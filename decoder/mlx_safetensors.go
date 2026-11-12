@@ -162,34 +162,84 @@ func mlxDequantMXFP4Row(words []uint32, scaleBytes []byte, in int, dst []float32
 	return nil
 }
 
+// stTensorQuantFormat classifies how an individual safetensors `.weight` tensor is packed on disk.
+type stTensorQuantFormat uint8
+
+const (
+	stQuantNone stTensorQuantFormat = iota
+	stQuantMLX
+	stQuantNVFP4
+)
+
+// classifySafetensorsTensorQuant inspects `name` and its companion scale tensor in `st` to classify
+// whether the tensor is MLX (`U32` + `.scales`), NVIDIA ModelOpt NVFP4 (`U8` + `.weight_scale`),
+// or a plain floating-point tensor (`stQuantNone`).
+func classifySafetensorsTensorQuant(st *embed.SafetensorsFile, name string) stTensorQuantFormat {
+	prefix, ok := strings.CutSuffix(name, ".weight")
+	if !ok {
+		return stQuantNone
+	}
+	wT, err := st.Tensor(name)
+	if err != nil {
+		return stQuantNone
+	}
+	switch wT.DType {
+	case "U32":
+		if _, serr := st.Tensor(prefix + ".scales"); serr == nil {
+			return stQuantMLX
+		}
+	case "U8":
+		if _, serr := st.Tensor(prefix + ".weight_scale"); serr == nil {
+			return stQuantNVFP4
+		}
+	}
+	return stQuantNone
+}
+
 // isMLXQuantizedTensor reports whether `name` (ending in `.weight`) has a sibling
 // `<prefix>.scales` tensor in `st` and a `"U32"` weight payload.
 func isMLXQuantizedTensor(st *embed.SafetensorsFile, name string) bool {
-	if !strings.HasSuffix(name, ".weight") {
-		return false
-	}
-	wT, err := st.Tensor(name)
-	if err != nil || wT.DType != "U32" {
-		return false
-	}
-	prefix := strings.TrimSuffix(name, ".weight")
-	_, serr := st.Tensor(prefix + ".scales")
-	return serr == nil
+	return classifySafetensorsTensorQuant(st, name) == stQuantMLX
 }
 
 // isNVFP4QuantizedTensor reports whether `name` (ending in `.weight`) has a sibling
 // `<prefix>.weight_scale` tensor in `st` and a `"U8"` weight payload.
 func isNVFP4QuantizedTensor(st *embed.SafetensorsFile, name string) bool {
-	if !strings.HasSuffix(name, ".weight") {
-		return false
+	return classifySafetensorsTensorQuant(st, name) == stQuantNVFP4
+}
+
+// reconstructSafetensorsMat2D reads a 2-D `[out, in]` weight matrix from `st`, dispatching on `qc`
+// when a checkpoint-level quantization config is present or on `classifySafetensorsTensorQuant`
+// for per-tensor MLX/NVFP4 reconstruction. `fresh` reports whether the returned slice is freshly
+// allocated (true for every reconstructed or BF16/F16 tensor; false only when `st.TensorF32`
+// returns a zero-copy view of an on-disk `F32` tensor).
+func reconstructSafetensorsMat2D(st *embed.SafetensorsFile, qc *quantConfig, name string, out, in int) (data []float32, fresh bool, err error) {
+	if qc != nil {
+		switch qc.method {
+		case "fp8":
+			data, err = fp8Reconstruct(st, name, in, out, qc.blockR, qc.blockC)
+		case "nvfp4":
+			data, err = nvfp4Reconstruct(st, name, in, out)
+		case "mlx":
+			data, err = mlxReconstruct2D(st, name, out, in)
+		case "awq":
+			data, err = awqReconstruct(st, strings.TrimSuffix(name, ".weight"), in, out)
+		default:
+			data, err = gptqReconstruct(st, strings.TrimSuffix(name, ".weight"), in, out)
+		}
+		return data, true, err
 	}
-	wT, err := st.Tensor(name)
-	if err != nil || wT.DType != "U8" {
-		return false
+	switch classifySafetensorsTensorQuant(st, name) {
+	case stQuantMLX:
+		data, err = mlxReconstruct2D(st, name, out, in)
+		return data, true, err
+	case stQuantNVFP4:
+		data, err = nvfp4Reconstruct(st, name, in, out)
+		return data, true, err
+	default:
+		data, err = st.TensorF32(name, out, in)
+		return data, false, err
 	}
-	prefix := strings.TrimSuffix(name, ".weight")
-	_, serr := st.Tensor(prefix + ".weight_scale")
-	return serr == nil
 }
 
 // mlxRowReader2D validates a 2-D MLX quantized tensor (`<prefix>.weight` U32 `[out, packedCols]`

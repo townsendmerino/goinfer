@@ -785,12 +785,158 @@ func (a *Architecture) moeResidentEligible() bool {
 	return a.MoE != nil
 }
 
+// ResidentMoESpec holds the MoE geometry and routing knobs for a resident backend or planner.
+type ResidentMoESpec struct {
+	NumExperts            int
+	TopK                  int
+	IntermediateDim       int
+	SharedIntermediateDim int
+	RouterSigmoid         bool
+	NormTopKProb          bool
+	SharedUngated         bool
+	RoutedScale           float64
+	NGroup                int
+	TopkGroup             int
+}
+
+// ResidentMLASpec holds the DeepSeek/Kimi MLA geometry and scales for a resident backend or planner.
+type ResidentMLASpec struct {
+	QLoRARank      int
+	KVLoRARank     int
+	QKNopeHeadDim  int
+	QKRopeHeadDim  int
+	VHeadDim       int
+	RopeInterleave bool
+	AttnScale      float64
+	RopeScale      float64
+}
+
+// ResidentQwen35Spec holds the Gated-DeltaNet and gated-softmax geometry for Qwen3.5/Qwen3-Next/Olmo-Hybrid.
+type ResidentQwen35Spec struct {
+	ConvKernel    int
+	KeyHeadDim    int
+	ValueHeadDim  int
+	NumKeyHeads   int
+	NumValueHeads int
+	AttnGate      bool
+}
+
+// ResidentNemotronSpec holds the Mamba-2 and GQA geometry for Nemotron-H.
+type ResidentNemotronSpec struct {
+	NHeads     int
+	HeadDim    int
+	DState     int
+	NGroups    int
+	DConv      int
+	NormGroups int
+	AttnScale  float32
+}
+
+// ResidentGraniteSpec holds the Mamba-2 geometry and four scalar multipliers for Granite-4.0-H.
+type ResidentGraniteSpec struct {
+	NHeads     int
+	HeadDim    int
+	DState     int
+	NGroups    int
+	DConv      int
+	EmbMul     float32
+	ResidMul   float32
+	LogitScale float32
+	AttnScale  float32
+}
+
+// ResidentSpec bundles the family-specific resident geometry of a Model into named sub-structs so callers
+// (such as fitplan.go and backend builders) can inspect named fields instead of unpacking positional 7-to-11-tuples.
+type ResidentSpec struct {
+	MoE      *ResidentMoESpec
+	MLA      *ResidentMLASpec
+	Qwen35   *ResidentQwen35Spec
+	Nemotron *ResidentNemotronSpec
+	Granite  *ResidentGraniteSpec
+}
+
+// ResidentSpec returns the structured resident geometry of m. Sub-structs are non-nil only when the model's
+// architecture carries that subsystem.
+func (m *Model) ResidentSpec() ResidentSpec {
+	var spec ResidentSpec
+	a := m.w.arch
+	if mo := a.MoE; mo != nil {
+		spec.MoE = &ResidentMoESpec{
+			NumExperts:            mo.NumExperts,
+			TopK:                  mo.TopK,
+			IntermediateDim:       mo.IntermediateDim,
+			SharedIntermediateDim: mo.SharedIntermediateDim,
+			RouterSigmoid:         mo.RouterSigmoid,
+			NormTopKProb:          mo.NormTopKProb,
+			SharedUngated:         mo.SharedUngated,
+			RoutedScale:           mo.RoutedScale,
+			NGroup:                mo.NGroup,
+			TopkGroup:             mo.TopkGroup,
+		}
+	}
+	if p := a.mla; p != nil {
+		spec.MLA = &ResidentMLASpec{
+			QLoRARank:      p.QLoRARank,
+			KVLoRARank:     p.KVLoRARank,
+			QKNopeHeadDim:  p.QKNopeHeadDim,
+			QKRopeHeadDim:  p.QKRopeHeadDim,
+			VHeadDim:       p.VHeadDim,
+			RopeInterleave: p.ropeInterleave,
+			AttnScale:      a.AttnScale,
+			RopeScale:      a.ropeMscale(0),
+		}
+	}
+	if g := a.qwen35; g != nil {
+		spec.Qwen35 = &ResidentQwen35Spec{
+			ConvKernel:    g.ConvKernel,
+			KeyHeadDim:    g.KeyHeadDim,
+			ValueHeadDim:  g.ValueHeadDim,
+			NumKeyHeads:   g.NumKeyHeads,
+			NumValueHeads: g.NumValueHeads,
+			AttnGate:      g.AttnGate,
+		}
+	}
+	if np := a.nemotron; np != nil {
+		spec.Nemotron = &ResidentNemotronSpec{
+			NHeads:     np.NHeads,
+			HeadDim:    np.HeadDim,
+			DState:     np.DState,
+			NGroups:    np.NGroups,
+			DConv:      np.DConv,
+			NormGroups: np.NGroups,
+			AttnScale:  float32(a.AttnScale),
+		}
+	}
+	if g := a.granite; g != nil {
+		ls := float32(1)
+		if a.LogitScale != 0 {
+			ls = float32(a.LogitScale)
+		}
+		em, rm := g.EmbMul, g.ResidMul
+		if os.Getenv("GOINFER_SSM_NOMUL") != "" {
+			em, rm, ls = 1, 1, 1
+		}
+		spec.Granite = &ResidentGraniteSpec{
+			NHeads:     g.NHeads,
+			HeadDim:    g.HeadDim,
+			DState:     g.DState,
+			NGroups:    g.NGroups,
+			DConv:      g.DConv,
+			EmbMul:     em,
+			ResidMul:   rm,
+			LogitScale: ls,
+			AttnScale:  float32(a.AttnScale),
+		}
+	}
+	return spec
+}
+
 // MoEResidentParams returns the MoE knobs the GPU resident runner needs (ok=false for
 // a dense model). sharedInter > 0 marks an always-on shared expert; sharedUngated picks
 // the GLM/DeepSeek (no sigmoid gate) combine; nGroup > 1 is DeepSeek group-limited
 // routing (topkGroup groups kept).
 func (m *Model) MoEResidentParams() (nE, k, inter, sharedInter int, sigmoid, norm, sharedUngated bool, scale float64, nGroup, topkGroup int, ok bool) {
-	mo := m.w.arch.MoE
+	mo := m.ResidentSpec().MoE
 	if mo == nil {
 		return 0, 0, 0, 0, false, false, false, 0, 0, 0, false
 	}
@@ -904,12 +1050,12 @@ func (m *Model) HasGemma4MoEResident() bool {
 // multiplier (qk_head_dim^-0.5, with any YaRN mscale²); ropeScale is the YaRN
 // attention factor folded into the decoupled RoPE cos/sin (1.0 when none).
 func (m *Model) MLAResidentParams() (qLoRA, kvLoRA, qkNope, qkRope, vHead int, interleave bool, attnScale, ropeScale float64, ok bool) {
-	p := m.w.arch.mla
+	p := m.ResidentSpec().MLA
 	if p == nil {
 		return 0, 0, 0, 0, 0, false, 0, 0, false
 	}
 	return p.QLoRARank, p.KVLoRARank, p.QKNopeHeadDim, p.QKRopeHeadDim, p.VHeadDim,
-		p.ropeInterleave, m.w.arch.AttnScale, m.w.arch.ropeMscale(0), true
+		p.RopeInterleave, p.AttnScale, p.RopeScale, true
 }
 
 // MLALayerWeights returns layer l's MLA projection weights (f32) for the resident
@@ -1386,19 +1532,11 @@ var releaseHostMemory = debug.FreeOSMemory
 // attnScale is the attention q·k multiplier (folded into the resident attention scale). Granite
 // gated-RMSNorm is over the full dInner (NormGroups=1).
 func (m *Model) GraniteResidentParams() (nHeads, headDim, dState, nGroups, dConv int, embMul, residMul, logitScale, attnScale float32, ok bool) {
-	g := m.w.arch.granite
+	g := m.ResidentSpec().Granite
 	if g == nil {
 		return 0, 0, 0, 0, 0, 0, 0, 0, 0, false
 	}
-	ls := float32(1)
-	if m.w.arch.LogitScale != 0 {
-		ls = float32(m.w.arch.LogitScale)
-	}
-	em, rm := g.EmbMul, g.ResidMul
-	if os.Getenv("GOINFER_SSM_NOMUL") != "" { // isolation seam: identity multipliers on both sides
-		em, rm, ls = 1, 1, 1
-	}
-	return g.NHeads, g.HeadDim, g.DState, g.NGroups, g.DConv, em, rm, ls, float32(m.w.arch.AttnScale), true
+	return g.NHeads, g.HeadDim, g.DState, g.NGroups, g.DConv, g.EmbMul, g.ResidMul, g.LogitScale, g.AttnScale, true
 }
 
 // GraniteMambaLayer reports whether layer i is a Mamba-2 mixer (vs GQA attention).
@@ -1410,11 +1548,11 @@ func (m *Model) GraniteMambaLayer(i int) bool { return m.w.arch.isMambaLayer(i) 
 // count — Nemotron normalizes PER GROUP (NGroups), unlike Granite's full-dInner (1). ok=false for
 // non-nemotron archs.
 func (m *Model) NemotronResidentParams() (nHeads, headDim, dState, nGroups, dConv, normGroups int, attnScale float32, ok bool) {
-	np := m.w.arch.nemotron
+	np := m.ResidentSpec().Nemotron
 	if np == nil {
 		return 0, 0, 0, 0, 0, 0, 0, false
 	}
-	return np.NHeads, np.HeadDim, np.DState, np.NGroups, np.DConv, np.NGroups, float32(m.w.arch.AttnScale), true
+	return np.NHeads, np.HeadDim, np.DState, np.NGroups, np.DConv, np.NormGroups, np.AttnScale, true
 }
 
 // NemotronBlockKind returns layer i's single-op kind: 0 mamba · 1 attention · 2 mlp (the
@@ -1897,7 +2035,7 @@ func (m *Model) GptOssExpertDownBiasResident(l int) []float32 {
 // residency as the recurrence: attnGate=true means q_proj emits [query ‖ gate] per head and the
 // attention context is multiplied by sigmoid(gate) before o_proj.
 func (m *Model) Qwen35ResidentParams() (convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numValueHeads int, attnGate, ok bool) {
-	g := m.w.arch.qwen35
+	g := m.ResidentSpec().Qwen35
 	if g == nil {
 		return 0, 0, 0, 0, 0, false, false
 	}

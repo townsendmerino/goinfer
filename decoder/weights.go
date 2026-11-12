@@ -585,14 +585,14 @@ func loadEmbedTable(st *embed.SafetensorsFile, name string, rows, cols int, mode
 		}
 		return quantizeEmbedWM(m, mode, needCanonical), nil
 	}
-	if isMLXQuantizedTensor(st, name) {
+	switch classifySafetensorsTensorQuant(st, name) {
+	case stQuantMLX:
 		rowInto, err := mlxRowReader2D(st, name, rows, cols)
 		if err != nil {
 			return linalg.WeightMat{}, err
 		}
 		return streamQuantizedEmbed(rows, cols, mode, needCanonical, !repackForDecode(sink), 1, func() rowReader { return rowInto })
-	}
-	if isNVFP4QuantizedTensor(st, name) {
+	case stQuantNVFP4:
 		data, err := nvfp4Reconstruct(st, name, cols, rows)
 		if err != nil {
 			return linalg.WeightMat{}, err
@@ -826,31 +826,14 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 	// quantizeWM, so it may build repacked-only int4 when this load's backend allows it. See that function for the safety
 	// argument and why o_proj/down_proj are not marked this way.
 	loadProj := func(name string, out, in int, batched bool) (linalg.WeightMat, error) {
-		var data []float32
-		var derr error
-		switch {
-		case qc == nil:
-			data, derr = st.TensorF32(name, out, in)
-			// TensorF32 may alias the read-only mmap for F32 tensors; the in-place
-			// merge needs a writable copy (only for the targeted tensors).
-			if derr == nil && lora.has(name) {
-				data = append([]float32(nil), data...)
-			}
-		case qc.method == "fp8":
-			// Block-quantized fp8 keeps the full tensor NAME (scales are name+"_scale_inv"),
-			// unlike gptq/awq which trim ".weight" and rebuild from a family of suffixes.
-			data, derr = fp8Reconstruct(st, name, in, out, qc.blockR, qc.blockC)
-		case qc.method == "nvfp4":
-			data, derr = nvfp4Reconstruct(st, name, in, out)
-		case qc.method == "mlx":
-			data, derr = mlxReconstruct2D(st, name, out, in)
-		case qc.method == "awq":
-			data, derr = awqReconstruct(st, strings.TrimSuffix(name, ".weight"), in, out)
-		default:
-			data, derr = gptqReconstruct(st, strings.TrimSuffix(name, ".weight"), in, out)
-		}
+		data, fresh, derr := reconstructSafetensorsMat2D(st, qc, name, out, in)
 		if derr != nil {
 			return linalg.WeightMat{}, derr
+		}
+		// TensorF32 may alias the read-only mmap for F32 tensors; the in-place
+		// merge needs a writable copy (only for the targeted tensors).
+		if !fresh && lora.has(name) {
+			data = append([]float32(nil), data...)
 		}
 		if derr = lora.merge(name, data, out, in); derr != nil {
 			return linalg.WeightMat{}, derr
@@ -1782,21 +1765,7 @@ func streamExperts(t embed.Tensor, nExpert, rows, cols int, quant quantMode, nee
 // embed.SafetensorsFile.TensorF32 typed read — F32/BF16/F16 dispatch + shape
 // check) and wraps it as a (f32) linalg.WeightMat ready for matmul/quantization.
 func loadMat(st *embed.SafetensorsFile, name string, rows, cols int) (linalg.WeightMat, error) {
-	if isMLXQuantizedTensor(st, name) {
-		data, err := mlxReconstruct2D(st, name, rows, cols)
-		if err != nil {
-			return linalg.WeightMat{}, err
-		}
-		return linalg.WrapF32(data, rows, cols), nil
-	}
-	if isNVFP4QuantizedTensor(st, name) {
-		data, err := nvfp4Reconstruct(st, name, cols, rows)
-		if err != nil {
-			return linalg.WeightMat{}, err
-		}
-		return linalg.WrapF32(data, rows, cols), nil
-	}
-	data, err := st.TensorF32(name, rows, cols)
+	data, _, err := reconstructSafetensorsMat2D(st, nil, name, rows, cols)
 	if err != nil {
 		return linalg.WeightMat{}, err
 	}

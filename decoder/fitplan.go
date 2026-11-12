@@ -55,11 +55,11 @@ func (m *Model) kvBytesPerPositionAllLayers(f16, i8 bool) int64 {
 // assumption ResidentWeightBytesPaged already makes) and the top-k floor below which even one
 // token's routed set cannot be resident.
 func (m *Model) moeGeometry() (nExperts, topK int, isMoE bool) {
-	nE, k, _, _, _, _, _, _, _, _, ok := m.MoEResidentParams()
-	if !ok || nE == 0 {
+	mo := m.ResidentSpec().MoE
+	if mo == nil || mo.NumExperts == 0 {
 		return 0, 0, false
 	}
-	return nE, k, true
+	return mo.NumExperts, mo.TopK, true
 }
 
 // WebGPUCtxCeiling is the WebGPU backend's fixed per-precision KV-capacity ceiling, gpu/residency.go's ctxCap before any -ctx request
@@ -191,10 +191,11 @@ func (m *Model) planIneligible(backend string, req PlanRequest) string {
 		}
 	}
 	if backend == "webgpu" && (req.KVF16 || req.KVI8) {
-		_, _, _, _, _, _, _, _, mlaOK := m.MLAResidentParams()
-		_, _, _, _, _, attnGate, dnetOK := m.Qwen35ResidentParams()
-		_, _, _, _, _, _, _, nemoOK := m.NemotronResidentParams()
-		if family := map[bool]string{true: "nemotron"}[nemoOK] + map[bool]string{true: "qwen3_5"}[dnetOK && attnGate] +
+		spec := m.ResidentSpec()
+		mlaOK := spec.MLA != nil
+		dnetGated := spec.Qwen35 != nil && spec.Qwen35.AttnGate
+		nemoOK := spec.Nemotron != nil
+		if family := map[bool]string{true: "nemotron"}[nemoOK] + map[bool]string{true: "qwen3_5"}[dnetGated] +
 			map[bool]string{true: "mla"}[mlaOK]; family != "" {
 			flag := map[bool]string{true: "--kv-i8"}[req.KVI8] + map[bool]string{true: "--kv-f16"}[req.KVF16]
 			return fmt.Sprintf("webgpu: %s does not implement %s KV (only the generic GQA path does) — drop the flag to plan the resident path", family, flag)

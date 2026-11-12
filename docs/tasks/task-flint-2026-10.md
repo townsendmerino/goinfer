@@ -13,7 +13,7 @@
 | id | state | next | evidence |
 |---|---|---|---|
 | F0 | done | desk read complete (F0.1–F0.5); zero `config.json` contradictions with the card; owner confirmed F0.3 parity tier and ordered F1b after F1–F3 | `docs/measurements/flint-f0-2026-10.md` |
-| F1 | done | CPU/CUDA/Metal family descriptor (`decoder/arch_flint.go:flintArchitecture`), standalone `Architecture.AttnSinks` split from `FeatAttnSink`, GGUF `flint` config/loader (`decoder/gguf.go:ggufFlintConfig`), `splitFlint` pre-tokenizer (`tokenizer/splitshape.go:shapeFlint`, `tokenizer/split_o200k.go:splitFlint`, `tokenizer/gguf.go:byteLevelKnobs`), and `Flint()` chat template + tool renderer/parser (`chat/templates.go:Flint`, `chat/chat.go:Detect`, `chat/tools.go:parseFlintCalls`) | `decoder/flint_parity_test.go`, `tokenizer/split_o200k_test.go`, `chat/streamable_test.go` |
+| F1 | done | CPU/CUDA/Metal family descriptor (`decoder/arch_flint.go:flintArchitecture`), standalone `Architecture.AttnSinks` split from `FeatAttnSink`, GGUF `flint` config/loader (`decoder/gguf.go:ggufFlintConfig`), `splitFlint` pre-tokenizer (`tokenizer/splitshape.go:shapeFlint`, `tokenizer/split_o200k.go:splitFlint`, `tokenizer/gguf.go:byteLevelKnobs`), and `Flint()` chat template + tool renderer/parser (`chat/templates.go:Flint`, `chat/chat.go:Detect`, `chat/tools.go:parseFlintTools`) | `decoder/flint_parity_test.go`, `tokenizer/split_o200k_test.go`, `chat/streamable_test.go` |
 | F1b | done | safetensors NVFP4 (`decoder/nvfp4.go:nvfp4Reconstruct`), MLX quantized safetensors (`affine` 4/8-bit, `nvfp4`, `mxfp4`, quantized `embed_tokens`/`lm_head`, and 3-D stacked `mlp.switch_mlp.{gate,up,down}_proj` in `decoder/mlx_safetensors.go`), GGUF `<name>.scale` companion multiplication (`decoder/gguf.go:buildWeightsFromGGUF`), and `decoder/fit/weights.go:SafetensorsWeightBytes` pricing (GGUF `Q4_1`/`NVFP4` block dequantizers skipped per owner scope decision as `.giw` is the primary runtime path) | `decoder/nvfp4_mlx_test.go` (`TestNVFP4_e2m1TableAndExhaustiveE4M3`, `TestNVFP4_reconstructAndEndToEndFlint`, `TestMLX_affineAndFP4ModesAndEndToEndFlint`, `TestFit_nvfp4AndMLXSafetensorsWeightBytes`) |
 | F2 | done | Tier 1 tiny-oracle parity (`TestFlint_tinyForwardParity`: `maxAbs=3.576e-07`, `cosine=1.00000000`, greedy continuation exact match, `.giw` round-trip `maxAbs < 1e-6`), `sliding_window=513` boundary golden (`TestFlint_windowBoundaryParity` at `len=512, 513, 514, 1100`: `maxAbs <= 7.600e-07`), 4 break-it-first checks (`TestFlint_breakItFirst`), resident + expert-cache parity (`TestFlintResidentParityCUDA`, `TestFlintResidentParityMetal`), and Tier 2 real-checkpoint gate (`TestFlint_realCheckpointParity`) verified on both Mac (`Q2_K` `.giw`, `argmax=220`) and `nobara` (`Flint-Q4_K_M` `.giw`, `argmax=13`) | `decoder/flint_parity_test.go`, `backend/cuda/flint_resident_parity_test.go`, `backend/metal/flint_resident_parity_test.go`, `testdata/flint-tiny`, `testdata/flint_tiny_golden.json`, `testdata/parity/flint.json` |
 | F3 | done | **Mac 16 GiB** (`RecursiveSI.flint.f16.gguf.Q2_K.int4.metal.v17.giw`, `21,689 MB`): `chat fit` matches F0.5 (`metal EXPERT-CACHED @ int4`: `dense 1.35 GB + 106/256 experts 8.21 GB + KV@4096 0.39 GB`); Metal `--moe-cache-experts` loads in `5.2s` and decodes at **`4.0 tok/s`** vs CPU `--stream-weights` **`1.6 tok/s`** (`2.5×`). **`nobara` 8 GiB RTX 2070 SUPER / 62.7 GiB RAM** (`Flint-Q4_K_M.int4.e4h.cuda.v17.giw`, `21,431 MB`): fits `-ctx 16384` (`48–54/256` slots), `-ctx 40960` (`36/256` slots, `3.2 GB`), and `-ctx 65536` (`20/256` slots, `1.8 GB`); vs `llama.cpp` `b988-a37cc46` (`-ngl 99 -ot ".ffn_.*_exps.=CPU"`, `pp64=52.7`, `pp512=237.6`, `tg64=33.0 tok/s`), `goinfer` CUDA (`--moe-cache-experts`, `54` slots, `ctx=16384`) gets `pp64=38.7 tok/s` (`0.73×`), `pp512=123.3 tok/s` (`0.52×`), and **`tg64=33.9 tok/s` cold (`1.03×`), `44.1–49.9 tok/s` warm (`1.34×–1.51×`)**, `30.8 tok/s` after `pp512` (`0.94×`); CPU resident `.giw` loads in `254ms` and decodes at `5.2 tok/s` | `decoder/capability_matrix_test.go`, `docs/capability-matrix.md`, `docs/hardware-matrix.md`, `docs/measurements/flint-f0-2026-10.md` §6.3 |
@@ -57,7 +57,7 @@ descriptor that composes existing operations, not a new forward.
 1. **Reference implementation (resolved in F0.3).** At release on 2026-10-21 no Transformers reference existed; as of
    F0 (2026-11-11), both upstream `huggingface/transformers` (`modeling_flint.py`, PR `#49824`) and `ggml-org/llama.cpp`
    mainline (`src/models/flint.cpp`, PR `#30928`) are merged and pinned in `docs/measurements/flint-f0-2026-10.md` §3.
-2. **The window convention.** "513 = current + 512" (`pos - j < 513`) matches `decoder/attention.go:attendQueryWith`
+2. **The window convention.** "513 = current + 512" (`pos - j < 513`) matches `decoder/attention.go:attendQueryP`
    (`j < pos-window+1`) exactly. Off by one, the output drifts with no error. F2 tests prompt lengths across the boundary.
 3. **The sink alone.** `FeatAttnSink` couples the sink with gpt-oss's clamped SwiGLU and router. Splitting it touches
    the CUDA and Metal feature declarations (`decoder/features.go`) and gpt-oss's own gates, which must stay unchanged.
@@ -108,7 +108,7 @@ A descriptor composing existing operations: layer types from the config, 2 dense
 expert, NoPE on full layers and RoPE on sliding ones, QK norm, the sink. The sink split from `FeatAttnSink` happens here,
 with gpt-oss's existing gates unchanged as the guard, plus changing `if arch.MoE.RouterSigmoid` to
 `if arch.MoE.HasRouterBias` for `exp_probs_b.bias` in `decoder/gguf.go:buildWeightsFromGGUF`. Tokenizer (`splitFlint` in
-`tokenizer/splitshape.go:splitRegex` and `tokenizer/gguf.go:byteLevelKnobs`) and template support (`TmplFlint` in
+`tokenizer/bytelevel.go:splitRegex` and `tokenizer/gguf.go:byteLevelKnobs`) and template support (`TmplFlint` in
 `chat/chat.go:Detect`) from F0.2.
 
 ### F1b — optional read-only format admission for Recursive's official quantized repos
@@ -117,11 +117,11 @@ Coordinated with `docs/tasks/task-lowbit-formats-2026-11.md` so `goinfer` can lo
 quantized checkpoints directly (dequantizing to `f32` at load/pack time into `int4`/`int8` or `.giw`, without new GPU
 kernels):
 1. **`GGML_TYPE_Q4_1` (`type = 3`, LB5c)** in `aikit/embed`: ~25-line block dequantizer (`32` nibbles + `FP16 d` +
-   `FP16 m`, `20 B/block`), admitting `RecursiveSI/flint-int4-gguf/flint-int4-q4_1.gguf`.
+   `FP16 m`, `20 B/block`), admitting `RecursiveSI/flint-int4-gguf` (`flint-int4-q4_1.gguf`).
 2. **`GGML_TYPE_NVFP4` (`type = 40`, LB0c / LB1b / LB2b)**: `block_nvfp4` (`64` values in `36 B`: four `UE4M3` sub-block
    scales + `32 B` `E2M1` nibbles in `j / j+8` sub-block order) in `aikit/embed`, plus companion `<name>.scale` `F32`
    tensor multiplication (`[1]` for 2D tensors, `[256]` per-expert for 3D `ffn_*_exps.weight`) in
-   `decoder/gguf.go:buildWeightsFromGGUF`, admitting `RecursiveSI/flint-nvfp4-gguf/flint-nvfp4.gguf`.
+   `decoder/gguf.go:buildWeightsFromGGUF`, admitting `RecursiveSI/flint-nvfp4-gguf` (`flint-nvfp4.gguf`).
 3. **MLX affine-INT4 safetensors (`quantization.group_size = 64, bits = 4, mode = "affine"`)**: dequantizing packed
    `U32` weights (`8` nibbles per `uint32`) with sibling `.scales` (`BF16`) and `.biases` (`BF16`:
    `w = q * scale + bias`) and pricing them in `decoder/fit/weights.go:SafetensorsWeightBytes`, admitting

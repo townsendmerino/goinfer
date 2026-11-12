@@ -443,3 +443,32 @@ func TestPlanFor_metalPricesEverySlotTheBuildKeeps(t *testing.T) {
 	recNeed := rec.Plan("metal", 1<<40, fit.PlanRequest{Ctx: 64, CtxPinned: true}).NeedBytes()
 	check("recurrent: one slot", rec, recNeed+further(rec, 64), fit.PlanRequest{Ctx: 64, CtxPinned: true}, 64, 1)
 }
+
+func TestSelfMeasureOptions_propagatesPlannedPlacementAndWindowedKV(t *testing.T) {
+	loadOpts := fitLoadOptions(fitSource{quant: "int4", group: 64}, 16384)
+	if !loadOpts.ResidentWindowedKV {
+		t.Fatal("fitLoadOptions did not set ResidentWindowedKV:true (chat/serve default)")
+	}
+	src := fitSource{path: "model.giw", quant: "int4", group: 64}
+	plan := fit.Plan{Placement: fit.PlacementExpertCached, Ctx: 40960}
+	opts := selfMeasureOptions("cuda", src, plan, true, false)
+	if !opts.MoECacheExperts {
+		t.Error("selfMeasureOptions did not enable MoECacheExperts for PlacementExpertCached")
+	}
+	if !opts.ResidentWindowedKV {
+		t.Error("selfMeasureOptions did not enable ResidentWindowedKV")
+	}
+	if opts.ResidentContext != 40960 {
+		t.Errorf("selfMeasureOptions ResidentContext = %d, want 40960", opts.ResidentContext)
+	}
+	if opts.KVPrecision != "f16" {
+		t.Errorf("selfMeasureOptions KVPrecision = %q, want f16", opts.KVPrecision)
+	}
+	resOpts := selfMeasureOptions("metal", src, fit.Plan{Placement: fit.PlacementResident, Ctx: 16384}, false, true)
+	if resOpts.MoECacheExperts {
+		t.Error("selfMeasureOptions enabled MoECacheExperts for PlacementResident")
+	}
+	if resOpts.KVQuant != "i8" {
+		t.Errorf("selfMeasureOptions KVQuant = %q, want i8", resOpts.KVQuant)
+	}
+}

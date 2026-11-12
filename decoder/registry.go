@@ -5,6 +5,8 @@ import (
 	"math"
 	"sort"
 	"strings"
+
+	"github.com/townsendmerino/aikit/embed"
 )
 
 // archAdapter resolves a parsed config.json into the family-agnostic
@@ -207,6 +209,46 @@ func validateConfigBounds(cfg *Config) error {
 func knownModelTypes() string {
 	keys := make([]string, 0, len(registry))
 	for k := range registry {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ", ")
+}
+
+// ggufConfigAdapter builds a *Config from a GGUF file's metadata for one general.architecture value.
+type ggufConfigAdapter func(*embed.GGUFFile) (*Config, error)
+
+// ggufRegistry maps GGUF general.architecture → its Config builder, keeping GGUF architecture registration in the same
+// table-driven file as safetensors registry above.
+var ggufRegistry = map[string]ggufConfigAdapter{
+	"llama":          ggufLlamaConfig,
+	"qwen2":          ggufQwen2Config,
+	"qwen3":          ggufQwen3Config,
+	"gemma":          func(g *embed.GGUFFile) (*Config, error) { return ggufGemma12Config(g, "gemma") },
+	"gemma2":         func(g *embed.GGUFFile) (*Config, error) { return ggufGemma12Config(g, "gemma2") },
+	"gemma3":         ggufGemmaConfig,
+	"gemma3_text":    ggufGemmaConfig,
+	"gemma4":         ggufGemma4Config,
+	"mellum":         ggufMellumConfig,
+	"qwen35moe":      ggufQwen35Config,
+	"qwen35":         ggufQwen35DenseConfig,
+	"qwen3moe":       ggufQwen3MoeConfig,
+	"laguna":         ggufLagunaConfig,
+	"flint":          ggufFlintConfig,
+	"glm4moe":        ggufGlm4MoeConfig,
+	"granitehybrid":  ggufGraniteConfig,
+	"granite":        ggufGraniteDenseConfig,
+	"nemotron_h":     ggufNemotronConfig,
+	"nemotron_h_moe": ggufNemotronConfig, // Nemotron 3 Nano — same HF model_type "nemotron_h", llama.cpp gives it its own GGUF arch string
+	"deepseek2":      ggufDeepseekConfig,
+	"phi3":           ggufPhi3Config,
+	"llama4":         ggufLlama4Config,
+	"gpt-oss":        ggufGptOssConfig,
+}
+
+func knownGGUFArchitectures() string {
+	keys := make([]string, 0, len(ggufRegistry))
+	for k := range ggufRegistry {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)

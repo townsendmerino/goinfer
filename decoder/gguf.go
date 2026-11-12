@@ -44,52 +44,10 @@ func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {
 			cfg.Sampling = ggufSampling(g)
 		}
 	}()
-	switch arch {
-	case "llama":
-		return ggufLlamaConfig(g)
-	case "qwen2":
-		return ggufQwen2Config(g)
-	case "qwen3":
-		return ggufQwen3Config(g)
-	case "gemma", "gemma2":
-		return ggufGemma12Config(g, arch)
-	case "gemma3", "gemma3_text":
-		return ggufGemmaConfig(g)
-	case "gemma4":
-		return ggufGemma4Config(g)
-	case "mellum":
-		return ggufMellumConfig(g)
-	case "qwen35moe":
-		return ggufQwen35Config(g)
-	case "qwen35":
-		return ggufQwen35DenseConfig(g)
-	case "qwen3moe":
-		return ggufQwen3MoeConfig(g)
-	case "laguna":
-		return ggufLagunaConfig(g)
-	case "flint":
-		return ggufFlintConfig(g)
-	case "glm4moe":
-		return ggufGlm4MoeConfig(g)
-	case "granitehybrid":
-		return ggufGraniteConfig(g)
-	case "granite":
-		return ggufGraniteDenseConfig(g)
-	case "nemotron_h":
-		return ggufNemotronConfig(g)
-	case "nemotron_h_moe": // Nemotron 3 Nano — same HF model_type "nemotron_h", llama.cpp gives it its own GGUF arch string
-		return ggufNemotronConfig(g)
-	case "deepseek2":
-		return ggufDeepseekConfig(g)
-	case "phi3":
-		return ggufPhi3Config(g)
-	case "llama4":
-		return ggufLlama4Config(g)
-	case "gpt-oss":
-		return ggufGptOssConfig(g)
-	default:
-		return nil, errorOfKind(ErrUnsupportedModel, "decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma, gemma2, gemma3, gemma4 [wip], mellum, qwen35moe, qwen35, qwen3moe, glm4moe, laguna, flint, granitehybrid, granite, nemotron_h, nemotron_h_moe, deepseek2, phi3, gpt-oss)", arch)
+	if adapter, ok := ggufRegistry[arch]; ok {
+		return adapter(g)
 	}
+	return nil, errorOfKind(ErrUnsupportedModel, "decoder(gguf): architecture %q unsupported (have: %s)", arch, knownGGUFArchitectures())
 }
 
 // ggufVocabSize reads the vocab size from the embedding tensor's dims (no
