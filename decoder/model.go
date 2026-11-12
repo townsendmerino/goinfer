@@ -52,6 +52,7 @@ type Model struct {
 	be          Backend
 	eosIDs      []int           // end-of-sequence ids from config (generation stops on these)
 	resident    ResidentForward // GPU full-residency decode path (webgpu + eligible arch); nil ⇒ staged/CPU
+	resSubP     unsafe.Pointer  // *cachedResidentSubsystems: lock-free legacy-bridge cache; raw pointer so Model stays copyable
 	lifeP       unsafe.Pointer  // *modelLife (lifecycle.go): the in-flight generations Close ends; made on first use
 	resBusy     int32           // atomic: claims the single shared resident KV for one in-flight generation. Raw int32 (not atomic.Bool) so Model stays copyable for the value-copy test seam.
 	capWarned   int32           // atomic: the first prompt past the resident's context has been reported (warnResidentCap)
@@ -354,20 +355,17 @@ func (m *Model) ExtraResidentKVPerPosition() int64 { return m.extraKVPerPos }
 // ExpertCacheStats reports the resident's MoE expert cache (ResidentExpertCache); ok is false off the resident path or when
 // the resident keeps no cache.
 func (m *Model) ExpertCacheStats() (ExpertCacheStats, bool) {
-	if c, ok := m.resident.(ResidentExpertCache); ok {
-		return c.ExpertCacheStats()
-	}
-	return ExpertCacheStats{}, false
+	return m.resRuntime().ExpertCacheStats()
 }
 
 // ResizeExpertCache resizes the resident's MoE expert cache (ResidentExpertCache) to leave reserve bytes of device memory
 // free, and returns its slots per layer. It errors when there is no resident or the resident keeps no cache.
 func (m *Model) ResizeExpertCache(reserve int64) (int, error) {
-	c, ok := m.resident.(ResidentExpertCache)
-	if !ok {
+	rt := m.resRuntime()
+	if !rt.ExpertCacheAvailable() {
 		return 0, fmt.Errorf("decoder: this model's resident keeps no expert cache")
 	}
-	return c.ResizeExpertCache(reserve)
+	return rt.ResizeExpertCache(reserve)
 }
 
 // SidecarFor is Options.SidecarFor: the backend whose sidecar .giw this load stands in for, "" for none.
@@ -1311,10 +1309,8 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 	// the backend's short continuation is exact (PrefillTailExact), any suffix of a prompt the cold run would have
 	// offered whole, so a reused prompt takes the cold run's route and returns its bits.
 	offer := len(suffix) >= 8
-	if !offer && from > 0 && len(prompt) >= 8 {
-		if te, ok := m.resident.(PrefillTailExact); ok && te.PrefillTailExact() {
-			offer = true
-		}
+	if !offer && from > 0 && len(prompt) >= 8 && m.resPrefill().PrefillTailExact() {
+		offer = true
 	}
 	if m.knobs.get(knobBatchedPrefill) != "0" && offer && !hasAdapter {
 		if canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe}) {
@@ -1569,7 +1565,9 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	}
 	var resAdapter ResidentAdapter
 	if lora != nil {
-		resAdapter, _ = m.resident.(ResidentAdapter)
+		if rt := m.resRuntime(); rt.AdapterAvailable() {
+			resAdapter = rt
+		}
 	}
 	useGPU := m.resident != nil && prefillFrom == 0 && (commit == nil || (lora != nil && resAdapter != nil))
 	var mc3 *residentBatcher // non-nil: this generation holds an MC3 place and, after prefill, the KV slot mc3Slot
@@ -1757,8 +1755,8 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// lookup is a plain table row, which the resident's gather reproduces. Under MC3 it runs only on the tokens this generation
 	// decodes alone, with the resident held across them (holdSolo); every other token takes the batcher as before, so fastGreedy
 	// stays the path for those.
-	chainRF, hasChain := m.resident.(ResidentGreedyChain)
-	useChain := useGPU && resCost == nil && hasChain && (sp.LogitProcessor == nil || (gated && mc3 == nil)) && lora == nil &&
+	chainRF := m.resDecode()
+	useChain := useGPU && resCost == nil && (sp.LogitProcessor == nil || (gated && mc3 == nil)) && lora == nil &&
 		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) && m.knobs.get(knobNoGreedyFastpath) == "" &&
 		m.embedIsTableRow() && chainRF.GreedyChainAvailable()
 	if useChain && mc3 == nil {
@@ -1814,10 +1812,8 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// ForwardSample itself takes the argmax (a temperature so small 1/T is infinite).
 	var sChainRF ResidentSampleChain
 	if sampleOn && resCost == nil && sp.LogitProcessor == nil && lora == nil && m.embedIsTableRow() &&
-		!math.IsInf(1/sp.Temperature, 0) {
-		if rf, ok := m.resident.(ResidentSampleChain); ok && rf.SampleChainAvailable() {
-			sChainRF = rf
-		}
+		!math.IsInf(1/sp.Temperature, 0) && chainRF.SampleChainAvailable() {
+		sChainRF = chainRF
 	}
 	var stepRow [1][]float32 // the decode token's one-row batch, reused across tokens so a step allocates nothing
 	var topKRow *TopKRow     // this step's device top-K row, set instead of logits when topKOn

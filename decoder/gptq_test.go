@@ -18,11 +18,11 @@ func TestParseQuantConfig(t *testing.T) {
 	if err != nil || p == nil {
 		t.Fatalf("good config: %v", err)
 	}
-	if p.method != "gptq" || p.bits != 4 || p.groupSize != 128 || !p.descAct || !p.sym {
+	if p.Method != "gptq" || p.Bits != 4 || p.GroupSize != 128 || !p.DescAct || !p.Sym {
 		t.Errorf("parsed %+v", p)
 	}
 	aw, err := parseQuantConfig(json.RawMessage(`{"quant_method":"awq","bits":4,"group_size":128,"version":"gemm"}`))
-	if err != nil || aw == nil || aw.method != "awq" || aw.groupSize != 128 {
+	if err != nil || aw == nil || aw.Method != "awq" || aw.GroupSize != 128 {
 		t.Errorf("awq config: %v %+v", err, aw)
 	}
 	for _, bad := range []string{

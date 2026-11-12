@@ -36,11 +36,11 @@ func (m *Model) recurrentCheckpointer() ResidentRecurrentCheckpoint {
 	if m.resident == nil || !m.hasRecurrentState() {
 		return nil
 	}
-	rc, ok := m.resident.(ResidentRecurrentCheckpoint)
-	if !ok || rc.RecurrentCheckpointBytes() <= 0 {
+	kv := m.resKV()
+	if kv.RecurrentCheckpointBytes() <= 0 {
 		return nil
 	}
-	return rc
+	return kv
 }
 
 // residentCheckpointRestore makes the live recurrent state the checkpoint's when the acquire scored a restart from it: a recurrent

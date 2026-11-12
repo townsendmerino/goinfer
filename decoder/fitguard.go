@@ -419,8 +419,8 @@ func estimateSafetensorsWeightBytes(dir string, q quantMode) int64 {
 	// The token embedding and LM head are held at q.embedding() (int8 under int4), not at q.
 	r.Embedding = quantBytesPerElem(q.embedding())
 	if cfg, cerr := loadConfig(os.DirFS(dir), "config.json"); cerr == nil {
-		if qc, qerr := parseCheckpointQuantConfig(cfg); qerr == nil && qc != nil && qc.method == "mlx" {
-			r.MLXBits = qc.bits
+		if qc, qerr := parseCheckpointQuantConfig(cfg); qerr == nil && qc != nil && qc.Method == "mlx" {
+			r.MLXBits = qc.Bits
 		}
 	}
 	return fit.SafetensorsWeightBytes(st.Names(), func(name string) ([]int, bool) {

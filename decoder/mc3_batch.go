@@ -342,8 +342,8 @@ func (b *residentBatcher) markSlot(slot int, busy bool) {
 		b.slotBusy[slot] = busy
 	}
 	b.mu.Unlock()
-	if act, ok := b.stepper.(ResidentKVSlotActivity); ok && slot >= 0 {
-		act.SetKVSlotBusy(slot, busy)
+	if slot >= 0 {
+		SubsystemsOf(b.stepper).KV.SetKVSlotBusy(slot, busy)
 	}
 }
 

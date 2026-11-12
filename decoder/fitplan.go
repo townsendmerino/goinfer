@@ -28,8 +28,9 @@ func (m *Model) kvBytesPerPositionAllLayers(f16, i8 bool) int64 {
 	case f16:
 		perElem = 2
 	}
+	bv := m.BackendView()
 	arch := m.w.arch
-	_, nLayers, _, _, _, _, _ := m.Dims()
+	_, nLayers, _, _, _, _, _ := bv.Dims()
 	var perPos float64
 	for l := range nLayers {
 		var kvDim int
@@ -39,7 +40,8 @@ func (m *Model) kvBytesPerPositionAllLayers(f16, i8 bool) int64 {
 			}
 			kvDim = arch.kvDimAt(l)
 		} else {
-			kvDim = m.KVHeadsAtResident(l) * m.HeadDimAtResident(l)
+			lv := bv.Layer(l)
+			kvDim = lv.KVHeads() * lv.HeadDim()
 		}
 		if arch != nil && arch.mla != nil {
 			perPos += 4 * float64(kvDim)
@@ -55,7 +57,7 @@ func (m *Model) kvBytesPerPositionAllLayers(f16, i8 bool) int64 {
 // assumption ResidentWeightBytesPaged already makes) and the top-k floor below which even one
 // token's routed set cannot be resident.
 func (m *Model) moeGeometry() (nExperts, topK int, isMoE bool) {
-	mo := m.ResidentSpec().MoE
+	mo := m.BackendView().Spec().MoE
 	if mo == nil || mo.NumExperts == 0 {
 		return 0, 0, false
 	}
@@ -183,15 +185,16 @@ func (m *Model) planIneligible(backend string, req PlanRequest) string {
 	if why := m.planAdmitDecline(backend); why != "" {
 		return why
 	}
+	bv := m.BackendView()
 	if backend == "webgpu" {
 		// webgpu's stacked-expert kernels take int8 or int4 (gpu/residency.go:staticResidentDecline).
-		if k := m.MoEExpertKind(); k != "" && k != "int8" && k != "int4" {
+		if k := bv.MoEExpertKind(); k != "" && k != "int8" && k != "int4" {
 			return fmt.Sprintf("webgpu: the routed experts are %s, and webgpu's MoE kernels take int8 or int4 — load with --quant int4 "+
 				"or int8int8 to plan the resident path", k)
 		}
 	}
 	if backend == "webgpu" && (req.KVF16 || req.KVI8) {
-		spec := m.ResidentSpec()
+		spec := bv.Spec()
 		mlaOK := spec.MLA != nil
 		dnetGated := spec.Qwen35 != nil && spec.Qwen35.AttnGate
 		nemoOK := spec.Nemotron != nil

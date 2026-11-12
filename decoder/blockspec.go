@@ -155,11 +155,7 @@ func recurrentSpecReserve(a *Architecture, drafter bool) int64 {
 // target that implements ResidentDrafterHost. Checked before a drafter is loaded, so a caller
 // can decline early rather than paying a load it cannot use.
 func (m *Model) BlockSpecCapable() bool {
-	if m.resident == nil {
-		return false
-	}
-	_, ok := m.resident.(ResidentDrafterHost)
-	return ok
+	return m.resident != nil && m.resRuntime().DrafterHostAvailable()
 }
 
 // BlockSpecOptions tunes block-drafting speculation.
@@ -260,24 +256,22 @@ func (m *Model) newBlockSpec(dw BlockDrafterWeights, taps []int) (*BlockSpec, er
 	if err := m.SpecDecodeConflict(); err != nil {
 		return nil, err
 	}
-	host, ok := m.resident.(ResidentDrafterHost)
-	if !ok {
+	rt := m.resRuntime()
+	if !rt.DrafterHostAvailable() {
 		return nil, errBlockSpecUnsupported
 	}
-	if sw, ok := dw.(StreamedDrafterWeights); ok && sw.Streamed() {
-		if _, ok := host.(StreamingDrafterHost); !ok {
-			return nil, fmt.Errorf("decoder: this resident cannot take a drafter opened to stream its matrices (OpenDFlashDrafter); load it with LoadDFlashDrafter")
-		}
+	if sw, ok := dw.(StreamedDrafterWeights); ok && sw.Streamed() && !rt.CanStreamDrafterRows() {
+		return nil, fmt.Errorf("decoder: this resident cannot take a drafter opened to stream its matrices (OpenDFlashDrafter); load it with LoadDFlashDrafter")
 	}
 	// Before the attach, so a refused model has no drafter uploaded to its device.
-	if err := m.prepareRecurrentSpec(host, dw); err != nil {
+	if err := m.prepareRecurrentSpec(rt, dw); err != nil {
 		return nil, err
 	}
-	rd, err := host.AttachBlockDrafter(dw)
+	rd, err := rt.AttachBlockDrafter(dw)
 	if err != nil {
 		return nil, err
 	}
-	return &BlockSpec{m: m, host: host, rd: rd, dw: dw, taps: taps}, nil
+	return &BlockSpec{m: m, host: rt, rd: rd, dw: dw, taps: taps}, nil
 }
 
 // prepareRecurrentSpec readies a recurrent target's fold path for dw's block, or says why block drafting would decode from
@@ -286,8 +280,8 @@ func (m *Model) prepareRecurrentSpec(host ResidentDrafterHost, dw BlockDrafterWe
 	if !m.hasRecurrentState() {
 		return nil
 	}
-	rs, ok := host.(ResidentRecurrentSpec)
-	if !ok {
+	rt := SubsystemsOf(host).Runtime
+	if !rt.RecurrentSpecAvailable() {
 		return fmt.Errorf("decoder: this model has recurrent state and its resident cannot verify without writing it (no ResidentRecurrentSpec)")
 	}
 	// The architecture first, so a model the path refuses has no arena allocated either; the arena's price is 0 exactly there.
@@ -298,11 +292,11 @@ func (m *Model) prepareRecurrentSpec(host ResidentDrafterHost, dw BlockDrafterWe
 	if rows < 2 {
 		return fmt.Errorf("decoder: a drafter block of %d positions verifies no draft", dw.BlockSize())
 	}
-	if err := rs.PrepareRecurrentSpec(rows); err != nil {
+	if err := rt.PrepareRecurrentSpec(rows); err != nil {
 		return fmt.Errorf("decoder: this model has recurrent state and its resident's fold path declined: %w", err)
 	}
-	if !m.specRollbackSafeVia(rs, rows) {
-		return fmt.Errorf("decoder: the resident's fold path holds %d rows, and this drafter verifies up to %d", rs.RecurrentSpecRows(), rows)
+	if !m.specRollbackSafeVia(rt, rows) {
+		return fmt.Errorf("decoder: the resident's fold path holds %d rows, and this drafter verifies up to %d", rt.RecurrentSpecRows(), rows)
 	}
 	return nil
 }
@@ -313,11 +307,11 @@ func (s *BlockSpec) recurrentFold(width int) ResidentRecurrentSpec {
 	if !s.m.hasRecurrentState() {
 		return nil
 	}
-	rs, _ := s.host.(ResidentRecurrentSpec)
-	if rs == nil || !s.m.specRollbackSafeVia(rs, width) {
+	rt := SubsystemsOf(s.host).Runtime
+	if !rt.RecurrentSpecAvailable() || !s.m.specRollbackSafeVia(rt, width) {
 		return nil
 	}
-	return rs
+	return rt
 }
 
 // verifyWidth is the verify width a generation with opt runs at: opt.VerifyWidth, else SetVerifyWidth's, else defaultVerifyWidth,

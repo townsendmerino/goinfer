@@ -283,10 +283,7 @@ type ResidentKVPoolInfo interface {
 
 // ResidentKVPool reports the resident's KV pool (ResidentKVPoolInfo), the zero value when it has none.
 func (m *Model) ResidentKVPool() KVPoolDetail {
-	if p, ok := m.resident.(ResidentKVPoolInfo); ok {
-		return p.KVPool()
-	}
-	return KVPoolDetail{}
+	return m.resKV().KVPool()
 }
 
 // KVShareState says whether a request on this resident can take KV rows another conversation computed, by residentShare's own tests:
@@ -301,7 +298,7 @@ func (m *Model) KVShareState() (state, why string) {
 	case m.hasRecurrentState():
 		return "none", "recurrent state cannot be copied"
 	}
-	if _, ok := m.resident.(ResidentKVCopier); !ok {
+	if !m.resKV().KVCopierAvailable() {
 		return "none", "this backend copies no KV rows"
 	}
 	switch {
@@ -363,11 +360,11 @@ type KVHostBudget interface {
 // residentPromote brings the bound slot's demoted rows back when this request reuses them. A failure leaves nothing of the slot's to
 // trust, so the request prefills cold.
 func (m *Model) residentPromote(acq *kvAcquired) {
-	d, ok := m.resident.(ResidentKVDemoter)
-	if !ok || acq.slot < 0 || acq.reuse <= 0 {
+	kv := m.resKV()
+	if !kv.KVDemoterAvailable() || acq.slot < 0 || acq.reuse <= 0 {
 		return
 	}
-	blocks, err := d.PromoteKV(acq.slot, acq.reuse)
+	blocks, err := kv.PromoteKV(acq.slot, acq.reuse)
 	if err != nil {
 		acq.declined, acq.reuse, acq.shared = err.Error(), 0, 0
 		m.residentForgetIDs()
@@ -394,10 +391,7 @@ func (m *Model) residentReuseFloor(reuse int) int {
 	if reuse <= 0 {
 		return reuse
 	}
-	if rk, ok := m.resident.(ResidentReusableKV); ok {
-		return rk.ReusableKV(reuse)
-	}
-	return reuse
+	return m.resKV().ReusableKV(reuse)
 }
 
 // reuseLenOf is how many leading tokens of prompt the sequence in slot holds, the bound slot's or a parked one's,
@@ -415,11 +409,11 @@ func (m *Model) reuseLenOf(slot int, prompt []int, imgs []residentImageClaim, lo
 // once per slot (recurrentSlotsOn): otherwise its state is mutated in place outside any slot, so two conversations could
 // not both keep theirs.
 func (m *Model) residentSlotCount() int {
-	sl, ok := m.resident.(ResidentKVSlotter)
-	if !ok || (m.hasRecurrentState() && (m.be == nil || !m.recurrentSlotsOn(m.be.Name()))) {
+	kv := m.resKV()
+	if !kv.KVSlotterAvailable() || (m.hasRecurrentState() && (m.be == nil || !m.recurrentSlotsOn(m.be.Name()))) {
 		return 1
 	}
-	return max(1, sl.KVSlots())
+	return max(1, kv.KVSlots())
 }
 
 // residentAcquire binds the resident KV slot a generation over prompt will use and returns how many leading tokens of
@@ -576,9 +570,10 @@ func kvChooseDonor(res ResidentForward, hits []int, cm kvmgr.ClassMap, n, dst, r
 		}
 	}
 	slices.SortStableFunc(cands, func(a, b cand) int { return b.hit - a.hit })
-	rk, windowed := res.(ResidentReusableKVSlot)
+	kv := SubsystemsOf(res).KV
+	windowed := kv.ReusableKVSlotAvailable()
 	for _, c := range cands {
-		if !windowed || rk.ReusableKVSlot(c.slot, c.hit) >= c.hit {
+		if !windowed || kv.ReusableKVSlot(c.slot, c.hit) >= c.hit {
 			return c.slot, c.hit, ""
 		}
 	}
@@ -609,8 +604,8 @@ func kvOtherDonors(rk ResidentReusableKVSlot, hits []int, cm kvmgr.ClassMap, n, 
 // holds. It does nothing under an Off scope or Options.KVShareOff, for a recurrent family, without ResidentKVCopier, or when the source's
 // window no longer holds the rows. A decline or an error leaves acq.reuse at what the slot can still trust.
 func (m *Model) residentShare(prompt []int, imgs []residentImageClaim, lora *loraRuntime, sc KVScope, acq *kvAcquired) {
-	cp, ok := m.resident.(ResidentKVCopier)
-	if !ok || sc.Off || m.kvShareOff || m.residentReuseDisabled() || m.hasRecurrentState() {
+	kv := m.resKV()
+	if !kv.KVCopierAvailable() || sc.Off || m.kvShareOff || m.residentReuseDisabled() || m.hasRecurrentState() {
 		return
 	}
 	a, dst, cm := m.kvSlots(), acq.slot, m.kvClassMap()
@@ -624,24 +619,24 @@ func (m *Model) residentShare(prompt []int, imgs []residentImageClaim, lora *lor
 	t0 := time.Now()
 	held := false
 	var err error
-	if d, ok := m.resident.(ResidentKVDemoter); ok {
+	if kv.KVDemoterAvailable() {
 		var blocks int
-		if blocks, held, err = d.CopyDemotedKV(src, dst, start, hit); blocks > 0 {
+		if blocks, held, err = kv.CopyDemotedKV(src, dst, start, hit); blocks > 0 {
 			acq.promotedBlocks += blocks
 			m.kvSnaps.promoted(blocks)
 			fmt.Fprintf(stderrKV, "kv host: wrote %d blocks of slot %d's copy into slot %d\n", blocks, src, dst)
 		}
 	}
 	if !held && err == nil {
-		err = cp.CopyKV(src, dst, start, hit)
+		err = kv.CopyKV(src, dst, start, hit)
 	}
 	acq.copyDur = time.Since(t0)
 	if err != nil {
 		var d *KVCopyDecline
 		if errors.As(err, &d) {
 			acq.declined = d.Reason
-			if rk, ok := m.resident.(ResidentReusableKVSlot); ok {
-				acq.declined += kvOtherDonors(rk, hits, cm, len(prompt), src, dst, acq.reuse)
+			if kv.ReusableKVSlotAvailable() {
+				acq.declined += kvOtherDonors(kv, hits, cm, len(prompt), src, dst, acq.reuse)
 			}
 		} else {
 			acq.declined = err.Error()
@@ -667,8 +662,7 @@ func (m *Model) residentBind(slot int) error {
 	if slot == a.Bound() || m.residentSlotCount() <= 1 {
 		return nil
 	}
-	sl := m.resident.(ResidentKVSlotter) // residentSlotCount > 1 implies it
-	if err := sl.UseKVSlot(slot); err != nil {
+	if err := m.resKV().UseKVSlot(slot); err != nil {
 		return err
 	}
 	a.Resize(m.residentSlotCount())

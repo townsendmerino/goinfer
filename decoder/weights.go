@@ -14,6 +14,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/decoder/quant"
 )
 
 // LayerWeights bundles one decoder block's tensors. Matrices follow
@@ -585,15 +586,15 @@ func loadEmbedTable(st *embed.SafetensorsFile, name string, rows, cols int, mode
 		}
 		return quantizeEmbedWM(m, mode, needCanonical), nil
 	}
-	switch classifySafetensorsTensorQuant(st, name) {
-	case stQuantMLX:
-		rowInto, err := mlxRowReader2D(st, name, rows, cols)
-		if err != nil {
-			return linalg.WeightMat{}, err
+	if r := quant.ForTensor(st, nil, name); r != nil {
+		if rs, ok := r.(quant.RowStreamReconstructor); ok {
+			rowInto, err := rs.RowReader2D(st, name, rows, cols)
+			if err != nil {
+				return linalg.WeightMat{}, err
+			}
+			return streamQuantizedEmbed(rows, cols, mode, needCanonical, !repackForDecode(sink), 1, func() rowReader { return rowInto })
 		}
-		return streamQuantizedEmbed(rows, cols, mode, needCanonical, !repackForDecode(sink), 1, func() rowReader { return rowInto })
-	case stQuantNVFP4:
-		data, err := nvfp4Reconstruct(st, name, cols, rows)
+		data, err := r.ReconstructMat2D(st, name, rows, cols)
 		if err != nil {
 			return linalg.WeightMat{}, err
 		}

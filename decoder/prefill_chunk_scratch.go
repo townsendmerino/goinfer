@@ -26,18 +26,15 @@ func (m *Model) prefillTailMinRows() int {
 // its chunk (the resident's own figure), plus the host embeddings the decoder builds for the whole suffix, which this path does
 // allocate in full. ok is false for a resident that does not report chunks.
 func (m *Model) residentChunkedScratch(promptTokens int) (bytes int64, ok bool) {
-	sc, has := m.resident.(ResidentPrefillChunks)
-	if !has || promptTokens <= 0 {
+	pf := m.resPrefill()
+	if !pf.PrefillChunksAvailable() || promptTokens <= 0 {
 		return 0, false
 	}
-	C := sc.PrefillChunkRows()
+	C := pf.PrefillChunkRows()
 	if C <= 0 {
 		return 0, false
 	}
 	rows := min(promptTokens, C)
-	dev := sc.PrefillScratchBytes(rows)
-	if ss, ok := m.resident.(ResidentPrefillSpanScratch); ok {
-		dev += ss.PrefillSpanScratchBytes(rows, promptTokens)
-	}
+	dev := pf.PrefillScratchBytes(rows) + pf.PrefillSpanScratchBytes(rows, promptTokens)
 	return dev + int64(promptTokens)*4*int64(m.ResidentEmbedLen()), true
 }

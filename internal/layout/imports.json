@@ -29,6 +29,17 @@
       "why": "decoder/config holds a checkpoint's Config, its validators and its loader, so they test in seconds without compiling decoder (DC1, docs/completed/task-decoder-config-2026-11.md). It sits below decoder, which aliases Config: it imports no goinfer package, decoder included."
     },
     {
+      "name": "quant-leaf",
+      "from": [
+        "decoder/quant"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "why": "decoder/quant (Tier 3, docs/layout.md) parses safetensors checkpoint quantization configs and reconstructs FP8, GPTQ, AWQ, NVFP4 and MLX quantized weights behind Reconstructor/RowStreamReconstructor. It sits below decoder and imports no goinfer package, decoder included."
+    },
+    {
       "name": "towers-standalone",
       "from": [
         "internal/vision",
@@ -285,6 +296,7 @@
       "constrain",
       "decoder/config",
       "decoder/fit",
+      "decoder/quant",
       "internal/cost",
       "internal/runtime/adapter",
       "internal/runtime/diskfree",

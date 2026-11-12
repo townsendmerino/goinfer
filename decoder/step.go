@@ -95,22 +95,21 @@ var errStepShape = errors.New("decoder: the resident does not offer this step's 
 // stepDo resolves b's shape on r to the one resident call that runs it, and makes that call when run is set; ok is false, and
 // nothing is called, when b names no shape or r does not offer it. It is the only place a forward shape is asserted on a resident:
 // canStep and stepOn both go through it, and it builds no closure, so a decode token's step allocates nothing of its own.
-func stepDo(r any, b stepBatch, run bool) (stepResult, bool, error) {
+func stepDo(r any, sub ResidentSubsystems, b stepBatch, run bool) (stepResult, bool, error) {
 	switch b.Pass {
 	case passToken:
 		if len(b.Emb) != 1 {
 			return stepResult{}, false, nil
 		}
-		return tokenDo(r, b, b.Emb[0], run)
+		return tokenDo(r, sub.Decode, b, b.Emb[0], run)
 	case passRows:
 		ctx := b.Ctx
 		if ctx == nil {
 			ctx = context.Background()
 		}
-		return rowsDo(r, b, ctx, run)
+		return rowsDo(r, sub.Prefill, sub.Runtime, b, ctx, run)
 	case passSeqs:
-		st, ok := r.(ResidentBatchStepper)
-		if !ok || len(b.Seqs) == 0 {
+		if !sub.Decode.BatchStepperAvailable() || len(b.Seqs) == 0 {
 			return stepResult{}, false, nil
 		}
 		if !run {
@@ -118,11 +117,10 @@ func stepDo(r any, b stepBatch, run bool) (stepResult, bool, error) {
 		}
 		var res stepResult
 		var err error
-		res.Batch, err = st.StepBatch(b.Seqs)
+		res.Batch, err = sub.Decode.StepBatch(b.Seqs)
 		return res, true, err
 	case passRagged:
-		st, ok := r.(ResidentRaggedStepper)
-		if !ok || len(b.Ragged) == 0 {
+		if !sub.Decode.RaggedStepperAvailable() || len(b.Ragged) == 0 {
 			return stepResult{}, false, nil
 		}
 		for _, q := range b.Ragged {
@@ -135,17 +133,16 @@ func stepDo(r any, b stepBatch, run bool) (stepResult, bool, error) {
 		}
 		var res stepResult
 		var err error
-		res.Ragged, err = st.StepRagged(b.Ragged)
+		res.Ragged, err = sub.Decode.StepRagged(b.Ragged)
 		return res, true, err
 	}
 	return stepResult{}, false, nil
 }
 
 // tokenDo is stepDo for passToken: the decode methods.
-func tokenDo(r any, b stepBatch, e []float32, run bool) (stepResult, bool, error) {
+func tokenDo(r any, dec ResidentDecodeSubsystem, b stepBatch, e []float32, run bool) (stepResult, bool, error) {
 	if b.In == inMRoPE {
-		mr, ok := r.(ResidentMRoPE)
-		if !ok || b.Out != outLogits {
+		if !dec.MRoPEDecodeAvailable() || b.Out != outLogits {
 			return stepResult{}, false, nil
 		}
 		if !run {
@@ -153,7 +150,7 @@ func tokenDo(r any, b stepBatch, e []float32, run bool) (stepResult, bool, error
 		}
 		var res stepResult
 		var err error
-		res.Logits, err = mr.ForwardMRoPE(e, b.Pos, b.RopePos)
+		res.Logits, err = dec.ForwardMRoPE(e, b.Pos, b.RopePos)
 		return res, true, err
 	}
 	if b.In != inTokens {
@@ -173,8 +170,7 @@ func tokenDo(r any, b stepBatch, e []float32, run bool) (stepResult, bool, error
 		res.Logits, err = f.Forward(e, b.Pos)
 		return res, true, err
 	case outArgmax:
-		g, ok := r.(ResidentGreedy)
-		if !ok {
+		if !dec.GreedyAvailable() {
 			return stepResult{}, false, nil
 		}
 		if !run {
@@ -182,11 +178,10 @@ func tokenDo(r any, b stepBatch, e []float32, run bool) (stepResult, bool, error
 		}
 		var res stepResult
 		var err error
-		res.ID, err = g.ForwardArgmax(e, b.Pos)
+		res.ID, err = dec.ForwardArgmax(e, b.Pos)
 		return res, true, err
 	case outTopK:
-		tk, ok := r.(ResidentTopK)
-		if !ok || !tk.TopKAvailable() {
+		if !dec.TopKAvailable() {
 			return stepResult{}, false, nil
 		}
 		if !run {
@@ -194,11 +189,10 @@ func tokenDo(r any, b stepBatch, e []float32, run bool) (stepResult, bool, error
 		}
 		var res stepResult
 		var err error
-		res.TopK, err = tk.ForwardTopK(e, b.Pos, b.K, b.Temperature, b.WantZ)
+		res.TopK, err = dec.ForwardTopK(e, b.Pos, b.K, b.Temperature, b.WantZ)
 		return res, true, err
 	case outSample:
-		sm, ok := r.(ResidentSample)
-		if !ok || !sm.SampleAvailable() {
+		if !dec.SampleAvailable() {
 			return stepResult{}, false, nil
 		}
 		if !run {
@@ -206,26 +200,24 @@ func tokenDo(r any, b stepBatch, e []float32, run bool) (stepResult, bool, error
 		}
 		var res stepResult
 		var err error
-		res.ID, err = sm.ForwardSample(e, b.Pos, b.Temperature, b.Seed, b.Draw)
+		res.ID, err = dec.ForwardSample(e, b.Pos, b.Temperature, b.Seed, b.Draw)
 		return res, true, err
 	case outNone:
-		kv, ok := r.(ResidentPrefillKV)
-		if !ok {
+		if !dec.NoLogitsAvailable() {
 			return stepResult{}, false, nil
 		}
 		if !run {
 			return stepResult{}, true, nil
 		}
-		return stepResult{}, true, kv.ForwardNoLogits(e, b.Pos)
+		return stepResult{}, true, dec.ForwardNoLogits(e, b.Pos)
 	}
 	return stepResult{}, false, nil
 }
 
 // rowsDo is stepDo for passRows: the batched passes.
-func rowsDo(r any, b stepBatch, ctx context.Context, run bool) (stepResult, bool, error) {
+func rowsDo(r any, pf ResidentPrefillSubsystem, rt ResidentRuntimeSubsystem, b stepBatch, ctx context.Context, run bool) (stepResult, bool, error) {
 	if b.In == inRowsFn {
-		pr, ok := r.(ResidentPrefillRows)
-		if !ok || b.Out != outLogits || b.N <= 0 || b.Rows == nil || b.At != nil {
+		if !pf.PrefillRowsAvailable() || b.Out != outLogits || b.N <= 0 || b.Rows == nil || b.At != nil {
 			return stepResult{}, false, nil
 		}
 		if !run {
@@ -233,20 +225,19 @@ func rowsDo(r any, b stepBatch, ctx context.Context, run bool) (stepResult, bool
 		}
 		var res stepResult
 		var err error
-		res.Logits, err = pr.PrefillLastRows(ctx, b.N, b.Pos, b.Rows)
+		res.Logits, err = pf.PrefillLastRows(ctx, b.N, b.Pos, b.Rows)
 		return res, true, err
 	}
 	if len(b.Emb) == 0 {
 		return stepResult{}, false, nil
 	}
 	if b.In != inTokens {
-		return mediaDo(r, b, ctx, run)
+		return mediaDo(pf, b, ctx, run)
 	}
 	switch b.Out {
 	case outLogits:
 		if b.At != nil {
-			mp, ok := r.(ResidentPrefillMarked)
-			if !ok {
+			if !pf.PrefillMarkedAvailable() {
 				return stepResult{}, false, nil
 			}
 			if !run {
@@ -254,11 +245,10 @@ func rowsDo(r any, b stepBatch, ctx context.Context, run bool) (stepResult, bool
 			}
 			var res stepResult
 			var err error
-			res.Logits, err = mp.PrefillLastMarked(ctx, b.Emb, b.Pos, b.Mark, b.At)
+			res.Logits, err = pf.PrefillLastMarked(ctx, b.Emb, b.Pos, b.Mark, b.At)
 			return res, true, err
 		}
-		pf, ok := r.(Prefiller)
-		if !ok {
+		if !pf.PrefillAvailable() {
 			return stepResult{}, false, nil
 		}
 		if !run {
@@ -281,8 +271,7 @@ func rowsDo(r any, b stepBatch, ctx context.Context, run bool) (stepResult, bool
 		res.Rows, err = f.ForwardN(b.Emb, b.Pos)
 		return res, true, err
 	case outArgmax:
-		sa, ok := r.(ResidentSeedArgmax)
-		if !ok {
+		if !rt.SeedArgmaxAvailable() {
 			return stepResult{}, false, nil
 		}
 		if !run {
@@ -290,13 +279,10 @@ func rowsDo(r any, b stepBatch, ctx context.Context, run bool) (stepResult, bool
 		}
 		var res stepResult
 		var err error
-		res.ID, err = sa.PrefillSeedArgmax(b.Emb, b.Pos)
+		res.ID, err = rt.PrefillSeedArgmax(b.Emb, b.Pos)
 		return res, true, err
 	case outEveryArgmax:
-		na, ok := r.(interface {
-			PrefillLastNArgmax(embeddings [][]float32, startPos int) ([]int, error)
-		})
-		if !ok {
+		if !rt.LastNArgmaxAvailable() {
 			return stepResult{}, false, nil
 		}
 		if !run {
@@ -304,11 +290,10 @@ func rowsDo(r any, b stepBatch, ctx context.Context, run bool) (stepResult, bool
 		}
 		var res stepResult
 		var err error
-		res.IDs, err = na.PrefillLastNArgmax(b.Emb, b.Pos)
+		res.IDs, err = rt.PrefillLastNArgmax(b.Emb, b.Pos)
 		return res, true, err
 	case outHidden:
-		hl, ok := r.(ResidentHiddenLast)
-		if !ok {
+		if !pf.HiddenLastAvailable() {
 			return stepResult{}, false, nil
 		}
 		if !run {
@@ -316,11 +301,10 @@ func rowsDo(r any, b stepBatch, ctx context.Context, run bool) (stepResult, bool
 		}
 		var res stepResult
 		var err error
-		res.Hidden, err = hl.HiddenLast(ctx, b.Emb, b.Pos)
+		res.Hidden, err = pf.HiddenLast(ctx, b.Emb, b.Pos)
 		return res, true, err
 	case outEveryResidual:
-		ra, ok := r.(ResidentResidualAll)
-		if !ok {
+		if !pf.ResidualAllAvailable() {
 			return stepResult{}, false, nil
 		}
 		if !run {
@@ -328,21 +312,20 @@ func rowsDo(r any, b stepBatch, ctx context.Context, run bool) (stepResult, bool
 		}
 		var res stepResult
 		var err error
-		res.Rows, err = ra.ResidualAll(ctx, b.Emb, b.Pos)
+		res.Rows, err = pf.ResidualAll(ctx, b.Emb, b.Pos)
 		return res, true, err
 	}
 	return stepResult{}, false, nil
 }
 
 // mediaDo is rowsDo for the image and m-RoPE inputs, which return the last row's logits.
-func mediaDo(r any, b stepBatch, ctx context.Context, run bool) (stepResult, bool, error) {
+func mediaDo(pf ResidentPrefillSubsystem, b stepBatch, ctx context.Context, run bool) (stepResult, bool, error) {
 	if b.Out != outLogits || b.At != nil {
 		return stepResult{}, false, nil
 	}
 	switch b.In {
 	case inImage:
-		ip, ok := r.(ResidentImagePrefill)
-		if !ok || len(b.Spans) != 1 {
+		if !pf.ImagePrefillAvailable() || len(b.Spans) != 1 {
 			return stepResult{}, false, nil
 		}
 		if !run {
@@ -350,11 +333,10 @@ func mediaDo(r any, b stepBatch, ctx context.Context, run bool) (stepResult, boo
 		}
 		var res stepResult
 		var err error
-		res.Logits, err = ip.PrefillImageLast(ctx, b.Emb, b.Pos, b.Spans[0][0], b.Spans[0][1])
+		res.Logits, err = pf.PrefillImageLast(ctx, b.Emb, b.Pos, b.Spans[0][0], b.Spans[0][1])
 		return res, true, err
 	case inImageBlocks:
-		ib, ok := r.(ResidentImageBlocksPrefill)
-		if !ok {
+		if !pf.ImageBlocksPrefillAvailable() {
 			return stepResult{}, false, nil
 		}
 		if !run {
@@ -362,11 +344,10 @@ func mediaDo(r any, b stepBatch, ctx context.Context, run bool) (stepResult, boo
 		}
 		var res stepResult
 		var err error
-		res.Logits, err = ib.PrefillImageBlocksLast(ctx, b.Emb, b.Pos, b.Spans)
+		res.Logits, err = pf.PrefillImageBlocksLast(ctx, b.Emb, b.Pos, b.Spans)
 		return res, true, err
 	case inSpans:
-		sp, ok := r.(ResidentSpanPrefill)
-		if !ok {
+		if !pf.SpanPrefillAvailable() {
 			return stepResult{}, false, nil
 		}
 		if !run {
@@ -374,18 +355,14 @@ func mediaDo(r any, b stepBatch, ctx context.Context, run bool) (stepResult, boo
 		}
 		var res stepResult
 		var err error
-		res.Logits, err = sp.PrefillSpansLast(ctx, b.Emb, b.Pos, b.Spans)
+		res.Logits, err = pf.PrefillSpansLast(ctx, b.Emb, b.Pos, b.Spans)
 		return res, true, err
 	case inMRoPE, inMRoPEDeepstack:
-		if b.Recurrent {
-			hp, ok := r.(ResidentHybridMRoPEPrefill)
-			if !ok || !hp.HybridMRoPEPrefill() {
-				return stepResult{}, false, nil
-			}
+		if b.Recurrent && !pf.HybridMRoPEPrefill() {
+			return stepResult{}, false, nil
 		}
 		if b.In == inMRoPE {
-			mp, ok := r.(ResidentMRoPEPrefill)
-			if !ok {
+			if !pf.MRoPEPrefillAvailable() {
 				return stepResult{}, false, nil
 			}
 			if !run {
@@ -393,11 +370,10 @@ func mediaDo(r any, b stepBatch, ctx context.Context, run bool) (stepResult, boo
 			}
 			var res stepResult
 			var err error
-			res.Logits, err = mp.PrefillMRoPELast(ctx, b.Emb, b.Pos, b.MRoPE)
+			res.Logits, err = pf.PrefillMRoPELast(ctx, b.Emb, b.Pos, b.MRoPE)
 			return res, true, err
 		}
-		dp, ok := r.(ResidentMRoPEDeepstackPrefill)
-		if !ok || len(b.Spans) != 1 {
+		if !pf.MRoPEDeepstackPrefillAvailable() || len(b.Spans) != 1 {
 			return stepResult{}, false, nil
 		}
 		lo, hi := b.Spans[0][0], b.Spans[0][1]
@@ -406,19 +382,19 @@ func mediaDo(r any, b stepBatch, ctx context.Context, run bool) (stepResult, boo
 		}
 		var res stepResult
 		var err error
-		res.Logits, err = dp.PrefillMRoPEDeepstackLast(ctx, b.Emb, b.Pos, b.MRoPE, b.Deep, lo, hi-lo)
+		res.Logits, err = pf.PrefillMRoPEDeepstackLast(ctx, b.Emb, b.Pos, b.MRoPE, b.Deep, lo, hi-lo)
 		return res, true, err
 	}
 	return stepResult{}, false, nil
 }
 
-// canStep reports whether r (a resident, or a drafter host) offers b's shape: the type assertion, and the availability answer beside it where the shape has
+// canStep reports whether r (a resident, or a drafter host) offers b's shape: the capability, and the availability answer beside it where the shape has
 // one (TopKAvailable, SampleAvailable, HybridMRoPEPrefill for a recurrent m-RoPE prefill). It calls no forward.
 func canStep(r any, b stepBatch) bool {
 	if r == nil {
 		return false
 	}
-	_, ok, _ := stepDo(r, b, false)
+	_, ok, _ := stepDo(r, SubsystemsOf(r), b, false)
 	return ok
 }
 
@@ -428,7 +404,7 @@ func stepOn(r any, b stepBatch) (stepResult, error) {
 	if r == nil {
 		return stepResult{}, errStepShape
 	}
-	res, ok, err := stepDo(r, b, true)
+	res, ok, err := stepDo(r, SubsystemsOf(r), b, true)
 	if !ok {
 		return stepResult{}, errStepShape
 	}
@@ -436,7 +412,16 @@ func stepOn(r any, b stepBatch) (stepResult, error) {
 }
 
 // step is stepOn on m's resident. It does not claim or bind the resident: the caller holds it as for the call step makes.
-func (m *Model) step(b stepBatch) (stepResult, error) { return stepOn(m.resident, b) }
+func (m *Model) step(b stepBatch) (stepResult, error) {
+	if m.resident == nil {
+		return stepResult{}, errStepShape
+	}
+	res, ok, err := stepDo(m.resident, m.subsystems(), b, true)
+	if !ok {
+		return stepResult{}, errStepShape
+	}
+	return res, err
+}
 
 // stepProbe is a one-row batch, stepProbeRows a rows function and stepProbeAt a mark callback, for asking canStep about a shape
 // before there is a row: canStep reads none of them.
@@ -452,25 +437,29 @@ var stepProbeSpan = [][2]int{{0, 1}}
 // stepBatchRange is ResidentBatchStepper's BatchStepRange on r, the batch sizes its multi-sequence step serves; ok is false when r
 // has no multi-sequence step (canStep refuses a passSeqs batch).
 func stepBatchRange(r any) (lo, hi int, ok bool) {
-	st, ok := r.(ResidentBatchStepper)
-	if !ok {
+	dec := SubsystemsOf(r).Decode
+	if !dec.BatchStepperAvailable() {
 		return 0, 0, false
 	}
-	lo, hi = st.BatchStepRange()
+	lo, hi = dec.BatchStepRange()
 	return lo, hi, true
 }
 
 // stepMarkAlign is ResidentPrefillMarked's PrefillMarkAlign on r, the pass width a marked prefill's mark must fall on; ok is false
 // when r cannot mark a prefill (canStep refuses a passRows batch with At).
 func stepMarkAlign(r any) (align int, ok bool) {
-	mp, ok := r.(ResidentPrefillMarked)
-	if !ok {
+	pf := SubsystemsOf(r).Prefill
+	if !pf.PrefillMarkedAvailable() {
 		return 0, false
 	}
-	return mp.PrefillMarkAlign(), true
+	return pf.PrefillMarkAlign(), true
 }
 
 // canDecode reports whether m's resident offers the decode-token shape with output out (canStep on a passToken batch).
 func (m *Model) canDecode(out stepOut) bool {
-	return canStep(m.resident, stepBatch{Pass: passToken, Emb: stepProbe, Out: out})
+	if m.resident == nil {
+		return false
+	}
+	_, ok, _ := stepDo(m.resident, m.subsystems(), stepBatch{Pass: passToken, Emb: stepProbe, Out: out}, false)
+	return ok
 }
