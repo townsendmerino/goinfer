@@ -1,0 +1,449 @@
+=== RUN   TestKV7_slotWriteTable
+=== RUN   TestKV7_slotWriteTable/live/0/success
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7078 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7078 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7078 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6946 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: kv copy: slot 3 -> 2 shares rows [64, 2048), 31 blocks; 33 of 1024 full-pool blocks in use
+=== RUN   TestKV7_slotWriteTable/live/0/declined
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/live/0/part_way
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/live/1/success
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/live/1/declined
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/live/1/part_way
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/live/2/success
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/live/2/declined
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/live/2/part_way
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/live/3/success
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/live/3/declined
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/live/3/part_way
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/live/4/success
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/live/4/declined
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/live/4/part_way
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/released/0/success
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: kv copy: slot 3 -> 2 shares rows [0, 2048), 32 blocks; 32 of 1024 full-pool blocks in use
+=== RUN   TestKV7_slotWriteTable/released/0/declined
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/released/0/part_way
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/released/1/success
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/released/1/declined
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/released/1/part_way
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/released/2/success
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/released/2/declined
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/released/2/part_way
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/released/3/success
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/released/3/declined
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/released/3/part_way
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/released/4/success
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/released/4/declined
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/released/4/part_way
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/demoted/0/success
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: kv copy: slot 3 -> 2 shares rows [0, 2048), 32 blocks; 32 of 1024 full-pool blocks in use
+=== RUN   TestKV7_slotWriteTable/demoted/0/declined
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/demoted/0/part_way
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/demoted/1/success
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/demoted/1/declined
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/demoted/1/part_way
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/demoted/2/success
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/demoted/2/declined
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/demoted/2/part_way
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/demoted/3/success
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/demoted/3/declined
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/demoted/3/part_way
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/demoted/4/success
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/demoted/4/declined
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/demoted/4/part_way
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: kept slot 2's 1024 rows in host memory (4 MiB)
+cuda: KV pool: released slot 2's 16 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+=== RUN   TestKV7_slotWriteTable/stopped/0/success
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: stopped slot 2, 1 blocks past its share of 256, for slot 0 within its share
+cuda: kv copy: slot 3 -> 2 shares rows [0, 2048), 32 blocks; 256 of 1024 full-pool blocks in use
+=== RUN   TestKV7_slotWriteTable/stopped/0/declined
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: stopped slot 2, 1 blocks past its share of 256, for slot 0 within its share
+=== RUN   TestKV7_slotWriteTable/stopped/0/part_way
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: stopped slot 2, 1 blocks past its share of 256, for slot 0 within its share
+=== RUN   TestKV7_slotWriteTable/stopped/1/success
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: stopped slot 2, 1 blocks past its share of 256, for slot 0 within its share
+=== RUN   TestKV7_slotWriteTable/stopped/1/declined
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: stopped slot 2, 1 blocks past its share of 256, for slot 0 within its share
+=== RUN   TestKV7_slotWriteTable/stopped/1/part_way
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: stopped slot 2, 1 blocks past its share of 256, for slot 0 within its share
+=== RUN   TestKV7_slotWriteTable/stopped/2/success
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: stopped slot 2, 1 blocks past its share of 256, for slot 0 within its share
+=== RUN   TestKV7_slotWriteTable/stopped/2/declined
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: stopped slot 2, 1 blocks past its share of 256, for slot 0 within its share
+=== RUN   TestKV7_slotWriteTable/stopped/2/part_way
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: stopped slot 2, 1 blocks past its share of 256, for slot 0 within its share
+=== RUN   TestKV7_slotWriteTable/stopped/3/success
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: stopped slot 2, 1 blocks past its share of 256, for slot 0 within its share
+=== RUN   TestKV7_slotWriteTable/stopped/3/declined
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: stopped slot 2, 1 blocks past its share of 256, for slot 0 within its share
+=== RUN   TestKV7_slotWriteTable/stopped/3/part_way
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: stopped slot 2, 1 blocks past its share of 256, for slot 0 within its share
+=== RUN   TestKV7_slotWriteTable/stopped/4/success
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: stopped slot 2, 1 blocks past its share of 256, for slot 0 within its share
+=== RUN   TestKV7_slotWriteTable/stopped/4/declined
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: stopped slot 2, 1 blocks past its share of 256, for slot 0 within its share
+=== RUN   TestKV7_slotWriteTable/stopped/4/part_way
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 65536 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (26 MiB of scratch; 6812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: KV pool: kept slot 1's 2048 rows in host memory (8 MiB)
+cuda: KV pool: released slot 1's 32 blocks (idle, the least recently used) for slot 0, which is past its share of 256
+cuda: KV pool: stopped slot 2, 1 blocks past its share of 256, for slot 0 within its share
+--- PASS: TestKV7_slotWriteTable (30.39s)
+    --- PASS: TestKV7_slotWriteTable/live/0/success (1.94s)
+    --- PASS: TestKV7_slotWriteTable/live/0/declined (0.48s)
+    --- PASS: TestKV7_slotWriteTable/live/0/part_way (0.47s)
+    --- PASS: TestKV7_slotWriteTable/live/1/success (0.47s)
+    --- PASS: TestKV7_slotWriteTable/live/1/declined (0.47s)
+    --- PASS: TestKV7_slotWriteTable/live/1/part_way (0.49s)
+    --- PASS: TestKV7_slotWriteTable/live/2/success (0.47s)
+    --- PASS: TestKV7_slotWriteTable/live/2/declined (0.47s)
+    --- PASS: TestKV7_slotWriteTable/live/2/part_way (0.47s)
+    --- PASS: TestKV7_slotWriteTable/live/3/success (0.48s)
+    --- PASS: TestKV7_slotWriteTable/live/3/declined (0.48s)
+    --- PASS: TestKV7_slotWriteTable/live/3/part_way (0.48s)
+    --- PASS: TestKV7_slotWriteTable/live/4/success (0.49s)
+    --- PASS: TestKV7_slotWriteTable/live/4/declined (0.48s)
+    --- PASS: TestKV7_slotWriteTable/live/4/part_way (0.48s)
+    --- PASS: TestKV7_slotWriteTable/released/0/success (0.48s)
+    --- PASS: TestKV7_slotWriteTable/released/0/declined (0.48s)
+    --- PASS: TestKV7_slotWriteTable/released/0/part_way (0.49s)
+    --- PASS: TestKV7_slotWriteTable/released/1/success (0.51s)
+    --- PASS: TestKV7_slotWriteTable/released/1/declined (0.52s)
+    --- PASS: TestKV7_slotWriteTable/released/1/part_way (0.49s)
+    --- PASS: TestKV7_slotWriteTable/released/2/success (0.46s)
+    --- PASS: TestKV7_slotWriteTable/released/2/declined (0.49s)
+    --- PASS: TestKV7_slotWriteTable/released/2/part_way (0.47s)
+    --- PASS: TestKV7_slotWriteTable/released/3/success (0.48s)
+    --- PASS: TestKV7_slotWriteTable/released/3/declined (0.47s)
+    --- PASS: TestKV7_slotWriteTable/released/3/part_way (0.47s)
+    --- PASS: TestKV7_slotWriteTable/released/4/success (0.48s)
+    --- PASS: TestKV7_slotWriteTable/released/4/declined (0.50s)
+    --- PASS: TestKV7_slotWriteTable/released/4/part_way (0.49s)
+    --- PASS: TestKV7_slotWriteTable/demoted/0/success (0.49s)
+    --- PASS: TestKV7_slotWriteTable/demoted/0/declined (0.47s)
+    --- PASS: TestKV7_slotWriteTable/demoted/0/part_way (0.49s)
+    --- PASS: TestKV7_slotWriteTable/demoted/1/success (0.49s)
+    --- PASS: TestKV7_slotWriteTable/demoted/1/declined (0.47s)
+    --- PASS: TestKV7_slotWriteTable/demoted/1/part_way (0.46s)
+    --- PASS: TestKV7_slotWriteTable/demoted/2/success (0.48s)
+    --- PASS: TestKV7_slotWriteTable/demoted/2/declined (0.48s)
+    --- PASS: TestKV7_slotWriteTable/demoted/2/part_way (0.49s)
+    --- PASS: TestKV7_slotWriteTable/demoted/3/success (0.49s)
+    --- PASS: TestKV7_slotWriteTable/demoted/3/declined (0.48s)
+    --- PASS: TestKV7_slotWriteTable/demoted/3/part_way (0.51s)
+    --- PASS: TestKV7_slotWriteTable/demoted/4/success (0.49s)
+    --- PASS: TestKV7_slotWriteTable/demoted/4/declined (0.49s)
+    --- PASS: TestKV7_slotWriteTable/demoted/4/part_way (0.47s)
+    --- PASS: TestKV7_slotWriteTable/stopped/0/success (0.48s)
+    --- PASS: TestKV7_slotWriteTable/stopped/0/declined (0.47s)
+    --- PASS: TestKV7_slotWriteTable/stopped/0/part_way (0.47s)
+    --- PASS: TestKV7_slotWriteTable/stopped/1/success (0.48s)
+    --- PASS: TestKV7_slotWriteTable/stopped/1/declined (0.51s)
+    --- PASS: TestKV7_slotWriteTable/stopped/1/part_way (0.49s)
+    --- PASS: TestKV7_slotWriteTable/stopped/2/success (0.48s)
+    --- PASS: TestKV7_slotWriteTable/stopped/2/declined (0.48s)
+    --- PASS: TestKV7_slotWriteTable/stopped/2/part_way (0.47s)
+    --- PASS: TestKV7_slotWriteTable/stopped/3/success (0.51s)
+    --- PASS: TestKV7_slotWriteTable/stopped/3/declined (0.47s)
+    --- PASS: TestKV7_slotWriteTable/stopped/3/part_way (0.50s)
+    --- PASS: TestKV7_slotWriteTable/stopped/4/success (0.46s)
+    --- PASS: TestKV7_slotWriteTable/stopped/4/declined (0.47s)
+    --- PASS: TestKV7_slotWriteTable/stopped/4/part_way (0.49s)
+PASS
+ledger: 124 device(s) released in this run

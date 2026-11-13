@@ -157,11 +157,11 @@ func kv4SameTrace(t *testing.T, want, got kv4Trace) {
 // runs it on the paged-experts build.
 func TestKV4_scrambledTables(t *testing.T) {
 	requireCUDADevice(t)
-	windowed := map[string]bool{"mistral-tiny-window": true, "gemma3-vl-tiny": true, "cohere2-tiny": true, "gemma2-tiny": true}
+	windowed := map[string]bool{"mistral-tiny-window": true, "gemma3-vl-tiny": true, "cohere2-tiny": true, "gemma2-tiny": true, "flint-tiny": true}
 	for _, fx := range []string{
 		"llama-tiny", "llama-attnfa-tiny", "mistral-tiny-window", "gemma3-vl-tiny", "cohere2-tiny", "gemma2-tiny", "cohere-tiny",
 		"qwen25vl-tiny", "qwen3moe-tiny", "deepseek-tiny", "qwen35-tiny", "gemma4-moe-kv-tiny32",
-		"llama-attnfa-tiny+flash", "llama-attnfa-tiny+splitkv", "mixtral-tiny", "qwen3moe-tiny+experts",
+		"llama-attnfa-tiny+flash", "llama-attnfa-tiny+splitkv", "mixtral-tiny", "qwen3moe-tiny+experts", "flint-tiny",
 	} {
 		for _, kv := range []string{"f32", "f16"} {
 			t.Run(fx+"/kv="+kv, func(t *testing.T) {
