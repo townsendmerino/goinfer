@@ -87,15 +87,11 @@ func checkWalkResidual(st layerStep, res *program.ResidualParams) error {
 	return nil
 }
 
-// encodeMixerWalk emits layer l's mixer step from its operations ops, which checkMixerWalk admitted, on residual x. A DeltaNet step
-// reads and adds into the resident's own residual, as its block does.
+// encodeMixerWalk emits layer l's mixer step from its operations ops, which checkMixerWalk admitted, on residual x.
 func (r *resident) encodeMixerWalk(e *Encoder, l int, L *residLayer, ops []program.Op, x, uPos, uNKeys, uQTemp, rp Buffer) {
 	if L.geom != nil && L.delta == nil && L.mamba == nil && L.mla == nil {
 		r.encodeAttentionWalk(e, l, ops, x, uPos, uNKeys, uQTemp, rp)
 		return
-	}
-	if L.delta != nil {
-		x = r.x
 	}
 	for i := 0; i < len(ops); i++ {
 		switch o := &ops[i]; o.Kind {
