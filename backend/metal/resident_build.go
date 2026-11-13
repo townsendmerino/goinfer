@@ -1009,3 +1009,113 @@ func (b *residentBuild) selectGemvRows() {
 		}
 	}
 }
+
+// sizeDecodeScratch sizes the decode shape from the widest layer, allocates its per-token scratch, checks the decode rows against what the
+// kernels address, and uploads the model-level rope table and the per-model scalars the encoder reads.
+func (b *residentBuild) sizeDecodeScratch() error {
+	m, d, r, pipe := b.m, b.d, b.r, b.pipe
+	H, nL, nH, I, V := r.H, r.nL, r.nH, r.I, r.V
+	addOne, win, guDim := b.addOne, b.win, b.guDim
+	maxNHhd, maxKvDim, maxHd, maxAttnFAPartial := b.maxNHhd, b.maxKvDim, b.maxHd, b.maxAttnFAPartial
+	if maxNHhd == 0 { // no attention layer (an all-MLA model): the attention scratch below is never dispatched, but sized
+		maxNHhd, maxKvDim, maxHd = 4, 4, 4
+	}
+	// attnFAPartial is independent of context depth (nSplit is capped, not depth-proportional; see
+	// canUseAttnFA/attnFASplitFor), so it is sized once here, not per token. It is zero-size on a model this
+	// kernel can never engage for (no layer attnFAHeadDimOK admits): canUseAttnFA's hd guard then always declines,
+	// so the zero buffer is never dispatched into.
+	r.attnFAMaxSplit = attnFAPartialSplits
+	// For the group sizes it was graded at (G = 6 and 7), attention_fa's first pass is the block-of-32 kernel
+	// attention_fa_blk at the fixed split count attnFABlkSplit (same grid shape, partial layout and combine). G =
+	// 2 to 8 take it too while attnFABlkAnyG; every other group size keeps attention_fa and its core-count rule.
+	if r.attnFANKV > 0 {
+		switch g := r.nH / r.attnFANKV; {
+		case r.layers[r.attnFALayer].geom.hd == 64: // B-P01: attnFAHeadDimOK admitted hd = 64 only where blk64 exists
+			r.pAttnFA = pipe(fmt.Sprintf("attention_fa_blk64_g%d", g))
+			r.pAttnFARows = pipe(fmt.Sprintf("mc3_attention_fa_blk64_rows_g%d", g))
+			r.attnFABlkSplit = attnFABlkSplit
+		case g == 6 || g == 7, attnFABlkAnyG && g >= 2 && g <= 8:
+			r.pAttnFA = pipe(fmt.Sprintf("attention_fa_blk_g%d", g))
+			r.pAttnFARows = pipe(fmt.Sprintf("mc3_attention_fa_blk_rows_g%d", g))
+			r.attnFABlkSplit = attnFABlkSplit
+		}
+	}
+	r.attnFAPartialLen = maxAttnFAPartial
+	r.decode = decodeShape{H: H, V: V, I: I, nH: nH, nHhd: maxNHhd, kvDim: maxKvDim, guDim: guDim, faPartial: maxAttnFAPartial,
+		q4k: r.q4kLane, attnScale: m.AttnScale(), normEps: m.NormEps(), act: uint32(m.GatedActResident()), addOne: addOne, window: uint32(win),
+		gumbelNB: r.gumbelNB, nL: nL, pleP: r.pleP, dnet: r.dnet, mamba: r.mamba, mla: r.mla}
+	if r.layerNormBias {
+		r.decode.lnHasBias = 1
+	}
+	if r.qkNormWhole {
+		r.decode.qkWholeHD = nH * m.HeadDimAtResident(0) // one model-level width: the build declines a non-uniform geometry for it
+	}
+	if r.attnSink {
+		r.decode.attnSink = 1
+	}
+	r.decode.layers = make([]decodeLayer, len(r.layers))
+	seen := map[*attnGeom]bool{}
+	for l := range r.layers {
+		L := &r.layers[l]
+		if L.ffnI == 0 || L.ffnI == I || g4OneFFNWidthForTest { // the seam: G2 defect (4)
+			L.ffnI = I
+		} else {
+			r.decode.layers[l].ffnI = L.ffnI
+		}
+		if g := L.geom; g != nil {
+			r.decode.layers[l].attn, r.decode.layers[l].window = true, L.window
+			r.decode.qGate = r.decode.qGate || L.qGate
+			if !seen[g] {
+				seen[g] = true
+				r.decode.geoms = append(r.decode.geoms, g)
+			}
+		}
+	}
+	if r.moe != nil {
+		r.decode.families = append(r.decode.families, r.moe.scratch...)
+	}
+	if r.g4moe != nil {
+		r.decode.families = append(r.decode.families, r.g4moe.scratch...)
+	}
+	rows := m.MetalDecodeRowWidths()
+	if decodeRowsPlantForTest != nil {
+		decodeRowsPlantForTest(rows)
+	}
+	if err := r.decodeRowsCheck(rows); err != nil {
+		return err
+	}
+	for _, sb := range r.decode.buffers(r) {
+		sb.set(sb.alloc(d))
+	}
+	for l := range r.layers {
+		if r.decode.layers[l].ffnI == 0 {
+			r.layers[l].uFFNI = r.uI
+		}
+	}
+	// Model-level rope table for the (uniform-only) prefill path; decode uses each layer's L.invf.
+	// GPT-2 (FeatLearnedPos): no RoPE at all, so this is empty — NewBufferFloats panics on empty;
+	// r.invf stays unused (prefillOK is false for a learned-pos family — see prefillFeatures).
+	if invf0 := m.RopeInvFreq(); len(invf0) > 0 {
+		r.invf = NewBufferFloatsOn(mem.LineDense, d, invf0)
+	}
+	if r.dnet != nil && r.uDnONormEps == (Buffer{}) {
+		r.uDnONormEps = r.uEps
+	}
+	r.attnTempBeta, r.attnTempOrigMaxPos = m.AttnTempParams()
+	// Scale-less v_norm plumbing for K=V layers (Gemma 4 globals): a unit-1.0 weight and the shared zero uniform (uZero, in the
+	// decode list) so qk_norm reduces to x·rms·1 on the V slot. Sized to the widest head.
+	ones := make([]float32, maxHd)
+	for i := range ones {
+		ones[i] = 1
+	}
+	r.vNormUnit = NewBufferFloatsOn(mem.LineDense, d, ones)
+	// HF and the CPU apply Gemma 4's scale-less v_norm on EVERY layer that owns its K/V, not only on K=V layers
+	// (S1.0); a K=V layer's V slot holds the raw k_proj output, any other's the v_proj output, and both take it.
+	r.g4VNorm = m.IsGemma4Resident()
+	r.finalSoftcap = m.FinalLogitSoftcapResident() // Gemma 4: 30 (host-side softcap); 0 for every other family
+	r.embedScale = float32(m.EmbedScaleResident()) // Gemma: √hidden; 0 for every non-scaled family (G-02)
+	r.logitsHost = make([]float32, V)
+	r.ensureBatchCap(16)
+
+	return nil
+}
