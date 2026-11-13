@@ -9,6 +9,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
@@ -1118,4 +1119,68 @@ func (b *residentBuild) sizeDecodeScratch() error {
 	r.ensureBatchCap(16)
 
 	return nil
+}
+
+// pinResidencySet pins a paged MoE's slot pool resident when the OS supports residency sets, and records what it pinned.
+func (b *residentBuild) pinResidencySet() {
+	m, d, r := b.m, b.d, b.r
+	// Residency set (on by default when supported and paged; GOINFER_MOE_RESIDENCY=0 opts out). The paged path
+	// submits per layer, and the pread stage CPU-writes the slot buffers each token, dirtying their residency so
+	// the driver re-validates them on every phase-2 commit. Pinning the slot pool resident holds it across those
+	// writes. Slots only: pinning anything more (weights, KV, scratch) regresses phase 1 in proportion to the
+	// pin-set size, read/write-agnostic; pinning helps only the pread-invalidated buffers. Footprint: the slot
+	// pool is N x MoE-layers x per-expert-bytes, permanently requested resident, so re-measure the win if N grows
+	// or the box is under other load. Capability-gated (macOS 15+); older OSes keep the correct, slower per-submit
+	// path. It gates on any paged MoE, generic (moe.go) or Gemma 4 (g4moe): both have pread-invalidated slot
+	// buffers.
+	paged := (r.g4moe != nil && r.g4moe.paged) || (r.moe != nil && r.moe.paged)
+	if paged && modelKnob(m, "GOINFER_MOE_RESIDENCY") != "0" && ResidencySetsSupported() {
+		rs, rerr := d.NewResidencySet()
+		if rerr != nil {
+			logs.Warnf("metal: residency set unavailable (%v) — per-submit validation stands", rerr)
+		} else {
+			slots := r.slotBuffers()      // GPU-read-only (CPU-written by pread)
+			written := r.writtenBuffers() // GPU-WRITTEN per token: KV cache + intermediates/scratch
+			kv := r.kvBuffers()
+			scratch := r.scratchBuffers()
+			// pinned accumulates exactly what addAll() adds, so r.residencyBufs is the true pinned list in every
+			// slot-scoped arm, not just the default (the teardown-consistency gate reads it).
+			var pinned []Buffer
+			addAll := func(bs []Buffer) {
+				for _, b := range bs {
+					rs.Add(b)
+					pinned = append(pinned, b)
+				}
+			}
+			switch modelKnob(m, "GOINFER_MOE_RESIDENCY_SCOPE") {
+			case "slots":
+				addAll(slots)
+			case "slots+kv": // bisect: does the KV cache cause the phase-1 regression?
+				addAll(slots)
+				addAll(kv)
+			case "slots+scratch": // bisect: do the intermediates cause it?
+				addAll(slots)
+				addAll(scratch)
+			case "readonly", "slots+weights": // diagnostic: pin all buffers EXCEPT the written set
+				rs.AddAllDeviceBuffersExcept(d, written) // whole-device: not slot-scoped, pinned stays nil
+			case "all": // diagnostic: pin every device buffer (regresses phase 1 — set-size overhead)
+				rs.AddAllDeviceBuffers(d) // whole-device: not slot-scoped, pinned stays nil
+			default: // SHIP DEFAULT: slots only. The five-arm bisect showed pinning anything BEYOND the
+				// pread-invalidated slot buffers regresses phase 1 in proportion to the pinned set size
+				// (read/write-agnostic), so slots-only is the sole net win (phase 2 idle 9→0.44 ms/CB).
+				addAll(slots)
+				_ = kv
+				_ = scratch
+			}
+			r.residencyBufs = pinned
+			rs.Commit()
+			rs.RequestResidency()
+			// Attach the set per encoder, only on phase 2's command buffers (the callers of encodeG4Phase2Paged and
+			// encodeMoEExpertsPaged, via Encoder.UseResidencySet, aikit gpu/v0.33.1+), the buffer category that reads it,
+			// not at the queue (r.q.AddResidencySet): at the queue it rides on every command buffer, and phase 1 carries
+			// the pinned slots in its referenced set though it never touches them.
+			r.residency = rs
+		}
+	}
+
 }
