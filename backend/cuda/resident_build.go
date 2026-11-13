@@ -5,9 +5,13 @@ package cuda
 import (
 	"fmt"
 	"math"
+	"os"
+	"runtime"
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/decoder/fit"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
@@ -675,4 +679,212 @@ func (s *buildState) planLayers() error {
 	}
 	s.hls, s.hlm, s.loadAbort = hls, hlm, loadAbort
 	return nil
+}
+
+// newResident builds the cudaResident the setup job fills: its fields from the planned geometry, the executor goroutine, the layer
+// geometry and the KV context plan (r.ctxCap), declining what it cannot hold. Plan-only and the memory plan end here, returning
+// planOnlySlack and errMemPlanned. A MoE build whose context is planned opens its device here (openForPlan), and every error
+// return after that closes it.
+func (s *buildState) newResident(planOnly bool, mp *memPlanRun) (*cudaResident, error) {
+	m, shape := s.m, s.shape
+	H, nLayers, nH, I, vocab, pleP := s.H, s.nLayers, s.nH, s.I, s.vocab, s.pleP
+	nE, topK, moeInter, sharedInter, nGroup, topkGroup := s.nE, s.topK, s.moeInter, s.sharedInter, s.nGroup, s.topkGroup
+	moeSig, moeNorm, isMoE, moeScale := s.moeSig, s.moeNorm, s.isMoE, s.moeScale
+	isG4MoE, isGemma4 := s.isG4MoE, s.isGemma4
+	qLoRA, kvLoRA, qkNope, qkRope, vHead, interleave := s.qLoRA, s.kvLoRA, s.qkNope, s.qkRope, s.vHead, s.interleave
+	mlaAttnScale, mlaRopeScale, mlaOK := s.mlaAttnScale, s.mlaRopeScale, s.mlaOK
+	dnetP, mambaP := s.dnetP, s.mambaP
+	sandwich, postOnly, qkNormWhole, layerNorm, parallelBlock := s.sandwich, s.postOnly, s.qkNormWhole, s.layerNorm, s.parallelBlock
+	logitScale, actG32 := s.logitScale, s.actG32
+	hls, hlm, loadAbort := s.hls, s.hlm, s.loadAbort
+	attnTempBeta, attnTempOrigMaxPos := m.AttnTempParams() // Ministral 3, FeatAttnTemp; 0 for every other family
+	// Computed once: both ctxCap and extraBytes below need it, and a struct literal cannot read a sibling field set in the
+	// same literal.
+	kvSlotsReq := cudaKVSlotsRequest(m)
+	// The driver's 2 MiB rounding over the weight buffers is the plan's figure (decoder.Model.PlanSlack, this package's
+	// report): the plan prices it as a fixed term, so the context it picks already leaves room for it, and the build adds no
+	// copy of its own. Plan-only, it is computed here, over the buffers just planned.
+	if planOnly {
+		if allocSlackOffForTest {
+			return nil, planOnlySlack(0) // the planted defect of TestBuildScratchAccounting_plantedDefect: a plan that prices no slack
+		}
+		return nil, planOnlySlack(packedAllocSlack([]any{hls, hlm}))
+	}
+	allocSlack := m.PlanSlack("cuda")
+	if allocSlackSeenForTest != nil && mp == nil {
+		allocSlackSeenForTest(allocSlack, packedAllocSlack([]any{hls, hlm}))
+	}
+	attnCap := m.AttnLogitSoftcapResident()
+	if attnSoftcapDropForTest {
+		attnCap = 0
+	}
+	if attnCap != 0 && mlaOK {
+		return nil, decline(fmt.Errorf("an attention softcap on a latent-attention model: mla_attn has no cap"))
+	}
+	r := &cudaResident{
+		prog:      m.Program(),
+		loadAbort: loadAbort,
+		knob:      m.Knob,
+		kvF16:     m.KVCacheF16(),
+		kvI8:      m.KVDeliveredFor("cuda") == mem.KVI8,
+		hidden:    H, nLayers: nLayers, nH: nH, inter: I, vocab: vocab,
+		eps: m.NormEps(), attnScale: m.AttnScale(), finalSoftcap: m.FinalLogitSoftcapResident(), attnCap: attnCap, faSoftcap: m.FlashDecodeSoftcap(),
+		attnTempBeta: attnTempBeta, attnTempOrigMaxPos: attnTempOrigMaxPos,
+		qkNorm: shape.QKNorm, qkNormWhole: qkNormWhole, rmsAddOne: m.RMSAddOne(),
+		act: int32(m.GatedActResident()), sandwich: sandwich, postOnly: postOnly,
+		layerNorm: layerNorm, parallelBlock: parallelBlock, logitScale: logitScale, actG32: actG32,
+		moe: isMoE, nE: nE, topK: topK, moeInter: moeInter,
+		moeScale: float32(moeScale), nGroup: nGroup, topkGroup: topkGroup,
+		sharedInter: sharedInter,
+		gemma4Moe:   isG4MoE, gemma4Dense: isGemma4, g4cap: os.Getenv("GOINFER_G4_CAPTURE") != "",
+		// C′: DMA the routed int4 experts host→VRAM slots per token (device read, correct). The
+		// path to running a model whose experts exceed VRAM. Off by default; byte-identical when off.
+		cacheExperts: m.MoECacheExperts(),
+		// MoEExpertsUnpinned: the cache's slots upload from pageable pages of a packed-experts file beside the model, not a pinned copy.
+		unpinnedExperts: m.MoEExpertsUnpinned(), unpinnedDir: modelDir(m.SourcePath()),
+		cacheProf: os.Getenv("GOINFER_MOE_CACHE_PROF") != "",
+		dnet:      dnetP,
+		mamba:     mambaP,
+		isMLA:     mlaOK, mlaRank: kvLoRA, mlaLatDim: kvLoRA + qkRope,
+		mlaQKHead: qkNope + qkRope, mlaQKNope: qkNope, mlaQKRope: qkRope,
+		mlaVHead: vHead, mlaQLoRA: qLoRA, mlaInterleave: interleave,
+		mlaRopeScale:    float32(mlaRopeScale),
+		allocSlackBytes: allocSlack,
+		ctxExplicit:     ctxExplicitFor(m),
+		// One conversation may use the whole KV pool (KV4a-3) unless a context was asked for or pinned by the fit guard, or a companion's
+		// device K/V scales with the context (a --drafter's, priced at the planned one).
+		kvRaise:    m.ResidentContextRequest() <= 0 && m.ExtraResidentKVPerPosition() == 0,
+		modelCtx:   m.Config().MaxPositions,
+		kvSlotsReq: kvSlotsReq,
+	}
+	if moeSig {
+		r.moeSigmoid = 1
+	}
+	if moeNorm {
+		r.moeNormTopK = 1
+	}
+	if mlaOK && mlaAttnScale != 0 {
+		r.attnScale = float32(mlaAttnScale)
+	}
+	// C' device expert slots per layer: an LRU cache of nSlots experts (clamped [topK, nE]), costing
+	// nLayers*nSlots*perExpert of VRAM; more slots trade VRAM for fewer per-token DMAs. The request comes from
+	// --moe-cache-slots (GOINFER_MOE_CACHE_SLOTS is still honoured).
+	//
+	// With caching on and no explicit request the default is 8*topK (capped at nE): a bounded multiple, neither topK nor the
+	// "ask for all, let allocSlots cap to free VRAM" that MoECacheSlotsRequest documents for 0. The floor is topK (one
+	// token's routed set must be resident at once) and allocSlots still caps to measured free VRAM. Do not default to "ask
+	// for all": allocSlots's headroom (marginBytes) covers per-token costs, not what the forward allocates after it, so on
+	// the real 26B it capped 128 slots to 34 and the warm forward then died with CUDA_ERROR_OUT_OF_MEMORY. 8*topK sits just
+	// above the knee of one measured sweep; it is a heuristic, not a derived constant, because where the knee falls depends
+	// on the model's routing entropy. The sweep and the history:
+	// docs/code-notes/cuda.md#BuildResident: MoE cache slots default.
+	r.cacheSlots = topK
+	r.cacheSlotsReq = topK
+	if r.cacheExperts && nE > 0 {
+		if d := 8 * topK; d > topK {
+			r.cacheSlots = min(d, nE)
+			r.cacheSlotsReq = r.cacheSlots
+		}
+	}
+	if r.cacheExperts {
+		// The request comes from Options (--moe-cache-slots); unset keeps the 8*topK default above, not the accessor's "ask for
+		// all". A request BELOW topK cannot be honoured, since one token's own top-k must fit, so it is refused rather than
+		// floored: flooring left the 8*topK default in place, and a gate asking for fewer slots than experts got the identity
+		// mapping and discriminated by routing luck.
+		if req := m.MoECacheSlotsRequest(); req > 0 && req < topK {
+			// A hard error, not declined(): declined() swallows the error and falls back to the staged path, which suits a shape
+			// this backend does not implement but not an operator flag that cannot mean what it says.
+			return nil, fmt.Errorf("cuda: --moe-cache-slots %d is below top-k %d — one "+
+				"token's own routed experts must all be resident at once, so this cannot be "+
+				"honoured (G-07)", req, topK)
+		} else if req >= topK {
+			r.cacheSlots = req
+			r.cacheSlotsReq = req
+			if nE > 0 && r.cacheSlots > nE {
+				r.cacheSlots = nE
+			}
+		}
+	}
+	if mp == nil { // the memory plan runs no job: it opens no device
+		r.reqCh = make(chan func() error)
+		r.ackCh = make(chan error)
+		go func() {
+			runtime.LockOSThread()
+			defer runtime.UnlockOSThread()
+			for j := range r.reqCh {
+				r.ackCh <- runJob(j)
+			}
+		}()
+	}
+
+	// (runJob — the executor's panic boundary — is defined below.)
+
+	// The context margin, on the planned geometry, before the context is planned (ctxMarginFor): the setup job replaces r.layers,
+	// and the fused-attention flags are set again where the modules load.
+	r.layers = planLayerGeometry(m, hls, nH, r)
+	if e := r.readRecurrentFloats(m); e != nil {
+		return nil, decline(e)
+	}
+	r.pleP, r.eModel = pleP, pleP > 0
+	for l := range r.layers {
+		r.eModel = r.eModel || r.layers[l].kvShared
+	}
+	r.fastAttn, r.fastGemm = fastPrefillEnabled(r.knobValue("GOINFER_CUDA_FAST_PREFILL"))
+	if m.ExactPrefill() {
+		r.fastAttn, r.fastGemm = false, false
+	}
+	r.planning = true
+	// A MoE build whose context is planned opens its device and pays moe_route's local-memory pool (payRoutePool) before the plan
+	// reads free VRAM, on the context it keeps: the startup self-test's pool is released with its own context before the build, so
+	// nothing else has paid it (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-H6 build, review amendment"). It checks the weights
+	// first, against the margin at the floor, so a model that does not fit gets checkWeightsFit's decline rather than a warm-up's
+	// failure. The setup job keeps this device and stream, and checks the weights again against the margin it plans.
+	if _, floor, plans := ctxPlanRange(m, m.ResidentContextRequest(), m.Config().MaxPositions); r.moe && plans {
+		r.ctxMarginBytes = r.ctxMarginFor(floor)
+		if mp != nil {
+			mp.out.Margin, mp.out.ExtraBytes, mp.out.KVSlotsReq = r.ctxMargin(), m.ExtraResidentBytes(), r.kvSlotsReq
+			if e := mp.weightsCheck(m, "weightsOpen", r.ctxMargin()); e != nil {
+				return nil, e
+			}
+			mp.out.PoolPaid = true // openForPlan pays the pool only after this check passes
+			if mp.derive {
+				mp.in.Plan, mp.in.Weights = mp.in.WeightsOpen-mp.pool, mp.in.WeightsOpen-mp.pool
+			}
+		} else if e := r.do(func() error { return r.openForPlan(m) }); e != nil {
+			r.Close()
+			return nil, decline(e)
+		}
+	}
+	owners, mlaPools := kvLayerCounts(r.layers)
+	// Resolve the resident KV capacity HERE, at construction, not at the KV allocation site: several buffers are sized from it
+	// earlier (the split-KV score scratch among them), and a zero-value ctxCap makes those 0-byte allocations that fail the whole
+	// resident build. cap = min(model context window, request); request 0 ⇒ the 4096 default, so a caller who did not ask
+	// allocates exactly what they always did.
+	// The plan reads free VRAM: a MoE build has paid its local-memory pool above, on the context it keeps.
+	readFree := liveCtxFree
+	if mp != nil {
+		readFree = func() (int64, bool) {
+			if mp.derive {
+				mp.in.PlanOK = true // called only when the context is planned
+			}
+			return mp.in.Plan, mp.in.PlanOK
+		}
+	}
+	if recurrentStatePlannedForTest != nil && mp == nil {
+		recurrentStatePlannedForTest(m.Plan("cuda", 1<<40, fit.PlanRequest{Ctx: 1}).StateBytes) // the state does not grow with the context
+	}
+	r.ctxCap, r.ctxMarginBytes = resolveCtxCapFitFree(m, m.ResidentContextRequest(), m.Config().MaxPositions, kvSlotsReq,
+		func(ctx int) int64 { r.ctxMarginCtx = ctx; return r.ctxMarginFor(ctx) },
+		kvRoundingBound(owners, mlaPools), readFree)
+	planned := r.layers
+	r.planning, r.layers = false, nil
+	r.ctxPlanned = r.ctxCap
+	// A drafter's device K/V is priced at the FINAL ctxCap. resolveCtxCapFit's ExtraBytes consult priced it at candidate, the
+	// widest ctx that call considered, and the real allocation can only be <= candidate, so this is never a smaller price than the
+	// one planned against; checkKVFits enforces it.
+	r.extraBytes = m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(r.ctxCap)
+	if mp != nil {
+		return nil, r.finishMemPlan(m, hls, planned, mp)
+	}
+	return r, nil
 }
