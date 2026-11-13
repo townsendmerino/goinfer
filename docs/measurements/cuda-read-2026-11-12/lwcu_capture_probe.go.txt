@@ -1,0 +1,67 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+import (
+	"fmt"
+	"strings"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+// Throwaway read for LW-cu (not part of the tree): which layers capture graph segments, and whether a graphs-on decode equals a graphs-off one.
+func TestZZ_captureMapAndIdentity(t *testing.T) {
+	requireCUDADevice(t)
+	for _, fx := range []string{"llama-tiny", "qwen35-tiny", "qwen3next-tiny", "nemotron-tiny", "deepseek-tiny", "lfm2-tiny", "granite-tiny", "qwen3moe-tiny",
+		"gemma4-moe-tiny", "gemma4-emodel-tiny", "gemma4-dense-twogeom-tiny", "mistral-tiny-window", "flint-tiny", "cohere-tiny", "gemma3-vl-tiny"} {
+		t.Run(fx, func(t *testing.T) {
+			var logits [2][][]float32
+			var capmap [2]string
+			var graphsOn [2]bool
+			for arm, g := range []string{"", "1"} {
+				t.Setenv("GOINFER_CUDA_GRAPHS", g)
+				t.Setenv("GOINFER_GEMMA4_RESIDENT", "1")
+				m, r := loadResident(t, fx, decoder.Options{ResidentKVSlots: 1})
+				graphsOn[arm] = r.graphs
+				var sb strings.Builder
+				for l := range r.layers {
+					Ly := &r.layers[l]
+					s := ""
+					if Ly.gSegA != nil {
+						s += "A"
+					}
+					if Ly.gSegB != nil {
+						s += "B"
+					}
+					if Ly.gSegC != nil {
+						s += "C"
+					}
+					if s == "" {
+						s = "-"
+					}
+					fmt.Fprintf(&sb, "%s ", s)
+				}
+				capmap[arm] = sb.String()
+				_, _, _, _, _, _, vocab := m.Dims()
+				for i := 0; i < 14; i++ {
+					lg, err := r.Forward(m.EmbedResidentForTest(3+(37*i)%(vocab-3)), i)
+					if err != nil {
+						t.Fatalf("forward %d (graphs %q): %v", i, g, err)
+					}
+					logits[arm] = append(logits[arm], append([]float32(nil), lg...))
+				}
+				m.Close()
+			}
+			same := true
+			for i := range logits[0] {
+				if j, ok := sameBits(logits[0][i], logits[1][i]); !ok {
+					same = false
+					t.Errorf("step %d logit %d differs graphs-on vs off", i, j)
+					break
+				}
+			}
+			t.Logf("CAPTUREMAP %s: graphs-flag off-arm=%v on-arm=%v | layers(on)= %s| on==off bits: %v", fx, graphsOn[0], graphsOn[1], capmap[1], same)
+		})
+	}
+}

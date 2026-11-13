@@ -1,0 +1,88 @@
+=== RUN   TestGemma4Graphs_bitExact_emodel
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7052 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7052 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7052 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6920 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (25 MiB of scratch; 7046 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[cuda] CUDA graphs enabled: CUDA MPS active (CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps)
+cuda: prefill width 2048 rows (25 MiB of scratch; 7046 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    gemma4_graphs_test.go:100: CUDA graphs (40 pos, cache=false, CUDA_LAUNCH_BLOCKING=""): replay == live launches, BIT-IDENTICAL
+--- PASS: TestGemma4Graphs_bitExact_emodel (1.62s)
+=== RUN   TestGemma4Graphs_bitExact_tiny
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (64 MiB of scratch; 6882 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+[cuda] CUDA graphs enabled: CUDA MPS active (CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps)
+cuda: prefill width 2048 rows (64 MiB of scratch; 6882 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    gemma4_graphs_test.go:100: CUDA graphs (40 pos, cache=false, CUDA_LAUNCH_BLOCKING=""): replay == live launches, BIT-IDENTICAL
+--- PASS: TestGemma4Graphs_bitExact_tiny (0.40s)
+=== RUN   TestGemma4Graphs_bitExact_tinyCache
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (64 MiB of scratch; 6882 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+[cuda] CUDA graphs enabled: CUDA MPS active (CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps)
+cuda: prefill width 2048 rows (64 MiB of scratch; 6882 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    gemma4_graphs_test.go:100: CUDA graphs (40 pos, cache=true, CUDA_LAUNCH_BLOCKING=""): replay == live launches, BIT-IDENTICAL
+--- PASS: TestGemma4Graphs_bitExact_tinyCache (0.41s)
+=== RUN   TestGemma4Graphs_bitExact_tinyCacheReuse
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (64 MiB of scratch; 6882 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+[cuda] CUDA graphs enabled: CUDA MPS active (CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps)
+cuda: prefill width 2048 rows (64 MiB of scratch; 6882 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    gemma4_graphs_test.go:100: CUDA graphs (40 pos, cache=true, CUDA_LAUNCH_BLOCKING=""): replay == live launches, BIT-IDENTICAL
+--- PASS: TestGemma4Graphs_bitExact_tinyCacheReuse (0.41s)
+=== RUN   TestGemma4Graphs_sameModelUnderLoad
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+[cuda] CUDA graphs enabled: CUDA MPS active (CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps)
+cuda: prefill width 2048 rows (64 MiB of scratch; 6882 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    gemma4_graphs_test.go:166: same-model graph-vs-live (40 pos, cache=true): BIT-IDENTICAL
+--- PASS: TestGemma4Graphs_sameModelUnderLoad (0.22s)
+=== RUN   TestGemma4Graphs_offVsOffControl
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (64 MiB of scratch; 6882 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    gemma4_graphs_test.go:205: control: two graphs-OFF runs BIT-IDENTICAL (40 pos) — the live forward is deterministic under this load
+--- PASS: TestGemma4Graphs_offVsOffControl (0.21s)
+=== RUN   TestCUDA_graphReplayBound
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (64 MiB of scratch; 6882 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    graph_bound_test.go:127: K=16 launches/segment
+    graph_bound_test.go:128:   live chain:   36.53 µs/iter  (2.28 µs/launch)
+    graph_bound_test.go:129:   graph replay: 16.39 µs/iter  (2.23× cheaper than live)
+    graph_bound_test.go:130:   saved/segment: 20.14 µs
+    graph_bound_test.go:137:   projection (48 layers × 3 segments = 144 replays/token): ~2.9 ms/token reclaimed
+    graph_bound_test.go:144:   VERDICT: replay 2.2× cheaper — MODEST. Proceed only if the segmentation overhead (below the launch count) stays small; the margin is thin.
+--- PASS: TestCUDA_graphReplayBound (1.24s)
+=== RUN   TestCUDA_graphLiveNoSyncOrdering
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (64 MiB of scratch; 6882 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    graph_nosync_test.go:92: live<->graph NO-SYNC chains ×400 (N=20 steps, want 1048575): 0 divergent, first got=0
+--- PASS: TestCUDA_graphLiveNoSyncOrdering (0.32s)
+=== RUN   TestCUDA_graphSegAIsolated
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (64 MiB of scratch; 6882 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    graph_segisolate_test.go:100: segA isolated ×2000 replays (qDim=64): 0 divergent replays, first maxAbsDiff=0
+--- PASS: TestCUDA_graphSegAIsolated (0.32s)
+=== RUN   TestCUDA_graphSharedMemHazard
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (64 MiB of scratch; 6882 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    graph_sharedmem_test.go:84: elementwise(fScaleVec): 0/256 elems differ, maxAbsDiff=0 (graph vs live)
+    graph_sharedmem_test.go:84: reduction(fRms): 0/64 elems differ, maxAbsDiff=0 (graph vs live)
+    graph_sharedmem_test.go:130: SUMMARY: elementwise mismatches=0, reduction mismatches=0 (run under churn to expose the class)
+--- PASS: TestCUDA_graphSharedMemHazard (0.15s)
+=== RUN   TestCUDAKVSlots_graphs
+[cuda] CUDA graphs enabled: CUDA MPS active (CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps)
+cuda: prefill width 2048 rows (11 MiB of scratch; 7028 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[cuda] CUDA graphs enabled: CUDA MPS active (CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps)
+cuda: prefill width 2048 rows (11 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[cuda] CUDA graphs enabled: CUDA MPS active (CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps)
+cuda: prefill width 2048 rows (11 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[cuda] CUDA graphs enabled: CUDA MPS active (CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps)
+cuda: prefill width 2048 rows (11 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv_slots_test.go:179: A: ids per turn alone [[113 113 113 113 113 117 91 117] [117 91 91 93 91 93 93 93] [32 32 88 11 30 11 11 11]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [0 3 3]
+    kv_slots_test.go:179: B: ids per turn alone [[40 40 40 123 113 40 123 125] [123 7 123 94 7 82 82 82] [82 40 40 40 40 40 40 15]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [3 3 3]
+--- PASS: TestCUDAKVSlots_graphs (0.67s)
+PASS
+ledger: 22 device(s) released in this run

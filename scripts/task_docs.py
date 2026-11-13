@@ -74,7 +74,7 @@ DOCS_ONLY_FILES = ("RELEASING.md",)
 LINK_RE = re.compile(r"(!?\[[^\]\n]*\]\()([^)\s]+)(\))")  # [text](target) and ![alt](target)
 REFDEF_RE = re.compile(r"^(\s*\[[^\]\n]+\]:\s*)(\S+)", re.M)  # [label]: target
 TICK_RE = re.compile(r"`([^`\n]+\.md(?:#[^`\n]*)?)`")  # `path/to/doc.md` in prose
-GENERATED_RE = re.compile(r"(?i)generated(\*\*)? (by|from)|do not edit")  # in a doc's first lines
+GENERATED_RE = re.compile(r"(?i)do not edit")  # in a doc's first lines
 REGEN_RE = re.compile(r"go test [^`\n—]*?-update")
 
 

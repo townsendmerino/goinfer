@@ -271,8 +271,9 @@ func cellPaging(t *testing.T) (swapMiB float64, pageouts int64) {
 	return swapMiB, pageouts
 }
 
-// TestOP4mPod_decodeSpeed is OP4m-pod's P-3 (docs/tasks/task-forward-and-memory-2026-11.md, "OP4m-pod: registration"): one
-// sequence's decode, the mixer steps' walk against their blocks, in one process, on the checkpoint at GOINFER_OP4MPOD_MODEL. Each
+// TestOP4mPod_decodeSpeed is OP4m-pod's and OP4m-pod2's P-3 (docs/tasks/task-forward-and-memory-2026-11.md, "OP4m-pod:
+// registration", "OP4m-pod2: registration"): one sequence's decode, the walk of the mixer and the FFN and tail steps against their
+// blocks, in one process, on the checkpoint at GOINFER_OP4MPOD_MODEL. Each
 // run refills the sequence to depth 128 untimed and times 64 greedy tokens; the arms alternate A B, B A over 6 pairs, and the tokens
 // must be equal in every pair. A pair whose starting load is above half the cores plus GOMAXPROCS, or across which swap in use
 // grows, voids the cell. Pass: a median rate ratio, walk ÷ blocks, of at least 0.99; fail: the cell resolves slower (every pair
@@ -318,7 +319,7 @@ func TestOP4mPod_decodeSpeed(t *testing.T) {
 	kinds := map[layerStep]int{}
 	for l := range r.layers {
 		for _, st := range r.layers[l].steps {
-			if mixerWalks(st) {
+			if mixerWalks(st) || ffnWalks(st) {
 				kinds[st]++
 			}
 		}
