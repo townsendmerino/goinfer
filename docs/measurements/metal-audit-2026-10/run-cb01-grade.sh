@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job: the grades of C-B01 and C-P02 (docs/tasks/task-metal-audit-2026-10.md, "C-B01: built, pending its grade"
+# Night job: the grades of C-B01 and C-P02 (docs/completed/task-metal-audit-2026-10.md, "C-B01: built, pending its grade"
 # and "C-P02: built, pending its grade"), pre-registered there on 2026-10-02 before any graded run. TestCB01ChainAB on
 # the 1.5B, the 0.5B and the 7B, one process per model and mode: Generate with the chain against the same request with
 # it off, 9 reps of 256 tokens per arm, alternated, greedy (C-B01) then temperature-only at T=1.0 (C-P02). The graded
@@ -10,7 +10,7 @@
 #     -o ~/goinfer-bench/metal-audit-2026-10/metal-tagged-<REV>.test ./metal/)
 # Queued with:
 #   python3 scripts/night.py add metal-audit-cb01 --est 30 --by "Claude (Mac session), Metal audit C-B01 and C-P02 grades" \
-#     --doc docs/tasks/task-metal-audit-2026-10.md -- bash ~/goinfer-bench/metal-audit-2026-10/run-cb01-grade.sh
+#     --doc docs/completed/task-metal-audit-2026-10.md -- bash ~/goinfer-bench/metal-audit-2026-10/run-cb01-grade.sh
 # The runner holds the timing lock. Logs: ~/goinfer-logs/metal-audit-2026-10/cb01/; METRIC lines in results.txt.
 set -uo pipefail
 REV=d566889b

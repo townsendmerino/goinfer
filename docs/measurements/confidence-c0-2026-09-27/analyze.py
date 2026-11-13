@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""C0 of docs/tasks/task-constrained-confidence.md: the pre-registered gates, from the harness's JSONL
+"""C0 of docs/tasks/parked/task-constrained-confidence.md: the pre-registered gates, from the harness's JSONL
 (metal/confidence_c0_test.go). Written and committed before any graded run; the rules are the task doc's C0
 pre-registration, restated here only as code.
 

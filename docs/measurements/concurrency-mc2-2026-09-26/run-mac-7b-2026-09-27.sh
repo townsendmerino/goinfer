@@ -1,5 +1,5 @@
 #!/bin/bash
-# The Mac 7B MC2 cell (docs/tasks/task-concurrency-2026-09.md MC3c, registered in 796ed628): decides whether
+# The Mac 7B MC2 cell (docs/tasks/parked/task-concurrency-2026-09.md MC3c, registered in 796ed628): decides whether
 # -cpu-batch auto batches on darwin. M1 Pro, qwen2.5-7b-instruct int4 via its .int4.cpu-arm64.giw.
 set -u
 cd /Users/francistownsend-merino/tmcode/goinfer || exit 1

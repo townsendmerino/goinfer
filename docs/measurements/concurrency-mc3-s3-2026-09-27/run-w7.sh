@@ -1,5 +1,5 @@
 #!/bin/bash
-# MC3 S3 W7 grading (docs/tasks/task-concurrency-2026-09.md, pre-registered in 767cffac): Metal, qwen2.5-coder-1.5b int4,
+# MC3 S3 W7 grading (docs/tasks/parked/task-concurrency-2026-09.md, pre-registered in 767cffac): Metal, qwen2.5-coder-1.5b int4,
 # serve defaults, greedy, --fixed-nonce.
 # old = serve-metal @ 4954f978 (S2); new = @ 731f4f4e (S3).
 set -u

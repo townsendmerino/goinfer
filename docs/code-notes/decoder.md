@@ -128,7 +128,7 @@ reused prompt (resident_reuse.go) can hand the batched path a suffix of any leng
 Without it residentPrefillSeed offers only suffixes of 8 tokens or more, so a repeated prompt (a 1-token suffix) ran
 its last position through decode while the cold run had computed it in the batched pass, which is not bit-identical
 to decode: on Metal the warm reply differed from the cold one some tens of tokens in (2026-10-04, found as the
-"MC3 pass identity defect" in docs/tasks/task-metal-audit-2026-10.md's A-P02 result).
+"MC3 pass identity defect" in docs/completed/task-metal-audit-2026-10.md's A-P02 result).
 ```
 
 ## ResidentPrefillKernelFloor
@@ -1681,7 +1681,7 @@ Moved from `decoder/model.go` (the comment above `Options.ResidentPrefillChunk`)
 ```text
 ResidentPrefillChunk, under MC3 (EnableResidentConcurrency), prefills a long prompt suffix in chunks of this many
 tokens while other generations are decoding, one decode step between chunks, instead of in one pass that stalls
-them all for the whole prompt (docs/tasks/task-concurrency-2026-09.md, chunked prefill). 0 = off: whole
+them all for the whole prompt (docs/tasks/parked/task-concurrency-2026-09.md, chunked prefill). 0 = off: whole
 prefill, the behaviour before it. Sound only where the resident's batched prefill is chunk-invariant (Metal's is:
 TestMC5_prefillChunkInvariance). serve defaults it to 512, the graded value (the decoders' longest stall 0.23x, wall
 1.045x, replies identical; a 256 candidate missed its wall gate — docs/measurements/chunked-prefill-2026-09-27.md).
@@ -1761,7 +1761,7 @@ each backend's fast-prefill switch alongside its env var. It used to be applied 
 os.Setenv here (M-26), which is process-global and never undone: every model loaded later
 in the same process inherited exact prefill whether it asked for it or not. Serve no longer
 sets the env vars either: its flags travel as this field and Options.Knobs (phase 5,
-docs/tasks/task-env-config-2026-09.md).
+docs/completed/task-env-config-2026-09.md).
 Whether the CALLER chose the resident context, read before either fit guard below can auto-pin one into
 opts.ResidentContext (R13) — that pin is a one-slot ceiling, not a choice (Model.ResidentContextPinned). Stamped
 on the Model after modelFromOptions and before withResidency, where a backend reads it.
@@ -2559,7 +2559,7 @@ Moved from `decoder/model.go` (the comment above `ResidentKVSlots` in `Options`)
 ```text
 ResidentKVSlots asks a GPU-resident backend for this many independent KV caches ("slots"), so several
 interleaved conversations each keep their own prefix resident instead of evicting one another's
-(docs/tasks/task-concurrency-2026-09.md MC1). Still one generation at a time: a slot is bound per generation,
+(docs/tasks/parked/task-concurrency-2026-09.md MC1). Still one generation at a time: a slot is bound per generation,
 never batched. 0 or 1 = one slot (the behaviour before MC1). A backend clamps it to what its fit guard allows
 and says so; a backend that does not implement ResidentKVSlotter, and every family with recurrent state, keep
 one slot. serve sets it from -kv-sessions.
@@ -6590,7 +6590,7 @@ Moved from `decoder/forward_qwen35_n.go` (the comment above `qwen35BatchN`) on 2
 
 ```text
 The batched Qwen3.5 forward: runLayersQwen35FromEmbed over K rows at once, for PromptHidden (Route B's hidden state,
-docs/tasks/task-constrained-confidence.md D6b). The per-token forward reads every weight once per token, which on a
+docs/tasks/parked/task-constrained-confidence.md D6b). The per-token forward reads every weight once per token, which on a
 CPU is decode speed and memory-bandwidth bound: JEV-9B's 150-item D6b sample measured ~0.2 s/token at int4 and ~1.2
 s/token at f32. Here every projection is one M=K matmul, so a weight is read once per prompt:
 
@@ -6627,7 +6627,7 @@ Moved from `decoder/prefill_ref_cache_testhook.go` (the comment above `prefillRe
 
 ```text
 A content-keyed cache for the prefill fidelity gates' CPU f32-activation references (TE6(a) and TE8 of
-docs/tasks/task-test-efficiency-2026-09.md). TestPrefillGateReference is the longest single run in the census (up to
+docs/completed/task-test-efficiency-2026-09.md). TestPrefillGateReference is the longest single run in the census (up to
 168 min), all-or-nothing, and its output's staleness was judged by hand — a stale set had to be renamed aside once,
 and set A's 2026-09-05 files were scored against logits for different text (prefill-ref-identity-2026-09-26.md).
 
@@ -7803,7 +7803,7 @@ looks the delta up by. Two silent-no-op classes this closes:
   - qwen35/mla load attention via loadQwen35Attn/loadDeepseekAttn, OUTSIDE loadProj, so merge
     never touches their attention deltas — reject rather than half-merge.
 
-qwen35 (D3, docs/tasks/task-constrained-confidence.md) loads its attention and DeltaNet
+qwen35 (D3, docs/tasks/parked/task-constrained-confidence.md) loads its attention and DeltaNet
 projections through loadQwen35Attn, which now merges. Its tensor names live in that function
 across four layouts (plain in_proj_qkv, qwen3_next's fused in_proj_qkvz, Olmo Hybrid's separate
 q/k/v, Olmo's plain full attention), so a list here would be a second copy of them that could
@@ -9816,7 +9816,7 @@ pricing the planning-time call against the candidate can only over-estimate (saf
 Moved from `decoder/mc3_batch.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
-MC3 (docs/tasks/task-concurrency-2026-09.md): several generations decoding on ONE resident at once, each on its own
+MC3 (docs/tasks/parked/task-concurrency-2026-09.md): several generations decoding on ONE resident at once, each on its own
 resident KV slot, their decode tokens joined into shared steps.
 
 A resident is one command queue with one set of scratch buffers, so everything that touches it — a prefill, a
@@ -10479,7 +10479,7 @@ build failure.
 Moved from `decoder/spec_ngram.go` (the comment in the body of `genNgramInto`) on 2026-10-09.
 
 ```text
-MC4 candidate (docs/tasks/task-concurrency-2026-09.md): "speculate when alone, batch under load".
+MC4 candidate (docs/tasks/parked/task-concurrency-2026-09.md): "speculate when alone, batch under load".
 adaptive claims the resident PER ROUND (below) instead of once for the whole generation, so MC3's
 batcher can admit other generations between rounds. Scoped to greedy: a sampled generation takes
 today's always-exclusive path unchanged — the batch-yield round needs a device-side greedy verify
@@ -10491,7 +10491,7 @@ via the batcher, which does not exist for a sampled draw here.
 Moved from `decoder/spec_ngram.go` (the comment in the body of `genNgramInto`) on 2026-10-09.
 
 ```text
-MC4 "spec inside a batch" premise measurement (docs/tasks/task-concurrency-2026-09.md): forces
+MC4 "spec inside a batch" premise measurement (docs/tasks/parked/task-concurrency-2026-09.md): forces
 this generation to wait for exclusive access rather than ever yielding, reproducing today's plain
 -spec ngram behavior (one at a time) even with -spec-adaptive on. Not a shipped policy — see the
 knob's own comment (decoder/knobs.go).
@@ -10736,7 +10736,7 @@ Moved from `decoder/embed.go` (the comment above `Model.PromptHidden`) on 2026-1
 
 ```text
 PromptHidden returns the final-norm hidden state at the last position of prompt: HF's output_hidden_states[-1][:, -1], which is
-last_hidden_state[:, -1]. It is the input a Route B decision head reads (D2, docs/tasks/task-constrained-confidence.md): JEV's
+last_hidden_state[:, -1]. It is the input a Route B decision head reads (D2, docs/tasks/parked/task-constrained-confidence.md): JEV's
 readout takes the last prompt token's final-norm hidden state through a linear head.
 
 Unlike HiddenLast it serves every family, those with their own layer loop included (Qwen3.5, the JEV models' family): it runs
@@ -10954,7 +10954,7 @@ prefetched the unread canonical copy too — a fixed ~2x I/O tax per miss.
 Moved from `decoder/cpu_batch.go` (the comment above `cpu_batch`) on 2026-10-09.
 
 ```text
-MC3c step 2 (docs/tasks/task-concurrency-2026-09.md): several CPU generations of one model decoding at once join
+MC3c step 2 (docs/tasks/parked/task-concurrency-2026-09.md): several CPU generations of one model decoding at once join
 their decode tokens into one batched forward (decodeMultiStep) instead of running N independent forwards. The
 trigger measured it on nobara's 7B: batched B = 4 is 2.25-2.41x J8's 4 independent workers, which barely scale
 there (docs/measurements/concurrency-mc2-2026-09-26.md, "Linux 7B cell").
@@ -10984,7 +10984,7 @@ Moved from `decoder/cpu_batch.go` (the comment above `cpuBatchFusedW4A8`) on 202
 
 ```text
 cpuBatchFusedW4A8 lets decodeMultiStep run an int4 layer's q‖k‖v, and its gate‖up, each as ONE batched W4A8 call
-over the B rows (MC3c step 2 S1, docs/tasks/task-concurrency-2026-09.md) instead of one matmul per projection. The
+over the B rows (MC3c step 2 S1, docs/tasks/parked/task-concurrency-2026-09.md) instead of one matmul per projection. The
 kernel (linalg.MatmulBTW4A8Batch) is numerically identical to calling MatmulBTW4A8Into once per op, so this changes
 only how many fork/joins a step pays: the probe put the small projections (q/o, k/v) at 1.6-3.0x one row's cost at
 M = 4, which is fork/join and compute, not bandwidth. A package variable, not an environment read: the S1
@@ -11012,7 +11012,7 @@ Moved from `decoder/routercapture.go` (the comment above `routerCapture`) on 202
 
 ```text
 routerCapture is a test seam (default off; tests set it directly — its GOINFER_ROUTER_CAPTURE env
-read was retired 2026-09-24, docs/tasks/task-env-config-2026-09.md phase 6): when on, gemma4MoEFFN appends each MoE-layer call's selected top-k expert
+read was retired 2026-09-24, docs/completed/task-env-config-2026-09.md phase 6): when on, gemma4MoEFFN appends each MoE-layer call's selected top-k expert
 indices to routerCaptureBuf, in call order (token-outer, layer-inner — one entry per
 layer per token). It is OBSERVE-ONLY: it copies out `idx` and changes no compute, so with
 it off the forward is byte-identical.
@@ -11377,7 +11377,7 @@ each); a fixture Metal re-quantizes to int4 is not compared (residentPrecision).
 Moved from `decoder/prefix_share.go` (the comment above `prefix_share`) on 2026-10-09.
 
 ```text
-D8 (docs/tasks/task-constrained-confidence.md): shared state, many questions. A decision request asks several questions about one state, and on the
+D8 (docs/tasks/parked/task-constrained-confidence.md): shared state, many questions. A decision request asks several questions about one state, and on the
 hybrid Qwen3.5 family each question used to prefill the whole prompt again (decisions-d7-2026-09-28.md: five questions cost exactly five times one).
 The state is the same in every question's prompt, so its prefill can be done once and its CACHE (the KV rows of the attention layers and the Gated
 DeltaNet's recurrent state, which has no per-position history and so cannot be rewound, only copied) resumed once per question.
@@ -11452,7 +11452,7 @@ Moved from `decoder/prompt_hidden_all.go` (the comment above `PromptHiddenAll`) 
 ```text
 PromptHiddenAll returns the final-norm hidden state at EVERY position of prompt: HF's last_hidden_state[0, :] (which is
 output_hidden_states[-1]), K rows of HiddenDim. It is what a head that reads all positions consumes (D11 of
-docs/tasks/task-constrained-confidence.md, Route C: Clef's joint schema head, docs/measurements/decisions-d10-clef-2026-10-02.md); D2's
+docs/tasks/parked/task-constrained-confidence.md, Route C: Clef's joint schema head, docs/measurements/decisions-d10-clef-2026-10-02.md); D2's
 PromptHidden returns only the last row.
 
 A resident backend that implements ResidentResidualAll answers first (CUDA does; D11's follow-up): the whole prompt runs on the device, the residual stream of
@@ -11798,7 +11798,7 @@ Moved from `decoder/fakequant.go` (a comment block rewritten to the rule; it car
 
 ```text
 fakeQuantPerRow (set by the §7 Phase 0b test; its GOINFER_FAKEQUANT_PERROW env read was retired
-2026-09-24 — §7's per-row fork is decided, docs/tasks/task-env-config-2026-09.md phase 6) forces the group to the FULL row — one scale per output row, the §7 per-row/IMMA granularity — so
+2026-09-24 — §7's per-row fork is decided, docs/completed/task-env-config-2026-09.md phase 6) forces the group to the FULL row — one scale per output row, the §7 per-row/IMMA granularity — so
 the probe can measure per-row vs per-group forward quality (Phase 0b) without a new kernel. Default
 off ⇒ the shipped 32-elem grouping, so the fakequant-off invariant is untouched.
 ```
@@ -12151,7 +12151,7 @@ resident-vs-CPU gap that had been read as a kernel bug. Observe-only: unset, not
 Moved from `decoder/knobs.go` (the comment above `knobs.go.header`) on 2026-10-09.
 
 ```text
-Per-model operator knobs (docs/tasks/task-env-config-2026-09.md, phase 2a). These were read from the
+Per-model operator knobs (docs/completed/task-env-config-2026-09.md, phase 2a). These were read from the
 process environment on EVERY forward or generation, so changing the environment altered a model that was
 already loaded, and two models in one process could not differ. Each model now snapshots them ONCE, at
 Load (Options.Knobs overrides the environment per model), and every reader consults the model's snapshot.
@@ -12182,7 +12182,7 @@ Phase 6: a rollback switch that had been filed as a diagnostic.
 Moved from `decoder/knobs.go` (the comment above `knobSpecAdaptiveNeverYield`) on 2026-10-09.
 
 ```text
-MC4 "spec inside a batch" premise (docs/tasks/task-concurrency-2026-09.md): does the just-shipped
+MC4 "spec inside a batch" premise (docs/tasks/parked/task-concurrency-2026-09.md): does the just-shipped
 switch's per-round yield ever cost more than it buys on copy-heavy traffic, where staying exclusive
 beats joining MC3's batch? Set to force genNgramInto's adaptive round loop to never yield — the
 measurement this bisects, not a shipped policy.
@@ -14504,7 +14504,7 @@ Moved from `decoder/forced_fallbacks_test.go` (the comment above `forcedFallback
 ```text
 Forced-fallback floors. Under a forced narrower kernel the numerics are a different realization of the same arithmetic, so the goldens that pin ONE path's token sequence or sample values
 (recorded on the default path; the int4 goldens are arm64-baked) cannot be compared exactly. These replace them under the tags with a closeness bound, measured 2026-10-04 on a Ryzen 7 3700X
-(docs/tasks/task-hardware-coverage-2026-10.md, H1.3), chosen between the measured healthy value and what a real defect does, and each shown red by a mutation.
+(docs/completed/task-hardware-coverage-2026-10.md, H1.3), chosen between the measured healthy value and what a real defect does, and each shown red by a mutation.
 ```
 
 ## forcedInt4CosFloor
@@ -17894,7 +17894,7 @@ announced eta=2h20m for work that took six minutes. The recent window has to dom
 Moved from `decoder/prompt_hidden_all_test.go` (the comment above `hiddenAllGolden`) on 2026-10-09.
 
 ```text
-D11's gate (docs/tasks/task-constrained-confidence.md, Route C): the final-norm hidden state at EVERY prompt position must match HF's
+D11's gate (docs/tasks/parked/task-constrained-confidence.md, Route C): the final-norm hidden state at EVERY prompt position must match HF's
 last_hidden_state[0, :] per position, cosine >= 0.9999 and relative L2 <= 1e-5, in f32, on the tiny Qwen3.5 checkpoints (dense, MoE, and the
 derived qwen3_5-tiny-normw whose random final-norm weight is what lets a missing, doubled or mis-weighted final norm fail: cosine alone cannot see
 a uniform scale, and the other tiny checkpoints' final-norm weights are all 0, a scale of exactly 1 under the add-one RMSNorm).

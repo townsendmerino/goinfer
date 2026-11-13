@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Night job: T1.9b of docs/tasks/task-metal-audit-2026-10.md, re-run alone, first in the night (owner, 2026-10-02).
+# Night job: T1.9b of docs/completed/task-metal-audit-2026-10.md, re-run alone, first in the night (owner, 2026-10-02).
 # On 2026-10-01 it ran 30 s after two other M26 processes and the resident guard declined the 64-slot build on
 # live-available memory (7.72 GB against 6.65 GB), so it never reached Metal. The rule is the M26 table's T1.9b row,
 # unchanged; the binary is the one that night ran (f56b40ec, which still has the scale cache), so R11(c) is tested on
 # the code the audit read. The guard is not bypassed: if it declines again, that is recorded and the run is ungraded.
 #
 #   python3 scripts/night.py add metal-audit-t19b --est 10 --priority 10 --by "Claude, Metal audit T1.9b re-run" \
-#     --doc docs/tasks/task-metal-audit-2026-10.md -- bash ~/goinfer-bench/metal-audit-2026-10/run-m26-t19b.sh
+#     --doc docs/completed/task-metal-audit-2026-10.md -- bash ~/goinfer-bench/metal-audit-2026-10/run-m26-t19b.sh
 # Logs: ~/goinfer-logs/metal-audit-2026-10/m26-t19b/.
 set -uo pipefail
 REV=f56b40ec

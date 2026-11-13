@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job: E-P03's grade (docs/tasks/task-metal-audit-2026-10.md, "E-P03: built, pending its grade"), pre-registered
+# Night job: E-P03's grade (docs/completed/task-metal-audit-2026-10.md, "E-P03: built, pending its grade"), pre-registered
 # there on 2026-10-02 before any graded run. TestEP03StepAB on the 7B and the 1.5B: the MC3 batched step at the FB
 # calibrateFB chose against FB = 2 everywhere, in one process per model, B = 4 and 8 at depths 128 and 2048, 9 reps.
 # The graded line is "E-P03 METRIC fb2/calibrated B=4 depth 128" on the 7B; the 1.5B is the A/A control.
@@ -8,7 +8,7 @@
 #   (cd ~/tmcode/goinfer-metal-audit && go test -c -o ~/goinfer-bench/metal-audit-2026-10/metal-<REV>.test ./metal/)
 # Queued with:
 #   python3 scripts/night.py add metal-audit-ep03 --est 35 --by "Claude (Mac session), Metal audit E-P03 grade" \
-#     --doc docs/tasks/task-metal-audit-2026-10.md -- bash ~/goinfer-bench/metal-audit-2026-10/run-ep03-grade.sh
+#     --doc docs/completed/task-metal-audit-2026-10.md -- bash ~/goinfer-bench/metal-audit-2026-10/run-ep03-grade.sh
 # The runner holds the timing lock. Logs: ~/goinfer-logs/metal-audit-2026-10/ep03/; METRIC lines in results.txt.
 set -uo pipefail
 REV=d9f2dba3

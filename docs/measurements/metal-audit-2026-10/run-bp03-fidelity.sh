@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job: B-P03's fidelity gate (docs/tasks/task-metal-audit-2026-10.md, "B-P03: fidelity gate at the 1024 floor"),
+# Night job: B-P03's fidelity gate (docs/completed/task-metal-audit-2026-10.md, "B-P03: fidelity gate at the 1024 floor"),
 # pre-registered there on 2026-10-02 before any graded run, under the owner's 2026-09-25 amended bar for
 # reordering-only decode-attention kernels (docs/measurements/metal-decode-attn-fidelity-setb-PREREGISTERED.md).
 #   P1: TestR17KernelAccuracy, arms bp03 (exact vs production's block kernel), set B, 10 prompts, depths 1024/1280/1535,
@@ -12,7 +12,7 @@
 #     -o ~/goinfer-bench/metal-audit-2026-10/metal-tagged-<REV>.test ./metal/)
 # Queued with:
 #   python3 scripts/night.py add metal-audit-bp03 --est 30 --by "Claude, Metal audit B-P03 fidelity" \
-#     --doc docs/tasks/task-metal-audit-2026-10.md -- bash ~/goinfer-bench/metal-audit-2026-10/run-bp03-fidelity.sh
+#     --doc docs/completed/task-metal-audit-2026-10.md -- bash ~/goinfer-bench/metal-audit-2026-10/run-bp03-fidelity.sh
 # Logs: ~/goinfer-logs/metal-audit-2026-10/bp03/; the verdict lines in results.txt.
 set -uo pipefail
 REV=2c5cfe8f

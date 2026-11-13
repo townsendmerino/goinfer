@@ -139,11 +139,11 @@ func TestSpark25Real_fitGuardLongContext(t *testing.T) {
 	// Hand-computed expectation from the real config (28 layers, 21 sliding/7 full, kvDim =
 	// NumKVHeads*HeadDim = 2*256 = 512, f32 = 4 bytes/elem, ×2 for K and V):
 	//   7 full layers  × ctx(131072)              × 512 × 4 × 2 = 3,758,096,384 bytes
-	//   21 sliding layers × window(512, capped)   × 512 × 4 × 2 =    44,040,192 bytes
-	//   total ≈ 3.80 GB — vs the flat (pre-M-28) formula's 28 × ctx × 512 × 4 × 2 ≈ 15.03 GB, ~4x more.
-	const wantFixed = int64(7*ctx+21*512) * 512 * 4 * 2
+	//   21 sliding layers × 2 × window(512)       × 512 × 4 × 2 =    88,080,384 bytes (an f32 ring past its window and its mirror)
+	//   total ≈ 3.85 GB — vs the flat (pre-M-28) formula's 28 × ctx × 512 × 4 × 2 ≈ 15.03 GB, ~4x more.
+	const wantFixed = int64(7*ctx+21*2*512) * 512 * 4 * 2
 	if fixed != wantFixed {
-		t.Errorf("estimateKVBytes(ctx=%d) = %d, want %d (hand-computed: 7 full layers uncapped, 21 sliding capped at window %d)",
+		t.Errorf("estimateKVBytes(ctx=%d) = %d, want %d (hand-computed: 7 full layers uncapped, 21 sliding rings of twice window %d)",
 			ctx, fixed, wantFixed, arch.SlidingWindow)
 	}
 	if fixed <= 0 || fixed >= flat {

@@ -45,7 +45,7 @@ func mlaPairs(ref, got *mlaWeights) []struct {
 	}{{"q_a", ref.qAProj, &got.qAQ}, {"q_b", ref.qBProj, &got.qBQ}, {"q", ref.qProj, &got.qQ}, {"kv_a", ref.kvAProj, &got.kvAQ}, {"o", ref.oProj, &got.oQ}}
 }
 
-// TestMEM11_mlaInt8Holding is I8M-G1 and I8M-G2's host half (docs/tasks/task-memory-campaign-2026-10.md, "MEM11-int8 gates"): on
+// TestMEM11_mlaInt8Holding is I8M-G1 and I8M-G2's host half (docs/completed/task-memory-campaign-2026-10.md, "MEM11-int8 gates"): on
 // deepseek-tiny, a quantized load holds q (or the q-LoRA pair), kv-A and o as int8 and kv-B f32, an f32 load holds all six f32 with
 // logits unchanged from main's, ResidentWeightBytes falls by exactly the difference, and the int8 codes and scales, and a bundle
 // round trip's, equal linalg.QuantizeInt8 of the f32 arm's projections.

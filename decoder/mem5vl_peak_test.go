@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// TestMEM5VL_peakTier1 is V1-G4 and V3-G4 (docs/tasks/task-memory-campaign-2026-10.md, "MEM5-VL" gates): a real checkpoint's image
+// TestMEM5VL_peakTier1 is V1-G4 and V3-G4 (docs/completed/task-memory-campaign-2026-10.md, "MEM5-VL" gates): a real checkpoint's image
 // prefill of about 8K tokens with a 1,024-row image, in one pass (main's shape: V1-G1 and V3-G1 show the passes are byte-equal) and
 // in prefillChunkRows passes. Two readings per arm: the live heap after a collection at every pass boundary (the registered one,
 // which sees a pass's working set only where the pass still holds it), and heap in use sampled every 20 ms without a collection

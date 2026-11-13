@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""te2b_variance.py: TE2(b) of docs/tasks/task-test-efficiency-2026-09.md. Where does the variance of a served cell's
+"""te2b_variance.py: TE2(b) of docs/completed/task-test-efficiency-2026-09.md. Where does the variance of a served cell's
 decode tok/s live: between server restarts, or inside one server lifetime?
 
 Read-only and stdlib-only. It reads every bench_peer-shaped JSON under docs/measurements (recursive) and prints tables.

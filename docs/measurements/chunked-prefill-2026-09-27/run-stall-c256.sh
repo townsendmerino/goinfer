@@ -1,5 +1,5 @@
 #!/bin/bash
-# Chunked-prefill stall grading (docs/tasks/task-concurrency-2026-09.md, registered in d8ae520a). Metal, qwen2.5-coder-1.5b
+# Chunked-prefill stall grading (docs/tasks/parked/task-concurrency-2026-09.md, registered in d8ae520a). Metal, qwen2.5-coder-1.5b
 # int4, serve defaults. old = serve-metal @ 731f4f4e (S3: whole prefill), new = @ d4293d41 (chunked while others decode).
 # stall cells: 3 decoders x 400 streamed tokens + 3 newcomers of ~2400 words; solo cells: the 3 newcomers alone.
 set -u
