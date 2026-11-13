@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S10q-c graded as registered (docs/tasks/task-multimodal-support-2026-10.md, "S10, Qwen3-VL MoE"); step (b')'s grader
+"""G-S10q-c graded as registered (docs/completed/task-multimodal-support-2026-10.md, "S10, Qwen3-VL MoE"); step (b')'s grader
 (g31b_grade.py) with this gate's models and bands. For each model (the Qwen3-VL-30B-A3B and the dense Qwen3-VL-2B sibling)
 and each arm (int8int8, int4): agreement = the fraction of positions where the arm's argmax equals Hugging Face float32's,
 KL(HF || arm), with a cluster bootstrap over the 8 prompts (10,000 resamples, seed 20261009, 95%).

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14c4's data (docs/tasks/task-multimodal-support-2026-10.md): the 73 clips of hf-internal-testing/librispeech_asr_dummy (LibriSpeech clean validation, CC BY 4.0) as 16 kHz mono 16-bit WAV
+"""G-S14c4's data (docs/completed/task-multimodal-support-2026-10.md): the 73 clips of hf-internal-testing/librispeech_asr_dummy (LibriSpeech clean validation, CC BY 4.0) as 16 kHz mono 16-bit WAV
 plus refs.json {id: transcript}, and provenance.json (tool versions, durations, word counts). Needs pyarrow and huggingface_hub (a data-only venv: ~/goinfer-bench/venv-data).
 Run: ~/goinfer-bench/venv-data/bin/python scripts/s14c4_data.py <out dir>"""
 import json, os, subprocess, sys, wave

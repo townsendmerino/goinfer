@@ -1,4 +1,4 @@
-// kvtype.cuh — the element type of the KV cache, per kernel module (docs/tasks/task-cuda-f16-kv-2026-10.md).
+// kvtype.cuh — the element type of the KV cache, per kernel module (docs/completed/task-cuda-f16-kv-2026-10.md).
 //
 // A kernel that reads or writes the resident K/V cache declares its cache pointers as `KV_T` and touches them only through the
 // macros below. Compiled as it always was (no -DKV_F16), KV_T is `float` and every macro expands to the exact expression the kernel

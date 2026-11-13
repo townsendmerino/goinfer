@@ -565,7 +565,7 @@ it priced. The **`fit` subcommand** (`goinfer-chat fit <model>`) loads the model
 placement for every backend compiled into the binary. `-measure` also times decode on the best one.
 
 **Each memory quantity is computed in one place**, so the planner and the guards cannot disagree
-([tasks/task-memory-accounting-2026-09.md](tasks/task-memory-accounting-2026-09.md)):
+([tasks/task-memory-accounting-2026-09.md](completed/task-memory-accounting-2026-09.md)):
 
 - `Model.ResidentKVBytes(backend, ctx, f16, i8)`: the KV cache as that backend allocates it (the
   table above). Pinned against the real allocations on CUDA and Metal.

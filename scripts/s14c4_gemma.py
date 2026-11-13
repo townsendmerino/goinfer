@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14c4's record-only arm D (docs/tasks/task-multimodal-support-2026-10.md): Gemma 4 E4B asked to transcribe the speech and reply with only the transcription on each clip through a running serve (input_audio), greedy, 160 tokens at most.
+"""G-S14c4's record-only arm D (docs/completed/task-multimodal-support-2026-10.md): Gemma 4 E4B asked to transcribe the speech and reply with only the transcription on each clip through a running serve (input_audio), greedy, 160 tokens at most.
 Writes {id: reply} to <out>. Usage: s14c4_gemma.py <port> <wav dir> <out.json> [max clips]"""
 import base64, json, sys, time, urllib.request
 port, data, out = sys.argv[1:4]; lim = int(sys.argv[4]) if len(sys.argv) > 4 else 0

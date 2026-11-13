@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""HF + PEFT reference for LoRA merge-at-load on Qwen3.5 (D3, docs/tasks/task-constrained-confidence.md).
+"""HF + PEFT reference for LoRA merge-at-load on Qwen3.5 (D3, docs/tasks/parked/task-constrained-confidence.md).
 
     ~/.venv-peft/bin/python scripts/pin_qwen35_lora.py   ->  decoder/testdata/qwen3_5-tiny-lora/  (the adapter)
                                                            decoder/testdata/qwen35_lora_golden.json

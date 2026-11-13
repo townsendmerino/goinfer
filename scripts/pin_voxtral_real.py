@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14e3's reference (docs/tasks/task-multimodal-support-2026-10.md, "S14.4b ... G-S14e"): the REAL Voxtral Mini 3B (mistralai/Voxtral-Mini-3B-2507) in transformers 5.15.0 float32 on the CPU.
+"""G-S14e3's reference (docs/completed/task-multimodal-support-2026-10.md, "S14.4b ... G-S14e"): the REAL Voxtral Mini 3B (mistralai/Voxtral-Mini-3B-2507) in transformers 5.15.0 float32 on the CPU.
 
 The reference is built through the official path and PROVED real the way G-S14d2's was: the model loads with zero missing keys (a silently random-initialised reference is the Qwen3-ASR trap) and
 transcribes the LibriSpeech clip, asserted (normalised) equal to the corpus text. The request is the processor's own `apply_transcription_request` (mistral_common builds the ids).

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-off (CC0 step 2, docs/tasks/task-code-comments-2026-10.md): rewrite every `path:line` in a LIVE doc to `path:Name`.
+"""One-off (CC0 step 2, docs/completed/task-code-comments-2026-10.md): rewrite every `path:line` in a LIVE doc to `path:Name`.
 
     python3 scripts/migrate_citations_to_symbols.py [--dry-run] [--out DIR] [DOC ...]
 

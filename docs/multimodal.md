@@ -1,6 +1,6 @@
 # Multimodal (vision-language) for goinfer — plan
 
-**What runs where, today** (S8 of `docs/tasks/task-multimodal-support-2026-10.md`). Every tower / decoder cell below is
+**What runs where, today** (S8 of `docs/completed/task-multimodal-support-2026-10.md`). Every tower / decoder cell below is
 computed from the code that decides it, and a test fails when the table and the code disagree. The status block after
 it is the 2026-10-02 audit record, kept as written; where the two differ, this table is current.
 
@@ -54,7 +54,7 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 >   tower, on `--backend cuda|webgpu`). So the Qwen2.5-VL, Qwen3.5+, Gemma 4 and GLM-OCR towers are CPU towers on every backend, and **no generative family's tower runs
 >   on Metal** (`docs/audit-metal-2026-09-12.md` M-15 says why aikit's Metal SigLIP tower was not wired; the 2026-09-30 audit found that unchanged). **2026-10-06:** Metal does
 >   run a Gemma 4 vision tower and the `gemma4_audio` tower now, goinfer's own (`backend/metal/gemma4_vision.go`, `backend/metal/gemma4_audio.go`), but only for EmbeddingGemma 2's embeddings
->   (`docs/tasks/task-embeddinggemma2.md`, Phases VM and A). Wiring the vision one to Gemma 4's own image input is in "Finishing this doc" below.
+>   (`docs/completed/task-embeddinggemma2.md`, Phases VM and A). Wiring the vision one to Gemma 4's own image input is in "Finishing this doc" below.
 > - **int8.** With `-vision-quant` unset, `--backend webgpu` makes Gemma 3's tower int8, because that is the only device tower it has (`towerInt8` in `internal/app/serveapp/main.go`). On `--backend cuda` the default is the float32 SigLIP tower
 >   (S4 addendum; the owner's decision, 2026-10-08: its reply equals the CPU float32 reference's and a new image costs 2.4 s of time to first token against the int8 tower's 4.6 s), at about 1.7 GiB of VRAM against 0.56, which on the 8 GB card is 2 resident KV slots
 >   at the 4096-position floor instead of 3. Before the plan is made, serve checks that the card can hold the decoder, one KV slot at the context floor and the float32 tower (an estimate from the checkpoint and the free VRAM, `resolveGemma3VisionQuant`); if it cannot, it says so and uses the int8 device tower, because a float32 reserve on a tight card would otherwise push the decoder itself to the CPU (measured on the 8 GB card with 5.4 GB free: 
@@ -96,9 +96,9 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 > regardless of which family.~~ **WRONG: only WebGPU needs cgo. The Linux release binary is `CGO_ENABLED=0` and carries the CUDA tower; it is the macOS and Windows binaries, and every family
 > but Gemma 3, that run the tower at CPU speed.** CPU tower cost is ~31.3 s/image (SigLIP, re-measured 2026-09-08, §A "Vision tower CPU prefill" in `docs/benchmarks.md` — flat vs. the
 > pre-measurement baseline, not a regression) *(still the recorded CPU figure)*. No audio in, no video, no image out. Nothing multimodal is in `serve check`, the fit guard, the recommendation
-> registry, or the cold-user protocol *(stale as written, read from code and not run: the fit guard prices safetensors towers since 2026-09-08, P9(b) below, and `serve check` has a vision row, `internal/guard/servecheck/check.go:Client.Vision`; the registry still has none; **the cold-user protocol does**, scenario F "Show it a screenshot", `docs/tasks/task-first-hour.md`, run 2026-10-05)*.
+> registry, or the cold-user protocol *(stale as written, read from code and not run: the fit guard prices safetensors towers since 2026-09-08, P9(b) below, and `serve check` has a vision row, `internal/guard/servecheck/check.go:Client.Vision`; the registry still has none; **the cold-user protocol does**, scenario F "Show it a screenshot", `docs/completed/task-first-hour.md`, run 2026-10-05)*.
 >
-> **Update 2026-10-02 (GLM-OCR, O3 of `docs/tasks/task-glm-ocr-2026-10.md`):** GLM-OCR reads images on the same OpenAI route: aikit's own tower (CPU, f32 by default, loaded on the first image)
+> **Update 2026-10-02 (GLM-OCR, O3 of `docs/completed/task-glm-ocr-2026-10.md`):** GLM-OCR reads images on the same OpenAI route: aikit's own tower (CPU, f32 by default, loaded on the first image)
 > feeds `GenerateQwenVL`, the CPU path is the default and the CUDA resident serves the decoder (pairwise rope kernels). Goinfer at f32 is token-identical to transformers on three rendered
 > documents (`docs/measurements/glm-ocr-o3-2026-10/`). O7 (2026-10-02) made the family list true; **the audit above (same day) re-checked the per-backend sentences** and they are replaced by the
 > table. (This note used to say the per-backend sentences "are NOT re-audited and are known to be stale".)
@@ -459,7 +459,7 @@ number is published without provenance.
   **Open, found 2026-10-06 (unmeasured for Gemma 4):** `vision.Gemma4Preprocess` resizes bilinearly, and
   `Gemma4ImageProcessor` resizes bicubic (`resample=3`, torchvision backend). On EmbeddingGemma 2, which shares the
   processor and the tower, that alone took image embeddings from cosine 1.000000000 (from HF's pixels) to
-  0.99924-0.99986 (`docs/tasks/task-embeddinggemma2.md`, Phase V). Gemma 4's own image input goes through the same
+  0.99924-0.99986 (`docs/completed/task-embeddinggemma2.md`, Phase V). Gemma 4's own image input goes through the same
   resizer, so it probably carries the same gap; a stage pin of the preprocessed pixels against HF would say.
   **EmbeddingGemma 2 now has the reference's resize** (`embeddinggemma2/preprocess.go`, default since 2026-10-06):
   torchvision's antialiased bicubic on uint8, bit-identical to it on the four gate images and twelve synthetic cases,
@@ -468,10 +468,10 @@ number is published without provenance.
   too** (`backend/metal/gemma4_vision.go`, 2026-10-06, from aikit's `Gemma4Encoder.Weights()` export), so far used only by
   EmbeddingGemma 2; Gemma 4's own image input could take it the same way.
   **Audio's tower is built (2026-10-06):** aikit `audio` runs `gemma4_audio` (the log-mel and the conformer) and
-  matches transformers on EmbeddingGemma 2 at 1.000000000 (`docs/tasks/task-embeddinggemma2.md`, Phase A). Gemma 4
+  matches transformers on EmbeddingGemma 2 at 1.000000000 (`docs/completed/task-embeddinggemma2.md`, Phase A). Gemma 4
   E2B/E4B declare the same `gemma4_audio` tower, but it has not been run against their checkpoints (their widths,
   e.g. the embedder's output, are unread); that, the decoder-side splice and the audio prompt layout are what is left. Video (Phase C in the roadmap above) remains untouched. **Audio had a second consumer queued:**
-  EmbeddingGemma 2's audio tower is `gemma4_audio` too, and its task (`docs/tasks/task-embeddinggemma2.md`, "The order
+  EmbeddingGemma 2's audio tower is `gemma4_audio` too, and its task (`docs/completed/task-embeddinggemma2.md`, "The order
   from here") does audio after its text-on-Metal and vision steps, as this phase's build rather than its own.
 
   **Phase B (serving integration) DONE, 2026-09-09 — CPU-only, E2B/E4B-class (causal) v1.** Wired
@@ -538,7 +538,7 @@ number is published without provenance.
   PLE at all**, so the safetensors refusal never fires for it; only E2B/E4B need PLE. Implementing
   safetensors PLE loading remains real, separate, undone work, and now GGUF's already-working PLE
   loader means it doesn't even block E2B validation — see Phase E below. **DONE 2026-10-06:** the
-  safetensors loader loads PLE (S1.1 of docs/tasks/task-multimodal-support-2026-10.md), gated
+  safetensors loader loads PLE (S1.1 of docs/completed/task-multimodal-support-2026-10.md), gated
   against HF on a tiny E-model fixture at every position.
 
   **What Phase B does NOT include**: an HTTP-level integration smoke test through `vision_serve.go`'s
@@ -927,7 +927,7 @@ number is published without provenance.
   or image placeholders; and request-time admission (`contextLengthError`/`clampMaxTokens`,
   `internal/app/serveapp/openai.go`) already ran on the fully placeholder-expanded prompt (`vi.ids`,
   `vision_serve.go`) before this pass touched anything — confirmed by reading the code, not
-  assumed. See `docs/tasks/task-first-hour.md`'s R2/guard section for the full writeup and
+  assumed. See `docs/completed/task-first-hour.md`'s R2/guard section for the full writeup and
   `decoder/fitguard_test.go`'s `TestFitEstimate_safetensorsAgreesWithResidentWeightBytes` /
   `TestFitCheckFor_pricesSafetensorsNotJustGGUF` for the gates.
   (c) `serve check` gains a vision row (a fixed small data-URI image, a question
@@ -951,9 +951,9 @@ number is published without provenance.
   weight byte moves if the repo no longer matches it). Box class S (CPU only, 16 GB RAM or less): `qwen3.5-0.8b`. Box class M (an 8 GB GPU, or
   16-32 GB Apple Silicon): `qwen3-vl-2b`. Box class L (24 GB GPU or 64 GB and up): none, because nothing at that size is validated, Apache-licensed
   and a single directory; `pull owner/repo:safetensors` works for anything else. Qwen2.5-VL-3B is deliberately not recommended: its `qwen-research`
-  license is non-commercial. Each line carries the tower's cost. Record: `docs/tasks/task-multimodal-support-2026-10.md`, "P9(d) done".
+  license is non-commercial. Each line carries the tower's cost. Record: `docs/completed/task-multimodal-support-2026-10.md`, "P9(d) done".
 - **P10 · Breadth on the small end.** LFM2.5-VL-3B (SigLIP2 on `lfm2`), Ministral 3's Pixtral tower
-  (done 2026-10-09: S10, G-S10m-a to d in `docs/tasks/task-multimodal-support-2026-10.md`), North Micro Vision 2.4B (dropped:
+  (done 2026-10-09: S10, G-S10m-a to d in `docs/completed/task-multimodal-support-2026-10.md`), North Micro Vision 2.4B (dropped:
   never identified).
   Each is a tower descriptor + projector on a decoder already at parity; do them in that order,
   after P6/P7 have made the tower path fast, and only with a real-checkpoint pin each. Multi-image
@@ -1000,7 +1000,7 @@ loop is the use case, and screenshots are what agents send.
 **Measurement.** Every phase re-measures per-image (and per-clip) time on both boxes with the
 current binary, paired against the previous phase, and retires the June figures explicitly — the
 171 s / 18.8 s numbers are struck from `benchmarks.md` at P6, not carried. A cold-user run
-(`docs/tasks/task-first-hour.md`) gains a scenario F — "show it a screenshot" — at P9.
+(`docs/completed/task-first-hour.md`) gains a scenario F — "show it a screenshot" — at P9.
 
 **Not in this program.** Image generation, speech output, video decoding, remote `image_url`
 fetching (still an SSRF primitive; still a flag with the `--allow-admin` posture if ever), and any
@@ -1184,7 +1184,7 @@ pattern; the serve/chat/constrain/tooling surface inherits automatically.
 
 ## What already exists to build on
 
-*(June 2026's survey, kept as the design record. Its `file:line` references were converted to declaration names on 2026-10-10 (CC0, `docs/tasks/task-code-comments-2026-10.md`);
+*(June 2026's survey, kept as the design record. Its `file:line` references were converted to declaration names on 2026-10-10 (CC0, `docs/completed/task-code-comments-2026-10.md`);
 before that, 2026-10-06 had found the line numbers for `decoder/weights.go:shardIndexFile` and `decoder/gguf_qwen35.go:ggufQwen35Config` no longer at what they described.)*
 
 - **VL config flattening** — `decoder/config.go:loadConfig` decodes `text_config` (the nested

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14b3's reference (docs/tasks/task-multimodal-support-2026-10.md, "G-S14b"): Qwen3-ASR-0.6B's audio encoder and projector in transformers 5.15.0, float32, on three clips.
+"""G-S14b3's reference (docs/completed/task-multimodal-support-2026-10.md, "G-S14b"): Qwen3-ASR-0.6B's audio encoder and projector in transformers 5.15.0, float32, on three clips.
 transformers 5.15.0 CANNOT read this checkpoint as shipped (it keeps the nested thinker_config as defaults, builds the 1.7B's dimensions and reports every weight MISSING, randomly initialised, with no error),
 so this converts it by a pure rename into a flat-config HF directory, loads that with zero missing and zero unexpected keys, and PROVES the conversion by transcribing the LibriSpeech clip.
 Writes <out>/hf (the converted directory), and per clip <out>/<name>.{feats,mask,tower,out}.f32 + <out>/meta.json.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S5e option (b)'s filter check (docs/tasks/task-multimodal-support-2026-10.md): scipy.signal.resample_poly (defaults:
+"""G-S5e option (b)'s filter check (docs/completed/task-multimodal-support-2026-10.md): scipy.signal.resample_poly (defaults:
 Kaiser beta 5.0, zero padding) of a deterministic signal from 44.1 kHz and from 48 kHz to 16 kHz, written to
 testdata/resample_poly_golden.json for multimodal's TestResample_matchesResamplePoly.
 Run from the repo root: python3 scripts/pin_resample_poly_golden.py"""

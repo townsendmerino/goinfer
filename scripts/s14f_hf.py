@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14f3's reference arm (docs/tasks/task-multimodal-support-2026-10.md, "G-S14f"): transformers 5.15.0 float32 Whisper, short-form greedy with the language detected, on every WAV in <data dir> (scripts/s14c4_data.py's);
+"""G-S14f3's reference arm (docs/completed/task-multimodal-support-2026-10.md, "G-S14f"): transformers 5.15.0 float32 Whisper, short-form greedy with the language detected, on every WAV in <data dir> (scripts/s14c4_data.py's);
 writes <out>.json {id: {"text": batch_decode(skip_special_tokens=True), "lang": the language token}}.
 Run: ~/g4venv/bin/python -I scripts/s14f_hf.py <whisper dir> <data dir> <out.json> [max clips]"""
 import json, sys, time, wave

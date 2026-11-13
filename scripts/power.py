@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """power.py: how many runs resolve a gate's bar, from the noise registry (TE3).
 
-Item TE3 of docs/tasks/task-test-efficiency-2026-09.md. A gate that cannot resolve its bar costs its full wall and
+Item TE3 of docs/completed/task-test-efficiency-2026-09.md. A gate that cannot resolve its bar costs its full wall and
 decides nothing, and until now that was found out after the run. This tool answers it before the run, from the A/A
 noise the records already hold (docs/measurements/noise-registry.json, explained in noise-registry.md beside it).
 Stdlib only; it reads the registry and runs and times nothing.

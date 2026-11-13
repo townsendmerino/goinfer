@@ -1,4 +1,4 @@
-// decode_fa.cu — CUDA flash-decode lane (docs/tasks/red-october.md R6 step 2). NOT bit-identical to the
+// decode_fa.cu — CUDA flash-decode lane (docs/completed/red-october.md R6 step 2). NOT bit-identical to the
 // shipped decode attention, opt-in (GOINFER_CUDA_FLASH_DECODE=S), and fidelity-gated by
 // docs/measurements/attn-decode-fa-fidelity-PREREGISTERED.md.
 //

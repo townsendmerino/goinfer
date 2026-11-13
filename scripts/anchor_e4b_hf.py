@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""HF float32 anchor for the Gemma 4 E4B G3 disagreement (docs/tasks/task-multimodal-support-2026-10.md, "S6 on nobara").
+"""HF float32 anchor for the Gemma 4 E4B G3 disagreement (docs/completed/task-multimodal-support-2026-10.md, "S6 on nobara").
 
 Reads the dump written by cuda's TestGemma4EModel_realE4BAnchorDump (the CPU's greedy sequence on each of G3's prompts, with goinfer's CPU and CUDA top-8 at every position), teacher-forces the SAME ids through
 transformers in float32, and at every position where goinfer's CPU and CUDA argmax differ says which of them HF sides with. Also prints each arm's overall argmax agreement with HF.

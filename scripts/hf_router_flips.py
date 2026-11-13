@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""I1 of docs/tasks/task-mellum21-2026-10.md ("The third crater, investigated"): does HF's own top-8 router choice differ from the exact one?
+"""I1 of docs/completed/task-mellum21-2026-10.md ("The third crater, investigated"): does HF's own top-8 router choice differ from the exact one?
 
     ~/g4venv/bin/python scripts/hf_router_flips.py run <model-dir> <window_golden.json> <A3 layers_cos.json> <out-dir>
     ~/g4venv/bin/python scripts/hf_router_flips.py selftest

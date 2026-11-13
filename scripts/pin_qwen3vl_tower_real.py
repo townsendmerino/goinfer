@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S10b's real half (docs/tasks/task-multimodal-support-2026-10.md, S10): Qwen3-VL-2B's vision tower, every stage, from
+"""G-S10b's real half (docs/completed/task-multimodal-support-2026-10.md, S10): Qwen3-VL-2B's vision tower, every stage, from
 transformers on the four F2a images. HF's own processor makes the pixel values (so the tower is compared on identical
 inputs; preprocessing parity is a separate question), the tower runs in float32 with sdpa, and forward hooks record:
 the input to block 0 (the patch embed plus the interpolated position rows), each block's output, the main merger's rows

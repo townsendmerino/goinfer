@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Pin HF's tokenization of GLM-OCR strings as a goinfer tokenizer golden (O1,
-docs/tasks/task-glm-ocr-2026-10.md): tokenizer/testdata/glm_ocr_tokenizer_golden.json.
+docs/completed/task-glm-ocr-2026-10.md): tokenizer/testdata/glm_ocr_tokenizer_golden.json.
 
 Reads the REAL tokenizer (zai-org/GLM-OCR tokenizer.json, ~6.8 MB, not committed) from
 $GOINFER_MODELS_DIR/glm-ocr (default ~/models/glm-ocr) with transformers' AutoTokenizer and records

@@ -398,7 +398,7 @@ def night_profile(host, t, readings, floor):
     floor, (name, bytes), is required: the day profile the figure may not exceed (MM6 option C, Francis 2026-11-01 07:55 PST). A
     figure above it is priced at the floor, the recorded one kept as recorded_available_bytes; the floor can only lower the
     figure. An unreadable floor (bytes not an int) raises ValueError: the caller refuses instead (fit_check), never prices the
-    unfloored figure (docs/tasks/task-subsystems-2026-10.md §8, "MM6 option C")."""
+    unfloored figure (docs/completed/task-subsystems-2026-10.md §8, "MM6 option C")."""
     if not (isinstance(floor, tuple) and len(floor) == 2 and isinstance(floor[1], int)):
         raise ValueError(f"night_profile: the floor must be (name, bytes), got {floor!r}")
     last = last_night_begun(t)
@@ -1431,7 +1431,7 @@ class Server(Runner):
         SAMPLE_EVERY_MIN into the memory log, as a night reading the profile prices. tick calls it only on a pass that starts no
         job, and not while paused. The reading (cmd/hostmem, a `go run`) loads the box, so it holds the timing lock shared and is
         skipped while a timed run holds it, to be tried on a later pass. A reading while a job runs would also hold the job's own
-        memory (docs/tasks/task-subsystems-2026-10.md §8, "MM6 option B")."""
+        memory (docs/completed/task-subsystems-2026-10.md §8, "MM6 option B")."""
         if not in_night(t) or (self.last_sample is not None and t - self.last_sample < dt.timedelta(minutes=SAMPLE_EVERY_MIN)):
             return
         try:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Golden for tokenizer/tekken.go (G-S14e1 of docs/tasks/task-multimodal-support-2026-10.md): Mistral's Tekken tokenizer against mistral_common itself.
+"""Golden for tokenizer/tekken.go (G-S14e1 of docs/completed/task-multimodal-support-2026-10.md): Mistral's Tekken tokenizer against mistral_common itself.
 
     ~/goinfer-bench/s14e/venv/bin/python -W ignore -I scripts/pin_tekken.py ~/models/voxtral-mini-3b-2507/tekken.json testdata/tekken_golden.json.gz
 

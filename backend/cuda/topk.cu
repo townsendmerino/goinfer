@@ -1,4 +1,4 @@
-// topk.cu — device-side bounded top-K selection for sampled decode (R7, docs/tasks/red-october.md).
+// topk.cu — device-side bounded top-K selection for sampled decode (R7, docs/completed/red-october.md).
 //
 // A SEPARATE .cu on purpose, for the same reason argmax.cu and router_f32.cu are: adding a kernel to
 // glue.cu would regenerate every audited glue kernel's codegen. This file adds only topk.ptx.

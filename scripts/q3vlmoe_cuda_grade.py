@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S10q-e graded as registered (docs/tasks/task-multimodal-support-2026-10.md, "S10, Qwen3-VL MoE"): is the CUDA path
+"""G-S10q-e graded as registered (docs/completed/task-multimodal-support-2026-10.md, "S10, Qwen3-VL MoE"): is the CUDA path
 (paged experts, CPU prefill + UploadKV + resident decode) as close to Hugging Face float32 as the CPU int4 path is, on the
 same teacher-forced positions G-S10q-c graded?
 For every position: agreement = argmax equals HF's, and KL(HF || arm). The statistic is the PAIRED difference per position,
