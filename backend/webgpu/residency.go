@@ -261,47 +261,9 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 		return fail(err)
 	}
 
-	rd.rm.KvF16 = bs.kvF16                      // the runner picks the f16 attn/store kernels off this
-	rd.rm.KvI8 = bs.kvI8                        // …or the int8 kernels + scale binds
-	rd.rm.GatedGELU = m.GatedActResident() == 0 // FeatGatedGELU — decoder's ActKind 0=GELU-tanh (Gemma)
-	scale, addOne := m.AttnScale(), m.RMSAddOne()
-	if bs.mlaOK { // MLA scores over qk_head_dim, not HeadDim — use the resolved score scale
-		scale = float32(bs.mlaAttnScale)
-	}
-	rd.runnerFor = func(rm kernels.RunModel) (*DecodeRunner, error) {
-		return kernels.ContextNewDecodeRunner(bs.c, rm, bs.hidden, bs.nH, bs.nKV, bs.hd, bs.inter, 0, bs.eps, scale, addOne)
-	}
-	rd.newRunner = func() (*DecodeRunner, error) { return rd.runnerFor(rd.rm) }
-	rd.mropeAxis = m.MRopeAxisResident
-	rd.prefillLast = func(xs [][]float32, startPos int, mrope [][3]int) ([]float32, error) {
-		mw, pp, ok := kernels.RunModelToPrefill(&rd.rm, bs.hd)
-		pp.MropeAxis = rd.mropeAxis
-		if !ok {
-			return nil, fmt.Errorf("gpu: PrefillLast declines — model uses a feature outside the plain dense pass (MoE/MLA/SSM/sliding-window/…)")
-		}
-		// q/k/v bias (Qwen2) on an int8 projection is admitted on Vulkan only: the fused-epilogue tiled GEMM
-		// (matmulTiledW8A8BiasKernelWGSL, see runModelToPrefill) is bit-exact there but still diverges on Metal past nKeys~15
-		// (cosine ~0.998, a real gap, not float noise). Do not widen this gate to another backend without a bit-exactness check
-		// on it, or a check against the real ship gate (docs/completed/task-prefill-gap.md §3.2);
-		// docs/code-notes/gpu.md#webgpuBackend.BuildResident.biasgate has the measurements. An int4 projection adds its bias in
-		// a separate step, as decode does, and is not behind this gate.
-		if pp.Int4() && !kernels.W4MultiVerified[bs.c.Backend()] {
-			return nil, fmt.Errorf("gpu: PrefillLast declines — the multi-row int4 kernels are not yet verified bit-exact on backend %q", bs.c.Backend())
-		}
-		if pp.Int8Bias(mw) && bs.c.Backend() != "vulkan" {
-			return nil, fmt.Errorf("gpu: PrefillLast declines — q/k/v bias on backend %q is not yet verified bit-exact (Vulkan only for now)", bs.c.Backend())
-		}
-		positions := make([]int, len(xs))
-		for i := range positions {
-			positions[i] = startPos + i
-		}
-		return kernels.ContextPrefillLastRows(bs.c, xs, mw, pp, mrope, bs.hidden, bs.nH, bs.nKV, bs.hd, bs.inter, positions, 0, bs.eps, scale, addOne)
-	}
-	runner, err := rd.newRunner()
-	if err != nil {
+	if err := bs.bindRunner(); err != nil {
 		return fail(err)
 	}
-	rd.runner = runner
 	rd.buildKVSlots(m, kvSlotsRequest(m, &rd.rm), avail0)
 	return rd, true, nil
 }
