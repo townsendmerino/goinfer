@@ -77,7 +77,8 @@ func TestForwardMRoPE_constantShiftInvariance(t *testing.T) {
 			if rf == nil {
 				t.Skip("model not resident-eligible on this build")
 			}
-			mrope, ok := rf.(decoder.ResidentMRoPE)
+			mrope := decoder.SubsystemsOf(rf).Decode
+			ok := mrope.MRoPEDecodeAvailable()
 			if !ok {
 				t.Fatal("metalResident does not satisfy decoder.ResidentMRoPE — interface wiring broken")
 			}
@@ -135,7 +136,8 @@ func TestForwardMRoPE_equalArgsMatchesForward(t *testing.T) {
 	if rf == nil {
 		t.Skip("model not resident-eligible on this build")
 	}
-	mrope, ok := rf.(decoder.ResidentMRoPE)
+	mrope := decoder.SubsystemsOf(rf).Decode
+	ok := mrope.MRoPEDecodeAvailable()
 	if !ok {
 		t.Fatal("metalResident does not satisfy decoder.ResidentMRoPE")
 	}

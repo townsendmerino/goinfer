@@ -153,58 +153,62 @@ func TestResidentSubsystems_UncomparableValueResidentDoesNotPanic(t *testing.T) 
 	}
 }
 
+// bannedMicroAssertions names the legacy resident capability micro-interfaces that callers no longer type-assert; they
+// reach a capability through ResidentSubsystems instead. The legacy interfaces themselves stay declared.
+var bannedMicroAssertions = map[string]bool{
+	"ResidentKVSlotter":             true,
+	"ResidentBatchStepper":          true,
+	"ResidentRaggedStepper":         true,
+	"ResidentMRoPE":                 true,
+	"ResidentGreedy":                true,
+	"ResidentGreedyChain":           true,
+	"ResidentSampleChain":           true,
+	"ResidentTopK":                  true,
+	"ResidentSample":                true,
+	"ResidentPrefillKV":             true,
+	"Prefiller":                     true,
+	"ResidentHiddenLast":            true,
+	"ResidentResidualAll":           true,
+	"ResidentAdapter":               true,
+	"ResidentImagePrefill":          true,
+	"ResidentImageBlocksPrefill":    true,
+	"ResidentExpertCache":           true,
+	"ResidentSpanPrefill":           true,
+	"ResidentHybridMRoPEPrefill":    true,
+	"ResidentMRoPEPrefill":          true,
+	"ResidentMRoPEDeepstackPrefill": true,
+	"PrefillPathReporter":           true,
+	"PrefillTailExact":              true,
+	"VerifyPathReporter":            true,
+	"ResidentCapsReporter":          true,
+	"ResidentPrefillBlocks":         true,
+	"ResidentKVCopier":              true,
+	"ResidentKVSlotActivity":        true,
+	"ResidentKVPoolInfo":            true,
+	"ResidentReusableKVSlot":        true,
+	"ResidentKVUploadPass":          true,
+	"ResidentKVDemoter":             true,
+	"ResidentReusableKV":            true,
+	"ResidentKVSnapshotter":         true,
+	"ResidentPrefillMarked":         true,
+	"ResidentPrefillChunks":         true,
+	"ResidentPrefillSpanScratch":    true,
+	"ResidentPrefillRows":           true,
+	"ResidentRecurrentCheckpoint":   true,
+	"ResidentDrafterHost":           true,
+	"ResidentSeedArgmax":            true,
+	"ResidentRecurrentSpec":         true,
+	"StreamingDrafterHost":          true,
+	"ResidentCost":                  true,
+	"VerifyCostReporter":            true,
+	"DecodeVerifyDiverger":          true,
+	"ExactAttentionScoper":          true,
+}
+
 // TestResidentSubsystems_NoScatteredMicroAssertions enforces the subsystem boundary across package decoder: no production
 // file outside resident_subsystems.go may type-assert any of the 42 optional resident capability micro-interfaces.
 func TestResidentSubsystems_NoScatteredMicroAssertions(t *testing.T) {
-	banned := map[string]bool{
-		"ResidentKVSlotter":             true,
-		"ResidentBatchStepper":          true,
-		"ResidentRaggedStepper":         true,
-		"ResidentMRoPE":                 true,
-		"ResidentGreedy":                true,
-		"ResidentGreedyChain":           true,
-		"ResidentSampleChain":           true,
-		"ResidentTopK":                  true,
-		"ResidentSample":                true,
-		"ResidentPrefillKV":             true,
-		"Prefiller":                     true,
-		"ResidentHiddenLast":            true,
-		"ResidentResidualAll":           true,
-		"ResidentAdapter":               true,
-		"ResidentImagePrefill":          true,
-		"ResidentImageBlocksPrefill":    true,
-		"ResidentExpertCache":           true,
-		"ResidentSpanPrefill":           true,
-		"ResidentHybridMRoPEPrefill":    true,
-		"ResidentMRoPEPrefill":          true,
-		"ResidentMRoPEDeepstackPrefill": true,
-		"PrefillPathReporter":           true,
-		"PrefillTailExact":              true,
-		"VerifyPathReporter":            true,
-		"ResidentCapsReporter":          true,
-		"ResidentPrefillBlocks":         true,
-		"ResidentKVCopier":              true,
-		"ResidentKVSlotActivity":        true,
-		"ResidentKVPoolInfo":            true,
-		"ResidentReusableKVSlot":        true,
-		"ResidentKVUploadPass":          true,
-		"ResidentKVDemoter":             true,
-		"ResidentReusableKV":            true,
-		"ResidentKVSnapshotter":         true,
-		"ResidentPrefillMarked":         true,
-		"ResidentPrefillChunks":         true,
-		"ResidentPrefillSpanScratch":    true,
-		"ResidentPrefillRows":           true,
-		"ResidentRecurrentCheckpoint":   true,
-		"ResidentDrafterHost":           true,
-		"ResidentSeedArgmax":            true,
-		"ResidentRecurrentSpec":         true,
-		"StreamingDrafterHost":          true,
-		"ResidentCost":                  true,
-		"VerifyCostReporter":            true,
-		"DecodeVerifyDiverger":          true,
-		"ExactAttentionScoper":          true,
-	}
+	banned := bannedMicroAssertions
 
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -232,5 +236,71 @@ func TestResidentSubsystems_NoScatteredMicroAssertions(t *testing.T) {
 			}
 			return true
 		})
+	}
+}
+
+// backendTypeAssertAllowed lists the backend type assertions on a legacy micro-interface that are kept on purpose, and
+// why. The list may only shrink. Each entry is a TYPE-level check on a nil pointer to the backend's resident
+// ("does this resident type implement the hybrid image prefill, as the support table declares"). The subsystem
+// contracts cannot say that: ResidentPrefillSubsystem always has the method, and answering it through the contract
+// needs a built resident (cudaResident.HybridMRoPEPrefill reads mropePrefillReady), which a table test has not got.
+var backendTypeAssertAllowed = map[string]string{
+	"backend/cuda/support_table_test.go:ResidentHybridMRoPEPrefill":   "type-level support-table check on (*cudaResident)(nil)",
+	"backend/metal/support_table_test.go:ResidentHybridMRoPEPrefill":  "type-level support-table check on (*metalResident)(nil)",
+	"backend/webgpu/support_table_test.go:ResidentHybridMRoPEPrefill": "type-level support-table check on (*residentDecoder)(nil)",
+}
+
+// TestResidentSubsystems_NoScatteredMicroAssertionsInBackends extends the boundary to the backend modules: no file under
+// backend/cuda, backend/metal or backend/webgpu, production or test, may type-assert a legacy micro-interface as
+// .(decoder.X). The scan is syntactic, so build tags do not hide a file from it, and it reads the modules from the
+// workspace on disk, which the backend modules' own go.mod files need not be able to build.
+func TestResidentSubsystems_NoScatteredMicroAssertionsInBackends(t *testing.T) {
+	fset := token.NewFileSet()
+	used := map[string]bool{}
+	for _, mod := range []string{"cuda", "metal", "webgpu"} {
+		root := filepath.Join("..", "backend", mod)
+		err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() || !strings.HasSuffix(path, ".go") {
+				return nil
+			}
+			f, err := parser.ParseFile(fset, path, nil, 0)
+			if err != nil {
+				return err
+			}
+			rel := filepath.ToSlash(strings.TrimPrefix(path, "../"))
+			ast.Inspect(f, func(n ast.Node) bool {
+				ta, ok := n.(*ast.TypeAssertExpr)
+				if !ok || ta.Type == nil {
+					return true
+				}
+				sel, ok := ta.Type.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				if pkg, ok := sel.X.(*ast.Ident); !ok || pkg.Name != "decoder" || !bannedMicroAssertions[sel.Sel.Name] {
+					return true
+				}
+				key := rel + ":" + sel.Sel.Name
+				if _, ok := backendTypeAssertAllowed[key]; ok {
+					used[key] = true
+					return true
+				}
+				t.Errorf("%s:%d: type assertion .(decoder.%s) on a legacy micro-interface; use decoder.SubsystemsOf(r) and its subsystem contract",
+					rel, fset.Position(ta.Pos()).Line, sel.Sel.Name)
+				return true
+			})
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for key := range backendTypeAssertAllowed {
+		if !used[key] {
+			t.Errorf("backendTypeAssertAllowed has %s, but no such assertion exists: delete the entry", key)
+		}
 	}
 }

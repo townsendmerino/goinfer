@@ -40,7 +40,8 @@ func TestLoRAResidentParityCUDA(t *testing.T) {
 		t.Fatalf("llama-tiny did not go resident (BuildResident refused) — decode path %q; decline: %s",
 			mRes.DecodePath(), mRes.ResidentDecline())
 	}
-	ra, ok := rf.(decoder.ResidentAdapter)
+	ra := decoder.SubsystemsOf(rf).Runtime
+	ok := ra.AdapterAvailable()
 	if !ok {
 		t.Fatalf("cuda resident runner does not implement decoder.ResidentAdapter")
 	}

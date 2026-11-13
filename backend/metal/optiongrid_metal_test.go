@@ -414,9 +414,9 @@ func TestOptionPathMetal_prefillChunk(t *testing.T) {
 			opts := mgWith(func(o *decoder.Options) { o.ResidentKVSlots = 2; o.ResidentPrefillChunk = chunk })
 			m := mgLoad(t, opts)
 			mgResident(t, m)
-			cr, ok := m.ResidentForwardForTest().(decoder.ResidentCapsReporter)
-			if !ok || !cr.ResidentCaps().HasKernelFloor || cr.ResidentCaps().KernelFloor != 32 {
-				t.Fatalf("the resident does not report its 32-token kernel floor (ok=%v)", ok)
+			cr := decoder.SubsystemsOf(m.ResidentForwardForTest()).Runtime
+			if !cr.ResidentCaps().HasKernelFloor || cr.ResidentCaps().KernelFloor != 32 {
+				t.Fatalf("the resident does not report its 32-token kernel floor (caps %+v)", cr.ResidentCaps())
 			}
 			if n := m.EnableResidentConcurrency(2); n != 2 {
 				t.Fatalf("EnableResidentConcurrency(2) = %d", n)

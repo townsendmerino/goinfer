@@ -46,7 +46,8 @@ func TestPrefill_sharedQuantAB(t *testing.T) {
 	if !m.ResidentActive() {
 		t.Skip("model not GPU-resident")
 	}
-	pf, ok := m.ResidentForwardForTest().(decoder.Prefiller)
+	pf := decoder.SubsystemsOf(m.ResidentForwardForTest()).Prefill
+	ok := pf.PrefillAvailable()
 	if !ok {
 		t.Skip("resident forward does not implement Prefiller")
 	}

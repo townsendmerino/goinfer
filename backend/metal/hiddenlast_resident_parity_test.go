@@ -47,7 +47,8 @@ func TestHiddenLastResidentParityMetal(t *testing.T) {
 	if rf == nil {
 		t.Fatalf("gpt2 did not go resident (BuildResident refused) — decode path %q; decline: %s", mRes.DecodePath(), mRes.ResidentDecline())
 	}
-	rh, ok := rf.(decoder.ResidentHiddenLast)
+	rh := decoder.SubsystemsOf(rf).Prefill
+	ok := rh.HiddenLastAvailable()
 	if !ok {
 		t.Fatalf("metal resident runner does not implement decoder.ResidentHiddenLast")
 	}

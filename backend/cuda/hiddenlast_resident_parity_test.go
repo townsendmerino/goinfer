@@ -42,7 +42,8 @@ func TestHiddenLastResidentParityCUDA(t *testing.T) {
 	if rf == nil {
 		t.Fatalf("llama-tiny did not go CUDA-resident — decode path %q; decline: %s", mRes.DecodePath(), mRes.ResidentDecline())
 	}
-	rh, ok := rf.(decoder.ResidentHiddenLast)
+	rh := decoder.SubsystemsOf(rf).Prefill
+	ok := rh.HiddenLastAvailable()
 	if !ok {
 		t.Fatalf("cuda resident runner (%T) does not implement decoder.ResidentHiddenLast", rf)
 	}

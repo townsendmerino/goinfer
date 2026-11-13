@@ -77,7 +77,8 @@ func TestQwen25VLMRoPEPrefillResidentReal_gate(t *testing.T) {
 	if rf == nil {
 		t.Skip("qwen2_5_vl not resident-eligible on this build")
 	}
-	rmp, ok := rf.(decoder.ResidentMRoPEPrefill)
+	rmp := decoder.SubsystemsOf(rf).Prefill
+	ok := rmp.MRoPEPrefillAvailable()
 	if !ok {
 		t.Skip("rope_kv_mrope_batched did not load on this build — ResidentMRoPEPrefill unavailable")
 	}
