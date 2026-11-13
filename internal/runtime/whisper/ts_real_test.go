@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// G-S14g3 of docs/tasks/task-multimodal-support-2026-10.md: openai/whisper-small, goinfer float32 on the CPU, against transformers 5.15.0 float32 generate(return_timestamps=True, return_segments=True) on the
+// G-S14g3 of docs/completed/task-multimodal-support-2026-10.md: openai/whisper-small, goinfer float32 on the CPU, against transformers 5.15.0 float32 generate(return_timestamps=True, return_segments=True) on the
 // registered 5.9 s clip (short form) and a 70 s composite of LibriSpeech clips (long form). Bars: the same segments (count, tokens, start and end to 1e-9), the same sequence, the same decoded text, the same language.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_WHISPER_TSREF=<pin output dir> [GOINFER_WHISPER_DIR=<checkpoint>] go test -tags realckpt ./internal/runtime/whisper/ -run TestWhisperSmall_timestamps -v -timeout 30m

@@ -11,7 +11,7 @@ import (
 )
 
 // TestGemmaSublayer_MetalContribution is the Metal half of the cross-box per-sublayer trace
-// (docs/prompts/gemma-metal-signflip-bisect.md, Fork 1). The CUDA box built ForwardSubCapture and
+// (docs/completed/gemma-metal-signflip-bisect.md, Fork 1). The CUDA box built ForwardSubCapture and
 // gave f32-truth attention/MLP contributions for the two confirmed Metal sign-flips (1723, 227) at
 // the last layers. This produces MY Metal attention contribution (o-proj → post-attn-norm, before
 // the residual add) and MLP contribution (down → post-MLP-norm, before the add) at the same

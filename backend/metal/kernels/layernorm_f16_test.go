@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// G-B1 (docs/tasks/task-metal-pairwise-followups-2026-10.md, Part B): layernorm_f16 against a float64 reference, max abs diff
+// G-B1 (docs/completed/task-metal-pairwise-followups-2026-10.md, Part B): layernorm_f16 against a float64 reference, max abs diff
 // <= 4e-3 on inputs in [-2, 2] shifted by a non-zero mean, and rmsnorm_f16 (no centring) on the same input must miss by at
 // least 10x. layernorm_quant_f16's dequantized output must land within half a quantization step plus the f16 input rounding.
 func TestLayerNormF16_matchesReference(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// G-S8c (S8, docs/tasks/task-multimodal-support-2026-10.md): this build's live tower registrations equal WebGPU's row of
+// G-S8c (S8, docs/completed/task-multimodal-support-2026-10.md): this build's live tower registrations equal WebGPU's row of
 // multimodal's declaration (SigLIP only), and WebGPU implements no hybrid image prefill, as decoder declares.
 func TestSupportTable_webgpuDeclarations(t *testing.T) {
 	live, declared := multimodal.LiveTowers("webgpu"), multimodal.DeclaredTowers("webgpu")

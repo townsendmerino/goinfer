@@ -12,7 +12,7 @@ import (
 // softcapSerial is the reference: the exact serial loop applySoftcap replaced in cuda/resident.go
 // and cuda/prefill.go, kept verbatim so the gate compares against that loop and not a
 // re-derivation of it. This is the WebGPU twin of cuda/softcap_test.go: gpu/softcap.go is a
-// byte-identical port of cuda/softcap.go's applySoftcap (docs/tasks/task-gpu-paths-2026-09.md,
+// byte-identical port of cuda/softcap.go's applySoftcap (docs/completed/task-gpu-paths-2026-09.md,
 // G6), so this test is a direct port too.
 func softcapSerial(dst []float32, sc float32) {
 	for j, v := range dst {

@@ -100,12 +100,12 @@ current tracks.
 
 - **Already handled:**
   - EmbeddingGemma-2: shipped in v0.22.0.
-  - Flint: `tasks/task-flint-2026-10.md`, F0 in progress.
+  - Flint: `completed/task-flint-2026-10.md`, shipped (F0–F5).
   - Clef-flash: route C.
   - Nemotron 3.5 Bolt E4B: NVIDIA's post-training of Gemma 4 E4B (8B total, 4B effective, 64K context, Q4_K_M GGUF of
     6.18 GB). Expected to be a `gemma4` checkpoint swap; its Gate 0 checks the architecture, the license and the chat
     template's reasoning toggle and tool format. Its DFlash drafter is a candidate windowed target for SP0
-    (`tasks/task-forward-architecture-2026-10.md` §6a).
+    (`completed/task-forward-architecture-2026-10.md` §6a).
   - Bolt 74B-A9B: item 4 above, unchanged.
 - **Out:**
   - Nemotron 3.5 Super (120B-A12B, vision, ~76 GB in NVFP4): rule 2.
@@ -250,7 +250,7 @@ Field check for this doc covering open-weight releases from **2026-10-26 to 2026
   (factor 64, `llama_4_scaling_beta` 0). That is exactly what
   `decoder/arch_mistral3.go:ministral3Architecture` already expresses — a config alias, no new
   forward. Two blockers, neither architectural: the safetensors ship per-tensor static fp8
-  (`weight_block_size` null), which `decoder/fp8.go:fp8Reconstruct` does not read (it needs
+  (`weight_block_size` null), which `decoder/quant/fp8.go:FP8Reconstruct` does not read (it needs
   block-wise `weight_scale_inv`), so GGUF is the load route; and 128B dense fails rule 2 except at
   Q2_K–Q3_K (~45–55 GB) on the Linux box. Parked on hardware, not on code.
 - **Out by rule 2 (released this period, weights posted, far past both rigs):** Meta's Muse

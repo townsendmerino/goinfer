@@ -15,7 +15,7 @@ var streamDirSwapForTest bool
 
 // StreamTranscodeDir is StreamTranscodeGGUF for a safetensors model DIRECTORY: it writes a .giw weights body (the GINFW
 // serialization + trailing CRC) to out, loading ONE layer at a time and the embedding a row at a time, so peak memory is
-// about the globals plus one layer rather than the whole model (docs/tasks/task-prequant-dir-streaming-2026-10.md).
+// about the globals plus one layer rather than the whole model (docs/completed/task-prequant-dir-streaming-2026-10.md).
 // The bytes are those Load + SerializeWeightsToForTarget write for the same directory (G-DS1). Returns the bytes written.
 //
 // A family whose dedicated safetensors loader does not stream yet returns an error IsDirNoStream reports; the caller

@@ -24,13 +24,13 @@ const (
 // its figure fails as a regression; a count below it fails until the figure is lowered to match, so each fall is
 // recorded in the commit that made it.
 var decoderRatchet = map[string]struct{ Direct, Reach int }{
-	"cuda":  {Direct: 241, Reach: 307},
+	"cuda":  {Direct: 241, Reach: 306},
 	"metal": {Direct: 241, Reach: 328},
 	"gpu":   {Direct: 85, Reach: 95},
 }
 
 // decoderRatchetExempt names the test files decoderRatchet does not count: the backend layers of SB2's admission census
-// (docs/tasks/task-subsystems-2026-10.md, "SB2 step 2"). A census of the decoder's admission has to reach decoder, since it
+// (docs/completed/task-subsystems-2026-10.md, "SB2 step 2"). A census of the decoder's admission has to reach decoder, since it
 // loads models through it. The exemption is by exact path, so no other test can shelter under it.
 var decoderRatchetExempt = map[string]bool{
 	"backend/cuda/sb2_census_test.go":   true,
@@ -323,7 +323,7 @@ func TestServeappTests_decoderImportsOnlyFall(t *testing.T) {
 	sort.Strings(got)
 	switch n := len(got); {
 	case n > serveappDecoderTests:
-		t.Errorf("%d internal/app/serveapp test files import decoder, above the ratchet's %d: test the serving shell on the fake engine instead (docs/tasks/task-subsystems-2026-10.md, SB7). Files: %s",
+		t.Errorf("%d internal/app/serveapp test files import decoder, above the ratchet's %d: test the serving shell on the fake engine instead (docs/completed/task-subsystems-2026-10.md, SB7). Files: %s",
 			n, serveappDecoderTests, strings.Join(got, ", "))
 	case n < serveappDecoderTests:
 		t.Errorf("%d internal/app/serveapp test files import decoder, below the ratchet's %d: lower serveappDecoderTests to %d in this change", n, serveappDecoderTests, n)

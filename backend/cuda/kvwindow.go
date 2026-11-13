@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-// Windowed KV (docs/tasks/task-cuda-windowed-kv-2026-10.md). A sliding-window layer reads only the last `window` positions, so with
+// Windowed KV (docs/completed/task-cuda-windowed-kv-2026-10.md). A sliding-window layer reads only the last `window` positions, so with
 // Options.ResidentWindowedKV its K and V live in the window group's pool (kvpool.go), and a slot maps only the blocks that cover the
 // positions it still holds, [base, end): window+slack positions at most, against the context's worth a full layer maps. Every kernel
 // addresses K and V by absolute position through the slot's table, so nothing moves: when the next write would pass base+window+slack,
@@ -273,25 +273,20 @@ func (r *cudaResident) kvEnsureSlot(s, p0, n int) error {
 // that diverges up to rollback positions before the furthest position written can still reuse its prefix (ReusableKV), at whatever point of the
 // cycle the last decode stopped. capN must exceed window+rollback; the positions beyond that are how far a slot writes between compactions.
 func kvWindowNextBase(base, p0, n, window, capN, rollback int) (from, to int, err error) {
-	if p0 == 0 {
-		base = 0 // a fresh sequence: nothing before it is read
+	from, newBase, low, st := decoder.KVWindowNextBase(base, p0, n, window, capN, rollback)
+	switch st {
+	case decoder.KVWindowStepBelowBase:
+		return from, from, fmt.Errorf("cuda: windowed KV: position %d needs history from position %d but this slot holds only from %d (a reuse or rollback past the window slack; the caller must prefill from the reusable prefix, ReusableKV)", p0, low, from)
+	case decoder.KVWindowStepOverCap:
+		return from, from, fmt.Errorf("cuda: windowed KV: %d rows at position %d need %d positions, past the %d the layers hold (window %d + slack %d): write fewer rows per pass", n, p0, p0+n-newBase, capN, window, capN-window)
 	}
-	low := max(0, p0-(window-1)) // the oldest position the first row's attention reads
-	if low < base {
-		return base, base, fmt.Errorf("cuda: windowed KV: position %d needs history from position %d but this slot holds only from %d (a reuse or rollback past the window slack; the caller must prefill from the reusable prefix, ReusableKV)", p0, low, base)
-	}
-	if p0+n-base <= capN {
-		return base, base, nil
-	}
-	newBase := max(base, min(low, p0+n-(window-1)-rollback))
-	if p0+n-newBase > capN {
-		return base, base, fmt.Errorf("cuda: windowed KV: %d rows at position %d need %d positions, past the %d the layers hold (window %d + slack %d): write fewer rows per pass", n, p0, p0+n-newBase, capN, window, capN-window)
-	}
-	return base, newBase, nil
+	return from, newBase, nil
 }
 
 // kvWindowReusable reports whether a forward continuing at position prefix finds its window held by a slot whose base is base.
-func kvWindowReusable(base, prefix, window int) bool { return base == 0 || prefix-(window-1) >= base }
+func kvWindowReusable(base, prefix, window int) bool {
+	return decoder.KVWindowReusable(base, prefix, window)
+}
 
 // kvRoomFor reports whether n rows at position p0 can ever be written: the window floor of the first row, then the rows themselves, must fit the
 // positions a windowed layer holds. False only for a pass wider than the slack allows (a long image block, a wide verify); no state is read, so

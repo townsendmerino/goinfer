@@ -6,7 +6,7 @@ import (
 	"sync"
 )
 
-// Hardware information for `check --hardware` (docs/tasks/task-hardware-coverage-2026-10.md, H3). A backend registers a function that returns the device facts a bug report needs, one line each
+// Hardware information for `check --hardware` (docs/completed/task-hardware-coverage-2026-10.md, H3). A backend registers a function that returns the device facts a bug report needs, one line each
 // ("device: NVIDIA GeForce RTX 2070 SUPER", "compute capability: 7.5"), the same register-from-init shape as RegisterBackend and RegisterMemoryProbe so decoder stays free of the GPU packages.
 var (
 	hwInfoMu sync.RWMutex

@@ -30,12 +30,9 @@ type ExactAttentionScoper interface {
 // goroutine starts, so the scope is active from the moment the entry point returns.
 func (m *Model) enterExactAttention() func() {
 	if m == nil || m.resident == nil {
-		return func() {}
+		return noopLeave
 	}
-	if sc, ok := m.resident.(ExactAttentionScoper); ok {
-		return sc.EnterExactAttention()
-	}
-	return func() {}
+	return m.resRuntime().EnterExactAttention()
 }
 
 // SpecDecodeConflict reports why speculative decoding on this model would not be lossless, or nil when it would be.
@@ -75,11 +72,7 @@ func (m *Model) SpecDecodeConflict() error {
 	if m.resident == nil {
 		return nil
 	}
-	d, ok := m.resident.(DecodeVerifyDiverger)
-	if !ok {
-		return nil
-	}
-	if err := d.DecodeVerifyDivergence(); err != nil {
+	if err := m.resRuntime().DecodeVerifyDivergence(); err != nil {
 		return fmt.Errorf("speculative decoding would not be lossless on this resident: %w", err)
 	}
 	return nil

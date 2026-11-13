@@ -26,7 +26,11 @@ func (c *Context) rmsnormDevice(x, weight *DeviceBuffer, H int, eps float32, add
 	if err != nil {
 		return nil, nil, err
 	}
-	pbuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "rmsn-p", Contents: wgpu.ToBytes([]uint32{uint32(H), F32bits(eps), BoolU32(addOne), 0}), Usage: wgpu.BufferUsageUniform})
+	pbuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "rmsn-p", Contents: wgpu.ToBytes([]uint32{uint32(H), F32bits(eps), BoolU32(addOne), 0}), Usage: wgpu.BufferUsageUniform})
+	if err != nil {
+		releaseBuf(out)
+		return nil, nil, fmt.Errorf("gpu: rmsnormDevice: rmsn-p: %w", err)
+	}
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.rmsnormLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: x.buf, Size: x.buf.GetSize()}, {Binding: 1, Buffer: weight.buf, Size: weight.buf.GetSize()},
 		{Binding: 2, Buffer: out, Size: out.GetSize()}, {Binding: 3, Buffer: pbuf, Size: pbuf.GetSize()},
@@ -49,7 +53,10 @@ func (c *Context) residualInPlace(x, y *DeviceBuffer, H int) ([]func(), error) {
 	if err := c.ensureLayer(); err != nil {
 		return nil, err
 	}
-	pbuf, _ := c.dims4("res-p", uint32(H), 0)
+	pbuf, err := c.dims4("res-p", uint32(H), 0)
+	if err != nil {
+		return nil, fmt.Errorf("gpu: residualInPlace: res-p: %w", err)
+	}
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.residualLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: x.buf, Size: x.buf.GetSize()}, {Binding: 1, Buffer: y.buf, Size: y.buf.GetSize()},
 		{Binding: 2, Buffer: pbuf, Size: pbuf.GetSize()},
@@ -70,7 +77,10 @@ func (c *Context) ropeInPlace(vec, invFreq *DeviceBuffer, heads, headDim, pos in
 		return nil, err
 	}
 	half := headDim / 2
-	pbuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "rope-p", Contents: wgpu.ToBytes([]uint32{uint32(heads), uint32(headDim), uint32(half), uint32(pos), F32bits(scale), 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	pbuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "rope-p", Contents: wgpu.ToBytes([]uint32{uint32(heads), uint32(headDim), uint32(half), uint32(pos), F32bits(scale), 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: ropeInPlace: rope-p: %w", err)
+	}
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.ropeLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: vec.buf, Size: vec.buf.GetSize()}, {Binding: 1, Buffer: invFreq.buf, Size: invFreq.buf.GetSize()},
 		{Binding: 2, Buffer: pbuf, Size: pbuf.GetSize()},
@@ -90,11 +100,14 @@ func (c *Context) qkNormInPlace(vec, weight *DeviceBuffer, heads, hd int, eps fl
 	if err := c.ensureQKNorm(); err != nil {
 		return nil, err
 	}
-	pbuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{
+	pbuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{
 		Label:    "qknorm-p",
 		Contents: wgpu.ToBytes([]uint32{uint32(heads), uint32(hd), F32bits(eps), BoolU32(addOne)}),
 		Usage:    wgpu.BufferUsageUniform,
 	})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: qkNormInPlace: pbuf: %w", err)
+	}
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
 		Layout: c.qkNormLayout,
 		Entries: []wgpu.BindGroupEntry{
@@ -107,7 +120,12 @@ func (c *Context) qkNormInPlace(vec, weight *DeviceBuffer, heads, hd int, eps fl
 		releaseBuf(pbuf)
 		return nil, err
 	}
-	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	enc, err := c.device.TryCreateCommandEncoder(nil)
+	if err != nil {
+		releaseBuf(pbuf)
+		bg.Release()
+		return nil, fmt.Errorf("gpu: qkNormInPlace: command encoder: %w", err)
+	}
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(c.qkNormPipeline)
@@ -120,7 +138,12 @@ func (c *Context) qkNormInPlace(vec, weight *DeviceBuffer, heads, hd int, eps fl
 		return nil, err
 	}
 	pass.Release()
-	cmd, _ := enc.TryFinish(nil)
+	cmd, err := enc.TryFinish(nil)
+	if err != nil {
+		releaseBuf(pbuf)
+		bg.Release()
+		return nil, fmt.Errorf("gpu: qkNormInPlace: finish: %w", err)
+	}
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	return []func(){releaser(pbuf), bg.Release}, nil
@@ -129,12 +152,18 @@ func (c *Context) qkNormInPlace(vec, weight *DeviceBuffer, heads, hd int, eps fl
 // kvAppend copies a device k or v [kvDim] into the cache at position pos (a copy
 // command, submitted; no poll).
 func (c *Context) kvAppend(src, cache *DeviceBuffer, pos, kvDim int) error {
-	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	enc, err := c.device.TryCreateCommandEncoder(nil)
+	if err != nil {
+		return fmt.Errorf("gpu: kvAppend: command encoder: %w", err)
+	}
 	defer enc.Release()
 	if err := enc.TryCopyBufferToBuffer(src.buf, 0, cache.buf, uint64(pos*kvDim*4), uint64(kvDim*4)); err != nil {
 		return err
 	}
-	cmd, _ := enc.TryFinish(nil)
+	cmd, err := enc.TryFinish(nil)
+	if err != nil {
+		return fmt.Errorf("gpu: kvAppend: finish: %w", err)
+	}
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	return nil
@@ -150,12 +179,27 @@ func (c *Context) attnDevice(q, kCache, vCache *DeviceBuffer, nH, nKV, hd, nKeys
 	if err != nil {
 		return nil, nil, err
 	}
-	pbuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(nKeys), uint32(start), uint32(group), F32bits(scale), 0}), Usage: wgpu.BufferUsageUniform})
-	// G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatAttnSink — always bound (WGSL bind groups can't
+	pbuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(nKeys), uint32(start), uint32(group), F32bits(scale), 0}), Usage: wgpu.BufferUsageUniform})
+	if err != nil {
+		releaseBuf(ctxBuf)
+		return nil, nil, fmt.Errorf("gpu: attnDevice: attn-p: %w", err)
+	}
+	// G6 (docs/completed/task-gpu-paths-2026-09.md): FeatAttnSink — always bound (WGSL bind groups can't
 	// bind a null storage buffer); this test-only path never carries a real sink, so a harmless
 	// one-element dummy + hasSink=0, matching attnShaderWGSL's convention.
-	sinksBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-sinks", Contents: wgpu.ToBytes([]float32{0}), Usage: wgpu.BufferUsageStorage})
-	hsBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-hs", Contents: wgpu.ToBytes([]uint32{0, 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	sinksBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-sinks", Contents: wgpu.ToBytes([]float32{0}), Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		releaseBuf(ctxBuf)
+		releaseBuf(pbuf)
+		return nil, nil, fmt.Errorf("gpu: attnDevice: attn-sinks: %w", err)
+	}
+	hsBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-hs", Contents: wgpu.ToBytes([]uint32{0, 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	if err != nil {
+		releaseBuf(ctxBuf)
+		releaseBuf(pbuf)
+		releaseBuf(sinksBuf)
+		return nil, nil, fmt.Errorf("gpu: attnDevice: attn-hs: %w", err)
+	}
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.attnLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: q.buf, Size: q.buf.GetSize()}, {Binding: 1, Buffer: kCache.buf, Size: kCache.buf.GetSize()},
 		{Binding: 2, Buffer: vCache.buf, Size: vCache.buf.GetSize()}, {Binding: 3, Buffer: ctxBuf, Size: ctxBuf.GetSize()},
@@ -169,7 +213,15 @@ func (c *Context) attnDevice(q, kCache, vCache *DeviceBuffer, nH, nKV, hd, nKeys
 		releaseBuf(hsBuf)
 		return nil, nil, err
 	}
-	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	enc, err := c.device.TryCreateCommandEncoder(nil)
+	if err != nil {
+		releaseBuf(ctxBuf)
+		releaseBuf(pbuf)
+		releaseBuf(sinksBuf)
+		releaseBuf(hsBuf)
+		bg.Release()
+		return nil, nil, fmt.Errorf("gpu: attnDevice: command encoder: %w", err)
+	}
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(c.attnPipeline)
@@ -185,7 +237,15 @@ func (c *Context) attnDevice(q, kCache, vCache *DeviceBuffer, nH, nKV, hd, nKeys
 		return nil, nil, err
 	}
 	pass.Release()
-	cmd, _ := enc.TryFinish(nil)
+	cmd, err := enc.TryFinish(nil)
+	if err != nil {
+		releaseBuf(ctxBuf)
+		releaseBuf(pbuf)
+		releaseBuf(sinksBuf)
+		releaseBuf(hsBuf)
+		bg.Release()
+		return nil, nil, fmt.Errorf("gpu: attnDevice: finish: %w", err)
+	}
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	cdb := NewDeviceBuffer(ctxBuf, nH*hd)
@@ -226,11 +286,16 @@ func (c *Context) qSplitDevice(qg *DeviceBuffer, n, headDim int) (*DeviceBuffer,
 		releaseBuf(q)
 		return nil, nil, nil, err
 	}
-	pbuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{
+	pbuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{
 		Label:    "qsplit-p",
 		Contents: wgpu.ToBytes([]uint32{uint32(n), uint32(headDim), 0, 0}),
 		Usage:    wgpu.BufferUsageUniform,
 	})
+	if err != nil {
+		releaseBuf(q)
+		releaseBuf(gate)
+		return nil, nil, nil, fmt.Errorf("gpu: qSplitDevice: pbuf: %w", err)
+	}
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
 		Layout: c.deltaQSplitLayout,
 		Entries: []wgpu.BindGroupEntry{
@@ -259,7 +324,10 @@ func (c *Context) attnGateInPlace(ctxv, gate *DeviceBuffer, n int) ([]func(), er
 	if err := c.ensureDeltaAttnGate(); err != nil {
 		return nil, err
 	}
-	pbuf, _ := c.dims4("attngate-p", uint32(n), 0)
+	pbuf, err := c.dims4("attngate-p", uint32(n), 0)
+	if err != nil {
+		return nil, fmt.Errorf("gpu: attnGateInPlace: attngate-p: %w", err)
+	}
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
 		Layout: c.deltaAttnGateLayout,
 		Entries: []wgpu.BindGroupEntry{
@@ -403,7 +471,11 @@ func (c *Context) swigluDevice(gate, up *DeviceBuffer, inter int) (*DeviceBuffer
 	if err != nil {
 		return nil, nil, err
 	}
-	pbuf, _ := c.dims4("swiglu-p", uint32(inter), 0)
+	pbuf, err := c.dims4("swiglu-p", uint32(inter), 0)
+	if err != nil {
+		releaseBuf(mid)
+		return nil, nil, fmt.Errorf("gpu: swigluDevice: swiglu-p: %w", err)
+	}
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.swigluLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: gate.buf, Size: gate.buf.GetSize()}, {Binding: 1, Buffer: up.buf, Size: up.buf.GetSize()},
 		{Binding: 2, Buffer: mid, Size: mid.GetSize()}, {Binding: 3, Buffer: pbuf, Size: pbuf.GetSize()},
@@ -429,7 +501,11 @@ func (c *Context) gegluDevice(gate, up *DeviceBuffer, inter int) (*DeviceBuffer,
 	if err != nil {
 		return nil, nil, err
 	}
-	pbuf, _ := c.dims4("geglu-p", uint32(inter), 0)
+	pbuf, err := c.dims4("geglu-p", uint32(inter), 0)
+	if err != nil {
+		releaseBuf(mid)
+		return nil, nil, fmt.Errorf("gpu: gegluDevice: geglu-p: %w", err)
+	}
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.gegluLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: gate.buf, Size: gate.buf.GetSize()}, {Binding: 1, Buffer: up.buf, Size: up.buf.GetSize()},
 		{Binding: 2, Buffer: mid, Size: mid.GetSize()}, {Binding: 3, Buffer: pbuf, Size: pbuf.GetSize()},

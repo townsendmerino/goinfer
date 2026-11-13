@@ -18,6 +18,10 @@ type (
 	KVClass = kvmgr.Class
 	// KVClassMap is a backend's rule for which class a prefill pass writes.
 	KVClassMap = kvmgr.ClassMap
+	// KVSequenceState is the live KV state of one sequence, implemented by CPU sessions and GPU resident slots.
+	KVSequenceState = kvmgr.SequenceState
+	// KVWindowStepStatus classifies the outcome of advancing a windowed slot's base.
+	KVWindowStepStatus = kvmgr.WindowStepStatus
 )
 
 // KVBlockRows is the number of positions in one logical KV block.
@@ -29,9 +33,27 @@ const (
 	KVRetainChunk  = kvmgr.RetainChunk
 )
 
+const (
+	KVWindowStepOK        = kvmgr.WindowStepOK
+	KVWindowStepBelowBase = kvmgr.WindowStepBelowBase
+	KVWindowStepOverCap   = kvmgr.WindowStepOverCap
+)
+
 // KVSlotRow is where logical block `block` of the sequence in KV slot `slot` lives while a backend stores KV per
 // slot: the slot itself, at row block*KVBlockRows.
 func KVSlotRow(slot, block int) (s, row int) { return kvmgr.SlotRow(slot, block) }
+
+// KVWindowReusable reports whether a forward continuing at position prefix finds its sliding window held by a slot
+// whose oldest resident position is base.
+func KVWindowReusable(base, prefix, window int) bool {
+	return kvmgr.WindowReusable(base, prefix, window)
+}
+
+// KVWindowNextBase computes the base before and after writing n rows starting at p0 into a windowed slot of capacity
+// capN with window size window and rollback budget rollback.
+func KVWindowNextBase(base, p0, n, window, capN, rollback int) (from, to, low int, status KVWindowStepStatus) {
+	return kvmgr.WindowNextBase(base, p0, n, window, capN, rollback)
+}
 
 // KVGeometry derives the model's KV shape from its architecture. Layers are grouped by what decides a block table:
 // the row width and the retention. It agrees with kvDimAt and kvPositionsAt, which price the same layers

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// TestGemvW8A8Body_matchesCPU is gate F1 of docs/tasks/task-metal-int8-2026-10.md: each W8A8 body kernel equals the
+// TestGemvW8A8Body_matchesCPU is gate F1 of docs/completed/task-metal-int8-2026-10.md: each W8A8 body kernel equals the
 // CPU's W8A8 arithmetic bit-for-bit — float32(Σ int8·int8)·aScale·wScale (linalg's w8a8Span), then +bias, then
 // +residual — on random int8 inputs at every decode GEMV shape of the 0.5B and 1.5B coder. The library is compiled
 // as buildResident compiles it (CompileLibrary, fast math on), since that is what ships. The gate's fallback bar,

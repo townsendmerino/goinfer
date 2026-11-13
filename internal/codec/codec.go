@@ -8,7 +8,7 @@
 // marker typed into a message stays text instead of forging a turn.
 //
 // chat's TestCodecCensus_throughCodec runs the codec census through this package and checks it against the census goldens
-// byte for byte; docs/tasks/task-subsystems-2026-10.md §8 SB8 registers that gate.
+// byte for byte; docs/completed/task-subsystems-2026-10.md §8 SB8 registers that gate.
 package codec
 
 import (

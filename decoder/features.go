@@ -198,7 +198,7 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 	add(a.pairwiseRoPE(), FeatPairwiseRoPE)
 	add(a.pairwiseRoPE() && len(a.MRopeSection) > 0, FeatPairwiseMRoPE)
 	add(a.lfm2 != nil, FeatShortConv)
-	add(a.gptoss != nil, FeatAttnSink)
+	add(a.hasAttnSinks(), FeatAttnSink)
 	// The attention output gate, by the activation the forward applies (hasAttnOutputGate's two cases: Laguna's softplus, keyed on
 	// arch.laguna, and arch.AttnGate == GateSigmoid), so the features and the math cannot drift; and Laguna's per-layer query-head
 	// count where its config gives one.
@@ -370,7 +370,7 @@ func residentGateReasons(a *Architecture, prog *layerProgram, backend string, ac
 }
 
 // residentBackendTables names the backends whose admission reads an operation-and-parameter table instead of a feature set
-// (docs/tasks/task-forward-architecture-2026-10.md §4.9 and §4.9a, OP4m-c and OP4cu-c). The backend's walker checks the same
+// (docs/completed/task-forward-architecture-2026-10.md §4.9 and §4.9a, OP4m-c and OP4cu-c). The backend's walker checks the same
 // table at build.
 var residentBackendTables = map[string]*program.Support{"metal": program.Metal, "cuda": program.CUDA}
 

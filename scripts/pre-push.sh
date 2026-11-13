@@ -78,7 +78,7 @@ if [ "$pstatus" -ne 0 ]; then
     exit 1
 fi
 
-# The comment census WARNING (CC6, docs/tasks/task-code-comments-2026-10.md): comments added or changed in the pushed .go files that carry
+# The comment census WARNING (CC6, docs/completed/task-code-comments-2026-10.md): comments added or changed in the pushed .go files that carry
 # a history marker. It never refuses a push (the script exits 0 and `|| true` makes that explicit): "timeout in ms" is a contract, not history.
 if [ -f scripts/comment_census.py ]; then
     printf '%s\n' "$refs" | while read -r lref lsha rref rsha; do

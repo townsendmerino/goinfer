@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
-// TestGemma4AudioResample is G-S5e of docs/tasks/task-multimodal-support-2026-10.md (S5's follow-up): the LibriSpeech clip at 44.1 kHz mono and at 48 kHz stereo (made offline by
+// TestGemma4AudioResample is G-S5e of docs/completed/task-multimodal-support-2026-10.md (S5's follow-up): the LibriSpeech clip at 44.1 kHz mono and at 48 kHz stereo (made offline by
 // scripts/make_resample_clips.py with ffmpeg and numpy), through DecodeWAVAnyRate's downmix and resampler and the real E2B
 // audio tower (GOINFER_GEMMA4_E2B, default ~/models/gemma-4-E2B-unq), soft tokens against the 16 kHz original's. The
 // reference is the same files brought back to 16 kHz by scipy's resample_poly. PASS: goinfer's worst-token and mean

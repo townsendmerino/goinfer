@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// The phase-2a contract (docs/tasks/task-env-config-2026-09.md): a model's knobs are read ONCE, at Load,
+// The phase-2a contract (docs/completed/task-env-config-2026-09.md): a model's knobs are read ONCE, at Load,
 // Options.Knobs overrides the environment for that model alone, and two models in one process can differ.
 func TestKnobs_snapshotAtLoad_overridePerModel(t *testing.T) {
 	t.Setenv(knobFusedAttention, "0")

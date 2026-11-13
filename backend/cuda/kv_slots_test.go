@@ -37,7 +37,7 @@ type kvSlotTurn struct {
 	reused int
 }
 
-// kvSlotsScenario is MC1's identity gate on CUDA (docs/tasks/task-concurrency-2026-09.md; the Metal twin is
+// kvSlotsScenario is MC1's identity gate on CUDA (docs/tasks/parked/task-concurrency-2026-09.md; the Metal twin is
 // TestMetalKVSlots_interleavedMatchesAlone): with two resident KV slots, two conversations that share only a lead,
 // interleaved turn by turn through the production Generate path, must each emit exactly the token ids they emit
 // when served alone, and reuse exactly as much of their own history on every turn. A control — the same interleaving
@@ -343,7 +343,7 @@ func TestCUDAKVSlots_pricedAgainstWhatIsLeft(t *testing.T) {
 	}
 }
 
-// TestResolveCtxCapFit_slotsShrinkTheContext pins the owner's decision (docs/tasks/task-concurrency-2026-09.md
+// TestResolveCtxCapFit_slotsShrinkTheContext pins the owner's decision (docs/tasks/parked/task-concurrency-2026-09.md
 // MC1 on CUDA): an unpinned load that asks for N resident KV slots gives up context until all N fit, instead of taking
 // the one-slot context and clamping the slots. The free-VRAM budget is forced (ExtraResidentBytes, from a real probe,
 // the way TestResolveCtxCapFit_agreesWithCheckKVFits does it) so that one slot fits the full candidate while 4 fit only
@@ -396,7 +396,7 @@ func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
 				t.Fatalf("Load: %v", err)
 			}
 			defer m.Close()
-			// A GENUINE pin (item 28, docs/prompts/nobara-mc1-webgpu-2026-09.md §4): ResidentContext set
+			// A GENUINE pin (item 28, docs/completed/nobara-mc1-webgpu-2026-09.md §4): ResidentContext set
 			// in Options, not just a bare 8192 handed to resolveCtxCapFit with an otherwise-unpinned m —
 			// the latter is now a guard-pin scenario (m.ResidentContextPinned() false) and correctly runs
 			// fit-by-default clamped to it, which would shrink for these slots, not the "never shrinks"
@@ -543,7 +543,7 @@ func TestResidentDenseBytes_matchesCUDADevice(t *testing.T) {
 			est, all := m.ResidentDenseWeightBytesFor("cuda"), m.ResidentDenseWeightBytes()
 			// Plan prices the requested bytes; the driver rounds each buffer of a quantum or more up (allocRoundSlack), which the build prices into the plan on its own
 			// (res.allocSlackBytes). The margin is for what neither knows, so the bound below is on Plan + that slack, not on Plan alone: the rounding alone can exceed the whole margin on the 7B
-			// (docs/tasks/task-multimodal-support-2026-10.md).
+			// (docs/completed/task-multimodal-support-2026-10.md).
 			t.Logf("device before KV %.0f MB; Plan's CUDA dense %.0f MB (all dense, host tables included, %.0f MB) + allocation slack %.0f MB; "+
 				"under by %.0f MB (margin %.0f MB)", mb(drop), mb(est), mb(all), mb(res.allocSlackBytes), mb(drop-est-res.allocSlackBytes), mb(res.ctxMargin()))
 			est += res.allocSlackBytes
@@ -627,7 +627,7 @@ func TestCUDAKVSlots_buildTrimsTheContext(t *testing.T) {
 	}
 }
 
-// TestCUDAKVSlots_oomKeepsTheSlotsThatFit is S18's CUDA gate (docs/tasks/task-multimodal-support-2026-10.md, "G-S18a"): when the device runs out of memory allocating a later KV slot (checkKVFits sizes the
+// TestCUDAKVSlots_oomKeepsTheSlotsThatFit is S18's CUDA gate (docs/completed/task-multimodal-support-2026-10.md, "G-S18a"): when the device runs out of memory allocating a later KV slot (checkKVFits sizes the
 // count against the free VRAM read before the build's own scratch, with the margin the only slack, so the last slot can miss by the scratch), the resident keeps the slots that fit instead of declining to the CPU.
 // Three slots requested, the seam fails slot 2: the model stays CUDA-resident with two, no device buffer leaks (the ledger equals a plain two-slot build's), and both granted slots decode the same tokens as a plain
 // two-slot build's. The control, no seam: all three slots. Without the recover the build declines and this goes red.

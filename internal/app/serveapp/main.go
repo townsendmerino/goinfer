@@ -321,7 +321,7 @@ type config struct {
 	visionMaxPixels   int           // -vision-max-pixels: lowers GLM-OCR's image pixel budget (0 = the model's own 4.82 MP ceiling)
 	visionQuant       string        // -vision-quant: "" (unset: f32; Gemma 3 on cuda may fall back to int8) | "f32" (explicit) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
 	visionDevice      string        // -vision-device: "auto" (default: the backend's device tower when it has one) | "cpu" | "gpu" (as auto, and it also puts on the device the towers auto keeps on the CPU under webgpu: on a discrete GPU, and a Qwen3.5+ .gguf mmproj tower)
-	// decisions (D5, docs/tasks/task-constrained-confidence.md): POST /v1/systemone's label-scoring template, and an
+	// decisions (D5, docs/tasks/parked/task-constrained-confidence.md): POST /v1/systemone's label-scoring template, and an
 	// optional calibration.json of per-kind temperatures ("" = none: every answer is uncalibrated).
 	decisionsTemplate string
 	decisionsCal      string
@@ -608,7 +608,7 @@ func (srv *server) routes(cfg config, authKey string, stderr io.Writer) (*http.S
 	mux.HandleFunc("POST /v1/audio/transcriptions", rl(auth(srv.haltGate(inf(maxBytes(audioCap, srv.handleTranscriptions))))))
 	mux.HandleFunc("POST /v1/messages/count_tokens", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCountTokens)))))
 	// POST /v1/systemone is TypeSafe's wire shape, served by label scoring (internal/decide), so jevx and the TypeSafe SDKs
-	// work against goinfer through their base-URL override (docs/tasks/task-constrained-confidence.md).
+	// work against goinfer through their base-URL override (docs/tasks/parked/task-constrained-confidence.md).
 	mux.HandleFunc("POST /v1/systemone", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleSystemOne)))))
 	// Submitting a job starts new admission, so POST /v1/jobs gets the same haltGate/inf/maxBytes stack as every other POST
 	// above. Polling (GET), the event stream and cancel (DELETE) are not new inference work: haltGate would 503 a client
@@ -1077,7 +1077,7 @@ func newServer(cfg config) (*server, error) {
 	}
 	// Armed last, after every startup load that could itself grow swap has finished: the guard's baseline should be steady
 	// state after startup, not a mid-load reading that counts every startup byte as its own delta
-	// (docs/tasks/task-never-swap-2026-09.md).
+	// (docs/completed/task-never-swap-2026-09.md).
 	s.startSwapGuard()
 	return s, nil
 }
@@ -1129,7 +1129,7 @@ func (s *server) loadAdapters(cfg config) error {
 
 // towerBackend is the backend a device tower (vision or audio) is chosen for: the model's own, unless -vision-device cpu keeps the
 // tower on the CPU, which also isolates the tower in a served comparison with the language model on the same backend in
-// both arms (docs/tasks/task-multimodal-support-2026-10.md).
+// both arms (docs/completed/task-multimodal-support-2026-10.md).
 func (cfg config) towerBackend() string {
 	if cfg.visionDevice == "cpu" {
 		return "cpu"
@@ -1296,7 +1296,7 @@ func (s *server) loadVisionTower(cfg config) error {
 	// attaches the int8 device tower instead of leaving the CPU one (an explicit -vision-quant never falls back). The unset
 	// default was settled before the plan was made: resolveGemma3VisionQuant makes it int8 on a card too tight for the
 	// decoder, one KV slot and the float32 tower. Both are in gemma3_tower.go. The CUDA default is float32 because the int8
-	// tower changes the reply, at the cost of about 1.7 GiB of VRAM against 0.56 (docs/tasks/task-multimodal-support-2026-10.md,
+	// tower changes the reply, at the cost of about 1.7 GiB of VRAM against 0.56 (docs/completed/task-multimodal-support-2026-10.md,
 	// "Gemma 3's CUDA default is now float32"). The CUDA resident tower registers its factory with vision.RegisterResident
 	// (cuda/vision_register.go) through cuda/cmd/serve's blank import.
 	towerBE := vbe
@@ -1380,7 +1380,7 @@ func attachResidentTower(family string, enc interface{ EnableResident() error },
 // load them again on its CPU path's first use (aikit's ReleaseBlocks).
 type blockReleaser interface{ ReleaseBlocks() error }
 
-// releaseTowerBlocks drops a device-attached tower's host blocks (D2, docs/tasks/task-memory-campaign-2026-10.md §7): the
+// releaseTowerBlocks drops a device-attached tower's host blocks (D2, docs/completed/task-memory-campaign-2026-10.md §7): the
 // device tower serves the images, and a CPU fallback reloads them. Called once per tower, after its device tower is built
 // and before any request runs it. A variable so a test can count the calls.
 var releaseTowerBlocks = func(family string, enc any) {
@@ -2078,7 +2078,7 @@ func visionPathError(dir string) error {
 
 // qwenTowerPlacement decides where Qwen2.5-VL's vision tower runs and attaches it: the device tower under --backend
 // cuda or webgpu when the binary registers one (cuda/vision_towers.go imports aikit's gpu/qwencuda) and the tower is
-// float32; the CPU everywhere else, with the reason named (docs/tasks/task-multimodal-support-2026-10.md).
+// float32; the CPU everywhere else, with the reason named (docs/completed/task-multimodal-support-2026-10.md).
 // -require-backend turns each CPU fallback on a device backend into a refusal. -vision-device cpu arrives here as backend
 // "cpu". Metal's tower is attached by loadQwenVisionTower.
 func qwenTowerPlacement(backend string, int8Tower, require bool, attach func() error, warn io.Writer) (string, error) {

@@ -1,5 +1,5 @@
 #!/bin/bash
-# MC0 (docs/tasks/task-concurrency-2026-09.md): does the GPU-resident path's single KV thrash under 2 interleaved
+# MC0 (docs/tasks/parked/task-concurrency-2026-09.md): does the GPU-resident path's single KV thrash under 2 interleaved
 # conversations? Metal 1 and 2 clients, then the CPU control (sessionLRU, -kv-sessions default 4) 1 and 2 clients.
 # Waits for the R18 e2e sweep to finish (same GPU) and for idle.
 set -u

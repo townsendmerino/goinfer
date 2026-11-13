@@ -63,12 +63,15 @@ def _matches(kind, arg, path):
 SCANS = [
     # decoder
     Scan("decoder", "TestDispatchCensus", NT("decoder")),
+    Scan("decoder", "TestResidentSubsystems_NoScatteredMicroAssertions", NT("decoder")),
+    # reads every .go file under each backend module, subdirectories included (fnmatch's * crosses /)
+    Scan("decoder", "TestResidentSubsystems_NoScatteredMicroAssertionsInBackends", F("backend/cuda/*.go", "backend/metal/*.go", "backend/webgpu/*.go")),
     # MM1's decision census pins every fit decision: a change to the fit code, the machine zoo or a fixture it reads runs it. Every
     # censusFixtures entry has "tiny" in its name (TestCensusFixtures_areTheCommittedOnes).
     Scan("decoder", "TestStepShapes_assertedOnlyInStep", NT("decoder")),
     Scan("decoder", "TestDecisionCensus", F("decoder/fitguard.go", "decoder/fitplan.go", "decoder/fitquery.go", "decoder/prefill_budget.go",
                                             "decoder/weightbytes.go", "decoder/residentneed.go", "decoder/kvresolve.go", "decoder/kvpolicy.go",
-                                            "decoder/metal_fitctx.go", "decoder/memprobe.go", "testdata/machines/*.json", "testdata/mm1_census.json.gz",
+                                            "decoder/metal_fitctx.go", "decoder/memprobe.go", "testdata/machines/*.json", "testdata/census/*.txt.gz",
                                             "decoder/mm1_census_fixtures_test.go", "testdata/*tiny*", "decoder/testdata/*tiny*",
                                             "decoder/selftestdata/*tiny*", "internal/vision/testdata/*tiny*",
                                             # MM5: KV and state are priced from each layer's operations' declarations
@@ -170,10 +173,12 @@ SCANS = [
     Scan("internal/app/fitcmd", "TestRun_closesFirstLoadBeforeMeasuring", F("internal/app/fitcmd/fit.go")),
     Scan("internal/diag/hwcensus", "TestHardwareCensus", TREE_NT + F("docs/hardware-coverage.json")),
     Scan("internal/runtime/mem/probe", "TestOnlyProbeReadsOSMemory", TREE_NT),
+    Scan("internal/guard/testcmdtags", "TestDocs_goTestCommandsCompileTheTestsTheyName", TREE_T + F("docs/*.md")),
     Scan("internal/testpath", "TestNoStrayRelativePathInInternalTests", TREE_T),
     Scan("internal/runtime/mem", "TestImports", NT("internal/runtime/mem")),
     Scan("backend/cuda", "TestPlanSlack_oneCopy", NT("backend/cuda")),
     Scan("backend/cuda", "TestLedger_everyAllocationNamesALine", NT("backend/cuda")),
+    Scan("internal/layout", "TestCUDASoloShapes_takeTodaysCalls", F("backend/cuda/resident.go", "backend/cuda/gumbel.go")),
     Scan("internal/runtime/mem", "TestSolve_pure", NT("internal/runtime/mem")),
     Scan("internal/runtime/mem", "TestNoGuardThresholdOutsideMem", TREE_NT),
     Scan("internal/runtime/mem/probe", "TestProbeImports", NT("internal/runtime/mem/probe")),
@@ -218,12 +223,13 @@ SCANS = [
     # site module
     Scan("apps/site/internal/site", "TestHome_heroCodeIsFromTheExample", F("apps/examples/structured/main.go")),
     # gpu module
-    Scan("backend/webgpu", "TestNemotronBlockKind_hasADefault", F("backend/webgpu/residency.go")),
+    Scan("backend/webgpu", "TestNemotronBlockKind_hasADefault", F("backend/webgpu/residency.go", "backend/webgpu/residency_layer.go")),
+    Scan("backend/webgpu/internal/kernels", "TestKernels_noDroppedTryError", NT("backend/webgpu/internal/kernels")),
     Scan("backend/webgpu/internal/kernels", "TestLedger_everyBufferIsLeased", NT("backend/webgpu", "backend/webgpu/internal/kernels")),
     Scan("backend/webgpu/internal/kernels", "TestRopeKernels_noBuiltinSinCos", NT("backend/webgpu/internal/kernels")),
     Scan("backend/webgpu", "TestEnsureAttnWide_guardsOnTheLastPipeline", F("backend/webgpu/attention.go")),
     Scan("backend/webgpu", "TestGPU_deviceBoundaryErrorsAreNotDropped", F("backend/webgpu/decoderunner.go", "backend/webgpu/residency.go")),
-    Scan("backend/webgpu", "TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches", F("backend/webgpu/residency.go")),
+    Scan("backend/webgpu", "TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches", F("backend/webgpu/residency.go", "backend/webgpu/residency_build.go")),
     # metal module
     Scan("backend/metal", "TestGptOssBiasDispatches_alwaysIndexedByRealExpert", F("backend/metal/moe.go")),
     Scan("backend/metal", "TestLedger_everyMetalAllocationNamesALine", NT("backend/metal", "backend/metal/internal/gpudev", "backend/metal/internal/qwenmetal", "backend/metal/internal/visionmetal")),

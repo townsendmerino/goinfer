@@ -20,7 +20,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// TestGemma4BidirSpanPrefill_real26B is G-S19c's logits half (docs/tasks/task-multimodal-support-2026-10.md, "S19"): the
+// TestGemma4BidirSpanPrefill_real26B is G-S19c's logits half (docs/completed/task-multimodal-support-2026-10.md, "S19"): the
 // real 26B-A4B loaded with -backend cuda -moe-cache-experts at the fit-default context, one image prompt per form-like image, the
 // tower run once on the CPU, then the last-position logits from the resident span prefill against the CPU bidirectional
 // prefill on the same model and the same features. It reports cosine and argmax; the served half grades the replies.

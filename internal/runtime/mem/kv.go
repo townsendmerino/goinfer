@@ -25,13 +25,11 @@ type KVQuery struct {
 	Backend    string // "" or "cpu": the host cache
 	Request    string // the resident cache's request (KVAuto when unset)
 	CPURequest string // the host cache's request (KVAuto when unset)
-	CPUBatchOn bool   // CPU batched decode, which reads f32 KV only
 	Drafter    bool   // a block drafter shares the resident's attention kernels
 
 	HasArch    bool // the architecture resolved; every fact below is false without it
 	NoKV       bool // no layer keeps attention K/V
 	MLA        bool // a latent KV cache
-	MoE        bool
 	OwnLoop    bool // the family runs its own forward loop
 	CPUF16OK   bool // the family's CPU attention reads an f16 cache
 	CPUI8OK    bool // the family's CPU attention reads an int8 cache
@@ -127,9 +125,6 @@ func resolveCUDAKV(q KVQuery, req string) (string, string) {
 
 func resolveCPUKV(q KVQuery) (string, string) {
 	req := q.CPURequest
-	if (req == KVF16 || req == KVI8) && q.CPUBatchOn {
-		return "", "CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4"
-	}
 	switch req {
 	case KVF16:
 		if q.HasArch && q.CPUF16OK {
@@ -152,8 +147,6 @@ func cpuKVDecline(q KVQuery) string {
 	switch {
 	case !q.HasArch:
 		return "no architecture"
-	case q.MoE:
-		return "MoE families keep an f32 CPU cache until phase 4"
 	case q.OwnLoop:
 		return "this family's own forward loop keeps an f32 CPU cache until phase 4"
 	}

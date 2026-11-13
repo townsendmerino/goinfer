@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-// The CUDA vision-tower base (docs/tasks/task-multimodal-support-2026-10.md;
+// The CUDA vision-tower base (docs/completed/task-multimodal-support-2026-10.md;
 // docs/measurements/multimodal-support-2026-10/s4-gate0-cuda-towers.md): aikit's gpu.ViT (f32 GEMMs with bias and
 // bias+residual epilogues, LayerNorm, RMSNorm, GELU, scaled attention, a NeoX RoPE) plus the six kernels of
 // tower_base.cu, behind one executor goroutine that owns the device (CUDA contexts are thread-affine, as in

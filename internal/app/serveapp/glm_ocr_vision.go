@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// GLM-OCR image serving (docs/tasks/task-glm-ocr-2026-10.md). The route is the Qwen2.5-VL / Qwen3.5+ one (preprocess ->
+// GLM-OCR image serving (docs/completed/task-glm-ocr-2026-10.md). The route is the Qwen2.5-VL / Qwen3.5+ one (preprocess ->
 // tower -> GenerateQwenVL with m-RoPE, the merged tower rows replacing the <|image|> run) with these differences, all of
 // which live here or in the loadedModel.glm branches of vision_serve.go:
 //
@@ -168,7 +168,7 @@ func (lm *loadedModel) imageFitsContext(n int, grid [3]int) error {
 // The rule (multimodal.GlmOcrExtractionText): the template prompt REPLACES the user's text only when that text is empty
 // or a bare task prompt ("Text Recognition:", "Table Recognition:", "Formula Recognition:"); any other text is the
 // user's own prompt and is sent unchanged, still under the grammar. json_object (no schema) has no template to build and
-// is left alone (docs/tasks/task-glm-ocr-2026-10.md).
+// is left alone (docs/completed/task-glm-ocr-2026-10.md).
 func (lm *loadedModel) glmOcrExtractionTurn(rf *respFormat, turns []chat.Turn) error {
 	if lm.glm == nil || rf == nil || rf.Type != "json_schema" || rf.JSONSchema == nil || len(rf.JSONSchema.Schema) == 0 {
 		return nil

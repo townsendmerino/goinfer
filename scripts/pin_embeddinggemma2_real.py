@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gate 2 of docs/tasks/task-embeddinggemma2.md: the real google/embeddinggemma-2 against sentence-transformers.
+"""Gate 2 of docs/completed/task-embeddinggemma2.md: the real google/embeddinggemma-2 against sentence-transformers.
 
 Reads a real corpus from this repository's own top-level docs at a pinned revision (`git show REV:docs/<file>.md`),
 split into sections at `## ` headings: the heading is a query, the body a document. Then, with sentence-transformers

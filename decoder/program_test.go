@@ -17,7 +17,7 @@ import (
 // simulate another configuration: the program is what the forward reads.
 func (m *Model) rebuildProgramForTest() { m.prog = buildProgram(m.w.arch, m.w.hasExperts) }
 
-// Gates P and L of docs/tasks/task-forward-architecture-2026-10.md §4.8 (OP3), on the per-token walker. Both change a model's
+// Gates P and L of docs/completed/task-forward-architecture-2026-10.md §4.8 (OP3), on the per-token walker. Both change a model's
 // built program and run the per-token forward over a fixed prompt on every tiny fixture whose family walks a program; a change
 // is detected when the last position's logits differ in any bit, or the forward errors or panics.
 

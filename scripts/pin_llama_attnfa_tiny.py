@@ -4,7 +4,7 @@
 head_dim EXACTLY 128, GQA with nKV>0. Every other committed Metal snapshot-golden fixture
 (mixtral-tiny: head_dim=8; gemma4-dense-scaled: head_dim=256) fails that guard, so
 `attention_fa` -- shipped as Metal decode's default past depth 1536 (R2,
-docs/tasks/red-october.md) -- has never been covered by TestMetalSnapshotGolden, the suite's
+docs/completed/red-october.md) -- has never been covered by TestMetalSnapshotGolden, the suite's
 only bit-exact (not cosine/tolerance) reference. This fixture closes that gap.
 
 Deliberately plain, same reasoning as pin_llama_tiny.py: the point is to isolate the ONE

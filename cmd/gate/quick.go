@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-// `gate quick` — the day loop's one command (TE7(a)+(c), docs/tasks/task-test-efficiency-2026-09.md):
+// `gate quick` — the day loop's one command (TE7(a)+(c), docs/completed/task-test-efficiency-2026-09.md):
 // gofmt, vet (the tagged variants CI runs, for the touched modules), the pinned staticcheck, the
 // tests that can observe the diff — one `go test` per package, in parallel, each to its own log —
 // and, when a parity shared set is touched, the tiny forward goldens. Then PASS / SKIP / FAIL,

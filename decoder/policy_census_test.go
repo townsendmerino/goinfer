@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/constrain"
 )
 
-// policyStreamsPath is SB5's census (docs/tasks/task-subsystems-2026-10.md §8 SB5, gate SB5-P1): the token stream each
+// policyStreamsPath is SB5's census (docs/completed/task-subsystems-2026-10.md §8 SB5, gate SB5-P1): the token stream each
 // engine policy produces on committed tiny fixtures. -update rewrites it; otherwise every stream must reproduce exactly.
 const policyStreamsPath = "../testdata/sb5/policy_streams.json"
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# MC3c step 2 — W7 grading (docs/tasks/task-concurrency-2026-09.md, MC3c step 2, pre-registered in 0bc06f90): nobara CPU,
+# MC3c step 2 — W7 grading (docs/tasks/parked/task-concurrency-2026-09.md, MC3c step 2, pre-registered in 0bc06f90): nobara CPU,
 # qwen2.5-7b-instruct q4_k_m int4 from ~/models, serve defaults (-max-concurrent 4, -kv-sessions 4, -cpu-batch auto),
 # greedy, 6 turns x 128 tokens, --fixed-nonce, a fresh server per cell.
 # old = serve @ 0bc06f90 (step 1: independent workers); new = serve @ 2c1d89ec (step 2: auto batches the 7B).

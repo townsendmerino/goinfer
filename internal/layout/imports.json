@@ -1,5 +1,5 @@
 {
-  "_about": "SB13's package layout (docs/tasks/task-subsystems-2026-10.md §8 and §9). arrows and test_arrows: every import from one goinfer package to another, by repository-relative directory, from non-test and from test files; TestLayout_arrows fails on one the tree makes that is not here, and on one here the tree no longer makes. rules: the protected separations, which no import, made or recorded, may break; they are edited by hand only.",
+  "_about": "SB13's package layout (docs/completed/task-subsystems-2026-10.md §8 and §9). arrows and test_arrows: every import from one goinfer package to another, by repository-relative directory, from non-test and from test files; TestLayout_arrows fails on one the tree makes that is not here, and on one here the tree no longer makes. rules: the protected separations, which no import, made or recorded, may break; they are edited by hand only.",
   "rules": [
     {
       "name": "fit-leaf",
@@ -27,6 +27,17 @@
         "*"
       ],
       "why": "decoder/config holds a checkpoint's Config, its validators and its loader, so they test in seconds without compiling decoder (DC1, docs/completed/task-decoder-config-2026-11.md). It sits below decoder, which aliases Config: it imports no goinfer package, decoder included."
+    },
+    {
+      "name": "quant-leaf",
+      "from": [
+        "decoder/quant"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "why": "decoder/quant (Tier 3, docs/layout.md) parses safetensors checkpoint quantization configs and reconstructs FP8, GPTQ, AWQ, NVFP4 and MLX quantized weights behind Reconstructor/RowStreamReconstructor. It sits below decoder and imports no goinfer package, decoder included."
     },
     {
       "name": "towers-standalone",
@@ -167,6 +178,7 @@
       "site/internal/site"
     ],
     "backend/cuda": [
+      "backend/cuda/internal/fitdecide",
       "backend/cuda/internal/gpudev",
       "backend/cuda/internal/launchgeom",
       "backend/cuda/internal/wpack",
@@ -277,11 +289,15 @@
     "cmd/serve": [
       "internal/app/serveapp"
     ],
+    "cmd/testcmdtags": [
+      "internal/guard/testcmdtags"
+    ],
     "decoder": [
       "chat",
       "constrain",
       "decoder/config",
       "decoder/fit",
+      "decoder/quant",
       "internal/cost",
       "internal/runtime/adapter",
       "internal/runtime/diskfree",

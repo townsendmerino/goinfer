@@ -1,7 +1,7 @@
 # metal: notes moved out of code comments
 
 History, measurements and open work that used to sit in the comments of `metal`, moved here verbatim by the comment diet
-(`docs/tasks/task-code-comments-2026-10.md`, CC1). The code comment above each declaration keeps what the code does, its contract and
+(`docs/completed/task-code-comments-2026-10.md`, CC1). The code comment above each declaration keeps what the code does, its contract and
 its guardrails, and points here by heading. This file is off the read path: open it when a pointer sends you. Text is unedited,
 except that a `file.go:NNN` reference inside it names the declaration instead (the line numbers had already gone stale).
 
@@ -10,7 +10,7 @@ except that a `file.go:NNN` reference inside it names the declaration instead (t
 Moved from `backend/metal/batch.go` (the comment opening the file, above `batchMaxSeqs`) on 2026-10-09.
 
 ```text
-MC3 (docs/tasks/task-concurrency-2026-09.md): batched decode — one decode token for up to batchMaxSeqs sequences in
+MC3 (docs/tasks/parked/task-concurrency-2026-09.md): batched decode — one decode token for up to batchMaxSeqs sequences in
 ONE command buffer, each sequence on its own MC1 resident KV slot at its own position, and every logit bit-identical
 to production's single-token forward on that sequence (TestMC3Step_bitIdentical). Everything that is per-row work
 runs production's own kernels, per sequence: norm + int8 quantisation, RoPE, the KV store into that sequence's slot,
@@ -44,7 +44,7 @@ Moved from `backend/metal/batch.go` (the comment above `mc3FARowsOn`) on 2026-10
 mc3FARowsOn runs the batched step's rows at attention_fa depth through one multi-row dispatch pair (E-P05,
 mc3_attention_fa*_rows), bit-identical to their per-row pairs. ON since 2026-10-04 (owner: "turn E-P05 on"): faster in
 every cell measured, 1.016x at 2 rows (serve's default slot count) to 1.06x at 8 rows on the 1.5B at depth 1100-2048,
-1.029x on the 7B (docs/tasks/task-metal-audit-2026-10.md, "E-P05").
+1.029x on the 7B (docs/completed/task-metal-audit-2026-10.md, "E-P05").
 ```
 
 ## mc3AdjRowsOn
@@ -64,7 +64,7 @@ Moved from `backend/metal/batch.go` (the comment above `calibrateRows`) on 2026-
 
 ```text
 calibrateRows decides, once, at which batch sizes qkv and gate|up are cheaper as B per-row production GEMVs than as
-one fragment dispatch (MC3 S4, docs/tasks/task-concurrency-2026-09.md). The fragment's cost is fixed for any B up to
+one fragment dispatch (MC3 S4, docs/tasks/parked/task-concurrency-2026-09.md). The fragment's cost is fixed for any B up to
 8, and a GEMV's is per row. On the 7B's large shapes the GEMV is bandwidth-bound and the fragment ALU-bound, so two
 GEMVs beat one fragment (gate|up 0.87 against 1.17 ms). Both run on the real weights of the first layers, one layer's
 weights per dispatch so the cache does not serve them, median of 7 command buffers after 2 warm-ups. The choice
@@ -79,7 +79,7 @@ Moved from `backend/metal/batch.go` (the comment above `stepVerifyCost`) on 2026
 stepVerifyCost is the step-kernel verify's measured cost in single-token steps, indexed by rows verified: the
 conservative end of TestMC3Verify_rowCost on the M1 Pro (the 7B at depth 2048, the dearest cell of both models; the
 1.5B at depth 128 reads 1.59 / 1.71 / 1.76 at 2 / 4 / 8 rows). 1 row is production's own Forward; 3 and 5-7 are
-interpolated; 9 rows are an 8-row step plus one Forward. docs/tasks/task-concurrency-2026-09.md, MC4.
+interpolated; 9 rows are an 8-row step plus one Forward. docs/tasks/parked/task-concurrency-2026-09.md, MC4.
 ```
 
 ## promptStepMaxAboveFloor
@@ -89,7 +89,7 @@ Moved from `backend/metal/batch.go` (the comment above `promptStepMaxAboveFloor`
 ```text
 promptStepMaxAboveFloor is the longest suffix the above-floor half of the step route takes (promptStepAboveFloor).
 T1.10 measured the step at 0.40× / 0.80× / 1.56× the pass at K = 16 / 32 / 64 on the 1.5B and the 7B
-(docs/tasks/task-metal-audit-2026-10.md, Batch A), so it stops at the last K measured faster.
+(docs/completed/task-metal-audit-2026-10.md, Batch A), so it stops at the last K measured faster.
 ```
 
 ## promptStepOK
@@ -223,7 +223,7 @@ the I/O WITHIN one call, on the single host goroutine that already owns this poo
 Moved from `backend/metal/batch_rows.go` (the comment opening the file, above `mc3RowsKernels`) on 2026-10-09.
 
 ```text
-MC3 S3 (docs/tasks/task-concurrency-2026-09.md): multi-row forms of the per-row kernels a batched step runs once per
+MC3 S3 (docs/tasks/parked/task-concurrency-2026-09.md): multi-row forms of the per-row kernels a batched step runs once per
 sequence — rmsnorm_quant, quant_vec, swiglu_quant, rope2. Measured (TestMC3StepBreakdown, 2026-09-27): those small
 dispatches cost ~1 ms per sequence per step (4.2 of a B = 4 step's 22.6 ms at depth 128, 8.1 of B = 8's 30.1), each
 running a single threadgroup, one sequence after another. One dispatch over all rows runs them side by side.
@@ -344,7 +344,7 @@ geometry object per distinct {hd, nKV, half, kEqV}, shared across the layers tha
 Moved from `backend/metal/greedy_chain.go` (the comment above `chainDrainEvery`) on 2026-10-09.
 
 ```text
-The greedy chain: C-B01 of docs/audit-metal-2026-09-30.md (Phase 3 item 5 of docs/tasks/task-metal-audit-2026-10.md).
+The greedy chain: C-B01 of docs/audit-metal-2026-09-30.md (Phase 3 item 5 of docs/completed/task-metal-audit-2026-10.md).
 
 The pipelined executor (execLoop) pre-encodes token t+1 while t runs, but cannot commit it until t finishes: t+1's
 input is the embedding of the token t's logits pick, and the host picks it. So between t's last kernel and t+1's
@@ -378,7 +378,7 @@ waitUntilCompleted (M-11 / C-B03, docs/audit-metal-2026-09-30.md). aikit's C-B03
 88.5 us sooner per boundary (p50 101.8 against 190.3 us) on a one-word payload. OFF: on M26 (phase 2 async on both
 arms) it read 0.878x a token with a busy spin and 0.848x with a 10 us nap, 0 of 9 reps above 1 each, every boundary
 fenced and none stale; each fenced phase 1 took about 1.3-1.6 ms to be seen. The likely cost is the system-scope fence
-publishing a whole decode layer's writes, which the probe's one word never priced (docs/tasks/task-m26-mac-2026-10.md,
+publishing a whole decode layer's writes, which the probe's one word never priced (docs/completed/task-m26-mac-2026-10.md,
 "M-11"). Kept, gated bit-exact and not stale (TestPagedFence_bitExactAndNotStale).
 ```
 
@@ -400,7 +400,7 @@ Moved from `backend/metal/prefill_deltanet.go` (the comment above `dnetPrefillOn
 
 ```text
 dnetPrefillOn admits Gated-DeltaNet models to the batched prefill pass. ON since D-B01's grade (2026-10-04,
-docs/tasks/task-metal-audit-2026-10.md: fidelity SHIPS on Qwen3.5-0.8B, the pass 8.06x the sequential loop at
+docs/completed/task-metal-audit-2026-10.md: fidelity SHIPS on Qwen3.5-0.8B, the pass 8.06x the sequential loop at
 K = 512); tests turn it off for the sequential arm.
 ```
 
@@ -410,7 +410,7 @@ Moved from `backend/metal/prefill_emodel.go` (the comment above `emodelLayerMajo
 
 ```text
 emodelLayerMajorOn routes a Gemma 4 E-model's prompt (E2B, E4B: per-layer embeddings, KV-shared layers) through
-prefillEModel instead of declining PrefillLast (S9 of docs/tasks/task-multimodal-support-2026-10.md). The f16-MMA pass
+prefillEModel instead of declining PrefillLast (S9 of docs/completed/task-multimodal-support-2026-10.md). The f16-MMA pass
 declines every dense Gemma 4 (head size varies by layer), so without this a text prompt prefilled one token at a
 time on the GPU and an image turn prefilled on the CPU. The pass is bit-identical to the sequential loop by
 construction (G-S9a); on by default, as the paged 26B's layer-major pass is, with a night speed grade to turn it off
@@ -423,7 +423,7 @@ Moved from `backend/metal/prefill_emodel.go` (the comment above `emodelBatchedOn
 
 ```text
 emodelBatchedOn routes a Gemma 4 E-model's prompt through the f16 batched pass (S9 step 2,
-docs/tasks/task-multimodal-support-2026-10.md) instead of the layer-major one, at or above the fast-prefill floor. ON
+docs/completed/task-multimodal-support-2026-10.md) instead of the layer-major one, at or above the fast-prefill floor. ON
 since 2026-10-09: G-S9c and G-S9d passed by day, and the night speed rule read 7.04x on a ~512-token text prompt
 (10.99 -> 1.57 s TTFT, five passes 6.84-7.42x). Below the floor, on any decline, or with --exact-prefill, the
 layer-major pass (bit-identical to sequential) keeps the route.
@@ -434,7 +434,7 @@ layer-major pass (bit-identical to sequential) keeps the route.
 Moved from `backend/metal/prefill_g4batch.go` (the comment above `g4ExpertBatchOn`) on 2026-10-09.
 
 ```text
-D-P01's batched expert GEMM (docs/audit-metal-2026-09-30.md; docs/tasks/task-m26-mac-2026-10.md, "D-P01"): a
+D-P01's batched expert GEMM (docs/audit-metal-2026-09-30.md; docs/completed/task-m26-mac-2026-10.md, "D-P01"): a
 layer-major paged Gemma 4 prefill runs one slot group's routed experts expert by expert, every (row, expert) pair the
 group routes to that expert in one pass over its weights, instead of row by row. Bit-identical to the per-row phase 2
 (encodeG4Phase2Paged) by construction:
@@ -453,7 +453,7 @@ g4ExpertBatchOn picks it in g4LayerMajorRows. ON once its gate passes and its sp
 Moved from `backend/metal/prefill_g4paged.go` (the comment above `g4LayerMajorOn`) on 2026-10-09.
 
 ```text
-g4LayerMajorOn routes a paged Gemma 4 MoE's prompt through prefillG4Paged (docs/tasks/task-m26-mac-2026-10.md, 4b)
+g4LayerMajorOn routes a paged Gemma 4 MoE's prompt through prefillG4Paged (docs/completed/task-m26-mac-2026-10.md, 4b)
 instead of the sequential loop. ON since 2026-10-04 (owner's bar, ship at >= 1.02x for a bit-identical change; a smoke
 on M26 read 1.42x); the night grade at M = 128 and 512 turns it off if it reads below 1.00x.
 ```
@@ -463,7 +463,7 @@ on M26 read 1.42x); the night grade at M = 128 and 512 turns it off if it reads 
 Moved from `backend/metal/lora.go` (the file comment opening the file) on 2026-10-09.
 
 ```text
-Compute-time LoRA on the resident path (G3, docs/tasks/task-gpu-paths-2026-09.md).
+Compute-time LoRA on the resident path (G3, docs/completed/task-gpu-paths-2026-09.md).
 
 A LoRA adapter's delta is additive: y[o] += scale·Σ_r B[o,r]·(A·x)[r], applied AFTER the base
 projection's matmul, on the SAME input x the base matmul consumed (decoder/lora.go's
@@ -665,7 +665,7 @@ Moved from `backend/metal/model.go` (the comment above `attnFADepthFloor`) on 20
 
 ```text
 attnFADepthFloor is where attention_fa takes over from the shipped kernel. It is 1024 since B-P03
-(docs/tasks/task-metal-audit-2026-10.md, night of 2026-10-03): T1.2 measured the block kernel at 1.167x the legacy
+(docs/completed/task-metal-audit-2026-10.md, night of 2026-10-03): T1.2 measured the block kernel at 1.167x the legacy
 kernel at 1024 keys on the 1.5B and 1.056x on the 7B, and the fidelity gate at the new depths passed. P1 on both
 models put the block kernel's median and p99 relative L2 against float64 below the exact kernel's at 1024, 1280 and
 1535 keys; P2 PASSES on the 1.5B at 1024 (KL ratio 0.9987). Below 1024 the two kernels were level (0.97-1.03x), so
@@ -692,7 +692,7 @@ Moved from `backend/metal/model.go` (the comment above `gemvExtOn`) on 2026-10-0
 gemvExtOn routes the int4 GEMVs R18 never reached through its rows-per-simdgroup kernels (D-B04): DeltaNet's qkv and
 z projections, and a shared expert's gate|up and down. Each rows kernel is bit-identical to the one it replaces
 (same lane-strided words, per-word sum and simd_sum; TestGemvExt_bitIdentical). ON since its grade passed
-(docs/tasks/task-metal-audit-2026-10.md, "D-B04", night of 2026-10-03): the 9B decodes 1.064x faster at depth 128 and
+(docs/completed/task-metal-audit-2026-10.md, "D-B04", night of 2026-10-03): the 9B decodes 1.064x faster at depth 128 and
 1.061x at 1024, 7 of 7 reps above 1, logits equal in every rep, against the pre-registered >= 1.02.
 ```
 
@@ -702,7 +702,7 @@ Moved from `backend/metal/model.go` (the comment above `attnFABlkAnyG`) on 2026-
 
 ```text
 attnFABlkAnyG selects the block kernel for the dense group sizes other than the graded 6 and 7 (G = 2, 3, 4, 5 and
-8; B-P02). ON since its grade passed (docs/tasks/task-metal-audit-2026-10.md, "B-P02", night of 2026-10-03): on the
+8; B-P02). ON since its grade passed (docs/completed/task-metal-audit-2026-10.md, "B-P02", night of 2026-10-03): on the
 two G = 2 models, legacy / block attention measured 2.37x and 2.32x (internlm2-1.8b) and 2.47x and 2.30x
 (qwen3-0.6b) at 2048 and 3900 keys, 5 of 5 reps above 1, against the pre-registered >= 1.5. The kernel agrees with
 g7 head for head (TestAttnFABlk_anyGMatchesG7).
@@ -714,7 +714,7 @@ Moved from `backend/metal/model.go` (the comment above `attnFABlk64On`) on 2026-
 
 ```text
 attnFABlk64On admits hd = 64 layers to attention_fa through the block kernel's hd = 64 twin (B-P01). ON since its
-pre-registered grade passed (docs/tasks/task-metal-audit-2026-10.md, "B-P01", night of 2026-10-03), on the 0.5B:
+pre-registered grade passed (docs/completed/task-metal-audit-2026-10.md, "B-P01", night of 2026-10-03), on the 0.5B:
 P1, the twin's median and p99 relative L2 against float64 below the exact kernel's; P2 at 3900 keys, critA, critB and
 the ceiling hold with a KL ratio of 1.0098 (<= 1.05); speed, legacy / block attention 3.17x at 2048 keys and 3.63x
 at 3900 (>= 1.5). The twin is not bit-identical to the per-query-head kernel, which is why it was graded on fidelity.
@@ -726,7 +726,7 @@ Moved from `backend/metal/model.go` (the comment above `canUseAttnFA`) on 2026-1
 
 ```text
 canUseAttnFA reports whether attention_fa may replace the shipped kernel for layer l in the command
-buffer being encoded (at planNKeys keys). R2 (docs/tasks/red-october.md): dense-GQA only, hd==128
+buffer being encoded (at planNKeys keys). R2 (docs/completed/red-october.md): dense-GQA only, hd==128
 only (the kernel's own cooperative-load tiling is fixed to 32 lanes x half4) — sinks, windows,
 and the f32-KV twin are explicitly out of scope until the dense-GQA kernel clears the band (the
 brief's own text), same reasoning as canUseF16Lane's family exclusions above it.
@@ -740,7 +740,7 @@ Moved from `backend/metal/model.go` (the comment in `buildResident`, above the g
 The same family's GATED softmax layer (qwen3_5/qwen3_5_moe/qwen3_next — NOT every
 dnetOK family: Olmo Hybrid's full-attention layer is olmo3's plain scheme instead,
 AttnGate=false, and falls through to the ordinary branch below — G5,
-docs/tasks/task-gpu-paths-2026-09.md. This used to be a bare `dnetOK` check, silently
+docs/completed/task-gpu-paths-2026-09.md. This used to be a bare `dnetOK` check, silently
 wrong the moment a non-gated hybrid family reached residency, since
 Qwen35ResidentParams hardcoded attnGate=true). Its q/k/v/o live off qattn, not
 lw.QProj/KProj/VProj/OProj,
@@ -870,7 +870,7 @@ Since M2 (docs/tasks/task-minimax-code-compat-2026-09.md) an unpinned load no lo
 
 How Metal bounds a long prompt's prefill memory (`backend/metal/backend.go:metalResident.PrefillBlockRows`,
 `backend/metal/prefill.go:resident.prefillScratchBytes`, `decoder/residency.go:Model.prefillBlockRows`). The gates and readings
-are in `docs/tasks/task-integration-harness-2026-10.md`, "I8".
+are in `docs/completed/task-integration-harness-2026-10.md`, "I8".
 
 - **Why a block.** The batched pass allocates its scratch for every row it is handed: two residual-width buffers, the
   q|k|v and attention outputs and three feed-forward widths, in halves. That is about 144 KB a row on a 7B, so one
@@ -981,7 +981,7 @@ every 4 layers this family has, and encodeLayer never dispatches pKv/pAttn for t
 Moved from `backend/metal/model.go` (the comment in `resident`, above `pRmsF16`) on 2026-10-09.
 
 ```text
-R1 (docs/tasks/red-october.md): the W4F16 decode lane — f16 activations, no int8
+R1 (docs/completed/red-october.md): the W4F16 decode lane — f16 activations, no int8
 quantization, gated by GOINFER_METAL_DECODE_LANE=w4f16 (decodeLaneW4F16). Pipelines are
 always built ("one binary carries both arms", per the brief); only DISPATCH is
 conditional. First slice only: plain dense QKV/o-proj/gate-up (see canUseF16Lane) — down-
@@ -994,7 +994,7 @@ parallelBlock, qGate, outBias, DeltaNet, nonGatedMLP) stay on the shipped W4A8 k
 Moved from `backend/metal/model.go` (the comment in `resident`, above `pAttnFA`) on 2026-10-09.
 
 ```text
-R2 (docs/tasks/red-october.md): the split-KV decode-attention lane, gridded by (kvHead,
+R2 (docs/completed/red-october.md): the split-KV decode-attention lane, gridded by (kvHead,
 split) instead of by query head, DEFAULT ON since 2026-09-21 (decodeAttnFA, set from
 metalAttnFAEnabled(); GOINFER_METAL_ATTN_FA=0 opts out) — see that function's own doc
 comment for the gate/speed/verify-oracle history. Pipelines always built; dispatch is
@@ -1024,7 +1024,7 @@ Moved from `backend/metal/model.go` (the comment in `resident`, above `attnFAFlo
 
 ```text
 attnFAFloorOverride, when > 0, replaces attnFADepthFloor as the key count at which attention_fa takes over.
-ZERO in production — set only by tests (T1.2 of docs/tasks/task-metal-audit-2026-10.md: legacy-against-blk arms
+ZERO in production — set only by tests (T1.2 of docs/completed/task-metal-audit-2026-10.md: legacy-against-blk arms
 below the floor). Read through attnFAFloor by attnPlanFor, canUseAttnFA and canUseAttnFAAt, so the single-token
 step and the batched step plan alike.
 ```
@@ -1050,7 +1050,7 @@ logic bug. Root cause of the divergence r2-attn-fa-2026-09-19.md left unexplaine
 Moved from `backend/metal/model.go` (the comment in `resident`, above `pLoraDelta`) on 2026-10-09.
 
 ```text
-Compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md — see lora.go). pLoraDelta is
+Compute-time LoRA (G3, docs/completed/task-gpu-paths-2026-09.md — see lora.go). pLoraDelta is
 allocated once in BuildResident unconditionally (cheap; same "always create, gate on the
 per-model state" shape every other optional pipeline in this struct already uses). Fused
 down+up into one kernel/dispatch (P-11, audit-2026-09-10) — t[R] lives in the kernel's own
@@ -1236,7 +1236,7 @@ Moved from `backend/metal/model.go` (the comment above `nativeInt8`) on 2026-10-
 
 ```text
 nativeInt8 turns the native int8 path on (w8Eligible). ON since 2026-10-04: F3′, F2 (read as hard flips, owner
-decision), P2, S and S-auto passed (docs/tasks/task-metal-int8-2026-10.md). Tests turn it off for the int4
+decision), P2, S and S-auto passed (docs/completed/task-metal-int8-2026-10.md). Tests turn it off for the int4
 re-quant arm; it is not an option or an environment variable.
 ```
 
@@ -1247,7 +1247,7 @@ Moved from `backend/metal/model.go` (the comment above `nativeInt4Mix`) on 2026-
 ```text
 nativeInt4Mix turns on int4mix's native path (w8AttnEligible: attention W8A8, FFN int4). ON since 2026-10-04: M1 and
 M3 passed, and M2 is read as hard flips (owner decision; it passes, 1 against the re-quant's 3), with M4 the night's
-prefill confirmation (docs/tasks/task-metal-int8-2026-10.md, "Slice 4: int4mix"). Tests turn it off for the re-quant arm.
+prefill confirmation (docs/completed/task-metal-int8-2026-10.md, "Slice 4: int4mix"). Tests turn it off for the re-quant arm.
 ```
 
 ## nativeInt8MoE
@@ -1256,7 +1256,7 @@ Moved from `backend/metal/model.go` (the comment above `nativeInt8MoE`) on 2026-
 
 ```text
 nativeInt8MoE admits a generic resident MoE to the native int8 path (w8Eligible; int8 expert GEMVs gemv_w8a8_moe*).
-ON since 2026-10-04: X1-X4 passed (docs/tasks/task-metal-int8-2026-10.md, "Slice 4: MoE int8"); tests turn it off.
+ON since 2026-10-04: X1-X4 passed (docs/completed/task-metal-int8-2026-10.md, "Slice 4: MoE int8"); tests turn it off.
 ```
 
 ## w8PreciseMath
@@ -1265,7 +1265,7 @@ Moved from `backend/metal/model.go` (the comment above `w8PreciseMath`) on 2026-
 
 ```text
 w8PreciseMath compiles the library of a model headed for the native int8 path without fast math (owner decision,
-2026-10-04, docs/tasks/task-metal-int8-2026-10.md): at int8int8 any difference from the CPU is amplified by the
+2026-10-04, docs/completed/task-metal-int8-2026-10.md): at int8int8 any difference from the CPU is amplified by the
 activation quantization, and fast math was about 40% of gate F3's gap (KL(f32 ‖ Metal int8) 0.027917 fast, 0.025440
 precise, against the f16-KV CPU's 0.024045). It is decided before the build from the model alone, so a model that
 passes w8Weights but is MoE (Gemma 4's parallel dense‖MoE) is excluded here too.
@@ -1338,7 +1338,7 @@ its own per-layer geom seam, encodeAttention's geomFor), so calling it with "met
 wrongly clear Gemma 4 here too. Checking !m.HasPerLayerGeometry() directly answers
 "does this arch vary per layer at all", the thing this uniform-g0 fast path can't handle
 regardless of what Metal's decode path separately supports.
-G8 MoE (docs/tasks/task-gpu-paths-2026-09.md): Gemma-4's enable_moe_block variant (parallel
+G8 MoE (docs/completed/task-gpu-paths-2026-09.md): Gemma-4's enable_moe_block variant (parallel
 dense‖MoE FFN, residLayer.g4moe, encodeGemma4MoEFFN) is a THIRD FFN shape this row's
 L.moe != nil branch in PrefillLast does not cover at all — declaring FeatMoE above would
 otherwise admit it if it happens to have uniform per-layer geometry (HasPerLayerGeometry alone
@@ -1379,7 +1379,7 @@ Moved from `backend/metal/prefill.go` (the comment above `gemmTile`) on 2026-10-
 gemmTile is the tile selector for a rows × N prefill GEMM. Every choice is bit-identical (gemm_w4f16_tile's comment,
 TestGemmTile_bitIdentical).
 
-The default (D-B02, docs/tasks/task-metal-audit-2026-10.md "D-B02: the 16-row tile"): a threadgroup costs the same
+The default (D-B02, docs/completed/task-metal-audit-2026-10.md "D-B02: the 16-row tile"): a threadgroup costs the same
 whatever share of its rows is real, so a smaller token tile is taken when it pads the pass to strictly fewer rows:
 32 tokens up to 128 rows, 16 up to 16 rows and, when N <= 8192, up to 48. Past those, more row tiles cost more than
 the padding they save (TestGemmTile16_probe: 16-token tiles lose from 96 rows, and a 100-token pass ran 0.847x on
@@ -1501,7 +1501,7 @@ TestPrefillScratch_zeroFilled pins the property on this backend.
 Moved from `backend/metal/prefill.go` (the comment above `prefillScratch`) on 2026-10-09.
 
 ```text
-prefillScratch is prefillScratchU16 for any element type (R-20, docs/tasks/task-recompute-audit.md): the pass's f32
+prefillScratch is prefillScratchU16 for any element type (R-20, docs/completed/task-recompute-audit.md): the pass's f32
 and u32 buffers that the router GEMM, the route kernels or the host fill before they are read (the expert-major MoE
 branch's moeLogits, moeIdx, moeWgt, rowIdxBuf, rowWgtBuf), and xF, which the embeddings are converted straight into.
 Same zero-fill reliance and the same copy arm, plus prefillR20Copy, which copies these alone so a test can time R-20
@@ -1667,13 +1667,13 @@ indexed by rIdx at kernel-execution time) plus the optional shared expert. The n
 
 dst is the down-projection's accumulate target — decode's own caller (encodeMoEFFN) always
 passes r.x (the shared F32 residual stream), but G8's batched-prefill MoE row loop
-(backend/metal/prefill.go, docs/tasks/task-gpu-paths-2026-09.md) needs the SAME expert-loop math to
+(backend/metal/prefill.go, docs/completed/task-gpu-paths-2026-09.md) needs the SAME expert-loop math to
 accumulate into an isolated F32 scratch buffer instead, since prefill's own residual (xF) is
 F16 and these kernels are F32-only — added into xF's row by a SEPARATE small kernel afterward,
 not by pointing these dispatches at xF directly (a type mismatch: `device float*` vs `half*`).
 moeKSlotsOn selects D-P03's k-slot dispatches where the shape admits them. Off: PARKED 2026-10-04, bit-identical
 but 1.019x on the Qwen1.5-MoE slice's token (21.5 us per MoE layer at k = 4), the owner's park zone for speed
-(docs/tasks/task-metal-audit-2026-10.md, "D-P03"). Tests turn it on for the k-slot arm.
+(docs/completed/task-metal-audit-2026-10.md, "D-P03"). Tests turn it on for the k-slot arm.
 ```
 
 ## metalBackend.memoryProbe
@@ -1706,7 +1706,7 @@ physical RAM — never on the OS's account of what is free. Darwin's UBC reclaim
 pressure, so "available" reports what survived rather than what can be asked for; an
 RSS-keyed ceiling once reported LESS memory at a known failure point than at baseline,
 which is a guard that inverts exactly when it is needed.
-G6 (docs/tasks/task-gpu-paths-2026-09.md — "honoured or refused with numbers"): an explicit -ctx
+G6 (docs/completed/task-gpu-paths-2026-09.md — "honoured or refused with numbers"): an explicit -ctx
 above metalCtxCapMax cannot be honoured (a fixed-size kernel score buffer, not a tunable
 budget) and must be a NAMED refusal, not folded into the generic "BuildResident declined"
 swallow below (buildResident itself also calls resolveMetalCtxCap and would hit the exact
@@ -1885,7 +1885,7 @@ Moved from `backend/metal/backend.go` (the comment above `metalFastPrefillFloor`
 ```text
 metalFastPrefillFloor is the PROMPT-LENGTH floor (whole prompt = startPos+M) below which
 the f16-MMA batched pass declines and the sequential per-token loop runs instead. Lowered to
-64 (2026-09-20, R3, docs/tasks/red-october.md and docs/measurements/metal-prefill-floor-
+64 (2026-09-20, R3, docs/completed/red-october.md and docs/measurements/metal-prefill-floor-
 2026-09-20.md): the §3.2 pooled gate SHIPS at K=64 alone (critA/B/C all true, S model) and at
 K=64+128 pooled together, and the batched arm beats sequential on served TTFT by 3.83x at
 K=64 and 4.66x at K=128 (bench_peer_prefill.py, three arms interleaved, n=6) — both well past
@@ -1893,7 +1893,7 @@ the >=2x ships band, not just the fidelity precondition. K=64 is the smaller of 
 registered candidates {64, 128}, so it is the new floor per the brief's own decision rule.
 Previously lowered to 256 (2026-09-12, audit-metal-2026-09-12.md M-02).
 
-16 since A-P02 (docs/tasks/task-metal-audit-2026-10.md, graded 2026-10-04 against its pre-registration): the §3.2 pooled
+16 since A-P02 (docs/completed/task-metal-audit-2026-10.md, graded 2026-10-04 against its pre-registration): the §3.2 pooled
 gate SHIPS on the 1.5B with K = 16, 32, 48 and 64 pooled, and on each new cell alone, against CPU f32 references built
 together; the pass beats the sequential loop 3.48x at K = 16 in-process (7 of 7 reps above the 1.5 bar; the 7B 2.52x).
 GOINFER_METAL_FAST_PREFILL_FLOOR overrides it, 0 = no floor. A resident with the batched step keeps the exact step
@@ -1937,7 +1937,7 @@ Moved from `backend/metal/backend.go` (the comment above `metalAttnFAEnabled`) o
 
 ```text
 metalAttnFAEnabled reports whether decode attention defaults to attention_fa (R2,
-docs/tasks/red-october.md) — the kvHead×split-gridded kernel, gated per layer by
+docs/completed/red-october.md) — the kvHead×split-gridded kernel, gated per layer by
 canUseAttnFA (dense-GQA, hd=128, key count >= attnFADepthFloor). DEFAULT ON since
 2026-09-21. The fidelity pass that admitted it (gate (3), docs/measurements/r2-attn-fa-rootcause-2026-09-21.md)
 is VOID: its arms were contaminated by the executor's stale pre-encoded buffer and 4 of its 10 set-A references
@@ -2022,7 +2022,7 @@ Moved from `backend/metal/backend.go` (the comment above `resident.prefillUnalig
 prefillUnaligned names the first reduction length the batched pass's GEMMs cannot take, or "" when every one is a multiple
 of 32. gemm_w4f16_tile and its int8 twin stage K in slabs of 32 with no partial-slab handling (backend/metal/prefill.go). An int4
 resident cannot violate it (int4Buf refuses K%32 != 0 at build), but a native int8 one can: glm-ocr-tiny (hidden 48, FFN
-144) was admitted and read cosine 0.22 against the CPU (docs/tasks/task-metal-pairwise-followups-2026-10.md, Part A).
+144) was admitted and read cosine 0.22 against the CPU (docs/completed/task-metal-pairwise-followups-2026-10.md, Part A).
 Real checkpoints are 32-aligned; this keeps a model that is not on the sequential path instead of computing garbage.
 ```
 
@@ -2050,7 +2050,7 @@ Moved from `backend/metal/backend.go` (the comment above `metalResident.HiddenLa
 ```text
 HiddenLast (decoder.ResidentHiddenLast) ingests a whole sequence starting at startPos and
 returns the LAST position's hidden state after the model's final norm — the resident twin of
-PrefillLast, but for embedding requests (G4, docs/tasks/task-gpu-paths-2026-09.md) instead of
+PrefillLast, but for embedding requests (G4, docs/completed/task-gpu-paths-2026-09.md) instead of
 generation: it never runs the LM head. This runs the SAME per-token sequential kernels decode
 uses — one forwardHiddenNoHead call per position. It does not match the CPU reference bit for
 bit: the decode kernels round differently and forwardHiddenNoHead returns the int8-dequantized
@@ -2360,11 +2360,11 @@ Moved from `backend/metal/gemma4_moe.go` (the comment above `g4PrefetchOn`) on 2
 
 ```text
 g4PrefetchOn guesses a paged Gemma 4 MoE layer's experts from the layer before it and reads the misses in the
-background (lever 3, docs/tasks/task-m26-mac-2026-10.md): phase 1 of layer l also runs layer l+1's router on layer l's
+background (lever 3, docs/completed/task-m26-mac-2026-10.md): phase 1 of layer l also runs layer l+1's router on layer l's
 residual, the host starts reading those experts into layer l+1's pool, and the reads overlap the GPU's phase 2 of l and
 phase 1 of l+1. The true router still picks; a wrong guess costs an evicted slot, never a wrong bit. OFF: on M26 at
 24 slots it read 0.894x a token guessing all 8 experts (43% of guesses used) and 0.947x guessing the top 2 (60%), 0
-of 9 reps above 1 each: the extra reads compete with demand reads on the SSD (docs/tasks/task-m26-mac-2026-10.md,
+of 9 reps above 1 each: the extra reads compete with demand reads on the SSD (docs/completed/task-m26-mac-2026-10.md,
 "Lever 3"). Kept, gated bit-exact, for a better guess.
 ```
 
@@ -2373,7 +2373,7 @@ of 9 reps above 1 each: the extra reads compete with demand reads on the SSD (do
 Moved from `backend/metal/alias.go` (the comment above `weightAlias`) on 2026-10-09.
 
 ```text
-S6 (docs/tasks/task-never-swap-2026-09.md): a dense int4 weight is copied twice at build — the
+S6 (docs/completed/task-never-swap-2026-09.md): a dense int4 weight is copied twice at build — the
 .giw's mapping → a heap []uint32 → a StorageModeShared MTLBuffer — and the MTLBuffer copy is the
 ~2.5 GB IOAccelerator dirty term of a Metal M26 load. weightAlias replaces the second copy for a
 canonical int4 array that lives in the mapping: it wraps the array's pages in a no-copy MTLBuffer
@@ -2437,7 +2437,7 @@ Moved from `backend/metal/gumbel.go` (the comment above `gumbelMSLKernels`) on 2
 
 ```text
 gumbelMSLKernels — device-side temperature-only sampling by Gumbel-max, the Mac half of R7b
-(docs/tasks/red-october.md). Port of backend/cuda/gumbel.cu and backend/webgpu/gumbel.go (WGSL) — read either
+(docs/completed/red-october.md). Port of backend/cuda/gumbel.cu and backend/webgpu/gumbel.go (WGSL) — read either
 first; this mirrors their structure kernel-for-kernel over MSL's own constraints, checked
 directly against the Metal Shading Language Specification (2026-06-04 rev), not assumed:
 
@@ -2489,7 +2489,7 @@ Comment lines the diet cut down to their contract (a tracker id, a date or a one
 ### backend/metal/backend.go, before `var metalCtxCeiling sync.Map // *decoder.Model -> int`
 
 ```text
-metalCtxCeiling is S18's context ceiling per model (docs/tasks/task-multimodal-support-2026-10.md, "S18 on the Mac"):
+metalCtxCeiling is S18's context ceiling per model (docs/completed/task-multimodal-support-2026-10.md, "S18 on the Mac"):
 what shrinkCtxToFit lowered an unpinned resident context to, read by resolveMetalCtxCap. A map keyed by the model, so
 the decoder keeps no backend state.
 ```
@@ -2582,7 +2582,7 @@ return true // §3 gate passed 2026-09-10 (S set B decision cells K=256/512/1024
 ### backend/metal/backend.go, before `if a.emodelBatched() && a.fastPrefill() && startPos+len(embeddings) >= metalFast`
 
 ```text
-4b (docs/tasks/task-m26-mac-2026-10.md): a paged Gemma 4 MoE (M26) takes no batched pass; its prompt runs layer by
+4b (docs/completed/task-m26-mac-2026-10.md): a paged Gemma 4 MoE (M26) takes no batched pass; its prompt runs layer by
 layer on decode's own kernels, bit-identical to the sequential loop, so neither the floor nor --exact-prefill
 applies. Behind g4LayerMajorOn until graded.
 S9 step 2: an E-model prompt at or above the floor takes the batched pass when it is on; below the floor, or on any
@@ -2603,7 +2603,7 @@ than the pass there (promptStepOK).
 ### backend/metal/backend.go, before `func (a *metalResident) PrefillImageLast(ctx context.Context, embeddings [][]flo`
 
 ```text
-PrefillImageLast (decoder.ResidentImagePrefill; S17's Metal image prefill, docs/tasks/task-multimodal-support-2026-10.md) is
+PrefillImageLast (decoder.ResidentImagePrefill; S17's Metal image prefill, docs/completed/task-multimodal-support-2026-10.md) is
 the batched f16 pass over an image turn's spliced embeddings with the image block [imgStart, imgEnd) attending
 bidirectionally (attention_prefill_img), as CUDA's PrefillImageLast and the CPU's prefillLogitsVL. The whole prompt in one
 pass, never chunked across the block. It takes the plain uniform pass only: a Gemma 4 E-model (its rows carry per-layer
@@ -2666,7 +2666,7 @@ decode (audit R-23; B-10 class).
 ### backend/metal/backend.go, before `if a.r.prefillResidNonFinite {`
 
 ```text
-S17 (docs/tasks/task-multimodal-support-2026-10.md): the f16 residual overflowed. The head reads the NaN row as
+S17 (docs/completed/task-multimodal-support-2026-10.md): the f16 residual overflowed. The head reads the NaN row as
 finite zeros, so the logit check below cannot see it.
 ```
 
@@ -2836,7 +2836,7 @@ Moved from `backend/metal/olmo3_resident_smoke_test.go` (the comment above `Test
 
 ```text
 TestOlmo3ResidentSmokeMetal and TestOlmoHybridResidentSmokeMetal are G5's FeatPostOnlyNorm +
-FeatQKNormWhole row (docs/tasks/task-gpu-paths-2026-09.md) smoke gates: the model actually goes
+FeatQKNormWhole row (docs/completed/task-gpu-paths-2026-09.md) smoke gates: the model actually goes
 resident and produces finite, non-degenerate output.
 
 DELIBERATELY NOT a resident-vs-CPU cosine floor — same finding G5 rows 1-2 already recorded for
@@ -2902,7 +2902,7 @@ time another additive term is found.
 Moved from `backend/metal/smollm3_resident_parity_test.go` (the comment above `TestSmolLM3ResidentSmokeMetal`) on 2026-10-09.
 
 ```text
-TestSmolLM3ResidentSmokeMetal is G5's FeatNoPE row (docs/tasks/task-gpu-paths-2026-09.md) smoke
+TestSmolLM3ResidentSmokeMetal is G5's FeatNoPE row (docs/completed/task-gpu-paths-2026-09.md) smoke
 gate: the model actually goes resident and produces finite, non-degenerate output when its
 LAST layer is NoPE (testdata/smollm3-tiny's no_rope_layers=[1,1,1,0], 1=has-rope/0=NoPE).
 
@@ -2944,7 +2944,7 @@ source afterward and confirms the restoration is byte-identical.
 Moved from `backend/metal/sampled_gumbel_speed_test.go` (the comment above `TestSampledDecodeLadder_speed`) on 2026-10-09.
 
 ```text
-TestSampledDecodeLadder_speed is R7b Mac's speed measurement (docs/tasks/red-october.md),
+TestSampledDecodeLadder_speed is R7b Mac's speed measurement (docs/completed/red-october.md),
 following the same protocol docs/measurements/sampled-gumbel-2026-09-20.md's CUDA/WebGPU numbers
 used (paired against greedy, same session, interleaved with a rotating start, a discarded
 warm-up round, and a do-nothing arm) — CUDA's own TestSampledDecodeLadder was not found
@@ -3023,7 +3023,7 @@ anything it cannot parse cleanly. Mirrors those two files' resolution exactly (m
 except an invalid/unset value means "assume unpaged" here (safe: buildResident still validates
 and declines on a bad value) rather than a hard error.
 
-Phase 2 (docs/tasks/task-gpu-paths-2026-09.md — "Metal slots become an Option and a flag"): the
+Phase 2 (docs/completed/task-gpu-paths-2026-09.md — "Metal slots become an Option and a flag"): the
 env-var cases below now go through a model whose Options.MoECacheSlots is 0 (unset), so
 metalMoESlotsRequest's fallback to GOINFER_METAL_MOE_SLOTS is what's actually exercised — an
 additional case pins the NEW priority order directly (Options wins over the env var when both
@@ -3181,7 +3181,7 @@ threadgroup parallelism is the tuning step). Validated vs a plain CPU softmax.
 Moved from `backend/metal/attn_fa_blk_test.go` (the comment above `r17Kernels`) on 2026-10-09.
 
 ```text
-r17Kernels is R17's step-2 prototype (docs/tasks/red-october.md; docs/measurements/metal-decode-attn-r17-2026-09-25.md)
+r17Kernels is R17's step-2 prototype (docs/completed/red-october.md; docs/measurements/metal-decode-attn-r17-2026-09-25.md)
 — attention_fa's first pass restructured in the shape of llama.cpp's flash_attn_ext_vec, as graded on 2026-09-25
 (fidelity decision on set B, confirmation run 3.50x). It SHIPPED as attention_fa_blk in kernels.go (allKernels);
 this is that shipped text rebuilt into the standalone library form the R17 harnesses compile (the prototype's own
@@ -3285,7 +3285,7 @@ Moved from `backend/metal/attn_fa_e2e_depth_test.go` (the comment above `TestAtt
 
 ```text
 TestAttentionFA_endToEndReproductionDepth2200 is the depth-2200 twin of attn_fa_e2e_test.go's
-keeper reproducer of the signature that PARKED R2 (docs/tasks/red-october.md) on 2026-09-19.
+keeper reproducer of the signature that PARKED R2 (docs/completed/red-october.md) on 2026-09-19.
 EXPLAINED 2026-09-21 (docs/measurements/r2-attn-fa-rootcause-2026-09-21.md; instrument:
 r2_ctx_diff_test.go): not a kernel defect — on identical inputs attention_fa matches the shipped
 kernel to <=1e-5 at every layer and step; the logit divergence is one int8 activation-quantization
@@ -3322,7 +3322,7 @@ Moved from `backend/metal/attn_fa_e2e_test.go` (the comment above `TestAttention
 
 ```text
 TestAttentionFA_endToEndReproduction is the KEEPER reproducer of the end-to-end signature that
-PARKED R2 (docs/tasks/red-october.md) on 2026-09-19: a kernel proven correct in isolation (16/16
+PARKED R2 (docs/completed/red-october.md) on 2026-09-19: a kernel proven correct in isolation (16/16
 adversarial cases in TestAttentionFA_vsReference, cosine 1.0000000 every time) whose logits
 diverge from the shipped kernel's from decode step 2 on. EXPLAINED 2026-09-21
 (docs/measurements/r2-attn-fa-rootcause-2026-09-21.md; instrument: r2_ctx_diff_test.go): not a
@@ -3387,7 +3387,7 @@ than inferred from a 28-layer model's stably-wrong logits.
 Moved from `backend/metal/attn_fa_test.go` (the comment above `TestAttentionFA_vsReference`) on 2026-10-09.
 
 ```text
-TestAttentionFA_vsReference is R2's (docs/tasks/red-october.md) gate (1), basic form: the new
+TestAttentionFA_vsReference is R2's (docs/completed/red-october.md) gate (1), basic form: the new
 attention_fa/attention_fa_combine pair against the CPU f64-shaped reference (cpuAttention,
 shared with TestAttention_ShippedKernelShapes), at the "control qwen2.5-1.5b" shape (hd=128,
 the only head width this kernel supports — see its own doc comment) and a handful of nKeys/nSplit
@@ -3815,7 +3815,7 @@ engages on; see snapshot_golden_test.go). A few seconds; no heavy assets.
 Moved from `backend/metal/gemm_mma8_mc3_test.go` (the comment above `mc3MMAKernels`) on 2026-10-09.
 
 ```text
-mc3MMAKernels is MC3's matrix-unit prototype (docs/tasks/task-concurrency-2026-09.md), TEST-ONLY: a W4A8 GEMM for
+mc3MMAKernels is MC3's matrix-unit prototype (docs/tasks/parked/task-concurrency-2026-09.md), TEST-ONLY: a W4A8 GEMM for
 up to 8 decode sequences on simdgroup_matrix, sized for decode rather than prefill. The prefill GEMM's 64-token tile
 costs the same at M = 1 as at M = 64 (TestMC3S0PrefillGEMMSmallM: 12-14x one decode GEMV), so this one's token tile
 is a single 8x8 fragment column: C^T[feature][token] = W[feature][k] . A^T[k][token].
@@ -3826,7 +3826,7 @@ is a single 8x8 fragment column: C^T[feature][token] = W[feature][k] . A^T[k][to
 Moved from `backend/metal/gemma4_26b_autopaged_test.go` (the comment above `TestGemma4_26B_autoPagedRuns`) on 2026-10-09.
 
 ```text
-TestGemma4_26B_autoPagedRuns is R11(c) (docs/tasks/red-october.md): the M26 row re-run against
+TestGemma4_26B_autoPagedRuns is R11(c) (docs/completed/red-october.md): the M26 row re-run against
 the AUTO-SIZED pager (decoder.Options.MoECacheExperts with MoECacheSlots left at 0), not a
 hand-picked N the way TestGemma4_26B_pagedRuns (GOINFER_METAL_MOE_SLOTS, N=32 default) exercises.
 metalMoESlotsRequest (backend/metal/backend.go) only calls the real autoMoESlots formula when
@@ -3890,7 +3890,7 @@ Moved from `backend/metal/gemma4_dense_scaled_test.go` (the comment at the pos-0
 
 ```text
 pos-0 kernel correctness (no KV accumulation): the 256-local/512-global geometry must compose.
-(S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.97 after the dense layer scalar and v_norm fixes, between the before-fix 0.982297 and after-fix 0.999148 readings)
+(S1.0 amendment, docs/completed/task-multimodal-support-2026-10.md: raised from 0.97 after the dense layer scalar and v_norm fixes, between the before-fix 0.982297 and after-fix 0.999148 readings)
 ```
 
 ## TestGemma4DenseScaled_metalParity.meanfloor
@@ -3898,7 +3898,7 @@ pos-0 kernel correctness (no KV accumulation): the 256-local/512-global geometry
 Moved from `backend/metal/gemma4_dense_scaled_test.go` (the comment at the mean floor) on 2026-10-09.
 
 ```text
-S1.0 amendment (docs/tasks/task-multimodal-support-2026-10.md): a floor on the mean itself, between the
+S1.0 amendment (docs/completed/task-multimodal-support-2026-10.md): a floor on the mean itself, between the
 before-fix 0.858647 and after-fix 0.926917 readings of the dense layer scalar and v_norm fixes.
 ```
 
@@ -3931,7 +3931,7 @@ logs the trace, so its shape can be compared to the 26B's (0.97→0.73→0.26).
 Moved from `backend/metal/gemma4_emodel_real_test.go` (the comment at the G3 amendment) on 2026-10-09.
 
 ```text
-G3 amendment (after run 1, docs/tasks/task-multimodal-support-2026-10.md): the CPU loads Metal's sidecar too, so
+G3 amendment (after run 1, docs/completed/task-multimodal-support-2026-10.md): the CPU loads Metal's sidecar too, so
 both sides run the same int8-pinned embedding/LM-head/PLE tables. Run 1 loaded the CPU's own e4h sidecar (those
 tables at int4), which compared two quantizations rather than two engines on one set of weights.
 ```
@@ -3961,7 +3961,7 @@ that here than after the MoE forward is wired.
 Moved from `backend/metal/gemma4_moe_parity_test.go` (the comment at the worst-layer floor) on 2026-10-09.
 
 ```text
-(S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.90 after the dense layer scalar and v_norm fixes, between the before-fix 0.999644 and after-fix 0.999982 readings)
+(S1.0 amendment, docs/completed/task-multimodal-support-2026-10.md: raised from 0.90 after the dense layer scalar and v_norm fixes, between the before-fix 0.999644 and after-fix 0.999982 readings)
 ```
 
 ## TestGemma4MoE_residentParity.mincos
@@ -3969,7 +3969,7 @@ Moved from `backend/metal/gemma4_moe_parity_test.go` (the comment at the worst-l
 Moved from `backend/metal/gemma4_moe_parity_test.go` (the comment at the minCos floor) on 2026-10-09.
 
 ```text
-(S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.60 after the dense layer scalar and v_norm fixes, between the before-fix 0.872764 and after-fix 0.998690 minCosine readings, s10-both.log and s10-after.log)
+(S1.0 amendment, docs/completed/task-multimodal-support-2026-10.md: raised from 0.60 after the dense layer scalar and v_norm fixes, between the before-fix 0.872764 and after-fix 0.998690 minCosine readings, s10-both.log and s10-after.log)
 ```
 
 ## TestGemma4TwoGeom_localize.bars
@@ -3982,7 +3982,7 @@ belief that int4-Metal (f16 group scales) against int4-CPU (f32 scales) floors a
 read 0.988 with no K=V. That ~0.98 was the two Gemma 4 bugs S1.0 fixed (the dense layer scalar and v_norm),
 not quantization: with them fixed, layer 0 reads 1.000000 and layer 1 0.999940. A seam or K=V break (a
 misthreaded geometry, the 2x v_norm trap) still craters a layer far below either bar.
-(S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.95 after the dense layer scalar and v_norm fixes, between the before-fix 0.987958 and after-fix 1.000000 readings)
+(S1.0 amendment, docs/completed/task-multimodal-support-2026-10.md: raised from 0.95 after the dense layer scalar and v_norm fixes, between the before-fix 0.987958 and after-fix 1.000000 readings)
 ```
 
 ## TestGemma4TwoGeom_localize.c1
@@ -3990,7 +3990,7 @@ misthreaded geometry, the 2x v_norm trap) still craters a layer far below either
 Moved from `backend/metal/gemma4_twogeom_test.go` (the comment at the layer-1 bar) on 2026-10-09.
 
 ```text
-(S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.95 after the dense layer scalar and v_norm fixes, between the before-fix 0.980768 and after-fix 0.999940 readings)
+(S1.0 amendment, docs/completed/task-multimodal-support-2026-10.md: raised from 0.95 after the dense layer scalar and v_norm fixes, between the before-fix 0.980768 and after-fix 0.999940 readings)
 ```
 
 ## TestGemma4TwoGeom_f16ScaleConfound
@@ -4020,7 +4020,7 @@ must not reveal a crater. It deliberately does NOT assert 0.999 — that would e
 Moved from `backend/metal/gemma4_twogeom_test.go` (the comment at the f16-scale floor) on 2026-10-09.
 
 ```text
-(S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.95 after the dense layer scalar and v_norm fixes, between the before-fix 0.981251 and after-fix 0.999761 readings) The ~0.98 this
+(S1.0 amendment, docs/completed/task-multimodal-support-2026-10.md: raised from 0.95 after the dense layer scalar and v_norm fixes, between the before-fix 0.981251 and after-fix 0.999761 readings) The ~0.98 this
 test used to attribute to "the broader resident quant path" was the two Gemma 4 fixes, not quantization.
 ```
 
@@ -4042,7 +4042,7 @@ int4-Metal(f16 scales)-vs-int4-CPU(f32 scales) representation gap (~0.98 on this
 cannot detect a small quality regression, only a crater. The SENSITIVE cosine gate is
 TestGemma4TwoGeom_f16ScaleConfound, which removes the scale confound. Keep 0.90 here purely as
 a "not obviously broken" backstop; do NOT tighten it toward the noise floor (that was the trap).
-(S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.90 after the dense layer scalar and v_norm fixes, between the before-fix 0.981251 and after-fix 0.999761 readings)
+(S1.0 amendment, docs/completed/task-multimodal-support-2026-10.md: raised from 0.90 after the dense layer scalar and v_norm fixes, between the before-fix 0.981251 and after-fix 0.999761 readings)
 ```
 
 ## TestGemmaConfirmer_MatchedInput
@@ -4096,7 +4096,7 @@ reproduces, so this was int4-GPU vs int8-CPU. CUDA's 3%-near-tie bar does NOT tr
 compares int4-vs-int4. Measured here on the KNOWN-GOOD dense path, CUDA's bar fails. That is why
 the control is committed: the bar is read off it, not assumed — the same lesson CUDA learned when
 a cosine >= 0.999 draft failed its own shipped path. The threshold is the usual bug. Since slice 1
-of docs/tasks/task-metal-int8-2026-10.md a dense int8 model runs its int8 weights natively, so for
+of docs/completed/task-metal-int8-2026-10.md a dense int8 model runs its int8 weights natively, so for
 those this is int8 against int8, and TestW8Native_F2 holds the pair to the int4 pair's agreement.
 ```
 
@@ -4284,7 +4284,7 @@ Moved from `backend/metal/image_prefill_resident_real_test.go` (the comment abov
 ```text
 differences against the reference and whether each is an R10 near-tie. The first read (2026-10-09) had one that is not
 (step 1, " are" 0.819 against "'" 0.143 in the reference), the G-IP4 pattern; whether it is accepted for several images is
-the owner's open decision (docs/tasks/task-multimodal-support-2026-10.md, S11 step 4). GOINFER_HEAVY_TESTS=1.
+the owner's open decision (docs/completed/task-multimodal-support-2026-10.md, S11 step 4). GOINFER_HEAVY_TESTS=1.
 ```
 
 ## TestGemma_Int4DirectContext
@@ -4439,7 +4439,7 @@ G11 if it's absent (4 GB, gitignored — only the golden ships).
 Moved from `backend/metal/ministral3_resident_parity_test.go` (the comment above `TestMinistral3ResidentSmokeMetal`) on 2026-10-09.
 
 ```text
-TestMinistral3ResidentSmokeMetal is G5's FeatAttnTemp row (docs/tasks/task-gpu-paths-2026-09.md)
+TestMinistral3ResidentSmokeMetal is G5's FeatAttnTemp row (docs/completed/task-gpu-paths-2026-09.md)
 smoke gate: the model actually goes resident and produces finite, non-degenerate output when
 the post-RoPE query scale is genuinely exercised (testdata/ministral3-tiny's
 AttnTempOrigMaxPos=8, so a 32-token run steps through four distinct scale values, past the
@@ -4488,7 +4488,7 @@ does not fit a 16 GB Mac at all (confirmed 2026-09-10, ~/models/moe_prefill_meas
 paged only holds N << nE experts per layer.
 
 	GOINFER_MOE_REUSE_PROBE_CKPT=~/models/qwen15-moe-a27b GOINFER_MOE_REUSE_PROBE_M=512 \
-	  go test -tags metal ./metal/ -run TestMoEExpertReuseProbe -v -timeout 30m
+	  go test -tags metal ./backend/metal/ -run TestMoEExpertReuseProbe -v -timeout 30m
 ```
 
 ## TestMoE_declinesPrefill
@@ -4497,7 +4497,7 @@ Moved from `backend/metal/moe_model_test.go` (the comment above `TestMoE_decline
 
 ```text
 TestMoE_declinesPrefill: MoE moved from the decline side to the admit side on 2026-09-08 (G8
-MoE half, docs/tasks/task-gpu-paths-2026-09.md) — the f16 MMA prefill path now runs a MoE layer's FFN
+MoE half, docs/completed/task-gpu-paths-2026-09.md) — the f16 MMA prefill path now runs a MoE layer's FFN
 row by row off the batched residual, reusing the unchanged per-token decode MoE dispatch chain
 (encodeMoERoute/encodeMoEExperts/encodeMoESharedExpert, backend/metal/moe.go); the name is historical
 (kept so `git log -p` on it still tells the right story — decoder/gptoss_decline_test.go
@@ -4539,7 +4539,7 @@ GOINFER_MOE_PREFILL_CKPT rather than GOINFER_HEAVY_TESTS' usual asset registry, 
 measurement script (docs/measurements/), not a correctness gate:
 
 	GOINFER_MOE_PREFILL_CKPT=~/models/qwen15-moe-a27b \
-	  go test -tags metal ./metal/ -run TestMoEPrefillMeasure_batchedVsSequential -v -timeout 30m
+	  go test -tags metal ./backend/metal/ -run TestMoEPrefillMeasure_batchedVsSequential -v -timeout 30m
 ```
 
 ## TestMoECacheExperts_bitExactMetal
@@ -4651,8 +4651,8 @@ Moved from `backend/metal/pairwise_rope_real_test.go` (the comment above `TestPa
 
 ```text
 The mean bar is 0.99 for every model but Command-R7B, whose 0.989242 the owner accepted on 2026-10-09 ("close
-enough, so it's a go"; docs/tasks/task-metal-pairwise-rope-2026-10.md G-PR5). Part C of
-docs/tasks/task-metal-pairwise-followups-2026-10.md localizes that gap; this floor records the decision, it is
+enough, so it's a go"; docs/completed/task-metal-pairwise-rope-2026-10.md G-PR5). Part C of
+docs/completed/task-metal-pairwise-followups-2026-10.md localizes that gap; this floor records the decision, it is
 not a measured tolerance.
 ```
 
@@ -4705,7 +4705,7 @@ falling back to CPU/staged, which fails this test's *metalResident type assertio
 written when that was 4096; it has been 32768 since 26f64807, so the fit guard priced a 32k KV — ~1.8 GB on
 the 1.5B — and refused loads that fit): the
 widest, K=3900 + continuationN(64) teacher-forced steps, tops out at pos 3962.
-GOINFER_METAL_GATE_QUANT=int8int8 grades the native int8 path (docs/tasks/task-metal-int8-2026-10.md, slice
+GOINFER_METAL_GATE_QUANT=int8int8 grades the native int8 path (docs/completed/task-metal-int8-2026-10.md, slice
 2): an int8int8 load with nativeInt8 on, both arms on its W8 kernels.
 ```
 
@@ -4772,7 +4772,7 @@ Moved from `backend/metal/prefill_gemm_s2_test.go` (the comment above `gemmS2Ker
 
 ```text
 gemmS2Kernels holds R16's prototypes (1-4; prototype 4 became production 2026-09-25) and the retired production
-kernel gemm_w4f16_store_r15. It began as R16's first prototype (docs/tasks/red-october.md; design in
+kernel gemm_w4f16_store_r15. It began as R16's first prototype (docs/completed/red-october.md; design in
 docs/measurements/metal-prefill-gemm-s2-2026-09-25.md): the int4 prefill GEMM restructured in the shape of
 llama.cpp's classic kernel_mul_mm, which S1b measured at >= 2.96 TFLOPS on this machine against the current
 gemm_w4f16_store's ~0.75 under sustained load. TEST-ONLY until R16's band is met — nothing in production
@@ -4926,7 +4926,7 @@ pos 0 is clean (no other per-sequence state accumulates in forwardLogits).
 
 Memory: ONE checkpoint resident at a time — the CPU model is Closed before the Metal load.
 
-	GOINFER_HEAVY_TESTS=1 go test -tags "darwin goinfer_testhooks" ./metal/ -run 'TestR1_laneVsCPU$' -v
+	GOINFER_HEAVY_TESTS=1 go test -tags "darwin goinfer_testhooks" ./backend/metal/ -run 'TestR1_laneVsCPU$' -v
 ```
 
 ## TestR2_perLayerCtxDiff
@@ -4961,7 +4961,7 @@ GOINFER_R2_STEPS (default 5). If a layer's ctx diverges locally (maxRel > 1e-3, 
 above f32 reduction noise), that layer's exact inputs and both outputs are dumped to
 GOINFER_R2_DUMP_DIR for TestR2_replayDump below.
 
-	GOINFER_HEAVY_TESTS=1 go test -tags "darwin goinfer_testhooks" ./metal/ -run 'TestR2_perLayerCtxDiff$' -v -timeout 20m
+	GOINFER_HEAVY_TESTS=1 go test -tags "darwin goinfer_testhooks" ./backend/metal/ -run 'TestR2_perLayerCtxDiff$' -v -timeout 20m
 ```
 
 ## runDecodeFidelityGate.identity
@@ -5016,7 +5016,7 @@ Metal build's 4096 need on the first try.
 Moved from `backend/metal/s9_emodel_batched_test.go` (the comment above `TestS9EModelBatched_tiny`) on 2026-10-09.
 
 ```text
-TestS9EModelBatched_tiny is G-S9c of S9 step 2 (docs/tasks/task-multimodal-support-2026-10.md, registered before any
+TestS9EModelBatched_tiny is G-S9c of S9 step 2 (docs/completed/task-multimodal-support-2026-10.md, registered before any
 code): on gemma4-emodel-tiny (6 layers; head dims 32 and 64; 2 KV-shared layers with their own sources and double FFN
 width; PLE P=32; layer scalars; v_norm), the f16 batched pass against the S9 layer-major pass (the validated path,
 bit-identical to sequential) on one Metal resident. Compared: the last prompt row and 8 decode steps teacher-forced
@@ -5048,7 +5048,7 @@ Moved from `backend/metal/sa_outlier_test.go` (the comment above `TestSAGemv_Out
 
 ```text
 TestSAGemv_OutlierRegime is the decisive experiment for the Gemma o-proj amplitude bug
-(docs/prompts/gemma-metal-signflip-bisect.md, Fork 2). The CUDA box showed Metal's o-proj
+(docs/completed/gemma-metal-signflip-bisect.md, Fork 2). The CUDA box showed Metal's o-proj
 contribution inflates 2–6× and flips on the secondary channels while CUDA's dp4a stays clean,
 and named it a Metal W4A8 GEMV scale bug. TestSAGemvLargeK already proves the kernel correct at
 K=4096 — but with a BENIGN random activation. This drives the same production kernel in the
@@ -5179,7 +5179,7 @@ code versions on a given GPU, but not guaranteed identical across chip families)
 a legitimate improvement — that's the point; regenerate with the refresh flag after verifying the
 change is intentional (the same goldens-refresh discipline the CUDA track uses):
 
-	GOINFER_UPDATE_GOLDENS=1 go test -run TestMetalSnapshotGolden ./metal/
+	GOINFER_UPDATE_GOLDENS=1 go test -run TestMetalSnapshotGolden ./backend/metal/
 
 N-29: the re-bake this note demanded HAS happened — TestMetalSnapshotGolden reports
 6 checkpoints byte-identical on this machine. A standing "EXPECTED TO FAIL" note turns
@@ -5192,7 +5192,7 @@ Forward/ForwardArgmax now apply the arch embed scale. For `gemma4-dense-scaled` 
 √hidden) that CHANGES the hashed stream — the stored entries pin the pre-fix, non-production
 computation, so that CHANGED the hashed stream, and the golden was re-baked accordingly:
 
-	GOINFER_UPDATE_GOLDENS=1 go test -run TestMetalSnapshotGolden ./metal/
+	GOINFER_UPDATE_GOLDENS=1 go test -run TestMetalSnapshotGolden ./backend/metal/
 
 `mixtral-tiny` has no embed scale and its entries must NOT move; if they do, something other than
 G-02 changed and the re-bake should be refused pending investigation.
@@ -5433,7 +5433,7 @@ anyway, so the two probes stay line-for-line comparable.
 Moved from `backend/metal/kernels/tower_attn_test.go` (the comment above `TestTowerGemmKernel`) on 2026-10-09.
 
 ```text
-TestTowerGemmKernel is S17 lever B's kernel gate on Metal (docs/tasks/task-multimodal-support-2026-10.md, "S17's
+TestTowerGemmKernel is S17 lever B's kernel gate on Metal (docs/completed/task-multimodal-support-2026-10.md, "S17's
 Metal lever B", registered before the code): tower_gemm_w32 and tower_gemm_w16 against a float64 A·Wᵀ + bias from the
 f32 inputs, at the towers' projection shapes (rows trimmed so the host reference stays fast) and at edge shapes (M, N
 and K off every tile multiple). Bars: every output within 1e-5 (w32: f32 accumulation order only) or 1e-3 (w16: the
@@ -5452,7 +5452,7 @@ Moved from `backend/metal/vl_image_turn_test.go` (the comment above `TestVLImage
 
 ```text
 TestVLImageTurn_metalResident is S3's tiny-fixture check (2026-10-07, first run: Gemma 3 8/8 tokens identical,
-Qwen2.5-VL 6/8) (docs/tasks/task-multimodal-support-2026-10.md): a Gemma 3 and a
+Qwen2.5-VL 6/8) (docs/completed/task-multimodal-support-2026-10.md): a Gemma 3 and a
 Qwen2.5-VL image turn decode on a Metal resident, from the committed tiny checkpoints and their goldens' image
 features, against the CPU decoder (both int4). It is the first image turn on a Mac's GPU for either family; the
 registered S3 gate is the served turn on the real checkpoints.

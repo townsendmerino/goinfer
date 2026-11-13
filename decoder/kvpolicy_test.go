@@ -93,6 +93,7 @@ func TestCUDAKVF16Decline_table(t *testing.T) {
 		{"gemma3", KVFacts{Family: "gemma3", SlidingWindow: true}, Options{}, ""},
 		{"gemma2", KVFacts{Family: "gemma2", SlidingWindow: true}, Options{}, ""},
 		{"gpt-oss", KVFacts{Family: "gpt-oss", MoE: true, SlidingWindow: true}, Options{}, ""},
+		{"flint", KVFacts{Family: "flint", MoE: true, SlidingWindow: true}, Options{}, ""},
 		{"laguna not delivered", dense("laguna"), Options{}, "keeps f32"},
 		{"qwen3_5", KVFacts{Family: "qwen3_5", Hybrid: true}, Options{}, ""},
 		{"gemma4", KVFacts{Family: "gemma4", Hybrid: true, SlidingWindow: true}, Options{}, ""},
@@ -179,5 +180,68 @@ func TestCUDAKVF16AutoDecline_table(t *testing.T) {
 		if got := CUDAKVF16AutoDecline(c.f, Options{}); !strings.Contains(got, c.want) {
 			t.Errorf("%s: auto decline %q, want it to name %q", c.f.Family, got, c.want)
 		}
+	}
+}
+
+// TestResidentSpec_matchesLegacyAccessors verifies that Model.ResidentSpec() populates all sub-specs
+// and agrees with the legacy positional accessors (MoEResidentParams, MLAResidentParams, Qwen35ResidentParams).
+func TestResidentSpec_matchesLegacyAccessors(t *testing.T) {
+	m := &Model{
+		w: &Weights{
+			arch: &Architecture{
+				Name:      "flint",
+				AttnScale: 0.125,
+				MoE: &MoEConfig{
+					NumExperts:            8,
+					TopK:                  2,
+					IntermediateDim:       1024,
+					SharedIntermediateDim: 512,
+					RouterSigmoid:         false,
+					NormTopKProb:          true,
+					SharedUngated:         false,
+					RoutedScale:           1.0,
+					NGroup:                1,
+					TopkGroup:             1,
+				},
+				mla: &mlaParams{
+					QLoRARank:      1536,
+					KVLoRARank:     512,
+					QKNopeHeadDim:  128,
+					QKRopeHeadDim:  64,
+					VHeadDim:       128,
+					ropeInterleave: true,
+				},
+				qwen35: &qwen35Params{
+					ConvKernel:    4,
+					KeyHeadDim:    64,
+					ValueHeadDim:  64,
+					NumKeyHeads:   8,
+					NumValueHeads: 8,
+					AttnGate:      true,
+				},
+			},
+		},
+	}
+	spec := m.ResidentSpec()
+	if spec.MoE == nil || spec.MLA == nil || spec.Qwen35 == nil {
+		t.Fatalf("ResidentSpec() missing sub-spec: %+v", spec)
+	}
+	nE, k, inter, sharedInter, sigmoid, norm, sharedUngated, scale, nGroup, topkGroup, ok := m.MoEResidentParams()
+	if !ok || spec.MoE.NumExperts != nE || spec.MoE.TopK != k || spec.MoE.IntermediateDim != inter ||
+		spec.MoE.SharedIntermediateDim != sharedInter || spec.MoE.RouterSigmoid != sigmoid ||
+		spec.MoE.NormTopKProb != norm || spec.MoE.SharedUngated != sharedUngated ||
+		spec.MoE.RoutedScale != scale || spec.MoE.NGroup != nGroup || spec.MoE.TopkGroup != topkGroup {
+		t.Errorf("ResidentSpec().MoE = %+v, disagrees with MoEResidentParams()", *spec.MoE)
+	}
+	qL, kvL, nope, rope, vDim, interleave, aScale, rScale, mlaOK := m.MLAResidentParams()
+	if !mlaOK || spec.MLA.QLoRARank != qL || spec.MLA.KVLoRARank != kvL || spec.MLA.QKNopeHeadDim != nope ||
+		spec.MLA.QKRopeHeadDim != rope || spec.MLA.VHeadDim != vDim || spec.MLA.RopeInterleave != interleave ||
+		spec.MLA.AttnScale != aScale || spec.MLA.RopeScale != rScale {
+		t.Errorf("ResidentSpec().MLA = %+v, disagrees with MLAResidentParams()", *spec.MLA)
+	}
+	ck, khd, vhd, nkh, nvh, gate, qOK := m.Qwen35ResidentParams()
+	if !qOK || spec.Qwen35.ConvKernel != ck || spec.Qwen35.KeyHeadDim != khd || spec.Qwen35.ValueHeadDim != vhd ||
+		spec.Qwen35.NumKeyHeads != nkh || spec.Qwen35.NumValueHeads != nvh || spec.Qwen35.AttnGate != gate {
+		t.Errorf("ResidentSpec().Qwen35 = %+v, disagrees with Qwen35ResidentParams()", *spec.Qwen35)
 	}
 }

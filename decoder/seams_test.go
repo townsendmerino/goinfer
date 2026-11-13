@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Gates H, C and S of docs/tasks/task-forward-architecture-2026-10.md §4.8 ("OP3's seams PR"), on every tiny fixture whose family
+// Gates H, C and S of docs/completed/task-forward-architecture-2026-10.md §4.8 ("OP3's seams PR"), on every tiny fixture whose family
 // walks a program, each with its planted defect (seamPlantForTest). A gate returns the fixtures it found wrong; one it cannot
 // reach is reported, never passed.
 

@@ -1,0 +1,218 @@
+11:03:19 15-stall-aa aa0-A0 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:03:19 cell start load 0.54
+[stall] aa0-A0: wall 9.68s; decoder gap p50 6.8 p99 103.7 max 178.9 ms; newcomer TTFT [0.669, 0.694, 0.695, 0.699, 0.704, 0.555]
+11:03:36 15-stall-aa aa0-B1 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:04:26 cell start load 0.77
+[stall] aa0-B1: wall 9.65s; decoder gap p50 6.8 p99 103.5 max 179.8 ms; newcomer TTFT [0.694, 0.693, 0.669, 0.672, 0.684, 0.581]
+11:04:43 15-stall-aa aa0-B2 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:04:44 cell start load 0.76
+[stall] aa0-B2: wall 9.698s; decoder gap p50 6.8 p99 103.4 max 183.3 ms; newcomer TTFT [0.667, 0.698, 0.697, 0.698, 0.704, 0.574]
+11:05:00 15-stall-aa aa0-A3 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:05:00 cell start load 0.81
+[stall] aa0-A3: wall 9.635s; decoder gap p50 6.8 p99 102.9 max 180.6 ms; newcomer TTFT [0.691, 0.667, 0.676, 0.696, 0.668, 0.582]
+11:05:17 15-stall-aa aa1-A0 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:05:27 cell start load 0.84
+[stall] aa1-A0: wall 9.685s; decoder gap p50 6.8 p99 103.2 max 179.5 ms; newcomer TTFT [0.683, 0.672, 0.678, 0.695, 0.698, 0.585]
+11:05:44 15-stall-aa aa1-B1 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:05:44 cell start load 0.81
+[stall] aa1-B1: wall 9.648s; decoder gap p50 6.8 p99 103.6 max 178.4 ms; newcomer TTFT [0.668, 0.696, 0.691, 0.671, 0.676, 0.58]
+11:06:01 15-stall-aa aa1-B2 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:06:01 cell start load 0.85
+[stall] aa1-B2: wall 9.686s; decoder gap p50 6.8 p99 103.4 max 179.8 ms; newcomer TTFT [0.695, 0.677, 0.699, 0.696, 0.697, 0.556]
+11:06:18 15-stall-aa aa1-A3 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:06:48 cell start load 0.77
+[stall] aa1-A3: wall 9.688s; decoder gap p50 6.8 p99 102.8 max 179.4 ms; newcomer TTFT [0.691, 0.698, 0.662, 0.699, 0.698, 0.58]
+A/A pooled TTFT ratio 1.000 (runs [0.669, 0.663, 0.668, 0.671] against [0.665, 0.673, 0.664, 0.67])
+11:07:05 15-stall b0-A0 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:07:55 cell start load 0.80
+[stall] b0-A0: wall 9.668s; decoder gap p50 6.8 p99 103.2 max 178.8 ms; newcomer TTFT [0.695, 0.696, 0.668, 0.685, 0.672, 0.585]
+11:08:12 15-stall b0-B1 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:08:52 cell start load 0.81
+[stall] b0-B1: wall 9.676s; decoder gap p50 6.8 p99 101.7 max 181.3 ms; newcomer TTFT [0.693, 0.685, 0.675, 0.689, 0.692, 0.578]
+11:09:09 15-stall b0-B2 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:09:29 cell start load 0.87
+[stall] b0-B2: wall 9.648s; decoder gap p50 6.8 p99 101.9 max 181.4 ms; newcomer TTFT [0.692, 0.687, 0.664, 0.693, 0.685, 0.579]
+11:09:45 15-stall b0-A3 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:09:55 cell start load 0.83
+[stall] b0-A3: wall 9.684s; decoder gap p50 6.8 p99 103.3 max 178.5 ms; newcomer TTFT [0.695, 0.697, 0.662, 0.693, 0.692, 0.582]
+11:10:12 15-stall b1-A0 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:10:12 cell start load 0.87
+[stall] b1-A0: wall 9.72s; decoder gap p50 6.8 p99 103.1 max 178.9 ms; newcomer TTFT [0.695, 0.694, 0.698, 0.698, 0.7, 0.58]
+11:10:29 15-stall b1-B1 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:10:39 cell start load 0.87
+[stall] b1-B1: wall 9.609s; decoder gap p50 6.8 p99 101.9 max 180.2 ms; newcomer TTFT [0.666, 0.694, 0.685, 0.685, 0.672, 0.557]
+11:10:56 15-stall b1-B2 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:11:16 cell start load 0.80
+[stall] b1-B2: wall 9.591s; decoder gap p50 6.8 p99 102.1 max 179.4 ms; newcomer TTFT [0.694, 0.665, 0.666, 0.67, 0.676, 0.569]
+11:11:33 15-stall b1-A3 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:12:23 cell start load 0.77
+[stall] b1-A3: wall 9.717s; decoder gap p50 6.8 p99 103.2 max 179.4 ms; newcomer TTFT [0.69, 0.701, 0.696, 0.672, 0.696, 0.581]
+11:12:40 15-stall b2-A0 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:12:50 cell start load 0.83
+[stall] b2-A0: wall 9.664s; decoder gap p50 6.8 p99 103.5 max 179.2 ms; newcomer TTFT [0.668, 0.689, 0.695, 0.671, 0.695, 0.579]
+11:13:07 15-stall b2-B1 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:13:07 cell start load 0.87
+[stall] b2-B1: wall 9.663s; decoder gap p50 6.8 p99 101.9 max 178.7 ms; newcomer TTFT [0.669, 0.689, 0.688, 0.688, 0.695, 0.584]
+11:13:23 15-stall b2-B2 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:13:34 cell start load 0.82
+[stall] b2-B2: wall 9.64s; decoder gap p50 6.8 p99 101.9 max 180.5 ms; newcomer TTFT [0.669, 0.689, 0.686, 0.665, 0.69, 0.583]
+11:13:50 15-stall b2-A3 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:14:20 cell start load 0.77
+[stall] b2-A3: wall 9.676s; decoder gap p50 6.8 p99 103.6 max 180.4 ms; newcomer TTFT [0.675, 0.694, 0.692, 0.678, 0.695, 0.58]
+11:14:37 15-stall b3-A0 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:14:47 cell start load 0.88
+[stall] b3-A0: wall 9.698s; decoder gap p50 6.8 p99 103.3 max 178.8 ms; newcomer TTFT [0.69, 0.668, 0.695, 0.691, 0.701, 0.583]
+11:15:04 15-stall b3-B1 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:15:14 cell start load 0.88
+[stall] b3-B1: wall 9.656s; decoder gap p50 6.8 p99 101.4 max 179.7 ms; newcomer TTFT [0.688, 0.685, 0.662, 0.693, 0.689, 0.583]
+11:15:31 15-stall b3-B2 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:15:51 cell start load 0.82
+[stall] b3-B2: wall 9.661s; decoder gap p50 6.8 p99 102.0 max 180.1 ms; newcomer TTFT [0.689, 0.688, 0.689, 0.69, 0.689, 0.558]
+11:16:08 15-stall b3-A3 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:16:18 cell start load 0.79
+[stall] b3-A3: wall 9.68s; decoder gap p50 6.8 p99 102.5 max 179.0 ms; newcomer TTFT [0.69, 0.691, 0.692, 0.696, 0.702, 0.556]
+11:16:35 15-solo b0-A0 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:16:55 cell start load 0.87
+[stall] b0-A0: wall 8.737s; no decoders; newcomer TTFT [0.585, 0.57, 0.568, 0.55, 0.565, 0.565]
+11:17:11 15-solo b0-B1 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:17:11 cell start load 0.74
+[stall] b0-B1: wall 8.717s; no decoders; newcomer TTFT [0.57, 0.568, 0.57, 0.546, 0.567, 0.565]
+11:17:27 15-solo b0-B2 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:17:27 cell start load 0.79
+[stall] b0-B2: wall 8.724s; no decoders; newcomer TTFT [0.593, 0.574, 0.54, 0.553, 0.568, 0.566]
+11:17:43 15-solo b0-A3 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:17:43 cell start load 0.78
+[stall] b0-A3: wall 8.743s; no decoders; newcomer TTFT [0.596, 0.572, 0.545, 0.566, 0.565, 0.566]
+11:17:59 15-solo b1-A0 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:18:09 cell start load 0.84
+[stall] b1-A0: wall 8.741s; no decoders; newcomer TTFT [0.568, 0.569, 0.568, 0.57, 0.567, 0.568]
+11:18:25 15-solo b1-B1 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:18:25 cell start load 0.79
+[stall] b1-B1: wall 8.729s; no decoders; newcomer TTFT [0.562, 0.57, 0.567, 0.569, 0.562, 0.569]
+11:18:40 15-solo b1-B2 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:18:41 cell start load 0.75
+[stall] b1-B2: wall 8.691s; no decoders; newcomer TTFT [0.565, 0.545, 0.569, 0.568, 0.552, 0.562]
+11:18:56 15-solo b1-A3 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:18:56 cell start load 0.73
+[stall] b1-A3: wall 8.729s; no decoders; newcomer TTFT [0.583, 0.545, 0.569, 0.569, 0.567, 0.566]
+11:19:12 15-solo b2-A0 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:19:32 cell start load 0.85
+[stall] b2-A0: wall 8.737s; no decoders; newcomer TTFT [0.597, 0.566, 0.544, 0.569, 0.567, 0.563]
+11:19:48 15-solo b2-B1 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:19:58 cell start load 0.79
+[stall] b2-B1: wall 8.765s; no decoders; newcomer TTFT [0.6, 0.57, 0.566, 0.564, 0.565, 0.569]
+11:20:14 15-solo b2-B2 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:20:14 cell start load 0.76
+[stall] b2-B2: wall 8.786s; no decoders; newcomer TTFT [0.605, 0.572, 0.568, 0.569, 0.57, 0.57]
+11:20:29 15-solo b2-A3 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:20:29 cell start load 0.73
+[stall] b2-A3: wall 8.721s; no decoders; newcomer TTFT [0.573, 0.57, 0.57, 0.547, 0.564, 0.566]
+11:20:45 15-solo b3-A0 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:20:45 cell start load 0.79
+[stall] b3-A0: wall 8.721s; no decoders; newcomer TTFT [0.607, 0.566, 0.553, 0.547, 0.567, 0.552]
+11:21:01 15-solo b3-B1 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:21:01 cell start load 0.76
+[stall] b3-B1: wall 8.702s; no decoders; newcomer TTFT [0.565, 0.554, 0.571, 0.573, 0.568, 0.541]
+11:21:17 15-solo b3-B2 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:21:17 cell start load 0.74
+[stall] b3-B2: wall 8.712s; no decoders; newcomer TTFT [0.57, 0.572, 0.552, 0.543, 0.572, 0.57]
+11:21:32 15-solo b3-A3 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:21:33 cell start load 0.80
+[stall] b3-A3: wall 8.704s; no decoders; newcomer TTFT [0.601, 0.546, 0.558, 0.545, 0.558, 0.564]
+11:21:48 7-stall b0-A0 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:21:48 cell start load 0.78
+[stall] b0-A0: wall 35.162s; decoder gap p50 18.9 p99 399.2 max 489.2 ms; newcomer TTFT [2.519, 2.506, 2.494, 2.508, 2.519, 2.511]
+11:22:35 7-stall b0-B1 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:23:15 cell start load 0.81
+[stall] b0-B1: wall 35.003s; decoder gap p50 19.0 p99 396.8 max 493.4 ms; newcomer TTFT [2.504, 2.497, 2.499, 2.486, 2.482, 2.512]
+11:24:00 7-stall b0-B2 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:24:20 cell start load 0.81
+[stall] b0-B2: wall 34.977s; decoder gap p50 18.9 p99 397.0 max 487.8 ms; newcomer TTFT [2.492, 2.497, 2.503, 2.495, 2.521, 2.488]
+11:25:04 7-stall b0-A3 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:25:54 cell start load 0.87
+[stall] b0-A3: wall 34.963s; decoder gap p50 18.9 p99 400.2 max 487.7 ms; newcomer TTFT [2.509, 2.502, 2.511, 2.516, 2.5, 2.485]
+11:26:39 7-stall b1-A0 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:27:09 cell start load 0.89
+[stall] b1-A0: wall 35.007s; decoder gap p50 18.9 p99 399.4 max 486.1 ms; newcomer TTFT [2.496, 2.479, 2.504, 2.496, 2.513, 2.516]
+11:27:54 7-stall b1-B1 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:28:34 cell start load 0.78
+[stall] b1-B1: wall 34.934s; decoder gap p50 18.9 p99 396.9 max 490.2 ms; newcomer TTFT [2.498, 2.501, 2.488, 2.502, 2.523, 2.481]
+11:29:18 7-stall b1-B2 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:29:48 cell start load 0.82
+[stall] b1-B2: wall 34.966s; decoder gap p50 18.9 p99 397.5 max 488.6 ms; newcomer TTFT [2.508, 2.509, 2.472, 2.503, 2.485, 2.505]
+11:30:33 7-stall b1-A3 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:30:53 cell start load 0.87
+[stall] b1-A3: wall 35.096s; decoder gap p50 18.9 p99 400.1 max 490.4 ms; newcomer TTFT [2.514, 2.521, 2.513, 2.521, 2.528, 2.528]
+11:31:38 7-stall b2-A0 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:32:08 cell start load 0.85
+[stall] b2-A0: wall 35.003s; decoder gap p50 18.9 p99 399.9 max 492.8 ms; newcomer TTFT [2.516, 2.503, 2.483, 2.489, 2.533, 2.513]
+11:32:52 7-stall b2-B1 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:33:13 cell start load 0.85
+[stall] b2-B1: wall 35.047s; decoder gap p50 19.0 p99 398.2 max 489.4 ms; newcomer TTFT [2.506, 2.507, 2.482, 2.505, 2.497, 2.509]
+11:33:57 7-stall b2-B2 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:34:07 cell start load 0.88
+[stall] b2-B2: wall 34.962s; decoder gap p50 18.9 p99 398.3 max 491.9 ms; newcomer TTFT [2.51, 2.488, 2.476, 2.515, 2.504, 2.514]
+11:34:52 7-stall b2-A3 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:35:12 cell start load 0.89
+[stall] b2-A3: wall 35.11s; decoder gap p50 19.0 p99 400.6 max 490.4 ms; newcomer TTFT [2.523, 2.509, 2.493, 2.523, 2.517, 2.507]
+11:35:57 7-stall b3-A0 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:36:17 cell start load 0.87
+[stall] b3-A0: wall 35.058s; decoder gap p50 18.9 p99 400.4 max 488.9 ms; newcomer TTFT [2.513, 2.527, 2.488, 2.528, 2.493, 2.497]
+11:37:01 7-stall b3-B1 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:37:22 cell start load 0.86
+[stall] b3-B1: wall 35.056s; decoder gap p50 19.0 p99 398.5 max 489.1 ms; newcomer TTFT [2.486, 2.495, 2.503, 2.514, 2.522, 2.519]
+11:38:06 7-stall b3-B2 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:38:16 cell start load 0.79
+[stall] b3-B2: wall 35.064s; decoder gap p50 18.9 p99 398.7 max 490.2 ms; newcomer TTFT [2.503, 2.518, 2.506, 2.512, 2.516, 2.515]
+11:39:01 7-stall b3-A3 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:39:21 cell start load 0.84
+[stall] b3-A3: wall 35.15s; decoder gap p50 19.0 p99 400.6 max 490.4 ms; newcomer TTFT [2.506, 2.484, 2.519, 2.531, 2.49, 2.516]
+11:40:06 7-solo b0-A0 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:40:36 cell start load 0.81
+[stall] b0-A0: wall 20.218s; no decoders; newcomer TTFT [2.34, 2.332, 2.328, 2.334, 2.317, 2.322]
+11:41:06 7-solo b0-B1 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:41:16 cell start load 0.84
+[stall] b0-B1: wall 20.234s; no decoders; newcomer TTFT [2.333, 2.314, 2.333, 2.336, 2.336, 2.336]
+11:41:46 7-solo b0-B2 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:42:06 cell start load 0.79
+[stall] b0-B2: wall 20.284s; no decoders; newcomer TTFT [2.362, 2.338, 2.332, 2.334, 2.343, 2.331]
+11:42:36 7-solo b0-A3 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:42:36 cell start load 0.80
+[stall] b0-A3: wall 20.232s; no decoders; newcomer TTFT [2.338, 2.334, 2.337, 2.336, 2.334, 2.306]
+11:43:06 7-solo b1-A0 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:43:06 cell start load 0.88
+[stall] b1-A0: wall 20.232s; no decoders; newcomer TTFT [2.356, 2.31, 2.335, 2.338, 2.338, 2.31]
+11:43:35 7-solo b1-B1 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:43:56 cell start load 0.79
+[stall] b1-B1: wall 20.236s; no decoders; newcomer TTFT [2.369, 2.31, 2.332, 2.334, 2.336, 2.311]
+11:44:25 7-solo b1-B2 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:44:45 cell start load 0.79
+[stall] b1-B2: wall 20.159s; no decoders; newcomer TTFT [2.342, 2.316, 2.314, 2.307, 2.306, 2.33]
+11:45:15 7-solo b1-A3 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:45:25 cell start load 0.82
+[stall] b1-A3: wall 20.182s; no decoders; newcomer TTFT [2.355, 2.315, 2.308, 2.312, 2.313, 2.334]
+11:45:55 7-solo b2-A0 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:46:05 cell start load 0.89
+[stall] b2-A0: wall 20.16s; no decoders; newcomer TTFT [2.334, 2.324, 2.308, 2.305, 2.334, 2.31]
+11:46:35 7-solo b2-B1 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:47:05 cell start load 0.77
+[stall] b2-B1: wall 20.209s; no decoders; newcomer TTFT [2.362, 2.31, 2.327, 2.332, 2.31, 2.323]
+11:47:35 7-solo b2-B2 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:48:25 cell start load 0.79
+[stall] b2-B2: wall 20.229s; no decoders; newcomer TTFT [2.359, 2.334, 2.31, 2.334, 2.309, 2.337]
+11:48:55 7-solo b2-A3 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:49:35 cell start load 0.84
+[stall] b2-A3: wall 20.26s; no decoders; newcomer TTFT [2.363, 2.335, 2.332, 2.337, 2.319, 2.328]
+11:50:04 7-solo b3-A0 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:50:45 cell start load 0.88
+[stall] b3-A0: wall 20.192s; no decoders; newcomer TTFT [2.33, 2.336, 2.314, 2.333, 2.307, 2.328]
+11:51:14 7-solo b3-B1 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:51:24 cell start load 0.80
+[stall] b3-B1: wall 20.219s; no decoders; newcomer TTFT [2.356, 2.315, 2.318, 2.332, 2.324, 2.33]
+11:51:54 7-solo b3-B2 serve-cuda-B-2235b2036 sha256 78df8496db8afd06
+11:52:14 cell start load 0.85
+[stall] b3-B2: wall 20.194s; no decoders; newcomer TTFT [2.33, 2.316, 2.33, 2.33, 2.333, 2.31]
+11:52:44 7-solo b3-A3 serve-cuda-A sha256 eaaa3b4dc2ebe218
+11:53:34 cell start load 0.86
+[stall] b3-A3: wall 20.217s; no decoders; newcomer TTFT [2.356, 2.336, 2.314, 2.301, 2.331, 2.334]
+RUN-G-RF3-S-DONE

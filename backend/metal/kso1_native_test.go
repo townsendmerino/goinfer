@@ -117,7 +117,7 @@ func kso1NativeWorst(t *testing.T, d *Device, src, kind string, N, K int, rng *r
 	return worst
 }
 
-// TestKSO1_nativeKernels is O1-G1 (docs/tasks/task-kernel-survey-2026-10.md, "KS-O1 on Metal: gates"): the q4k lane's native
+// TestKSO1_nativeKernels is O1-G1 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-O1 on Metal: gates"): the q4k lane's native
 // gemv_q5k_f32 and gemv_q6k_f32 rows kernels (plain, residual, bias at R = 4) against the float64 reference that dequantizes
 // the same blocks, at a partial threadgroup over 1, 2, 6, 19 and 35 super-blocks a row and at Phi-3's shapes (qkv, 12, and
 // down, 32, for both kinds; the head for Q6_K); random
@@ -417,7 +417,7 @@ func kso1LaneBytesCheck(t *testing.T, path, label string) {
 }
 
 // kso1HeapSlack is O1-G3's allowance for the Go runtime's own allocations during a load (GC is off while heapAllocDuring
-// counts, but background goroutines still allocate), registered in docs/tasks/task-kernel-survey-2026-10.md, "Review fixes for
+// counts, but background goroutines still allocate), registered in docs/tasks/parked/task-kernel-survey-2026-10.md, "Review fixes for
 // #215, second pass".
 const kso1HeapSlack = 1 << 20
 

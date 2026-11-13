@@ -15,7 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/prequant"
 )
 
-// TestG4LayerMajor_matchesSequential is 4b's gate (docs/tasks/task-m26-mac-2026-10.md): the layer-major paged prefill
+// TestG4LayerMajor_matchesSequential is 4b's gate (docs/completed/task-m26-mac-2026-10.md): the layer-major paged prefill
 // against the sequential loop on the tiny Gemma 4 MoE, transcoded to a metal-target .giw as M26's bundle is and paged
 // at 2 and 3 slots (pread staging, as M26 runs). Prompts of 1, 5 and 8 tokens from position 0, and 5 tokens continuing
 // a 3-token prefix the sequential loop wrote. Every K/V element and the last row's logits must be equal bit for bit,

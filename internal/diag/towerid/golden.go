@@ -16,7 +16,7 @@ import (
 )
 
 // Golden is one backend's committed record on one platform, with the anchor its bits depend on (SB9's goldens,
-// docs/tasks/task-subsystems-2026-10.md, "SB9's gates").
+// docs/completed/task-subsystems-2026-10.md, "SB9's gates").
 type Golden struct {
 	Schema int    `json:"schema"`
 	Anchor string `json:"anchor"`
@@ -32,7 +32,7 @@ const (
 	// FailOtherAnchor: a different anchor is re-anchored deliberately, never carried forward (a device's driver or adapter).
 	FailOtherAnchor
 	// FailOtherAnchorSkipOnCI is FailOtherAnchor, except on CI (GITHUB_ACTIONS=true), where a different anchor skips: a CI
-	// runner's virtual adapter has no golden of its own (docs/tasks/task-subsystems-2026-10.md, "SB9 step S on the Mac").
+	// runner's virtual adapter has no golden of its own (docs/completed/task-subsystems-2026-10.md, "SB9 step S on the Mac").
 	FailOtherAnchorSkipOnCI
 )
 
@@ -170,7 +170,7 @@ func isActivation(op vision.TowerOp) bool {
 		op.Kind == vision.TowerGELUErf || op.Kind == vision.TowerSiLU
 }
 
-// programPlants are G-SB9M-2's plants in a tower program (docs/tasks/task-subsystems-2026-10.md §8, "SB9 step M"). The
+// programPlants are G-SB9M-2's plants in a tower program (docs/completed/task-subsystems-2026-10.md §8, "SB9 step M"). The
 // epsilon is scaled by 2^20, exact in float32 and float64, because a one-ulp move is lost in variance+eps. The
 // activation swap reads a register its linear has not yet written (on SigLIP and Qwen3 it equals the activation
 // dropped), so proj's swap with the second norm is the order plant that reads only written registers.

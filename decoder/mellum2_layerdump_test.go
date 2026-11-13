@@ -12,7 +12,7 @@ import (
 // layerDumpPositions are the token positions of the 1441-token window golden whose per-layer residuals are dumped. The sliding
 // window is 1024, so a token at position p attends [p-1023, p]: positions <= 1023 see their whole history (the window cannot
 // have changed anything for them) and positions >= 1024 lose their oldest tokens on the 21 sliding layers. The split is what lets
-// ONE run separate "the window path" from "long-context drift" (docs/tasks/task-mellum21-2026-10.md, follow-up A).
+// ONE run separate "the window path" from "long-context drift" (docs/completed/task-mellum21-2026-10.md, follow-up A).
 var layerDumpPositions = []int{10, 300, 600, 900, 1000, 1030, 1100, 1300, 1440}
 
 // TestMellum2_layerDump writes the goinfer side of the per-layer comparison against Hugging Face for the window golden: the residual

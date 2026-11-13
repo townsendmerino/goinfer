@@ -103,6 +103,10 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// these; M.1 drops the sliding-window half, but this table states the family's
 	// BASE profile and RequiredResidentFeatures derives the per-model truth.
 	"laguna": {FeatAttnOutputGateSoftplus, FeatMoE, FeatPartialRotary, FeatPerLayerQueryHeads, FeatPerLayerRoPE, FeatQKNorm, FeatRopeMscale, FeatSlidingWindow},
+	// Flint: sigmoid-routed MoE with an UNGATED shared expert (FeatMoE), per-head QK RMSNorm (FeatQKNorm), per-query-head
+	// attention sinks (FeatAttnSink), and a sliding/full attention schedule where the full-attention layers are NoPE
+	// (FeatNoPE, FeatSlidingWindow).
+	"flint": {FeatAttnSink, FeatMoE, FeatNoPE, FeatQKNorm, FeatSlidingWindow},
 	// spark2_5: an attention output gate as Laguna has, through sigmoid here (FeatAttnOutputGateSigmoid) where Laguna's is
 	// softplus; no resident backend implements either, and a gated MLP with exact-erf GELU (FeatGatedGELUErf), which no backend
 	// implements either: every gated kernel has GELU-tanh and SiLU only.
@@ -187,11 +191,12 @@ var admissionGolden = map[string][]string{
 	// Cohere / Command-R + Cohere2 / Command-R7B: FeatParallelBlock, FeatLogitScale and FeatLayerNorm (and for cohere2
 	// FeatNoPE/FeatSlidingWindow) are declared on cuda and metal. Their rotation is GPT-J pairwise and WebGPU's rope kernel
 	// is NeoX half-split, so webgpu declines (FeatPairwiseRoPE): a NeoX rotation reads near-zero cosine on the real
-	// checkpoints while flat 0.02-std fixtures read 0.9997 (docs/tasks/task-metal-pairwise-rope-2026-10.md).
+	// checkpoints while flat 0.02-std fixtures read 0.9997 (docs/completed/task-metal-pairwise-rope-2026-10.md).
 	"cohere":      {"cuda", "metal"},
 	"cohere2":     {"cuda", "metal"},
 	"deepseek_v2": {"cuda", "metal", "webgpu"},
 	"deepseek_v3": {"cuda", "metal", "webgpu"},
+	"flint":       {"cuda", "metal", "webgpu"},
 	// gemma3 (uniform head_dim) reaches webgpu for real (testdata/gemma3-vl-tiny's text tower,
 	// gpu.TestGemma3ResidentParityWebGPU). gemma4/gemma4_text/gemma4_unified_text are FEATURE-compatible there, but dense
 	// Gemma 4's local/global head_dim split needs a per-layer geometry seam this feature-list model cannot express
@@ -244,7 +249,7 @@ var admissionGolden = map[string][]string{
 	// Its full-attention layer uses a plain q projection, not qwen3.5's double-width q-gate
 	// (Architecture.qwen35.AttnGate).
 	"olmo3":       {"cuda", "metal", "webgpu"},
-	"olmo_hybrid": {"cuda", "metal", "webgpu"}, // each claims DeltaNet's widened write gate (NegEigval) and its own output-norm epsilon (docs/tasks/task-olmo-hybrid-cuda-2026-11.md, docs/tasks/task-olmo-hybrid-metal-webgpu-2026-11.md)
+	"olmo_hybrid": {"cuda", "metal", "webgpu"}, // each claims DeltaNet's widened write gate (NegEigval) and its own output-norm epsilon (docs/completed/task-olmo-hybrid-cuda-2026-11.md, docs/completed/task-olmo-hybrid-metal-webgpu-2026-11.md)
 	"internlm2":   {"cuda", "metal", "webgpu"},
 	"internlm3":   {"cuda", "metal", "webgpu"},
 	// Dense Granite 4.2: empty feature profile (see archFeatureProfile's note), so it is
@@ -425,7 +430,7 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 			FeatNoPE, FeatPostOnlyNorm, FeatQKNormWhole, // Olmo Hybrid / Olmo 3 / SmolLM3 (gpu.TestOlmoHybridResidentParityWebGPU)
 		},
 	}
-	// CUDA's admission reads its operation table (OP4cu-c2, docs/tasks/task-forward-architecture-2026-10.md §4.9a); the evidence each
+	// CUDA's admission reads its operation table (OP4cu-c2, docs/completed/task-forward-architecture-2026-10.md §4.9a); the evidence each
 	// feature was declared on is docs/code-notes/decoder.md#residentBackendFeatures.cuda.entry.
 	if residentBackendTables["cuda"] != program.CUDA {
 		t.Errorf("CUDA's admission does not read program.CUDA")
@@ -706,7 +711,7 @@ func TestResidentMoECapacity_routerCap(t *testing.T) {
 	}
 }
 
-// TestFeatureSplits_wrongHalfDeclinesByName is OP2's gate for the two feature splits (docs/tasks/task-forward-architecture-2026-10.md
+// TestFeatureSplits_wrongHalfDeclinesByName is OP2's gate for the two feature splits (docs/completed/task-forward-architecture-2026-10.md
 // §4.7, OP2 (a) and (b)): a backend that declares the wrong half of a split, the other activation of the same structure, must
 // decline the family and name the half it lacks.
 func TestFeatureSplits_wrongHalfDeclinesByName(t *testing.T) {

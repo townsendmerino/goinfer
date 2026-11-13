@@ -16,7 +16,7 @@ import (
 type imageRef struct {
 	mediaType string // e.g. "image/png" (informational; preprocess sniffs the real format), "audio/wav"
 	data      []byte // raw bytes (base64 already decoded)
-	audio     bool   // an OpenAI input_audio part (docs/tasks/task-multimodal-support-2026-10.md): a WAV for Gemma 4's audio tower
+	audio     bool   // an OpenAI input_audio part (docs/completed/task-multimodal-support-2026-10.md): a WAV for Gemma 4's audio tower
 	at        int    // the byte offset in its message's joined text parts where this part sat (placeImageBlocks)
 }
 

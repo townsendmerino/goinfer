@@ -14,7 +14,7 @@ import (
 // token sequence, not tied to the fixture's real tokenizer.
 var gemma3ParityPrompt = []int{1, 7, 42, 100, 5, 200, 13, 88}
 
-// TestGemma3ResidentParityWebGPU is G6's Gemma set gate (docs/tasks/task-gpu-paths-2026-09.md):
+// TestGemma3ResidentParityWebGPU is G6's Gemma set gate (docs/completed/task-gpu-paths-2026-09.md):
 // FeatEmbedScale + FeatSandwichNorm + FeatGatedGELU (plus the already-declared
 // FeatQKNorm/FeatSlidingWindow/FeatRMSAddOne) against a real, non-seeded checkpoint
 // (testdata/gemma3-vl-tiny's text tower, not a tiny-random fixture), so the floor is numeric

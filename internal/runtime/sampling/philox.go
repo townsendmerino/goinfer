@@ -4,7 +4,7 @@ package sampling
 // 3", SC'11): a counter-based generator, so the k-th output is a pure function of (key, counter) with no
 // state to carry. That is what lets a GPU kernel draw one variate per vocabulary entry in parallel and a
 // host reimplementation draw the identical bits — the whole point of using it for temperature-only sampling
-// (docs/tasks/red-october.md R7b).
+// (docs/completed/red-october.md R7b).
 //
 // It is INTEGER-ONLY (32-bit wrapping multiplies, xors, adds), so every backend can compute exactly the
 // same bits: CUDA (__umulhi), Metal (mulhi), and WebGPU (no 64-bit integers; a 16-bit-split mulhi). Only

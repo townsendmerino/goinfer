@@ -34,7 +34,7 @@ type taskEmbedder interface {
 	EncodeTasks(texts []string, prompt string) ([][]float32, []int, error)
 }
 
-// embedTask picks the prompt a taskEmbedder applies (docs/tasks/task-embeddinggemma2.md): an explicit task names one
+// embedTask picks the prompt a taskEmbedder applies (docs/completed/task-embeddinggemma2.md): an explicit task names one
 // of the model's prompts ("none" for none); else input_type maps onto the model's own "query" and "document" prompts;
 // else no prompt, which is what sentence-transformers applies by default, so a client that knows nothing about
 // prompts gets the reference's own output.

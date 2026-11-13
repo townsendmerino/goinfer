@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// The gpu gate's CUDA heavy tier as graders (SB12, docs/tasks/task-subsystems-2026-10.md): the partition block, each main-group
+// The gpu gate's CUDA heavy tier as graders (SB12, docs/completed/task-subsystems-2026-10.md): the partition block, each main-group
 // process's memory line, the two reconciliations and the drain, fresh-process and tier verdicts are functions of what the
 // runner recorded (heavyInput) and of each process's graded cell, results and text. gpuGate.heavyTier prints them, live and
 // in `gate gpu -replay`.

@@ -1,5 +1,5 @@
 #!/bin/bash
-# MC3 on the 7B, end to end — W7 grading (docs/tasks/task-concurrency-2026-09.md, pre-registered in 21e88ae4): Metal,
+# MC3 on the 7B, end to end — W7 grading (docs/tasks/parked/task-concurrency-2026-09.md, pre-registered in 21e88ae4): Metal,
 # qwen2.5-7b-instruct q4_k_m int4 from ~/models, serve defaults, greedy, --fixed-nonce.
 # old = serve-metal @ 9efc3185 (pre-MC3, serialised); new = @ cc5f8c2c (MC3 + S2 + S3 + chunked prefill).
 set -u

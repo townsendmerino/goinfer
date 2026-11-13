@@ -21,17 +21,18 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 )
 
-// The decision census (MM1, docs/tasks/task-subsystems-2026-10.md, "MM1's decision census"): every memory decision the fit code
+// The decision census (MM1, docs/completed/task-subsystems-2026-10.md, "MM1's decision census"): every memory decision the fit code
 // makes, over every family fixture, option cell and machine, recorded so that the code that replaces it (mem.Solve and its callers)
 // can be held to the same answers and the same lines, byte for byte. The golden holds one SHA-256 prefix per group (a decision on
 // one family with one option set, over every machine reading); -census.dump writes the full text, to diff a red run against its base.
 
 var (
-	censusUpdate = flag.Bool("census.update", false, "rewrite testdata/mm1_census.json.gz for this host class")
+	censusUpdate = flag.Bool("census.update", false, "rewrite this host class's golden, testdata/census/<class>.txt.gz")
 	censusDump   = flag.String("census.dump", "", "write the full census, one group per line, to this file")
 )
 
-const censusGolden = "../testdata/mm1_census.json.gz"
+// censusGoldenDir holds one golden per host class (censusGoldenPath), so a PR that moves one class changes only that file.
+const censusGoldenDir = "../testdata/census"
 
 // censusMachine is one testdata/machines entry.
 type censusMachine struct {
@@ -328,16 +329,18 @@ func TestDecisionCensus(t *testing.T) {
 	if *censusDump != "" {
 		writeCensusDump(t, c1, *censusDump)
 	}
-	golden := readCensusGolden(t)
 	if *censusUpdate {
-		golden.Classes[class] = censusGoldenClass{Total: c1.total(), Groups: c1.hashes()}
-		writeCensusGolden(t, golden)
-		t.Logf("wrote %s for host class %q", censusGolden, class)
+		writeCensusGolden(t, censusGoldenPath(), class, censusGoldenClass{Total: c1.total(), Groups: c1.hashes()})
+		t.Logf("wrote %s for host class %q", censusGoldenPath(), class)
 		return
 	}
-	want, ok := golden.Classes[class]
-	if !ok {
-		t.Skipf("host class %q has no census entry: a capture run (census %s). Record it with -census.update on this host", class, c1.total())
+	want, recorded, found := readCensusGolden(t, censusGoldenPath())
+	skip, err := checkCensusGoldenClass(found, recorded, class, censusGoldenPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if skip {
+		t.Skipf("host class %q has no census golden (%s): a capture run (census %s). Record it with -census.update on this host", class, censusGoldenPath(), c1.total())
 	}
 	if want.Total == c1.total() {
 		return
@@ -395,22 +398,31 @@ func lastLines(s string, n int) string {
 	return strings.Join(ls[max(0, len(ls)-n):], "\n")
 }
 
+// censusGoldenClass is one host class's golden: a SHA-256 prefix per group, and one hash over every group.
 type censusGoldenClass struct {
-	Total  string            `json:"total"`
-	Groups map[string]string `json:"groups"`
+	Total  string
+	Groups map[string]string
 }
 
-type censusGoldenFile struct {
-	About   string                       `json:"_about"`
-	Classes map[string]censusGoldenClass `json:"classes"`
+// censusGoldenPath is this host's golden: testdata/census/<GOARCH>.txt.gz, with "-metal" where the host plans WebGPU as Metal (darwin).
+// The file's first line names the full host class (censusHostClass), so a host whose quantization sizes differ from the recorded
+// class's reads no golden instead of a wrong one.
+func censusGoldenPath() string { return censusGoldenPathFor(runtime.GOARCH, !webgpuVulkan) }
+
+func censusGoldenPathFor(arch string, metal bool) string {
+	if metal {
+		arch += "-metal"
+	}
+	return filepath.Join(censusGoldenDir, arch+".txt.gz")
 }
 
-func readCensusGolden(t *testing.T) censusGoldenFile {
+// The golden is text, one group a line in key order: "# class <host class>", "# total <hash>", then "<key>\t<hash>". A key holds
+// neither a tab nor a newline (writeCensusGolden checks).
+func readCensusGolden(t *testing.T, path string) (c censusGoldenClass, recordedClass string, found bool) {
 	t.Helper()
-	g := censusGoldenFile{Classes: map[string]censusGoldenClass{}}
-	f, err := os.Open(censusGolden)
+	f, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return g
+		return censusGoldenClass{}, "", false
 	}
 	if err != nil {
 		t.Fatal(err)
@@ -424,30 +436,79 @@ func readCensusGolden(t *testing.T) censusGoldenFile {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := json.Unmarshal(b, &g); err != nil {
-		t.Fatal(err)
-	}
-	if g.Classes == nil {
-		g.Classes = map[string]censusGoldenClass{}
-	}
-	return g
+	return parseCensusGolden(t, path, string(b))
 }
 
-func writeCensusGolden(t *testing.T, g censusGoldenFile) {
+func parseCensusGolden(t *testing.T, path, text string) (censusGoldenClass, string, bool) {
 	t.Helper()
-	g.About = "MM1's decision census (docs/tasks/task-subsystems-2026-10.md, \"MM1's decision census\"): per host class, a SHA-256 prefix of " +
-		"each group's full text, and one hash over every group. Written by go test ./decoder -run TestDecisionCensus -census.update."
-	b, err := json.MarshalIndent(g, "", " ")
+	c, class, err := decodeCensusGolden(text)
 	if err != nil {
+		t.Fatalf("%s: %v", path, err)
+	}
+	return c, class, true
+}
+
+// decodeCensusGolden reads the golden's text. The early return on a matching total would hide a corrupt body, so a missing header, a
+// line with no tab, and a key repeated or out of order are errors.
+func decodeCensusGolden(text string) (censusGoldenClass, string, error) {
+	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
+	if len(lines) < 2 || !strings.HasPrefix(lines[0], "# class ") || !strings.HasPrefix(lines[1], "# total ") {
+		return censusGoldenClass{}, "", errors.New("no class and total header")
+	}
+	c := censusGoldenClass{Total: strings.TrimPrefix(lines[1], "# total "), Groups: make(map[string]string, len(lines))}
+	prev := ""
+	for _, l := range lines[2:] {
+		k, h, ok := strings.Cut(l, "\t")
+		if !ok {
+			return censusGoldenClass{}, "", fmt.Errorf("a line with no tab: %q", l)
+		}
+		if prev != "" && k <= prev {
+			return censusGoldenClass{}, "", fmt.Errorf("group %q is out of order or repeated after %q", k, prev)
+		}
+		prev = k
+		c.Groups[k] = h
+	}
+	return c, strings.TrimPrefix(lines[0], "# class "), nil
+}
+
+// checkCensusGoldenClass decides what this host's golden file means. No file: an unrecorded host class, a capture run (skip). A file
+// recorded for another class string than this host's (a changed quantization size, say) is an error naming both, not a skip: a skip is
+// not a pass, and the golden would otherwise stop guarding this host unseen.
+func checkCensusGoldenClass(found bool, recorded, class, path string) (skip bool, err error) {
+	if !found {
+		return true, nil
+	}
+	if recorded != class {
+		return false, fmt.Errorf("%s was recorded for host class %q, but this host is %q: re-record it with -census.update (or fix the class string if the quantization sizes changed by mistake)", path, recorded, class)
+	}
+	return false, nil
+}
+
+func writeCensusGolden(t *testing.T, path, class string, c censusGoldenClass) {
+	t.Helper()
+	keys := make([]string, 0, len(c.Groups))
+	for k := range c.Groups {
+		if strings.ContainsAny(k, "\t\n") {
+			t.Fatalf("a group key holds a tab or a newline: %q", k)
+		}
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var sb strings.Builder
+	sb.WriteString("# class " + class + "\n# total " + c.Total + "\n")
+	for _, k := range keys {
+		sb.WriteString(k + "\t" + c.Groups[k] + "\n")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	f, err := os.Create(censusGolden)
+	f, err := os.Create(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	zw, _ := gzip.NewWriterLevel(f, gzip.BestCompression)
 	zw.ModTime = zeroTime // a byte-identical file for identical content
-	if _, err := zw.Write(append(b, '\n')); err != nil {
+	if _, err := zw.Write([]byte(sb.String())); err != nil {
 		t.Fatal(err)
 	}
 	if err := zw.Close(); err != nil {
@@ -492,5 +553,47 @@ func checkCensusCoverage(t *testing.T, c *census) {
 				t.Errorf("G-MM1-C1: %s never reached %q", d, o)
 			}
 		}
+	}
+}
+
+// TestCensusGolden_roundTripAndClassGuard holds the per-class golden's encoding: a write reads back to the same groups, the lines are in
+// key order, and a golden recorded for another class string than this host's fails naming both instead of skipping.
+func TestCensusGolden_roundTripAndClassGuard(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "x", "g.txt.gz")
+	in := censusGoldenClass{Total: "abc", Groups: map[string]string{"D2 b | cpu": "02", "D1 a | cpu": "01", "D1 a | cuda": "03"}}
+	writeCensusGolden(t, path, "amd64 f32=4", in)
+	out, recorded, ok := readCensusGolden(t, path)
+	if !ok || recorded != "amd64 f32=4" || out.Total != "abc" || len(out.Groups) != 3 || out.Groups["D1 a | cuda"] != "03" {
+		t.Fatalf("round trip: %v %+v", ok, out)
+	}
+	f, _ := os.Open(path)
+	zr, _ := gzip.NewReader(f)
+	b, _ := io.ReadAll(zr)
+	f.Close()
+	want := "# class amd64 f32=4\n# total abc\nD1 a | cpu\t01\nD1 a | cuda\t03\nD2 b | cpu\t02\n"
+	if string(b) != want {
+		t.Errorf("encoding:\n%s\nwant:\n%s", b, want)
+	}
+	for name, text := range map[string]string{
+		"repeated":     "# class c\n# total t\nA\t1\nA\t2\n",
+		"out of order": "# class c\n# total t\nB\t1\nA\t2\n",
+		"no tab":       "# class c\n# total t\nA1\n",
+		"no header":    "A\t1\n",
+	} {
+		if _, _, err := decodeCensusGolden(text); err == nil {
+			t.Errorf("a %s golden decoded without an error", name)
+		}
+	}
+	// The decision on a file: absent is a skip; present for this class passes; present for another class string is an error that
+	// names both (a skip would let the golden stop guarding this host).
+	if skip, err := checkCensusGoldenClass(false, "", "amd64 f32=4", path); !skip || err != nil {
+		t.Errorf("no file: skip %v, err %v; want a skip", skip, err)
+	}
+	if skip, err := checkCensusGoldenClass(true, "amd64 f32=4", "amd64 f32=4", path); skip || err != nil {
+		t.Errorf("a matching file: skip %v, err %v; want neither", skip, err)
+	}
+	skip, err := checkCensusGoldenClass(true, "amd64 f32=4", "amd64 f32=4 int4=1.125", path)
+	if skip || err == nil || !strings.Contains(err.Error(), "amd64 f32=4 int4=1.125") || !strings.Contains(err.Error(), `"amd64 f32=4"`) {
+		t.Errorf("a file for another class string: skip %v, err %v; want an error naming both", skip, err)
 	}
 }

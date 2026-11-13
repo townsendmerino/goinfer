@@ -65,7 +65,7 @@ func loadWebGPUResident(t *testing.T, dir string, opts decoder.Options, slots in
 	return m, rd
 }
 
-// kvSlotsScenario is MC1's identity gate on WebGPU (docs/tasks/task-concurrency-2026-09.md; the twins are
+// kvSlotsScenario is MC1's identity gate on WebGPU (docs/tasks/parked/task-concurrency-2026-09.md; the twins are
 // TestMetalKVSlots_interleavedMatchesAlone and TestCUDAKVSlots_interleavedMatchesAlone): with two resident KV slots,
 // two conversations that share only a lead, interleaved turn by turn through the production Generate path, must each
 // emit exactly the token ids they emit when served alone, and reuse exactly as much of their own history on every
@@ -473,7 +473,7 @@ func TestDarwinKVSlots(t *testing.T) {
 	}
 }
 
-// TestSlotsGranted is G-WS1's table (docs/tasks/task-subsystems-2026-10.md, "SB2 memory reads, step 4"): slotsGranted is
+// TestSlotsGranted is G-WS1's table (docs/completed/task-subsystems-2026-10.md, "SB2 memory reads, step 4"): slotsGranted is
 // darwinKVSlots on darwin, every slot on a discrete GPU with no figure, and the headroom rule with one; slotsBeforeContextOn leaves a
 // discrete GPU's context alone and prices darwin's as ctxWhereSlotsFit over darwinKVSlots does.
 func TestSlotsGranted(t *testing.T) {
@@ -726,7 +726,7 @@ func captureStderrGPU(t *testing.T, fn func()) string {
 }
 
 // TestWebGPUKVSlots_realClamp exercises the discrete-GPU clamp on real hardware and a real
-// checkpoint (docs/prompts/nobara-mc1-webgpu-2026-09.md, §2, item 26). A slot whose allocation
+// checkpoint (docs/completed/nobara-mc1-webgpu-2026-09.md, §2, item 26). A slot whose allocation
 // fails, or whose headroom probe after it fails, stops buildKVSlots; that path otherwise only
 // runs under an injected failure (TestWebGPUKVSlots_clampedBuild). It loads with 4 slots
 // requested, runs every granted slot, and checks the device comes back clean.

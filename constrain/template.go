@@ -16,7 +16,7 @@ import (
 // (`请按下列JSON格式输出图中信息:` followed by `{"id_number": "", "address": {"street": "", ...}}`, the model card's
 // example): the model is told the SHAPE by example, not by a JSON Schema, and the grammar (JSONSchema /
 // GrammarFromStruct) is what guarantees it. A schema-only request gives the model no template to read, and a
-// template-only one gives no guarantee, so both are built from the one source (docs/tasks/task-glm-ocr-2026-10.md O5).
+// template-only one gives no guarantee, so both are built from the one source (docs/completed/task-glm-ocr-2026-10.md O5).
 //
 // THE CONVENTION, one table for both entry points (a test pins every row):
 //

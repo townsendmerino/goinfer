@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase A gate A2t (docs/tasks/task-embeddinggemma2.md): a tiny random gemma4_audio tower and its reference, for CI.
+"""Phase A gate A2t (docs/completed/task-embeddinggemma2.md): a tiny random gemma4_audio tower and its reference, for CI.
 
 transformers' Gemma4AudioModel at a tiny width (hidden 64, 4 heads, 2 layers, the real subsampler's [128, 32]
 channels, the real window) with a Linear embedder to a text width of 40, in float32 with sdpa attention (eager inverts

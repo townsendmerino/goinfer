@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// Per-field confidence on constrained output (C1 of docs/tasks/task-constrained-confidence.md).
+// Per-field confidence on constrained output (C1 of docs/tasks/parked/task-constrained-confidence.md).
 //
 // WHAT THE NUMBER IS. A field's confidence is the model's probability over what the grammar allowed at the position(s)
 // that decided the field's value — narrower than the probability that the value is right, and not a calibrated

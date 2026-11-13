@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""D6b (docs/tasks/task-constrained-confidence.md): goinfer's Route B on autotrust's JEV-9B against the D0 reference,
+"""D6b (docs/tasks/parked/task-constrained-confidence.md): goinfer's Route B on autotrust's JEV-9B against the D0 reference,
 graded by the pre-registered rule and its 2026-09-30 amendment.
 
     python3 grade.py results/          (the dir holding f32.jsonl, int8int8.jsonl, int4.jsonl from run-d6b.sh)

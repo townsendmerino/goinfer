@@ -1,6 +1,6 @@
 // Command confidence is per-field confidence on constrained output: the answer is forced into a JSON Schema, and
 // each enum, boolean and integer field comes back with the model's probability over what the schema allowed at the
-// position that decided it (docs/tasks/task-constrained-confidence.md, C1).
+// position that decided it (docs/tasks/parked/task-constrained-confidence.md, C1).
 //
 // The number ranks answers — a low one is wrong more often (docs/measurements/confidence-c0-2026-09-27.md) — but it
 // is NOT the probability that the value is right, and it is not calibrated. Use it to route ("ask a person below

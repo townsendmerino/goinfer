@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// H2 on WebGPU (docs/tasks/task-hardware-coverage-2026-10.md): the resident self-test on a real adapter. A green probe on healthy code, and the same probe going RED when the resident's inputs are
+// H2 on WebGPU (docs/completed/task-hardware-coverage-2026-10.md): the resident self-test on a real adapter. A green probe on healthy code, and the same probe going RED when the resident's inputs are
 // wrong, which is what makes the green mean something. Skips on a software renderer (lavapipe on a CI runner): its limits and math are not a GPU's, and the margins below are for a real adapter.
 
 func requireRealAdapter(t *testing.T) {

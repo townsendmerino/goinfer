@@ -17,7 +17,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// --image (O5, docs/tasks/task-glm-ocr-2026-10.md): one image, one answer, in the terminal.
+// --image (O5, docs/completed/task-glm-ocr-2026-10.md): one image, one answer, in the terminal.
 //
 //	goinfer-chat --model ~/models/glm-ocr --image invoice.png --schema invoice.schema.json
 //

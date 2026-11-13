@@ -14,7 +14,7 @@ import (
 	"testing"
 )
 
-// Audit R-11 (docs/tasks/task-recompute-audit.md §5): no aikit CPU kernel accumulates into its output, so a caller that
+// Audit R-11 (docs/completed/task-recompute-audit.md §5): no aikit CPU kernel accumulates into its output, so a caller that
 // zeroes a buffer and then hands it to a kernel whose documented contract is "overwrites dst" or "zeroes dst internally"
 // is doing dead work (or hiding a missing write). aikit v1.56.1 put an `Output contract:` line on every exported writer;
 // this test reads those lines from the PINNED aikit source and fails on a `clear(x)` (or `for i := range x { x[i] = 0 }`)

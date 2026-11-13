@@ -1,7 +1,6 @@
 package decoder
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 )
@@ -43,7 +42,9 @@ func ministral3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 			Mscale       *float64 `json:"mscale"`
 			MscaleAllDim *float64 `json:"mscale_all_dim"`
 		}
-		_ = json.Unmarshal(cfg.RopeParameters, &y)
+		if err := rereadRope("mistral3", cfg.RopeParameters, &y); err != nil {
+			return nil, nil, err
+		}
 		if y.Mscale != nil || y.MscaleAllDim != nil {
 			m, mAll := 1.0, 1.0
 			if y.Mscale != nil {
@@ -59,7 +60,9 @@ func ministral3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		Beta       float64 `json:"llama_4_scaling_beta"`
 		OrigMaxPos float64 `json:"original_max_position_embeddings"`
 	}
-	_ = json.Unmarshal(cfg.RopeParameters, &attnTemp)
+	if err := rereadRope("mistral3", cfg.RopeParameters, &attnTemp); err != nil {
+		return nil, nil, err
+	}
 
 	hd := cfg.EffectiveHeadDim()
 	var layerIsGlobal func(int) bool

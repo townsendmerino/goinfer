@@ -9,7 +9,7 @@ import (
 // Support is one backend's operation-and-parameter table: the operation kinds it has a step for, and the parameter values its
 // blocks implement. The backend's walker checks a program against it at build, and decoder's admission reads the same table, so
 // a decline names the operation and parameter. A parameter the table does not name is implemented at every value. A tier-0 test
-// per backend holds the table to its walker (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-c).
+// per backend holds the table to its walker (docs/completed/task-forward-architecture-2026-10.md §4.9, OP4m-c).
 type Support struct {
 	Backend string
 	Kinds   []OpKind
@@ -187,7 +187,7 @@ var MetalStep = &Support{
 
 // MetalStepMoE is MetalStep with the step's MoE block (the generic routed FFN, its shared expert included), which runs
 // decode's MoE dispatches row by row. The step reads it in place of MetalStep only while that block is switched on; it is
-// opt-in (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-d3).
+// opt-in (docs/completed/task-forward-architecture-2026-10.md §4.9, OP4m-d3).
 var MetalStepMoE = func() *Support {
 	s := *MetalStep
 	s.FFN = map[FFNForm][]ActKind{FfnGated: {ActSiLU, ActGeluTanh}, FfnMoE: {ActSiLU, ActGeluTanh}}
@@ -198,7 +198,7 @@ var MetalStepMoE = func() *Support {
 // hybrids: Gated-DeltaNet and Mamba-2, each on its row's own slot state, and gated attention, each running decode's
 // dispatches on each row in turn; and Nemotron-H's non-gated ReLU² FFN, its front batched. The step reads them in place of
 // MetalStep and MetalStepMoE only while those blocks are switched on; they are opt-in
-// (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-d4b and OP4m-d6b).
+// (docs/completed/task-forward-architecture-2026-10.md §4.9, OP4m-d4b and OP4m-d6b).
 var (
 	MetalStepRecurrent    = withNonGatedReLU2(withKinds(MetalStep, OpDeltaNet, OpGatedAttn, OpMamba2))
 	MetalStepRecurrentMoE = withNonGatedReLU2(withKinds(MetalStepMoE, OpDeltaNet, OpGatedAttn, OpMamba2))
@@ -214,7 +214,7 @@ func withNonGatedReLU2(s *Support) *Support {
 // MetalStepGemma4 is MetalStep with the step's per-row Gemma 4 layers: Gemma 4 attention, its dense FFN, its per-layer
 // embedding branch and layer scale, and the norms on sublayer outputs they carry. Each row runs decode's own layer encoder in
 // turn. The step reads it in place of MetalStep only while those blocks are switched on; it is opt-in
-// (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-d5a).
+// (docs/completed/task-forward-architecture-2026-10.md §4.9, OP4m-d5a).
 var MetalStepGemma4 = func() *Support {
 	s := withKinds(MetalStep, OpGemma4Attn, OpPLE, OpLayerScale)
 	s.FFN = map[FFNForm][]ActKind{FfnGated: {ActSiLU, ActGeluTanh}, FfnGemma4Dense: {ActSiLU, ActGeluTanh}}
@@ -238,7 +238,7 @@ func (f FFNForm) String() string {
 	return fmt.Sprintf("ffn-form(%d)", uint8(f))
 }
 
-// CUDA is the CUDA resident's table (OP4cu-c1, docs/tasks/task-forward-architecture-2026-10.md §4.9a). Its walker is cuda's
+// CUDA is the CUDA resident's table (OP4cu-c1, docs/completed/task-forward-architecture-2026-10.md §4.9a). Its walker is cuda's
 // cudaStepsOf, which matches a layer's sublayer pattern; the build checks the program against this table first. CUDA's DeltaNet
 // reads NegEigval and its own output-norm epsilon per layer (cuda's deltaNetGateSettings), and it keeps a recurrent state once
 // per layer.
@@ -263,7 +263,7 @@ var CUDA = &Support{
 }
 
 // CUDAStep is the table of CUDA's multi-sequence step (cuda/batchstep.go, MC3's batched decode): what its rows run through
-// prefillCore's batched layers and decode's attention gap (OP4cu-d2, docs/tasks/task-forward-architecture-2026-10.md §4.9a). Its
+// prefillCore's batched layers and decode's attention gap (OP4cu-d2, docs/completed/task-forward-architecture-2026-10.md §4.9a). Its
 // runtime limits (a batched prefill, C′ expert streaming, two or more KV slots, the batched pass's static declines) are checked by
 // the step, not here.
 var CUDAStep = func() *Support {

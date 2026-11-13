@@ -63,7 +63,7 @@ const (
 	lcEvict   lifecyclePath = "evict"   // a slot's rows stop being a known sequence's: residentForgetIDs, or the slot given to another prompt
 	// KV8a's two paths (recurrent_checkpoint.go): the save at the end of a prefill, and the restore at that position.
 	lcCkptSave    lifecyclePath = "checkpoint save"    // residentCheckpointSave, after the prefill and before the first decode step
-	lcCkptRestore lifecyclePath = "checkpoint restore" // residentCheckpointRestore, when kvmgr's scoreRecurrent returns the checkpoint's c
+	lcCkptRestore lifecyclePath = "checkpoint restore" // residentCheckpointRestore, when kvmgr's scoreRecurrentTokens returns the checkpoint's c
 )
 
 // lifecyclePaths is every path, in display order.
@@ -156,7 +156,7 @@ var cacheStateGrid = map[cacheState]map[lifecyclePath]stateCell{
 		lcShare:        {hColdOnMismatch, "a span is taken whole, and only when the request claims the same image at the same place; otherwise the match stops at its start"},
 		lcEvict:        {hCleared, "residentForgetIDs clears resImgBlocks with the ids, always"},
 		lcCkptSave:     {hTransient, "the saving path (generateInto) takes text prompts: no image block is in what it saves"},
-		lcCkptRestore:  {hRefused, "scoreRecurrent gives no checkpoint hit to a sequence or a request with an image span"},
+		lcCkptRestore:  {hRefused, "scoreRecurrentTokens gives no checkpoint hit to a sequence or a request with an image span"},
 	},
 	stateMRoPE: {
 		lcRewind:       {hInexact, "positions and the decode delta are set by the image prefill and have no per-position rewind"},

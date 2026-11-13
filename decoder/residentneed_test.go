@@ -8,7 +8,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// docs/tasks/task-memory-accounting-2026-09.md item 2: `fit`'s verdict (Plan) and Metal's resident guard (ResidentNeedBytes,
+// docs/completed/task-memory-accounting-2026-09.md item 2: `fit`'s verdict (Plan) and Metal's resident guard (ResidentNeedBytes,
 // via residentNeedBytes in metal/backend.go) must be the same number by construction. Plan("metal") once had no host-copy term
 // and priced Metal's KV at f32, so on a directly loaded model it asked for about half of what the guard then demanded.
 

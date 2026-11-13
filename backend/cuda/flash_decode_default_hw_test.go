@@ -57,7 +57,7 @@ func TestFlashDecode_defaultOnRealResident(t *testing.T) {
 			t.Fatalf("GOINFER_CUDA_FLASH_DECODE=0 left the lane on: faSplit=%d", rf.faSplit)
 		}
 	})
-	// Phase 3 (docs/tasks/task-env-config-2026-09.md): the knob is a property of the MODEL, read at build from its
+	// Phase 3 (docs/completed/task-env-config-2026-09.md): the knob is a property of the MODEL, read at build from its
 	// Load-time snapshot. Two models in one process, one with Options.Knobs turning the lane off, must each get
 	// their own — the environment (unset, the default-ON arm) must not leak into the overridden one, nor it into the other.
 	t.Run("Options.Knobs is per model", func(t *testing.T) {

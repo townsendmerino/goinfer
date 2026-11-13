@@ -167,7 +167,7 @@ var ogGrid = map[string]map[ogPath]ogCell{
 			// int8 attention branch turns it red. (TestKVI8_genParity sets m.kvI8 itself, not through Options.)
 			pathCPUDecode:        ogTestedBy("TestOptionPath_cpuBatchedPrefill"),
 			pathCPUBatchPrefill:  ogTestedBy("TestOptionPath_cpuBatchedPrefill"), // TestKVI8_batchedPrefill sets m.kvI8 itself
-			pathCPUBatchDecode:   ogDeclinedAt("cpuBatchCacheEligible", "TestCPUBatch_ineligibleCachesBypass"),
+			pathCPUBatchDecode:   ogTestedBy("TestOptionPath_cpuBatchedDecode"),
 			pathSpecVerify:       ogTestedBy("TestOptionPath_specVerify"),
 			pathSessionLifecycle: ogTestedBy("TestKVI8_snapshotRoundtrip"),
 		},
@@ -286,7 +286,7 @@ var ogGrid = map[string]map[ogPath]ogCell{
 			pathSessionLifecycle: ogTestedBy("TestOptionPathMetal_neutralOptions"),
 		},
 	),
-	// CUDA's windowed KV (docs/tasks/task-cuda-windowed-kv-2026-10.md): a sliding-window layer holds window+slack positions instead of the
+	// CUDA's windowed KV (docs/completed/task-cuda-windowed-kv-2026-10.md): a sliding-window layer holds window+slack positions instead of the
 	// context. Metal and WebGPU ignore it. The identity tests live in cuda/kvwindow_test.go (a GPU job, tags cuda goinfer_testhooks) and
 	// compare logits bit for bit against the same load without the option.
 	"KVShareOff": ogMerge(

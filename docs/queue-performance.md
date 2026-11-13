@@ -46,9 +46,12 @@
   iteration runs serial then parallel, so the ten iterations are ten matched pairs per component. A component ships, wired
   into `topFilterLogits`, at a median ≥ 1.2x with 9 of 10 pairs faster; otherwise it is killed and its arm removed.
 
-- **P41 · R13's full three-arm sweep, both boxes, all sizes — OPEN, filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions).** `either`. The grouped CPU decode attention shipped
+- **P41 · R13's full three-arm sweep, both boxes, all sizes — READ 2026-11-12, the default stays (Francis): on ÷ off 1.015 at 128 keys, 0.940 at 2,048, 0.952 at 4,096, 1.264 at 8,192 on the M1 Pro's CPU path; the mid-depth loss is a recorded cost (`docs/measurements/r13-grouped-sweep-2026-11/README.md`, "Reading"). Filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions).** `either`. The grouped CPU decode attention shipped
   default on (1.32x served at depth 8192), but the three-arm, both-box, every-size sweep was never run, and the Linux half
   read a regression on the 1.5B. `docs/completed/red-october.md` § "R13" has the arms.
+  *Updated 2026-11-09: registered, awaiting Francis's approval before any run
+  (`docs/measurements/r13-grouped-sweep-2026-11/README.md`). Two arms, on against off. It is arm64 only: on amd64 both arms
+  run the per-head path, and of the bench models only Qwen2.5-1.5B takes the grouped path.*
 
 - **P36 · The memory campaign's CUDA cells, on nobara — a pointer, filed 2026-10-31 (coordinator).** `linux`.
   *Updated 2026-11-08: the memory campaign is archived (`docs/completed/task-memory-campaign-2026-10.md`); MEM10's build

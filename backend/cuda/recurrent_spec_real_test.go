@@ -21,7 +21,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// SP2's real-pairing gates on Qwen3.5-9B with z-lab's DFlash (docs/tasks/task-forward-architecture-2026-10.md §6a, "SP2 on
+// SP2's real-pairing gates on Qwen3.5-9B with z-lab's DFlash (docs/completed/task-forward-architecture-2026-10.md §6a, "SP2 on
 // nobara"): G1c identity with the plants P1 and P2 and G5 on the 9B (TestSP2_identity), G2 the fold's cost (TestSP2_foldCost) and
 // G4 speed (TestSP2_speed). Each writes JSON lines to SP2_OUT for docs/measurements/sp2-2026-10/.
 //

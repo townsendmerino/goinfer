@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MC4's spec trigger on Metal (docs/tasks/task-concurrency-2026-09.md MC4, registered in b11bcfc3): S, L and identity
+"""MC4's spec trigger on Metal (docs/tasks/parked/task-concurrency-2026-09.md MC4, registered in b11bcfc3): S, L and identity
 from bench_spec_copy.py's and bench_w7_plain.py's JSON. Keys batchN_i / specN_i, N clients, pair i."""
 import json, statistics, sys
 

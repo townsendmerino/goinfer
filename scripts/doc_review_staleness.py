@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""doc_review_staleness.py — which docs/tasks/ and docs/prompts/ files need a fresh /doc-review pass.
+"""doc_review_staleness.py — which docs/tasks/ files need a fresh /doc-review pass.
 
 Each live design record and prompt brief carries a footer:
 
@@ -20,8 +20,8 @@ The citation index already exists (scripts/queue_citation_lint.py maintains it a
 and already maps every doc to every path:line it points at. Reusing it here means this script asks
 exactly the question the doc's own citations claim to be about, not a proxy for it.
 
-SCOPE, DELIBERATELY. Only docs/tasks/*.md, docs/tasks/parked/*.md and docs/prompts/*.md are
-checked — the two directories currently under this convention. docs/completed/ is excluded on
+SCOPE, DELIBERATELY. Only docs/tasks/*.md and docs/tasks/parked/*.md are
+checked — the directory under this convention. docs/completed/ is excluded on
 purpose: archived docs are frozen records and are not supposed to track the tree (same reasoning
 queue_citation_lint.py already applies).
 
@@ -84,7 +84,7 @@ def aikit_pin_bump_since(footer_date: str):
 
 def review_scoped_docs():
     out = []
-    for base in ("docs/tasks", "docs/prompts"):
+    for base in ("docs/tasks",):
         d = ROOT / base
         if d.is_dir():
             out += sorted(p for p in d.rglob("*.md"))
@@ -168,7 +168,7 @@ def main() -> int:
             fresh.append((rel, footer_date, aikit_cites))
 
     total = len(docs)
-    print(f"doc_review_staleness: {total} file(s) under docs/tasks/ and docs/prompts/.\n")
+    print(f"doc_review_staleness: {total} file(s) under docs/tasks/.\n")
 
     if stale:
         print(f"STALE ({len(stale)}) — footer predates a change to the doc or something it cites:")

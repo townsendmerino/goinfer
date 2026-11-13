@@ -189,6 +189,53 @@
    "label": {
     "regime": "screening, Mellum2.1 int4mix, C' expert streaming (45 of 64 slots), -ctx 16384, KV f32; the registered three repetitions of a fragile cell (Codex x Mellum2.1, 2 of 5 on 2026-10-13)"
    }
+  },
+  {
+   "name": "flint-16k",
+   "model": "/home/francis/models/Flint-Q4_K_M.int4.e4h.cuda.v17.giw",
+   "ctx": 16384,
+   "serve_args": [
+    "--moe-cache-experts"
+   ],
+   "agents": [
+    "opencode",
+    "codex"
+   ],
+   "tasks": [
+    "read",
+    "search",
+    "edit",
+    "write",
+    "fix"
+   ],
+   "reps": 1,
+   "run_timeout": 1500,
+   "label": {
+    "regime": "screening, Flint 40B-A2.5B int4 (.giw from Q4_K_M), C' expert streaming (48 of 256 slots), windowed KV (1,601 positions in 35 sliding layers), -ctx 16384, KV f32"
+   }
+  },
+  {
+   "name": "flint-40k-cc",
+   "model": "/home/francis/models/Flint-Q4_K_M.int4.e4h.cuda.v17.giw",
+   "ctx": 40960,
+   "serve_args": [
+    "--moe-cache-experts"
+   ],
+   "agents": [
+    "claude-code"
+   ],
+   "tasks": [
+    "read",
+    "search",
+    "edit",
+    "write",
+    "fix"
+   ],
+   "reps": 1,
+   "run_timeout": 2400,
+   "label": {
+    "regime": "screening, Flint 40B-A2.5B int4 (.giw from Q4_K_M), C' expert streaming (36 of 256 slots, 3.2 GB), windowed KV (1,601 positions in 35 sliding layers; 14 full layers at 40,960), -ctx 40960 (2.13 x Claude Code's 19,234-token first request on Flint), one KV slot"
+   }
   }
  ]
 }

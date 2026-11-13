@@ -2,6 +2,7 @@ package modelload
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -67,7 +68,7 @@ func TestLoad_loraOnAQuantizedFileIsRefusedBeforeTranscoding(t *testing.T) {
 	}
 }
 
-// TestLoad_safetensorsDirGoesThroughSidecar is G-S18d's load half (docs/tasks/task-multimodal-support-2026-10.md): where
+// TestLoad_safetensorsDirGoesThroughSidecar is G-S18d's load half (docs/completed/task-multimodal-support-2026-10.md): where
 // the sidecar default holds, a safetensors directory loads through a sidecar built beside it once; the second load
 // reuses it without a rebuild; the tokenizer, chat template included, is still the directory's; and -direct-load keeps
 // the directory.
@@ -150,7 +151,7 @@ func TestLoad_safetensorsDirGoesThroughSidecar(t *testing.T) {
 	}
 }
 
-// TestRouteFor_q4kTakesTheSidecar is D8B-G2's app half (docs/tasks/task-memory-campaign-2026-10.md, D8b-build gates): a
+// TestRouteFor_q4kTakesTheSidecar is D8B-G2's app half (docs/completed/task-memory-campaign-2026-10.md, D8b-build gates): a
 // q4k .gguf takes its sidecar where the platform defaults to one, refuses -stream-weights, and a directory at q4k stays
 // direct.
 func TestRouteFor_q4kTakesTheSidecar(t *testing.T) {
@@ -259,5 +260,53 @@ func TestLoad_refusesStreamingABundleThatCannotPage(t *testing.T) {
 				t.Error("the bundle was loaded before it was refused, copying a kind-1 bundle onto the heap")
 			}
 		})
+	}
+}
+
+// TestLoad_explicitInt4AcceptsItsMoESidecar: an explicit --quant int4 on a MoE safetensors directory is accepted against the
+// sidecar the same load builds, and the model reports int4. A MoE's routers stay float32 at every quant, and a float32 body
+// weight beside int4 is not a mix (decoder's quantLabel); counted as one, the bundle reads int4mix and CheckGiwQuantMatch
+// refuses the load. Built from the committed testdata/mixtral-tiny, so it runs wherever the sidecar default holds.
+func TestLoad_explicitInt4AcceptsItsMoESidecar(t *testing.T) {
+	if !prequant.DefaultToSidecar(false) {
+		t.Skip("the sidecar default does not hold on this platform")
+	}
+	fix := testpath.Testdata(t, "mixtral-tiny")
+	src := filepath.Join(t.TempDir(), "mixtral-tiny")
+	if err := os.Mkdir(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"config.json", "generation_config.json", "model.safetensors"} {
+		raw, err := os.ReadFile(filepath.Join(fix, name))
+		if err != nil {
+			t.Fatalf("committed fixture %s: %v", name, err)
+		}
+		if err := os.WriteFile(filepath.Join(src, name), raw, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	vocab := map[string]int{"Ġ": 0, "Ċ": 1, "h": 2, "i": 3, "hi": 4}
+	tok, err := json.Marshal(map[string]any{
+		"model":         map[string]any{"type": "BPE", "vocab": vocab, "merges": []string{"h i"}},
+		"pre_tokenizer": map[string]any{"type": "ByteLevel", "add_prefix_space": false},
+		"decoder":       map[string]any{"type": "ByteLevel"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "tokenizer.json"), tok, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	opts := decoder.Options{Quant: "int4", Backend: "cpu"}
+	res, err := Load(context.Background(), Request{Spec: src, Opts: opts, ExplicitQuant: "int4"})
+	if err != nil {
+		t.Fatalf("an explicit --quant int4 on a MoE safetensors directory: %v", err)
+	}
+	t.Cleanup(func() { res.Model.Close() })
+	if !strings.HasSuffix(res.LoadPath, ".giw") {
+		t.Fatalf("LoadPath = %q, want the sidecar .giw", res.LoadPath)
+	}
+	if q := res.Model.Quant(); q != "int4" {
+		t.Errorf("the sidecar reports %q, want int4", q)
 	}
 }

@@ -93,7 +93,7 @@
 > (constrained generation; D7 measures decisions against it) ·
 > [`task-work-queue-2026-09.md`](../task-work-queue-2026-09.md) (J1/J3/J4 plumbing D5's batch route
 > rides) · [`task-concurrency-2026-09.md`](task-concurrency-2026-09.md) (MC1/MC3 slots, D7's
-> concurrency cell) · [`task-site-2026-09.md`](../task-site-2026-09.md) (D9) ·
+> concurrency cell) · [`task-site-2026-09.md`](../../completed/task-site-2026-09.md) (D9) ·
 > [`task-never-swap-2026-09.md`](../../completed/task-never-swap-2026-09.md) (D3's merge-at-load memory) ·
 > [`task-embed-and-harness-ux.md`](../task-embed-and-harness-ux.md) (mode 3, "point my tools at it").
 
@@ -369,7 +369,7 @@ violate" section (one paragraph, the caveat linked), and a worked example in `ap
 every fact read from a primary artifact at a pinned revision). Where it contradicts the text below, the record wins:
 - **autotrust's `jev_judge` server is not published**, and the `{distribution, decision, confidence, latency_ms}`
   fields appear in no source. The reference fixture is the JEV-9B card's `decide()` (transformers 5.16.1 + peft
-  0.21.0), run on the Linux box: `docs/prompts/nobara-decisions-d0-fixture-2026-09.md`.
+  0.21.0), run on the Linux box: `docs/completed/nobara-decisions-d0-fixture-2026-09.md`.
 - **The template is bare-v1**, with no chat template and no BOS. The labels are bare `false`/`true`, `0`–`5` and
   `A`–`P` (no leading space). `slots.template_version` holds the version.
 - **The 9B's numbers:**
@@ -724,7 +724,7 @@ schema was never published (D0).
 **D6a pre-registration (2026-09-28, committed before any graded run; the owner chose chat-v1 as the graded
 template).** The artifacts are in `docs/measurements/decisions-d6a-2026-09-28/`: `select.py`, `analyze.py` and
 `run-d6a.sh`, all written before any graded run.
-- **Machine: nobara-pc, CUDA** (`docs/prompts/nobara-decisions-d6a-2026-09.md`). The Mac cannot run it.
+- **Machine: nobara-pc, CUDA** (`docs/completed/nobara-decisions-d6a-2026-09.md`). The Mac cannot run it.
   - The 9B fell back to the CPU there twice: first because the auto-pinned context exceeded Metal's 32,768
     ceiling (fixed by `--ctx 4096`), then because Metal's memory guard budget (5.4–5.8 GB of live memory against
     the 6.04 GB the resident needs) declined it.
@@ -890,7 +890,7 @@ suffix, and the cost is documented.
   questions about one state cost a full prefill each.
 - **README:** the Decisions paragraph, with no speed claim.
 - **`docs/README.md`:** the index entry updated.
-- **The site:** [`task-site-2026-09.md`](../task-site-2026-09.md) S2 gains a decisions row on each model page, and a
+- **The site:** [`task-site-2026-09.md`](../../completed/task-site-2026-09.md) S2 gains a decisions row on each model page, and a
   decision-model tag reserved for Route B.
   - **Built 2026-09-30.** Each vetted checkpoint's card has a "Decisions · /v1/systemone" block.
     - **Where measured:** the checkpoint's label-scoring figures, from `apps/site/data/claims.json`'s new `decisions`
@@ -911,7 +911,7 @@ suffix, and the cost is documented.
 
 `docs/server.md` (a Decisions section with the §2 caveat), README (one paragraph; no speed claim
 unless D7 is in), the capability matrix (decision routes per family),
-[`task-site-2026-09.md`](../task-site-2026-09.md) (a models-page tag for decision models), and a recipe
+[`task-site-2026-09.md`](../../completed/task-site-2026-09.md) (a models-page tag for decision models), and a recipe
 under `docs/integrations/` if D0 found the SDK base-URL override or when jevx acceptance passes.
 
 ### Route C: Cloudflare's Clef (D10–D14) — done; the record is archived

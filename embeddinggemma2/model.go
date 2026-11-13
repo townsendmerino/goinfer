@@ -6,7 +6,7 @@
 // It is an encoder, not a decoder: attention is bidirectional on every layer (a symmetric window of radius
 // `sliding_window` on the sliding layers, the whole sequence on the full ones), there is no KV cache and no decode
 // step, so it does not go through decoder.Load. Only the text half of the checkpoint is read; the vision and audio
-// towers stay on disk. The forward runs on the CPU in float32. docs/tasks/task-embeddinggemma2.md has the design.
+// towers stay on disk. The forward runs on the CPU in float32. docs/completed/task-embeddinggemma2.md has the design.
 package embeddinggemma2
 
 import (

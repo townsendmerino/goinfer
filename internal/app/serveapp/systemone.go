@@ -1,6 +1,6 @@
 package serveapp
 
-// POST /v1/systemone is TypeSafe's decisions wire shape (docs/tasks/task-constrained-confidence.md; the request and
+// POST /v1/systemone is TypeSafe's decisions wire shape (docs/tasks/parked/task-constrained-confidence.md; the request and
 // response JSON are recorded verbatim in docs/measurements/decisions-d0-prior-art-2026-09-27.md section 3), answered
 // by label scoring on the served model (internal/decide), or by the entry's trained decision head or Clef model where
 // it has one. It exists so jevx and TypeSafe's SDKs (JS, Python, Vercel, LangChain), which all take a base-URL

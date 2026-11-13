@@ -110,7 +110,12 @@ func TestGuardGIWFit_metalNotOverchargedByCPUPricing(t *testing.T) {
 	if !buildDemandFor(cfg, Options{Backend: "metal"}, 0, 0, false).Resident {
 		t.Fatal("test setup: Metal would not admit this config, so the test would only exercise the CPU pricing")
 	}
-	metalNeed := estimateKVBytes(cfg, MetalCtxDefault, true, false) + prefillAttnScratchBudget
+	arch, _, err := resolveArchitecture(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metalKV := metalKVBytesFor(arch, MetalCtxDefault, kvPrecF16) // one slot of Metal's f16 pools
+	metalNeed := metalKV + prefillAttnScratchBudget
 	cpuNeed := estimateKVBytes(cfg, cfg.MaxPositions, false, false) + prefillAttnScratchBudget
 	avail := 2*metalNeed + giwMemMargin // twice what Metal holds; a small fraction of the CPU's ceiling
 	if cpuNeed <= 2*metalNeed {
@@ -125,7 +130,7 @@ func TestGuardGIWFit_metalNotOverchargedByCPUPricing(t *testing.T) {
 	}
 	// The .gguf/safetensors guard shares the pricing.
 	f := fitCheck{}.priceCtxAndKV(cfg, Options{Backend: "metal"})
-	if f.effCtx != MetalCtxDefault || !f.kvF16 || f.kvBytes != estimateKVBytes(cfg, MetalCtxDefault, true, false) {
+	if f.effCtx != MetalCtxDefault || !f.kvF16 || f.kvBytes != metalKV {
 		t.Errorf("priceCtxAndKV for Metal: ctx %d f16 %v kv %d", f.effCtx, f.kvF16, f.kvBytes)
 	}
 }
@@ -144,11 +149,12 @@ func TestKVPricingFor_metalMLAPricedAsAllocated(t *testing.T) {
 		if !ok || !p.metalSizing {
 			t.Fatalf("--kv %q: priced %+v ok=%v, want Metal sizing", kv, p, ok)
 		}
-		got := estimateKVBytes(cfg, 1024, p.kvF16, p.kvI8)
-		want := int64(0)
+		got := p.bytes(cfg, 1024)
+		var latent int64
 		for l := 0; l < arch.NumLayers; l++ {
-			want += int64(arch.kvDimAt(l)) * 1024 * 4 // one f32 latent row per position (metal/mla.go)
+			latent += int64(arch.kvDimAt(l)) * 4 // one f32 latent row per position (metal/mla.go)
 		}
+		want := latent*(1024+KVBlockRows) + 1024/KVBlockRows*4 // 1024 rows, the pools' null block, the slot's table
 		if got != want {
 			t.Errorf("--kv %q: priced %d B for 1024 positions, Metal allocates %d B", kv, got, want)
 		}

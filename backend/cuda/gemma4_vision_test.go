@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
-// S4's Gemma 4 vision tower on CUDA (docs/tasks/task-multimodal-support-2026-10.md), the twin of metal/gemma4_vision_test.go: the tower followed by aikit's tail
+// S4's Gemma 4 vision tower on CUDA (docs/completed/task-multimodal-support-2026-10.md), the twin of metal/gemma4_vision_test.go: the tower followed by aikit's tail
 // (FinishHidden) against aikit's CPU Forward, every soft token at cosine >= 0.9999, on the tiny tower with finite clip bounds and random position tables and
 // norms, over raster and shuffled grids; each CUDA-specific planted defect alone must break it; the real E2B on the four F2a images under GOINFER_HEAVY_TESTS=1.
 

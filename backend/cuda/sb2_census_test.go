@@ -20,6 +20,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unsafe"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -30,7 +31,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-// Layer B-cuda of the admission and routing census (docs/tasks/task-subsystems-2026-10.md, "SB2 step 2"): CUDA's own static
+// Layer B-cuda of the admission and routing census (docs/completed/task-subsystems-2026-10.md, "SB2 step 2"): CUDA's own static
 // admission, the declines buildResident makes from the model alone, on layer D's fixtures and option cells. A fake backend named
 // cuda takes the decoder's real admission; where that admits, it runs buildResident in plan-only mode (every static decline, then
 // a return before anything is allocated), records the answer and declines, so nothing is uploaded and no device is needed. A cell
@@ -189,7 +190,7 @@ func TestBackendAdmissionCensus_cuda_plant(t *testing.T) {
 	t.Logf("planted MoE per-32 decline off: %d of %d cells red, as expected", len(diffs), len(clean))
 }
 
-// The memory census (docs/tasks/task-subsystems-2026-10.md, "SB2 memory reads, step 2"): cuda's memory decisions
+// The memory census (docs/completed/task-subsystems-2026-10.md, "SB2 memory reads, step 2"): cuda's memory decisions
 // (cudaBackend.planMemory) on every cell layer B-cuda plans, fed each recorded machine's free-VRAM figure. The KV fit reads free
 // VRAM after allocation and is not fed here.
 
@@ -1128,7 +1129,7 @@ func TestBackendMemoryCensus_cuda_sitePlants(t *testing.T) {
 	}
 }
 
-// TestResident_holdsTheModelsProgram is OP4cu-a's A-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): a CUDA resident
+// TestResident_holdsTheModelsProgram is OP4cu-a's A-1 (docs/completed/task-forward-architecture-2026-10.md §4.9a): a CUDA resident
 // holds the model's own program, the pointer decoder.Model.Program returns, with one operation list per layer. Both fixtures
 // are tracked, so a missing one fails. It lives in this file, which already imports decoder, so the decoder-import ratchet does
 // not move.
@@ -1241,7 +1242,7 @@ func walkDecode(t *testing.T, dir string, steps int) [][]float32 {
 
 // walkNamedDeclines are the fixtures the walk's build declines by a registered, named outcome change, which the pre-walk build
 // accepted. It is empty: Olmo Hybrid, declined by OP4cu-c1 until program.CUDA claimed its DeltaNet's two settings, builds again
-// (docs/tasks/task-olmo-hybrid-cuda-2026-11.md).
+// (docs/completed/task-olmo-hybrid-cuda-2026-11.md).
 var walkNamedDeclines = map[string]bool{}
 
 // walkEqualsLegacy compares the walk with the pre-walk loop on every fixture and returns how many fixtures ran and how many
@@ -1280,7 +1281,7 @@ func walkEqualsLegacy(t *testing.T, report func(format string, args ...any)) (ra
 	return ran, differ
 }
 
-// TestWalk_equalsLegacy is OP4cu-b2's B2-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): on every tracked tiny
+// TestWalk_equalsLegacy is OP4cu-b2's B2-1 (docs/completed/task-forward-architecture-2026-10.md §4.9a): on every tracked tiny
 // fixture that builds a CUDA resident at int4, 24 greedy decode positions on the walk equal the pre-walk loop's bit for bit.
 func TestWalk_equalsLegacy(t *testing.T) {
 	requireDeviceAndFixture(t, "../../testdata/llama-tiny")
@@ -1436,7 +1437,7 @@ func b26AvailMB() int64 {
 	return 0
 }
 
-// TestWalkSpeed_B26 is OP4cu-b2's B2-6 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): a whole-token in-process A/B of the
+// TestWalkSpeed_B26 is OP4cu-b2's B2-6 (docs/completed/task-forward-architecture-2026-10.md §4.9a): a whole-token in-process A/B of the
 // walk against the pre-walk loop, interleaved ABBA on one loaded model, 6 pairs per cell: decode at depth 128 (64 tokens timed
 // from position 128) and prefill at 3,900 tokens, on the 0.5B and the 1.5B. The quantity is walk / old, as rates. It runs under the
 // exclusive timing lock, set OP4CU_B26=1.
@@ -1723,7 +1724,7 @@ func cudaOpLayer(o program.Op) []program.Op {
 	return []program.Op{norm, o, res}
 }
 
-// TestCUDATable_equalsTheWalker is OP4cu-c1's C1-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): on every layer of
+// TestCUDATable_equalsTheWalker is OP4cu-c1's C1-1 (docs/completed/task-forward-architecture-2026-10.md §4.9a): on every layer of
 // every tracked fixture program the decoder loads on the CPU, and on a synthetic layer of each operation kind and FFN form (one
 // past the last of each included), program.CUDA has a step for every operation exactly when cudaSublayersOf accepts the layer.
 // The plant (the table lists Kimi Delta Attention) must turn it red on Bailing Hybrid.
@@ -1798,7 +1799,7 @@ func cudaTableGaps(m *decoder.Model) string {
 	return ""
 }
 
-// TestCUDAStep_tableEqualsTheFlagList is OP4cu-d2's D2-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): on every tracked
+// TestCUDAStep_tableEqualsTheFlagList is OP4cu-d2's D2-1 (docs/completed/task-forward-architecture-2026-10.md §4.9a): on every tracked
 // tiny fixture that builds a CUDA resident at int4, program.CUDAStep admits the program exactly when the step's former flag list
 // (MoE, Gemma 4's MoE, MLA, a recurrent mixer) did not exclude the resident. The walk adds decoder/testdata/gptoss_tiny.gguf, which
 // walkFixtures (directories with safetensors) does not reach. Each plant (the step's table lists the MoE form, DeltaNet, MLA,
@@ -1932,7 +1933,7 @@ func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
 	}
 }
 
-// TestPrefillSteps_equalTheFlags is OP4cu-d1's D1-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): on every tracked tiny
+// TestPrefillSteps_equalTheFlags is OP4cu-d1's D1-1 (docs/completed/task-forward-architecture-2026-10.md §4.9a): on every tracked tiny
 // fixture that builds a CUDA resident at int4, each layer's batched prefill steps, where it has any, are the blocks the former
 // branches chose, a model the flags' guards batch (prefillFlagsDecline) has steps on every layer, and the batched pass serves
 // exactly the models those guards batch. On a model they decline, a layer with no batched block (MLA, Mamba-2, an attention-only or
@@ -2594,7 +2595,7 @@ func gateSlots(r *cudaResident) int {
 	return 0
 }
 
-// TestMemGate_cuda is MM7's gate on CUDA (docs/tasks/task-subsystems-2026-10.md).
+// TestMemGate_cuda is MM7's gate on CUDA (docs/completed/task-subsystems-2026-10.md).
 func TestMemGate_cuda(t *testing.T) {
 	requireCUDADevice(t)
 	t.Setenv("GOINFER_SSM_RESIDENT", "")
@@ -2672,5 +2673,110 @@ func TestMemGate_cuda(t *testing.T) {
 		if err := os.WriteFile(cudaGateRowsPath, []byte(strings.Join(builtRows, "\n")+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func nonEmptyBufForWalkTest() Buffer {
+	var b Buffer
+	// Set a non-zero first word without touching a live CUDA context; checkCUDALayerWalk only compares against Buffer{}.
+	*(*uintptr)(unsafe.Pointer(&b)) = 1
+	return b
+}
+
+func TestCheckCUDALayerWalk_TopologiesAndRejections(t *testing.T) {
+	nz := nonEmptyBufForWalkTest()
+	const eps = 1e-5
+
+	rms := func(slot program.NormSlot) program.Op {
+		return program.Op{Kind: program.OpNorm, Norm: program.NormParams{Slot: slot, Form: program.NormRMS, Eps: eps}}
+	}
+	ln := func(slot program.NormSlot) program.Op {
+		return program.Op{Kind: program.OpNorm, Norm: program.NormParams{Slot: slot, Form: program.NormLayer, Eps: eps}}
+	}
+	cp := func(slot program.NormSlot) program.Op {
+		return program.Op{Kind: program.OpNorm, Norm: program.NormParams{Slot: slot, Form: program.NormCopy}}
+	}
+
+	// 1. Standard pre-norm dense layer.
+	denseOps := []program.Op{
+		rms(program.SlotPreAttn),
+		{Kind: program.OpProjQKV},
+		{Kind: program.OpRope, Rope: program.RopeParams{Kernel: program.RopeAtKernel, InvFreq: []float64{1}}},
+		{Kind: program.OpAttention},
+		{Kind: program.OpProjO},
+		{Kind: program.OpResidual},
+		rms(program.SlotPreMLP),
+		{Kind: program.OpFFN, FFN: program.FFNParams{Form: program.FfnGated, Act: program.ActSiLU}},
+		{Kind: program.OpResidual},
+	}
+	rDense := &cudaResident{eps: eps, act: int32(program.ActSiLU)}
+	lyDense := &cudaLayer{preNorm: nz, postNorm: nz}
+	if err := rDense.checkCUDALayerWalk(lyDense, denseOps); err != nil {
+		t.Fatalf("dense walk rejected: %v", err)
+	}
+	if lyDense.attnOutUnfused() || lyDense.routedFFN() {
+		t.Fatalf("unexpected flags on dense layer: unfused=%v routed=%v", lyDense.attnOutUnfused(), lyDense.routedFFN())
+	}
+
+	// Wrong activation uniform must be rejected.
+	rWrongAct := &cudaResident{eps: eps, act: int32(program.ActGeluTanh)}
+	if err := rWrongAct.checkCUDALayerWalk(&cudaLayer{preNorm: nz, postNorm: nz}, denseOps); err == nil {
+		t.Fatal("expected activation mismatch error")
+	}
+
+	// 2. Parallel LayerNorm block (Cohere).
+	parOps := []program.Op{
+		ln(program.SlotPreAttn),
+		{Kind: program.OpProjQKV},
+		{Kind: program.OpAttention},
+		{Kind: program.OpProjO},
+		{Kind: program.OpFFN, Out: program.RegB, FFN: program.FFNParams{Form: program.FfnGated, Act: program.ActSiLU}},
+		{Kind: program.OpResidual, Res: program.ResidualParams{Two: true}},
+	}
+	rPar := &cudaResident{eps: eps, layerNorm: true, parallelBlock: true, act: int32(program.ActSiLU)}
+	lyPar := &cudaLayer{preNorm: nz}
+	if err := rPar.checkCUDALayerWalk(lyPar, parOps); err != nil {
+		t.Fatalf("parallel walk rejected: %v", err)
+	}
+	if !lyPar.attnOutUnfused() || lyPar.walk.FFN.InputMode != program.FFNInShared || lyPar.walk.FFN.OutMode != program.OutTwoResidual {
+		t.Fatalf("unexpected parallel walk: %+v", lyPar.walk)
+	}
+
+	// 3. Olmo Hybrid: post-only attention layer AND pre-norm DeltaNet layer on the same postOnly resident.
+	postAttnOps := []program.Op{
+		cp(program.SlotPreAttn),
+		{Kind: program.OpProjQKV},
+		{Kind: program.OpQKNorm, QKNorm: program.QKNormParams{Form: program.QKRMS, Whole: true, Eps: eps}},
+		{Kind: program.OpAttention},
+		{Kind: program.OpProjO},
+		rms(program.SlotPostAttn),
+		{Kind: program.OpResidual},
+		cp(program.SlotPreMLP),
+		{Kind: program.OpFFN, FFN: program.FFNParams{Form: program.FfnGated, Act: program.ActSiLU}},
+		rms(program.SlotPostMLP),
+		{Kind: program.OpResidual},
+	}
+	dnOps := []program.Op{
+		rms(program.SlotPreAttn),
+		{Kind: program.OpDeltaNet, Delta: program.DeltaNetOpParams{Eps: eps}},
+		{Kind: program.OpResidual},
+		rms(program.SlotPreMLP),
+		{Kind: program.OpFFN, FFN: program.FFNParams{Form: program.FfnGated, Act: program.ActSiLU}},
+		{Kind: program.OpResidual},
+	}
+	rHybrid := &cudaResident{eps: eps, postOnly: true, qkNorm: true, qkNormWhole: true, act: int32(program.ActSiLU)}
+	lyPost := &cudaLayer{postAttnNorm: nz, postMLPNorm: nz}
+	if err := rHybrid.checkCUDALayerWalk(lyPost, postAttnOps); err != nil {
+		t.Fatalf("hybrid post-only attention rejected: %v", err)
+	}
+	if lyPost.walk.FFN.InputMode != program.FFNInRaw || lyPost.walk.FFN.OutMode != program.OutPostNormResidual {
+		t.Fatalf("unexpected post-only FFN walk: %+v", lyPost.walk.FFN)
+	}
+	lyDN := &cudaLayer{preNorm: nz, postNorm: nz}
+	if err := rHybrid.checkCUDALayerWalk(lyDN, dnOps); err != nil {
+		t.Fatalf("hybrid DeltaNet layer rejected: %v", err)
+	}
+	if lyDN.walk.FFN.InputMode != program.FFNInNorm || lyDN.walk.FFN.OutMode != program.OutFusedResidual {
+		t.Fatalf("unexpected DeltaNet FFN walk: %+v", lyDN.walk.FFN)
 	}
 }

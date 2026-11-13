@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// dirStreamCases are G-DS1's configurations (docs/tasks/task-prequant-dir-streaming-2026-10.md): int4 for the Metal
+// dirStreamCases are G-DS1's configurations (docs/completed/task-prequant-dir-streaming-2026-10.md): int4 for the Metal
 // target with the int4 embedding, int4 for the CPU target, and int8int8.
 var dirStreamCases = []struct {
 	quant     string

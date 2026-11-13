@@ -3,6 +3,7 @@
 package kernels
 
 import (
+	"fmt"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"math"
 
@@ -63,7 +64,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 `
 
-// gegluShaderWGSL is swigluShaderWGSL's GELU-tanh-gated twin, Gemma's FeatGatedGELU (docs/tasks/task-gpu-paths-2026-09.md).
+// gegluShaderWGSL is swigluShaderWGSL's GELU-tanh-gated twin, Gemma's FeatGatedGELU (docs/completed/task-gpu-paths-2026-09.md).
 // The tanh argument is CLAMPED to ±15 before calling tanh: unclamped, it overflows f32 before saturating at Gemma's
 // activation magnitudes and produces NaN. tanh itself saturates to ±1 by |arg|~9, so the clamp is a correctness fix at f32
 // overflow, not an approximation; SwiGLU families never reach this branch. History: docs/code-notes/gpu.md#gegluShaderWGSL.
@@ -131,7 +132,10 @@ func (c *Context) ensureLayer() error {
 // the output device buffer. binds = the bind-group entries (output already
 // included by the caller); n is the dispatch element count (ceil/64 workgroups).
 func (c *Context) submitUnary(pl *wgpu.ComputePipeline, bg *wgpu.BindGroup, n int) error {
-	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	enc, err := c.device.TryCreateCommandEncoder(nil)
+	if err != nil {
+		return fmt.Errorf("gpu: submitUnary: command encoder: %w", err)
+	}
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(pl)
@@ -142,7 +146,10 @@ func (c *Context) submitUnary(pl *wgpu.ComputePipeline, bg *wgpu.BindGroup, n in
 		return err
 	}
 	pass.Release()
-	cmd, _ := enc.TryFinish(nil)
+	cmd, err := enc.TryFinish(nil)
+	if err != nil {
+		return fmt.Errorf("gpu: submitUnary: finish: %w", err)
+	}
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	return nil

@@ -277,12 +277,6 @@ func TestConcurrencyLine_cpuBatch(t *testing.T) {
 	if !strings.Contains(batched, "decode tokens batched on the CPU") || !strings.Contains(batched, "-cpu-batch") {
 		t.Errorf("batched CPU model: %q", batched)
 	}
-	// Batching engaged for the family, but an f16 or int8 cache's tokens decode per sequence: the line says so and why, not "batched".
-	why := "the i8 KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4"
-	bypass := concurrencyLine(bannerFacts{concurrent: 4, cpuBatched: true, cpuBatchBypass: why}, config{maxConcurrent: 4, kvSessions: 4})
-	if strings.Contains(bypass, "batched on the CPU") || !strings.Contains(bypass, "decode runs per sequence: "+why) {
-		t.Errorf("CPU model whose int8 cache bypasses the batcher: %q", bypass)
-	}
 	workers := concurrencyLine(bannerFacts{concurrent: 4}, config{maxConcurrent: 4, kvSessions: 4, cpuBatch: decoder.CPUBatchAuto})
 	if !strings.Contains(workers, "independent workers") || strings.Contains(workers, "batched on the CPU") {
 		t.Errorf("CPU model on the workers under auto: %q", workers)
@@ -427,7 +421,7 @@ func (b *decliningBackend) BuildResident(m *decoder.Model) (decoder.ResidentForw
 	return nil, false, decoder.DeclineResident("no card in this test")
 }
 
-// TestKVPlanLine pins S18's "KV plan" line (docs/tasks/task-multimodal-support-2026-10.md): the resolved slots and positions, and the reasons the banner can state when the plan is less than was asked for.
+// TestKVPlanLine pins S18's "KV plan" line (docs/completed/task-multimodal-support-2026-10.md): the resolved slots and positions, and the reasons the banner can state when the plan is less than was asked for.
 func TestKVPlanLine(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

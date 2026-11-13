@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
-// Prefix snapshots in host memory (docs/tasks/task-kv7-prefix-snapshot-2026-10.md). After a cold first prefill of a long prompt the
+// Prefix snapshots in host memory (docs/completed/task-kv7-prefix-snapshot-2026-10.md). After a cold first prefill of a long prompt the
 // resident's KV for the prompt's full blocks is copied to pinned host memory, keyed by the token ids and the root KV2 keys on
 // (namespace, model identity, adapter, KV precision). A later request whose prompt starts with those ids restores the rows into its
 // slot by device copy and prefills only the rest. It keeps a prefix that a one-slot card would overwrite when the next session
@@ -80,7 +80,7 @@ func (m *Model) snapshotsBlocked() bool { return m.hasRecurrentState() && !m.rec
 
 // ResidentPrefillMarked is the optional capability of a resident to tell its caller when a batched prefill has just written a given position,
 // between two of its passes: the one moment a windowed layer's ring holds exactly what a shorter prompt would leave there, so a prefix snapshot
-// can be taken in the middle of a cold prefill (docs/tasks/task-kv7-step2-boundary-snapshot-2026-10.md).
+// can be taken in the middle of a cold prefill (docs/completed/task-kv7-step2-boundary-snapshot-2026-10.md).
 type ResidentPrefillMarked interface {
 	Prefiller
 	// PrefillMarkAlign is the width of the passes of a batched prefill, in positions: a mark can fire only at startPos plus a multiple of it.
@@ -412,8 +412,11 @@ func (m *Model) snapshotter() ResidentKVSnapshotter {
 	if m.kvSnaps == nil || m.resident == nil {
 		return nil
 	}
-	sn, _ := m.resident.(ResidentKVSnapshotter)
-	return sn
+	kv := m.resKV()
+	if !kv.KVSnapshotterAvailable() {
+		return nil
+	}
+	return kv
 }
 
 // residentRestoreSnapshot restores a held snapshot's rows into the bound slot when that serves more of prompt than the slot's own
@@ -733,8 +736,8 @@ func (m *Model) residentSnapshotRows(slot int, prompt []int, b int, lora *loraRu
 // kvSnapReserve charges need bytes for a snapshot about to be taken. A demoted copy goes before a held snapshot: it serves one conversation
 // that may never return, a snapshot any prompt with its prefix.
 func (m *Model) kvSnapReserve(st *kvSnapStore, need int64) bool {
-	if d, ok := m.resident.(ResidentKVDemoter); ok && m.kvDemote {
-		return d.ReserveKVHost(need)
+	if kv := m.resKV(); kv.KVDemoterAvailable() && m.kvDemote {
+		return kv.ReserveKVHost(need)
 	}
 	return st.Reserve(need, true)
 }

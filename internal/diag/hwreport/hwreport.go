@@ -1,4 +1,4 @@
-// Package hwreport prints the block `check --hardware` shows (docs/tasks/task-hardware-coverage-2026-10.md, H3): what a bug report about hardware needs, in one paste.
+// Package hwreport prints the block `check --hardware` shows (docs/completed/task-hardware-coverage-2026-10.md, H3): what a bug report about hardware needs, in one paste.
 //
 // Nothing is sent anywhere: the block is written to the terminal for the user to paste or not. It leaves out what identifies a person or a machine (no hostname, no user name, no home
 // directory, no serial numbers, no network addresses) and a model is named by its file name alone.

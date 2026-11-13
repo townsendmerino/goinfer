@@ -13,7 +13,7 @@ import (
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 )
 
-// S17 lever A's kernel gate (docs/tasks/task-multimodal-support-2026-10.md, "S17's CUDA lever A"): the fused float32 attention (tower_base.cu) against a float64 reference at the production shapes
+// S17 lever A's kernel gate (docs/completed/task-multimodal-support-2026-10.md, "S17's CUDA lever A"): the fused float32 attention (tower_base.cu) against a float64 reference at the production shapes
 // (head dim 72 at 4096 patches, 64 at 3136, 80, a ragged length, lengths below one tile, and two segments in one buffer that must not see each other), then each planted kernel defect required red.
 // Needs a CUDA device; skips without one.
 

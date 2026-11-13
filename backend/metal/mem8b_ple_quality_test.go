@@ -17,7 +17,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestPLE_qualityE2BMetal is PLE-G3 (docs/tasks/task-memory-campaign-2026-10.md, MEM8(b) gates): E2B on Metal with its
+// TestPLE_qualityE2BMetal is PLE-G3 (docs/completed/task-memory-campaign-2026-10.md, MEM8(b) gates): E2B on Metal with its
 // per-layer table at int8 (the sidecar written before the table left the head pin) against int4 (the .ple4 sidecar), one
 // arm at a time. The int8 arm free-runs each G3 prompt 32 tokens greedy; the int4 arm is teacher-forced on that sequence.
 // PASS: top-1 agreement over every position >= 95.0% and mean KL(int8 || int4) <= 0.05 nats; 90.0-95.0% or KL 0.05-0.10

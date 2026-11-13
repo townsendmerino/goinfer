@@ -13,6 +13,7 @@ const (
 	reCl100kQwen  = `(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+`
 	reCl100kLlama = `(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+`
 	reO200k       = `[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n/]*|\s*[\r\n]+|\s+(?!\S)|\s+`
+	reFlint       = `[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]*[\p{Ll}\p{Lm}\p{Lo}\p{M}]+(?i:'s|'t|'re|'ve|'m|'ll|'d)?|[^\r\n\p{L}\p{N}]?[\p{Lu}\p{Lt}\p{Lm}\p{Lo}\p{M}]+[\p{Ll}\p{Lm}\p{Lo}\p{M}]*(?i:'s|'t|'re|'ve|'m|'ll|'d)?| ?[\p{P}\p{S}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+`
 	reGPT2        = `'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+`
 )
 
@@ -30,6 +31,7 @@ func TestClassifySplit_namesTheRealAlternations(t *testing.T) {
 		"qwen (cl100k, 1 digit)":   {reCl100kQwen, shapeCl100k},
 		"llama3 (cl100k, 3 digit)": {reCl100kLlama, shapeCl100k},
 		"o200k / gpt-4o":           {reO200k, shapeO200k},
+		"flint":                    {reFlint, shapeFlint},
 		"gpt-2 original":           {reGPT2, shapeGPT2Original},
 		"empty":                    {"", shapeUnknown},
 		"something else":           {`\w+|\s+`, shapeUnknown},
@@ -44,7 +46,7 @@ func TestClassifySplit_namesTheRealAlternations(t *testing.T) {
 // reports true for one that does not, the mis-tokenization is back and silent again — which is the
 // whole of C-10.
 func TestWalkerImplements_onlyShapesWithAWalker(t *testing.T) {
-	for _, s := range []splitShape{shapeCl100k, shapeO200k, shapeGPT2Original} {
+	for _, s := range []splitShape{shapeCl100k, shapeO200k, shapeGPT2Original, shapeTekken, shapeFlint} {
 		if !walkerImplements(s) {
 			t.Errorf("%v has a walker (splitGPT2 / splitO200k / splitGPT2Original) and is not claimed", s)
 		}
@@ -79,6 +81,12 @@ func TestSplitPre_dispatchesOnTheDeclaredShape(t *testing.T) {
 	if got := g.splitPre(" 2020"); len(got) != 1 {
 		t.Errorf("a gpt2-original tokenizer split ' 2020' into %q; the walker was not selected", got)
 	}
+	// Flint's three-stage pre-tokenizer: CJK/Kana runs split out of adjacent Latin words (`hello日本語world`
+	// -> `hello` + `日本語` + `world`), whereas o200k keeps them in one word.
+	f := &Tokenizer{preShape: shapeFlint, maxDigits: 3}
+	if got := f.splitPre("hello日本語world"); len(got) != 3 {
+		t.Errorf("a flint tokenizer split 'hello日本語world' into %q; want 3 pieces", got)
+	}
 }
 
 // The o200k markers are what distinguish it, so a regex carrying only one of them must not be
@@ -104,7 +112,7 @@ func TestClassifySplit_partialO200kIsNotO200k(t *testing.T) {
 // would mean claiming the walker handles o200k, and it does not.
 func TestByteLevelKnobs_unknownPreIsReportedNotAssumed(t *testing.T) {
 	for _, pre := range []string{"llama-bpe", "llama3", "llama-v3", "qwen2", "qwen2.5", "qwen",
-		"qwen35", "mellum2", "gpt-2", "default", "", "gpt-4o"} {
+		"qwen35", "mellum2", "gpt-2", "default", "", "gpt-4o", "flint"} {
 		if _, _, _, _, _, _, known := byteLevelKnobs(pre); !known {
 			t.Errorf("pre=%q is not recognised; it was, before this change or after it", pre)
 		}

@@ -33,6 +33,7 @@ var censusFixtures = []string{
 	"../testdata/cohere2-tiny",
 	"../testdata/deepseek-tiny",
 	"../testdata/embeddinggemma2-tiny",
+	"../testdata/flint-tiny",
 	"../testdata/gemma1-tiny",
 	"../testdata/gemma1-tiny.gguf",
 	"../testdata/gemma2-hd-tiny",

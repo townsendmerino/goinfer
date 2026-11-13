@@ -4,7 +4,7 @@ Draft, `reviewed:` empty. Body about 917 words counting code blocks and table ma
 
 ## The big conflict with the brief
 
-The brief asks for D6a ECE and the bias-adjusted bar as measured quality. **D6a has no graded result anywhere in the tree.** `docs/tasks/task-constrained-confidence.md` (status, 2026-09-28) says "D6a queued"; `docs/README.md` line ~93, `README.md` "Decisions", `docs/server.md` ("goinfer's own measurement ... (D6a) is pending") and `docs/integrations/typesafe-jevx.md` all say pending. `docs/measurements/decisions-d6a-2026-09-28/` holds only `run-d6a.sh`, `select.py`, `analyze.py` (no result file). No D6a log in `~/goinfer-logs/night`. The page therefore says "not yet measured", gives the pre-registered bar as "not yet run", and does not invent an ECE. If a nobara result exists off-repo, the table and the first `doesnt` item need rewriting.
+The brief asks for D6a ECE and the bias-adjusted bar as measured quality. **D6a has no graded result anywhere in the tree.** `docs/tasks/parked/task-constrained-confidence.md` (status, 2026-09-28) says "D6a queued"; `docs/README.md` line ~93, `README.md` "Decisions", `docs/server.md` ("goinfer's own measurement ... (D6a) is pending") and `docs/integrations/typesafe-jevx.md` all say pending. `docs/measurements/decisions-d6a-2026-09-28/` holds only `run-d6a.sh`, `select.py`, `analyze.py` (no result file). No D6a log in `~/goinfer-logs/night`. The page therefore says "not yet measured", gives the pre-registered bar as "not yet run", and does not invent an ECE. If a nobara result exists off-repo, the table and the first `doesnt` item need rewriting.
 
 ## Claims and sources
 

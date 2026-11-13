@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MC1 on CUDA: the W7 gates (docs/tasks/task-concurrency-2026-09.md MC1, pre-registered before any timing) from
+"""MC1 on CUDA: the W7 gates (docs/tasks/parked/task-concurrency-2026-09.md MC1, pre-registered before any timing) from
 bench_w7_plain.py's JSON.
 
 Cells are keyed <arm><clients>_<pair>: old1_1 .. new4_3 (1.5B), and the reported 7B pair old7b4_1 / new7b4_1 in a second file. p50 and

@@ -1,0 +1,32 @@
+11:21:48 cell start load 0.78
+[stall] b0-A0: wall 35.162s; decoder gap p50 18.9 p99 399.2 max 489.2 ms; newcomer TTFT [2.519, 2.506, 2.494, 2.508, 2.519, 2.511]
+11:23:15 cell start load 0.81
+[stall] b0-B1: wall 35.003s; decoder gap p50 19.0 p99 396.8 max 493.4 ms; newcomer TTFT [2.504, 2.497, 2.499, 2.486, 2.482, 2.512]
+11:24:20 cell start load 0.81
+[stall] b0-B2: wall 34.977s; decoder gap p50 18.9 p99 397.0 max 487.8 ms; newcomer TTFT [2.492, 2.497, 2.503, 2.495, 2.521, 2.488]
+11:25:54 cell start load 0.87
+[stall] b0-A3: wall 34.963s; decoder gap p50 18.9 p99 400.2 max 487.7 ms; newcomer TTFT [2.509, 2.502, 2.511, 2.516, 2.5, 2.485]
+11:27:09 cell start load 0.89
+[stall] b1-A0: wall 35.007s; decoder gap p50 18.9 p99 399.4 max 486.1 ms; newcomer TTFT [2.496, 2.479, 2.504, 2.496, 2.513, 2.516]
+11:28:34 cell start load 0.78
+[stall] b1-B1: wall 34.934s; decoder gap p50 18.9 p99 396.9 max 490.2 ms; newcomer TTFT [2.498, 2.501, 2.488, 2.502, 2.523, 2.481]
+11:29:48 cell start load 0.82
+[stall] b1-B2: wall 34.966s; decoder gap p50 18.9 p99 397.5 max 488.6 ms; newcomer TTFT [2.508, 2.509, 2.472, 2.503, 2.485, 2.505]
+11:30:53 cell start load 0.87
+[stall] b1-A3: wall 35.096s; decoder gap p50 18.9 p99 400.1 max 490.4 ms; newcomer TTFT [2.514, 2.521, 2.513, 2.521, 2.528, 2.528]
+11:32:08 cell start load 0.85
+[stall] b2-A0: wall 35.003s; decoder gap p50 18.9 p99 399.9 max 492.8 ms; newcomer TTFT [2.516, 2.503, 2.483, 2.489, 2.533, 2.513]
+11:33:13 cell start load 0.85
+[stall] b2-B1: wall 35.047s; decoder gap p50 19.0 p99 398.2 max 489.4 ms; newcomer TTFT [2.506, 2.507, 2.482, 2.505, 2.497, 2.509]
+11:34:07 cell start load 0.88
+[stall] b2-B2: wall 34.962s; decoder gap p50 18.9 p99 398.3 max 491.9 ms; newcomer TTFT [2.51, 2.488, 2.476, 2.515, 2.504, 2.514]
+11:35:12 cell start load 0.89
+[stall] b2-A3: wall 35.11s; decoder gap p50 19.0 p99 400.6 max 490.4 ms; newcomer TTFT [2.523, 2.509, 2.493, 2.523, 2.517, 2.507]
+11:36:17 cell start load 0.87
+[stall] b3-A0: wall 35.058s; decoder gap p50 18.9 p99 400.4 max 488.9 ms; newcomer TTFT [2.513, 2.527, 2.488, 2.528, 2.493, 2.497]
+11:37:22 cell start load 0.86
+[stall] b3-B1: wall 35.056s; decoder gap p50 19.0 p99 398.5 max 489.1 ms; newcomer TTFT [2.486, 2.495, 2.503, 2.514, 2.522, 2.519]
+11:38:16 cell start load 0.79
+[stall] b3-B2: wall 35.064s; decoder gap p50 18.9 p99 398.7 max 490.2 ms; newcomer TTFT [2.503, 2.518, 2.506, 2.512, 2.516, 2.515]
+11:39:21 cell start load 0.84
+[stall] b3-A3: wall 35.15s; decoder gap p50 19.0 p99 400.6 max 490.4 ms; newcomer TTFT [2.506, 2.484, 2.519, 2.531, 2.49, 2.516]

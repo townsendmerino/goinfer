@@ -52,7 +52,7 @@ Moved from `multimodal/glm_ocr.go` (the comment above `glm_ocr.go.header`) on 20
 ```text
 GLM-OCR (zai-org/GLM-OCR, model_type glm_ocr) image plumbing: the prompt block, the task prompts and the
 preprocessing config. The pixel path itself is QwenPreprocess unchanged — GLM-OCR's Glm46VImageProcessor is the
-same smart-resize + CLIP-normalize + merge-block patchify the Qwen towers take (docs/tasks/task-glm-ocr-2026-10.md
+same smart-resize + CLIP-normalize + merge-block patchify the Qwen towers take (docs/completed/task-glm-ocr-2026-10.md
 O0), so only the config differs.
 ```
 
@@ -73,7 +73,7 @@ Moved from `multimodal/glm_ocr.go` (the comment above `GlmOcrExtractionInstructi
 ```text
 GlmOcrExtractionInstruction opens the model's information-extraction prompt (the model card's own, verbatim: "output
 the information in the image in the following JSON format"). It is followed by a newline and a JSON TEMPLATE, an
-object whose values are empty strings, NOT a JSON Schema (O0, docs/tasks/task-glm-ocr-2026-10.md); build the template
+object whose values are empty strings, NOT a JSON Schema (O0, docs/completed/task-glm-ocr-2026-10.md); build the template
 with constrain.TemplateFromSchema / TemplateFromStruct so the prompt and the grammar come from one source.
 ```
 

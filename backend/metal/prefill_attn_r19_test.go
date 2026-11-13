@@ -9,12 +9,12 @@ import (
 	"time"
 )
 
-// R19 (docs/tasks/red-october.md): Metal prefill attention at depth. The prototype selected by the exploratory runs and
+// R19 (docs/completed/red-october.md): Metal prefill attention at depth. The prototype selected by the exploratory runs and
 // graded by the confirmation run is production's attention_prefill_steel since its wiring (metal/prefill.go); what
 // stays here is the harness phase that compares production against the retired attention_prefill_fused.
 
 // runR19Phase is R19's comparison inside TestMetalPrefillDecomp, at one prompt length M, per the pre-registration in
-// docs/tasks/red-october.md R19. The "prototype" arm is production's attention (attention_prefill_steel); the other
+// docs/completed/red-october.md R19. The "prototype" arm is production's attention (attention_prefill_steel); the other
 // arm, switched on by protoOn, is the retired attention_prefill_fused:
 //  1. the two kernels' attention output on the last layer's real inputs (the buffers a full replay leaves): relative
 //     L2 error, max |diff|, cosine;

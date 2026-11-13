@@ -4,13 +4,14 @@ package metal
 
 import (
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"unsafe"
 
 	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
 // prefillSteelAttnOff, set only by tests, runs attention_prefill_fused where attention_prefill_steel would run: the
@@ -27,7 +28,7 @@ var prefillAttnRanForTest map[string]int
 
 // gemmTilePolicy picks gemmTile's rule: "" the default (D-B02's padding rule below), "a01" A-P01's rule as it shipped,
 // "shipped" every GEMM on gemm_w4f16_store's 64 × 64 tile, "bm32" / "bn32" only A-P01's 32-token / 32-feature rule.
-// Test-only: the arms of the grades (docs/tasks/task-metal-audit-2026-10.md); not an option or an environment variable.
+// Test-only: the arms of the grades (docs/completed/task-metal-audit-2026-10.md); not an option or an environment variable.
 var gemmTilePolicy = ""
 
 // gemmTile is the tile selector for a rows x N prefill GEMM. Every choice is bit-identical (gemm_w4f16_tile's comment,
@@ -36,7 +37,7 @@ var gemmTilePolicy = ""
 // The default: a threadgroup costs the same whatever share of its rows is real, so a smaller token tile is taken when
 // it pads the pass to strictly fewer rows: 32 tokens up to 128 rows, 16 up to 16 rows and, when N <= 8192, up to 48.
 // Past those, more row tiles cost more than the padding they save, and a gate|up GEMM as wide as the 1.5B's or 7B's
-// already fills the cores at 64 (docs/tasks/task-metal-audit-2026-10.md "D-B02: the 16-row tile";
+// already fills the cores at 64 (docs/completed/task-metal-audit-2026-10.md "D-B02: the 16-row tile";
 // TestGemmTile16_probe). A 16-token tile always takes 32 features; otherwise 32 features when N <= 2048 and rows <=
 // 64, so the narrow GEMMs fill more cores.
 //
@@ -128,11 +129,11 @@ type prefillState struct {
 	// A-P01: gemm_w4f16_tile at the smaller tiles (tokens × features), picked by gemmTile.
 	pGemmM32N64, pGemmM64N32, pGemmM32N32 Pipeline
 	pGemmM16N32                           Pipeline // D-B02's 16-token tile
-	// int8 slice 2 (docs/tasks/task-metal-int8-2026-10.md): a native int8 resident's GEMMs, gemm_w4f16_tile<TM, TN,
+	// int8 slice 2 (docs/completed/task-metal-int8-2026-10.md): a native int8 resident's GEMMs, gemm_w4f16_tile<TM, TN,
 	// true> by (TM, TN); w8 selects them in gemmTile.
 	w8  bool
 	pW8 map[[2]int]Pipeline
-	// G8 (docs/tasks/task-gpu-paths-2026-09.md): the MoE row loop's F32-scratch bridge (see
+	// G8 (docs/completed/task-gpu-paths-2026-09.md): the MoE row loop's F32-scratch bridge (see
 	// residual_f16_from_f32/zero_f32's own comments).
 	pResF32, pZeroF32 Pipeline
 	pResScaled        Pipeline // S17: residual_f16_scaled, the add into a residual stored scaled by 1/s
@@ -162,7 +163,7 @@ type prefillState struct {
 }
 
 // ropeF16Name is the batched prefill's rope kernel: rope_f16, or rope_mrope_f16 for the m-RoPE pass, and their pairwise
-// twins for a GPT-J pairwise model (docs/tasks/task-metal-pairwise-rope-2026-10.md).
+// twins for a GPT-J pairwise model (docs/completed/task-metal-pairwise-rope-2026-10.md).
 func ropeF16Name(pairwise, mrope bool) string {
 	n := "rope_f16"
 	if mrope {
@@ -509,7 +510,7 @@ type prefillDeep struct {
 	sets     [][]float32
 }
 
-// prefillParallelDefectForTest is a planted defect (docs/tasks/task-metal-pairwise-followups-2026-10.md, G-B2): a
+// prefillParallelDefectForTest is a planted defect (docs/completed/task-metal-pairwise-followups-2026-10.md, G-B2): a
 // parallel block's MLP fed from the post-attention residual instead of the layer's shared input norm. Tests set it.
 var prefillParallelDefectForTest bool
 
@@ -523,7 +524,7 @@ var prefillResidScaleForTest float32
 const gemmaPrefillResidScale = 32
 
 // prefillResidScale is the s the batched pass stores its residual divided by (S17,
-// docs/tasks/task-multimodal-support-2026-10.md): Gemma 3 4B's residual outgrows f16 (inf at layer 6). It applies where
+// docs/completed/task-multimodal-support-2026-10.md): Gemma 3 4B's residual outgrows f16 (inf at layer 6). It applies where
 // every read of the residual is an RMSNorm, which ignores scale except through eps, and every write is an embedding
 // upload or a post-normed branch's residual add: sandwich norms with no post-only norm, PLE, MoE or DeepStack rows. s is
 // a power of two, so the scaled pass equals the unscaled one wherever that one does not overflow (eps and subnormals
@@ -883,22 +884,23 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		}
 		e.Dispatch(pf.pResF32, (hi-lo)*H, 256, xF.At((lo-startPos)*H*2), deepB[k].At((lo-deep.start)*H*4))
 	}
-	// The batched pass's blocks, one for each layer step it implements (docs/tasks/task-forward-architecture-2026-10.md §4.9,
+	// The batched pass's blocks, one for each layer step it implements (docs/completed/task-forward-architecture-2026-10.md §4.9,
 	// OP4m-d1). Each emits the dispatches the pass has always emitted for that block. moeBlock reports false when an encoder
 	// error stops the pass.
 	attnBlock := func(l int, L *residLayer) {
+		aw := &L.walk.Attn
 		lu := layerUFor(L)
 		// pre-attn norm — addOne (Gemma's 1+w) matters even for a plain non-sandwich family's
 		// GEMV-input norm, so it is always passed (0 for every family without RMSAddOne).
-		// Olmo 3 / Olmo Hybrid (postOnly): no pre-norm; GEMV reads raw residual xF directly.
+		// Post-only placement (NormCopy): no pre-norm; GEMV reads raw residual xF directly.
 		inAttn := normF
-		if r.postOnly {
+		if aw.InputForm == program.NormCopy {
 			inAttn = xF
 		} else {
 			e.Dispatch(normPipe, M*tgReduceNorm, tgReduceNorm, xF, L.preNorm, normF, uH, uEpsX, r.uAddOne)
 		}
 		// fused QKV (+bias)
-		if L.qGate {
+		if aw.Gated {
 			// D-B01, Qwen3.5's gated softmax layer (decode's encodeAttention qGate branch): q_proj is [query ‖ gate]
 			// per head at double width, split on the activation into qkv's Q slot and the gate; K‖V is its own
 			// bias-free projection, copied into qkv's K and V slots.
@@ -909,7 +911,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		} else {
 			gemmAttn(e, Mpad, lu.qkvDim, inAttn, L.qkvW, L.qkvS, qkvF, uM, lu.uQkv, uH, L.qkvBias, m1)
 		}
-		if r.qkNorm { // Qwen3 / Olmo 3: per-head Q/K RMSNorm before RoPE
+		if aw.QKNorm { // Qwen3 / Olmo 3: per-head or whole-vector Q/K RMSNorm before RoPE
 			qkNH, qkNKV, qkHD, qkNHhd := r.uNH, lu.g.uNKV, lu.g.uHd, lu.g.uNHhd
 			tgCount := r.nH + lu.g.nKV
 			if L.kvShared {
@@ -917,7 +919,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 				// must be 0 here too, or rows shift and the "K" head normalizes the next row's Q.
 				tgCount, qkNKV = r.nH, r.uZero
 			}
-			if r.qkNormWhole {
+			if aw.QKNormParams.Whole {
 				qkNH, qkNKV, qkHD, qkNHhd = r.uQKWholeOne, r.uQKWholeOne, r.uQKWholeHD, r.uQKWholeHD
 				tgCount = 2
 			}
@@ -926,7 +928,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		// S9 step 2: Gemma 4's scale-less v_norm on every K/V-owning layer's V slot, after Q/K norm and before RoPE, as
 		// decode does (encodeAttentionResidualWith): the Q/K-norm kernel over the V slot with nH = 0, a unit weight and
 		// addOne 0.
-		if !L.kvShared && r.g4VNorm && emodelBatchDefect != 5 {
+		if aw.G4VNorm && emodelBatchDefect != 5 {
 			e.Dispatch(pf.pQK, M*lu.g.nKV*tgReduceAttn, tgReduceAttn, qkvF.At((lu.nHhd+lu.kvDim)*2), r.vNormUnit, r.vNormUnit,
 				r.uZero, lu.g.uNKV, lu.g.uHd, r.uZero, lu.uStride, r.uEps, r.uZero)
 		}
@@ -991,7 +993,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		if prefillAttnRanForTest != nil && ran != "" {
 			prefillAttnRanForTest[ran]++
 		}
-		if L.qGate { // ctx *= sigmoid(gate), before o-proj, as decode does
+		if aw.Gated { // ctx *= sigmoid(gate), before o-proj, as decode does
 			e.Dispatch(pf.pAttnGate, M*nHhd, 256, ctxF, gateF, uGateN)
 		}
 		// o-proj, then either the plain residual epilogue, Gemma's sandwich norm, or Olmo 3 postOnly: mode-0 write
@@ -999,7 +1001,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		// norm's output, is below), norm the sublayer output in place (safe: rmsnorm_f16's read pass completes before
 		// its write pass touches the same buffer), then a separate residual add. Other families take the fused mode-2
 		// residual epilogue.
-		if r.sandwich || r.postOnly {
+		if aw.OutMode == program.OutPostNormResidual {
 			gemmAttn(e, Mpad, H, ctxF, L.oW, L.oS, normF, uM, uH, lu.uQDim, dummyBias, m0)
 			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, normF, L.postAttnNorm, normF, uH, r.uEps, r.uAddOne)
 			if uResidInv != (Buffer{}) {
@@ -1012,12 +1014,14 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		}
 	}
 	moeBlock := func(l int, L *residLayer) bool {
+		fw := &L.walk.FFN
+		normW, _ := r.ffnNormWeights(L, fw.InputNorm.Slot)
 		if r.knobValue("GOINFER_MOE_EXPERT_MAJOR") == "0" {
 			// Fallback to row-by-row path for A/B testing
 			for m := range M {
 				row := xF.At(m * H * 2)
-				e.Dispatch(pf.pRmsQ, tgReduceNorm, tgReduceNorm, row, L.postNorm, r.mq, r.mSc, uH, r.uEps, r.uAddOne)
-				r.encodeMoERoute(e, L)
+				e.Dispatch(pf.pRmsQ, tgReduceNorm, tgReduceNorm, row, normW, r.mq, r.mSc, uH, r.uEps, r.uAddOne)
+				r.encodeMoERouteForForm(e, L, fw.FFN.Form)
 				if r.moeCap.idx != (Buffer{}) && m < r.moeCap.rows {
 					r.encodeMoECapture(e, l*r.moeCap.rows+m)
 				}
@@ -1030,14 +1034,14 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 
 		// --- EXPERT-MAJOR PATH ---
 		// 1. Pre-norm all M rows into normF
-		e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, xF, L.postNorm, normF, uH, uEpsX, r.uAddOne)
+		e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, xF, normW, normF, uH, uEpsX, r.uAddOne)
 
 		// 2. Batched Router GEMM: normF [M, H] x routerW [nE, H] -> moeLogits [M, nE]
 		totalRouterThreads := (M*r.moe.nE*32 + 255) / 256 * 256
 		e.Dispatch(pf.pRouterGemm, totalRouterThreads, 256, normF, L.moe.routerW, moeLogits, uH, r.moe.uNE, uMReal)
 
 		// 3. Batched Top-k Route: moeLogits -> moeIdx [M, k], moeWgt [M, k]
-		if r.moe.isGptOss {
+		if fw.FFN.Form == program.FfnGptOss {
 			e.Dispatch(pf.pRouteGptOssBatch, M*32, 32, moeLogits, L.moe.routerBias, moeIdx, moeWgt, r.moe.uNE, r.moe.uK, uMReal)
 		} else {
 			e.Dispatch(pf.pMoeRouteBatch, M*32, 32, moeLogits, L.moe.routerBias, moeIdx, moeWgt, r.moe.uNE, r.moe.uK, r.moe.uSigmoid, r.moe.uNorm, r.moe.uScale, r.moe.uNGroup, r.moe.uTopkGroup, uMReal)
@@ -1151,15 +1155,14 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		}
 
 		// 8. Shared expert (if present)
-		if r.moe.sharedInter > 0 && dg01Mutation != "shared-off" {
-			shI := r.moe.sharedInter
+		if shI := fw.FFN.MoE.SharedIntermediateDim; shI > 0 && dg01Mutation != "shared-off" {
 			u2ShI := getU32(2 * shI)
 			uShI := getU32(shI)
 
 			gemm(e, Mpad, 2*shI, normF, L.moe.shGuW, L.moe.shGuS, guF, uM, u2ShI, uH, dummyBias, m0)
 			e.Dispatch(pf.pSw, Mpad*shI, 256, guF, dqF, uShI, r.uAct)
 
-			if r.moe.sharedUngated {
+			if fw.FFN.MoE.SharedUngated {
 				// dst += down directly into xF
 				gemm(e, Mpad, H, dqF, L.moe.shDW, L.moe.shDS, xF, uM, uH, uShI, dummyBias, m2)
 			} else {
@@ -1174,20 +1177,22 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		}
 		return true
 	}
-	ffnBlock := func(L *residLayer, nonGated bool) {
+	ffnBlock := func(L *residLayer) {
+		fw := &L.walk.FFN
 		// pre-MLP norm. A parallel block (Cohere) has none: its MLP reads the same shared norm of the layer's input that the
 		// attention read, which normF still holds (the o-proj added into xF directly), so x ends as x + attn + mlp.
 		inFFN := normF
 		switch {
-		case r.parallelBlock && !prefillParallelDefectForTest:
-		case r.parallelBlock: // Part B's planted defect: the MLP fed from the post-attention residual
+		case fw.InputMode == program.FFNInShared && !prefillParallelDefectForTest:
+		case fw.InputMode == program.FFNInShared: // Part B's planted defect: the MLP fed from the post-attention residual
 			e.Dispatch(normPipe, M*tgReduceNorm, tgReduceNorm, xF, L.preNorm, normF, uH, uEpsX, r.uAddOne)
-		case r.postOnly:
+		case fw.InputMode == program.FFNInRaw:
 			inFFN = xF
 		default:
-			e.Dispatch(normPipe, M*tgReduceNorm, tgReduceNorm, xF, L.postNorm, normF, uH, uEpsX, r.uAddOne)
+			normW, _ := r.ffnNormWeights(L, fw.InputNorm.Slot)
+			e.Dispatch(normPipe, M*tgReduceNorm, tgReduceNorm, xF, normW, normF, uH, uEpsX, r.uAddOne)
 		}
-		if nonGated {
+		if fw.FFN.Form == program.FfnNonGated {
 			// KS-D8: the non-gated MLP (Nemotron-H's relu²; a down projection with a bias never reaches the pass): up with its
 			// bias, the activation in place, down accumulated into the residual.
 			gemm(e, Mpad, I, inFFN, L.upW, L.upS, dqF, uM, uI, uH, L.upBias, m1)
@@ -1217,7 +1222,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 			e.Dispatch(pf.pSw, M*fI, 256, guF, dqF, uFI, r.uAct)
 		}
 		// down-proj, same plain-vs-sandwich split as o-proj above.
-		if r.sandwich || r.postOnly {
+		if fw.OutMode == program.OutPostNormResidual {
 			gemm(e, Mpad, H, dqF, L.dW, L.dS, normF, uM, uH, uFI, dummyBias, m0)
 			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, normF, L.postMLPNorm, normF, uH, r.uEps, r.uAddOne)
 			if uResidInv != (Buffer{}) {
@@ -1265,7 +1270,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 					return nil
 				}
 			case stepDenseFFN, stepNonGatedFFN:
-				ffnBlock(L, st == stepNonGatedFFN)
+				ffnBlock(L)
 			case stepPLE:
 				pleBlock(l, L)
 			case stepLayerScale:

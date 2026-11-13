@@ -107,10 +107,6 @@ func kvMatrix(t *testing.T) map[[3]string]kvMatrixCell {
 				c := kvMatrixCell{delivered: got, reason: why}
 				if r := kvRefusal(p.backend, arch, o); r != nil {
 					c.refused, c.reason = true, r.Reason
-				} else if p.backend == "cpu" && o.CPUBatchDecode == CPUBatchAuto && c.reason == "" {
-					if b := cpuBatchKVBypass(got); b != "" { // delivered; batched decode under auto stands aside for it
-						c.reason = "batched decode under auto: " + b
-					}
 				}
 				out[[3]string{p.name, f.group, v}] = c
 			}
@@ -225,7 +221,10 @@ func renderKVMatrix(cells map[[3]string]kvMatrixCell) []byte {
 	w("    0.99x at 4,096 keys and 1.01x to 1.02x at 16,384. It buys about twice f16's positions in the same VRAM.\n")
 	w("  - The records: `docs/measurements/cuda-kv-i8-2026-11/s4-registration.md` and `s6-registration.md` (the tensor-core prefill). Widening int8\n")
 	w("    to more CUDA families is parked (the task doc, P2).\n")
-	w("- **f16 on CUDA:** `docs/tasks/task-cuda-f16-kv-2026-10.md`.\n")
+	w("- **f16 on CUDA** (`auto` for the dense families): quality in `docs/completed/task-cuda-f16-kv-2026-10.md`. Speed against f32, served, A B B A, same session\n")
+	w("  (nobara, RTX 2070 SUPER, driver 595.112.07, 2026-11-09; `docs/benchmarks.md` B2.1): 13 of 14 cells at or above 1.0 (phi3-mini faster by 6.7%% at 2048 keys and\n")
+	w("  11.5%% at 3900); the one cost is the 7B at 8,000 keys, 68.1 against 70.1 tok/s (0.972x, under the registered 0.98 bar: PARKED). The owner accepted that cost\n")
+	w("  for f16's halved KV memory (2026-11-10): `auto` stays f16 on CUDA, with no per-family rule.\n")
 	for _, p := range kvMatrixPaths {
 		w("\n## %s\n\n| family (fixture) |", p.name)
 		for _, v := range kvMatrixValues {

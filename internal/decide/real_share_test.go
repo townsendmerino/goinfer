@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// D8 on REAL weights (docs/tasks/task-constrained-confidence.md): D7's five questions about one state, as the two decision templates build them, through
+// D8 on REAL weights (docs/tasks/parked/task-constrained-confidence.md): D7's five questions about one state, as the two decision templates build them, through
 // decoder.PromptHiddenMany and through one PromptHidden each. It reports (1) how much the shared answer differs from the separate one on a 32-layer 9B model's
 // final-norm hidden state, and (2) how long each took. The timing is an EXPLORATORY single run by day and is never quoted as a result: it shows whether sharing
 // pays on the real thing and what it shares, not by how much.

@@ -19,7 +19,7 @@ if [ -n "$(git -C "$repo" status --porcelain -- decoder go.mod go.sum)" ]; then
 fi
 out=~/goinfer-bench/l5/$(date -u +%Y%m%dT%H%M%SZ)-$sha
 mkdir -p "$out"
-echo "L5 A/B at $sha, model $model, record $out; start $(date '+%H:%M %Z'), expected finish about 15 min later"
+echo "L5 A/B at $sha, model $model, record $out; start $(date '+%H:%M %Z'), expected finish about 15 min later (visits wait for the load to settle under 4.0)"
 (cd "$repo" && go test -c -o "$out/decoder.test" ./decoder)
 
 export GOINFER_PREQUANT_GGUF=$model GOINFER_BENCH_QUANT=int4

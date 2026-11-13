@@ -6,7 +6,9 @@
 # phases (default all): decode deep gemma ttft mc3 verify. verify is bench_spec_lane.py's exact attention with -spec ngram on each
 # build (A = OLD, B = NEW via --build-b), cells 1.5B:3900 and 7B:7500, three pairs.
 # Build each binary once from its own worktree:
-#   (cd <wt>/backend/cuda && GOWORK=<wt>/go.work CGO_ENABLED=0 go build -tags cuda -o <bins>/serve-cuda-<rev> ./cmd/serve)
+#   (cd <wt>/backend/cuda && GOWORK=<wt>/go.work CGO_ENABLED=0 go build -tags cuda -o <bins>/serve-cuda-old ./cmd/serve), and serve-cuda-new
+# from the new worktree. The names are required (real files, not links): the never-swap sampler and KV4's score_speed.py find the
+# servers by them.
 set -euo pipefail
 # Every path is made absolute here, before any cd: the lock re-enters this script by SELF, and OUT, OLD and NEW are read after cd.
 SELF=$(realpath "$0")
@@ -22,6 +24,7 @@ if [ "${1:-}" = __cell ]; then
 fi
 OUT=$(realpath -m "${1:?out dir}"); OLD=$(realpath -e "${2:?old serve-cuda}"); NEW=$(realpath -e "${3:?new serve-cuda}"); PHASES=${4:-decode deep gemma ttft mc3 verify}
 [ "$OLD" != "$NEW" ] && [ "$(sha256sum < "$OLD")" != "$(sha256sum < "$NEW")" ] || { echo "old and new are the same binary"; exit 2; }
+[ "$(basename "$OLD")" = serve-cuda-old ] && [ "$(basename "$NEW")" = serve-cuda-new ] || { echo "the binaries must be named serve-cuda-old and serve-cuda-new (the never-swap sampler and score_speed.py find the servers by name)"; exit 2; }
 REPO=$(cd "$(dirname "$SELF")/../../.." && pwd)
 KV4=$REPO/docs/measurements/kv4-cuda-2026-10-21
 mkdir -p "$OUT"; cd "$REPO"

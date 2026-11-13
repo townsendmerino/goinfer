@@ -53,7 +53,7 @@ func seedPrompt(t *testing.T, path, text string) []int {
 // On the bar: CUDA's 3%-near-tie bar does NOT transfer to Metal, so the bar is read off the committed control
 // (TestDenseResidentParity), not assumed; a threshold is the usual bug. It was set when Metal had no like-for-like CPU
 // reference: BuildResident re-quantized an int8 load to its own W4A8 (group=32, scale=max/7), which no CPU load reproduces,
-// so the pair was int4-GPU vs int8-CPU. Since slice 1 of docs/tasks/task-metal-int8-2026-10.md a dense int8 model runs its
+// so the pair was int4-GPU vs int8-CPU. Since slice 1 of docs/completed/task-metal-int8-2026-10.md a dense int8 model runs its
 // int8 weights natively, so for those this is int8 against int8, and TestW8Native_F2 holds the pair to the int4 pair's
 // agreement.
 func residentParity(t *testing.T, path string, seed []int, steps int) parityStats {
@@ -163,7 +163,7 @@ func TestGemma3ResidentParity(t *testing.T) {
 	assertParity(t, "gemma3", st, 0.88) // int4-hostile: floor 0.92 (quantbar), 0.88 with margin
 }
 
-// TestGemma2ResidentParity is the registered gate G2-R (docs/tasks/task-forward-architecture-2026-10.md §4.6): Gemma 2 2B
+// TestGemma2ResidentParity is the registered gate G2-R (docs/completed/task-forward-architecture-2026-10.md §4.6): Gemma 2 2B
 // through the same harness and at the bar TestGemma3ResidentParity uses, at int8int8 and at int4. Run it in one session
 // with TestDenseResidentParity and TestGemma3ResidentParity: the control failing voids the session, and a Gemma 2 min
 // cosine more than 0.03 under Gemma 3's from the same session is parked for the owner even when it clears the bar.

@@ -52,7 +52,7 @@ func argmaxF32(v []float32) int {
 	return best
 }
 
-// TestMC2_batchedDecodeThroughput is MC2's measurement (docs/tasks/task-concurrency-2026-09.md): aggregate decode tok/s
+// TestMC2_batchedDecodeThroughput is MC2's measurement (docs/tasks/parked/task-concurrency-2026-09.md): aggregate decode tok/s
 // on CPU for B sequences through decodeMultiStep (B = 1, 2, 4, 8), against the production single-token forward taking
 // the B sequences one at a time ("serial", today's behaviour) and against J8's cell, N independent decode workers on
 // the same model (N = 2, 4 concurrent forwards, each on its own cache). Every arm decodes S steps per sequence from a

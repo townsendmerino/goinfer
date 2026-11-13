@@ -279,7 +279,7 @@ func writeSTF32(t *testing.T, path string, tensors map[string]stf32) {
 }
 
 // TestMoE_declinesPrefill: the name is historical (kept for `git log -p` on it, decoder/gptoss_decline_test.go precedent). MoE
-// is admitted by the f16 MMA prefill path (G8 MoE half, docs/tasks/task-gpu-paths-2026-09.md), which runs a MoE layer's FFN row
+// is admitted by the f16 MMA prefill path (G8 MoE half, docs/completed/task-gpu-paths-2026-09.md), which runs a MoE layer's FFN row
 // by row off the batched residual, reusing the per-token decode MoE dispatch chain
 // (encodeMoERoute/encodeMoEExperts/encodeMoESharedExpert, metal/moe.go). Both MoE and its dense twin must accept.
 //

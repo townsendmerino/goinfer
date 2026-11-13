@@ -8,7 +8,7 @@ import (
 	schema "github.com/townsendmerino/goinfer/internal/config"
 )
 
-// TestConfigDefaults is G-SB10-6 (docs/tasks/task-subsystems-2026-10.md § "Step 2's gates"): every flag serve
+// TestConfigDefaults is G-SB10-6 (docs/completed/task-subsystems-2026-10.md § "Step 2's gates"): every flag serve
 // registers has a schema setting whose default is the flag's registered default, with GOINFER_GGUF_DIRECT unset.
 // moe-pager's is checked on this OS.
 func TestConfigDefaults(t *testing.T) {

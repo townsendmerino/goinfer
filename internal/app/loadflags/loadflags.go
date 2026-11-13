@@ -282,7 +282,7 @@ func (f *Flags) ExplicitQuant() string {
 }
 
 // Knobs carries the prompt-ingestion flags to the model's decoder.Options (phase 5,
-// docs/tasks/task-env-config-2026-09.md). --exact-prefill itself travels as Options.ExactPrefill,
+// docs/completed/task-env-config-2026-09.md). --exact-prefill itself travels as Options.ExactPrefill,
 // which every backend consults per model, so only the CPU-specific flag needs a knob.
 //
 // The CPU knob is set EXPLICITLY either way rather than left unset. The decoder treats unset as on,
@@ -299,7 +299,7 @@ func (f *Flags) Knobs() *decoder.Knobs {
 
 // CPUKV is the CPU KV cache precision: serve's deprecated --kv-quant when given, else --kv mapped onto the CPU cache: f16 and
 // i8 select those caches, and auto (the default) and f32 the f32 reference. auto moves to f16 only after the gates read
-// (docs/tasks/task-cpu-kv-f16-2026-10.md, decision 1). (Both Options fields remain; only the command line unified.)
+// (docs/completed/task-cpu-kv-f16-2026-10.md, decision 1). (Both Options fields remain; only the command line unified.)
 func CPUKV(kvQuant, kv string) string {
 	if kvQuant != "" {
 		return kvQuant

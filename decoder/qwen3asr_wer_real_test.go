@@ -17,7 +17,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// G-S14c4's goinfer arms (docs/tasks/task-multimodal-support-2026-10.md, registered before this code): every WAV in $GOINFER_S14C4_DIR (scripts/s14c4_data.py) transcribed by Qwen3-ASR-0.6B through
+// G-S14c4's goinfer arms (docs/completed/task-multimodal-support-2026-10.md, registered before this code): every WAV in $GOINFER_S14C4_DIR (scripts/s14c4_data.py) transcribed by Qwen3-ASR-0.6B through
 // the library path (Go front end, encoder, projector, soft-token splice, GenerateAudio, greedy, 256 new tokens at most) at the checkpoint's own weights (arm "f32") and at serve's defaults (arm
 // "int4": Quant int4, int4 head). The encoder is float32 in both, so it runs once per clip. Writes {arm: {id: raw text}} to $GOINFER_S14C4_OUT; scripts/s14c4_grade.py scores it.
 //

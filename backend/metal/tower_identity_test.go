@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
-// TestTowerIdentity_metal is AX2a-T on Metal (docs/tasks/task-subsystems-2026-10.md §7.8): every tower Metal declares
+// TestTowerIdentity_metal is AX2a-T on Metal (docs/completed/task-subsystems-2026-10.md §7.8): every tower Metal declares
 // attaches through its production registry and gives the same bits twice.
 func TestTowerIdentity_metal(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
@@ -40,7 +40,7 @@ func metalAnchor(device string) (string, error) {
 	return fmt.Sprintf("metal %s, macOS %s (%s)", device, ver, build), nil
 }
 
-// TestTowerGolden_metal is G-SB9-1M, G-SB9-2M and G-SB9-3M (docs/tasks/task-subsystems-2026-10.md, "SB9 step S on the
+// TestTowerGolden_metal is G-SB9-1M, G-SB9-2M and G-SB9-3M (docs/completed/task-subsystems-2026-10.md, "SB9 step S on the
 // Mac") and G-SB9M-2 on Metal: the record equals the committed golden recorded on this device and macOS build (another
 // fails until it is re-anchored), each family's plant turns exactly its own cases red, each plant in each block program Metal
 // walks turns exactly the families that walk it red, and each device case agrees with the CPU within the registered bound.

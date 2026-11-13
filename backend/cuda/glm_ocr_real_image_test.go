@@ -20,7 +20,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// GLM-OCR on the CUDA resident, on a REAL page through the REAL tower (gate O3 item 3, docs/tasks/task-glm-ocr-2026-10.md).
+// GLM-OCR on the CUDA resident, on a REAL page through the REAL tower (gate O3 item 3, docs/completed/task-glm-ocr-2026-10.md).
 // TestGlmOcrResidentParityCUDA proves the pairwise kernels on a tiny fixture; these prove the composition on the real
 // 1.1 B checkpoint: the image prefill through rope_kv_mrope_batched_pw, then decode past the image through ForwardMRoPE at
 // ropePos != pos. int4 on both arms (the resident and the CPU), the images are the procedurally rendered documents of
@@ -92,7 +92,8 @@ func TestGlmOcrCUDAResidentRealImage(t *testing.T) {
 		t.Fatalf("glm_ocr is not resident at ResidentContext %d: %s", glmOcrResidentCtx, mc.ResidentDecline())
 	}
 	t.Logf("CUDA resident: %s (cap %d)", mc.DecodePath(), mc.ResidentContextCap())
-	rmp, ok := mc.ResidentForwardForTest().(decoder.ResidentMRoPEPrefill)
+	rmp := decoder.SubsystemsOf(mc.ResidentForwardForTest()).Prefill
+	ok := rmp.MRoPEPrefillAvailable()
 	if !ok {
 		t.Fatal("the resident does not satisfy ResidentMRoPEPrefill")
 	}
@@ -273,7 +274,8 @@ func TestGlmOcrCUDAResidentFullBudget(t *testing.T) {
 	if !mc.ResidentActive() {
 		t.Fatalf("not resident at %d: %s", ctx, mc.ResidentDecline())
 	}
-	rmp, ok := mc.ResidentForwardForTest().(decoder.ResidentMRoPEPrefill)
+	rmp := decoder.SubsystemsOf(mc.ResidentForwardForTest()).Prefill
+	ok := rmp.MRoPEPrefillAvailable()
 	if !ok {
 		t.Fatal("no ResidentMRoPEPrefill")
 	}

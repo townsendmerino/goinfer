@@ -32,7 +32,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 | `KVDemote` | n/a | n/a | n/a | n/a | tested: `TestKV7_demoteAndPromote` | n/a | n/a |
 | `KVHostBytes` | n/a | n/a | n/a | n/a | tested: `TestKV7_optionKVHostBytes_resident` | n/a | n/a |
 | `KVPrecision` | n/a | n/a | n/a | tested: `TestOptionPathMetal_kvPrecision`; CUDA f16 tested: `TestKV16_everyAttentionPathStaysCloseToF32`; CUDA i8 tested: `TestKV8_G2exact_readersMatchTheCPUOnOneCache` | tested: `TestPrefill_int8KVOnThePass`; CUDA f16 tested: `TestKV16_everyAttentionPathStaysCloseToF32`; CUDA i8 tested: `TestKV8_G2exact_readersMatchTheCPUOnOneCache` | tested: `TestOptionPathMetal_kvPrecision`; CUDA i8 tested: `TestKV8_verifyIsSequentialDecode` | tested: `TestOptionPathMetal_kvPrecision`; CUDA f16 tested: `TestKV7_restoreFull`; CUDA i8 tested: `TestKV7_restoreFull` |
-| `KVQuant` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedPrefill` | declined at `cpuBatchCacheEligible` (`TestCPUBatch_ineligibleCachesBypass`) | n/a | n/a | tested: `TestOptionPath_specVerify` | tested: `TestKVI8_snapshotRoundtrip` |
+| `KVQuant` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedDecode` | n/a | n/a | tested: `TestOptionPath_specVerify` | tested: `TestKVI8_snapshotRoundtrip` |
 | `KVShareOff` | n/a | n/a | n/a | n/a | tested: `TestKV2_optionKVShareOff_resident` | n/a | tested: `TestSessionLRU_sharesAPreamble` |
 | `Knobs` | n/a | n/a | n/a | n/a | n/a | n/a | n/a |
 | `MoECacheExperts` | n/a | n/a | n/a | tested: `TestMoECacheExperts_bitExactMetal` | tested: `TestMoECacheExperts_bitExactMetal` | tested: `TestMoECacheExperts_specAndSessionMetal` | tested: `TestMoECacheExperts_specAndSessionMetal` |
@@ -218,7 +218,7 @@ Every `KVCache` field belongs to one of these kinds, or is declared geometry, a 
 - image blocks × share: a span is taken whole, and only when the request claims the same image at the same place; otherwise the match stops at its start
 - image blocks × evict: residentForgetIDs clears resImgBlocks with the ids, always
 - image blocks × checkpoint save: the saving path (generateInto) takes text prompts: no image block is in what it saves
-- image blocks × checkpoint restore: scoreRecurrent gives no checkpoint hit to a sequence or a request with an image span
+- image blocks × checkpoint restore: scoreRecurrentTokens gives no checkpoint hit to a sequence or a request with an image span
 - m-RoPE positions × partial rewind: positions and the decode delta are set by the image prefill and have no per-position rewind
 - m-RoPE positions × full reset: resetMultimodal (audit M-25)
 - m-RoPE positions × snapshot: the snapshot format does not carry m-RoPE positions

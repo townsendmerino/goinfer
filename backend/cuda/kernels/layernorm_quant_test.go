@@ -14,7 +14,7 @@ import (
 // TestLayerNormQuant is the CUDA twin of metal/gpt2_kernels_test.go's TestLayerNormQuant: this
 // backend's layernorm_quant (cuda/glue.cu) gets the same isolated, exact-CPU-reference proof Metal's
 // kernel had before any family was declared resident on the strength of it (Cohere/Command-R,
-// docs/tasks/task-gpu-paths-2026-09.md G5).
+// docs/completed/task-gpu-paths-2026-09.md G5).
 //
 // Bias-free ONLY, unlike Metal's kernel: Cohere's LayerNorm carries no learned bias term, and this
 // backend's layernorm_quant has no hasBias parameter at all — a future bias-bearing LayerNorm

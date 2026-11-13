@@ -22,7 +22,7 @@
 | CH1 | done | — | `backend/webgpu/internal/kernels/moe_w4a8_expert_test.go:TestUploadStackedExpertsInt4Packed_matchesUnpacked` (2026-11-09): the packed and unpacked uploads of the same experts give bit-identical expert GEMV outputs over every expert and two activations; an in-test plant (one byte's nibbles swapped) is red on every run, and a temporary plant in the packed upload itself was red before it was reverted |
 | CH2 | done | — | the audit-2026-09-02 M-04 read, fixed 2026-09-02; `decoder/session_hostile_test.go:TestLoadSession_hostileHeaders` |
 | CH3 | done | — | 2026-11-09, no behaviour change (touched.py green; parity refresh non-numeric, forward goldens green): `decoder/model.go:layerStates` replaces the five per-family recurrent-state loops of the KV cache constructor (the two Mamba-2 blocks were the near-duplicate pair); `decoder/model.go:Model.prefillSeedFrom` is the shared prologue of `residentPrefillSeedMarked` and `residentPrefillSeedMRoPE`; `decoder/blockspec.go:BlockSpec.seedAnchor` is the extraction from `BlockSpec.generate`. Not done: `server.serveChatText` onto `loadedModel`, whose premise is stale (it now uses five of the server's members: resolveThink, haltState, gens, jobs, routeThink), so a move would only trade receivers; and the greedy and sampled chain blocks of the decode loop, which call different interfaces with different arguments |
-| CH4 | active | the metadata-reader extraction (`decoder/gguf.go:ggufUintReader`, `decoder/gguf.go:ggufFloatReader`: 13 + 8 per-family closures) in its PR, behind the gate (`decoder/ch4_giw_gate_test.go:TestCH4_giwByteIdentity`, #848); next: nobara's re-record at the gate head and the check at the PR's head, then the merge | §3.2; `docs/measurements/ch4-2026-11/before.txt` |
+| CH4 | active | the metadata-reader extraction (`decoder/gguf.go:ggufUintReader`, `decoder/gguf.go:ggufFloatReader`: 13 + 8 per-family closures) merged as #852 on 2026-11-09, behind the gate (`decoder/ch4_giw_gate_test.go:TestCH4_giwByteIdentity`, #848); the gate's re-record at 87b41343a is on main (f7d03bab8, nobara, `before2.txt`); **no check after #852 is on record** (no "after" file in `docs/measurements/ch4-2026-11/`). Next: that check, `TestCH4_giwByteIdentity` against `before2.txt` on nobara-v1 at main, a CPU test of about a minute, queued 2026-11-13 after #927's device tests so it does not void the LW-cu timed read. Francis expects the nine weights hashes to match; the three config hashes may differ, because `Config` gained fields with Flint after the re-record, which would be expected and not a regression. Then the row closes as done | §3.2; `docs/measurements/ch4-2026-11/before.txt`; `docs/measurements/ch4-2026-11/before2.txt` |
 | CH5 | decision | the `.repowise` history purge, declined 2026-08-26 | `.gitignore` carries `.repowise/` |
 
 Tooling: repowise 0.45.0, `apple-m1pro`, 2026-08-26, `--no-prose` (structural only, no LLM).
@@ -141,6 +141,15 @@ it is this.
 snapshots", 2026-09-05) also touched this file. The predictor keeps predicting; the review pass
 itself still has not happened. *(Correction 2026-11-09: it happened. The audit-2026-09-02 M-04 read found and fixed the
 `LoadSession` validate-after-allocate OOM; `decoder/session_hostile_test.go:TestLoadSession_hostileHeaders` pins it (CH2).)*
+
+### 3.4 · Moving the `.giw` code out of `decoder`: decided against (Francis, 2026-11-13)
+
+The question was whether the `.giw` serializer and sidecar entry points could leave `decoder` for `internal/runtime/giw` or a `decoder/giw` subpackage, so that `internal/runtime/prequant` stops importing `decoder`. They stay in `decoder`, for two reasons read from the tree on 2026-11-13:
+
+- **The serializer is built on `decoder`'s own types.** `decoder/serialize.go` names `Weights` 26 times, `LayerWeights` 15 and `WeightMat` 37. A subpackage may not import `decoder` (`docs/layout.md`, "Tier 3"), so moving it would first mean moving those types, which is the larger move and not a `.giw` one.
+- **`prequant` would still import `decoder`.** Besides the sixteen `.giw` and sidecar names (`GIWTarget`, `TranscodeGIW*`, `SidecarPath*`, `SidecarState`, `EnsureCachedGIW`, `DefaultToSidecar`, `GIWAdapterLoRA`, ...), `internal/runtime/prequant` calls `decoder.Load`. Moving the sixteen would not remove the import.
+
+What stays open is the split of `decoder/weights.go` by family inside package `decoder` (a pure move, no exported change), which this doc's §2 scores at CCN 105 and 1,569 NLOC. It touches the parity manifests, so it waits for the coordinator to clear the parity lane.
 
 ## 4 · What is NOT a work list, and why
 

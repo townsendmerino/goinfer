@@ -17,7 +17,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// TestS17Profile is S17 step 0 on Metal (docs/tasks/task-multimodal-support-2026-10.md, registered before it ran): each
+// TestS17Profile is S17 step 0 on Metal (docs/completed/task-multimodal-support-2026-10.md, registered before it ran): each
 // Metal grid tower's GPU time split by kernel class (gemm with its bias, attention, norm, elementwise) through the
 // gvProfile seam, on the four F2a images at serve's caps: one unprofiled warm-up, one unprofiled timed forward (the
 // overhead check's reference), then 3 profiled forwards, the median per class reported. The profiled output must equal
@@ -177,7 +177,7 @@ func TestS17Profile(t *testing.T) {
 	})
 }
 
-// TestS17LeverA_wholeTowerMetal is S17 lever A's speed instrument on Metal (docs/tasks/task-multimodal-support-2026-10.md,
+// TestS17LeverA_wholeTowerMetal is S17 lever A's speed instrument on Metal (docs/completed/task-multimodal-support-2026-10.md,
 // "The two Metal levers", TE5(b)): a whole-tower A/B in one process, the fused tower_attn kernel against eg2Ops.attention
 // (gridVAccel.oldAttn), interleaved: per tower and image one warm-up of each arm, then 3 rounds, the arm order alternating
 // by round, each round's ratio old/new from wall time. A direction resolves when all three ratios sit on one side of 1.

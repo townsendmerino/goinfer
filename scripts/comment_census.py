@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""comment_census.py: CC6 of docs/tasks/task-code-comments-2026-10.md. Keeps Go comments from growing back into a lab notebook.
+"""comment_census.py: CC6 of docs/completed/task-code-comments-2026-10.md. Keeps Go comments from growing back into a lab notebook.
 
   comment_census.py report [--tests] [PATH...]
       The §1 census per package: files, non-blank lines, comment lines (and their share), comment blocks of 1-3 lines and how many carry

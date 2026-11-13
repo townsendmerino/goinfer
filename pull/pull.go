@@ -715,7 +715,7 @@ func CacheRoot() (string, error) {
 }
 
 // CacheHelp is the sentence --help prints about where `pull` puts models and what moves it
-// (docs/tasks/task-first-hour.md). It names the directory this process would actually use, because
+// (docs/completed/task-first-hour.md). It names the directory this process would actually use, because
 // "the user cache dir" is a different place on each OS; the variable is named for Linux, where
 // XDG_CACHE_HOME is what os.UserCacheDir reads.
 func CacheHelp() string {

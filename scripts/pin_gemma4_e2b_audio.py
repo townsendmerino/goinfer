@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S5a's reference (docs/tasks/task-multimodal-support-2026-10.md, S5): Gemma 4 E2B's audio tower and embed_audio, from
+"""G-S5a's reference (docs/completed/task-multimodal-support-2026-10.md, S5): Gemma 4 E2B's audio tower and embed_audio, from
 E2B's own checkpoint, on the three committed EmbeddingGemma 2 clips (testdata/embeddinggemma2-audio/*.wav).
 
 Only the tower and the embedder are built (transformers' Gemma4AudioModel and Gemma4MultimodalEmbedder from E2B's

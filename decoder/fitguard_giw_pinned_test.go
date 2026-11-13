@@ -17,7 +17,7 @@ func m35() *Config {
 	return cfg
 }
 
-// measuredM35Experts is the routed-expert footprint of that model in the memory campaign's census (docs/tasks/task-memory-campaign-2026-10.md,
+// measuredM35Experts is the routed-expert footprint of that model in the memory campaign's census (docs/completed/task-memory-campaign-2026-10.md,
 // MEM0's table: "routed experts 18.12 GB", the same figure MEM10 quotes as page-locked), in bytes.
 const measuredM35Experts = 18_120_000_000
 

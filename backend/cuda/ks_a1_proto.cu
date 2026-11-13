@@ -1,4 +1,4 @@
-// ks_a1_proto.cu — KS-A1's first measurement on CUDA (docs/tasks/task-kernel-survey-2026-10.md, "KS-A1 on CUDA"): prototype
+// ks_a1_proto.cu — KS-A1's first measurement on CUDA (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-A1 on CUDA"): prototype
 // native Q5_K and Q6_K GEMVs against the shipped per-32 int8 kernel. Test-only: TestKSA1_gemvTiming loads this module and
 // nothing shipped does. Activations are the shipped per-32 form (actgroup.cu's quantG32): packed int8 codes a, scales aS[K/32],
 // then the groups' dequantized sums aS[K/32 + g].

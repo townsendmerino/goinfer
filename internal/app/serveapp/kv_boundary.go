@@ -8,7 +8,7 @@ import (
 
 // prefixBoundary is how many leading ids of ids, the prompt rendered from (system, turns, tools), come before the first conversation turn's content: the
 // stable system-and-tools section, which every session of one client shares and which a prefix snapshot is taken at during the cold prefill
-// (docs/tasks/task-kv7-step2-boundary-snapshot-2026-10.md). 0 when there is none to find or the server cannot use one.
+// (docs/completed/task-kv7-step2-boundary-snapshot-2026-10.md). 0 when there is none to find or the server cannot use one.
 //
 // It is found without knowing the family's markers: the prompt is rendered again with the first turn's content changed, and the segments that
 // render identically are the stable section (the first turn's opening marker is in it; the content that differs is not). The ids of those

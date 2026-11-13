@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// G-IP2 (S17's Metal image prefill, docs/tasks/task-multimodal-support-2026-10.md): gemma3-vl-tiny's image turn through the
+// G-IP2 (S17's Metal image prefill, docs/completed/task-multimodal-support-2026-10.md): gemma3-vl-tiny's image turn through the
 // resident image prefill (PrefillImageLast, via the decoder's own splice), its last-token logits and 8 decode steps after it
 // teacher-forced on the CPU's continuation, against the CPU's image prefill (prefillLogitsVL) at int4 with per-32 activation
 // scales. Bars: cosine >= 0.995, relL2 <= 0.15. Planted defect: the same spliced rows through the pass with no image block
@@ -115,7 +115,7 @@ func TestImagePrefillResident_gemma3Tiny(t *testing.T) {
 	}
 }
 
-// TestImagePrefillResident_twoImagesTiny (G-S11c, Metal; S11 of docs/tasks/task-multimodal-support-2026-10.md): gemma3-vl-tiny
+// TestImagePrefillResident_twoImagesTiny (G-S11c, Metal; S11 of docs/completed/task-multimodal-support-2026-10.md): gemma3-vl-tiny
 // with two images (the two-image golden's layouts and features), the resident multi-block image prefill (PrefillImageBlocksLast)
 // against the CPU's two-image prefill at int4 per-32, the last token and 8 teacher-forced decode steps. Bars as G-IP2:
 // cosine >= 0.995, relL2 <= 0.15.

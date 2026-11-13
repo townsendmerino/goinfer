@@ -1616,14 +1616,25 @@ func (r *DecodeRunner) writeInputs(x []float32, pos, ropePos int) error {
 // fresh staging per call and returns an error, never panics, on a failed buffer map.
 func (r *DecodeRunner) ReadMambaCap(projN, convN, dInner int) (proj, conv, y, gated []float32, err error) {
 	rd := func(b *wgpu.Buffer, n int) ([]float32, error) {
-		stag, _ := r.c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+		stag, err := r.c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+		if err != nil {
+			return nil, fmt.Errorf("gpu: ReadMambaCap: stag: %w", err)
+		}
 		defer releaseBuf(stag)
-		enc, _ := r.c.device.TryCreateCommandEncoder(nil)
-		enc.TryCopyBufferToBuffer(b, 0, stag, 0, uint64(n*4))
-		cmd, _ := enc.TryFinish(nil)
+		enc, err := r.c.device.TryCreateCommandEncoder(nil)
+		if err != nil {
+			return nil, fmt.Errorf("gpu: ReadMambaCap: command encoder: %w", err)
+		}
+		defer enc.Release()
+		if err := enc.TryCopyBufferToBuffer(b, 0, stag, 0, uint64(n*4)); err != nil {
+			return nil, fmt.Errorf("gpu: ReadMambaCap: copy: %w", err)
+		}
+		cmd, err := enc.TryFinish(nil)
+		if err != nil {
+			return nil, fmt.Errorf("gpu: ReadMambaCap: finish: %w", err)
+		}
 		r.c.queue.Submit(cmd)
 		cmd.Release()
-		enc.Release()
 		st := wgpu.MapAsyncStatus(0)
 		stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(n*4), func(s wgpu.MapAsyncStatus) { st = s })
 		r.c.device.Poll(true, nil)
@@ -1999,7 +2010,7 @@ type DnetRunParams struct {
 }
 
 // g4DropVNormForTest turns off the v_norm that Gemma 4 layers with their own v_proj apply (runLayer.vNorm), so a test can
-// show that v_norm is what moves the parity numbers (docs/tasks/task-multimodal-support-2026-10.md). Set only by a test
+// show that v_norm is what moves the parity numbers (docs/completed/task-multimodal-support-2026-10.md). Set only by a test
 // seam; never in production.
 var G4DropVNormForTest bool
 

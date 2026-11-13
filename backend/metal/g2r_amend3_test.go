@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// G2-R amendment 3 (docs/tasks/task-forward-architecture-2026-10.md §4.6, "G2-R amendment 3"): the Metal process loads
+// G2-R amendment 3 (docs/completed/task-forward-architecture-2026-10.md §4.6, "G2-R amendment 3"): the Metal process loads
 // Metal .giw bundles, a refused load voids the run, and every load is fit-checked by day before the job is queued.
 
 // g2rSmall is the Metal precondition's model: its .gguf loads on Metal directly.

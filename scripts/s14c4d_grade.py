@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14c4d's grading (docs/tasks/task-multimodal-support-2026-10.md, registered before the code). Usage:
+"""G-S14c4d's grading (docs/completed/task-multimodal-support-2026-10.md, registered before the code). Usage:
   s14c4d_grade.py <refs.json> <hf.json> <go.json> [<old-go.json>]
 go.json holds the arms f32, int4, int4h8 and, from GOINFER_S14C4_PF=1, f32pf, int4pf, int4h8pf (decoder TestQwen3ASRWER_arms); old-go.json is G-S14c4's 2026-10-09 output, the control that the unforced path did not move.
 Normalisation, WER, the bootstrap and the PASS / PARKED / FAIL rule are scripts/s14c4_grade.py's (G-S14c4b), applied to the arm int4pf against f32."""

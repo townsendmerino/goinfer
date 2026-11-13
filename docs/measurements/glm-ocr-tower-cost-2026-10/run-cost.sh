@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job: the GLM-OCR vision-tower cost sweep (docs/tasks/task-glm-ocr-2026-10.md, O2: "cost, measured and recorded,
+# Night job: the GLM-OCR vision-tower cost sweep (docs/completed/task-glm-ocr-2026-10.md, O2: "cost, measured and recorded,
 # not gated"; O4 reads it to choose a default pixel cap). Pre-registered in README.md beside this script, committed
 # before the first run. A RECORD, not a gate.
 #
@@ -14,7 +14,7 @@
 #
 # Queued with:
 #   python3 scripts/night.py add glm-ocr-tower-cost --est 150 --by "Claude (Mac session), GLM-OCR O2 cost" \
-#     --doc docs/tasks/task-glm-ocr-2026-10.md -- bash docs/measurements/glm-ocr-tower-cost-2026-10/run-cost.sh
+#     --doc docs/completed/task-glm-ocr-2026-10.md -- bash docs/measurements/glm-ocr-tower-cost-2026-10/run-cost.sh
 # Logs: ~/goinfer-logs/glm-ocr-tower-cost-2026-10/<date>/ (provenance.txt, one raw log per process, results.txt).
 set -uo pipefail
 TAG=v1.52.0

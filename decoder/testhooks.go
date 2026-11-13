@@ -491,7 +491,7 @@ func SetProbeGPUConfigMutatorForTest(mutate func(name string, cfg []byte) []byte
 func ResetSelfTestCachesForTest() { resetSelfTestCaches() }
 
 // SetGemma4PLEDropTokenForTest plants a defect: the resident embedding row's PLE inputs lose their token-identity term
-// (docs/tasks/task-multimodal-support-2026-10.md), so a gate can be shown to go red. The CPU forward is unaffected.
+// (docs/completed/task-multimodal-support-2026-10.md), so a gate can be shown to go red. The CPU forward is unaffected.
 func SetGemma4PLEDropTokenForTest(on bool) { gemma4PLEDropTokenForTest = on }
 
 // SetGemma4VLRowsDefectForTest selects a planted defect in the E-model image-row builder (0 clears it; see gemma4VLRowsDefectForTest).
@@ -545,7 +545,7 @@ func (c *KVCache) SetCaptureLayersForTest(layers []int) {
 func (c *KVCache) CapturedForTest() [][]float32 { return c.captured }
 
 // SetStreamDirSwapForTest turns on StreamTranscodeDir's planted defect (layers 0 and 1 written in each other's place) and
-// returns the restore (docs/tasks/task-prequant-dir-streaming-2026-10.md).
+// returns the restore (docs/completed/task-prequant-dir-streaming-2026-10.md).
 func SetStreamDirSwapForTest(on bool) func() {
 	prev := streamDirSwapForTest
 	streamDirSwapForTest = on
@@ -666,7 +666,7 @@ func TakeMoESelTraceForTest() ([][]int, [][]float32) {
 func StopMoESelTraceForTest() { moeSelTrace, moeWtsTrace = nil, nil }
 
 // SetResidentFeaturesForTest adds the given features to backend's declared set and returns a function that restores it. A backend's build
-// seam that is gated but not yet declared (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP2b on CUDA) is reachable from its own
+// seam that is gated but not yet declared (docs/completed/task-forward-architecture-2026-10.md §4.7, OP2b on CUDA) is reachable from its own
 // tests only through this: production admission reads the unexported map and never sees a feature a test added after restore. It is not
 // safe for parallel tests, and it panics on a backend that declares no set, so a typo cannot pass as a no-op.
 func SetResidentFeaturesForTest(backend string, add ...ResidentFeature) (restore func()) {
@@ -761,14 +761,14 @@ func (m *Model) ResidentPrefillScratchForTest(promptTokens int) (int64, bool) {
 // gates drive the real loop with a drafter whose proposals they choose. dw stands for the drafter's weights; the loop reads
 // only its BlockSize and MaskTokenID. The fold path's preparation and refusal are NewBlockSpec's.
 func (m *Model) NewBlockSpecForTest(rd ResidentBlockDrafter, dw BlockDrafterWeights, taps []int) (*BlockSpec, error) {
-	host, ok := m.resident.(ResidentDrafterHost)
-	if !ok {
+	rt := m.resRuntime()
+	if !rt.DrafterHostAvailable() {
 		return nil, errBlockSpecUnsupported
 	}
-	if err := m.prepareRecurrentSpec(host, dw); err != nil {
+	if err := m.prepareRecurrentSpec(rt, dw); err != nil {
 		return nil, err
 	}
-	return &BlockSpec{m: m, host: host, rd: rd, dw: dw, taps: taps}, nil
+	return &BlockSpec{m: m, host: rt, rd: rd, dw: dw, taps: taps}, nil
 }
 
 // TripBlockSpecGuardForTest makes every BlockSpec generation's acceptance guard stop speculating after its window, whatever

@@ -119,7 +119,7 @@ func kmlaWorst(t *testing.T, src string, interleave bool) (store, qrope float64)
 	return store, qrope
 }
 
-// TestMLAKernels_rope is OP2a's K-MLA gate (docs/tasks/task-forward-architecture-2026-10.md §4.7, registered before it ran):
+// TestMLAKernels_rope is OP2a's K-MLA gate (docs/completed/task-forward-architecture-2026-10.md §4.7, registered before it ran):
 // mla_store and mla_qrope against a float64 reference on non-flat inputs, both rope branches, at positions 0, 1, 7, 255 and
 // 4,095, max|error| <= 2e-3 x max|reference|. With q's and the latent's rope and nope slices swapped in each branch (the
 // plant), both kernels must exceed it. The tiny fixtures cannot see this defect (gate M's amendment 2).

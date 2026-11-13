@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// G-S4q of docs/tasks/task-multimodal-support-2026-10.md (S4), the CUDA twin of metal/s3_towers_test.go (G-S3a). It grades
+// G-S4q of docs/completed/task-multimodal-support-2026-10.md (S4), the CUDA twin of metal/s3_towers_test.go (G-S3a). It grades
 // whatever EnableResident attaches, which is goinfer's own Qwen2.5-VL tower (qwen25_vision.go; aikit's gpu/qwencuda is no
 // longer imported), against aikit's CPU tower, f32 on both sides, every output token at cosine >= 0.9999; 0.999-0.9999 is
 // ambiguous (parked). aikit's CUDA SigLIP tower (gpu/visioncuda) is read in cuda/s4siglip, a package of its own, because

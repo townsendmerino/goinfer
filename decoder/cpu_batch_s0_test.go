@@ -15,7 +15,7 @@ import (
 )
 
 // TestCPUBatchS0_matmulScaling is an EXPLORATORY probe for MC3c step 2's follow-on (a tuned small-M amd64 kernel for
-// the batched CPU decode step; docs/tasks/task-concurrency-2026-09.md). It is not a gate. On a real checkpoint's layer-0
+// the batched CPU decode step; docs/tasks/parked/task-concurrency-2026-09.md). It is not a gate. On a real checkpoint's layer-0
 // weights it times the production matmul (decoder.matmul, which picks the kernel and layout) at M = 1, 2, 3, 4 and 8
 // rows, and reports each against M separate M = 1 calls — the cost the batched step would pay with no amortisation.
 // The ratio t(M) / t(1) is what batching buys: near 1 means the weights are read once for all M rows; near M means
@@ -80,7 +80,7 @@ func TestCPUBatchS0_matmulScaling(t *testing.T) {
 	}
 }
 
-// TestCPUBatchS1_fusedVsUnfused is MC3c step 2 S1's pre-registered measurement (docs/tasks/task-concurrency-2026-09.md,
+// TestCPUBatchS1_fusedVsUnfused is MC3c step 2 S1's pre-registered measurement (docs/tasks/parked/task-concurrency-2026-09.md,
 // "Step 2 follow-on S1"): the batched CPU step with q‖k‖v and gate‖up fused into one batched W4A8 call each
 // (cpuBatchFusedW4A8 on) against the per-projection calls (off), in one process, on the same caches.
 //

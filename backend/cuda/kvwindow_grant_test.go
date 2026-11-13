@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -259,6 +260,83 @@ func compareHeldKV(t *testing.T, full, win *cudaResident, end int) {
 			if j, ok := sameBits(pair[0], pair[1]); !ok {
 				t.Fatalf("layer %d %s at end %d: held position %d differs from the full cache (base %d)", l, []string{"K", "V"}[i], end, base+j/Ly.kvDim, base)
 			}
+		}
+	}
+}
+
+// guardPinModels loads a tiny checkpoint three ways: the caller's -ctx (pinned), a context the load-time fit guard pinned
+// for an unrequested load (AutoPinResidentContextForTest: a request, not pinned), and no context at all.
+func guardPinModels(t *testing.T, ctx int) (explicit, guard, unset *decoder.Model) {
+	t.Helper()
+	dir := filepath.Join("..", "..", "testdata", "llama-tiny")
+	load := func(o decoder.Options) *decoder.Model {
+		m, err := decoder.Load(dir, o)
+		if err != nil {
+			t.Fatalf("load %s: %v", dir, err)
+		}
+		t.Cleanup(func() { m.Close() })
+		return m
+	}
+	explicit = load(decoder.Options{Backend: "cpu", ResidentContext: ctx})
+	guard = load(decoder.Options{Backend: "cpu"})
+	guard.AutoPinResidentContextForTest(ctx)
+	unset = load(decoder.Options{Backend: "cpu"})
+	return explicit, guard, unset
+}
+
+// TestCtxExplicitFor_guardPinIsACeiling: only the caller's -ctx is explicit to the CUDA build. A guard-pinned context is a
+// ceiling the build may trim, as resolveCtxCapFit already treats it, and no context is not explicit either.
+func TestCtxExplicitFor_guardPinIsACeiling(t *testing.T) {
+	explicit, guard, unset := guardPinModels(t, 12353)
+	if !ctxExplicitFor(explicit) {
+		t.Error("the caller's -ctx is not explicit to the build")
+	}
+	if ctxExplicitFor(guard) {
+		t.Error("a context the fit guard pinned is explicit to the build, so the build refuses it rather than trimming it")
+	}
+	if ctxExplicitFor(unset) {
+		t.Error("an unpinned load is explicit to the build")
+	}
+}
+
+// TestKVFitDecision_guardPinTrimsWhereAnExplicitCtxRefuses sweeps free VRAM across the edge for a 12353-position context the
+// fit guard pinned and for the same context as the caller's -ctx. The guard pin fits as given when it fits, trims to the
+// largest context at or above cudaCtxCapDefault whose KV fits beside the reserve, and otherwise takes the ordinary decline;
+// the -ctx is never trimmed and a miss is errKVWontFit.
+func TestKVFitDecision_guardPinTrimsWhereAnExplicitCtxRefuses(t *testing.T) {
+	const ctx = 12353
+	explicitM, guardM, _ := guardPinModels(t, ctx)
+	layers := make([]cudaLayer, 28)
+	for i := range layers {
+		layers[i].kvDim = 2 * 128
+	}
+	const reserve = int64(384 << 20)
+	needFull := kvChargedBytes(ctx, 1, layers)
+	needFloor := kvChargedBytes(cudaCtxCapDefault, 1, layers)
+	for _, free := range []int64{needFloor + reserve - (8 << 20), needFloor + reserve, (needFloor+needFull)/2 + reserve,
+		needFull + reserve - (8 << 20), needFull + reserve, needFull + reserve + (64 << 20)} {
+		fits := needFull+reserve <= free
+		g := kvFitDecision(kvFitIn{ctxCap: ctx, explicit: ctxExplicitFor(guardM), slotsReq: 1, layers: layers, margin: reserve}, uint64(free), true)
+		switch {
+		case fits:
+			if g.err != nil || g.ctxCap != ctx {
+				t.Errorf("free %d MB: the guard pin that fits became ctx %d, err %v", free>>20, g.ctxCap, g.err)
+			}
+		case needFloor+reserve <= free:
+			if g.err != nil || g.ctxCap < cudaCtxCapDefault || g.ctxCap >= ctx || kvChargedBytes(g.ctxCap, 1, layers)+reserve > free {
+				t.Errorf("free %d MB: the guard pin was not trimmed to a context that fits: ctx %d, err %v", free>>20, g.ctxCap, g.err)
+			}
+		default:
+			if g.err == nil || errors.Is(g.err, errKVWontFit) {
+				t.Errorf("free %d MB: a guard pin with no room even at %d wants the ordinary decline, got %v", free>>20, cudaCtxCapDefault, g.err)
+			}
+		}
+		e := kvFitDecision(kvFitIn{ctxCap: ctx, explicit: ctxExplicitFor(explicitM), slotsReq: 1, layers: layers, margin: reserve}, uint64(free), true)
+		if e.ctxCap != ctx {
+			t.Errorf("free %d MB: the caller's -ctx was trimmed to %d", free>>20, e.ctxCap)
+		}
+		if !fits && !errors.Is(e.err, errKVWontFit) {
+			t.Errorf("free %d MB: the caller's -ctx that does not fit wants errKVWontFit, got %v", free>>20, e.err)
 		}
 	}
 }

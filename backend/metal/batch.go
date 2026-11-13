@@ -18,7 +18,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// MC3 (docs/tasks/task-concurrency-2026-09.md): batched decode, one decode token for up to batchMaxSeqs sequences in ONE
+// MC3 (docs/tasks/parked/task-concurrency-2026-09.md): batched decode, one decode token for up to batchMaxSeqs sequences in ONE
 // command buffer, each sequence on its own resident KV slot at its own position, and every logit bit-identical to
 // production's single-token forward on that sequence (TestMC3Step_bitIdentical). Per-row work runs production's own
 // kernels, per sequence: norm + int8 quantisation, RoPE, the KV store into that sequence's slot, attention over that slot
@@ -151,7 +151,7 @@ func metalStepInputs(m *decoder.Model) *stepInputs {
 	in := &stepInputs{prog: p, H: H, V: V, I: I, nH: nH, moeStep: m.ResidentMoEStep(), recurrentStep: m.ResidentRecurrentStepOn(wanted),
 		gemma4Step: m.ResidentGemma4StepOn(wanted), q4k: m.Quant() == "q4k"}
 	in.w4f16Lane = modelKnob(m, "GOINFER_METAL_DECODE_LANE") == "w4f16" && m.Quant() == "int4"
-	_, _, in.attnSink = m.GptOssActResident()
+	in.attnSink = m.HasAttnSinksResident()
 	if nE, _, _, _, _, _, _, _, _, _, ok := m.MoEResidentParams(); ok {
 		n := metalMoESlotsFromEnv(m)
 		in.pagedMoE = n > 0 && (n < nE || moePagedAllSlotsForTest)
@@ -382,6 +382,26 @@ var stepMambaSlot0PlantForTest, stepNonGatedRow0PlantForTest = false, false
 func (r *resident) stepBatchesAttn(l int) bool {
 	L := &r.layers[l]
 	return len(L.steps) > 0 && L.steps[0] == stepAttention && !L.qGate && !r.stepWholeLayer(l)
+}
+
+// rowState is the recurrent state layer L's step runs on for a row on slot q.slot: the slot's conv window and state, or the
+// zero value (the layer's own pair) for a one-slot build or a layer with none.
+func rowState(L *residLayer, q batchSeq) stepState {
+	if D := L.delta; D != nil && len(D.slotWin) > 0 {
+		s := q.slot
+		if stepDeltaSlot0PlantForTest {
+			s = 0
+		}
+		return stepState{D.slotWin[s], D.slotState[s]}
+	}
+	if M := L.mamba; M != nil && len(M.slotWin) > 0 {
+		s := q.slot
+		if stepMambaSlot0PlantForTest {
+			s = 0
+		}
+		return stepState{M.slotWin[s], M.slotSSM[s]}
+	}
+	return stepState{}
 }
 
 // stepWholeLayer reports whether the step runs layer l whole, per row, on decode's own layer encoder: a Gemma 4 layer, with
@@ -839,7 +859,7 @@ var mc3AdjRowsOn = true
 const batchTGBytes = 4 * 2 * 32 * 8
 
 // calibrateRows decides, once, at which batch sizes qkv and gate|up are cheaper as B per-row production GEMVs than as one
-// fragment dispatch (docs/tasks/task-concurrency-2026-09.md, MC3 S4). The fragment's cost is fixed for any B up to 8 and a
+// fragment dispatch (docs/tasks/parked/task-concurrency-2026-09.md, MC3 S4). The fragment's cost is fixed for any B up to 8 and a
 // GEMV's is per row, so on large shapes (a bandwidth-bound GEMV against an ALU-bound fragment) the GEMVs win at small B.
 // Both arms run on the real weights of the first layers, one layer's weights per dispatch so the cache does not serve
 // them, and the fastest of 7 command buffers after 3 warm-ups decides. The choice changes speed only: the per-row path is
@@ -976,7 +996,7 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 }
 
 // multiOut is what a step returns. multiNoHead and multiLastRow serve a prompt run on the step kernels (prefillByStep, R-19,
-// docs/tasks/task-recompute-audit.md): a piece before the last needs only its K/V, so the step encodes no final norm, LM head
+// docs/completed/task-recompute-audit.md): a piece before the last needs only its K/V, so the step encodes no final norm, LM head
 // or argmax and returns nothing; the last piece needs only its last row's logits, so only that row is copied out (the head
 // still runs for every row: it reads the whole LM head's weights once at any row count).
 type multiOut int
@@ -1107,7 +1127,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		b.uMaxS.SetU32(uint32(maxS))
 	}
 	e := r.q.Begin()
-	// The step's two blocks (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-d2): every layer the step admits is
+	// The step's two blocks (docs/completed/task-forward-architecture-2026-10.md §4.9, OP4m-d2): every layer the step admits is
 	// an attention step and a dense FFN step (batchIneligible), and each block emits the dispatches the step always emitted.
 	attnRows := func(l int, L *residLayer) {
 		g := L.geom
@@ -1242,8 +1262,8 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 						}
 					}
 					r.encLayer = l
-					for _, st := range L.steps[from:to] {
-						r.encodeStep(e, st, l, L, f32(b.xB, m, H), b.uPos[src], b.uNKeys[src], b.uQTemp[src], b.uPos[src])
+					for i := from; i < to; i++ {
+						r.encodeLayerStep(e, L.steps[i], i, l, L, f32(b.xB, m, H), b.uPos[src], b.uNKeys[src], b.uQTemp[src], b.uPos[src], rowState(L, q))
 					}
 				}
 			}
@@ -1258,7 +1278,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 			r.encNKeys, r.encFANSplit = 0, Buffer{}
 			continue
 		}
-		for _, st := range L.steps {
+		for i, st := range L.steps {
 			switch st {
 			case stepAttention:
 				if !L.qGate {
@@ -1278,33 +1298,13 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 					if r.attnFANKV > 0 {
 						r.encFANSplit = b.uFANSplit[src]
 					}
-					r.encodeAttentionResidualWith(e, l, f32(b.xB, m, H), b.uPos[src], b.uNKeys[src], b.uQTemp[src])
+					r.encodeLayerStep(e, st, i, l, L, f32(b.xB, m, H), b.uPos[src], b.uNKeys[src], b.uQTemp[src], b.uPos[src], stepState{})
 				}
 				r.kt = kt
 				r.encNKeys, r.encFANSplit = 0, Buffer{}
-			case stepDeltaNet:
-				for m, q := range seqs { // decode's DeltaNet mixer on each row in turn, on the row's own slot state (OP4m-d4a)
-					D := L.delta
-					win, state := D.win, D.state // a one-slot build: the layer's own pair
-					if s := q.slot; len(D.slotWin) > 0 {
-						if stepDeltaSlot0PlantForTest {
-							s = 0
-						}
-						win, state = D.slotWin[s], D.slotState[s]
-					}
-					r.encodeDeltaNetMixerOn(e, L, f32(b.xB, m, H), win, state)
-				}
-			case stepMamba:
-				for m, q := range seqs { // decode's Mamba-2 mixer on each row in turn, on the row's own slot state (OP4m-d6a)
-					M := L.mamba
-					win, ssm := M.win, M.ssm // a one-slot build: the layer's own pair
-					if s := q.slot; len(M.slotWin) > 0 {
-						if stepMambaSlot0PlantForTest {
-							s = 0
-						}
-						win, ssm = M.slotWin[s], M.slotSSM[s]
-					}
-					r.encodeMambaMixerOn(e, L, f32(b.xB, m, H), win, ssm)
+			case stepDeltaNet, stepMamba:
+				for m, q := range seqs { // decode's recurrent mixer on each row in turn, on the row's own slot state (OP4m-d4a, OP4m-d6a)
+					r.encodeLayerStep(e, st, i, l, L, f32(b.xB, m, H), b.uPos[m], b.uNKeys[m], b.uQTemp[m], b.uPos[m], rowState(L, q))
 				}
 			case stepNonGatedFFN:
 				r.encodeNonGatedFFNRows(e, L, B)
@@ -1312,11 +1312,8 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 				ffnRows(L)
 			case stepMoE:
 				r.encLayer = l
-				for m := range B { // decode's MoE dispatches on each row in turn: norm, route, the k experts and the shared one
-					row := f32(b.xB, m, H)
-					e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, row, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
-					r.encodeMoERoute(e, L)
-					r.encodeMoEExperts(e, L, row)
+				for m := range B { // decode's MoE on each row in turn: norm, route, the k experts and the shared one
+					r.encodeLayerStep(e, st, i, l, L, f32(b.xB, m, H), b.uPos[m], b.uNKeys[m], b.uQTemp[m], b.uPos[m], stepState{})
 				}
 			default:
 				panic(fmt.Sprintf("metal: the batched step has no block for the %v step, and batchIneligible admits none", st))

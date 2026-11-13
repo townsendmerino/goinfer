@@ -176,7 +176,7 @@ func qwen35ResidentParityCUDA(t *testing.T, ckpt, quant string) {
 	}
 }
 
-// Olmo Hybrid on CUDA against the CPU (docs/tasks/task-olmo-hybrid-cuda-2026-11.md, O-2 to O-4). The family's DeltaNet layers
+// Olmo Hybrid on CUDA against the CPU (docs/completed/task-olmo-hybrid-cuda-2026-11.md, O-2 to O-4). The family's DeltaNet layers
 // widen the write gate to [0, 2) (NegEigval) and run the output norm at an epsilon of their own (ONormEps); the bar is the one
 // the other DeltaNet families hold in TestQwen35ResidentParityCUDA: worst cosine >= 0.95, drift <= 0.02, and the replay after
 // Reset reproducing the first run. Each setting is then dropped at the build (dnSettingPlantForTest) and the run is scored
@@ -313,7 +313,7 @@ func TestOlmoHybridResidentParityCUDA_real(t *testing.T) {
 // OP4cu-c1's table declined: the default, the resident cache at f32, and the CPU-side KV cache at i8 and f16 (KVQuant, serve's
 // --kv mapped onto the CPU cache). A resident cache at f16 or i8 (KVPrecision) is refused at load for this family before the
 // build, by the f16 KV family list and the missing CUDA int8 KV cache, on main as here; the test requires those two refused by
-// the KV cache (docs/tasks/task-olmo-hybrid-cuda-2026-11.md, O-4's correction).
+// the KV cache (docs/completed/task-olmo-hybrid-cuda-2026-11.md, O-4's correction).
 func TestOlmoHybridResident_kvOptions(t *testing.T) {
 	const ckpt = "../../testdata/olmo_hybrid-tiny"
 	requireDeviceAndFixture(t, ckpt)

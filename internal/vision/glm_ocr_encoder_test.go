@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// Gate O2 of goinfer docs/tasks/task-glm-ocr-2026-10.md: the GLM-OCR vision tower against HF's
+// Gate O2 of goinfer docs/completed/task-glm-ocr-2026-10.md: the GLM-OCR vision tower against HF's
 // GlmOcrVisionModel (transformers 5.12.0, f32, CPU), tower-only. Pinned by
 // goinfer scripts/pin_glm_ocr_vision.py:
 //

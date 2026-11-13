@@ -100,7 +100,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
     var qd: f32 = 0.0;
     if (lane) { qd = q[qbase + d]; }
     var acc: f32 = 0.0;
-    // gpt-oss's learned per-head attention sink (FeatAttnSink, G6 docs/tasks/task-gpu-paths-2026-09.md):
+    // gpt-oss's learned per-head attention sink (FeatAttnSink, G6 docs/completed/task-gpu-paths-2026-09.md):
     // an extra logit with NO key and NO value, joining the softmax MAX and DENOMINATOR only —
     // seeding the online-softmax state with an imaginary zero-value key whose score is the sink
     // is exactly equivalent (m=sink, l=1 ⇒ the first real key's mnew=max(sink,x) folds it into
@@ -898,24 +898,42 @@ func (c *Context) Attention(q, keys, vals []float32, nH, nKV, hd, nKeys, start i
 // than the kernel the runner uses.
 func (c *Context) attentionOn(pl *wgpu.ComputePipeline, ly *wgpu.BindGroupLayout, q, keys, vals []float32, nH, nKV, hd, nKeys, start int, scale float32) ([]float32, error) {
 	group := nH / nKV
-	qBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-q", Contents: wgpu.ToBytes(q), Usage: wgpu.BufferUsageStorage})
+	qBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-q", Contents: wgpu.ToBytes(q), Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: attentionOn: attn-q: %w", err)
+	}
 	defer releaseBuf(qBuf)
-	kBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-k", Contents: wgpu.ToBytes(keys), Usage: wgpu.BufferUsageStorage})
+	kBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-k", Contents: wgpu.ToBytes(keys), Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: attentionOn: attn-k: %w", err)
+	}
 	defer releaseBuf(kBuf)
-	vBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-v", Contents: wgpu.ToBytes(vals), Usage: wgpu.BufferUsageStorage})
+	vBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-v", Contents: wgpu.ToBytes(vals), Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: attentionOn: attn-v: %w", err)
+	}
 	defer releaseBuf(vBuf)
 	cBuf, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Label: "attn-ctx", Size: uint64(nH * hd * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, err
 	}
 	defer releaseBuf(cBuf)
-	pBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(nKeys), uint32(start), uint32(group), F32bits(scale), 0}), Usage: wgpu.BufferUsageUniform})
+	pBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(nKeys), uint32(start), uint32(group), F32bits(scale), 0}), Usage: wgpu.BufferUsageUniform})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: attentionOn: attn-p: %w", err)
+	}
 	defer releaseBuf(pBuf)
-	// FeatAttnSink (docs/tasks/task-gpu-paths-2026-09.md): always bound (WGSL bind groups can't bind a null storage buffer); this
+	// FeatAttnSink (docs/completed/task-gpu-paths-2026-09.md): always bound (WGSL bind groups can't bind a null storage buffer); this
 	// test helper never carries a real sink, so a one-element dummy + hasSink=0, matching attnShaderWGSL's convention.
-	sinksBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-sinks", Contents: wgpu.ToBytes([]float32{0}), Usage: wgpu.BufferUsageStorage})
+	sinksBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-sinks", Contents: wgpu.ToBytes([]float32{0}), Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: attentionOn: attn-sinks: %w", err)
+	}
 	defer releaseBuf(sinksBuf)
-	hsBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-hs", Contents: wgpu.ToBytes([]uint32{0, 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	hsBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-hs", Contents: wgpu.ToBytes([]uint32{0, 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: attentionOn: attn-hs: %w", err)
+	}
 	defer releaseBuf(hsBuf)
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ly, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: qBuf, Size: qBuf.GetSize()},
@@ -930,7 +948,10 @@ func (c *Context) attentionOn(pl *wgpu.ComputePipeline, ly *wgpu.BindGroupLayout
 		return nil, err
 	}
 	defer bg.Release()
-	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	enc, err := c.device.TryCreateCommandEncoder(nil)
+	if err != nil {
+		return nil, fmt.Errorf("gpu: attentionOn: command encoder: %w", err)
+	}
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(pl)
@@ -941,7 +962,10 @@ func (c *Context) attentionOn(pl *wgpu.ComputePipeline, ly *wgpu.BindGroupLayout
 		return nil, err
 	}
 	pass.Release()
-	cmd, _ := enc.TryFinish(nil)
+	cmd, err := enc.TryFinish(nil)
+	if err != nil {
+		return nil, fmt.Errorf("gpu: attentionOn: finish: %w", err)
+	}
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	return c.readbackRaw(cBuf, nH*hd)

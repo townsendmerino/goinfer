@@ -46,6 +46,7 @@ var identityTiny = []identityAsset{
 	{Family: "cohere", Name: "tiny", Path: "testdata/cohere-tiny", Golden: "testdata/cohere_tiny_golden.json"},
 	{Family: "cohere2", Name: "tiny", Path: "testdata/cohere2-tiny", Golden: "testdata/cohere2_tiny_golden.json"},
 	{Family: "deepseek_v3", Name: "tiny", Path: "testdata/deepseek-tiny", Golden: "testdata/deepseek_tiny_text_golden.json"},
+	{Family: "flint", Name: "tiny", Path: "testdata/flint-tiny", Golden: "testdata/flint_tiny_golden.json"},
 	{Family: "gemma3", Name: "vl-tiny-text", Path: "testdata/gemma3-vl-tiny", Golden: "testdata/gemma3_vl_tiny_text_golden.json"},
 	{Family: "gemma4", Name: "moe-tiny", Path: "testdata/gemma4-moe-tiny", Golden: "testdata/gemma4_moe_forward_golden.json"},
 	{Family: "gemma4", Name: "moe-unified-tiny", Path: "testdata/gemma4-moe-unified-tiny", Golden: "testdata/gemma4_moe_forward_golden.json"},
@@ -121,7 +122,7 @@ var identityReal = []identityAsset{
 // f16xbuild-mac.go.txt): 145 and 621 tokens on the qwen2.5 tokenizer.
 //
 // long adds a third of about 2,500 tokens, so a CPU prefill crosses its 2,048-row chunk (OP3's gate T1,
-// docs/tasks/task-forward-architecture-2026-10.md §4.8).
+// docs/completed/task-forward-architecture-2026-10.md §4.8).
 func identityRealPrompts(long bool) []string {
 	base := "Rivers shape the land they cross. Over thousands of years a river carves valleys, deposits silt on its floodplain, and builds deltas where it meets the sea. "
 	reps := []int{4, 18}

@@ -39,7 +39,9 @@ Untagged, `backend/cuda/` does not build on its own (`backend/cuda/internal/gpud
 | Path | What it is |
 |---|---|
 | `decoder/` | the decoder-only transformer runtime: loaders, forward passes, KV cache, fit guards, the `.giw` sidecar |
+| `decoder/config/` | checkpoint `Config` JSON loading, family defaults and validation; a leaf importing no goinfer package |
 | `decoder/fit/` | the types the fit guard and the placement planner hand their callers (`Plan`, `PlanRequest`, `Placement`, `FitAnswer`, `FitDeclineError`); a leaf over `internal/runtime/mem` |
+| `decoder/quant/` | safetensors checkpoint quantization config parsing and weight reconstruction (`Reconstructor`, `RowStreamReconstructor` for FP8, GPTQ, AWQ, NVFP4, MLX); a leaf over `aikit/safetensors` |
 | `engine/` | what the serving shell asks of a model: a generation from a prepared request |
 | `server/` | the HTTP API (OpenAI and Anthropic routes, web UI) as a library handler |
 | `chat/` | chat templates and tool-call rendering and parsing, no Jinja engine |
@@ -179,4 +181,5 @@ About 316 files, referenced by path from CI, skills, the night runner and docs: 
 | `RELEASING.md` | the release procedure and the module-tag rules |
 | `CHANGELOG.md`, `changelog.d/` | the changelog and its pending fragments |
 | `.github/workflows/` | CI (`ci.yml`), site, coverage, vulnerability, release-asset and weekly workflows |
+| `.ken-go.json` | the build configurations (GOOS, GOARCH, tags) that ken's Go tools ask gopls under, and the timing-lock wrapper each run goes through; three configurations compile 98.9% of the Go files, the host default 64% |
 | `LICENSE`, `NOTICE`, `THIRD_PARTY_LICENSES.md` | licensing |

@@ -109,7 +109,7 @@ func (o *outcomeTB) outcome(run func(*outcomeTB)) (res *outcomeTB) {
 	return
 }
 
-// TestCheckGolden_otherAnchor is G-SB9-5 (docs/tasks/task-subsystems-2026-10.md, "SB9 step S on the Mac"): against a golden
+// TestCheckGolden_otherAnchor is G-SB9-5 (docs/completed/task-subsystems-2026-10.md, "SB9 step S on the Mac"): against a golden
 // recorded on another adapter, FailOtherAnchorSkipOnCI skips on CI (GITHUB_ACTIONS=true) and fails anywhere else, naming both
 // anchors either way; SkipOtherAnchor skips and FailOtherAnchor fails whatever the environment.
 func TestCheckGolden_otherAnchor(t *testing.T) {

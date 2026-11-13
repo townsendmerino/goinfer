@@ -82,14 +82,14 @@ func TestResolveCtxCap(t *testing.T) {
 // (fit-by-default only ever applies to an UNPINNED load), --fit=off (Options.DisableFit) and its GOINFER_NO_FIT_DEFAULT
 // env-var precursor both restore resolveCtxCap exactly, and a model whose own window is already at or below
 // cudaCtxCapDefault has nothing to gain from asking Plan. The live-probe branch (a real free-VRAM reading) is exercised on
-// real hardware separately (docs/tasks/task-gpu-paths-2026-09.md, G11). A real (minimal, tracked-in-git) model is loaded per
+// real hardware separately (docs/completed/task-gpu-paths-2026-09.md, G11). A real (minimal, tracked-in-git) model is loaded per
 // case rather than nil: m.FitDisabled() reads a real field, so a nil *decoder.Model would panic in the request==0 cases.
 //
 // `pinned` decides whether the case's Options carries ResidentContext: request, i.e. whether m itself is a GENUINE pin
 // (decoder.Model.ResidentContextPinned() true) or a bare request value passed to resolveCtxCapFit with an unpinned m. Set
 // it deliberately on every request>0 case: left unset, the cases pass by coincidence (fitDefaultCtx is itself 8192 and
 // llama-tiny is small enough that Plan hands 8192 back unshrunk) instead of taking the "genuine pin, skip fit entirely"
-// branch they claim to test (docs/prompts/nobara-mc1-webgpu-2026-09.md §4, item 28).
+// branch they claim to test (docs/completed/nobara-mc1-webgpu-2026-09.md §4, item 28).
 func TestResolveCtxCapFit_shortcuts(t *testing.T) {
 	for _, c := range []struct {
 		name              string
@@ -284,58 +284,7 @@ func TestKVBytesForCap(t *testing.T) {
 	}
 }
 
-// TestFitsWeightsBudget is M-02's gate for CUDA's previously-nonexistent memory-fit check on the
-// FIXED (non-expert) weight term — mirrors metal/backend.go's TestResidentMemGuard, same reasoning:
-// a guard that never fires leaves the raw-driver-error failure mode checkWeightsFit exists to
-// avoid; one that fires too eagerly silently moves every model to the staged/CPU path.
-func TestFitsWeightsBudget(t *testing.T) {
-	const gb = int64(1) << 30
-	for _, c := range []struct {
-		name       string
-		need, free int64
-		want       bool
-	}{
-		{"comfortably_fits", 4 * gb, 8 * gb, true},
-		{"exactly_at_margin", 8*gb - testCtxMargin, 8 * gb, true},
-		{"just_over_margin", 8*gb - testCtxMargin + 1, 8 * gb, false},
-		{"far_too_large", 22 * gb, 8 * gb, false}, // Qwen3.5-35B-A3B-shaped dense-only sum on an 8 GB card
-		// Unknown inputs must never refuse: an unreadable MemInfo or a model reporting zero bytes
-		// would otherwise disable residency for everyone, silently.
-		{"unknown_need", 0, 8 * gb, true},
-		{"unknown_free", 4 * gb, 0, true},
-		{"negative_need", -1, 8 * gb, true},
-	} {
-		if got := fitsWeightsBudget(c.need, c.free, testCtxMargin); got != c.want {
-			t.Errorf("%s: fitsWeightsBudget(%.2f GB, %.2f GB) = %v, want %v",
-				c.name, float64(c.need)/float64(gb), float64(c.free)/float64(gb), got, c.want)
-		}
-	}
-}
-
-// TestReservedBudget is tasks/task-fit-to-hardware.md §2's drafter-aware sizing: allocSlots' elastic
-// expert-cache search must see free VRAM MINUS whatever a companion attach (--drafter) will claim
-// afterward, never a negative number capSlots was never written to handle.
-func TestReservedBudget(t *testing.T) {
-	const gb = int64(1) << 30
-	for _, c := range []struct {
-		name             string
-		free, extraBytes int64
-		want             int64
-	}{
-		{"nothing_attaching", 8 * gb, 0, 8 * gb},
-		{"drafter_reserves_its_share", 8 * gb, 500 << 20, 8*gb - 500<<20},
-		{"drafter_exceeds_everything_free_clamps_to_zero", 1 * gb, 2 * gb, 0},
-		{"drafter_exactly_consumes_free", 1 * gb, 1 * gb, 0},
-	} {
-		if got := reservedBudget(c.free, c.extraBytes); got != c.want {
-			t.Errorf("%s: reservedBudget(%.2f GB, %.2f GB) = %.2f GB, want %.2f GB",
-				c.name, float64(c.free)/float64(gb), float64(c.extraBytes)/float64(gb),
-				float64(got)/float64(gb), float64(c.want)/float64(gb))
-		}
-	}
-}
-
-// TestCheckKVFits_realDevice_explicitRefusesWithNumbers is G6 (docs/tasks/task-gpu-paths-2026-09.md §6): "nothing pinned
+// TestCheckKVFits_realDevice_explicitRefusesWithNumbers is G6 (docs/completed/task-gpu-paths-2026-09.md §6): "nothing pinned
 // is overridden... honoured or refused with numbers". The sibling test below pins the SENTINEL/wiring without a device;
 // this one calls checkKVFits against a REAL device's REAL free VRAM and asserts the refusal NAMES the requested context
 // and the GB figures, not just that an error occurred. An absurd ctx (1<<30 positions) makes it hold on any card.

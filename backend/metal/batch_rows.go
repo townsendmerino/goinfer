@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// MC3 S3 (docs/tasks/task-concurrency-2026-09.md): multi-row forms of the per-row kernels a batched step runs once per
+// MC3 S3 (docs/tasks/parked/task-concurrency-2026-09.md): multi-row forms of the per-row kernels a batched step runs once per
 // sequence (rmsnorm_quant, quant_vec, swiglu_quant, rope2). Each of those small dispatches ran a single threadgroup, one
 // sequence after another; one dispatch over all rows runs them side by side (cost figures:
 // docs/code-notes/metal.md#mc3RowsKernels).
@@ -206,7 +206,7 @@ func deriveRowsKernels() string {
 			"    device float* out = out_rows + mc3_row*outStride;"))
 	b.WriteString("\n")
 
-	// int8 slice 3b (docs/tasks/task-metal-int8-2026-10.md): the native int8 path's projection for B rows of the batched
+	// int8 slice 3b (docs/completed/task-metal-int8-2026-10.md): the native int8 path's projection for B rows of the batched
 	// step, each weight row read ONCE for all B activation rows. One simdgroup per output row keeps B integer
 	// accumulators; W8A8 sums are exact, so any order gives decode's integer, and each row's epilogue is decode's own
 	// statement (W8A8_SA_BODY / W8A8_COAL_BODY: float(acc)*aScale*wScale through simd_broadcast_first, then the site's
@@ -282,7 +282,7 @@ kernel void mc3_gemv_w8a8_rows(device const char* bq[[buffer(0)]], device const 
 }
 `)
 
-	// The q4k lane's step (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP6): its norm and SwiGLU derived as
+	// The q4k lane's step (docs/completed/task-forward-architecture-2026-10.md §4.7, OP6): its norm and SwiGLU derived as
 	// above, and its two projections for B rows, each weight read once for all rows. A rows GEMV keeps its decode
 	// kernel's per-lane loop, statement for statement, and simd_sum per row (q4k_rows_acc, w8f32_rows_acc), so each row is
 	// decode's bits. Activation row b starts at ax_rows + b*lda, output row b at out_rows + b*ldo. mode: 0 store, 1

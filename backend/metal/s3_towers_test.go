@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// G-S3a of docs/tasks/task-multimodal-support-2026-10.md (S3), for the rebuilt towers (vl_towers.go): the Metal SigLIP
+// G-S3a of docs/completed/task-multimodal-support-2026-10.md (S3), for the rebuilt towers (vl_towers.go): the Metal SigLIP
 // and Qwen2.5-VL towers against aikit's CPU tower, both float32, every output token at cosine >= 0.9999; 0.999-0.9999 is
 // ambiguous (parked). The tiny towers always, norms randomised first (through the exports' aliasing slices: the tiny
 // checkpoints' norms are all ones), with each registered planted defect alone required to go red; the real ones

@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestKSD8_sequentialPrefillBaseline is KS-D8's baseline (docs/tasks/task-kernel-survey-2026-10.md, "KS-D8 baseline"):
+// TestKSD8_sequentialPrefillBaseline is KS-D8's baseline (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-D8 baseline"):
 // NVIDIA-Nemotron-Nano-9B-v2's int4 Metal .giw resident on Metal, whose Mamba-2 layers decline the batched prefill
 // (recurrentPrefillOK), so a prompt runs one decode step a token. One 512-token greedy generation of one token warms it,
 // then three timed ones, each on a prompt with its own first token so nothing is reused; the reading is 512 / time to

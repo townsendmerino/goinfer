@@ -40,7 +40,7 @@ const (
 	knobMoEPreadCPU = "GOINFER_MOE_PREAD_CPU"
 
 	// Forces genNgramInto's adaptive round loop to never yield to a batch: a diagnostic for the MC4 "spec inside a batch"
-	// measurement (docs/tasks/task-concurrency-2026-09.md), not a shipped policy.
+	// measurement (docs/tasks/parked/task-concurrency-2026-09.md), not a shipped policy.
 	knobSpecAdaptiveNeverYield = "GOINFER_SPEC_ADAPTIVE_NEVER_YIELD"
 )
 

@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
-// Ministral 3's image path (Mistral3ForConditionalGeneration; S10 of docs/tasks/task-multimodal-support-2026-10.md):
+// Ministral 3's image path (Mistral3ForConditionalGeneration; S10 of docs/completed/task-multimodal-support-2026-10.md):
 // the preprocessing (HF's PixtralImageProcessor), the prompt block ([IMG]/[IMG_BREAK]/[IMG_END]) and the multimodal
 // projector (Mistral3MultiModalProjector). The tower is aikit's vision.PixtralVisionEncoder.
 

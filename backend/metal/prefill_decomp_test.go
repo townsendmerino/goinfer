@@ -436,7 +436,7 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 	}
 
 	// R16 / S2 (GOINFER_METAL_S2=1): the prototype against the current kernel, per the pre-registration in
-	// docs/tasks/red-october.md R16 — bitwise per GEMM on real inputs, full-replay logits, the registered metric
+	// docs/completed/red-october.md R16 — bitwise per GEMM on real inputs, full-replay logits, the registered metric
 	// (sum of the four GEMM marginals by leave-one-out, both arms in the same session), and burst vs sustained.
 	if os.Getenv("GOINFER_METAL_S2") == "1" {
 		func() {

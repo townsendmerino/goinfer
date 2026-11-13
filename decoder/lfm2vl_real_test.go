@@ -1,6 +1,6 @@
 //go:build realckpt
 
-// G-S10l-c of docs/tasks/task-multimodal-support-2026-10.md (S10, LFM2.5-VL, registered 2026-10-09 before any code):
+// G-S10l-c of docs/completed/task-multimodal-support-2026-10.md (S10, LFM2.5-VL, registered 2026-10-09 before any code):
 // LFM2.5-VL-1.6B on a multi-tile image prompt, goinfer's float32 CPU prefill against transformers'
 // Lfm2VlForConditionalGeneration in float32. Three steps, so the same ids reach both sides (nobara):
 //

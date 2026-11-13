@@ -184,7 +184,7 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 	if err != nil {
 		return ph, fmt.Errorf("create %s: %w", tmp, err)
 	}
-	// Streamed one layer at a time (docs/tasks/task-prequant-dir-streaming-2026-10.md): peak memory about the globals plus
+	// Streamed one layer at a time (docs/completed/task-prequant-dir-streaming-2026-10.md): peak memory about the globals plus
 	// one layer, byte-identical to the resident transcode. A LoRA merge, and a family whose loader does not stream yet, take
 	// the resident transcode instead.
 	body := func(w io.Writer) (int64, error) { return residentDirBody(w, dir, lora, quant, embedInt4, target, id) }
@@ -304,7 +304,7 @@ func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string, embed
 
 // SidecarPathIfFresh returns the sidecar .giw for ggufPath at quant/backend's target and embedInt4
 // setting, and true, ONLY when a fresh one already exists: it never transcodes. For a caller like `fit`
-// (docs/tasks/task-never-swap-2026-09.md) where measuring is supposed to stay cheap: forcing a
+// (docs/completed/task-never-swap-2026-09.md) where measuring is supposed to stay cheap: forcing a
 // transcode just to check fit would cost as much as the resident build it avoids.
 func SidecarPathIfFresh(ggufPath, quant, backend string, embedInt4 bool) (string, bool) {
 	target := GIWTargetForBackend(backend)

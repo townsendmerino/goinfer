@@ -11,7 +11,7 @@ import (
 )
 
 // decoder.Model.PromptHiddenAll on a CUDA-resident Qwen3.5 answers from the device through the ResidentResidualAll seam
-// (docs/tasks/task-constrained-confidence.md, Route C), and every row stays within promptHiddenAllResidentBarCUDA of the
+// (docs/tasks/parked/task-constrained-confidence.md, Route C), and every row stays within promptHiddenAllResidentBarCUDA of the
 // CPU's PromptHiddenAll on the same weights. Three checks:
 //
 //   - the answer is the runner's own pre-norm residual rows with the decoder's f32 final norm applied (so the dispatch took the resident, and the norm is the host's, not the
@@ -36,7 +36,8 @@ func TestPromptHiddenAllResidentCUDA(t *testing.T) {
 			if rf == nil {
 				t.Skipf("%s did not go resident on this box — decode path %q; decline: %s", ckpt, mRes.DecodePath(), mRes.ResidentDecline())
 			}
-			rr, ok := rf.(decoder.ResidentResidualAll)
+			rr := decoder.SubsystemsOf(rf).Prefill
+			ok := rr.ResidualAllAvailable()
 			if !ok {
 				t.Fatal("the cuda resident runner does not implement decoder.ResidentResidualAll")
 			}

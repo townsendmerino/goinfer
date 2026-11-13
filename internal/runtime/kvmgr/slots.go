@@ -110,7 +110,7 @@ type Request struct {
 	Tokens []int
 	Images []ImageSpan
 	// Checkpoint: the caller restores a recurrent sequence's checkpoint before it prefills (KV8a). A recurrent request
-	// that is not a strict extension may then score the checkpoint's position (scoreRecurrent).
+	// that is not a strict extension may then score the checkpoint's position (scoreRecurrentTokens).
 	Checkpoint bool
 }
 
@@ -123,15 +123,12 @@ type Request struct {
 //     place: image placeholder ids are the same for every image, so ids alone prove nothing about one;
 //   - a recurrent model continues a strict extension of the whole sequence from where its state stopped. A request that
 //     is not one may restart from the sequence's checkpoint instead, when the caller restores it (Request.Checkpoint):
-//     scoreRecurrent.
+//     scoreRecurrentTokens.
 //
 // The producer class is not compared here: a sequence continuing in its own slot keeps the rows it wrote, as
 // resident reuse always has (the task doc's §5.6, property 3). DeclineShortLead is the one class rule on this path.
 func (a *Slots) Score(slot int, req Request, recurrent bool) int {
-	if n := a.score(slot, req, recurrent); n >= a.floors[slot] {
-		return n
-	}
-	return 0
+	return SafeReuseLen(a.score(slot, req, recurrent), len(req.Tokens), a.floors[slot], nil)
 }
 
 func (a *Slots) score(slot int, req Request, recurrent bool) int {
@@ -142,73 +139,7 @@ func (a *Slots) score(slot int, req Request, recurrent bool) int {
 	if rootHash(req.Root, a.m.parts) != s.rootHash {
 		return 0
 	}
-	if recurrent {
-		return scoreRecurrent(s, req)
-	}
-	n := min(len(req.Tokens)-1, len(s.tokens))
-	i, bi := 0, 0 // bi: the next image span of s that could start at or after i
-	for i < n {
-		for bi < len(s.images) && s.images[bi].end() <= i {
-			bi++
-		}
-		if bi < len(s.images) && s.images[bi].Start == i {
-			sp := s.images[bi]
-			if c, ok := claimAt(req.Images, sp.Start); ok && c.Len == sp.Len && sp.Hash != 0 && c.Hash == sp.Hash && sp.end() <= n {
-				i = sp.end() // the whole span verified: past it in one step, never a stop inside it
-				bi++
-				continue
-			}
-			return i // another image, no claim, or a span that does not fit under the cap: stop exactly at its start
-		}
-		if s.tokens[i] != req.Tokens[i] {
-			return i
-		}
-		i++
-	}
-	return i
-}
-
-// scoreRecurrent is Score for a recurrent model. It returns the sequence's length for a strict extension of the whole
-// sequence, which continues from the live state. Otherwise, under Request.Checkpoint, it returns the checkpoint's
-// position c when the request matches the sequence through c and carries a token past it, and neither side has an
-// image span; else 0. A divergence before c, a re-send of the prompt that ended at c, and any image stay cold.
-func scoreRecurrent(s *Seq, req Request) int {
-	n := len(s.tokens)
-	if len(req.Tokens) <= n || !slices.Equal(s.tokens, req.Tokens[:n]) {
-		c := s.ckpt
-		if !req.Checkpoint || c <= 0 || len(req.Tokens) <= c || len(s.images) > 0 || len(req.Images) > 0 ||
-			!slices.Equal(s.tokens[:c], req.Tokens[:c]) {
-			return 0
-		}
-		return c
-	}
-	// The spans held and the request's claims must be the same set over the reused rows: the state cannot be
-	// rewound to an image boundary to repair a wrong guess.
-	for _, sp := range s.images {
-		c, ok := claimAt(req.Images, sp.Start)
-		if !ok || sp.Hash == 0 || c.Hash != sp.Hash || c.Len != sp.Len {
-			return 0
-		}
-	}
-	for _, c := range req.Images {
-		if c.Start >= n {
-			continue // a new image past the reused rows is ordinary new work
-		}
-		if c.end() > n {
-			return 0 // it straddles the boundary: half of it would be reused
-		}
-		held := false
-		for _, sp := range s.images {
-			if sp.Start == c.Start && sp.Len == c.Len {
-				held = true
-				break
-			}
-		}
-		if !held {
-			return 0
-		}
-	}
-	return n
+	return scoreSeqTokens(s.tokens, s.images, s.ckpt, req, recurrent)
 }
 
 func claimAt(images []ImageSpan, pos int) (ImageSpan, bool) {
@@ -393,11 +324,7 @@ func (a *Slots) commit(slot int, root Root, tokens []int, images []ImageSpan, pr
 		s.first = p.first // a continuation of the same conversation: it kept that conversation's first prompt
 	}
 	if p.ok && p.promptLen == promptLen && promptLen <= len(tokens) && p.reuse < promptLen && p.sum == fingerprint(tokens[:promptLen]) {
-		for _, r := range p.prefix {
-			s.classes = appendClass(s.classes, r)
-		}
-		s.classes = appendClass(s.classes, ClassRun{Start: p.reuse, Len: promptLen - p.reuse, Class: cm.PassAt(p.reuse, promptLen-p.reuse, promptLen)})
-		s.classes = appendClass(s.classes, ClassRun{Start: promptLen, Len: len(tokens) - promptLen, Class: ClassExact})
+		s.classes = RecordTurnClasses(p.prefix, p.reuse, promptLen, len(tokens), cm.PassAt(p.reuse, promptLen-p.reuse, promptLen))
 	}
 	for i := 0; i*BlockRows < len(tokens); i++ {
 		id, _ := a.m.alloc(int32(slot), int32(i)) // an unlimited manager always has a block

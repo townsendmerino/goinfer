@@ -454,6 +454,23 @@ confirms 33 by run before anything is published as safe rather than as computed.
 
 ## Queued
 
+**B45 · CI runs no adapter-gated WebGPU test, so a WebGPU ratchet is checked only on the boxes** — filed 2026-11-09 (mbp2-fit,
+from the `TestMemGate_webgpu` finding). **Not started; a CI change, so it waits on the owner's word.**
+- **The hole.** The webgpu job runs `go test -short -tags 'gpu goinfer_testhooks' ./backend/webgpu/...` on a headless runner with
+  no Vulkan adapter, so every test that opens a device skips there: `TestMemGate_webgpu` (the memory gate and its known-gap table),
+  the slot census, and the kernel parity tests. A known-gap entry that stops firing, or a lease that grows past its plan, goes red
+  only when someone runs the package on nobara, the Mac or mbp2. On 2026-11-09 the "MM8, Gemma 4 MoE dense" entry had stopped
+  firing on mbp2's Vulkan run with nobody having seen it; its fate waits on nobara's run.
+- **What is in reach.** A software Vulkan adapter. mbp2's (Mesa's llvmpipe) ran the kernels package with 52 tests passing
+  and 67 skipping as hardware-dependent, and ran `TestMemGate_webgpu` to its verdict. The binding documents the packages:
+  `apt install -y libegl1-mesa-dev mesa-vulkan-drivers` (`github.com/oliverbestmann/webgpu`'s README). Tests that need real hardware
+  already skip on a software adapter by name ("software adapter …; hardware-dependent test").
+- **Cost, to measure before deciding.** On mbp2: the kernels package about 2 to 7 minutes, `TestMemGate_webgpu` about 3 to 4, the
+  root webgpu package past go test's 10-minute default. A CI job would run a chosen subset (the memory gate, the census, the
+  kernels package) with its own timeout, not the whole module.
+- **Done when:** a CI job opens a software adapter and runs `TestMemGate_webgpu` and the kernels package to a PASS, and its wall
+  time is recorded here. A known-gap entry that stops firing then goes red in CI on the PR that caused it.
+
 **B44 · `serve check`'s long-prompt row fails on reasoning models** — filed 2026-11-09 (mbp2-fit, from Francis's doc-review
 decisions); **FIXED 2026-11-09.** `internal/guard/servecheck/check.go:Client.Chat` counted content deltas only, so a model that
 thinks first spent the row's 8 tokens on reasoning and read "stream produced no tokens". It now counts `reasoning_content` and
@@ -652,7 +669,7 @@ checkout. The M1 cell is re-queued night-only with its exit 75 on a fit refusal.
   rounded down to the 512-row pass grid, so a warm turn re-prefills up to about one pass; a cut at Keep is the follow-up that removes it.
   Step 3's grid cell as built is the recurrent `share` cell, which names the B35 restore. CUDA only; Metal and the CPU keep no recurrent
   snapshot (`KeepsRecurrentSnapshots` false), and their cold output is unchanged.
-- **What happens:** the engine reuses an appended request (`scoreRecurrent`: 0.04 s against 15.2 s cold on `/v1/completions`), but through `/v1/chat/completions` the next prompt shares only the first 22 of the previous 26 ids, because the history render drops the empty `<think>\n\n</think>\n\n`
+- **What happens:** the engine reuses an appended request (`scoreRecurrentTokens`: 0.04 s against 15.2 s cold on `/v1/completions`), but through `/v1/chat/completions` the next prompt shares only the first 22 of the previous 26 ids, because the history render drops the empty `<think>\n\n</think>\n\n`
   the generation prompt ends with. A recurrent state can only continue from where it stopped, so every chat turn is a cold prefill: 15 s at 4k, 39 s at 8k, 7 minutes at 31k for the 9B.
 - **The fix, exact (the owner's choice over changing the history render):** save the DeltaNet state before the generation tail.
   1. **The tail.** Derive it from the template, not per family: render the conversation with and without a following assistant turn; the generation prompt's text after the common prefix is the tail (`<think>\n\n</think>\n\n` here), and its token count is `k`. `chat.Template` grows `GenerationTail(system, turns)`. A template whose history render keeps the whole generation prompt has an empty tail and nothing changes.
@@ -725,7 +742,8 @@ correctly and then continues with `<|im_start|>assistant ... What is the currenc
   The 4B is the by-day tier 1 model for it (it loads in 5 s on the card).
 
 **B30 · an auto-picked resident context the fit guard then refuses: the picker must never choose it** — filed 2026-10-16 (owner, from OP2b's tier 1).
-**Not started.** Loading the whole Nemotron-Nano-9B-v2 from its GGUF on the 8 GB card, with the token table at int4 and no `-ctx`, the load-time fit
+**Tier 0 shipped (the guard-pin trim, #879); tier 1 on nobara (2026-11-09) INCONCLUSIVE:** the 9B loaded cuda-resident int4 at 12096, so the trim path was not exercised, and the pre-#879 build behaves the same on this card; the tier-0 tests stand.
+**Original filing, not started:** Loading the whole Nemotron-Nano-9B-v2 from its GGUF on the 8 GB card, with the token table at int4 and no `-ctx`, the load-time fit
 guard pinned a context of **12,353** positions and the CUDA build then refused it: 0.40 GB of KV against 0.80 GB free, with 384 MiB reserved
 (`checkKVFits`), short by about 8 MB, so the model ran on the CPU. With an explicit `ResidentContext: 4096` it ran resident (the same weights, 135 MiB of KV).
 - **Why it is not trimmed (INFERRED from `backend/cuda/resident.go` and `decoder/model.go`; not stepped through):** the guard's pin sets
@@ -1101,9 +1119,11 @@ set for the analysis only, run from inside the module with `GOWORK=off`, gives t
 "Zero findings" and "the tool did not run" are the same output, which is the same class the tracer's
 zero samples belonged to.
 
-**B8 · A sweep must distinguish "could not evaluate" from "failed"** *Checked 2026-11-09 (mbp2-fit): STILL LIVE in
-`cmd/gate`. `scripts/parity_sweep.sh` is gone, and `cmd/gate/grade_parity.go:classifyChecks` still labels every unexplained
-skip `SKIP - asset missing (blocker)` whatever the cause, and the verdict is one count, `N BLOCKER(S)`.* — `linux`, **filed 2026-08-12**
+~~**B8 · A sweep must distinguish "could not evaluate" from "failed"**~~ **DONE 2026-11-09 (mbp2-fit):** `cmd/gate/grade_parity.go:classifyChecks` names the
+variable of an env-gated skip (`SKIP - not evaluated, GOINFER_HEAVY_TESTS unset (blocker)`), an asset skip keeps its label,
+and the verdict line splits the count (`blockerSplit`: `N BLOCKER(S): F FAILED, E NOT EVALUATED (a asset absent, b env gate
+unset, c did not run)`, plus any from the catch-alls); both still block a tag
+(`cmd/gate/parity_test.go:TestParity_notEvaluatedIsCountedApartFromFailed`). The entry as filed:* — `linux`, **filed 2026-08-12**
 
 `scripts/parity_sweep.sh` reported **27 blockers**, then **15**, then **0**. The tree was fine at all
 three. Every one of the 42 was a **missing asset or an unset env var** — an *inability to evaluate*,

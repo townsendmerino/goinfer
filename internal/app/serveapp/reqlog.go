@@ -20,7 +20,7 @@ import (
 )
 
 // -log-requests: one line per generation request on stderr: route, model, status, prompt and completion tokens, time to first
-// token, total time. Off by default, so a quiet server stays quiet (docs/tasks/task-first-hour.md).
+// token, total time. Off by default, so a quiet server stays quiet (docs/completed/task-first-hour.md).
 //
 // The middleware owns the status and the clock; the token counts and the first-token time can only be known where tokens are
 // read, which is streamTokens, the shared tail of every generation (drive and driveVL). A request that makes several

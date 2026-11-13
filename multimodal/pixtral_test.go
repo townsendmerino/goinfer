@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// S10, Ministral 3 (docs/tasks/task-multimodal-support-2026-10.md): the projector against HF's own
+// S10, Ministral 3 (docs/completed/task-multimodal-support-2026-10.md): the projector against HF's own
 // Mistral3MultiModalProjector (transformers 5.15.0, float32), pinned by scripts/pin_pixtral_projector.py: random
 // weights, a randomised norm, two images of different patch grids in one call. Relative max|diff| <= 5e-6, the tiny
 // towers' bar. Planted: the merger laid out position-major instead of HF's channel-major unfold must miss.

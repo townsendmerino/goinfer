@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// TestGradeHeavy_plants is SB12-C4 for step 12 (docs/tasks/task-subsystems-2026-10.md, SB12 step 12 (CUDA)): each part of the
+// TestGradeHeavy_plants is SB12-C4 for step 12 (docs/completed/task-subsystems-2026-10.md, SB12 step 12 (CUDA)): each part of the
 // heavy tier can go red on its own input.
 func TestGradeHeavy_plants(t *testing.T) {
 	green := heavyInput{Drain: []string{"TestD"}, Iso: []string{"TestI"}, Total: 3, Kernels: 1,

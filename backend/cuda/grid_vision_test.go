@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// G-S2b and G-S2c of docs/tasks/task-multimodal-support-2026-10.md on the committed tiny towers, CUDA twin of metal/grid_vision_test.go: the CUDA tower plus aikit's
+// G-S2b and G-S2c of docs/completed/task-multimodal-support-2026-10.md on the committed tiny towers, CUDA twin of metal/grid_vision_test.go: the CUDA tower plus aikit's
 // FinishHidden against aikit's CPU Forward, every merged token at cosine >= 0.9999, at three grid sizes and a two-image batch (two attention segments); and each
 // planted defect, alone, below the bar. The norms are randomised first through the export's aliasing slices: the tiny checkpoints' norms are all ones, which would
 // hide a dropped or swapped norm. CUDA's additions to the defect list: the frames of a batch attending across the boundary, and (in tower_base_test.go) the
@@ -283,7 +283,7 @@ func TestGridVisionCUDA_real(t *testing.T) {
 				}, enc.Cfg.OutHiddenSize, func() { _ = acc.Close() }
 			}},
 	}
-	// S6 on nobara (docs/tasks/task-multimodal-support-2026-10.md): the Qwen3.5+ MoE family's tower (Qwen3.6-35B-A3B: 27 blocks, hidden 1152, out 2048), whose two shards were copied from the archive into ~/models/qwen3.6-35b-a3b-vision.
+	// S6 on nobara (docs/completed/task-multimodal-support-2026-10.md): the Qwen3.5+ MoE family's tower (Qwen3.6-35B-A3B: 27 blocks, hidden 1152, out 2048), whose two shards were copied from the archive into ~/models/qwen3.6-35b-a3b-vision.
 	fams = append(fams, fam{"qwen3.6-35b-a3b", filepath.Join(home, "models", "qwen3.6-35b-a3b-vision"), nil, fams[0].run})
 	for _, f := range fams {
 		t.Run(f.name, func(t *testing.T) {

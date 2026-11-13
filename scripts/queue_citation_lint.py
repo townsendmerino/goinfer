@@ -2,7 +2,7 @@
 """queue_citation_lint.py — every citation in docs/QUEUE.md must resolve, and its target must match.
 
 Commit citations (sha -> subject) are recorded in a generated index (docs/citation-index.md) and compared on every run. Code
-citations come in two forms since CC0 (docs/tasks/task-code-comments-2026-10.md):
+citations come in two forms since CC0 (docs/completed/task-code-comments-2026-10.md):
 
   - `path.go:Name` / `path.go:Type.Method` in a LIVE doc names a declaration, and the lint checks the file declares it NOW. Nothing is
     recorded and nothing goes stale when lines move above it.
@@ -615,7 +615,7 @@ def resolve_path(rel: str, line: int):
 BARE_RE = re.compile(r"(?<![\w/])((?:[a-z0-9_]+/)*[a-z0-9_]+\.(?:go|sh|py))(?![\w:])")
 
 
-# ---- SYMBOL CITATIONS (CC0.b, docs/tasks/task-code-comments-2026-10.md) ----
+# ---- SYMBOL CITATIONS (CC0.b, docs/completed/task-code-comments-2026-10.md) ----
 #
 # A live doc names a declaration, not a line: `decoder/forwardn.go:Model.forwardN`, `gpu/residency.go:residentDecoder.PrefillLast`,
 # `scripts/x.py:Tool.run`. The check is that the file DECLARES that name. It survives every edit that does not rename the declaration
@@ -867,7 +867,9 @@ def _git_show(commit: str, rel: str):
 def modules_at(commit: str):
     """{module: version} the aikit modules goinfer required AT that commit — what the record's aikit paths were about."""
     out = {}
-    for mod_file, want in (("go.mod", "github.com/townsendmerino/aikit"), ("cuda/go.mod", "github.com/townsendmerino/aikit/gpu")):
+    for mod_file, want in (("go.mod", "github.com/townsendmerino/aikit"),
+                           ("cuda/go.mod", "github.com/townsendmerino/aikit/gpu"),
+                           ("backend/cuda/go.mod", "github.com/townsendmerino/aikit/gpu")):
         t = _git_show(commit, mod_file)
         if t is None:
             continue
@@ -877,14 +879,52 @@ def modules_at(commit: str):
     return out
 
 
+_PSEUDO_VER_RE = re.compile(r"^v\d+\.\d+\.\d+-(?:0\.|\d+\.)?\d{14}-([0-9a-f]{12})(?:\+incompatible)?$")
+
+
+def _aikit_sibling_repo():
+    for r in sibling_repos():
+        if pathlib.Path(r) != ROOT.resolve() and repo_name(r) == "aikit" and (pathlib.Path(r) / ".git").exists():
+            return str(r)
+    return None
+
+
+def _aikit_git_file_at(mod: str, ver: str, rel: str):
+    """Resolve (mod, ver, rel) from the sibling aikit git checkout when GOMODCACHE does not hold mod@ver.
+    Returns (searched: bool, text: str | None)."""
+    repo = _aikit_sibling_repo()
+    if repo is None:
+        return False, None
+    m = _PSEUDO_VER_RE.match(ver)
+    if m:
+        ref = m.group(1)
+    elif mod.endswith("/gpu"):
+        ref = f"gpu/{ver}"
+    else:
+        ref = ver
+    chk = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
+                         capture_output=True, text=True, cwd=repo, env=_repo_env())
+    if chk.returncode != 0:
+        return False, None
+    if mod.endswith("/gpu"):
+        git_rel = f"gpu/{rel}"
+    elif rel.startswith("gpu/"):
+        return True, None
+    else:
+        git_rel = rel
+    r = subprocess.run(["git", "show", f"{ref}:{git_rel}"], capture_output=True, cwd=repo, env=_repo_env())
+    return True, (r.stdout.decode("utf-8", "replace") if r.returncode == 0 else None)
+
+
 class CannotSearch(Exception):
     """A module the commit required is not in the module cache: the search did not happen, so the answer is not 'absent'."""
 
 
 def file_at(commit: str, rel: str):
     """(label, text) of `rel` as it was at `commit`: this repo first, then the aikit module(s) at the version that commit's go.mod
-    required, read from the module cache. None when the file existed in neither. Raises CannotSearch when it was not found AND a
-    required module is not downloaded — a missing download is not an absence, and calling it one would be a green that covers nothing.
+    required, read from the module cache (or the sibling aikit git repository at that exact tag/commit when the module cache does not
+    hold it). None when the file existed in neither. Raises CannotSearch when it was not found AND a required module cannot be searched
+    — a missing download is not an absence, and calling it one would be a green that covers nothing.
 
     This repo wins when a path exists in both: a goinfer record cites goinfer first, and the live-doc resolver's aikit-first order
     exists to pin versions, which a commit already does."""
@@ -901,10 +941,16 @@ def file_at(commit: str, rel: str):
         PINNED_MODULES_NEEDED.update(f"{mod}@{ver}" for mod, ver in mods.items())  # all of them, whatever is cached here
         for mod, ver in mods.items():
             d = modcache_dir(mod, ver)
-            if d is None:
+            if d is not None:
+                if (d / rel).is_file():
+                    hit = (repo_name(d), (d / rel).read_text(errors="replace"))
+                    break
+                continue
+            searched, txt = _aikit_git_file_at(mod, ver, rel)
+            if not searched:
                 missing.append(f"{mod}@{ver}")
-            elif (d / rel).is_file():
-                hit = (repo_name(d), (d / rel).read_text(errors="replace"))
+            elif txt is not None:
+                hit = (mod.rstrip("/").split("/")[-1], txt)
                 break
         if hit is None and missing:
             raise CannotSearch(f"{rel} is not in this repository at {commit[:10]}, and the module(s) it may belong to are not downloaded: "

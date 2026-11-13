@@ -25,7 +25,7 @@ demo/chat/dist/
 !testdata/mixtral-tiny/
 !testdata/mixtral-tiny/model.safetensors
 # EXCEPTION: decoder/selftestdata holds copies of three tiny deterministic checkpoints (testdata/phi3-tiny, gemma3-vl-tiny, qwen35-tiny; a test asserts they
-# stay byte-identical) that are EMBEDDED into the binary for the startup GPU self-test (docs/tasks/task-hardware-coverage-2026-10.md, H2). Unlike a test
+# stay byte-identical) that are EMBEDDED into the binary for the startup GPU self-test (docs/completed/task-hardware-coverage-2026-10.md, H2). Unlike a test
 # fixture, a missing file here is a build error (go:embed), so an ignored one would fail CI loudly rather than skip silently.
 !decoder/selftestdata/
 !decoder/selftestdata/*/
@@ -217,7 +217,7 @@ testdata/*-awq
 # tokenizer/config JSONs are not, so ignore the whole dirs; the *_golden.json in testdata/ stay tracked.
 testdata/tiny-qwen2-moe/
 # Gemma 4 E-model tiny fixture: 9.4 MB, regenerated per machine by scripts/pin_gemma4_emodel_tiny.py and fingerprinted
-# in testdata/fixture_identity.json (docs/tasks/task-multimodal-support-2026-10.md). Ignored as a whole directory: with
+# in testdata/fixture_identity.json (docs/completed/task-multimodal-support-2026-10.md). Ignored as a whole directory: with
 # only *.safetensors ignored, its config.json showed as untracked forever.
 testdata/gemma4-emodel-tiny/
 # Per-machine real-checkpoint fixtures for the §C1 sweep's forward-parity and tokenizer gates.
@@ -333,6 +333,13 @@ decoder/testdata/laguna-*-tiny/*.py
 decoder/testdata/.spark2-5-code/
 decoder/testdata/spark2-5-tiny/*.py
 !decoder/testdata/spark2-5-tiny/model.safetensors
+
+# Flint (flint) tiny fixture (~1.5 MB, scripts/pin_flint_tiny.py): weights and config.json are
+# tracked so the T1 forward and window-boundary gates run in CI; the fetched upstream
+# transformers PR #49824 modeling files stay in decoder/testdata/.flint-code/ (ignored).
+decoder/testdata/.flint-code/
+!testdata/flint-tiny/
+!testdata/flint-tiny/model.safetensors
 
 # Laguna real-weight SLICE fixtures (scripts/pin_laguna_slice.py). ~6GB each: real
 # checkpoint layers, regenerable from a local XS.2/XS-2.1 copy. Only the goldens

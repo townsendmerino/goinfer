@@ -11,7 +11,7 @@ import (
 
 func init() { decoder.RegisterHardwareInfo("webgpu", webgpuHardwareInfo) }
 
-// webgpuHardwareInfo is the adapter facts `check --hardware` prints for the WebGPU backend (docs/tasks/task-hardware-coverage-2026-10.md, H3). It opens an adapter only when asked, and says so
+// webgpuHardwareInfo is the adapter facts `check --hardware` prints for the WebGPU backend (docs/completed/task-hardware-coverage-2026-10.md, H3). It opens an adapter only when asked, and says so
 // plainly when there is none. WebGPU does not expose VRAM size or the driver version, so the report says it cannot report them rather than leaving the gap unexplained. The adapter's name is the
 // GPU model, not a machine identifier.
 func webgpuHardwareInfo() []string {

@@ -20,7 +20,7 @@ const (
 )
 
 // Shape is the layer shape a resident's dense layer body dispatches on (OP4m-b1 and OP4cu-b1,
-// docs/tasks/task-forward-architecture-2026-10.md §4.9 and §4.9a): the norm placement, the parallel block, the FFN's form, the
+// docs/completed/task-forward-architecture-2026-10.md §4.9 and §4.9a): the norm placement, the parallel block, the FFN's form, the
 // norm's form, the QK-norm and its reach, the output projection's bias and learned positions. Each is a model-level flag because
 // the encoders take them at that level.
 type Shape struct {

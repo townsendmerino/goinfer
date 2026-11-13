@@ -1,6 +1,6 @@
 //go:build realckpt
 
-// G-S5b of docs/tasks/task-multimodal-support-2026-10.md (S5, registered before this ran): Gemma 4 E2B on an audio
+// G-S5b of docs/completed/task-multimodal-support-2026-10.md (S5, registered before this ran): Gemma 4 E2B on an audio
 // prompt, goinfer's float32 CPU prefill against transformers' Gemma4ForConditionalGeneration in float32. Three steps, so
 // the same ids reach both sides (run on a box that holds E2B in float32 twice over, about 20 GB each: nobara):
 //

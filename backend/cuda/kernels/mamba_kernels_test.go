@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mamba2"
 )
 
-// OP2b on CUDA, gate K (docs/tasks/task-forward-architecture-2026-10.md §4.7, "OP2b on CUDA"): the Mamba-2 gated norm against
+// OP2b on CUDA, gate K (docs/completed/task-forward-architecture-2026-10.md §4.7, "OP2b on CUDA"): the Mamba-2 gated norm against
 // internal/mamba2's grouped norm, and the squared-ReLU quantize against the CPU's rule, on seeded inputs. The chain test over the
 // tiny fixtures' real per-token inputs stays in package cuda (cuda/mamba_kernels_test.go), which captures them from a decoder
 // forward.

@@ -92,8 +92,9 @@ type fitCheck struct {
 	effCtx int  // the context KV was priced at: opts.ResidentContext if pinned, else cfg.MaxPositions
 	pinned bool // true when the caller explicitly requested effCtx (an explicit request that
 	// cannot be honoured is refused, never silently downgraded)
-	kvF16 bool
-	kvI8  bool
+	kvF16   bool
+	kvI8    bool
+	metalKV string // kvPrice.metalKV
 
 	// denseStreamable is true when a -stream-weights retry after this refusal would engage
 	// decoder/layerpaging.go's windowed dense pager — see denseStreamable(cfg)'s own doc comment.
@@ -126,11 +127,16 @@ func (f fitCheck) check() mem.HostCheck {
 	if f.quant != "int4" && f.quant != "int4mix" {
 		l.Int4Smaller = quantBytesPerElem(quantInt4) < quantBytesPerElem(quantInt8)
 	}
-	if cfg, f16, i8 := f.cfg, f.kvF16, f.kvI8; cfg != nil {
-		l.MaxCtx = cfg.MaxPositions
-		l.KV = func(ctx int) int64 { return estimateKVBytes(cfg, ctx, f16, i8) }
+	if f.cfg != nil {
+		l.MaxCtx = f.cfg.MaxPositions
+		l.KV = f.kvAt
 	}
 	return mem.NewHostCheck(l, mem.HostMachine(f.availBytes), mem.DefaultPolicy())
+}
+
+// kvAt is the KV f prices at ctx positions, the one function its own figure and every re-pricing at another context read.
+func (f fitCheck) kvAt(ctx int) int64 {
+	return kvPrice{kvF16: f.kvF16, kvI8: f.kvI8, metalKV: f.metalKV}.bytes(f.cfg, ctx)
 }
 
 const fitGB = 1 << 30
@@ -195,7 +201,7 @@ func (f fitCheck) decide() (pinCtx int, decline *FitDeclineError) {
 	return pin, fitDecline(d)
 }
 
-// giwMemMargin is the flat margin guardGIWFit leaves against the live availability probe (docs/tasks/task-never-swap-2026-09.md, item 1).
+// giwMemMargin is the flat margin guardGIWFit leaves against the live availability probe (docs/completed/task-never-swap-2026-09.md, item 1).
 // A .giw load's weights are file-backed (zero-copy aliases, evictable under memory pressure), so it deliberately does not reuse
 // fitMemFraction's 70% conservatism, which is sized for a load that commits anonymous memory for its weights; only KV and scratch are real
 // anonymous cost here.
@@ -248,13 +254,12 @@ func decideGIWFitAt(cfg *Config, opts Options, read func() int64) giwFit {
 	if avail <= 0 {
 		return d
 	}
-	p, ok := kvPricingFor(cfg, opts) // what the load will allocate: Metal's f16 at its default context, or the CPU's ceiling
+	p, ok := kvPricingFor(cfg, opts) // what the load will allocate: Metal's pools at its default context, or the CPU's ceiling
 	if !ok {
 		return d // no pin and the model's own max is unknown ⇒ can't price KV; proceed
 	}
-	kvF16, kvI8 := p.kvF16, p.kvI8
 	r := mem.SolveGIW(mem.GIWLoad{Ctx: p.ctx, Pinned: p.pinned, DeviceKV: p.deviceKV, Scratch: prefillAttnScratchBudget,
-		PinnedExperts: giwPinnedExpertBytes(cfg, opts), KV: func(ctx int) int64 { return estimateKVBytes(cfg, ctx, kvF16, kvI8) }},
+		PinnedExperts: giwPinnedExpertBytes(cfg, opts), KV: func(ctx int) int64 { return p.bytes(cfg, ctx) }},
 		mem.HostMachine(avail), mem.DefaultPolicy())
 	return giwFit{known: r.Known, avail: r.Avail, budget: r.Budget, need: r.Need, pinnedExperts: r.PinnedExperts, ctx: r.Ctx,
 		pinned: r.Pinned, pinCtx: r.PinCtx, err: r.Err, note: r.Note}
@@ -418,6 +423,11 @@ func estimateSafetensorsWeightBytes(dir string, q quantMode) int64 {
 	r.Matrix = quantBytesPerElem(q)
 	// The token embedding and LM head are held at q.embedding() (int8 under int4), not at q.
 	r.Embedding = quantBytesPerElem(q.embedding())
+	if cfg, cerr := loadConfig(os.DirFS(dir), "config.json"); cerr == nil {
+		if qc, qerr := parseCheckpointQuantConfig(cfg); qerr == nil && qc != nil && qc.Method == "mlx" {
+			r.MLXBits = qc.Bits
+		}
+	}
 	return fit.SafetensorsWeightBytes(st.Names(), func(name string) ([]int, bool) {
 		t, err := st.Tensor(name)
 		if err != nil {
@@ -539,7 +549,7 @@ func (f fitCheck) priceCtxAndKV(cfg *Config, opts Options) fitCheck {
 	if !ok {
 		return f // no pin and the model's own max is unknown ⇒ can't price KV; proceed as before
 	}
-	f.effCtx, f.kvF16, f.kvI8 = p.ctx, p.kvF16, p.kvI8
+	f.effCtx, f.kvF16, f.kvI8, f.metalKV = p.ctx, p.kvF16, p.kvI8, p.metalKV
 	if p.deviceKV {
 		f.deviceKV = true
 		if f.cudaBuildBytes == 0 {
@@ -547,7 +557,7 @@ func (f fitCheck) priceCtxAndKV(cfg *Config, opts Options) fitCheck {
 		}
 		return f
 	}
-	f.kvBytes = estimateKVBytes(cfg, f.effCtx, f.kvF16, f.kvI8)
+	f.kvBytes = f.kvAt(f.effCtx)
 	return f
 }
 
@@ -556,19 +566,33 @@ type kvPrice struct {
 	ctx         int
 	pinned      bool
 	kvF16, kvI8 bool
-	metalSizing bool // priced as the Metal resident will allocate, not at the CPU's per-request ceiling
-	deviceKV    bool // the load will be CUDA-resident: its KV is in VRAM, so a host guard prices none of it (ctx is still the context in play)
+	metalSizing bool   // priced as the Metal resident will allocate, not at the CPU's per-request ceiling
+	metalKV     string // the precision a Metal resident's pools hold (ResolveKV), set with metalSizing when the architecture resolves
+	deviceKV    bool   // the load will be CUDA-resident: its KV is in VRAM, so a host guard prices none of it (ctx is still the context in play)
+}
+
+// bytes is the KV p prices at ctx positions of cfg: one slot of Metal's pools where p.metalKV names their precision, else the CPU
+// cache (estimateKVBytes).
+func (p kvPrice) bytes(cfg *Config, ctx int) int64 {
+	if p.metalKV != "" {
+		if arch, _, err := resolveArchitecture(cfg); err == nil && arch != nil {
+			return metalKVBytesFor(arch, ctx, p.metalKV)
+		}
+	}
+	return estimateKVBytes(cfg, ctx, p.kvF16, p.kvI8)
 }
 
 // kvPricingFor is what both host guards (priceCtxAndKV for .gguf/safetensors, guardGIWFit for .giw) price KV at: what the load will
 // actually allocate.
 //
 //   - A load that will be Metal-resident (Metal compiled in, the resolved backend, and the architecture inside Metal's feature gate) is
-//     priced at f16, or at f32 where ResolveKV delivers f32 there (an int8 cache stays priced at f16, above what it allocates), for
-//     MetalCtxDefault positions unless the caller pinned a context, clamped to the model's window.
-//     Pricing it at Options.KVPrecision over the whole window would refuse or pin down a load that fits.
-//   - Every other load: the CPU allocates KV per request, at Options.KVPrecision, up to the window, and that ceiling is what a long
-//     request reaches.
+//     priced as one slot of Metal's pools (metalKVBytesFor): the precision ResolveKV delivers there and the full padded context on
+//     every attention layer, sliding ones included, for MetalCtxDefault positions unless the caller pinned a context, clamped to the
+//     model's window. Pricing it at Options.KVPrecision over the whole window would refuse or pin down a load that fits.
+//   - A load that will be CUDA-resident holds its KV on the device (deviceKV), which the host guards do not price.
+//   - Every other load allocates KV per request, up to the window, and that ceiling is what a long request reaches. A CPU load, and a
+//     Metal or CUDA load that backend does not take (not compiled, streamed, or outside its gate), hold it in the CPU cache at the
+//     precision ResolveKV("cpu") delivers (Options.KVQuant's, where the family allows it).
 //
 // A Metal resident that then declines for memory falls back to the CPU, whose per-request KV this no longer prices at load. The weights
 // term is unchanged by that fallback, and serve's -require-backend refuses rather than fall back.
@@ -577,13 +601,6 @@ type kvPrice struct {
 func kvPricingFor(cfg *Config, opts Options) (p kvPrice, ok bool) {
 	p.pinned = opts.ResidentContext > 0
 	p.kvF16, p.kvI8 = opts.KVPrecision == "f16", opts.KVQuant == "i8"
-	if opts.Backend == "" || opts.Backend == "cpu" { // the CPU cache's precision is KVQuant's, where the family allows it (ResolveKV)
-		p.kvF16 = false
-		if arch, _, err := resolveArchitecture(cfg); err == nil {
-			got, _ := ResolveKV("cpu", arch, opts)
-			p.kvF16 = got == kvPrecF16
-		}
-	}
 	if _, ok := kvPolicies[opts.Backend]; ok {
 		// A backend with a KV policy is f16 only where ResolveKV says so (the default included), else f32 whatever was requested.
 		p.kvF16 = false
@@ -594,11 +611,10 @@ func kvPricingFor(cfg *Config, opts Options) (p kvPrice, ok bool) {
 	}
 	d := buildDemandFor(cfg, opts, 0, 0, false)
 	if opts.Backend == "metal" && d.Resident {
-		p.metalSizing, p.kvF16 = true, true
+		p.metalSizing, p.kvF16, p.kvI8 = true, true, false
 		if arch, _, err := resolveArchitecture(cfg); err == nil {
-			// An explicit --kv f32: 4 B per element.
-			if got, _ := ResolveKV("metal", arch, opts); got == kvPrecF32 {
-				p.kvF16, p.kvI8 = false, false
+			if got, _ := ResolveKV("metal", arch, opts); got != "" {
+				p.metalKV, p.kvF16, p.kvI8 = got, got == kvPrecF16, got == kvPrecI8
 			}
 		}
 		p.ctx = MetalCtxDefault
@@ -611,6 +627,18 @@ func kvPricingFor(cfg *Config, opts Options) (p kvPrice, ok bool) {
 		return p, true
 	}
 	p.deviceKV = d.KVOnDevice
+	switch opts.Backend {
+	case "", "cpu", "metal", "cuda":
+		if p.deviceKV {
+			break
+		}
+		// No resident runner holds this KV, so the CPU cache does, at KVQuant's precision where the family allows it (ResolveKV).
+		p.kvF16 = false
+		if arch, _, err := resolveArchitecture(cfg); err == nil {
+			got, _ := ResolveKV("cpu", arch, opts)
+			p.kvF16 = got == kvPrecF16
+		}
+	}
 	switch {
 	case p.pinned:
 		p.ctx = opts.ResidentContext

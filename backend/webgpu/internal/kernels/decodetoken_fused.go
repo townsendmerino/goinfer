@@ -101,7 +101,9 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 		pass.SetPipeline(pl)
 		pass.SetBindGroup(0, bg, nil)
 		pass.DispatchWorkgroups(gx, gy, 1)
-		pass.TryEnd()
+		if e := pass.TryEnd(); e != nil {
+			buildErr = fmt.Errorf("gpu: DecodeTokenFused: pass: %w", e)
+		}
 		pass.Release()
 	}
 	// op shorthands recording into enc:
@@ -142,7 +144,9 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 		if buildErr != nil || src == nil || cache == nil {
 			return
 		}
-		enc.TryCopyBufferToBuffer(src, 0, cache, uint64(pos*kvDim*4), uint64(kvDim*4))
+		if e := enc.TryCopyBufferToBuffer(src, 0, cache, uint64(pos*kvDim*4), uint64(kvDim*4)); e != nil {
+			buildErr = fmt.Errorf("gpu: DecodeTokenFused: KV copy: %w", e)
+		}
 	}
 
 	xd, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(x), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
@@ -151,7 +155,7 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 	}
 	keepBuf(xd)
 
-	// G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatAttnSink — always bound (WGSL bind groups can't
+	// G6 (docs/completed/task-gpu-paths-2026-09.md): FeatAttnSink — always bound (WGSL bind groups can't
 	// bind a null storage buffer); this test-only path never carries a real sink, so one shared
 	// harmless dummy + hasSink=0 for every layer, matching attnShaderWGSL's convention.
 	noSinks := storF(1)
@@ -203,7 +207,9 @@ func (c *Context) DecodeTokenFused(x []float32, m ModelW, hidden, nH, nKV, hd, i
 		return nil, err
 	}
 	defer releaseBuf(stag)
-	enc.TryCopyBufferToBuffer(logits, 0, stag, 0, uint64(m.LMHead.rows*4))
+	if err := enc.TryCopyBufferToBuffer(logits, 0, stag, 0, uint64(m.LMHead.rows*4)); err != nil {
+		return nil, fmt.Errorf("gpu: DecodeTokenFused: logits copy: %w", err)
+	}
 	cmd, err := enc.TryFinish(nil)
 	if err != nil {
 		return nil, err

@@ -1,4 +1,4 @@
-// Package whisper is a pure-Go Whisper decoder: the cross-attention transformer that turns aikit's Whisper encoder output into text (docs/tasks/task-multimodal-support-2026-10.md, S14.4c, G-S14f).
+// Package whisper is a pure-Go Whisper decoder: the cross-attention transformer that turns aikit's Whisper encoder output into text (docs/completed/task-multimodal-support-2026-10.md, S14.4c, G-S14f).
 // float32 on the CPU, greedy, one 30 s window; the encoder, the log-mel features and the weights reader are aikit's. It follows transformers' WhisperDecoder.
 package whisper
 

@@ -3,6 +3,7 @@ package tokenizer
 import (
 	"math/rand"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"unicode"
@@ -155,6 +156,29 @@ func TestSplitO200k_isLossless(t *testing.T) {
 		s := string(b)
 		if joined := strings.Join(splitO200k(s), ""); joined != s {
 			t.Fatalf("not lossless: %q -> %q", s, joined)
+		}
+		if joined := strings.Join(splitFlint(s), ""); joined != s {
+			t.Fatalf("splitFlint not lossless: %q -> %q", s, joined)
+		}
+	}
+}
+
+func TestSplitFlint_threeStageSequence(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want []string
+	}{
+		{"Hello, world! 12345", []string{"Hello", ",", " world", "!", " ", "123", "45"}},
+		{" 日本語とひらがなとカタカナ 1234", []string{" ", "日本語とひらがなとカタカナ", " ", "123", "4"}},
+		{"hello日本語world", []string{"hello", "日本語", "world"}},
+		{"foo/bar/baz\n", []string{"foo", "/bar", "/baz", "\n"}},
+		{"a\u200b\u200b1", []string{"a", "\u200b\u200b", "1"}},
+		{" \u200bhello", []string{" ", "\u200bhello"}},
+		{"CamelCased HTTPRequest don't", []string{"Camel", "Cased", " HTTPRequest", " don't"}},
+	} {
+		got := splitFlint(tc.in)
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("splitFlint(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
 }

@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestUploadKV_perLayerGeometry is G-S12.0a (docs/tasks/task-multimodal-support-2026-10.md, S12): the procedure of
+// TestUploadKV_perLayerGeometry is G-S12.0a (docs/completed/task-multimodal-support-2026-10.md, S12): the procedure of
 // TestUploadKV_matchesSequentialForward on a model whose layers do not share one attention geometry. The tiny dense
 // Gemma 4 has a sliding layer (head_dim 16, window 4) and a global one (head_dim 512), so an upload that sizes or
 // groups a layer's rows by the model's geometry is wrong on one of them. Both prompt lengths are run: one inside the

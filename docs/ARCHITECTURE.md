@@ -111,7 +111,7 @@ experts and the shared expert.
   routed scaling factor.
 - **The top k experts** run as gated MLPs.
 - **An optional always-on shared expert** is added on top. It is sigmoid-gated (Qwen-MoE) or
-  ungated (GLM, DeepSeek).
+  ungated (GLM, DeepSeek, Laguna, Flint).
 
 Granite's fused expert tensors are split per expert at load, so `moeMLP` never sees them. Four
 families bring their own MoE FFN inside their own layer loop: gpt-oss, Llama 4, Nemotron 3 Nano and
@@ -127,8 +127,8 @@ primitive is chosen per layer (`isLinearLayer`, `isMambaLayer`, `isConvLayer`, N
 kind). Its state lives in the same `KVCache` (`decoder/kvcache.go`) beside ordinary K/V. The
 capability matrix files each family under one class (its `coverage_axis`).
 
-**softmax-GQA** — 27 families, among them Llama, Qwen 2/2.5/3 and their MoE and VL variants, Mistral,
-Mixtral, Gemma 3 and 4, Phi, GPT-2, gpt-oss and GLM-4.5/4.6.
+**softmax-GQA** — 28 families, among them Llama, Qwen 2/2.5/3 and their MoE and VL variants, Mistral,
+Mixtral, Gemma 3 and 4, Phi, GPT-2, gpt-oss, GLM-4.5/4.6, Laguna and Flint.
 - Cached per layer: K and V.
 - Code: the generic loop (`decoder/model.go`), or an own loop (below).
 
@@ -565,7 +565,7 @@ it priced. The **`fit` subcommand** (`goinfer-chat fit <model>`) loads the model
 placement for every backend compiled into the binary. `-measure` also times decode on the best one.
 
 **Each memory quantity is computed in one place**, so the planner and the guards cannot disagree
-([tasks/task-memory-accounting-2026-09.md](tasks/task-memory-accounting-2026-09.md)):
+([tasks/task-memory-accounting-2026-09.md](completed/task-memory-accounting-2026-09.md)):
 
 - `Model.ResidentKVBytes(backend, ctx, f16, i8)`: the KV cache as that backend allocates it (the
   table above). Pinned against the real allocations on CUDA and Metal.
@@ -1086,7 +1086,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `apps/examples/structured` | `chat`, `constrain`, `decoder`, `tokenizer` |  |
 | `apps/sdktest` |  | `server` |
 | `apps/site/cmd/build` | `site/internal/site` |  |
-| `backend/cuda` | `backend/cuda/internal/gpudev`, `backend/cuda/internal/launchgeom`, `backend/cuda/internal/wpack`, `decoder`, `decoder/fit`, `internal/audio`, `internal/cost`, `internal/runtime/logs`, `internal/runtime/mem`, `internal/runtime/program`, `internal/runtime/sampling`, `internal/vision`, `multimodal` | `chat`, `embeddinggemma2`, `internal/app/loadflags`, `internal/clef`, `internal/diag/sb2census`, `internal/diag/towerid`, `internal/guard/memgate`, `internal/runtime/giw`, `internal/runtime/mem/probe`, `internal/runtime/modelload`, `internal/runtime/whisper`, `internal/wrappedupload`, `tokenizer` |
+| `backend/cuda` | `backend/cuda/internal/fitdecide`, `backend/cuda/internal/gpudev`, `backend/cuda/internal/launchgeom`, `backend/cuda/internal/wpack`, `decoder`, `decoder/fit`, `internal/audio`, `internal/cost`, `internal/runtime/logs`, `internal/runtime/mem`, `internal/runtime/program`, `internal/runtime/sampling`, `internal/vision`, `multimodal` | `chat`, `embeddinggemma2`, `internal/app/loadflags`, `internal/clef`, `internal/diag/sb2census`, `internal/diag/towerid`, `internal/guard/memgate`, `internal/runtime/giw`, `internal/runtime/mem/probe`, `internal/runtime/modelload`, `internal/runtime/whisper`, `internal/wrappedupload`, `tokenizer` |
 | `backend/cuda/cmd/chat` | `backend/cuda`, `internal/app/chatapp` |  |
 | `backend/cuda/cmd/serve` | `backend/cuda`, `internal/app/serveapp` |  |
 | `backend/cuda/internal/qwencuda` | `backend/cuda/internal/gpudev`, `internal/runtime/mem`, `internal/vision` |  |
@@ -1108,8 +1108,9 @@ Every import from one goinfer package to another, by repository-relative directo
 | `cmd/hostmem` | `internal/runtime/mem/probe` |  |
 | `cmd/prequant` | `decoder`, `internal/runtime/prequant` |  |
 | `cmd/serve` | `internal/app/serveapp` |  |
+| `cmd/testcmdtags` | `internal/guard/testcmdtags` |  |
 | `constrain` |  | `tokenizer` |
-| `decoder` | `chat`, `constrain`, `decoder/config`, `decoder/fit`, `internal/cost`, `internal/runtime/adapter`, `internal/runtime/diskfree`, `internal/runtime/f16`, `internal/runtime/giw`, `internal/runtime/hybridattn`, `internal/runtime/kvmgr`, `internal/runtime/logs`, `internal/runtime/mamba2`, `internal/runtime/mem`, `internal/runtime/mem/probe`, `internal/runtime/program`, `internal/runtime/sampling`, `tokenizer` | `internal/audio`, `internal/diag/sb2census`, `internal/fidelity`, `internal/guard/paritykey`, `internal/vision`, `multimodal` |
+| `decoder` | `chat`, `constrain`, `decoder/config`, `decoder/fit`, `decoder/quant`, `internal/cost`, `internal/runtime/adapter`, `internal/runtime/diskfree`, `internal/runtime/f16`, `internal/runtime/giw`, `internal/runtime/hybridattn`, `internal/runtime/kvmgr`, `internal/runtime/logs`, `internal/runtime/mamba2`, `internal/runtime/mem`, `internal/runtime/mem/probe`, `internal/runtime/program`, `internal/runtime/sampling`, `tokenizer` | `internal/audio`, `internal/diag/sb2census`, `internal/fidelity`, `internal/guard/paritykey`, `internal/vision`, `multimodal` |
 | `decoder/fit` | `internal/runtime/mem` |  |
 | `demo/agent/agent` | `chat`, `constrain`, `decoder`, `multimodal`, `tokenizer` |  |
 | `demo/agent/cmd/agent-web` | `backend/webgpu`, `demo/agent/agent`, `demo/agent/internal/embedmodel` |  |
@@ -1151,6 +1152,7 @@ No import, made or recorded, may break one; they are edited by hand in `imports.
 |---|---|---|---|
 | fit-leaf | `decoder/fit`, tests included | any goinfer package; (`decoder/fit` may import `internal/runtime/mem`) | decoder/fit (Tier 3, docs/layout.md) holds the fit guard's and the planner's exchange types so a caller can name them without importing the loader. It sits below decoder, which re-exports them: it imports internal/runtime/mem and no other goinfer package, decoder included. |
 | config-leaf | `decoder/config`, tests included | any goinfer package | decoder/config holds a checkpoint's Config, its validators and its loader, so they test in seconds without compiling decoder (DC1, docs/completed/task-decoder-config-2026-11.md). It sits below decoder, which aliases Config: it imports no goinfer package, decoder included. |
+| quant-leaf | `decoder/quant`, tests included | any goinfer package | decoder/quant (Tier 3, docs/layout.md) parses safetensors checkpoint quantization configs and reconstructs FP8, GPTQ, AWQ, NVFP4 and MLX quantized weights behind Reconstructor/RowStreamReconstructor. It sits below decoder and imports no goinfer package, decoder included. |
 | towers-standalone | `internal/vision`, `internal/audio`, tests included | any goinfer package; (`internal/audio` may import `internal/vision`); anything outside the standard library but `github.com/townsendmerino/aikit/linalg`, `github.com/townsendmerino/aikit/embed` | The towers moved from aikit (AX) as model semantics over aikit's kernels: no goinfer package, and from outside the standard library only aikit's linalg and embed. One exception: internal/audio may import internal/vision, whose tower program type the audio towers walk (Francis, 2026-10-29). |
 | gpudev-standalone | `backend/cuda/internal/gpudev`, `backend/metal/internal/gpudev`, tests included | any goinfer package | The device substrate (AX) sits under every backend package and imports none of them, nor anything else of goinfer's. |
 | kernels-free-of-decoder | `backend/cuda/kernels`, `backend/metal/kernels`, `backend/webgpu/internal/kernels`, tests included | `decoder` | Backend kernel tests left the packages that import decoder (SB1 step 1) so a decoder edit stops re-running them. |

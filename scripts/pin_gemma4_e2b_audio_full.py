@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S5b's reference (docs/tasks/task-multimodal-support-2026-10.md, S5): transformers' Gemma4ForConditionalGeneration,
+"""G-S5b's reference (docs/completed/task-multimodal-support-2026-10.md, S5): transformers' Gemma4ForConditionalGeneration,
 float32, on goinfer's own prompt ids for the mid clip (decoder/gemma4_audio_e2b_real_test.go, step "ids", writes
 <out>/ids.json) and the clip's log-mel from Gemma4AudioFeatureExtractor (its defaults equal E2B's processor config,
 checked by pin_gemma4_e2b_audio.py). Writes <out>/hf_last_logits.f32 (float32 little-endian, the vocabulary) and

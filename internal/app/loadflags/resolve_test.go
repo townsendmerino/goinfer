@@ -73,7 +73,7 @@ func parsed(t *testing.T, app App, args []string) *Flags {
 	return f
 }
 
-// TestOptions_golden is G-SB10-9 (docs/tasks/task-subsystems-2026-10.md § "Step 3a's gates"): Options over the case
+// TestOptions_golden is G-SB10-9 (docs/completed/task-subsystems-2026-10.md § "Step 3a's gates"): Options over the case
 // table, auto resolved to each case's machine, is the golden recorded before Resolve existed.
 func TestOptions_golden(t *testing.T) {
 	t.Setenv("GOINFER_GGUF_DIRECT", "")

@@ -176,7 +176,7 @@
 | MC4-adapter | blocked | trigger: a real multi-adapter workload | "MC4 — broadening" below |
 | P10-metal | decision | Francis: pick it up (step 0, the drafter trunk's Metal cost, by day) or kill it | `docs/measurements/p10-metal-projection-2026-09-28.md` |
 | 413-e2e | open | re-run the 7B MC3 batch cells on a Mac that is not swapping, or close it as covered by the unit test | `internal/app/serveapp/prefill_share_testhooks_test.go:TestPrepare_prefillShare` |
-| W7-vulkan | open | optional, reported only (item 29) | `docs/prompts/nobara-mc1-webgpu-2026-09.md` §5 |
+| W7-vulkan | open | optional, reported only (item 29) | `docs/completed/nobara-mc1-webgpu-2026-09.md` §5 |
 | LeverB | blocked | trigger: 7B-class concurrent CPU serving becomes a priority, or a peer row puts the batched CPU path behind | `docs/measurements/concurrency-mc3c-s1-2026-09-27.md` |
 | J6 | blocked | trigger: more concurrently active conversations than `-kv-sessions` (8 or more on one model) | "MC1 — multi-slot resident KV", follow-on |
 | MC5-cb | blocked | trigger: Francis reverses the positioning | `docs/completed/task-forward-architecture-2026-10.md` §8 E6 (stays parked) |
@@ -337,7 +337,7 @@ Re-run J6's measurement once after MC1 ships; its 1.024× was taken against a si
   - An explicit `-ctx` is never shrunk.
 - The decoder suite was stopped before timing and re-run after it, by owner decision; no `decoder/` file changed.
 
-**What was built** (`9fddaf7e`; prompt `docs/prompts/nobara-mc1-cuda-2026-09.md`). The CUDA resident implements
+**What was built** (`9fddaf7e`; prompt `docs/completed/nobara-mc1-cuda-2026-09.md`). The CUDA resident implements
 `decoder.ResidentKVSlotter`; the decoder half is Metal's, unchanged. Each CUDA specific the prompt named was checked in
 the code:
 - **Storage.** A slot is a full copy of the per-layer f32 `kc`/`vc` set (one latent buffer for an MLA layer, nothing
@@ -415,7 +415,7 @@ control thrashes (3 / 3). The tagged CUDA suite: 171 pass, 0 fail.
 - The slowest turn at 4 clients falls from ~99 s to ~23.6 s. What remains is admission: WebGPU has no batch stepper,
   so generations still run one at a time.
 - Owed: the discrete-GPU clamp (a failed allocation plus the headroom probe) on real Vulkan hardware
-  (`docs/prompts/nobara-mc1-webgpu-2026-09.md`).
+  (`docs/completed/nobara-mc1-webgpu-2026-09.md`).
 - **Owner decision, 2026-09-27: slots before context on WebGPU too, in two steps.**
   - **Step 1, done (darwin):** `slotsBeforeContext` (`backend/webgpu/kv_slots.go`). When more than one slot is requested and
     the context is unpinned, the context gives up positions, down to 4096, until every slot fits under
@@ -1151,7 +1151,7 @@ lever to test," with a quantified ceiling: batching the head should move M=4 fro
   At M=4 (MC3's default slot count) the 7B lands at 2.34×, inside the 2.2–2.4× band the S0 predicted, and within
   0.07× of `PrefillLastNArgmax`'s own 2.41× ceiling — the head is now nearly as cheap as the argmax-only variant
   for every family this scoping covers.
-- **In-process, by day, per TE5(b)** (owner decision 2026-09-28, `docs/tasks/task-test-efficiency-2026-09.md`): a
+- **In-process, by day, per TE5(b)** (owner decision 2026-09-28, `docs/completed/task-test-efficiency-2026-09.md`): a
   resolved in-process kernel-speed result may be acted on by day, and this one resolves cleanly — real,
   bit-identical, and consistent across both models and every M tested. The served, end-to-end W7 number (how much
   of this reaches the 4-client aggregate) is queued for tonight, not assumed from the per-step figure above.
@@ -1482,7 +1482,7 @@ production's decode kernels run layer-major in one command buffer, so an extra v
       The other loops were checked the same day.
       - The block drafter (`--drafter`, CUDA) committed one position more than it wrote, so the next turn reused a
         stale one. It is fixed and pinned by `TestBlockSpecGenerate_commitsOnlyWrittenPositions`. ~~its CUDA check on
-        nobara is owed~~ — **run 2026-09-28** (item 30, `docs/prompts/nobara-cuda-spec-trailing-token-2026-09.md`):
+        nobara is owed~~ — **run 2026-09-28** (item 30, `docs/completed/nobara-cuda-spec-trailing-token-2026-09.md`):
         new `backend/cuda/spec_twoturn_test.go` on the real qwen3-4b + DFlash drafter, N ∈ {1, 17, 48}, both fixes together
         (the n-gram one too). 14/14 pass with the fixes in; reverted, n-gram is exactly one token short at every N
         and the block drafter's turn 2 visibly diverges at N=17/48 (N=1's stale position happens not to corrupt

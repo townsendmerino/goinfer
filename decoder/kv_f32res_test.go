@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// TestKVQuant_reservesNoF32 is F32R-G1 and RR-G1 (docs/tasks/task-memory-campaign-2026-10.md, MEM12-f32res and MEM12-ringres
+// TestKVQuant_reservesNoF32 is F32R-G1 and RR-G1 (docs/completed/task-memory-campaign-2026-10.md, MEM12-f32res and MEM12-ringres
 // gates): an f16 or int8 CPU cache built with a capacity hint holds no f32 K/V capacity on any layer, and a ring layer holds
 // none in any form; a global layer keeps its reservation in its own form; and the bytes the hint costs are the global layers'
 // reservation alone (within 1%), computed from the capacity each layer should hold, not read back from the cache.

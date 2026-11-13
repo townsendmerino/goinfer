@@ -1,6 +1,6 @@
 package main
 
-// `gate identity -record FILE` (TE6(b), docs/tasks/task-test-efficiency-2026-09.md): a family's validation may
+// `gate identity -record FILE` (TE6(b), docs/completed/task-test-efficiency-2026-09.md): a family's validation may
 // be inherited by identity. It writes PARITY_ROW lines for the decoder package's TestParityManifest_merge, the
 // manifest's one writer, and never writes the manifest itself.
 //

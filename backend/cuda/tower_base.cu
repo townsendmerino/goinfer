@@ -1,4 +1,4 @@
-// tower_base.cu — the kernels the CUDA vision-tower base adds to aikit's gpu.ViT (S4 of docs/tasks/task-multimodal-support-2026-10.md).
+// tower_base.cu — the kernels the CUDA vision-tower base adds to aikit's gpu.ViT (S4 of docs/completed/task-multimodal-support-2026-10.md).
 //
 // aikit's ViT module already has the f32 GEMMs (with bias / bias+residual epilogues), LayerNorm, RMSNorm, GELU, scaled attention and a NeoX RoPE; what Gemma 4's
 // tower and the grid towers need beyond it is below: the patch embedder's two position tables, ClippableLinear's clamps, Gemma 4's axial 2-D RoPE, an elementwise
@@ -96,7 +96,7 @@ extern "C" __global__ void tower_rope_half(float* __restrict__ x, const float* _
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------------------------------------
-// tower_attn_hd{64,72,80}: S17 lever A (docs/tasks/task-multimodal-support-2026-10.md, "S17's CUDA lever A"): a fused, query-tiled, online-softmax float32 attention for the towers,
+// tower_attn_hd{64,72,80}: S17 lever A (docs/completed/task-multimodal-support-2026-10.md, "S17's CUDA lever A"): a fused, query-tiled, online-softmax float32 attention for the towers,
 // replacing aikit's AttentionTiled (which the step 0 profile measured at 0.12-0.14 TFLOPS, 92-95% of every tower's time). Non-causal, one segment per call (the caller offsets the
 // pointers), q/k/v/out all [T, nH*HD] with the heads in place, softmax(scale * q k^T) v.
 //

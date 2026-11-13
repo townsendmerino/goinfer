@@ -15,7 +15,7 @@ import (
 )
 
 // TestLoRAResidentParityWebGPU is the numeric gate for compute-time LoRA on this backend's
-// resident decode path (docs/tasks/task-gpu-paths-2026-09.md, G3): it must match the CPU
+// resident decode path (docs/completed/task-gpu-paths-2026-09.md, G3): it must match the CPU
 // reference (the same adapter applied via decoder's generic gatedMLP/causalAttention forward). It
 // mirrors metal/lora_resident_parity_test.go: same fixture (testdata/llama-tiny, GQA 4 heads/2 kv
 // heads so o-proj and the differently-widthed q/k/v sites are all genuinely exercised), same
@@ -41,7 +41,8 @@ func TestLoRAResidentParityWebGPU(t *testing.T) {
 		t.Fatalf("llama-tiny did not go resident (BuildResident refused) — decode path %q; decline: %s",
 			mRes.DecodePath(), mRes.ResidentDecline())
 	}
-	ra, ok := rf.(decoder.ResidentAdapter)
+	ra := decoder.SubsystemsOf(rf).Runtime
+	ok := ra.AdapterAvailable()
 	if !ok {
 		t.Fatalf("webgpu resident runner does not implement decoder.ResidentAdapter")
 	}

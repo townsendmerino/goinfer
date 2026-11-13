@@ -1,5 +1,5 @@
 #!/bin/bash
-# MC3 W7 grading (docs/tasks/task-concurrency-2026-09.md, pre-registered in 505cc6fc): Metal, qwen2.5-coder-1.5b int4,
+# MC3 W7 grading (docs/tasks/parked/task-concurrency-2026-09.md, pre-registered in 505cc6fc): Metal, qwen2.5-coder-1.5b int4,
 # serve defaults (-max-concurrent 4, -kv-sessions 4). old = serve-metal @ 9efc3185 (pre-MC3: a Metal resident serialises);
 # new = serve-metal @ d2225ec4 (MC3 + the straggler-window fix). --fixed-nonce so every turn's content_sha compares
 # across arms. Cells interleaved as registered; idle-gated per cell (load1 <= 2.0).

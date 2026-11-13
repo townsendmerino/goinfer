@@ -324,7 +324,7 @@ class TestHookGitDirDoesNotRedirectSiblingLookups(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------------------------------
-# CC0 (docs/tasks/task-code-comments-2026-10.md): symbol citations `path.go:Name`, pinned records
+# CC0 (docs/completed/task-code-comments-2026-10.md): symbol citations `path.go:Name`, pinned records
 # `<!-- citations-at: <commit> -->`, and the closing of the path:line door. Mutation-checked: each
 # red case below is a mistake someone will make, and each green case is an edit that used to cost a
 # citation re-point and must not any more.
@@ -727,6 +727,30 @@ class TestPinnedDocs(_LintRepo):
         c = _git_commit_all(self.repo, "go.mod pins aikit v9.9.9")
         self.doc(self.pinned("see `linalg/quant.go:3`\n", commit=c))
         self.assertRed("CANNOT SEARCH", "go mod download")
+
+    def test_aikit_path_in_a_pinned_doc_resolves_from_sibling_git_repo_when_modcache_cold(self):
+        self.write("go.mod", "module example.com/goinfer\n\ngo 1.22\n\nrequire github.com/townsendmerino/aikit v9.9.9\n")
+        c = _git_commit_all(self.repo, "go.mod pins aikit v9.9.9")
+        with tempfile.TemporaryDirectory() as sib_td:
+            sib = os.path.join(sib_td, "aikit")
+            os.makedirs(os.path.join(sib, "linalg"))
+            _git(sib, "init", "-q")
+            _git(sib, "config", "user.email", "test@example.com")
+            _git(sib, "config", "user.name", "Test")
+            with open(os.path.join(sib, "linalg", "quant.go"), "w") as f:
+                f.write("package linalg\n\nfunc Quant() {}\n")
+            _git(sib, "add", "linalg/quant.go")
+            _git(sib, "commit", "-q", "-m", "add quant")
+            _git(sib, "tag", "v9.9.9")
+            orig_sib = qcl.sibling_repos
+            qcl.sibling_repos = lambda: [self.repo, sib]
+            qcl.PINNED_FILE_CACHE.clear()
+            try:
+                self.doc(self.pinned("see `linalg/quant.go:3`\n", commit=c))
+                self.assertGreen()
+            finally:
+                qcl.sibling_repos = orig_sib
+                qcl.PINNED_FILE_CACHE.clear()
 
     def test_pinned_modules_lists_what_the_pinned_records_need_and_nothing_else(self):
         # Two records pinned to commits that required different aikit versions; neither version is downloaded.

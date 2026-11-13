@@ -5,7 +5,7 @@ to plan and estimate the rest here; #731 (2026-11-07) merged this plan and nothi
 code is on `main` in goinfer or aikit). It is v0.26.0 work (`docs/releases/v0.25.0-plan.md` §7, §8), except that the plan
 pinned for v0.25.0 lists the Bonsai guard (LB0a) as cheap v0.25.0 work: which release takes LB0a is open. This doc replaces item C
 (NVFP4 read support) of `docs/tasks/task-fp4-formats.md`, which links here. Items A (a native MXFP4 CPU kernel), B (MXFP4
-beyond gpt-oss) and D (Blackwell FP4 tensor cores) stay there and are not this doc's subject. A likely first NVFP4 asset is
+beyond gpt-oss) and D (Blackwell FP4 tensor cores) stay there; LB7's MXFP4 half (rows MX0 to MX2) is decided here. A likely first NVFP4 asset is
 the Bolt E4B DFlash drafter (`nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16-DFlash-NVFP4`, named blocked on NVFP4 dequant in
 `docs/measurements/bolt-e4b-g0-2026-10.md`).
 
@@ -14,14 +14,14 @@ the Bolt E4B DFlash drafter (`nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16-DFlash-NV
 |---|---|---|---|
 | LB0a | open | the Bonsai guard: a named decline keyed on the GGUF metadata marking the Hadamard rotation, checked before any tensor read, tier 0 on a synthetic GGUF; settle whether Ollama's `Q2_0` Bonsai files are upstream Q2_0 or relabeled PQ2_0; release slot (v0.25.0 or v0.26.0) open | §2; `docs/next-models.md` "Bonsai-2: the format question changed" |
 | LB0b | open | count real files per format (NVFP4 safetensors and GGUF, IQ types in Unsloth dynamic quants, ModelOpt exports of models goinfer runs) | §1 |
-| LB0c | open | NVFP4 GGUF type id, block size and nibble order from `ggml-common.h` at a pinned llama.cpp build | §1 |
-| LB0d | open | ModelOpt's NVFP4 nibble order from its exporter | §1 |
-| LB1a | open | aikit NVFP4 dequant, safetensors form; tier 0 bit-exact against the ModelOpt formula | §1 |
-| LB1b | blocked | aikit NVFP4 dequant, GGUF type; tier 0 against gguf-py; needs LB0c | §1 |
-| LB2a | blocked | loader admission for ModelOpt safetensors (uint8 `[N,K/2]` + F8_E4M3 `[N,K/16]` + scalar fp32; a named load error otherwise); needs LB0d, LB1a | §1 |
-| LB2b | blocked | loader admission for the NVFP4 GGUF type; needs LB1b | §1 |
-| LB2c | open | fit: a `.weight` with a sibling `.weight_scale` counts N·K; skip `weight_scale`, `weight_scale_2`, `input_scale`; tier 0 on a synthetic index; independent of LB1 | §1; `decoder/fit/weights.go:SafetensorsWeightBytes` |
-| LB2d | blocked | tier 1: one small real NVFP4 file loads, and its first greedy tokens and per-layer hidden states match the reference; needs LB2a and the asset LB0b finds | §1 |
+| LB0c | done | NVFP4 GGUF type id (`GGML_TYPE_NVFP4 = 40`), 64-element super-block (4 × 16-element sub-blocks, `ue4m3` scales + 32 packed nibble bytes = 36 B/block, split `j`/`j+8` nibble order within each 16-element sub-block), plus companion `<name>.scale` `F32 [1]` tensor in `llama.cpp` PR `#21445` | `docs/measurements/flint-f0-2026-10.md` §4.1 |
+| LB0d | done | ModelOpt's NVFP4 nibble order from its exporter: sequential (`b & 0x0F` = even index `2j`, `b >> 4` = odd index `2j+1`), 16-element micro-blocks with `F8_E4M3` `weight_scale` `[N, K/16]` and scalar `F32` `weight_scale_2` | `docs/measurements/flint-f0-2026-10.md` §4.1; `decoder/nvfp4.go:nvfp4DequantRow` |
+| LB1a | done | NVFP4 safetensors dequant (`decoder/nvfp4.go:nvfp4DequantRow`, `decoder/mlx_safetensors.go:mlxDequantNVFP4Row`); tier 0 bit-exact against all 4,096 `e2m1 × e4m3` pairs and the ModelOpt formula | `decoder/nvfp4_mlx_test.go:TestNVFP4_e2m1TableAndExhaustiveE4M3` |
+| LB1b | open | aikit NVFP4 dequant, GGUF type (`GGML_TYPE_NVFP4 = 40`); tier 0 against gguf-py; companion `<name>.scale` tensor multiplication is already wired in `decoder/gguf.go:buildWeightsFromGGUF` | §1 |
+| LB2a | done | loader admission for ModelOpt NVFP4 safetensors (`uint8 [N,K/2]` + `F8_E4M3 [N,K/16]` + optional scalar fp32 `weight_scale_2`) and MLX quantized safetensors (`affine` 4/8-bit, `nvfp4`, `mxfp4`, plus 3-D `switch_mlp` experts) | `decoder/nvfp4.go:nvfp4Reconstruct`, `decoder/quant/mlx.go:MLXReconstruct2D`, `decoder/nvfp4_mlx_test.go` |
+| LB2b | blocked | loader admission for the NVFP4 GGUF type (`type 40` in `aikit`); companion `<name>.scale` tensor multiplication is done in `decoder/gguf.go:buildWeightsFromGGUF`; needs LB1b | §1 |
+| LB2c | done | fit: a `.weight` with a sibling `.weight_scale` counts N·K (pack factor 2) and with `.scales` counts N·K (pack factor 8 at 4-bit, 4 at 8-bit); skip `weight_scale`, `weight_scale_2`, `input_scale`, `.scales`, `.biases`; tier 0 on a synthetic index | `decoder/fit/weights.go:SafetensorsWeightBytes`, `decoder/nvfp4_mlx_test.go:TestFit_nvfp4AndMLXSafetensorsWeightBytes` |
+| LB2d | blocked | tier 1: one small real NVFP4 file loads, and its first greedy tokens and per-layer hidden states match the reference; needs the asset LB0b finds (LB2a is done) | §1 |
 | LB3 | moved | into LB0a: the Bonsai guard ships first, since a rotated file can load today | §2 |
 | LB4a | open | IQ2_XXS dequant (aikit), tier 0 | §2 |
 | LB4b | open | IQ2_XS dequant, tier 0 | §2 |
@@ -33,7 +33,10 @@ the Bolt E4B DFlash drafter (`nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16-DFlash-NV
 | LB6a | open | F1: a per-type source bytes-per-weight table, so fit prices another build's source before download | §3 |
 | LB6b | open | F2: `mem.HostCheck.smallerLoad` never names a smaller file for a read-only format | §3; `internal/runtime/mem/host.go:HostCheck.smallerLoad` |
 | LB6c | open | fit prices `int4mix` (and `q4k` in `measureBytesPerElem`) as all-int4, an underestimate an admission guard must not make: price per tensor through `fit.Rates.Kept`, as `q4k`'s GGUF estimator does; tier 0 | `decoder/fitguard.go:measureBytesPerElem`; found by the 2026-11-08 close-out |
-| LB7 | decision | the owner: whether to build kept lanes (compute in a low-bit format) at all; recommended: decide once LB0b shows demand and LB1-LB4 have shipped; until then a low-bit file fits no better resident than a Q4_K one at the same `--quant` | §3 |
+| LB7 | done | decided, MXFP4 only. Francis, 2026-11-09: build a kept MXFP4 lane for gpt-oss, `q4k`'s lane as its pattern (MX0 to MX2 below). NVFP4's kept lanes still wait on LB0b's demand and LB1-LB4, as before. Why: gpt-oss's tool-call loss is the int4 requantize (#542, #549, #555: int8 with f32 activations is within 0.99 nats of llama.cpp, int4 is 7.7-9.4 nats under); gpt-oss stays a target. MXFP4 moves alongside or ahead of NVFP4; the order against LB1-LB2 and the release are Francis's to confirm | §3; `docs/tasks/task-fp4-formats.md` items A, B |
+| MX0 | done | closed with no run (Francis, 2026-11-10, on the coordinator's reading): P8 is the ceiling arm. int8 weights with f32 activations read a step-22 margin of +4.829 against llama.cpp's +5.822, 0.99 nats under, with llama.cpp's top-1; an f32-dequantized arm (about 84 GB) fits no box and would add nothing on weights. MX1's gate takes P88's lesson | `docs/measurements/gptoss-forced-call-2026-10-30/README.md` "P8, read" |
+| MX1 | open | a kept MXFP4 lane on CUDA (dequant in the kernel, as q4k). Its scope names what the lane does about activations: P88 (int8 weights, per-row int8 activations) reads -0.097, so per-row int8 activations carry about 4.9 nats of the gap even at int8 weights, and CUDA has no f32-activation GEMV today. The lane must carry f32 or f16 activations, or grouped (per-32) ones (P4g, int4 weights at per-32 activations, read -1.267: grouping recovers part, not all), and says which. Registered gates: fidelity (the step-22 margin, with the activation format stated, plus KL against llama.cpp) and speed against today's int4 (A B B A, one box, `~/models`); fit priced at MXFP4's own bytes through `fit.Rates.Kept`; registered before any kernel | LB7, LB6c; `docs/measurements/gptoss-forced-call-2026-10-30/README.md` "P8, read" |
+| MX2 | blocked | the same lane on Metal, same two gates and the same activation question; needs MX1's lane shape | LB7, MX1 |
 
 ---
 
@@ -161,4 +164,4 @@ LB0 (1 day, the Bonsai guard included) → LB1 + LB2 NVFP4 (2 to 3 days) → LB4
 reads Bolt's 24 GB build) → LB6 fit F1 and F2 (1 day) → LB5 (2 days). About two weeks of read work, all at tier 0 and
 tier 1. LB7, if chosen, is per format per backend and gets its own registration.
 
-<!-- doc-reviewed: 2026-11-08 -->
+<!-- doc-reviewed: 2026-11-12 -->

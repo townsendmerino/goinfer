@@ -184,7 +184,7 @@ func (r layoutRule) breaks(from, path string, test bool, moduleOf map[string]str
 	return false
 }
 
-// TestLayout_arrows is SB13 (docs/tasks/task-subsystems-2026-10.md §8, "SB13's gates"): the goinfer→goinfer imports the
+// TestLayout_arrows is SB13 (docs/completed/task-subsystems-2026-10.md §8, "SB13's gates"): the goinfer→goinfer imports the
 // tree makes equal the arrows imports.json records, and no import, made or recorded, breaks one of its rules. A new
 // arrow is added to the data in the change that makes it; an arrow the tree stops making is removed from it.
 //

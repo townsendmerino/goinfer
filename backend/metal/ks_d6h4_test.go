@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
-// TestKSD6H4_gridTowerScratch is KS-D6's and KS-H4's first measurement (docs/tasks/task-kernel-survey-2026-10.md), on the
+// TestKSD6H4_gridTowerScratch is KS-D6's and KS-H4's first measurement (docs/tasks/parked/task-kernel-survey-2026-10.md), on the
 // Qwen3-VL-2B grid tower (MEM2-G4's), float32, a 4K grid (32,160 patches):
 //   - KS-D6: each scratch buffer's allocated bytes after the forward, and a second forward with the buffers the survey calls
 //     unread (the unfused attention's qh, kh, vh, sc, vt, ob, and f2) filled with NaN first: its output must equal the

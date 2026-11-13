@@ -1,6 +1,6 @@
 #!/bin/bash
 # External, out-of-process swap-growth kill switch for runs that load a checkpoint the machine
-# cannot comfortably hold (S5/S6, docs/tasks/task-never-swap-2026-09.md). Independent of decoder's
+# cannot comfortably hold (S5/S6, docs/completed/task-never-swap-2026-09.md). Independent of decoder's
 # S3 in-process tripwire: R11(c)'s lesson was that an in-process RSS read can look fine while swap
 # actually explodes, so this watches REAL swap-used via sysctl and kills on a real delta.
 #

@@ -15,7 +15,7 @@ import (
 	"unsafe"
 )
 
-// TestM26ZeroCopyProbe is lever 2's probe (docs/tasks/task-m26-mac-2026-10.md): can the routed experts be read by the GPU
+// TestM26ZeroCopyProbe is lever 2's probe (docs/completed/task-m26-mac-2026-10.md): can the routed experts be read by the GPU
 // straight from the mapped .giw through no-copy buffers, instead of being pread into the expert pool's slots? No model:
 // a file of random bytes laid out as M26's expert tensors are (every expert's gate|up nibbles stacked, then every
 // expert's down nibbles; 1,982,464 and 991,232 bytes, so half the down tensors start mid-page), mapped as decoder.Load

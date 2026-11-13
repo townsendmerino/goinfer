@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// S8 (docs/tasks/task-multimodal-support-2026-10.md, "S8, plan and gates"): the images-and-audio support table in
+// S8 (docs/completed/task-multimodal-support-2026-10.md, "S8, plan and gates"): the images-and-audio support table in
 // docs/multimodal.md and the README, generated here. Every tower / decoder cell is computed from code:
 //   - tower: GPU when the backend runs that tower family on the device by default (multimodal.DefaultTowerOnDevice, which
 //     is the build's declaration, multimodal.DeclaredTower; each backend module's test proves its live registrations equal

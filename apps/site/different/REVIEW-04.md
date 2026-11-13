@@ -29,7 +29,7 @@ Draft: `04-a-go-struct-the-model-cant-break.md` (body about 846 words including 
 ## Conflicts
 
 1. **Brief says "examples/ (grep for a struct-based example)". There is none.** Only `examples/confidence` and `examples/embed` exist; neither calls `GrammarFromStruct`. The only end-to-end struct code is the README snippet, which is a sketch (`generate`, `toks`, `eos`, `sp` undefined). I showed the README code as written, then the real generation code from `examples/confidence` (a hand-written schema), and said so on the page.
-2. **`docs/QUEUE.md` G37's "constrained decoding excludes speculative decoding" is dated 2026-09-02.** Later records (`docs/server.md`, `docs/tasks/task-constrained-confidence.md`) refer to "grammar-fused speculative decoding", which drives the masker. So that limit may be stale in part. I kept only "skips some faster decode paths" and attributed it to the record, without naming spec.
+2. **`docs/QUEUE.md` G37's "constrained decoding excludes speculative decoding" is dated 2026-09-02.** Later records (`docs/server.md`, `docs/tasks/parked/task-constrained-confidence.md`) refer to "grammar-fused speculative decoding", which drives the masker. So that limit may be stale in part. I kept only "skips some faster decode paths" and attributed it to the record, without naming spec.
 3. **`constrain/reflect.go` doc says `*T` is "the optional/nullable form"; the code makes it optional only.** I followed the code.
 4. **`docs/api-tiers.md` lists only `SchemaFromStruct` (and `NewMasker`, `Process`, etc.) under the stable tier, not `GrammarFromStruct` or `JSONSchema`.** The page makes no stability claim, so nothing to reconcile, but see question 2.
 

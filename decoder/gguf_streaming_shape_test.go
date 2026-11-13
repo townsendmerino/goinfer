@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// S2 (docs/tasks/task-never-swap-2026-09.md): a family's per-layer loader closure is safe to
+// S2 (docs/completed/task-never-swap-2026-09.md): a family's per-layer loader closure is safe to
 // stream (build -> sink.layer -> release, the loadQ35/loadGptOss shape) only if EVERY tensor it reads is genuinely
 // per-layer: named "blk.{i}." + something, never a bare/model-level name.
 //

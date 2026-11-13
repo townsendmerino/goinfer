@@ -75,7 +75,7 @@ func residentLockstepAt(t *testing.T, path string, opts decoder.Options, steps i
 	return st
 }
 
-// TestNemotronResident_tinyAgainstControl is OP2b's gate M on Metal (docs/tasks/task-forward-architecture-2026-10.md §4.7,
+// TestNemotronResident_tinyAgainstControl is OP2b's gate M on Metal (docs/completed/task-forward-architecture-2026-10.md §4.7,
 // "OP2b on Metal", graded at int4 by the amendment after the data): nemotron-tiny resident on Metal against the CPU at int4,
 // 32 steps of greedy lockstep, graded
 // from position 2. The bar is relative to llama-tiny through the same harness in the same run: nemotron-tiny's min logit
@@ -215,7 +215,7 @@ func TestNemotronResident_int8Declines(t *testing.T) {
 	_ = m.Close()
 }
 
-// TestNemotronResident_tier1Slice is OP2b's tier 1 on Metal on a layer slice (docs/tasks/task-forward-architecture-2026-10.md
+// TestNemotronResident_tier1Slice is OP2b's tier 1 on Metal on a layer slice (docs/completed/task-forward-architecture-2026-10.md
 // §4.7, "Tier 1 on a layer slice", registered before any run): layers 0, 1 and 14 of NVIDIA-Nemotron-Nano-9B-v2's Q8_0 GGUF
 // as an int4 .giw, resident on Metal against the CPU model it was built from, 32 steps of greedy lockstep graded from
 // position 2. G2-R's bars: min logit cosine >= 0.88 and argmax agreement >= 50%. The dense Qwen2.5-Coder-1.5B through its

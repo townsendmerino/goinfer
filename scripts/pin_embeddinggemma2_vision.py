@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase V of docs/tasks/task-embeddinggemma2.md: the reference for EmbeddingGemma 2 image embeddings.
+"""Phase V of docs/completed/task-embeddinggemma2.md: the reference for EmbeddingGemma 2 image embeddings.
 
 With sentence-transformers (>= 6.1.0) loading google/embeddinggemma-2 in float32 on the CPU, for four repo images of
 different aspect ratios, each as the image alone, the image with the `query` prompt, and the image followed by text

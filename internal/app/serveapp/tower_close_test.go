@@ -20,7 +20,7 @@ type closeCountGrid struct{ *fakeTower }
 
 func (f closeCountGrid) Hidden([]float32, [][3]int) ([]float32, error) { return nil, nil }
 
-// TestUnload_closesTheDeviceTowers is MEM2-G3 (docs/tasks/task-memory-campaign-2026-10.md, MEM2 gates): through the admin
+// TestUnload_closesTheDeviceTowers is MEM2-G3 (docs/completed/task-memory-campaign-2026-10.md, MEM2 gates): through the admin
 // unload and the real drain, each device tower an entry built (the Gemma 4 vision tower, the Qwen3.5+ and GLM-OCR
 // towers' accelerators, the Gemma 4 audio accelerator) is closed exactly once and the entry holds none afterwards; an entry
 // that built none closes nothing.

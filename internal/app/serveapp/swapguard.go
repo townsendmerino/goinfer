@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/guard/swapguard"
 )
 
-// Both halves of the swap tripwire (docs/tasks/task-never-swap-2026-09.md).
+// Both halves of the swap tripwire (docs/completed/task-never-swap-2026-09.md).
 //
 // The SERVING half (armSwapGuard, armed once for the process's life): the callback flips the admission gate to refuse new
 // requests, lets in-flight generations finish, logs once, and re-opens when swap-used is back within threshold of the baseline

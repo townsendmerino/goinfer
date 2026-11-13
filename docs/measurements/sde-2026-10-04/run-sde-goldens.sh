@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# H1.2 (docs/tasks/task-hardware-coverage-2026-10.md): the CPU parity suite and the tiny-fixture goldens under Intel SDE,
+# H1.2 (docs/completed/task-hardware-coverage-2026-10.md): the CPU parity suite and the tiny-fixture goldens under Intel SDE,
 # so the AVX-512 VNNI paths nobody here owns (Ice Lake -icx, Sapphire Rapids -spr) execute, with Haswell -hsw as the
 # control (AVX2 only, so it must match the native run on the 3700X).
 #

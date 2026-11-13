@@ -189,7 +189,12 @@ func (c *Context) quantizeDevice(src *DeviceBuffer, M, K int) (*DeviceBuffer, *D
 		return nil, nil, fmt.Errorf("gpu: quantizeDevice bind: %w", err)
 	}
 	defer bg.Release()
-	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	enc, err := c.device.TryCreateCommandEncoder(nil)
+	if err != nil {
+		releaseBuf(qBuf)
+		releaseBuf(scBuf)
+		return nil, nil, fmt.Errorf("gpu: quantizeDevice: command encoder: %w", err)
+	}
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(c.quantizePipeline)
@@ -202,7 +207,12 @@ func (c *Context) quantizeDevice(src *DeviceBuffer, M, K int) (*DeviceBuffer, *D
 		return nil, nil, fmt.Errorf("gpu: quantizeDevice pass: %w", err)
 	}
 	pass.Release()
-	cmd, _ := enc.TryFinish(nil)
+	cmd, err := enc.TryFinish(nil)
+	if err != nil {
+		releaseBuf(qBuf)
+		releaseBuf(scBuf)
+		return nil, nil, fmt.Errorf("gpu: quantizeDevice: finish: %w", err)
+	}
 	defer cmd.Release()
 	c.queue.Submit(cmd) // no Poll — pipelines with the consumer
 	return NewDeviceBuffer(qBuf, qWords), NewDeviceBuffer(scBuf, M), nil
@@ -246,7 +256,11 @@ func (c *Context) matmulW8A8Device(aq, aScales *DeviceBuffer, rm *ResidentW8A8, 
 		return nil, fmt.Errorf("gpu: matmulW8A8Device bind: %w", err)
 	}
 	defer bg.Release()
-	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	enc, err := c.device.TryCreateCommandEncoder(nil)
+	if err != nil {
+		releaseBuf(dstBuf)
+		return nil, fmt.Errorf("gpu: matmulW8A8Device: command encoder: %w", err)
+	}
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(c.quantPipeline)
@@ -258,7 +272,11 @@ func (c *Context) matmulW8A8Device(aq, aScales *DeviceBuffer, rm *ResidentW8A8, 
 		return nil, fmt.Errorf("gpu: matmulW8A8Device pass: %w", err)
 	}
 	pass.Release()
-	cmd, _ := enc.TryFinish(nil)
+	cmd, err := enc.TryFinish(nil)
+	if err != nil {
+		releaseBuf(dstBuf)
+		return nil, fmt.Errorf("gpu: matmulW8A8Device: finish: %w", err)
+	}
 	defer cmd.Release()
 	c.queue.Submit(cmd) // no Poll
 	return NewDeviceBuffer(dstBuf, M*N), nil
@@ -288,12 +306,18 @@ func (c *Context) Readback(db *DeviceBuffer) ([]float32, error) {
 		return nil, fmt.Errorf("gpu: Readback staging: %w", err)
 	}
 	defer releaseBuf(stage)
-	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	enc, err := c.device.TryCreateCommandEncoder(nil)
+	if err != nil {
+		return nil, fmt.Errorf("gpu: Readback: command encoder: %w", err)
+	}
 	defer enc.Release()
 	if err := enc.TryCopyBufferToBuffer(db.buf, 0, stage, 0, size); err != nil {
 		return nil, fmt.Errorf("gpu: Readback copy: %w", err)
 	}
-	cmd, _ := enc.TryFinish(nil)
+	cmd, err := enc.TryFinish(nil)
+	if err != nil {
+		return nil, fmt.Errorf("gpu: Readback: finish: %w", err)
+	}
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	status := wgpu.MapAsyncStatus(0)

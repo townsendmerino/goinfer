@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-// TestOlmo3ResidentSmokeMetal is the smoke gate for FeatPostOnlyNorm + FeatQKNormWhole (docs/tasks/task-gpu-paths-2026-09.md,
+// TestOlmo3ResidentSmokeMetal is the smoke gate for FeatPostOnlyNorm + FeatQKNormWhole (docs/completed/task-gpu-paths-2026-09.md,
 // G5): the model goes resident, no logit of a 24-token decode or of the batched prefill is NaN, and the prefill is batched.
 //
 // Deliberately NOT a resident-vs-CPU cosine floor: the seeded synthetic fixture (testdata/olmo3-tiny)
@@ -25,7 +25,7 @@ func TestOlmo3ResidentSmokeMetal(t *testing.T) {
 	testOlmoFamilyResidentSmoke(t, "../../testdata/olmo3-tiny", "int8int8")
 }
 
-// TestOlmoHybridResidentParityMetal is OM-1 (docs/tasks/task-olmo-hybrid-metal-webgpu-2026-11.md): Olmo Hybrid's DeltaNet
+// TestOlmoHybridResidentParityMetal is OM-1 (docs/completed/task-olmo-hybrid-metal-webgpu-2026-11.md): Olmo Hybrid's DeltaNet
 // widens its write gate (NegEigval) and runs its output norm at an epsilon of its own (ONormEps). olmo_hybrid-tiny goes
 // resident on Metal at int4, the one quant its build takes (TestOlmoHybridBuildDeclinesOtherQuants), and holds
 // TestQwen35ResidentParityMetal's bar against the CPU at int4. With either setting dropped at the build, it falls outside the bar.
@@ -155,7 +155,7 @@ func TestDeltaNetPrefill_readsBothParameters(t *testing.T) {
 		t.Fatalf("qwen35-tiny's prefill is not batched: %s", why)
 	}
 	r := rf.(*metalResident).r
-	pf := rf.(decoder.Prefiller)
+	pf := decoder.SubsystemsOf(rf).Prefill
 	_, _, _, _, _, _, vocab := m.Dims()
 	embs := make([][]float32, 40)
 	for i := range embs {
@@ -263,7 +263,8 @@ func testOlmoFamilyResidentSmoke(t *testing.T, ckpt, quant string) {
 		t.Logf("Olmo 3 prefill path: %s", reason)
 
 		decoder.SetKnobEnvForTest(t, mRes, "GOINFER_METAL_FAST_PREFILL_FLOOR", "0")
-		pf, ok := rf.(decoder.Prefiller)
+		pf := decoder.SubsystemsOf(rf).Prefill
+		ok := pf.PrefillAvailable()
 		if !ok {
 			t.Fatalf("rf does not implement decoder.Prefiller")
 		}

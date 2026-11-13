@@ -1,0 +1,7 @@
+=== RUN   TestWindowedKV_i3Replay
+    kvwindow_replay_test.go:110: floor, no extra (slack 512, rollback 448): 16 of 54 in-run follow-ups cold
+    kvwindow_replay_test.go:110: the most the grant gives (slack 1088, rollback 1024): 5 of 54 in-run follow-ups cold
+    kvwindow_replay_test.go:115: old rule: 35 of 59 cold
+--- PASS: TestWindowedKV_i3Replay (0.00s)
+PASS
+ledger: 0 device(s) released in this run

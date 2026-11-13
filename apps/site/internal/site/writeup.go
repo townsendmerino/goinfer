@@ -18,7 +18,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// The "What's different" writeups (docs/tasks/task-site-2026-09.md S8c): one Markdown file each in site/different/, with
+// The "What's different" writeups (docs/completed/task-site-2026-09.md S8c): one Markdown file each in site/different/, with
 // YAML front matter. A writeup is published only when its front matter carries a `reviewed` date, which is the
 // owner's; an unreviewed one is a draft, built only for a preview (Config.Drafts) and never linked from the site.
 

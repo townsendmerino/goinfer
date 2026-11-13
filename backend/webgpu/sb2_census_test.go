@@ -26,7 +26,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-// Layer B-webgpu of the admission and routing census (docs/tasks/task-subsystems-2026-10.md, "SB2 step 2"): WebGPU's own static
+// Layer B-webgpu of the admission and routing census (docs/completed/task-subsystems-2026-10.md, "SB2 step 2"): WebGPU's own static
 // admission, staticResidentDecline, on layer D's fixtures and option cells. A fake backend named webgpu takes the decoder's real
 // admission; where that admits, it records staticResidentDecline's answer and declines, so no device is opened. A cell the decoder
 // declines is layer D's line (decoder's TestAdmissionCensus) and is not repeated here.
@@ -242,7 +242,7 @@ func planVsLoadWebGPU(t *testing.T, req func(c sb2census.Cell) fit.PlanRequest) 
 }
 
 // TestPlanAgreesWithLoad_webgpu holds Plan's webgpu verdict, with each cell's KV request, to what the load does on webgpu
-// (docs/tasks/task-subsystems-2026-10.md, "SB2 — Plan asks Admit", gate 2), and shows the comparison goes red on a Plan that
+// (docs/completed/task-subsystems-2026-10.md, "SB2 — Plan asks Admit", gate 2), and shows the comparison goes red on a Plan that
 // ignores the KV request.
 func TestPlanAgreesWithLoad_webgpu(t *testing.T) {
 	// Plan's KV request is the serving flag's precision (KVPrecision).
@@ -267,7 +267,7 @@ func TestPlanAgreesWithLoad_webgpu(t *testing.T) {
 	t.Logf("planted KV-blind Plan: %d cells red", len(planted))
 }
 
-// The slot census (docs/tasks/task-subsystems-2026-10.md, "SB2 memory reads, step 4"): WebGPU's KV-slot decisions (slotsGranted,
+// The slot census (docs/completed/task-subsystems-2026-10.md, "SB2 memory reads, step 4"): WebGPU's KV-slot decisions (slotsGranted,
 // slotsBeforeContextOn) on every cell layer B-webgpu passes, asked for 4 slots, against each recorded machine. A unified-memory
 // profile feeds its RAM and available memory; a discrete one feeds its free-VRAM figure less the build's weights and slot 0's KV,
 // a derived figure that G-WS3 checks against what Vulkan leaves.
@@ -750,36 +750,11 @@ var webgpuRounding = memgate.PowerOfTwo("Vulkan's power-of-two blocks")
 // webgpuMemGaps is WebGPU's table of known reds. It may only shrink: the fix that removes a row lowers webgpuMemGapsPin.
 var webgpuMemGaps = func() []memgate.Gap {
 	var out []memgate.Gap
-	moeDense := func(row string, over int64) {
-		out = append(out, memgate.Gap{Row: row, Line: mem.LineDense, What: "Gemma 4's MoE block at int8int8 on Vulkan leases on dense past the router tables the plan prices: not diagnosed, so it names this row's own bytes",
-			Item: "MM8, Gemma 4 MoE dense", Bytes: func(map[string]int64) int64 { return over }})
-	}
-	for _, f := range []string{
-		"testdata/olmo3-tiny", "testdata/olmo_hybrid-tiny", "testdata/smollm3-tiny",
-		"internal/vision/testdata/qwen25vl-vision-tiny", "selftestdata/gemma3-vl-tiny", "selftestdata/llama-tiny",
-		"testdata/gemma3-vl-tiny", "testdata/gguf-split/glm-tiny-00001-of-00004.gguf", "testdata/glm-tiny",
-		"testdata/glm-tiny-bias", "testdata/glm-tiny.gguf", "testdata/gptoss_tiny.gguf",
-		"testdata/granite-dense-tiny", "testdata/internlm2-tiny", "testdata/internlm3-tiny",
-		"testdata/llama-tiny", "testdata/mixtral-tiny", "testdata/qwen25vl-tiny",
-		"testdata/qwen3asr-tiny", "testdata/qwen3moe-tiny", "testdata/qwen3moe-tiny-k3",
-		"testdata/qwen3vlmoe-tiny", "testdata/voxtral-tiny",
-	} {
-		out = append(out, memgate.Gap{Row: f + " int4/kvprecision-i8", Line: mem.LineKV, What: "int8 K/V holds one scale a head, and the plan prices 1/8 of a byte an element, which under-prices a narrow head",
-			Item: "MM8, int8 KV's scale", Bytes: memgate.KVPricedUnder})
-	}
-	for _, f := range []string{"testdata/gemma4-moe-kv-tiny", "testdata/gemma4-moe-kv-tiny32", "testdata/llama-attnfa-tiny"} {
-		out = append(out, memgate.Gap{Row: f + " int4/kvprecision-i8", Line: mem.LineKV, OverPriced: true, What: "int8 K/V holds one scale a head, and the plan prices 1/8 of a byte an element, which over-prices a wide head",
-			Item: "MM8, int8 KV's scale", Bytes: memgate.KVPricedOver})
-	}
 	stacked := func(row string, over int64) {
 		out = append(out, memgate.Gap{Row: row, Line: mem.LineExperts, What: "the stacked experts lease more than the plan's expert figure: not diagnosed, so it names this row's own bytes",
 			Item: "MM8 WebGPU, stacked experts", Bytes: func(map[string]int64) int64 { return over }})
 	}
 	stacked("testdata/qwen3vlmoe-tiny int8int8", 16384)
-	if runtime.GOOS != "darwin" { // Vulkan's adapter: darwin's, which is Metal's, reads neither
-		moeDense("testdata/gemma4-moe-kv-tiny int8int8", 1064)
-		moeDense("testdata/gemma4-moe-kv-tiny32 int8int8", 1064)
-	}
 	if runtime.GOARCH != "arm64" { // gpu-darwin's run fires none of these int4 rows: not diagnosed, and not shown to be the architecture rather than the adapter
 		stacked("testdata/gemma4-moe-kv-tiny int4*", 8192)
 		stacked("testdata/qwen3vlmoe-tiny int4*", 8192)
@@ -792,8 +767,8 @@ const webgpuGateRowsPath = "testdata/memgate_rows.txt"
 
 var webgpuGateRowsUpdate = flag.Bool("memgate.rows.update", false, "have TestMemGate_webgpu rewrite testdata/memgate_rows.txt")
 
-// webgpuMemGapsPin is len(webgpuMemGaps) on this platform: 27 rows everywhere, two more on Vulkan and two more off arm64.
-var webgpuMemGapsPin = 27 + map[bool]int{true: 2}[runtime.GOOS != "darwin"] + map[bool]int{true: 2}[runtime.GOARCH != "arm64"]
+// webgpuMemGapsPin is len(webgpuMemGaps) on this platform: 1 row everywhere and two more off arm64.
+var webgpuMemGapsPin = 1 + map[bool]int{true: 2}[runtime.GOARCH != "arm64"]
 
 // webgpuGatePlantForTest, when set, runs on a row's resident after its generation and before the ledger is read; the function it returns
 // runs after that read, so the plant is released before Close and the package's own ledger check stays clean.
@@ -848,7 +823,7 @@ func webgpuGateRow(t *testing.T, row, path string, o decoder.Options, census boo
 	return read, true
 }
 
-// TestMemGate_webgpu is MM7's gate on WebGPU (docs/tasks/task-subsystems-2026-10.md): every census fixture at every option cell whose
+// TestMemGate_webgpu is MM7's gate on WebGPU (docs/completed/task-subsystems-2026-10.md): every census fixture at every option cell whose
 // build goes resident, and each at int4 with two KV slots. It runs every row in one test, since a filtered run would see known gaps go quiet.
 func TestMemGate_webgpu(t *testing.T) {
 	newOrSkip(t).Close()
@@ -897,7 +872,7 @@ func TestMemGate_webgpu(t *testing.T) {
 }
 
 // TestMemGate_webgpuPlantsThroughTheTable: a buffer really allocated over plan after the generation stays red through the table, on a row whose
-// line a live gap forgives part of (each is checked to fire unplanted, and dense's only where its row is in the table), and on a line nothing
+// line a live gap forgives part of (each is checked to fire unplanted), and on a line nothing
 // forgives. A lease left open after Close is held by
 // memgate's own test and the CPU's plant: here it would fail this package's ledger check at exit.
 func TestMemGate_webgpuPlantsThroughTheTable(t *testing.T) {
@@ -909,9 +884,9 @@ func TestMemGate_webgpuPlantsThroughTheTable(t *testing.T) {
 		o             decoder.Options
 		live          bool
 	}{
-		{"dense", "../../testdata/gemma4-moe-kv-tiny", "testdata/gemma4-moe-kv-tiny int8int8", mem.LineDense, decoder.Options{Quant: "int8int8"}, runtime.GOOS != "darwin"},
+		{"dense", "../../testdata/gemma4-moe-kv-tiny", "testdata/gemma4-moe-kv-tiny int8int8", mem.LineDense, decoder.Options{Quant: "int8int8"}, false},
 		{"experts", "../../testdata/qwen3vlmoe-tiny", "testdata/qwen3vlmoe-tiny int8int8", mem.LineExperts, decoder.Options{Quant: "int8int8"}, true},
-		{"kv", "../../testdata/llama-tiny", "testdata/llama-tiny int4/kvprecision-i8", mem.LineKV, decoder.Options{Quant: "int4", KVPrecision: "i8"}, true},
+		{"kv", "../../testdata/llama-tiny", "testdata/llama-tiny int4/kvprecision-i8", mem.LineKV, decoder.Options{Quant: "int4", KVPrecision: "i8"}, false},
 		{"state", "../../testdata/llama-tiny", "testdata/llama-tiny int4", mem.LineState, decoder.Options{Quant: "int4"}, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {

@@ -15,7 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// G-PR4 (per position) and G-PR5 (docs/tasks/task-metal-pairwise-rope-2026-10.md): the pairwise families on the Metal
+// G-PR4 (per position) and G-PR5 (docs/completed/task-metal-pairwise-rope-2026-10.md): the pairwise families on the Metal
 // resident against the CPU at int4, on the real checkpoints. 64 tokens of real text (README.md) and a 16-token greedy
 // continuation the CPU chose, teacher-forced on the resident. Bars, CUDA's real-checkpoint tier
 // (docs/measurements/cuda-pairwise-rope-2026-10-01.md): mean per-position cosine >= 0.99 and worst >= 0.90, and every
@@ -123,8 +123,8 @@ func TestPairwiseRoPERealMetal(t *testing.T) {
 			}
 			mean, worst, wp, real, ties := measure()
 			fmt.Fprintf(os.Stderr, "[%s] PAIRWISE %d positions: mean cos %.6f, worst %.6f (pos %d); continuation flips: %d near-tie, %d real\n", name, len(toks), mean, worst, wp, ties, real)
-			// The mean bar is 0.99 for every model but Command-R7B, whose 0.989242 the owner accepted (docs/tasks/task-metal-pairwise-rope-2026-10.md
-			// G-PR5). Part C of docs/tasks/task-metal-pairwise-followups-2026-10.md localizes that gap; this floor records the decision, it is
+			// The mean bar is 0.99 for every model but Command-R7B, whose 0.989242 the owner accepted (docs/completed/task-metal-pairwise-rope-2026-10.md
+			// G-PR5). Part C of docs/completed/task-metal-pairwise-followups-2026-10.md localizes that gap; this floor records the decision, it is
 			// not a measured tolerance.
 			meanBar := 0.99
 			if name == "command-r7b" {
@@ -133,7 +133,7 @@ func TestPairwiseRoPERealMetal(t *testing.T) {
 			if mean < meanBar || worst < 0.90 || real > 0 {
 				t.Errorf("%s: mean %.6f (>= %.3f), worst %.6f (>= 0.90), %d non-tie continuation flips (0)", name, mean, meanBar, worst, real)
 			}
-			// The batched pass (docs/tasks/task-metal-pairwise-followups-2026-10.md, G-A2/G-B3): the prompt through PrefillLast,
+			// The batched pass (docs/completed/task-metal-pairwise-followups-2026-10.md, G-A2/G-B3): the prompt through PrefillLast,
 			// its last-token logits against the CPU's (>= 0.98, CUDA's real tier), then the continuation decoded after it,
 			// teacher-forced, against the CPU per position (the decode bars) with no non-tie flip.
 			embs := make([][]float32, nPrompt)

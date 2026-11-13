@@ -7,7 +7,7 @@ import (
 	"os"
 )
 
-// knobDrift is the phase-2a tripwire (docs/tasks/task-env-config-2026-09.md). A knob is read once, at Load;
+// knobDrift is the phase-2a tripwire (docs/completed/task-env-config-2026-09.md). A knob is read once, at Load;
 // a test that sets its environment variable AFTER loading a model and expects the loaded model to follow
 // would, silently, now compare a path with itself — an identity A/B passing for the wrong reason. In test
 // builds every snapshot read therefore checks the live environment and panics when it has moved for a knob
@@ -19,7 +19,7 @@ func knobDrift(k *knobSet, name string) {
 	live, liveSet := os.LookupEnv(name)
 	if live != k.val[name] || liveSet != k.set[name] {
 		panic(fmt.Sprintf("decoder: %s changed after this model was loaded (snapshot %q set=%v, environment now %q set=%v). "+
-			"Knobs are read once per model, at Load (docs/tasks/task-env-config-2026-09.md). A test that A/Bs a loaded "+
+			"Knobs are read once per model, at Load (docs/completed/task-env-config-2026-09.md). A test that A/Bs a loaded "+
 			"model must use decoder.SetKnobForTest(m, %q, value) instead of t.Setenv — or set the variable before Load.",
 			name, k.val[name], k.set[name], live, liveSet, name))
 	}

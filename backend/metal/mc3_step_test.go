@@ -191,11 +191,11 @@ func moeStepResident(t *testing.T, dir string, on bool) *resident {
 	return r
 }
 
-// TestMC3Step_moeBitIdentical is OP4m-d3's identity gate (docs/tasks/task-forward-architecture-2026-10.md §4.9): with the
+// TestMC3Step_moeBitIdentical is OP4m-d3's identity gate (docs/completed/task-forward-architecture-2026-10.md §4.9): with the
 // step's MoE block on, each tracked generic-MoE fixture builds the batched step, and four sequences at different depths stepped
 // together equal production's single-token forward bit for bit, every logit of every step. With the block off, which is the
 // default, none builds it.
-// TestOP4mD3_moeStepSpeed is OP4m-d3's D3-3 (docs/tasks/task-forward-architecture-2026-10.md §4.9): on the MoE checkpoint at
+// TestOP4mD3_moeStepSpeed is OP4m-d3's D3-3 (docs/completed/task-forward-architecture-2026-10.md §4.9): on the MoE checkpoint at
 // GOINFER_OP4MD3_MODEL, loaded int4 with the step's MoE block on, four slots filled to depth 128, then 64 greedy tokens of all four
 // sequences timed two ways: the batched step (device argmax), against the do-nothing arm, each sequence decoded one token at a
 // time on its own slot as today (ForwardArgmax). A B B A over 10 pairs after one warm run each; both arms' tokens must be
@@ -224,6 +224,16 @@ func TestOP4mD4b_recurrentStepSpeed(t *testing.T) {
 func TestOP4mD6b_mambaStepSpeed(t *testing.T) {
 	op4mStepSpeed(t, stepSpeedCell{env: "GOINFER_OP4MD6B", label: "[OP4m-d6b D6b-5]", recurrent: true,
 		want: func(r *resident) bool { return r.mamba != nil }, wantWhat: "a Mamba-2 (Nemotron-H) resident"})
+}
+
+// TestOP4mPod2_stepSpeed is OP4m-pod2 part 2's P-3 (docs/tasks/task-forward-and-memory-2026-11.md, "OP4m-pod2 part 2:
+// registration") on a recurrent checkpoint at GOINFER_OP4MPOD2S_MODEL (GOINFER_OP4MPOD2S_TIMING=1, under the timing lock): the
+// batched step on four slots, its per-row steps through the walk against through the blocks, graded as a parity cell.
+func TestOP4mPod2_stepSpeed(t *testing.T) {
+	t.Cleanup(func() { mixerWalkBlocksForTest = false })
+	op4mStepSpeed(t, stepSpeedCell{env: "GOINFER_OP4MPOD2S", label: "[OP4m-pod2 P-3]", recurrent: true, parity: true,
+		want: func(r *resident) bool { return r.dnet != nil || r.mamba != nil }, wantWhat: "a DeltaNet or Mamba-2 resident",
+		stepArms: func(on bool) { mixerWalkBlocksForTest = !on }})
 }
 
 // cellLoad1 is the 1-minute load average (vm.loadavg), a timed cell's start and pair term.
@@ -271,8 +281,9 @@ func cellPaging(t *testing.T) (swapMiB float64, pageouts int64) {
 	return swapMiB, pageouts
 }
 
-// TestOP4mPod_decodeSpeed is OP4m-pod's P-3 (docs/tasks/task-forward-and-memory-2026-11.md, "OP4m-pod: registration"): one
-// sequence's decode, the mixer steps' walk against their blocks, in one process, on the checkpoint at GOINFER_OP4MPOD_MODEL. Each
+// TestOP4mPod_decodeSpeed is OP4m-pod's and OP4m-pod2's P-3 (docs/tasks/task-forward-and-memory-2026-11.md, "OP4m-pod:
+// registration", "OP4m-pod2: registration"): one sequence's decode, the walk of the mixer and the FFN and tail steps against their
+// blocks, in one process, on the checkpoint at GOINFER_OP4MPOD_MODEL. Each
 // run refills the sequence to depth 128 untimed and times 64 greedy tokens; the arms alternate A B, B A over 6 pairs, and the tokens
 // must be equal in every pair. A pair whose starting load is above half the cores plus GOMAXPROCS, or across which swap in use
 // grows, voids the cell. Pass: a median rate ratio, walk ÷ blocks, of at least 0.99; fail: the cell resolves slower (every pair
@@ -318,7 +329,7 @@ func TestOP4mPod_decodeSpeed(t *testing.T) {
 	kinds := map[layerStep]int{}
 	for l := range r.layers {
 		for _, st := range r.layers[l].steps {
-			if mixerWalks(st) {
+			if mixerWalks(st) || ffnWalks(st) {
 				kinds[st]++
 			}
 		}
@@ -530,6 +541,10 @@ type stepSpeedCell struct {
 	// stepArms, when set, makes both arms the step, switched by stepArms(true) for the new arm and stepArms(false) for the
 	// do-nothing one; the log's "sequential" is then the step in its do-nothing form. The caller restores what the switch set.
 	stepArms func(on bool)
+	// parity, when set, grades the cell as a no-regression check (OP4m-pod2 part 2's P-3) in place of a feature bar: 6 pairs;
+	// pass at a median new ÷ do-nothing of at least 0.99, fail when every pair is under 1 and the median under 0.99, parked
+	// otherwise.
+	parity bool
 }
 
 // op4mStepSpeed is the feature-bar cell TestOP4mD3_moeStepSpeed describes, on the model and arms c names.
@@ -545,7 +560,11 @@ func op4mStepSpeed(t *testing.T, c stepSpeedCell) {
 	if strings.HasPrefix(path, "/Volumes/") || strings.HasPrefix(path, "/srv/models") {
 		t.Fatalf("%s is on the archive, not the bench set: a timing from it measures the disk", path)
 	}
-	const B, depth, steps, pairs, ctx = 4, 128, 64, 10, 1024
+	const B, depth, steps, ctx = 4, 128, 64, 1024
+	pairs := 10
+	if c.parity {
+		pairs = 6
+	}
 	load1 := func() float64 { return cellLoad1(t) }
 	paging := func() (swapMiB float64, pageouts int64) { return cellPaging(t) }
 	majFaults := func() int64 { // this process's major faults (page-ins from disk), the never-swap rule's own reading
@@ -700,6 +719,21 @@ func op4mStepSpeed(t *testing.T, c stepSpeedCell) {
 	med := (ratios[pairs/2-1] + ratios[pairs/2]) / 2
 	verdict := "PARKED (under the feature bar, not under 1.00)"
 	switch {
+	case c.parity:
+		below := 0
+		for _, x := range ratios {
+			if x < 1 {
+				below++
+			}
+		}
+		switch {
+		case med >= 0.99:
+			verdict = "PASS"
+		case below == pairs:
+			verdict = "FAIL (every pair under 1, median under 0.99)"
+		default:
+			verdict = "PARKED (median under 0.99)"
+		}
 	case med >= 1.05 && faster >= 9:
 		verdict = "PASS"
 	case med < 1.00:
@@ -1067,7 +1101,7 @@ func TestMC3Step_recurrentMatchesDecodeOnServeHistories(t *testing.T) {
 	}
 }
 
-// TestMC3Step_recurrentBitIdentical is OP4m-d4b's D4b-1 and OP4m-d6b's D6b-1 (docs/tasks/task-forward-architecture-2026-10.md
+// TestMC3Step_recurrentBitIdentical is OP4m-d4b's D4b-1 and OP4m-d6b's D6b-1 (docs/completed/task-forward-architecture-2026-10.md
 // §4.9): with the step's recurrent blocks on, each tracked recurrent fixture builds the batched step. Four sequences at
 // different depths, each on its own slot with its own recurrent state, stepped together 12 times, equal production's
 // single-token forward on every logit. With the blocks off, none builds it.
@@ -1881,7 +1915,7 @@ func TestMC3StepWallVsGPU(t *testing.T) {
 }
 
 // TestMC3Verify_sameSlotRowsBitIdentical is the first gate of Metal spec verify on the step kernels
-// (docs/tasks/task-concurrency-2026-09.md, MC4): a step whose rows are CONSECUTIVE positions of one sequence on one slot
+// (docs/tasks/parked/task-concurrency-2026-09.md, MC4): a step whose rows are CONSECUTIVE positions of one sequence on one slot
 // (a verify round) gives every logit and every K/V element bit-identical to production decoding those tokens one after
 // another. Twin slots are filled with the same history; M = 2, 4, 8 rows at depths 128 and 2048, and a run straddling
 // attnFADepthFloor, so one step mixes per-head and attention_fa rows.

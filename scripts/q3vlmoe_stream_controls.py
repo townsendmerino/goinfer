@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S10q-c's controls (docs/tasks/task-multimodal-support-2026-10.md, "S10, Qwen3-VL MoE"), run by day before the 30B is
+"""G-S10q-c's controls (docs/completed/task-multimodal-support-2026-10.md, "S10, Qwen3-VL MoE"), run by day before the 30B is
 queued: the layer-streaming reference (scripts/q3vlmoe_hf_stream.py) on the tiny Qwen3-VL MoE (testdata/qwen3vlmoe-tiny,
 its experts on disk in the 4.57 layout, so HF's own conversion is exercised too) against an ordinary Hugging Face float32
 forward of the same checkpoint, on two image sequences.

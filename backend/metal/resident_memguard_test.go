@@ -268,7 +268,7 @@ func TestResidentNeedBytes_honorsPagingSlots(t *testing.T) {
 	// load, with no q4k lane or Mamba layer to take anything off, is that term alone.
 	derived := m.ResidentDenseWeightBytesFor("metal") - m.ResidentDenseWeightBytes()
 
-	// The slot request is a per-model knob, read at Load (docs/tasks/task-env-config-2026-09.md, phase 4), so
+	// The slot request is a per-model knob, read at Load (docs/completed/task-env-config-2026-09.md, phase 4), so
 	// each arm prices its own model loaded with that request, not one model with the environment changed under it.
 	// needWith is the guard's figure at a slot request less decode's scratch with every expert resident, which the request does not
 	// move: the weights, the derived buffers, host copy and KV at that request, and the paged experts' slot indices where it pages.
@@ -384,7 +384,7 @@ func TestBuildDemand_matchesDecoderDefault(t *testing.T) {
 	t.Logf("%d configs, %d queries", len(cfgs), len(queries))
 }
 
-// TestResident_holdsTheModelsProgram (OP4m-a's A4, docs/tasks/task-forward-architecture-2026-10.md §4.9): the resident a Metal
+// TestResident_holdsTheModelsProgram (OP4m-a's A4, docs/completed/task-forward-architecture-2026-10.md §4.9): the resident a Metal
 // build returns holds the model's own program, the one copy decoder walks, for a synthetic dense model and the tracked qwen3.5
 // fixture.
 func TestResident_holdsTheModelsProgram(t *testing.T) {
@@ -529,7 +529,7 @@ func eachShapeFixture(t *testing.T, f func(name string, m *decoder.Model)) int {
 	return compared
 }
 
-// TestDenseShape_matchesTheAccessors is OP4m-b1's B1-1 and B1-2 (docs/tasks/task-forward-architecture-2026-10.md §4.9): on every
+// TestDenseShape_matchesTheAccessors is OP4m-b1's B1-1 and B1-2 (docs/completed/task-forward-architecture-2026-10.md §4.9): on every
 // tracked tiny checkpoint the decoder loads on the CPU, the layer shape Metal derives from the program equals the nine
 // Architecture accessors it replaces, and the derivation returns no error. The derivation is internal/program's ShapeOf; its
 // plants are decoder's TestProgramShape_matchesTheAccessors, which runs on every box.
@@ -636,10 +636,11 @@ func TestBuildLayerSteps_matchesTheLoadedBlocks(t *testing.T) {
 	parallel := append(slices.Clone(dense[:4]), dense[6], program.Op{Kind: program.OpResidual, Res: program.ResidualParams{Two: true}})
 	build := func(ops []program.Op, L residLayer, q4k bool) error {
 		parallel := slices.ContainsFunc(ops, func(o program.Op) bool { return o.Kind == program.OpResidual && o.Res.Two })
-		r := &resident{layers: []residLayer{L}, q4kLane: q4k, parallelBlock: parallel}
+		r := &resident{layers: []residLayer{L}, q4kLane: q4k, parallelBlock: parallel, decode: decodeShape{act: uint32(program.ActSiLU)}}
 		return r.buildLayerSteps(&program.Program{Layers: [][]program.Op{ops}})
 	}
-	loaded := residLayer{geom: &attnGeom{}, ffn: true}
+	nonEmpty := (Buffer{}).At(1)
+	loaded := residLayer{geom: &attnGeom{}, ffn: true, preNorm: nonEmpty, postNorm: nonEmpty}
 	read := loaded
 	read.layerScaleRead = true
 	for _, c := range []struct {
@@ -652,8 +653,8 @@ func TestBuildLayerSteps_matchesTheLoadedBlocks(t *testing.T) {
 		{"a dense layer as loaded", dense, loaded, false, true},
 		{"a dense layer on the q4k lane", dense, loaded, true, true},
 		{"a layer scale whose scalar was read", scaled, read, false, true},
-		{"the build loaded no FFN", dense, residLayer{geom: &attnGeom{}}, false, false},
-		{"the build loaded no attention", dense, residLayer{ffn: true}, false, false},
+		{"the build loaded no FFN", dense, residLayer{geom: &attnGeom{}, preNorm: nonEmpty}, false, false},
+		{"the build loaded no attention", dense, residLayer{ffn: true, postNorm: nonEmpty}, false, false},
 		{"a layer scale the build did not read", scaled, loaded, false, false},
 		{"a read layer scale the program lacks", dense, read, false, false},
 		{"the q4k lane with a layer scale", scaled, read, true, false},
