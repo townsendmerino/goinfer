@@ -54,3 +54,28 @@ Harness `backend/metal/mc3_step_test.go:TestOP4mPod_decodeSpeed`, one process pe
 - `TestMemGate_metal` with flint-tiny: PASS (10.6 s). `TestKVPages_everyResidentFixture` (G1a): PASS (42.6 s); flint-tiny runs
   (210 logit rows, 3 slots, prefill kernels none, 6 refused). The NOT RUN fixtures there are
   model types this build does not load.
+
+## Part 2, the multi-sequence step's walk (2026-11-12, mac-metal, ef05fcb6e): P-1 and P-2 PASS, P-3 OWED
+
+Registration: "OP4m-pod2 part 2: registration" in `docs/tasks/task-forward-and-memory-2026-11.md`.
+
+- **Red first.** Against main's step, which calls the blocks, `TestMultiSeqWalk_plantsGoRed` was red on 3 of 3 DeltaNet fixtures
+  (the plant never reached the step); `TestMultiSeqWalk_issuesTheBlocksDispatches` was green there, as it compares two arms of
+  the same code.
+- **P-1 and P-2:** `TestMultiSeqWalk_issuesTheBlocksDispatches` passes on 7 fixtures (dense, qwen35-tiny, qwen3next-tiny,
+  qwen3_5-tiny, nemotron-tiny, three Gemma 4) at 2 and 4 rows: identical pipelines and bit-identical logits, walk against blocks.
+  The extra-residual plant is red on all 3 DeltaNet fixtures. `TestMC3Step_*` (identity, recurrent, MoE, Gemma 4, plants) pass
+  unchanged. `gate identity origin/main ef05fcb6e -backend metal`: 30 IDENTICAL, 0 DIFFERENT, 14 not run.
+- **P-3, one cell read.** Harness `TestOP4mPod2_stepSpeed` and `TestOP4mPod2_gemma4StepSpeed`, 4 slots, depth 128, 6 pairs A B B A,
+  exclusive lock (`p3-seq-run1.log`).
+
+| cell | median step walk ÷ blocks | pairs under 1 | verdict |
+|---|---:|---:|---|
+| Qwen3.5 0.8B (DeltaNet) | 1.0091 | 2 of 6 | PASS |
+| Nemotron-H 4B (Mamba-2) | not read | | VOID: pair 0 paged (3 process major faults; available 6.39 GiB against need 5.44) |
+| Gemma 4 E2B | not read | | VOID: pair 2 paged (1 process major fault) |
+
+  A re-run of the two void cells (`p3-seq-run2.log`, from 19:37:34 PST) was stopped at about 19:41 on the coordinator's word: another
+  session on the Mac needed the lock, and Nemotron's attempt 1 had already paged (185 faults, swap 1400.7 to 1605.2 MiB) under that
+  session's load. Nothing was averaged in. **P-3 stays owed for Nemotron-H and Gemma 4 E2B** until the Mac is quiet; the walk is
+  on by default meanwhile, and a fail or park there reverts it for that step kind.

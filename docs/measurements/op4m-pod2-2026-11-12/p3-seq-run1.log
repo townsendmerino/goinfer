@@ -1,0 +1,30 @@
+hold start 2026-11-12 19:29:37 PST commit ef05fcb6e
+== qwen3.5-0.8b.int4.metal.v17.giw 19:32:39 load1=3.38
+[OP4m-pod2 P-3] qwen3.5-0.8b.int4.metal.v17.giw: cell start: 1-minute load 3.43; available 10.39 GiB against need 0.65 GiB (ok); reclaimable 2.92 GiB (recorded); pair bar 12.0
+[OP4m-pod2 P-3] qwen3.5-0.8b.int4.metal.v17.giw: the step's scratch 9.8 MiB
+[OP4m-pod2 P-3] pair 0 (load 3.13): step 199.7 tok/s, sequential 199.9 tok/s, step/sequential 0.9989; tokens equal; process major faults 33311 -> 33311; swap 622.7 -> 622.7 MiB; system pageouts 396473 -> 396495 (context)
+[OP4m-pod2 P-3] pair 1 (load 2.96): step 204.7 tok/s, sequential 200.5 tok/s, step/sequential 1.0211; tokens equal; process major faults 33311 -> 33311; swap 622.7 -> 622.7 MiB; system pageouts 396495 -> 396519 (context)
+[OP4m-pod2 P-3] pair 2 (load 2.58): step 199.9 tok/s, sequential 197.0 tok/s, step/sequential 1.0145; tokens equal; process major faults 33311 -> 33311; swap 622.7 -> 622.7 MiB; system pageouts 396519 -> 396538 (context)
+[OP4m-pod2 P-3] pair 3 (load 2.73): step 198.1 tok/s, sequential 197.4 tok/s, step/sequential 1.0036; tokens equal; process major faults 33311 -> 33311; swap 622.7 -> 622.7 MiB; system pageouts 396538 -> 396581 (context)
+[OP4m-pod2 P-3] pair 4 (load 2.46): step 198.5 tok/s, sequential 195.4 tok/s, step/sequential 1.0161; tokens equal; process major faults 33311 -> 33311; swap 622.7 -> 622.7 MiB; system pageouts 396581 -> 396581 (context)
+[OP4m-pod2 P-3] pair 5 (load 2.08): step 196.1 tok/s, sequential 199.4 tok/s, step/sequential 0.9833; tokens equal; process major faults 33311 -> 33311; swap 622.7 -> 622.7 MiB; system pageouts 396581 -> 396671 (context)
+[OP4m-pod2 P-3] qwen3.5-0.8b.int4.metal.v17.giw: median step/sequential 1.0091, 4 of 6 pairs faster, ratios [0.9833 0.9989 1.0036 1.0145 1.0161 1.0211]: PASS
+--- PASS: TestOP4mPod2_stepSpeed (72.69s)
+PASS
+== nemotron-h-4b-instruct-128k.int4.metal.v17.giw 19:33:53 load1=2.07
+[OP4m-pod2 P-3] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: cell start: 1-minute load 2.07; available 6.39 GiB against need 5.44 GiB (ok); reclaimable 4.84 GiB (recorded); pair bar 12.0
+[OP4m-pod2 P-3] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: the step's scratch 11.4 MiB
+[OP4m-pod2 P-3] pair 0 (load 3.15): step 31.0 tok/s, sequential 30.8 tok/s, step/sequential 1.0046; tokens equal; process major faults 305147 -> 305150; swap 622.7 -> 622.7 MiB; system pageouts 397878 -> 397920 (context)
+    mc3_step_test.go:711: cell void: pair 0 paged (process major faults 305147 -> 305150, swap 622.7 -> 622.7 MiB); re-run the cell
+--- FAIL: TestOP4mPod2_stepSpeed (150.73s)
+FAIL
+== gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.int4.metal.v17.giw 19:36:24 load1=2.15
+[OP4m-pod2 P-3] gemma-4-E2B_q4_0-it.int4.metal.v17.giw: cell start: 1-minute load 2.15; available 9.11 GiB against need 3.64 GiB (ok); reclaimable 5.86 GiB (recorded); pair bar 12.0
+[OP4m-pod2 P-3] gemma-4-E2B_q4_0-it.int4.metal.v17.giw: the step's scratch 11.3 MiB
+[OP4m-pod2 P-3] pair 0 (load 1.87): step 55.4 tok/s, sequential 54.6 tok/s, step/sequential 1.0141; tokens equal; process major faults 231863 -> 231863; swap 622.7 -> 622.7 MiB; system pageouts 397987 -> 398075 (context)
+[OP4m-pod2 P-3] pair 1 (load 2.18): step 54.7 tok/s, sequential 54.3 tok/s, step/sequential 1.0079; tokens equal; process major faults 231863 -> 231863; swap 622.7 -> 622.7 MiB; system pageouts 398075 -> 398076 (context)
+[OP4m-pod2 P-3] pair 2 (load 2.07): step 54.4 tok/s, sequential 54.9 tok/s, step/sequential 0.9909; tokens equal; process major faults 231863 -> 231864; swap 622.7 -> 622.7 MiB; system pageouts 398076 -> 398104 (context)
+    mc3_step_test.go:711: cell void: pair 2 paged (process major faults 231863 -> 231864, swap 622.7 -> 622.7 MiB); re-run the cell
+--- FAIL: TestOP4mPod2_gemma4StepSpeed (52.79s)
+FAIL
+hold end 2026-11-12 19:37:17 PST
