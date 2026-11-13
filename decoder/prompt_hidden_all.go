@@ -8,7 +8,7 @@ import (
 
 // PromptHiddenAll returns the final-norm hidden state at EVERY position of prompt: HF's last_hidden_state[0, :] (which
 // is output_hidden_states[-1]), K rows of HiddenDim. It is what a head that reads all positions consumes (Route C of
-// docs/tasks/task-constrained-confidence.md: Clef's joint schema head, docs/measurements/decisions-d10-clef-2026-10-02.md);
+// docs/tasks/parked/task-constrained-confidence.md: Clef's joint schema head, docs/measurements/decisions-d10-clef-2026-10-02.md);
 // PromptHidden returns only the last row.
 //
 // A resident backend that implements ResidentResidualAll answers first: the whole prompt runs on the device, the

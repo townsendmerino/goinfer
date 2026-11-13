@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-// TestProgramShape_matchesTheAccessors is OP4cu-b1's B-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): on every tracked
+// TestProgramShape_matchesTheAccessors is OP4cu-b1's B-1 (docs/completed/task-forward-architecture-2026-10.md §4.9a): on every tracked
 // tiny checkpoint the decoder loads on the CPU, program.ShapeOf equals the nine Architecture accessors the residents read, and
 // program.MixerOf equals ResidentLayerOps on every layer: the mixer where a resident runs it, and the FFN everywhere. A layer
 // holding KDA or LFM2's short convolution, which have no ResidentMixer, must map to its own mixer. Each plant must add a
@@ -210,7 +210,7 @@ func tableHasSteps(s *program.Support, p *program.Program) error {
 }
 
 // TestSublayers_consumeEveryOperationOnce is OP4m-b2's M2 and OP4m-c1's C1-1 over the fixtures, moved here from metal with the
-// derivation (OP4cu-b2, docs/tasks/task-forward-architecture-2026-10.md §4.9 and §4.9a): on every tracked tiny checkpoint the
+// derivation (OP4cu-b2, docs/completed/task-forward-architecture-2026-10.md §4.9 and §4.9a): on every tracked tiny checkpoint the
 // decoder loads on the CPU, the sublayers of each layer consume each of its operations exactly once, in order, each only
 // operations its block emits, exactly when Metal's table (program.Metal) has a step for every operation. Two plants must each
 // turn it red on at least one fixture: the attention sublayer also consumes the FFN sublayer's input norm, and the table lists

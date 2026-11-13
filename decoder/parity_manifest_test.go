@@ -498,7 +498,7 @@ func isT3Method(m string) bool {
 	return t3Methods[m] || strings.HasPrefix(m, "shared-path (via ")
 }
 
-// identityInherited parses "identity-inherited (<method> @ <rev>)" (TE6(b), docs/tasks/task-test-efficiency-2026-09.md;
+// identityInherited parses "identity-inherited (<method> @ <rev>)" (TE6(b), docs/completed/task-test-efficiency-2026-09.md;
 // parity-coverage-policy.md): a family whose full logits at the current rev are byte-identical, on the same arch and
 // backend, to the build its T3 oracle ran at. <method> is that original T3 method and <rev> the rev it ran at; both
 // carry through chains of inheritance unchanged, and the row keeps the original metrics. It clears T3 exactly when the

@@ -1,6 +1,6 @@
 //go:build realckpt
 
-// G-S10q-c of docs/tasks/task-multimodal-support-2026-10.md ("S10, Qwen3-VL MoE", registered before this code): goinfer's
+// G-S10q-c of docs/completed/task-multimodal-support-2026-10.md ("S10, Qwen3-VL MoE", registered before this code): goinfer's
 // half, step (b')'s design (g31b_logits_real_test.go) on image prompts. Run once for the 30B and once for the dense
 // Qwen3-VL-2B sibling the bar is read against.
 //

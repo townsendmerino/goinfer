@@ -67,7 +67,7 @@ type ResidentForward interface {
 	Close() error
 }
 
-// ResidentKVSlotter is an OPTIONAL ResidentForward extension (MC1, docs/tasks/task-concurrency-2026-09.md): a resident
+// ResidentKVSlotter is an OPTIONAL ResidentForward extension (MC1, docs/tasks/parked/task-concurrency-2026-09.md): a resident
 // that holds several independent KV caches ("slots") and binds exactly one at a time. Every ResidentForward method —
 // Forward, ForwardN, UploadKV, TruncateTo, Reset — reads and writes the BOUND slot only, so a slot switch is the whole
 // interface: the decoder keeps each slot's reuse bookkeeping and binds the slot a generation will use before it
@@ -78,7 +78,7 @@ type ResidentKVSlotter interface {
 	UseKVSlot(i int) error
 }
 
-// ResidentBatchStepper is an OPTIONAL ResidentKVSlotter extension (MC3, docs/tasks/task-concurrency-2026-09.md): one
+// ResidentBatchStepper is an OPTIONAL ResidentKVSlotter extension (MC3, docs/tasks/parked/task-concurrency-2026-09.md): one
 // decode token for several sequences at once, each on its own KV slot at its own position, in one step. It reads and
 // writes only the named slots — never the bound one's binding — and each returned row must equal what that sequence's
 // own call would return on its slot, bit for bit (the identity gate MC3 keeps): Forward's logits, or, for a sequence
@@ -198,7 +198,7 @@ type ResidentSampleChain interface {
 }
 
 // TopKRow is one decode step's logits row reduced on-device to its K best entries (R7,
-// docs/tasks/red-october.md). IDs/Logits are ordered (logit DESCENDING, token id ASCENDING) — the tie
+// docs/completed/red-october.md). IDs/Logits are ordered (logit DESCENDING, token id ASCENDING) — the tie
 // order internal/sampling's topKByLogit defines, which feeds the sampler's cumulative draw — so Logits[0] is the
 // row's exact maximum and IDs[0] its argmax. Z is the full-vocabulary softmax denominator
 // Σ exp((l−max)/T) at the temperature the row was requested with; 0 unless it was asked for. Full
@@ -296,7 +296,7 @@ type ResidentHiddenLast interface {
 // ResidentResidualAll is an OPTIONAL ResidentForward extension: ingest a whole sequence at positions
 // startPos..startPos+len-1 and return the residual stream of EVERY row after the last layer and BEFORE the final
 // norm, [len][hidden] f32, each row a fresh slice the caller owns: the resident twin of Model.PromptHiddenAll
-// (docs/tasks/task-constrained-confidence.md, Route C). It stops before the norm because the decoder applies it on
+// (docs/tasks/parked/task-constrained-confidence.md, Route C). It stops before the norm because the decoder applies it on
 // the host in f32, as its CPU path does; ResidentHiddenLast cannot serve this (post-norm, last row only, and on CUDA
 // already through the int8 activation quantization). A backend whose batched forward is not what its decode computes
 // must take the exact path; a decline falls back to the CPU, a cancellation returns.
@@ -356,7 +356,7 @@ type ResidentImagePrefill interface {
 }
 
 // ResidentImageBlocksPrefill is ResidentImagePrefill for a prompt with several images (S11,
-// docs/tasks/task-multimodal-support-2026-10.md): blocks are each image's [start, end), in order and disjoint, each its
+// docs/completed/task-multimodal-support-2026-10.md): blocks are each image's [start, end), in order and disjoint, each its
 // own bidirectional block. OPTIONAL: a backend without it takes a multi-image turn through the CPU-prefill + UploadKV
 // bridge, which handles any number of blocks.
 type ResidentImageBlocksPrefill interface {
@@ -469,7 +469,7 @@ type ResidentCaps struct {
 	// attention's floor); every loop that cuts a prompt into passes takes the larger of it and prefillTailMin.
 	TailMinRows int
 	// Quant is the precision the weights run at, when the decoder cannot infer it from the backend and the load quant (Metal runs
-	// some int8 models natively and re-quantizes others to int4, docs/tasks/task-metal-int8-2026-10.md); "" means residentQuantLabel applies.
+	// some int8 models natively and re-quantizes others to int4, docs/completed/task-metal-int8-2026-10.md); "" means residentQuantLabel applies.
 	Quant string
 	// ContextNote is a few words on how the backend arrived at ContextCap, for a load banner; "" when the caller's own -ctx set it.
 	ContextNote string
@@ -1067,7 +1067,7 @@ func (m *Model) LayerRopeGlobal(i int) bool { return m.BackendView().Layer(i).Ro
 // A whole-model no-RoPE arch (rope_theta absent, arch.NoPositionEncoding) never populates ropeInvFreqGlobal/Local,
 // so ropeInvFreq(i) is empty for every layer. The table is then RotaryDim()/2 wide, the width every resident rope
 // kernel launch expects (rhalf): a zero-length table would be a 0-byte device allocation, a hard error on CUDA
-// (docs/tasks/task-gpu-paths-2026-09.md, G5; docs/code-notes/decoder.md#Model.RopeInvFreqLayer).
+// (docs/completed/task-gpu-paths-2026-09.md, G5; docs/code-notes/decoder.md#Model.RopeInvFreqLayer).
 func (m *Model) RopeInvFreqLayer(i int) []float32 {
 	a := m.w.arch
 	inv := a.ropeInvFreq(i)
@@ -1173,7 +1173,7 @@ func (m *Model) AttnLogitSoftcapResident() float32 { return m.BackendView().Attn
 // archs (m.resident stays nil → staged/CPU path). Called at every model-load site.
 // attnSoftcapOffForTest removes the attention-score softcap from every model loaded while it is set, on the CPU and on
 // a resident alike, before the resident is built: OP1's real Gemma 2 gate measures its own baseline with it
-// (docs/tasks/task-forward-architecture-2026-10.md §4.6, G2-R's arm B). Set only through SetAttnSoftcapOffForTest
+// (docs/completed/task-forward-architecture-2026-10.md §4.6, G2-R's arm B). Set only through SetAttnSoftcapOffForTest
 // (goinfer_testhooks).
 var attnSoftcapOffForTest atomic.Bool
 
@@ -1196,7 +1196,7 @@ func (m *Model) withResidency() *Model {
 	}
 	// H2: the backend's startup self-test, once per backend and quant per process, BEFORE the build, so the device memory its
 	// fixture builds take (the local-memory pool their kernels' first launches reserve) is released or already held when the
-	// build's plan and fit check read free memory, never taken after them (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6
+	// build's plan and fit check read free memory, never taken after them (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-H6
 	// build, amendment"). A mismatch skips the build and continues on the CPU path with the reason on the decode path, instead of
 	// producing wrong numbers silently.
 	if r, ran := gpuProbeBeforeResident(m); ran && r.Status == SelfTestDeclined {
@@ -1421,7 +1421,7 @@ func (m *Model) residentKVFlags(backend string) (kvF16, kvI8 bool) {
 // ResidentKVPrecision is the KV-cache precision the resident runner actually allocates — "f32", "f16" or
 // "i8" — or "" when no resident runner is active. It reports what runs, not what was requested: Metal
 // ships f16 (or int8) KV only, its f32 KV kernels being compiled out (metal/model.go's r.kvF32), so a
-// Metal resident model runs f16 KV even when nothing asked for it (docs/tasks/task-memory-accounting-2026-09.md
+// Metal resident model runs f16 KV even when nothing asked for it (docs/completed/task-memory-accounting-2026-09.md
 // found serve's banner printing "KV f32" there).
 func (m *Model) ResidentKVPrecision() string {
 	if m.resident == nil || m.be == nil || m.w == nil {
@@ -1501,9 +1501,9 @@ func residentQuantLabel(backend, quant string) string {
 
 // autoMetalPrecision is why a model stays on the CPU when -backend auto chose metal, "" when it may go resident. A
 // backend the user did not name must not change the precision they loaded at (such as the int8int8 bundle a
-// model-included goinfer-chat carries; R17, docs/tasks/task-first-hour.md). Metal runs int4 resident, dense
-// int8int8 natively (docs/tasks/task-metal-int8-2026-10.md), and q4k on its q4k lane, which keeps the file's K-quant
-// blocks (docs/tasks/task-metal-q4k-2026-10.md); it re-quantizes int8, int4mix and the int8int8 models native int8 does
+// model-included goinfer-chat carries; R17, docs/completed/task-first-hour.md). Metal runs int4 resident, dense
+// int8int8 natively (docs/completed/task-metal-int8-2026-10.md), and q4k on its q4k lane, which keeps the file's K-quant
+// blocks (docs/completed/task-metal-q4k-2026-10.md); it re-quantizes int8, int4mix and the int8int8 models native int8 does
 // not cover (MoE, DeltaNet) to int4, and takes no f32. So int8int8 may try the resident here and
 // autoMetalKeepsPrecision checks afterwards that it ran natively; the others stay on the CPU. A named -backend
 // metal still runs them re-quantized.
@@ -1625,7 +1625,7 @@ func (m *Model) embedIsTableRow() bool {
 //
 // A Gemma 4 E-model's row is [h ‖ PLE inputs], ResidentEmbedLen() long: the per-layer inputs need the token id,
 // which the resident interface does not carry, so the host computes them here with the CPU's own helper
-// (gemma4PLEInputs) and the backend reads them from the row's tail (S1.2, docs/tasks/task-multimodal-support-2026-10.md).
+// (gemma4PLEInputs) and the backend reads them from the row's tail (S1.2, docs/completed/task-multimodal-support-2026-10.md).
 func (m *Model) embedResidentInto(id int, dst []float32) []float32 {
 	return m.embedResidentScratch(id, dst, nil)
 }
@@ -1674,7 +1674,7 @@ func (m *Model) embedResidentScratch(id int, dst, pleScratch []float32) []float3
 	return row
 }
 
-// gemma4PLEDropTokenForTest is S1's G2 planted defect (2) (docs/tasks/task-multimodal-support-2026-10.md): the
+// gemma4PLEDropTokenForTest is S1's G2 planted defect (2) (docs/completed/task-multimodal-support-2026-10.md): the
 // token-identity term missing from the resident row's PLE inputs, which G1 (resident against the CPU) must catch.
 // Set only through SetGemma4PLEDropTokenForTest (goinfer_testhooks).
 var gemma4PLEDropTokenForTest bool

@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-// G-W4 of docs/tasks/task-cuda-windowed-kv-2026-10.md, the decoder half: with Options.ResidentWindowedKV the CUDA price of a sliding-window
+// G-W4 of docs/completed/task-cuda-windowed-kv-2026-10.md, the decoder half: with Options.ResidentWindowedKV the CUDA price of a sliding-window
 // layer's KV is the blocks of min(ctx, window+WindowedKVSlack) positions (plus one past window+slack, for a range that starts mid-block),
 // beside the null blocks and the tables, and Plan chooses a context against that price. The allocation it must equal is
 // cuda's TestWindowedKV_allocation (needs a GPU).

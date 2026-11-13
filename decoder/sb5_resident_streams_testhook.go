@@ -12,7 +12,7 @@ import (
 )
 
 // ResidentStreamCase is one generateInto run on a resident model: its tokens and the counters that say which decode path
-// served them (SB5, docs/tasks/task-subsystems-2026-10.md §8 SB5).
+// served them (SB5, docs/completed/task-subsystems-2026-10.md §8 SB5).
 type ResidentStreamCase struct {
 	Tokens        []int `json:"tokens"`
 	DeviceSampled int   `json:"device_sampled,omitempty"`

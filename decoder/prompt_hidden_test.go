@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// TestPromptHidden_matchesHF is D2's gate (docs/tasks/task-constrained-confidence.md): the final-norm hidden state at the last
+// TestPromptHidden_matchesHF is D2's gate (docs/tasks/parked/task-constrained-confidence.md): the final-norm hidden state at the last
 // prompt position must reach cosine >= 0.9999 against HF's output_hidden_states[-1] on five prompts, in f32, for the family the
 // JEV decision models are (Qwen3.5), dense and MoE. The reference is scripts/pin_prompt_hidden.py, run on the existing tiny
 // checkpoints; its prompts are 2..64 tokens, never 1, where attention is the identity. Cosine alone cannot see the final norm when

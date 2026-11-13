@@ -14,7 +14,7 @@ import (
 	"testing"
 )
 
-// TestParityManifest_adapterFilesOwned is VK2's census (docs/tasks/task-subsystems-2026-10.md §5.5, A4): every parity
+// TestParityManifest_adapterFilesOwned is VK2's census (docs/completed/task-subsystems-2026-10.md §5.5, A4): every parity
 // family's key covers the file holding its registry adapter, and the arch_*.go file of every adapter or helper that
 // adapter reaches, so an edit to a family's adapter re-stales that family and an edit to another's does not reach it.
 // The adapter is found through the live registry map, the calls by parsing the adapters' files.
