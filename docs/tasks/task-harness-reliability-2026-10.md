@@ -18,7 +18,7 @@
 | H-d | moved | `docs/tasks/task-embed-and-harness-ux.md`, row F.4 | `docs/completed/task-integration-harness-2026-10.md` §5 |
 | Gate-1 | done | — | `internal/guard/servecheck/check.go:Client.ToolsHarnessMessages` (28b79e28b) |
 | Gate-2 | open | (Francis, 2026-11-09: keep) both rows on the four checkpoints, fit-checked first, from `~/models`; also re-run the small Qwen coders and add Mellum2.1 (the amendments moved to `docs/queue-presentation.md`) | opencode.md's tools table: "not yet measured" |
-| Gate-3 | open | wanted now for tack's development (Francis, 2026-11-09): size its night cost first, then record three traces and queue the night cells on nobara | none yet |
+| Gate-3 | open | wanted now for tack's development (Francis, 2026-11-09): size its night cost first, then record three traces and queue the night cells on nobara. Sized 2026-11-09: about 23 h of night time in full, about 8 h reduced. Francis, 2026-11-09: the reduced design, one cell a night (about 3.6 h each, the 3 h cap waived), after C12's nights. The pilot recipe is merged; nobara's pilot data is on `origin/gate3-pilot-data-2026-11-09`, not on main. Next: the per-cell registration and night recipe, three recorded traces, and the Mac pilot | `docs/measurements/harness-gate3-pilot-2026-11/README.md` |
 | hygiene | done | — | the integration pages carry no "honest" |
 
 ## 1. What already exists, so it is not re-measured

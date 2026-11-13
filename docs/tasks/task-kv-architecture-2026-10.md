@@ -1,5 +1,14 @@
 # Task: one KV architecture — paged, content-addressed, tiered (KV0–KV11) — 2026-10
 
+> **Status 2026-11-12: the ledger re-read against main at 93a183f82, after ten commits that went straight to main on
+> 2026-11-11 and 2026-11-12.** No open row advanced, and none of those commits changed this ledger beyond one renamed
+> citation. 90e4d44f8 moved the reuse arithmetic into `internal/runtime/kvmgr/sequence.go` behind `kvmgr.SequenceState`
+> (row SEQ, new): the old entry points stay as wrappers, the interface is live on the CPU session path only, and one behavior
+> changed (`decoder/resident_reuse.go:Model.residentReuseFloor` now applies the slot floor, which is new on Metal and WebGPU).
+> No CUDA device run and no timed run is on record for it. Flint was admitted to f16 and int8 KV on request without its
+> gates (`auto` is unchanged); that is P4 and G5 in `docs/tasks/task-kv-precision-everywhere-2026-10.md`. Flint's F4 replay gives the CPU-ring row its first figure.
+> The proposed order of work is §7a. KV5, KV7-rest, KV8 and KV10 stand as the 2026-11-02 block says.
+>
 > **Status 2026-11-02: KV4 is done.** §5.16's three items landed (nobara-sb01, branch `kv4-observability-2026-11-02`;
 > `docs/measurements/kv4-observability-2026-11/`): `usage.prefill_reuse` beside `prefill_reused_tokens`, the KV pool banner line, and
 > `serve check`'s shared-preamble row. KV5, KV7-rest, KV8 (its CUDA half) and KV10 (its CUDA half) are open; KV11 waits on KV7.
@@ -63,8 +72,9 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | KV10 | open | KV4 is done (2026-11-02); Metal's ceiling waits on KV5. Next: the 64K/128K fidelity harness (lever 4's third step) on CUDA, and listing the families with no fused prefill kernel | §6 |
 | KV11 | blocked | KV7 (KV4 done 2026-11-02). Its KV-share trade curve on CUDA was read 2026-11-02 (nobara-sb01), AMBIGUOUS by its registered rule because nothing at 16,384 or more loads. Stated plainly: the 26B with paged experts decodes 62.2 tok/s at 4,096 positions (29 slots, 96.9% hits) and 24.1 at 8,192 (10 slots, 51.2%), 0.39x, and refuses 16,384. A follow-up between 4,096 and 8,192 is owed, and the Mac's curve | §6; lead4-perlayer-hitrate-2026-09-22.md; `docs/measurements/kv11-trade-curve-2026-11/` |
 | §5.16 | done | 2026-11-02 (nobara-sb01): the reuse-source field, the pool banner, the check row; red first each | §5.16; `docs/measurements/kv4-observability-2026-11/` |
-| §12 | open | desk: `docs/ARCHITECTURE.md`'s KV sections for KV7 and KV8a | §12 |
-| CPU-ring | open | needs an owner: the CPU ring's one-position rollback, left as a finding in the prefix-reuse record §3 | from the archived windowed-KV doc |
+| §12 | open | desk: `docs/ARCHITECTURE.md`'s KV sections for KV7 and KV8a. Read 2026-11-12: "Recurrent state cannot be rewound" still says no backend checkpoints it, "The KV manager" still ends at paged storage "not yet", and the page names neither host demotion nor `kvmgr.SequenceState` | §12 |
+| CPU-ring | open | needs an owner: the CPU ring's one-position rollback, left as a finding in the prefix-reuse record §3. It has a figure now: Flint's F4 replay (`decoder/flint_parity_test.go:TestFlint_kv0hBShapedWindowReuse`, arithmetic over KV0-H's 29 B-shaped requests, not a served reading) keeps 0 of 29 rollbacks warm on the CPU for a 513-position window, against 29 of 29 on CUDA's windowed KV. `decoder/kvcache.go:ring.truncate` keeps the same rule through `kvmgr.RingTruncateExact`. F4's own rule sends a CPU result here, and its record did not. Next: an owner, and a ring with rollback slack as CUDA's has, sized S to M | from the archived windowed-KV doc; `docs/measurements/flint-f0-2026-10.md` §6.4 |
+| SEQ | open | `internal/runtime/kvmgr/sequence.go:SequenceState` (90e4d44f8, no PR): the reuse arithmetic in one place (prefix scoring, class-run clipping, window horizons, rewind, reconcile, the recurrent checkpoint decision), traced equal to what it replaced except where named here. It is live on the CPU session path (`decoder/session.go:Session.rewindForReuse`, through `decoder/sequence_state.go:cpuSequenceState`). The resident adapter (`residentSequenceState`) and `kvmgr.ScoreSequence` have test callers only, so the residents still score through `Slots.Score` and two paths stand. Behavior that changed: `decoder/resident_reuse.go:Model.residentReuseFloor` returns 0 for a reuse under the slot floor after the in-place cap (CUDA already did; new on Metal and WebGPU), and the CPU rewind refuses a prefix past the cache's position. Next: a tier-0 test of the floor through the acquire path; `decoder/policy_fake_test.go:TestSessionPolicy_exactOnTheFake` moved onto the path production calls (it drives `sessionRewind`, which production no longer does); the CUDA window replay tests, G1a and G3b on nobara at main; then the residents score through `ScoreSequence`, or the test-only half goes | `decoder/sequence_state_test.go:TestSequenceState_CPUAndResidentParity`; `internal/runtime/kvmgr/sequence_test.go` |
 | D1–D8, Q1–Q7 | done | — | §8 |
 
 > **For KV4's owner (mac-sb11m, 2026-10-30):** KV4's row reads active, although KV4a (#138, merged 2026-10-22) and KV4b
@@ -1611,6 +1621,31 @@ Added on the owner's word the same day, from the conversation that produced `doc
   something.
 - **Every phase leaves the tree consistent:** a backend not yet paged keeps working behind the slot adapter.
 
+## 7a. Plan, 2026-11-12 (proposed, for Francis)
+
+Nothing here is decided. It follows a read of the tree at 93a183f82 after the direct commits (no test was run for the read);
+the forward and memory side is in `docs/tasks/task-forward-and-memory-2026-11.md`, "Plan".
+
+1. **Read SEQ on the devices before building on it.** The CUDA window replay tests, G1a and G3b on nobara at main (tier 1,
+   minutes, under the lock; it rides with LW-cu's device run in the forward doc). On the Mac, G1a with flint-tiny, which its
+   fixture glob now takes. Tier 0 first: the floor test and the SB5-P3 test, both in SEQ's row.
+2. **Gate Flint's KV precision or take it back out** (P4 and G5 in the precision doc). `decoder/kvresolve.go:cudaKVF16Delivered`
+   lists `flint` since aea0ee556, so CUDA delivers `--kv f16` for it on request (`auto` stays f32, on the sliding-window
+   gate), and that list's own rule is that a family joins with its exact-input identity and delivered-bytes gates, never by
+   compiling. Flint has no fixture in `backend/cuda/kv4b_groups_test.go:kv4bGroups` and no max |V| reading; the CPU admits it
+   to f16 and int8 with no flint-tiny row in `TestKVF16_F1Exactness` or `TestKVI8_moeFamiliesConsistent`. Read the gates
+   (tier 0 on the CPU, minutes on nobara), or remove the entry until they are read.
+3. **KV5-7 next on the Mac** (the window group in paged storage). The retention arithmetic it needs is backend-neutral now
+   (`internal/runtime/kvmgr/sequence.go:WindowNextBase`), and until it lands Metal holds a sliding family's full context
+   (F4). Then KV5-8, the default context; F5's reading at 40,960 on the 8 GB card is one more input to it.
+4. **On nobara after the reads:** KV8's message-boundary checkpoint; KV7-rest's "Before demotion can be turned on" list
+   (`docs/measurements/kv7-demote-2026-11/README.md`), whose floor SEQ's change touches; KV3-S1; KV10's fidelity harness.
+5. **CPU-ring gets an owner,** now that it has a figure. **§12 is desk work** for whoever takes SEQ's last step.
+6. **One correction owed outside this doc:** `docs/measurements/flint-f0-2026-10.md` §6.4 describes F4's data as four sessions
+   with two Claude Code ones and committed lengths of 640 to 26,184. The file it reads,
+   `docs/measurements/kv0h-2026-10/study-h20-stats-h.json`, holds ten codex and opencode sessions on one model. The rollback
+   distances it reports (9, 31 and 271) match the file; the description does not. It goes to the record's owner.
+
 ## 8. Owner decisions
 
 | id | question | recommendation |
@@ -1970,4 +2005,4 @@ External:
 - [Marconi](https://arxiv.org/abs/2411.19379)
 - [Selective KV-cache sharing (SafeKV)](https://arxiv.org/abs/2508.08438)
 
-<!-- doc-reviewed: 2026-10-21 -->
+<!-- doc-reviewed: 2026-11-12 -->
