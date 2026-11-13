@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// G-S2a of goinfer's docs/tasks/task-multimodal-support-2026-10.md: a device tower built from these exports runs the
+// G-S2a of goinfer's docs/completed/task-multimodal-support-2026-10.md: a device tower built from these exports runs the
 // patch embed and the blocks itself and calls FinishHidden for the tail, so the exported pieces, recomposed the way a
 // device tower recomposes them, must reproduce Forward bit for bit (it is the same CPU code, called in a different
 // order). The tiny towers' norms and Qwen3's position table are randomised first: an all-ones fixture would hide a

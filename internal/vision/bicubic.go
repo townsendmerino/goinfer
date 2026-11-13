@@ -8,7 +8,7 @@ import "math"
 // support widened by the scale on downscale, normalised per output pixel, quantised to int16 at the precision the
 // pass's largest weight allows, accumulated in integers with a rounding offset, clamped to uint8 after each pass.
 // Bit-identical to torchvision 0.29.1 on goinfer's pinned cases and real images (goinfer's
-// docs/tasks/task-embeddinggemma2.md, the Phase V resize; moved here from goinfer's embeddinggemma2 on 2026-10-06).
+// docs/completed/task-embeddinggemma2.md, the Phase V resize; moved here from goinfer's embeddinggemma2 on 2026-10-06).
 
 // bicubicFloatForTest (tests only) runs the resize in float64 with one rounding at the end instead of torchvision's
 // fixed-point passes: the control that shows a comparison sees a rounding-level change.

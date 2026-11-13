@@ -1,6 +1,6 @@
 // Package hybridattn holds the hybrid-attention layers' operations (the Gated-DeltaNet linear-attention recurrence,
 // its L2 head normalization, and the Qwen 3.5 interleaved query/gate split and sigmoid gate) shared by decoder and the
-// backend kernel tests (SB1, docs/tasks/task-subsystems-2026-10.md §8). Keeping the reference here lets metal/kernels
+// backend kernel tests (SB1, docs/completed/task-subsystems-2026-10.md §8). Keeping the reference here lets metal/kernels
 // test against the single production implementation without importing decoder.
 //
 // Invariants, each with the test that holds it:

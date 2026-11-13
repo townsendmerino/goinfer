@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// The swap tripwire (docs/tasks/task-never-swap-2026-09.md, S3): goinfer notices swap growing during its own run and
+// The swap tripwire (docs/completed/task-never-swap-2026-09.md, S3): goinfer notices swap growing during its own run and
 // acts. It keys on swap-used, never RSS: darwin RSS reports what survived reclaim under memory pressure (CLAUDE.md, "a guard
 // that INVERTS under the condition it exists for"), so it can fall while the machine is losing memory. The run that showed it:
 // docs/code-notes/decoder.md#swapwatch.

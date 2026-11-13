@@ -7,7 +7,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// S10 (docs/tasks/task-multimodal-support-2026-10.md, "S10, Ministral 3 (Pixtral)"): a Pixtral image fills one [IMG]
+// S10 (docs/completed/task-multimodal-support-2026-10.md, "S10, Ministral 3 (Pixtral)"): a Pixtral image fills one [IMG]
 // run per merged row, the [IMG_BREAK]s between them text, and becomes one span per row with the image's hash.
 func TestImageSpans_pixtralRows(t *testing.T) {
 	const img, brk, end = 10, 12, 13

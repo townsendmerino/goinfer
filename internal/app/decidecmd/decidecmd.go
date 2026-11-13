@@ -1,5 +1,5 @@
 // Package decidecmd is the goinfer-chat `decide` and `decisions-calibrate` subcommands (D1 of
-// docs/tasks/task-constrained-confidence.md): decisions by label-token scoring on a loaded model, one JSONL line
+// docs/tasks/parked/task-constrained-confidence.md): decisions by label-token scoring on a loaded model, one JSONL line
 // in and one out, and the per-kind temperature fit that makes their distributions calibrated in the fit's sense.
 //
 // A line in is a decision in the shape of SargeDev/jev-distill-corpus-v3's rows —

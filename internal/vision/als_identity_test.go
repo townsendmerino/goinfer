@@ -96,7 +96,7 @@ type alsTower struct {
 	run       func(t *testing.T, dir string) (out []float32, afterClose error)
 }
 
-// TestALS_G1_identity is MEM4(a)'s ALS-G1 (goinfer docs/tasks/task-memory-campaign-2026-10.md, "MEM4(a) gates"): each tower's
+// TestALS_G1_identity is MEM4(a)'s ALS-G1 (goinfer docs/completed/task-memory-campaign-2026-10.md, "MEM4(a) gates"): each tower's
 // tiny fixture, and a bf16 copy of it, loaded aliased (aliasQMat) against copied as before (aliasOffForTest); every output
 // byte-equal, the aliased load wrapping at least one weight in place, and a forward after Close an error.
 func TestALS_G1_identity(t *testing.T) {

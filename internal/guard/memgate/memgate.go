@@ -1,4 +1,4 @@
-// Package memgate is MM7's gate (docs/tasks/task-subsystems-2026-10.md): what a resident build leased on each plan line, against
+// Package memgate is MM7's gate (docs/completed/task-subsystems-2026-10.md): what a resident build leased on each plan line, against
 // the plan's figure for that line. A lease over plan, a lease on an unknown line, or a lease open after Close is red. Each backend
 // brings its rows and its allocator's named rounding; a known red lives in the backend's table of Gaps, which names the fix that
 // removes it and may only shrink. It imports testing because tests are its only callers.
@@ -288,7 +288,7 @@ type Gap struct {
 	// over what it holds; otherwise it is a line over its figure. None accounts for another.
 	Built, OverPriced bool
 	What              string // the gap, in a sentence
-	Item              string // the MM8 item, or the row of docs/tasks/task-subsystems-2026-10.md, that removes it
+	Item              string // the MM8 item, or the row of docs/completed/task-subsystems-2026-10.md, that removes it
 	// Bytes is the most this gap accounts for at a snapshot, from that snapshot's facts. It must come from the build's shape, not from
 	// the ledger it is checked against. A gap without one forgives nothing and fails Finish.
 	Bytes func(facts map[string]int64) int64

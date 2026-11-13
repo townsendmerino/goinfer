@@ -71,7 +71,7 @@ func specOptionsJSON(t *testing.T, o any, pagerDefault string) string {
 	return string(b)
 }
 
-// TestSpecOptions_golden is G-SB10-13 (docs/tasks/task-subsystems-2026-10.md § "Step 3b's gates"): modelSpec.options
+// TestSpecOptions_golden is G-SB10-13 (docs/completed/task-subsystems-2026-10.md § "Step 3b's gates"): modelSpec.options
 // over the case table is the golden recorded before Resolve took serve's overrides.
 func TestSpecOptions_golden(t *testing.T) {
 	t.Setenv("GOINFER_GGUF_DIRECT", "")

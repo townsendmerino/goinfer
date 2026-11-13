@@ -12,7 +12,7 @@ import (
 )
 
 // towerSwap runs a device Gemma 4 tower that holds device memory only while it encodes, for a model whose MoE expert cache
-// (decoder.ResidentExpertCache) uses that memory between images (docs/tasks/task-multimodal-support-2026-10.md, S20).
+// (decoder.ResidentExpertCache) uses that memory between images (docs/completed/task-multimodal-support-2026-10.md, S20).
 // Before an encode the cache shrinks to leave reserve bytes free and the tower uploads from the encoder's host weights, so
 // those weights stay loaded; after it the tower is closed and the cache grows back. An image whose tower cannot come up
 // encodes on the CPU. It is called inside a generation, and a vision model runs one generation at a time (setConcurrency);

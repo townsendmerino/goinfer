@@ -421,7 +421,7 @@ func (b *decliningBackend) BuildResident(m *decoder.Model) (decoder.ResidentForw
 	return nil, false, decoder.DeclineResident("no card in this test")
 }
 
-// TestKVPlanLine pins S18's "KV plan" line (docs/tasks/task-multimodal-support-2026-10.md): the resolved slots and positions, and the reasons the banner can state when the plan is less than was asked for.
+// TestKVPlanLine pins S18's "KV plan" line (docs/completed/task-multimodal-support-2026-10.md): the resolved slots and positions, and the reasons the banner can state when the plan is less than was asked for.
 func TestKVPlanLine(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

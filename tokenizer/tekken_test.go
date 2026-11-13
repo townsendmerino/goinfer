@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-// G-S14e1 (docs/tasks/task-multimodal-support-2026-10.md): the Tekken tokenizer against mistral_common 1.12.0's own ids, pinned by scripts/pin_tekken.py into
+// G-S14e1 (docs/completed/task-multimodal-support-2026-10.md): the Tekken tokenizer against mistral_common 1.12.0's own ids, pinned by scripts/pin_tekken.py into
 // testdata/tekken_golden.json.gz. The tekken.json (14.9 MB) is not committed: it is read from the Voxtral Mini directory under GOINFER_MODELS_DIR (default ~/models) and the
 // test is skipped without it (and refuses a file whose sha256 is not the golden's).
 

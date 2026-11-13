@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// D12's encoder gate (docs/tasks/task-constrained-confidence.md): the prompt text, the token ids and every span identical to the
+// D12's encoder gate (docs/tasks/parked/task-constrained-confidence.md): the prompt text, the token ids and every span identical to the
 // official encoder's on all 150 recorded items (testdata/decisions/clef/encoder.jsonl, pinned by scripts/pin_clef_d10.py from the
 // checkpoint's own joint_schema_model.py, with its tokenizer calls instrumented).
 //

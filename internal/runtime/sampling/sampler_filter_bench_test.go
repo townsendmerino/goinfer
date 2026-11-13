@@ -7,7 +7,7 @@ import (
 
 // maxScanSerial reproduces topFilterLogits's own inline max-scan (a serial, 4x-unrolled loop at the top of the function,
 // not parallelMax in sampler_chunked.go) in isolation, for a same-session A/B against parallelMax; same design as the
-// softcap benchmark in softcap_test.go. Task: docs/tasks/red-october.md, R15.
+// softcap benchmark in softcap_test.go. Task: docs/completed/red-october.md, R15.
 func maxScanSerial(logits []float32) float32 {
 	maxF := logits[0]
 	i := 1

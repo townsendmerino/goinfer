@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// The gpu gate's Metal cell groups as a grader (SB12 step 8, docs/tasks/task-subsystems-2026-10.md): suite, parity,
+// The gpu gate's Metal cell groups as a grader (SB12 step 8, docs/completed/task-subsystems-2026-10.md): suite, parity,
 // lifecycle and prefill are one `go test` cell each, and each group's state, line and detail or evidence lines are a
 // function of its spec, whether the checkpoint it needs was present, and its cell's graded result and text. The live gate
 // (gpuGate.metalCells) and `gate gpu -replay` (replayGPU) both print what gradeMetalCell returns.

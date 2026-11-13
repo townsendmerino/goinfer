@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// G-S11f (S11, docs/tasks/task-multimodal-support-2026-10.md): several images in one message keep their order on every
+// G-S11f (S11, docs/completed/task-multimodal-support-2026-10.md): several images in one message keep their order on every
 // API surface. Each parser records where its images sat among the text parts (imageRef.at), and placeImageBlocks puts
 // each block back there.
 

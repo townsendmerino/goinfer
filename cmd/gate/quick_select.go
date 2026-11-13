@@ -26,7 +26,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
 )
 
-// `gate quick`'s SELECTION (docs/tasks/task-test-efficiency-2026-09.md, TE7(a)): changed files -> their
+// `gate quick`'s SELECTION (docs/completed/task-test-efficiency-2026-09.md, TE7(a)): changed files -> their
 // packages -> every test binary, in any of the five modules, that can observe them.
 //
 // THREE TIERS, because "imports the change" is not the only way a test here observes one:

@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// TestReal_parity is Gate 2 (docs/tasks/task-embeddinggemma2.md): the real google/embeddinggemma-2 checkpoint
+// TestReal_parity is Gate 2 (docs/completed/task-embeddinggemma2.md): the real google/embeddinggemma-2 checkpoint
 // (GOINFER_EG2_DIR, default ~/models/embeddinggemma-2, never the archive) against the sentence-transformers reference
 // that scripts/pin_embeddinggemma2_real.py records (GOINFER_EG2_GOLDEN, default testdata/embeddinggemma2-real). For each
 // of its 48 texts, under the prompt the reference applied (query, document, none, two other named prompts; four

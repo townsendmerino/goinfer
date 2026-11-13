@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
-// S10, LFM2.5-VL, G-S10l-a and G-S10l-b (docs/tasks/task-multimodal-support-2026-10.md, registered 2026-10-09 before any
+// S10, LFM2.5-VL, G-S10l-a and G-S10l-b (docs/completed/task-multimodal-support-2026-10.md, registered 2026-10-09 before any
 // code), against transformers' references from scripts/pin_lfm2vl_real.py (nobara; GOINFER_LFM2VL_REAL_ARTIFACTS,
 // default ~/goinfer-logs/lfm2vl-real) and the real checkpoint (GOINFER_LFM2VL, default ~/models/lfm25-vl-1.6b).
 //

@@ -10,7 +10,7 @@ import (
 )
 
 // contextOverflowError is a prompt that fills or exceeds the context window it was sent to. It has two readings,
-// and which one decides the words a client is given (docs/tasks/task-integration-harness-2026-10.md, "I1"):
+// and which one decides the words a client is given (docs/completed/task-integration-harness-2026-10.md, "I1"):
 //
 //   - the conversation is too long, so compacting it would make the request fit: each dialect gets the wording its
 //     coding agents recognise as an overflow, and they compact;

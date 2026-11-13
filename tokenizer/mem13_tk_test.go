@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/aikit/embed"
 )
 
-// TK-G (docs/tasks/task-memory-campaign-2026-10.md, §4 MEM13, MEM13-tokenizer gates): the rank map keyed by ids, the typed
+// TK-G (docs/completed/task-memory-campaign-2026-10.md, §4 MEM13, MEM13-tokenizer gates): the rank map keyed by ids, the typed
 // metadata reader, and what they must leave unchanged.
 
 var updateTK = flag.Bool("update-tk", false, "rewrite testdata/mem13_tk_ids.json from this tree")

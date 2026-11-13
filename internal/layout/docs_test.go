@@ -79,7 +79,7 @@ func scanDocs(t *testing.T) ([]packageDoc, map[string]map[string]bool) {
 	return docs, tests
 }
 
-// TestPackageDocs_namedTestsExist is SB14's first half (docs/tasks/task-subsystems-2026-10.md §8, "SB14's gates"): every
+// TestPackageDocs_namedTestsExist is SB14's first half (docs/completed/task-subsystems-2026-10.md §8, "SB14's gates"): every
 // test a package doc comment names exists, in the package the prose puts it in (its own when it names none), and every
 // line of an "Invariants" block names one. A doc that promises coverage by a test that is gone, or by none, fails here.
 func TestPackageDocs_namedTestsExist(t *testing.T) {

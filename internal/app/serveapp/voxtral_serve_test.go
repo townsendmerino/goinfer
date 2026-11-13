@@ -18,7 +18,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// G-S14e4a (iii) of docs/tasks/task-multimodal-support-2026-10.md: the serve wiring of Voxtral Mini on the tiny fixture. A real tekken.json is 14.9 MB and not committed, so the tokenizer here is a
+// G-S14e4a (iii) of docs/completed/task-multimodal-support-2026-10.md: the serve wiring of Voxtral Mini on the tiny fixture. A real tekken.json is 14.9 MB and not committed, so the tokenizer here is a
 // Tekken file built in the test: the 256 byte tokens and 40 special tokens, the seven the prompt uses at the ids the real file gives them. Only special ids appear in a no-language prompt, so
 // nothing else of the vocabulary is exercised (the real file is G-S14e4a (i) and (ii), in tokenizer/ and multimodal/).
 func tinyTekkenJSON(t *testing.T) []byte {

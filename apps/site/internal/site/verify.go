@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// Verify is the gate on what a build wrote (docs/tasks/task-site-2026-09.md, S7): every family in the capability matrix
+// Verify is the gate on what a build wrote (docs/completed/task-site-2026-09.md, S7): every family in the capability matrix
 // has a page that names it, the Models page links every one, and every measured figure that a claim carries is on its
 // checkpoint's page with its date. It reads the files back, so a template or a loop that quietly skips a family fails
 // here and not in production.
@@ -90,7 +90,7 @@ func Verify(out string, m *Model, ws []*Writeup, drafts bool) error {
 	} else if !strings.Contains(dl, "built without release data") {
 		bad = append(bad, "download: a build without release data must say so on the page")
 	}
-	// H6 (docs/tasks/task-hardware-coverage-2026-10.md): the page says what goinfer has been run on, from the same list every speed is gated on, and where to report.
+	// H6 (docs/completed/task-hardware-coverage-2026-10.md): the page says what goinfer has been run on, from the same list every speed is gated on, and where to report.
 	for _, mc := range m.Machines {
 		if !strings.Contains(dl, html.EscapeString(mc.Label)) {
 			bad = append(bad, fmt.Sprintf("download: the page never names machine %q, which speeds are measured on", mc.Label))

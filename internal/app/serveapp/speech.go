@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// A Whisper model is served as a speech model (docs/tasks/task-multimodal-support-2026-10.md, G-S14i): it is not a decoder.Model, so it lives in server.speech and not in server.models, which everything
+// A Whisper model is served as a speech model (docs/completed/task-multimodal-support-2026-10.md, G-S14i): it is not a decoder.Model, so it lives in server.speech and not in server.models, which everything
 // (sessions, KV slots, templates, adapters, the resident path) assumes holds decoders. It answers POST /v1/audio/transcriptions and is listed by GET /v1/models.
 
 // speechEngine is what the route needs of a Whisper model; *whisper.Transcriber is the real one, a stub stands in for the handler tests.

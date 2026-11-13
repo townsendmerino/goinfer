@@ -1,5 +1,5 @@
 // Package confidence is the shared readout behind goinfer's confidence surfaces
-// (docs/tasks/task-constrained-confidence.md): a softmax over a RESTRICTED set of tokens at a
+// (docs/tasks/parked/task-constrained-confidence.md): a softmax over a RESTRICTED set of tokens at a
 // position a grammar or a template controls, renormalized over that set and optionally
 // temperature-scaled. Per-field confidence on constrained output (C) reads it over the tokens a
 // grammar left legal; decisions (D) read it over an option set's label tokens.

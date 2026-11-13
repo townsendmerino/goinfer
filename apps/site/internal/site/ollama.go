@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// The "Coming from Ollama?" section of the Models page (docs/tasks/task-site-2026-09.md S2): Ollama's most-pulled
+// The "Coming from Ollama?" section of the Models page (docs/completed/task-site-2026-09.md S2): Ollama's most-pulled
 // models, each with what goinfer does with it. site/data/ollama.json transcribes a dated snapshot in docs/measurements/
 // row for row; the status is not stored but derived from the capability matrix at build time; CheckOllama holds the
 // data, the derived statuses and the headline to the snapshot.
@@ -168,7 +168,7 @@ func splitCells(ln string) []string {
 	return c
 }
 
-// CheckOllama holds the section to its snapshot (docs/tasks/task-site-2026-09.md S2, S8b). It fails the build when:
+// CheckOllama holds the section to its snapshot (docs/completed/task-site-2026-09.md S2, S8b). It fails the build when:
 //   - the data's rows are not the snapshot table's, row for row (rank, tag, pulls, Ollama's tags, families);
 //   - a status derived from today's matrix differs from the snapshot's: the matrix has moved since the snapshot, so
 //     its headline is stale and a new dated snapshot is needed;
