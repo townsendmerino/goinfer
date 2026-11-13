@@ -15,7 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
-// G-S14e2 of docs/tasks/task-multimodal-support-2026-10.md (registered 2026-10-09 before any code): Voxtral's text decoder loads from the checkpoint's own layout (nested text_config, tensors
+// G-S14e2 of docs/completed/task-multimodal-support-2026-10.md (registered 2026-10-09 before any code): Voxtral's text decoder loads from the checkpoint's own layout (nested text_config, tensors
 // under language_model.*, an explicit head_dim that is not hidden/heads, rope_theta 1e8, an untied head) and the composition audio samples -> Go front end (one pass over the whole padded
 // signal) -> Go tower -> stack four frames -> projector -> soft-token splice -> Go llama decoder matches transformers' VoxtralForConditionalGeneration on the same prompt, on a 6 s clip (one
 // 30 s window, 375 audio tokens) and a 35 s clip (two windows, 750). The checkpoint is testdata/voxtral-tiny (scripts/pin_voxtral_tiny.py).

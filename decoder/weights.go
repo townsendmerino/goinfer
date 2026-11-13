@@ -297,7 +297,7 @@ func LoadWeights(dir string) (*Weights, error) {
 }
 
 // errLoadAborted is parallelLayers' sentinel when abort closes mid-build, the swap tripwire's load-time consumer
-// (docs/tasks/task-never-swap-2026-09.md). decoder.Load does not know why abort closed (a swap watch it neither owns nor
+// (docs/completed/task-never-swap-2026-09.md). decoder.Load does not know why abort closed (a swap watch it neither owns nor
 // imports); the caller that armed the watch checks errors.Is(err, errLoadAborted) and wraps it with its own reason and
 // pricing detail (see Options.LoadAbort).
 var errLoadAborted = errors.New("decoder: load aborted")
@@ -562,7 +562,7 @@ func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchem
 
 // errDirNoStream is buildWeightsFromSafetensorsTo's answer, given a sink, for a family whose dedicated builder does not
 // stream yet; StreamTranscodeDir's caller then takes the resident transcode instead
-// (docs/tasks/task-prequant-dir-streaming-2026-10.md).
+// (docs/completed/task-prequant-dir-streaming-2026-10.md).
 type errDirNoStream struct{ family string }
 
 func (e errDirNoStream) Error() string {
@@ -577,7 +577,7 @@ func IsDirNoStream(err error) bool {
 
 // loadEmbedTable loads a [rows, cols] logit table (the token embedding or an untied head) at the embedding precision mode:
 // whole and then quantized for the resident build, a row at a time when streaming (a 256k x 4096 table is 4.2 GB as f32,
-// the largest single allocation of a transcode). Both give the same bytes (G-DS1, docs/tasks/task-prequant-dir-streaming-2026-10.md).
+// the largest single allocation of a transcode). Both give the same bytes (G-DS1, docs/completed/task-prequant-dir-streaming-2026-10.md).
 func loadEmbedTable(st *embed.SafetensorsFile, name string, rows, cols int, mode quantMode, needCanonical bool, sink *giwWriter) (linalg.WeightMat, error) {
 	if sink == nil {
 		m, err := loadMat(st, name, rows, cols)

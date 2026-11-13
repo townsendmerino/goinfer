@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// TestDirSidecar_matchesDirectLoad is G-S18d's identity half (docs/tasks/task-multimodal-support-2026-10.md, S18 on the
+// TestDirSidecar_matchesDirectLoad is G-S18d's identity half (docs/completed/task-multimodal-support-2026-10.md, S18 on the
 // Mac): for every tiny safetensors fixture in testdata that Load reads as a generating model, the directory
 // transcoded to a sidecar (as modelload now does by default on darwin and linux) must generate the same greedy stream as
 // the directory loaded directly, at serve's defaults (int4, embed-int4, the Metal target). A config field the bundle

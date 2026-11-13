@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
 
-// Startup self-tests (docs/tasks/task-hardware-coverage-2026-10.md, H2). goinfer is built and measured on two machines, and a wrong kernel on hardware nobody here owns does not crash: it
+// Startup self-tests (docs/completed/task-hardware-coverage-2026-10.md, H2). goinfer is built and measured on two machines, and a wrong kernel on hardware nobody here owns does not crash: it
 // returns slightly wrong numbers. A self-test runs the kernels this process is about to use against a reference on a small fixed input, judged by the agreement the parity suite already
 // certified for them, and on a mismatch DECLINES (names the kernel and the numbers, falls back to the next path) instead of continuing silently. This file is the common record every backend
 // reports into, and the CPU test: aikit's linalg.SelfCheck, run once per process before the first model load.

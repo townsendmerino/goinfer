@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// MEM1-G, Load's sidecar default for a library caller (docs/tasks/task-memory-campaign-2026-10.md, §4 MEM1, registered
+// MEM1-G, Load's sidecar default for a library caller (docs/completed/task-memory-campaign-2026-10.md, §4 MEM1, registered
 // before the code): G0 the default in a non-test program, G1 what it opens, G2 the opt-out, G3 the test-binary default,
 // G4 the refusal.
 
