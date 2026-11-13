@@ -102,14 +102,6 @@ func (s *Session) rewindForReuse(prompt []int) (matched int) {
 	return kvmgr.RewindSequence(s.SequenceState(), kvmgr.Request{Root: s.sequenceRoot(s.cache.lora), Tokens: prompt}, clean)
 }
 
-// sessionRewind is a session's reuse decision (SB5): how many leading tokens of prompt the live KV keeps, having
-// truncated it there through truncate (which reports whether the cut was exact). A clean cache keeps nothing and is not
-// touched; a changed adapter, or a cut that cannot be exact (a ring cache's evicted rows), drops everything. At least one
-// prompt token is always left to prefill, so the turn has logits to start from.
-func sessionRewind(tokens, prompt []int, clean, adapterChanged bool, truncate func(int) bool) int {
-	return kvmgr.RewindPrefix(tokens, prompt, clean, adapterChanged, truncate)
-}
-
 // reconcile sets s.tokens to exactly what the cache holds after a generation. seq mirrors the cache (prompt + each
 // committed token); on a prefill/forward error the cache may hold fewer positions than seq claims, so clamp, or the next
 // call reuses KV that was never written and prefills at the wrong position.

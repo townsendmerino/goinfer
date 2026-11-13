@@ -333,10 +333,10 @@ func TestKVI8_batchedPrefill(t *testing.T) {
 }
 
 // TestKVI8_moeFamiliesConsistent: an int8 CPU cache on the MoE families of the generic loop (mixtral-tiny, qwen3moe-tiny, glm-tiny,
-// laguna-m1-tiny; llama-tiny is the dense control) is int8, and a batched forward over N tokens gives, bit for bit, the logits of the same N tokens
+// laguna-m1-tiny, flint-tiny; llama-tiny is the dense control) is int8, and a batched forward over N tokens gives, bit for bit, the logits of the same N tokens
 // decoded one at a time (docs/tasks/task-kv-precision-everywhere-2026-10.md, P4).
 func TestKVI8_moeFamiliesConsistent(t *testing.T) {
-	for _, dir := range []string{"../testdata/llama-tiny", "../testdata/mixtral-tiny", "../testdata/qwen3moe-tiny", "../testdata/glm-tiny", "testdata/laguna-m1-tiny"} {
+	for _, dir := range []string{"../testdata/llama-tiny", "../testdata/mixtral-tiny", "../testdata/qwen3moe-tiny", "../testdata/glm-tiny", "testdata/laguna-m1-tiny", "../testdata/flint-tiny"} {
 		t.Run(filepath.Base(dir), func(t *testing.T) {
 			m, err := Load(dir, Options{KVQuant: "i8"})
 			if err != nil {
