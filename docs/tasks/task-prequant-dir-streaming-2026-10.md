@@ -1,5 +1,0 @@
-# Task — stream a safetensors directory into its .giw one layer at a time (2026-10)
-
-**Moved.** Archived 2026-11-09; the doc now lives at
-[`completed/task-prequant-dir-streaming-2026-10.md`](../completed/task-prequant-dir-streaming-2026-10.md). Pointer kept here because other pages and code comments
-link to this path.
