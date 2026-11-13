@@ -1,0 +1,288 @@
+=== RUN   TestKV4b_deliveredBytes
+=== RUN   TestKV4b_deliveredBytes/moe/qwen3moe-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7078 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7078 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7078 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6946 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6944 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:147: 4 f16 layers; one slot at 4096 positions: f32 2130432 bytes, f16 1065472
+=== RUN   TestKV4b_deliveredBytes/moe/qwen3moe-tiny-k3
+cuda: prefill width 2048 rows (5 MiB of scratch; 6944 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:147: 4 f16 layers; one slot at 4096 positions: f32 2130432 bytes, f16 1065472
+=== RUN   TestKV4b_deliveredBytes/moe/mixtral-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 6932 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6928 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:147: 4 f16 layers; one slot at 4096 positions: f32 8520192 bytes, f16 4260352
+=== RUN   TestKV4b_deliveredBytes/paged-experts/qwen3moe-tiny
+cuda: prefill width 2048 rows (5 MiB of scratch; 6944 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:147: 4 f16 layers; one slot at 4096 positions: f32 2130432 bytes, f16 1065472
+=== RUN   TestKV4b_deliveredBytes/sliding-window/mistral-tiny-window
+cuda: prefill width 2048 rows (11 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (11 MiB of scratch; 7064 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:147: 3 f16 layers; one slot at 4096 positions: f32 6390272 bytes, f16 3195392
+=== RUN   TestKV4b_deliveredBytes/sliding-window/gemma2-tiny
+cuda: prefill width 2048 rows (8 MiB of scratch; 7064 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7060 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:147: 4 f16 layers; one slot at 4096 positions: f32 8520192 bytes, f16 4260352
+=== RUN   TestKV4b_deliveredBytes/sliding-window/gemma3-vl-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:147: 2 f16 layers; one slot at 4096 positions: f32 2130432 bytes, f16 1065472
+=== RUN   TestKV4b_deliveredBytes/sliding-window/gptoss_tiny.gguf
+cuda: prefill width 2048 rows (3 MiB of scratch; 6936 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (3 MiB of scratch; 6934 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:147: 4 f16 layers; one slot at 4096 positions: f32 2130432 bytes, f16 1065472
+=== RUN   TestKV4b_deliveredBytes/sliding-window/windowed/mistral-tiny-window
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kv4b_groups_test.go:138: one slot at 4096 positions: f32 295424 bytes, f16 147968
+=== RUN   TestKV4b_deliveredBytes/sliding-window/windowed/gemma2-tiny
+cuda: windowed KV: sliding-window layers hold 28 positions (window 4 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 28 positions (window 4 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kv4b_groups_test.go:138: one slot at 4096 positions: f32 4456960 bytes, f16 2228736
+=== RUN   TestKV4b_deliveredBytes/sliding-window/windowed/gemma3-vl-tiny
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kv4b_groups_test.go:138: one slot at 4096 positions: f32 1114624 bytes, f16 557568
+=== RUN   TestKV4b_deliveredBytes/pairwise-rope/cohere-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:147: 4 f16 layers; one slot at 4096 positions: f32 4260352 bytes, f16 2130432
+=== RUN   TestKV4b_deliveredBytes/pairwise-rope/cohere2-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:147: 4 f16 layers; one slot at 4096 positions: f32 4260352 bytes, f16 2130432
+=== RUN   TestKV4b_deliveredBytes/pairwise-rope/windowed/cohere2-tiny
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kv4b_groups_test.go:138: one slot at 4096 positions: f32 1212928 bytes, f16 606720
+=== RUN   TestKV4b_deliveredBytes/m-rope/qwen25vl-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:147: 2 f16 layers; one slot at 4096 positions: f32 2130432 bytes, f16 1065472
+=== RUN   TestKV4b_deliveredBytes/m-rope/qwen3vl-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:147: 2 f16 layers; one slot at 4096 positions: f32 2130432 bytes, f16 1065472
+=== RUN   TestKV4b_deliveredBytes/hybrid/qwen3_5-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:147: 1 f16 layers; one slot at 4096 positions: f32 2130432 bytes, f16 1065472
+=== RUN   TestKV4b_deliveredBytes/hybrid/qwen35-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6946 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:147: 1 f16 layers; one slot at 4096 positions: f32 1065472 bytes, f16 532992
+=== RUN   TestKV4b_deliveredBytes/hybrid/qwen3next-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (71 MiB of scratch; 6938 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (71 MiB of scratch; 6932 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:147: 1 f16 layers; one slot at 16384 positions: f32 4212736 bytes, f16 2107392
+=== RUN   TestKV4b_deliveredBytes/hybrid/gemma4-dense-twogeom-tiny
+cuda: prefill width 2048 rows (64 MiB of scratch; 7040 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (64 MiB of scratch; 7018 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:147: 2 f16 layers; one slot at 4096 positions: f32 35144192 bytes, f16 17572352
+=== RUN   TestKV4b_deliveredBytes/hybrid/gemma4-moe-kv-tiny32
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6926 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6910 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:147: 2 f16 layers; one slot at 4096 positions: f32 18104832 bytes, f16 9052672
+=== RUN   TestKV4b_deliveredBytes/hybrid/gemma4-moe-tiny
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (64 MiB of scratch; 6908 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (64 MiB of scratch; 6884 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:147: 2 f16 layers; one slot at 4096 positions: f32 35144192 bytes, f16 17572352
+=== RUN   TestKV4b_deliveredBytes/mla/deepseek-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 6946 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:147: 4 f16 layers; one slot at 4096 positions: f32 1597952 bytes, f16 799232
+=== RUN   TestKV4b_deliveredBytes/mla/kimi-tiny
+cuda: prefill width 2048 rows (25 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (25 MiB of scratch; 6936 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:147: 4 f16 layers; one slot at 4096 positions: f32 1597952 bytes, f16 799232
+=== RUN   TestKV4b_deliveredBytes/mamba-hybrid/nemotron-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:147: 2 f16 layers; one slot at 4096 positions: f32 2130432 bytes, f16 1065472
+=== RUN   TestKV4b_deliveredBytes/flint/flint-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6934 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:147: 6 f16 layers; one slot at 4096 positions: f32 6390272 bytes, f16 3195392
+=== RUN   TestKV4b_deliveredBytes/flint/windowed/flint-tiny
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kv4b_groups_test.go:138: one slot at 4096 positions: f32 3342848 bytes, f16 1671680
+=== RUN   TestKV4b_deliveredBytes/flint/paged-experts/flint-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6934 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4b_groups_test.go:147: 6 f16 layers; one slot at 4096 positions: f32 6390272 bytes, f16 3195392
+--- PASS: TestKV4b_deliveredBytes (9.59s)
+    --- PASS: TestKV4b_deliveredBytes/moe/qwen3moe-tiny (1.84s)
+    --- PASS: TestKV4b_deliveredBytes/moe/qwen3moe-tiny-k3 (0.29s)
+    --- PASS: TestKV4b_deliveredBytes/moe/mixtral-tiny (0.31s)
+    --- PASS: TestKV4b_deliveredBytes/paged-experts/qwen3moe-tiny (0.30s)
+    --- PASS: TestKV4b_deliveredBytes/sliding-window/mistral-tiny-window (0.26s)
+    --- PASS: TestKV4b_deliveredBytes/sliding-window/gemma2-tiny (0.29s)
+    --- PASS: TestKV4b_deliveredBytes/sliding-window/gemma3-vl-tiny (0.27s)
+    --- PASS: TestKV4b_deliveredBytes/sliding-window/gptoss_tiny.gguf (0.28s)
+    --- PASS: TestKV4b_deliveredBytes/sliding-window/windowed/mistral-tiny-window (0.27s)
+    --- PASS: TestKV4b_deliveredBytes/sliding-window/windowed/gemma2-tiny (0.27s)
+    --- PASS: TestKV4b_deliveredBytes/sliding-window/windowed/gemma3-vl-tiny (0.27s)
+    --- PASS: TestKV4b_deliveredBytes/pairwise-rope/cohere-tiny (0.26s)
+    --- PASS: TestKV4b_deliveredBytes/pairwise-rope/cohere2-tiny (0.27s)
+    --- PASS: TestKV4b_deliveredBytes/pairwise-rope/windowed/cohere2-tiny (0.29s)
+    --- PASS: TestKV4b_deliveredBytes/m-rope/qwen25vl-tiny (0.27s)
+    --- PASS: TestKV4b_deliveredBytes/m-rope/qwen3vl-tiny (0.26s)
+    --- PASS: TestKV4b_deliveredBytes/hybrid/qwen3_5-tiny (0.29s)
+    --- PASS: TestKV4b_deliveredBytes/hybrid/qwen35-tiny (0.29s)
+    --- PASS: TestKV4b_deliveredBytes/hybrid/qwen3next-tiny (0.31s)
+    --- PASS: TestKV4b_deliveredBytes/hybrid/gemma4-dense-twogeom-tiny (0.29s)
+    --- PASS: TestKV4b_deliveredBytes/hybrid/gemma4-moe-kv-tiny32 (0.27s)
+    --- PASS: TestKV4b_deliveredBytes/hybrid/gemma4-moe-tiny (0.29s)
+    --- PASS: TestKV4b_deliveredBytes/mla/deepseek-tiny (0.28s)
+    --- PASS: TestKV4b_deliveredBytes/mla/kimi-tiny (0.30s)
+    --- PASS: TestKV4b_deliveredBytes/mamba-hybrid/nemotron-tiny (0.25s)
+    --- PASS: TestKV4b_deliveredBytes/flint/flint-tiny (0.30s)
+    --- PASS: TestKV4b_deliveredBytes/flint/windowed/flint-tiny (0.29s)
+    --- PASS: TestKV4b_deliveredBytes/flint/paged-experts/flint-tiny (0.29s)
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/moe/qwen3moe-tiny
+cuda: prefill width 2048 rows (5 MiB of scratch; 6944 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/moe/qwen3moe-tiny-k3
+cuda: prefill width 2048 rows (5 MiB of scratch; 6944 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/moe/mixtral-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 6932 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6928 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/paged-experts/qwen3moe-tiny
+cuda: prefill width 2048 rows (5 MiB of scratch; 6944 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/sliding-window/mistral-tiny-window
+cuda: prefill width 2048 rows (11 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (11 MiB of scratch; 7064 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/sliding-window/gemma2-tiny
+cuda: prefill width 2048 rows (8 MiB of scratch; 7064 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7060 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/sliding-window/gemma3-vl-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/sliding-window/gptoss_tiny.gguf
+cuda: prefill width 2048 rows (3 MiB of scratch; 6936 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (3 MiB of scratch; 6934 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/sliding-window/windowed/mistral-tiny-window
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/sliding-window/windowed/gemma2-tiny
+cuda: windowed KV: sliding-window layers hold 28 positions (window 4 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 28 positions (window 4 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/sliding-window/windowed/gemma3-vl-tiny
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/pairwise-rope/cohere-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/pairwise-rope/cohere2-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/pairwise-rope/windowed/cohere2-tiny
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/m-rope/qwen25vl-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/m-rope/qwen3vl-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/hybrid/qwen3_5-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/hybrid/qwen35-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6946 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/hybrid/qwen3next-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (71 MiB of scratch; 6938 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (71 MiB of scratch; 6932 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/hybrid/gemma4-dense-twogeom-tiny
+cuda: prefill width 2048 rows (64 MiB of scratch; 7040 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (64 MiB of scratch; 7018 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/hybrid/gemma4-moe-kv-tiny32
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6926 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6910 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/hybrid/gemma4-moe-tiny
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (64 MiB of scratch; 6908 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (64 MiB of scratch; 6884 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/mla/deepseek-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 6946 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/mla/kimi-tiny
+cuda: prefill width 2048 rows (25 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (25 MiB of scratch; 6936 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/mamba-hybrid/nemotron-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/flint/flint-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6934 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/flint/windowed/flint-tiny
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+=== RUN   TestKV4b_layer0StoreIsTheRoundedF32Store/flint/paged-experts/flint-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6934 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store (8.63s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/moe/qwen3moe-tiny (0.31s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/moe/qwen3moe-tiny-k3 (0.32s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/moe/mixtral-tiny (0.33s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/paged-experts/qwen3moe-tiny (0.30s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/sliding-window/mistral-tiny-window (0.28s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/sliding-window/gemma2-tiny (0.27s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/sliding-window/gemma3-vl-tiny (0.27s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/sliding-window/gptoss_tiny.gguf (0.32s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/sliding-window/windowed/mistral-tiny-window (0.28s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/sliding-window/windowed/gemma2-tiny (0.27s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/sliding-window/windowed/gemma3-vl-tiny (0.28s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/pairwise-rope/cohere-tiny (0.28s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/pairwise-rope/cohere2-tiny (0.28s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/pairwise-rope/windowed/cohere2-tiny (0.29s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/m-rope/qwen25vl-tiny (0.26s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/m-rope/qwen3vl-tiny (0.27s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/hybrid/qwen3_5-tiny (0.28s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/hybrid/qwen35-tiny (0.33s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/hybrid/qwen3next-tiny (0.38s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/hybrid/gemma4-dense-twogeom-tiny (0.29s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/hybrid/gemma4-moe-kv-tiny32 (0.32s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/hybrid/gemma4-moe-tiny (0.35s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/mla/deepseek-tiny (0.35s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/mla/kimi-tiny (0.39s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/mamba-hybrid/nemotron-tiny (0.30s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/flint/flint-tiny (0.33s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/flint/windowed/flint-tiny (0.35s)
+    --- PASS: TestKV4b_layer0StoreIsTheRoundedF32Store/flint/paged-experts/flint-tiny (0.34s)
+PASS
+ledger: 120 device(s) released in this run
