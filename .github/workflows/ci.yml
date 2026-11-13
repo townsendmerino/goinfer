@@ -967,7 +967,7 @@ jobs:
         run: |
           go test -timeout 30m -tags goinfer_testhooks -run '^TestDecisionCensus$' -census.update ./decoder/ || true
           mkdir -p census-out
-          git diff --name-only -- testdata/census | xargs -r -I{} cp {} census-out/
+          git ls-files --modified --others --exclude-standard -- testdata/census | xargs -r -I{} cp {} census-out/
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()
         with:
@@ -1064,7 +1064,7 @@ jobs:
         run: |
           go test -timeout 30m -tags goinfer_testhooks -run '^TestDecisionCensus$' -census.update ./decoder/ || true
           mkdir -p census-out
-          git diff --name-only -- testdata/census | xargs -r -I{} cp {} census-out/
+          git ls-files --modified --others --exclude-standard -- testdata/census | xargs -r -I{} cp {} census-out/
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()
         with:
