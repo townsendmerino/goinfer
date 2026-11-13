@@ -253,8 +253,12 @@ func TestKV3_residentReportsItsChunks(t *testing.T) {
 	if got := cr.ResidentCaps().TailMinRows; got <= 0 || got != g.r.PrefillTailMinRows() {
 		t.Fatalf("ResidentCaps().TailMinRows = %d, want PrefillTailMinRows %d (> 0)", got, g.r.PrefillTailMinRows())
 	}
-	if pc.PrefillSpanScratchBytes(512, 512) <= 0 {
-		t.Fatal("cudaResident's prefill subsystem reports no span scratch (PrefillSpanScratchBytes(512, 512) <= 0)")
+	// The fused attention serves this fixture and needs no span scratch, so the row kernels are forced for this one check.
+	prefillSplitKVForceForTest = true
+	spanScratch := pc.PrefillSpanScratchBytes(512, 512)
+	prefillSplitKVForceForTest = false
+	if spanScratch <= 0 {
+		t.Fatal("cudaResident's prefill subsystem reports no span scratch with the row kernels forced (PrefillSpanScratchBytes(512, 512) <= 0)")
 	}
 	if c := pc.PrefillChunkRows(); c != g.r.prefillWidth || !slices.Contains(prefillWidths, c) || c%64 != 0 {
 		t.Errorf("PrefillChunkRows %d, want the build's chosen width %d, one of %v (each a multiple of the block size 64)", c, g.r.prefillWidth, prefillWidths)
