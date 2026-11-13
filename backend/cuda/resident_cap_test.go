@@ -547,7 +547,7 @@ func largestTensorF32(dir string) (string, int64, error) {
 }
 
 // TestPlanSlack_oneCopy (MM2b gate G-MM2b-3): the driver's rounding over the weight buffers has one copy. packedAllocSlack is
-// called only inside buildResidentMode (plan-only, and the real build's test seam), and neither resolveCtxCapFitSlack nor
+// called only inside buildState.newResident (plan-only, and the real build's test seam), and neither resolveCtxCapFitSlack nor
 // resolveCtxCapFitFree takes a slack parameter or is handed one at a call site, so the build cannot add the figure beside the plan's.
 func TestPlanSlack_oneCopy(t *testing.T) {
 	ents, err := os.ReadDir(".")
@@ -606,12 +606,12 @@ func TestPlanSlack_oneCopy(t *testing.T) {
 		t.Fatalf("read %d source files", read)
 	}
 	for fn, n := range calls {
-		if fn != "buildResidentMode" {
+		if fn != "newResident" {
 			t.Errorf("%s calls packedAllocSlack %d time(s): a second copy of the plan's rounding", fn, n)
 		}
 	}
-	if calls["buildResidentMode"] == 0 {
-		t.Error("buildResidentMode no longer calls packedAllocSlack: the scan checks nothing")
+	if calls["newResident"] == 0 {
+		t.Error("newResident no longer calls packedAllocSlack: the scan checks nothing")
 	}
 	if sites == 0 {
 		t.Error("no call of resolveCtxCapFitSlack or resolveCtxCapFitFree found: the argument check checks nothing")
