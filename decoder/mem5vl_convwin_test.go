@@ -10,7 +10,7 @@ import (
 	"unsafe"
 )
 
-// TestConvWin_noSlabRetained is MEM5-VL-convwin's CW-G2 (docs/tasks/task-memory-campaign-2026-10.md, "MEM5-VL-convwin gates"):
+// TestConvWin_noSlabRetained is MEM5-VL-convwin's CW-G2 (docs/completed/task-memory-campaign-2026-10.md, "MEM5-VL-convwin gates"):
 // after a deltaNetCoreN pass, no row of the conv window shares the pass's mixed slab, so the slab is free once the pass returns.
 func TestConvWin_noSlabRetained(t *testing.T) {
 	m, err := Load("../testdata/qwen35-tiny", Options{})

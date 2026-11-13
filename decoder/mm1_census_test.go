@@ -21,7 +21,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 )
 
-// The decision census (MM1, docs/tasks/task-subsystems-2026-10.md, "MM1's decision census"): every memory decision the fit code
+// The decision census (MM1, docs/completed/task-subsystems-2026-10.md, "MM1's decision census"): every memory decision the fit code
 // makes, over every family fixture, option cell and machine, recorded so that the code that replaces it (mem.Solve and its callers)
 // can be held to the same answers and the same lines, byte for byte. The golden holds one SHA-256 prefix per group (a decision on
 // one family with one option set, over every machine reading); -census.dump writes the full text, to diff a red run against its base.
@@ -435,7 +435,7 @@ func readCensusGolden(t *testing.T) censusGoldenFile {
 
 func writeCensusGolden(t *testing.T, g censusGoldenFile) {
 	t.Helper()
-	g.About = "MM1's decision census (docs/tasks/task-subsystems-2026-10.md, \"MM1's decision census\"): per host class, a SHA-256 prefix of " +
+	g.About = "MM1's decision census (docs/completed/task-subsystems-2026-10.md, \"MM1's decision census\"): per host class, a SHA-256 prefix of " +
 		"each group's full text, and one hash over every group. Written by go test ./decoder -run TestDecisionCensus -census.update."
 	b, err := json.MarshalIndent(g, "", " ")
 	if err != nil {

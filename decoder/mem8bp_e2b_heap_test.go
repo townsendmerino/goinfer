@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// TestMEM8bp_e2bTranscodeHeap is SQE-G2 (docs/tasks/task-memory-campaign-2026-10.md, MEM8(b′) gates): StreamTranscodeGGUF of
+// TestMEM8bp_e2bTranscodeHeap is SQE-G2 (docs/completed/task-memory-campaign-2026-10.md, MEM8(b′) gates): StreamTranscodeGGUF of
 // E2B from ~/models at int4 for the metal target, the Go heap in use sampled every 20 ms through it, and the output's sha256
 // and size (hashed as written, not kept on disk). Not timed; a real checkpoint.
 //
