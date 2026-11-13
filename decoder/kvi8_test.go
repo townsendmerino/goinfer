@@ -331,3 +331,31 @@ func TestKVI8_batchedPrefill(t *testing.T) {
 		t.Errorf("batched int8 prefill avg cosine %.5f < 0.99", cos)
 	}
 }
+
+// TestKVI8_moeFamiliesConsistent: an int8 CPU cache on the MoE families of the generic loop (mixtral-tiny, qwen3moe-tiny, glm-tiny,
+// laguna-m1-tiny; llama-tiny is the dense control) is int8, and a batched forward over N tokens gives, bit for bit, the logits of the same N tokens
+// decoded one at a time (docs/tasks/task-kv-precision-everywhere-2026-10.md, P4).
+func TestKVI8_moeFamiliesConsistent(t *testing.T) {
+	for _, dir := range []string{"../testdata/llama-tiny", "../testdata/mixtral-tiny", "../testdata/qwen3moe-tiny", "../testdata/glm-tiny", "testdata/laguna-m1-tiny"} {
+		t.Run(filepath.Base(dir), func(t *testing.T) {
+			m, err := Load(dir, Options{KVQuant: "i8"})
+			if err != nil {
+				t.Fatalf("load -kv i8: %v", err)
+			}
+			defer m.Close()
+			if m.CPUKVPrecision() != "i8" {
+				t.Fatalf("CPU KV %q, want i8 delivered", m.CPUKVPrecision())
+			}
+			_, _, _, _, _, _, vocab := m.Dims()
+			ids := f1IDs(32, vocab)
+			dec := f1Decode(t, m, ids)
+			pre, c := f1Prefill(t, m, ids, nil)
+			if c.quant != kvI8 {
+				t.Fatalf("the cache is %d, want int8", c.quant)
+			}
+			if d := f1Diff(pre, dec); d != 0 {
+				t.Errorf("the batched forward differs from token-by-token decode in %d values", d)
+			}
+		})
+	}
+}

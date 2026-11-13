@@ -4,7 +4,7 @@
 > Nothing here is blocked by a fact: it is deprioritised. **What is built and live:** C0-C2 (per-field confidence), D0-D5 (label scoring and the trained-head routes, `POST /v1/systemone`), D6a/D6b/D7 (graded and measured), D8 on the CPU path, D9, and Route C (Clef, D10-D14, archived).
 > **What is open, in the order I would take it:**
 > 1. **jevx and the TypeSafe SDK run end to end against a live `/v1/systemone`** (`docs/integrations/typesafe-jevx.md`, "Not yet run end to end"): the one compat claim the TypeSafe-shaped endpoint exists for that has never been checked with the real clients (the tests reproduce their request shape). It means installing third-party packages (node, npm and python3 are on nobara), which this repo's earlier work deliberately avoided, so it needs the owner's yes. A throwaway venv or scratch npm directory and the tiny model are enough; no GPU.
-> 2. **Clef-flash as a registry checkpoint, then its site tag** (a site change, so it lands at a release cut; `v0.20.0` is 417 commits behind `main` as of this date). The registry's checkpoint shape is one GGUF file (repo, file, sha256); a multi-file safetensors set needs a design, which `checkpoint-fetch` (archived) now makes possible.
+> 2. **Clef-flash as a registry checkpoint, then its site tag** (a site change, so it lands at a release cut; `v0.20.0` is 417 commits behind `main` as of this date; on 2026-11-09 the latest tag is v0.24.1). The registry's checkpoint shape is one GGUF file (repo, file, sha256); a multi-file safetensors set needs a design, which `checkpoint-fetch` (archived) now makes possible.
 > 3. **Hardware-blocked, park further:** D8 on the GPU-resident path, the Metal and WebGPU all-positions hidden seam, CUDA-resident Clef (9.5 GB at `int8int8` against an 8 GB card, `int4` refused).
 > 4. **Low, no demand:** joint-versus-single under quantization, K = 4,096, more than five questions, 27B multi-question, `transcode --lora`, number and string field confidence.
 >
@@ -96,6 +96,22 @@
 > concurrency cell) · [`task-site-2026-09.md`](../task-site-2026-09.md) (D9) ·
 > [`task-never-swap-2026-09.md`](../../completed/task-never-swap-2026-09.md) (D3's merge-at-load memory) ·
 > [`task-embed-and-harness-ux.md`](../task-embed-and-harness-ux.md) (mode 3, "point my tools at it").
+
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| C0-C2 | done | — | `constrain/confidence.go:Masker.FieldConfidence`; `apps/examples/confidence/main.go` |
+| C-numstr | blocked | number and string field confidence: a harder labelled set, and demand | `docs/measurements/confidence-c0-2026-09-27.md` |
+| D0-D7 | done | — | the decisions-d0, d6a, d6b and d7 records under `docs/measurements/`; `internal/app/serveapp/systemone.go` |
+| D8-cpu | done | — | `decoder/prefix_share.go:Model.PromptHiddenMany`; `docs/measurements/decisions-d8-shared-state-2026-10-03.md` |
+| D8-gpu | blocked | a device recurrent-state copy per backend; unscheduled | D8 below |
+| D9 | done | the capability-matrix column is deferred by design | `docs/integrations/typesafe-jevx.md` |
+| D10-D14 | moved | `docs/completed/task-clef-route-c-2026-10.md` | that doc |
+| CC1 | blocked | parked (Francis, 2026-11-09): jevx and the TypeSafe SDK end to end against a live `/v1/systemone`. On reopening, CC3 is the cheaper first step | `docs/integrations/typesafe-jevx.md` "Not yet run end to end" |
+| CC2 | blocked | a Clef-flash registry entry (multi-file design), then its site tag at a release cut | `pull/registry.go` has no Clef entry |
+| CC3 | open | on reopening: read Ollama's Tev1 and Nimble `/v1/systemone` recipes, then a D10-style reproduce gate | the 2026-10-26 block above |
+| CC4 | blocked | the Metal and WebGPU all-positions seam; CUDA-resident Clef at int8int8 on a card over 9.5 GB | Route C's open list |
+| CC5 | open | low, no demand: joint-versus-single quantized, K = 4,096, more than five questions, 27B multi-question | Route C's open list |
 
 ---
 
@@ -353,7 +369,7 @@ violate" section (one paragraph, the caveat linked), and a worked example in `ap
 every fact read from a primary artifact at a pinned revision). Where it contradicts the text below, the record wins:
 - **autotrust's `jev_judge` server is not published**, and the `{distribution, decision, confidence, latency_ms}`
   fields appear in no source. The reference fixture is the JEV-9B card's `decide()` (transformers 5.16.1 + peft
-  0.21.0), run on the Linux box: `docs/prompts/nobara-decisions-d0-fixture-2026-09.md`.
+  0.21.0), run on the Linux box: `docs/completed/nobara-decisions-d0-fixture-2026-09.md`.
 - **The template is bare-v1**, with no chat template and no BOS. The labels are bare `false`/`true`, `0`–`5` and
   `A`–`P` (no leading space). `slots.template_version` holds the version.
 - **The 9B's numbers:**
@@ -408,7 +424,7 @@ every fact read from a primary artifact at a pinned revision). Where it contradi
   - `chat-v1` puts the same content in the model's chat template, with thinking off.
   - Each verbalizer must be a single bare token in the model's tokenizer, or `New` refuses and names it.
   - A calibration fitted under the other template is refused.
-- **CLI:** the `goinfer-chat decide` / `decisions-calibrate` subcommands (`internal/decidecmd`). Every backend's chat
+- **CLI:** the `goinfer-chat decide` / `decisions-calibrate` subcommands (`internal/app/decidecmd`). Every backend's chat
   binary has them.
   - `decide --model <f> [--template chat-v1] [--calibration c.json] [--permute n] in.jsonl`: one JSONL line in and
     one out. Lines are in the corpus's row shape.
@@ -528,7 +544,7 @@ every fact read from a primary artifact at a pinned revision). Where it contradi
 - The template must be byte-identical to the reference's version. Pin it, and refuse a
   `judge_config.json` whose version the loader does not know.
 - **DONE 2026-09-30.** `decide.LoadHead` and a Route B `Decider` (`internal/decide/head.go`); `goinfer-chat decide
-  --head DIR` and `decisions-calibrate --head DIR` (`internal/decidecmd`).
+  --head DIR` and `decisions-calibrate --head DIR` (`internal/app/decidecmd`).
   - **Loading.** `judge_config.json`, `head.safetensors` (`proj.weight` [slots, hidden], `proj.bias`) and
     `calibration.json`. The loader refuses:
     - a `weights_mode` other than `unmerged`/`merged`;
@@ -708,7 +724,7 @@ schema was never published (D0).
 **D6a pre-registration (2026-09-28, committed before any graded run; the owner chose chat-v1 as the graded
 template).** The artifacts are in `docs/measurements/decisions-d6a-2026-09-28/`: `select.py`, `analyze.py` and
 `run-d6a.sh`, all written before any graded run.
-- **Machine: nobara-pc, CUDA** (`docs/prompts/nobara-decisions-d6a-2026-09.md`). The Mac cannot run it.
+- **Machine: nobara-pc, CUDA** (`docs/completed/nobara-decisions-d6a-2026-09.md`). The Mac cannot run it.
   - The 9B fell back to the CPU there twice: first because the auto-pinned context exceeded Metal's 32,768
     ceiling (fixed by `--ctx 4096`), then because Metal's memory guard budget (5.4–5.8 GB of live memory against
     the 6.04 GB the resident needs) declined it.
@@ -751,7 +767,7 @@ exists.
 - **Why it stopped:** its estimate was ~6 h. CUDA prefills a Gated-DeltaNet prompt one token at a time (~14 ms per
   token). The owner: never a 6-hour run. Two changes:
   1. **Batched DeltaNet prefill on CUDA**, as its own gated task
-     ([`task-cuda-deltanet-prefill-2026-09.md`](../task-cuda-deltanet-prefill-2026-09.md)). D6a runs on the commit that
+     ([`task-cuda-deltanet-prefill-2026-09.md`](../../completed/task-cuda-deltanet-prefill-2026-09.md)). D6a runs on the commit that
      ships it, named then.
   2. **Smaller samples**, from the same rule (lowest `sha256(id)` per stratum), so each is the head of the original:
      - calibration: 600 rows (noul 239 / choice 187 / score 174), sha256 `91b3cc2a…95cb`;
@@ -986,4 +1002,4 @@ skips recurrent state) · `internal/app/serveapp/openai.go:maxTopLogprobs`, `:53
 [Cloudflare/clef](https://huggingface.co/Cloudflare/clef) (config, `joint_head_config.json`, `joint_schema_model.py`) · [Cloudflare/clef-flash](https://huggingface.co/Cloudflare/clef-flash) · [Introducing Clef (Cloudflare blog, 2026-10-01)](https://blog.cloudflare.com/clef-decision-models/) · [Clef-flash vs Jev, 42 agent decisions (DEV Community)](https://dev.to/prodbymarcu/i-benchmarked-cloudflares-new-open-decision-model-against-the-hosted-api-its-trying-to-replace-2ded) · [kyegomez/open-jev](https://github.com/kyegomez/open-jev) (random-weights reconstruction) ·
 [muthuishere/jevx](https://github.com/muthuishere/jevx) (CLI client)
 
-<!-- doc-reviewed: 2026-10-05 -->
+<!-- doc-reviewed: 2026-11-09 -->

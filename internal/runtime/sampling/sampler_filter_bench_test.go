@@ -76,9 +76,8 @@ func BenchmarkMaxScan_152kVocab_parallel(b *testing.B)  { benchMaxScan(b, 151936
 func BenchmarkMaxScan_32kVocab_serial(b *testing.B)     { benchMaxScan(b, 32064, false) }
 func BenchmarkMaxScan_32kVocab_parallel(b *testing.B)   { benchMaxScan(b, 32064, true) }
 
-// topKByLogit and the min-p linear scan are sized here, not parallelized: unlike the max-scan, parallelizing a
-// heap-select or an order-preserving filter is real algorithmic work, and R15 asks whether either is worth it. topK
-// 1/8/40 span greedy-adjacent to a typical sampling config.
+// topKByLogit and the min-p linear scan, serial: the production forms. Their parallel arms, for R15's A/B, are in
+// sampler_filter_parallel_test.go. topK 1/8/40 span greedy-adjacent to a typical sampling config.
 func benchTopKByLogit(b *testing.B, n, k int) {
 	logits := benchRandLogits(n, 2)
 	b.ResetTimer()

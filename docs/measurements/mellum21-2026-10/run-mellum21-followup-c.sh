@@ -4,7 +4,7 @@
 # model, ctx 2048, fully resident against C' (45 of 64 slots), ABBA by session, 3 prompts x 3 reps, greedy. It sizes the lever; it does not build it.
 # Pre-registered reading in resident_vs_cprime.py's docstring and the task doc: ratio >= 1.15 worth building, < 1.05 park, between ambiguous -> parked.
 # Timed (night.py holds the timing lock). Estimate ~12 min expected (4 loads of ~25 s + 36 requests), queued at 30.
-#   python3 scripts/night.py add mellum21-fu-c --est 30 --by "nobara session, Mellum2.1 follow-up C" --doc docs/tasks/task-mellum21-2026-10.md -- bash docs/measurements/mellum21-2026-10/run-mellum21-followup-c.sh
+#   python3 scripts/night.py add mellum21-fu-c --est 30 --by "nobara session, Mellum2.1 follow-up C" --doc docs/completed/task-mellum21-2026-10.md -- bash docs/measurements/mellum21-2026-10/run-mellum21-followup-c.sh
 source "$(dirname "$0")/_common.sh"
 OUT=${1:-$HOME/goinfer-logs/mellum21-followup-c-$(date +%F)}
 [ -x "$F/serve-cuda" ] || fatal "$F/serve-cuda missing"; [ -e "$CK/config.json" ] || fatal "$CK missing"

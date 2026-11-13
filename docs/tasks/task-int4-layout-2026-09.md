@@ -8,13 +8,30 @@
 > didn't. **L5 remains PARKED**, blocked on the same aikit prerequisite (still v1.41.0, no bump
 > since). Drafted 2026-09-11 on branch `aikit-v1.41.0-bump` (off `main` at `46c9dfa`), against
 > aikit v1.41.0 (its `docs/audit-2026-09-10.md` M-22 entry is the aikit-side contract). Companion
-> to `docs/tasks/task-gpu-paths-2026-09.md`; this is the CPU/format half of the same question — which
+> to `docs/completed/task-gpu-paths-2026-09.md`; this is the CPU/format half of the same question — which
 > representation of an int4 tensor exists in memory and on disk, and who decided.
 >
 > Suggested order: L1 (in progress, finish first) → L3 (ten minutes, do with L1) → L2 → L5 on
 > nobara once L1 lands (its park condition is met — see L5). **L1–L3 done; L4 partially shipped
 > (see below); L5 still parked** — this line is the ORIGINAL plan, kept as written rather than
 > rewritten to match what actually happened.
+>
+> **Note 2026-11-09:** L5's prerequisite has shipped: aikit v1.42.0 (2026-09-12) serves split-half int4 at M>1
+> (`linalg/matmul_w4a8_splithalf_tile_amd64.go`) and `W4A8Op` takes a `SplitHalf` slice, and goinfer pins aikit v1.76.0, so
+> L5 is unblocked and open (no live doc owns it but this one). Kind 6 is now Metal's fused group
+> (`decoder/serialize.go:giwWriter.fusedEligible`), so L5 needs a new kind number; the `.giw` version is 17, and kind 4 was retired in
+> v16 (`docs/giw-bundles.md`). L4's second half (release the CPU copies after upload) is superseded: on Metal the weights
+> are one physical copy through S6's no-copy aliasing, on by default (`backend/metal/alias.go:newWeightAlias`), and MEM1
+> (`docs/completed/task-memory-campaign-2026-10.md` §0).
+
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| L1 | done | — | `decoder/weightmat.go:wantsCanonicalInt4`; `backend/metal/int4_repacked_only_decline_test.go` |
+| L2 | done | — | `decoder/w4a8_row4_giwkind5_test.go`; kind 4 retired in v16 (`docs/giw-bundles.md`) |
+| L3 | done | — | §L3 below, 2026-09-11 |
+| L4 | moved | the M-07 half shipped here; "release the CPU copies" is superseded by S6 aliasing and MEM1 | `docs/completed/task-memory-campaign-2026-10.md` §0; `backend/metal/alias.go:newWeightAlias` |
+| L5 | killed | nobara's re-run (#868, 2026-11-09, branch l5-rerun-data-2026-11-09 at 3a6df4126): median -6.48%, 0/10 pairs positive; Francis's rule was kill under +2% median gain, so no split-half-only build and no new `.giw` kind | `docs/measurements/l5-splithalf-2026-11/README.md`; aikit v1.42.0 (`W4A8Op.SplitHalf`) |
 
 ## The decision this doc records
 
@@ -410,11 +427,11 @@ decodes**." aikit v1.41.0's `RepackInt4SplitHalfInPlace` / `WrapInt4SplitHalfOnl
 second condition. The trade inverts: +2.1% for zero extra bytes.
 
 **Fix.** Same shape as L1/L2 for a `cpu-amd64` target: `RepackInt4SplitHalfInPlace` at load
-under `Backend: "cpu"` where `Int4SplitHalfUsable`; kind 6 on disk (split-half nibbles +
+under `Backend: "cpu"` where `Int4SplitHalfUsable`; kind 6 *(2026-11-09: taken by Metal's fused group; L5 needs a new number)* on disk (split-half nibbles +
 canonical scales, which split-half shares). The env flag's meaning changes from "opt into the
 duplicate" to nothing — remove it, or keep it only as an off-switch for A/B.
 
-**aikit prerequisite (VERIFIED 2026-09-11, blocks this item).** aikit
+**aikit prerequisite (VERIFIED 2026-09-11, blocks this item; 2026-11-09: shipped in aikit v1.42.0, no longer blocks).** aikit
 `linalg/weightmat_splithalf_amd64.go`'s `MatmulBTW4A8Into` serves split-half at **M=1 only**;
 for a split-half-only WeightMat at M>1 it panics by design ("has no path for M>1 — the
 split-half AVX2 kernel is M=1 only and there is no canonical fallback"), and
@@ -439,4 +456,4 @@ memory cost been zero.
 
 **Size.** Medium on aikit (one `.s` tile variant + gates); small on goinfer after; the measurement is the goinfer work.
 
-<!-- doc-reviewed: 2026-09-13 -->
+<!-- doc-reviewed: 2026-11-09 -->

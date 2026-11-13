@@ -1,0 +1,14 @@
+rev 148c69f0c60820341a10fa603c5531205b1ab260 2026-11-09 12:53:39 PST load 0.37 0.22 0.14
+=== RUN   TestCH4_giwByteIdentity
+    ch4_giw_gate_test.go:64: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf q4k 53e637a2eb6ed11b6a28d07c32878db5d548d25971f64a5a155a00c7ed3a4922
+    ch4_giw_gate_test.go:64: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf int4 c29dfe6465674df186725b346c1f660cbc5abc1b93532bc471e825d5631f23de
+    ch4_giw_gate_test.go:64: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf int8int8 dd4859a06d8e15316d45c80765be0906163d307f5fbb876b248cb1bef537d429
+    ch4_giw_gate_test.go:64: gemma3-1b-q4_k_m.gguf q4k c39f65edc974bc69cc32e11b0c9ab9de05423eb43c50f05921227773620d25e6
+    ch4_giw_gate_test.go:64: gemma3-1b-q4_k_m.gguf int4 0219e84625f67021ee5cdb12f09ce562c5e493558ad945777cefa603704e91b3
+    ch4_giw_gate_test.go:64: gemma3-1b-q4_k_m.gguf int8int8 36e23c173a3d8079e25108cab97727ddaa15db61ba41d3d407945d1f69bd4ef9
+    ch4_giw_gate_test.go:99: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: plant (one dequantized value past its group scale) changes the int4 hash (red, as it must be)
+    ch4_giw_gate_test.go:99: gemma3-1b-q4_k_m.gguf: plant (one dequantized value past its group scale) changes the int4 hash (red, as it must be)
+    ch4_giw_gate_test.go:105: recorded 6 hashes to /home/francis/goinfer-bench/ch4/before.txt
+--- PASS: TestCH4_giwByteIdentity (19.30s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	19.319s

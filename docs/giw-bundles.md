@@ -45,7 +45,7 @@ transcode). gemma4 was the last family to get there (2026-09-24,
 `docs/measurements/transcode-streaming-gemma4-2026-09-24.md`): the 26B-A4B's transcode went from
 18.1 GB of anonymous memory (34.8 GB RSS) resident to a 1.61 GB peak streamed, byte-identical output.
 A transcode from a safetensors directory (`prequant` given an HF directory) streams layer by layer too
-(`docs/tasks/task-prequant-dir-streaming-2026-10.md`).
+(`docs/completed/task-prequant-dir-streaming-2026-10.md`).
 
 ## A cold load
 

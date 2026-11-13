@@ -20,6 +20,7 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/internal/app/loadflags"
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
+	"github.com/townsendmerino/goinfer/internal/testpath"
 )
 
 // Carried ids on /v1/messages: the same blob, signing and checks as /v1/responses, carried in a thinking block's signature, or
@@ -456,7 +457,7 @@ func jsMarshal(t *testing.T, v any) []byte {
 // keeps its ids by the closed list (ids_fmt=1). Every planted defect gives today's tokenization, its reason and no error. The
 // Responses-only defect (k), a v1 blob, becomes a signature this server did not mint, which carries nothing.
 func TestIDsCarriedMessages_G0(t *testing.T) {
-	tkDir := filepath.Join("..", "..", "testdata", "mellum2-tokenizer")
+	tkDir := testpath.Testdata(t, "mellum2-tokenizer")
 	if _, err := os.Stat(filepath.Join(tkDir, "tokenizer.json")); err != nil {
 		t.Skipf("G-ids-0 needs the Mellum2 tokenizer at %s (a per-machine symlink): %v", tkDir, err)
 	}

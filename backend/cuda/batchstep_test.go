@@ -283,6 +283,9 @@ func at(v [][]int, i int) []int {
 // table read one block entry on) must make a row differ too: where a fixture's rows sit past the first 64-key block, a row there,
 // where its offset table has the row read another block than its own. llama-tiny's depths put the decode sequence at 62, across
 // the 64-key edge within the four steps, and the k = 4 verify past it from the start (its context is 128).
+// llama-attnfa-tiny with the flash-decode lane forced from 48 keys mixes lane rows and attn_batched rows in each step: every step
+// must make both an attn_ragged and a fa_partial_ragged launch, and each lane row equal its own decode's lane bit for bit; llama-tiny
+// with split-KV forced from 48 keys (the lane off) mixes split-KV rows in the same way, and must make a splitkv_scores_ragged launch.
 // GOINFER_CUDA_STEP_MODEL=<checkpoint> runs it on a real model, one sequence past 2048 keys (the flash-decode lane), where the
 // rows' launches differ and the step takes each row's own.
 func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
@@ -292,21 +295,26 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 		kv     string
 		knobs  *decoder.Knobs // nil: the defaults
 		lane   bool           // every step must also take the flash-decode lane's ragged launch
+		split  bool           // every step must also take split-KV's ragged launches
 	}
 	// llama-attnfa-tiny with the lane forced from 48 keys: each step mixes lane rows and attn_batched rows.
 	laneKnobs := &decoder.Knobs{"GOINFER_CUDA_FLASH_DECODE": "16", "GOINFER_CUDA_FLASH_DECODE_MIN_KEYS": "48"}
+	// llama-tiny with split-KV forced from 48 keys and the lane off: each step mixes split-KV rows and attn_batched rows.
+	splitKnobs := &decoder.Knobs{"GOINFER_CUDA_FLASH_DECODE": "0", "GOINFER_SPLITKV_MIN_KEYS": "48"}
 	cfgs := []cfg{
-		{"../../testdata/llama-tiny", []int{5, 62, 40, 90}, "", nil, false},
-		{"../../testdata/llama-tiny", []int{5, 62, 40, 90}, "i8", nil, false},
-		{"../../testdata/mistral-tiny-window", []int{9, 70, 200, 33}, "", nil, false},
-		{"../../testdata/gemma4-dense-twogeom-tiny", []int{5, 23, 40, 11}, "", nil, false},
-		{"../../testdata/granite-dense-tiny", []int{5, 23, 40, 11}, "", nil, false}, // a 64-position context: every row in the first block
-		{"../../testdata/llama-attnfa-tiny", []int{5, 60, 30, 90}, "", laneKnobs, true},
-		{"../../testdata/llama-attnfa-tiny", []int{5, 60, 30, 90}, "i8", laneKnobs, true},
+		{"../../testdata/llama-tiny", []int{5, 62, 40, 90}, "", nil, false, false},
+		{"../../testdata/llama-tiny", []int{5, 62, 40, 90}, "i8", nil, false, false},
+		{"../../testdata/mistral-tiny-window", []int{9, 70, 200, 33}, "", nil, false, false},
+		{"../../testdata/gemma4-dense-twogeom-tiny", []int{5, 23, 40, 11}, "", nil, false, false},
+		{"../../testdata/granite-dense-tiny", []int{5, 23, 40, 11}, "", nil, false, false}, // a 64-position context: every row in the first block
+		{"../../testdata/llama-attnfa-tiny", []int{5, 60, 30, 90}, "", laneKnobs, true, false},
+		{"../../testdata/llama-attnfa-tiny", []int{5, 60, 30, 90}, "i8", laneKnobs, true, false},
+		{"../../testdata/llama-tiny", []int{5, 62, 30, 90}, "", splitKnobs, false, true},
+		{"../../testdata/llama-tiny", []int{5, 62, 30, 90}, "i8", splitKnobs, false, true},
 	}
 	ragged := true
 	if p := os.Getenv("GOINFER_CUDA_STEP_MODEL"); p != "" {
-		cfgs = []cfg{{p, []int{120, 2200, 700, 64}, "", nil, false}, {p, []int{120, 2200, 700, 64}, "i8", nil, false}}
+		cfgs = []cfg{{p, []int{120, 2200, 700, 64}, "", nil, false, false}, {p, []int{120, 2200, 700, 64}, "i8", nil, false, false}}
 		ragged = false
 	}
 	nRows := []int{1, 1, 2, 4} // per sequence: a drawn decode row, a decode row, verify k = 2 and 4
@@ -402,7 +410,7 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 				return differ
 			}
 			for n := range 4 {
-				launches, lane := r.raggedAttnLaunches, r.raggedFALaunches
+				launches, lane, split := r.raggedAttnLaunches, r.raggedFALaunches, r.raggedSKLaunches
 				if d := step(n); d != 0 {
 					t.Fatalf("step %d: %d rows differ from their own shapes", n, d)
 				}
@@ -411,6 +419,9 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 				}
 				if c.lane && r.raggedFALaunches == lane {
 					t.Fatalf("step %d: no fa_partial_ragged launch; the lane rows took the M=1 lane one by one", n)
+				}
+				if c.split && r.raggedSKLaunches == split {
+					t.Fatalf("step %d: no splitkv_scores_ragged launch; the split-KV rows took decode's own launches one by one", n)
 				}
 			}
 			t.Cleanup(func() { raggedPlantForTest = 0 })

@@ -2,7 +2,6 @@ package decoder
 
 import (
 	"context"
-	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -70,28 +69,43 @@ func TestCPUBatch_everyEligibleFixtureBitIdentical(t *testing.T) {
 	var admitted, declined []string
 	for _, cfgPath := range dirs {
 		dir := filepath.Dir(cfgPath)
+	cells:
 		for _, quant := range []string{"", "int8int8"} {
-			m, err := Load(dir, Options{Quant: quant})
-			if err != nil {
-				continue // not a text model this loader serves standalone (vision towers, drafters, ...)
+			for _, kv := range []string{"", "f16", "i8"} {
+				m, err := Load(dir, Options{Quant: quant, KVQuant: kv})
+				if err != nil {
+					continue cells // not a text model this loader serves standalone (vision towers, drafters, ...)
+				}
+				if kv != "" && m.CPUKVPrecision() != kv {
+					continue // the family keeps an f32 CPU cache at this request: its f32 cell is already here
+				}
+				if err := m.cpuBatchModelEligible(); err != nil {
+					declined = append(declined, filepath.Base(dir))
+					break cells
+				}
+				if c := m.NewCache(64); cpuBatchCacheEligible(c) != nil {
+					declined = append(declined, filepath.Base(dir)+"/kv "+kv+" (cache)")
+					continue
+				}
+				name := filepath.Base(dir) + "/" + quant + "/kv" + kv
+				t.Run(name, func(t *testing.T) { assertBatchedStepBitIdentical(t, m, []int{3, 17, 9}, 8) })
+				admitted = append(admitted, name)
 			}
-			if err := m.cpuBatchModelEligible(); err != nil {
-				declined = append(declined, filepath.Base(dir))
-				break
-			}
-			if c := m.NewCache(64); cpuBatchCacheEligible(c) != nil {
-				declined = append(declined, filepath.Base(dir)+" (cache)")
-				break
-			}
-			name := filepath.Base(dir) + "/" + quant
-			t.Run(name, func(t *testing.T) { assertBatchedStepBitIdentical(t, m, []int{3, 17, 9}, 8) })
-			admitted = append(admitted, name)
 		}
 	}
 	t.Logf("admitted and bit-identical: %v", admitted)
 	t.Logf("declined: %v", declined)
 	if len(admitted) < 3 {
 		t.Errorf("only %d fixture/quant cells were eligible — the sweep covers too little to vouch for the predicate", len(admitted))
+	}
+	widened := 0
+	for _, n := range admitted {
+		if strings.HasSuffix(n, "/kvf16") || strings.HasSuffix(n, "/kvi8") {
+			widened++
+		}
+	}
+	if widened < 4 {
+		t.Errorf("only %d f16 or int8 cache cells were eligible: the sweep does not vouch for widened caches in the batch", widened)
 	}
 }
 
@@ -237,70 +251,49 @@ func at(v [][]int, i int) []int {
 	return nil
 }
 
-// TestCPUBatch_ineligibleCachesBypass: a model whose family batches but whose caches do not (int8 KV) runs its
-// concurrent generations as step 1's workers — nothing is submitted to the batcher — and still matches alone. Under batched
-// decode's default, auto: the tiny fixture is under cpuBatchAutoMinBytes, so the test stands in for auto's pick on a model over it.
-// (Batched decode explicitly on with an int8 cache refuses the load: TestCPUBatch_explicitOnRefusesWidenedKV.)
-func TestCPUBatch_ineligibleCachesBypass(t *testing.T) {
+// TestCPUBatch_widenedCachesBatch: f16 and int8 CPU caches batch (docs/tasks/task-kv-precision-everywhere-2026-10.md, P4a): with
+// batched decode on, concurrent generations' decode tokens are joined into batched steps (the batcher's stats move) and every
+// conversation emits exactly the tokens it does alone with batching off, at the same precision.
+func TestCPUBatch_widenedCachesBatch(t *testing.T) {
 	path := "../testdata/llama-tiny"
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no fixture: %v", err)
 	}
 	greedy := func(int, int) SamplingParams { return SamplingParams{} }
-	ref, err := Load(path, Options{KVQuant: "i8", CPUBatchDecode: CPUBatchOff})
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	want, _ := cpuBatchConversations(t, ref, 3, 2, 8, greedy, false)
-	m, err := Load(path, Options{KVQuant: "i8"})
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	m.cpuBatchMode = CPUBatchOn // auto's pick on a model over cpuBatchAutoMinBytes
-	if cpuBatchCacheEligible(m.NewCache(16)) == nil {
-		t.Fatal("an int8-KV cache is eligible — this test no longer covers a declined cache")
-	}
-	if !m.EnableCPUBatch(3) {
-		t.Fatal("EnableCPUBatch declined a model whose family is eligible")
-	}
-	got, _ := cpuBatchConversations(t, m, 3, 2, 8, greedy, true)
-	for c := range want {
-		for tn := range want[c] {
-			if !slices.Equal(at(got[c], tn), want[c][tn]) {
-				t.Errorf("conversation %d turn %d: %v concurrent, %v alone", c, tn, at(got[c], tn), want[c][tn])
-			}
-		}
-	}
-	if st := m.CPUBatchStats(); st.Runs != 0 {
-		t.Errorf("int8-KV generations were submitted to the batcher (%d runs)", st.Runs)
-	}
-}
-
-// TestCPUBatch_explicitOnRefusesWidenedKV: batched decode explicitly on with an f16 or int8 CPU cache refuses the load by name, since
-// the batcher reads f32 KV only (docs/tasks/task-kv-precision-everywhere-2026-10.md, phase 0); under auto the cache is delivered and
-// decodes per sequence, which the banner names (Model.CPUBatchKVBypass).
-func TestCPUBatch_explicitOnRefusesWidenedKV(t *testing.T) {
-	path := "../testdata/llama-tiny"
-	if _, err := os.Stat(path); err != nil {
-		t.Skipf("no fixture: %v", err)
-	}
 	for _, kv := range []string{"f16", "i8"} {
-		m, err := Load(path, Options{KVQuant: kv, CPUBatchDecode: CPUBatchOn})
-		var r *KVRefusal
-		if !errors.As(err, &r) || !strings.Contains(r.Reason, "batched decode") {
-			t.Errorf("-kv %s with batched decode on: load error %v, want a refusal naming batched decode", kv, err)
-		}
-		if m != nil {
-			m.Close()
-		}
-		m, err = Load(path, Options{KVQuant: kv})
-		if err != nil {
-			t.Fatalf("-kv %s under auto: %v", kv, err)
-		}
-		if m.CPUKVPrecision() != kv || !strings.Contains(m.CPUBatchKVBypass(), "per sequence") {
-			t.Errorf("-kv %s under auto: precision %q, bypass %q; want it delivered and the bypass named", kv, m.CPUKVPrecision(), m.CPUBatchKVBypass())
-		}
-		m.Close()
+		t.Run(kv, func(t *testing.T) {
+			ref, err := Load(path, Options{KVQuant: kv, CPUBatchDecode: CPUBatchOff})
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			defer ref.Close()
+			want, _ := cpuBatchConversations(t, ref, 3, 2, 8, greedy, false)
+			m, err := Load(path, Options{KVQuant: kv, CPUBatchDecode: CPUBatchOn})
+			if err != nil {
+				t.Fatalf("load with batched decode on: %v", err)
+			}
+			defer m.Close()
+			if m.CPUKVPrecision() != kv {
+				t.Fatalf("CPU KV %q, want %q delivered", m.CPUKVPrecision(), kv)
+			}
+			if err := cpuBatchCacheEligible(m.NewCache(16)); err != nil {
+				t.Fatalf("a %s cache is not eligible: %v", kv, err)
+			}
+			if !m.EnableCPUBatch(3) {
+				t.Fatal("EnableCPUBatch declined a model whose family is eligible")
+			}
+			got, _ := cpuBatchConversations(t, m, 3, 2, 8, greedy, true)
+			for c := range want {
+				for tn := range want[c] {
+					if !slices.Equal(at(got[c], tn), want[c][tn]) {
+						t.Errorf("conversation %d turn %d: %v concurrent, %v alone", c, tn, at(got[c], tn), want[c][tn])
+					}
+				}
+			}
+			if st := m.CPUBatchStats(); st.Steps == 0 {
+				t.Errorf("no batched step ran (%d runs): the %s generations decoded per sequence", st.Runs, kv)
+			}
+		})
 	}
 }
 

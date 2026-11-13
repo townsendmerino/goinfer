@@ -440,8 +440,9 @@ supply, with any number of tools:
 - `auto` is constrained the same way from the moment the model writes its call opener, so it can still answer in prose — and a turn
   that answers in prose decodes exactly as it would with no constraint (same speed, byte-identical output). llama3 has no opener:
   under `auto` its call is constrained when the reply BEGINS as one (`{"name": "`, optionally after `<|python_tag|>`); a call that
-  follows prose in the same reply is still only parsed. A server started with speculative decoding leaves `auto` unconstrained, to
-  keep its drafter.
+  follows prose in the same reply is still only parsed. On a server started with speculative decoding, an `auto` turn speculates
+  until the call's opener and then takes the constrained path a non-speculating server takes (plain constrained decoding, which on
+  a GPU-resident server does not speculate) for the rest of the turn: a prose answer keeps its drafter and comes back unchanged.
 
 **On a family with no JSON call form** (Gemma 4, gpt-oss, a ChatML model under `-tool-format template`), a call is parsed, not
 constrained. A named tool is a 400. `required` / `any` runs unconstrained and is checked once the reply is parsed: a reply with no
@@ -724,7 +725,7 @@ recognised by its tokens, not by who sent it. The design is `tasks/task-kv-archi
   load-time fit guard chose for you counts as not set; an explicit `--ctx` is never shrunk. Elsewhere (a discrete
   GPU) a slot that fails to allocate, or that would leave under 384 MiB free, ends the count, and the context is not
   shrunk yet; pass a smaller `--ctx` for more slots. That half waits on a measurement of the clamp on real Vulkan
-  hardware (`docs/prompts/nobara-mc1-webgpu-2026-09.md`).
+  hardware (`docs/completed/nobara-mc1-webgpu-2026-09.md`).
 - **On CUDA, slots come before context** (owner decision 2026-09-27). When `--ctx` is not set, fit by default gives up
   context, down to 4096, until every requested slot fits, and it logs the shrink. Below 4096 the slots are clamped
   instead.
@@ -1167,7 +1168,7 @@ after it (text before the image is a 400 for now), at most 16 per request and 16
 loads on the first image request, so a text-only server never pays for it. It runs on Metal with the encoder when
 the encoder is on Metal (startup says where, and so does a line when the first image loads it), on the CPU otherwise. The image is resized as the reference's processor does it (torchvision's antialiased
 bicubic, reproduced bit for bit), and an image embedding then matches sentence-transformers' to cosine 1.000000000 on
-the gate's 12 cases (`docs/tasks/task-embeddinggemma2.md`, Phase V). `--embed-image-resize bilinear` selects aikit's
+the gate's 12 cases (`docs/completed/task-embeddinggemma2.md`, Phase V). `--embed-image-resize bilinear` selects aikit's
 bilinear resize instead (0.9992 to 0.9999 from the reference); `bicubic` is the default.
 
 **Audio.** EmbeddingGemma 2 embeds audio into the same space too. An `input` element may be `{"audio": "<data:
@@ -1181,12 +1182,12 @@ URI or bare base64 of a WAV>", "text": "optional text after it"}`, or the OpenAI
 The WAV must be 16-bit PCM, mono, at 16 kHz, and at most 30 s. Anything else is a 400; nothing is resampled or cut.
 One image or one audio clip per input, at most 16 clips per request. `usage` counts the clip's soft tokens, 25 a
 second. The audio tower loads on the first audio request, and runs on Metal with the encoder when the encoder is on Metal, on the CPU otherwise. On the gate's nine cases the embeddings
-match sentence-transformers' to cosine 1.000000000 (`docs/tasks/task-embeddinggemma2.md`, Phase A).
+match sentence-transformers' to cosine 1.000000000 (`docs/completed/task-embeddinggemma2.md`, Phase A).
 
 Every response says which prompt it applied, in a `goinfer_task: {"name", "prompt"}` field and an
 `X-Goinfer-Embedding-Task` header. Index and query with the prompts the model intends: an index built under one prompt
 and queried under another retrieves worse without any error, and the echo is there so that can be seen. Its checks
-against sentence-transformers are in `docs/tasks/task-embeddinggemma2.md`.
+against sentence-transformers are in `docs/completed/task-embeddinggemma2.md`.
 
 **Startup self-tests, and `check --hardware`.** goinfer is built and measured on two machines, and a wrong kernel on hardware nobody here owns does not crash: it returns slightly wrong numbers (an AVX-512 VNNI
 accumulator bug did exactly that in September, and surfaced only because one CI runner happened to have the CPU). So the first model load of a process runs aikit's `linalg.SelfCheck`: the dispatched CPU kernels

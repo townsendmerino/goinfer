@@ -1,5 +1,9 @@
 # Task: concurrency — stop the resident-KV thrash, then earn batched multi-request decode (MC0–MC5) — 2026-09
 
+> **2026-11-09:** nothing is queued: rerun 2 ran 2026-10-02 and parked the MC4 candidate with the numbers; "spec inside a
+> batch" is now RF6 and MC4's MoE and recurrent items were built on Metal by OP4 (CUDA: OP4cu-x), both in
+> `docs/tasks/task-forward-and-memory-2026-11.md`. The ledger below is current.
+>
 > **PARKED, 2026-10-01 (owner), with one graded run queued.** Moved to `docs/tasks/parked/`; a pointer stub stays at the
 > old path because ~60 code comments and several docs cite it. MC0–MC3 (including MC3c) and chunked prefill shipped
 > (below), and nothing in this track is an unblocked build. Open:
@@ -12,8 +16,9 @@
 >   Do not treat `-spec-adaptive` as lossless. The run was queued as: (`mc4-candidate-cuda`, nobara, ~45 min). The build is
 >   `-spec-adaptive` (`6e9fcb99`, opt-in); the gates and the decision rule were registered before the run in
 >   [`mc4-candidate-cuda-2026-10-01.md`](../../measurements/mc4-candidate-cuda-2026-10-01.md). The graded outcome (rerun 2) was a chat hard-gate miss, so PARKED; a copy-only miss was the pre-run guess and was wrong. The Metal run of the same gates (the Mac's night queue, ~60 min) is not queued.
-> - **Owner decisions:** whether `-spec-adaptive` ever becomes a default; "spec inside a batch" (CUDA copy L = 1.54×; needs a
->   ragged-batch kernel, no design); P10 on Metal (projected, not started).
+> - **Owner decisions, 2026-11-09:** `-spec-adaptive` stays opt-in and is not a default (a cost of about 15% under load is
+>   acceptable for whoever wants it; its flag help and `docs/flags.md` state the measured 0.858x). P10 on Metal: KILLED (projected,
+>   never started). Still open: "spec inside a batch" (CUDA copy L = 1.54×; needs a ragged-batch kernel, no design).
 > - **Owed, low priority:** the 413 prefill-share fix's end-to-end re-run (the 2026-09-28 attempt was inconclusive: its memory
 >   ballast was compressible, so the ballast is fixed first; a unit test pins the fix).
 > - **Optional, unqueued:** item 29, the W7 run on Vulkan (reported only; WebGPU's MC1 shipped regardless).
@@ -35,8 +40,8 @@
 > - **MC4 candidate "speculate when alone, batch under load"**: built 2026-09-29 as `-spec-adaptive` (`6e9fcb99`, off by
 >   default). CUDA premise measured 2026-09-29: S 1.253×, L 0.790× on chat. CUDA's copy workload overshot the candidate's own
 >   condition (L 1.540×, spec beats batching under load), a separate, larger "spec inside a batch" question (investigated
->   2026-09-29, parked; the shipped candidate underperforms plain `-spec ngram` on copy traffic). P10 on Metal is projected,
->   not started.
+>   2026-09-29, parked; the shipped candidate underperforms plain `-spec ngram` on copy traffic). P10 on Metal was
+>   killed 2026-11-09.
 > - ~~**Since 9ccf7fb1** (embed-int4 on by default), a default Metal load declines the resident~~ — **fixed 2026-09-30**
 >   (`0ca36756`: `--embed-int4` defaults off on `--backend metal`, so a default Metal load stays on the GPU). The old
 >   `-embed-int4=false` workaround is no longer needed.
@@ -150,7 +155,7 @@
 > MC0–MC1 address the first problem and stay inside goinfer's stated niche (one generation at a
 > time). MC2–MC3 address the second and bend it; see "House rules this doc bends."
 >
-> **Siblings.** [`red-october.md`](../red-october.md) R12 (owns W7; this doc is its follow-on) ·
+> **Siblings.** [`red-october.md`](../../completed/red-october.md) R12 (owns W7; this doc is its follow-on) ·
 > [`task-work-queue-2026-09.md`](../task-work-queue-2026-09.md) (J1 fair admission, which MC3 changes;
 > J6 prefix-aware scheduling, measured 1.024× and not shipped, which MC1 may re-open; J8, which
 > MC2 absorbs if the owner agrees) · [`../positioning.md`](../../positioning.md) ("not a serving
@@ -158,6 +163,23 @@
 > [`task-fit-to-hardware.md`](../task-fit-to-hardware.md) (owns the fit guard MC1 must price) ·
 > [`task-never-swap-2026-09.md`](../../completed/task-never-swap-2026-09.md) (MC1's extra KV is anonymous GPU
 > memory on a 16 GB Mac).
+
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| MC0-MC3c | done | — | MC0, MC1 (Metal, CUDA, WebGPU), MC2, MC3 (Metal, CUDA), MC3c steps 1-2; `backend/metal/kv_slots_test.go:TestKVSlotsWithin` |
+| MC5-chunk | done | — | `backend/metal/mc5_chunk_invariance_test.go:TestMC5_prefillChunkInvariance`; `docs/measurements/chunked-prefill-2026-09-27.md` |
+| MC5-paged | moved | KV5 in `docs/tasks/task-kv-architecture-2026-10.md` | D1, 2026-10-13 |
+| MC4-cand | decision | Francis: keep `-spec-adaptive` opt-in, make it a default, or withdraw it | `docs/measurements/mc4-candidate-cuda-2026-10-01.md` "RERUN 2 RESULT" |
+| MC4-spec | moved | RF6 in `docs/tasks/task-forward-and-memory-2026-11.md` | `docs/completed/task-forward-architecture-2026-10.md` §5.4 |
+| MC4-moe, MC4-rec | moved | Metal: built by OP4; CUDA: OP4cu-x in `docs/tasks/task-forward-and-memory-2026-11.md` | `internal/config/help.go:RecurrentStepHelp` |
+| MC4-adapter | blocked | trigger: a real multi-adapter workload | "MC4 — broadening" below |
+| P10-metal | decision | Francis: pick it up (step 0, the drafter trunk's Metal cost, by day) or kill it | `docs/measurements/p10-metal-projection-2026-09-28.md` |
+| 413-e2e | open | re-run the 7B MC3 batch cells on a Mac that is not swapping, or close it as covered by the unit test | `internal/app/serveapp/prefill_share_testhooks_test.go:TestPrepare_prefillShare` |
+| W7-vulkan | open | optional, reported only (item 29) | `docs/completed/nobara-mc1-webgpu-2026-09.md` §5 |
+| LeverB | blocked | trigger: 7B-class concurrent CPU serving becomes a priority, or a peer row puts the batched CPU path behind | `docs/measurements/concurrency-mc3c-s1-2026-09-27.md` |
+| J6 | blocked | trigger: more concurrently active conversations than `-kv-sessions` (8 or more on one model) | "MC1 — multi-slot resident KV", follow-on |
+| MC5-cb | blocked | trigger: Francis reverses the positioning | `docs/completed/task-forward-architecture-2026-10.md` §8 E6 (stays parked) |
 
 ---
 
@@ -315,7 +337,7 @@ Re-run J6's measurement once after MC1 ships; its 1.024× was taken against a si
   - An explicit `-ctx` is never shrunk.
 - The decoder suite was stopped before timing and re-run after it, by owner decision; no `decoder/` file changed.
 
-**What was built** (`9fddaf7e`; prompt `docs/prompts/nobara-mc1-cuda-2026-09.md`). The CUDA resident implements
+**What was built** (`9fddaf7e`; prompt `docs/completed/nobara-mc1-cuda-2026-09.md`). The CUDA resident implements
 `decoder.ResidentKVSlotter`; the decoder half is Metal's, unchanged. Each CUDA specific the prompt named was checked in
 the code:
 - **Storage.** A slot is a full copy of the per-layer f32 `kc`/`vc` set (one latent buffer for an MLA layer, nothing
@@ -393,7 +415,7 @@ control thrashes (3 / 3). The tagged CUDA suite: 171 pass, 0 fail.
 - The slowest turn at 4 clients falls from ~99 s to ~23.6 s. What remains is admission: WebGPU has no batch stepper,
   so generations still run one at a time.
 - Owed: the discrete-GPU clamp (a failed allocation plus the headroom probe) on real Vulkan hardware
-  (`docs/prompts/nobara-mc1-webgpu-2026-09.md`).
+  (`docs/completed/nobara-mc1-webgpu-2026-09.md`).
 - **Owner decision, 2026-09-27: slots before context on WebGPU too, in two steps.**
   - **Step 1, done (darwin):** `slotsBeforeContext` (`backend/webgpu/kv_slots.go`). When more than one slot is requested and
     the context is unpinned, the context gives up positions, down to 4096, until every slot fits under
@@ -1420,7 +1442,7 @@ Each item waits on MC3 shipping and on a measured request for it:
   §6). Investigated the same day: the real fix is a ragged-batch kernel (unscoped, real backend
   work); the cheap hypothesis (a workload-aware yield policy in the switch candidate, zero new
   kernels) does NOT work — measured worse than doing nothing, because the cost is concurrent
-  admission itself, not the per-round policy. **Parked, no design exists yet, owner's call.**
+  admission itself, not the per-round policy. **Parked, no design exists yet, owner's call.** *(2026-11-09: now RF6, the ragged path, in `docs/tasks/task-forward-and-memory-2026-11.md`.)*
 - **Mixed adapters in one batch.** Trigger: a real multi-adapter workload.
 
 **The spec trigger, measured on Metal — pre-registered 2026-09-27, before any timing.** Today a model served with
@@ -1460,7 +1482,7 @@ production's decode kernels run layer-major in one command buffer, so an extra v
       The other loops were checked the same day.
       - The block drafter (`--drafter`, CUDA) committed one position more than it wrote, so the next turn reused a
         stale one. It is fixed and pinned by `TestBlockSpecGenerate_commitsOnlyWrittenPositions`. ~~its CUDA check on
-        nobara is owed~~ — **run 2026-09-28** (item 30, `docs/prompts/nobara-cuda-spec-trailing-token-2026-09.md`):
+        nobara is owed~~ — **run 2026-09-28** (item 30, `docs/completed/nobara-cuda-spec-trailing-token-2026-09.md`):
         new `backend/cuda/spec_twoturn_test.go` on the real qwen3-4b + DFlash drafter, N ∈ {1, 17, 48}, both fixes together
         (the n-gram one too). 14/14 pass with the fixes in; reverted, n-gram is exactly one token short at every N
         and the block drafter's turn 2 visibly diverges at N=17/48 (N=1's stale position happens not to corrupt
@@ -1723,4 +1745,4 @@ decline, and p99 latency. Only the speed thresholds move:
   shows eviction still hurts at realistic client counts.
 - **Multi-model scheduling.** Distinct models already run in parallel; nothing here changes that.
 
-<!-- doc-reviewed: 2026-10-01 -->
+<!-- doc-reviewed: 2026-11-09 -->

@@ -412,8 +412,11 @@ func (m *Model) snapshotter() ResidentKVSnapshotter {
 	if m.kvSnaps == nil || m.resident == nil {
 		return nil
 	}
-	sn, _ := m.resident.(ResidentKVSnapshotter)
-	return sn
+	kv := m.resKV()
+	if !kv.KVSnapshotterAvailable() {
+		return nil
+	}
+	return kv
 }
 
 // residentRestoreSnapshot restores a held snapshot's rows into the bound slot when that serves more of prompt than the slot's own
@@ -733,8 +736,8 @@ func (m *Model) residentSnapshotRows(slot int, prompt []int, b int, lora *loraRu
 // kvSnapReserve charges need bytes for a snapshot about to be taken. A demoted copy goes before a held snapshot: it serves one conversation
 // that may never return, a snapshot any prompt with its prefix.
 func (m *Model) kvSnapReserve(st *kvSnapStore, need int64) bool {
-	if d, ok := m.resident.(ResidentKVDemoter); ok && m.kvDemote {
-		return d.ReserveKVHost(need)
+	if kv := m.resKV(); kv.KVDemoterAvailable() && m.kvDemote {
+		return kv.ReserveKVHost(need)
 	}
 	return st.Reserve(need, true)
 }

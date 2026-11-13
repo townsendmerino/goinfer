@@ -17,6 +17,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -507,6 +508,15 @@ func (r *resident) encodeMoERouterWithX(e *Encoder, L *residLayer, x Buffer) {
 // (r.pRms above is f32-only, so prefill cannot call encodeMoERouter). Reads r.mq/r.mSc (already normed and quantized
 // by either caller); writes mo.rIdx/mo.rWgt. No r.x involvement.
 func (r *resident) encodeMoERoute(e *Encoder, L *residLayer) {
+	form := program.FfnMoE
+	if r.moe.isGptOss {
+		form = program.FfnGptOss
+	}
+	r.encodeMoERouteForForm(e, L, form)
+}
+
+// encodeMoERouteForForm emits the router projection and top-k selection for form (program.FfnMoE or program.FfnGptOss).
+func (r *resident) encodeMoERouteForForm(e *Encoder, L *residLayer, form program.FFNForm) {
 	mo := r.moe
 	ml := L.moe
 	// router logits: routerW[nE,H] × mq → rLogits[nE]
@@ -514,7 +524,7 @@ func (r *resident) encodeMoERoute(e *Encoder, L *residLayer) {
 	// on-GPU top-k → rIdx[k], rWgt[k]. gpt-oss's router bias reaches the logits BEFORE top-k and
 	// the weight is softmax over the SELECTED biased logits — a genuinely different kernel from
 	// the generic DeepSeek/GLM/Qwen-MoE shape (moe_route), not a parameter swap (see route_gptoss).
-	if mo.isGptOss {
+	if form == program.FfnGptOss {
 		e.Dispatch(mo.pRouteGptOss, 32, 32, mo.rLogits, ml.routerBias, mo.rIdx, mo.rWgt, mo.uNE, mo.uK)
 	} else {
 		e.Dispatch(mo.pRoute, 32, 32, mo.rLogits, ml.routerBias, mo.rIdx, mo.rWgt,

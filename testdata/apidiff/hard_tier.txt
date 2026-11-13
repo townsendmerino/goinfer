@@ -69,6 +69,7 @@ chat (*Template).Name
 chat (*Template).Render
 chat (*Template).RenderSegments
 chat (*Template).ParseToolCalls
+chat (*Template).StopIDs
 chat ChatML
 chat Gemma3
 chat Gemma4
@@ -97,3 +98,5 @@ constrain (*Masker).ForcedBytesRun
 constrain (*Masker).GrammarClone
 constrain TokenBytes
 constrain SchemaFromStruct
+constrain GrammarFromStruct
+constrain TemplateFromStruct

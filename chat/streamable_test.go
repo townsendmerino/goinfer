@@ -87,7 +87,7 @@ func TestStreamableLen_bytewiseNeverOverruns(t *testing.T) {
 // strings.TrimSpace(lead), not the raw untrimmed prefix, and this catches a streamer that
 // releases a byte the parser would later disagree with.
 func TestProseStreamerMatchesParser(t *testing.T) {
-	families := map[string]*Template{"chatml": ChatML(), "mellum2": Mellum2(), "gemma4": Gemma4()}
+	families := map[string]*Template{"chatml": ChatML(), "mellum2": Mellum2(), "gemma4": Gemma4(), "flint": Flint()}
 	for name, tmpl := range families {
 		opener, ok := tmpl.ToolCallOpener()
 		if !ok {

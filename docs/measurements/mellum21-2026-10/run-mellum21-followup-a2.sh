@@ -2,9 +2,9 @@
 # Follow-up A2: is the follow-up A crater (positions 1030 and 1300 of the window golden) the window path, or int8 quantization sensitivity?
 # The same per-layer dump as A (TestMellum2_layerDump, the same sequential path) with goinfer in f32 (GOINFER_MELLUM_DUMP_QUANT empty), read against the same
 # HF bf16 reference by the same script; if the f32 load is declined by the fit guard (12B x 4 bytes is about 48 GB of 62), the registered fallback arm is
-# int8 weight-only (f32 activations). The arm that ran is named in the result. Rule (pre-registered in docs/tasks/task-mellum21-2026-10.md, "A2"):
+# int8 weight-only (f32 activations). The arm that ran is named in the result. Rule (pre-registered in docs/completed/task-mellum21-2026-10.md, "A2"):
 # scripts/diff_mellum_layers.py compare: Q / P / M / X. A SKIP is a failure of this job. Estimate: dump about 25-40 min, HF about 2 min, queue at 90.
-#   python3 scripts/night.py add mellum21-fu-a2 --est 90 --by "nobara session, Mellum2.1 follow-up A2" --doc docs/tasks/task-mellum21-2026-10.md -- bash docs/measurements/mellum21-2026-10/run-mellum21-followup-a2.sh
+#   python3 scripts/night.py add mellum21-fu-a2 --est 90 --by "nobara session, Mellum2.1 follow-up A2" --doc docs/completed/task-mellum21-2026-10.md -- bash docs/measurements/mellum21-2026-10/run-mellum21-followup-a2.sh
 # MELLUM_DRY=1 checks preconditions only.
 export F=${F:-$HOME/goinfer-bench/mellum21/a2}      # pinned decoder.test of the commit that adds GOINFER_MELLUM_DUMP_QUANT, and rev
 source "$(dirname "$0")/_common.sh"

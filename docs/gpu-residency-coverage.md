@@ -89,6 +89,10 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   on the same missing feature as Granite-4.0-H above, `FeatSSM` (`decoder/features.go:residentBackendFeatures`, webgpu
   only) — the Mamba-2 scan a CUDA/Metal port would need already exists on WebGPU
   (`backend/webgpu/mamba2.go`), so this is a port, not a new design.
+  > **Correction 2026-11-09:** Nemotron-H's dense layers are now resident on CUDA and Metal too (`docs/hardware-matrix.md`).
+  > Still open, handed here when `docs/completed/task-gpu-paths-2026-09.md` was archived: the Nemotron 3 Nano and Lightning
+  > MoE block (non-gated relu²) on CUDA and Metal, which `decoder/residency.go` declines as the Nemotron MoE runner shape
+  > (that doc's G7); and a WebGPU `HiddenLast` for resident embeddings (G4; Metal and CUDA have one).
 - **Gemma 4 dense** — resident on CUDA, Metal, and (as of 2026-09-17) WebGPU too: WebGPU's
   per-layer geometry seam (`backend/webgpu/residency.go`'s `ghd`/`gnKV`/`ghalf`/`gKEqV`, mirroring
   `backend/cuda/resident.go`'s `cudaLayer.hd/nKV` and `backend/metal/model.go`'s `residLayer.geom`), K=V
@@ -110,7 +114,7 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   would silently skip the PLE branch if admitted). `hardware-matrix.md`'s single "Gemma 4" row
   cannot distinguish E2B/E4B from the dense shape it actually measures.
 - **Command-R / Command-R7B** — **2026-10-09: resident on CUDA and Metal; CPU on WebGPU.** Metal has pairwise twins of its
-  rope kernels since 2026-10-09 (`docs/tasks/task-metal-pairwise-rope-2026-10.md`). Metal's batched prefill does not run
+  rope kernels since 2026-10-09 (`docs/completed/task-metal-pairwise-rope-2026-10.md`). Metal's batched prefill does not run
   this family (parallel-block FFN), so it prefills sequentially. The correction below is the 2026-10-01 state.
   **CORRECTION 2026-10-01: resident on CUDA ONLY; CPU on WebGPU and Metal.**
   The paragraph below was written when all three backends ran Cohere's rotation on the NeoX half-split
@@ -125,7 +129,7 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   learned bias), plus `FeatParallelBlock` and `FeatLogitScale`, both sequencing/host-side changes
   once the norm exists.
 - **GLM-OCR (`glm_ocr`)** — **2026-10-09: resident on Metal too** (the pairwise twins,
-  `docs/tasks/task-metal-pairwise-rope-2026-10.md`). An image turn takes the CPU prefill and the upload, then Metal
+  `docs/completed/task-metal-pairwise-rope-2026-10.md`). An image turn takes the CPU prefill and the upload, then Metal
   decode; Metal's batched prefill does not run this FFN shape.
   - Real invoice on the M1 Pro (exploratory): reply byte-identical to the CPU decoder's, decode 92-95 tok/s against
     about 42, the whole run about 20 s.

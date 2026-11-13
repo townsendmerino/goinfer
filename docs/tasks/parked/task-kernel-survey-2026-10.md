@@ -240,7 +240,7 @@ noticed: `docs/queue-performance.md` has two entries numbered P24 (`attn_fused`,
    twin removed that decline (KS-H1).
 7. **`docs/completed/task-forward-architecture-2026-10.md` §6** says "decode already replays CUDA graph segments". Graphs are
    opt-in and off by default.
-8. **`docs/tasks/red-october.md` §2.3** calls the CUDA GEMM done ("Nothing left to fund there"). It compared against a
+8. **`docs/completed/red-october.md` §2.3** calls the CUDA GEMM done ("Nothing left to fund there"). It compared against a
    whole-curve Ollama figure that the 2026-09-21 per-interval marginals supersede (KS-B1).
 9. **P24's 1.72% of tensor peak and 12.6% occupancy** describe the retired 64×64 kernel. The shipped 128-row kernel has no
    ncu reading (KS-B2).
@@ -1551,7 +1551,7 @@ clean.
 - **Gain (est.):** −1.7 to −2.0 ms (12–14%) if the body reaches 160–165 GB/s. This is `-backend auto`'s dense int8int8 path,
   including the goinfer-chat bundles.
 - **Size:** S–M.
-- **Prior art:** `docs/tasks/task-metal-int8-2026-10.md` slice 1, "can follow", never built.
+- **Prior art:** `docs/completed/task-metal-int8-2026-10.md` slice 1, "can follow", never built.
 
 **KS-C3 first measurement, registered 2026-10-23 before the run, on the owner's order of 11:50.** Instrument: `TestMetalGEMVS0`
 gains the native int8 body at the 1.5B's shapes, each the kernel decode dispatches there: qkv (`gemv_w8a8_sa`, 2,048 × 1,536), o

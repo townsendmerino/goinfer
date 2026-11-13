@@ -50,7 +50,7 @@ From v1.0 these follow semver: no breaking change before a v2.0.
 ### `chat`
 
 - `chat.Detect`, `chat.Meta`, `chat.ErrUnknownTemplate`
-- `chat.Template`: `Name`, `Render`, `RenderSegments`, `ParseToolCalls`
+- `chat.Template`: `Name`, `Render`, `RenderSegments`, `ParseToolCalls`, `StopIDs`
 - The named constructors: `ChatML`, `Gemma3`, `Gemma4`, `Harmony`, `Llama3`, `Mellum2`, `Mistral`
 - `chat.Turn`, `chat.Tool`, `chat.ToolCall`, `chat.Stops`, `chat.Segment`
 
@@ -62,7 +62,8 @@ for a given input IS, because callers pin prompts against it.
 - `constrain.Grammar` (interface), `constrain.NewMasker`, `constrain.Masker`'s
   `Process`, `MaskAt`, `Commit`, `Reset`, `CanEnd`, `StopWhenComplete`, `ForcedRun`,
   `ForcedBytesRun`, `GrammarClone`
-- `constrain.TokenBytes`, `constrain.SchemaFromStruct`
+- `constrain.TokenBytes`, `constrain.SchemaFromStruct`, `constrain.GrammarFromStruct`, `constrain.TemplateFromStruct` (the
+  README's structured-output API)
 
 ### `cmd/serve` — the operator surface
 
@@ -93,7 +94,20 @@ Real, supported, and used in production paths here — but they may change in an
 patch. Pin a version if you depend on them. Each graduates when it settles.
 
 - **The library's logger.** `decoder.SetLogger`.
-- **Load's error kinds.** `decoder.ErrUnsupportedModel`, `ErrUnknownQuant`, `ErrUnknownBackend`, for `errors.Is`.
+- **Load's error kinds.** `decoder.ErrUnsupportedModel`, `ErrUnknownQuant`, `ErrUnknownBackend`, for `errors.Is`, and
+  `ErrBackendDeclined` with the `Options.RequireBackend` that asks for it (a named backend's decline becomes Load's error).
+- **Structured output from JSON Schema.** `constrain.JSONSchema`, which holds a string's `format` for `date`, `time`,
+  `date-time`, `uuid`, `ipv4` and `email` (any other format is an annotation). `GrammarFromStruct` and
+  `TemplateFromStruct`, its Go-type twins, are Hard (above).
+- **Per-field confidence.** `constrain.Masker`'s `CaptureConfidence` and `FieldConfidence`, with `ConfidenceOptions` and
+  `FieldConfidence`.
+- **Tool-call wiring.** `chat.Template`'s `ToolGrammar` (the masker for a turn that may call a tool), `ToolCallWrapper`,
+  `ToolCallOpener`, `ParseToolCallsFor` and `SplitThink`, and
+  `constrain.ToolCallsGrammar`, `ToolSpec`, `NewLazyMasker` and `LazyMasker`: the parts a caller assembles a constrained
+  tool call from (`ParseToolCalls` itself is Hard, above).
+- **Fit and placement reports.** `decoder.FitDeclineError`, `ErrWontFitResident` and `ResidentDeclineError`, and
+  `Model.EffectiveBackend`, `BackendReport` and `CPUConcurrentSafe`: what a load or a backend decided, and why.
+- **Embeddings.** The `embeddinggemma2` package (EmbeddingGemma 2's text, image and audio encoders).
 - **The backend/residency seam.** `decoder.Backend`, `RegisterBackend`, `QuantBackend`,
   `QuantBatchBackend`, `ResidencyBackend`, `Prefiller`, `ResidentForward`, `ResidentGreedy`,
   `ResidentPrefillKV`, `ResidentCapped`, `ResidentDrafterHost`, `ResidentBlockDrafter`,
@@ -124,7 +138,8 @@ patch. Pin a version if you depend on them. Each graduates when it settles.
 - **Adapters at compute time.** `Model.LoadAdapter`, `HasAdapter`, `Session.UseAdapter`,
   `Session.ClearAdapter`, and `Options.LoRA`'s multi-adapter behaviour.
 - **Diagnostics and capture.** `Model.ForwardCapture`, `ForwardSubCapture`, `HiddenLast`,
-  `DecodePath`, `PrefillPath`, `PrefillPathReporter`, `ResidentDecline`, `MmapByteOffset`.
+  `DecodePath`, `PrefillPath`, `PrefillPathReporter`, `ResidentDecline`, `MmapByteOffset`, and `Generation.ResidentDeclined`
+  (why one generation ran on the CPU on a resident model).
 - **Serialization plumbing.** `SerializeWeights`, `SerializeWeightsTo`, `StreamTranscodeGGUF`,
   `TranscodeGIW`, `TranscodeGIWTimed`, `TranscodeGIWLoRA`, `TranscodeGIWLoRATimed`, `TranscodePhases`, `GIWAdapterLoRA`,
   `EnsureCachedGIW`, `SidecarPath`, `SidecarPathIfFresh`, `SidecarPathIfCurrent`, `SidecarState`, `DefaultToSidecar`,

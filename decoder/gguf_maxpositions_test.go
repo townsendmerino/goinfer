@@ -1,9 +1,6 @@
 package decoder
 
 import (
-	"os"
-	"regexp"
-	"strings"
 	"testing"
 
 	"github.com/townsendmerino/aikit/embed"
@@ -103,8 +100,9 @@ func TestGGUFConfig_everyArchitectureReadsMaxPositions(t *testing.T) {
 		{"phi3", dense("phi3")},
 		{"llama4", dense("llama4")},
 		{"gpt-oss", dense("gpt-oss")},
+		{"flint", dense("flint")},
 	}
-	// The architecture list comes from ggufConfig's own switch, not a hand count (audit-2026-09-10
+	// The architecture list comes from ggufRegistry (knownGGUFArchitectures), not a hand count (audit-2026-09-10
 	// G-13(c)). A hard-coded "18" let a 20th case with no MaxPositions pass untouched.
 	covered := map[string]bool{}
 	for _, tc := range cases {
@@ -138,32 +136,16 @@ func TestGGUFConfig_everyArchitectureReadsMaxPositions(t *testing.T) {
 // this test covers it under.
 var ggufConfigAliases = map[string]string{"gemma3_text": "gemma3", "nemotron_h_moe": "nemotron_h"}
 
-// ggufConfigCaseLabels reads ggufConfig's switch labels from gguf.go, so the covered set is derived
-// from the dispatch itself rather than kept in step with it by hand.
+// ggufConfigCaseLabels reads ggufRegistry's keys directly, so the covered set is derived
+// from the dispatch table itself rather than kept in step with it by hand.
 func ggufConfigCaseLabels(t *testing.T) []string {
 	t.Helper()
-	b, err := os.ReadFile("gguf.go")
-	if err != nil {
-		t.Fatalf("read gguf.go: %v", err)
-	}
-	src := string(b)
-	start := strings.Index(src, "\nfunc ggufConfig(")
-	if start < 0 {
-		t.Fatal("ggufConfig not found in gguf.go")
-	}
-	end := strings.Index(src[start+1:], "\n}\n")
-	if end < 0 {
-		t.Fatal("ggufConfig's closing brace not found")
-	}
-	body := src[start : start+1+end]
-	var labels []string
-	for _, m := range regexp.MustCompile(`(?m)^\s*case\s+([^:]+):`).FindAllStringSubmatch(body, -1) {
-		for _, q := range regexp.MustCompile(`"([^"]+)"`).FindAllStringSubmatch(m[1], -1) {
-			labels = append(labels, q[1])
-		}
+	labels := make([]string, 0, len(ggufRegistry))
+	for k := range ggufRegistry {
+		labels = append(labels, k)
 	}
 	if len(labels) < 15 {
-		t.Fatalf("found only %d case labels in ggufConfig — the scan is broken", len(labels))
+		t.Fatalf("found only %d case labels in ggufRegistry — the registry is incomplete", len(labels))
 	}
 	return labels
 }

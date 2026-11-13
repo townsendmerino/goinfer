@@ -72,7 +72,7 @@ at `docs/completed/task-demo-refresh.md` and other pages still link the old path
 design record itself, so it is not counted above.
 
 One is a program rather than a single design, and is named without the `task-` prefix:
-[`red-october.md`](tasks/red-october.md) — the backend × area performance gap matrix (CPU / WebGPU /
+[`red-october.md`](completed/red-october.md) — the backend × area performance gap matrix (CPU / WebGPU /
 CUDA / Metal against the peers, as of 2026-09-18), the mechanism behind each cell, the registered
 projection bands, and the twelve briefs R1–R12 that would close them. It is the one place the whole
 chase is on a page; `benchmarks.md` stays the source of every ratio it quotes.
@@ -187,7 +187,7 @@ what shipped: the hd = 64 and G = 2–8 block attention kernels, the batched ste
 a GPU attribute or a memory size (`hardware-coverage.json`, and the generated "Verified on" section of `hardware-matrix.md`), ways to reach those paths without owning the machine (CI runners including windows-arm64,
 Intel SDE, forced fallbacks, faked probes), a startup self-test on CPU, CUDA, WebGPU and Metal that declines rather than answers wrong, and a pasteable `check --hardware` report.
 
-[`task-pull-to-giw-2026-09.md`](tasks/task-pull-to-giw-2026-09.md) (a proposal, filed 2026-09-25 and reviewed 2026-10-05; P0 done, P1-P3 not started, four owner decisions open and a fifth added) is about disk:
+[`task-pull-to-giw-2026-09.md`](tasks/parked/task-pull-to-giw-2026-09.md) (a proposal, filed 2026-09-25; P0 done, parked 2026-11-09 with its five decisions taken) is about disk:
 `pull` converting to `.giw` after a verified download and keeping the `.gguf` only on request, and a load that finds the `.giw` without its source. It was indexed nowhere before the review.
 
 [`task-test-efficiency-2026-09.md`](completed/task-test-efficiency-2026-09.md) (TE0–TE12, filed 2026-09-28, **closed and archived 2026-10-04**; its live rules are in `CLAUDE.md`'s "Run budget" and "Gate tiers") was the
@@ -248,12 +248,6 @@ separate sweep because this step kept being skipped at move time.
 
 ## Other kinds
 
-- `prompts/` (16) — briefs written for another session or the other machine to execute. 21 of the
-  original 25 were archived to `completed/` in a 2026-09-13 sweep once verified delivered, and the 4
-  left then were each still open (drafted-by-decision, blocked, or unshipped, per their own status).
-  Briefs written since are read by their own status headers. Newest:
-  `prompts/nobara-mc4-spec-alone-cuda-2026-09.md` (2026-09-28), the nobara brief for MC4's
-  "speculate when alone, batch under load" premise measurement.
 - `releases/` (12) — per-release records; `RELEASING.md` at the repo root is the authority on ritual.
 - `scoping-*.md`, `plan-*.md` — pre-build scoping, some superseded; check the status header.
 - [`what-parity-gated-means.md`](what-parity-gated-means.md) — the reader-facing explanation of

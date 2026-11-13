@@ -15,6 +15,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Command-R7B | ✅ | CPU | ✅ resident | ✅ resident |
 | DeepSeek-V2 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | DeepSeek-V3 | ✅ | ✅ resident | ✅ resident | ✅ resident |
+| Flint | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | GLM-4.5/4.6 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | GLM-OCR | ✅ | CPU | ✅ resident | ✅ resident |
 | GPT-2 | ✅ | CPU | CPU | ✅ resident |

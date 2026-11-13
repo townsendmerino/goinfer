@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Night job: S-auto's first-token half (docs/tasks/task-metal-int8-2026-10.md, "S-auto's first-token half"),
+# Night job: S-auto's first-token half (docs/completed/task-metal-int8-2026-10.md, "S-auto's first-token half"),
 # pre-registered 2026-10-04 before any graded run: TestW8Native_S_ttft on the 0.5B and the 1.5B, a 1,000-token prompt,
 # Metal native int8 (precise math) against CPU int8int8, Metal int4 re-quant reported, 7 rotated repetitions; warm is
 # graded, cold reported. The test builds its own prompt, so the binary needs no package directory.
 #   go test -c -tags goinfer_testhooks -o ~/goinfer-bench/metal-int8-2026-10/metal-<REV>.test ./metal/
 # Queued with:
 #   python3 scripts/night.py add metal-int8-ttft --est 10 --by "Claude, Metal int8 S-auto TTFT" \
-#     --doc docs/tasks/task-metal-int8-2026-10.md -- bash docs/measurements/metal-int8-2026-10/run-ttft.sh
+#     --doc docs/completed/task-metal-int8-2026-10.md -- bash docs/measurements/metal-int8-2026-10/run-ttft.sh
 # The runner holds the timing lock. Logs: ~/goinfer-logs/metal-int8-2026-10/ttft/.
 set -uo pipefail
 REV=d0d65266

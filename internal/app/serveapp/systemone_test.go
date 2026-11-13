@@ -8,12 +8,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/app/loadflags"
 	"github.com/townsendmerino/goinfer/internal/decide"
+	"github.com/townsendmerino/goinfer/internal/testpath"
 )
 
 // sysOneTok gives every verbalizer its own single id (noul, digits, letters) and any prompt three ids.
@@ -213,7 +213,7 @@ func TestJSONText(t *testing.T) {
 // End to end on a real model (the local Qwen 0.5B; skips without it): the decider is built from the served model and
 // its tokenizer, and a two-question request comes back in TypeSafe's shape.
 func TestSystemOne_realModel(t *testing.T) {
-	path := filepath.Join("..", "..", "testdata", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
+	path := testpath.Testdata(t, "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no local checkpoint at %s (an untracked symlink): %v", path, err)
 	}

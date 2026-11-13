@@ -100,6 +100,24 @@ file it.** The shape: a kernel with a fixed bound declares it beside the kernel,
 request against the declaration and declines by name, and, if it can be made mechanical, a test fails when a bound-carrying
 kernel has no declaration. Start from the 19 B findings, which name most of the kernels. Either box, M.
 
+**G55 · An explicit `--quant int4` on a safetensors CUDA load was refused by the int4mix `.giw` it built** — `cuda`, **filed
+2026-11-09 (mbp2-fit, from Francis's doc-review decisions); CLOSED 2026-11-09: fixed before it was filed, and now guarded in CI**
+- The cause was `decoder/serialize.go:Weights.quantLabel` counting a MoE's float32 routers beside int4 as a mix, so every int4 MoE
+  bundle read `int4mix` and `Model.CheckGiwQuantMatch` refused the load that built it. It was fixed on 2026-10-10, the day after
+  the Mellum2.1 run; the fix was not target-specific.
+- The caller-level guard, `internal/runtime/modelload/modelload_test.go:TestLoad_safetensorsDirGoesThroughSidecar`, skips
+  everywhere: its fixture is an uncommitted download. `TestLoad_explicitInt4AcceptsItsMoESidecar` runs the same path on the
+  committed `testdata/mixtral-tiny`, and is red with the old rule planted back.
+
+~~**G54 · `TestSpecDecodeCurve`'s depth-512 lossless violation on CUDA**~~ — `cuda`, filed 2026-11-09 (mbp2-fit, from Francis's
+doc-review decisions, B4-4); **CLOSED 2026-11-09: PASS on nobara** (main f8fb5b883, under the exclusive timing lock, 12 s):
+lossless at every depth, accepting 1.00 at 128, 0.47 at 512 and 0.43 at 2048 tokens per round. The depth-512 violation recorded
+in `docs/completed/task-cuda-deltanet-prefill-2026-09.md` no longer reproduces. The run's tok/s are not quotable: that main
+carries a solo-decode regression.
+- **Kept as the pre-claim check:** before any published or decided spec-decode number on CUDA, run on nobara
+  `GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' -count=1 ./backend/cuda/ -run '^TestSpecDecodeCurve$' -v` (it skips
+  without the variable) and read for `--- PASS`. A red is a correctness bug in the speculative path, filed as a new item.
+
 **G53 · Metal and CUDA: admission claims whole-vector QK-norm, and the build refuses it on a GQA model** — `metal`, `cuda`, **filed 2026-11-03 (mac-sb11m, from Gemini's review of #627); not started**
 - `backend/metal/model.go:buildResident` and `backend/cuda/backend.go` decline a layer with `QKNormWhole` at `nH != nKV`, while `residentBackendFeatures` claims `FeatQKNormWhole` for any KV heads. So `Admit` says resident and the load runs on the CPU. The review says real Olmo 3 checkpoints are GQA; no checkpoint here could confirm that, so read one's `num_key_value_heads` first.
 - WebGPU's restriction came off on #627, with a generated GQA tiny case (`olmo3GQAFixture`). The same check for these two needs their QK-norm dispatches to take Q's and K's widths apart: Metal's whole-vector launch sizes its grid from a single head dimension, so it is real work there. Either box, M.
@@ -124,7 +142,7 @@ path "metal-resident (int8int8→int4, no Metal int8 GEMV kernel)". The path lab
 was loaded with.
 
 **The fix, as Nemotron-H's (OP2b, `backend/metal/mamba.go:buildMamba`):** at int8 Metal declines the model as resident and the CPU runs it
-at real int8. Native int8 for recurrent families is a later slice of `docs/tasks/task-metal-int8-2026-10.md`.
+at real int8. Native int8 for recurrent families is a later slice of `docs/completed/task-metal-int8-2026-10.md`.
 
 **Gate (tier 0):** `qwen35-tiny` at int8int8 does not go resident on Metal; at int4 it does, unchanged. Planted defect: no decline,
 which must turn it red.

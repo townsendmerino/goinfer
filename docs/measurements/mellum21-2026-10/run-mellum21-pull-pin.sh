@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Mellum2.1 Gate 1, part 1 (docs/tasks/task-mellum21-2026-10.md): pull JetBrains/Mellum2.1-12B-A2.5B-Thinking at the pinned revision to ~/models, verify every shard against Hugging Face's own sha256, and pin
+# Mellum2.1 Gate 1, part 1 (docs/completed/task-mellum21-2026-10.md): pull JetBrains/Mellum2.1-12B-A2.5B-Thinking at the pinned revision to ~/models, verify every shard against Hugging Face's own sha256, and pin
 # the two parity goldens (forward and window) from the real 2.1 weights with transformers (bf16, CPU), the way scripts/pin_mellum2.py pinned 2.0's. Writes the pair under $GOLD (durable, outside the repo)
 # for run-mellum21-gates.sh. Nothing here is a verdict; the verdicts are part 2's.
 #   1. pull      snapshot_download at REV (24.3 GB over 5 shards; the .png/.svg are skipped)             -> ~/models/mellum2.1-thinking
 #   2. verify    each shard's sha256 against the tree API's lfs oid; the five small files against the gate-0 copies (tokenizer.json etc. must be byte-identical to 2.0's)
 #   3. pin       MELLUM_PIN_* env -> scripts/pin_mellum2.py: chat golden with enable_thinking=False (answer token) and the 1441-token window golden; the record carries revision, shard hashes, versions
 # Estimate ~50 min (pull 5-25 min by network; sha256 of 24 GB twice ~5 min; HF bf16 load ~3 min; the 1,441-token forward 10-25 min); queue at 90:
-#   python3 scripts/night.py add mellum21-pull-pin --est 90 --by "nobara session, Mellum2.1 Gate 1" --doc docs/tasks/task-mellum21-2026-10.md -- bash docs/measurements/mellum21-2026-10/run-mellum21-pull-pin.sh
+#   python3 scripts/night.py add mellum21-pull-pin --est 90 --by "nobara session, Mellum2.1 Gate 1" --doc docs/completed/task-mellum21-2026-10.md -- bash docs/measurements/mellum21-2026-10/run-mellum21-pull-pin.sh
 # MELLUM_DRY=1 checks preconditions and prints the plan. Everything lands under ~/models (local NVMe), never the archive.
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../.." && pwd)

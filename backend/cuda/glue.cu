@@ -2,7 +2,7 @@
 #include "kvpage.cuh" // KV_ROW: the paged row of a key
 #include "attnscore.cuh"
 // glue.cu — the per-token elementwise/attention kernels the GEMV-only projection omitted,
-// so the cgo-free CUDA decode measurement is end-to-end (docs/prompts/cuda-measure-e2e-decode.md).
+// so the cgo-free CUDA decode measurement is end-to-end (docs/completed/cuda-measure-e2e-decode.md).
 // Dense Qwen2/Llama decode. Compiled to PTX offline (NVRTC compute_75), go:embed'd, driver-JIT'd.
 // Each is cosine-validated vs a CPU reference in the harness; math matches goinfer's CPU decode.
 

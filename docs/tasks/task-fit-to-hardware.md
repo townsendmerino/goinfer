@@ -6,13 +6,13 @@
 > **and its M-01/M-02 dependency is DONE/mostly-done** (M-01 fixed 2026-09-03; M-02's Metal
 > ordering/paged-accounting half fixed 2026-09-03, its KV/scratch/host-copy gaps closed
 > 2026-09-09, and CUDA's previously-nonexistent fixed-term guard added 2026-09-09 — see
-> `docs/tasks/task-gpu-paths-2026-09.md`'s G11 entries for both). Phase 0's shape differs from what this
+> `docs/completed/task-gpu-paths-2026-09.md`'s G11 entries for both). Phase 0's shape differs from what this
 > doc originally specified (no single `WeightBudget()`; the CPU path uses `fitCheck`/
 > `estimateGGUFWeightBytes` instead, and CUDA/Metal each kept their own separate guard rather than
 > unifying on one). **Phase 1 is DONE for its `plan()` core and `goinfer-chat fit` dry run**
 > (`decoder/fitplan.go` + `internal/app/fitcmd`, 2026-09-09; verified end-to-end on real Mac/Metal and
 > nobara/CUDA hardware, including the exact gemma-4-26B expert-cache scenario §4 uses as its worked
-> example) — Load()-based rather than header-only, see `docs/tasks/task-gpu-paths-2026-09.md`'s entries
+> example) — Load()-based rather than header-only, see `docs/completed/task-gpu-paths-2026-09.md`'s entries
 > for the scope decision. **The startup banner (Phase 1's third surface) is NOT started**, nor are
 > `pull`'s verdict / the web UI listing (both need the still-deferred header-only work). **Phase 2
 > is DONE for CUDA and Metal** (context + slots + the real `--fit=off` switch, all measured on real
@@ -20,7 +20,7 @@
 > resident RAM gets one automatic `-stream-weights` retry, gated by `--fit`, MoE deliberately
 > excluded after `docs/benchmarks.md`'s "M35/M26 on the Mac" measured that CPU path as
 > catastrophic — 2h10min/zero completions; the dense retry itself measured at streamed/resident =
-> 0.944, real hardware, 2026-09-09 — see `docs/tasks/task-gpu-paths-2026-09.md`'s entries).
+> 0.944, real hardware, 2026-09-09 — see `docs/completed/task-gpu-paths-2026-09.md`'s entries).
 > **S1 (`docs/completed/task-never-swap-2026-09.md`, 2026-09-22) narrows what this auto-retry now
 > covers on darwin**: a plain `.gguf` already resolves to its sidecar `.giw` by default there
 > (`prequant.DefaultToSidecar`), so this refusal-driven retry now only fires when that default was
@@ -31,7 +31,7 @@
 > attach after `BuildResident` grabbing VRAM an MoE expert cache already claimed — fixed 2026-09-09
 > WITHOUT the `ResidencyBackend` interface change the doc originally expected: an out-of-band hint
 > on `decoder.Model` was enough, CUDA-only since Metal hosts no drafter today, verified on real
-> nobara hardware — see `docs/tasks/task-gpu-paths-2026-09.md`'s entries). **Correction (2026-09-13
+> nobara hardware — see `docs/completed/task-gpu-paths-2026-09.md`'s entries). **Correction (2026-09-13
 > doc-review): "the real `--fit=off` switch ... 2026-09-09" above overstates the CLI plumbing's
 > actual date.** `--fit=off` did not parse until `413b3afe` (2026-09-11, M-14) — plain
 > `flag.BoolVar` only understands `strconv.ParseBool`'s spellings, so the server exited 2 with
@@ -68,6 +68,28 @@
 > path does none of this: it prices KV and scratch (plus the pinned copy under `--moe-cache-experts`), and the under-2 tok/s
 > refusal and `--accept-slow` exist only under `-stream-weights` (`decoder/model.go:Load`). It changes what the fit guard
 > does, and this note is the owner's word for it. Not built; either box, S–M.
+>
+> **Correction 2026-11-09:** two claims above are out of date. The banner prints a `fit:` line (context cap, KV, weights,
+> budget; `internal/app/serveapp/banner.go:modelBannerFrom`), though no placement line yet, and the web UI has tagged each
+> file fits / tight / won't fit by size since 49d849de4 (2026-09-16; `internal/app/serveapp/webui.go:fitEstimate`); only
+> `pull`'s verdict waits on header-only reading. Phase 5 is killed, not unstarted: L-01 was killed on 2026-09-21
+> (afbd10416, about 11x slower on the 8 GB card) and its code removed in 806f7c57d; the placement value stays reserved.
+
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| P0 | done | — | `decoder/fitguard.go`; `internal/runtime/mem` |
+| P1 | done | — | `decoder/fitplan.go`; `internal/app/fitcmd/fit.go` |
+| P1-banner | open | print the placement and its reason beside the `fit:` line (the banner's full shape: `task-embed-and-harness-ux.md` §3.3) | `internal/app/serveapp/banner.go:modelBannerFrom` |
+| P2 | done | — | `--fit` (413b3afe); `backend/metal/backend.go:metalMoESlotsRequest` |
+| P3 | done | — | `decoder/fitplan.go` (WebGPU's context ceiling) |
+| P4-measure | done | — | `internal/app/fitcmd/fit.go` (`-measure`) |
+| P4-webui | done | coarse, by file size | `internal/app/serveapp/webui.go:fitEstimate` |
+| P4-pull | open | needs header-only reading; W12 skipped (owner, 2026-09-14) | `internal/app/pullcmd/pull.go` prints no verdict |
+| G1-G3-G5 | open | the reference cells on nobara and the Mac | no record |
+| P5 | killed | — | afbd10416, 806f7c57d; `../completed/task-l01-hybrid-moe-cpu-gpu.md` |
+| SLOW | done | — | a MoE `.giw` decoded on the CPU from its mapping (no `-stream-weights`, no resident runner) takes the paged load's working-set refusal and `--accept-slow`: `decoder/moeworkingset.go:mappedMoEWorkingSetPrediction`, wired in `decoder/model.go:Load`; `decoder/moeworkingset_test.go:TestLoad_mappedMoEWorkingSetRefusal` |
+| Q-KV | decision | whether a decline may offer `-kv f16`, after G1 | §8 |
 
 **Who this is for.** One person with one consumer machine — an 8 GB RTX card, a 16 GB Apple
 Silicon laptop, a 32 GB desktop with no GPU — who has just pulled a 26B-A4B or 35B-A3B checkpoint
@@ -320,7 +342,7 @@ The do-nothing arm throughout is the **hand-tuned configuration** from the measu
    which `decoder/gguf.go`'s ~2900 lines of format logic does not separate out today); that is
    its own scoping pass, not attempted here.
 5. **Host-computed experts** as a placement when L-01 lands — the enum slot exists from step 1.
-   L-01's own design pass (`docs/tasks/task-l01-hybrid-moe-cpu-gpu.md`, 2026-09-10) found a first-pass
+   L-01's own design pass (`docs/completed/task-l01-hybrid-moe-cpu-gpu.md`, 2026-09-10) found a first-pass
    estimate suggesting the naive mechanism loses was ~7× too high; a real isolated microbenchmark
    on target hardware shows it beating the shipped path's per-layer cost at every measured miss
    count. **Correction (2026-09-13 doc-review): "still no CUDA code" above was stale the same day
@@ -382,4 +404,4 @@ G31–G33 (the DMA term, capacity misses) · `docs/hardware-matrix.md` (residenc
 `pull/pull.go:File` (`File.Size`) · llama.cpp `--fit` (discussion #18049, the
 priority order borrowed).
 
-<!-- doc-reviewed: 2026-09-13 -->
+<!-- doc-reviewed: 2026-11-09 -->

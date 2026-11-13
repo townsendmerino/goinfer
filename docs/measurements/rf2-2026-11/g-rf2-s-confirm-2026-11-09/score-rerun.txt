@@ -1,0 +1,8 @@
+     model  depth           file  blocks new/old                median  verdict
+        7B    128 decode-qwen-rerun-7b128  1.001 1.000                    1.000  PASS
+
+G2 verdict: PASS
+
+serve-cuda-old: 4 servers; VmHWM median 4151 MB, max 4157 MB; peak VmSwap max 0.0 MB; system swap 1358-1358 MB (context)
+serve-cuda-new: 4 servers; VmHWM median 4152 MB, max 4157 MB; peak VmSwap max 0.0 MB; system swap 1358-1358 MB (context)
+G4: 4 pairs; new - old VmHWM -8.2 to +6.7 MB, peak VmSwap +0.0 to +0.0 MB -> PASS

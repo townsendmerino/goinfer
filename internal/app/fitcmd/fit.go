@@ -82,7 +82,7 @@ func Run(args []string) int {
 		return 2
 	}
 	if *profile != "" {
-		opts := decoder.Options{Quant: *quant, Backend: *backend, MoECacheExperts: *moeCache, StreamWeights: *stream}
+		opts := decoder.Options{Quant: *quant, Backend: *backend, MoECacheExperts: *moeCache, StreamWeights: *stream, ResidentWindowedKV: true}
 		fs.Visit(func(f *flag.Flag) {
 			if f.Name == "ctx" {
 				opts.ResidentContext = *ctx // an explicit -ctx is a pin, as it is for Load
@@ -179,6 +179,7 @@ func Run(args []string) int {
 	failed := false
 	var admitted []string // in CompiledBackends() order; "cpu" always eligible, sorted last
 	srcOf := map[string]fitSource{}
+	planOf := map[string]fit.Plan{}
 	for _, l := range lines {
 		if !l.known {
 			fmt.Printf("%-6s  no memory probe available (driver/device not found) — skipped\n", l.backend)
@@ -207,9 +208,10 @@ func Run(args []string) int {
 			admitted = append(admitted, l.backend)
 		}
 		srcOf[l.backend] = l.src
+		planOf[l.backend] = l.plan
 	}
 	if *measure {
-		selfMeasure(admitted, srcOf)
+		selfMeasure(admitted, srcOf, planOf, *kvF16, *kvI8)
 	}
 	if failed {
 		return 1
@@ -270,7 +272,7 @@ func sameSource(a, b fitSource) bool {
 // (the caller's default, which Metal keeps to decoder.MetalDefaultKVSlots), which planFor's Metal line prices.
 func fitLoadOptions(src fitSource, residentCtx int) decoder.Options {
 	return decoder.Options{Quant: src.quant, ActQuantGroup: src.group, Backend: src.loadBackend, SidecarFor: src.sidecarFor, DirectLoad: true,
-		ResidentContext: residentCtx, ResidentKVSlots: decoder.MetalDefaultKVSlots, ResidentKVSlotsDefault: true}
+		ResidentContext: residentCtx, ResidentKVSlots: decoder.MetalDefaultKVSlots, ResidentKVSlotsDefault: true, ResidentWindowedKV: true}
 }
 
 // planFor is the plan `fit` prints for one backend. On Metal it is decoder.Model.MetalLoadPlan's, the load a serve without
@@ -303,7 +305,29 @@ func planFor(m *decoder.Model, backend string, free int64, req fit.PlanRequest) 
 // non-cpu backend over cpu (cpu is always eligible and always last in admitted, so it is only
 // picked when nothing else was) — a user asking "how fast will it go" almost always means the
 // GPU they compiled in, not the CPU fallback every build has.
-func selfMeasure(admitted []string, srcOf map[string]fitSource) {
+// selfMeasureOptions builds the decoder.Options selfMeasure loads with so that the probe executes under the same placement,
+// context, windowed-KV default, and KV precision that Plan just admitted (in particular MoECacheExperts when Plan chose
+// PlacementExpertCached, so a large MoE checkpoint does not attempt an all-resident upload and OOM during -measure).
+func selfMeasureOptions(backend string, src fitSource, plan fit.Plan, kvF16, kvI8 bool) decoder.Options {
+	opts := decoder.Options{
+		Backend:            backend,
+		Quant:              src.quant,
+		ActQuantGroup:      src.group,
+		DirectLoad:         true,
+		ResidentWindowedKV: true,
+		ResidentContext:    plan.Ctx,
+		MoECacheExperts:    plan.Placement == fit.PlacementExpertCached,
+	}
+	if kvF16 {
+		opts.KVPrecision = "f16"
+	}
+	if kvI8 {
+		opts.KVQuant = "i8"
+	}
+	return opts
+}
+
+func selfMeasure(admitted []string, srcOf map[string]fitSource, planOf map[string]fit.Plan, kvF16, kvI8 bool) {
 	if len(admitted) == 0 {
 		fmt.Println("\n(measure) no backend admitted this checkpoint — nothing to probe")
 		return
@@ -317,7 +341,7 @@ func selfMeasure(admitted []string, srcOf map[string]fitSource) {
 	}
 
 	src := srcOf[backend] // what fit planned this backend on: the load's quant, and its sidecar when one is fresh
-	pm, err := decoder.Load(src.path, decoder.Options{Backend: backend, Quant: src.quant, ActQuantGroup: src.group, DirectLoad: true})
+	pm, err := decoder.Load(src.path, selfMeasureOptions(backend, src, planOf[backend], kvF16, kvI8))
 	if err != nil {
 		fmt.Printf("\n(measure) %s: load failed, skipping probe: %v\n", backend, err)
 		return

@@ -57,6 +57,8 @@ var parityGates = []gateCheck{
 	{"gemma+gemma2", "TestGemma12_forwardParity"}, // Gemma 1 / CodeGemma and Gemma 2, safetensors and GGUF
 	{"olmo_hybrid", "TestOlmoHybrid_forwardParity"},
 	{"bailing_hybrid", "TestBailingHybrid_forwardParity"},
+	{"flint-tiny", "TestFlint_tinyForwardParity"},
+	{"flint-window", "TestFlint_windowBoundaryParity"},
 	{"mistral3-batched", "TestMinistral3_batchedMatchesSequential"},
 	{"llama", "TestLlama_forwardParity"},
 	{"llama3.2", "TestLlama32_forwardParity"},

@@ -66,9 +66,9 @@ func ResolveKV(backend string, arch *Architecture, opts Options) (delivered, rea
 		o.Backend = backend
 	}
 	q := mem.KVQuery{Backend: backend, Request: gpuKVRequested(opts), CPURequest: cpuKVRequested(opts),
-		CPUBatchOn: opts.CPUBatchDecode == CPUBatchOn, Drafter: o.Drafter, HasArch: arch != nil}
+		Drafter: o.Drafter, HasArch: arch != nil}
 	if arch != nil {
-		q.NoKV, q.MLA, q.MoE, q.OwnLoop = arch.keepsNoKV(), arch.mla != nil, arch.MoE != nil, arch.ownLoopFamily()
+		q.NoKV, q.MLA, q.OwnLoop = arch.keepsNoKV(), arch.mla != nil, arch.ownLoopFamily()
 		q.CPUF16OK, q.CPUI8OK = arch.kvF16OK(), arch.kvInt8OK()
 		p := kvPolicies["cuda"]
 		q.CUDAPolicy = mem.KVPolicy{Decline: func() string { return p.Decline(arch.kvFacts(), o) }, Auto: p.Auto}
@@ -117,7 +117,7 @@ func cudaKVF16Delivered(f KVFacts) bool {
 	switch f.Family {
 	case "llama", "mistral", "qwen2", "qwen3", "phi3", "qwen2_moe", "qwen3_moe", "mixtral", "gemma2", "gemma3", "gpt-oss", "cohere",
 		"cohere2", "qwen2_5_vl", "qwen3_vl", "qwen3_vl_moe", "qwen3_5", "qwen3_5_moe", "qwen3_next", "gemma4", "deepseek_v2", "deepseek_v3", "kimi_k2",
-		"nemotron_h":
+		"nemotron_h", "flint":
 		return true
 	}
 	return false
@@ -144,7 +144,7 @@ func cudaKVF16AutoCleared(f KVFacts) bool {
 func CUDAKVF16Decline(f KVFacts, _ Options) string {
 	if !cudaKVF16Delivered(f) {
 		return "f16 KV on CUDA covers llama, mistral, qwen2, qwen3, phi3, qwen2_moe, qwen3_moe, mixtral, gemma2, gemma3, gpt-oss, cohere, cohere2, " +
-			"qwen2_5_vl, qwen3_vl, qwen3_vl_moe, qwen3_5, qwen3_5_moe, qwen3_next, gemma4, deepseek_v2, deepseek_v3, kimi_k2 and nemotron_h so far; " +
+			"qwen2_5_vl, qwen3_vl, qwen3_vl_moe, qwen3_5, qwen3_5_moe, qwen3_next, gemma4, deepseek_v2, deepseek_v3, kimi_k2, nemotron_h and flint so far; " +
 			f.Family + " keeps f32"
 	}
 	return ""

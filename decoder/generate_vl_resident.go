@@ -39,12 +39,12 @@ func (m *Model) residentUploadPrefill(cache *KVCache) (err error) {
 		m.residentForgetIDs()
 		a.RaiseFloor(a.Bound(), floor)
 	}()
-	if pass, ok := m.resident.(ResidentKVUploadPass); ok {
-		if err := pass.BeginKVUpload(); err != nil {
+	if kv := m.resKV(); kv.KVUploadPassAvailable() {
+		if err := kv.BeginKVUpload(); err != nil {
 			return err
 		}
 		defer func() {
-			if e := pass.EndKVUpload(err != nil); err == nil {
+			if e := kv.EndKVUpload(err != nil); err == nil {
 				err = e
 			}
 		}()

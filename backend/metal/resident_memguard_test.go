@@ -636,10 +636,11 @@ func TestBuildLayerSteps_matchesTheLoadedBlocks(t *testing.T) {
 	parallel := append(slices.Clone(dense[:4]), dense[6], program.Op{Kind: program.OpResidual, Res: program.ResidualParams{Two: true}})
 	build := func(ops []program.Op, L residLayer, q4k bool) error {
 		parallel := slices.ContainsFunc(ops, func(o program.Op) bool { return o.Kind == program.OpResidual && o.Res.Two })
-		r := &resident{layers: []residLayer{L}, q4kLane: q4k, parallelBlock: parallel}
+		r := &resident{layers: []residLayer{L}, q4kLane: q4k, parallelBlock: parallel, decode: decodeShape{act: uint32(program.ActSiLU)}}
 		return r.buildLayerSteps(&program.Program{Layers: [][]program.Op{ops}})
 	}
-	loaded := residLayer{geom: &attnGeom{}, ffn: true}
+	nonEmpty := (Buffer{}).At(1)
+	loaded := residLayer{geom: &attnGeom{}, ffn: true, preNorm: nonEmpty, postNorm: nonEmpty}
 	read := loaded
 	read.layerScaleRead = true
 	for _, c := range []struct {
@@ -652,8 +653,8 @@ func TestBuildLayerSteps_matchesTheLoadedBlocks(t *testing.T) {
 		{"a dense layer as loaded", dense, loaded, false, true},
 		{"a dense layer on the q4k lane", dense, loaded, true, true},
 		{"a layer scale whose scalar was read", scaled, read, false, true},
-		{"the build loaded no FFN", dense, residLayer{geom: &attnGeom{}}, false, false},
-		{"the build loaded no attention", dense, residLayer{ffn: true}, false, false},
+		{"the build loaded no FFN", dense, residLayer{geom: &attnGeom{}, preNorm: nonEmpty}, false, false},
+		{"the build loaded no attention", dense, residLayer{ffn: true, postNorm: nonEmpty}, false, false},
 		{"a layer scale the build did not read", scaled, loaded, false, false},
 		{"a read layer scale the program lacks", dense, read, false, false},
 		{"the q4k lane with a layer scale", scaled, read, true, false},

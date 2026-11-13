@@ -109,6 +109,7 @@ var ogLoadOnly = map[string]string{
 	"DirectLoad":                   "chooses the file Load opens (the source or its sidecar .giw); the paths run whatever was opened",
 	"LoRA":                         "merged into the base weights at load (\"merged into the base at load\"), so every path runs the merged weights; compute-time adapters are Session state, in the cache-state grid",
 	"AcceptSlowMoE":                "an acknowledgement checked when a paged-MoE load is planned; a no-op afterwards",
+	"RequireBackend":               "turns a backend's decline at load into Load's error; a loaded model runs whatever was built",
 	"DisableFit":                   "selects load-time fit-by-default behaviour (resolveCtxCapFit, guardFit)",
 	"ExtraResidentBytes":           "prices a companion allocation when the resident is planned",
 	"ExtraResidentKVPerPosition":   "prices a companion allocation's K/V when the resident context is chosen",
@@ -166,7 +167,7 @@ var ogGrid = map[string]map[ogPath]ogCell{
 			// int8 attention branch turns it red. (TestKVI8_genParity sets m.kvI8 itself, not through Options.)
 			pathCPUDecode:        ogTestedBy("TestOptionPath_cpuBatchedPrefill"),
 			pathCPUBatchPrefill:  ogTestedBy("TestOptionPath_cpuBatchedPrefill"), // TestKVI8_batchedPrefill sets m.kvI8 itself
-			pathCPUBatchDecode:   ogDeclinedAt("cpuBatchCacheEligible", "TestCPUBatch_ineligibleCachesBypass"),
+			pathCPUBatchDecode:   ogTestedBy("TestOptionPath_cpuBatchedDecode"),
 			pathSpecVerify:       ogTestedBy("TestOptionPath_specVerify"),
 			pathSessionLifecycle: ogTestedBy("TestKVI8_snapshotRoundtrip"),
 		},

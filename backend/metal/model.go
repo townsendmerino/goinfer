@@ -187,10 +187,11 @@ type residLayer struct {
 	// ffn is whether a feed-forward block follows the mixer (decoder.Model.ResidentLayerOps); false on Nemotron-H's
 	// Mamba and attention blocks.
 	ffn bool
-	// steps is the layer's per-token body, in order (buildLayerSteps), and stepOps each step's operations in the program, which the
-	// mixer steps' walk emits (resident.encodeMixerWalk).
+	// steps is the layer's per-token body, in order (buildLayerSteps), stepOps each step's operations in the program, and walk the
+	// decoded sublayer walk of the layer's operations.
 	steps   []layerStep
 	stepOps [][]program.Op
+	walk    program.LayerWalk
 }
 
 // recurrent reports whether the layer's mixer keeps per-sequence state instead of a KV cache: every path that cannot
@@ -1298,7 +1299,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if preciseMath {
 		compile = d.CompileLibraryPrecise
 	}
-	attnSoftcap := m.AttnLogitSoftcapResident()
+	bv := m.BackendView()
+	attnSoftcap := bv.AttnLogitSoftcap()
 	if attnSoftcapDropForTest {
 		attnSoftcap = 0
 	}
@@ -1323,7 +1325,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		}
 		return p
 	}
-	H, nL, nH, _, _, I, V := m.Dims() // model-level hd/nKV dropped — geometry is per-layer (geom.go)
+	H, nL, nH, _, _, I, V := bv.Dims() // model-level hd/nKV dropped — geometry is per-layer (geom.go)
 	r := &resident{knob: m.Knob, prog: m.Program(), d: d, H: H, nL: nL, nH: nH, I: I, V: V, preciseMath: preciseMath, stepHeadroom: stepHeadroom,
 		moeStep: m.ResidentMoEStep(), recurrentStep: m.ResidentRecurrentStepOn(kvSlots), gemma4Step: m.ResidentGemma4StepOn(kvSlots), ckptSlot: -1}
 	r.chainEmbBase = residentNeedBytes(m) + int64(kvSlots-1)*metalSlotBytes(m) // every slot's KV and recurrent state
@@ -1368,12 +1370,12 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pRope, r.pRope2, r.pKv, r.pAttn = pipe("rope"), pipe("rope2"), pipe("kv_store"), pipe("attention")
 	// Pairwise rope (docs/tasks/task-metal-pairwise-rope-2026-10.md): a GPT-J pairwise family (Cohere, Command-R7B, Aya,
 	// GLM-OCR) binds the pairwise twins into the same fields, so no dispatch site changes; every other family keeps these.
-	if r.pairwiseRoPE = m.PairwiseRoPEResident(); r.pairwiseRoPE {
+	if r.pairwiseRoPE = bv.PairwiseRoPE(); r.pairwiseRoPE {
 		r.pRope, r.pRope2 = pipe("rope_pw"), pipe("rope2_pw")
 	}
 	r.pSw, r.pRes = pipe("swiglu_quant"), pipe("residual")
 	r.pLayerScale = pipe("layer_scale")
-	if P := m.Gemma4PLEDimResident(); P > 0 {
+	if P := bv.Gemma4PLEDim(); P > 0 {
 		r.pPLEGeluMul, r.pleP = pipe("ple_gelu_mul"), P
 	}
 	r.pRmsRows, r.pQvRows = pipe("mc3_rmsnorm_quant_rows"), pipe("mc3_quant_vec_rows")
@@ -1402,16 +1404,16 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.pLoraDelta = pipe("lora_delta") // G3/P-11: compute-time LoRA, down+up fused into one kernel
 	r.pSABiasResid, r.pCoalBiasResid = pipe("gemv_w4a8_sa_bias_resid"), pipe("gemv_w4a8_resid_bias")
 	r.layerNorm = shape.LayerNorm
-	r.parallelBlock = shape.Parallel         // G5: Cohere/Command-R + Cohere2/Command-R7B
-	r.logitScale, _ = m.LogitScaleResident() // ok=false ⇒ 1, already finalizeLogits's no-op value
+	r.parallelBlock = shape.Parallel  // G5: Cohere/Command-R + Cohere2/Command-R7B
+	r.logitScale, _ = bv.LogitScale() // ok=false ⇒ 1, already finalizeLogits's no-op value
 	r.nonGatedMLP = shape.NonGated
 	if r.nonGatedMLP {
 		r.pNgActRows = pipe("nongated_act_rows_f16")
 	}
 	r.outBias = shape.OutBias
 	r.learnedPos = shape.LearnedPos
-	if alpha, limit, isGptOss := m.GptOssActResident(); isGptOss {
-		r.attnSink = true
+	r.attnSink = bv.HasAttnSinks()
+	if alpha, limit, isGptOss := bv.GptOssAct(); isGptOss {
 		r.gptossAlpha, r.gptossLimit = float64(alpha), float64(limit)
 	}
 	// The f32 KV path (kv_store_f32, attention_f32) runs when the resolver delivers f32: on an explicit --kv f32, never for auto
@@ -1559,10 +1561,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 
 	r.q = d.NewCommandQueue()
 
-	w := m.Weights()
+	w := bv.Weights()
 	r.embed = &w.Embed
 	if r.learnedPos {
-		r.posEmbed = m.PosEmbedResident()
+		r.posEmbed = bv.PosEmbed()
 	}
 	// Whether THIS family's LayerNorm carries a bias (GPT-2) or not (Cohere) — a per-arch
 	// constant, so layer 0's presence/absence decides it for every layer.
@@ -1620,9 +1622,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	_, _, _, _, _, attnGate, dnetOK := m.Qwen35ResidentParams()
 	for l := range nL {
 		lw := &w.Layers[l]
+		lv := bv.Layer(l)
 		var L residLayer
 		var kEqV bool // false for isDelta (no geometry) and qGate (this family never has K=V); set below otherwise
-		mixer, hasFFN := m.ResidentLayerOps(l)
+		mixer, hasFFN := lv.Ops()
 		L.ffn = hasFFN
 		isDelta := dnetOK && mixer == decoder.MixerDeltaNet
 		isAttn := mixer == decoder.MixerAttention
@@ -1676,7 +1679,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			// from the wrong tensor. So the fused QKV path does not apply: K||V still fuse into L.qkvW (2-way), and Q is a
 			// separate double-width projection (L.dnQw/dnQs), split on the activation at encode time (delta_qsplit),
 			// because slicing rows out of a quantized int4 bundle with per-group scales is real surgery.
-			qP, kP, vP, oP, qN, kN := m.Qwen35AttnWeights(l)
+			qP, kP, vP, oP, qN, kN := lv.Qwen35AttnWeights()
 			if len(qN) == 0 || len(kN) == 0 {
 				return nil, fmt.Errorf("metal: layer %d: qwen35 softmax layer has empty q_norm/k_norm "+
 					"(%d/%d) — the loader did not populate them for this container", l, len(qN), len(kN))
@@ -1696,8 +1699,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			// slot is scale-less-v_norm'd and left un-roped, while the K slot gets k_norm and RoPE. This is a build-time
 			// weight-layout difference, so the value-independent ForwardEmbPipe pre-encode stays correct (see geom.kEqV).
 			// False (and a no-op) for every family without K=V layers.
-			kEqV = m.VFromKResident(l)
-			if src := m.KVSrcAtResident(l); src != l {
+			kEqV = lv.VFromK()
+			if src := lv.KVSrc(); src != l {
 				// Gemma 4 E-model KV-shared layer (S1.4): the checkpoint has no k_proj/v_proj/k_norm here; it attends
 				// over layer src's keys and values. Q-only projection; kEqV does not apply (no K of its own).
 				if src < 0 || src >= l {
@@ -1705,7 +1708,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				}
 				if g4KVSrcOffForTest { // G2 defect (3): the previous owning layer of the same attention type, if any
 					for j := src - 1; j >= 0; j-- {
-						if m.KVSrcAtResident(j) == j && m.LayerIsLocalResident(j) == m.LayerIsLocalResident(src) {
+						if bv.Layer(j).KVSrc() == j && bv.Layer(j).IsLocal() == bv.Layer(src).IsLocal() {
 							src = j
 							break
 						}
@@ -1728,7 +1731,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				// argument (encodeAttention), which is only correct when nH==nKV (MHA). Decline
 				// rather than silently mis-normalize a hypothetical future GQA family.
 				if r.qkNormWhole {
-					if nKVL := m.KVHeadsAtResident(l); r.nH != nKVL {
+					if nKVL := lv.KVHeads(); r.nH != nKVL {
 						return nil, fmt.Errorf("metal: layer %d: arch claims QKNormWhole but nH=%d != nKV=%d — the resident whole-vector kernel launch requires MHA", l, r.nH, nKVL)
 					}
 				}
@@ -1752,7 +1755,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		}
 		g4b, isG4MoE := decoder.Gemma4MoEResidentBundle{}, false
 		if r.g4moe != nil {
-			g4b, isG4MoE = m.Gemma4MoEResidentLayer(l)
+			g4b, isG4MoE = lv.Gemma4MoEBundle()
 		}
 		switch {
 		case !hasFFN: // the layer is its mixer alone (Nemotron-H's Mamba and attention blocks)
@@ -1836,9 +1839,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		// Gemma 4's per-layer output scalar on a dense layer (h *= layer_scalar after the FFN residual;
 		// decoder/forward_gemma4.go, HF Gemma4DecoderLayer). The g4moe join applies its own. 1 and absent (0) are
 		// no-ops, as on the CPU, so no dispatch is encoded for them.
-		if L.g4moe == nil && m.IsGemma4Resident() {
+		if L.g4moe == nil && bv.IsGemma4() {
 			L.layerScaleRead = true
-			if s := m.Gemma4DenseLayerScalarAtResident(l); s != 0 && s != 1 {
+			if s := lv.Gemma4DenseScalar(); s != 0 && s != 1 {
 				L.uLayerScalar = NewBufferFloatsOn(mem.LineDense, d, []float32{s})
 			}
 		}
@@ -1853,20 +1856,20 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		if isAttn {
 			// Per-layer RoPE table (Gemma local 10k vs global 1M base) and per-layer window. The rope
 			// KERNEL is unchanged — all per-layer variation rides in the table contents AND the width
-			// (geom.half). RopeInvFreqLayerResident is the resident per-layer table (== the generic
+			// (geom.half). lv.RopeInvFreq() is the resident per-layer table (== the generic
 			// RopeInvFreqLayer for every uniform family; Gemma 4's global proportional-rotary tail is
 			// what makes it differ). Its length is this layer's rhalf (rotated pairs/head). A DeltaNet
 			// layer has no attention geometry at all (see residLayer.delta's doc) — skip this whole
 			// block for it: no RoPE table, no geom (L.geom stays nil), no KV cache allocated.
-			invf := m.RopeInvFreqLayerResident(l)
+			invf := lv.RopeInvFreq()
 			if len(invf) > 0 { // GPT-2 (FeatLearnedPos): no RoPE at all, invf is empty — NewBufferFloats panics on empty; L.invf stays unused (rope dispatch is skipped)
 				L.invf = NewBufferFloatsOn(mem.LineDense, d, invf)
-				L.mscale = NewBufferFloatsOn(mem.LineDense, d, []float32{float32(m.RopeMscaleLayer(l))}) // 1.0 for every family without YaRN
+				L.mscale = NewBufferFloatsOn(mem.LineDense, d, []float32{float32(lv.RopeMscale())}) // 1.0 for every family without YaRN
 			}
 			// Per-layer attention geometry — the whole point of the 9c seam. Uniform families resolve
 			// every layer to the same {hd, nKV, half, kEqV}; Gemma 4 varies hd/nKV/kEqV between its
 			// local and global layers. geomFor dedups by value so a uniform model shares one geom.
-			L.geom = r.geomFor(geomCache, m.HeadDimAtResident(l), m.KVHeadsAtResident(l), len(invf), kEqV)
+			L.geom = r.geomFor(geomCache, lv.HeadDim(), lv.KVHeads(), len(invf), kEqV)
 			if L.geom.hd > maxHd {
 				maxHd = L.geom.hd
 			}
@@ -1887,7 +1890,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 				}
 			}
 			lw2 := uint32(0) // 0 = full causal; only local layers carry the window
-			if m.LayerIsLocalResident(l) {
+			if lv.IsLocal() {
 				lw2 = uint32(win)
 			}
 			L.window = lw2
@@ -3064,7 +3067,7 @@ func (r *resident) encodeLayerWith(e *Encoder, l int, uPos, uNKeys, uQTempScale 
 }
 
 // encodeLayerResidualWith encodes one decoder layer into e with parameterized residual buffer x and uniforms: the layer's steps
-// (buildLayerSteps), in order, a mixer step the walk covers by its operations (resident.encodeMixerWalk).
+// (buildLayerSteps), in order, each walked from its program operations (resident.encodeMixerWalk, resident.encodeFFNWalk).
 func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uNKeys, uQTempScale Buffer, uRopePos ...Buffer) {
 	rp := uPos
 	if len(uRopePos) > 0 && uRopePos[0] != (Buffer{}) {
@@ -3073,9 +3076,15 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 	L := &r.layers[l]
 	r.encLayer = l
 	for i, st := range L.steps {
-		if mixerWalks(st) && !mixerWalkBlocksForTest {
-			r.encodeMixerWalk(e, l, L, L.stepOps[i], x, uPos, uNKeys, uQTempScale, rp)
-			continue
+		if !mixerWalkBlocksForTest {
+			if mixerWalks(st) {
+				r.encodeMixerWalk(e, l, L, L.stepOps[i], x, uPos, uNKeys, uQTempScale, rp)
+				continue
+			}
+			if ffnWalks(st) {
+				r.encodeFFNWalk(e, st, l, L, L.stepOps[i], x)
+				continue
+			}
 		}
 		r.encodeStep(e, st, l, L, x, uPos, uNKeys, uQTempScale, rp)
 	}

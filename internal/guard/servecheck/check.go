@@ -140,7 +140,9 @@ func sse(resp *http.Response, fn func(data string) bool) error {
 
 // Chat streams a short completion and reports TTFT and the inter-token rate — the two numbers
 // a harness user needs before picking a model — plus whether a usage block arrived, which
-// several harnesses require for accounting and which a stream can silently omit.
+// several harnesses require for accounting and which a stream can silently omit. A reasoning delta
+// (reasoning_content or reasoning) counts as a token, and the row says how many were: a thinking
+// model can spend a small max_tokens before any content.
 func (c *Client) Chat(ctx context.Context, model, prompt string, maxTokens int, label string) Result {
 	res := Result{Name: label}
 	body := map[string]any{
@@ -160,7 +162,7 @@ func (c *Client) Chat(ctx context.Context, model, prompt string, maxTokens int, 
 		return res
 	}
 	var ttft time.Duration
-	var n int
+	var n, thinking int
 	var last time.Time
 	usage := false
 	_ = sse(resp, func(data string) bool {
@@ -169,7 +171,11 @@ func (c *Client) Chat(ctx context.Context, model, prompt string, maxTokens int, 
 		}
 		var ev struct {
 			Choices []struct {
-				Delta struct{ Content string } `json:"delta"`
+				Delta struct {
+					Content          string `json:"content"`
+					ReasoningContent string `json:"reasoning_content"`
+					Reasoning        string `json:"reasoning"`
+				} `json:"delta"`
 			} `json:"choices"`
 			Usage *struct {
 				CompletionTokens int `json:"completion_tokens"`
@@ -181,7 +187,14 @@ func (c *Client) Chat(ctx context.Context, model, prompt string, maxTokens int, 
 		if ev.Usage != nil {
 			usage = true
 		}
-		if len(ev.Choices) > 0 && ev.Choices[0].Delta.Content != "" {
+		if len(ev.Choices) > 0 {
+			d := ev.Choices[0].Delta
+			if d.Content == "" && d.ReasoningContent == "" && d.Reasoning == "" {
+				return true
+			}
+			if d.Content == "" {
+				thinking++
+			}
 			if n == 0 {
 				ttft = time.Since(start)
 			}
@@ -197,6 +210,9 @@ func (c *Client) Chat(ctx context.Context, model, prompt string, maxTokens int, 
 	d := fmt.Sprintf("TTFT %.2fs", ttft.Seconds())
 	if n > 1 {
 		d += fmt.Sprintf(" · %.1f tok/s", float64(n-1)/last.Sub(start.Add(ttft)).Seconds())
+	}
+	if thinking > 0 {
+		d += fmt.Sprintf(" · %d of %d tokens reasoning", thinking, n)
 	}
 	if usage {
 		d += " · usage present"

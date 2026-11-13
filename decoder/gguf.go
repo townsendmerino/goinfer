@@ -44,50 +44,10 @@ func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {
 			cfg.Sampling = ggufSampling(g)
 		}
 	}()
-	switch arch {
-	case "llama":
-		return ggufLlamaConfig(g)
-	case "qwen2":
-		return ggufQwen2Config(g)
-	case "qwen3":
-		return ggufQwen3Config(g)
-	case "gemma", "gemma2":
-		return ggufGemma12Config(g, arch)
-	case "gemma3", "gemma3_text":
-		return ggufGemmaConfig(g)
-	case "gemma4":
-		return ggufGemma4Config(g)
-	case "mellum":
-		return ggufMellumConfig(g)
-	case "qwen35moe":
-		return ggufQwen35Config(g)
-	case "qwen35":
-		return ggufQwen35DenseConfig(g)
-	case "qwen3moe":
-		return ggufQwen3MoeConfig(g)
-	case "laguna":
-		return ggufLagunaConfig(g)
-	case "glm4moe":
-		return ggufGlm4MoeConfig(g)
-	case "granitehybrid":
-		return ggufGraniteConfig(g)
-	case "granite":
-		return ggufGraniteDenseConfig(g)
-	case "nemotron_h":
-		return ggufNemotronConfig(g)
-	case "nemotron_h_moe": // Nemotron 3 Nano — same HF model_type "nemotron_h", llama.cpp gives it its own GGUF arch string
-		return ggufNemotronConfig(g)
-	case "deepseek2":
-		return ggufDeepseekConfig(g)
-	case "phi3":
-		return ggufPhi3Config(g)
-	case "llama4":
-		return ggufLlama4Config(g)
-	case "gpt-oss":
-		return ggufGptOssConfig(g)
-	default:
-		return nil, errorOfKind(ErrUnsupportedModel, "decoder(gguf): architecture %q unsupported (have: llama, qwen2, qwen3, gemma, gemma2, gemma3, gemma4 [wip], mellum, qwen35moe, qwen35, qwen3moe, glm4moe, laguna, granitehybrid, granite, nemotron_h, nemotron_h_moe, deepseek2, phi3, gpt-oss)", arch)
+	if adapter, ok := ggufRegistry[arch]; ok {
+		return adapter(g)
 	}
+	return nil, errorOfKind(ErrUnsupportedModel, "decoder(gguf): architecture %q unsupported (have: %s)", arch, knownGGUFArchitectures())
 }
 
 // ggufVocabSize reads the vocab size from the embedding tensor's dims (no
@@ -145,10 +105,7 @@ func ggufLlamaConfig(g *embed.GGUFFile) (*Config, error) {
 // exactly llama's: the metadata namespace differs, so ggufLlamaConfig cannot be reused, but tensor loading is identical
 // once resolveArchitecture returns llamaTensorSchema.
 func ggufGraniteDenseConfig(g *embed.GGUFFile) (*Config, error) {
-	u := func(k string) int {
-		v, _ := g.Uint("granite." + k)
-		return int(v)
-	}
+	u := ggufUintReader(g, "granite.")
 	f := func(k string) float64 {
 		v, _ := g.Float("granite." + k)
 		return v
@@ -180,10 +137,7 @@ func ggufGraniteDenseConfig(g *embed.GGUFFile) (*Config, error) {
 // (QKVBias) and loaded by buildWeightsFromGGUF. RoPE base defaults to llama.cpp's
 // qwen2 default (1e6) when absent.
 func ggufQwen2Config(g *embed.GGUFFile) (*Config, error) {
-	u := func(k string) int {
-		v, _ := g.Uint("qwen2." + k)
-		return int(v)
-	}
+	u := ggufUintReader(g, "qwen2.")
 	cfg := &Config{
 		ModelType:       "qwen2",
 		MaxPositions:    u("context_length"),
@@ -214,10 +168,7 @@ func ggufQwen2Config(g *embed.GGUFFile) (*Config, error) {
 // derived). NEOX rope (no q/k permute, via ggufQKPermuted). RoPE base defaults to
 // llama.cpp's qwen3 default (1e6) when absent.
 func ggufQwen3Config(g *embed.GGUFFile) (*Config, error) {
-	u := func(k string) int {
-		v, _ := g.Uint("qwen3." + k)
-		return int(v)
-	}
+	u := ggufUintReader(g, "qwen3.")
 	cfg := &Config{
 		ModelType:       "qwen3",
 		MaxPositions:    u("context_length"),
@@ -251,10 +202,7 @@ func ggufQwen3Config(g *embed.GGUFFile) (*Config, error) {
 // pattern, and head_dim). Gemma 3 has no logit/attn soft-capping (that's Gemma 2),
 // so those stay zero — ValidateAssumptions rejects a Gemma 2 GGUF here.
 func ggufGemmaConfig(g *embed.GGUFFile) (*Config, error) {
-	u := func(k string) int {
-		v, _ := g.Uint("gemma3." + k)
-		return int(v)
-	}
+	u := ggufUintReader(g, "gemma3.")
 	cfg := &Config{
 		ModelType:        "gemma3",
 		MaxPositions:     u("context_length"),
@@ -289,6 +237,26 @@ func ggufGemmaConfig(g *embed.GGUFFile) (*Config, error) {
 	cfg.QueryPreAttnScalar = float64(cfg.HeadDim)
 	ggufEOS(g, cfg)
 	return cfg, nil
+}
+
+// ggufUintReader reads the unsigned metadata keys under prefix (a family's "arch." keys) as int, 0 when absent.
+func ggufUintReader(g *embed.GGUFFile, prefix string) func(k string) int {
+	return func(k string) int {
+		v, _ := g.Uint(prefix + k)
+		return int(v)
+	}
+}
+
+// ggufFloatReader reads a float metadata key under prefix, or an unsigned one as float (a value some writers store as an
+// integer), 0 when absent.
+func ggufFloatReader(g *embed.GGUFFile, prefix string) func(k string) float64 {
+	return func(k string) float64 {
+		if v, ok := g.Float(prefix + k); ok {
+			return v
+		}
+		v, _ := g.Uint(prefix + k)
+		return float64(v)
+	}
 }
 
 // ggufIntArray / ggufBoolArray coerce a GGUF array metadatum (parsed as []any)
@@ -340,10 +308,7 @@ func ggufBoolArray(v any) []bool {
 // (partial-rotary) factor for the global layers isn't in the GGUF metadata, so
 // it's set from the known Gemma 4 value (0.25). Defaults mirror ggufGemmaConfig.
 func ggufGemma4Config(g *embed.GGUFFile) (*Config, error) {
-	u := func(k string) int {
-		v, _ := g.Uint("gemma4." + k)
-		return int(v)
-	}
+	u := ggufUintReader(g, "gemma4.")
 	cfg := &Config{
 		ModelType:               "gemma4",
 		MaxPositions:            u("context_length"),
@@ -428,17 +393,8 @@ func ggufGemma4Config(g *embed.GGUFFile) (*Config, error) {
 // shapes the mellum adapter consumes (LayerTypes + a rope_parameters JSON), so
 // resolveArchitecture runs the identical descriptor build as the safetensors path.
 func ggufMellumConfig(g *embed.GGUFFile) (*Config, error) {
-	u := func(k string) int {
-		v, _ := g.Uint("mellum." + k)
-		return int(v)
-	}
-	gf := func(k string) float64 { // float-or-int metadata
-		if v, ok := g.Float("mellum." + k); ok {
-			return v
-		}
-		v, _ := g.Uint("mellum." + k)
-		return float64(v)
-	}
+	u := ggufUintReader(g, "mellum.")
+	gf := ggufFloatReader(g, "mellum.")
 	normTopK := true
 	cfg := &Config{
 		ModelType:           "mellum",
@@ -505,17 +461,8 @@ func ggufMellumConfig(g *embed.GGUFFile) (*Config, error) {
 // norm_topk_prob is not GGUF metadata and is hardcoded true to match HF Qwen3MoeConfig's default, the same convention
 // ggufMellumConfig uses for its own missing metadata.
 func ggufQwen3MoeConfig(g *embed.GGUFFile) (*Config, error) {
-	u := func(k string) int {
-		v, _ := g.Uint("qwen3moe." + k)
-		return int(v)
-	}
-	gf := func(k string) float64 {
-		if v, ok := g.Float("qwen3moe." + k); ok {
-			return v
-		}
-		v, _ := g.Uint("qwen3moe." + k)
-		return float64(v)
-	}
+	u := ggufUintReader(g, "qwen3moe.")
+	gf := ggufFloatReader(g, "qwen3moe.")
 	normTopK := true
 	cfg := &Config{
 		ModelType:           "qwen3_moe",
@@ -560,17 +507,8 @@ func ggufQwen3MoeConfig(g *embed.GGUFFile) (*Config, error) {
 //     *float64 whose nil means "compute get_mscale(factor) = 0.1*ln(factor)+1", which is what the safetensors config
 //     states. So the field is omitted at the sentinel and passed through otherwise.
 func ggufLagunaConfig(g *embed.GGUFFile) (*Config, error) {
-	u := func(k string) int {
-		v, _ := g.Uint("laguna." + k)
-		return int(v)
-	}
-	gf := func(k string) float64 {
-		if v, ok := g.Float("laguna." + k); ok {
-			return v
-		}
-		v, _ := g.Uint("laguna." + k)
-		return float64(v)
-	}
+	u := ggufUintReader(g, "laguna.")
+	gf := ggufFloatReader(g, "laguna.")
 	headDim := u("attention.key_length")
 	numLayers := u("block_count")
 	if headDim <= 0 || numLayers <= 0 {
@@ -699,6 +637,108 @@ func ggufLagunaConfig(g *embed.GGUFFile) (*Config, error) {
 	return cfg, nil
 }
 
+// ggufFlintConfig builds a Flint (Cognichip) Config from the flint.* metadata
+// emitted by llama.cpp PR #21882. Per-layer full vs sliding attention is encoded
+// in flint.rope.scaling.factors (0.0 -> full_attention / NoPE, 1.0 ->
+// sliding_attention / RoPE); when absent, ValidateFlint synthesizes the upstream
+// default schedule.
+func ggufFlintConfig(g *embed.GGUFFile) (*Config, error) {
+	u := ggufUintReader(g, "flint.")
+	gf := ggufFloatReader(g, "flint.")
+	headDim := u("attention.key_length")
+	numLayers := u("block_count")
+	if headDim <= 0 || numLayers <= 0 {
+		return nil, fmt.Errorf("decoder(gguf-flint): missing attention.key_length / block_count")
+	}
+	if _, err := ggufLayerCount(numLayers); err != nil {
+		return nil, err
+	}
+	if gfn := u("expert_gating_func"); gfn != 0 && gfn != 2 {
+		return nil, fmt.Errorf("decoder(gguf-flint): expert_gating_func=%d unsupported (2 = sigmoid)", gfn)
+	}
+	normTopK := true
+	if b, ok := g.Metadata["flint.expert_weights_norm"].(bool); ok {
+		normTopK = b
+	} else if n, ok := g.Uint("flint.expert_weights_norm"); ok {
+		normTopK = n != 0
+	}
+	scale := gf("expert_weights_scale")
+	if scale == 0 {
+		scale = 1
+	}
+	base := gf("rope.freq_base")
+	if base == 0 {
+		base = 10000
+	}
+	cfg := &Config{
+		ModelType:                    "flint",
+		MaxPositions:                 u("context_length"),
+		HiddenDim:                    u("embedding_length"),
+		NumLayers:                    numLayers,
+		NumHeads:                     u("attention.head_count"),
+		NumKVHeads:                   u("attention.head_count_kv"),
+		HeadDim:                      headDim,
+		IntermediateDim:              u("feed_forward_length"),
+		MoeIntermediateSize:          u("expert_feed_forward_length"),
+		SharedExpertIntermediateSize: u("expert_shared_feed_forward_length"),
+		NumExperts:                   u("expert_count"),
+		NumExpertsPerTok:             u("expert_used_count"),
+		SlidingWindow:                u("attention.sliding_window"),
+		RoutedScalingFactor:          scale,
+		NormTopKProb:                 &normTopK,
+		HiddenAct:                    "silu",
+		VocabSize:                    ggufVocabSize(g),
+		RMSNormEps:                   gf("attention.layer_norm_rms_epsilon"),
+		RoPEGlobalBase:               base,
+	}
+	if k, ok := g.Uint("flint.leading_dense_block_count"); ok {
+		cfg.MlpOnlyLayers = make([]int, int(k))
+		for i := range cfg.MlpOnlyLayers {
+			cfg.MlpOnlyLayers[i] = i
+		}
+	}
+	if arr, ok := g.Metadata["flint.attention.sliding_window_pattern"].([]any); ok && len(arr) > 0 {
+		if len(arr) != numLayers {
+			return nil, fmt.Errorf("decoder(gguf-flint): attention.sliding_window_pattern has %d entries, want %d", len(arr), numLayers)
+		}
+		cfg.LayerTypes = make([]string, numLayers)
+		for i, v := range arr {
+			if b, _ := v.(bool); b {
+				cfg.LayerTypes[i] = "sliding_attention"
+			} else {
+				cfg.LayerTypes[i] = "full_attention"
+			}
+		}
+	} else if arr, ok := g.Metadata["flint.rope.scaling.factors"].([]any); ok && len(arr) > 0 {
+		if len(arr) != numLayers {
+			return nil, fmt.Errorf("decoder(gguf-flint): rope.scaling.factors has %d entries, want %d", len(arr), numLayers)
+		}
+		cfg.LayerTypes = make([]string, numLayers)
+		for i, v := range arr {
+			var f float64
+			if f32, ok := v.(float32); ok {
+				f = float64(f32)
+			} else if f64, ok := v.(float64); ok {
+				f = f64
+			}
+			if f == 0 {
+				cfg.LayerTypes[i] = "full_attention"
+			} else {
+				cfg.LayerTypes[i] = "sliding_attention"
+			}
+		}
+	}
+	if arr, ok := g.Metadata["flint.attention.rope_pattern"].([]any); ok && len(arr) == numLayers {
+		for i, v := range arr {
+			if b, _ := v.(bool); !b {
+				cfg.NoRopeLayerIndices = append(cfg.NoRopeLayerIndices, i)
+			}
+		}
+	}
+	ggufEOS(g, cfg)
+	return cfg, nil
+}
+
 // ggufGlm4MoeConfig builds a GLM-4.5/4.6 Config from the glm4moe.* metadata: dims,
 // the DeepSeek-style MoE counts (expert_count / expert_used_count /
 // expert_shared_count / expert_feed_forward_length), the leading_dense_block_count
@@ -706,17 +746,8 @@ func ggufLagunaConfig(g *embed.GGUFFile) (*Config, error) {
 // rope_parameters JSON (partial_rotary_factor = rope.dimension_count / head_dim) so
 // glm4moeArchitecture runs the identical descriptor build as the safetensors path.
 func ggufGlm4MoeConfig(g *embed.GGUFFile) (*Config, error) {
-	u := func(k string) int {
-		v, _ := g.Uint("glm4moe." + k)
-		return int(v)
-	}
-	gf := func(k string) float64 {
-		if v, ok := g.Float("glm4moe." + k); ok {
-			return v
-		}
-		v, _ := g.Uint("glm4moe." + k)
-		return float64(v)
-	}
+	u := ggufUintReader(g, "glm4moe.")
+	gf := ggufFloatReader(g, "glm4moe.")
 	normTopK := true
 	if b, ok := g.Metadata["glm4moe.expert_weights_norm"].(bool); ok {
 		normTopK = b
@@ -822,17 +853,8 @@ func ggufGptOssConfig(g *embed.GGUFFile) (*Config, error) {
 // embedding_scale / attention.scale / residual_scale / logit_scale. rope_parameters
 // is synthesized so graniteArchitecture runs the same descriptor build as safetensors.
 func ggufGraniteConfig(g *embed.GGUFFile) (*Config, error) {
-	u := func(k string) int {
-		v, _ := g.Uint("granitehybrid." + k)
-		return int(v)
-	}
-	gf := func(k string) float64 {
-		if v, ok := g.Float("granitehybrid." + k); ok {
-			return v
-		}
-		v, _ := g.Uint("granitehybrid." + k)
-		return float64(v)
-	}
+	u := ggufUintReader(g, "granitehybrid.")
+	gf := ggufFloatReader(g, "granitehybrid.")
 	nLayers, err := ggufLayerCount(u("block_count"))
 	if err != nil {
 		return nil, err
@@ -1022,17 +1044,8 @@ func ggufNemotronConfig(g *embed.GGUFFile) (*Config, error) {
 // descriptor build as safetensors (yarn_log_multiplier = 0.1·mscale; DeepSeek's
 // mscale == mscale_all_dim ⇒ the cos/sin attention_factor ratio is 1.0).
 func ggufDeepseekConfig(g *embed.GGUFFile) (*Config, error) {
-	u := func(k string) int {
-		v, _ := g.Uint("deepseek2." + k)
-		return int(v)
-	}
-	gf := func(k string) float64 {
-		if v, ok := g.Float("deepseek2." + k); ok {
-			return v
-		}
-		v, _ := g.Uint("deepseek2." + k)
-		return float64(v)
-	}
+	u := ggufUintReader(g, "deepseek2.")
+	gf := ggufFloatReader(g, "deepseek2.")
 	keyLen := u("attention.key_length")  // qk_nope_head_dim + qk_rope_head_dim
 	ropeDim := u("rope.dimension_count") // qk_rope_head_dim
 	sigmoid := u("expert_gating_func") == 2
@@ -1098,17 +1111,8 @@ func ggufDeepseekConfig(g *embed.GGUFFile) (*Config, error) {
 // rotary. LongRoPE (128k variants) is deferred — those store a rope.scaling block that this
 // minimal reader doesn't translate (and phi3Architecture would reject).
 func ggufPhi3Config(g *embed.GGUFFile) (*Config, error) {
-	u := func(k string) int {
-		v, _ := g.Uint("phi3." + k)
-		return int(v)
-	}
-	gf := func(k string) float64 {
-		if v, ok := g.Float("phi3." + k); ok {
-			return v
-		}
-		v, _ := g.Uint("phi3." + k)
-		return float64(v)
-	}
+	u := ggufUintReader(g, "phi3.")
+	gf := ggufFloatReader(g, "phi3.")
 	hidden, heads := u("embedding_length"), u("attention.head_count")
 	headDim := hidden / heads
 	base := gf("rope.freq_base")
@@ -1144,17 +1148,8 @@ func ggufPhi3Config(g *embed.GGUFFile) (*Config, error) {
 // NOT applied (negligible below original_max_position_embeddings; the GGUF stores it as a
 // precomputed rope_freqs.weight goinfer doesn't consume) — fine for short-prompt gates.
 func ggufLlama4Config(g *embed.GGUFFile) (*Config, error) {
-	u := func(k string) int {
-		v, _ := g.Uint("llama4." + k)
-		return int(v)
-	}
-	gf := func(k string) float64 {
-		if v, ok := g.Float("llama4." + k); ok {
-			return v
-		}
-		v, _ := g.Uint("llama4." + k)
-		return float64(v)
-	}
+	u := ggufUintReader(g, "llama4.")
+	gf := ggufFloatReader(g, "llama4.")
 	nLayers, err := ggufLayerCount(u("block_count"))
 	if err != nil {
 		return nil, err
@@ -1548,20 +1543,50 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	w := &Weights{Cfg: *cfg, arch: arch, Layers: make([]LayerWeights, arch.NumLayers)}
 	skipRow4 = skipRow4 || !repackForDecode(sink) // every closure and family branch below takes it from here
 
+	// rowDequantizer wraps g.RowDequantizer(name) and, when a companion `<name>.scale`
+	// tensor is present (llama.cpp PR #21445's GGUF NVFP4 per-tensor F32 [1] multiplier),
+	// scales each dequantized row in place before quantization.
+	rowDequantizer := func(name string) ([]int, func(offset int, dst []float32) error, error) {
+		dims, into, err := g.RowDequantizer(name)
+		if err != nil || !g.Has(name+".scale") {
+			return dims, into, err
+		}
+		sDims, sData, sErr := g.Tensor(name + ".scale")
+		if sErr != nil {
+			return nil, nil, fmt.Errorf("decoder(gguf): %q: %w", name+".scale", sErr)
+		}
+		if len(sDims) != 1 || sDims[0] != 1 || len(sData) != 1 {
+			return nil, nil, fmt.Errorf("decoder(gguf): %q dims %v, want [1]", name+".scale", sDims)
+		}
+		scale := sData[0]
+		if scale == 1 {
+			return dims, into, nil
+		}
+		return dims, func(offset int, dst []float32) error {
+			if err := into(offset, dst); err != nil {
+				return err
+			}
+			for i := range dst {
+				dst[i] *= scale
+			}
+			return nil
+		}, nil
+	}
+
 	// streamMat builds a [out, in] linalg.WeightMat by streaming the tensor's rows through
 	// the GGUF dequantizer and quantizing each row directly into the resident
 	// arrays — no whole-tensor f32 intermediate (see streamQuantized). rowSrc maps
 	// a destination row index to its source element offset in the tensor (identity
 	// for a plain load; a permutation for the RoPE-permuted q/k projections).
 	streamMat := func(name string, out, in int, mode quantMode, rowSrc func(r int) int) (linalg.WeightMat, error) {
-		dims, into, err := g.RowDequantizer(name)
+		dims, into, err := rowDequantizer(name)
 		if err != nil {
 			return linalg.WeightMat{}, err
 		}
 		if len(dims) != 2 || dims[0] != in || dims[1] != out {
 			return linalg.WeightMat{}, fmt.Errorf("decoder(gguf): %q dims %v, want [in=%d, out=%d]", name, dims, in, out)
 		}
-		q4k := mode == quantQ4K
+		q4k := mode == quantQ4K && !g.Has(name+".scale")
 		if q4k {
 			if wm, ok, err := q4kMat(g, name, out, in, rowSrc); ok || err != nil {
 				return wm, err
@@ -1581,14 +1606,14 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	// streamQuantizedBatchedProj instead of streamQuantized, so it may build repacked-only int4 when this load's backend
 	// allows it. See quantizeBatchedProjWM for the safety argument.
 	streamMatBatched := func(name string, out, in int, mode quantMode, rowSrc func(r int) int) (linalg.WeightMat, error) {
-		dims, into, err := g.RowDequantizer(name)
+		dims, into, err := rowDequantizer(name)
 		if err != nil {
 			return linalg.WeightMat{}, err
 		}
 		if len(dims) != 2 || dims[0] != in || dims[1] != out {
 			return linalg.WeightMat{}, fmt.Errorf("decoder(gguf): %q dims %v, want [in=%d, out=%d]", name, dims, in, out)
 		}
-		q4k := mode == quantQ4K
+		q4k := mode == quantQ4K && !g.Has(name+".scale")
 		if q4k {
 			if wm, ok, err := q4kMat(g, name, out, in, rowSrc); ok || err != nil {
 				return wm, err
@@ -1615,7 +1640,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	// embMatAt streams an embedding-shaped table at q through streamQuantizedEmbed, which may build repacked-only when
 	// needCanonical is false and int4 mode applies; see that function.
 	embMatAt := func(name string, out, in int, q quantMode) (linalg.WeightMat, error) {
-		dims, into, err := g.RowDequantizer(name)
+		dims, into, err := rowDequantizer(name)
 		if err != nil {
 			return linalg.WeightMat{}, err
 		}
@@ -1634,7 +1659,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			*dst = m
 			return err
 		}
-		dims, into, err := g.RowDequantizer(name)
+		dims, into, err := rowDequantizer(name)
 		if err != nil {
 			return err
 		}
@@ -1711,7 +1736,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	// (fastest-first) blob where each expert occupies a contiguous [out, in]
 	// row-major slice — and returns one quantized linalg.WeightMat per expert.
 	stackedExperts := func(name string, out, in, nExpert int) ([]linalg.WeightMat, error) {
-		dims, into, err := g.RowDequantizer(name)
+		dims, into, err := rowDequantizer(name)
 		if err != nil {
 			return nil, err
 		}
@@ -2868,6 +2893,11 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 				}
 				l.QNorm, l.KNorm = qn, kn
 			}
+			if arch.hasAttnSinks() {
+				if l.AttnSinks, err = vec(p+"attn_sinks.weight", arch.NumHeads); err != nil {
+					return err
+				}
+			}
 		}
 		// Pre-MLP norm. GLM4_MOE has no ffn_norm — llama.cpp stores its (positionally
 		// pre-MLP, Pre2) post_attention_layernorm under the ATTN_POST_NORM name; every
@@ -2901,7 +2931,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			if l.Router, err = streamMat(p+"ffn_gate_inp.weight", arch.MoE.NumExperts, hidden, quantNone, func(r int) int { return r * hidden }); err != nil {
 				return err
 			}
-			if arch.MoE.RouterSigmoid { // DeepSeek/GLM e_score_correction_bias (a bias term)
+			if arch.MoE.RouterSigmoid && arch.Name != "flint" { // DeepSeek/GLM e_score_correction_bias (a bias term; Flint has none)
 				if l.RouterBias, err = vec(p+"exp_probs_b.bias", arch.MoE.NumExperts); err != nil {
 					return err
 				}

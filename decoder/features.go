@@ -198,7 +198,7 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 	add(a.pairwiseRoPE(), FeatPairwiseRoPE)
 	add(a.pairwiseRoPE() && len(a.MRopeSection) > 0, FeatPairwiseMRoPE)
 	add(a.lfm2 != nil, FeatShortConv)
-	add(a.gptoss != nil, FeatAttnSink)
+	add(a.hasAttnSinks(), FeatAttnSink)
 	// The attention output gate, by the activation the forward applies (hasAttnOutputGate's two cases: Laguna's softplus, keyed on
 	// arch.laguna, and arch.AttnGate == GateSigmoid), so the features and the math cannot drift; and Laguna's per-layer query-head
 	// count where its config gives one.

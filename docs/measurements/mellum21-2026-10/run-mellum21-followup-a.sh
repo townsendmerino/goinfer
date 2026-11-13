@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Follow-up A: WHERE does Mellum2.1's window-golden cosine (0.98600, 2.0: 0.99636) come from? Per-layer residuals, goinfer int8int8 vs HF bf16, at positions
-# before and after the 1024 window, one run each. Pre-registered classes W / F / N in scripts/diff_mellum_layers.py and docs/tasks/task-mellum21-2026-10.md.
+# before and after the 1024 window, one run each. Pre-registered classes W / F / N in scripts/diff_mellum_layers.py and docs/completed/task-mellum21-2026-10.md.
 #   1. dump   TestMellum2_layerDump: the SAME sequential int8int8 path as TestMellum2_windowParity (about 15 min), ForwardCapture at 9 positions
 #   2. diff   scripts/diff_mellum_layers.py run: HF bf16 forward over the 1441 ids with a hook on every layer (about 5 min), rotary buffers checked, table + class
 # A SKIP is a failure of this job. Estimate ~35 min expected, queued at 70 (window gate 883 s measured; HF pin 195 s for two forwards, measured).
-#   python3 scripts/night.py add mellum21-fu-a --est 70 --by "nobara session, Mellum2.1 follow-up A" --doc docs/tasks/task-mellum21-2026-10.md -- bash docs/measurements/mellum21-2026-10/run-mellum21-followup-a.sh
+#   python3 scripts/night.py add mellum21-fu-a --est 70 --by "nobara session, Mellum2.1 follow-up A" --doc docs/completed/task-mellum21-2026-10.md -- bash docs/measurements/mellum21-2026-10/run-mellum21-followup-a.sh
 # MELLUM_DRY=1 checks preconditions only.
 source "$(dirname "$0")/_common.sh"
 OUT=${1:-$HOME/goinfer-logs/mellum21-followup-a-$(date +%F)}

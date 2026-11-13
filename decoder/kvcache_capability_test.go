@@ -9,11 +9,11 @@ import (
 // (lfm2 and llama4 were on the int8 list but not the ring list; gpt-oss the other way round). They are now
 // one rule each — Architecture.kvInt8OK / kvRingsOK, read off the family's attention kernel (attnOrder). This pins that the
 // change is behaviour-preserving: on every loadable fixture, the cache NewCache builds with int8 requested
-// has exactly the int8 and ring state the OLD lists produced (reproduced below as the reference, verbatim).
+// has exactly the int8 and ring state the OLD lists produced (reproduced below as the reference; the MoE exclusion narrowed to gpt-oss, whose own loop still refuses).
 func TestNewCache_kvCapabilitiesMatchTheOldLists(t *testing.T) {
 	slowTest(t)
 	oldInt8 := func(a *Architecture) bool {
-		return a.gemma4 == nil && a.qwen35 == nil && a.granite == nil && a.nemotron == nil && a.MoE == nil &&
+		return a.gemma4 == nil && a.qwen35 == nil && a.granite == nil && a.nemotron == nil && a.gptoss == nil &&
 			a.lfm2 == nil && a.llama4 == nil
 	}
 	oldRings := func(a *Architecture) bool {

@@ -80,6 +80,26 @@
       "int8int8/canonical": "sha256:c0bdd5a311af6f0a51b0db62192b9acb560fff003157813da8fb662ffc096ce3",
       "int8int8/canonical/norow4": "sha256:c0bdd5a311af6f0a51b0db62192b9acb560fff003157813da8fb662ffc096ce3"
     },
+    "testdata/flint-tiny": {
+      "bf16": "sha256:4cdc44fb03828069cbfdac7ef70c74778ff0cba538317d4ed54ecd59808cf5d2",
+      "bf16/canonical": "sha256:4cdc44fb03828069cbfdac7ef70c74778ff0cba538317d4ed54ecd59808cf5d2",
+      "bf16/canonical/norow4": "sha256:4cdc44fb03828069cbfdac7ef70c74778ff0cba538317d4ed54ecd59808cf5d2",
+      "f16": "sha256:9dffcd39f982d77aa932e8490c595fc77033feb23eb92954a5055f48d1e197db",
+      "f16/canonical": "sha256:9dffcd39f982d77aa932e8490c595fc77033feb23eb92954a5055f48d1e197db",
+      "f16/canonical/norow4": "sha256:9dffcd39f982d77aa932e8490c595fc77033feb23eb92954a5055f48d1e197db",
+      "f32": "sha256:cc865da3d190b498e5644d0abf53e5076daae00452ce2185e4ebab831c72ecde",
+      "f32/canonical": "sha256:cc865da3d190b498e5644d0abf53e5076daae00452ce2185e4ebab831c72ecde",
+      "f32/canonical/norow4": "sha256:cc865da3d190b498e5644d0abf53e5076daae00452ce2185e4ebab831c72ecde",
+      "int4": "sha256:4ad66f510d281d1d5972aab196eca743c01c0933ccc1afcc4b005c0622cbfbaa",
+      "int4/canonical": "sha256:4ad66f510d281d1d5972aab196eca743c01c0933ccc1afcc4b005c0622cbfbaa",
+      "int4/canonical/norow4": "sha256:4ad66f510d281d1d5972aab196eca743c01c0933ccc1afcc4b005c0622cbfbaa",
+      "int8": "sha256:5b5b34e999daabe574a1bd26ebf46c3a6f1706f11dbb630148df0aacace33598",
+      "int8/canonical": "sha256:5b5b34e999daabe574a1bd26ebf46c3a6f1706f11dbb630148df0aacace33598",
+      "int8/canonical/norow4": "sha256:5b5b34e999daabe574a1bd26ebf46c3a6f1706f11dbb630148df0aacace33598",
+      "int8int8": "sha256:7b2ce035cf439239e3a3cb6c597c5e01ad82e862c9d92a9bde3659bd8cdb794c",
+      "int8int8/canonical": "sha256:7b2ce035cf439239e3a3cb6c597c5e01ad82e862c9d92a9bde3659bd8cdb794c",
+      "int8int8/canonical/norow4": "sha256:7b2ce035cf439239e3a3cb6c597c5e01ad82e862c9d92a9bde3659bd8cdb794c"
+    },
     "testdata/gemma1-tiny": {
       "bf16": "sha256:e2c4362de729eb49479bf4238493fad7b4ce522b7182e9cad65be86d8326458c",
       "bf16/canonical": "sha256:e2c4362de729eb49479bf4238493fad7b4ce522b7182e9cad65be86d8326458c",
@@ -861,6 +881,26 @@
       "int8int8": "sha256:c0bdd5a311af6f0a51b0db62192b9acb560fff003157813da8fb662ffc096ce3",
       "int8int8/canonical": "sha256:c0bdd5a311af6f0a51b0db62192b9acb560fff003157813da8fb662ffc096ce3",
       "int8int8/canonical/norow4": "sha256:c0bdd5a311af6f0a51b0db62192b9acb560fff003157813da8fb662ffc096ce3"
+    },
+    "testdata/flint-tiny": {
+      "bf16": "sha256:4cdc44fb03828069cbfdac7ef70c74778ff0cba538317d4ed54ecd59808cf5d2",
+      "bf16/canonical": "sha256:4cdc44fb03828069cbfdac7ef70c74778ff0cba538317d4ed54ecd59808cf5d2",
+      "bf16/canonical/norow4": "sha256:4cdc44fb03828069cbfdac7ef70c74778ff0cba538317d4ed54ecd59808cf5d2",
+      "f16": "sha256:9dffcd39f982d77aa932e8490c595fc77033feb23eb92954a5055f48d1e197db",
+      "f16/canonical": "sha256:9dffcd39f982d77aa932e8490c595fc77033feb23eb92954a5055f48d1e197db",
+      "f16/canonical/norow4": "sha256:9dffcd39f982d77aa932e8490c595fc77033feb23eb92954a5055f48d1e197db",
+      "f32": "sha256:cc865da3d190b498e5644d0abf53e5076daae00452ce2185e4ebab831c72ecde",
+      "f32/canonical": "sha256:cc865da3d190b498e5644d0abf53e5076daae00452ce2185e4ebab831c72ecde",
+      "f32/canonical/norow4": "sha256:cc865da3d190b498e5644d0abf53e5076daae00452ce2185e4ebab831c72ecde",
+      "int4": "sha256:c2f8ef6502f8913c2953a6d97ef8cc7b36f94b944d3876087742a92365b3d6f3",
+      "int4/canonical": "sha256:cd3ac22cd2b0023f42d334792cb93549fd45452b91da28262d2c89068328cf4d",
+      "int4/canonical/norow4": "sha256:4ad66f510d281d1d5972aab196eca743c01c0933ccc1afcc4b005c0622cbfbaa",
+      "int8": "sha256:5b5b34e999daabe574a1bd26ebf46c3a6f1706f11dbb630148df0aacace33598",
+      "int8/canonical": "sha256:5b5b34e999daabe574a1bd26ebf46c3a6f1706f11dbb630148df0aacace33598",
+      "int8/canonical/norow4": "sha256:5b5b34e999daabe574a1bd26ebf46c3a6f1706f11dbb630148df0aacace33598",
+      "int8int8": "sha256:7b2ce035cf439239e3a3cb6c597c5e01ad82e862c9d92a9bde3659bd8cdb794c",
+      "int8int8/canonical": "sha256:7b2ce035cf439239e3a3cb6c597c5e01ad82e862c9d92a9bde3659bd8cdb794c",
+      "int8int8/canonical/norow4": "sha256:7b2ce035cf439239e3a3cb6c597c5e01ad82e862c9d92a9bde3659bd8cdb794c"
     },
     "testdata/gemma1-tiny": {
       "bf16": "sha256:e2c4362de729eb49479bf4238493fad7b4ce522b7182e9cad65be86d8326458c",
