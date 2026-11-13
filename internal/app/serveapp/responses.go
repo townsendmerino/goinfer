@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"net/http"
 	"strings"
 	"sync"
@@ -751,8 +752,8 @@ func responseObject(id, model string, created int64, status string, output []any
 
 // responseObjectTurn is a finished turn's responseObject, with the turn's timings and, when asked, its cost beside the
 // usage (clock, nil for none).
-func responseObjectTurn(clock *turnClock, id, model string, created int64, status string, output []any, inTok, outTok int) map[string]any {
-	return clock.addTurn(responseObject(id, model, created, status, output, inTok, outTok))
+func responseObjectTurn(clock *jobs.TurnClock, id, model string, created int64, status string, output []any, inTok, outTok int) map[string]any {
+	return clock.AddTurn(responseObject(id, model, created, status, output, inTok, outTok))
 }
 
 // withCachedTokens reports the prompt tokens whose prefill a prior turn's KV made unnecessary, in OpenAI's own field for

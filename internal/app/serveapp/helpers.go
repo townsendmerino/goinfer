@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"mime/multipart"
 	"net/http"
 	"reflect"
@@ -364,11 +365,11 @@ type streamOptions struct {
 // is what lets a test count the sites, so a new streaming surface cannot be added quietly without one. Agent
 // harnesses, which declare tools on every turn, depend on the usage chunk for context accounting. The chunk carries the
 // turn's timings and, when asked, its cost beside the usage (clock, nil for none).
-func sendUsage(ss *sseWriter, clock *turnClock, so *streamOptions, id string, created int64, model string, u usage) {
+func sendUsage(ss *sseWriter, clock *jobs.TurnClock, so *streamOptions, id string, created int64, model string, u usage) {
 	if so == nil || !so.IncludeUsage {
 		return
 	}
-	sseSend(ss, clock.addTurn(usageChunk(id, created, model, u)))
+	sseSend(ss, clock.AddTurn(usageChunk(id, created, model, u)))
 }
 
 // usageChunk is the final streaming chunk when stream_options.include_usage is set: empty choices,

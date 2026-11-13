@@ -1,9 +1,6 @@
 package serveapp
 
 import (
-	"encoding/json"
-	"runtime"
-	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -11,36 +8,6 @@ import (
 
 // MEM13 (docs/completed/task-memory-campaign-2026-10.md): the job store keeps a capped number of jobs, each with its prompt's token
 // ids, and an adapter reads its base model's token-bytes table instead of building its own.
-
-// A job keeps the prompt ids as int32: the same JSON, half the retained bytes of the []int the request carried. The bound is on the
-// heap retained by a store full of 20K-token jobs once the request slices are gone.
-func TestJobStore_promptIDsRetainFourBytesEach(t *testing.T) {
-	const jobs, ids = 50, 20000
-	js := &jobStore{jobs: map[string]*job{}, cap: jobs}
-	heap := func() uint64 {
-		runtime.GC()
-		var ms runtime.MemStats
-		runtime.ReadMemStats(&ms)
-		return ms.HeapAlloc
-	}
-	before := heap()
-	for i := 0; i < jobs; i++ {
-		req := make([]int, ids)
-		for k := range req {
-			req[k] = k % 150000
-		}
-		js.createPending(string(rune('a'+i%26))+strings.Repeat("x", i/26), "m", req)
-	}
-	retained := heap() - before
-	runtime.KeepAlive(js)
-	if want := uint64(jobs * ids * 4); retained > want+want/10 {
-		t.Errorf("a store of %d jobs x %d ids retains %d bytes; int32 ids are %d", jobs, ids, retained, want)
-	}
-	b, err := json.Marshal(&job{ID: "j", PromptIDs: []int32{1, 150000, 7}})
-	if err != nil || !strings.Contains(string(b), `"prompt_ids":[1,150000,7]`) {
-		t.Errorf("the job's JSON changed shape: %s (%v)", b, err)
-	}
-}
 
 // loadAdapters gives every adapter its base's token-bytes table, built once. Through the real caller: the adapters of
 // TestServe_multiAdapter's synthetic base.

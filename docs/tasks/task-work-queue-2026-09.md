@@ -27,7 +27,7 @@
 |---|---|---|---|
 | J0 | done | — | `scripts/queue_citation_lint.py:untracked_live_docs` |
 | J1 | done | — | `internal/runtime/scheduler/admission.go:Admission`; `internal/app/serveapp/admission_test.go:TestAdmission_waiterLeavesOnContextCancelWithoutWaitingForHolder` |
-| J2 | done | — | `internal/app/serveapp/jobjournal.go:jobJournal`; `-job-dir` in `internal/app/serveapp/main.go:registerFlags` |
+| J2 | done | — | `internal/app/serveapp/jobs/jobjournal.go:Journal`; `-job-dir` in `internal/app/serveapp/main.go:registerFlags` |
 | J3 | done | unbuilt: vision and tool bodies, the `user` key (needs K4), `-job-cap` | `internal/app/serveapp/jobs_http_test.go:TestJobs_submitPollReattachMatchesSyncRun` |
 | J4 | done | unbuilt: vision and tool lines, non-chat endpoints | `internal/app/serveapp/batches_http_test.go:TestBatches_openAIRoundTrip` |
 | J5 | done | — | `internal/app/chatapp/batch.go:planBatch`; `internal/app/serveapp/batch_cli_parity_test.go:TestBatch_cliAndServeAgree` |

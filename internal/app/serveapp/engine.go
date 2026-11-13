@@ -3,7 +3,6 @@ package serveapp
 import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/engine"
-	"github.com/townsendmerino/goinfer/engine/enginetest"
 )
 
 // genReport is a generation's account as the shell reads it.
@@ -17,20 +16,10 @@ func reportNow(report func() *genReport) *genReport {
 	return report()
 }
 
-// genEngine is the model's engine: a test's fake engine or the scripted seam when one is set, else the decoder.
+// genEngine is the model's engine: a test's fake engine when one is set, else the decoder.
 func (lm *loadedModel) genEngine() engine.Engine {
 	if lm.fakeEngine != nil {
 		return lm.fakeEngine
-	}
-	if lm.scripted != nil {
-		return enginetest.Scripted{IDs: lm.scripted, OnStart: func(req engine.Request) {
-			if lm.onScripted != nil {
-				lm.onScripted(req.PromptIDs)
-			}
-			if lm.onScriptedScope != nil {
-				lm.onScriptedScope(req.Scope)
-			}
-		}}
 	}
 	return engine.Local{Model: asDecoder(lm.model), Pool: sessionPool{lm}, Drafter: asBlockSpec(lm.blockSpec), Speculative: lm.spec, AdapterBound: lm.adapter != "",
 		Encode: func(s string) []int { ids, _ := lm.tk.Encode(s, false); return ids }}
