@@ -1,0 +1,5 @@
+2026-11-13 08:41:14 PST start decode-qwen: load1 0.38, MemAvailable 61406.1 MB
+2026-11-13 08:54:19 PST start decode-deep: load1 0.84, MemAvailable 61466.6 MB
+2026-11-13 09:02:21 PST start decode-gemma: load1 0.79, MemAvailable 61424.3 MB
+2026-11-13 09:06:48 PST start ttft-1.5B: load1 0.88, MemAvailable 61453.9 MB
+2026-11-13 09:08:38 PST start ttft-7B: load1 0.80, MemAvailable 61406.8 MB
