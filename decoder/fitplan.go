@@ -12,11 +12,11 @@ import (
 const ctxPlanFloor = mem.PlanCtxFloor
 
 // kvBytesPerPositionAllLayers is the KV-cost rate Plan prices WebGPU at (ResidentKVBytes; the CPU, CUDA and Metal have their own): per layer (a per-layer-varying family like Gemma 4 is not approximated by one
-// model-level figure, as metal/backend.go's residentKVBytes also sums per layer), K+V, at the requested precision. Bytes per element match
-// kvBytesForCtx in decoder/arch.go (f32 4.0, f16 2, int8 1.125 including scale). The per-layer width is Architecture.kvDimAt: zero for a
+// model-level figure, as metal/backend.go's residentKVBytes also sums per layer), K+V, at the requested precision: f32 4 bytes an element,
+// f16 2, int8 1.125 (its scales as a flat allowance). The per-layer width is Architecture.kvDimAt: zero for a
 // linear/mamba/conv mixer layer (no position-indexed K/V), MLA's compressed latent width, whose one row stays f32 at any precision.
 //
-// It deliberately does NOT apply kvBytesForCtx's sliding-window cap (kvPositionsAt): this returns a flat per-position rate that the caller
+// It deliberately does NOT cap a sliding-window layer (kvPositionsAt): this returns a flat per-position rate that the caller
 // multiplies by ctx, while a sliding-window layer's cost flattens at SlidingWindow, so capping it needs tryCtx/chooseCtx to search rather
 // than multiply, and a sliding-window fixture to verify against. The rate stays exact for families without a window (MLA, DeltaNet/Mamba/
 // conv hybrids); a family with both would be overpriced, the safe direction.
