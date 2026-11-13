@@ -7,7 +7,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-// TestMetalPricing_followsThePathThatRuns (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-c2): the fit guard prices a Metal
+// TestMetalPricing_followsThePathThatRuns (docs/completed/task-forward-architecture-2026-10.md §4.9, OP4m-c2): the fit guard prices a Metal
 // load as resident only when BuildQuery.FeaturesCovered, which reads Metal's table. Llama 4 and Nemotron 3 Nano run on the CPU
 // under Metal (the runner shape, and Nemotron's MoE block), and the table declines their operations, so they are priced as the
 // CPU path (f32 KV, the whole context), not as Metal-resident (f16 KV, a default 4096). Plain Llama stays priced resident.
@@ -37,7 +37,7 @@ func TestMetalPricing_followsThePathThatRuns(t *testing.T) {
 	}
 }
 
-// TestMetalTable_plantedGapGoesRed is OP4m-c2's C2-3 (docs/tasks/task-forward-architecture-2026-10.md §4.9): Metal's
+// TestMetalTable_plantedGapGoesRed is OP4m-c2's C2-3 (docs/completed/task-forward-architecture-2026-10.md §4.9): Metal's
 // admission reads program.Metal, so a copy of the table without GELU-tanh on the gated FFN form, put in place for Metal, must
 // decline every admitted Gemma row (a gated GELU-tanh family the golden admits on Metal) and leave a SiLU row admitted.
 func TestMetalTable_plantedGapGoesRed(t *testing.T) {

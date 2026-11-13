@@ -168,7 +168,7 @@ func (m *Model) metalDeltaNetEpsByFamily() (eps, oEps float64) {
 	return 0, 0
 }
 
-// TestMetalDecodeScratch_fromTheDeclarations is MM5b's derivation (docs/tasks/task-forward-architecture-2026-10.md §4.9c): Metal's
+// TestMetalDecodeScratch_fromTheDeclarations is MM5b's derivation (docs/completed/task-forward-architecture-2026-10.md §4.9c): Metal's
 // decode scratch priced from the program's per-row declarations (MetalDecodeScratchBytes) is the family-keyed price it replaces, on
 // every fixture and option cell layer D built resident on Metal (TestMemGate_metal's rows), unpaged and at a paged slot count. Each
 // is loaded on the CPU without its KV options. Each router row such a load declares has Metal's MoE terms; the MoE forms with none

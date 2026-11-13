@@ -29,7 +29,7 @@ func v3Run(t *testing.T, m *Model, chunk int) ([][]float32, int64) {
 	return v1Decode(t, m, cache, lg), passes
 }
 
-// TestMEM5VL_qwen35Chunked is V3-G1 (docs/tasks/task-memory-campaign-2026-10.md, "MEM5-VL (3) gates"): Qwen3.5's image prefill in
+// TestMEM5VL_qwen35Chunked is V3-G1 (docs/completed/task-memory-campaign-2026-10.md, "MEM5-VL (3) gates"): Qwen3.5's image prefill in
 // 7-, 16- and 59-row passes (the last a one-row pass, which takes the per-token DeltaNet core) against one pass; the last logits and
 // four decode steps after are byte-equal.
 func TestMEM5VL_qwen35Chunked(t *testing.T) {

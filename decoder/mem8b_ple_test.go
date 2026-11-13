@@ -27,7 +27,7 @@ func pleSources(t *testing.T) []string {
 	return srcs
 }
 
-// TestPLE_gatherTableIgnoresThePin is PLE-G1 (docs/tasks/task-memory-campaign-2026-10.md, MEM8(b) gates): at int4 the
+// TestPLE_gatherTableIgnoresThePin is PLE-G1 (docs/completed/task-memory-campaign-2026-10.md, MEM8(b) gates): at int4 the
 // per-layer token table is int4 with the head pin on and off, its rows byte-equal between the two, while the token
 // embedding still follows the pin (int8 with it on, int4 with it off).
 func TestPLE_gatherTableIgnoresThePin(t *testing.T) {
