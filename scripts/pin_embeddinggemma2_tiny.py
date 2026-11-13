@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pin the tiny EmbeddingGemma 2 fixture (docs/tasks/task-embeddinggemma2.md, Gate 1).
+"""Pin the tiny EmbeddingGemma 2 fixture (docs/completed/task-embeddinggemma2.md, Gate 1).
 
 Builds a random-weight EmbeddingGemma2TextModel with transformers' own modeling code (>= 5.19.0, which added
 `embedding_gemma2`), in float32, and writes:

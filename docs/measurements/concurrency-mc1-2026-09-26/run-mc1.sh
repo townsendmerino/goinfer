@@ -1,5 +1,5 @@
 #!/bin/bash
-# MC1 measurement (docs/tasks/task-concurrency-2026-09.md): W7 plain workload on Metal at 1/2/4 clients, the MC1 build
+# MC1 measurement (docs/tasks/parked/task-concurrency-2026-09.md): W7 plain workload on Metal at 1/2/4 clients, the MC1 build
 # (-kv-sessions default 4 -> 4 resident KV slots) against the pre-MC1 build, same session, idle-gated. Order:
 # old 1,2,4 then new 1,2,4, then old 4 and new 4 again (a repeat of the deciding cell, reversed order).
 set -u

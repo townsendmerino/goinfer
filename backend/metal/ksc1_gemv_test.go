@@ -30,7 +30,7 @@ func ksc1Q4KRaw(rng *rand.Rand, n, K int) []byte {
 	return raw
 }
 
-// TestKSC1_w8RowsMatch is C1-G1 (b) (docs/tasks/task-kernel-survey-2026-10.md, "KS-C1 (a)+(b) gates"): gemv_w8_f32_rows<R> and its
+// TestKSC1_w8RowsMatch is C1-G1 (b) (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-C1 (a)+(b) gates"): gemv_w8_f32_rows<R> and its
 // residual and bias variants, R = 1, 2, 4, against gemv_w8_f32 and its variants at G-Q1's int8 shapes (a partial threadgroup,
 // Phi-3's qkv, its Q6_K down layers, the LM head), random int8 rows and per-row scales, f32 activations with outliers, in the
 // fast-math and the precise library. Byte-equal.

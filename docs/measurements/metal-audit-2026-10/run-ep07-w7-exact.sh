@@ -1,5 +1,5 @@
 #!/bin/bash
-# Night job: E-P07 amendment 2 (docs/tasks/task-metal-audit-2026-10.md, "E-P07 amendment 2"): the identity re-run with both
+# Night job: E-P07 amendment 2 (docs/completed/task-metal-audit-2026-10.md, "E-P07 amendment 2"): the identity re-run with both
 # arms on the exact lane (-exact-prefill), written before this run. Otherwise E-P07's first job exactly: W7 on Qwen3-0.6B, old (serve-metal at d50dbbca: Qwen3 one generation at a
 # time) against new (at aa924eca: Qwen3 in MC3), -max-concurrent 4 -kv-sessions 4, greedy, --fixed-nonce, a fresh server
 # per cell, 4 then 1 then 2 clients, old/new x 3 pairs in the order old new new old old new. Graded by MC3's gates.py.
@@ -9,7 +9,7 @@
 #   old: the same from a worktree at d50dbbca (with go.work copied in)
 # Queued with:
 #   python3 scripts/night.py add metal-audit-ep07-exact --est 10 --by "Claude (Mac session), Metal audit E-P07 identity re-run, exact lane" \
-#     --doc docs/tasks/task-metal-audit-2026-10.md -- bash docs/measurements/metal-audit-2026-10/run-ep07-w7-exact.sh
+#     --doc docs/completed/task-metal-audit-2026-10.md -- bash docs/measurements/metal-audit-2026-10/run-ep07-w7-exact.sh
 # Logs: ~/goinfer-logs/metal-audit-2026-10/ep07-exact/.
 set -u
 REPO=$HOME/tmcode/goinfer

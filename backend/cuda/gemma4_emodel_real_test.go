@@ -20,7 +20,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// g3Prompts is G3c's prompt set: the eight prompts Metal's G3 fixed in docs/tasks/task-multimodal-support-2026-10.md before any run, unchanged.
+// g3Prompts is G3c's prompt set: the eight prompts Metal's G3 fixed in docs/completed/task-multimodal-support-2026-10.md before any run, unchanged.
 var g3Prompts = []string{
 	"Explain why the sky is blue in two sentences.",
 	"Write a haiku about autumn leaves.",
@@ -34,7 +34,7 @@ var g3Prompts = []string{
 
 const g3NewTokens = 32
 
-// g3Run is G3c's procedure (docs/tasks/task-multimodal-support-2026-10.md, "S1 on CUDA"; Metal's G3 procedure unchanged) over g3Prompts: free-running
+// g3Run is G3c's procedure (docs/completed/task-multimodal-support-2026-10.md, "S1 on CUDA"; Metal's G3 procedure unchanged) over g3Prompts: free-running
 // greedy on each side for 32 tokens (a first divergence at a near-tie, under 3% of the CPU's |top-1|, still passes the prompt), then the CPU's sequence
 // teacher-forced through the CUDA resident and compared position by position.
 func g3Run(t *testing.T, tk *tokenizer.Tokenizer, tmpl *chat.Template, r *cudaResident, mg, mc *decoder.Model, logf func(string, ...any)) (passPrompts, agree, positions int) {
@@ -163,7 +163,7 @@ func g3Model(t *testing.T, gguf, label string, logf func(string, ...any)) (pass,
 		t.Fatalf("%s: no CUDA resident: %s", label, mg.ResidentDecline())
 	}
 	// The CPU loads the SAME file with the SAME options, so both sides hold the same quantization of every table. A CPU arm on a sidecar with an int4 head against the CUDA
-	// side's int8 pin is the confound that invalidated an earlier run (docs/tasks/task-multimodal-support-2026-10.md).
+	// side's int8 pin is the confound that invalidated an earlier run (docs/completed/task-multimodal-support-2026-10.md).
 	mc, err := decoder.Load(gguf, opts)
 	if err != nil {
 		t.Fatalf("%s: load (cpu): %v", label, err)
@@ -177,13 +177,13 @@ func g3Model(t *testing.T, gguf, label string, logf func(string, ...any)) (pass,
 
 // g3PassMargin and g3FailMargin bound the E-model non-inferiority gates (G3c, G-E4B-C1b) in points of teacher-forced agreement against the live reference.
 // They are -4.7 and -6.7, the registered -2.0 and -4.0 shifted by the reference's own move from 93.97% to 96.64% under ChatML's default system message, so the
-// absolute floor the gates were registered at (about 92%) is unchanged. Record: docs/tasks/task-multimodal-support-2026-10.md, "G3c reference moved".
+// absolute floor the gates were registered at (about 92%) is unchanged. Record: docs/completed/task-multimodal-support-2026-10.md, "G3c reference moved".
 const (
 	g3PassMargin = -4.7
 	g3FailMargin = -6.7
 )
 
-// TestGemma4EModel_realE2BNonInferiority is G3c (docs/tasks/task-multimodal-support-2026-10.md, "S1 on CUDA"; Metal's re-registered G3 rule unchanged): in one process, g3Run on Qwen2.5-Coder-1.5B on CUDA (the validated reference), then on E2B.
+// TestGemma4EModel_realE2BNonInferiority is G3c (docs/completed/task-multimodal-support-2026-10.md, "S1 on CUDA"; Metal's re-registered G3 rule unchanged): in one process, g3Run on Qwen2.5-Coder-1.5B on CUDA (the validated reference), then on E2B.
 // PASS: E2B's teacher-forced agreement >= the reference's + g3PassMargin points and its free-run passes >= the reference's - 1; up to 2.0 points below
 // that is ambiguous (parked for the owner); worse, or free-run passes 2+ short, fails.
 //
@@ -210,7 +210,7 @@ func TestGemma4EModel_realE2BNonInferiority(t *testing.T) {
 	}
 }
 
-// TestGemma4EModel_realE2BPLEHostCost is S1's speed record on CUDA (docs/tasks/task-multimodal-support-2026-10.md, "S1 on CUDA"): the milliseconds
+// TestGemma4EModel_realE2BPLEHostCost is S1's speed record on CUDA (docs/completed/task-multimodal-support-2026-10.md, "S1 on CUDA"): the milliseconds
 // embedResidentInto spends per token on E2B, i.e. the embedding row plus the PLE inputs the CPU computes before every resident step. A record, not a
 // gate; timed, so it runs on the night queue under the timing lock.
 //
@@ -251,7 +251,7 @@ func TestGemma4EModel_realE2BPLEHostCost(t *testing.T) {
 		sum/float64(n), sorted[n/2], sorted[n*9/10], n, len(m.EmbedResidentForTest(ids[0])))
 }
 
-// TestGemma4EModel_realE4BNonInferiority is G-E4B-C1b (docs/tasks/task-multimodal-support-2026-10.md, "S6 on nobara"): G3c's procedure, rule and reference,
+// TestGemma4EModel_realE4BNonInferiority is G-E4B-C1b (docs/completed/task-multimodal-support-2026-10.md, "S6 on nobara"): G3c's procedure, rule and reference,
 // unchanged, on Gemma 4 E4B loaded by both sides from GOINFER_GEMMA4_E4B_CKPT, a .gguf or a Hugging Face directory, default Google's quantization-aware
 // GGUF (~/models/gemma-4-e4b-gguf/gemma-4-E4B_q4_0-it.gguf, the equivalent of the E2B file G3c reads). A run on the plain bf16 checkpoint
 // (~/models/gemma-4-E4B-it) is a record, not this gate: that checkpoint fails the bar for its own sake, not the implementation's (same section).

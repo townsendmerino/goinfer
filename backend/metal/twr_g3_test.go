@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
-// TestTWRG3_qwen3VLHostHeap is TWR-G3 (docs/tasks/task-memory-campaign-2026-10.md, MEM4(b) gates): the Qwen3-VL-2B tower
+// TestTWRG3_qwen3VLHostHeap is TWR-G3 (docs/completed/task-memory-campaign-2026-10.md, MEM4(b) gates): the Qwen3-VL-2B tower
 // attached on Metal, float32; the Go heap in use after runtime.GC with the attach alone (main) and after the release serve
 // now calls (ReleaseBlocks). The heap must fall by at least 80% of the blocks' float32 bytes.
 func TestTWRG3_qwen3VLHostHeap(t *testing.T) {

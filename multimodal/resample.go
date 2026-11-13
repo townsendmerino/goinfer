@@ -2,7 +2,7 @@ package multimodal
 
 import "math"
 
-// Audio towers take 16 kHz mono (docs/tasks/task-multimodal-support-2026-10.md, S5's follow-up). A WAV at another rate or with several
+// Audio towers take 16 kHz mono (docs/completed/task-multimodal-support-2026-10.md, S5's follow-up). A WAV at another rate or with several
 // channels is brought to that here: the channels averaged per frame (librosa's to_mono convention), then resampled with
 // scipy.signal.resample_poly's own filter, built the same way: up and down reduced by their gcd, a firwin low-pass at 1/max(up, down) of
 // the upsampled Nyquist with unit DC gain, a Kaiser window of beta 5.0 over 20·max(up, down)+1 taps, centred and scaled by up, zero

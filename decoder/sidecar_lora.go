@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-// A .giw built with a PEFT adapter merged in (TranscodeGIWLoRA, `transcode --lora`, docs/tasks/task-constrained-confidence.md)
+// A .giw built with a PEFT adapter merged in (TranscodeGIWLoRA, `transcode --lora`, docs/tasks/parked/task-constrained-confidence.md)
 // carries a sidecar, <bundle>.lora.json, naming the adapter and the sha256
 // of its weights. The whole-model f32 merge is then paid once, at transcode, instead of on every load, which on a 16 GB
 // Mac is the anonymous-memory spike a 27B merge-at-load would be.

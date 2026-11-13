@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// MC3 (docs/tasks/task-concurrency-2026-09.md): several generations decoding on one resident at once, each on its own
+// MC3 (docs/tasks/parked/task-concurrency-2026-09.md): several generations decoding on one resident at once, each on its own
 // resident KV slot, their decode tokens joined into shared steps.
 //
 // A resident is one command queue with one set of scratch buffers, so everything that touches it (a prefill, a
@@ -158,7 +158,7 @@ func (m *Model) ResidentConcurrency() int {
 }
 
 // SetSpecAdaptive turns MC4's "speculate when alone, batch under load" candidate on or off
-// (docs/tasks/task-concurrency-2026-09.md). Call it once at load, before any generation starts. It has no
+// (docs/tasks/parked/task-concurrency-2026-09.md). Call it once at load, before any generation starts. It has no
 // effect unless EnableResidentConcurrency also enabled a batcher — with no batcher, genNgramInto's
 // exclusive claim behaves exactly as it does with this off.
 func (m *Model) SetSpecAdaptive(on bool) { m.specAdaptive = on }
@@ -294,7 +294,7 @@ func (b *tokenCoalescer) exclusiveKind(prefill bool, fn func()) {
 }
 
 // prefillTailMin is chunked prefill's shortest final pass (Options.ResidentPrefillChunk;
-// docs/tasks/task-concurrency-2026-09.md): residentPrefillSeed takes a suffix of at least 8 tokens through the batched
+// docs/tasks/parked/task-concurrency-2026-09.md): residentPrefillSeed takes a suffix of at least 8 tokens through the batched
 // prefill, and the chunks must all run that same path. Chunking is sound only where the resident's prefill is
 // chunk-invariant, the same bits whole or in chunks (TestMC5_prefillChunkInvariance on Metal), so a reply never depends
 // on whether others were decoding.

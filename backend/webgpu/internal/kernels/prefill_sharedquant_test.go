@@ -115,7 +115,7 @@ func samePrefill(t *testing.T, what string, refL, gotL []float32, refC, gotC [][
 	}
 }
 
-// TestPrefillLastW8A8_sharedQuantBitIdentical is R-25's gate (docs/tasks/task-recompute-audit.md): the batched prefill
+// TestPrefillLastW8A8_sharedQuantBitIdentical is R-25's gate (docs/completed/task-recompute-audit.md): the batched prefill
 // quantizes xn once for q, k and v and xn2 once for gate and up (sharedQ) instead of once per projection. Against the
 // same prefill with a quantization per projection (prefillQuantPerProj), the last row's logits and every element of
 // every layer's K and V cache must be equal bit for bit, with and without Qwen2's q/k/v biases (the bias-epilogue GEMM),

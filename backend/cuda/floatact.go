@@ -11,7 +11,7 @@ import (
 // Float-activation decode for Gemma 4 MoE (floatAct, gemv_w4f32.cu): every int4 projection of a decode step reads its
 // activation as f32 instead of rounding it to int8. Under per-vector int8 activations the 26B-A4B's decode is chaotic at
 // some tokens, on the CPU's W4A8 path as on this one, and can land on a garbage digit; over f32 activations the same int4
-// weights are stable (docs/tasks/task-multimodal-support-2026-10.md, "S19"). Prefill and the LM head keep W4A8.
+// weights are stable (docs/completed/task-multimodal-support-2026-10.md, "S19"). Prefill and the LM head keep W4A8.
 
 // floatActOffForTest builds the next resident on the W4A8 decode: the other arm of an A/B. Set by tests only.
 var floatActOffForTest bool

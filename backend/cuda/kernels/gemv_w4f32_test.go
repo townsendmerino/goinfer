@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// G-S19e (docs/tasks/task-multimodal-support-2026-10.md, "S19 follow-up step 2"): the float-activation int4 kernels
+// G-S19e (docs/completed/task-multimodal-support-2026-10.md, "S19 follow-up step 2"): the float-activation int4 kernels
 // against a CPU float64 reference (each int4 row dequantized by WeightMat.Row, dotted with the f32 activation), at the
 // 26B-A4B's shapes, so the ragged-tail word walk runs (the down projections' K/8 is not a multiple of 64). Each planted
 // defect must turn the comparison red.

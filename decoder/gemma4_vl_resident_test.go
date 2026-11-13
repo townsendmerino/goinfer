@@ -200,7 +200,7 @@ func TestGenerateGemma4VL_residentUploadFailureFallsBackToCPU(t *testing.T) {
 }
 
 // TestGenerateGemma4VL_sequentialEModelUploadsOwningLayers is the gitignored gemma4-vl-tiny fixture's check of the S1.8
-// contract (docs/tasks/task-multimodal-support-2026-10.md): a sequential (causal) checkpoint of the E-model class (this one
+// contract (docs/completed/task-multimodal-support-2026-10.md): a sequential (causal) checkpoint of the E-model class (this one
 // has KV-shared layers) with a resident attached uploads its CPU prefill's K/V for the layers that own it, never a KV-shared
 // one, then decodes resident. CI skips it (the fixture is gitignored); the same contract runs on a committed-path fixture in
 // TestGenerateGemma4VL_eModelDecodesResident.

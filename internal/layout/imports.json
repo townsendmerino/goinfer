@@ -1,5 +1,5 @@
 {
-  "_about": "SB13's package layout (docs/tasks/task-subsystems-2026-10.md §8 and §9). arrows and test_arrows: every import from one goinfer package to another, by repository-relative directory, from non-test and from test files; TestLayout_arrows fails on one the tree makes that is not here, and on one here the tree no longer makes. rules: the protected separations, which no import, made or recorded, may break; they are edited by hand only.",
+  "_about": "SB13's package layout (docs/completed/task-subsystems-2026-10.md §8 and §9). arrows and test_arrows: every import from one goinfer package to another, by repository-relative directory, from non-test and from test files; TestLayout_arrows fails on one the tree makes that is not here, and on one here the tree no longer makes. rules: the protected separations, which no import, made or recorded, may break; they are edited by hand only.",
   "rules": [
     {
       "name": "fit-leaf",

@@ -5,7 +5,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-// One memory-accounting path per backend (docs/tasks/task-memory-accounting-2026-09.md).
+// One memory-accounting path per backend (docs/completed/task-memory-accounting-2026-09.md).
 //
 // ResidentNeedBytes is the single definition that Plan("metal") (what `fit` reports) and Metal's own pre-build guard
 // both use, so they cannot price the same load differently. Its KV half is ResidentKVBytes, which prices a backend's KV
@@ -53,49 +53,12 @@ func (m *Model) ResidentKVBytes(backend string, ctx int, kvF16, kvI8 bool) int64
 	return slot + null
 }
 
-// cpuKVBytes is the K/V a CPU cache (NewCache) holds for ctx positions, at the precision NewCache takes for the request (int8 or f16
-// only where the family accepts it, else f32). An append-forever layer holds ctx rows. A ring layer (ringLayerAt) holds its
-// window's W rows from its first write, and at f32 twice that once a read wraps, which any context past W reaches. An int8 row is
-// one byte an element plus one f32 scale a KV head; an MLA layer holds one f32 latent row a position; a layer that reads another's
-// cache, or has no attention, holds none.
+// cpuKVBytes is what this model's CPU cache holds for ctx positions (kvBytesForCtx); without a resolved architecture, Plan's flat rate.
 func (m *Model) cpuKVBytes(ctx int, f16, i8 bool) int64 {
-	a := m.w.arch
-	if a == nil {
+	if m.w.arch == nil {
 		return m.kvBytesPerPositionAllLayers(f16, i8) * int64(ctx)
 	}
-	quant := kvqF32
-	if i8 && a.kvInt8OK() {
-		quant = kvI8
-	} else if f16 && a.kvF16OK() {
-		quant = kvqF16
-	}
-	var total int64
-	for l := range a.NumLayers {
-		if a.hasNoAttentionKVAt(l) || a.gemma4KVSrcAt(l) != l {
-			continue
-		}
-		width := int64(a.kvDimAt(l))
-		if a.mla != nil {
-			total += 4 * width * int64(ctx)
-			continue
-		}
-		rows := int64(ctx)
-		if a.ringLayerAt(l) {
-			rows = int64(a.SlidingWindow)
-			if quant == kvqF32 && ctx > a.SlidingWindow {
-				rows *= 2
-			}
-		}
-		row := 4 * width
-		switch quant {
-		case kvI8:
-			row = width + 4*int64(a.NumKVHeads)
-		case kvqF16:
-			row = 2 * width
-		}
-		total += 2 * rows * row
-	}
-	return total
+	return kvBytesForCtx(m.w.arch, ctx, f16, i8)
 }
 
 // MetalKVSlotBytes is what one more resident KV slot costs a metal load at ctx positions: ResidentKVBytes less the pools' null blocks.
@@ -135,14 +98,29 @@ func (m *Model) MetalKVTableRaiseBytes(slots, ctx int) int64 {
 	return int64(slots) * (blocks(m.MetalKVCap(slots, ctx)) - blocks(ctx)) * 4
 }
 
-// metalKVParts is one slot's KV on Metal, at the precision ResolveKV delivers, and its pools' null blocks, once per load: per 64-row
-// block, every row its layers declare (LayerBuffers) at Metal's size for it (MetalKVRowBytes), and the slot's table, 4 B a block.
+// metalKVParts is one slot's KV on Metal at the precision ResolveKV delivers for this model's load, and its pools' null blocks
+// (metalKVPartsFor over the memoized LayerBuffers).
 func (m *Model) metalKVParts(ctx int) (slot, null int64) {
+	return metalKVPartsFor(m.w.arch, ctx, m.KVDeliveredFor("metal"), m.LayerBuffers)
+}
+
+// metalKVBytesFor is ResidentKVBytes("metal") for arch at precision delivered, read from the architecture alone: what the host guards
+// price a Metal-resident load's KV at before any model exists.
+func metalKVBytesFor(a *Architecture, ctx int, delivered string) int64 {
+	if a == nil || ctx <= 0 {
+		return 0
+	}
+	slot, null := metalKVPartsFor(a, ctx, delivered, func(l int) []program.Buf { return layerBuffers(a, l) })
+	return slot + null
+}
+
+// metalKVPartsFor is one slot's KV on Metal at precision delivered, and its pools' null blocks, once per load: per 64-row block,
+// every row bufs declares for a layer at Metal's size for it (MetalKVRowBytes), and the slot's table, 4 B a block.
+func metalKVPartsFor(a *Architecture, ctx int, delivered string, bufs func(l int) []program.Buf) (slot, null int64) {
 	blocks := int64((ctx + KVBlockRows - 1) / KVBlockRows)
-	delivered := m.KVDeliveredFor("metal")
 	var perBlock int64
-	for l := range m.w.arch.NumLayers {
-		for _, b := range m.LayerBuffers(l) {
+	for l := range a.NumLayers {
+		for _, b := range bufs(l) {
 			if b.Unit == program.PerPosition {
 				perBlock += KVBlockRows * MetalKVRowBytes(b, delivered)
 			}

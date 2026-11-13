@@ -1,4 +1,4 @@
-// Package site builds goinfer.dev from the repository (docs/tasks/task-site-2026-09.md, S8a). It reads the generated
+// Package site builds goinfer.dev from the repository (docs/completed/task-site-2026-09.md, S8a). It reads the generated
 // capability matrix, the curated release tiers and the site's own two small data files, and writes plain static files.
 // Nothing here talks to the network, and nothing is hand-listed that the repo can say for itself: a new family, a new
 // checkpoint or a new curated tier appears on the next build.

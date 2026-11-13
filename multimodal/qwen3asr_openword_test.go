@@ -9,7 +9,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestQwenASRPromptOpenLanguage_realTokenizer is G-S14c4d's prompt control (docs/tasks/task-multimodal-support-2026-10.md): on the real Qwen3-ASR tokenizer the opened prompt is the
+// TestQwenASRPromptOpenLanguage_realTokenizer is G-S14c4d's prompt control (docs/completed/task-multimodal-support-2026-10.md): on the real Qwen3-ASR tokenizer the opened prompt is the
 // ordinary prompt plus exactly one token, that token is the one the model generates first (the id of "language"), and encoding the text "...assistant\nlanguage" gives the same ids, so
 // the prefix is not a tokenisation different from the model's own.
 func TestQwenASRPromptOpenLanguage_realTokenizer(t *testing.T) {

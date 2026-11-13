@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestImagePrefillResident_twoImagesTinyCUDA (G-S11c, CUDA; S11 of docs/tasks/task-multimodal-support-2026-10.md):
+// TestImagePrefillResident_twoImagesTinyCUDA (G-S11c, CUDA; S11 of docs/completed/task-multimodal-support-2026-10.md):
 // gemma3-vl-tiny with two images (the two-image golden's layouts and features), the resident multi-block image prefill
 // (PrefillImageBlocksLast) against the CPU's two-image prefill at int4 per-32, the last token and 8 teacher-forced decode
 // steps. Bars as Metal's: cosine >= 0.995, relL2 <= 0.15.

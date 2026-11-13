@@ -201,7 +201,7 @@ func TestFitGuard_envOverrideLoads(t *testing.T) {
 }
 
 // The same bypass through Options.Knobs, for one model, with the environment clean — the per-model route
-// (docs/tasks/task-env-config-2026-09.md, phase 2b). The guard runs inside Load before the model's knob
+// (docs/completed/task-env-config-2026-09.md, phase 2b). The guard runs inside Load before the model's knob
 // snapshot exists, so it reads the knob through loadKnob; this pins that the override reaches it. The
 // refusing half is TestFitGuard_envOverrideLoads' own premise (same fixture, same injected RAM).
 func TestFitGuard_optionsKnobLoads(t *testing.T) {
@@ -608,7 +608,7 @@ func TestQuantBytesPerElem_everyModeIsPlausible(t *testing.T) {
 	//
 	// Pinning the pair rather than a range is the point: a wrong measurement usually lands BETWEEN them, and a range wide enough
 	// to hold both would accept it. Do not assert int4 < int8: on Apple Silicon int4 occupies MORE resident RAM than int8int8,
-	// because int8 gets no repack (docs/tasks/task-first-hour.md).
+	// because int8 gets no repack (docs/completed/task-first-hour.md).
 	for _, name := range []struct {
 		label string
 		mode  quantMode

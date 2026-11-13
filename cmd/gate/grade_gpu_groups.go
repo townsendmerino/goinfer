@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// The gpu gate's cgofree (Metal) and webgpu groups as graders (SB12 step 9, docs/tasks/task-subsystems-2026-10.md): each
+// The gpu gate's cgofree (Metal) and webgpu groups as graders (SB12 step 9, docs/completed/task-subsystems-2026-10.md): each
 // verdict is a function of what the run recorded, the build and otool's output for cgofree, the adapter probe and the cells
 // for webgpu.
 

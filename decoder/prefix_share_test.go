@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// D8's gate (docs/tasks/task-constrained-confidence.md): sharing a prompt prefix across questions must give the same answers as prefilling each prompt alone, on the
+// D8's gate (docs/tasks/parked/task-constrained-confidence.md): sharing a prompt prefix across questions must give the same answers as prefilling each prompt alone, on the
 // Qwen3.5 checkpoints (dense, MoE), f32 and int4 and with an int8 KV cache, and the checkpoint must be a COPY: resuming from it any number of times, in any order,
 // leaves it as it was. Like the batched-versus-sequential gates beside it the difference from the unshared answer is bounded, not claimed zero.
 

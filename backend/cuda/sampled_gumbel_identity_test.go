@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestSampledGumbelStreamIdentity is R7b's end-to-end gate (docs/tasks/red-october.md): with a fixed seed, the token
+// TestSampledGumbelStreamIdentity is R7b's end-to-end gate (docs/completed/red-october.md): with a fixed seed, the token
 // stream drawn on-device by Gumbel-max is IDENTICAL to the stream the host draws (GOINFER_NO_SAMPLE_FASTPATH=1): the host
 // and the device implement one algorithm over one Philox counter stream, so they may differ only where two candidates'
 // scores are within an f32 rounding (a ~1e-6 per-token event). Real checkpoints, three temperatures, 1,000 tokens each.
@@ -126,7 +126,7 @@ var (
 
 // TestSB5ResidentStreams records generateInto's decode paths on llama-tiny resident on cuda, alone and under MC3, and holds
 // them to a record taken before a change (-sb5.out writes one, -sb5.want compares): the before/after identity for moving
-// the plain decode loop onto Forward (docs/tasks/task-subsystems-2026-10.md §8 SB5). Skips without a device.
+// the plain decode loop onto Forward (docs/completed/task-subsystems-2026-10.md §8 SB5). Skips without a device.
 func TestSB5ResidentStreams(t *testing.T) {
 	got := map[string]decoder.ResidentStreamCase{}
 	for _, mc3 := range []bool{false, true} {

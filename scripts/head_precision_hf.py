@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Option D of the --embed-int4 decision (docs/tasks/task-multimodal-support-2026-10.md, "option D", registered before this code): the Hugging Face float32 side.
+"""Option D of the --embed-int4 decision (docs/completed/task-multimodal-support-2026-10.md, "option D", registered before this code): the Hugging Face float32 side.
 For each model: 32 fixed chat prompts through the checkpoint's own chat template, a greedy 32-token continuation (EOS suppressed so every prompt has 32 positions), and the float32
 logits at those 32 positions, written for the Go test (decoder TestHeadPrecision_real) to teacher-force. A model that fails is recorded in its meta.json and the rest still run.
 Usage: ~/g4venv/bin/python -I scripts/head_precision_hf.py <out root> [model name ...]   (models under ~/models)"""

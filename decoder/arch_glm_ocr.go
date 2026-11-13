@@ -9,7 +9,7 @@ import (
 // "glm_ocr_text", reached as "glm_ocr" through the VL wrapper's flattened text_config — loadConfig
 // merges text_config into the Config and lets the top-level keys win). Built from existing parts
 // and read against the generated modeling_glm_ocr.py and the checkpoint's own tensor shapes
-// (docs/tasks/task-glm-ocr-2026-10.md, O0):
+// (docs/completed/task-glm-ocr-2026-10.md, O0):
 //
 //   - GQA, no bias on q/k/v/o, and a head_dim the config states EXPLICITLY (128 with hidden 1536 and
 //     16 heads: hidden/heads would be 96 — the adapter reads head_dim, never derives it past a

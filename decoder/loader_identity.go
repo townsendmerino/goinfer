@@ -15,7 +15,7 @@ import (
 )
 
 // tensorIdentity is one tensor of a loaded *Weights as the model receives it: SB4's loader identity
-// (docs/tasks/task-subsystems-2026-10.md §8 SB4). Path names the field ("Layers[3].QProj", "Layers[0].Experts[2].Up");
+// (docs/completed/task-subsystems-2026-10.md §8 SB4). Path names the field ("Layers[3].QProj", "Layers[0].Experts[2].Up");
 // Layout is the WeightMat's Kind, the element type of a plain slice, "scalar", or "len" for the length of a slice whose
 // elements are walked one by one; Shape is "rows x cols" or the length; Hash covers every byte and field of the tensor,
 // so two tensors with equal identities hand the model the same values in the same layout.

@@ -239,7 +239,7 @@ var relModules = []string{".", "backend/webgpu", "backend/cuda", "backend/metal"
 
 // rePseudo matches the three pseudo-version forms Go writes (vX.0.0-yyyymmddhhmmss-hash, vX.Y.Z-pre.0.yyyymmddhhmmss-hash,
 // vX.Y.Z-0.yyyymmddhhmmss-hash), with or without build metadata such as +incompatible. goinfer's main may require one
-// between weekly aikit tags; a release may not (the owner's decision, docs/tasks/task-subsystems-2026-10.md §14).
+// between weekly aikit tags; a release may not (the owner's decision, docs/completed/task-subsystems-2026-10.md §14).
 var rePseudo = regexp.MustCompile(`[-.][0-9]{14}-[0-9a-f]{12}(?:\+[0-9A-Za-z.-]+)?$`)
 
 // modRequire is the version a go.mod requires for module, or "".

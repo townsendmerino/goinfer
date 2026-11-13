@@ -36,7 +36,7 @@ func TestActivationQuantHazard_declinesGPUResidency(t *testing.T) {
 }
 
 // TestActivationQuantHazard_metalQ4KLane: the one Metal configuration that clears the hazard is the q4k lane, which
-// quantizes no activation at all (docs/tasks/task-metal-q4k-2026-10.md). residentGateReasonAct admits Phi-3 on Metal
+// quantizes no activation at all (docs/completed/task-metal-q4k-2026-10.md). residentGateReasonAct admits Phi-3 on Metal
 // with actSafe; WebGPU stays declined either way (no such lane), and the default (actSafe false) still declines Metal.
 func TestActivationQuantHazard_metalQ4KLane(t *testing.T) {
 	m, err := Load("../testdata/phi3-tiny", Options{})

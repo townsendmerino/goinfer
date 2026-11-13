@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// kso1aOld rebuilds the pre-KS-O1a library source from src (docs/tasks/task-kernel-survey-2026-10.md, "KS-O1a"): the
+// kso1aOld rebuilds the pre-KS-O1a library source from src (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-O1a"): the
 // q4k_scale_min2 definition removed and each call to it put back as the two per-byte q4k_scale_min calls, so every other
 // line of the library stands where it did.
 func kso1aOld(t testing.TB, src string) string {

@@ -18,7 +18,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// The grid towers' gates (docs/tasks/task-multimodal-support-2026-10.md, S12.3e): the WebGPU tower plus aikit's tail
+// The grid towers' gates (docs/completed/task-multimodal-support-2026-10.md, S12.3e): the WebGPU tower plus aikit's tail
 // against aikit's CPU Forward. Tiny norms are randomised first through the export's aliasing slices: the tiny
 // checkpoints' norms are all ones, which would hide a dropped or swapped norm.
 

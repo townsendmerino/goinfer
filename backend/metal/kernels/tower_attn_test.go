@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// TestTowerAttnKernel is S17 lever A's kernel gate on Metal (docs/tasks/task-multimodal-support-2026-10.md): tower_attn_hd
+// TestTowerAttnKernel is S17 lever A's kernel gate on Metal (docs/completed/task-multimodal-support-2026-10.md): tower_attn_hd
 // {64,72,80} against a float64 softmax(q·kᵀ)·v on the host, for segment lengths that cover one row, a partial query block,
 // a partial key block, several of each, and a tower-sized segment. Bar, set before the first run: every output element
 // within 1e-5 of the segment's max |v| (an output is a convex combination of v rows, so max |v| bounds it; f32 accumulation
@@ -115,7 +115,7 @@ func TestTowerAttnKernel(t *testing.T) {
 	}
 }
 
-// TestTowerGemmKernel is S17 lever B's kernel gate on Metal (docs/tasks/task-multimodal-support-2026-10.md, "S17's
+// TestTowerGemmKernel is S17 lever B's kernel gate on Metal (docs/completed/task-multimodal-support-2026-10.md, "S17's
 // Metal lever B", registered before the code): tower_gemm_w32 and tower_gemm_w16 against a float64 A·Wᵀ + bias from the
 // f32 inputs, at the towers' projection shapes (rows trimmed so the host reference stays fast) and at edge shapes (M, N
 // and K off every tile multiple). Bars: every output within 1e-5 (w32: f32 accumulation order only) or 1e-3 (w16: the

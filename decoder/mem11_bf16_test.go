@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// TestMEM11_lfm2ResidentBytes is B16-G0 (docs/tasks/task-memory-campaign-2026-10.md, MEM11-bf16 gates): LFM2.5-2.6B from
+// TestMEM11_lfm2ResidentBytes is B16-G0 (docs/completed/task-memory-campaign-2026-10.md, MEM11-bf16 gates): LFM2.5-2.6B from
 // ~/models at int4 on the CPU, its ResidentWeightBytes and the short-conv projections' share. Not timed; a real checkpoint.
 //
 //	GOINFER_MEM11_LFM2=1 go test -count=1 -run '^TestMEM11_lfm2ResidentBytes$' -v ./decoder/
@@ -76,7 +76,7 @@ func mem11SameBits(a, b [][]float32) (diff int) {
 	return diff
 }
 
-// TestMEM11_lfm2BF16Islands is B16-G1 and B16-G2 for LFM2 (docs/tasks/task-memory-campaign-2026-10.md, MEM11-bf16 gates): the
+// TestMEM11_lfm2BF16Islands is B16-G1 and B16-G2 for LFM2 (docs/completed/task-memory-campaign-2026-10.md, MEM11-bf16 gates): the
 // tiny fixture's short-conv projections rounded to bf16 and held as f32 ("off") against the same values through islandMat
 // ("on", the bf16 kind): logits over 16 tokens bit-identical, each projection's bytes halved in ResidentWeightBytes, and a .giw
 // serialization round trip of the "on" weights that reads them as bf16 again and decodes the same logits.

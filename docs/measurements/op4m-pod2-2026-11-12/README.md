@@ -54,3 +54,33 @@ Harness `backend/metal/mc3_step_test.go:TestOP4mPod_decodeSpeed`, one process pe
 - `TestMemGate_metal` with flint-tiny: PASS (10.6 s). `TestKVPages_everyResidentFixture` (G1a): PASS (42.6 s); flint-tiny runs
   (210 logit rows, 3 slots, prefill kernels none, 6 refused). The NOT RUN fixtures there are
   model types this build does not load.
+
+## Part 2, the multi-sequence step's walk (2026-11-12, mac-metal, ef05fcb6e): P-1, P-2 and P-3 PASS
+
+Registration: "OP4m-pod2 part 2: registration" in `docs/tasks/task-forward-and-memory-2026-11.md`.
+
+- **Red first.** Against main's step, which calls the blocks, `TestMultiSeqWalk_plantsGoRed` was red on 3 of 3 DeltaNet fixtures
+  (the plant never reached the step); `TestMultiSeqWalk_issuesTheBlocksDispatches` was green there, as it compares two arms of
+  the same code.
+- **P-1 and P-2:** `TestMultiSeqWalk_issuesTheBlocksDispatches` passes on 7 fixtures (dense, qwen35-tiny, qwen3next-tiny,
+  qwen3_5-tiny, nemotron-tiny, three Gemma 4) at 2 and 4 rows: identical pipelines and bit-identical logits, walk against blocks.
+  The extra-residual plant is red on all 3 DeltaNet fixtures. `TestMC3Step_*` (identity, recurrent, MoE, Gemma 4, plants) pass
+  unchanged. `gate identity origin/main ef05fcb6e -backend metal`: 30 IDENTICAL, 0 DIFFERENT, 14 not run.
+- **P-3: PASS on all three cells.** Harness `TestOP4mPod2_stepSpeed` and `TestOP4mPod2_gemma4StepSpeed`, 4 slots, depth 128, 64
+  tokens per sequence, 6 pairs A B B A, tokens equal in every pair, exclusive lock, bar a median walk ÷ blocks of at least 0.99.
+
+| cell | median step walk ÷ blocks | pairs under 1 | verdict | log |
+|---|---:|---:|---|---|
+| Qwen3.5 0.8B (DeltaNet) | 1.0091 | 2 of 6 | PASS | `p3-seq-run1.log` (19:29 to 19:37 PST) |
+| Nemotron-H 4B (Mamba-2) | 1.0007 | 3 of 6 | PASS | `p3-seq-run3.log` (22:20 to 22:28 PST) |
+| Gemma 4 E2B | 1.0022 | 2 of 6 | PASS | `p3-seq-run3.log` |
+
+  - **Void cells, listed.** In run 1 the Nemotron-H and Gemma 4 E2B cells voided on paging (the process took 3 and 1 page-ins, with
+    available memory at 6.39 GiB against a need of 5.44 on Nemotron-H, another session loading the Mac). A re-run
+    (`p3-seq-run2.log`, from 19:37:34 PST) voided Nemotron's attempt 1 the same way (185 faults, swap 1400.7 to 1605.2 MiB) and was
+    stopped in its second attempt on the coordinator's word. Nothing was averaged in. Run 3 read both cells once each, with no
+    void: start loads 2.23 and 1.57, swap and major faults flat across every pair.
+  - **Power source.** Run 3 ran on battery (`pmset`: Battery Power, 100% at the start, 95% at the end), on Francis's word relayed by
+    the coordinator at 22:25; both arms of every pair ran under that one condition, and nothing in the runner, the void rule or the
+    harness refuses battery, so no refusal was lifted and no threshold changed. Run 1's power source was not recorded.
+  - Gemma 4 E2B's pairs 5 and 6 (1.0695, 1.1897) are the blocks arm running slow, not the walk fast; the median ignores them.

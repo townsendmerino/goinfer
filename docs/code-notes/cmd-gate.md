@@ -943,7 +943,7 @@ REQUIRED GATES GREEN, exit 0 (audit-2026-09-02 G-05).
 Moved from `cmd/gate/quick_select.go` (the comment above `quickModule`) on 2026-10-09.
 
 ```text
-`gate quick`'s SELECTION (TE7(a), docs/tasks/task-test-efficiency-2026-09.md): changed files ->
+`gate quick`'s SELECTION (TE7(a), docs/completed/task-test-efficiency-2026-09.md): changed files ->
 their packages -> every test binary, in any of the five modules, that can observe them.
 
 THREE TIERS, because "imports the change" is not the only way a test here observes one:
@@ -1271,7 +1271,7 @@ Moved from `cmd/gate/identity.go` (the comment above `identityDumperTmpl`) on 20
 
 ```text
 `gate identity <old-rev> <new-rev>` — inherit validation by identity (TE6(b),
-docs/tasks/task-test-efficiency-2026-09.md).
+docs/completed/task-test-efficiency-2026-09.md).
 
 For a change meant to be numerically neutral, the cheapest complete proof is byte-identical logits
 against the last validated build on the family's parity prompt. This formalizes what L1 did by hand
@@ -1504,7 +1504,7 @@ that "0 passed" could be told apart from "0 attempted", which are different bugs
 Moved from `cmd/gate/identity_record.go` (comments that named retired scripts, dates or audit ids; the new comments state the same contracts) on 2026-10-09.
 
 ```text
-`gate identity -record FILE` (TE6(b), docs/tasks/task-test-efficiency-2026-09.md; owner decision 2026-09-28: a
+`gate identity -record FILE` (TE6(b), docs/completed/task-test-efficiency-2026-09.md; owner decision 2026-09-28: a
 family's validation may be inherited by identity). It writes PARITY_ROW lines for the decoder package's
 TestParityManifest_merge, the manifest's one writer, and never writes the manifest itself.
 ```

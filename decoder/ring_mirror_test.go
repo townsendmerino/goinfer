@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// Audit R-12 (docs/tasks/task-recompute-audit.md §5). K=1 decode on an f32 sliding-window ring used to copy every resident row into scratch each token. It now
+// Audit R-12 (docs/completed/task-recompute-audit.md §5). K=1 decode on an f32 sliding-window ring used to copy every resident row into scratch each token. It now
 // writes the new row first and reads the window in place, from a ring that keeps a MIRROR of its slots ([w, 2w) equal [0, w)) so any window is one contiguous
 // slice. Two gates: (1) the ring invariant under every kind of mutation, model-free; (2) the whole decode, bit for bit against the copy path, on real tiny
 // sliding-window checkpoints across several wraps.
@@ -191,8 +191,9 @@ func TestRingMirror_decodeBitIdenticalToTheCopyPath(t *testing.T) {
 	}
 }
 
-// TestKvBytesForCtx_countsTheRingMirror pins the fit guard to what the ring really holds: a local f32 layer past its window is 2*W positions (the window and its
-// mirror), a layer short of its window or an int8 ring is W (or ctx) positions, and a global layer is ctx.
+// TestKvBytesForCtx_countsTheRingMirror pins the fit guard to what the ring really holds: a local layer holds its window's W rows from
+// its first write, an f32 one twice that once past its window (the window and its mirror), an int8 ring W rows of one byte an element
+// and one f32 scale a KV head; a global layer holds ctx rows.
 func TestKvBytesForCtx_countsTheRingMirror(t *testing.T) {
 	const nLayers, nH, nKV, hd, W = 2, 4, 2, 8, 16
 	arch := ringTestArch(nH, nKV, hd, W, func(l int) bool { return l == 1 }) // layer 0 local, layer 1 global
@@ -201,22 +202,25 @@ func TestKvBytesForCtx_countsTheRingMirror(t *testing.T) {
 	if dim != nKV*hd {
 		t.Fatalf("kvDimAt = %d, want %d: the test arch does not price layers the way the model does", dim, nKV*hd)
 	}
-	perPos := func(positions int, perElem float64) float64 { return 2 * perElem * float64(dim) * float64(positions) }
+	if !arch.ringLayerAt(0) || arch.ringLayerAt(1) {
+		t.Fatal("VOID: the test arch's local layer is not a ring, or its global layer is")
+	}
+	f32Row, i8Row := 4*dim, dim+4*nKV // one position's K (or V) row
 	cases := []struct {
 		name        string
 		ctx         int
 		kvI8        bool
-		local, glob int // positions priced for the local and the global layer
-		perElem     float64
+		local, glob int // rows held by the local and the global layer
+		row         int
 	}{
-		{"short of the window", W - 3, false, W - 3, W - 3, 4},
-		{"past the window, f32: window plus mirror", 3 * W, false, 2 * W, 3 * W, 4},
-		{"past the window, int8: no mirror", 3 * W, true, W, 3 * W, 1.125},
+		{"short of the window: the ring's W rows", W - 3, false, W, W - 3, f32Row},
+		{"past the window, f32: window plus mirror", 3 * W, false, 2 * W, 3 * W, f32Row},
+		{"past the window, int8: no mirror, a scale a head", 3 * W, true, W, 3 * W, i8Row},
 	}
 	for _, c := range cases {
-		want := int64(perPos(c.local, c.perElem) + perPos(c.glob, c.perElem))
+		want := int64(2 * c.row * (c.local + c.glob)) // K and V
 		if got := kvBytesForCtx(arch, c.ctx, false, c.kvI8); got != want {
-			t.Errorf("%s: kvBytesForCtx = %d, want %d (local %d positions + global %d)", c.name, got, want, c.local, c.glob)
+			t.Errorf("%s: kvBytesForCtx = %d, want %d (local %d rows + global %d)", c.name, got, want, c.local, c.glob)
 		}
 	}
 }

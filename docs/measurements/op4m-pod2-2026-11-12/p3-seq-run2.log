@@ -1,0 +1,10 @@
+hold start 2026-11-12 19:37:34 PST commit ef05fcb6e
+-- attempt 1: nemotron-h-4b-instruct-128k.int4.metal.v17.giw
+== nemotron-h-4b-instruct-128k.int4.metal.v17.giw 19:37:37 load1=2.70
+[OP4m-pod2 P-3] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: cell start: 1-minute load 2.70; available 9.43 GiB against need 5.44 GiB (ok); reclaimable 5.36 GiB (recorded); pair bar 12.0
+[OP4m-pod2 P-3] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: the step's scratch 11.4 MiB
+[OP4m-pod2 P-3] pair 0 (load 4.79): step 26.4 tok/s, sequential 24.9 tok/s, step/sequential 1.0603; tokens equal; process major faults 224679 -> 224864; swap 1400.7 -> 1605.2 MiB; system pageouts 400041 -> 400875 (context)
+    mc3_step_test.go:711: cell void: pair 0 paged (process major faults 224679 -> 224864, swap 1400.7 -> 1605.2 MiB); re-run the cell
+--- FAIL: TestOP4mPod2_stepSpeed (158.48s)
+FAIL
+-- attempt 2: nemotron-h-4b-instruct-128k.int4.metal.v17.giw

@@ -15,7 +15,7 @@ type vendorOptions struct {
 
 func (v *vendorOptions) wantsCost() bool { return v != nil && v.Cost }
 
-// turnClock is one turn's stage boundaries, the only places X1's timings are read (docs/tasks/task-subsystems-2026-10.md §8,
+// turnClock is one turn's stage boundaries, the only places X1's timings are read (docs/completed/task-subsystems-2026-10.md §8,
 // "SB11b"): the queue entered, the turn admitted, and, for each generation the turn drives, its start, its first token
 // received and its end. It also holds the turn's cost counter when the request asked for one, nil otherwise. It is touched
 // only from the handler goroutine that drives the turn. A nil *turnClock (a genRequest not built by prepare) reports nothing.

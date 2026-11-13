@@ -117,7 +117,7 @@ func kse3Sequence(t *testing.T, m *decoder.Model, rd *residentDecoder, off, plan
 	return out
 }
 
-// TestKSE3_encodeAheadIdentity is E3-G1 (docs/tasks/task-kernel-survey-2026-10.md, "KS-E3 gates"): llama-tiny (and, with
+// TestKSE3_encodeAheadIdentity is E3-G1 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-E3 gates"): llama-tiny (and, with
 // GOINFER_HEAVY_TESTS=1, the 1.5B's .gguf) at int8int8 on WebGPU with two KV slots, kse3Sequence with encode-ahead off on one
 // fresh resident and on on another; every logit byte-equal. GOINFER_KSE3_PLANT=1 swaps in a pending buffer without the logits copy and
 // expects red.
@@ -322,7 +322,7 @@ func TestKSE3_pendingDroppedWhereRecorded(t *testing.T) {
 	}
 }
 
-// TestKSE3_decodeSpeed is E3-G2 (docs/tasks/task-kernel-survey-2026-10.md, "KS-E3 gates" and its amendments): the 1.5B's .gguf
+// TestKSE3_decodeSpeed is E3-G2 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-E3 gates" and its amendments): the 1.5B's .gguf
 // at int8int8 on WebGPU, encode-ahead on against off on one resident, 128 greedy decode tokens after a 32-token prompt, A B B A
 // over 10 valid pairs after 2 warm runs each. It refuses to run outside the timing lock or under 6 GB reclaimable before the
 // load; voidWindow and otherGPUWindow bracket each arm's timed decode (not its prompt), and a pair with an arm over either line

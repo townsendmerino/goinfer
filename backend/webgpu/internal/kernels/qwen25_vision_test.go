@@ -52,7 +52,7 @@ func q25Tiny(t *testing.T) *vision.QwenVisionEncoder {
 	return enc
 }
 
-// TestQwen25VisionWebGPU_matchesCPU is G-S12.3f-1 (docs/tasks/task-multimodal-support-2026-10.md, S12.3f): the tiny
+// TestQwen25VisionWebGPU_matchesCPU is G-S12.3f-1 (docs/completed/task-multimodal-support-2026-10.md, S12.3f): the tiny
 // Qwen2.5-VL tower on WebGPU then aikit's merger against the CPU Forward, every merged token at cosine >= 0.9999, on
 // two grids and a two-image batch; once with the windowed attention kernels and once with every block on the matmul
 // path. Each planted defect, alone, must put the comparison under the bar.

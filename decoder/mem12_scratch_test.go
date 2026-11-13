@@ -22,7 +22,7 @@ func mem12Alloc(fn func()) uint64 {
 	return b.TotalAlloc - a.TotalAlloc
 }
 
-// TestMEM12Scratch_moeChunks is SCR-G1 (docs/tasks/task-memory-campaign-2026-10.md, MEM12-scratch gates, as amended): on
+// TestMEM12Scratch_moeChunks is SCR-G1 (docs/completed/task-memory-campaign-2026-10.md, MEM12-scratch gates, as amended): on
 // mixtral-tiny with the expert-major path on, a 64-token prefill in 16-row chunks allocates each of the path's eight scratch
 // buffers exactly once (moeScratchGrows). It also logs the bytes allocated after the first chunk, which the gate compares
 // with origin/main's as context.

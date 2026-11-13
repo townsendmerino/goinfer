@@ -36,7 +36,7 @@ func eModelPrompt(t *testing.T) []int {
 	return append(append([]int(nil), g.PromptIDs...), g.ContinuationIDs...)
 }
 
-// eModelG1 is the measurement G1 grades (docs/tasks/task-multimodal-support-2026-10.md): Metal resident against the
+// eModelG1 is the measurement G1 grades (docs/completed/task-multimodal-support-2026-10.md): Metal resident against the
 // CPU, int4 on both sides, teacher-forced over eModelPrompt, plus the CPU's own int4-vs-f32 agreement for the
 // envelope.
 type eModelG1 struct {
@@ -164,7 +164,7 @@ func g4OneFFNWidth(on bool) {
 	}
 }
 
-// TestGemma4EModel_plantedDefects is S1's G2 (docs/tasks/task-multimodal-support-2026-10.md): each planted defect,
+// TestGemma4EModel_plantedDefects is S1's G2 (docs/completed/task-multimodal-support-2026-10.md): each planted defect,
 // alone, must turn G1 red. A defect that stays green means the fixture is degenerate along that axis.
 func TestGemma4EModel_plantedDefects(t *testing.T) {
 	defects := []struct {
@@ -193,7 +193,7 @@ func TestGemma4EModel_plantedDefects(t *testing.T) {
 }
 
 // TestGemma4EModel_sharedStoreIsNoOp records why G2's defect (5) cannot go red on any fixture (amendment,
-// docs/tasks/task-multimodal-support-2026-10.md). A shared layer's Q-only GEMV writes only the Q region of the qkv
+// docs/completed/task-multimodal-support-2026-10.md). A shared layer's Q-only GEMV writes only the Q region of the qkv
 // scratch, so its K/V slots still hold what its source layer — the last owning layer of the same attention type —
 // stored earlier in the same token: the other type's writes end below that slot (fixture: sliding writes floats
 // 0..191, the global K slot starts at 256; E2B: 0..2559 against 4096). An unskipped store therefore re-writes the
@@ -215,7 +215,7 @@ func TestGemma4EModel_sharedStoreIsNoOp(t *testing.T) {
 }
 
 // gemma4StepFixtures are the tracked Gemma 4 dense checkpoints the step's per-row Gemma 4 layers are checked on (OP4m-d5a,
-// docs/tasks/task-forward-architecture-2026-10.md §4.9): an E-model (PLE, layers sharing another's KV), and two plain dense
+// docs/completed/task-forward-architecture-2026-10.md §4.9): an E-model (PLE, layers sharing another's KV), and two plain dense
 // ones, one with two attention geometries.
 var gemma4StepFixtures = []string{"../../testdata/gemma4-emodel-tiny", "../../testdata/gemma4-dense-twogeom-tiny", "../../testdata/gemma4-dense-scaled"}
 
@@ -501,4 +501,14 @@ func TestOP4mD5b_gemma4FFNSplitSpeed(t *testing.T) {
 		want: func(r *resident) bool { return r.gemma4Blocks() }, wantWhat: "a Gemma 4 resident",
 		rows:     func(m *decoder.Model) func(int) []float32 { return m.EmbedResidentForTest },
 		stepArms: func(on bool) { gemma4FFNSplitOffForTest = !on }})
+}
+
+// TestOP4mPod2_gemma4StepSpeed is TestOP4mPod2_stepSpeed on the Gemma 4 checkpoint at GOINFER_OP4MPOD2G_MODEL
+// (GOINFER_OP4MPOD2G_TIMING=1), whose layers the step runs whole per row, on full rows.
+func TestOP4mPod2_gemma4StepSpeed(t *testing.T) {
+	t.Cleanup(func() { mixerWalkBlocksForTest = false })
+	op4mStepSpeed(t, stepSpeedCell{env: "GOINFER_OP4MPOD2G", label: "[OP4m-pod2 P-3]", gemma4: true, parity: true,
+		want: func(r *resident) bool { return r.gemma4Blocks() }, wantWhat: "a Gemma 4 resident",
+		rows:     func(m *decoder.Model) func(int) []float32 { return m.EmbedResidentForTest },
+		stepArms: func(on bool) { mixerWalkBlocksForTest = !on }})
 }

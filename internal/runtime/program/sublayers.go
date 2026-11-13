@@ -6,7 +6,7 @@ import (
 )
 
 // Sublayer is one sublayer kind of a layer's operations, as a resident's walker runs it (OP4m-b2 and OP4cu-b2,
-// docs/tasks/task-forward-architecture-2026-10.md §4.9 and §4.9a). A layer's sublayers run in its program's order; each backend
+// docs/completed/task-forward-architecture-2026-10.md §4.9 and §4.9a). A layer's sublayers run in its program's order; each backend
 // maps them to its own blocks.
 type Sublayer uint8
 

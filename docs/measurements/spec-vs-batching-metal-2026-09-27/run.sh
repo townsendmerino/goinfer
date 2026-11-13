@@ -1,5 +1,5 @@
 #!/bin/bash
-# MC4's spec trigger on Metal (docs/tasks/task-concurrency-2026-09.md, MC4, pre-registered in b11bcfc3):
+# MC4's spec trigger on Metal (docs/tasks/parked/task-concurrency-2026-09.md, MC4, pre-registered in b11bcfc3):
 # serve-metal @ cc5f8c2c, arms batch (defaults: MC3) vs spec (-spec ngram, one generation at a time); greedy.
 set -u
 cd /Users/francistownsend-merino/tmcode/goinfer || exit 1

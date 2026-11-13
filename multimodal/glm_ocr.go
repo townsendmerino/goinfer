@@ -7,7 +7,7 @@ import (
 
 // GLM-OCR (zai-org/GLM-OCR, model_type glm_ocr) image plumbing: the prompt block, the task prompts and the preprocessing config. The
 // pixel path itself is QwenPreprocess unchanged (GLM-OCR's Glm46VImageProcessor is the same smart-resize + CLIP-normalize +
-// merge-block patchify the Qwen towers take; docs/tasks/task-glm-ocr-2026-10.md), so only the config differs.
+// merge-block patchify the Qwen towers take; docs/completed/task-glm-ocr-2026-10.md), so only the config differs.
 
 // GLM-OCR image-block sentinels. The checkpoint's chat template renders an image as
 // "<|begin_of_image|><|image|><|end_of_image|>" and the processor expands the single <|image|> to n of them
@@ -38,7 +38,7 @@ const GlmOcrDefaultPrompt = GlmOcrPromptText
 
 // GlmOcrExtractionInstruction opens the model's information-extraction prompt (the model card's own, verbatim: "output the information
 // in the image in the following JSON format"). It is followed by a newline and a JSON TEMPLATE, an object whose values are empty
-// strings, NOT a JSON Schema (docs/tasks/task-glm-ocr-2026-10.md); build the template with constrain.TemplateFromSchema /
+// strings, NOT a JSON Schema (docs/completed/task-glm-ocr-2026-10.md); build the template with constrain.TemplateFromSchema /
 // TemplateFromStruct so the prompt and the grammar come from one source.
 const GlmOcrExtractionInstruction = "请按下列JSON格式输出图中信息:"
 

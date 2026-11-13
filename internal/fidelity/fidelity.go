@@ -1,6 +1,6 @@
 // Package fidelity grades a candidate path against an exact path, both scored position by position against a reference
 // (the prefill and decode fidelity gates' protocol), under the criteria TE12 of
-// docs/tasks/task-test-efficiency-2026-09.md pre-registers for the next gate that uses the protocol.
+// docs/completed/task-test-efficiency-2026-09.md pre-registers for the next gate that uses the protocol.
 //
 // What changed from the per-file criteria the gates carry today, and why:
 //

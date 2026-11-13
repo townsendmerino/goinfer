@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// G-S9a and G-S9b of docs/tasks/task-multimodal-support-2026-10.md (S9, registered and amended before this ran), on
+// G-S9a and G-S9b of docs/completed/task-multimodal-support-2026-10.md (S9, registered and amended before this ran), on
 // the tiny E-model: the layer-major prefill (prefill_emodel.go, through PrefillLast) against the sequential resident loop
 // (Forward, one row at a time) on the same resident and rows. G-S9a: the last row's logits and the next 8 decode steps'
 // logits from the prefilled cache are bit-identical, for a text-only prompt and one carrying a run of image rows (built

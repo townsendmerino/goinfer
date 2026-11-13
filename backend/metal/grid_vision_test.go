@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// G-S2b and G-S2c of docs/tasks/task-multimodal-support-2026-10.md (S2), on the committed tiny towers: the Metal tower plus
+// G-S2b and G-S2c of docs/completed/task-multimodal-support-2026-10.md (S2), on the committed tiny towers: the Metal tower plus
 // aikit's FinishHidden against aikit's CPU Forward, every merged token at cosine >= 0.9999, at three grid sizes and a
 // two-image batch (two attention segments); and each planted defect, alone, below the bar. The norms are randomised
 // first through the export's aliasing slices: the tiny checkpoints' norms are all ones, which would hide a dropped or

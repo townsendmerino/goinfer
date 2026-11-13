@@ -10,7 +10,7 @@ import (
 
 // streamedTable is an embedding-shaped table (the token embedding, the LM head, Gemma 4's per-layer token table) that a
 // streaming transcode writes from its source rows instead of building it in the heap (MEM8(b′),
-// docs/tasks/task-memory-campaign-2026-10.md). The build registers it with the writer under the Weights field it stands for
+// docs/completed/task-memory-campaign-2026-10.md). The build registers it with the writer under the Weights field it stands for
 // (giwWriter.tables), and writeHeadGlobals writes it in two passes: every row's scales first (the format puts them before the
 // codes), then the rows quantized again and written a block at a time. Each row is quantized on its own and deterministically,
 // so the bytes are the ones a whole-table write of streamQuantizedEmbed's result produces.

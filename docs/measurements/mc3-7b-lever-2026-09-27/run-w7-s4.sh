@@ -1,5 +1,5 @@
 #!/bin/bash
-# MC3 S4 W7 grading (docs/tasks/task-concurrency-2026-09.md, registered in 915bf6fc): Metal, serve defaults, greedy,
+# MC3 S4 W7 grading (docs/tasks/parked/task-concurrency-2026-09.md, registered in 915bf6fc): Metal, serve defaults, greedy,
 # --fixed-nonce. old = serve-metal @ 915bf6fc (pre-S4), new = @ 7fa344b2 (S4).
 set -u
 cd /Users/francistownsend-merino/tmcode/goinfer || exit 1

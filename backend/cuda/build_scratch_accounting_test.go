@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// The build-scratch / margin accounting gates, registered in docs/tasks/task-multimodal-support-2026-10.md ("Build-scratch / margin accounting on CUDA", 2026-10-08)
+// The build-scratch / margin accounting gates, registered in docs/completed/task-multimodal-support-2026-10.md ("Build-scratch / margin accounting on CUDA", 2026-10-08)
 // before the code. The finding: the 384 MiB margin is not what falls short. The driver rounds every buffer of 2 MiB or more up to a 2 MiB multiple, Plan prices the
 // requested bytes, and the plan therefore asks checkKVFits for a context that has already spent the rounding. The build prices it (packedAllocSlack) into the plan.
 

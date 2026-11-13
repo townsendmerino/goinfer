@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// H2 on Metal (docs/tasks/task-hardware-coverage-2026-10.md): the resident self-test on a real Apple GPU. A green probe
+// H2 on Metal (docs/completed/task-hardware-coverage-2026-10.md): the resident self-test on a real Apple GPU. A green probe
 // on healthy code, and the same probe going RED when the resident's inputs are wrong, which is what makes the green mean
 // something. A fixture that does not go resident at a quant is not compared, and the probe's note names it.
 

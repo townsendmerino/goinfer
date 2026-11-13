@@ -50,7 +50,7 @@ func cos64(a []float32, b []float64) float64 {
 	return dot / math.Sqrt(na*nb)
 }
 
-// TestReal_vision is Phase V's gates (docs/tasks/task-embeddinggemma2.md, pre-registered), on the real
+// TestReal_vision is Phase V's gates (docs/completed/task-embeddinggemma2.md, pre-registered), on the real
 // google/embeddinggemma-2 (GOINFER_EG2_DIR, default ~/models/embeddinggemma-2) against sentence-transformers'
 // references (testdata/embeddinggemma2-vision/golden.json, committed; and GOINFER_EG2_VISION_ARTIFACTS, default
 // ~/goinfer-logs/embeddinggemma2-vision, HF's own patches, positions and image features per image):

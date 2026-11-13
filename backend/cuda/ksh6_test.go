@@ -71,7 +71,7 @@ type ksh6Model struct {
 	moeCache   bool
 }
 
-// TestKSH6_marginPartsQwen3 and TestKSH6_marginParts26B are H6-R (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 reading"), a
+// TestKSH6_marginPartsQwen3 and TestKSH6_marginParts26B are H6-R (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-H6 reading"), a
 // reading, not a gate, one model each (the heavy tier holds one large checkpoint a process): the model loaded as serve loads it
 // (--kv auto, f16 where cleared), the free VRAM after the load, then a long prompt's prefill and 64 decode tokens with the card
 // sampled every 20 ms. Each prints the parts the margins must cover; it asserts only that its run completed.
@@ -157,7 +157,7 @@ func ksh6MarginParts(t *testing.T, c ksh6Model) (minFreeMiB float64) {
 	return float64(free)/(1<<20) - (maxUsed - usedLoad)
 }
 
-// TestKSH6C_headroomQwen3 is H6C-G4 (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build: gates"): H6-R's run on Qwen3-8B,
+// TestKSH6C_headroomQwen3 is H6C-G4 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-H6 build: gates"): H6-R's run on Qwen3-8B,
 // unpinned at the context the computed margin gives it, a prompt of that context less 512 and 64 decode tokens. The run's minimum
 // free VRAM must be at least the allocation floor plus the decode allowance less 4 MiB.
 func TestKSH6C_headroomQwen3(t *testing.T) {

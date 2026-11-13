@@ -17,7 +17,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// MC1 on WebGPU (docs/tasks/task-concurrency-2026-09.md): several resident KV caches ("slots"), one bound at a time.
+// MC1 on WebGPU (docs/tasks/parked/task-concurrency-2026-09.md): several resident KV caches ("slots"), one bound at a time.
 //
 // A slot here is a whole DecodeRunner, not a pointer swap as on CUDA and Metal: newDecodeRunner bakes every KV buffer
 // into bind groups it builds once (ropeStore, vStore, qkvFinalize, the attention binds, the MLA latent store and
@@ -72,7 +72,7 @@ func kvSlotsWithin(want int, budget, base, perSlot int64) int {
 //   - the memory available when the build STARTED (avail0, read before its first upload, 0 when unknown), against only what
 //     the build then allocated: the device weights and the slots. The host copy was already resident when avail0 was read, so
 //     it is not counted again, and a live figure read after the upload would count the weights twice
-//     (docs/tasks/task-concurrency-2026-09.md, "priced after the build").
+//     (docs/tasks/parked/task-concurrency-2026-09.md, "priced after the build").
 //
 // An unreadable RAM size grants one, as metalKVSlots does.
 func darwinKVSlots(want int, ram, avail0, weights, hostCopy, perSlot int64) int {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pin the GLM-OCR END-TO-END reference (gate O3 of docs/tasks/task-glm-ocr-2026-10.md): the real
+"""Pin the GLM-OCR END-TO-END reference (gate O3 of docs/completed/task-glm-ocr-2026-10.md): the real
 checkpoint, transformers f32 on CPU, greedy, the checkpoint's OWN processor and chat template, on the
 three procedurally rendered documents of scripts/gen_glm_ocr_doc_images.py (NOT real scans).
 

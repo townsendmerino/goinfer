@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// S8 (docs/tasks/task-multimodal-support-2026-10.md, "S8, plan and gates"): every family docs/multimodal.md's support
+// S8 (docs/completed/task-multimodal-support-2026-10.md, "S8, plan and gates"): every family docs/multimodal.md's support
 // table lists has a serve loader. loadVisionTower dispatches on the checkpoint's model_type (`mt == "..."` branches),
 // and every other model_type falls through to Gemma 3's SigLIP tower; a listed model_type must be one of the branches or
 // gemma3 itself.

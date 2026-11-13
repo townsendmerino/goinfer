@@ -17,7 +17,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestDG01_expertMajorMoEPrefill is D-G01's gate (docs/tasks/task-metal-audit-2026-10.md, "D-G01: pre-registration"):
+// TestDG01_expertMajorMoEPrefill is D-G01's gate (docs/completed/task-metal-audit-2026-10.md, "D-G01: pre-registration"):
 // expert-major MoE prefill against the f16 lane's own MoE baseline, on real weights. Three arms per prompt, each writing
 // positions 0..M-1 of the one KV slot:
 //   - seq: the sequential decode loop, its routing captured per token and layer (resident.moeCap, slot l);
@@ -62,7 +62,7 @@ func TestDG01_expertMajorMoEPrefill(t *testing.T) {
 	t.Cleanup(func() { dg01Mutation = "" })
 	maxM := slices.Max(Ms)
 
-	// GOINFER_DG01_QUANT=int8int8 runs the gate on the native int8 MoE path (MoE int8's X4, docs/tasks/task-metal-int8-2026-10.md).
+	// GOINFER_DG01_QUANT=int8int8 runs the gate on the native int8 MoE path (MoE int8's X4, docs/completed/task-metal-int8-2026-10.md).
 	quant := "int4"
 	if os.Getenv("GOINFER_DG01_QUANT") == "int8int8" {
 		quant = "int8int8"

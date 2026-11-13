@@ -199,7 +199,7 @@ func cudaExtraSlotKVBytes(m *decoder.Model, ctx int) int64 {
 }
 
 // ctxForSlots is resolveCtxCapFit's answer when MC1's resident KV slots are requested
-// (docs/tasks/task-concurrency-2026-09.md MC1 on CUDA): the largest context in [floor, oneSlot] at which Plan fits
+// (docs/tasks/parked/task-concurrency-2026-09.md MC1 on CUDA): the largest context in [floor, oneSlot] at which Plan fits
 // every requested slot (the build's own KV plus slots-1 more copies, priced as ExtraBytes), so an unpinned load
 // gives up context before conversations (owner decision). When not even floor holds them all it returns floor and
 // checkKVFits clamps the count. An explicit -ctx never reaches here.
@@ -376,7 +376,7 @@ type cudaLayer struct {
 	qNorm, kNorm        Buffer // per-head QK-norm weights (absent ⇒ arch has none)
 	window              int32  // sliding-window span for THIS layer; 0 = full causal
 	kvWin               bool   // this layer's K/V hold window+slack positions, not the context (kvwindow.go)
-	kvHalf              bool   // this layer's K/V cache holds f16 (the _kv16 kernel twins, docs/tasks/task-cuda-f16-kv-2026-10.md); an MLA latent never does
+	kvHalf              bool   // this layer's K/V cache holds f16 (the _kv16 kernel twins, docs/completed/task-cuda-f16-kv-2026-10.md); an MLA latent never does
 	kvI8                bool   // this layer's K/V cache holds int8 with one f32 scale per (position, KV head) in ksc/vsc (the _kv8 twins and kv8_store)
 	// Per-layer attention geometry. Uniform families set the model values on every layer; Gemma 4 varies them (local
 	// head_dim 16 / global 512, K=V). launchToken reads ONLY these: the model-level hd/nKV/qDim/kvDim/rhalf are
@@ -394,11 +394,11 @@ type cudaLayer struct {
 	pleGate, pleProj cudaWQ
 	postPLENorm      Buffer
 	// kvShared / kvSrc (Gemma 4 E-models, num_kv_shared_layers): this layer owns no K/V. It projects Q only, rotates only Q, and attends over
-	// layer kvSrc's cache, which r.kc[l]/r.vc[l] alias (docs/tasks/task-multimodal-support-2026-10.md). kEqV and vNorm are false on it.
+	// layer kvSrc's cache, which r.kc[l]/r.vc[l] alias (docs/completed/task-multimodal-support-2026-10.md). kEqV and vNorm are false on it.
 	kvShared bool
 	kvSrc    int
 	// vNorm: scale-less v_norm on this layer's V before it is stored. HF and the CPU apply it on EVERY Gemma 4 layer
-	// that owns its K/V, K=V or not (docs/tasks/task-multimodal-support-2026-10.md). Implies kEqV or a real v_proj.
+	// that owns its K/V, K=V or not (docs/completed/task-multimodal-support-2026-10.md). Implies kEqV or a real v_proj.
 	vNorm             bool
 	preNorm, postNorm Buffer
 	// Gemma sandwich norms (absent unless NormSandwich4): applied to the SUBLAYER OUTPUT before
@@ -529,7 +529,7 @@ type cudaResident struct {
 	ackCh     chan error
 
 	// knob reads this model's operator knobs (decoder.Model.Knob): the snapshot taken at Load, with
-	// Options.Knobs applied, never the live environment (docs/tasks/task-env-config-2026-09.md).
+	// Options.Knobs applied, never the live environment (docs/completed/task-env-config-2026-09.md).
 	knob func(name string) (string, bool)
 
 	hidden, nLayers, inter, vocab int
@@ -548,7 +548,7 @@ type cudaResident struct {
 	finalSoftcap   float32 // Gemma final-logit softcap (30); 0 ⇒ none. Applied host-side in step().
 	attnCap        float32 // Gemma 2 attention-score softcap (50); 0 ⇒ none. The covered kernels' capped variants take it as an argument (withCap).
 	faSoftcap      bool    // a capped layer may take the flash-decode lane's capped variant (decoder.Options.FlashDecodeSoftcap); off, it decodes on split-KV
-	// attnTempBeta/attnTempOrigMaxPos (Ministral 3, FeatAttnTemp, docs/tasks/task-gpu-paths-2026-09.md): the raw
+	// attnTempBeta/attnTempOrigMaxPos (Ministral 3, FeatAttnTemp, docs/completed/task-gpu-paths-2026-09.md): the raw
 	// params behind the post-RoPE query scale (decoder.Model.AttnTempParams), 0 for every family without it.
 	// Recomputed into qTempScale per decode call (rope_kv's parameter) or passed raw into rope_kv_batched, which
 	// must recompute it per row (position varies within one batched launch, unlike decode's single scalar per call).
@@ -723,7 +723,7 @@ type cudaResident struct {
 	// int4 / q4k per projection). fuseG32 selects them (BuildResident); bound only under actG32.
 	fQKVg32, fGUg32 Pipeline
 	fuseG32         bool
-	// Compute-time LoRA (docs/tasks/task-gpu-paths-2026-09.md, cuda/lora.go). Own module (lora.ptx), loaded
+	// Compute-time LoRA (docs/completed/task-gpu-paths-2026-09.md, cuda/lora.go). Own module (lora.ptx), loaded
 	// unconditionally like every other glue pipeline: cheap, and whether a model will ever receive an adapter is not
 	// known at BuildResident time.
 	fLoraDown, fLoraUp Pipeline
@@ -934,7 +934,7 @@ type cudaResident struct {
 	kc, vc                                              []Buffer // each layer's K/V pool (kvpool.go); a KV-shared layer holds its source's
 	ksc, vsc                                            []Buffer // an int8 layer's K and V scale pools, one f32 per (pool row, KV head), laid out like kc/vc; empty otherwise
 
-	// MC1's resident KV slots (docs/tasks/task-concurrency-2026-09.md) over the paged pools (kvpool.go). kvSlotsReq is the model's
+	// MC1's resident KV slots (docs/tasks/parked/task-concurrency-2026-09.md) over the paged pools (kvpool.go). kvSlotsReq is the model's
 	// request (decoder.Model.ResidentKVSlotsRequest; 1 for a recurrent family and under expert streaming), kvTabs each slot's block
 	// tables (kvTabDev their device copy), kvSlot the bound index, and kvTabSlot the slot whose tables the KV kernels read: the bound
 	// one, or an MC3 row's while its attention runs.
@@ -1280,7 +1280,7 @@ var recurrentStatePlannedForTest func(planned int64)
 var recurrentStateAtKVFitForTest func(charged int64)
 
 // attnSoftcapDropForTest builds every resident without its attention-score softcap while the CPU keeps it: the planted defect of
-// OP1's real Gemma 2 gate (docs/tasks/task-forward-architecture-2026-10.md §4.6a, G2-R's arm P). Tests only.
+// OP1's real Gemma 2 gate (docs/completed/task-forward-architecture-2026-10.md §4.6a, G2-R's arm P). Tests only.
 var attnSoftcapDropForTest bool
 
 var hostWType = reflect.TypeFor[hostW]()
@@ -2787,7 +2787,7 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 // are never read and get overwritten (matches the WebGPU path).
 func (r *cudaResident) TruncateTo(pos int) {}
 
-// KVSlots / UseKVSlot implement decoder.ResidentKVSlotter (MC1, docs/tasks/task-concurrency-2026-09.md): how many
+// KVSlots / UseKVSlot implement decoder.ResidentKVSlotter (MC1, docs/tasks/parked/task-concurrency-2026-09.md): how many
 // resident KV slots the build allocated, and binding one.
 //
 // Binding selects the slot's tables, done on the executor so it is ordered after every job already posted. That is
@@ -3725,7 +3725,7 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 			}
 		}
 	}
-	// Compute-time LoRA (docs/tasks/task-gpu-paths-2026-09.md): q/k/v deltas, right after the base projection and
+	// Compute-time LoRA (docs/completed/task-gpu-paths-2026-09.md): q/k/v deltas, right after the base projection and
 	// before qk_norm/RoPE below, matching applyLoRA's CPU order exactly. Not reached for gated attention (a documented gap,
 	// see cuda/lora.go's file comment): gated q_proj takes a different path entirely, into r.dnQg, split afterward,
 	// so no single hook point covers both.
@@ -3951,7 +3951,7 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 		return r.moeMLPPre(Ly, x)
 	}
 	rawIn := fw.InputMode == program.FFNInRaw
-	// This layer's own FFN width: Gemma 4 E-models mix 6144 and 12288 (docs/tasks/task-multimodal-support-2026-10.md), and the
+	// This layer's own FFN width: Gemma 4 E-models mix 6144 and 12288 (docs/completed/task-multimodal-support-2026-10.md), and the
 	// scratch is sized to the widest layer, so every launch below takes the layer's width and never the model-level r.inter.
 	ffnI := Ly.ffnI
 	if ffnI == 0 {
@@ -4183,7 +4183,7 @@ func (r *cudaResident) captureGraphs() error {
 func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) error {
 	r.launchErr = nil // reset the sticky launch-error accumulator for this token (M23)
 	nullBias := ArgNull()
-	// qTempScale (Ministral 3, FeatAttnTemp; docs/tasks/task-gpu-paths-2026-09.md): computed ONCE per token (the same
+	// qTempScale (Ministral 3, FeatAttnTemp; docs/completed/task-gpu-paths-2026-09.md): computed ONCE per token (the same
 	// value at every layer, unlike mscale, which is per-layer); mirrors decoder.Model.AttnTempScale. attnTempBeta==0
 	// (every family without the feature) skips the division: attnTempOrigMaxPos is 0 for those, and pos/0 would poison
 	// Q with NaN.
@@ -4561,7 +4561,7 @@ type dnetParams struct {
 // deltaNetGateSettings reads a DeltaNet layer's two settings from its operation: the write gate's scale (2 where NegEigval
 // widens sigmoid's [0, 1) to [0, 2), else 1) and the output norm's own epsilon (ONormEps; 0 means the model's NormEps).
 // program.CUDA claims both (DeltaNegEigval, DeltaONormEps) on the strength of this; dnSettingPlantForTest drops one for the
-// gates in docs/tasks/task-olmo-hybrid-cuda-2026-11.md.
+// gates in docs/completed/task-olmo-hybrid-cuda-2026-11.md.
 func deltaNetGateSettings(ops []program.Op) (betaScale, oNormEps float32) {
 	betaScale = 1
 	for _, o := range ops {
@@ -4785,13 +4785,13 @@ const fusedG32MaxHidden = 1536
 func fusedG32Shmem(H int) uint32 { return uint32((H + 256 + H/4 + 2*(H/32)) * 4) }
 
 // g4DropVNormForTest re-drops Gemma 4's v_norm on the layers that are not K=V, so a gate can show the fix is what
-// moved the parity numbers (docs/tasks/task-multimodal-support-2026-10.md). Set only by a test seam; never in production.
+// moved the parity numbers (docs/completed/task-multimodal-support-2026-10.md). Set only by a test seam; never in production.
 var g4DropVNormForTest bool
 
 // pleLayerShiftForTest shifts every PLE input slice by this many layers (a planted off-by-one per-layer offset). 0 in production; set only by a test seam.
 var pleLayerShiftForTest int
 
-// Test seams that each re-plant one defect (docs/tasks/task-multimodal-support-2026-10.md), so a gate can show it
+// Test seams that each re-plant one defect (docs/completed/task-multimodal-support-2026-10.md), so a gate can show it
 // goes red. All false in production; only tests set them.
 var (
 	g4SkipPLEForTest           bool // (1) the PLE branch skipped

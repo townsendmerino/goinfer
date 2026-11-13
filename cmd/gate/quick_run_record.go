@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// quickRunRecord is what a `gate quick` run leaves for its grader (SB12, docs/tasks/task-subsystems-2026-10.md §8):
+// quickRunRecord is what a `gate quick` run leaves for its grader (SB12, docs/completed/task-subsystems-2026-10.md §8):
 // what quick printed before the verdict, each job's outcome inputs (a test job's stream, a lint job's output), the
 // cells it could not run or deferred, the number of goldens the selection triggered, and the run's start and end.
 // `gate quick -replay FILE` prints the report exactly as the run did.

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// TestAutoBackend_picksTheFirstGPUThatAnswers (R17, docs/tasks/task-first-hour.md): "auto" is the first GPU backend this
+// TestAutoBackend_picksTheFirstGPUThatAnswers (R17, docs/completed/task-first-hour.md): "auto" is the first GPU backend this
 // binary links whose device answers, cuda then metal, else cpu, with a reason the CLIs print as-is. autoBackend is the
 // selection over its inputs, so the cases that need a GPU backend linked run here without registering one: a fake
 // registered under "cuda" would outlive this test in the process-wide registry and change what NewBackend("cuda")
@@ -108,7 +108,7 @@ func (b *fakeNamedResidency) BuildResident(m *Model) (ResidentForward, bool, err
 
 func (b *fakeNamedResidency) Name() string { return b.name }
 
-// TestAutoMetalPrecision_keepsTheLoadedPrecision (R17, then slice 5 of docs/tasks/task-metal-int8-2026-10.md): when
+// TestAutoMetalPrecision_keepsTheLoadedPrecision (R17, then slice 5 of docs/completed/task-metal-int8-2026-10.md): when
 // auto chose metal, a model Metal would run only re-quantized (int8, int4mix) or not at all (f32) stays on the CPU at
 // the precision it loaded at, and says so. int8int8 goes to BuildResident, since Metal runs dense int8int8 natively,
 // and is kept only when the resident reports that it ran at int8int8; one Metal re-quantized (MoE, DeltaNet) is

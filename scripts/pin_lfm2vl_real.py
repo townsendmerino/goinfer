@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""S10's real-checkpoint references for LFM2.5-VL, G-S10l-a/b/c (docs/tasks/task-multimodal-support-2026-10.md, "S10,
+"""S10's real-checkpoint references for LFM2.5-VL, G-S10l-a/b/c (docs/completed/task-multimodal-support-2026-10.md, "S10,
 LFM2.5-VL"): transformers' Lfm2VlForConditionalGeneration in float32 (sdpa), loaded once.
 
   a. The full Lfm2VlProcessor on the four F2a images and three layout cases written here (a 1000x20 strip, a 3000x2000

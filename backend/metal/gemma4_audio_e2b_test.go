@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// TestG4AMetal_E2BTower is G-S5d's tower half (docs/tasks/task-multimodal-support-2026-10.md, S5, registered before
+// TestG4AMetal_E2BTower is G-S5d's tower half (docs/completed/task-multimodal-support-2026-10.md, S5, registered before
 // this ran): Gemma 4 E2B's audio tower (~/models/gemma-4-E2B-unq, never the archive) with its 12 conformer blocks on
 // Metal (the g4aAccel EmbeddingGemma 2 uses), aikit's Subsample before and FinishBlocks after, against aikit's CPU Forward:
 // every soft token at cosine >= 0.9999 (0.999-0.9999 parked), on the three EmbeddingGemma 2 clips and the LibriSpeech

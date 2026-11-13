@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// TestKSD8_cpuReference writes D8-G3's reference (docs/tasks/task-kernel-survey-2026-10.md, "D8-G3's reference route"): the
+// TestKSD8_cpuReference writes D8-G3's reference (docs/tasks/parked/task-kernel-survey-2026-10.md, "D8-G3's reference route"): the
 // Hugging Face checkpoint at GOINFER_KSD8_REF_MODEL on the CPU with its bf16 weights kept bf16 and exact attention, each prompt
 // of GOINFER_KSD8_REF_IDS (a JSON list of token-id lists) prefilled from an empty cache, its last-position logits appended to
 // GOINFER_KSD8_REF_OUT as little-endian float32.

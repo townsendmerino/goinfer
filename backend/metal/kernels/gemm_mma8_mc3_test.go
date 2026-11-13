@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// mc3MMAKernels is MC3's matrix-unit prototype (docs/tasks/task-concurrency-2026-09.md), TEST-ONLY: a W4A8 GEMM for
+// mc3MMAKernels is MC3's matrix-unit prototype (docs/tasks/parked/task-concurrency-2026-09.md), TEST-ONLY: a W4A8 GEMM for
 // up to 8 decode sequences on simdgroup_matrix, sized for decode rather than prefill. The prefill GEMM's 64-token tile
 // costs the same at M = 1 as at M = 64 (TestMC3S0PrefillGEMMSmallM times it), so this one's token tile
 // is a single 8x8 fragment column: C^T[feature][token] = W[feature][k] . A^T[k][token].

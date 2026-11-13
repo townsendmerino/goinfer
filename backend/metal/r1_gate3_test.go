@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestR1_decodeFidelityGate is R1's Build gate (3) (docs/tasks/red-october.md), pre-registered at
+// TestR1_decodeFidelityGate is R1's Build gate (3) (docs/completed/red-october.md), pre-registered at
 // docs/measurements/w4f16-decode-fidelity-PREREGISTERED.md before this test was written. It reuses
 // two things already in the tree rather than re-deriving them: the S-K64 CPU f32-weight/
 // f32-activation reference (decoder/prefill_ref_gen_test.go's TestPrefillGateReference, already

@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// OP1 on CUDA, the resident-level tests of the attention softcap (docs/tasks/task-forward-architecture-2026-10.md §4.6a). The softcap's
+// OP1 on CUDA, the resident-level tests of the attention softcap (docs/completed/task-forward-architecture-2026-10.md §4.6a). The softcap's
 // evidence is the kernel gates against float64 (TestAttnSoftcap_kernelsAgainstFloat64, with the cap dropped as the control) and the lane
 // test below; the tiny Gemma 2 fixtures are diagnostics, because their scores sit far inside the cap, where cap·tanh(s/cap) is nearly the
 // identity and a dropped cap can leave them green.

@@ -12,7 +12,7 @@ import (
 
 // NO FAMILY LOOP OUTSIDE THE PROGRAM.
 //
-// Every family's layers are a program the walkers run (OP3, docs/tasks/task-forward-architecture-2026-10.md §4.8). A family
+// Every family's layers are a program the walkers run (OP3, docs/completed/task-forward-architecture-2026-10.md §4.8). A family
 // layer loop written beside it, a runLayersXxx dispatched by an `if`, is a second list of families: "runLayers dispatches here"
 // and "the batched path must not touch this" were once two hand-written facts and LFM2 was in one of them. The source scan
 // notices such a loop being born; the second half checks that every registered model type builds a program whose every

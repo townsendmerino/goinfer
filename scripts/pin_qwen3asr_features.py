@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14b1's golden (docs/tasks/task-multimodal-support-2026-10.md, "G-S14b"): transformers' Qwen3ASRFeatureExtractor called as Qwen3ASRProcessor calls it (padding=True, truncation=False,
+"""G-S14b1's golden (docs/completed/task-multimodal-support-2026-10.md, "G-S14b"): transformers' Qwen3ASRFeatureExtractor called as Qwen3ASRProcessor calls it (padding=True, truncation=False,
 return_attention_mask=True, n_window=50) on seven clips: the features, the mask and the input samples, as a zip of raw little-endian float32 / uint8 and a meta.json.
 Run (repo root): ~/g4venv/bin/python -I scripts/pin_qwen3asr_features.py testdata/qwen3asr_features_golden.zip"""
 import json, sys, wave, zipfile

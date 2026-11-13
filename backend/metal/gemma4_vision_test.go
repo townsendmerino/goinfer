@@ -87,7 +87,7 @@ func g4vWorst(got, want []float32, d int) float64 {
 	return worst
 }
 
-// TestG4VMetal_matchesCPU is Phase VM's gate VM1 (docs/tasks/task-embeddinggemma2.md): on the tiny tower, with its
+// TestG4VMetal_matchesCPU is Phase VM's gate VM1 (docs/completed/task-embeddinggemma2.md): on the tiny tower, with its
 // finite clip bounds and random position tables, the Metal tower followed by aikit's tail (FinishHidden) matches
 // aikit's CPU Forward to cosine 0.9999 on every soft token: grids of 18, 54 and 135 patches, raster and shuffled
 // order, at attention blocks of 256 (one block), 6 (divides 18 and 54) and 5 (divides none of 18 or 54). The clamps'

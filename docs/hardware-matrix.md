@@ -74,7 +74,7 @@ features). Two load-time notes the taxonomy does not encode:
 - **Nemotron-H's row is generated from a DENSE representative config.** Real, downloadable
   Nemotron 3 Nano and 3.5 Lightning checkpoints add a fourth per-layer block kind (MoE
   FFN) this representative config never exercises — WebGPU implements it (G7 part 2,
-  docs/tasks/task-gpu-paths-2026-09.md); CUDA and Metal still decline it, CPU-only. `DecodePath()`
+  docs/completed/task-gpu-paths-2026-09.md); CUDA and Metal still decline it, CPU-only. `DecodePath()`
   names this specific per-checkpoint gap for a loaded model; this table cannot, since its
   rows are one per architecture, not per checkpoint.
 - **Gemma 4's row is generated from a representative that is not an E-model.** The small E-models
@@ -89,7 +89,7 @@ features). Two load-time notes the taxonomy does not encode:
   kernels is exact at position 0 and wrong from position 1 with no error (measured 2026-10-01 on the
   CUDA resident before its pairwise kernels existed: real Command-R7B and Aya-expanse-8B at int4, worst
   per-position cosine -0.075 / -0.041 against the CPU). CUDA has `backend/cuda/rope_pairwise.cu` and Metal its
-  twins since 2026-10-09 (docs/tasks/task-metal-pairwise-rope-2026-10.md); a WebGPU row returns once it
+  twins since 2026-10-09 (docs/completed/task-metal-pairwise-rope-2026-10.md); a WebGPU row returns once it
   has pairwise rope kernels and a resident-vs-CPU gate on peaked attention.
 
 ## Why a cell reads CPU

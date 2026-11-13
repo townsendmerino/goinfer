@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MC3c step 2's W7 gates (docs/tasks/task-concurrency-2026-09.md, MC3c step 2, pre-registered in 0bc06f90) from
+"""MC3c step 2's W7 gates (docs/tasks/parked/task-concurrency-2026-09.md, MC3c step 2, pre-registered in 0bc06f90) from
 bench_w7_plain.py's JSON. Same gate shape as MC3's (this script is its copy), with MC3c step 2's decision bands:
 1 identity and 2 reuse (every cell at a client count agrees turn by turn with the first, old and new alike), 3 aggregate
 >= 1.2x (owner band 1.03-1.2), 4 p99 under load <= 1.0, 5 solo guard p50/p99 <= 1.05; 1, 2, 4, 5 hard.

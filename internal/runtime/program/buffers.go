@@ -2,7 +2,7 @@ package program
 
 import "slices"
 
-// The memory each operation declares beyond its weights (MM5, docs/tasks/task-forward-architecture-2026-10.md §4.9b and §4.9c): a load's
+// The memory each operation declares beyond its weights (MM5, docs/completed/task-forward-architecture-2026-10.md §4.9b and §4.9c): a load's
 // KV, recurrent state and per-row activations are its layers' declarations and the head's, priced and allocated from the same list.
 
 // Unit is what a buffer's size counts by.

@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestR2_decodeFidelityGate is R2's gate (3) (docs/tasks/red-october.md: "the same teacher-forced
+// TestR2_decodeFidelityGate is R2's gate (3) (docs/completed/red-october.md: "the same teacher-forced
 // fidelity gate R1 uses, S at depth 3900 as the decision cell, W4A8 + shipped attention as the exact
 // arm"). Same construction as metal/r1_gate3_test.go, two substitutions: the toggle is
 // r.decodeAttnFA (attention_fa vs the shipped attention kernel; canUseAttnFA reads the field on
@@ -69,7 +69,7 @@ func runDecodeFidelityGate(t *testing.T, tag, candName string, prep func(t *test
 	}
 	// K is the decision cell's depth: 3900 by default (R2, R17). GOINFER_METAL_GATE_K picks another cell that has CPU
 	// references (S-K<K> files); GOINFER_METAL_GATE_FLOOR sets attnFAFloorOverride so the candidate arm engages below
-	// the production floor (B-P03, docs/tasks/task-metal-audit-2026-10.md: K = 1024 with the floor at 1024). Without
+	// the production floor (B-P03, docs/completed/task-metal-audit-2026-10.md: K = 1024 with the floor at 1024). Without
 	// the override a K below the floor fails the arm's own canUseAttnFA check rather than comparing a kernel with
 	// itself.
 	K := 3900

@@ -8,7 +8,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// lfm2vlTower is LFM2-VL's image path (S10, docs/tasks/task-multimodal-support-2026-10.md): aikit's SigLIP2 NaFlex tower,
+// lfm2vlTower is LFM2-VL's image path (S10, docs/completed/task-multimodal-support-2026-10.md): aikit's SigLIP2 NaFlex tower,
 // the projector, the processor's settings and the <image> token id. The tower runs on the CPU in float32, one tile at a
 // time, and the decoder (lfm2) runs on the CPU only, so the turn goes through decoder.GenerateVLCausalSpans with one span
 // per tile and thumbnail.

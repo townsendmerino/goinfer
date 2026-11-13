@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestAuditM26_pagedProbe serves T1.8 (C-P01) and T1.9 (D-P02, M-11) of docs/tasks/task-metal-audit-2026-10.md on
+// TestAuditM26_pagedProbe serves T1.8 (C-P01) and T1.9 (D-P02, M-11) of docs/completed/task-metal-audit-2026-10.md on
 // the Gemma 4 26B (M26), one configuration per process, pre-registered in that doc before the night run. The run
 // script sets the model and slot count, arms scripts/swap_killwatch.sh on this process's PID, and, for T1.8, takes
 // vmmap and footprint from outside while this process holds at token 32. The load goes through the production Metal

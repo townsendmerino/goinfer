@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14f1's golden (docs/tasks/task-multimodal-support-2026-10.md, "G-S14f"): transformers' own WhisperDecoder on the tiny random-weight Whisper of scripts/pin_whisper_tiny.py (testdata/whisper-tiny-rand, which
+"""G-S14f1's golden (docs/completed/task-multimodal-support-2026-10.md, "G-S14f"): transformers' own WhisperDecoder on the tiny random-weight Whisper of scripts/pin_whisper_tiny.py (testdata/whisper-tiny-rand, which
 holds the decoder's weights), given the fixture's encoder output for each of its two clips (golden.zip's <clip>.enc.f32): the teacher-forced logits at every position of a fixed 12-token input, and a 12-token
 greedy continuation from the decoder start token with no logits processors. Writes testdata/whisper-tiny-rand/dec_golden.zip.
 Run (repo root): ~/g4venv/bin/python -I scripts/pin_whisper_decoder_tiny.py testdata/whisper-tiny-rand"""

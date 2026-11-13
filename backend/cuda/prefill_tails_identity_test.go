@@ -18,7 +18,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// The batched prefill's tails (R-24, docs/tasks/task-recompute-audit.md §5): only ResidualAll reads the [M, hidden]
+// The batched prefill's tails (R-24, docs/completed/task-recompute-audit.md §5): only ResidualAll reads the [M, hidden]
 // residual back to the host; the argmax and all-logits heads read it on the device, and the last-row tails upload one
 // row. This gate hashes the output of EVERY tail mode the resident exposes, per fixture, and compares it with the hashes
 // recorded from the code before the residual download was dropped (testdata/prefill_tails_baseline.json). It is

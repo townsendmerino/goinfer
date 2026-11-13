@@ -16,7 +16,7 @@ var prefillWidths = []int{2048, 1024, prefillDefaultChunk}
 // prefillWidthFor is the build's default pass width: the widest of prefillWidths whose pass (pass(rows), its device scratch) fits in
 // free less margin less attach, the VRAM left after the build beyond what must stay free beside a pass (marginBesidePass) and what
 // is still to attach. When none of the wider ones fits it is prefillDefaultChunk, whose pass the context margin holds. Measurement and gates:
-// docs/tasks/task-kernel-survey-2026-10.md, "KS-B8 build".
+// docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-B8 build".
 func prefillWidthFor(free, margin, attach int64, pass func(rows int) int64) int {
 	room := free - margin - attach
 	for _, w := range prefillWidths[:len(prefillWidths)-1] {

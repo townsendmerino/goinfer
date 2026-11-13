@@ -19,7 +19,7 @@ func unsetenvT(t *testing.T, name string) {
 }
 
 // The prompt-ingestion flags reach each model through its decoder.Options, never the process environment
-// (docs/tasks/task-env-config-2026-09.md, phase 5). M-48 holds: --exact-prefill covers all three backends,
+// (docs/completed/task-env-config-2026-09.md, phase 5). M-48 holds: --exact-prefill covers all three backends,
 // because Options.ExactPrefill is consulted by each (CPU, CUDA resident build, Metal resident) per model.
 func TestPrefillFlags_reachTheDecoderThroughOptions(t *testing.T) {
 	for _, v := range []string{"GOINFER_METAL_FAST_PREFILL", "GOINFER_CUDA_FAST_PREFILL", "GOINFER_CPU_FAST_ATTENTION"} {

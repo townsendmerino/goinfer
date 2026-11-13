@@ -162,7 +162,7 @@ func renderHardwareMD(rows []hwRow, verified string) []byte {
 	b.WriteString("- **Nemotron-H's row is generated from a DENSE representative config.** Real, downloadable\n")
 	b.WriteString("  Nemotron 3 Nano and 3.5 Lightning checkpoints add a fourth per-layer block kind (MoE\n")
 	b.WriteString("  FFN) this representative config never exercises — WebGPU implements it (G7 part 2,\n")
-	b.WriteString("  docs/tasks/task-gpu-paths-2026-09.md); CUDA and Metal still decline it, CPU-only. `DecodePath()`\n")
+	b.WriteString("  docs/completed/task-gpu-paths-2026-09.md); CUDA and Metal still decline it, CPU-only. `DecodePath()`\n")
 	b.WriteString("  names this specific per-checkpoint gap for a loaded model; this table cannot, since its\n")
 	b.WriteString("  rows are one per architecture, not per checkpoint.\n")
 	b.WriteString("- **Gemma 4's row is generated from a representative that is not an E-model.** The small E-models\n")
@@ -177,7 +177,7 @@ func renderHardwareMD(rows []hwRow, verified string) []byte {
 	b.WriteString("  kernels is exact at position 0 and wrong from position 1 with no error (measured 2026-10-01 on the\n")
 	b.WriteString("  CUDA resident before its pairwise kernels existed: real Command-R7B and Aya-expanse-8B at int4, worst\n")
 	b.WriteString("  per-position cosine -0.075 / -0.041 against the CPU). CUDA has `backend/cuda/rope_pairwise.cu` and Metal its\n")
-	b.WriteString("  twins since 2026-10-09 (docs/tasks/task-metal-pairwise-rope-2026-10.md); a WebGPU row returns once it\n")
+	b.WriteString("  twins since 2026-10-09 (docs/completed/task-metal-pairwise-rope-2026-10.md); a WebGPU row returns once it\n")
 	b.WriteString("  has pairwise rope kernels and a resident-vs-CPU gate on peaked attention.\n")
 	b.WriteString(renderHardwareWhy(rows))
 	b.WriteString(verified)
@@ -361,7 +361,7 @@ func TestHardwareMatrix_declineReasonsNotHidden(t *testing.T) {
 	}
 }
 
-// Verified on (hardware-coverage H6, docs/tasks/task-hardware-coverage-2026-10.md): the table above is CAPABILITY. This section is what has actually RUN, generated from the H0 census
+// Verified on (hardware-coverage H6, docs/completed/task-hardware-coverage-2026-10.md): the table above is CAPABILITY. This section is what has actually RUN, generated from the H0 census
 // (docs/hardware-coverage.json), so it cannot say more than the census records and goes stale, and red here, the moment a record is added. The census is per hardware-selected code path, not
 // per model family, so the section is a machine table and a never-executed list, not a per-family column; a per-family cell would have to be invented.
 type censusFile struct {

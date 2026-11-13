@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// G-S14h1 of docs/tasks/task-multimodal-support-2026-10.md: the decode policy (conditioning on earlier text, the thresholds, silence skipping) against transformers' generate on the tiny random-weight Whisper
+// G-S14h1 of docs/completed/task-multimodal-support-2026-10.md: the decode policy (conditioning on earlier text, the thresholds, silence skipping) against transformers' generate on the tiny random-weight Whisper
 // (testdata/whisper-tiny-ts; scripts/pin_whisper_policy_tiny.py), temperature=(0.0,) so no sampled attempt is reachable.
 
 type polGolden struct {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14b2's fixture (docs/tasks/task-multimodal-support-2026-10.md, "G-S14b"): a tiny random-weight Qwen3-ASR (audio encoder + projector + a Qwen3 text decoder, for S14.3) built from
+"""G-S14b2's fixture (docs/completed/task-multimodal-support-2026-10.md, "G-S14b"): a tiny random-weight Qwen3-ASR (audio encoder + projector + a Qwen3 text decoder, for S14.3) built from
 transformers' own classes, written in the REAL checkpoint's layout (everything under `thinker.`, the projector as proj1/proj2 inside the audio tower, config nested under thinker_config), and
 the reference outputs of its audio tower and projector on three synthetic clips, with features made by transformers' own Qwen3ASRFeatureExtractor.
 Run (repo root): ~/g4venv/bin/python -I scripts/pin_qwen3asr_tiny.py testdata/qwen3asr-tiny"""

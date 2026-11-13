@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14e4c's record (docs/tasks/task-multimodal-support-2026-10.md, registered before the code; nothing here is graded). Usage:
+"""G-S14e4c's record (docs/completed/task-multimodal-support-2026-10.md, registered before the code; nothing here is graded). Usage:
   s14e4c_grade.py <ref-dir> <out-dir>
 ref-dir is scripts/pin_voxtral_real.py's output with --language none (libri.gen.json, libri6x.gen.json and the HF log's decoded text in ref.log); out-dir holds reply-{f32,int4}-{libri,libri6x}.json from scripts/s14e4_request.py.
 Prints, per clip: the float32 served reply against the reference (byte-equal or the first differing word), and the int4 reply against float32 (word-level edit distance, the first characters, control tokens)."""

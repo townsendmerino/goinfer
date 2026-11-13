@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14f3's grading (docs/tasks/task-multimodal-support-2026-10.md, "G-S14f", registered before the code). Usage: s14f_grade.py <refs.json> <hf.json> <goinfer.json>
+"""G-S14f3's grading (docs/completed/task-multimodal-support-2026-10.md, "G-S14f", registered before the code). Usage: s14f_grade.py <refs.json> <hf.json> <goinfer.json>
 Both arms hold {id: {text, lang}}. The normaliser and the WER are G-S14c4's. PASS: texts byte-equal on at least 70 of 73 clips (scaled to the clip count) and |WER_goinfer - WER_transformers| <= 0.30 points.
 Reported, not graded: the language each side detected."""
 import json, re, sys

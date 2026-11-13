@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// G-S14g1 of docs/tasks/task-multimodal-support-2026-10.md: LongestFeatures against transformers 5.15.0's WhisperFeatureExtractor(truncation=False, padding="longest") on three clips
+// G-S14g1 of docs/completed/task-multimodal-support-2026-10.md: LongestFeatures against transformers 5.15.0's WhisperFeatureExtractor(truncation=False, padding="longest") on three clips
 // (scripts/pin_whisper_longest.py). Bars: the same shape, max |diff| <= 1e-4, mean |diff| <= 1e-6. Each planted defect must break the bar.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_WHISPER_LONGREF=<pin output dir> go test -tags realckpt ./internal/runtime/whisper/ -run TestLongestFeatures -v

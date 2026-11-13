@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""D6a's deterministic samples (docs/tasks/task-constrained-confidence.md, D6a pre-registration).
+"""D6a's deterministic samples (docs/tasks/parked/task-constrained-confidence.md, D6a pre-registration).
 
 From SargeDev/jev-distill-corpus-v3 @ fc99c6357a9f89f7512c4a987314352addead049
 (calibration.jsonl sha256 c5e232a0f8efdf9fafc4a829ad40917a6b3ace6ce4bc276b6210c947fb068155,

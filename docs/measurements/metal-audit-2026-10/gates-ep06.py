@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""E-P06's served grade (docs/tasks/task-metal-audit-2026-10.md, "E-P06: built, pending its grade"; pre-registered there
+"""E-P06's served grade (docs/completed/task-metal-audit-2026-10.md, "E-P06: built, pending its grade"; pre-registered there
 before any graded run). Usage: gates-ep06.py DIR, reading copy-<m>.json and chat-<m>.json for m in 15b, 05b, 7b. Keys
 <arm>_<round>, arm in plain / specold / specnew, one client, greedy. specnew is --spec ngram with the model's own verify
 cost curve (calibrateVerifyCost), specold the same with the shipped constant; plain is the do-nothing arm."""

@@ -10,7 +10,7 @@ import (
 // quant. DecodePath() folds that into the same requested-vs-effective shape BackendSummary() already uses (see
 // decoder/backend_report_test.go), rather than naming a "cuda-staged"/"metal-staged" path that was never real.
 // declinedToCPUReason is the pure, Model-free piece of that string; DecodePath()'s own wiring is covered by R9's
-// real-hardware verification (docs/tasks/task-first-hour.md), not a synthetic Model here.
+// real-hardware verification (docs/completed/task-first-hour.md), not a synthetic Model here.
 func TestDeclinedToCPUReason(t *testing.T) {
 	for _, tc := range []struct {
 		backend, resDecline string
@@ -33,7 +33,7 @@ func TestDeclinedToCPUReason(t *testing.T) {
 	}
 }
 
-// TestResidentQuantLabel pins G10's reporting fix (docs/tasks/task-gpu-paths-2026-09.md), widened
+// TestResidentQuantLabel pins G10's reporting fix (docs/completed/task-gpu-paths-2026-09.md), widened
 // by M-25 (audit-2026-09-10): Metal has no int8 GEMV kernel, so ANY Int8()-kind resident load
 // (int8, int8int8, and int4mix's int8-kind tensors) must not claim a precision this backend never
 // actually runs — every other (backend, quant) pair, including int8-family quants on cuda/webgpu
@@ -108,7 +108,7 @@ func (r quantReportingResident) ResidentCaps() ResidentCaps {
 
 // TestDecodePath_residentReportsItsQuant: a resident that reports its own precision is what the banner names, and one
 // that reports "" or nothing leaves residentQuantLabel's answer. Metal's native int8 path
-// (docs/tasks/task-metal-int8-2026-10.md) runs an int8int8 model at int8int8, which the backend and load quant alone
+// (docs/completed/task-metal-int8-2026-10.md) runs an int8int8 model at int8int8, which the backend and load quant alone
 // would label as re-quantized to int4.
 func TestDecodePath_residentReportsItsQuant(t *testing.T) {
 	be := &fakeNamedResidency{name: "metal"}

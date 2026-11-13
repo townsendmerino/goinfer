@@ -13,7 +13,7 @@ import (
 
 // Qwen3-ASR's audio encoder ("AuT") and projector, float32 on the CPU.
 //
-// Parity reference: transformers 5.15.0's Qwen3ASREncoder and Qwen3ASRMultiModalProjector, read in goinfer's docs/tasks/task-multimodal-support-2026-10.md (G-S14b). The mel features arrive as
+// Parity reference: transformers 5.15.0's Qwen3ASREncoder and Qwen3ASRMultiModalProjector, read in goinfer's docs/completed/task-multimodal-support-2026-10.md (G-S14b). The mel features arrive as
 // [128][T] with T a multiple of 100 (QwenASRFeatures). Each 100-frame chunk goes through three Conv2d (k3 s2 p1, exact-erf GELU after each), a bias-free Linear over the flattened
 // (channel, frequency) axes and a sinusoidal position that restarts in every chunk; the real post-CNN positions of all chunks are packed into one sequence; 18 pre-LayerNorm layers attend within
 // windows of (max post-CNN length of a chunk) * (n_window_infer / 100) positions; then ln_post and the projector (Linear, GELU, Linear).

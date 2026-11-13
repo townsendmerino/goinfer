@@ -60,7 +60,7 @@ type Model struct {
 	// slot, their decode tokens joined into shared steps. nil unless EnableResidentConcurrency enabled it.
 	batcher *residentBatcher
 	// specAdaptive: MC4's "speculate when alone, batch under load" candidate (SetSpecAdaptive,
-	// docs/tasks/task-concurrency-2026-09.md). off by default — genNgramInto's exclusive claim is unchanged unless
+	// docs/tasks/parked/task-concurrency-2026-09.md). off by default — genNgramInto's exclusive claim is unchanged unless
 	// this is on AND batcher is non-nil.
 	specAdaptive bool
 	// cpuBatch: MC3c step 2's coordinator (cpu_batch.go) — several CPU generations' decode tokens joined into one
@@ -464,7 +464,7 @@ type Options struct {
 	// KVQuant selects the CPU KV cache storage precision: "" / "f32" (default, bit-exact, the reference), "f16" (each stored row
 	// rounded to binary16, half the bytes; the generic loop, Architecture.kvF16OK, else f32) or "i8" (per-(position,
 	// KV-head) symmetric int8, 4x smaller; declined where Architecture.kvInt8OK says no). The lossy two are opt-in. See
-	// docs/tasks/task-cpu-kv-f16-2026-10.md and task-cpu-kv-quant.md.
+	// docs/completed/task-cpu-kv-f16-2026-10.md and task-cpu-kv-quant.md.
 	KVQuant string
 	// StreamWeights enables on-demand weight residency (idea #2): for an mmap-backed
 	// .giw MoE model, expert weights are paged out of the mapping under a RAM budget
@@ -528,7 +528,7 @@ type Options struct {
 	// overridden. This is the library-level chokepoint docs/completed/task-prefill-gap.md describes; --exact-prefill sets it.
 	ExactPrefill bool
 	// ResidentKVSlots asks a GPU-resident backend for this many independent KV caches ("slots"), so several interleaved
-	// conversations each keep their own prefix resident instead of evicting one another's (docs/tasks/task-concurrency-2026-09.md).
+	// conversations each keep their own prefix resident instead of evicting one another's (docs/tasks/parked/task-concurrency-2026-09.md).
 	// Still one generation at a time unless MC3 is enabled: a slot is bound per generation. 0 or 1 = one slot. A backend clamps it
 	// to what its fit guard allows and says so; a backend that does not implement ResidentKVSlotter, and every family with
 	// recurrent state, keep one slot. serve sets it from -kv-sessions.
@@ -542,30 +542,30 @@ type Options struct {
 	ResidentRecurrentStepDefault, ResidentGemma4StepDefault bool
 	// ResidentWindowedKV asks the CUDA resident to keep only a window's worth of K/V (plus WindowedKVSlack positions of headroom) for each
 	// sliding-window layer instead of the whole context, which lets a windowed model such as Mellum2.1 fit a long context fully resident
-	// beside its weights (docs/tasks/task-cuda-windowed-kv-2026-10.md). Off by default: it changes how much memory a load takes. A
+	// beside its weights (docs/completed/task-cuda-windowed-kv-2026-10.md). Off by default: it changes how much memory a load takes. A
 	// backend or family that cannot honour it keeps the full cache and says why (ResidentWindowedKVDecline); the decode is bit-identical
 	// either way. Only CUDA reads it today.
 	ResidentWindowedKV bool
 	// ResidentMoEStep lets a generic MoE model (the routed FFN, its shared expert included) run on the Metal resident's
 	// multi-sequence step: concurrent generations decode in one batched step, and a prompt shorter than the batched pass's
-	// floor prefills on it, each bit-identical to the single-token forward (docs/tasks/task-forward-architecture-2026-10.md
+	// floor prefills on it, each bit-identical to the single-token forward (docs/completed/task-forward-architecture-2026-10.md
 	// §4.9, OP4m-d3). It costs the step's scratch, a few MiB. Off leaves every MoE generation on single-token decode. Only
 	// Metal reads it. Chat and serve set it from --moe-step, on by default.
 	ResidentMoEStep bool
 	// ResidentRecurrentStep lets a Qwen3.5-family model (Gated-DeltaNet and gated attention) or a Nemotron-H model (Mamba-2)
 	// run on the Metal resident's multi-sequence step: concurrent generations, each on its own KV slot with its own recurrent
 	// state, decode in one batched step, and a prompt shorter than the batched pass's floor prefills on it, each bit-identical
-	// to the single-token forward (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-d4b, d4c and d6b). Concurrency needs several slots
+	// to the single-token forward (docs/completed/task-forward-architecture-2026-10.md §4.9, OP4m-d4b, d4c and d6b). Concurrency needs several slots
 	// (ResidentKVSlots, asked for explicitly). It costs the step's scratch. Only Metal reads it.
 	ResidentRecurrentStep bool
 	// ResidentGemma4Step lets a Gemma 4 dense model (the E-models with their per-layer embeddings included) run on the Metal
 	// resident's multi-sequence step: concurrent generations decode in one batched step, each row's layer on decode's own
 	// encoder with the front of its dense FFN batched, bit-identical to the single-token forward
-	// (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-d5). It costs the step's scratch. Only Metal reads it.
+	// (docs/completed/task-forward-architecture-2026-10.md §4.9, OP4m-d5). It costs the step's scratch. Only Metal reads it.
 	ResidentGemma4Step bool
 	// ResidentPrefillChunk, under MC3 (EnableResidentConcurrency), prefills a long prompt suffix in chunks of this many tokens
 	// while other generations are decoding, one decode step between chunks, instead of in one pass that stalls them all for the
-	// whole prompt (docs/tasks/task-concurrency-2026-09.md). 0 = off: whole prefill. Sound only where the resident's batched
+	// whole prompt (docs/tasks/parked/task-concurrency-2026-09.md). 0 = off: whole prefill. Sound only where the resident's batched
 	// prefill is chunk-invariant (Metal's is: TestMC5_prefillChunkInvariance). serve defaults it to 512, the graded value
 	// (docs/measurements/chunked-prefill-2026-09-27.md).
 	ResidentPrefillChunk int
@@ -573,7 +573,7 @@ type Options struct {
 	// continuation of a slot's own sequence (KVScope.Off for every request; docs/tasks/task-kv-architecture-2026-10.md
 	// §5.15). serve sets it for -kv-share off and when it answers the network without an API key.
 	KVShareOff bool
-	// KVHostBytes is the host memory budget for prefix snapshots (docs/tasks/task-kv7-prefix-snapshot-2026-10.md): after a cold
+	// KVHostBytes is the host memory budget for prefix snapshots (docs/completed/task-kv7-prefix-snapshot-2026-10.md): after a cold
 	// first prefill of a long prompt a GPU-resident backend that implements ResidentKVSnapshotter copies the prompt's KV to pinned
 	// host memory, and a later request that starts with the same ids restores it instead of prefilling it. 0 turns it off, and
 	// nothing is held while no snapshot is. Pinned memory is allocated when a snapshot is taken and freed when it is dropped.
@@ -585,7 +585,7 @@ type Options struct {
 	// turns it off, as it does the snapshots.
 	KVDemote bool
 	// CPUBatchDecode chooses whether concurrent CPU generations of this model join their decode tokens into one batched
-	// forward (MC3c step 2, docs/tasks/task-concurrency-2026-09.md; Model.EnableCPUBatch): CPUBatchAuto (0, the
+	// forward (MC3c step 2, docs/tasks/parked/task-concurrency-2026-09.md; Model.EnableCPUBatch): CPUBatchAuto (0, the
 	// default) batches an eligible model with at least 2 GiB of dense weights; CPUBatchOn batches every
 	// eligible model; CPUBatchOff keeps step 1's independent workers. Every reply is bit-identical either way.
 	CPUBatchDecode int

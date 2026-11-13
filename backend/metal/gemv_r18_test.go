@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// r18Kernels are R18's prototypes (docs/tasks/red-october.md R18; docs/measurements/metal-decode-gemv-s0-2026-09-26.md),
+// r18Kernels are R18's prototypes (docs/completed/red-october.md R18; docs/measurements/metal-decode-gemv-s0-2026-09-26.md),
 // TEST-ONLY. Step 0: gemv_w4a8_sa with R rows per simdgroup — each lane reads its group's 32 staged activations ONCE into
 // registers and reuses them for R rows; the integer math (UNP8V) and, per row, the lane-to-group assignment and the
 // float(gi)*scale accumulation order are the shipped kernel's, so the output is bit-identical by construction.
@@ -458,7 +458,7 @@ kernel void r18_sa_resid(device const uint4* wq[[buffer(0)]], device const half*
     r18_sa_acc<R,F>(wq, sct, aq, K, As, tgid, tid, tgs, sgid, lane, acc, row0);
     if (lane==0) { R18_UNROLL for (uint r=0;r<R;r++) out[row0+r] += acc[r]*asc[0]; }
 }
-// R18b candidates (docs/tasks/red-october.md R18b): the SA rows kernels in MLX's masked, half-staged form, production
+// R18b candidates (docs/completed/red-october.md R18b): the SA rows kernels in MLX's masked, half-staged form, production
 // signatures. Activations staged as HALF pre-scaled by 16^-(k mod 4) — exact, |a| <= 127 and 127*2^-12 is a normal half
 // — in the same K*2 bytes the shipped short staging uses. Each lane takes its group's sum(a), for the -8 fold, from the
 // staged halves it already reads (one exact dot per half-word), so neither extra threadgroup memory nor a device

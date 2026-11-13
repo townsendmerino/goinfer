@@ -1,6 +1,6 @@
 //go:build realckpt
 
-// G-S3b's Gemma 3 divergence, phase 2 (docs/tasks/task-multimodal-support-2026-10.md, S3). Served, with only the tower
+// G-S3b's Gemma 3 divergence, phase 2 (docs/completed/task-multimodal-support-2026-10.md, S3). Served, with only the tower
 // differing, Gemma 3 4B's reply split at token 10 (the reference at p 0.795 against 0.195) although the Metal tower's
 // features matched the CPU tower's to a worst token cosine of 0.9999999. Is that the tower, or the decoder's sensitivity?
 //

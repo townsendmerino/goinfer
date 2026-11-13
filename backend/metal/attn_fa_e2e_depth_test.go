@@ -12,7 +12,7 @@ import (
 )
 
 // TestAttentionFA_endToEndReproductionDepth2200 is the depth-2200 twin of attn_fa_e2e_test.go's
-// TestAttentionFA_endToEndReproduction: the same keeper reproducer of the signature that parked R2 (docs/tasks/red-october.md),
+// TestAttentionFA_endToEndReproduction: the same keeper reproducer of the signature that parked R2 (docs/completed/red-october.md),
 // batch-prefilling a real qwen2.5-1.5b checkpoint to depth 2200 (> attnFADepthFloor), then decoding 5 tokens one at a time and
 // comparing logits against the SAME prefill+decode sequence with attention_fa disabled. It asserts each step: cosine >= 0.9999
 // and maxAbs <= 0.1. The signature is not a kernel defect (docs/measurements/r2-attn-fa-rootcause-2026-09-21.md; instrument

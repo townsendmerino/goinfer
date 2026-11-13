@@ -130,7 +130,7 @@ func (m *Model) webgpuLayerCaches(i, ctx int, kvF16, kvI8 bool) (bufs []int64, k
 	perElem := 4.0
 	switch {
 	case kvI8:
-		perElem = 1.125
+		perElem = 1
 	case kvF16:
 		perElem = 2
 	}
@@ -150,6 +150,10 @@ func (m *Model) webgpuLayerCaches(i, ctx int, kvF16, kvI8 bool) (bufs []int64, k
 			return nil, true
 		}
 		c := int64(float64(kvDim) * perElem * float64(ctx))
+		if kvI8 {
+			sc := 4 * int64(m.KVHeadsAtResident(i)) * int64(ctx) // one f32 scale a KV head a position, its own buffer for K and for V
+			return []int64{c, c, sc, sc}, true
+		}
 		return []int64{c, c}, true
 	case MixerMLA:
 		// The latent row (kv_lora_rank + the rope key) is f32 at any precision. kvDimAt is 0 on a layer with no latent, such as a

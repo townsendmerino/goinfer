@@ -56,7 +56,7 @@ func buildMamba(m *decoder.Model) (*mambaParams, error) {
 	if !m.ResidentProjsInt4() || recurrentInt8Load(m) {
 		// Metal's native int8 path covers no recurrent family (w8Eligible), so int8 projections would be re-quantized to
 		// int4 without notice: decline, and the CPU runs the model at the int8 it was loaded with
-		// (docs/tasks/task-forward-architecture-2026-10.md §4.7, gate M's amendment).
+		// (docs/completed/task-forward-architecture-2026-10.md §4.7, gate M's amendment).
 		return nil, fmt.Errorf("metal: Nemotron-H runs resident at int4 only; its int8 projections would be re-quantized to int4 here, so it runs on the CPU")
 	}
 	if normG < 1 || ng < 1 || nh%ng != 0 || (nh*hd)%normG != 0 || k < 2 || k > 8 || (nh*hd)%8 != 0 {

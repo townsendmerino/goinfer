@@ -63,7 +63,7 @@ func fitQueryAt(path string, opts Options, read func() int64) (FitAnswer, error)
 	}
 	if pin > 0 {
 		a.Ctx, a.CtxCapped = pin, true
-		a.KVBytes = estimateKVBytes(f.cfg, pin, f.kvF16, f.kvI8)
+		a.KVBytes = f.kvAt(pin)
 		a.NeedBytes = max(f.cudaBuildBytes, f.weightBytes+a.KVBytes+f.srcFileBytes)
 	}
 	if f.noGuard || !f.known() {

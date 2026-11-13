@@ -13,7 +13,7 @@ type decodeClock struct {
 	n                        int
 }
 
-// decodeTarget is the model as plainDecodeLoop drives it (SB5, docs/tasks/task-subsystems-2026-10.md §8). generateInto
+// decodeTarget is the model as plainDecodeLoop drives it (SB5, docs/completed/task-subsystems-2026-10.md §8). generateInto
 // builds one per generation from the path it chose; a test builds one over a scripted fake.
 //   - pick returns the token the backend already chose for this step, with its draw's info where the backend has one
 //     (drew true), so the host sampler does not run, or leaves the step's row for logits (drew false). It may consume

@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/app/loadflags"
 )
 
-// R25 gate (docs/tasks/task-first-hour.md): with the flag on, a request through the real chat handler writes one line naming the route, the model, the status,
+// R25 gate (docs/completed/task-first-hour.md): with the flag on, a request through the real chat handler writes one line naming the route, the model, the status,
 // the prompt and completion tokens the response itself reported, and a first-token time. The tiny committed fixture runs it with no asset.
 func TestRequestLog_oneLinePerGenerationRequest(t *testing.T) {
 	p := tinyChatCheckpoint(t) // built from committed files with a tokenizer and a chat template; testdata/tiny-qwen2-moe was never committed, so this used to skip in CI

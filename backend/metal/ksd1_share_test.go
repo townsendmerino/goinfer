@@ -19,7 +19,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestKSD1_attnShare is KS-D1's first measurement (docs/tasks/task-kernel-survey-2026-10.md, "KS-D1 first measurement"):
+// TestKSD1_attnShare is KS-D1's first measurement (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-D1 first measurement"):
 // Gemma 4 E2B (its default Metal sidecar), PrefillLast on 4,096 resident rows through the batched E-model pass, the full pass
 // against the same pass with the attention dispatch skipped (prefillAttnSkipForTest), A B B A over 3 pairs after one warm run
 // each; attention's share is 1 - skip/full. A timed run: hold the timing lock (GOINFER_KSD1_TIMING=1).

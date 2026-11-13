@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// TestSamplerScratch_pooled is SCR-G3 (docs/tasks/task-memory-campaign-2026-10.md, MEM12-scratch gates): ten requests, each a
+// TestSamplerScratch_pooled is SCR-G3 (docs/completed/task-memory-campaign-2026-10.md, MEM12-scratch gates): ten requests, each a
 // sampler that observes 64 ids, draws 8 tokens with top-k, top-p, min-p and a repetition penalty, and is released. With the
 // collector off, requests 2-10 each allocate at most 5% of request 1's bytes, which built the vocabulary-sized scratch.
 func TestSamplerScratch_pooled(t *testing.T) {

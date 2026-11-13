@@ -131,7 +131,7 @@ type FitDeclineError struct {
 	msg string
 
 	// DenseStreamable is true when a -stream-weights retry after this refusal would engage decoder/layerpaging.go's windowed dense pager, the
-	// path measured as sound for an automatic retry (docs/tasks/task-fit-to-hardware.md, docs/tasks/task-gpu-paths-2026-09.md). It is false for
+	// path measured as sound for an automatic retry (docs/tasks/task-fit-to-hardware.md, docs/completed/task-gpu-paths-2026-09.md). It is false for
 	// MoE models and own-forward families: MoE CPU weight streaming is a documented, measured failure (docs/benchmarks.md "M35/M26 on the
 	// Mac": a real 20 GB MoE through the CPU-staged path ran for hours with no completions, re-reading weights from disk on essentially every
 	// token), so there the retry stays a manual, explicit choice and is never something the guard does on the caller's behalf.

@@ -19,7 +19,7 @@ var updateFlagsDoc = flag.Bool("update", false, "rewrite docs/flags.md from serv
 // flagsDoc is docs/flags.md's generator and its drift test. The page is built from the flags serve really registers
 // (registerFlags, on a fresh FlagSet) plus curated text in docs/flags.meta.json, so a new flag cannot ship without a
 // line on the site and a removed flag cannot linger there — the same shape as TestEnvVars_docAndCodeAgree and the
-// capability matrix. The long help text stays in --help on purpose (docs/tasks/task-site-2026-09.md; main.go's own
+// capability matrix. The long help text stays in --help on purpose (docs/completed/task-site-2026-09.md; main.go's own
 // note on the cold-user run that could not skim it): the page carries one curated sentence per flag instead.
 
 type flagMeta struct {

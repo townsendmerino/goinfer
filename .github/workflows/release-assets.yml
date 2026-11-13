@@ -56,7 +56,7 @@ jobs:
           # replace mechanism as the "cross-compile goinfer-serve per platform" step below; see
           # that step's comment for the R6/R2-follow-on rationale, unchanged here.
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          # R18 (docs/tasks/task-first-hour.md): the submodules are built against the checked-out root through a go.work that
+          # R18 (docs/completed/task-first-hour.md): the submodules are built against the checked-out root through a go.work that
           # lives OUTSIDE the checkout, not through `go mod edit -replace` on their go.mod. That edit was an uncommitted change
           # to a tracked file, which alone made `go version -m` read vcs.modified=true and the binary print "-dirty". The
           # workspace resolves the root to this tree just the same (the assertion below still requires `dep ... (devel)`, no

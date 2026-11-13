@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// The prefix snapshot's gates on CUDA (docs/tasks/task-kv7-prefix-snapshot-2026-10.md): a restored prefix is the prefix computed, bit
+// The prefix snapshot's gates on CUDA (docs/completed/task-kv7-prefix-snapshot-2026-10.md): a restored prefix is the prefix computed, bit
 // for bit, in every K and V row the next position reads and in the logits that follow; a snapshot declines what its ring cannot serve
 // and nothing is written when it does.
 //

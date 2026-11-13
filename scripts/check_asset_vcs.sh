@@ -2,7 +2,7 @@
 # check_asset_vcs.sh <binary>... — fail unless every binary's embedded build info says vcs.modified=false.
 #   check_asset_vcs.sh --selftest   — prove this check can go red (a dirty and a clean build, both read back).
 #
-# Why: the v0.17.0 to v0.19.0 release assets printed `vX.Y.Z (<rev>-dirty)` (R6, then R18 of docs/tasks/task-first-hour.md).
+# Why: the v0.17.0 to v0.19.0 release assets printed `vX.Y.Z (<rev>-dirty)` (R6, then R18 of docs/completed/task-first-hour.md).
 # The build step's own `go mod edit -replace` was an uncommitted edit to a tracked file, and the embedded job's downloaded
 # licenses/ an untracked one; either marks the whole tree modified in the VCS stamp. v0.20.0 still shipped it (`go version -m` on the published darwin-arm64 and linux-amd64 assets
 # read vcs.modified=true), because nothing read the stamp back. This reads it, on the built file, before it is published.

@@ -84,7 +84,7 @@ type ResidentSeedArgmax interface {
 }
 
 // ResidentRecurrentSpec is the OPTIONAL capability that lets a resident with recurrent state verify speculatively (SP2,
-// docs/tasks/task-forward-architecture-2026-10.md §6a, "SP2 on nobara"). Without it, BlockSpec refuses every recurrent model,
+// docs/completed/task-forward-architecture-2026-10.md §6a, "SP2 on nobara"). Without it, BlockSpec refuses every recurrent model,
 // because PrefillLastNArgmax advances the state by every row it verifies, rejected or not.
 type ResidentRecurrentSpec interface {
 	// PrepareRecurrentSpec allocates what verifies of up to rows rows need, before a drafter attaches; a later call for no more

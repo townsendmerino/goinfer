@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// H2: the resident self-test on a real device (docs/tasks/task-hardware-coverage-2026-10.md). A green probe on healthy code, and the same probe going RED when the resident's inputs are
+// H2: the resident self-test on a real device (docs/completed/task-hardware-coverage-2026-10.md). A green probe on healthy code, and the same probe going RED when the resident's inputs are
 // wrong, which is what makes the green mean something.
 
 func TestResidentSelfTest_passesOnHealthyCUDA(t *testing.T) {

@@ -606,7 +606,7 @@ var familyDocs = map[string]familyDoc{
 	"lfm2_vl":          {"LFM2.5", "Liquid AI LFM2/LFM2.5 hybrid: a gated short convolution on most layers, GQA + QK-norm on the rest (CPU-only — no backend implements FeatShortConv)", "safetensors", "text (+ vision tower)"},
 }
 
-// siteDoc is what goinfer.dev's model pages say about a family in plain words (docs/tasks/task-site-2026-09.md, 4a). Keyed by
+// siteDoc is what goinfer.dev's model pages say about a family in plain words (docs/completed/task-site-2026-09.md, 4a). Keyed by
 // the resolved Architecture.Name, the same key as the row, not by model_type alias: a summary describes the family, and
 // one row covers every alias. Summary is one sentence for someone choosing a model, not an engineer; Tasks tags what the
 // family is for (chat, code, vision). Written by hand, reviewed by the owner; the matrix carries them so the site never

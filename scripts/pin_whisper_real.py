@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14d2/3's reference (docs/tasks/task-multimodal-support-2026-10.md, "G-S14d"): a real Whisper checkpoint's ENCODER in transformers 5.15.0 float32 on the LibriSpeech clip and a 25 s synthetic signal, with the
+"""G-S14d2/3's reference (docs/completed/task-multimodal-support-2026-10.md, "G-S14d"): a real Whisper checkpoint's ENCODER in transformers 5.15.0 float32 on the LibriSpeech clip and a 25 s synthetic signal, with the
 PROOF that the reference is the real model and not a silently random-initialised one: the same model transcribes the LibriSpeech clip. Writes <out>/{libri,synth25s}.{in,feats,enc}.f32 and meta.json.
 Run: ~/g4venv/bin/python -I scripts/pin_whisper_real.py --model ~/models/whisper-small --out <dir>   (from the repo root)"""
 import argparse, json, os, wave

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// TestGemmW8Tile_matchesReference (int8 slice 2, docs/tasks/task-metal-int8-2026-10.md): gemm_w4f16_tile<TM, TN, true>,
+// TestGemmW8Tile_matchesReference (int8 slice 2, docs/completed/task-metal-int8-2026-10.md): gemm_w4f16_tile<TM, TN, true>,
 // the batched pass's GEMM over the native int8 path's weights (row-major int8 codes, one f32 scale a row), against a
 // float64 reference over the same inputs: A as f16, each weight dequantized to f16 exactly as the kernel stages it
 // (half(q*scale)). Each output must be within one f16 rounding of the reference plus the f32 accumulation error over K

@@ -15,7 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestKSH6C_postPoolBreakdown is a reading for KS-H6's build (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build"): one CUDA
+// TestKSH6C_postPoolBreakdown is a reading for KS-H6's build (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-H6 build"): one CUDA
 // build of KSH6C_MODEL at KSH6C_CTX, served as serve loads it, with free VRAM read at every requested allocation. It lists every
 // allocation after the last K/V pool buffer (bytes, and the card's drop across it) and the drop no allocation accounts for.
 // KSH6C_NO_SELFTEST skips the decoder's startup self-test, whose fixtures build before this one. KSH6C_S4=1 makes it H6C-S4's

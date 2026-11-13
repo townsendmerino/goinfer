@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestCUDADeltaNetPrefill_matchesPerToken is gate 1 of docs/tasks/task-cuda-deltanet-prefill-2026-09.md: the batched
+// TestCUDADeltaNetPrefill_matchesPerToken is gate 1 of docs/completed/task-cuda-deltanet-prefill-2026-09.md: the batched
 // prefill of a Gated-DeltaNet model against the per-token path on the same resident.
 //   - Below 16 rows the batched GEMVs are decode's own kernel: the last-token logits must be bit-identical.
 //   - At 16 rows and above the projections take the batched GEMM: argmax equal and cosine >= 0.9999.

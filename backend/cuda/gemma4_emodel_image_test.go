@@ -12,7 +12,7 @@ import (
 )
 
 // S9 on CUDA, part B: the Gemma 4 E-model image turn prefilled on the resident in one batched pass, from rows the decoder builds. The plan, the gates and the
-// bars: docs/tasks/task-multimodal-support-2026-10.md ("S9 on CUDA, part B").
+// bars: docs/completed/task-multimodal-support-2026-10.md ("S9 on CUDA, part B").
 
 // eModelImageLayouts are the three places the image block can sit in the 18-position prompt (the golden's prompt plus its continuation): the start, the
 // middle and the end, 6 soft tokens each, so the PLE tails of image rows meet text rows on both sides and the shared layers attend across the boundary.
@@ -46,7 +46,7 @@ type eModelImageGrade struct {
 // eModelImageMinCos is G1q's row bar: both sides run the same int4 weights, so the resident's logits on correctly built rows
 // track the CPU int4 forward far tighter than the int4-vs-f32 envelope (0.76-0.90 here), which no row defect smaller than a
 // zeroed tail can cross. The placeholder-id tail (G2q's defect 1) reads 0.988-0.998, a correct build 0.9998 or better; the
-// readings and the amendment are in docs/tasks/task-multimodal-support-2026-10.md ("S9 on CUDA part B").
+// readings and the amendment are in docs/completed/task-multimodal-support-2026-10.md ("S9 on CUDA part B").
 const eModelImageMinCos = 0.999
 
 func (g eModelImageGrade) pass() (bool, string) {

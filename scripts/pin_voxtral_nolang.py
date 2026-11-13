@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14e4a(ii) of docs/tasks/task-multimodal-support-2026-10.md: the processor's own transcription request ids with NO language (apply_transcription_request(language=None)), for three clip lengths,
+"""G-S14e4a(ii) of docs/completed/task-multimodal-support-2026-10.md: the processor's own transcription request ids with NO language (apply_transcription_request(language=None)), for three clip lengths,
 so goinfer's multimodal.VoxtralPrompt(tk, n, "") can be compared id for id. Tokenizer and processor only: no model is loaded. Writes testdata/voxtral_nolang_ids.json.
 Run (repo root): PYTHONPATH=~/goinfer-bench/s14e/mc ~/g4venv/bin/python scripts/pin_voxtral_nolang.py ~/models/voxtral-mini-3b-2507"""
 import json, sys, wave

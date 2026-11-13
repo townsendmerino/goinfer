@@ -247,7 +247,7 @@ extern "C" __global__ void delta_attn_gate(float* __restrict__ ctx,
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// ROW-BATCHED TWINS for a prompt prefill (docs/tasks/task-cuda-deltanet-prefill-2026-09.md). A prefill of M tokens
+// ROW-BATCHED TWINS for a prompt prefill (docs/completed/task-cuda-deltanet-prefill-2026-09.md). A prefill of M tokens
 // used to cost 5 launches per token per layer; these cover all M rows in one launch each. Every body is its
 // single-token twin's, line for line, with a row offset added — the same intrinsics in the same order, so each
 // element is bit-identical to what the per-token path computes. Only two carry state across rows, and both walk the

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14g3's reference (docs/tasks/task-multimodal-support-2026-10.md, "G-S14g"): openai/whisper-small in transformers 5.15.0 float32, generate(return_timestamps=True, return_segments=True, task="transcribe") on the
+"""G-S14g3's reference (docs/completed/task-multimodal-support-2026-10.md, "G-S14g"): openai/whisper-small in transformers 5.15.0 float32, generate(return_timestamps=True, return_segments=True, task="transcribe") on the
 registered 5.9 s LibriSpeech clip (short form, the extractor's default 30 s padding) and on the 70 s composite of scripts/pin_whisper_longest.py (long form: truncation=False, padding="longest", the attention mask
 passed). Per case: the segments (start, end, tokens), the concatenated sequence, the decoded text (skip_special_tokens=True), the detected language id. The reference is PROVED real: zero missing keys, and the
 short clip's text asserted against the corpus. Writes <out>/golden.json.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job: Batch B's peer run, T1.11's 0.5B cells and T1.14 (docs/tasks/task-metal-audit-2026-10.md, "Batch B:
+# Night job: Batch B's peer run, T1.11's 0.5B cells and T1.14 (docs/completed/task-metal-audit-2026-10.md, "Batch B:
 # pre-registration"), pre-registered there on 2026-10-02 before any graded run. One same-session bench_peer.py sweep
 # on the Metal backend: goinfer (main as shipped, serve at REV), mlx-lm 0.31.3 (mlx-community 4-bit, its own quant) and
 # Ollama, greedy, depth 128 (phase A) and 2048 and 3900 (phase B), 3 runs per cell, on the 0.5B, 1.5B and 7B. mlx has
@@ -10,7 +10,7 @@
 #   git -C ~/tmcode/goinfer worktree add --detach ~/goinfer-bench/metal-audit-2026-10/wt-batch-b-<REV> <REV>
 # Queued with:
 #   python3 scripts/night.py add metal-audit-peer-b --est 90 --by "Claude (Mac session), Metal audit Batch B T1.11 + T1.14" \
-#     --doc docs/tasks/task-metal-audit-2026-10.md -- bash ~/goinfer-bench/metal-audit-2026-10/run-peer-b.sh
+#     --doc docs/completed/task-metal-audit-2026-10.md -- bash ~/goinfer-bench/metal-audit-2026-10/run-peer-b.sh
 # bench_peer.py holds the timing lock itself (inherited from the night runner). Results: ~/goinfer-logs/metal-audit-2026-10/batch-b/.
 set -uo pipefail
 REV=71812d57

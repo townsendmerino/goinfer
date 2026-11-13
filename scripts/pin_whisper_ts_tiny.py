@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14g2's fixture and reference (docs/tasks/task-multimodal-support-2026-10.md, "G-S14g"): a tiny random-weight Whisper whose vocabulary has the real layout in miniature (3,110 ids: text 0-1,599, stop 1,600, start
+"""G-S14g2's fixture and reference (docs/completed/task-multimodal-support-2026-10.md, "G-S14g"): a tiny random-weight Whisper whose vocabulary has the real layout in miniature (3,110 ids: text 0-1,599, stop 1,600, start
 1,601, <|en|> <|fr|> <|de|> 1,602-1,604, translate 1,605, transcribe 1,606, <|notimestamps|> 1,607, 1,501 timestamp tokens from 1,608), built from transformers' own classes and saved the ordinary way, with a generation_config.json
 carrying what generate needs; and transformers' generate(return_timestamps=True, return_segments=True) on a 7 s clip and an 8 s clip (short form; the 8 s one ends a window on a single timestamp) and a 68 s clip (long form, three windows) as the reference: per clip the segments (start, end,
 tokens), the final sequence, and the detected language token. Random weights make every branch of the timestamp rules fire. Writes <out>/{config.json,generation_config.json,model.safetensors,golden.json}.

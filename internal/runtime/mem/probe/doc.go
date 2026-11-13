@@ -20,5 +20,5 @@
 //
 // Test it: go test ./internal/runtime/mem/probe/ (seconds; no model, no device).
 //
-// Design and plan: docs/tasks/task-subsystems-2026-10.md, Track MM (MM0).
+// Design and plan: docs/completed/task-subsystems-2026-10.md, Track MM (MM0).
 package probe

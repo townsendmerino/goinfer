@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// The Qwen3.5+ and GLM-OCR vision towers on Metal (S2 of docs/tasks/task-multimodal-support-2026-10.md): aikit's
+// The Qwen3.5+ and GLM-OCR vision towers on Metal (S2 of docs/completed/task-multimodal-support-2026-10.md): aikit's
 // ForwardViT up to the last block, in float32, from aikit's export (Weights, RopeTables, PositionEmbeds,
 // VisionSegments). The patch embed and every block run here on the Gemma 4 tower's base (eg2Ops: f32 GEMM, RMSNorm,
 // rotate-half RoPE, blocked attention) plus aikit gpu.ViT's bias add, LayerNorm, GELU-tanh and SiLU-mul. The tail
@@ -108,7 +108,7 @@ type gridVAccel struct {
 	ropeSin        Buffer
 }
 
-// gvProfile is S17 step 0's instrument (docs/tasks/task-multimodal-support-2026-10.md): with it set, run ends its command
+// gvProfile is S17 step 0's instrument (docs/completed/task-multimodal-support-2026-10.md): with it set, run ends its command
 // buffer at every change of kernel class and adds each buffer's GPU-busy window to its class, and linear and the
 // attention loop add their FLOPs. A test sets it; production never does, and run is then unchanged.
 type gvProfile struct {

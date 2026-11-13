@@ -1,4 +1,4 @@
-// Package hwcensus holds the hardware census test (docs/tasks/task-hardware-coverage-2026-10.md, H0). It has no
+// Package hwcensus holds the hardware census test (docs/completed/task-hardware-coverage-2026-10.md, H0). It has no
 // non-test code: the census is docs/hardware-coverage.json, and this package checks it against the source.
 package hwcensus
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job: B-P02's grade (docs/tasks/task-metal-audit-2026-10.md, "B-P02: built, pending its grade"), pre-registered
+# Night job: B-P02's grade (docs/completed/task-metal-audit-2026-10.md, "B-P02: built, pending its grade"), pre-registered
 # there on 2026-10-03 before any graded run. TestBP02AttnAB on internlm2-1_8b (graded) and Qwen3-0.6B (reported), G = 2:
 # in-sequence attention, legacy attention_fa against the block kernel, 5 reps.
 #
@@ -7,7 +7,7 @@
 #   (cd ~/tmcode/goinfer && go test -c -tags goinfer_testhooks -o ~/goinfer-bench/metal-audit-2026-10/metal-tagged-<REV>.test ./metal/)
 # Queued with:
 #   python3 scripts/night.py add metal-audit-bp02 --est 20 --by "Claude (Mac session), Metal audit B-P02 grade" \
-#     --doc docs/tasks/task-metal-audit-2026-10.md -- bash docs/measurements/metal-audit-2026-10/run-bp02-grade.sh
+#     --doc docs/completed/task-metal-audit-2026-10.md -- bash docs/measurements/metal-audit-2026-10/run-bp02-grade.sh
 # The runner holds the timing lock. Logs: ~/goinfer-logs/metal-audit-2026-10/bp02/.
 set -uo pipefail
 REV=39b893d5

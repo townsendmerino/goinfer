@@ -50,7 +50,7 @@ func optionsAssignments(src string) []string {
 	return out
 }
 
-// TestOneMerge is G-SB10-14 (docs/tasks/task-subsystems-2026-10.md § "Step 3b's gates"): serve's non-test code
+// TestOneMerge is G-SB10-14 (docs/completed/task-subsystems-2026-10.md § "Step 3b's gates"): serve's non-test code
 // assigns no decoder.Options field loadflags.Resolve sets, so a per-model setting is merged in one place.
 func TestOneMerge(t *testing.T) {
 	planted := "\to.KVHostBytes = cfg.kvHostBytes\n\tc.load.Quant, c.load.QuantSet = q, true\n\tov.Quant = &q\n\tf(o.Quant, x == y)\n"

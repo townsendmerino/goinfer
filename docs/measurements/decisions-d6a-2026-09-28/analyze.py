@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""D6a's pre-registered metrics and decision (docs/tasks/task-constrained-confidence.md, D6a pre-registration),
+"""D6a's pre-registered metrics and decision (docs/tasks/parked/task-constrained-confidence.md, D6a pre-registration),
 from `goinfer-chat decide` output run WITHOUT a calibration (raw, T = 1) on eval-sample.jsonl, plus the
 calibration.json `decisions-calibrate` fitted on calib-sample.jsonl for the same arm.
 

@@ -107,7 +107,7 @@ func siglipF32Device(t *testing.T, c *Context, enc *vision.Encoder, w vision.Sig
 	return out
 }
 
-// TestVisionEncoderF32_parity is G-S12.3a-1 (docs/tasks/task-multimodal-support-2026-10.md, S12.3a): the float32
+// TestVisionEncoderF32_parity is G-S12.3a-1 (docs/completed/task-multimodal-support-2026-10.md, S12.3a): the float32
 // SigLIP tower on WebGPU against the CPU float32 tower on the sharpened tiny fixture, every output token at cosine
 // >= 0.9999, and each planted defect, alone, under that bar.
 func TestVisionEncoderF32_parity(t *testing.T) {
@@ -214,7 +214,7 @@ func TestVisionEnableResidentF32_parity(t *testing.T) {
 	}
 }
 
-// siglipRealImages are the five images of the default-tower comparison (docs/tasks/task-multimodal-support-2026-10.md,
+// siglipRealImages are the five images of the default-tower comparison (docs/completed/task-multimodal-support-2026-10.md,
 // "Gemma 3's default tower on WebGPU").
 var siglipRealImages = []string{
 	"../../../../testdata/glm_ocr/table.png", "../../../../testdata/glm_ocr/invoice.png", "../../../../testdata/glm_ocr/formula.png",
@@ -501,7 +501,7 @@ func TestVisionEncoder_profile(t *testing.T) {
 	profile("int8", ve8, patches)
 }
 
-// TestVisionEncoderF32_speedGate is G-S12.3a-4 (docs/tasks/task-multimodal-support-2026-10.md, S12.3a): gemma-3-4b-it's
+// TestVisionEncoderF32_speedGate is G-S12.3a-4 (docs/completed/task-multimodal-support-2026-10.md, S12.3a): gemma-3-4b-it's
 // tower at 896x896 on one image, the float32 WebGPU tower's encode time over the CPU float32 tower's, five pairs in
 // alternating order after one discarded pass of each. The float32 device tower becomes WebGPU's default at a median
 // ratio of at most 0.98; 0.98-1.00 is parked; above 1.00 it stays opt-in. A night gate: it runs only with

@@ -239,7 +239,7 @@ kernel void gemv_w4a8_moe(device const uint4* wq[[buffer(0)]], device const half
     if (lane==0) out[row] = acc*asc[0];
 }
 
-// gemv_w8a8_moe / gemv_w8a8_moe_wacc (int8 slice 4, docs/tasks/task-metal-int8-2026-10.md): the expert GEMVs above on the
+// gemv_w8a8_moe / gemv_w8a8_moe_wacc (int8 slice 4, docs/completed/task-metal-int8-2026-10.md): the expert GEMVs above on the
 // native int8 path's weights, in their argument order and launch shape. The stacked buffer holds every expert's int8
 // rows (K bytes each) with one f32 scale per row; the weight row is idx[slot]*rowsPerExpert + outRow. The body is
 // W8A8_SA_BODY's at that row: the activation staged as words, an exact int32 dot, and float(acc)·aScale·wScale through

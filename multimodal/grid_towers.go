@@ -8,7 +8,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
-// Device towers for the grid-based vision encoders, Qwen3.5+ and GLM-OCR (S2 of docs/tasks/task-multimodal-support-2026-10.md),
+// Device towers for the grid-based vision encoders, Qwen3.5+ and GLM-OCR (S2 of docs/completed/task-multimodal-support-2026-10.md),
 // on the pattern of the Gemma 4 registry (gemma4_tower.go): a backend module registers a tower built from aikit's export
 // (the encoder's Weights, RopeTables, VisionSegments) here, the tower runs the patch embed and the blocks on its
 // device, and the tail (Qwen3's merger; GLM-OCR's post-norm, downsample and merger) stays aikit's FinishHidden.

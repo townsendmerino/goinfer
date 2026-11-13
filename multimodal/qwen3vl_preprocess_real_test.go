@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// TestQwen3VLPreprocess_againstHF is S10's owed preprocessing record (docs/tasks/task-multimodal-support-2026-10.md):
+// TestQwen3VLPreprocess_againstHF is S10's owed preprocessing record (docs/completed/task-multimodal-support-2026-10.md):
 // goinfer's QwenPreprocess with Qwen3-VL-2B's own preprocessor config (uncapped, so the grids match the processor's)
 // against transformers' Qwen2VLImageProcessor pixel values for the four F2a images (written by
 // scripts/pin_qwen3vl_tower_real.py on nobara; GOINFER_QWEN3VL_TOWER_ARTIFACTS, default ~/goinfer-logs/qwen3vl-tower).

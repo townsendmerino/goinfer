@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Metal spec verify on the step kernels: the served gates (docs/tasks/task-concurrency-2026-09.md MC4, registered in
+"""Metal spec verify on the step kernels: the served gates (docs/tasks/parked/task-concurrency-2026-09.md MC4, registered in
 8bb80b1f). Usage: gates-served.py DIR (copy-15b.json chat-15b.json [copy-7b.json chat-7b.json]). Keys <arm>_<round>,
 arm in plain / specold / specnew; one client."""
 import json, os, statistics, sys

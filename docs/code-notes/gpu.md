@@ -1194,7 +1194,7 @@ guard takes the smaller of (metalMemoryCeiling):
   - the memory available when the build STARTED (avail0, read before its first upload, 0 when unknown), against
     only what the build then allocated: the device weights and the slots. The host copy was already resident when
     avail0 was read, so it is not counted again — and a live figure read after the upload would count the weights
-    twice, the bug MC1's Metal clamp had (docs/tasks/task-concurrency-2026-09.md, "priced after the build").
+    twice, the bug MC1's Metal clamp had (docs/tasks/parked/task-concurrency-2026-09.md, "priced after the build").
 
 An unreadable RAM size grants one, as metalKVSlots does.
 ```
@@ -1347,7 +1347,7 @@ Moved from `backend/webgpu/residency.go` (the comment above `uploadProj.slowpath
 ```text
 The int4 resident upload takes the direct byte path whenever K%32==0 (decoder int4 bytes == GPU
 layout), else unpack+packNibbles. GOINFER_INT4_SLOWPATH, which forced the latter to isolate the
-fast path's delta, was retired 2026-09-24 (docs/tasks/task-env-config-2026-09.md, phase 6); the
+fast path's delta, was retired 2026-09-24 (docs/completed/task-env-config-2026-09.md, phase 6); the
 measurement is in docs/completed/mellum2-resident.md.
 ```
 

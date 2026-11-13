@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// TestKSD4_w32MatchesViTGEMM is D4-G1 (docs/tasks/task-kernel-survey-2026-10.md, "KS-D4 gates"): S17's tower_gemm_w32 against
+// TestKSD4_w32MatchesViTGEMM is D4-G1 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-D4 gates"): S17's tower_gemm_w32 against
 // the kernel aikit's GEMMF32Plan picks (gemm_f32_sg_big or gemm_f32_sg), the GEMM eg2Ops.gemm runs today, C = A · Wᵀ at six
 // (M, N, K) cells, random f32, tower_gemm_w32 from the precise library the towers compile (eg2MSL + gvMSL). A differing byte
 // means the swap is not a bit-identical change.

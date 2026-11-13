@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestRecurrentGuards_declineMamba is OP2b's guard gate (docs/tasks/task-forward-architecture-2026-10.md §4.7): every path
+// TestRecurrentGuards_declineMamba is OP2b's guard gate (docs/completed/task-forward-architecture-2026-10.md §4.7): every path
 // that declined a Gated-DeltaNet model declines a Mamba-2 one, through the general recurrent check (residLayer.recurrent,
 // resident.recurrentModel), on a resident built by hand with one Mamba-2 layer. Where the recurrent check is what decides, a
 // control without the Mamba layer must not decline, so the guard is not passing on an earlier, unrelated exit. A guard that

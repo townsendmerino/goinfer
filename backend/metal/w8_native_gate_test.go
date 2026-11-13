@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder/fit"
 )
 
-// Gates F2 and F3 of docs/tasks/task-metal-int8-2026-10.md, pre-registered: does a dense int8 model on
+// Gates F2 and F3 of docs/completed/task-metal-int8-2026-10.md, pre-registered: does a dense int8 model on
 // Metal's native int8 path (r.w8) agree with the CPU at the same quant, and is it as close to f32 as the CPU's int8?
 // They run on the 0.5B coder by day; GOINFER_W8_GATE_MODEL names another checkpoint (the 1.5B runs with gate S).
 

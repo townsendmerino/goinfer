@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14e2's fixture (docs/tasks/task-multimodal-support-2026-10.md, "S14.4b ... G-S14e"): a tiny random-weight Voxtral built by transformers' own VoxtralForConditionalGeneration, saved the ordinary
+"""G-S14e2's fixture (docs/completed/task-multimodal-support-2026-10.md, "S14.4b ... G-S14e"): a tiny random-weight Voxtral built by transformers' own VoxtralForConditionalGeneration, saved the ordinary
 way in the REAL checkpoint's layout (audio_tower.*, multi_modal_projector.*, language_model.model.*, language_model.lm_head.weight), plus goldens for goinfer's composition.
 
 It keeps the properties the real model has and the planted defects need: the audio intermediate_size is 4 x its hidden size (the projector reads four stacked frames), the text head_dim (16) is

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Two-image goldens for S11 (docs/tasks/task-multimodal-support-2026-10.md, "S11, plan and gates"): every tiny VL
+"""Two-image goldens for S11 (docs/completed/task-multimodal-support-2026-10.md, "S11, plan and gates"): every tiny VL
 fixture with TWO images in one prompt, in two layouts:
 
   interleaved  prefix, image A, text, image B, text   (Qwen: A and B different sizes)
@@ -24,7 +24,7 @@ Gemma 4's bidirectional mask: global layers causal only, and on sliding layers t
 5.12 applied Gemma 3's mask on every layer, which is what goinfer's gemma4AttendRange implements. Measured 2026-10-09:
 the single-image golden re-pinned under 5.15 reads cosine 0.99982 against the committed (5.12) one, with identical image
 features and causal-only logits. Which is right for the real checkpoints is a separate question
-(docs/tasks/task-multimodal-support-2026-10.md, S11 results); S11's golden measures multi-image handling against the
+(docs/completed/task-multimodal-support-2026-10.md, S11 results); S11's golden measures multi-image handling against the
 semantics goinfer has.
 """
 import argparse

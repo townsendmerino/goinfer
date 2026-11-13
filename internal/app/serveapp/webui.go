@@ -170,7 +170,7 @@ type webPullReq struct {
 	Quant string `json:"quant"`
 	File  string `json:"file"`
 	// Checkpoint names the repo's whole safetensors checkpoint (pull's ":safetensors" selector) rather than one GGUF file: the
-	// shape a family with no GGUF loader is published in (docs/tasks/task-checkpoint-fetch-2026-09.md).
+	// shape a family with no GGUF loader is published in (docs/completed/task-checkpoint-fetch-2026-09.md).
 	Checkpoint bool `json:"checkpoint"`
 }
 
@@ -681,7 +681,7 @@ func (s *server) handleWebLoad(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleWebCache answers the page's "On disk" card (docs/tasks/task-checkpoint-fetch-2026-09.md): every model the pull cache
+// handleWebCache answers the page's "On disk" card (docs/completed/task-checkpoint-fetch-2026-09.md): every model the pull cache
 // holds, with its size, its .giw sidecars, whether its pull finished, and the name it is loaded under, if it is. On disk and
 // loaded are different questions, and this is the one the Resident card does not answer: what a pull put here that nothing has
 // loaded, or loaded since. Sizes only (pull.CacheEntries), so it is fast on a large cache; a load still verifies in full.

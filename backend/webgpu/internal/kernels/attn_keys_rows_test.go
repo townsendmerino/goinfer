@@ -70,7 +70,7 @@ func attnRowsOn(t *testing.T, c *Context, p tiledPipes, q, keys, vals []float32,
 	return out
 }
 
-// G-S12.4c-b1 (docs/tasks/task-multimodal-support-2026-10.md): each key-split kernel's rows form against the single-row
+// G-S12.4c-b1 (docs/completed/task-multimodal-support-2026-10.md): each key-split kernel's rows form against the single-row
 // kernel run once a row, bit for bit, with and without a window, at key counts that cross a tile. Then the planted
 // defects, each of which must differ.
 func TestAttnKeysRows_matchSingleRow(t *testing.T) {

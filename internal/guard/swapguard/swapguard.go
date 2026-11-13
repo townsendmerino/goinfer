@@ -1,4 +1,4 @@
-// Package swapguard is S3's load-time swap tripwire (docs/tasks/task-never-swap-2026-09.md), shared by every
+// Package swapguard is S3's load-time swap tripwire (docs/completed/task-never-swap-2026-09.md), shared by every
 // entry point that loads a model: goinfer-serve (internal/serveapp, which also runs the SERVING half — the
 // admission gate — on top of ThresholdBytes) and goinfer-chat (internal/chatapp, which has no admission gate,
 // so it takes only this half: "chat gets the load-time half only", S3 Build item 4).

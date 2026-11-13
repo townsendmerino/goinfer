@@ -8,7 +8,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestS18ShrinkCtxToFit is S18's part 3 on the Mac (docs/tasks/task-multimodal-support-2026-10.md, "S18 on the Mac", registered before the code): with a
+// TestS18ShrinkCtxToFit is S18's part 3 on the Mac (docs/completed/task-multimodal-support-2026-10.md, "S18 on the Mac", registered before the code): with a
 // budget between what the resident needs at the 4096 default and at the 2048 floor, an unpinned build shrinks its context to 2048 and goes resident
 // instead of declining; an explicit -ctx never shrinks (the build declines); and the ceiling's entry goes with the resident, so it cannot keep a closed
 // model alive. Red before S18: the 4096 build declined.

@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestKSD9_layerMajorSpeed is D9-G2 (docs/tasks/task-kernel-survey-2026-10.md, "KS-D9 gates" and its model amendment): the
+// TestKSD9_layerMajorSpeed is D9-G2 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-D9 gates" and its model amendment): the
 // generic MoE at GOINFER_KSD9_MODEL paged on Metal (GOINFER_METAL_MOE_SLOTS slots a layer, 16 unless set), a 512-row
 // layer-major prefill (PrefillLast), the batched phase 2 against the per-row one (moeExpertBatchOn) on one resident, A B B A
 // over 3 valid pairs (A B, B A, A B) after one warm run each. voidWindow brackets each timed prefill, and a pair with an arm over

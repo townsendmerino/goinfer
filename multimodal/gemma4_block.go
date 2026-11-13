@@ -45,7 +45,7 @@ func Gemma4PooledTokens(positionIDs [][2]int, poolingKernelSize int) int {
 // FindImageRun (Gemma3ImageBlock's own function, gemma3_block.go) is already
 // family-agnostic and is reused unchanged for Gemma 4.
 
-// Gemma 4's audio placeholders (docs/tasks/task-multimodal-support-2026-10.md, S5): HF's processor (processing_gemma4.py,
+// Gemma 4's audio placeholders (docs/completed/task-multimodal-support-2026-10.md, S5): HF's processor (processing_gemma4.py,
 // replace_audio_token) emits BOA + n × the audio soft token + EOA, with no newline on either side, as for an image.
 const (
 	Gemma4AudioSoftToken  = "<|audio|>"

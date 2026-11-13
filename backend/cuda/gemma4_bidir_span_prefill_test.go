@@ -13,7 +13,7 @@ import (
 )
 
 // S19: the bidirectional Gemma 4 image prefill on the resident (PrefillSpansLast, attn_span_batched). The plan, the gates
-// and the bars: docs/tasks/task-multimodal-support-2026-10.md ("S19").
+// and the bars: docs/completed/task-multimodal-support-2026-10.md ("S19").
 
 // spanFixtures are the two bidirectional fixtures: tiny (4 layers, window 3) and scaled (12 layers, the real 256/512 head
 // dims, window 8). Both windows are shorter than every span below, so a span row's reach-back to its span start is

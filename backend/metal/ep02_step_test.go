@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// TestEP02_stepAB is E-P02's whole-step read (docs/tasks/task-metal-audit-2026-10.md, "E-P02"): the batched step at B = 2
+// TestEP02_stepAB is E-P02's whole-step read (docs/completed/task-metal-audit-2026-10.md, "E-P02"): the batched step at B = 2
 // and 4, depth 128, with mc3AdjRowsOn on and off, alternated rep by rep in one process, GPU time per step. On the 7B
 // calibrateRows gives gate|up (and at small B qkv) to the per-row GEMVs, which is where the adjacent form runs. The
 // arms' logits are compared every step. Exploratory, by day.

@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// TestKSD2_steelHeadDims is D2-G2 (docs/tasks/task-kernel-survey-2026-10.md, "KS-D2 gates"): attention_prefill_steel's
+// TestKSD2_steelHeadDims is D2-G2 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-D2 gates"): attention_prefill_steel's
 // head-dim 64, 80 and 96 instances and attention_prefill_fused, each against an f64 attention over the same half-precision
 // inputs, at random q, k and v; M = 100 and 300; start 0 and 37; window 0 and 64; 14 query heads over 2 KV heads. PASS iff
 // every output is finite and, in every cell, steel's max-abs error is at most 2x the fused kernel's and its mean-abs error
