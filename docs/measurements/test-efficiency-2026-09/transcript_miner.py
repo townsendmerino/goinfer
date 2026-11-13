@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """transcript_miner.py — TE0's complete census: every command a Claude Code session ran on this machine, with its
-duration, from the session transcripts (docs/tasks/task-test-efficiency-2026-09.md, TE0 "Complete").
+duration, from the session transcripts (docs/completed/task-test-efficiency-2026-09.md, TE0 "Complete").
 
 WHY. census.py sees only what was archived. A daytime `go test` that printed to a terminal, a poll loop, or a smoke run
 never reaches a log. Every one of them is in the transcripts: each Bash tool call is a `tool_use` entry (timestamp,

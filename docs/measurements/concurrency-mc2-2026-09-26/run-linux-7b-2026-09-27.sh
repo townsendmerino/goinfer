@@ -1,5 +1,5 @@
 #!/bin/bash
-# MC3c step-2 trigger (docs/tasks/task-concurrency-2026-09.md MC3c, pre-registered in 2f5185c0): MC2 throughput on the
+# MC3c step-2 trigger (docs/tasks/parked/task-concurrency-2026-09.md MC3c, pre-registered in 2f5185c0): MC2 throughput on the
 # 7B, nobara CPU, int4, depths 128 and 512, harness defaults. One depth per go test invocation. Before each depth: load1
 # <= 1.0 and no other go / test binary / serve process on the box.
 export PATH=/usr/local/go/bin:$PATH

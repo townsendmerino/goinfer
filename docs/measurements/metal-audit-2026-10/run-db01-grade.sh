@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job: D-B01's grade (docs/tasks/task-metal-audit-2026-10.md, "D-B01: built, off by default; pre-registration"),
+# Night job: D-B01's grade (docs/completed/task-metal-audit-2026-10.md, "D-B01: built, off by default; pre-registration"),
 # pre-registered there on 2026-10-03 before any graded run. From tagged test binaries pinned at REV, each run from its
 # package directory (the tests read ../testdata relative to it):
 #   1. preconditions: TestDeltaNetSeqKernels_matchDecodeBitwise, TestDB01_chunkedPrefillMatchesWhole and (the 2026-10-04
@@ -14,7 +14,7 @@
 #     && go test -c -tags goinfer_testhooks -o ~/goinfer-bench/metal-audit-2026-10/metal-tagged-<REV>.test ./metal/)
 # Queued with:
 #   python3 scripts/night.py add metal-audit-db01 --est 40 --by "Claude (Mac session), Metal audit D-B01 grade" \
-#     --doc docs/tasks/task-metal-audit-2026-10.md -- bash docs/measurements/metal-audit-2026-10/run-db01-grade.sh
+#     --doc docs/completed/task-metal-audit-2026-10.md -- bash docs/measurements/metal-audit-2026-10/run-db01-grade.sh
 # Logs: ~/goinfer-logs/metal-audit-2026-10/db01/; the readings in results.txt.
 set -uo pipefail
 REV=f50afe17

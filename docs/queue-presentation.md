@@ -156,7 +156,7 @@ decided.
 **U9 · The book — publish standalone, or keep as GitHub Pages only** — docs/book/, **DECISION
 PENDING, filed 2026-09-15**
 
-**UPDATE 2026-10-06 (the hosting half is decided; the premise below is stale).** The owner decided on 2026-09-29 for one host (`docs/tasks/task-site-2026-09.md` S5): the book is built and served by
+**UPDATE 2026-10-06 (the hosting half is decided; the premise below is stale).** The owner decided on 2026-09-29 for one host (`docs/completed/task-site-2026-09.md` S5): the book is built and served by
 `site.yml` at **https://goinfer.dev/book/**, which `README.md` and `docs/README.md` link. The sentence below that it is "served at `townsendmerino.github.io/goinfer/` via `book-pages.yml`" is out of
 date: that address now serves a one-file redirect stub (`.github/workflows/book-pages.yml`), kept because every released binary's web UI and the v0.19.0 and v0.20.0 release notes link to it and
 switching Pages off would turn those into 404s. Both addresses returned 200 on 2026-10-06. The book is unchanged in shape (eleven numbered chapters, `12-glossary.md`, the figures). **What is still

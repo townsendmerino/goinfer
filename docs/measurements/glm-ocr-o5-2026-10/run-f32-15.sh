@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # GLM-OCR O5, the f32 half of the 15-invoice accuracy report (synthetic invoices, NOT real scans). Queued for the night
-# (docs/tasks/task-glm-ocr-2026-10.md O5; root CLAUDE.md "Run budget"): by day only a 3-document f32 subset (documents 2, 8, 10) ran.
+# (docs/completed/task-glm-ocr-2026-10.md O5; root CLAUDE.md "Run budget"): by day only a 3-document f32 subset (documents 2, 8, 10) ran.
 #
 # Self-contained and unattended: it uses a PINNED CPU serve binary and a PINNED copy of the eval script and the test data,
 # all staged under $D (nothing is read from the working tree, which may move before tonight), starts its own server, runs

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job: the serve chain's served grade (docs/tasks/task-metal-audit-2026-10.md, "The serve chain: served grade"),
+# Night job: the serve chain's served grade (docs/completed/task-metal-audit-2026-10.md, "The serve chain: served grade"),
 # registered 2026-10-04 before it runs. TE5(a): two arms, no peer. goinfer = main 3b9ef839 (a lone MC3 generation runs
 # the greedy or sampled chain with the resident held, 0277f4ed); goinfer_old = the same rev with the hold never taken
 # (servechain-old-arm.patch, the gate's "never hold" mutation), so the arms differ in that one branch. bench_peer.py on
@@ -14,7 +14,7 @@
 #     servechain_cells.py; fca400fe is 3b9ef839 plus docs, and its one local diff is the old arm patch, in decoder/model.go)
 # Queued with:
 #   python3 scripts/night.py add metal-audit-servechain --est 40 --by "Claude (Mac session), serve-chain grade" \
-#     --doc docs/tasks/task-metal-audit-2026-10.md -- bash docs/measurements/metal-audit-2026-10/run-servechain-grade.sh
+#     --doc docs/completed/task-metal-audit-2026-10.md -- bash docs/measurements/metal-audit-2026-10/run-servechain-grade.sh
 # bench_peer.py holds the timing lock (inherited from the night runner) and uses the darwin instant idle gate.
 set -uo pipefail
 REV=3b9ef839

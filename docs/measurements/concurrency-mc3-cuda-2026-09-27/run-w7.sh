@@ -1,5 +1,5 @@
 #!/bin/bash
-# MC3 on CUDA — W7 grading (docs/tasks/task-concurrency-2026-09.md, "MC3 on CUDA", pre-registered in 01bcb640): nobara,
+# MC3 on CUDA — W7 grading (docs/tasks/parked/task-concurrency-2026-09.md, "MC3 on CUDA", pre-registered in 01bcb640): nobara,
 # RTX 2070 SUPER, driver 595.91.07, qwen2.5-coder-1.5b q4_k_m int4 from ~/models, serve defaults (-max-concurrent 4,
 # -kv-sessions 4, -prefill-chunk 512), greedy, 6 turns x 128, --fixed-nonce, a fresh server per cell.
 # old = serve-cuda @ 01bcb640 (MC1: slots, one generation at a time); new = serve-cuda @ 7a44a58e (MC3 on CUDA).

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job: D-G01's grade (docs/tasks/task-metal-audit-2026-10.md, "D-G01: pre-registration"), pre-registered there on
+# Night job: D-G01's grade (docs/completed/task-metal-audit-2026-10.md, "D-G01: pre-registration"), pre-registered there on
 # 2026-10-03 before any graded run. From the tagged metal test binary pinned at REV, run from metal/ (the tests read
 # ../testdata): TestDG01_expertMajorMoEPrefill on the Qwen1.5-MoE 4-layer slice, M = 64 and 512, 10 set-A prompts.
 #   1. the three planted mutations, each of which must FAIL the gate (a mutation that passes stops the grade)
@@ -9,7 +9,7 @@
 #   (cd ~/tmcode/goinfer && go test -c -tags goinfer_testhooks -o ~/goinfer-bench/metal-audit-2026-10/metal-tagged-<REV>.test ./metal/)
 # Queued with:
 #   python3 scripts/night.py add metal-audit-dg01 --est 15 --by "Claude (Mac session), Metal audit D-G01 gate" \
-#     --doc docs/tasks/task-metal-audit-2026-10.md -- bash docs/measurements/metal-audit-2026-10/run-dg01-grade.sh
+#     --doc docs/completed/task-metal-audit-2026-10.md -- bash docs/measurements/metal-audit-2026-10/run-dg01-grade.sh
 # Logs: ~/goinfer-logs/metal-audit-2026-10/dg01/; the readings in results.txt.
 set -uo pipefail
 REV=ec3cafd1

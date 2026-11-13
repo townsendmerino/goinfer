@@ -1151,7 +1151,7 @@ lever to test," with a quantified ceiling: batching the head should move M=4 fro
   At M=4 (MC3's default slot count) the 7B lands at 2.34×, inside the 2.2–2.4× band the S0 predicted, and within
   0.07× of `PrefillLastNArgmax`'s own 2.41× ceiling — the head is now nearly as cheap as the argmax-only variant
   for every family this scoping covers.
-- **In-process, by day, per TE5(b)** (owner decision 2026-09-28, `docs/tasks/task-test-efficiency-2026-09.md`): a
+- **In-process, by day, per TE5(b)** (owner decision 2026-09-28, `docs/completed/task-test-efficiency-2026-09.md`): a
   resolved in-process kernel-speed result may be acted on by day, and this one resolves cleanly — real,
   bit-identical, and consistent across both models and every M tested. The served, end-to-end W7 number (how much
   of this reaches the 4-client aggregate) is queued for tonight, not assumed from the per-step figure above.
