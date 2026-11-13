@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// G-S14e3 of docs/tasks/task-multimodal-support-2026-10.md (registered 2026-10-09 before any code): the REAL Voxtral Mini 3B, goinfer float32 on the CPU, against transformers float32
+// G-S14e3 of docs/completed/task-multimodal-support-2026-10.md (registered 2026-10-09 before any code): the REAL Voxtral Mini 3B, goinfer float32 on the CPU, against transformers float32
 // (scripts/pin_voxtral_real.py: the reference loads with no missing keys and is proved real by transcribing the LibriSpeech clip). Registered bars, on the LibriSpeech clip: the prompt ids equal
 // the processor's (the Tekken tokenizer and VoxtralPrompt on the real tekken.json); the tower output compared per row (1500 rows) and the projector output per row (375 rows) at cosine >=
 // 0.9999, the first and last rows named; the prompt-row logits at cosine >= 0.9999 with the argmax equal; the greedy transcription BYTE-EQUAL (token for token) to transformers'; and with the
