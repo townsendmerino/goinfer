@@ -1,0 +1,8 @@
+    sb2_census_test.go:1211: 202 resident cells checked, 202 of them walk a mixer step, 202 an FFN or tail step
+--- PASS: TestMixerWalk_issuesTheBlocksDispatches (8.87s)
+    sb2_census_test.go:1265: fixtures red: the extra residual on 7, (1 + w) ignored on 5
+--- PASS: TestMixerWalk_plantsGoRed (0.48s)
+    sb2_census_test.go:1320: FFN fixtures red: extra residual 5, dropped post-MLP norm 2, fresh parallel norm 1
+--- PASS: TestFFNWalk_plantsGoRed (1.57s)
+PASS
+ok  	github.com/townsendmerino/goinfer/backend/metal	11.621s

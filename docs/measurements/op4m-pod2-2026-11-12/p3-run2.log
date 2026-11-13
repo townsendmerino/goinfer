@@ -1,0 +1,26 @@
+hold start 2026-11-12 16:54:24 PST commit cfe97ee7d
+== qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw 16:54:29 load1=2.99
+[OP4m-pod P-3] qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: cell start: 1-minute load 2.99; available 10.23 GiB against need 1.16 GiB (ok); reclaimable 5.48 GiB (recorded)
+[OP4m-pod P-3] qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: walked steps by kind map[attention:28 dense FFN:28]
+[OP4m-pod P-3] qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: pair 1/6 (walk first, load 3.07): walk 93.43 tok/s, blocks 93.71 tok/s, ratio 0.9970
+[OP4m-pod P-3] qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: pair 2/6 (blocks first, load 3.06): walk 93.65 tok/s, blocks 93.43 tok/s, ratio 1.0023
+[OP4m-pod P-3] qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: pair 3/6 (walk first, load 3.06): walk 92.57 tok/s, blocks 92.41 tok/s, ratio 1.0017
+[OP4m-pod P-3] qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: pair 4/6 (blocks first, load 2.81): walk 92.57 tok/s, blocks 92.68 tok/s, ratio 0.9988
+[OP4m-pod P-3] qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: pair 5/6 (walk first, load 2.59): walk 92.63 tok/s, blocks 94.10 tok/s, ratio 0.9843
+[OP4m-pod P-3] qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: pair 6/6 (blocks first, load 2.59): walk 94.32 tok/s, blocks 93.93 tok/s, ratio 1.0042
+[OP4m-pod P-3] qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: median ratio 1.0003, 3 of 6 pairs under 1: PASS
+--- PASS: TestOP4mPod_decodeSpeed (29.36s)
+PASS
+== gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.int4.metal.v17.giw 16:54:59 load1=2.46
+[OP4m-pod P-3] gemma-4-E2B_q4_0-it.int4.metal.v17.giw: cell start: 1-minute load 2.46; available 10.39 GiB against need 3.59 GiB (ok); reclaimable 6.23 GiB (recorded)
+[OP4m-pod P-3] gemma-4-E2B_q4_0-it.int4.metal.v17.giw: walked steps by kind map[attention:35 dense FFN:35 PLE:35 layer scale:35]
+[OP4m-pod P-3] gemma-4-E2B_q4_0-it.int4.metal.v17.giw: pair 1/6 (walk first, load 2.05): walk 43.65 tok/s, blocks 43.72 tok/s, ratio 0.9985
+[OP4m-pod P-3] gemma-4-E2B_q4_0-it.int4.metal.v17.giw: pair 2/6 (blocks first, load 1.88): walk 43.64 tok/s, blocks 43.75 tok/s, ratio 0.9976
+[OP4m-pod P-3] gemma-4-E2B_q4_0-it.int4.metal.v17.giw: pair 3/6 (walk first, load 2.55): walk 43.71 tok/s, blocks 44.16 tok/s, ratio 0.9897
+[OP4m-pod P-3] gemma-4-E2B_q4_0-it.int4.metal.v17.giw: pair 4/6 (blocks first, load 2.38): walk 43.50 tok/s, blocks 43.41 tok/s, ratio 1.0020
+[OP4m-pod P-3] gemma-4-E2B_q4_0-it.int4.metal.v17.giw: pair 5/6 (walk first, load 2.01): walk 43.60 tok/s, blocks 43.71 tok/s, ratio 0.9974
+[OP4m-pod P-3] gemma-4-E2B_q4_0-it.int4.metal.v17.giw: pair 6/6 (blocks first, load 1.85): walk 43.65 tok/s, blocks 43.55 tok/s, ratio 1.0023
+[OP4m-pod P-3] gemma-4-E2B_q4_0-it.int4.metal.v17.giw: median ratio 0.9981, 4 of 6 pairs under 1: PASS
+--- PASS: TestOP4mPod_decodeSpeed (63.86s)
+PASS
+hold end 2026-11-12 16:56:03 PST
