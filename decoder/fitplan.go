@@ -13,7 +13,7 @@ const ctxPlanFloor = mem.PlanCtxFloor
 
 // kvBytesPerPositionAllLayers is the KV-cost rate Plan prices WebGPU at (ResidentKVBytes; the CPU, CUDA and Metal have their own): per layer (a per-layer-varying family like Gemma 4 is not approximated by one
 // model-level figure, as metal/backend.go's residentKVBytes also sums per layer), K+V, at the requested precision: f32 4 bytes an element,
-// f16 2, int8 1.125 (its scales as a flat allowance). The per-layer width is Architecture.kvDimAt: zero for a
+// f16 2, int8 one byte an element plus one f32 scale a KV head a position (what WebGPU's int8 cache holds, as the CPU's does). The per-layer width is Architecture.kvDimAt: zero for a
 // linear/mamba/conv mixer layer (no position-indexed K/V), MLA's compressed latent width, whose one row stays f32 at any precision.
 //
 // It deliberately does NOT cap a sliding-window layer (kvPositionsAt): this returns a flat per-position rate that the caller
@@ -22,10 +22,7 @@ const ctxPlanFloor = mem.PlanCtxFloor
 // conv hybrids); a family with both would be overpriced, the safe direction.
 func (m *Model) kvBytesPerPositionAllLayers(f16, i8 bool) int64 {
 	perElem := 4.0
-	switch {
-	case i8:
-		perElem = 1.125
-	case f16:
+	if f16 && !i8 {
 		perElem = 2
 	}
 	bv := m.BackendView()
@@ -45,6 +42,10 @@ func (m *Model) kvBytesPerPositionAllLayers(f16, i8 bool) int64 {
 		}
 		if arch != nil && arch.mla != nil {
 			perPos += 4 * float64(kvDim)
+			continue
+		}
+		if i8 && kvDim > 0 { // a layer that holds no K/V holds no scales
+			perPos += 2 * (float64(kvDim) + 4*float64(bv.Layer(l).KVHeads())) // ×2 for K and V
 			continue
 		}
 		perPos += 2 * float64(kvDim) * perElem // ×2 for K and V
