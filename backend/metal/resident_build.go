@@ -912,3 +912,100 @@ func (b *residentBuild) checkWidths() error {
 	b.guDim, b.maxFFNI = guDim, maxFFNI
 	return nil
 }
+
+// selectGemvRows picks the decode GEMVs' rows-per-simdgroup widths where every layer's row count tiles, creates their pipelines, and swaps
+// in the int8 twins for the int8 attention and the native int8 lane.
+func (b *residentBuild) selectGemvRows() {
+	d, r, pipe := b.d, b.r, b.pipe
+	H, nH, I := r.H, r.nH, r.I
+	maxFFNI := b.maxFFNI
+	// R18: the dense decode GEMVs at R rows per simdgroup — 4 for qkv, gate/up and down, 2 for o: R18's confirmed
+	// configuration (docs/measurements/metal-decode-gemv-r18-2026-09-26.md) with qkv moved to 4 by R18b's
+	// (metal-decode-gemv-r18b-2026-09-26.md), whose kernel form changed what the best qkv width is. Each is taken only where every layer's row
+	// count fills whole threadgroups (gemvRowsFor), and down only where its K = I bytes of staged activations fit the
+	// threadgroup memory; anything else keeps the shipped kernel.
+	{
+		qkvR := 4
+		for _, L := range r.layers {
+			if L.geom != nil { // a DeltaNet layer has no attention geometry (and no qkv GEMV)
+				rows := nH*L.geom.hd + 2*L.geom.kvDim
+				if L.kvShared {
+					rows = nH * L.geom.hd // Q only (S1.4)
+				}
+				qkvR = min(qkvR, gemvRowsFor(rows, 4))
+			}
+		}
+		guR := gemvRowsFor(2*I, 4)
+		for _, L := range r.layers { // every dense width must tile at R (halving R keeps the widths already tiled)
+			if L.ffnI != 0 {
+				guR = gemvRowsFor(2*L.ffnI, guR)
+			}
+		}
+		r.gemvRows.qkv, r.gemvRows.o, r.gemvRows.gu = qkvR, gemvRowsFor(H, 2), guR
+		// down stages K = the layer's FFN width of int8 activations: the widest must fit, and every width be %4.
+		downOK := maxFFNI <= d.MaxThreadgroupMemoryLength()
+		for _, L := range r.layers {
+			if fi := max(L.ffnI, I); fi%4 != 0 {
+				downOK = false
+			}
+		}
+		if downOK {
+			r.gemvRows.down = gemvRowsFor(H, 4)
+		}
+		rowsPipe := func(base string, R int) Pipeline {
+			if R == 0 {
+				return Pipeline{}
+			}
+			return pipe(fmt.Sprintf("%s%d", base, R))
+		}
+		r.pSABiasRows = rowsPipe("gemv_w4a8_sa_bias_rows", r.gemvRows.qkv)
+		r.pSAResidRows = rowsPipe("gemv_w4a8_sa_resid_rows", r.gemvRows.o)
+		r.pSARows = rowsPipe("gemv_w4a8_sa_rows", r.gemvRows.gu)
+		r.pSABiasRowsAdj = rowsPipe("mc3_gemv_w4a8_sa_bias_rows_adj", r.gemvRows.qkv)
+		r.pSARowsAdj = rowsPipe("mc3_gemv_w4a8_sa_rows_adj", r.gemvRows.gu)
+		r.pGemvResidStaged = rowsPipe("gemv_w4a8_resid_staged", r.gemvRows.down)
+		for _, R := range []int{2, 4} {
+			r.gemvExtCoal[R] = pipe(fmt.Sprintf("gemv_w4a8_coal_staged%d", R))
+			r.gemvExtSA[R] = pipe(fmt.Sprintf("gemv_w4a8_sa_rows%d", R))
+			r.gemvExtResid[R] = pipe(fmt.Sprintf("gemv_w4a8_resid_staged%d", R))
+		}
+		r.gemvExtTGMax = d.MaxThreadgroupMemoryLength()
+	}
+	if r.w8Attn {
+		// int4mix (slice 4): the attention projections' handles swap to their int8 twins (same arguments, same launch
+		// shape); the FFN keeps its int4 kernels and R18 rows forms. w8AttnEligible admits only the families whose
+		// qkv and o-proj run exactly these two handles.
+		r.gemvRows.qkv, r.gemvRows.o = 0, 0
+		r.pSABias, r.pSAResid = pipe("gemv_w8a8_sa_bias"), pipe("gemv_w8a8_sa_resid")
+		for B := 2; B <= batchMaxSeqs; B++ {
+			r.pW8Rows[B] = pipe(fmt.Sprintf("mc3_gemv_w8a8_rows%d", B))
+		}
+	}
+	if r.w8 {
+		// Each int8 twin takes its int4 kernel's arguments in the same order at the same launch shape, so swapping
+		// the handles is the whole dispatch change. The R18 rows kernels keep their widths through their int8 twins
+		// (KS-C3) where every K is a multiple of 16 (w8RowsOK); the batched step's int4 adjacency kernels never run here.
+		rows := r.gemvRows
+		r.gemvRows = struct{ qkv, o, gu, down int }{}
+		r.pSABiasRowsAdj, r.pSARowsAdj = Pipeline{}, Pipeline{}
+		if !w8RowsOffForTest && r.w8RowsOK() {
+			r.gemvRows = rows
+			rowsPipe := func(base string, R int) Pipeline {
+				if R == 0 {
+					return Pipeline{}
+				}
+				return pipe(fmt.Sprintf("%s%d", base, R))
+			}
+			r.pSABiasRows = rowsPipe("gemv_w8a8_sa_bias_rows", rows.qkv)
+			r.pSAResidRows = rowsPipe("gemv_w8a8_sa_resid_rows", rows.o)
+			r.pSARows = rowsPipe("gemv_w8a8_sa_rows", rows.gu)
+			r.pGemvResidStaged = rowsPipe("gemv_w8a8_body_resid_staged", rows.down)
+		}
+		r.pGemv, r.pGemvResid, r.pCoalBiasResid = pipe("gemv_w8a8_body"), pipe("gemv_w8a8_body_resid"), pipe("gemv_w8a8_body_resid_bias")
+		r.pSA, r.pSABias, r.pSAResid = pipe("gemv_w8a8_sa"), pipe("gemv_w8a8_sa_bias"), pipe("gemv_w8a8_sa_resid")
+		r.pSABiasResid = pipe("gemv_w8a8_sa_bias_resid")
+		for B := 2; B <= batchMaxSeqs; B++ { // the batched step's projections, B rows per weight read (batch_rows.go)
+			r.pW8Rows[B] = pipe(fmt.Sprintf("mc3_gemv_w8a8_rows%d", B))
+		}
+	}
+}
