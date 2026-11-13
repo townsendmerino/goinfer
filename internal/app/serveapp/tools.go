@@ -187,7 +187,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		sseDone(ss)
 		return
 	}
-	writeJSON(w, http.StatusOK, gr.clock.addTurn(map[string]any{
+	writeJSON(w, http.StatusOK, gr.clock.AddTurn(map[string]any{
 		"id": id, "object": "chat.completion", "created": created, "model": lm.name,
 		"choices": []any{choice}, "usage": usagev,
 	}))

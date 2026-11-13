@@ -33,7 +33,8 @@ func ksd3Run(t *testing.T, ckpt string, old bool) ([][]float32, string) {
 	if batched, why := m.PrefillPath(); !batched {
 		return nil, why
 	}
-	pf, ok := rf.(decoder.Prefiller)
+	pf := decoder.SubsystemsOf(rf).Prefill
+	ok := pf.PrefillAvailable()
 	if !ok {
 		t.Fatalf("%s: the resident has no batched prefill", ckpt)
 	}

@@ -750,23 +750,6 @@ var webgpuRounding = memgate.PowerOfTwo("Vulkan's power-of-two blocks")
 // webgpuMemGaps is WebGPU's table of known reds. It may only shrink: the fix that removes a row lowers webgpuMemGapsPin.
 var webgpuMemGaps = func() []memgate.Gap {
 	var out []memgate.Gap
-	for _, f := range []string{
-		"testdata/flint-tiny", "testdata/olmo3-tiny", "testdata/olmo_hybrid-tiny", "testdata/smollm3-tiny",
-		"internal/vision/testdata/qwen25vl-vision-tiny", "selftestdata/gemma3-vl-tiny", "selftestdata/llama-tiny",
-		"testdata/gemma3-vl-tiny", "testdata/gguf-split/glm-tiny-00001-of-00004.gguf", "testdata/glm-tiny",
-		"testdata/glm-tiny-bias", "testdata/glm-tiny.gguf", "testdata/gptoss_tiny.gguf",
-		"testdata/granite-dense-tiny", "testdata/internlm2-tiny", "testdata/internlm3-tiny",
-		"testdata/llama-tiny", "testdata/mixtral-tiny", "testdata/qwen25vl-tiny",
-		"testdata/qwen3asr-tiny", "testdata/qwen3moe-tiny", "testdata/qwen3moe-tiny-k3",
-		"testdata/qwen3vlmoe-tiny", "testdata/voxtral-tiny",
-	} {
-		out = append(out, memgate.Gap{Row: f + " int4/kvprecision-i8", Line: mem.LineKV, What: "int8 K/V holds one scale a head, and the plan prices 1/8 of a byte an element, which under-prices a narrow head",
-			Item: "MM8, int8 KV's scale", Bytes: memgate.KVPricedUnder})
-	}
-	for _, f := range []string{"testdata/gemma4-moe-kv-tiny", "testdata/gemma4-moe-kv-tiny32", "testdata/llama-attnfa-tiny"} {
-		out = append(out, memgate.Gap{Row: f + " int4/kvprecision-i8", Line: mem.LineKV, OverPriced: true, What: "int8 K/V holds one scale a head, and the plan prices 1/8 of a byte an element, which over-prices a wide head",
-			Item: "MM8, int8 KV's scale", Bytes: memgate.KVPricedOver})
-	}
 	stacked := func(row string, over int64) {
 		out = append(out, memgate.Gap{Row: row, Line: mem.LineExperts, What: "the stacked experts lease more than the plan's expert figure: not diagnosed, so it names this row's own bytes",
 			Item: "MM8 WebGPU, stacked experts", Bytes: func(map[string]int64) int64 { return over }})
@@ -784,8 +767,8 @@ const webgpuGateRowsPath = "testdata/memgate_rows.txt"
 
 var webgpuGateRowsUpdate = flag.Bool("memgate.rows.update", false, "have TestMemGate_webgpu rewrite testdata/memgate_rows.txt")
 
-// webgpuMemGapsPin is len(webgpuMemGaps) on this platform: 28 rows everywhere and two more off arm64.
-var webgpuMemGapsPin = 28 + map[bool]int{true: 2}[runtime.GOARCH != "arm64"]
+// webgpuMemGapsPin is len(webgpuMemGaps) on this platform: 1 row everywhere and two more off arm64.
+var webgpuMemGapsPin = 1 + map[bool]int{true: 2}[runtime.GOARCH != "arm64"]
 
 // webgpuGatePlantForTest, when set, runs on a row's resident after its generation and before the ledger is read; the function it returns
 // runs after that read, so the plant is released before Close and the package's own ledger check stays clean.
@@ -903,7 +886,7 @@ func TestMemGate_webgpuPlantsThroughTheTable(t *testing.T) {
 	}{
 		{"dense", "../../testdata/gemma4-moe-kv-tiny", "testdata/gemma4-moe-kv-tiny int8int8", mem.LineDense, decoder.Options{Quant: "int8int8"}, false},
 		{"experts", "../../testdata/qwen3vlmoe-tiny", "testdata/qwen3vlmoe-tiny int8int8", mem.LineExperts, decoder.Options{Quant: "int8int8"}, true},
-		{"kv", "../../testdata/llama-tiny", "testdata/llama-tiny int4/kvprecision-i8", mem.LineKV, decoder.Options{Quant: "int4", KVPrecision: "i8"}, true},
+		{"kv", "../../testdata/llama-tiny", "testdata/llama-tiny int4/kvprecision-i8", mem.LineKV, decoder.Options{Quant: "int4", KVPrecision: "i8"}, false},
 		{"state", "../../testdata/llama-tiny", "testdata/llama-tiny int4", mem.LineState, decoder.Options{Quant: "int4"}, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {

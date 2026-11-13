@@ -79,7 +79,8 @@ func TestQwen25VLResidentReal_gate(t *testing.T) {
 	if rf == nil {
 		t.Skip("qwen2_5_vl not resident-eligible on this build")
 	}
-	mrope, ok := rf.(decoder.ResidentMRoPE)
+	mrope := decoder.SubsystemsOf(rf).Decode
+	ok := mrope.MRoPEDecodeAvailable()
 	if !ok {
 		t.Fatal("cudaResident does not satisfy decoder.ResidentMRoPE")
 	}

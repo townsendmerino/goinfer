@@ -18,7 +18,11 @@ func TestResidentDenseWeightBytesFor_webgpuKeepsTheUntiedTableOnTheHost(t *testi
 		t.Fatal("llama-tiny has no token table")
 	}
 	for _, backend := range []string{"webgpu", "cuda"} {
-		if got, want := m.ResidentDenseWeightBytesFor(backend), m.ResidentDenseWeightBytes()-table; got != want {
+		want := m.ResidentDenseWeightBytes() - table
+		if backend == "cuda" {
+			want += m.cudaDerivedTableBytes() // CUDA's dense line also holds the RoPE and router-bias tables its build derives
+		}
+		if got := m.ResidentDenseWeightBytesFor(backend); got != want {
 			t.Errorf("%s: dense device bytes %d, want %d (the dense total less the %d-byte untied token table)", backend, got, want, table)
 		}
 	}

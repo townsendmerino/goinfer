@@ -37,6 +37,7 @@ func newFastRig(t *testing.T, reply string, alias bool) *fastRig {
 	s := &server{cfg: config{fastAlias: alias}}
 	var prompts [][]int
 	lm := &loadedModel{tk: tk, name: "m", scripted: append([]int{}, ids...)}
+	lm.fakeEngine = scriptedEngine{lm}
 	lm.onScripted = func(p []int) { prompts = append(prompts, append([]int(nil), p...)) }
 	lm.tmpl = s.cfg.tuneTemplate(mellum21Template(t))
 	s.models = map[string]*loadedModel{"m": lm}
@@ -269,6 +270,7 @@ func TestFastAlias_modelsAndNames(t *testing.T) {
 	// A served model named m-fast takes the name.
 	taken := newFastRig(t, "ok", true)
 	other := &loadedModel{tk: taken.lm.tk, name: "m-fast", tmpl: taken.lm.tmpl, scripted: []int{}}
+	other.fakeEngine = scriptedEngine{other}
 	taken.s.regMu.Lock()
 	taken.s.models["m-fast"] = other
 	taken.s.regMu.Unlock()

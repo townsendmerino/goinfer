@@ -254,5 +254,8 @@ func (m *Model) PricedDenseVectorBytesForTest(backend string) int64 {
 	if backend == "cuda" || backend == "webgpu" {
 		n += m.expertBiasBytes()
 	}
+	if backend == "cuda" {
+		n += m.cudaDerivedTableBytes()
+	}
 	return n
 }

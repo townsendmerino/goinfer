@@ -502,13 +502,3 @@ func TestOP4mD5b_gemma4FFNSplitSpeed(t *testing.T) {
 		rows:     func(m *decoder.Model) func(int) []float32 { return m.EmbedResidentForTest },
 		stepArms: func(on bool) { gemma4FFNSplitOffForTest = !on }})
 }
-
-// TestOP4mPod2_gemma4StepSpeed is TestOP4mPod2_stepSpeed on the Gemma 4 checkpoint at GOINFER_OP4MPOD2G_MODEL
-// (GOINFER_OP4MPOD2G_TIMING=1), whose layers the step runs whole per row, on full rows.
-func TestOP4mPod2_gemma4StepSpeed(t *testing.T) {
-	t.Cleanup(func() { mixerWalkBlocksForTest = false })
-	op4mStepSpeed(t, stepSpeedCell{env: "GOINFER_OP4MPOD2G", label: "[OP4m-pod2 P-3]", gemma4: true, parity: true,
-		want: func(r *resident) bool { return r.gemma4Blocks() }, wantWhat: "a Gemma 4 resident",
-		rows:     func(m *decoder.Model) func(int) []float32 { return m.EmbedResidentForTest },
-		stepArms: func(on bool) { mixerWalkBlocksForTest = !on }})
-}

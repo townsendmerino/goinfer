@@ -56,7 +56,8 @@ func TestResidentPrefillLast_parity(t *testing.T) {
 	if rf == nil {
 		t.Fatal("ResidentActive but no resident forward")
 	}
-	pf, ok := rf.(decoder.Prefiller)
+	pf := decoder.SubsystemsOf(rf).Prefill
+	ok := pf.PrefillAvailable()
 	if !ok {
 		t.Skip("resident forward does not implement Prefiller (arch outside PrefillLastW8A8's dense-W8A8 scope)")
 	}

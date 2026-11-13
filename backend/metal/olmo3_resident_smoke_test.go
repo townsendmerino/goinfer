@@ -155,7 +155,7 @@ func TestDeltaNetPrefill_readsBothParameters(t *testing.T) {
 		t.Fatalf("qwen35-tiny's prefill is not batched: %s", why)
 	}
 	r := rf.(*metalResident).r
-	pf := rf.(decoder.Prefiller)
+	pf := decoder.SubsystemsOf(rf).Prefill
 	_, _, _, _, _, _, vocab := m.Dims()
 	embs := make([][]float32, 40)
 	for i := range embs {
@@ -263,7 +263,8 @@ func testOlmoFamilyResidentSmoke(t *testing.T, ckpt, quant string) {
 		t.Logf("Olmo 3 prefill path: %s", reason)
 
 		decoder.SetKnobEnvForTest(t, mRes, "GOINFER_METAL_FAST_PREFILL_FLOOR", "0")
-		pf, ok := rf.(decoder.Prefiller)
+		pf := decoder.SubsystemsOf(rf).Prefill
+		ok := pf.PrefillAvailable()
 		if !ok {
 			t.Fatalf("rf does not implement decoder.Prefiller")
 		}
