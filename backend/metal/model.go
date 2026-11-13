@@ -1289,6 +1289,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		}
 	}()
 	b := &residentBuild{m: m, d: d, shape: shape, kvSlots: kvSlots, stepHeadroom: stepHeadroom}
+	defer func() { _ = b.kq.Close() }() // nil-safe: only the q4k lane opens one
 	if err := b.compileKernels(); err != nil {
 		return nil, err
 	}
@@ -1299,93 +1300,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		return nil, err
 	}
 	addOne, win := b.addOne, b.win
-	// Native int8 (docs/completed/task-metal-int8-2026-10.md): a dense model whose body projections are all int8 runs
-	// them as W8A8 instead of re-quantizing them to int4. The int4-only paths cannot read those buffers, so they are
-	// off for it: the f16 lane here, the R18 rows kernels and the MC3 step below. The batched prefill pass reads
-	// them through its W8 tiles (gemm_w8f16_*).
-	r.w8 = w8Eligible(m, r)
-	if r.w8 && r.moe != nil { // slice 4: the experts' GEMVs on their int8 weights (buildMoELayer uploads them as int8)
-		r.moe.w8 = true
-		r.moe.pGU, r.moe.pDownWacc = pipe("gemv_w8a8_moe"), pipe("gemv_w8a8_moe_wacc")
-		r.moe.guR, r.moe.downR = 0, 0
-		if moeExpertRowsOn { // the int8 expert GEMVs' rows form (gemv_w8a8_moe_rows), where the row counts admit it
-			if R := gemvRowsFor(2*r.moe.inter, 4); R > 0 {
-				r.moe.pGU, r.moe.guR = pipe(fmt.Sprintf("gemv_w8a8_moe_rows%d", R)), R
-			}
-			if R := gemvRowsFor(r.H, 4); R > 0 {
-				r.moe.pDownWacc, r.moe.downR = pipe(fmt.Sprintf("gemv_w8a8_moe_wacc_rows%d", R)), R
-			}
-		}
-		r.moe.kSlots = false // D-P03's k-slot kernels read int4
+	if err := b.selectLanes(); err != nil {
+		return nil, err
 	}
-	r.w8Attn = !r.w8 && w8AttnEligible(m, r)
-	var kq *decoder.KQuantReader // the file's Q5_K and Q6_K blocks for the q4k lane (q4kLaneProj); nil uploads their int8 copies
-	if r.q4kLane {
-		r.w8, r.w8Attn = false, false
-		if !q4kNativeOffForTest {
-			if kq, err = m.OpenKQuant(); err != nil {
-				return nil, err
-			}
-			defer kq.Close()
-		}
-	}
-	if r.w8Attn {
-		r.decodeLaneW4F16 = false // the f16 lane reads int4 attention weights
-	}
-	if why := f32Projection(m); why != "" {
-		// An f32 load reaches here only when f32 was asked for; this backend runs int4 or int8 weights and does not
-		// quantize them behind the request (docs/completed/task-metal-int8-2026-10.md, slice 4). A clear decline instead of
-		// int4Concat's panic on an f32 kind.
-		return nil, fmt.Errorf("weights loaded at f32 (%s); metal runs int4 or int8 weights: load with -quant int4 or int8int8 to use the GPU", why)
-	}
-	if r.w8 {
-		r.decodeLaneW4F16 = false
-	}
-	// prefillOK is derived, not hand-listed: the f16 prefill kernels implement exactly the features in
-	// prefillFeatures, so a model needing more (MoE never packs the dense FFN buffers at all) declines prefill and
-	// falls back to the sequential Forward loop. Admission by prefillFeatures alone is not enough, so these are
-	// declined explicitly:
-	// - Per-layer geometry. PrefillLast reads r.layers[0].geom once and reuses it for every layer's rope and
-	//   attention dims. That is right for every uniform-geometry family (Gemma 3's dual-base RoPE keeps head_dim
-	//   uniform) but not for Gemma 4's local/global split (head_dim 256 versus 512). Check !m.HasPerLayerGeometry()
-	//   directly: decoder.Model.PerLayerGeomOK("metal") answers whether Metal's decode path supports per-layer
-	//   geometry, so it would wrongly clear Gemma 4.
-	// - Gemma 4's enable_moe_block (parallel dense||MoE FFN, residLayer.g4moe, encodeGemma4MoEFFN) is a third FFN
-	//   shape that PrefillLast's L.moe != nil branch does not cover. Geometry does not catch it, so it is checked
-	//   directly.
-	// - A paged generic MoE: its per-layer expGuW/expGuS/expDW/expDS buffers are zero-value (the weights live in the
-	//   slot pool), but both of PrefillLast's MoE paths (the row loop's non-paged encodeMoERoute/encodeMoEExperts pair
-	//   and the expert-major pass) read those stacked buffers unconditionally.
-	// - An int8 KV cache (-kv i8). The prefill kernels write K/V with kv_store_f16 (half per element at pos*kvDim)
-	//   and PrefillLast's attention reads half, but the int8 cache is one byte per element with separate scale
-	//   buffers: every position would land in the wrong layout, and positions at or past ctxCap/2 would write past
-	//   the buffer. Such a model takes the sequential path, whose decode kernels write and read the int8 cache.
-	// - A Gated-DeltaNet hybrid takes the pass only with dnetPrefillOn, and only in the shape prefill_deltanet.go
-	//   implements: Qwen3.5's pre-norm layers, no LayerNorm bias. Olmo Hybrid (postOnly) stays sequential.
-	missing := m.MissingResidentFeatures(prefillFeatures)
-	dnetOK := r.recurrentPrefillOK()
-	if r.dnet != nil && dnetOK {
-		missing = slices.DeleteFunc(missing, func(f decoder.ResidentFeature) bool { return f == decoder.FeatDeltaNet })
-	}
-	if r.mamba != nil && dnetOK {
-		missing = slices.DeleteFunc(missing, func(f decoder.ResidentFeature) bool { return f == decoder.FeatSSM })
-	}
-	if r.nonGatedMLP && !slices.ContainsFunc(m.Weights().Layers, func(lw decoder.LayerWeights) bool { return len(lw.DownBias) > 0 }) {
-		// KS-D8: the pass's non-gated MLP takes a relu² activation and no down-projection bias (another activation stays
-		// missing on its own feature). This runs before r.layers is built, so it reads the weights, not residLayer.downBiasSet.
-		missing = slices.DeleteFunc(missing, func(f decoder.ResidentFeature) bool {
-			return f == decoder.FeatNonGatedMLP || f == decoder.FeatNonGatedReLU2
-		})
-	}
-	if r.q4kLane && !r.q4kLaneShapeOK() {
-		return nil, fmt.Errorf("metal: --quant q4k runs on Metal for the plain dense pre-norm shape only (Phi-3, Llama); this family has a variant the q4k lane does not cover")
-	}
-	r.ksd7Old = ksd7OldDequantForTest
-	r.prefillOK = !r.q4kLane && len(missing) == 0 && !m.HasPerLayerGeometry() &&
-		!(r.moe != nil && r.moe.paged) && dnetOK && !r.kvF32 &&
-		!r.attnSink && // D-C01: gpt-oss's sink and clamped, biased SwiGLU are in no prefill kernel; explicit, so a feature-map edit cannot admit it
-		prefillStepsDecline(m.Program()) == "" // a step with no batched block: MLA's latent attention, Gemma 4's MoE block
-
+	kq := b.kq
 	r.q = d.NewCommandQueue()
 
 	w := bv.Weights()
