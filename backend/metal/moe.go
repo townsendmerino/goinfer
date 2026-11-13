@@ -465,31 +465,6 @@ func f32MatOn(line string, d *Device, w *linalg.WeightMat) Buffer {
 	return NewBufferFloatsOn(line, d, f)
 }
 
-// encodeMoEFFNWithX records the MoE FFN for one layer, replacing the dense gate/up/swiglu/down dispatches: post-attn
-// norm, router logits, on-GPU top-k, per-selected-expert gate|up/swiglu/weighted-down, then the optional shared
-// expert. Value-independent (idx/wgt are read at kernel-execution time), so the encode-ahead executor still
-// pre-encodes it. x is the post-attention hidden state to route from: r.x for decode, a caller-owned buffer for
-// batched prefill.
-//
-// This is the non-paged path: it reads the stacked all-E buffers (ml.expGuW/expGuS/expDW/expDS), which stay zero-value
-// once the layer is paged (see moeLayer's comment on pool). forwardLogitsMoEPaged never reaches here for a paged layer
-// (it tears the layer into encodeMoERouter and encodeMoEExpertsPaged around a host readback), so the panic below is a
-// chokepoint against every other caller of encodeLayer (Forward, ForwardArgmax, forwardHiddenNoHead's encodeTrunkInto)
-// reaching a paged layer through the non-paged encoder and silently computing off zero-value weights.
-//
-// FinishEncoding before the panic: e already holds this layer's attention or mixer dispatches, and Metal asserts if a
-// command encoder is released without endEncoding ("[_MTLCommandEncoder dealloc]: failed assertion"), as an
-// uncommitted, never-End()'d Encoder left for the Go GC to finalize would. Ending encoding without committing discards
-// the partial work cleanly, with no GPU execution and no side effect on r.x.
-func (r *resident) encodeMoEFFNWithX(e *Encoder, L *residLayer, x Buffer) {
-	if L.moe.pool != nil {
-		e.FinishEncoding()
-		panic("metal: encodeMoEFFNWithX reached a paged MoE layer — route through forwardLogitsMoEPaged instead (C-02)")
-	}
-	r.encodeMoERouterWithX(e, L, x)
-	r.encodeMoEExperts(e, L, x)
-}
-
 // encodeMoERouter is the value-INDEPENDENT head of the FFN: post-attn norm → router logits →
 // on-GPU top-k, ending with rIdx[k]/rWgt[k] written on-device. In the paged forward this is the
 // first command buffer; the host then reads rIdx and stages the routed experts before the second.
@@ -545,7 +520,7 @@ var moeKSlotsOn = false
 // encodeMoEExperts runs the k selected experts out of the stacked all-E buffer (ml.expGuW/expDW, indexed by rIdx at
 // kernel-execution time) plus the optional shared expert: the non-paged path.
 //
-// dst is the down-projection's accumulate target. Decode's caller (encodeMoEFFNWithX) passes x, the shared f32 residual
+// dst is the down-projection's accumulate target. Decode's caller (encodeFFNWalk) passes x, the shared f32 residual
 // stream; the batched-prefill MoE row loop (prefill.go) accumulates the same expert-loop math into an isolated f32
 // scratch instead, because prefill's own residual (xF) is f16 and these kernels are f32-only (`device float*` versus
 // `half*`), and adds that scratch into xF's row afterward with a separate small kernel.

@@ -420,7 +420,7 @@ var stepFFNRow0PlantForTest = false
 
 // gemma4FFNSplits reports whether the step batches the front of whole layer l's dense FFN (encodeGemma4FFNRows): a sandwich
 // layer on the plain int4 lane, whose FFN decode encodes as norm, gate|up, activation, down into scratch, post-norm and
-// residual (encodeFFNBlock), at a width the step's kernels tile.
+// residual (encodeFFNWalk), at a width the step's kernels tile.
 func (r *resident) gemma4FFNSplits(l int) bool {
 	L := &r.layers[l]
 	return !gemma4FFNSplitOffForTest && r.sandwich && !r.q4kLane && !r.w8 && !r.parallelBlock && !r.postOnly && !r.canUseF16Lane(l) &&
@@ -429,8 +429,8 @@ func (r *resident) gemma4FFNSplits(l int) bool {
 
 // encodeGemma4FFNRows is whole layer l's dense FFN with its front batched (OP4m-d5b). The input norm, the fused gate|up and
 // the activation run over all B rows on the step's dense-FFN kernels at the layer's own width, the choice ffnRows makes. Then
-// each row's down GEMV into scratch, post-MLP norm and residual add run on decode's own dispatches (encodeFFNBlock's
-// sandwich branch), since the step's batched down kernel is fused with the residual and is not that arithmetic.
+// each row's down GEMV into scratch, post-MLP norm and residual add run on decode's own dispatches (encodeFFNWalk's
+// sandwich form), since the step's batched down kernel is fused with the residual and is not that arithmetic.
 func (r *resident) encodeGemma4FFNRows(e *Encoder, l int, L *residLayer, B int) {
 	b, H, w := r.batch, r.H, L.ffnI
 	f32 := func(buf Buffer, m, n int) Buffer { return buf.At(4 * m * n) }
@@ -464,8 +464,8 @@ func (r *resident) encodeGemma4FFNRows(e *Encoder, l int, L *residLayer, B int) 
 // encodeNonGatedFFNRows is a non-gated dense FFN (Nemotron-H's ReLU²) with its front batched (OP4m-d6b). The input norm runs
 // over all B rows, then the up projection: decode's own SA-bias GEMV per row below the calibrated size, or the step's batched
 // kernel in its bias mode (mc3_bt mode 1, gemv_w4a8_sa_bias's arithmetic) above it. Each row's activation and down
-// projection, fused with its bias and the residual add, then run on decode's own dispatches (encodeFFNBlock's non-gated
-// branch), whose down kernel the step's batched one is not.
+// projection, fused with its bias and the residual add, then run on decode's own dispatches (encodeFFNWalk's non-gated
+// form), whose down kernel the step's batched one is not.
 func (r *resident) encodeNonGatedFFNRows(e *Encoder, L *residLayer, B int) {
 	b, H, I := r.batch, r.H, r.I
 	f32 := func(buf Buffer, m, n int) Buffer { return buf.At(4 * m * n) }
