@@ -14,7 +14,7 @@
 | id | state | next | evidence |
 |---|---|---|---|
 | MZ1 | open | cut `backend/cuda/backend.go:cudaBackend.buildResidentMode` (1,988 lines) into named build phases, one PR per phase. Waits for LW-cu's device reads (`docs/tasks/task-forward-and-memory-2026-11.md`), which touch the same build. Gate: the SB2 lease census and MM7's memory gate unchanged on nobara | §2, §3.1 |
-| MZ2 | in progress (WebGPU: phase 1 of 5, build state and upload helpers, PR open) | the same for `backend/metal/model.go:buildResident` (1,107 lines) and `backend/webgpu/residency.go:webgpuBackend.BuildResident` (1,049 lines). Gate: each backend's SB2 census and memory gate unchanged | §2, §3.1 |
+| MZ2 | active | Metal: `backend/metal/resident_build.go:residentBuild` carries five of the build's phases (`compileKernels`, `bindPipelines`, `buildMixers`, `selectLanes`, `uploadLayers`), branch `mz2-metal-buildresident-2026-11-13`; next the per-layer body of `uploadLayers`, then the KV tables and head, the width and threadgroup checks, the GEMV-row choice, the decode scratch and the residency set. WebGPU `backend/webgpu/residency.go:webgpuBackend.BuildResident` (1,049 lines): `backend/webgpu/residency_build.go:webgpuBuild` carries the upload helpers (phase 1 of 5, PR open); next the model-level setup, the per-layer mixers, the per-layer feed-forward and tail, then the runner and KV slots (WebGPU: 244 builds held, 39 declined, identical at each cut). Gate: each backend's SB2 census and memory gate unchanged (Metal: 840 census lines; 286 builds held, 87 declined, identical at each cut) | §2, §3.1 |
 | MZ3 | open | cut `decoder/gguf.go:buildWeightsFromGGUF` (1,469 lines) and `decoder/weights.go:buildWeightsFromSafetensorsTo` (627 lines) into per-family builders. After CH4 closes (`docs/tasks/task-code-health.md`), behind its gate (`decoder/ch4_giw_gate_test.go:TestCH4_giwByteIdentity`); it touches the parity manifests, so the coordinator clears the parity lane first. This replaces "split `weights.go` by family" in that doc's §3.4 | §2, §3.1 |
 | MZ4 | open | move CUDA and WebGPU onto `decoder/backend_view.go:BackendModelView` and delete the `Model.*Resident` forwarders in `decoder/residency.go` as their last caller goes. Then stop: §3.2's package question is Francis's | §3.2 |
 | MZ5 | decision | whether the resident contract leaves `decoder` for a leaf package, and whether the weight data types follow. Decide with SUB1 (`docs/tasks/task-forward-and-memory-2026-11.md`), which already owns "which interfaces stay" | §3.2 |
@@ -58,9 +58,18 @@ after the move under `backend/` together: `backend/cuda/resident.go` 109, `backe
 the changed hunks fall on `Options` (27), `Load` (26), the `Model` struct (24) and `modelFromOptions` (20): a new option
 touches all four.
 
-**The package seam, for scale.** Non-test code outside `decoder` names these many distinct `decoder` identifiers:
-`backend/metal` 117, `backend/cuda` 111, `internal/app/serveapp` 50, `backend/webgpu` 41. The October census
-(`docs/completed/task-subsystems-2026-10.md` §2.2) read 103, 93, 52 and 35, so the backend seams have widened.
+**The package seam, for scale.** Non-test code outside `decoder` names these many distinct package-level `decoder`
+identifiers: `backend/metal` 102, `backend/cuda` 90, `internal/app/serveapp` 43, `backend/webgpu` at least 37.
+Type-resolved (`ken go uses . <package> decoder`, three build configurations, 2026-11-13); WebGPU's is a lower bound,
+because its configuration type-checks with errors where cgo is off. Counting methods and fields as well, non-test code
+names 303 in metal, 334 in cuda, 148 in webgpu and 126 in serveapp. Test code is the wider seam: 187 package-level
+names in metal's and 189 in cuda's, led by `decoder.Options` (622 test lines in cuda) and the two test hooks
+`Model.EmbedResidentForTest` and `Model.ResidentForwardForTest` (287 and 281).
+
+*Corrected 2026-11-13.* This paragraph first read 117, 111, 50 and 41, from a regular expression that also counted
+names in comments, and concluded from the October census (`docs/completed/task-subsystems-2026-10.md` §2.2: 103, 93,
+52 and 35) that the backend seams had widened. The typed counts do not support that: they sit at or below October's,
+whose method is not recorded, so the two are not comparable and no trend is claimed.
 
 ## 3 · The rows
 
