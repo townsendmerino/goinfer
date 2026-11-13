@@ -221,7 +221,8 @@ func TestGemma4MoE_webgpuPrefill(t *testing.T) {
 			rows[i] = append([]float32(nil), mb.EmbedResidentForTest(tok)...)
 		}
 	}
-	pf, isPF := rb.(decoder.Prefiller)
+	pf := decoder.SubsystemsOf(rb).Prefill
+	isPF := pf.PrefillAvailable()
 	if !isPF {
 		t.Fatalf("the resident (%T) is not a Prefiller", rb)
 	}

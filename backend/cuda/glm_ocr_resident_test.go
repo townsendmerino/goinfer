@@ -67,11 +67,13 @@ func TestGlmOcrResidentParityCUDA(t *testing.T) {
 	if !cr.pairwiseRoPE || !cr.mropePrefillReady {
 		t.Fatalf("pairwiseRoPE=%v mropePrefillReady=%v: the pairwise kernels (decode, batched, m-RoPE) are not all bound", cr.pairwiseRoPE, cr.mropePrefillReady)
 	}
-	mrope, ok := rf.(decoder.ResidentMRoPE)
+	mrope := decoder.SubsystemsOf(rf).Decode
+	ok = mrope.MRoPEDecodeAvailable()
 	if !ok {
 		t.Fatal("cudaResident does not satisfy decoder.ResidentMRoPE")
 	}
-	rmp, ok := rf.(decoder.ResidentMRoPEPrefill)
+	rmp := decoder.SubsystemsOf(rf).Prefill
+	ok = rmp.MRoPEPrefillAvailable()
 	if !ok {
 		t.Fatal("cudaResident does not satisfy decoder.ResidentMRoPEPrefill")
 	}

@@ -72,9 +72,9 @@ func TestKV3_residentReportsItsChunks(t *testing.T) {
 	if !ok || rd == nil {
 		t.Skip("no WebGPU resident")
 	}
-	pc, ok := any(rd).(decoder.ResidentPrefillChunks)
-	if !ok {
-		t.Fatal("residentDecoder does not satisfy decoder.ResidentPrefillChunks")
+	pc := decoder.SubsystemsOf(rd).Prefill
+	if !pc.PrefillChunksAvailable() {
+		t.Fatal("residentDecoder's prefill subsystem does not report prefill chunks")
 	}
 	if c := pc.PrefillChunkRows(); c != 512 || c%64 != 0 {
 		t.Errorf("PrefillChunkRows %d, want 512 (a multiple of the block size 64)", c)

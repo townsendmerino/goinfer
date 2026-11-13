@@ -95,7 +95,8 @@ func TestGemma3ImgPrefillResidentReal_gate(t *testing.T) {
 	if rf == nil {
 		t.Fatalf("gemma3 did not take the resident path with a 1024-position context (decode path: %s): the gate has nothing to test, which is a failure, not a skip", mc.DecodePath())
 	}
-	rip, ok := rf.(decoder.ResidentImagePrefill)
+	rip := decoder.SubsystemsOf(rf).Prefill
+	ok := rip.ImagePrefillAvailable()
 	if !ok {
 		t.Fatal("attn_img_batched did not load on this build — ResidentImagePrefill unavailable: the gate has nothing to test, which is a failure, not a skip")
 	}
