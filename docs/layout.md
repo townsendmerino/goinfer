@@ -181,4 +181,5 @@ About 316 files, referenced by path from CI, skills, the night runner and docs: 
 | `RELEASING.md` | the release procedure and the module-tag rules |
 | `CHANGELOG.md`, `changelog.d/` | the changelog and its pending fragments |
 | `.github/workflows/` | CI (`ci.yml`), site, coverage, vulnerability, release-asset and weekly workflows |
+| `.ken-go.json` | the build configurations (GOOS, GOARCH, tags) that ken's Go tools ask gopls under, and the timing-lock wrapper each run goes through; three configurations compile 98.9% of the Go files, the host default 64% |
 | `LICENSE`, `NOTICE`, `THIRD_PARTY_LICENSES.md` | licensing |

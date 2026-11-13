@@ -1,0 +1,8 @@
+{
+  "configs": [
+    {"name": "default"},
+    {"name": "darwin-gpu", "env": {"GOOS": "darwin", "GOARCH": "arm64", "CGO_ENABLED": "0", "GOFLAGS": "-tags=gpu,goinfer_testhooks,realckpt"}},
+    {"name": "linux-cuda", "env": {"GOOS": "linux", "GOARCH": "amd64", "CGO_ENABLED": "0", "GOFLAGS": "-tags=cuda,goinfer_testhooks,realckpt"}}
+  ],
+  "wrap": ["python3", "scripts/timing_lock.py", "run", "--shared", "--label", "ken-go", "--"]
+}
