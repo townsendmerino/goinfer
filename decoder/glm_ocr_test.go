@@ -14,7 +14,7 @@ import (
 	"testing"
 )
 
-// GLM-OCR text decoder (docs/tasks/task-glm-ocr-2026-10.md, O1). The gates, in the order a defect
+// GLM-OCR text decoder (docs/completed/task-glm-ocr-2026-10.md, O1). The gates, in the order a defect
 // would surface:
 //
 //   - TestGlmOcr_realConfig: the real zai-org/GLM-OCR config.json resolves to the descriptor O0

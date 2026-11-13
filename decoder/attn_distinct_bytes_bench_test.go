@@ -14,7 +14,7 @@ import (
 //
 // Reading: GQA markedly faster than expanded means the hardware does not dedup, and an explicit K/V-staging kernel
 // recovers real bandwidth. The same speed means the cache already dedups, and a grouped kernel's gain is the µop
-// sharing alone (docs/tasks/red-october.md, R13). Head shapes come from loadBenchModel()'s config so the group
+// sharing alone (docs/completed/red-october.md, R13). Head shapes come from loadBenchModel()'s config so the group
 // size G = NumHeads/NumKVHeads matches what the served kernels see.
 func BenchmarkAttnDistinctBytes(b *testing.B) {
 	m, err := loadBenchModel()

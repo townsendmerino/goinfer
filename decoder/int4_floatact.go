@@ -10,7 +10,7 @@ import (
 
 // int4FloatActForTest runs every int4 projection with f32 activations instead of the W4A8 kernels' int8 ones: each weight
 // row is dequantized (WeightMat.Row) and dotted with the activation as given. It is a measurement seam for the question
-// whether int4 weights stay stable once activations are not rounded (docs/tasks/task-multimodal-support-2026-10.md,
+// whether int4 weights stay stable once activations are not rounded (docs/completed/task-multimodal-support-2026-10.md,
 // "S19"), and is slow. Set only through SetInt4FloatActForTest (goinfer_testhooks), which also turns the fused W4A8
 // batches off, so every int4 projection reaches matmulInt4Float; int4FloatActMissed counts a W4A8 kernel call made while
 // it is on, and a gate requires zero.

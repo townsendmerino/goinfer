@@ -19,7 +19,7 @@ import (
 // It takes one sequence, so the last token is always the last real token; there is no padded batch whose last slot
 // could be a pad. Callers that want a batch call it per sequence. The returned slice is a fresh copy the caller owns.
 //
-// Every family: its layers run through the program walker. Gate H of docs/tasks/task-forward-architecture-2026-10.md §4.8
+// Every family: its layers run through the program walker. Gate H of docs/completed/task-forward-architecture-2026-10.md §4.8
 // ("OP3's seams PR") holds the row to the forward's final hidden state, bit for bit.
 func (m *Model) HiddenLast(ids []int) ([]float32, error) {
 	_, done, err := m.enterCall(context.Background())
@@ -137,7 +137,7 @@ func (m *Model) checkHiddenIDs(who string, ids []int) error {
 
 // PromptHidden returns the final-norm hidden state at the last position of prompt: HF's output_hidden_states[-1][:, -1],
 // equal to last_hidden_state[:, -1]. It is the input a Route B decision head reads
-// (docs/tasks/task-constrained-confidence.md): a linear head over the last prompt token's final-norm hidden state.
+// (docs/tasks/parked/task-constrained-confidence.md): a linear head over the last prompt token's final-norm hidden state.
 //
 // Like HiddenLast it serves every family: it runs the per-token forward
 // Generate's CPU path runs (runLayers), in a fresh cache, then the final norm logitsFromHidden applies before the LM

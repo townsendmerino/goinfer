@@ -370,7 +370,7 @@ func residentGateReasons(a *Architecture, prog *layerProgram, backend string, ac
 }
 
 // residentBackendTables names the backends whose admission reads an operation-and-parameter table instead of a feature set
-// (docs/tasks/task-forward-architecture-2026-10.md §4.9 and §4.9a, OP4m-c and OP4cu-c). The backend's walker checks the same
+// (docs/completed/task-forward-architecture-2026-10.md §4.9 and §4.9a, OP4m-c and OP4cu-c). The backend's walker checks the same
 // table at build.
 var residentBackendTables = map[string]*program.Support{"metal": program.Metal, "cuda": program.CUDA}
 

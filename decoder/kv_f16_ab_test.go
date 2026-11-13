@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// TestKVF16_F3InProcessAB is gate F3's day half (docs/tasks/task-cpu-kv-f16-2026-10.md § F3): decode on one loaded model,
+// TestKVF16_F3InProcessAB is gate F3's day half (docs/completed/task-cpu-kv-f16-2026-10.md § F3): decode on one loaded model,
 // the CPU cache f16 against f32, interleaved ABBA in one process, on the 0.5B and 1.5B at depths 128 and 4096. Each
 // generation builds a fresh cache, so flipping kvH between generations switches the arm. The quantity is the paired
 // ratio f32 ms/token ÷ f16 ms/token (the decode-rate ratio f16 ÷ f32), read against F3's bars; the streams are allowed

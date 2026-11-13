@@ -257,7 +257,7 @@ func TestB27_cpuFidelityTiny(t *testing.T) {
 }
 
 // TestB27_cpuFidelitySlice is B27's CPU fidelity bar on the three-layer slice of NVIDIA-Nemotron-Nano-9B-v2 (layers 0, 1
-// and 14 of the Q8_0 GGUF; docs/tasks/task-forward-architecture-2026-10.md §4.7) at int4: the int8-Mamba CPU against the
+// and 14 of the Q8_0 GGUF; docs/completed/task-forward-architecture-2026-10.md §4.7) at int4: the int8-Mamba CPU against the
 // f32-Mamba CPU, 32 steps of greedy lockstep, min logit cosine >= 0.99 from position 2 and argmax agreement >= 28/32.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -run '^TestB27_cpuFidelitySlice$' -v ./decoder/

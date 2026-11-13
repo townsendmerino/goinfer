@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 )
 
-// S4 item 1 of docs/tasks/task-never-swap-2026-09.md: a .giw load's weights are file-backed (fitCheckFor is never
+// S4 item 1 of docs/completed/task-never-swap-2026-09.md: a .giw load's weights are file-backed (fitCheckFor is never
 // called for one, by design; see its srcFileBytes doc comment), but KV and prefill scratch ARE real anonymous cost, and
 // guardGIWFit is the load-time guard that prices them. These are its gates, mirroring fitguard_test.go's conventions
 // for the .gguf side (injectHostRAM, the same Config field shape).

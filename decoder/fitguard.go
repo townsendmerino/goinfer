@@ -195,7 +195,7 @@ func (f fitCheck) decide() (pinCtx int, decline *FitDeclineError) {
 	return pin, fitDecline(d)
 }
 
-// giwMemMargin is the flat margin guardGIWFit leaves against the live availability probe (docs/tasks/task-never-swap-2026-09.md, item 1).
+// giwMemMargin is the flat margin guardGIWFit leaves against the live availability probe (docs/completed/task-never-swap-2026-09.md, item 1).
 // A .giw load's weights are file-backed (zero-copy aliases, evictable under memory pressure), so it deliberately does not reuse
 // fitMemFraction's 70% conservatism, which is sized for a load that commits anonymous memory for its weights; only KV and scratch are real
 // anonymous cost here.

@@ -1,6 +1,6 @@
 //go:build realckpt
 
-// Option D of the --embed-int4 decision (docs/tasks/task-multimodal-support-2026-10.md, "option D", registered before this code): what the int4 embedding / LM-head table costs against the
+// Option D of the --embed-int4 decision (docs/completed/task-multimodal-support-2026-10.md, "option D", registered before this code): what the int4 embedding / LM-head table costs against the
 // int8 pin. scripts/head_precision_hf.py wrote, per model, the Hugging Face float32 logits on a fixed greedy path (16 prompts x 32 positions); this teacher-forces that path through the CPU
 // backend at --quant int4 TWICE, once with EmbedInt4 false (the int8 pin) and once true, the only difference, and records per position the KL(HF || arm) and whether the arm's argmax is HF's.
 // The arms are loaded one at a time. HeadTable() must read int8 in the first and int4 in the second, or the run is void. GOINFER_HP_CONTROL=1 loads the int8 pin twice (the positive control:
