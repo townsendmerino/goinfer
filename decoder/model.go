@@ -52,6 +52,7 @@ type Model struct {
 	be          Backend
 	eosIDs      []int           // end-of-sequence ids from config (generation stops on these)
 	resident    ResidentForward // GPU full-residency decode path (webgpu + eligible arch); nil ⇒ staged/CPU
+	resSubP     unsafe.Pointer  // *cachedResidentSubsystems: lock-free legacy-bridge cache; raw pointer so Model stays copyable
 	lifeP       unsafe.Pointer  // *modelLife (lifecycle.go): the in-flight generations Close ends; made on first use
 	resBusy     int32           // atomic: claims the single shared resident KV for one in-flight generation. Raw int32 (not atomic.Bool) so Model stays copyable for the value-copy test seam.
 	capWarned   int32           // atomic: the first prompt past the resident's context has been reported (warnResidentCap)
@@ -354,20 +355,17 @@ func (m *Model) ExtraResidentKVPerPosition() int64 { return m.extraKVPerPos }
 // ExpertCacheStats reports the resident's MoE expert cache (ResidentExpertCache); ok is false off the resident path or when
 // the resident keeps no cache.
 func (m *Model) ExpertCacheStats() (ExpertCacheStats, bool) {
-	if c, ok := m.resident.(ResidentExpertCache); ok {
-		return c.ExpertCacheStats()
-	}
-	return ExpertCacheStats{}, false
+	return m.resRuntime().ExpertCacheStats()
 }
 
 // ResizeExpertCache resizes the resident's MoE expert cache (ResidentExpertCache) to leave reserve bytes of device memory
 // free, and returns its slots per layer. It errors when there is no resident or the resident keeps no cache.
 func (m *Model) ResizeExpertCache(reserve int64) (int, error) {
-	c, ok := m.resident.(ResidentExpertCache)
-	if !ok {
+	rt := m.resRuntime()
+	if !rt.ExpertCacheAvailable() {
 		return 0, fmt.Errorf("decoder: this model's resident keeps no expert cache")
 	}
-	return c.ResizeExpertCache(reserve)
+	return rt.ResizeExpertCache(reserve)
 }
 
 // SidecarFor is Options.SidecarFor: the backend whose sidecar .giw this load stands in for, "" for none.
@@ -464,7 +462,7 @@ type Options struct {
 	// at VRAM cost. Only meaningful with MoECacheExperts.
 	MoECacheSlots int
 	// KVQuant selects the CPU KV cache storage precision: "" / "f32" (default, bit-exact, the reference), "f16" (each stored row
-	// rounded to binary16, half the bytes; the generic loop without MoE, Architecture.kvF16OK, else f32) or "i8" (per-(position,
+	// rounded to binary16, half the bytes; the generic loop, Architecture.kvF16OK, else f32) or "i8" (per-(position,
 	// KV-head) symmetric int8, 4x smaller; declined where Architecture.kvInt8OK says no). The lossy two are opt-in. See
 	// docs/tasks/task-cpu-kv-f16-2026-10.md and task-cpu-kv-quant.md.
 	KVQuant string
@@ -480,6 +478,11 @@ type Options struct {
 	// StreamWeights) needs when its predicted working-set rate falls below moeSlowTokPerSecThreshold (moeworkingset.go):
 	// without it the load is refused. A no-op everywhere else.
 	AcceptSlowMoE bool
+	// RequireBackend makes a decline an error: when Backend names a backend other than the CPU and the load builds no
+	// resident runner on it (the backend is not linked, no device answered, or it declined the model), Load closes the model
+	// and returns an error that errors.Is matches against ErrBackendDeclined, carrying the decline's reason, instead of
+	// running on the CPU. A CPU load is unaffected.
+	RequireBackend bool
 	// MoEPager is the CPU expert pager's backing mode for a .giw-paged MoE model: "mmap" (advice-based,
 	// zero-copy) or "pool" (owned buffers + pread; a firm cap on every platform). "" = the platform
 	// default (MoEPagerDefault: pool on darwin, mmap elsewhere), unless GOINFER_MOE_PREAD_CPU overrides.
@@ -1135,47 +1138,27 @@ func (m *Model) NewCache(capHint int) *KVCache {
 		// Hybrid cache: KV for the softmax layers + a recurrent DeltaState for each
 		// linear layer. manualPos because the linear layers never Append.
 		c.manualPos = true
-		c.delta = make([]*deltaState, a.NumLayers)
-		for l := 0; l < a.NumLayers; l++ {
-			if a.isLinearLayer(l) {
-				c.delta[l] = newDeltaState(*a.qwen35)
-			}
-		}
+		c.delta = layerStates(a.NumLayers, a.isLinearLayer, func() *deltaState { return newDeltaState(*a.qwen35) })
 	}
 	if a.lfm2 != nil {
 		// Hybrid cache: KV for the attention layers + a rolling conv window for each conv layer. manualPos because the conv layers
 		// never Append, so position cannot be inferred from the KV length.
 		c.manualPos = true
-		c.conv = make([]*shortConvState, a.NumLayers)
-		for l := 0; l < a.NumLayers; l++ {
-			if a.isConvLayer(l) {
-				c.conv[l] = newShortConvState()
-			}
-		}
+		c.conv = layerStates(a.NumLayers, a.isConvLayer, newShortConvState)
 	}
 	if a.granite != nil {
 		// Hybrid cache: KV for the attention layers + a Mamba-2 recurrent state for
 		// each mamba layer. manualPos because the mamba layers never Append.
 		c.manualPos = true
-		c.mamba = make([]*mamba2State, a.NumLayers)
 		mp := mamba2Params{NHeads: a.granite.NHeads, HeadDim: a.granite.HeadDim, DState: a.granite.DState, NGroups: a.granite.NGroups, DConv: a.granite.DConv, Hidden: a.HiddenDim}
-		for l := 0; l < a.NumLayers; l++ {
-			if a.isMambaLayer(l) {
-				c.mamba[l] = newMamba2State(mp)
-			}
-		}
+		c.mamba = layerStates(a.NumLayers, a.isMambaLayer, func() *mamba2State { return newMamba2State(mp) })
 	}
 	if a.nemotron != nil {
 		// Single-op-block hybrid: only attention layers touch KV (manualPos), mamba
 		// layers carry a Mamba-2 recurrent state, mlp layers neither.
 		c.manualPos = true
-		c.mamba = make([]*mamba2State, a.NumLayers)
 		mp := mamba2Params{NHeads: a.nemotron.NHeads, HeadDim: a.nemotron.HeadDim, DState: a.nemotron.DState, NGroups: a.nemotron.NGroups, DConv: a.nemotron.DConv, Hidden: a.HiddenDim}
-		for l := 0; l < a.NumLayers; l++ {
-			if a.nemotron.blockKind[l] == nemoMamba {
-				c.mamba[l] = newMamba2State(mp)
-			}
-		}
+		c.mamba = layerStates(a.NumLayers, func(l int) bool { return a.nemotron.blockKind[l] == nemoMamba }, func() *mamba2State { return newMamba2State(mp) })
 	}
 	if a.mla != nil {
 		// DeepSeek MLA: the cache is the per-layer compressed latent, not full K/V.
@@ -1193,12 +1176,7 @@ func (m *Model) NewCache(capHint int) *KVCache {
 		// Bailing Hybrid (Ling 3.0): a third hybrid-cache shape. The MLA layers' latent cache is handled by the a.mla block above
 		// (bailingHybridArchitecture sets both), so only the KDA linear layers' recurrent state needs its own array here.
 		c.manualPos = true
-		c.kda = make([]*kdaState, a.NumLayers)
-		for l := 0; l < a.NumLayers; l++ {
-			if a.isLinearLayer(l) {
-				c.kda[l] = newKDAState(*a.kda)
-			}
-		}
+		c.kda = layerStates(a.NumLayers, a.isLinearLayer, func() *kdaState { return newKDAState(*a.kda) })
 	}
 	return c
 }
@@ -1309,25 +1287,30 @@ func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int,
 	return m.residentPrefillSeedMarked(ctx, prompt, from, hasAdapter, nil)
 }
 
-// residentPrefillSeedMarked is residentPrefillSeed that, given a mark, has a resident that can (ResidentPrefillMarked) call it back between two
-// passes of the batched prefill, at the mark's position: the prefix snapshot of a prompt whose tail after the stable section is long (kvsnap.go).
-// A resident that cannot, a prefill that does not reach the position at a pass boundary, or one that falls to the sequential loop, calls nothing.
-func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, from int, hasAdapter bool, mk *prefillMark) ([]float32, error) {
+// prefillSeedFrom is where a prefill seed of prompt starts: from, or 0 when from is outside the prompt (the seed token, whose logits
+// start decode, is never skipped); a seed from 0 rewrites the resident's KV from the start (residentWritesFromZero).
+func (m *Model) prefillSeedFrom(prompt []int, from int) int {
 	if from < 0 || from >= len(prompt) {
-		from = 0 // never skip the seed token, whose logits start decode
+		from = 0
 	}
 	if from == 0 {
 		m.residentWritesFromZero()
 	}
+	return from
+}
+
+// residentPrefillSeedMarked is residentPrefillSeed that, given a mark, has a resident that can (ResidentPrefillMarked) call it back between two
+// passes of the batched prefill, at the mark's position: the prefix snapshot of a prompt whose tail after the stable section is long (kvsnap.go).
+// A resident that cannot, a prefill that does not reach the position at a pass boundary, or one that falls to the sequential loop, calls nothing.
+func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, from int, hasAdapter bool, mk *prefillMark) ([]float32, error) {
+	from = m.prefillSeedFrom(prompt, from)
 	suffix := prompt[from:]
 	// Offer the batched path suffixes of 8 tokens or more (a shorter one is cheaper token by token) -- and, when
 	// the backend's short continuation is exact (PrefillTailExact), any suffix of a prompt the cold run would have
 	// offered whole, so a reused prompt takes the cold run's route and returns its bits.
 	offer := len(suffix) >= 8
-	if !offer && from > 0 && len(prompt) >= 8 {
-		if te, ok := m.resident.(PrefillTailExact); ok && te.PrefillTailExact() {
-			offer = true
-		}
+	if !offer && from > 0 && len(prompt) >= 8 && m.resPrefill().PrefillTailExact() {
+		offer = true
 	}
 	if m.knobs.get(knobBatchedPrefill) != "0" && offer && !hasAdapter {
 		if canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe}) {
@@ -1423,12 +1406,7 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 // pos. Deliberately simple (no batched or KV-only prefill): the reused-suffix case is an agent turn's short trailing
 // extension, not a long cold prompt worth the batched machinery.
 func (m *Model) residentPrefillSeedMRoPE(ctx context.Context, prompt []int, from, mropeDelta int) ([]float32, error) {
-	if from < 0 || from >= len(prompt) {
-		from = 0
-	}
-	if from == 0 {
-		m.residentWritesFromZero()
-	}
+	from = m.prefillSeedFrom(prompt, from)
 	var sr stepResult
 	var err error
 	var row [1][]float32
@@ -1460,6 +1438,9 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 		C = f
 	}
 	chunk := ok && C > 0 && m.knobs.get(knobBatchedPrefill) != "0"
+	// ride: each chunk is carried by a decode run, one ragged step with the decode rows pending then (rideChunk), instead of a
+	// pass of its own followed by yieldToDecode.
+	ride := chunk && mc3.ride != nil
 	var logits []float32
 	var err error
 	// Cut a chunk only while a chunk plus prefillTailMinRows tokens remain, so the pass that ends the prefill has at least
@@ -1474,6 +1455,15 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 		embs := make([][]float32, end-from)
 		for i, id := range prompt[from:end] {
 			embs[i] = m.embedResident(id)
+		}
+		if ride {
+			c := &chunkReq{seq: ResidentRaggedSeq{Slot: slot, Pos: from, Embs: embs, Prefill: &ResidentRaggedPrefill{PromptLen: len(prompt)}}}
+			if err = mc3.rideChunk(c); err == nil {
+				from = end
+				continue
+			}
+			// The ragged step did not take the chunk (a family it declines, a full KV pool): this chunk and the rest alternate.
+			ride, err = false, nil
 		}
 		mc3.prefillExclusive(func() {
 			if err = m.residentBind(slot); err == nil {
@@ -1575,7 +1565,9 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	}
 	var resAdapter ResidentAdapter
 	if lora != nil {
-		resAdapter, _ = m.resident.(ResidentAdapter)
+		if rt := m.resRuntime(); rt.AdapterAvailable() {
+			resAdapter = rt
+		}
 	}
 	useGPU := m.resident != nil && prefillFrom == 0 && (commit == nil || (lora != nil && resAdapter != nil))
 	var mc3 *residentBatcher // non-nil: this generation holds an MC3 place and, after prefill, the KV slot mc3Slot
@@ -1763,8 +1755,8 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// lookup is a plain table row, which the resident's gather reproduces. Under MC3 it runs only on the tokens this generation
 	// decodes alone, with the resident held across them (holdSolo); every other token takes the batcher as before, so fastGreedy
 	// stays the path for those.
-	chainRF, hasChain := m.resident.(ResidentGreedyChain)
-	useChain := useGPU && resCost == nil && hasChain && (sp.LogitProcessor == nil || (gated && mc3 == nil)) && lora == nil &&
+	chainRF := m.resDecode()
+	useChain := useGPU && resCost == nil && (sp.LogitProcessor == nil || (gated && mc3 == nil)) && lora == nil &&
 		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) && m.knobs.get(knobNoGreedyFastpath) == "" &&
 		m.embedIsTableRow() && chainRF.GreedyChainAvailable()
 	if useChain && mc3 == nil {
@@ -1820,10 +1812,8 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// ForwardSample itself takes the argmax (a temperature so small 1/T is infinite).
 	var sChainRF ResidentSampleChain
 	if sampleOn && resCost == nil && sp.LogitProcessor == nil && lora == nil && m.embedIsTableRow() &&
-		!math.IsInf(1/sp.Temperature, 0) {
-		if rf, ok := m.resident.(ResidentSampleChain); ok && rf.SampleChainAvailable() {
-			sChainRF = rf
-		}
+		!math.IsInf(1/sp.Temperature, 0) && chainRF.SampleChainAvailable() {
+		sChainRF = chainRF
 	}
 	var stepRow [1][]float32 // the decode token's one-row batch, reused across tokens so a step allocates nothing
 	var topKRow *TopKRow     // this step's device top-K row, set instead of logits when topKOn
@@ -2305,3 +2295,14 @@ type Generation struct {
 // channel closes. A cancelled or expired context ends the stream with an error that errors.Is matches against ctx.Err()
 // (context.Canceled or context.DeadlineExceeded), whether it fired before the first token or mid-decode.
 func (g *Generation) Err() error { return g.err }
+
+// layerStates is a hybrid cache's per-layer recurrent state: mk's state for each of the n layers where at holds, nil elsewhere.
+func layerStates[T any](n int, at func(l int) bool, mk func() T) []T {
+	out := make([]T, n)
+	for l := range n {
+		if at(l) {
+			out[l] = mk()
+		}
+	}
+	return out
+}

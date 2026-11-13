@@ -103,6 +103,10 @@ var archFeatureProfile = map[string][]ResidentFeature{
 	// these; M.1 drops the sliding-window half, but this table states the family's
 	// BASE profile and RequiredResidentFeatures derives the per-model truth.
 	"laguna": {FeatAttnOutputGateSoftplus, FeatMoE, FeatPartialRotary, FeatPerLayerQueryHeads, FeatPerLayerRoPE, FeatQKNorm, FeatRopeMscale, FeatSlidingWindow},
+	// Flint: sigmoid-routed MoE with an UNGATED shared expert (FeatMoE), per-head QK RMSNorm (FeatQKNorm), per-query-head
+	// attention sinks (FeatAttnSink), and a sliding/full attention schedule where the full-attention layers are NoPE
+	// (FeatNoPE, FeatSlidingWindow).
+	"flint": {FeatAttnSink, FeatMoE, FeatNoPE, FeatQKNorm, FeatSlidingWindow},
 	// spark2_5: an attention output gate as Laguna has, through sigmoid here (FeatAttnOutputGateSigmoid) where Laguna's is
 	// softplus; no resident backend implements either, and a gated MLP with exact-erf GELU (FeatGatedGELUErf), which no backend
 	// implements either: every gated kernel has GELU-tanh and SiLU only.
@@ -192,6 +196,7 @@ var admissionGolden = map[string][]string{
 	"cohere2":     {"cuda", "metal"},
 	"deepseek_v2": {"cuda", "metal", "webgpu"},
 	"deepseek_v3": {"cuda", "metal", "webgpu"},
+	"flint":       {"cuda", "metal", "webgpu"},
 	// gemma3 (uniform head_dim) reaches webgpu for real (testdata/gemma3-vl-tiny's text tower,
 	// gpu.TestGemma3ResidentParityWebGPU). gemma4/gemma4_text/gemma4_unified_text are FEATURE-compatible there, but dense
 	// Gemma 4's local/global head_dim split needs a per-layer geometry seam this feature-list model cannot express

@@ -14,6 +14,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/decoder/quant"
 )
 
 // LayerWeights bundles one decoder block's tensors. Matrices follow
@@ -585,6 +586,24 @@ func loadEmbedTable(st *embed.SafetensorsFile, name string, rows, cols int, mode
 		}
 		return quantizeEmbedWM(m, mode, needCanonical), nil
 	}
+	if r := quant.ForTensor(st, nil, name); r != nil {
+		if rs, ok := r.(quant.RowStreamReconstructor); ok {
+			rowInto, err := rs.RowReader2D(st, name, rows, cols)
+			if err != nil {
+				return linalg.WeightMat{}, err
+			}
+			return streamQuantizedEmbed(rows, cols, mode, needCanonical, !repackForDecode(sink), 1, func() rowReader { return rowInto })
+		}
+		data, err := r.ReconstructMat2D(st, name, rows, cols)
+		if err != nil {
+			return linalg.WeightMat{}, err
+		}
+		readRow := func(r int, dst []float32) error {
+			copy(dst, data[r*cols:(r+1)*cols])
+			return nil
+		}
+		return streamQuantizedEmbed(rows, cols, mode, needCanonical, !repackForDecode(sink), 1, func() rowReader { return readRow })
+	}
 	t, err := st.Tensor(name)
 	if err != nil {
 		return linalg.WeightMat{}, err
@@ -761,7 +780,8 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 		}
 		return topPrefix + fmt.Sprintf("model.%slayers.%d.%s", modelPrefix, i, suf)
 	}
-	fusedExperts := arch.MoE != nil && have[tn(0, "mlp.experts.gate_up_proj")]
+	fusedExperts := arch.MoE != nil && arch.FirstKDense < arch.NumLayers && have[tn(arch.FirstKDense, "mlp.experts.gate_up_proj")]
+	switchMLPExperts := arch.MoE != nil && arch.FirstKDense < arch.NumLayers && have[tn(arch.FirstKDense, "mlp.switch_mlp.gate_proj.weight")]
 
 	// LoRA merge-at-load validation, deferred to here so it sees tn: the same prefixed name (language_model.* or
 	// model.language_model.* on VL checkpoints, or model.-stripped) that loadProj looks the delta up by. It closes two
@@ -783,9 +803,9 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 		}
 	}
 
-	// GPTQ/AWQ checkpoints ship their projections as packed int4 (qweight/…);
+	// Pre-quantized safetensors checkpoints (GPTQ/AWQ/FP8/NVFP4/MLX);
 	// resolve the params once. nil ⇒ a normal f32/bf16 checkpoint.
-	qc, err := parseQuantConfig(cfg.QuantizationConfig)
+	qc, err := parseCheckpointQuantConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -800,34 +820,21 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 		}
 		return m, merr
 	}
-	// loadProj loads a per-layer attention/MLP projection to f32 (a GPTQ/AWQ/fp8 reconstruction when the checkpoint is
+	// loadProj loads a per-layer attention/MLP projection to f32 (a GPTQ/AWQ/fp8/nvfp4/mlx reconstruction when the checkpoint is
 	// pre-quantized, else a plain load), merges any LoRA delta into it, then quantizes to the requested resident format,
 	// freeing the f32 before the next tensor. The LoRA merge must happen here, on the f32, before quantization. batched marks
 	// a projection reached through the batched W4A8 dispatch (attention Q/K/V, MLP gate/up): quantizeBatchedProjWM instead of
 	// quantizeWM, so it may build repacked-only int4 when this load's backend allows it. See that function for the safety
 	// argument and why o_proj/down_proj are not marked this way.
 	loadProj := func(name string, out, in int, batched bool) (linalg.WeightMat, error) {
-		var data []float32
-		var derr error
-		switch {
-		case qc == nil:
-			data, derr = st.TensorF32(name, out, in)
-			// TensorF32 may alias the read-only mmap for F32 tensors; the in-place
-			// merge needs a writable copy (only for the targeted tensors).
-			if derr == nil && lora.has(name) {
-				data = append([]float32(nil), data...)
-			}
-		case qc.method == "fp8":
-			// Block-quantized fp8 keeps the full tensor NAME (scales are name+"_scale_inv"),
-			// unlike gptq/awq which trim ".weight" and rebuild from a family of suffixes.
-			data, derr = fp8Reconstruct(st, name, in, out, qc.blockR, qc.blockC)
-		case qc.method == "awq":
-			data, derr = awqReconstruct(st, strings.TrimSuffix(name, ".weight"), in, out)
-		default:
-			data, derr = gptqReconstruct(st, strings.TrimSuffix(name, ".weight"), in, out)
-		}
+		data, fresh, derr := reconstructSafetensorsMat2D(st, qc, name, out, in)
 		if derr != nil {
 			return linalg.WeightMat{}, derr
+		}
+		// TensorF32 may alias the read-only mmap for F32 tensors; the in-place
+		// merge needs a writable copy (only for the targeted tensors).
+		if !fresh && lora.has(name) {
+			data = append([]float32(nil), data...)
 		}
 		if derr = lora.merge(name, data, out, in); derr != nil {
 			return linalg.WeightMat{}, derr
@@ -1055,6 +1062,17 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 					return err
 				}
 			}
+			// Per-head attention sink logit (Flint: self_attn.softmax_offset, or
+			// self_attn.sinks on older builds).
+			if arch.hasAttnSinks() && s.AttnSinks != "" {
+				sinkName := tn(i, s.AttnSinks)
+				if !have[sinkName] && s.AttnSinksAlt != "" && have[tn(i, s.AttnSinksAlt)] {
+					sinkName = tn(i, s.AttnSinksAlt)
+				}
+				if l.AttnSinks, err = st.TensorF32(sinkName, arch.headsAt(i)); err != nil {
+					return err
+				}
+			}
 		}
 		// Block norms — Pre2 has only Pre*; Sandwich4 adds Post*. A hybrid whose norm
 		// tensor NAMES (not just placement) differ between linear and full-attention
@@ -1142,6 +1160,11 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 			if fusedExperts {
 				// Real qwen3_5_moe: all experts in two stacked 3-D tensors.
 				if l.Experts, err = loadFusedExperts(st, tn(i, "mlp.experts.gate_up_proj"), tn(i, "mlp.experts.down_proj"), arch.MoE.NumExperts, expInter, hd, quant, needCanonical, skipRow4, sink); err != nil {
+					return err
+				}
+			} else if switchMLPExperts {
+				// MLX MoE: all experts in three stacked 3-D tensors under mlp.switch_mlp.{gate,up,down}_proj.
+				if l.Experts, err = loadSwitchMLPExperts(st, tn(i, "mlp.switch_mlp"), arch.MoE.NumExperts, expInter, hd, quant, needCanonical, skipRow4, sink); err != nil {
 					return err
 				}
 			} else {
@@ -1743,7 +1766,7 @@ func streamExperts(t embed.Tensor, nExpert, rows, cols int, quant quantMode, nee
 // embed.SafetensorsFile.TensorF32 typed read — F32/BF16/F16 dispatch + shape
 // check) and wraps it as a (f32) linalg.WeightMat ready for matmul/quantization.
 func loadMat(st *embed.SafetensorsFile, name string, rows, cols int) (linalg.WeightMat, error) {
-	data, err := st.TensorF32(name, rows, cols)
+	data, _, err := reconstructSafetensorsMat2D(st, nil, name, rows, cols)
 	if err != nil {
 		return linalg.WeightMat{}, err
 	}
@@ -1773,7 +1796,10 @@ type tensorSchema struct {
 	// per-layer suffixes passed to tensorName(layer, suffix); "" = absent
 	QProj, KProj, VProj, OProj string
 	// GProj is Laguna's attention output gate (g_proj). "" = the family has none.
-	GProj                      string
+	GProj string
+	// AttnSinks is Flint's per-query-head attention sink logit (self_attn.softmax_offset,
+	// with AttnSinksAlt = self_attn.sinks for older checkpoints). "" = none.
+	AttnSinks, AttnSinksAlt    string
 	QBias, KBias, VBias        string // "" = no projection bias (Qwen2 sets q/k/v)
 	QNorm, KNorm               string // "" = no QK-norm
 	PreAttnNorm, PostAttnNorm  string
@@ -3103,4 +3129,42 @@ var lagunaTensorSchema = tensorSchema{
 	SharedUp:   "mlp.shared_expert.up_proj.weight",
 	SharedDown: "mlp.shared_expert.down_proj.weight",
 	// SharedExpertGate empty: Laguna adds the shared expert with no outer sigmoid gate.
+}
+
+// flintTensorSchema: Flint (RecursiveSI/flint). Qwen3-shaped attention (per-head
+// q_norm/k_norm, no biases on the released checkpoint) with a learned
+// per-query-head attention sink (self_attn.sinks, or self_attn.softmax_offset),
+// a dense MLP prefix (mlp_only_layers), and a sigmoid-routed MoE (both per-expert
+// 2D mlp.experts.%d.{gate,up,down}_proj.weight and fused 3D
+// mlp.experts.{gate_up,down}_proj are handled by buildWeightsFromSafetensorsTo)
+// plus an always-on ungated SwiGLU shared expert (mlp.shared_expert.*).
+var flintTensorSchema = tensorSchema{
+	Embed:        "model.embed_tokens.weight",
+	LMHead:       "lm_head.weight",
+	FinalNorm:    "model.norm.weight",
+	QProj:        "self_attn.q_proj.weight",
+	KProj:        "self_attn.k_proj.weight",
+	VProj:        "self_attn.v_proj.weight",
+	OProj:        "self_attn.o_proj.weight",
+	QNorm:        "self_attn.q_norm.weight",
+	KNorm:        "self_attn.k_norm.weight",
+	AttnSinks:    "self_attn.sinks",
+	AttnSinksAlt: "self_attn.softmax_offset",
+	QBias:        "self_attn.q_proj.bias",
+	KBias:        "self_attn.k_proj.bias",
+	VBias:        "self_attn.v_proj.bias",
+	PreAttnNorm:  "input_layernorm.weight",
+	PreMLPNorm:   "post_attention_layernorm.weight",
+	// dense prefix (mlp_only_layers) layers
+	GateProj: "mlp.gate_proj.weight",
+	UpProj:   "mlp.up_proj.weight",
+	DownProj: "mlp.down_proj.weight",
+	// MoE layers
+	Router:     "mlp.gate.weight",
+	ExpertGate: "mlp.experts.%d.gate_proj.weight",
+	ExpertUp:   "mlp.experts.%d.up_proj.weight",
+	ExpertDown: "mlp.experts.%d.down_proj.weight",
+	SharedGate: "mlp.shared_expert.gate_proj.weight",
+	SharedUp:   "mlp.shared_expert.up_proj.weight",
+	SharedDown: "mlp.shared_expert.down_proj.weight",
 }

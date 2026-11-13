@@ -454,10 +454,27 @@ confirms 33 by run before anything is published as safe rather than as computed.
 
 ## Queued
 
-**B44 · `serve check`'s long-prompt row fails on reasoning models** — filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions).
-- It asks for 8 tokens and counts content only (`internal/guard/servecheck/check.go:Client.Chat`), so a model that thinks first
-  spends the budget on reasoning and the row reads a failure. The fix counts reasoning, or gives a reasoning model the room to
-  answer. From `docs/completed/task-mellum21-2026-10.md`'s status block. Tier 0: a stub server that streams reasoning first.
+**B45 · CI runs no adapter-gated WebGPU test, so a WebGPU ratchet is checked only on the boxes** — filed 2026-11-09 (mbp2-fit,
+from the `TestMemGate_webgpu` finding). **Not started; a CI change, so it waits on the owner's word.**
+- **The hole.** The webgpu job runs `go test -short -tags 'gpu goinfer_testhooks' ./backend/webgpu/...` on a headless runner with
+  no Vulkan adapter, so every test that opens a device skips there: `TestMemGate_webgpu` (the memory gate and its known-gap table),
+  the slot census, and the kernel parity tests. A known-gap entry that stops firing, or a lease that grows past its plan, goes red
+  only when someone runs the package on nobara, the Mac or mbp2. On 2026-11-09 the "MM8, Gemma 4 MoE dense" entry had stopped
+  firing on mbp2's Vulkan run with nobody having seen it; its fate waits on nobara's run.
+- **What is in reach.** A software Vulkan adapter. mbp2's (Mesa's llvmpipe) ran the kernels package with 52 tests passing
+  and 67 skipping as hardware-dependent, and ran `TestMemGate_webgpu` to its verdict. The binding documents the packages:
+  `apt install -y libegl1-mesa-dev mesa-vulkan-drivers` (`github.com/oliverbestmann/webgpu`'s README). Tests that need real hardware
+  already skip on a software adapter by name ("software adapter …; hardware-dependent test").
+- **Cost, to measure before deciding.** On mbp2: the kernels package about 2 to 7 minutes, `TestMemGate_webgpu` about 3 to 4, the
+  root webgpu package past go test's 10-minute default. A CI job would run a chosen subset (the memory gate, the census, the
+  kernels package) with its own timeout, not the whole module.
+- **Done when:** a CI job opens a software adapter and runs `TestMemGate_webgpu` and the kernels package to a PASS, and its wall
+  time is recorded here. A known-gap entry that stops firing then goes red in CI on the PR that caused it.
+
+**B44 · `serve check`'s long-prompt row fails on reasoning models** — filed 2026-11-09 (mbp2-fit, from Francis's doc-review
+decisions); **FIXED 2026-11-09.** `internal/guard/servecheck/check.go:Client.Chat` counted content deltas only, so a model that
+thinks first spent the row's 8 tokens on reasoning and read "stream produced no tokens". It now counts `reasoning_content` and
+`reasoning` deltas as tokens and says how many were reasoning (`TestChat_reasoningOnlyStreamPasses`, red before the fix).
 
 **B43 · On Windows, every `.giw` is on the Go heap, at every quant, and the fit guard prices it as file-backed** — filed 2026-11-02
 (mbp2-sb7, from #597's Windows CI). **Francis chose to map, 2026-11-02 09:00 PST (via the coordinator); no guard change. Built: `decoder/giwmap_windows.go`, with the heap bounds holding on `windows-latest` and `windows-11-arm` in CI. A sidecar's replacement goes through `publishGIW`: the plain rename worked over a mapped file in CI on both, and where a platform refuses it the old file moves aside.** As filed: `aikit`'s `mmap.MapReadOnly` is
@@ -725,7 +742,8 @@ correctly and then continues with `<|im_start|>assistant ... What is the currenc
   The 4B is the by-day tier 1 model for it (it loads in 5 s on the card).
 
 **B30 · an auto-picked resident context the fit guard then refuses: the picker must never choose it** — filed 2026-10-16 (owner, from OP2b's tier 1).
-**Not started.** Loading the whole Nemotron-Nano-9B-v2 from its GGUF on the 8 GB card, with the token table at int4 and no `-ctx`, the load-time fit
+**Tier 0 shipped (the guard-pin trim, #879); tier 1 on nobara (2026-11-09) INCONCLUSIVE:** the 9B loaded cuda-resident int4 at 12096, so the trim path was not exercised, and the pre-#879 build behaves the same on this card; the tier-0 tests stand.
+**Original filing, not started:** Loading the whole Nemotron-Nano-9B-v2 from its GGUF on the 8 GB card, with the token table at int4 and no `-ctx`, the load-time fit
 guard pinned a context of **12,353** positions and the CUDA build then refused it: 0.40 GB of KV against 0.80 GB free, with 384 MiB reserved
 (`checkKVFits`), short by about 8 MB, so the model ran on the CPU. With an explicit `ResidentContext: 4096` it ran resident (the same weights, 135 MiB of KV).
 - **Why it is not trimmed (INFERRED from `backend/cuda/resident.go` and `decoder/model.go`; not stepped through):** the guard's pin sets
@@ -1101,7 +1119,11 @@ set for the analysis only, run from inside the module with `GOWORK=off`, gives t
 "Zero findings" and "the tool did not run" are the same output, which is the same class the tracer's
 zero samples belonged to.
 
-**B8 · A sweep must distinguish "could not evaluate" from "failed"** — `linux`, **filed 2026-08-12**
+~~**B8 · A sweep must distinguish "could not evaluate" from "failed"**~~ **DONE 2026-11-09 (mbp2-fit):** `cmd/gate/grade_parity.go:classifyChecks` names the
+variable of an env-gated skip (`SKIP - not evaluated, GOINFER_HEAVY_TESTS unset (blocker)`), an asset skip keeps its label,
+and the verdict line splits the count (`blockerSplit`: `N BLOCKER(S): F FAILED, E NOT EVALUATED (a asset absent, b env gate
+unset, c did not run)`, plus any from the catch-alls); both still block a tag
+(`cmd/gate/parity_test.go:TestParity_notEvaluatedIsCountedApartFromFailed`). The entry as filed:* — `linux`, **filed 2026-08-12**
 
 `scripts/parity_sweep.sh` reported **27 blockers**, then **15**, then **0**. The tree was fine at all
 three. Every one of the 42 was a **missing asset or an unset env var** — an *inability to evaluate*,
@@ -1125,7 +1147,9 @@ moved".** An absence rendered as a result, and a cause rendered as the wrong kin
 project already has the rule — *a skip is not a pass* — and these are the corollary: **a skip is also
 not a failure, and a gate that cannot say which it had is asking the operator to guess.**
 
-**B7 · `aikit_version` is a hand-maintained input to a computed gate** — `linux`, **found 2026-08-12
+~~**B7 · `aikit_version` is a hand-maintained input to a computed gate**~~ **Done, checked 2026-11-09 (mbp2-fit):** the parity manifest has no aikit field;
+`deps_hash` reads the kernel fingerprint table at hash time (`decoder/parity_manifest_test.go`, the manifest's doc), and
+`decoder/aikit_pin_test.go:TestAikitPinsAgree` holds every module to the root's pin. Kept as written: — `linux`, **found 2026-08-12
 during the v1.17.0 bump; MEASURED AND STILL LIVE 2026-09-06 — see the box immediately below**
 
 > **STATUS 2026-09-06: CONFIRMED LIVE, AND A RELEASE WAS CUT THROUGH IT. ONE ACTION OUTSTANDING.**
@@ -1208,7 +1232,14 @@ Two instances landed the same day, which is what promoted it from a chore to a c
 *Cross-reference:* B6 carries the check/dispatch shapes; this is the constant shape, and the three
 belong to one class.
 
-**B1 · Env-var lint** — either box
+**B1 · Env-var lint** *Checked 2026-11-09 (mbp2-fit): the registry half is DONE: `testdata/env_reads.txt` lists every production
+`GOINFER_*` read and `decoder/envvars_registry_test.go:TestEnvVars_docAndCodeAgree` fails on one missing from it or from
+`docs/env-vars.md`, and operator knobs are snapshotted at `Load` (`decoder.Model.Knob`, `TestKnobDrift_firesOnPostLoadSetenv`).
+The package-initialiser half is GUARDED: `decoder/envvars_pkginit_test.go:TestEnvVars_noNewPackageInitRead` fails
+on a new production package-level `var` initialised from the environment (a direct `os.Getenv`/`os.LookupEnv`, or a
+`GOINFER_*` literal passed to a helper such as `envBoolDefault`). Thirteen such reads remain, listed there
+(`pkgInitEnvReadsKnown`), out of reach of `t.Setenv`; the list only shrinks. OPEN: moving those thirteen to load-time knobs
+or test hooks, one at a time, where a test needs to set one.* — either box
 
 `cc238c6` landed the `GINFER_`→`GOINFER_` rename (31 files, real work) and an env-var
 classification as `docs/env-vars.md`. The classification is the expensive part and it's done. What's
@@ -1231,7 +1262,8 @@ Why it matters: 105 variables, exactly one of which anything has ever set. Six h
 only findable *as a class* if something enumerates `os.Getenv` mechanically. A markdown table
 maintained by intention drifts on the first variable someone adds.
 
-**B2 · Gate reconciliation — one entry point** — `linux`
+~~**B2 · Gate reconciliation — one entry point**~~ **Superseded, checked 2026-11-09 (mbp2-fit):** both scripts are gone; `go run ./cmd/gate gpu` is the one
+entry point, with the heavy main tier and a vacuous cell counted as a failure (`cmd/gate/gpu.go`). Kept as written: — `linux`
 
 Two mechanisms now exist for running the heavy tier: `scripts/gpu_gate.sh` group 2c (linux) and
 `scripts/heavy_gate.sh` (`8fecfad`, mac).
@@ -1490,7 +1522,10 @@ sibling already had — it reproduces the class rather than closing it. Where en
 mechanical, the invariant's own comment carries the full set, so the next fix is written by someone
 who has been told the set exists.
 
-**B17 · CI staticcheck verdicts are toolchain-nondeterministic** — either box. Filed 2026-08-14,
+**B17 · CI staticcheck verdicts are toolchain-nondeterministic** *Checked 2026-11-09 (mbp2-fit): addressed in
+practice. CI builds staticcheck v0.8.1 from `.github/actions/staticcheck`'s own `go.mod` (x/tools pinned), under the Go that
+`go.mod` names (`go-version-file`), and `go run ./cmd/lint` checks a local binary is that build and runs a canary first.
+Francis's decision is left open here, since it was his to make.* — either box. Filed 2026-08-14,
 decider Francis.
 
 `ci.yml` runs `go run honnef.co/go/tools/cmd/staticcheck@2025.1.1` (root and backend jobs). The

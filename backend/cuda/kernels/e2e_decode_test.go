@@ -15,7 +15,7 @@ import (
 // gluePTX + gemvFwdPTX now live in kernels.go (shared with the production backend).
 
 // TestE2EDecodeThroughput_synthetic is the end-to-end cgo-free CUDA decode THROUGHPUT measurement
-// (docs/prompts/cuda-measure-e2e-decode.md): the full per-token work — GEMVs PLUS the glue a projection
+// (docs/completed/cuda-measure-e2e-decode.md): the full per-token work — GEMVs PLUS the glue a projection
 // omits (RMSNorm+quant, RoPE, GQA attention, SwiGLU+quant, residual, argmax) — so the tok/s is end-to-end,
 // not a streaming ceiling. Shippable config: PTX compiled offline (NVRTC) + go:embed'd + DRIVER-JIT'd (no
 // libnvrtc in the binary), every launch through gocudrv's LockOSThread executor channel (its hop is in

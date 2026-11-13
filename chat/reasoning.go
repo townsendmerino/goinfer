@@ -311,6 +311,9 @@ func (t *Template) renderThinking(system string, turns []Turn) []Segment {
 		on, _ := r.effectiveOn(t.think)
 		return gemma4Segments(system, turns, on, r.hist == histGemma4 || r.oldGemma4, r.oldGemma4, r.offScaffold())
 	}
+	if t.name == "flint" {
+		return t.render(system, turns)
+	}
 	segs := chatMLSegments(system, turns, r.hist)
 	return append(segs[:len(segs):len(segs)], r.suffix(t.think)...)
 }

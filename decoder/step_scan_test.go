@@ -19,8 +19,8 @@ var stepShapes = map[string]bool{
 }
 
 // TestStepShapes_assertedOnlyInStep refuses a type assertion or type-switch case naming a forward-shape interface in any
-// non-test decoder file but step.go, whatever its build tags: every caller asks canStep and calls step, so the call shape has one
-// place to change.
+// non-test decoder file outside the legacy compatibility bridge in resident_subsystems.go, whatever its build tags: every caller
+// asks canStep and calls step (which routes through ResidentSubsystems), so the call shape has one place to change.
 func TestStepShapes_assertedOnlyInStep(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil {
@@ -29,7 +29,7 @@ func TestStepShapes_assertedOnlyInStep(t *testing.T) {
 	fset := token.NewFileSet()
 	read := 0
 	for _, f := range files {
-		if strings.HasSuffix(f, "_test.go") || f == "step.go" {
+		if strings.HasSuffix(f, "_test.go") || f == "resident_subsystems.go" {
 			continue
 		}
 		af, err := parser.ParseFile(fset, f, nil, parser.SkipObjectResolution)

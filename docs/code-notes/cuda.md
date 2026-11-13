@@ -3286,7 +3286,7 @@ Small shapes on purpose: the reference is O(M · nH · nKeys · hd) in Go and th
 test, not a benchmark. Seam BREADTH is TestAttnFused_vsExact's job; DEPTH of correctness is this
 one's. Both are needed — neither substitutes for the other.
 
-	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_FAST_PREFILL=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestAttnFused_vsF16Reference -v
+	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_FAST_PREFILL=1 go test -tags 'cuda goinfer_testhooks' ./backend/cuda/ -run TestAttnFused_vsF16Reference -v
 ```
 
 ## TestAttnFused_vsF16Reference.reference
@@ -3585,7 +3585,7 @@ box that has a viable pairing:
 
 What it still is NOT: a second PAIRING. This box has one viable one (qwen3-4b dense + DFlash);
 the other drafters are absent and their targets are MoE, where batched verify touches ~8x the
-expert weight. The cross-pairing cell belongs on the Mac -- docs/prompts/mac-default-verify-width.md.
+expert weight. The cross-pairing cell belongs on the Mac -- docs/tasks/parked/mac-default-verify-width.md.
 
 	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ \
 	  -run TestDefaultVerifyWidth -v -timeout 4h
@@ -3612,7 +3612,7 @@ causal-conv ring, and dnState, the recurrent matrix). A snapshot is therefore a 
 copy, not a host memcpy, and the 13.9 GB/s host figure has no bearing on it in either direction.
 
 	GOINFER_QWEN35_08B=~/models/qwen3.5-0.8b \
-	  go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestDeltaNetSnapshotCUDA -v -timeout 30m
+	  go test -tags 'cuda goinfer_testhooks' ./backend/cuda/ -run TestDeltaNetSnapshotCUDA -v -timeout 30m
 ```
 
 ## TestDeltaNetSnapshotCUDA.paths
@@ -4747,7 +4747,7 @@ Moved from `backend/cuda/kernels/e2e_decode_test.go` (the comment above `TestE2E
 
 ```text
 TestE2EDecodeThroughput_synthetic is the end-to-end cgo-free CUDA decode THROUGHPUT measurement
-(docs/prompts/cuda-measure-e2e-decode.md): the full per-token work — GEMVs PLUS the
+(docs/completed/cuda-measure-e2e-decode.md): the full per-token work — GEMVs PLUS the
 glue the 244 projection omitted (RMSNorm+quant, RoPE, GQA attention, SwiGLU+quant,
 residual, argmax) — so the tok/s is end-to-end, not a streaming ceiling. Shippable
 config: PTX compiled offline (NVRTC) + go:embed'd + DRIVER-JIT'd (no libnvrtc in the
@@ -5277,7 +5277,7 @@ kernel; L2's f16 K/V operands and online rescale are the only real precision cha
 unit gate already puts the kernel at cosine >= 0.99999707 against exact math on those operands.
 If fast is measurably WORSE, the per-lever env split (=attn / =gemm) exists to say which.
 
-	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestPrefillGateVsReferenceCUDA -v -timeout 4h
+	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./backend/cuda/ -run TestPrefillGateVsReferenceCUDA -v -timeout 4h
 ```
 
 ## TestPrefillGateVsReferenceCUDA.decisionset
@@ -6750,7 +6750,7 @@ replaced, so a nil *decoder.Model would panic in the request==0 cases where it's
 `pinned` decides whether the case's Options carries ResidentContext: request, i.e. whether m
 itself is a GENUINE pin (decoder.Model.ResidentContextPinned() true) or just a bare request
 value passed straight to resolveCtxCapFit with an unpinned m — item 28
-(docs/prompts/nobara-mc1-webgpu-2026-09.md §4): before this field existed here, every
+(docs/completed/nobara-mc1-webgpu-2026-09.md §4): before this field existed here, every
 request>0 case below loaded m WITHOUT ResidentContext set, so `pinned` was accidentally always
 false and these cases were passing by coincidence (fitDefaultCtx is itself 8192, and llama-tiny
 is small enough that Plan hands 8192 straight back unshrunk) rather than by actually taking the
@@ -7420,7 +7420,7 @@ defect/fixed pair rather than inheriting 0.50.
 Moved from `backend/cuda/spec_twoturn_test.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
-spec_twoturn_test.go is item 30 (docs/prompts/nobara-cuda-spec-trailing-token-2026-09.md §2): the CUDA check of
+spec_twoturn_test.go is item 30 (docs/completed/nobara-cuda-spec-trailing-token-2026-09.md §2): the CUDA check of
 two fixes measured and shipped on Metal / against stubs only —
 
   - 0e579400 (the block drafter, --drafter, CUDA only): at a completed exit (EOS or max_tokens) the resident
@@ -7785,7 +7785,7 @@ the output of EVERY tail mode the resident exposes, for each fixture, and compar
 (testdata/prefill_tails_baseline.json). It is device-specific for the same reason keqv_copy_baseline.json is (the PTX is JIT-compiled to the card's own SASS), so
 the baseline is compared only on the device and driver that recorded it.
 
-	go test -tags 'cuda goinfer_testhooks' -run TestPrefillTails -v ./cuda/
+	go test -tags 'cuda goinfer_testhooks' -run TestPrefillTails -v ./backend/cuda/
 	GOINFER_TAILS_RECORD=1 go test ...   # (re)writes the baseline: only from code whose tails are the reference
 ```
 
@@ -7951,7 +7951,7 @@ at each S in GOINFER_VSUM_MECH_S (default 1,2,4,8,16). S=1 must be BIT-IDENTICAL
 built-in defect detector, because a one-chunk "split" is the same fold in the same order.
 
 	GOINFER_HEAVY_TESTS=1 GOINFER_SPLITKV_VSUM_SPLIT=16 \
-	  go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestVsumMechanism -v -timeout 2h
+	  go test -tags 'cuda goinfer_testhooks' ./backend/cuda/ -run TestVsumMechanism -v -timeout 2h
 
 GOINFER_SPLITKV_VSUM_SPLIT must be >= max(S): it sizes the partials buffer at backend setup.
 ```

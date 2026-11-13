@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Decisions D0: the JEV-9B reference fixture (docs/prompts/nobara-decisions-d0-fixture-2026-09.md).
+"""Decisions D0: the JEV-9B reference fixture (docs/completed/nobara-decisions-d0-fixture-2026-09.md).
 
 autotrust/JEV-9B's own distributions on 150 held-out items, so goinfer's Route A (D1/D6a) and Route B (D2-D4/D6b)
 can be graded against the reference. autotrust's server is unpublished (docs/measurements/

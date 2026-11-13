@@ -33,6 +33,10 @@ const (
 	shapeGPT2Original
 	// shapeTekken is Mistral's Tekken pattern: o200k's alternation without the attached contractions and with a single `\p{N}` for digits (split_o200k.go's splitTekken).
 	shapeTekken
+	// shapeFlint is RecursiveSI/flint's three-stage Split sequence: \p{N}{1,3}, then Han/Hiragana/Katakana
+	// [\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]+, then o200k's case-split + attached-contraction word
+	// clauses with ` ?[\p{P}\p{S}]+[\r\n]*` for punctuation/symbols (split_o200k.go's splitFlint).
+	shapeFlint
 )
 
 func (s splitShape) String() string {
@@ -45,6 +49,8 @@ func (s splitShape) String() string {
 		return "gpt2-original"
 	case shapeTekken:
 		return "tekken"
+	case shapeFlint:
+		return "flint"
 	}
 	return "unknown"
 }
@@ -73,6 +79,9 @@ var (
 	gpt2LeadContraction = regexp.MustCompile(`^'s\|'t\|'re\|'ve\|'m\|'ll\|'d\|`)
 	// Tekken: the o200k case-split classes, NO attached contractions, then a bare `\p{N}` alternative followed by o200k's punctuation tail.
 	tekkenDigitTail = regexp.MustCompile(`\|\\p\{N\}\| \?\[\^\\s\\p\{L\}\\p\{N\}\]\+\[\\r\\n/\]\*`)
+	// Flint: o200k's case-split + attached contractions with digits and CJK/Kana hoisted into earlier Split
+	// stages and the punctuation clause narrowed to ` ?[\p{P}\p{S}]+[\r\n]*`.
+	flintPunctTail = regexp.MustCompile(`\| \?\[\\p\{P\}\\p\{S\}\]\+\[\\r\\n\]\*\|`)
 )
 
 // classifySplit names the alternation a Split regex expresses.
@@ -86,6 +95,9 @@ func classifySplit(re string) splitShape {
 	}
 	switch {
 	case o200kCaseSplit.MatchString(c) && o200kAttached.MatchString(c):
+		if flintPunctTail.MatchString(c) {
+			return shapeFlint
+		}
 		return shapeO200k
 	case o200kCaseSplit.MatchString(c) && !o200kAttached.MatchString(c) && tekkenDigitTail.MatchString(c):
 		return shapeTekken
@@ -103,5 +115,5 @@ func classifySplit(re string) splitShape {
 // PreTokenizerDecline, because a wrong split that SAYS SO is better than one that does not, and
 // refusing to load a model that works today would be the worse trade.
 func walkerImplements(s splitShape) bool {
-	return s == shapeCl100k || s == shapeO200k || s == shapeGPT2Original || s == shapeTekken
+	return s == shapeCl100k || s == shapeO200k || s == shapeGPT2Original || s == shapeTekken || s == shapeFlint
 }

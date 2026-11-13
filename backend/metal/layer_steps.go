@@ -44,21 +44,22 @@ func (r *resident) buildLayerSteps(p *program.Program) error {
 	}
 	for l, ops := range p.Layers {
 		err := program.Metal.CheckLayer(ops)
-		var spans []stepSpan
+		var lw program.LayerWalk
 		if err == nil {
-			spans, err = layerStepsOf(ops)
-		}
-		if err == nil {
-			err = checkStepClaims(ops, spans)
+			lw, err = program.DecodeLayerWalk(ops, "Metal")
 		}
 		if err != nil {
 			return fmt.Errorf("layer %d: %w", l, err)
 		}
+		spans := lw.Spans
 		L := &r.layers[l]
 		steps, stepOps := make([]layerStep, len(spans)), make([][]program.Op, len(spans))
 		for i, s := range spans {
 			steps[i], stepOps[i] = s.Kind, ops[s.From:s.To]
 			if err := r.checkMixerWalk(L, s.Kind, stepOps[i]); err != nil {
+				return fmt.Errorf("layer %d: %w", l, err)
+			}
+			if err := r.checkFFNWalk(L, s, stepOps[i]); err != nil {
 				return fmt.Errorf("layer %d: %w", l, err)
 			}
 		}
@@ -69,7 +70,7 @@ func (r *resident) buildLayerSteps(p *program.Program) error {
 			return fmt.Errorf("layer %d: the q4k lane runs a sequential attention and dense FFN step only, and the layer's steps are %v (a parallel block: %v)",
 				l, steps, spans[0].Parallel)
 		}
-		L.steps, L.stepOps = steps, stepOps
+		L.steps, L.stepOps, L.walk = steps, stepOps, lw
 	}
 	return nil
 }

@@ -13,7 +13,7 @@ import (
 // TestDecide_realModel runs Route A end to end on a real Qwen checkpoint (CPU), under both templates: every bare
 // verbalizer is one token in the Qwen tokenizer, the distributions are proper, and the readout moves the right way on
 // a pair that differs only in the answer. The arithmetic against transformers' own restricted softmax on identical
-// bytes is the D0 fixture's job (docs/prompts/nobara-decisions-d0-fixture-2026-09.md), not this test's.
+// bytes is the D0 fixture's job (docs/completed/nobara-decisions-d0-fixture-2026-09.md), not this test's.
 func TestDecide_realModel(t *testing.T) {
 	const path = "../../testdata/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
 	if _, err := os.Stat(path); err != nil {

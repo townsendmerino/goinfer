@@ -3,6 +3,7 @@
 package kernels
 
 import (
+	"fmt"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"math"
 
@@ -131,7 +132,10 @@ func (c *Context) ensureLayer() error {
 // the output device buffer. binds = the bind-group entries (output already
 // included by the caller); n is the dispatch element count (ceil/64 workgroups).
 func (c *Context) submitUnary(pl *wgpu.ComputePipeline, bg *wgpu.BindGroup, n int) error {
-	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	enc, err := c.device.TryCreateCommandEncoder(nil)
+	if err != nil {
+		return fmt.Errorf("gpu: submitUnary: command encoder: %w", err)
+	}
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(pl)
@@ -142,7 +146,10 @@ func (c *Context) submitUnary(pl *wgpu.ComputePipeline, bg *wgpu.BindGroup, n in
 		return err
 	}
 	pass.Release()
-	cmd, _ := enc.TryFinish(nil)
+	cmd, err := enc.TryFinish(nil)
+	if err != nil {
+		return fmt.Errorf("gpu: submitUnary: finish: %w", err)
+	}
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	return nil

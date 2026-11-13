@@ -71,10 +71,9 @@ func (c *Context) ensureRelu2() error {
 
 // relu2QuantOp records the fused relu²(up)→int8 dispatch into the resident plan, returning the
 // packed int8 activation + its scale (for the down-projection W8A8 GEMV).
-func (c *Context) relu2QuantBind(up, qout, scales, dims *wgpu.Buffer) *wgpu.BindGroup {
-	bg, _ := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.relu2Layout, Entries: []wgpu.BindGroupEntry{
+func (c *Context) relu2QuantBind(up, qout, scales, dims *wgpu.Buffer) (*wgpu.BindGroup, error) {
+	return c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.relu2Layout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: up, Size: up.GetSize()}, {Binding: 1, Buffer: qout, Size: qout.GetSize()},
 		{Binding: 2, Buffer: scales, Size: scales.GetSize()}, {Binding: 3, Buffer: dims, Size: dims.GetSize()},
 	}})
-	return bg
 }

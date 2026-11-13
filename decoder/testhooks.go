@@ -761,14 +761,14 @@ func (m *Model) ResidentPrefillScratchForTest(promptTokens int) (int64, bool) {
 // gates drive the real loop with a drafter whose proposals they choose. dw stands for the drafter's weights; the loop reads
 // only its BlockSize and MaskTokenID. The fold path's preparation and refusal are NewBlockSpec's.
 func (m *Model) NewBlockSpecForTest(rd ResidentBlockDrafter, dw BlockDrafterWeights, taps []int) (*BlockSpec, error) {
-	host, ok := m.resident.(ResidentDrafterHost)
-	if !ok {
+	rt := m.resRuntime()
+	if !rt.DrafterHostAvailable() {
 		return nil, errBlockSpecUnsupported
 	}
-	if err := m.prepareRecurrentSpec(host, dw); err != nil {
+	if err := m.prepareRecurrentSpec(rt, dw); err != nil {
 		return nil, err
 	}
-	return &BlockSpec{m: m, host: host, rd: rd, dw: dw, taps: taps}, nil
+	return &BlockSpec{m: m, host: rt, rd: rd, dw: dw, taps: taps}, nil
 }
 
 // TripBlockSpecGuardForTest makes every BlockSpec generation's acceptance guard stop speculating after its window, whatever

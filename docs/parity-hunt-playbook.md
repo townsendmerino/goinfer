@@ -4,7 +4,7 @@
 > gates). **Principle-level on purpose** — it says *how to investigate*, never *what the
 > answer is*, so it doesn't rot the way a specific prompt does. When a backend produces
 > wrong (or suspiciously-off) output on a real model, start here instead of re-deriving the
-> traps. Task prompts in `docs/prompts/` are ephemeral (mark SUPERSEDED when their hunt
+> traps. A brief written for one hunt is ephemeral (archived to `docs/completed/` when the hunt
 > ends); this is the standing reference.
 
 ## Prime directive

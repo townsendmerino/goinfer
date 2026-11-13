@@ -4,7 +4,6 @@ package cuda
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 
@@ -213,27 +212,6 @@ func raggedOrder(seqs []decoder.ResidentRaggedSeq) ([]int, error) {
 		}
 	}
 	return order, nil
-}
-
-// soloRaggedOffForTest keeps Forward, ForwardArgmax, ForwardSample and ForwardN on today's calls, so a test's references are a
-// shape's own launches rather than the ragged step it checks. false in production. Set by tests only.
-var soloRaggedOffForTest bool
-
-// soloRagged runs one sequence's rows (one decode token, or a verify's rows) as a one-sequence StepRagged on the bound KV slot,
-// with draw on the last row when non-nil: RF2-3b-3's move of the solo shapes onto the ragged step. ok is false, and the caller
-// takes today's call, when the step is not offered, a ragged kernel is not loaded, or the step declines the shape.
-func (r *cudaResident) soloRagged(embs [][]float32, pos int, draw *decoder.ResidentBatchDraw) (out decoder.ResidentRaggedOut, ok bool, err error) {
-	if _, hi := r.BatchStepRange(); soloRaggedOffForTest || hi == 0 || r.raggedRowsWords(1) == 0 || r.eModel {
-		return decoder.ResidentRaggedOut{}, false, nil
-	}
-	res, err := r.StepRagged([]decoder.ResidentRaggedSeq{{Slot: r.kvSlot, Pos: pos, Embs: embs, Draw: draw}})
-	if errors.Is(err, errPrefillDeclined) {
-		return decoder.ResidentRaggedOut{}, false, nil
-	}
-	if err != nil {
-		return decoder.ResidentRaggedOut{}, true, err
-	}
-	return res[0], true, nil
 }
 
 // raggedChunkDecline is why this model's step cannot take a prefill chunk, or nil: the chunk runs prefillCore's attention and

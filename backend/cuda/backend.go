@@ -829,7 +829,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		mlaVHead: vHead, mlaQLoRA: qLoRA, mlaInterleave: interleave,
 		mlaRopeScale:    float32(mlaRopeScale),
 		allocSlackBytes: allocSlack,
-		ctxExplicit:     m.ResidentContextRequest() > 0,
+		ctxExplicit:     ctxExplicitFor(m),
 		// One conversation may use the whole KV pool (KV4a-3) unless a context was asked for or pinned by the fit guard, or a companion's
 		// device K/V scales with the context (a --drafter's, priced at the planned one).
 		kvRaise:    m.ResidentContextRequest() <= 0 && m.ExtraResidentKVPerPosition() == 0,
@@ -1477,26 +1477,30 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		}
 
 		// gpt-oss per-layer device state: the attention sinks and the per-expert gate‖up
-		// bias table. Uploaded once here rather than per token — they are weights, not
+		// Per-head attention sinks (gpt-oss and Flint) and gpt-oss's per-expert bias
+		// tables. Uploaded once here rather than per token — they are weights, not
 		// activations. Both are nil for every other family, and r.af/r.up32 are not called
 		// at all in that case (Alloc(0) is an error, not a no-op).
-		if _, _, isGptOss := m.GptOssActResident(); isGptOss {
-			// The glue `attention` fallback (taken when !prefillReady) has no sink parameter, so a gpt-oss model whose
+		if m.HasAttnSinksResident() {
+			// The glue `attention` fallback (taken when !prefillReady) has no sink parameter, so a model whose
 			// prefill_batched.ptx fails to JIT would decode through a kernel that silently omits the learned per-head sink. Refuse
 			// that case: decoder/features.go says the sink reaches both paths, and this is what makes that true.
 			if !r.prefillReady {
-				return fmt.Errorf("cuda: gpt-oss needs the batched attention kernel " +
-					"for its learned attention sink, and prefill_batched.ptx did not load — the " +
-					"glue attention fallback has no sink parameter, so decoding here would " +
-					"silently drop it (N-10)")
+				return fmt.Errorf("cuda: attention sinks need the batched attention kernel, " +
+					"and prefill_batched.ptx did not load — the glue attention fallback has no " +
+					"sink parameter, so decoding here would silently drop it (N-10)")
 			}
 			r.gptOssSinks = make([]Buffer, nLayers)
-			r.gptOssExpBias = make([]Buffer, nLayers)
-			r.gptOssDownBias = make([]Buffer, nLayers)
 			for l := range nLayers {
 				if sk := m.GptOssSinksResident(l); len(sk) > 0 {
 					r.gptOssSinks[l] = r.upOn(mem.LineDense, sk)
 				}
+			}
+		}
+		if _, _, isGptOss := m.GptOssActResident(); isGptOss {
+			r.gptOssExpBias = make([]Buffer, nLayers)
+			r.gptOssDownBias = make([]Buffer, nLayers)
+			for l := range nLayers {
 				if gb := m.GptOssExpertBiasResident(l); len(gb) > 0 {
 					r.gptOssExpBias[l] = r.upOn(mem.LineDense, gb)
 				}
@@ -1602,7 +1606,8 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 				return fmt.Errorf("cuda: resident build aborted before uploading layer %d of %d: %w", l, nLayers, decoder.ErrLoadAborted)
 			}
 			h := &hls[l]
-			L := cudaLayer{idx: l, mixer: h.mixer, ffn: h.ffn, steps: h.steps, prefillSteps: cudaPrefillStepsOf(m.Program().Layers[l])}
+			lw, _ := program.DecodeLayerWalk(m.Program().Layers[l], "CUDA")
+			L := cudaLayer{idx: l, mixer: h.mixer, ffn: h.ffn, steps: h.steps, prefillSteps: cudaPrefillStepsOf(m.Program().Layers[l]), walk: lw}
 			if l == prefillStepsEmptyLayerForTest {
 				L.prefillSteps = nil
 			}
@@ -1770,7 +1775,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			L.kEqV = m.VFromKResident(l) && !L.kvShared
 			// Gemma 4 applies v_norm on every layer that owns its K/V; K=V layers always did. g4DropVNormForTest re-drops it on the
 			// non-K=V layers so a test can reproduce the pre-fix numbers.
-			L.vNorm = !L.kvShared && (L.kEqV || (isGemma4 && !g4DropVNormForTest))
+			L.vNorm = L.walk.Attn.G4VNorm && (L.kEqV || !g4DropVNormForTest)
 			if !L.kEqV && !L.kvShared {
 				L.v = r.upW(h.v) // non-K=V layers have a real v_proj weight; K=V derives V from k; a shared layer has neither
 			}
@@ -1794,6 +1799,9 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			prog, progParallel, err := cudaSublayersOf(m.Program().Layers[l])
 			if err == nil {
 				err = checkLoadedSublayers(prog, progParallel, loadedSublayers(&r.layers[l]), r.parallelBlock)
+			}
+			if err == nil {
+				err = r.checkCUDALayerWalk(&r.layers[l], m.Program().Layers[l])
 			}
 			// The batched prefill's steps, where it has any, must be the blocks the layer's kind chose before (OP4cu-d1).
 			if ps := r.layers[l].prefillSteps; err == nil && !prefillStepsBuildChecksOffForTest && len(ps) > 0 && !slices.Equal(ps, prefillStepsFromFlags(&r.layers[l])) {
@@ -2296,4 +2304,11 @@ func modelDir(path string) string {
 		return path
 	}
 	return filepath.Dir(path)
+}
+
+// ctxExplicitFor reports whether m's resident context is the caller's own -ctx, which the build never trims and whose VRAM miss
+// is errKVWontFit. A context the load-time fit guard pinned for an unrequested load is a ceiling (decoder.Model's
+// ResidentContextPinned), so the build trims it to what is free, never below cudaCtxCapDefault, as it trims an unpinned one.
+func ctxExplicitFor(m *decoder.Model) bool {
+	return m.ResidentContextRequest() > 0 && m.ResidentContextPinned()
 }

@@ -46,6 +46,7 @@ var identityTiny = []identityAsset{
 	{Family: "cohere", Name: "tiny", Path: "testdata/cohere-tiny", Golden: "testdata/cohere_tiny_golden.json"},
 	{Family: "cohere2", Name: "tiny", Path: "testdata/cohere2-tiny", Golden: "testdata/cohere2_tiny_golden.json"},
 	{Family: "deepseek_v3", Name: "tiny", Path: "testdata/deepseek-tiny", Golden: "testdata/deepseek_tiny_text_golden.json"},
+	{Family: "flint", Name: "tiny", Path: "testdata/flint-tiny", Golden: "testdata/flint_tiny_golden.json"},
 	{Family: "gemma3", Name: "vl-tiny-text", Path: "testdata/gemma3-vl-tiny", Golden: "testdata/gemma3_vl_tiny_text_golden.json"},
 	{Family: "gemma4", Name: "moe-tiny", Path: "testdata/gemma4-moe-tiny", Golden: "testdata/gemma4_moe_forward_golden.json"},
 	{Family: "gemma4", Name: "moe-unified-tiny", Path: "testdata/gemma4-moe-unified-tiny", Golden: "testdata/gemma4_moe_forward_golden.json"},

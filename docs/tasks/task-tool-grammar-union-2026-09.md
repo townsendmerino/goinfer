@@ -10,8 +10,8 @@
 > [`tool-union-2026-09-24.md`](../measurements/tool-union-2026-09-24.md). T4: [`tool-call-coverage.md`](../tool-call-coverage.md),
 > which also found and fixed an unread `chat_template.jinja`. T7: `server.md`, `QUEUE.md`, both integration recipes,
 > `task-embed-and-harness-ux.md`, README. llama3 under `auto`: option (c) built 2026-09-24 (arm when the reply begins `{"name": "`;
-> unusable 6.5% → 2.2%, 0 among armed calls). **Still open:** llama3 calls that follow prose in the same reply; the lazy union on speculative-decoding servers (they keep their drafter and skip the union under `auto`); the MoE cell of T0;
-> a second harness transcript. Everything below is the original scoping, kept as the record.
+> unusable 6.5% → 2.2%, 0 among armed calls). **Still open:** llama3 calls that follow prose in the same reply (R1, parked); the MoE cell of T0 and a second harness transcript
+> (moved to the harness-reliability doc). The lazy union on speculative-decoding servers is done (R2, 2026-11-09: CUDA and Metal reads PASS). Everything below is the original scoping, kept as the record.
 >
 > **Original status: SCOPED 2026-09-15, unstarted. T0 is a measurement and gates the rest.**
 >
@@ -37,7 +37,7 @@
 | T6 | done | — | `docs/measurements/tool-union-2026-09-24.md` |
 | T7 | done | — | `docs/server.md` "What `tool_choice` actually constrains"; `docs/env-vars.md` (`GOINFER_TOOL_UNION`) |
 | R1 | blocked | parked (Francis, 2026-11-09). Trigger: a harness trace where prose-then-call on llama3 does real damage | `constrain/lazy.go:NewCallKeyLazyMasker` arms only at the output's start |
-| R2 | decision | the auto union on a speculative-decoding server: keep, park or kill | `internal/app/serveapp/tools.go:constrainToolUnion` skips auto when the model speculates |
+| R2 | done | built 2026-11-09 (Francis: build), #850: on a speculating server an auto turn speculates until the call's opener and then takes what a constrained turn takes there (plain gated Generate), not resuming speculation after the call. CUDA read PASS (nobara, qwen2.5-7b: identical with and without -spec; the call parsed with lazy=armed, spec=8/3; a copy turn spec=16/15). Metal read PASS (the Mac, 2026-11-09, qwen2.5-7b, main 971c0bbc: the three turns byte-identical with and without -spec, the call parsed with lazy=armed, a copy turn spec=21/17, no spec field without -spec) | `engine/lazy.go:lazyTurn`; `internal/app/serveapp/tools.go:armLazy`; `engine/lazy_test.go:TestLazyTurn_malformedFreeCallComesBackWellFormed`, `engine/lazy_test.go:TestLazyTurn_realSpeculativeProseKeepsTheDrafter` |
 | R3 | moved | `docs/tasks/task-harness-reliability-2026-10.md`, row Gate-3 | its Gate 3 cells name one MoE |
 | R4 | moved | `docs/tasks/task-harness-reliability-2026-10.md`, row Gate-3 | its Gate 3 asks for three traces |
 

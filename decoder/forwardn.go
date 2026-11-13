@@ -299,8 +299,8 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 	group := nH / nKV
 	scale := ap.Scale
 	nKeys := len(keys) / kvDim
-	if arch.gptoss != nil && ap.Sinks == nil {
-		panic(fmt.Sprintf("decoder: layer %d: gpt-oss attention without its sinks (the caller built attentionParams without LayerWeights.AttnSinks)", layer))
+	if arch.hasAttnSinks() && ap.Sinks == nil {
+		panic(fmt.Sprintf("decoder: layer %d: attention without its sinks (the caller built attentionParams without LayerWeights.AttnSinks)", layer))
 	}
 	// sinkMax and sinkSum add query head qh's learned sink to a softmax: to the max-shift, then exp(sink − max) to the denominator. They
 	// do nothing when ap.Sinks is nil, so every other family runs the same operations as before.
@@ -323,9 +323,9 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 	// shared `matmul` variable: acc64 calls MatmulQKAcc64/MatmulAVAcc64 directly (strided, no gather), and the f32 path is handed its
 	// matmul per head (package-level MatmulBT when the head loop is serial, the worker's serial Workspace when not).
 
-	// The fused schedule is eligible only on the f32 path (it would break acc64's bit-identity), without a tree mask or logit softcap.
-	// Each worker uses its own ws.fused, never a shared one, since each gathers a different kv head's V.
-	fusedOK := !useAcc64 && cache.treeMask == nil && ap.Softcap == 0
+	// The fused schedule is eligible only on the f32 path (it would break acc64's bit-identity), without a tree mask, logit softcap,
+	// or attention sinks. Each worker uses its own ws.fused, never a shared one, since each gathers a different kv head's V.
+	fusedOK := !useAcc64 && cache.treeMask == nil && ap.Softcap == 0 && ap.Sinks == nil
 	// attendOneHead runs one query head's QKᵀ → softmax → scores·V → scatter into ctx using ws's scratch. It runs concurrently
 	// across heads and is bit-identical regardless of pool slot, goroutine or finish order: each head's reduction order is
 	// unchanged and its ctx write is a disjoint qhead*hd slice. mm is the f32 matmul to use (package-level MatmulBT on the serial

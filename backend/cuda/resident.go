@@ -443,6 +443,8 @@ type cudaLayer struct {
 	// dispatches on mixer, and isDeltaNet and isMLA (methods below) read it, so nothing else decides a layer's kind.
 	mixer decoder.ResidentMixer
 	ffn   bool
+	// walk is the decoded sublayer walk of this layer's program operations, driving sublayer norms, gating, QK-norm, residual modes, and FFN topology.
+	walk program.LayerWalk
 	// steps is the layer's fusion-table steps (cudaStepsOf), set at build; launchToken runs them in order (OP4cu-b2).
 	steps []cudaStep
 	// prefillSteps is the layer's batched prefill steps (cudaPrefillStepsOf), set at build; prefillCore runs them in order (OP4cu-d1).
@@ -507,7 +509,7 @@ func (r *cudaResident) knobValue(name string) string { v, _ := r.lookupKnob(name
 type cudaResident struct {
 	// xhostBuf is the contiguous host block a batched pass stages its embeddings in before the upload (prefillCore), grown to the widest pass and reused.
 	xhostBuf []float32
-	// prog is the model's program (decoder.Model.Program), shared and read-only; nothing is launched from it yet.
+	// prog is the model's program (decoder.Model.Program), shared and read-only, decoded into each layer's walk.
 	prog *program.Program
 	// cost, when set, counts the token in progress into costPhase (SB11, cost.go); nil is off. Executor goroutine only.
 	cost      *cost.Counter
@@ -2560,12 +2562,6 @@ func (r *cudaResident) Forward(embedding []float32, pos int) ([]float32, error) 
 			return nil, r.resetErr // a failed re-zero would decode from the previous sequence
 		}
 	}
-	if o, ok, e := r.soloRagged([][]float32{embedding}, pos, nil); ok {
-		if e != nil {
-			return nil, e
-		}
-		return o.Logits[0], nil
-	}
 	var out []float32
 	err := r.do(func() error {
 		o, e := r.step(embedding, pos, pos)
@@ -2639,9 +2635,6 @@ func (r *cudaResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 	// tiny. A recurrent (Gated-DeltaNet) family always takes the loop: the weight-stationary pass has no notion of
 	// recurrent state, which must advance one token at a time and in order, and the loop is the same r.step this
 	// family's decode uses, so prefill and decode see the same state evolution.
-	if o, ok, e := r.soloRagged(embeddings, startPos, nil); ok {
-		return o.Logits, e
-	}
 	if r.batchedVerifyOK() {
 		// context.Background(): ForwardN is the spec-decode verify, M<=9 rows, and its own
 		// interface carries no context. Nothing here is long enough to want cancelling.
@@ -3237,7 +3230,7 @@ func (r *cudaResident) doG(wt cudaWQ, a Buffer, as Buffer, bias KernelArg, dst B
 func (r *cudaResident) moeMLPPre(Ly *cudaLayer, x Buffer) error {
 	// Explicit rmsnorm, NOT the fused fGU path: the fused kernel folds the norm into the dense
 	// gate/up GEMV and never writes r.mq, but the router needs that quantized activation too.
-	if e := r.rms(x, Ly.postNorm, r.mq, r.mSc); e != nil {
+	if e := r.emitInputNorm(Ly.walk.FFN.InputNorm.Form, x, Ly.postNorm, r.mq, r.mSc); e != nil {
 		return e
 	}
 	// Router logits (one block per expert row) → top-k idx/wgt, both left on the device. The
@@ -3251,7 +3244,7 @@ func (r *cudaResident) moeMLPPre(Ly *cudaLayer, x Buffer) error {
 	// gpt-oss routes through its OWN kernel: moe_route takes the mixing weight from the UNBIASED score (bias steers
 	// selection only), while gpt-oss softmaxes over the SELECTED BIASED logits. Same selection, different weights,
 	// which is why the wrong one produces plausible output rather than an error.
-	if r.gptOssRoute != (Pipeline{}) {
+	if Ly.walk.FFN.FFN.Form == program.FfnGptOss {
 		if e := r.launch(r.gptOssRoute, onecfg(1, 0),
 			Arg(r.rLogits), Arg(Ly.routerB), Arg(r.rIdx), Arg(r.rWgt),
 			gpu.ArgValue(int32(r.nE)), gpu.ArgValue(int32(r.topK))); e != nil {
@@ -3421,7 +3414,7 @@ func (r *cudaResident) moeMLPPost(Ly *cudaLayer, x Buffer) error {
 			return e
 		}
 	}
-	if Ly.hasShared {
+	if Ly.walk.FFN.FFN.MoE.SharedIntermediateDim > 0 {
 		return r.sharedExpert(Ly, r.mq, r.mSc, x)
 	}
 	return nil
@@ -3446,7 +3439,7 @@ func (r *cudaResident) sharedExpert(Ly *cudaLayer, mq, mSc, x Buffer) error {
 	// first. Same kernel either way. When ungated the gl pointer is unread, but the kernel
 	// still takes it, so pass a valid buffer (shSc, spare) rather than a null.
 	gl, ungated := r.shSc, int32(1)
-	if Ly.shGateW.W != (Buffer{}) {
+	if !Ly.walk.FFN.FFN.MoE.SharedUngated {
 		if e := r.doG(Ly.shGateW, mq, mSc, nullBias, r.shGl, 0); e != nil {
 			return e
 		}
@@ -3693,18 +3686,11 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 			return e
 		}
 	} else {
-		if r.postOnly {
-			// Olmo 3/Olmo Hybrid: no pre-norm at all — quantize the RAW residual (quant_vec,
-			// the same symmetric int8 quantizer ctx-before-o-proj already uses) instead of
-			// rmsnorm_quant. fuseQKV is forced off for postOnly (see BuildResident), so this is
-			// the only path a postOnly layer's QKV projection takes.
-			if e := r.launch(r.fQ, onecfg(256, 256*4), Arg(r.x), gpu.ArgValue(int32(r.hidden)), Arg(r.aq), Arg(r.aSc)); e != nil {
-				return e
-			}
-		} else if e := r.norm(r.x, Ly.preNorm, r.aq, r.aSc); e != nil {
+		aw := &Ly.walk.Attn
+		if e := r.emitInputNorm(aw.InputForm, r.x, Ly.preNorm, r.aq, r.aSc); e != nil {
 			return e
 		}
-		if Ly.qGate {
+		if aw.Gated {
 			// attn_output_gate: q_proj emits [query ‖ gate] PER HEAD at double width. Project into
 			// a 2*qDim scratch and split on the ACTIVATION — the weight stays fused because it is
 			// quantized, and slicing rows out of an int4 bundle with its per-group scales is real
@@ -3740,10 +3726,10 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 		}
 	}
 	// Compute-time LoRA (docs/tasks/task-gpu-paths-2026-09.md): q/k/v deltas, right after the base projection and
-	// before qk_norm/RoPE below, matching applyLoRA's CPU order exactly. Not reached for Ly.qGate (a documented gap,
-	// see cuda/lora.go's file comment): qGate's q_proj takes a different path entirely, into r.dnQg, split afterward,
+	// before qk_norm/RoPE below, matching applyLoRA's CPU order exactly. Not reached for gated attention (a documented gap,
+	// see cuda/lora.go's file comment): gated q_proj takes a different path entirely, into r.dnQg, split afterward,
 	// so no single hook point covers both.
-	if r.loraLayers != nil && !Ly.qGate {
+	if r.loraLayers != nil && !Ly.walk.Attn.Gated {
 		if r.fuseQKV {
 			// The K1 fused kernel computes rmsnorm+quant INTERNALLY and never writes r.aq/r.aSc
 			// out — materialize them here (redundant work, correct result: rmsnorm_quant is a
@@ -3763,9 +3749,9 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 			return e
 		}
 	}
-	if r.qkNorm { // per-head (or, for QKNormWhole, whole-vector) Q/K RMSNorm before RoPE
+	if Ly.walk.Attn.QKNorm { // per-head (or, for QKNormWhole, whole-vector) Q/K RMSNorm before RoPE
 		addOne := int32(0)
-		if r.rmsAddOne {
+		if Ly.walk.Attn.QKNormParams.AddOne {
 			addOne = 1
 		}
 		// QKNormWhole (Olmo 3/Olmo Hybrid): the SAME per-head kernel, grid collapsed to one Q
@@ -3775,7 +3761,7 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 		// nH*hd,...) exactly. Only correct when nH==Ly.nKV (MHA) — BuildResident already declines
 		// otherwise (backend.go), so that invariant holds here unconditionally.
 		qkNH, qkNKV, qkHD := r.nH, Ly.nKV, Ly.hd
-		if r.qkNormWhole {
+		if Ly.walk.Attn.QKNormParams.Whole {
 			qkNH, qkNKV, qkHD = 1, 1, r.nH*Ly.hd
 		}
 		kNormW := Ly.kNorm
@@ -3791,7 +3777,7 @@ func (r *cudaResident) segA(Ly *cudaLayer, l int) error {
 			return e
 		}
 	}
-	if Ly.vNorm { // scale-less v_norm on vB (the raw k copy on a K=V layer, the v_proj output otherwise), BEFORE rope_kv rotates k
+	if Ly.walk.Attn.G4VNorm && (Ly.kEqV || !g4DropVNormForTest) { // scale-less v_norm on vB (the raw k copy on a K=V layer, the v_proj output otherwise), BEFORE rope_kv rotates k
 		if err := r.launch(r.fQKN, LaunchConfig{GridX: uint32(Ly.nKV), GridY: 1, GridZ: 1,
 			BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8},
 			Arg(r.vB), Arg(r.vB), Arg(r.vNormUnit), Arg(r.vNormUnit),
@@ -3895,7 +3881,7 @@ func (r *cudaResident) segAMLA(Ly *cudaLayer, l, pos, ropePos int) error {
 // the router readback — the whole dense MLP for a dense layer (no readback gap, segC is nil), or the
 // MoE pre-readback half (moeMLPPre / gemma4MoeMLPPre) for a routed layer.
 func (r *cudaResident) segB(Ly *cudaLayer, l int, x Buffer) error {
-	if Ly.qGate { // ctx *= sigmoid(gate), before o_proj (matches the CPU qwen35Attention)
+	if Ly.walk.Attn.Gated { // ctx *= sigmoid(gate), before o_proj (matches the CPU qwen35Attention)
 		if err := r.launch(r.dnAttnGate, g1cfg(Ly.qDim, 256),
 			Arg(r.cctx), Arg(r.dnAGate), gpu.ArgValue(int32(Ly.qDim))); err != nil {
 			return err
@@ -3906,7 +3892,7 @@ func (r *cudaResident) segB(Ly *cudaLayer, l int, x Buffer) error {
 	} else if err := r.launch(r.fQ, onecfg(256, 256*4), Arg(r.cctx), gpu.ArgValue(int32(Ly.qDim)), Arg(r.cq), Arg(r.cSc)); err != nil {
 		return err
 	}
-	if r.sandwich || r.postOnly || r.parallelBlock {
+	if Ly.attnOutUnfused() {
 		if r.floatAct {
 			if err := r.gemvF(Ly.o, r.cctx, r.oBiasArg(Ly), r.oO, 0); err != nil {
 				return err
@@ -3920,10 +3906,10 @@ func (r *cudaResident) segB(Ly *cudaLayer, l int, x Buffer) error {
 				return e
 			}
 		}
-		// normF32 no-ops on an empty weight (w.Len()==0) — parallelBlock (Cohere) has no post-attn
-		// norm at all, so Ly.postAttnNorm stays unbuilt and this is a pure quantize-then-add for it.
-		if err := r.normF32(r.oO, Ly.postAttnNorm); err != nil {
-			return err
+		if Ly.walk.Attn.OutMode == program.OutPostNormResidual {
+			if err := r.normF32(r.oO, Ly.postAttnNorm); err != nil {
+				return err
+			}
 		}
 		if r.subCap {
 			r.capVec(r.oO, r.subAttnC, l, r.hidden)
@@ -3945,7 +3931,7 @@ func (r *cudaResident) segB(Ly *cudaLayer, l int, x Buffer) error {
 			}
 		}
 	}
-	if !Ly.ffn {
+	if !Ly.walk.HasFFN {
 		return nil // a single-operation block (Nemotron-H attention): the o-projection above was the whole layer
 	}
 	return r.segBFFN(Ly, l, x)
@@ -3957,17 +3943,14 @@ func (r *cudaResident) segB(Ly *cudaLayer, l int, x Buffer) error {
 // gap + segC that follow in launchToken are likewise unchanged.
 func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 	nullBias := ArgNull()
-	if Ly.g4moe {
+	fw := &Ly.walk.FFN
+	switch fw.Kind {
+	case program.SublayerGemma4MoE:
 		return r.gemma4MoeMLPPre(Ly, l, x)
-	}
-	if Ly.isMoE {
+	case program.SublayerMoE:
 		return r.moeMLPPre(Ly, x)
 	}
-	// postOnly is a MODEL-level flag, but segBFFN is shared with the DeltaNet mixer's own call site (Olmo Hybrid: the
-	// mixer replaces segA+attention, not the FFN half). A DeltaNet layer reaches NormPre2 via NormPlacementLinear
-	// regardless of the model-level placement and has a real Ly.postNorm (and no postMLPNorm; see BuildResident's
-	// DeltaNet-continue comment), so it must take the normal branches.
-	postOnlyHere := r.postOnly && !Ly.isDeltaNet()
+	rawIn := fw.InputMode == program.FFNInRaw
 	// This layer's own FFN width: Gemma 4 E-models mix 6144 and 12288 (docs/tasks/task-multimodal-support-2026-10.md), and the
 	// scratch is sized to the widest layer, so every launch below takes the layer's width and never the model-level r.inter.
 	ffnI := Ly.ffnI
@@ -4005,7 +3988,7 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 			Arg(r.gO), Arg(r.uO)); e != nil {
 			return e
 		}
-	} else if r.fuseG32 && !postOnlyHere {
+	} else if r.fuseG32 && !rawIn {
 		// Per-32 twin of fGU (fused_rms_gu_g32): bit-identical to the unfused chain below.
 		rpw := fusedGURowsPerWarp(r.hidden, ffnI)
 		cfg := LaunchConfig{GridX: uint32((2*ffnI + 8*rpw - 1) / (8 * rpw)), GridY: 1, GridZ: 1,
@@ -4021,20 +4004,13 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 		}
 	} else {
 		gq, gSc := r.mq, r.mSc
-		switch {
-		case r.parallelBlock:
-			// Cohere/Command-R: reuse segA's shared input norm (r.aq/r.aSc) — the MLP consumes
-			// the SAME normed+quantized activation the attention branch already computed, not a
-			// fresh norm of the post-attention residual (Model.ParallelBlockResident's comment).
+		switch fw.InputMode {
+		case program.FFNInShared:
+			// Parallel block (Cohere/Command-R): reuse segA's shared input norm (r.aq/r.aSc) — the MLP
+			// consumes the same normed+quantized activation the attention branch computed.
 			gq, gSc = r.aq, r.aSc
-		case postOnlyHere:
-			// Olmo 3/Olmo Hybrid: no pre-MLP norm either — quantize the raw residual x directly,
-			// same reasoning as segA's attention-side branch.
-			if err := r.launch(r.fQ, onecfg(256, 256*4), Arg(x), gpu.ArgValue(int32(r.hidden)), Arg(r.mq), Arg(r.mSc)); err != nil {
-				return err
-			}
 		default:
-			if err := r.norm(x, Ly.postNorm, r.mq, r.mSc); err != nil {
+			if err := r.emitInputNorm(fw.InputNorm.Form, x, Ly.postNorm, r.mq, r.mSc); err != nil {
 				return err
 			}
 		}
@@ -4049,7 +4025,7 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 	if r.loraLayers != nil {
 		if r.fuseQKV {
 			// fGU computes rmsnorm+quant INTERNALLY (same reasoning as segA's fQKV case) — this
-			// branch only runs when !postOnlyHere/!parallelBlock (both force fuseQKV off at
+			// branch only runs when InputMode is FFNInNorm (both raw and shared inputs force fuseQKV off at
 			// BuildResident), so Ly.postNorm is unambiguously the right weight to materialize with.
 			if e := r.norm(x, Ly.postNorm, r.mq, r.mSc); e != nil {
 				return e
@@ -4064,16 +4040,15 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 		}
 	}
 	if err := r.launch(r.fSw, onecfg(glueQuantThreads, glueQuantThreads*4), Arg(r.gO), Arg(r.uO), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(ffnI)),
-		gpu.ArgValue(r.act), Arg(r.dq), Arg(r.dSc), Arg(r.dScr)); err != nil {
+		gpu.ArgValue(int32(fw.FFN.Act)), Arg(r.dq), Arg(r.dSc), Arg(r.dScr)); err != nil {
 		return err
 	}
-	if r.sandwich || postOnlyHere || r.parallelBlock {
+	if fw.OutMode != program.OutFusedResidual {
 		if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, r.dO, 0); e != nil {
 			return e
 		}
 		if r.loraLayers != nil {
-			// Added BEFORE the post-MLP norm (sandwich/postOnly) or the deferred residual add
-			// (parallelBlock, which has none) — same "delta before any subsequent norm" order.
+			// Added BEFORE any post-MLP norm or deferred residual add — same "delta before any subsequent norm" order.
 			if e := r.applyLora(r.loraLayers[l].down, r.dq, r.dSc, ffnI, r.dO); e != nil {
 				return e
 			}
@@ -4081,48 +4056,16 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 		if r.subCap {
 			r.capVec(r.dO, r.subMLPpreC, l, r.hidden)
 		}
-		// normF32 no-ops on an empty weight — parallelBlock (Cohere) has no post-MLP norm at all,
-		// so Ly.postMLPNorm stays unbuilt and this is a pure down-proj-then-add for it.
-		if err := r.normF32(r.dO, Ly.postMLPNorm); err != nil {
-			return err
+		if fw.OutMode == program.OutPostNormResidual {
+			if err := r.normF32(r.dO, Ly.postMLPNorm); err != nil {
+				return err
+			}
 		}
 		if r.subCap {
 			r.capVec(r.dO, r.subMLPC, l, r.hidden)
 		}
 		if err := r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(x), Arg(r.dO), gpu.ArgValue(int32(r.hidden))); err != nil {
 			return err
-		}
-		if r.pleP > 0 && !g4SkipPLEForTest {
-			// Gemma 4 E-model per-layer embedding branch (decoder/forward_gemma4.go: gate on the RAW residual, geluTanh(gate)*this layer's input,
-			// projection, post-norm, residual add), between the FFN residual and the layer scalar. Existing launches only: quant_vec, the GEMV,
-			// glu_quant with a GELU-tanh act (0) and the layer's slice of the row's tail as its `up`, the GEMV, the post-norm, the add.
-			if e := r.launch(r.fQ, onecfg(256, 256*4), Arg(x), gpu.ArgValue(int32(r.hidden)), Arg(r.mq), Arg(r.mSc)); e != nil {
-				return e
-			}
-			if e := r.doG(Ly.pleGate, r.mq, r.mSc, nullBias, r.pleG, 0); e != nil {
-				return e
-			}
-			if e := r.launch(r.fSw, onecfg(glueQuantThreads, glueQuantThreads*4), Arg(r.pleG), Arg(r.x), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(r.hidden+(l+pleLayerShiftForTest)*r.pleP)), gpu.ArgValue(int32(r.pleP)),
-				gpu.ArgValue(int32(0)), Arg(r.dq), Arg(r.dSc), Arg(r.dScr)); e != nil {
-				return e
-			}
-			if e := r.doG(Ly.pleProj, r.dq, r.dSc, nullBias, r.dO, 0); e != nil {
-				return e
-			}
-			if e := r.normF32(r.dO, Ly.postPLENorm); e != nil {
-				return e
-			}
-			if e := r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(x), Arg(r.dO), gpu.ArgValue(int32(r.hidden))); e != nil {
-				return e
-			}
-		}
-		// Gemma 4 dense per-layer output scalar (forward_gemma4.go's `if lw.LayerScalar != 0 { h *= lw.LayerScalar }`),
-		// applied AFTER the MLP residual add, matching the CPU order; on an E-model it follows the PLE branch above. 0
-		// (every non-gemma4 family, and Gemma4DenseLayerScalarAtResident's own "skip" sentinel) never launches the kernel.
-		if Ly.layerScalar != 0 && !g4DropLayerScalarForTest {
-			if err := r.launch(r.fScaleVec, g1cfg(r.hidden, 256), Arg(x), gpu.ArgValue(Ly.layerScalar), gpu.ArgValue(int32(r.hidden))); err != nil {
-				return err
-			}
 		}
 	} else {
 		if e := r.doG(Ly.d, r.dq, r.dSc, nullBias, x, 1); e != nil {
@@ -4134,15 +4077,46 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 			}
 		}
 	}
+	if Ly.walk.HasPLE && !g4SkipPLEForTest {
+		// Gemma 4 E-model per-layer embedding branch (decoder/forward_gemma4.go: gate on the RAW residual, geluTanh(gate)*this layer's input,
+		// projection, post-norm, residual add), between the FFN residual and the layer scalar. Existing launches only: quant_vec, the GEMV,
+		// glu_quant with a GELU-tanh act (0) and the layer's slice of the row's tail as its `up`, the GEMV, the post-norm, the add.
+		if e := r.launch(r.fQ, onecfg(256, 256*4), Arg(x), gpu.ArgValue(int32(r.hidden)), Arg(r.mq), Arg(r.mSc)); e != nil {
+			return e
+		}
+		if e := r.doG(Ly.pleGate, r.mq, r.mSc, nullBias, r.pleG, 0); e != nil {
+			return e
+		}
+		if e := r.launch(r.fSw, onecfg(glueQuantThreads, glueQuantThreads*4), Arg(r.pleG), Arg(r.x), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(r.hidden+(l+pleLayerShiftForTest)*r.pleP)), gpu.ArgValue(int32(r.pleP)),
+			gpu.ArgValue(int32(0)), Arg(r.dq), Arg(r.dSc), Arg(r.dScr)); e != nil {
+			return e
+		}
+		if e := r.doG(Ly.pleProj, r.dq, r.dSc, nullBias, r.dO, 0); e != nil {
+			return e
+		}
+		if e := r.normF32(r.dO, Ly.postPLENorm); e != nil {
+			return e
+		}
+		if e := r.launch(r.fRes, g1cfg(r.hidden, 256), Arg(x), Arg(r.dO), gpu.ArgValue(int32(r.hidden))); e != nil {
+			return e
+		}
+	}
+	// Per-layer output scalar (Gemma 4 dense: `if lw.LayerScalar != 0 { h *= lw.LayerScalar }`),
+	// applied after the MLP residual add (and after the PLE branch on an E-model).
+	if Ly.walk.HasLayerScale && Ly.layerScalar != 0 && !g4DropLayerScalarForTest {
+		if err := r.launch(r.fScaleVec, g1cfg(r.hidden, 256), Arg(x), gpu.ArgValue(Ly.layerScalar), gpu.ArgValue(int32(r.hidden))); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 // segC: the post-readback MoE half (expert loop + combine/join). nil for a dense layer.
 func (r *cudaResident) segC(Ly *cudaLayer, l int, x Buffer) error {
-	if Ly.g4moe {
+	switch Ly.walk.FFN.Kind {
+	case program.SublayerGemma4MoE:
 		return r.gemma4MoeMLPPost(Ly, l, x)
-	}
-	if Ly.isMoE {
+	case program.SublayerMoE:
 		return r.moeMLPPost(Ly, x)
 	}
 	return nil
@@ -4156,7 +4130,8 @@ func (r *cudaResident) segC(Ly *cudaLayer, l int, x Buffer) error {
 func (r *cudaResident) captureGraphs() error {
 	for l := range r.layers {
 		Ly, ll := &r.layers[l], l
-		if Ly.isDeltaNet() {
+		switch Ly.walk.Mixer {
+		case program.MixerDeltaNet:
 			// A Gated-DeltaNet layer is MORE graph-static than an attention one: no rope and no attention, so no per-token
 			// dynamic uniform. The recurrence's only per-token input is the residual, which is buffer CONTENTS, and replay
 			// reads current contents (TestCUDA_graphReplay). So the whole pre-routing half captures as ONE segment, mixer +
@@ -4171,34 +4146,30 @@ func (r *cudaResident) captureGraphs() error {
 				return fmt.Errorf("layer %d deltanet mixer+ffn: %w", l, e)
 			}
 			r.layers[l].gSegA = gM
-			if Ly.g4moe || Ly.isMoE {
+			if Ly.routedFFN() {
 				gC, e := r.stream.Capture(func() error { return r.segC(Ly, ll, r.x) })
 				if e != nil {
 					return fmt.Errorf("layer %d segC: %w", l, e)
 				}
 				r.layers[l].gSegC = gC
 			}
-			continue
-		}
-		if Ly.isMLA() {
-			// For MLA, segA is dynamic (rope and attention depend on pos) and graphs are disabled.
-			continue
-		}
-		gA, e := r.stream.Capture(func() error { return r.segA(Ly, ll) })
-		if e != nil {
-			return fmt.Errorf("layer %d segA: %w", l, e)
-		}
-		gB, e := r.stream.Capture(func() error { return r.segB(Ly, ll, r.x) })
-		if e != nil {
-			return fmt.Errorf("layer %d segB: %w", l, e)
-		}
-		r.layers[l].gSegA, r.layers[l].gSegB = gA, gB
-		if Ly.g4moe || Ly.isMoE {
-			gC, e := r.stream.Capture(func() error { return r.segC(Ly, ll, r.x) })
+		case program.MixerAttention:
+			gA, e := r.stream.Capture(func() error { return r.segA(Ly, ll) })
 			if e != nil {
-				return fmt.Errorf("layer %d segC: %w", l, e)
+				return fmt.Errorf("layer %d segA: %w", l, e)
 			}
-			r.layers[l].gSegC = gC
+			gB, e := r.stream.Capture(func() error { return r.segB(Ly, ll, r.x) })
+			if e != nil {
+				return fmt.Errorf("layer %d segB: %w", l, e)
+			}
+			r.layers[l].gSegA, r.layers[l].gSegB = gA, gB
+			if Ly.routedFFN() {
+				gC, e := r.stream.Capture(func() error { return r.segC(Ly, ll, r.x) })
+				if e != nil {
+					return fmt.Errorf("layer %d segC: %w", l, e)
+				}
+				r.layers[l].gSegC = gC
+			}
 		}
 	}
 	r.launchErr = nil // capture invoked launch() to RECORD (not execute); clear the sticky accumulator
@@ -4419,10 +4390,6 @@ func (r *cudaResident) step(emb []float32, pos, ropePos int) ([]float32, error) 
 func (r *cudaResident) ForwardArgmax(embedding []float32, pos int) (int, error) {
 	if e := r.checkCap(pos, 1); e != nil {
 		return 0, e
-	}
-	// A temperature of 0 makes the step's draw the argmax pick (stepDraw), the one this path makes below.
-	if o, ok, e := r.soloRagged([][]float32{embedding}, pos, &decoder.ResidentBatchDraw{Temperature: 0}); ok {
-		return o.ID, e
 	}
 	var id int
 	err := r.do(func() error {
@@ -4698,7 +4665,9 @@ func (r *cudaResident) deltaNetMixer(Ly *cudaLayer, l int) error {
 // rejoins it instead of duplicating it — a DeltaNet layer's FFN can be MoE (qwen3_5_moe,
 // qwen3_next) and would otherwise skip the router readback entirely.
 func (r *cudaResident) layerTail(Ly *cudaLayer, l int, gC bool, x Buffer) error {
-	if Ly.g4moe {
+	g4moe := Ly.walk.FFN.Kind == program.SublayerGemma4MoE
+	routed := Ly.routedFFN()
+	if g4moe {
 		// segC(l-1) writes AND reads g4x2 on r.stream (CU_STREAM_NON_BLOCKING). The clear must land after that read and
 		// before segC(l) accumulates into it. A memset ON r.stream is ordered by the stream itself, in every mode, and
 		// drains nothing. Do not clear with gpu.Upload of a host zero slice: it runs its copy on the context's legacy null
@@ -4710,16 +4679,16 @@ func (r *cudaResident) layerTail(Ly *cudaLayer, l int, gC bool, x Buffer) error 
 		}
 		r.profMark(&r.profClear)
 	}
-	if (Ly.g4moe || Ly.isMoE) && r.cacheExperts {
+	if routed && r.cacheExperts {
 		if e := r.loadRoutedExperts(Ly); e != nil {
 			return e
 		}
-		if Ly.g4moe {
+		if g4moe {
 			r.profMark(&r.profRT)
 		}
 	}
 	// segC: the post-readback MoE half (expert loop + join). Dense layers have none.
-	if Ly.g4moe || Ly.isMoE {
+	if routed {
 		if gC {
 			if e := Ly.gSegC.Replay(); e != nil {
 				return e
@@ -4732,7 +4701,7 @@ func (r *cudaResident) layerTail(Ly *cudaLayer, l int, gC bool, x Buffer) error 
 		} else if e := r.segC(Ly, l, x); e != nil {
 			return e
 		}
-		if Ly.g4moe {
+		if g4moe {
 			r.profMark(&r.profSegC)
 		}
 	}

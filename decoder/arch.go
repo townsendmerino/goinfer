@@ -169,6 +169,13 @@ type Architecture struct {
 	// interleaved-SwiGLU expert (gate·sigmoid(α·gate) · (up+1), clamped, with per-expert biases) + a router-logit bias. Own
 	// forward (forward_gptoss.go); a resident backend admits it by declaring FeatAttnSink. nil for every other family.
 	gptoss *gptOssParams
+
+	// AttnSinks marks a generic-path family that carries a learned per-query-head
+	// attention sink logit in the softmax denominator on every layer (LayerWeights.AttnSinks,
+	// shape [NumHeads]; Flint's self_attn.softmax_offset / self_attn.sinks). Separate from
+	// gptoss, which also sets per-head sinks alongside its clamped interleaved-SwiGLU MoE;
+	// hasAttnSinks() unifies both for loader validation, residency, and FeatAttnSink.
+	AttnSinks bool
 }
 
 // gptOssParams carries gpt-oss's expert-activation knobs. The sink weights and
@@ -709,18 +716,24 @@ func (a *Architecture) ropeInvFreq(i int) []float64 {
 // and the resident features derived from it (FeatAttnOutputGateSoftplus, FeatAttnOutputGateSigmoid).
 func (a *Architecture) hasAttnOutputGate() bool { return a.laguna != nil || a.AttnGate == GateSigmoid }
 
+// hasAttnSinks reports whether this architecture carries a learned per-query-head attention sink logit in the softmax
+// denominator on every layer (LayerWeights.AttnSinks): either gpt-oss (a.gptoss != nil) or a generic-path sink family
+// (a.AttnSinks, such as Flint).
+func (a *Architecture) hasAttnSinks() bool { return a.gptoss != nil || a.AttnSinks }
+
 // kvInt8OK reports whether NewCache may store this architecture's K/V as int8: a family whose attention is the batched kernel
-// (attnOrder), which reads K/V through the int8-aware path, except for MoE, where attention runs the acc64 kernel so expert
-// routing stays bit-stable and a quantized cache would reopen that.
+// (attnOrder) on the generic loop, which reads K/V through the int8-aware path, MoE included. A family with its own forward loop
+// (ownLoopFamily; gpt-oss's runs the batched kernel) keeps f32 until that loop is checked. What a quantized cache does to expert
+// routing is G4's published reading, not a refusal (docs/tasks/task-kv-precision-everywhere-2026-10.md, §1.4 and P4).
 func (a *Architecture) kvInt8OK() bool {
-	return a.MoE == nil && a.attnOrder() == attnBatchedAcc64
+	return !a.ownLoopFamily() && a.attnOrder() == attnBatchedAcc64
 }
 
 // kvF16OK reports whether NewCache may store this architecture's KV at f16 (Options.KVQuant == "f16"): a family whose
-// attention is the batched kernel (attnOrder), without MoE, the set the gates were registered on
-// (docs/tasks/task-cpu-kv-f16-2026-10.md, decision 1). Another family keeps f32 until it is checked on its own.
+// attention is the batched kernel (attnOrder) on the generic loop, MoE included, held to gate F1 (TestKVF16_F1Exactness). A family
+// with its own forward loop keeps f32 until it is checked on its own.
 func (a *Architecture) kvF16OK() bool {
-	return a.MoE == nil && a.attnOrder() == attnBatchedAcc64
+	return !a.ownLoopFamily() && a.attnOrder() == attnBatchedAcc64
 }
 
 // ringLayerAt reports whether NewCache stores layer i as a ring: a sliding-window (local) layer of a family kvRingsOK admits.

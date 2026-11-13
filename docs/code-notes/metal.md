@@ -4488,7 +4488,7 @@ does not fit a 16 GB Mac at all (confirmed 2026-09-10, ~/models/moe_prefill_meas
 paged only holds N << nE experts per layer.
 
 	GOINFER_MOE_REUSE_PROBE_CKPT=~/models/qwen15-moe-a27b GOINFER_MOE_REUSE_PROBE_M=512 \
-	  go test -tags metal ./metal/ -run TestMoEExpertReuseProbe -v -timeout 30m
+	  go test -tags metal ./backend/metal/ -run TestMoEExpertReuseProbe -v -timeout 30m
 ```
 
 ## TestMoE_declinesPrefill
@@ -4539,7 +4539,7 @@ GOINFER_MOE_PREFILL_CKPT rather than GOINFER_HEAVY_TESTS' usual asset registry, 
 measurement script (docs/measurements/), not a correctness gate:
 
 	GOINFER_MOE_PREFILL_CKPT=~/models/qwen15-moe-a27b \
-	  go test -tags metal ./metal/ -run TestMoEPrefillMeasure_batchedVsSequential -v -timeout 30m
+	  go test -tags metal ./backend/metal/ -run TestMoEPrefillMeasure_batchedVsSequential -v -timeout 30m
 ```
 
 ## TestMoECacheExperts_bitExactMetal
@@ -4926,7 +4926,7 @@ pos 0 is clean (no other per-sequence state accumulates in forwardLogits).
 
 Memory: ONE checkpoint resident at a time — the CPU model is Closed before the Metal load.
 
-	GOINFER_HEAVY_TESTS=1 go test -tags "darwin goinfer_testhooks" ./metal/ -run 'TestR1_laneVsCPU$' -v
+	GOINFER_HEAVY_TESTS=1 go test -tags "darwin goinfer_testhooks" ./backend/metal/ -run 'TestR1_laneVsCPU$' -v
 ```
 
 ## TestR2_perLayerCtxDiff
@@ -4961,7 +4961,7 @@ GOINFER_R2_STEPS (default 5). If a layer's ctx diverges locally (maxRel > 1e-3, 
 above f32 reduction noise), that layer's exact inputs and both outputs are dumped to
 GOINFER_R2_DUMP_DIR for TestR2_replayDump below.
 
-	GOINFER_HEAVY_TESTS=1 go test -tags "darwin goinfer_testhooks" ./metal/ -run 'TestR2_perLayerCtxDiff$' -v -timeout 20m
+	GOINFER_HEAVY_TESTS=1 go test -tags "darwin goinfer_testhooks" ./backend/metal/ -run 'TestR2_perLayerCtxDiff$' -v -timeout 20m
 ```
 
 ## runDecodeFidelityGate.identity
@@ -5048,7 +5048,7 @@ Moved from `backend/metal/sa_outlier_test.go` (the comment above `TestSAGemv_Out
 
 ```text
 TestSAGemv_OutlierRegime is the decisive experiment for the Gemma o-proj amplitude bug
-(docs/prompts/gemma-metal-signflip-bisect.md, Fork 2). The CUDA box showed Metal's o-proj
+(docs/completed/gemma-metal-signflip-bisect.md, Fork 2). The CUDA box showed Metal's o-proj
 contribution inflates 2–6× and flips on the secondary channels while CUDA's dp4a stays clean,
 and named it a Metal W4A8 GEMV scale bug. TestSAGemvLargeK already proves the kernel correct at
 K=4096 — but with a BENIGN random activation. This drives the same production kernel in the
@@ -5179,7 +5179,7 @@ code versions on a given GPU, but not guaranteed identical across chip families)
 a legitimate improvement — that's the point; regenerate with the refresh flag after verifying the
 change is intentional (the same goldens-refresh discipline the CUDA track uses):
 
-	GOINFER_UPDATE_GOLDENS=1 go test -run TestMetalSnapshotGolden ./metal/
+	GOINFER_UPDATE_GOLDENS=1 go test -run TestMetalSnapshotGolden ./backend/metal/
 
 N-29: the re-bake this note demanded HAS happened — TestMetalSnapshotGolden reports
 6 checkpoints byte-identical on this machine. A standing "EXPECTED TO FAIL" note turns
@@ -5192,7 +5192,7 @@ Forward/ForwardArgmax now apply the arch embed scale. For `gemma4-dense-scaled` 
 √hidden) that CHANGES the hashed stream — the stored entries pin the pre-fix, non-production
 computation, so that CHANGED the hashed stream, and the golden was re-baked accordingly:
 
-	GOINFER_UPDATE_GOLDENS=1 go test -run TestMetalSnapshotGolden ./metal/
+	GOINFER_UPDATE_GOLDENS=1 go test -run TestMetalSnapshotGolden ./backend/metal/
 
 `mixtral-tiny` has no embed scale and its entries must NOT move; if they do, something other than
 G-02 changed and the re-bake should be refused pending investigation.

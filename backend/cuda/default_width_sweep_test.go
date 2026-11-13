@@ -14,7 +14,7 @@
 //
 // What it still is NOT: a second PAIRING. This box has one viable one (qwen3-4b dense + DFlash); the other
 // drafters are absent and their targets are MoE, where batched verify touches many more expert weights. The
-// cross-pairing cell belongs on the Mac -- docs/prompts/mac-default-verify-width.md.
+// cross-pairing cell belongs on the Mac -- docs/tasks/parked/mac-default-verify-width.md.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ \
 //	  -run TestDefaultVerifyWidth -v -timeout 4h

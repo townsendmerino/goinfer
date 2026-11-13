@@ -20,6 +20,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unsafe"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -2672,5 +2673,110 @@ func TestMemGate_cuda(t *testing.T) {
 		if err := os.WriteFile(cudaGateRowsPath, []byte(strings.Join(builtRows, "\n")+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func nonEmptyBufForWalkTest() Buffer {
+	var b Buffer
+	// Set a non-zero first word without touching a live CUDA context; checkCUDALayerWalk only compares against Buffer{}.
+	*(*uintptr)(unsafe.Pointer(&b)) = 1
+	return b
+}
+
+func TestCheckCUDALayerWalk_TopologiesAndRejections(t *testing.T) {
+	nz := nonEmptyBufForWalkTest()
+	const eps = 1e-5
+
+	rms := func(slot program.NormSlot) program.Op {
+		return program.Op{Kind: program.OpNorm, Norm: program.NormParams{Slot: slot, Form: program.NormRMS, Eps: eps}}
+	}
+	ln := func(slot program.NormSlot) program.Op {
+		return program.Op{Kind: program.OpNorm, Norm: program.NormParams{Slot: slot, Form: program.NormLayer, Eps: eps}}
+	}
+	cp := func(slot program.NormSlot) program.Op {
+		return program.Op{Kind: program.OpNorm, Norm: program.NormParams{Slot: slot, Form: program.NormCopy}}
+	}
+
+	// 1. Standard pre-norm dense layer.
+	denseOps := []program.Op{
+		rms(program.SlotPreAttn),
+		{Kind: program.OpProjQKV},
+		{Kind: program.OpRope, Rope: program.RopeParams{Kernel: program.RopeAtKernel, InvFreq: []float64{1}}},
+		{Kind: program.OpAttention},
+		{Kind: program.OpProjO},
+		{Kind: program.OpResidual},
+		rms(program.SlotPreMLP),
+		{Kind: program.OpFFN, FFN: program.FFNParams{Form: program.FfnGated, Act: program.ActSiLU}},
+		{Kind: program.OpResidual},
+	}
+	rDense := &cudaResident{eps: eps, act: int32(program.ActSiLU)}
+	lyDense := &cudaLayer{preNorm: nz, postNorm: nz}
+	if err := rDense.checkCUDALayerWalk(lyDense, denseOps); err != nil {
+		t.Fatalf("dense walk rejected: %v", err)
+	}
+	if lyDense.attnOutUnfused() || lyDense.routedFFN() {
+		t.Fatalf("unexpected flags on dense layer: unfused=%v routed=%v", lyDense.attnOutUnfused(), lyDense.routedFFN())
+	}
+
+	// Wrong activation uniform must be rejected.
+	rWrongAct := &cudaResident{eps: eps, act: int32(program.ActGeluTanh)}
+	if err := rWrongAct.checkCUDALayerWalk(&cudaLayer{preNorm: nz, postNorm: nz}, denseOps); err == nil {
+		t.Fatal("expected activation mismatch error")
+	}
+
+	// 2. Parallel LayerNorm block (Cohere).
+	parOps := []program.Op{
+		ln(program.SlotPreAttn),
+		{Kind: program.OpProjQKV},
+		{Kind: program.OpAttention},
+		{Kind: program.OpProjO},
+		{Kind: program.OpFFN, Out: program.RegB, FFN: program.FFNParams{Form: program.FfnGated, Act: program.ActSiLU}},
+		{Kind: program.OpResidual, Res: program.ResidualParams{Two: true}},
+	}
+	rPar := &cudaResident{eps: eps, layerNorm: true, parallelBlock: true, act: int32(program.ActSiLU)}
+	lyPar := &cudaLayer{preNorm: nz}
+	if err := rPar.checkCUDALayerWalk(lyPar, parOps); err != nil {
+		t.Fatalf("parallel walk rejected: %v", err)
+	}
+	if !lyPar.attnOutUnfused() || lyPar.walk.FFN.InputMode != program.FFNInShared || lyPar.walk.FFN.OutMode != program.OutTwoResidual {
+		t.Fatalf("unexpected parallel walk: %+v", lyPar.walk)
+	}
+
+	// 3. Olmo Hybrid: post-only attention layer AND pre-norm DeltaNet layer on the same postOnly resident.
+	postAttnOps := []program.Op{
+		cp(program.SlotPreAttn),
+		{Kind: program.OpProjQKV},
+		{Kind: program.OpQKNorm, QKNorm: program.QKNormParams{Form: program.QKRMS, Whole: true, Eps: eps}},
+		{Kind: program.OpAttention},
+		{Kind: program.OpProjO},
+		rms(program.SlotPostAttn),
+		{Kind: program.OpResidual},
+		cp(program.SlotPreMLP),
+		{Kind: program.OpFFN, FFN: program.FFNParams{Form: program.FfnGated, Act: program.ActSiLU}},
+		rms(program.SlotPostMLP),
+		{Kind: program.OpResidual},
+	}
+	dnOps := []program.Op{
+		rms(program.SlotPreAttn),
+		{Kind: program.OpDeltaNet, Delta: program.DeltaNetOpParams{Eps: eps}},
+		{Kind: program.OpResidual},
+		rms(program.SlotPreMLP),
+		{Kind: program.OpFFN, FFN: program.FFNParams{Form: program.FfnGated, Act: program.ActSiLU}},
+		{Kind: program.OpResidual},
+	}
+	rHybrid := &cudaResident{eps: eps, postOnly: true, qkNorm: true, qkNormWhole: true, act: int32(program.ActSiLU)}
+	lyPost := &cudaLayer{postAttnNorm: nz, postMLPNorm: nz}
+	if err := rHybrid.checkCUDALayerWalk(lyPost, postAttnOps); err != nil {
+		t.Fatalf("hybrid post-only attention rejected: %v", err)
+	}
+	if lyPost.walk.FFN.InputMode != program.FFNInRaw || lyPost.walk.FFN.OutMode != program.OutPostNormResidual {
+		t.Fatalf("unexpected post-only FFN walk: %+v", lyPost.walk.FFN)
+	}
+	lyDN := &cudaLayer{preNorm: nz, postNorm: nz}
+	if err := rHybrid.checkCUDALayerWalk(lyDN, dnOps); err != nil {
+		t.Fatalf("hybrid DeltaNet layer rejected: %v", err)
+	}
+	if lyDN.walk.FFN.InputMode != program.FFNInNorm || lyDN.walk.FFN.OutMode != program.OutFusedResidual {
+		t.Fatalf("unexpected DeltaNet FFN walk: %+v", lyDN.walk.FFN)
 	}
 }

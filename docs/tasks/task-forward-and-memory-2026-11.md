@@ -1,5 +1,15 @@
 # Task: the forward pass and the memory planner, what is left (2026-11)
 
+> **Status 2026-11-12: the ledger re-read against main at 93a183f82, after ten commits that went straight to main on
+> 2026-11-11 and 2026-11-12** (251184470 to 93a183f82: the Flint family, the subsystem contracts, `decoder/quant`,
+> `kvmgr.SequenceState`, `program.LayerWalk`, a CI fix). None of them changed this ledger, and no row changed state by its own
+> terms. Three things are in the tree without the gates their rows register: OP4m-pod2's decode half on Metal, CUDA's decode
+> and prefill reading the layer walk (LW-cu, new), and flint-tiny on the memory gates (MM9, new). The structures those commits
+> added had no row; SUB1 and LAY1 hold them. MM5, MM5b and MM8 are corrected to what is merged. The facts are in "State after
+> the direct commits" and the proposed order of work in "Plan", both near the end. One sentence in the block below is no
+> longer true: the forward-shape assertions are in `decoder/resident_subsystems.go` and each backend's `subsystems.go`, not
+> in `decoder/step.go` (0df3294dc).
+>
 > **Status 2026-11-08: open; the live remainder of two programs.** Split on 2026-11-08 by the coordinator's close-out sweep
 > (Francis's yes: one combined live doc) from the forward-architecture and subsystems task docs, which are archived as the
 > records at `docs/completed/task-forward-architecture-2026-10.md` (FA below) and `docs/completed/task-subsystems-2026-10.md`
@@ -21,8 +31,8 @@
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| RF2 | active | RF2-1 (#787), RF2-2 (#799), RF2-3a (#804), RF2-3b-1 (#811, a step heads only the rows it reads) and RF2-3b-2a (#823, the flash-decode lane's ragged twins; a step's rows split by arm per layer class) merged. G-RF2-S first-working-build read (2026-11-09, nobara): decode PASS at every depth on 1.5B, 7B and gemma3-1b (0.999-1.001), TTFT PASS (worst 0.982), MC3 PASS at 1.217 with identical replies, never-swap PASS as registered (cell medians -24.5 to +25.6 MB, no swap); verify PASS (1.003 and 1.0004). RF2-3b-2b (split-KV's ragged twins, its scores chunked inside the margin's 512-row pass) in #825; RF2-3b-3 (Forward, ForwardArgmax, ForwardSample and ForwardN as one-sequence ragged steps on the bound slot, today's calls kept beside them for the kill) in #826, identity and G-RF2-I PASS on nobara; then the final-build read | FA §5.4; "RF2: registration", "RF2: addendum 1", "RF2: steps" below; `docs/measurements/rf2-2026-11/g-rf2-s-2026-11-09/README.md` |
-| RF3 | blocked | RF2 | FA §5.4 |
+| RF2 | done | RF2-1 (#787), RF2-2 (#799), RF2-3a (#804), RF2-3b-1 (#811, a step heads only the rows it reads) and RF2-3b-2a (#823, the flash-decode lane's ragged twins; a step's rows split by arm per layer class) merged. G-RF2-S first-working-build read (2026-11-09, nobara): decode PASS at every depth on 1.5B, 7B and gemma3-1b (0.999-1.001), TTFT PASS (worst 0.982), MC3 PASS at 1.217 with identical replies, never-swap PASS as registered (cell medians -24.5 to +25.6 MB, no swap); verify PASS (1.003 and 1.0004). RF2-3b-2b (split-KV's ragged twins, its scores chunked inside the margin's 512-row pass) in #825; RF2-3b-3 (Forward, ForwardArgmax, ForwardSample and ForwardN as one-sequence ragged steps on the bound slot, today's calls kept beside them for the kill) in #826, identity and G-RF2-I PASS on nobara. G-RF2-S final-build read (2026-11-09, nobara, 983282891 against a2c276e3d): decode FAIL at every depth (1.5B 0.726 to 0.779, 7B 0.856 to 0.879, gemma3-1b 0.762 to 0.782), verify 1.5B:3900 AMBIGUOUS at 0.977 (7B 0.992), TTFT PASS (0.997 to 1.013), MC3 PASS at 1.223 with identical replies, never-swap not read (no host-memory samples). By the rule: the decode kill (the solo shapes back on today's calls; MC3 keeps the ragged step) and verify parked on today's ForwardN, in the kill PR (#869, merged 62649f78e). Confirmation read (2026-11-09, nobara, 62649f78e against the RF2-reverted arm): decode PASS at every depth (0.999-1.001; one swap-void cell, 7B:128, kept in the record and re-run at 1.000), never-swap PASS (peak VmSwap 0.0 MB, 36 pairs). Kill confirmed; MC3 1.22x and TTFT stand; the verify shape stays parked on today's ForwardN | FA §5.4; "RF2: registration", "RF2: addendum 1", "RF2: steps" below; `docs/measurements/rf2-2026-11/g-rf2-s-2026-11-09/README.md`; `docs/measurements/rf2-2026-11/g-rf2-s-confirm-2026-11-09/README.md` |
+| RF3 | decision | RF3-1 merged (#881; the coalescer carries a newcomer's chunk in its decode run). RF3-2 PASS on nobara (2ca514def: ride passes 2, ride rows 4, replies equal alone). RF3-3 G-RF3-S read 2026-11-10 (nobara, addendum 1, 72 cells, none void, A/A pooled 1.000): PARKED, TTFT ambiguous on both models (1.5B stall 1.006, 7B stall 1.002; the registered 1.5B prediction of about 1.05 missed); every guard held (gap max 0.994 and 1.000, solo TTFT 1.004 and 0.999). Per the registered outcomes: the alternation stays the default and the reading goes to Francis (ship RF3 anyway as a lossless no-gain path, or park it and what RF4 and RF6 then rest on). **2026-11-12:** `backend/cuda/prefill.go:cudaResident.prefillCore`, the body `StepRagged` runs, changed in 90e4d44f8 after the builds G-RF2-I, G-RF3-I and G-RF3-S read; LW-cu re-reads identity before either answer ships | FA §5.4; "RF3: plan and registration" and "RF3: reading" below; `docs/measurements/rf3-2026-11/run-2026-11-10-addendum1/README.md` |
 | RF4 | blocked | RF3 and KV5 | FA §7a |
 | RF5 | blocked | RF4; it also takes SB1's op-level interface | FA §7a; SS §8 "SB1" |
 | RF6 | blocked | RF3 or RF4 | FA §7a |
@@ -31,7 +41,8 @@
 | OP1-o2 | active | the CUDA flash-decode lane with the softcap (nobara-sb01): built (`decode_fa_cap`), opt-in only (`Options.FlashDecodeSoftcap`; the exact split-KV lane stays Gemma 2's default), correctness gates pass (G2-K at both KV types, the resident path, a real Gemma 2 2B end to end). Next: the registered fidelity gate by day (G22B at K=3900), then the timed cell; a default change needs Francis | FA §4.6a "Owed, not in OP1"; `docs/measurements/op1o2-fa-softcap-2026-11/README.md` |
 | OP4m-D6b5 | done | read 2026-11-09 by day under the exclusive Mac lock: PASS, median step/sequential 1.2009, 10 of 10 pairs faster, tokens equal in every pair, after the cell's recurrent refill fix; `--recurrent-step` stays off by default | FA §4.9; "OP4m-D6b5: reading" below; `docs/measurements/op4-2026-10/op4m-d6b5-speed-nemotron-h-4b.log` |
 | OP4m-pod | done | Metal decode walks each mixer step (attention, DeltaNet, Mamba-2, MLA) by its operations (`backend/metal/mixer_walk.go:resident.encodeMixerWalk`): P-1 and P-2 pass on all 197 resident cells, gate identity reads 29 IDENTICAL, and P-3 passes (medians 0.9996, 1.0008, 1.0005) | "OP4m-pod: registration" below; `docs/measurements/op4m-pod-2026-11-09/README.md` |
-| OP4m-pod2 | open | the FFN and own-block steps (MoE, Gemma 4's MoE block, PLE, layer scale) walked by their operations, registered as OP4m-pod was; then the batched prefill and the multi-sequence step, after which `mixerWalkBlocksForTest` goes | "OP4m-pod: registration" below; `docs/measurements/op4m-pod-2026-11-09/README.md` "Consequences" |
+| OP4m-pod2 | active | the FFN and own-block steps (MoE, Gemma 4's MoE block, PLE, layer scale) walked by their operations, registered as OP4m-pod was; then the batched prefill and the multi-sequence step, after which `mixerWalkBlocksForTest` goes. **2026-11-12: the decode half is in the tree without the registration or its gates (90e4d44f8).** Metal's dense, MoE, Gemma 4 MoE, PLE and layer-scale steps go through `backend/metal/ffn_walk.go:resident.encodeFFNWalk`, on by default, with the blocks kept behind `mixerWalkBlocksForTest` (which now switches the FFN steps too). The batched prefill (`backend/metal/prefill.go:resident.prefillLastImgSrc`) keeps its blocks, which now branch on the walk's fields in place of the family flags, with no second arm. The multi-sequence step (`backend/metal/batch.go`) is untouched. Tests added: `TestFFNWalk_plantsGoRed` (three plants) and `TestDecodeLayerWalk_CoversAllTopologies`. No `cmd/gate identity -backend metal` record, no device run on record, P-3 not read. Next, on the Mac: register it as OP4m-pod was; P-1 and P-2 on the device (`TestMixerWalk_issuesTheBlocksDispatches`, whose comment and counter still name mixer steps only) and gate identity; P-3 against the kept blocks; a prefill identity read against a build at 0df3294dc. Then the multi-sequence step, after which the blocks and the switch go | "OP4m-pod: registration" below; "State after the direct commits" below; `docs/measurements/op4m-pod-2026-11-09/README.md` "Consequences" |
+| LW-cu | open | CUDA's decode segments and `backend/cuda/prefill.go:cudaResident.prefillCore` read a decoded `internal/runtime/program/walk.go:LayerWalk` (checked at build by `backend/cuda/op_walk.go:cudaResident.checkCUDALayerWalk`) in place of the family flags since 90e4d44f8, with no switch back, no registration and no device run on record. Its one test, `TestCheckCUDALayerWalk_TopologiesAndRejections`, builds operation lists by hand and runs no forward. Two edits are more than a substitution: `backend/cuda/resident.go:cudaResident.captureGraphs` chooses the layers it captures differently, and the PLE and layer-scale launches left the unfused branch (effect not read). It is not OP4cu-x: CUDA's step admits what it did. Next, on nobara by day under the exclusive lock: the CUDA device suite and `go run ./cmd/gate identity -backend cuda` at main; G-RF2-I's batch invariance (`TestCUDAStepRagged_rowsMatchTheirShapes`) and G-RF3-I; then a registered decode and TTFT read, main against a build at 51ed2ae27 (before the subsystem contracts and the walk; 0df3294dc is the bisect point), A B B A, on KV4's G2 instrument and RF2's bands. RF2 is the precedent for a decode loss from a change of this kind. A red identity or a failed band goes to Francis, with the revert as the do-nothing arm | "State after the direct commits" below; `docs/measurements/kv4-cuda-2026-10-21.md` §2 G2; "RF2: registration" below |
 | OP4cu-census | done | an arm64 `TestAdmissionCensus` run passes at c2's commit (`c40e79dc6`) and on main, 2,711 lines each: the golden c2 applied per line key is what an arm64 run produces | FA §4.9a "C2-2"; `docs/measurements/op4-cuda-2026-11/op4cu-c2-c22-arm64-census-run.txt` |
 | OP5-S | open | Spark-X2.5, on Metal first | FA §4.7 "OP5" |
 | OP5-L | open | LFM2.5's short conv | FA §4.7; `docs/hardware-matrix.md` |
@@ -44,12 +55,15 @@
 | HL-C | active | registered 2026-11-08 (docs PR); code after the registration merges: HL-C1 (the gather's table, tier 0), then HL-C3 and HL-C4 on nobara by day | FA §6; `docs/measurements/hl-2026-11/registration-hlc.md`; `docs/measurements/hl-2026-11/README.md` |
 | AC | done | the 13 compute, fit-guard and speculative family findings mapped to what decides each path now: 8 read the program in whole or in part (one of them the resident's own report), 5 do not, which the map lists as candidates for the owner | FA status block (owner, 2026-10-21); `docs/queue-correctness.md` G47; `docs/measurements/audit-classes-2026-10-08/compute-share-paths-2026-11-08.md` |
 | F-coh | done | CUDA Cohere LayerNorm: decode runs the batched kernel (the CPU's order), so a step row is bit-identical to `Forward`; G-coh-1 red on main then green, G-coh-2 no farther from the CPU (nobara-sb01, 2026-11-08) | FA §4.5; `docs/measurements/fcoh-cohere-layernorm-2026-11/README.md` |
-| MM5 | active | the memory planner's CUDA half (nobara-sb01): `cudaKVParts` priced from the declared rows and CUDA's build holding its pools to them (`kvCheckDeclared`); G-MP1 to G-MP4 and the plants pass, G-MP1 moved nothing. Next: its PR's merge; then CPU and WebGPU | FA §4.9b; #739, #741; `docs/measurements/mm5-cuda-2026-11/README.md` |
-| MM5b | active | decode scratch's program-side declaration, PR #772: the operations declare their per-row activations (`program.Buffers`' per-row unit, `program.HeadBuffers`), Metal's decode scratch is priced from them (G-MS4 passes; the family-keyed price kept as the oracle, equal on 368 prices), and Metal's build holds the declared widths to its kernels'. G-MS1: only Olmo Hybrid moved (768 B of unused rows dropped), and the paged-cache boundary in a later fix. G-MS5: 29 IDENTICAL. Both Gemini reviews fixed. Next: #772's merge | FA §4.9c ("MM5b's declaration"); #762, #772 |
-| MM8 | active | the memory-drift gap fixes: CUDA #721 (dense 314 rows to 10), dense-moe 18, grant 1; WebGPU's int8int8 Gemma 4 MoE dense rows on Vulkan (bound 1,064 B, read on nobara); confirm or strike the towers, host-kept embeddings and verify logits lines. Done: Metal's dense table rows and Gemma 4 MoE's 19,016 B (the plan prices the buffers Metal's build derives, `decoder/metal_dense.go:Model.metalDerivedDenseBytes`; Metal's table is empty), and WebGPU's Gemma 4 MoE router tables (`decoder/webgpu_vulkan.go:Model.webgpuDerivedTableBytes`; the 64 B int4 rows go), and the CPU's Mamba-2 window views (`internal/runtime/mamba2/mamba2.go:Mix` copies each window row, so the window holds no part of the projection's output; the CPU's gap pin 28 to 26), and the CPU's KV (`decoder/residentneed.go:Model.cpuKVBytes` prices what `NewCache` holds: a ring layer's window, twice it at f32 once a read wraps, int8's one f32 scale a KV head; the CPU's gap table is empty, pin 0; the decision census's three classes re-recorded), and the load-time host-RAM guard's KV (`decoder/arch.go:kvBytesForCtx` is the CPU cache's price, which `Model.cpuKVBytes` reads; a Metal-resident load is one slot of Metal's pools, `decoder/residentneed.go:metalKVBytesFor`; a load Metal declines is priced at the CPU cache's precision) | SS §6.5 "MM8"; `internal/guard/memgate` gap tables; `docs/measurements/mm8-*` |
+| MM5 | open | the memory planner's CUDA half (nobara-sb01): `cudaKVParts` priced from the declared rows and CUDA's build holding its pools to them (`kvCheckDeclared`); G-MP1 to G-MP4 and the plants pass, G-MP1 moved nothing; #739 and #741 merged 2026-11-07, and Metal prices its KV the same way. Next: the CPU and WebGPU halves, not started. The CPU's KV is priced from the architecture (`decoder/residentneed.go:Model.cpuKVBytes`) and WebGPU's from `decoder/fitplan.go:Model.kvBytesPerPositionAllLayers`, and neither build holds its buffers to declared rows | FA §4.9b; #739, #741; `docs/measurements/mm5-cuda-2026-11/README.md` |
+| MM5b | open | decode scratch's program-side declaration, PR #772 (merged 2026-11-08, with #762): the operations declare their per-row activations (`program.Buffers`' per-row unit, `program.HeadBuffers`), Metal's decode scratch is priced from them (G-MS4 passes; the family-keyed price kept as the oracle, equal on 368 prices), and Metal's build holds the declared widths to its kernels'. G-MS1: only Olmo Hybrid moved (768 B of unused rows dropped), and the paged-cache boundary in a later fix. G-MS5: 29 IDENTICAL. Both Gemini reviews fixed. Next: CUDA, WebGPU and the CPU, which price no decode scratch from the program (`decoder/metal_scratch.go:Model.MetalDecodeScratchBytes` is the only reader) | FA §4.9c ("MM5b's declaration"); #762, #772 |
+| MM8 | active | the memory-drift gap fixes: CUDA #721 (dense 314 rows to 10), dense-moe 18, grant 1; WebGPU's int8int8 Gemma 4 MoE dense rows on Vulkan (bound 1,064 B, read on nobara); confirm or strike the towers, host-kept embeddings and verify logits lines. Done: Metal's dense table rows and Gemma 4 MoE's 19,016 B (the plan prices the buffers Metal's build derives, `decoder/metal_dense.go:Model.metalDerivedDenseBytes`; Metal's table is empty), and WebGPU's Gemma 4 MoE router tables (`decoder/webgpu_vulkan.go:Model.webgpuDerivedTableBytes`; the 64 B int4 rows go), and the CPU's Mamba-2 window views (`internal/runtime/mamba2/mamba2.go:Mix` copies each window row, so the window holds no part of the projection's output; the CPU's gap pin 28 to 26), and the CPU's KV (`decoder/residentneed.go:Model.cpuKVBytes` prices what `NewCache` holds: a ring layer's window, twice it at f32 once a read wraps, int8's one f32 scale a KV head; the CPU's gap table is empty, pin 0; the decision census's three classes re-recorded), and the load-time host-RAM guard's KV (`decoder/arch.go:kvBytesForCtx` is the CPU cache's price, which `Model.cpuKVBytes` reads; a Metal-resident load is one slot of Metal's pools, `decoder/residentneed.go:metalKVBytesFor`; a load Metal declines is priced at the CPU cache's precision). **2026-11-12:** WebGPU's Gemma 4 MoE dense rows went on 2026-11-09 (06c735193), so that item is done. The three open PRs are neither superseded nor invalidated by the new layout: #827 and #829 (the host guard prices KV as the plan does; a `-backend cuda` load CUDA does not take) conflict with main only in generated files (the decision census and twelve parity manifests), and #721 (draft; the RoPE and router-bias tables CUDA derives, dense 314 rows to 10) also in the CUDA memory census, two test files and the archived subsystems doc. Each needs a merge of main, a parity refresh and a re-take of the census's three classes, which hold 30,143 groups each now; #721 also needs nobara's gap and row re-takes. Order: #827, then #829 on it (one census take at #829's head covers both), then #721 | SS §6.5 "MM8"; `internal/guard/memgate` gap tables; `docs/measurements/mm8-*` |
+| MM9 | open | flint-tiny on the memory gates, which the Flint commits and the CI fix left uneven. **CUDA:** the admission census has flint-tiny resident on `cuda` and `backend/cuda/testdata/memgate_rows.txt` has no flint row, so `backend/cuda/sb2_census_test.go:cudaGateRowsHold` fails `TestMemGate_cuda` on a card (read from the code: CI runs no device test and no nobara run is on record). **WebGPU:** `backend/webgpu/sb2_census_test.go:webgpuMemGaps` gained a flint-tiny int4, int8-KV row and `webgpuMemGapsPin` went 27 to 28, on a table that may only shrink. **Metal:** `TestMemGate_metal` with flint-tiny, no run on record. Next: nobara runs `TestMemGate_cuda` and adds the rows with `-memgate.rows.update` (a gap it finds is MM8's); the Mac runs Metal's; the WebGPU row is fixed, or kept on Francis's word | SS §6.5 "MM7", "MM8"; "State after the direct commits" below |
 | MEM10 | done | the pinned expert copy stays the default (tier 0 and tier 1, 2026-11-08: no in-place pin on nobara; unpinned decode 0.817x / 0.750x). Francis, 13:05: ship the unpinned path as an opt-in, `--moe-experts-unpinned` (default off), which the memory refusal names when the pinned copy is what does not fit | `docs/completed/task-memory-campaign-2026-10.md` §4 "MEM10"; `docs/measurements/mem10-2026-11/README.md`; `docs/measurements/mem10-2026-11/README.md` "MEM10 tier 0"; `backend/cuda/internal/gpudev/mem10_probe_test.go:TestMEM10_fileMappingRegistration_probe`; `docs/measurements/mem10-2026-11/ab-registration.md`; `docs/measurements/mem10-2026-11/ab-registration.md` "Reading"; `docs/measurements/mem10-2026-11/README.md` "MEM10 opt-in" |
 | SB2-vk | done | shipped (Francis, 2026-11-08: rebuild and ship): held-out set 6 HOLDS (worst plan 1.8 MiB from the card, two hybrids among four loads) and the fourteen-load re-run holds; the planner prices WebGPU on Vulkan as M1′ over the build's buffer list in its order | SS §8 "SB2"; `docs/measurements/sb2-vk-2026-10-31/README.md` ("Held-out set 6, read") |
 | SB11a | blocked | OP4 on CUDA past d2 and OP4 on WebGPU: the walker emits SB11's operation records | SS §8 "SB11" |
+| SUB1 | open | the four subsystem contracts (`decoder/resident_subsystems.go:ResidentDecodeSubsystem`, `ResidentPrefillSubsystem`, `ResidentKVSubsystem`, `ResidentRuntimeSubsystem`; 0df3294dc) stand beside the earlier `Resident*` interfaces, none of which was deleted, with hand-written forwarders in each backend's `subsystems.go` and a bridge for the test fakes. `TestResidentSubsystems_NoScatteredMicroAssertions` forbids a new assertion on the old names in `decoder/` only; it does not read type switches or other packages. Next: decide it with RF5 and SB1, whose op-level interface this overlaps: the old interfaces go behind the contracts, or the row names which stay and why; and a test that holds every resident method to a forwarder | SS §8 "SB1"; FA §7a; "State after the direct commits" below |
+| LAY1 | open | desk: `docs/layout.md`'s row for `decoder/quant/` calls it a leaf over `aikit/safetensors`, and the package imports `aikit/embed`; its Tier 3 order text predates the package. `docs/ARCHITECTURE.md` describes none of the subsystem contracts, `decoder/backend_view.go:BackendModelView` or the layer walk | `internal/layout/imports.json` (rule `quant-leaf`) |
 | SerWt | done | every writer entry point refuses a bundle with bf16 or f16 weights with a `*SerializeError` naming the kind, before writing a byte (`decoder/serialize.go:giwWriter.writeBundle`) | `docs/measurements/sb4-2026-10.md` §3; `TestSerializeWeights_refuses16BitWeights` (`decoder/serialize_test.go`) |
 | SB4 | blocked | parked in shadow (Francis, 2026-11-08): the loader rule keeps computing its verdict without acting; the first loader-only push decides whether it switches | SS §5 "VK5"; `docs/measurements/vk5-2026-10.md` §12; `docs/measurements/sb4-2026-10.md` |
 | VK6 | blocked | parked (Francis, 2026-11-08): the daily real-checkpoint canary; trigger: a carried-over validation found wrong, or an aikit bump that changes kernels | SS §5.9 |
@@ -135,6 +149,80 @@ takes (a decode token, a verify and MC3's step keep today's calls), so the speed
 | RF2-2 | a prefill chunk's rows in the same step, in the class its own prefill takes (the fast kernels over its rows, the exact ones over the others) | the full mixed batch of addendum 1, bit-identical to each row's own shape; G-RF2-I's `cmd/gate identity` |
 | RF2-3 | one ragged attention launch over the block tables in place of the per-row decode gap; the solo shapes move onto `StepRagged` | G-RF2-I again; G-RF2-S and never-swap, by day on nobara; the kill |
 
+## RF3: plan and registration (2026-11-09, docs only, before any RF3 code)
+
+**What changes.** Today a newcomer's prefill alternates with decode (`decoder/model.go:Model.mc3Prefill`): one `-prefill-chunk`
+pass (512 by default) inside `prefillExclusive`, then `tokenCoalescer.yieldToDecode`. Under RF3 the coalescer's run carries the
+chunk itself: one `passRagged` step of the newcomer's chunk (first, a `ResidentRaggedPrefill` with the whole prompt's
+`PromptLen`) beside every pending decode row. FA §5.1's token budget is the chunk plus the decode rows, so no new option is
+added. The cuts stay mc3Prefill's (the floor raise, a tail of at least `prefillTailMinRows`). The tail, which returns the
+newcomer's logits, stays a prefill pass of its own (`residentPrefillSeed`), so the worst stall is today's tail pass. Each row keeps its own shape's class (RF2-2's identity). Where the resident is not a
+`ResidentRaggedStepper`, or `raggedChunkDecline` refuses the chunk (recurrent, windowed KV, MoE), the alternation stays.
+Metal and WebGPU keep it until RF4.
+
+| id | what | gate |
+|---|---|---|
+| RF3-1 | the coalescer folds a pending chunk into its run as a `passRagged` step, and mc3Prefill hands it the chunk instead of taking the resident; a decline falls back to the alternation | tier 0: a counting fake `ResidentRaggedStepper` driven through mc3Prefill and the coalescer (not the step alone). With 3 decoders, each of the newcomer's chunk passes holds the 3 decode rows; no exclusive prefill pass runs except on the declined path; a plant that keeps the alternation is red |
+| RF3-2 | the CUDA check, in process and served | G-RF3-I |
+| RF3-3 | the run script under `docs/measurements/rf3-2026-11/`, the A/A and the speed read | G-RF3-S |
+
+**G-RF3-I (tier 1, nobara, exclusive lock).**
+- A CUDA test through the coalescer: each row of a mixed run is bit-identical to the same row under today's alternation.
+- The stall cell below, both arms: every reply's sha identical, the decoders' and the newcomers' (hard).
+
+**G-RF3-S (tier 2, nobara, exclusive lock, by day).**
+- *Instrument:* `scripts/bench_prefill_stall.py --serve-args=-backend cuda`. The run script runs it under `timing_lock.py run`.
+  - Arms: A is the RF3 PR's merge base (the alternation), B is RF3.
+  - A B B A, four pairs a cell; each B is paired with the A next to it, and a band reads the median pair.
+- *Cells:* qwen2.5-coder-1.5b and qwen2.5-7b (q4_k_m, `~/models`).
+  - Stall: 3 decoders, 3 newcomers, `--prompt-words 2400`.
+  - Solo: `--decoders 0`.
+- *A/A first, in the same session:* two pairs of A against A on the 1.5B's stall cell. nobara has no TTFT A/A
+  (`docs/measurements/noise-registry.json`, the served-ttft gap). If either pair's TTFT ratio is off 1.00 by more than
+  0.03, the read is void and goes to the coordinator before B runs.
+- *Metrics and bands:* each is the median pair, B against A.
+  - Newcomer TTFT in the stall cell (A/B, primary): pass at 1.03 or better; ambiguous 0.98 to 1.03; fail below 0.98.
+  - Longest decode stall, `decoder_gap_ms` max (A/B): pass at 0.95 or better; ambiguous 0.90 to 0.95; fail below 0.90.
+    It is a guard: the stall is one chunk pass either way, now with the decode rows in it.
+  - Solo guard, the newcomer's TTFT with no decoders (A/B): 0.95 or better, hard.
+  - The decoders' tokens inside the newcomer windows (B/A): reported, not gated.
+- *Prediction:* the TTFT gain is the decode runs the alternation spends between chunks.
+  - On the 1.5B (six chunks of a 3k-token prompt): about 1.05 (0.6).
+  - The stall guard: 0.97 to 1.00 (0.7).
+  - The solo guard: 1.00 (0.9).
+- *Stopping:* fixed. Each cell is read once, with no tuning round. A cell started under heavy load is void, re-run and listed.
+- *Wall:* about 45 minutes. The A/A takes about 5; the 1.5B's 16 runs about 12; the 7B's 16 about 20, with its loads.
+
+**Outcomes.**
+- Every gate passes on both models: RF3 ships on CUDA by default. The alternation stays for declined models and the other
+  backends, and RF4 and RF6 can start.
+- TTFT ambiguous on either model: parked. The alternation stays the default, and the reading goes to Francis.
+- A failed guard or band: RF3 does not ship. The reading and a mechanism come first.
+
+**G-RF3-S addendum 1 (2026-11-10, before any B run; the thresholds and bands above are unchanged).** The first A/A voided as the
+registration says (exit 3): two pair TTFT ratios, 1.020 and 1.070, on one binary, 3 newcomers a run, per-run mean TTFT 0.607 to 0.644 s.
+The instrument's run-to-run noise (about 2 to 3% a run, so about 3 to 4% on a pair's ratio) is wider than the 0.03 the check must resolve, so
+the A/A is not re-rolled and the bar does not move: the sample grows instead.
+- *Newcomers a run:* 3 to 6, with `--decode-tokens` 400 to 1200 so the decoders run through every newcomer's window. A cell's TTFT is the mean of
+  its newcomers (the per-run median of three was the noisiest part). The solo guard takes the same 6.
+- *The A/A:* two A B B A blocks (8 runs, all binary A) instead of one. It pools the four runs in the A0/A3 positions against the four in
+  the B1/B2 positions; the TTFT ratio of the two means must be within 0.03 of 1.00. Four runs a side bring the ratio's noise to about 1.5%, so
+  0.03 is two standard deviations. If it voids again at this n, the run stops and the noise floor goes to Francis; it is not re-rolled.
+- *Cells and bands:* the four B-against-A cells, A B B A x4 each, and every band are as registered (the median pair, B against A).
+- *Wall:* the A/A about 7 minutes (8 runs of about 50 s), the 1.5B stall and solo about 14, the 7B stall and solo about 24 (each stall run gains
+  about 10 s from the extra newcomers), so about 55 minutes plus the builds. Start by 18:30 to end by 19:30, well before the 22:00 reservation.
+- *Scoring:* `docs/measurements/rf3-2026-11/score_rf3s.py` (`--aa` for the A/A) and `run-g-rf3-s.sh`, both updated with this addendum.
+
+## RF3: reading (2026-11-10, nobara, G-RF3-S under addendum 1): PARKED
+
+Data and provenance: `docs/measurements/rf3-2026-11/run-2026-11-10-addendum1/` (README, `score.txt`, raw json, `cells.log`); the voided first A/A, unscored, is in `run-2026-11-10-void/`. nobara (RTX 2070 SUPER, driver 595.112.07), 11:03 to 11:54 PST, 72 cells, none void, the exclusive lock per cell, the highest start load 0.89. A is `serve-cuda-A` built from `df6393703` (sha256 `eaaa3b4dc2eb`), B is built from the RF3-1 merge `2235b2036` (sha256 `78df8496db8a`); A to B differs by exactly `decoder/mc3_batch.go` and `decoder/model.go`. A first B built from `2cb919116` carried all of main since `df6393703`, so it was not A plus RF3-1 and no scored cell used it.
+
+- **A/A (addendum 1, pooled):** 1.000, inside 0.03. The first A/A (3 newcomers a run) read 1.020 and 1.070 and voided; the instrument's noise was wider than the check, so the sample grew and the bar did not move.
+- **Stall cells:** TTFT A/B 1.006 (1.5B) and 1.002 (7B), both AMBIGUOUS (0.98 to 1.03); decoder gap max 0.994 and 1.000, PASS; decoders' tokens inside the newcomer windows B/A 1.0 and 1.007 (reported).
+- **Solo guard:** newcomer TTFT A/B 1.004 and 0.999, PASS. Every reply sha identical A against B.
+- **Prediction:** the 1.5B stall TTFT of about 1.05 missed at 1.006; the stall-guard (0.97 to 1.00) and solo-guard (1.00) predictions held.
+- **Outcome by the registration:** TTFT ambiguous on either model is PARKED: the alternation stays the default and the reading goes to Francis. No guard failed. RF3 on CUDA is lossless and costs nothing measurable, and gains nothing measurable at this prompt length and decoder count.
+
 ## OP4m-D6b5: reading (2026-11-09, mac-fit, the exclusive Mac lock)
 
 - **The cell:** FA §4.9's D6b-5, D4b-4's cell on Nemotron-H 4B Instruct (`backend/metal/mc3_step_test.go:TestOP4mD6b_mambaStepSpeed`):
@@ -208,9 +296,74 @@ takes (a decode token, a verify and MC3's step keep today's calls), so the speed
 - **Outcomes:** all pass, the blocks' family branches go and OP4m-pod closes, with the FFN and own-block steps as its own next
   row. A P-3 fail reverts the walk for the failing step kind. A P-3 park leaves the walk behind its switch, off.
 
+## State after the direct commits (2026-11-12, read at 93a183f82)
+
+Ten commits went to main without a PR on 2026-11-11 and 2026-11-12: 251184470, 8f3d314ff, d9a81ab64, 7ae20d508 and 2f6134fe2
+(the Flint family and its record, `docs/completed/task-flint-2026-10.md`), aea0ee556, 0df3294dc, 90e4d44f8, 3b9729c78 (the CI
+fix) and 93a183f82. This is a read of the tree and of git objects; no test was run for it. Main's CI is green at 93a183f82.
+CI builds the `cuda` tag and runs no device test, and Metal's device tests cannot run there, so green says nothing about
+either card.
+
+**What landed that bears on this doc.**
+- **The subsystem contracts** (0df3294dc): four interfaces of 22 to 30 methods in `decoder/resident_subsystems.go`, reached
+  through `SubsystemsOf`; decoder call sites ask `XAvailable()` and call the method in place of a type assertion. The earlier
+  interfaces are all still declared. Row SUB1.
+- **`decoder/backend_view.go:BackendModelView`** (0df3294dc): one inspection seam over the model, read by Metal's build and by
+  `decoder/fitplan.go`; the `Model.*Resident` accessors stay as forwarders. CUDA and WebGPU do not call it.
+- **`decoder/quant`** (0df3294dc): the FP8, GPTQ, AWQ, NVFP4 and MLX config parsing and reconstruction, a Tier 3 leaf
+  (`internal/layout/imports.json`, rule `quant-leaf`); `decoder` keeps thin forwarders. Row LAY1.
+- **`internal/runtime/program/walk.go:LayerWalk`** (90e4d44f8): a layer's operation list decoded into an attention walk and an
+  FFN walk. Metal's decode FFN steps walk it (OP4m-pod2), and CUDA's decode and prefill read it (LW-cu).
+- **aea0ee556's five:** `decoder/registry.go:ggufRegistry` in place of the switch; `Model.ResidentSpec` with named structs;
+  one safetensors reconstruct dispatch; `internal/app/fitcmd/fit.go:selfMeasureOptions`, so `fit -measure` loads under the
+  plan; the citation lint reads `backend/cuda/go.mod`. `fit` now plans with `ResidentWindowedKV` on.
+- **The layout ratchets did not move.** The CI fix kept `internal/layout`'s decoder-import ratchet by folding the new test
+  files into existing ones. One pin outside it was raised: `webgpuMemGapsPin` (MM9).
+
+**The regenerated decision census was read, and no decision moved.** 0df3294dc's CI run failed `TestDecisionCensus` with 2,999
+groups off the golden, and 3b9729c78 rewrote the golden with no reason given
+(`internal/runtime/mem/CLAUDE.md` asks for the reason first). The golden holds a hash a group, so the groups were rebuilt from
+the code and matched to the stored hashes before and after:
+- 29,637 groups a class became 30,143: 506 new, all flint-tiny; none missing.
+- 2,940 existing `cpu` D3 groups moved by one figure, the CPU's dense bytes, +96 B, with no placement, context or slot change.
+  The cause is the Flint commit, not the consolidation: `decoder/weightbytes.go:Model.cpuStructBytes` prices the size of the
+  weights struct, which holds the config by value, and the config gained six fields. 196 of those groups were matched by
+  hash; the rest share the mechanism and were not matched one by one.
+- 59 D7 groups changed in text only (the f16 decline reason and the unsupported-type list gain `flint`), and the `loads` line
+  went 210 to 214.
+- The SB2 censuses gained flint lines only; the admission census also carries that one text edit on 135 `cuda` lines.
+
+**Pricing that did change, outside the census.** `decoder/fit/weights.go:SafetensorsWeightBytes` counts quantized safetensors
+tensors by new rules (blocks and scaled weights at a multiple, scale and bias tensors at zero). No census fixture has such
+names; its effect on a real MXFP4 directory is not measured.
+
+**Not verified here.** Any test outcome on a device; where the arm64 census classes were re-taken; whether the wgpu bump in
+93a183f82 moves a WebGPU reading; the 2,744 `cpu` D3 groups a class not matched by hash.
+
+## Plan (proposed 2026-11-12, for Francis)
+
+Nothing here is decided. The order puts reading what landed ahead of building on it, because the two device backends have
+no run on record for it and RF2 showed what an unread routing change can cost on CUDA.
+
+1. **Read what landed, by day (rows LW-cu, OP4m-pod2, MM9).**
+   - nobara: the CUDA device suite and gate identity at main; `TestMemGate_cuda` and the flint rows; then LW-cu's registered
+     decode and TTFT read (about 45 minutes under the exclusive lock, registered first, one screen).
+   - the Mac: OP4m-pod2's registration, P-1 and P-2 on the device and gate identity; `TestMemGate_metal`; P-3 against the kept
+     blocks (about 10 minutes under the Mac lock).
+   - A red identity or a failed band stops the row and goes to Francis with the revert named.
+2. **Re-land MM8's three PRs** (#827, then #829, then #721), each after a merge of main, a parity refresh and the census's
+   three classes. This is the memory work closest to done, and every day of main moving adds to its conflicts.
+3. **Decide the orphans** (SUB1, LAY1): one answer on the old interfaces, then the desk fixes.
+4. **Then the rows that were moving before:** OP4m-pod2's multi-sequence step and the blocks' removal; MM5's CPU and WebGPU
+   halves; MM5b off Metal; HL-C; OP1-o2's fidelity gate.
+
+**Waiting on Francis:** RF3 (ship the lossless path or park it); OP4cu-x's word; the WebGPU gap row (MM9); whether a direct
+commit that lands structure must name and change its row in the same commit, as a PR's does (`CLAUDE.md`, "Task docs: the
+ledger"). The KV side of the same read is in `docs/tasks/task-kv-architecture-2026-10.md`, "Plan, 2026-11-12".
+
 ## Conventions
 
 The archived records' rules for every phase still apply to any row taken up here: gates registered and committed before the
 first measurement, the tiers and timing rules in `CLAUDE.md`, and commit subjects that name the row's ID.
 
-<!-- doc-reviewed: 2026-11-08 -->
+<!-- doc-reviewed: 2026-11-12 -->
