@@ -264,7 +264,7 @@ Data and provenance: `docs/measurements/rf3-2026-11/run-2026-11-10-addendum1/` (
   step's operations in the program, issuing exactly today's dispatches at today's speed? Today each step is one hand-written block
   that branches on family flags (`backend/metal/model.go:resident.encodeAttentionResidualWith`,
   `backend/metal/deltanet.go:resident.encodeDeltaNetMixerOn`, `backend/metal/mamba.go:resident.encodeMambaMixerOn`,
-  `backend/metal/mla.go:resident.encodeMLAMixer`).
+  and MLA's block, since deleted).
 - **Built:**
   - a table of emitters, one per operation kind, each reading its parameters from the operation (`program.Op`). For example, the
     norm reads its form, `AddOne` and bias; the QK-norm its form; the output gate its sigmoid; the residual its scale.
