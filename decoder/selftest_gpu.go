@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// The resident self-test (docs/tasks/task-hardware-coverage-2026-10.md, H2): for a GPU backend, run tiny committed checkpoints through the RESIDENT path and through the CPU path already in this
+// The resident self-test (docs/completed/task-hardware-coverage-2026-10.md, H2): for a GPU backend, run tiny committed checkpoints through the RESIDENT path and through the CPU path already in this
 // binary, and hold the resident logits to the CPU's with the numeric bars the resident-vs-CPU parity gates already use. It exercises the kernels the real model is about to use (the same resident
 // build, not reimplementations), on a fixed deterministic input, and it runs once per backend and quant per process, before the real model's resident is built, so the device memory its
 // fixture builds take is released (on CUDA the context goes with the last fixture, and its pool with it) or already held when the real build plans and fit-checks. On a mismatch the real
@@ -50,7 +50,7 @@ var (
 )
 
 // probeMeasured lists the backends whose healthy-hardware margins against the bars were measured, each on ONE device
-// (figures: docs/tasks/task-hardware-coverage-2026-10.md). A backend not on it is NOT probed (its result is simply
+// (figures: docs/completed/task-hardware-coverage-2026-10.md). A backend not on it is NOT probed (its result is simply
 // absent from the report) rather than probed against bars nobody has seen it clear. WebGPU's margins come from one
 // NVIDIA adapter over Vulkan, so AMD, Intel and DX12 adapters are probed against those bars unmeasured, a risk of a
 // false decline. Metal's come from one M1 Pro; a fixture Metal re-quantizes to int4 is not compared

@@ -20,7 +20,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 )
 
-// The admission and routing census, layer D (SB2, docs/tasks/task-subsystems-2026-10.md, "SB2 — the admission and routing
+// The admission and routing census, layer D (SB2, docs/completed/task-subsystems-2026-10.md, "SB2 — the admission and routing
 // census"): every admission and routing decision the decoder makes, recorded so the pure function that replaces them can be held to
 // the same answers, line for line. Backend-side decisions (BuildResident's own declines) are later layers in the backend modules:
 // here a fake resident backend named cuda, metal or webgpu builds whatever it is asked to, so a line records the decoder's decision.

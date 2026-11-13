@@ -103,7 +103,7 @@ func TestSmolLM3_forwardParity(t *testing.T) {
 	emitParityRow(t, "smollm3", "tiny-golden", "HF f32 (smollm3-tiny seeded fixture, per-layer NoPE on layer 3)", 100.0, cos, cos)
 }
 
-// TestRopeInvFreqLayer_NoPEIsZero is G5's real gate (docs/tasks/task-gpu-paths-2026-09.md, FeatNoPE): a resident
+// TestRopeInvFreqLayer_NoPEIsZero is G5's real gate (docs/completed/task-gpu-paths-2026-09.md, FeatNoPE): a resident
 // backend's rope kernel gets an all-zero invFreq table for a NoPE layer (RopeInvFreqLayer, decoder/residency.go) instead
 // of a new kernel path, which is exact identity rotation by construction (cos(pos·0)=1, sin(pos·0)=0; the rope kernels
 // in cuda/gemv_fwd.cu and metal/kernels.go's rope2 both compute c=cos(th)*scale, s=sin(th)*scale with th=pos·invf[dd]).
