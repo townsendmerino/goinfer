@@ -1,0 +1,15 @@
+=== RUN   TestFlintResidentParityCUDA
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7078 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7078 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7078 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6946 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6940 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    gptoss_cache_ab_test.go:161: flint-tiny CUDA decode (12 positions across window=8) vs CPU int4: worst cosine 0.999958, worst relL2 9.1975e-03
+    gptoss_cache_ab_test.go:179: flint-tiny CUDA batched prefill vs sequential decode: cosine 1.000000 relL2 0.0000e+00
+cuda: prefill width 2048 rows (6 MiB of scratch; 6930 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    gptoss_cache_ab_test.go:215: flint-tiny CUDA expert cache (slots=3 vs all 8 experts): 12 steps bit-identical
+--- PASS: TestFlintResidentParityCUDA (1.81s)
+PASS
+ledger: 6 device(s) released in this run

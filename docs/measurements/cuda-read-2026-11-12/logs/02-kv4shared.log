@@ -1,0 +1,26 @@
+=== RUN   TestKV4_sharedPreambleStoredOnce
+=== RUN   TestKV4_sharedPreambleStoredOnce/f32
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7078 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7078 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7078 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6946 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 6750 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: kv copy: slot 0 -> 1 shares rows [0, 16384), 256 blocks; 258 of 1280 full-pool blocks in use
+cuda: kv copy: slot 0 -> 2 shares rows [0, 16384), 256 blocks; 260 of 1280 full-pool blocks in use
+cuda: kv copy: slot 0 -> 3 shares rows [0, 16384), 256 blocks; 262 of 1280 full-pool blocks in use
+    kv4_share_test.go:119: full pool: 264 blocks in use after 4 conversations sharing a 16384-token preamble (limit 268; 1032 if each stored its own)
+cuda: prefill width 2048 rows (26 MiB of scratch; 6658 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV4_sharedPreambleStoredOnce/i8
+cuda: prefill width 2048 rows (26 MiB of scratch; 6986 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: kv copy: slot 0 -> 1 shares rows [0, 16384), 256 blocks; 258 of 1280 full-pool blocks in use
+cuda: kv copy: slot 0 -> 2 shares rows [0, 16384), 256 blocks; 260 of 1280 full-pool blocks in use
+cuda: kv copy: slot 0 -> 3 shares rows [0, 16384), 256 blocks; 262 of 1280 full-pool blocks in use
+    kv4_share_test.go:119: full pool: 264 blocks in use after 4 conversations sharing a 16384-token preamble (limit 268; 1032 if each stored its own)
+cuda: prefill width 2048 rows (26 MiB of scratch; 6958 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestKV4_sharedPreambleStoredOnce (3.79s)
+    --- PASS: TestKV4_sharedPreambleStoredOnce/f32 (2.52s)
+    --- PASS: TestKV4_sharedPreambleStoredOnce/i8 (1.24s)
+PASS
+ledger: 8 device(s) released in this run

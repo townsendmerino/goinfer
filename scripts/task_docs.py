@@ -5,6 +5,7 @@
     python3 scripts/task_docs.py check [--strict]      the hygiene a close-out depends on
     python3 scripts/task_docs.py evidence DOC          each item ID the doc names, and the commits that name it
     python3 scripts/task_docs.py archive DOC --status FILE [--refs auto|docs|all|stub] [--apply] [--stage]
+    python3 scripts/task_docs.py unstub [--only GLOB] [--delete-stubs] [--apply] [--stage]
 
 WHY THIS EXISTS. Closing a task doc is half judgment (is every item shipped, killed or owned elsewhere?) and half
 ritual (`.claude/skills/doc-review/SKILL.md` §3: the ARCHIVED header copied verbatim, a dated status block, `git mv`,
@@ -47,6 +48,7 @@ import argparse
 import collections
 import datetime as dt
 import difflib
+import fnmatch
 import os
 import pathlib
 import posixpath
@@ -582,6 +584,163 @@ def cmd_archive(a) -> int:
     return lint.returncode
 
 
+# ---------------------------------------------------------------------------------------------------------- unstub
+
+_UNSTUB_PROBE = "\x00UNSTUB_PROBE\x00"
+
+
+def stub_target(rel: str):
+    """Target repo-relative path from the stub's first markdown link, or (None, reason) if invalid."""
+    m = LINK_RE.search(read(rel))
+    if not m:
+        return None, "no markdown link found"
+    raw = m.group(2).partition("#")[0]
+    if not raw or re.match(r"^[a-z]+:|^#|^/", raw):
+        return None, f"non-local link {m.group(2)!r}"
+    target = posixpath.normpath(posixpath.join(posixpath.dirname(rel), raw))
+    p = ROOT / target
+    if not p.exists():
+        return None, f"target {target} does not exist"
+    if is_stub(read(target)):
+        return None, f"target {target} is itself a stub"
+    return target, None
+
+
+def _frozen_references(rel: str) -> list[str]:
+    """Tracked frozen files that point at rel by repo path or relative link."""
+    out = []
+    for f in git("grep", "-l", "-I", "-F", pathlib.Path(rel).name, "--", ".", check=False).splitlines():
+        if f != rel and is_frozen(f) and rewrite_refs(read(f), f, rel, rel + ".probe") is not None:
+            out.append(f)
+    return out
+
+
+def _count_mentions(text: str, from_file: str, old: str) -> int:
+    probed = rewrite_refs(text, from_file, old, _UNSTUB_PROBE)
+    return 0 if probed is None else probed.count(_UNSTUB_PROBE)
+
+
+def _matches_only(rel: str, globs: list[str]) -> bool:
+    return not globs or any(fnmatch.fnmatch(rel, g) for g in globs)
+
+
+def cmd_unstub(a) -> int:
+    stubs = stubs_on_disk()
+    valid: list[tuple[str, str]] = []
+    skipped: list[tuple[str, str]] = []
+    for s in stubs:
+        target, err = stub_target(s)
+        if err is not None:
+            skipped.append((s, err))
+        else:
+            valid.append((s, target))
+
+    class_files: dict[str, set[str]] = {"FROZEN": set(), "GENERATED": set(), "REPOINT": set()}
+    class_mentions: collections.Counter[str] = collections.Counter()
+    go_files: set[str] = set()
+    go_mentions = 0
+    gen_cmds: dict[str, str] = {}
+    blocked: dict[str, list[str]] = collections.defaultdict(list)
+    read_by_go_files: set[str] = set()
+    planned: dict[str, str] = {}
+    stub_non_gen_refs: dict[str, list[str]] = {}
+
+    for s, target in valid:
+        for f in _frozen_references(s):
+            class_files["FROZEN"].add(f)
+            class_mentions["FROZEN"] += _count_mentions(read(f), f, s)
+
+        non_gen: list[str] = []
+        for f in references(s):
+            txt = read(f)
+            cmd = generated_by(f)
+            if cmd is not None:
+                class_files["GENERATED"].add(f)
+                class_mentions["GENERATED"] += _count_mentions(txt, f, s)
+                if cmd:
+                    gen_cmds[f] = cmd
+                else:
+                    blocked[f].append(s)
+                continue
+
+            non_gen.append(f)
+            class_files["REPOINT"].add(f)
+            n = _count_mentions(txt, f, s)
+            class_mentions["REPOINT"] += n
+            if f.endswith(".go"):
+                go_files.add(f)
+                go_mentions += n
+            if f.startswith("docs/") and read_by_go(f):
+                read_by_go_files.add(f)
+            if _matches_only(f, a.only):
+                cur = planned.get(f, txt)
+                out = rewrite_refs(cur, f, s, target)
+                if out is not None:
+                    planned[f] = out
+        stub_non_gen_refs[s] = non_gen
+
+    deletable: list[str] = []
+    kept: list[tuple[str, int]] = []
+    if a.delete_stubs:
+        for s, target in valid:
+            remaining = [
+                f for f in stub_non_gen_refs[s]
+                if rewrite_refs(planned.get(f, read(f)), f, s, target) is not None
+            ]
+            if not remaining:
+                deletable.append(s)
+            else:
+                kept.append((s, len(remaining)))
+
+    print(f"unstub: {len(valid)} valid stub(s), {len(skipped)} skipped")
+    for s, err in skipped:
+        print(f"  SKIPPED {s}: {err}")
+    print("  counts by class:")
+    print(f"    FROZEN (never edit):     {len(class_files['FROZEN']):4} file(s), {class_mentions['FROZEN']:4} mention(s)")
+    print(f"    GENERATED (regenerate):  {len(class_files['GENERATED']):4} file(s), {class_mentions['GENERATED']:4} mention(s)")
+    print(f"    EVERYTHING ELSE:         {len(class_files['REPOINT']):4} file(s), {class_mentions['REPOINT']:4} mention(s)"
+          f"  (Go: {len(go_files)} file(s), {go_mentions} mention(s))")
+    if a.only:
+        print(f"    --only {a.only}: matched {len(planned)} file(s) to rewrite")
+    if gen_cmds:
+        print("  regenerate commands:")
+        for f in sorted(gen_cmds):
+            print(f"    {f}: {gen_cmds[f]}")
+    if blocked:
+        print("  BLOCKED (generated_by returned no regenerate command):")
+        for f in sorted(blocked):
+            print(f"    {f}  (mentions: {', '.join(blocked[f])})")
+    if read_by_go_files:
+        print("  docs read by Go tests (re-run their tests with -v):")
+        for f in sorted(read_by_go_files):
+            print(f"    {f}")
+    if a.delete_stubs:
+        print(f"  stubs eligible for deletion: {len(deletable)} (kept with remaining refs: {len(kept)})")
+        for s in deletable:
+            print(f"    delete {s}")
+        for s, n in kept:
+            print(f"    keep {s} ({n} non-frozen, non-generated file(s) still mention it)")
+
+    if not a.apply:
+        for f in sorted(planned):
+            sys.stdout.writelines(difflib.unified_diff(
+                read(f).splitlines(True), planned[f].splitlines(True), f"a/{f}", f"b/{f}", n=1))
+        print("\n(dry run: nothing written; add --apply)")
+        return 0
+
+    for f, out in planned.items():
+        (ROOT / f).write_text(out, encoding="utf-8")
+    for s in deletable:
+        (ROOT / s).unlink()
+    changed = sorted(set(planned) | set(deletable))
+    if a.stage and changed:
+        subprocess.run(["git", "add", "--", *changed], cwd=ROOT, check=True)
+        print(f"staged {len(changed)} path(s)")
+    elif changed:
+        print(f"wrote {len(planned)} file(s), deleted {len(deletable)} stub(s)")
+    return 0
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--main", default="origin/main", help="the ref that counts as shipped (default origin/main)")
@@ -601,8 +760,14 @@ def main() -> int:
     ar.add_argument("--stub-line", help="one sentence for the pointer stub: what became of the work")
     ar.add_argument("--apply", action="store_true", help="write the files and run the citation lint")
     ar.add_argument("--stage", action="store_true", help="git add exactly the changed paths")
+    un = sub.add_parser("unstub", help="retire pointer stubs under docs/tasks/ (dry run unless --apply)")
+    un.add_argument("--only", action="append", default=[], help="glob limiting which files are rewritten (repeatable)")
+    un.add_argument("--delete-stubs", action="store_true", help="delete stubs with no non-frozen, non-generated refs")
+    un.add_argument("--apply", action="store_true", help="write rewritten files and delete eligible stubs")
+    un.add_argument("--stage", action="store_true", help="git add exactly the changed paths")
     a = p.parse_args()
-    return {"rank": cmd_rank, "check": cmd_check, "evidence": cmd_evidence, "archive": cmd_archive}[a.cmd](a)
+    return {"rank": cmd_rank, "check": cmd_check, "evidence": cmd_evidence,
+            "archive": cmd_archive, "unstub": cmd_unstub}[a.cmd](a)
 
 
 if __name__ == "__main__":
