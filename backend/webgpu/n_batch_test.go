@@ -33,29 +33,31 @@ func srcOf(t *testing.T, name string) string {
 // the first token. Reachable through the exported ResidencyBackend.BuildResident.
 func TestNemotronBlockKind_hasADefault(t *testing.T) {
 	fset := token.NewFileSet()
-	af, err := parser.ParseFile(fset, "residency.go", nil, 0)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
 	var found, hasDefault bool
-	ast.Inspect(af, func(n ast.Node) bool {
-		sw, ok := n.(*ast.SwitchStmt)
-		if !ok || sw.Tag == nil {
-			return true
+	for _, file := range []string{"residency.go", "residency_layer.go"} {
+		af, err := parser.ParseFile(fset, file, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", file, err)
 		}
-		var tag strings.Builder
-		_ = printer.Fprint(&tag, fset, sw.Tag)
-		if !strings.Contains(tag.String(), "NemotronBlockKind") {
-			return true
-		}
-		found = true
-		for _, st := range sw.Body.List {
-			if cc, ok := st.(*ast.CaseClause); ok && cc.List == nil {
-				hasDefault = true
+		ast.Inspect(af, func(n ast.Node) bool {
+			sw, ok := n.(*ast.SwitchStmt)
+			if !ok || sw.Tag == nil {
+				return true
 			}
-		}
-		return true
-	})
+			var tag strings.Builder
+			_ = printer.Fprint(&tag, fset, sw.Tag)
+			if !strings.Contains(tag.String(), "NemotronBlockKind") {
+				return true
+			}
+			found = true
+			for _, st := range sw.Body.List {
+				if cc, ok := st.(*ast.CaseClause); ok && cc.List == nil {
+					hasDefault = true
+				}
+			}
+			return true
+		})
+	}
 	if !found {
 		t.Fatal("no switch on NemotronBlockKind — this guard is watching nothing")
 	}
