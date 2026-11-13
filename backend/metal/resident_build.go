@@ -23,6 +23,8 @@ type residentBuild struct {
 	kvSlots      int
 	stepHeadroom int64
 	attnSoftcap  float32
+	addOne       uint32
+	win          int
 }
 
 // compileKernels compiles the kernel library and creates the resident, with its dimensions, context cap and the memory-guard readings
@@ -184,4 +186,52 @@ func (b *residentBuild) bindPipelines() {
 		r.pKvI8, r.pAttnI8 = pipe("kv_store_i8"), pipe("attention_i8")
 		r.pKvI8Rows, r.pAttnI8Rows = pipe("mc3_kv_store_i8_rows"), pipe("mc3_attention_i8_rows")
 	}
+}
+
+// buildMixers builds the model-level state of the MoE, Gemma 4 MoE, Gated-DeltaNet, Mamba-2 and MLA mixers, and their pipelines, for the
+// families that have them (each is nil otherwise), and reads the gated-MLP activation and sliding window the decode shape takes. It sets b.addOne
+// and b.win.
+func (b *residentBuild) buildMixers() error {
+	m, d, r, pipe := b.m, b.d, b.r, b.pipe
+	H, nL := r.H, r.nL
+	var err error
+	// Gated-MLP activation: ordinals ARE decoder.ActKind's iota (0=GELU-tanh, 1=SiLU), so this
+	// passes straight through to glu_act. Gemma is GeGLU; everything else admitted is SwiGLU.
+	addOne := uint32(0)
+	if m.RMSAddOne() {
+		addOne = 1
+	}
+	win := max(m.SlidingWindowResident(), 0)              // 0 = full causal; Mistral is all-local with this window
+	if r.moe, err = buildMoE(d, m, pipe, H); err != nil { // nil for a dense (or gemma4-MoE) model; error ⇒ decline
+		return err
+	}
+	if r.g4moe, err = buildGemma4MoE(d, m, pipe, H, nL); err != nil { // Gemma-4 enable_moe_block; nil otherwise; error ⇒ decline
+		return err
+	}
+	if r.dnet, err = buildDeltaNet(d, m, pipe); err != nil { // Gated-DeltaNet mixer; nil otherwise; error ⇒ decline
+		return err
+	}
+	if r.mamba, err = buildMamba(m); err != nil { // Mamba-2 mixer; nil otherwise; error ⇒ decline
+		return err
+	}
+	if r.mamba != nil {
+		r.buildMambaPipes(pipe)
+	}
+	if r.mla, err = buildMLA(m, r.nH, H); err != nil { // MLA; nil otherwise; error ⇒ decline
+		return err
+	}
+	if r.mla != nil {
+		r.pMlaStore, r.pMlaHeadMV, r.pMlaQRope, r.pMlaAttn = pipe("mla_store"), pipe("mla_head_mv"), pipe("mla_qrope"), pipe("mla_attn")
+		r.mlaS = buildMLAScratch(d, m)
+	}
+	if r.dnet != nil {
+		r.pDnConv, r.pDnGates = pipe("delta_conv"), pipe("delta_gates")
+		r.pDnNorm, r.pDnRule, r.pDnGNorm = pipe("delta_norm"), pipe("delta_rule"), pipe("delta_gnorm")
+		r.pDnQSplit, r.pDnAttnGate = pipe("delta_qsplit"), pipe("delta_attn_gate")
+		r.pDnConvSeq, r.pDnGatesRows, r.pDnNormRows = pipe("delta_conv_seq"), pipe("delta_gates_rows"), pipe("delta_norm_rows")
+		r.pDnRuleSeq, r.pDnGNormRows, r.pDnProjW8Rows = pipe("delta_rule_seq"), pipe("delta_gnorm_rows"), pipe("delta_proj_w8_rows")
+		r.pDnRuleSeqTG, r.pDnConvSeqReg = pipe("delta_rule_seq_tg"), pipe("delta_conv_seq_reg")
+	}
+	b.addOne, b.win = addOne, win
+	return nil
 }

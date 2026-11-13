@@ -1295,43 +1295,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r, bv, pipe := b.r, b.bv, b.pipe
 	H, nL, nH, I, V := r.H, r.nL, r.nH, r.I, r.V
 	b.bindPipelines()
-	// Gated-MLP activation: ordinals ARE decoder.ActKind's iota (0=GELU-tanh, 1=SiLU), so this
-	// passes straight through to glu_act. Gemma is GeGLU; everything else admitted is SwiGLU.
-	addOne := uint32(0)
-	if m.RMSAddOne() {
-		addOne = 1
-	}
-	win := max(m.SlidingWindowResident(), 0)              // 0 = full causal; Mistral is all-local with this window
-	if r.moe, err = buildMoE(d, m, pipe, H); err != nil { // nil for a dense (or gemma4-MoE) model; error ⇒ decline
+	if err := b.buildMixers(); err != nil {
 		return nil, err
 	}
-	if r.g4moe, err = buildGemma4MoE(d, m, pipe, H, nL); err != nil { // Gemma-4 enable_moe_block; nil otherwise; error ⇒ decline
-		return nil, err
-	}
-	if r.dnet, err = buildDeltaNet(d, m, pipe); err != nil { // Gated-DeltaNet mixer; nil otherwise; error ⇒ decline
-		return nil, err
-	}
-	if r.mamba, err = buildMamba(m); err != nil { // Mamba-2 mixer; nil otherwise; error ⇒ decline
-		return nil, err
-	}
-	if r.mamba != nil {
-		r.buildMambaPipes(pipe)
-	}
-	if r.mla, err = buildMLA(m, r.nH, H); err != nil { // MLA; nil otherwise; error ⇒ decline
-		return nil, err
-	}
-	if r.mla != nil {
-		r.pMlaStore, r.pMlaHeadMV, r.pMlaQRope, r.pMlaAttn = pipe("mla_store"), pipe("mla_head_mv"), pipe("mla_qrope"), pipe("mla_attn")
-		r.mlaS = buildMLAScratch(d, m)
-	}
-	if r.dnet != nil {
-		r.pDnConv, r.pDnGates = pipe("delta_conv"), pipe("delta_gates")
-		r.pDnNorm, r.pDnRule, r.pDnGNorm = pipe("delta_norm"), pipe("delta_rule"), pipe("delta_gnorm")
-		r.pDnQSplit, r.pDnAttnGate = pipe("delta_qsplit"), pipe("delta_attn_gate")
-		r.pDnConvSeq, r.pDnGatesRows, r.pDnNormRows = pipe("delta_conv_seq"), pipe("delta_gates_rows"), pipe("delta_norm_rows")
-		r.pDnRuleSeq, r.pDnGNormRows, r.pDnProjW8Rows = pipe("delta_rule_seq"), pipe("delta_gnorm_rows"), pipe("delta_proj_w8_rows")
-		r.pDnRuleSeqTG, r.pDnConvSeqReg = pipe("delta_rule_seq_tg"), pipe("delta_conv_seq_reg")
-	}
+	addOne, win := b.addOne, b.win
 	// Native int8 (docs/completed/task-metal-int8-2026-10.md): a dense model whose body projections are all int8 runs
 	// them as W8A8 instead of re-quantizing them to int4. The int4-only paths cannot read those buffers, so they are
 	// off for it: the f16 lane here, the R18 rows kernels and the MC3 step below. The batched prefill pass reads
