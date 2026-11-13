@@ -1,0 +1,71 @@
+=== RUN   TestFlint_rangeSurvey
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7018 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7018 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7018 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6886 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (260 MiB of scratch; 1250 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[flint-survey] prompt 1/10 done
+[flint-survey] prompt 2/10 done
+[flint-survey] prompt 3/10 done
+[flint-survey] prompt 4/10 done
+[flint-survey] prompt 5/10 done
+[flint-survey] prompt 6/10 done
+[flint-survey] prompt 7/10 done
+[flint-survey] prompt 8/10 done
+[flint-survey] prompt 9/10 done
+[flint-survey] prompt 10/10 done
+[flint-survey] layer 0: max|K| 18.09, max|V| 7.34
+[flint-survey] layer 1: max|K| 14.30, max|V| 2.29
+[flint-survey] layer 2: max|K| 34.14, max|V| 0.86
+[flint-survey] layer 3: max|K| 41.33, max|V| 1.00
+[flint-survey] layer 4: max|K| 41.55, max|V| 0.84
+[flint-survey] layer 5: max|K| 9.94, max|V| 0.70
+[flint-survey] layer 6: max|K| 36.44, max|V| 1.12
+[flint-survey] layer 7: max|K| 23.58, max|V| 0.90
+[flint-survey] layer 8: max|K| 42.54, max|V| 1.25
+[flint-survey] layer 9: max|K| 11.76, max|V| 1.41
+[flint-survey] layer 10: max|K| 22.07, max|V| 1.28
+[flint-survey] layer 11: max|K| 22.24, max|V| 1.84
+[flint-survey] layer 12: max|K| 17.69, max|V| 1.70
+[flint-survey] layer 13: max|K| 13.60, max|V| 2.70
+[flint-survey] layer 14: max|K| 20.28, max|V| 2.02
+[flint-survey] layer 15: max|K| 17.37, max|V| 2.39
+[flint-survey] layer 16: max|K| 16.12, max|V| 3.53
+[flint-survey] layer 17: max|K| 16.11, max|V| 4.32
+[flint-survey] layer 18: max|K| 13.23, max|V| 5.40
+[flint-survey] layer 19: max|K| 12.77, max|V| 4.79
+[flint-survey] layer 20: max|K| 12.54, max|V| 5.81
+[flint-survey] layer 21: max|K| 23.72, max|V| 7.08
+[flint-survey] layer 22: max|K| 15.63, max|V| 7.75
+[flint-survey] layer 23: max|K| 17.88, max|V| 7.68
+[flint-survey] layer 24: max|K| 13.45, max|V| 7.12
+[flint-survey] layer 25: max|K| 17.26, max|V| 11.34
+[flint-survey] layer 26: max|K| 14.22, max|V| 10.44
+[flint-survey] layer 27: max|K| 11.98, max|V| 9.69
+[flint-survey] layer 28: max|K| 12.06, max|V| 13.58
+[flint-survey] layer 29: max|K| 15.04, max|V| 10.88
+[flint-survey] layer 30: max|K| 14.94, max|V| 14.45
+[flint-survey] layer 31: max|K| 18.39, max|V| 13.69
+[flint-survey] layer 32: max|K| 14.50, max|V| 12.93
+[flint-survey] layer 33: max|K| 13.69, max|V| 15.19
+[flint-survey] layer 34: max|K| 15.76, max|V| 14.43
+[flint-survey] layer 35: max|K| 12.42, max|V| 10.58
+[flint-survey] layer 36: max|K| 19.79, max|V| 12.75
+[flint-survey] layer 37: max|K| 16.58, max|V| 19.51
+[flint-survey] layer 38: max|K| 12.70, max|V| 17.66
+[flint-survey] layer 39: max|K| 11.83, max|V| 21.21
+[flint-survey] layer 40: max|K| 15.58, max|V| 21.03
+[flint-survey] layer 41: max|K| 13.07, max|V| 14.61
+[flint-survey] layer 42: max|K| 20.25, max|V| 18.49
+[flint-survey] layer 43: max|K| 18.31, max|V| 23.36
+[flint-survey] layer 44: max|K| 15.43, max|V| 20.98
+[flint-survey] layer 45: max|K| 12.87, max|V| 22.10
+[flint-survey] layer 46: max|K| 22.85, max|V| 55.36
+[flint-survey] layer 47: max|K| 18.86, max|V| 33.31
+[flint-survey] layer 48: max|K| 49.85, max|V| 129.80
+[flint-survey] 49 K/V layers, 10 prompts x 3900 tokens: worst max|V| 129.80 at layer 48, limit 32752 => PASS
+--- PASS: TestFlint_rangeSurvey (259.38s)
+PASS
+ledger: 5 device(s) released in this run
