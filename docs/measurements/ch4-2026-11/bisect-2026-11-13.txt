@@ -1,0 +1,13 @@
+# CH4 gate, TestCH4_giwByteIdentity against before2.txt (recorded at 87b41343a), nobara-pc, CPU, 2026-11-13
+# fixtures: ~/models qwen2.5-coder-1.5b-instruct-q4_k_m.gguf, gemma3-1b-q4_k_m.gguf, phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf
+87b41343a PASS 12/12
+1117a2b2c PASS 12/12
+251184470_1 PASS 12/12
+251184470 FAIL 12/12 differ
+8f3d314ff FAIL 12/12 differ
+aea0ee556 FAIL 12/12 differ
+0df3294dc FAIL 12/12 differ
+1398acfd8 FAIL 12/12 differ
+origin_main FAIL 12/12 differ
+# 251184470_1 is d29d1ba46 (251184470's parent); origin_main was 325cca9f6
+# MZ3 cut 1 (#944): re-recorded at 1c063ed3c, checked at 0da4acf63: PASS 12/12

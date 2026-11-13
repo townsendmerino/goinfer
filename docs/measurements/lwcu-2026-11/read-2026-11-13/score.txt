@@ -1,0 +1,20 @@
+     model  depth           file  blocks new/old                median  verdict
+      1.5B    128    decode-deep  1.000 0.999                    0.999  PASS
+      1.5B    128    decode-qwen  0.999 0.999                    0.999  PASS
+      1.5B   2048    decode-qwen  1.000 1.002                    1.001  PASS
+      1.5B   3900    decode-qwen  0.999 1.000                    1.000  PASS
+      1.5B   8000    decode-deep  1.000 1.000                    1.000  PASS
+        7B    128    decode-deep  0.999 1.000                    1.000  PASS
+        7B    128    decode-qwen  1.000 0.999                    1.000  PASS
+        7B   2048    decode-qwen  1.000 1.002                    1.001  PASS
+        7B   3900    decode-qwen  1.000 0.999                    0.999  PASS
+        7B   8000    decode-deep  0.999 1.000                    0.999  PASS
+ gemma3-1b    128  decode-gemma3  0.999 1.000                    1.000  PASS
+ gemma3-1b   2048  decode-gemma3  1.000 1.001                    1.000  PASS
+ gemma3-1b   3900  decode-gemma3  1.000 0.999                    0.999  PASS
+
+G2 verdict: PASS
+
+serve-cuda-old: 32 servers; VmHWM median 1638 MB, max 5638 MB; peak VmSwap max 0.0 MB; system swap 0-0 MB (context)
+serve-cuda-new: 31 servers; VmHWM median 1432 MB, max 5457 MB; peak VmSwap max 0.0 MB; system swap 0-0 MB (context)
+G4: VOID, 32 old and 31 new servers sampled

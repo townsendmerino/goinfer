@@ -1,0 +1,7 @@
+pair 1 old: K=512 median 435.0 ms, K=3900 median 3124.9 ms
+pair 1 new: K=512 median 435.5 ms, K=3900 median 3129.4 ms
+pair 2 new: K=512 median 438.0 ms, K=3900 median 3127.7 ms
+pair 2 old: K=512 median 436.9 ms, K=3900 median 3136.8 ms
+pair 3 old: K=512 median 437.2 ms, K=3900 median 3133.7 ms
+pair 3 new: K=512 median 438.3 ms, K=3900 median 3137.5 ms
+SUMMARY {"512": {"ratios": [0.999, 0.998, 0.998], "median": 0.998, "verdict": "PASS"}, "3900": {"ratios": [0.999, 1.003, 0.999], "median": 0.999, "verdict": "PASS"}}
