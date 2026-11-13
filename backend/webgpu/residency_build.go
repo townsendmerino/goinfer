@@ -22,6 +22,29 @@ type webgpuBuild struct {
 	m  *decoder.Model
 	c  *Context
 	rd *residentDecoder
+	w  *decoder.Weights
+
+	// The geometry newBuild reads from the model: hidden width, query and KV heads, head dim, FFN width, half the rotary dim, the
+	// norm epsilon, the delivered KV precision, the resident context cap and the KV row width kvDim = nKV*hd.
+	hidden, nH, nKV, hd, inter, half int
+	eps                              float32
+	kvF16, kvI8                      bool
+	ctxCap, kvDim                    int
+
+	// What uploadModelLevel records for the per-layer phase: the Granite and Nemotron-H hybrids (rmul is Granite's ResidMul),
+	// the MoE shared-expert shape, MLA's geometry, the Gated-DeltaNet flags, and the norm placements.
+	granOK, nemoOK                bool
+	rmul                          float32
+	nemoZeroInvFreq, dnZeroConvB  *wgpu.Buffer
+	moeOK, shUngated              bool
+	shInter                       int
+	mlaOK                         bool
+	qLoRA, kvLoRA, qkNope, qkRope int
+	vHead                         int
+	mlaAttnScale                  float64
+	dnetOK, dnAttnGate            bool
+	sandwichOK, postOnlyOK        bool
+	qkNormWhole                   bool
 
 	// ropeInvCache holds the invFreq tables uploaded so far; a layer whose table is equal reuses the buffer.
 	ropeInvCache []ropeEntry
@@ -30,6 +53,30 @@ type webgpuBuild struct {
 type ropeEntry struct {
 	invf []float32
 	buf  *wgpu.Buffer
+}
+
+// newBuild reads m's geometry and resolves the KV precision and the resident context cap, which an unpinned build lets give way to
+// the requested KV slots. It allocates no device memory. avail0 is the host memory read before the build's first upload.
+func (b *webgpuBackend) newBuild(m *decoder.Model, avail0 int64) *webgpuBuild {
+	c := b.ctx
+	w := m.Weights()
+	hidden, _, nH, nKV, hd, inter, vocab := m.Dims() // arch-backed (Cfg may be zero for GGUF/.giw)
+	half := m.RotaryDimResident() / 2
+	eps := m.NormEps()
+	kvDelivered := m.KVDeliveredFor("webgpu") // the resolver's answer, not the raw request (decoder.ResolveKV)
+	kvF16, kvI8 := kvDelivered == "f16", kvDelivered == "i8"
+
+	ctxCap := webgpuCtxBeforeSlots(m, kvF16, kvI8)
+	// An unpinned context gives way to the requested KV slots (darwin; slotsBeforeContext in gpu/kv_slots.go).
+	ctxCap = slotsBeforeContext(m, ctxCap, kvF16, kvI8, avail0)
+	kvDim := nKV * hd
+
+	rd := &residentDecoder{c: c, nKV: nKV, hd: hd, ctxCap: ctxCap, finalSoftcap: m.FinalLogitSoftcapResident(), hidden: hidden, inter: inter, nH: nH, vocab: vocab}
+	return &webgpuBuild{
+		m: m, c: c, rd: rd, w: w,
+		hidden: hidden, nH: nH, nKV: nKV, hd: hd, inter: inter, half: half, eps: eps,
+		kvF16: kvF16, kvI8: kvI8, ctxCap: ctxCap, kvDim: kvDim,
+	}
 }
 
 // keep registers a release for rd.Close to run.
@@ -255,4 +302,138 @@ func (bs *webgpuBuild) ropeInvBuf(layer int) (*wgpu.Buffer, error) {
 	}
 	bs.ropeInvCache = append(bs.ropeInvCache, ropeEntry{invf: invf, buf: b})
 	return b, nil
+}
+
+// uploadModelLevel is the build's model-level phase: the final norm and LM head, the family parameters (Granite and Nemotron-H
+// Mamba, MoE, MLA, Gated-DeltaNet) and the checks that refuse an unsupported norm and MoE combination. It records on bs what the
+// per-layer phase reads and returns the first error; the caller releases the partly built decoder.
+func (bs *webgpuBuild) uploadModelLevel() error {
+	m, w, rd := bs.m, bs.w, bs.rd
+	hidden, hd := bs.hidden, bs.hd
+	invFreq := m.RopeInvFreqLayerResident(0)
+	finalNorm, err := bs.up32(w.FinalNorm)
+	if err != nil {
+		return err
+	}
+	// Granite-4.0-H, the Mamba/attention hybrid: rmul folds ResidMul into every residual-add weight; lmMult folds
+	// 1/LogitScale into the head. mambaP carries the model-level SSM geometry (per-layer mixer kind from m.GraniteMambaLayer).
+	gNH, gHd, gDS, gNG, gK, _, gResidMul, gLogitScale, _, granOK := m.GraniteResidentParams()
+	rmul := float32(1)
+	lmMult := float32(1)
+	if granOK {
+		rmul = gResidMul
+		if gLogitScale != 0 {
+			lmMult = 1 / gLogitScale
+		}
+		gIn := gNH * gHd
+		rd.rm.Mamba = &kernels.MambaRunParams{
+			NHeads: gNH, Hp: gHd, Dn: gDS, NGroups: gNG, DConv: gK,
+			DInner: gIn, ConvDim: gIn + 2*gNG*gDS, ProjDim: 2*gIn + 2*gNG*gDS + gNH,
+			GSize: gNG * gDS, Repeat: gNH / gNG, NormGroups: 1,
+		}
+	}
+	// Nemotron-H (dense squared-ReLU hybrid): the same Mamba-2 geometry but the gated RMSNorm
+	// is PER GROUP (normGroups = NGroups), and there are NO multipliers (rmul/lmMult stay 1).
+	nNH, nHd, nDS, nNG, nK, nNormG, _, nemoOK := m.NemotronResidentParams()
+	var nemoZeroInvFreq *wgpu.Buffer // NoPE: a zeroed invFreq makes the rope kernel an identity
+	if nemoOK {
+		nIn := nNH * nHd
+		rd.rm.Mamba = &kernels.MambaRunParams{
+			NHeads: nNH, Hp: nHd, Dn: nDS, NGroups: nNG, DConv: nK,
+			DInner: nIn, ConvDim: nIn + 2*nNG*nDS, ProjDim: 2*nIn + 2*nNG*nDS + nNH,
+			GSize: nNG * nDS, Repeat: nNH / nNG, NormGroups: nNormG,
+		}
+		var ze error
+		if nemoZeroInvFreq, ze = bs.up32(make([]float32, hd/2)); ze != nil {
+			return ze
+		}
+	}
+	// LM head: tied (LMHead empty → the Embed matrix is the head) or separate.
+	headW := &w.LMHead
+	if w.LMHead.Rows() == 0 {
+		headW = &w.Embed
+	}
+	lmHead, err := bs.projMul(headW, lmMult)
+	if err != nil {
+		return err
+	}
+	// ropeHalf = len(invFreq) = rotaryDim/2 drives the rope dispatch (partial RoPE rotates only the first rotaryDim dims of
+	// each head).
+	rd.rm.FinalNorm, rd.rm.LmHead, rd.rm.RopeHalf, rd.rm.SlidingWindow = finalNorm, lmHead, len(invFreq), m.SlidingWindowResident()
+
+	// MoE: models route to stacked experts on-device. moeOK gates the per-layer FFN build below; the params are model-level.
+	nExp, topK, moeInter, shInter, sig, normTopK, shUngated, rScale, nGroup, topkGroup, moeOK := m.MoEResidentParams()
+	if moeOK {
+		rd.rm.Moe = &kernels.MoeRunParams{
+			NE: nExp, K: topK, Inter: moeInter, Sigmoid: sig, Norm: normTopK, Scale: float32(rScale),
+			SharedInter: shInter, SharedUngated: shUngated, NGroup: nGroup, TopkGroup: topkGroup,
+		}
+		// gpt-oss's clamped-SwiGLU constants, uniform across every gpt-oss layer.
+		if alpha, limit, isGptOss := m.GptOssActResident(); isGptOss {
+			rd.rm.Moe.Gptoss = true
+			rd.rm.Moe.GptossAlpha, rd.rm.Moe.GptossLimit = alpha, limit
+		}
+	}
+	// MLA: latent attention replaces the q/k/v/o block. mlaOK gates the per-layer MLA build below; the geometry is
+	// model-level. attnScale overrides the GQA 1/√HeadDim with the resolved qk_head_dim score scale.
+	qLoRA, kvLoRA, qkNope, qkRope, vHead, interleave, mlaAttnScale, mlaRopeScale, mlaOK := m.MLAResidentParams()
+	if mlaOK {
+		rd.rm.Mla = &kernels.MlaRunParams{
+			QLoRARank: qLoRA, KvLoRARank: kvLoRA, QkNope: qkNope, QkRope: qkRope,
+			VHead: vHead, Interleave: interleave, RopeScale: float32(mlaRopeScale),
+		}
+	}
+	// Gated-DeltaNet hybrid. Two things make this family its own branch rather than a flag on the generic one: most layers are
+	// the recurrent delta rule instead of attention, and its FULL-attention layers carry a per-head output gate fused into a
+	// double-width q_proj (when dnAttnGate is true; Olmo Hybrid's full-attention layer uses the plain scheme).
+	dnConvK, dnHK, dnHV, dnNK, dnNV, dnAttnGate, dnetOK := m.Qwen35ResidentParams()
+	var dnZeroConvB *wgpu.Buffer // DeltaNet's causal conv is bias-free; mambaConv binds a bias
+	if dnetOK {
+		dnBetaScale, dnONormEps, dnErr := deltaNetOpParams(m)
+		if dnErr != nil {
+			return dnErr
+		}
+		keyDim, valueDim := dnNK*dnHK, dnNV*dnHV
+		rd.rm.Dnet = &kernels.DnetRunParams{
+			ConvK: dnConvK, Hk: dnHK, Hv: dnHV, Nk: dnNK, Nv: dnNV, Rep: dnNV / dnNK,
+			KeyDim: keyDim, ValueDim: valueDim, ConvDim: 2*keyDim + valueDim,
+			StateElems: dnNV * dnHV * dnHK, Eps: dnONormEps, BetaScale: dnBetaScale,
+		}
+		var ze error
+		if dnZeroConvB, ze = bs.up32(make([]float32, rd.rm.Dnet.ConvDim)); ze != nil {
+			return ze
+		}
+	}
+	// Gemma's NormSandwich4 (FeatSandwichNorm) and Olmo 3 / Olmo Hybrid's NormPostOnly (FeatPostOnlyNorm): norms on each
+	// sublayer OUTPUT, applied before the residual add.
+	sandwichOK := m.SandwichNormResident()
+	postOnlyOK := m.PostOnlyNormResident()
+	qkNormWhole := m.QKNormWholeResident() && !qkNormWholeOffForTest
+	rd.rm.QKNormWhole, rd.rm.PostOnlyNorm = qkNormWhole, postOnlyOK
+	g4MoE := m.HasGemma4MoEResident() // some layers' feed-forward is Gemma 4's parallel dense and MoE block, which carries its own norms
+	if sandwichOK {
+		for i := range w.Layers {
+			lw := &w.Layers[i]
+			_, moeLayer := m.Gemma4MoEResidentLayer(i)
+			if len(lw.PostAttnNorm) != hidden || (!moeLayer && len(lw.PostMLPNorm) != hidden) {
+				return fmt.Errorf("gpu: layer %d: arch declares sandwich norms but PostAttnNorm/PostMLPNorm are not len==hidden(%d) (got %d/%d)",
+					i, hidden, len(lw.PostAttnNorm), len(lw.PostMLPNorm))
+			}
+		}
+	}
+	if (sandwichOK || postOnlyOK) && moeOK && !g4MoE {
+		// Sandwich / post-only norms + the generic MoE branch is refused: decoderunner.go's MoE FFN branch writes the expert-down output and
+		// the shared-expert add straight into r.xd with no postMLPNorm step (the dense FFN branch applies it before the residual
+		// add), so admitting the combination would give silently wrong logits. Gemma 4's own MoE block is a different branch with
+		// its norms inside (runLayer.g4moe); refuse any other family loudly so the gap cannot ship silently.
+		return fmt.Errorf("gpu: sandwich norms (FeatSandwichNorm) + MoE is not supported — " +
+			"the MoE FFN dispatch has no postMLPNorm step (N-89, docs/audit-2026-09-10.md)")
+	}
+	bs.granOK, bs.rmul = granOK, rmul
+	bs.nemoOK, bs.nemoZeroInvFreq = nemoOK, nemoZeroInvFreq
+	bs.moeOK, bs.shInter, bs.shUngated = moeOK, shInter, shUngated
+	bs.mlaOK, bs.qLoRA, bs.kvLoRA, bs.qkNope, bs.qkRope, bs.vHead, bs.mlaAttnScale = mlaOK, qLoRA, kvLoRA, qkNope, qkRope, vHead, mlaAttnScale
+	bs.dnetOK, bs.dnAttnGate, bs.dnZeroConvB = dnetOK, dnAttnGate, dnZeroConvB
+	bs.sandwichOK, bs.postOnlyOK, bs.qkNormWhole = sandwichOK, postOnlyOK, qkNormWhole
+	return nil
 }

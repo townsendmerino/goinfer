@@ -26,23 +26,26 @@ import (
 // docs/code-notes/gpu.md#TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches.
 func TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches(t *testing.T) {
 	fset := token.NewFileSet()
-	af, err := parser.ParseFile(fset, "residency.go", nil, parser.ParseComments)
-	if err != nil {
-		t.Fatalf("parse residency.go: %v", err)
-	}
-	// The decline is staticResidentDecline's, which BuildResident calls first; the context request is BuildResident's own.
+	// The decline is staticResidentDecline's, which BuildResident calls first; the context request is webgpuCtxBeforeSlots's, which
+	// the build's constructor (newBuild, in residency_build.go) calls.
 	funcs := map[string]string{}
-	ast.Inspect(af, func(n ast.Node) bool {
-		if d, ok := n.(*ast.FuncDecl); ok && (d.Name.Name == "BuildResident" || d.Name.Name == "staticResidentDecline" || d.Name.Name == "webgpuCtxBeforeSlots") {
-			var b strings.Builder
-			if err := printer.Fprint(&b, fset, d); err != nil {
-				t.Fatalf("print: %v", err)
-			}
-			funcs[d.Name.Name] = b.String()
+	for _, file := range []string{"residency.go", "residency_build.go"} {
+		af, err := parser.ParseFile(fset, file, nil, parser.ParseComments)
+		if err != nil {
+			t.Fatalf("parse %s: %v", file, err)
 		}
-		return true
-	})
-	for _, name := range []string{"BuildResident", "staticResidentDecline", "webgpuCtxBeforeSlots"} {
+		ast.Inspect(af, func(n ast.Node) bool {
+			if d, ok := n.(*ast.FuncDecl); ok && (d.Name.Name == "BuildResident" || d.Name.Name == "newBuild" || d.Name.Name == "staticResidentDecline" || d.Name.Name == "webgpuCtxBeforeSlots") {
+				var b strings.Builder
+				if err := printer.Fprint(&b, fset, d); err != nil {
+					t.Fatalf("print: %v", err)
+				}
+				funcs[d.Name.Name] = b.String()
+			}
+			return true
+		})
+	}
+	for _, name := range []string{"BuildResident", "newBuild", "staticResidentDecline", "webgpuCtxBeforeSlots"} {
 		if funcs[name] == "" {
 			t.Fatalf("%s not found — this guard is watching nothing", name)
 		}
@@ -65,7 +68,7 @@ func TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches(t *testing.T) {
 	}
 	// And the -ctx request must be consulted (ResidentContextRequest) where BuildResident takes its context, or -ctx would not
 	// change the allocated cap.
-	if !strings.Contains(funcs["BuildResident"], "webgpuCtxBeforeSlots(m,") || !strings.Contains(funcs["webgpuCtxBeforeSlots"], "ResidentContextRequest") {
+	if !strings.Contains(funcs["BuildResident"], "b.newBuild(m,") || !strings.Contains(funcs["newBuild"], "webgpuCtxBeforeSlots(m,") || !strings.Contains(funcs["webgpuCtxBeforeSlots"], "ResidentContextRequest") {
 		t.Error("BuildResident ignores ResidentContextRequest: `serve -ctx` is silently a no-op " +
 			"on webgpu (M-32)")
 	}
