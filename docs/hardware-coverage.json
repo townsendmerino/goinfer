@@ -1,5 +1,5 @@
 {
- "_about": "H0's hardware census (docs/tasks/task-hardware-coverage-2026-10.md): one entry per hardware-selected gate. internal/hwcensus/census_test.go fails when a hardware predicate in goinfer, aikit or aikit/gpu (at the pinned versions) has no entry here, or an entry names one the source no longer has. last_executed [] means no record: never executed, or (see notes) executed with no committed record to cite. A record names the machine, the date, how it ran (native, emulated, ci-pool, forced), both commits and the gate.",
+ "_about": "H0's hardware census (docs/completed/task-hardware-coverage-2026-10.md): one entry per hardware-selected gate. internal/hwcensus/census_test.go fails when a hardware predicate in goinfer, aikit or aikit/gpu (at the pinned versions) has no entry here, or an entry names one the source no longer has. last_executed [] means no record: never executed, or (see notes) executed with no committed record to cite. A record names the machine, the date, how it ran (native, emulated, ci-pool, forced), both commits and the gate.",
  "inventory_at": "goinfer 90b7190b / aikit 4a5a7b2 (the task doc's section 1); predicates re-derived at goinfer e91cba3d / aikit v1.53.0, aikit/gpu v0.33.3",
  "entries": [
   {
