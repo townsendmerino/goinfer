@@ -1,8 +1,12 @@
-//go:build cuda
+package fitdecide
 
-package cuda
+import (
+	"strings"
+	"testing"
+)
 
-import "testing"
+// testCtxMargin is a context margin of the figure the cuda build keeps for its small fixtures.
+const testCtxMargin = int64(384 << 20)
 
 // The real 26B's per-slot buffer strides, in the order allocSlots allocates them:
 // expGU.W, expGU.scales, expDown.W, expDown.scales — 123,904 x {16, 2, 8, 1} bytes. The 8:1 ratio
@@ -20,7 +24,7 @@ const (
 // binds when the requested slots exceed free VRAM, and no fixture is large enough for that: it is the
 // exercised-but-never-triggered shape, reported green by coverage tools and never run until the real 26B.
 //
-// The gate drives capSlots, which allocSlots calls, so it points at the shipping path; agreement between two
+// The gate drives CapSlots, which allocSlots calls, so it points at the shipping path; agreement between two
 // transcriptions of one formula is not evidence about the formula. The formula must charge each of the four buffers per
 // layer its own whole 2 MiB quanta: a sum of requested bytes returns 34 slots on the 26B, where the forward generates
 // zero tokens. The two claims this file once made and withdrew: docs/code-notes/cuda.md#TestSlotCapArithmetic.
@@ -45,16 +49,16 @@ func TestSlotCapArithmetic(t *testing.T) {
 		// Exactly topK fits: the boundary must admit, not decline (off-by-one both ways). Derived
 		// from the same rounding form rather than from a raw sum, or the boundary is off by the
 		// rounding this gate exists to enforce.
-		{"exactly topK fits", slotRequirement(topK26B, nLayers26B, strides26B) + slotMarginBytes,
+		{"exactly topK fits", SlotRequirement(topK26B, nLayers26B, strides26B) + SlotMarginBytes,
 			nLayers26B, strides26B, topK26B, topK26B, false},
 		// One byte short of the topK boundary must decline. This is the assertion that catches a
 		// `<=` / `<` slip, which no other case here can distinguish.
-		{"one byte below topK: declines", slotRequirement(topK26B, nLayers26B, strides26B) + slotMarginBytes - 1,
+		{"one byte below topK: declines", SlotRequirement(topK26B, nLayers26B, strides26B) + SlotMarginBytes - 1,
 			nLayers26B, strides26B, topK26B, 0, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got, decline := capSlots(c.free, c.nLayers, c.strides, c.topK, 128)
+			got, decline := CapSlots(c.free, c.nLayers, c.strides, c.topK, 128)
 			if decline != c.wantDecline {
 				t.Fatalf("decline = %v, want %v (got %d slots)", decline, c.wantDecline, got)
 			}
@@ -75,8 +79,8 @@ func TestSlotCapArithmetic_search(t *testing.T) {
 	for _, p := range strides26B {
 		perLayerRaw += p
 	}
-	division := int((free26B - slotMarginBytes) / nLayers26B / perLayerRaw)
-	search, _ := capSlots(free26B, nLayers26B, strides26B, topK26B, 128)
+	division := int((free26B - SlotMarginBytes) / nLayers26B / perLayerRaw)
+	search, _ := CapSlots(free26B, nLayers26B, strides26B, topK26B, 128)
 	if division != 34 {
 		t.Errorf("the raw-sum division no longer returns 34 (got %d) — the historical figures in "+
 			"docs/QUEUE.md A1 were derived from it and need re-checking", division)
@@ -94,37 +98,37 @@ func TestSlotCapArithmetic_search(t *testing.T) {
 	//    per-buffer floor, or a stride that shrank with n, would break it silently.
 	prev := int64(-1)
 	for n := 0; n <= 200; n++ {
-		got := slotRequirement(n, nLayers26B, strides26B)
+		got := SlotRequirement(n, nLayers26B, strides26B)
 		if got < prev {
 			t.Fatalf("requirement is not monotone: n=%d needs %d, less than n=%d's %d — the binary "+
-				"search in capSlots is invalid", n, got, n-1, prev)
+				"search in CapSlots is invalid", n, got, n-1, prev)
 		}
 		prev = got
 	}
 
 	// 3. The step at 34 is real and is four quanta, which is why a division plus a correction term
 	//    cannot work: the error is not a constant offset, it is concentrated at boundaries.
-	step := slotRequirement(34, nLayers26B, strides26B) - slotRequirement(33, nLayers26B, strides26B)
-	if want := int64(4 * nLayers26B * allocQuantumBytes); step != want {
+	step := SlotRequirement(34, nLayers26B, strides26B) - SlotRequirement(33, nLayers26B, strides26B)
+	if want := int64(4 * nLayers26B * AllocQuantumBytes); step != want {
 		t.Errorf("the 33->34 step is %d B, expected %d (4 quanta x %d layers) — the boundary this "+
 			"whole item turns on has moved", step, want, nLayers26B)
 	}
 
-	// 4. capSlots must never return a count whose requirement does not actually fit. This is the
+	// 4. CapSlots must never return a count whose requirement does not actually fit. This is the
 	//    property, stated independently of any particular number, so it survives the constants above
 	//    changing.
 	for _, free := range []int64{free26B, 1 << 30, 2 << 30, 6 << 30, 40 << 30} {
-		n, decline := capSlots(free, nLayers26B, strides26B, topK26B, 128)
+		n, decline := CapSlots(free, nLayers26B, strides26B, topK26B, 128)
 		if decline {
 			continue
 		}
-		if req := slotRequirement(n, nLayers26B, strides26B); req+slotMarginBytes > free {
-			t.Errorf("free=%d: capSlots returned %d slots needing %d B + %d margin > %d free",
-				free, n, req, int64(slotMarginBytes), free)
+		if req := SlotRequirement(n, nLayers26B, strides26B); req+SlotMarginBytes > free {
+			t.Errorf("free=%d: CapSlots returned %d slots needing %d B + %d margin > %d free",
+				free, n, req, int64(SlotMarginBytes), free)
 		}
 		if n < 128 {
-			if req := slotRequirement(n+1, nLayers26B, strides26B); req+slotMarginBytes <= free {
-				t.Errorf("free=%d: capSlots returned %d but %d also fits — the search is not "+
+			if req := SlotRequirement(n+1, nLayers26B, strides26B); req+SlotMarginBytes <= free {
+				t.Errorf("free=%d: CapSlots returned %d but %d also fits — the search is not "+
 					"returning the LARGEST admissible count", free, n, n+1)
 			}
 		}
@@ -147,7 +151,7 @@ func TestSlotCapArithmetic_search(t *testing.T) {
 // Each is asserted directly rather than described, so the claim "this gate can fail" is itself
 // checked.
 func TestSlotCapArithmetic_mutation(t *testing.T) {
-	base, _ := capSlots(free26B, nLayers26B, strides26B, topK26B, 128)
+	base, _ := CapSlots(free26B, nLayers26B, strides26B, topK26B, 128)
 	if base != 33 {
 		t.Fatalf("baseline moved: got %d, want 33 — update the mutation deltas below", base)
 	}
@@ -157,7 +161,7 @@ func TestSlotCapArithmetic_mutation(t *testing.T) {
 	for _, p := range strides26B {
 		perLayerRaw += p
 	}
-	if noRound := int((free26B - slotMarginBytes) / nLayers26B / perLayerRaw); noRound == base {
+	if noRound := int((free26B - SlotMarginBytes) / nLayers26B / perLayerRaw); noRound == base {
 		t.Error("dropping per-buffer quantum rounding changes nothing — the gate cannot see the " +
 			"rounding, which is the entire content of the fix")
 	}
@@ -165,7 +169,7 @@ func TestSlotCapArithmetic_mutation(t *testing.T) {
 	// Mutation 2: no margin. Must differ, or the margin is doing nothing.
 	noMargin := 0
 	for n := 128; n >= 0; n-- {
-		if slotRequirement(n, nLayers26B, strides26B) <= free26B {
+		if SlotRequirement(n, nLayers26B, strides26B) <= free26B {
 			noMargin = n
 			break
 		}
@@ -180,10 +184,118 @@ func TestSlotCapArithmetic_mutation(t *testing.T) {
 
 	// Mutation 3: no floor (clamp up to topK). Must differ from declining.
 	tiny := int64(500) * (1 << 20)
-	if _, decline := capSlots(tiny, nLayers26B, strides26B, topK26B, 128); !decline {
+	if _, decline := CapSlots(tiny, nLayers26B, strides26B, topK26B, 128); !decline {
 		t.Error("floor is not enforced: a free-VRAM figure below topK must DECLINE, not clamp up")
 	}
-	if fit, _ := capSlots(tiny, nLayers26B, strides26B, topK26B, 128); fit >= topK26B {
+	if fit, _ := CapSlots(tiny, nLayers26B, strides26B, topK26B, 128); fit >= topK26B {
 		t.Errorf("mutation case is not below topK (fit=%d) — it no longer exercises the floor", fit)
+	}
+}
+
+// TestFitsWeightsBudget is M-02's gate for CUDA's previously-nonexistent memory-fit check on the
+// FIXED (non-expert) weight term — mirrors metal/backend.go's TestResidentMemGuard, same reasoning:
+// a guard that never fires leaves the raw-driver-error failure mode checkWeightsFit exists to
+// avoid; one that fires too eagerly silently moves every model to the staged/CPU path.
+func TestFitsWeightsBudget(t *testing.T) {
+	const gb = int64(1) << 30
+	for _, c := range []struct {
+		name       string
+		need, free int64
+		want       bool
+	}{
+		{"comfortably_fits", 4 * gb, 8 * gb, true},
+		{"exactly_at_margin", 8*gb - testCtxMargin, 8 * gb, true},
+		{"just_over_margin", 8*gb - testCtxMargin + 1, 8 * gb, false},
+		{"far_too_large", 22 * gb, 8 * gb, false}, // Qwen3.5-35B-A3B-shaped dense-only sum on an 8 GB card
+		// Unknown inputs must never refuse: an unreadable MemInfo or a model reporting zero bytes
+		// would otherwise disable residency for everyone, silently.
+		{"unknown_need", 0, 8 * gb, true},
+		{"unknown_free", 4 * gb, 0, true},
+		{"negative_need", -1, 8 * gb, true},
+	} {
+		if got := FitsWeightsBudget(c.need, c.free, testCtxMargin); got != c.want {
+			t.Errorf("%s: FitsWeightsBudget(%.2f GB, %.2f GB) = %v, want %v",
+				c.name, float64(c.need)/float64(gb), float64(c.free)/float64(gb), got, c.want)
+		}
+	}
+}
+
+// TestReservedBudget is tasks/task-fit-to-hardware.md §2's drafter-aware sizing: allocSlots' elastic
+// expert-cache search must see free VRAM MINUS whatever a companion attach (--drafter) will claim
+// afterward, never a negative number CapSlots was never written to handle.
+func TestReservedBudget(t *testing.T) {
+	const gb = int64(1) << 30
+	for _, c := range []struct {
+		name             string
+		free, extraBytes int64
+		want             int64
+	}{
+		{"nothing_attaching", 8 * gb, 0, 8 * gb},
+		{"drafter_reserves_its_share", 8 * gb, 500 << 20, 8*gb - 500<<20},
+		{"drafter_exceeds_everything_free_clamps_to_zero", 1 * gb, 2 * gb, 0},
+		{"drafter_exactly_consumes_free", 1 * gb, 1 * gb, 0},
+	} {
+		if got := ReservedBudget(c.free, c.extraBytes); got != c.want {
+			t.Errorf("%s: ReservedBudget(%.2f GB, %.2f GB) = %.2f GB, want %.2f GB",
+				c.name, float64(c.free)/float64(gb), float64(c.extraBytes)/float64(gb),
+				float64(got)/float64(gb), float64(c.want)/float64(gb))
+		}
+	}
+}
+
+// TestWeightsFitDecision holds the weights check at its boundaries: an unknown reading passes, a fit exactly at the budget
+// passes, one byte over refuses, and a companion attach is named in the refusal.
+func TestWeightsFitDecision(t *testing.T) {
+	const need, margin = int64(1000), int64(100)
+	for _, c := range []struct {
+		name        string
+		extra, free int64
+		ok          bool
+		want        string // "" fits; else a substring of the refusal
+	}{
+		{"no reading", 0, 0, false, ""},
+		{"exactly at the budget", 0, need + margin, true, ""},
+		{"one byte over", 0, need + margin - 1, true, "dense weights need"},
+		{"companion at the budget", 50, need + 50 + margin, true, ""},
+		{"companion one byte over", 50, need + 50 + margin - 1, true, "reserved for a companion"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			err := WeightsFitDecision(need, c.extra, c.free, c.ok, margin)
+			switch {
+			case c.want == "" && err != nil:
+				t.Errorf("refused: %v", err)
+			case c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)):
+				t.Errorf("got %v, want a refusal containing %q", err, c.want)
+			}
+		})
+	}
+	if WeightsFitDecision(0, 0, 1, true, margin) != nil {
+		t.Error("an unknown need (0) must pass")
+	}
+}
+
+// TestSlotsDecision holds the expert-cache decision's wrapper over CapSlots: an unknown reading keeps the request; a reading that
+// holds it changes nothing; one that holds fewer caps to CapSlots' answer and logs it (naming the companion when one is reserved);
+// one under top-k refuses naming the minimum.
+func TestSlotsDecision(t *testing.T) {
+	strides := []int64{1 << 20, 1 << 18, 1 << 20, 1 << 18}
+	const nLayers, topK, want = 4, 2, 16
+	if d := SlotsDecision(0, false, 0, nLayers, strides, topK, want); d.Slots != want || d.Err != nil || len(d.Logs) != 0 {
+		t.Errorf("no reading: %+v", d)
+	}
+	plenty := uint64(1 << 34)
+	if d := SlotsDecision(plenty, true, 0, nLayers, strides, topK, want); d.Slots != want || d.Err != nil || len(d.Logs) != 0 {
+		t.Errorf("plenty: %+v", d)
+	}
+	mid := uint64(SlotMarginBytes + SlotRequirement(want, nLayers, strides)/2) // CapSlots keeps SlotMarginBytes back
+	fit, _ := CapSlots(int64(mid), nLayers, strides, topK, want)
+	if d := SlotsDecision(mid, true, 0, nLayers, strides, topK, want); d.Slots != fit || fit >= want || len(d.Logs) != 1 || d.Err != nil {
+		t.Errorf("half: %+v, want %d slots logged once", d, fit)
+	}
+	if d := SlotsDecision(mid+1<<30, true, 1<<30, nLayers, strides, topK, want); d.Slots != fit || len(d.Logs) != 1 || !strings.Contains(d.Logs[0], "companion") {
+		t.Errorf("half beside a companion: %+v, want %d slots and the companion named", d, fit)
+	}
+	if d := SlotsDecision(1, true, 0, nLayers, strides, topK, want); d.Err == nil || !strings.Contains(d.Err.Error(), "cannot fit its MINIMUM") {
+		t.Errorf("under top-k: %+v, want the minimum's refusal", d)
 	}
 }

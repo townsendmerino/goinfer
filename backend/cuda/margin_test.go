@@ -202,37 +202,6 @@ func TestPlanMemory(t *testing.T) {
 	}
 }
 
-// TestWeightsFitDecision holds the weights check at its boundaries: an unknown reading passes, a fit exactly at the budget
-// passes, one byte over refuses, and a companion attach is named in the refusal.
-func TestWeightsFitDecision(t *testing.T) {
-	const need, margin = int64(1000), int64(100)
-	for _, c := range []struct {
-		name        string
-		extra, free int64
-		ok          bool
-		want        string // "" fits; else a substring of the refusal
-	}{
-		{"no reading", 0, 0, false, ""},
-		{"exactly at the budget", 0, need + margin, true, ""},
-		{"one byte over", 0, need + margin - 1, true, "dense weights need"},
-		{"companion at the budget", 50, need + 50 + margin, true, ""},
-		{"companion one byte over", 50, need + 50 + margin - 1, true, "reserved for a companion"},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			err := weightsFitDecision(need, c.extra, c.free, c.ok, margin)
-			switch {
-			case c.want == "" && err != nil:
-				t.Errorf("refused: %v", err)
-			case c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)):
-				t.Errorf("got %v, want a refusal containing %q", err, c.want)
-			}
-		})
-	}
-	if weightsFitDecision(0, 0, 1, true, margin) != nil {
-		t.Error("an unknown need (0) must pass")
-	}
-}
-
 // kvTestLayers is two full-attention layers with f32 KV, kvDim 256: what kvChargedBytes prices.
 func kvTestLayers() []cudaLayer {
 	return []cudaLayer{{idx: 0, kvDim: 256, nKV: 2, hd: 128}, {idx: 1, kvDim: 256, nKV: 2, hd: 128}}
@@ -362,32 +331,6 @@ func TestCkptDeclineFor(t *testing.T) {
 	}
 	if why := ckptDeclineFor(bytes, reserve, 0, errors.New("x")); why != "free VRAM unreadable: x" {
 		t.Errorf("unreadable: %q", why)
-	}
-}
-
-// TestSlotsDecision holds the expert-cache decision's wrapper over capSlots: an unknown reading keeps the request; a reading that
-// holds it changes nothing; one that holds fewer caps to capSlots' answer and logs it (naming the companion when one is reserved);
-// one under top-k refuses naming the minimum.
-func TestSlotsDecision(t *testing.T) {
-	strides := []int64{1 << 20, 1 << 18, 1 << 20, 1 << 18}
-	const nLayers, topK, want = 4, 2, 16
-	if d := slotsDecision(0, false, 0, nLayers, strides, topK, want); d.slots != want || d.err != nil || len(d.logs) != 0 {
-		t.Errorf("no reading: %+v", d)
-	}
-	plenty := uint64(1 << 34)
-	if d := slotsDecision(plenty, true, 0, nLayers, strides, topK, want); d.slots != want || d.err != nil || len(d.logs) != 0 {
-		t.Errorf("plenty: %+v", d)
-	}
-	mid := uint64(slotMarginBytes + slotRequirement(want, nLayers, strides)/2) // capSlots keeps slotMarginBytes back
-	fit, _ := capSlots(int64(mid), nLayers, strides, topK, want)
-	if d := slotsDecision(mid, true, 0, nLayers, strides, topK, want); d.slots != fit || fit >= want || len(d.logs) != 1 || d.err != nil {
-		t.Errorf("half: %+v, want %d slots logged once", d, fit)
-	}
-	if d := slotsDecision(mid+1<<30, true, 1<<30, nLayers, strides, topK, want); d.slots != fit || len(d.logs) != 1 || !strings.Contains(d.logs[0], "companion") {
-		t.Errorf("half beside a companion: %+v, want %d slots and the companion named", d, fit)
-	}
-	if d := slotsDecision(1, true, 0, nLayers, strides, topK, want); d.err == nil || !strings.Contains(d.err.Error(), "cannot fit its MINIMUM") {
-		t.Errorf("under top-k: %+v, want the minimum's refusal", d)
 	}
 }
 
