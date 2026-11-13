@@ -270,7 +270,7 @@ func TestResidentSubsystems_NoScatteredMicroAssertionsInBackends(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			rel := filepath.ToSlash(strings.TrimPrefix(path, "../"))
+			rel := strings.TrimPrefix(filepath.ToSlash(path), "../") // slashes first: on Windows the walked path is "..\\backend\\..."
 			ast.Inspect(f, func(n ast.Node) bool {
 				ta, ok := n.(*ast.TypeAssertExpr)
 				if !ok || ta.Type == nil {
