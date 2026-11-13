@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/townsendmerino/goinfer/internal/app/loadflags"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -85,14 +86,14 @@ func TestNotAdmitted_queueFullIsAFailureNotACancellation(t *testing.T) {
 		ctx        context.Context
 		halt       string
 		lm         *loadedModel
-		wantState  jobState
+		wantState  jobs.State
 		wantStatus int
 		wantReason string
 	}{
-		{"halted", live, "maintenance", noQueue, jobCancelled, statusCancelled, "maintenance"},
-		{"cancelled while waiting", done, "", noQueue, jobCancelled, statusCancelled, "cancelled before a turn was granted"},
-		{"queue full, unbounded queue (can't really happen — see tryEnter)", live, "", noQueue, jobFailed, http.StatusTooManyRequests, `model "m" queue full; retry`},
-		{"queue full, W28's number", live, "", boundedQueue, jobFailed, http.StatusTooManyRequests, `model "m" queue full (max 3 queued); retry`},
+		{"halted", live, "maintenance", noQueue, jobs.Cancelled, statusCancelled, "maintenance"},
+		{"cancelled while waiting", done, "", noQueue, jobs.Cancelled, statusCancelled, "cancelled before a turn was granted"},
+		{"queue full, unbounded queue (can't really happen — see tryEnter)", live, "", noQueue, jobs.Failed, http.StatusTooManyRequests, `model "m" queue full; retry`},
+		{"queue full, W28's number", live, "", boundedQueue, jobs.Failed, http.StatusTooManyRequests, `model "m" queue full (max 3 queued); retry`},
 	} {
 		got := notAdmitted(c.ctx, c.halt, c.lm)
 		if got.state != c.wantState || got.status != c.wantStatus || got.reason != c.wantReason {
@@ -124,18 +125,18 @@ func TestJobTerminalEvents(t *testing.T) {
 		return ch[0].(map[string]any)["finish_reason"]
 	}
 
-	done := decode(jobTerminalEvents(job{ID: "j", Model: "m", State: jobDone, Usage: u, result: &jobResult{Content: "hi", FinishReason: "length"}}, 1, ""))
+	done := decode(jobTerminalEvents(jobs.Job{ID: "j", Model: "m", State: jobs.Done, Usage: u, Result: &jobs.Result{Content: "hi", FinishReason: "length"}}, 1, ""))
 	if len(done) != 2 || finishOf(done[0]) != "length" || done[1]["usage"].(map[string]any)["completion_tokens"] != float64(7) {
 		t.Errorf("done job: %v, want a finish_reason=length chunk then a usage chunk", done)
 	}
-	failed := decode(jobTerminalEvents(job{ID: "j", Model: "m", State: jobFailed, Error: `model "m" queue full; retry`}, 1, "rate_limit_error"))
+	failed := decode(jobTerminalEvents(jobs.Job{ID: "j", Model: "m", State: jobs.Failed, Error: `model "m" queue full; retry`}, 1, "rate_limit_error"))
 	if len(failed) != 1 || failed[0]["error"].(map[string]any)["message"] != `model "m" queue full; retry` || failed[0]["error"].(map[string]any)["type"] != "rate_limit_error" {
 		t.Errorf("failed job: %v, want one error event carrying the reason and type", failed)
 	}
-	if f := decode(jobTerminalEvents(job{ID: "j", State: jobFailed, Error: "boom"}, 1, "")); f[0]["error"].(map[string]any)["type"] != "api_error" {
+	if f := decode(jobTerminalEvents(jobs.Job{ID: "j", State: jobs.Failed, Error: "boom"}, 1, "")); f[0]["error"].(map[string]any)["type"] != "api_error" {
 		t.Errorf("failed job without a type: %v, want api_error", f)
 	}
-	cancelled := decode(jobTerminalEvents(job{ID: "j", Model: "m", State: jobCancelled, Error: "cancelled before a turn was granted"}, 1, ""))
+	cancelled := decode(jobTerminalEvents(jobs.Job{ID: "j", Model: "m", State: jobs.Cancelled, Error: "cancelled before a turn was granted"}, 1, ""))
 	if len(cancelled) != 1 || finishOf(cancelled[0]) != "cancelled" {
 		t.Errorf("cancelled-before-running job: %v, want one finish_reason=cancelled chunk", cancelled)
 	}
@@ -181,7 +182,7 @@ func TestJobs_realModelEventsQueueAndRefusal(t *testing.T) {
 
 	_, holder, _ := post(long)
 	deadline := time.Now().Add(20 * time.Second)
-	for get(holder["id"].(string))["status"] != string(jobRunning) {
+	for get(holder["id"].(string))["status"] != string(jobs.Running) {
 		if time.Now().After(deadline) {
 			t.Fatal("holder never started running")
 		}
@@ -208,7 +209,7 @@ func TestJobs_realModelEventsQueueAndRefusal(t *testing.T) {
 	}
 
 	// let both finish, then re-attach to the short one and read its whole stream
-	for get(wid)["status"] != string(jobDone) {
+	for get(wid)["status"] != string(jobs.Done) {
 		if time.Now().After(deadline.Add(60 * time.Second)) {
 			t.Fatalf("waiting job never finished: %v", get(wid))
 		}

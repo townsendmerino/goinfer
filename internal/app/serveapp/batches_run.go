@@ -9,7 +9,7 @@ import (
 
 // setResult records line i's outcome under the batch's own lock. Safe to call concurrently from every line's goroutine:
 // each writes a disjoint index, so only Status and the file-id fields (untouched here) actually need the lock; it is
-// taken anyway, as jobStore's mu is, rather than reasoning that a slice-index write never needs it.
+// taken anyway, as jobs.Store's mu is, rather than reasoning that a slice-index write never needs it.
 func setResult(batch *batchRecord, i int, r batchLineResult) {
 	batch.mu.Lock()
 	batch.Results[i] = r
@@ -96,19 +96,19 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 
 	jobID := "batch_req_" + reqID()
 	gr.id = jobID
-	s.jobs.createPending(jobID, lm.name, gr.promptIDs)
+	s.jobs.CreatePending(jobID, lm.name, gr.promptIDs)
 	setJobID(batch, i, jobID)
 
 	// Stored before tryEnter, same ordering as runJob — POST .../cancel must reach a still-queued
 	// line, not only a running one.
 	bgCtx, bgCancel := context.WithCancel(context.Background())
-	s.jobs.setCancel(jobID, bgCancel)
+	s.jobs.SetCancel(jobID, bgCancel)
 	defer bgCancel()
 
 	ok, haltReason := lm.tryEnter(bgCtx, admissionRecord{promptIDs: gr.promptIDs, id: jobID, clock: gr.clock}, s.haltState)
 	if !ok {
 		why := notAdmitted(bgCtx, haltReason, lm) // a full queue is a failure, not a cancellation
-		s.jobs.finish(s.jobs.get(jobID), why.state, nil, why.reason, nil)
+		s.jobs.Finish(s.jobs.Get(jobID), why.state, nil, why.reason, nil)
 		setResult(batch, i, lineError(customID, why.status, why.errType, why.reason))
 		return
 	}
@@ -140,7 +140,7 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 		}},
 		"usage": newUsage(len(gr.promptIDs), nComp, prefillReused),
 	}
-	setResult(batch, i, batchLineResult{CustomID: customID, StatusCode: 200, Body: gr.clock.addTurn(body)})
+	setResult(batch, i, batchLineResult{CustomID: customID, StatusCode: 200, Body: gr.clock.AddTurn(body)})
 }
 
 // runBatchMessageLine is runBatchChatLine's Anthropic twin — one line of a Message Batch,
@@ -219,17 +219,17 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 
 	jobID := "batch_req_" + reqID()
 	gr.id = jobID
-	s.jobs.createPending(jobID, lm.name, gr.promptIDs)
+	s.jobs.CreatePending(jobID, lm.name, gr.promptIDs)
 	setJobID(batch, i, jobID)
 
 	bgCtx, bgCancel := context.WithCancel(context.Background())
-	s.jobs.setCancel(jobID, bgCancel)
+	s.jobs.SetCancel(jobID, bgCancel)
 	defer bgCancel()
 
 	ok, haltReason := lm.tryEnter(bgCtx, admissionRecord{promptIDs: gr.promptIDs, id: jobID, clock: gr.clock}, s.haltState)
 	if !ok {
 		why := notAdmitted(bgCtx, haltReason, lm) // a full queue is a failure, not a cancellation
-		s.jobs.finish(s.jobs.get(jobID), why.state, nil, why.reason, nil)
+		s.jobs.Finish(s.jobs.Get(jobID), why.state, nil, why.reason, nil)
 		setResult(batch, i, lineError(customID, why.status, why.errType, why.reason))
 		return
 	}
@@ -263,5 +263,5 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 		"stop_sequence": seq,
 		"usage":         anthropicUsage(len(gr.promptIDs), reused.Tokens, nComp),
 	}
-	setResult(batch, i, batchLineResult{CustomID: customID, StatusCode: 200, Body: gr.clock.addTurn(body)})
+	setResult(batch, i, batchLineResult{CustomID: customID, StatusCode: 200, Body: gr.clock.AddTurn(body)})
 }

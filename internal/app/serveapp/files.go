@@ -6,7 +6,7 @@ import (
 )
 
 // storedFile is OpenAI's Files API object: a batch's input JSONL, or an assembled output or error JSONL, held in
-// memory keyed by id. Write-once: nothing mutates its fields after put() returns it, so unlike job (job.go), get()
+// memory keyed by id. Write-once: nothing mutates its fields after put() returns it, so unlike jobs.Job (jobs/job.go), get()
 // hands back the live pointer directly, with no snapshot copy and no lock needed to read it.
 type storedFile struct {
 	ID        string
@@ -18,8 +18,8 @@ type storedFile struct {
 
 // fileStore is a bounded, in-memory, process-wide registry. Two bounds hold, whichever comes first: at most cap files, and at most maxBytes of
 // their contents (either 0 for no such bound). The oldest file goes first, and the files of the newest put are always kept, even over either bound,
-// so a finished batch's results, its output and error files stored by one putAll, are never dropped as they are stored. Deliberately without jobStore's "never evict a live one" protection
-// (jobStore.evictLocked): nothing polls a file the way a client polls a job's state, so there is no in-flight condition eviction could corrupt, and
+// so a finished batch's results, its output and error files stored by one putAll, are never dropped as they are stored. Deliberately without jobs.Store's "never evict a live one" protection
+// (jobs.Store.evictLocked): nothing polls a file the way a client polls a job's state, so there is no in-flight condition eviction could corrupt, and
 // a reader holding a storedFile keeps its bytes until it is done.
 type fileStore struct {
 	mu       sync.Mutex

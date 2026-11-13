@@ -6,8 +6,24 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/engine"
+	"github.com/townsendmerino/goinfer/engine/enginetest"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
+
+// scriptedEngine is lm's scripted seam as its engine: Start streams lm.scripted (read at each call, so a test may set it
+// after building the model) and reports the prompt and KV scope to lm.onScripted and lm.onScriptedScope.
+type scriptedEngine struct{ lm *loadedModel }
+
+func (e scriptedEngine) Start(ctx context.Context, req engine.Request) *engine.Stream {
+	return enginetest.Scripted{IDs: e.lm.scripted, OnStart: func(req engine.Request) {
+		if e.lm.onScripted != nil {
+			e.lm.onScripted(req.PromptIDs)
+		}
+		if e.lm.onScriptedScope != nil {
+			e.lm.onScriptedScope(req.Scope)
+		}
+	}}.Start(ctx, req)
+}
 
 // nilReportEngine streams ids on a stream with no report function at all, which the engine contract allows (a Stream's
 // Report is then nil).

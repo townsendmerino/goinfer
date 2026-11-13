@@ -1,6 +1,7 @@
 package serveapp
 
 import (
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"net/http"
 	"time"
 
@@ -89,17 +90,17 @@ func (s *server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 
 	id := "job_" + reqID()
 	gr.id = id
-	s.jobs.createPending(id, lm.name, gr.promptIDs)
+	s.jobs.CreatePending(id, lm.name, gr.promptIDs)
 	go runJob(s, lm, release, gr, admissionRecord{promptIDs: gr.promptIDs, clock: gr.clock}, time.Now().Unix())
 
-	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "status": string(jobPending)})
+	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "status": string(jobs.Pending)})
 }
 
 // handleGetJob is GET /v1/jobs/{id}: state and result, a plain JSON projection of a job snapshot. It uses snapshot(),
 // not get(): this goroutine is a concurrent reader against whichever goroutine (runJob, or a synchronous handler) is
-// still mutating the job via markRunning/finish (see jobStore.snapshot).
+// still mutating the job via markRunning/Finish (see jobs.Store.Snapshot).
 func (s *server) handleGetJob(w http.ResponseWriter, r *http.Request) {
-	j, ok := s.jobs.snapshot(r.PathValue("id"))
+	j, ok := s.jobs.Snapshot(r.PathValue("id"))
 	if !ok {
 		writeErr(w, http.StatusNotFound, "job not found")
 		return
@@ -125,12 +126,12 @@ func (s *server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	if j.Error != "" {
 		out["error"] = j.Error
 	}
-	if j.result != nil {
-		out["result"] = j.result
+	if j.Result != nil {
+		out["result"] = j.Result
 	}
 	// A waiting job's place in line: its own request's state, the only queue information the page may see
 	// (docs/tasks/task-web-ui-2026-09.md). Absent once it runs, and briefly before it joins the line.
-	if j.State == jobPending {
+	if j.State == jobs.Pending {
 		if lm := s.modelByName(j.Model); lm != nil {
 			if place, waiting, running, ok := lm.turns.position(j.ID); ok {
 				out["queue"] = map[string]any{"position": place, "waiting": waiting, "running": running}
@@ -146,21 +147,21 @@ func (s *server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 // way.
 func (s *server) handleCancelJob(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	found := s.jobs.cancel(id)
+	found := s.jobs.Cancel(id)
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "cancelled": found})
 }
 
 // handleJobEvents is GET /v1/jobs/{id}/events — replay everything already emitted, then continue
 // live until the job reaches a terminal state or the client disconnects. A reconnect is a NEW
-// call to this handler (a new snapshot(0)), not a resumed one — see jobeventlog.go's own doc
+// call to this handler (a new Snapshot(0)), not a resumed one — see jobs/jobeventlog.go's own doc
 // comment for why that needs no per-reader bookkeeping.
 func (s *server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if s.jobs.get(id) == nil {
+	if s.jobs.Get(id) == nil {
 		writeErr(w, http.StatusNotFound, "job not found")
 		return
 	}
-	log := s.jobs.eventLog(id)
+	log := s.jobs.EventLog(id)
 	if log == nil {
 		// A job restored from the journal on restart (or otherwise never attach()'d) has no live
 		// output to replay — its own GET /v1/jobs/{id} still answers state+result.
@@ -173,7 +174,7 @@ func (s *server) handleJobEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	pos := 0
 	for {
-		events, wait, done := log.snapshot(pos)
+		events, wait, done := log.Snapshot(pos)
 		for _, e := range events {
 			ss.frame("data: %s\n\n", e)
 		}

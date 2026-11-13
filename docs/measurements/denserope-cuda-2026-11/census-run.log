@@ -1,0 +1,27 @@
+census-721 start 2026-11-06 16:34:25 PST, expected finish 17:00 to 17:15 PST, hard timeout 60m (17:35); TMPDIR=/home/francis/goinfer-bench/tmp-census2
+=== RUN   TestDecisionCensus
+census: D1: 8435 groups in 1.0s
+census: D2: 3948 groups in 7.6s
+census: loads: 1 groups in 0.3s
+census: D3: 11760 groups in 0.9s
+census: D4: 2310 groups in 0.3s
+census: D5: 2730 groups in 0.9s
+decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)
+census: D6: 2 groups in 0.0s
+census: D7: 451 groups in 0.0s
+census: D1: 8435 groups in 0.9s
+census: D2: 3948 groups in 7.5s
+census: loads: 1 groups in 0.1s
+census: D3: 11760 groups in 1.0s
+census: D4: 2310 groups in 0.3s
+census: D5: 2730 groups in 1.0s
+decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)
+census: D6: 2 groups in 0.0s
+census: D7: 451 groups in 0.0s
+    mm1_census_test.go:323: host class "amd64 f32=4.000000 int8=1.015625 int4=0.562500 int4mix=0.562500 int8int8=1.015625 q4k=0.562500 bf16=2.000000 f16=2.000000"; 29637 groups; census e6638db40687c5c8eeb969b1912367999884abcc586d5d05867cc79415c014e8
+    mm1_census_test.go:331: wrote ../testdata/mm1_census.json.gz for host class "amd64 f32=4.000000 int8=1.015625 int4=0.562500 int4mix=0.562500 int8int8=1.015625 q4k=0.562500 bf16=2.000000 f16=2.000000"
+--- PASS: TestDecisionCensus (22.62s)
+=== RUN   TestDecisionCensus_secondProcess
+--- PASS: TestDecisionCensus_secondProcess (11.33s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	33.992s

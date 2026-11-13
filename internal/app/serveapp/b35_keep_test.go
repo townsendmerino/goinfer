@@ -103,6 +103,7 @@ func keepServer(t *testing.T, reply string, recurrent bool) (*httptest.Server, *
 	}
 	s := &server{}
 	lm := &loadedModel{tk: tk, name: "m", scripted: append([]int{}, ids...), scriptedRecurrent: recurrent}
+	lm.fakeEngine = scriptedEngine{lm}
 	lm.tmpl = s.cfg.tuneTemplate(qwen35Template(t))
 	var prompts [][]int
 	var scopes []kvScope

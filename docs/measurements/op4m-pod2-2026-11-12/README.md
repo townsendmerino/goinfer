@@ -1,5 +1,7 @@
 # OP4m-pod2: readings (2026-11-12, mac-metal)
 
+<!-- citations-at: b5cceb8e5 -->
+
 These are the readings for "OP4m-pod2: registration" in `docs/tasks/task-forward-and-memory-2026-11.md`, of the Metal decode FFN and
 own-block walk that went to main in 90e4d44f8. All were taken on the MacBook (M1 Pro, 16 GB, arm64) at 4baa8f78c (main plus the
 test-comment and counter fixes in this PR), through the shared or exclusive timing lock, from a worktree. Raw: the `.log` files here.

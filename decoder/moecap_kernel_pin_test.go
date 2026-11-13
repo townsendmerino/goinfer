@@ -10,13 +10,13 @@ import (
 
 // TestResidentMoECap_pinsKernelConstant gates M-17: the feature-matrix MoE caps in residentBackendMoECap MUST equal
 // the router kernel's actual fixed-array bounds, or the hardware-matrix generator declines archs BuildResident admits
-// (or vice versa). It extracts each constant from the kernel source (e.g. cuda/moe.cu's MOE_MAX_G) and pins the cap
+// (or vice versa). It extracts each constant from the kernel source (e.g. backend/cuda/moe.cu's MOE_MAX_G) and pins the cap
 // to it; a kernel bump that forgets the map fails here.
 func TestResidentMoECap_pinsKernelConstant(t *testing.T) {
 	grep := func(path, pat string) int {
 		b, err := os.ReadFile(path)
 		if err != nil {
-			t.Skipf("kernel source %s unavailable: %v", path, err)
+			t.Fatalf("kernel source %s unavailable: %v", path, err)
 		}
 		m := regexp.MustCompile(pat).FindSubmatch(b)
 		if m == nil {
@@ -26,31 +26,31 @@ func TestResidentMoECap_pinsKernelConstant(t *testing.T) {
 		return n
 	}
 	// cuda: #define MOE_MAX_E 256 / MOE_MAX_G 64
-	cudaE := grep("../cuda/moe.cu", `#define MOE_MAX_E (\d+)`)
-	cudaG := grep("../cuda/moe.cu", `#define MOE_MAX_G (\d+)`)
+	cudaE := grep("../backend/cuda/moe.cu", `#define MOE_MAX_E (\d+)`)
+	cudaG := grep("../backend/cuda/moe.cu", `#define MOE_MAX_G (\d+)`)
 	if got := residentBackendMoECap["cuda"]; got.experts != cudaE || got.groups != cudaG {
 		t.Errorf("cuda cap %+v != kernel (experts %d, groups %d) — one-source-of-truth broken (M-17)", got, cudaE, cudaG)
 	}
 	// webgpu: array<f32, 256> score / array<f32, 32> gscore
-	wE := grep("../gpu/moe.go", `var score: array<f32, (\d+)>`)
-	wG := grep("../gpu/moe.go", `var gscore: array<f32, (\d+)>`)
+	wE := grep("../backend/webgpu/internal/kernels/moe.go", `var score: array<f32, (\d+)>`)
+	wG := grep("../backend/webgpu/internal/kernels/moe.go", `var gscore: array<f32, (\d+)>`)
 	if got := residentBackendMoECap["webgpu"]; got.experts != wE || got.groups != wG {
 		t.Errorf("webgpu cap %+v != kernel (experts %d, groups %d) (M-17)", got, wE, wG)
 	}
 }
 
 // M-31: the pin above reads the KERNEL sources and features_test.go asserts ResidentEligible, and neither reads the
-// file that makes the runtime decision. This one asserts the RUNTIME decline site (gpu/residency.go) does not restate
+// file that makes the runtime decision. This one asserts the RUNTIME decline site (backend/webgpu/residency.go) does not restate
 // a literal cap: the numbers must come from ResidentBackendMoECap, because a literal there is the drift the map
 // exists to prevent and is invisible to a test that only greps the kernel.
 func TestResidentMoECap_runtimeDeclineReadsTheDeclaration(t *testing.T) {
-	b, err := os.ReadFile("../gpu/residency.go")
+	b, err := os.ReadFile("../backend/webgpu/residency.go")
 	if err != nil {
-		t.Skipf("gpu/residency.go unavailable: %v", err)
+		t.Fatalf("backend/webgpu/residency.go unavailable: %v", err)
 	}
 	src := string(b)
 	if !regexp.MustCompile(`ResidentBackendMoECap\(`).MatchString(src) {
-		t.Error("gpu/residency.go does not call decoder.ResidentBackendMoECap: its MoE decline " +
+		t.Error("backend/webgpu/residency.go does not call decoder.ResidentBackendMoECap: its MoE decline " +
 			"restates the cap instead of reading it, which is how residency.go and the feature " +
 			"map disagreed about 256 vs 512 (M-31)")
 	}
@@ -62,7 +62,7 @@ func TestResidentMoECap_runtimeDeclineReadsTheDeclaration(t *testing.T) {
 			continue
 		}
 		if lit.MatchString(ln) {
-			t.Errorf("gpu/residency.go:%d compares the expert/group count against a LITERAL: %s\n"+
+			t.Errorf("backend/webgpu/residency.go:%d compares the expert/group count against a LITERAL: %s\n"+
 				"the cap belongs to residentBackendMoECap, which the kernel pin above keeps "+
 				"honest; a literal here is invisible to both (M-31)", i+1, strings.TrimSpace(ln))
 		}
