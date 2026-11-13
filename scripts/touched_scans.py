@@ -94,7 +94,7 @@ SCANS = [
     Scan("decoder", "TestTranscode_writesViaTempThenRenames", F("decoder/sidecar.go")),
     Scan("decoder", "TestTranscodeDir_writesViaTempThenRenames", F("decoder/sidecar.go")),
     Scan("decoder", "TestGGUFConfig_everyArchitectureReadsMaxPositions", F("decoder/gguf.go")),
-    Scan("decoder", "TestStreamableFamilyClosures_onlyReadPerLayerTensors", F("decoder/gguf.go")),
+    Scan("decoder", "TestStreamableFamilyClosures_onlyReadPerLayerTensors", F("decoder/gguf.go", "decoder/gguf_build.go")),
     Scan("decoder", "TestEmbedInt4_noLoaderPinsTheHeadItself", NT("decoder")),
     Scan("decoder", "TestProgram_noFamilyLoopAndEveryFamilyWalks", NT("decoder")),
     Scan("decoder", "TestFP8_shapeCheckDistinguishesTranspose", F("decoder/fp8.go")),
