@@ -495,3 +495,123 @@ func TestP1r_nemotronRangeSurvey(t *testing.T) {
 	fmt.Fprintf(os.Stderr, "[p1r-survey] %d attention layers, %d prompts x %d tokens: worst max|%s| %.2f at layer %d, limit %.0f => %s\n",
 		attn, len(files), K, wkind, worst, wl, limit, verdict)
 }
+
+// TestFlint_rangeSurvey is G5's range survey for Flint (docs/measurements/kv4-cuda-2026-10-21.md §2, G5): the real Flint checkpoint on CUDA at an f32 cache
+// (routed experts paged), each of the ten held-out set-B gate prompts prefilled at 3,900 tokens, and every K/V-keeping layer's max |K| and max |V| read back;
+// the worst must be under 65504/2, or an f16 cache could overflow it.
+func TestFlint_rangeSurvey(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads the real Flint checkpoint)")
+	}
+	gguf := modelPath("Flint-Q4_K_M.gguf")
+	load := modelPath("Flint-Q4_K_M.int4.e4h.cuda.v17.giw")
+	for _, p := range []string{gguf, load} {
+		if _, err := os.Stat(p); err != nil {
+			t.Skipf("no checkpoint at %s: %v", p, err)
+		}
+	}
+	const K, limit = 3900, 65504.0 / 2
+	m, err := decoder.Load(load, decoder.Options{Backend: "cuda", Quant: "int4", KVPrecision: "f32", MoECacheExperts: true, ResidentContext: K + 128, ResidentKVSlots: 1})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer m.Close()
+	rf, ok := m.ResidentForwardForTest().(*cudaResident)
+	if !ok || rf == nil {
+		t.Fatalf("not CUDA-resident: %s", m.ResidentDecline())
+	}
+	tk, err := tokenizer.LoadGGUF(gguf)
+	if err != nil {
+		t.Fatalf("tokenizer: %v", err)
+	}
+	maxK, maxV := make([]float64, len(rf.layers)), make([]float64, len(rf.layers))
+	attn := 0
+	for l := range rf.layers {
+		if !rf.layers[l].noKV() && !rf.layers[l].kvShared {
+			attn++
+		}
+	}
+	if attn == 0 {
+		t.Fatal("no layer keeps K/V: the survey would be vacuous")
+	}
+	files := decoder.PrefillGatePromptSetFor("b")
+	if len(files) == 0 {
+		t.Fatal("no set-B prompts: the survey would be vacuous")
+	}
+	ctx := context.Background()
+	nans := 0
+	for pi, f := range files {
+		rf.Reset()
+		ids := decoder.PrefillGateProseIDsForTest(t, tk, f, K)
+		embs := make([][]float32, K)
+		for i, id := range ids[:K] {
+			embs[i] = m.EmbedResidentForTest(id)
+		}
+		if _, err := rf.PrefillLast(ctx, embs, 0); errors.Is(err, errPrefillDeclined) {
+			for i, e := range embs {
+				if _, err := rf.Forward(e, i); err != nil {
+					t.Fatalf("prompt %d position %d: %v", pi, i, err)
+				}
+			}
+		} else if err != nil {
+			t.Fatalf("prefill prompt %d: %v", pi, err)
+		}
+		for l := range rf.layers {
+			if rf.layers[l].noKV() || rf.layers[l].kvShared {
+				continue
+			}
+			var kb, vb []float32
+			if err := rf.do(func() error {
+				if e := rf.stream.Sync(); e != nil {
+					return e
+				}
+				var e error
+				kb, vb, e = rf.kvRowsForTest(rf.kvSlot, l, 0, K)
+				return e
+			}); err != nil {
+				t.Fatalf("read layer %d: %v", l, err)
+			}
+			for _, v := range kb {
+				if a := math.Abs(float64(v)); !math.IsNaN(a) {
+					maxK[l] = max(maxK[l], a)
+				} else {
+					nans++
+				}
+			}
+			for _, v := range vb {
+				if a := math.Abs(float64(v)); !math.IsNaN(a) {
+					maxV[l] = max(maxV[l], a)
+				} else {
+					nans++
+				}
+			}
+		}
+		fmt.Fprintf(os.Stderr, "[flint-survey] prompt %d/%d done\n", pi+1, len(files))
+	}
+	worst, wl, wkind := 0.0, -1, ""
+	for l := range rf.layers {
+		if rf.layers[l].noKV() || rf.layers[l].kvShared {
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "[flint-survey] layer %d: max|K| %.2f, max|V| %.2f\n", l, maxK[l], maxV[l])
+		if maxK[l] > worst {
+			worst, wl, wkind = maxK[l], l, "K"
+		}
+		if maxV[l] > worst {
+			worst, wl, wkind = maxV[l], l, "V"
+		}
+	}
+	if nans > 0 {
+		t.Errorf("%d K/V elements read back NaN: an f32 cache holding NaN cannot be surveyed", nans)
+	}
+	if !(worst > 0) {
+		t.Fatalf("the worst max|K|/|V| is %v: the survey read nothing", worst)
+	}
+	verdict := "PASS"
+	if nans > 0 || worst >= limit {
+		verdict = "FAIL"
+		t.Errorf("layer %d's max|%s| is %.1f, at or over %.0f: an f16 cache could overflow", wl, wkind, worst, limit)
+	}
+	fmt.Fprintf(os.Stderr, "[flint-survey] %d K/V layers, %d prompts x %d tokens: worst max|%s| %.2f at layer %d, limit %.0f => %s\n",
+		attn, len(files), K, wkind, worst, wl, limit, verdict)
+}
