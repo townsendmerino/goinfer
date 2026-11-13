@@ -793,7 +793,7 @@ Moved from `backend/cuda/backend.go` (the comment above `cudaKVSlotsRequest`) on
 
 ```text
 cudaKVSlotsRequest is how many resident KV slots a build asks checkKVFits for (MC1,
-docs/tasks/task-concurrency-2026-09.md): the model's request on this backend (decoder.Model.ResidentKVSlotsRequestFor: a
+docs/tasks/parked/task-concurrency-2026-09.md): the model's request on this backend (decoder.Model.ResidentKVSlotsRequestFor: a
 recurrent family gets more than one only when the caller asked, since each slot holds its own state), and 1 in one case the
 decoder cannot see:
   - expert streaming (MoECacheExperts): that cache takes whatever VRAM is left after everything pinned, so every
@@ -1529,7 +1529,7 @@ The kernels are bit-identical for any rows-per-warp, so a bad pick costs speed, 
 Moved from `backend/cuda/batchstep.go` (the comment above the ResidentBatchStepper assertion) on 2026-10-09.
 
 ```text
-MC3 on CUDA (docs/tasks/task-concurrency-2026-09.md, "MC3 on CUDA"): one decode token for each of several sequences,
+MC3 on CUDA (docs/tasks/parked/task-concurrency-2026-09.md, "MC3 on CUDA"): one decode token for each of several sequences,
 each on its own resident KV slot at its own position, in one step. The S0 found a batched pass through the exact
 kernels bit-identical to decode per row, and 1.75x (1.5B) / 2.04x (7B) cheaper than 4 decodes
 (docs/measurements/concurrency-mc3-cuda-s0-2026-09-27.md).
@@ -2014,7 +2014,7 @@ Moved from `backend/cuda/resident.go` (the comment above `allocSlots.probe`) on 
 
 ```text
 A10's per-allocation recording (GOINFER_A10_PROBE) was retired 2026-09-24, phase 6 of
-docs/tasks/task-env-config-2026-09.md: its question — capacity or servability — is answered in
+docs/completed/task-env-config-2026-09.md: its question — capacity or servability — is answered in
 the account below.
 ```
 
@@ -2211,7 +2211,7 @@ Moved from `backend/cuda/resident.go` (the comment above `ctxForSlots`) on 2026-
 
 ```text
 ctxForSlots is resolveCtxCapFit's answer when MC1's resident KV slots are requested (owner decision 2026-09-27,
-docs/tasks/task-concurrency-2026-09.md MC1 on CUDA): the largest context in [floor, oneSlot] at which Plan fits
+docs/tasks/parked/task-concurrency-2026-09.md MC1 on CUDA): the largest context in [floor, oneSlot] at which Plan fits
 every requested slot — the build's own KV plus slots-1 more copies of it, priced as ExtraBytes — so an unpinned
 load gives up context before conversations. Measured before the decision on the 8 GB card: the 7B at the
 one-slot choice (8192) fit 2 of 4 slots and 4 round-robin clients thrashed (1.006x); at 4096 all 4 fit (1.33x).
@@ -2247,7 +2247,7 @@ qwen2.5-coder-0.5b (24 layers × 128 kvDim × 2 × 4 B) and 56.0 KB/position for
 Moved from `backend/cuda/resident.go` (the comment above `kvSlotsFit`) on 2026-10-09.
 
 ```text
-kvSlotsFit is MC1's slot arithmetic on CUDA (docs/tasks/task-concurrency-2026-09.md): the largest n in [1, want]
+kvSlotsFit is MC1's slot arithmetic on CUDA (docs/tasks/parked/task-concurrency-2026-09.md): the largest n in [1, want]
 whose n resident KV slots, perSlot bytes each, fit free VRAM beside reserve (a companion attach plus
 ctxCapMarginBytes). Never below 1: the first slot is checkKVFits' own and is refused there, not clamped here.
 

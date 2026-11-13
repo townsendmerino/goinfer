@@ -1463,7 +1463,7 @@ task doc ("C-P02: built, pending its grade").
 3. metal/model.go:3220-3225 `attnFACoreCount = 14` against the 16-core M1 Pro target (area B owns the effect; the constant is a runtime-visible stale value).
 4. N-20's premise (an f32 heap copy of the scales exists) no longer holds under v15 (C-P01).
 5. `ForwardArgmax` carries two contradictory comments: "NOT actually production's greedy decode path ... exercised only by tests/gates" (metal/model.go:2664-2669) and "a genuine production entry point (the fast-greedy path)" (:2051-2053). The first is right (no `ResidentGreedy`, decoder/model.go:1947).
-6. docs/completed/task-metal-runtime-selftest.md specifies a runtime self-test that is not implemented. (2026-10-01: folded into docs/tasks/task-hardware-coverage-2026-10.md §H2; the original is archived in docs/completed/.)
+6. docs/completed/task-metal-runtime-selftest.md specifies a runtime self-test that is not implemented. (2026-10-01: folded into docs/completed/task-hardware-coverage-2026-10.md §H2; the original is archived in docs/completed/.)
 
 #### C-N01 [N] Fixed-size binding scratch
 
@@ -2563,7 +2563,7 @@ task-never-swap-2026-09.md:281-283. `attnFACoreCount = 14` (metal/model.go:3220)
 7. Whether Metal's precise-math mode defaults `fp contract` to off (E-C02).
 8. `simd_sum` tree on M3 and later: `batchSimdSumTreeOK` guards it at build, but only an M3+ run shows it holding.
 9. Stability of `calibrateRows` (metal/batch.go:446-505) run to run; its choice at B=2/3 on the 7B decides how much E-P02 can buy.
-10. `docs/tasks/task-concurrency-2026-09.md` and its log directories are cited by many records and absent from the snapshot.
+10. `docs/tasks/parked/task-concurrency-2026-09.md` and its log directories are cited by many records and absent from the snapshot.
 
 
 ## 9. Area F — Correctness of recently changed code, gates and tests, stale claims
@@ -3097,6 +3097,6 @@ them. Everything here needs the Mac or a file the audited snapshot did not carry
 | Prompt-length distribution of real first turns | A-P02 | Not recorded anywhere; log it |
 | MLX's per-chip commit bucket and `sdpa_vector` 2-pass switch for an M1 Pro; whether mlx-lm quantises `lm_head`; the same-session MLX ratio | §0, B-N01 | T1.14 (the first two affect only the MLX comparison, never a goinfer change) |
 | GPU watchdog behaviour for a whole-prompt single command buffer | C-N02 | A long-prompt run |
-| Files absent from the snapshot that the reports cite: `docs/completed/metal-verdict.md`, `scripts/autoresearch_rmsnorm_results.tsv`, `docs/tasks/task-concurrency-2026-09.md` and its log directories, `docs/task-mxfp4-gptoss.md`, the S0 logs | B-P09, M-09 loose ends, E-P03, D-B03 | Read them in the working repo before acting on those items |
+| Files absent from the snapshot that the reports cite: `docs/completed/metal-verdict.md`, `scripts/autoresearch_rmsnorm_results.tsv`, `docs/tasks/parked/task-concurrency-2026-09.md` and its log directories, `docs/task-mxfp4-gptoss.md`, the S0 logs | B-P09, M-09 loose ends, E-P03, D-B03 | Read them in the working repo before acting on those items |
 
 <!-- citation-lint: allow-path visionmetal/threadgroup_budget_test.go aikit's own separate Go module (gpu/visionmetal), not pinned by goinfer, so no checked-out or module-cache root can verify it here; same reason as visionmetal/encoder.go in audit-metal-2026-09-12.md. -->

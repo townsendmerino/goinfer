@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """te1_analyze.py — grades TE1's night run (run-te1-aa-mutation.sh) by the rule pre-registered in
-docs/tasks/task-test-efficiency-2026-09.md, TE1 "Pre-registration". Written, and committed, before the run exists.
+docs/completed/task-test-efficiency-2026-09.md, TE1 "Pre-registration". Written, and committed, before the run exists.
 
   usage: te1_analyze.py [DIR]    (default: te1-2026-09-28 beside this script)
 

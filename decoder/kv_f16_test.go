@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// Gate F1 of docs/tasks/task-cpu-kv-f16-2026-10.md (registered before any code): an f16 CPU cache gives the logits, bit for
+// Gate F1 of docs/completed/task-cpu-kv-f16-2026-10.md (registered before any code): an f16 CPU cache gives the logits, bit for
 // bit, of the f32 path with every stored K and V row rounded to f16 by hand (kvRoundF16ForTest), on every path that stores
 // or reads the cache. Zero differing bits in every cell; no tolerance.
 

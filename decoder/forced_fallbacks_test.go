@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// Hardware-coverage H1.3 (docs/tasks/task-hardware-coverage-2026-10.md): CI builds this package with aikit's aikit_noavx512 / aikit_noavx2 / aikit_nopopcnt / aikit_nodotprod tags, which make the
+// Hardware-coverage H1.3 (docs/completed/task-hardware-coverage-2026-10.md): CI builds this package with aikit's aikit_noavx512 / aikit_noavx2 / aikit_nopopcnt / aikit_nodotprod tags, which make the
 // dispatchers take the narrower kernels on whatever CPU the runner has. forcedFallbacks reports which the test binary was built with (nil normally).
 func forcedFallbacks() []string { return linalg.ForcedFallbacks() }
 
@@ -37,7 +37,7 @@ func TestForcedFallbacks_expected(t *testing.T) {
 // Forced-fallback floors. Under a forced narrower kernel the numerics are a different realization of the same
 // arithmetic, so the goldens that pin ONE path's token sequence or sample values (recorded on the default path; the
 // int4 goldens are arm64-baked) cannot be compared exactly. These replace them under the tags with a closeness bound
-// (docs/tasks/task-hardware-coverage-2026-10.md, H1.3), chosen between the measured healthy value and what a real
+// (docs/completed/task-hardware-coverage-2026-10.md, H1.3), chosen between the measured healthy value and what a real
 // defect does, each shown red by a mutation.
 const (
 	// forcedInt4CosFloor: centered cosine of an int4 fixture's logit samples against its recorded golden. The bar sits

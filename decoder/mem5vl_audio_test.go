@@ -24,7 +24,7 @@ func v4Case(m *Model, n, a int) (ids []int, feats []float32) {
 	return ids, feats
 }
 
-// TestMEM5VL_audioChunked is V4-G1 (docs/tasks/task-memory-campaign-2026-10.md, "MEM5-VL (4) gates"): the audio prefill in 7- and
+// TestMEM5VL_audioChunked is V4-G1 (docs/completed/task-memory-campaign-2026-10.md, "MEM5-VL (4) gates"): the audio prefill in 7- and
 // 16-row passes against one pass; the last logits and four decode steps after are byte-equal.
 func TestMEM5VL_audioChunked(t *testing.T) {
 	ran := 0

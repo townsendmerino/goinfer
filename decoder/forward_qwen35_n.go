@@ -5,7 +5,7 @@ import (
 )
 
 // The batched Qwen3.5 forward is the batched walker over the family's program, for PromptHidden (Route B's hidden state,
-// docs/tasks/task-constrained-confidence.md), prefix sharing and the image prefill. The per-token forward reads every weight once
+// docs/tasks/parked/task-constrained-confidence.md), prefix sharing and the image prefill. The per-token forward reads every weight once
 // per token; here every projection is one M=K matmul, so a weight is read once per prompt. The DeltaNet's conv, gates, recurrence
 // and gated norm stay sequential per token (deltaNetBatch), and attention runs with f64 accumulation (gatedAttnBatch).
 //

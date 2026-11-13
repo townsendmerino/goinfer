@@ -3096,7 +3096,7 @@ func (r *resident) encodeStep(e *Encoder, st layerStep, l int, L *residLayer, x,
 	case stepAttention:
 		r.encodeAttentionResidualWith(e, l, x, uPos, uNKeys, uQTempScale, rp)
 	case stepDeltaNet:
-		r.encodeDeltaNetMixer(e, L)
+		r.encodeDeltaNetMixerOn(e, L, x, L.delta.win, L.delta.state)
 	case stepMamba:
 		r.encodeMambaMixer(e, L, x)
 	case stepMLA:

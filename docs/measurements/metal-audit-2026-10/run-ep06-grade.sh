@@ -1,5 +1,5 @@
 #!/bin/bash
-# Night job: E-P06's grade (docs/tasks/task-metal-audit-2026-10.md, "E-P06: built, pending its grade"), pre-registered
+# Night job: E-P06's grade (docs/completed/task-metal-audit-2026-10.md, "E-P06: built, pending its grade"), pre-registered
 # there on 2026-10-02 before any graded run. Served, one client, greedy, the spec record's two workloads
 # (docs/measurements/metal-spec-step-verify-2026-09-27.md): copy (scripts/bench_spec_copy.py) and W7 chat
 # (scripts/bench_w7_plain.py, --fixed-nonce). Arms rotate per round, 5 rounds on the 1.5B and 3 on the others: plain (no spec), specold (--spec ngram,
@@ -10,7 +10,7 @@
 #   (cd <worktree at REV> && cd metal && CGO_ENABLED=0 go build -o ~/goinfer-bench/metal-audit-2026-10/serve-metal-ep06<arm>-<REV> ./cmd/serve)
 # Queued with:
 #   python3 scripts/night.py add metal-audit-ep06 --est 60 --by "Claude (Mac session), Metal audit E-P06 grade" \
-#     --doc docs/tasks/task-metal-audit-2026-10.md -- bash ~/goinfer-bench/metal-audit-2026-10/run-ep06-grade.sh
+#     --doc docs/completed/task-metal-audit-2026-10.md -- bash ~/goinfer-bench/metal-audit-2026-10/run-ep06-grade.sh
 # The runner holds the timing lock. Logs and JSON: ~/goinfer-logs/metal-audit-2026-10/ep06/.
 set -u
 REV_NEW=2bbd495c

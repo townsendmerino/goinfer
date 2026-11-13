@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Night job: Phase 2, Batch A of docs/tasks/task-metal-audit-2026-10.md (T1.1, T1.2, T1.3, T1.4, T1.10's timing),
+# Night job: Phase 2, Batch A of docs/completed/task-metal-audit-2026-10.md (T1.1, T1.2, T1.3, T1.4, T1.10's timing),
 # pre-registered in that doc's "Batch A: pre-registration" table before this ran. Timed, so night-only by rule.
 #
 # Runs a test binary built at REV from the metal-audit worktree, so the tree may move before tonight:
 #   (cd ~/tmcode/goinfer-metal-audit && go test -c -o ~/goinfer-bench/metal-audit-2026-10/metal-<REV>.test ./metal/)
 # Queued with:
 #   python3 scripts/night.py add metal-audit-batch-a --est 20 --by "Claude, Metal audit Phase 2" \
-#     --doc docs/tasks/task-metal-audit-2026-10.md -- bash ~/goinfer-bench/metal-audit-2026-10/run-batch-a.sh
+#     --doc docs/completed/task-metal-audit-2026-10.md -- bash ~/goinfer-bench/metal-audit-2026-10/run-batch-a.sh
 # The runner holds the timing lock for the whole job. Logs: ~/goinfer-logs/metal-audit-2026-10/batch-a/; the RESULT
 # lines are collected in results.txt there.
 set -uo pipefail

@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// S10, LFM2.5-VL (docs/tasks/task-multimodal-support-2026-10.md, "S10, LFM2.5-VL"): the causal image entry on the tracked
+// S10, LFM2.5-VL (docs/completed/task-multimodal-support-2026-10.md, "S10, LFM2.5-VL"): the causal image entry on the tracked
 // lfm2-tiny decoder. lfm2 has no batched pass, so prefillHiddenLFM2VL runs the spliced rows one at a time through
 // the per-token walker (runLayersFromEmbed). Three properties:
 //   - with the text embeddings themselves spliced in as the "image" rows, it equals the plain per-token forward over the

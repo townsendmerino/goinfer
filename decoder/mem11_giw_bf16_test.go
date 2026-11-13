@@ -81,7 +81,7 @@ func gbIslands(m *Model) (kind string, aliased int64) {
 	return kind, aliased
 }
 
-// TestMEM11_giwBF16Islands is GB-G1, GB-G2's tier 0 and GB-G3 (docs/tasks/task-memory-campaign-2026-10.md, "MEM11-giw-bf16
+// TestMEM11_giwBF16Islands is GB-G1, GB-G2's tier 0 and GB-G3 (docs/completed/task-memory-campaign-2026-10.md, "MEM11-giw-bf16
 // gates"): lfm2-tiny's bf16 islands written as kind 9 load aliased from the mapping, bit-identical, off the heap; the committed
 // fixture's f32 islands round-trip as f32; a bundle in the f32 form (and, with GOINFER_GB_MAIN_BUNDLE, one written by main's
 // build) still loads, with its islands bf16 on the heap.

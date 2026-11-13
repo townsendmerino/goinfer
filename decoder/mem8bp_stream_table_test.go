@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// TestMEM8bp_streamedTablesAreTheWholeTableBytes is SQE-G1 (docs/tasks/task-memory-campaign-2026-10.md, MEM8(b′) gates): a
+// TestMEM8bp_streamedTablesAreTheWholeTableBytes is SQE-G1 (docs/completed/task-memory-campaign-2026-10.md, MEM8(b′) gates): a
 // streaming GGUF transcode that writes its embedding-shaped tables from their source rows (streamTablesOn) produces the same
 // .giw bytes as one that builds them whole, for every tiny GGUF, quant, embed-int4 setting and target, and with the block
 // size shrunk so a table spans many blocks (int4 at 4-row groups).

@@ -21,7 +21,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// GLM-OCR end to end on the REAL checkpoint (gate O3, docs/tasks/task-glm-ocr-2026-10.md). Goinfer at f32 (Options{}, no
+// GLM-OCR end to end on the REAL checkpoint (gate O3, docs/completed/task-glm-ocr-2026-10.md). Goinfer at f32 (Options{}, no
 // Quant) reads three PROCEDURALLY RENDERED documents (scripts/gen_glm_ocr_doc_images.py: an invoice, a ruled table, a page
 // with an equation; not real scans) through its OWN preprocessing, tower and decoder (GenerateQwenVL, the entry point serve
 // uses), and must produce the SAME 64 greedy tokens as transformers 5.12.0 f32 CPU eager (scripts/pin_glm_ocr_e2e.py,

@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// TestGemma4_26B_s10Grade is the grading half of S1.0's 26B re-check (docs/tasks/task-multimodal-support-2026-10.md),
+// TestGemma4_26B_s10Grade is the grading half of S1.0's 26B re-check (docs/completed/task-multimodal-support-2026-10.md),
 // run on nobara: the CPU 26B forward over the sequences the Mac's Metal dump (metal TestGemma4_26B_s10Dump) recorded,
 // position by position, against both Metal arms. PASS (S1.0's rule, registered before the dump ran): with the fixes in,
 // neither the mean Metal-vs-CPU logit cosine nor the argmax agreement is lower than with them dropped.

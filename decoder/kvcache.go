@@ -25,7 +25,7 @@ const (
 func (q kvQuant) widened() bool { return q != kvqF32 }
 
 // kvRoundF16ForTest rounds each K and V row to f16 and back where it reaches an f32 cache: gate F1's reference
-// (docs/tasks/task-cpu-kv-f16-2026-10.md). The planted defects F1 must see: kvF16NewRowsF32ForTest (a prefill's new ring rows
+// (docs/completed/task-cpu-kv-f16-2026-10.md). The planted defects F1 must see: kvF16NewRowsF32ForTest (a prefill's new ring rows
 // attended at f32) and kvF16RingOffsetForTest (the ring window read one slot late).
 var kvRoundF16ForTest, kvF16NewRowsF32ForTest, kvF16RingOffsetForTest bool
 

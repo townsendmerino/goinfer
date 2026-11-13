@@ -1,0 +1,13 @@
+CAPTUREMAP llama-tiny: graphs-flag off-arm=false on-arm=true | layers(on)= AB AB AB AB | on==off bits: true
+CAPTUREMAP qwen35-tiny: graphs-flag off-arm=false on-arm=true | layers(on)= AC AC AC ABC | on==off bits: true
+CAPTUREMAP qwen3next-tiny: graphs-flag off-arm=false on-arm=true | layers(on)= AC AC AC ABC AC AC | on==off bits: true
+CAPTUREMAP nemotron-tiny: graphs-flag off-arm=false on-arm=false | layers(on)= - - - - - | on==off bits: true
+CAPTUREMAP deepseek-tiny: graphs-flag off-arm=false on-arm=false | layers(on)= - - - - | on==off bits: true
+CAPTUREMAP qwen3moe-tiny: graphs-flag off-arm=false on-arm=true | layers(on)= ABC ABC ABC ABC | on==off bits: true
+CAPTUREMAP gemma4-moe-tiny: graphs-flag off-arm=false on-arm=true | layers(on)= ABC ABC | on==off bits: true
+CAPTUREMAP gemma4-emodel-tiny: graphs-flag off-arm=false on-arm=true | layers(on)= AB AB AB AB AB AB | on==off bits: true
+CAPTUREMAP gemma4-dense-twogeom-tiny: graphs-flag off-arm=false on-arm=true | layers(on)= AB AB | on==off bits: true
+CAPTUREMAP mistral-tiny-window: graphs-flag off-arm=false on-arm=true | layers(on)= AB AB AB | on==off bits: true
+CAPTUREMAP flint-tiny: graphs-flag off-arm=false on-arm=true | layers(on)= AB AB ABC ABC ABC ABC | on==off bits: true
+CAPTUREMAP cohere-tiny: graphs-flag off-arm=false on-arm=true | layers(on)= AB AB AB AB | on==off bits: true
+CAPTUREMAP gemma3-vl-tiny: graphs-flag off-arm=false on-arm=true | layers(on)= AB AB | on==off bits: true

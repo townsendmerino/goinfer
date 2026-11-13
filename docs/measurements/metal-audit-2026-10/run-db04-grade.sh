@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job: D-B04's grade (docs/tasks/task-metal-audit-2026-10.md, "D-B04: built, pending its grade"), pre-registered
+# Night job: D-B04's grade (docs/completed/task-metal-audit-2026-10.md, "D-B04: built, pending its grade"), pre-registered
 # there on 2026-10-03 before any graded run. TestDB04AB on the Qwen3.5-9B hybrid: decode with R18's rows form at the
 # DeltaNet and shared-expert GEMV sites against off, one resident, 7 reps, at depths 128 and 1024.
 #
@@ -7,7 +7,7 @@
 #   (cd ~/tmcode/goinfer && go test -c -tags goinfer_testhooks -o ~/goinfer-bench/metal-audit-2026-10/metal-tagged-<REV>.test ./metal/)
 # Queued with:
 #   python3 scripts/night.py add metal-audit-db04 --est 15 --by "Claude (Mac session), Metal audit D-B04 grade" \
-#     --doc docs/tasks/task-metal-audit-2026-10.md -- bash docs/measurements/metal-audit-2026-10/run-db04-grade.sh
+#     --doc docs/completed/task-metal-audit-2026-10.md -- bash docs/measurements/metal-audit-2026-10/run-db04-grade.sh
 # The runner holds the timing lock. Logs: ~/goinfer-logs/metal-audit-2026-10/db04/.
 set -uo pipefail
 REV=b37b8158

@@ -7,7 +7,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-// TestCUDATable_plantedGapGoesRed is OP4cu-c2's C2-3 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): CUDA's
+// TestCUDATable_plantedGapGoesRed is OP4cu-c2's C2-3 (docs/completed/task-forward-architecture-2026-10.md §4.9a): CUDA's
 // admission reads program.CUDA (c2 replaced c1's C1-2, which compared the table with the feature set it now stands in for), so a
 // copy of the table without the tanh GELU on the gated FFN form, put in place for CUDA, must decline every admitted Gemma row (a
 // gated GELU-tanh family the golden admits on CUDA) and leave a SiLU row admitted.

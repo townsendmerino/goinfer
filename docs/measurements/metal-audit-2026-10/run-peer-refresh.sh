@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job: the peer read that refreshes docs/benchmarks.md's Metal decode row (docs/tasks/task-metal-audit-2026-10.md,
+# Night job: the peer read that refreshes docs/benchmarks.md's Metal decode row (docs/completed/task-metal-audit-2026-10.md,
 # "Peer refresh: pre-registration"), registered 2026-10-04 before it runs. TE5(a): the levers shipped since the
 # post-merge read (B-P01, B-P02, D-B04, the serve chain, E-P05/E-P02/E-P08, int8) were graded new / old; the peer ratio is
 # read once, after they ship, as its own same-session interleaved run, with no old arm. One bench_peer.py sweep on Metal:
@@ -11,7 +11,7 @@
 # scripts worktree ~/goinfer-bench/metal-audit-2026-10/wt-peer-REV (bench_peer.py, prompts.json).
 # Queued with:
 #   python3 scripts/night.py add metal-audit-peer-refresh --est 50 --priority 80 --by "Claude (Mac session), peer refresh" \
-#     --doc docs/tasks/task-metal-audit-2026-10.md -- bash docs/measurements/metal-audit-2026-10/run-peer-refresh.sh
+#     --doc docs/completed/task-metal-audit-2026-10.md -- bash docs/measurements/metal-audit-2026-10/run-peer-refresh.sh
 # Priority 80 runs it after tonight's serve-chain grade and M26 prefill grade (50 each). bench_peer.py holds the timing
 # lock (inherited from the night runner) and uses the darwin instant idle gate.
 set -uo pipefail

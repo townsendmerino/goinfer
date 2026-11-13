@@ -21,7 +21,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-// D8B-G (docs/tasks/task-memory-campaign-2026-10.md, §4 MEM13, "D8b-build gates"): a q4k load's Q4_K tensors as .giw kind 8.
+// D8B-G (docs/completed/task-memory-campaign-2026-10.md, §4 MEM13, "D8b-build gates"): a q4k load's Q4_K tensors as .giw kind 8.
 
 type ggufRawTensor struct {
 	name string
