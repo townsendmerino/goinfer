@@ -1156,10 +1156,12 @@ func TestMetalDensePrice_isTheBuildsLeases(t *testing.T) {
 	}
 }
 
-// TestMixerWalk_issuesTheBlocksDispatches is OP4m-pod's P-1 and P-2 (docs/tasks/task-forward-and-memory-2026-11.md, "OP4m-pod:
-// registration"): on every census fixture and option cell whose build goes resident, eight decode tokens issue the same pipelines,
-// dispatch for dispatch, and the same logits, bit for bit, under the mixer steps' walk as under their blocks. The cells that walk a
-// mixer step are counted, so a walk nothing reaches cannot pass.
+// TestMixerWalk_issuesTheBlocksDispatches is OP4m-pod's P-1 and P-2 and OP4m-pod2's (docs/tasks/task-forward-and-memory-2026-11.md,
+// "OP4m-pod: registration", "OP4m-pod2: registration"): on every census fixture and option cell whose build goes resident, eight
+// decode tokens issue the same pipelines, dispatch for dispatch, and the same logits, bit for bit, under the walk as under the
+// blocks. mixerWalkBlocksForTest switches the mixer steps and the FFN and tail steps together, so one comparison covers both. The
+// cells that walk a mixer step and the cells that walk an FFN or tail step are counted separately, so a walk nothing reaches cannot
+// pass.
 func TestMixerWalk_issuesTheBlocksDispatches(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -1168,7 +1170,7 @@ func TestMixerWalk_issuesTheBlocksDispatches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	checked, walked := 0, 0
+	checked, walked, ffnWalked := 0, 0, 0
 	for _, f := range d.Fixtures {
 		path, err := sb2census.Path("../..", f)
 		if err != nil {
@@ -1195,6 +1197,9 @@ func TestMixerWalk_issuesTheBlocksDispatches(t *testing.T) {
 			if slices.ContainsFunc(a.r.layers, func(L residLayer) bool { return slices.ContainsFunc(L.steps, mixerWalks) }) {
 				walked++
 			}
+			if slices.ContainsFunc(a.r.layers, func(L residLayer) bool { return slices.ContainsFunc(L.steps, ffnWalks) }) {
+				ffnWalked++
+			}
 			diffs := mixerWalkDiffs(t, m, a)
 			m.Close()
 			for _, d := range diffs {
@@ -1203,9 +1208,12 @@ func TestMixerWalk_issuesTheBlocksDispatches(t *testing.T) {
 			checked++
 		}
 	}
-	t.Logf("%d resident cells checked, %d of them walk a mixer step", checked, walked)
+	t.Logf("%d resident cells checked, %d of them walk a mixer step, %d an FFN or tail step", checked, walked, ffnWalked)
 	if walked < 6 {
 		t.Errorf("only %d cells walk a mixer step: a gate the walk barely reaches covers little", walked)
+	}
+	if ffnWalked < 6 {
+		t.Errorf("only %d cells walk an FFN or tail step: a gate the walk barely reaches covers little", ffnWalked)
 	}
 }
 
