@@ -1,0 +1,39 @@
+hold start 2026-11-12 16:33:40 PST commit 4baa8f78c
+== qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw: load never settled (last load1=4.72 after 15 min): NOT RUN
+== qwen3.5-0.8b.int4.metal.v17.giw 16:49:34 load1=3.28
+[OP4m-pod P-3] qwen3.5-0.8b.int4.metal.v17.giw: cell start: 1-minute load 3.28; available 10.71 GiB against need 0.56 GiB (ok); reclaimable 4.59 GiB (recorded)
+[OP4m-pod P-3] qwen3.5-0.8b.int4.metal.v17.giw: walked steps by kind map[attention:6 DeltaNet:18]
+[OP4m-pod P-3] qwen3.5-0.8b.int4.metal.v17.giw: pair 1/6 (walk first, load 3.66): walk 128.22 tok/s, blocks 124.91 tok/s, ratio 1.0264
+[OP4m-pod P-3] qwen3.5-0.8b.int4.metal.v17.giw: pair 2/6 (blocks first, load 3.53): walk 126.33 tok/s, blocks 127.34 tok/s, ratio 0.9920
+[OP4m-pod P-3] qwen3.5-0.8b.int4.metal.v17.giw: pair 3/6 (walk first, load 3.40): walk 128.57 tok/s, blocks 126.57 tok/s, ratio 1.0158
+[OP4m-pod P-3] qwen3.5-0.8b.int4.metal.v17.giw: pair 4/6 (blocks first, load 3.40): walk 125.52 tok/s, blocks 125.55 tok/s, ratio 0.9997
+[OP4m-pod P-3] qwen3.5-0.8b.int4.metal.v17.giw: pair 5/6 (walk first, load 3.29): walk 125.90 tok/s, blocks 125.46 tok/s, ratio 1.0035
+[OP4m-pod P-3] qwen3.5-0.8b.int4.metal.v17.giw: pair 6/6 (blocks first, load 3.29): walk 126.60 tok/s, blocks 127.05 tok/s, ratio 0.9965
+[OP4m-pod P-3] qwen3.5-0.8b.int4.metal.v17.giw: median ratio 1.0016, 3 of 6 pairs under 1: PASS
+--- PASS: TestOP4mPod_decodeSpeed (22.51s)
+PASS
+== nemotron-h-4b-instruct-128k.int4.metal.v17.giw 16:49:57 load1=3.27
+[OP4m-pod P-3] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: cell start: 1-minute load 3.27; available 10.23 GiB against need 5.14 GiB (ok); reclaimable 6.67 GiB (recorded)
+[OP4m-pod P-3] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: walked steps by kind map[attention:4 Mamba-2:24]
+[OP4m-pod P-3] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: pair 1/6 (walk first, load 3.24): walk 27.75 tok/s, blocks 27.63 tok/s, ratio 1.0046
+[OP4m-pod P-3] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: pair 2/6 (blocks first, load 3.42): walk 27.74 tok/s, blocks 27.75 tok/s, ratio 0.9994
+[OP4m-pod P-3] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: pair 3/6 (walk first, load 3.42): walk 27.74 tok/s, blocks 27.73 tok/s, ratio 1.0005
+[OP4m-pod P-3] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: pair 4/6 (blocks first, load 3.34): walk 27.75 tok/s, blocks 27.74 tok/s, ratio 1.0004
+[OP4m-pod P-3] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: pair 5/6 (walk first, load 3.44): walk 27.74 tok/s, blocks 27.72 tok/s, ratio 1.0004
+[OP4m-pod P-3] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: pair 6/6 (blocks first, load 3.51): walk 27.76 tok/s, blocks 27.72 tok/s, ratio 1.0012
+[OP4m-pod P-3] nemotron-h-4b-instruct-128k.int4.metal.v17.giw: median ratio 1.0005, 1 of 6 pairs under 1: PASS
+--- PASS: TestOP4mPod_decodeSpeed (101.40s)
+PASS
+== gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.int4.metal.v17.giw 16:52:50 load1=3.20
+[OP4m-pod P-3] gemma-4-E2B_q4_0-it.int4.metal.v17.giw: cell start: 1-minute load 3.20; available 10.39 GiB against need 3.59 GiB (ok); reclaimable 5.91 GiB (recorded)
+[OP4m-pod P-3] gemma-4-E2B_q4_0-it.int4.metal.v17.giw: walked steps by kind map[attention:35]
+[OP4m-pod P-3] gemma-4-E2B_q4_0-it.int4.metal.v17.giw: pair 1/6 (walk first, load 2.63): walk 43.66 tok/s, blocks 43.63 tok/s, ratio 1.0008
+[OP4m-pod P-3] gemma-4-E2B_q4_0-it.int4.metal.v17.giw: pair 2/6 (blocks first, load 2.42): walk 43.66 tok/s, blocks 43.68 tok/s, ratio 0.9996
+[OP4m-pod P-3] gemma-4-E2B_q4_0-it.int4.metal.v17.giw: pair 3/6 (walk first, load 2.04): walk 43.74 tok/s, blocks 43.81 tok/s, ratio 0.9985
+[OP4m-pod P-3] gemma-4-E2B_q4_0-it.int4.metal.v17.giw: pair 4/6 (blocks first, load 1.73): walk 43.64 tok/s, blocks 43.72 tok/s, ratio 0.9981
+[OP4m-pod P-3] gemma-4-E2B_q4_0-it.int4.metal.v17.giw: pair 5/6 (walk first, load 1.68): walk 43.80 tok/s, blocks 43.66 tok/s, ratio 1.0031
+[OP4m-pod P-3] gemma-4-E2B_q4_0-it.int4.metal.v17.giw: pair 6/6 (blocks first, load 1.55): walk 43.45 tok/s, blocks 43.56 tok/s, ratio 0.9974
+[OP4m-pod P-3] gemma-4-E2B_q4_0-it.int4.metal.v17.giw: median ratio 0.9991, 4 of 6 pairs under 1: PASS
+--- PASS: TestOP4mPod_decodeSpeed (63.26s)
+PASS
+hold end 2026-11-12 16:53:53 PST
