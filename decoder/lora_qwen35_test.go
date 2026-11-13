@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-// TestLoRA_mergeAtLoad_qwen35MatchesPEFT is D3's gate (docs/tasks/task-constrained-confidence.md): a PEFT adapter on
+// TestLoRA_mergeAtLoad_qwen35MatchesPEFT is D3's gate (docs/tasks/parked/task-constrained-confidence.md): a PEFT adapter on
 // Qwen3.5, merged at load, must give the hidden state PEFT's own merge_and_unload() gives. The adapter targets every module
 // autotrust's JEV recipe does (the DeltaNet in_proj_qkv/in_proj_z/out_proj, the full-attention q/k/v/o_proj, and the MLP)
 // on all four layers of the tiny checkpoint, three linear-attention and one full-attention. It was written by PEFT

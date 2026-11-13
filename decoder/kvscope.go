@@ -10,7 +10,7 @@ type KVScope struct {
 	Off       bool   // no rows from another sequence: a continuation of a slot's sequence only
 	// Boundary is how many leading ids of the request's prompt are the stable system-and-tools section, the part before the first conversation turn
 	// (chat.Template.PrefixBoundary), 0 when the route does not know. A prefix snapshot is taken there during the cold prefill when the part of the
-	// prompt after it is longer than a windowed layer's rollback (docs/tasks/task-kv7-step2-boundary-snapshot-2026-10.md).
+	// prompt after it is longer than a windowed layer's rollback (docs/completed/task-kv7-step2-boundary-snapshot-2026-10.md).
 	Boundary int
 	// Keep is how many leading ids of the prompt the next turn's prompt repeats: the end of the prompt less its generation tail, the part a
 	// chat template's history render rewrites (chat.NextTurns). A recurrent model's state is kept there, so the next turn continues from it

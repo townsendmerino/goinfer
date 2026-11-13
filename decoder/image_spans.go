@@ -2,7 +2,7 @@ package decoder
 
 import "fmt"
 
-// ImageSpan is one image's placeholder run in a prompt (docs/tasks/task-multimodal-support-2026-10.md): ids[Pos, Pos+Len)
+// ImageSpan is one image's placeholder run in a prompt (docs/completed/task-multimodal-support-2026-10.md): ids[Pos, Pos+Len)
 // are replaced by that image's projected features. Hash identifies the image for resident prefix reuse; 0 makes no claim
 // and never matches.
 //

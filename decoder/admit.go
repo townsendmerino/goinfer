@@ -106,7 +106,7 @@ func admitRunner(f AdmitFacts, shape string) string {
 	if !eligible && a.nemotron != nil && a.MoE != nil && isWebGPUBackend(f.Backend) {
 		// webgpu implements the Nemotron MoE block (its residency switch and nemoKMoE dispatch), so it overrides the runner shape's
 		// blanket MoE-block decline, which stays for cuda and metal: a narrow backend-specific override, not a general escape hatch
-		// (docs/tasks/task-gpu-paths-2026-09.md, G7 part 2).
+		// (docs/completed/task-gpu-paths-2026-09.md, G7 part 2).
 		eligible = true
 	}
 	if !eligible {

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// TestConcurrentSessions_matchAlone is MC3c's decoder-side precondition (docs/tasks/task-concurrency-2026-09.md): N
+// TestConcurrentSessions_matchAlone is MC3c's decoder-side precondition (docs/tasks/parked/task-concurrency-2026-09.md): N
 // conversations on distinct Sessions of ONE Model, generating at the same time on the CPU, each emit exactly the ids
 // they emit when run alone — the property serve's -max-concurrent relies on. Run it under -race: a data race between
 // generations (shared scratch, a shared pool, a lazily built table) is the failure it exists to catch.

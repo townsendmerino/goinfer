@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
-// Prefix snapshots in host memory (docs/tasks/task-kv7-prefix-snapshot-2026-10.md). After a cold first prefill of a long prompt the
+// Prefix snapshots in host memory (docs/completed/task-kv7-prefix-snapshot-2026-10.md). After a cold first prefill of a long prompt the
 // resident's KV for the prompt's full blocks is copied to pinned host memory, keyed by the token ids and the root KV2 keys on
 // (namespace, model identity, adapter, KV precision). A later request whose prompt starts with those ids restores the rows into its
 // slot by device copy and prefills only the rest. It keeps a prefix that a one-slot card would overwrite when the next session
@@ -80,7 +80,7 @@ func (m *Model) snapshotsBlocked() bool { return m.hasRecurrentState() && !m.rec
 
 // ResidentPrefillMarked is the optional capability of a resident to tell its caller when a batched prefill has just written a given position,
 // between two of its passes: the one moment a windowed layer's ring holds exactly what a shorter prompt would leave there, so a prefix snapshot
-// can be taken in the middle of a cold prefill (docs/tasks/task-kv7-step2-boundary-snapshot-2026-10.md).
+// can be taken in the middle of a cold prefill (docs/completed/task-kv7-step2-boundary-snapshot-2026-10.md).
 type ResidentPrefillMarked interface {
 	Prefiller
 	// PrefillMarkAlign is the width of the passes of a batched prefill, in positions: a mark can fire only at startPos plus a multiple of it.

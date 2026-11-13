@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// TestG40KV_decodeWithinBudgetNeverRegrows is G40's KV gate (a) (docs/tasks/task-cpu-prefill-memory-2026-10.md, "The KV
+// TestG40KV_decodeWithinBudgetNeverRegrows is G40's KV gate (a) (docs/completed/task-cpu-prefill-memory-2026-10.md, "The KV
 // reserve fix"): through Session.Generate, serve's route, whose cache starts with no capacity, a chunked prefill reserves
 // the prompt plus max_tokens, so decoding up to the budget grows no KV layer. It holds for the f32 and the int8 cache.
 // Planting a reserve of the prompt alone must turn it red (gate (c)).
