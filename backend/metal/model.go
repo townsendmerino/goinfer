@@ -1313,88 +1313,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if err := b.uploadHead(); err != nil {
 		return nil, err
 	}
-	// The gate|up and down scratch must fit the widest FFN width: the dense I, or (for MoE) the
-	// larger of the expert and shared-expert intermediate dims.
-	guDim, maxFFNI := I, I // maxFFNI: the widest dense FFN (a Gemma 4 E-model's double-wide shared layers, S1.3)
-	for l := range r.layers {
-		maxFFNI = max(maxFFNI, r.layers[l].ffnI)
+	if err := b.checkWidths(); err != nil {
+		return nil, err
 	}
-	guDim = maxFFNI
-	if r.moe != nil {
-		guDim = max(guDim, max(r.moe.inter, r.moe.sharedInter))
-	}
-	if r.g4moe != nil { // Gemma-4 dense‖MoE: the gate|up/down scratch must fit BOTH the dense branch and the experts
-		guDim = max(guDim, max(r.g4moe.denseInter, r.g4moe.moeInter))
-	}
-	// The SA-GEMV decode kernels (gemv_w4a8_sa, _sa_bias, _sa_resid and the MoE variants) derive the output row
-	// from the runtime threadgroup size and, unlike gemv_w4a8_sa_bk, carry no `row >= N` guard. An output width
-	// N%8 != 0 therefore makes the tail threadgroup rewrite an already-written row while the true tail rows stay
-	// uninitialised scratch: plausible-looking wrong logits, no error. The attention widths (qDim = nH*hd, kvDim =
-	// nKV*hd) are structurally %8 (hd is 64 or 128), so the risk is the model-level FFN widths below: decline any
-	// that is not a multiple of 8, and the CPU path serves it. The deeper fix (an N parameter and a `row >= N`
-	// guard in the SA-family and MoE kernels) would touch every dispatch binding and is not done.
-	//
-	// Vocab is not checked: it never routes through an SA-family kernel. The LM head is pinned int8 and dispatches
-	// only gemv_w8a8_coal (forwardLogits) or gemv_w8a8_amax (ForwardArgmax). gemv_w8a8_coal addresses its row
-	// directly via threadgroup_position_in_grid, correct whatever a threadgroup's uniformity. gemv_w8a8_amax uses
-	// the same hazardous tgs-derived formula as the SA family, so ForwardArgmax routes a non-%8 vocab around it
-	// (full logits plus host argmax) instead of declining the family; GPT-2 (50257) is the first family this
-	// reaches.
-	bad8 := func(name string, n int) error {
-		if n%8 != 0 {
-			return fmt.Errorf("metal: %s width %d is not a multiple of 8 — SA-GEMV tail-write hazard (audit C-10); use the CPU path", name, n)
-		}
-		return nil
-	}
-	// Include the attention widths too: the fused-QKV projection dispatches (nH*hd + 2*nKV*hd) rows through
-	// pSABias, so both the q-width (nH*hd) and the kv-width (nKV*hd), and hence their sum, must be %8. "hd is 64
-	// or 128" is not guaranteed for every admitted arch; one with hd%8 != 0 declines instead of corrupting.
-	widthChecks := []error{bad8("hidden", H), bad8("intermediate", I)}
-	// Check each layer's geom, not the maxima: a two-geom arch (Gemma 4 local/global) whose smaller q or kv width
-	// is non-%8 while the larger is %8 would pass a max-only check yet corrupt that layer's SA-GEMV. Duplicate
-	// widths across uniform layers are harmless.
-	for l := range r.layers {
-		if r.layers[l].geom == nil {
-			continue // a recurrent or mixer-less layer: no attention geometry at all, L.geom is nil by design
-		}
-		g := r.layers[l].geom
-		widthChecks = append(widthChecks,
-			bad8(fmt.Sprintf("layer %d attn q-width (nH·hd)", l), r.nH*g.hd),
-			bad8(fmt.Sprintf("layer %d attn kv-width (nKV·hd)", l), g.kvDim))
-		if fi := r.layers[l].ffnI; fi != 0 && fi != I {
-			widthChecks = append(widthChecks, bad8(fmt.Sprintf("layer %d intermediate", l), fi))
-		}
-	}
-	if r.moe != nil {
-		widthChecks = append(widthChecks, bad8("MoE expert intermediate", r.moe.inter), bad8("MoE shared-expert intermediate", r.moe.sharedInter))
-	}
-	if r.g4moe != nil {
-		widthChecks = append(widthChecks, bad8("gemma-4 dense intermediate", r.g4moe.denseInter), bad8("gemma-4 MoE intermediate", r.g4moe.moeInter))
-	}
-	for _, e := range widthChecks {
-		if e != nil {
-			return nil, e
-		}
-	}
-	// The SA-GEMV and MoE kernels stage the contraction row into threadgroup memory (see
-	// maxThreadgroupStageBytes). A dispatch whose threadgroup memory exceeds the device tile limit aborts the
-	// command buffer, and the host would then read stale logits. Decline here so the caller falls back to CPU.
-	// (Mixtral's inter=14336 is 28672 B, already 87% of a 32 KiB budget; inter >= 16384 exceeds it. The dense
-	// down-proj is not counted: R18's staged kernel checks its own I-byte fit below, else coal.)
-	moeInter, g4Inter := 0, 0
-	if r.moe != nil {
-		moeInter = r.moe.inter
-	}
-	if r.g4moe != nil {
-		g4Inter = r.g4moe.moeInter
-	}
-	dnValueDim := 0
-	if r.dnet != nil {
-		dnValueDim = r.dnet.valueDim
-	}
-	if tg, lim := maxThreadgroupStageBytes(H, maxNHhd, moeInter, g4Inter, dnValueDim), d.MaxThreadgroupMemoryLength(); tg > lim {
-		return nil, fmt.Errorf("metal: threadgroup staging needs %d B (2×K) > device tile-memory max %d B — declining to CPU (audit M-11)", tg, lim)
-	}
+	guDim, maxFFNI := b.guDim, b.maxFFNI
 	// R18: the dense decode GEMVs at R rows per simdgroup — 4 for qkv, gate/up and down, 2 for o: R18's confirmed
 	// configuration (docs/measurements/metal-decode-gemv-r18-2026-09-26.md) with qkv moved to 4 by R18b's
 	// (metal-decode-gemv-r18b-2026-09-26.md), whose kernel form changed what the best qkv width is. Each is taken only where every layer's row
