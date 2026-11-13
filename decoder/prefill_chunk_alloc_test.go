@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// G40-T0a and G40-T0b (docs/tasks/task-cpu-prefill-memory-2026-10.md, "T0a demoted to a diagnostic"): a chunked prefill
+// G40-T0a and G40-T0b (docs/completed/task-cpu-prefill-memory-2026-10.md, "T0a demoted to a diagnostic"): a chunked prefill
 // allocates its working set once. T0b, graded: its live heap stays within the prompt's KV, one chunk's working set and
 // the attention pool. T0a counts each later chunk's allocations of 4 KiB or more, with its total bytes and allocation
 // count beside them. On the fixture it asserts none, which keeps goinfer's own buffers from coming back; on the 0.5B it

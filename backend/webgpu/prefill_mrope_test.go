@@ -81,7 +81,7 @@ func ropeInPlace(t *testing.T, c *Context, vec []float32, pl *wgpu.ComputePipeli
 	return out
 }
 
-// G-S12.4b-4a-1 (docs/tasks/task-multimodal-support-2026-10.md): the per-row-position rotary kernel against decode's
+// G-S12.4b-4a-1 (docs/completed/task-multimodal-support-2026-10.md): the per-row-position rotary kernel against decode's
 // single-row rotary kernel run once per axis at that axis's position, each pair taken from the run its axis names.
 func TestMRoPERows_matchesSingleRow(t *testing.T) {
 	c := newOrSkipHW(t)

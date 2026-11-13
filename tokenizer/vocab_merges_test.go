@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-// LoadVocabMerges (S14.3 of docs/tasks/task-multimodal-support-2026-10.md): a Qwen2-class tokenizer assembled from vocab.json + merges.txt + tokenizer_config.json must encode and decode
+// LoadVocabMerges (S14.3 of docs/completed/task-multimodal-support-2026-10.md): a Qwen2-class tokenizer assembled from vocab.json + merges.txt + tokenizer_config.json must encode and decode
 // exactly like the tokenizer.json the same three files make. The committed Qwen2.5 tokenizer.json is taken apart into those three files, reassembled, and compared on a corpus built to
 // hit the pipeline's parts: the split regex's alternatives (contractions, letters, single digits, punctuation runs, newlines, trailing whitespace), non-ASCII, and the added tokens.
 

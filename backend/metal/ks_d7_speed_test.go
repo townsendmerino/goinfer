@@ -57,7 +57,7 @@ func ksd7Differ(a, b []float32) int {
 	return d
 }
 
-// TestKSD7_prefillIdentity is D7-G1's tiny half (docs/tasks/task-kernel-survey-2026-10.md, "KS-D7 gates"): llama-tiny at int4, a
+// TestKSD7_prefillIdentity is D7-G1's tiny half (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-D7 gates"): llama-tiny at int4, a
 // 100-token batched prefill's last logits with the half2 dequant against the per-weight one, byte-equal.
 func TestKSD7_prefillIdentity(t *testing.T) {
 	const path = "../../testdata/llama-tiny"
@@ -136,7 +136,7 @@ func TestKSD7_prefillSpeed(t *testing.T) {
 	fmt.Fprintf(os.Stderr, "[D7-G2] median new/old %.4f, %d of 10 pairs below 1\n", median, below)
 }
 
-// TestKSD7_memoryUnchanged is D7-G3, the owner's condition for shipping KS-D7 (docs/tasks/task-kernel-survey-2026-10.md): on
+// TestKSD7_memoryUnchanged is D7-G3, the owner's condition for shipping KS-D7 (docs/tasks/parked/task-kernel-survey-2026-10.md): on
 // Qwen2.5-Coder-1.5B (the Metal .giw), one 3,900-token prefill per build, the half2 dequant against the per-weight one: the prefill
 // scratch counter and Metal's allocated size after the prefill (net of the reading after the build) must be equal or lower, and
 // the logits byte-equal. Not timed; a real checkpoint (GOINFER_HEAVY_TESTS=1).

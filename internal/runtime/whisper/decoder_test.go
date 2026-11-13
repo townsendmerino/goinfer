@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// G-S14f1 of docs/tasks/task-multimodal-support-2026-10.md: the decoder against transformers' own WhisperDecoder on the tiny random-weight Whisper (testdata/whisper-tiny-rand), given the
+// G-S14f1 of docs/completed/task-multimodal-support-2026-10.md: the decoder against transformers' own WhisperDecoder on the tiny random-weight Whisper (testdata/whisper-tiny-rand), given the
 // fixture's encoder output for each of its two clips. Goldens: scripts/pin_whisper_tiny.py (golden.zip, the encoder output) and scripts/pin_whisper_decoder_tiny.py (dec_golden.zip).
 
 func tinyDir() string { return filepath.Join("../../../testdata/whisper-tiny-rand") }

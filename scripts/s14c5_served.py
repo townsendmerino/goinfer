@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14c5's requests (docs/tasks/task-multimodal-support-2026-10.md): input_audio chat requests for the three LibriSpeech files against a running serve of Qwen3-ASR.
+"""G-S14c5's requests (docs/completed/task-multimodal-support-2026-10.md): input_audio chat requests for the three LibriSpeech files against a running serve of Qwen3-ASR.
 Usage: s14c5_served.py <port> <out dir>   (from the repo root). Prints each reply verbatim, the usage, and the checks (a)-(c)."""
 import base64, json, re, sys, time, urllib.request
 port, out = sys.argv[1:3]

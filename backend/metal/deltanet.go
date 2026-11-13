@@ -199,7 +199,7 @@ func recurrentInt8Load(m *decoder.Model) bool {
 var dnetInt8DeclineOffForTest = false
 
 // dnetNegEigvalOffForTest and dnetONormEpsOffForTest drop the DeltaNet's NegEigval and ONormEps at the build: OM-1's planted
-// defects (docs/tasks/task-olmo-hybrid-metal-webgpu-2026-11.md).
+// defects (docs/completed/task-olmo-hybrid-metal-webgpu-2026-11.md).
 var dnetNegEigvalOffForTest, dnetONormEpsOffForTest = false, false
 
 // buildDeltaNetLayer uploads one Gated-DeltaNet layer's weights and allocates its persistent

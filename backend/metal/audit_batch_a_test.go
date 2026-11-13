@@ -18,7 +18,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// Phase 2, Batch A of docs/tasks/task-metal-audit-2026-10.md: the timed probes of docs/audit-metal-2026-09-30.md §10
+// Phase 2, Batch A of docs/completed/task-metal-audit-2026-10.md: the timed probes of docs/audit-metal-2026-09-30.md §10
 // that run at night. Each prints a "[t1.x] RESULT" line carrying the reading its pre-registration names; the decision
 // rules are in the task doc, committed before the run. GOINFER_METAL_AUDIT_A=1 enables them (they are timings, so never
 // by day except as a labelled smoke run), GOINFER_AUDIT_MODEL picks the checkpoint, and GOINFER_AUDIT_REPS overrides

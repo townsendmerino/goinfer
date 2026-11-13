@@ -49,7 +49,7 @@ func eModelPrompt(t *testing.T) []int {
 	return append(append([]int(nil), g.PromptIDs...), g.ContinuationIDs...)
 }
 
-// eModelG1 is the measurement G1c grades (docs/tasks/task-multimodal-support-2026-10.md, "S1 on CUDA"): the CUDA resident against the CPU, int4 on
+// eModelG1 is the measurement G1c grades (docs/completed/task-multimodal-support-2026-10.md, "S1 on CUDA"): the CUDA resident against the CPU, int4 on
 // both sides, teacher-forced over eModelPrompt, plus the CPU's own int4-vs-f32 agreement for the envelope.
 type eModelG1 struct {
 	n, exact, gaps3   int

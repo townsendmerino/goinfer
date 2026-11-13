@@ -90,7 +90,7 @@ MLX_MODELS = {
 MODELS = {
     "0.5B": (os.path.expanduser("~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"), "q05"),
     "1.5B": (os.path.expanduser("~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"), "q15"),
-    # E2B added 2026-10-06 for S1.9 of docs/tasks/task-multimodal-support-2026-10.md: goinfer's own Metal-resident vs
+    # E2B added 2026-10-06 for S1.9 of docs/completed/task-multimodal-support-2026-10.md: goinfer's own Metal-resident vs
     # CPU decode record (BENCH_ENGINES=goinfer). The peer tag is a placeholder: no peer row is taken for it yet.
     "E2B":  (os.path.expanduser("~/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf"), "e2b-none"),
     # 7B added 2026-08-22. Both other rows are TINY, and this repo has already been burned by
@@ -113,7 +113,7 @@ MODELS = {
     # identical, and its template closes turns with <|end|>, where p3m used </s>.
     "phi3-mini":  (os.path.expanduser("~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf"), "p3m-local"),
     "gemma3-1b":  (os.path.expanduser("~/models/gemma3-1b-q4_k_m.gguf"), "g31b"),
-    # gemma3-4b added 2026-10-13 for OP1's Metal speed guard (docs/tasks/task-forward-architecture-2026-10.md §4.6, G2-S):
+    # gemma3-4b added 2026-10-13 for OP1's Metal speed guard (docs/completed/task-forward-architecture-2026-10.md §4.6, G2-S):
     # head dimension 256 on the exact attention kernel, new against base (BENCH_ENGINES=goinfer,goinfer_old). The peer
     # tag is a placeholder: no peer row is taken for it.
     "gemma3-4b":  (os.path.expanduser("~/models/gemma-3-4b-it-gguf/gemma-3-4b-it-Q4_K_M.gguf"), "g34b-none"),
@@ -281,7 +281,7 @@ for _kv in os.environ.get("BENCH_QUANT_OVERRIDE", "M35=int4mix,phi3-mini=q4k").s
 # wait_llamacpp_ready window is sized for a small model's load, not a 15-22 GB checkpoint's
 # first-use .gguf->.giw transcode, which can itself run past 180s before the port ever opens.
 LOAD_TIMEOUT = int(os.environ.get("BENCH_LOAD_TIMEOUT", "180"))
-# TE1 (docs/tasks/task-test-efficiency-2026-09.md): the idle gate before each cell. "load" is the original: the 1-min load
+# TE1 (docs/completed/task-test-efficiency-2026-09.md): the idle gate before each cell. "load" is the original: the 1-min load
 # average under BENCH_MAX_LOADAVG. That is an exponentially damped average with a ~60 s time constant, so after a cell
 # that loaded the box to ~8 it waits ~2 min for the harness's OWN previous cell to drain, and it measured 44% of timed-run
 # wall. "instant" gates on what is running NOW: the share of all CPUs busy over BENCH_BUSY_WINDOW_S seconds (under
@@ -1578,7 +1578,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
     load_timeout = 900 if model_key in MOE_MODELS else LOAD_TIMEOUT
     proc = None
     decode_path = None   # what goinfer's own load resolved to, read from its serve log (goinfer engines only)
-    # TE0 (docs/tasks/task-test-efficiency-2026-09.md): where a cell's wall goes, measured rather than inferred. The dict
+    # TE0 (docs/completed/task-test-efficiency-2026-09.md): where a cell's wall goes, measured rather than inferred. The dict
     # is shared with the returned counts, so the teardown in `finally` (which runs after the return value is built)
     # still lands in the record.
     phases = {}
@@ -1602,7 +1602,7 @@ def run_cell(engine, model_key, depth, cfg_name, backend="cuda"):
             _q = GOINFER_QUANT_OVERRIDE.get(model_key, "int4")
             quant_args = [] if (has_own_bundle or _q == "default") else ["-quant", _q]
             # Metal too since 2026-10-07 (peer-vetted): a 12-14 GB MoE on a 16 GB Mac runs paged (the M26 day-use rule in
-            # docs/tasks/task-m26-mac-2026-10.md), as the 8 GB card does; both are disclosed on the cell.
+            # docs/completed/task-m26-mac-2026-10.md), as the 8 GB card does; both are disclosed on the cell.
             moe_args = ["-moe-cache-experts"] if (model_key in MOE_MODELS and backend in ("cuda", "metal")) else []
             # "goinfer_old" picks SERVE_OLD instead of SERVE -- same flags, same port (the two never
             # run concurrently: run_cell always tears one engine down before the next starts), a
@@ -1936,7 +1936,7 @@ def run_vision_cell(engine):
     underlying cost). goinfer and Ollama only. CPU only, matching the existing row's own backend.
     """
     import base64
-    # A NEW image every request, warm-up included (S13's harness fix, docs/tasks/task-multimodal-support-2026-10.md,
+    # A NEW image every request, warm-up included (S13's harness fix, docs/completed/task-multimodal-support-2026-10.md,
     # 2026-10-07). Sending the same bytes every time measured a re-send: Ollama/llama.cpp and goinfer all cache an
     # image's encode by its bytes, so the 2026-09-20 row's 0.4 s for gemma3:4b on the CPU was most likely a cache hit.
     # fresh_image(i) is VISION_IMAGE_PATH with request i's own pseudorandom least-significant-bit pattern in the red
@@ -2422,7 +2422,7 @@ def _term_exits(signum, frame):
 if __name__ == "__main__":
     signal.signal(signal.SIGTERM, _term_exits)
     signal.signal(signal.SIGINT, _term_exits)  # Ctrl-C takes the same masked teardown, not a KeyboardInterrupt a second one can cut short
-    # TE9 (docs/tasks/task-test-efficiency-2026-09.md): one timed run per box. The lock is held for the whole run and
+    # TE9 (docs/completed/task-test-efficiency-2026-09.md): one timed run per box. The lock is held for the whole run and
     # taken before preflight(), so a second timed run refuses, naming this one; BENCH_LOCK_WAIT=<seconds> waits for a
     # holder instead. Under a night.py job or a `timing_lock.py run` wrapper the lock is inherited, not re-taken.
     import timing_lock

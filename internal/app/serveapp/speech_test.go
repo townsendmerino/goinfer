@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/whisper"
 )
 
-// G-S14i1 of docs/tasks/task-multimodal-support-2026-10.md: the shapes of POST /v1/audio/transcriptions and its refusals, on a stub engine.
+// G-S14i1 of docs/completed/task-multimodal-support-2026-10.md: the shapes of POST /v1/audio/transcriptions and its refusals, on a stub engine.
 
 type stubSpeech struct {
 	got  whisper.TranscribeOptions

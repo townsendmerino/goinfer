@@ -131,7 +131,7 @@ func solvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy, withRe
 			l.ExpertBytesFull, l.NExperts)
 	}
 	// reserve is the expert bytes priced before the context grows: an MoE placement's experts are reserved first (owner
-	// decision, docs/tasks/task-subsystems-2026-10.md, "MM1's MoE reserve"), or one more KV step could leave no room for them
+	// decision, docs/completed/task-subsystems-2026-10.md, "MM1's MoE reserve"), or one more KV step could leave no room for them
 	// and more memory would give a worse placement.
 	var reserve int64
 	tryCtx := func(ctx int) (kv int64, fits bool) {

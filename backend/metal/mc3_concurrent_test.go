@@ -43,7 +43,7 @@ func mc3Checkpoint(t *testing.T) (path, tokPath string) {
 }
 
 // TestMC3_concurrentMatchesAloneOnMetal is MC3's identity gate through the production Generate path on a real
-// checkpoint (docs/tasks/task-concurrency-2026-09.md): 4 conversations × 3 turns × 32 greedy tokens, generating at once
+// checkpoint (docs/tasks/parked/task-concurrency-2026-09.md): 4 conversations × 3 turns × 32 greedy tokens, generating at once
 // on one Metal resident with EnableResidentConcurrency(4), each emit exactly the ids — and reuse exactly the prefix —
 // they do when the same conversations run one after another on a model without concurrency. Greedy tokens a batched
 // step serves continue on the host-argmax path; alone they take the device argmax (ForwardArgmax) — so this also pins

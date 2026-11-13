@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// TestGradeCUDACells_plants is SB12-C4 for step 10 (docs/tasks/task-subsystems-2026-10.md, SB12 step 10 (CUDA)): each CUDA
+// TestGradeCUDACells_plants is SB12-C4 for step 10 (docs/completed/task-subsystems-2026-10.md, SB12 step 10 (CUDA)): each CUDA
 // cell group fails on a failed test, naming its assertion, and on a crash, with the crash head; the suite lists its skips by
 // name and warns on a census of zero; parity prints the all-zero-buffer note with the recorded reading; graphsforced fails on
 // a cell that ran nothing, and always adds its forced-capture note.
@@ -189,7 +189,7 @@ func TestReplayGPU_cudaEqualsTheRun(t *testing.T) {
 	}
 }
 
-// TestReplayGPU_aFullCUDARecordReplaysTheVerdict is SB12-C4 for step 14 (docs/tasks/task-subsystems-2026-10.md, SB12 step 14
+// TestReplayGPU_aFullCUDARecordReplaysTheVerdict is SB12-C4 for step 14 (docs/completed/task-subsystems-2026-10.md, SB12 step 14
 // (CUDA)): a CUDA record holding every group's inputs replays to the gate's verdict, one without the ptx or heavy input
 // regrades without a verdict, and the verdict follows the record. The record is gpu-cuda-heavy's, a narrowed live run that
 // failed only on tower_base.ptx.

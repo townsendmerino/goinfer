@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestKSC3_w8RowsMatchShipped is C3-G1's kernel half (docs/tasks/task-kernel-survey-2026-10.md, "KS-C3 gates"): each int8
+// TestKSC3_w8RowsMatchShipped is C3-G1's kernel half (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-C3 gates"): each int8
 // rows twin against its shipped one-row kernel at the 1.5B's and the 0.5B's qkv (bias), o (residual), gate|up and down
 // (residual) shapes, R = 2 and 4, random int8 weights and activations and f32 scales, in the fast-math and the precise
 // library. Every output byte-equal.

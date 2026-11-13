@@ -1,5 +1,5 @@
 // goinfer.dev: a Workers static-assets site (no Worker script). `wrangler deploy` uploads _site, which the
-// site workflow builds: the generator's pages plus the book under /book/. Docs: docs/tasks/task-site-2026-09.md S5, S8d.
+// site workflow builds: the generator's pages plus the book under /book/. Docs: docs/completed/task-site-2026-09.md S5, S8d.
 {
   "name": "goinfer-site",
   "compatibility_date": "2026-09-29",

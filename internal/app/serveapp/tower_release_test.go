@@ -64,7 +64,7 @@ func sameBits(t *testing.T, what string, got, want []float32) {
 	}
 }
 
-// TestTowerRelease_gridTowersFallBackOnReloadedBlocks is TWR-G2's grid half (docs/tasks/task-memory-campaign-2026-10.md,
+// TestTowerRelease_gridTowersFallBackOnReloadedBlocks is TWR-G2's grid half (docs/completed/task-memory-campaign-2026-10.md,
 // MEM4(b) gates): the Qwen3.5+ and GLM-OCR towers release their host blocks once the device tower starts, and when the
 // device runs out of memory the CPU fallback reloads them and returns the never-released CPU tower's features, bit for bit.
 func TestTowerRelease_gridTowersFallBackOnReloadedBlocks(t *testing.T) {

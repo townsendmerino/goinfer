@@ -26,7 +26,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-// Layer B-webgpu of the admission and routing census (docs/tasks/task-subsystems-2026-10.md, "SB2 step 2"): WebGPU's own static
+// Layer B-webgpu of the admission and routing census (docs/completed/task-subsystems-2026-10.md, "SB2 step 2"): WebGPU's own static
 // admission, staticResidentDecline, on layer D's fixtures and option cells. A fake backend named webgpu takes the decoder's real
 // admission; where that admits, it records staticResidentDecline's answer and declines, so no device is opened. A cell the decoder
 // declines is layer D's line (decoder's TestAdmissionCensus) and is not repeated here.
@@ -242,7 +242,7 @@ func planVsLoadWebGPU(t *testing.T, req func(c sb2census.Cell) fit.PlanRequest) 
 }
 
 // TestPlanAgreesWithLoad_webgpu holds Plan's webgpu verdict, with each cell's KV request, to what the load does on webgpu
-// (docs/tasks/task-subsystems-2026-10.md, "SB2 — Plan asks Admit", gate 2), and shows the comparison goes red on a Plan that
+// (docs/completed/task-subsystems-2026-10.md, "SB2 — Plan asks Admit", gate 2), and shows the comparison goes red on a Plan that
 // ignores the KV request.
 func TestPlanAgreesWithLoad_webgpu(t *testing.T) {
 	// Plan's KV request is the serving flag's precision (KVPrecision).
@@ -267,7 +267,7 @@ func TestPlanAgreesWithLoad_webgpu(t *testing.T) {
 	t.Logf("planted KV-blind Plan: %d cells red", len(planted))
 }
 
-// The slot census (docs/tasks/task-subsystems-2026-10.md, "SB2 memory reads, step 4"): WebGPU's KV-slot decisions (slotsGranted,
+// The slot census (docs/completed/task-subsystems-2026-10.md, "SB2 memory reads, step 4"): WebGPU's KV-slot decisions (slotsGranted,
 // slotsBeforeContextOn) on every cell layer B-webgpu passes, asked for 4 slots, against each recorded machine. A unified-memory
 // profile feeds its RAM and available memory; a discrete one feeds its free-VRAM figure less the build's weights and slot 0's KV,
 // a derived figure that G-WS3 checks against what Vulkan leaves.
@@ -823,7 +823,7 @@ func webgpuGateRow(t *testing.T, row, path string, o decoder.Options, census boo
 	return read, true
 }
 
-// TestMemGate_webgpu is MM7's gate on WebGPU (docs/tasks/task-subsystems-2026-10.md): every census fixture at every option cell whose
+// TestMemGate_webgpu is MM7's gate on WebGPU (docs/completed/task-subsystems-2026-10.md): every census fixture at every option cell whose
 // build goes resident, and each at int4 with two KV slots. It runs every row in one test, since a filtered run would see known gaps go quiet.
 func TestMemGate_webgpu(t *testing.T) {
 	newOrSkip(t).Close()

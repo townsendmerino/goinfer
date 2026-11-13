@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestKSD2_steel128Logits is D2-G1's instrument (docs/tasks/task-kernel-survey-2026-10.md, "KS-D2 gates"): Qwen2.5-Coder-1.5B
+// TestKSD2_steel128Logits is D2-G1's instrument (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-D2 gates"): Qwen2.5-Coder-1.5B
 // (head dim 128, the Metal .giw), PrefillLast at K=512 and 3,900, the SHA-256 of the last logits' bits. Run from a test binary
 // at the change and one at its base; the hashes must match. A real checkpoint (GOINFER_HEAVY_TESTS=1).
 func TestKSD2_steel128Logits(t *testing.T) {

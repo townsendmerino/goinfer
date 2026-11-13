@@ -12,8 +12,8 @@ Draft: `site/different/19-find-out-before-your-agent-does.md` (body ~890 words c
 | Skip text (`model did not call the tool under a harness-scale (12-tool) schema — ...`), skip is not a fail; only FAIL exits non-zero | `check.go` `toolCall`, `cmd.go` end of `Run` |
 | Ok/skip sample output (7B) | `docs/integrations/opencode.md` ("Run serve check before opencode") |
 | Skip sample output (1.5B, Mac CPU, 2026-09-07, v0.17.1) | `docs/measurements/cold-user-2026-09-07-macbook-arm64.md` Scenario B |
-| 7B q4_k_m, CUDA, ctx 16384, nobara-pc, 2026-09-08, v0.17.2: all 8 checks, load 26.2 s, 6,824 / 8,192 MiB, two turns 7,165 / 7,399 input tokens, Read + Glob calls | `docs/integrations/opencode.md` "The working configuration, measured"; also `docs/tasks/task-first-hour.md` R14 |
-| 1.5B, opencode printed fake JSON call as prose twice, ~173 s each, 2026-09-06, opencode 1.18.29 | `docs/measurements/cold-user-2026-09-06-nobara-pc.md` (opencode leg); row added as a consequence: `docs/tasks/task-first-hour.md` R11 |
+| 7B q4_k_m, CUDA, ctx 16384, nobara-pc, 2026-09-08, v0.17.2: all 8 checks, load 26.2 s, 6,824 / 8,192 MiB, two turns 7,165 / 7,399 input tokens, Read + Glob calls | `docs/integrations/opencode.md` "The working configuration, measured"; also `docs/completed/task-first-hour.md` R14 |
+| 1.5B, opencode printed fake JSON call as prose twice, ~173 s each, 2026-09-06, opencode 1.18.29 | `docs/measurements/cold-user-2026-09-06-nobara-pc.md` (opencode leg); row added as a consequence: `docs/completed/task-first-hour.md` R11 |
 | 0.5B harness-scale skip measured 2026-09-07 on nobara-pc; other four registry checkpoints "not yet measured" | `docs/capability-matrix.json` ("tools" fields, line ~693 and four others); `pull/registry.go` `Checkpoint.Tools` |
 | 0.5B opencode 2026-09-18: first request 9,917 tokens, never completed | `docs/measurements/cold-user-2026-09-18-nobara-pc.md` Scenario B |
 | Mac 1.5B skip; Mac 3B skip, "not a memory problem" | 09-07 Mac record; `task-first-hour.md` R13-follow-on "fourth live data point" |

@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
-// TestG4AMetal_matchesCPU is Phase A's gate AM1 on the tiny tower (docs/tasks/task-embeddinggemma2.md): the Metal
+// TestG4AMetal_matchesCPU is Phase A's gate AM1 on the tiny tower (docs/completed/task-embeddinggemma2.md): the Metal
 // blocks between aikit's subsampler and tail match aikit's CPU Forward to cosine 0.9999 on every soft token, and
 // transformers' golden too, on the committed tiny random tower (testdata/gemma4-audio-tiny: finite asymmetric clip
 // bounds binding in 15 of 20 projections, random norms and per_dim_scale, 33 soft tokens so the 12-key window binds).

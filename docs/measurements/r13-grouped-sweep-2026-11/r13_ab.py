@@ -55,9 +55,13 @@ def main():
     ap.add_argument("--hostmem", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--model", required=True, help="Qwen2.5-1.5B-Instruct Q4_K_M .gguf")
-    ap.add_argument("--control", required=True, help="Qwen2.5-7B-Instruct Q4_K_M .gguf")
+    ap.add_argument("--control", required=True, help="Qwen2.5-Coder-0.5B-Instruct Q4_K_M .gguf (ratio 7: both arms per-head)")
     ap.add_argument("--commit", required=True)
+    ap.add_argument("--control-only", action="store_true", help="run only the control; grade it with --prior's runs")
+    ap.add_argument("--prior", help="raw.jsonl of the earlier sweep whose clean runs are graded with this control")
     a = ap.parse_args()
+    if a.control_only and not a.prior:
+        sys.exit("--control-only needs --prior")
     raw = open(os.path.join(a.out, "raw.jsonl"), "w")
     grade = os.path.join(a.out, "grade.txt")
 
@@ -68,8 +72,10 @@ def main():
         open(grade, "w").write("VOID: TestAttendGroupedHeads_matchesPerHead did not pass\n" + text[-2000:])
         sys.exit(1)
 
-    fits = {a.model: 3 << 30, a.control: 6 << 30}  # each model's int4 load, rounded up
+    fits = {a.model: 3 << 30, a.control: 2 << 30}  # each model's int4 load, rounded up
     queue = [(a.model, d, i) for d in DEPTHS for i in range(PAIRS)] + [(a.control, CONTROL_DEPTH, i) for i in range(PAIRS)]
+    if a.control_only:  # addendum 2026-11-10: the 2026-11-09 night run timed out before its control
+        queue = [(a.control, CONTROL_DEPTH, i) for i in range(PAIRS)]
     runs, reruns = [], 0
     while queue:
         model, depth, i = queue.pop(0)
@@ -96,14 +102,22 @@ def main():
         else:
             runs.append(r)
 
+    if a.prior:  # the earlier session's clean sweep runs are graded with this session's control
+        for line in open(a.prior):
+            x = json.loads(line)
+            if x.get("kind") == "run" and not x.get("void") and x["model"] == os.path.basename(a.model):
+                runs.append(x)
+
     def ratios(model, depth):
         return [x["arms"]["grouped_on"] / x["arms"]["grouped_off"] for x in runs
                 if x["model"] == os.path.basename(model) and x["depth"] == depth]
 
     lines = [f"P41 R13 sweep at {a.commit}; model {a.model}; control {a.control}"]
+    if a.prior:
+        lines.append(f"sweep runs from {a.prior} (a separate session); control from this one")
     ctrl = ratios(a.control, CONTROL_DEPTH)
     cmed = statistics.median(ctrl)
-    lines.append(f"control (7B, depth {CONTROL_DEPTH}): median on/off {cmed:.4f}")
+    lines.append(f"control ({os.path.basename(a.control)}, depth {CONTROL_DEPTH}): median on/off {cmed:.4f}")
     if abs(cmed - 1.0) > 0.02:
         lines.append("VERDICT: VOID (the control is outside 1.00 +/- 0.02: the fixed arm order is biased)")
         open(grade, "w").write("\n".join(lines) + "\n")

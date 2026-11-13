@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestKSH6C_moeModelPaysItsPool is H6C-S5 (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build, amendment"): a MoE resident built
+// TestKSH6C_moeModelPaysItsPool is H6C-S5 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-H6 build, amendment"): a MoE resident built
 // with the startup self-test skipped pays moe_route's local-memory pool before its fit check (payRoutePool), so serving it takes
 // nothing the fit check did not see. qwen35-tiny (DeltaNet and MoE) is loaded through decoder.Load, then one prefill and 8 decode
 // tokens. KSH6C_S5_PLANT=1 skips the warm-up, and must run in its own process: the context keeps the pool once it is paid.

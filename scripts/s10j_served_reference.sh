@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# G-S10j step 1's reference: the served first-token top-5 probabilities on table.png with the served prompt, for the off and the on serve binary (docs/tasks/task-multimodal-support-2026-10.md, "G-S10j").
+# G-S10j step 1's reference: the served first-token top-5 probabilities on table.png with the served prompt, for the off and the on serve binary (docs/completed/task-multimodal-support-2026-10.md, "G-S10j").
 # Usage: s10j_served_reference.sh <out.json>   (run from the repo root; binaries in ~/goinfer-bench/s6)
 set -euo pipefail
 OUT=$1; PORT=18462; TMP=$(mktemp -d)

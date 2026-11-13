@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
-// S14.6 lever B's kernels and encoder (docs/tasks/task-multimodal-support-2026-10.md, G-S14t4): the exact GELU against aikit's contract kernel BIT FOR BIT, the im2col
+// S14.6 lever B's kernels and encoder (docs/completed/task-multimodal-support-2026-10.md, G-S14t4): the exact GELU against aikit's contract kernel BIT FOR BIT, the im2col
 // layouts of both stems against a host loop, and the whole device encoder against the CPU encoder on the tiny fixture, with each planted defect red. The real checkpoints are
 // audio_encoder_real_test.go. Needs a CUDA device; skips without one.
 

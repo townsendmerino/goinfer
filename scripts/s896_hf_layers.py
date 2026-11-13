@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The 896-pixel investigation's Hugging Face half (docs/tasks/task-multimodal-support-2026-10.md, "The 896-pixel image prefill"): per-layer differencing of goinfer's two prefills against
+"""The 896-pixel investigation's Hugging Face half (docs/completed/task-multimodal-support-2026-10.md, "The 896-pixel image prefill"): per-layer differencing of goinfer's two prefills against
 Hugging Face's float32 text model, fed the SAME inputs. cuda/s896_layerdump_test.go writes, per image, the ids, the m-RoPE positions, the merged image rows, the DeepStack sets and each arm's
 [layers][rows*hidden] residual (the residual after layer l and its DeepStack add: HF's hidden_states[l+1]). This script runs Qwen3VLTextModel on inputs_embeds (embedding of the ids with the image
 rows replaced by the merged rows, no scale), the same position_ids, visual_pos_masks and deepstack_visual_embeds, and prints per layer: cosine and relative error of each arm against HF, image rows and

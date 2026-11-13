@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Chunked prefill's gates (docs/tasks/task-concurrency-2026-09.md, registered in d8ae520a) from bench_prefill_stall.py's
+"""Chunked prefill's gates (docs/tasks/parked/task-concurrency-2026-09.md, registered in d8ae520a) from bench_prefill_stall.py's
 JSON. Stall cells old_1..new_3 (3 decoders + 3 newcomers), solo cells oldsolo_1..newsolo_3 (the newcomers alone)."""
 import json, statistics, sys
 

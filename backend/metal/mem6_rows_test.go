@@ -60,13 +60,13 @@ func asMap(v any) map[string]any { m, _ := v.(map[string]any); return m }
 
 // mem6MainHashes are the last-logits-plus-32-steps hashes of TestMEM6_prefillHostBytes's prefills as they ship (MEM6-G2), by route and
 // prompt rows. The chunked read must not move them. A prefill kernel that changes outputs under its own fidelity gate moves them too,
-// and re-pins here (docs/tasks/task-memory-campaign-2026-10.md, "MEM6 (Metal routes) gates").
+// and re-pins here (docs/completed/task-memory-campaign-2026-10.md, "MEM6 (Metal routes) gates").
 var mem6MainHashes = map[string]map[int]uint64{
 	"batched":     {1024: 0xe9f3095f9da2e155, 2048: 0x28b133776db2141},
 	"layer-major": {1024: 0x88f6214a681043ac, 2048: 0xc40ab360a5668f7c},
 }
 
-// TestMEM6_prefillHostBytes is MEM6-G1 and MEM6-G2 (docs/tasks/task-memory-campaign-2026-10.md, "MEM6 (Metal routes) gates"): on
+// TestMEM6_prefillHostBytes is MEM6-G1 and MEM6-G2 (docs/completed/task-memory-campaign-2026-10.md, "MEM6 (Metal routes) gates"): on
 // the E-model fixture, Metal-resident, on the batched route and the layer-major one, a resident prefill of 1,024 and of 2,048 rows:
 // the most embedding rows the decoder holds at once (at most 256), and on the batched route the Go bytes a prompt row adds (under
 // an eighth of an embedding row); and the last logits and 32 decode steps after them, hashed, equal to main's.

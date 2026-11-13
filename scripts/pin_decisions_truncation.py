@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""jev_core's state truncation, pinned (D4 follow-up, docs/tasks/task-constrained-confidence.md).
+"""jev_core's state truncation, pinned (D4 follow-up, docs/tasks/parked/task-constrained-confidence.md).
 
     JEV_TOKENIZER=~/models/JEV-9B python3 scripts/pin_decisions_truncation.py  ->  testdata/decisions/truncation_golden.json
 

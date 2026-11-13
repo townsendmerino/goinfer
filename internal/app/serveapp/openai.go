@@ -461,7 +461,7 @@ type server struct {
 	// zero value is nil, so newServer needs no init.
 	halted atomic.Pointer[haltInfo]
 
-	// swapGuardTripped and swapWatch are the serving-side swap tripwire (docs/tasks/task-never-swap-2026-09.md); see
+	// swapGuardTripped and swapWatch are the serving-side swap tripwire (docs/completed/task-never-swap-2026-09.md); see
 	// swapguard.go. The zero values mean not armed yet: startSwapGuard sets swapWatch during newServer, and a nil
 	// swapWatch (GOINFER_SWAP_GUARD=off) is a valid, permanent state.
 	swapGuardTripped atomic.Bool
@@ -630,7 +630,7 @@ type sampling struct {
 	// before sampling; -100 bans the token in practice. /v1/messages takes it as a goinfer extension.
 	LogitBias      map[string]float64 `json:"logit_bias"`
 	ResponseFormat *respFormat        `json:"response_format"`
-	// Confidence is the goinfer_confidence vendor extension (docs/tasks/task-constrained-confidence.md): with
+	// Confidence is the goinfer_confidence vendor extension (docs/tasks/parked/task-constrained-confidence.md): with
 	// response_format json_schema, the response carries each enum, boolean and integer field's confidence. Only the
 	// routes that write it back set confidenceOK; prepare refuses the flag everywhere else, so no route can accept it
 	// and silently drop the result.

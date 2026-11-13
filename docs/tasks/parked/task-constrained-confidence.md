@@ -93,7 +93,7 @@
 > (constrained generation; D7 measures decisions against it) ·
 > [`task-work-queue-2026-09.md`](../task-work-queue-2026-09.md) (J1/J3/J4 plumbing D5's batch route
 > rides) · [`task-concurrency-2026-09.md`](task-concurrency-2026-09.md) (MC1/MC3 slots, D7's
-> concurrency cell) · [`task-site-2026-09.md`](../task-site-2026-09.md) (D9) ·
+> concurrency cell) · [`task-site-2026-09.md`](../../completed/task-site-2026-09.md) (D9) ·
 > [`task-never-swap-2026-09.md`](../../completed/task-never-swap-2026-09.md) (D3's merge-at-load memory) ·
 > [`task-embed-and-harness-ux.md`](../task-embed-and-harness-ux.md) (mode 3, "point my tools at it").
 
@@ -890,7 +890,7 @@ suffix, and the cost is documented.
   questions about one state cost a full prefill each.
 - **README:** the Decisions paragraph, with no speed claim.
 - **`docs/README.md`:** the index entry updated.
-- **The site:** [`task-site-2026-09.md`](../task-site-2026-09.md) S2 gains a decisions row on each model page, and a
+- **The site:** [`task-site-2026-09.md`](../../completed/task-site-2026-09.md) S2 gains a decisions row on each model page, and a
   decision-model tag reserved for Route B.
   - **Built 2026-09-30.** Each vetted checkpoint's card has a "Decisions · /v1/systemone" block.
     - **Where measured:** the checkpoint's label-scoring figures, from `apps/site/data/claims.json`'s new `decisions`
@@ -911,7 +911,7 @@ suffix, and the cost is documented.
 
 `docs/server.md` (a Decisions section with the §2 caveat), README (one paragraph; no speed claim
 unless D7 is in), the capability matrix (decision routes per family),
-[`task-site-2026-09.md`](../task-site-2026-09.md) (a models-page tag for decision models), and a recipe
+[`task-site-2026-09.md`](../../completed/task-site-2026-09.md) (a models-page tag for decision models), and a recipe
 under `docs/integrations/` if D0 found the SDK base-URL override or when jevx acceptance passes.
 
 ### Route C: Cloudflare's Clef (D10–D14) — done; the record is archived

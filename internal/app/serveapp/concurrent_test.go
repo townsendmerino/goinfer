@@ -111,7 +111,7 @@ func TestSessionLRU_checkout(t *testing.T) {
 	}
 }
 
-// TestServe_maxConcurrentMatchesAlone is MC3c's gate 1 (docs/tasks/task-concurrency-2026-09.md) through the real
+// TestServe_maxConcurrentMatchesAlone is MC3c's gate 1 (docs/tasks/parked/task-concurrency-2026-09.md) through the real
 // request path: 4 multi-turn conversations driven through drive() at the same time, on one CPU model with
 // -max-concurrent 4, each produce byte-identical text to the same conversation driven alone, and reuse their own
 // history on every turn. It needs a real checkpoint with a tokenizer: GOINFER_MC3C_MODEL (a .gguf), skipped without.

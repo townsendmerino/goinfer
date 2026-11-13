@@ -15,7 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestR9_w4a8BatchAt7B asks whether R-06 (docs/tasks/task-recompute-audit.md: GOINFER_W4A8_BATCH's fused q/k/v and
+// TestR9_w4a8BatchAt7B asks whether R-06 (docs/completed/task-recompute-audit.md: GOINFER_W4A8_BATCH's fused q/k/v and
 // gate/up matmuls, measured on the 1.5B only, ambiguous and parked) behaves differently at 7B, where the MLP's share of the
 // token is largest. w4a8BatchEnabled (decoder/weightmat.go) is a package-level var read once from GOINFER_W4A8_BATCH at
 // process start, so this test cannot toggle it mid-process: it reports this run's own mean/stdev over repeated decode windows
@@ -70,7 +70,7 @@ func TestR9_w4a8BatchAt7B(t *testing.T) {
 	}
 }
 
-// TestR9_decodeAttribution is docs/tasks/red-october.md R9, step 1, Mac half: the per-component
+// TestR9_decodeAttribution is docs/completed/red-october.md R9, step 1, Mac half: the per-component
 // ms/token table step 1 asks for, using the already-shipped GOINFER_DECODE_TIMING diagnostic
 // (decoder/model.go's decodeTiming var — forward/sample/logitProc/embed, already split; this test
 // adds nothing new there) at the brief's own decision-cell depth (128), greedy, on 0.5B/1.5B/7B.

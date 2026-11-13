@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// The VRAM a CUDA vision tower will claim, priced before the decoder builds (docs/tasks/task-multimodal-support-2026-10.md). A
+// The VRAM a CUDA vision tower will claim, priced before the decoder builds (docs/completed/task-multimodal-support-2026-10.md). A
 // tower loads lazily on the first image, after the resident decoder; without a reserve, serve's default KV plan takes every
 // free byte, the tower's upload fails (`CUDA_ERROR_OUT_OF_MEMORY`) and it runs on the CPU, so a served run on the default plan
 // reads as a pass for the wrong reason. The resident build already reserves for a drafter through Options.ExtraResidentBytes;

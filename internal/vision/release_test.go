@@ -143,7 +143,7 @@ func releasables(t *testing.T) []releasable {
 	return out
 }
 
-// TestReleaseBlocks_reloadsTheSameTower is TWR-G1 (goinfer's docs/tasks/task-memory-campaign-2026-10.md, MEM4(b) gates):
+// TestReleaseBlocks_reloadsTheSameTower is TWR-G1 (goinfer's docs/completed/task-memory-campaign-2026-10.md, MEM4(b) gates):
 // after ReleaseBlocks the heap falls by at least 80% of the blocks' bytes, the next forward is byte-equal to the one before
 // and reloads the blocks, and the export after it hashes the same as before.
 //

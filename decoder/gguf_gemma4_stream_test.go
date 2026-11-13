@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/aikit/embed"
 )
 
-// S2 (docs/tasks/task-never-swap-2026-09.md): gemma4 transcodes by streaming (build -> write -> release per layer), not by
+// S2 (docs/completed/task-never-swap-2026-09.md): gemma4 transcodes by streaming (build -> write -> release per layer), not by
 // building the whole model resident and serializing it once (34.7 GB RSS for the 26B-A4B, which no 16 GB Mac can build).
 // These gates pin that the streamed bundle is byte-identical to the resident one on synthetic gemma4 GGUFs shaped like the
 // two real layouts:

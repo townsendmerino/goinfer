@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// Images (Phase V, docs/tasks/task-embeddinggemma2.md). EmbeddingGemma 2's vision tower is gemma4_vision, the same
+// Images (Phase V, docs/completed/task-embeddinggemma2.md). EmbeddingGemma 2's vision tower is gemma4_vision, the same
 // tower and projector aikit already runs for Gemma 4 (vision.Gemma4Encoder, its tensors under the same names), so an
 // image's soft tokens come from aikit and replace their placeholder rows in the encoder's input, unscaled (the
 // composite model's masked_scatter runs after the token embedding's sqrt(hidden) scale). The text encoder, its PLE

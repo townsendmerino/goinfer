@@ -3,7 +3,7 @@ package sampling
 import "math"
 
 // TopKRow is one decode step's logits row reduced on-device to its K best entries (R7,
-// docs/tasks/red-october.md). IDs/Logits are ordered (logit DESCENDING, token id ASCENDING) — the tie
+// docs/completed/red-october.md). IDs/Logits are ordered (logit DESCENDING, token id ASCENDING) — the tie
 // order topKByLogit defines, which feeds the sampler's cumulative draw — so Logits[0] is the
 // row's exact maximum and IDs[0] its argmax. Z is the full-vocabulary softmax denominator
 // Σ exp((l−max)/T) at the temperature the row was requested with; 0 unless it was asked for. Full
@@ -15,7 +15,7 @@ type TopKRow struct {
 	Full   func() ([]float32, error)
 }
 
-// Sampling from a device-side top-K (R7, docs/tasks/red-october.md).
+// Sampling from a device-side top-K (R7, docs/completed/red-october.md).
 //
 // A resident backend that implements ResidentTopK hands the sampler the K best logits of the row
 // instead of all V. For a FILTERED sampler that is enough to reproduce the host path exactly: the

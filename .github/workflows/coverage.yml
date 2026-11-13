@@ -2,7 +2,7 @@ name: coverage
 
 # Test coverage, uploaded to Codecov for the README badge and the coverage link awesome-go asks for: the
 # root module (flag `root`) and demo/agent (flag `agent`), one flag per module so each number means something on its own
-# (docs/tasks/task-coverage-all-modules.md).
+# (docs/completed/task-coverage-all-modules.md).
 #
 # Measured and left out, by that task's pre-registered 25% bar (deviceless ubuntu-24.04, each module's own tags, the
 # workspace stitched; the coverage-probe run, 2026-10-08):

@@ -1015,7 +1015,7 @@ func (ps *prefillPassScratch) take(buf *[]float32, n int) []float32 {
 	return b
 }
 
-// prefillChunkRows is how many rows one pass of a long text prefill holds (docs/tasks/task-cpu-prefill-memory-2026-10.md,
+// prefillChunkRows is how many rows one pass of a long text prefill holds (docs/completed/task-cpu-prefill-memory-2026-10.md,
 // G40): the pass's working set is sized by its rows, so a chunk bounds it. A variable so a test can cross chunk boundaries on a
 // tiny fixture; 2048 in production.
 var prefillChunkRows = 2048

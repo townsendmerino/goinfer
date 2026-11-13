@@ -20,7 +20,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
-// G-S3a on CUDA for the float32 SigLIP tower (the S4 addendum, docs/tasks/task-multimodal-support-2026-10.md): the CUDA tower against aikit's CPU tower, both float32,
+// G-S3a on CUDA for the float32 SigLIP tower (the S4 addendum, docs/completed/task-multimodal-support-2026-10.md): the CUDA tower against aikit's CPU tower, both float32,
 // every output token at cosine >= 0.9999 (0.999-0.9999 ambiguous, parked). The Metal rebuild's test shape, bars and planted defects: (1) the attention scale dropped,
 // (5) the position table dropped, (6) the patch-embed bias dropped, each alone required to turn the tiny check red. The tiny tower is sharpened first (norms
 // randomised; random patch and q/k biases; q/k weights scaled up) because its all-ones norms, zero biases and init-scale q/k hid 5 of S3's 7 defects. The real tower

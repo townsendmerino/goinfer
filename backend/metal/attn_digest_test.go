@@ -19,7 +19,7 @@ import (
 )
 
 // The attention kernels' raw test outputs, hashed, so two builds can be compared byte for byte (OP1's gate G1-K,
-// docs/tasks/task-forward-architecture-2026-10.md §4.6). The kernel tests call recordAttnDigest where they read a
+// docs/completed/task-forward-architecture-2026-10.md §4.6). The kernel tests call recordAttnDigest where they read a
 // kernel's output back; without -attn-digest it does nothing.
 //
 //	go test -tags goinfer_testhooks ./metal -run "$(attnDigestRun)" -count=1 -attn-digest=/tmp/base.tsv

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job: the peer read after the Metal audit's merge (docs/tasks/task-metal-audit-2026-10.md, "Post-merge peer read:
+# Night job: the peer read after the Metal audit's merge (docs/completed/task-metal-audit-2026-10.md, "Post-merge peer read:
 # pre-registration"), registered 2026-10-03 before it runs. TE5(a): the levers were graded new / old with no peer arm;
 # the peer ratio is read once, after they ship, as its own same-session interleaved run. One bench_peer.py sweep on
 # Metal: goinfer at main c6f8100e (the merge), goinfer_old at main 71812d57 (last night's peer run, before the merge),
@@ -11,7 +11,7 @@
 #   scripts worktree ~/goinfer-bench/metal-audit-2026-10/wt-peer-post-c6f8100e (bench_peer.py and prompts.json)
 # Queued with:
 #   python3 scripts/night.py add metal-audit-peer-post --est 60 --by "Claude (Mac session), post-merge peer read" \
-#     --doc docs/tasks/task-metal-audit-2026-10.md -- bash docs/measurements/metal-audit-2026-10/run-peer-post-merge.sh
+#     --doc docs/completed/task-metal-audit-2026-10.md -- bash docs/measurements/metal-audit-2026-10/run-peer-post-merge.sh
 # bench_peer.py holds the timing lock (inherited from the night runner) and uses the darwin instant idle gate.
 set -uo pipefail
 NEW=c6f8100e

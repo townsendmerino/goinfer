@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
 )
 
-// TestEG2Metal_realParity is Phase M's Gate 2 (docs/tasks/task-embeddinggemma2.md): the real google/embeddinggemma-2
+// TestEG2Metal_realParity is Phase M's Gate 2 (docs/completed/task-embeddinggemma2.md): the real google/embeddinggemma-2
 // (GOINFER_EG2_DIR, default ~/models/embeddinggemma-2, never the archive) on the Metal accelerator against the
 // committed sentence-transformers golden (testdata/embeddinggemma2-real/golden.json, 48 texts, 10 to 1,771 tokens):
 // identical ids, and every embedding at cosine >= 0.9999 with the reference. It also times the Metal and the CPU

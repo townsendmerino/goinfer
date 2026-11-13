@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job: the C-P01 A/B of docs/tasks/task-metal-audit-2026-10.md ("C-P01: built, pending its A/B"), pre-registered
+# Night job: the C-P01 A/B of docs/completed/task-metal-audit-2026-10.md ("C-P01: built, pending its A/B"), pre-registered
 # there on 2026-10-02 before any timed run, and amended the same day, still before any, to three arms. M26 at 8 slots,
 # 128 timed tokens per process, one process at a time under scripts/swap_killwatch.sh:
 #   old   = metal-tagged-f56b40ec.test (the binary T1.8 ran: the heap scale cache)
@@ -10,7 +10,7 @@
 # the Go heap in use there.
 #
 #   python3 scripts/night.py add metal-audit-cp01-ab --est 30 --priority 20 --by "Claude, Metal audit C-P01 A/B" \
-#     --doc docs/tasks/task-metal-audit-2026-10.md -- bash ~/goinfer-bench/metal-audit-2026-10/run-cp01-ab.sh
+#     --doc docs/completed/task-metal-audit-2026-10.md -- bash ~/goinfer-bench/metal-audit-2026-10/run-cp01-ab.sh
 # Logs: ~/goinfer-logs/metal-audit-2026-10/cp01-ab/; the graded summary is summary.txt there.
 set -uo pipefail
 OLD=f56b40ec

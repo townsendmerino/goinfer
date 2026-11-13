@@ -18,7 +18,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// TestKSD4_towerHashes is D4-G2's instrument (docs/tasks/task-kernel-survey-2026-10.md, "KS-D4 gates"): every tower of
+// TestKSD4_towerHashes is D4-G2's instrument (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-D4 gates"): every tower of
 // mem2Towers over its committed tiny fixture and growing inputs, the SHA-256 of each output's bits. Run from a test binary at
 // the change and one at its base; every line must match.
 func TestKSD4_towerHashes(t *testing.T) {

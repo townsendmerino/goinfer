@@ -21,7 +21,7 @@ const (
 	RouteHead  = "head"  // Route B: a trained decision head over the final-norm hidden state (D4)
 )
 
-// Head is a trained decision head (Route B, D4 of docs/tasks/task-constrained-confidence.md), in the shape autotrust's
+// Head is a trained decision head (Route B, D4 of docs/tasks/parked/task-constrained-confidence.md), in the shape autotrust's
 // JEV models ship: judge_config.json (the slot layout, the template version, how the adapter is applied),
 // head.safetensors (one fp32 linear map proj.weight [slots, hidden] and proj.bias [slots]) and calibration.json (a
 // temperature per kind). The reference decide() runs the prompt through the backbone with the LoRA active, takes the

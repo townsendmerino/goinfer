@@ -7,7 +7,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
-// The audio tower on another device (Phase A's AM, docs/tasks/task-embeddinggemma2.md: Metal). An AudioAccelerator
+// The audio tower on another device (Phase A's AM, docs/completed/task-embeddinggemma2.md: Metal). An AudioAccelerator
 // runs the 12 conformer blocks from aikit's loaded tower (its exported Layers); the subsampler before them and the
 // output projection and embedder after them stay aikit's (Subsample, FinishBlocks), on the host.
 

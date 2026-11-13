@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// G-S14e1, the prompt half (docs/tasks/task-multimodal-support-2026-10.md): the transcription-request ids mistral_common 1.12.0 builds for 2 s, 35 s and 65 s clips (1, 2 and 3 thirty-second
+// G-S14e1, the prompt half (docs/completed/task-multimodal-support-2026-10.md): the transcription-request ids mistral_common 1.12.0 builds for 2 s, 35 s and 65 s clips (1, 2 and 3 thirty-second
 // chunks) with language "en", "fr" and none, pinned by scripts/pin_tekken.py. The tekken.json is not committed; the test reads it from the Voxtral Mini directory under
 // GOINFER_MODELS_DIR (default ~/models) and skips without it, and refuses a file whose sha256 is not the golden's.
 

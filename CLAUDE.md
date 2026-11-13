@@ -19,7 +19,7 @@ with a canary, runs CI's targets under `GOOS=linux` itself, and ends with a VERD
 indistinguishable from one that never ran. Never combine `go run …staticcheck` with `GOOS=linux`: it builds a Linux binary
 the Mac cannot exec, and the shell still reports exit 0.
 
-**Product code reaches `main` through a pull request that merges itself; do not watch CI** (Francis, `docs/tasks/task-subsystems-2026-10.md` §12 PW1).
+**Product code reaches `main` through a pull request that merges itself; do not watch CI** (Francis, `docs/completed/task-subsystems-2026-10.md` §12 PW1).
 - Push your branch, open a PR, and at once, checks still pending, run `gh pr merge <n> --repo <owner/repo> --auto --merge`
   as its own bare command (no `cd`, no `&&`); then print `BRANCHES READY: #<n> <head sha>`. Never a plain `gh pr merge`
   without `--auto`. If `--auto` is denied, print `BRANCHES READY` and say so; the coordinator takes it to Francis. **Never

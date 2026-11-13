@@ -85,7 +85,7 @@ func worstRel(got, want []float32) float64 {
 	return worst
 }
 
-// TestMatmulTiledF32_matchesNaive is G-S12.3b-1 and G-S12.3c-1 (docs/tasks/task-multimodal-support-2026-10.md, S12.3b
+// TestMatmulTiledF32_matchesNaive is G-S12.3b-1 and G-S12.3c-1 (docs/completed/task-multimodal-support-2026-10.md, S12.3b
 // and S12.3c): the two tiled float32 matmuls, 16x16 and register-blocked, each against the naive kernel, at shapes that are and are not multiples of 16 in each dimension and at the
 // SigLIP tower's own, every output within a relative 1e-5; the naive kernel against a float64 host product as the
 // control; and, planted, a strip tail read past K, which must be red at a K that is not a multiple of 16.

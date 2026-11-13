@@ -9,7 +9,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/app/loadflags"
 )
 
-// G-S14i2 of docs/tasks/task-multimodal-support-2026-10.md: a Whisper directory in --model loads as a speech model, beside a decoder when there is one, and a directory missing what it needs is refused by name.
+// G-S14i2 of docs/completed/task-multimodal-support-2026-10.md: a Whisper directory in --model loads as a speech model, beside a decoder when there is one, and a directory missing what it needs is refused by name.
 
 func whisperSmallDir(t *testing.T) string {
 	t.Helper()

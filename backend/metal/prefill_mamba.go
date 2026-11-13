@@ -4,7 +4,7 @@ package metal
 
 import "github.com/townsendmerino/goinfer/internal/runtime/mem"
 
-// KS-D8 (docs/tasks/task-kernel-survey-2026-10.md, "KS-D8 design and gates"): a Mamba-2 layer in the batched prefill pass, in
+// KS-D8 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-D8 design and gates"): a Mamba-2 layer in the batched prefill pass, in
 // D-B01's shape. in_proj and out_proj run as int8 prefill GEMMs over all M rows (gemm_w8f16_*, on the int8 codes and per-row
 // scales the layer already holds), on f16 activations like every other batched layer; the mixer between them runs as one
 // dispatch per stage over the M rows, the recurrent stages (the conv window, the SSM state) as a token loop inside the kernel.

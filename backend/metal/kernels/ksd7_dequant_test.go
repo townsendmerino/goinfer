@@ -30,7 +30,7 @@ kernel void ksd7_dequant(device ushort* out[[buffer(0)]], uint i[[thread_positio
 }
 `
 
-// TestKSD7_half2DequantExhaustive is KS-D7's first measurement (docs/tasks/task-kernel-survey-2026-10.md): every f16 scale
+// TestKSD7_half2DequantExhaustive is KS-D7's first measurement (docs/tasks/parked/task-kernel-survey-2026-10.md): every f16 scale
 // times every nibble, the half2 dequant against the current one, bit for bit, compiled as the prefill library is (fast math).
 // It reports the differing cases by class; it does not change any kernel.
 func TestKSD7_half2DequantExhaustive(t *testing.T) {

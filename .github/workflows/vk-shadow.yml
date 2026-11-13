@@ -1,6 +1,6 @@
 name: vk-shadow
 
-# VK5's shadow mode (docs/tasks/task-subsystems-2026-10.md §5.8): on every push to main, every parity family judged by
+# VK5's shadow mode (docs/completed/task-subsystems-2026-10.md §5.8): on every push to main, every parity family judged by
 # today's key and by the shadow key (week 3: the program builders and the loader files out, the family's program fingerprints
 # and loader identities in), each
 # disagreement with its reason. Not a required check. No concurrency group, so a push that lands while another runs is not collapsed away.

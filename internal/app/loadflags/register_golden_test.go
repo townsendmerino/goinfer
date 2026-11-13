@@ -19,7 +19,7 @@ type registeredFlag struct {
 	Name, Usage, DefValue, Type string
 }
 
-// TestRegister_golden is G-SB10-5 (docs/tasks/task-subsystems-2026-10.md § "Step 2's gates"): every flag Register
+// TestRegister_golden is G-SB10-5 (docs/completed/task-subsystems-2026-10.md § "Step 2's gates"): every flag Register
 // adds, for each app, keeps its usage text, default and value type byte for byte. --moe-pager's default is the
 // one that varies by OS, so the golden holds the linux value and the test checks it against MoEPagerDefault.
 func TestRegister_golden(t *testing.T) {

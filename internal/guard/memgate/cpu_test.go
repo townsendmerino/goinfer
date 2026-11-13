@@ -72,7 +72,7 @@ func cpuGateRowAt(t *testing.T, row, path string, o decoder.Options, plant func(
 	return read, true
 }
 
-// TestMemGate_cpu is MM7's gate on the CPU (docs/tasks/task-subsystems-2026-10.md): every census fixture at every option cell that loads.
+// TestMemGate_cpu is MM7's gate on the CPU (docs/completed/task-subsystems-2026-10.md): every census fixture at every option cell that loads.
 // It runs every row in one test, since a filtered run would see known gaps go quiet.
 func TestMemGate_cpu(t *testing.T) {
 	d, err := sb2census.ReadLayerD("../../..", "cuda") // the fixture list; which cells go resident on CUDA is not read

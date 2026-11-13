@@ -21,7 +21,7 @@ import (
 // ksA1ProtoPTX is ks_a1_proto.cu: KS-A1's prototype native Q5_K / Q6_K GEMVs. Test-only.
 var ksA1ProtoPTX = readPTX("ks_a1_proto")
 
-// ksA1Shape is one GEMV shape of A1-G0 (docs/tasks/task-kernel-survey-2026-10.md, "KS-A1 on CUDA"). count is how many
+// ksA1Shape is one GEMV shape of A1-G0 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-A1 on CUDA"). count is how many
 // tensors of the shape a Phi-3 mini token reads; 0 marks a shape that is read but not graded.
 type ksA1Shape struct {
 	name  string

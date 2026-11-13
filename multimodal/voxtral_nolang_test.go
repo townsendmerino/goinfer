@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// G-S14e4a (ii) of docs/tasks/task-multimodal-support-2026-10.md: VoxtralPrompt with no language, on the real tekken.json, is transformers 5.15.0's own
+// G-S14e4a (ii) of docs/completed/task-multimodal-support-2026-10.md: VoxtralPrompt with no language, on the real tekken.json, is transformers 5.15.0's own
 // apply_transcription_request(language=None) request id for id, for a 3 s clip, the registered 5.9 s clip and the 36 s two-window clip (scripts/pin_voxtral_nolang.py; tokenizer and processor only).
 func TestVoxtralPrompt_noLanguageMatchesProcessor(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "testdata", "voxtral_nolang_ids.json"))

@@ -10,7 +10,7 @@ import (
 )
 
 // TestCohereResidentSmokeMetal and TestCohere2ResidentSmokeMetal are G5's last row
-// (docs/tasks/task-gpu-paths-2026-09.md) smoke gates: FeatParallelBlock + FeatLogitScale (+
+// (docs/completed/task-gpu-paths-2026-09.md) smoke gates: FeatParallelBlock + FeatLogitScale (+
 // FeatLayerNorm, already declared here for GPT-2) — Cohere/Command-R and Cohere2/Command-R7B
 // going resident instead of running fully on CPU.
 //

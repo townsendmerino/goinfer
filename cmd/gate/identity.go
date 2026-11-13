@@ -21,7 +21,7 @@ import (
 )
 
 // `gate identity <old-rev> <new-rev>`: inherit validation by identity (TE6(b),
-// docs/tasks/task-test-efficiency-2026-09.md).
+// docs/completed/task-test-efficiency-2026-09.md).
 //
 // For a change meant to be numerically neutral, the cheapest complete proof is byte-identical logits
 // against the last validated build on the family's parity prompt: build ONE small dumper at each revision,

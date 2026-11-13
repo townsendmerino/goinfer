@@ -18,7 +18,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// The scheduling census (docs/tasks/task-subsystems-2026-10.md § "SB6 — the scheduling census"): today's scheduling
+// The scheduling census (docs/completed/task-subsystems-2026-10.md § "SB6 — the scheduling census"): today's scheduling
 // decisions replayed over fixed traces and compared with goldens under testdata/sched/, so a move of the policy out of
 // this package can show it changed nothing. -sched.update rewrites the goldens.
 var updateSched = flag.Bool("sched.update", false, "rewrite the scheduling census goldens under testdata/sched/")

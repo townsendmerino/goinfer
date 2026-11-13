@@ -14,7 +14,7 @@ import (
 	"testing"
 )
 
-// S11 (docs/tasks/task-multimodal-support-2026-10.md, "S11, plan and gates"): two images in one prompt, against the
+// S11 (docs/completed/task-multimodal-support-2026-10.md, "S11, plan and gates"): two images in one prompt, against the
 // two-image goldens scripts/pin_two_images_tiny.py pinned from HF (transformers 5.15.0). Each layout is graded at the
 // family's existing single-image bar, at the last position and at every position; each planted defect must miss it.
 

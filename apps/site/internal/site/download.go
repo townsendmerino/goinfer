@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// The Download page (docs/tasks/task-site-2026-09.md S4) is built from the release facts scripts/site_release_data.py writes
+// The Download page (docs/completed/task-site-2026-09.md S4) is built from the release facts scripts/site_release_data.py writes
 // to site/data/release.json: the tag, and every attached asset with its size and the sha256 from the release's own
 // checksums.txt. The file is generated at build time and not committed; without it (a local build with no network) the page
 // says so and points at the releases page rather than showing a table it cannot fill.

@@ -324,7 +324,7 @@ class TestHookGitDirDoesNotRedirectSiblingLookups(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------------------------------
-# CC0 (docs/tasks/task-code-comments-2026-10.md): symbol citations `path.go:Name`, pinned records
+# CC0 (docs/completed/task-code-comments-2026-10.md): symbol citations `path.go:Name`, pinned records
 # `<!-- citations-at: <commit> -->`, and the closing of the path:line door. Mutation-checked: each
 # red case below is a mistake someone will make, and each green case is an edit that used to cost a
 # citation re-point and must not any more.

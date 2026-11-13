@@ -1,5 +1,5 @@
 #!/bin/bash
-# MC3 S2 W7 grading (docs/tasks/task-concurrency-2026-09.md, pre-registered in 16c27bd7): Metal, qwen2.5-coder-1.5b int4,
+# MC3 S2 W7 grading (docs/tasks/parked/task-concurrency-2026-09.md, pre-registered in 16c27bd7): Metal, qwen2.5-coder-1.5b int4,
 # serve defaults, temperature 0.8 with a fixed seed per client per turn (--seed 1000) and --fixed-nonce.
 # old = serve-metal @ d2225ec4 (shipped MC3: sampled tokens run solo); new = @ 4954f978 (S2); ref = @ 9efc3185 (pre-MC3).
 set -u

@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
-// TestTinyAudio_matchesTransformers is Phase A's gate A2t (docs/tasks/task-embeddinggemma2.md): aikit's gemma4_audio
+// TestTinyAudio_matchesTransformers is Phase A's gate A2t (docs/completed/task-embeddinggemma2.md): aikit's gemma4_audio
 // tower on the committed tiny random tower (testdata/gemma4-audio-tiny, scripts/pin_gemma4_audio_tiny.py: finite
 // asymmetric clip bounds binding in 15 of 20 projections, random norm weights and per_dim_scale, a 1.3 s clip of 33
 // soft tokens so the 12-key window binds) against transformers in float32 with sdpa: the log-mel within 1e-4 of the

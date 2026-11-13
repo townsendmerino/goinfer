@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14h2's reference (docs/tasks/task-multimodal-support-2026-10.md, "G-S14h"): openai/whisper-small in transformers 5.15.0 float32, generate(return_timestamps=True, return_segments=True, task="transcribe", temperature=(0.0,),
+"""G-S14h2's reference (docs/completed/task-multimodal-support-2026-10.md, "G-S14h"): openai/whisper-small in transformers 5.15.0 float32, generate(return_timestamps=True, return_segments=True, task="transcribe", temperature=(0.0,),
 condition_on_prev_tokens=True, logprob_threshold=-1.0, compression_ratio_threshold=2.4, no_speech_threshold=0.6) (OpenAI's defaults, without the sampled fallback) on three configurations on two long clips (the last uses logprob_threshold=-0.4 on the silent composite): the 70 s composite of
 scripts/pin_whisper_longest.py, and a "silent" composite: 35 s of zeros, the registered 5.9 s clip, 35 s of zeros, the first two LibriSpeech dummy clips (long form, a silent first window and a silent third).
 Per case: the segments (start, end, tokens), the sequence, the decoded text. Writes <out>/golden.json and <case>.in.f32.

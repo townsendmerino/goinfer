@@ -20,7 +20,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// G-S14t4 on the real checkpoints (docs/tasks/task-multimodal-support-2026-10.md, S14.6 lever B): the device encoder against the CPU encoder, whole-window, every position, on Whisper-small
+// G-S14t4 on the real checkpoints (docs/completed/task-multimodal-support-2026-10.md, S14.6 lever B): the device encoder against the CPU encoder, whole-window, every position, on Whisper-small
 // (80 mels, 12 layers, d 768) and Voxtral Mini's tower (128 mels, 32 layers, d 1280, head dim 64: the fused attention kernel's shape). The features are a clip's own log-mel when
 // GOINFER_SPEED_WAV is set, else seeded noise.
 

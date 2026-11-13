@@ -1,4 +1,4 @@
-// Package clef is the Go side of Cloudflare's Clef-flash joint decision model (Route C of docs/tasks/task-constrained-confidence.md,
+// Package clef is the Go side of Cloudflare's Clef-flash joint decision model (Route C of docs/tasks/parked/task-constrained-confidence.md,
 // D10-D14): the record encoder here (D12), the joint head beside it.
 //
 // The encoder is a port of encode_record in the checkpoint's own joint_schema_model.py, read in full for

@@ -2,7 +2,7 @@
 """queue_citation_lint.py — every citation in docs/QUEUE.md must resolve, and its target must match.
 
 Commit citations (sha -> subject) are recorded in a generated index (docs/citation-index.md) and compared on every run. Code
-citations come in two forms since CC0 (docs/tasks/task-code-comments-2026-10.md):
+citations come in two forms since CC0 (docs/completed/task-code-comments-2026-10.md):
 
   - `path.go:Name` / `path.go:Type.Method` in a LIVE doc names a declaration, and the lint checks the file declares it NOW. Nothing is
     recorded and nothing goes stale when lines move above it.
@@ -615,7 +615,7 @@ def resolve_path(rel: str, line: int):
 BARE_RE = re.compile(r"(?<![\w/])((?:[a-z0-9_]+/)*[a-z0-9_]+\.(?:go|sh|py))(?![\w:])")
 
 
-# ---- SYMBOL CITATIONS (CC0.b, docs/tasks/task-code-comments-2026-10.md) ----
+# ---- SYMBOL CITATIONS (CC0.b, docs/completed/task-code-comments-2026-10.md) ----
 #
 # A live doc names a declaration, not a line: `decoder/forwardn.go:Model.forwardN`, `gpu/residency.go:residentDecoder.PrefillLast`,
 # `scripts/x.py:Tool.run`. The check is that the file DECLARES that name. It survives every edit that does not rename the declaration

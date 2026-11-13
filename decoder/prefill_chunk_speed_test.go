@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// TestG40Speed is G40-3 (docs/tasks/task-cpu-prefill-memory-2026-10.md §4, and the amendment before it ran): the CPU text
+// TestG40Speed is G40-3 (docs/completed/task-cpu-prefill-memory-2026-10.md §4, and the amendment before it ran): the CPU text
 // prefill chunked against a single pass, in one process, interleaved ABBA across pairs, each arm on a fresh cache. The
 // quantity is the median over pairs of chunked ÷ single-pass prefill time. Night only: GOINFER_G40_SPEED=1.
 //

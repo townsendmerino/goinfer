@@ -64,7 +64,7 @@ func v2Run(t *testing.T, m *Model, chunk int) ([][]float32, int64) {
 	return v1Decode(t, m, cache, lg), passes
 }
 
-// TestMEM5VL_gemma4BidirChunked is V2-G1 (docs/tasks/task-memory-campaign-2026-10.md, "MEM5-VL (2) gates"): the bidirectional
+// TestMEM5VL_gemma4BidirChunked is V2-G1 (docs/completed/task-memory-campaign-2026-10.md, "MEM5-VL (2) gates"): the bidirectional
 // image prefill in 7- and 16-row passes against one pass; the last logits and four decode steps after are byte-equal.
 func TestMEM5VL_gemma4BidirChunked(t *testing.T) {
 	needGemma4Bidir(t)

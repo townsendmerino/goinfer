@@ -49,6 +49,7 @@ import collections
 import datetime as dt
 import difflib
 import fnmatch
+import json
 import os
 import pathlib
 import posixpath
@@ -74,7 +75,7 @@ DOCS_ONLY_FILES = ("RELEASING.md",)
 LINK_RE = re.compile(r"(!?\[[^\]\n]*\]\()([^)\s]+)(\))")  # [text](target) and ![alt](target)
 REFDEF_RE = re.compile(r"^(\s*\[[^\]\n]+\]:\s*)(\S+)", re.M)  # [label]: target
 TICK_RE = re.compile(r"`([^`\n]+\.md(?:#[^`\n]*)?)`")  # `path/to/doc.md` in prose
-GENERATED_RE = re.compile(r"(?i)generated(\*\*)? (by|from)|do not edit")  # in a doc's first lines
+GENERATED_RE = re.compile(r"(?i)do not edit")  # in a doc's first lines
 REGEN_RE = re.compile(r"go test [^`\n—]*?-update")
 
 
@@ -624,6 +625,32 @@ def _matches_only(rel: str, globs: list[str]) -> bool:
     return not globs or any(fnmatch.fnmatch(rel, g) for g in globs)
 
 
+def parity_hashed_files() -> set[str]:
+    """Non-Go files listed in a parity manifest's covers/own/shared_sets."""
+    parity_dir = ROOT / "testdata/parity"
+    if not parity_dir.is_dir():
+        return set()
+    out: set[str] = set()
+    for p in parity_dir.glob("*.json"):
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        lists = []
+        for key in ("own", "covers"):
+            if isinstance(data.get(key), list):
+                lists.append(data[key])
+        if p.name == "shared_sets.json":
+            lists.extend(v for v in data.values() if isinstance(v, list))
+        for items in lists:
+            for item in items:
+                if isinstance(item, str) and not item.endswith(".go"):
+                    out.add(item)
+    return out
+
+
 def cmd_unstub(a) -> int:
     stubs = stubs_on_disk()
     valid: list[tuple[str, str]] = []
@@ -635,12 +662,13 @@ def cmd_unstub(a) -> int:
         else:
             valid.append((s, target))
 
-    class_files: dict[str, set[str]] = {"FROZEN": set(), "GENERATED": set(), "REPOINT": set()}
+    class_files: dict[str, set[str]] = {"FROZEN": set(), "GENERATED": set(), "HASHED": set(), "REPOINT": set()}
     class_mentions: collections.Counter[str] = collections.Counter()
     go_files: set[str] = set()
     go_mentions = 0
     gen_cmds: dict[str, str] = {}
     blocked: dict[str, list[str]] = collections.defaultdict(list)
+    hashed_files = parity_hashed_files()
     read_by_go_files: set[str] = set()
     planned: dict[str, str] = {}
     stub_non_gen_refs: dict[str, list[str]] = {}
@@ -661,6 +689,17 @@ def cmd_unstub(a) -> int:
                     gen_cmds[f] = cmd
                 else:
                     blocked[f].append(s)
+                continue
+
+            if f in hashed_files:
+                non_gen.append(f)
+                class_files["HASHED"].add(f)
+                class_mentions["HASHED"] += _count_mentions(txt, f, s)
+                if a.hashed and _matches_only(f, a.only):
+                    cur = planned.get(f, txt)
+                    out = rewrite_refs(cur, f, s, target)
+                    if out is not None:
+                        planned[f] = out
                 continue
 
             non_gen.append(f)
@@ -698,10 +737,15 @@ def cmd_unstub(a) -> int:
     print("  counts by class:")
     print(f"    FROZEN (never edit):     {len(class_files['FROZEN']):4} file(s), {class_mentions['FROZEN']:4} mention(s)")
     print(f"    GENERATED (regenerate):  {len(class_files['GENERATED']):4} file(s), {class_mentions['GENERATED']:4} mention(s)")
+    print(f"    HASHED (parity inputs):  {len(class_files['HASHED']):4} file(s), {class_mentions['HASHED']:4} mention(s)")
     print(f"    EVERYTHING ELSE:         {len(class_files['REPOINT']):4} file(s), {class_mentions['REPOINT']:4} mention(s)"
           f"  (Go: {len(go_files)} file(s), {go_mentions} mention(s))")
     if a.only:
         print(f"    --only {a.only}: matched {len(planned)} file(s) to rewrite")
+    if class_files["HASHED"] and not a.hashed:
+        print("  hashed inputs (skipped; pass --hashed to rewrite):")
+        for f in sorted(class_files["HASHED"]):
+            print(f"    {f}")
     if gen_cmds:
         print("  regenerate commands:")
         for f in sorted(gen_cmds):
@@ -762,6 +806,7 @@ def main() -> int:
     ar.add_argument("--stage", action="store_true", help="git add exactly the changed paths")
     un = sub.add_parser("unstub", help="retire pointer stubs under docs/tasks/ (dry run unless --apply)")
     un.add_argument("--only", action="append", default=[], help="glob limiting which files are rewritten (repeatable)")
+    un.add_argument("--hashed", action="store_true", help="also rewrite non-Go files hashed by a parity manifest")
     un.add_argument("--delete-stubs", action="store_true", help="delete stubs with no non-frozen, non-generated refs")
     un.add_argument("--apply", action="store_true", help="write rewritten files and delete eligible stubs")
     un.add_argument("--stage", action="store_true", help="git add exactly the changed paths")

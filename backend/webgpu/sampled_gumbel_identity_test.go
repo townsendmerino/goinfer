@@ -119,7 +119,7 @@ var (
 
 // TestSB5ResidentStreams records generateInto's decode paths on llama-tiny resident on webgpu, alone and under MC3, and holds
 // them to a record taken before a change (-sb5.out writes one, -sb5.want compares): the before/after identity for moving
-// the plain decode loop onto Forward (docs/tasks/task-subsystems-2026-10.md §8 SB5). Skips without a device.
+// the plain decode loop onto Forward (docs/completed/task-subsystems-2026-10.md §8 SB5). Skips without a device.
 func TestSB5ResidentStreams(t *testing.T) {
 	got := map[string]decoder.ResidentStreamCase{}
 	for _, mc3 := range []bool{false, true} {

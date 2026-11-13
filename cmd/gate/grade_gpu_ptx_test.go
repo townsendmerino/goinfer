@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// TestGradePTX_plants is SB12-C4 for step 11 (docs/tasks/task-subsystems-2026-10.md, SB12 step 11 (CUDA)): from a green
+// TestGradePTX_plants is SB12-C4 for step 11 (docs/completed/task-subsystems-2026-10.md, SB12 step 11 (CUDA)): from a green
 // input the group passes; one file that differs fails naming it; none verified fails; some unverified add a counted SKIP
 // naming them beside the verdict; a script that cannot run skips with its reason; every verdict that ran counts as ran.
 func TestGradePTX_plants(t *testing.T) {

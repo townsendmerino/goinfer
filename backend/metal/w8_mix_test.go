@@ -8,7 +8,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestW8Mix_M2_matchesCPU is int4mix's gate M2 (docs/tasks/task-metal-int8-2026-10.md, "Slice 4: int4mix"): in
+// TestW8Mix_M2_matchesCPU is int4mix's gate M2 (docs/completed/task-metal-int8-2026-10.md, "Slice 4: int4mix"): in
 // residentParity's harness (24 greedy steps in lockstep against the CPU at the same quant), Metal int4mix on its native
 // path (attention W8A8, FFN int4) against the CPU's int4mix, beside the same with the native path off (the int4
 // re-quant). Bar: the native arm's minimum cosine at least 0.99 and at least the re-quant arm's, and its hard flips (top-2

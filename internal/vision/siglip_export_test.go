@@ -8,7 +8,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// G-S3's export check (goinfer's docs/tasks/task-multimodal-support-2026-10.md, the S2 G-S2a rule applied to SigLIP):
+// G-S3's export check (goinfer's docs/completed/task-multimodal-support-2026-10.md, the S2 G-S2a rule applied to SigLIP):
 // the exported pieces, recomposed the way a device tower recomposes them, reproduce Forward bit for bit. Norms are
 // randomised first (an all-ones fixture hides a dropped norm).
 func TestSiglipExport_recomposesForward(t *testing.T) {

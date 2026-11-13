@@ -1,4 +1,4 @@
-// gumbel.cu — device-side temperature-only sampling by Gumbel-max (R7b, docs/tasks/red-october.md).
+// gumbel.cu — device-side temperature-only sampling by Gumbel-max (R7b, docs/completed/red-october.md).
 //
 // The token drawn is  argmax_i ( l_i * invT + G_i ),  G_i = -ln(-ln1p(-w_i)),  w_i = (h_i + 0.5) / 2^32,
 // where h_i is a word of Philox4x32-10 keyed by (seed) with counter (i>>2, draw_lo, draw_hi, 0), lane i&3.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job, owner-approved 2026-10-01 to run LAST in the queue: T1.8 and T1.9 of docs/tasks/task-metal-audit-2026-10.md
+# Night job, owner-approved 2026-10-01 to run LAST in the queue: T1.8 and T1.9 of docs/completed/task-metal-audit-2026-10.md
 # on the Gemma 4 26B (M26), pre-registered in that doc's "The M26 job" table before this ran. Three processes, each under
 # scripts/swap_killwatch.sh (copied beside the binary):
 #   1. T1.8:  8 slots, held at token 32 while vmmap and footprint are taken from OUTSIDE the process;
@@ -13,7 +13,7 @@
 #     -o ~/goinfer-bench/metal-audit-2026-10/metal-tagged-<REV>.test ./metal/)
 # Queued with:
 #   python3 scripts/night.py add metal-audit-m26 --est 15 --priority 90 --by "Claude, Metal audit M26 (owner-approved)" \
-#     --doc docs/tasks/task-metal-audit-2026-10.md -- bash ~/goinfer-bench/metal-audit-2026-10/run-m26.sh
+#     --doc docs/completed/task-metal-audit-2026-10.md -- bash ~/goinfer-bench/metal-audit-2026-10/run-m26.sh
 # Logs: ~/goinfer-logs/metal-audit-2026-10/m26/; RESULT lines collected in results.txt there.
 set -uo pipefail
 REV=f56b40ec

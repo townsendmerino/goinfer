@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Step (b') of the Gemma 4 31B work (docs/tasks/task-multimodal-support-2026-10.md, "Gemma 4 31B, step (b')", registered before this code): a layer-streaming Hugging Face float32 reference.
+"""Step (b') of the Gemma 4 31B work (docs/completed/task-multimodal-support-2026-10.md, "Gemma 4 31B, step (b')", registered before this code): a layer-streaming Hugging Face float32 reference.
 The 31B is 59 GB in bf16, so an ordinary float32 forward (about 124 GB) does not fit this box's 62 GB. This runs Hugging Face's OWN decoder-layer modules LAYER-MAJOR: every sequence goes through layer 0
 (its weights read from the safetensors shards, cast to float32, used, dropped), then layer 1, and so on, keeping only the [tokens, hidden] states between layers. What this script owns is the loop order,
 the scaled embedding, the masks (HF's own helpers), the final norm, the tied head and the softcap; no layer arithmetic is re-implemented.

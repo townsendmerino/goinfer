@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14g1's reference (docs/tasks/task-multimodal-support-2026-10.md, "G-S14g"): transformers 5.15.0's WhisperFeatureExtractor as long-form generate calls it (truncation=False, padding="longest",
+"""G-S14g1's reference (docs/completed/task-multimodal-support-2026-10.md, "G-S14g"): transformers 5.15.0's WhisperFeatureExtractor as long-form generate calls it (truncation=False, padding="longest",
 return_attention_mask=True) on three clips: the registered 5.9 s LibriSpeech clip, the clip six times with half-second gaps (36 s), and a 70 s composite of the first LibriSpeech dummy clips with half-second gaps.
 Writes <out>/<case>.in.f32, <case>.feats.f32 ([mels][T] row-major), <case>.mask (frames the attention mask counts) and meta.json.
 Run (repo root): ~/g4venv/bin/python -I scripts/pin_whisper_longest.py --model ~/models/whisper-small --data ~/goinfer-bench/librispeech-dummy --out <dir>"""

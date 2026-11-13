@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestKSH6C_chargedKVArithmetic is H6C-G1's KV half (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build"): kvChargedBytes against a
+// TestKSH6C_chargedKVArithmetic is H6C-G1's KV half (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-H6 build"): kvChargedBytes against a
 // hand count on synthetic layers (pool buffers under, exactly at and over the 2 MiB quantum; f16 and f32; an MLA latent pool; a
 // KV-shared layer and a layer with no KV), the plan's rounding bound at least the real rounding, and the planted defect (the pools
 // priced as requested, kvBytesForCap's linear figure) below the charged figure.

@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestGemma4_26B_autoPagedRuns is R11(c) (docs/tasks/red-october.md): the M26 row re-run against
+// TestGemma4_26B_autoPagedRuns is R11(c) (docs/completed/red-october.md): the M26 row re-run against
 // the AUTO-SIZED pager (decoder.Options.MoECacheExperts with MoECacheSlots left at 0), not a
 // hand-picked N the way TestGemma4_26B_pagedRuns (GOINFER_METAL_MOE_SLOTS, N=32 default) exercises.
 // metalMoESlotsRequest (metal/backend.go) only calls the real autoMoESlots formula when

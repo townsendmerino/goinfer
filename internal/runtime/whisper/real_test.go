@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-// G-S14f2 of docs/tasks/task-multimodal-support-2026-10.md: openai/whisper-small, goinfer float32 on the CPU against transformers 5.15.0 float32 on the LibriSpeech clip. The reference is
+// G-S14f2 of docs/completed/task-multimodal-support-2026-10.md: openai/whisper-small, goinfer float32 on the CPU against transformers 5.15.0 float32 on the LibriSpeech clip. The reference is
 // scripts/pin_whisper_decoder_real.py's. Bars: (a) the detected language is the reference's; (b) the logits at the last prompt position, cosine >= 0.9999 and the same argmax; (c) the greedy
 // transcription byte-equal (ids and decoded text); (d) teacher-forced on the reference's own tokens, worst cosine >= 0.9999 and no position where the argmax (after the same suppression) differs.
 //

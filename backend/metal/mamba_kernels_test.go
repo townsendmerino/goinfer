@@ -157,7 +157,7 @@ func mambaCos(a, b []float32) (cos, maxAbs float64) {
 	return cos, maxAbs
 }
 
-// TestMambaKernels_cpuParity is OP2b's K gate on Metal (docs/tasks/task-forward-architecture-2026-10.md §4.7, "OP2b on Metal"):
+// TestMambaKernels_cpuParity is OP2b's K gate on Metal (docs/completed/task-forward-architecture-2026-10.md §4.7, "OP2b on Metal"):
 // the conv, SSM and gated-norm kernels, chained as the resident runs them, against decoder.mamba2Step on the tiny Nemotron-H
 // (normalized per group) and Granite-4.0-H (over the full width) fixtures' real per-token inputs, over 72 steps. Bar:
 // cosine ≥ 0.99999 and max |diff| ≤ 1e-3 at every step.

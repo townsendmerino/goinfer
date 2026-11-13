@@ -8,7 +8,7 @@ import (
 )
 
 // setResidentKnob overrides one per-call operator knob on an already-built resident, for the rest of the test.
-// Knobs are read from the model's Load-time snapshot (docs/tasks/task-env-config-2026-09.md, phase 4), so a
+// Knobs are read from the model's Load-time snapshot (docs/completed/task-env-config-2026-09.md, phase 4), so a
 // t.Setenv after the build no longer reaches the resident — an A/B written that way would silently compare a path
 // with itself. This works untagged (unlike decoder.SetKnobEnvForTest), and only for knobs read per call
 // (r.knobValue); a knob read at build needs its value before Load (t.Setenv, or Options.Knobs).

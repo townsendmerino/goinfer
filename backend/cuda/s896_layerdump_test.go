@@ -19,7 +19,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestS896_layerDump is the 896-pixel investigation's Go half (docs/tasks/task-multimodal-support-2026-10.md, "The 896-pixel image prefill"): per-layer differencing, which CLAUDE.md prefers
+// TestS896_layerDump is the 896-pixel investigation's Go half (docs/completed/task-multimodal-support-2026-10.md, "The 896-pixel image prefill"): per-layer differencing, which CLAUDE.md prefers
 // over reasoning from final logits. For each image it runs the two prefills G-S10j compared, on IDENTICAL inputs, each with its batched hidden-state capture armed on EVERY layer:
 //   - "cpu": the off arm's CPU prefill with the DeepStack sets (KVCache.SetCaptureLayersForTest), the residual after each layer and its DeepStack add;
 //   - "cuda": the on arm's resident DeepStack prefill (cudaResident.SetBatchedCapture), the same convention.

@@ -5,7 +5,7 @@ import "fmt"
 // moePreadRateBytesPerSec is the default pread-rate prior for the paged-MoE working-set prediction: about 3.7 GB/s at
 // concurrency 1 on the dev Mac's SSD (docs/completed/task-w4a8-neon-bandwidth.md). It is a default, not a live
 // measurement of the machine at hand. Having the guard measure its own rate (one 64 MB pread at load) is not built;
-// docs/tasks/task-never-swap-2026-09.md names it.
+// docs/completed/task-never-swap-2026-09.md names it.
 const moePreadRateBytesPerSec = 3.7e9
 
 // moeSlowTokPerSecThreshold is the refusal rule: below this predicted rate, a paged-MoE load is refused without an

@@ -17,7 +17,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestMEM7_blockFitsTheBudget is BLK-G2 (docs/tasks/task-memory-campaign-2026-10.md, MEM7 gates): the block is the rows
+// TestMEM7_blockFitsTheBudget is BLK-G2 (docs/completed/task-memory-campaign-2026-10.md, MEM7 gates): the block is the rows
 // that fit what the memory guard's budget leaves after the need, capped at prefillBlockScratch and floored at
 // prefillBlockRowsMin; the cases that report no block still report none.
 func TestMEM7_blockFitsTheBudget(t *testing.T) {
@@ -67,7 +67,7 @@ func TestMEM7_blockFitsTheBudget(t *testing.T) {
 	r.kvI8 = false
 }
 
-// TestMEM7_speedSmallBlock is BLK-G3 (docs/tasks/task-memory-campaign-2026-10.md, MEM7 gates): on Qwen2.5-Coder-1.5B from
+// TestMEM7_speedSmallBlock is BLK-G3 (docs/completed/task-memory-campaign-2026-10.md, MEM7 gates): on Qwen2.5-Coder-1.5B from
 // ~/models, a 12,288-token prose prompt's resident prefill with today's block (the rows prefillBlockScratch holds) against the
 // rows a 128 MiB budget gives, five alternating pairs after a warm-up pair, in one process. A timed run: hold the timing lock.
 //

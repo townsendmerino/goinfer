@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-// Compute-time LoRA on the resident path (docs/tasks/task-gpu-paths-2026-09.md). Like Metal and unlike WebGPU:
+// Compute-time LoRA on the resident path (docs/completed/task-gpu-paths-2026-09.md). Like Metal and unlike WebGPU:
 // launchToken re-issues live kernel launches every token (segA/segB/segBFFN), so binding or clearing an adapter is a
 // Go-side `if r.loraLayers != nil` at each of the 7 projection sites, with no fixed dispatch plan to rebuild (contrast
 // gpu/lora_resident.go's rebuildSteps). CUDA graphs are the exception: a captured graph replays the launches recorded

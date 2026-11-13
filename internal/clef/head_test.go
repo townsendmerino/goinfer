@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// D12's head gate (docs/tasks/task-constrained-confidence.md): given the reference's own inputs, the head's per-option probabilities
+// D12's head gate (docs/tasks/parked/task-constrained-confidence.md): given the reference's own inputs, the head's per-option probabilities
 // are within 1e-5 absolute of the reference's, at f32.
 //
 // A GOLDEN is a directory: golden.json (per item: tag, id, input ids, the encoder's questions, the lm_head rows' token ids, and the

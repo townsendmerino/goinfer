@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tabulate the serve-chain A/B (docs/tasks/task-metal-audit-2026-10.md, "The serve chain: served grade").
+"""Tabulate the serve-chain A/B (docs/completed/task-metal-audit-2026-10.md, "The serve chain: served grade").
 
 usage: servechain_cells.py <log dir>    (the run's LOG: pass1/ .. pass4/, each with peer.json and serve-logs/)
 

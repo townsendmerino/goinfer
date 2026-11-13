@@ -338,7 +338,7 @@ ordinary tokens.
   untouched. Jobs and batches record the split form (`resultText` in `drive` currently sees raw text — decide once).
 
 **Controlling it: `enable_thinking`.** Plumb it as a render option, not a per-request env read (the env-config rules in
-`task-env-config-2026-09.md` apply): accept `chat_template_kwargs.enable_thinking` (vLLM / llama.cpp / SGLang all use exactly
+`../completed/task-env-config-2026-09.md` apply): accept `chat_template_kwargs.enable_thinking` (vLLM / llama.cpp / SGLang all use exactly
 that), Anthropic `thinking`, and Ollama-style `think` where cheap; add a render-options argument to `chat.Template.render`
 (today `func(system string, turns []Turn) []Segment`; every caller listed in the serve map must pass it — `serveChatText`,
 `tools.go`, `anthropic.go`, `responses.go`, vision routes, jobs, batches, and **`count_tokens`, which must render identically

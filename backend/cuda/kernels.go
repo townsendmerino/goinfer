@@ -136,7 +136,7 @@ var gumbelPTX []byte
 //go:embed testdata/decode_fa.ptx
 var decodeFAPTX []byte
 
-// loraPTX: lora_delta_down/lora_delta_up, compute-time LoRA (docs/tasks/task-gpu-paths-2026-09.md). A new kernel pair is
+// loraPTX: lora_delta_down/lora_delta_up, compute-time LoRA (docs/completed/task-gpu-paths-2026-09.md). A new kernel pair is
 // its own module per cuda/testdata/REGEN.md's rule (new .cu, new .ptx, built at whatever NVRTC is present). See
 // cuda/lora.cu.
 //
@@ -236,7 +236,7 @@ var attnFusedBMPTX []byte
 var attnFusedVitPTX []byte
 
 // towerBasePTX: tower_pos_add / tower_clamp / tower_clamp_copy / tower_rope_axial / tower_mul / tower_scale, the CUDA
-// vision-tower base's own kernels (docs/tasks/task-multimodal-support-2026-10.md), added to aikit's gpu.ViT module.
+// vision-tower base's own kernels (docs/completed/task-multimodal-support-2026-10.md), added to aikit's gpu.ViT module.
 // Built at NVRTC 12.9.86.
 //
 //go:embed testdata/tower_base.ptx
@@ -303,7 +303,7 @@ func f32tof16(f float32) uint16   { return wpack.F32ToF16(f) }
 
 // The _kv16 twins: the same sources as the modules above, built with -DKV_F16 (kvtype.cuh), so their K/V cache pointers are __half. The resident
 // loads a twin in place of its module when the KV cache is f16 (cudaResident.kvPTX); the f32 modules above are byte-identical to what they were
-// before the twins existed. docs/tasks/task-cuda-f16-kv-2026-10.md.
+// before the twins existed. docs/completed/task-cuda-f16-kv-2026-10.md.
 //
 //go:embed testdata/gemv_fwd_kv16.ptx
 var gemvFwdKV16PTX []byte

@@ -242,7 +242,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 	// The drafter is pure Go, so this adds no GPU memory. A session's CPU cache forces the staged path.
 	resident := cache == nil && target.resident != nil && target.DecodeRunnerEligible()
 	// adaptive claims the resident per round instead of once per generation, so MC3's batcher can admit other generations
-	// between rounds ("speculate when alone, batch under load"; docs/tasks/task-concurrency-2026-09.md). Greedy only: a
+	// between rounds ("speculate when alone, batch under load"; docs/tasks/parked/task-concurrency-2026-09.md). Greedy only: a
 	// sampled generation takes the always-exclusive path, because the yield round needs a device-side greedy verify through
 	// the batcher, which does not exist for a sampled draw.
 	adaptive := resident && target.specAdaptive && target.batcher != nil && !sampled
@@ -595,7 +595,7 @@ func ngramSpecLoop(ctx context.Context, tg ngramTarget, seedLogits []float32, ou
 	holdingExclusive := false
 	// neverYield makes this generation wait for exclusive access rather than ever yielding, reproducing plain -spec ngram
 	// (one at a time) with -spec-tg.adaptive on. A measurement control, not a shipped policy; see knobSpecAdaptiveNeverYield
-	// (docs/tasks/task-concurrency-2026-09.md).
+	// (docs/tasks/parked/task-concurrency-2026-09.md).
 	neverYield := tg.adaptive && tg.neverYield
 	if tg.adaptive {
 		defer func() {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MC3 S4's W7 gates (docs/tasks/task-concurrency-2026-09.md, registered in 915bf6fc) from bench_w7_plain.py's JSON.
+"""MC3 S4's W7 gates (docs/tasks/parked/task-concurrency-2026-09.md, registered in 915bf6fc) from bench_w7_plain.py's JSON.
 Usage: gates-s4.py W7-7B.json W7-1.5B.json. Cells <arm><clients>_<pair>; p99 / p50 nearest-rank over a cell's turns."""
 import json, math, statistics, sys
 

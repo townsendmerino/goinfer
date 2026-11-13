@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// D8A-G (docs/tasks/task-memory-campaign-2026-10.md, §4 MEM13, "D8a-build gates"): under Backend "cpu" the int4 layer
+// D8A-G (docs/completed/task-memory-campaign-2026-10.md, §4 MEM13, "D8a-build gates"): under Backend "cpu" the int4 layer
 // tensors keep one row4 copy (quantizeLayerWM), and every CPU path computes what the canonical-plus-row4 load computes.
 
 // d8aFixtures is every tiny fixture directory with a config.json.

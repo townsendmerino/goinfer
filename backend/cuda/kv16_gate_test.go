@@ -19,7 +19,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestKV16GateVsReference is the registered fidelity gate of docs/tasks/task-cuda-f16-kv-2026-10.md: the f32 cache (exact) and the f16 cache, both
+// TestKV16GateVsReference is the registered fidelity gate of docs/completed/task-cuda-f16-kv-2026-10.md: the f32 cache (exact) and the f16 cache, both
 // scored against the CPU f32/f64 reference of held-out prompt set B, with the flash-decode lane's criteria (a) / (b) / (c) and its preconditions.
 // The arms load one after the other (a 7B's two weight copies do not fit the card together); the overflow survey runs inside the f32 arm, on the
 // real K/V of every gate prompt, before any score is read.

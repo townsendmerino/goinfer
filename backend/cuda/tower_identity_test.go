@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
-// TestTowerIdentity_cuda is AX2a-T on CUDA (docs/tasks/task-subsystems-2026-10.md §7.8): every tower CUDA declares, and
+// TestTowerIdentity_cuda is AX2a-T on CUDA (docs/completed/task-subsystems-2026-10.md §7.8): every tower CUDA declares, and
 // the Whisper encoders, attach through their production registries and give the same bits twice.
 func TestTowerIdentity_cuda(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()

@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestAuditDB01_prefillTiming is D-B01's speed half (docs/tasks/task-metal-audit-2026-10.md, "D-B01: pre-registration"):
+// TestAuditDB01_prefillTiming is D-B01's speed half (docs/completed/task-metal-audit-2026-10.md, "D-B01: pre-registration"):
 // a fresh K-token prompt's wall time on a Gated-DeltaNet hybrid two ways, the sequential decode loop (what the hybrid
 // runs today) and the batched pass (dnetPrefillOn), arms alternated rep by rep, the recurrent state reset before each.
 // GOINFER_AUDIT_MODEL picks the checkpoint (default ~/models/qwen3.5-0.8b), GOINFER_DB01_KS the prompt lengths (default

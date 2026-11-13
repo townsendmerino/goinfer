@@ -219,9 +219,9 @@ var PrefillGateProseFilesB = []string{
 	"../docs/completed/queue-performance.md",
 	"../docs/ARCHITECTURE.md",
 	"../docs/how-inference-works.md",
-	"../docs/tasks/task-peer-benchmarks.md", // moved from ../docs/task-peer-benchmarks.md, still LIVE
-	"../docs/tasks/task-recompute-audit.md", // moved from ../docs/task-recompute-audit.md, still LIVE
-	"../docs/tasks/task-gpu-paths-2026-09.md",
+	"../docs/tasks/task-peer-benchmarks.md",     // moved from ../docs/task-peer-benchmarks.md, still LIVE
+	"../docs/completed/task-recompute-audit.md", // moved from ../docs/task-recompute-audit.md, still LIVE
+	"../docs/completed/task-gpu-paths-2026-09.md",
 	"../docs/cuda-backend.md",
 	"../docs/completed/audit-2026-08-05.md",
 }
@@ -384,7 +384,7 @@ func ReadPrefillReferenceForTest(path string) (seedLogits []float32, refTokens [
 	return seedLogits, refTokens, refLogits, nil
 }
 
-// W8F3Ref is the CPU f32 reference for the metal W8 F3′ gate (docs/tasks/task-metal-int8-2026-10.md): the 8 prompts,
+// W8F3Ref is the CPU f32 reference for the metal W8 F3′ gate (docs/completed/task-metal-int8-2026-10.md): the 8 prompts,
 // the f32 model's greedy continuation (the tokens every arm is teacher-forced on) and its logits at every position.
 // TestW8F3Reference_write writes it where the f32 model fits; metal's TestW8Native_F3amended_closerToF32 reads it
 // through GOINFER_W8_F3_REF_IN.

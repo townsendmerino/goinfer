@@ -15,7 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// S17 step 0 on CUDA (docs/tasks/task-multimodal-support-2026-10.md, "Step 0's instrument on CUDA"): the device towers' time split by kernel class.
+// S17 step 0 on CUDA (docs/completed/task-multimodal-support-2026-10.md, "Step 0's instrument on CUDA"): the device towers' time split by kernel class.
 // Per tower and image: one warm-up, 3 unprofiled forwards (the wall) and 3 profiled ones, the median per class. Checks recorded with the read: the profiled output equals the unprofiled
 // one bit for bit; the profiled total is within +10% of the unprofiled wall; the three profiled reads of a class agree within 5%. Heavy; run alone.
 

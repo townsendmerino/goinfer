@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-// kso1CPUFingerprint is O1-G4's digest by arch, taken before KS-O1 on Metal (arm64, docs/tasks/task-kernel-survey-2026-10.md,
+// kso1CPUFingerprint is O1-G4's digest by arch, taken before KS-O1 on Metal (arm64, docs/tasks/parked/task-kernel-survey-2026-10.md,
 // "Review fixes for #215") and before KS-O1 on CUDA (amd64, on nobara: "KS-O1 on CUDA: gates", O1C-G4). The CPU reference is
 // bit-identical within an arch, not across.
 var kso1CPUFingerprint = map[string]string{
@@ -21,7 +21,7 @@ var kso1CPUFingerprint = map[string]string{
 	"amd64": "8bd2324c3e921ce233bf1d440d44e09244d60ba9ddfb3948dbbfe64d6c7a5a89",
 }
 
-// TestKSO1_cpuQ4KFingerprint is O1-G4 (docs/tasks/task-kernel-survey-2026-10.md, "KS-O1 on Metal: gates"): the CPU at --quant q4k on
+// TestKSO1_cpuQ4KFingerprint is O1-G4 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-O1 on Metal: gates"): the CPU at --quant q4k on
 // Qwen2.5-Coder-0.5B q4_k_m (its Q6_K layers are int8 copies there) forwards a fixed prompt and 16 greedy tokens one position at a
 // time, and every position's logits bytes are hashed. The digest must equal kso1CPUFingerprint, taken before KS-O1.
 //

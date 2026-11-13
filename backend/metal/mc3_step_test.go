@@ -191,11 +191,11 @@ func moeStepResident(t *testing.T, dir string, on bool) *resident {
 	return r
 }
 
-// TestMC3Step_moeBitIdentical is OP4m-d3's identity gate (docs/tasks/task-forward-architecture-2026-10.md §4.9): with the
+// TestMC3Step_moeBitIdentical is OP4m-d3's identity gate (docs/completed/task-forward-architecture-2026-10.md §4.9): with the
 // step's MoE block on, each tracked generic-MoE fixture builds the batched step, and four sequences at different depths stepped
 // together equal production's single-token forward bit for bit, every logit of every step. With the block off, which is the
 // default, none builds it.
-// TestOP4mD3_moeStepSpeed is OP4m-d3's D3-3 (docs/tasks/task-forward-architecture-2026-10.md §4.9): on the MoE checkpoint at
+// TestOP4mD3_moeStepSpeed is OP4m-d3's D3-3 (docs/completed/task-forward-architecture-2026-10.md §4.9): on the MoE checkpoint at
 // GOINFER_OP4MD3_MODEL, loaded int4 with the step's MoE block on, four slots filled to depth 128, then 64 greedy tokens of all four
 // sequences timed two ways: the batched step (device argmax), against the do-nothing arm, each sequence decoded one token at a
 // time on its own slot as today (ForwardArgmax). A B B A over 10 pairs after one warm run each; both arms' tokens must be
@@ -271,8 +271,9 @@ func cellPaging(t *testing.T) (swapMiB float64, pageouts int64) {
 	return swapMiB, pageouts
 }
 
-// TestOP4mPod_decodeSpeed is OP4m-pod's P-3 (docs/tasks/task-forward-and-memory-2026-11.md, "OP4m-pod: registration"): one
-// sequence's decode, the mixer steps' walk against their blocks, in one process, on the checkpoint at GOINFER_OP4MPOD_MODEL. Each
+// TestOP4mPod_decodeSpeed is OP4m-pod's and OP4m-pod2's P-3 (docs/tasks/task-forward-and-memory-2026-11.md, "OP4m-pod:
+// registration", "OP4m-pod2: registration"): one sequence's decode, the walk of the mixer and the FFN and tail steps against their
+// blocks, in one process, on the checkpoint at GOINFER_OP4MPOD_MODEL. Each
 // run refills the sequence to depth 128 untimed and times 64 greedy tokens; the arms alternate A B, B A over 6 pairs, and the tokens
 // must be equal in every pair. A pair whose starting load is above half the cores plus GOMAXPROCS, or across which swap in use
 // grows, voids the cell. Pass: a median rate ratio, walk ÷ blocks, of at least 0.99; fail: the cell resolves slower (every pair
@@ -318,7 +319,7 @@ func TestOP4mPod_decodeSpeed(t *testing.T) {
 	kinds := map[layerStep]int{}
 	for l := range r.layers {
 		for _, st := range r.layers[l].steps {
-			if mixerWalks(st) {
+			if mixerWalks(st) || ffnWalks(st) {
 				kinds[st]++
 			}
 		}
@@ -1067,7 +1068,7 @@ func TestMC3Step_recurrentMatchesDecodeOnServeHistories(t *testing.T) {
 	}
 }
 
-// TestMC3Step_recurrentBitIdentical is OP4m-d4b's D4b-1 and OP4m-d6b's D6b-1 (docs/tasks/task-forward-architecture-2026-10.md
+// TestMC3Step_recurrentBitIdentical is OP4m-d4b's D4b-1 and OP4m-d6b's D6b-1 (docs/completed/task-forward-architecture-2026-10.md
 // §4.9): with the step's recurrent blocks on, each tracked recurrent fixture builds the batched step. Four sequences at
 // different depths, each on its own slot with its own recurrent state, stepped together 12 times, equal production's
 // single-token forward on every logit. With the blocks off, none builds it.
@@ -1881,7 +1882,7 @@ func TestMC3StepWallVsGPU(t *testing.T) {
 }
 
 // TestMC3Verify_sameSlotRowsBitIdentical is the first gate of Metal spec verify on the step kernels
-// (docs/tasks/task-concurrency-2026-09.md, MC4): a step whose rows are CONSECUTIVE positions of one sequence on one slot
+// (docs/tasks/parked/task-concurrency-2026-09.md, MC4): a step whose rows are CONSECUTIVE positions of one sequence on one slot
 // (a verify round) gives every logit and every K/V element bit-identical to production decoding those tokens one after
 // another. Twin slots are filled with the same history; M = 2, 4, 8 rows at depths 128 and 2048, and a run straddling
 // attnFADepthFloor, so one step mixes per-head and attention_fa rows.

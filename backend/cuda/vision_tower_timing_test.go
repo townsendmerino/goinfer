@@ -15,7 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
-// TestVisionTowerTiming is R8's committed timing driver (docs/tasks/red-october.md R8; the P6 driver was a throwaway).
+// TestVisionTowerTiming is R8's committed timing driver (docs/completed/red-october.md R8; the P6 driver was a throwaway).
 // Real gemma-3-4b-it SigLIP tower, 896^2 = 4096 patches, 27 layers, int8 both arms. It times the RESIDENT tower's Forward
 // (host im2col + upload + 27 layers + download), one discarded warm-up then GOINFER_VISION_REPS (default 5) measured runs,
 // heartbeat per run, and reports min/median/max seconds. It can also

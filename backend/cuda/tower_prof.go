@@ -4,7 +4,7 @@ package cuda
 
 import "time"
 
-// The tower profile on CUDA (docs/tasks/task-multimodal-support-2026-10.md, "Step 0's instrument on CUDA"): with
+// The tower profile on CUDA (docs/completed/task-multimodal-support-2026-10.md, "Step 0's instrument on CUDA"): with
 // profiling on, towerOps drains its queue at every change of kernel class and attributes the host time since the
 // previous drain to the class that was running. aikit's Event has no elapsed-time call, so this is a wall-clock split
 // with the queue drained at each class boundary, and the launch latency of the first kernel after a drain sits inside

@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// The Qwen3.5+ and GLM-OCR vision towers on CUDA (docs/tasks/task-multimodal-support-2026-10.md): aikit's CPU Forward up
+// The Qwen3.5+ and GLM-OCR vision towers on CUDA (docs/completed/task-multimodal-support-2026-10.md): aikit's CPU Forward up
 // to the merger, in float32, from aikit's export (Qwen3VisionEncoder.Weights, GlmOcrVisionEncoder.Weights), on the CUDA
 // tower base. It is the port of metal/grid_vision.go with aikit's own scaled bidirectional attention kernel (one call
 // per image frame, the frame being the attention segment) in place of Metal's matmul-blocked attention, and a separate

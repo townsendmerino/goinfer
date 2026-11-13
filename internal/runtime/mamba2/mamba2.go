@@ -1,6 +1,6 @@
 // Package mamba2 holds the Mamba-2 selective state-space mixer between its two projections (the depthwise causal conv,
 // the selective-scan recurrence, and the grouped gated RMSNorm) shared by decoder and the backend kernel tests (SB1,
-// docs/tasks/task-subsystems-2026-10.md §8). It mirrors the HF GraniteMoeHybridMambaLayer single-token (cache) path.
+// docs/completed/task-subsystems-2026-10.md §8). It mirrors the HF GraniteMoeHybridMambaLayer single-token (cache) path.
 // Keeping the reference here lets metal/kernels test against the single production implementation without importing
 // decoder.
 //

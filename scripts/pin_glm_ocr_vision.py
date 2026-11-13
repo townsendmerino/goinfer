@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Pin the GLM-OCR VISION TOWER (transformers' GlmOcrVisionModel, f32, CPU) as an aikit parity golden.
 
-Gate O2 of docs/tasks/task-glm-ocr-2026-10.md. The Go side is aikit/vision/glm_ocr_encoder.go
+Gate O2 of docs/completed/task-glm-ocr-2026-10.md. The Go side is aikit/vision/glm_ocr_encoder.go
 (GlmOcrVisionEncoder). Tower-only: pixel_values + grid_thw in, merged features (HF pooler_output) out.
 No decoder is involved.
 

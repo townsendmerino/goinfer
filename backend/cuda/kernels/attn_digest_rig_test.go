@@ -19,7 +19,7 @@ import (
 	gc "github.com/eitamring/gocudrv/cuda"
 )
 
-// G1-K, OP1 on CUDA (docs/tasks/task-forward-architecture-2026-10.md §4.6a): every text-path attention kernel is driven on fixed inputs and
+// G1-K, OP1 on CUDA (docs/completed/task-forward-architecture-2026-10.md §4.6a): every text-path attention kernel is driven on fixed inputs and
 // its output bytes are hashed, so a change to how a score is formed shows as a changed digest. The digests are committed in
 // testdata/attn_digests.json, recorded at base (the commit before step 1) and compared at every later commit.
 //

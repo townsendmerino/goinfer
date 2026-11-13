@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// frozen is the readers as they were before they moved here (the commit is named in docs/tasks/task-subsystems-2026-10.md,
+// frozen is the readers as they were before they moved here (the commit is named in docs/completed/task-subsystems-2026-10.md,
 // MM0's gates), copied into the per-platform frozen_*_test.go files with their bodies unchanged and their names prefixed. A nil
 // reader is one the platform did not have.
 type frozen struct {

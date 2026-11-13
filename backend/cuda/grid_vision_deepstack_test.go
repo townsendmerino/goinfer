@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// G-S10f of docs/tasks/task-multimodal-support-2026-10.md ("S10 on CUDA", registered before this code): the Qwen3-VL tower on CUDA with DeepStack, CUDA twin of metal/grid_vision_deepstack_test.go. The grid tower taps the
+// G-S10f of docs/completed/task-multimodal-support-2026-10.md ("S10 on CUDA", registered before this code): the Qwen3-VL tower on CUDA with DeepStack, CUDA twin of metal/grid_vision_deepstack_test.go. The grid tower taps the
 // DeepStack blocks (HiddenTaps) and aikit's host tails make the merged rows and the sets (multimodal.Qwen3TowerFeaturesDeepstack), against aikit's CPU ForwardDeepstack: every set and the merged rows at worst-row
 // cosine >= 0.9999 (0.999-0.9999 parked), on the tiny DeepStack tower (testdata/qwen3vl-vision-tiny, norms randomised) and on Qwen3-VL-2B's four F2a images (heavy). Two planted defects must go red, each alone: the
 // taps one block late, and the taps in reverse order.

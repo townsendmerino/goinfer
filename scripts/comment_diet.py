@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tooling for the Go comment diet (docs/tasks/task-code-comments-2026-10.md, CC1/CC4).
+"""Tooling for the Go comment diet (docs/completed/task-code-comments-2026-10.md, CC1/CC4).
 
   comment_diet.py blocks FILE [MINLEN]     list the comment blocks of FILE (default MINLEN 6): line range, length, whether the block
                                            carries a history marker, and the declaration under it. Comments inside a raw string
@@ -209,7 +209,7 @@ def cmd_apply(plan_path):
     if moved:
         existing = open(notes).read() if os.path.exists(notes) else (
             f"# {pkg}: notes moved out of code comments\n\nHistory, measurements and open work that used to sit in the comments of `{pkg}`, moved here verbatim by the comment diet\n"
-            "(`docs/tasks/task-code-comments-2026-10.md`, CC1). The code comment above each declaration keeps what the code does, its contract and\n"
+            "(`docs/completed/task-code-comments-2026-10.md`, CC1). The code comment above each declaration keeps what the code does, its contract and\n"
             "its guardrails, and points here by heading. This file is off the read path: open it when a pointer sends you. Text is unedited,\n"
             "except that a `file.go:NNN` reference inside it names the declaration instead (the line numbers had already gone stale).\n")
         seen = set(re.findall(r'^## (.+)$', existing, re.M))

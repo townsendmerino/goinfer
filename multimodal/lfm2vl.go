@@ -15,7 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
-// LFM2-VL's image path (Lfm2VlForConditionalGeneration; S10 of docs/tasks/task-multimodal-support-2026-10.md): the
+// LFM2-VL's image path (Lfm2VlForConditionalGeneration; S10 of docs/completed/task-multimodal-support-2026-10.md): the
 // preprocessing (HF's Lfm2VlImageProcessorFast: a large image becomes a grid of 512-pixel tiles plus a thumbnail, a small
 // one a single smart-resized tile), the prompt block and the multimodal projector (Lfm2VlMultiModalProjector). The tower
 // is aikit's vision.Siglip2NaFlexEncoder, one tile per call.

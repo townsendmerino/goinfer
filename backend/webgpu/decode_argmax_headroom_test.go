@@ -17,7 +17,7 @@ import (
 )
 
 // TestDecodeArgmaxHeadroom bounds what an on-device argmax for the greedy path could recover
-// (docs/tasks/red-october.md, R10). ForwardSample's greedy branch (gpu/resident_sample.go) still
+// (docs/completed/red-october.md, R10). ForwardSample's greedy branch (gpu/resident_sample.go) still
 // calls Run(): the full LM-head GEMV, a vocab*4-byte staging copy, MapAsync and a host linear
 // scan, where a device-side argmax kernel would need only the GEMV (unavoidable either way) plus
 // a tiny readback. RunNoLogits skips the GEMV dispatch, the staging copy and the

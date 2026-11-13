@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// The gpu gate's ptx group as a grader (SB12 step 11, docs/tasks/task-subsystems-2026-10.md): its lines and verdicts are a
+// The gpu gate's ptx group as a grader (SB12 step 11, docs/completed/task-subsystems-2026-10.md): its lines and verdicts are a
 // function of what the runner (readPTX) recorded: why cuda/build_ptx.sh could not run, the toolchains found, and each
 // committed PTX file's outcome when rebuilt at the NVRTC version it records.
 

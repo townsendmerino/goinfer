@@ -164,7 +164,7 @@ func TestBestExtend_editedLastMessageReuse(t *testing.T) {
 	}
 }
 
-// TestPickSession_sparePreambleGoesFresh (docs/tasks/task-concurrency-2026-09.md, MC0): with one resident
+// TestPickSession_sparePreambleGoesFresh (docs/tasks/parked/task-concurrency-2026-09.md, MC0): with one resident
 // session, bestExtend's floor (what a candidate shares with every OTHER session) is 0, so the shared
 // chat-template preamble alone would qualify. Two interleaved conversations would then take each other's
 // single session, each truncating the other to the preamble, and the LRU would never grow past one session

@@ -82,7 +82,7 @@ func TestResolveCtxCap(t *testing.T) {
 // (fit-by-default only ever applies to an UNPINNED load), --fit=off (Options.DisableFit) and its GOINFER_NO_FIT_DEFAULT
 // env-var precursor both restore resolveCtxCap exactly, and a model whose own window is already at or below
 // cudaCtxCapDefault has nothing to gain from asking Plan. The live-probe branch (a real free-VRAM reading) is exercised on
-// real hardware separately (docs/tasks/task-gpu-paths-2026-09.md, G11). A real (minimal, tracked-in-git) model is loaded per
+// real hardware separately (docs/completed/task-gpu-paths-2026-09.md, G11). A real (minimal, tracked-in-git) model is loaded per
 // case rather than nil: m.FitDisabled() reads a real field, so a nil *decoder.Model would panic in the request==0 cases.
 //
 // `pinned` decides whether the case's Options carries ResidentContext: request, i.e. whether m itself is a GENUINE pin
@@ -335,7 +335,7 @@ func TestReservedBudget(t *testing.T) {
 	}
 }
 
-// TestCheckKVFits_realDevice_explicitRefusesWithNumbers is G6 (docs/tasks/task-gpu-paths-2026-09.md §6): "nothing pinned
+// TestCheckKVFits_realDevice_explicitRefusesWithNumbers is G6 (docs/completed/task-gpu-paths-2026-09.md §6): "nothing pinned
 // is overridden... honoured or refused with numbers". The sibling test below pins the SENTINEL/wiring without a device;
 // this one calls checkKVFits against a REAL device's REAL free VRAM and asserts the refusal NAMES the requested context
 // and the GB figures, not just that an error occurred. An absurd ctx (1<<30 positions) makes it hold on any card.

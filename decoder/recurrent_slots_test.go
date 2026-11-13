@@ -3,7 +3,7 @@ package decoder
 import "testing"
 
 // TestResidentKVSlotsRequestFor_recurrentSlotsByTable is OP4m-d4a's D4a-3 and D4a-4, and OP4m-d6a's D6a-3 and D6a-4, with no
-// GPU (docs/tasks/task-forward-architecture-2026-10.md §4.9).
+// GPU (docs/completed/task-forward-architecture-2026-10.md §4.9).
 //   - A Gated-DeltaNet model or a Mamba-2 hybrid that asks for three slots gets them on Metal, whose table keeps that state
 //     per slot.
 //   - Each gets one on every other backend, on the no-backend request, and at the caller's default request.

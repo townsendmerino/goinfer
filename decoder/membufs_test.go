@@ -15,7 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-// TestMM5_noFamilySwitchInPricing is G-MP4 (docs/tasks/task-forward-architecture-2026-10.md §4.9b): Metal's and CUDA's KV pricing and the
+// TestMM5_noFamilySwitchInPricing is G-MP4 (docs/completed/task-forward-architecture-2026-10.md §4.9b): Metal's and CUDA's KV pricing and the
 // state lists read the operations' declarations, so none of them names a mixer, a family or a family's parameters.
 func TestMM5_noFamilySwitchInPricing(t *testing.T) {
 	banned := []string{"ResidentLayerOps", "Mixer", "KVSrcAtResident", "MLAResidentParams", "HeadDimAtResident", "KVHeadsAtResident",
@@ -26,7 +26,7 @@ func TestMM5_noFamilySwitchInPricing(t *testing.T) {
 	}, banned, "KV and state pricing reads the operations' declarations (LayerBuffers), not the family")
 }
 
-// TestMM5b_decodeScratchNamesNoFamily is G-MS4 (docs/tasks/task-forward-architecture-2026-10.md §4.9c): Metal's decode scratch is
+// TestMM5b_decodeScratchNamesNoFamily is G-MS4 (docs/completed/task-forward-architecture-2026-10.md §4.9c): Metal's decode scratch is
 // priced from the operations' per-row declarations and the head's (program.Buffers, program.HeadBuffers), so its pricing function
 // names no mixer, operation kind of one, FFN form, family or family parameter. Metal's own terms are read by a row's name
 // (metalRowTerms), which the scan reads too. An operation's parameters are read from the operation; a layer whose V is its K (no
@@ -137,7 +137,7 @@ func checkpointByFamily(a *Architecture) []int64 {
 	return out
 }
 
-// TestStateSpecs_fromTheOperations is MM5's state half (docs/tasks/task-forward-architecture-2026-10.md §4.9b): every family's state,
+// TestStateSpecs_fromTheOperations is MM5's state half (docs/completed/task-forward-architecture-2026-10.md §4.9b): every family's state,
 // derived from its layers' operations (layerBuffers, program.Buffers), is the list the family switch gave, layer by layer, and so is the
 // checkpoint, on every registered model type's representative config (each must resolve) and on every fixture under testdata whose config
 // resolves (the others are named). Each of the five families with state is compared, by name.
@@ -219,7 +219,7 @@ func TestStateSpecs_fromTheOperations(t *testing.T) {
 	}
 }
 
-// TestLayerShape_kvRowsAreWhatTheCPUCacheHolds is G-MP6 (docs/tasks/task-forward-architecture-2026-10.md §4.9b): every layer's declarations
+// TestLayerShape_kvRowsAreWhatTheCPUCacheHolds is G-MP6 (docs/completed/task-forward-architecture-2026-10.md §4.9b): every layer's declarations
 // (layerBuffers, through layerShapeOf) are what the CPU walker's own cache holds after a prefill, which it sizes without the list. Per
 // position: K and V of the width the walker writes, with the layer's KV heads, at the KV precision, and the window its ring keeps; MLA's
 // latent row in f32; no other row. Per slot: each recurrent state entry is the size of the walker's state, its conv windows full. Each
@@ -341,7 +341,7 @@ func TestLayerShape_kvRowsAreWhatTheCPUCacheHolds(t *testing.T) {
 	}
 }
 
-// TestMM5_handTableCUDA is G-MP3 for CUDA's half (docs/tasks/task-forward-architecture-2026-10.md §4.9b): on the same six fixtures,
+// TestMM5_handTableCUDA is G-MP3 for CUDA's half (docs/completed/task-forward-architecture-2026-10.md §4.9b): on the same six fixtures,
 // CUDA's KV per 64-row block (cudaKVParts' null blocks) at the precision CUDA delivers for -kv f16 and at f32, written as arithmetic on
 // each config's numbers. CUDA holds MLA's latent at the cache's precision (f16 here, unlike Metal), and a family its f16 kernels do not
 // cover at f32. Two more rows: llama-tiny's int8 block (one f32 scale per position and head), and one slot of gemma2-tiny at 1,024
@@ -408,7 +408,7 @@ func TestMM5_handTableCUDA(t *testing.T) {
 	}
 }
 
-// TestMM5_handTable is G-MP3 (docs/tasks/task-forward-architecture-2026-10.md §4.9b): on six fixtures, Metal's KV per 64-row block, the
+// TestMM5_handTable is G-MP3 (docs/completed/task-forward-architecture-2026-10.md §4.9b): on six fixtures, Metal's KV per 64-row block, the
 // recurrent state per slot and its checkpoint per slot are written here as arithmetic on each config's numbers, and the plan's figures
 // (metalKVParts' null block, stateBuffers, recurrentCheckpointBuffers) must equal them. Each row checks the config numbers it uses, so a
 // fixture that changes is red, not stale.

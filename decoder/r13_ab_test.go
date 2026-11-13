@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// TestR13_cpuAB times R-13 (docs/tasks/task-recompute-audit.md) on the CPU: each input quantized once for the W4A8
+// TestR13_cpuAB times R-13 (docs/completed/task-recompute-audit.md) on the CPU: each input quantized once for the W4A8
 // projections that share it (the default) against every matmul quantizing its own (w4a8PreOff), on one loaded model
 // per path in GOINFER_R13_MODELS (default the 1.5B GGUF and the Qwen1.5-MoE 4-layer slice), int4, one activation scale
 // per row. Decode: a fresh cache per arm, 8 warm-up tokens, then the median of 32 timed decode steps. Batched prefill

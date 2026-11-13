@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Step (b') graded as registered (docs/tasks/task-multimodal-support-2026-10.md, "Gemma 4 31B, step (b')"). For each model (the 31B and the plain-bf16 E4B sibling) and each arm (int8int8, int4):
+"""Step (b') graded as registered (docs/completed/task-multimodal-support-2026-10.md, "Gemma 4 31B, step (b')"). For each model (the 31B and the plain-bf16 E4B sibling) and each arm (int8int8, int4):
 agreement = the fraction of positions where the arm's argmax equals Hugging Face float32's, KL(HF || arm), with a cluster bootstrap over the 12 prompts (10,000 resamples, seed 20261009, 95%).
 PASS for an arm: the 31B's agreement is at least the E4B's same-arm agreement minus 5.0 points; PARKED between -5.0 and -10.0; FAIL worse than -10.0 or any non-finite logit.
 Usage: g31b_grade.py <31B prefix> <E4B prefix> [hf prefix31 hf prefix e4b]   where <prefix>.seqs.json, <prefix>.<arm>.f32 (goinfer) and <hfprefix>.f32/.json (HF) exist (hf prefixes default to <prefix>.hf)."""

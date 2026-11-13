@@ -15,7 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestQ4KLane_realPhi3NonInferiority is G-Q2 of docs/tasks/task-metal-q4k-2026-10.md (registered before any code): S1's
+// TestQ4KLane_realPhi3NonInferiority is G-Q2 of docs/completed/task-metal-q4k-2026-10.md (registered before any code): S1's
 // G3 procedure (g3Run: the eight G3 prompts, 32 greedy tokens free-running on each side, then the CPU's sequence
 // teacher-forced through Metal), on Phi-3 mini 4k at --quant q4k, Metal's q4k lane against the CPU at q4k on the same
 // file, with the validated Qwen2.5-Coder-1.5B (its int4 Metal sidecar, as G3 runs it) as the reference in this process.

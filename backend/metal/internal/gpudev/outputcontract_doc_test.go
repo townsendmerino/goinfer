@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// R-11 (goinfer docs/tasks/task-recompute-audit.md §5): the two backends disagree on what a fresh buffer holds — CUDA's cuMemAlloc is uninitialized, Metal's
+// R-11 (goinfer docs/completed/task-recompute-audit.md §5): the two backends disagree on what a fresh buffer holds — CUDA's cuMemAlloc is uninitialized, Metal's
 // newBufferWithLength is zero-filled — and both NewBufferLen* docs used to say "uninitialized". The behaviour is deliberately unchanged; the docs are the fix, and
 // this pins them. It reads cuda.go and metal.go as source (each is build-tagged to its own OS), so it runs on either host and checks both files.
 func gpuDocs(t *testing.T, file string) map[string]string {

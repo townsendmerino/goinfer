@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-// The greedy chain (docs/audit-metal-2026-09-30.md, C-B01; docs/tasks/task-metal-audit-2026-10.md, Phase 3 item 5).
+// The greedy chain (docs/audit-metal-2026-09-30.md, C-B01; docs/completed/task-metal-audit-2026-10.md, Phase 3 item 5).
 //
 // The pipelined executor (execLoop) pre-encodes token t+1 while t runs, but cannot commit it until t finishes: t+1's input is
 // the embedding of the token t's logits pick, and the host picks it, so between t's last kernel and t+1's first the GPU waits

@@ -21,7 +21,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/app/inproc"
 )
 
-// The wire census (docs/tasks/task-subsystems-2026-10.md § "SB7 — the wire census"): what a client receives from each
+// The wire census (docs/completed/task-subsystems-2026-10.md § "SB7 — the wire census"): what a client receives from each
 // scripted request, byte for byte after normalizing ids and times, compared with goldens under testdata/wire/golden/, so
 // a move of the serving shell onto an engine interface can show it changed nothing a client sees. -wire.update rewrites
 // the goldens.

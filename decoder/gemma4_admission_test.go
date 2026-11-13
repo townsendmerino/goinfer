@@ -60,7 +60,7 @@ func TestGemma4Admission_unconditional(t *testing.T) {
 	}
 
 	// A Gemma-4 E-MODEL (E2B/E4B: per-layer embeddings / shared-KV / variable FFN) is admitted by every backend that declares
-	// FeatGemma4EModel, which is all three (docs/tasks/task-multimodal-support-2026-10.md, S1 and S12.1). A backend without the
+	// FeatGemma4EModel, which is all three (docs/completed/task-multimodal-support-2026-10.md, S1 and S12.1). A backend without the
 	// feature would skip the per-layer embeddings and mis-run, so the gate must refuse it: the made-up backend below.
 	e := denseArch()
 	e.gemma4.HiddenSizePerLayerInput = 256 // turn the dense arch into an E-model shape

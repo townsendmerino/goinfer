@@ -1463,7 +1463,7 @@ by a pre-registered margin, on a small local model, or it does not ship.
 ### W36 — A response-schema control — DONE 2026-10-02
 
 The page could attach an image to a vision model but not constrain a reply, so reading an invoice into a fixed shape through `-web` meant unconstrained
-OCR or a hand-typed prompt with no grammar (found building GLM-OCR extraction, `task-glm-ocr-2026-10.md` O5). The server already honoured
+OCR or a hand-typed prompt with no grammar (found building GLM-OCR extraction, `../completed/task-glm-ocr-2026-10.md` O5). The server already honoured
 `response_format` on the chat route and the jobs route; the page never sent it. **Done:** a *Response schema* field in the Sampling box (a JSON Schema, or a
 pasted `response_format`), sent with every reply request, kept across reloads, shown as `· schema on` in the summary while the box is closed; replies generated
 under it are stored `structured: true` and shown as a JSON code block. Invalid input is refused like any bad sampling field. Gate: `webui_app_gate.mjs` phases

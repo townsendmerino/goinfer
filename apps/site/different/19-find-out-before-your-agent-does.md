@@ -38,7 +38,7 @@ sources:
   - "docs/measurements/cold-user-2026-09-06-nobara-pc.md"
   - "docs/measurements/cold-user-2026-09-07-macbook-arm64.md"
   - "docs/measurements/cold-user-2026-09-18-nobara-pc.md"
-  - "docs/tasks/task-first-hour.md"
+  - "docs/completed/task-first-hour.md"
   - "docs/capability-matrix.json"
   - "internal/guard/servecheck/check.go"
   - "internal/app/fitcmd/fit.go"

@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// TestKSD3_scanKernelTiming is D3-G3 (docs/tasks/task-kernel-survey-2026-10.md, "KS-D3 gates"): the GPU time (GPUEnd −
+// TestKSD3_scanKernelTiming is D3-G3 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-D3 gates"): the GPU time (GPUEnd −
 // GPUStart, one command buffer per dispatch) of delta_rule_seq against delta_rule_seq_tg alone at M = 512, Qwen3.5 geometry,
 // interleaved A B B A over 10 pairs after 3 warm runs of each; delta_conv_seq against delta_conv_seq_reg the same way, read
 // only. A timed run: hold the timing lock.

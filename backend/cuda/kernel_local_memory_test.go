@@ -181,12 +181,12 @@ func TestKernelLocalMemoryCensus(t *testing.T) {
 		"mla_q_rope":               32, // mla.ptx (FeatMLA)
 		"mla_latent_store":         32, // mla.ptx (FeatMLA)
 		"mamba_conv":               32, // mamba.ptx (Mamba-2 conv); the same 1.2 MiB at full occupancy as the 32 B rope kernels above
-		// deltanet.ptx, the batched Gated-DeltaNet prefill (docs/tasks/task-cuda-deltanet-prefill-2026-09.md): the
+		// deltanet.ptx, the batched Gated-DeltaNet prefill (docs/completed/task-cuda-deltanet-prefill-2026-09.md): the
 		// scan holds its 128-float state row in registers across the rows and spills 24 floats of it at 255
 		// registers (launch_bounds(128, 1) gives the same 96 B). That is 3.8 MiB at full occupancy, accepted
 		// for the speed over the no-spill generic scan.
 		"delta_rule_rows_128": 96,
-		// Its verify twin (docs/tasks/task-forward-architecture-2026-10.md §6a, "SP2 on nobara") runs the same row body over
+		// Its verify twin (docs/completed/task-forward-architecture-2026-10.md §6a, "SP2 on nobara") runs the same row body over
 		// the folded rows and its own, and spills the same 96 B: the backing store, sized by the largest kernel launched, does
 		// not grow.
 		"delta_rule_rows_128_spec": 96,

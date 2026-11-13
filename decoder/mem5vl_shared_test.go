@@ -135,7 +135,7 @@ func v1Differ(a, b []float32) int {
 	return n
 }
 
-// TestMEM5VL_sharedRouteChunked is V1-G1 (docs/tasks/task-memory-campaign-2026-10.md, "MEM5-VL (1) gates"): the shared batched
+// TestMEM5VL_sharedRouteChunked is V1-G1 (docs/completed/task-memory-campaign-2026-10.md, "MEM5-VL (1) gates"): the shared batched
 // route's image prefill run in 7- and 16-row passes against one pass, on every family it serves: every position's rows, the last
 // logits and four decode steps after are byte-equal, and each chunked run really took several passes.
 func TestMEM5VL_sharedRouteChunked(t *testing.T) {

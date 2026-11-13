@@ -89,7 +89,7 @@ func TestGemma4MoE_localize(t *testing.T) {
 			}
 		}
 	}
-	// S1.0 amendment (docs/tasks/task-multimodal-support-2026-10.md): the 0.9999 bar sits between the readings before and after the v_norm fix on the sliding layers; the fix is the mechanism, and the bar is never loosened.
+	// S1.0 amendment (docs/completed/task-multimodal-support-2026-10.md): the 0.9999 bar sits between the readings before and after the v_norm fix on the sliding layers; the fix is the mechanism, and the bar is never loosened.
 	assertBranch("wgt", cpuWts, resWgt, 0.9999)
 	assertBranch("x1", cpuX1, resX1, 0.9999)
 	assertBranch("x2", cpuX2, resX2, 0.9999)

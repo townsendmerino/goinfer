@@ -1,5 +1,5 @@
 #!/bin/bash
-# D6b (docs/tasks/task-constrained-confidence.md): goinfer's Route B on autotrust's JEV-9B over the 150 D0 items, one arm
+# D6b (docs/tasks/parked/task-constrained-confidence.md): goinfer's Route B on autotrust's JEV-9B over the 150 D0 items, one arm
 # per invocation (ARM = f32 | int8int8 | int4), CPU, graded afterwards by grade.py against the reference. Unattended:
 # BIN is a goinfer-chat pre-built at 90f8dbc9 (the batched Qwen3.5 PromptHidden), the items and the model are read from
 # fixed paths, output goes to a durable results dir.

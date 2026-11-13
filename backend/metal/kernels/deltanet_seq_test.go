@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-// TestDeltaNetSeqKernels_matchDecodeBitwise is D-B01's kernel gate (docs/tasks/task-metal-audit-2026-10.md), and KS-D3's
-// D3-G1 (docs/tasks/task-kernel-survey-2026-10.md): the mixer's row kernels (delta_conv_seq, delta_gates_rows, delta_norm_rows,
+// TestDeltaNetSeqKernels_matchDecodeBitwise is D-B01's kernel gate (docs/completed/task-metal-audit-2026-10.md), and KS-D3's
+// D3-G1 (docs/tasks/parked/task-kernel-survey-2026-10.md): the mixer's row kernels (delta_conv_seq, delta_gates_rows, delta_norm_rows,
 // delta_rule_seq, delta_gnorm_rows), each dispatched once over M rows, against the decode kernels they copy run M times, one row
 // at a time, on the same inputs. Every row's output of every stage, the conv window and the recurrent state after the last row
 // must be equal bit for bit. The window and state start non-zero, as a continuation from an earlier prompt leaves them. Inputs

@@ -167,7 +167,7 @@ func TestSendUsage_onlyWhenRequested(t *testing.T) {
 // chat, /v1/completions and vision. The generated ids continue the prompt, and Decode applies SentencePiece's
 // sequence-level dummy-prefix strip to them, eating the response's leading space on Llama-2/Mistral.
 //
-// The guard requires DecodePiece, the incremental non-stripping form (docs/tasks/task-recompute-audit.md,
+// The guard requires DecodePiece, the incremental non-stripping form (docs/completed/task-recompute-audit.md,
 // R-08: a per-token re-decode of the whole sequence is O(n^2) in output length), and forbids Decode.
 func TestStreamTokens_decodesAsAContinuation(t *testing.T) {
 	fset := token.NewFileSet()

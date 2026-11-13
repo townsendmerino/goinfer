@@ -18,7 +18,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// G-S10g of docs/tasks/task-multimodal-support-2026-10.md ("S10 on CUDA"), tiny half; CUDA twin of metal/s16_mrope_prefill_test.go's TestS16DeepstackPrefill_tiny. The Qwen3-VL tiny decoder
+// G-S10g of docs/completed/task-multimodal-support-2026-10.md ("S10 on CUDA"), tiny half; CUDA twin of metal/s16_mrope_prefill_test.go's TestS16DeepstackPrefill_tiny. The Qwen3-VL tiny decoder
 // takes a synthetic 16x24 image with random features and DeepStack sets: the resident DeepStack prefill (PrefillMRoPEDeepstackLast) against today's path (the CPU prefill with the sets, the KV uploaded, CUDA decode), on
 // the last-row logits and 8 teacher-forced decode steps, at cosine >= 0.9999 per row with an equal argmax (an argmax difference counts only when it is not an R10 near-tie: this fixture's next-token distribution is
 // nearly uniform). Three planted defects, each alone red: the sets not added, added one layer late, added to the text rows too. Then the decoder's own entry point, which must take the resident prefill.

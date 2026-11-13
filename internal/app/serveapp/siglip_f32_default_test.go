@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// The S4 addendum (docs/tasks/task-multimodal-support-2026-10.md): -vision-quant is unset by default so an explicit f32 is distinguishable from the default (which matters
+// The S4 addendum (docs/completed/task-multimodal-support-2026-10.md): -vision-quant is unset by default so an explicit f32 is distinguishable from the default (which matters
 // for the fallback, attachGemma3Tower). Unset is float32 on every backend (WebGPU, which has no float32 device tower, runs it on the CPU: TestGemma3TowerBackend_webgpuDefault);
 // an explicit f32 selects the float32 tower; int8 stays int8 everywhere.
 func TestTowerInt8_gemma3ExplicitF32(t *testing.T) {
@@ -55,7 +55,7 @@ func TestTowerReserve_gemma3(t *testing.T) {
 	}
 }
 
-// TestTowerReserve_everyDeviceTower is S18's G-S18c (docs/tasks/task-multimodal-support-2026-10.md): towerReserve is nonzero for every family that has a DEVICE tower under
+// TestTowerReserve_everyDeviceTower is S18's G-S18c (docs/completed/task-multimodal-support-2026-10.md): towerReserve is nonzero for every family that has a DEVICE tower under
 // its backend, int8 included, and zero where the tower runs on the CPU. A table over family x -vision-quant x backend. Gemma 3 under cuda is the case that matters: its
 // shipped default (the int8 device tower) was priced at zero.
 func TestTowerReserve_everyDeviceTower(t *testing.T) {

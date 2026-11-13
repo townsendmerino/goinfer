@@ -94,11 +94,11 @@ func TestGemma4TwoGeom_localize(t *testing.T) {
 	// Attribution asserts. Both bars are 0.999 (S1.0's amendment, below): with the dense layer scalar and v_norm fixed,
 	// int4-Metal (f16 group scales) against int4-CPU (f32 scales) does not floor at ~0.98 per layer. A seam or K=V break (a
 	// misthreaded geometry, the 2x v_norm trap) still craters a layer far below either bar.
-	// (S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.95 after the dense layer scalar and v_norm fixes)
+	// (S1.0 amendment, docs/completed/task-multimodal-support-2026-10.md: raised from 0.95 after the dense layer scalar and v_norm fixes)
 	if c0 < 0.999 {
 		t.Errorf("layer 0 cosine %.6f < 0.999 — the per-layer GEOMETRY seam (local hd=16) diverges", c0)
 	}
-	// (S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.95 after the dense layer scalar and v_norm fixes)
+	// (S1.0 amendment, docs/completed/task-multimodal-support-2026-10.md: raised from 0.95 after the dense layer scalar and v_norm fixes)
 	if c1 < 0.999 {
 		t.Errorf("layer 1 cosine %.6f < 0.999 — the K=V forward (global hd=512, v_norm(raw k)) diverges", c1)
 	}
@@ -114,7 +114,7 @@ func TestGemma4TwoGeom_localize(t *testing.T) {
 //
 // It moves the floor by ~nothing: the group scales are NOT the confound (f16-rounding a scale is a ~5e-4
 // perturbation). The residual that once read ~0.98 was two Gemma 4 bugs on Metal, the dense layer scalar and
-// v_norm, found by S1.0 (docs/tasks/task-multimodal-support-2026-10.md), not the resident quant path.
+// v_norm, found by S1.0 (docs/completed/task-multimodal-support-2026-10.md), not the resident quant path.
 //
 // The assertion is a crater backstop only: removing a benign confound must not make things worse and
 // must not reveal a crater. It deliberately does NOT assert 0.999 — that would encode the falsified
@@ -158,7 +158,7 @@ func TestGemma4TwoGeom_f16ScaleConfound(t *testing.T) {
 	}
 	t.Logf("f16-scale-matched minCosine = %.6f — vs ~0.9806 against the f32-scale CPU: the group-scale "+
 		"representation is ~0 of the gap (the old ~0.98 residual was S1.0's two Gemma 4 fixes)", minCos)
-	// (S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md: raised from 0.95 after the dense layer scalar and v_norm fixes.)
+	// (S1.0 amendment, docs/completed/task-multimodal-support-2026-10.md: raised from 0.95 after the dense layer scalar and v_norm fixes.)
 	if minCos < 0.995 {
 		t.Errorf("f16-scale-matched minCosine %.6f < 0.995 — a crater, not quant noise", minCos)
 	}
@@ -221,7 +221,7 @@ func TestGemma4TwoGeom_residentParity(t *testing.T) {
 	// int4-Metal(f16 scales)-vs-int4-CPU(f32 scales) representation gap — it
 	// cannot detect a small quality regression, only a crater. The SENSITIVE cosine gate is
 	// TestGemma4TwoGeom_f16ScaleConfound, which removes the scale confound. Do NOT tighten it toward the noise floor
-	// (that was the trap). The floor is 0.995 (S1.0 amendment, docs/tasks/task-multimodal-support-2026-10.md; raised from 0.90
+	// (that was the trap). The floor is 0.995 (S1.0 amendment, docs/completed/task-multimodal-support-2026-10.md; raised from 0.90
 	// after the dense layer scalar and v_norm fixes).
 	if minCos < 0.995 {
 		t.Errorf("minCosine %.6f < 0.995 — a crater, not quant noise; the two-geometry/K=V forward is broken", minCos)

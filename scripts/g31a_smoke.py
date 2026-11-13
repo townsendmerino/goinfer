@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-31a1's requests (docs/tasks/task-multimodal-support-2026-10.md, "G-31a"): three text chat requests and one image request, 48 greedy tokens each, against a running serve.
+"""G-31a1's requests (docs/completed/task-multimodal-support-2026-10.md, "G-31a"): three text chat requests and one image request, 48 greedy tokens each, against a running serve.
 Applies the registered automatic bars (non-empty, >= 8 distinct tokens, no <unused / <pad>) and writes every reply verbatim for the reader's coherence call.
 Usage: g31a_smoke.py <port> <out dir> <repo root>   (exit 0 when every automatic bar holds; the coherence call is NOT made here)"""
 import base64, json, os, sys, time, urllib.request

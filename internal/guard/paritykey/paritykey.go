@@ -14,7 +14,7 @@
 //
 // Imports: the standard library only.
 //
-// Plan: docs/tasks/task-subsystems-2026-10.md §5.8.
+// Plan: docs/completed/task-subsystems-2026-10.md §5.8.
 package paritykey
 
 import (
@@ -359,7 +359,7 @@ func ProgramsDigest(fixtures []string, tab map[string]map[string]string) (string
 // LoaderTablePath is SB4's committed loader identity table: GOARCH -> fixture -> quant mode -> the digest of the fixture's
 // per-tensor identities as loaded in that mode. decoder's TestLoaderIdentity_table holds each GOARCH's entry to the
 // loaders. The shadow key reads it (LoaderRule), so the loader files leave a family's key the way the program fingerprints let
-// the builders leave it (docs/tasks/task-subsystems-2026-10.md §8 SB4).
+// the builders leave it (docs/completed/task-subsystems-2026-10.md §8 SB4).
 const LoaderTablePath = "testdata/loader_identity.json"
 
 // ReadLoaderTable reads src's loader identity table, or nil in a tree from before it.

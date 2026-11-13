@@ -12,7 +12,7 @@ import (
 )
 
 // SP2's speculative verify on a Gated-DeltaNet resident (decoder.ResidentRecurrentSpec; design and gates in
-// docs/tasks/task-forward-architecture-2026-10.md §6a, "SP2 on nobara"). A verify pass runs the DeltaNet layers through the
+// docs/completed/task-forward-architecture-2026-10.md §6a, "SP2 on nobara"). A verify pass runs the DeltaNet layers through the
 // conv and scan twins that never store (delta_conv_rows_spec, delta_rule_rows_128_spec, delta_rule_rows_spec), and writes
 // each row's recurrence inputs into dnSpecArena instead of the pass's scratch. FoldVerified marks the rows the loop commits; the
 // next verify's twins fold them into the live window and state before scanning their own rows, and FlushFold folds them through

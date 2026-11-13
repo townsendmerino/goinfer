@@ -5,7 +5,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-// One memory-accounting path per backend (docs/tasks/task-memory-accounting-2026-09.md).
+// One memory-accounting path per backend (docs/completed/task-memory-accounting-2026-09.md).
 //
 // ResidentNeedBytes is the single definition that Plan("metal") (what `fit` reports) and Metal's own pre-build guard
 // both use, so they cannot price the same load differently. Its KV half is ResidentKVBytes, which prices a backend's KV

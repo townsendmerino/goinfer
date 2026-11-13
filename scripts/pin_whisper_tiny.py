@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14d1's fixture (docs/tasks/task-multimodal-support-2026-10.md, "G-S14d"): a tiny random-weight Whisper (encoder AND decoder, so S14.4c can reuse it) built from transformers' own classes
+"""G-S14d1's fixture (docs/completed/task-multimodal-support-2026-10.md, "G-S14d"): a tiny random-weight Whisper (encoder AND decoder, so S14.4c can reuse it) built from transformers' own classes
 and saved the ordinary way (transformers 5.15.0 reloads it: the round trip is checked below), plus the encoder's output on two synthetic clips whose features come from transformers' own
 WhisperFeatureExtractor. Weights are sized so the planted defects can be SEEN (pre-activations of order 1-3, sharp attention, a loud position table).
 Run (repo root): ~/g4venv/bin/python -I scripts/pin_whisper_tiny.py testdata/whisper-tiny-rand"""

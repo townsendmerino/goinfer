@@ -25,7 +25,7 @@ func ksh4Released(a *gridVAccel) bool {
 	return false
 }
 
-// TestKSH4_releaseKeepsOutputs is H4-G1 (docs/tasks/task-kernel-survey-2026-10.md, "KS-H4 gates"): with the ceiling at 0 and a
+// TestKSH4_releaseKeepsOutputs is H4-G1 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-H4 gates"): with the ceiling at 0 and a
 // 1 ms idle wait, every grid tiny fixture releases its scratch after each forward, and the forwards after a release (a larger then a
 // smaller grid, then the first again) give the same outputs, byte for byte, as a tower that never releases.
 func TestKSH4_releaseKeepsOutputs(t *testing.T) {

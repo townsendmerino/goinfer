@@ -6,7 +6,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// MC3c step 2 (docs/tasks/task-concurrency-2026-09.md): several CPU generations of one model decoding at once join their
+// MC3c step 2 (docs/tasks/parked/task-concurrency-2026-09.md): several CPU generations of one model decoding at once join their
 // decode tokens into one batched forward (decodeMultiStep) instead of running N independent forwards. Measurements:
 // docs/measurements/concurrency-mc2-2026-09-26.md.
 //
@@ -130,7 +130,7 @@ func cpuBatchCacheEligible(c *KVCache) error {
 // cpuBatchFusedW4A8 lets decodeMultiStep run an int4 layer's q‖k‖v, and its gate‖up, each as one batched W4A8 call over
 // the B rows instead of one matmul per projection. The kernel (linalg.MatmulBTW4A8Batch) is numerically identical to
 // calling MatmulBTW4A8Into once per op, so this changes only how many fork/joins a step pays. A package variable, not
-// an environment read: the measurement (docs/tasks/task-concurrency-2026-09.md, MC3c step 2 S1) flips it in-process to
+// an environment read: the measurement (docs/tasks/parked/task-concurrency-2026-09.md, MC3c step 2 S1) flips it in-process to
 // interleave its arms.
 var cpuBatchFusedW4A8 = true
 

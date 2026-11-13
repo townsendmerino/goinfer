@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// g3Prompts is G3's prompt set, fixed in docs/tasks/task-multimodal-support-2026-10.md (S1) before any run, and the
+// g3Prompts is G3's prompt set, fixed in docs/completed/task-multimodal-support-2026-10.md (S1) before any run, and the
 // same eight on every backend.
 var g3Prompts = []string{
 	"Explain why the sky is blue in two sentences.",
@@ -166,7 +166,7 @@ func g3ModelWebGPU(t *testing.T, giw, tok, label string, logf func(string, ...an
 	return pass, agree, n
 }
 
-// TestGemma4EModel_webgpuRealNonInferiority is G-S12.1d (docs/tasks/task-multimodal-support-2026-10.md, S12): S1's G3
+// TestGemma4EModel_webgpuRealNonInferiority is G-S12.1d (docs/completed/task-multimodal-support-2026-10.md, S12): S1's G3
 // rule, unchanged, on WebGPU. In one process the reference Qwen2.5-Coder-1.5B runs WebGPU against the CPU, then the
 // Gemma 4 E-model named by GOINFER_G3_EMODEL (e2b, the default, or e4b; the quantization-aware GGUF's sidecar). PASS
 // at >= the reference's - 2.0 points with free-run passes >= the reference's - 1; 2.0-4.0 points below is parked.

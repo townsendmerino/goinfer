@@ -1,5 +1,5 @@
 // Package movedpaths holds the test that keeps the aikit paths Track AX moved into goinfer out of goinfer's imports and
-// module files (docs/tasks/task-subsystems-2026-10.md §7.11). It has no non-test code.
+// module files (docs/completed/task-subsystems-2026-10.md §7.11). It has no non-test code.
 package movedpaths
 
 import (

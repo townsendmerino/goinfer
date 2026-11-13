@@ -9,7 +9,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// ptxTargetMajor/Minor: every PTX file in this package targets sm_75 (Turing), JIT-compiled forward by the driver on a newer card (docs/tasks/task-hardware-coverage-2026-10.md section 1.A). A card
+// ptxTargetMajor/Minor: every PTX file in this package targets sm_75 (Turing), JIT-compiled forward by the driver on a newer card (docs/completed/task-hardware-coverage-2026-10.md section 1.A). A card
 // OLDER than that cannot load the kernels at all, and the report says so.
 const ptxTargetMajor, ptxTargetMinor = 7, 5
 

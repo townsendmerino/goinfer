@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestSampledTopKStreamIdentity is R7's end-to-end gate (docs/tasks/red-october.md): with a fixed seed,
+// TestSampledTopKStreamIdentity is R7's end-to-end gate (docs/completed/red-october.md): with a fixed seed,
 // the token stream sampled from the device top-K row is IDENTICAL to the stream from the full-row path
 // (GOINFER_NO_TOPK_FASTPATH=1), on real checkpoints, for four filter configurations, 1,000 tokens each.
 // It also records how many steps the K candidates served and how many fell back to the full row.

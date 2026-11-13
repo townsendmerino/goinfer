@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14i3's client (docs/tasks/task-multimodal-support-2026-10.md, "G-S14i"): POST /v1/audio/transcriptions of a served Whisper model, compared with transformers' references.
+"""G-S14i3's client (docs/completed/task-multimodal-support-2026-10.md, "G-S14i"): POST /v1/audio/transcriptions of a served Whisper model, compared with transformers' references.
 Usage: s14i_served.py <port> <libri.wav> <ts-real golden.json (G-S14g3's)> <policy-real golden.json (G-S14h2's)> <long70.in.f32 from the policy reference>
 The 5.9 s clip's verbose_json segments must equal the g3 reference's (one window), the 70 s composite's the h2 reference's long70 case (13 segments; OpenAI's policy), the language "english"; srt, vtt and text of the
 same request must be consistent with the segments; a repeat of a request returns the same result."""

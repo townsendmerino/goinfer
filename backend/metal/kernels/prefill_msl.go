@@ -13,7 +13,7 @@ using namespace metal;
 // int4/W4A8 (packed nibbles + f16 group scales), dequanted in-kernel. Dispatched as a 2-D grid of
 // threadgroups, (ceil(N/64), ceil(M/64)) × 128 threads — see gemmGrid in PrefillLast.
 //
-// R16 (docs/tasks/red-october.md; docs/measurements/metal-prefill-gemm-s2-2026-09-25.md): restructured
+// R16 (docs/completed/red-october.md; docs/measurements/metal-prefill-gemm-s2-2026-09-25.md): restructured
 // 2026-09-25 in the shape of llama.cpp's classic kernel_mul_mm. The previous kernel (each simdgroup an
 // island that fetched its own activations from device memory inside the MMA loop, K stepped by 8) ran
 // the MLP projections at ~0.75 TFLOPS under sustained load; this one runs them at ~2.7–2.9, measured
@@ -295,7 +295,7 @@ kernel void gemm_w4f16_tile(device const half* A[[buffer(0)]], device const uint
     for (uint k0 = 0; k0 < K; k0 += 32u) {
         threadgroup_barrier(mem_flags::mem_threadgroup);
         if constexpr (W8) {
-            // int8 slice 2 (docs/tasks/task-metal-int8-2026-10.md): W is the native int8 path's row-major int8 codes,
+            // int8 slice 2 (docs/completed/task-metal-int8-2026-10.md): W is the native int8 path's row-major int8 codes,
             // K bytes a row, and WS its per-row f32 scales; an 8-k block is two words.
             float sc = wok ? reinterpret_cast<device const float*>(WS)[ncol] : 0.0f;
             for (ushort w = 0; w < WPT; w++) {
@@ -397,7 +397,7 @@ kernel void rmsnorm_quant_f16(device const half* x[[buffer(0)]], device const fl
 
 // rmsnorm_f16: one threadgroup per row. out[m] = x[m]*rsqrt(mean(x[m]²)+eps)*w (w f32).
 // addOne selects Gemma's (1+w) RMS offset vs plain w — mirrors decoder's rmsnorm.go / the decode
-// path's rmsnorm_quant (kernels.go). G8 (docs/tasks/task-gpu-paths-2026-09.md): added so this kernel
+// path's rmsnorm_quant (kernels.go). G8 (docs/completed/task-gpu-paths-2026-09.md): added so this kernel
 // can serve BOTH a GEMV-input norm (Llama/Qwen, addOne=0) and Gemma's sandwich norm on a sublayer
 // OUTPUT (addOne=1) — same math either way, only the weight convention differs.
 kernel void rmsnorm_f16(device const half* x[[buffer(0)]], device const float* w[[buffer(1)]],
@@ -414,7 +414,7 @@ kernel void rmsnorm_f16(device const half* x[[buffer(0)]], device const float* w
     for(uint i=tid;i<H;i+=tgs){ float g=addOne!=0u?(1.0f+w[i]):w[i]; orow[i]=half(float(xr[i])*rms*g); }
 }
 
-// layernorm_f16 / layernorm_quant_f16 (docs/tasks/task-metal-pairwise-followups-2026-10.md, Part B): rmsnorm_f16 and
+// layernorm_f16 / layernorm_quant_f16 (docs/completed/task-metal-pairwise-followups-2026-10.md, Part B): rmsnorm_f16 and
 // rmsnorm_quant_f16 for a bias-free LayerNorm (Cohere / Command-R7B): out = (x - mean) * rsqrt(var + eps) * w, the math of
 // the decode path's layernorm_quant with hasBias 0. Same signatures as the RMSNorm twins (addOne is accepted and unused:
 // no LayerNorm family carries Gemma's 1+w), so a dispatch site only swaps the pipeline. A biased LayerNorm (GPT-2) does not
@@ -469,7 +469,7 @@ kernel void residual_f16(device half* x[[buffer(0)]], device const half* y[[buff
 kernel void residual_f16_scaled(device half* x[[buffer(0)]], device const half* y[[buffer(1)]], constant float& inv[[buffer(2)]],
     uint i[[thread_position_in_grid]]) { x[i]=half(float(x[i])+float(y[i])*inv); }
 
-// residual_f16_from_f32: x += y, x is f16, y is f32 (G8, docs/tasks/task-gpu-paths-2026-09.md). The
+// residual_f16_from_f32: x += y, x is f16, y is f32 (G8, docs/completed/task-gpu-paths-2026-09.md). The
 // batched-prefill MoE row loop's expert-combine dispatches (encodeMoEExperts/
 // encodeMoESharedExpert, metal/moe.go) are F32-only — reused UNCHANGED for the per-row loop by
 // pointing their accumulate target at an isolated F32 scratch buffer instead of prefill's own F16
@@ -531,7 +531,7 @@ kernel void rope_f16(device half* x[[buffer(0)]], device const float* invf[[buff
     x[base+dd]=half(x0*c-x1*s); x[base+rhalf+dd]=half(x0*s+x1*c);
 }
 
-// rope_mrope_f16 (S16, docs/tasks/task-multimodal-support-2026-10.md): rope_f16 for Qwen's multimodal RoPE. Each row has
+// rope_mrope_f16 (S16, docs/completed/task-multimodal-support-2026-10.md): rope_f16 for Qwen's multimodal RoPE. Each row has
 // three positions (temporal, height, width) in pos3[m*3..], and rotary pair dd turns by pos3[m*3 + axis[dd]]. axis is the
 // host's own table from decoder's mropeComponent / mropeComponentInterleaved (contiguous sections for Qwen2.5-VL, strided
 // for Qwen3.5+/Qwen3-VL), built once per model, so the kernel carries no layout formula of its own. A text row has three
@@ -551,7 +551,7 @@ kernel void rope_mrope_f16(device half* x[[buffer(0)]], device const float* invf
     x[base+dd]=half(x0*c-x1*s); x[base+rhalf+dd]=half(x0*s+x1*c);
 }
 
-// rope_f16_pw / rope_mrope_f16_pw (docs/tasks/task-metal-pairwise-rope-2026-10.md): rope_f16 / rope_mrope_f16 for GPT-J
+// rope_f16_pw / rope_mrope_f16_pw (docs/completed/task-metal-pairwise-rope-2026-10.md): rope_f16 / rope_mrope_f16 for GPT-J
 // PAIRWISE rotation, pair dd = dims (2dd, 2dd+1), as decoder's rope.go's applyRoPEInterleaved and applyMRoPEPairwise (GLM-OCR's
 // contiguous m-RoPE sections come in through the same host axis table). Same arguments and grid; bound for a model whose
 // decoder.Model.PairwiseRoPEResident() is true, and nowhere else.
@@ -708,7 +708,7 @@ kernel void attention_prefill_tiled(device const half* qkv[[buffer(0)]], device 
     for (uint j=0u, d=tid; d<hd; j++, d+=tgs) out[m*qDim + qh*hd + d]=half(acc[j]/sum);
 }
 
-// attention_prefill_img (S17's Metal image prefill, docs/tasks/task-multimodal-support-2026-10.md): attention_prefill with
+// attention_prefill_img (S17's Metal image prefill, docs/completed/task-multimodal-support-2026-10.md): attention_prefill with
 // image blocks [b.x, b.y) in absolute positions that attend BIDIRECTIONALLY, as the CPU's KVCache.attendHi and CUDA's
 // PrefillImageLast: a query inside a block sees keys up to that block's b.y - 1 (its own block only; several blocks for
 // several images, S11), every other query stays causal, and the sliding window's lower bound stays at the causal
@@ -901,7 +901,7 @@ kernel void attention_prefill_fused(device const half* qkv[[buffer(0)]], device 
     }
 }
 
-// attention_prefill_steel (R19, docs/tasks/red-october.md): prefill attention in the shape of MLX 0.32.0's
+// attention_prefill_steel (R19, docs/completed/red-october.md): prefill attention in the shape of MLX 0.32.0's
 // steel_attention (bq32 bk16 bd128), for head dim 128. One threadgroup per (query head, 32 query rows); its 4 simdgroups
 // own 8 rows each, and each 16-key K/V block is staged ONCE in padded threadgroup memory and read by all 32 rows. O stays
 // in registers (16 8x8 fragments per simdgroup, rescaled in place); the online softmax runs on every lane through the
