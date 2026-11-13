@@ -75,7 +75,7 @@ Registration: "OP4m-pod2 part 2: registration" in `docs/tasks/task-forward-and-m
 | Nemotron-H 4B (Mamba-2) | not read | | VOID: pair 0 paged (3 process major faults; available 6.39 GiB against need 5.44) |
 | Gemma 4 E2B | not read | | VOID: pair 2 paged (1 process major fault) |
 
-  A re-run of the two void cells (`p3-seq-run2.log`, from 19:37:34 PST) was stopped at about 19:41 on the coordinator's word: another
+  A re-run of the two void cells (`p3-seq-run2.log`, from 19:37:34 PST) was stopped, in its second attempt, on the coordinator's word: another
   session on the Mac needed the lock, and Nemotron's attempt 1 had already paged (185 faults, swap 1400.7 to 1605.2 MiB) under that
   session's load. Nothing was averaged in. **P-3 stays owed for Nemotron-H and Gemma 4 E2B** until the Mac is quiet; the walk is
   on by default meanwhile, and a fail or park there reverts it for that step kind.
