@@ -19,7 +19,7 @@ Each family is one tiny fixture under `testdata/`; the CPU column is the CPU (ho
     0.99x at 4,096 keys and 1.01x to 1.02x at 16,384. It buys about twice f16's positions in the same VRAM.
   - The records: `docs/measurements/cuda-kv-i8-2026-11/s4-registration.md` and `s6-registration.md` (the tensor-core prefill). Widening int8
     to more CUDA families is parked (the task doc, P2).
-- **f16 on CUDA** (`auto` for the dense families): quality in `docs/tasks/task-cuda-f16-kv-2026-10.md`. Speed against f32, served, A B B A, same session
+- **f16 on CUDA** (`auto` for the dense families): quality in `docs/completed/task-cuda-f16-kv-2026-10.md`. Speed against f32, served, A B B A, same session
   (nobara, RTX 2070 SUPER, driver 595.112.07, 2026-11-09; `docs/benchmarks.md` B2.1): 13 of 14 cells at or above 1.0 (phi3-mini faster by 6.7% at 2048 keys and
   11.5% at 3900); the one cost is the 7B at 8,000 keys, 68.1 against 70.1 tok/s (0.972x, under the registered 0.98 bar: PARKED). The owner accepted that cost
   for f16's halved KV memory (2026-11-10): `auto` stays f16 on CUDA, with no per-family rule.
