@@ -698,3 +698,70 @@ func (bs *webgpuBuild) layerTail(i int, lw *decoder.LayerWeights, rl *kernels.Ru
 	}
 	return nil
 }
+
+// uploadLayers uploads every layer in order and appends its RunLayer to rd.rm.Layers. A layer takes its mixer (Nemotron-H's layer is
+// one op and nothing else), its pre-norms and RoPE table, its feed-forward, and its biases, norms and sinks; a layer that
+// shares an earlier layer's K/V needs that layer built before it.
+func (bs *webgpuBuild) uploadLayers() error {
+	m, rd := bs.m, bs.rd
+	rd.rm.PleDim = m.Gemma4PLEDimResident()
+	for i := range bs.w.Layers {
+		lw := &bs.w.Layers[i]
+		rl := bs.newRunLayer(i)
+		var e error
+		if bs.nemoOK {
+			if e = bs.nemotronLayer(i, lw, &rl); e != nil {
+				return e
+			}
+			rd.rm.Layers = append(rd.rm.Layers, rl)
+			continue
+		}
+		isDelta := bs.dnetOK && m.Qwen35LinearLayer(i)
+		// postOnlyOK (Olmo 3, Olmo Hybrid) is model-level, but Olmo Hybrid's DeltaNet layers reach NormPre2 through
+		// NormPlacementLinear and carry real pre-norm weights regardless; gate on the per-layer truth.
+		postOnlyHere := bs.postOnlyOK && !isDelta
+		g4b, isG4MoE := m.Gemma4MoEResidentLayer(i)
+		if !postOnlyHere {
+			if rl.AttnNorm, e = bs.up32(lw.PreAttnNorm); e != nil {
+				return e
+			}
+			if !isG4MoE { // a Gemma 4 MoE layer's feed-forward norms are its block's own
+				if rl.MlpNorm, e = bs.up32(lw.PreMLPNorm); e != nil {
+					return e
+				}
+			}
+		}
+		if rl.InvFreq, e = bs.ropeInvBuf(i); e != nil {
+			return e
+		}
+		if isDelta {
+			e = bs.deltaNetMixer(i, &rl)
+		} else if bs.dnetOK && bs.dnAttnGate {
+			e = bs.gatedAttnMixer(i, lw, &rl)
+		} else if bs.granOK && m.GraniteMambaLayer(i) {
+			e = bs.graniteMambaMixer(i, &rl)
+		} else if bs.mlaOK {
+			e = bs.mlaMixer(i, &rl)
+		} else {
+			e = bs.attnMixer(i, lw, &rl)
+		}
+		if e != nil {
+			return e
+		}
+		if isG4MoE { // Gemma 4's parallel dense and MoE block
+			e = bs.g4MoEFFN(i, g4b, &rl)
+		} else if bs.moeOK && len(lw.Experts) > 0 { // Mixtral-class sparse MoE FFN
+			e = bs.sparseMoEFFN(i, lw, &rl)
+		} else {
+			e = bs.denseFFN(lw, &rl)
+		}
+		if e != nil {
+			return e
+		}
+		if e = bs.layerTail(i, lw, &rl, isG4MoE, postOnlyHere); e != nil {
+			return e
+		}
+		rd.rm.Layers = append(rd.rm.Layers, rl)
+	}
+	return nil
+}
