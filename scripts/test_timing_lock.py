@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for timing_lock.py (TE9, docs/tasks/task-test-efficiency-2026-09.md): one timed run per box.
+"""Tests for timing_lock.py (TE9, docs/completed/task-test-efficiency-2026-09.md): one timed run per box.
 
 Every case runs real processes against a private lock file (GOINFER_TIMING_LOCK_FILE), never ~/.goinfer-timing.lock.
 The refusal cases are the ones that must be able to go red: a contender that got the lock while a holder had it would

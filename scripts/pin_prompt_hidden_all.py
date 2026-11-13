@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""HF reference for decoder.Model.PromptHiddenAll (D11, docs/tasks/task-constrained-confidence.md Route C): the final-norm hidden state at EVERY
+"""HF reference for decoder.Model.PromptHiddenAll (D11, docs/tasks/parked/task-constrained-confidence.md Route C): the final-norm hidden state at EVERY
 prompt position, last_hidden_state[0, :], from the EXISTING tiny checkpoints, in f32. The Clef joint head reads the text model's last_hidden_state at
 all positions (decisions-d10-clef-2026-10-02.md), so this is what D12 feeds it.
 

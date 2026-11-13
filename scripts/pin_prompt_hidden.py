@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""HF reference for decoder.Model.PromptHidden (D2, docs/tasks/task-constrained-confidence.md): the final-norm hidden state at the
+"""HF reference for decoder.Model.PromptHidden (D2, docs/tasks/parked/task-constrained-confidence.md): the final-norm hidden state at the
 last prompt position, output_hidden_states[-1][0, -1], from the EXISTING tiny checkpoints (not regenerated), in f32.
 
     python3 scripts/pin_prompt_hidden.py   ->  decoder/testdata/prompt_hidden_golden.json

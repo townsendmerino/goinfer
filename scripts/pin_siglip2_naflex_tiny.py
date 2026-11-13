@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """Tiny SigLIP2 NaFlex tower + golden for aikit's Siglip2NaFlexEncoder, ResizeBilinearAA and ResizeBilinearAAFloat (S10,
-LFM2.5-VL; G-S10l-b's tiny half, docs/tasks/task-multimodal-support-2026-10.md).
+LFM2.5-VL; G-S10l-b's tiny half, docs/completed/task-multimodal-support-2026-10.md).
 
 A random Siglip2VisionModel (transformers' own, float32, eager attention) at toy size, every LayerNorm weight and bias
 randomised (a 1.0 norm hides a swapped or skipped one), a 4x4 position table. Three tiles, each run alone and also all

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S10c's reference (docs/tasks/task-multimodal-support-2026-10.md, S10): transformers' Qwen3VLForConditionalGeneration,
+"""G-S10c's reference (docs/completed/task-multimodal-support-2026-10.md, S10): transformers' Qwen3VLForConditionalGeneration,
 float32, on one image prompt (testdata/glm_ocr/table.png, "What does this image show? Answer briefly."), its own
 processor and chat template making the inputs. Writes, to <out>: inputs.json (input_ids, image_grid_thw, the image token
 id), pixels.f32 (HF's pixel values, float32 little-endian), hf_last_logits.f32, and hf_argmax.json (the argmax at every

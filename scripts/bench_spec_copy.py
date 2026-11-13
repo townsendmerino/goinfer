@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """A copy-heavy serve workload for n-gram speculation, at 1..N concurrent clients (MC4's spec item,
-docs/tasks/task-concurrency-2026-09.md).
+docs/tasks/parked/task-concurrency-2026-09.md).
 
 W7's chat turns give a prompt-lookup drafter little to copy. Here each request hands the model a section of a Go source
 file and asks for it back verbatim, the traffic `--spec ngram` exists for (code edits, RAG, agent loops). Client i sends

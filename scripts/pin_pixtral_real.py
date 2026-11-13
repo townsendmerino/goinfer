@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""S10's real-checkpoint references for Ministral 3 (Pixtral), G-S10m-a/b/c (docs/tasks/task-multimodal-support-2026-10.md,
+"""S10's real-checkpoint references for Ministral 3 (Pixtral), G-S10m-a/b/c (docs/completed/task-multimodal-support-2026-10.md,
 "S10, Ministral 3 (Pixtral)"): transformers' Mistral3ForConditionalGeneration in float32 (sdpa), loaded once.
 
   a. The processor (PixtralImageProcessorFast, the checkpoint's processor_config.json) on the four F2a images and two

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14f2's reference (docs/tasks/task-multimodal-support-2026-10.md, "G-S14f"): a real Whisper checkpoint's generation in transformers float32 on the LibriSpeech clip: the detected language, the greedy
+"""G-S14f2's reference (docs/completed/task-multimodal-support-2026-10.md, "G-S14f"): a real Whisper checkpoint's generation in transformers float32 on the LibriSpeech clip: the detected language, the greedy
 transcription with the default logits processors, the logits at the last prompt position, and the logits at every generated position teacher-forced on the reference's own tokens.
 The reference is PROVED real as G-S14d2's was: zero missing keys, and the transcription asserted against the corpus text. Writes <out>/libri.{in.f32,prompt.json,gen.json,lang.json,plogits.f32,tf.f32} and meta.json.
 Run (repo root): ~/g4venv/bin/python -I scripts/pin_whisper_decoder_real.py --model ~/models/whisper-small --out <dir>"""

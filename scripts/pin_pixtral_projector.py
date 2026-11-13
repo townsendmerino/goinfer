@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """Tiny Mistral 3 multimodal projector + golden for goinfer's multimodal.PixtralProjector (S10, Ministral 3;
-docs/tasks/task-multimodal-support-2026-10.md).
+docs/completed/task-multimodal-support-2026-10.md).
 
 HF's own Mistral3MultiModalProjector (transformers' modeling_mistral3, float32) at toy size, random weights and a
 randomised norm, over two images of different patch grids in one call (the merger splits per image by image_sizes).

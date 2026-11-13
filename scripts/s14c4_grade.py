@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14c4's grading (docs/tasks/task-multimodal-support-2026-10.md, registered before the harness). Usage:
+"""G-S14c4's grading (docs/completed/task-multimodal-support-2026-10.md, registered before the harness). Usage:
   s14c4_grade.py <refs.json> <hf.json> <goinfer.json> [gemma.json]
 hf.json is the reference arm R, goinfer.json holds the arms f32 and int4 (decoder TestQwen3ASRWER_arms), gemma.json (optional) the record-only Gemma 4 E4B arm D. The control S is F shifted by one clip.
 Normalisation: strip `language X<asr_text>` and <|..|> control tokens from the hypothesis; lowercase; Mr./Mrs./Dr. -> mister/missus/doctor; hyphens to spaces; drop everything except letters, digits and apostrophes."""

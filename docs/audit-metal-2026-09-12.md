@@ -171,7 +171,7 @@ re-baked by the code it checks (G-04).
   Verified: `go test ./metal/...` (79 pass) and `-tags goinfer_testhooks` (129 pass, 52 skip) both
   green, `go test ./decoder/...` (488 pass), gofmt clean, staticcheck clean (same pre-existing
   U1000s as `main`, none new).
-- **Follow-up, 2026-09-20 (R3, `docs/tasks/red-october.md`).** The floor moved again: 256 → 64.
+- **Follow-up, 2026-09-20 (R3, `docs/completed/red-october.md`).** The floor moved again: 256 → 64.
   §3.2 pooled gate ships at K=64 alone and at K=64+128 pooled (S model); the batched arm beats
   sequential TTFT by 3.83× at K=64 and 4.66× at K=128, both past the ≥2× ships band. Full record:
   [`metal-prefill-floor-2026-09-20.md`](measurements/metal-prefill-floor-2026-09-20.md).
@@ -251,7 +251,7 @@ re-baked by the code it checks (G-04).
 - **Where:** `metal/prefill.go:1813-1821` (`for m := range M { … r.encodeMoEExperts(e, L, moeDst) }`),
   `metal/moe.go:1018-983`; `metal/model.go:1273-1161` (paged/g4moe/DeltaNet → `prefillOK=false`);
   `metal/backend.go:796-585` (`PrefillPath` reports "batched f16-MMA" for it);
-  `docs/tasks/task-gpu-paths-2026-09.md:1184-1191` (G8: "Mirrors CUDA's own established shape exactly").
+  `docs/completed/task-gpu-paths-2026-09.md:1184-1191` (G8: "Mirrors CUDA's own established shape exactly").
 - **Mechanism and bound (counted):** non-paged: per row per MoE layer (5 + 3k [+3–5 shared])
   dispatches and a full read of the k routed experts — bytes ≈ M × L × k·3·H·I/2: Qwen1.5-MoE-class
   (24 L, k=4, H=2048, I=1408) ≈ 0.83 GB per row → 1.7 TB at M=2048 (≥8.5 s at 200 GB/s) plus ~0.84 M
@@ -270,7 +270,7 @@ re-baked by the code it checks (G-04).
 - **Prior:** audit-2026-09-10 P-15 (dispatch count only); queue-performance P20/P18 (CPU
   expert-major 4.36×, bit-identical); CUDA `prefill-moe-m26` (batching worth 8%, expert DMA 59.5%).
 - **NOT CLOSED — interim step done 2026-09-13, the real fix not attempted.** The bound this
-  finding computed is now recorded beside G8 (`docs/tasks/task-gpu-paths-2026-09.md`, dated
+  finding computed is now recorded beside G8 (`docs/completed/task-gpu-paths-2026-09.md`, dated
   2026-09-13 entry, exactly the ask this Fix line makes for the interim), so "batched" is no
   longer undocumented as a TTFT promise. The layer-major/expert-major dispatch restructuring
   itself is a real, multi-file kernel-design project (a new batched-K GEMM shape, not a parameter
@@ -459,7 +459,7 @@ re-baked by the code it checks (G-04).
   (`docs/measurements/s6-alias-2026-09-24.md`, "Build step 2"; `docs/completed/task-never-swap-2026-09.md`, S6).
   <br>**What remains of M-07:** a direct `.gguf` or safetensors load on Metal still keeps two copies (host canonical +
   Metal buffer; the host-release half stays declined, above), and its default int4 lane builds a full staging copy of
-  each projection before the upload, which is MEM13 in `docs/tasks/task-memory-campaign-2026-10.md` (owner, 2026-10-21:
+  each projection before the upload, which is MEM13 in `docs/completed/task-memory-campaign-2026-10.md` (owner, 2026-10-21:
   remove it). On a `.giw` load, a build with aliasing off, a file written for another target (its fused groups and
   scales), and the two fused pairs the writer does not lay out as groups (the shared-expert gate|up, qwen35's K‖V; MEM9)
   still take the copy path.
@@ -1294,7 +1294,7 @@ re-baked by the code it checks (G-04).
   runs `ForwardEmbPipe` → full head + host argmax. Labelling defect (fused argmax is a recorded
   speed-neutral on UMA), but the curve measures a path serve never takes. **FIXED 2026-09-13**: a
   caveat now names which path production actually calls. **SUPERSEDED 2026-09-18** (R2 step 0,
-  `docs/tasks/red-october.md`): the caveat's own argument is now moot rather than merely noted —
+  `docs/completed/red-october.md`): the caveat's own argument is now moot rather than merely noted —
   `scripts/bench_peer.py` drives goinfer over its real HTTP server, measuring the production path
   directly instead of arguing the internal one should be representative of it.
 - N-04 `docs/gpu-residency-coverage.md:19-25` — "in int8 W8A8": Metal has no int8 GEMV and
@@ -1435,7 +1435,7 @@ re-baked by the code it checks (G-04).
   memory leaked through anywhere, the staged-content checks in these would have caught it.
 - N-22 `metal/moe.go:1189`, `metal/gemma4_moe.go:666-566` — phase 2 of layer l and phase 1 of l+1 have no
   host dependency and could share one command buffer (2L+1 → L+1); superseded by M-11. **Since 2026-10-04 phase 2 is
-  committed without a wait** (`pagedAsyncPhase2On`, 1.132x on M26; `docs/tasks/task-m26-mac-2026-10.md`).
+  committed without a wait** (`pagedAsyncPhase2On`, 1.132x on M26; `docs/completed/task-m26-mac-2026-10.md`).
 - N-23 `metal/moe.go:1121` — a hybrid's dense layers each get their own `Begin/End` in
   `forwardLogitsMoEPaged`. **FIXED 2026-09-13**: consecutive dense layers now share ONE command
   buffer (`Begin()` on first use, closed only when the next MoE-paged layer's router readback needs
@@ -1755,7 +1755,7 @@ Ordered by TTFT-on-the-Mac per hour of work; each lands with its own gate line a
    benchmark (`BenchmarkForwardNoLogits_SyncVsPipe`, ~4% wall-time win on a trivial trunk, too
    small to carry meaningful CPU encode time) — so treat the headline number as unverified, not
    confirmed. The TTFT ladder re-run this item called for **ran 2026-09-20/21**
-   (`docs/tasks/red-october.md` R3, [`metal-prefill-floor-2026-09-20.md`](measurements/metal-prefill-floor-2026-09-20.md) +
+   (`docs/completed/red-october.md` R3, [`metal-prefill-floor-2026-09-20.md`](measurements/metal-prefill-floor-2026-09-20.md) +
    [`r3-startpos-speed-2026-09-21.md`](measurements/r3-startpos-speed-2026-09-21.md)) — floor moved
    256→64, batched beats sequential 3.83-4.66× at `startPos=0` and 4.01-4.13× at the realistic
    `startPos=512` prefix-reuse shape. Note R3's own floor drop (512→64) shrank the population that
@@ -1764,7 +1764,7 @@ Ordered by TTFT-on-the-Mac per hour of work; each lands with its own gate line a
    this against a 512-token floor.
 2. **M-03** — **CLOSED 2026-09-13** (`f6c222ee`). 32×32 per-simdgroup block, all-lane dequant, A
    staged per threadgroup, exactly as scoped. §3.2 pooled gate SHIPS (see M-03's own closure note);
-   the P=256 TTFT re-measurement this item called for **ran 2026-09-18** (`docs/tasks/red-october.md`
+   the P=256 TTFT re-measurement this item called for **ran 2026-09-18** (`docs/completed/red-october.md`
    R4 step 0, [`metal-prefill-ladder-2026-09-18.md`](measurements/metal-prefill-ladder-2026-09-18.md)) —
    K=512 came in at 2.54× behind Ollama, improved from the 3.33× pre-fix baseline but short of this
    item's own ≤1.8× ship projection; the further GEMM-tile change (R4 step 2) that projection would

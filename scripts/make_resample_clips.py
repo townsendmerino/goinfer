@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S5e's inputs (docs/tasks/task-multimodal-support-2026-10.md, S5's follow-up), made offline from the LibriSpeech clip
+"""G-S5e's inputs (docs/completed/task-multimodal-support-2026-10.md, S5's follow-up), made offline from the LibriSpeech clip
 (testdata/speech/librispeech-1272-128104-0000.wav, 16 kHz mono, CC BY 4.0) by tools independent of goinfer:
 
   -44k1.wav           (i)  44.1 kHz mono, 16-bit: ffmpeg's default resampler, -ar 44100 -ac 1 -c:a pcm_s16le

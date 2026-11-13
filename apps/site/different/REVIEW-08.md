@@ -25,7 +25,7 @@ Draft only (`reviewed:` empty). Body about 810 words. The site build passes with
 | Halving ctx 4096 to 2048 gave 30 to 40 slots | `benchmarks.md` B4.1 table |
 | Metal: three attempts (N=64, 32, 8) on 16 GB M1 Pro, swap spirals, killed; no served rate | `metal-moe-autopager-m26-2026-09-20.md` (result paragraph, "Out of scope") |
 | Metal later: 5.98 / 6.19 / 6.07 / 6.04 tok/s, N=8, ctx 512, 32 tokens, n=2 per arm, "not a registered bench" | `m26-alias-fork-collapse-2026-09-24.md` section 1 (cell) and 7a (table) |
-| Metal streams experts by pread into fixed device slots | `docs/tasks/task-never-swap-2026-09.md`, memory-budget table row for "Metal resident, .giw source" (line ~111) |
+| Metal streams experts by pread into fixed device slots | `docs/completed/task-never-swap-2026-09.md`, memory-budget table row for "Metal resident, .giw source" (line ~111) |
 | "capacity-bound, not a kernel or MoE deficiency" | `docs/capability-matrix.json` gemma-4-26b-a4b `needs` (line 353) |
 | Code/tests exist for Gemma 4, gpt-oss, Qwen3.6-35B-A3B under the cache | `cuda/gemma4_26b_cache_test.go`, `cuda/gptoss_real20b_test.go`, `cuda/qwen35moe_35b_cache_test.go` (headers) |
 | Only int4-kind experts take the slot path | `cuda/resident.go` `upExperts` |

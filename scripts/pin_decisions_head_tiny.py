@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Route B reference on a tiny JEV-shaped judge (D4, docs/tasks/task-constrained-confidence.md).
+"""Route B reference on a tiny JEV-shaped judge (D4, docs/tasks/parked/task-constrained-confidence.md).
 
     ~/.venv-peft/bin/python scripts/pin_decisions_head_tiny.py  ->  testdata/decisions/judge-tiny/  (the judge dir)
                                                                     testdata/decisions/head_tiny_golden.json

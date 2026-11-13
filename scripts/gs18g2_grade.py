@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Grade G-S18g2 (docs/tasks/task-multimodal-support-2026-10.md, "G-S18g2"): Gemma 3's int8 Metal tower against the f16
+"""Grade G-S18g2 (docs/completed/task-multimodal-support-2026-10.md, "G-S18g2"): Gemma 3's int8 Metal tower against the f16
 Metal tower, each measured against the exact CPU tower by decoder/gemma3_tower_sensitivity_real_test.go.
 
 Input: the test's GOINFER_G3_OUT file, one JSON line per unit (an image and a prompt). Per unit the test teacher-forces

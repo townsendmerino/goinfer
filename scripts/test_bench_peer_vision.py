@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""bench_peer.py's vision cell sends a fresh image per request (S13's harness fix, docs/tasks/task-multimodal-support-2026-10.md):
+"""bench_peer.py's vision cell sends a fresh image per request (S13's harness fix, docs/completed/task-multimodal-support-2026-10.md):
 the 2026-09-20 row sent one image's bytes for the warm-up and every timed run, so every engine's image cache could answer it.
 Run: python3 -B scripts/test_bench_peer_vision.py"""
 import hashlib

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The plumbing controls for step (b') (docs/tasks/task-multimodal-support-2026-10.md, "Gemma 4 31B, step (b')", controls 1-3), run on a 31B-shaped tiny BEFORE any 31B reading:
+"""The plumbing controls for step (b') (docs/completed/task-multimodal-support-2026-10.md, "Gemma 4 31B, step (b')", controls 1-3), run on a 31B-shaped tiny BEFORE any 31B reading:
   1. streaming against ordinary on testdata/gemma4-dense-twogeom-tiny (dense, two attention geometries, K=V on the global layer, softcap, tied head, sliding window 4) over sequences LONGER than the
      window so the window engages: per-position logits cosine >= 0.9999999 and max |difference| <= 1e-5 at every position;
   2. each registered planted defect, alone, must break that bar (nosoftcap, nonorm, swap, fullmask, kvtie, noscale);

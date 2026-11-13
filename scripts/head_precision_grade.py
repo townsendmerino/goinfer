@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Option D of the --embed-int4 decision, graded as registered (docs/tasks/task-multimodal-support-2026-10.md, "option D").
+"""Option D of the --embed-int4 decision, graded as registered (docs/completed/task-multimodal-support-2026-10.md, "option D").
 Per model: d_agree = agree(int8 head) - agree(int4 head) in points, dKL = mean KL(int4 head) - mean KL(int8 head) in nats; paired by position, cluster bootstrap over prompts (32)
 (10,000 resamples, seed 20261008, 95% interval). OK: d_agree upper <= 2.3 AND dKL upper <= 0.02. COSTLY: d_agree point >= 4.3 OR dKL point >= 0.05. Else MIXED.
 A control result (both arms the int8 pin) must read exactly 0 / 0.   Usage: head_precision_grade.py <dump root> [<dump root> ...]

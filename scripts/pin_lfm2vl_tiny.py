@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Goldens for goinfer's LFM2-VL preprocessing layout and projector (S10, LFM2.5-VL; docs/tasks/task-multimodal-support-2026-10.md,
+"""Goldens for goinfer's LFM2-VL preprocessing layout and projector (S10, LFM2.5-VL; docs/completed/task-multimodal-support-2026-10.md,
 G-S10l-a's layout half and G-S10l-b's tiny projector).
 
 1. The layout: HF's Lfm2VlProcessor (the real checkpoint's processor_config.json and tokenizer) on blank images of many sizes,

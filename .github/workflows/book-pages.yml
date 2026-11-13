@@ -1,5 +1,5 @@
 # The old address of the book, kept alive as a redirect. The book itself is built and served by site.yml at
-# https://goinfer.dev/book/ (owner decision 2026-09-29: one host; docs/tasks/task-site-2026-09.md S5).
+# https://goinfer.dev/book/ (owner decision 2026-09-29: one host; docs/completed/task-site-2026-09.md S5).
 #
 # WHY THIS STILL EXISTS. townsendmerino.github.io/goinfer/ is baked into things that cannot be edited: every released
 # binary's web UI links to it, and the published v0.19.0 and v0.20.0 release notes quote it. Switching Pages off would turn

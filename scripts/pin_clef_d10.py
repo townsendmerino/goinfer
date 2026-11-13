@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Decisions D10: the Clef-flash reference fixture (docs/tasks/task-constrained-confidence.md, Route C).
+"""Decisions D10: the Clef-flash reference fixture (docs/tasks/parked/task-constrained-confidence.md, Route C).
 
 Cloudflare's own code (joint_schema_model.py, read from the pinned release directory and imported unmodified) run on Cloudflare/clef-flash, over the
 150 items of the D0 fixture (testdata/decisions/items.jsonl) re-expressed as Clef records, so goinfer's Clef encoder (D12) and head (D12) and the

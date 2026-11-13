@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S10k's Hugging Face half and grader (docs/tasks/task-multimodal-support-2026-10.md, "G-S10k", registered before this code).
+"""G-S10k's Hugging Face half and grader (docs/completed/task-multimodal-support-2026-10.md, "G-S10k", registered before this code).
 Run 1 dump (OFF = serve's CPU prefill + upload, ON = the resident DeepStack prefill, ONX = ON with the planted defect) and run 2 dump (the CPU arm at the exact attention kernel = OFFX; its ON must equal run 1's).
 Per unit: HF float32 logits at the 4 positions (cached beside the dump as <unit>.hf.f32); c(arm) = mean over the 4 positions of cos(arm, HF); d = c(ON) - c(OFF), a = c(OFFX) - c(OFF), x = c(ONX) - c(OFF).
 Margin M = max(0.005, -mean(a)). Stratified cluster bootstrap (units within image, images equally weighted), 10,000 resamples, seed 20261009, 95%.

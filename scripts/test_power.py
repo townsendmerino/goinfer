@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for power.py (TE3, docs/tasks/task-test-efficiency-2026-09.md): the N a gate needs, from the noise registry.
+"""Tests for power.py (TE3, docs/completed/task-test-efficiency-2026-09.md): the N a gate needs, from the noise registry.
 
 The cases that must be able to go red:
   - textbook sample sizes (the normal formula exactly, and the exact-t N against G*Power's published values);

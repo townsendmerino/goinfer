@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """Tiny Pixtral vision tower + golden for aikit's PixtralVisionEncoder (S10, Ministral 3; G-S10m-b's tiny half,
-docs/tasks/task-multimodal-support-2026-10.md).
+docs/completed/task-multimodal-support-2026-10.md).
 
 A random PixtralVisionModel (transformers' own, float32, eager attention) of the real structure at toy size: patch conv
 without bias, RMSNorm ln_pre, pre-norm blocks with separate q/k/v/o and a SiLU-gated MLP, the 2-D RoPE whose rows take

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-31a2's grading (docs/tasks/task-multimodal-support-2026-10.md, "G-31a"): the 31B's int4-against-int8int8 agreement against the sibling's.
+"""G-31a2's grading (docs/completed/task-multimodal-support-2026-10.md, "G-31a"): the 31B's int4-against-int8int8 agreement against the sibling's.
 PASS: 31B >= sibling - 5.0 points; PARKED: 5.0-10.0 below; FAIL: more than 10.0 below or any non-finite logit.
 Usage: g31a_grade.py <sibling qc json> <31B qc json>"""
 import json, math, sys
