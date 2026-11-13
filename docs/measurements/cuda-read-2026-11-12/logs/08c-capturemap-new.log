@@ -1,0 +1,100 @@
+=== RUN   TestZZ_captureMapAndIdentity
+=== RUN   TestZZ_captureMapAndIdentity/llama-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7052 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7052 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7052 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6920 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[cuda] CUDA graphs enabled: CUDA MPS active (CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    zz_lwcu_capture_test.go:64: CAPTUREMAP llama-tiny: graphs-flag off-arm=false on-arm=true | layers(on)= AB AB AB AB | on==off bits: true
+=== RUN   TestZZ_captureMapAndIdentity/qwen35-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6920 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+[cuda] CUDA graphs enabled: CUDA MPS active (CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6920 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    zz_lwcu_capture_test.go:64: CAPTUREMAP qwen35-tiny: graphs-flag off-arm=false on-arm=true | layers(on)= AC AC AC ABC | on==off bits: true
+=== RUN   TestZZ_captureMapAndIdentity/qwen3next-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (71 MiB of scratch; 6912 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+[cuda] CUDA graphs enabled: CUDA MPS active (CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps)
+cuda: prefill width 2048 rows (71 MiB of scratch; 6912 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    zz_lwcu_capture_test.go:64: CAPTUREMAP qwen3next-tiny: graphs-flag off-arm=false on-arm=true | layers(on)= AC AC AC ABC AC AC | on==off bits: true
+=== RUN   TestZZ_captureMapAndIdentity/nemotron-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    zz_lwcu_capture_test.go:64: CAPTUREMAP nemotron-tiny: graphs-flag off-arm=false on-arm=false | layers(on)= - - - - - | on==off bits: true
+=== RUN   TestZZ_captureMapAndIdentity/deepseek-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 6920 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6920 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    zz_lwcu_capture_test.go:64: CAPTUREMAP deepseek-tiny: graphs-flag off-arm=false on-arm=false | layers(on)= - - - - | on==off bits: true
+=== RUN   TestZZ_captureMapAndIdentity/lfm2-tiny
+    zz_lwcu_capture_test.go:25: lfm2-tiny not CUDA-resident: arch is not eligible for the resident decode runner: own forward, not bridged (a tiny fixture must meet the CUDA kernels' shape rules, such as int4 MoE widths in multiples of 32: regenerate it to fit, or use a resident-eligible sibling)
+=== RUN   TestZZ_captureMapAndIdentity/granite-tiny
+    zz_lwcu_capture_test.go:25: granite-tiny not CUDA-resident: arch is not eligible for the resident decode runner: bring-up gate (GOINFER_SSM_RESIDENT unset) (a tiny fixture must meet the CUDA kernels' shape rules, such as int4 MoE widths in multiples of 32: regenerate it to fit, or use a resident-eligible sibling)
+=== RUN   TestZZ_captureMapAndIdentity/qwen3moe-tiny
+cuda: prefill width 2048 rows (5 MiB of scratch; 6918 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[cuda] CUDA graphs enabled: CUDA MPS active (CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps)
+cuda: prefill width 2048 rows (5 MiB of scratch; 6918 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    zz_lwcu_capture_test.go:64: CAPTUREMAP qwen3moe-tiny: graphs-flag off-arm=false on-arm=true | layers(on)= ABC ABC ABC ABC | on==off bits: true
+=== RUN   TestZZ_captureMapAndIdentity/gemma4-moe-tiny
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (64 MiB of scratch; 6882 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+[cuda] CUDA graphs enabled: CUDA MPS active (CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps)
+cuda: prefill width 2048 rows (64 MiB of scratch; 6882 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    zz_lwcu_capture_test.go:64: CAPTUREMAP gemma4-moe-tiny: graphs-flag off-arm=false on-arm=true | layers(on)= ABC ABC | on==off bits: true
+=== RUN   TestZZ_captureMapAndIdentity/gemma4-emodel-tiny
+cuda: prefill width 2048 rows (25 MiB of scratch; 7046 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[cuda] CUDA graphs enabled: CUDA MPS active (CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps)
+cuda: prefill width 2048 rows (25 MiB of scratch; 7046 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    zz_lwcu_capture_test.go:64: CAPTUREMAP gemma4-emodel-tiny: graphs-flag off-arm=false on-arm=true | layers(on)= AB AB AB AB AB AB | on==off bits: true
+=== RUN   TestZZ_captureMapAndIdentity/gemma4-dense-twogeom-tiny
+cuda: prefill width 2048 rows (64 MiB of scratch; 7014 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[cuda] CUDA graphs enabled: CUDA MPS active (CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps)
+cuda: prefill width 2048 rows (64 MiB of scratch; 7014 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    zz_lwcu_capture_test.go:64: CAPTUREMAP gemma4-dense-twogeom-tiny: graphs-flag off-arm=false on-arm=true | layers(on)= AB AB | on==off bits: true
+=== RUN   TestZZ_captureMapAndIdentity/mistral-tiny-window
+cuda: prefill width 2048 rows (11 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[cuda] CUDA graphs enabled: CUDA MPS active (CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps)
+cuda: prefill width 2048 rows (11 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    zz_lwcu_capture_test.go:64: CAPTUREMAP mistral-tiny-window: graphs-flag off-arm=false on-arm=true | layers(on)= AB AB AB | on==off bits: true
+=== RUN   TestZZ_captureMapAndIdentity/flint-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 6914 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[cuda] CUDA graphs enabled: CUDA MPS active (CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6914 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    zz_lwcu_capture_test.go:64: CAPTUREMAP flint-tiny: graphs-flag off-arm=false on-arm=true | layers(on)= AB AB ABC ABC ABC ABC | on==off bits: true
+=== RUN   TestZZ_captureMapAndIdentity/cohere-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[cuda] CUDA graphs enabled: CUDA MPS active (CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    zz_lwcu_capture_test.go:64: CAPTUREMAP cohere-tiny: graphs-flag off-arm=false on-arm=true | layers(on)= AB AB AB AB | on==off bits: true
+=== RUN   TestZZ_captureMapAndIdentity/gemma3-vl-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[cuda] CUDA graphs enabled: CUDA MPS active (CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    zz_lwcu_capture_test.go:64: CAPTUREMAP gemma3-vl-tiny: graphs-flag off-arm=false on-arm=true | layers(on)= AB AB | on==off bits: true
+--- FAIL: TestZZ_captureMapAndIdentity (5.65s)
+    --- PASS: TestZZ_captureMapAndIdentity/llama-tiny (1.48s)
+    --- PASS: TestZZ_captureMapAndIdentity/qwen35-tiny (0.34s)
+    --- PASS: TestZZ_captureMapAndIdentity/qwen3next-tiny (0.38s)
+    --- PASS: TestZZ_captureMapAndIdentity/nemotron-tiny (0.31s)
+    --- PASS: TestZZ_captureMapAndIdentity/deepseek-tiny (0.36s)
+    --- FAIL: TestZZ_captureMapAndIdentity/lfm2-tiny (0.00s)
+    --- FAIL: TestZZ_captureMapAndIdentity/granite-tiny (0.00s)
+    --- PASS: TestZZ_captureMapAndIdentity/qwen3moe-tiny (0.34s)
+    --- PASS: TestZZ_captureMapAndIdentity/gemma4-moe-tiny (0.37s)
+    --- PASS: TestZZ_captureMapAndIdentity/gemma4-emodel-tiny (0.37s)
+    --- PASS: TestZZ_captureMapAndIdentity/gemma4-dense-twogeom-tiny (0.34s)
+    --- PASS: TestZZ_captureMapAndIdentity/mistral-tiny-window (0.32s)
+    --- PASS: TestZZ_captureMapAndIdentity/flint-tiny (0.35s)
+    --- PASS: TestZZ_captureMapAndIdentity/cohere-tiny (0.33s)
+    --- PASS: TestZZ_captureMapAndIdentity/gemma3-vl-tiny (0.33s)
+FAIL
+ledger: 32 device(s) released in this run

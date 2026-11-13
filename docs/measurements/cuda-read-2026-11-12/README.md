@@ -30,8 +30,21 @@ Every GPU invocation held the exclusive timing lock (`scripts/timing_lock.py run
 Read beside them, not asked for: every `TestWindowedKV_*` (57 PASS, one SKIP: `TestWindowedKV_offsetsFastClass_real1p5B`, which needs the real checkpoint; `02x-windowedkv.log`), and
 the two edits LW-cu names as more than a substitution (`05c-graphs-ple-extra.log`): the Gemma 4 E-model (PLE and layer scale) resident parity, batched-prefill bit identity, image
 prefill and its planted defects, all PASS. **Graph capture is not read on this box:** `TestGemma4Graphs_bitExact_tiny`, `_tinyCache` and `_tinyCacheReuse` SKIP with "CUDA graphs not admitted on this box
-(DEFAULT compute mode, no MPS)", because a graphs-on arm would run live and compare live to live. `captureGraphs` choosing its layers differently (LW-cu) therefore has no device reading from this
-box; `TestGemma4Graphs_bitExact_emodel` and `TestCUDA_graph*` pass but are not evidence for it under that decline. A read needs `EXCLUSIVE_PROCESS` or MPS, which is a change to the box.
+(DEFAULT compute mode, no MPS)", because a graphs-on arm would run live and compare live to live. `captureGraphs` choosing its layers differently (LW-cu) had no device reading at that point; `TestGemma4Graphs_bitExact_emodel` and `TestCUDA_graph*` passed but are not evidence for it under that decline. Read afterwards, under MPS: next section.
+
+## Graph capture under MPS (added 18:00 PST, after the coordinator started the MPS control daemon)
+
+Francis asked for graph capture on nobara (via the coordinator, 17:55). The CUDA MPS control daemon runs as francis (pid 973928, `docs/cuda-graphs-investigation.md` §5.1); the compute mode stays Default, and a process admits graphs only with
+`CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps` (and `CUDA_MPS_LOG_DIRECTORY=/tmp/nvidia-mps-log`) exported. MPS was live for the test process: `get_server_list` printed a server pid (974139) at every sample during the run
+(`logs/08-mps-serverlist-main.log`), and each load printed "CUDA graphs enabled: CUDA MPS active". Exclusive timing lock, `-v`.
+- **At main (`08a-graphs-on-main.log`):** `TestGemma4Graphs_bitExact_tiny`, `_tinyCache`, `_tinyCacheReuse` (the three that SKIPPED), `_bitExact_emodel`, `_sameModelUnderLoad`, `_offVsOffControl`, `TestCUDA_graph*` and `TestCUDAKVSlots_graphs` all **PASS**, no skips.
+  `TestGraphsSafeGate` FAILS under MPS by construction: it asserts the tenancy is UNSAFE on a DEFAULT box and finds MPS active (`backend/cuda/graphs_safe_test.go:TestGraphsSafeGate`, "expected UNSAFE tenancy on a DEFAULT box, got safe: CUDA MPS active"). It passed without the variable (`logs/05c-graphs-ple-extra.log`). Not a regression.
+- **The same tests on a build at 51ed2ae27 (`08b-graphs-on-old-51ed2ae27.log`):** all PASS, the same set.
+- **Which layers capture, old against new, and graphs-on against live** (a throwaway probe, `lwcu_capture_probe.go.txt`, built into both trees and not committed: it loads each tiny fixture at int4 with `GOINFER_CUDA_GRAPHS` unset and set, lists each layer's captured segments
+  (A, B, C), and compares 14 decode steps' logits bit for bit; `08c-capturemap-{old,new}.log`, `08c-map-{old,new}.txt`). **The 13 capture maps are identical between 51ed2ae27 and main, and graphs-on equals graphs-off bit for bit on all 13 on both builds.**
+  Attention layers capture A and B (`AB`), MoE layers add C (`ABC`), DeltaNet layers capture one mixer-plus-FFN segment (`AC`, `ABC` where an attention layer sits among them), Flint `AB AB ABC ABC ABC ABC`. `nemotron-tiny` and `deepseek-tiny` do not enable graphs on either build (the flag is false), so their layers
+  are uncaptured on both and the new `switch` that skips mixers other than attention and DeltaNet changes nothing there. `lfm2-tiny` and `granite-tiny` are not CUDA-resident (declined on both builds) and were not read.
+- **Not read:** a graphs-on speed cell. Tomorrow's registered decode read is the default path (graphs off); a graphs-on cell would be an addendum, registered first. The daemon dies with the power-off.
 
 ## Step 3: `TestMemGate_cuda`
 
@@ -74,5 +87,5 @@ The run record (`identity_run.json.gz`) replays with `gate identity -replay`.
 ## What this does not settle
 
 - LW-cu's speed half is registered, not read (`docs/measurements/lwcu-2026-11/registration.md`, PR #897).
-- Graph capture (above), the floor test through the acquire path, and the CPU-side SEQ checks are not read here. SEQ's resident adapter and `ScoreSequence` still have test callers only.
+- A graphs-on speed cell, the floor test through the acquire path, and the CPU-side SEQ checks are not read here. SEQ's resident adapter and `ScoreSequence` still have test callers only.
 - The unforgiven MM8 gaps and the WebGPU and Metal halves of MM9 are the coordinator's and the Mac's.
