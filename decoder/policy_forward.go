@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// Forward is the model as an engine policy drives it (SB5, docs/tasks/task-subsystems-2026-10.md §8): a token prefix
+// Forward is the model as an engine policy drives it (SB5, docs/completed/task-subsystems-2026-10.md §8): a token prefix
 // held in the model's KV, grown by Prefill, Verify and Step and cut back by TruncateTo. Prefill returns the logits after
 // its last id; Verify returns one row per id, row i being the logits after ids[i]; Step is a single token's forward,
 // which on a model may differ in the last bits from a one-id Verify, so a policy uses the one its plain path uses. A

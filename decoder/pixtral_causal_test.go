@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// S10, Ministral 3 (docs/tasks/task-multimodal-support-2026-10.md, "S10, Ministral 3 (Pixtral)"): the causal span entry
+// S10, Ministral 3 (docs/completed/task-multimodal-support-2026-10.md, "S10, Ministral 3 (Pixtral)"): the causal span entry
 // on the tiny ministral3 decoder. Pixtral's features replace the [IMG] positions only, one span per merged row, with
 // [IMG_BREAK]/[IMG_END] left as text, and the image tokens attend causally (no image block). Three properties, each with
 // a planted defect that must break it:

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// Audit R-12 (docs/tasks/task-recompute-audit.md §5). K=1 decode on an f32 sliding-window ring used to copy every resident row into scratch each token. It now
+// Audit R-12 (docs/completed/task-recompute-audit.md §5). K=1 decode on an f32 sliding-window ring used to copy every resident row into scratch each token. It now
 // writes the new row first and reads the window in place, from a ring that keeps a MIRROR of its slots ([w, 2w) equal [0, w)) so any window is one contiguous
 // slice. Two gates: (1) the ring invariant under every kind of mutation, model-free; (2) the whole decode, bit for bit against the copy path, on real tiny
 // sliding-window checkpoints across several wraps.

@@ -19,7 +19,7 @@ import (
 // (forwardn.go). Both are in core.
 var forwardEntryFiles = map[string]bool{"decoder/model_forward.go": true, "decoder/forwardn.go": true}
 
-// TestParityManifest_coreClosed is VK2's forward census (docs/tasks/task-subsystems-2026-10.md §5.5, B2): every decoder
+// TestParityManifest_coreClosed is VK2's forward census (docs/completed/task-subsystems-2026-10.md §5.5, B2): every decoder
 // function the forward reaches, by a go/types call graph from the functions in forwardEntryFiles over the files this
 // GOOS and GOARCH build, lives in a file some shared set or some family's own list covers, so an edit to code the forward
 // runs re-stales the families that run it. A reached file's other functions are not roots: a file that mixes forward and

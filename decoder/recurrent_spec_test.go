@@ -2,7 +2,7 @@ package decoder
 
 import "testing"
 
-// SP2's decoder-side tier-0 gates (docs/tasks/task-forward-architecture-2026-10.md §6a, "SP2 on nobara"): admission, the
+// SP2's decoder-side tier-0 gates (docs/completed/task-forward-architecture-2026-10.md §6a, "SP2 on nobara"): admission, the
 // arena's price, and the loop's fold accounting.
 
 type recurrentSpecStub struct {

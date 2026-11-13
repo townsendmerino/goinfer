@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// Shared state, many questions (docs/tasks/task-constrained-confidence.md, D8). A decision request asks several
+// Shared state, many questions (docs/tasks/parked/task-constrained-confidence.md, D8). A decision request asks several
 // questions about one state, and on the hybrid Qwen3.5 family each question would prefill the whole prompt again. The
 // state is the same in every question's prompt, so its prefill is done once and its CACHE (the KV rows of the attention
 // layers and the Gated DeltaNet's recurrent state, which has no per-position history and so cannot be rewound, only

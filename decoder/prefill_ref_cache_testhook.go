@@ -2,7 +2,7 @@
 
 package decoder
 
-// A content-keyed cache for the prefill fidelity gates' CPU f32-activation references (docs/tasks/task-test-efficiency-2026-09.md,
+// A content-keyed cache for the prefill fidelity gates' CPU f32-activation references (docs/completed/task-test-efficiency-2026-09.md,
 // TE6(a) and TE8). TestPrefillGateReference is the longest single run in the test census and all-or-nothing, and a stale
 // reference cannot be spotted by hand (prefill-ref-identity-2026-09-26.md records a set scored against logits for different
 // text). So each (model, K, prompt) reference is keyed by everything it depends on:
