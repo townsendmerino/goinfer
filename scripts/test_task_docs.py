@@ -175,6 +175,25 @@ class UnstubTests(unittest.TestCase):
             "go test ./decoder -run Foo -update",
         )
 
+    def test_hashed_inputs_skipped_unless_flag(self):
+        self._write("testdata/parity/tiny.json", '{"own": ["scripts/pin_tiny.py"]}\n')
+        orig = "# docs/tasks/task-alpha.md\n"
+        self._write("scripts/pin_tiny.py", orig)
+        self._commit_all()
+
+        _, out = self._run_unstub("--delete-stubs", "--apply")
+        self.assertEqual((self.root / "scripts/pin_tiny.py").read_text(encoding="utf-8"), orig)
+        self.assertTrue((self.root / "docs/tasks/task-alpha.md").exists())
+        self.assertIn("HASHED (parity inputs):", out)
+        self.assertIn("scripts/pin_tiny.py", out)
+
+        self._run_unstub("--hashed", "--delete-stubs", "--apply")
+        self.assertEqual(
+            (self.root / "scripts/pin_tiny.py").read_text(encoding="utf-8"),
+            "# docs/completed/task-alpha.md\n",
+        )
+        self.assertFalse((self.root / "docs/tasks/task-alpha.md").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
