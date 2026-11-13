@@ -9,7 +9,6 @@ import (
 	"math"
 	"os"
 	"runtime"
-	"slices"
 	"sync"
 	"unsafe"
 
@@ -1306,52 +1305,14 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if err := b.uploadLayers(); err != nil {
 		return nil, err
 	}
-	w, alias := b.w, b.alias
+	alias := b.alias
 	maxNHhd, maxKvDim, maxHd, maxAttnFAPartial := b.maxNHhd, b.maxKvDim, b.maxHd, b.maxAttnFAPartial
-	// MC1: the resident KV slots (kvSlots: the model's request, clamped to what the memory guard allows, priced at the top of this
-	// build; 1 for a family with recurrent state). A slot is its block table over the layers' shared pools, set below.
-	switch {
-	case kvSlots > 1:
-		r.kvSlotBufs = make([]kvSlotBuf, kvSlots)
-	case r.kvContig:
-		r.kvSlotBufs = make([]kvSlotBuf, 1)
-	}
-	if slices.ContainsFunc(r.kvNullBytes, func(n int) bool { return n > 0 }) {
-		// The pools above hold every slot's share, the context the plan priced; one conversation's cap may then rise past it (kvRaise).
-		// The tables start unmapped and take blocks as the slots write (kvWrite).
-		slots := max(kvSlots, 1)
-		r.kvShareCtx, r.kvShareBlocks = r.ctxCap, kvBlocksFor(r.ctxCap)
-		r.ctxCap = kvRaise(m, slots, r.kvShareCtx)
-		r.kvTabBlocks = kvBlocksFor(r.ctxCap)
-		r.kvTab = NewBufferUint32sOn(mem.LineKV, d, make([]uint32, slots*r.kvTabBlocks))
-		r.kvTabU32 = r.kvTab.U32s()
-		r.kvRefs = make([]int32, 1+slots*r.kvShareBlocks)
-		r.kvOrder = kvBlockOrder(slots * r.kvShareBlocks)
-		r.kvSlotSt = make([]kvSlotState, slots)
-		r.kt = r.kvTab
-		for s := range r.kvSlotBufs {
-			r.kvSlotBufs[s].kt = r.kvTab.At(4 * s * r.kvTabBlocks)
-		}
-	}
-	if err := r.allocRecurrentSlots(m, kvSlots); err != nil {
+	if err := b.allocKVTables(); err != nil {
 		return nil, err
 	}
-	r.finalNorm = NewBufferFloatsOn(mem.LineDense, d, w.FinalNorm)
-	if r.layerNorm && r.layerNormBias {
-		r.finalNormBias = NewBufferFloatsOn(mem.LineDense, d, w.FinalNormBias)
-	}
-	lm := &w.LMHead
-	if lm.Rows() == 0 {
-		lm = &w.Embed // tied
-		r.lmTied = true
-	}
-	// The LM head is logit-critical and must stay int8: at int4 it flips the argmax and tanks the cosine (a tied
-	// head dots every logit against it), which is why the decoder pins the embedding and LM head at int8 even in
-	// int4 mode (decoder/weightmat.go). Worst for a tied head such as Gemma's, 262k x 2560.
-	if r.lmW, r.lmS, err = int8BufAOn(mem.LineDense, d, alias, lm); err != nil {
+	if err := b.uploadHead(); err != nil {
 		return nil, err
 	}
-
 	// The gate|up and down scratch must fit the widest FFN width: the dense I, or (for MoE) the
 	// larger of the expert and shared-expert intermediate dims.
 	guDim, maxFFNI := I, I // maxFFNI: the widest dense FFN (a Gemma 4 E-model's double-wide shared layers, S1.3)

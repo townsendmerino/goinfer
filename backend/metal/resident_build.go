@@ -759,3 +759,62 @@ func (b *residentBuild) buildLayer(l int) error {
 	r.layers[l] = L
 	return nil
 }
+
+// allocKVTables sets up the KV slots' block tables over the layers' shared pools (the context the plan priced, which one conversation may
+// raise past) and the recurrent-state slots.
+func (b *residentBuild) allocKVTables() error {
+	m, d, r := b.m, b.d, b.r
+	kvSlots := b.kvSlots
+	// MC1: the resident KV slots (kvSlots: the model's request, clamped to what the memory guard allows, priced at the top of this
+	// build; 1 for a family with recurrent state). A slot is its block table over the layers' shared pools, set below.
+	switch {
+	case kvSlots > 1:
+		r.kvSlotBufs = make([]kvSlotBuf, kvSlots)
+	case r.kvContig:
+		r.kvSlotBufs = make([]kvSlotBuf, 1)
+	}
+	if slices.ContainsFunc(r.kvNullBytes, func(n int) bool { return n > 0 }) {
+		// The pools above hold every slot's share, the context the plan priced; one conversation's cap may then rise past it (kvRaise).
+		// The tables start unmapped and take blocks as the slots write (kvWrite).
+		slots := max(kvSlots, 1)
+		r.kvShareCtx, r.kvShareBlocks = r.ctxCap, kvBlocksFor(r.ctxCap)
+		r.ctxCap = kvRaise(m, slots, r.kvShareCtx)
+		r.kvTabBlocks = kvBlocksFor(r.ctxCap)
+		r.kvTab = NewBufferUint32sOn(mem.LineKV, d, make([]uint32, slots*r.kvTabBlocks))
+		r.kvTabU32 = r.kvTab.U32s()
+		r.kvRefs = make([]int32, 1+slots*r.kvShareBlocks)
+		r.kvOrder = kvBlockOrder(slots * r.kvShareBlocks)
+		r.kvSlotSt = make([]kvSlotState, slots)
+		r.kt = r.kvTab
+		for s := range r.kvSlotBufs {
+			r.kvSlotBufs[s].kt = r.kvTab.At(4 * s * r.kvTabBlocks)
+		}
+	}
+	if err := r.allocRecurrentSlots(m, kvSlots); err != nil {
+		return err
+	}
+	return nil
+}
+
+// uploadHead uploads the final norm and the LM head, which stays int8 whatever the body's lane.
+func (b *residentBuild) uploadHead() error {
+	d, r, w, alias := b.d, b.r, b.w, b.alias
+	var err error
+	r.finalNorm = NewBufferFloatsOn(mem.LineDense, d, w.FinalNorm)
+	if r.layerNorm && r.layerNormBias {
+		r.finalNormBias = NewBufferFloatsOn(mem.LineDense, d, w.FinalNormBias)
+	}
+	lm := &w.LMHead
+	if lm.Rows() == 0 {
+		lm = &w.Embed // tied
+		r.lmTied = true
+	}
+	// The LM head is logit-critical and must stay int8: at int4 it flips the argmax and tanks the cosine (a tied
+	// head dots every logit against it), which is why the decoder pins the embedding and LM head at int8 even in
+	// int4 mode (decoder/weightmat.go). Worst for a tied head such as Gemma's, 262k x 2560.
+	if r.lmW, r.lmS, err = int8BufAOn(mem.LineDense, d, alias, lm); err != nil {
+		return err
+	}
+
+	return nil
+}
