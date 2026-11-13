@@ -100,7 +100,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
     var qd: f32 = 0.0;
     if (lane) { qd = q[qbase + d]; }
     var acc: f32 = 0.0;
-    // gpt-oss's learned per-head attention sink (FeatAttnSink, G6 docs/tasks/task-gpu-paths-2026-09.md):
+    // gpt-oss's learned per-head attention sink (FeatAttnSink, G6 docs/completed/task-gpu-paths-2026-09.md):
     // an extra logit with NO key and NO value, joining the softmax MAX and DENOMINATOR only —
     // seeding the online-softmax state with an imaginary zero-value key whose score is the sink
     // is exactly equivalent (m=sink, l=1 ⇒ the first real key's mnew=max(sink,x) folds it into
@@ -923,7 +923,7 @@ func (c *Context) attentionOn(pl *wgpu.ComputePipeline, ly *wgpu.BindGroupLayout
 		return nil, fmt.Errorf("gpu: attentionOn: attn-p: %w", err)
 	}
 	defer releaseBuf(pBuf)
-	// FeatAttnSink (docs/tasks/task-gpu-paths-2026-09.md): always bound (WGSL bind groups can't bind a null storage buffer); this
+	// FeatAttnSink (docs/completed/task-gpu-paths-2026-09.md): always bound (WGSL bind groups can't bind a null storage buffer); this
 	// test helper never carries a real sink, so a one-element dummy + hasSink=0, matching attnShaderWGSL's convention.
 	sinksBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-sinks", Contents: wgpu.ToBytes([]float32{0}), Usage: wgpu.BufferUsageStorage})
 	if err != nil {

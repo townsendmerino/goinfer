@@ -11,7 +11,7 @@ import (
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 )
 
-// TestLead3_pinOrderMicrobench is docs/tasks/task-freetoken-techniques.md Lead 3's own "cheap,
+// TestLead3_pinOrderMicrobench is docs/completed/task-freetoken-techniques.md Lead 3's own "cheap,
 // narrow experiment against an already-known, already-measured cost": does populating ordinary
 // memory FIRST and pinning it afterward (gocudrv's cuda.RegisterHost, exposed but unused by
 // cuda/resident.go's mapBytes today) beat allocating pinned memory first and copying into it

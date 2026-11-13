@@ -18,7 +18,7 @@ import (
 )
 
 // TestMC3CUDAS0_batchedRowsVsDecode is an EXPLORATORY probe (not a gate) for an MC3 port to CUDA
-// (docs/tasks/task-concurrency-2026-09.md): how much a batched M-row pass through the EXACT kernels (gemv_w4a8_rn,
+// (docs/tasks/parked/task-concurrency-2026-09.md): how much a batched M-row pass through the EXACT kernels (gemv_w4a8_rn,
 // attn_batched: the verify path, bit-identical to decode per row by construction) costs against M single-token
 // decodes. It times, at depth 1024, for M in {2, 4, 8}:
 //   - PrefillLastN: every row's full logits, the LM head run once per row (the logits-exact tail);

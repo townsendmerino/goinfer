@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// The Gemma 4 vision tower on CUDA (docs/tasks/task-multimodal-support-2026-10.md): aikit's Gemma4Encoder.Forward up to
+// The Gemma 4 vision tower on CUDA (docs/completed/task-multimodal-support-2026-10.md): aikit's Gemma4Encoder.Forward up to
 // its pool, in float32, from aikit's export (Gemma4Encoder.Weights), on the CUDA tower base (tower_base.go). The patch
 // embed and the layers run here; the pool and the projection after them stay aikit's (FinishHidden), on the host. The
 // port of metal/gemma4_vision.go: the same ops in the same order, with aikit's bidirectional attention kernel (scale

@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestR14DrafterArgmaxProfile is R14's step 0 (docs/tasks/red-october.md): what does the spec
+// TestR14DrafterArgmaxProfile is R14's step 0 (docs/completed/red-october.md): what does the spec
 // loop's sync → M×vocab D2H → host-argmax tail cost, at a real block width on a real model, as a
 // share of the spec round it sits in? Both sites are profiled — the drafter's DraftTokens and the
 // verify's batchedHeadArgmax, which has the identical shape — because a round pays both.

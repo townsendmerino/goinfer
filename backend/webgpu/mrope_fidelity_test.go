@@ -22,7 +22,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// G-S12.4b-4a-5 (docs/tasks/task-multimodal-support-2026-10.md): which of the two routes an image turn can prefill by
+// G-S12.4b-4a-5 (docs/completed/task-multimodal-support-2026-10.md): which of the two routes an image turn can prefill by
 // under WebGPU is nearer the model. Both arms decode on the resident at int4 and are scored, position by position,
 // against the float32 CPU forward of the same checkpoint on the same prompt and image features:
 //   - exact, the route in use: the CPU's int4 image prefill, uploaded;

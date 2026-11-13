@@ -18,7 +18,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestKV16_wholeTokenDecodeAB is the in-process whole-token A/B of docs/tasks/task-cuda-f16-kv-2026-10.md's speed question: one process, both caches
+// TestKV16_wholeTokenDecodeAB is the in-process whole-token A/B of docs/completed/task-cuda-f16-kv-2026-10.md's speed question: one process, both caches
 // resident side by side, the same prompt, decode steps timed ABBA-interleaved. It gives a direction and a size per cell; the served check is the
 // instrument for any claim. Exploratory by day: KV16_AB=1, KV16_AB_MODELS and KV16_AB_DEPTHS narrow it.
 //

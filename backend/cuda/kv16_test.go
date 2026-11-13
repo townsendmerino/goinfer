@@ -22,7 +22,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// The f16 KV cache (docs/tasks/task-cuda-f16-kv-2026-10.md): CUDA's resident K/V as __half behind the _kv16 kernel twins.
+// The f16 KV cache (docs/completed/task-cuda-f16-kv-2026-10.md): CUDA's resident K/V as __half behind the _kv16 kernel twins.
 
 const kv16Model = "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
 

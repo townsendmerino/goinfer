@@ -180,7 +180,7 @@ func TestGemma4MoE_residentParity(t *testing.T) {
 		pos0, meanCuda, meanCpu)
 
 	// ---- gates ----
-	// S1.0 amendment (docs/tasks/task-multimodal-support-2026-10.md): the 0.9999 bar sits between the readings before and after the v_norm fix on the sliding layers; the fix is the mechanism, and the bar is never loosened.
+	// S1.0 amendment (docs/completed/task-multimodal-support-2026-10.md): the 0.9999 bar sits between the readings before and after the v_norm fix on the sliding layers; the fix is the mechanism, and the bar is never loosened.
 	if pos0 < 0.9999 {
 		t.Errorf("pos-0 cosine %.6f < 0.9999 — kernel divergence at the first token (GOINFER_G4_CAPTURE / "+
 			"TestGemma4MoE_localize to localize)", pos0)

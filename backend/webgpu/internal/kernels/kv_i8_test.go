@@ -271,7 +271,7 @@ func TestKVI8Attn(t *testing.T) {
 
 	ctx := c.zbuf(nH * hd)
 	uni := c.ubuf([]uint32{nH, nKV, uint32(hd), nKeys, 0, uint32(group), math.Float32bits(scale), 0})
-	// G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatAttnSink — always bound; no real sink here.
+	// G6 (docs/completed/task-gpu-paths-2026-09.md): FeatAttnSink — always bound; no real sink here.
 	noSinks := c.zbuf(1)
 	noHasSink := c.ubuf([]uint32{0, 0, 0, 0})
 	if err := c.dispatchI8(c.attnI8Pipeline, c.attnI8Layout, nH, []*wgpu.Buffer{c.sbuf(q), c.wbuf(kWords), c.wbuf(vWords), c.sbuf(kSc), c.sbuf(vSc), ctx, noSinks}, uni, noHasSink); err != nil {

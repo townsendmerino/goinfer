@@ -17,7 +17,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestVsumMechanism is R6 step 1 (docs/tasks/red-october.md): why did the V-sum spike's KL against the f32/f64 reference
+// TestVsumMechanism is R6 step 1 (docs/completed/red-october.md): why did the V-sum spike's KL against the f32/f64 reference
 // read worse than exact's on D7@8000 while its argmax metrics were better? Pre-registered in
 // docs/measurements/vsum-mechanism-PREREGISTERED.md; the hypotheses, the numeric tests and the decision rule are there and
 // are not restated here.

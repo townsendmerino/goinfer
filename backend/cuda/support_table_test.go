@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// G-S8c (S8, docs/tasks/task-multimodal-support-2026-10.md): this build's live tower registrations equal CUDA's row of
+// G-S8c (S8, docs/completed/task-multimodal-support-2026-10.md): this build's live tower registrations equal CUDA's row of
 // multimodal's declaration, and CUDA implements the hybrid image prefill exactly where decoder declares it (dense hybrids).
 func TestSupportTable_cudaDeclarations(t *testing.T) {
 	var extra []string

@@ -2,7 +2,7 @@
 
 package kernels
 
-// Device-side temperature-only sampling by Gumbel-max on WebGPU (R7b, docs/tasks/red-october.md).
+// Device-side temperature-only sampling by Gumbel-max on WebGPU (R7b, docs/completed/red-october.md).
 //
 // The token is argmax_i( l_i*invT + G_i ), G_i = -ln(E_i), E_i = -ln1p(-w_i), w_i = (h_i+0.5)/2^32, h_i a word
 // of Philox4x32-10 keyed by (seed) with counter (i>>2, draw_lo, draw_hi, 0), lane i&3 — the SAME function as

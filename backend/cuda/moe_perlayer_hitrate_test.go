@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestMoEPerLayerHitRate is Lead 4's own "first step" (docs/tasks/task-freetoken-techniques.md):
+// TestMoEPerLayerHitRate is Lead 4's own "first step" (docs/completed/task-freetoken-techniques.md):
 // "instrument per-layer hit rate at a fixed total budget... and see whether the hit-rate
 // distribution across layers is actually uneven before building anything." A global pool only
 // pays if layers differ in hotness; if every layer sees roughly the same demand, a fixed per-layer

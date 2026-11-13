@@ -12,12 +12,12 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// OP2b on CUDA, step 2b (docs/tasks/task-forward-architecture-2026-10.md §4.7, "OP2b on CUDA"): Nemotron-H resident on CUDA. Gate M is the tiny model
+// OP2b on CUDA, step 2b (docs/completed/task-forward-architecture-2026-10.md §4.7, "OP2b on CUDA"): Nemotron-H resident on CUDA. Gate M is the tiny model
 // against the CPU in greedy lockstep with a same-run control; gate S is the slot behaviour; the int8 decline is pinned by name. CUDA's admission
 // reads program.CUDA, which lists Mamba-2 and the non-gated ReLU² FFN, so these tests need no feature of their own.
 
 // nemotronFeaturesForTest is a no-op kept for its callers: CUDA declares no feature set since OP4cu-c2, and program.CUDA, which
-// lists Mamba-2 and the non-gated ReLU² FFN, admits Nemotron-H (docs/tasks/task-forward-architecture-2026-10.md §4.9a).
+// lists Mamba-2 and the non-gated ReLU² FFN, admits Nemotron-H (docs/completed/task-forward-architecture-2026-10.md §4.9a).
 func nemotronFeaturesForTest() func() { return func() {} }
 
 // lockstepReading is one fixture's CUDA-resident run against the CPU at the same quant: the worst logit cosine over positions from 2, and on how many

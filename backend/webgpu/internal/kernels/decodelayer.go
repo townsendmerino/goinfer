@@ -184,7 +184,7 @@ func (c *Context) attnDevice(q, kCache, vCache *DeviceBuffer, nH, nKV, hd, nKeys
 		releaseBuf(ctxBuf)
 		return nil, nil, fmt.Errorf("gpu: attnDevice: attn-p: %w", err)
 	}
-	// G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatAttnSink — always bound (WGSL bind groups can't
+	// G6 (docs/completed/task-gpu-paths-2026-09.md): FeatAttnSink — always bound (WGSL bind groups can't
 	// bind a null storage buffer); this test-only path never carries a real sink, so a harmless
 	// one-element dummy + hasSink=0, matching attnShaderWGSL's convention.
 	sinksBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-sinks", Contents: wgpu.ToBytes([]float32{0}), Usage: wgpu.BufferUsageStorage})

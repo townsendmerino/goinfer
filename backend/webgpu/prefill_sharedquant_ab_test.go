@@ -18,7 +18,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestPrefill_sharedQuantAB times R-25 (docs/tasks/task-recompute-audit.md): the WebGPU batched prefill with one
+// TestPrefill_sharedQuantAB times R-25 (docs/completed/task-recompute-audit.md): the WebGPU batched prefill with one
 // quantization per projection (prefillQuantPerProj, as it was) against sharedQ's one per input (q/k/v of xn, gate/up of
 // xn2), on one loaded model (GOINFER_RESIDENT_GGUF, else the 1.5B), at P = 128 and 512 (GOINFER_R25_PS), whole
 // PrefillLast wall time, arms alternated rep by rep after a warm-up, last-row logits compared every run. By day,

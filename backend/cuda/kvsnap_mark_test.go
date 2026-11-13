@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// KV7 step 2 on CUDA (docs/tasks/task-kv7-step2-boundary-snapshot-2026-10.md §8, M1 and M2): a snapshot taken between two passes of a cold prefill is the
+// KV7 step 2 on CUDA (docs/completed/task-kv7-step2-boundary-snapshot-2026-10.md §8, M1 and M2): a snapshot taken between two passes of a cold prefill is the
 // prefix computed, a prefill that carries a mark is the prefill without one, and a restore of that snapshot followed by the rest of the prompt reaches
 // the cold prompt's rows and logits. The windowed fixtures run with a slack of 63 so a pass is 64 rows (a block, as the snapshot needs) and a mark can
 // fall on a pass boundary.

@@ -15,7 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder/fit"
 )
 
-// OP2b on CUDA, gate F (docs/tasks/task-forward-architecture-2026-10.md §4.7): the resident's own fit plan for the real Nemotron-H checkpoints, read once and
+// OP2b on CUDA, gate F (docs/completed/task-forward-architecture-2026-10.md §4.7): the resident's own fit plan for the real Nemotron-H checkpoints, read once and
 // alone before any tier 1 run, against the predictions committed before a resident existed. A refused load is VOID for its cell, not a FAIL, and no guard is
 // bypassed. Reports the free VRAM before and after, the planned and final context, the KV slots and bytes, and the Mamba state, for a default load and for the
 // context the prediction names.
@@ -146,7 +146,7 @@ func nemotronLockstep(t *testing.T, path string, steps int, embedInt4 bool, ctx 
 
 // nemotronTier1Cells resolves NEMOTRON_TIER1 into the dense control cell followed by each named Nemotron-H cell, and
 // reports whether the caller set NEMOTRON_TIER1 explicitly. When spec is empty (unset), it defaults to "4b"
-// (docs/tasks/task-forward-architecture-2026-10.md §4.7).
+// (docs/completed/task-forward-architecture-2026-10.md §4.7).
 func nemotronTier1Cells(spec string, ctrl, c4b, c9bslice, c9b nemotronCell) (cells []nemotronCell, explicit bool, err error) {
 	all := map[string]nemotronCell{
 		"4b":      c4b,
@@ -234,7 +234,7 @@ func TestNemotronTier1Cells(t *testing.T) {
 	}
 }
 
-// TestNemotronResidentCUDA_tier1 is OP2b's tier 1 on CUDA (docs/tasks/task-forward-architecture-2026-10.md §4.7): whole real Nemotron-H checkpoints resident on
+// TestNemotronResidentCUDA_tier1 is OP2b's tier 1 on CUDA (docs/completed/task-forward-architecture-2026-10.md §4.7): whole real Nemotron-H checkpoints resident on
 // the card against the CPU model at the same int4, 32 steps of greedy lockstep, G2-R's bars (min logit cosine >= 0.88 from position 2, argmax equal on at
 // least 50% of steps, no NaN). The dense Qwen2.5-Coder 1.5B runs first through the same harness; under min cosine 0.95 the session is VOID. A refused load is VOID
 // for its cell. NEMOTRON_TIER1 names the cells, comma separated: 4b (the 4B whole, the default when NEMOTRON_TIER1 is unset), 9bslice (layers 0, 1 and 14 of

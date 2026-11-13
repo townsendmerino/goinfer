@@ -20,7 +20,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// R-23 (docs/tasks/task-recompute-audit.md §5): on a K=V layer (Gemma 4 global layers, attention_k_eq_v) the resident decode and prefill projected k TWICE, once into kB and
+// R-23 (docs/completed/task-recompute-audit.md §5): on a K=V layer (Gemma 4 global layers, attention_k_eq_v) the resident decode and prefill projected k TWICE, once into kB and
 // once into vB, on identical inputs. They now project once and copy kB into vB on the same stream (a launch of the kv_store kernel at pos 0, so it is capturable under CUDA graphs like
 // every other launch of the segment). Dropping a projection must change no bit, and this gate says so: for each fixture it hashes every decode logit and every greedy token, and the
 // batched-prefill logits, with CUDA graphs off and on, and compares them with the hashes recorded from the code BEFORE the change (testdata/keqv_copy_baseline.json).
