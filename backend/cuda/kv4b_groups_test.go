@@ -38,6 +38,9 @@ var kv4bGroups = []struct {
 		"gemma4-moe-tiny"}, decoder.Options{}, false},
 	{"mla", []string{"deepseek-tiny", "kimi-tiny"}, decoder.Options{}, false},
 	{"mamba-hybrid", []string{"nemotron-tiny"}, decoder.Options{}, false}, // P1r (docs/measurements/p1r-nemotron-f16-2026-11/README.md)
+	{"flint", []string{"flint-tiny"}, decoder.Options{}, false},
+	{"flint/windowed", []string{"flint-tiny"}, decoder.Options{}, true},
+	{"flint/paged-experts", []string{"flint-tiny"}, decoder.Options{MoECacheExperts: true}, false},
 }
 
 // kv4bPair loads a tiny fixture twice, at -kv f32 and -kv f16, with the group's options and one slot.

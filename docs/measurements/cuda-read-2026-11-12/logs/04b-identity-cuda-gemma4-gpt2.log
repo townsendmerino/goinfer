@@ -1,0 +1,54 @@
+== identity provenance ==
+  repo        4edbe93e9
+  date (UTC)  2026-11-13T00:39:02Z
+  host        Linux x86_64
+  old         51ed2ae27 docs: archive task-flint-2026-10 (F0-F5 shipped); its path updated in 
+  new         4edbe93e9 Merge pull request #893 from townsendmerino/campaign-eval-2026-11-12
+  backend     cuda
+  mode        logits from each cell's own checkpoint
+  assets      tiny — the forward goldens' fixtures under /home/francis/wt/v1-2026-11-12, each golden's prompt ids (+ a longer cycled prompt where the context allows)
+  quants      int4,int8int8
+  steps       8 per prompt (the first dumped step is the prefill's logits)
+  env         GOINFER_* removed from both sides' dumpers (GOINFER_TIMING_LOCK) — the code is the only difference
+  build       go build -trimpath; dumper in backend/cuda/ with -tags cuda, ephemeral go.work: . ./backend/cuda
+  run dir     /home/francis/goinfer-logs/v1-2026-11-12/identity-run/gate-identity-20261112-163902-1012419571
+  started     16:39:02 PST
+  tree        the revs are commits, built in temporary worktrees; the main tree supplies only the fixtures, identically to both
+== identity: 12 cell(s) over 2 family(ies), started 16:39:02 — building 51ed2ae27 and 4edbe93e9 ==
+   built both in 5s (old 5s, new 5s)
+   [1/2] gemma4             10 cell(s): new1 6s, old 5.2s, new2 5.3s — 16.5s total, elapsed 22s (started 16:39:02)
+   [2/2] gpt2               2 cell(s): new1 4.6s, old 2.4s, new2 2.4s — 9.4s total, elapsed 31s (started 16:39:02)
+
+== determinism: the new build (4edbe93e9) run twice, separate processes, on cuda ==
+  6 cell(s) byte-identical to themselves, 0 not, 0 unchecked (second run failed)
+
+== identity: old 51ed2ae27 vs new 4edbe93e9, per family ==
+  IDENTICAL        gemma4             6/10 cell(s) ran validation inheritable from 51ed2ae27
+      IDENTICAL  moe-tiny @ int4                        cuda-resident (int4)
+      IDENTICAL  moe-unified-tiny @ int4                cuda-resident (int4)
+      IDENTICAL  dense-twogeom-tiny @ int4              cuda-resident (int4)
+      IDENTICAL  dense-twogeom-tiny @ int8int8          cuda-resident (int8int8)
+      IDENTICAL  dense-scaled @ int4                    cuda-resident (int4)
+      IDENTICAL  dense-scaled @ int8int8                cuda-resident (int8int8)
+  NOT RUN          gpt2               nothing ran — see NOT RUN
+
+== NOT RUN (6 cell(s)) — reported, never counted as a pass ==
+  NOT RUN  gemma4             moe-tiny               [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 0: gemma4 experts are \"int8\"/\"int
+  NOT RUN  gemma4             moe-unified-tiny       [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 0: gemma4 experts are \"int8\"/\"int
+  NOT RUN  gemma4             moe-kv-tiny            [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(
+  NOT RUN  gemma4             moe-kv-tiny            [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: gemma4 MoE int4 needs moeInter(16) and hid
+  NOT RUN  gpt2               124m                   [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: the embedding stage: cuda does not implement learned
+  NOT RUN  gpt2               124m                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: the embedding stage: cuda does not implement lea
+
+== would record (the parity manifest is NOT written by this item) ==
+  gemma4             method "identity-inherited from 51ed2ae27" at 4edbe93e9 — cuda, Linux/x86_64, tiny assets, 6 cell(s); today: full-forward-oracle @ 310a2e44 (linux-amd64)
+  NOTE old 51ed2ae27 is not the validated_at of 1 of these: identity inherits only what 51ed2ae27 itself carries —
+       chain through the revs that were checked, or pass the family's validated_at as <old-rev>:
+       gemma4@310a2e44
+  scope: this machine (Linux/x86_64) and backend (cuda) only — identity is per machine and per backend (the CPU reference is bit-identical within an arch, not across).
+
+== verdict ==
+  families 2: 1 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 1 NOT RUN (a skip is not a pass)
+  wall     31s (16:39:02 → 16:39:33): builds 5s, runs 26s
+  logs     /home/francis/goinfer-logs/v1-2026-11-12/identity-run/gate-identity-20261112-163902-1012419571/logs (dumps/binaries kept; worktrees removed)
+  GREEN — every family that ran is IDENTICAL
