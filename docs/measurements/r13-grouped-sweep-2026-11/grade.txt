@@ -1,0 +1,9 @@
+P41 R13 sweep at d9875a08e; model /Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf; control /Users/francistownsend-merino/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+sweep runs from /Users/francistownsend-merino/goinfer-bench/r13/20261110T062622Z-d9875a08e/raw.jsonl (a separate session); control from this one
+control (qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, depth 2048): median on/off 1.0013
+depth 128: median on/off 1.0153, 7 of 9 pairs faster; 1.071, 1.009, 0.995, 1.015, 1.008, 1.067, 0.974, 1.052, 1.141
+depth 2048: median on/off 0.9402, 1 of 10 pairs faster; 1.031, 0.940, 0.942, 0.889, 0.930, 0.943, 0.898, 0.931, 0.943, 0.940
+depth 4096: median on/off 0.9517, 1 of 10 pairs faster; 0.983, 0.949, 0.960, 0.947, 0.953, 0.944, 0.971, 0.950, 0.951, 1.008
+depth 8192: median on/off 1.2638, 9 of 9 pairs faster; 1.409, 1.260, 1.264, 1.263, 1.264, 1.281, 1.215, 1.332, 1.263
+void runs re-run: 2
+VERDICT: RAISE the floor: loses shallow, keeps at 8192; attnGroupedMinKeys to 128 (Francis's call)
