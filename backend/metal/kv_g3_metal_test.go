@@ -1545,7 +1545,8 @@ func kvUploadLayers(r *resident) []int {
 // layer starting late through the decoder's own pass.
 func TestKVPages_uploadPass(t *testing.T) {
 	a, r := kv2Resident(t, false)
-	p, ok := any(a).(decoder.ResidentKVUploadPass)
+	p := decoder.SubsystemsOf(a).KV
+	ok := p.KVUploadPassAvailable()
 	if !ok {
 		t.Fatal("Metal's resident has no upload pass (decoder.ResidentKVUploadPass)")
 	}

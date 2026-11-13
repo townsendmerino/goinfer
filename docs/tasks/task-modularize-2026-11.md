@@ -14,13 +14,13 @@
 | id | state | next | evidence |
 |---|---|---|---|
 | MZ1 | open | cut `backend/cuda/backend.go:cudaBackend.buildResidentMode` (1,988 lines) into named build phases, one PR per phase. Waits for LW-cu's device reads (`docs/tasks/task-forward-and-memory-2026-11.md`), which touch the same build. Gate: the SB2 lease census and MM7's memory gate unchanged on nobara | §2, §3.1 |
-| MZ2 | open | the same for `backend/metal/model.go:buildResident` (1,107 lines) and `backend/webgpu/residency.go:webgpuBackend.BuildResident` (1,049 lines). Gate: each backend's SB2 census and memory gate unchanged | §2, §3.1 |
+| MZ2 | active | Metal: `backend/metal/resident_build.go:residentBuild` carries five of the build's phases (`compileKernels`, `bindPipelines`, `buildMixers`, `selectLanes`, `uploadLayers`), branch `mz2-metal-buildresident-2026-11-13`; next the per-layer body of `uploadLayers`, then the KV tables and head, the width and threadgroup checks, the GEMV-row choice, the decode scratch and the residency set. WebGPU `backend/webgpu/residency.go:webgpuBackend.BuildResident` (1,049 lines) not started here. Gate: each backend's SB2 census and memory gate unchanged (Metal: 840 census lines; 286 builds held, 87 declined, identical at each cut) | §2, §3.1 |
 | MZ3 | open | cut `decoder/gguf.go:buildWeightsFromGGUF` (1,469 lines) and `decoder/weights.go:buildWeightsFromSafetensorsTo` (627 lines) into per-family builders. After CH4 closes (`docs/tasks/task-code-health.md`), behind its gate (`decoder/ch4_giw_gate_test.go:TestCH4_giwByteIdentity`); it touches the parity manifests, so the coordinator clears the parity lane first. This replaces "split `weights.go` by family" in that doc's §3.4 | §2, §3.1 |
 | MZ4 | open | move CUDA and WebGPU onto `decoder/backend_view.go:BackendModelView` and delete the `Model.*Resident` forwarders in `decoder/residency.go` as their last caller goes. Then stop: §3.2's package question is Francis's | §3.2 |
 | MZ5 | decision | whether the resident contract leaves `decoder` for a leaf package, and whether the weight data types follow. Decide with SUB1 (`docs/tasks/task-forward-and-memory-2026-11.md`), which already owns "which interfaces stay" | §3.2 |
-| MZ6 | open | move CUDA's pure fit decisions (`backend/cuda/resident.go:kvFitDecision`, `slotsDecision`, `weightsFitDecision`, `capSlots`) and their tests to a package under `backend/cuda/internal/` that imports `decoder/fit` and not `decoder`; lower the layout ratchet by the test files that leave | §3.3 |
+| MZ6 | done | none | `backend/cuda/internal/fitdecide` holds `capSlots`, `slotsDecision`, `weightsFitDecision`, `kvFitDecision` and their pure tests; it imports `gpudev` for the quantum, neither `decoder` nor `decoder/fit`. `kvFitDecision` takes the KV price as a function (`kvChargedBytes` stays in cuda), so cuda keeps one-line adapters and `TestKVFitDecision*` stay and run through them. Ratchet cuda Reach 307 to 306 (`slotcap_test.go` left). §3.3 |
 | MZ7 | done | none | `genEngine` no longer links `engine/enginetest` (rule `serveapp-fakes-test-only`; tests set `fakeEngine` to the test-file `scriptedEngine`). Francis approved the move (relayed by the coordinator, 11:30): `internal/app/serveapp/jobs` now holds `job.go`, `jobeventlog.go`, `jobjournal.go`, `turn_timings.go` (611 lines; the earlier "1,611" was a typo) and `usage.go`, plus `job_test.go` and `jobeventlog_test.go`; serveapp keeps `usage` and `prefillReuseSources` as aliases of `jobs.Usage` and `jobs.PrefillReuseSources`, which moved because `Job` holds a `Usage`. The journal's two permission constants are its own (`dirPerm`, `filePerm`, pinned to 0o700 and 0o600 by `TestJobJournal_permissions`), so `sessions.go` is untouched. `Job.Result` is exported with `json:"-"`, so the JSON is unchanged. The survey of the 32 files that touch neither `server` nor `loadedModel` (4,709 lines by an identifier scan; the row's 29 differs by counting method): remaining leaves with no outward need are `sessions.go` (534; `sessionLRU`, `newSessionLRU`, `sessionDirOK`), `carried_ids.go` (358; 12 names used outside), `feature_cache.go`, `kvhost.go`, `tower_swap.go`, `version.go`. Coupled, not first: the tower cluster (`tower_reserve.go`, `gemma3_tower.go`, `webgpu_tower_fit.go` need `config` and `visionModelType` from `main.go`), `helpers.go` (SSE and body helpers), `reasoning_items.go` and `responses_stream.go` (need `carriedMint`, `thinkOut`). §3.4 |
-| MZ8 | open | `decoder/model.go`: `Options` and `Options.Validate` to their own file, then cut `decoder/model.go:Model.generateInto` (657 lines, 10 parameters) into its phases. Touches the parity manifests (a non-test `decoder` file), so it shares MZ3's lane | §2, §3.5 |
+| MZ8 | active | `decoder/model.go`: `Options` and `Options.Validate` to their own file, then cut `decoder/model.go:Model.generateInto` (657 lines, 10 parameters) into its phases. Touches the parity manifests (a non-test `decoder` file), so it shares MZ3's lane. First half done: `Options`, `Options.Validate` and `Options.layoutBackend` are `decoder/options.go` (a pure move: every line of the old `model.go` is in `model.go` or `options.go`, plus the package and import lines); next: `generateInto`'s phases, after MZ3 | §2, §3.5 |
 
 ## 1 · Gemini's five suggestions, checked against the tree
 
@@ -58,9 +58,18 @@ after the move under `backend/` together: `backend/cuda/resident.go` 109, `backe
 the changed hunks fall on `Options` (27), `Load` (26), the `Model` struct (24) and `modelFromOptions` (20): a new option
 touches all four.
 
-**The package seam, for scale.** Non-test code outside `decoder` names these many distinct `decoder` identifiers:
-`backend/metal` 117, `backend/cuda` 111, `internal/app/serveapp` 50, `backend/webgpu` 41. The October census
-(`docs/completed/task-subsystems-2026-10.md` §2.2) read 103, 93, 52 and 35, so the backend seams have widened.
+**The package seam, for scale.** Non-test code outside `decoder` names these many distinct package-level `decoder`
+identifiers: `backend/metal` 102, `backend/cuda` 90, `internal/app/serveapp` 43, `backend/webgpu` at least 37.
+Type-resolved (`ken go uses . <package> decoder`, three build configurations, 2026-11-13); WebGPU's is a lower bound,
+because its configuration type-checks with errors where cgo is off. Counting methods and fields as well, non-test code
+names 303 in metal, 334 in cuda, 148 in webgpu and 126 in serveapp. Test code is the wider seam: 187 package-level
+names in metal's and 189 in cuda's, led by `decoder.Options` (622 test lines in cuda) and the two test hooks
+`Model.EmbedResidentForTest` and `Model.ResidentForwardForTest` (287 and 281).
+
+*Corrected 2026-11-13.* This paragraph first read 117, 111, 50 and 41, from a regular expression that also counted
+names in comments, and concluded from the October census (`docs/completed/task-subsystems-2026-10.md` §2.2: 103, 93,
+52 and 35) that the backend seams had widened. The typed counts do not support that: they sit at or below October's,
+whose method is not recorded, so the two are not comparable and no trend is claimed.
 
 ## 3 · The rows
 

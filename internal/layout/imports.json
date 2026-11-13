@@ -189,6 +189,7 @@
       "site/internal/site"
     ],
     "backend/cuda": [
+      "backend/cuda/internal/fitdecide",
       "backend/cuda/internal/gpudev",
       "backend/cuda/internal/launchgeom",
       "backend/cuda/internal/wpack",

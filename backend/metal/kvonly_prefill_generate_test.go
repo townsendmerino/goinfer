@@ -42,7 +42,7 @@ func TestResidentPrefillSeed_metalKVOnly_byteIdentical(t *testing.T) {
 			t.Fatalf("load: %v", err)
 		}
 		defer m.Close()
-		if _, ok := m.ResidentForwardForTest().(decoder.ResidentPrefillKV); !ok {
+		if ok := decoder.SubsystemsOf(m.ResidentForwardForTest()).Decode.NoLogitsAvailable(); !ok {
 			t.Fatal("metalResident does not implement decoder.ResidentPrefillKV")
 		}
 		out, _ := m.Generate(context.Background(), prompt, 16, decoder.SamplingParams{})
