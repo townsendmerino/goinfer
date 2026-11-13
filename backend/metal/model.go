@@ -12,8 +12,6 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/townsendmerino/goinfer/internal/runtime/logs"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -1242,7 +1240,8 @@ func int8ConcatOn(line string, d *Device, a *weightAlias, wms ...*linalg.WeightM
 
 // buildResident builds a Metal resident decoder from a loaded Model: it uploads the weights, creates the pipelines and
 // allocates the KV slots. It returns an error, which the caller treats as a decline to the CPU path, when the model's
-// shape or the device cannot run it resident.
+// shape or the device cannot run it resident. The work is residentBuild's phases (resident_build.go), run in the order the
+// calls below list; the order is the order of the allocations the memory gate and the lease census read.
 func buildResident(m *decoder.Model) (res *resident, err error) {
 	// Entry point: convert the build-time panics (pipeline-compile failure, non-int4 expert weights, buffer OOM in
 	// model.go, moe.go and gemma4_moe.go) into the error this signature promises, so a direct caller gets a decline,
@@ -1303,7 +1302,6 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if err := b.uploadLayers(); err != nil {
 		return nil, err
 	}
-	alias := b.alias
 	if err := b.allocKVTables(); err != nil {
 		return nil, err
 	}
@@ -1318,27 +1316,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		return nil, err
 	}
 	b.pinResidencySet()
-	r.alias = alias
-	if line := alias.summary(); line != "" {
-		logs.InfoText(line)
+	if err := b.finish(); err != nil {
+		return nil, err
 	}
-	// S16: the m-RoPE prefill's per-pair axis table, from the decoder's own layout rule; nil for a model without a
-	// three-way m-RoPE section, whose PrefillMRoPELast then declines.
-	if g := r.prefillGeom(); g != nil && r.prefillOK {
-		if ax := m.MRopeAxisResident(g.half); ax != nil {
-			u := make([]uint32, len(ax))
-			for i, v := range ax {
-				u[i] = uint32(v)
-			}
-			r.mropeAxis = NewBufferUint32sOn(mem.LineDense, d, u)
-		}
-	}
-	if err := r.buildLayerSteps(m.Program()); err != nil {
-		return nil, fmt.Errorf("metal: %w", err)
-	}
-	r.allocRecurrentCheckpoint(m) // KV8a, once the KV and scratch are up (recurrent_checkpoint.go)
-	r.buildBatch()                // MC3: the batched decode step, when this resident can run one (batch.go)
-	ok = true                     // construction complete — the resident owns everything; Close (not the defer) frees it
+	ok = true // construction complete — the resident owns everything; Close (not the defer) frees it
 	return r, nil
 }
 

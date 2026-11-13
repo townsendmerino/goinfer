@@ -1184,3 +1184,31 @@ func (b *residentBuild) pinResidencySet() {
 	}
 
 }
+
+// finish records the weight alias, uploads the m-RoPE axis table, builds the per-layer steps, and allocates the recurrent checkpoint and the
+// batched decode step, the last of the build.
+func (b *residentBuild) finish() error {
+	m, d, r := b.m, b.d, b.r
+	alias := b.alias
+	r.alias = alias
+	if line := alias.summary(); line != "" {
+		logs.InfoText(line)
+	}
+	// S16: the m-RoPE prefill's per-pair axis table, from the decoder's own layout rule; nil for a model without a
+	// three-way m-RoPE section, whose PrefillMRoPELast then declines.
+	if g := r.prefillGeom(); g != nil && r.prefillOK {
+		if ax := m.MRopeAxisResident(g.half); ax != nil {
+			u := make([]uint32, len(ax))
+			for i, v := range ax {
+				u[i] = uint32(v)
+			}
+			r.mropeAxis = NewBufferUint32sOn(mem.LineDense, d, u)
+		}
+	}
+	if err := r.buildLayerSteps(m.Program()); err != nil {
+		return fmt.Errorf("metal: %w", err)
+	}
+	r.allocRecurrentCheckpoint(m) // KV8a, once the KV and scratch are up (recurrent_checkpoint.go)
+	r.buildBatch()                // MC3: the batched decode step, when this resident can run one (batch.go)
+	return nil
+}
