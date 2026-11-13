@@ -9,6 +9,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
@@ -34,6 +35,12 @@ type residentBuild struct {
 	maxNHhd          int // the widest layer's attention sizes, which the shared per-token scratch is cut to
 	maxKvDim         int
 	maxHd            int
+	guDim            int // the gate|up and down scratch width, and the widest dense FFN (a Gemma 4 E-model's double-wide shared layers)
+	maxFFNI          int
+	mk               func(wm *linalg.WeightMat) (Buffer, Buffer) // the layer upload helpers, which close over r and the alias
+	fuse             func(wms ...*linalg.WeightMat) (Buffer, Buffer)
+	geomCache        map[[4]int]*attnGeom
+	attnGate, dnetOK bool
 	maxAttnFAPartial int // R2: attnFAPartialFloats at its widest layer; see attnFAPartial's own comment
 }
 
@@ -343,8 +350,7 @@ func (b *residentBuild) selectLanes() error {
 // and checks that every layer's declared KV rows are what the build holds. It sets b.w, b.alias and the widest-layer sizes the scratch is cut to.
 func (b *residentBuild) uploadLayers() error {
 	m, d, r, bv := b.m, b.d, b.r, b.bv
-	H, nL := r.H, r.nL
-	kvSlots, win, kq := b.kvSlots, b.win, b.kq
+	nL := r.nL
 	r.q = d.NewCommandQueue()
 
 	w := bv.Weights()
@@ -403,336 +409,12 @@ func (b *residentBuild) uploadLayers() error {
 	// layer to one geom; Gemma 4's local/global interleave resolves to two. maxNHhd/maxKvDim size
 	// the shared per-token scratch to the widest layer (== the model shape for a uniform family).
 	geomCache := map[[4]int]*attnGeom{}
-	var maxNHhd, maxKvDim, maxHd int
-	var maxAttnFAPartial int // R2: attnFAPartialFloats at its widest layer; see attnFAPartial's own comment
 	_, _, _, _, _, attnGate, dnetOK := m.Qwen35ResidentParams()
+	b.w, b.alias, b.mk, b.fuse, b.geomCache, b.attnGate, b.dnetOK = w, alias, mk, fuse, geomCache, attnGate, dnetOK
 	for l := range nL {
-		lw := &w.Layers[l]
-		lv := bv.Layer(l)
-		var L residLayer
-		var kEqV bool // false for isDelta (no geometry) and qGate (this family never has K=V); set below otherwise
-		mixer, hasFFN := lv.Ops()
-		L.ffn = hasFFN
-		isDelta := dnetOK && mixer == decoder.MixerDeltaNet
-		isAttn := mixer == decoder.MixerAttention
-		if isDelta {
-			// Gated-DeltaNet mixer layer: no attention projections, no KV cache, no geometry at
-			// all — see metal/deltanet.go and residLayer.delta's doc. L.geom stays nil and
-			// r.kc[l]/r.vc[l] stay zero-value; encodeLayer never calls encodeAttention for this
-			// layer, so nothing downstream dereferences them.
-			DL, e := buildDeltaNetLayer(d, m, l, r.dnet, mk)
-			if e != nil {
-				return e
-			}
-			L.delta = DL
-		} else if mixer == decoder.MixerMamba {
-			// Mamba-2 mixer layer (mamba.go): no attention projections, no KV cache, no geometry, as for DeltaNet.
-			if r.mamba == nil {
-				return fmt.Errorf("metal: layer %d is a Mamba-2 layer but the model gives no Mamba geometry", l)
-			}
-			ML, e := buildMambaLayer(d, m, l, H, r.mamba)
-			if e != nil {
-				return e
-			}
-			L.mamba = ML
-		} else if mixer == decoder.MixerMLA {
-			// MLA (mla.go): the latent rows are this layer's KV cache, in kc with its slots as for attention (vc aliases kc).
-			if r.mla == nil {
-				return fmt.Errorf("metal: layer %d is an MLA layer but the model gives no MLA geometry", l)
-			}
-			ML, e := buildMLALayer(d, m, l, H, r.mla)
-			if e != nil {
-				return e
-			}
-			L.mla = ML
-			lat, e := kvCheckRows(l, m.LayerBuffers(l), kvLayerWant{latent: r.mla.latDim})
-			if e != nil {
-				return e
-			}
-			r.kvNullBytes[l] = decoder.KVBlockRows * lat * 4
-			kvBytes := kvBlocksFor(r.ctxCap) * r.kvNullBytes[l]
-			r.kvContig = true
-			r.kvSlotBytes[l] = kvBytes
-			r.kc[l] = byteBufOn(mem.LineKV, d, r.kvNullBytes[l]+kvBytes*kvSlots)
-			r.vc[l] = r.kc[l]
-		} else if mixer == decoder.MixerNone {
-			// A feed-forward-only block (Nemotron-H's MLP): no mixer to build.
-		} else if dnetOK && attnGate {
-			// The same family's gated softmax layer (qwen3_5, qwen3_5_moe, qwen3_next), not every dnetOK family: Olmo
-			// Hybrid's full-attention layer is olmo3's plain scheme (AttnGate=false) and takes the ordinary branch below.
-			// Its q/k/v/o live off qattn, not lw.QProj/KProj/VProj/OProj, and q_proj is double width: [query || gate] per
-			// head, interleaved, not two concatenated blocks; treated as an ordinary q_proj it yields plausible logits
-			// from the wrong tensor. So the fused QKV path does not apply: K||V still fuse into L.qkvW (2-way), and Q is a
-			// separate double-width projection (L.dnQw/dnQs), split on the activation at encode time (delta_qsplit),
-			// because slicing rows out of a quantized int4 bundle with per-group scales is real surgery.
-			qP, kP, vP, oP, qN, kN := lv.Qwen35AttnWeights()
-			if len(qN) == 0 || len(kN) == 0 {
-				return fmt.Errorf("metal: layer %d: qwen35 softmax layer has empty q_norm/k_norm "+
-					"(%d/%d) — the loader did not populate them for this container", l, len(qN), len(kN))
-			}
-			L.qGate = true
-			L.dnQw, L.dnQs = mk(qP)
-			L.qkvW, L.qkvS = int4ConcatAOn(mem.LineDense, d, alias, kP, vP) // K‖V fused (Q handled separately above)
-			L.oW, L.oS = mk(oP)
-			L.qNorm, L.kNorm = NewBufferFloatsOn(mem.LineDense, d, qN), NewBufferFloatsOn(mem.LineDense, d, kN)
-		} else {
-			// The ordinary plain-attention layer: every layer that is neither DeltaNet nor qGate, including a dnetOK
-			// family's full-attention layer when AttnGate is false (Olmo Hybrid). lw.QProj/KProj/VProj/OProj/QNorm/KNorm
-			// are read normally.
-			//
-			// K=V (attention_k_eq_v, Gemma 4 global layers): no v_proj; V = v_norm(the raw k_proj output). The V slot is
-			// fused with k_proj (the fused projection yields qkv=[Q|K_raw|K_raw]); at encode time (encodeTrunkInto) the V
-			// slot is scale-less-v_norm'd and left un-roped, while the K slot gets k_norm and RoPE. This is a build-time
-			// weight-layout difference, so the value-independent ForwardEmbPipe pre-encode stays correct (see geom.kEqV).
-			// False (and a no-op) for every family without K=V layers.
-			kEqV = lv.VFromK()
-			if src := lv.KVSrc(); src != l {
-				// Gemma 4 E-model KV-shared layer (S1.4): the checkpoint has no k_proj/v_proj/k_norm here; it attends
-				// over layer src's keys and values. Q-only projection; kEqV does not apply (no K of its own).
-				if src < 0 || src >= l {
-					return fmt.Errorf("metal: layer %d: KV source %d is not an earlier layer", l, src)
-				}
-				if g4KVSrcOffForTest { // G2 defect (3): the previous owning layer of the same attention type, if any
-					for j := src - 1; j >= 0; j-- {
-						if bv.Layer(j).KVSrc() == j && bv.Layer(j).IsLocal() == bv.Layer(src).IsLocal() {
-							src = j
-							break
-						}
-					}
-				}
-				L.kvShared, L.kvSrc, kEqV = true, src, false
-				L.qkvW, L.qkvS = fuse(&lw.QProj)
-			} else if kEqV {
-				L.qkvW, L.qkvS = int4ConcatOn(mem.LineDense, d, &lw.QProj, &lw.KProj, &lw.KProj) // V slot = raw k_proj
-			} else {
-				L.qkvW, L.qkvS = fuse(&lw.QProj, &lw.KProj, &lw.VProj) // fused QKV
-			}
-			L.oW, L.oS = mk(&lw.OProj)
-			if r.outBias {
-				L.oBias = NewBufferFloatsOn(mem.LineDense, d, lw.OBias)
-			}
-			if r.qkNorm { // Qwen3 per-head Q/K norm weights [hd] — qGate layers set these above instead
-				// QKNormWhole (Olmo 3/Olmo Hybrid, G5): the resident kernel launch that reproduces
-				// this collapses the grid to one Q block + one K block sized from a SINGLE hd
-				// argument (encodeAttention), which is only correct when nH==nKV (MHA). Decline
-				// rather than silently mis-normalize a hypothetical future GQA family.
-				if r.qkNormWhole {
-					if nKVL := lv.KVHeads(); r.nH != nKVL {
-						return fmt.Errorf("metal: layer %d: arch claims QKNormWhole but nH=%d != nKV=%d — the resident whole-vector kernel launch requires MHA", l, r.nH, nKVL)
-					}
-				}
-				L.qNorm = NewBufferFloatsOn(mem.LineDense, d, lw.QNorm)
-				if L.kvShared {
-					L.kNorm = L.qNorm // bound, never read: a shared layer's qk_norm grid covers the Q heads only
-				} else {
-					L.kNorm = NewBufferFloatsOn(mem.LineDense, d, lw.KNorm)
-				}
-			}
+		if err := b.buildLayer(l); err != nil {
+			return err
 		}
-		if isAttn {
-			// attention always dispatches L.attnSinks/L.uHasSink (unlike L.invf, which is only bound
-			// when the rope dispatch itself runs) — every family needs a VALID buffer bound, gated by
-			// the flag, so non-gpt-oss gets a real but unused 1-element dummy, not a zero Buffer.
-			if r.attnSink {
-				L.attnSinks = NewBufferFloatsOn(mem.LineDense, d, lw.AttnSinks)
-			} else {
-				L.attnSinks = NewBufferFloatsOn(mem.LineDense, d, []float32{0})
-			}
-		}
-		g4b, isG4MoE := decoder.Gemma4MoEResidentBundle{}, false
-		if r.g4moe != nil {
-			g4b, isG4MoE = lv.Gemma4MoEBundle()
-		}
-		switch {
-		case !hasFFN: // the layer is its mixer alone (Nemotron-H's Mamba and attention blocks)
-		case isG4MoE: // Gemma-4 enable_moe_block: parallel dense‖MoE FFN (its own norms/router/experts)
-			L.g4moe = buildGemma4MoELayer(d, m, &g4b, r.g4moe)
-		case r.moe != nil && len(lw.Experts) > 0: // generic MoE layer: stacked experts instead of a dense FFN
-			L.moe = buildMoELayer(d, m, l, lw, r.moe)
-		case r.nonGatedMLP: // GPT-2/Nemotron relu²: single up-proj (no gate) + biases (zero where the family has none)
-			L.upW, L.upS = mk(&lw.UpProj)
-			L.dW, L.dS = mk(&lw.DownProj)
-			L.upBias = NewBufferFloatsOn(mem.LineDense, d, orZeros(lw.UpBias, lw.UpProj.Rows()))
-			L.downBias = NewBufferFloatsOn(mem.LineDense, d, orZeros(lw.DownBias, lw.DownProj.Rows()))
-			L.downBiasSet = len(lw.DownBias) > 0
-		default: // dense FFN (also GLM/DeepSeek's FirstKDense prefix layers, and gemma4 dense layers)
-			L.guW, L.guS = fuse(&lw.GateProj, &lw.UpProj) // fused gate/up
-			L.dW, L.dS = mk(&lw.DownProj)
-			L.ffnI = lw.GateProj.Rows()
-		}
-		if r.q4kLane {
-			// The q4k lane covers the plain dense shape (Phi-3, Llama, Qwen2): pre-norm attention (q/k/v bias allowed), a
-			// SwiGLU FFN.
-			if !isAttn || !hasFFN || L.moe != nil || L.g4moe != nil || L.qGate || L.kvShared || kEqV || r.nonGatedMLP {
-				return fmt.Errorf("metal: --quant q4k runs on Metal for dense attention+SwiGLU layers only (layer %d is not)", l)
-			}
-			L.qkvSegs = q4kLaneProjOn(mem.LineDense, d, kq, &lw.QProj, &lw.KProj, &lw.VProj)
-			L.oSegs, L.dSegs = q4kLaneProjOn(mem.LineDense, d, kq, &lw.OProj), q4kLaneProjOn(mem.LineDense, d, kq, &lw.DownProj)
-			L.guSegs = q4kLaneProjOn(mem.LineDense, d, kq, &lw.GateProj, &lw.UpProj)
-		}
-		// postOnly (Olmo 3, Olmo Hybrid) is a model-level flag, but Olmo Hybrid's DeltaNet layers reach NormPre2
-		// through NormPlacementLinear and carry real pre-norm weights regardless; isDelta is already resolved above,
-		// so gate on the per-layer truth, not the model-level flag.
-		postOnlyHere := r.postOnly && isAttn
-		if !postOnlyHere {
-			// A postOnly (non-delta) layer has NO pre-norm weight at all (lw.PreAttnNorm/
-			// PreMLPNorm are 0-length — NewBufferFloats on an empty slice is a build-time error,
-			// not a no-op), so this is skipped entirely; segA/encodeLayer quantize the raw
-			// residual instead (see encodeAttention/encodeLayer's own postOnly branch).
-			L.preNorm = NewBufferFloatsOn(mem.LineDense, d, lw.PreAttnNorm)
-			// parallelBlock (Cohere/Command-R) has no pre-MLP norm tensor at all: the MLP reuses the shared input norm the
-			// attention branch computed (encodeLayer's r.aq/r.aSc reuse), so lw.PreMLPNorm is empty (see
-			// Model.ParallelBlockResident), with the same NewBufferFloats hazard postOnly's comment above names.
-			switch {
-			case !hasFFN: // no FFN, no pre-MLP norm
-			case mixer == decoder.MixerNone: // a feed-forward-only block's one norm is its input norm (Nemotron-H)
-				L.postNorm = L.preNorm
-			case L.g4moe == nil && !r.parallelBlock: // dense/generic FFN entry norm (PreMLPNorm); g4moe carries its five norms in the bundle
-				L.postNorm = NewBufferFloatsOn(mem.LineDense, d, lw.PreMLPNorm)
-			}
-			if r.layerNorm && r.layerNormBias {
-				L.preNormBias = NewBufferFloatsOn(mem.LineDense, d, lw.PreAttnNormBias)
-				if hasFFN && mixer != decoder.MixerNone && L.g4moe == nil && !r.parallelBlock {
-					L.postNormBias = NewBufferFloatsOn(mem.LineDense, d, lw.PreMLPNormBias)
-				}
-			}
-		}
-		// qk-norm weights are set above, in whichever of the isDelta/qGate/default branches applies: a qGate layer's
-		// qattn-sourced qNorm/kNorm must not be overwritten by the generic lw.QNorm/lw.KNorm, which this family does
-		// not populate.
-		// Gemma sandwich / Olmo 3 postOnly norms on each sublayer OUTPUT — postOnly is the
-		// post-norm half of sandwich, minus the pre half (see PostOnlyNormResident's own
-		// comment). Required to be present when the arch declares either — a silently-missing
-		// one would DROP the norm rather than error. A g4moe layer still runs the ATTENTION
-		// sandwich (postAttnNorm) but its FFN block is the parallel dense‖MoE, which carries its
-		// own post-norms (postFFN1/postFFN2/postFFN) in the bundle and never touches
-		// postMLPNorm — exactly as decoder/forward_gemma4.go skips PostMLPNorm for
-		// enable_moe_block layers. So require/build postMLPNorm only for the non-g4moe FFN path.
-		if r.sandwich || postOnlyHere {
-			if len(lw.PostAttnNorm) != H {
-				return fmt.Errorf("metal: layer %d declares sandwich/postOnly norms but PostAttnNorm is not len==hidden(%d) (got %d)",
-					l, H, len(lw.PostAttnNorm))
-			}
-			L.postAttnNorm = NewBufferFloatsOn(mem.LineDense, d, lw.PostAttnNorm)
-			if L.g4moe == nil {
-				if len(lw.PostMLPNorm) != H {
-					return fmt.Errorf("metal: layer %d declares sandwich/postOnly norms but PostMLPNorm is not len==hidden(%d) (got %d)",
-						l, H, len(lw.PostMLPNorm))
-				}
-				L.postMLPNorm = NewBufferFloatsOn(mem.LineDense, d, lw.PostMLPNorm)
-			}
-		}
-		// Gemma 4's per-layer output scalar on a dense layer (h *= layer_scalar after the FFN residual;
-		// decoder/forward_gemma4.go, HF Gemma4DecoderLayer). The g4moe join applies its own. 1 and absent (0) are
-		// no-ops, as on the CPU, so no dispatch is encoded for them.
-		if L.g4moe == nil && bv.IsGemma4() {
-			L.layerScaleRead = true
-			if s := lv.Gemma4DenseScalar(); s != 0 && s != 1 {
-				L.uLayerScalar = NewBufferFloatsOn(mem.LineDense, d, []float32{s})
-			}
-		}
-		if r.pleP > 0 { // Gemma 4 E-model PLE branch weights (S1.5)
-			if lw.PLEGate.Rows() != r.pleP || lw.PLEProj.Rows() != H || len(lw.PostPLENorm) != H {
-				return fmt.Errorf("metal: layer %d: PLE weights %dx? / %dx? / %d, want P=%d and H=%d", l, lw.PLEGate.Rows(), lw.PLEProj.Rows(), len(lw.PostPLENorm), r.pleP, H)
-			}
-			L.pleGW, L.pleGS = mk(&lw.PLEGate)
-			L.plePW, L.plePS = mk(&lw.PLEProj)
-			L.postPLENorm = NewBufferFloatsOn(mem.LineDense, d, lw.PostPLENorm)
-		}
-		if isAttn {
-			// Per-layer RoPE table (Gemma local 10k vs global 1M base) and per-layer window. The rope
-			// KERNEL is unchanged — all per-layer variation rides in the table contents AND the width
-			// (geom.half). lv.RopeInvFreq() is the resident per-layer table (== the generic
-			// RopeInvFreqLayer for every uniform family; Gemma 4's global proportional-rotary tail is
-			// what makes it differ). Its length is this layer's rhalf (rotated pairs/head). A DeltaNet
-			// layer has no attention geometry at all (see residLayer.delta's doc) — skip this whole
-			// block for it: no RoPE table, no geom (L.geom stays nil), no KV cache allocated.
-			invf := lv.RopeInvFreq()
-			if len(invf) > 0 { // GPT-2 (FeatLearnedPos): no RoPE at all, invf is empty — NewBufferFloats panics on empty; L.invf stays unused (rope dispatch is skipped)
-				L.invf = NewBufferFloatsOn(mem.LineDense, d, invf)
-				L.mscale = NewBufferFloatsOn(mem.LineDense, d, []float32{float32(lv.RopeMscale())}) // 1.0 for every family without YaRN
-			}
-			// Per-layer attention geometry — the whole point of the 9c seam. Uniform families resolve
-			// every layer to the same {hd, nKV, half, kEqV}; Gemma 4 varies hd/nKV/kEqV between its
-			// local and global layers. geomFor dedups by value so a uniform model shares one geom.
-			L.geom = r.geomFor(geomCache, lv.HeadDim(), lv.KVHeads(), len(invf), kEqV)
-			if L.geom.hd > maxHd {
-				maxHd = L.geom.hd
-			}
-			if L.geom.kvDim > maxKvDim {
-				maxKvDim = L.geom.kvDim
-			}
-			if r.nH*L.geom.hd > maxNHhd {
-				maxNHhd = r.nH * L.geom.hd
-			}
-			if e := attnFAPartialFloats(L.geom.hd, r.nH, L.geom.nKV); e > 0 {
-				maxAttnFAPartial = max(maxAttnFAPartial, e)
-				// Cache nKV here: attention_fa is dense-GQA-only, so every eligible layer shares one nKV (canUseAttnFA's own
-				// gate is this same condition), and setPos can compute G and nSplit once per decode step instead of the
-				// per-layer dispatch site doing it during encode-ahead (see uAttnFAG/uAttnFANSplit's field comment for the
-				// race that would be).
-				if r.attnFANKV == 0 {
-					r.attnFANKV, r.attnFALayer = L.geom.nKV, l
-				}
-			}
-			lw2 := uint32(0) // 0 = full causal; only local layers carry the window
-			if lv.IsLocal() {
-				lw2 = uint32(win)
-			}
-			L.window = lw2
-			if !L.qGate {
-				// combined qkv bias (zeros where absent) so the fused pSABias GEMV epilogue is
-				// uniform, sized for the full [Q|K|V] concat pSABias expects. qGate's K‖V is only
-				// a 2-way concat (Q is separate — see above), so it dispatches via the no-bias pSA
-				// kernel instead (this family is bias-free everywhere anyway: lw.QBias is nil for
-				// it same as for a qGate layer, and Qwen35AttnWeights returns no bias either) —
-				// L.qkvBias would be the wrong width for it and is simply unused.
-				qb, kb, vb := lw.QBias, lw.KBias, lw.VBias
-				if qb == nil {
-					qb, kb, vb = make([]float32, r.nH*L.geom.hd), make([]float32, L.geom.kvDim), make([]float32, L.geom.kvDim)
-				}
-				L.qkvBias = NewBufferFloatsOn(mem.LineDense, d, append(append(append([]float32{}, qb...), kb...), vb...))
-			}
-			// A layer's slots are one pool of 64-row blocks, reached through a table (r.kvTab), so a batched step's one dispatch
-			// reaches every row's blocks. attention_prefill_fused reads whole 8-row tiles and masks the ragged remainder after the
-			// load; a tile lies inside a block, so that read stays in the block. An int8 cache keeps one f32 scale per position and
-			// head beside its one-byte codes, block for block.
-			blocks := kvBlocksFor(r.ctxCap)
-			want := kvLayerWant{kvDim: L.geom.kvDim, nKV: L.geom.nKV, shared: L.kvShared}
-			kw, e := kvCheckRows(l, m.LayerBuffers(l), want)
-			if e != nil {
-				return e
-			}
-			r.kvNullBytes[l] = decoder.KVBlockRows * kw * r.kvElemBytes()
-			if L.kvShared {
-				r.kvNullBytes[l] = r.kvNullBytes[L.kvSrc]
-			}
-			kvBytes := blocks * r.kvNullBytes[l]
-			allocSlots := kvSlots
-			r.kvContig = true
-			if L.kvShared {
-				// S1.4: no cache of its own. Its geometry must be its source's (same attention type, so the same
-				// head_dim and KV heads); the buffers are aliased below, once every source exists.
-				if sg := r.layers[L.kvSrc].geom; sg == nil || *sg != *L.geom {
-					return fmt.Errorf("metal: layer %d shares layer %d's KV but their attention geometries differ", l, L.kvSrc)
-				}
-				if r.kvI8 {
-					r.ks[l], r.vs[l] = r.ks[L.kvSrc], r.vs[L.kvSrc]
-				}
-				r.kc[l], r.vc[l] = r.kc[L.kvSrc], r.vc[L.kvSrc]
-				r.layers[l] = L
-				continue
-			}
-			r.kvSlotBytes[l] = kvBytes
-			r.kc[l] = byteBufOn(mem.LineKV, d, r.kvNullBytes[l]+kvBytes*allocSlots)
-			r.vc[l] = byteBufOn(mem.LineKV, d, r.kvNullBytes[l]+kvBytes*allocSlots)
-			if r.kvI8 {
-				scaleFloats := (1 + blocks*allocSlots) * decoder.KVBlockRows * L.geom.nKV
-				r.ks[l] = d.NewBufferLenOn(mem.LineKV, scaleFloats)
-				r.vs[l] = d.NewBufferLenOn(mem.LineKV, scaleFloats)
-			}
-		}
-		r.layers[l] = L
 	}
 	for l := range r.layers { // a layer with no pool of its own declares no row: the plan prices what the build holds
 		if r.kc[l] == (Buffer{}) && !r.layers[l].kvShared {
@@ -741,7 +423,792 @@ func (b *residentBuild) uploadLayers() error {
 			}
 		}
 	}
-	b.w, b.alias = w, alias
-	b.maxNHhd, b.maxKvDim, b.maxHd, b.maxAttnFAPartial = maxNHhd, maxKvDim, maxHd, maxAttnFAPartial
+	return nil
+}
+
+// buildLayer uploads layer l's weights and norms and allocates its KV pool, as the mixer and FFN kinds it carries ask. It grows the
+// widest-layer sizes on b that the shared scratch is cut to.
+func (b *residentBuild) buildLayer(l int) error {
+	m, d, r, bv := b.m, b.d, b.r, b.bv
+	H := r.H
+	kvSlots, win, kq := b.kvSlots, b.win, b.kq
+	w, mk, fuse, alias := b.w, b.mk, b.fuse, b.alias
+	geomCache, attnGate, dnetOK := b.geomCache, b.attnGate, b.dnetOK
+	lw := &w.Layers[l]
+	lv := bv.Layer(l)
+	var L residLayer
+	var kEqV bool // false for isDelta (no geometry) and qGate (this family never has K=V); set below otherwise
+	mixer, hasFFN := lv.Ops()
+	L.ffn = hasFFN
+	isDelta := dnetOK && mixer == decoder.MixerDeltaNet
+	isAttn := mixer == decoder.MixerAttention
+	if isDelta {
+		// Gated-DeltaNet mixer layer: no attention projections, no KV cache, no geometry at
+		// all — see metal/deltanet.go and residLayer.delta's doc. L.geom stays nil and
+		// r.kc[l]/r.vc[l] stay zero-value; encodeLayer never calls encodeAttention for this
+		// layer, so nothing downstream dereferences them.
+		DL, e := buildDeltaNetLayer(d, m, l, r.dnet, mk)
+		if e != nil {
+			return e
+		}
+		L.delta = DL
+	} else if mixer == decoder.MixerMamba {
+		// Mamba-2 mixer layer (mamba.go): no attention projections, no KV cache, no geometry, as for DeltaNet.
+		if r.mamba == nil {
+			return fmt.Errorf("metal: layer %d is a Mamba-2 layer but the model gives no Mamba geometry", l)
+		}
+		ML, e := buildMambaLayer(d, m, l, H, r.mamba)
+		if e != nil {
+			return e
+		}
+		L.mamba = ML
+	} else if mixer == decoder.MixerMLA {
+		// MLA (mla.go): the latent rows are this layer's KV cache, in kc with its slots as for attention (vc aliases kc).
+		if r.mla == nil {
+			return fmt.Errorf("metal: layer %d is an MLA layer but the model gives no MLA geometry", l)
+		}
+		ML, e := buildMLALayer(d, m, l, H, r.mla)
+		if e != nil {
+			return e
+		}
+		L.mla = ML
+		lat, e := kvCheckRows(l, m.LayerBuffers(l), kvLayerWant{latent: r.mla.latDim})
+		if e != nil {
+			return e
+		}
+		r.kvNullBytes[l] = decoder.KVBlockRows * lat * 4
+		kvBytes := kvBlocksFor(r.ctxCap) * r.kvNullBytes[l]
+		r.kvContig = true
+		r.kvSlotBytes[l] = kvBytes
+		r.kc[l] = byteBufOn(mem.LineKV, d, r.kvNullBytes[l]+kvBytes*kvSlots)
+		r.vc[l] = r.kc[l]
+	} else if mixer == decoder.MixerNone {
+		// A feed-forward-only block (Nemotron-H's MLP): no mixer to build.
+	} else if dnetOK && attnGate {
+		// The same family's gated softmax layer (qwen3_5, qwen3_5_moe, qwen3_next), not every dnetOK family: Olmo
+		// Hybrid's full-attention layer is olmo3's plain scheme (AttnGate=false) and takes the ordinary branch below.
+		// Its q/k/v/o live off qattn, not lw.QProj/KProj/VProj/OProj, and q_proj is double width: [query || gate] per
+		// head, interleaved, not two concatenated blocks; treated as an ordinary q_proj it yields plausible logits
+		// from the wrong tensor. So the fused QKV path does not apply: K||V still fuse into L.qkvW (2-way), and Q is a
+		// separate double-width projection (L.dnQw/dnQs), split on the activation at encode time (delta_qsplit),
+		// because slicing rows out of a quantized int4 bundle with per-group scales is real surgery.
+		qP, kP, vP, oP, qN, kN := lv.Qwen35AttnWeights()
+		if len(qN) == 0 || len(kN) == 0 {
+			return fmt.Errorf("metal: layer %d: qwen35 softmax layer has empty q_norm/k_norm "+
+				"(%d/%d) — the loader did not populate them for this container", l, len(qN), len(kN))
+		}
+		L.qGate = true
+		L.dnQw, L.dnQs = mk(qP)
+		L.qkvW, L.qkvS = int4ConcatAOn(mem.LineDense, d, alias, kP, vP) // K‖V fused (Q handled separately above)
+		L.oW, L.oS = mk(oP)
+		L.qNorm, L.kNorm = NewBufferFloatsOn(mem.LineDense, d, qN), NewBufferFloatsOn(mem.LineDense, d, kN)
+	} else {
+		// The ordinary plain-attention layer: every layer that is neither DeltaNet nor qGate, including a dnetOK
+		// family's full-attention layer when AttnGate is false (Olmo Hybrid). lw.QProj/KProj/VProj/OProj/QNorm/KNorm
+		// are read normally.
+		//
+		// K=V (attention_k_eq_v, Gemma 4 global layers): no v_proj; V = v_norm(the raw k_proj output). The V slot is
+		// fused with k_proj (the fused projection yields qkv=[Q|K_raw|K_raw]); at encode time (encodeTrunkInto) the V
+		// slot is scale-less-v_norm'd and left un-roped, while the K slot gets k_norm and RoPE. This is a build-time
+		// weight-layout difference, so the value-independent ForwardEmbPipe pre-encode stays correct (see geom.kEqV).
+		// False (and a no-op) for every family without K=V layers.
+		kEqV = lv.VFromK()
+		if src := lv.KVSrc(); src != l {
+			// Gemma 4 E-model KV-shared layer (S1.4): the checkpoint has no k_proj/v_proj/k_norm here; it attends
+			// over layer src's keys and values. Q-only projection; kEqV does not apply (no K of its own).
+			if src < 0 || src >= l {
+				return fmt.Errorf("metal: layer %d: KV source %d is not an earlier layer", l, src)
+			}
+			if g4KVSrcOffForTest { // G2 defect (3): the previous owning layer of the same attention type, if any
+				for j := src - 1; j >= 0; j-- {
+					if bv.Layer(j).KVSrc() == j && bv.Layer(j).IsLocal() == bv.Layer(src).IsLocal() {
+						src = j
+						break
+					}
+				}
+			}
+			L.kvShared, L.kvSrc, kEqV = true, src, false
+			L.qkvW, L.qkvS = fuse(&lw.QProj)
+		} else if kEqV {
+			L.qkvW, L.qkvS = int4ConcatOn(mem.LineDense, d, &lw.QProj, &lw.KProj, &lw.KProj) // V slot = raw k_proj
+		} else {
+			L.qkvW, L.qkvS = fuse(&lw.QProj, &lw.KProj, &lw.VProj) // fused QKV
+		}
+		L.oW, L.oS = mk(&lw.OProj)
+		if r.outBias {
+			L.oBias = NewBufferFloatsOn(mem.LineDense, d, lw.OBias)
+		}
+		if r.qkNorm { // Qwen3 per-head Q/K norm weights [hd] — qGate layers set these above instead
+			// QKNormWhole (Olmo 3/Olmo Hybrid, G5): the resident kernel launch that reproduces
+			// this collapses the grid to one Q block + one K block sized from a SINGLE hd
+			// argument (encodeAttention), which is only correct when nH==nKV (MHA). Decline
+			// rather than silently mis-normalize a hypothetical future GQA family.
+			if r.qkNormWhole {
+				if nKVL := lv.KVHeads(); r.nH != nKVL {
+					return fmt.Errorf("metal: layer %d: arch claims QKNormWhole but nH=%d != nKV=%d — the resident whole-vector kernel launch requires MHA", l, r.nH, nKVL)
+				}
+			}
+			L.qNorm = NewBufferFloatsOn(mem.LineDense, d, lw.QNorm)
+			if L.kvShared {
+				L.kNorm = L.qNorm // bound, never read: a shared layer's qk_norm grid covers the Q heads only
+			} else {
+				L.kNorm = NewBufferFloatsOn(mem.LineDense, d, lw.KNorm)
+			}
+		}
+	}
+	if isAttn {
+		// attention always dispatches L.attnSinks/L.uHasSink (unlike L.invf, which is only bound
+		// when the rope dispatch itself runs) — every family needs a VALID buffer bound, gated by
+		// the flag, so non-gpt-oss gets a real but unused 1-element dummy, not a zero Buffer.
+		if r.attnSink {
+			L.attnSinks = NewBufferFloatsOn(mem.LineDense, d, lw.AttnSinks)
+		} else {
+			L.attnSinks = NewBufferFloatsOn(mem.LineDense, d, []float32{0})
+		}
+	}
+	g4b, isG4MoE := decoder.Gemma4MoEResidentBundle{}, false
+	if r.g4moe != nil {
+		g4b, isG4MoE = lv.Gemma4MoEBundle()
+	}
+	switch {
+	case !hasFFN: // the layer is its mixer alone (Nemotron-H's Mamba and attention blocks)
+	case isG4MoE: // Gemma-4 enable_moe_block: parallel dense‖MoE FFN (its own norms/router/experts)
+		L.g4moe = buildGemma4MoELayer(d, m, &g4b, r.g4moe)
+	case r.moe != nil && len(lw.Experts) > 0: // generic MoE layer: stacked experts instead of a dense FFN
+		L.moe = buildMoELayer(d, m, l, lw, r.moe)
+	case r.nonGatedMLP: // GPT-2/Nemotron relu²: single up-proj (no gate) + biases (zero where the family has none)
+		L.upW, L.upS = mk(&lw.UpProj)
+		L.dW, L.dS = mk(&lw.DownProj)
+		L.upBias = NewBufferFloatsOn(mem.LineDense, d, orZeros(lw.UpBias, lw.UpProj.Rows()))
+		L.downBias = NewBufferFloatsOn(mem.LineDense, d, orZeros(lw.DownBias, lw.DownProj.Rows()))
+		L.downBiasSet = len(lw.DownBias) > 0
+	default: // dense FFN (also GLM/DeepSeek's FirstKDense prefix layers, and gemma4 dense layers)
+		L.guW, L.guS = fuse(&lw.GateProj, &lw.UpProj) // fused gate/up
+		L.dW, L.dS = mk(&lw.DownProj)
+		L.ffnI = lw.GateProj.Rows()
+	}
+	if r.q4kLane {
+		// The q4k lane covers the plain dense shape (Phi-3, Llama, Qwen2): pre-norm attention (q/k/v bias allowed), a
+		// SwiGLU FFN.
+		if !isAttn || !hasFFN || L.moe != nil || L.g4moe != nil || L.qGate || L.kvShared || kEqV || r.nonGatedMLP {
+			return fmt.Errorf("metal: --quant q4k runs on Metal for dense attention+SwiGLU layers only (layer %d is not)", l)
+		}
+		L.qkvSegs = q4kLaneProjOn(mem.LineDense, d, kq, &lw.QProj, &lw.KProj, &lw.VProj)
+		L.oSegs, L.dSegs = q4kLaneProjOn(mem.LineDense, d, kq, &lw.OProj), q4kLaneProjOn(mem.LineDense, d, kq, &lw.DownProj)
+		L.guSegs = q4kLaneProjOn(mem.LineDense, d, kq, &lw.GateProj, &lw.UpProj)
+	}
+	// postOnly (Olmo 3, Olmo Hybrid) is a model-level flag, but Olmo Hybrid's DeltaNet layers reach NormPre2
+	// through NormPlacementLinear and carry real pre-norm weights regardless; isDelta is already resolved above,
+	// so gate on the per-layer truth, not the model-level flag.
+	postOnlyHere := r.postOnly && isAttn
+	if !postOnlyHere {
+		// A postOnly (non-delta) layer has NO pre-norm weight at all (lw.PreAttnNorm/
+		// PreMLPNorm are 0-length — NewBufferFloats on an empty slice is a build-time error,
+		// not a no-op), so this is skipped entirely; segA/encodeLayer quantize the raw
+		// residual instead (see encodeAttention/encodeLayer's own postOnly branch).
+		L.preNorm = NewBufferFloatsOn(mem.LineDense, d, lw.PreAttnNorm)
+		// parallelBlock (Cohere/Command-R) has no pre-MLP norm tensor at all: the MLP reuses the shared input norm the
+		// attention branch computed (encodeLayer's r.aq/r.aSc reuse), so lw.PreMLPNorm is empty (see
+		// Model.ParallelBlockResident), with the same NewBufferFloats hazard postOnly's comment above names.
+		switch {
+		case !hasFFN: // no FFN, no pre-MLP norm
+		case mixer == decoder.MixerNone: // a feed-forward-only block's one norm is its input norm (Nemotron-H)
+			L.postNorm = L.preNorm
+		case L.g4moe == nil && !r.parallelBlock: // dense/generic FFN entry norm (PreMLPNorm); g4moe carries its five norms in the bundle
+			L.postNorm = NewBufferFloatsOn(mem.LineDense, d, lw.PreMLPNorm)
+		}
+		if r.layerNorm && r.layerNormBias {
+			L.preNormBias = NewBufferFloatsOn(mem.LineDense, d, lw.PreAttnNormBias)
+			if hasFFN && mixer != decoder.MixerNone && L.g4moe == nil && !r.parallelBlock {
+				L.postNormBias = NewBufferFloatsOn(mem.LineDense, d, lw.PreMLPNormBias)
+			}
+		}
+	}
+	// qk-norm weights are set above, in whichever of the isDelta/qGate/default branches applies: a qGate layer's
+	// qattn-sourced qNorm/kNorm must not be overwritten by the generic lw.QNorm/lw.KNorm, which this family does
+	// not populate.
+	// Gemma sandwich / Olmo 3 postOnly norms on each sublayer OUTPUT — postOnly is the
+	// post-norm half of sandwich, minus the pre half (see PostOnlyNormResident's own
+	// comment). Required to be present when the arch declares either — a silently-missing
+	// one would DROP the norm rather than error. A g4moe layer still runs the ATTENTION
+	// sandwich (postAttnNorm) but its FFN block is the parallel dense‖MoE, which carries its
+	// own post-norms (postFFN1/postFFN2/postFFN) in the bundle and never touches
+	// postMLPNorm — exactly as decoder/forward_gemma4.go skips PostMLPNorm for
+	// enable_moe_block layers. So require/build postMLPNorm only for the non-g4moe FFN path.
+	if r.sandwich || postOnlyHere {
+		if len(lw.PostAttnNorm) != H {
+			return fmt.Errorf("metal: layer %d declares sandwich/postOnly norms but PostAttnNorm is not len==hidden(%d) (got %d)",
+				l, H, len(lw.PostAttnNorm))
+		}
+		L.postAttnNorm = NewBufferFloatsOn(mem.LineDense, d, lw.PostAttnNorm)
+		if L.g4moe == nil {
+			if len(lw.PostMLPNorm) != H {
+				return fmt.Errorf("metal: layer %d declares sandwich/postOnly norms but PostMLPNorm is not len==hidden(%d) (got %d)",
+					l, H, len(lw.PostMLPNorm))
+			}
+			L.postMLPNorm = NewBufferFloatsOn(mem.LineDense, d, lw.PostMLPNorm)
+		}
+	}
+	// Gemma 4's per-layer output scalar on a dense layer (h *= layer_scalar after the FFN residual;
+	// decoder/forward_gemma4.go, HF Gemma4DecoderLayer). The g4moe join applies its own. 1 and absent (0) are
+	// no-ops, as on the CPU, so no dispatch is encoded for them.
+	if L.g4moe == nil && bv.IsGemma4() {
+		L.layerScaleRead = true
+		if s := lv.Gemma4DenseScalar(); s != 0 && s != 1 {
+			L.uLayerScalar = NewBufferFloatsOn(mem.LineDense, d, []float32{s})
+		}
+	}
+	if r.pleP > 0 { // Gemma 4 E-model PLE branch weights (S1.5)
+		if lw.PLEGate.Rows() != r.pleP || lw.PLEProj.Rows() != H || len(lw.PostPLENorm) != H {
+			return fmt.Errorf("metal: layer %d: PLE weights %dx? / %dx? / %d, want P=%d and H=%d", l, lw.PLEGate.Rows(), lw.PLEProj.Rows(), len(lw.PostPLENorm), r.pleP, H)
+		}
+		L.pleGW, L.pleGS = mk(&lw.PLEGate)
+		L.plePW, L.plePS = mk(&lw.PLEProj)
+		L.postPLENorm = NewBufferFloatsOn(mem.LineDense, d, lw.PostPLENorm)
+	}
+	if isAttn {
+		// Per-layer RoPE table (Gemma local 10k vs global 1M base) and per-layer window. The rope
+		// KERNEL is unchanged — all per-layer variation rides in the table contents AND the width
+		// (geom.half). lv.RopeInvFreq() is the resident per-layer table (== the generic
+		// RopeInvFreqLayer for every uniform family; Gemma 4's global proportional-rotary tail is
+		// what makes it differ). Its length is this layer's rhalf (rotated pairs/head). A DeltaNet
+		// layer has no attention geometry at all (see residLayer.delta's doc) — skip this whole
+		// block for it: no RoPE table, no geom (L.geom stays nil), no KV cache allocated.
+		invf := lv.RopeInvFreq()
+		if len(invf) > 0 { // GPT-2 (FeatLearnedPos): no RoPE at all, invf is empty — NewBufferFloats panics on empty; L.invf stays unused (rope dispatch is skipped)
+			L.invf = NewBufferFloatsOn(mem.LineDense, d, invf)
+			L.mscale = NewBufferFloatsOn(mem.LineDense, d, []float32{float32(lv.RopeMscale())}) // 1.0 for every family without YaRN
+		}
+		// Per-layer attention geometry — the whole point of the 9c seam. Uniform families resolve
+		// every layer to the same {hd, nKV, half, kEqV}; Gemma 4 varies hd/nKV/kEqV between its
+		// local and global layers. geomFor dedups by value so a uniform model shares one geom.
+		L.geom = r.geomFor(geomCache, lv.HeadDim(), lv.KVHeads(), len(invf), kEqV)
+		if L.geom.hd > b.maxHd {
+			b.maxHd = L.geom.hd
+		}
+		if L.geom.kvDim > b.maxKvDim {
+			b.maxKvDim = L.geom.kvDim
+		}
+		if r.nH*L.geom.hd > b.maxNHhd {
+			b.maxNHhd = r.nH * L.geom.hd
+		}
+		if e := attnFAPartialFloats(L.geom.hd, r.nH, L.geom.nKV); e > 0 {
+			b.maxAttnFAPartial = max(b.maxAttnFAPartial, e)
+			// Cache nKV here: attention_fa is dense-GQA-only, so every eligible layer shares one nKV (canUseAttnFA's own
+			// gate is this same condition), and setPos can compute G and nSplit once per decode step instead of the
+			// per-layer dispatch site doing it during encode-ahead (see uAttnFAG/uAttnFANSplit's field comment for the
+			// race that would be).
+			if r.attnFANKV == 0 {
+				r.attnFANKV, r.attnFALayer = L.geom.nKV, l
+			}
+		}
+		lw2 := uint32(0) // 0 = full causal; only local layers carry the window
+		if lv.IsLocal() {
+			lw2 = uint32(win)
+		}
+		L.window = lw2
+		if !L.qGate {
+			// combined qkv bias (zeros where absent) so the fused pSABias GEMV epilogue is
+			// uniform, sized for the full [Q|K|V] concat pSABias expects. qGate's K‖V is only
+			// a 2-way concat (Q is separate — see above), so it dispatches via the no-bias pSA
+			// kernel instead (this family is bias-free everywhere anyway: lw.QBias is nil for
+			// it same as for a qGate layer, and Qwen35AttnWeights returns no bias either) —
+			// L.qkvBias would be the wrong width for it and is simply unused.
+			qb, kb, vb := lw.QBias, lw.KBias, lw.VBias
+			if qb == nil {
+				qb, kb, vb = make([]float32, r.nH*L.geom.hd), make([]float32, L.geom.kvDim), make([]float32, L.geom.kvDim)
+			}
+			L.qkvBias = NewBufferFloatsOn(mem.LineDense, d, append(append(append([]float32{}, qb...), kb...), vb...))
+		}
+		// A layer's slots are one pool of 64-row blocks, reached through a table (r.kvTab), so a batched step's one dispatch
+		// reaches every row's blocks. attention_prefill_fused reads whole 8-row tiles and masks the ragged remainder after the
+		// load; a tile lies inside a block, so that read stays in the block. An int8 cache keeps one f32 scale per position and
+		// head beside its one-byte codes, block for block.
+		blocks := kvBlocksFor(r.ctxCap)
+		want := kvLayerWant{kvDim: L.geom.kvDim, nKV: L.geom.nKV, shared: L.kvShared}
+		kw, e := kvCheckRows(l, m.LayerBuffers(l), want)
+		if e != nil {
+			return e
+		}
+		r.kvNullBytes[l] = decoder.KVBlockRows * kw * r.kvElemBytes()
+		if L.kvShared {
+			r.kvNullBytes[l] = r.kvNullBytes[L.kvSrc]
+		}
+		kvBytes := blocks * r.kvNullBytes[l]
+		allocSlots := kvSlots
+		r.kvContig = true
+		if L.kvShared {
+			// S1.4: no cache of its own. Its geometry must be its source's (same attention type, so the same
+			// head_dim and KV heads); the buffers are aliased below, once every source exists.
+			if sg := r.layers[L.kvSrc].geom; sg == nil || *sg != *L.geom {
+				return fmt.Errorf("metal: layer %d shares layer %d's KV but their attention geometries differ", l, L.kvSrc)
+			}
+			if r.kvI8 {
+				r.ks[l], r.vs[l] = r.ks[L.kvSrc], r.vs[L.kvSrc]
+			}
+			r.kc[l], r.vc[l] = r.kc[L.kvSrc], r.vc[L.kvSrc]
+			r.layers[l] = L
+			return nil
+		}
+		r.kvSlotBytes[l] = kvBytes
+		r.kc[l] = byteBufOn(mem.LineKV, d, r.kvNullBytes[l]+kvBytes*allocSlots)
+		r.vc[l] = byteBufOn(mem.LineKV, d, r.kvNullBytes[l]+kvBytes*allocSlots)
+		if r.kvI8 {
+			scaleFloats := (1 + blocks*allocSlots) * decoder.KVBlockRows * L.geom.nKV
+			r.ks[l] = d.NewBufferLenOn(mem.LineKV, scaleFloats)
+			r.vs[l] = d.NewBufferLenOn(mem.LineKV, scaleFloats)
+		}
+	}
+	r.layers[l] = L
+	return nil
+}
+
+// allocKVTables sets up the KV slots' block tables over the layers' shared pools (the context the plan priced, which one conversation may
+// raise past) and the recurrent-state slots.
+func (b *residentBuild) allocKVTables() error {
+	m, d, r := b.m, b.d, b.r
+	kvSlots := b.kvSlots
+	// MC1: the resident KV slots (kvSlots: the model's request, clamped to what the memory guard allows, priced at the top of this
+	// build; 1 for a family with recurrent state). A slot is its block table over the layers' shared pools, set below.
+	switch {
+	case kvSlots > 1:
+		r.kvSlotBufs = make([]kvSlotBuf, kvSlots)
+	case r.kvContig:
+		r.kvSlotBufs = make([]kvSlotBuf, 1)
+	}
+	if slices.ContainsFunc(r.kvNullBytes, func(n int) bool { return n > 0 }) {
+		// The pools above hold every slot's share, the context the plan priced; one conversation's cap may then rise past it (kvRaise).
+		// The tables start unmapped and take blocks as the slots write (kvWrite).
+		slots := max(kvSlots, 1)
+		r.kvShareCtx, r.kvShareBlocks = r.ctxCap, kvBlocksFor(r.ctxCap)
+		r.ctxCap = kvRaise(m, slots, r.kvShareCtx)
+		r.kvTabBlocks = kvBlocksFor(r.ctxCap)
+		r.kvTab = NewBufferUint32sOn(mem.LineKV, d, make([]uint32, slots*r.kvTabBlocks))
+		r.kvTabU32 = r.kvTab.U32s()
+		r.kvRefs = make([]int32, 1+slots*r.kvShareBlocks)
+		r.kvOrder = kvBlockOrder(slots * r.kvShareBlocks)
+		r.kvSlotSt = make([]kvSlotState, slots)
+		r.kt = r.kvTab
+		for s := range r.kvSlotBufs {
+			r.kvSlotBufs[s].kt = r.kvTab.At(4 * s * r.kvTabBlocks)
+		}
+	}
+	if err := r.allocRecurrentSlots(m, kvSlots); err != nil {
+		return err
+	}
+	return nil
+}
+
+// uploadHead uploads the final norm and the LM head, which stays int8 whatever the body's lane.
+func (b *residentBuild) uploadHead() error {
+	d, r, w, alias := b.d, b.r, b.w, b.alias
+	var err error
+	r.finalNorm = NewBufferFloatsOn(mem.LineDense, d, w.FinalNorm)
+	if r.layerNorm && r.layerNormBias {
+		r.finalNormBias = NewBufferFloatsOn(mem.LineDense, d, w.FinalNormBias)
+	}
+	lm := &w.LMHead
+	if lm.Rows() == 0 {
+		lm = &w.Embed // tied
+		r.lmTied = true
+	}
+	// The LM head is logit-critical and must stay int8: at int4 it flips the argmax and tanks the cosine (a tied
+	// head dots every logit against it), which is why the decoder pins the embedding and LM head at int8 even in
+	// int4 mode (decoder/weightmat.go). Worst for a tied head such as Gemma's, 262k x 2560.
+	if r.lmW, r.lmS, err = int8BufAOn(mem.LineDense, d, alias, lm); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// checkWidths sizes the gate|up and down scratch to the widest FFN and declines a model whose projection widths or threadgroup staging the
+// SA-GEMV kernels cannot take. It sets b.guDim and b.maxFFNI.
+func (b *residentBuild) checkWidths() error {
+	d, r := b.d, b.r
+	H, I := r.H, r.I
+	maxNHhd := b.maxNHhd
+	// The gate|up and down scratch must fit the widest FFN width: the dense I, or (for MoE) the
+	// larger of the expert and shared-expert intermediate dims.
+	guDim, maxFFNI := I, I // maxFFNI: the widest dense FFN (a Gemma 4 E-model's double-wide shared layers, S1.3)
+	for l := range r.layers {
+		maxFFNI = max(maxFFNI, r.layers[l].ffnI)
+	}
+	guDim = maxFFNI
+	if r.moe != nil {
+		guDim = max(guDim, max(r.moe.inter, r.moe.sharedInter))
+	}
+	if r.g4moe != nil { // Gemma-4 dense‖MoE: the gate|up/down scratch must fit BOTH the dense branch and the experts
+		guDim = max(guDim, max(r.g4moe.denseInter, r.g4moe.moeInter))
+	}
+	// The SA-GEMV decode kernels (gemv_w4a8_sa, _sa_bias, _sa_resid and the MoE variants) derive the output row
+	// from the runtime threadgroup size and, unlike gemv_w4a8_sa_bk, carry no `row >= N` guard. An output width
+	// N%8 != 0 therefore makes the tail threadgroup rewrite an already-written row while the true tail rows stay
+	// uninitialised scratch: plausible-looking wrong logits, no error. The attention widths (qDim = nH*hd, kvDim =
+	// nKV*hd) are structurally %8 (hd is 64 or 128), so the risk is the model-level FFN widths below: decline any
+	// that is not a multiple of 8, and the CPU path serves it. The deeper fix (an N parameter and a `row >= N`
+	// guard in the SA-family and MoE kernels) would touch every dispatch binding and is not done.
+	//
+	// Vocab is not checked: it never routes through an SA-family kernel. The LM head is pinned int8 and dispatches
+	// only gemv_w8a8_coal (forwardLogits) or gemv_w8a8_amax (ForwardArgmax). gemv_w8a8_coal addresses its row
+	// directly via threadgroup_position_in_grid, correct whatever a threadgroup's uniformity. gemv_w8a8_amax uses
+	// the same hazardous tgs-derived formula as the SA family, so ForwardArgmax routes a non-%8 vocab around it
+	// (full logits plus host argmax) instead of declining the family; GPT-2 (50257) is the first family this
+	// reaches.
+	bad8 := func(name string, n int) error {
+		if n%8 != 0 {
+			return fmt.Errorf("metal: %s width %d is not a multiple of 8 — SA-GEMV tail-write hazard (audit C-10); use the CPU path", name, n)
+		}
+		return nil
+	}
+	// Include the attention widths too: the fused-QKV projection dispatches (nH*hd + 2*nKV*hd) rows through
+	// pSABias, so both the q-width (nH*hd) and the kv-width (nKV*hd), and hence their sum, must be %8. "hd is 64
+	// or 128" is not guaranteed for every admitted arch; one with hd%8 != 0 declines instead of corrupting.
+	widthChecks := []error{bad8("hidden", H), bad8("intermediate", I)}
+	// Check each layer's geom, not the maxima: a two-geom arch (Gemma 4 local/global) whose smaller q or kv width
+	// is non-%8 while the larger is %8 would pass a max-only check yet corrupt that layer's SA-GEMV. Duplicate
+	// widths across uniform layers are harmless.
+	for l := range r.layers {
+		if r.layers[l].geom == nil {
+			continue // a recurrent or mixer-less layer: no attention geometry at all, L.geom is nil by design
+		}
+		g := r.layers[l].geom
+		widthChecks = append(widthChecks,
+			bad8(fmt.Sprintf("layer %d attn q-width (nH·hd)", l), r.nH*g.hd),
+			bad8(fmt.Sprintf("layer %d attn kv-width (nKV·hd)", l), g.kvDim))
+		if fi := r.layers[l].ffnI; fi != 0 && fi != I {
+			widthChecks = append(widthChecks, bad8(fmt.Sprintf("layer %d intermediate", l), fi))
+		}
+	}
+	if r.moe != nil {
+		widthChecks = append(widthChecks, bad8("MoE expert intermediate", r.moe.inter), bad8("MoE shared-expert intermediate", r.moe.sharedInter))
+	}
+	if r.g4moe != nil {
+		widthChecks = append(widthChecks, bad8("gemma-4 dense intermediate", r.g4moe.denseInter), bad8("gemma-4 MoE intermediate", r.g4moe.moeInter))
+	}
+	for _, e := range widthChecks {
+		if e != nil {
+			return e
+		}
+	}
+	// The SA-GEMV and MoE kernels stage the contraction row into threadgroup memory (see
+	// maxThreadgroupStageBytes). A dispatch whose threadgroup memory exceeds the device tile limit aborts the
+	// command buffer, and the host would then read stale logits. Decline here so the caller falls back to CPU.
+	// (Mixtral's inter=14336 is 28672 B, already 87% of a 32 KiB budget; inter >= 16384 exceeds it. The dense
+	// down-proj is not counted: R18's staged kernel checks its own I-byte fit below, else coal.)
+	moeInter, g4Inter := 0, 0
+	if r.moe != nil {
+		moeInter = r.moe.inter
+	}
+	if r.g4moe != nil {
+		g4Inter = r.g4moe.moeInter
+	}
+	dnValueDim := 0
+	if r.dnet != nil {
+		dnValueDim = r.dnet.valueDim
+	}
+	if tg, lim := maxThreadgroupStageBytes(H, maxNHhd, moeInter, g4Inter, dnValueDim), d.MaxThreadgroupMemoryLength(); tg > lim {
+		return fmt.Errorf("metal: threadgroup staging needs %d B (2×K) > device tile-memory max %d B — declining to CPU (audit M-11)", tg, lim)
+	}
+	b.guDim, b.maxFFNI = guDim, maxFFNI
+	return nil
+}
+
+// selectGemvRows picks the decode GEMVs' rows-per-simdgroup widths where every layer's row count tiles, creates their pipelines, and swaps
+// in the int8 twins for the int8 attention and the native int8 lane.
+func (b *residentBuild) selectGemvRows() {
+	d, r, pipe := b.d, b.r, b.pipe
+	H, nH, I := r.H, r.nH, r.I
+	maxFFNI := b.maxFFNI
+	// R18: the dense decode GEMVs at R rows per simdgroup — 4 for qkv, gate/up and down, 2 for o: R18's confirmed
+	// configuration (docs/measurements/metal-decode-gemv-r18-2026-09-26.md) with qkv moved to 4 by R18b's
+	// (metal-decode-gemv-r18b-2026-09-26.md), whose kernel form changed what the best qkv width is. Each is taken only where every layer's row
+	// count fills whole threadgroups (gemvRowsFor), and down only where its K = I bytes of staged activations fit the
+	// threadgroup memory; anything else keeps the shipped kernel.
+	{
+		qkvR := 4
+		for _, L := range r.layers {
+			if L.geom != nil { // a DeltaNet layer has no attention geometry (and no qkv GEMV)
+				rows := nH*L.geom.hd + 2*L.geom.kvDim
+				if L.kvShared {
+					rows = nH * L.geom.hd // Q only (S1.4)
+				}
+				qkvR = min(qkvR, gemvRowsFor(rows, 4))
+			}
+		}
+		guR := gemvRowsFor(2*I, 4)
+		for _, L := range r.layers { // every dense width must tile at R (halving R keeps the widths already tiled)
+			if L.ffnI != 0 {
+				guR = gemvRowsFor(2*L.ffnI, guR)
+			}
+		}
+		r.gemvRows.qkv, r.gemvRows.o, r.gemvRows.gu = qkvR, gemvRowsFor(H, 2), guR
+		// down stages K = the layer's FFN width of int8 activations: the widest must fit, and every width be %4.
+		downOK := maxFFNI <= d.MaxThreadgroupMemoryLength()
+		for _, L := range r.layers {
+			if fi := max(L.ffnI, I); fi%4 != 0 {
+				downOK = false
+			}
+		}
+		if downOK {
+			r.gemvRows.down = gemvRowsFor(H, 4)
+		}
+		rowsPipe := func(base string, R int) Pipeline {
+			if R == 0 {
+				return Pipeline{}
+			}
+			return pipe(fmt.Sprintf("%s%d", base, R))
+		}
+		r.pSABiasRows = rowsPipe("gemv_w4a8_sa_bias_rows", r.gemvRows.qkv)
+		r.pSAResidRows = rowsPipe("gemv_w4a8_sa_resid_rows", r.gemvRows.o)
+		r.pSARows = rowsPipe("gemv_w4a8_sa_rows", r.gemvRows.gu)
+		r.pSABiasRowsAdj = rowsPipe("mc3_gemv_w4a8_sa_bias_rows_adj", r.gemvRows.qkv)
+		r.pSARowsAdj = rowsPipe("mc3_gemv_w4a8_sa_rows_adj", r.gemvRows.gu)
+		r.pGemvResidStaged = rowsPipe("gemv_w4a8_resid_staged", r.gemvRows.down)
+		for _, R := range []int{2, 4} {
+			r.gemvExtCoal[R] = pipe(fmt.Sprintf("gemv_w4a8_coal_staged%d", R))
+			r.gemvExtSA[R] = pipe(fmt.Sprintf("gemv_w4a8_sa_rows%d", R))
+			r.gemvExtResid[R] = pipe(fmt.Sprintf("gemv_w4a8_resid_staged%d", R))
+		}
+		r.gemvExtTGMax = d.MaxThreadgroupMemoryLength()
+	}
+	if r.w8Attn {
+		// int4mix (slice 4): the attention projections' handles swap to their int8 twins (same arguments, same launch
+		// shape); the FFN keeps its int4 kernels and R18 rows forms. w8AttnEligible admits only the families whose
+		// qkv and o-proj run exactly these two handles.
+		r.gemvRows.qkv, r.gemvRows.o = 0, 0
+		r.pSABias, r.pSAResid = pipe("gemv_w8a8_sa_bias"), pipe("gemv_w8a8_sa_resid")
+		for B := 2; B <= batchMaxSeqs; B++ {
+			r.pW8Rows[B] = pipe(fmt.Sprintf("mc3_gemv_w8a8_rows%d", B))
+		}
+	}
+	if r.w8 {
+		// Each int8 twin takes its int4 kernel's arguments in the same order at the same launch shape, so swapping
+		// the handles is the whole dispatch change. The R18 rows kernels keep their widths through their int8 twins
+		// (KS-C3) where every K is a multiple of 16 (w8RowsOK); the batched step's int4 adjacency kernels never run here.
+		rows := r.gemvRows
+		r.gemvRows = struct{ qkv, o, gu, down int }{}
+		r.pSABiasRowsAdj, r.pSARowsAdj = Pipeline{}, Pipeline{}
+		if !w8RowsOffForTest && r.w8RowsOK() {
+			r.gemvRows = rows
+			rowsPipe := func(base string, R int) Pipeline {
+				if R == 0 {
+					return Pipeline{}
+				}
+				return pipe(fmt.Sprintf("%s%d", base, R))
+			}
+			r.pSABiasRows = rowsPipe("gemv_w8a8_sa_bias_rows", rows.qkv)
+			r.pSAResidRows = rowsPipe("gemv_w8a8_sa_resid_rows", rows.o)
+			r.pSARows = rowsPipe("gemv_w8a8_sa_rows", rows.gu)
+			r.pGemvResidStaged = rowsPipe("gemv_w8a8_body_resid_staged", rows.down)
+		}
+		r.pGemv, r.pGemvResid, r.pCoalBiasResid = pipe("gemv_w8a8_body"), pipe("gemv_w8a8_body_resid"), pipe("gemv_w8a8_body_resid_bias")
+		r.pSA, r.pSABias, r.pSAResid = pipe("gemv_w8a8_sa"), pipe("gemv_w8a8_sa_bias"), pipe("gemv_w8a8_sa_resid")
+		r.pSABiasResid = pipe("gemv_w8a8_sa_bias_resid")
+		for B := 2; B <= batchMaxSeqs; B++ { // the batched step's projections, B rows per weight read (batch_rows.go)
+			r.pW8Rows[B] = pipe(fmt.Sprintf("mc3_gemv_w8a8_rows%d", B))
+		}
+	}
+}
+
+// sizeDecodeScratch sizes the decode shape from the widest layer, allocates its per-token scratch, checks the decode rows against what the
+// kernels address, and uploads the model-level rope table and the per-model scalars the encoder reads.
+func (b *residentBuild) sizeDecodeScratch() error {
+	m, d, r, pipe := b.m, b.d, b.r, b.pipe
+	H, nL, nH, I, V := r.H, r.nL, r.nH, r.I, r.V
+	addOne, win, guDim := b.addOne, b.win, b.guDim
+	maxNHhd, maxKvDim, maxHd, maxAttnFAPartial := b.maxNHhd, b.maxKvDim, b.maxHd, b.maxAttnFAPartial
+	if maxNHhd == 0 { // no attention layer (an all-MLA model): the attention scratch below is never dispatched, but sized
+		maxNHhd, maxKvDim, maxHd = 4, 4, 4
+	}
+	// attnFAPartial is independent of context depth (nSplit is capped, not depth-proportional; see
+	// canUseAttnFA/attnFASplitFor), so it is sized once here, not per token. It is zero-size on a model this
+	// kernel can never engage for (no layer attnFAHeadDimOK admits): canUseAttnFA's hd guard then always declines,
+	// so the zero buffer is never dispatched into.
+	r.attnFAMaxSplit = attnFAPartialSplits
+	// For the group sizes it was graded at (G = 6 and 7), attention_fa's first pass is the block-of-32 kernel
+	// attention_fa_blk at the fixed split count attnFABlkSplit (same grid shape, partial layout and combine). G =
+	// 2 to 8 take it too while attnFABlkAnyG; every other group size keeps attention_fa and its core-count rule.
+	if r.attnFANKV > 0 {
+		switch g := r.nH / r.attnFANKV; {
+		case r.layers[r.attnFALayer].geom.hd == 64: // B-P01: attnFAHeadDimOK admitted hd = 64 only where blk64 exists
+			r.pAttnFA = pipe(fmt.Sprintf("attention_fa_blk64_g%d", g))
+			r.pAttnFARows = pipe(fmt.Sprintf("mc3_attention_fa_blk64_rows_g%d", g))
+			r.attnFABlkSplit = attnFABlkSplit
+		case g == 6 || g == 7, attnFABlkAnyG && g >= 2 && g <= 8:
+			r.pAttnFA = pipe(fmt.Sprintf("attention_fa_blk_g%d", g))
+			r.pAttnFARows = pipe(fmt.Sprintf("mc3_attention_fa_blk_rows_g%d", g))
+			r.attnFABlkSplit = attnFABlkSplit
+		}
+	}
+	r.attnFAPartialLen = maxAttnFAPartial
+	r.decode = decodeShape{H: H, V: V, I: I, nH: nH, nHhd: maxNHhd, kvDim: maxKvDim, guDim: guDim, faPartial: maxAttnFAPartial,
+		q4k: r.q4kLane, attnScale: m.AttnScale(), normEps: m.NormEps(), act: uint32(m.GatedActResident()), addOne: addOne, window: uint32(win),
+		gumbelNB: r.gumbelNB, nL: nL, pleP: r.pleP, dnet: r.dnet, mamba: r.mamba, mla: r.mla}
+	if r.layerNormBias {
+		r.decode.lnHasBias = 1
+	}
+	if r.qkNormWhole {
+		r.decode.qkWholeHD = nH * m.HeadDimAtResident(0) // one model-level width: the build declines a non-uniform geometry for it
+	}
+	if r.attnSink {
+		r.decode.attnSink = 1
+	}
+	r.decode.layers = make([]decodeLayer, len(r.layers))
+	seen := map[*attnGeom]bool{}
+	for l := range r.layers {
+		L := &r.layers[l]
+		if L.ffnI == 0 || L.ffnI == I || g4OneFFNWidthForTest { // the seam: G2 defect (4)
+			L.ffnI = I
+		} else {
+			r.decode.layers[l].ffnI = L.ffnI
+		}
+		if g := L.geom; g != nil {
+			r.decode.layers[l].attn, r.decode.layers[l].window = true, L.window
+			r.decode.qGate = r.decode.qGate || L.qGate
+			if !seen[g] {
+				seen[g] = true
+				r.decode.geoms = append(r.decode.geoms, g)
+			}
+		}
+	}
+	if r.moe != nil {
+		r.decode.families = append(r.decode.families, r.moe.scratch...)
+	}
+	if r.g4moe != nil {
+		r.decode.families = append(r.decode.families, r.g4moe.scratch...)
+	}
+	rows := m.MetalDecodeRowWidths()
+	if decodeRowsPlantForTest != nil {
+		decodeRowsPlantForTest(rows)
+	}
+	if err := r.decodeRowsCheck(rows); err != nil {
+		return err
+	}
+	for _, sb := range r.decode.buffers(r) {
+		sb.set(sb.alloc(d))
+	}
+	for l := range r.layers {
+		if r.decode.layers[l].ffnI == 0 {
+			r.layers[l].uFFNI = r.uI
+		}
+	}
+	// Model-level rope table for the (uniform-only) prefill path; decode uses each layer's L.invf.
+	// GPT-2 (FeatLearnedPos): no RoPE at all, so this is empty — NewBufferFloats panics on empty;
+	// r.invf stays unused (prefillOK is false for a learned-pos family — see prefillFeatures).
+	if invf0 := m.RopeInvFreq(); len(invf0) > 0 {
+		r.invf = NewBufferFloatsOn(mem.LineDense, d, invf0)
+	}
+	if r.dnet != nil && r.uDnONormEps == (Buffer{}) {
+		r.uDnONormEps = r.uEps
+	}
+	r.attnTempBeta, r.attnTempOrigMaxPos = m.AttnTempParams()
+	// Scale-less v_norm plumbing for K=V layers (Gemma 4 globals): a unit-1.0 weight and the shared zero uniform (uZero, in the
+	// decode list) so qk_norm reduces to x·rms·1 on the V slot. Sized to the widest head.
+	ones := make([]float32, maxHd)
+	for i := range ones {
+		ones[i] = 1
+	}
+	r.vNormUnit = NewBufferFloatsOn(mem.LineDense, d, ones)
+	// HF and the CPU apply Gemma 4's scale-less v_norm on EVERY layer that owns its K/V, not only on K=V layers
+	// (S1.0); a K=V layer's V slot holds the raw k_proj output, any other's the v_proj output, and both take it.
+	r.g4VNorm = m.IsGemma4Resident()
+	r.finalSoftcap = m.FinalLogitSoftcapResident() // Gemma 4: 30 (host-side softcap); 0 for every other family
+	r.embedScale = float32(m.EmbedScaleResident()) // Gemma: √hidden; 0 for every non-scaled family (G-02)
+	r.logitsHost = make([]float32, V)
+	r.ensureBatchCap(16)
+
+	return nil
+}
+
+// pinResidencySet pins a paged MoE's slot pool resident when the OS supports residency sets, and records what it pinned.
+func (b *residentBuild) pinResidencySet() {
+	m, d, r := b.m, b.d, b.r
+	// Residency set (on by default when supported and paged; GOINFER_MOE_RESIDENCY=0 opts out). The paged path
+	// submits per layer, and the pread stage CPU-writes the slot buffers each token, dirtying their residency so
+	// the driver re-validates them on every phase-2 commit. Pinning the slot pool resident holds it across those
+	// writes. Slots only: pinning anything more (weights, KV, scratch) regresses phase 1 in proportion to the
+	// pin-set size, read/write-agnostic; pinning helps only the pread-invalidated buffers. Footprint: the slot
+	// pool is N x MoE-layers x per-expert-bytes, permanently requested resident, so re-measure the win if N grows
+	// or the box is under other load. Capability-gated (macOS 15+); older OSes keep the correct, slower per-submit
+	// path. It gates on any paged MoE, generic (moe.go) or Gemma 4 (g4moe): both have pread-invalidated slot
+	// buffers.
+	paged := (r.g4moe != nil && r.g4moe.paged) || (r.moe != nil && r.moe.paged)
+	if paged && modelKnob(m, "GOINFER_MOE_RESIDENCY") != "0" && ResidencySetsSupported() {
+		rs, rerr := d.NewResidencySet()
+		if rerr != nil {
+			logs.Warnf("metal: residency set unavailable (%v) — per-submit validation stands", rerr)
+		} else {
+			slots := r.slotBuffers()      // GPU-read-only (CPU-written by pread)
+			written := r.writtenBuffers() // GPU-WRITTEN per token: KV cache + intermediates/scratch
+			kv := r.kvBuffers()
+			scratch := r.scratchBuffers()
+			// pinned accumulates exactly what addAll() adds, so r.residencyBufs is the true pinned list in every
+			// slot-scoped arm, not just the default (the teardown-consistency gate reads it).
+			var pinned []Buffer
+			addAll := func(bs []Buffer) {
+				for _, b := range bs {
+					rs.Add(b)
+					pinned = append(pinned, b)
+				}
+			}
+			switch modelKnob(m, "GOINFER_MOE_RESIDENCY_SCOPE") {
+			case "slots":
+				addAll(slots)
+			case "slots+kv": // bisect: does the KV cache cause the phase-1 regression?
+				addAll(slots)
+				addAll(kv)
+			case "slots+scratch": // bisect: do the intermediates cause it?
+				addAll(slots)
+				addAll(scratch)
+			case "readonly", "slots+weights": // diagnostic: pin all buffers EXCEPT the written set
+				rs.AddAllDeviceBuffersExcept(d, written) // whole-device: not slot-scoped, pinned stays nil
+			case "all": // diagnostic: pin every device buffer (regresses phase 1 — set-size overhead)
+				rs.AddAllDeviceBuffers(d) // whole-device: not slot-scoped, pinned stays nil
+			default: // SHIP DEFAULT: slots only. The five-arm bisect showed pinning anything BEYOND the
+				// pread-invalidated slot buffers regresses phase 1 in proportion to the pinned set size
+				// (read/write-agnostic), so slots-only is the sole net win (phase 2 idle 9→0.44 ms/CB).
+				addAll(slots)
+				_ = kv
+				_ = scratch
+			}
+			r.residencyBufs = pinned
+			rs.Commit()
+			rs.RequestResidency()
+			// Attach the set per encoder, only on phase 2's command buffers (the callers of encodeG4Phase2Paged and
+			// encodeMoEExpertsPaged, via Encoder.UseResidencySet, aikit gpu/v0.33.1+), the buffer category that reads it,
+			// not at the queue (r.q.AddResidencySet): at the queue it rides on every command buffer, and phase 1 carries
+			// the pinned slots in its referenced set though it never touches them.
+			r.residency = rs
+		}
+	}
+
+}
+
+// finish records the weight alias, uploads the m-RoPE axis table, builds the per-layer steps, and allocates the recurrent checkpoint and the
+// batched decode step, the last of the build.
+func (b *residentBuild) finish() error {
+	m, d, r := b.m, b.d, b.r
+	alias := b.alias
+	r.alias = alias
+	if line := alias.summary(); line != "" {
+		logs.InfoText(line)
+	}
+	// S16: the m-RoPE prefill's per-pair axis table, from the decoder's own layout rule; nil for a model without a
+	// three-way m-RoPE section, whose PrefillMRoPELast then declines.
+	if g := r.prefillGeom(); g != nil && r.prefillOK {
+		if ax := m.MRopeAxisResident(g.half); ax != nil {
+			u := make([]uint32, len(ax))
+			for i, v := range ax {
+				u[i] = uint32(v)
+			}
+			r.mropeAxis = NewBufferUint32sOn(mem.LineDense, d, u)
+		}
+	}
+	if err := r.buildLayerSteps(m.Program()); err != nil {
+		return fmt.Errorf("metal: %w", err)
+	}
+	r.allocRecurrentCheckpoint(m) // KV8a, once the KV and scratch are up (recurrent_checkpoint.go)
+	r.buildBatch()                // MC3: the batched decode step, when this resident can run one (batch.go)
 	return nil
 }
