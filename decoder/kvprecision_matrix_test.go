@@ -107,10 +107,6 @@ func kvMatrix(t *testing.T) map[[3]string]kvMatrixCell {
 				c := kvMatrixCell{delivered: got, reason: why}
 				if r := kvRefusal(p.backend, arch, o); r != nil {
 					c.refused, c.reason = true, r.Reason
-				} else if p.backend == "cpu" && o.CPUBatchDecode == CPUBatchAuto && c.reason == "" {
-					if b := cpuBatchKVBypass(got); b != "" { // delivered; batched decode under auto stands aside for it
-						c.reason = "batched decode under auto: " + b
-					}
 				}
 				out[[3]string{p.name, f.group, v}] = c
 			}
@@ -213,6 +209,22 @@ func renderKVMatrix(cells map[[3]string]kvMatrixCell) []byte {
 	w("or the load **refuses** and says why; `auto` is the backend's pick, with the reason when it is not the request. `TestKVPrecisionDelivered`\n")
 	w("checks every cell, loads every CPU cell and checks the cache it builds, and fails a cell that moves from delivered back to refused.\n")
 	w("Each family is one tiny fixture under `testdata/`; the CPU column is the CPU (host) cache, which a load uses when no resident runner is active.\n")
+	w("\n## Measured cost of the lossy cells\n\n")
+	w("- **int8 on CUDA** (the dense llama, mistral, qwen2, qwen3 and phi3 families): delivered on request, never an `auto` pick. G4 against an f32 cache,\n")
+	w("  teacher-forced on held-out prompt set B, with int8's prefill on the tensor-core tiles (nobara, RTX 2070 SUPER, driver 595.112.07, 2026-11-08):\n")
+	w("  - qwen2.5-7b-instruct-q4_k_m at 8,000 keys: about f16's quality. Agreement -0.93 pt, hard flips 14 against 11, mean KL 1.080x: inside the\n")
+	w("    gate's ambiguous band (PARKED). f16 itself reads 1.057x there, and int8 against f16 is inside every bar (1.022x).\n")
+	w("  - qwen2.5-coder-1.5b-instruct-q4_k_m at 3,900 keys: a measurable loss (DOES NOT PASS). Agreement -2.81 pt, hard flips 27 against 9\n")
+	w("    (the bar is 15), mean KL 1.688x.\n")
+	w("  - Speed against f16, the default it would replace (same session, A B B A, served): decode 0.871x / 0.723x on the 1.5B and 0.953x / 0.883x on\n")
+	w("    the 7B at 128 / 512 keys (under the registered 0.95 bar except the 7B at 128), 0.99x at 4,096 and 16,384. A cold prefill is near f16's:\n")
+	w("    0.99x at 4,096 keys and 1.01x to 1.02x at 16,384. It buys about twice f16's positions in the same VRAM.\n")
+	w("  - The records: `docs/measurements/cuda-kv-i8-2026-11/s4-registration.md` and `s6-registration.md` (the tensor-core prefill). Widening int8\n")
+	w("    to more CUDA families is parked (the task doc, P2).\n")
+	w("- **f16 on CUDA** (`auto` for the dense families): quality in `docs/tasks/task-cuda-f16-kv-2026-10.md`. Speed against f32, served, A B B A, same session\n")
+	w("  (nobara, RTX 2070 SUPER, driver 595.112.07, 2026-11-09; `docs/benchmarks.md` B2.1): 13 of 14 cells at or above 1.0 (phi3-mini faster by 6.7%% at 2048 keys and\n")
+	w("  11.5%% at 3900); the one cost is the 7B at 8,000 keys, 68.1 against 70.1 tok/s (0.972x, under the registered 0.98 bar: PARKED). The owner accepted that cost\n")
+	w("  for f16's halved KV memory (2026-11-10): `auto` stays f16 on CUDA, with no per-family rule.\n")
 	for _, p := range kvMatrixPaths {
 		w("\n## %s\n\n| family (fixture) |", p.name)
 		for _, v := range kvMatrixValues {

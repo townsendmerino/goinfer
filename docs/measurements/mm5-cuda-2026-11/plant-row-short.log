@@ -1,0 +1,15 @@
+== plant row-short: internal/runtime/program/buffers.go: '		w := s.KVHeads * s.HeadDim
+' -> '		w := s.KVHeads*s.HeadDim - 1
+'
+    membufs_test.go:383: ../testdata/nemotron-tiny: the plan prices 31744 B of KV a block at f32; the hand table 32768
+    membufs_test.go:392: llama-tiny: the plan prices 19968 B of KV a block at int8; the hand table 20480
+    membufs_test.go:407: gemma2-tiny windowed at 1,024 positions: the plan prices 838784 B a slot; the hand table 852096
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.012s
+FAIL
+--- FAIL: TestMM5_cudaPoolsAreTheDeclaredRows (20.08s)
+FAIL
+--- FAIL: TestMM5_cudaPoolsAreTheDeclaredRows (20.07s)
+    mm5_test.go:51: internal/vision/testdata/qwen25vl-vision-tiny kv=f16: the build refuses the declaration as built: cuda: cuda: layer 0: the program declares k rows of 31 elements in 2 heads at precision 1, window 0; the kernels address 32 in 2 at 1, window 0
+    mm5_test.go:51: internal/vision/testdata/qwen25vl-vision-tiny kv=i8: the build refuses the declaration as built: cuda: cuda: layer 0: the program declares k rows of 31 elements in 2 heads at precision 1, window 0; the kernels address 32 in 2 at 1, window 0
+    mm5_test.go:51: selftestdata/gemma3-vl-tiny kv=f16: the build refuses the declaration as built: cuda: cuda: layer 0: the program declares k rows of 31 elements in 2 heads at precision 1, window 16; the kernels address 32 in 2 at 1, window 16

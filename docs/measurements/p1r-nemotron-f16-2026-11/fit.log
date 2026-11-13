@@ -1,0 +1,28 @@
+stream-weights: transcoding nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.gguf → nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.int4.e4h.cuda.v17.giw (int4, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (6446 MB) in 11s: stream 10.4s, self-check 0.0s
+swap guard (load): armed for /home/francis/models/nemotron/nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.int4.e4h.cuda.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7067 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7071 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7071 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6939 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+swap guard: baseline 1.61 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+cuda: recurrent checkpoint: none kept (165.8 MiB needed beside a 680 MiB reserve, 606 MiB free); a reply rendered back differently re-prefills the whole prompt
+cuda: prefill width 1024 rows (286 MiB of scratch; 433 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+loaded "nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0": 56-layer model (vocab 131072) in 5.573s [chat: raw (no template)]
+  decode path: cuda-resident (int4)
+  prefill path: sequential — the Mamba-2 mixer has no batched kernel, so a prompt runs one forward per token (slower TTFT)
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 4028 tokens (--ctx; model maximum 1048576) · KV f32 (requested f32)
+  harness: 4028 tokens is short for a coding agent — its first request is about 11k tokens (opencode: 11137) and will be refused (context_length_exceeded); --ctx 16384 holds it for 0.5 GB of KV (1 slot)
+  fit: 4028-token cap needs 0.1 GB KV (weights 6.3 GB, budget 41.6 GB, 41.5 GB left for a request's own prefill)
+  KV plan: 1 conversation x 4028 positions (--ctx 4028)
+  KV pool: 4,032 tokens in blocks of 64 (f32, 128.0 MB; group: full); no conversation takes another's KV rows (one KV slot); one conversation can use up to 4,028 of them.
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions applies to the CPU path only)
+  prefix snapshots: budget 6.3 GiB (auto: 1/10 of 62.7 GiB of RAM, at most 8.0 GiB), 0 B held; host memory is pinned only while a snapshot is held (taken after a cold first prefill of 2048 ids or more; /admin/status reports the use)
+  features: no chat template — raw completion only · structured output
+  !! tokenizer: GGUF tokenizer.ggml.pre="tekken" is not a known pre-tokenizer; falling back to cl100k with a 1-digit cap, so this model's token ids may differ from HF and llama.cpp
+--require-backend: model "nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0" declined the batched prefill: sequential — the Mamba-2 mixer has no batched kernel, so a prompt runs one forward per token (slower TTFT)

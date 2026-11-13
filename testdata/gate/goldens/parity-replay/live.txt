@@ -269,5 +269,5 @@ voxtral-text         TestVoxtral_tinyTextParity         ✅ pass
       TestQwen38GGUF_weightDiff  (confirmed at 2732e75b)
       TestQwen3MoeReal_oracle  (confirmed at 70be7081)
       TestQwen3Moe_forwardParity  (confirmed at b7726cd)
-== 3f7c8f30b: 3 BLOCKER(S) ==
+== 3f7c8f30b: 3 BLOCKER(S): 0 FAILED, 3 NOT EVALUATED (3 asset absent, 0 env gate unset, 0 did not run) ==
 full log: /home/francist/.claude/jobs/b25d14fd/tmp/sb12rec4/gate_parity___decoder____tokenizer.json

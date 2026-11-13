@@ -487,3 +487,22 @@ func NemotronH() *Template {
 func pyStrip(s string) string {
 	return strings.TrimFunc(s, func(r rune) bool { return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x1f) })
 }
+
+// Flint is RecursiveSI/flint's chat template (chat_template.jinja): per turn "<|system|>{system}",
+// "<|developer|>{content}", "<|user|>{content}", "<|assistant|><think>{reasoning}</think>{content}{calls}",
+// "<|observation|><tool_response>{content}</tool_response>", ending with the generation prompt "<|assistant|>".
+// Untrusted content (system, developer, user, tool) is sanitized via flintText (removing NUL and <think>/</think>,
+// HTML-escaping the seven <|...|> control markers). Prior assistant turns keep their <think>...</think> blocks on all
+// historical turns. Stops are the checkpoint's four eos_token_id strings: <|end_of_text|>, <|user|>, <|observation|>,
+// <|developer|>.
+func Flint() *Template {
+	t := &Template{
+		name:   "flint",
+		stops:  []string{"<|end_of_text|>", "<|user|>", "<|observation|>", "<|developer|>"},
+		reason: &Reasoning{open: "<think>", close: "</think>", openTok: "<think>", closeTok: "</think>", def: defOn},
+	}
+	t.render = func(system string, turns []Turn) []Segment {
+		return t.renderFlintTools(system, turns, nil)
+	}
+	return t
+}

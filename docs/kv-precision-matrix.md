@@ -6,39 +6,57 @@ or the load **refuses** and says why; `auto` is the backend's pick, with the rea
 checks every cell, loads every CPU cell and checks the cache it builds, and fails a cell that moves from delivered back to refused.
 Each family is one tiny fixture under `testdata/`; the CPU column is the CPU (host) cache, which a load uses when no resident runner is active.
 
+## Measured cost of the lossy cells
+
+- **int8 on CUDA** (the dense llama, mistral, qwen2, qwen3 and phi3 families): delivered on request, never an `auto` pick. G4 against an f32 cache,
+  teacher-forced on held-out prompt set B, with int8's prefill on the tensor-core tiles (nobara, RTX 2070 SUPER, driver 595.112.07, 2026-11-08):
+  - qwen2.5-7b-instruct-q4_k_m at 8,000 keys: about f16's quality. Agreement -0.93 pt, hard flips 14 against 11, mean KL 1.080x: inside the
+    gate's ambiguous band (PARKED). f16 itself reads 1.057x there, and int8 against f16 is inside every bar (1.022x).
+  - qwen2.5-coder-1.5b-instruct-q4_k_m at 3,900 keys: a measurable loss (DOES NOT PASS). Agreement -2.81 pt, hard flips 27 against 9
+    (the bar is 15), mean KL 1.688x.
+  - Speed against f16, the default it would replace (same session, A B B A, served): decode 0.871x / 0.723x on the 1.5B and 0.953x / 0.883x on
+    the 7B at 128 / 512 keys (under the registered 0.95 bar except the 7B at 128), 0.99x at 4,096 and 16,384. A cold prefill is near f16's:
+    0.99x at 4,096 keys and 1.01x to 1.02x at 16,384. It buys about twice f16's positions in the same VRAM.
+  - The records: `docs/measurements/cuda-kv-i8-2026-11/s4-registration.md` and `s6-registration.md` (the tensor-core prefill). Widening int8
+    to more CUDA families is parked (the task doc, P2).
+- **f16 on CUDA** (`auto` for the dense families): quality in `docs/tasks/task-cuda-f16-kv-2026-10.md`. Speed against f32, served, A B B A, same session
+  (nobara, RTX 2070 SUPER, driver 595.112.07, 2026-11-09; `docs/benchmarks.md` B2.1): 13 of 14 cells at or above 1.0 (phi3-mini faster by 6.7% at 2048 keys and
+  11.5% at 3900); the one cost is the 7B at 8,000 keys, 68.1 against 70.1 tok/s (0.972x, under the registered 0.98 bar: PARKED). The owner accepted that cost
+  for f16's halved KV memory (2026-11-10): `auto` stays f16 on CUDA, with no per-family rule.
+
 ## CUDA resident
 
 | family (fixture) | `--kv auto` | `--kv f32` | `--kv f16` | `--kv i8` |
 |---|---|---|---|---|
-| dense (llama) (`llama-tiny`) | f16 (auto is f16 on CUDA for this family) | f32 | f16 | refused: CUDA has no int8 KV cache until phase 2 |
-| dense (phi3) (`phi3-tiny`) | f16 (auto is f16 on CUDA for this family) | f32 | f16 | refused: CUDA has no int8 KV cache until phase 2 |
-| MoE (`qwen3moe-tiny`) | f16 (auto is f16 on CUDA for this family) | f32 | f16 | refused: CUDA has no int8 KV cache until phase 2 |
-| sliding window (`gemma2-tiny`) | f32 (f16 KV is delivered on request (--kv f16); auto keeps f32: the sliding-window quality gate read AMBIGUOUS at 8,000 keys (a passing K=8,000 cell would clear it)) | f32 | f16 | refused: CUDA has no int8 KV cache until phase 2 |
-| pairwise RoPE (`cohere-tiny`) | f32 (f16 KV is delivered on request (--kv f16); auto keeps f32: the pairwise-RoPE quality gate did not pass at 8,000 keys (a passing K=8,000 cell would clear it)) | f32 | f16 | refused: CUDA has no int8 KV cache until phase 2 |
-| m-RoPE (VL) (`qwen25vl-tiny`) | f16 (auto is f16 on CUDA for this family) | f32 | f16 | refused: CUDA has no int8 KV cache until phase 2 |
-| MLA (`deepseek-tiny`) | f32 (f16 KV is delivered on request (--kv f16) for this build; auto keeps f32 until its quality gate passes) | f32 | f16 | refused: CUDA has no int8 KV cache until phase 2 |
-| Gated DeltaNet hybrid, MoE (`qwen35-tiny`) | f32 (f16 KV is delivered on request (--kv f16); auto keeps f32: the hybrids' quality gate did not pass (mean KL 1.21x f32's at 3,900 keys)) | f32 | f16 | refused: CUDA has no int8 KV cache until phase 2 |
-| Gated DeltaNet hybrid (`qwen3next-tiny`) | f32 (f16 KV is delivered on request (--kv f16); auto keeps f32: the hybrids' quality gate did not pass (mean KL 1.21x f32's at 3,900 keys)) | f32 | f16 | refused: CUDA has no int8 KV cache until phase 2 |
-| Mamba-2 hybrid (`nemotron-tiny`) | f32 (f16 KV on CUDA covers llama, mistral, qwen2, qwen3, phi3, qwen2_moe, qwen3_moe, mixtral, gemma2, gemma3, gpt-oss, cohere, cohere2, qwen2_5_vl, qwen3_vl, qwen3_vl_moe, qwen3_5, qwen3_5_moe, qwen3_next, gemma4, deepseek_v2, deepseek_v3 and kimi_k2 so far; nemotron_h keeps f32) | f32 | refused: f16 KV on CUDA covers llama, mistral, qwen2, qwen3, phi3, qwen2_moe, qwen3_moe, mixtral, gemma2, gemma3, gpt-oss, cohere, cohere2, qwen2_5_vl, qwen3_vl, qwen3_vl_moe, qwen3_5, qwen3_5_moe, qwen3_next, gemma4, deepseek_v2, deepseek_v3 and kimi_k2 so far; nemotron_h keeps f32 | refused: CUDA has no int8 KV cache until phase 2 |
-| short-conv hybrid (`lfm2-tiny`) | f32 (f16 KV on CUDA covers llama, mistral, qwen2, qwen3, phi3, qwen2_moe, qwen3_moe, mixtral, gemma2, gemma3, gpt-oss, cohere, cohere2, qwen2_5_vl, qwen3_vl, qwen3_vl_moe, qwen3_5, qwen3_5_moe, qwen3_next, gemma4, deepseek_v2, deepseek_v3 and kimi_k2 so far; lfm2 keeps f32) | f32 | refused: f16 KV on CUDA covers llama, mistral, qwen2, qwen3, phi3, qwen2_moe, qwen3_moe, mixtral, gemma2, gemma3, gpt-oss, cohere, cohere2, qwen2_5_vl, qwen3_vl, qwen3_vl_moe, qwen3_5, qwen3_5_moe, qwen3_next, gemma4, deepseek_v2, deepseek_v3 and kimi_k2 so far; lfm2 keeps f32 | refused: CUDA has no int8 KV cache until phase 2 |
-| Gemma 4, MoE (`gemma4-moe-kv-tiny`) | f32 (f16 KV is delivered on request (--kv f16); auto keeps f32: the hybrids' quality gate did not pass (mean KL 1.21x f32's at 3,900 keys)) | f32 | f16 | refused: CUDA has no int8 KV cache until phase 2 |
+| dense (llama) (`llama-tiny`) | f16 (auto is f16 on CUDA for this family) | f32 | f16 | i8 |
+| dense (phi3) (`phi3-tiny`) | f16 (auto is f16 on CUDA for this family) | f32 | f16 | i8 |
+| MoE (`qwen3moe-tiny`) | f16 (auto is f16 on CUDA for this family) | f32 | f16 | refused: int8 KV on CUDA covers the dense families (llama, mistral, qwen2, qwen3, phi3); qwen3_moe is not among them (widening to other families is parked: docs/tasks/task-kv-precision-everywhere-2026-10.md, P2) |
+| sliding window (`gemma2-tiny`) | f32 (f16 KV is delivered on request (--kv f16); auto keeps f32: the sliding-window quality gate read AMBIGUOUS at 8,000 keys (a passing K=8,000 cell would clear it)) | f32 | f16 | refused: int8 KV on CUDA covers the dense families (llama, mistral, qwen2, qwen3, phi3); gemma2 is not among them (widening to other families is parked: docs/tasks/task-kv-precision-everywhere-2026-10.md, P2) |
+| pairwise RoPE (`cohere-tiny`) | f32 (f16 KV is delivered on request (--kv f16); auto keeps f32: the pairwise-RoPE quality gate did not pass at 8,000 keys (a passing K=8,000 cell would clear it)) | f32 | f16 | refused: int8 KV on CUDA covers the dense families (llama, mistral, qwen2, qwen3, phi3); cohere is not among them (widening to other families is parked: docs/tasks/task-kv-precision-everywhere-2026-10.md, P2) |
+| m-RoPE (VL) (`qwen25vl-tiny`) | f16 (auto is f16 on CUDA for this family) | f32 | f16 | refused: int8 KV on CUDA covers the dense families (llama, mistral, qwen2, qwen3, phi3); qwen2_5_vl is not among them (widening to other families is parked: docs/tasks/task-kv-precision-everywhere-2026-10.md, P2) |
+| MLA (`deepseek-tiny`) | f32 (f16 KV is delivered on request (--kv f16) for this build; auto keeps f32 until its quality gate passes) | f32 | f16 | refused: int8 KV on CUDA covers the dense families (llama, mistral, qwen2, qwen3, phi3); deepseek_v3 is not among them (widening to other families is parked: docs/tasks/task-kv-precision-everywhere-2026-10.md, P2) |
+| Gated DeltaNet hybrid, MoE (`qwen35-tiny`) | f32 (f16 KV is delivered on request (--kv f16); auto keeps f32: the hybrids' quality gate did not pass (mean KL 1.21x f32's at 3,900 keys)) | f32 | f16 | refused: int8 KV on CUDA covers the dense families (llama, mistral, qwen2, qwen3, phi3); qwen3_5_moe is not among them (widening to other families is parked: docs/tasks/task-kv-precision-everywhere-2026-10.md, P2) |
+| Gated DeltaNet hybrid (`qwen3next-tiny`) | f32 (f16 KV is delivered on request (--kv f16); auto keeps f32: the hybrids' quality gate did not pass (mean KL 1.21x f32's at 3,900 keys)) | f32 | f16 | refused: int8 KV on CUDA covers the dense families (llama, mistral, qwen2, qwen3, phi3); qwen3_next is not among them (widening to other families is parked: docs/tasks/task-kv-precision-everywhere-2026-10.md, P2) |
+| Mamba-2 hybrid (`nemotron-tiny`) | f32 (f16 KV is delivered on request (--kv f16); auto keeps f32: no quality gate has read a Mamba-2 hybrid yet (a passing G4 cell would clear it)) | f32 | f16 | refused: int8 KV on CUDA covers the dense families (llama, mistral, qwen2, qwen3, phi3); nemotron_h is not among them (widening to other families is parked: docs/tasks/task-kv-precision-everywhere-2026-10.md, P2) |
+| short-conv hybrid (`lfm2-tiny`) | f32 (f16 KV on CUDA covers llama, mistral, qwen2, qwen3, phi3, qwen2_moe, qwen3_moe, mixtral, gemma2, gemma3, gpt-oss, cohere, cohere2, qwen2_5_vl, qwen3_vl, qwen3_vl_moe, qwen3_5, qwen3_5_moe, qwen3_next, gemma4, deepseek_v2, deepseek_v3, kimi_k2, nemotron_h and flint so far; lfm2 keeps f32) | f32 | refused: f16 KV on CUDA covers llama, mistral, qwen2, qwen3, phi3, qwen2_moe, qwen3_moe, mixtral, gemma2, gemma3, gpt-oss, cohere, cohere2, qwen2_5_vl, qwen3_vl, qwen3_vl_moe, qwen3_5, qwen3_5_moe, qwen3_next, gemma4, deepseek_v2, deepseek_v3, kimi_k2, nemotron_h and flint so far; lfm2 keeps f32 | refused: int8 KV on CUDA covers the dense families (llama, mistral, qwen2, qwen3, phi3); lfm2 is not among them (widening to other families is parked: docs/tasks/task-kv-precision-everywhere-2026-10.md, P2) |
+| Gemma 4, MoE (`gemma4-moe-kv-tiny`) | f32 (f16 KV is delivered on request (--kv f16); auto keeps f32: the hybrids' quality gate did not pass (mean KL 1.21x f32's at 3,900 keys)) | f32 | f16 | refused: int8 KV on CUDA covers the dense families (llama, mistral, qwen2, qwen3, phi3); gemma4 is not among them (widening to other families is parked: docs/tasks/task-kv-precision-everywhere-2026-10.md, P2) |
 
 ## CUDA resident with --drafter
 
 | family (fixture) | `--kv auto` | `--kv f32` | `--kv f16` | `--kv i8` |
 |---|---|---|---|---|
-| dense (llama) (`llama-tiny`) | f32 (the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels) | f32 | refused: the drafter needs f32 KV until phase 6 | refused: CUDA has no int8 KV cache until phase 2 |
-| dense (phi3) (`phi3-tiny`) | f32 (the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels) | f32 | refused: the drafter needs f32 KV until phase 6 | refused: CUDA has no int8 KV cache until phase 2 |
-| MoE (`qwen3moe-tiny`) | f32 (the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels) | f32 | refused: the drafter needs f32 KV until phase 6 | refused: CUDA has no int8 KV cache until phase 2 |
-| sliding window (`gemma2-tiny`) | f32 (the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels) | f32 | refused: the drafter needs f32 KV until phase 6 | refused: CUDA has no int8 KV cache until phase 2 |
-| pairwise RoPE (`cohere-tiny`) | f32 (the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels) | f32 | refused: the drafter needs f32 KV until phase 6 | refused: CUDA has no int8 KV cache until phase 2 |
-| m-RoPE (VL) (`qwen25vl-tiny`) | f32 (the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels) | f32 | refused: the drafter needs f32 KV until phase 6 | refused: CUDA has no int8 KV cache until phase 2 |
-| MLA (`deepseek-tiny`) | f32 (the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels) | f32 | refused: the drafter needs f32 KV until phase 6 | refused: CUDA has no int8 KV cache until phase 2 |
-| Gated DeltaNet hybrid, MoE (`qwen35-tiny`) | f32 (the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels) | f32 | refused: the drafter needs f32 KV until phase 6 | refused: CUDA has no int8 KV cache until phase 2 |
-| Gated DeltaNet hybrid (`qwen3next-tiny`) | f32 (the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels) | f32 | refused: the drafter needs f32 KV until phase 6 | refused: CUDA has no int8 KV cache until phase 2 |
-| Mamba-2 hybrid (`nemotron-tiny`) | f32 (the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels) | f32 | refused: the drafter needs f32 KV until phase 6 | refused: CUDA has no int8 KV cache until phase 2 |
-| short-conv hybrid (`lfm2-tiny`) | f32 (the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels) | f32 | refused: the drafter needs f32 KV until phase 6 | refused: CUDA has no int8 KV cache until phase 2 |
-| Gemma 4, MoE (`gemma4-moe-kv-tiny`) | f32 (the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels) | f32 | refused: the drafter needs f32 KV until phase 6 | refused: CUDA has no int8 KV cache until phase 2 |
+| dense (llama) (`llama-tiny`) | f32 (the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels) | f32 | refused: the drafter needs f32 KV until phase 6 | refused: the drafter needs f32 KV until phase 6 |
+| dense (phi3) (`phi3-tiny`) | f32 (the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels) | f32 | refused: the drafter needs f32 KV until phase 6 | refused: the drafter needs f32 KV until phase 6 |
+| MoE (`qwen3moe-tiny`) | f32 (the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels) | f32 | refused: the drafter needs f32 KV until phase 6 | refused: the drafter needs f32 KV until phase 6 |
+| sliding window (`gemma2-tiny`) | f32 (the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels) | f32 | refused: the drafter needs f32 KV until phase 6 | refused: the drafter needs f32 KV until phase 6 |
+| pairwise RoPE (`cohere-tiny`) | f32 (the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels) | f32 | refused: the drafter needs f32 KV until phase 6 | refused: the drafter needs f32 KV until phase 6 |
+| m-RoPE (VL) (`qwen25vl-tiny`) | f32 (the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels) | f32 | refused: the drafter needs f32 KV until phase 6 | refused: the drafter needs f32 KV until phase 6 |
+| MLA (`deepseek-tiny`) | f32 (the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels) | f32 | refused: the drafter needs f32 KV until phase 6 | refused: the drafter needs f32 KV until phase 6 |
+| Gated DeltaNet hybrid, MoE (`qwen35-tiny`) | f32 (the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels) | f32 | refused: the drafter needs f32 KV until phase 6 | refused: the drafter needs f32 KV until phase 6 |
+| Gated DeltaNet hybrid (`qwen3next-tiny`) | f32 (the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels) | f32 | refused: the drafter needs f32 KV until phase 6 | refused: the drafter needs f32 KV until phase 6 |
+| Mamba-2 hybrid (`nemotron-tiny`) | f32 (the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels) | f32 | refused: the drafter needs f32 KV until phase 6 | refused: the drafter needs f32 KV until phase 6 |
+| short-conv hybrid (`lfm2-tiny`) | f32 (the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels) | f32 | refused: the drafter needs f32 KV until phase 6 | refused: the drafter needs f32 KV until phase 6 |
+| Gemma 4, MoE (`gemma4-moe-kv-tiny`) | f32 (the block drafter (--drafter) keeps f32 K/V beside the target's attention kernels) | f32 | refused: the drafter needs f32 KV until phase 6 | refused: the drafter needs f32 KV until phase 6 |
 
 ## Metal resident
 
@@ -78,32 +96,32 @@ Each family is one tiny fixture under `testdata/`; the CPU column is the CPU (ho
 
 | family (fixture) | `--kv auto` | `--kv f32` | `--kv f16` | `--kv i8` |
 |---|---|---|---|---|
-| dense (llama) (`llama-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 (batched decode under auto: the f16 KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4) | i8 (batched decode under auto: the i8 KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4) |
-| dense (phi3) (`phi3-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 (batched decode under auto: the f16 KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4) | i8 (batched decode under auto: the i8 KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4) |
-| MoE (`qwen3moe-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: MoE families keep an f32 CPU cache until phase 4 | refused: MoE families keep an f32 CPU cache until phase 4 |
-| sliding window (`gemma2-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 (batched decode under auto: the f16 KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4) | i8 (batched decode under auto: the i8 KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4) |
-| pairwise RoPE (`cohere-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 (batched decode under auto: the f16 KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4) | i8 (batched decode under auto: the i8 KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4) |
-| m-RoPE (VL) (`qwen25vl-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 (batched decode under auto: the f16 KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4) | i8 (batched decode under auto: the i8 KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4) |
-| MLA (`deepseek-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: MoE families keep an f32 CPU cache until phase 4 | refused: MoE families keep an f32 CPU cache until phase 4 |
-| Gated DeltaNet hybrid, MoE (`qwen35-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: MoE families keep an f32 CPU cache until phase 4 | refused: MoE families keep an f32 CPU cache until phase 4 |
-| Gated DeltaNet hybrid (`qwen3next-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: MoE families keep an f32 CPU cache until phase 4 | refused: MoE families keep an f32 CPU cache until phase 4 |
+| dense (llama) (`llama-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 | i8 |
+| dense (phi3) (`phi3-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 | i8 |
+| MoE (`qwen3moe-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 | i8 |
+| sliding window (`gemma2-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 | i8 |
+| pairwise RoPE (`cohere-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 | i8 |
+| m-RoPE (VL) (`qwen25vl-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 | i8 |
+| MLA (`deepseek-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: this family's own forward loop keeps an f32 CPU cache until phase 4 | refused: this family's own forward loop keeps an f32 CPU cache until phase 4 |
+| Gated DeltaNet hybrid, MoE (`qwen35-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: this family's own forward loop keeps an f32 CPU cache until phase 4 | refused: this family's own forward loop keeps an f32 CPU cache until phase 4 |
+| Gated DeltaNet hybrid (`qwen3next-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: this family's own forward loop keeps an f32 CPU cache until phase 4 | refused: this family's own forward loop keeps an f32 CPU cache until phase 4 |
 | Mamba-2 hybrid (`nemotron-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: this family's own forward loop keeps an f32 CPU cache until phase 4 | refused: this family's own forward loop keeps an f32 CPU cache until phase 4 |
 | short-conv hybrid (`lfm2-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: this family's own forward loop keeps an f32 CPU cache until phase 4 | refused: this family's own forward loop keeps an f32 CPU cache until phase 4 |
-| Gemma 4, MoE (`gemma4-moe-kv-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: MoE families keep an f32 CPU cache until phase 4 | refused: MoE families keep an f32 CPU cache until phase 4 |
+| Gemma 4, MoE (`gemma4-moe-kv-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: this family's own forward loop keeps an f32 CPU cache until phase 4 | refused: this family's own forward loop keeps an f32 CPU cache until phase 4 |
 
 ## CPU, batched decode on
 
 | family (fixture) | `--kv auto` | `--kv f32` | `--kv f16` | `--kv i8` |
 |---|---|---|---|---|
-| dense (llama) (`llama-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4 | refused: CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4 |
-| dense (phi3) (`phi3-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4 | refused: CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4 |
-| MoE (`qwen3moe-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4 | refused: CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4 |
-| sliding window (`gemma2-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4 | refused: CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4 |
-| pairwise RoPE (`cohere-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4 | refused: CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4 |
-| m-RoPE (VL) (`qwen25vl-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4 | refused: CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4 |
-| MLA (`deepseek-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4 | refused: CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4 |
-| Gated DeltaNet hybrid, MoE (`qwen35-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4 | refused: CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4 |
-| Gated DeltaNet hybrid (`qwen3next-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4 | refused: CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4 |
-| Mamba-2 hybrid (`nemotron-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4 | refused: CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4 |
-| short-conv hybrid (`lfm2-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4 | refused: CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4 |
-| Gemma 4, MoE (`gemma4-moe-kv-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4 | refused: CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4 |
+| dense (llama) (`llama-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 | i8 |
+| dense (phi3) (`phi3-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 | i8 |
+| MoE (`qwen3moe-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 | i8 |
+| sliding window (`gemma2-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 | i8 |
+| pairwise RoPE (`cohere-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 | i8 |
+| m-RoPE (VL) (`qwen25vl-tiny`) | f32 (auto is f32 on the CPU) | f32 | f16 | i8 |
+| MLA (`deepseek-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: this family's own forward loop keeps an f32 CPU cache until phase 4 | refused: this family's own forward loop keeps an f32 CPU cache until phase 4 |
+| Gated DeltaNet hybrid, MoE (`qwen35-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: this family's own forward loop keeps an f32 CPU cache until phase 4 | refused: this family's own forward loop keeps an f32 CPU cache until phase 4 |
+| Gated DeltaNet hybrid (`qwen3next-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: this family's own forward loop keeps an f32 CPU cache until phase 4 | refused: this family's own forward loop keeps an f32 CPU cache until phase 4 |
+| Mamba-2 hybrid (`nemotron-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: this family's own forward loop keeps an f32 CPU cache until phase 4 | refused: this family's own forward loop keeps an f32 CPU cache until phase 4 |
+| short-conv hybrid (`lfm2-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: this family's own forward loop keeps an f32 CPU cache until phase 4 | refused: this family's own forward loop keeps an f32 CPU cache until phase 4 |
+| Gemma 4, MoE (`gemma4-moe-kv-tiny`) | f32 (auto is f32 on the CPU) | f32 | refused: this family's own forward loop keeps an f32 CPU cache until phase 4 | refused: this family's own forward loop keeps an f32 CPU cache until phase 4 |

@@ -5,8 +5,8 @@
 #   1. identity   TestMoEExpertMajor_bitIdentical  K=4096 real text   (expert-major on vs off, every logit `!=`)           ~7 min
 #   2. e2e_real   TestMoEExpertMajor_endToEnd      K=4096 real text, 2 pairs                                              ~20 min   <- GRADED
 #   3. e2e_period TestMoEExpertMajor_endToEnd      K=4096 periodic ids, 2 pairs                                           ~20 min   reference for attribution, not graded
-# Timed (night.py holds the timing lock). Estimate ~50 min; queued at 80. Pre-registration: docs/tasks/task-mellum21-2026-10.md, "B2".
-#   python3 scripts/night.py add mellum21-fu-b2 --est 80 --by "nobara session, Mellum2.1 follow-up B2" --doc docs/tasks/task-mellum21-2026-10.md -- bash <pinned src>/docs/measurements/mellum21-2026-10/run-mellum21-followup-b2.sh
+# Timed (night.py holds the timing lock). Estimate ~50 min; queued at 80. Pre-registration: docs/completed/task-mellum21-2026-10.md, "B2".
+#   python3 scripts/night.py add mellum21-fu-b2 --est 80 --by "nobara session, Mellum2.1 follow-up B2" --doc docs/completed/task-mellum21-2026-10.md -- bash <pinned src>/docs/measurements/mellum21-2026-10/run-mellum21-followup-b2.sh
 F=${F:-$HOME/goinfer-bench/mellum21/b2}
 source "$(dirname "$0")/_common.sh"
 OUT=${1:-$HOME/goinfer-logs/mellum21-followup-b2-$(date +%F)}

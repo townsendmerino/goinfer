@@ -58,24 +58,21 @@ type ResidentKVSnapshotter interface {
 	KVSnapshotBytes(end int) int64
 	// KVSnapshotRollback is how many positions before a snapshot's end a windowed layer still serves a restore; 0 with no windowed layer.
 	KVSnapshotRollback() int
-}
-
-// ResidentRecurrentSnapshots is the optional capability of a ResidentKVSnapshotter to carry a recurrent model's state with its rows: a snapshot
-// to end holds the state as it stood after position end-1, so it serves a restore to exactly end and to no shorter prefix.
-type ResidentRecurrentSnapshots interface {
+	// KVSnapshotRecurrent reports whether a snapshot carries a recurrent model's state with its rows: a snapshot to end holds the state
+	// as it stood after position end-1, so it serves a restore to exactly end and to no shorter prefix. False when it carries none.
 	KVSnapshotRecurrent() bool
 }
 
 // KeepsRecurrentSnapshots reports whether this model's prefix snapshots carry its recurrent state: it has recurrent state, and its resident's
-// snapshots hold it (ResidentRecurrentSnapshots). A route computes KVScope.Keep only for such a model.
+// snapshots hold it (ResidentKVSnapshotter.KVSnapshotRecurrent). A route computes KVScope.Keep only for such a model.
 func (m *Model) KeepsRecurrentSnapshots() bool {
 	return m.hasRecurrentState() && m.recurrentSnapshots()
 }
 
 // recurrentSnapshots reports whether the snapshotter carries recurrent state.
 func (m *Model) recurrentSnapshots() bool {
-	rs, ok := m.snapshotter().(ResidentRecurrentSnapshots)
-	return ok && rs.KVSnapshotRecurrent()
+	sn := m.snapshotter()
+	return sn != nil && sn.KVSnapshotRecurrent()
 }
 
 // snapshotsBlocked reports whether this model's state is outside what a snapshot holds: recurrent state its snapshotter does not carry.
@@ -415,8 +412,11 @@ func (m *Model) snapshotter() ResidentKVSnapshotter {
 	if m.kvSnaps == nil || m.resident == nil {
 		return nil
 	}
-	sn, _ := m.resident.(ResidentKVSnapshotter)
-	return sn
+	kv := m.resKV()
+	if !kv.KVSnapshotterAvailable() {
+		return nil
+	}
+	return kv
 }
 
 // residentRestoreSnapshot restores a held snapshot's rows into the bound slot when that serves more of prompt than the slot's own
@@ -554,11 +554,11 @@ func (m *Model) kvSnapSlack() int {
 // cannot mark its passes, there is no boundary, the prompt is short, or the part after the boundary fits the rollback (the end snapshot serves).
 func (m *Model) kvBoundaryPlan(prompt []int, sc KVScope, lora *loraRuntime) (q int, ok bool) {
 	sn := m.snapshotter()
-	mp, hasMark := m.resident.(ResidentPrefillMarked)
+	align, hasMark := stepMarkAlign(m.resident)
 	if sn == nil || !hasMark || lora != nil || sc.Off || m.kvShareOff || m.residentReuseDisabled() || m.snapshotsBlocked() {
 		return 0, false
 	}
-	n, align := len(prompt), mp.PrefillMarkAlign()
+	n := len(prompt)
 	if m.hasRecurrentState() {
 		// A recurrent model's snapshot is taken where the next turn's prompt parts from this one (KVScope.Keep), on a pass boundary: the
 		// state exists only between passes, and the next turn re-prefills from there on the same pass grid as a cold prefill.
@@ -594,8 +594,7 @@ func (m *Model) kvPrefillMark(slot int, prompt []int, from int, lora *loraRuntim
 	if !ok || (acq.snapRows > 0 && !m.hasRecurrentState()) || q <= from {
 		return nil
 	}
-	mp := m.resident.(ResidentPrefillMarked)
-	if (q-from)%mp.PrefillMarkAlign() != 0 {
+	if align, _ := stepMarkAlign(m.resident); (q-from)%align != 0 {
 		return nil // the passes of this prefill do not end at q
 	}
 	if st := m.kvSnaps; st != nil {
@@ -737,8 +736,8 @@ func (m *Model) residentSnapshotRows(slot int, prompt []int, b int, lora *loraRu
 // kvSnapReserve charges need bytes for a snapshot about to be taken. A demoted copy goes before a held snapshot: it serves one conversation
 // that may never return, a snapshot any prompt with its prefix.
 func (m *Model) kvSnapReserve(st *kvSnapStore, need int64) bool {
-	if d, ok := m.resident.(ResidentKVDemoter); ok && m.kvDemote {
-		return d.ReserveKVHost(need)
+	if kv := m.resKV(); kv.KVDemoterAvailable() && m.kvDemote {
+		return kv.ReserveKVHost(need)
 	}
 	return st.Reserve(need, true)
 }

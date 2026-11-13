@@ -6,8 +6,8 @@ import (
 )
 
 // llamaArchitecture expresses Llama-2/3 dense: like Qwen3 (RMSNorm no-offset, Pre2 placement, SwiGLU, 1/√head_dim scale, single-base RoPE,
-// no embed scale) but WITHOUT QK-norm: Llama's attention applies RoPE to raw q/k. head_dim is derived (headDim()) since many Llama configs
-// omit it. The LM head is tied on the small text models and untied on 8B+, finalized from lm_head.weight presence at load. validateLlama
+// no embed scale) but WITHOUT QK-norm: Llama's attention applies RoPE to raw q/k. head_dim is derived (EffectiveHeadDim()) since many Llama configs
+// omit it. The LM head is tied on the small text models and untied on 8B+, finalized from lm_head.weight presence at load. ValidateLlama
 // rejects attention bias, so reaching here implies a plain checkpoint; linear and llama3 rope scaling are parsed below.
 func llamaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := backfillFlatRope(cfg, "llama"); err != nil {

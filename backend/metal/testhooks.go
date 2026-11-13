@@ -15,9 +15,14 @@ import (
 // Test hooks: entry points into the resident that only goinfer_testhooks tests call (bisection, sub-layer capture, the
 // confirmers, the q4k lane's segments on the unlined plan line). Production code does not reach them.
 
-// q4kLaneProj is q4kLaneProjOn on gpu.UnlinedLine: tests call it; production code names its plan line.
+// q4kLaneProj is q4kLaneProjOn on gpu.UnlinedLine with each segment's row-count uniform, which a build's decode list allocates:
+// tests call it; production code names its plan line.
 func q4kLaneProj(d *Device, kq *decoder.KQuantReader, wms ...*linalg.WeightMat) []q4kSeg {
-	return q4kLaneProjOn(gpu.UnlinedLine, d, kq, wms...)
+	segs := q4kLaneProjOn(gpu.UnlinedLine, d, kq, wms...)
+	for i := range segs {
+		segs[i].uN = NewBufferU32On(gpu.UnlinedLine, d, uint32(segs[i].rows))
+	}
+	return segs
 }
 
 // forwardTrunkForTest runs the trunk over the first nLayers layers ONLY and returns the residual
@@ -37,7 +42,7 @@ func (r *resident) forwardTrunkForTest(emb []float32, pos, nLayers int) []float3
 	r.nL = nLayers
 	defer func() { r.nL = saved }()
 	r.loadEmb(emb)
-	r.setPos(pos)
+	r.setPosAheadForTest(pos)
 	e := r.q.Begin()
 	r.encodeTrunkInto(e)
 	e.End()
@@ -62,7 +67,7 @@ func (r *resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, 
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	r.loadEmb(emb)
-	r.setPos(pos)
+	r.setPosAheadForTest(pos)
 	grab := func() []float32 { return append([]float32(nil), r.oO.Floats()...) }
 	grabD := func() []float32 { return append([]float32(nil), r.dO.Floats()...) }
 	for l := 0; l < r.nL; l++ {
@@ -130,7 +135,7 @@ func (r *resident) l0GegluForTest(emb []float32, pos int) (gateUp, geglu8 []floa
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	r.loadEmb(emb)
-	r.setPos(pos)
+	r.setPosAheadForTest(pos)
 	L := &r.layers[0]
 	g := L.geom
 	nHhd := r.nH * g.hd
@@ -188,7 +193,7 @@ func (r *resident) attnConfirmForTest(resid, kHist, vHist []float32, layer, pos 
 	qkvRows := nHhd + 2*g.kvDim
 	kOff, vOff := nHhd*4, (nHhd+g.kvDim)*4
 	copy(r.x.Floats(), resid)
-	r.setPos(pos)
+	r.setPosAheadForTest(pos)
 	if injectKV {
 		// Inject goinfer's post-RoPE K and raw V — matched KV history. f32 cache (Gemma) takes the
 		// values verbatim; the f16 cache narrows them (still cos 1.0 for the CORRECT values — the
@@ -244,7 +249,7 @@ func (r *resident) forwardHeadForTest(emb []float32, pos int) (act, logits []flo
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	r.loadEmb(emb)
-	r.setPos(pos)
+	r.setPosAheadForTest(pos)
 	e := r.q.Begin()
 	r.encodeTrunkInto(e)
 	e.Dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)

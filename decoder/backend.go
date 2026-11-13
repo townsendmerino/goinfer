@@ -108,7 +108,7 @@ var autoOrder = []string{"cuda", "metal"}
 // than opening a device, so what auto actually checks for it is the architecture.
 var autoFound = map[string]string{
 	"cuda":  "auto: a CUDA device answered",
-	"metal": "auto: Apple silicon; metal runs int4 models, other precisions stay on the CPU", // autoMetalPrecision
+	"metal": "auto: Apple silicon; metal runs int4 and q4k models, other precisions stay on the CPU", // autoMetalPrecision
 }
 
 // AutoChoice is what a backend of "auto" resolved to on this binary and machine.

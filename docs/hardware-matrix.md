@@ -15,6 +15,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Command-R7B | ✅ | CPU | ✅ resident | ✅ resident |
 | DeepSeek-V2 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | DeepSeek-V3 | ✅ | ✅ resident | ✅ resident | ✅ resident |
+| Flint | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | GLM-4.5/4.6 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | GLM-OCR | ✅ | CPU | ✅ resident | ✅ resident |
 | GPT-2 | ✅ | CPU | CPU | ✅ resident |
@@ -142,8 +143,9 @@ the configuration that has it. The loader picks one that does not
 
 - **CUDA:** a GGUF loads at `--quant q4k` by default and runs resident. Any other source loads at int8int8 with
   per-32 activation scales, which CUDA's residency also implements.
-- **Metal:** resident only with an explicit `--quant q4k`. The default load is int8int8 with per-32 activation
-  scales, which Metal's resident projections do not implement, so it runs on the CPU.
+- **Metal:** a GGUF loads at `--quant q4k` by default and runs resident on the q4k lane, which quantizes no
+  activation. Any other source loads at int8int8 with per-32 activation scales, which Metal's resident projections do
+  not implement, so it runs on the CPU.
 - **WebGPU:** neither; the CPU.
 
 ## Verified on: what has actually run

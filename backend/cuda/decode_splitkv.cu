@@ -20,11 +20,12 @@
 #include "kvtype.cuh"
 #include "kvpage.cuh"
 #include "attnscore.cuh"
-extern "C" __global__ void splitkv_scores(
+// splitkv_scores_row is splitkv_scores' block for head h and key tile ty of one query: the one body splitkv_scores and
+// splitkv_scores_ragged share, so a ragged row's scores are the M=1 kernel's. qs is the launch's dynamic shared memory (hd floats).
+__device__ __forceinline__ void splitkv_scores_row(float* qs,
     const float* __restrict__ q, const KV_T* __restrict__ kc, const int* __restrict__ kvt,
     int nH, int nKV, int hd, int winStart, int nKeys, float scale,
-    float* __restrict__ scStore, int nWin ATTN_CAP_PARAM) {
-    int h = blockIdx.x; if (h >= nH) return;   // block-uniform: safe before the barrier below
+    float* __restrict__ scStore, int nWin, int h, int ty ATTN_CAP_PARAM KV_SCALE_PARAMS) {
 
     // q IS BLOCK-INVARIANT — it depends only on h = blockIdx.x — but every one of the 128 threads
     // used to re-load all hd/4 float4 of it from GLOBAL inside the inner loop. Warp-uniform
@@ -36,11 +37,10 @@ extern "C" __global__ void splitkv_scores(
     //
     // BIT-IDENTICAL BY CONSTRUCTION: same values, same d-order, same __fmaf_rn sequence. Only the
     // address space q is read from changes, so no reduction tree moves and no golden re-bases.
-    extern __shared__ __align__(16) float qs[];
     for (int t = threadIdx.x; t < hd; t += blockDim.x) qs[t] = q[(long)h * hd + t];
     __syncthreads();   // BEFORE the divergent return below — every thread in the block reaches it
 
-    int i = blockIdx.y * blockDim.x + threadIdx.x;   // window index
+    int i = ty * blockDim.x + threadIdx.x;   // window index
     int s = winStart + i;
     if (i >= nWin || s >= nKeys) return;
     int kvDim = nKV * hd, group = nH / nKV, kvh = h / group;
@@ -50,14 +50,42 @@ extern "C" __global__ void splitkv_scores(
     int d4 = hd >> 2;
     const float4* q4 = (const float4*)qs;
     for (int j = 0; j < d4; j++) {
-        float4 qq = q4[j], kk = KV_LD4V(ks, j);
+        float4 qq = q4[j], kk = KV_LD4VS(ks, j, kscl[KV_ROW(kvt, s) * nKV + kvh]);
         dot = __fmaf_rn(qq.x, kk.x, dot);
         dot = __fmaf_rn(qq.y, kk.y, dot);
         dot = __fmaf_rn(qq.z, kk.z, dot);
         dot = __fmaf_rn(qq.w, kk.w, dot);
     }
-    for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qs[d], KV_LD(ks + d), dot);
+    for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qs[d], KV_LDS(ks + d, kscl[KV_ROW(kvt, s) * nKV + kvh]), dot);
     scStore[(long)h * nWin + i] = attn_score(dot, scale ATTN_CAP_ARG);
+}
+
+extern "C" __global__ void splitkv_scores(
+    const float* __restrict__ q, const KV_T* __restrict__ kc, const int* __restrict__ kvt,
+    int nH, int nKV, int hd, int winStart, int nKeys, float scale,
+    float* __restrict__ scStore, int nWin ATTN_CAP_PARAM KV_SCALE_PARAMS) {
+    int h = blockIdx.x; if (h >= nH) return;   // block-uniform: safe before the barrier inside
+    extern __shared__ __align__(16) float qs[];
+    splitkv_scores_row(qs, q, kc, kvt, nH, nKV, hd, winStart, nKeys, scale, scStore, nWin, h, blockIdx.y ATTN_CAP_ARG KV_SCALE_ARGS);
+}
+
+// splitkv_scores_ragged: splitkv_scores over a ragged step's split-KV rows, grid (nH, key tiles, rows). Launch slot k is batch row
+// m = rowIdx[row0 + k]: its query is row m of q, its keys are positions up to rowPos[m] (and its window) in KV slot rowSlot[m],
+// whose table is tabs + rowSlot[m]*tabStride, and its scores go to slot k's [nH][stride] region of scStore, its own nWin wide.
+extern "C" __global__ void splitkv_scores_ragged(
+    const float* __restrict__ q, const KV_T* __restrict__ kc, const int* __restrict__ tabs, int tabStride,
+    const int* __restrict__ rowSlot, const int* __restrict__ rowPos, const int* __restrict__ rowIdx, int row0,
+    int nH, int nKV, int hd, int window, float scale, float* __restrict__ scStore, int stride ATTN_CAP_PARAM KV_SCALE_PARAMS) {
+    int h = blockIdx.x; if (h >= nH) return;
+    const int k = blockIdx.z;
+    const int m = rowIdx[row0 + k];
+    const int nKeys = rowPos[m] + 1;
+    const int winStart = (window > 0 && nKeys > window) ? nKeys - window : 0;
+    const long qo = (long)m * nH * hd;
+    const long so = (long)k * nH * stride;
+    extern __shared__ __align__(16) float qs[];
+    splitkv_scores_row(qs, q + qo, kc, tabs + (long)rowSlot[m] * tabStride, nH, nKV, hd, winStart, nKeys, scale, scStore + so,
+                       nKeys - winStart, h, blockIdx.y ATTN_CAP_ARG KV_SCALE_ARGS);
 }
 
 // splitkv_softmax: grid nH, block 128 — replicates attn_batched's max+exp+denom EXACTLY (same strided
@@ -71,11 +99,11 @@ extern "C" __global__ void splitkv_scores(
 // max after the exp pass would need every exp recomputed. NULL for every other family, and
 // the kernel is then bit-identical to before (the branch is uniform across the block, so it
 // costs no divergence).
-extern "C" __global__ void splitkv_softmax(
+// splitkv_softmax_row is splitkv_softmax's block for head h: the one body splitkv_softmax and splitkv_softmax_ragged share. red is
+// the launch's dynamic shared memory (blockDim floats).
+__device__ __forceinline__ void splitkv_softmax_row(float* red,
     float* __restrict__ scStore, int nH, int nWin, float* __restrict__ invStore,
-    const float* __restrict__ sinks) {
-    int h = blockIdx.x; if (h >= nH) return;
-    extern __shared__ float red[];
+    const float* __restrict__ sinks, int h) {
     int t = threadIdx.x, nt = blockDim.x;
     float* sc = scStore + (long)h * nWin;
     float lm = -1e30f;
@@ -113,6 +141,29 @@ extern "C" __global__ void splitkv_softmax(
     if (t == 0) { float denom = red[0]; if (hasSink) denom += __expf(sink - mx); invStore[h] = 1.f / denom; }
 }
 
+extern "C" __global__ void splitkv_softmax(
+    float* __restrict__ scStore, int nH, int nWin, float* __restrict__ invStore,
+    const float* __restrict__ sinks) {
+    int h = blockIdx.x; if (h >= nH) return;
+    extern __shared__ float red[];
+    splitkv_softmax_row(red, scStore, nH, nWin, invStore, sinks, h);
+}
+
+// splitkv_softmax_ragged: splitkv_softmax over a ragged step's split-KV rows, grid (nH, rows), block 128: launch slot k's scores
+// (slot k's [nH][stride] region, its row's nWin wide) and its inverse denominators (slot k's nH entries of invStore).
+extern "C" __global__ void splitkv_softmax_ragged(
+    float* __restrict__ scStore, const int* __restrict__ rowPos, const int* __restrict__ rowIdx, int row0,
+    int nH, int window, int stride, float* __restrict__ invStore, const float* __restrict__ sinks) {
+    int h = blockIdx.x; if (h >= nH) return;
+    const int k = blockIdx.y;
+    const int nKeys = rowPos[rowIdx[row0 + k]] + 1;
+    const int nWin = (window > 0 && nKeys > window) ? window : nKeys;
+    const long so = (long)k * nH * stride;
+    const long io = (long)k * nH;
+    extern __shared__ float red[];
+    splitkv_softmax_row(red, scStore + so, nH, nWin, invStore + io, sinks, h);
+}
+
 // splitkv_vsum: each thread owns one output dim d and folds Σ_s sc[s]·v[s][d] in ascending s — the
 // WHOLE per-d reduction, identical to attn_batched. grid nH × ⌈hd/Dtile⌉ blocks fills the SMs.
 //
@@ -122,18 +173,44 @@ extern "C" __global__ void splitkv_softmax(
 // scalar loop's independent loads), and a naive `(long)(s+k)*kvDim` unroll REGRESSED to 111 (extra
 // 64-bit multiplies). Multiple accumulators are forbidden (they reorder the fold). So the scalar loop
 // stands; further vsum gains would need a non-bit-identical reduction. See task-decode-splitkv-attention.
-extern "C" __global__ void splitkv_vsum(
+// splitkv_vsum_row is splitkv_vsum's thread for head h, output dim tile ty: the one body splitkv_vsum and splitkv_vsum_ragged share.
+__device__ __forceinline__ void splitkv_vsum_row(
     const float* __restrict__ scStore, const KV_T* __restrict__ vc, const int* __restrict__ kvt,
     const float* __restrict__ invStore, int nH, int nKV, int hd, int winStart, int nKeys,
-    int nWin, float* __restrict__ ctx) {
-    int h = blockIdx.x; if (h >= nH) return;
-    int d = blockIdx.y * blockDim.x + threadIdx.x;
+    int nWin, float* __restrict__ ctx, int h, int ty KV_SCALE_PARAMS) {
+    int d = ty * blockDim.x + threadIdx.x;
     if (d >= hd) return;
     int kvDim = nKV * hd, group = nH / nKV, kvh = h / group;
     const float* sc = scStore + (long)h * nWin;
     float acc = 0.f;
-    KV_SUM_RUNS(vc + (long)kvh * hd + d, kvt, kvDim, winStart, nKeys, acc, sc[s - winStart])
+    KV_SUM_RUNS_S(vc + (long)kvh * hd + d, kvt, kvDim, winStart, nKeys, acc, sc[s - winStart], vscl[KV_ROW(kvt, s) * nKV + kvh])
     ctx[(long)h * hd + d] = acc * invStore[h];
+}
+
+extern "C" __global__ void splitkv_vsum(
+    const float* __restrict__ scStore, const KV_T* __restrict__ vc, const int* __restrict__ kvt,
+    const float* __restrict__ invStore, int nH, int nKV, int hd, int winStart, int nKeys,
+    int nWin, float* __restrict__ ctx KV_SCALE_PARAMS) {
+    int h = blockIdx.x; if (h >= nH) return;
+    splitkv_vsum_row(scStore, vc, kvt, invStore, nH, nKV, hd, winStart, nKeys, nWin, ctx, h, blockIdx.y KV_SCALE_ARGS);
+}
+
+// splitkv_vsum_ragged: splitkv_vsum over a ragged step's split-KV rows, grid (nH, dim tiles, rows): launch slot k's scores and
+// inverse denominators (its regions of scStore and invStore) into batch row rowIdx[row0 + k] of ctx.
+extern "C" __global__ void splitkv_vsum_ragged(
+    const float* __restrict__ scStore, const KV_T* __restrict__ vc, const int* __restrict__ tabs, int tabStride,
+    const int* __restrict__ rowSlot, const int* __restrict__ rowPos, const int* __restrict__ rowIdx, int row0,
+    const float* __restrict__ invStore, int nH, int nKV, int hd, int window, int stride, float* __restrict__ ctx KV_SCALE_PARAMS) {
+    int h = blockIdx.x; if (h >= nH) return;
+    const int k = blockIdx.z;
+    const int m = rowIdx[row0 + k];
+    const int nKeys = rowPos[m] + 1;
+    const int winStart = (window > 0 && nKeys > window) ? nKeys - window : 0;
+    const long so = (long)k * nH * stride;
+    const long io = (long)k * nH;
+    const long co = (long)m * nH * hd;
+    splitkv_vsum_row(scStore + so, vc, tabs + (long)rowSlot[m] * tabStride, invStore + io, nH, nKV, hd, winStart, nKeys,
+                     nKeys - winStart, ctx + co, h, blockIdx.y KV_SCALE_ARGS);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -155,7 +232,7 @@ extern "C" __global__ void splitkv_vsum(
 extern "C" __global__ void splitkv_vsum_partial(
     const float* __restrict__ scStore, const KV_T* __restrict__ vc, const int* __restrict__ kvt,
     int nH, int nKV, int hd, int winStart, int nKeys, int nWin, int nSplit,
-    float* __restrict__ partials) {
+    float* __restrict__ partials KV_SCALE_PARAMS) {
     int h = blockIdx.x; if (h >= nH) return;
     int d = blockIdx.y * blockDim.x + threadIdx.x;
     if (d >= hd) return;
@@ -170,7 +247,7 @@ extern "C" __global__ void splitkv_vsum_partial(
     int lo = winStart + sp * per;
     int hi = lo + per; if (hi > nKeys) hi = nKeys;
     float acc = 0.f;
-    KV_SUM_RUNS(vc + (long)kvh * hd + d, kvt, kvDim, lo, hi, acc, sc[s - winStart])
+    KV_SUM_RUNS_S(vc + (long)kvh * hd + d, kvt, kvDim, lo, hi, acc, sc[s - winStart], vscl[KV_ROW(kvt, s) * nKV + kvh])
     partials[((long)h * hd + d) * nSplit + sp] = acc;
 }
 

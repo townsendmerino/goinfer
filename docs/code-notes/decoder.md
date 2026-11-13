@@ -15,7 +15,7 @@ equality check: gpu.webgpuBackend's real Name() is "webgpu:" + the underlying GP
 (e.g. "webgpu:metal" on macOS, "webgpu:vulkan" on Linux) — every OTHER backend's Name() is a
 bare string ("cpu", "cuda", "metal"), so this asymmetry is specific to webgpu.
 
-Found while wiring G7 part 2 (docs/tasks/task-gpu-paths-2026-09.md): a NEW `== "webgpu"` check
+Found while wiring G7 part 2 (docs/completed/task-gpu-paths-2026-09.md): a NEW `== "webgpu"` check
 written for that row silently never matched on this exact Mac, which led straight to a
 PRE-EXISTING bug this asymmetry already caused — DecodePath()'s own `case be != "webgpu":`
 (below) has never matched a real webgpu backend on any platform, so a declined webgpu load has
@@ -84,7 +84,7 @@ ResidentHiddenLast is an OPTIONAL ResidentForward extension: ingest a whole sequ
 positions startPos..startPos+len-1 and return the LAST position's hidden state AFTER the
 model's final norm — the resident twin of Prefiller, but stopping before the LM head instead
 of after it (decoder/embed.go's HiddenLast never needs logits, and the head is the single
-most expensive matmul in a forward). Used by HiddenLast/G4 (docs/tasks/task-gpu-paths-2026-09.md):
+most expensive matmul in a forward). Used by HiddenLast/G4 (docs/completed/task-gpu-paths-2026-09.md):
 an embedding request on a GPU box otherwise runs the whole text decoder on the CPU even when
 the same arch decodes resident, the exact defect G2 documents for image turns.
 
@@ -150,7 +150,7 @@ which prefix reuse also reads; a backend can report this one without changing wh
 Moved from `decoder/residency.go` (the comment above `eligible = true` in `decodeRunnerDecline`) on 2026-10-09.
 
 ```text
-G7 part 2 (docs/tasks/task-gpu-paths-2026-09.md): decodeRunnerEligible's own Nemotron branch
+G7 part 2 (docs/completed/task-gpu-paths-2026-09.md): decodeRunnerEligible's own Nemotron branch
 hard-declines ANY MoE-block variant for every backend — a real crash-risk guard, since
 cuda/metal's own per-layer block-kind switches have no MoE case at all and would
 otherwise nil-dereference on the first token. webgpu now implements it for real
@@ -289,7 +289,7 @@ Moved from `decoder/residency.go` (the comment above `RopeInvFreqLayer`) on 2026
 RopeInvFreqLayer returns layer i's RoPE inverse-frequency table as float32 — the global
 or local table per the layer's attention type (Mellum YaRN-on-global vs default-local).
 
-G5 (docs/tasks/task-gpu-paths-2026-09.md), FeatNoPE: a NoPE layer (SmolLM3's no_rope_layers,
+G5 (docs/completed/task-gpu-paths-2026-09.md), FeatNoPE: a NoPE layer (SmolLM3's no_rope_layers,
 Cohere2's every-Nth global layer — arch.isNoPELayer) gets an all-ZERO table instead of the
 real one, same length. The resident rope kernels compute cos=cos(pos·invFreq)·mscale,
 sin=sin(pos·invFreq)·mscale (backend/cuda/gemv_fwd.cu, backend/metal/kernels.go); at invFreq==0 that is
@@ -339,7 +339,7 @@ on 27B/Granite. Falls back to 1/√headDim only if an arch left AttnScale unset 
 Moved from `decoder/residency.go` (the comment above the Nemotron MoE decline in `withResidency`) on 2026-10-09.
 
 ```text
-G7 (docs/tasks/task-gpu-paths-2026-09.md): Nemotron 3 Nano / 3.5 Lightning's fourth block
+G7 (docs/completed/task-gpu-paths-2026-09.md): Nemotron 3 Nano / 3.5 Lightning's fourth block
 kind (MoE FFN) has no GPU resident implementation on cuda/metal — decodeRunnerEligible's
 own nemotron branch already declines this for them (`a.MoE == nil`), but that predicate
 returns a bare bool, so the generic "arch is not eligible" message below would otherwise
@@ -408,7 +408,7 @@ Moved from `decoder/residency.go` (the comment above `residentQuantLabel`) on 20
 residentQuantLabel is DecodePath's resident-quant string, split out so it is testable without a
 live Model (see decoder/staged_device_note_test.go) — same shape as declinedToCPUReason below.
 
-G10 (docs/tasks/task-gpu-paths-2026-09.md), widened by M-15... M-25 (audit-2026-09-10): Metal has
+G10 (docs/completed/task-gpu-paths-2026-09.md), widened by M-15... M-25 (audit-2026-09-10): Metal has
 no int8 GEMV kernel at all — ANY Int8()-kind weight is silently re-quantized to W4A8 (int4) at
 resident-build time (backend/metal/model.go's int4Buf falls back to w.Int8() whenever int4DirectWords
 finds no already-int4 nibbles), not just under `--quant int8int8`. `--quant int8` produces the
@@ -430,7 +430,7 @@ Moved from `decoder/residency.go` (the comment above `autoMetalPrecision`) on 20
 autoMetalPrecision is why a model stays on the CPU when -backend auto chose metal, "" when it may go resident. A
 backend the user did not name must not change the precision they loaded at, such as the int8int8 bundle a
 model-included goinfer-chat carries (R17, docs/completed/task-first-hour.md). Metal runs int4 resident, and since slice 1
-of docs/tasks/task-metal-int8-2026-10.md dense int8int8 natively; it re-quantizes int8, int4mix and the int8int8
+of docs/completed/task-metal-int8-2026-10.md dense int8int8 natively; it re-quantizes int8, int4mix and the int8int8
 models native int8 does not cover (MoE, DeltaNet) to int4, and takes no f32. So int8int8 may try the resident here
 (slice 5: gate S-auto passed, 2026-10-04), and autoMetalKeepsPrecision checks afterwards that it ran natively; the
 others stay on the CPU. A named -backend metal still runs them re-quantized.
@@ -540,7 +540,7 @@ decode coverage needs a batch equivalent (a follow-on).
 Moved from `decoder/backend.go` (the comment above `QuantBackend4`) on 2026-10-09.
 
 ```text
-QuantBackend4 is QuantBackend's int4 (W4A8) counterpart — G6 (docs/tasks/task-gpu-paths-2026-09.md),
+QuantBackend4 is QuantBackend's int4 (W4A8) counterpart — G6 (docs/completed/task-gpu-paths-2026-09.md),
 the "staged int4" item: matmulInto's int8 branch already checked QuantBackend before falling
 back to the CPU kernel, but its int4 branch never consulted a backend at all, so an int4 model
 on the STAGED (non-resident) path ran every projection on the CPU regardless of which backend
@@ -912,7 +912,7 @@ qwen3_next (verified against their real modeling_qwen3_5*.py: Qwen3_5Attention P
 q_proj to 2*num_heads*head_dim). FALSE for Olmo Hybrid: its full-attention layer is
 olmo3's own PLAIN scheme (ordinary q_proj, no gate) — verified against the real
 modeling_olmo_hybrid.py, which reuses Olmo3Attention verbatim for these layers, not
-qwen3.5's gated one. G5 (docs/tasks/task-gpu-paths-2026-09.md): this field did not exist before
+qwen3.5's gated one. G5 (docs/completed/task-gpu-paths-2026-09.md): this field did not exist before
 Olmo Hybrid — the resident backends assumed EVERY qwen35Params-carrying family's softmax
 layer was qGate, which was true of every family that had reached residency until now.
 ```
@@ -1245,7 +1245,7 @@ prompts since a GPU Run ≫ a CPU int4 forward (the K/V-upload bridge stays
 for future prefix-reuse; batched on-device prefill, the long-prompt fix,
 is deferred).
 
-G3 (docs/tasks/task-gpu-paths-2026-09.md): a plain session (commit != nil, no adapter) still
+G3 (docs/completed/task-gpu-paths-2026-09.md): a plain session (commit != nil, no adapter) still
 keeps the CPU/staged path — sessions exist for prefix reuse, which the prior paragraph
 already rules out combining with resident. But an ADAPTER session (cache.lora != nil) is
 the one case where going through Session.Generate is NOT about prefix reuse at all — it is
@@ -1640,7 +1640,7 @@ backend/cuda/resident.go's resolveCtxCapFit; and (decoder/fitguard.go's guardFit
 internal/runtime/modelload's Load, not by Load itself) a dense .gguf that will not fit
 resident RAM stays a plain refusal instead of getting an automatic -stream-weights retry.
 Does NOT affect a genuine bug fix shipped alongside Phase 2 work (Metal now honoring an
-explicit -ctx at all, docs/tasks/task-gpu-paths-2026-09.md's G6 entry) — that is correctness, not
+explicit -ctx at all, docs/completed/task-gpu-paths-2026-09.md's G6 entry) — that is correctness, not
 an opinionated default, and stays on either way. An explicitly PINNED request
 (ResidentContext, MoECacheSlots, StreamWeights itself, etc.) is never affected by this flag
 in either direction: fit-by-default only ever acts on the UNPINNED case.
@@ -2887,7 +2887,7 @@ FeatAttnTemp (Ministral 3, batch 2 G3): the Llama4-style attn-temp query scale
 decoder/forwardn.go) when this feature was added — admitting mistral3 to a resident path
 that didn't apply it would silently drop the scale for every position past
 original_max_position_embeddings, producing plausible-but-wrong logits at exactly the
-context lengths the mechanism exists for. G5 (docs/tasks/task-gpu-paths-2026-09.md): cuda and
+context lengths the mechanism exists for. G5 (docs/completed/task-gpu-paths-2026-09.md): cuda and
 metal now apply it (Model.AttnTempScale/AttnTempParams, folded into the existing rope
 launch's Q output rather than a new kernel) and declare this. WebGPU still declines —
 otherwise a plain GQA+YaRN model needing nothing else any backend lacks, so without this
@@ -2902,7 +2902,7 @@ Moved from `decoder/features.go` (the comment above `FeatPostOnlyNorm`) on 2026-
 FeatPostOnlyNorm (Olmo 3/Olmo Hybrid, batch 2 G2): NormPostOnly — no pre-norm at all, the
 sublayer's OUTPUT is normalized before the residual add. Genuinely different from
 FeatSandwichNorm (which normalizes BOTH the input and the output). G5
-(docs/tasks/task-gpu-paths-2026-09.md): cuda and metal now implement it (quant_vec on the raw
+(docs/completed/task-gpu-paths-2026-09.md): cuda and metal now implement it (quant_vec on the raw
 residual in place of the pre-norm dispatch; the sandwich post-norm dispatch already both
 backends ship widens to cover this placement too) and declare it.
 ```
@@ -3120,7 +3120,7 @@ TestZZGemmaFeatureDiff-shaped comparisons). CUDA and Metal implement it via thei
 geometry seam (backend/cuda/resident.go's cudaLayer.hd/nKV, backend/metal/model.go's residLayer.geom); WebGPU's
 twin fields (runLayer.ghd/gnKV/ghalf, backend/webgpu/decoderunner.go) exist but are never populated by
 backend/webgpu/residency.go's per-layer builder for any family — confirmed 2026-09-08 when G6's Gemma-set
-feature work (docs/tasks/task-gpu-paths-2026-09.md) satisfied every ResidentFeature dense Gemma 4
+feature work (docs/completed/task-gpu-paths-2026-09.md) satisfied every ResidentFeature dense Gemma 4
 nominally requires without also covering this, which would have silently admitted it to a path
 that crashes on upload ("gpu: residency unsupported projection precision \"\"") rather than
 mis-running quietly — still a decline this predicate exists to make deliberate instead of
@@ -3305,7 +3305,7 @@ because each was a term the wiring dropped rather than a kernel computing it wro
 Moved from `decoder/features.go` (the comment above `FeatNoPE` in the cuda entry) on 2026-10-09.
 
 ```text
-G5 (docs/tasks/task-gpu-paths-2026-09.md): SmolLM3's NoPE layers get an all-zero per-layer
+G5 (docs/completed/task-gpu-paths-2026-09.md): SmolLM3's NoPE layers get an all-zero per-layer
 invFreq table instead of a new kernel path — RopeInvFreqLayer folds this in for every
 backend that reads it (decoder/residency.go), so this line and Metal's twin are the
 whole change. Identity rotation at invFreq==0 holds only when mscale==1 on those
@@ -3317,7 +3317,7 @@ layers, true of every layerNoPE family admitted so far — see that function's c
 Moved from `decoder/features.go` (the comment above `FeatAttnTemp` in the cuda entry) on 2026-10-09.
 
 ```text
-G5 (docs/tasks/task-gpu-paths-2026-09.md): Ministral 3's post-RoPE query scale, folded into
+G5 (docs/completed/task-gpu-paths-2026-09.md): Ministral 3's post-RoPE query scale, folded into
 rope_kv's existing launch (a new qTempScale parameter, applied to Q only, after the
 rotation) rather than a new kernel — Model.AttnTempScale/AttnTempParams
 (decoder/residency.go) supply the value; rope_kv_batched's twin recomputes it per row
@@ -3331,7 +3331,7 @@ verified end-to-end on real CUDA hardware — TestMinistral3ResidentParityCUDA.
 Moved from `decoder/features.go` (the comment above `FeatPostOnlyNorm` in the cuda entry) on 2026-10-09.
 
 ```text
-G5 (docs/tasks/task-gpu-paths-2026-09.md): Olmo 3 / Olmo Hybrid's no-pre-norm placement
+G5 (docs/completed/task-gpu-paths-2026-09.md): Olmo 3 / Olmo Hybrid's no-pre-norm placement
 (Model.PostOnlyNormResident) — segA quantizes the RAW residual (quant_vec) instead of
 running rmsnorm_quant, and the pre-existing sandwich post-norm dispatch widens from
 `sandwich` to `sandwich || postOnly`. Requires the fused QKV path off (it bakes a real
@@ -3343,7 +3343,7 @@ pre-norm weight in) — postOnly forces the unfused segA chain.
 Moved from `decoder/features.go` (the comment above `FeatLayerNorm` in the cuda entry) on 2026-10-09.
 
 ```text
-G5 (docs/tasks/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-
+G5 (docs/completed/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-
 R7B. FeatLayerNorm is a genuinely NEW kernel (layernorm_quant, backend/cuda/glue.cu) — this
 backend had NO mean-centered norm before, only RMSNorm variants — but bias-free only
 (Cohere's LayerNorm carries no learned bias term; a future bias-bearing LayerNorm family
@@ -3459,7 +3459,7 @@ The attention-score softcap is compiled into the three kernels a capped layer ta
 variant built with -DATTN_SOFTCAP (backend/cuda/attnscore.cuh). The lane selectors keep such a layer off flash-decode and its verify
 rows, the fused prefill kernels, the image block kernel, the block drafter and MLA. The declaration rests on the kernel gates
 against float64 with the cap dropped as the control (TestAttnSoftcap_kernelsAgainstFloat64) and on the lane test
-(TestGemma2Softcap_lanesCUDA); the Gemma 2 end-to-end tests are diagnostics (docs/tasks/task-forward-architecture-2026-10.md §4.6a).
+(TestGemma2Softcap_lanesCUDA); the Gemma 2 end-to-end tests are diagnostics (docs/completed/task-forward-architecture-2026-10.md §4.6a).
 FeatAttnLogitSoftcap: true,
 FeatPerLayerRoPE:     true, // per-layer invFreq buffer (Gemma local 10k vs global 1M base)
 FeatMoE:              true, // moe_route + indexed stacked experts + ungated shared expert
@@ -3511,7 +3511,7 @@ Nemotron-H's Mamba-2 mixer (backend/cuda/mamba.cu: mamba_conv, mamba_ssm, mamba_
 (backend/cuda/nongated_act.cu: relu2_quant) and the non-gated up/down structure, at int4 only: BuildResident declines an int8 load, whose
 projections would be re-quantized to int4, and the family's non-gated MoE blocks. Granite-4.0-H stays on the CPU. The declaration rests on
 the tier 0 gates (K, D, I, M, S, G, P) and on tier 1 against the CPU: the 4B whole, a three-layer slice of the 9B, and the whole 9B on this
-8 GB card (docs/tasks/task-forward-architecture-2026-10.md §4.7, "OP2b on CUDA"; docs/measurements/op2b-cuda-2026-10-16/).
+8 GB card (docs/completed/task-forward-architecture-2026-10.md §4.7, "OP2b on CUDA"; docs/measurements/op2b-cuda-2026-10-16/).
 FeatSSM:           true,
 FeatNonGatedMLP:   true,
 FeatNonGatedReLU2: true,
@@ -3528,7 +3528,7 @@ FeatPairwiseMRoPE: true,
 Moved from `decoder/features.go` (the comment above `FeatParallelBlock` in the metal entry) on 2026-10-09.
 
 ```text
-G5 (docs/tasks/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-R7B.
+G5 (docs/completed/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-R7B.
 FeatLayerNorm was already true (GPT-2's layernorm_quant, bias-capable via r.uLNHasBias —
 Cohere just needs hasBias=0, no kernel change). FeatParallelBlock reuses encodeAttention's
 pre-attn r.aq/r.aSc as the MLP's gate|up input in encodeLayer instead of re-normalizing
@@ -3543,7 +3543,7 @@ Model.LogitScaleResident.
 Moved from `decoder/features.go` (the comment above `FeatPairwiseRoPE` in the metal entry) on 2026-10-09.
 
 ```text
-2026-10-09 (docs/tasks/task-metal-pairwise-rope-2026-10.md): GPT-J PAIRWISE rotation, via the twins rope_pw,
+2026-10-09 (docs/completed/task-metal-pairwise-rope-2026-10.md): GPT-J PAIRWISE rotation, via the twins rope_pw,
 rope2_pw, rope_f16_pw and rope_mrope_f16_pw, bound in place of the NeoX pipelines when
 Model.PairwiseRoPEResident() (backend/metal/model.go, backend/metal/prefill.go); the MC3 batched step declines a pairwise model.
 Backed by the kernel gate (TestRopePairwise_*), the peaked-attention resident gates that go red on the NeoX
@@ -3988,7 +3988,7 @@ a block drafter's weights + verify/capture buffers, a vision tower. tasks/task-f
 §2's "every allocation is a term of the plan, including the ones that attach after load" —
 the concrete example that motivated it (a 26B's expert cache sized before a later --drafter
 attach grabbed room NewBlockSpec then needed) is exactly what this term exists to prevent
-PLAN from repeating. capSlots itself is now fixed too (docs/tasks/task-gpu-paths-2026-09.md,
+PLAN from repeating. capSlots itself is now fixed too (docs/completed/task-gpu-paths-2026-09.md,
 2026-09-09): no ResidencyBackend interface change was needed after all — an out-of-band
 hint on decoder.Model (Options.ExtraResidentBytes / Model.ExtraResidentBytes()) was enough,
 since backend/cuda/backend.go's BuildResident already receives *Model and can read it directly.
@@ -4214,7 +4214,7 @@ input — so the flag was being recommended as a fix that could not possibly cha
 producing an identical refusal after the user did what they were told.
 
 cmd/prequant builds a .giw from a directory one layer at a time since 2026-10-09 (StreamTranscodeDir,
-docs/tasks/task-prequant-dir-streaming-2026-10.md): it no longer loads the checkpoint whole, so it no longer hits this
+docs/completed/task-prequant-dir-streaming-2026-10.md): it no longer loads the checkpoint whole, so it no longer hits this
 guard, and it is the remedy for a directory (goinfer-serve and goinfer-chat already take that route unless --direct-load).
 Before that, the directory transcode loaded fully resident and could not help, so GOINFER_NO_FIT_GUARD=1 was named
 instead; it stays in the text for the case the 70% margin is being conservative about.
@@ -4228,7 +4228,7 @@ Moved from `decoder/fitguard.go` (the comment above `DenseStreamable` in `FitDec
 DenseStreamable is true when a -stream-weights retry after this refusal would engage
 decoder/layerpaging.go's windowed dense pager — the mechanism tasks/task-fit-to-hardware.md's
 CPU placement piece measured as sound for an AUTOMATIC retry
-(docs/tasks/task-gpu-paths-2026-09.md). It is false for MoE models and "own-forward" families
+(docs/completed/task-gpu-paths-2026-09.md). It is false for MoE models and "own-forward" families
 (gemma4, nemotron-h-moe, lfm2): MoE CPU weight streaming is a documented, MEASURED failure
 mode instead — docs/benchmarks.md "M35/M26 on the Mac" ran a real 20 GB MoE checkpoint
 through the CPU-staged --stream-weights path for 2h10min with ZERO completions (RSS pinned
@@ -4997,7 +4997,7 @@ Moved from `decoder/forwardn.go` (the comment above `attnGroupedNEONSize`) on 20
 attnGroupedNEONSize is the query-head group size aikit's grouped acc64
 kernels (MatmulQKAcc64Group/MatmulAVAcc64Group) have a NEON port for — the
 1.5B's real GQA ratio (NumHeads/NumKVHeads), R13's registered decision
-shape (docs/tasks/red-october.md, aikit linalg commit af926e3). Any other
+shape (docs/completed/red-october.md, aikit linalg commit af926e3). Any other
 group ratio still runs correctly through the same Group functions (their
 Go fallback is the oracle every G is gated against), but slower than G
 separate per-head calls — so attendGroupedHeads is gated to EXACTLY this
@@ -5306,7 +5306,7 @@ model, where weight matmul is bandwidth-bound:
 	4096      93.9%        6.1%
 	8192      97.1%        2.9%
 
-So batching this FFN expert-major (docs/tasks/task-moe-streaming.md Lever 4) is not a
+So batching this FFN expert-major (docs/completed/task-moe-streaming.md Lever 4) is not a
 compute lever at agentic prompt lengths: an upper bound on what it could
 return was measured at 4.6-5.1% at K=1-2k and was NOT RESOLVABLE above
 run-to-run spread at K>=4096. Its case has to be made on streaming I/O,
@@ -7578,7 +7578,7 @@ Moved from `decoder/weightmat.go` (the comment above `matmul`) on 2026-10-09.
 matmul computes dst[M, rows] = a[M, cols] · wᵀ, dispatching on w's precision
 with goinfer's backend routing: the f32, W8A8 and W4A8 paths can run on a GPU backend
 (be.MatmulBT / QuantBackend.MatmulW8A8 / QuantBackend4.MatmulW4A8, the last a G6
-docs/tasks/task-gpu-paths-2026-09.md addition); weight-only int8 (Q8) stays CPU. (The old
+docs/completed/task-gpu-paths-2026-09.md addition); weight-only int8 (Q8) stays CPU. (The old
 weightMat.matmul, now a free function over linalg.WeightMat.)
 ```
 
@@ -7587,7 +7587,7 @@ weightMat.matmul, now a free function over linalg.WeightMat.)
 Moved from `decoder/weightmat.go` (the comment above `matmul.int4.consult`) on 2026-10-09.
 
 ```text
-G6 (docs/tasks/task-gpu-paths-2026-09.md): staged int4 backend consult, mirroring the W8A8
+G6 (docs/completed/task-gpu-paths-2026-09.md): staged int4 backend consult, mirroring the W8A8
 branch below — matmulInto's own int4 branch gets the same fix, for the same reason.
 
 Nested under Int4()'s narrower ok (canonical bytes present), not the outer IsInt4():
@@ -7694,7 +7694,7 @@ matmulIntoPre is matmulInto(ws, be, w, a, dst, M), using p's block when it was q
 Moved from `decoder/weightmat.go` (the comment above `matmulInto.int4`) on 2026-10-09.
 
 ```text
-G6 (docs/tasks/task-gpu-paths-2026-09.md): the staged int4 backend consult this branch
+G6 (docs/completed/task-gpu-paths-2026-09.md): the staged int4 backend consult this branch
 never had, mirroring the isW8A8 branch's QuantBackend check above.
 
 Nested under Int4()'s ok, not the outer IsInt4() — see matmul()'s own comment on
@@ -10328,7 +10328,7 @@ of those entry points calls this function today, matching this function's own
 Moved from `decoder/residentneed.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
-One memory-accounting path per backend (docs/tasks/task-memory-accounting-2026-09.md).
+One memory-accounting path per backend (docs/completed/task-memory-accounting-2026-09.md).
 
 Before this, Plan("metal") — what `fit` reports — and Metal's own pre-build guard priced the same
 load differently, measured on an M1 Pro (2026-09-25, qwen2.5-coder-1.5b at ctx 4096):
@@ -10537,7 +10537,7 @@ Moved from `decoder/fidelity_testhook.go` (the comment above `Model.PrefillLogit
 ```text
 PrefillLogitsWithAdapterForTest is PrefillLogitsForTest with a compute-time LoRA adapter
 (already loaded via Model.LoadAdapter) bound to a fresh cache before prefilling — the CPU-side
-half of a resident-vs-CPU LoRA numeric parity gate (G3, docs/tasks/task-gpu-paths-2026-09.md) driven
+half of a resident-vs-CPU LoRA numeric parity gate (G3, docs/completed/task-gpu-paths-2026-09.md) driven
 from a package (e.g. metal) that cannot reach KVCache.lora or Model.adapter directly, both
 unexported.
 ```
@@ -10690,7 +10690,7 @@ one: lfm2 and gpt-oss both reached this seam (audit-2026-09-02 C-02).
 Moved from `decoder/embed.go` (the comment above `Model.HiddenLast.resident`) on 2026-10-09.
 
 ```text
-G4 (docs/tasks/task-gpu-paths-2026-09.md): on a GPU box this arch may decode resident while
+G4 (docs/completed/task-gpu-paths-2026-09.md): on a GPU box this arch may decode resident while
 embedding requests still ran the whole text decoder on the CPU — the same class of gap G2
 documents for image turns. Same resBusy claim Generate uses (M9): a loser (a generation
 already in flight on this Model) falls through to the CPU path below exactly like it
@@ -11186,7 +11186,7 @@ Moved from `decoder/doc.go` (the comment above `doc.families`) on 2026-10-09.
 Moved from `internal/runtime/sampling/sampler_gumbel.go` (the comment above `sampler_gumbel`) on 2026-10-09.
 
 ```text
-Temperature-only sampling by Gumbel-max (docs/tasks/red-october.md R7b, owner decision 2026-09-20).
+Temperature-only sampling by Gumbel-max (docs/completed/red-october.md R7b, owner decision 2026-09-20).
 
 WHAT IT IS. For a logit row l and temperature T, the token is
 
@@ -11939,7 +11939,7 @@ size fields.
 Moved from `decoder/fidelity_testhook.go` (a comment block rewritten to the rule; it carried tracker ids, dates or a provenance note) on 2026-10-09.
 
 ```text
-W8F3Ref is F3′'s CPU f32 reference (docs/tasks/task-metal-int8-2026-10.md, "F3′"), written by
+W8F3Ref is F3′'s CPU f32 reference (docs/completed/task-metal-int8-2026-10.md, "F3′"), written by
 TestW8F3Reference_write on a machine whose fit guard admits the f32 model (nobara for the 1.5B) and read by
 metal's TestW8Native_F3amended_closerToF32 through GOINFER_W8_F3_REF_IN: the 8 prompts, the f32 model's greedy
 continuation (the tokens every arm is teacher-forced on), and the f32 logits at every position.
@@ -12830,7 +12830,7 @@ arch; if a case ever differs by architecture, the table must be keyed by GOARCH,
 Moved from `decoder/attn_distinct_bytes_bench_test.go` (the comment above `BenchmarkAttnDistinctBytes`) on 2026-10-09.
 
 ```text
-BenchmarkAttnDistinctBytes is R13 (docs/tasks/red-october.md) step 0(iii): "the CPU's version of
+BenchmarkAttnDistinctBytes is R13 (docs/completed/red-october.md) step 0(iii): "the CPU's version of
 the Metal collapse probe and CUDA's ncu traffic ratio" — it asks whether the real GQA layout
 (nKV distinct KV heads, each read by nH/nKV query heads) is faster than an otherwise-identical
 MHA-EXPANDED layout (nH distinct KV heads, one per query head, same per-head QKᵀ/scores·V work)
@@ -12873,7 +12873,7 @@ attribution measured the fallback slower than per-head).
 Moved from `decoder/auto_backend_test.go` (the comment above `TestAutoMetalPrecision_keepsTheLoadedPrecision`) on 2026-10-09.
 
 ```text
-TestAutoMetalPrecision_keepsTheLoadedPrecision (R17, then slice 5 of docs/tasks/task-metal-int8-2026-10.md): when
+TestAutoMetalPrecision_keepsTheLoadedPrecision (R17, then slice 5 of docs/completed/task-metal-int8-2026-10.md): when
 auto chose metal, a model Metal would run only re-quantized (int8, int4mix) or not at all (f32) stays on the CPU at the
 precision it loaded at, and says so. int8int8 goes to BuildResident, since Metal runs dense int8int8 natively, and is
 kept only when the resident reports that it ran at int8int8; one Metal re-quantized (MoE, DeltaNet) is dropped for
@@ -13736,7 +13736,7 @@ checked equal on this same input before that copy was deleted.
 Moved from `decoder/features_test.go` (the comment above `archFeatureProfile.smollm3`) on 2026-10-09.
 
 ```text
-SmolLM3: llama-shaped plus per-layer NoPE (FeatNoPE). G5 (docs/tasks/task-gpu-paths-2026-09.md):
+SmolLM3: llama-shaped plus per-layer NoPE (FeatNoPE). G5 (docs/completed/task-gpu-paths-2026-09.md):
 cuda+metal now declare FeatNoPE (RopeInvFreqLayer zeroes the NoPE layers' invFreq table,
 no new kernel), so this is SmolLM3's ONLY required feature and it now reaches both —
 see the admission golden below. cohere2 also needs FeatNoPE, plus FeatLayerNorm/
@@ -13749,7 +13749,7 @@ Moved from `decoder/features_test.go` (the comment above `archFeatureProfile.olm
 
 ```text
 Olmo 3: NormPostOnly + QKNormWhole, plus the standard sliding-window/YaRN features every
-backend already has. G5 (docs/tasks/task-gpu-paths-2026-09.md) declares both on cuda+metal, so
+backend already has. G5 (docs/completed/task-gpu-paths-2026-09.md) declares both on cuda+metal, so
 this now reaches both.
 FeatPerLayerRoPE IS needed (restored 2026-09-12, docs/audit-2026-09-10.md G-03/G-04's
 disposition): YaRN applies to full_attention layers only, sliding_attention gets plain
@@ -13804,7 +13804,7 @@ family with a gated exact-GELU MLP and NO attention gate would need that verifie
 not assumed safe by this precedent.
 ```
 
-Resolved 2026-10-13 (OP0, `docs/tasks/task-forward-architecture-2026-10.md` §3.2): the gated kernels take GELU-tanh and SiLU only, so
+Resolved 2026-10-13 (OP0, `docs/completed/task-forward-architecture-2026-10.md` §3.2): the gated kernels take GELU-tanh and SiLU only, so
 exact GELU now derives its own feature, `gated-gelu-erf`, which no backend declares. `spark2_5`'s profile carries it in place of
 `gated-gelu`.
 
@@ -13841,7 +13841,7 @@ until Split B lands the delta — the feature set is necessary, not sufficient.
 Moved from `decoder/features_test.go` (the comment above the cohere golden row) on 2026-10-09.
 
 ```text
-Cohere / Command-R + Cohere2 / Command-R7B: G5's last row (docs/tasks/task-gpu-paths-2026-09.md).
+Cohere / Command-R + Cohere2 / Command-R7B: G5's last row (docs/completed/task-gpu-paths-2026-09.md).
 FeatParallelBlock reuses the pre-attn norm's already-quantized activation as the MLP's
 input too (no new kernel, a sequencing change); FeatLogitScale is a host-side multiply
 after readback (the same shape as FeatFinalLogitSoftcap). FeatLayerNorm was already
@@ -13856,7 +13856,7 @@ kernel is NeoX half-split; the CUDA resident had the same defect until backend/c
 -0.041, exact at position 0 only). The old gates used flat 0.02-std fixtures where a wrong
 rotation reads 0.9997. FeatPairwiseRoPE is declared by cuda alone; metal declines these families
 to the CPU path until the Mac session ports the kernels.
-2026-10-09: Metal too (docs/tasks/task-metal-pairwise-rope-2026-10.md: rope_pw and twins, metal.TestPairwiseRoPEResidentParityMetal
+2026-10-09: Metal too (docs/completed/task-metal-pairwise-rope-2026-10.md: rope_pw and twins, metal.TestPairwiseRoPEResidentParityMetal
 and the real-checkpoint metal.TestPairwiseRoPERealMetal). WebGPU still declines.
 ```
 
@@ -13865,7 +13865,7 @@ and the real-checkpoint metal.TestPairwiseRoPERealMetal). WebGPU still declines.
 Moved from `decoder/features_test.go` (the comment above the gemma golden row) on 2026-10-09.
 
 ```text
-G6 (docs/tasks/task-gpu-paths-2026-09.md): webgpu declares FeatEmbedScale/FeatFinalLogitSoftcap/
+G6 (docs/completed/task-gpu-paths-2026-09.md): webgpu declares FeatEmbedScale/FeatFinalLogitSoftcap/
 FeatSandwichNorm/FeatGatedGELU — gemma3 (uniform head_dim) now reaches it for real,
 verified against a genuine non-seeded checkpoint (testdata/gemma3-vl-tiny's text tower,
 gpu.TestGemma3ResidentParityWebGPU, minCosine 0.9998). gemma4/gemma4_text/
@@ -13961,7 +13961,7 @@ could see. Still no per-layer rotary WIDTH, no ATTENTION softcap (FeatAttnLogitS
 a per-layer kernel), no MLA/SSM, and no GATED shared expert (Qwen2-MoE)... which is now
 expressed as FeatMoEGatedShared (which CUDA does NOT declare), so the Qwen2-MoE decline
 is in the shared taxonomy, not a hand-coded check.
-G5 (docs/tasks/task-gpu-paths-2026-09.md) added seven more, across all five rows: FeatNoPE
+G5 (docs/completed/task-gpu-paths-2026-09.md) added seven more, across all five rows: FeatNoPE
 (SmolLM3), FeatAttnTemp (Ministral 3), FeatPostOnlyNorm + FeatQKNormWhole (Olmo 3/Olmo
 Hybrid), FeatLayerNorm + FeatParallelBlock + FeatLogitScale (Cohere/Command-R +
 Cohere2/Command-R7B, the last row — FeatLayerNorm is a genuinely new kernel here,
@@ -13985,7 +13985,7 @@ kernels, KV-shared layers aliasing their source's cache, per-layer FFN widths; G
 Moved from `decoder/features_test.go` (the comment above the webgpu row) on 2026-10-09.
 
 ```text
-G6 (docs/tasks/task-gpu-paths-2026-09.md) added six more: FeatEmbedScale (free — decoder
+G6 (docs/completed/task-gpu-paths-2026-09.md) added six more: FeatEmbedScale (free — decoder
 already applies it host-side), FeatFinalLogitSoftcap/FeatOutBias (existing-kernel
 wiring), FeatSandwichNorm (defeats the fused residual epilogue, no new kernel),
 FeatGatedGELU (a genuinely new kernel pair — this backend had no GELU-tanh-gated
@@ -14009,7 +14009,7 @@ Mellum's own real-weight Metal gate is tracked as G11, not yet landed. Gated-Del
 mixer + fused attn output gate (deltanet.go/deltanet_kernels.go) landed with its own
 end-to-end whole-model gate (TestQwen35ResidentParityMetal, qwen3_5-tiny: worst cosine
 0.9886, drift 0.0081, replay-after-Reset self-cosine 1.0) — not ahead of it.
-G5 (docs/tasks/task-gpu-paths-2026-09.md) added six more, across four rows (FeatLayerNorm was
+G5 (docs/completed/task-gpu-paths-2026-09.md) added six more, across four rows (FeatLayerNorm was
 already here, from GPT-2): FeatNoPE (SmolLM3), FeatAttnTemp (Ministral 3),
 FeatPostOnlyNorm + FeatQKNormWhole (Olmo 3/Olmo Hybrid), FeatParallelBlock +
 FeatLogitScale (Cohere/Command-R + Cohere2/Command-R7B, the last row — reusing GPT-2's
@@ -14095,7 +14095,7 @@ gates that the knob takes effect and is lossless-to-load.
 Moved from `decoder/features_test.go` (the comment above the smollm3 golden row) on 2026-10-09.
 
 ```text
-G5 (docs/tasks/task-gpu-paths-2026-09.md): FeatNoPE declared on cuda+metal (RopeInvFreqLayer
+G5 (docs/completed/task-gpu-paths-2026-09.md): FeatNoPE declared on cuda+metal (RopeInvFreqLayer
 zeroes the NoPE layers' invFreq table, no new kernel) — smollm3's ONLY required feature,
 so it now reaches both.
 ```
@@ -14121,7 +14121,7 @@ alongside this via a new Architecture.qwen35.AttnGate field.
 Moved from `decoder/features_test.go` (the comment above the mistral3 golden row) on 2026-10-09.
 
 ```text
-Ministral 3: G5 (docs/tasks/task-gpu-paths-2026-09.md) declares FeatAttnTemp on cuda+metal —
+Ministral 3: G5 (docs/completed/task-gpu-paths-2026-09.md) declares FeatAttnTemp on cuda+metal —
 rope_kv/rope2's new qTempScale param (Q-only, post-rotation) — its ONLY required feature,
 so it now reaches both, same shape as smollm3/FeatNoPE above. Not webgpu: unimplemented
 there.
@@ -14132,7 +14132,7 @@ there.
 Moved from `decoder/features_test.go` (the comment above the `known` taxonomy map) on 2026-10-09.
 
 ```text
-G5 (docs/tasks/task-gpu-paths-2026-09.md): FeatAttnTemp/FeatPostOnlyNorm/FeatQKNormWhole
+G5 (docs/completed/task-gpu-paths-2026-09.md): FeatAttnTemp/FeatPostOnlyNorm/FeatQKNormWhole
 landed (rows 2-3) without being added here — the exact N-12 omission repeated, caught
 only when the last row's full-suite run exercised this test again.
 ```
@@ -14407,7 +14407,7 @@ Moved from `decoder/fitplan_test.go` (the comment above `TestPlan_tableDriven`) 
 TestPlan_tableDriven is G4 (docs/tasks/task-fit-to-hardware.md §6): "a table-driven unit test on
 synthetic headers — dense, MoE, hybrid, every backend, every budget... pins the placement and
 the ctx cap. A change to the priority order is a change to this table, reviewed." Not literally
-synthetic headers (Phase 1 was scoped Load()-based, docs/tasks/task-gpu-paths-2026-09.md's G11 entry)
+synthetic headers (Phase 1 was scoped Load()-based, docs/completed/task-gpu-paths-2026-09.md's G11 entry)
 — real tiny checkpoints instead, budgets scaled to each fixture's OWN measured byte counts
 rather than the doc's literal "6 to 64 GB" (these are toy-sized parity fixtures, not real
 deployment checkpoints, so a literal GB range would never exercise the decline path at all).
@@ -14419,7 +14419,7 @@ Moved from `decoder/fitplan_test.go` (the comment above `TestPlan_extraBytesRese
 
 ```text
 TestPlan_extraBytesReservedAheadOfExperts is the regression this session's own G11 CUDA guard
-work (docs/tasks/task-gpu-paths-2026-09.md) traces back to: tasks/task-fit-to-hardware.md's motivating
+work (docs/completed/task-gpu-paths-2026-09.md) traces back to: tasks/task-fit-to-hardware.md's motivating
 example (a --drafter attach after BuildResident grabbed VRAM an MoE expert cache had already
 claimed). PlanRequest.ExtraBytes exists so the CALLER can price a companion allocation (a
 drafter, a vision tower) as a FIXED term ahead of the elastic expert-slot count, per §2's "every
@@ -15477,7 +15477,7 @@ FeatAttnSink once on kernel-level evidence and was correctly reverted; this time
 ran.
 
 WEBGPU MOVED FROM THE DECLINE SIDE TO THE ADMIT SIDE on 2026-09-08 (G6,
-docs/tasks/task-gpu-paths-2026-09.md): the sink threaded through every attention kernel (attn,
+docs/completed/task-gpu-paths-2026-09.md): the sink threaded through every attention kernel (attn,
 attn-keys, attn-f16, attn-i8, and all three wide variants — 7 pipelines), plus three brand-new
 MoE kernels (gpt-oss disagrees with the generic MoE path on what the router bias means and what
 the activation clamps — routeGptOssWGSL/gptossGluQuantWGSL/moeExpertGptOssDownGEMVWGSL,
@@ -18393,7 +18393,7 @@ against 0.9977 with f32 ones, and its recorded cause is the expert-flip cliff.
 Moved from `decoder/r9_decode_attribution_test.go` (the comment above `TestR9_w4a8BatchAt7B`) on 2026-10-09.
 
 ```text
-TestR9_w4a8BatchAt7B is a follow-up to R-06 (docs/tasks/task-recompute-audit.md), which measured
+TestR9_w4a8BatchAt7B is a follow-up to R-06 (docs/completed/task-recompute-audit.md), which measured
 GOINFER_W4A8_BATCH's fused q/k/v and gate/up matmuls on the 1.5B only (1.071x arm64/Metal,
 1.066x amd64/CPU -- both ambiguous, parked). R9 step 1's own finding (MLP's share of the token
 grows with model size, largest at 7B) raises the natural follow-up: does R-06 behave differently
@@ -18550,7 +18550,7 @@ human remembering to look at throughput.
 Moved from `decoder/residentneed_test.go` (the comment above `loadAccountingFixture`) on 2026-10-09.
 
 ```text
-docs/tasks/task-memory-accounting-2026-09.md item 2: `fit`'s verdict (Plan) and Metal's resident guard
+docs/completed/task-memory-accounting-2026-09.md item 2: `fit`'s verdict (Plan) and Metal's resident guard
 (ResidentNeedBytes, via backend/metal/backend.go's residentNeedBytes) must be the same number by construction. Before,
 Plan("metal") had no host-copy term and priced Metal's KV at f32, so on a directly loaded model it asked for
 about half of what the guard would then demand (measured: 2.34 vs 4.33 GB on qwen2.5-coder-1.5b).
@@ -19193,7 +19193,7 @@ mid-prefill; the cache state it produces is what is built here, and it is the st
 Moved from `decoder/smollm3_test.go` (the comment above the test) on 2026-10-09.
 
 ```text
-TestRopeInvFreqLayer_NoPEIsZero is G5's real gate (docs/tasks/task-gpu-paths-2026-09.md, FeatNoPE):
+TestRopeInvFreqLayer_NoPEIsZero is G5's real gate (docs/completed/task-gpu-paths-2026-09.md, FeatNoPE):
 a resident backend's rope kernel gets an all-zero invFreq table for a NoPE layer instead of a
 new kernel path (RopeInvFreqLayer, decoder/residency.go), which is exact identity rotation by
 construction (cos(pos·0)=1, sin(pos·0)=0 for every position — verified against the shipped
@@ -19912,7 +19912,7 @@ On the box tack's C3 ran on (38 GiB available) the load is admitted; the term re
 ## residentBackendFeatures.metal.removed
 
 Moved from `decoder/features.go` on 2026-10-31, when Metal's admission moved from its feature set to its operation table
-(`internal/runtime/program/support.go:Metal`; docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-c2). The entry as it stood,
+(`internal/runtime/program/support.go:Metal`; docs/completed/task-forward-architecture-2026-10.md §4.9, OP4m-c2). The entry as it stood,
 with each feature's evidence:
 
 ```go
@@ -19964,18 +19964,18 @@ with each feature's evidence:
 	// the three kernels a capped layer takes: attention, attention_i8 and the exact attention_prefill. The lane selectors keep
 	// such a layer off every other attention kernel, and the MC3 batched step declines it. The declaration rests on the kernel
 	// gates against float64, with the cap dropped as the control (TestAttnSoftcap_decodeKernels, TestAttnSoftcap_prefillKernel).
-	// The Gemma 2 end-to-end tests are diagnostics, not its gate (docs/tasks/task-forward-architecture-2026-10.md §4.6).
+	// The Gemma 2 end-to-end tests are diagnostics, not its gate (docs/completed/task-forward-architecture-2026-10.md §4.6).
 	FeatAttnLogitSoftcap: true,
 	// Nemotron-H's Mamba-2 mixer (backend/metal/mamba.go: mamba_conv, mamba_ssm, mamba_gnorm) and its squared-ReLU MLP (act_quant's
 	// nongated_act), at int4 only: buildMamba declines an int8 model, whose projections would be re-quantized to int4. The
 	// declaration rests on gates M and S, the tier 0 kernel and guard tests, a three-layer slice of the real 9B, and the
-	// whole 9B against the CPU (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP2b step 2).
+	// whole 9B against the CPU (docs/completed/task-forward-architecture-2026-10.md §4.7, OP2b step 2).
 	FeatSSM:           true,
 	FeatNonGatedReLU2: true,
 	// Multi-head latent attention (backend/metal/mla.go: mla_store, mla_head_mv, mla_qrope, mla_attn), the absorbed form, its latent
 	// rows in each slot's KV buffer. The declaration rests on gate M with routing forced (deepseek-tiny, kimi-tiny), the
 	// kernel gate on both rope branches, the guard tests, and a two-layer slice of DeepSeek-V2-Lite against the CPU
-	// (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP2a). Kimi K2's 384-expert router is not here.
+	// (docs/completed/task-forward-architecture-2026-10.md §4.7, OP2a). Kimi K2's 384-expert router is not here.
 	FeatMLA: true,
 },
 ```

@@ -16,8 +16,9 @@ import (
 	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
 )
 
-// TestParityKey_matchesFreshDepsHash is VK5's P1 (docs/tasks/task-subsystems-2026-10.md §5.8): internal/paritykey's
-// today key equals freshDepsHash for every family, so the shadow job's "today" column is the gate's own hash.
+// TestParityKey_matchesFreshDepsHash is VK5's P1 and the builder switch's B1 (docs/tasks/task-subsystems-2026-10.md §5.8):
+// paritykey's today key, read under the tree's key marker, equals freshDepsHash for every family, so the shadow job's
+// "today" column is the gate's own hash.
 func TestParityKey_matchesFreshDepsHash(t *testing.T) {
 	raw, err := parityManifestJSON()
 	if err != nil {
@@ -36,6 +37,14 @@ func TestParityKey_matchesFreshDepsHash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	def, err := paritykey.TodayDefinition(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	progs, err := paritykey.ReadProgramTable(src)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(m.Families) == 0 || len(pm.Families) != len(m.Families) {
 		t.Fatalf("%d families in the manifest, %d read by paritykey", len(m.Families), len(pm.Families))
 	}
@@ -44,7 +53,7 @@ func TestParityKey_matchesFreshDepsHash(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, err := paritykey.Key(src, pm, pm.Families[name], tail)
+		got, err := paritykey.TodayKey(src, pm, pm.Families[name], def, tail, progs)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -55,11 +64,12 @@ func TestParityKey_matchesFreshDepsHash(t *testing.T) {
 }
 
 // isBuilder is the decoder's own statement of which files build programs (paritykey.BuilderFile's list, written again so
-// W1 compares two computations): the program builder, the block spec, the architecture and config types, the registry,
-// and every architecture adapter (gemma12.go holds gemma's and gemma2's).
+// P1 and W1 compare two computations): the program builder, the block spec, the architecture and config types, the registry,
+// every architecture adapter (gemma12.go holds gemma's and gemma2's), and the program's types.
 func isBuilder(p string) bool {
 	switch p {
-	case "decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/registry.go", "decoder/gemma12.go":
+	case "decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/config/config.go", "decoder/registry.go", "decoder/gemma12.go",
+		"internal/runtime/program/program.go":
 		return true
 	}
 	base := filepath.Base(p)
@@ -275,9 +285,9 @@ func TestParityLoaders_mapping(t *testing.T) {
 			t.Errorf("%s: GGUF fixture %v, dropped %v", name, hasGGUF, dropped)
 		}
 	}
-	if len(under) != 30 || !slices.Equal(keep, []string{"mellum"}) {
+	if len(under) != 31 || !slices.Equal(keep, []string{"mellum"}) {
 		sort.Strings(keep)
-		t.Errorf("%d under the rule of %d with programs, keeping %v; want 30, keeping [mellum]", len(under), len(withPrograms), keep)
+		t.Errorf("%d under the rule of %d with programs, keeping %v; want 31, keeping [mellum]", len(under), len(withPrograms), keep)
 	}
 	for _, f := range []string{"testdata/gemma1-tiny.gguf", "testdata/gemma2-hd-tiny.gguf", "testdata/glm-tiny.gguf"} {
 		if len(ggufs[f]) != 1 {
@@ -380,4 +390,14 @@ func TestParityPrograms_mapping(t *testing.T) {
 		}
 	}
 	t.Logf("%d fixtures mapped to families", len(owner))
+}
+
+// TestFamilyProgramsDigest_needsATable: decoder's own programs digest refuses a missing or empty table, as
+// paritykey.ProgramsDigest does, so the key never stands for nothing.
+func TestFamilyProgramsDigest_needsATable(t *testing.T) {
+	for _, tab := range []map[string]map[string]string{nil, {}} {
+		if d, err := programsDigestOf([]string{"testdata/llama-tiny"}, tab); err == nil {
+			t.Errorf("table %v: digest %q, want an error", tab, d)
+		}
+	}
 }

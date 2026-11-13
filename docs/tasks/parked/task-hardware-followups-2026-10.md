@@ -1,8 +1,23 @@
 # Task (parked): what was left when the hardware-coverage task closed (2026-10)
 
 > **Filed 2026-10-05**, when [`task-hardware-coverage-2026-10.md`](../../completed/task-hardware-coverage-2026-10.md) (H0-H6) was archived. Everything it scoped is done, measured, or listed here with a trigger.
-> What it built is live code and live generated docs, not this file: the census (`docs/hardware-coverage.json`, checked by `internal/hwcensus`), the "Verified on" section of `docs/hardware-matrix.md`, the startup self-tests (`docs/server.md`),
+> What it built is live code and live generated docs, not this file: the census (`docs/hardware-coverage.json`, checked by `internal/diag/hwcensus`, moved there 2026-11-04), the "Verified on" section of `docs/hardware-matrix.md`, the startup self-tests (`docs/server.md`),
 > `check --hardware`, and the CI jobs `root-forced-fallbacks`, `root-forced-fallbacks-arm64`, `root-windows` and `root-windows-arm64`.
+>
+> **2026-11-09:** item 1's re-run ran on 2026-10-05 (decoder 99 passed, 0 failed, no timeout; the stall did not reproduce:
+> `docs/measurements/sde-2026-10-04/README.md`, "Re-run result, 2026-10-05"), but the census record still says a re-run is
+> queued. Item 2's date (about 2026-11-04) has passed and nothing records a decision. The triggers of items 3 to 6 still hold.
+
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| 1 | open | update the `-spr` census record to the clean 2026-10-05 re-run, then regenerate the matrix | `docs/hardware-coverage.json` still says "re-run is queued" |
+| 2 | done | — (Francis, 2026-11-09: the RELEASING pre-flight and aikit-bump item) | `RELEASING.md` pre-flight item 10 |
+| 3 | blocked | parked (Francis, 2026-11-09): the owner decides to rent, borrow or be given hardware | the owner's park of 2026-10-04 stands |
+| 4 | blocked | after two H4 sweeps (item 3) | item 3 |
+| 5 | killed | — (Francis, 2026-11-09; reopen on start-up latency complaints, or the probe growing past a few seconds) | no persistent cache: `decoder/selftest_gpu.go:resetSelfTestCaches` resets only in-process results |
+| 6 | blocked | item 3, or a user's `check --hardware` in a bug report | `docs/hardware-matrix.md`, "Verified on" |
+| 7 | open | read before every tag; it shrinks only when a path runs | RELEASING.md pre-flight item 7; the matrix says 10 of 31 |
 
 | # | item | state | trigger or owner |
 |---|---|---|---|
@@ -16,4 +31,4 @@
 
 **Not scoped, stated in the archived doc and unchanged:** telemetry of any kind; certifying every GPU; new native backends (`gpu-vendor-coverage.md` owns that); tuning for rented hardware.
 
-<!-- doc-reviewed: 2026-10-05 -->
+<!-- doc-reviewed: 2026-11-09 -->

@@ -63,14 +63,23 @@ def _matches(kind, arg, path):
 SCANS = [
     # decoder
     Scan("decoder", "TestDispatchCensus", NT("decoder")),
+    Scan("decoder", "TestResidentSubsystems_NoScatteredMicroAssertions", NT("decoder")),
     # MM1's decision census pins every fit decision: a change to the fit code, the machine zoo or a fixture it reads runs it. Every
     # censusFixtures entry has "tiny" in its name (TestCensusFixtures_areTheCommittedOnes).
+    Scan("decoder", "TestStepShapes_assertedOnlyInStep", NT("decoder")),
     Scan("decoder", "TestDecisionCensus", F("decoder/fitguard.go", "decoder/fitplan.go", "decoder/fitquery.go", "decoder/prefill_budget.go",
                                             "decoder/weightbytes.go", "decoder/residentneed.go", "decoder/kvresolve.go", "decoder/kvpolicy.go",
                                             "decoder/metal_fitctx.go", "decoder/memprobe.go", "testdata/machines/*.json", "testdata/mm1_census.json.gz",
                                             "decoder/mm1_census_fixtures_test.go", "testdata/*tiny*", "decoder/testdata/*tiny*",
-                                            "decoder/selftestdata/*tiny*", "internal/vision/testdata/*tiny*") +
+                                            "decoder/selftestdata/*tiny*", "internal/vision/testdata/*tiny*",
+                                            # MM5: KV and state are priced from each layer's operations' declarations
+                                            "decoder/statebytes.go", "decoder/membufs.go", "decoder/program.go",
+                                            "internal/runtime/program/buffers.go") +
          NT("internal/runtime/mem")),
+    # MM5's G-MP4: KV and state pricing names no family or mixer.
+    Scan("decoder", "TestMM5_noFamilySwitchInPricing", F("decoder/residentneed.go", "decoder/statebytes.go")),
+    # MM5b's G-MS4: Metal's decode scratch pricing names no family, mixer or FFN form.
+    Scan("decoder", "TestMM5b_decodeScratchNamesNoFamily", F("decoder/metal_scratch.go")),
     # The census reads a declared fixture list, which must match the committed fixtures: a fixture added or removed runs it.
     Scan("decoder", "TestCensusFixtures_areTheCommittedOnes", F("decoder/mm1_census_fixtures_test.go", "testdata/*", "decoder/testdata/*",
                                                                 "decoder/selftestdata/*", "internal/vision/testdata/*")),
@@ -90,6 +99,7 @@ SCANS = [
     Scan("decoder", "TestGoDoc_listsEveryFieldOfOptionsAndSamplingParams", NT("decoder")),
     Scan("decoder", "TestBackendBanner_usesTheReport", TREE_NT),
     Scan("decoder", "TestEnvVars_docAndCodeAgree", TREE_GO + F("docs/env-vars.md", "testdata/env_reads.txt")),
+    Scan("decoder", "TestEnvVars_noNewPackageInitRead", TREE_NT),
     Scan("internal/config", "TestInventory", F("decoder/knobs.go", "decoder/model.go", "testdata/env_reads.txt", "docs/flags.meta.json") + NT("internal/app/loadflags")),
     Scan("internal/config", "TestInventory_plants", F("decoder/knobs.go", "decoder/model.go", "testdata/env_reads.txt", "docs/flags.meta.json") + NT("internal/app/loadflags")),
     Scan("internal/config", "TestEnvVarsDoc", F("docs/env-vars.md", "docs/env-vars.meta.json")),
@@ -102,10 +112,24 @@ SCANS = [
     Scan("decoder", "TestAssetRegistry_noDirectReads", TREE_T + F("testdata/assets.json", "decoder/assets.go")),
     Scan("decoder", "TestAssetRegistry_resolvesFromEveryCallerDir", TREE_T + F("testdata/assets.json", "decoder/assets.go")),
     # Two computations of one key over the same files: only the two implementations or the manifest can split them.
-    Scan("decoder", "TestParityKey_matchesFreshDepsHash", F("decoder/parity_manifest_test.go", "testdata/parity/*.json", "testdata/kernel_fingerprints.json") + NT("internal/guard/paritykey")),
-    Scan("decoder", "TestParityKey_shadowMatchesDecoder", F("testdata/loader_identity.json", "decoder/parity_manifest_test.go", "testdata/parity/*.json", "testdata/kernel_fingerprints.json", "testdata/program_fingerprints.json") + NT("internal/guard/paritykey", "decoder")),
+    Scan("decoder", "TestParityKey_matchesFreshDepsHash", F("decoder/parity_manifest_test.go", "testdata/parity/*.json", "testdata/kernel_fingerprints.json", "testdata/parity_key.json", "testdata/program_fingerprints.json") + NT("internal/guard/paritykey")),
+    Scan("decoder", "TestParityKey_shadowMatchesDecoder", F("testdata/loader_identity.json", "decoder/parity_manifest_test.go", "testdata/parity/*.json", "testdata/kernel_fingerprints.json", "testdata/program_fingerprints.json", "testdata/parity_key.json") + NT("internal/guard/paritykey", "decoder")),
+    # Both keys of every family over the working tree, from the tables they read.
+    Scan("internal/guard/paritykey", "TestKey_onTheTree", F("testdata/parity/*.json", "testdata/parity_key.json", "testdata/program_fingerprints.json", "testdata/loader_identity.json", "testdata/kernel_fingerprints.json")),
     Scan("decoder", "TestParityPrograms_mapping", F("testdata/parity/*.json", "testdata/program_fingerprints.json", "testdata/*/config.json") + NT("decoder")),
+    # decoder's config tests exercise decoder/config through decoder's wrappers (loadConfig, resolveEOSIDs) and real fixtures, so an
+    # edit in decoder/config runs them; touched.py alone would run only decoder/config's own tests (where Config's validator tests live).
+    *[Scan("decoder", n, NT("decoder/config")) for n in (
+        "TestValidateConfigBounds_hostileCountsAreRefusedBeforeAllocation", "TestGGUFLayerCount_boundsTheLagunaPath", "FuzzLoadConfig",
+        "TestConfigSnapshot_M23", "TestLagunaArchitecture_realConfigs", "TestMellum21_configResolves", "TestNemotronH_attentionHeadDim",
+        "TestRecommendedSampling_sources", "TestQwen3ASR_loadedModelDoesNotStopOnIDZero")],
+    # The parity key's and the program fingerprints' guards: Config and the program's types, methods and constants are builders or
+    # core files of every family, in packages whose own tests touched.py would run alone.
+    *[Scan("decoder", n, NT("decoder/config", "internal/runtime/program")) for n in (
+        "TestParityKey_matchesFreshDepsHash", "TestParityKey_shadowMatchesDecoder", "TestProgramFingerprint_table", "TestParityPrograms_mapping")],
     Scan("decoder", "TestParityLoaders_mapping", F("testdata/parity/*.json", "testdata/loader_identity.json") + NT("internal/guard/paritykey")),
+    # It polices one file of the program package, and a declaration can move into it from any other.
+    Scan("internal/guard/paritykey", "TestBuilderFile_programTypesDeclareOnly", NT("internal/runtime/program")),
     # The fixture censuses walk testdata/: a new or changed model fixture must be listed or excluded in each (8ec704c3).
     Scan("decoder", "TestSerializeCensus_everyFixtureIsListedOrExcluded", F("testdata/*/config.json")),
     Scan("decoder", "TestSeams_subCaptureRefusedWhereGateSCannotRun", F("testdata/*/config.json")),
@@ -147,9 +171,12 @@ SCANS = [
     Scan("internal/app/fitcmd", "TestRun_closesFirstLoadBeforeMeasuring", F("internal/app/fitcmd/fit.go")),
     Scan("internal/diag/hwcensus", "TestHardwareCensus", TREE_NT + F("docs/hardware-coverage.json")),
     Scan("internal/runtime/mem/probe", "TestOnlyProbeReadsOSMemory", TREE_NT),
+    Scan("internal/guard/testcmdtags", "TestDocs_goTestCommandsCompileTheTestsTheyName", TREE_T + F("docs/*.md")),
+    Scan("internal/testpath", "TestNoStrayRelativePathInInternalTests", TREE_T),
     Scan("internal/runtime/mem", "TestImports", NT("internal/runtime/mem")),
     Scan("backend/cuda", "TestPlanSlack_oneCopy", NT("backend/cuda")),
     Scan("backend/cuda", "TestLedger_everyAllocationNamesALine", NT("backend/cuda")),
+    Scan("internal/layout", "TestCUDASoloShapes_takeTodaysCalls", F("backend/cuda/resident.go", "backend/cuda/gumbel.go")),
     Scan("internal/runtime/mem", "TestSolve_pure", NT("internal/runtime/mem")),
     Scan("internal/runtime/mem", "TestNoGuardThresholdOutsideMem", TREE_NT),
     Scan("internal/runtime/mem/probe", "TestProbeImports", NT("internal/runtime/mem/probe")),
@@ -195,7 +222,9 @@ SCANS = [
     Scan("apps/site/internal/site", "TestHome_heroCodeIsFromTheExample", F("apps/examples/structured/main.go")),
     # gpu module
     Scan("backend/webgpu", "TestNemotronBlockKind_hasADefault", F("backend/webgpu/residency.go")),
+    Scan("backend/webgpu/internal/kernels", "TestKernels_noDroppedTryError", NT("backend/webgpu/internal/kernels")),
     Scan("backend/webgpu/internal/kernels", "TestLedger_everyBufferIsLeased", NT("backend/webgpu", "backend/webgpu/internal/kernels")),
+    Scan("backend/webgpu/internal/kernels", "TestRopeKernels_noBuiltinSinCos", NT("backend/webgpu/internal/kernels")),
     Scan("backend/webgpu", "TestEnsureAttnWide_guardsOnTheLastPipeline", F("backend/webgpu/attention.go")),
     Scan("backend/webgpu", "TestGPU_deviceBoundaryErrorsAreNotDropped", F("backend/webgpu/decoderunner.go", "backend/webgpu/residency.go")),
     Scan("backend/webgpu", "TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches", F("backend/webgpu/residency.go")),
@@ -216,6 +245,7 @@ SCANS = [
     Scan("backend/cuda", "TestPipelineLint_boundKernelsAreLaunched", NT("backend/cuda")),
     Scan("backend/cuda", "TestPrefillCoreAndDraftBlockCallTheShmemGuards", F("backend/cuda/prefill.go", "backend/cuda/drafter.go")),
     Scan("backend/cuda", "TestPrefillCoreCallsMropePosWindow", F("backend/cuda/prefill.go")),
+    Scan("backend/cuda", "TestKV8_everyFusedPrefillLaunchPassesScales", F("backend/cuda/prefill.go")),
     Scan("backend/cuda", "TestPrefillCoreCallsCheckPrefillShmemImg", F("backend/cuda/prefill.go")),
     Scan("backend/cuda", "TestDeclineAdvice_wiredIntoBuildResident", F("backend/cuda/backend.go")),
     Scan("backend/cuda/kernels", "TestAttnKernelDigests_tableCoversTheSource", CU("backend/cuda")),

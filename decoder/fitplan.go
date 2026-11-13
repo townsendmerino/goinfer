@@ -11,7 +11,7 @@ import (
 // independent by design, so a change to one floor must not silently move the other's.
 const ctxPlanFloor = mem.PlanCtxFloor
 
-// kvBytesPerPositionAllLayers is Plan's KV-cost rate: per layer (a per-layer-varying family like Gemma 4 is not approximated by one
+// kvBytesPerPositionAllLayers is the KV-cost rate Plan prices WebGPU at (ResidentKVBytes; the CPU, CUDA and Metal have their own): per layer (a per-layer-varying family like Gemma 4 is not approximated by one
 // model-level figure, as metal/backend.go's residentKVBytes also sums per layer), K+V, at the requested precision. Bytes per element match
 // kvBytesForCtx in decoder/arch.go (f32 4.0, f16 2, int8 1.125 including scale). The per-layer width is Architecture.kvDimAt: zero for a
 // linear/mamba/conv mixer layer (no position-indexed K/V), MLA's compressed latent width, whose one row stays f32 at any precision.
@@ -28,8 +28,9 @@ func (m *Model) kvBytesPerPositionAllLayers(f16, i8 bool) int64 {
 	case f16:
 		perElem = 2
 	}
+	bv := m.BackendView()
 	arch := m.w.arch
-	_, nLayers, _, _, _, _, _ := m.Dims()
+	_, nLayers, _, _, _, _, _ := bv.Dims()
 	var perPos float64
 	for l := range nLayers {
 		var kvDim int
@@ -39,7 +40,8 @@ func (m *Model) kvBytesPerPositionAllLayers(f16, i8 bool) int64 {
 			}
 			kvDim = arch.kvDimAt(l)
 		} else {
-			kvDim = m.KVHeadsAtResident(l) * m.HeadDimAtResident(l)
+			lv := bv.Layer(l)
+			kvDim = lv.KVHeads() * lv.HeadDim()
 		}
 		if arch != nil && arch.mla != nil {
 			perPos += 4 * float64(kvDim)
@@ -55,11 +57,11 @@ func (m *Model) kvBytesPerPositionAllLayers(f16, i8 bool) int64 {
 // assumption ResidentWeightBytesPaged already makes) and the top-k floor below which even one
 // token's routed set cannot be resident.
 func (m *Model) moeGeometry() (nExperts, topK int, isMoE bool) {
-	nE, k, _, _, _, _, _, _, _, _, ok := m.MoEResidentParams()
-	if !ok || nE == 0 {
+	mo := m.BackendView().Spec().MoE
+	if mo == nil || mo.NumExperts == 0 {
 		return 0, 0, false
 	}
-	return nE, k, true
+	return mo.NumExperts, mo.TopK, true
 }
 
 // WebGPUCtxCeiling is the WebGPU backend's fixed per-precision KV-capacity ceiling, gpu/residency.go's ctxCap before any -ctx request
@@ -117,8 +119,15 @@ func (m *Model) plan(backend string, freeBytes int64, req PlanRequest, slack boo
 	p.DenseBytes, p.ExpertBytesFull, p.AllocSlackBytes, p.StateBytes = l.DenseBytes, l.ExpertBytesFull, l.FixedSlack, l.StateBytes
 	d := mem.SolvePlacement(l, mem.PlanRequest{Ctx: req.Ctx, CtxPinned: req.CtxPinned, Slots: req.Slots, ExtraBytes: req.ExtraBytes},
 		mem.Machine{Free: map[mem.Tier]int64{l.Tier: freeBytes}}, mem.DefaultPolicy())
-	p.Placement, p.Ctx, p.Slots = Placement(d.Placement), d.Ctx, d.Slots
+	p.Placement, p.Ctx, p.Slots, p.ScratchBytes = Placement(d.Placement), d.Ctx, d.Slots, d.ScratchBytes
 	p.ExpertBytesUsed, p.KVBytes, p.HostCopyBytes, p.Reason = d.ExpertBytesUsed, d.KVBytes, d.HostCopyBytes, d.Reason
+	if backend == "webgpu" && webgpuVulkan && p.Placement != PlacementDecline {
+		// The search priced Vulkan's block rounding on the KV term, where it moves with the context; the plan reports it as slack, so
+		// KVBytes is the KV the build allocates (one slot's, as a caller multiplies it) and the total is unchanged.
+		r := m.webgpuBlockRounding(p.Ctx, req.KVF16, req.KVI8)
+		p.KVBytes -= r
+		p.AllocSlackBytes += r
+	}
 	if ckpt, perSlot := m.checkpointBytes(backend); p.Placement != PlacementDecline {
 		if copies := checkpointCopies(checkpointHeadroom(p, freeBytes, req), ckpt, max(req.KVSlots, 1), perSlot); copies > 0 {
 			p.CheckpointBytes, p.CheckpointCopies = ckpt, copies
@@ -176,18 +185,20 @@ func (m *Model) planIneligible(backend string, req PlanRequest) string {
 	if why := m.planAdmitDecline(backend); why != "" {
 		return why
 	}
+	bv := m.BackendView()
 	if backend == "webgpu" {
 		// webgpu's stacked-expert kernels take int8 or int4 (gpu/residency.go:staticResidentDecline).
-		if k := m.MoEExpertKind(); k != "" && k != "int8" && k != "int4" {
+		if k := bv.MoEExpertKind(); k != "" && k != "int8" && k != "int4" {
 			return fmt.Sprintf("webgpu: the routed experts are %s, and webgpu's MoE kernels take int8 or int4 — load with --quant int4 "+
 				"or int8int8 to plan the resident path", k)
 		}
 	}
 	if backend == "webgpu" && (req.KVF16 || req.KVI8) {
-		_, _, _, _, _, _, _, _, mlaOK := m.MLAResidentParams()
-		_, _, _, _, _, attnGate, dnetOK := m.Qwen35ResidentParams()
-		_, _, _, _, _, _, _, nemoOK := m.NemotronResidentParams()
-		if family := map[bool]string{true: "nemotron"}[nemoOK] + map[bool]string{true: "qwen3_5"}[dnetOK && attnGate] +
+		spec := bv.Spec()
+		mlaOK := spec.MLA != nil
+		dnetGated := spec.Qwen35 != nil && spec.Qwen35.AttnGate
+		nemoOK := spec.Nemotron != nil
+		if family := map[bool]string{true: "nemotron"}[nemoOK] + map[bool]string{true: "qwen3_5"}[dnetGated] +
 			map[bool]string{true: "mla"}[mlaOK]; family != "" {
 			flag := map[bool]string{true: "--kv-i8"}[req.KVI8] + map[bool]string{true: "--kv-f16"}[req.KVF16]
 			return fmt.Sprintf("webgpu: %s does not implement %s KV (only the generic GQA path does) — drop the flag to plan the resident path", family, flag)
@@ -219,13 +230,29 @@ func (m *Model) deviceLoad(backend string, kvF16, kvI8, pinned bool) mem.DeviceL
 	switch backend {
 	case "metal":
 		l.CtxStep, l.CtxCeiling, l.CtxSearch = metalKVPad, MetalCtxCeiling, true // whole blocks beside the pools' null blocks: no one rate
+		l.ScratchBytes = m.MetalDecodeScratchBytes(0)
+		if l.TopK < l.NExperts { // an expert cache holds at least the top k, under the expert count when it pages
+			l.ScratchPagedExtra = m.MetalDecodeScratchBytes(l.TopK) - l.ScratchBytes
+		}
 		if !pinned {
 			l.CtxCeiling = MetalFitDefaultCtx
 		}
 	case "webgpu":
 		l.CtxCeiling = WebGPUCtxCeiling(kvF16, kvI8)
+		l.DenseBytes = m.webgpuDenseLine()
+		if !webgpuVulkan {
+			break
+		}
+		// Vulkan's blocks, not the buffers' sum (webgpu_vulkan.go): the device and the kept host block are fixed, and the block
+		// rounding moves with the context, so it rides on the KV term and the context is searched.
+		l.FixedSlack += webgpuVkFixed
+		l.CtxSearch = true
+		l.KV = func(ctx int) int64 {
+			return m.ResidentKVBytes(backend, ctx, kvF16, kvI8) + m.webgpuBlockRounding(ctx, kvF16, kvI8)
+		}
+		return l
 	case "cuda":
-		kvF16 = m.kvF16
+		kvF16, kvI8 = m.residentKVFlags(backend)
 		l.CtxSearch = true
 	}
 	l.KV = func(ctx int) int64 { return m.ResidentKVBytes(backend, ctx, kvF16, kvI8) }

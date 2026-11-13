@@ -322,11 +322,10 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 		// whose batched pass declines (MoE) keeps working. nil when not applicable.
 		var idsVerify func(seq []int, base int) ([]int, error)
 		if resident && !sampled && tr == nil {
-			rg, hasG := target.resident.(ResidentGreedy)
-			av, hasAV := target.resident.(interface {
-				PrefillLastNArgmax(embeddings [][]float32, startPos int) ([]int, error)
-			})
+			hasG := target.canDecode(outArgmax)
+			hasAV := canStep(target.resident, stepBatch{Pass: passRows, Emb: stepProbe, Out: outEveryArgmax})
 			if hasG || hasAV {
+				var oneRow [1][]float32 // a one-row verify's batch, reused across rounds
 				idsVerify = func(seq []int, base int) ([]int, error) {
 					if adaptive {
 						if err := target.residentBind(mc3Slot); err != nil {
@@ -334,8 +333,9 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 						}
 					}
 					if len(seq) == 1 && hasG {
-						id, e := rg.ForwardArgmax(target.embedResident(seq[0]), base)
-						return []int{id}, e
+						oneRow[0] = target.embedResident(seq[0])
+						sr, e := target.step(stepBatch{Pass: passToken, Emb: oneRow[:], Pos: base, Out: outArgmax})
+						return []int{sr.ID}, e
 					}
 					if !hasAV {
 						return nil, fmt.Errorf("decoder: no argmax-only batched verify on this resident")
@@ -344,7 +344,8 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 					for i, tok := range seq {
 						embs[i] = target.embedResident(tok)
 					}
-					return av.PrefillLastNArgmax(embs, base)
+					sr, e := target.step(stepBatch{Pass: passRows, Emb: embs, Pos: base, Out: outEveryArgmax})
+					return sr.IDs, e
 				}
 			}
 		}

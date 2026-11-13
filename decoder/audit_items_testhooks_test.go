@@ -11,7 +11,11 @@ func TestResidentKV_webgpuSharedLayersOwnNone(t *testing.T) {
 	const ctx = 8
 	var built int64
 	for l := range m.w.arch.NumLayers {
-		for _, b := range m.webgpuLayerCaches(l, ctx, false, false) {
+		bufs, kv := m.webgpuLayerCaches(l, ctx, false, false)
+		if !kv {
+			continue // recurrent state: not context
+		}
+		for _, b := range bufs {
 			built += b
 		}
 	}

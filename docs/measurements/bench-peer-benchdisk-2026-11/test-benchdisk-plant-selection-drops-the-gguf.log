@@ -1,0 +1,17 @@
+plant: selection-drops-the-gguf
+replaced:         paths.append(MODELS[mk][0])
+        if mk in GOINFER_MOE_PATH:
+with:             if mk in GOINFER_MOE_PATH:
+
+test_a_selected_archive_model_still_refuses (__main__.SelectedOnly.test_a_selected_archive_model_still_refuses) ... FAIL
+test_a_selected_moe_models_own_bundle_is_checked (__main__.SelectedOnly.test_a_selected_moe_models_own_bundle_is_checked) ... ok
+test_an_unselected_archive_model_does_not_block (__main__.SelectedOnly.test_an_unselected_archive_model_does_not_block) ... ok
+test_preflight_calls_it_with_the_selection (__main__.SelectedOnly.test_preflight_calls_it_with_the_selection) ... # preflight OK: gate load · loadavg (0.1, 0.1, 0.1) · gpu None · compute apps []
+FAIL
+test_the_vision_checkpoint_is_checked_when_phase_e_is_on (__main__.SelectedOnly.test_the_vision_checkpoint_is_checked_when_phase_e_is_on) ... ok
+FAIL: test_a_selected_archive_model_still_refuses (__main__.SelectedOnly.test_a_selected_archive_model_still_refuses)
+AssertionError: SystemExit not raised
+FAIL: test_preflight_calls_it_with_the_selection (__main__.SelectedOnly.test_preflight_calls_it_with_the_selection)
+AssertionError: Lists differ: [[]] != [['/tmp/benchdisk-ed3ao31z/models/near.gguf']]
+Ran 5 tests in 0.003s
+FAILED (failures=2)

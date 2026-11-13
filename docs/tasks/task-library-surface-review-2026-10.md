@@ -5,6 +5,25 @@
 > [`library-surface-2026-10-09.md`](../measurements/library-surface-2026-10-09.md). **9 must-fix, 19 should-fix,
 > 4 notes.** Under §3's outcome rule v1.0 waits on the nine; §5 maps each to its tier and a change.
 
+**2026-11-09:** M3, M5 and M6 (and S5) are done, and M9's error kinds have shipped; v1.0 waits on M1, M2, M4, M7, M8, M9's
+`Options` half and U1 (the ledger).
+
+<!-- ledger -->
+| id | state | next | evidence |
+|---|---|---|---|
+| M1 | done | — (Francis: enforce the common formats) | `constrain/schema_format.go:fmtStep`; `constrain/schema_format_test.go:TestJSONSchema_formatIsEnforced` |
+| M2 | done | — | `chat/chat.go:Template.StopIDs` (Hard); `chat/stopids_test.go:TestTemplate_StopIDs`; the smallest structured program uses it |
+| M3 | done | — | f02d0b534; `tokenizer/stream.go:Tokenizer.NewStream` |
+| M4 | done | — | `chat/toolgrammar.go:Template.ToolGrammar`, which serve's auto mode now calls; `chat/tools.go:Template.ParseToolCalls` documents `ID` and the reasoning lead; `chat/toolgrammar_test.go:TestTemplate_ToolGrammar` |
+| M5 | done | — | merged 2026-10-11 |
+| M6 | done | — | 3d50ec1f8; `decoder/lifecycle.go:Model.endGenerations` |
+| M7 | done | — | the contract is `decoder.Model`'s doc comment; `decoder/concurrency_contract_test.go:TestModel_concurrentGenerationsBeyondTheResidentsPlacesRunOnTheCPU` pins the case past the resident's places |
+| M8 | done | — | the comments on `decoder.Model.Generate` and `decoder.Generation.Err`; `decoder/generation_cancel_test.go:TestGeneration_errReportsCancellation` |
+| M9 | done | — | the kinds shipped in 275701c0c; `decoder.Options.RequireBackend` and `ErrBackendDeclined` (`decoder/residency.go:Model.backendDeclinedErr`); `decoder/require_backend_test.go:TestLoad_requireBackendRefusesADecline` |
+| U1 | done | — (promoting any of them to Hard is a separate call) | `docs/api-tiers.md`, Experimental: structured output, per-field confidence, tool-call wiring, fit and placement reports, embeddings |
+| S1 | done | — | `decoder.Generation.ResidentDeclined` reports it per turn and `decoder/model.go:Model.warnResidentCap` warns once per model; `decoder/resident_declined_test.go:TestGeneration_residentDeclinedSaysWhyItRanOnTheCPU` |
+| S5 | done | — | 3d50ec1f8 (`ErrClosed`) |
+
 ## 1. Why now
 
 The owner decided on 2026-09-30 that goinfer's primary user is a Go engineer embedding a model in their own program.
@@ -109,10 +128,10 @@ Each must-fix below is graded by the run, not re-argued here. "Checked" is this 
 |---|---|---|---|---|---|
 | M1 | a | `constrain.JSONSchema` `format` | **unlisted** | yes: `constrain/schema.go:schemaKeywords` lists `format` among the ignored annotation keywords beside `title` and `description` | owner's call: refusing `format` breaks callers whose schemas carry it (serve's `response_format` included); enforcing the common formats keeps them. Either keeps the doc promise |
 | M2 | c | `chat` + `tokenizer` + `decoder` render, encode, stop ids | Hard (`Detect`, `RenderSegments`, `EncodeSegments`, `Generate`, `chat.Stops`) | no | a `Template.StopIDs(tok)` (or a chat-level prompt builder) so the 12-line loop leaves every caller |
-| M3 | c | `tokenizer.Decode` / `DecodePiece` for streaming | Hard | partly: `docs/use-from-go.md:94` streams with per-token `Decode` | a streaming detokenizer (UTF-8 and leading-space state); fix the doc's smallest program |
+| M3 | c | `tokenizer.Decode` / `DecodePiece` for streaming | Hard | partly: the smallest program streamed with per-token `Decode` | **done** 2026-10-11 (f02d0b534): `Tokenizer.NewStream`, and the smallest program uses it |
 | M4 | c | tool-call wiring: `ToolCallWrapper`, `ToolCallOpener`, `ToolCallsGrammar`, `NewLazyMasker`, `ParseToolCallsFor`, `SplitThink` | `ParseToolCalls` Hard; the rest **unlisted** | no | a `Template.ToolGrammar(tools)`-style helper returning the lazy masker; state the empty `ToolCall.ID` and the `<think>` lead on `ParseToolCalls` |
 | M5 | b | `decoder.Load` of a cpu-arm64 `.giw` with the zero `Options.Backend` | `Load` Hard; `Backend` Experimental | yes: `wantsCanonicalInt4` (`decoder/weightmat.go:wantsCanonicalInt4`) treats `""` as a non-CPU backend, so the zero value fails where `"cpu"` loads | **done**, on `main` since 2026-10-11 (merged from `libsurface-harness-2026-10`): the `.giw` check treats `""` as `"cpu"`; the kind-5 test loads under `Options{}` |
-| M6 | d | `Model.Close` during a generation | Hard | yes, structurally: `metal.(*resident).Close` (`backend/metal/model.go:resident.Close`) releases the device with no wait for an open chain (`chainOpen`, `backend/metal/greedy_chain.go:resident.chainOpen`) | Close waits for, or cancels and drains, in-flight generations; write the contract |
+| M6 | d | `Model.Close` during a generation | Hard | yes, structurally: `metal.(*resident).Close` (`backend/metal/model.go:resident.Close`) releases the device with no wait for an open chain (`chainOpen`, `backend/metal/greedy_chain.go:resident.chainOpen`) | **done** 2026-10-11 (3d50ec1f8): Close cancels and waits for generations in flight; later calls get `ErrClosed` |
 | M7 | d | GPU-resident `Model.Generate` concurrency | Hard (`Generate`); `CPUConcurrentSafe` unlisted | no | one written statement on `Model`: concurrent calls are safe; extras decode on the CPU while the resident KV is claimed |
 | M8 | d | `Generate` / `Generation.Err` cancellation | Hard | no | document that `Err` wraps `ctx.Err()` and the prefill check granularity |
 | M9 | d | `decoder.Load` error kinds | `Load` Hard; `ResidentDeclineError` unlisted | no | typed errors for unsupported family, quant and backend (done: `decoder/load_errors.go`); still open: an `Options` way to make a backend decline an error |
@@ -124,3 +143,5 @@ package. The run's S12 says the same of the README's headline API.
 
 **Should-fix worth naming now:** S1 (a long prompt silently leaves the Metal resident path: 40 s against 4.9 s to
 first token) and S5 (use after `Close` on a `.giw` is a SIGSEGV) are the two a user would hit first.
+
+<!-- doc-reviewed: 2026-11-09 -->

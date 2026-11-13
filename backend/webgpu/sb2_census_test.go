@@ -747,31 +747,11 @@ func TestBackendSlotCensus_webgpu_m1p(t *testing.T) {
 // blocks are outside what a row reads (webgpuVkBlocks prices them in the slot census).
 var webgpuRounding = memgate.PowerOfTwo("Vulkan's power-of-two blocks")
 
-// webgpuDenseTableFixtures are the fixtures whose dense line reads over plan: a tied head uploads the table the plan counts, so the
-// host-kept table that hides the derived tables on other fixtures is not there to hide them.
-var webgpuDenseTableFixtures = []string{
-	"selftestdata/gemma3-vl-tiny",
-	"testdata/gemma1-tiny",
-	"testdata/gemma1-tiny.gguf",
-	"testdata/gemma3-vl-tiny",
-	"testdata/smollm3-tiny",
-}
-
 // webgpuMemGaps is WebGPU's table of known reds. It may only shrink: the fix that removes a row lowers webgpuMemGapsPin.
 var webgpuMemGaps = func() []memgate.Gap {
 	var out []memgate.Gap
-	for _, row := range webgpuDenseTableFixtures {
-		out = append(out, memgate.Gap{Row: row + " *", Line: mem.LineDense, What: "the rotation tables and small constant buffers a build derives are leased on dense and priced nowhere",
-			Item: "MM8 WebGPU, derived dense tables", Bytes: func(f map[string]int64) int64 { return f["tables"] }})
-	}
-	moeDense := func(row string, over int64) {
-		out = append(out, memgate.Gap{Row: row, Line: mem.LineDense, What: "Gemma 4's MoE block leases derived router tables on dense past the tensors the plan sums: not diagnosed, so it names this row's own bytes",
-			Item: "MM8, Gemma 4 MoE dense", Bytes: func(map[string]int64) int64 { return over }})
-	}
-	moeDense("testdata/gemma4-moe-kv-tiny int8int8", 1128)
-	moeDense("testdata/gemma4-moe-kv-tiny32 int8int8", 1128)
 	for _, f := range []string{
-		"testdata/olmo3-tiny", "testdata/olmo_hybrid-tiny", "testdata/smollm3-tiny",
+		"testdata/flint-tiny", "testdata/olmo3-tiny", "testdata/olmo_hybrid-tiny", "testdata/smollm3-tiny",
 		"internal/vision/testdata/qwen25vl-vision-tiny", "selftestdata/gemma3-vl-tiny", "selftestdata/llama-tiny",
 		"testdata/gemma3-vl-tiny", "testdata/gguf-split/glm-tiny-00001-of-00004.gguf", "testdata/glm-tiny",
 		"testdata/glm-tiny-bias", "testdata/glm-tiny.gguf", "testdata/gptoss_tiny.gguf",
@@ -793,8 +773,6 @@ var webgpuMemGaps = func() []memgate.Gap {
 	}
 	stacked("testdata/qwen3vlmoe-tiny int8int8", 16384)
 	if runtime.GOARCH != "arm64" { // gpu-darwin's run fires none of these int4 rows: not diagnosed, and not shown to be the architecture rather than the adapter
-		moeDense("testdata/gemma4-moe-kv-tiny int4*", 2152)
-		moeDense("testdata/gemma4-moe-kv-tiny32 int4*", 1128)
 		stacked("testdata/gemma4-moe-kv-tiny int4*", 8192)
 		stacked("testdata/qwen3vlmoe-tiny int4*", 8192)
 	}
@@ -806,8 +784,8 @@ const webgpuGateRowsPath = "testdata/memgate_rows.txt"
 
 var webgpuGateRowsUpdate = flag.Bool("memgate.rows.update", false, "have TestMemGate_webgpu rewrite testdata/memgate_rows.txt")
 
-// webgpuMemGapsPin is len(webgpuMemGaps) on this architecture.
-var webgpuMemGapsPin = map[string]int{"arm64": 34}[runtime.GOARCH] + map[bool]int{true: 38}[runtime.GOARCH != "arm64"]
+// webgpuMemGapsPin is len(webgpuMemGaps) on this platform: 28 rows everywhere and two more off arm64.
+var webgpuMemGapsPin = 28 + map[bool]int{true: 2}[runtime.GOARCH != "arm64"]
 
 // webgpuGatePlantForTest, when set, runs on a row's resident after its generation and before the ledger is read; the function it returns
 // runs after that read, so the plant is released before Close and the package's own ledger check stays clean.
@@ -911,7 +889,8 @@ func TestMemGate_webgpu(t *testing.T) {
 }
 
 // TestMemGate_webgpuPlantsThroughTheTable: a buffer really allocated over plan after the generation stays red through the table, on a row whose
-// line a live gap forgives part of (each is checked to fire unplanted), and on a line nothing forgives. A lease left open after Close is held by
+// line a live gap forgives part of (each is checked to fire unplanted), and on a line nothing
+// forgives. A lease left open after Close is held by
 // memgate's own test and the CPU's plant: here it would fail this package's ledger check at exit.
 func TestMemGate_webgpuPlantsThroughTheTable(t *testing.T) {
 	newOrSkip(t).Close()
@@ -922,7 +901,7 @@ func TestMemGate_webgpuPlantsThroughTheTable(t *testing.T) {
 		o             decoder.Options
 		live          bool
 	}{
-		{"dense", "../../testdata/gemma1-tiny", "testdata/gemma1-tiny int8int8", mem.LineDense, decoder.Options{Quant: "int8int8"}, true},
+		{"dense", "../../testdata/gemma4-moe-kv-tiny", "testdata/gemma4-moe-kv-tiny int8int8", mem.LineDense, decoder.Options{Quant: "int8int8"}, false},
 		{"experts", "../../testdata/qwen3vlmoe-tiny", "testdata/qwen3vlmoe-tiny int8int8", mem.LineExperts, decoder.Options{Quant: "int8int8"}, true},
 		{"kv", "../../testdata/llama-tiny", "testdata/llama-tiny int4/kvprecision-i8", mem.LineKV, decoder.Options{Quant: "int4", KVPrecision: "i8"}, true},
 		{"state", "../../testdata/llama-tiny", "testdata/llama-tiny int4", mem.LineState, decoder.Options{Quant: "int4"}, false},
@@ -963,6 +942,54 @@ func TestMemGate_webgpuPlantsThroughTheTable(t *testing.T) {
 			}
 			if !red {
 				t.Errorf("64 MiB on %q is not red through the table: %v", c.line, g.Unknown(read))
+			}
+		})
+	}
+}
+
+// TestWebGPUDeviceBuffers_inTheBuildsOrder: on a real WebGPU build of each fixture, the planner's buffer list (vkPlanBuffers, its
+// trailing scratch line left out) appears in the build's ledger of weight, KV, state and expert buffers, buffer for buffer and in
+// order, with only vectors between (Storage|CopySrc, as up32 makes them: the norms and gains the plan prices beside the blocks).
+// M1′ places first fit, so the order decides the blocks (docs/measurements/sb2-vk-2026-10-31/README.md, "The hybrid's miss").
+func TestWebGPUDeviceBuffers_inTheBuildsOrder(t *testing.T) {
+	for _, dir := range []string{"olmo_hybrid-tiny", "qwen35-tiny", "qwen3next-tiny", "nemotron-tiny", "nemotron3nano-tiny", "deepseek-tiny",
+		"gemma4-moe-kv-tiny", "llama-tiny", "mistral-tiny-window", "mixtral-tiny", "qwen3moe-tiny", "glm-tiny", "glm-tiny-bias",
+		"granite-dense-tiny", "olmo3-tiny", "smollm3-tiny", "gemma1-tiny", "qwen25vl-tiny"} {
+		t.Run(dir, func(t *testing.T) {
+			path := filepath.Join("../../testdata", dir)
+			if _, err := os.Stat(path); err != nil {
+				t.Skipf("no fixture at %s", path)
+			}
+			o := decoder.Options{Quant: "int4", ResidentContext: 64}
+			if dir == "nemotron-tiny" {
+				o.Knobs = &decoder.Knobs{"GOINFER_SSM_RESIDENT": "1"}
+			}
+			m, rd := loadWebGPUResident(t, path, o, 1)
+			defer m.Close()
+			kv := m.KVDeliveredFor("webgpu")
+			plan, _ := vkPlanBuffers(m, rd.ctxCap, kv == "f16", kv == "i8")
+			plan = plan[:len(plan)-1]
+			const vector = uint64(wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc)
+			var led []kernels.LeasedBufferForTest
+			for _, b := range rd.c.LeasedBuffersForTest() {
+				if b.Line == "dense" || b.Line == "kv" || b.Line == "state" || b.Line == "experts" {
+					led = append(led, b)
+				}
+			}
+			// ok[i][j]: the ledger from i on holds the plan from j on, in order, skipping vectors only.
+			ok := make([][]bool, len(led)+1)
+			for i := range ok {
+				ok[i] = make([]bool, len(plan)+1)
+			}
+			ok[len(led)][len(plan)] = true
+			for i := len(led) - 1; i >= 0; i-- {
+				for j := len(plan); j >= 0; j-- {
+					ok[i][j] = led[i].Usage == vector && led[i].Line == "dense" && ok[i+1][j] ||
+						j < len(plan) && led[i].Bytes == plan[j] && ok[i+1][j+1]
+				}
+			}
+			if !ok[0][0] {
+				t.Fatalf("the planner's %d buffers are not the build's %d weight, KV, state and expert buffers in order, with only vectors between", len(plan), len(led))
 			}
 		})
 	}

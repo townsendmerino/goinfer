@@ -105,6 +105,9 @@ var censusList = []string{
 	// gemma1-tiny / gemma2-tiny: Gemma 1's Pre2 + (1+w) RMSNorm + MQA and Gemma 2's Sandwich4 without QK-norm, sliding/full
 	// alternating, both softcaps; and their GGUF copies, whose loader derives what the file omits.
 	"../testdata/gemma1-tiny", "../testdata/gemma2-tiny", "../testdata/gemma1-tiny.gguf", "../testdata/gemma2-hd-tiny.gguf",
+	// flint-tiny (docs/completed/task-flint-2026-10.md): generic-path AttnSinks (LayerWeights.AttnSinks on a non-gptoss family) +
+	// per-layer NoPE + dense prefix + sigmoid-routed MoE + ungated shared expert.
+	"../testdata/flint-tiny",
 }
 
 // censusExcluded names a committed model fixture the census deliberately does NOT round-trip, with the reason. Every

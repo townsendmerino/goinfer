@@ -1,0 +1,6 @@
+plant: hint-never (internal/runtime/mem/giw.go)
+    mem_test.go:273: device KV: the pinned copy is the whole need: the refusal names --moe-experts-unpinned: false, want true: decoder: pinned context 4096 needs ~60.00 GB (KV + scratch + the pinned MoE expert copy) but 
+    mem_test.go:273: pinned copy only, over the budget, dropping it fits: the refusal names --moe-experts-unpinned: false, want true: decoder: pinned context 4096 needs ~45.00 GB (KV + scratch + the pinned MoE expert cop
+    mem_test.go:273: floor refusal, dropping the copy fits: the refusal names --moe-experts-unpinned: false, want true: decoder: this model needs ~45.00 GB (KV + scratch + the pinned MoE expert copy) even at the 2048-tok
+--- FAIL: TestUnpinnedExpertsHint_onlyWhenTheCopyIsWhatDoesNotFit (0.00s)
+FAIL

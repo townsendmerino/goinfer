@@ -32,7 +32,7 @@
 extern "C" __global__ void splitkv_scores_rows(
     const float* __restrict__ q, const KV_T* __restrict__ kc, const int* __restrict__ kvt,
     int nH, int nKV, int hd, int startPos, int window, int row0, float scale,
-    float* __restrict__ scStore, int stride, const int* __restrict__ blocks, int nBlocks) {
+    float* __restrict__ scStore, int stride, const int* __restrict__ blocks, int nBlocks KV_SCALE_PARAMS) {
     int h = blockIdx.x; if (h >= nH) return;   // block-uniform: safe before the barrier below
     int z = blockIdx.z, m = row0 + z;
     ROW_RANGE(m)
@@ -51,13 +51,13 @@ extern "C" __global__ void splitkv_scores_rows(
     int d4 = hd >> 2;
     const float4* q4 = (const float4*)qs;
     for (int j = 0; j < d4; j++) {
-        float4 qq = q4[j], kk = KV_LD4V(ks, j);
+        float4 qq = q4[j], kk = KV_LD4VS(ks, j, kscl[KV_ROW(kvt, s) * nKV + kvh]);
         dot = __fmaf_rn(qq.x, kk.x, dot);
         dot = __fmaf_rn(qq.y, kk.y, dot);
         dot = __fmaf_rn(qq.z, kk.z, dot);
         dot = __fmaf_rn(qq.w, kk.w, dot);
     }
-    for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qs[d], KV_LD(ks + d), dot);
+    for (int d = d4 << 2; d < hd; d++) dot = __fmaf_rn(qs[d], KV_LDS(ks + d, kscl[KV_ROW(kvt, s) * nKV + kvh]), dot);
     scStore[((long)z * nH + h) * stride + i] = dot * scale;
 }
 
@@ -104,7 +104,7 @@ extern "C" __global__ void splitkv_softmax_rows(
 extern "C" __global__ void splitkv_vsum_rows(
     const float* __restrict__ scStore, const KV_T* __restrict__ vc, const int* __restrict__ kvt,
     const float* __restrict__ invStore, int nH, int nKV, int hd, int startPos, int window, int row0,
-    int stride, float* __restrict__ ctx, const int* __restrict__ blocks, int nBlocks) {
+    int stride, float* __restrict__ ctx, const int* __restrict__ blocks, int nBlocks KV_SCALE_PARAMS) {
     int h = blockIdx.x; if (h >= nH) return;
     int d = blockIdx.y * blockDim.x + threadIdx.x;
     if (d >= hd) return;
@@ -131,7 +131,7 @@ extern "C" __global__ void splitkv_vsum_rows(
     for (int s = winStart; s < nKeys;) {
         const int e = KV_RUN_END(s, nKeys);
         const KV_T* vp = vc + KV_ROW(kvt, s) * kvDim + (long)kvh * hd + d;
-        for (; s < e; s++, vp += kvDim) acc = __fmaf_rn(sc[s - winStart], KV_LD(vp), acc);
+        for (; s < e; s++, vp += kvDim) acc = __fmaf_rn(sc[s - winStart], KV_LDS(vp, vscl[KV_ROW(kvt, s) * nKV + kvh]), acc);
     }
 #endif
     ctx[(long)m * nH * hd + (long)h * hd + d] = acc * invStore[(long)z * nH + h];

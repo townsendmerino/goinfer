@@ -105,8 +105,8 @@ const (
 )
 
 // SerializeError is returned by LoadSerializedWeights on any magic/version/
-// quant/CRC mismatch. It is distinct so callers can fall back to building from
-// the source GGUF rather than treating a stale blob as fatal.
+// quant/CRC mismatch, and by the writer for weights the format cannot hold (a bf16 or f16 load). It is distinct so callers can
+// fall back to building from the source GGUF rather than treating a stale blob as fatal.
 type SerializeError struct{ Reason string }
 
 func (e *SerializeError) Error() string { return "decoder: serialized weights: " + e.Reason }
@@ -188,6 +188,13 @@ func SerializeWeightsToForTarget(out io.Writer, w *Weights, id string, target GI
 func (wr *giwWriter) writeBundle(w *Weights, id string) error {
 	if err := canSerialize(w.arch); err != nil {
 		return err
+	}
+	// The format has no 16-bit matmul weight kind (LFM2's bf16 conv islands, kind 9, are not matmul weights): refused before a
+	// byte is written, not emitted as a bundle that leaves them out.
+	for _, m := range w.matmulWeights() {
+		if k := m.Kind(); k == "bf16" || k == "f16" {
+			return &SerializeError{"a .giw has no " + k + " matmul weight kind: serialize a load at int4, int8, int8int8 or f32"}
+		}
 	}
 	wr.arch = w.arch // gates the gemma4 model-level PLE + per-layer tail
 	if err := wr.writeHeadGlobals(w, id); err != nil {
@@ -363,7 +370,7 @@ func walkSerializedWeights(data []byte, crcAlreadyVerified bool, beforeWalk func
 	}
 
 	if cfg.Sampling != nil {
-		cfg.Sampling = cfg.Sampling.normalized() // the bundle's bytes are input, held to the same ranges as the checkpoint's
+		cfg.Sampling = cfg.Sampling.Normalized() // the bundle's bytes are input, held to the same ranges as the checkpoint's
 	}
 	arch, _, err := resolveArchitecture(&cfg)
 	if err != nil {
@@ -702,13 +709,15 @@ func validateShapes(w *Weights, arch *Architecture) *SerializeError {
 			}
 		}
 
-		// The v6 completeness tail. forward_gptoss.go indexes AttnSinks[qh] for every head and addBias iterates every expert bias
-		// with no nil check, so for this family these are required, not optional; a gpt-oss sidecar written before v6 is
-		// sink-free, within giwMinReadV, and judged fresh by mtime.
-		if arch.gptoss != nil {
-			if e := req(fmt.Sprintf("layer %d AttnSinks", i), len(lw.AttnSinks), arch.NumHeads); e != nil {
+		// The v6 completeness tail. forward_gptoss.go and the generic sink attention path index AttnSinks[qh] for every head, and
+		// addBias iterates every expert bias with no nil check, so for these families they are required, not optional; a sidecar
+		// written before v6 is sink-free, within giwMinReadV, and judged fresh by mtime.
+		if arch.hasAttnSinks() {
+			if e := req(fmt.Sprintf("layer %d AttnSinks", i), len(lw.AttnSinks), arch.headsAt(i)); e != nil {
 				return e
 			}
+		}
+		if arch.gptoss != nil {
 			for xe := range lw.Experts {
 				ex := &lw.Experts[xe]
 				if ex.Gate.Rows() == 0 {

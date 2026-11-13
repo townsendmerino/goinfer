@@ -1,5 +1,5 @@
 #!/bin/bash
-# OP2b's tier 1 on the whole NVIDIA-Nemotron-Nano-9B-v2 on Metal (docs/tasks/task-forward-architecture-2026-10.md §4.7),
+# OP2b's tier 1 on the whole NVIDIA-Nemotron-Nano-9B-v2 on Metal (docs/completed/task-forward-architecture-2026-10.md §4.7),
 # night queue: B27's v17 int4 bundle is 7.27 GB, which this Mac holds only with the desktop's memory free. The fit guard
 # and Metal's memory guard stay on; a refused load is VOID (rc 2), never bypassed.
 # Pinned: a detached worktree at B27_REV with its own go.work and a metal test binary built from it. Bundles from ~/models.

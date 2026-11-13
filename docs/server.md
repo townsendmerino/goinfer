@@ -21,6 +21,13 @@ go run ./cmd/serve --model ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
 > sequential path. `--quant -h` explains all five. A prequantized `.giw` model ignores `--quant`
 > (it carries its own).
 >
+> **A Phi-3 or Phi-4 `.gguf` defaults to `q4k`** on the CPU, CUDA and Metal: the file's Q4_K blocks kept exact, the rest
+> int8, because per-vector int8 activations break these families (`decoder/actquant_hazard.go:ActivationQuantHazard`). The CPU
+> and CUDA quantize activations with per-32 scales. On Metal, `-backend auto` included, it runs resident on the q4k lane, which
+> quantizes no activation; before 2026-11-08 the default
+> there was int8int8 with per-32 scales, which Metal declines, so it ran on the CPU. An explicit `--quant` is kept, and WebGPU
+> loads int8int8 with per-32 scales, on the CPU.
+>
 > **`int4` is not the smallest option everywhere.** On Apple Silicon and non-VNNI amd64 hosts, the
 > loader keeps a second, repacked copy of the int4 nibbles beside the canonical ones (the layout
 > the fast NEON/AVX2 kernels need), so `int4` measures ~1.25 bytes/element resident against
@@ -56,6 +63,17 @@ has its tower found in the fetched directory, as a local one would. One loaded f
 the tower is attached once, at startup, to the sole `--model`. The Models tab's "On disk" card (`GET /web/models/cache`)
 lists everything the pull cache holds, pulled in this session or not, with sizes, sidecars and whether each pull
 finished, and loads any complete one; `goinfer-chat cache` prints the same list.
+
+Each load of a `.gguf` (and of a safetensors directory, by default) writes a `.giw` sidecar beside the model, named with
+the format version (`<model>.<quant>.<target>.v<N>.giw`). A build that reads a newer format writes a new one and never
+opens the old, which stays on disk. `goinfer-chat cache prune-sidecars` lists those older versions under the pull cache
+and the space they hold; `-apply` deletes them with their `.verified` markers, and `-dir <dir>` looks under another
+models directory instead. It never touches this build's version or a newer one, a legacy name without a version (an older
+build still reads it), or a transcode in progress. A sidecar hard-linked to a name that stays is listed as freeing nothing.
+A symlinked `-dir` or cache root is followed. A root that is not a directory, or cannot be read, is an error, not an empty
+list; a directory under it that cannot be read is named, and the run exits 1 because the listing is incomplete. Hard-linked
+stale names count their file once in the total. Run `-apply` while no
+load is writing to that directory: it re-checks each file just before removing it, which narrows the race but does not close it.
 
 `/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/messages`
 (Anthropic — see below), `/v1/models`, and `GET /health` — which is **auth-gated like every
@@ -150,7 +168,7 @@ Add `"goinfer": {"cost": true}` to the request body and the response also carrie
 phases, each with its tokens, its wall time where the backend measures it, its totals and its per-operation counts
 (`calls`, `bytes_read`, `bytes_written`, `launches`, `submits`, `syncs`, `allocs`, `alloc_bytes`, `time_ns`). A field a
 backend does not count is listed in that operation's `unmeasured`, never reported as 0. `internal/cost` is the schema
-(`docs/tasks/task-subsystems-2026-10.md` §8, "SB11b").
+(`docs/completed/task-subsystems-2026-10.md` §8, "SB11b").
 - **Counted:** the CPU's program walker (operations by kind, with bytes and time), and CUDA's resident `Generate` (per
   kernel launches, syncs and allocations, the prefill and the decode each as one span with its wall time).
 - **Not counted yet**, answering `"cost": {}`: speculative or drafted decode, image and audio turns, the WebGPU and Metal
@@ -422,8 +440,9 @@ supply, with any number of tools:
 - `auto` is constrained the same way from the moment the model writes its call opener, so it can still answer in prose — and a turn
   that answers in prose decodes exactly as it would with no constraint (same speed, byte-identical output). llama3 has no opener:
   under `auto` its call is constrained when the reply BEGINS as one (`{"name": "`, optionally after `<|python_tag|>`); a call that
-  follows prose in the same reply is still only parsed. A server started with speculative decoding leaves `auto` unconstrained, to
-  keep its drafter.
+  follows prose in the same reply is still only parsed. On a server started with speculative decoding, an `auto` turn speculates
+  until the call's opener and then takes the constrained path a non-speculating server takes (plain constrained decoding, which on
+  a GPU-resident server does not speculate) for the rest of the turn: a prose answer keeps its drafter and comes back unchanged.
 
 **On a family with no JSON call form** (Gemma 4, gpt-oss, a ChatML model under `-tool-format template`), a call is parsed, not
 constrained. A named tool is a 400. `required` / `any` runs unconstrained and is checked once the reply is parsed: a reply with no
@@ -536,23 +555,36 @@ was available.** Per family:*
 
 | family | the vision tower | the decoder after the image |
 |---|---|---|
-| **Gemma 3** (SigLIP) | CPU, f32. **On `--backend cuda` a resident CUDA tower (goinfer's own), on `--backend webgpu` a resident WebGPU tower**, both int8; Metal: CPU | CUDA and WebGPU: resident decode; CUDA also a resident image prefill. Metal: resident decode through the `UploadKV` bridge (read, unrun) |
-| **Gemma 4 E2B, E4B** | CPU, f32 unless `-vision-quant int8` | **CPU for the whole model on every backend** (no backend implements the E-model features) |
-| **Gemma 4 26B-A4B, 31B** | CPU, f32 unless `-vision-quant int8` | CUDA: resident bidirectional image prefill and decode (S19, 2026-10-23; 26B-A4B run, 31B unverified). Elsewhere: CPU bidirectional prefill, then resident decode through the bridge (Metal and WebGPU unverified) |
-| **Qwen2.5-VL** | CPU, f32 unless `-vision-quant int8`: aikit has `gpu/qwencuda` and `gpu/qwenmetal`, goinfer does not use them | CUDA: resident m-RoPE prefill and decode; WebGPU and Metal: CPU prefill, then resident decode |
-| **Qwen3.5+ dense** (0.8B, 9B gated; MoE sizes accepted but never run) | CPU, f32 unless `-vision-quant int8`, loaded on the first image, at most 1,024 image tokens per image; from a checkpoint directory or a GGUF `mmproj` (below) | **CUDA: resident image prefill and decode** since 2026-10-06 (P26b; dense only); every other backend: CPU prefill and CPU decode (a recurrent family refuses the other resident branches); a repeated image does not re-run the tower (the feature cache) |
-| **GLM-OCR** | CPU, **f32 on every backend** | CUDA: resident (pairwise rope); WebGPU: staged (no resident KV); Metal: CPU |
+| **Gemma 3** (SigLIP) | A device tower on CUDA, Metal and WebGPU, float32 by default (CUDA drops to int8 when the card cannot hold float32; `-vision-quant int8` asks for the int8 one); CPU, f32 under `-vision-device cpu` | CUDA and WebGPU: resident decode; CUDA also a resident image prefill. Metal: resident decode through the `UploadKV` bridge (read, unrun) |
+| **Gemma 4 E2B, E4B** | A float32 device tower on CUDA, Metal and WebGPU; CPU, f32 under `-vision-device cpu` (int8 under `-vision-quant int8`) | **CPU for the whole model on every backend** (no backend implements the E-model features) |
+| **Gemma 4 26B-A4B, 31B** | A float32 device tower on CUDA, Metal and WebGPU; CPU as above | CUDA: resident bidirectional image prefill and decode (S19, 2026-10-23; 26B-A4B run, 31B unverified). Elsewhere: CPU bidirectional prefill, then resident decode through the bridge (Metal and WebGPU unverified) |
+| **Qwen2.5-VL** | A float32 device tower on CUDA, Metal and WebGPU; CPU as above | CUDA: resident m-RoPE prefill and decode; WebGPU and Metal: CPU prefill, then resident decode |
+| **Qwen3.5+ dense** (0.8B, 9B gated; MoE sizes accepted but never run) | A float32 device tower on CUDA, Metal and WebGPU (CPU as above), loaded on the first image, at most 1,024 image tokens per image; from a checkpoint directory or a GGUF `mmproj` (below) | **CUDA: resident image prefill and decode** since 2026-10-06 (P26b; dense only); every other backend: CPU prefill and CPU decode (a recurrent family refuses the other resident branches); a repeated image does not re-run the tower (the feature cache) |
+| **GLM-OCR** | A float32 device tower on CUDA, Metal and WebGPU; CPU, f32 under `-vision-device cpu` | CUDA: resident (pairwise rope); WebGPU: staged (no resident KV); Metal: CPU |
 
-**The tower-quant rule, exactly as `towerInt8` in `main.go` applies it.** `-vision-quant int8` gives an int8 tower. Unset, **Gemma 3's
-tower is float32 on every backend**: on the GPU under `--backend cuda` (which falls back to its int8 device tower when the card cannot hold float32) and `--backend metal`, and on the CPU under
-`--backend webgpu`, whose device towers are opt-in. `-vision-device gpu` (or `-vision-quant f32`) asks for the float32 WebGPU tower and `-vision-quant int8` for the int8 one. Gemma 4's,
-Qwen2.5-VL's, Qwen3.5+'s, Qwen3-VL's and GLM-OCR's towers have float32 WebGPU towers too, asked for the same way (`-vision-device gpu`). On an M1 Pro each device tower encodes a large image in 0.36 to 0.49 of its CPU tower's time (five interleaved pairs each, 2026-10-11; Gemma 3's float32 tower 10.5 s against 24.3 s);
-the CPU towers are still the default (the 33 s and 43 s an image this page once quoted for Gemma 3 were measured before the tower's matmul was rewritten, and no longer describe it). **Every other tower
-(Qwen2.5-VL, Qwen3.5+, Gemma 4, GLM-OCR) is CPU-only and f32 unless `-vision-quant int8`:** until 2026-10-02 the first three were forced to int8 under cuda/webgpu, which was not faster and was
-not close to f32 (relative L2 0.21 / 0.14 / 0.31 against each tower's own f32 on one image; `docs/measurements/vision-tower-int8-fidelity-2026-10-02.md`), and GLM-OCR's int8 form is not gated
-on the real checkpoint. The f32 tower holds more host memory. `EnableResident` is called in one place only (the Gemma 3 tower on cuda/webgpu); if it fails, serve warns and runs that tower on
-the CPU rather than refusing to start. `-vision-quant int8` (default `f32`) is a CPU option: `docs/completed/task-cpu-vision-prefill.md` found it speeds the compute-bound
-prefill only on AVX512-VNNI hardware and measures a wash on plain AVX2, which is why f32 is the default.
+**The tower-quant and placement rule, as `towerInt8` and the placement functions in `main.go` apply them.** `-vision-quant int8` gives an int8 tower;
+unset, **every family's tower is float32**, Gemma 3's included. A float32 tower runs on the GPU under `--backend cuda`, `--backend metal` and
+`--backend webgpu` when the binary registers one for the family; `-vision-device cpu` keeps any tower on the CPU while the model keeps its backend,
+and `-vision-device gpu` is the same as the default, except that it also puts on the device the towers the default keeps on the CPU under WebGPU (a discrete GPU, and a Qwen3.5+ `.gguf` mmproj tower). An int8 tower is a device tower only for Gemma 3; every other int8 tower is the CPU's. On an M1 Pro
+each WebGPU tower encodes a large image in 0.36 to 0.49 of its CPU tower's time (five interleaved pairs each, 2026-10-11; Gemma 3's float32 tower 10.5 s against
+24.3 s), which made them the default under `--backend webgpu` on a unified-memory Mac on 2026-11-07 (a discrete GPU keeps the CPU tower until its memory can be priced); they were opt-in (`-vision-device gpu`) before (the 33 s and 43 s an image this page
+once quoted for Gemma 3 were measured before the tower's matmul was rewritten, and no longer describe it).
+
+**Where a tower cannot be placed.** CUDA and Metal price the tower into the resident plan (`towerReserve`), so the KV plan leaves room for it. WebGPU prices its device tower the same way, before the
+decoder loads. On a Mac (unified memory, where the device's buffers are host RAM) the tower is counted with the weights when the KV slots and the context are sized (a single-slot build too: its
+context gives way, down to 4096, until slot, weights and tower fit), then checked once the decoder is resident against the memory available now. The 70% share of RAM is the sizing target for slots and
+context; the check afterwards is the physical backstop (the tower must fit what is available) and applies no second fraction, so an explicit `-ctx`, or a floor context that still overshoots the share,
+is not refused by the share (the context floor logs a warning). If the tower does not fit, serve **refuses the load** and says how much it needs: a float32 CPU tower would hold the same RAM, so moving
+it is not a fallback. Free memory, lower `-ctx` or `-kv-sessions`, or pass `-vision-device cpu` to run the CPU tower anyway; for Gemma 3 only, `-vision-quant int8` is a smaller device tower (lossy). The
+reserve stays counted if the tower later falls back to the CPU, which only leaves more room than needed. A Qwen3.5+ `.gguf` mmproj tower has no `config.json` to price, so under WebGPU it stays on the CPU
+unless `-vision-device gpu` asks for the device (then nothing is reserved for it). A discrete GPU has no free-memory figure under WebGPU, so the towers are **not** the default there: the CPU tower runs unless `-vision-device gpu` asks for the device (for Gemma 3, an explicit `-vision-quant` asks too: its int8 form is the one WebGPU int8 tower), and an asked-for tower that cannot start is warned about at startup
+(Gemma 3, Qwen2.5-VL, Gemma 4) and runs on the CPU, or refuses under `--require-backend`; the Qwen2.5-VL, Qwen3.5+, Qwen3-VL and GLM-OCR towers also fall back to the CPU for good at the first image that
+runs them out of device memory (a message on stderr), while Gemma 3's and Gemma 4's fail that one request, naming `-vision-device cpu`.
+
+**The int8 forms.** Qwen2.5-VL, Qwen3.5+, Gemma 4 and GLM-OCR keep an int8 tower on the CPU: until 2026-10-02 the first three were forced to int8 under cuda/webgpu, which
+was not faster and was not close to f32 (relative L2 0.21 / 0.14 / 0.31 against each tower's own f32 on one image; `docs/measurements/vision-tower-int8-fidelity-2026-10-02.md`),
+and GLM-OCR's int8 form is not gated on the real checkpoint. The f32 tower holds more host memory. `-vision-quant int8` (default `f32`) is a CPU option for them:
+`docs/completed/task-cpu-vision-prefill.md` found it speeds the compute-bound prefill only on AVX512-VNNI hardware and measures a wash on plain AVX2, which is why f32 is the default.
 
 **Speed, each figure with its record.** CPU SigLIP tower ~31.3 s/image at 896² (recorded 2026-09-08, `docs/benchmarks.md` §A "Vision tower CPU prefill", not re-measured). CUDA Gemma 3 tower
 **4.1 s/image** (recorded 2026-09-21: 26.0 s with the exact attention kernel, 6.4x with the fused one that is the default since the owner's override; `GOINFER_CUDA_VISION_ATTN=exact`
@@ -693,7 +725,7 @@ recognised by its tokens, not by who sent it. The design is `tasks/task-kv-archi
   load-time fit guard chose for you counts as not set; an explicit `--ctx` is never shrunk. Elsewhere (a discrete
   GPU) a slot that fails to allocate, or that would leave under 384 MiB free, ends the count, and the context is not
   shrunk yet; pass a smaller `--ctx` for more slots. That half waits on a measurement of the clamp on real Vulkan
-  hardware (`docs/prompts/nobara-mc1-webgpu-2026-09.md`).
+  hardware (`docs/completed/nobara-mc1-webgpu-2026-09.md`).
 - **On CUDA, slots come before context** (owner decision 2026-09-27). When `--ctx` is not set, fit by default gives up
   context, down to 4096, until every requested slot fits, and it logs the shrink. Below 4096 the slots are clamped
   instead.
@@ -919,6 +951,11 @@ to ignore.**
   signature this server did not mint carries nothing. A client sends `tool_use` input back as JSON it parsed, so arguments
   the model spaced return compacted: the closed list above keeps their ids. Not covered: Chat Completions (no carrier), and
   a reply whose calls the client echoes as separate turns.
+- **A MoE expert cache without its pinned host copy** (`-moe-experts-unpinned`, with `-moe-cache-experts`, CUDA). The expert slots upload from
+  pageable pages of a packed-experts file written beside the model, unlinked while mapped and never on tmpfs, instead of a pinned copy.
+  It saves that copy's host memory, about 12 GiB on Gemma 4 26B, and is slower by design: measured at 0.82x decode at short context and
+  0.75x at 4,096 keys (`docs/measurements/mem10-2026-11/ab-registration.md`). Off by default. The load's memory refusal names it only when the
+  pinned copy is what does not fit (`docs/bigger-than-memory.md`).
 - **Prefix snapshots in host memory** (`-kv-host-bytes`). A GPU card with one KV slot loses the previous session's prompt the moment
   the next session starts, and a coding agent's sessions share almost all of their first prompt (the system prompt, the tool
   definitions, the environment). After a **cold first prefill of 2,048 ids or more**, a GPU-resident model copies the prompt's full
@@ -953,7 +990,13 @@ to ignore.**
 - **The KV precision a request ran at.** `--kv f32`, `f16` or `i8` is delivered on the path the load resolves to, or the load refuses
   at startup and says why (`docs/kv-precision-matrix.md` has every backend and family; `auto` is the backend's pick). The banner's
   context line prints each cache's precision with the one requested, and `-log-requests` gives every generating request ` kv=<f32|f16|i8|n/a>`,
-  the precision of the cache it wrote.
+  the precision of the cache it wrote. `--kv i8` on CUDA (the dense llama, Mistral, Qwen2, Qwen3 and Phi-3 families without a sliding
+  window; opt-in, never an `auto` pick) holds about half f16's KV bytes. Its measured cost (nobara, RTX 2070 SUPER, 2026-11-08, against an
+  f32 cache): about f16's quality on qwen2.5-7b at 8,000 keys (mean KL 1.080x f32's, f16's own 1.057x), a measurable loss on
+  qwen2.5-coder-1.5b at 3,900 keys (27 hard flips against 9, KL 1.688x). Its speed: decode is 0.72x to 0.95x f16's at 128 and 512 keys and
+  0.99x at 4,096 and 16,384, and a cold prefill is near f16's (0.99x at 4,096 keys, 1.02x at 16,384 on the 7B: 16.2 s against 16.0 s), on the
+  tensor-core tiles. It buys context, about twice f16's positions in the same VRAM. The banner names the cost;
+  `docs/kv-precision-matrix.md` has the figures.
 - **Constrained requests render thinking-off.** A `response_format` of `json_object`/`json_schema` (or Anthropic's
   `output_config.format`), and a tool call the
   server forces from the first token (a named or lone tool, or `required`), are grammar-constrained from token 1; a prompt
@@ -1125,7 +1168,7 @@ after it (text before the image is a 400 for now), at most 16 per request and 16
 loads on the first image request, so a text-only server never pays for it. It runs on Metal with the encoder when
 the encoder is on Metal (startup says where, and so does a line when the first image loads it), on the CPU otherwise. The image is resized as the reference's processor does it (torchvision's antialiased
 bicubic, reproduced bit for bit), and an image embedding then matches sentence-transformers' to cosine 1.000000000 on
-the gate's 12 cases (`docs/tasks/task-embeddinggemma2.md`, Phase V). `--embed-image-resize bilinear` selects aikit's
+the gate's 12 cases (`docs/completed/task-embeddinggemma2.md`, Phase V). `--embed-image-resize bilinear` selects aikit's
 bilinear resize instead (0.9992 to 0.9999 from the reference); `bicubic` is the default.
 
 **Audio.** EmbeddingGemma 2 embeds audio into the same space too. An `input` element may be `{"audio": "<data:
@@ -1139,12 +1182,12 @@ URI or bare base64 of a WAV>", "text": "optional text after it"}`, or the OpenAI
 The WAV must be 16-bit PCM, mono, at 16 kHz, and at most 30 s. Anything else is a 400; nothing is resampled or cut.
 One image or one audio clip per input, at most 16 clips per request. `usage` counts the clip's soft tokens, 25 a
 second. The audio tower loads on the first audio request, and runs on Metal with the encoder when the encoder is on Metal, on the CPU otherwise. On the gate's nine cases the embeddings
-match sentence-transformers' to cosine 1.000000000 (`docs/tasks/task-embeddinggemma2.md`, Phase A).
+match sentence-transformers' to cosine 1.000000000 (`docs/completed/task-embeddinggemma2.md`, Phase A).
 
 Every response says which prompt it applied, in a `goinfer_task: {"name", "prompt"}` field and an
 `X-Goinfer-Embedding-Task` header. Index and query with the prompts the model intends: an index built under one prompt
 and queried under another retrieves worse without any error, and the echo is there so that can be seen. Its checks
-against sentence-transformers are in `docs/tasks/task-embeddinggemma2.md`.
+against sentence-transformers are in `docs/completed/task-embeddinggemma2.md`.
 
 **Startup self-tests, and `check --hardware`.** goinfer is built and measured on two machines, and a wrong kernel on hardware nobody here owns does not crash: it returns slightly wrong numbers (an AVX-512 VNNI
 accumulator bug did exactly that in September, and surfaced only because one CI runner happened to have the CPU). So the first model load of a process runs aikit's `linalg.SelfCheck`: the dispatched CPU kernels

@@ -243,7 +243,7 @@ func constructorSources() []*censusSource {
 		name string
 		mk   func() *Template
 	}{{"Gemma3", Gemma3}, {"Gemma4", Gemma4}, {"Harmony", Harmony}, {"ChatML", ChatML}, {"Phi3", Phi3}, {"Phi3Orig", Phi3Orig},
-		{"NemotronH", NemotronH}, {"GlmOCR", GlmOCR}, {"Mellum2", Mellum2}, {"Llama3", Llama3}, {"Mistral", Mistral}, {"Ministral", Ministral}} {
+		{"NemotronH", NemotronH}, {"GlmOCR", GlmOCR}, {"Mellum2", Mellum2}, {"Llama3", Llama3}, {"Mistral", Mistral}, {"Ministral", Ministral}, {"Flint", Flint}} {
 		out = append(out, &censusSource{Name: "ctor--" + strings.ToLower(c.name), Kind: "constructor", Origin: "chat." + c.name + "()"})
 	}
 	return out
@@ -252,7 +252,7 @@ func constructorSources() []*censusSource {
 var constructors = map[string]func() *Template{
 	"chat.Gemma3()": Gemma3, "chat.Gemma4()": Gemma4, "chat.Harmony()": Harmony, "chat.ChatML()": ChatML, "chat.Phi3()": Phi3,
 	"chat.Phi3Orig()": Phi3Orig, "chat.NemotronH()": NemotronH, "chat.GlmOCR()": GlmOCR, "chat.Mellum2()": Mellum2, "chat.Llama3()": Llama3,
-	"chat.Mistral()": Mistral, "chat.Ministral()": Ministral,
+	"chat.Mistral()": Mistral, "chat.Ministral()": Ministral, "chat.Flint()": Flint,
 }
 
 // discoverLocalSources lists the models under GOINFER_MODELS_DIR whose tokenizer goinfer loads and whose template (or
@@ -797,6 +797,8 @@ var parseOutputs = []struct{ name, text string }{
 	{"harmony_analysis_then_call", "<|channel|>analysis<|message|>Need weather.<|end|><|start|>assistant<|channel|>commentary to=functions.get_weather <|constrain|>json<|message|>{\"location\":\"Paris\"}<|call|>"},
 	{"harmony_bad_json", "<|channel|>commentary to=functions.get_weather <|constrain|>json<|message|>{\"location\":<|call|>"},
 	{"harmony_final", "<|channel|>final<|message|>Paris.<|return|>"},
+	{"flint_one", "<tool_call>get_weather<arg_key>location</arg_key><arg_value>Paris</arg_value><arg_key>unit</arg_key><arg_value>celsius</arg_value></tool_call>"},
+	{"flint_two", "<tool_call>get_weather<arg_key>location</arg_key><arg_value>Paris</arg_value></tool_call><tool_call>search_web<arg_key>query</arg_key><arg_value>museums</arg_value><arg_key>max_results</arg_key><arg_value>3</arg_value></tool_call>"},
 }
 
 type parseResult struct {
@@ -828,6 +830,7 @@ var ownDialect = map[string][]string{
 	"llama3":  {"llama3_json", "llama3_python_tag"},
 	"gemma4":  {"gemma4_one", "gemma4_two"},
 	"harmony": {"harmony_call", "harmony_analysis_then_call"},
+	"flint":   {"flint_one", "flint_two"},
 }
 
 // neverACall are outputs no family may read a call from: prose, malformed calls, a Harmony final answer, and Ministral 3's

@@ -151,5 +151,8 @@ func PTXSourceName(mod string) (src string, capped bool) {
 	if s, ok := strings.CutSuffix(mod, "_cap"); ok {
 		return s, true
 	}
+	if s, ok := strings.CutSuffix(mod, "_kv8"); ok {
+		return s, false
+	}
 	return strings.TrimSuffix(mod, "_kv16"), false
 }

@@ -735,8 +735,8 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 					return fail(e)
 				}
 				keepF(rl.ExpDown.Release)
-				// Gated on shInter > 0, like the generic branch below: n_shared_experts == 0 is a valid config (validateNemotron in
-				// decoder/config.go rejects only the opposite combination), and the CPU path in decoder/forward_nemotron.go gates the add on
+				// Gated on shInter > 0, like the generic branch below: n_shared_experts == 0 is a valid config (ValidateNemotron in
+				// decoder/config's Config.ValidateNemotron rejects only the opposite combination), and the CPU path in decoder/forward_nemotron.go gates the add on
 				// moe.SharedIntermediateDim > 0. Projecting a zero-value SharedExpert would fail with "unsupported projection precision" and
 				// fall back to CPU with the wrong stated reason.
 				if shInter > 0 {
@@ -1288,6 +1288,13 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 // ContextCap is the resident KV capacity in positions, queryable so the decode loop can clamp or refuse up front instead of
 // hitting the mid-generation cap error.
 func (rd *residentDecoder) ContextCap() int { return rd.ctxCap }
+
+// ResidentCaps is decoder.ResidentCapsReporter's: the context cap, and nothing else.
+func (rd *residentDecoder) ResidentCaps() decoder.ResidentCaps {
+	return decoder.ResidentCaps{ContextCap: rd.ContextCap()}
+}
+
+var _ decoder.ResidentCapsReporter = (*residentDecoder)(nil)
 
 // checkCap refuses a write that would land at/past the resident cap. Every KV buffer is
 // sized ctxCap positions; a write for absolute position p lands at [p*kvDim…], so p ≥

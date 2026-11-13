@@ -133,8 +133,9 @@ func f1Cells(t *testing.T, m *Model, n int, setup func(*KVCache)) map[string]int
 }
 
 // TestKVF16_F1Exactness is gate F1's tiny-fixture cells: decode, batched prefill under 512 rows, the GPU-upload bridge and
-// rewind, on llama-tiny (dense), gemma2-tiny (a sliding window, so the ring) and qwen25vl-tiny (m-RoPE positions and an image
-// block). Every cell must show zero differing bits.
+// rewind, on llama-tiny (dense), gemma2-tiny (a sliding window, so the ring), qwen25vl-tiny (m-RoPE positions and an image
+// block), and the MoE families of the generic loop (mixtral-tiny, qwen3moe-tiny, glm-tiny; Laguna, one with a sliding window). Every cell must
+// show zero differing bits.
 func TestKVF16_F1Exactness(t *testing.T) {
 	vlSetup := func(c *KVCache) {
 		c.SetImageBlocks([][2]int{{4, 12}})
@@ -155,8 +156,18 @@ func TestKVF16_F1Exactness(t *testing.T) {
 		{"llama-tiny", 40, nil},
 		{"gemma2-tiny", 30, nil},
 		{"qwen25vl-tiny", 24, vlSetup},
+		{"mixtral-tiny", 32, nil},
+		{"qwen3moe-tiny", 32, nil},
+		{"glm-tiny", 32, nil},
+		{"decoder/testdata/laguna-m1-tiny", 32, nil},
+		{"decoder/testdata/laguna-xs2-tiny", 32, nil}, // MoE with a sliding window, so the ring
+		{"flint-tiny", 32, nil},                       // attention sinks, MoE and a sliding window
 	} {
-		m := f1Load(t, filepath.Join("..", "testdata", fx.dir))
+		path := filepath.Join("..", "testdata", fx.dir)
+		if rel, ok := strings.CutPrefix(fx.dir, "decoder/"); ok {
+			path = rel // a fixture under decoder/testdata
+		}
+		m := f1Load(t, path)
 		if !m.w.arch.kvF16OK() {
 			t.Fatalf("%s: kvF16OK is false", fx.dir)
 		}
@@ -278,17 +289,23 @@ func TestKVF16_F1Plants(t *testing.T) {
 	}
 }
 
-// TestKVF16_excludedFamilyKeepsF32: an f16 request on a family outside kvF16OK (mixtral-tiny, MoE) refuses the load and says why, where
-// before phase 0 of docs/tasks/task-kv-precision-everywhere-2026-10.md it built an f32 cache (D1: an explicit precision is delivered or
-// refused). The test keeps its name, which the gate run log of docs/measurements/cpu-kv-f16-2026-10-16 records.
+// TestKVF16_excludedFamilyKeepsF32: an f16 request on a family outside kvF16OK (llama4-tiny, whose own forward loop keeps f32) refuses
+// the load and says why, where before phase 0 of docs/tasks/task-kv-precision-everywhere-2026-10.md it built an f32 cache (D1: an
+// explicit precision is delivered or refused). The test keeps its name, which the gate run log of docs/measurements/cpu-kv-f16-2026-10-16
+// records.
 func TestKVF16_excludedFamilyKeepsF32(t *testing.T) {
-	m, err := Load(filepath.Join("..", "testdata", "mixtral-tiny"), Options{KVQuant: "f16"})
-	var r *KVRefusal
-	if !errors.As(err, &r) || r.Path != "cpu" || !strings.Contains(r.Reason, "MoE") {
-		t.Errorf("mixtral-tiny -kv f16: load error %v, want a CPU KV refusal naming MoE", err)
-	}
-	if m != nil {
-		m.Close()
+	// gpt-oss runs its own loop over the batched attention kernel, so the kernel alone does not admit it.
+	for _, path := range []string{filepath.Join("..", "testdata", "llama4-tiny"), filepath.Join("testdata", "gptoss_tiny.gguf")} {
+		for _, kv := range []string{"f16", "i8"} {
+			m, err := Load(path, Options{KVQuant: kv})
+			var r *KVRefusal
+			if !errors.As(err, &r) || r.Path != "cpu" || !strings.Contains(r.Reason, "own forward loop") {
+				t.Errorf("%s -kv %s: load error %v, want a CPU KV refusal naming its own forward loop", filepath.Base(path), kv, err)
+			}
+			if m != nil {
+				m.Close()
+			}
+		}
 	}
 }
 

@@ -362,6 +362,18 @@ func representativeConfig(modelType string) *Config {
 				`"original_max_position_embeddings":8192,"beta_fast":64.0,"beta_slow":1.0,"partial_rotary_factor":0.5},` +
 				`"sliding_attention":{"rope_type":"default","rope_theta":10000.0,"partial_rotary_factor":1.0}}`),
 		}
+	case "flint":
+		// Mirrors the released Cognichip/Flint shape: 256 routed experts (top 8, sigmoid),
+		// ungated shared expert, dense prefix on layers [0, 1], and the default full/sliding
+		// schedule (layers 0, 1, 3 full_attention+NoPE; layer 2 sliding_attention+RoPE).
+		return &Config{
+			ModelType: "flint", HiddenDim: 64, NumLayers: 4, NumHeads: 4, NumKVHeads: 2,
+			HeadDim: 16, VocabSize: 256, IntermediateDim: 128, RMSNormEps: 1e-6, HiddenAct: "silu",
+			NumExperts: 256, NumExpertsPerTok: 8, MoeIntermediateSize: 32,
+			SharedExpertIntermediateSize: 32, RoutedScalingFactor: 1.0,
+			SlidingWindow:  16,
+			RopeParameters: json.RawMessage(`{"rope_type":"default","rope_theta":10000.0}`),
+		}
 	case "spark2_5":
 		// Mirrors testdata/spark2-5-tiny (scripts/pin_spark2_5_tiny.py): decoupled head_dim
 		// (32, not hidden/heads=16), 1:3 sliding:full interleave with a window smaller than a
@@ -576,6 +588,7 @@ var familyDocs = map[string]familyDoc{
 	"qwen3_next":       {"Qwen3-Next", "Qwen3-Next 80B-A3B: same DeltaNet/softmax/MoE hybrid shape as Qwen3.5, computed (not stated) layer pattern", "safetensors", "text"},
 	"glm4_moe":         {"GLM-4.5/4.6", "Zhipu GLM-4.5/4.6 DeepSeek-style MoE (sigmoid routing + dense prefix)", "safetensors, GGUF", "text"},
 	"laguna":           {"Laguna", "poolside Laguna XS-2.1 / XS.2 / M.1: sigmoid-routed MoE + softplus attention output gating + per-layer query heads", "safetensors, GGUF", "text"},
+	"flint":            {"Flint", "Cognichip Flint (36B-A3B): hybrid sliding-window + NoPE full attention with per-head attention sinks, dense prefix + sigmoid-routed MoE + ungated shared expert", "safetensors, GGUF", "text"},
 	"spark2_5":         {"Spark-X2.5", "XHToken Spark-X2.5 (1.7B/4B): fused QKV, sigmoid head-wise attention output gate, 1:3 sliding:full interleave with layer-dependent partial RoPE, gated exact-GELU MLP", "safetensors", "text"},
 	"granitemoehybrid": {"Granite-4.0-H", "IBM Granite-4.0-H: Mamba-2 + attention hybrid + MoE-on-every-layer", "safetensors, GGUF", "text"},
 	"granite":          {"Granite 4.2", "IBM Granite 4.2 dense (3B/8B/30B): llama skeleton + Granite's scalar multipliers", "safetensors, GGUF", "text"},
@@ -627,6 +640,7 @@ var siteDocs = map[string]siteDoc{
 	"internlm2":        {"Shanghai AI Lab's InternLM2.", []string{"chat"}},
 	"lfm2":             {"Liquid AI's LFM2 and LFM2.5: short convolutions mixed with attention. LFM2.5-VL reads images (SigLIP2 tower).", []string{"chat", "vision"}},
 	"laguna":           {"poolside's Laguna coding models.", []string{"code"}},
+	"flint":            {"Cognichip's Flint 36B mixture-of-experts (about 3B active per token), built for chip design and RTL/Verilog.", []string{"chat", "code"}},
 	"llama":            {"Meta's Llama 2 and 3, plus InternLM3. The one family that also loads GPTQ and AWQ.", []string{"chat"}},
 	"llama4_text":      {"Meta's Llama 4 Scout and Maverick, text only.", []string{"chat"}},
 	"mellum":           {"JetBrains' Mellum2, built for code completion.", []string{"code"}},

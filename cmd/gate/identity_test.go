@@ -192,6 +192,8 @@ func TestJudgeCell_verdicts(t *testing.T) {
 		{"tolerance: inside", "metal", withPath(good, "metal-resident (int4)"), withPath(noisy(2), "metal-resident (int4)"), withPath(noisy(1), "metal-resident (int4)"), vTolerant, false},
 		{"tolerance: outside", "metal", withPath(good, "metal-resident (int4)"), withPath(noisy(1), "metal-resident (int4)"), withPath(noisy(40), "metal-resident (int4)"), vDifferent, false},
 		{"gpu fell back to cpu", "metal", good, good, good, vNotRun, false},
+		// The new build leaves the backend where the old one ran on it: a regression, not a skip.
+		{"new left the gpu, old ran on it", "cuda", good, good, withPath(good, "cuda-resident (int4)"), vDifferent, false},
 	}
 	for _, tc := range cases {
 		out := judgeCell(c, tc.backend, tc.n1, tc.n2, tc.old)

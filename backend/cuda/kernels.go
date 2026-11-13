@@ -347,13 +347,68 @@ var decodeSplitKVCapPTX []byte
 //go:embed testdata/decode_splitkv_kv16_cap.ptx
 var decodeSplitKVKV16CapPTX []byte
 
+// glueKV8PTX: gluePTX built with the KV cache as int8 and per-(position, head) f32 scales (-DKV_I8, kvtype.cuh). Only `attention` reads the cache;
+// S1 of docs/measurements/cuda-kv-i8-2026-11/scope.md. Built at the pinned NVRTC 12.6.85 beside the audited glue modules, which stay byte-identical.
+//
+//go:embed testdata/glue_kv8.ptx
+var glueKV8PTX []byte
+
+// prefillBatchedKV8PTX and kv8StorePTX: the int8 cache's batched-prefill attention (prefill_batched.cu built with -DKV_I8) and its quantizing store
+// (kv8_store.cu). S1 of docs/measurements/cuda-kv-i8-2026-11/scope.md: built and tested, bound to nothing yet.
+//
+//go:embed testdata/prefill_batched_kv8.ptx
+var prefillBatchedKV8PTX []byte
+
+//go:embed testdata/kv8_store.ptx
+var kv8StorePTX []byte
+
+// prefillSplitKVKV8PTX: prefill_splitkv.cu built with -DKV_I8 (the row-batched long-context prefill attention), at the ambient NVRTC like prefill_splitkv.ptx.
+//
+//go:embed testdata/prefill_splitkv_kv8.ptx
+var prefillSplitKVKV8PTX []byte
+
+// decodeSplitKVKV8PTX: decode_splitkv.cu built with -DKV_I8 (the exact long-context decode path), at the ambient NVRTC like decode_splitkv.ptx.
+//
+//go:embed testdata/decode_splitkv_kv8.ptx
+var decodeSplitKVKV8PTX []byte
+
+// decodeFAKV8PTX: decode_fa.cu built with -DKV_I8 (the flash-decode lane's int8 readers), at the ambient NVRTC like decode_fa.ptx.
+//
+//go:embed testdata/decode_fa_kv8.ptx
+var decodeFAKV8PTX []byte
+
+// decodeFACapPTX and decodeFAKV16CapPTX: decode_fa.cu built with -DATTN_SOFTCAP (and -DKV_F16), the flash-decode lane for a model with an
+// attention softcap: every fa_partial* kernel takes the cap as its last parameter (withCap). At the ambient NVRTC like decode_fa.ptx.
+//
+//go:embed testdata/decode_fa_cap.ptx
+var decodeFACapPTX []byte
+
+//go:embed testdata/decode_fa_kv16_cap.ptx
+var decodeFAKV16CapPTX []byte
+
+// attnFusedKV8PTX and attnFusedBMKV8PTX: the tensor-core prefill tiles (attn_fused.cu, attn_fused_bm.cu) built with -DKV_I8, at the ambient
+// NVRTC like their f32 and f16 modules: K and V staged as f16 from the int8 cache and its scales (KV_LDHS), the rest of each tile the f16 build's.
+//
+//go:embed testdata/attn_fused_kv8.ptx
+var attnFusedKV8PTX []byte
+
+//go:embed testdata/attn_fused_bm_kv8.ptx
+var attnFusedBMKV8PTX []byte
+
+// gemvFwdKV8PTX: gemv_fwd.cu built with -DKV_I8, at the pinned NVRTC 12.6.85 beside the audited gemv_fwd modules, which stay byte-identical. Its
+// rope_kv rotates Q and K in place and stores nothing (KV_ST is a no-op in an int8 build); kv8_store then quantizes the rotated K and the V.
+//
+//go:embed testdata/gemv_fwd_kv8.ptx
+var gemvFwdKV8PTX []byte
+
 // attnPTX is kvPTX for the three modules that hold a kernel a capped layer takes (attention, attn_batched, splitkv_scores): a model with
-// an attention softcap loads the variant built with -DATTN_SOFTCAP (cuda/attnscore.cuh), every other model the plain module.
-func (r *cudaResident) attnPTX(f32, kv16, capF32, capKV16 []byte) []byte {
+// an attention softcap loads the variant built with -DATTN_SOFTCAP (cuda/attnscore.cuh), every other model the plain module. There is no
+// capped int8 build: on an int8 cache a capped model gets nil, which no load accepts (CUDAKVI8Decline refuses every capped family first).
+func (r *cudaResident) attnPTX(f32, kv16, kv8, capF32, capKV16 []byte) []byte {
 	if r.attnCap != 0 {
 		return r.kvPTX(capF32, capKV16)
 	}
-	return r.kvPTX(f32, kv16)
+	return r.kvPTX8(f32, kv16, kv8)
 }
 
 // withCap appends the cap to the argument list of a covered kernel when the model has one: the capped variants take it as their last
@@ -376,9 +431,19 @@ var mambaPTX []byte
 //go:embed testdata/nongated_act.ptx
 var nongatedActPTX []byte
 
-// kvPTX is the module a KV-touching pipeline loads: the f16 twin when the resident's cache is f16, else the f32 module.
+// kvPTX is the module a KV-touching pipeline loads: the f16 twin when the resident's cache is f16, else the f32 module. A module with no
+// int8 twin is nil on an int8 cache, so it fails to load rather than reading int8 bytes as floats: an optional module (the tensor-core
+// prefill tiles) is then not bound and its fallback runs, a required one fails the build.
 func (r *cudaResident) kvPTX(f32, kv16 []byte) []byte {
-	if r.kvF16 {
+	return r.kvPTX8(f32, kv16, nil)
+}
+
+// kvPTX8 is kvPTX for a module that has an int8 twin (kv8, -DKV_I8): that twin on an int8 cache.
+func (r *cudaResident) kvPTX8(f32, kv16, kv8 []byte) []byte {
+	switch {
+	case r.kvI8:
+		return kv8
+	case r.kvF16:
 		return kv16
 	}
 	return f32

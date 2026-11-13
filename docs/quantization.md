@@ -11,6 +11,7 @@ extrapolating.
 | | |
 |---|---|
 | **Recommended, gated, default** | `int4` (W4A8) for dense models · `int8int8` (W8A8) where accuracy matters more than RAM |
+| **Phi-3 and Phi-4, by default** | `q4k` for a `.gguf` on the CPU, CUDA and Metal: the file's Q4_K blocks exact, the rest int8, with per-32 activations on the CPU and CUDA and none quantized on Metal, since per-vector int8 activations break these families (int8int8 with per-32 scales for any other source, and on WebGPU) |
 | **Supported with a caveat** | `int4mix` (attention int8, FFN int4) · `f32` (the reference, and the slowest thing here) |
 | **Read but not endorsed** | 15 ggml types, including Q2_K and Q3_K |
 | **Measured and refused** | 3-bit KV cache · resident int8 for Mamba-2 hybrids · weight-space per-row IMMA scale search |
@@ -60,7 +61,7 @@ accuracy-per-byte on the shapes this project targets, not because it is smallest
 
 int8 weights and int8 activations on native SDOT/VNNI — on CUDA and the CPU backend, which both
 ship a real W8A8 GEMV. **Metal does not**: it has no int8 weight kernel at all
-(docs/tasks/task-gpu-paths-2026-09.md G10), so a `--quant int8int8` load's resident weights are silently
+(docs/completed/task-gpu-paths-2026-09.md G10), so a `--quant int8int8` load's resident weights are silently
 re-quantized to W4A8 (int4) at build time — you pay int8's RAM (the host copy stays int8) for
 int4's numerics. `decoder.Model.DecodePath()` reports this honestly as
 `metal-resident (int8int8→int4, no Metal int8 GEMV kernel)` rather than the requested string. int4

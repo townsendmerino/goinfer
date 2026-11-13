@@ -103,11 +103,12 @@ func TestKV7_restoreWindowed(t *testing.T) {
 	})
 }
 
-// TestKV7_restoreFull runs it on a whole-context fixture, f32 and f16 (the raw words of an f16 cache are copied as they are).
+// TestKV7_restoreFull runs it on a whole-context fixture, f32, f16 and int8 (the raw words of an f16 or int8 cache are copied as they are, and
+// an int8 cache's scales with them: kv2Rig compares them too).
 func TestKV7_restoreFull(t *testing.T) {
 	const dir = "../../testdata/llama-attnfa-tiny"
 	requireDeviceAndFixture(t, dir)
-	for _, kv := range []string{"f32", "f16"} {
+	for _, kv := range []string{"f32", "f16", "i8"} {
 		t.Run(kv, func(t *testing.T) {
 			g := kv2Load(t, dir, decoder.Options{ResidentKVSlots: 3, ResidentContext: 1024, KVPrecision: kv})
 			kv7Restore(t, g, 256)

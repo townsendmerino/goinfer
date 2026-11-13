@@ -1,0 +1,66 @@
+start 16:07:10 PST
+== amd64 ^TestDecisionCensus$ 16:07:24
+=== RUN   TestDecisionCensus
+census: D1: 8435 groups in 1.2s
+census: D2: 3948 groups in 25.8s
+census: loads: 1 groups in 0.3s
+census: D3: 11760 groups in 1.7s
+census: D4: 2310 groups in 1.0s
+census: D5: 2730 groups in 0.9s
+decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)
+census: D6: 2 groups in 0.0s
+census: D7: 451 groups in 0.0s
+census: D1: 8435 groups in 1.0s
+census: D2: 3948 groups in 25.4s
+census: loads: 1 groups in 0.1s
+census: D3: 11760 groups in 1.8s
+census: D4: 2310 groups in 1.0s
+census: D5: 2730 groups in 0.8s
+decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)
+census: D6: 2 groups in 0.0s
+census: D7: 451 groups in 0.0s
+    mm1_census_test.go:323: host class "amd64 f32=4.000000 int8=1.015625 int4=0.562500 int4mix=0.562500 int8int8=1.015625 q4k=0.562500 bf16=2.000000 f16=2.000000"; 29637 groups; census 2c04c49a593edafd572cd4fd14662ec8c9b60a8d6a8e5c09737c8760aff93780
+    mm1_census_test.go:331: wrote ../testdata/mm1_census.json.gz for host class "amd64 f32=4.000000 int8=1.015625 int4=0.562500 int4mix=0.562500 int8int8=1.015625 q4k=0.562500 bf16=2.000000 f16=2.000000"
+--- PASS: TestDecisionCensus (61.95s)
+PASS
+exit 0 16:08:26
+== amd64 ^TestAdmissionCensus$ 16:08:26
+=== RUN   TestAdmissionCensus
+    sb2_census_test.go:241: 2711 census lines in 9.203s
+    sb2_census_test.go:256: wrote ../testdata/sb2_admission_census.amd64.txt.gz
+--- PASS: TestAdmissionCensus (9.22s)
+PASS
+exit 0 16:08:35
+== arm64 ^TestDecisionCensus$ 16:08:35
+=== RUN   TestDecisionCensus
+census: D1: 8435 groups in 10.3s
+census: D2: 3948 groups in 92.4s
+census: loads: 1 groups in 3.5s
+census: D3: 11760 groups in 16.8s
+census: D4: 2310 groups in 7.0s
+census: D5: 2730 groups in 10.6s
+decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)
+census: D6: 2 groups in 0.0s
+census: D7: 451 groups in 0.1s
+census: D1: 8435 groups in 9.4s
+census: D2: 3948 groups in 80.9s
+census: loads: 1 groups in 1.6s
+census: D3: 11760 groups in 16.7s
+census: D4: 2310 groups in 6.9s
+census: D5: 2730 groups in 11.0s
+decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)
+census: D6: 2 groups in 0.0s
+census: D7: 451 groups in 0.0s
+    mm1_census_test.go:323: host class "arm64 f32=4.000000 int8=1.015625 int4=1.125000 int4mix=1.125000 int8int8=1.015625 q4k=1.125000 bf16=2.000000 f16=2.000000"; 29637 groups; census 714f1f00f874e639e9374117b22888b86a726356a3f294ed8636aeb916a591b3
+    mm1_census_test.go:331: wrote ../testdata/mm1_census.json.gz for host class "arm64 f32=4.000000 int8=1.015625 int4=1.125000 int4mix=1.125000 int8int8=1.015625 q4k=1.125000 bf16=2.000000 f16=2.000000"
+--- PASS: TestDecisionCensus (276.65s)
+PASS
+exit 0 16:13:12
+== arm64 ^TestAdmissionCensus$ 16:13:12
+=== RUN   TestAdmissionCensus
+    sb2_census_test.go:241: 2711 census lines in 1m29.942s
+    sb2_census_test.go:256: wrote ../testdata/sb2_admission_census.arm64.txt.gz
+--- PASS: TestAdmissionCensus (90.05s)
+PASS
+exit 0 16:14:43
+DONE 16:14:43 PST

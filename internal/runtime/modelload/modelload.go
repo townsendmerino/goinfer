@@ -317,13 +317,14 @@ func isDir(p string) bool {
 }
 
 // activationSafeQuant is the precision and activation group a load should use for src. For a family
-// that per-vector int8 activations break (decoder.ActivationQuantHazard), the default becomes:
-//   - q4k for a .gguf on the CPU or CUDA backend: the file's Q4_K tensors exact, the rest int8,
+// that per-vector int8 activations break (decoder.ActivationQuantHazard: Phi-3, and Phi-4, which shares its type), the default becomes:
+//   - q4k for a .gguf on the CPU, CUDA or Metal backend: the file's Q4_K tensors exact, the rest int8,
 //     per-32 (docs/tasks/task-int4-weight-quality-2026-09.md: on phi3-mini, CPU decode 1.31× and
 //     CUDA resident decode 1.26× / 1.17× (depth 128 / 2048) the int8int8 default's, and CUDA fits the
-//     default context resident where int8int8 does not);
-//   - int8int8 with per-32 activation scales anywhere else (Metal, WebGPU: no Q4_K kernel yet). Only CUDA
-//     residency implements per-group activation scales, so on Metal and WebGPU such a load declines to the
+//     default context resident where int8int8 does not). On Metal it runs resident on the q4k lane, which quantizes no
+//     activation (OP6's default switch: docs/measurements/peer-vetted-2026-10-07-macbook.md, "M1 on main after #775: read");
+//   - int8int8 with per-32 activation scales anywhere else (WebGPU: no Q4_K kernel). Only CUDA
+//     residency implements per-group activation scales, so on WebGPU such a load declines to the
 //     CPU (decoder's actGroupResidentDecline; docs/completed/task-option-path-admission-2026-10.md §4.3), which
 //     honours the group (docs/tasks/task-actquant-pergroup-2026-09.md).
 //
@@ -336,8 +337,12 @@ func activationSafeQuant(src, quant string, group int, explicitQuant, backend st
 		return quant, group, ""
 	}
 	switch {
-	case explicitQuant == "" && strings.HasSuffix(src, ".gguf") && (backend == "" || backend == "cpu" || backend == "cuda"):
-		return "q4k", 0, fmt.Sprintf("note: loading at --quant q4k (the file's Q4_K tensors kept exact, the rest int8, per-32 activations) instead of the default %s: %s.", quant, why)
+	case explicitQuant == "" && strings.HasSuffix(src, ".gguf") && (backend == "" || backend == "cpu" || backend == "cuda" || backend == "metal"):
+		acts := "per-32 activations"
+		if backend == "metal" {
+			acts = "no activation quantized on Metal"
+		}
+		return "q4k", 0, fmt.Sprintf("note: loading at --quant q4k (the file's Q4_K tensors kept exact, the rest int8, %s) instead of the default %s: %s.", acts, quant, why)
 	case explicitQuant == "":
 		return "int8int8", 32, fmt.Sprintf("note: loading at --quant int8int8 with per-32 activation scales instead of the default %s: %s.", quant, why)
 	case quant == "int8int8":

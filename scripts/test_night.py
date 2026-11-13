@@ -12,6 +12,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 _tmp = tempfile.mkdtemp(prefix="night-test-")
@@ -58,11 +59,13 @@ class Runner(night.Runner):
 
 class FreeMemoryReading(unittest.TestCase):
     def test_reads_goinfers_number(self):
-        # The runner's fit-need gate reads cmd/hostmem's reclaimable figure (scripts/hostmem.py), not the fit guard's available one.
+        # The runner's fit-need gate reads the fit guard's own available figure (scripts/hostmem.py), not the reclaimable one.
         import hostmem
-        saved = hostmem.reclaimable_mb
-        self.addCleanup(setattr, hostmem, "reclaimable_mb", saved)
-        hostmem.reclaimable_mb = lambda *a, **k: 6789
+        saved, saved_r = hostmem.available_mb, hostmem.reclaimable_mb
+        self.addCleanup(setattr, hostmem, "available_mb", saved)
+        self.addCleanup(setattr, hostmem, "reclaimable_mb", saved_r)
+        hostmem.available_mb = lambda *a, **k: 6789
+        hostmem.reclaimable_mb = lambda *a, **k: 1
         self.assertEqual(night.free_mem_mb(), 6789)
 
 
@@ -408,6 +411,83 @@ class QueueEnvironment(unittest.TestCase):
         self.assertIsNone(code, out)
 
 
+_FLAT = {"t": "x", "load1": 1.0, "ncores": 8, "available_mb": 9000, "reclaimable_mb": 8000, "swap_mb": 500.0}
+
+
+def setUpModule():
+    # Every job reads the box at its start and end (void_rule.snapshot, two cmd/hostmem runs) and samples swap (sysctl): a cheap flat
+    # stand-in for the tests that do not look at them, so no test spawns either.
+    import void_rule
+    night.readings = lambda: dict(_FLAT)
+    void_rule.swap_used_mb = lambda: _FLAT["swap_mb"]
+
+
+class SwapReadingsInAJob(unittest.TestCase):
+    """A job's four readings at its start and end are recorded, with the swap growth between them as information. They never void the job:
+    the cell is the unit of the void rule (scripts/void_rule.py), so a multi-cell job that voided a cell and re-ran it in place, which ends
+    above its start baseline, is not failed here; the runner's own per-cell void is the verdict."""
+
+    def run_job(self, swaps):
+        night.QUEUE.mkdir(parents=True, exist_ok=True)
+        for f in night.QUEUE.glob("*"):
+            f.unlink()
+        _seq[0] += 1
+        seq = 2_000_000 + _seq[0]
+        job = {"name": f"swap-{seq}", "cmd": ["/bin/sh", "-c", "echo measured; exit 0"], "cwd": _tmp, "est_min": 1.0, "timeout_min": 2.0,
+               "priority": 50, "seq": seq}
+        (night.QUEUE / f"{seq}-swap.json").write_text(json.dumps(job))
+        seen = iter(swaps)
+        saved = night.readings
+        night.readings = lambda: dict(_FLAT, swap_mb=next(seen))
+        self.addCleanup(setattr, night, "readings", saved)
+        r = Runner(night.now() + dt.timedelta(hours=1), Path(tempfile.mkdtemp(dir=_tmp)))
+        with contextlib.redirect_stdout(io.StringIO()):
+            r.run()
+        return [x for x in r.results if x["name"] == job["name"]][0]
+
+    def test_swap_growth_between_the_readings_is_recorded_and_does_not_fail_the_job(self):
+        got = self.run_job([500.0, 650.5])
+        self.assertEqual(got["outcome"], "ok", got["outcome"])
+        self.assertEqual((got["readings"]["start"]["swap_mb"], got["readings"]["end"]["swap_mb"], got["readings"]["swap_growth_mb"]),
+                         (500.0, 650.5, 150.5))
+
+    def test_the_end_reading_is_folded_into_the_peak(self):
+        # the job's swap grew 150.5 MB by its end reading; the peak is never smaller than that growth, whatever the polls saw
+        got = self.run_job([500.0, 650.5])
+        self.assertGreaterEqual(got["readings"]["swap_peak_growth_mb"], got["readings"]["swap_growth_mb"])
+        self.assertEqual(got["readings"]["swap_peak_growth_mb"], 150.5)
+
+    def test_polls_and_an_end_reading_that_all_fail_leave_no_numeric_peak_or_growth(self):
+        import void_rule
+        saved = void_rule.swap_used_mb
+        self.addCleanup(setattr, void_rule, "swap_used_mb", saved)
+        void_rule.swap_used_mb = lambda: None
+        got = self.run_job([500.0, None])
+        self.assertIsNone(got["readings"]["swap_peak_growth_mb"])
+        self.assertIsNone(got["readings"]["swap_growth_mb"])
+
+    def test_an_unreadable_start_swap_leaves_the_peak_unknown_not_rebased(self):
+        got = self.run_job([None, 650.5])
+        self.assertIsNone(got["readings"]["swap_peak_growth_mb"])
+
+    def test_the_sampled_peak_and_the_growth_share_one_baseline(self):
+        # readings: swap 500 at the start, 520 at the end; the sampler reads 530 once: both are growth over the SAME 500 (the start reading),
+        # not the peak over the sampler's own first reading
+        import void_rule
+        saved = void_rule.swap_used_mb
+        self.addCleanup(setattr, void_rule, "swap_used_mb", saved)
+        void_rule.swap_used_mb = lambda: 530.0
+        got = self.run_job([500.0, 520.0])
+        self.assertEqual((got["readings"]["swap_growth_mb"], got["readings"]["swap_peak_growth_mb"]), (20.0, 30.0))
+
+    def test_the_readings_are_recorded(self):
+        got = self.run_job([500.0, 500.0])
+        for k in ("load1", "available_mb", "reclaimable_mb", "swap_mb"):
+            self.assertIn(k, got["readings"]["start"])
+            self.assertIn(k, got["readings"]["end"])
+        self.assertEqual(got["readings"]["swap_growth_mb"], 0.0)
+
+
 class LogFailureMarkers(unittest.TestCase):
     """A job that exits 0 but prints a failure marker (--- FAIL, a FAIL line, FAILED, VOID) in its own output is FAILED; a line tagged
     [expected] (a plant's red run) is exempt, and the runner's header (a note naming VOID) is not scanned."""
@@ -566,11 +646,25 @@ class Serve(unittest.TestCase):
     def test_low_free_memory_holds_the_start(self):
         sv = FakeServer()
         self.job(fit_need_gb=4)
-        sv.free = 4 * 1024 + 2048 - 1
+        sv.free = 4 * 1024 - 1
         self.assertEqual(self.tick(sv), "idle")
-        self.assertIn("free memory", sv.waits[0])
-        sv.free = 4 * 1024 + 2048
+        self.assertIn("available memory", sv.waits[0])
+        sv.free = 4 * 1024  # exactly the need starts: there is no 2 GB margin any more
         self.assertEqual(self.tick(sv), "ran")
+
+    def test_the_real_runner_does_not_coerce_an_unreadable_core_count(self):
+        with mock.patch.object(night.os, "cpu_count", lambda: None):
+            self.assertIsNone(night.Server.ncores(object()))
+
+    def test_an_unreadable_core_count_skips_the_load_term_and_logs_it_once(self):
+        sv = FakeServer()
+        sv.ncores = lambda: None
+        logged = []
+        sv.log = logged.append
+        sv.la = 99.0
+        self.assertIsNone(sv.heavy({"fit_need_gb": 0}), "no cap of 0.5 from an unknown core count")
+        self.assertIsNone(sv.heavy({"fit_need_gb": 0}))
+        self.assertEqual(sum("core count unreadable" in m for m in logged), 1)
 
     def test_plant_without_the_heavy_gate_it_runs_under_load(self):
         sv = FakeServer()
@@ -1275,7 +1369,7 @@ class NightProfile(unittest.TestCase):
         self.assertEqual(prof["name"], "box-night")
         self.assertEqual(night.percentile([2900, 3900, 4600, 6400, 6400, 6600, 6900, 7000, 7400, 7500, 7700], 25), 5500)
 
-    def test_too_few_readings_fall_back_to_the_day_profile_with_a_warning(self):
+    def too_few_readings_scenario(self):
         """G-NP-2: under 5 readings or 3 nights, a night job is priced on the apps-open profile, and add says why."""
         for d in range(2):
             for mb in (5000, 6000, 7000):
@@ -1291,11 +1385,37 @@ class NightProfile(unittest.TestCase):
         for d in range(2):
             for mb in (5000, 6000, 7000):
                 night.record_reading(self.at(d, 23), "j", True, mb, path=self.readings, host="macbookpro.lan")
-        checks, refusals, warnings = night.fit_check(["m.gguf"], [""], True, "macbookpro.lan", self.dir, run=fake,
-                                                     readings_path=self.readings, night_profile_path=self.dir / "p.json")
+        # fit_check prices on night.now(): pin it to the test's own clock (night of 2026-10-26), or the window slides with the day the
+        # test runs on and the readings, dated 24 to 26 October, fall out of it
+        saved_now = night.now
+        night.now = lambda: self.t
+        try:
+            checks, refusals, warnings = night.fit_check(["m.gguf"], [""], True, "macbookpro.lan", self.dir, run=fake,
+                                                         readings_path=self.readings, night_profile_path=self.dir / "p.json")
+        finally:
+            night.now = saved_now
         self.assertEqual(checks[0]["profile"], "m1pro-apps-open")
-        self.assertTrue(any("6 night readings over 2 nights" in w and "m1pro-apps-open" in w for w in warnings), warnings)
+        want = ("only 6 night readings over 2 nights in the last 14 (the night profile needs 5 over 3): "
+                "this night job is priced on the m1pro-apps-open profile")
+        self.assertIn(want, warnings)
         self.assertTrue(calls[0][calls[0].index("-profile") + 1].endswith("m1pro-apps-open.json"))
+
+    def test_too_few_readings_fall_back_to_the_day_profile_with_a_warning(self):
+        self.too_few_readings_scenario()
+
+    def test_the_scenario_does_not_read_the_wall_clock(self):
+        """The readings are dated 2026-10-24 to 26; fit_check prices on night.now(). Run under any later wall clock the scenario must
+        say the same thing: it is the test's clock that is fixed, not the day it runs on."""
+        for i, when in enumerate(("2026-11-08T22:30:00", "2026-11-09T12:00:00", "2027-03-01T12:00:00")):
+            with self.subTest(wall_clock=when):
+                saved = night.now
+                self.addCleanup(setattr, night, "now", saved)
+                self.readings = self.dir / f"memory-{i}.jsonl"  # a fresh log each time: the scenario writes its own readings
+                night.now = lambda w=dt.datetime.fromisoformat(when).astimezone(): w
+                try:
+                    self.too_few_readings_scenario()
+                finally:
+                    night.now = saved
 
     def run_at(self, hour, name, avail=4321):
         """Runs one queued job through the real runner with the clock at hour today; returns its log text and new readings."""

@@ -1,0 +1,15 @@
+=== RUN   TestMEM6_cudaPrefillAllocatesNoRowCopy
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6942 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv3_longprefill_test.go:474: Go bytes allocated by the prefill: 553568 at 1,024 rows, 1001408 at 2,048; 437 B per prompt row against 256 B per embedding row (1.71)
+    kv3_longprefill_test.go:476: a prompt row adds 437 B of Go allocation, over an eighth of an embedding row (32 B)
+--- FAIL: TestMEM6_cudaPrefillAllocatesNoRowCopy (1.92s)
+FAIL
+ledger: 5 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/backend/cuda	1.972s
+FAIL

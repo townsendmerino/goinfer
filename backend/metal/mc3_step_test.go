@@ -199,8 +199,9 @@ func moeStepResident(t *testing.T, dir string, on bool) *resident {
 // GOINFER_OP4MD3_MODEL, loaded int4 with the step's MoE block on, four slots filled to depth 128, then 64 greedy tokens of all four
 // sequences timed two ways: the batched step (device argmax), against the do-nothing arm, each sequence decoded one token at a
 // time on its own slot as today (ForwardArgmax). A B B A over 10 pairs after one warm run each; both arms' tokens must be
-// equal. The cell records the 1-minute load and the reclaimable memory against the resident's need plus a free-memory margin
-// (the void rule's 2 GiB), read after the load and before the resident allocates. A pair voids the cell when the test process itself pages (its own
+// equal, and on a recurrent resident every run starts from a refill (stepCellFill). The cell starts only under the void rule's start terms (stepCellStartVoid), read after the load maps the file and
+// before the resident allocates; the reclaimable reading is recorded beside them. Swap growth over the whole cell is the
+// runner's to judge (scripts/void_rule.py watch and end). A pair voids the cell when the test process itself pages (its own
 // major faults rise during the pair) or system swap in use grows; system-wide pageouts are recorded as context only. A
 // pair whose starting 1-minute load is above half the cores plus GOMAXPROCS voids the cell. Pass: a median rate ratio, step ÷
 // sequential, of at least 1.05 with at least 9 of 10 pairs faster; fail: a median under 1.00; parked otherwise. A fail or a
@@ -216,6 +217,304 @@ func TestOP4mD3_moeStepSpeed(t *testing.T) {
 func TestOP4mD4b_recurrentStepSpeed(t *testing.T) {
 	op4mStepSpeed(t, stepSpeedCell{env: "GOINFER_OP4MD4B", label: "[OP4m-d4b D4b-4]", recurrent: true,
 		want: func(r *resident) bool { return r.dnet != nil }, wantWhat: "a Qwen3.5-family resident"})
+}
+
+// TestOP4mD6b_mambaStepSpeed is OP4m-d6b's D6b-5, D4b-4's cell on the Nemotron-H checkpoint at GOINFER_OP4MD6B_MODEL with
+// the step's recurrent blocks on (GOINFER_OP4MD6B_TIMING=1, under the timing lock).
+func TestOP4mD6b_mambaStepSpeed(t *testing.T) {
+	op4mStepSpeed(t, stepSpeedCell{env: "GOINFER_OP4MD6B", label: "[OP4m-d6b D6b-5]", recurrent: true,
+		want: func(r *resident) bool { return r.mamba != nil }, wantWhat: "a Mamba-2 (Nemotron-H) resident"})
+}
+
+// cellLoad1 is the 1-minute load average (vm.loadavg), a timed cell's start and pair term.
+func cellLoad1(t *testing.T) float64 {
+	t.Helper()
+	out, err := exec.Command("sysctl", "-n", "vm.loadavg").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v float64
+	if _, err := fmt.Sscanf(strings.Trim(strings.TrimSpace(string(out)), "{} "), "%g", &v); err != nil {
+		t.Fatalf("vm.loadavg %q: %v", out, err)
+	}
+	return v
+}
+
+// cellPaging is swap in use (MiB, vm.swapusage), whose growth voids a pair, and the system-wide pageouts count (vm_stat),
+// recorded as context. A swap reading that does not parse fails the cell rather than reading as zero.
+func cellPaging(t *testing.T) (swapMiB float64, pageouts int64) {
+	t.Helper()
+	out, err := exec.Command("sysctl", "-n", "vm.swapusage").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := strings.Fields(string(out)) // total = X  used = Y  free = Z ...
+	parsed := false
+	for i := range f {
+		if f[i] == "used" && i+2 < len(f) {
+			_, err := fmt.Sscanf(strings.TrimSuffix(f[i+2], "M"), "%g", &swapMiB)
+			parsed = err == nil
+		}
+	}
+	if !parsed {
+		t.Fatalf("vm.swapusage %q: no swap-in-use reading", out)
+	}
+	vs, err := exec.Command("vm_stat").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for line := range strings.SplitSeq(string(vs), "\n") {
+		if strings.HasPrefix(line, "Pageouts:") {
+			fmt.Sscanf(strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(line, "Pageouts:")), "."), "%d", &pageouts)
+		}
+	}
+	return swapMiB, pageouts
+}
+
+// TestOP4mPod_decodeSpeed is OP4m-pod's and OP4m-pod2's P-3 (docs/tasks/task-forward-and-memory-2026-11.md, "OP4m-pod:
+// registration", "OP4m-pod2: registration"): one sequence's decode, the walk of the mixer and the FFN and tail steps against their
+// blocks, in one process, on the checkpoint at GOINFER_OP4MPOD_MODEL. Each
+// run refills the sequence to depth 128 untimed and times 64 greedy tokens; the arms alternate A B, B A over 6 pairs, and the tokens
+// must be equal in every pair. A pair whose starting load is above half the cores plus GOMAXPROCS, or across which swap in use
+// grows, voids the cell. Pass: a median rate ratio, walk ÷ blocks, of at least 0.99; fail: the cell resolves slower (every pair
+// under 1) with its median under 0.99; parked otherwise under 0.99. A fail or a park fails the test. A timed run: it refuses to
+// run outside the timing lock (GOINFER_OP4MPOD_TIMING=1).
+func TestOP4mPod_decodeSpeed(t *testing.T) {
+	path := os.Getenv("GOINFER_OP4MPOD_MODEL")
+	if os.Getenv("GOINFER_OP4MPOD_TIMING") == "" || path == "" {
+		t.Skip("set GOINFER_OP4MPOD_TIMING=1 and GOINFER_OP4MPOD_MODEL (a timed run under the timing lock)")
+	}
+	if os.Getenv("GOINFER_TIMING_LOCK") == "" {
+		t.Fatal("not under the timing lock: run through scripts/timing_lock.py run")
+	}
+	if strings.HasPrefix(path, "/Volumes/") || strings.HasPrefix(path, "/srv/models") {
+		t.Fatalf("%s is on the archive, not the bench set: a timing from it measures the disk", path)
+	}
+	const depth, steps, pairs, ctx = 128, 64, 6, 1024
+	const label = "[OP4m-pod P-3]"
+	name := filepath.Base(path)
+	l0 := cellLoad1(t)
+	m, err := decoder.Load(path, decoder.Options{Quant: "int4", ResidentContext: ctx})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	need := m.ResidentNeedBytes("metal", 0, ctx, false, false)
+	r0, ok := probe.Read() // the fit check: after the load maps the file, before the resident allocates
+	if !ok {
+		t.Fatal("no memory reading")
+	}
+	gib := func(b int64) float64 { return float64(b) / (1 << 30) }
+	why := stepCellStartVoid(l0, runtime.NumCPU(), r0.Available, need)
+	fmt.Fprintf(os.Stderr, label+" %s: cell start: 1-minute load %.2f; available %.2f GiB against need %.2f GiB (%s); reclaimable %.2f GiB (recorded)\n",
+		name, l0, gib(r0.Available), gib(need), map[bool]string{true: "ok", false: "VOID"}[why == ""], gib(r0.Reclaimable))
+	if why != "" {
+		t.Fatalf("cell void: %s", why)
+	}
+	r, err := buildResident(m)
+	if err != nil {
+		t.Fatalf("build the resident: %v", err)
+	}
+	defer r.Close()
+	kinds := map[layerStep]int{}
+	for l := range r.layers {
+		for _, st := range r.layers[l].steps {
+			if mixerWalks(st) || ffnWalks(st) {
+				kinds[st]++
+			}
+		}
+	}
+	fmt.Fprintf(os.Stderr, label+" %s: walked steps by kind %v\n", name, kinds)
+	defer func() { mixerWalkBlocksForTest = false }()
+	rng := rand.New(rand.NewSource(128))
+	fill := make([]int, depth)
+	for i := range fill {
+		fill[i] = rng.Intn(min(20000, r.V))
+	}
+	first := rng.Intn(min(20000, r.V))
+	run := func(blocks bool) (rate float64, toks []int) {
+		mixerWalkBlocksForTest = blocks
+		r.stopExec()
+		r.resetRecurrent()
+		for p, id := range fill {
+			r.Forward(id, p)
+		}
+		cur := first
+		t0 := time.Now()
+		for s := range steps {
+			lg := r.Forward(cur, depth+s)
+			cur = 0
+			for i, v := range lg {
+				if v > lg[cur] {
+					cur = i
+				}
+			}
+			toks = append(toks, cur)
+		}
+		el := time.Since(t0)
+		if err := r.takeExecErr(); err != nil {
+			t.Fatal(err)
+		}
+		return float64(steps) / el.Seconds(), toks
+	}
+	run(false) // each arm warm before the first pair, untimed
+	run(true)
+	bar := float64(runtime.NumCPU())/2 + float64(runtime.GOMAXPROCS(0))
+	var ratios []float64
+	below := 0
+	for p := range pairs {
+		lp := cellLoad1(t)
+		if lp > bar {
+			t.Fatalf("cell void: pair %d starts at 1-minute load %.2f, above %.1f", p+1, lp, bar)
+		}
+		s0, _ := cellPaging(t)
+		order := []bool{false, true} // false: the walk; true: the blocks
+		if p%2 == 1 {
+			order = []bool{true, false}
+		}
+		rates, toks := map[bool]float64{}, map[bool][]int{}
+		for _, blocks := range order {
+			rates[blocks], toks[blocks] = run(blocks)
+		}
+		if s1, _ := cellPaging(t); s1 > s0 {
+			t.Fatalf("cell void: swap in use grew from %.1f to %.1f MiB across pair %d", s0, s1, p+1)
+		}
+		if !slices.Equal(toks[false], toks[true]) {
+			t.Fatalf("pair %d: the walk's tokens differ from the blocks'", p+1)
+		}
+		ratio := rates[false] / rates[true]
+		ratios = append(ratios, ratio)
+		if ratio < 1 {
+			below++
+		}
+		fmt.Fprintf(os.Stderr, label+" %s: pair %d/%d (%s first, load %.2f): walk %.2f tok/s, blocks %.2f tok/s, ratio %.4f\n",
+			name, p+1, pairs, map[bool]string{false: "walk", true: "blocks"}[order[0]], lp, rates[false], rates[true], ratio)
+	}
+	sorted := slices.Clone(ratios)
+	slices.Sort(sorted)
+	med := (sorted[pairs/2-1] + sorted[pairs/2]) / 2
+	verdict := "PASS"
+	switch {
+	case med >= 0.99:
+	case below == pairs:
+		verdict = "FAIL"
+	default:
+		verdict = "PARKED"
+	}
+	fmt.Fprintf(os.Stderr, label+" %s: median ratio %.4f, %d of %d pairs under 1: %s\n", name, med, below, pairs, verdict)
+	if verdict != "PASS" {
+		t.Errorf("P-3 on %s: median %.4f, %d of %d pairs under 1: %s", name, med, below, pairs, verdict)
+	}
+}
+
+// stepCellStartVoid is why a timed cell may not start, or "" when it may: the void rule's start terms
+// (docs/measurements/noise-registry.md §8, scripts/void_rule.py start). The 1-minute load must not be above half of ncpu, and
+// available, the fit guard's reading (probe.Reading.Available), must cover need with no margin.
+func stepCellStartVoid(load1 float64, ncpu int, available, need int64) string {
+	if limit := float64(ncpu) / 2; load1 > limit {
+		return fmt.Sprintf("1-minute load %.2f above %.1f", load1, limit)
+	}
+	if available < need {
+		return fmt.Sprintf("available %.2f GiB under need %.2f GiB", float64(available)/(1<<30), float64(need)/(1<<30))
+	}
+	return ""
+}
+
+func TestStepCellStartVoid(t *testing.T) {
+	const gib = int64(1) << 30
+	for _, c := range []struct {
+		load1           float64
+		available, need int64
+		void            bool
+	}{
+		{4.0, 4 * gib, 4 * gib, false},       // both terms at their bound: starts
+		{4.01, 8 * gib, 4 * gib, true},       // load above half of 8 cores
+		{1.0, 4*gib - 1, 4 * gib, true},      // a byte short of the need
+		{1.0, 4*gib + 1<<20, 4 * gib, false}, // no margin is added to the need
+	} {
+		if why := stepCellStartVoid(c.load1, 8, c.available, c.need); (why != "") != c.void {
+			t.Errorf("load %.2f, available %d, need %d: void %q, want void %v", c.load1, c.available, c.need, why, c.void)
+		}
+	}
+}
+
+// stepCellFill fills KV slot i with fills[i] from position 0: through ForwardBatch, or token by token through ForwardEmb when
+// full (rows that carry more than the embedding). A recurrent resident's slot states are zeroed first, since a pass at
+// position 0 does not reset them, so a refill puts every slot back where the first fill left it.
+func stepCellFill(t *testing.T, r *resident, fills [][]int, row func(int) []float32, full bool) {
+	t.Helper()
+	if r.recurrentModel() {
+		r.stopExec()
+		for sl := range fills {
+			r.resetRecurrentSlot(sl)
+		}
+	}
+	for sl, ids := range fills {
+		if !full {
+			mc3Fill(t, r, sl, ids)
+			continue
+		}
+		if err := r.useKVSlot(sl); err != nil {
+			t.Fatal(err)
+		}
+		for i, id := range ids {
+			r.ForwardEmb(row(id), i)
+		}
+	}
+}
+
+// TestStepCellFill_rewindsRecurrentState: on nemotron-tiny with the step on, two slots, steps run after a refill equal
+// the steps run after the first fill, every logit; run again without the refill they differ, so the fixture's state carries
+// the earlier steps and a cell that skipped the refill would compare arms from different states.
+func TestStepCellFill_rewindsRecurrentState(t *testing.T) {
+	r := recurrentStepResidentSlots(t, recurrentFixture{dir: "../../testdata/nemotron-tiny"}, true, 2)
+	if r.batch == nil || r.mamba == nil {
+		t.Fatalf("step built %v, Mamba-2 %v: want both (%s)", r.batch != nil, r.mamba != nil, r.batchIneligible())
+	}
+	const depth, steps = 20, 6
+	rng := rand.New(rand.NewSource(11))
+	fills := [][]int{make([]int, depth), make([]int, depth)}
+	for _, f := range fills {
+		for i := range f {
+			f[i] = rng.Intn(r.V)
+		}
+	}
+	row := func(id int) []float32 { return mc3Emb(r, id) }
+	run := func() [][]float32 {
+		var out [][]float32
+		cur := []int{1, 2}
+		for s := range steps {
+			logits, _, err := r.forwardMultiInto([]batchSeq{{slot: 0, pos: depth + s, emb: row(cur[0])}, {slot: 1, pos: depth + s, emb: row(cur[1])}}, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i := range cur {
+				cur[i] = argmaxF32(logits[i])
+				out = append(out, slices.Clone(logits[i]))
+			}
+		}
+		return out
+	}
+	differ := func(a, b [][]float32) int {
+		n := 0
+		for i := range a {
+			for j := range a[i] {
+				if math.Float32bits(a[i][j]) != math.Float32bits(b[i][j]) {
+					n++
+				}
+			}
+		}
+		return n
+	}
+	stepCellFill(t, r, fills, row, false)
+	want := run()
+	stepCellFill(t, r, fills, row, false)
+	if n := differ(want, run()); n != 0 {
+		t.Errorf("after a refill, %d logits differ from the run after the first fill", n)
+	}
+	if n := differ(want, run()); n == 0 {
+		t.Error("a run without a refill equals the first: the fixture's state does not carry earlier steps, so this test proves nothing")
+	}
 }
 
 // stepSpeedCell is one feature-bar cell's model and arms (op4mStepSpeed).
@@ -248,46 +547,8 @@ func op4mStepSpeed(t *testing.T, c stepSpeedCell) {
 		t.Fatalf("%s is on the archive, not the bench set: a timing from it measures the disk", path)
 	}
 	const B, depth, steps, pairs, ctx = 4, 128, 64, 10, 1024
-	load1 := func() float64 {
-		out, err := exec.Command("sysctl", "-n", "vm.loadavg").Output()
-		if err != nil {
-			t.Fatal(err)
-		}
-		var v float64
-		if _, err := fmt.Sscanf(strings.Trim(strings.TrimSpace(string(out)), "{} "), "%g", &v); err != nil {
-			t.Fatalf("vm.loadavg %q: %v", out, err)
-		}
-		return v
-	}
-	// paging is swap in use (MiB, vm.swapusage), whose growth voids a pair, and the system-wide pageouts count (vm_stat),
-	// recorded as context. A swap reading that does not parse fails the cell rather than reading as zero.
-	paging := func() (swapMiB float64, pageouts int64) {
-		out, err := exec.Command("sysctl", "-n", "vm.swapusage").Output()
-		if err != nil {
-			t.Fatal(err)
-		}
-		f := strings.Fields(string(out)) // total = X  used = Y  free = Z ...
-		parsed := false
-		for i := range f {
-			if f[i] == "used" && i+2 < len(f) {
-				_, err := fmt.Sscanf(strings.TrimSuffix(f[i+2], "M"), "%g", &swapMiB)
-				parsed = err == nil
-			}
-		}
-		if !parsed {
-			t.Fatalf("vm.swapusage %q: no swap-in-use reading", out)
-		}
-		vs, err := exec.Command("vm_stat").Output()
-		if err != nil {
-			t.Fatal(err)
-		}
-		for line := range strings.SplitSeq(string(vs), "\n") {
-			if strings.HasPrefix(line, "Pageouts:") {
-				fmt.Sscanf(strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(line, "Pageouts:")), "."), "%d", &pageouts)
-			}
-		}
-		return swapMiB, pageouts
-	}
+	load1 := func() float64 { return cellLoad1(t) }
+	paging := func() (swapMiB float64, pageouts int64) { return cellPaging(t) }
 	majFaults := func() int64 { // this process's major faults (page-ins from disk), the never-swap rule's own reading
 		var ru syscall.Rusage
 		if err := syscall.Getrusage(syscall.RUSAGE_SELF, &ru); err != nil {
@@ -303,28 +564,28 @@ func op4mStepSpeed(t *testing.T, c stepSpeedCell) {
 	}
 	defer m.Close()
 	need := m.ResidentNeedBytes("metal", 0, ctx, false, false) + int64(B-1)*metalSlotBytes(m) // every slot's KV and recurrent state
-	const margin = 2048                                                                       // MiB, the void rule's registered margin
 	r0, ok := probe.Read()                                                                    // the fit check: after the load maps the file, before the resident allocates
 	if !ok {
 		t.Fatal("no memory reading")
 	}
 	gib := func(b int64) float64 { return float64(b) / (1 << 30) }
 	bar := float64(runtime.NumCPU())/2 + float64(runtime.GOMAXPROCS(0))
-	memOK := int64(r0.Reclaimable) >= need+margin<<20
+	why := stepCellStartVoid(l0, runtime.NumCPU(), r0.Available, need)
 	name := filepath.Base(path)
-	fmt.Fprintf(os.Stderr, label+" %s: cell start: 1-minute load %.2f; reclaimable %.2f GiB against need %.2f GiB + %d MiB (%s); pair bar %.1f\n",
-		name, l0, gib(int64(r0.Reclaimable)), gib(need), margin, map[bool]string{true: "ok", false: "VOID"}[memOK], bar)
-	if !memOK {
-		t.Fatalf("cell void: reclaimable %.2f GiB under need %.2f GiB + %d MiB", gib(int64(r0.Reclaimable)), gib(need), margin)
+	fmt.Fprintf(os.Stderr, label+" %s: cell start: 1-minute load %.2f; available %.2f GiB against need %.2f GiB (%s); reclaimable %.2f GiB (recorded); pair bar %.1f\n",
+		name, l0, gib(r0.Available), gib(need), map[bool]string{true: "ok", false: "VOID"}[why == ""], gib(r0.Reclaimable), bar)
+	if why != "" {
+		t.Fatalf("cell void: %s", why)
 	}
 	r, err := buildResident(m)
 	if err != nil {
 		t.Fatalf("build the resident: %v", err)
 	}
 	defer r.Close()
-	if scratch := r.stepScratchBytes(); int64(r0.Reclaimable) < need+scratch+margin<<20 {
-		t.Fatalf("cell void: reclaimable %.2f GiB under need %.2f GiB, the step's scratch %.1f MiB and %d MiB", gib(int64(r0.Reclaimable)), gib(need),
-			float64(scratch)/(1<<20), margin)
+	scratch := r.stepScratchBytes()
+	fmt.Fprintf(os.Stderr, label+" %s: the step's scratch %.1f MiB\n", name, float64(scratch)/(1<<20))
+	if why := stepCellStartVoid(l0, runtime.NumCPU(), r0.Available, need+scratch); why != "" {
+		t.Fatalf("cell void, with the step's scratch: %s", why)
 	}
 	if !want(r) || r.batch == nil || len(r.kvSlotBufs) < B {
 		t.Fatalf("%s %v, batched step %v, %d KV slots: want %s with the step and %d slots (%s)", wantWhat, want(r), r.batch != nil,
@@ -341,22 +602,14 @@ func op4mStepSpeed(t *testing.T, c stepSpeedCell) {
 	if c.rows != nil {
 		row = c.rows(m)
 	}
-	for sl := range B {
-		ids := make([]int, depth)
-		for i := range ids {
-			ids[i] = rnd()
-		}
-		if c.rows == nil {
-			mc3Fill(t, r, sl, ids)
-			continue
-		}
-		if err := r.useKVSlot(sl); err != nil {
-			t.Fatal(err)
-		}
-		for i, id := range ids {
-			r.ForwardEmb(row(id), i)
+	fills := make([][]int, B)
+	for sl := range fills {
+		fills[sl] = make([]int, depth)
+		for i := range fills[sl] {
+			fills[sl][i] = rnd()
 		}
 	}
+	stepCellFill(t, r, fills, row, c.rows != nil)
 	first := make([]int, B)
 	for i := range first {
 		first[i] = rnd()
@@ -364,6 +617,9 @@ func op4mStepSpeed(t *testing.T, c stepSpeedCell) {
 	run := func(batched bool) (float64, []int) {
 		if c.stepArms != nil {
 			c.stepArms(batched)
+		}
+		if r.recurrentModel() { // every run starts from the state the fill left, as the KV rows it rewrites in place do
+			stepCellFill(t, r, fills, row, c.rows != nil)
 		}
 		cur := append([]int(nil), first...)
 		var toks []int
@@ -1995,7 +2251,7 @@ func TestKVPages_prefillThroughTheTable(t *testing.T) {
 
 // TestKVPages_uploadKVThroughTheTable: UploadKV writes each position's K and V (and int8 scales) at its row through the bound slot's
 // table, so rows uploaded into blocks handed out reversed and interleaved across slots decode as in-order ones bit for bit, at every
-// KV precision, on two slots, with uploads that start inside a block and cross block edges.
+// KV precision, on two slots, with uploads (each slot one pass, as the decoder uploads) that cross block edges.
 func TestKVPages_uploadKVThroughTheTable(t *testing.T) {
 	const ctx, slots, rows = 512, 2, 150
 	for _, kv := range []string{"", "i8", "f32"} {
@@ -2012,6 +2268,9 @@ func TestKVPages_uploadKVThroughTheTable(t *testing.T) {
 					if err := r.useKVSlot(s); err != nil {
 						t.Fatal(err)
 					}
+					if err := a.BeginKVUpload(); err != nil {
+						t.Fatal(err)
+					}
 					for l := range r.layers {
 						g := r.layers[l].geom
 						if g == nil || r.layers[l].kvShared {
@@ -2025,13 +2284,12 @@ func TestKVPages_uploadKVThroughTheTable(t *testing.T) {
 							}
 							return v
 						}
-						// two uploads: rows [0, 40), then [40, rows), the second starting inside a block
-						for _, span := range [][2]int{{0, 40}, {40, rows}} {
-							n := span[1] - span[0]
-							if err := a.UploadKV(l, span[0], vals(n*g.kvDim), vals(n*g.kvDim)); err != nil {
-								t.Fatal(err)
-							}
+						if err := a.UploadKV(l, 0, vals(rows*g.kvDim), vals(rows*g.kvDim)); err != nil {
+							t.Fatal(err)
 						}
+					}
+					if err := a.EndKVUpload(false); err != nil {
+						t.Fatal(err)
 					}
 					out = append(out, slices.Clone(r.ForwardEmb(mc3Emb(r, 11+s), rows)))
 				}

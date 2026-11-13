@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -197,8 +198,8 @@ func TestHeavyPartition_cudaTreeFitsTheTable(t *testing.T) {
 			t.Errorf("group %s is empty; got %v", l, byLabel)
 		}
 	}
-	if got := byGroup["nemotron-h"]; !slices.Equal(got, []string{"TestNemotronResidentCUDA_tier1"}) {
-		t.Errorf("group nemotron-h = %v, want [TestNemotronResidentCUDA_tier1] so absent checkpoints grade as an all-skip group", got)
+	if got := byGroup["nemotron-h"]; !slices.Equal(got, []string{"TestNemotronResidentCUDA_tier1", "TestP1r_nemotronRangeSurvey"}) {
+		t.Errorf("group nemotron-h = %v, want [TestNemotronResidentCUDA_tier1 TestP1r_nemotronRangeSurvey] so absent checkpoints grade as an all-skip group", got)
 	}
 }
 
@@ -214,22 +215,19 @@ func TestProcSampler_findsTheTestBinaryUnderItsParent(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("reads /proc")
 	}
-	sleep, err := exec.LookPath("sleep")
+	// The grandchild is this test binary, already named "<pkg>.test", re-run into TestProcSampler_helperSleeps. A copy of a system
+	// binary under a .test name is not a stand-in: a multi-call coreutils (uutils, busybox) picks its utility from argv[0] and exits.
+	bin, err := os.Executable()
 	if err != nil {
 		t.Skip(err)
 	}
-	b, err := os.ReadFile(sleep)
-	if err != nil {
-		t.Skip(err)
-	}
-	bin := filepath.Join(t.TempDir(), "fake.test")
-	if err := os.WriteFile(bin, b, 0o755); err != nil {
-		t.Fatal(err)
+	if !strings.HasSuffix(filepath.Base(bin), ".test") {
+		t.Skipf("test binary %s is not named .test", bin)
 	}
 	old := procSamplePeriod
 	procSamplePeriod = 20 * time.Millisecond
 	t.Cleanup(func() { procSamplePeriod = old })
-	cmd := exec.Command("sh", "-c", bin+" 1; true")
+	cmd := exec.Command("sh", "-c", `"$0" -test.run='^TestProcSampler_helperSleeps$' -procsampler.helper; true`, bin)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -242,4 +240,14 @@ func TestProcSampler_findsTheTestBinaryUnderItsParent(t *testing.T) {
 	if p.ByTest["TestFake"] == 0 || len(p.ByTest) != 1 {
 		t.Errorf("attribution %v; want the top-level test only", p.ByTest)
 	}
+}
+
+var procSamplerHelper = flag.Bool("procsampler.helper", false, "run TestProcSampler_helperSleeps as the sampler test's grandchild")
+
+// TestProcSampler_helperSleeps is the grandchild TestProcSampler_findsTheTestBinaryUnderItsParent samples: it lives a second.
+func TestProcSampler_helperSleeps(t *testing.T) {
+	if !*procSamplerHelper {
+		t.Skip("only as TestProcSampler_findsTheTestBinaryUnderItsParent's grandchild")
+	}
+	time.Sleep(time.Second)
 }

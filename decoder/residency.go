@@ -99,7 +99,7 @@ type ResidentBatchSeq struct {
 
 // ResidentBatchDraw is a temperature-only draw a batched step makes on-device for its row: ForwardSample's
 // arguments, from the sequence's own Sampler.NextDraw. Greedy marks a greedy generation's row (E-P08,
-// docs/audit-metal-2026-09-30.md), sent only to a resident that implements ResidentBatchGreedy: the id must be the
+// docs/audit-metal-2026-09-30.md), sent only to a resident that reports ResidentCaps.BatchGreedyDraw: the id must be the
 // argmax of the logits the row would have returned (after any softcap or logit scale), first maximum on a tie, exactly
 // as the decoder's sampler would pick it from them.
 type ResidentBatchDraw struct {
@@ -108,16 +108,44 @@ type ResidentBatchDraw struct {
 	Greedy      bool
 }
 
-// ResidentBatchGreedy is an OPTIONAL ResidentBatchStepper extension: BatchGreedyDraw reports that StepBatch returns a
-// Greedy draw row's argmax id (ResidentBatchDraw.Greedy) instead of its logits, so a greedy generation's batched token
-// costs no logits readback.
-type ResidentBatchGreedy interface {
-	BatchGreedyDraw() bool
-}
-
 // ResidentBatchOut is one row of a StepBatch: the drawn id (>= 0) for a sequence that carried a Draw, else its logits.
 type ResidentBatchOut struct {
 	Logits []float32
+	ID     int
+}
+
+// ResidentRaggedStepper is an optional ResidentForward extension: one step over several sequences, each with one row or more
+// at consecutive positions from its Pos on its own KV slot, every row in the kernel class its own shape runs today (a row
+// alone is a decode token, a sequence's rows a verify). Row j of a sequence equals that sequence's own Forward at Pos+j bit
+// for bit, or ForwardSample's id for a last row that carries the Draw. The slots are distinct; the bound slot is restored.
+// Docs: docs/tasks/task-forward-and-memory-2026-11.md, "RF2: registration".
+type ResidentRaggedStepper interface {
+	StepRagged(seqs []ResidentRaggedSeq) ([]ResidentRaggedOut, error)
+}
+
+// ResidentRaggedSeq is one sequence of a ResidentRaggedStepper step: its KV slot, the position of its first row, its rows'
+// embeddings (embedResident's), and, when its last row's token is drawn on-device, that draw. Prefill marks the rows as one
+// chunk of a prompt's prefill instead of decode or verify rows; such a sequence carries no Draw.
+type ResidentRaggedSeq struct {
+	Slot, Pos int
+	Embs      [][]float32
+	Draw      *ResidentBatchDraw     // nil: every row's logits
+	Prefill   *ResidentRaggedPrefill // nil: decode or verify rows
+}
+
+// ResidentRaggedPrefill makes a ResidentRaggedSeq one pass of a prompt's PrefillLast: its rows take the kernel class that pass
+// takes (the fast kernels where the prompt's length allows them), so its K/V and its last row's logits equal that pass's bit
+// for bit. PromptLen is the whole prompt's length, which decides the class; Last is the prompt's final pass, the only one
+// whose last row's logits are returned. The caller cuts the prompt into passes as PrefillLast does.
+type ResidentRaggedPrefill struct {
+	PromptLen int
+	Last      bool
+}
+
+// ResidentRaggedOut is one sequence of a StepRagged: each row's logits, with the last nil when the sequence carried a Draw,
+// and the drawn id (>= 0), or -1. A prefill sequence's rows are nil but for a Last pass's final row.
+type ResidentRaggedOut struct {
+	Logits [][]float32
 	ID     int
 }
 
@@ -419,40 +447,45 @@ type VerifyPathReporter interface {
 	VerifyPath() (batched bool, reason string)
 }
 
-// ResidentQuantReporter is an OPTIONAL resident extension: the precision the resident runs its weights at, when it
-// chose one the decoder cannot infer from the backend and the load quant. Metal runs some int8 models natively and
-// re-quantizes others to int4 (docs/tasks/task-metal-int8-2026-10.md). "" means residentQuantLabel applies.
-type ResidentQuantReporter interface {
-	ResidentQuant() string
+// ResidentCaps is what a resident reports about itself (ResidentCapsReporter), read at each use. The zero value is what a
+// resident that reports nothing gives, and each field's zero means "none".
+type ResidentCaps struct {
+	// ContextCap is the KV capacity in positions. A write past it is an out-of-bounds device write: the backends refuse one
+	// mid-generation, and the decoder clamps a turn to it up front (clampToResidentCap) so the turn stops cleanly at the cap.
+	ContextCap int
+	// HasFastPrefill reports that the batched prefill switches to non-exact kernels (CUDA's attn_fused and gemm_w4a8_mma) from
+	// FastPrefillFloor prompt tokens, a floor of 0 when the fast kernels are off. Rows a short request computed on the exact kernels
+	// differ from the same rows on the fast ones, so prefix reuse declines a reuse that would mix them
+	// (docs/measurements/mc4-candidate-cuda-2026-10-01.md, ROOT CAUSE). The class rule keys on HasFastPrefill, not on the floor.
+	HasFastPrefill   bool
+	FastPrefillFloor int
+	// HasKernelFloor reports that the batched prefill runs one kernel class below a whole-prompt length of KernelFloor and another,
+	// not bit-identical, from it (Metal: decode rows, then f16 MMA), a floor of 0 when one class runs at every length. Chunked
+	// prefill keeps every chunk on the class the whole prompt takes. A narrower contract than HasFastPrefill's, which prefix reuse
+	// also reads.
+	HasKernelFloor bool
+	KernelFloor    int
+	// TailMinRows is the fewest rows a prefill's last pass may have to run the kernels of the pass before it (CUDA: the fused
+	// attention's floor); every loop that cuts a prompt into passes takes the larger of it and prefillTailMin.
+	TailMinRows int
+	// Quant is the precision the weights run at, when the decoder cannot infer it from the backend and the load quant (Metal runs
+	// some int8 models natively and re-quantizes others to int4, docs/tasks/task-metal-int8-2026-10.md); "" means residentQuantLabel applies.
+	Quant string
+	// ContextNote is a few words on how the backend arrived at ContextCap, for a load banner; "" when the caller's own -ctx set it.
+	ContextNote string
+	// BatchGreedyDraw reports that StepBatch returns a Greedy draw row's argmax id (ResidentBatchDraw.Greedy) instead of its
+	// logits, so a greedy generation's batched token costs no logits readback.
+	BatchGreedyDraw bool
 }
 
-// ResidentCapped is an OPTIONAL ResidentForward extension exposing the backend's fixed
-// KV context capacity (in positions). A write past it is an out-of-bounds device write
-// (silent KV corruption); the backends refuse it mid-generation, but generateInto also
-// type-asserts for this to clamp/refuse UP FRONT — so a request that would overrun stops
-// cleanly at the cap (or falls back) instead of erroring after N tokens. Backends may
-// skip implementing it (they still enforce the cap in Forward/ForwardN/UploadKV). C3/M20.
-type ResidentCapped interface {
-	ContextCap() int
+// ResidentCapsReporter is the optional capability of a resident to report its ResidentCaps.
+type ResidentCapsReporter interface {
+	ResidentCaps() ResidentCaps
 }
 
-// ResidentFastPrefill is the optional capability of a resident whose batched prefill switches to NON-EXACT kernels once a prompt is long enough (CUDA's attn_fused and
-// gemm_w4a8_mma, from 512 prompt tokens). FastPrefillFloor is that prompt length, or 0 when the fast kernels are off. It exists for prefix reuse: rows a SHORT earlier
-// request computed on the exact kernels differ numerically from the same rows on the fast ones, so a long prompt that reuses even a few of them and prefills the rest
-// fast has a mixed KV and different logits than a cold prefill (docs/measurements/mc4-candidate-cuda-2026-10-01.md, ROOT CAUSE). residentAcquireSlot reads this to
-// decline such a reuse. A resident whose prefill is exact at every length need not implement it.
-type ResidentFastPrefill interface {
-	FastPrefillFloor() int
-}
-
-// ResidentPrefillKernelFloor is the optional capability of a resident whose batched prefill runs one class of
-// kernels below a whole-prompt length and another, not bit-identical, from it (Metal: decode rows below its
-// floor, f16 MMA from it). PrefillKernelFloor is that length, or 0 when one class runs at every length.
-// Chunked prefill (mc3Prefill) reads it so no chunk straddles the boundary the whole prompt would not: a first
-// chunk below the floor ran on the other class, and the reply then depended on whether another generation was
-// decoding. A narrower contract than ResidentFastPrefill's, which prefix reuse also reads.
-type ResidentPrefillKernelFloor interface {
-	PrefillKernelFloor() int
+// residentCapsOf is rf's ResidentCaps, or the zero value when rf is nil or reports none.
+func residentCapsOf(rf ResidentForward) ResidentCaps {
+	return SubsystemsOf(rf).Runtime.ResidentCaps()
 }
 
 // ResidentPrefillBlocks is the optional capability of a Prefiller whose pass allocates scratch for every row it is
@@ -467,16 +500,25 @@ type ResidentPrefillBlocks interface {
 	PrefillScratchBytes(rows int) int64
 }
 
+// prefillBlocks is the resident's ResidentPrefillBlocks, or nil when it reports none.
+func (m *Model) prefillBlocks() ResidentPrefillBlocks {
+	pf := m.resPrefill()
+	if !pf.PrefillBlocksAvailable() {
+		return nil
+	}
+	return pf
+}
+
 // prefillBlockRows is the pass length residentPrefillSeed splits a prompt of promptLen tokens into, or 0 when the
 // resident's prefill is not split: it does not report a block, or its continuation is not exact. A block under the
 // resident's kernel-class floor is raised to it, as mc3Prefill raises its chunk, so the first pass runs the class the
 // whole prompt would.
 func (m *Model) prefillBlockRows(promptLen int) int {
-	pb, ok := m.resident.(ResidentPrefillBlocks)
-	if !ok {
+	pb := m.prefillBlocks()
+	if pb == nil {
 		return 0
 	}
-	if te, ok := m.resident.(PrefillTailExact); !ok || !te.PrefillTailExact() {
+	if !m.resPrefill().PrefillTailExact() {
 		return 0
 	}
 	B := pb.PrefillBlockRows()
@@ -497,20 +539,27 @@ func (m *Model) residentPrefillScratch(promptTokens int) (bytes int64, ok bool) 
 		return m.residentChunkedScratch(promptTokens)
 	}
 	rows := min(promptTokens, B+m.prefillTailMinRows()-1)
-	pb := m.resident.(ResidentPrefillBlocks)
-	return pb.PrefillScratchBytes(rows) + int64(rows)*4*int64(m.ResidentEmbedLen()), true
+	return m.prefillBlocks().PrefillScratchBytes(rows) + int64(rows)*4*int64(m.ResidentEmbedLen()), true
 }
 
 // prefillKernelFloor is the resident's kernel-class boundary for chunking: PrefillKernelFloor when the resident
-// reports it, else ResidentFastPrefill's floor (the same boundary, as CUDA reports it), else 0.
+// reports it, else the fast-prefill floor (the same boundary, as CUDA reports it), else 0.
 func (m *Model) prefillKernelFloor() int {
-	if kf, ok := m.resident.(ResidentPrefillKernelFloor); ok {
-		return kf.PrefillKernelFloor()
-	}
-	if fp, ok := m.resident.(ResidentFastPrefill); ok {
-		return fp.FastPrefillFloor()
+	fast, hasFast, kernel, hasKernel := m.residentFloors()
+	switch {
+	case hasKernel:
+		return kernel
+	case hasFast:
+		return fast
 	}
 	return 0
+}
+
+// residentFloors is the resident's two kernel-class reports (ResidentCaps), each with whether the resident gives it. A caller that
+// keys on a report's presence reads has, not a 0.
+func (m *Model) residentFloors() (fast int, hasFast bool, kernel int, hasKernel bool) {
+	c := residentCapsOf(m.resident)
+	return c.FastPrefillFloor, c.HasFastPrefill, c.KernelFloor, c.HasKernelFloor
 }
 
 // ResidencyBackend is the optional capability a Backend advertises to build a
@@ -578,7 +627,8 @@ func (m *Model) decodeRunnerDecline() string {
 // in either backend reads the group, so a load that asked for per-32 ran resident at per-vector, silently,
 // whenever the family had no activation hazard for the gate below to catch. The Options doc has always
 // said such a load declines to the CPU; this makes it so. Metal's q4k lane is exempt: it quantizes no
-// activation at all, and modelFromOptions stamps the group on every q4k load.
+// activation at all, and every q4k load carries the group (a direct load's and a q4k .giw's alike). quant
+// is the loaded weights' (Model.Quant), as Metal's build reads it, not the --quant option a .giw does not keep.
 func actGroupResidentDecline(backend string, actGroup int, quant string) string {
 	if actGroup == 0 || backend == "cuda" || backend == "metal" && quant == "q4k" {
 		return ""
@@ -735,12 +785,158 @@ func (a *Architecture) moeResidentEligible() bool {
 	return a.MoE != nil
 }
 
+// ResidentMoESpec holds the MoE geometry and routing knobs for a resident backend or planner.
+type ResidentMoESpec struct {
+	NumExperts            int
+	TopK                  int
+	IntermediateDim       int
+	SharedIntermediateDim int
+	RouterSigmoid         bool
+	NormTopKProb          bool
+	SharedUngated         bool
+	RoutedScale           float64
+	NGroup                int
+	TopkGroup             int
+}
+
+// ResidentMLASpec holds the DeepSeek/Kimi MLA geometry and scales for a resident backend or planner.
+type ResidentMLASpec struct {
+	QLoRARank      int
+	KVLoRARank     int
+	QKNopeHeadDim  int
+	QKRopeHeadDim  int
+	VHeadDim       int
+	RopeInterleave bool
+	AttnScale      float64
+	RopeScale      float64
+}
+
+// ResidentQwen35Spec holds the Gated-DeltaNet and gated-softmax geometry for Qwen3.5/Qwen3-Next/Olmo-Hybrid.
+type ResidentQwen35Spec struct {
+	ConvKernel    int
+	KeyHeadDim    int
+	ValueHeadDim  int
+	NumKeyHeads   int
+	NumValueHeads int
+	AttnGate      bool
+}
+
+// ResidentNemotronSpec holds the Mamba-2 and GQA geometry for Nemotron-H.
+type ResidentNemotronSpec struct {
+	NHeads     int
+	HeadDim    int
+	DState     int
+	NGroups    int
+	DConv      int
+	NormGroups int
+	AttnScale  float32
+}
+
+// ResidentGraniteSpec holds the Mamba-2 geometry and four scalar multipliers for Granite-4.0-H.
+type ResidentGraniteSpec struct {
+	NHeads     int
+	HeadDim    int
+	DState     int
+	NGroups    int
+	DConv      int
+	EmbMul     float32
+	ResidMul   float32
+	LogitScale float32
+	AttnScale  float32
+}
+
+// ResidentSpec bundles the family-specific resident geometry of a Model into named sub-structs so callers
+// (such as fitplan.go and backend builders) can inspect named fields instead of unpacking positional 7-to-11-tuples.
+type ResidentSpec struct {
+	MoE      *ResidentMoESpec
+	MLA      *ResidentMLASpec
+	Qwen35   *ResidentQwen35Spec
+	Nemotron *ResidentNemotronSpec
+	Granite  *ResidentGraniteSpec
+}
+
+// ResidentSpec returns the structured resident geometry of m. Sub-structs are non-nil only when the model's
+// architecture carries that subsystem.
+func (m *Model) ResidentSpec() ResidentSpec {
+	var spec ResidentSpec
+	a := m.w.arch
+	if mo := a.MoE; mo != nil {
+		spec.MoE = &ResidentMoESpec{
+			NumExperts:            mo.NumExperts,
+			TopK:                  mo.TopK,
+			IntermediateDim:       mo.IntermediateDim,
+			SharedIntermediateDim: mo.SharedIntermediateDim,
+			RouterSigmoid:         mo.RouterSigmoid,
+			NormTopKProb:          mo.NormTopKProb,
+			SharedUngated:         mo.SharedUngated,
+			RoutedScale:           mo.RoutedScale,
+			NGroup:                mo.NGroup,
+			TopkGroup:             mo.TopkGroup,
+		}
+	}
+	if p := a.mla; p != nil {
+		spec.MLA = &ResidentMLASpec{
+			QLoRARank:      p.QLoRARank,
+			KVLoRARank:     p.KVLoRARank,
+			QKNopeHeadDim:  p.QKNopeHeadDim,
+			QKRopeHeadDim:  p.QKRopeHeadDim,
+			VHeadDim:       p.VHeadDim,
+			RopeInterleave: p.ropeInterleave,
+			AttnScale:      a.AttnScale,
+			RopeScale:      a.ropeMscale(0),
+		}
+	}
+	if g := a.qwen35; g != nil {
+		spec.Qwen35 = &ResidentQwen35Spec{
+			ConvKernel:    g.ConvKernel,
+			KeyHeadDim:    g.KeyHeadDim,
+			ValueHeadDim:  g.ValueHeadDim,
+			NumKeyHeads:   g.NumKeyHeads,
+			NumValueHeads: g.NumValueHeads,
+			AttnGate:      g.AttnGate,
+		}
+	}
+	if np := a.nemotron; np != nil {
+		spec.Nemotron = &ResidentNemotronSpec{
+			NHeads:     np.NHeads,
+			HeadDim:    np.HeadDim,
+			DState:     np.DState,
+			NGroups:    np.NGroups,
+			DConv:      np.DConv,
+			NormGroups: np.NGroups,
+			AttnScale:  float32(a.AttnScale),
+		}
+	}
+	if g := a.granite; g != nil {
+		ls := float32(1)
+		if a.LogitScale != 0 {
+			ls = float32(a.LogitScale)
+		}
+		em, rm := g.EmbMul, g.ResidMul
+		if os.Getenv("GOINFER_SSM_NOMUL") != "" {
+			em, rm, ls = 1, 1, 1
+		}
+		spec.Granite = &ResidentGraniteSpec{
+			NHeads:     g.NHeads,
+			HeadDim:    g.HeadDim,
+			DState:     g.DState,
+			NGroups:    g.NGroups,
+			DConv:      g.DConv,
+			EmbMul:     em,
+			ResidMul:   rm,
+			LogitScale: ls,
+			AttnScale:  float32(a.AttnScale),
+		}
+	}
+	return spec
+}
+
 // MoEResidentParams returns the MoE knobs the GPU resident runner needs (ok=false for
 // a dense model). sharedInter > 0 marks an always-on shared expert; sharedUngated picks
 // the GLM/DeepSeek (no sigmoid gate) combine; nGroup > 1 is DeepSeek group-limited
 // routing (topkGroup groups kept).
 func (m *Model) MoEResidentParams() (nE, k, inter, sharedInter int, sigmoid, norm, sharedUngated bool, scale float64, nGroup, topkGroup int, ok bool) {
-	mo := m.w.arch.MoE
+	mo := m.ResidentSpec().MoE
 	if mo == nil {
 		return 0, 0, 0, 0, false, false, false, 0, 0, 0, false
 	}
@@ -765,101 +961,35 @@ type Gemma4MoEResidentBundle struct {
 // MoEExpertKind is the precision of the routed experts' weights as a resident build stacks them (the first routed expert's
 // first projection: Gemma 4's fused gate‖up, else gate, up or down), or "" when the model has no routed experts. A backend
 // whose stacked-expert kernels take only some kinds declines a model by it before uploading anything, and Plan mirrors that.
-func (m *Model) MoEExpertKind() string {
-	for i := range m.w.Layers {
-		lw := &m.w.Layers[i]
-		if gm := lw.gemma4moe; gm != nil && len(gm.expertsGateUp) > 0 {
-			return gm.expertsGateUp[0].Kind()
-		}
-		if len(lw.Experts) > 0 {
-			e := &lw.Experts[0]
-			for _, w := range []*linalg.WeightMat{&e.Gate, &e.Up, &e.Down} {
-				if w.Rows() > 0 {
-					return w.Kind()
-				}
-			}
-		}
-	}
-	return ""
-}
+func (m *Model) MoEExpertKind() string { return m.BackendView().MoEExpertKind() }
 
 // Gemma4MoEResidentLayer returns the build bundle for gemma4 MoE layer l, or ok=false for a
 // non-gemma4 model / dense layer. Used by the CUDA backend's resident build (task 2c).
-func (m *Model) Gemma4MoEResidentLayer(l int) (b Gemma4MoEResidentBundle, ok bool) {
-	if m.w.arch.gemma4 == nil || l < 0 || l >= len(m.w.Layers) {
-		return b, false
-	}
-	gm := m.w.Layers[l].gemma4moe
-	if gm == nil {
-		return b, false
-	}
-	proj, has := gm.routerProj.F32()
-	if !has {
-		// M-27 (docs/audit-2026-09-10.md): named, so a future regression here (the router
-		// loaded non-f32) surfaces as this instead of the caller's unrelated "gate/up/down
-		// proj zero-shape" error further down — the same reasoning as cuda/backend.go's own
-		// "router is %q, not f32" decline for the generic (non-gemma4) MoE path.
-		logs.Warnf("[resident] gemma4 MoE layer %d: router is %q, not f32 — declining", l, gm.routerProj.Kind())
-		return b, false
-	}
-	if len(gm.routerScale) != m.w.arch.HiddenDim {
-		return b, false
-	}
-	H := m.w.arch.HiddenDim
-	root := float32(math.Pow(float64(H), -0.5))
-	scaled := make([]float32, len(proj))
-	for e := 0; e < gm.nE; e++ {
-		for i := range H {
-			scaled[e*H+i] = proj[e*H+i] * gm.routerScale[i] * root
-		}
-	}
-	gu := make([]*linalg.WeightMat, gm.nE)
-	dn := make([]*linalg.WeightMat, gm.nE)
-	for e := 0; e < gm.nE; e++ {
-		gu[e], dn[e] = &gm.expertsGateUp[e], &gm.expertsDown[e]
-	}
-	return Gemma4MoEResidentBundle{
-		PreFFNNorm: gm.preFFNNorm, PostFFNNorm1: gm.postFFNNorm1, PreFFNNorm2: gm.preFFNNorm2,
-		PostFFNNorm2: gm.postFFNNorm2, PostFFNNorm: gm.postFFNNorm,
-		MlpGate: &gm.mlpGate, MlpUp: &gm.mlpUp, MlpDown: &gm.mlpDown,
-		RouterProjScaled: scaled, PerExpertScale: gm.perExpertScale,
-		ExpertsGateUp: gu, ExpertsDown: dn,
-		LayerScalar: gm.layerScalar, DenseInter: gm.denseInter, MoeInter: gm.moeInter,
-		NE: gm.nE, TopK: gm.topK,
-	}, true
+func (m *Model) Gemma4MoEResidentLayer(l int) (Gemma4MoEResidentBundle, bool) {
+	return m.BackendView().Layer(l).Gemma4MoEBundle()
 }
 
 // IsGemma4Resident reports whether this is a gemma4 model at all (dense or MoE, shared-KV or
 // not) — the broader signal for resident build steps that apply to every gemma4 checkpoint, not
 // just the enable_moe_block ones HasGemma4MoEResident gates.
-func (m *Model) IsGemma4Resident() bool { return m.w.arch.gemma4 != nil }
+func (m *Model) IsGemma4Resident() bool { return m.BackendView().IsGemma4() }
 
 // HasGemma4MoEResident reports whether this is a gemma4 model with any enable_moe_block layer — the
 // signal the CUDA backend uses to route around the generic MoE build (which can't express the
 // parallel dense‖MoE join) into gemma4MoeMLP.
-func (m *Model) HasGemma4MoEResident() bool {
-	if m.w.arch.gemma4 == nil {
-		return false
-	}
-	for l := range m.w.Layers {
-		if m.w.Layers[l].gemma4moe != nil {
-			return true
-		}
-	}
-	return false
-}
+func (m *Model) HasGemma4MoEResident() bool { return m.BackendView().HasGemma4MoE() }
 
 // MLAResidentParams returns the DeepSeek/Kimi MLA geometry the GPU resident runner
 // needs (ok=false when the arch is not MLA). attnScale is the resolved q·k softmax
 // multiplier (qk_head_dim^-0.5, with any YaRN mscale²); ropeScale is the YaRN
 // attention factor folded into the decoupled RoPE cos/sin (1.0 when none).
 func (m *Model) MLAResidentParams() (qLoRA, kvLoRA, qkNope, qkRope, vHead int, interleave bool, attnScale, ropeScale float64, ok bool) {
-	p := m.w.arch.mla
+	p := m.ResidentSpec().MLA
 	if p == nil {
 		return 0, 0, 0, 0, 0, false, 0, 0, false
 	}
 	return p.QLoRARank, p.KVLoRARank, p.QKNopeHeadDim, p.QKRopeHeadDim, p.VHeadDim,
-		p.ropeInterleave, m.w.arch.AttnScale, m.w.arch.ropeMscale(0), true
+		p.RopeInterleave, p.AttnScale, p.RopeScale, true
 }
 
 // MLALayerWeights returns layer l's MLA projection weights (f32) for the resident
@@ -867,130 +997,63 @@ func (m *Model) MLAResidentParams() (qLoRA, kvLoRA, qkNope, qkRope, vHead int, i
 // (kvA) + its latent norm (kvANorm), the per-head kv up-proj kvB (sliced into W_UK /
 // W_UV on the GPU side), and the output proj. nil qA ⇒ the direct qProj (V2-Lite).
 func (m *Model) MLALayerWeights(l int) (qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj []float32) {
-	w := m.w.Layers[l].mla
-	return w.qAProj, w.qALayernorm, w.qBProj, w.qProj, w.kvAProj, w.kvALayernorm, w.kvBProj, w.oProj
+	return m.BackendView().Layer(l).MLAWeights()
 }
 
 // SlidingWindowResident returns the sliding-window size for the resident runner (0 when
 // the model is full-attention). Local (windowed) layers attend only the last `window`
 // positions; the runner computes the per-token window start (Lever C6).
-func (m *Model) SlidingWindowResident() int { return m.w.arch.SlidingWindow }
+func (m *Model) SlidingWindowResident() int { return m.BackendView().SlidingWindow() }
 
 // HasQKNorm reports per-head RMSNorm on Q/K before RoPE (Qwen3, Gemma3). The WebGPU/CUDA
 // runner handles it (Lever C1); a backend that doesn't must decline such models.
-func (m *Model) HasQKNorm() bool { return m.w.arch.QKNorm }
+func (m *Model) HasQKNorm() bool { return m.BackendView().HasQKNorm() }
 
 // PartialRotary reports RoPE that rotates only the first RotaryDim (<HeadDim) dims (Phi's
 // partial_rotary_factor). A full-rotary backend must decline these.
-func (m *Model) PartialRotary() bool {
-	return m.w.arch.RotaryDim != 0 && m.w.arch.RotaryDim < m.w.arch.HeadDim
-}
+func (m *Model) PartialRotary() bool { return m.BackendView().PartialRotary() }
 
 // RotaryDimResident is the number of head dims RoPE actually rotates, resolved: HeadDim for
 // the full-rotary families, RotaryDim (< HeadDim) for partial rotary. Backends need the WIDTH,
 // not just PartialRotary()'s yes/no — the un-rotated tail still has to reach the KV cache, so a
 // backend that knows only "this is partial" cannot dispatch it.
-func (m *Model) RotaryDimResident() int {
-	if m.w.arch.RotaryDim != 0 && m.w.arch.RotaryDim < m.w.arch.HeadDim {
-		return m.w.arch.RotaryDim
-	}
-	return m.w.arch.HeadDim
-}
+func (m *Model) RotaryDimResident() int { return m.BackendView().RotaryDim() }
 
 // EmbedScaleResident is the token-embedding multiplier (Gemma = √hidden; 0/1 = none).
-func (m *Model) EmbedScaleResident() float64 { return m.w.arch.EmbedScale }
+func (m *Model) EmbedScaleResident() float64 { return m.BackendView().EmbedScale() }
 
 // LayerIsLocalResident reports whether layer i is a sliding-window (local) layer — i.e. a
 // window is set AND the arch marks the layer non-global. Mistral is all-local; Mellum
 // interleaves (3:1 sliding/full).
-func (m *Model) LayerIsLocalResident(i int) bool {
-	return m.w.arch.SlidingWindow > 0 && !m.w.arch.isGlobalLayer(i)
-}
+func (m *Model) LayerIsLocalResident(i int) bool { return m.BackendView().Layer(i).IsLocal() }
 
 // HeadDimAtResident / KVHeadsAtResident / RotaryDimAtResident expose layer i's attention
-// geometry to a resident runner that plumbs per-layer widths (9a-P2). They delegate to the
-// SAME arch methods the CPU forward uses (headDimAt/kvHeadsAt/isGlobalLayer), so the runner's
-// interleave can never drift from the Gemma 4 program walk's — Gemma 4's global layers report the
-// wider head_dim / fewer KV heads / partial rotary; every uniform family collapses to the
-// model-level Architecture fields.
-func (m *Model) HeadDimAtResident(i int) int { return m.w.arch.headDimAt(i) }
-func (m *Model) KVHeadsAtResident(i int) int { return m.w.arch.kvHeadsAt(i) }
+// geometry to a resident runner that plumbs per-layer widths (9a-P2).
+func (m *Model) HeadDimAtResident(i int) int { return m.BackendView().Layer(i).HeadDim() }
+func (m *Model) KVHeadsAtResident(i int) int { return m.BackendView().Layer(i).KVHeads() }
 
 // VFromKResident reports whether layer i is a K=V layer (attention_k_eq_v): it carries NO v_proj, V is
-// v_norm(the raw k_proj output). Gemma 4 sets this on its GLOBAL layers (12B/26B; off for E2B). It is
-// arch.KVShared, deliberately distinct from SharedKVLayers (the E-models' cross-layer KV reuse).
-//
-// Two sources, OR'd: the config flag (attention_k_eq_v) and the per-layer LayerWeights.VFromK the loader sets.
-// A GGUF carries no config flag, so its loader marks a layer by the ABSENCE of attn_v.weight (gguf.go); reading
-// only the config flag would make a GGUF K=V layer look like a plain QKV layer with an empty V. The per-layer
-// flag is also what a .giw stores.
-func (m *Model) VFromKResident(i int) bool {
-	if m.w.arch.gemma4 == nil {
-		return false
-	}
-	if m.w.arch.gemma4.KVShared && m.w.arch.isGlobalLayer(i) {
-		return true
-	}
-	return i >= 0 && i < len(m.w.Layers) && m.w.Layers[i].VFromK
-}
+// v_norm(the raw k_proj output).
+func (m *Model) VFromKResident(i int) bool { return m.BackendView().Layer(i).VFromK() }
 
-// Gemma4DenseLayerScalarAtResident is layer i's per-layer output scalar (out = h*layerScalar, applied AFTER the dense
-// MLP residual add and the PLE branch, as forward_gemma4.go does) for a PLAIN DENSE gemma4 layer; the MoE case carries
-// its own copy in Gemma4MoEResidentBundle. LayerScalar defaults to 1 when the tensor is absent, so this is a real
-// multiply for every dense gemma4 layer. Returns 0 (the CPU forward's "skip" sentinel) for a non-gemma4 model or an
-// out-of-range index.
+// Gemma4DenseLayerScalarAtResident is layer i's per-layer output scalar for a plain dense gemma4 layer.
 func (m *Model) Gemma4DenseLayerScalarAtResident(i int) float32 {
-	if m.w.arch.gemma4 == nil || i < 0 || i >= len(m.w.Layers) {
-		return 0
-	}
-	return m.w.Layers[i].LayerScalar
+	return m.BackendView().Layer(i).Gemma4DenseScalar()
 }
 
-// KVSrcAtResident is the layer index whose K/V a resident runner should actually attend over for
-// layer i — itself, unless i is one of Gemma 4's E-model cross-layer-KV-shared tail layers
-// (arch.gemma4.SharedKVLayers, unrelated to VFromKResident/attention_k_eq_v above), in which
-// case it is the last non-shared layer of the SAME attention type. Every non-gemma4 family (and
-// every gemma4 checkpoint with SharedKVLayers==0, e.g. 26B-A4B/31B) returns i unconditionally.
-func (m *Model) KVSrcAtResident(i int) int { return m.w.arch.gemma4KVSrcAt(i) }
+// KVSrcAtResident is the layer index whose K/V a resident runner should actually attend over for layer i.
+func (m *Model) KVSrcAtResident(i int) int { return m.BackendView().Layer(i).KVSrc() }
 
-// RotaryDimAtResident is the rotary width the resident rope_kv kernel pairs over for layer i, i.e. 2×rhalf. Gemma 4
-// rotates the FULL head width on every layer (rhalf = headDim/2, the "split at headDim/2" pairing of applyRoPE and
-// gemma4InvFreq); its GLOBAL layers' partial rotation is carried by ZERO frequencies in the tail of
-// RopeInvFreqLayerResident, not by a shorter rhalf, so this returns headDimAt(i). Uniform families with a contiguous
-// partial-rotary block (GLM/Phi) use the model-level rotary dim.
-func (m *Model) RotaryDimAtResident(i int) int {
-	if m.w.arch.gemma4 != nil {
-		return m.w.arch.headDimAt(i) // full-width pairing; partial-ness lives in the invFreq zeros
-	}
-	return m.RotaryDimResident()
-}
+// RotaryDimAtResident is the rotary width the resident rope_kv kernel pairs over for layer i, i.e. 2×rhalf.
+func (m *Model) RotaryDimAtResident(i int) int { return m.BackendView().Layer(i).RotaryDim() }
 
-// RopeInvFreqLayerResident is layer i's inverse-frequency table for the resident runner. For
-// Gemma 4 the generic finalizeRoPE table is WRONG (single model-level rotary dim; can't express
-// the global layer's proportional rotary over the wide head), so build the real per-layer table
-// with gemma4InvFreq — headDim/2 entries, base-local full-rotary for local layers, base-global
-// proportional (first GlobalRotaryDim/2 real, rest zero) for global. len == headDim/2 == rhalf,
-// which the cuda builder asserts. Every other family returns the generic per-layer table.
+// RopeInvFreqLayerResident is layer i's inverse-frequency table for the resident runner.
 func (m *Model) RopeInvFreqLayerResident(i int) []float32 {
-	a := m.w.arch
-	if a.gemma4 != nil {
-		hd, rot, base := a.HeadDim, a.HeadDim, a.RoPELocalBase
-		if a.isGlobalLayer(i) {
-			hd, rot, base = a.gemma4.GlobalHeadDim, a.gemma4.GlobalRotaryDim, a.RoPEGlobalBase
-		}
-		f := gemma4InvFreq(hd, rot, base)
-		out := make([]float32, len(f))
-		for j, v := range f {
-			out[j] = float32(v)
-		}
-		return out
-	}
-	return m.RopeInvFreqLayer(i)
+	return m.BackendView().Layer(i).RopeInvFreq()
 }
 
-// LayerRopeGlobal reports whether layer i uses the global RoPE table (vs the local one) —
-// the per-layer-type RoPE selector (Lever C7). For single-rope models this is always true.
-func (m *Model) LayerRopeGlobal(i int) bool { return m.w.arch.isGlobalLayer(i) }
+// LayerRopeGlobal reports whether layer i uses the global RoPE table (vs the local one).
+func (m *Model) LayerRopeGlobal(i int) bool { return m.BackendView().Layer(i).RopeGlobal() }
 
 // RopeInvFreqLayer returns layer i's RoPE inverse-frequency table as float32: the global or local table per
 // the layer's attention type (Mellum YaRN-on-global vs default-local).
@@ -1002,7 +1065,7 @@ func (m *Model) LayerRopeGlobal(i int) bool { return m.w.arch.isGlobalLayer(i) }
 // A RESIDENT-ONLY accessor: the CPU forward skips ropeAt for a NoPE layer.
 //
 // A whole-model no-RoPE arch (rope_theta absent, arch.NoPositionEncoding) never populates ropeInvFreqGlobal/Local,
-// so ropeInvFreq(i) is empty for every layer. The table is then rotaryDim()/2 wide, the width every resident rope
+// so ropeInvFreq(i) is empty for every layer. The table is then RotaryDim()/2 wide, the width every resident rope
 // kernel launch expects (rhalf): a zero-length table would be a 0-byte device allocation, a hard error on CUDA
 // (docs/tasks/task-gpu-paths-2026-09.md, G5; docs/code-notes/decoder.md#Model.RopeInvFreqLayer).
 func (m *Model) RopeInvFreqLayer(i int) []float32 {
@@ -1024,40 +1087,17 @@ func (m *Model) RopeInvFreqLayer(i int) []float32 {
 
 // RopeMscaleLayer returns layer i's RoPE cos/sin scale (YaRN attention_factor; 1.0 for
 // non-YaRN layers) — folded into the resident rope kernel per layer.
-func (m *Model) RopeMscaleLayer(i int) float64 { return m.w.arch.ropeMscale(i) }
+func (m *Model) RopeMscaleLayer(i int) float64 { return m.BackendView().Layer(i).RopeMscale() }
 
-// AttnTempScale returns the query-side attention-temperature scale (Ministral 3's AttnTempBeta/AttnTempOrigMaxPos; see
-// that field's comment for the formula) for the resident forward at absolute position pos (FeatAttnTemp). 1 (no-op)
-// for every family without it: the beta==0 guard decoder/attention.go's sequential path uses is load-bearing here too,
-// since the formula would otherwise divide by AttnTempOrigMaxPos==0 and poison Q with NaN.
-func (m *Model) AttnTempScale(pos int) float32 {
-	a := m.w.arch
-	if a.AttnTempBeta == 0 {
-		return 1
-	}
-	return float32(1 + a.AttnTempBeta*math.Log1p(math.Floor(float64(pos)/a.AttnTempOrigMaxPos)))
-}
+// AttnTempScale returns the query-side attention-temperature scale for the resident forward at absolute position pos (FeatAttnTemp).
+func (m *Model) AttnTempScale(pos int) float32 { return m.BackendView().AttnTempScale(pos) }
 
-// AttnTempParams returns Ministral 3's raw attention-temperature parameters (beta, origMaxPos)
-// for a backend that must compute AttnTempScale PER ROW inside a single batched kernel launch
-// (position varies within the launch, unlike the sequential decode path's one AttnTempScale(pos)
-// call per token) — CUDA's batched prefill (prefillCore/rope_kv_batched). beta==0 for every
-// family without this feature; the caller must apply the SAME guard AttnTempScale does before
-// dividing by origMaxPos.
-func (m *Model) AttnTempParams() (beta, origMaxPos float64) {
-	return m.w.arch.AttnTempBeta, m.w.arch.AttnTempOrigMaxPos
-}
+// AttnTempParams returns Ministral 3's raw attention-temperature parameters (beta, origMaxPos).
+func (m *Model) AttnTempParams() (beta, origMaxPos float64) { return m.BackendView().AttnTempParams() }
 
 // RopeInvFreq returns the rotary inverse frequencies (layer 0; uniform across an
 // eligible model's dense layers) as float32 — the GPU bridge's RoPE table.
-func (m *Model) RopeInvFreq() []float32 {
-	inv := m.w.arch.ropeInvFreq(0)
-	out := make([]float32, len(inv))
-	for i, v := range inv {
-		out[i] = float32(v)
-	}
-	return out
-}
+func (m *Model) RopeInvFreq() []float32 { return m.BackendView().RopeInvFreq() }
 
 // AttnScale is the attention softmax q·k multiplier the resident backends (CUDA/Metal/WebGPU) apply: the
 // registry-RESOLVED arch.AttnScale, which is 1/√headDim for the common case but deliberately not for several
@@ -1072,75 +1112,47 @@ func (m *Model) AttnScale() float32 {
 }
 
 // RMSAddOne reports the Gemma (1+w) RMSNorm offset (false for Qwen/Llama).
-func (m *Model) RMSAddOne() bool { return m.w.arch.RMSAddOne }
+func (m *Model) RMSAddOne() bool { return m.BackendView().RMSAddOne() }
 
 // LayerNormResident reports whether this arch normalizes with mean-centered LayerNorm
 // (GPT-2, Cohere) rather than RMSNorm — FeatLayerNorm.
-func (m *Model) LayerNormResident() bool { return m.w.arch.Norm == NormLayer }
+func (m *Model) LayerNormResident() bool { return m.BackendView().LayerNorm() }
 
 // NonGatedMLPResident reports whether the FFN is a plain up→act→down, no gate
 // (GPT-2, Nemotron relu²) — FeatNonGatedMLP.
-func (m *Model) NonGatedMLPResident() bool { return m.w.arch.NonGatedMLP }
+func (m *Model) NonGatedMLPResident() bool { return m.BackendView().NonGatedMLP() }
 
 // OutBiasResident reports an additive bias on the attention output projection
 // (GPT-2, gpt-oss) — FeatOutBias.
-func (m *Model) OutBiasResident() bool { return m.w.arch.OutBias }
+func (m *Model) OutBiasResident() bool { return m.BackendView().OutBias() }
 
 // LearnedPosResident reports learned absolute position embeddings with no RoPE at
 // all (GPT-2) — FeatLearnedPos.
-func (m *Model) LearnedPosResident() bool { return m.w.arch.LearnedPosEmbed }
+func (m *Model) LearnedPosResident() bool { return m.BackendView().LearnedPos() }
 
 // PosEmbedResident returns the learned position-embedding table (GPT-2's wpe) —
 // nil/zero-value WeightMat for any family without LearnedPosResident.
-func (m *Model) PosEmbedResident() *linalg.WeightMat { return &m.w.PosEmbed }
+func (m *Model) PosEmbedResident() *linalg.WeightMat { return m.BackendView().PosEmbed() }
 
 // Dims returns the model shape from the resolved Architecture — authoritative,
 // unlike Config() (Cfg), which a GGUF-loaded or .giw model may leave partly
 // zero. The forward pass reads these.
 func (m *Model) Dims() (hidden, nLayers, nH, nKV, hd, inter, vocab int) {
-	a := m.w.arch
-	return a.HiddenDim, a.NumLayers, a.NumHeads, a.NumKVHeads, a.HeadDim, a.IntermediateDim, a.VocabSize
+	return m.BackendView().Dims()
 }
 
 // MRopeSectionResident exposes Qwen2.5-VL's m-RoPE head_dim/2 split across the
-// (temporal,height,width) position components — nil/empty for every non-m-RoPE family. A resident
-// backend's m-RoPE prefill kernel (decoder.ResidentMRoPEPrefill) needs this ONCE, at build time,
-// to compute its own cumulative section boundaries; every other resident capability is family-
-// agnostic and has no equivalent accessor.
-func (m *Model) MRopeSectionResident() []int { return m.w.arch.MRopeSection }
+// (temporal,height,width) position components — nil/empty for every non-m-RoPE family.
+func (m *Model) MRopeSectionResident() []int { return m.BackendView().MRopeSection() }
 
-// MRopeInterleavedResident reports whether the model's m-RoPE assigns position components per frequency INDEX (Qwen3-VL and the
-// Qwen3.5+ family: decoder.mropeComponentInterleaved) rather than in contiguous section blocks (Qwen2.5-VL: mropeComponent). A
-// resident that rotates by m-RoPE must apply the matching rule.
-func (m *Model) MRopeInterleavedResident() bool { return m.w.arch.MRopeInterleaved }
+// MRopeInterleavedResident reports whether the model's m-RoPE assigns position components per frequency INDEX.
+func (m *Model) MRopeInterleavedResident() bool { return m.BackendView().MRopeInterleaved() }
 
-// MRopeAxisResident is the m-RoPE position component (0 temporal, 1 height, 2 width) of each of the first half rotary
-// pairs, by the same rule the CPU rotates with (mropeComponent, or mropeComponentInterleaved for the interleaved layout), or
-// nil when the model has no three-way m-RoPE section. A resident's m-RoPE prefill kernel reads it as a table (S16), so the
-// layout lives in one place.
-func (m *Model) MRopeAxisResident(half int) []int {
-	sec := m.w.arch.MRopeSection
-	if len(sec) != 3 || half <= 0 {
-		return nil
-	}
-	comp := mropeComponent
-	if m.w.arch.MRopeInterleaved {
-		comp = mropeComponentInterleaved
-	}
-	axis := make([]int, half)
-	for d := range axis {
-		axis[d] = comp(d, sec)
-	}
-	return axis
-}
+// MRopeAxisResident is the m-RoPE position component (0 temporal, 1 height, 2 width) of each of the first half rotary pairs.
+func (m *Model) MRopeAxisResident(half int) []int { return m.BackendView().MRopeAxis(half) }
 
-// PairwiseRoPEResident reports whether the generic scalar rope is GPT-J PAIRWISE (adjacent dims
-// 2d, 2d+1 share frequency d: Cohere/Command-R, Cohere2/Command-R7B, Aya, GLM-OCR) rather than the
-// NeoX half-split (d, d+half) every other family uses — the same predicate FeatPairwiseRoPE derives
-// from. A resident backend binds its pairwise rope kernels when this is true; running the half-split
-// kernels on such a model is exact at position 0 and wrong from position 1 (see FeatPairwiseRoPE).
-// False for MLA (DeepSeek/Kimi: mla.cu carries its own interleave, MLAResidentParams).
-func (m *Model) PairwiseRoPEResident() bool { return m.w.arch.pairwiseRoPE() }
+// PairwiseRoPEResident reports whether the generic scalar rope is GPT-J PAIRWISE.
+func (m *Model) PairwiseRoPEResident() bool { return m.BackendView().PairwiseRoPE() }
 
 // NormEps is the RMSNorm epsilon (arch-backed).
 func (m *Model) NormEps() float32 {
@@ -1150,15 +1162,11 @@ func (m *Model) NormEps() float32 {
 	return 1e-6
 }
 
-// FinalLogitSoftcapResident is the Gemma final-logit softcap (30 for Gemma 4; 0 for every
-// non-softcapped family). A resident backend declaring FeatFinalLogitSoftcap applies
-// softcap·tanh(logits/softcap) host-side after readback, mirroring logitsFromHidden.
-func (m *Model) FinalLogitSoftcapResident() float32 { return float32(m.w.arch.FinalLogitSoftcap) }
+// FinalLogitSoftcapResident is the Gemma final-logit softcap (30 for Gemma 4; 0 for every non-softcapped family).
+func (m *Model) FinalLogitSoftcapResident() float32 { return m.BackendView().FinalLogitSoftcap() }
 
-// AttnLogitSoftcapResident is the attention-score softcap (FeatAttnLogitSoftcap), 0 when the model has none. A
-// resident backend that declares the feature computes cap·tanh(score/cap) on each scaled score before the mask and the
-// softmax, as softcapScore does, in every attention kernel a capped layer can take.
-func (m *Model) AttnLogitSoftcapResident() float32 { return float32(m.w.arch.AttnLogitSoftcap) }
+// AttnLogitSoftcapResident is the attention-score softcap (FeatAttnLogitSoftcap), 0 when the model has none.
+func (m *Model) AttnLogitSoftcapResident() float32 { return m.BackendView().AttnLogitSoftcap() }
 
 // withResidency builds the GPU resident decoder if the backend supports it and
 // the arch is eligible, then returns m. A no-op for the CPU backend / ineligible
@@ -1217,8 +1225,8 @@ func (m *Model) withResidency() *Model {
 		return m
 	}
 	m.resident = rf
-	if d, ok := rf.(ResidentKVDemoter); ok && m.kvSnaps != nil && m.kvDemote && !m.kvShareOff {
-		d.SetKVHostBudget(m.kvSnaps)
+	if kv := m.resKV(); kv.KVDemoterAvailable() && m.kvSnaps != nil && m.kvDemote && !m.kvShareOff {
+		kv.SetKVHostBudget(m.kvSnaps)
 	}
 	// BuildResident's host-side work (the CUDA backend packs every layer's weights on the Go heap before uploading,
 	// and stages the expert stacks in pinned memory) is garbage the moment it returns, but Go hands freed heap back
@@ -1240,7 +1248,25 @@ func (m *Model) withResidencyOrAbort() (*Model, error) {
 		_ = m.Close()
 		return nil, err
 	}
+	if err := m.backendDeclinedErr(); err != nil {
+		_ = m.Close()
+		return nil, err
+	}
 	return m, nil
+}
+
+// backendDeclinedErr is Options.RequireBackend's refusal: an ErrBackendDeclined error naming the backend and the decline when
+// the load asked for a backend other than the CPU and built no resident runner on it, else nil.
+func (m *Model) backendDeclinedErr() error {
+	be := m.kvOpts.Backend
+	if !m.kvOpts.RequireBackend || be == "" || be == "cpu" || m.ResidentActive() {
+		return nil
+	}
+	reason := m.ResidentDecline()
+	if reason == "" {
+		reason = "no reason recorded"
+	}
+	return errorOfKind(ErrBackendDeclined, "decoder: backend %q built no resident runner and RequireBackend refuses the CPU fallback: %s", be, reason)
 }
 
 // LoadAbort is Options.LoadAbort as the load that built this model passed it: a backend's resident build polls it between layers and
@@ -1318,61 +1344,37 @@ var releaseHostMemory = debug.FreeOSMemory
 // attnScale is the attention q·k multiplier (folded into the resident attention scale). Granite
 // gated-RMSNorm is over the full dInner (NormGroups=1).
 func (m *Model) GraniteResidentParams() (nHeads, headDim, dState, nGroups, dConv int, embMul, residMul, logitScale, attnScale float32, ok bool) {
-	g := m.w.arch.granite
+	g := m.ResidentSpec().Granite
 	if g == nil {
 		return 0, 0, 0, 0, 0, 0, 0, 0, 0, false
 	}
-	ls := float32(1)
-	if m.w.arch.LogitScale != 0 {
-		ls = float32(m.w.arch.LogitScale)
-	}
-	em, rm := g.EmbMul, g.ResidMul
-	if os.Getenv("GOINFER_SSM_NOMUL") != "" { // isolation seam: identity multipliers on both sides
-		em, rm, ls = 1, 1, 1
-	}
-	return g.NHeads, g.HeadDim, g.DState, g.NGroups, g.DConv, em, rm, ls, float32(m.w.arch.AttnScale), true
+	return g.NHeads, g.HeadDim, g.DState, g.NGroups, g.DConv, g.EmbMul, g.ResidMul, g.LogitScale, g.AttnScale, true
 }
 
 // GraniteMambaLayer reports whether layer i is a Mamba-2 mixer (vs GQA attention).
-func (m *Model) GraniteMambaLayer(i int) bool { return m.w.arch.isMambaLayer(i) }
+func (m *Model) GraniteMambaLayer(i int) bool { return m.BackendView().Layer(i).GraniteMamba() }
 
 // NemotronResidentParams returns the resident geometry for Nemotron-H (the dense squared-ReLU
 // hybrid: Mamba-2 / NoPE-GQA / non-gated relu² MLP, single-op-per-block, no multipliers, no MoE).
-// attnScale is the GQA q·k multiplier (1/√head_dim). normGroups is the Mamba gated-RMSNorm group
-// count — Nemotron normalizes PER GROUP (NGroups), unlike Granite's full-dInner (1). ok=false for
-// non-nemotron archs.
 func (m *Model) NemotronResidentParams() (nHeads, headDim, dState, nGroups, dConv, normGroups int, attnScale float32, ok bool) {
-	np := m.w.arch.nemotron
+	np := m.ResidentSpec().Nemotron
 	if np == nil {
 		return 0, 0, 0, 0, 0, 0, 0, false
 	}
-	return np.NHeads, np.HeadDim, np.DState, np.NGroups, np.DConv, np.NGroups, float32(m.w.arch.AttnScale), true
+	return np.NHeads, np.HeadDim, np.DState, np.NGroups, np.DConv, np.NormGroups, np.AttnScale, true
 }
 
-// NemotronBlockKind returns layer i's single-op kind: 0 mamba · 1 attention · 2 mlp (the
-// arch's nemoMamba/nemoAttn/nemoMLP). Mamba weights reuse GraniteMambaWeights (model-agnostic).
-func (m *Model) NemotronBlockKind(i int) uint8 { return m.w.arch.nemotron.blockKind[i] }
+// NemotronBlockKind returns layer i's single-op kind: 0 mamba · 1 attention · 2 mlp.
+func (m *Model) NemotronBlockKind(i int) uint8 { return m.BackendView().Layer(i).NemotronBlockKind() }
 
-// GraniteMambaWeights returns layer i's f32 Mamba-2 mixer tensors (nil if the layer is an
-// attention layer). The resident build quantizes inProj/outProj to W8A8 and uploads
-// convW/convB/aLog/d/dtBias/normW as f32; aLog is folded to Aexp=-exp(aLog) at build.
+// GraniteMambaWeights returns layer i's f32 Mamba-2 mixer tensors (nil if the layer is an attention layer).
 func (m *Model) GraniteMambaWeights(i int) (inProj, convW, convB, aLog, dW, dtBias, normW, outProj []float32) {
-	w := m.w.Layers[i].mamba
-	if w == nil {
-		return
-	}
-	return w.inProj, w.convW, w.convB, w.aLog, w.d, w.dtBias, w.normW, w.outProj
+	return m.BackendView().Layer(i).GraniteMambaWeights()
 }
 
-// MambaProjInt8 returns layer i's Mamba in_proj and out_proj as per-row int8 weight matrices when the load holds them so
-// (a quantized Nemotron-H load), nil otherwise; GraniteMambaWeights then returns nil for those two. They are
-// linalg.QuantizeRowsInt8 of the f32 weights, the codes a backend would make from GraniteMambaWeights itself.
+// MambaProjInt8 returns layer i's Mamba in_proj and out_proj as per-row int8 weight matrices when the load holds them so.
 func (m *Model) MambaProjInt8(i int) (in, out *linalg.WeightMat) {
-	w := m.w.Layers[i].mamba
-	if w == nil || w.inQ.Rows() == 0 {
-		return nil, nil
-	}
-	return &w.inQ, &w.outQ
+	return m.BackendView().Layer(i).MambaProjInt8()
 }
 
 // ResidentActive reports whether the GPU full-residency decode path is built and
@@ -1382,30 +1384,20 @@ func (m *Model) ResidentActive() bool { return m.resident != nil }
 // ResidentContextCap returns the resident backend's fixed KV/attention capacity in positions, or 0
 // when the model is not GPU-resident or its backend exposes no cap. A stateless prompt longer than
 // this cannot be prefilled on the resident path, so a caller can reject it up front rather than
-// fail mid-prefill (audit R-10). Mirrors the ResidentCapped clamp generateInto applies to maxTokens.
-func (m *Model) ResidentContextCap() int {
-	if m.resident == nil {
-		return 0
+// fail mid-prefill (audit R-10). clampToResidentCap applies the same cap to maxTokens.
+func (m *Model) ResidentContextCap() int { return residentCapsOf(m.resident).ContextCap }
+
+// clampToResidentCap is maxTokens cut so that a turn starting at gpuPos ends at the resident's context cap, and whether it was cut.
+// A resident without a cap, or a cap of 0, cuts nothing; the result may be 0 when the prompt fills the cap.
+func (m *Model) clampToResidentCap(gpuPos, maxTokens int) (int, bool) {
+	if c := m.ResidentContextCap(); c > 0 && gpuPos+maxTokens > c {
+		return c - gpuPos, true
 	}
-	if capper, ok := m.resident.(ResidentCapped); ok {
-		return capper.ContextCap()
-	}
-	return 0
+	return maxTokens, false
 }
 
-// ResidentContextNoted is an optional ResidentForward extension: a few words on how the backend arrived at its context cap
-// ("fit: 2 slots, 1.9 GB KV", "paged MoE keeps the default"), for a load banner. "" when the caller's own -ctx set it.
-type ResidentContextNoted interface {
-	ContextNote() string
-}
-
-// ResidentContextNote is the active resident's ContextNote, or "" when there is no resident or it gives none.
-func (m *Model) ResidentContextNote() string {
-	if n, ok := m.resident.(ResidentContextNoted); ok {
-		return n.ContextNote()
-	}
-	return ""
-}
+// ResidentContextNote is the active resident's ContextNote ("fit: 2 slots, 1.9 GB KV"), or "" when there is no resident or it gives none.
+func (m *Model) ResidentContextNote() string { return residentCapsOf(m.resident).ContextNote }
 
 // ResidentContextKVBytes is the KV one resident slot holds at ctx positions on the active resident's backend, at the precision
 // that backend allocates: the figure FitBudgetSummary reports at the resolved context. 0 when no resident is active.
@@ -1413,7 +1405,17 @@ func (m *Model) ResidentContextKVBytes(ctx int) int64 {
 	if m.resident == nil || m.be == nil {
 		return 0
 	}
-	return m.ResidentKVBytes(m.be.Name(), ctx, m.kvF16, m.kvI8)
+	f16, i8 := m.residentKVFlags(m.be.Name())
+	return m.ResidentKVBytes(m.be.Name(), ctx, f16, i8)
+}
+
+// residentKVFlags are the kvF16 and kvI8 ResidentKVBytes is handed for this model's own load on backend: on CUDA the precision its KV policy
+// delivers (int8 only where ResolveKV gives it), elsewhere the load's f16 decision and the CPU cache's int8 request, as before.
+func (m *Model) residentKVFlags(backend string) (kvF16, kvI8 bool) {
+	if backend == "cuda" {
+		return m.kvF16, m.KVDeliveredFor("cuda") == kvPrecI8
+	}
+	return m.kvF16, m.kvI8
 }
 
 // ResidentKVPrecision is the KV-cache precision the resident runner actually allocates — "f32", "f16" or
@@ -1454,8 +1456,8 @@ func (m *Model) DecodePath() string {
 	switch {
 	case m.resident != nil:
 		label := residentQuantLabel(be, m.Quant())
-		if qr, ok := m.resident.(ResidentQuantReporter); ok && qr.ResidentQuant() != "" {
-			label = qr.ResidentQuant()
+		if q := residentCapsOf(m.resident).Quant; q != "" {
+			label = q
 		}
 		return fmt.Sprintf("%s-resident (%s)", be, label)
 	case be == "cpu":
@@ -1487,7 +1489,7 @@ func (m *Model) DecodePath() string {
 
 // residentQuantLabel is DecodePath's resident-quant string, split out so it is testable without a live Model
 // (decoder/staged_device_note_test.go). Metal has no int8 GEMV kernel of its own: unless the resident reports
-// otherwise (ResidentQuantReporter), an Int8()-kind weight is re-quantized to W4A8 at resident-build time, under
+// otherwise (ResidentCaps.Quant), an Int8()-kind weight is re-quantized to W4A8 at resident-build time, under
 // `--quant int8` and `int8int8` and for `int4mix`'s int8-kind tensors, so the label says "→int4". f32 never produces
 // a resident build there. Every other (backend, quant) pair echoes the requested quant.
 func residentQuantLabel(backend, quant string) string {
@@ -1499,13 +1501,14 @@ func residentQuantLabel(backend, quant string) string {
 
 // autoMetalPrecision is why a model stays on the CPU when -backend auto chose metal, "" when it may go resident. A
 // backend the user did not name must not change the precision they loaded at (such as the int8int8 bundle a
-// model-included goinfer-chat carries; R17, docs/tasks/task-first-hour.md). Metal runs int4 resident and dense
-// int8int8 natively (docs/tasks/task-metal-int8-2026-10.md); it re-quantizes int8, int4mix and the int8int8 models
-// native int8 does not cover (MoE, DeltaNet) to int4, and takes no f32. So int8int8 may try the resident here and
+// model-included goinfer-chat carries; R17, docs/tasks/task-first-hour.md). Metal runs int4 resident, dense
+// int8int8 natively (docs/tasks/task-metal-int8-2026-10.md), and q4k on its q4k lane, which keeps the file's K-quant
+// blocks (docs/tasks/task-metal-q4k-2026-10.md); it re-quantizes int8, int4mix and the int8int8 models native int8 does
+// not cover (MoE, DeltaNet) to int4, and takes no f32. So int8int8 may try the resident here and
 // autoMetalKeepsPrecision checks afterwards that it ran natively; the others stay on the CPU. A named -backend
 // metal still runs them re-quantized.
 func autoMetalPrecision(auto bool, backend, quant string) string {
-	if !auto || backend != "metal" || quant == "int4" || quant == "int8int8" {
+	if !auto || backend != "metal" || quant == "int4" || quant == "int8int8" || quant == "q4k" {
 		return ""
 	}
 	switch quant {
@@ -1518,13 +1521,13 @@ func autoMetalPrecision(auto bool, backend, quant string) string {
 }
 
 // autoMetalKeepsPrecision is why a resident -backend auto built on metal must be dropped for the CPU, "" when it keeps
-// it: an int8int8 model the resident did not run natively (ResidentQuantReporter reports no int8int8) was re-quantized
+// it: an int8int8 model the resident did not run natively (ResidentCaps.Quant is not int8int8) was re-quantized
 // to int4, a precision the user did not ask for.
 func autoMetalKeepsPrecision(auto bool, backend, quant string, rf ResidentForward) string {
 	if !auto || backend != "metal" || quant != "int8int8" {
 		return ""
 	}
-	if qr, ok := rf.(ResidentQuantReporter); ok && qr.ResidentQuant() == quant {
+	if residentCapsOf(rf).Quant == quant {
 		return ""
 	}
 	return "-backend auto keeps this int8int8 model on the CPU: metal would re-quantize it to int4 (its int8 kernels cover dense models only; -backend metal does that)"
@@ -1585,12 +1588,11 @@ func (m *Model) PrefillPath() (batched bool, reason string) {
 	if m.knobs.get(knobBatchedPrefill) == "0" {
 		return false, "sequential — GOINFER_BATCHED_PREFILL=0 forces the per-token loop"
 	}
-	pf, ok := m.resident.(Prefiller)
-	if !ok {
+	if !canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe}) {
 		return false, "sequential — this backend has no batched prefill (per-token resident forward)"
 	}
-	if rep, ok := pf.(PrefillPathReporter); ok {
-		return rep.PrefillPath()
+	if batched, reason, ok := m.resPrefill().PrefillPathInfo(); ok {
+		return batched, reason
 	}
 	return true, "batched (backend reports no load-time declines; a per-prompt fallback is still possible)"
 }
@@ -1677,167 +1679,62 @@ func (m *Model) embedResidentScratch(id int, dst, pleScratch []float32) []float3
 // Set only through SetGemma4PLEDropTokenForTest (goinfer_testhooks).
 var gemma4PLEDropTokenForTest bool
 
-// ResidentEmbedLen is the length of every embedding row a ResidentForward receives: HiddenDim, or for a Gemma 4
-// E-model HiddenDim + NumLayers*HiddenSizePerLayerInput (the PLE inputs embedResidentInto appends). A backend checks
-// each row against this, never against HiddenDim alone.
-func (m *Model) ResidentEmbedLen() int {
-	n := m.w.arch.HiddenDim
-	if g4 := m.w.arch.gemma4; g4 != nil {
-		n += m.w.arch.NumLayers * g4.HiddenSizePerLayerInput
-	}
-	return n
-}
+// ResidentEmbedLen is the length of every embedding row a ResidentForward receives.
+func (m *Model) ResidentEmbedLen() int { return m.BackendView().EmbedLen() }
 
-// Gemma4PLEDimResident is a Gemma 4 E-model's per-layer input width (hidden_size_per_layer_input), 0 for every
-// other model. The layer's slice of an embedding row's PLE tail is [HiddenDim + l*P, HiddenDim + (l+1)*P).
-func (m *Model) Gemma4PLEDimResident() int {
-	if g4 := m.w.arch.gemma4; g4 != nil {
-		return g4.HiddenSizePerLayerInput
-	}
-	return 0
-}
+// Gemma4PLEDimResident is a Gemma 4 E-model's per-layer input width (hidden_size_per_layer_input), 0 for every other model.
+func (m *Model) Gemma4PLEDimResident() int { return m.BackendView().Gemma4PLEDim() }
 
-// SandwichNormResident reports whether the arch uses Gemma's 4-norm sandwich — extra norms
-// applied to each SUBLAYER OUTPUT before the residual add (NormPlacement == NormSandwich4).
-// A backend that admits such a model must dispatch PostAttnNorm/PostMLPNorm; note this also
-// rules out folding the residual add into a projection's accumulate epilogue, since the norm
-// has to happen between the projection and the add.
-func (m *Model) SandwichNormResident() bool { return m.w.arch.NormPlacement == NormSandwich4 }
+// SandwichNormResident reports whether the arch uses Gemma's 4-norm sandwich.
+func (m *Model) SandwichNormResident() bool { return m.BackendView().SandwichNorm() }
 
-// PostOnlyNormResident reports whether the arch has NO pre-norm at all (Olmo 3 / Olmo Hybrid's full-attention
-// layers, NormPlacement == NormPostOnly). Model-level, not per-layer: Olmo Hybrid's DeltaNet layers reach NormPre2
-// through NormPlacementLinear, and both backends' DeltaNet mixer never consults this flag. A backend that admits
-// such a model must skip the pre-sublayer norm (the sublayer reads the RAW residual) and dispatch
-// PostAttnNorm/PostMLPNorm on the sublayer OUTPUT before the residual add.
-func (m *Model) PostOnlyNormResident() bool { return m.w.arch.NormPlacement == NormPostOnly }
+// PostOnlyNormResident reports whether the arch has NO pre-norm at all (NormPlacement == NormPostOnly).
+func (m *Model) PostOnlyNormResident() bool { return m.BackendView().PostOnlyNorm() }
 
-// QKNormWholeResident reports whether QK-norm (HasQKNorm) reduces over the WHOLE projected q/k vector (one RMSNorm
-// over num_heads*head_dim) rather than per head: Olmo 3 / Olmo Hybrid (modeling_olmo3.py's
-// Olmo3RMSNorm(num_attention_heads*head_dim)). A backend can reuse its per-head qk-norm kernel with the grid
-// collapsed to one Q block and one K block (nH=1, nKV=1, hd=nH_orig*hd_orig), valid ONLY when nH==nKV (MHA); it
-// must decline rather than mis-normalize a GQA QKNormWhole family.
-func (m *Model) QKNormWholeResident() bool { return m.w.arch.QKNormWhole }
+// QKNormWholeResident reports whether QK-norm (HasQKNorm) reduces over the WHOLE projected q/k vector.
+func (m *Model) QKNormWholeResident() bool { return m.BackendView().QKNormWhole() }
 
-// ParallelBlockResident reports whether the arch computes attention and MLP from ONE shared input norm and sums
-// both into a single residual add (NormPlacement == NormParallel; see that value's own comment for the formula):
-// Cohere/Command-R, Cohere2/Command-R7B. Model-level, a flat model-wide value. A backend must feed the MLP from
-// the SAME normed+quantized activation the attention branch computed (not a fresh norm of the post-attention
-// residual), defer both outputs' residual adds, and not require a per-layer PreMLPNorm (the family has none;
-// registry.go's cohere note).
-func (m *Model) ParallelBlockResident() bool { return m.w.arch.NormPlacement == NormParallel }
+// ParallelBlockResident reports whether the arch computes attention and MLP from ONE shared input norm.
+func (m *Model) ParallelBlockResident() bool { return m.BackendView().ParallelBlock() }
 
-// LogitScaleResident returns the host-side final-logit multiplier for FeatLogitScale families
-// OUTSIDE Granite's own SSM bundle — GraniteResidentParams carries an independent copy of this
-// same arch.LogitScale field alongside its embMul/residMul/attnScale siblings, since that path
-// predates this one; Cohere/Command-R's logits_scaling is the first consumer here. ok=false when
-// the arch declares no logit scale (LogitScale==0 or ==1 — the exact condition features.go:205
-// gates FeatLogitScale on), in which case a backend must not multiply the logits at all.
-func (m *Model) LogitScaleResident() (inv float32, ok bool) {
-	if m.w.arch.LogitScale == 0 || m.w.arch.LogitScale == 1 {
-		return 1, false
-	}
-	return float32(1 / m.w.arch.LogitScale), true
-}
+// LogitScaleResident returns the host-side final-logit multiplier for FeatLogitScale families outside Granite's own SSM bundle.
+func (m *Model) LogitScaleResident() (inv float32, ok bool) { return m.BackendView().LogitScale() }
 
-// GatedActResident returns the MLP activation as its ActKind ordinal, for backends that pass it straight to a kernel
-// that knows 0 (GELU-tanh) and 1 (SiLU). A gated model past admission returns only those two: residentFeatures gives
-// every other gated activation a feature no backend declares. For a non-gated arch it is the arch's ordinal unchecked,
-// and the backend's FeatNonGatedMLP declaration is what vouches for its kernel.
-func (m *Model) GatedActResident() int { return int(m.w.arch.Act) }
+// GatedActResident returns the MLP activation as its ActKind ordinal.
+func (m *Model) GatedActResident() int { return m.BackendView().GatedAct() }
 
-// GptOssActResident exposes gpt-oss's clamped interleaved-SwiGLU constants to a resident backend and whether this model
-// is that family at all: ok=false for every other family, which is what a backend branches on to keep the shared
-// glu_quant path. Exported because the backends live in other modules and cannot see arch.gptoss.
+// GptOssActResident exposes gpt-oss's clamped interleaved-SwiGLU constants to a resident backend.
 func (m *Model) GptOssActResident() (alpha, limit float32, ok bool) {
-	gp := m.w.arch.gptoss
-	if gp == nil {
-		return 0, 0, false
-	}
-	return float32(gp.SwigluAlpha), float32(gp.SwigluLimit), true
+	return m.BackendView().GptOssAct()
 }
 
-// GptOssSinksResident returns layer l's per-head attention sink logits ([NumHeads]), or nil
-// when the family has none. A resident backend uploads these once at attach time.
-func (m *Model) GptOssSinksResident(l int) []float32 {
-	if m.w.arch.gptoss == nil || l < 0 || l >= len(m.w.Layers) {
-		return nil
-	}
-	return m.w.Layers[l].AttnSinks
-}
+// HasAttnSinksResident reports whether the arch carries per-query-head attention sink logits in the softmax denominator on every layer.
+func (m *Model) HasAttnSinksResident() bool { return m.BackendView().HasAttnSinks() }
 
-// GptOssExpertBiasResident returns layer l's per-expert gate‖up bias table, packed the same
-// way the resident expert WEIGHTS are — expert-major, gate then up:
-//
-//	[e*2*inter + 0 .. +inter)      expert e's gate bias
-//	[e*2*inter + inter .. +2inter) expert e's up bias
-//
-// Packing it to match the weight layout is what lets the kernel use the identical addressing
-// (biasRow = idx[slot]*2*inter) instead of a second convention that could drift from it.
-// nil for every family without per-expert biases.
+// GptOssSinksResident returns layer l's per-head attention sink logits ([NumHeads]), or nil when the family has none.
+func (m *Model) GptOssSinksResident(l int) []float32 { return m.BackendView().Layer(l).AttnSinks() }
+
+// GptOssExpertBiasResident returns layer l's per-expert gate‖up bias table, packed expert-major.
 func (m *Model) GptOssExpertBiasResident(l int) []float32 {
-	if m.w.arch.gptoss == nil || m.w.arch.MoE == nil || l < 0 || l >= len(m.w.Layers) {
-		return nil
-	}
-	lw := &m.w.Layers[l]
-	if len(lw.Experts) == 0 || lw.Experts[0].GateBias == nil {
-		return nil
-	}
-	inter := m.w.arch.MoE.IntermediateDim
-	out := make([]float32, len(lw.Experts)*2*inter)
-	for e := range lw.Experts {
-		copy(out[e*2*inter:], lw.Experts[e].GateBias)
-		copy(out[e*2*inter+inter:], lw.Experts[e].UpBias)
-	}
-	return out
+	return m.BackendView().Layer(l).GptOssExpertBias()
 }
 
-// GptOssExpertDownBiasResident returns layer l's per-expert down-projection bias table,
-// expert-major (biasRow = idx[slot]*hidden), matching gemv_w4a8_moe_wacc_bias's addressing —
-// the down-combine kernel adds this INSIDE the expert before the router weight scales the
-// result (decoder/forward_gptoss.go's gptOssExpertWith: dst = Down·h + downBias; gptOssMoE then
-// combines out += w·dst), unlike GPT-2's plain post-hoc += bias[row]. nil for every family
-// without per-expert down biases.
+// GptOssExpertDownBiasResident returns layer l's per-expert down-projection bias table, expert-major.
 func (m *Model) GptOssExpertDownBiasResident(l int) []float32 {
-	if m.w.arch.gptoss == nil || m.w.arch.MoE == nil || l < 0 || l >= len(m.w.Layers) {
-		return nil
-	}
-	lw := &m.w.Layers[l]
-	if len(lw.Experts) == 0 || lw.Experts[0].DownBias == nil {
-		return nil
-	}
-	hidden := m.w.arch.HiddenDim
-	out := make([]float32, len(lw.Experts)*hidden)
-	for e := range lw.Experts {
-		copy(out[e*hidden:], lw.Experts[e].DownBias)
-	}
-	return out
+	return m.BackendView().Layer(l).GptOssExpertDownBias()
 }
-
-// Qwen3.5/3.6-MoE / Qwen3-Next / Qwen3.8 resident bridge (Gated-DeltaNet hybrid). The family's
-// forward has its own operations (opDeltaNet, opGatedAttn) because two things in it are not the uniform-layer shape:
-// most layers replace softmax attention with a recurrent delta rule, and the full-attention layers
-// carry a per-head output gate fused into a double-width q_proj. These accessors expose both to a
-// backend without exporting the family's internals.
 
 // Qwen35ResidentParams returns the Gated-DeltaNet geometry (ok=false for every other family).
-// rotaryDim/attnGate describe the SOFTMAX layers, which are as much a part of this family's
-// residency as the recurrence: attnGate=true means q_proj emits [query ‖ gate] per head and the
-// attention context is multiplied by sigmoid(gate) before o_proj.
 func (m *Model) Qwen35ResidentParams() (convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numValueHeads int, attnGate, ok bool) {
-	g := m.w.arch.qwen35
+	g := m.ResidentSpec().Qwen35
 	if g == nil {
 		return 0, 0, 0, 0, 0, false, false
 	}
-	// G5 (docs/tasks/task-gpu-paths-2026-09.md): attnGate used to be hardcoded true here — correct for
-	// every family that had reached residency (qwen3_5/qwen3_5_moe/qwen3_next), silently wrong
-	// for Olmo Hybrid (AttnGate=false), whose full-attention layer is olmo3's plain scheme, not
-	// qwen3.5's gated one. A caller that assumed attnGate==ok would build Olmo Hybrid's
-	// full-attention layer as if it had a double-width [query‖gate] q_proj it does not have.
 	return g.ConvKernel, g.KeyHeadDim, g.ValueHeadDim, g.NumKeyHeads, g.NumValueHeads, g.AttnGate, true
 }
 
 // Qwen35LinearLayer reports whether layer i is a Gated-DeltaNet mixer (vs gated softmax attention).
-func (m *Model) Qwen35LinearLayer(i int) bool { return m.w.arch.isLinearLayer(i) }
+func (m *Model) Qwen35LinearLayer(i int) bool { return m.BackendView().Layer(i).Qwen35Linear() }
 
 // ResidentMixer is the sequence-mixing operation of one layer in a resident's layer walk.
 type ResidentMixer uint8
@@ -1854,56 +1751,18 @@ const (
 func (x ResidentMixer) Recurrent() bool { return x == MixerDeltaNet || x == MixerMamba }
 
 // ResidentLayerOps is layer i's operations in a resident's layer walk: its mixer, then a feed-forward block when ffn is true.
-// It is the smallest form of the operation-list layer program (docs/tasks/task-forward-architecture-2026-10.md §4.1): a
-// backend builds and encodes each layer from these two facts, so a hybrid of existing kinds needs no family branch.
-// Most families give every layer (MixerAttention, true); Nemotron-H's blocks carry one operation each.
 func (m *Model) ResidentLayerOps(i int) (mixer ResidentMixer, ffn bool) {
-	a := m.w.arch
-	switch {
-	case a.nemotron != nil:
-		switch a.nemotron.blockKind[i] {
-		case nemoMamba:
-			return MixerMamba, false
-		case nemoAttn:
-			return MixerAttention, false
-		default: // nemoMLP, nemoMoE
-			return MixerNone, true
-		}
-	case a.qwen35 != nil && a.isLinearLayer(i):
-		return MixerDeltaNet, true
-	case a.granite != nil && a.isMambaLayer(i):
-		return MixerMamba, true
-	case a.mla != nil:
-		return MixerMLA, true
-	}
-	return MixerAttention, true
+	return m.BackendView().Layer(i).Ops()
 }
 
-// Qwen35DeltaWeights returns layer i's DeltaNet parameters. The three dominant projections come
-// back as *linalg.WeightMat because they carry the model's quant (int4/int8/f32) — a backend
-// uploads them through the same path as any other projection. The rest are small f32 tensors:
-// inB/inA are the two gate projections (kept f32 in the CPU path for precision — see
-// deltaNetWeights), convW is the depthwise causal conv, and negExpA is the PRECOMPUTED −exp(A_log)
-// the recurrence multiplies by softplus(a+dt_bias), not the raw A_log a Mamba-2 path would expect.
+// Qwen35DeltaWeights returns layer i's DeltaNet parameters.
 func (m *Model) Qwen35DeltaWeights(i int) (inQKV, inZ, outProj *linalg.WeightMat, inB, inA, convW, dtBias, negExpA, normW []float32) {
-	w := m.w.Layers[i].delta
-	if w == nil {
-		return
-	}
-	return &w.inProjQKV, &w.inProjZ, &w.outProj, w.inProjB, w.inProjA, w.convW, w.dtBias, w.negExpA, w.normW
+	return m.BackendView().Layer(i).Qwen35DeltaWeights()
 }
 
-// Qwen35AttnWeights returns a full-attention layer's projections and QK-norm weights. qProj is
-// DOUBLE WIDTH — [NumHeads*2*HeadDim, HiddenDim], query and gate interleaved PER HEAD, not
-// concatenated as two blocks. A backend that treats it as an ordinary q_proj gets the first
-// NumHeads/2 heads' query and gate as its "queries", which is wrong in a way that still produces
-// plausible logits.
+// Qwen35AttnWeights returns a full-attention layer's projections and QK-norm weights.
 func (m *Model) Qwen35AttnWeights(i int) (qProj, kProj, vProj, oProj *linalg.WeightMat, qNorm, kNorm []float32) {
-	a := m.w.Layers[i].qattn
-	if a == nil {
-		return
-	}
-	return &a.qProj, &a.kProj, &a.vProj, &a.oProj, a.qNorm, a.kNorm
+	return m.BackendView().Layer(i).Qwen35AttnWeights()
 }
 
 // BackendReport renders the load banner's backend field. It NEVER names a backend that is not executing: when the

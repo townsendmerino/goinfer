@@ -18,6 +18,28 @@
       "why": "decoder/fit (Tier 3, docs/layout.md) holds the fit guard's and the planner's exchange types so a caller can name them without importing the loader. It sits below decoder, which re-exports them: it imports internal/runtime/mem and no other goinfer package, decoder included."
     },
     {
+      "name": "config-leaf",
+      "from": [
+        "decoder/config"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "why": "decoder/config holds a checkpoint's Config, its validators and its loader, so they test in seconds without compiling decoder (DC1, docs/completed/task-decoder-config-2026-11.md). It sits below decoder, which aliases Config: it imports no goinfer package, decoder included."
+    },
+    {
+      "name": "quant-leaf",
+      "from": [
+        "decoder/quant"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "why": "decoder/quant (Tier 3, docs/layout.md) parses safetensors checkpoint quantization configs and reconstructs FP8, GPTQ, AWQ, NVFP4 and MLX quantized weights behind Reconstructor/RowStreamReconstructor. It sits below decoder and imports no goinfer package, decoder included."
+    },
+    {
       "name": "towers-standalone",
       "from": [
         "internal/vision",
@@ -248,6 +270,7 @@
       "multimodal"
     ],
     "chat": [
+      "constrain",
       "tokenizer"
     ],
     "cmd/gate": [
@@ -265,10 +288,15 @@
     "cmd/serve": [
       "internal/app/serveapp"
     ],
+    "cmd/testcmdtags": [
+      "internal/guard/testcmdtags"
+    ],
     "decoder": [
       "chat",
       "constrain",
+      "decoder/config",
       "decoder/fit",
+      "decoder/quant",
       "internal/cost",
       "internal/runtime/adapter",
       "internal/runtime/diskfree",
@@ -585,6 +613,7 @@
       "internal/fidelity",
       "internal/guard/memgate",
       "internal/runtime/giw",
+      "internal/runtime/logs",
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
       "internal/runtime/program",
@@ -620,6 +649,7 @@
       "decoder/fit",
       "internal/audio",
       "internal/cost",
+      "internal/diag/sb2census",
       "internal/fidelity",
       "internal/guard/paritykey",
       "internal/runtime/giw",
@@ -644,6 +674,7 @@
       "multimodal"
     ],
     "engine": [
+      "constrain",
       "decoder",
       "internal/cost"
     ],
@@ -662,7 +693,8 @@
     "internal/app/fitcmd": [
       "decoder",
       "decoder/fit",
-      "internal/runtime/giw"
+      "internal/runtime/giw",
+      "internal/runtime/modelload"
     ],
     "internal/app/loadflags": [
       "decoder",
@@ -694,6 +726,7 @@
       "internal/runtime/modelload",
       "internal/runtime/prequant",
       "internal/runtime/whisper",
+      "internal/testpath",
       "internal/vision",
       "multimodal",
       "pull",
@@ -734,6 +767,7 @@
       "decoder",
       "decoder/fit",
       "internal/runtime/prequant",
+      "internal/testpath",
       "tokenizer"
     ],
     "internal/runtime/whisper": [

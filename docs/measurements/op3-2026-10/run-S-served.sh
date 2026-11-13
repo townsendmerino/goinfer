@@ -1,5 +1,5 @@
 #!/bin/bash
-# OP3a gate S, the parked cell's served gate (docs/tasks/task-forward-architecture-2026-10.md §4.8, "Gate S's served cell").
+# OP3a gate S, the parked cell's served gate (docs/completed/task-forward-architecture-2026-10.md §4.8, "Gate S's served cell").
 # CPU decode on Qwen2.5-Coder-0.5B q4_k_m at depth 128, the walker (d5752b99) against the commit OP3a branched from
 # (2c56d9c6), two arms and no peer, BENCH_RUNS=5, two passes in reversed engine order. Binaries were built by day
 # (2026-10-16 08:26) and fit-checked: both admit the 0.5B (0.3 GB weights, 4.1 GB budget).

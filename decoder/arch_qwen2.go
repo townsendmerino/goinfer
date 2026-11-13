@@ -39,7 +39,7 @@ func qwen2Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		QKVBias:         true, // the one knob that differs from llama
 		QKNorm:          false,
 		AttnScale:       math.Pow(float64(hd), -0.5),
-		SlidingWindow:   0,   // validateQwen2 rejects use_sliding_window=true
+		SlidingWindow:   0,   // ValidateQwen2 rejects use_sliding_window=true
 		layerIsGlobal:   nil, // all-global
 		RoPELocalBase:   cfg.RoPEGlobalBase,
 		RoPEGlobalBase:  cfg.RoPEGlobalBase,

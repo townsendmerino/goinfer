@@ -10,6 +10,7 @@ import (
 // Side is one end of a push, as Compare needs it: each family's two keys, dependency files and program list, each listed
 // fixture's fingerprints, the content digest of every dependency path, and today's tail.
 type Side struct {
+	Definition    string // TodayDefinition
 	Tail          string
 	Today         map[string]string
 	Shadow        map[string]string
@@ -32,6 +33,10 @@ func LoadSide(src Source) (Side, error) {
 	if err != nil {
 		return Side{}, err
 	}
+	def, err := TodayDefinition(src)
+	if err != nil {
+		return Side{}, err
+	}
 	progs, err := ReadProgramTable(src)
 	if err != nil {
 		return Side{}, err
@@ -40,11 +45,11 @@ func LoadSide(src Source) (Side, error) {
 	if err != nil {
 		return Side{}, err
 	}
-	s := Side{Tail: tail, Today: map[string]string{}, Shadow: map[string]string{}, Files: map[string][]string{},
+	s := Side{Definition: def, Tail: tail, Today: map[string]string{}, Shadow: map[string]string{}, Files: map[string][]string{},
 		Programs: map[string][]string{}, Fixture: map[string]string{}, Content: map[string]string{},
 		Loaders: map[string][]string{}, Dropped: map[string][]string{}, LoaderFixture: map[string]string{}}
 	for name, fam := range m.Families {
-		if s.Today[name], err = Key(src, m, fam, tail); err != nil {
+		if s.Today[name], err = TodayKey(src, m, fam, def, tail, progs); err != nil {
 			return Side{}, fmt.Errorf("%s: %w", name, err)
 		}
 		if s.Shadow[name], err = ShadowKey(src, m, fam, tail, progs, loaders); err != nil {
@@ -97,9 +102,9 @@ type Verdict struct {
 }
 
 // Compare classes every family across a push from before to after. An old-only verdict is explained when every moved
-// input is a builder file (BuilderFile), which the shadow key replaces by the family's programs, or a loader file this family's
-// loader digest stands for (Dropped); a change on a path no fixture exercises reads the same, so a grade reads those pushes'
-// diffs. A new-only verdict is explained when the only moved inputs are the family's program and loader lists, and no loader fixture left
+// input is the key's definition (today's key took the builders out), a builder file of a family with programs on a push
+// with a side keyed by DefinitionFiles (BuilderFile; under the builder rule neither key reads one), or a loader file this family's loader digest stands for (Dropped); a
+// change on a path no fixture exercises reads the same, so a grade reads those pushes' diffs. A new-only verdict is explained when the only moved inputs are the family's program and loader lists, and no loader fixture left
 // its list while its program stayed (loaderListShrank). Every other disagreement is unexplained.
 func Compare(before, after Side) []Verdict {
 	var out []Verdict
@@ -120,16 +125,37 @@ func Compare(before, after Side) []Verdict {
 			v.Class = AgreeFresh
 		case oldStale:
 			v.Class = OldOnly
-			v.Explained = len(v.Moved) > 0
+			// A builder explains today's key moving alone only where today's key reads the builders and the shadow key does not:
+			// a family with programs, on a side keyed by DefinitionFiles. Under the builder rule neither key reads them.
+			// Under the builder rule on both sides, a family with programs has its builders in neither key: one that moved neither
+			// explains nor refutes the verdict, and something else must explain it.
+			hasPrograms := len(after.Programs[name]) > 0
+			builderRule := before.Definition == DefinitionPrograms && after.Definition == DefinitionPrograms
+			builders := hasPrograms && !builderRule
+			defChanged, others := false, []string(nil)
+			v.Explained = true
 			for _, m := range v.Moved {
-				if !BuilderFile(m) && !slices.Contains(after.Dropped[name], m) {
+				switch {
+				case m == "key definition":
+					defChanged = true
+				case hasPrograms && builderRule && BuilderFile(m):
+				case builders && BuilderFile(m), slices.Contains(after.Dropped[name], m):
+					others = append(others, m)
+				default:
 					v.Explained = false
 				}
 			}
-			if v.Explained {
-				v.Reason = "only builder or loader files moved, and no program or loader identity of the family did: a refactor, or a change on a path no fixture exercises"
-			} else {
+			v.Explained = v.Explained && (defChanged || len(others) > 0)
+			switch {
+			case !v.Explained:
 				v.Reason = "today's key moved on an input the shadow key also reads"
+			case defChanged && len(others) == 0:
+				v.Reason = "the key's definition changed (" + before.Definition + " -> " + after.Definition + "); no input it reads moved"
+			case defChanged:
+				v.Reason = "the key's definition changed (" + before.Definition + " -> " + after.Definition + "), and the other inputs that moved (" +
+					strings.Join(others, ", ") + ") are builder or loader files the shadow key does not read"
+			default:
+				v.Reason = "only builder or loader files moved, and no program or loader identity of the family did: a refactor, or a change on a path no fixture exercises"
 			}
 		default:
 			v.Class = NewOnly
@@ -174,10 +200,13 @@ func loaderListShrank(before, after Side, name string) bool {
 	return false
 }
 
-// moved names the inputs of a family's keys that differ between the sides: the file list, a dependency path, today's
-// tail, the program and loader lists, and the fingerprints or loader identity of a fixture listed on both sides.
+// moved names the inputs of a family's keys that differ between the sides: the key's definition, the file list, a
+// dependency path, today's tail, the program and loader lists, and the fingerprints or loader identity of a fixture listed on both sides.
 func moved(before, after Side, name string) []string {
 	var out []string
+	if before.Definition != after.Definition && (len(before.Programs[name]) > 0 || len(after.Programs[name]) > 0) {
+		out = append(out, "key definition") // it changes only the key of a family with programs
+	}
 	if strings.Join(before.Files[name], "\x00") != strings.Join(after.Files[name], "\x00") {
 		out = append(out, "file list")
 	}

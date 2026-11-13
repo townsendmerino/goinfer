@@ -1,0 +1,5 @@
+--- FAIL: TestBuilderFile_programTypesDeclareOnly (0.00s)
+    compare_test.go:168: internal/runtime/program/program.go has a import declaration: it may declare only types and constants
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/guard/paritykey	0.003s
+FAIL

@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
@@ -804,8 +805,9 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		loadAbort: loadAbort,
 		knob:      m.Knob,
 		kvF16:     m.KVCacheF16(),
+		kvI8:      m.KVDeliveredFor("cuda") == mem.KVI8,
 		hidden:    H, nLayers: nLayers, nH: nH, inter: I, vocab: vocab,
-		eps: m.NormEps(), attnScale: m.AttnScale(), finalSoftcap: m.FinalLogitSoftcapResident(), attnCap: attnCap,
+		eps: m.NormEps(), attnScale: m.AttnScale(), finalSoftcap: m.FinalLogitSoftcapResident(), attnCap: attnCap, faSoftcap: m.FlashDecodeSoftcap(),
 		attnTempBeta: attnTempBeta, attnTempOrigMaxPos: attnTempOrigMaxPos,
 		qkNorm: shape.QKNorm, qkNormWhole: qkNormWhole, rmsAddOne: m.RMSAddOne(),
 		act: int32(m.GatedActResident()), sandwich: sandwich, postOnly: postOnly,
@@ -817,15 +819,17 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		// C′: DMA the routed int4 experts host→VRAM slots per token (device read, correct). The
 		// path to running a model whose experts exceed VRAM. Off by default; byte-identical when off.
 		cacheExperts: m.MoECacheExperts(),
-		cacheProf:    os.Getenv("GOINFER_MOE_CACHE_PROF") != "",
-		dnet:         dnetP,
-		mamba:        mambaP,
-		isMLA:        mlaOK, mlaRank: kvLoRA, mlaLatDim: kvLoRA + qkRope,
+		// MoEExpertsUnpinned: the cache's slots upload from pageable pages of a packed-experts file beside the model, not a pinned copy.
+		unpinnedExperts: m.MoEExpertsUnpinned(), unpinnedDir: modelDir(m.SourcePath()),
+		cacheProf: os.Getenv("GOINFER_MOE_CACHE_PROF") != "",
+		dnet:      dnetP,
+		mamba:     mambaP,
+		isMLA:     mlaOK, mlaRank: kvLoRA, mlaLatDim: kvLoRA + qkRope,
 		mlaQKHead: qkNope + qkRope, mlaQKNope: qkNope, mlaQKRope: qkRope,
 		mlaVHead: vHead, mlaQLoRA: qLoRA, mlaInterleave: interleave,
 		mlaRopeScale:    float32(mlaRopeScale),
 		allocSlackBytes: allocSlack,
-		ctxExplicit:     m.ResidentContextRequest() > 0,
+		ctxExplicit:     ctxExplicitFor(m),
 		// One conversation may use the whole KV pool (KV4a-3) unless a context was asked for or pinned by the fit guard, or a companion's
 		// device K/V scales with the context (a --drafter's, priced at the planned one).
 		kvRaise:    m.ResidentContextRequest() <= 0 && m.ExtraResidentKVPerPosition() == 0,
@@ -991,11 +995,11 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		// Any change that drives the device to refusal and then keeps using the same context breaks this, silently, as zeros. A
 		// retry loop, an eviction-and-rebuild or a "just try a smaller cache" must re-load rather than reuse these handles.
 		// Evidence, path by path: docs/QUEUE.md A13; the full record: docs/code-notes/cuda.md#BuildResident: device exhaustion.
-		gmod, e := r.dev.CompileLibrary(r.kvPTX(gemvFwdPTX, gemvFwdKV16PTX))
+		gmod, e := r.compileKV(r.kvPTX8(gemvFwdPTX, gemvFwdKV16PTX, gemvFwdKV8PTX))
 		if e != nil {
 			return e
 		}
-		glmod, e := r.dev.CompileLibrary(r.attnPTX(gluePTX, glueKV16PTX, glueCapPTX, glueKV16CapPTX))
+		glmod, e := r.compileKV(r.attnPTX(gluePTX, glueKV16PTX, glueKV8PTX, glueCapPTX, glueKV16CapPTX))
 		if e != nil {
 			return e
 		}
@@ -1013,7 +1017,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		// no fallback.
 		r.pairwiseRoPE = m.PairwiseRoPEResident()
 		if r.pairwiseRoPE {
-			pwmod, pe := r.dev.CompileLibrary(r.kvPTX(ropePairwisePTX, ropePairwiseKV16PTX))
+			pwmod, pe := r.compileKV(r.kvPTX(ropePairwisePTX, ropePairwiseKV16PTX))
 			if pe != nil {
 				return fmt.Errorf("pairwise rope: compile rope_pairwise.ptx: %w", pe)
 			}
@@ -1145,7 +1149,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		// Batched prefill kernels (weight-stationary M=len path): own module, prefill_batched.ptx, with the audited PTX
 		// untouched. bGemvB dispatches int4 to bRN (gemv_w4a8_rn) unconditionally; there is no gemv_w4a8_batched module.
 		{
-			if pbmod, e3 := r.dev.CompileLibrary(r.attnPTX(prefillBatchedPTX, prefillBatchedKV16PTX, prefillBatchedCapPTX, prefillBatchedKV16CapPTX)); e3 == nil {
+			if pbmod, e3 := r.compileKV(r.attnPTX(prefillBatchedPTX, prefillBatchedKV16PTX, prefillBatchedKV8PTX, prefillBatchedCapPTX, prefillBatchedKV16CapPTX)); e3 == nil {
 				ok := true
 				load := func(dst *Pipeline, mod gpu.Library, name string) {
 					if p, le := r.dev.NewComputePipeline(mod, name); le == nil {
@@ -1170,7 +1174,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 				load(&r.bNormF32, pbmod, "rmsnorm_f32_batched")
 				if r.pairwiseRoPE {
 					// GPT-J pairwise twin of rope_kv_batched (same signature); see the decode bind above.
-					if pwmod, pe := r.dev.CompileLibrary(r.kvPTX(ropePairwisePTX, ropePairwiseKV16PTX)); pe == nil {
+					if pwmod, pe := r.compileKV(r.kvPTX(ropePairwisePTX, ropePairwiseKV16PTX)); pe == nil {
 						load(&r.bRopeKV, pwmod, "rope_kv_batched_pw")
 					} else {
 						ok = false
@@ -1179,6 +1183,16 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 					load(&r.bRopeKV, pbmod, "rope_kv_batched")
 				}
 				load(&r.bAttn, pbmod, "attn_batched")
+				// A ragged step's twins of rope_kv_batched and attn_batched (stepAttnRows). Optional: without them every row takes
+				// decode's own gap. The pairwise rope has no ragged twin.
+				if !r.pairwiseRoPE {
+					var e1, e2 error
+					r.bRopeKVRagged, e1 = r.dev.NewComputePipeline(pbmod, "rope_kv_ragged")
+					r.bAttnRagged, e2 = r.dev.NewComputePipeline(pbmod, "attn_ragged")
+					if e1 != nil || e2 != nil {
+						r.bRopeKVRagged, r.bAttnRagged = Pipeline{}, Pipeline{}
+					}
+				}
 				load(&r.bQuant, pbmod, "quant_vec_batched")
 				load(&r.bSw, pbmod, "glu_quant_batched")
 				load(&r.bRes, pbmod, "residual_batched")
@@ -1207,8 +1221,8 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		// Gemma 3 image-block prefill attention (decoder.ResidentImagePrefill): own module, prefill_batched.ptx untouched. A
 		// load failure is not fatal: bAttnImg stays zero and PrefillImageLast declines to the CPU-prefill-then-UploadKV bridge.
 		// It depends on r.prefillReady, as L2 does.
-		if r.prefillReady {
-			if imod, e8 := r.dev.CompileLibrary(r.kvPTX(attnImgPrefillPTX, attnImgPrefillKV16PTX)); e8 == nil {
+		if r.prefillReady && !r.kvI8 { // no int8 twin: an int8 cache leaves the image and span prefills declined
+			if imod, e8 := r.compileKV(r.kvPTX(attnImgPrefillPTX, attnImgPrefillKV16PTX)); e8 == nil {
 				// &r.bAttnImg (not a bare tuple assign): TestPipelineLint_boundKernelsAreLaunched's
 				// static scan recognizes `&r.<field>` or a direct NewComputePipeline RHS as a bind
 				// site, matching the loadF/loadG idiom L2/L3 already use below.
@@ -1234,7 +1248,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		if r.prefillReady {
 			// GLM-OCR's pairwise m-RoPE kernel writes f32 rows, so an f16 cache never compiles or loads it, whatever the policy says: the
 			// batched m-RoPE prefill stays unready and PrefillMRoPELast declines to the CPU prefill and upload (TestKV16_pairwiseMRoPENeverF16).
-			if sec := m.MRopeSectionResident(); len(sec) == 3 && !(r.pairwiseRoPE && r.kvF16) {
+			if sec := m.MRopeSectionResident(); len(sec) == 3 && !(r.pairwiseRoPE && r.kvF16) && !r.kvI8 {
 				// Pairwise m-RoPE (GLM-OCR) rotates (2d, 2d+1): its own kernel in rope_pairwise.ptx. A
 				// model that needs it and cannot load it must NOT fall back to the NeoX m-RoPE kernel.
 				mropePTX, mropeName := r.kvPTX(ropeMRopePrefillPTX, ropeMRopePrefillKV16PTX), "rope_kv_mrope_batched"
@@ -1272,7 +1286,9 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			r.fastAttn, r.fastGemm = false, false
 		}
 		if (r.fastAttn || r.fastGemm) && r.prefillReady {
-			if fmod, e6 := r.dev.CompileLibrary(r.kvPTX(attnFusedPTX, attnFusedKV16PTX)); r.fastAttn && e6 == nil {
+			// The tensor-core prefill attention loads its cache's build: f32, f16 or int8 (the _kv8 twins stage K and V as f16 from the int8 cache and
+			// its scales, docs/measurements/cuda-kv-i8-2026-11/s6-registration.md); its launches pass the layer's scale pools (kvScaled).
+			if fmod, e6 := r.compileKV(r.kvPTX8(attnFusedPTX, attnFusedKV16PTX, attnFusedKV8PTX)); r.fastAttn && e6 == nil {
 				loadF := func(dst *Pipeline, name string) {
 					if pl, pe := r.dev.NewComputePipeline(fmod, name); pe == nil {
 						*dst = pl
@@ -1280,7 +1296,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 				}
 				loadF(&r.bAttnFused64, "attn_fused_hd64")
 				loadF(&r.bAttnFused128, "attn_fused_hd128")
-				if bmod, eb := r.dev.CompileLibrary(r.kvPTX(attnFusedBMPTX, attnFusedBMKV16PTX)); eb == nil {
+				if bmod, eb := r.compileKV(r.kvPTX8(attnFusedBMPTX, attnFusedBMKV16PTX, attnFusedBMKV8PTX)); eb == nil {
 					loadF2 := func(dst *Pipeline, name string) {
 						if pl, pe := r.dev.NewComputePipeline(bmod, name); pe == nil {
 							*dst = pl
@@ -1339,7 +1355,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			}
 		}
 		if r.prefillReady {
-			if skmod, e2 := r.dev.CompileLibrary(r.attnPTX(decodeSplitKVPTX, decodeSplitKVKV16PTX, decodeSplitKVCapPTX, decodeSplitKVKV16CapPTX)); e2 == nil {
+			if skmod, e2 := r.compileKV(r.attnPTX(decodeSplitKVPTX, decodeSplitKVKV16PTX, decodeSplitKVKV8PTX, decodeSplitKVCapPTX, decodeSplitKVKV16CapPTX)); e2 == nil {
 				skOK := true
 				loadSK := func(dst *Pipeline, name string) {
 					if p, le := r.dev.NewComputePipeline(skmod, name); le == nil {
@@ -1352,6 +1368,15 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 				loadSK(&r.skSoftmax, "splitkv_softmax")
 				loadSK(&r.skVsum, "splitkv_vsum")
 				if skOK {
+					// A ragged step's twins (splitkv_*_ragged). A load failure leaves them zero, so the step's split-KV rows take
+					// decode's own three launches row by row.
+					var e1, e2, e3 error
+					r.skScoresRagged, e1 = r.dev.NewComputePipeline(skmod, "splitkv_scores_ragged")
+					r.skSoftmaxRagged, e2 = r.dev.NewComputePipeline(skmod, "splitkv_softmax_ragged")
+					r.skVsumRagged, e3 = r.dev.NewComputePipeline(skmod, "splitkv_vsum_ragged")
+					if e1 != nil || e2 != nil || e3 != nil {
+						r.skScoresRagged, r.skSoftmaxRagged, r.skVsumRagged = Pipeline{}, Pipeline{}, Pipeline{}
+					}
 					r.skScoreBuf = r.af(r.nH * r.ctxCap)
 					r.skInvBuf = r.af(r.nH)
 					// Flash-decode V-sum SPIKE, opt-in and NOT bit-identical. Loaded and allocated
@@ -1452,26 +1477,30 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		}
 
 		// gpt-oss per-layer device state: the attention sinks and the per-expert gate‖up
-		// bias table. Uploaded once here rather than per token — they are weights, not
+		// Per-head attention sinks (gpt-oss and Flint) and gpt-oss's per-expert bias
+		// tables. Uploaded once here rather than per token — they are weights, not
 		// activations. Both are nil for every other family, and r.af/r.up32 are not called
 		// at all in that case (Alloc(0) is an error, not a no-op).
-		if _, _, isGptOss := m.GptOssActResident(); isGptOss {
-			// The glue `attention` fallback (taken when !prefillReady) has no sink parameter, so a gpt-oss model whose
+		if m.HasAttnSinksResident() {
+			// The glue `attention` fallback (taken when !prefillReady) has no sink parameter, so a model whose
 			// prefill_batched.ptx fails to JIT would decode through a kernel that silently omits the learned per-head sink. Refuse
 			// that case: decoder/features.go says the sink reaches both paths, and this is what makes that true.
 			if !r.prefillReady {
-				return fmt.Errorf("cuda: gpt-oss needs the batched attention kernel " +
-					"for its learned attention sink, and prefill_batched.ptx did not load — the " +
-					"glue attention fallback has no sink parameter, so decoding here would " +
-					"silently drop it (N-10)")
+				return fmt.Errorf("cuda: attention sinks need the batched attention kernel, " +
+					"and prefill_batched.ptx did not load — the glue attention fallback has no " +
+					"sink parameter, so decoding here would silently drop it (N-10)")
 			}
 			r.gptOssSinks = make([]Buffer, nLayers)
-			r.gptOssExpBias = make([]Buffer, nLayers)
-			r.gptOssDownBias = make([]Buffer, nLayers)
 			for l := range nLayers {
 				if sk := m.GptOssSinksResident(l); len(sk) > 0 {
 					r.gptOssSinks[l] = r.upOn(mem.LineDense, sk)
 				}
+			}
+		}
+		if _, _, isGptOss := m.GptOssActResident(); isGptOss {
+			r.gptOssExpBias = make([]Buffer, nLayers)
+			r.gptOssDownBias = make([]Buffer, nLayers)
+			for l := range nLayers {
 				if gb := m.GptOssExpertBiasResident(l); len(gb) > 0 {
 					r.gptOssExpBias[l] = r.upOn(mem.LineDense, gb)
 				}
@@ -1541,7 +1570,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			}
 		}
 		if r.isMLA {
-			mlamod, me := r.dev.CompileLibrary(r.kvPTX(mlaPTX, mlaKV16PTX))
+			mlamod, me := r.compileKV(r.kvPTX(mlaPTX, mlaKV16PTX))
 			if me != nil {
 				return fmt.Errorf("cuda: JIT mla.ptx: %w", me)
 			}
@@ -1577,7 +1606,8 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 				return fmt.Errorf("cuda: resident build aborted before uploading layer %d of %d: %w", l, nLayers, decoder.ErrLoadAborted)
 			}
 			h := &hls[l]
-			L := cudaLayer{idx: l, mixer: h.mixer, ffn: h.ffn, steps: h.steps, prefillSteps: cudaPrefillStepsOf(m.Program().Layers[l])}
+			lw, _ := program.DecodeLayerWalk(m.Program().Layers[l], "CUDA")
+			L := cudaLayer{idx: l, mixer: h.mixer, ffn: h.ffn, steps: h.steps, prefillSteps: cudaPrefillStepsOf(m.Program().Layers[l]), walk: lw}
 			if l == prefillStepsEmptyLayerForTest {
 				L.prefillSteps = nil
 			}
@@ -1745,7 +1775,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			L.kEqV = m.VFromKResident(l) && !L.kvShared
 			// Gemma 4 applies v_norm on every layer that owns its K/V; K=V layers always did. g4DropVNormForTest re-drops it on the
 			// non-K=V layers so a test can reproduce the pre-fix numbers.
-			L.vNorm = !L.kvShared && (L.kEqV || (isGemma4 && !g4DropVNormForTest))
+			L.vNorm = L.walk.Attn.G4VNorm && (L.kEqV || !g4DropVNormForTest)
 			if !L.kEqV && !L.kvShared {
 				L.v = r.upW(h.v) // non-K=V layers have a real v_proj weight; K=V derives V from k; a shared layer has neither
 			}
@@ -1769,6 +1799,9 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			prog, progParallel, err := cudaSublayersOf(m.Program().Layers[l])
 			if err == nil {
 				err = checkLoadedSublayers(prog, progParallel, loadedSublayers(&r.layers[l]), r.parallelBlock)
+			}
+			if err == nil {
+				err = r.checkCUDALayerWalk(&r.layers[l], m.Program().Layers[l])
 			}
 			// The batched prefill's steps, where it has any, must be the blocks the layer's kind chose before (OP4cu-d1).
 			if ps := r.layers[l].prefillSteps; err == nil && !prefillStepsBuildChecksOffForTest && len(ps) > 0 && !slices.Equal(ps, prefillStepsFromFlags(&r.layers[l])) {
@@ -1847,8 +1880,18 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		}
 		r.qB, r.kB, r.vB = r.af(qBufDim), r.af(maxKVDim), r.af(maxKVDim)
 		r.kc, r.vc = make([]Buffer, nLayers), make([]Buffer, nLayers)
+		r.ksc, r.vsc = make([]Buffer, nLayers), make([]Buffer, nLayers)
 		for l := range r.layers {
 			r.layers[l].kvHalf = r.kvF16 && !r.layers[l].noKV() && !r.layers[l].kvShared
+			r.layers[l].kvI8 = r.kvI8 && !r.layers[l].noKV() && !r.layers[l].kvShared
+			if e := kvCheckDeclared(l, m.LayerBuffers(l), &r.layers[l]); e != nil {
+				return e
+			}
+		}
+		if r.kvI8 {
+			if e := r.loadKV8(); e != nil {
+				return e
+			}
 		}
 		r.kvWindowSetup(m) // before checkKVFits: windowed layers price and allocate at window+slack, not at the context
 		// r.ctxCap was resolved at construction (several earlier buffers size from it). The fit check
@@ -2249,4 +2292,23 @@ func cudaMixerOf(ops []program.Op) (mixer decoder.ResidentMixer, ffn, ok bool) {
 		return decoder.MixerMLA, ffn, true
 	}
 	return 0, ffn, false
+}
+
+// modelDir is where the packed-experts file goes for a model loaded from path: a checkpoint directory itself, a file's directory, or "" when
+// the model has no path, so the file is never written to the working directory by default.
+func modelDir(path string) string {
+	if path == "" {
+		return ""
+	}
+	if fi, err := os.Stat(path); err == nil && fi.IsDir() {
+		return path
+	}
+	return filepath.Dir(path)
+}
+
+// ctxExplicitFor reports whether m's resident context is the caller's own -ctx, which the build never trims and whose VRAM miss
+// is errKVWontFit. A context the load-time fit guard pinned for an unrequested load is a ceiling (decoder.Model's
+// ResidentContextPinned), so the build trims it to what is free, never below cudaCtxCapDefault, as it trims an unpinned one.
+func ctxExplicitFor(m *decoder.Model) bool {
+	return m.ResidentContextRequest() > 0 && m.ResidentContextPinned()
 }

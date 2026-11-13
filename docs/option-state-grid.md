@@ -28,14 +28,16 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 | `CPUBatchDecode` | n/a | n/a | tested: `TestEnableCPUBatch_policy` | n/a | n/a | tested: `TestOptionPath_specVerify` | tested: `TestOptionPath_sessionSnapshot` |
 | `EmbedInt4` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedDecode` | declined at `int8BufOn` (`TestOptionPathMetal_embedInt4Declines`) | declined at `int8BufOn` (`TestOptionPathMetal_embedInt4Declines`) | tested: `TestOptionPath_specVerify` | n/a |
 | `ExactPrefill` | n/a | tested: `TestOptionPath_cpuBatchedPrefill` | n/a | n/a | tested: `TestOptionPathMetal_exactPrefill` | tested: `TestOptionPath_specVerify` | n/a |
+| `FlashDecodeSoftcap` | n/a | n/a | n/a | tested: `TestGemma2Softcap_lanesCUDA` | n/a | tested: `TestGemma2Softcap_lanesCUDA` | n/a |
 | `KVDemote` | n/a | n/a | n/a | n/a | tested: `TestKV7_demoteAndPromote` | n/a | n/a |
 | `KVHostBytes` | n/a | n/a | n/a | n/a | tested: `TestKV7_optionKVHostBytes_resident` | n/a | n/a |
-| `KVPrecision` | n/a | n/a | n/a | tested: `TestOptionPathMetal_kvPrecision`; CUDA f16 tested: `TestKV16_everyAttentionPathStaysCloseToF32`; CUDA i8 declined at `ResolveKV` (`TestKVPrecisionDelivered`) | tested: `TestPrefill_int8KVOnThePass`; CUDA f16 tested: `TestKV16_everyAttentionPathStaysCloseToF32`; CUDA i8 declined at `ResolveKV` (`TestKVPrecisionDelivered`) | tested: `TestOptionPathMetal_kvPrecision`; CUDA i8 declined at `ResolveKV` (`TestKVPrecisionDelivered`) | tested: `TestOptionPathMetal_kvPrecision`; CUDA f16 tested: `TestKV7_restoreFull`; CUDA i8 declined at `ResolveKV` (`TestKVPrecisionDelivered`) |
-| `KVQuant` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedPrefill` | declined at `cpuBatchCacheEligible` (`TestCPUBatch_ineligibleCachesBypass`) | n/a | n/a | tested: `TestOptionPath_specVerify` | tested: `TestKVI8_snapshotRoundtrip` |
+| `KVPrecision` | n/a | n/a | n/a | tested: `TestOptionPathMetal_kvPrecision`; CUDA f16 tested: `TestKV16_everyAttentionPathStaysCloseToF32`; CUDA i8 tested: `TestKV8_G2exact_readersMatchTheCPUOnOneCache` | tested: `TestPrefill_int8KVOnThePass`; CUDA f16 tested: `TestKV16_everyAttentionPathStaysCloseToF32`; CUDA i8 tested: `TestKV8_G2exact_readersMatchTheCPUOnOneCache` | tested: `TestOptionPathMetal_kvPrecision`; CUDA i8 tested: `TestKV8_verifyIsSequentialDecode` | tested: `TestOptionPathMetal_kvPrecision`; CUDA f16 tested: `TestKV7_restoreFull`; CUDA i8 tested: `TestKV7_restoreFull` |
+| `KVQuant` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedDecode` | n/a | n/a | tested: `TestOptionPath_specVerify` | tested: `TestKVI8_snapshotRoundtrip` |
 | `KVShareOff` | n/a | n/a | n/a | n/a | tested: `TestKV2_optionKVShareOff_resident` | n/a | tested: `TestSessionLRU_sharesAPreamble` |
 | `Knobs` | n/a | n/a | n/a | n/a | n/a | n/a | n/a |
 | `MoECacheExperts` | n/a | n/a | n/a | tested: `TestMoECacheExperts_bitExactMetal` | tested: `TestMoECacheExperts_bitExactMetal` | tested: `TestMoECacheExperts_specAndSessionMetal` | tested: `TestMoECacheExperts_specAndSessionMetal` |
 | `MoECacheSlots` | n/a | n/a | n/a | tested: `TestMoECacheExperts_bitExactMetal` | tested: `TestMoECacheExperts_bitExactMetal` | tested: `TestMoECacheExperts_specAndSessionMetal` | tested: `TestMoECacheExperts_specAndSessionMetal` |
+| `MoEExpertsUnpinned` | n/a | n/a | n/a | tested: `TestMoEExpertsUnpinned_identityAndPricing` | tested: `TestMoEExpertsUnpinned_identityAndPricing` | tested: `TestMoEExpertsUnpinned_identityAndPricing` | n/a |
 | `MoEPager` | tested: `TestOptionPath_moePaging` | tested: `TestOptionPath_moePaging` | declined at `cpuBatchModelEligible` (`TestOptionPath_moePagingDeclinesCPUBatch`) | n/a | n/a | tested: `TestOptionPath_moePaging` | n/a |
 | `Quant` | tested: `TestDecodeParityInt4` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedDecode` | tested: `TestOptionPathMetal_quant` | tested: `TestOptionPathMetal_quant` | declined at `SpecDecodeConflict` (`TestSpecDecodeConflict_refusesStagedWebGPUInt4`) | tested: `TestOptionPath_sessionSnapshot` |
 | `ResidentContext` | n/a | n/a | n/a | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` |
@@ -58,6 +60,9 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 - `EmbedInt4`: a weight format; the session's cache does not depend on it
 - `ExactPrefill`: selects how a prompt is ingested; decode is one token
 - `ExactPrefill`: selects prefill numerics; a session's reuse rules do not depend on them
+- `FlashDecodeSoftcap`: a CUDA flash-decode lane option; the CPU has no flash-decode lane
+- `FlashDecodeSoftcap`: the flash-decode lane serves decode and verify rows; a prompt's prefill keeps its kernels
+- `FlashDecodeSoftcap`: it changes which kernel attends a decode row; a session's prefix, KV and snapshot are the same
 - `KVDemote`: a released slot is a GPU resident's; the CPU path keeps its own session LRU
 - `KVDemote`: rows are promoted as a request takes its slot, before the prefill; decode extends the slot's own rows
 - `KVDemote`: promotion acts as a request takes its slot, before any speculative step
@@ -74,6 +79,8 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 - `Knobs`: routes per-model operator knobs by name to the code that reads each (knobs.go); each knob is an environment read listed in testdata/env_reads.txt and owned there
 - `MoECacheExperts`: "CUDA and Metal residency; the CPU's expert paging is StreamWeights"
 - `MoECacheSlots`: "Only meaningful with MoECacheExperts", a residency option
+- `MoEExpertsUnpinned`: a CUDA expert-cache option (with MoECacheExperts); the CPU's expert paging is StreamWeights
+- `MoEExpertsUnpinned`: it changes only where expert slots upload from; a session's prefix, KV and snapshot hold no expert bytes
 - `MoEPager`: the CPU expert pager's backing mode
 - `MoEPager`: pages weights, not the session's cache
 - `ResidentContext`: "Ignored off the residency path"
@@ -108,9 +115,11 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 - `ExtraResidentKVPerPosition`: prices a companion allocation's K/V when the resident context is chosen
 - `LoRA`: merged into the base weights at load ("merged into the base at load"), so every path runs the merged weights; compute-time adapters are Session state, in the cache-state grid
 - `LoadAbort`: checked between layers during a GGUF weight build, a .giw load and a backend's resident build; nil afterwards in effect
+- `RequireBackend`: turns a backend's decline at load into Load's error; a loaded model runs whatever was built
 - `ResidentGemma4StepDefault`: tells the backend at load that ResidentGemma4Step is the caller's default, not a choice
 - `ResidentKVSlotsDefault`: tells the backend at load that ResidentKVSlots is the caller's default, not a chosen count
 - `ResidentRecurrentStepDefault`: tells the backend at load that ResidentRecurrentStep is the caller's default, not a choice
+- `SidecarFor`: a planner's stand-in for the sidecar a load would build first: the weights in that sidecar's layout, the host copy as it maps them
 - `noSelfTest`: the resident self-test's own fixture loads; read by the self-test at load
 - `planResidency`: FitQuery's open of a .giw, which builds no resident and is closed before it runs anything
 
@@ -166,7 +175,7 @@ Every `KVCache` field belongs to one of these kinds, or is declared geometry, a 
 - DeltaNet state × session prefix reuse: follows the rewind; rewindForReuse goes cold
 - DeltaNet state × speculative rollback: specRollbackSafe refuses every model with recurrent state on a loop that rolls back with TruncateTo; BlockSpec on a resident whose fold path serves every recurrent layer (ResidentRecurrentSpec, SP2: Gated DeltaNet on CUDA) verifies without writing it and folds the committed rows in
 - DeltaNet state × publish: the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)
-- DeltaNet state × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (ResidentRecurrentSnapshots: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold
+- DeltaNet state × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (ResidentKVSnapshotter.KVSnapshotRecurrent: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold
 - DeltaNet state × evict: the resident re-zeroes it at position 0 of the prefill that follows; the sequence's checkpoint record goes with it
 - DeltaNet state × checkpoint save: the resident copies every recurrent layer's state and conv window at c, the end of the prompt (ResidentRecurrentCheckpoint); one that cannot copy every recurrent kind the model has keeps none
 - DeltaNet state × checkpoint restore: copied back whole at c, conv window included; the prefill continues from c
@@ -176,7 +185,7 @@ Every `KVCache` field belongs to one of these kinds, or is declared geometry, a 
 - short-conv window × session prefix reuse: follows the rewind; rewindForReuse goes cold
 - short-conv window × speculative rollback: specRollbackSafe refuses every model with recurrent state on a loop that rolls back with TruncateTo; BlockSpec on a resident whose fold path serves every recurrent layer (ResidentRecurrentSpec, SP2: Gated DeltaNet on CUDA) verifies without writing it and folds the committed rows in
 - short-conv window × publish: the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)
-- short-conv window × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (ResidentRecurrentSnapshots: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold
+- short-conv window × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (ResidentKVSnapshotter.KVSnapshotRecurrent: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold
 - short-conv window × evict: the resident re-zeroes it at position 0 of the prefill that follows; the sequence's checkpoint record goes with it
 - short-conv window × checkpoint save: the resident copies every recurrent layer's state and conv window at c, the end of the prompt (ResidentRecurrentCheckpoint); one that cannot copy every recurrent kind the model has keeps none
 - short-conv window × checkpoint restore: copied back whole at c, conv window included; the prefill continues from c
@@ -186,7 +195,7 @@ Every `KVCache` field belongs to one of these kinds, or is declared geometry, a 
 - Mamba-2 state × session prefix reuse: follows the rewind; rewindForReuse goes cold
 - Mamba-2 state × speculative rollback: specRollbackSafe refuses every model with recurrent state on a loop that rolls back with TruncateTo; BlockSpec on a resident whose fold path serves every recurrent layer (ResidentRecurrentSpec, SP2: Gated DeltaNet on CUDA) verifies without writing it and folds the committed rows in
 - Mamba-2 state × publish: the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)
-- Mamba-2 state × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (ResidentRecurrentSnapshots: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold
+- Mamba-2 state × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (ResidentKVSnapshotter.KVSnapshotRecurrent: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold
 - Mamba-2 state × evict: the resident re-zeroes it at position 0 of the prefill that follows; the sequence's checkpoint record goes with it
 - Mamba-2 state × checkpoint save: the resident copies every recurrent layer's state and conv window at c, the end of the prompt (ResidentRecurrentCheckpoint); one that cannot copy every recurrent kind the model has keeps none
 - Mamba-2 state × checkpoint restore: copied back whole at c, conv window included; the prefill continues from c
@@ -196,7 +205,7 @@ Every `KVCache` field belongs to one of these kinds, or is declared geometry, a 
 - KDA state × session prefix reuse: follows the rewind; rewindForReuse goes cold
 - KDA state × speculative rollback: specRollbackSafe refuses every model with recurrent state on a loop that rolls back with TruncateTo; BlockSpec on a resident whose fold path serves every recurrent layer (ResidentRecurrentSpec, SP2: Gated DeltaNet on CUDA) verifies without writing it and folds the committed rows in
 - KDA state × publish: the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)
-- KDA state × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (ResidentRecurrentSnapshots: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold
+- KDA state × share: a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (ResidentKVSnapshotter.KVSnapshotRecurrent: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold
 - KDA state × evict: the resident re-zeroes it at position 0 of the prefill that follows; the sequence's checkpoint record goes with it
 - KDA state × checkpoint save: the resident copies every recurrent layer's state and conv window at c, the end of the prompt (ResidentRecurrentCheckpoint); one that cannot copy every recurrent kind the model has keeps none
 - KDA state × checkpoint restore: copied back whole at c, conv window included; the prefill continues from c
@@ -209,7 +218,7 @@ Every `KVCache` field belongs to one of these kinds, or is declared geometry, a 
 - image blocks × share: a span is taken whole, and only when the request claims the same image at the same place; otherwise the match stops at its start
 - image blocks × evict: residentForgetIDs clears resImgBlocks with the ids, always
 - image blocks × checkpoint save: the saving path (generateInto) takes text prompts: no image block is in what it saves
-- image blocks × checkpoint restore: scoreRecurrent gives no checkpoint hit to a sequence or a request with an image span
+- image blocks × checkpoint restore: scoreRecurrentTokens gives no checkpoint hit to a sequence or a request with an image span
 - m-RoPE positions × partial rewind: positions and the decode delta are set by the image prefill and have no per-position rewind
 - m-RoPE positions × full reset: resetMultimodal (audit M-25)
 - m-RoPE positions × snapshot: the snapshot format does not carry m-RoPE positions

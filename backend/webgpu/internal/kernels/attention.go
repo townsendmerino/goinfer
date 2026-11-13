@@ -26,7 +26,7 @@ import (
 // RoPE: rotate the (d, half+d) pair of each head by pos·invFreq[d], scaled. One
 // thread per (head, d) pair. vec is q or k in place; invFreq is the layer's
 // precomputed inverse frequencies [half].
-const ropeShaderWGSL = `
+const ropeShaderWGSL = ropeCosSinWGSL + `
 struct P { heads: u32, headDim: u32, half: u32, pos: u32, scale: f32, _a: u32, _b: u32, _c: u32 };
 @group(0) @binding(0) var<storage, read_write> vec:     array<f32>;  // [heads*headDim]
 @group(0) @binding(1) var<storage, read>       invFreq: array<f32>;  // [half]
@@ -38,8 +38,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let h = idx / p.half;
     let d = idx % p.half;
     let theta = f32(p.pos) * invFreq[d];
-    let c = cos(theta) * p.scale;
-    let s = sin(theta) * p.scale;
+    let cs = ropeCosSin(theta); let c = cs.x * p.scale;
+    let s = cs.y * p.scale;
     let off = h * p.headDim;
     let x1 = vec[off + d];
     let x2 = vec[off + p.half + d];
@@ -314,7 +314,7 @@ func (c *Context) attnKernel(hd, kvDim int, kvF16 bool) (*wgpu.ComputePipeline, 
 // p.base = pos*kvDim. Used for K so the decode token never needs a
 // CopyBufferToBuffer to append the cache — the rotate IS the append. One thread
 // per (head, d) pair. p.base is rewritten per token via the runner's posUni.
-const ropeStoreShaderWGSL = `
+const ropeStoreShaderWGSL = ropeCosSinWGSL + `
 struct P { heads: u32, headDim: u32, half: u32, pos: u32, scale: f32, base: u32, _b: u32, _c: u32 };
 @group(0) @binding(0) var<storage, read>       src:     array<f32>;  // [heads*headDim]
 @group(0) @binding(1) var<storage, read>       invFreq: array<f32>;  // [half]
@@ -329,8 +329,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let h = idx / p.half;
         let d = idx % p.half;
         let theta = f32(p.pos) * invFreq[d];
-        let c = cos(theta) * p.scale;
-        let s = sin(theta) * p.scale;
+        let cs = ropeCosSin(theta); let c = cs.x * p.scale;
+        let s = cs.y * p.scale;
         let off = h * p.headDim;
         let x1 = src[off + d];
         let x2 = src[off + p.half + d];
@@ -372,7 +372,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 // their own packed-store kernels. The three index ranges differ (q: nH·half, k: nKV·half,
 // v: kvDim), so each thread does whichever apply to its global index — independent writes,
 // no barrier needed between them.
-const qkvFinalizeShaderWGSL = `
+const qkvFinalizeShaderWGSL = ropeCosSinWGSL + `
 struct P { nH: u32, nKV: u32, hd: u32, half: u32, pos: u32, base: u32, scale: f32, kvDim: u32 };
 @group(0) @binding(0) var<storage, read_write> q:       array<f32>;  // [nH*hd] rotated in place
 @group(0) @binding(1) var<storage, read>       k:       array<f32>;  // [nKV*hd]
@@ -388,7 +388,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (i < p.nH * p.half) {
         let h = i / p.half; let d = i % p.half;
         let theta = f32(p.pos) * invFreq[d];
-        let c = cos(theta) * p.scale; let s = sin(theta) * p.scale;
+        let cs = ropeCosSin(theta); let c = cs.x * p.scale; let s = cs.y * p.scale;
         let off = h * p.hd;
         let x1 = q[off + d]; let x2 = q[off + p.half + d];
         q[off + d]          = x1 * c - x2 * s;
@@ -398,7 +398,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (i < p.nKV * p.half) {
         let h = i / p.half; let d = i % p.half;
         let theta = f32(p.pos) * invFreq[d];
-        let c = cos(theta) * p.scale; let s = sin(theta) * p.scale;
+        let cs = ropeCosSin(theta); let c = cs.x * p.scale; let s = cs.y * p.scale;
         let off = h * p.hd;
         let x1 = k[off + d]; let x2 = k[off + p.half + d];
         kCache[p.base + off + d]          = x1 * c - x2 * s;
@@ -495,7 +495,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 // threads — same count as the f32 ropeStore's nKV*half), owning the two logical
 // elements 2*idx, 2*idx+1. Each is rotated independently (its (d,half+d) RoPE
 // partner is read from src) and the pair is pack2x16float'd into one word.
-const ropeStoreF16ShaderWGSL = `
+const ropeStoreF16ShaderWGSL = ropeCosSinWGSL + `
 struct P { heads: u32, headDim: u32, half: u32, pos: u32, scale: f32, base: u32, _b: u32, _c: u32 };
 @group(0) @binding(0) var<storage, read>       src:     array<f32>;  // [heads*headDim]
 @group(0) @binding(1) var<storage, read>       invFreq: array<f32>;  // [half]
@@ -507,15 +507,15 @@ fn rotated(e: u32) -> f32 {
     let off = h * p.headDim;
     if (dd < p.half) {
         let theta = f32(p.pos) * invFreq[dd];
-        let c = cos(theta) * p.scale;
-        let s = sin(theta) * p.scale;
+        let cs = ropeCosSin(theta); let c = cs.x * p.scale;
+        let s = cs.y * p.scale;
         return src[off + dd] * c - src[off + p.half + dd] * s;
     }
     if (dd < 2u * p.half) {
         let d = dd - p.half;
         let theta = f32(p.pos) * invFreq[d];
-        let c = cos(theta) * p.scale;
-        let s = sin(theta) * p.scale;
+        let cs = ropeCosSin(theta); let c = cs.x * p.scale;
+        let s = cs.y * p.scale;
         return src[off + p.half + d] * c + src[off + d] * s;
     }
     return src[off + dd]; // pass-through tail [2*half, headDim): partial rotary, un-rotated (C4)
@@ -723,7 +723,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 
 // ropeStoreI8: rotate K, per-head absmax → int8. One thread per KV head; two
 // passes over headDim (recompute the cheap rope rather than spill a local array).
-const ropeStoreI8ShaderWGSL = `
+const ropeStoreI8ShaderWGSL = ropeCosSinWGSL + `
 struct P { heads: u32, headDim: u32, half: u32, pos: u32, scale: f32, base: u32, nKV: u32, spos: u32 };
 @group(0) @binding(0) var<storage, read>       src:     array<f32>;  // [heads*headDim]
 @group(0) @binding(1) var<storage, read>       invFreq: array<f32>;  // [half]
@@ -733,12 +733,14 @@ struct P { heads: u32, headDim: u32, half: u32, pos: u32, scale: f32, base: u32,
 fn rot(off: u32, dd: u32) -> f32 {
     if (dd < p.half) {
         let theta = f32(p.pos) * invFreq[dd];
-        return src[off + dd] * cos(theta) * p.scale - src[off + p.half + dd] * sin(theta) * p.scale;
+        let cs = ropeCosSin(theta);
+        return src[off + dd] * cs.x * p.scale - src[off + p.half + dd] * cs.y * p.scale;
     }
     if (dd < 2u * p.half) {
         let d = dd - p.half;
         let theta = f32(p.pos) * invFreq[d];
-        return src[off + p.half + d] * cos(theta) * p.scale + src[off + d] * sin(theta) * p.scale;
+        let cs = ropeCosSin(theta);
+        return src[off + p.half + d] * cs.x * p.scale + src[off + d] * cs.y * p.scale;
     }
     return src[off + dd]; // pass-through tail [2*half, headDim): partial rotary, un-rotated (C4)
 }
@@ -896,24 +898,42 @@ func (c *Context) Attention(q, keys, vals []float32, nH, nKV, hd, nKeys, start i
 // than the kernel the runner uses.
 func (c *Context) attentionOn(pl *wgpu.ComputePipeline, ly *wgpu.BindGroupLayout, q, keys, vals []float32, nH, nKV, hd, nKeys, start int, scale float32) ([]float32, error) {
 	group := nH / nKV
-	qBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-q", Contents: wgpu.ToBytes(q), Usage: wgpu.BufferUsageStorage})
+	qBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-q", Contents: wgpu.ToBytes(q), Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: attentionOn: attn-q: %w", err)
+	}
 	defer releaseBuf(qBuf)
-	kBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-k", Contents: wgpu.ToBytes(keys), Usage: wgpu.BufferUsageStorage})
+	kBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-k", Contents: wgpu.ToBytes(keys), Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: attentionOn: attn-k: %w", err)
+	}
 	defer releaseBuf(kBuf)
-	vBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-v", Contents: wgpu.ToBytes(vals), Usage: wgpu.BufferUsageStorage})
+	vBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-v", Contents: wgpu.ToBytes(vals), Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: attentionOn: attn-v: %w", err)
+	}
 	defer releaseBuf(vBuf)
 	cBuf, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Label: "attn-ctx", Size: uint64(nH * hd * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, err
 	}
 	defer releaseBuf(cBuf)
-	pBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(nKeys), uint32(start), uint32(group), F32bits(scale), 0}), Usage: wgpu.BufferUsageUniform})
+	pBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(nKeys), uint32(start), uint32(group), F32bits(scale), 0}), Usage: wgpu.BufferUsageUniform})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: attentionOn: attn-p: %w", err)
+	}
 	defer releaseBuf(pBuf)
 	// FeatAttnSink (docs/tasks/task-gpu-paths-2026-09.md): always bound (WGSL bind groups can't bind a null storage buffer); this
 	// test helper never carries a real sink, so a one-element dummy + hasSink=0, matching attnShaderWGSL's convention.
-	sinksBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-sinks", Contents: wgpu.ToBytes([]float32{0}), Usage: wgpu.BufferUsageStorage})
+	sinksBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-sinks", Contents: wgpu.ToBytes([]float32{0}), Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: attentionOn: attn-sinks: %w", err)
+	}
 	defer releaseBuf(sinksBuf)
-	hsBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-hs", Contents: wgpu.ToBytes([]uint32{0, 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	hsBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-hs", Contents: wgpu.ToBytes([]uint32{0, 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: attentionOn: attn-hs: %w", err)
+	}
 	defer releaseBuf(hsBuf)
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ly, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: qBuf, Size: qBuf.GetSize()},
@@ -928,7 +948,10 @@ func (c *Context) attentionOn(pl *wgpu.ComputePipeline, ly *wgpu.BindGroupLayout
 		return nil, err
 	}
 	defer bg.Release()
-	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	enc, err := c.device.TryCreateCommandEncoder(nil)
+	if err != nil {
+		return nil, fmt.Errorf("gpu: attentionOn: command encoder: %w", err)
+	}
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(pl)
@@ -939,7 +962,10 @@ func (c *Context) attentionOn(pl *wgpu.ComputePipeline, ly *wgpu.BindGroupLayout
 		return nil, err
 	}
 	pass.Release()
-	cmd, _ := enc.TryFinish(nil)
+	cmd, err := enc.TryFinish(nil)
+	if err != nil {
+		return nil, fmt.Errorf("gpu: attentionOn: finish: %w", err)
+	}
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	return c.readbackRaw(cBuf, nH*hd)

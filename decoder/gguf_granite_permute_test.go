@@ -99,7 +99,7 @@ func tinyNormRopeGGUF(arch string) (raw []byte, q, k, v []float32) {
 	}
 	if arch == "granite" {
 		// The REAL Granite 4.2 multipliers (granite-4.2-3b config.json). residual_scale must be 1.0: every released 4.2 size
-		// ships it, and validateGraniteDense rejects anything else because the generic forward has no residual hook.
+		// ships it, and ValidateGraniteDense rejects anything else because the generic forward has no residual hook.
 		kvs = append(kvs, kvF32("granite.attention.scale", 0.015625), kvF32("granite.embedding_scale", 1),
 			kvF32("granite.logit_scale", 1), kvF32("granite.residual_scale", 1))
 	}

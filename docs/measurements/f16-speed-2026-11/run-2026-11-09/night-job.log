@@ -1,0 +1,26 @@
+=== night job f16-speed
+=== cmd      env REV=f5f06f4b2 bash /home/francis/goinfer-bench/f16-speed/run.sh
+=== cwd      /home/francis/mycode/goinfer
+=== rev      queued at 7cb04cd1c, now 7cb04cd1c
+=== host     nobara-pc
+=== est      70.0 min, timeout 140.0 min
+=== by       nobara-sb01s, F16-speed
+=== doc      docs/tasks/task-kv-precision-everywhere-2026-10.md
+=== START    2026-11-09 23:12:18 PST  loadavg 0.21  available 61347 MB
+rev:      f5f06f4b2ec67eaeb5f40b6b3febd9d239511f91
+aikit:    v1.76.0
+binary:   /home/francis/goinfer-bench/f16-speed/serve-cuda-f5f06f4b2
+started:  2026-11-09 23:12:22 PST
+driver:   595.112.07
+arms:     goinfer = -kv f16, goinfer_old = -kv f32 (one binary)
+== small-f16first: start 23:12:22
+== small-f16first: exit 0 23:29:59
+== small-f32first: start 23:30:39
+== small-f32first: exit 0 23:50:53
+== d7-f16first: start 23:51:33
+== d7-f16first: exit 0 23:56:25
+== d7-f32first: start 23:57:15
+== d7-f32first: exit 0 00:01:24
+finished: 2026-11-10 00:01:24 PST rc=0
+
+=== END      2026-11-10 00:01:24 PST  rc=0

@@ -118,20 +118,10 @@ func buildMambaLayer(d *Device, m *decoder.Model, l, hidden int, p *mambaParams)
 	return L, nil
 }
 
-// buildMambaScratch compiles the mixer's pipelines and allocates its per-token scratch and uniforms.
-func (r *resident) buildMambaScratch(d *Device, pipe func(string) Pipeline, eps float32) {
-	p := r.mamba
+// buildMambaPipes compiles the mixer's pipelines. Its per-token scratch and uniforms are in the decode list (decodeShape.buffers).
+func (r *resident) buildMambaPipes(pipe func(string) Pipeline) {
 	r.pMbConv, r.pMbSSM, r.pMbGNorm = pipe("mamba_conv"), pipe("mamba_ssm"), pipe("mamba_gnorm")
 	r.pMbConvSeq, r.pMbSSMSeq, r.pMbGNormRows = pipe("mamba_conv_seq"), pipe("mamba_ssm_seq"), pipe("mamba_gnorm_rows")
-	r.mbProj, r.mbConv = d.NewBufferLenOn(mem.LineScratch, p.projDim), d.NewBufferLenOn(mem.LineScratch, p.convDim)
-	r.mbY, r.mbGated = d.NewBufferLenOn(mem.LineScratch, p.dInner), d.NewBufferLenOn(mem.LineScratch, p.dInner)
-	r.mbGq, r.mbGSc = d.NewBufferBytesOn(mem.LineScratch, p.dInner), d.NewBufferLenOn(mem.LineScratch, 1)
-	u := func(v int) Buffer { return NewBufferU32On(mem.LineScratch, d, uint32(v)) }
-	r.uMbConvDim, r.uMbK, r.uMbDInner = u(p.convDim), u(p.dConv), u(p.dInner)
-	r.uMbNH, r.uMbHD, r.uMbDS, r.uMbRep, r.uMbGSize = u(p.nHeads), u(p.headDim), u(p.dState), u(p.repeat), u(p.gSize)
-	r.uMbDtBase, r.uMbGroupSize, r.uMbZero = u(p.dInner+p.convDim), u(p.dInner/p.normGroups), u(0)
-	r.uMbEps = NewBufferFloatsOn(mem.LineScratch, d, []float32{eps})
-	r.uMbNormGroups = u(p.normGroups)
 }
 
 // encodeMambaMixer runs one Mamba-2 layer's mixer and folds its output into the residual x: the norm, in_proj, the conv →
@@ -143,8 +133,14 @@ func (r *resident) encodeMambaMixer(e *Encoder, L *residLayer, x Buffer) {
 // encodeMambaMixerOn is encodeMambaMixer against the conv window win and SSM state ssm: the bound slot's, or, in the batched
 // step, a row's own slot's.
 func (r *resident) encodeMambaMixerOn(e *Encoder, L *residLayer, x, win, ssm Buffer) {
-	p, M := r.mamba, L.mamba
 	r.encodeNorm(e, x, L.preNorm, L.preNormBias, r.aq, r.aSc)
+	r.encodeMambaCoreOn(e, L, win, ssm)
+	e.Dispatch(r.pRes, r.H, 256, x, r.dO)
+}
+
+// encodeMambaCoreOn is the Mamba-2 mixer from its normed input in aq and aSc through out_proj, into dO.
+func (r *resident) encodeMambaCoreOn(e *Encoder, L *residLayer, win, ssm Buffer) {
+	p, M := r.mamba, L.mamba
 	e.Dispatch(r.pGemvW8, p.projDim*32, 32, r.aq, r.aSc, M.inW, M.inS, r.mbProj, r.uH)
 	e.Dispatch(r.pMbConv, p.convDim, 64, r.mbProj, M.convW, M.convB, win, r.mbConv, r.uMbConvDim, r.uMbK, r.uMbDInner)
 	e.Dispatch(r.pMbSSM, p.nHeads*p.headDim, 64, r.mbConv, r.mbProj, M.headP, ssm, r.mbY,
@@ -152,7 +148,6 @@ func (r *resident) encodeMambaMixerOn(e *Encoder, L *residLayer, x, win, ssm Buf
 	e.Dispatch(r.pMbGNorm, p.normGroups*64, 64, r.mbY, r.mbProj, M.normW, r.mbGated, r.uMbGroupSize, r.uMbEps, r.uMbZero)
 	e.Dispatch(r.pQv, 256, 256, r.mbGated, r.mbGq, r.mbGSc, r.uMbDInner)
 	e.Dispatch(r.pGemvW8, r.H*32, 32, r.mbGq, r.mbGSc, M.outW, M.outS, r.dO, r.uMbDInner)
-	e.Dispatch(r.pRes, r.H, 256, x, r.dO)
 }
 
 // resetMamba zeroes every Mamba layer's conv window and SSM state, which a fresh sequence must not inherit. No-op without

@@ -1,5 +1,5 @@
 #!/bin/bash
-# G-Q2 and G-Q3 of docs/tasks/task-metal-q4k-2026-10.md on the MacBook, night queue (the fit guard refuses Phi-3 at q4k by
+# G-Q2 and G-Q3 of docs/completed/task-metal-q4k-2026-10.md on the MacBook, night queue (the fit guard refuses Phi-3 at q4k by
 # day; at night the free memory is the budget). The load-time fit guard stays ON unless GQ_NO_FIT_GUARD=1, the owner's
 # word for one run: both gates then load with GOINFER_NO_FIT_GUARD=1 under a swap watch that kills the gate's test and
 # serve processes when swap grows more than GQ_SWAP_KILL_MB (default 1024) over the gate's own baseline. Metal's

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# G-Q3 of docs/tasks/task-metal-q4k-2026-10.md (registered before any code): one greedy chat request, the peer harness's
+# G-Q3 of docs/completed/task-metal-q4k-2026-10.md (registered before any code): one greedy chat request, the peer harness's
 # depth-128 Phi-3 prompt (scripts/prompts.json "phi3-mini:128"), 64 tokens with top-3 log-probabilities, through ONE serve
 # binary, once with --backend cpu (the reference) and once with --backend metal, both at -quant q4k and -ctx 512. Each
 # arm's decode path is read from its serve log and must be the one it names (cpu (q4k) / metal-resident (q4k)), or the

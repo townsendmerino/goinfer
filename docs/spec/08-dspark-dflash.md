@@ -809,7 +809,7 @@ they line up with the performance problem gate 3 exposed.
 (2026-08-15) — the `dspark_*_block7` drafters are in scope for the spike. Filing one upstream
 issue is still worth it (DeepSpec is MIT and lists these as releases — likely an oversight),
 but that is for eventual distribution/ship, not a blocker on exploring. Draft issue kept at
-`docs/prompts/dspark-license-issue.md`. The apache-2.0 PARO family in the same org remains a
+`docs/tasks/parked/dspark-license-issue.md`. The apache-2.0 PARO family in the same org remains a
 cleanly-licensed fallback.
 
 **Sequencing — explore DSpark first.** (1) Reframe against routed economics (free);
@@ -1640,7 +1640,7 @@ profile** — near-geometric for the 35B, front-loaded for the 4B.
 
 ## Metal — verify curve measured, and the leading finding isn't the numbers
 
-Per `docs/prompts/metal-verify-curve.md` (dispatched to the M1 Pro leg 2026-08-16). Result up
+Per `docs/completed/metal-verify-curve.md` (dispatched to the M1 Pro leg 2026-08-16). Result up
 front: **Metal doesn't currently amortize batched verify at all** — ceiling ~1.13× *even with
 free drafting*, against CUDA's measured 1.74× at k=7. And that ceiling number is arguably the
 second finding, not the first — see below.

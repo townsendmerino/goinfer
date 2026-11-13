@@ -334,6 +334,13 @@ decoder/testdata/.spark2-5-code/
 decoder/testdata/spark2-5-tiny/*.py
 !decoder/testdata/spark2-5-tiny/model.safetensors
 
+# Flint (flint) tiny fixture (~1.5 MB, scripts/pin_flint_tiny.py): weights and config.json are
+# tracked so the T1 forward and window-boundary gates run in CI; the fetched upstream
+# transformers PR #49824 modeling files stay in decoder/testdata/.flint-code/ (ignored).
+decoder/testdata/.flint-code/
+!testdata/flint-tiny/
+!testdata/flint-tiny/model.safetensors
+
 # Laguna real-weight SLICE fixtures (scripts/pin_laguna_slice.py). ~6GB each: real
 # checkpoint layers, regenerable from a local XS.2/XS-2.1 copy. Only the goldens
 # (decoder/testdata/laguna_*_slice_golden.json) are tracked — unlike the ~1.3MB tiny

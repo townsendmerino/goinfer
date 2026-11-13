@@ -1,0 +1,1 @@
+model=sb2-heldout6-nemotronh-4b-ctx8192 ctx=8192 B=3513981184 ledger_list=3611616040 buffers=1011 A=3539992576 fills_MiB=map[16:3 256:1 1024:3] nvsmi_used_MiB before=430 loaded=4226 full=7556 kv=f32 plan_list=3612452864 plan_list_buffers=379 m1p_plan_list=3976200192 plan=3978456576 plan_ctx=8192 plan_placement=resident

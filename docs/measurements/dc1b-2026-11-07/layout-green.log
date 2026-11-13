@@ -1,0 +1,5 @@
+=== RUN   TestLayout_arrows
+    arrows_test.go:311: 231 arrows and 195 test arrows between goinfer packages; 9 rules
+--- PASS: TestLayout_arrows (0.09s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/layout	0.092s

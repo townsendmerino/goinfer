@@ -1,0 +1,7 @@
+--- FAIL: TestCompare_classes (0.00s)
+    compare_test.go:205: under the builder rule, a loader file and a builder moved, no identity or program did: got [{Family:f Class:old-only Moved:[decoder/arch.go decoder/weights.go] Explained:false Reason:today's key moved on an input the shadow key also reads}], want class old-only explained true
+--- FAIL: TestTodayKey_builderRule (0.00s)
+    compare_test.go:465: TodayKey keyed a family under an unknown definition, want an error
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/guard/paritykey	0.004s
+FAIL

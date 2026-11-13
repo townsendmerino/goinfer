@@ -9,7 +9,7 @@ cross-compile it like anything else. No Python, no llama.cpp, no C toolchain, no
 - **Output your types guarantee** — constrain generation to a Go struct or a JSON Schema; an
   invalid token is unreachable, not retried.
 - **One static binary** — and, if you want, the model baked into it.
-- **43 model families**, each behind a HuggingFace logit-parity gate.
+- **44 model families**, each behind a HuggingFace logit-parity gate.
 - **CPU, CUDA and Metal**, cgo-free; **WebGPU** as an opt-in cgo build.
 - **Runs offline** — no telemetry, no update check, no account. The one thing that reaches the network is fetching a
   model when you ask for one, from HuggingFace: `pull`, an `hf:` or `demo:` model reference, or the web UI's search and
@@ -55,7 +55,8 @@ It works from any JSON Schema too (`constrain.JSONSchema(bytes)`), and from the 
 
 Supported subset: objects (required and optional, `additionalProperties:false`), arrays
 (`items`/`minItems`/`maxItems`), `string`/`number`/`integer`/`boolean`/`null`, `enum`/`const`,
-and arbitrary nesting. A property-based test asserts that every constrained generation validates
+a string's `format` for `date`, `time`, `date-time`, `uuid`, `ipv4` and `email`, and arbitrary
+nesting. A property-based test asserts that every constrained generation validates
 against its schema.
 
 **Tool calls get the same treatment.** On the Qwen families (Qwen2 through Qwen3.8),
@@ -160,7 +161,7 @@ goinfer-chat  --model demo:0.5b
 ```
 
 Interrupted transfers resume. Downloads land in your user cache dir and print the exact `--model`
-command to run them; `goinfer-chat cache` lists what is there. A family that ships no GGUF (safetensors only) is fetched whole with
+command to run them; `goinfer-chat cache` lists what is there, and `goinfer-chat cache prune-sidecars` the old-format `.giw` sidecars it can reclaim. A family that ships no GGUF (safetensors only) is fetched whole with
 `:safetensors` — `pull HuggingFaceTB/SmolLM3-3B:safetensors`, or `--model hf:…:safetensors` — as one verified set
 of config, tokenizer and weight shards; nothing lands until every file has checked out. Access is anonymous only; a gated repo is detected and named before the
 transfer starts. A plain path still means a plain path — only the `hf:` and `demo:` prefixes are
@@ -351,9 +352,9 @@ in-process. Longer form: [docs/positioning.md](docs/positioning.md).
 
 ## What it runs
 
-- **43 model families** — Gemma 1/2/3/4 (and CodeGemma), the Qwen line (Qwen2, Qwen2.5, Qwen3, Qwen3-MoE, Qwen3-Next, Qwen3.5-MoE, Qwen3.8, Qwen2.5-VL,
+- **44 model families** — Gemma 1/2/3/4 (and CodeGemma), the Qwen line (Qwen2, Qwen2.5, Qwen3, Qwen3-MoE, Qwen3-Next, Qwen3.5-MoE, Qwen3.8, Qwen2.5-VL,
   Qwen3-VL and its MoE, Qwen3-ASR), Llama, Mistral, Mixtral, Phi-3, DeepSeek/MLA,
-  GLM, Kimi, Granite, Nemotron, Mellum, Olmo 3, Olmo Hybrid (on Metal at `int4` only; on WebGPU read only on the M1 Pro's adapter) and more; one page each at
+  GLM, Kimi, Granite, Nemotron, Mellum, Olmo 3, Olmo Hybrid (on Metal at `int4` only; on WebGPU read only on the M1 Pro's adapter), Flint and more; one page each at
   [goinfer.dev/models](https://goinfer.dev/models/), generated from the `decoder` registry
   ([capability-matrix.md](docs/capability-matrix.md)).
 - **All four sequence-mixing families** — softmax·GQA, gated-linear (DeltaNet), state-space
@@ -391,24 +392,24 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 
 | family (`model_type`) | CPU | CUDA | Metal | WebGPU |
 |---|---|---|---|---|
-| Gemma 3 (`gemma3`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU |
-| Gemma 4 E2B, E4B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU |
+| Gemma 3 (`gemma3`) | CPU / CPU | GPU / GPU | GPU / GPU | GPU / GPU |
+| Gemma 4 E2B, E4B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | GPU / GPU |
 | Gemma 4 E2B, E4B audio (`gemma4`) | CPU / CPU | CPU / GPU | GPU / GPU | CPU / GPU |
-| Gemma 4 26B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU |
-| Gemma 4 31B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU |
-| Qwen2.5-VL (`qwen2_5_vl`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU |
-| Qwen3.5+ dense (`qwen3_5`) | CPU / CPU | GPU / GPU | GPU / CPU | CPU / CPU |
-| Qwen3.5+ MoE (`qwen3_5_moe`) | CPU / CPU | GPU / CPU | GPU / CPU | CPU / CPU |
-| Qwen3-VL (`qwen3_vl`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU |
-| Qwen3-VL MoE (`qwen3_vl_moe`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / GPU |
-| GLM-OCR (`glm_ocr`) | CPU / CPU | GPU / GPU | GPU / GPU | CPU / CPU |
+| Gemma 4 26B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | GPU / GPU |
+| Gemma 4 31B (`gemma4`) | CPU / CPU | GPU / GPU | GPU / GPU | GPU / GPU |
+| Qwen2.5-VL (`qwen2_5_vl`) | CPU / CPU | GPU / GPU | GPU / GPU | GPU / GPU |
+| Qwen3.5+ dense (`qwen3_5`) | CPU / CPU | GPU / GPU | GPU / CPU | GPU / CPU |
+| Qwen3.5+ MoE (`qwen3_5_moe`) | CPU / CPU | GPU / CPU | GPU / CPU | GPU / CPU |
+| Qwen3-VL (`qwen3_vl`) | CPU / CPU | GPU / GPU | GPU / GPU | GPU / GPU |
+| Qwen3-VL MoE (`qwen3_vl_moe`) | CPU / CPU | GPU / GPU | GPU / GPU | GPU / GPU |
+| GLM-OCR (`glm_ocr`) | CPU / CPU | GPU / GPU | GPU / GPU | GPU / CPU |
 | LFM2.5-VL (`lfm2_vl`) | CPU / CPU | CPU / CPU | CPU / CPU | CPU / CPU |
 | Ministral 3 (`mistral3`) | CPU / CPU | CPU / GPU | CPU / GPU | CPU / CPU |
 
 <!-- END images-and-audio support table -->
 
-Not yet: video. Under `--backend webgpu` every image tower stays on the CPU by default (the table's WebGPU column); `--vision-device gpu` puts the Gemma 3, Gemma 4, Qwen2.5-VL, Qwen3.5+, Qwen3-VL and GLM-OCR towers on the GPU there, and the other families' towers have no WebGPU form.
-Qwen3-VL MoE (a 30B model, too large for a 16 GB Mac or an 8 GB card) has been checked against HuggingFace on the CPU; its served check on a GPU has not passed, because a two-image request on CUDA's paged path read as a fail and is still open ([S10q-paged](docs/tasks/task-multimodal-remaining-2026-10.md)).
+Not yet: video. Under `--backend webgpu` the Gemma 3, Gemma 4, Qwen2.5-VL, Qwen3.5+, Qwen3-VL and GLM-OCR towers run on the GPU by default on a unified-memory Mac (the table's WebGPU column; `--vision-device cpu` keeps them on the CPU). A discrete GPU keeps the CPU tower until `--vision-device gpu` asks, since WebGPU cannot price a card's memory, and a Qwen3.5+ `.gguf` mmproj tower likewise; the other families' towers have no WebGPU form.
+Qwen3-VL MoE (a 30B model, too large for a 16 GB Mac or an 8 GB card) has been checked against HuggingFace on the CPU; its served check on a GPU has not passed, because a two-image request on CUDA's paged path read as a fail and is still open ([S10q-paged](docs/tasks/parked/task-multimodal-remaining-2026-10.md)).
 
 ## Docs
 

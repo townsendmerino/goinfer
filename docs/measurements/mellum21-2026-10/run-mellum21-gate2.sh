@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mellum2.1 Gate 2 (docs/tasks/task-mellum21-2026-10.md, "Gate 2 ... PRE-REGISTERED"): int4 on the 8 GB card, then the unmodified `serve check`.
+# Mellum2.1 Gate 2 (docs/completed/task-mellum21-2026-10.md, "Gate 2 ... PRE-REGISTERED"): int4 on the 8 GB card, then the unmodified `serve check`.
 # Run NOW at the owner's word (2026-10-09 "go ahead and run gate 2 now"); estimate ~40 min (int4 quantisation of a 24 GB bf16 checkpoint at load, check < 2 min).
 # Registered flags: --model <ckpt> --backend cuda --ctx 16384; --moe-cache-experts ONLY if the plan declines a resident load (banner decode path not cuda). No flag is tuned after a reading.
 # Leaves the server RUNNING (pid in $OUT/serve.pid) for the by-hand follow-ups the registration names; stop it with: kill "$(cat $OUT/serve.pid)"

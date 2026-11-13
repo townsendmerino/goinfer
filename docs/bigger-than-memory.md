@@ -70,6 +70,20 @@ goinfer-chat pull gemma-4-26b-a4b
 goinfer-serve -backend cuda -moe-cache-experts -model ~/models/gemma-4-26B_q4_0-it.gguf
 ```
 
+**Host memory for the expert cache: `-moe-experts-unpinned`.**
+- `-moe-cache-experts` keeps a page-locked host copy of every routed expert, about 12 GiB on gemma-4-26b, so that the per-token DMA reads
+  pinned memory.
+- On a box where that copy does not fit, `-moe-experts-unpinned` holds no copy. It writes the packed experts to a file beside the model
+  (unlinked while mapped; the directory must not be tmpfs) and uploads the slots from that file's pageable pages.
+- **It is slower by design.** Measured on the RTX 2070 SUPER with gemma-4-26b: decode **0.82x** at short context and **0.75x** at 4,096
+  keys, for 12,251 MiB of host memory saved
+  ([`measurements/mem10-2026-11/ab-registration.md`](measurements/mem10-2026-11/ab-registration.md), "Reading").
+- Off by default. The load's memory refusal names it when the pinned copy is what does not fit, and only then.
+
+```bash
+goinfer-serve -backend cuda -moe-cache-experts -moe-experts-unpinned -model ~/models/gemma-4-26B_q4_0-it.gguf
+```
+
 `gpt-oss-20b` (`goinfer-chat pull gpt-oss-20b`; 12 GB at native MXFP4) is a second real option at
 this size class — its own CUDA resident gate is measured on an 8 GB card too, see
 [`capability-matrix.md`](capability-matrix.md)'s gpt-oss row — with `-moe-cache-experts` results not yet as

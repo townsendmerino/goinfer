@@ -9,8 +9,11 @@ R = tok/s(B) / tok/s(A), formed within each PAIR, arm order alternating across p
 streamed token, token counts from the engine's usage (speculative decoding emits bursts, so counting chunks would be wrong).
 
   GOINFER_SERVE_CUDA=/path/serve-cuda python3 scripts/bench_spec_lane.py --out r.json --cell 1.5B:3900 --cell 7B:7500
+With --build-b PATH, arm B is arm A's flags and environment on the binary PATH instead of the lane: R is then a build-against-build
+ratio on the exact attention with speculation (RF2's G-RF2-S verify cells: A = GOINFER_SERVE_CUDA, the old build; B = PATH, the new).
 """
-import argparse, json, os, signal, statistics, subprocess, sys, time, urllib.request
+import argparse
+import hashlib, json, os, signal, statistics, subprocess, sys, time, urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bench_peer as bp  # noqa: E402  (primitives only)
@@ -36,7 +39,7 @@ def prompt(chars):
             "\n\nRewrite the file above EXACTLY, character for character, with no changes and no commentary.")
 
 
-def run_arm(model, chars, arm, ntok, reps):
+def run_arm(model, chars, arm, ntok, reps, binary=None):
     env = dict(os.environ)
     for k in ("GOINFER_CUDA_FLASH_DECODE", "GOINFER_CUDA_FLASH_DECODE_MIN_KEYS", "GOINFER_CUDA_FLASH_DECODE_VERIFY"):
         env.pop(k, None)
@@ -45,7 +48,7 @@ def run_arm(model, chars, arm, ntok, reps):
     aenv, extra = ARMS[arm]
     env.update(aenv)
     ctx = 8192
-    proc = subprocess.Popen([bp.SERVE["cuda"], "-model", "bench=" + MODELS[model], "-backend", "cuda", "-quant", "int4",
+    proc = subprocess.Popen([binary or bp.SERVE["cuda"], "-model", "bench=" + MODELS[model], "-backend", "cuda", "-quant", "int4",
                              "-addr", f"127.0.0.1:{PORT}", "-ctx", str(ctx)] + extra,
                             env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setsid)
     try:
@@ -103,9 +106,19 @@ def main():
     ap.add_argument("--ntok", type=int, default=192)
     ap.add_argument("--reps", type=int, default=2)
     ap.add_argument("--context", action="store_true", help="also run the plain exact / plain lane context arms once per cell")
+    ap.add_argument("--build-b", help="arm B = arm A's flags on this serve-cuda binary (a build-against-build ratio) instead of the lane")
     args = ap.parse_args()
     bp.preflight()
     res = {"provenance": bp.provenance(), "cells": {}}
+    # arm name -> (the ARMS entry it runs, the binary; None = GOINFER_SERVE_CUDA's)
+    plan = {"A": ("A", None), "B": ("B", None)}
+    if args.build_b:
+        a, b = os.path.realpath(bp.SERVE["cuda"]), os.path.realpath(args.build_b)
+        digest = lambda p: hashlib.sha256(open(p, "rb").read()).hexdigest()
+        if a == b or digest(a) == digest(b):
+            sys.exit(f"bench_spec_lane: --build-b {b} is the same binary as GOINFER_SERVE_CUDA ({a})")
+        plan["B"] = ("A", b)
+        res["builds"] = {"A": {"path": a, "sha256": digest(a)}, "B": {"path": b, "sha256": digest(b)}}
     for cell in args.cell:
         model, chars = cell.split(":")
         chars = int(chars)
@@ -115,7 +128,7 @@ def main():
             order = ("A", "B") if p % 2 == 0 else ("B", "A")
             pair = {}
             for arm in order:
-                out, err = run_arm(model, chars, arm, args.ntok, args.reps)
+                out, err = run_arm(model, chars, plan[arm][0], args.ntok, args.reps, plan[arm][1])
                 pair[arm] = out if not err else {"error": err}
                 print(f"  {key} pair {p} {arm}: {out['mean']:.1f} tok/s (prompt {out['prompt_tokens']} tok) {out['rates']}" if out else f"  {key} {arm} ERROR {err}", flush=True)
             if "mean" in pair.get("A", {}) and "mean" in pair.get("B", {}):

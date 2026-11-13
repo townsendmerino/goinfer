@@ -43,17 +43,16 @@ func init() {
 
 // Compile-time seams: catch signature drift against decoder/residency.go + decoder/backend.go.
 var (
-	_ decoder.Backend               = (*metalBackend)(nil)
-	_ decoder.ResidencyBackend      = (*metalBackend)(nil)
-	_ decoder.ResidencyPricer       = (*metalBackend)(nil)
-	_ decoder.ResidentForward       = (*metalResident)(nil)
-	_ decoder.ResidentContextNoted  = (*metalResident)(nil)
-	_ decoder.ResidentMRoPE         = (*metalResident)(nil)
-	_ decoder.ResidentAdapter       = (*metalResident)(nil)
-	_ decoder.Prefiller             = (*metalResident)(nil)
-	_ decoder.PrefillPathReporter   = (*metalResident)(nil)
-	_ decoder.VerifyPathReporter    = (*metalResident)(nil)
-	_ decoder.ResidentQuantReporter = (*metalResident)(nil)
+	_ decoder.Backend              = (*metalBackend)(nil)
+	_ decoder.ResidencyBackend     = (*metalBackend)(nil)
+	_ decoder.ResidencyPricer      = (*metalBackend)(nil)
+	_ decoder.ResidentForward      = (*metalResident)(nil)
+	_ decoder.ResidentCapsReporter = (*metalResident)(nil)
+	_ decoder.ResidentMRoPE        = (*metalResident)(nil)
+	_ decoder.ResidentAdapter      = (*metalResident)(nil)
+	_ decoder.Prefiller            = (*metalResident)(nil)
+	_ decoder.PrefillPathReporter  = (*metalResident)(nil)
+	_ decoder.VerifyPathReporter   = (*metalResident)(nil)
 )
 
 // metalBackend implements decoder.Backend + decoder.ResidencyBackend.
@@ -96,7 +95,11 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 		res.ctxCeilKey = m // the entry lives as long as the resident (resident.Close deletes it)
 	}
 	b.resident = &metalResident{r: res, hidden: res.H, exact: m.ExactPrefill(), need: func() int64 { return residentNeedBytes(m) }}
-	b.resident.ctxNote = metalContextNote(m, fit, res.ctxCap, res.kvSlotCount())
+	share := res.ctxCap // the note prices the context the plan sized each slot for, not the cap one conversation may borrow up to
+	if res.kvShareCtx > 0 {
+		share = res.kvShareCtx
+	}
+	b.resident.ctxNote = metalContextNote(m, fit, share, res.kvSlotCount())
 	if got, want := b.resident.embLen(), m.ResidentEmbedLen(); got != want {
 		_ = res.Close()
 		b.resident = nil
@@ -476,7 +479,7 @@ func metalKVSlots(m *decoder.Model) int {
 	if err != nil || ram == 0 {
 		return 1
 	}
-	budget, need := metalMemoryCeiling(ram), residentNeedBytes(m)
+	budget, need := metalMemoryCeiling(ram), residentNeedBytes(m)+metalRaisedTableBytes(m, n)
 	got := kvSlotsWithin(n, budget, need, metalSlotBytes(m))
 	// An unpinned slot count gives up a slot for the batched step's scratch, since a default slot is worth less than batched prefill,
 	// but only where the step then fits. A count the caller asked for keeps its slots, and the step declines if it no longer fits.
@@ -494,6 +497,16 @@ func metalKVSlots(m *decoder.Model) int {
 	return got
 }
 
+// metalRaisedTableBytes is what n slots' block tables add at one conversation's raised cap (decoder.Model.MetalKVTableRaiseBytes), priced
+// for the most slots asked: fewer raise the cap less.
+func metalRaisedTableBytes(m *decoder.Model, n int) int64 {
+	ctxCap, err := resolveMetalCtxCap(m)
+	if err != nil {
+		ctxCap = metalCtxCapMax
+	}
+	return m.MetalKVTableRaiseBytes(n, ctxCap)
+}
+
 // metalSlotBytes is what each KV slot after the first costs: its KV at the resident context, and its own recurrent state
 // (metalRecurrentSlotBytes, 0 for a model without a recurrent mixer).
 func metalSlotBytes(m *decoder.Model) int64 {
@@ -504,15 +517,9 @@ func metalSlotBytes(m *decoder.Model) int64 {
 	return m.MetalKVSlotBytes(ctxCap) + metalRecurrentSlotBytes(m)
 }
 
-// metalKVSlotsWanted is the slot count the build asks memory for: the model's request, or metalDefaultKVSlots when that
-// request is only the caller's default (E-P09). metalKVSlots grants as many of them as fit.
-func metalKVSlotsWanted(m *decoder.Model) int {
-	n := m.ResidentKVSlotsRequestFor("metal")
-	if m.ResidentKVSlotsIsDefault() && n > metalDefaultKVSlots {
-		n = metalDefaultKVSlots
-	}
-	return max(n, 1)
-}
+// metalKVSlotsWanted is the slot count the build asks memory for (decoder.Model.MetalKVSlotsWanted, E-P09). metalKVSlots grants as
+// many of them as fit.
+func metalKVSlotsWanted(m *decoder.Model) int { return m.MetalKVSlotsWanted() }
 
 // metalDefaultKVSlots is how many resident KV slots Metal keeps when the count asked is the caller's default
 // (decoder.Options.ResidentKVSlotsDefault: serve without -kv-sessions). Every slot's KV is resident from the first token, so
@@ -673,7 +680,7 @@ func (a *metalResident) fastPrefill() bool {
 	return a.fast
 }
 
-// ContextNote makes metalResident a decoder.ResidentContextNoted.
+// ContextNote is ResidentCaps' ContextNote: how the load arrived at the context cap.
 func (a *metalResident) ContextNote() string { return a.ctxNote }
 
 // ctxCap is this resident's resolved KV capacity: a.r.ctxCap, or metalCtxCapDefault for a zero-value &metalResident{} (r == nil),
@@ -697,9 +704,22 @@ func (a *metalResident) checkCap(pos, n int) error {
 	return nil
 }
 
-// ContextCap is the resident KV capacity in positions. It makes metalResident a decoder.ResidentCapped, so generateInto clamps
-// maxTokens to the cap up front instead of erroring mid-decode.
+// ContextCap is the resident KV capacity in positions (ResidentCaps' ContextCap), so generateInto clamps maxTokens to the cap
+// up front instead of erroring mid-decode.
 func (a *metalResident) ContextCap() int { return a.ctxCap() }
+
+// ResidentCaps is decoder.ResidentCapsReporter's. The batched prefill always reports a kernel-class floor, 0 when one class runs
+// at every length.
+func (a *metalResident) ResidentCaps() decoder.ResidentCaps {
+	return decoder.ResidentCaps{
+		ContextCap:      a.ContextCap(),
+		HasKernelFloor:  true,
+		KernelFloor:     a.PrefillKernelFloor(),
+		Quant:           a.ResidentQuant(),
+		ContextNote:     a.ContextNote(),
+		BatchGreedyDraw: a.BatchGreedyDraw(),
+	}
+}
 
 // ForwardMRoPE is decoder.ResidentMRoPE: like Forward, but the rotation angle (ropePos) and the
 // KV-cache/attention position (pos) are supplied separately — Qwen2.5-VL decode past an image
@@ -711,8 +731,13 @@ func (a *metalResident) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]f
 	if e := a.checkCap(pos, 1); e != nil {
 		return nil, e
 	}
+	a.r.kvQuiesce(a.r.kvSlot, pos+1)
+	if e := a.r.kvWrite(a.r.kvSlot, pos, pos+1); e != nil { // its block, before the forward is encoded (setPos's kvWriteMust then holds)
+		return nil, e
+	}
 	if pos == 0 {
-		// A fresh sequence re-zeroes any recurrent state (DeltaNet, Mamba-2) left by a prior Generate on this resident (no-op for other families).
+		// A fresh sequence re-zeroes any recurrent state (DeltaNet, Mamba-2) left by a prior Generate on this resident (no-op for other
+		// families), once its write is mapped: a refused one leaves the slot as it was.
 		a.Reset()
 	}
 	logits := a.r.ForwardEmbMRoPEPipe(embedding, pos, ropePos)
@@ -738,6 +763,13 @@ func (a *metalResident) ForwardSample(embedding []float32, pos int, temperature 
 	if len(embedding) != a.embLen() {
 		return 0, fmt.Errorf("metal: embedding len %d != %d (hidden %d + PLE inputs)", len(embedding), a.embLen(), a.hidden)
 	}
+	if e := a.checkCap(pos, 1); e != nil {
+		return 0, e
+	}
+	a.r.kvQuiesce(a.r.kvSlot, pos+1)
+	if e := a.r.kvWrite(a.r.kvSlot, pos, pos+1); e != nil {
+		return 0, e
+	}
 	return a.r.ForwardSample(embedding, pos, temperature, seed, draw)
 }
 
@@ -762,8 +794,12 @@ func (a *metalResident) ForwardNoLogits(embedding []float32, pos int) error {
 	if e := a.checkCap(pos, 1); e != nil {
 		return e
 	}
+	a.r.kvQuiesce(a.r.kvSlot, pos+1)
+	if e := a.r.kvWrite(a.r.kvSlot, pos, pos+1); e != nil {
+		return e
+	}
 	if pos == 0 {
-		a.Reset() // fresh sequence — same reason as Forward
+		a.Reset() // a fresh sequence, once its write is mapped, as Forward does
 	}
 	a.r.ForwardEmbNoLogitsPipe(embedding, pos)
 	return a.r.takeExecErr() // a command buffer aborted: surface it
@@ -857,12 +893,12 @@ func metalFusedAttentionEnabled(v string) bool {
 	return true
 }
 
-// ResidentQuant (decoder.ResidentQuantReporter) is the precision this resident runs its weights at, when the decoder cannot
+// ResidentQuant (decoder.ResidentCaps.Quant) is the precision this resident runs its weights at, when the decoder cannot
 // infer it: an int8 model on the native path (r.w8) runs at its own quant, where one on the int4 path is re-quantized. ""
 // leaves the decoder's label.
 func (a *metalResident) ResidentQuant() string { return a.quant }
 
-// PrefillKernelFloor (decoder.ResidentPrefillKernelFloor) is the whole-prompt length from which the batched
+// PrefillKernelFloor (decoder.ResidentCaps.KernelFloor) is the whole-prompt length from which the batched
 // prefill runs the f16 MMA kernels, below which it runs decode rows or the sequential loop: two kernel classes
 // that are not bit-identical. 0 when one class runs at every length (a layer-major path, int8 KV, an arch the
 // MMA kernels do not cover, fast prefill off, or GOINFER_METAL_FAST_PREFILL_FLOOR=0). PrefillPath reports the same
@@ -870,7 +906,7 @@ func (a *metalResident) ResidentQuant() string { return a.quant }
 func (a *metalResident) PrefillKernelFloor() int { return a.prefillKernelFloor() }
 
 func (a *metalResident) prefillKernelFloor() int {
-	if a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() || a.r.kvF32 || a.r.attnSink || !a.r.prefillOK || !a.fastPrefill() {
+	if a.r == nil || a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() || a.r.kvF32 || a.r.attnSink || !a.r.prefillOK || !a.fastPrefill() {
 		return 0
 	}
 	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
@@ -1431,7 +1467,10 @@ func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 	if e := a.checkCap(base, n); e != nil {
 		return e
 	}
-	a.r.kvOwn(a.r.kvSlot, base, base+n)
+	a.r.stopExec() // it writes K/V from the host beside the executor, whose pipelined forward may still be in flight
+	if err := a.r.kvUploadMap(layer, base, base+n); err != nil {
+		return err
+	}
 	// Each position goes to its row through the bound slot's table (kvHostRow), the pool's contents indexed from its start.
 	if a.r.kvI8 {
 		nKV := g.nKV

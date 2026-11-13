@@ -17,12 +17,70 @@
 
 ## What is open
 
+- **P46 · Metal int8's MC3 step: B activation rows staged in threadgroup memory, or an MMA form (S3-next) — PARKED, filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions).**
+  `darwin`. Optional and unmeasured; B = 8 already reads 2.0x. Moved from `docs/completed/task-metal-int8-2026-10.md` (slice 3b,
+  "Still not built"). Trigger: a served multi-client Metal int8 run that names the step as the gap.
+
+- **P45 · Native int8 for the recurrent families on Metal (S6) — PARKED, filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions).** `darwin`. Until it is built, G44's decline
+  holds (`backend/metal/g44_deltanet_int8_test.go:TestG44_deltaNetInt8Declines`): the recurrent families' int4 default serves
+  them on Metal and their int8 loads run on the CPU. Write its gates before code. Moved from
+  `docs/completed/task-metal-int8-2026-10.md`. Trigger: a recurrent model ships as an int8int8 bundle.
+
+- **P44 · Recompute audit's leftovers (R-14 rest, R-17 rest, R-24 drafter trips) — as they come up, filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions).** `either`. Moved
+  from `docs/completed/task-recompute-audit.md` when it was archived: R-14's aikit-side activation re-quantization and R-17's
+  small CPU duplicates are taken as they come up (their "Not done" lists); R-24's drafter round trips are parked until the
+  transfer time is measured (`decoder/blockspec.go:ResidentBlockDrafter`).
+
+- **P43 · Re-run `TestGemma4EndToEndThroughput` before any expert-pager work (R-05) — OPEN, filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions).** `either`. One run on a box
+  with the Gemma 4 bundles and about 75 GB free; no pager code before it (`decoder/moepaging.go:newExpertPager`). Moved from
+  `docs/completed/task-recompute-audit.md`, R-05.
+
+- **P42 · Parallel `topKByLogit` and min-p scan at Gemma vocab (R15's open half) — OPEN, unfunded, filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions).** `darwin`. Sized
+  (about 250 µs and 167 µs a token), not measured for a parallel form; the max-scan half lost (1.39x to 3.78x slower). Ships
+  at ≥ 1.2x at Gemma vocab with bit-identity, the min-p candidate order preserved; killed otherwise. The design and band are
+  in `docs/completed/red-october.md` § "R15".
+  *Updated 2026-11-09: the parallel arms and their bit-identity tests are built, test-only
+  (`internal/runtime/sampling/sampler_filter_parallel_test.go`); what is left is the timed A/B, by day on the Mac,
+  in-process:* `for i in $(seq 10); do python3 scripts/timing_lock.py run --label r15 -- go test ./internal/runtime/sampling
+  -run '^$' -bench 'TopKByLogit_gemmaVocab|MinPScan_gemmaVocab' -benchtime 2000x -count 1; done`, about 2 minutes. Each
+  iteration runs serial then parallel, so the ten iterations are ten matched pairs per component. A component ships, wired
+  into `topFilterLogits`, at a median ≥ 1.2x with 9 of 10 pairs faster; otherwise it is killed and its arm removed.
+
+- **P41 · R13's full three-arm sweep, both boxes, all sizes — OPEN, filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions).** `either`. The grouped CPU decode attention shipped
+  default on (1.32x served at depth 8192), but the three-arm, both-box, every-size sweep was never run, and the Linux half
+  read a regression on the 1.5B. `docs/completed/red-october.md` § "R13" has the arms.
+  *Updated 2026-11-09: registered, awaiting Francis's approval before any run
+  (`docs/measurements/r13-grouped-sweep-2026-11/README.md`). Two arms, on against off. It is arm64 only: on amd64 both arms
+  run the per-head path, and of the bench models only Qwen2.5-1.5B takes the grouped path.*
+
 - **P36 · The memory campaign's CUDA cells, on nobara — a pointer, filed 2026-10-31 (coordinator).** `linux`.
-  The rows live in `docs/tasks/task-memory-campaign-2026-10.md`'s ledger, which stays the record; this entry only puts
+  *Updated 2026-11-08: the memory campaign is archived (`docs/completed/task-memory-campaign-2026-10.md`); MEM10's build
+  (Francis, 2026-11-08: build it now) is a row in `docs/tasks/task-forward-and-memory-2026-11.md`, and P37 to P40 hold the
+  parked rest, so this pointer has nothing left to point at and closes.* The rows lived in the campaign's ledger; this entry only put
   them in a queue. State at 2026-11-06, from the ledger: MEM13-copies-CUDA and D8b-cuda are done (2026-11-05); MEM10 has its G0
   reading (`docs/measurements/mem10-2026-11/README.md`) and no build, which is the coordinator's and the owner's call; MEM6 (the
-  CUDA cells and the `RssAnon` gate) is open as the parked PR #691, with no lever until a mechanism is named; MEM4(b) on CUDA is
+  CUDA cells and the `RssAnon` gate) is PR #691, merged as is by Francis 2026-11-06 21:32 (7B 81 MiB against the 64 MiB bar; the three levers not taken); MEM4(b) on CUDA is
   read INCONCLUSIVE (`docs/measurements/mem4b-cuda-2026-11/README.md`), its release already wired. Close a row there, in the same commit as the work, and strike it here.
+
+- **P37 · MoE on Metal: stack-major aliasable experts and the two writer gaps (MEM9(a,b)) — PARKED, filed 2026-11-08
+  (close-out sweep).** `darwin`. Moved from the memory campaign's ledger (`docs/completed/task-memory-campaign-2026-10.md`
+  §4 "MEM9"; its pool half, MEM9(c), is KV11 in `docs/tasks/task-kv-architecture-2026-10.md`). M26 unpaged held 12.85 GB
+  anonymous. Trigger: a Mac that runs an MoE unpaged, or a user report.
+
+- **P38 · Gemma 4 E2B's per-pass PLE block on CUDA (`pleHost`) — PARKED, filed 2026-11-08 (close-out sweep).** `linux`.
+  MEM6's CUDA half did not cover it (`docs/measurements/mem6-cuda-2026-11/README.md`, "Verdict"). Trigger: someone serves
+  E2B on CUDA where host memory binds; the first step is a tier-0 bytes test.
+
+- **P39 · `decoder.Load`'s host peak while it builds the host model (about 16 GB on Nemotron-Nano-9B) — PARKED, filed
+  2026-11-08 (close-out sweep).** `linux`. It sets the whole-process peak before the CUDA build starts
+  (`docs/measurements/mem13-copies-cuda-2026-11/README.md`); no item owned it once MEM1 closed. Trigger: a box where that
+  peak trips the swap or fit guard.
+
+- **P40 · Chunk text by reference in aikit, and ken's reload hygiene (MEM17, ken) — PARKED (Francis, 2026-11-08), filed
+  2026-11-08.** aikit and ken. `chunk.Chunk` as a file and a byte range through a mapping (D4, owner 2026-10-21), about
+  1.4 GB saved at 1M chunks and about 2 MB on aikit's own tree; ken would store chunks that way, and call
+  `StaticModel.Close` on reload and use `Builder.Add`. Needs an aikit minor release (publishing: Francis's go) and a brief to
+  ken's own session. Trigger: a ken index over about 100k chunks where chunk text shows in its memory use.
 
 - **P35 · Gemma-4 prefill falls back to one token at a time past about 12k attended keys on a 48 KB shared-memory card
   (sm_75) — SUPERSEDED 2026-10-18: branch `kv3-tiled-2026-10` already covers it, and nobara is bringing that branch onto

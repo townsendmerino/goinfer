@@ -3,6 +3,8 @@ package decoder
 import (
 	"slices"
 	"sync"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
 // BuildQuery is a load as the fit guard sees it before the build: the options, the facts decoder resolves from the config,
@@ -120,8 +122,11 @@ func defaultCUDABuildDemand(q BuildQuery) BuildDemand {
 	}
 	if o.Backend == "cuda" && q.GGUF && !o.StreamWeights && q.ExpertBytes > 0 && q.ExpertCache {
 		d.HostBuildPeak = 2*q.WeightBytes + q.ExpertBytes
+		if o.MoEExpertsUnpinned { // the packed experts are file pages, not a host copy
+			d.HostBuildPeak = 2 * q.WeightBytes
+		}
 	}
-	if q.ExpertCache && d.Resident && q.NumExperts > 0 && q.ExpertIntermediate > 0 {
+	if q.ExpertCache && d.Resident && q.NumExperts > 0 && q.ExpertIntermediate > 0 && !o.MoEExpertsUnpinned {
 		d.PinnedExpertBytes = int64(q.MoELayers) * int64(q.NumExperts) * 3 * int64(q.ExpertIntermediate) * int64(q.Hidden) * 9 / 16
 	}
 	for _, b := range q.StateBuffers {
@@ -208,7 +213,8 @@ type fitMemo struct {
 	archProg *layerProgram // arch's program, for coverage
 	facts    map[string]archFacts
 
-	prog *layerProgram // the loaded architecture's program, for admission
+	prog *layerProgram   // the loaded architecture's program, for admission
+	bufs [][]program.Buf // the loaded architecture's declared buffers, by layer (Model.LayerBuffers)
 }
 
 // factsFor is cfg's facts on backend (zero for one that does not resolve), from the memo where it has them. A nil cfg gets zero

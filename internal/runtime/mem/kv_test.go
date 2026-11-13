@@ -10,6 +10,8 @@ import (
 func TestResolveKV_eachBranch(t *testing.T) {
 	declines := KVPolicy{Decline: func() string { return "not this family" }, Auto: func() bool { return true }}
 	clears := KVPolicy{Decline: func() string { return "" }, Auto: func() bool { return true }}
+	i8Clears := KVPolicy{Decline: func() string { return "" }, Auto: func() bool { return true }, DeclineI8: func() string { return "" }}
+	i8Declines := KVPolicy{Decline: func() string { return "" }, Auto: func() bool { return true }, DeclineI8: func() string { return "not this family at int8" }}
 	autoOff := KVPolicy{Decline: func() string { return "" }, Auto: func() bool { return false }}
 	autoGate := KVPolicy{Decline: func() string { return "" }, Auto: func() bool { return true },
 		AutoDecline: func() string { return "gate not passed" }}
@@ -19,9 +21,8 @@ func TestResolveKV_eachBranch(t *testing.T) {
 		got, why string
 	}{
 		{"no KV at all", KVQuery{Backend: "cuda", HasArch: true, NoKV: true}, KVNone, "this model keeps no attention KV"},
-		{"cpu batched decode", KVQuery{Backend: "cpu", CPURequest: KVF16, CPUBatchOn: true}, "", "CPU batched decode (CPUBatchDecode on) reads f32 KV only until phase 4"},
 		{"cpu f16 allowed", KVQuery{Backend: "", CPURequest: KVF16, HasArch: true, CPUF16OK: true}, KVF16, ""},
-		{"cpu f16 on MoE", KVQuery{Backend: "cpu", CPURequest: KVF16, HasArch: true, MoE: true}, KVF32, "MoE families keep an f32 CPU cache until phase 4"},
+		{"cpu f16, attention not the batched kernel", KVQuery{Backend: "cpu", CPURequest: KVF16, HasArch: true}, KVF32, "this family's attention keeps an f32 CPU cache until phase 4"},
 		{"cpu i8 own loop", KVQuery{Backend: "cpu", CPURequest: KVI8, HasArch: true, OwnLoop: true}, KVF32, "this family's own forward loop keeps an f32 CPU cache until phase 4"},
 		{"cpu i8 no arch", KVQuery{Backend: "cpu", CPURequest: KVI8}, KVF32, "no architecture"},
 		{"cpu auto", KVQuery{Backend: "cpu", CPURequest: KVAuto}, KVF32, "auto is f32 on the CPU"},
@@ -29,7 +30,11 @@ func TestResolveKV_eachBranch(t *testing.T) {
 		{"metal auto", KVQuery{Backend: "metal", Request: KVAuto, HasArch: true}, KVF16, "auto is f16 on Metal"},
 		{"metal i8", KVQuery{Backend: "metal", Request: KVI8, HasArch: true}, KVI8, ""},
 		{"cuda no arch", KVQuery{Backend: "cuda", Request: KVF16}, KVF32, "no architecture"},
-		{"cuda i8", KVQuery{Backend: "cuda", Request: KVI8, HasArch: true, CUDAPolicy: clears}, KVF32, "CUDA has no int8 KV cache until phase 2"},
+		{"cuda i8 no int8 policy", KVQuery{Backend: "cuda", Request: KVI8, HasArch: true, CUDAPolicy: clears}, KVF32, "CUDA has no int8 KV cache in this build"},
+		{"cuda i8", KVQuery{Backend: "cuda", Request: KVI8, HasArch: true, CUDAPolicy: i8Clears}, KVI8, ""},
+		{"cuda i8 declined", KVQuery{Backend: "cuda", Request: KVI8, HasArch: true, CUDAPolicy: i8Declines}, KVF32, "not this family at int8"},
+		{"cuda i8 drafter", KVQuery{Backend: "cuda", Request: KVI8, HasArch: true, Drafter: true, CUDAPolicy: i8Clears}, KVF32, "the drafter needs f32 KV until phase 6"},
+		{"cuda auto is never i8", KVQuery{Backend: "cuda", Request: KVAuto, HasArch: true, CUDAPolicy: i8Clears}, KVF16, "auto is f16 on CUDA for this family"},
 		{"cuda f16 drafter", KVQuery{Backend: "cuda", Request: KVF16, HasArch: true, Drafter: true, CUDAPolicy: clears}, KVF32, "the drafter needs f32 KV until phase 6"},
 		{"cuda f16 declined", KVQuery{Backend: "cuda", Request: KVF16, HasArch: true, CUDAPolicy: declines}, KVF32, "not this family"},
 		{"cuda f16", KVQuery{Backend: "cuda", Request: KVF16, HasArch: true, CUDAPolicy: clears}, KVF16, ""},

@@ -1,0 +1,6 @@
+plant: unpinned-path-not-taken (backend/cuda/pack_stream.go)
+    kv16_test.go:1589: pageable stacks: pinned load 0 (want 0), unpinned load 0 (want 8)
+--- FAIL: TestMoEExpertsUnpinned_identityAndPricing (1.90s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/backend/cuda	1.963s
+FAIL

@@ -184,6 +184,8 @@ jobs:
       # own name used to claim otherwise).
       - name: apidiff (Hard tier vs the v0.13.0 API-freeze baseline)
         run: scripts/apidiff_check.sh v0.13.0
+      - name: apidiff_check.sh's classification (the alias list's two licensed lines, and plants that stay fatal)
+        run: python3 -B scripts/test_apidiff_check.py
 
       # The lint resolves a cross-repo citation at the version a go.mod requires today. No goinfer module
       # requires aikit/gpu since Track AX moved the device package in; cuda's own dependencies are downloaded
@@ -238,8 +240,13 @@ jobs:
       - name: bench_peer sampling payloads
         run: python3 -B scripts/test_bench_peer_sampling.py
 
-      # bench_peer.py voids a cell whose start finds the box under heavy load (load above half the cores, or free memory under
-      # the fit need plus 2 GB), lists it and re-runs it in place, never averaging it in. Stdlib, milliseconds.
+      # scripts/void_rule.py is the one definition of the heavy-load void (a cell starts only with available memory at least its fit
+      # need and the load at most half the cores; swap growth voids it); bench_peer.py and night.py call it. Stdlib, milliseconds.
+      - name: heavy-load void rule
+        run: python3 -B scripts/test_void_rule.py
+
+      # bench_peer.py voids a cell whose start finds the box under heavy load (load above half the cores, or available memory under
+      # the fit need), lists it and re-runs it in place, never averaging it in. Stdlib, milliseconds.
       - name: bench_peer heavy-load void
         run: python3 -B scripts/test_bench_peer_heavy.py
 
@@ -248,10 +255,17 @@ jobs:
       - name: bench_peer plan refusals and teardown
         run: python3 -B scripts/test_bench_peer_phases.py
 
+      # bench_peer.py's archive check covers the checkpoints the run selects: a selected one on the archive refuses, and a table entry
+      # the run does not load cannot block it. Stdlib, milliseconds.
+      - name: bench_peer archive check
+        run: python3 -B scripts/test_bench_peer_benchdisk.py
+
       # touched.py runs each source-scan test when a file it reads changes (scripts/touched_scans.py), and the table must name
       # every test that reads Go source: a scanner missing from it is the day loop going green on a change CI then fails.
       - name: touched.py scan selection
         run: python3 -B scripts/test_touched.py
+      - name: task_docs.py unstub
+        run: python3 -B scripts/test_task_docs.py
       - name: CHANGELOG fragments (scripts/changelog.py)
         run: python3 -B scripts/test_changelog.py && python3 -B scripts/changelog.py render > /dev/null
 
@@ -1205,5 +1219,11 @@ jobs:
             echo "::error::TestLedger_everyMetalAllocationNamesALine matched NOTHING in ./metal/ — renamed or deleted?"
             exit 1
           fi
+          # R17's source pin on attention_fa_blk, and the harnesses' graded arm: text and hashes, device-free.
+          matched=$(go test -list '^(TestAttnFABlkIsTheGradedKernel|TestR17GradedArm_isTheGradedText)$' ./backend/metal/ | grep -cE '^[A-Za-z_][A-Za-z0-9_]*$' || true)
+          if [ "$matched" != 2 ]; then
+            echo "::error::TestAttnFABlkIsTheGradedKernel and TestR17GradedArm_isTheGradedText matched $matched of 2 in ./metal/ — renamed or deleted?"
+            exit 1
+          fi
       - name: test (device-free tests only — the runner's Metal layer SIGSEGVs)
-        run: go test -run 'TestParity_NaNCosineFailsTheGate|TestBuildDemand_matchesDecoderDefault|TestLedger_everyMetalAllocationNamesALine' ./backend/metal/...
+        run: go test -run 'TestParity_NaNCosineFailsTheGate|TestBuildDemand_matchesDecoderDefault|TestLedger_everyMetalAllocationNamesALine|^TestAttnFABlkIsTheGradedKernel$|^TestR17GradedArm_isTheGradedText$' ./backend/metal/...

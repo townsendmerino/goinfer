@@ -1,0 +1,355 @@
+{
+  "Before": "7b881c80bea1869df90584d7c0f27b7e24b18b4b",
+  "After": "7068bcd3cd82106f41961b49e57fc8d9d7b2d601",
+  "Outcome": "OK",
+  "Counts": {
+    "agree-fresh": 31,
+    "agree-stale": 12
+  },
+  "Verdicts": [
+    {
+      "family": "bailing_hybrid",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "cohere",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "cohere2",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "deepseek_v2",
+      "class": "agree-stale",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "deepseek_v3",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "gemma",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "gemma2",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "gemma3",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "gemma4",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "glm4_moe",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "glm_ocr",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "gpt-oss",
+      "class": "agree-stale",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "gpt2",
+      "class": "agree-stale",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "granite",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "granitemoehybrid",
+      "class": "agree-stale",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "internlm2",
+      "class": "agree-stale",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "kimi_k2",
+      "class": "agree-stale",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "laguna",
+      "class": "agree-stale",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "lfm2",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "llama",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "llama4_text",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "mellum",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "mistral",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "mistral3",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "mixtral",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "nemotron_h",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "olmo3",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "olmo_hybrid",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "phi3",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen2",
+      "class": "agree-stale",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen2_5_vl",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen2_moe",
+      "class": "agree-stale",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen3",
+      "class": "agree-stale",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen3_5",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen3_5_moe",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen3_asr",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen3_moe",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen3_next",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen3_vl",
+      "class": "agree-stale",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "qwen3_vl_moe",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "smollm3",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "spark2_5",
+      "class": "agree-stale",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    },
+    {
+      "family": "voxtral",
+      "class": "agree-fresh",
+      "moved": [
+        "decoder/arch.go"
+      ],
+      "explained": true
+    }
+  ]
+}

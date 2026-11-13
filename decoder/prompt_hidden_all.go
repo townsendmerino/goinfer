@@ -48,8 +48,8 @@ func (m *Model) promptHiddenAll(ctx context.Context, prompt []int) ([][]float32,
 		return nil, err
 	}
 	a := m.w.arch
-	if rr, ok := m.resident.(ResidentResidualAll); ok && m.tryClaimResident() {
-		rows, err := m.residualAllResident(ctx, rr, prompt)
+	if canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe, Out: outEveryResidual}) && m.tryClaimResident() {
+		rows, err := m.residualAllResident(ctx, prompt)
 		atomic.StoreInt32(&m.resBusy, 0)
 		if err == nil {
 			return rows, nil
@@ -79,14 +79,15 @@ func (m *Model) promptHiddenAll(ctx context.Context, prompt []int) ([][]float32,
 
 // residualAllResident is PromptHiddenAll's resident path: embed on the host (the embedding the plain resident forward uses), hand the sequence to the backend, and apply the
 // final norm to each returned residual row in f32. The caller holds the resident claim.
-func (m *Model) residualAllResident(ctx context.Context, rr ResidentResidualAll, ids []int) ([][]float32, error) {
+func (m *Model) residualAllResident(ctx context.Context, ids []int) ([][]float32, error) {
 	a := m.w.arch
-	m.residentForgetIDs()
+	m.residentForgetScratch()
 	embs := make([][]float32, len(ids))
 	for i, id := range ids {
 		embs[i] = m.embedResident(id)
 	}
-	rows, err := rr.ResidualAll(ctx, embs, 0)
+	sr, err := m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: embs, Out: outEveryResidual})
+	rows := sr.Rows
 	if err != nil {
 		return nil, err
 	}

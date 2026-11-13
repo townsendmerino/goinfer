@@ -1,5 +1,14 @@
 # Task: one KV architecture — paged, content-addressed, tiered (KV0–KV11) — 2026-10
 
+> **Status 2026-11-12: the ledger re-read against main at 93a183f82, after ten commits that went straight to main on
+> 2026-11-11 and 2026-11-12.** No open row advanced, and none of those commits changed this ledger beyond one renamed
+> citation. 90e4d44f8 moved the reuse arithmetic into `internal/runtime/kvmgr/sequence.go` behind `kvmgr.SequenceState`
+> (row SEQ, new): the old entry points stay as wrappers, the interface is live on the CPU session path only, and one behavior
+> changed (`decoder/resident_reuse.go:Model.residentReuseFloor` now applies the slot floor, which is new on Metal and WebGPU).
+> No CUDA device run and no timed run is on record for it. Flint was admitted to f16 and int8 KV on request without its
+> gates (`auto` is unchanged); that is P4 and G5 in `docs/tasks/task-kv-precision-everywhere-2026-10.md`. Flint's F4 replay gives the CPU-ring row its first figure.
+> The proposed order of work is §7a. KV5, KV7-rest, KV8 and KV10 stand as the 2026-11-02 block says.
+>
 > **Status 2026-11-02: KV4 is done.** §5.16's three items landed (nobara-sb01, branch `kv4-observability-2026-11-02`;
 > `docs/measurements/kv4-observability-2026-11/`): `usage.prefill_reuse` beside `prefill_reused_tokens`, the KV pool banner line, and
 > `serve check`'s shared-preamble row. KV5, KV7-rest, KV8 (its CUDA half) and KV10 (its CUDA half) are open; KV11 waits on KV7.
@@ -51,7 +60,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | KV4 | done | KV4a and KV4b done; §5.16's three items done 2026-11-02 (nobara-sb01): the reuse-source extension `usage.prefill_reuse` (own, shared, host, disk tokens and blocks promoted; disk and promoted read 0 until KV7-rest), the pool banner line (tokens, block size, precision, bytes, groups, sharing scope, one conversation's use; decoder.KVPoolDetail), and `serve check`'s shared-preamble row (on CUDA with the 0.5B, a preamble new each run: 960 of 1,766 tokens from another slot's KV, on repeated runs; red at `--kv-share off`, a skip at one slot; `e2e-plants.log`). | §6; `docs/measurements/kv4-cuda-2026-10-21.md`; `docs/measurements/kv4-observability-2026-11/` |
 | KV4a | done | nobara: merged as #138 (2026-10-22). Paged KV on CUDA: per-group pools of 64-row blocks behind block tables, preamble blocks shared by reference with copy on write, one conversation can use the whole pool (2.71x the 7B's single-conversation context on the 8 GB card). Every gate read; MC3 0.973 on decode's bands (D-KV4-3 (b), owner, 2026-10-22), the ~2% cost at four clients recorded | `kv4-cuda-2026-10-21.md` §3, §5 |
 | KV4b | done | closed 2026-10-24 (owner, D-KV4-9); final table in `kv4-cuda-2026-10-21.md` §3. nobara, branch `kv4b-2026-10-22`: f16 delivered on request per family group, `auto` per group on G4 PASS (D7). G4 keeps both cells: K=3,900 by day with ten prompts, K=8,000 on the night queue at four prompts (D-KV4-4 (b), owner, 2026-10-22); tier 0 re-run alone under the exclusive timing lock (owner, 2026-10-22); tier 0 passes on all six groups; G4 passes at both depths on Qwen2.5-VL-3B (m-RoPE: `auto` f16); Gemma-3-4B passes K=3,900 and reads AMBIGUOUS at K=8,000 (sliding window `auto` f32: D-KV4-10 withdrew D-KV4-6's override, 2026-10-25); Qwen1.5-MoE passes K=3,900 and K=8,000 (2026-10-24; MoE `auto` f16, qwen3_vl_moe with it; gpt-oss f32 until its sinks are gated, D-KV4-10); Command-R7B passes K=3,900 and fails K=8,000 on hard flips alone (2 against f32's 0, where criterion (a) allows none), re-read on native references 2026-10-25 with the same PASS at K=3,900; pairwise `auto` f32 (D-KV4-10 withdrew D-KV4-8); Qwen3.5-9B's K=3,900 DOES NOT PASS (KL ratio 1.21, f16 ≥ f32 on 4/10; hybrids' `auto` stays f32, f16 on request; kept without a re-read, D-KV4-11); the K=8,000 cells of both wait on the CPU reference's speed (owner, 2026-10-23); MLA's DeepSeek-V2-Lite K=3,900 was stopped with no prompt stored (four concurrent per-token prompts could not finish inside REF_TIMEOUT), and MLA stays f32 with no verdict, gradable later (D-KV4-9); its batched CPU prefill branch `mla-batched-cpu-prefill-2026-10-24` is parked (owner, 2026-10-25) | `kv4-cuda-2026-10-21.md` §2 G5; `docs/tasks/task-kv-precision-everywhere-2026-10.md` |
-| KV5 | active | Started 2026-11-03 (Francis, mac-sb11m). KV5-1 is #632. KV5-2 is #640, bit-identical; its kill rule tripped on gemma3-1b after both tuning rounds, and **Francis accepted the cost (D-KV5-1, below)**. The 1.5B and MC3 pass after round one. **The 7B's decode gate passes** (0.997, 1.001, 1.005, 1.018 at 128, 2,048, 3,900, 8,000). Prefill TTFT passes too (1.000 and 1.001 on the 1.5B, 1.001 and 1.001 on the 7B, at 512 and 3,900). **KV5-3 (prefill's stores and readers, the int8 dequantize, MLA, UploadKV, CopyKV) is #694, merged, bit-identical, 25 of 25 plants red; its TTFT read passes** (0.999 and 0.994 on the 1.5B, 0.999 and 0.997 on the 7B, at 512 and 3,900). **KV5-4 (the slot views go; a slot is only its table) is #696, merged, bit-identical: G1a whole passes on 33 resident fixtures, 4 of 4 plants red.** **KV5-5 (sharing by reference: CopyKV maps blocks, every writer copies on write) is built: G3b passes on the 1.5B (a 16,384-token preamble held once across four conversations, every reply token-identical to its own run), 8 of 8 plants red.** Next: KV5-6, capacity. Takes I7, the default context toward 32,768 (owner, 2026-10-21), as its last slice. Mac | §6, KV5's plan; `docs/measurements/kv5-metal-2026-11/kv5-2.log`, `docs/measurements/kv5-metal-2026-11/kv5-3.log`, `docs/measurements/kv5-metal-2026-11/kv5-4.log`, `docs/measurements/kv5-metal-2026-11/kv5-5.log` |
+| KV5 | active | Started 2026-11-03 (Francis, mac-sb11m). KV5-1 is #632. KV5-2 is #640, bit-identical; its kill rule tripped on gemma3-1b after both tuning rounds, and **Francis accepted the cost (D-KV5-1, below)**. The 1.5B and MC3 pass after round one. **The 7B's decode gate passes** (0.997, 1.001, 1.005, 1.018 at 128, 2,048, 3,900, 8,000). Prefill TTFT passes too (1.000 and 1.001 on the 1.5B, 1.001 and 1.001 on the 7B, at 512 and 3,900). **KV5-3 (prefill's stores and readers, the int8 dequantize, MLA, UploadKV, CopyKV) is #694, merged, bit-identical, 25 of 25 plants red; its TTFT read passes** (0.999 and 0.994 on the 1.5B, 0.999 and 0.997 on the 7B, at 512 and 3,900). **KV5-4 (the slot views go; a slot is only its table) is #696, merged, bit-identical: G1a whole passes on 33 resident fixtures, 4 of 4 plants red.** **KV5-5 (sharing by reference: CopyKV maps blocks, every writer copies on write) is #707, merged: G3b passes on the 1.5B (a 16,384-token preamble held once across four conversations, every reply token-identical to its own run), 9 of 9 plants red.** **KV5-6 (capacity: blocks on demand, one conversation's cap is the pool, D5's pressure order, the pool banner) is #711: G3a, G3d and the pool detail pass at tier 0, 22 of 22 plants red; G3c passes on the 1.5B and the 7B (each a 32,768 cap against main's 16,384 a slot, and a 32,768-token request completes on Metal, no 413).** **G2 on its final tree: the 1.5B, TTFT and G3c pass; gemma3-1b reads 0.947 at 3,900 (FAIL, under D-KV5-1's 0.956) and 0.975 at 128, and MC3 0.979 (both AMBIGUOUS): accepted by Francis 2026-11-06 21:20 over G2 at those readings (D-KV5-2, below), so KV5-6 ships.** A ladder of the KV5 merges puts the cost before KV5-6 (main against it: gemma3-1b 1.010 and 1.003, MC3 0.992). Its 7B cells are Saturday night's job, reported, not a gate on the merge. Then KV5-7, the window group; I7, the default context toward 32,768 (owner, 2026-10-21), is KV5-8. Mac | §6, KV5's plan; `docs/measurements/kv5-metal-2026-11/kv5-2.log`, `docs/measurements/kv5-metal-2026-11/kv5-3.log`, `docs/measurements/kv5-metal-2026-11/kv5-4.log`, `docs/measurements/kv5-metal-2026-11/kv5-5.log`, `docs/measurements/kv5-metal-2026-11/kv5-6.log` |
 | KV6 | done | — (WebGPU keeps slots, D3) | §8 |
 | KV7-s1, KV7-s2 | done | — | 60cfcba7 (#57); 671b54bb (#86) |
 | KV7-rest | active | First slice built on CUDA (nobara-sb01, `docs/measurements/kv7-demote-2026-11/`), off by default (`Options.KVDemote`, set when `--kv-host-bytes` names a budget) until a timed reading exists: a released idle conversation's rows go to pinned host memory and come back on return, bit-identical; on the 0.5B its next turn took 0.66 s against 2.63 s (one run each, not a timed reading). Per slot, not the block host pool §6 planned, which stays planned should a reading ask for it. **Demotion stays off until the list in `docs/measurements/kv7-demote-2026-11/README.md`, "Before demotion can be turned on", is closed, with its gate: `TestKV7_slotWriteTable` extended to a slot holding a wrapped upload (`kvFloor`), and the served reading** (coordinator, 2026-11-03). Also open: windowed KV; the disk tier; and D5's step 3, releasing a running conversation so it re-admits through the index (moved here from KV4 by D-KV4-2, owner, 2026-10-21) | §6; `docs/measurements/kv4-cuda-2026-10-21.md` §5 |
@@ -63,13 +72,14 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | KV10 | open | KV4 is done (2026-11-02); Metal's ceiling waits on KV5. Next: the 64K/128K fidelity harness (lever 4's third step) on CUDA, and listing the families with no fused prefill kernel | §6 |
 | KV11 | blocked | KV7 (KV4 done 2026-11-02). Its KV-share trade curve on CUDA was read 2026-11-02 (nobara-sb01), AMBIGUOUS by its registered rule because nothing at 16,384 or more loads. Stated plainly: the 26B with paged experts decodes 62.2 tok/s at 4,096 positions (29 slots, 96.9% hits) and 24.1 at 8,192 (10 slots, 51.2%), 0.39x, and refuses 16,384. A follow-up between 4,096 and 8,192 is owed, and the Mac's curve | §6; lead4-perlayer-hitrate-2026-09-22.md; `docs/measurements/kv11-trade-curve-2026-11/` |
 | §5.16 | done | 2026-11-02 (nobara-sb01): the reuse-source field, the pool banner, the check row; red first each | §5.16; `docs/measurements/kv4-observability-2026-11/` |
-| §12 | open | desk: `docs/ARCHITECTURE.md`'s KV sections for KV7 and KV8a | §12 |
-| CPU-ring | open | needs an owner: the CPU ring's one-position rollback, left as a finding in the prefix-reuse record §3 | from the archived windowed-KV doc |
+| §12 | open | desk: `docs/ARCHITECTURE.md`'s KV sections for KV7 and KV8a. Read 2026-11-12: "Recurrent state cannot be rewound" still says no backend checkpoints it, "The KV manager" still ends at paged storage "not yet", and the page names neither host demotion nor `kvmgr.SequenceState` | §12 |
+| CPU-ring | open | needs an owner: the CPU ring's one-position rollback, left as a finding in the prefix-reuse record §3. It has a figure now: Flint's F4 replay (`decoder/flint_parity_test.go:TestFlint_kv0hBShapedWindowReuse`, arithmetic over KV0-H's 29 B-shaped requests, not a served reading) keeps 0 of 29 rollbacks warm on the CPU for a 513-position window, against 29 of 29 on CUDA's windowed KV. `decoder/kvcache.go:ring.truncate` keeps the same rule through `kvmgr.RingTruncateExact`. F4's own rule sends a CPU result here, and its record did not. Next: an owner, and a ring with rollback slack as CUDA's has, sized S to M | from the archived windowed-KV doc; `docs/measurements/flint-f0-2026-10.md` §6.4 |
+| SEQ | open | `internal/runtime/kvmgr/sequence.go:SequenceState` (90e4d44f8, no PR): the reuse arithmetic in one place (prefix scoring, class-run clipping, window horizons, rewind, reconcile, the recurrent checkpoint decision), traced equal to what it replaced except where named here. It is live on the CPU session path (`decoder/session.go:Session.rewindForReuse`, through `decoder/sequence_state.go:cpuSequenceState`). The resident adapter (`residentSequenceState`) and `kvmgr.ScoreSequence` have test callers only, so the residents still score through `Slots.Score` and two paths stand. Behavior that changed: `decoder/resident_reuse.go:Model.residentReuseFloor` returns 0 for a reuse under the slot floor after the in-place cap (CUDA already did; new on Metal and WebGPU), and the CPU rewind refuses a prefix past the cache's position. The floor now has a tier-0 test through the acquire path (`decoder/resident_leadreuse_test.go:TestResidentAcquire_floorAfterTheInPlaceCap`, red with the check planted out). `TestSessionPolicy_exactOnTheFake` drives `kvmgr.RewindSequence` (`sessionRewind` is gone), and `TestSequenceState_ScoreRewindReconcileAndShare` asserts the inexact cut. **2026-11-12, nobara at main 4edbe93e9 (nobara-v1):** the CUDA window replay (`TestWindowedKV_i3Replay` and every `TestWindowedKV_*`: 57 PASS, one real-checkpoint SKIP), G1a (`TestKV4_scrambledTables`, 33 PASS lines, flint-tiny added) and G3b at tier 0 (`TestKV4_sharedPreambleStoredOnce`) all PASS on the card, with the gate identity read of 30 families IDENTICAL in the forward doc's LW-cu row. Not read: the Mac's G1a with flint-tiny. G1a with flint-tiny on the Mac PASSES at 4baa8f78c (`docs/measurements/op4m-pod2-2026-11-12/README.md`). Next: the residents score through `ScoreSequence`, or the test-only half goes | `decoder/sequence_state_test.go:TestSequenceState_CPUAndResidentParity`; `internal/runtime/kvmgr/sequence_test.go`; `docs/measurements/cuda-read-2026-11-12/README.md` |
 | D1–D8, Q1–Q7 | done | — | §8 |
 
 > **For KV4's owner (mac-sb11m, 2026-10-30):** KV4's row reads active, although KV4a (#138, merged 2026-10-22) and KV4b
 > (closed 2026-10-24, D-KV4-9) are both done. Close the row, or name what remains in it. KV5, KV8 and KV10 read as blocked on it,
-> and KV5 (Metal) shares its files with OP4 on Metal (`docs/tasks/task-forward-architecture-2026-10.md` §4.9).
+> and KV5 (Metal) shares its files with OP4 on Metal (`docs/completed/task-forward-architecture-2026-10.md` §4.9).
 
 
 > **2026-10-20: KV8a added, ahead of KV4.** KV0-H (`docs/measurements/kv0h-hybrid-traffic-2026-10.md`) drove opencode
@@ -110,7 +120,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 > llama, mistral, qwen2, qwen3 and phi3 (`decoder/kvresolve.go:CUDAKVF16Decline` lists what keeps f32; owner override,
 > commit 60222412). The text below that says CUDA is f32-only (this note as first written, §1, §4, §5.9, KV4b, D7) described the
 > tree at `e2ffb953`. R6 phase 3 had been parked on 2026-09-26 on a *speed* case: about 1.05× on a GQA 7B at depth 3,900
-> (`docs/prompts/cuda-r6-flash-decode.md`); the case for it was *capacity*, and the override took it on that ground. What
+> (`docs/completed/cuda-r6-flash-decode.md`); the case for it was *capacity*, and the override took it on that ground. What
 > is left for KV4b is f16 *pools* and the families still on f32. Lever 4 is KV-pre plus KV10, lever 5 is this doc, and lever
 > 6 is KV7.
 
@@ -188,8 +198,8 @@ slot is gone; and every KV feature is built three or four times.
    - An edited message or a second conversation therefore means a full re-prefill or the CPU path. On Qwen3.6-35B-A3B the
      CPU path decodes 5.6× slower (4.19 against 23.5 tok/s;
      `docs/measurements/r01-phase2-cpu-fallback-cost-2026-09-23.md`).
-   - R-01 phase 2 and FreeToken Lead 1 are both open (`docs/tasks/task-recompute-audit.md`,
-     `docs/tasks/task-freetoken-techniques.md`).
+   - R-01 phase 2 and FreeToken Lead 1 are both open (`docs/completed/task-recompute-audit.md`,
+     `docs/completed/task-freetoken-techniques.md`).
 4. **A conversation that loses its GPU slot is gone.**
    - The CPU path has a RAM → NVMe tier (`internal/app/serveapp/sessions.go:sessionLRU`, `.giw-kv` v3 snapshots,
      `-session-dir`, `-kv-idle-demote`). The GPU paths have nothing.
@@ -200,7 +210,7 @@ slot is gone; and every KV feature is built three or four times.
      the whole context and mask it.
    - Precision: CUDA f16 for five families and f32 for the rest, with no int8; Metal f16 or i8; WebGPU f32, f16 or i8; the CPU f32 or i8.
    - Slots: a pointer swap on CUDA, contiguous views on Metal, whole runners on WebGPU.
-   - Accounting: `docs/tasks/task-memory-accounting-2026-09.md` found five KV byte formulas. Today it is one function,
+   - Accounting: `docs/completed/task-memory-accounting-2026-09.md` found five KV byte formulas. Today it is one function,
      `decoder/residentneed.go:Model.ResidentKVBytes`, with a "cuda" branch.
    - Context ceilings are allocation ceilings: Metal's 32,768 (`decoder/fitplan.go`), WebGPU's 16k/32k/64k by precision
      (`decoder/fitplan.go:WebGPUCtxCeiling`). Under paging they become table length and kernel limits (KV10).
@@ -223,7 +233,7 @@ slot is gone; and every KV feature is built three or four times.
 4. **The cache-state grid stays fail-closed** (`decoder/cachestate.go:cacheStateGrid`: 14 kinds of state × 5 lifecycle
    paths). The new lifecycle paths (publish, share, demote, promote, restore) join it, and every kind gets a declared
    cell for each.
-5. **One memory formula** (`docs/tasks/task-memory-accounting-2026-09.md`). The pool size, admission and the allocator
+5. **One memory formula** (`docs/completed/task-memory-accounting-2026-09.md`). The pool size, admission and the allocator
    compute from one function, and the never-swap rules hold on every gate (`docs/completed/task-never-swap-2026-09.md`).
 6. **The Hard API tier** (`docs/api-tiers.md`):
    - `decoder.KVCache` stays an opaque handle;
@@ -275,7 +285,7 @@ slot is gone; and every KV feature is built three or four times.
 **What is already right and carries over:**
 - **The cache-state grid** (`decoder/cachestate.go`). It is exactly the correctness skeleton the new manager needs.
 - **The four reuse rules.** They become key properties instead of per-site checks.
-- **Kernel-class awareness.** `decoder/residency.go:ResidentFastPrefill`, `decoder/residency.go:ResidentPrefillKernelFloor`
+- **Kernel-class awareness.** `decoder/residency.go:ResidentCaps` (its fast-prefill and kernel floors)
   and `decoder/resident_reuse.go:Model.declineShortLeadReuse` become the class component of the key (§5.5, §5.6).
 - **MC1 and MC3.** Binding a slot and stepping several rows become "pass a sequence's block table" and "pass a table per row".
 - **Chunked prefill.** It is chunk-invariant on Metal: 0 of 14,336,000 KV elements and 0 of 151,936 last-token logits
@@ -485,7 +495,7 @@ is MC4's identity gate extended to shared preambles.
 ### 5.7 Recurrent state
 
 - **A state spec per model.** spec/09 measured 62.8 MiB per sequence for Qwen3.6-35B-A3B and 149.6 MiB for the 27B
-  (`docs/spec/09-mtp-heads.md`, quoted in `task-recompute-audit.md` R-01).
+  (`docs/spec/09-mtp-heads.md`, quoted in `../completed/task-recompute-audit.md` R-01).
 - **Two stores:**
   - a pool of **state slots**, one per running sequence. This lifts `residentSlotCount`'s one-slot rule for hybrids;
   - a **checkpoint store** keyed by `(chain hash at position c, c)`.
@@ -850,7 +860,7 @@ Metal device gate.
 The donor choice (follow-up 2 below) merged the same day (#37).
 
 Branch `kv2-2026-10`. Gates, and the choices made before the code: `docs/measurements/kv2-2026-10-14.md`. The Mac
-builds the decoder, serve, Metal, WebGPU and the CPU; nobara builds CUDA from `docs/prompts/nobara-kv2-cuda-2026-10.md`.
+builds the decoder, serve, Metal, WebGPU and the CPU; nobara builds CUDA from `docs/completed/nobara-kv2-cuda-2026-10.md`.
 KV2 merges when every arm on both boxes is read.
 
 - **Build:**
@@ -1131,7 +1141,7 @@ KV2 merges when every arm on both boxes is read.
 - **KV4b: f16 pools.** This reopens R6 phase 3 (parked 2026-09-26 on speed) on capacity.
   - The fidelity gate takes the registered shape `docs/completed/task-gpu-f16-kv.md` used on WebGPU: argmax agreement and
     cosine on a held-out set.
-  - `docs/prompts/cuda-r6-flash-decode.md` notes that no family is known to need f32 KV: Metal runs f16 for every family.
+  - `docs/completed/cuda-r6-flash-decode.md` notes that no family is known to need f32 KV: Metal runs f16 for every family.
   - The default is D7.
 - **Gates (sketch):**
   - **Identity (hard):** every CUDA fixture and real checkpoint, with `TestWindowedKV_*` kept as oracles.
@@ -1223,6 +1233,7 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
   - **MC3 at 4 clients, 1.5B, 6 turns of 128 greedy tokens, cells old new new old old new: decode's bands, median of 3 pairs, and every turn's `content_sha` equal.** KV4 read 0.973 and shipped on its capacity arm by Francis's D-KV4-3 (b). That was his call on a reading, and it does not pass this one: AMBIGUOUS goes to him.
   - **Kill:** decode at depth 2,048 or more under 0.98 on the KV5-2 build gets two tuning rounds within a working day, the first being one base per 32-key block with the block edge found once. Still under, KV5 parks with its measurement, and slots and KV2's copies stay.
 - **D-KV5-1 (Francis, 2026-11-03 14:22, relayed by the coordinator): G2's kill rule tripped on gemma3-1b, and he accepts the measured cost, as D-KV4-3 did for KV4. KV5 does not park.** gemma3-1b, new/old: at depth 128 / 2,048 / 3,900, 0.995 / 0.975 / 0.963 on round one's code, which is what ships here; 0.980 / 0.975 / 0.963 on round two's, which does not ship and is the set relayed with his answer. Depth 2,048 and 3,900 read the same on both. On the 1.5B the same code reads 0.990, 0.990, 0.990 and 1.009 at 128, 2,048, 3,900 and 8,000, and MC3 0.984. **The 7B was still a gate, and it passed that night:** 0.997, 1.001, 1.005 and 1.018 at 128, 2,048, 3,900 and 8,000. A repeat on gemma3-1b, three times the quads, read 0.970 and 0.956 at 2,048 and 3,900, tighter and a little worse than the 0.975 and 0.963 he first accepted, and **he approved those too (2026-11-04 07:32): his acceptance covers about 4.4% at depth 3,900.** Record: `docs/measurements/kv5-metal-2026-11/kv5-2.log`.
+- **D-KV5-2 (Francis, 2026-11-06 21:20, relayed by the coordinator): KV5-6 is accepted over G2 at its final tree's readings and ships.** On e2762eb0, gemma3-1b decode reads 0.947 at 3,900 (FAIL, under D-KV5-1's 0.956) and 0.975 at 128 (AMBIGUOUS), and MC3 at 4 slots 0.979 (AMBIGUOUS). A ladder of the KV5 merges against f8632013 places the cost before KV5-6: KV5-2's accepted cost reads 0.958 at 3,900 that day, the later merges drift about a point, and main against KV5-6 reads 1.010 and 1.003 on gemma3-1b and 0.992 on MC3. The 7B's decode cells are reported from Saturday night's job and do not gate the merge. Record: `docs/measurements/kv5-metal-2026-11/kv5-6.log`.
 - **G3, capacity.** G3a: one sequence reaches at least 90% of the pool's tokens and stops with `finish_reason: length`. G3b: four conversations sharing a 16,384-token preamble hold it once, read from the pool's own counter, with each reply byte-identical to that conversation run alone. G3d: pressure in D5's order, with its plant. **G3c: at serve's defaults on this 16 GB Mac, on the 1.5B and the 7B, one conversation's cap is at least twice `main`'s planned per-slot context, from both banners in one session, and a request of that length completes on Metal with no CPU fallback and no 413.** I7's night refused a 20,954-token prompt with a 413 before I8 cut the prefill's scratch to a block, so that refusal is not assumed gone: a 413 here fails G3c at KV5-6 and is that slice's to fix, whatever KV5-8 then decides.
 - **G4, never-swap, every timed cell.** macOS has no per-process swap counter, so this reads the system's: `vm_stat`'s swapins and swapouts before and after each cell, on both arms. **Any swap-out during a timed cell makes that cell VOID,** re-run in its order and listed, never averaged. Three voids in a row stops the run and reports it, since that box state answers nothing. **Swap-ins are recorded in every cell as context and do not void** (`BENCH_SWAPOUT_VOID_MB=0`, `BENCH_SWAPIN_VOID_MB` unset). Francis amended this on 2026-11-03, before any cell was timed: the first form voided on any swap-in too, and with nothing running this Mac read swap-ins in all 12 of 12 windows of 30 s (1.2 to 69.4 MB) and swap-outs in none, so it could not pass by day whatever the build did (`docs/measurements/kv5-metal-2026-11/kv5-2.log`). The harness's process-group RSS is held too: **peak within 64 MB of `main`'s, cell by cell.** Compressed memory is recorded as context.
 - **The memory gate, every slice.** `TestMemGate_metal` stays green on every build with **no new row in `metalMemGaps`**: the `kv` line stays exact to the plan, tables and block 0 included, on a scrambled build too. Sharing frees blocks, not bytes, so G3b reads the pool's counter, not the ledger. Each slice that moves `ResidentKVBytes` names the Linux census it needs, with its expected diff measured here first: KV5-1 (the layout) and KV5-7 (the window group's second table and block counts) do, and any other is named when it is read.
@@ -1249,7 +1260,7 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
   - the fingerprint plus numerics epoch.
 - **Gates (sketch):**
   - **R-04's own rule:** resume against the fallback a lost slot really takes today, not against a cold prefill
-    (`task-recompute-audit.md`, R-01's phase-2 rule);
+    (`../completed/task-recompute-audit.md`, R-01's phase-2 rule);
   - promoted blocks are bit-exact;
   - persistence across a restart;
   - file permissions;
@@ -1370,7 +1381,7 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
     - **C-6:** 20 census lines change, every one a recurrent family's `int4/slots4`.
     - **C-7: PASS** (`docs/measurements/kv8-2026-11/README.md`): 12 of 12 follow-ups reuse rows, 16 of 16 turns equal that client alone, ratio 0.008.
     - **The registered "room for fewer" clause on a served load is not read:** C-3 stands in a card with room for one by its test seam.
-    - **#658's review:** with fewer copies than slots, a save took a slot's copy while its record still named the position, so a branch of that conversation picked its slot over an empty one, the restore failed, and the conversation lost its sequence (red on three fixtures: a next turn reused 0 of 38 rows). A load of several slots now scores only a checkpoint its slot holds (`decoder/recurrent_checkpoint.go:ResidentRecurrentCheckpointOwner`), and a reset frees the slot's copy. The least-recently-saved rule has its own test at three slots and two copies. The served reading ran a third time, with both slots restoring.
+    - **#658's review:** with fewer copies than slots, a save took a slot's copy while its record still named the position, so a branch of that conversation picked its slot over an empty one, the restore failed, and the conversation lost its sequence (red on three fixtures: a next turn reused 0 of 38 rows). A load of several slots now scores only a checkpoint its slot holds (`decoder/recurrent_checkpoint.go:ResidentRecurrentCheckpoint`, its `RecurrentCheckpointHeld`), and a reset frees the slot's copy. The least-recently-saved rule has its own test at three slots and two copies. The served reading ran a third time, with both slots restoring.
     - **The plan follows the build's order:** it counts checkpoint copies beside the weights and every slot's KV and state, and a named reserve stands in for the expert cache and the companion, which a build sizes after them. `Placement` and `NeedBytes` stay one slot's, deliberately: a caller sizing a context for several slots prices the further ones through `ExtraBytes`.
     - **With #645:** the plan priced one checkpoint a load, so its `CheckpointCopies` field now says how many the load keeps: on a backend that keeps one a slot, as CUDA does, one for each slot that fits beside every slot's KV and state and the reserve, which the caller names (`decoder/fit/fit.go:PlanRequest`), and the gate's state line reads it. A plant pricing one copy is red on the `slots2` and `slots4` rows.
   - **Follow-ups, from #658's fifth review, after that PR's review rounds closed (coordinator, 2026-11-04). Not done:**
@@ -1400,7 +1411,7 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
     attention KV to `c`, and prefill from `c`. §2's rule that at least one token is always recomputed holds, since the
     request has tokens past `c`. A strict extension of the whole sequence keeps today's path (continue from the live state).
     A divergence before `c`, an identical re-request, or a request with image spans stays cold, as today.
-  - **Score.** `internal/runtime/kvmgr/slots.go:scoreRecurrent` returns `c` in the restore case, where today it returns 0. Its image
+  - **Score.** `internal/runtime/kvmgr/sequence.go:scoreRecurrentTokens` returns `c` in the restore case, where today it returns 0. Its image
     rules are unchanged.
   - **Where it lives.** Device memory if the load's memory plan admits it, host memory otherwise; the choice is registered
     per backend before building. Its size comes from the state spec (§5.7: 62.8 MiB for Qwen3.6-35B-A3B, 149.6 MiB for the
@@ -1534,7 +1545,7 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
 
 ### KV11 — One residency manager for KV blocks and MoE experts (added 2026-10-13)
 
-Added on the owner's word the same day, from the conversation that produced `docs/tasks/task-forward-architecture-2026-10.md`
+Added on the owner's word the same day, from the conversation that produced `docs/completed/task-forward-architecture-2026-10.md`
 (the compute half; this is its memory item).
 
 - **Why: two managers split one memory by a fixed rule.**
@@ -1583,7 +1594,7 @@ Added on the owner's word the same day, from the conversation that produced `doc
   - The CPU pager keeps its own cache (D2).
 - **First, measure.** The build goes ahead only if these show the fixed split costs something:
   - per-layer expert hit rates at a fixed total budget on the real Gemma 4 26B-A4B, which is FreeToken Lead 4's first
-    step (`docs/tasks/task-freetoken-techniques.md`);
+    step (`docs/completed/task-freetoken-techniques.md`);
   - the trade curve on one paged-MoE model per GPU box: decode speed, and the longest prompt that fits, against the KV share.
 - **Gates (sketch):**
   - tokens identical to today's at the same split, since paging changes where weights live and not what is computed;
@@ -1609,6 +1620,31 @@ Added on the owner's word the same day, from the conversation that produced `doc
 - **KV11 follows KV4 and KV7,** CUDA first, and is built only if its first measurement shows the fixed split costs
   something.
 - **Every phase leaves the tree consistent:** a backend not yet paged keeps working behind the slot adapter.
+
+## 7a. Plan, 2026-11-12 (proposed, for Francis)
+
+Nothing here is decided. It follows a read of the tree at 93a183f82 after the direct commits (no test was run for the read);
+the forward and memory side is in `docs/tasks/task-forward-and-memory-2026-11.md`, "Plan".
+
+1. **Read SEQ on the devices before building on it.** The CUDA window replay tests, G1a and G3b on nobara at main (tier 1,
+   minutes, under the lock; it rides with LW-cu's device run in the forward doc). On the Mac, G1a with flint-tiny, which its
+   fixture glob now takes. Tier 0 first: the floor test and the SB5-P3 test, both in SEQ's row.
+2. **Gate Flint's KV precision or take it back out** (P4 and G5 in the precision doc). `decoder/kvresolve.go:cudaKVF16Delivered`
+   lists `flint` since aea0ee556, so CUDA delivers `--kv f16` for it on request (`auto` stays f32, on the sliding-window
+   gate), and that list's own rule is that a family joins with its exact-input identity and delivered-bytes gates, never by
+   compiling. Flint has no fixture in `backend/cuda/kv4b_groups_test.go:kv4bGroups` and no max |V| reading; the CPU admits it
+   to f16 and int8 with no flint-tiny row in `TestKVF16_F1Exactness` or `TestKVI8_moeFamiliesConsistent`. Read the gates
+   (tier 0 on the CPU, minutes on nobara), or remove the entry until they are read.
+3. **KV5-7 next on the Mac** (the window group in paged storage). The retention arithmetic it needs is backend-neutral now
+   (`internal/runtime/kvmgr/sequence.go:WindowNextBase`), and until it lands Metal holds a sliding family's full context
+   (F4). Then KV5-8, the default context; F5's reading at 40,960 on the 8 GB card is one more input to it.
+4. **On nobara after the reads:** KV8's message-boundary checkpoint; KV7-rest's "Before demotion can be turned on" list
+   (`docs/measurements/kv7-demote-2026-11/README.md`), whose floor SEQ's change touches; KV3-S1; KV10's fidelity harness.
+5. **CPU-ring gets an owner,** now that it has a figure. **§12 is desk work** for whoever takes SEQ's last step.
+6. **One correction owed outside this doc:** `docs/measurements/flint-f0-2026-10.md` §6.4 describes F4's data as four sessions
+   with two Claude Code ones and committed lengths of 640 to 26,184. The file it reads,
+   `docs/measurements/kv0h-2026-10/study-h20-stats-h.json`, holds ten codex and opencode sessions on one model. The rollback
+   distances it reports (9, 31 and 271) match the file; the description does not. It goes to the record's owner.
 
 ## 8. Owner decisions
 
@@ -1656,8 +1692,8 @@ Added on the owner's word the same day, from the conversation that produced `doc
 - **Absorbs:**
   - lever 5 (a shared KV pool);
   - MC5's paged-KV half (`docs/tasks/parked/task-concurrency-2026-09.md`);
-  - R-01 phase 2 and R-04's resident half (`docs/tasks/task-recompute-audit.md`);
-  - FreeToken Lead 1 (`docs/tasks/task-freetoken-techniques.md`);
+  - R-01 phase 2 and R-04's resident half (`docs/completed/task-recompute-audit.md`);
+  - FreeToken Lead 1 (`docs/completed/task-freetoken-techniques.md`);
   - the reopen condition of `docs/tasks/parked/task-kv-cache-streaming.md` (its host-KV idea becomes KV7);
   - lever 4's third step (KV10);
   - FreeToken Lead 4, pooling the CUDA expert cache across layers (KV11).
@@ -1674,7 +1710,7 @@ Added on the owner's word the same day, from the conversation that produced `doc
   - `docs/completed/task-cpu-kv-f16-2026-10.md`: independent;
   - `docs/tasks/task-library-surface-review-2026-10.md`: D6;
   - `docs/option-state-grid.md` (its Policy section; design record `docs/completed/task-option-path-admission-2026-10.md`): new options join its grid;
-  - `docs/tasks/task-forward-architecture-2026-10.md`: its RF2 and RF4 read KV4's and KV5's block tables, and its OP4
+  - `docs/completed/task-forward-architecture-2026-10.md`: its RF2 and RF4 read KV4's and KV5's block tables, and its OP4
     memory planner prices through §5.10's one function.
 - **Doc amendments when phases land:**
   - `docs/roadmap.md` and MC5 record D1 (done 2026-10-13); `docs/positioning.md`'s "no paged attention" changes when
@@ -1921,8 +1957,8 @@ Code, read at `e2ffb953`:
     `decoder/resident_reuse.go:Model.residentAcquireSlotAll`, `decoder/resident_reuse.go:Model.declineShortLeadReuse`,
     `decoder/resident_reuse.go:Model.residentSlotCount`, `decoder/resident_reuse.go:Model.residentReuseFloor`;
   - `decoder/residency.go:ResidentForward`, `decoder/residency.go:ResidentKVSlotter`,
-    `decoder/residency.go:ResidentBatchStepper`, `decoder/residency.go:ResidentFastPrefill`,
-    `decoder/residency.go:ResidentPrefillKernelFloor`, `decoder/residency.go:Model.ResidentKVPrecision`;
+    `decoder/residency.go:ResidentBatchStepper`, `decoder/residency.go:ResidentCaps`,
+    `decoder/residency.go:Model.ResidentKVPrecision`;
   - `decoder/session.go:Session.rewindForReuse`, `decoder/kvsnapshot.go:Session.Snapshot`,
     `decoder/kvsnapshot.go:Model.LoadSession`;
   - `decoder/forwardn.go:Model.hasRecurrentState`, `decoder/forwardn.go:Model.specRollbackSafe`;
@@ -1946,9 +1982,9 @@ Code, read at `e2ffb953`:
 Docs and records:
 - **Positioning and policy:** `docs/positioning.md`, `docs/roadmap.md`, `docs/api-tiers.md`, `docs/ARCHITECTURE.md`.
 - **Task docs:**
-  - `docs/tasks/parked/task-concurrency-2026-09.md` (MC1, MC3, MC5), `docs/tasks/task-recompute-audit.md` (R-01,
-    R-04), `docs/tasks/task-freetoken-techniques.md` (Lead 1);
-  - `docs/completed/task-cuda-windowed-kv-2026-10.md`, `docs/tasks/task-memory-accounting-2026-09.md`,
+  - `docs/tasks/parked/task-concurrency-2026-09.md` (MC1, MC3, MC5), `docs/completed/task-recompute-audit.md` (R-01,
+    R-04), `docs/completed/task-freetoken-techniques.md` (Lead 1);
+  - `docs/completed/task-cuda-windowed-kv-2026-10.md`, `docs/completed/task-memory-accounting-2026-09.md`,
     `docs/completed/task-never-swap-2026-09.md`;
   - `docs/completed/task-integration-harness-2026-10.md` (I4, I7), `docs/completed/task-cpu-kv-f16-2026-10.md`,
     `docs/tasks/parked/task-kv-cache-streaming.md`;
@@ -1969,4 +2005,4 @@ External:
 - [Marconi](https://arxiv.org/abs/2411.19379)
 - [Selective KV-cache sharing (SafeKV)](https://arxiv.org/abs/2508.08438)
 
-<!-- doc-reviewed: 2026-10-21 -->
+<!-- doc-reviewed: 2026-11-12 -->

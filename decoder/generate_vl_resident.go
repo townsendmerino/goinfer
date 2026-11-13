@@ -39,12 +39,12 @@ func (m *Model) residentUploadPrefill(cache *KVCache) (err error) {
 		m.residentForgetIDs()
 		a.RaiseFloor(a.Bound(), floor)
 	}()
-	if pass, ok := m.resident.(ResidentKVUploadPass); ok {
-		if err := pass.BeginKVUpload(); err != nil {
+	if kv := m.resKV(); kv.KVUploadPassAvailable() {
+		if err := kv.BeginKVUpload(); err != nil {
 			return err
 		}
 		defer func() {
-			if e := pass.EndKVUpload(err != nil); err == nil {
+			if e := kv.EndKVUpload(err != nil); err == nil {
 				err = e
 			}
 		}()
@@ -70,17 +70,13 @@ func (m *Model) residentUploadPrefill(cache *KVCache) (err error) {
 // and the UploadKV bridge entirely. One span goes to ResidentImagePrefill; several need
 // ResidentImageBlocksPrefill. Any error is a DECLINE, not fatal — the caller falls through to the
 // CPU-prefill+UploadKV bridge (gap 0, docs/multimodal.md).
-func (m *Model) residentImagePrefill(ctx context.Context, rip ResidentImagePrefill, ids []int, imageEmbeds []float32, spans []ImageSpan) (logits []float32, gpuPos int, err error) {
+func (m *Model) residentImagePrefill(ctx context.Context, r any, ids []int, imageEmbeds []float32, spans []ImageSpan) (logits []float32, gpuPos int, err error) {
 	hidden := m.w.arch.HiddenDim
 	if err := checkImageSpans(spans, len(ids), imageEmbeds, hidden); err != nil {
 		return nil, 0, err
 	}
-	var ribp ResidentImageBlocksPrefill
-	if len(spans) > 1 {
-		var ok bool
-		if ribp, ok = rip.(ResidentImageBlocksPrefill); !ok {
-			return nil, 0, fmt.Errorf("decoder: this backend's resident image prefill takes one image block and the prompt has %d; using the CPU prefill and upload", len(spans))
-		}
+	if len(spans) > 1 && !canStep(r, stepBatch{Pass: passRows, In: inImageBlocks, Emb: stepProbe}) {
+		return nil, 0, fmt.Errorf("decoder: this backend's resident image prefill takes one image block and the prompt has %d; using the CPU prefill and upload", len(spans))
 	}
 	h := m.embedN(ids)
 	spliceImageSpans(h, spans, imageEmbeds, hidden) // raw projected features, no embed scale
@@ -88,11 +84,13 @@ func (m *Model) residentImagePrefill(ctx context.Context, rip ResidentImagePrefi
 	for i := range rows {
 		rows[i] = h[i*hidden : (i+1)*hidden]
 	}
-	if ribp != nil {
-		logits, err = ribp.PrefillImageBlocksLast(ctx, rows, 0, imageSpanBlocks(spans))
+	var sr stepResult
+	if len(spans) > 1 {
+		sr, err = stepOn(r, stepBatch{Pass: passRows, Ctx: ctx, In: inImageBlocks, Emb: rows, Spans: imageSpanBlocks(spans)})
 	} else {
-		logits, err = rip.PrefillImageLast(ctx, rows, 0, spans[0].Pos, spans[0].Pos+spans[0].Len)
+		sr, err = stepOn(r, stepBatch{Pass: passRows, Ctx: ctx, In: inImage, Emb: rows, Spans: [][2]int{{spans[0].Pos, spans[0].Pos + spans[0].Len}}})
 	}
+	logits = sr.Logits
 	if err != nil {
 		return nil, 0, err
 	}
@@ -108,7 +106,7 @@ func (m *Model) residentImagePrefill(ctx context.Context, rip ResidentImagePrefi
 //
 // With Qwen3-VL's DeepStack sets, deep is non-nil and the resident must implement ResidentMRoPEDeepstackPrefill, or
 // the call declines (and the caller falls through to the CPU prefill); nil is Qwen2.5-VL's plain m-RoPE prefill.
-func (m *Model) residentMRoPEPrefillDeep(ctx context.Context, rmp ResidentMRoPEPrefill, ids []int, imageFeats []float32, spans []ImageSpan, mropePos [][3]int, deep [][]float32) (logits []float32, gpuPos int, err error) {
+func (m *Model) residentMRoPEPrefillDeep(ctx context.Context, r any, ids []int, imageFeats []float32, spans []ImageSpan, mropePos [][3]int, deep [][]float32) (logits []float32, gpuPos int, err error) {
 	hidden := m.w.arch.HiddenDim
 	if err := checkImageSpans(spans, len(ids), imageFeats, hidden); err != nil {
 		return nil, 0, err
@@ -125,15 +123,18 @@ func (m *Model) residentMRoPEPrefillDeep(ctx context.Context, rmp ResidentMRoPEP
 	for i := range rows {
 		rows[i] = h[i*hidden : (i+1)*hidden]
 	}
+	var sr stepResult
 	if deep != nil {
-		rdp, ok := rmp.(ResidentMRoPEDeepstackPrefill)
-		if !ok {
+		b := stepBatch{Pass: passRows, Ctx: ctx, In: inMRoPEDeepstack, Emb: rows, MRoPE: mropePos, Deep: deep,
+			Spans: [][2]int{{spans[0].Pos, spans[0].Pos + spans[0].Len}}}
+		if !canStep(r, b) {
 			return nil, 0, fmt.Errorf("decoder: the resident has no DeepStack prefill")
 		}
-		logits, err = rdp.PrefillMRoPEDeepstackLast(ctx, rows, 0, mropePos, deep, spans[0].Pos, spans[0].Len)
+		sr, err = stepOn(r, b)
 	} else {
-		logits, err = rmp.PrefillMRoPELast(ctx, rows, 0, mropePos)
+		sr, err = stepOn(r, stepBatch{Pass: passRows, Ctx: ctx, In: inMRoPE, Emb: rows, MRoPE: mropePos})
 	}
+	logits = sr.Logits
 	if err != nil {
 		return nil, 0, err
 	}
@@ -143,7 +144,7 @@ func (m *Model) residentMRoPEPrefillDeep(ctx context.Context, rmp ResidentMRoPEP
 // residentCausalImagePrefill is residentImagePrefill for a causal image family (Pixtral): the same spliced rows,
 // through the backend's plain batched pass (Prefiller.PrefillLast), which is exactly a causal prefill. The resident's
 // recorded ids are forgotten first: the pass overwrites its cache from position 0 even when it then declines.
-func (m *Model) residentCausalImagePrefill(ctx context.Context, pf Prefiller, ids []int, imageEmbeds []float32, spans []ImageSpan) (logits []float32, gpuPos int, err error) {
+func (m *Model) residentCausalImagePrefill(ctx context.Context, r any, ids []int, imageEmbeds []float32, spans []ImageSpan) (logits []float32, gpuPos int, err error) {
 	hidden := m.w.arch.HiddenDim
 	if err := checkImageSpans(spans, len(ids), imageEmbeds, hidden); err != nil {
 		return nil, 0, err
@@ -156,8 +157,9 @@ func (m *Model) residentCausalImagePrefill(ctx context.Context, pf Prefiller, id
 	}
 	m.residentForgetIDsIn(kvScopeOf(ctx))
 	m.residentWritesFromZero()
-	if logits, err = pf.PrefillLast(ctx, rows, 0); err != nil {
+	sr, err := stepOn(r, stepBatch{Pass: passRows, Ctx: ctx, Emb: rows})
+	if err != nil {
 		return nil, 0, err
 	}
-	return logits, len(ids), nil
+	return sr.Logits, len(ids), nil
 }

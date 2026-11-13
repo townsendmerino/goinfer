@@ -142,9 +142,7 @@ func (target *Model) GenerateNgramSpeculativeAdaptive(ctx context.Context, promp
 	// request only, since only greedy verifies through the argmax path (genNgramInto's idsVerify); a sampled request
 	// verifies through the full-logits ForwardN, which the curve does not describe.
 	if ad.Cost == nil && sp.Temperature <= 0 && target.resident != nil {
-		if cr, ok := target.resident.(VerifyCostReporter); ok {
-			ad.Cost = cr.VerifyCost()
-		}
+		ad.Cost = target.resRuntime().VerifyCost()
 	}
 	ad.ensure()
 	if ad.Theta >= 1 {
@@ -209,18 +207,16 @@ func (m *Model) verifyTheta() float64 {
 	}
 	// Prefer the explicit VerifyPathReporter if implemented: ask the resident directly
 	// whether its ForwardN verify path is batched.
-	if rep, ok := m.resident.(VerifyPathReporter); ok {
-		if batched, _ := rep.VerifyPath(); !batched {
+	if batched, _, ok := m.resRuntime().VerifyPathInfo(); ok {
+		if !batched {
 			return sequentialVerifyTheta
 		}
 		return thetaFor(m.be.Name())
 	}
 	// Fallback for residents that only implement PrefillPathReporter: ask whether their prefill path is batched.
-	if pf, ok := m.resident.(Prefiller); ok {
-		if rep, ok := pf.(PrefillPathReporter); ok {
-			if batched, _ := rep.PrefillPath(); !batched {
-				return sequentialVerifyTheta
-			}
+	if canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe}) {
+		if batched, _, ok := m.resPrefill().PrefillPathInfo(); ok && !batched {
+			return sequentialVerifyTheta
 		}
 	}
 	return thetaFor(m.be.Name())

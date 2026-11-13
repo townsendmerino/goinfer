@@ -1,0 +1,6 @@
+plant: cuda-pricing-ignores-flag (backend/cuda/builddemand.go)
+    kv16_test.go:1615: the unpinned load prices a 55296-byte pinned copy
+--- FAIL: TestMoEExpertsUnpinned_identityAndPricing (1.95s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/backend/cuda	2.002s
+FAIL

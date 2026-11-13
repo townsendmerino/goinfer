@@ -1,0 +1,19 @@
+# OP4cu-c2, C2-2: the arm64 TestAdmissionCensus run that op4cu-c2-c22-arm64-census-applied.txt said was owed.
+# c2 updated testdata/sb2_admission_census.arm64.txt.gz on an amd64 box by applying the amd64 golden's change per line key (34 keys).
+# The question: does an arm64 run produce that golden? Read 2026-11-08 on an Apple M1 Pro, macOS 26.6.2, go1.27.2 darwin/arm64,
+# under the timing lock's shared mode. Not a timed run.
+
+## At c2's own commit, c40e79dc6 (the golden as c2 wrote it). No go.work at that commit, so GOWORK=off (go.mod's pinned modules).
+$ GOWORK=off go test -tags goinfer_testhooks ./decoder/ -run '^TestAdmissionCensus$' -v -count=1
+    sb2_census_test.go:241: 2711 census lines in 3.485s
+--- PASS: TestAdmissionCensus (3.49s)
+
+## On main, 5c5fe5db2.
+$ go test -tags goinfer_testhooks ./decoder/ -run '^TestAdmissionCensus$' -v -count=1
+    sb2_census_test.go:241: 2711 census lines in 3.639s
+--- PASS: TestAdmissionCensus (3.64s)
+
+## What it shows
+# The census passes line for line at c2's commit, so the 34 lines c2 applied by key are what an arm64 run produces: the per-key
+# application was right. Two later re-records of the arm64 golden were real arm64 runs as well: 96990caaf (under qemu on nobara)
+# and d5d26d198 (-sb2census.update on this Mac, whose diff was 6 lines of -backend auto's reason text and nothing else).

@@ -1,7 +1,7 @@
 # Task: int4 weight quality: stop re-quantizing Q4_K (2026-09-26)
 
 **Owner decision 2026-09-26:** this goes ahead of R6 phase 3, the f16 resident KV cache, which is parked
-(`docs/prompts/cuda-r6-flash-decode.md`). The reasons are in `docs/measurements/f16kv-baseline-2026-09-26.md`:
+(`docs/completed/cuda-r6-flash-decode.md`). The reasons are in `docs/measurements/f16kv-baseline-2026-09-26.md`:
 Phi-3 on CUDA is 0.70× the peers at depth 128 and 0.68× at 2048. That gap comes from its **int8
 weights**, the only safe setting after H2, not from the KV cache.
 

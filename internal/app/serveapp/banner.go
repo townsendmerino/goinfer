@@ -85,8 +85,6 @@ type bannerFacts struct {
 	// cpuBatched: a CPU model's concurrent generations join their decode tokens into batched steps
 	// (decoder.Model.EnableCPUBatch).
 	cpuBatched bool
-	// cpuBatchBypass is why a batched model's decode tokens still run per sequence (decoder.Model.CPUBatchKVBypass), "" when they batch.
-	cpuBatchBypass string
 
 	// sampling: the checkpoint's recommended sampling (decoder.Config.Sampling), nil when it carries none.
 	sampling *decoder.RecommendedSampling
@@ -111,7 +109,6 @@ func factsOf(lm *loadedModel) bannerFacts {
 	f.ctxWindow = lm.contextWindow(lm.adapter == "")
 	f.maxPositions = lm.mdl().Config().MaxPositions
 	f.kv = lm.mdl().KVPrecisionReports()
-	f.cpuBatchBypass = lm.mdl().CPUBatchKVBypass()
 	f.ctxNote = lm.mdl().ResidentContextNote()
 	f.harnessKVBytes = lm.mdl().ResidentContextKVBytes(harnessCtx)
 	f.kvSlots = lm.mdl().ResidentKVSlots()
@@ -197,7 +194,7 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 			cpuNote += "; a GPU-resident load caps it with --ctx, but this model declined one (see decode path)"
 		}
 	}
-	ctxLine += kvBannerPart(f.kv)
+	ctxLine += kvBannerPart(f.kv, strings.HasPrefix(f.decodePath, "cuda-resident"))
 	ctxLine += cpuNote
 	out = append(out, ctxLine)
 	if l := harnessLine(f); l != "" {
@@ -210,12 +207,17 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 	// excluded from it by the OS's own accounting. Subtracting them again would double-count a footprint that is not
 	// there (the bug AdmitPrefillMemory once had at request time). Weights are still shown, for the reader's own
 	// arithmetic.
+	// A resident of two or more slots holds every slot's KV from the load, so the line prices its pool (the resident's own account),
+	// not one conversation's cap.
 	if f.fitKnown {
-		remaining := f.fitBudgetBytes - f.fitKVBytes
+		kv, what := f.fitKVBytes, fmt.Sprintf("%d-token cap needs", f.fitCtx)
+		if f.resident && f.kvSlots > 1 && f.kvPoolDetail.Bytes > 0 {
+			kv, what = f.kvPoolDetail.Bytes, fmt.Sprintf("%d KV slots at a %d-token cap hold", f.kvSlots, f.fitCtx)
+		}
 		fitLine := fmt.Sprintf(
-			"fit: %d-token cap needs %.1f GB KV (weights %.1f GB, budget %.1f GB, %.1f GB left for a request's own prefill)",
-			f.fitCtx, float64(f.fitKVBytes)/(1<<30), float64(f.fitWeightBytes)/(1<<30),
-			float64(f.fitBudgetBytes)/(1<<30), float64(remaining)/(1<<30))
+			"fit: %s %.1f GB KV (weights %.1f GB, budget %.1f GB, %.1f GB left for a request's own prefill)",
+			what, float64(kv)/(1<<30), float64(f.fitWeightBytes)/(1<<30),
+			float64(f.fitBudgetBytes)/(1<<30), float64(f.fitBudgetBytes-kv)/(1<<30))
 		if !f.resident && f.ctxWindow > 0 && f.fitCtx == f.maxPositions { // the CPU path's ceiling, as the context line says
 			fitLine += " — a ceiling, reached only by a request that fills the window"
 		}
@@ -358,9 +360,7 @@ func concurrencyLine(f bannerFacts, cfg config) string {
 		return line
 	case f.concurrent > 1:
 		line := fmt.Sprintf("concurrency: %d generations at once, each on its own session KV (-max-concurrent)", f.concurrent)
-		if f.cpuBatched && f.cpuBatchBypass != "" {
-			line += "; decode runs per sequence: " + f.cpuBatchBypass
-		} else if f.cpuBatched {
+		if f.cpuBatched {
 			line = fmt.Sprintf("concurrency: %d generations at once, each on its own session KV, decode tokens batched on the CPU (-max-concurrent, -cpu-batch)", f.concurrent)
 		} else if cfg.cpuBatch == decoder.CPUBatchAuto {
 			line += "; decode runs as independent workers (-cpu-batch auto batches models with 2 GiB or more of weights)"
@@ -515,8 +515,12 @@ func samplingLine(rs *decoder.RecommendedSampling) string {
 
 // kvBannerPart is the context line's KV part: for each cache the load built, the precision it holds and the one requested, with the
 // reason when they differ (an explicit request that cannot be delivered refuses the load, so a difference here is auto's pick).
-// "lossy" marks f16 or i8 that the operator asked for by name.
-func kvBannerPart(reps []decoder.KVPrecisionReport) string {
+// "lossy" marks f16 or i8 that the operator asked for by name. A CUDA resident's i8 cache (cudaResident: the load's decode path is
+// cuda-resident) also names its measured cost, which was measured there and nowhere else (docs/kv-precision-matrix.md, "Measured cost").
+// kvI8Cost is CUDA int8 KV's measured cost, as the banner states it: the G4 and speed results of docs/measurements/cuda-kv-i8-2026-11/s6-registration.md (and s4-registration.md's).
+const kvI8Cost = "about f16's quality on a 7B at 8K keys, a measurable loss on a 1.5B; decode up to 28% slower than f16 at short context, prefill near f16's"
+
+func kvBannerPart(reps []decoder.KVPrecisionReport, cudaResident bool) string {
 	if len(reps) == 0 {
 		return " · KV f32"
 	}
@@ -532,6 +536,9 @@ func kvBannerPart(reps []decoder.KVPrecisionReport) string {
 		}
 		if (r.Delivered == "f16" || r.Delivered == "i8") && r.Delivered == r.Requested {
 			note += ", lossy"
+			if r.Delivered == "i8" && r.Cache == "resident" && cudaResident {
+				note += ": " + kvI8Cost
+			}
 		}
 		s += " · " + label + " " + r.Delivered + " (" + note + ")"
 	}

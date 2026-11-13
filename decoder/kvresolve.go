@@ -2,6 +2,8 @@ package decoder
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
@@ -64,14 +66,17 @@ func ResolveKV(backend string, arch *Architecture, opts Options) (delivered, rea
 		o.Backend = backend
 	}
 	q := mem.KVQuery{Backend: backend, Request: gpuKVRequested(opts), CPURequest: cpuKVRequested(opts),
-		CPUBatchOn: opts.CPUBatchDecode == CPUBatchOn, Drafter: o.Drafter, HasArch: arch != nil}
+		Drafter: o.Drafter, HasArch: arch != nil}
 	if arch != nil {
-		q.NoKV, q.MLA, q.MoE, q.OwnLoop = arch.keepsNoKV(), arch.mla != nil, arch.MoE != nil, arch.ownLoopFamily()
+		q.NoKV, q.MLA, q.OwnLoop = arch.keepsNoKV(), arch.mla != nil, arch.ownLoopFamily()
 		q.CPUF16OK, q.CPUI8OK = arch.kvF16OK(), arch.kvInt8OK()
 		p := kvPolicies["cuda"]
 		q.CUDAPolicy = mem.KVPolicy{Decline: func() string { return p.Decline(arch.kvFacts(), o) }, Auto: p.Auto}
 		if p.AutoDecline != nil {
 			q.CUDAPolicy.AutoDecline = func() string { return p.AutoDecline(arch.kvFacts(), o) }
+		}
+		if p.DeclineI8 != nil {
+			q.CUDAPolicy.DeclineI8 = func() string { return p.DeclineI8(arch.kvFacts(), o) }
 		}
 	}
 	return mem.ResolveKV(q)
@@ -111,7 +116,8 @@ func kvRefusal(path string, arch *Architecture, opts Options) *KVRefusal {
 func cudaKVF16Delivered(f KVFacts) bool {
 	switch f.Family {
 	case "llama", "mistral", "qwen2", "qwen3", "phi3", "qwen2_moe", "qwen3_moe", "mixtral", "gemma2", "gemma3", "gpt-oss", "cohere",
-		"cohere2", "qwen2_5_vl", "qwen3_vl", "qwen3_vl_moe", "qwen3_5", "qwen3_5_moe", "qwen3_next", "gemma4", "deepseek_v2", "deepseek_v3", "kimi_k2":
+		"cohere2", "qwen2_5_vl", "qwen3_vl", "qwen3_vl_moe", "qwen3_5", "qwen3_5_moe", "qwen3_next", "gemma4", "deepseek_v2", "deepseek_v3", "kimi_k2",
+		"nemotron_h", "flint":
 		return true
 	}
 	return false
@@ -138,7 +144,7 @@ func cudaKVF16AutoCleared(f KVFacts) bool {
 func CUDAKVF16Decline(f KVFacts, _ Options) string {
 	if !cudaKVF16Delivered(f) {
 		return "f16 KV on CUDA covers llama, mistral, qwen2, qwen3, phi3, qwen2_moe, qwen3_moe, mixtral, gemma2, gemma3, gpt-oss, cohere, cohere2, " +
-			"qwen2_5_vl, qwen3_vl, qwen3_vl_moe, qwen3_5, qwen3_5_moe, qwen3_next, gemma4, deepseek_v2, deepseek_v3 and kimi_k2 so far; " +
+			"qwen2_5_vl, qwen3_vl, qwen3_vl_moe, qwen3_5, qwen3_5_moe, qwen3_next, gemma4, deepseek_v2, deepseek_v3, kimi_k2, nemotron_h and flint so far; " +
 			f.Family + " keeps f32"
 	}
 	return ""
@@ -158,15 +164,40 @@ func CUDAKVF16AutoDecline(f KVFacts, o Options) string {
 		return "f16 KV is delivered on request (--kv f16); auto keeps f32: the pairwise-RoPE quality gate did not pass at 8,000 keys (a passing K=8,000 cell would clear it)"
 	case f.SlidingWindow:
 		return "f16 KV is delivered on request (--kv f16); auto keeps f32: the sliding-window quality gate read AMBIGUOUS at 8,000 keys (a passing K=8,000 cell would clear it)"
+	case f.Family == "nemotron_h":
+		return "f16 KV is delivered on request (--kv f16); auto keeps f32: no quality gate has read a Mamba-2 hybrid yet (a passing G4 cell would clear it)"
 	}
 	return "f16 KV is delivered on request (--kv f16) for this build; auto keeps f32 until its quality gate passes"
+}
+
+// cudaKVI8Families are the families CUDA's int8 cache is delivered for: the dense ones, whose every path the _kv8 kernels and the
+// quantizing store cover (docs/measurements/cuda-kv-i8-2026-11/scope.md, S2). A family joins with its own identity and delivered-bytes gates.
+var cudaKVI8Families = []string{"llama", "mistral", "qwen2", "qwen3", "phi3"}
+
+// CUDAKVI8Decline returns why a CUDA resident cannot hold this model's KV cache as int8 under o, or "" when it can. Every refusal names what
+// it is waiting for. Several KV slots, their shared blocks and copy on write, host snapshots and demotion carry the scale pools (cuda's
+// kvCopyBlockRows and kvsnap.go).
+func CUDAKVI8Decline(f KVFacts, o Options) string {
+	if !slices.Contains(cudaKVI8Families, f.Family) {
+		return "int8 KV on CUDA covers the dense families (" + strings.Join(cudaKVI8Families, ", ") + "); " + f.Family + " is not among them (widening to other families is parked: docs/tasks/task-kv-precision-everywhere-2026-10.md, P2)"
+	}
+	switch {
+	case f.SlidingWindow:
+		return "int8 KV on CUDA does not cover sliding-window layers yet (the windowed ring and its rollback carry no scales)"
+	case f.MoE || f.MLA || f.MRoPE || f.PairwiseRoPE || f.Hybrid:
+		return "int8 KV on CUDA covers dense attention only so far"
+	case f.KVRowNotWords > 0:
+		return fmt.Sprintf("int8 KV on CUDA moves rows as whole 4-byte words, and this model's %d-element K/V row is not", f.KVRowNotWords)
+	}
+	return ""
 }
 
 // The CUDA policy ResolveKV reads when the cuda package is not linked in, as in the decoder's own tests and the generated KV matrix:
 // auto is f16 for a cleared family (the owner's decision of 2026-10-13). The cuda package registers the same table with its own auto
 // switch, which its tests pin to f32.
 func init() {
-	RegisterKVF16Policy("cuda", KVF16Policy{Decline: CUDAKVF16Decline, Auto: func() bool { return true }, AutoDecline: CUDAKVF16AutoDecline})
+	RegisterKVF16Policy("cuda", KVF16Policy{Decline: CUDAKVF16Decline, Auto: func() bool { return true }, AutoDecline: CUDAKVF16AutoDecline,
+		DeclineI8: CUDAKVI8Decline})
 }
 
 // kvPath is the cache a generation of this model writes: the resident backend's when a runner is active, else the CPU's.

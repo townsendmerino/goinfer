@@ -1,0 +1,71 @@
+=== RUN   TestLenientConfigJSON_tokens
+--- PASS: TestLenientConfigJSON_tokens (0.00s)
+=== RUN   TestLenientConfigJSON_cleanInputUntouched
+--- PASS: TestLenientConfigJSON_cleanInputUntouched (0.00s)
+=== RUN   TestLoadConfig_realNemotronH4B
+--- PASS: TestLoadConfig_realNemotronH4B (0.00s)
+=== RUN   TestSamplingFromGenerationConfig
+--- PASS: TestSamplingFromGenerationConfig (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder/config	0.003s
+=== RUN   TestDecisionCensus
+census: D1: 8435 groups in 1.9s
+census: D2: 3948 groups in 6.3s
+census: loads: 1 groups in 0.2s
+census: D3: 11760 groups in 2.3s
+census: D4: 2310 groups in 0.7s
+census: D5: 2730 groups in 0.9s
+decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)
+census: D6: 2 groups in 0.0s
+census: D7: 451 groups in 0.0s
+census: D1: 8435 groups in 1.8s
+census: D2: 3948 groups in 8.0s
+census: loads: 1 groups in 0.1s
+census: D3: 11760 groups in 2.8s
+census: D4: 2310 groups in 1.3s
+census: D5: 2730 groups in 0.9s
+decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)
+census: D6: 2 groups in 0.0s
+census: D7: 451 groups in 0.0s
+    mm1_census_test.go:323: host class "amd64 f32=4.000000 int8=1.015625 int4=0.562500 int4mix=0.562500 int8int8=1.015625 q4k=0.562500 bf16=2.000000 f16=2.000000"; 29637 groups; census adb09410b4927bce010d43017cd5e1e54ace1b72488d2ec921573eeb2dbd0aff
+--- PASS: TestDecisionCensus (28.73s)
+=== RUN   TestParityManifest_fresh
+    parity_manifest_test.go:449: parity stale for 12 validated family(ies) — numerics changed since the noted commit:
+          deepseek_v2      stale since d5c5a1d53  [covers: core+loaders+quant+moe+own(decoder/forward_deepseek.go,decoder/arch_deepseek.go,decoder/mla_int8.go)]
+          gpt-oss          stale since 960ef65a7  [covers: core+loaders+quant+moe+own(decoder/forward_gptoss.go,decoder/gptoss120_test.go,decoder/gptoss_safetensors.go,decoder/gptoss_safetensors_test.go,decoder/arch_gpt_oss.go)]
+          gpt2             stale since 7b50947a  [covers: core+loaders+quant+own(decoder/arch_gpt2.go)]
+          granitemoehybrid stale since 7b50947a  [covers: core+loaders+quant+moe+mamba2+own(decoder/forward_granite.go,decoder/arch_granitemoehybrid.go)]
+          internlm2        stale since 7b50947a  [covers: core+loaders+quant+own(decoder/internlm2.go,decoder/internlm2_test.go,scripts/pin_internlm2_tiny.py,decoder/arch_internlm2.go)]
+          kimi_k2          stale since d5c5a1d53  [covers: core+loaders+quant+moe+own(decoder/forward_deepseek.go,decoder/arch_deepseek.go,decoder/mla_int8.go)]
+          laguna           stale since 7b50947a  [covers: core+loaders+quant+moe+own(decoder/laguna_config_test.go,decoder/laguna_test.go,decoder/laguna_slice_test.go,decoder/laguna_gguf_test.go,scripts/pin_laguna_tiny.py,scripts/pin_slice_oracle.py,decoder/arch_laguna.go)]
+          qwen2            stale since 7b50947a  [covers: core+loaders+quant+own(decoder/arch_qwen2.go)]
+          qwen2_moe        stale since 7b50947a  [covers: core+loaders+quant+moe+own(decoder/arch_qwen2_moe.go)]
+          qwen3            stale since 7b50947a  [covers: core+loaders+quant+own(decoder/arch_qwen3.go)]
+          qwen3_vl         stale since 7ee05f0a  [covers: core+loaders+quant+own(decoder/arch_qwen3_vl.go,decoder/arch_qwen3.go)]
+          spark2_5         stale since 7b50947a  [covers: core+loaders+quant+own(decoder/spark25_test.go,decoder/spark25_real_test.go,scripts/pin_spark2_5_tiny.py,scripts/pin_spark2_5_real.py,decoder/arch_spark2_5.go)]
+        Fix: re-run T3 (go run ./cmd/gate parity) then -update; or, for a provably non-numeric core edit (a guarded diagnostic seam, comment, rename), scripts/refresh_parity_hashes.sh.
+--- FAIL: TestParityManifest_fresh (0.49s)
+=== RUN   TestParityKey_matchesFreshDepsHash
+--- PASS: TestParityKey_matchesFreshDepsHash (1.04s)
+=== RUN   TestParityKey_shadowMatchesDecoder
+    paritykey_test.go:213: 43 families, 31 with programs, 30 under the loader rule
+--- PASS: TestParityKey_shadowMatchesDecoder (1.17s)
+=== RUN   TestParityLoaders_mapping
+--- PASS: TestParityLoaders_mapping (0.00s)
+=== RUN   TestParityPrograms_mapping
+    paritykey_test.go:392: 37 fixtures mapped to families
+--- PASS: TestParityPrograms_mapping (0.00s)
+=== RUN   TestProgramFingerprint_table
+    program_fingerprint_test.go:103: 37 fixture programs (amd64)
+--- PASS: TestProgramFingerprint_table (0.39s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	31.898s
+FAIL
+=== RUN   TestBuilderFile
+--- PASS: TestBuilderFile (0.00s)
+=== RUN   TestBuilderFile_programTypesDeclareOnly
+--- PASS: TestBuilderFile_programTypesDeclareOnly (0.00s)
+=== RUN   TestKey_onTheTree
+--- PASS: TestKey_onTheTree (1.01s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/guard/paritykey	1.011s

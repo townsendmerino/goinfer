@@ -1,0 +1,6 @@
+plant: decline-old-condition (internal/runtime/mem/host.go)
+    mem_test.go:290: a load the flag would not save names it (fits false): decoder: m needs ~32.0 GB of host memory while building the CUDA expert cache (10.0 GB weights + 10.0 GB packed copy + 12.0 GB pinned copy of the
+--- FAIL: TestUnpinnedExpertsHint_onlyWhenTheCopyIsWhatDoesNotFit (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/runtime/mem	0.002s
+FAIL

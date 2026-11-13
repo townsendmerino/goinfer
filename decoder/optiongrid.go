@@ -109,12 +109,14 @@ var ogLoadOnly = map[string]string{
 	"DirectLoad":                   "chooses the file Load opens (the source or its sidecar .giw); the paths run whatever was opened",
 	"LoRA":                         "merged into the base weights at load (\"merged into the base at load\"), so every path runs the merged weights; compute-time adapters are Session state, in the cache-state grid",
 	"AcceptSlowMoE":                "an acknowledgement checked when a paged-MoE load is planned; a no-op afterwards",
+	"RequireBackend":               "turns a backend's decline at load into Load's error; a loaded model runs whatever was built",
 	"DisableFit":                   "selects load-time fit-by-default behaviour (resolveCtxCapFit, guardFit)",
 	"ExtraResidentBytes":           "prices a companion allocation when the resident is planned",
 	"ExtraResidentKVPerPosition":   "prices a companion allocation's K/V when the resident context is chosen",
 	"Drafter":                      "tells ResolveKV at load that a block drafter will attach: auto stays f32 on CUDA, and an explicit f16 refuses",
 	"LoadAbort":                    "checked between layers during a GGUF weight build, a .giw load and a backend's resident build; nil afterwards in effect",
 	"BackendAuto":                  "tells a backend at load that \"auto\" chose it, so it may decline a precision it would requantize",
+	"SidecarFor":                   "a planner's stand-in for the sidecar a load would build first: the weights in that sidecar's layout, the host copy as it maps them",
 	"ResidentKVSlotsDefault":       "tells the backend at load that ResidentKVSlots is the caller's default, not a chosen count",
 	"ResidentRecurrentStepDefault": "tells the backend at load that ResidentRecurrentStep is the caller's default, not a choice",
 	"ResidentGemma4StepDefault":    "tells the backend at load that ResidentGemma4Step is the caller's default, not a choice",
@@ -165,25 +167,25 @@ var ogGrid = map[string]map[ogPath]ogCell{
 			// int8 attention branch turns it red. (TestKVI8_genParity sets m.kvI8 itself, not through Options.)
 			pathCPUDecode:        ogTestedBy("TestOptionPath_cpuBatchedPrefill"),
 			pathCPUBatchPrefill:  ogTestedBy("TestOptionPath_cpuBatchedPrefill"), // TestKVI8_batchedPrefill sets m.kvI8 itself
-			pathCPUBatchDecode:   ogDeclinedAt("cpuBatchCacheEligible", "TestCPUBatch_ineligibleCachesBypass"),
+			pathCPUBatchDecode:   ogTestedBy("TestOptionPath_cpuBatchedDecode"),
 			pathSpecVerify:       ogTestedBy("TestOptionPath_specVerify"),
 			pathSessionLifecycle: ogTestedBy("TestKVI8_snapshotRoundtrip"),
 		},
 		ogResidentNA("the CPU KV cache's precision (\"selects the CPU KV cache storage precision\"); a resident uses KVPrecision"),
 	),
-	// The cells name Metal's tests; CUDA's own are beside them (f16 by the CUDA f16 build's tests, i8 refused at load until phase 2 of
-	// docs/tasks/task-kv-precision-everywhere-2026-10.md). Every value's delivery, per backend and family, is docs/kv-precision-matrix.md.
+	// The cells name Metal's tests; CUDA's own are beside them (f16 by the CUDA f16 build's tests; i8, delivered on the dense families, by
+	// the int8 build's). Every value's delivery, per backend and family, is docs/kv-precision-matrix.md.
 	"KVPrecision": ogMerge(
 		ogCPUNA("\"Ignored off the residency path\""),
 		map[ogPath]ogCell{
 			pathResidentDecode: ogWithCUDA(ogTestedBy("TestOptionPathMetal_kvPrecision"),
-				ogValueCell{"f16", ogTestedBy("TestKV16_everyAttentionPathStaysCloseToF32")}, ogValueCell{"i8", ogDeclinedAt("ResolveKV", "TestKVPrecisionDelivered")}),
+				ogValueCell{"f16", ogTestedBy("TestKV16_everyAttentionPathStaysCloseToF32")}, ogValueCell{"i8", ogTestedBy("TestKV8_G2exact_readersMatchTheCPUOnOneCache")}),
 			pathResidentPrefill: ogWithCUDA(ogTestedBy("TestPrefill_int8KVOnThePass"),
-				ogValueCell{"f16", ogTestedBy("TestKV16_everyAttentionPathStaysCloseToF32")}, ogValueCell{"i8", ogDeclinedAt("ResolveKV", "TestKVPrecisionDelivered")}),
+				ogValueCell{"f16", ogTestedBy("TestKV16_everyAttentionPathStaysCloseToF32")}, ogValueCell{"i8", ogTestedBy("TestKV8_G2exact_readersMatchTheCPUOnOneCache")}),
 			pathSpecVerify: ogWithCUDA(ogTestedBy("TestOptionPathMetal_kvPrecision"),
-				ogValueCell{"i8", ogDeclinedAt("ResolveKV", "TestKVPrecisionDelivered")}),
+				ogValueCell{"i8", ogTestedBy("TestKV8_verifyIsSequentialDecode")}),
 			pathSessionLifecycle: ogWithCUDA(ogTestedBy("TestOptionPathMetal_kvPrecision"),
-				ogValueCell{"f16", ogTestedBy("TestKV7_restoreFull")}, ogValueCell{"i8", ogDeclinedAt("ResolveKV", "TestKVPrecisionDelivered")}),
+				ogValueCell{"f16", ogTestedBy("TestKV7_restoreFull")}, ogValueCell{"i8", ogTestedBy("TestKV7_restoreFull")}),
 		},
 	),
 
@@ -199,6 +201,28 @@ var ogGrid = map[string]map[ogPath]ogCell{
 			pathResidentPrefill:  ogTestedBy("TestMoECacheExperts_bitExactMetal"),
 			pathSpecVerify:       ogTestedBy("TestMoECacheExperts_specAndSessionMetal"),
 			pathSessionLifecycle: ogTestedBy("TestMoECacheExperts_specAndSessionMetal"),
+		},
+	),
+	// The CUDA expert cache's slots uploaded from pageable pages (docs/measurements/mem10-2026-11/README.md, "MEM10 opt-in"): the same bytes, so
+	// every resident path is bit-identical to the pinned load on the paths it touches.
+	"MoEExpertsUnpinned": ogMerge(
+		ogCPUNA("a CUDA expert-cache option (with MoECacheExperts); the CPU's expert paging is StreamWeights"),
+		map[ogPath]ogCell{
+			pathResidentDecode:   ogTestedBy("TestMoEExpertsUnpinned_identityAndPricing"),
+			pathResidentPrefill:  ogTestedBy("TestMoEExpertsUnpinned_identityAndPricing"),
+			pathSpecVerify:       ogTestedBy("TestMoEExpertsUnpinned_identityAndPricing"),
+			pathSessionLifecycle: ogNACell("it changes only where expert slots upload from; a session's prefix, KV and snapshot hold no expert bytes"),
+		},
+	),
+	// A capped model on CUDA's flash-decode lane (docs/measurements/op1o2-fa-softcap-2026-11/README.md): decode and verify rows past the lane's
+	// floor; the lane's eligibility, which both paths ask, is what the option changes.
+	"FlashDecodeSoftcap": ogMerge(
+		ogCPUNA("a CUDA flash-decode lane option; the CPU has no flash-decode lane"),
+		map[ogPath]ogCell{
+			pathResidentDecode:   ogTestedBy("TestGemma2Softcap_lanesCUDA"),
+			pathResidentPrefill:  ogNACell("the flash-decode lane serves decode and verify rows; a prompt's prefill keeps its kernels"),
+			pathSpecVerify:       ogTestedBy("TestGemma2Softcap_lanesCUDA"),
+			pathSessionLifecycle: ogNACell("it changes which kernel attends a decode row; a session's prefix, KV and snapshot are the same"),
 		},
 	),
 	"MoECacheSlots": ogMerge(

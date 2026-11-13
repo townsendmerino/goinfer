@@ -1,0 +1,6 @@
+05:45:23 mc3 cell old4_1 binary /home/francis/goinfer-bench/rf2-s-2026-11-09/bins/serve-cuda-old sha256 99541c53bf50938b
+05:46:18 mc3 cell new4_1 binary /home/francis/goinfer-bench/rf2-s-2026-11-09/bins/serve-cuda-new sha256 0e232a46521c0b41
+05:46:42 mc3 cell new4_2 binary /home/francis/goinfer-bench/rf2-s-2026-11-09/bins/serve-cuda-new sha256 0e232a46521c0b41
+05:47:15 mc3 cell old4_2 binary /home/francis/goinfer-bench/rf2-s-2026-11-09/bins/serve-cuda-old sha256 99541c53bf50938b
+05:47:50 mc3 cell old4_3 binary /home/francis/goinfer-bench/rf2-s-2026-11-09/bins/serve-cuda-old sha256 99541c53bf50938b
+05:48:15 mc3 cell new4_3 binary /home/francis/goinfer-bench/rf2-s-2026-11-09/bins/serve-cuda-new sha256 0e232a46521c0b41

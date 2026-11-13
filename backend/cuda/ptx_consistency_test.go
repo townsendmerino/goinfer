@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -59,6 +60,8 @@ func TestPTX_matchesSourcesAndBindings(t *testing.T) {
 			continue
 		}
 		cuText := strings.ReplaceAll(string(cu), "ATTN_CAP_PARAM", map[bool]string{true: ", float attnCap", false: ""}[capped])
+		// A _kv8 twin is built with -DKV_I8, where KV_SCALE_PARAMS stands for the K and V scale pools (kvtype.cuh); the other builds have it expand to nothing.
+		cuText = strings.ReplaceAll(cuText, "KV_SCALE_PARAMS", map[bool]string{true: ", const float* __restrict__ kscl, const float* __restrict__ vscl", false: ""}[strings.HasSuffix(mod, "_kv8")])
 		globals := cuGlobals(cuText)
 		checked++
 		for name, want := range globals {
@@ -227,4 +230,36 @@ func goBoundKernelNames(t *testing.T) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// The int8 twins of the audited glue and gemv_fwd modules are built beside them, at the same pinned NVRTC (docs/measurements/cuda-kv-i8-2026-11/scope.md): a twin
+// from the ambient toolchain would put two compilers in one family of modules.
+func TestKV8_glueTwinIsBuiltAtTheAuditedToolchain(t *testing.T) {
+	banner := func(b []byte) string {
+		_, rest, _ := bytes.Cut(b, []byte("Cuda compilation tools, "))
+		line, _, _ := bytes.Cut(rest, []byte("\n"))
+		return string(line)
+	}
+	if got, want := banner(glueKV8PTX), banner(gluePTX); got == "" || got != want {
+		t.Errorf("glue_kv8.ptx was built by %q, glue.ptx by %q", got, want)
+	}
+	if got, want := banner(gemvFwdKV8PTX), banner(gemvFwdPTX); got == "" || got != want {
+		t.Errorf("gemv_fwd_kv8.ptx was built by %q, gemv_fwd.ptx by %q", got, want)
+	}
+	// prefill_batched and the store are not among the audited modules: their twins and the store are built at the toolchain their base records.
+	if got, want := banner(prefillBatchedKV8PTX), banner(prefillBatchedPTX); got == "" || got != want {
+		t.Errorf("prefill_batched_kv8.ptx was built by %q, prefill_batched.ptx by %q", got, want)
+	}
+	if got, want := banner(decodeFAKV8PTX), banner(decodeFAPTX); got == "" || got != want {
+		t.Errorf("decode_fa_kv8.ptx was built by %q, decode_fa.ptx by %q", got, want)
+	}
+	if got, want := banner(decodeSplitKVKV8PTX), banner(decodeSplitKVPTX); got == "" || got != want {
+		t.Errorf("decode_splitkv_kv8.ptx was built by %q, decode_splitkv.ptx by %q", got, want)
+	}
+	if got, want := banner(prefillSplitKVKV8PTX), banner(prefillSplitKVPTX); got == "" || got != want {
+		t.Errorf("prefill_splitkv_kv8.ptx was built by %q, prefill_splitkv.ptx by %q", got, want)
+	}
+	if banner(kv8StorePTX) == "" {
+		t.Error("kv8_store.ptx has no NVRTC banner")
+	}
 }

@@ -1,0 +1,32 @@
+11:16:55 cell start load 0.87
+[stall] b0-A0: wall 8.737s; no decoders; newcomer TTFT [0.585, 0.57, 0.568, 0.55, 0.565, 0.565]
+11:17:11 cell start load 0.74
+[stall] b0-B1: wall 8.717s; no decoders; newcomer TTFT [0.57, 0.568, 0.57, 0.546, 0.567, 0.565]
+11:17:27 cell start load 0.79
+[stall] b0-B2: wall 8.724s; no decoders; newcomer TTFT [0.593, 0.574, 0.54, 0.553, 0.568, 0.566]
+11:17:43 cell start load 0.78
+[stall] b0-A3: wall 8.743s; no decoders; newcomer TTFT [0.596, 0.572, 0.545, 0.566, 0.565, 0.566]
+11:18:09 cell start load 0.84
+[stall] b1-A0: wall 8.741s; no decoders; newcomer TTFT [0.568, 0.569, 0.568, 0.57, 0.567, 0.568]
+11:18:25 cell start load 0.79
+[stall] b1-B1: wall 8.729s; no decoders; newcomer TTFT [0.562, 0.57, 0.567, 0.569, 0.562, 0.569]
+11:18:41 cell start load 0.75
+[stall] b1-B2: wall 8.691s; no decoders; newcomer TTFT [0.565, 0.545, 0.569, 0.568, 0.552, 0.562]
+11:18:56 cell start load 0.73
+[stall] b1-A3: wall 8.729s; no decoders; newcomer TTFT [0.583, 0.545, 0.569, 0.569, 0.567, 0.566]
+11:19:32 cell start load 0.85
+[stall] b2-A0: wall 8.737s; no decoders; newcomer TTFT [0.597, 0.566, 0.544, 0.569, 0.567, 0.563]
+11:19:58 cell start load 0.79
+[stall] b2-B1: wall 8.765s; no decoders; newcomer TTFT [0.6, 0.57, 0.566, 0.564, 0.565, 0.569]
+11:20:14 cell start load 0.76
+[stall] b2-B2: wall 8.786s; no decoders; newcomer TTFT [0.605, 0.572, 0.568, 0.569, 0.57, 0.57]
+11:20:29 cell start load 0.73
+[stall] b2-A3: wall 8.721s; no decoders; newcomer TTFT [0.573, 0.57, 0.57, 0.547, 0.564, 0.566]
+11:20:45 cell start load 0.79
+[stall] b3-A0: wall 8.721s; no decoders; newcomer TTFT [0.607, 0.566, 0.553, 0.547, 0.567, 0.552]
+11:21:01 cell start load 0.76
+[stall] b3-B1: wall 8.702s; no decoders; newcomer TTFT [0.565, 0.554, 0.571, 0.573, 0.568, 0.541]
+11:21:17 cell start load 0.74
+[stall] b3-B2: wall 8.712s; no decoders; newcomer TTFT [0.57, 0.572, 0.552, 0.543, 0.572, 0.57]
+11:21:33 cell start load 0.80
+[stall] b3-A3: wall 8.704s; no decoders; newcomer TTFT [0.601, 0.546, 0.558, 0.545, 0.558, 0.564]

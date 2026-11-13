@@ -1,0 +1,10 @@
+=== RUN   TestMM5_noFamilySwitchInPricing
+    membufs_test.go:23: residentneed.go: cudaKVParts names "KVSrcAtResident": KV and state pricing reads the operations' declarations (LayerBuffers), not the family
+    membufs_test.go:23: residentneed.go: cudaKVParts names ".mla": KV and state pricing reads the operations' declarations (LayerBuffers), not the family
+    membufs_test.go:23: residentneed.go: cudaKVRowBytes names ".mla": KV and state pricing reads the operations' declarations (LayerBuffers), not the family
+--- FAIL: TestMM5_noFamilySwitchInPricing (0.00s)
+=== RUN   TestMM5_handTableCUDA
+--- PASS: TestMM5_handTableCUDA (0.01s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.022s
+FAIL

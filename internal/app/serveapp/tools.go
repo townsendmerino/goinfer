@@ -283,24 +283,17 @@ func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []ch
 	if !toolUnionEnabled || (mode != "auto" && mode != "required") || (mode == "auto" && !toolUnionAuto) {
 		return
 	}
-	// A server started with speculative decoding keeps its pre-union auto behaviour: every speculative path refuses a
-	// LogitProcessor (gated or not), so arming the lazy union would silently cost such a server its drafter on every
-	// multi-tool auto turn, a regression it opted out of by opting in. required is unaffected: it rides the grammar-fused
-	// speculative path.
-	if mode == "auto" && (lm.spec || lm.blockSpec != nil) {
-		return
-	}
 	prefix, suffix, argsKey, array, ok := lm.tmpl.ToolCallWrapper()
 	if !ok {
 		gr.callPostCheck = mode == "required" && forcedCallEnforcement(lm.tmpl) == "post-check"
 		return
 	}
-	specs := make([]constrain.ToolSpec, len(tools))
-	for i, t := range tools {
-		specs[i] = constrain.ToolSpec{Name: t.Name, Parameters: t.Parameters}
-	}
 	eos := append(append([]int(nil), lm.eosIDs...), lm.stopIDs...)
 	if mode == "required" {
+		specs := make([]constrain.ToolSpec, len(tools))
+		for i, t := range tools {
+			specs[i] = constrain.ToolSpec{Name: t.Name, Parameters: t.Parameters}
+		}
 		// The model must call something, and cannot call it badly. Forced from token 1 exactly like a named tool, so
 		// grammar-fused speculative decode applies.
 		g, err := constrain.ToolCallsGrammar(prefix, suffix, argsKey, array, specs)
@@ -313,30 +306,25 @@ func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []ch
 		gr.masker = m
 		return
 	}
-	// auto: arm on the opener. A family whose call has no opener (llama3's bare JSON) arms instead on the output beginning
-	// with a call object's name key: nothing is masked before the model has written `{"name": "`, so a prose answer (or JSON
-	// with another first key) is never touched and there is nothing to back out of.
-	trigger := strings.TrimRight(prefix, " \t\r\n")
-	if trigger == "" {
-		g, err := constrain.ToolCallsGrammar("", suffix, argsKey, array, specs)
-		if err != nil {
-			warnToolUnionOff(err)
-			return
-		}
-		lazy := constrain.NewCallKeyLazyMasker(constrain.NewMasker(g, lm.cachedTokenBytes(), eos), "<|python_tag|>")
-		gr.sp.LogitProcessor = lazy.Process
-		gr.sp.LogitProcessorGate = lazy.Gate
-		return
-	}
-	g, err := constrain.ToolCallsGrammar(trigger, suffix, argsKey, array, specs)
+	// auto: the template's lazy masker (chat.Template.ToolGrammar) masks nothing until the call opener arrives, so a prose
+	// answer is never touched.
+	lazy, err := lm.tmpl.ToolGrammar(tools, lm.cachedTokenBytes(), eos)
 	if err != nil {
 		warnToolUnionOff(err)
 		return
 	}
-	// A LogitProcessor only: gr.masker stays nil, because the grammar-fused speculative path
-	// assumes a grammar live from token 1, which a lazy one is not. The Gate keeps the decoder's
-	// on-device fast paths until the opener arrives (SamplingParams.LogitProcessorGate).
-	lazy := constrain.NewLazyMasker(constrain.NewMasker(g, lm.cachedTokenBytes(), eos), trigger)
+	armLazy(lm, gr, lazy)
+}
+
+// armLazy puts an auto turn's lazy union on gr. On a server that speculates it goes to gr.lazy, with no LogitProcessor, which every
+// speculative path refuses: the engine then speculates until the call's opener and takes the constrained path from there
+// (engine.Request.Lazy). Elsewhere it is a LogitProcessor only, gated (SamplingParams.LogitProcessorGate): gr.masker stays nil,
+// because the grammar-fused speculative path assumes a grammar live from token 1, which a lazy one is not.
+func armLazy(lm *loadedModel, gr *genRequest, lazy *constrain.LazyMasker) {
+	if lm.spec || lm.blockSpec != nil {
+		gr.lazy = lazy
+		return
+	}
 	gr.sp.LogitProcessor = lazy.Process
 	gr.sp.LogitProcessorGate = lazy.Gate
 }

@@ -12,30 +12,42 @@ import (
 // zero-copy load, not a heap allocation. f32 and SplitHalfBytes are never mmap-aliased (f32 is copied at .giw read time;
 // SplitHalfBytes is a derived repack). Unlike aikit's WeightMat.MappedSpan (the expert paging registry), this does not
 // page-align: it answers "did this allocation happen at all", not "can MADV_DONTNEED release whole pages", and rounding
-// would undercount a small mmap-backed tensor.
+// would undercount a small mmap-backed tensor. A heap model standing in for its sidecar (Options.SidecarFor) counts every payload of
+// these kinds, as the bundle maps them.
 func mmapAliasedBytes(m *Model, w *linalg.WeightMat) int64 {
-	if m == nil || len(m.mmap) == 0 {
+	if m == nil {
 		return 0
+	}
+	in := func(b []byte) bool { _, ok := m.MmapByteOffset(b); return ok }
+	if len(m.mmap) == 0 {
+		if m.sidecarFor == "" {
+			return 0
+		}
+		in = func([]byte) bool { return true }
 	}
 	var n int64
 	if q8, sc, _, ok := w.Int8(); ok && len(q8) > 0 {
-		raw := unsafe.Slice((*byte)(unsafe.Pointer(&q8[0])), len(q8))
-		if _, aliased := m.MmapByteOffset(raw); aliased {
+		if in(unsafe.Slice((*byte)(unsafe.Pointer(&q8[0])), len(q8))) {
 			n += int64(len(q8)) + 4*int64(len(sc))
 		}
 	}
 	if q4, sc, _, ok := w.Int4F16(); ok && len(q4) > 0 {
-		if _, aliased := m.MmapByteOffset(q4); aliased {
+		if in(q4) {
 			n += int64(len(q4)) + 2*int64(len(sc)) // int4 scales are binary16
 		}
 	}
 	if p4, sc, ok := w.Int4Row4F16(); ok && len(p4) > 0 {
-		if _, aliased := m.MmapByteOffset(p4); aliased {
+		if in(p4) {
 			n += int64(len(p4)) + 2*int64(len(sc))
 		}
 	}
+	if raw, ok := w.Q4K(); ok && len(raw) > 0 {
+		if in(raw) {
+			n += int64(len(raw))
+		}
+	}
 	if u, _, ok := w.Half16(); ok && len(u) > 0 {
-		if _, aliased := m.MmapByteOffset(unsafe.Slice((*byte)(unsafe.Pointer(&u[0])), 2*len(u))); aliased {
+		if in(unsafe.Slice((*byte)(unsafe.Pointer(&u[0])), 2*len(u))) {
 			n += 2 * int64(len(u))
 		}
 	}
@@ -91,11 +103,12 @@ func (m *Model) ResidentDenseWeightBytes() int64 {
 // ResidentDenseWeightBytesFor is ResidentDenseWeightBytes less the model-level tables backend keeps on the host rather
 // than its device: the dense figure that backend's fit checks must price against device memory.
 //
-// CUDA uploads every per-layer matrix and the LM head (the embedding table when the embeddings are tied). It gathers
-// token embeddings on the host and never uploads the learned position table or Gemma 4's per-layer embedding tables, so
+// CUDA and WebGPU upload every per-layer matrix and the LM head (the embedding table when the embeddings are tied). They
+// gather token embeddings on the host and never upload the learned position table or Gemma 4's per-layer embedding tables, so
 // an untied model's token-embedding table must not be priced as device memory; pricing it makes the slot-aware context
 // plan land too low. The Metal and CUDA q4k lanes upload the file's Q5_K and Q6_K blocks for their int8 copies (kquantSavings).
-// The CPU also holds the weights' own structs (cpuStructBytes), and CUDA and WebGPU hold gpt-oss's expert biases on this line.
+// The CPU also holds the weights' own structs (cpuStructBytes), CUDA and WebGPU hold gpt-oss's expert biases on this line, and Metal
+// the buffers its build derives (metalDerivedDenseBytes).
 // Measurement: docs/code-notes/decoder.md#Model.ResidentDenseWeightBytesFor.
 func (m *Model) ResidentDenseWeightBytesFor(backend string) int64 {
 	n := m.ResidentDenseWeightBytes() - m.residentHostSideBytes(backend) - m.kquantSavings(backend) - m.mambaProjSavings(backend)
@@ -105,6 +118,8 @@ func (m *Model) ResidentDenseWeightBytesFor(backend string) int64 {
 		n += dense
 	case "cuda", "webgpu":
 		n += m.expertBiasBytes()
+	case "metal":
+		n += m.metalDerivedDenseBytes()
 	}
 	if backend == "cuda" {
 		n += m.cudaDerivedTableBytes()
@@ -249,7 +264,7 @@ func (m *Model) mambaProjSavings(backend string) int64 {
 
 // residentHostSideBytes is the dense-sum portion backend keeps host-side; see ResidentDenseWeightBytesFor.
 func (m *Model) residentHostSideBytes(backend string) int64 {
-	if backend != "cuda" || m == nil || m.w == nil {
+	if (backend != "cuda" && backend != "webgpu") || m == nil || m.w == nil {
 		return 0
 	}
 	w := m.w

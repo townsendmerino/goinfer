@@ -396,7 +396,7 @@ func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
 				t.Fatalf("Load: %v", err)
 			}
 			defer m.Close()
-			// A GENUINE pin (item 28, docs/prompts/nobara-mc1-webgpu-2026-09.md §4): ResidentContext set
+			// A GENUINE pin (item 28, docs/completed/nobara-mc1-webgpu-2026-09.md §4): ResidentContext set
 			// in Options, not just a bare 8192 handed to resolveCtxCapFit with an otherwise-unpinned m —
 			// the latter is now a guard-pin scenario (m.ResidentContextPinned() false) and correctly runs
 			// fit-by-default clamped to it, which would shrink for these slots, not the "never shrinks"

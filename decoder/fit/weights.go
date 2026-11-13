@@ -17,6 +17,9 @@ type Rates struct {
 	MLAProjInt8 bool
 	// Kept (GGUF only, nil for none) prices a tensor the load keeps in its stored encoding, and reports false for any other.
 	Kept func(name string, dims []int) (bytes float64, ok bool)
+	// MLXBits (safetensors only, 0 or 4 for 4-bit, 8 for 8-bit) gives the bit-width of MLX U32-packed weights when
+	// sibling .scales tensors are present. 0 defaults to 4-bit (8 elements per uint32 word).
+	MLXBits int
 }
 
 // elems is the element count of a tensor of the given shape: 1 for an empty shape (a 0-D scalar holds one element, priced as f32 by the
@@ -82,6 +85,14 @@ func GGUFWeightBytes(names []string, dims func(name string) ([]int, bool), arch 
 // It prices the requested quant, never the on-disk bytes: a checkpoint is usually f32 or bf16 on disk and shrinks several-fold when
 // quantized on load, and an estimate wrong in the refusing direction is worse than none. shape reports ok false for a tensor it cannot read.
 func SafetensorsWeightBytes(names []string, shape func(name string) ([]int, bool), r Rates) int64 {
+	have := make(map[string]bool, len(names))
+	for _, name := range names {
+		have[name] = true
+	}
+	mlxPack := mlxDefaultPackFactor
+	if r.MLXBits == 8 {
+		mlxPack = 4
+	}
 	var total float64
 	for _, name := range names {
 		s, ok := shape(name)
@@ -92,7 +103,7 @@ func SafetensorsWeightBytes(names []string, shape func(name string) ([]int, bool
 		if n == 0 {
 			continue
 		}
-		// A GPTQ/AWQ auxiliary tensor is consumed during reconstruction and never kept resident.
+		// A GPTQ/AWQ/NVFP4/MLX auxiliary tensor is consumed during reconstruction and never kept resident.
 		if gptqAWQAuxSuffix(name) {
 			continue
 		}
@@ -120,6 +131,17 @@ func SafetensorsWeightBytes(names []string, shape func(name string) ([]int, bool
 		// A GPTQ/AWQ qweight's on-disk shape is the packed [in/8, out] layout; the load unpacks it to the logical [in, out].
 		if strings.HasSuffix(name, ".qweight") {
 			n *= gptqAWQPackFactor
+		} else if strings.HasSuffix(name, "_blocks") {
+			// MXFP4 safetensors (*_blocks U8 [..., nBlocks, 16]): 2 elements per packed byte.
+			n *= nvfp4PackFactor
+		} else if prefix, ok := strings.CutSuffix(name, ".weight"); ok {
+			if have[prefix+".weight_scale"] {
+				// NVIDIA ModelOpt NVFP4 (.weight U8 [out, in/2]): 2 elements per packed byte.
+				n *= nvfp4PackFactor
+			} else if have[prefix+".scales"] {
+				// MLX quantized (.weight U32 [..., out, in*bits/32]): 8 elements per U32 word at 4-bit, 4 at 8-bit.
+				n *= mlxPack
+			}
 		}
 		if embeddingTensorName(name) {
 			total += r.Embedding * float64(n)
@@ -196,10 +218,10 @@ func visionTowerTensorName(name string) bool {
 	return strings.Contains(name, "vision_tower.") || strings.Contains(name, "multi_modal_projector.")
 }
 
-// gptqAWQAuxSuffix reports whether name is a GPTQ/AWQ auxiliary tensor (qzeros/g_idx/scales) that is consumed during the one-time
+// gptqAWQAuxSuffix reports whether name is a GPTQ/AWQ/NVFP4/FP8/MXFP4/MLX auxiliary tensor that is consumed during the one-time
 // reconstruct-then-requantize step and never kept resident: pricing it as a weight matrix would double-count storage the load discards.
 func gptqAWQAuxSuffix(name string) bool {
-	for _, s := range []string{".qzeros", ".g_idx", ".scales"} {
+	for _, s := range []string{".qzeros", ".g_idx", ".scales", ".biases", ".weight_scale", ".weight_scale_2", ".input_scale", ".weight_scale_inv", "_scales"} {
 		if strings.HasSuffix(name, s) {
 			return true
 		}
@@ -209,7 +231,11 @@ func gptqAWQAuxSuffix(name string) bool {
 
 // gptqAWQPackFactor is how many 4-bit codes GPTQ/AWQ pack into each int32 along qweight's packed dimension, so qweight's on-disk shape
 // under-counts the logical [in, out] matrix by exactly this factor; the load unpacks it and requantizes.
-const gptqAWQPackFactor = 8
+const (
+	gptqAWQPackFactor    = 8
+	mlxDefaultPackFactor = 8
+	nvfp4PackFactor      = 2
+)
 
 // embeddingTensorName reports a checkpoint tensor the loaders keep at the embedding precision: a token-embedding table or an untied
 // LM head, under the names the supported safetensors families use.

@@ -8,7 +8,11 @@ type fastPrefillResident struct {
 	floor int
 }
 
-func (f *fastPrefillResident) FastPrefillFloor() int { return f.floor }
+func (f *fastPrefillResident) ResidentCaps() ResidentCaps {
+	c := f.slotResident.ResidentCaps()
+	c.HasFastPrefill, c.FastPrefillFloor = true, f.floor
+	return c
+}
 
 func longPrompt(lead []int, n int) []int {
 	p := append([]int(nil), lead...)
@@ -132,5 +136,42 @@ func TestResidentAcquire_capsInPlaceReuseToTheColdClass(t *testing.T) {
 	under := append(append([]int(nil), short[:290]...), 9001, 9002, 9003)
 	if got := m.residentAcquire(under, nil, nil); got != 290 {
 		t.Errorf("a prompt under the floor reused %d, want 290 (its cold prefill is exact too)", got)
+	}
+}
+
+// A reuse the in-place class cap backs off to a block edge can land under the slot's floor (Slots.SetFloor: a wrapped upload holds no rows
+// below its ring's base); the acquire returns 0 then, so the prompt is prefilled whole, not served from rows the slot no longer has. The
+// scorer sees the uncapped 1,000 rows, which clear a floor of 970, so only the check after the cap (Model.residentReuseFloor) stops it.
+// Driven through residentAcquire, the path every reuse caller takes.
+func TestResidentAcquire_floorAfterTheInPlaceCap(t *testing.T) {
+	pre := longPrompt(nil, 1000)
+	tail := func(seed, n int) []int {
+		p := append([]int(nil), pre...)
+		for i := range n {
+			p = append(p, 50000+seed*100+i)
+		}
+		return p
+	}
+	for _, tc := range []struct {
+		name  string
+		floor int
+		want  int
+	}{
+		{"no floor: the capped 960 stands", 0, 960},
+		{"floor at the capped length: kept", 960, 960},
+		{"capped reuse one under the floor: refused", 961, 0},
+		{"capped reuse well under the floor: refused", 970, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &Model{resident: &fastPrefillResident{&slotResident{n: 1}, 512}}
+			a := tail(1, 5)
+			m.residentAcquire(a, nil, nil)
+			m.residentForgetIDs()
+			m.residentCommitIDs(a, []int{1, 2, 3, 4}, nil, nil)
+			m.kvSlots().SetFloor(m.kvSlots().Bound(), tc.floor)
+			if got := m.residentAcquire(tail(2, 14), nil, nil); got != tc.want {
+				t.Errorf("floor %d: reuse = %d, want %d", tc.floor, got, tc.want)
+			}
+		})
 	}
 }

@@ -1,0 +1,8 @@
+served:   12eedab501f922e4728bc9777e799cc599fa77bb (/home/francis/goinfer-bench/s6-g4/bin/serve-cuda-s6, sha256 17bdac5866a57d25)
+harness:  33bfef1d0d6e90e00f82c75f6305c69250306db2 (bench_peer.py from #777); served = S6 G4 tree
+started:  2026-11-08 10:26:24 PST
+driver:   595.112.07
+arms:     goinfer = default (auto, f16 here), goinfer_old = -kv i8 (one binary)
+cells:    1.5B, 7B x 128, 512, 4096, 16384 (16,436 tokens); BENCH_CTX=16896; 2 runs a pass, two passes in reversed arm order
+prompts:  /home/francis/goinfer-bench/s4-pinned/prompts-s4.json (sha256 bbcb206615a9a25a); corrected after the run: the script's echo named the wrong path, BENCH_PROMPTS pointed here
+finished: 2026-11-08 10:51:43 PST rc=0

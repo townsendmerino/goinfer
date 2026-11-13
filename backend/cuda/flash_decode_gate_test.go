@@ -218,6 +218,9 @@ func TestFlashDecodeGateVsReference(t *testing.T) {
 	}{
 		"D7": {"GOINFER_CUDA_GATE_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf", true},
 		"S":  {"GOINFER_CUDA_GATE_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", false},
+		// G22B: Gemma 2 on the lane's capped variant, the opt-in's gate (docs/measurements/op1o2-fa-softcap-2026-11/README.md); run as
+		// GOINFER_FA_GATE_CELLS=G22B:3900.
+		"G22B": {"GOINFER_CUDA_GATE_MODEL_G22B", "$HOME/models/gemma-2-2b-it-Q8_0.gguf", true},
 	}
 	for cell := range strings.SplitSeq(cells, ",") {
 		parts := strings.Split(strings.TrimSpace(cell), ":")
@@ -238,7 +241,8 @@ func TestFlashDecodeGateVsReference(t *testing.T) {
 			if _, err := os.Stat(path); err != nil {
 				t.Skipf("no fixture at %s", path)
 			}
-			m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: K + 128})
+			// FlashDecodeSoftcap lets a capped model's lane arm take the lane; it changes nothing for an uncapped one.
+			m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: K + 128, FlashDecodeSoftcap: true})
 			if err != nil {
 				t.Fatalf("load: %v", err)
 			}

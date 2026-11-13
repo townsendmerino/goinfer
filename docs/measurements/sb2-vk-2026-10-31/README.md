@@ -221,3 +221,125 @@ holds, as read at 17:40.
   and 3 above. They stay with that branch.
 - **The buffer list here** carries K and V caches by owning layer. An MLA layer's latent cache and a hybrid's recurrent state are
   listed only on the planner branch.
+
+## Held-out set 5 (registered 2026-11-08, before any of its loads): the rebuilt planner
+
+- **What is judged.** The planner change rebuilt on main (branch `sb2-vk-ship-2026-11-08`): the host-side tables, M1′ in webgpu's
+  `deviceLoad` on a Vulkan build, and the buffer list with KV only on cache-owning layers (main's `ResidentKVBytes`, from MM8),
+  MLA's latent and the recurrent state. The run is at that branch's head as the run names it.
+- **The loads.** Four architectures no earlier load read, each statically admitted by WebGPU's feature set
+  (`residentBackendFeatures`), int4 at load, one slot. Each is fetched into a new directory under `~/models` and deleted after its
+  load (15 GB limit), by `run-heldout5.sh`:
+  - `allenai/Olmo-3-7B-Instruct` at 2048 (olmo3: post-norm only, whole-vector QK-norm, MHA, untied);
+  - `allenai/Olmo-Hybrid-7B` at 4096 (olmo_hybrid: 24 DeltaNet layers, 8 MHA attention layers);
+  - `HuggingFaceTB/SmolLM3-3B` at 8192 (smollm3: NoPE on 9 of 36 layers, tied);
+  - `granite-4.0-h-tiny-Q8_0.gguf` at 8192, copied from the archive, with the SSM gate set as set 3's amendment did (Mamba-2 with
+    routed experts and NoPE attention; it declined on NoPE in set 3, which WebGPU now implements). It exercises the f32 Mamba
+    projections WebGPU re-quantizes to int8, which the list does not model.
+- **Left out:** Ministral 3 (WebGPU does not implement `FeatAttnTemp`); Mellum-4b (llama, a fit-set layout); InternLM3-8B and
+  command-r7b (over the disk limit); Olmo 3 at its 4096 window (the 32 MHA layers' f32 KV does not fit beside the weights).
+- **Fit, by hand from the configs, int4, f32 KV:** about 6.4, 5.4, 3.3 and 4.5 GB against the card's 7.2 GB free. A load the fit
+  guard refuses is recorded and not scored.
+- **The CPU re-run (`sb2_vr5_test.go.txt`, `vr5.txt`):** G-VR1, G-VP2 and G-VR3 over the fourteen scored loads of sets 1 and 2,
+  with the planner as rebuilt.
+- **The rule** (set 3's), per scored set-5 load, from `score_heldout5.py`:
+  - **holds:** the planner's list within 32 MiB of the ledger, and M1′ over the recorded list and the plan's priced bytes
+    (`Plan.NeedBytes`) each within ±64 MiB of nvidia-smi's rise, on every scored load;
+  - **fails:** any of the three beyond 96 MiB;
+  - **ambiguous:** otherwise;
+  - **void:** fewer than two scored loads.
+- **What each outcome means:**
+  - **ships** only if set 5 holds and `vr5.txt` reads G-VR1 HOLDS, G-VP2 HOLDS and G-VR3 matches on all fourteen (an absent
+    checkpoint makes it INCOMPLETE, which does not ship);
+  - **fails:** it does not ship; the miss is read from the ledgers, and any fix needs a further held-out set (set 5 becomes fit data);
+  - **ambiguous or void:** parked, the branch kept, and the reading goes to Francis.
+- **Stopping:** one pass, no substitution after any load is read. A card step that exits 75 (VOID: another client on the card) is
+  not read and is re-run once the card is clear.
+
+## Held-out set 5, read (2026-11-08 12:30–12:37 PDT, nobara-sb01): fails on the DeltaNet hybrid
+
+| load | rise MiB | list − ledger | M1′ − rise | plan − rise |
+|---|---|---|---|---|
+| olmo3-7b @2048 | 6365 | −2.2 | −5.3 | −3.3 |
+| olmohybrid-7b @4096 | 5571 | +13.2 | −3.5 | **−258.3** |
+| smollm3-3b @8192 | 3409 | +2.1 | −1.0 | −0.4 |
+
+- **By the registered rule, FAILS** (`heldout5-score.txt`). The planner change does not ship on this set.
+- **Granite-4.0-H-tiny is not scored:** it does not go WebGPU-resident (`heldout5-granite4h-tiny-ctx8192-probe.log`, "granite
+  mult-fold unsupported kind int4"). WebGPU's Granite multiplier fold takes an int8 or f32 projection, not int4. That is a
+  separate gap, not fixed here.
+- **The fourteen-load re-run (`vr5.txt`) holds:** G-VR1 (worst 15.6 MiB), G-VP2 (worst 6.0 MiB), and G-VR3 matches on both
+  loads.
+
+## The hybrid's miss: the list's order, not its bytes (2026-11-08, mbp2, from set 5's records)
+
+- **The bytes agree.** The planner's list is within 13.2 MiB of the ledger, and buffer class by buffer class the two match: the LM
+  head, the MLP and DeltaNet projections, the 8 attention layers' KV and the 24 DeltaNet layers' conv window and state.
+- **The blocks do not.** M1′ places buffers first fit into 128 and 256 MiB blocks, and this load sits on a block edge:
+  - over the ledger in its own order, M1′ is 5,359.5 MiB of blocks (the rise less 3.5, with the fixed 208);
+  - leaving out the 54 MiB of state, or every buffer under 1 MiB, gives 5,103.5: one 256 MiB block fewer.
+- **The planner listed each DeltaNet layer out of the build's order:** its state, then its MLP, then its projections. The build
+  makes the projections first, then the gate projections as W8A8, the conv and gain vectors, the state, and then the MLP.
+  Repacking the recorded buffers in the planner's order gives exactly 5,103.5, the plan's figure.
+- **Qwen3.5-9B (set 2) held with the same order** (−6.0 MiB): its total did not sit on a block edge.
+
+**The fix** (`decoder/webgpu_vulkan.go`, `webgpuDeviceBuffers`): the list follows the build buffer for buffer.
+- A recurrent mixer (DeltaNet, Mamba-2) lists its weights, then its state, then the layer's other matrices; any other layer lists
+  its caches first.
+- Each projection is sized as WebGPU uploads it (`webgpuProjBuffers`): int4 as packed codes and f16 scale pairs; int8 and f32 as
+  W8A8. DeltaNet's two gate projections and Mamba's projections are therefore W8A8, not f32.
+- An MoE layer's experts are one stacked buffer per projection, plus their scales (`webgpuStackedBuffers`), as the build stacks
+  them; before, each expert was listed apart.
+- MLA lists its W8A8 projections and the two f32 halves of kv_b; Gemma 4's MoE block lists its f32 router ahead of the dense MLP.
+- The plan's rounding term subtracts the plan's own matrix walk (`webgpuMatrixWalk`). The plan's total therefore stays M1′'s
+  blocks plus the fixed terms, the vectors, the biases and the slack (`TestPlan_webgpuPricesVulkansBlocks`).
+
+**The gate, red first:** `TestWebGPUDeviceBuffers_inTheBuildsOrder` (backend/webgpu, tags `gpu goinfer_testhooks`). On a real
+WebGPU build of each of 18 fixtures, the planner's list must appear in the build's ledger buffer for buffer and in order, with
+only vectors between.
+- **Before the fix:** 11 fixtures red (both DeltaNet hybrids, Qwen3-Next, both Nemotrons, DeepSeek's MLA, Gemma 4's MoE,
+  Mixtral, Qwen3-MoE and both GLMs).
+- **After:** all 18 green, on mbp2's Intel WebGPU. The buffer list is goinfer's own, so it does not depend on the driver.
+- The MM1 census and the WebGPU slot census are unchanged: every tiny fixture packs into its first 128 MiB block either way.
+
+## Held-out set 6 (registered 2026-11-08, before any of its loads): the list in the build's order
+
+- **What is judged:** the planner change at the commit that adds this section, on branch `sb2-vk-ship-2026-11-08`. Set 5 is now
+  fit data (the fix was read off its records).
+- **The loads:** four checkpoints no earlier load read, int4 at load, one slot, each statically admitted by WebGPU's feature set.
+  They are fetched into a new directory under `~/models` and deleted after each load, by `run-heldout6.sh`.
+  - `nvidia/Nemotron-H-4B-Instruct-128K` at 8192, with the SSM gate set (Mamba-2 with 4 attention layers: a hybrid);
+  - `Qwen/Qwen3.5-4B` at 8192 (DeltaNet with 8 attention layers: a hybrid; its family's 9B is fit data, this checkpoint is not);
+  - `JetBrains/Mellum-4b-base` at 4096 (llama layout with 24 KV heads: dense);
+  - `Qwen/Qwen3-4B-Instruct-2507` at 8192 (qwen3: dense).
+- **Fit, by hand from the configs (int4, f32 KV):** about 3.5, 3.3, 5.6 and 5.0 GB against the card's 7.2 GB free. Mellum runs
+  at 4096, because its 30 layers' f32 KV at 8192 (6.0 GB) does not fit beside its weights. A load the fit guard refuses is
+  recorded and not scored.
+- **The CPU re-run (`vr6.txt`):** G-VR1, G-VP2 and G-VR3 over the fourteen scored loads of sets 1 and 2, with the planner as
+  committed.
+- **The rule is set 5's** (`score_heldout5.py . heldout6`):
+  - **holds:** the list within 32 MiB of the ledger, and M1′ over the recorded list and the plan's priced bytes each within ±64 MiB
+    of nvidia-smi's rise, on every scored load;
+  - **fails:** any of the three beyond 96 MiB;
+  - **ambiguous:** otherwise;
+  - **void:** fewer than two scored loads, or no scored hybrid.
+- **What each outcome means:**
+  - **ships** only if set 6 holds and `vr6.txt` reads G-VR1 HOLDS, G-VP2 HOLDS and G-VR3 matches on all fourteen;
+  - **fails:** it does not ship, and the miss is read from the ledgers;
+  - **ambiguous or void:** parked, and the reading goes to Francis.
+- **Stopping:** one pass, no substitution after any load is read. A card step that exits 75 (VOID) is re-run once the card is clear.
+
+## Held-out set 6, read (2026-11-08 15:00–15:08 PDT, nobara-sb01): holds, so the planner change ships
+
+| load | rise MiB | list − ledger | M1′ − rise | plan − rise |
+|---|---|---|---|---|
+| mellum-4b @4096 | 5490 | +2.7 | −2.0 | −1.3 |
+| nemotronh-4b @8192 | 3796 | +0.8 | −4.0 | −1.8 |
+| qwen3-4b-2507 @8192 | 5316 | +1.3 | −1.1 | −0.3 |
+| qwen35-4b @8192 | 3504 | −1.1 | −1.8 | −1.1 |
+
+- **Set 6 HOLDS** (`heldout6-score.txt`): four scored loads, two of them hybrids; worst list against ledger 2.7 MiB (bar 32), M1′
+  4.0 and the plan 1.8 MiB (bar 64).
+- **The fourteen re-run holds** (`vr6.txt`): G-VR1 (worst 5.3 and 7.0 MiB), G-VP2 (worst 6.0 MiB), G-VR3 matches on both loads.
+- **By the registered rule the planner change ships:** the host-side tables, M1′ in webgpu's `deviceLoad` on a Vulkan build, and
+  the buffer list in the build's order.

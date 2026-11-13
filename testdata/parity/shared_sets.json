@@ -11,6 +11,7 @@
     "decoder/registry.go",
     "decoder/arch.go",
     "decoder/config.go",
+    "decoder/config/config.go",
     "decoder/backend.go",
     "decoder/blockspec.go",
     "decoder/cpu_gateup_fused.go",
@@ -32,7 +33,9 @@
     "decoder/scratch.go",
     "decoder/cost_cpu.go",
     "decoder/wmbytes.go",
-    "internal/runtime/program/program.go"
+    "internal/runtime/program/methods.go",
+    "internal/runtime/program/program.go",
+    "internal/runtime/program/values.go"
   ],
   "deltanet": [
     "decoder/deltanet.go",

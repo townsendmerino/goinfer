@@ -91,10 +91,17 @@ for k in "${targets[@]}"; do
 	if grep -q 'kvtype.cuh' "$src"; then
 		nvrtc "$src" "out/${k%.cu}_kv16.ptx" "$ARCH" "$CUDA_INC" -DKV_F16
 	fi
-	# The three modules whose kernels a capped layer takes (attention, attn_batched, splitkv_scores) are also built with the attention
-	# softcap, at both KV types: <name>_cap.ptx and <name>_kv16_cap.ptx (cuda/attnscore.cuh). The plain modules above do not change.
+	# The modules whose every KV access goes through KV_LDS and the quantizing store are also built with the KV cache as int8 and per-(position,
+	# head) f32 scales: <name>_kv8.ptx (docs/measurements/cuda-kv-i8-2026-11/scope.md). A module joins this list only when it is ready; the others
+	# do not compile under -DKV_I8 and are not built.
 	case "${k%.cu}" in
-	glue | prefill_batched | decode_splitkv)
+	gemv_fwd | glue | prefill_batched | decode_fa | decode_splitkv | prefill_splitkv | attn_fused | attn_fused_bm) nvrtc "$src" "out/${k%.cu}_kv8.ptx" "$ARCH" "$CUDA_INC" -DKV_I8 ;;
+	esac
+	# The four modules whose kernels a capped layer takes (attention, attn_batched, splitkv_scores, the flash-decode lane's fa_partial*)
+	# are also built with the attention softcap, at both KV types: <name>_cap.ptx and <name>_kv16_cap.ptx (cuda/attnscore.cuh). The
+	# plain modules above do not change.
+	case "${k%.cu}" in
+	glue | prefill_batched | decode_splitkv | decode_fa)
 		for variant in "cap:-DATTN_SOFTCAP" "kv16_cap:-DKV_F16 -DATTN_SOFTCAP"; do
 			nvrtc "$src" "out/${k%.cu}_${variant%%:*}.ptx" "$ARCH" "$CUDA_INC" ${variant#*:}
 		done

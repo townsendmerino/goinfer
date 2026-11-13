@@ -6,6 +6,7 @@ package cliutil
 
 import (
 	"errors"
+	"path/filepath"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -82,4 +83,13 @@ func BuildIdent(injected string) (version, revision string) {
 		revision += "-dirty"
 	}
 	return version, revision
+}
+
+// BinaryName is prog, a binary's file name, without a Windows .exe extension in any case: the name --version's first line
+// gives, which a client that pins goinfer's version parses.
+func BinaryName(prog string) string {
+	if ext := filepath.Ext(prog); strings.EqualFold(ext, ".exe") {
+		return strings.TrimSuffix(prog, ext)
+	}
+	return prog
 }

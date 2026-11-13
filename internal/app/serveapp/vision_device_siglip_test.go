@@ -122,3 +122,52 @@ func TestLoadVisionTower_gemma3FloatDefaultFallsBackToInt8(t *testing.T) {
 		}
 	}
 }
+
+// TestLoadVisionTower_gemma3WebGPUDefault: under --backend webgpu on a unified-memory machine Gemma 3's SigLIP tower, with nothing asked,
+// attaches the float32 device tower (G-S12.3a-4, medians 0.430 of the CPU tower, S12-defaults). -vision-quant int8 attaches the int8
+// device tower, -vision-device gpu is the same as the default, and -vision-device cpu attaches no device tower at all. On a discrete
+// GPU, whose device memory cannot be priced, the default is the CPU tower and the device is attached only when asked for
+// (-vision-device gpu, -vision-quant). It runs through loadVisionTower with a fake WebGPU resident that tells float32 from int8 by
+// whether the encoder holds int8 weights.
+func TestLoadVisionTower_gemma3WebGPUDefault(t *testing.T) {
+	var f32Tries, int8Tries int
+	vision.RegisterResident(func(e *vision.Encoder) (vision.ResidentEncoder, error) {
+		if _, err := e.GPUWeights(); err == nil {
+			int8Tries++
+		} else {
+			f32Tries++
+		}
+		return fakeSiglipResident{}, nil
+	})
+	t.Cleanup(func() { vision.RegisterResident(nil) })
+	dir := gemma3RealLayoutTiny(t)
+	for _, tc := range []struct {
+		name, quant, device string
+		unified             bool
+		wantF32, wantInt8   int
+	}{
+		{"unified, nothing asked", "", "", true, 1, 0},
+		{"unified, -vision-device auto", "", "auto", true, 1, 0},
+		{"unified, -vision-quant f32", "f32", "", true, 1, 0},
+		{"unified, -vision-device gpu", "", "gpu", true, 1, 0},
+		{"unified, -vision-quant int8", "int8", "", true, 0, 1},
+		{"unified, -vision-device cpu", "", "cpu", true, 0, 0},
+		{"discrete, nothing asked: the CPU tower", "", "", false, 0, 0},
+		{"discrete, -vision-device auto: the CPU tower", "", "auto", false, 0, 0},
+		{"discrete, -vision-device gpu", "", "gpu", false, 1, 0},
+		{"discrete, -vision-quant f32", "f32", "", false, 1, 0},
+		{"discrete, -vision-quant int8", "int8", "", false, 0, 1},
+		{"discrete, -vision-device cpu", "", "cpu", false, 0, 0},
+	} {
+		stubWebGPU(t, tc.unified, 1<<40) // unified: plenty of memory, so the guard proceeds
+		f32Tries, int8Tries = 0, 0
+		cfg := config{visionPath: dir, visionQuant: tc.quant, visionDevice: tc.device, models: modelFlag{{path: "m"}}}
+		cfg.load.Backend = "webgpu"
+		if err := (&server{}).loadVisionTower(cfg); err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if f32Tries != tc.wantF32 || int8Tries != tc.wantInt8 {
+			t.Errorf("%s: WebGPU attach tried float32 %d times and int8 %d, want %d and %d", tc.name, f32Tries, int8Tries, tc.wantF32, tc.wantInt8)
+		}
+	}
+}

@@ -102,6 +102,8 @@ func TestPrefillGateReference(t *testing.T) {
 		{"Q359", "GOINFER_CPU_MODEL_Q359", "$HOME/models/qwen3.5-9b", "int8", refKs([]int{3900, 8000})},
 		// DSV2L, DeepSeek-V2-Lite: group 6's (MLA), weight-only int8 like D7.
 		{"DSV2L", "GOINFER_CPU_MODEL_DSV2L", "$HOME/models/deepseek-v2-lite", "int8", refKs([]int{3900, 8000})},
+		// G22B, Gemma-2-2B: the capped flash-decode lane's fidelity gate (docs/measurements/op1o2-fa-softcap-2026-11/README.md), f32 like S.
+		{"G22B", "GOINFER_CPU_MODEL_G22B", "$HOME/models/gemma-2-2b-it-Q8_0.gguf", "", refKs([]int{3900})},
 	}
 	// GOINFER_CPU_REF_MODELS (comma-separated cell names) narrows the run; unset builds S and D7, as before Q05.
 	want := map[string]bool{"S": true, "D7": true}

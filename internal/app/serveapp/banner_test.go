@@ -277,12 +277,6 @@ func TestConcurrencyLine_cpuBatch(t *testing.T) {
 	if !strings.Contains(batched, "decode tokens batched on the CPU") || !strings.Contains(batched, "-cpu-batch") {
 		t.Errorf("batched CPU model: %q", batched)
 	}
-	// Batching engaged for the family, but an f16 or int8 cache's tokens decode per sequence: the line says so and why, not "batched".
-	why := "the i8 KV cache decodes per sequence; the CPU batcher reads f32 KV only until phase 4"
-	bypass := concurrencyLine(bannerFacts{concurrent: 4, cpuBatched: true, cpuBatchBypass: why}, config{maxConcurrent: 4, kvSessions: 4})
-	if strings.Contains(bypass, "batched on the CPU") || !strings.Contains(bypass, "decode runs per sequence: "+why) {
-		t.Errorf("CPU model whose int8 cache bypasses the batcher: %q", bypass)
-	}
 	workers := concurrencyLine(bannerFacts{concurrent: 4}, config{maxConcurrent: 4, kvSessions: 4, cpuBatch: decoder.CPUBatchAuto})
 	if !strings.Contains(workers, "independent workers") || strings.Contains(workers, "batched on the CPU") {
 		t.Errorf("CPU model on the workers under auto: %q", workers)
@@ -653,5 +647,64 @@ func TestBanner_kvPoolLine(t *testing.T) {
 				t.Errorf("KV plan line\n got %q\nwant %q", got, tc.plan)
 			}
 		})
+	}
+}
+
+// TestBanner_kvI8CostIsCUDAs: the measured int8 cost is CUDA's (kvI8Cost), so the banner prints it only for a CUDA resident's int8 cache. A
+// CPU cache, a Metal resident and a CPU cache beside a CUDA resident print "lossy" alone.
+func TestBanner_kvI8CostIsCUDAs(t *testing.T) {
+	i8 := func(cache string) decoder.KVPrecisionReport {
+		return decoder.KVPrecisionReport{Cache: cache, Requested: "i8", Delivered: "i8"}
+	}
+	for _, tc := range []struct {
+		name, decodePath string
+		kv               []decoder.KVPrecisionReport
+		want, notWant    []string
+	}{
+		{"cuda resident", "cuda-resident (int4)", []decoder.KVPrecisionReport{i8("resident")},
+			[]string{"KV i8 (requested i8, lossy: " + kvI8Cost + ")"}, nil},
+		{"metal resident", "metal-resident (int4)", []decoder.KVPrecisionReport{i8("resident")},
+			[]string{"KV i8 (requested i8, lossy)"}, []string{kvI8Cost}},
+		{"webgpu resident", "webgpu-resident (int8)", []decoder.KVPrecisionReport{i8("resident")},
+			[]string{"KV i8 (requested i8, lossy)"}, []string{kvI8Cost}},
+		{"cpu", "cpu (int4)", []decoder.KVPrecisionReport{i8("cpu")},
+			[]string{"KV i8 (requested i8, lossy)"}, []string{kvI8Cost}},
+		{"cuda resident and its cpu cache", "cuda-resident (int4)", []decoder.KVPrecisionReport{i8("resident"), i8("cpu")},
+			[]string{"· KV i8 (requested i8, lossy: " + kvI8Cost + ") · CPU KV i8 (requested i8, lossy)"}, nil},
+	} {
+		got := bannerLine(modelBannerFrom(bannerFacts{hasTemplate: true, ctxWindow: 4096, maxPositions: 4096, decodePath: tc.decodePath, kv: tc.kv},
+			config{load: loadflags.Flags{KV: "i8"}}), "context:")
+		for _, w := range tc.want {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s: line %q lacks %q", tc.name, got, w)
+			}
+		}
+		for _, w := range tc.notWant {
+			if strings.Contains(got, w) {
+				t.Errorf("%s: line %q prints CUDA's measured int8 cost", tc.name, got)
+			}
+		}
+	}
+}
+
+// The "fit:" line prices the KV a resident holds: with two or more slots, the pool every slot's blocks take (the resident's own
+// account, decoder.Model.ResidentKVPool), not one conversation's cap, and the room left for a prefill is the budget less all of it.
+// A one-slot resident and the CPU path keep the one-cap figure.
+func TestBanner_fitLinePricesEveryResidentSlot(t *testing.T) {
+	const gib = float64(1 << 30)
+	f := bannerFacts{hasTemplate: true, resident: true, kvSlots: 2, ctxWindow: 2048, maxPositions: 4096, fitKnown: true, fitCtx: 2048,
+		fitKVBytes: 792 << 20, fitWeightBytes: 2680 << 20, fitBudgetBytes: 7884 << 20,
+		kvPoolDetail: decoder.KVPoolDetail{Positions: 4096, Guaranteed: 2048, BlockRows: 64, Precision: "f16", Bytes: 1560 << 20}}
+	line := func(f bannerFacts) string { return bannerLine(modelBannerFrom(f, config{}), "fit:") }
+
+	want := fmt.Sprintf("fit: 2 KV slots at a 2048-token cap hold %.1f GB KV (weights %.1f GB, budget %.1f GB, %.1f GB left for a request's own prefill)",
+		float64(1560<<20)/gib, float64(2680<<20)/gib, float64(7884<<20)/gib, float64((7884-1560)<<20)/gib)
+	if got := line(f); got != want {
+		t.Errorf("two resident slots:\n got %q\nwant %q", got, want)
+	}
+	one := f
+	one.kvSlots, one.kvPoolDetail.Positions, one.kvPoolDetail.Bytes = 1, 2048, 792<<20
+	if got := line(one); !strings.HasPrefix(got, "fit: 2048-token cap needs 0.8 GB KV (") {
+		t.Errorf("one resident slot: %q, want the cap's own figure", got)
 	}
 }

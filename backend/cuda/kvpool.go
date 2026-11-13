@@ -9,6 +9,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
 // Paged KV storage (docs/tasks/task-kv-architecture-2026-10.md §5.3, KV4). Every layer that keeps K/V holds them in a pool of
@@ -291,6 +292,9 @@ func (r *cudaResident) kvAllocPools(slots int) error {
 			continue
 		}
 		r.kc[l], r.vc[l] = r.akv(l, rows*Ly.kvDim), r.akv(l, rows*Ly.kvDim)
+		if Ly.kvI8 {
+			r.ksc[l], r.vsc[l] = r.akvScales(rows*Ly.nKV), r.akvScales(rows*Ly.nKV)
+		}
 	}
 	for l := range r.layers {
 		if r.layers[l].kvShared {
@@ -342,16 +346,86 @@ func (r *cudaResident) kvZeroNullBlocks() error {
 				return e
 			}
 		}
+		if Ly.kvI8 { // a null row reads 0 x its scale: zero the scales too, so it reads 0 as the f32 null block does
+			for _, b := range []Buffer{r.ksc[l], r.vsc[l]} {
+				if e := r.stream.ZeroAsync(b, kvBlock*Ly.nKV*4); e != nil {
+					return e
+				}
+			}
+		}
 	}
 	return nil
 }
 
-// kvElem is the bytes of one cached element of layer l: 4, or 2 for an f16 layer. An MLA latent row is f32.
+// kvElem is the bytes of one cached element of layer l: 4, 2 for an f16 layer, or 1 for an int8 one (whose scales are in ksc/vsc). An MLA
+// latent row is f32.
 func (r *cudaResident) kvElem(l int) int {
-	if r.layers[l].kvHalf {
+	switch {
+	case r.layers[l].kvI8:
+		return 1
+	case r.layers[l].kvHalf:
 		return 2
 	}
 	return 4
+}
+
+// kvCheckDeclared holds layer l's declared per-position rows (decoder.Model.LayerBuffers) to what its kernels address, before its pools
+// are sized from its geometry: K and V of kvDim elements in nKV heads at the KV precision, with the layer's window; on an MLA layer one
+// latent of kvDim elements declared f32, which CUDA holds at the cache's precision but never int8; none on a layer that reads another's
+// KV or keeps none. A row missing, extra, declared twice, or of another width, head count, precision or window is refused: the plan
+// prices the declaration, so pools sized otherwise would not be what fit priced.
+func kvCheckDeclared(l int, bufs []program.Buf, Ly *cudaLayer) error {
+	rows := map[string]program.Buf{}
+	for _, b := range bufs {
+		if b.Unit != program.PerPosition {
+			continue
+		}
+		if _, again := rows[b.Name]; again {
+			return fmt.Errorf("cuda: layer %d: the program declares %s rows twice", l, b.Name)
+		}
+		rows[b.Name] = b
+	}
+	need := map[string]program.Buf{}
+	switch {
+	case Ly.kvShared || Ly.noKV() || Ly.kvDim == 0:
+	case Ly.isMLA():
+		if Ly.kvI8 {
+			return fmt.Errorf("cuda: layer %d: the program declares an f32 latent, which CUDA holds at f16 or f32, on an int8 cache", l)
+		}
+		need["latent"] = program.Buf{Prec: program.PrecF32, Elems: Ly.kvDim}
+	default:
+		kv := program.Buf{Prec: program.PrecKV, Elems: Ly.kvDim, Heads: Ly.nKV, Window: int(Ly.window)}
+		need["k"], need["v"] = kv, kv
+	}
+	for name, b := range rows {
+		w, ok := need[name]
+		switch {
+		case !ok:
+			return fmt.Errorf("cuda: layer %d: the program declares %s rows, which its kernels have no pool for", l, name)
+		case b.Elems != w.Elems || b.Prec != w.Prec || b.Window != w.Window || (w.Heads > 0 && b.Heads != w.Heads):
+			return fmt.Errorf("cuda: layer %d: the program declares %s rows of %d elements in %d heads at precision %d, window %d; the kernels address %d in %d at %d, window %d",
+				l, name, b.Elems, b.Heads, b.Prec, b.Window, w.Elems, w.Heads, w.Prec, w.Window)
+		}
+	}
+	for name := range need {
+		if _, ok := rows[name]; !ok {
+			return fmt.Errorf("cuda: layer %d: the program declares no %s rows", l, name)
+		}
+	}
+	return nil
+}
+
+// kvRowBytes is the device bytes of one position's K (or V, or MLA latent) row of a layer: kvDim elements, and on an int8 layer one f32
+// scale per KV head in its scale pool. decoder.cudaKVRowBytes prices the same from the declared row, which kvCheckDeclared holds to
+// this layer.
+func kvRowBytes(Ly *cudaLayer) int64 {
+	switch {
+	case Ly.kvI8:
+		return int64(Ly.kvDim) + 4*int64(Ly.nKV)
+	case Ly.kvHalf:
+		return 2 * int64(Ly.kvDim)
+	}
+	return 4 * int64(Ly.kvDim)
 }
 
 // kvMap gives slot s's group-g table a block of its own for every kvBlock positions overlapping [lo, hi), which the caller is about to
@@ -416,6 +490,14 @@ func (r *cudaResident) kvCopyBlockRows(g int, from, to int32, rows int) error {
 			}
 			if e := r.copyF32(b.At(int(from)*kvBlock*row), b.At(int(to)*kvBlock*row), rows*row/4); e != nil {
 				return e
+			}
+		}
+		if Ly.kvI8 { // the rows' scales go with them
+			srow := Ly.nKV * 4
+			for _, b := range []Buffer{r.ksc[l], r.vsc[l]} {
+				if e := r.copyF32(b.At(int(from)*kvBlock*srow), b.At(int(to)*kvBlock*srow), rows*Ly.nKV); e != nil {
+					return e
+				}
 			}
 		}
 	}
@@ -542,15 +624,11 @@ func kvPoolNullBytes(layers []cudaLayer) int64 {
 		if Ly.kvShared || Ly.kvDim == 0 || Ly.noKV() {
 			continue
 		}
-		elem := int64(4)
-		if Ly.kvHalf {
-			elem = 2
-		}
 		if Ly.isMLA() {
-			n += kvBlock * int64(Ly.kvDim) * elem
+			n += kvBlock * kvRowBytes(Ly)
 			continue
 		}
-		n += 2 * kvBlock * int64(Ly.kvDim) * elem
+		n += 2 * kvBlock * kvRowBytes(Ly)
 	}
 	return n
 }
@@ -618,7 +696,7 @@ func (r *cudaResident) kvReleasePools() {
 			r.kc[l], r.vc[l] = Buffer{}, Buffer{}
 		}
 	}
-	for _, set := range [][]Buffer{r.kc, r.vc} {
+	for _, set := range [][]Buffer{r.kc, r.vc, r.ksc, r.vsc} {
 		for l := range set {
 			if set[l].Len() > 0 {
 				r.dev.ReleaseBuf(set[l])
@@ -660,7 +738,7 @@ func (r *cudaResident) kvPoolLine() string {
 // at the driver's charge).
 func (r *cudaResident) KVPool() decoder.KVPoolDetail {
 	d := decoder.KVPoolDetail{Positions: r.KVSlots() * r.kvShareBlocks * kvBlock, Guaranteed: r.kvShareCtx, BlockRows: kvBlock}
-	half, single := false, false
+	half, single, i8 := false, false, false
 	var inGroup [kvGroups]bool
 	for l := range r.layers {
 		Ly := &r.layers[l]
@@ -669,9 +747,13 @@ func (r *cudaResident) KVPool() decoder.KVPoolDetail {
 		}
 		inGroup[r.kvGroupOf(l)] = true
 		elem := int64(4)
-		if Ly.kvHalf {
+		switch {
+		case Ly.kvI8:
+			elem, i8 = 1, true
+			d.Bytes += chargedBytes(int64(r.ksc[l].Len())*4) + chargedBytes(int64(r.vsc[l].Len())*4)
+		case Ly.kvHalf:
 			elem, half = 2, true
-		} else {
+		default:
 			single = true
 		}
 		d.Bytes += chargedBytes(int64(r.kc[l].Len()) * elem)
@@ -688,6 +770,8 @@ func (r *cudaResident) KVPool() decoder.KVPoolDetail {
 		d.WindowRows = r.kvSlotBlocks(kvGroupWin) * kvBlock
 	}
 	switch {
+	case i8:
+		d.Precision = "i8"
 	case half && single:
 		d.Precision = "f16 and f32"
 	case half:

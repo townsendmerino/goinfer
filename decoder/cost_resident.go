@@ -16,8 +16,11 @@ func (m *Model) residentCostFor(c *cost.Counter, shared bool) ResidentCost {
 	if c == nil || shared {
 		return nil
 	}
-	rc, _ := m.resident.(ResidentCost)
-	return rc
+	rt := m.resRuntime()
+	if !rt.CostAvailable() {
+		return nil
+	}
+	return rt
 }
 
 // prefillComputed is how many prompt tokens a resident prefill from position from computes: residentPrefillSeedMarked's own

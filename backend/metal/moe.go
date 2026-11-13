@@ -17,6 +17,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -49,6 +50,7 @@ type moeLayer struct {
 // moeResident holds the MoE pipelines, config, constant uniforms and scratch shared across
 // all MoE layers (config is uniform per model). rIdx/rWgt are the on-GPU router outputs.
 type moeResident struct {
+	scratch                                      scratchList // its decode scratch, allocated with the decode list
 	pRouter, pRoute, pGU, pDownWacc, pSharedGate Pipeline
 	guR, downR                                   int // D-B04: R18 rows per simdgroup of pGU / pDownWacc, 0 = one row (moeExpertRows)
 
@@ -169,8 +171,9 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 		mo.pRouteGptOss = pipe("route_gptoss_sg")
 		mo.pActGptOss = pipe("swiglu_quant_gptoss")
 		mo.pDownWaccBias = pipe("gemv_w4a8_moe_wacc_bias")
-		mo.uAlpha, mo.uLimit = NewBufferFloatsOn(mem.LineScratch, d, []float32{alpha}), NewBufferFloatsOn(mem.LineScratch, d, []float32{limit})
-		mo.uHasBias = NewBufferU32On(mem.LineScratch, d, 1)
+		mo.scratch.f32Of(&mo.uAlpha, alpha)
+		mo.scratch.f32Of(&mo.uLimit, limit)
+		mo.scratch.u32(&mo.uHasBias, 1)
 	}
 	b1 := func(b bool) uint32 {
 		if b {
@@ -178,26 +181,34 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 		}
 		return 0
 	}
-	mo.uNE, mo.uK = NewBufferU32On(mem.LineScratch, d, uint32(nE)), NewBufferU32On(mem.LineScratch, d, uint32(k))
-	mo.uSigmoid, mo.uNorm = NewBufferU32On(mem.LineScratch, d, b1(sigmoid)), NewBufferU32On(mem.LineScratch, d, b1(norm))
-	mo.uScale = NewBufferFloatsOn(mem.LineScratch, d, []float32{float32(scale)})
-	mo.uNGroup, mo.uTopkGroup = NewBufferU32On(mem.LineScratch, d, uint32(nGroup)), NewBufferU32On(mem.LineScratch, d, uint32(topkGroup))
-	mo.uInter, mo.uInter2 = NewBufferU32On(mem.LineScratch, d, uint32(inter)), NewBufferU32On(mem.LineScratch, d, uint32(2*inter))
-	mo.uSharedInter = NewBufferU32On(mem.LineScratch, d, uint32(sharedInter))
+	sc := &mo.scratch
+	sc.u32(&mo.uNE, uint32(nE))
+	sc.u32(&mo.uK, uint32(k))
+	sc.u32(&mo.uSigmoid, b1(sigmoid))
+	sc.u32(&mo.uNorm, b1(norm))
+	sc.f32Of(&mo.uScale, float32(scale))
+	sc.u32(&mo.uNGroup, uint32(nGroup))
+	sc.u32(&mo.uTopkGroup, uint32(topkGroup))
+	sc.u32(&mo.uInter, uint32(inter))
+	sc.u32(&mo.uInter2, uint32(2*inter))
+	sc.u32(&mo.uSharedInter, uint32(sharedInter))
 	mo.uSlot = make([]Buffer, k)
 	for j := range mo.uSlot {
-		mo.uSlot[j] = NewBufferU32On(mem.LineScratch, d, uint32(j))
+		sc.u32(&mo.uSlot[j], uint32(j))
 	}
-	mo.rLogits = d.NewBufferLenOn(mem.LineScratch, nE)
-	mo.rIdx = NewBufferUint32sOn(mem.LineScratch, d, make([]uint32, k))
-	mo.rWgt = d.NewBufferLenOn(mem.LineScratch, k)
-	mo.shGl, mo.shDown = d.NewBufferLenOn(mem.LineScratch, 1), d.NewBufferLenOn(mem.LineScratch, H)
+	sc.f32(&mo.rLogits, nE)
+	sc.u32s(&mo.rIdx, make([]uint32, k))
+	sc.f32(&mo.rWgt, k)
+	sc.f32(&mo.shGl, 1)
+	sc.f32(&mo.shDown, H)
 	if !isGptOss && (2*inter)%8 == 0 && H%8 == 0 { // 8 rows per 256-thread threadgroup, per slot
 		mo.kSlots = true
 		mo.pGUk, mo.pDownK = pipe("dp03_gemv_w4a8_moe_k"), pipe("dp03_gemv_w4a8_moe_down_k")
 		mo.pSwRows, mo.pCombine = pipe("mc3_swiglu_quant_rows"), pipe("moe_combine_k")
-		mo.guK, mo.dqK = d.NewBufferLenOn(mem.LineScratch, k*2*inter), byteBufOn(mem.LineScratch, d, k*inter)
-		mo.dScK, mo.accK = d.NewBufferLenOn(mem.LineScratch, k), d.NewBufferLenOn(mem.LineScratch, k*H)
+		sc.f32(&mo.guK, k*2*inter)
+		sc.bytes(&mo.dqK, k*inter)
+		sc.f32(&mo.dScK, k)
+		sc.f32(&mo.accK, k*H)
 	}
 	// Synchronous paging: --moe-cache-slots / GOINFER_METAL_MOE_SLOTS (deprecated fallback,
 	// metalMoESlotsRequest) keeps only N experts/layer resident and stages the routed top-k in
@@ -210,7 +221,7 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 		}
 		if n < nE || moePagedAllSlotsForTest { // n>=nE would hold every expert — no paging, just build the stacked path
 			mo.paged, mo.slots = true, n
-			mo.slotIdx = NewBufferUint32sOn(mem.LineScratch, d, make([]uint32, k))
+			sc.u32s(&mo.slotIdx, make([]uint32, k))
 			w := m.Weights()
 			for l := range w.Layers {
 				if skipPagedInt4CheckForTest {
@@ -497,6 +508,15 @@ func (r *resident) encodeMoERouterWithX(e *Encoder, L *residLayer, x Buffer) {
 // (r.pRms above is f32-only, so prefill cannot call encodeMoERouter). Reads r.mq/r.mSc (already normed and quantized
 // by either caller); writes mo.rIdx/mo.rWgt. No r.x involvement.
 func (r *resident) encodeMoERoute(e *Encoder, L *residLayer) {
+	form := program.FfnMoE
+	if r.moe.isGptOss {
+		form = program.FfnGptOss
+	}
+	r.encodeMoERouteForForm(e, L, form)
+}
+
+// encodeMoERouteForForm emits the router projection and top-k selection for form (program.FfnMoE or program.FfnGptOss).
+func (r *resident) encodeMoERouteForForm(e *Encoder, L *residLayer, form program.FFNForm) {
 	mo := r.moe
 	ml := L.moe
 	// router logits: routerW[nE,H] × mq → rLogits[nE]
@@ -504,7 +524,7 @@ func (r *resident) encodeMoERoute(e *Encoder, L *residLayer) {
 	// on-GPU top-k → rIdx[k], rWgt[k]. gpt-oss's router bias reaches the logits BEFORE top-k and
 	// the weight is softmax over the SELECTED biased logits — a genuinely different kernel from
 	// the generic DeepSeek/GLM/Qwen-MoE shape (moe_route), not a parameter swap (see route_gptoss).
-	if mo.isGptOss {
+	if form == program.FfnGptOss {
 		e.Dispatch(mo.pRouteGptOss, 32, 32, mo.rLogits, ml.routerBias, mo.rIdx, mo.rWgt, mo.uNE, mo.uK)
 	} else {
 		e.Dispatch(mo.pRoute, 32, 32, mo.rLogits, ml.routerBias, mo.rIdx, mo.rWgt,

@@ -34,6 +34,24 @@ func resolveUploadKVModel(t *testing.T) string {
 	return ""
 }
 
+// uploadPass opens an upload pass on rf, as the decoder's upload does, and returns the call that ends it.
+func uploadPass(t *testing.T, rf decoder.ResidentForward) func() {
+	t.Helper()
+	p, ok := rf.(decoder.ResidentKVUploadPass)
+	if !ok {
+		t.Fatal("the resident has no upload pass")
+	}
+	if err := p.BeginKVUpload(); err != nil {
+		t.Fatal(err)
+	}
+	return func() {
+		t.Helper()
+		if err := p.EndKVUpload(false); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // TestUploadKV_matchesSequentialForward is UploadKV's FIRST real correctness test on the Metal backend.
 // The CUDA twin lives in cuda/uploadkv_parity_test.go; the WebGPU twin lives in gpu/uploadkv_parity_test.go.
 //
@@ -106,6 +124,7 @@ func TestUploadKV_matchesSequentialForward(t *testing.T) {
 			if err != nil {
 				t.Fatalf("CPU prefill: %v", err)
 			}
+			end := uploadPass(t, rf)
 			for l := range nLayers {
 				k, v, base := cache.LayerKVForTest(l)
 				if len(k) == 0 {
@@ -115,6 +134,7 @@ func TestUploadKV_matchesSequentialForward(t *testing.T) {
 					t.Fatalf("UploadKV layer %d (base=%d, len(k)=%d): %v", l, base, len(k), err)
 				}
 			}
+			end()
 			gotDecode := make([][]float32, nDecode)
 			tok = argmaxF(cpuLogits)
 			for i := range nDecode {
@@ -206,12 +226,14 @@ func TestUploadKV_offsetBase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CPU prefill: %v", err)
 	}
+	end := uploadPass(t, rf)
 	for l := range nLayers {
 		k, v, base := cache.LayerKVForTest(l)
 		if err := rf.UploadKV(l, base, k, v); err != nil {
 			t.Fatalf("UploadKV layer %d (base=%d, len(k)=%d): %v", l, base, len(k), err)
 		}
 	}
+	end()
 	gotDecode := make([][]float32, nDecode)
 	tok = argmaxF(cpuLogits)
 	for i := range nDecode {
@@ -289,12 +311,14 @@ func TestUploadKV_matchesSequentialForward_KVI8(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CPU prefill: %v", err)
 	}
+	end := uploadPass(t, rf)
 	for l := range nLayers {
 		k, v, base := cache.LayerKVForTest(l)
 		if err := rf.UploadKV(l, base, k, v); err != nil {
 			t.Fatalf("UploadKV layer %d: %v", l, err)
 		}
 	}
+	end()
 
 	gotDecode := make([][]float32, nDecode)
 	tok = argmaxF(cpuLogits)
@@ -312,6 +336,73 @@ func TestUploadKV_matchesSequentialForward_KVI8(t *testing.T) {
 		t.Logf("INT8 KV UploadKV decode step %d: cosine = %.7f maxAbs=%.4g", i, cos, maxAbs)
 		if cos < 0.999 {
 			t.Errorf("decode step %d: cosine = %.7f < 0.999", i, cos)
+		}
+	}
+}
+
+// TestUploadKV_slidingLayerStartsLate: the decoder's own upload (one pass, decoder.ResidentKVUploadPass) on a Gemma 2 shape whose sliding
+// layers' rings have wrapped at 20 positions (window 4), so they start late: the pass takes them, and decode continues from the uploaded rows
+// as it does from a sequential resident prefill. The bar is the cross-path one (a CPU prefill's K/V against the resident's own), as in
+// TestUploadKV_matchesSequentialForward_KVI8.
+func TestUploadKV_slidingLayerStartsLate(t *testing.T) {
+	const n, nDecode = 20, 4
+	mc, err := decoder.Load("../../testdata/gemma2-tiny", decoder.Options{Backend: "metal", Quant: "int8int8"})
+	if err != nil {
+		t.Fatalf("load metal: %v", err)
+	}
+	defer mc.Close()
+	rf := mc.ResidentForwardForTest()
+	if rf == nil {
+		t.Skip("gemma2-tiny is not resident on this build")
+	}
+	_, nLayers, _, _, _, _, vocab := mc.Dims()
+	rng := rand.New(rand.NewSource(23))
+	ids := make([]int, n)
+	for i := range ids {
+		ids[i] = rng.Intn(vocab - 1)
+	}
+	decode := func(tok int) [][]float32 {
+		t.Helper()
+		out := make([][]float32, nDecode)
+		for i := range nDecode {
+			l, err := rf.Forward(mc.EmbedResidentForTest(tok), n+i)
+			if err != nil {
+				t.Fatalf("decode step %d: %v", i, err)
+			}
+			out[i] = append([]float32(nil), l...)
+			tok = argmaxF(l)
+		}
+		return out
+	}
+	var last []float32
+	for i, id := range ids {
+		if last, err = rf.Forward(mc.EmbedResidentForTest(id), i); err != nil {
+			t.Fatalf("sequential prefill at %d: %v", i, err)
+		}
+	}
+	want := decode(argmaxF(last))
+	rf.Reset()
+	cache := mc.NewCache(n + nDecode)
+	cpuLogits, err := mc.PrefillLogitsForTest(context.Background(), ids, cache)
+	if err != nil {
+		t.Fatalf("CPU prefill: %v", err)
+	}
+	late := 0
+	for l := range nLayers {
+		if _, _, base := cache.LayerKVForTest(l); base > 0 {
+			late++
+		}
+	}
+	if late == 0 {
+		t.Fatalf("no layer's ring wrapped at %d positions; the test reads nothing", n)
+	}
+	if err := mc.ResidentUploadPrefillForTest(cache); err != nil {
+		t.Fatalf("the decoder's upload, %d of %d layers starting late: %v", late, nLayers, err)
+	}
+	got := decode(argmaxF(cpuLogits))
+	for i := range nDecode {
+		if cos, maxAbs := cosSim(want[i], got[i]); cos < 0.999 {
+			t.Errorf("decode step %d: cosine(sequential, uploaded) = %.8f < 0.999, maxAbs %.4g", i, cos, maxAbs)
 		}
 	}
 }

@@ -97,7 +97,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 // re-roping every cached key each step). interleave=1 is the V3 GPT-J pairwise layout
 // (de-interleave to [evens|odds] before NeoX rotate); =0 is plain NeoX. ropeScale folds
 // the YaRN attention factor (1.0 when none). One workgroup; base = pos*latDim.
-const mlaLatentStoreWGSL = `
+const mlaLatentStoreWGSL = ropeCosSinWGSL + `
 struct P { rank: u32, qkRope: u32, pos: u32, eps: f32, base: u32, ropeScale: f32, interleave: u32, _c: u32 };
 @group(0) @binding(0) var<storage, read>       kvDown:   array<f32>;  // [rank+qkRope] current token
 @group(0) @binding(1) var<storage, read>       normW:    array<f32>;  // [rank] kvALayernorm
@@ -129,8 +129,8 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
     let half = p.qkRope / 2u;
     for (var i: u32 = t; i < half; i = i + 64u) {
         let theta = f32(p.pos) * invFreq[i];
-        let c = cos(theta) * p.ropeScale;
-        let s = sin(theta) * p.ropeScale;
+        let cs = ropeCosSin(theta); let c = cs.x * p.ropeScale;
+        let s = cs.y * p.ropeScale;
         var a: f32;
         var b: f32;
         if (p.interleave == 1u) {
@@ -176,18 +176,30 @@ func (c *Context) MLALatentStore(kvDown, normW, invFreq []float32, rank, qkRope,
 		return nil, err
 	}
 	latDim := rank + qkRope
-	dBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-kvdown", Contents: wgpu.ToBytes(kvDown), Usage: wgpu.BufferUsageStorage})
+	dBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-kvdown", Contents: wgpu.ToBytes(kvDown), Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: MLALatentStore: mla-kvdown: %w", err)
+	}
 	defer releaseBuf(dBuf)
-	nBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-normw", Contents: wgpu.ToBytes(normW), Usage: wgpu.BufferUsageStorage})
+	nBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-normw", Contents: wgpu.ToBytes(normW), Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: MLALatentStore: mla-normw: %w", err)
+	}
 	defer releaseBuf(nBuf)
-	fBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-invfreq", Contents: wgpu.ToBytes(invFreq), Usage: wgpu.BufferUsageStorage})
+	fBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-invfreq", Contents: wgpu.ToBytes(invFreq), Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: MLALatentStore: mla-invfreq: %w", err)
+	}
 	defer releaseBuf(fBuf)
 	lBuf, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Label: "mla-latcache", Size: uint64(latDim * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, err
 	}
 	defer releaseBuf(lBuf)
-	pBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-store-p", Contents: wgpu.ToBytes([]uint32{uint32(rank), uint32(qkRope), uint32(pos), F32bits(eps), 0, F32bits(ropeScale), BoolU32(interleave), 0}), Usage: wgpu.BufferUsageUniform})
+	pBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-store-p", Contents: wgpu.ToBytes([]uint32{uint32(rank), uint32(qkRope), uint32(pos), F32bits(eps), 0, F32bits(ropeScale), BoolU32(interleave), 0}), Usage: wgpu.BufferUsageUniform})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: MLALatentStore: mla-store-p: %w", err)
+	}
 	defer releaseBuf(pBuf)
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.mlaStoreLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: dBuf, Size: dBuf.GetSize()},
@@ -256,7 +268,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 // and writes it into the combined qAbs buffer at [h*latDim + rank ..] — directly after
 // the W_UK-absorbed qNopeAbs. Same de-interleave+NeoX as the key store (mlaLatentStore),
 // so the q·k rope dot matches. One thread per (head, rope-pair).
-const mlaQRopeWGSL = `
+const mlaQRopeWGSL = ropeCosSinWGSL + `
 struct P { nH: u32, qkHead: u32, qkNope: u32, qkRope: u32, rank: u32, latDim: u32, pos: u32, interleave: u32, ropeScale: f32, _a: u32, _b: u32, _c: u32 };
 @group(0) @binding(0) var<storage, read>       q:       array<f32>;  // [nH*qkHead]
 @group(0) @binding(1) var<storage, read>       invFreq: array<f32>;  // [qkRope/2]
@@ -271,8 +283,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = idx % half;
     let qbase = h * p.qkHead + p.qkNope;  // rope dims of head h
     let theta = f32(p.pos) * invFreq[i];
-    let c = cos(theta) * p.ropeScale;
-    let s = sin(theta) * p.ropeScale;
+    let cs = ropeCosSin(theta); let c = cs.x * p.ropeScale;
+    let s = cs.y * p.ropeScale;
     var a: f32;
     var b: f32;
     if (p.interleave == 1u) {
@@ -316,16 +328,25 @@ func (c *Context) MLAHeadMatvec(a, w []float32, nH, N, K, aStride int) ([]float3
 	if err := c.ensureMLAHeadMV(); err != nil {
 		return nil, err
 	}
-	aBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-hmv-a", Contents: wgpu.ToBytes(a), Usage: wgpu.BufferUsageStorage})
+	aBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-hmv-a", Contents: wgpu.ToBytes(a), Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: MLAHeadMatvec: mla-hmv-a: %w", err)
+	}
 	defer releaseBuf(aBuf)
-	wBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-hmv-w", Contents: wgpu.ToBytes(w), Usage: wgpu.BufferUsageStorage})
+	wBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-hmv-w", Contents: wgpu.ToBytes(w), Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: MLAHeadMatvec: mla-hmv-w: %w", err)
+	}
 	defer releaseBuf(wBuf)
 	dBuf, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Label: "mla-hmv-dst", Size: uint64(nH * N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, err
 	}
 	defer releaseBuf(dBuf)
-	pBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-hmv-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(N), uint32(K), uint32(aStride), uint32(N), 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	pBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-hmv-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(N), uint32(K), uint32(aStride), uint32(N), 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: MLAHeadMatvec: mla-hmv-p: %w", err)
+	}
 	defer releaseBuf(pBuf)
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.mlaHeadMVLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()},
@@ -337,7 +358,10 @@ func (c *Context) MLAHeadMatvec(a, w []float32, nH, N, K, aStride int) ([]float3
 		return nil, err
 	}
 	defer bg.Release()
-	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	enc, err := c.device.TryCreateCommandEncoder(nil)
+	if err != nil {
+		return nil, fmt.Errorf("gpu: MLAHeadMatvec: command encoder: %w", err)
+	}
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(c.mlaHeadMVPipeline)
@@ -349,7 +373,10 @@ func (c *Context) MLAHeadMatvec(a, w []float32, nH, N, K, aStride int) ([]float3
 		return nil, err
 	}
 	pass.Release()
-	cmd, _ := enc.TryFinish(nil)
+	cmd, err := enc.TryFinish(nil)
+	if err != nil {
+		return nil, fmt.Errorf("gpu: MLAHeadMatvec: finish: %w", err)
+	}
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	return c.readbackRaw(dBuf, nH*N)
@@ -410,16 +437,25 @@ func (c *Context) MLAAttn(qAbs, lat []float32, nH, latDim, rank, nKeys int, scal
 	if rank > 8*128 {
 		return nil, fmt.Errorf("gpu: MLAAttn rank %d exceeds 1024 (per-lane acc cap)", rank)
 	}
-	qBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-qabs", Contents: wgpu.ToBytes(qAbs), Usage: wgpu.BufferUsageStorage})
+	qBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-qabs", Contents: wgpu.ToBytes(qAbs), Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: MLAAttn: mla-qabs: %w", err)
+	}
 	defer releaseBuf(qBuf)
-	lBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-lat", Contents: wgpu.ToBytes(lat), Usage: wgpu.BufferUsageStorage})
+	lBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-lat", Contents: wgpu.ToBytes(lat), Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: MLAAttn: mla-lat: %w", err)
+	}
 	defer releaseBuf(lBuf)
 	wBuf, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Label: "mla-wsum", Size: uint64(nH * rank * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, err
 	}
 	defer releaseBuf(wBuf)
-	pBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(latDim), uint32(rank), uint32(nKeys), F32bits(scale), 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	pBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(latDim), uint32(rank), uint32(nKeys), F32bits(scale), 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: MLAAttn: mla-p: %w", err)
+	}
 	defer releaseBuf(pBuf)
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.mlaAttnLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: qBuf, Size: qBuf.GetSize()},
@@ -431,7 +467,10 @@ func (c *Context) MLAAttn(qAbs, lat []float32, nH, latDim, rank, nKeys int, scal
 		return nil, err
 	}
 	defer bg.Release()
-	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	enc, err := c.device.TryCreateCommandEncoder(nil)
+	if err != nil {
+		return nil, fmt.Errorf("gpu: MLAAttn: command encoder: %w", err)
+	}
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(c.mlaAttnPipeline)
@@ -442,7 +481,10 @@ func (c *Context) MLAAttn(qAbs, lat []float32, nH, latDim, rank, nKeys int, scal
 		return nil, err
 	}
 	pass.Release()
-	cmd, _ := enc.TryFinish(nil)
+	cmd, err := enc.TryFinish(nil)
+	if err != nil {
+		return nil, fmt.Errorf("gpu: MLAAttn: finish: %w", err)
+	}
 	defer cmd.Release()
 	c.queue.Submit(cmd)
 	return c.readbackRaw(wBuf, nH*rank)

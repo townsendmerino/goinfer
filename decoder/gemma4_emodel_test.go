@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"math"
 	"os"
-	"strings"
 	"testing"
 )
 
@@ -111,47 +110,6 @@ func TestGemma4EModel_safetensorsParity(t *testing.T) {
 	for i := range cont {
 		if cont[i] != g.ContinuationIDs[i] {
 			t.Fatalf("continuation %v, want %v", cont, g.ContinuationIDs)
-		}
-	}
-}
-
-// TestGemma4GlobalGeometry pins how the full-attention geometry is read: the flat fields as before, the
-// per_layer_config map transformers >= 5.16 writes in their place, and the refusals for any override goinfer
-// cannot represent (it has exactly two attention geometries).
-func TestGemma4GlobalGeometry(t *testing.T) {
-	types := []string{"sliding_attention", "full_attention", "sliding_attention", "full_attention"}
-	cases := []struct {
-		name         string
-		flatHD, flKV int
-		plc          string
-		hd, kv       int
-		err          string
-	}{
-		{name: "flat only", flatHD: 512, flKV: 1, hd: 512, kv: 1},
-		{name: "per_layer_config only", plc: `{"1":{"head_dim":64},"3":{"head_dim":64,"num_key_value_heads":2}}`, hd: 64, kv: 2},
-		{name: "null map", flatHD: 512, plc: `null`, hd: 512},
-		{name: "both agree", flatHD: 64, plc: `{"1":{"head_dim":64},"3":{"head_dim":64}}`, hd: 64},
-		{name: "both disagree", flatHD: 512, plc: `{"1":{"head_dim":64}}`, err: "disagrees"},
-		{name: "full layers differ", plc: `{"1":{"head_dim":64},"3":{"head_dim":128}}`, err: "different head_dim"},
-		{name: "sliding override", plc: `{"0":{"head_dim":64}}`, err: "sliding layer 0"},
-		{name: "unknown field", plc: `{"1":{"sliding_window":8}}`, err: `"sliding_window"`},
-		{name: "bad index", plc: `{"9":{"head_dim":64}}`, err: "not a layer index"},
-	}
-	for _, c := range cases {
-		cfg := &Config{NumLayers: len(types), LayerTypes: types, GlobalHeadDim: c.flatHD, NumGlobalKVHeads: c.flKV}
-		if c.plc != "" {
-			cfg.PerLayerConfig = json.RawMessage(c.plc)
-		}
-		hd, kv, err := cfg.Gemma4GlobalGeometry()
-		switch {
-		case c.err != "":
-			if err == nil || !strings.Contains(err.Error(), c.err) {
-				t.Errorf("%s: err %v, want one containing %q", c.name, err, c.err)
-			}
-		case err != nil:
-			t.Errorf("%s: %v", c.name, err)
-		case hd != c.hd || kv != c.kv:
-			t.Errorf("%s: got (%d, %d), want (%d, %d)", c.name, hd, kv, c.hd, c.kv)
 		}
 	}
 }

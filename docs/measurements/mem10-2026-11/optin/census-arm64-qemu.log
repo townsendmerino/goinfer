@@ -1,0 +1,23 @@
+=== RUN   TestDecisionCensus
+census: D1: 8435 groups in 10.2s
+census: D2: 3948 groups in 92.7s
+census: loads: 1 groups in 3.7s
+census: D3: 11760 groups in 16.8s
+census: D4: 2310 groups in 7.0s
+census: D5: 2730 groups in 10.6s
+decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)
+census: D6: 2 groups in 0.0s
+census: D7: 451 groups in 0.0s
+census: D1: 8435 groups in 9.4s
+census: D2: 3948 groups in 81.6s
+census: loads: 1 groups in 1.6s
+census: D3: 11760 groups in 16.7s
+census: D4: 2310 groups in 7.0s
+census: D5: 2730 groups in 10.6s
+decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)
+census: D6: 2 groups in 0.0s
+census: D7: 451 groups in 0.0s
+    mm1_census_test.go:323: host class "arm64 f32=4.000000 int8=1.015625 int4=1.125000 int4mix=1.125000 int8int8=1.015625 q4k=1.125000 bf16=2.000000 f16=2.000000"; 29637 groups; census 70b8dab16252967335b0c233f736367f5ab5313a0240a9d604bb89b9c66080fe
+    mm1_census_test.go:331: wrote ../testdata/mm1_census.json.gz for host class "arm64 f32=4.000000 int8=1.015625 int4=1.125000 int4mix=1.125000 int8int8=1.015625 q4k=1.125000 bf16=2.000000 f16=2.000000"
+--- PASS: TestDecisionCensus (277.23s)
+PASS

@@ -1,0 +1,6 @@
+=== RUN   TestSB2VK5Probe
+[resident] BuildResident declined (ok=false err=gpu: granite mult-fold unsupported kind "int4") — continuing on the CPU/staged path
+    sb2_vk5_probe_test.go:54: /home/francis/models/sb2-heldout5-granite4h-tiny-ctx8192/granite-4.0-h-tiny-Q8_0.gguf did not go webgpu-resident: backend failed to build a resident path: gpu: granite mult-fold unsupported kind "int4"
+--- FAIL: TestSB2VK5Probe (3.89s)
+FAIL
+ledger: 5 Context(s) closed in this run

@@ -1948,7 +1948,7 @@ kernel void attention_fa_blk(
             ATTN_FA_BLK_UNROLL for (uint j = 0; j < 32u; j++) {
                 float4 k4 = float4(*((device const half4*)(kb + (j < edge ? base0 + j : base1 + j)*kvDim)));
                 ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
-                    float d = simd_sum(dot(qs[g], k4));
+                    float d = attn_score(simd_sum(dot(qs[g], k4)));
                     s[g] = (lane == j) ? d : s[g];
                 }
             }
@@ -1956,7 +1956,7 @@ kernel void attention_fa_blk(
             for (uint j = 0; j < nb; j++) {
                 float4 k4 = float4(*((device const half4*)(kb + (j < edge ? base0 + j : base1 + j)*kvDim)));
                 ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
-                    float d = simd_sum(dot(qs[g], k4));
+                    float d = attn_score(simd_sum(dot(qs[g], k4)));
                     s[g] = (lane == j) ? d : s[g];
                 }
             }

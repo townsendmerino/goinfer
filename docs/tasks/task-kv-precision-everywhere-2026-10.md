@@ -1,37 +1,46 @@
 # Task: `--kv f16` and `--kv i8` delivered on every backend, family and path (2026-10)
 
-> **Status 2026-10-21 (the close-out sweep).** Phase 0 is done and on main, in no tag yet: five commits, ca49bcf1 to
-> c51e13cf (#114, 2026-10-20). One resolver (`decoder.ResolveKV`) decides the precision, an explicit precision that cannot be
-> delivered refuses the load by name (D1), the banner and the request log print requested and delivered, and
-> `docs/kv-precision-matrix.md` is generated and ratcheted. **Decided by the owner on 2026-10-21:** KV4
-> (`docs/tasks/task-kv-architecture-2026-10.md`) goes first. Phase 1 (CUDA f16 for the ten families that refuse it) folds
-> into KV4b, and phase 2 (CUDA int8, B39) waits for KV4's pools, so no KV kernel is written twice. That revises D4's order;
-> phases 3 to 6 stay this doc's. **Stale below:** the status line's "Phase 0 is next"; §2, which is the tree at 8494a91d
-> (the generated matrix is the truth now); §2's `backend/cuda/kvpolicy.go`, since moved to
-> `decoder/kvresolve.go:CUDAKVF16Decline`; and "used by every backend's build", since Metal's and WebGPU's builds still read
-> the raw request (P0a′ below).
-
-**Ledger, 2026-10-21.** One row per item, the current state; it supersedes the status notes below where they
-disagree, and is updated in the same commit as the work. `python3 scripts/task_docs.py check` reads it.
+> **Status 2026-11-12 (re-read against main at 93a183f82).** S4 (#768) and S6 (#785) merged on 2026-11-08, so P2 and P2-S6
+> are done, and the block below's condition for archiving this doc has held since then: the archive and the parked successor
+> are owed at the next close-out. One thing comes first. The Flint family, which went straight to main on 2026-11-11, was
+> admitted to f16 and int8 KV on request without the gates this doc registers (`auto` is unchanged): P4 and G5 below.
+>
+> **Status 2026-11-08 (close-out sweep).** Phase 0 shipped (#114, 2026-10-20); one resolver (`decoder.ResolveKV`) decides
+> the precision and `docs/kv-precision-matrix.md` is generated and ratcheted (it is the truth for what runs where; §2 below is
+> the tree at 8494a91d). Phase 1 folded into KV4b, which closed 2026-10-24. Phase 2, CUDA `--kv i8` for the five dense
+> families (B39), is staged S1 to S5: S1 (#735), S2 (#755), S3a/S3b (#759) and S3's follow-ups (#764) are merged; S4 (#768,
+> the G4 fidelity gate and the speed check) is open: its 1.5B S cell reads DOES NOT PASS, and the 7B D7 decision cell and the
+> speed check run on nobara on 2026-11-08 on a pinned tree. Phase 3 is done. Whether int8 widens past the dense families is
+> Francis's call after D7. When S4 merges, this doc archives and its open rows go to one parked successor.
 
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
 | P0 | done | — | ca49bcf1 to c51e13cf (#114) |
-| P0a′ | done | — | branch `p0a-resolvekv-2026-10`; P0A-G1, G2 PASS, `docs/measurements/kv-precision-2026-10/p0a-prime.md` |
-| §1.6 | blocked | nothing to build until a Mamba-only family exists | `keepsNoKV` |
-| P1 | moved | KV4b in `docs/tasks/task-kv-architecture-2026-10.md` (owner, 2026-10-21) | — |
-| P2 | blocked | KV4's pools (owner, 2026-10-21); the sizing stays in B39 | B39 |
-| P3 | done | P3a (Metal `--kv f32` back) done 2026-10-22, P3-G2 PASS as amended (D6, owner, 2026-10-22); D5 (owner, 2026-10-22) done: MLA on Metal reports f32 and refuses f16/i8 (`docs/measurements/kv-precision-2026-10/d5.md`); P3b-1 (int8 and f32 on the batched step: batched decode and the step prefill) done 2026-10-22, P3B-G1 to G4 PASS (`docs/measurements/kv-precision-2026-10/p3b-1.md`); P3b-2: the layer-major paths (paged Gemma 4, paged MoE, the E-model) already run int8 and f32 on decode's kernels (`encodeAttentionResidualWith`), so every path delivers both; what declines is the f16 MMA pass, a speed question for long prompts: D7 (owner, 2026-10-22) measured it: the i8 step is 6.80× the f16 pass at 8K; building an int8 MMA prefill decided by the owner (D8, owner, 2026-10-22); D9 (owner, 2026-10-22): design (b), dequantize to an f16 scratch, built on branch `p3b2-int8-mma-prefill-2026-10`: G1 and G3 PASS (int8 at 1.000 and 1.006 of f16), G2 failed as registered and passes as amended after the data (D10, owner, 2026-10-22); done 2026-10-22: every Metal path delivers int8 and f32, and int8 prefill runs at f16's speed | `docs/measurements/kv-precision-2026-10/p3b-2.md` | `docs/measurements/kv-precision-2026-10/p3a.md` |
-| P4 | blocked | P3, by the doc's order | 38 matrix cells "until phase 4" |
-| P5 | blocked | P4; a park candidate (trigger: phase 4 lands, or a request for WebGPU f16 or i8) | no matrix cells yet |
-| P6 | blocked | P1–P5 | 12 matrix cells "until phase 6" |
-| G1 | blocked | P1 and P2, with KV4 | — |
-| G2 | blocked | P1–P5 | — |
-| G3 | open | CPU and Metal cells done 2026-10-22 (PASS; `deepseek-tiny` auto/f16 on Metal hold an f32 latent, the P3a D5 question); left: the CUDA cells, on nobara; S | `TestKVDeliveredBytes_CPU`, `TestKVDeliveredBytes_Metal`, `docs/measurements/kv-precision-2026-10/g3.md` |
-| G4, G5, speed | blocked | each phase | the instrument is in `docs/tasks/task-cuda-f16-kv-2026-10.md` |
-| D1–D3 | done | — | §6 |
-| D4 | done | revised 2026-10-21: KV4 first, phase 2 after the pools | §6; the status block above |
+| P0a2 | done | — (written P0a′ before) | `docs/measurements/kv-precision-2026-10/p0a-prime.md` (P0A-G1, G2 PASS) |
+| C6 | done | the §1.6 no-KV rule is built at the resolver; no Mamba-only family exists to load | `decoder/kvresolve.go:Architecture.keepsNoKV`; `internal/runtime/mem/kv_test.go` |
+| P1 | moved | KV4b, closed 2026-10-24 (`docs/tasks/task-kv-architecture-2026-10.md`); its leftover is P1r | `docs/measurements/kv4-cuda-2026-10-21.md` §3 |
+| P1r | done | CUDA `--kv f16` for nemotron_h delivered on request 2026-11-08 (auto stays f32, a hybrid): tier 0 PASS on nemotron-tiny (G1 store identity, G3 exactly half; red on main), G5 PASS on Nemotron-Nano-9B-v2 (worst max|V| 44.67 against 32,752). lfm2 is not CUDA-resident, so its cell is the resolver's word only | `docs/measurements/p1r-nemotron-f16-2026-11/README.md` |
+| P2 | done | S1 #735, S2 #755, S3a/S3b #759, #764 merged; S4 #768 merged 2026-11-08 (its follow-ups in #788) with every reading in (pinned tree 7545a43c, 2026-11-08): G4 D7 AMBIGUOUS, PARKED on KL 1.078x (f16 itself 1.057x), S DOES NOT PASS; speed: short-context REGRESSION by the registered 0.95 bar (0.72x to 0.95x at 128 and 512 keys), 0.99x at depth, cold prefill 20x to 26x slower at 16K. Shipped opt-in (P2-D); S6 took the cold prefill back | `docs/measurements/cuda-kv-i8-2026-11/scope.md`, `s4-registration.md` |
+| P2-S3c | blocked | parked (Francis, 2026-11-08): int8 on sliding-window layers and the windowed ring. Trigger: someone asks for int8 on one of those families, or tack's window becomes the binding limit | `decoder/kvresolve.go:CUDAKVI8Decline` |
+| P2-S5 | blocked | parked (Francis, 2026-11-08): int8 for MoE, MLA, pairwise RoPE, VL and Gemma 4 on CUDA. Trigger: someone asks for int8 on one of those families, or tack's window becomes the binding limit | the matrix's CUDA i8 cells, "widening to other families is parked" |
+| P2-S6 | done | int8 KV on the tensor-core prefill tiles (Francis, 2026-11-08 09:30), built and read 2026-11-08, merged as #785 on 2026-11-08: G1 identity PASS (every fused variant bit-identical to its f16 twin on f16(code*scale)), route gate PASS, G4 unchanged in verdict (D7 PARKED at KL 1.080, S DOES NOT PASS), speed PASS: the 7B's 16K cold request at int8 is 1.017x f16's (16.2 s, S4 314 s), decode unchanged | `docs/measurements/cuda-kv-i8-2026-11/s6-registration.md` |
+| P2-D | done | Francis, 2026-11-08: ship opt-in (never an auto pick) and publish both readings; the help text, the banner, `docs/flags.md`, `docs/server.md` and the matrix's "Measured cost" notes carry the quality and speed cost (#768) | `s4-registration.md`, "Owner decision" |
+| P3 | done | — | `docs/measurements/kv-precision-2026-10/p3a.md`, `p3b-1.md`, `p3b-2.md`, `d5.md` |
+| P4 | active | P4b, MoE on the generic loop, done 2026-11-09: `kvF16OK` and `kvInt8OK` admit every family whose attention is the batched kernel, MoE included, on the generic loop (Mixtral, Qwen3-MoE, GLM-4-MoE, Qwen3-VL-MoE, Laguna; gpt-oss, whose own loop runs the batched kernel, still refuses); tier 0: F1 exact on mixtral-tiny, qwen3moe-tiny, glm-tiny and Laguna (one with a sliding window) (decode, prefill, the bridge, rewind: 0 differing bits), int8 prefill equal to decode. Owed: G4 on a real MoE checkpoint (published, not a refusal). P4a (the CPU batcher, #874) done: `decodeMultiStep` reads f16 and int8 caches (each widened into its own scratch); tier 0: every eligible fixture batched bit-identical to its own forward at f16 and i8, and G-P4a PASS on nobara (7B, 4 clients: f16 B/A 1.970, i8 1.964, 10/10 pairs). Next: the own-loop families (MLA, Gemma 4, Qwen3.5, gpt-oss, Llama 4). Flint (251184470; attention sinks, MoE, sliding window 8, the generic loop) has flint-tiny rows in `TestKVF16_F1Exactness` (decode, prefill, the bridge, rewind: 0 differing bits) and `TestKVI8_moeFamiliesConsistent` (int8 prefill equal to decode), both green, so it stays admitted | `decoder/cpu_batch_test.go:TestCPUBatch_widenedCachesBatch`, `decoder/kv_f16_test.go:TestKVF16_F1Exactness`, `decoder/kvi8_test.go:TestKVI8_moeFamiliesConsistent`; the matrix's "until phase 4" cells |
+| P5 | blocked | parked: WebGPU f16 and i8; trigger: P4 lands, or someone asks for WebGPU f16 or i8 | no WebGPU refusals; the column is unsurveyed |
+| P6 | open | the CUDA drafter at f16 can start now (KV4b done); at i8 after P2; then session save/restore on disk and the option grid | 24 matrix cells "until phase 6" (12 f16, 12 i8) |
+| G1 | active | one identity test per new kernel, with its stage | `backend/cuda/kernels/kv8_identity_test.go` |
+| G2 | active | CUDA i8 dense: the exact-input G2 PASSES (owner's (c) on #755) and the cross-backend G2's FAIL is recorded; still to do: Metal f16 and i8 against the CPU, and P4's families | `docs/measurements/cuda-kv-i8-2026-11/scope.md` "S2, exact-input G2" |
+| G3 | open | CPU, Metal and CUDA i8 dense PASS; still to do: CUDA explicit f32 and f16 readback per family, on nobara, after S4's runs | `docs/measurements/kv-precision-2026-10/g3.md`; `TestKV8_deliveredBytes` |
+| G4 | active | CUDA i8 dense read 2026-11-08 (S4, #768: D7 PARKED, S DOES NOT PASS); every other phase's G4 runs with that phase | `s4-registration.md` |
+| G5 | open | with each f16 widening. One is owed: aea0ee556 added `flint` to `decoder/kvresolve.go:cudaKVF16Delivered`, whose rule is that a family joins with its exact-input identity and delivered-bytes gates, never by compiling. **2026-11-12 (nobara-v1, main 4edbe93e9), tier 0 on the card:** flint-tiny is in `backend/cuda/kv4b_groups_test.go:kv4bGroups` (plain, windowed and paged-experts) and in `TestKV4_scrambledTables`: G3 delivered bytes PASS, layer-0 store identity PASS (the f16 cache is the f32 store rounded to nearest even, bit for bit, decode and batched prefill) and G1a PASS at f32 and f16, no skips. Still owed: the max \|K\| and max \|V\| reading on a real Flint checkpoint (`~/models/Flint-Q4_K_M.gguf`, after a fit check), and the flint-tiny row in `docs/kv-precision-matrix.md`; `auto` stays f32 (D7) either way. The entry stays on the list while the range reading is owed | `docs/completed/task-cuda-f16-kv-2026-10.md`; `docs/measurements/kv4-cuda-2026-10-21.md` §2, G5; `docs/measurements/cuda-read-2026-11-12/README.md` |
+| speed | active | CUDA i8 dense read 2026-11-08 (S4, #768: short-context REGRESSION by the registered bar; published); every other phase's runs with that phase | `s4-registration.md`, "Speed results" |
+| F16-speed | done | CLOSED AS AN OWNER DECISION, not a pass (Francis, 2026-11-10: the 0.98 bar was too strict for this trade; the memory benefit matters more than the speed cost; `auto` stays f16 on CUDA, no per-family rules, no follow-up cells): the cost row: graded on nobara 2026-11-09 (`docs/measurements/f16-speed-2026-11/run-2026-11-09/README.md`): VERDICT PARKED, worst cell 0.972 (band 0.95-0.98), the 7B at 8000 keys, f16 68.1 against f32 70.1 tok/s; every other cell at or above 1.0 (phi3-mini f16 faster by 6.7% at 2048 keys and 11.5% at 3900); 56 cells, none void. The registered prediction (7B at 8000 at least 1.10) missed. Registered outcome: `auto` stays f16, the figures are published as a cost (`docs/benchmarks.md` B2.1), and 13 of 14 cells at or above 1.0; not repeated for a better read | `docs/measurements/f16-speed-2026-11/registration.md`; `docs/measurements/cuda-f16-kv-2026-10/grade-speed.py` |
+| D1 | done | — | §6 |
+| D2 | done | — | §6 |
+| D3 | done | — | §6 |
+| D4 | done | revised 2026-10-21: KV4 first | §6 |
 
 
 > **Status: APPROVED 2026-10-20 (owner: D1 refuse, D2 honor, D3 WebGPU in scope, D4 the recommended order; §6). Phase 0 is next. Filed 2026-10-20 at the owner's request: a KV precision the caller asks for
@@ -268,7 +277,7 @@ G2 minutes (two arms × the prompt set on the 1.5B; state the wall time before s
   i8 1 B plus 8 B of scales per position, head and layer) for every cell in phase 0's table. Catches a silent fallback
   that the banner might still misreport.
 - **G4, quality against f32 (published, not a refusal):** the CUDA f16 gate's instrument and cells
-  (`docs/tasks/task-cuda-f16-kv-2026-10.md`: 7B at K=8000, 1.5B at K=3900) plus one long-context cell per family group,
+  (`docs/completed/task-cuda-f16-kv-2026-10.md`: 7B at K=8000, 1.5B at K=3900) plus one long-context cell per family group,
   agreement and mean KL ratio recorded per family and precision. `auto` may move to a precision only on a PASS under that
   doc's bars and the owner's word.
 - **G5, f16 range:** the overflow survey from the CUDA f16 gate (max|K| and max|V| under 65504/2 on the gate prompts).
@@ -391,4 +400,4 @@ scope; D4 the recommended order (phase 0 now, CUDA int8 before the CUDA family w
 - **D4:** order. Recommended: phase 0 now; CUDA int8 (2) before the CUDA family widening (1) if the 8 GB card's context is
   the pull, since tack's Qwen3-8B is already a cleared dense family.
 
-<!-- doc-reviewed: 2026-10-21 -->
+<!-- doc-reviewed: 2026-11-12 -->

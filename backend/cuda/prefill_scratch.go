@@ -95,7 +95,7 @@ func (r *cudaResident) prefillPassRowsAt(width int) int {
 // PrefillChunkRows (decoder.ResidentPrefillChunks, matched structurally: TestKV3_residentReportsItsChunks holds the wiring) is the most rows one pass of a long prompt's prefill takes.
 func (r *cudaResident) PrefillChunkRows() int { return r.prefillPassRows() }
 
-// PrefillTailMinRows (decoder.ResidentPrefillTailMin) is the fewest rows a prefill's last pass may have: a shorter one runs the
+// PrefillTailMinRows (decoder.ResidentCaps.TailMinRows) is the fewest rows a prefill's last pass may have: a shorter one runs the
 // exact kernels while the pass before it ran the fused ones (attnFusedMinRows).
 func (r *cudaResident) PrefillTailMinRows() int { return attnFusedMinRows }
 
@@ -112,6 +112,17 @@ var prefillPassDoneForTest func()
 func scratchBufBytes(n int) int64 {
 	b := int64(max(n, 1)) * 4
 	return b + allocRoundSlack(b)
+}
+
+// StepScratchBytes is what a ragged step of rows decode and verify rows (no prefill chunk) allocates on the device beyond the
+// standing buffers: an ordinary pass's M-row buffers at that width and the rows' slots, positions and query scales
+// (raggedRowsWords). TestCUDAStepRagged_scratchIsPriced holds it to a step's allocations and to the pass the margin reserves.
+func (r *cudaResident) StepScratchBytes(rows int) int64 {
+	s := r.PrefillScratchBytes(rows)
+	if w := r.raggedRowsWords(rows); w > 0 {
+		s += scratchBufBytes(w)
+	}
+	return s
 }
 
 // PrefillScratchBytes (decoder.ResidentPrefillChunks) is what one ordinary prefill pass of rows rows allocates on the device beyond

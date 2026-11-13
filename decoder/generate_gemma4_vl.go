@@ -195,11 +195,8 @@ func (m *Model) GenerateGemma4VLSpans(ctx context.Context, ids []int, spans []Im
 				useGPU = true
 				g.DecodeResident = true
 				gpuPos = len(ids)
-				if capper, ok := m.resident.(ResidentCapped); ok {
-					if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
-						maxTokens = ctxCap - gpuPos
-						g.BudgetClamped = true // the resident cap (not the request) bounds this turn
-					}
+				if c, clamped := m.clampToResidentCap(gpuPos, maxTokens); clamped {
+					maxTokens, g.BudgetClamped = c, true
 				}
 			}
 		}
@@ -241,19 +238,23 @@ func (m *Model) gemma4VLResidentPrefill(ctx context.Context, out chan<- int, g *
 	var prefill func(rows [][]float32) ([]float32, error)
 	build := m.gemma4EModelImageRowsSpans
 	if m.w.Cfg.UseBidirectionalAttention != "" {
-		ssp, ok := m.resident.(ResidentSpanPrefill)
-		if !ok || gemma4IsEModel(m.w.arch) {
+		if !canStep(m.resident, stepBatch{Pass: passRows, In: inSpans, Emb: stepProbe}) || gemma4IsEModel(m.w.arch) {
 			return false
 		}
 		blocks := imageSpanBlocks(spans)
-		prefill = func(rows [][]float32) ([]float32, error) { return ssp.PrefillSpansLast(ctx, rows, 0, blocks) }
+		prefill = func(rows [][]float32) ([]float32, error) {
+			sr, err := m.step(stepBatch{Pass: passRows, Ctx: ctx, In: inSpans, Emb: rows, Spans: blocks})
+			return sr.Logits, err
+		}
 		build = m.gemma4BidirImageRowsSpans
 	} else {
-		pf, ok := m.resident.(Prefiller)
-		if !ok {
+		if !canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe}) {
 			return false
 		}
-		prefill = func(rows [][]float32) ([]float32, error) { return pf.PrefillLast(ctx, rows, 0) }
+		prefill = func(rows [][]float32) ([]float32, error) {
+			sr, err := m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: rows})
+			return sr.Logits, err
+		}
 	}
 	if !m.tryClaimResident() {
 		return false
@@ -276,11 +277,8 @@ func (m *Model) gemma4VLResidentPrefill(ctx context.Context, out chan<- int, g *
 	}
 	g.ImgPrefillResident, g.DecodeResident = true, true
 	gpuPos := len(ids)
-	if capper, ok := m.resident.(ResidentCapped); ok {
-		if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
-			maxTokens = ctxCap - gpuPos
-			g.BudgetClamped = true
-		}
+	if c, clamped := m.clampToResidentCap(gpuPos, maxTokens); clamped {
+		maxTokens, g.BudgetClamped = c, true
 	}
 	g.Budget = maxTokens
 	sampler := NewSampler(sp)

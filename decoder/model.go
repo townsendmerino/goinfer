@@ -37,9 +37,14 @@ var dtAttn, dtMLP, dtHead, dtGU, dtAct, dtActDown, dtQKV, dtO, dtAttnAll int64
 // component in-process (decodeTiming must be on for it to fill).
 var lastDecodeSplit struct{ fwd, attn, mlp, head, gu, act, down, qkv, core, o float64 }
 
-// Model is a loaded checkpoint plus the compute backend. Goroutine safety follows encoder.Model: Weights are immutable after
-// Load; per-sequence state (the KV cache) is owned by each Generate call, so distinct sequences can run concurrently, but a
-// single KVCache is not shared.
+// Model is a loaded checkpoint plus the compute backend. It is safe for concurrent use: weights are immutable after Load, and
+// any number of goroutines may call Generate (and each its own Session) at once; every call completes correctly. Where a call
+// runs is the only thing concurrency changes. On the CPU each generation owns its KV cache. A GPU-resident model's resident KV
+// is claimed per generation: by default one generation holds it and the others run on the CPU path; after
+// EnableResidentConcurrency(n), up to n run on the device at once, each on its own KV slot, and any further one runs on the
+// CPU. A prompt longer than ResidentContextCap also runs on the CPU. Falling back costs speed, never correctness; whether
+// CPU generations are worth running side by side is CPUConcurrentSafe's answer. A single KVCache or Session is not safe to
+// share between goroutines.
 type Model struct {
 	planSlackOf *planSlackMemo // PlanSlack per backend, asked once; nil on a Model built by hand (asked every time)
 	fitOf       *fitMemo       // what Plan derives from the config and architecture alone; nil on a Model built by hand
@@ -47,8 +52,10 @@ type Model struct {
 	be          Backend
 	eosIDs      []int           // end-of-sequence ids from config (generation stops on these)
 	resident    ResidentForward // GPU full-residency decode path (webgpu + eligible arch); nil ⇒ staged/CPU
+	resSubP     unsafe.Pointer  // *cachedResidentSubsystems: lock-free legacy-bridge cache; raw pointer so Model stays copyable
 	lifeP       unsafe.Pointer  // *modelLife (lifecycle.go): the in-flight generations Close ends; made on first use
 	resBusy     int32           // atomic: claims the single shared resident KV for one in-flight generation. Raw int32 (not atomic.Bool) so Model stays copyable for the value-copy test seam.
+	capWarned   int32           // atomic: the first prompt past the resident's context has been reported (warnResidentCap)
 	// batcher: MC3's coordinator (mc3_batch.go) — several generations on the resident at once, each on its own KV
 	// slot, their decode tokens joined into shared steps. nil unless EnableResidentConcurrency enabled it.
 	batcher *residentBatcher
@@ -96,6 +103,7 @@ type Model struct {
 	prog          *layerProgram // the forward as operations (buildProgram), built once by modelFromOptions
 	exactPrefill  bool          // Options.ExactPrefill: THIS model's prompt ingestion stays bit-exact on every backend (ExactPrefill())
 	backendAuto   bool          // Options.BackendAuto: the backend was chosen by "auto", not named (withResidency's Metal precision guard)
+	sidecarFor    string        // Options.SidecarFor: the backend whose sidecar .giw this load stands in for
 	noSelfTest    bool          // Options.noSelfTest: this model IS a self-test fixture, so withResidency must not probe for it (selftest_gpu.go)
 	planResidency bool          // Options.planResidency: FitQuery's open, which plans the resident (plannedDecodePath) instead of building it
 	knobs         *knobSet      // per-model operator knobs, snapshotted once at Load (knobs.go)
@@ -115,6 +123,8 @@ type Model struct {
 	kvDemote      bool          // Options.KVDemote
 	disableFit    bool          // tasks/task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
 	moeCache      bool          // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
+	moeUnpinned   bool          // the expert cache uploads from pageable file pages, not a pinned copy (Options.MoEExpertsUnpinned)
+	faSoftcap     bool          // a capped model may take CUDA's flash-decode lane (Options.FlashDecodeSoftcap)
 
 	loadAbort    <-chan struct{} // Options.LoadAbort, read by a backend's resident build through LoadAbort(); nil off a guarded load
 	loadAbortErr error           // set by withResidency when the build returned ErrLoadAborted; Load turns it into the load's error
@@ -125,6 +135,7 @@ type Model struct {
 	extraKVPerPos int64        // Options.ExtraResidentKVPerPosition — see that field's own doc comment
 	mmap          []byte       // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
 	srcPath       string       // the .giw path this model mmap-loaded from ("" off the .giw path) — for pread-staging over the same file
+	loadPath      string       // the file or directory Load opened, after the sidecar route ("" for a model not loaded from a path)
 	pager         *expertPager // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
 	layerPager    *layerPager  // dense per-layer streaming over the mapping (Options.StreamWeights); nil = all-resident
 	quant         string       // the requested Options.Quant for a direct load ("" for a prequant .giw → Quant() derives from kinds)
@@ -169,6 +180,10 @@ func newAdapterRegistry() *adapterRegistry {
 // from a .giw (safetensors/GGUF have no single mmap-backed weight file to pread from). The metal
 // expert-paging path re-opens this for pread-staging (the mmap closes its own fd after mapping).
 func (m *Model) GiwPath() string { return m.srcPath }
+
+// SourcePath is the file or checkpoint directory Load opened (the sidecar .giw when the route took it), or "" for a model not loaded from a
+// path. The CUDA expert cache writes its packed-experts file beside it under MoEExpertsUnpinned.
+func (m *Model) SourcePath() string { return m.loadPath }
 
 // MmapByteOffset returns the byte offset of slice b within this model's .giw mmap region, or
 // ok=false if b does not alias that region (a heap-backed weight, or no .giw mapping). MapReadOnly
@@ -340,20 +355,28 @@ func (m *Model) ExtraResidentKVPerPosition() int64 { return m.extraKVPerPos }
 // ExpertCacheStats reports the resident's MoE expert cache (ResidentExpertCache); ok is false off the resident path or when
 // the resident keeps no cache.
 func (m *Model) ExpertCacheStats() (ExpertCacheStats, bool) {
-	if c, ok := m.resident.(ResidentExpertCache); ok {
-		return c.ExpertCacheStats()
-	}
-	return ExpertCacheStats{}, false
+	return m.resRuntime().ExpertCacheStats()
 }
 
 // ResizeExpertCache resizes the resident's MoE expert cache (ResidentExpertCache) to leave reserve bytes of device memory
 // free, and returns its slots per layer. It errors when there is no resident or the resident keeps no cache.
 func (m *Model) ResizeExpertCache(reserve int64) (int, error) {
-	c, ok := m.resident.(ResidentExpertCache)
-	if !ok {
+	rt := m.resRuntime()
+	if !rt.ExpertCacheAvailable() {
 		return 0, fmt.Errorf("decoder: this model's resident keeps no expert cache")
 	}
-	return c.ResizeExpertCache(reserve)
+	return rt.ResizeExpertCache(reserve)
+}
+
+// SidecarFor is Options.SidecarFor: the backend whose sidecar .giw this load stands in for, "" for none.
+func (m *Model) SidecarFor() string { return m.sidecarFor }
+
+// layoutBackend is the backend whose weight layout a load builds: the one its sidecar stand-in is for, else the one it runs on.
+func (o Options) layoutBackend() string {
+	if o.SidecarFor != "" {
+		return o.SidecarFor
+	}
+	return o.Backend
 }
 
 // FitDisabled is --fit=off (Options.DisableFit), also set by GOINFER_NO_FIT_DEFAULT (kept working as the original, narrower
@@ -373,6 +396,15 @@ func (m *Model) FitDisabled() bool {
 func (m *Model) MoECacheExperts() bool {
 	return m.moeCache || m.knobs.get(knobMoECacheExperts) != ""
 }
+
+// MoEExpertsUnpinned reports whether a CUDA expert cache (MoECacheExperts) uploads its slots from pageable pages of a file holding the packed
+// experts, instead of a pinned host copy (Options.MoEExpertsUnpinned, `--moe-experts-unpinned`): about 12 GiB less host memory on Gemma 4 26B, at
+// 0.82x decode at short context and 0.75x at long (docs/measurements/mem10-2026-11/ab-registration.md). Off by default.
+func (m *Model) MoEExpertsUnpinned() bool { return m.moeUnpinned }
+
+// FlashDecodeSoftcap reports Options.FlashDecodeSoftcap: a model with an attention softcap may take CUDA's flash-decode lane, in its capped
+// variant. Off by default.
+func (m *Model) FlashDecodeSoftcap() bool { return m.faSoftcap }
 
 // MoECacheSlotsRequest returns the requested per-layer expert-slot count, or 0 for "as many as fit"; only meaningful with
 // MoECacheExperts. 0 asks for ALL experts and lets the builder cap to measured free VRAM, deliberately: topK slots is the
@@ -398,8 +430,8 @@ type Options struct {
 	// DirectLoad builds a .gguf or a safetensors directory's weights in the heap. Off (the default) on darwin and linux, Load
 	// opens the source's sidecar .giw instead, transcoding it once beside the source when it is missing or stale, so the
 	// weights are a mapping of that file rather than an anonymous copy; serve and chat do the same. A .gguf whose sidecar
-	// cannot be written (a read-only directory, a full disk) is refused, naming this field. A q4k .gguf always loads
-	// directly. A test binary loads directly too, unless the test turns the default on.
+	// cannot be written (a read-only directory, a full disk) is refused, naming this field. A q4k .gguf takes its sidecar too,
+	// except under StreamWeights. A test binary loads directly, unless the test turns the default on.
 	DirectLoad bool
 	// KVPrecision selects the GPU residency KV cache precision: "" / "auto" (the default: f16 on CUDA for a family the f16 kernels cover and
 	// the gates cleared, otherwise what the backend always did: f32, or f16 on Metal), "f32" (bit-exact, on every backend), "f16" (lossy, twice
@@ -415,12 +447,22 @@ type Options struct {
 	// differs exactly as ExactPrefill does). The experts must be int4: Metal declines int8 experts by
 	// name. CUDA and Metal residency; the CPU's expert paging is StreamWeights.
 	MoECacheExperts bool
+	// MoEExpertsUnpinned makes a CUDA expert cache (MoECacheExperts) upload its slots from pageable pages of a file holding the packed experts,
+	// written once beside the model and unlinked while mapped, instead of a pinned host copy: the copy's host memory (about 12 GiB on Gemma 4 26B)
+	// is not held, at a measured decode cost of 0.82x at short context and 0.75x at long (docs/measurements/mem10-2026-11/ab-registration.md).
+	// Off by default; the fit guard names it when the pinned copy is what does not fit.
+	MoEExpertsUnpinned bool
+	// FlashDecodeSoftcap lets a model with an attention softcap (Gemma 2) take CUDA's flash-decode lane, in its capped variant, for decode and
+	// verify rows past the lane's key floor. Off by default: such a model decodes on the exact split-KV lane, and the flash-decode lane's
+	// outputs differ from it, with no fidelity gate read yet (docs/measurements/op1o2-fa-softcap-2026-11/README.md). No effect on an uncapped
+	// model, which takes the lane by default, or off CUDA.
+	FlashDecodeSoftcap bool
 	// MoECacheSlots is the per-layer expert-slot count for MoECacheExperts (0 = ask for all and
 	// auto-cap to measured free VRAM). More slots ⇒ higher LRU hit rate ⇒ fewer per-token DMAs,
 	// at VRAM cost. Only meaningful with MoECacheExperts.
 	MoECacheSlots int
 	// KVQuant selects the CPU KV cache storage precision: "" / "f32" (default, bit-exact, the reference), "f16" (each stored row
-	// rounded to binary16, half the bytes; the generic loop without MoE, Architecture.kvF16OK, else f32) or "i8" (per-(position,
+	// rounded to binary16, half the bytes; the generic loop, Architecture.kvF16OK, else f32) or "i8" (per-(position,
 	// KV-head) symmetric int8, 4x smaller; declined where Architecture.kvInt8OK says no). The lossy two are opt-in. See
 	// docs/tasks/task-cpu-kv-f16-2026-10.md and task-cpu-kv-quant.md.
 	KVQuant string
@@ -430,12 +472,17 @@ type Options struct {
 	// trades RAM for cold-miss fault latency. No-op for non-MoE / non-.giw models.
 	StreamWeights bool
 	// WeightCacheBytes is the resident-bytes budget for streamed weights (0 = auto,
-	// ~half of available RAM). Only meaningful with StreamWeights.
+	// ~half of available RAM), and the budget a mapped MoE .giw's working-set prediction prices the page cache at.
 	WeightCacheBytes int64
-	// AcceptSlowMoE is the explicit acknowledgement a paged-MoE StreamWeights load needs when its predicted working-set rate
-	// falls below moeSlowTokPerSecThreshold (moeworkingset.go): without it the load is refused. Only meaningful for a .giw MoE
-	// load under StreamWeights; a no-op everywhere else.
+	// AcceptSlowMoE is the explicit acknowledgement a MoE .giw load that decodes on the CPU (mapped, or paged under
+	// StreamWeights) needs when its predicted working-set rate falls below moeSlowTokPerSecThreshold (moeworkingset.go):
+	// without it the load is refused. A no-op everywhere else.
 	AcceptSlowMoE bool
+	// RequireBackend makes a decline an error: when Backend names a backend other than the CPU and the load builds no
+	// resident runner on it (the backend is not linked, no device answered, or it declined the model), Load closes the model
+	// and returns an error that errors.Is matches against ErrBackendDeclined, carrying the decline's reason, instead of
+	// running on the CPU. A CPU load is unaffected.
+	RequireBackend bool
 	// MoEPager is the CPU expert pager's backing mode for a .giw-paged MoE model: "mmap" (advice-based,
 	// zero-copy) or "pool" (owned buffers + pread; a firm cap on every platform). "" = the platform
 	// default (MoEPagerDefault: pool on darwin, mmap elsewhere), unless GOINFER_MOE_PREAD_CPU overrides.
@@ -564,6 +611,12 @@ type Options struct {
 	// sets it beside the name.
 	BackendAuto bool
 
+	// SidecarFor names the backend whose sidecar .giw this load stands in for, "" for none: a planner (goinfer-chat fit) opens a source
+	// whose sidecar the real load would build first, to price that load without building it. The weights are built in the layout the
+	// sidecar holds (on metal, canonical int4 with no row4 repack: wantsRow4Fallback), and the resident host copy is priced as the
+	// bundle maps it, every weight payload (mmapAliasedBytes). A load from a .giw ignores it. Per model: Model.SidecarFor.
+	SidecarFor string
+
 	// planResidency is set only by FitQuery's open of a .giw: withResidency builds nothing, so FitQuery can ask the backend what
 	// its build would decide (Model.plannedDecodePath).
 	planResidency bool
@@ -607,10 +660,10 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
 		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, moeStep: opts.ResidentMoEStep, recurStep: opts.ResidentRecurrentStep, recurStepDef: opts.ResidentRecurrentStepDefault, gemma4StepDef: opts.ResidentGemma4StepDefault, gemma4Step: opts.ResidentGemma4Step, prefillChunk: opts.ResidentPrefillChunk, kvShareOff: opts.KVShareOff, kvSnaps: newKVSnapStore(opts.KVHostBytes), kvDemote: opts.KVDemote, disableFit: opts.DisableFit,
 		cpuBatchMode: opts.CPUBatchDecode,
-		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots,
+		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, moeUnpinned: opts.MoEExpertsUnpinned, faSoftcap: opts.FlashDecodeSoftcap,
 		loadAbort:  opts.LoadAbort,
 		extraBytes: opts.ExtraResidentBytes + recurrentSpecReserve(w.arch, opts.Drafter), extraKVPerPos: opts.ExtraResidentKVPerPosition,
-		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup, backendAuto: opts.BackendAuto, noSelfTest: opts.noSelfTest,
+		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup, backendAuto: opts.BackendAuto, sidecarFor: opts.SidecarFor, noSelfTest: opts.noSelfTest,
 		planResidency: opts.planResidency}
 }
 
@@ -736,7 +789,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		}
 		m := modelFromOptions(w, be, opts)
 		m.resCtxPinned = ctxFromCaller
-		m.mmap, m.srcPath = data, dir
+		m.mmap, m.srcPath, m.loadPath = data, dir, dir
 		m.bindKnobs(opts.Knobs.values())
 		m.withBackendNames(opts.Backend, beErr)
 		if opts.StreamWeights {
@@ -766,7 +819,24 @@ func Load(dir string, opts Options) (*Model, error) {
 				logs.Warnf("decoder: --stream-weights ignored (model fits the budget, or no mmap-backed layer weights)")
 			}
 		}
-		return m.withResidencyOrAbort()
+		m, rerr = m.withResidencyOrAbort()
+		if rerr != nil {
+			return nil, rerr
+		}
+		// A MoE load that decodes from its mapping on the CPU (no -stream-weights, no resident runner) pages its experts through
+		// the page cache, so it takes the paged load's working-set refusal (docs/tasks/task-fit-to-hardware.md, SLOW) at the
+		// budget a pager would take here.
+		if !opts.StreamWeights && w.arch.MoE != nil && !m.ResidentActive() {
+			if predicted, ok := mappedMoEWorkingSetPrediction(m, resolveWeightCacheBudget(opts.WeightCacheBytes)); ok {
+				logs.Infof("decoder: predicted mapped-MoE decode rate ~%.2f tok/s "+
+					"(a prior, not a measurement — see moeHitRatePrior's own doc comment)", predicted)
+				if serr := moeWorkingSetRefusal(filepath.Base(dir), predicted, opts.AcceptSlowMoE); serr != nil {
+					m.Close()
+					return nil, serr
+				}
+			}
+		}
+		return m, nil
 	}
 
 	// Resolve the quant mode first so the weights stream straight into the
@@ -810,7 +880,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		opts.ResidentContext = pinnedCtx
 	}
 
-	w, err := loadWeights(dir, quant, opts.EmbedInt4, wantsCanonicalInt4(opts.Backend, be), !wantsRow4Fallback(opts.Backend), lora, opts.LoadAbort)
+	w, err := loadWeights(dir, quant, opts.EmbedInt4, wantsCanonicalInt4(opts.Backend, be), !wantsRow4Fallback(opts.layoutBackend()), lora, opts.LoadAbort)
 	if err != nil {
 		closeBackend(be)
 		return nil, err
@@ -847,6 +917,7 @@ func Load(dir string, opts Options) (*Model, error) {
 	}
 	m := modelFromOptions(w, be, opts)
 	m.resCtxPinned = ctxFromCaller
+	m.loadPath = dir
 	m.quant, m.eosIDs = opts.Quant, resolvedEOS
 	m = m.withBackendNames(opts.Backend, beErr)
 	m.bindKnobs(opts.Knobs.values())
@@ -1067,47 +1138,27 @@ func (m *Model) NewCache(capHint int) *KVCache {
 		// Hybrid cache: KV for the softmax layers + a recurrent DeltaState for each
 		// linear layer. manualPos because the linear layers never Append.
 		c.manualPos = true
-		c.delta = make([]*deltaState, a.NumLayers)
-		for l := 0; l < a.NumLayers; l++ {
-			if a.isLinearLayer(l) {
-				c.delta[l] = newDeltaState(*a.qwen35)
-			}
-		}
+		c.delta = layerStates(a.NumLayers, a.isLinearLayer, func() *deltaState { return newDeltaState(*a.qwen35) })
 	}
 	if a.lfm2 != nil {
 		// Hybrid cache: KV for the attention layers + a rolling conv window for each conv layer. manualPos because the conv layers
 		// never Append, so position cannot be inferred from the KV length.
 		c.manualPos = true
-		c.conv = make([]*shortConvState, a.NumLayers)
-		for l := 0; l < a.NumLayers; l++ {
-			if a.isConvLayer(l) {
-				c.conv[l] = newShortConvState()
-			}
-		}
+		c.conv = layerStates(a.NumLayers, a.isConvLayer, newShortConvState)
 	}
 	if a.granite != nil {
 		// Hybrid cache: KV for the attention layers + a Mamba-2 recurrent state for
 		// each mamba layer. manualPos because the mamba layers never Append.
 		c.manualPos = true
-		c.mamba = make([]*mamba2State, a.NumLayers)
 		mp := mamba2Params{NHeads: a.granite.NHeads, HeadDim: a.granite.HeadDim, DState: a.granite.DState, NGroups: a.granite.NGroups, DConv: a.granite.DConv, Hidden: a.HiddenDim}
-		for l := 0; l < a.NumLayers; l++ {
-			if a.isMambaLayer(l) {
-				c.mamba[l] = newMamba2State(mp)
-			}
-		}
+		c.mamba = layerStates(a.NumLayers, a.isMambaLayer, func() *mamba2State { return newMamba2State(mp) })
 	}
 	if a.nemotron != nil {
 		// Single-op-block hybrid: only attention layers touch KV (manualPos), mamba
 		// layers carry a Mamba-2 recurrent state, mlp layers neither.
 		c.manualPos = true
-		c.mamba = make([]*mamba2State, a.NumLayers)
 		mp := mamba2Params{NHeads: a.nemotron.NHeads, HeadDim: a.nemotron.HeadDim, DState: a.nemotron.DState, NGroups: a.nemotron.NGroups, DConv: a.nemotron.DConv, Hidden: a.HiddenDim}
-		for l := 0; l < a.NumLayers; l++ {
-			if a.nemotron.blockKind[l] == nemoMamba {
-				c.mamba[l] = newMamba2State(mp)
-			}
-		}
+		c.mamba = layerStates(a.NumLayers, func(l int) bool { return a.nemotron.blockKind[l] == nemoMamba }, func() *mamba2State { return newMamba2State(mp) })
 	}
 	if a.mla != nil {
 		// DeepSeek MLA: the cache is the per-layer compressed latent, not full K/V.
@@ -1125,12 +1176,7 @@ func (m *Model) NewCache(capHint int) *KVCache {
 		// Bailing Hybrid (Ling 3.0): a third hybrid-cache shape. The MLA layers' latent cache is handled by the a.mla block above
 		// (bailingHybridArchitecture sets both), so only the KDA linear layers' recurrent state needs its own array here.
 		c.manualPos = true
-		c.kda = make([]*kdaState, a.NumLayers)
-		for l := 0; l < a.NumLayers; l++ {
-			if a.isLinearLayer(l) {
-				c.kda[l] = newKDAState(*a.kda)
-			}
-		}
+		c.kda = layerStates(a.NumLayers, a.isLinearLayer, func() *kdaState { return newKDAState(*a.kda) })
 	}
 	return c
 }
@@ -1165,6 +1211,10 @@ func (m *Model) embedToken(id int, dst []float32) {
 //
 // Sampling is greedy at Temperature 0, else temperature/top-k/top-p (see Sampler). A SamplingParams.LogitProcessor, if set,
 // masks each step's logits before sampling, the seam for constrained/structured decoding.
+//
+// Cancelling ctx ends the generation at its next check: before each layer of a batched CPU prefill, before each token of a
+// token-at-a-time prefill (CPU or resident), between tokens while decoding, and at a resident backend's own boundaries inside
+// its batched prefill (PrefillLast takes ctx). Generation.Err then reports the context's error.
 func (m *Model) Generate(ctx context.Context, prompt []int, maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
 	out := make(chan int)
 	g := &Generation{}
@@ -1237,28 +1287,33 @@ func (m *Model) residentPrefillSeed(ctx context.Context, prompt []int, from int,
 	return m.residentPrefillSeedMarked(ctx, prompt, from, hasAdapter, nil)
 }
 
-// residentPrefillSeedMarked is residentPrefillSeed that, given a mark, has a resident that can (ResidentPrefillMarked) call it back between two
-// passes of the batched prefill, at the mark's position: the prefix snapshot of a prompt whose tail after the stable section is long (kvsnap.go).
-// A resident that cannot, a prefill that does not reach the position at a pass boundary, or one that falls to the sequential loop, calls nothing.
-func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, from int, hasAdapter bool, mk *prefillMark) ([]float32, error) {
+// prefillSeedFrom is where a prefill seed of prompt starts: from, or 0 when from is outside the prompt (the seed token, whose logits
+// start decode, is never skipped); a seed from 0 rewrites the resident's KV from the start (residentWritesFromZero).
+func (m *Model) prefillSeedFrom(prompt []int, from int) int {
 	if from < 0 || from >= len(prompt) {
-		from = 0 // never skip the seed token, whose logits start decode
+		from = 0
 	}
 	if from == 0 {
 		m.residentWritesFromZero()
 	}
+	return from
+}
+
+// residentPrefillSeedMarked is residentPrefillSeed that, given a mark, has a resident that can (ResidentPrefillMarked) call it back between two
+// passes of the batched prefill, at the mark's position: the prefix snapshot of a prompt whose tail after the stable section is long (kvsnap.go).
+// A resident that cannot, a prefill that does not reach the position at a pass boundary, or one that falls to the sequential loop, calls nothing.
+func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, from int, hasAdapter bool, mk *prefillMark) ([]float32, error) {
+	from = m.prefillSeedFrom(prompt, from)
 	suffix := prompt[from:]
 	// Offer the batched path suffixes of 8 tokens or more (a shorter one is cheaper token by token) -- and, when
 	// the backend's short continuation is exact (PrefillTailExact), any suffix of a prompt the cold run would have
 	// offered whole, so a reused prompt takes the cold run's route and returns its bits.
 	offer := len(suffix) >= 8
-	if !offer && from > 0 && len(prompt) >= 8 {
-		if te, ok := m.resident.(PrefillTailExact); ok && te.PrefillTailExact() {
-			offer = true
-		}
+	if !offer && from > 0 && len(prompt) >= 8 && m.resPrefill().PrefillTailExact() {
+		offer = true
 	}
 	if m.knobs.get(knobBatchedPrefill) != "0" && offer && !hasAdapter {
-		if pf, ok := m.resident.(Prefiller); ok {
+		if canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe}) {
 			embed := func(ids []int) [][]float32 {
 				if embedRowsObserver != nil {
 					embedRowsObserver(len(ids))
@@ -1278,23 +1333,24 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 				if perr = ctx.Err(); perr != nil {
 					break
 				}
-				if _, perr = pf.PrefillLast(ctx, embed(prompt[from:from+B]), from); perr == nil {
+				if _, perr = m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: embed(prompt[from : from+B]), Pos: from}); perr == nil {
 					from += B
 				}
 			}
 			// startPos is why the batched path needs no change for reuse: it already
 			// places the run at an offset.
 			if perr == nil {
-				var lg []float32
-				if mp, ok := pf.(ResidentPrefillMarked); ok && mk != nil {
-					lg, perr = mp.PrefillLastMarked(ctx, embed(prompt[from:]), from, mk.q, mk.at)
-				} else if pr, ok := pf.(ResidentPrefillRows); ok { // MEM6: the resident reads the suffix a chunk at a time
-					lg, perr = pr.PrefillLastRows(ctx, len(prompt)-from, from, m.suffixRows(prompt[from:]))
+				var sr stepResult
+				if mk != nil && canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe, At: stepProbeAt}) {
+					sr, perr = m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: embed(prompt[from:]), Pos: from, Mark: mk.q, At: mk.at})
+				} else if canStep(m.resident, stepBatch{Pass: passRows, In: inRowsFn, N: 1, Rows: stepProbeRows}) {
+					// MEM6: the resident reads the suffix a chunk at a time.
+					sr, perr = m.step(stepBatch{Pass: passRows, Ctx: ctx, In: inRowsFn, N: len(prompt) - from, Pos: from, Rows: m.suffixRows(prompt[from:])})
 				} else {
-					lg, perr = pf.PrefillLast(ctx, embed(prompt[from:]), from)
+					sr, perr = m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: embed(prompt[from:]), Pos: from})
 				}
 				if perr == nil {
-					return lg, nil
+					return sr.Logits, nil
 				}
 			}
 			// A CANCELLED PREFILL IS NOT A DECLINE. Falling through to the sequential loop would
@@ -1317,8 +1373,8 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 	// (a big-vocab matmul + readback + softcap) on every prefill token but the last, whose
 	// logits seed decode. Byte-identical (same layer chain → same KV → same last-token logits);
 	// GOINFER_NO_KVONLY_PREFILL forces the full-logits prefill (A/B / escape hatch).
-	kvOnly, hasKV := m.resident.(ResidentPrefillKV)
-	useKV := hasKV && m.knobs.get(knobNoKVOnlyPrefill) == ""
+	useKV := m.canDecode(outNone) && m.knobs.get(knobNoKVOnlyPrefill) == ""
+	var row [1][]float32 // the token's one-row batch, reused across the prompt
 	var logits []float32
 	var err error
 	for i, id := range prompt {
@@ -1332,7 +1388,8 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 		}
 		emb := m.embedResident(id)
 		if useKV && i < len(prompt)-1 {
-			if err = kvOnly.ForwardNoLogits(emb, i); err != nil {
+			row[0] = emb
+			if _, err = m.step(stepBatch{Pass: passToken, Emb: row[:], Pos: i, Out: outNone}); err != nil {
 				return nil, err
 			}
 			continue
@@ -1348,25 +1405,21 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 // (docs/multimodal.md), where decode past the (already-resident) image block needs pos+mropeDelta for the rotation, not plain
 // pos. Deliberately simple (no batched or KV-only prefill): the reused-suffix case is an agent turn's short trailing
 // extension, not a long cold prompt worth the batched machinery.
-func (m *Model) residentPrefillSeedMRoPE(ctx context.Context, mrope ResidentMRoPE, prompt []int, from, mropeDelta int) ([]float32, error) {
-	if from < 0 || from >= len(prompt) {
-		from = 0
-	}
-	if from == 0 {
-		m.residentWritesFromZero()
-	}
-	var logits []float32
+func (m *Model) residentPrefillSeedMRoPE(ctx context.Context, prompt []int, from, mropeDelta int) ([]float32, error) {
+	from = m.prefillSeedFrom(prompt, from)
+	var sr stepResult
 	var err error
+	var row [1][]float32
 	for i := from; i < len(prompt); i++ {
 		if err = ctx.Err(); err != nil {
 			return nil, err
 		}
-		emb := m.embedResident(prompt[i])
-		if logits, err = mrope.ForwardMRoPE(emb, i, i+mropeDelta); err != nil {
+		row[0] = m.embedResident(prompt[i])
+		if sr, err = m.step(stepBatch{Pass: passToken, In: inMRoPE, Emb: row[:], Pos: i, RopePos: i + mropeDelta}); err != nil {
 			return nil, err
 		}
 	}
-	return logits, nil
+	return sr.Logits, nil
 }
 
 // mc3Prefill prefills prompt[from:] into an MC3 generation's slot and returns the seed logits. A long suffix is taken
@@ -1377,7 +1430,7 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 	if from < 0 || from >= len(prompt) {
 		from = 0 // never skip the seed token (residentPrefillSeed's own rule)
 	}
-	pf, ok := m.resident.(Prefiller)
+	ok := canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe})
 	C := m.prefillChunk
 	// A chunk below the resident's kernel-class floor would put the first chunk on the other class from the
 	// whole prompt's; raising the chunk to the floor keeps every pass on the class a whole prefill uses.
@@ -1385,6 +1438,9 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 		C = f
 	}
 	chunk := ok && C > 0 && m.knobs.get(knobBatchedPrefill) != "0"
+	// ride: each chunk is carried by a decode run, one ragged step with the decode rows pending then (rideChunk), instead of a
+	// pass of its own followed by yieldToDecode.
+	ride := chunk && mc3.ride != nil
 	var logits []float32
 	var err error
 	// Cut a chunk only while a chunk plus prefillTailMinRows tokens remain, so the pass that ends the prefill has at least
@@ -1400,9 +1456,18 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 		for i, id := range prompt[from:end] {
 			embs[i] = m.embedResident(id)
 		}
+		if ride {
+			c := &chunkReq{seq: ResidentRaggedSeq{Slot: slot, Pos: from, Embs: embs, Prefill: &ResidentRaggedPrefill{PromptLen: len(prompt)}}}
+			if err = mc3.rideChunk(c); err == nil {
+				from = end
+				continue
+			}
+			// The ragged step did not take the chunk (a family it declines, a full KV pool): this chunk and the rest alternate.
+			ride, err = false, nil
+		}
 		mc3.prefillExclusive(func() {
 			if err = m.residentBind(slot); err == nil {
-				_, err = pf.PrefillLast(ctx, embs, from)
+				_, err = m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: embs, Pos: from})
 			}
 		})
 		if err != nil {
@@ -1430,6 +1495,14 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 		}
 	})
 	return logits, err
+}
+
+// warnResidentCap reports, once per model, that a prompt passed the resident's context and ran on the CPU path, which is
+// correct but far slower to the first token; raising the resident context (-ctx) keeps such prompts on the device.
+func (m *Model) warnResidentCap(why string) {
+	if atomic.CompareAndSwapInt32(&m.capWarned, 0, 1) {
+		logs.Warnf("decoder: %s, so it runs on the CPU (first time only; a larger resident context keeps it on the device)", why)
+	}
 }
 
 // tryClaimResident attempts the exclusive claim on the model's single shared resident KV (the resBusy CAS), the one CAS site
@@ -1492,7 +1565,9 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	}
 	var resAdapter ResidentAdapter
 	if lora != nil {
-		resAdapter, _ = m.resident.(ResidentAdapter)
+		if rt := m.resRuntime(); rt.AdapterAvailable() {
+			resAdapter = rt
+		}
 	}
 	useGPU := m.resident != nil && prefillFrom == 0 && (commit == nil || (lora != nil && resAdapter != nil))
 	var mc3 *residentBatcher // non-nil: this generation holds an MC3 place and, after prefill, the KV slot mc3Slot
@@ -1513,6 +1588,8 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			// caller derives residentPath from ResidentActive(). This is the decoder-seam half, defense in depth for any caller that
 			// does not.
 			useGPU = false
+			g.ResidentDeclined = fmt.Sprintf("the prompt's %d tokens pass the resident's context of %d", len(prompt), ctxCap)
+			m.warnResidentCap(g.ResidentDeclined)
 		} else if bt := m.batcher; bt != nil && lora == nil && bt.claim(&m.resBusy) {
 			// MC3: one of several concurrent generations on the resident, on its own KV slot (mc3_batch.go).
 			mc3 = bt
@@ -1525,6 +1602,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 					// (applyLoRA); do NOT proceed resident with no delta bound.
 					atomic.StoreInt32(&m.resBusy, 0)
 					useGPU = false
+					g.ResidentDeclined = "the adapter could not be bound on the resident: " + err.Error()
 				} else {
 					defer func() {
 						resAdapter.SetAdapter(nil)
@@ -1536,6 +1614,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			}
 		} else {
 			useGPU = false
+			g.ResidentDeclined = "another generation held the resident"
 		}
 	}
 	// Allocate the host KV cache here, not before the CAS above: this covers both "never going to be resident" and "lost the race
@@ -1666,17 +1745,18 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// then asks the gate, and only a step it opens takes the full-logits path below (needFull).
 	gated := sp.LogitProcessor != nil && sp.LogitProcessorGate != nil
 	procFree := sp.LogitProcessor == nil || gated
-	greedyRF, hasGreedy := m.resident.(ResidentGreedy)
+	hasGreedy := m.canDecode(outArgmax)
 	fastGreedy := useGPU && hasGreedy && procFree &&
 		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) &&
 		m.knobs.get(knobNoGreedyFastpath) == ""
 	// The greedy chain (ResidentGreedyChain): the same tokens with the next token's forward queued on the device before the host
-	// has seen this one. Only with no processor at all (a gated one would need the full row mid-chain), no adapter, and where the
-	// embedding lookup is a plain table row, which the resident's gather reproduces. Under MC3 it runs only on the tokens this
-	// generation decodes alone, with the resident held across them (holdSolo); every other token takes the batcher as before, so
-	// fastGreedy stays the path for those.
-	chainRF, hasChain := m.resident.(ResidentGreedyChain)
-	useChain := useGPU && resCost == nil && hasChain && sp.LogitProcessor == nil && lora == nil &&
+	// has seen this one. With no processor, or a gated one while its gate is closed (outside MC3: a step the gate opens stops the
+	// chain and takes the full-logits path below, which the chain would otherwise skip), no adapter, and where the embedding
+	// lookup is a plain table row, which the resident's gather reproduces. Under MC3 it runs only on the tokens this generation
+	// decodes alone, with the resident held across them (holdSolo); every other token takes the batcher as before, so fastGreedy
+	// stays the path for those.
+	chainRF := m.resDecode()
+	useChain := useGPU && resCost == nil && (sp.LogitProcessor == nil || (gated && mc3 == nil)) && lora == nil &&
 		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) && m.knobs.get(knobNoGreedyFastpath) == "" &&
 		m.embedIsTableRow() && chainRF.GreedyChainAvailable()
 	if useChain && mc3 == nil {
@@ -1703,48 +1783,41 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// that needs or rewrites the full row (bias, penalties, logprobs, a LogitProcessor), the greedy and optimistic-forward paths,
 	// and backends whose logits are transformed on the host after readback. GOINFER_NO_TOPK_FASTPATH forces the full-row path
 	// (escape hatch / A-B check), same convention as GOINFER_NO_GREEDY_FASTPATH.
-	var topKRF ResidentTopK
+	topKOn := false
 	topKWidth, topKVocab := 0, len(logits)
 	// Under MC3 a TopKRow's Full() reads the resident's logits, which a later step of another generation may have overwritten, so
 	// the draw is resolved inside the resident call (topKPre / topKPreFull below) while this generation still holds the resident,
 	// not at the top of the next iteration. Do not switch it off under MC3: that sent every CUDA top-p request down the
 	// full-row path (docs/measurements/topp-regression-2026-09-30.md).
 	if useGPU && !fastGreedy && !useChain && !optFwd && procFree && m.knobs.get(knobNoTopKFastpath) == "" && sampler.TopKEligible() {
-		if rf, ok := m.resident.(ResidentTopK); ok && rf.TopKAvailable() {
+		if m.canDecode(outTopK) {
 			if w, wok := sampler.TopKWidth(len(logits)); wok {
-				topKRF, topKWidth = rf, w
+				topKOn, topKWidth = true, w
 			}
 		}
 	}
 	// Device temperature-only sampling (sampler_gumbel.go): the resident draws the next token by Gumbel-max on-device and returns
 	// just the id, reusing the greedy fast path's fastNext mechanism. Same exclusions as the top-K path;
 	// GOINFER_NO_SAMPLE_FASTPATH forces the host draw (A/B check, escape hatch).
-	var sampleRF ResidentSample
-	if useGPU && !fastGreedy && !useChain && !optFwd && procFree && m.knobs.get(knobNoSampleFastpath) == "" && sampler.SampleEligible() {
-		if rf, ok := m.resident.(ResidentSample); ok && rf.SampleAvailable() {
-			sampleRF = rf
-		}
-	}
+	sampleOn := useGPU && !fastGreedy && !useChain && !optFwd && procFree && m.knobs.get(knobNoSampleFastpath) == "" &&
+		sampler.SampleEligible() && m.canDecode(outSample)
 	// A greedy generation's batched token asks the step for its argmax id (a Greedy draw) where the resident offers that, instead
 	// of its whole logits row; the id is the argmax the sampler would take from that row. Rows run alone keep residentCall's path.
 	batchGreedy := false
-	if mc3 != nil && !fastGreedy && sampleRF == nil && procFree && (sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) {
-		if bg, ok := m.resident.(ResidentBatchGreedy); ok && bg.BatchGreedyDraw() {
-			batchGreedy = true
-		}
+	if mc3 != nil && !fastGreedy && !sampleOn && procFree && (sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) {
+		batchGreedy = residentCapsOf(m.resident).BatchGreedyDraw
 	}
 	// The sampled chain (ResidentSampleChain): where the device draw serves the token, the same draw with the next token's forward
 	// queued on the device first, as the greedy chain does for the argmax. Same exclusions as the greedy chain, and not where
 	// ForwardSample itself takes the argmax (a temperature so small 1/T is infinite).
 	var sChainRF ResidentSampleChain
-	if sampleRF != nil && resCost == nil && sp.LogitProcessor == nil && lora == nil && m.embedIsTableRow() &&
-		!math.IsInf(1/sp.Temperature, 0) {
-		if rf, ok := m.resident.(ResidentSampleChain); ok && rf.SampleChainAvailable() {
-			sChainRF = rf
-		}
+	if sampleOn && resCost == nil && sp.LogitProcessor == nil && lora == nil && m.embedIsTableRow() &&
+		!math.IsInf(1/sp.Temperature, 0) && chainRF.SampleChainAvailable() {
+		sChainRF = chainRF
 	}
-	var topKRow *TopKRow // this step's device top-K row, set instead of logits when topKRF is active
-	// Under MC3 the top-K draw is made inside the resident call (see topKRF above): topKPre is the drawn token when the row
+	var stepRow [1][]float32 // the decode token's one-row batch, reused across tokens so a step allocates nothing
+	var topKRow *TopKRow     // this step's device top-K row, set instead of logits when topKOn
+	// Under MC3 the top-K draw is made inside the resident call (see topKOn above): topKPre is the drawn token when the row
 	// held the whole retained set, else topKPreFull says topKFullBuf holds this step's full row, copied before the resident
 	// was released. Both are consumed, and cleared, where topKRow is.
 	var topKPre *SampleInfo
@@ -1764,11 +1837,8 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// silent-corruption guard), but a resident that exposes its cap lets us stop cleanly at it. gpuPos is the next decode
 	// position; the last valid one is ctxCap-1, and the prefill loop guarantees gpuPos <= ctxCap.
 	if useGPU {
-		if capper, ok := m.resident.(ResidentCapped); ok {
-			if ctxCap := capper.ContextCap(); ctxCap > 0 && gpuPos+maxTokens > ctxCap {
-				maxTokens = ctxCap - gpuPos // may be 0 (prompt used the whole context)
-				g.BudgetClamped = true      // the resident cap (not the request) bounds this turn
-			}
+		if c, clamped := m.clampToResidentCap(gpuPos, maxTokens); clamped {
+			maxTokens, g.BudgetClamped = c, true
 		}
 	}
 	// Publish the effective budget so the caller reports finish_reason "length" when this clamp, not an EOS, ends the turn. Set
@@ -1936,7 +2006,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			// A device-drawn token takes its draw HERE, once, whichever path then serves it — the sampler's RNG
 			// stream advances exactly as it always has.
 			var draw *ResidentBatchDraw
-			if !needFull && !fastGreedy && sampleRF != nil {
+			if !needFull && !fastGreedy && sampleOn {
 				seed, d := sampler.NextDraw()
 				draw = &ResidentBatchDraw{Temperature: sp.Temperature, Seed: seed, Draw: d}
 			} else if batchGreedy && !needFull {
@@ -1947,7 +2017,10 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			residentCall := func() error {
 				var ferr error
 				if needFull {
-					// The gated processor needs this position's full logits (it is about to mask them).
+					// The gated processor needs this position's full logits (it is about to mask them). A chain still open stops
+					// first: it has queued the forward for this position, which Forward then rewrites, and it reopens at the
+					// next closed step.
+					stopChain()
 					logits, ferr = m.resident.Forward(emb, pos)
 					viaForward = true
 				} else if useChain && chainTok {
@@ -1985,17 +2058,27 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				} else if fastGreedy {
 					// Greedy fast path: the resident picks the argmax on-device and returns
 					// just the id, skipping the full-logits readback.
-					fastNext, ferr = greedyRF.ForwardArgmax(emb, pos)
-				} else if sampleRF != nil {
-					fastNext, ferr = sampleRF.ForwardSample(emb, pos, draw.Temperature, draw.Seed, draw.Draw)
+					stepRow[0] = emb
+					var sr stepResult
+					sr, ferr = m.step(stepBatch{Pass: passToken, Emb: stepRow[:], Pos: pos, Out: outArgmax})
+					fastNext = sr.ID
+				} else if sampleOn {
+					stepRow[0] = emb
+					var sr stepResult
+					sr, ferr = m.step(stepBatch{Pass: passToken, Emb: stepRow[:], Pos: pos, Out: outSample,
+						Temperature: draw.Temperature, Seed: draw.Seed, Draw: draw.Draw})
+					fastNext = sr.ID
 					if ferr == nil {
 						g.DeviceSampled++
 					}
-				} else if topKRF != nil {
-					var row TopKRow
-					row, ferr = topKRF.ForwardTopK(emb, pos, topKWidth, sp.Temperature, sampler.topPActive())
+				} else if topKOn {
+					stepRow[0] = emb
+					var sr stepResult
+					sr, ferr = m.step(stepBatch{Pass: passToken, Emb: stepRow[:], Pos: pos, Out: outTopK, K: topKWidth,
+						Temperature: sp.Temperature, WantZ: sampler.topPActive()})
+					row := sr.TopK
 					if ferr == nil && mc3 != nil {
-						// Resolve the draw now, while this generation holds the resident (see topKRF). The sampler is this
+						// Resolve the draw now, while this generation holds the resident (see topKOn). The sampler is this
 						// generation's own and nothing else draws from it before the next iteration would have, so the RNG
 						// is consumed in the same order as the unbatched path.
 						if inf, ok := sampler.SampleFromTopK(row, topKVocab); ok {
@@ -2175,6 +2258,10 @@ type Generation struct {
 	// was asked and said no (a multi-image turn on a backend whose resident prefill takes one block). Empty when it
 	// ran, or when no resident implements it.
 	ImgPrefillDecline string
+	// ResidentDeclined is why this generation ran on the CPU path on a model with a resident runner it could have used: its
+	// prompt passed the resident's context (ResidentContextCap), another generation held the resident, or an adapter failed
+	// to bind. "" when it ran on the resident, or the model has no resident.
+	ResidentDeclined string
 	// DecodeResident reports whether a multimodal turn's decode ran on the resident after its CPU prefill was uploaded
 	// (GenerateGemma4VL's bridge). Diagnostic, as ImgPrefillResident: a gate must show the image turn decoded resident, not on
 	// the CPU.
@@ -2204,6 +2291,18 @@ type Generation struct {
 	BudgetClamped bool
 }
 
-// Err returns the error that ended the stream, or nil if it ended cleanly
-// (EOS / stop / maxTokens). Read it after the channel closes.
+// Err returns the error that ended the stream, or nil if it ended cleanly (EOS / stop / maxTokens). Read it after the
+// channel closes. A cancelled or expired context ends the stream with an error that errors.Is matches against ctx.Err()
+// (context.Canceled or context.DeadlineExceeded), whether it fired before the first token or mid-decode.
 func (g *Generation) Err() error { return g.err }
+
+// layerStates is a hybrid cache's per-layer recurrent state: mk's state for each of the n layers where at holds, nil elsewhere.
+func layerStates[T any](n int, at func(l int) bool, mk func() T) []T {
+	out := make([]T, n)
+	for l := range n {
+		if at(l) {
+			out[l] = mk()
+		}
+	}
+	return out
+}

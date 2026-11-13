@@ -229,3 +229,78 @@ start). Records: `~/goinfer-bench/peer-vetted/results-mac-m1-fix/` (`grade.jsonl
 - **A VOID attempt first:** job `peer-vetted-m1-phi3-q4k-fixed-2` ran 22:43:18–22:45:38 while this Mac's own session ran `go test`
   beside it (about 22:43–22:44), so it is void and not graded (it read 22.4 against 41.4, 0.54). Its files are kept in
   `results-mac-m1-fix-VOID-2026-10-20-2243/` with a `VOID.txt`.
+
+### M1 on main after #722: registered 2026-11-07, before it runs
+
+OP6's Metal switch, which would make `--quant q4k` Metal's default load for Phi-3/4, waits on this cell. Since the 2026-10-20 reading,
+#722 fixed the q4k lane's step kernels, and main has moved by three weeks of Metal work. It is the same cell, rules and grader as
+"M1 on the fixed build", with these differences, all in `peer-vetted-2026-10-07/run-mac-m1-2026-11-07.sh`:
+- the serve binary and the harness come from an archive of main at `1ecbb5d6`, built by day (serve sha256 `62af620ac4e36d6e`), so
+  the night job builds nothing and runs no git command;
+- the records go to `results-mac-m1-2026-11-07`;
+- the fit check's server runs without `GODEBUG`, since the footprint question the last run asked is closed, and its peak
+  footprint is still read once it serves;
+- a refused fit check or a battery start exits 75, so the night queue retries it until 05:30;
+- amended before it runs, on review: any swap growth across the fit check (the void's 0 MB bar; the kill's is 1,024 MB) also
+  exits 75 before the cell starts, rather than starting a cell the void would void. A fit-check server that ignores SIGTERM for 30 s
+  is killed. The serve's sha256 must equal the registered one. `grade.py` runs only when `bench_peer.py` exits 0. Its stdout is
+  kept whole in `grade.txt`, its JSON lines alone in `grade.jsonl`, and its stderr in `grade.stderr`. A grading failure fails
+  the job.
+
+- **Read at night:** goinfer's tok/s ×3 and Ollama's ×3, graded by `grade.py` (AHEAD, PARITY or BEHIND), with the swap void and
+  the decode-path gate as before.
+- **What it decides:** nothing on its own. The cell is the published number the switch waits on. Changing a default is
+  Francis's call, so the reading goes to him beside the 2026-10-20 one (0.539, BEHIND).
+
+### M1 on main after #775: re-registered 2026-11-08, before it runs
+
+The 2026-11-07 job never ran the cell: its fit check read NOT-RESIDENT on all 18 tries ("ActQuantGroup 32: metal's resident
+projections use per-vector activation scales …"). That was a decoder regression, not the checkpoint or the cell's flags.
+- Since `d84d8644` (2026-10-21), a q4k `.gguf` loads through its sidecar `.giw`.
+- The activation-group gate exempted Metal's q4k lane by the `--quant` option, which a `.giw` does not keep.
+- #775 (`bbfce11d`) fixed it, so admission reads the loaded weights' quant, as Metal's build does.
+
+It is the same cell, rules and grader as "M1 on main after #722", with these differences, all in
+`peer-vetted-2026-10-07/run-mac-m1-2026-11-08.sh`:
+- **The build:** the serve and the harness come from an archive of main at `76d78d19` (after `bbfce11d`), built by day (serve sha256
+  `9a2e74bd1ce5fb28`).
+  - The harness's one change since `1ecbb5d6` is which checkpoints its archive check covers (`33bfef1d`); no measurement rule moved.
+- **The records** go to `results-mac-m1-2026-11-08`.
+- **By day,** as the coordinator asked. The job holds the timing lock and keeps the Mac awake (`caffeinate -i`). The fit check runs
+  first and must read `metal-resident (q4k)`. A refused load, swap growth across the fit check, or a battery start stops the job
+  for the coordinator; nothing retries it or forces the load.
+- **The load path:** goinfer's load now opens the file's q4k sidecar (`Phi-3-mini-4k-instruct-q4.q4k.metal.v17.giw`), the default
+  on darwin since `d84d8644`, where the 2026-10-20 run loaded the `.gguf` into the heap. They are the same weights
+  (`decoder/d8b_q4k_giw_test.go:TestD8b_q4kGGUFTakesItsSidecar`). Ollama's arm reads the same `.gguf` as before.
+- **The void rule** is the registered one: `BENCH_SWAP_VOID_MB=0` and the kill at +1,024 MB over an engine's cell, plus the
+  heavy-load rule of `docs/measurements/noise-registry.md` §8 at the cell's start. #774's new rule is not applied: it is in review.
+- **A by-day fit check before this was registered** (08:41, the cell's own flags on this serve) read `metal-resident (q4k)`, with
+  swap unchanged.
+
+- **Read:** goinfer's tok/s ×3 and Ollama's ×3, graded by `grade.py` (AHEAD, PARITY or BEHIND), with the swap void and the
+  decode-path gate.
+- **What it decides:** nothing on its own. The reading goes to Francis for OP6's default switch, beside 2026-10-20's (0.539,
+  BEHIND).
+
+### M1 on main after #775: read 2026-11-08 — LEVEL (1.02)
+
+By day, 2026-11-08 08:44:33–08:47:54 PST (16:44:33–16:47:54 UTC), `run-mac-m1-2026-11-08.sh` under the exclusive timing lock with
+`caffeinate -i`.
+- **Provenance:** the serve built at `76d78d19` (sha256 `9a2e74bd1ce5fb28`), Ollama 0.32.5, macOS 26.6.2, on AC power.
+- **Records:** `~/goinfer-bench/peer-vetted/results-mac-m1-2026-11-08/` (`grade.jsonl`, `grade.txt`, `fitcheck.log`,
+  `metal-phi3-q4k.json`, `provenance.txt`). The run's log is `~/goinfer-logs/op6-m1-2026-11-08.log`.
+
+- **Fit check: RESIDENT.** Decode path `metal-resident (q4k)`, the sidecar `.giw` loaded in 1.7 s, and a peak physical footprint of
+  2,527 MB once serving (the 2026-10-20 heap load: 5,311 MB). Swap was 2,425 MB before and after.
+- **Each cell's start, against the heavy-load rule:**
+  - goinfer: load average 2.13 (cap 4.0); free memory 6,854 MB against the fit need 2,282 MB plus 2 GB.
+  - Ollama: load average 2.94; free memory 6,768 MB against 3,481 MB plus 2 GB.
+  - `bench_peer.py`'s instant gate waited 19.6 s and 51.9 s for the box to go quiet. No GPU compute apps were running.
+- **Swap over each engine's cell: 0 and 0 MB.** The bar is 0 MB, so neither arm is void.
+- **The cell:** goinfer 42.2, 42.4 and 42.7 tok/s; Ollama 41.1, 41.7 and 41.9. Pairs 1.026, 1.017 and 1.020, median ratio **1.02**,
+  spread 1.2 and 1.9. `grade.py`: **LEVEL**, its parity band.
+- **Against 2026-10-20's reading** (goinfer 22.6, Ollama 41.9, 0.539 BEHIND), on the same weights and box: goinfer's decode is 1.88×
+  faster between `a2732f00` and `76d78d19`, and Ollama's arm is unchanged within its spread. The peak RSS was 4.80 GiB for goinfer
+  and 3.05 GiB for Ollama.
+- **What it decides:** nothing on its own. The reading goes to Francis for OP6's default switch.
+

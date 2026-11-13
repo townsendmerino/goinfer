@@ -20,6 +20,7 @@ package chat
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -153,6 +154,28 @@ func chatMLBOS(t string, has func(string) bool) string {
 // Stops returns the turn-stop marker strings for this family.
 func (t *Template) Stops() Stops { return Stops{Strings: append([]string(nil), t.stops...)} }
 
+// StopIDs is the token ids that end a generation of this template on tok, for decoder.SamplingParams.StopIDs and
+// constrain.NewMasker: tok's end-of-sequence and end-of-turn ids where it has them, then each of Stops' strings that is a
+// single token in tok's vocabulary, each id once and in that order. A stop string that is not one token contributes
+// nothing here; match it as text.
+func (t *Template) StopIDs(tok *tokenizer.Tokenizer) []int {
+	var ids []int
+	add := func(id int) {
+		if id >= 0 && !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	sp := tok.Special()
+	add(sp.EOS)
+	add(sp.EndOfTurn)
+	for _, s := range t.stops {
+		if id, ok := tok.TokenID(s); ok {
+			add(id)
+		}
+	}
+	return ids
+}
+
 // Meta is what Detect inspects: the model's chat-template string (from
 // GGUF/HF tokenizer metadata, possibly empty) and a vocab-membership probe used
 // only for the bare-checkpoint fallback.
@@ -206,6 +229,10 @@ func detect(meta Meta) (*Template, error) {
 		// part of the fingerprint on purpose (see GlmOCR): GLM-4.5's text template opens the same way and is not this one.
 		case strings.Contains(t, "[gMASK]<sop>") && strings.Contains(t, "<|begin_of_image|>") && strings.Contains(t, "<|user|>"):
 			return GlmOCR(), nil
+		// Flint (RecursiveSI/flint): <|user|>/<|assistant|>/<|observation|>/<|developer|> roles and <arg_key>/<arg_value>
+		// XML tool calls, with no [gMASK]<sop> prefix.
+		case strings.Contains(t, "<|observation|>") && strings.Contains(t, "<|developer|>") && strings.Contains(t, "<arg_key>"):
+			return Flint(), nil
 		// Mellum2 IS ChatML; its distinctive normalize_content macro lets Detect
 		// name it "mellum2" (banner/serve) before the generic <|im_start|> branch.
 		case strings.Contains(t, "normalize_content") && strings.Contains(t, "<|im_start|>"):
@@ -264,6 +291,8 @@ func detect(meta Meta) (*Template, error) {
 			// Ministral 3 (and the Mistral 3 VL saves) ship no chat template; their tekken vocab carries [SYSTEM_PROMPT] as a control token,
 			// which Mistral v0.3's [INST]-only vocab does not. Without this branch an image request on one is refused.
 			return Ministral(), nil
+		case has("<|observation|>") && has("<|developer|>") && has("<arg_key>"):
+			return Flint(), nil
 		}
 	}
 	return nil, ErrUnknownTemplate

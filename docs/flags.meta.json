@@ -44,13 +44,13 @@
   {
    "name": "vision-device",
    "group": "Choosing models",
-   "summary": "Where the vision towers and the Whisper-style audio encoder (Whisper, Voxtral) run: `auto` (on the `--backend` GPU when this binary has a tower there; under `--backend webgpu` the vision towers stay on the CPU), `cpu` (the model keeps its own backend) or `gpu` (as `auto`, and under `--backend webgpu` the towers with a WebGPU form run on the GPU in float32).",
+   "summary": "Where the vision towers and the Whisper-style audio encoder (Whisper, Voxtral) run: `auto` (on the `--backend` GPU when this binary has a tower there; under `--backend webgpu` a discrete GPU and a Qwen3.5+ `.gguf` mmproj tower keep the CPU), `cpu` (the model keeps its own backend) or `gpu` (as `auto`, and it also puts those on the device).",
    "type": "auto | cpu | gpu"
   },
   {
    "name": "vision-quant",
    "group": "Choosing models",
-   "summary": "Vision encoder precision: `f32` (bit-exact) or `int8`, which only speeds up the vision encoder on AVX512-VNNI CPUs. Unset is `f32` everywhere. On CUDA Gemma 3 is `int8` instead, with a note, if the card cannot hold decoder, a KV slot and the float32 tower; explicit `f32` never falls back. Under `--backend webgpu` Gemma 3's unset default runs on the CPU, and an explicit `f32` or `int8` puts that tower on the GPU.",
+   "summary": "Vision encoder precision: `f32` (bit-exact) or `int8`, which only speeds up the vision encoder on AVX512-VNNI CPUs. Unset is `f32` everywhere. On CUDA Gemma 3 is `int8` instead, with a note, if the card cannot hold decoder, a KV slot and the float32 tower. Under `--backend webgpu` Gemma 3's `f32` tower is on the GPU on a Mac (a discrete GPU keeps the CPU tower unless `f32` or `int8` is given).",
    "type": "f32 | int8"
   },
   {
@@ -105,12 +105,17 @@
   {
    "name": "accept-slow",
    "group": "Memory and swap safety",
-   "summary": "Load a `--stream-weights` paged-MoE model even when its predicted decode rate is below the 2 tok/s floor. Without this, such a load is refused and the predicted rate is named."
+   "summary": "Load a MoE `.giw` (its default mapped sidecar, or `--stream-weights`) even when its predicted decode rate on the CPU is below the 2 tok/s floor. Without this, such a load is refused and the predicted rate is named."
   },
   {
    "name": "moe-cache-experts",
    "group": "Memory and swap safety",
    "summary": "Run a MoE model whose experts exceed VRAM or RAM by streaming routed experts to the GPU per token. Bit-identical to fully resident, at the cost of a transfer per token. Off by default."
+  },
+  {
+   "name": "moe-experts-unpinned",
+   "group": "Memory and swap safety",
+   "summary": "With `--moe-cache-experts` on CUDA, upload expert slots from a packed-experts file's pageable pages instead of a pinned host copy: about 12 GiB less host memory on Gemma 4 26B, slower by design (0.82x decode at short context, 0.75x at long). Off by default; named by the memory refusal when the copy does not fit."
   },
   {
    "name": "moe-cache-slots",
@@ -132,13 +137,13 @@
   {
    "name": "backend",
    "group": "Backend, precision and context",
-   "summary": "The compute backend. `auto` (the default) picks `cuda` when a device answers, else `metal` on Apple silicon for int4 models (Metal re-quantizes other precisions, so those stay on the CPU), else `cpu`, and prints one line saying which. It never picks `webgpu`. `--version` lists the backends in this binary; naming one that is not there falls back to `cpu`.",
+   "summary": "The compute backend. `auto` (the default) picks `cuda` when a device answers, else `metal` on Apple silicon for int4 and q4k models (Metal re-quantizes other precisions, so those stay on the CPU), else `cpu`, and prints one line saying which. It never picks `webgpu`. `--version` lists the backends in this binary; naming one that is not there falls back to `cpu`.",
    "type": "auto | cpu | webgpu | cuda | metal"
   },
   {
    "name": "quant",
    "group": "Backend, precision and context",
-   "summary": "Weight precision, the accuracy, speed and RAM trade-off. `int4` is the default; `f32` is unquantized. A prequantized `.giw` carries its own.",
+   "summary": "Weight precision, the accuracy, speed and RAM trade-off. `int4` is the default (`q4k` for a Phi-3/4 `.gguf`, except on WebGPU); `f32` is unquantized. A prequantized `.giw` carries its own.",
    "type": "int4 | int4mix | q4k | int8int8 | int8 | f32",
    "see": "docs/quantization.md"
   },
@@ -152,7 +157,7 @@
   {
    "name": "kv",
    "group": "Backend, precision and context",
-   "summary": "KV cache precision. `auto` (the default) is f16 on Metal, and on CUDA for each family group whose quality gate cleared it (the rest stay f32 with the reason in the banner; the KV precision matrix names which), f32 elsewhere; `f32` is bit-exact; `f16` and `i8` are lossy and smaller (`f16` applies to GPU-resident models only).",
+   "summary": "KV cache precision. `auto` (the default) is f16 on Metal, and on CUDA for each family group whose quality gate cleared it (the rest stay f32 with the reason in the banner; the KV precision matrix names which), f32 elsewhere; `f32` is bit-exact; `f16` and `i8` are lossy and smaller (`f16` applies to GPU-resident models only). CUDA `i8`'s measured cost: the KV precision matrix.",
    "type": "auto | f32 | f16 | i8"
   },
   {
@@ -290,7 +295,7 @@
   {
    "name": "spec-adaptive",
    "group": "Speculative decoding",
-   "summary": "Experimental. With `--spec ngram`, keeps concurrent generations: one speculates only while it is alone and joins batched decode when others arrive. Needs a resident whose decode can batch. Graded on CUDA: faster than batching alone, but under load slower than batching on chat (0.86x) and slower than plain `--spec ngram` on copy (0.80x), so not recommended there (`docs/measurements/mc4-candidate-cuda-2026-10-01.md`)."
+   "summary": "Experimental, opt-in. With `--spec ngram`, a generation speculates only while it is alone and joins batched decode when others arrive. Measured on CUDA under load: 0.858x batching on chat and 0.80x plain `--spec ngram` on copy (`docs/measurements/mc4-candidate-cuda-2026-10-01.md`)."
   },
   {
    "name": "drafter",

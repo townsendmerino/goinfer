@@ -72,7 +72,10 @@ func TestNemotronRelu2FFN_parity(t *testing.T) {
 		rq, _ := dev.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(kp / 4 * 4), Usage: stor | wgpu.BufferUsageCopySrc})
 		rs, _ := dev.TryCreateBuffer(&wgpu.BufferDescriptor{Size: 4, Usage: stor | wgpu.BufferUsageCopySrc})
 		rDims, _ := dev.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes([]uint32{uint32(interOdd), uint32(kp), 0, 0}), Usage: wgpu.BufferUsageUniform})
-		rBG := ctx.relu2QuantBind(upOut, rq, rs, rDims)
+		rBG, err := ctx.relu2QuantBind(upOut, rq, rs, rDims)
+		if err != nil {
+			t.Fatalf("relu2 bind group: %v", err)
+		}
 		// down GEMV: rq[inter int8] → hidden
 		dOut, _ := dev.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(hidden * 4), Usage: stor | wgpu.BufferUsageCopySrc})
 		dDims, _ := dev.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes([]uint32{1, uint32(padK(interOdd)), uint32(hidden), 0}), Usage: wgpu.BufferUsageUniform})

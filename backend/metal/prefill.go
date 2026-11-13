@@ -4,13 +4,14 @@ package metal
 
 import (
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"unsafe"
 
 	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
 // prefillSteelAttnOff, set only by tests, runs attention_prefill_fused where attention_prefill_steel would run: the
@@ -563,7 +564,11 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 			"(metalResident.checkCap guards the decoder's path; this caller skipped it)", src.n, startPos, c))
 	}
 	r.ensurePrefill()
-	r.kvOwn(r.kvSlot, startPos, startPos+src.n)
+	r.stopExec() // the pass runs beside the executor: a pipelined forward may be in flight reading the table or K/V
+	if err := r.kvWrite(r.kvSlot, startPos, startPos+src.n); err != nil {
+		r.recordExecErr(err)
+		return nil
+	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	d, pf := r.d, r.pf
@@ -708,7 +713,10 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 	scratch := []Buffer{
 		xF, normF, qkvF, ctxF, guF, dqF, posB, moeDst,
 		uM, uI, u2I, uQkv, uQDim, uStride, uKOff, uVOff, uStartPos,
-		uTotalQ, uTotalK, uBase0, uBaseK, m0, m1, m2, dummyBias, uMReal,
+		uTotalQ, uTotalK, uBase0, uBaseK, m0, m1, m2, dummyBias, uMReal, uTile,
+	}
+	if pos3B != (Buffer{}) {
+		scratch = append(scratch, pos3B)
 	}
 	if r.moe != nil {
 		scratch = append(scratch, moeLogits, moeIdx, moeWgt, expertIn, expertDown, rowIdxBuf, rowWgtBuf)
@@ -864,6 +872,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		for _, set := range deep.sets {
 			deepB = append(deepB, NewBufferFloatsOn(mem.LineScratch, d, set))
 		}
+		scratch = append(scratch, deepB...) // the deferred release reads scratch when the call returns
 	}
 	addDeep := func(k int) {
 		if k >= len(deepB) {
@@ -879,18 +888,19 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 	// OP4m-d1). Each emits the dispatches the pass has always emitted for that block. moeBlock reports false when an encoder
 	// error stops the pass.
 	attnBlock := func(l int, L *residLayer) {
+		aw := &L.walk.Attn
 		lu := layerUFor(L)
 		// pre-attn norm — addOne (Gemma's 1+w) matters even for a plain non-sandwich family's
 		// GEMV-input norm, so it is always passed (0 for every family without RMSAddOne).
-		// Olmo 3 / Olmo Hybrid (postOnly): no pre-norm; GEMV reads raw residual xF directly.
+		// Post-only placement (NormCopy): no pre-norm; GEMV reads raw residual xF directly.
 		inAttn := normF
-		if r.postOnly {
+		if aw.InputForm == program.NormCopy {
 			inAttn = xF
 		} else {
 			e.Dispatch(normPipe, M*tgReduceNorm, tgReduceNorm, xF, L.preNorm, normF, uH, uEpsX, r.uAddOne)
 		}
 		// fused QKV (+bias)
-		if L.qGate {
+		if aw.Gated {
 			// D-B01, Qwen3.5's gated softmax layer (decode's encodeAttention qGate branch): q_proj is [query ‖ gate]
 			// per head at double width, split on the activation into qkv's Q slot and the gate; K‖V is its own
 			// bias-free projection, copied into qkv's K and V slots.
@@ -901,7 +911,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		} else {
 			gemmAttn(e, Mpad, lu.qkvDim, inAttn, L.qkvW, L.qkvS, qkvF, uM, lu.uQkv, uH, L.qkvBias, m1)
 		}
-		if r.qkNorm { // Qwen3 / Olmo 3: per-head Q/K RMSNorm before RoPE
+		if aw.QKNorm { // Qwen3 / Olmo 3: per-head or whole-vector Q/K RMSNorm before RoPE
 			qkNH, qkNKV, qkHD, qkNHhd := r.uNH, lu.g.uNKV, lu.g.uHd, lu.g.uNHhd
 			tgCount := r.nH + lu.g.nKV
 			if L.kvShared {
@@ -909,7 +919,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 				// must be 0 here too, or rows shift and the "K" head normalizes the next row's Q.
 				tgCount, qkNKV = r.nH, r.uZero
 			}
-			if r.qkNormWhole {
+			if aw.QKNormParams.Whole {
 				qkNH, qkNKV, qkHD, qkNHhd = r.uQKWholeOne, r.uQKWholeOne, r.uQKWholeHD, r.uQKWholeHD
 				tgCount = 2
 			}
@@ -918,7 +928,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		// S9 step 2: Gemma 4's scale-less v_norm on every K/V-owning layer's V slot, after Q/K norm and before RoPE, as
 		// decode does (encodeAttentionResidualWith): the Q/K-norm kernel over the V slot with nH = 0, a unit weight and
 		// addOne 0.
-		if !L.kvShared && r.g4VNorm && emodelBatchDefect != 5 {
+		if aw.G4VNorm && emodelBatchDefect != 5 {
 			e.Dispatch(pf.pQK, M*lu.g.nKV*tgReduceAttn, tgReduceAttn, qkvF.At((lu.nHhd+lu.kvDim)*2), r.vNormUnit, r.vNormUnit,
 				r.uZero, lu.g.uNKV, lu.g.uHd, r.uZero, lu.uStride, r.uEps, r.uZero)
 		}
@@ -983,7 +993,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		if prefillAttnRanForTest != nil && ran != "" {
 			prefillAttnRanForTest[ran]++
 		}
-		if L.qGate { // ctx *= sigmoid(gate), before o-proj, as decode does
+		if aw.Gated { // ctx *= sigmoid(gate), before o-proj, as decode does
 			e.Dispatch(pf.pAttnGate, M*nHhd, 256, ctxF, gateF, uGateN)
 		}
 		// o-proj, then either the plain residual epilogue, Gemma's sandwich norm, or Olmo 3 postOnly: mode-0 write
@@ -991,7 +1001,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		// norm's output, is below), norm the sublayer output in place (safe: rmsnorm_f16's read pass completes before
 		// its write pass touches the same buffer), then a separate residual add. Other families take the fused mode-2
 		// residual epilogue.
-		if r.sandwich || r.postOnly {
+		if aw.OutMode == program.OutPostNormResidual {
 			gemmAttn(e, Mpad, H, ctxF, L.oW, L.oS, normF, uM, uH, lu.uQDim, dummyBias, m0)
 			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, normF, L.postAttnNorm, normF, uH, r.uEps, r.uAddOne)
 			if uResidInv != (Buffer{}) {
@@ -1004,12 +1014,14 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		}
 	}
 	moeBlock := func(l int, L *residLayer) bool {
+		fw := &L.walk.FFN
+		normW, _ := r.ffnNormWeights(L, fw.InputNorm.Slot)
 		if r.knobValue("GOINFER_MOE_EXPERT_MAJOR") == "0" {
 			// Fallback to row-by-row path for A/B testing
 			for m := range M {
 				row := xF.At(m * H * 2)
-				e.Dispatch(pf.pRmsQ, tgReduceNorm, tgReduceNorm, row, L.postNorm, r.mq, r.mSc, uH, r.uEps, r.uAddOne)
-				r.encodeMoERoute(e, L)
+				e.Dispatch(pf.pRmsQ, tgReduceNorm, tgReduceNorm, row, normW, r.mq, r.mSc, uH, r.uEps, r.uAddOne)
+				r.encodeMoERouteForForm(e, L, fw.FFN.Form)
 				if r.moeCap.idx != (Buffer{}) && m < r.moeCap.rows {
 					r.encodeMoECapture(e, l*r.moeCap.rows+m)
 				}
@@ -1022,14 +1034,14 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 
 		// --- EXPERT-MAJOR PATH ---
 		// 1. Pre-norm all M rows into normF
-		e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, xF, L.postNorm, normF, uH, uEpsX, r.uAddOne)
+		e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, xF, normW, normF, uH, uEpsX, r.uAddOne)
 
 		// 2. Batched Router GEMM: normF [M, H] x routerW [nE, H] -> moeLogits [M, nE]
 		totalRouterThreads := (M*r.moe.nE*32 + 255) / 256 * 256
 		e.Dispatch(pf.pRouterGemm, totalRouterThreads, 256, normF, L.moe.routerW, moeLogits, uH, r.moe.uNE, uMReal)
 
 		// 3. Batched Top-k Route: moeLogits -> moeIdx [M, k], moeWgt [M, k]
-		if r.moe.isGptOss {
+		if fw.FFN.Form == program.FfnGptOss {
 			e.Dispatch(pf.pRouteGptOssBatch, M*32, 32, moeLogits, L.moe.routerBias, moeIdx, moeWgt, r.moe.uNE, r.moe.uK, uMReal)
 		} else {
 			e.Dispatch(pf.pMoeRouteBatch, M*32, 32, moeLogits, L.moe.routerBias, moeIdx, moeWgt, r.moe.uNE, r.moe.uK, r.moe.uSigmoid, r.moe.uNorm, r.moe.uScale, r.moe.uNGroup, r.moe.uTopkGroup, uMReal)
@@ -1143,15 +1155,14 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		}
 
 		// 8. Shared expert (if present)
-		if r.moe.sharedInter > 0 && dg01Mutation != "shared-off" {
-			shI := r.moe.sharedInter
+		if shI := fw.FFN.MoE.SharedIntermediateDim; shI > 0 && dg01Mutation != "shared-off" {
 			u2ShI := getU32(2 * shI)
 			uShI := getU32(shI)
 
 			gemm(e, Mpad, 2*shI, normF, L.moe.shGuW, L.moe.shGuS, guF, uM, u2ShI, uH, dummyBias, m0)
 			e.Dispatch(pf.pSw, Mpad*shI, 256, guF, dqF, uShI, r.uAct)
 
-			if r.moe.sharedUngated {
+			if fw.FFN.MoE.SharedUngated {
 				// dst += down directly into xF
 				gemm(e, Mpad, H, dqF, L.moe.shDW, L.moe.shDS, xF, uM, uH, uShI, dummyBias, m2)
 			} else {
@@ -1166,20 +1177,22 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		}
 		return true
 	}
-	ffnBlock := func(L *residLayer, nonGated bool) {
+	ffnBlock := func(L *residLayer) {
+		fw := &L.walk.FFN
 		// pre-MLP norm. A parallel block (Cohere) has none: its MLP reads the same shared norm of the layer's input that the
 		// attention read, which normF still holds (the o-proj added into xF directly), so x ends as x + attn + mlp.
 		inFFN := normF
 		switch {
-		case r.parallelBlock && !prefillParallelDefectForTest:
-		case r.parallelBlock: // Part B's planted defect: the MLP fed from the post-attention residual
+		case fw.InputMode == program.FFNInShared && !prefillParallelDefectForTest:
+		case fw.InputMode == program.FFNInShared: // Part B's planted defect: the MLP fed from the post-attention residual
 			e.Dispatch(normPipe, M*tgReduceNorm, tgReduceNorm, xF, L.preNorm, normF, uH, uEpsX, r.uAddOne)
-		case r.postOnly:
+		case fw.InputMode == program.FFNInRaw:
 			inFFN = xF
 		default:
-			e.Dispatch(normPipe, M*tgReduceNorm, tgReduceNorm, xF, L.postNorm, normF, uH, uEpsX, r.uAddOne)
+			normW, _ := r.ffnNormWeights(L, fw.InputNorm.Slot)
+			e.Dispatch(normPipe, M*tgReduceNorm, tgReduceNorm, xF, normW, normF, uH, uEpsX, r.uAddOne)
 		}
-		if nonGated {
+		if fw.FFN.Form == program.FfnNonGated {
 			// KS-D8: the non-gated MLP (Nemotron-H's relu²; a down projection with a bias never reaches the pass): up with its
 			// bias, the activation in place, down accumulated into the residual.
 			gemm(e, Mpad, I, inFFN, L.upW, L.upS, dqF, uM, uI, uH, L.upBias, m1)
@@ -1209,7 +1222,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 			e.Dispatch(pf.pSw, M*fI, 256, guF, dqF, uFI, r.uAct)
 		}
 		// down-proj, same plain-vs-sandwich split as o-proj above.
-		if r.sandwich || r.postOnly {
+		if fw.OutMode == program.OutPostNormResidual {
 			gemm(e, Mpad, H, dqF, L.dW, L.dS, normF, uM, uH, uFI, dummyBias, m0)
 			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, normF, L.postMLPNorm, normF, uH, r.uEps, r.uAddOne)
 			if uResidInv != (Buffer{}) {
@@ -1257,7 +1270,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 					return nil
 				}
 			case stepDenseFFN, stepNonGatedFFN:
-				ffnBlock(L, st == stepNonGatedFFN)
+				ffnBlock(L)
 			case stepPLE:
 				pleBlock(l, L)
 			case stepLayerScale:

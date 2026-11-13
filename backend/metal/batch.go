@@ -151,7 +151,7 @@ func metalStepInputs(m *decoder.Model) *stepInputs {
 	in := &stepInputs{prog: p, H: H, V: V, I: I, nH: nH, moeStep: m.ResidentMoEStep(), recurrentStep: m.ResidentRecurrentStepOn(wanted),
 		gemma4Step: m.ResidentGemma4StepOn(wanted), q4k: m.Quant() == "q4k"}
 	in.w4f16Lane = modelKnob(m, "GOINFER_METAL_DECODE_LANE") == "w4f16" && m.Quant() == "int4"
-	_, _, in.attnSink = m.GptOssActResident()
+	in.attnSink = m.HasAttnSinksResident()
 	if nE, _, _, _, _, _, _, _, _, _, ok := m.MoEResidentParams(); ok {
 		n := metalMoESlotsFromEnv(m)
 		in.pagedMoE = n > 0 && (n < nE || moePagedAllSlotsForTest)
@@ -606,12 +606,14 @@ type stepShape struct {
 	q4k                            bool  // the q4k lane's extra rows
 }
 
-// stepBuf is one buffer of the batched step: the one list buildBatch allocates from and the price sums.
+// stepBuf is one scratch buffer of a list that allocates and prices it: the batched step's (stepShape.buffers) or decode's
+// (decodeShape.buffers).
 type stepBuf struct {
 	kind stepBufKind
-	n    int     // elements; a uniform has 1
-	u    uint32  // a stepU32's value
-	f    float32 // a stepFloatsOf's fill
+	n    int      // elements; a uniform has 1
+	u    uint32   // a stepU32's value
+	f    float32  // a stepFloatsOf's fill
+	us   []uint32 // a stepU32s's values, n of them
 	set  func(Buffer)
 }
 
@@ -623,6 +625,7 @@ const (
 	stepBytes                       // n bytes
 	stepHalves                      // n half-words, zeroed
 	stepU32                         // one u32 holding u
+	stepU32s                        // n u32s holding us
 )
 
 // bytes is what the buffer asks the device for.
@@ -647,6 +650,8 @@ func (sb stepBuf) alloc(d *Device) Buffer {
 		return NewBufferU16sOn(mem.LineScratch, d, make([]uint16, sb.n))
 	case stepU32:
 		return NewBufferU32On(mem.LineScratch, d, sb.u)
+	case stepU32s:
+		return NewBufferUint32sOn(mem.LineScratch, d, sb.us)
 	case stepFloatsOf:
 		data := make([]float32, sb.n)
 		for i := range data {
@@ -1031,11 +1036,13 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	r.stopExec()
+	if err := r.kvMapStep(seqs); err != nil { // every row's K/V block, before anything is encoded or reset
+		return nil, nil, err
+	}
 	for _, q := range seqs {
 		if q.pos == 0 { // a new sequence: its slot's recurrent state starts zeroed, as Forward at position 0 does
 			r.resetRecurrentSlot(q.slot)
 		}
-		r.kvOwn(q.slot, q.pos, q.pos+1) // the row's K/V, in a block of its slot's own
 	}
 	if r.attnFANKV > 0 {
 		r.uAttnFAG.SetU32(uint32(r.nH / r.attnFANKV))
@@ -1492,9 +1499,11 @@ func (r *resident) transformedRow(raw []float32) []float32 {
 	return row
 }
 
-// BatchGreedyDraw is decoder.ResidentBatchGreedy's (E-P08): a step returns a Greedy draw row's argmax id, the argmax of
+// BatchGreedyDraw is decoder.ResidentCaps' BatchGreedyDraw (E-P08): a step returns a Greedy draw row's argmax id, the argmax of
 // the row forwardMulti would have returned, first maximum on a tie.
-func (a *metalResident) BatchGreedyDraw() bool { return a.r.batch != nil && len(a.r.kvSlotBufs) >= 2 }
+func (a *metalResident) BatchGreedyDraw() bool {
+	return a.r != nil && a.r.batch != nil && len(a.r.kvSlotBufs) >= 2
+}
 
 // BatchStepRange is decoder.ResidentBatchStepper's: the batch sizes StepBatch serves well (batchMinSeqs..the smaller
 // of batchMaxSeqs and the slot count), or (0, 0) when this resident cannot batch.

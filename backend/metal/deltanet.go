@@ -271,9 +271,15 @@ func (r *resident) encodeDeltaNetMixer(e *Encoder, L *residLayer) {
 // encodeDeltaNetMixerOn is encodeDeltaNetMixer on residual x, against the conv window win and state state: the multi-sequence
 // step passes each row's residual and its own slot's pair.
 func (r *resident) encodeDeltaNetMixerOn(e *Encoder, L *residLayer, x, win, state Buffer) {
+	r.encodeNorm(e, x, L.preNorm, L.preNormBias, r.aq, r.aSc)
+	r.encodeDeltaNetCoreOn(e, L, x, win, state)
+}
+
+// encodeDeltaNetCoreOn is the DeltaNet mixer from its normed input in aq and aSc through out_proj, which adds into the residual
+// x: the mixer operation and the residual add, which one dispatch serves.
+func (r *resident) encodeDeltaNetCoreOn(e *Encoder, L *residLayer, x, win, state Buffer) {
 	dp := r.dnet
 	D := L.delta
-	r.encodeNorm(e, x, L.preNorm, L.preNormBias, r.aq, r.aSc)
 	r.gemvExt(e, gemvExtKCoal, dp.convDim, r.H, D.qkvW, D.qkvS, r.aq, r.aSc, r.dnMixed, r.uH)
 	e.Dispatch(r.pGemvW8, dp.nv*32, 32, r.aq, r.aSc, D.bW, D.bS, r.dnBt, r.uH)
 	e.Dispatch(r.pGemvW8, dp.nv*32, 32, r.aq, r.aSc, D.aW, D.aS, r.dnAt, r.uH)
