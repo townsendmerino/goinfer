@@ -1,0 +1,337 @@
+=== RUN   TestWindowedKV_grantArithmetic
+--- PASS: TestWindowedKV_grantArithmetic (0.00s)
+=== RUN   TestWindowedKV_expertCacheGetsTheGrant
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7078 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7078 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7078 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6946 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: 48 more positions from free VRAM (0 MB of 7251 MB free); a follow-up may now diverge 64 before the newest
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: 48 more positions from free VRAM (0 MB of 7249 MB free); a follow-up may now diverge 64 before the newest
+=== RUN   TestWindowedKV_expertCacheGetsTheGrant/routed_experts
+cuda: windowed KV: sliding-window layers hold 28 positions (window 4 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: windowed KV: 48 more positions from free VRAM (0 MB of 7097 MB free); a follow-up may now diverge 64 before the newest
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+--- PASS: TestWindowedKV_expertCacheGetsTheGrant (1.95s)
+    --- PASS: TestWindowedKV_expertCacheGetsTheGrant/routed_experts (0.03s)
+=== RUN   TestWindowedKV_e0ResendReplay
+--- PASS: TestWindowedKV_e0ResendReplay (0.00s)
+=== RUN   TestWindowedKV_grant
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: 48 more positions from free VRAM (0 MB of 7251 MB free); a follow-up may now diverge 64 before the newest
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (11 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: 48 more positions from free VRAM (0 MB of 7221 MB free); a follow-up may now diverge 64 before the newest
+--- PASS: TestWindowedKV_grant (0.41s)
+=== RUN   TestWindowedKV_stepIdentity64
+=== RUN   TestWindowedKV_stepIdentity64/mistral-tiny-window
+cuda: windowed KV: sliding-window layers hold 96 positions (window 16 + 80 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (11 MiB of scratch; 7064 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kvwindow_grant_test.go:227: mistral-tiny-window: 600 steps, 8 compactions, final base 528
+=== RUN   TestWindowedKV_stepIdentity64/gemma3-vl-tiny
+cuda: windowed KV: sliding-window layers hold 96 positions (window 16 + 80 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kvwindow_grant_test.go:227: gemma3-vl-tiny: 600 steps, 8 compactions, final base 528
+=== RUN   TestWindowedKV_stepIdentity64/cohere2-tiny
+cuda: windowed KV: sliding-window layers hold 88 positions (window 8 + 80 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kvwindow_grant_test.go:227: cohere2-tiny: 600 steps, 8 compactions, final base 528
+--- PASS: TestWindowedKV_stepIdentity64 (1.55s)
+    --- PASS: TestWindowedKV_stepIdentity64/mistral-tiny-window (0.47s)
+    --- PASS: TestWindowedKV_stepIdentity64/gemma3-vl-tiny (0.48s)
+    --- PASS: TestWindowedKV_stepIdentity64/cohere2-tiny (0.60s)
+=== RUN   TestWindowedKV_offsetsStorage
+=== RUN   TestWindowedKV_offsetsStorage/mistral-tiny-window
+cuda: prefill width 2048 rows (11 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (11 MiB of scratch; 7054 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (11 MiB of scratch; 7038 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (11 MiB of scratch; 7024 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (11 MiB of scratch; 7010 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (11 MiB of scratch; 6994 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (11 MiB of scratch; 6980 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+=== RUN   TestWindowedKV_offsetsStorage/gemma3-vl-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (6 MiB of scratch; 7062 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (6 MiB of scratch; 7056 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (6 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (6 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (6 MiB of scratch; 7036 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+=== RUN   TestWindowedKV_offsetsStorage/cohere2-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (6 MiB of scratch; 7066 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (6 MiB of scratch; 7056 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (6 MiB of scratch; 7046 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (6 MiB of scratch; 7038 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (6 MiB of scratch; 7026 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (6 MiB of scratch; 7018 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+--- PASS: TestWindowedKV_offsetsStorage (2.77s)
+    --- PASS: TestWindowedKV_offsetsStorage/mistral-tiny-window (0.78s)
+    --- PASS: TestWindowedKV_offsetsStorage/gemma3-vl-tiny (0.93s)
+    --- PASS: TestWindowedKV_offsetsStorage/cohere2-tiny (1.06s)
+=== RUN   TestWindowedKV_offsetsInvariance
+=== RUN   TestWindowedKV_offsetsInvariance/mistral-tiny-window
+cuda: prefill width 2048 rows (11 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kvwindow_offsets_test.go:153: 3 of 3 layers are sliding-window; head dim 32
+    kvwindow_offsets_test.go:188: 9 arms invariant over 184320 K/V elements; control: first difference at 300, 6144 elements after it
+=== RUN   TestWindowedKV_offsetsInvariance/gemma3-vl-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kvwindow_offsets_test.go:153: 1 of 2 layers are sliding-window; head dim 16
+    kvwindow_offsets_test.go:188: 9 arms invariant over 61440 K/V elements; control: first difference at 300, 1088 elements after it
+=== RUN   TestWindowedKV_offsetsInvariance/cohere2-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kvwindow_offsets_test.go:153: 3 of 4 layers are sliding-window; head dim 16
+    kvwindow_offsets_test.go:188: 9 arms invariant over 122880 K/V elements; control: first difference at 300, 2944 elements after it
+--- PASS: TestWindowedKV_offsetsInvariance (0.99s)
+    --- PASS: TestWindowedKV_offsetsInvariance/mistral-tiny-window (0.34s)
+    --- PASS: TestWindowedKV_offsetsInvariance/gemma3-vl-tiny (0.30s)
+    --- PASS: TestWindowedKV_offsetsInvariance/cohere2-tiny (0.35s)
+=== RUN   TestWindowedKV_offsetsFastClass_tiny
+cuda: prefill width 2048 rows (26 MiB of scratch; 7062 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kvwindow_offsets_test.go:225: READING control, full attention, split@600: INVARIANT (1024000 K/V elements, 4 attn_fused launches)
+cuda: prefill width 2048 rows (26 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kvwindow_offsets_test.go:245: READING window 256, split@576 (a multiple of 64): INVARIANT; 0 of 1024000 K/V elements differ, 0 logits, 4 attn_fused launches
+    kvwindow_offsets_test.go:245: READING window 256, split@704 (a multiple of 64): INVARIANT; 0 of 1024000 K/V elements differ, 0 logits, 4 attn_fused launches
+    kvwindow_offsets_test.go:245: READING window 256, split@600: NOT invariant, first differing position 600 (layer 1); 198622 of 1024000 K/V elements differ, 256 logits, 4 attn_fused launches
+    kvwindow_offsets_test.go:245: READING window 256, split@777: NOT invariant, first differing position 777 (layer 1); 108494 of 1024000 K/V elements differ, 256 logits, 4 attn_fused launches
+    kvwindow_offsets_test.go:245: READING window 256, chunk=448 (a multiple of 64): INVARIANT; 0 of 1024000 K/V elements differ, 0 logits, 6 attn_fused launches
+    kvwindow_offsets_test.go:245: READING window 256, chunk=500: NOT invariant, first differing position 500 (layer 1); 243979 of 1024000 K/V elements differ, 256 logits, 4 attn_fused launches
+--- PASS: TestWindowedKV_offsetsFastClass_tiny (0.38s)
+=== RUN   TestWindowedKV_offsetsFastClass_real1p5B
+    kvwindow_offsets_test.go:205: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+--- SKIP: TestWindowedKV_offsetsFastClass_real1p5B (0.00s)
+=== RUN   TestWindowedKV_i3Replay
+    kvwindow_replay_test.go:110: floor, no extra (slack 512, rollback 448): 16 of 54 in-run follow-ups cold
+    kvwindow_replay_test.go:110: the most the grant gives (slack 1088, rollback 1024): 5 of 54 in-run follow-ups cold
+    kvwindow_replay_test.go:115: old rule: 35 of 59 cold
+--- PASS: TestWindowedKV_i3Replay (0.00s)
+=== RUN   TestWindowedKV_view
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestWindowedKV_view (0.24s)
+=== RUN   TestWindowedKV_allocation
+cuda: prefill width 2048 rows (11 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+--- PASS: TestWindowedKV_allocation (0.25s)
+=== RUN   TestWindowedKV_decodeIdentity
+=== RUN   TestWindowedKV_decodeIdentity/mistral-tiny-window
+cuda: prefill width 2048 rows (11 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kvwindow_test.go:232: final base 360 after 400 steps (window 16, slack 24)
+=== RUN   TestWindowedKV_decodeIdentity/gemma3-vl-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kvwindow_test.go:232: final base 360 after 400 steps (window 16, slack 24)
+=== RUN   TestWindowedKV_decodeIdentity/cohere2-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kvwindow_test.go:232: final base 370 after 400 steps (window 8, slack 24)
+--- PASS: TestWindowedKV_decodeIdentity (1.32s)
+    --- PASS: TestWindowedKV_decodeIdentity/mistral-tiny-window (0.41s)
+    --- PASS: TestWindowedKV_decodeIdentity/gemma3-vl-tiny (0.42s)
+    --- PASS: TestWindowedKV_decodeIdentity/cohere2-tiny (0.49s)
+=== RUN   TestWindowedKV_prefillIdentity
+=== RUN   TestWindowedKV_prefillIdentity/mistral-tiny-window
+cuda: prefill width 2048 rows (11 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kvwindow_test.go:259: plen 20: identical through 60 decode steps, final base 40
+cuda: prefill width 2048 rows (11 MiB of scratch; 7054 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kvwindow_test.go:259: plen 41: identical through 60 decode steps, final base 70
+cuda: prefill width 2048 rows (11 MiB of scratch; 7038 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kvwindow_test.go:259: plen 97: identical through 60 decode steps, final base 120
+cuda: prefill width 2048 rows (11 MiB of scratch; 7024 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kvwindow_test.go:259: plen 250: identical through 60 decode steps, final base 270
+=== RUN   TestWindowedKV_prefillIdentity/gemma3-vl-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kvwindow_test.go:259: plen 20: identical through 60 decode steps, final base 40
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kvwindow_test.go:259: plen 41: identical through 60 decode steps, final base 70
+cuda: prefill width 2048 rows (6 MiB of scratch; 7062 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kvwindow_test.go:259: plen 97: identical through 60 decode steps, final base 120
+cuda: prefill width 2048 rows (6 MiB of scratch; 7056 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kvwindow_test.go:259: plen 250: identical through 60 decode steps, final base 270
+=== RUN   TestWindowedKV_prefillIdentity/cohere2-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kvwindow_test.go:259: plen 20: identical through 60 decode steps, final base 50
+cuda: prefill width 2048 rows (6 MiB of scratch; 7066 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kvwindow_test.go:259: plen 41: identical through 60 decode steps, final base 78
+cuda: prefill width 2048 rows (6 MiB of scratch; 7056 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kvwindow_test.go:259: plen 97: identical through 60 decode steps, final base 128
+cuda: prefill width 2048 rows (6 MiB of scratch; 7046 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kvwindow_test.go:259: plen 250: identical through 60 decode steps, final base 278
+--- PASS: TestWindowedKV_prefillIdentity (1.90s)
+    --- PASS: TestWindowedKV_prefillIdentity/mistral-tiny-window (0.60s)
+    --- PASS: TestWindowedKV_prefillIdentity/gemma3-vl-tiny (0.62s)
+    --- PASS: TestWindowedKV_prefillIdentity/cohere2-tiny (0.68s)
+=== RUN   TestWindowedKV_verifyIdentity
+=== RUN   TestWindowedKV_verifyIdentity/mistral-tiny-window
+cuda: prefill width 2048 rows (11 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+=== RUN   TestWindowedKV_verifyIdentity/gemma3-vl-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+=== RUN   TestWindowedKV_verifyIdentity/cohere2-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+--- PASS: TestWindowedKV_verifyIdentity (1.32s)
+    --- PASS: TestWindowedKV_verifyIdentity/mistral-tiny-window (0.43s)
+    --- PASS: TestWindowedKV_verifyIdentity/gemma3-vl-tiny (0.44s)
+    --- PASS: TestWindowedKV_verifyIdentity/cohere2-tiny (0.45s)
+=== RUN   TestWindowedKV_reuseFloor
+=== RUN   TestWindowedKV_reuseFloor/mistral-tiny-window
+cuda: prefill width 2048 rows (11 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+=== RUN   TestWindowedKV_reuseFloor/gemma3-vl-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+=== RUN   TestWindowedKV_reuseFloor/cohere2-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+--- PASS: TestWindowedKV_reuseFloor (0.96s)
+    --- PASS: TestWindowedKV_reuseFloor/mistral-tiny-window (0.30s)
+    --- PASS: TestWindowedKV_reuseFloor/gemma3-vl-tiny (0.32s)
+    --- PASS: TestWindowedKV_reuseFloor/cohere2-tiny (0.33s)
+=== RUN   TestWindowedKV_slotsIdentity
+=== RUN   TestWindowedKV_slotsIdentity/mistral-tiny-window
+cuda: prefill width 2048 rows (11 MiB of scratch; 7054 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+=== RUN   TestWindowedKV_slotsIdentity/gemma3-vl-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7072 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+=== RUN   TestWindowedKV_slotsIdentity/cohere2-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7064 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+--- PASS: TestWindowedKV_slotsIdentity (1.92s)
+    --- PASS: TestWindowedKV_slotsIdentity/mistral-tiny-window (0.57s)
+    --- PASS: TestWindowedKV_slotsIdentity/gemma3-vl-tiny (0.61s)
+    --- PASS: TestWindowedKV_slotsIdentity/cohere2-tiny (0.75s)
+=== RUN   TestWindowedKV_stepIdentity
+=== RUN   TestWindowedKV_stepIdentity/mistral-tiny-window
+cuda: prefill width 2048 rows (11 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+=== RUN   TestWindowedKV_stepIdentity/gemma3-vl-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7062 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+=== RUN   TestWindowedKV_stepIdentity/cohere2-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7046 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+--- PASS: TestWindowedKV_stepIdentity (1.41s)
+    --- PASS: TestWindowedKV_stepIdentity/mistral-tiny-window (0.48s)
+    --- PASS: TestWindowedKV_stepIdentity/gemma3-vl-tiny (0.46s)
+    --- PASS: TestWindowedKV_stepIdentity/cohere2-tiny (0.48s)
+=== RUN   TestWindowedKV_uploadKV
+=== RUN   TestWindowedKV_uploadKV/mistral-tiny-window
+cuda: prefill width 2048 rows (11 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+=== RUN   TestWindowedKV_uploadKV/gemma3-vl-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+=== RUN   TestWindowedKV_uploadKV/cohere2-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+--- PASS: TestWindowedKV_uploadKV (1.05s)
+    --- PASS: TestWindowedKV_uploadKV/mistral-tiny-window (0.34s)
+    --- PASS: TestWindowedKV_uploadKV/gemma3-vl-tiny (0.34s)
+    --- PASS: TestWindowedKV_uploadKV/cohere2-tiny (0.37s)
+=== RUN   TestWindowedKV_agentTurns
+=== RUN   TestWindowedKV_agentTurns/mistral-tiny-window
+cuda: prefill width 2048 rows (11 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (11 MiB of scratch; 7054 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kvwindow_test.go:555: turn 0: reused 0 windowed, 0 full
+    kvwindow_test.go:555: turn 1: reused 70 windowed, 70 full
+    kvwindow_test.go:555: turn 2: reused 102 windowed, 102 full
+    kvwindow_test.go:555: turn 3: reused 116 windowed, 116 full
+    kvwindow_test.go:555: turn 4: reused 128 windowed, 128 full
+    kvwindow_test.go:555: turn 5: reused 130 windowed, 130 full
+    kvwindow_test.go:555: turn 6: reused 162 windowed, 162 full
+    kvwindow_test.go:555: turn 7: reused 176 windowed, 176 full
+    kvwindow_test.go:555: turn 8: reused 0 windowed, 20 full
+=== RUN   TestWindowedKV_agentTurns/gemma3-vl-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kvwindow_test.go:555: turn 0: reused 0 windowed, 0 full
+    kvwindow_test.go:555: turn 1: reused 41 windowed, 41 full
+    kvwindow_test.go:555: turn 2: reused 56 windowed, 56 full
+    kvwindow_test.go:555: turn 3: reused 88 windowed, 88 full
+    kvwindow_test.go:555: turn 4: reused 120 windowed, 120 full
+    kvwindow_test.go:555: turn 5: reused 152 windowed, 152 full
+    kvwindow_test.go:555: turn 6: reused 184 windowed, 184 full
+    kvwindow_test.go:555: turn 7: reused 216 windowed, 216 full
+    kvwindow_test.go:555: turn 8: reused 0 windowed, 20 full
+=== RUN   TestWindowedKV_agentTurns/cohere2-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (6 MiB of scratch; 7066 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+    kvwindow_test.go:555: turn 0: reused 0 windowed, 0 full
+    kvwindow_test.go:555: turn 1: reused 70 windowed, 70 full
+    kvwindow_test.go:555: turn 2: reused 102 windowed, 102 full
+    kvwindow_test.go:555: turn 3: reused 134 windowed, 134 full
+    kvwindow_test.go:555: turn 4: reused 166 windowed, 166 full
+    kvwindow_test.go:555: turn 5: reused 198 windowed, 198 full
+    kvwindow_test.go:555: turn 6: reused 230 windowed, 230 full
+    kvwindow_test.go:555: turn 7: reused 262 windowed, 262 full
+    kvwindow_test.go:555: turn 8: reused 0 windowed, 20 full
+--- PASS: TestWindowedKV_agentTurns (1.38s)
+    --- PASS: TestWindowedKV_agentTurns/mistral-tiny-window (0.43s)
+    --- PASS: TestWindowedKV_agentTurns/gemma3-vl-tiny (0.44s)
+    --- PASS: TestWindowedKV_agentTurns/cohere2-tiny (0.51s)
+=== RUN   TestWindowedKV_rollbackReuse
+=== RUN   TestWindowedKV_rollbackReuse/mistral-tiny-window
+cuda: prefill width 2048 rows (11 MiB of scratch; 7068 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (11 MiB of scratch; 7054 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestWindowedKV_rollbackReuse/gemma3-vl-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7076 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (6 MiB of scratch; 7070 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestWindowedKV_rollbackReuse/cohere2-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: prefill width 2048 rows (6 MiB of scratch; 7066 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestWindowedKV_rollbackReuse (1.26s)
+    --- PASS: TestWindowedKV_rollbackReuse/mistral-tiny-window (0.42s)
+    --- PASS: TestWindowedKV_rollbackReuse/gemma3-vl-tiny (0.40s)
+    --- PASS: TestWindowedKV_rollbackReuse/cohere2-tiny (0.45s)
+PASS
+ledger: 149 device(s) released in this run

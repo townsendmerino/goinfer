@@ -91,6 +91,15 @@ testdata/deepseek-tiny int4/slots4
 testdata/deepseek-tiny int4/ssm
 testdata/deepseek-tiny int4/windowed
 testdata/deepseek-tiny int4/windowed+expert-cache
+testdata/flint-tiny int4
+testdata/flint-tiny int4/expert-cache
+testdata/flint-tiny int4/kv-f16
+testdata/flint-tiny int4/kv-i8
+testdata/flint-tiny int4/slots2
+testdata/flint-tiny int4/slots4
+testdata/flint-tiny int4/ssm
+testdata/flint-tiny int4/windowed
+testdata/flint-tiny int4/windowed+expert-cache
 testdata/gemma1-tiny f32
 testdata/gemma1-tiny f32/g32
 testdata/gemma1-tiny int4
@@ -335,6 +344,7 @@ testdata/mixtral-tiny int4/windowed+expert-cache
 testdata/nemotron-tiny int4
 testdata/nemotron-tiny int4/expert-cache
 testdata/nemotron-tiny int4/g32
+testdata/nemotron-tiny int4/kv-f16
 testdata/nemotron-tiny int4/kv-i8
 testdata/nemotron-tiny int4/slots2
 testdata/nemotron-tiny int4/slots4

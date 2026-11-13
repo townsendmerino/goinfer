@@ -161,6 +161,7 @@ func TestKVF16_F1Exactness(t *testing.T) {
 		{"glm-tiny", 32, nil},
 		{"decoder/testdata/laguna-m1-tiny", 32, nil},
 		{"decoder/testdata/laguna-xs2-tiny", 32, nil}, // MoE with a sliding window, so the ring
+		{"flint-tiny", 32, nil},                       // attention sinks, MoE and a sliding window
 	} {
 		path := filepath.Join("..", "testdata", fx.dir)
 		if rel, ok := strings.CutPrefix(fx.dir, "decoder/"); ok {

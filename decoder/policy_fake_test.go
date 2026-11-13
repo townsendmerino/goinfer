@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/constrain"
+	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
 // scriptedForward is a fake Forward (SB5): the logits after a history are a pure function of that history, so a policy
@@ -439,13 +440,39 @@ func (k *fakeKV) truncate(pos int) bool {
 	return exact
 }
 
+// fakeSeqView is fakeKV and the session's token record as the kvmgr.SequenceState Session.rewindForReuse hands to
+// kvmgr.RewindSequence, with the rule of cpuSequenceState.ReusablePrefix (a prefix past the KV's position, or a cut a ring
+// cannot make exactly, is not servable).
+type fakeSeqView struct {
+	kv     *fakeKV
+	tokens []int
+}
+
+func (v fakeSeqView) Len() int                  { return len(v.tokens) }
+func (v fakeSeqView) Tokens() []int             { return v.tokens }
+func (v fakeSeqView) Root() kvmgr.Root          { return kvmgr.Root{Model: "fake", Precision: "f32"} }
+func (v fakeSeqView) Images() []kvmgr.ImageSpan { return nil }
+func (v fakeSeqView) Classes() []kvmgr.ClassRun { return nil }
+func (v fakeSeqView) Recurrent() bool           { return v.kv.recurrent }
+func (v fakeSeqView) Checkpoint() int           { return 0 }
+func (v fakeSeqView) Floor() int                { return 0 }
+func (v fakeSeqView) Truncate(target int) bool {
+	return target >= 0 && target <= len(v.kv.hist) && v.kv.truncate(target)
+}
+func (v fakeSeqView) ReusablePrefix(prefix int) int {
+	if prefix <= 0 || prefix > len(v.kv.hist) || (prefix < len(v.kv.hist) && v.kv.ring > 0 && prefix < len(v.kv.hist)-v.kv.ring) {
+		return 0
+	}
+	return prefix
+}
+
 // fakeSessionTurn is one Session.Generate on the fake, as the CPU decode loop runs it: rewind the KV for the prompt,
 // prefill the rest, emit greedy tokens, forward and commit each emitted token but the last, stop on a stop token; cutAt
 // > 0 ends the turn after that many commits with the KV one token behind (a forward that failed mid-sweep). It returns
 // the stream, the reuse, and the session's new tokens.
 func fakeSessionTurn(kv *fakeKV, tokens, prompt []int, clean bool, n, cutAt int, isStop func(int) bool) (gen []int, matched int, after []int) {
 	ctx := context.Background()
-	matched = sessionRewind(tokens, prompt, clean, false, kv.truncate)
+	matched = kvmgr.RewindSequence(fakeSeqView{kv, tokens}, kvmgr.Request{Root: kvmgr.Root{Model: "fake", Precision: "f32"}, Tokens: prompt}, clean)
 	logits, _ := kv.Prefill(ctx, prompt[matched:])
 	seq := slices.Clone(prompt)
 	for {
@@ -469,7 +496,7 @@ func fakeSessionTurn(kv *fakeKV, tokens, prompt []int, clean bool, n, cutAt int,
 	return gen, matched, after
 }
 
-// TestSessionPolicy_exactOnTheFake is SB5-P3 for sessions: a run of turns on one fake KV (a cold start, a resume
+// TestSessionPolicy_exactOnTheFake is SB5-P3 for sessions, through kvmgr.RewindSequence (what Session.rewindForReuse calls): a run of turns on one fake KV (a cold start, a resume
 // extending the last turn, the same prompt again, a rewind to a shorter prefix, a divergence, a turn cut off mid-write)
 // emits, turn by turn, exactly what cold decoding of that turn's prompt emits, with a plain KV, a ring cache that cannot
 // truncate exactly below a window, and recurrent state; and the session's tokens are always the KV's contents.
