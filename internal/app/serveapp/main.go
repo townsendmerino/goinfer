@@ -28,6 +28,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"io"
 	"net"
 	"net/http"
@@ -989,7 +990,7 @@ func newServer(cfg config) (*server, error) {
 	}
 	// 256 matches responseStore's own bound (newResponseStore(256), just below) — no dedicated
 	// -job-cap flag yet; a job past this many jobs old is only evicted once terminal (evictLocked).
-	jobs, err := newJobStore(cfg.jobDir, 256)
+	jobs, err := jobs.NewStore(cfg.jobDir, 256)
 	if err != nil {
 		return nil, fmt.Errorf("-job-dir %q: %w", cfg.jobDir, err)
 	}

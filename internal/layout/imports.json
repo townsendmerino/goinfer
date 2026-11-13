@@ -411,6 +411,7 @@
       "internal/app/connect",
       "internal/app/loadflags",
       "internal/app/pullcmd",
+      "internal/app/serveapp/jobs",
       "internal/audio",
       "internal/batchio",
       "internal/clef",
@@ -429,6 +430,9 @@
       "multimodal",
       "pull",
       "tokenizer"
+    ],
+    "internal/app/serveapp/jobs": [
+      "internal/cost"
     ],
     "internal/audio": [
       "internal/vision"
@@ -725,6 +729,7 @@
       "internal/app/connect",
       "internal/app/inproc",
       "internal/app/loadflags",
+      "internal/app/serveapp/jobs",
       "internal/audio",
       "internal/clef",
       "internal/config",

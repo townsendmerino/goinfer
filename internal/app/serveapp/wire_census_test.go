@@ -82,7 +82,7 @@ var wireNorms = []struct {
 		return m[:strings.Index(m, ":")+1] + `"<time>"`
 	}},
 	{"logprob", regexp.MustCompile(`"logprob":\s*-?[0-9.]+(e-?[0-9]+)?`), func(string) string { return `"logprob":0` }},
-	// A turn's timings (turn_timings.go): which fields are present is the record; their values are wall time.
+	// A turn's timings (jobs/turn_timings.go): which fields are present is the record; their values are wall time.
 	{"timings", regexp.MustCompile(`"(queue_wait_ms|prefill_ms|decode_ms|ttft_ms)":\s*[0-9.]+(e-?[0-9]+)?`), func(m string) string {
 		return m[:strings.Index(m, ":")+1] + `"<ms>"`
 	}},
