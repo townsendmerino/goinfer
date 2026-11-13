@@ -1164,7 +1164,9 @@ jobs:
         run: go vet -tags 'gpu goinfer_testhooks' ./backend/webgpu/...
 
       - name: test -tags gpu
-        run: go test -short -tags 'gpu goinfer_testhooks' ./backend/webgpu/...
+        # -timeout 20m, not the 10m default: this runner takes 330 to 530 s for ./backend/webgpu beside ./backend/webgpu/internal/kernels
+        # (4x the same suite on a Mesa adapter), so contention alone crossed 600 s. A hang still fails, at 20 minutes.
+        run: go test -timeout 20m -short -tags 'gpu goinfer_testhooks' ./backend/webgpu/...
 
   # cgo-free Metal module (metal/) on darwin/arm64 — the purego-objc resident decode + f16-MMA
   # prefill kernels. It is its OWN module (metal/go.mod, `replace ../`), so NEITHER the root nor
