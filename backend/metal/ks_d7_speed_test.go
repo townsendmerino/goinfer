@@ -31,7 +31,8 @@ func ksd7Load(t *testing.T, path string, opts decoder.Options, old bool) (*decod
 	if rf == nil {
 		t.Fatalf("%s did not go resident: %s", path, m.ResidentDecline())
 	}
-	pf, ok := rf.(decoder.Prefiller)
+	pf := decoder.SubsystemsOf(rf).Prefill
+	ok := pf.PrefillAvailable()
 	if !ok {
 		t.Fatalf("%s: no batched prefill", path)
 	}

@@ -48,7 +48,8 @@ func TestPrefill_gemmTileAB(t *testing.T) {
 	if !isRD {
 		t.Fatalf("ResidentForwardForTest returned %T, want *residentDecoder", rf)
 	}
-	pf, ok := rf.(decoder.Prefiller)
+	pf := decoder.SubsystemsOf(rf).Prefill
+	ok := pf.PrefillAvailable()
 	if !ok {
 		t.Skip("resident forward does not implement Prefiller")
 	}

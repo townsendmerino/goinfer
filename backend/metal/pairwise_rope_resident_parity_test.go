@@ -293,7 +293,8 @@ func TestGlmOcrResidentParityMetal(t *testing.T) {
 	// int8int8: glm-ocr-tiny's hidden size (48) is not a multiple of 32, which Metal's int4 needs; CUDA's gate runs it at
 	// int8int8 too. On Metal that is the native int8 resident.
 	mRes, cpuRow, cpu32, a := pwLoad(t, ckpt, "int8int8")
-	rmp, ok := mRes.ResidentForwardForTest().(decoder.ResidentMRoPEPrefill)
+	rmp := decoder.SubsystemsOf(mRes.ResidentForwardForTest()).Prefill
+	ok := rmp.MRoPEPrefillAvailable()
 	if !ok {
 		t.Fatal("the Metal resident is not a decoder.ResidentMRoPEPrefill")
 	}

@@ -161,7 +161,8 @@ func TestProdThroughput(t *testing.T) {
 		}
 	}
 	// greedy fast path: same chain, 4 B readback instead of the logits vector
-	rg, ok := rf.(decoder.ResidentGreedy)
+	rg := decoder.SubsystemsOf(rf).Decode
+	ok := rg.GreedyAvailable()
 	bestG := 1e18
 	if ok {
 		stepG := func() {
@@ -229,7 +230,7 @@ func TestGreedyFastPathIdentical(t *testing.T) {
 	// cudaResident stopped satisfying it, both arms would take the logits path and this gate would
 	// report "token-identical" having compared the logits path to itself. The kv-only sibling
 	// (kvonly_prefill_test.go) already asserts its ResidentPrefillKV precondition this way.
-	if _, ok := m.ResidentForwardForTest().(decoder.ResidentGreedy); !ok {
+	if ok := decoder.SubsystemsOf(m.ResidentForwardForTest()).Decode.GreedyAvailable(); !ok {
 		t.Fatal("cuda resident does not implement ResidentGreedy — the fast arm would take the " +
 			"logits path and this gate would compare it to itself")
 	}

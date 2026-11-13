@@ -37,7 +37,8 @@ func resolveUploadKVModel(t *testing.T) string {
 // uploadPass opens an upload pass on rf, as the decoder's upload does, and returns the call that ends it.
 func uploadPass(t *testing.T, rf decoder.ResidentForward) func() {
 	t.Helper()
-	p, ok := rf.(decoder.ResidentKVUploadPass)
+	p := decoder.SubsystemsOf(rf).KV
+	ok := p.KVUploadPassAvailable()
 	if !ok {
 		t.Fatal("the resident has no upload pass")
 	}

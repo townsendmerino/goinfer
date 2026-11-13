@@ -44,7 +44,8 @@ func TestPromptHiddenAllResidentMetal(t *testing.T) {
 				}
 				t.Fatalf("%s did not go resident — decode path %q; decline: %s", ckpt, mRes.DecodePath(), mRes.ResidentDecline())
 			}
-			rr, ok := rf.(decoder.ResidentResidualAll)
+			rr := decoder.SubsystemsOf(rf).Prefill
+			ok := rr.ResidualAllAvailable()
 			if !ok {
 				t.Fatal("the metal resident runner does not implement decoder.ResidentResidualAll")
 			}

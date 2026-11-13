@@ -70,7 +70,8 @@ func TestSmolLM3ResidentSmokeMetal(t *testing.T) {
 	t.Logf("SmolLM3 prefill path: %s", reason)
 
 	decoder.SetKnobEnvForTest(t, mRes, "GOINFER_METAL_FAST_PREFILL_FLOOR", "0")
-	pf, ok := rf.(decoder.Prefiller)
+	pf := decoder.SubsystemsOf(rf).Prefill
+	ok := pf.PrefillAvailable()
 	if !ok {
 		t.Fatalf("rf does not implement decoder.Prefiller")
 	}

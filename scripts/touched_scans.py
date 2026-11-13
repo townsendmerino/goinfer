@@ -64,6 +64,8 @@ SCANS = [
     # decoder
     Scan("decoder", "TestDispatchCensus", NT("decoder")),
     Scan("decoder", "TestResidentSubsystems_NoScatteredMicroAssertions", NT("decoder")),
+    # reads every .go file under each backend module, subdirectories included (fnmatch's * crosses /)
+    Scan("decoder", "TestResidentSubsystems_NoScatteredMicroAssertionsInBackends", F("backend/cuda/*.go", "backend/metal/*.go", "backend/webgpu/*.go")),
     # MM1's decision census pins every fit decision: a change to the fit code, the machine zoo or a fixture it reads runs it. Every
     # censusFixtures entry has "tiny" in its name (TestCensusFixtures_areTheCommittedOnes).
     Scan("decoder", "TestStepShapes_assertedOnlyInStep", NT("decoder")),

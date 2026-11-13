@@ -58,9 +58,18 @@ after the move under `backend/` together: `backend/cuda/resident.go` 109, `backe
 the changed hunks fall on `Options` (27), `Load` (26), the `Model` struct (24) and `modelFromOptions` (20): a new option
 touches all four.
 
-**The package seam, for scale.** Non-test code outside `decoder` names these many distinct `decoder` identifiers:
-`backend/metal` 117, `backend/cuda` 111, `internal/app/serveapp` 50, `backend/webgpu` 41. The October census
-(`docs/completed/task-subsystems-2026-10.md` §2.2) read 103, 93, 52 and 35, so the backend seams have widened.
+**The package seam, for scale.** Non-test code outside `decoder` names these many distinct package-level `decoder`
+identifiers: `backend/metal` 102, `backend/cuda` 90, `internal/app/serveapp` 43, `backend/webgpu` at least 37.
+Type-resolved (`ken go uses . <package> decoder`, three build configurations, 2026-11-13); WebGPU's is a lower bound,
+because its configuration type-checks with errors where cgo is off. Counting methods and fields as well, non-test code
+names 303 in metal, 334 in cuda, 148 in webgpu and 126 in serveapp. Test code is the wider seam: 187 package-level
+names in metal's and 189 in cuda's, led by `decoder.Options` (622 test lines in cuda) and the two test hooks
+`Model.EmbedResidentForTest` and `Model.ResidentForwardForTest` (287 and 281).
+
+*Corrected 2026-11-13.* This paragraph first read 117, 111, 50 and 41, from a regular expression that also counted
+names in comments, and concluded from the October census (`docs/completed/task-subsystems-2026-10.md` §2.2: 103, 93,
+52 and 35) that the backend seams had widened. The typed counts do not support that: they sit at or below October's,
+whose method is not recorded, so the two are not comparable and no trend is claimed.
 
 ## 3 · The rows
 
