@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestAutoBackend_int8int8 (slice 5, docs/tasks/task-metal-int8-2026-10.md): with -backend auto on Metal, a dense
+// TestAutoBackend_int8int8 (slice 5, docs/completed/task-metal-int8-2026-10.md): with -backend auto on Metal, a dense
 // int8int8 model goes resident on the native int8 path, at the precision it loaded at, and so does an int8int8 MoE
 // (slice 4); with the MoE path off, Metal would re-quantize it to int4, and auto drops it for the CPU and says why.
 func TestAutoBackend_int8int8(t *testing.T) {

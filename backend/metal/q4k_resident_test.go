@@ -18,7 +18,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
 )
 
-// TestQ4KLaneResidentQwen is the q4k lane's by-day wiring smoke (docs/tasks/task-metal-q4k-2026-10.md), not G-Q2: a
+// TestQ4KLaneResidentQwen is the q4k lane's by-day wiring smoke (docs/completed/task-metal-q4k-2026-10.md), not G-Q2: a
 // Qwen2.5-Coder q4_k_m at --quant q4k, resident on Metal, against the CPU at q4k on the same file, teacher-forced over
 // 32 positions. The two files cover the lane's shapes between them:
 //   - 0.5B: ffn_down Q4_K in half the layers and Q6_K (int8) in the rest, as Phi-3's; everything else int8 (Q5_0/Q8_0);

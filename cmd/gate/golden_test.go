@@ -15,7 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
 )
 
-// SB12's goldens (docs/tasks/task-subsystems-2026-10.md §8 SB12, gate SB12-C2): each case under goldenRoot is a recorded
+// SB12's goldens (docs/completed/task-subsystems-2026-10.md §8 SB12, gate SB12-C2): each case under goldenRoot is a recorded
 // input and the verdict today's grader gives on it. TestGraderGoldens regrades every case from its recorded inputs alone,
 // so a grader that moves out of its runner must reproduce each want.txt byte for byte. -update-goldens captures a case:
 // it resolves the git lookups the grader asks for with real git, stores the answers in case.json, and writes want.txt.

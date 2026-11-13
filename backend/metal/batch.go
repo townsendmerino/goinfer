@@ -18,7 +18,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// MC3 (docs/tasks/task-concurrency-2026-09.md): batched decode, one decode token for up to batchMaxSeqs sequences in ONE
+// MC3 (docs/tasks/parked/task-concurrency-2026-09.md): batched decode, one decode token for up to batchMaxSeqs sequences in ONE
 // command buffer, each sequence on its own resident KV slot at its own position, and every logit bit-identical to
 // production's single-token forward on that sequence (TestMC3Step_bitIdentical). Per-row work runs production's own
 // kernels, per sequence: norm + int8 quantisation, RoPE, the KV store into that sequence's slot, attention over that slot
@@ -859,7 +859,7 @@ var mc3AdjRowsOn = true
 const batchTGBytes = 4 * 2 * 32 * 8
 
 // calibrateRows decides, once, at which batch sizes qkv and gate|up are cheaper as B per-row production GEMVs than as one
-// fragment dispatch (docs/tasks/task-concurrency-2026-09.md, MC3 S4). The fragment's cost is fixed for any B up to 8 and a
+// fragment dispatch (docs/tasks/parked/task-concurrency-2026-09.md, MC3 S4). The fragment's cost is fixed for any B up to 8 and a
 // GEMV's is per row, so on large shapes (a bandwidth-bound GEMV against an ALU-bound fragment) the GEMVs win at small B.
 // Both arms run on the real weights of the first layers, one layer's weights per dispatch so the cache does not serve
 // them, and the fastest of 7 command buffers after 3 warm-ups decides. The choice changes speed only: the per-row path is
@@ -996,7 +996,7 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 }
 
 // multiOut is what a step returns. multiNoHead and multiLastRow serve a prompt run on the step kernels (prefillByStep, R-19,
-// docs/tasks/task-recompute-audit.md): a piece before the last needs only its K/V, so the step encodes no final norm, LM head
+// docs/completed/task-recompute-audit.md): a piece before the last needs only its K/V, so the step encodes no final norm, LM head
 // or argmax and returns nothing; the last piece needs only its last row's logits, so only that row is copied out (the head
 // still runs for every row: it reads the whole LM head's weights once at any row count).
 type multiOut int
@@ -1127,7 +1127,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		b.uMaxS.SetU32(uint32(maxS))
 	}
 	e := r.q.Begin()
-	// The step's two blocks (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-d2): every layer the step admits is
+	// The step's two blocks (docs/completed/task-forward-architecture-2026-10.md §4.9, OP4m-d2): every layer the step admits is
 	// an attention step and a dense FFN step (batchIneligible), and each block emits the dispatches the step always emitted.
 	attnRows := func(l int, L *residLayer) {
 		g := L.geom

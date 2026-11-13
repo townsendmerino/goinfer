@@ -227,7 +227,7 @@ func TestWatch_ctxCancelStopsTheGoroutine(t *testing.T) {
 	}
 }
 
-// TestWatch_keyingOnRSSWouldHaveMissedR11c is the inverting-guard mutation check docs/tasks/task-never-swap-2026-09.md
+// TestWatch_keyingOnRSSWouldHaveMissedR11c is the inverting-guard mutation check docs/completed/task-never-swap-2026-09.md
 // S3 asks for, encoded as a test so the mistake it guards against cannot come back silently. CLAUDE.md: "A guard that
 // INVERTS under the condition it exists for is worse than no guard". In the real R11(c) run
 // (docs/measurements/metal-moe-autopager-m26-2026-09-20.md) swap-used genuinely grew and NEVER came back down, while the

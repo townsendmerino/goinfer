@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// qwenTowerPlacement (S4, docs/tasks/task-multimodal-support-2026-10.md): Qwen2.5-VL's tower goes to aikit's CUDA tower only under --backend cuda with a float32 tower; every
+// qwenTowerPlacement (S4, docs/completed/task-multimodal-support-2026-10.md): Qwen2.5-VL's tower goes to aikit's CUDA tower only under --backend cuda with a float32 tower; every
 // other case is the CPU with its reason named, and -require-backend refuses the device fallbacks. Under webgpu the device tower is opt-in (-vision-device gpu).
 func TestQwenTowerPlacement(t *testing.T) {
 	ok := func() error { return nil }

@@ -9,7 +9,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// OP2b step 2a and 2d (docs/tasks/task-forward-architecture-2026-10.md §4.7): BuildResident takes each layer's mixer and feed-forward flag from
+// OP2b step 2a and 2d (docs/completed/task-forward-architecture-2026-10.md §4.7): BuildResident takes each layer's mixer and feed-forward flag from
 // decoder.Model.ResidentLayerOps and nothing else decides a layer's kind. This test builds a fixture of every family the builder knows and checks each
 // layer's built kind against a source independent of ResidentLayerOps (the family's own layer predicate or block kind), so a builder that filled the field
 // wrongly, or a ResidentLayerOps that drifted from the family, is red here.

@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// T0.3 of docs/tasks/task-metal-audit-2026-10.md: three guards from docs/audit-metal-2026-09-30.md that fail closed.
+// T0.3 of docs/completed/task-metal-audit-2026-10.md: three guards from docs/audit-metal-2026-09-30.md that fail closed.
 
 // TestAttnFAMaxG_matchesKernel: attnFAGroupOK's bound is only as good as its constant, which must be the kernel's own
 // array size (F-C03).
@@ -119,7 +119,7 @@ func TestPrefill_declinesNonFiniteLogits(t *testing.T) {
 	}
 	a.poisonPrefillLogitsForTest = false
 	// S17 (G-NF2): an overflowed f16 residual declines too. The int8 head reads its NaN row as finite zeros, which the
-	// logit check above cannot see (Gemma 3 4B, docs/tasks/task-multimodal-support-2026-10.md).
+	// logit check above cannot see (Gemma 3 4B, docs/completed/task-multimodal-support-2026-10.md).
 	a.r.poisonPrefillResidForTest = true
 	if _, err := a.PrefillLast(context.Background(), tinyEmbs(32), 0); err == nil || !strings.Contains(err.Error(), "residual overflowed") {
 		t.Errorf("PrefillLast with an inf in the last residual row: err %v, want the overflow decline", err)

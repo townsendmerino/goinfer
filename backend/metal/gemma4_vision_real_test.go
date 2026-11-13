@@ -42,7 +42,7 @@ func g4vReadPos(t *testing.T, path string) [][2]int {
 	return p
 }
 
-// TestG4VMetal_realParity is Phase VM's gates VM2 and VM3 (docs/tasks/task-embeddinggemma2.md) on the real
+// TestG4VMetal_realParity is Phase VM's gates VM2 and VM3 (docs/completed/task-embeddinggemma2.md) on the real
 // google/embeddinggemma-2 (GOINFER_EG2_DIR, default ~/models/embeddinggemma-2, never the archive), with the encoder and
 // its tower on Metal:
 //

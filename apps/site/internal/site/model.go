@@ -65,7 +65,7 @@ type Fit struct {
 	Note    string
 }
 
-// FitFor is the coarse fits / tight / won't-fit verdict (docs/tasks/task-site-2026-09.md S2). memGB is host RAM and
+// FitFor is the coarse fits / tight / won't-fit verdict (docs/completed/task-site-2026-09.md S2). memGB is host RAM and
 // gpu is apple, nv8, nv16 or none. bytes is the checkpoint's size; moe and gpuEligible come from the family.
 func FitFor(bytes int64, moe, gpuEligible bool, memGB float64, gpu string) Fit {
 	s := float64(bytes) / 1e9

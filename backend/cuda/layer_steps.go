@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-// cudaStep is one entry of CUDA's fusion table (OP4cu-b2, docs/tasks/task-forward-architecture-2026-10.md §4.9a): one of
+// cudaStep is one entry of CUDA's fusion table (OP4cu-b2, docs/completed/task-forward-architecture-2026-10.md §4.9a): one of
 // today's decode segments, emitting exactly its launches. A static step is a graph-capturable launch run (captureGraphs
 // records it); a dynamic one binds per-token state (the position, the key count, a host readback).
 type cudaStep uint8
@@ -241,7 +241,7 @@ func (r *cudaResident) replay(g *gpu.Graph) error {
 	return nil
 }
 
-// prefillStep is one block of the batched prefill's layer body (prefillCore, OP4cu-d1, docs/tasks/task-forward-architecture-2026-10.md
+// prefillStep is one block of the batched prefill's layer body (prefillCore, OP4cu-d1, docs/completed/task-forward-architecture-2026-10.md
 // §4.9a): the DeltaNet rows or the attention half, then the MoE or the dense FFN. Each runs over a pass's M rows.
 type prefillStep uint8
 

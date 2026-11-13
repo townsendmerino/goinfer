@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// TestKSD6_towerOutputsUnchanged is D6-G1 (docs/tasks/task-kernel-survey-2026-10.md, "KS-D6 gates"): MEM2-G1's seven tower
+// TestKSD6_towerOutputsUnchanged is D6-G1 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-D6 gates"): MEM2-G1's seven tower
 // fixtures, three inputs each, with the grid towers' scratch allocated only where read against main's allocation
 // (gridScratchAllForTest): every output byte-equal. The grid towers also run with the oldAttn seam, so the unfused attention's
 // lazily allocated scratch is exercised.

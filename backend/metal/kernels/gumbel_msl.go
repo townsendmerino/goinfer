@@ -1,7 +1,7 @@
 package kernels
 
 // GumbelMSLKernels is device-side temperature-only sampling by Gumbel-max, a port of cuda/gumbel.cu and gpu/gumbel.go (WGSL); read
-// either first, this mirrors their structure kernel for kernel (docs/tasks/red-october.md, R7b). Where MSL differs:
+// either first, this mirrors their structure kernel for kernel (docs/completed/red-october.md, R7b). Where MSL differs:
 //
 //   - MSL has no log1p. The small-w branch (w < 0.25) uses the same 12-term Taylor polynomial gpu/gumbel.go uses, computed
 //     directly from w and never forming 1-w: for w below ~6e-8, 1.0-w rounds exactly to 1.0 in f32 and loses the input, a

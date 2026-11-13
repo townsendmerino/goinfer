@@ -186,7 +186,7 @@ func w4Grade(ref, got []float32, M, N int) string {
 	return ""
 }
 
-// G-S12.4b-1a (docs/tasks/task-multimodal-support-2026-10.md): both multi-row int4 kernels against the single-row
+// G-S12.4b-1a (docs/completed/task-multimodal-support-2026-10.md): both multi-row int4 kernels against the single-row
 // kernel on the same quantized rows, over aligned and ragged K and N and row counts on both sides of a 16-row block and
 // a 64-row tile.
 func TestW4Multi_matchesSingleRow(t *testing.T) {

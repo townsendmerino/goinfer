@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""S5 pager A/B harness (docs/tasks/task-never-swap-2026-09.md, S5 "Measure").
+"""S5 pager A/B harness (docs/completed/task-never-swap-2026-09.md, S5 "Measure").
 
 One invocation = ONE server start + ONE streamed greedy request, so a mode is never measured
 against a warm server the other mode did not also get. The driver (see --help / the S5 record)

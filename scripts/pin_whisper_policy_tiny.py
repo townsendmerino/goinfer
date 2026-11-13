@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14h1's reference (docs/tasks/task-multimodal-support-2026-10.md, "G-S14h"): transformers' generate on the tiny random-weight Whisper of scripts/pin_whisper_ts_tiny.py (testdata/whisper-tiny-ts) with the decode
+"""G-S14h1's reference (docs/completed/task-multimodal-support-2026-10.md, "G-S14h"): transformers' generate on the tiny random-weight Whisper of scripts/pin_whisper_ts_tiny.py (testdata/whisper-tiny-ts) with the decode
 policy switched on, temperature=(0.0,) so no sampled attempt is reachable: per clip and per configuration the segments (start, end, tokens) and the sequence. Writes testdata/whisper-tiny-ts/policy_golden.json.
 Configurations: cond (condition_on_prev_tokens), thr (a logprob and a compression-ratio threshold that "need a fallback" on some windows, with nothing to fall back to), skip (logprob and no-speech thresholds that skip
 windows), skip2 (a lower no-speech threshold: more windows skipped), all (everything together).

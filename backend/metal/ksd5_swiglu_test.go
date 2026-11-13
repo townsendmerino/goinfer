@@ -15,7 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestKSD5_fusedSwigluMatchesTwoStep is D5-G1's kernel half (docs/tasks/task-kernel-survey-2026-10.md, "KS-D5 gates"):
+// TestKSD5_fusedSwigluMatchesTwoStep is D5-G1's kernel half (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-D5 gates"):
 // gemm_w4f16_swiglu against gemm_w4f16_store over the gate|up rows followed by swiglu_f16, at random int4 weights, f16 scales and
 // activations; M = 64, 100, 200; I = 96 and 8,960 (K = 1,536, the 1.5B's hidden); SiLU and GELU-tanh. Every output byte-equal.
 func TestKSD5_fusedSwigluMatchesTwoStep(t *testing.T) {
@@ -80,7 +80,7 @@ func TestKSD5_fusedSwigluMatchesTwoStep(t *testing.T) {
 	}
 }
 
-// TestKSD5c_w8FusedSwigluMatchesTwoStep is D5c-G1's kernel half (docs/tasks/task-kernel-survey-2026-10.md, "KS-D5c gates"):
+// TestKSD5c_w8FusedSwigluMatchesTwoStep is D5c-G1's kernel half (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-D5c gates"):
 // gemm_w8f16_swiglu against gemm_w8f16_m64n64 over the gate|up rows followed by swiglu_f16, at random int8 codes, f32 row scales
 // and f16 activations, D5-G1's 12 cells, in the fast-math library and in the precise one a native int8 resident compiles.
 // Every output byte-equal.

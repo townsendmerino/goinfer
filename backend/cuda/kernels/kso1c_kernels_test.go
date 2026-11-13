@@ -101,7 +101,7 @@ func kso1cQ6KPlanted(raw []byte, out []float64, plant int) {
 	}
 }
 
-// TestKSO1C_nativeKernels is O1C-G1's kernel half (docs/tasks/task-kernel-survey-2026-10.md, "KS-O1 on CUDA: gates"):
+// TestKSO1C_nativeKernels is O1C-G1's kernel half (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-O1 on CUDA: gates"):
 // gemv_q5k_g32 and gemv_q6k_g32 against kso1cRef at super-block counts 1, 2, 6, 12, 19, 32, 35, a row count that leaves a
 // partial block of rows, with bias and accumulate, every row within G-Q1's bar; then each planted reference is red. CUDA's
 // PTX is built offline, so the plants are carried by the reference: a kernel that made the planted mistake would match it.

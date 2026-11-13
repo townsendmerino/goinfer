@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// Audio (Phase A, docs/tasks/task-embeddinggemma2.md). EmbeddingGemma 2's audio tower is gemma4_audio, which aikit's
+// Audio (Phase A, docs/completed/task-embeddinggemma2.md). EmbeddingGemma 2's audio tower is gemma4_audio, which aikit's
 // audio package runs (Gemma4Features, then Gemma4AudioEncoder), so an audio clip's soft tokens come from aikit and
 // replace their placeholder rows in the encoder's input, unscaled, as an image's do.
 

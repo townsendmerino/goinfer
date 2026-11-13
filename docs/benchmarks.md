@@ -225,7 +225,7 @@ A measurement enters a table **only if it satisfies all of**:
   **Update 2026-10-02: on the Mac the default gate is no longer the load average.** `bench_peer.py`
   now defaults to `BENCH_IDLE_GATE=instant` on darwin: before each cell it samples the share of all
   CPUs busy (≤ `BENCH_MAX_BUSY`, 10%) and checks that no other timed workload is running. TE1
-  attempt 5 passed its pre-registration (`docs/tasks/task-test-efficiency-2026-09.md`): the A/A
+  attempt 5 passed its pre-registration (`docs/completed/task-test-efficiency-2026-09.md`): the A/A
   spread matched the load gate's (RMS ratio 1.04), and the gate held through an all-core hog and
   released within 10 s. Linux keeps the load gate at 1.0. A Mac row records which gate admitted
   it, and rows from before this date were admitted by the load average as described above.
@@ -663,7 +663,7 @@ marked stale. The SigLIP vision-prefill row below it **is** current as of 2026-0
 > K=3900 (BEHIND). goinfer's fast path is unchanged (225.0 → 223.8 TTFT tok/s at 3900); the ratio moved because this
 > run uses Ollama's default f16 KV where this row pinned `OLLAMA_KV_CACHE_TYPE=q8_0`.
 
-**R4 step 0** (`docs/tasks/red-october.md`) — same-session re-run against the current kernels,
+**R4 step 0** (`docs/completed/red-october.md`) — same-session re-run against the current kernels,
 superseding the 2026-09-09 pre-fix row (now in `legacy-benchmarks.md` §A) per N-01's flag. Full
 record: [`metal-prefill-ladder-2026-09-18.md`](measurements/metal-prefill-ladder-2026-09-18.md).
 
@@ -923,7 +923,7 @@ the same isolation gap 0's own Gemma 3 row above uses), 1 discarded warm-up + 5 
 | warm (P9a resident reuse) | 0.051 s | **159.98×** |
 
 Full end-to-end, including a real vision-tower forward pass on every cold visit — the actual "does
-resending a screenshot get fast" claim (`docs/tasks/task-first-hour.md` scenario F), 4 visits each (no
+resending a screenshot get fast" claim (`docs/completed/task-first-hour.md` scenario F), 4 visits each (no
 warm-up discard — the tower cost alone dominates any startup noise):
 
 | | median turn time | speedup |
@@ -1274,7 +1274,7 @@ the CUDA §B6/§B7 sweep. **Split-KV was never enabled on Metal** (built, measur
 reverted — ollama-chase §A2-Metal), so unlike the CUDA 0.5B curve these rows carry **no split-KV
 caveat**: this is the single attention path Metal ships.
 
-**R2 step 0** (`docs/tasks/red-october.md`), full record:
+**R2 step 0** (`docs/completed/red-october.md`), full record:
 [`metal-depth-r2-2026-09-18.md`](measurements/metal-depth-r2-2026-09-18.md). Provenance: Apple M1
 Pro, 16 GB, macOS 26.6.2, qwen2.5-coder-1.5b int4, both engines driven over their real HTTP
 servers (`scripts/bench_peer.py`), goinfer `a0924fb6`, Ollama v0.32.5 (FA on). Unlike the
@@ -1305,7 +1305,7 @@ independently costing Ollama 14–36% of its decode throughput, growing with dep
 for the isolation that found and excluded it.)
 
 **2026-09-21 — `attention_fa` shipped as Metal's default decode attention past depth 1536** (R2
-Build, `docs/tasks/red-october.md`), by owner decision, despite missing the peer-parity band this
+Build, `docs/completed/red-october.md`), by owner decision, despite missing the peer-parity band this
 brief itself registered (needed ≥60 tok/s at depth 4000; measured 44.9). Full record:
 [`r2-attn-fa-speed-2026-09-21.md`](measurements/r2-attn-fa-speed-2026-09-21.md) (speed) and
 [`r2-attn-fa-rootcause-2026-09-21.md`](measurements/r2-attn-fa-rootcause-2026-09-21.md) (fidelity
@@ -2166,7 +2166,7 @@ without adding TTFT/prefill instrumentation, so the actual prefill-time comparis
 to answer is still open. Cost 3h38m wall-clock to learn that. A corrected re-run with real TTFT
 capture is a follow-up, not done here.
 
-**M26 re-run 2026-09-23, closing a named follow-up from `docs/tasks/red-october.md`'s R11(b)
+**M26 re-run 2026-09-23, closing a named follow-up from `docs/completed/red-october.md`'s R11(b)
 ("P20: `benchmarks.md` W3 wall-clock column re-run").** `GOINFER_CUDA_MOE_EXPERT_MAJOR` (P20's
 expert-major MoE prefill restructuring) shipped default-on 2026-09-21 with a real 2.26–2.66×
 per-token win on M26 (`docs/measurements/p20-expert-major-m26-2026-09-21.md`), well past the small

@@ -139,7 +139,7 @@ var prefillInt4Fixtures = []struct {
 	{"kv-f16", "llama-tiny", decoder.Options{KVPrecision: "f16"}, []int{7, 40, 70}},
 }
 
-// G-S12.4b-2a (docs/tasks/task-multimodal-support-2026-10.md): the batched pass at int4 against the row-by-row walk,
+// G-S12.4b-2a (docs/completed/task-multimodal-support-2026-10.md): the batched pass at int4 against the row-by-row walk,
 // the last row and the next 8 decode steps from the prefilled cache, at row counts on both sides of the row-shaped
 // kernel's 16-row block and the tiled kernel's 64-row tile.
 func TestPrefillInt4_matchesWalk(t *testing.T) {

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The prefill stall: what a newcomer's long prompt costs the conversations already decoding (MC3 / chunked prefill,
-docs/tasks/task-concurrency-2026-09.md).
+docs/tasks/parked/task-concurrency-2026-09.md).
 
 W7 cannot show it: its turns reuse their history and prefill only ~150-token suffixes. Here D "decoder" clients each
 stream one long greedy generation from a short prompt, and while they run, N "newcomer" requests arrive one after

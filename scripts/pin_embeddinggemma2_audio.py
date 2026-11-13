@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Phase A of docs/tasks/task-embeddinggemma2.md: the reference for EmbeddingGemma 2 audio embeddings.
+"""Phase A of docs/completed/task-embeddinggemma2.md: the reference for EmbeddingGemma 2 audio embeddings.
 
 Writes three seeded 16-bit 16 kHz mono WAVs (chirp, tone bursts and noise; 0.37 s, 2.37 s and 7.83 s, the last not
 aligned to 128 or 160 samples) into --wavs, then, with sentence-transformers loading google/embeddinggemma-2 in float32

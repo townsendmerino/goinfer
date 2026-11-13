@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// mc3Kernels is MC3's S0 probe (docs/tasks/task-concurrency-2026-09.md), TEST-ONLY: a W4A8 GEMM for a SMALL number of
+// mc3Kernels is MC3's S0 probe (docs/tasks/parked/task-concurrency-2026-09.md), TEST-ONLY: a W4A8 GEMM for a SMALL number of
 // activation rows M (2-8 decode sequences), built on R18's shipped rows-per-simdgroup kernel. Each simdgroup computes
 // R output rows x M activation rows: per group it loads each of its R weight rows' uint4 and half scale ONCE, and each
 // of the M rows' 32 staged activations once, then forms R*M integer group sums. Output (r, m) keeps the M = 1 kernel's
@@ -306,7 +306,7 @@ func TestMC3SmallMProbe(t *testing.T) {
 	}
 }
 
-// TestMC3S0PrefillGEMMSmallM: MC3's matrix-unit S0 (docs/tasks/task-concurrency-2026-09.md). The existing prefill GEMM
+// TestMC3S0PrefillGEMMSmallM: MC3's matrix-unit S0 (docs/tasks/parked/task-concurrency-2026-09.md). The existing prefill GEMM
 // (gemm_w4f16_store, the f16 simdgroup_matrix kernel fast prefill uses) timed at M = 1..64 rows on decode shapes,
 // against the production decode GEMV (gemv_w4a8_sa_rows, R18b) run M times — what M sequences cost today, one GEMV
 // each. Its 64x64 tile runs every token row's MMAs whether or not the row exists (the kernel's own comment), so its

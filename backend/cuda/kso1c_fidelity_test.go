@@ -38,7 +38,7 @@ func kso1cKL(p, q []float32) float64 {
 	return kl
 }
 
-// TestKSO1C_towardTheFile is O1C-G6 (docs/tasks/task-kernel-survey-2026-10.md, "KS-O1 on CUDA: gates"): on the 0.5B q4_k_m and Phi-3
+// TestKSO1C_towardTheFile is O1C-G6 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-O1 on CUDA: gates"): on the 0.5B q4_k_m and Phi-3
 // mini q4, one CUDA q4k resident holding both arms (kquantKeepInt8ForTest) and the CPU at f32 on the same GGUF (the file exactly).
 // Over G3's 8 prompts, the CPU's own greedy continuation of 32 tokens is teacher-forced through each arm, and every position's
 // KL(CPU f32 ‖ arm) is taken. PASS per model iff the native arm's mean KL is at most the int8 arm's; up to 1.10× is ambiguous.
@@ -139,7 +139,7 @@ func TestKSO1C_towardTheFile(t *testing.T) {
 	}
 }
 
-// TestKSO1C_realPhi3NonInferiority is O1C-G5, the CUDA G-Q2 (docs/tasks/task-kernel-survey-2026-10.md, "KS-O1 on CUDA: gates"): in one
+// TestKSO1C_realPhi3NonInferiority is O1C-G5, the CUDA G-Q2 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-O1 on CUDA: gates"): in one
 // process, g3Model on Qwen2.5-Coder-1.5B (the validated reference, as G3c runs it), then g3Run on Phi-3 mini q4 with the CUDA resident
 // on the native lane at --quant q4k against the CPU at q4k on the same file. PASS iff Phi-3's teacher-forced agreement is at least the
 // reference's - 2.0 points and its free-run passes at least the reference's - 1; 2.0-4.0 points below is ambiguous (parked).
@@ -225,7 +225,7 @@ func kso1cDocPrompt(t *testing.T, tk *tokenizer.Tokenizer, doc string, n int) (t
 	return "Summarize this document:\n\n" + body, fmt.Sprintf("%s, first %d tokens", doc, n)
 }
 
-// TestKSO1C_longContextQuality is the native lane's long-context quality gate (docs/tasks/task-kernel-survey-2026-10.md, "Owner
+// TestKSO1C_longContextQuality is the native lane's long-context quality gate (docs/tasks/parked/task-kernel-survey-2026-10.md, "Owner
 // decision on #230's long-context bar"): on Phi-3 mini q4, README.md and docs/benchmarks.md each cut to their first 900 tokens
 // inside "Summarize this document:", teacher-forced through both arms of one CUDA q4k resident and through the CPU at f32 on the
 // file. PASS iff on each document the native arm's mean KL to f32 over positions 256 and later is at most 1.05× the int8 arm's.
@@ -304,7 +304,7 @@ func TestKSO1C_longContextQuality(t *testing.T) {
 	}
 }
 
-// TestKSO1C_fillerDiagnostic is LQ2 and LQ3 (docs/tasks/task-kernel-survey-2026-10.md, "#230's review, item 1"), a reading, not a
+// TestKSO1C_fillerDiagnostic is LQ2 and LQ3 (docs/tasks/parked/task-kernel-survey-2026-10.md, "#230's review, item 1"), a reading, not a
 // gate: one Phi-3 resident holding both arms (kso1cLoadBothArms) and the CPU at q4k, each against the CPU at f32, over one prompt.
 // The prompt is TestQ4K_phi3ResidentMatchesCPU's filler at GOINFER_KSO1C_DIAG_REPS repeats (110 by default), or, with
 // GOINFER_KSO1C_DIAG_DOC set, that file's first GOINFER_KSO1C_DIAG_TOKENS tokens (900) inside "Summarize this document:". Per arm

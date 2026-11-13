@@ -21,7 +21,7 @@ import (
 
 // r17Kernels is the graded attention_fa_blk, rebuilt from the shipped section of allKernels into the standalone library form the R17
 // harnesses compile (the prototype's own macro name, its own #include): the shipped text less the score function and the block table
-// (r17GradedKernelSource, r17WithoutTable). The prototype is R17's step 2 (docs/tasks/red-october.md;
+// (r17GradedKernelSource, r17WithoutTable). The prototype is R17's step 2 (docs/completed/red-october.md;
 // docs/measurements/metal-decode-attn-r17-2026-09-25.md): attention_fa's first pass restructured in the shape of
 // llama.cpp's flash_attn_ext_vec. TestR17GradedArm_isTheGradedText holds it to the SHA-256 of the source that was graded.
 var r17Kernels = r17WithoutTable(r17GradedKernelSource())

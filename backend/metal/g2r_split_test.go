@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// G2-R in two processes (docs/tasks/task-forward-architecture-2026-10.md §4.6, "G2-R amendment, 2026-10-15"):
+// G2-R in two processes (docs/completed/task-forward-architecture-2026-10.md §4.6, "G2-R amendment, 2026-10-15"):
 // TestG2R_cpuReference loads only CPU models and saves everything the arms read on the CPU to $GOINFER_G2R_REF;
 // TestG2R_registered then loads only Metal models and compares against that file. Each process's loads meet the fit
 // guard and Metal's memory guard alone. $GOINFER_G2R_COMMIT names the build both processes run; a file made at another

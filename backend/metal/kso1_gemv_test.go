@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// kso1ProtoKernels are O1-G0's prototype native Q5_K and Q6_K GEMVs at R rows a simdgroup (docs/tasks/task-kernel-survey-2026-10.md,
+// kso1ProtoKernels are O1-G0's prototype native Q5_K and Q6_K GEMVs at R rows a simdgroup (docs/tasks/parked/task-kernel-survey-2026-10.md,
 // "KS-O1 on Metal: gates"), appended to allKernels. Q5_K is GGUF's 176-byte block verbatim (d, dmin, scales[12], qh[32],
 // qs[128]) on q4k_rows_acc's lane map. kso1_q6k_rows<R> is the production gemv_q6k_f32_rows<R> at the R this file times, over
 // the lane's segment-wide Q6_K planes (kso1Q6KPlanes); at R = 4 it is the resident's own instance (kso1ProtoName).

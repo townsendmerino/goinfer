@@ -9,7 +9,7 @@ import (
 )
 
 // TestEncoderSpeed_record prints one timed run of an audio encoder on a fixed synthetic window, for the interleaved old/new records of
-// docs/tasks/task-multimodal-support-2026-10.md S14.5 (G-S14s3). It runs two builds' test binaries alternately, so each process times once.
+// docs/completed/task-multimodal-support-2026-10.md S14.5 (G-S14s3). It runs two builds' test binaries alternately, so each process times once.
 // It is a record, not a gate: it asserts nothing and skips unless asked.
 //
 //	AIKIT_SPEED_WHISPER=<whisper checkpoint dir> and/or AIKIT_SPEED_VOXTRAL=<voxtral checkpoint dir> [AIKIT_SPEED_WARM=1] go test -run TestEncoderSpeed_record -v ./audio/

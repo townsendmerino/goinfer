@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
 )
 
-// TestParityKey_matchesFreshDepsHash is VK5's P1 and the builder switch's B1 (docs/tasks/task-subsystems-2026-10.md §5.8):
+// TestParityKey_matchesFreshDepsHash is VK5's P1 and the builder switch's B1 (docs/completed/task-subsystems-2026-10.md §5.8):
 // paritykey's today key, read under the tree's key marker, equals freshDepsHash for every family, so the shadow job's
 // "today" column is the gate's own hash.
 func TestParityKey_matchesFreshDepsHash(t *testing.T) {
@@ -76,7 +76,7 @@ func isBuilder(p string) bool {
 	return filepath.Dir(p) == "decoder" && strings.HasPrefix(base, "arch_") && !strings.HasSuffix(base, "_test.go")
 }
 
-// TestParityKey_shadowMatchesDecoder is VK5 week 2's W1 (docs/tasks/task-subsystems-2026-10.md §5.8): the shadow key
+// TestParityKey_shadowMatchesDecoder is VK5 week 2's W1 (docs/completed/task-subsystems-2026-10.md §5.8): the shadow key
 // computed here (the family's dependency files less the builders, its fixtures' program fingerprints for every GOARCH,
 // then freshDepsHash's kernel tail) equals paritykey.ShadowKey for every family, and a family with no programs keeps
 // today's key.

@@ -10,7 +10,7 @@ import (
 	gc "github.com/eitamring/gocudrv/cuda"
 )
 
-// G2-K, OP1 on CUDA (docs/tasks/task-forward-architecture-2026-10.md §4.6a): each kernel that is built with the attention softcap computes
+// G2-K, OP1 on CUDA (docs/completed/task-forward-architecture-2026-10.md §4.6a): each kernel that is built with the attention softcap computes
 // cap·tanh(score/cap) on the scaled score, before the softmax, against a float64 reference. The three covered kernels are attention
 // (glue), attn_batched (prefill_batched, which decode takes at M = 1) and the split-KV chain (splitkv_scores, then softmax and V-sum, which
 // read the stored capped scores), each at f32 and f16 KV.

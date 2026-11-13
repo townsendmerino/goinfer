@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// TestDecoderSpeed_record prints one timed greedy decode on a held encoder output, for G-S14t3's interleaved old/new record (docs/tasks/task-multimodal-support-2026-10.md, S14.6). It is a record, not a gate:
+// TestDecoderSpeed_record prints one timed greedy decode on a held encoder output, for G-S14t3's interleaved old/new record (docs/completed/task-multimodal-support-2026-10.md, S14.6). It is a record, not a gate:
 // it asserts nothing, and skips unless asked. Each process times once after GOINFER_SPEED_WARM warm-up runs, so two builds' test binaries can be run alternately.
 //
 //	GOINFER_SPEED_WAV=<16-bit wav> [GOINFER_WHISPER_DIR=<checkpoint>] [GOINFER_SPEED_WARM=1] go test -tags realckpt ./internal/runtime/whisper/ -run TestDecoderSpeed_record -v

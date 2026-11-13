@@ -99,7 +99,7 @@ func TestGemma4DenseScaled_metalParity(t *testing.T) {
 		pos0, exact, len(prompt), meanMetal, meanCpu, minFloor)
 
 	// pos-0 kernel correctness (no KV accumulation): the 256-local/512-global geometry must compose.
-	// (The floor was raised from 0.97 by S1.0's amendment, docs/tasks/task-multimodal-support-2026-10.md.)
+	// (The floor was raised from 0.97 by S1.0's amendment, docs/completed/task-multimodal-support-2026-10.md.)
 	if pos0 < 0.99 {
 		t.Errorf("pos-0 Metal-vs-CPUint4 %.6f < 0.99 — the 256-local/512-global resident geometry diverges at the first token (a real bug)", pos0)
 	}
@@ -109,7 +109,7 @@ func TestGemma4DenseScaled_metalParity(t *testing.T) {
 		t.Errorf("mean Metal-vs-CPUint4 %.6f < mean CPUint4-vs-f32 %.6f — Metal diverges FASTER than the fixture's int4 quantization: a real bug, not conditioning",
 			meanMetal, meanCpu)
 	}
-	// S1.0 amendment (docs/tasks/task-multimodal-support-2026-10.md): a floor on the mean itself, set between the
+	// S1.0 amendment (docs/completed/task-multimodal-support-2026-10.md): a floor on the mean itself, set between the
 	// readings before and after the dense layer scalar and v_norm fixes.
 	if meanMetal < 0.90 {
 		t.Errorf("mean Metal-vs-CPUint4 %.6f < 0.90 — the Gemma 4 dense layer (scalar, v_norm) diverges", meanMetal)

@@ -5,13 +5,13 @@ import (
 	"strconv"
 )
 
-// Images already in a conversation's history (docs/tasks/task-first-hour.md). The vision path takes one image span per
+// Images already in a conversation's history (docs/completed/task-first-hour.md). The vision path takes one image span per
 // generation (decoder.GenerateVL and its Qwen and Gemma 4 variants), and a chat client resends the whole conversation,
 // so its second image turn would carry both images and fail with "v1 supports 1 image per request, got 2". There is NO
 // multi-image history: the newest image is kept and every image in an EARLIER message is replaced by a visible note, so
 // the model knows something was there rather than hearing nothing, and the client is told with a header. Several images
 // inside the one latest message are a different thing (the caller asked for them together) and are taken, each its own
-// block, up to maxImagesPerTurn (docs/tasks/task-multimodal-support-2026-10.md).
+// block, up to maxImagesPerTurn (docs/completed/task-multimodal-support-2026-10.md).
 
 // imagesOmittedHeader tells the client how many earlier images this request's answer did not see.
 const imagesOmittedHeader = "X-Goinfer-Images-Omitted"

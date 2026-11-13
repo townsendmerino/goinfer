@@ -68,7 +68,7 @@ func TestLoad_loraOnAQuantizedFileIsRefusedBeforeTranscoding(t *testing.T) {
 	}
 }
 
-// TestLoad_safetensorsDirGoesThroughSidecar is G-S18d's load half (docs/tasks/task-multimodal-support-2026-10.md): where
+// TestLoad_safetensorsDirGoesThroughSidecar is G-S18d's load half (docs/completed/task-multimodal-support-2026-10.md): where
 // the sidecar default holds, a safetensors directory loads through a sidecar built beside it once; the second load
 // reuses it without a rebuild; the tokenizer, chat template included, is still the directory's; and -direct-load keeps
 // the directory.
@@ -151,7 +151,7 @@ func TestLoad_safetensorsDirGoesThroughSidecar(t *testing.T) {
 	}
 }
 
-// TestRouteFor_q4kTakesTheSidecar is D8B-G2's app half (docs/tasks/task-memory-campaign-2026-10.md, D8b-build gates): a
+// TestRouteFor_q4kTakesTheSidecar is D8B-G2's app half (docs/completed/task-memory-campaign-2026-10.md, D8b-build gates): a
 // q4k .gguf takes its sidecar where the platform defaults to one, refuses -stream-weights, and a directory at q4k stays
 // direct.
 func TestRouteFor_q4kTakesTheSidecar(t *testing.T) {

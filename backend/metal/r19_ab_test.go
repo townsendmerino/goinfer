@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// TestR19_stepPrefillAB times R-19 (docs/tasks/task-recompute-audit.md): a short fresh prompt through PrefillLast on the
+// TestR19_stepPrefillAB times R-19 (docs/completed/task-recompute-audit.md): a short fresh prompt through PrefillLast on the
 // step route with every piece's head run (stepPrefillAllHeads, as it was) against R-19's head-less pieces and last-row
 // copy, arms alternated rep by rep in one process after a warm-up, last-row logits compared every rep. Prompts of 16
 // and 31 tokens (1 and 3 head-less pieces). The checkpoint is mc3LoadCheckpoint's (GOINFER_METAL_MC3_MODEL, else the

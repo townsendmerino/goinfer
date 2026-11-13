@@ -589,9 +589,10 @@ func (p kvPrice) bytes(cfg *Config, ctx int) int64 {
 //     priced as one slot of Metal's pools (metalKVBytesFor): the precision ResolveKV delivers there and the full padded context on
 //     every attention layer, sliding ones included, for MetalCtxDefault positions unless the caller pinned a context, clamped to the
 //     model's window. Pricing it at Options.KVPrecision over the whole window would refuse or pin down a load that fits.
+//   - A load that will be CUDA-resident holds its KV on the device (deviceKV), which the host guards do not price.
 //   - Every other load allocates KV per request, up to the window, and that ceiling is what a long request reaches. A CPU load, and a
-//     Metal load Metal does not take, hold it in the CPU cache at the precision ResolveKV("cpu") delivers (Options.KVQuant's, where the
-//     family allows it).
+//     Metal or CUDA load that backend does not take (not compiled, streamed, or outside its gate), hold it in the CPU cache at the
+//     precision ResolveKV("cpu") delivers (Options.KVQuant's, where the family allows it).
 //
 // A Metal resident that then declines for memory falls back to the CPU, whose per-request KV this no longer prices at load. The weights
 // term is unchanged by that fallback, and serve's -require-backend refuses rather than fall back.
@@ -600,13 +601,6 @@ func (p kvPrice) bytes(cfg *Config, ctx int) int64 {
 func kvPricingFor(cfg *Config, opts Options) (p kvPrice, ok bool) {
 	p.pinned = opts.ResidentContext > 0
 	p.kvF16, p.kvI8 = opts.KVPrecision == "f16", opts.KVQuant == "i8"
-	if opts.Backend == "" || opts.Backend == "cpu" { // the CPU cache's precision is KVQuant's, where the family allows it (ResolveKV)
-		p.kvF16 = false
-		if arch, _, err := resolveArchitecture(cfg); err == nil {
-			got, _ := ResolveKV("cpu", arch, opts)
-			p.kvF16 = got == kvPrecF16
-		}
-	}
 	if _, ok := kvPolicies[opts.Backend]; ok {
 		// A backend with a KV policy is f16 only where ResolveKV says so (the default included), else f32 whatever was requested.
 		p.kvF16 = false
@@ -632,14 +626,19 @@ func kvPricingFor(cfg *Config, opts Options) (p kvPrice, ok bool) {
 		}
 		return p, true
 	}
-	if opts.Backend == "metal" { // a load Metal does not take runs on the CPU, whose cache is at KVQuant's precision (ResolveKV)
+	p.deviceKV = d.KVOnDevice
+	switch opts.Backend {
+	case "", "cpu", "metal", "cuda":
+		if p.deviceKV {
+			break
+		}
+		// No resident runner holds this KV, so the CPU cache does, at KVQuant's precision where the family allows it (ResolveKV).
 		p.kvF16 = false
 		if arch, _, err := resolveArchitecture(cfg); err == nil {
 			got, _ := ResolveKV("cpu", arch, opts)
 			p.kvF16 = got == kvPrecF16
 		}
 	}
-	p.deviceKV = d.KVOnDevice
 	switch {
 	case p.pinned:
 		p.ctx = opts.ResidentContext

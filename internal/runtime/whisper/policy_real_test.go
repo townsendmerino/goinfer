@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// G-S14h2 of docs/tasks/task-multimodal-support-2026-10.md: openai/whisper-small with OpenAI's decode policy (conditioning on earlier text, logprob_threshold -1.0, compression_ratio_threshold 2.4, no_speech_threshold 0.6,
+// G-S14h2 of docs/completed/task-multimodal-support-2026-10.md: openai/whisper-small with OpenAI's decode policy (conditioning on earlier text, logprob_threshold -1.0, compression_ratio_threshold 2.4, no_speech_threshold 0.6,
 // one greedy attempt) against transformers 5.15.0 float32, on a 70 s composite of LibriSpeech clips and on a "silent" composite (35 s of zeros, a clip, 35 s of zeros, two clips). Bars: the same segments (count,
 // tokens, start and end to 1e-9), the same sequence and decoded text. The windows' statistics are logged.
 //

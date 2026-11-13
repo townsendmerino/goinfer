@@ -8,7 +8,7 @@ kernel void gv_scale(device float* x [[buffer(0)]], constant uint& n [[buffer(1)
     if (gid < n) x[gid] = x[gid] * s;
 }
 
-// tower_attn_hd{64,72,80}: S17 lever A on Metal (docs/tasks/task-multimodal-support-2026-10.md, "The two Metal levers"):
+// tower_attn_hd{64,72,80}: S17 lever A on Metal (docs/completed/task-multimodal-support-2026-10.md, "The two Metal levers"):
 // a fused, non-causal, online-softmax float32 attention over one segment, replacing eg2Ops.attention's per-head chain
 // (head-major copies, a GEMM for the scores, a row softmax, a GEMM against V transposed, a scatter). q (already scaled by
 // 1/sqrt(head_dim)), k, v and out are [T, nH*HD] with the heads in place. R19's shape (attention_prefill_steel) in f32:
@@ -133,7 +133,7 @@ TOWER_ATTN(80)
 // TowerGemmMSL is the towers' GEMM kernels. Every EmbeddingGemma 2 / Gemma 4 tower library compiles it (newEG2Ops), so the
 // grid towers' lever B and eg2Ops.gemm (tower_gemm_w32, KS-D4) share one copy.
 const TowerGemmMSL = `
-// tower_gemm_{w32,w16}: S17 lever B on Metal (docs/tasks/task-multimodal-support-2026-10.md, "S17's Metal lever B"):
+// tower_gemm_{w32,w16}: S17 lever B on Metal (docs/completed/task-multimodal-support-2026-10.md, "S17's Metal lever B"):
 // C[M,N] = A[M,K]·Wᵀ (+ bias[N]), A in f32, W [N,K] in f32 (w32) or f16 widened to f32 as it is staged (w16), f32
 // accumulation on simdgroup 8x8 tiles. One threadgroup of 16 simdgroups (512 threads) per 64x64 output tile, each
 // simdgroup 16x16 (2x2 fragments: 4x4 per simdgroup spilled, 0.08 TFLOPS against aikit's 1.19, 2026-10-08); K steps of 32

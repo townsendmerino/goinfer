@@ -13,7 +13,7 @@ import (
 )
 
 // One decode token for each of several sequences, each on its own resident KV slot at its own position, in one step
-// (docs/tasks/task-concurrency-2026-09.md). The step is prefillCore's batched layer stack in its multi-sequence mode
+// (docs/tasks/parked/task-concurrency-2026-09.md). The step is prefillCore's batched layer stack in its multi-sequence mode
 // (rows != nil): rms+quant, the q/k/v, o, gate/up and down GEMVs, the batched qk-norm, SwiGLU and residuals run over the
 // B rows through the exact kernels (forceExactKernels holds for tailAllLogits), bit-identical to decode per row. Rope,
 // the KV store and attention run per sequence through decode's own gap (decodeAttnGap), so every row gets exactly the

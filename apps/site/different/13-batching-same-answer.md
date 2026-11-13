@@ -61,7 +61,7 @@ sources:
   - "docs/measurements/concurrency-mc3-7b-w7-2026-09-27.md"
   - "docs/measurements/concurrency-mc3-s3-2026-09-27.md"
   - "docs/measurements/concurrency-mc3-s4-2026-09-27.md"
-  - "docs/tasks/task-concurrency-2026-09.md"
+  - "docs/tasks/parked/task-concurrency-2026-09.md"
   - "docs/server.md"
   - "docs/positioning.md"
 ---

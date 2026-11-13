@@ -97,7 +97,7 @@ type expertPool struct {
 	stagePread  func(e int, s expertSlot)
 	scalePreads atomic.Int64 // stages whose f16 scales were pread from the file too (C-P01); atomic: batch stages run concurrently
 
-	// Lever 3 (docs/tasks/task-m26-mac-2026-10.md): experts guessed for this layer's next use, claimed on the caller's
+	// Lever 3 (docs/completed/task-m26-mac-2026-10.md): experts guessed for this layer's next use, claimed on the caller's
 	// thread and read in the background (prefetchAsync); finishPrefetch, which ensureResidentBatch runs first, waits for
 	// the reads and only then marks them resident, so the GPU never reads a slot still being written.
 	prefetchWG      sync.WaitGroup

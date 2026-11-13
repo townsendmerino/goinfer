@@ -151,3 +151,43 @@ func censusLoadKV(path, kv string) (*Model, error) {
 	censusLoaded.Store(key, m)
 	return m, nil
 }
+
+// TestHostFitKV_cudaFallbackIsTheCPUCachesPrice: a -backend cuda load whose KV is not on the device (CUDA not compiled in, weights
+// streamed, or an architecture outside CUDA's gate) runs on the CPU cache, so both host guards price it as the CPU cache holds it, at
+// the precision KVQuant asks of it, whatever KVPrecision or CUDA's own KV policy would pick.
+func TestHostFitKV_cudaFallbackIsTheCPUCachesPrice(t *testing.T) {
+	qm, _ := parseQuant("f32")
+	var host, device, moved int
+	for _, linked := range []bool{false, true} {
+		restore := setCompiled("cuda", linked)
+		for _, fx := range hostKVFixtures(t) {
+			for _, stream := range []bool{false, true} {
+				for _, pin := range []int{0, 32768} {
+					for _, kv := range []struct{ gpu, cpu string }{{"", ""}, {"f16", ""}, {"", "f16"}, {"", "i8"}, {"i8", ""}} {
+						o := Options{Backend: "cuda", ResidentContext: pin, StreamWeights: stream, KVPrecision: kv.gpu, KVQuant: kv.cpu}
+						f := fitCheckFor(fx.path, "f32", qm, o)
+						p, ok := kvPricingFor(fx.cfg, o)
+						if !ok {
+							continue
+						}
+						if p.deviceKV {
+							device++
+							continue
+						}
+						host++
+						where := fmt.Sprintf("%s linked=%v stream=%v pin=%d kv=%+v ctx=%d", fx.name, linked, stream, pin, kv, p.ctx)
+						if price := fx.m.ResidentKVBytes("cpu", p.ctx, kv.cpu == "f16", kv.cpu == "i8"); f.kvBytes != price {
+							t.Errorf("%s: the host guard prices %d bytes of KV, the CPU cache holds %d", where, f.kvBytes, price)
+							moved++
+						}
+					}
+				}
+			}
+		}
+		restore()
+	}
+	if host == 0 || device == 0 {
+		t.Fatalf("VOID: %d host-priced and %d device-KV loads; both kinds must occur", host, device)
+	}
+	t.Logf("%d host-priced loads checked (%d device-KV passed over), %d differ", host, device, moved)
+}

@@ -1,5 +1,5 @@
 // Package engine is what goinfer's serving shell asks of a model: a generation started from a prepared request and
-// streamed as token ids, and its report once the stream closes (docs/tasks/task-subsystems-2026-10.md, SB7). It is
+// streamed as token ids, and its report once the stream closes (docs/completed/task-subsystems-2026-10.md, SB7). It is
 // Experimental (docs/api-tiers.md): it may change in any release.
 //
 // Contract. An Engine's Start begins one generation and returns its Stream: Tokens, read to its end; Report, the

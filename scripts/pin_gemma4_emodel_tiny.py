@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Pin a tiny-random Gemma 4 E-MODEL (the E2B/E4B shape) — S1.1 of
-docs/tasks/task-multimodal-support-2026-10.md.
+docs/completed/task-multimodal-support-2026-10.md.
 
 Every other Gemma 4 tiny fixture is PLE-free (hidden_size_per_layer_input=0) and has no
 cross-layer KV sharing, because until S1.1 the safetensors loader refused a PLE checkpoint.

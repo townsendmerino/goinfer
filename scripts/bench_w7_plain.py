@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""bench_w7_plain.py — W7 (docs/tasks/red-october.md R12 item iv), simplified: goinfer's single
+"""bench_w7_plain.py — W7 (docs/completed/red-october.md R12 item iv), simplified: goinfer's single
 worker vs llama-server's slots under N concurrent conversations, on plain multi-turn chat (no
 tool-calling).
 
@@ -23,7 +23,7 @@ replaying the same fixture don't share cache credit.
 
   python3 scripts/bench_w7_plain.py out.json --clients 1,2,4
 
-MC0 of docs/tasks/task-concurrency-2026-09.md (added 2026-09-26): every turn now records
+MC0 of docs/tasks/parked/task-concurrency-2026-09.md (added 2026-09-26): every turn now records
 usage.prefill_reused_tokens (goinfer's vendor extension; absent from llama-server), and
 --engines / --backend select goinfer-only runs and the CPU control. `--backend cpu` records under
 the engine key "goinfer_cpu", so a Metal and a CPU sweep can share one results file.

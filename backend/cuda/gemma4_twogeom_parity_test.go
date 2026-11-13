@@ -81,7 +81,7 @@ func TestGemma4DenseTwoGeom_residentParity(t *testing.T) {
 		t.Fatal("cuda resident DECLINED dense Gemma 4 with env on — admission regressed")
 	}
 	t.Logf("two-geometry K=V resident parity: minCosine=%.6f maxAbs=%.4e exact-argmax %d/%d", minCos, maxAbs, exact, n)
-	// S1.0 amendment (docs/tasks/task-multimodal-support-2026-10.md): the 0.995 bar sits between the readings before and after the v_norm fix on the sliding layers; the fix is the mechanism, and the bar is never loosened.
+	// S1.0 amendment (docs/completed/task-multimodal-support-2026-10.md): the 0.995 bar sits between the readings before and after the v_norm fix on the sliding layers; the fix is the mechanism, and the bar is never loosened.
 	if minCos < 0.995 {
 		t.Errorf("minCosine %.6f < 0.995 — the resident two-geometry/K=V forward diverges from CPU", minCos)
 	}

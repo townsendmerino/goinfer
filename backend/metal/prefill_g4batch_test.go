@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/prequant"
 )
 
-// TestG4ExpertBatch_matchesPerRow is D-P01's gate (docs/tasks/task-m26-mac-2026-10.md): the layer-major paged prefill
+// TestG4ExpertBatch_matchesPerRow is D-P01's gate (docs/completed/task-m26-mac-2026-10.md): the layer-major paged prefill
 // with the batched expert phase 2 (g4ExpertBatchOn) against the same pass with the per-row phase 2, on the tiny Gemma 4
 // MoE transcoded as M26's bundle is, paged at 2 and 3 slots of its 4 experts. Prompts of 5 and 12 rows from position
 // 0 and 9 rows continuing a 3-token prefix. The last row's logits, every K/V element and 3 decode steps after it must be

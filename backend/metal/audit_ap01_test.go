@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// A-P01's night grade (docs/tasks/task-metal-audit-2026-10.md, "A-P01: built, pending its grade"): the GEMM tile
+// A-P01's night grade (docs/completed/task-metal-audit-2026-10.md, "A-P01: built, pending its grade"): the GEMM tile
 // selector's policies against each other, timed. Gated like the Batch A probes (GOINFER_METAL_AUDIT_A=1, a timing),
 // GOINFER_AUDIT_MODEL picks the checkpoint and GOINFER_AUDIT_REPS the repetitions.
 

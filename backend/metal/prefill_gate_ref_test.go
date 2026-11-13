@@ -107,7 +107,7 @@ func TestPrefillGateVsReference(t *testing.T) {
 	// meaning "sequential Forward, with attention_fa engaged past 1536" on any future re-run,
 	// changing what this gate's already-recorded results compare against.
 	t.Setenv("GOINFER_METAL_ATTN_FA", "0")
-	// R19 (docs/tasks/red-october.md): GOINFER_METAL_R19_BASELINE=1 runs the fast arm on the retired
+	// R19 (docs/completed/red-october.md): GOINFER_METAL_R19_BASELINE=1 runs the fast arm on the retired
 	// attention_prefill_fused where production now runs attention_prefill_steel — the baseline of R19's precondition 1.
 	if os.Getenv("GOINFER_METAL_R19_BASELINE") == "1" {
 		prefillSteelAttnOff = true
@@ -173,7 +173,7 @@ func TestPrefillGateVsReference(t *testing.T) {
 			// which fails this test's *metalResident type assertion. Pinning to metalCtxCapMax instead would make the fit guard price a
 			// 32k KV and refuse loads that fit. 4096 covers every decision/confirm cell: the widest, K=3900 + continuationN(64)
 			// teacher-forced steps, tops out at pos 3962.
-			// GOINFER_METAL_GATE_QUANT=int8int8 grades the native int8 path (docs/tasks/task-metal-int8-2026-10.md, slice 2): an int8int8
+			// GOINFER_METAL_GATE_QUANT=int8int8 grades the native int8 path (docs/completed/task-metal-int8-2026-10.md, slice 2): an int8int8
 			// load with nativeInt8 on, both arms on its W8 kernels.
 			quant := "int4"
 			switch q := os.Getenv("GOINFER_METAL_GATE_QUANT"); q {

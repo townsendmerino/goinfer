@@ -64,7 +64,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 `
 
-// gegluShaderWGSL is swigluShaderWGSL's GELU-tanh-gated twin, Gemma's FeatGatedGELU (docs/tasks/task-gpu-paths-2026-09.md).
+// gegluShaderWGSL is swigluShaderWGSL's GELU-tanh-gated twin, Gemma's FeatGatedGELU (docs/completed/task-gpu-paths-2026-09.md).
 // The tanh argument is CLAMPED to ±15 before calling tanh: unclamped, it overflows f32 before saturating at Gemma's
 // activation magnitudes and produces NaN. tanh itself saturates to ±1 by |arg|~9, so the clamp is a correctness fix at f32
 // overflow, not an approximation; SwiGLU families never reach this branch. History: docs/code-notes/gpu.md#gegluShaderWGSL.

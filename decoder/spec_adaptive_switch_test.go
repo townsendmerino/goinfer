@@ -40,7 +40,7 @@ func specAdaptiveConversation(t *testing.T, m *Model, c, turns, maxTok int) []mc
 	return out
 }
 
-// TestSpecAdaptiveSwitch_matchesPlainDecode is the MC4 candidate's Step 0.1 (docs/tasks/task-concurrency-2026-09.md):
+// TestSpecAdaptiveSwitch_matchesPlainDecode is the MC4 candidate's Step 0.1 (docs/tasks/parked/task-concurrency-2026-09.md):
 // a -spec-adaptive generation forced through spec -> batch -> spec transitions by 1-3 concurrent plain generations
 // emits EXACTLY plain decode's ids, every turn — greedy, so this is exact equality, not a tolerance. mc3Fake panics
 // on any resident access that escapes its guard (enter/leave), so a synchronization mistake in the switch fails this

@@ -160,7 +160,7 @@ func TestPrefillPath_mixedInt4Int8Batches(t *testing.T) {
 }
 
 // TestPrefillPath_deltaNetBindsItsOwnProjections pins the admission of a Gated-DeltaNet model to batched prefill
-// (docs/tasks/task-cuda-deltanet-prefill-2026-09.md): it is decided by the projections prefillDeltaNetRows binds,
+// (docs/completed/task-cuda-deltanet-prefill-2026-09.md): it is decided by the projections prefillDeltaNetRows binds,
 // dnQKV/dnB/dnA/dnZ/dnOut, not by q/k/o.
 //
 // The fixture's layers carry valid int4 q/k/o, which a DeltaNet layer never binds. If nonBatchableKind checked those

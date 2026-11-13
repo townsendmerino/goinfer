@@ -19,7 +19,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestKSD8_seqKernelsMatchDecode is D8-G1 (docs/tasks/task-kernel-survey-2026-10.md, "KS-D8 design and gates"): mamba_conv_seq,
+// TestKSD8_seqKernelsMatchDecode is D8-G1 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-D8 design and gates"): mamba_conv_seq,
 // mamba_ssm_seq and mamba_gnorm_rows over M rows against M steps of mamba_conv, mamba_ssm and mamba_gnorm, at nemotron-tiny's
 // and the 9B's mixer shapes, M = 1, 7 and 64, from a non-zero window and state. The projection rows are f16 values (the row
 // kernels read them as f16, decode as f32). Outputs, window and state byte-equal, in the fast-math and the precise library.
@@ -148,7 +148,7 @@ func TestKSD8_seqKernelsMatchDecode(t *testing.T) {
 // all M+4 tokens. Per prompt length, at the prompt's end and after the continuation, the pass is non-inferior to the sequential
 // path against the reference: its mean KL at most the sequential path's + δ, and its top-1 agreement at least the sequential
 // path's less one prompt. δ is half the sequential path's KL, at least 1e-5 and at most the registered 0.005 nats: on this model
-// both KLs are about 5e-5, where a flat 0.005 could not fail (docs/tasks/task-kernel-survey-2026-10.md, "D8-G2's margin scaled").
+// both KLs are about 5e-5, where a flat 0.005 could not fail (docs/tasks/parked/task-kernel-survey-2026-10.md, "D8-G2's margin scaled").
 // The pass must be taken.
 func TestKSD8_tinyFidelity(t *testing.T) {
 	const path = "../../testdata/nemotron-tiny"

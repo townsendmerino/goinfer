@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S10h's Hugging Face float32 side (docs/tasks/task-multimodal-support-2026-10.md, "G-S10h", registered before this code).
+"""G-S10h's Hugging Face float32 side (docs/completed/task-multimodal-support-2026-10.md, "G-S10h", registered before this code).
 
 Reads the dump written by cuda TestS10DeepstackPrefillCUDA_anchorDump (ids, pixels, grid, teacher tokens, and the 9 logit vectors of the "off" and "on" arms per image),
 runs Qwen3-VL-2B in float32 on the CPU over the SAME ids and pixels with the teacher tokens appended, and prints the registered reading:

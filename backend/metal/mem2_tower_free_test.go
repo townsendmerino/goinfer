@@ -153,7 +153,7 @@ func mem2Towers(t *testing.T) []mem2Tower {
 	return towers
 }
 
-// TestMEM2_towerScratchFreed is MEM2-G1 and MEM2-G2 (docs/tasks/task-memory-campaign-2026-10.md, MEM2 gates). G1: a
+// TestMEM2_towerScratchFreed is MEM2-G1 and MEM2-G2 (docs/completed/task-memory-campaign-2026-10.md, MEM2 gates). G1: a
 // tower that grows three times (A, inputs ascending) holds the same ledger buffers as one that grew once (B, the same
 // inputs largest first), Metal's allocated size agrees within 256 KiB, and every output is byte-equal. G2: after Close the
 // ledger is empty and Metal's allocated size is back within 64 KiB of its reading before the build; a second Close

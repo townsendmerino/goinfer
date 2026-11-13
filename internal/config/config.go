@@ -1,7 +1,7 @@
 // Package config is the one inventory of goinfer's load and serve configuration: every exported
 // decoder.Options field, every GOINFER_* variable production code reads, every per-model knob, and every
 // flag the shared loading set and goinfer-serve register, each claimed by exactly one Setting.
-// TestInventory holds the table total against those four surfaces (docs/tasks/task-subsystems-2026-10.md
+// TestInventory holds the table total against those four surfaces (docs/completed/task-subsystems-2026-10.md
 // § "SB10's scope and step 1's gates"). Chat's sampling and REPL flags are not load configuration and are
 // not in it.
 package config
@@ -168,9 +168,9 @@ var Settings = []Setting{
 	{Name: "fast-alias", Flag: "fast-alias", Apps: Serve, Default: "true", Doc: "docs/flags.md"},
 	{Name: "ids-key-file", Flag: "ids-key-file", Apps: Serve, Doc: "docs/flags.md"},
 
-	{Name: "GOINFER_ATTNFA_DEBUG", Env: "GOINFER_ATTNFA_DEBUG", EnvRole: EnvDiagnostic, Class: Diagnostic, Doc: "docs/tasks/red-october.md"},
+	{Name: "GOINFER_ATTNFA_DEBUG", Env: "GOINFER_ATTNFA_DEBUG", EnvRole: EnvDiagnostic, Class: Diagnostic, Doc: "docs/completed/red-october.md"},
 	{Name: "GOINFER_ATTN_KEYS", Env: "GOINFER_ATTN_KEYS", EnvRole: EnvDiagnostic, Class: Diagnostic, Doc: "docs/env-vars.md"},
-	{Name: "GOINFER_CPU_FUSED_GATEUP", Env: "GOINFER_CPU_FUSED_GATEUP", EnvRole: EnvDiagnostic, Class: Diagnostic, Doc: "docs/tasks/red-october.md"},
+	{Name: "GOINFER_CPU_FUSED_GATEUP", Env: "GOINFER_CPU_FUSED_GATEUP", EnvRole: EnvDiagnostic, Class: Diagnostic, Doc: "docs/completed/red-october.md"},
 	{Name: "GOINFER_CUDA_GRAPHS", Env: "GOINFER_CUDA_GRAPHS", EnvRole: EnvDiagnostic, Class: Diagnostic, Doc: "docs/cuda-graphs-investigation.md"},
 	{Name: "GOINFER_CUDA_GRAPHS_ONLY", Env: "GOINFER_CUDA_GRAPHS_ONLY", EnvRole: EnvDiagnostic, Class: Diagnostic, Doc: "docs/cuda-graphs-investigation.md"},
 	{Name: "GOINFER_CUDA_GRAPHS_SYNC", Env: "GOINFER_CUDA_GRAPHS_SYNC", EnvRole: EnvDiagnostic, Class: Diagnostic, Doc: "docs/cuda-graphs-investigation.md"},

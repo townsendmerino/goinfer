@@ -17,7 +17,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestSampledDecodeLadder is R7's measurement instrument (docs/tasks/red-october.md): decode tok/s
+// TestSampledDecodeLadder is R7's measurement instrument (docs/completed/red-october.md): decode tok/s
 // for greedy versus sampled configs on ONE binary in ONE session, arms interleaved round by round,
 // on a realistic prose prompt. It reports the PAIRED ratio sampled/greedy per round, because pooled
 // means carry between-round variance that swamps the effect (CLAUDE.md, measurement discipline).

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""timing_lock.py — one timed run per box (TE9, docs/tasks/task-test-efficiency-2026-09.md).
+"""timing_lock.py — one timed run per box (TE9, docs/completed/task-test-efficiency-2026-09.md).
 
 WHY. Two timed runs on one box measure each other. "A process collision invalidated the first launch, and its numbers
 are discarded" (a September record); Aug 27's contaminated sweep is why bench_peer.py's per-cell idle gate exists at all.

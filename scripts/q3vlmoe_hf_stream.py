@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S10q-c's reference (docs/tasks/task-multimodal-support-2026-10.md, "S10, Qwen3-VL MoE"): a layer-streaming Hugging
+"""G-S10q-c's reference (docs/completed/task-multimodal-support-2026-10.md, "S10, Qwen3-VL MoE"): a layer-streaming Hugging
 Face float32 forward of Qwen3-VL MoE on image prompts, step (b')'s design (scripts/g31b_hf_stream.py) for this family.
 
 The 30B is about 120 GB in float32, beyond this box's 62 GB, so this runs Hugging Face's OWN modules LAYER-MAJOR: every

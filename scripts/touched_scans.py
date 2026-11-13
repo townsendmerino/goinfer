@@ -69,7 +69,7 @@ SCANS = [
     Scan("decoder", "TestStepShapes_assertedOnlyInStep", NT("decoder")),
     Scan("decoder", "TestDecisionCensus", F("decoder/fitguard.go", "decoder/fitplan.go", "decoder/fitquery.go", "decoder/prefill_budget.go",
                                             "decoder/weightbytes.go", "decoder/residentneed.go", "decoder/kvresolve.go", "decoder/kvpolicy.go",
-                                            "decoder/metal_fitctx.go", "decoder/memprobe.go", "testdata/machines/*.json", "testdata/mm1_census.json.gz",
+                                            "decoder/metal_fitctx.go", "decoder/memprobe.go", "testdata/machines/*.json", "testdata/census/*.txt.gz",
                                             "decoder/mm1_census_fixtures_test.go", "testdata/*tiny*", "decoder/testdata/*tiny*",
                                             "decoder/selftestdata/*tiny*", "internal/vision/testdata/*tiny*",
                                             # MM5: KV and state are priced from each layer's operations' declarations

@@ -57,7 +57,7 @@ func prefillGemmaDir(t *testing.T, dir string) string {
 	return path
 }
 
-// G-S12.4b-3a (docs/tasks/task-multimodal-support-2026-10.md): the batched pass on the Gemma shape against the
+// G-S12.4b-3a (docs/completed/task-multimodal-support-2026-10.md): the batched pass on the Gemma shape against the
 // row-by-row walk, the last row and the next 8 decode steps bit for bit, at row counts inside and past the sliding
 // window and on both sides of a 16-row block.
 func TestPrefillGemma_matchesWalk(t *testing.T) {

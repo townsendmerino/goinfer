@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/testpath"
 )
 
-// KV7 step 2, M3 (docs/tasks/task-kv7-step2-boundary-snapshot-2026-10.md §8): the boundary is where the stable system-and-tools section ends, read from the
+// KV7 step 2, M3 (docs/completed/task-kv7-step2-boundary-snapshot-2026-10.md §8): the boundary is where the stable system-and-tools section ends, read from the
 // render, and the same for two sessions of one client whatever their first message says.
 func TestPrefixBoundary_endsWhereTheFirstTurnBegins(t *testing.T) {
 	tk, err := modelload.Tokenizer(testpath.Testdata(t, "mellum2-tokenizer"))

@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// Hardware-coverage H1.5 (docs/tasks/task-hardware-coverage-2026-10.md): the device-shape and memory-budget decisions are made from numbers our one card
+// Hardware-coverage H1.5 (docs/completed/task-hardware-coverage-2026-10.md): the device-shape and memory-budget decisions are made from numbers our one card
 // (RTX 2070 SUPER: 40 SMs, 8 GB) never takes other values of. These tests tell a real resident build that it has another card's SM count, or another amount of
 // free VRAM, and run the existing correctness expectation (a greedy decode must not change) under each. Nothing new is asserted about the answer: a different SM
 // count only changes launch grids (the kernels are bit-identical for any rows-per-warp), and a smaller budget only changes the context and slots a load picks.

@@ -31,7 +31,7 @@ func alsBF16(t *testing.T, w *linalg.WeightMat) {
 	*w = linalg.QuantizeBF16(f, w.Rows(), w.Cols())
 }
 
-// TestALS_G0_speed is MEM4(a)'s ALS-G0 (goinfer docs/tasks/task-memory-campaign-2026-10.md, "MEM4(a) gates"): the CPU tower
+// TestALS_G0_speed is MEM4(a)'s ALS-G0 (goinfer docs/completed/task-memory-campaign-2026-10.md, "MEM4(a) gates"): the CPU tower
 // forward with f32-held projection weights against 16-bit-held ones, on Qwen2.5-VL-3B's tower (random patches at grid
 // (1, 32, 44)) and Gemma-3-4B's SigLIP (goinfer's gemma3_preprocess_image.png, named by ALS_G0_IMAGE), A B B A over 6 pairs
 // after one warm run each, both arms' features compared bit for bit. Armed by ALS_G0=1 (real checkpoints from ~/models; a timed

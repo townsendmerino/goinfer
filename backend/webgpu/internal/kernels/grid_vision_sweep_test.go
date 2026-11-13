@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// TestGridTowersWebGPU_patchSweep is G-S12.3g (docs/tasks/task-multimodal-support-2026-10.md, "S12.3g"): for one grid
+// TestGridTowersWebGPU_patchSweep is G-S12.3g (docs/completed/task-multimodal-support-2026-10.md, "S12.3g"): for one grid
 // tower, the WebGPU tower's encode time over the CPU tower's at a ladder of image sizes, to find the patch count above
 // which the device tower is the faster one. The same image is preprocessed under a ladder of pixel ceilings, the last
 // rung being the ceiling serve uses. A rung is a discarded warm-up pair and three timed pairs in alternating order; its

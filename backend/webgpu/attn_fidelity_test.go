@@ -20,7 +20,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// G-S12.4c-6 (docs/tasks/task-multimodal-support-2026-10.md): which attention kernel leaves a wide-head model nearer
+// G-S12.4c-6 (docs/completed/task-multimodal-support-2026-10.md): which attention kernel leaves a wide-head model nearer
 // the model itself. Gemma 3 4B decodes on the WebGPU resident at int4 twice, once built with the per-dimension kernel a
 // head over 128 used to get (exact) and once with the key-split kernel it gets now (candidate), prefill and decode
 // alike. Both are scored, position by position, against the float32 CPU forward of the same checkpoint on the same

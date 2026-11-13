@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S14a's golden (docs/tasks/task-multimodal-support-2026-10.md, "G-S14a"): transformers' WhisperFeatureExtractor, BOTH of its paths (the torch float32 one __call__ uses and the NumPy
+"""G-S14a's golden (docs/completed/task-multimodal-support-2026-10.md, "G-S14a"): transformers' WhisperFeatureExtractor, BOTH of its paths (the torch float32 one __call__ uses and the NumPy
 float64 one), on eight inputs, plus the valid-frame count its attention mask gives for a range of lengths. Written as a zip of raw little-endian float32 (inputs and features) and a
 meta.json, because the features are [mels, 3000] each and mostly constant padding for a short clip, which deflate removes.
 Run: ~/g4venv/bin/python -I scripts/pin_whisper_features.py testdata/whisper_features_golden.zip   (from the repo root)"""

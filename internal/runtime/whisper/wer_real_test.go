@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// G-S14f3's goinfer arm (docs/tasks/task-multimodal-support-2026-10.md, "G-S14f"): every WAV in $GOINFER_S14F_DIR (scripts/s14c4_data.py's) through the Transcriber, short-form greedy, language detected, and
+// G-S14f3's goinfer arm (docs/completed/task-multimodal-support-2026-10.md, "G-S14f"): every WAV in $GOINFER_S14F_DIR (scripts/s14c4_data.py's) through the Transcriber, short-form greedy, language detected, and
 // {id: {text, lang}} written to $GOINFER_S14F_OUT, the shape scripts/s14f_hf.py writes; scripts/s14f_grade.py compares them.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_S14F_DIR=<wav dir> GOINFER_S14F_OUT=<json> [GOINFER_S14F_LIMIT=<clips>] [GOINFER_WHISPER_DIR=<checkpoint>] go test -tags realckpt ./internal/runtime/whisper/ -run TestWhisperSmall_clips -v -timeout 60m

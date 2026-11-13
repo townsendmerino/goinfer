@@ -89,7 +89,7 @@ type session struct {
 	// no other family's prompt (chat.Template.WithReasoningEffort is a no-op for them).
 	effort string
 
-	// plain is script-friendly output (R26, docs/tasks/task-first-hour.md): no banner, no `you>` label, no ANSI escapes, no `bye`, the
+	// plain is script-friendly output (R26, docs/completed/task-first-hour.md): no banner, no `you>` label, no ANSI escapes, no `bye`, the
 	// reasoning (when shown) on stderr so stdout is the answer and nothing else. It is on for -p, and whenever stdin or stdout is not a
 	// terminal. out is where stdout-bound text goes (nil = os.Stdout), so a test can read it; genFn replaces generate in tests.
 	plain bool
@@ -175,11 +175,11 @@ func Main() {
 	if len(os.Args) > 1 && os.Args[1] == "fit" {
 		os.Exit(fitcmd.Run(os.Args[2:]))
 	}
-	// `check --hardware` (H3, docs/tasks/task-hardware-coverage-2026-10.md): the block a hardware bug report needs. Chat has no server to drive, so `check` here is only that.
+	// `check --hardware` (H3, docs/completed/task-hardware-coverage-2026-10.md): the block a hardware bug report needs. Chat has no server to drive, so `check` here is only that.
 	if len(os.Args) > 1 && os.Args[1] == "check" {
 		os.Exit(hwreport.Run(os.Args[2:], filepath.Base(os.Args[0])))
 	}
-	// `decide` / `decisions-calibrate` — D1 of docs/tasks/task-constrained-confidence.md: decisions by label-token
+	// `decide` / `decisions-calibrate` — D1 of docs/tasks/parked/task-constrained-confidence.md: decisions by label-token
 	// scoring (one prefill per line, a distribution over the line's options) and the per-kind temperature fit.
 	if len(os.Args) > 1 && os.Args[1] == "decide" {
 		os.Exit(decidecmd.Run(os.Args[2:]))

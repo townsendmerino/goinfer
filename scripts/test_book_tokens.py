@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The book and the site must wear the same tokens (docs/tasks/task-site-2026-09.md, 4a). The book's CSS lives in
+"""The book and the site must wear the same tokens (docs/completed/task-site-2026-09.md, 4a). The book's CSS lives in
 docs/book-search/head-custom.html (the include the site workflow ships (scripts/build_book_src.sh)); the site's reference is apps/site/mockups/*.html. This
 fails if a colour or font token differs, in the light block or the dark one.
 

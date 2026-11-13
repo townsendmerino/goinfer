@@ -17,7 +17,7 @@ const (
 )
 
 // MixerOf is a layer's mixer and whether a feed-forward block follows it, read from the layer's operations: the program's form
-// of decoder.Model.ResidentLayerOps (OP4cu-b1, docs/tasks/task-forward-architecture-2026-10.md §4.9a). A layer whose
+// of decoder.Model.ResidentLayerOps (OP4cu-b1, docs/completed/task-forward-architecture-2026-10.md §4.9a). A layer whose
 // operations hold no mixer is MixerNone; an FFN is an OpFFN or Gemma 4's parallel dense and MoE block.
 func MixerOf(ops []Op) (mixer Mixer, ffn bool) {
 	mixer = MixerNone

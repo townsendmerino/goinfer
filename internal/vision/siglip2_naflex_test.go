@@ -10,7 +10,7 @@ import (
 
 // SigLIP2's NaFlex tower (LFM2-VL's) against HF's Siglip2VisionModel (transformers 5.12.0, float32, eager), on a tiny
 // random tower pinned by goinfer scripts/pin_siglip2_naflex_tiny.py (S10, G-S10l-b's tiny half, goinfer
-// docs/tasks/task-multimodal-support-2026-10.md): every LayerNorm randomised, a 4x4 position table, three tiles that grow,
+// docs/completed/task-multimodal-support-2026-10.md): every LayerNorm randomised, a 4x4 position table, three tiles that grow,
 // shrink and keep it. HF's own patchify is checked byte for byte, each stage at the Pixtral tiny tower's bar. Planted
 // defects, each must miss: the table resized without antialias, the patches flattened channel-major, the post-layernorm
 // dropped. The resizes are checked too: torchvision's uint8 bilinear exactly, F.interpolate's float bilinear to 1e-6.

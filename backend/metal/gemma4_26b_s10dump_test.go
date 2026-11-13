@@ -20,7 +20,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestGemma4_26B_s10Dump is the Mac half of S1.0's 26B re-check (docs/tasks/task-multimodal-support-2026-10.md).
+// TestGemma4_26B_s10Dump is the Mac half of S1.0's 26B re-check (docs/completed/task-multimodal-support-2026-10.md).
 // Every 26B parity test here compares against a CPU 26B forward, which this 16 GB Mac must not run (the M26 rule:
 // Metal only, paged, guards on). So the Mac dumps Metal's per-position logits and nobara supplies the CPU reference
 // later, over the same token sequences.

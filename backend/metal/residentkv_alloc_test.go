@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// The KV term Metal's resident guard — and, since docs/tasks/task-memory-accounting-2026-09.md, Plan("metal") —
+// The KV term Metal's resident guard — and, since docs/completed/task-memory-accounting-2026-09.md, Plan("metal") —
 // prices is decoder.Model.ResidentKVBytes("metal", …), which claims to be exact to what buildResident allocates.
 // This checks that claim against the real buffers: every layer's K and V payload (NewBufferBytes: Len is bytes)
 // plus the int8 per-head scales (NewBufferLen: Len is float32s). Fixtures cover a dense model, per-layer geometry

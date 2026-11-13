@@ -9,7 +9,7 @@ import (
 
 // The Pixtral tower (Mistral 3 / Ministral 3) against HF's PixtralVisionModel (transformers 5.15.0, float32, eager), on a
 // tiny random tower of the real structure pinned by goinfer scripts/pin_pixtral_vision.py (S10, G-S10m-b's tiny half,
-// goinfer docs/tasks/task-multimodal-support-2026-10.md): every norm randomised, two non-square images of different sizes
+// goinfer docs/completed/task-multimodal-support-2026-10.md): every norm randomised, two non-square images of different sizes
 // in one call. Each stage at relative max|diff| <= 5e-6 (the GLM-OCR and Qwen3.5+ tiny towers' bar), and each image alone.
 // Planted defects, each must miss: the column frequencies from the even list (Qwen's rule), the row and column halves
 // swapped, and the block-diagonal mask dropped.

@@ -33,5 +33,5 @@
 // go test ./internal/app/serveapp -run 'TestSchedCensus_admission|TestSchedCensus_placement' (about 4 s; the tiny CPU
 // checkpoint under testdata/).
 //
-// Design: docs/code-notes/internal-scheduler.md. Plan: docs/tasks/task-subsystems-2026-10.md, SB6.
+// Design: docs/code-notes/internal-scheduler.md. Plan: docs/completed/task-subsystems-2026-10.md, SB6.
 package scheduler

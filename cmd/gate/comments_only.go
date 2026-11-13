@@ -17,7 +17,7 @@ import (
 )
 
 // gate comments-only <base> [--worktree] proves that a commit (or the working tree) changed Go comments and docs and nothing else:
-// the gate behind docs/tasks/task-code-comments-2026-10.md (CC2). A comment rewrite is only safe to review quickly if a tool, not
+// the gate behind docs/completed/task-code-comments-2026-10.md (CC2). A comment rewrite is only safe to review quickly if a tool, not
 // the reviewer, vouches that no code moved with it.
 //
 // What is checked, per changed .go file:

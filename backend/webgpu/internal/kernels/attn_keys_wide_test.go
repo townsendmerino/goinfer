@@ -41,7 +41,7 @@ func attnRef64(q, keys, vals []float32, nH, nKV, hd, nKeys, start int, scale flo
 	return ref
 }
 
-// G-S12.4c-1 (docs/tasks/task-multimodal-support-2026-10.md): the wide key-split attention kernel against the float64
+// G-S12.4c-1 (docs/completed/task-multimodal-support-2026-10.md): the wide key-split attention kernel against the float64
 // reference and against the per-dimension wide kernel it replaces, at Gemma's geometry (8 heads of 256 over 4 KV
 // heads) and at a head of 192, at key counts on both sides of the lane count and of a tile, from key 0 and from a
 // window start. Then the planted defects, each of which must fail the same bars.

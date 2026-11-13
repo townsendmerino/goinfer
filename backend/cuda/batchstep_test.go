@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestCUDAStepBatch_matchesForward is MC3-on-CUDA's step-identity gate (docs/tasks/task-concurrency-2026-09.md, "MC3 on
+// TestCUDAStepBatch_matchesForward is MC3-on-CUDA's step-identity gate (docs/tasks/parked/task-concurrency-2026-09.md, "MC3 on
 // CUDA", correctness 1). For B = 2, 3 and 4 sequences, each on its own KV slot at its own depth, one StepBatch row must
 // equal that sequence's own Forward on its slot bit for bit — or ForwardSample's id for a row that carries a Draw (the
 // last row of each step does). Four teacher-forced steps per B.
@@ -147,7 +147,7 @@ func TestCUDAStepBatch_matchesForward(t *testing.T) {
 	}
 }
 
-// TestCUDAStepBatch_concurrentMatchesAlone is MC3-on-CUDA's production-path gate (docs/tasks/task-concurrency-2026-09.md,
+// TestCUDAStepBatch_concurrentMatchesAlone is MC3-on-CUDA's production-path gate (docs/tasks/parked/task-concurrency-2026-09.md,
 // "MC3 on CUDA", correctness 2). 4 conversations run through Model.Generate at once on a CUDA model with
 // EnableResidentConcurrency(4): the decoder's MC3 batcher joins their decode tokens into CUDA StepBatch steps, each on its
 // own KV slot. Every turn's ids must equal what the same conversation emits alone on a model where concurrency is never

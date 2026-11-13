@@ -3,7 +3,7 @@
 // The W4A8 kernels (aikit's gemv_w4a8_fwd, moe.cu's gemv_w4a8_moe / _wacc) quantize every activation to int8 with one
 // scale per vector. On Gemma 4 26B-A4B that rounding makes the decode chaotic at some tokens: a difference of 1e-5 in the
 // input swings the late layers and can land on a garbage digit, on the CPU's W4A8 path as on this one, while the same
-// int4 weights over f32 activations stay at cosine 1.00000 (docs/tasks/task-multimodal-support-2026-10.md, "S19").
+// int4 weights over f32 activations stay at cosine 1.00000 (docs/completed/task-multimodal-support-2026-10.md, "S19").
 // These kernels keep the int4 weights and their layout and read the activation as f32.
 //
 // Layout (the W4A8 kernels'): W is [rows][Kwords] u32, 8 int4 per word, nibble-permuted at pack time so that byte b's low

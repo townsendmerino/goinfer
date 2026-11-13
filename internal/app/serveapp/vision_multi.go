@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// Several images in one message (docs/tasks/task-multimodal-support-2026-10.md, "S11, plan and gates"). Each image is
+// Several images in one message (docs/completed/task-multimodal-support-2026-10.md, "S11, plan and gates"). Each image is
 // prepared on its own (its block, its placeholder count, its lazy tower), the blocks go where the image parts sat
 // among the text parts, and every block becomes its own imageSpan: never two images in one block, even
 // adjacent and the same size (docs/multimodal.md, "Do not pair images"). One image takes the same path, so the

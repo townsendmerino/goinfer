@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// runRecord is what a tally gate's run leaves for its grader (SB12, docs/tasks/task-subsystems-2026-10.md §8): the
+// runRecord is what a tally gate's run leaves for its grader (SB12, docs/completed/task-subsystems-2026-10.md §8): the
 // configuration the verdict reads, the provenance the report prints, and each cell with its exit code and the file
 // its `go test -json` stream was written to. `gate census|heavy -replay FILE` grades a record exactly as the run that
 // wrote it did; TestGraderGoldens holds that on recorded runs.

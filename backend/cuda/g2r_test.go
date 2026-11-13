@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// G2-R on CUDA, as registered in docs/tasks/task-forward-architecture-2026-10.md §4.6a: a model-level sanity gate for real Gemma 2 2B, and
+// G2-R on CUDA, as registered in docs/completed/task-forward-architecture-2026-10.md §4.6a: a model-level sanity gate for real Gemma 2 2B, and
 // not a softcap test. On Metal the cap barely acted on the gate's prompts (a plant that dropped it passed the rule), so the CUDA
 // declaration rests on G2-K, G2-D and G2-L; this test records the same arms beside them.
 //

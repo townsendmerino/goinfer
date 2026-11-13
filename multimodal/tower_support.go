@@ -6,7 +6,7 @@ import (
 	"sync"
 )
 
-// S8 (docs/tasks/task-multimodal-support-2026-10.md, "S8, plan and gates"): which GPU towers each backend's build
+// S8 (docs/completed/task-multimodal-support-2026-10.md, "S8, plan and gates"): which GPU towers each backend's build
 // registers, declared once, here. The README and docs/multimodal.md support table's tower cells are computed from this
 // declaration (decoder's support-table drift test), and each backend module's test proves its live registrations equal
 // its row, so a tower added or dropped without the table following fails a test rather than a reader.

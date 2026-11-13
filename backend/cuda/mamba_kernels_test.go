@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// OP2b on CUDA, gate K (docs/tasks/task-forward-architecture-2026-10.md §4.7, "OP2b on CUDA"): the Mamba-2 kernels against the CPU's own computation
+// OP2b on CUDA, gate K (docs/completed/task-forward-architecture-2026-10.md §4.7, "OP2b on CUDA"): the Mamba-2 kernels against the CPU's own computation
 // (decoder/mamba2.go:mamba2Step) on the tiny fixtures' real per-token inputs. The gated norm at other group counts and the squared-ReLU quantize are
 // tested in cuda/kernels/mamba_kernels_test.go. Every reading asserts both outputs are non-zero before it takes a cosine (mambaCosNonZero), because
 // CUDA's cosF32 scores 1 for an all-zero side.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Per-layer residual comparison, goinfer vs Hugging Face, for the Mellum window golden (follow-up A of docs/tasks/task-mellum21-2026-10.md).
+"""Per-layer residual comparison, goinfer vs Hugging Face, for the Mellum window golden (follow-up A of docs/completed/task-mellum21-2026-10.md).
 
     ~/g4venv/bin/python scripts/diff_mellum_layers.py run  <model-dir> <window_golden.json> <goinfer_dump.json.gz> <out-dir>
     ~/g4venv/bin/python scripts/diff_mellum_layers.py selftest
@@ -171,7 +171,7 @@ def selftest():
     print("selftest ok: hooks fire on all 4 layers of a tiny Mellum, residual shape", a[0].shape)
 
 
-# Follow-up A2 (docs/tasks/task-mellum21-2026-10.md): the three craters follow-up A found in the int8int8 dump, as (position, layer):
+# Follow-up A2 (docs/completed/task-mellum21-2026-10.md): the three craters follow-up A found in the int8int8 dump, as (position, layer):
 # position 1030 at layer 5, position 1300 at layers 10 and 15. r = (1 - cos in the new arm) / (1 - cos in the int8int8 arm).
 CRATERS = [(1030, 5), (1300, 10), (1300, 15)]
 
@@ -210,7 +210,7 @@ I2_GUARD = 0.9999  # f32 against f32 at the short positions 10 and 300, last lay
 
 
 def i2(bf16_json, f32_json):
-    """I2 of docs/tasks/task-mellum21-2026-10.md (registered before the run). The same goinfer dump (the f32 forward) is read against HF in bf16 and
+    """I2 of docs/completed/task-mellum21-2026-10.md (registered before the run). The same goinfer dump (the f32 forward) is read against HF in bf16 and
     HF in float32. Cells S = every (layer, position) where 1 - cos against the bf16 reference >= I2_CELL; rho = (1 - cos vs f32 reference) / (1 - cos vs
     bf16 reference). G (the craters were the bf16 reference): median rho <= 0.25 and at least 80% of the cells have rho <= 0.5. D (a goinfer-side
     difference): median rho >= 0.75. M otherwise. Guard: the last-layer cosine against the f32 reference at positions 10 and 300 must be >= I2_GUARD,

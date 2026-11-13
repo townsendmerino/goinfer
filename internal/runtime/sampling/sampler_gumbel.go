@@ -2,7 +2,7 @@ package sampling
 
 import "math"
 
-// Temperature-only sampling by Gumbel-max (docs/tasks/red-october.md, R7b).
+// Temperature-only sampling by Gumbel-max (docs/completed/red-october.md, R7b).
 //
 // For a logit row l and temperature T, the token is
 //

@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// SP2's tier-0 gates (docs/tasks/task-forward-architecture-2026-10.md §6a, "SP2 on nobara"): G1a, a verify leaves the committed
+// SP2's tier-0 gates (docs/completed/task-forward-architecture-2026-10.md §6a, "SP2 on nobara"): G1a, a verify leaves the committed
 // recurrent state as it found it and a fold of n rows leaves what a prefill of those rows leaves, byte for byte; G1b, the
 // BlockSpec loop with a scripted drafter emits plain greedy's tokens and ends on plain greedy's state; G5, a speculative turn
 // commits what kvmgr then scores. Each runs clean and under the two registered plants, which must fail it.

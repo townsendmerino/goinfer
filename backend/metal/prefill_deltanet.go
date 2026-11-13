@@ -4,7 +4,7 @@ package metal
 
 import "github.com/townsendmerino/goinfer/internal/runtime/mem"
 
-// D-B01 (docs/audit-metal-2026-09-30.md, docs/tasks/task-metal-audit-2026-10.md): a Gated-DeltaNet layer in the batched
+// D-B01 (docs/audit-metal-2026-09-30.md, docs/completed/task-metal-audit-2026-10.md): a Gated-DeltaNet layer in the batched
 // prefill pass. The projections (qkv, z, out) run as prefill GEMMs over all M rows, and in_proj_b / in_proj_a as a small
 // rows kernel, on f16 activations like every other batched layer. The mixer between them runs as one dispatch per
 // stage over the M rows, the recurrent stages (the conv window, the delta rule's state) as a token loop inside the
@@ -17,7 +17,7 @@ import "github.com/townsendmerino/goinfer/internal/runtime/mem"
 // a fresh sequence (resetDeltaNet) and leaves them for a continuation.
 
 // dnetPrefillOn admits Gated-DeltaNet models to the batched prefill pass. On by default; tests turn it off for the
-// sequential arm (docs/tasks/task-metal-audit-2026-10.md, D-B01; docs/code-notes/metal.md#dnetPrefillOn).
+// sequential arm (docs/completed/task-metal-audit-2026-10.md, D-B01; docs/code-notes/metal.md#dnetPrefillOn).
 var dnetPrefillOn = true
 
 // prefillDelta is one PrefillLast call's DeltaNet scratch, shared by every DeltaNet layer (each layer's own window and

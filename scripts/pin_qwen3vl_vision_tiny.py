@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S10b's tiny half (docs/tasks/task-multimodal-support-2026-10.md, S10): a tiny Qwen3-VL vision tower WITH DeepStack
+"""G-S10b's tiny half (docs/completed/task-multimodal-support-2026-10.md, S10): a tiny Qwen3-VL vision tower WITH DeepStack
 and its reference, for CI. transformers' Qwen3VLVisionModel at the tiny Qwen3-VL fixture's vision_config (hidden 32,
 2 heads, 3 blocks, DeepStack at blocks 0 and 1), seeded, float32, on random pre-patchified pixel values for two images
 (grids 1x4x6 and 1x6x4). Sharpened so planted defects cannot hide in a degenerate fixture (S3's lesson: zero biases and

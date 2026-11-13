@@ -2,7 +2,7 @@
 
 package metal
 
-// C0 of docs/tasks/task-constrained-confidence.md: does a per-field number on constrained output mean anything?
+// C0 of docs/tasks/parked/task-constrained-confidence.md: does a per-field number on constrained output mean anything?
 // This is the measurement harness only; the gates, the aggregations and the decision rule are pre-registered in the
 // task doc's C0 section, and the analysis (docs/measurements/confidence-c0-2026-09-27/analyze.py) reads what this
 // writes. It collects, for every generated token of a schema-constrained answer:

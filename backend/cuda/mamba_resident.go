@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-// The Mamba-2 mixer (Nemotron-H) and the non-gated squared-ReLU MLP on the resident runner (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP2b on
+// The Mamba-2 mixer (Nemotron-H) and the non-gated squared-ReLU MLP on the resident runner (docs/completed/task-forward-architecture-2026-10.md §4.7, OP2b on
 // CUDA, step 2b). A Nemotron-H block carries ONE operation (cudaMixerOf, from the program): the Mamba-2 mixer, attention, or the MLP, each behind
 // its own pre-norm and added to the residual. The mixer is mamba.cu's conv → SSM → gated-norm chain around two W8A8 projections; the MLP is the up
 // GEMV, nongated_act.cu's relu2_quant, and the down GEMV. Nothing here is reachable end to end until the recurrent guard sites read Mamba too

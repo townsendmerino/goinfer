@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestSampledDecodeLadder_speed is the Mac measurement of the on-device sampler (docs/tasks/red-october.md, R7b). It follows the
+// TestSampledDecodeLadder_speed is the Mac measurement of the on-device sampler (docs/completed/red-october.md, R7b). It follows the
 // protocol of docs/measurements/sampled-gumbel-2026-09-20.md and of cuda/sampled_decode_ladder_test.go: paired against greedy, same
 // session, interleaved with a rotating start, a discarded warm-up round and a do-nothing arm. Three arms, one seed, one prompt,
 // per round:

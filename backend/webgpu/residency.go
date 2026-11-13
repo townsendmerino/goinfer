@@ -1502,7 +1502,7 @@ func (rd *residentDecoder) prefillBlocks(ctx context.Context, embeddings [][]flo
 // gate against the float32 reference: the device prefill and the CPU's are two int4 readings of the model, and the
 // device's is not the further one. They are not each other's reference, so a reply can differ between them. Metal is
 // out because the CPU route is the faster one there. A backend goes in on its own run of that gate
-// (docs/tasks/task-multimodal-support-2026-10.md, "G-S12.4b-4a-5").
+// (docs/completed/task-multimodal-support-2026-10.md, "G-S12.4b-4a-5").
 var mropePrefillBackends = map[string]bool{"vulkan": true}
 
 var _ decoder.ResidentMRoPEPrefill = (*residentDecoder)(nil)

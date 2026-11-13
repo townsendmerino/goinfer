@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// TestW4A8Pre_decodeBitIdenticalAndTaken is R-13's goinfer gate (docs/tasks/task-recompute-audit.md): decoding with
+// TestW4A8Pre_decodeBitIdenticalAndTaken is R-13's goinfer gate (docs/completed/task-recompute-audit.md): decoding with
 // each layer's normed row quantized once for the projections that share it (q/k/v, gate/up, every MoE expert) gives the
 // logits bits of decoding with every matmul quantizing its own input (w4a8PreOff), on dense and MoE tiny fixtures at
 // int4, with one activation scale per row and per 32. The shared path must have run: at least two matmuls a layer a

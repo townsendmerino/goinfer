@@ -29,7 +29,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/wrappedupload"
 )
 
-// Layer B-metal of the admission and routing census (docs/tasks/task-subsystems-2026-10.md, "SB2 step 2"): Metal's decisions
+// Layer B-metal of the admission and routing census (docs/completed/task-subsystems-2026-10.md, "SB2 step 2"): Metal's decisions
 // before it allocates (residentPreBuild: the feature taxonomy, an explicit context cap, the fit choice and the memory guard with
 // its context shrink), on layer D's fixtures and option cells, once per recorded machine with a Metal budget. A fake backend
 // named metal takes the decoder's real admission; where that admits, it runs residentPreBuild against the profile's readings,
@@ -334,7 +334,7 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	}
 	read := memgate.Reading{Row: row, KVSlots: r.kvSlotCount()}
 	read.Plan = m.Plan("metal", math.MaxInt64/4, fit.PlanRequest{Ctx: r.ctxCap, CtxPinned: true, KVI8: kvI8})
-	// G-MS2 (docs/tasks/task-forward-architecture-2026-10.md §4.9c): the scratch line holds decode's list and the step's to the byte,
+	// G-MS2 (docs/completed/task-forward-architecture-2026-10.md §4.9c): the scratch line holds decode's list and the step's to the byte,
 	// both ways. The ledger's requests are read, not its charges, so the allocator's rounding hides nothing.
 	exact := func(at string) {
 		if held, want := scratchRequested(l), scratchLists(r); held != want {
@@ -485,7 +485,7 @@ func TestMemGate_metalPlantsThroughTheTable(t *testing.T) {
 	}
 }
 
-// TestDecodeScratch_handTable is G-MS3 (docs/tasks/task-forward-architecture-2026-10.md §4.9c): a build's decode list, as it stands
+// TestDecodeScratch_handTable is G-MS3 (docs/completed/task-forward-architecture-2026-10.md §4.9c): a build's decode list, as it stands
 // after the build, equals arithmetic written here on the config's numbers. G-MS2 holds the ledger to the list; this holds the list to
 // the model, which a declaration one element short fails. Its rows reach every branch of the list a registered row builds; the chain
 // and the paged fence, which a build holds later or under a switch, have their own tests below. No registered row builds the q4k lane
@@ -1374,7 +1374,7 @@ func firstApart(a, b []string) int {
 	return min(len(a), len(b))
 }
 
-// TestMemGate_metal is MM7's gate on Metal (docs/tasks/task-subsystems-2026-10.md): every census fixture at every option cell whose
+// TestMemGate_metal is MM7's gate on Metal (docs/completed/task-subsystems-2026-10.md): every census fixture at every option cell whose
 // build goes resident, and each at int4 with two KV slots and the step's blocks on, holds what it leased on each line to the plan
 // for the same load. It runs every row in one test, since a filtered run would see known gaps go quiet.
 func TestMemGate_metal(t *testing.T) {
@@ -1591,7 +1591,7 @@ func TestMM5_kvCheckRows(t *testing.T) {
 	}
 }
 
-// TestMM5_poolsAreTheDeclaredRows is G-MP2 on Metal (docs/tasks/task-forward-architecture-2026-10.md §4.9b): every census fixture's int4
+// TestMM5_poolsAreTheDeclaredRows is G-MP2 on Metal (docs/completed/task-forward-architecture-2026-10.md §4.9b): every census fixture's int4
 // build at two slots, with an f16 and an int8 cache, sizes each layer's KV pool from the row its operations declare
 // (decoder.Model.LayerBuffers), the null block and every slot's blocks at the cache's element size (f32 for MLA's latent), and a layer
 // that declares no row holds no pool of its own. The build's whole KV, every pool, int8's scales and the tables, is what MetalKVBytes

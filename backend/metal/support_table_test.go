@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// G-S8c (S8, docs/tasks/task-multimodal-support-2026-10.md): this build's live tower registrations equal Metal's row of
+// G-S8c (S8, docs/completed/task-multimodal-support-2026-10.md): this build's live tower registrations equal Metal's row of
 // multimodal's declaration, and Metal implements the hybrid image prefill exactly where decoder declares it, so the
 // support table's Metal column is true. Planted: a declaration with one tower dropped must be reported.
 func TestSupportTable_metalDeclarations(t *testing.T) {

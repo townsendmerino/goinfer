@@ -2,7 +2,7 @@ package program
 
 import "testing"
 
-// TestMixerOf_eachKind is OP4cu-b1's direct check of MixerOf (docs/tasks/task-forward-architecture-2026-10.md §4.9a): each mixer
+// TestMixerOf_eachKind is OP4cu-b1's direct check of MixerOf (docs/completed/task-forward-architecture-2026-10.md §4.9a): each mixer
 // operation maps to its own mixer, a layer with none is MixerNone, and the FFN is an OpFFN or Gemma 4's MoE block.
 func TestMixerOf_eachKind(t *testing.T) {
 	norm, ffn := Op{Kind: OpNorm}, Op{Kind: OpFFN}

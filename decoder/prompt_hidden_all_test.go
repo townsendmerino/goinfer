@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/aikit/embed"
 )
 
-// D11's gate (docs/tasks/task-constrained-confidence.md, Route C): the final-norm hidden state at EVERY prompt position must
+// D11's gate (docs/tasks/parked/task-constrained-confidence.md, Route C): the final-norm hidden state at EVERY prompt position must
 // match HF's last_hidden_state[0, :] per position, cosine >= 0.9999 and relative L2 <= 1e-5, in f32, on the tiny Qwen3.5
 // checkpoints (dense, MoE, and the derived qwen3_5-tiny-normw whose random final-norm weight is what lets a missing, doubled
 // or mis-weighted final norm fail: cosine alone cannot see a uniform scale, and the other tiny checkpoints' final-norm

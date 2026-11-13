@@ -8,7 +8,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// The vision tower on another device (Phase VM, docs/tasks/task-embeddinggemma2.md: Metal). A VisionAccelerator runs
+// The vision tower on another device (Phase VM, docs/completed/task-embeddinggemma2.md: Metal). A VisionAccelerator runs
 // the tower's patch embed and every encoder layer from aikit's export (vision.Gemma4Encoder.Weights); the pool and the
 // projection after them stay aikit's (FinishHidden), shared with the CPU tower.
 

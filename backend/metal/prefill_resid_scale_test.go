@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// G-RS1 (S17, docs/tasks/task-multimodal-support-2026-10.md): the batched pass's residual stored scaled by 1/s against
+// G-RS1 (S17, docs/completed/task-multimodal-support-2026-10.md): the batched pass's residual stored scaled by 1/s against
 // unscaled, on gemma3-vl-tiny (a sandwich-norm family whose residual stays inside f16). s is a power of two and every read
 // is an RMSNorm, so the two differ only through eps and subnormals: last-token cosine >= 0.99999. A family the scale does
 // not apply to reports s = 1 and runs the unchanged kernels.
