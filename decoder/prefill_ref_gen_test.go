@@ -83,7 +83,7 @@ func TestPrefillGateReference(t *testing.T) {
 	}{
 		{"S", "GOINFER_CPU_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", "", refKs([]int{256, 512, 1024, 3900})},
 		{"D7", "GOINFER_CPU_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf", d7RefQuant(), refKs([]int{256, 512, 1024})},
-		// Q05, the 0.5B (head dim 64): references for B-P01's fidelity gate (docs/tasks/task-metal-audit-2026-10.md), f32
+		// Q05, the 0.5B (head dim 64): references for B-P01's fidelity gate (docs/completed/task-metal-audit-2026-10.md), f32
 		// like S. Built only when GOINFER_CPU_REF_MODELS names it, so the standing S/D7 run is unchanged.
 		{"Q05", "GOINFER_CPU_MODEL_Q05", "$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", "", refKs([]int{2048, 3900})},
 		// Q35, Qwen3.5-0.8B (a Gated-DeltaNet hybrid, safetensors): references for D-B01's fidelity gate, f32 like S. Built
@@ -280,7 +280,7 @@ func preflightConcurrencySafety(t *testing.T, m *Model, prompt []int, workers in
 // worker pool, each worker owning its own *KVCache (see the concurrency-safety note on
 // TestPrefillGateReference and the preflight above).
 //
-// CONTENT-KEYED AND RESUMABLE (TE6(a)/TE8, docs/tasks/task-test-efficiency-2026-09.md): each prompt's reference is
+// CONTENT-KEYED AND RESUMABLE (TE6(a)/TE8, docs/completed/task-test-efficiency-2026-09.md): each prompt's reference is
 // looked up in prefill_ref_cache_testhook.go's cache by checkpoint sha256 + the prompt's ids + the reference path's
 // source + arch/quant/continuation. A hit is linked into outDir and skipped; a miss is computed, stored atomically, then
 // linked. So a rerun after an interruption computes only the prompts not yet stored, and a reference for different
