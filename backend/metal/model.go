@@ -3076,29 +3076,49 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 	L := &r.layers[l]
 	r.encLayer = l
 	for i, st := range L.steps {
-		if !mixerWalkBlocksForTest {
-			if mixerWalks(st) {
-				r.encodeMixerWalk(e, l, L, L.stepOps[i], x, uPos, uNKeys, uQTempScale, rp)
-				continue
-			}
-			if ffnWalks(st) {
-				r.encodeFFNWalk(e, st, l, L, L.stepOps[i], x)
-				continue
-			}
-		}
-		r.encodeStep(e, st, l, L, x, uPos, uNKeys, uQTempScale, rp)
+		r.encodeLayerStep(e, st, i, l, L, x, uPos, uNKeys, uQTempScale, rp, stepState{})
 	}
 }
 
-// encodeStep encodes one step of layer l.
-func (r *resident) encodeStep(e *Encoder, st layerStep, l int, L *residLayer, x, uPos, uNKeys, uQTempScale, rp Buffer) {
+// stepState is the conv window and state a recurrent step (DeltaNet, Mamba-2) runs on in place of the layer's own pair: the
+// multi-sequence step passes each row's slot. The zero value is the layer's own.
+type stepState struct{ win, state Buffer }
+
+// orPair is the state's pair, or the layer's own when the state is the zero value.
+func (rec stepState) orPair(win, state Buffer) (Buffer, Buffer) {
+	if rec.win == (Buffer{}) {
+		return win, state
+	}
+	return rec.win, rec.state
+}
+
+// encodeLayerStep encodes step i of layer l, st, on residual x: from its operations through the walk (resident.encodeMixerWalk,
+// resident.encodeFFNWalk), or through its block when mixerWalkBlocksForTest is set. rec names a recurrent step's own state.
+func (r *resident) encodeLayerStep(e *Encoder, st layerStep, i, l int, L *residLayer, x, uPos, uNKeys, uQTempScale, rp Buffer, rec stepState) {
+	if !mixerWalkBlocksForTest {
+		if mixerWalks(st) {
+			r.encodeMixerWalk(e, l, L, L.stepOps[i], x, uPos, uNKeys, uQTempScale, rp, rec)
+			return
+		}
+		if ffnWalks(st) {
+			r.encodeFFNWalk(e, st, l, L, L.stepOps[i], x)
+			return
+		}
+	}
+	r.encodeStep(e, st, l, L, x, uPos, uNKeys, uQTempScale, rp, rec)
+}
+
+// encodeStep encodes one step of layer l through its block.
+func (r *resident) encodeStep(e *Encoder, st layerStep, l int, L *residLayer, x, uPos, uNKeys, uQTempScale, rp Buffer, rec stepState) {
 	switch st {
 	case stepAttention:
 		r.encodeAttentionResidualWith(e, l, x, uPos, uNKeys, uQTempScale, rp)
 	case stepDeltaNet:
-		r.encodeDeltaNetMixerOn(e, L, x, L.delta.win, L.delta.state)
+		win, state := rec.orPair(L.delta.win, L.delta.state)
+		r.encodeDeltaNetMixerOn(e, L, x, win, state)
 	case stepMamba:
-		r.encodeMambaMixer(e, L, x)
+		win, ssm := rec.orPair(L.mamba.win, L.mamba.ssm)
+		r.encodeMambaMixerOn(e, L, x, win, ssm)
 	case stepMLA:
 		r.encodeMLAMixer(e, l, L, x, uPos, rp, uNKeys)
 	case stepGemma4MoE, stepMoE, stepNonGatedFFN, stepDenseFFN:

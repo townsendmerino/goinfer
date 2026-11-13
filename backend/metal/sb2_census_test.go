@@ -1710,3 +1710,140 @@ func TestWrappedUpload_turns(t *testing.T) {
 	}
 	wrappedupload.Turns(t, "metal")
 }
+
+// multiSeqWalkCell is a resident the multi-sequence step's walk is checked on, and how it builds a row's embedding: full is true
+// where a row carries more than the embedding (a Gemma 4 E-model's PLE input), so a slot is filled token by token.
+type multiSeqWalkCell struct {
+	name string
+	r    *resident
+	row  func(id int) []float32
+	full bool
+}
+
+// multiSeqWalkCells is the resident fixtures that build the batched step: the dense one, the recurrent and MoE ones, and the
+// Gemma 4 ones, whose layers the step runs whole per row.
+func multiSeqWalkCells(t *testing.T) []multiSeqWalkCell {
+	t.Helper()
+	var cells []multiSeqWalkCell
+	_, dense := mc3Resident(t, 8, 1024)
+	cells = append(cells, multiSeqWalkCell{"dense", dense, func(id int) []float32 { return mc3Emb(dense, id) }, false})
+	for _, fx := range recurrentStepFixtures {
+		r := recurrentStepResident(t, fx, true)
+		if r.batch == nil {
+			t.Fatalf("%s: no batched step: %s", fx.dir, r.batchIneligible())
+		}
+		cells = append(cells, multiSeqWalkCell{filepath.Base(fx.dir), r, func(id int) []float32 { return mc3Emb(r, id) }, false})
+	}
+	for _, dir := range gemma4StepFixtures {
+		m, r := gemma4StepModel(t, dir, true)
+		if r.batch == nil {
+			t.Fatalf("%s: no batched step: %s", dir, r.batchIneligible())
+		}
+		cells = append(cells, multiSeqWalkCell{filepath.Base(dir), r, m.EmbedResidentForTest, true})
+	}
+	return cells
+}
+
+// multiSeqWalkDiffs runs the batched step on b rows (each on its own slot, at depths from 3 to 40) for four steps under the
+// blocks and then under the walk, each from the same refill, and names each step whose pipeline sequence or logits differ.
+// The refill runs on the walk in both arms, so it is the same state; only the step's own per-row steps switch.
+func multiSeqWalkDiffs(t *testing.T, c multiSeqWalkCell, b int) []string {
+	t.Helper()
+	r := c.r
+	depths := []int{3, 11, 20, 40}[:b]
+	seed := uint32(2468013)
+	rnd := func() int {
+		seed ^= seed << 13
+		seed ^= seed >> 17
+		seed ^= seed << 5
+		return int(seed % uint32(min(20000, r.V)))
+	}
+	fills := make([][]int, b)
+	for m, D := range depths {
+		fills[m] = make([]int, D)
+		for i := range fills[m] {
+			fills[m][i] = rnd()
+		}
+	}
+	toks := make([][]int, 4)
+	for st := range toks {
+		for range b {
+			toks[st] = append(toks[st], rnd())
+		}
+	}
+	names := r.pipelineNames()
+	run := func(blocks bool) (seqs [][]string, logits [][]float32) {
+		mixerWalkBlocksForTest = false
+		stepCellFill(t, r, fills, c.row, c.full)
+		mixerWalkBlocksForTest = blocks
+		defer func() { mixerWalkBlocksForTest = false }()
+		var cur []string
+		r.d.SetDispatchHook(func(pl Pipeline) { cur = append(cur, names[pl]) })
+		defer r.d.SetDispatchHook(nil)
+		for st := range toks {
+			rows := make([]batchSeq, b)
+			for m := range b {
+				rows[m] = batchSeq{slot: m, pos: depths[m] + st, emb: c.row(toks[st][m])}
+			}
+			cur = nil
+			out := mc3Step(t, r, rows)
+			seqs = append(seqs, cur)
+			for m := range out {
+				logits = append(logits, slices.Clone(out[m]))
+			}
+		}
+		return seqs, logits
+	}
+	bs, bl := run(true)
+	ws, wl := run(false)
+	var diffs []string
+	for st := range bs {
+		if !slices.Equal(bs[st], ws[st]) {
+			diffs = append(diffs, fmt.Sprintf("step %d: %d dispatches under the blocks, %d under the walk, or a pipeline differs", st, len(bs[st]), len(ws[st])))
+		}
+	}
+	for i := range bl {
+		for j := range bl[i] {
+			if j >= len(wl[i]) || math.Float32bits(bl[i][j]) != math.Float32bits(wl[i][j]) {
+				diffs = append(diffs, fmt.Sprintf("row %d logit %d differs", i, j))
+				break
+			}
+		}
+	}
+	return diffs
+}
+
+// TestMultiSeqWalk_issuesTheBlocksDispatches is OP4m-pod2 part 2's P-1 and P-2 (docs/tasks/task-forward-and-memory-2026-11.md,
+// "OP4m-pod2 part 2: registration"): on every fixture that builds the batched step, at 2 and 4 rows, the step's per-row steps issue
+// the same pipelines, dispatch for dispatch, and the same logits, bit for bit, through the walk as through the blocks.
+func TestMultiSeqWalk_issuesTheBlocksDispatches(t *testing.T) {
+	for _, c := range multiSeqWalkCells(t) {
+		for _, b := range []int{2, 4} {
+			t.Run(fmt.Sprintf("%s/B=%d", c.name, b), func(t *testing.T) {
+				for _, d := range multiSeqWalkDiffs(t, c, b) {
+					t.Error(d)
+				}
+			})
+		}
+	}
+}
+
+// TestMultiSeqWalk_plantsGoRed: the walk's extra residual after an output projection that already adds it (DeltaNet's out_proj)
+// is an extra dispatch in the batched step on every fixture with a DeltaNet layer, so the step reaches the walk for its per-row
+// recurrent steps; a fixture with none is not asked to go red.
+func TestMultiSeqWalk_plantsGoRed(t *testing.T) {
+	reds := 0
+	for _, c := range multiSeqWalkCells(t) {
+		delta := slices.ContainsFunc(c.r.layers, func(L residLayer) bool { return L.delta != nil })
+		mixerWalkPlantForTest = mixerWalkPlantResidual
+		diffs := multiSeqWalkDiffs(t, c, 4)
+		mixerWalkPlantForTest = 0
+		if delta && len(diffs) == 0 {
+			t.Errorf("%s: the extra-residual plant is red nowhere on a fixture with DeltaNet layers", c.name)
+		}
+		if len(diffs) > 0 {
+			reds++
+		}
+	}
+	t.Logf("fixtures red under the extra-residual plant: %d", reds)
+}

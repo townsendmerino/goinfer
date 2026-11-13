@@ -87,8 +87,9 @@ func checkWalkResidual(st layerStep, res *program.ResidualParams) error {
 	return nil
 }
 
-// encodeMixerWalk emits layer l's mixer step from its operations ops, which checkMixerWalk admitted, on residual x.
-func (r *resident) encodeMixerWalk(e *Encoder, l int, L *residLayer, ops []program.Op, x, uPos, uNKeys, uQTemp, rp Buffer) {
+// encodeMixerWalk emits layer l's mixer step from its operations ops, which checkMixerWalk admitted, on residual x. A recurrent
+// step runs on rec's conv window and state, or the layer's own when rec is the zero value.
+func (r *resident) encodeMixerWalk(e *Encoder, l int, L *residLayer, ops []program.Op, x, uPos, uNKeys, uQTemp, rp Buffer, rec stepState) {
 	if L.geom != nil && L.delta == nil && L.mamba == nil && L.mla == nil {
 		r.encodeAttentionWalk(e, l, ops, x, uPos, uNKeys, uQTemp, rp)
 		return
@@ -98,13 +99,15 @@ func (r *resident) encodeMixerWalk(e *Encoder, l int, L *residLayer, ops []progr
 		case program.OpNorm:
 			r.emitNorm(e, &o.Norm, x, L.preNorm, L.preNormBias, r.aq, r.aSc)
 		case program.OpDeltaNet: // and the residual add after it, which its out_proj does
-			r.encodeDeltaNetCoreOn(e, L, x, L.delta.win, L.delta.state)
+			win, state := rec.orPair(L.delta.win, L.delta.state)
+			r.encodeDeltaNetCoreOn(e, L, x, win, state)
 			if mixerWalkPlantForTest == mixerWalkPlantResidual {
 				e.Dispatch(r.pRes, r.H, 256, x, r.dO)
 			}
 			i++
 		case program.OpMamba2:
-			r.encodeMambaCoreOn(e, L, L.mamba.win, L.mamba.ssm)
+			win, ssm := rec.orPair(L.mamba.win, L.mamba.ssm)
+			r.encodeMambaCoreOn(e, L, win, ssm)
 		case program.OpMLA:
 			r.encodeMLACore(e, l, L, uPos, rp, uNKeys)
 		case program.OpResidual:

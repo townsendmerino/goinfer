@@ -384,6 +384,26 @@ func (r *resident) stepBatchesAttn(l int) bool {
 	return len(L.steps) > 0 && L.steps[0] == stepAttention && !L.qGate && !r.stepWholeLayer(l)
 }
 
+// rowState is the recurrent state layer L's step runs on for a row on slot q.slot: the slot's conv window and state, or the
+// zero value (the layer's own pair) for a one-slot build or a layer with none.
+func rowState(L *residLayer, q batchSeq) stepState {
+	if D := L.delta; D != nil && len(D.slotWin) > 0 {
+		s := q.slot
+		if stepDeltaSlot0PlantForTest {
+			s = 0
+		}
+		return stepState{D.slotWin[s], D.slotState[s]}
+	}
+	if M := L.mamba; M != nil && len(M.slotWin) > 0 {
+		s := q.slot
+		if stepMambaSlot0PlantForTest {
+			s = 0
+		}
+		return stepState{M.slotWin[s], M.slotSSM[s]}
+	}
+	return stepState{}
+}
+
 // stepWholeLayer reports whether the step runs layer l whole, per row, on decode's own layer encoder: a Gemma 4 layer, with
 // the step's Gemma 4 blocks on (OP4m-d5a).
 func (r *resident) stepWholeLayer(l int) bool {
@@ -1242,8 +1262,8 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 						}
 					}
 					r.encLayer = l
-					for _, st := range L.steps[from:to] {
-						r.encodeStep(e, st, l, L, f32(b.xB, m, H), b.uPos[src], b.uNKeys[src], b.uQTemp[src], b.uPos[src])
+					for i := from; i < to; i++ {
+						r.encodeLayerStep(e, L.steps[i], i, l, L, f32(b.xB, m, H), b.uPos[src], b.uNKeys[src], b.uQTemp[src], b.uPos[src], rowState(L, q))
 					}
 				}
 			}
@@ -1258,7 +1278,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 			r.encNKeys, r.encFANSplit = 0, Buffer{}
 			continue
 		}
-		for _, st := range L.steps {
+		for i, st := range L.steps {
 			switch st {
 			case stepAttention:
 				if !L.qGate {
@@ -1278,33 +1298,13 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 					if r.attnFANKV > 0 {
 						r.encFANSplit = b.uFANSplit[src]
 					}
-					r.encodeAttentionResidualWith(e, l, f32(b.xB, m, H), b.uPos[src], b.uNKeys[src], b.uQTemp[src])
+					r.encodeLayerStep(e, st, i, l, L, f32(b.xB, m, H), b.uPos[src], b.uNKeys[src], b.uQTemp[src], b.uPos[src], stepState{})
 				}
 				r.kt = kt
 				r.encNKeys, r.encFANSplit = 0, Buffer{}
-			case stepDeltaNet:
-				for m, q := range seqs { // decode's DeltaNet mixer on each row in turn, on the row's own slot state (OP4m-d4a)
-					D := L.delta
-					win, state := D.win, D.state // a one-slot build: the layer's own pair
-					if s := q.slot; len(D.slotWin) > 0 {
-						if stepDeltaSlot0PlantForTest {
-							s = 0
-						}
-						win, state = D.slotWin[s], D.slotState[s]
-					}
-					r.encodeDeltaNetMixerOn(e, L, f32(b.xB, m, H), win, state)
-				}
-			case stepMamba:
-				for m, q := range seqs { // decode's Mamba-2 mixer on each row in turn, on the row's own slot state (OP4m-d6a)
-					M := L.mamba
-					win, ssm := M.win, M.ssm // a one-slot build: the layer's own pair
-					if s := q.slot; len(M.slotWin) > 0 {
-						if stepMambaSlot0PlantForTest {
-							s = 0
-						}
-						win, ssm = M.slotWin[s], M.slotSSM[s]
-					}
-					r.encodeMambaMixerOn(e, L, f32(b.xB, m, H), win, ssm)
+			case stepDeltaNet, stepMamba:
+				for m, q := range seqs { // decode's recurrent mixer on each row in turn, on the row's own slot state (OP4m-d4a, OP4m-d6a)
+					r.encodeLayerStep(e, st, i, l, L, f32(b.xB, m, H), b.uPos[m], b.uNKeys[m], b.uQTemp[m], b.uPos[m], rowState(L, q))
 				}
 			case stepNonGatedFFN:
 				r.encodeNonGatedFFNRows(e, L, B)
@@ -1312,11 +1312,8 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 				ffnRows(L)
 			case stepMoE:
 				r.encLayer = l
-				for m := range B { // decode's MoE dispatches on each row in turn: norm, route, the k experts and the shared one
-					row := f32(b.xB, m, H)
-					e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, row, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
-					r.encodeMoERoute(e, L)
-					r.encodeMoEExperts(e, L, row)
+				for m := range B { // decode's MoE on each row in turn: norm, route, the k experts and the shared one
+					r.encodeLayerStep(e, st, i, l, L, f32(b.xB, m, H), b.uPos[m], b.uNKeys[m], b.uQTemp[m], b.uPos[m], stepState{})
 				}
 			default:
 				panic(fmt.Sprintf("metal: the batched step has no block for the %v step, and batchIneligible admits none", st))

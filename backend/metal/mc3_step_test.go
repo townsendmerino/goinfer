@@ -226,6 +226,16 @@ func TestOP4mD6b_mambaStepSpeed(t *testing.T) {
 		want: func(r *resident) bool { return r.mamba != nil }, wantWhat: "a Mamba-2 (Nemotron-H) resident"})
 }
 
+// TestOP4mPod2_stepSpeed is OP4m-pod2 part 2's P-3 (docs/tasks/task-forward-and-memory-2026-11.md, "OP4m-pod2 part 2:
+// registration") on a recurrent checkpoint at GOINFER_OP4MPOD2S_MODEL (GOINFER_OP4MPOD2S_TIMING=1, under the timing lock): the
+// batched step on four slots, its per-row steps through the walk against through the blocks, graded as a parity cell.
+func TestOP4mPod2_stepSpeed(t *testing.T) {
+	t.Cleanup(func() { mixerWalkBlocksForTest = false })
+	op4mStepSpeed(t, stepSpeedCell{env: "GOINFER_OP4MPOD2S", label: "[OP4m-pod2 P-3]", recurrent: true, parity: true,
+		want: func(r *resident) bool { return r.dnet != nil || r.mamba != nil }, wantWhat: "a DeltaNet or Mamba-2 resident",
+		stepArms: func(on bool) { mixerWalkBlocksForTest = !on }})
+}
+
 // cellLoad1 is the 1-minute load average (vm.loadavg), a timed cell's start and pair term.
 func cellLoad1(t *testing.T) float64 {
 	t.Helper()
@@ -531,6 +541,10 @@ type stepSpeedCell struct {
 	// stepArms, when set, makes both arms the step, switched by stepArms(true) for the new arm and stepArms(false) for the
 	// do-nothing one; the log's "sequential" is then the step in its do-nothing form. The caller restores what the switch set.
 	stepArms func(on bool)
+	// parity, when set, grades the cell as a no-regression check (OP4m-pod2 part 2's P-3) in place of a feature bar: 6 pairs;
+	// pass at a median new ÷ do-nothing of at least 0.99, fail when every pair is under 1 and the median under 0.99, parked
+	// otherwise.
+	parity bool
 }
 
 // op4mStepSpeed is the feature-bar cell TestOP4mD3_moeStepSpeed describes, on the model and arms c names.
@@ -546,7 +560,11 @@ func op4mStepSpeed(t *testing.T, c stepSpeedCell) {
 	if strings.HasPrefix(path, "/Volumes/") || strings.HasPrefix(path, "/srv/models") {
 		t.Fatalf("%s is on the archive, not the bench set: a timing from it measures the disk", path)
 	}
-	const B, depth, steps, pairs, ctx = 4, 128, 64, 10, 1024
+	const B, depth, steps, ctx = 4, 128, 64, 1024
+	pairs := 10
+	if c.parity {
+		pairs = 6
+	}
 	load1 := func() float64 { return cellLoad1(t) }
 	paging := func() (swapMiB float64, pageouts int64) { return cellPaging(t) }
 	majFaults := func() int64 { // this process's major faults (page-ins from disk), the never-swap rule's own reading
@@ -701,6 +719,21 @@ func op4mStepSpeed(t *testing.T, c stepSpeedCell) {
 	med := (ratios[pairs/2-1] + ratios[pairs/2]) / 2
 	verdict := "PARKED (under the feature bar, not under 1.00)"
 	switch {
+	case c.parity:
+		below := 0
+		for _, x := range ratios {
+			if x < 1 {
+				below++
+			}
+		}
+		switch {
+		case med >= 0.99:
+			verdict = "PASS"
+		case below == pairs:
+			verdict = "FAIL (every pair under 1, median under 0.99)"
+		default:
+			verdict = "PARKED (median under 0.99)"
+		}
 	case med >= 1.05 && faster >= 9:
 		verdict = "PASS"
 	case med < 1.00:
