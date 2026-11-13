@@ -959,6 +959,21 @@ jobs:
         # -timeout 25m kept from the -race era (the default is 10m PER PACKAGE; ./decoder was the
         # package that tripped it) -- generous now without the detector, but a hang still fails.
         run: go test -timeout 25m -tags goinfer_testhooks ./...
+      # MM10: when anything above is red, take this host class's decision census golden as the job's artifact, so a class can be
+      # taken from CI instead of from a person's machine. The file is rewritten only in this runner's checkout and only the changed
+      # one is uploaded; nothing is committed. Download it into testdata/census/ and review the diff.
+      - name: census golden as this host would write it (artifact only)
+        if: failure()
+        run: |
+          go test -timeout 30m -tags goinfer_testhooks -run '^TestDecisionCensus$' -census.update ./decoder/ || true
+          mkdir -p census-out
+          git diff --name-only -- testdata/census | xargs -r -I{} cp {} census-out/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: census-golden-darwin
+          path: census-out/
+          if-no-files-found: ignore
 
   # H1.1 (docs/tasks/task-hardware-coverage-2026-10.md): two runners we did not use, so two shipped
   # targets go from never run to run on every push. Windows: the release ships windows-amd64, and
@@ -1041,6 +1056,21 @@ jobs:
         run: go build ./...
       - name: test
         run: go test -timeout 30m -tags goinfer_testhooks ./...
+      # MM10: when anything above is red, take this host class's decision census golden as the job's artifact, so a class can be
+      # taken from CI instead of from a person's machine. The file is rewritten only in this runner's checkout and only the changed
+      # one is uploaded; nothing is committed. Download it into testdata/census/ and review the diff.
+      - name: census golden as this host would write it (artifact only)
+        if: failure()
+        run: |
+          go test -timeout 30m -tags goinfer_testhooks -run '^TestDecisionCensus$' -census.update ./decoder/ || true
+          mkdir -p census-out
+          git diff --name-only -- testdata/census | xargs -r -I{} cp {} census-out/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: census-golden-linux-arm64
+          path: census-out/
+          if-no-files-found: ignore
 
   # H1.3 (docs/tasks/task-hardware-coverage-2026-10.md): the narrower CPU kernels, forced on whatever CPU the runner has. aikit v1.54.0's aikit_noavx512 / aikit_noavx2 / aikit_nopopcnt tags make the
   # dispatchers take the AVX2 kernels on an AVX-512 VNNI machine (the ubuntu pool mixes CPU models), or the pure-Go kernels, so the paths that no machine of ours executes run on every push.
