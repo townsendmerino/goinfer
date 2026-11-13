@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// R26 (docs/tasks/task-first-hour.md): through the REPL loop itself (the caller of every print), a scripted session
+// R26 (docs/completed/task-first-hour.md): through the REPL loop itself (the caller of every print), a scripted session
 // (piped stdin) must print the answer and nothing else: no banner, `you>` label, ANSI escapes or trailing `bye`. An
 // interactive one is unchanged. Origin: docs/code-notes/internal-chatapp.md#TestRepl_plainWhenScripted.
 func TestRepl_plainWhenScripted(t *testing.T) {

@@ -12,7 +12,7 @@ import (
 //
 // Parity reference: transformers 5.15.0's WhisperFeatureExtractor, its NumPy path (_np_extract_fbank_features, float64 arithmetic) and its torch path (float32, what __call__ uses).
 // The two differ by up to 3.1e-05 on real inputs; this port follows the NumPy path, including the places it rounds to float32: the FFT result is stored as complex64, and the log
-// is cast to float32 before the clamp and the final (x + 4) / 4 (docs/tasks/task-multimodal-support-2026-10.md, G-S14a, in goinfer).
+// is cast to float32 before the clamp and the final (x + 4) / 4 (docs/completed/task-multimodal-support-2026-10.md, G-S14a, in goinfer).
 const (
 	WhisperSampleRate = 16000
 	WhisperChunkLen   = 480000 // 30 s: the extractor pads to this and truncates past it

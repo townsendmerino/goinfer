@@ -59,7 +59,7 @@ func cosMax(got []float32, want []float64) (cos, maxAbs float64) {
 	return dot / math.Sqrt(ng*nw), maxAbs
 }
 
-// TestTiny_parity is Gate 1 (docs/tasks/task-embeddinggemma2.md): on a random-weight fixture pinned with transformers'
+// TestTiny_parity is Gate 1 (docs/completed/task-embeddinggemma2.md): on a random-weight fixture pinned with transformers'
 // own embedding_gemma2 modeling code, every layer's hidden state, the projected last hidden state, the pooled vector
 // before normalisation and the sentence embedding match the float32 reference to cosine 0.9999 (each on its own, so a
 // pooling or normalisation bug cannot pass on a matching hidden state), and the embedding is as accurate as the

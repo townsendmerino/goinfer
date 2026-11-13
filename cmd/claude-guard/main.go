@@ -8,7 +8,7 @@
 //
 //	go build -o ~/go/bin/claude-guard ./cmd/claude-guard
 //
-// The rules and their ids are in rules.go; docs/tasks/task-claude-code-hygiene-2026-10.md (DX4) has the wiring.
+// The rules and their ids are in rules.go; docs/completed/task-claude-code-hygiene-2026-10.md (DX4) has the wiring.
 package main
 
 import (

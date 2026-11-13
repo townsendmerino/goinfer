@@ -56,7 +56,7 @@ func gradeEvents(c cell, evs []testEvent, rc int) (*results, cellResult) {
 	return res, gradeCell(c, gpuRunConfig(), res, rc, "", 0)
 }
 
-// TestGradeMetalCell_plants is SB12-C4 for step 8 (docs/tasks/task-subsystems-2026-10.md, SB12 step 8 (Metal)): from a
+// TestGradeMetalCell_plants is SB12-C4 for step 8 (docs/completed/task-subsystems-2026-10.md, SB12 step 8 (Metal)): from a
 // green cell each group passes with its evidence; a failed test fails each group; an all-skip cell fails every group that
 // VacuousFails and the suite still passes; an absent checkpoint skips with no cell; a crash fails with the crash head.
 func TestGradeMetalCell_plants(t *testing.T) {

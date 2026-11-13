@@ -101,7 +101,7 @@ func (s *server) handleAdminStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	// The resident batcher's counters per model running several generations at once (the numbers serve prints at
 	// shutdown), so a harness can difference them across one cell rather than across the server's whole life: load,
-	// warm-up and first-use pipeline compiles excluded (docs/tasks/task-concurrency-2026-09.md).
+	// warm-up and first-use pipeline compiles excluded (docs/tasks/parked/task-concurrency-2026-09.md).
 	rb := map[string]any{}
 	for _, lm := range s.modelList() {
 		if lm.model != nil && lm.mdl().ResidentConcurrency() > 1 {

@@ -12,7 +12,7 @@ type refusal struct {
 }
 
 // Each rule's message names the right command; the rule ids are what the refusal log records and what the monthly rule
-// review counts (docs/tasks/task-claude-code-hygiene-2026-10.md, DX4 and DX8).
+// review counts (docs/completed/task-claude-code-hygiene-2026-10.md, DX4 and DX8).
 const (
 	msgGA1 = "GA1: never `git add -A`, `git add --all` or `git add .`: it sweeps generated fixture metadata into git, and a " +
 		"fixture's skip-guard then reads it as present. Stage explicit paths: `git add <path> <path>…`."

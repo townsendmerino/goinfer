@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// S10, LFM2.5-VL (docs/tasks/task-multimodal-support-2026-10.md, "S10, LFM2.5-VL"): the preprocessing layout against HF's
+// S10, LFM2.5-VL (docs/completed/task-multimodal-support-2026-10.md, "S10, LFM2.5-VL"): the preprocessing layout against HF's
 // Lfm2VlProcessor on 21 image sizes (scripts/pin_lfm2vl_tiny.py), and the projector against HF's
 // Lfm2VlMultiModalProjector at toy size. The goldens carry everything (the projector's weights too), so these run in CI.
 

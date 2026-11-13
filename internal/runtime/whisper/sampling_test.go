@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// G-S14h3 of docs/tasks/task-multimodal-support-2026-10.md: the fallback loop and sampling, by invariants (a sampled attempt's random stream is torch's and cannot be reproduced here).
+// G-S14h3 of docs/completed/task-multimodal-support-2026-10.md: the fallback loop and sampling, by invariants (a sampled attempt's random stream is torch's and cannot be reproduced here).
 
 func samplingClip(t *testing.T) (*Transcriber, []float32) {
 	t.Helper()

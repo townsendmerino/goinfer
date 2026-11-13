@@ -159,7 +159,7 @@ func ResolveVerbose(ctx context.Context, spec string) (string, error) {
 
 // IsMMProj reports whether a repo file is a llama.cpp-style multimodal projector (`mmproj-*.gguf`): the
 // vision half of a GGUF model, shipped as a second file. A model repo lists it beside the quants, so
-// `pull` says what it is (docs/tasks/task-first-hour.md): goinfer loads a Qwen3.5+ one with `--vision`
+// `pull` says what it is (docs/completed/task-first-hour.md): goinfer loads a Qwen3.5+ one with `--vision`
 // (docs/multimodal.md); other families' are not supported yet.
 func IsMMProj(name string) bool {
 	base := strings.ToLower(name)

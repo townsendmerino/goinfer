@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// TestQwen3Deepstack_tiny is G-S10b's tiny half (goinfer's docs/tasks/task-multimodal-support-2026-10.md, S10): a tiny
+// TestQwen3Deepstack_tiny is G-S10b's tiny half (goinfer's docs/completed/task-multimodal-support-2026-10.md, S10): a tiny
 // Qwen3-VL tower WITH DeepStack (blocks 0 and 1), every LayerNorm randomised, against transformers' Qwen3VLVisionModel
 // on two images (testdata/qwen3vl-vision-tiny, pinned by goinfer's scripts/pin_qwen3vl_vision_tiny.py). ForwardDeepstack's
 // main rows and each DeepStack set at worst-row cosine >= 0.9999, and the planted defect, each DeepStack merger's

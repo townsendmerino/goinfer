@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// TestPlanGridTower pins where a Qwen3.5+ or GLM-OCR tower runs (S2 of docs/tasks/task-multimodal-support-2026-10.md): the device tower only under --backend metal or cuda,
+// TestPlanGridTower pins where a Qwen3.5+ or GLM-OCR tower runs (S2 of docs/completed/task-multimodal-support-2026-10.md): the device tower only under --backend metal or cuda,
 // float32 and registered for THAT backend; the CPU otherwise with the reason; and each CPU fallback a refusal under -require-backend. Under webgpu the device tower is opt-in
 // (-vision-device gpu) and the CPU tower otherwise is a choice, not a fallback.
 func TestPlanGridTower(t *testing.T) {

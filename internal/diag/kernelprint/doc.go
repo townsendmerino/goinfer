@@ -8,7 +8,7 @@
 // variable or device, and changes no process-wide setting. A kernel's inputs never depend on another kernel's output,
 // so a change to one kernel changes only the fingerprints of the kernels that call it.
 //
-// Gates (docs/tasks/task-subsystems-2026-10.md §5.4, "VK1's gates"):
+// Gates (docs/completed/task-subsystems-2026-10.md §5.4, "VK1's gates"):
 //
 //	K1 stable          TestCompute_stable
 //	K2 mutation        TestCompute_mutation (runs with GOINFER_KERNELPRINT_MUTATION=1: it copies aikit and builds five times)

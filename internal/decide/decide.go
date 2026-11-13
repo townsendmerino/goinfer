@@ -1,4 +1,4 @@
-// Package decide is D1 of docs/tasks/task-constrained-confidence.md: decisions by label-token scoring ("Route A")
+// Package decide is D1 of docs/tasks/parked/task-constrained-confidence.md: decisions by label-token scoring ("Route A")
 // on any loaded model. A decision is a state, a question and a closed option set; the answer is a probability
 // distribution over the options, from ONE prefill and no decode:
 //
@@ -397,7 +397,7 @@ func (d *Decider) decideWith(ctx context.Context, r Request, pre *preScored) (Re
 
 // DecideMany answers several requests about (usually) one state. Where the model can share work across them it does: every request's prompt is built first and
 // handed to the many-prompt hook (Options.HiddenMany for a Route B head, Options.PrefillMany for label scoring) in ONE call, which prefills the prefix the prompts
-// share once and resumes each question from a copy of that cache (decoder.PromptHiddenMany; D8 of docs/tasks/task-constrained-confidence.md). The answers are the
+// share once and resumes each question from a copy of that cache (decoder.PromptHiddenMany; D8 of docs/tasks/parked/task-constrained-confidence.md). The answers are the
 // ones Decide gives, up to the numerical difference of splitting one prefill in two (bounded by the decoder's own gate). Without the hook, or for a request that asks
 // for several answer orders (Permute > 1), each request is Decide'd alone, exactly as before. Results are in the order of reqs.
 func (d *Decider) DecideMany(ctx context.Context, reqs []Request) ([]Result, error) {

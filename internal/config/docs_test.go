@@ -123,7 +123,7 @@ func readEnvMeta(t *testing.T) envMeta {
 	return m
 }
 
-// TestEnvVarsDoc is G-SB10-12, 16 and 17 (docs/tasks/task-subsystems-2026-10.md § SB10): docs/env-vars.md's knob
+// TestEnvVarsDoc is G-SB10-12, 16 and 17 (docs/completed/task-subsystems-2026-10.md § SB10): docs/env-vars.md's knob
 // paragraph is the schema's knobs, its tables are docs/env-vars.meta.json's rows over schema settings, and every
 // variable in the schema is named on the page.
 func TestEnvVarsDoc(t *testing.T) {

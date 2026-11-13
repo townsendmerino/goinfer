@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// G-S14e4a (i) of docs/tasks/task-multimodal-support-2026-10.md: Load(dir) on a directory that holds tekken.json and no tokenizer.json (Voxtral Mini) is the Tekken tokenizer: it gives
+// G-S14e4a (i) of docs/completed/task-multimodal-support-2026-10.md: Load(dir) on a directory that holds tekken.json and no tokenizer.json (Voxtral Mini) is the Tekken tokenizer: it gives
 // mistral_common's ids on every golden string, exactly as LoadTekken of the same bytes does. A directory with neither file still fails, naming tokenizer.json.
 func TestLoad_tekkenDirectory(t *testing.T) {
 	g, raw := loadTekkenGolden(t)

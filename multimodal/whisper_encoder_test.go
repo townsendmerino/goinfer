@@ -9,7 +9,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/audio"
 )
 
-// G-S14d1 of docs/tasks/task-multimodal-support-2026-10.md: aikit's Whisper encoder against transformers' WhisperEncoder on a tiny random-weight Whisper
+// G-S14d1 of docs/completed/task-multimodal-support-2026-10.md: aikit's Whisper encoder against transformers' WhisperEncoder on a tiny random-weight Whisper
 // (scripts/pin_whisper_tiny.py): per-frame cosine >= 0.99999 AND max |diff| <= 2e-05, and every planted defect red against both.
 
 const (

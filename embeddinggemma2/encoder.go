@@ -17,7 +17,7 @@ import (
 const MaxTokens = 8192
 
 // MatryoshkaWidths are the embedding widths a server offers for OpenAI's `dimensions`. The model card lists 768, 512,
-// 256 and 128; Gate 2's pre-registered truncation reading (docs/tasks/task-embeddinggemma2.md) kept 768 and 512 and
+// 256 and 128; Gate 2's pre-registered truncation reading (docs/completed/task-embeddinggemma2.md) kept 768 and 512 and
 // dropped the other two: on 341 sections of this repo's docs, heading-to-section recall@10 fell to 0.888x of 768's at
 // 256 and 0.684x at 128, under the rule's 0.90x.
 var MatryoshkaWidths = []int{768, 512}

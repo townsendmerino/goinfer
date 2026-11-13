@@ -232,7 +232,7 @@ const (
 // (its Q4_K tensors are the .giw's kind 8). -stream-weights is refused at a quant weight paging cannot read (mem.QuantPages),
 // where it would bound nothing. A directory's sidecar keeps its
 // weights as mmap aliases rather than a heap copy, which on Metal's unified memory is the difference between the weights
-// counted once and counted twice (docs/tasks/task-multimodal-support-2026-10.md, S18).
+// counted once and counted twice (docs/completed/task-multimodal-support-2026-10.md, S18).
 func routeFor(src string, opts decoder.Options, directLoad bool) (sourceRoute, error) {
 	gguf := strings.HasSuffix(src, ".gguf")
 	if opts.StreamWeights && strings.HasSuffix(src, ".giw") {
@@ -351,7 +351,7 @@ func activationSafeQuant(src, quant string, group int, explicitQuant, backend st
 	return quant, group, fmt.Sprintf("warning: --quant %s quantizes activations to int8, and %s; expect degraded output (--quant int8int8 runs it with per-32 activation scales).", quant, why)
 }
 
-// loadGuarded is decoder.Load under S3's load-time swap tripwire (docs/tasks/task-never-swap-2026-09.md).
+// loadGuarded is decoder.Load under S3's load-time swap tripwire (docs/completed/task-never-swap-2026-09.md).
 // A .gguf direct build and a .giw load observe Options.LoadAbort (the .giw loader's CRC pass and layer walk, and the resident build through
 // Model.LoadAbort), so both arm the watch; an HF-dir or streamed load arms nothing.
 func loadGuarded(path string, opts decoder.Options, advice string) (*decoder.Model, error) {

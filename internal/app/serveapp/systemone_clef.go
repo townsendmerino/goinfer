@@ -1,6 +1,6 @@
 package serveapp
 
-// Route C of POST /v1/systemone (docs/tasks/task-constrained-confidence.md): a model directory that carries
+// Route C of POST /v1/systemone (docs/tasks/parked/task-constrained-confidence.md): a model directory that carries
 // joint_head.safetensors is Cloudflare's Clef decision model, and one backbone pass over the whole record answers every
 // question (internal/clef). The request is the same TypeSafe shape; what differs is that it is read as the reference's encoder
 // reads it, from the raw body, and answered in the reference's own shape (systemone_answer in the checkpoint's

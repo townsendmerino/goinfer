@@ -45,7 +45,7 @@ type headGolden struct {
 	}
 }
 
-// TestHead_matchesReference is D4's gate (docs/tasks/task-constrained-confidence.md): Route B end to end on a tiny
+// TestHead_matchesReference is D4's gate (docs/tasks/parked/task-constrained-confidence.md): Route B end to end on a tiny
 // JEV-shaped judge (testdata/decisions/judge-tiny, from scripts/pin_decisions_head_tiny.py), against the reference
 // decide() as the demo Space runs it, with PEFT applying the adapter UNMERGED. goinfer instead merges the adapter at
 // load (D3), reads PromptHidden (D2), applies head.safetensors, keeps the kind's first n slots, divides by

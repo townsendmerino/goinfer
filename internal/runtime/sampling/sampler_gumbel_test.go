@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// PRE-REGISTERED ACCEPTANCE RULES (written before the first run; docs/tasks/red-october.md R7b).
+// PRE-REGISTERED ACCEPTANCE RULES (written before the first run; docs/completed/red-october.md R7b).
 //
 // The new temperature-only draw does not reproduce the old stream, so there is no reference stream to diff
 // against; correctness is statistical, and that is a weaker instrument than token identity. The rules below

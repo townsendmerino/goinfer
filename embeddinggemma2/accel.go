@@ -6,7 +6,7 @@ import (
 	"sync"
 )
 
-// Accelerator runs the encoder's forward on another device (Phase M of docs/tasks/task-embeddinggemma2.md: Metal).
+// Accelerator runs the encoder's forward on another device (Phase M of docs/completed/task-embeddinggemma2.md: Metal).
 // It returns what Model.forward returns: the projected last hidden state, [len(ids), Dim()] row-major, and, with
 // keepLayers, every layer's input and the last layer's output for per-layer differencing. Pooling, normalisation and
 // tokenization stay in this package, shared with the CPU path.

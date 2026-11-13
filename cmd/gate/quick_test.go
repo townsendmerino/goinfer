@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-// EQUIVALENCE for `gate quick` (TE7, docs/tasks/task-test-efficiency-2026-09.md). The campaign's
+// EQUIVALENCE for `gate quick` (TE7, docs/completed/task-test-efficiency-2026-09.md). The campaign's
 // constraint is that a faster check which stops detecting is worse than a slow one, so each claim
 // the selection makes is pinned here, and each test below was shown to go RED when the selection
 // was deliberately broken (recorded in the TE7 report):

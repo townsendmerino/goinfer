@@ -64,7 +64,7 @@ func (s *server) haltGate(h http.HandlerFunc) http.HandlerFunc {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "halted", "reason": hi.reason})
 			return
 		}
-		// A second, independent condition at this same chokepoint (swapguard.go, docs/tasks/task-never-swap-2026-09.md).
+		// A second, independent condition at this same chokepoint (swapguard.go, docs/completed/task-never-swap-2026-09.md).
 		// Unlike a halt, a tripped swap guard never cancels anything already running; it only refuses NEW admissions, so
 		// this check does not touch s.gens.
 		if s.swapGuardTripped.Load() {

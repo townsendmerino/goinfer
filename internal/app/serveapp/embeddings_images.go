@@ -9,7 +9,7 @@ import (
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
 )
 
-// Image inputs to /v1/embeddings (docs/tasks/task-embeddinggemma2.md). `input` is a string, an object, or an array
+// Image inputs to /v1/embeddings (docs/completed/task-embeddinggemma2.md). `input` is a string, an object, or an array
 // whose every element is one input; an element is a string, an {"image": ..., "text": ...} object (the dict
 // sentence-transformers takes), or an OpenAI content-part array ([{"type": "image_url", "image_url": {"url":
 // "data:..."}}, {"type": "text", "text": "..."}]). A lone part object with a "type" is a one-part input. Images are

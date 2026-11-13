@@ -21,7 +21,7 @@ type attachableTower interface {
 
 // attachGemma3Tower loads Gemma 3's SigLIP encoder (load(true) is the int8 one) and attaches its device-resident form.
 //
-// On CUDA the unset default is the float32 tower (docs/tasks/task-multimodal-support-2026-10.md, "Night 2026-10-08"); a
+// On CUDA the unset default is the float32 tower (docs/completed/task-multimodal-support-2026-10.md, "Night 2026-10-08"); a
 // card without room for it would drop the request to the much slower CPU tower, worse than the int8 device tower. So
 // when fallback is set (float32 was the DEFAULT, not asked for) a float32 attach that does not take is released and the
 // int8 tower is attached in its place, with a line saying why. An explicit `-vision-quant f32` sets fallback false:

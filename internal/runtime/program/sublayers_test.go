@@ -6,7 +6,7 @@ import (
 )
 
 // The pure tests of SublayersOf and CheckSublayerClaims, moved from metal's resident_memguard_test.go with the derivation
-// (OP4cu-b2, docs/tasks/task-forward-architecture-2026-10.md §4.9a); their assertions are unchanged.
+// (OP4cu-b2, docs/completed/task-forward-architecture-2026-10.md §4.9a); their assertions are unchanged.
 
 // TestSublayersOf_parallelAndForms (Gemini on #544, points 1 and 2): an FFN form with no Metal block declines instead of mapping
 // to a step; one sublayer holding a mixer and an FFN is a parallel block only with attention, a dense FFN and a residual of two

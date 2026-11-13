@@ -78,9 +78,9 @@ func TestOptions_everyFlagReachesOptions(t *testing.T) {
 			return o.ExactPrefill && (*o.Knobs)["GOINFER_CPU_FAST_ATTENTION"] == "0"
 		}},
 		"cpu-exact-prefill": {"--cpu-exact-prefill", func(o decoder.Options, _ *Flags) bool { return (*o.Knobs)["GOINFER_CPU_FAST_ATTENTION"] == "0" }},
-		// Default is true (docs/tasks/task-cuda-windowed-kv-2026-10.md, section 12): the row probes the opt-out.
+		// Default is true (docs/completed/task-cuda-windowed-kv-2026-10.md, section 12): the row probes the opt-out.
 		"windowed-kv": {"--windowed-kv=false", func(o decoder.Options, _ *Flags) bool { return !o.ResidentWindowedKV }},
-		// Default is true (docs/tasks/task-forward-architecture-2026-10.md §4.9, D3-3r): the row probes the opt-out.
+		// Default is true (docs/completed/task-forward-architecture-2026-10.md §4.9, D3-3r): the row probes the opt-out.
 		"moe-step":       {"--moe-step=false", func(o decoder.Options, _ *Flags) bool { return !o.ResidentMoEStep }},
 		"recurrent-step": {"--recurrent-step", func(o decoder.Options, _ *Flags) bool { return o.ResidentRecurrentStep }},
 		"gemma4-step":    {"--gemma4-step", func(o decoder.Options, _ *Flags) bool { return o.ResidentGemma4Step }},

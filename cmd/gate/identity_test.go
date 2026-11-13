@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// EQUIVALENCE for `gate identity` (TE6(b), docs/tasks/task-test-efficiency-2026-09.md). Each claim
+// EQUIVALENCE for `gate identity` (TE6(b), docs/completed/task-test-efficiency-2026-09.md). Each claim
 // is pinned by a test here, and each was shown to go RED with the property deliberately broken
 // (recorded in the TE6(b) report; reproduce with `go run ./cmd/gate mutation …`):
 //

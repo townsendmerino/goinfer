@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// The gpu gate's CUDA cell groups and cgofree as graders (SB12 step 10, docs/tasks/task-subsystems-2026-10.md): suite,
+// The gpu gate's CUDA cell groups and cgofree as graders (SB12 step 10, docs/completed/task-subsystems-2026-10.md): suite,
 // parity and graphsforced are one `go test` cell each, and each verdict is a function of the cell's graded result, its
 // top-level results and text, and what the runner read beside it (the card's free VRAM after a zero-cosine parity failure);
 // cgofree's is a function of the build and ldd's recorded output. The live gate and `gate gpu -replay` print through these.
