@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// TestKSD1_splitKernel is D1-G1 (docs/tasks/task-kernel-survey-2026-10.md, "KS-D1 gates"): attention_prefill_steel_split at head
+// TestKSD1_splitKernel is D1-G1 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-D1 gates"): attention_prefill_steel_split at head
 // dims 256 and 512 against an f64 attention over the same half inputs, at random q, k, v; M = 100 and 300; start 0 and 37;
 // window 0 and 64 (at 256); 8 query heads over 1 KV head. PASS iff every output is finite and max-abs <= 4e-3, mean-abs <=
 // 2e-4 in every cell. It also checks (not a registered gate) that a 300-row pass equals the same rows run as two passes of 150,

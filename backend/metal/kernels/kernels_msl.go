@@ -57,7 +57,7 @@ kernel void rmsnorm_quant(device const float* x[[buffer(0)]], device const float
 }
 // rmsnorm_f16_act: rmsnorm_quant's f32-in shape with NO quantization at all — writes the true
 // normed value straight to half. The input-precision half of R1's W4F16 decode lane
-// (docs/tasks/red-october.md; gemv_w4f16_sa* above is the weight-stream half). Same
+// (docs/completed/red-october.md; gemv_w4f16_sa* above is the weight-stream half). Same
 // reduction/precise::rsqrt pinning as rmsnorm_quant for consistency; a scalar loop, not
 // vectorized — this kernel is not the bottleneck rmsnorm_quant's amax-scan vectorization was
 // written for (no second pass here at all), so the extra complexity isn't earning its keep yet.
@@ -238,7 +238,7 @@ kernel void gemv_w8a8_coal(device const char* aq[[buffer(0)]], device const floa
     acc = simd_sum(acc);
     if (lid == 0) out[gid] = float(acc) * asc[0] * bsc[gid];
 }
-// W8A8 decode GEMVs for the dense body (docs/tasks/task-metal-int8-2026-10.md, slice 1): int8 weights row-major
+// W8A8 decode GEMVs for the dense body (docs/completed/task-metal-int8-2026-10.md, slice 1): int8 weights row-major
 // [N][K] with one f32 scale per row (int8Buf), against the same int8 activations and single f32 scale (aq/asc) the
 // W4A8 kernels read. Each takes its W4A8 twin's arguments in the same order and runs at the same launch shape, so
 // buildResident swaps pipelines for an int8 model and no dispatch site changes. The _body kernels are the coal
@@ -851,7 +851,7 @@ kernel void gemv_w4a8_sa_amax(device const uint4* wq[[buffer(0)]], device const 
         part[tgid].v = bv; part[tgid].i = bi;
     }
 }
-// gemv_w4f16_* — R1 (docs/tasks/red-october.md): a decode GEMV in the f16-FMA regime MLX and
+// gemv_w4f16_* — R1 (docs/completed/red-october.md): a decode GEMV in the f16-FMA regime MLX and
 // llama.cpp use, instead of gemv_w4a8_sa's int8-activation W4A8 regime. NOT bit-identical to the
 // shipped path (no int8 activation quantization at all — arguably HIGHER fidelity, not lower;
 // still a fidelity-gated lane per the 2026-09-18 owner decision, §4). First slice only: the plain
@@ -924,7 +924,7 @@ kernel void gemv_w4f16_sa_resid(device const uint4* wq[[buffer(0)]], device cons
     if (lane==0) out[row] += acc;
 }
 
-// --- the q4k lane (docs/tasks/task-metal-q4k-2026-10.md): float activations, no quantization ---
+// --- the q4k lane (docs/completed/task-metal-q4k-2026-10.md): float activations, no quantization ---
 // A model loaded at --quant q4k keeps its Q4_K tensors as GGUF super-blocks and its other tensors as int8 (per-row
 // scale); every projection reads the f32 activation straight from device memory, so nothing rounds Phi-3's activation
 // outliers. One simdgroup per output row, 8 rows per 256-thread threadgroup, row bound N checked (the grid is N*32).
@@ -1099,7 +1099,7 @@ template [[host_name("gemv_w8_f32_bias_rows1")]] kernel decltype(gemv_w8_f32_bia
 template [[host_name("gemv_w8_f32_bias_rows2")]] kernel decltype(gemv_w8_f32_bias_rows<2>) gemv_w8_f32_bias_rows<2>;
 template [[host_name("gemv_w8_f32_bias_rows4")]] kernel decltype(gemv_w8_f32_bias_rows<4>) gemv_w8_f32_bias_rows<4>;
 
-// --- KS-O1: native Q5_K and Q6_K on the q4k lane (docs/tasks/task-kernel-survey-2026-10.md, "KS-O1 on Metal: gates") ---
+// --- KS-O1: native Q5_K and Q6_K on the q4k lane (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-O1 on Metal: gates") ---
 // q4k_lane_act loads lane (j, h)'s 16 low and 16 high activations of super-block b on q4k_rows_acc's lane map, and their sums.
 inline void q4k_lane_act(device const float* ax, uint b, uint j, uint h, thread float4* al, thread float4* ah,
     thread float& slo, thread float& shi) {
@@ -1424,7 +1424,7 @@ kernel void rope2(device float* x[[buffer(0)]], device const float* invf[[buffer
     if (isQ) { r0 *= qTempScale; r1 *= qTempScale; }
     x[base+dd]=r0; x[base+rhalf+dd]=r1;
 }
-// rope_pw / rope2_pw (docs/tasks/task-metal-pairwise-rope-2026-10.md): rope / rope2 for GPT-J PAIRWISE rotation (Cohere,
+// rope_pw / rope2_pw (docs/completed/task-metal-pairwise-rope-2026-10.md): rope / rope2 for GPT-J PAIRWISE rotation (Cohere,
 // Command-R7B, Aya, GLM-OCR), pair dd = dims (2dd, 2dd+1) at invf[dd] instead of NeoX's (dd, rhalf+dd), as
 // decoder's rope.go's applyRoPEInterleaved. Same arguments and grid, bound into the same pipeline fields when
 // decoder.Model.PairwiseRoPEResident(); every other family keeps rope / rope2. Partial rotary rotates dims [0, 2*rhalf)
@@ -1748,7 +1748,7 @@ kernel void attention(device const float* q[[buffer(0)]], device const half* kc[
         out[qh*hd + d] = acc[slot] / l_prev;
     }
 }
-// attention_fa / attention_fa_combine — R2 (docs/tasks/red-october.md): decode attention gridded
+// attention_fa / attention_fa_combine — R2 (docs/completed/red-october.md): decode attention gridded
 // by (kvHead, split) instead of by query head, so the G=nH/nKV heads sharing a KV head compute
 // their dots/folds from ONE cooperative, coalesced K/V read per key instead of G separate
 // per-head reads. hd MUST be 128 (32 lanes x half4 = one coalesced 256B row read per simdgroup) --
@@ -1895,7 +1895,7 @@ kernel void attention_fa_combine(
 }
 
 // ---- attention_fa_blk begin (R17; see TestAttnFABlkIsTheGradedKernel) ----
-// R17 (docs/tasks/red-october.md; docs/measurements/metal-decode-attn-r17-2026-09-25.md): attention_fa's first
+// R17 (docs/completed/red-october.md; docs/measurements/metal-decode-attn-r17-2026-09-25.md): attention_fa's first
 // pass in the shape of llama.cpp's flash_attn_ext_vec — keys in blocks of 32 (32 coalesced K-row loads, per head 32
 // independent simd_sums landing one score per lane), ONE online-softmax step per block per head, V weighted by
 // simd_shuffle(p, j), G a template parameter so every per-head loop has a constant bound. Same signature, grid and
@@ -2507,7 +2507,7 @@ kernel void layer_scale(device float* x[[buffer(0)]], device const float* s[[buf
 kernel void ple_gelu_mul(device float* g[[buffer(0)]], device const float* ple[[buffer(1)]], constant uint& n[[buffer(2)]],
     uint i[[thread_position_in_grid]]) { if (i < n) g[i] = glu_act(g[i], ACT_GELU_TANH) * ple[i]; }
 
-// lora_delta: compute-time LoRA (G3, docs/tasks/task-gpu-paths-2026-09.md), the two-GEMV low-rank
+// lora_delta: compute-time LoRA (G3, docs/completed/task-gpu-paths-2026-09.md), the two-GEMV low-rank
 // delta y[o] += scale·Σ_r B[o,r]·(A·x)[r], fused into ONE dispatch (P-11, audit-2026-09-10 —
 // mirrors CUDA's own P-11 finding, "14 extra launches per layer per token... before the
 // serialized reduction": up to 7 targeted projections/layer each paid TWO dispatches — down then

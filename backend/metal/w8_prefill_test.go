@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestW8Prefill_passAgainstSequential (int8 slice 2, docs/tasks/task-metal-int8-2026-10.md): a native int8 resident now
+// TestW8Prefill_passAgainstSequential (int8 slice 2, docs/completed/task-metal-int8-2026-10.md): a native int8 resident now
 // takes the batched prefill pass (gemm_w8f16 tiles). Per prompt of the prefill gate's set A, the last position's logits
 // from the pass against the sequential decode loop's, on the native int8 path and, as the yardstick, on the int4 path
 // (whose pass has shipped since L1 with the pooled fidelity gate): logit cosine, argmax agreement, KL(sequential ‖

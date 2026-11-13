@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
 )
 
-// EmbeddingGemma 2's text encoder on Metal (Phase M, docs/tasks/task-embeddinggemma2.md): the CPU forward of
+// EmbeddingGemma 2's text encoder on Metal (Phase M, docs/completed/task-embeddinggemma2.md): the CPU forward of
 // embeddinggemma2/model.go in float32 on the GPU, one command buffer per input. The GEMMs and the row RMSNorm are
 // aikit's ViT kernels (an f32 simdgroup GEMM of A·Bᵀ with B as nn.Linear stores it, [N, K]); attention runs as those
 // GEMMs over blocks of query rows (attention, below), and this file adds the windowed row softmax and the data

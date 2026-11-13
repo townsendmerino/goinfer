@@ -17,7 +17,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestW8Native_S_decodeSpeed is gate S of docs/tasks/task-metal-int8-2026-10.md, a night-queue measurement: an
+// TestW8Native_S_decodeSpeed is gate S of docs/completed/task-metal-int8-2026-10.md, a night-queue measurement: an
 // in-process, interleaved A/B of decode speed for an int8int8 model in four arms. They are Metal on the native int8
 // path (precise math), the same with fast math kept (reported: the precise-math decision's price),
 // Metal re-quantized to int4 (what -backend metal ran before), and the CPU (what -backend auto gives an int8 model). Each sample loads one arm, prefills a deterministic prompt of the given depth through Generate, and times
@@ -28,7 +28,7 @@ import (
 func TestW8Native_S_decodeSpeed(t *testing.T) {
 	requireHeavyModel(t)
 	if os.Getenv("GOINFER_W8_GATE_S") == "" {
-		t.Skip("gate S is a night-queue measurement (docs/tasks/task-metal-int8-2026-10.md): set GOINFER_W8_GATE_S=1")
+		t.Skip("gate S is a night-queue measurement (docs/completed/task-metal-int8-2026-10.md): set GOINFER_W8_GATE_S=1")
 	}
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -207,7 +207,7 @@ func sampleW8Decode(t *testing.T, path string, a w8Arm, prompt []int, n int) w8S
 	return s
 }
 
-// TestW8Native_S_ttft is S-auto's other half (docs/tasks/task-metal-int8-2026-10.md, gate S: "first-token latency at a
+// TestW8Native_S_ttft is S-auto's other half (docs/completed/task-metal-int8-2026-10.md, gate S: "first-token latency at a
 // 1,000-token prompt is no worse than the CPU's"), measurable since slice 2 gave the native int8 path the batched
 // prefill pass. Per sample: load the arm (untimed), then time Generate from the call to its first token on a
 // 1,000-token prompt (w8SpeedPrompt). Arms: Metal native int8 (precise math), CPU int8int8, and Metal int4 re-quant

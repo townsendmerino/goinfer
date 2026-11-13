@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
-// TestAmaxHead_nanRowsMatchTheHost is G-MA1 (docs/tasks/task-subsystems-2026-10.md §8, "The device argmax on Metal: NaN rows"):
+// TestAmaxHead_nanRowsMatchTheHost is G-MA1 (docs/completed/task-subsystems-2026-10.md §8, "The device argmax on Metal: NaN rows"):
 // each fused head kernel (gemv_w8a8_amax, and gemv_w8f32_amax on f32 activations) then argmax_finish gives sampling.Argmax of the
 // same logits on an all -inf row, a row whose NaN leads the tile holding the maximum, a random row and a random row with ties at
 // the maximum; an all-NaN row gives an id at or past V, which the host maps to 0. The activations are small integers, so the host

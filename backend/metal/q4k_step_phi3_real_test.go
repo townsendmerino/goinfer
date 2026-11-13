@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// TestQ4KStep_phi3Tier1 is OP6's Metal tier 1 (docs/tasks/task-forward-architecture-2026-10.md §4.7, registered before any
+// TestQ4KStep_phi3Tier1 is OP6's Metal tier 1 (docs/completed/task-forward-architecture-2026-10.md §4.7, registered before any
 // code): Phi-3 mini 4k at --quant q4k on Metal.
 //
 //   - Graded: the step route against decode's sequential loop, bit for bit on the last row's logits and the K/V, on the

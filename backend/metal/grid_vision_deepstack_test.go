@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// G-S10e of docs/tasks/task-multimodal-support-2026-10.md (S10, registered before this ran): the Qwen3-VL tower on Metal
+// G-S10e of docs/completed/task-multimodal-support-2026-10.md (S10, registered before this ran): the Qwen3-VL tower on Metal
 // with DeepStack. S2's grid tower taps the DeepStack blocks (HiddenTaps) and aikit's host tails make the merged rows and
 // the sets (multimodal.Qwen3TowerFeaturesDeepstack), against aikit's CPU ForwardDeepstack: every set and the merged rows
 // at worst-row cosine >= 0.9999 (0.999-0.9999 parked), on the tiny DeepStack tower (testdata/qwen3vl-vision-tiny, norms

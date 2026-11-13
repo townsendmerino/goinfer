@@ -18,7 +18,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
-// G-S18f (docs/tasks/task-multimodal-support-2026-10.md, "S18 on the Mac, the tower", registered before the code): the
+// G-S18f (docs/completed/task-multimodal-support-2026-10.md, "S18 on the Mac, the tower", registered before the code): the
 // Metal int8 SigLIP tower (tower_gemm_w8, weights in groups of 32, activations f32) is exact on its own weights. The
 // reference is aikit's CPU float32 tower running the same weights rounded the way the tower rounds them
 // (dequantG32(quantG32(w))), so the tower bar holds: every token at cosine >= 0.9999. What the rounding itself costs

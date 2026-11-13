@@ -11,7 +11,7 @@ import (
 )
 
 // TestPrefillLast_stepRouteBitIdentical is E-P01's gate (docs/audit-metal-2026-09-30.md, Phase 3 item 1 of
-// docs/tasks/task-metal-audit-2026-10.md), run through PrefillLast, the entry point the decoder calls, rather than the
+// docs/completed/task-metal-audit-2026-10.md), run through PrefillLast, the entry point the decoder calls, rather than the
 // step it routes to. On a resident with the batched step (the default-run fixture; the 1.5B under GOINFER_METAL_MC3=1),
 // a prompt ending below the step bound (the larger of the fast-prefill floor and metalStepPrefillCeiling, A-P02) runs as decode rows on the step kernels. Each case prefills on slot 1 and the sequential loop runs on slot 0 from the same
 // embeddings; every K/V element of every position and every logit of the last row must match bit for bit. The batched
@@ -124,7 +124,7 @@ func TestPrefillLast_stepRouteCancels(t *testing.T) {
 	}
 }
 
-// TestPrefillLast_stepRouteNoHead is R-19's gate (docs/tasks/task-recompute-audit.md): the step route runs no head on
+// TestPrefillLast_stepRouteNoHead is R-19's gate (docs/completed/task-recompute-audit.md): the step route runs no head on
 // its pieces before the last (multiNoHead) and copies out only the last row of the last piece (multiLastRow). For
 // prompts of 9, 16, 20 and 31 tokens the last-row logits and every K/V element equal the route with every head run
 // (stepPrefillAllHeads), and the head-less pieces were taken: ceil(n/8)-1 of them per prompt.

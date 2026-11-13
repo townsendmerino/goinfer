@@ -130,7 +130,7 @@ func ksh1WholeVsBlocked(t *testing.T, m *decoder.Model, a *metalResident, n, B i
 	}
 }
 
-// TestKSH1_exactAttentionBlocks is KH1-G1 and KH1-G3 (docs/tasks/task-kernel-survey-2026-10.md, "KS-H1 gates"): llama-tiny on
+// TestKSH1_exactAttentionBlocks is KH1-G1 and KH1-G3 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-H1 gates"): llama-tiny on
 // Metal with the exact attention kernel forced and a 32-key tile, a 300-row prompt whole against 64-row blocks, byte-equal, each
 // pass inside its scratch figure; the resident now reports a block, and admission prices a 20,000-token prompt by it.
 func TestKSH1_exactAttentionBlocks(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// TestR21_switchCost measures R-21's third item (docs/tasks/task-recompute-audit.md): forwardMultiInto calls stopExec on
+// TestR21_switchCost measures R-21's third item (docs/completed/task-recompute-audit.md): forwardMultiInto calls stopExec on
 // every batched step, which is a no-op unless the one-sequence executor or chain is running, so the cost is paid once
 // per switch between one sequence and several. On the 1.5B (mc3LoadCheckpoint) with 2 KV slots filled to 256 tokens,
 // 32-step blocks: steady B=2 batched steps, steady one-sequence steps on slot 0, and the two alternating step by step.

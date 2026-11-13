@@ -19,7 +19,7 @@ func TestMC3Step_bitIdenticalPreciseMath(t *testing.T) {
 	})
 }
 
-// TestMC3Step_w8BitIdentical (int8 slice 3, docs/tasks/task-metal-int8-2026-10.md): a native int8 resident (precise
+// TestMC3Step_w8BitIdentical (int8 slice 3, docs/completed/task-metal-int8-2026-10.md): a native int8 resident (precise
 // math, as w8PreciseMath compiles it) in the batched step, its projections as mc3_gemv_w8a8_rows (each weight row read
 // once for every row) and, as the per-row arm, production's int8 GEMV once per row, against production's single-token
 // decode: every logit equal, shallow and deep rows, the per-row and multi-row deep attention both.

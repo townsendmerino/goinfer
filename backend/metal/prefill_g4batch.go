@@ -4,7 +4,7 @@ package metal
 
 import "github.com/townsendmerino/goinfer/internal/runtime/mem"
 
-// D-P01's batched expert GEMM (docs/audit-metal-2026-09-30.md; docs/tasks/task-m26-mac-2026-10.md, "D-P01"): a layer-major
+// D-P01's batched expert GEMM (docs/audit-metal-2026-09-30.md; docs/completed/task-m26-mac-2026-10.md, "D-P01"): a layer-major
 // paged Gemma 4 prefill runs one slot group's routed experts expert by expert, every (row, expert) pair the group routes to
 // that expert in one pass over its weights, instead of row by row. Bit-identical to the per-row phase 2
 // (encodeG4Phase2Paged) by construction:

@@ -17,7 +17,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// g3Prompts is G3's prompt set, fixed in docs/tasks/task-multimodal-support-2026-10.md before any run.
+// g3Prompts is G3's prompt set, fixed in docs/completed/task-multimodal-support-2026-10.md before any run.
 var g3Prompts = []string{
 	"Explain why the sky is blue in two sentences.",
 	"Write a haiku about autumn leaves.",
@@ -96,7 +96,7 @@ func TestGemma4EModel_realE2BText(t *testing.T) {
 		}
 	}
 	logf("E2B resident on Metal: template %s, P=%d, %d KV-shared layers, FFN %d / %d", tmpl.Name(), r.pleP, shared, r.layers[0].ffnI, r.layers[len(r.layers)-1].ffnI)
-	// G3 amendment (docs/tasks/task-multimodal-support-2026-10.md): the CPU loads Metal's sidecar too, so
+	// G3 amendment (docs/completed/task-multimodal-support-2026-10.md): the CPU loads Metal's sidecar too, so
 	// both sides run the same int8-pinned embedding/LM-head/PLE tables. The CPU's own e4h sidecar has those
 	// tables at int4, which compares two quantizations rather than two engines on one set of weights.
 	mc, err := decoder.Load(metalGiw, opts)
@@ -267,7 +267,7 @@ func TestGemma4EModel_realE2BLocalize(t *testing.T) {
 	}
 }
 
-// g3Run is G3's procedure (docs/tasks/task-multimodal-support-2026-10.md) over g3Prompts: free-running greedy on each
+// g3Run is G3's procedure (docs/completed/task-multimodal-support-2026-10.md) over g3Prompts: free-running greedy on each
 // side, then the CPU's sequence teacher-forced through Metal. Shared by G3 and its calibration run.
 func g3Run(t *testing.T, tk *tokenizer.Tokenizer, tmpl *chat.Template, r *resident, mg, mc *decoder.Model, logf func(string, ...any)) (passPrompts, agree, positions int) {
 	t.Helper()
@@ -449,7 +449,7 @@ func g3Model(t *testing.T, giw, tokGGUF, label string, logf func(string, ...any)
 	return pass, agree, n
 }
 
-// TestGemma4EModel_realE2BNonInferiority is G3 as re-registered (docs/tasks/task-multimodal-support-2026-10.md, owner
+// TestGemma4EModel_realE2BNonInferiority is G3 as re-registered (docs/completed/task-multimodal-support-2026-10.md, owner
 // decision): in one process, g3Run on Qwen2.5-Coder-1.5B (whose Metal path is validated: the reference),
 // then on E2B. PASS: E2B's teacher-forced agreement >= the reference's - 2.0 points and its free-run passes >= the
 // reference's - 1; 2.0-4.0 points below is ambiguous (parked); worse, or free-run passes 2+ short, fails.
@@ -481,7 +481,7 @@ func TestGemma4EModel_realE2BNonInferiority(t *testing.T) {
 	}
 }
 
-// TestGemma4EModel_realE2BPLEHostCost is S1.9's host-side record (docs/tasks/task-multimodal-support-2026-10.md): the
+// TestGemma4EModel_realE2BPLEHostCost is S1.9's host-side record (docs/completed/task-multimodal-support-2026-10.md): the
 // milliseconds embedResidentInto spends per token on E2B, i.e. the embedding row plus the PLE inputs the CPU computes
 // (the per-layer token row and the [L·P x H] projection) before every resident step. A record, not a gate; timed, so
 // it runs on the night queue under the timing lock.
@@ -529,7 +529,7 @@ func TestGemma4EModel_realE2BPLEHostCost(t *testing.T) {
 		sum/n, sorted[n/2], sorted[n*9/10], n, m.ResidentEmbedLen())
 }
 
-// TestGemma4EModel_realE4BNonInferiority is S6's G-E4B-1b (docs/tasks/task-multimodal-support-2026-10.md, registered
+// TestGemma4EModel_realE4BNonInferiority is S6's G-E4B-1b (docs/completed/task-multimodal-support-2026-10.md, registered
 // before it ran): S1's G3 rule, unchanged, on Gemma 4 E4B, with Qwen2.5-Coder-1.5B as the reference in the same
 // process. The sidecar is GOINFER_GEMMA4_E4B_GIW, default the quantization-aware GGUF's
 // (decoder.SidecarPath of ~/models/gemma-4-e4b-gguf/gemma-4-E4B_q4_0-it.gguf at int4 for metal, built by prequant -quant int4 -target metal). The

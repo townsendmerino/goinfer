@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestSampledGumbelStreamIdentity is the Mac end-to-end gate for the on-device sampler (docs/tasks/red-october.md, R7b), a port of
+// TestSampledGumbelStreamIdentity is the Mac end-to-end gate for the on-device sampler (docs/completed/red-october.md, R7b), a port of
 // cuda's TestSampledGumbelStreamIdentity: with a fixed seed, the token stream drawn on-device by Gumbel-max is IDENTICAL to the
 // stream the host draws (GOINFER_NO_SAMPLE_FASTPATH=1), because both implement one algorithm over one Philox counter stream and may
 // differ only where two candidates' scores are within an f32 rounding. Real checkpoints, three temperatures, nTok tokens each.

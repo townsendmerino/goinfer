@@ -20,7 +20,7 @@ func init() {
 	}
 }
 
-// TestBP01AttnAB is B-P01's speed instrument (docs/tasks/task-metal-audit-2026-10.md, "B-P01"): in-sequence attention
+// TestBP01AttnAB is B-P01's speed instrument (docs/completed/task-metal-audit-2026-10.md, "B-P01"): in-sequence attention
 // work on the 0.5B at 2048 and 3900 keys, the per-query-head kernel (today's path for hd = 64) against the hd = 64
 // block kernel at the production split (16) and at 8, 24 and 32 (R17 found the response to S not monotone). Each
 // depth runs every arm and a no-op-attention arm, interleaved and rotated rep by rep, `tokens` decode tokens each from
@@ -124,7 +124,7 @@ func TestBP01AttnAB(t *testing.T) {
 	}
 }
 
-// TestBP02AttnAB is B-P02's speed instrument (docs/tasks/task-metal-audit-2026-10.md, "B-P02"): in-sequence attention
+// TestBP02AttnAB is B-P02's speed instrument (docs/completed/task-metal-audit-2026-10.md, "B-P02"): in-sequence attention
 // work on a G = 2 hd = 128 model (internlm2-1_8b by default; GOINFER_AUDIT_MODEL picks another) at 2048 and 3900
 // keys, the legacy attention_fa at its core-count split (today's path for G outside 6 and 7) against the block kernel
 // at the production split (16), with the no-op arm subtracted per rep, as TestBP01AttnAB. Night-only:
@@ -207,7 +207,7 @@ func TestBP02AttnAB(t *testing.T) {
 	}
 }
 
-// TestDB04AB is D-B04's speed instrument (docs/tasks/task-metal-audit-2026-10.md, "D-B04"): decode on the Qwen3.5-9B
+// TestDB04AB is D-B04's speed instrument (docs/completed/task-metal-audit-2026-10.md, "D-B04"): decode on the Qwen3.5-9B
 // hybrid (24 DeltaNet layers) with gemvExtOn against off, one resident, the switch toggled between arms (gemvExt reads
 // it at encode; stopExec drops anything encoded under the other arm). Each rep runs both arms over the same `tokens`
 // positions from depth D, alternated, from the same DeltaNet state (snapshotted after the fill, restored before each

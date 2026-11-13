@@ -8,7 +8,7 @@ import (
 	"slices"
 )
 
-// decodeShape is what decode's own scratch is sized from (docs/tasks/task-forward-architecture-2026-10.md §4.9c): the widths, in
+// decodeShape is what decode's own scratch is sized from (docs/completed/task-forward-architecture-2026-10.md §4.9c): the widths, in
 // elements, its buffers take, each at the widest layer that uses it, since every layer reuses one buffer a role.
 type decodeShape struct {
 	H, V, I, nH        int

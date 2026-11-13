@@ -19,7 +19,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestS16MRoPEPrefill_tiny is G-S16a and G-S16b (defects 1-3) of S16 (docs/tasks/task-multimodal-support-2026-10.md,
+// TestS16MRoPEPrefill_tiny is G-S16a and G-S16b (defects 1-3) of S16 (docs/completed/task-multimodal-support-2026-10.md,
 // registered before any S16 code): on one Metal-resident int4 model, the new resident m-RoPE prefill against today's path,
 // on the tiny Qwen2.5-VL (contiguous sections) and Qwen3.5 (interleaved, a Gated-DeltaNet hybrid) fixtures.
 //
@@ -292,7 +292,7 @@ func TestS16MRoPEPrefill_givesItsScratchBack(t *testing.T) {
 	}
 }
 
-// TestS16MRoPEPrefill_real is G-S16c's first half (docs/tasks/task-multimodal-support-2026-10.md, S16): Qwen2.5-VL-3B and
+// TestS16MRoPEPrefill_real is G-S16c's first half (docs/completed/task-multimodal-support-2026-10.md, S16): Qwen2.5-VL-3B and
 // Qwen3-VL-2B (with its DeepStack sets, S16 step 2) on the four F2a images, the resident m-RoPE prefill against today's path
 // (the CPU prefill and upload, then Metal decode, so both arms decode on the same kernels), over the last prompt row and 8
 // teacher-forced decode steps.
@@ -559,7 +559,7 @@ func TestS16MRoPEPrefill_real(t *testing.T) {
 	}
 }
 
-// TestS16DeepstackPrefill_tiny is S16 step 2's G-S16a and G-S16b defects 4-6 (docs/tasks/task-multimodal-support-2026-10.md):
+// TestS16DeepstackPrefill_tiny is S16 step 2's G-S16a and G-S16b defects 4-6 (docs/completed/task-multimodal-support-2026-10.md):
 // the tiny Qwen3-VL decoder (2 layers, DeepStack after layers 0 and 1), a synthetic prompt with a 16x24 image (96 merged
 // rows) whose features and DeepStack sets are random at unit scale (the comparison is Go path against Go path, so no HF
 // golden is needed). Today's path: the CPU prefill with the sets, its K/V uploaded, Metal decode; the new path: Metal's

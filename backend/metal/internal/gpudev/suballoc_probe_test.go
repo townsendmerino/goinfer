@@ -8,7 +8,7 @@ import (
 	"github.com/ebitengine/purego/objc"
 )
 
-// TestMetal_smallBufferSuballocation is a diagnostic for G-MM3c-4 (docs/tasks/task-subsystems-2026-10.md, MM3c): on llama-tiny
+// TestMetal_smallBufferSuballocation is a diagnostic for G-MM3c-4 (docs/completed/task-subsystems-2026-10.md, MM3c): on llama-tiny
 // the ledger's Unified charge, the sum of each buffer's allocatedSize, exceeds the growth of the device's CurrentAllocatedSize
 // over the build by a few KB. It allocates small buffers one at a time and logs, for each, its length, its allocatedSize and
 // how far CurrentAllocatedSize moved. If small buffers move it in whole pages, or not at all while a page has room, then

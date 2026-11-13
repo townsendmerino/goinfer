@@ -115,7 +115,7 @@ var prefillFeatures = map[decoder.ResidentFeature]bool{
 	decoder.FeatNoPE:              true, // SmolLM3 NoPE layers — invFreq is zero, exact identity in rope_f16
 	decoder.FeatPostOnlyNorm:      true, // Olmo 3 / Olmo Hybrid — no pre-norm; sublayer outputs normed before residual
 	decoder.FeatQKNormWhole:       true, // Olmo 3 / Olmo Hybrid — single QK reduction over the whole projected width
-	// GPT-J pairwise rotation (GLM-OCR; docs/tasks/task-metal-pairwise-followups-2026-10.md Part A): rope_f16_pw and
+	// GPT-J pairwise rotation (GLM-OCR; docs/completed/task-metal-pairwise-followups-2026-10.md Part A): rope_f16_pw and
 	// rope_mrope_f16_pw, bound in place of the NeoX prefill kernels for a pairwise model (ropeF16Name).
 	decoder.FeatPairwiseRoPE:  true,
 	decoder.FeatPairwiseMRoPE: true,
@@ -129,7 +129,7 @@ var prefillFeatures = map[decoder.ResidentFeature]bool{
 
 type residLayer struct {
 	qkvW, qkvS, guW, guS, oW, oS, dW, dS Buffer // fused QKV + fused gate/up + o + down
-	// The q4k lane (docs/tasks/task-metal-q4k-2026-10.md): each projection as its runs of same-kind rows (q4kLaneProj);
+	// The q4k lane (docs/completed/task-metal-q4k-2026-10.md): each projection as its runs of same-kind rows (q4kLaneProj);
 	// the xxxW/xxxS buffers above stay empty on the lane.
 	qkvSegs, oSegs, guSegs, dSegs []q4kSeg
 	qkvBias, preNorm, postNorm    Buffer
@@ -139,7 +139,7 @@ type residLayer struct {
 	uLayerScalar                  Buffer          // Gemma 4 dense layer's output scalar (S1.0); zero Buffer when 1 or absent
 	layerScaleRead                bool            // the build read the layer's output scalar (any value), so its steps end with the layer scale
 	// ffnI is this dense layer's FFN width and uFFNI its uniform. Equal to the model's I (and r.uI) for every family
-	// except a Gemma 4 E-model, whose KV-shared layers are double-wide (S1.3, docs/tasks/task-multimodal-support-2026-10.md).
+	// except a Gemma 4 E-model, whose KV-shared layers are double-wide (S1.3, docs/completed/task-multimodal-support-2026-10.md).
 	ffnI  int
 	uFFNI Buffer
 	// Gemma 4 E-model PLE branch (S1.5): input gate [P,H], projection [H,P], post norm [H]. Zero when the model has
@@ -233,7 +233,7 @@ func (r *resident) q4kLaneShapeOK() bool {
 }
 
 // modelKnob is one of m's operator knobs (decoder.Model.Knob): the Load-time snapshot with Options.Knobs applied,
-// never the live environment (docs/tasks/task-env-config-2026-09.md, phase 4). "" when unset.
+// never the live environment (docs/completed/task-env-config-2026-09.md, phase 4). "" when unset.
 func modelKnob(m *decoder.Model, name string) string { v, _ := m.Knob(name); return v }
 
 // knobValue reads one operator knob from the model this resident was built from. A resident built by hand in a
@@ -285,7 +285,7 @@ type resident struct {
 	pSAf16, pSAf16Bias, pSAf16Resid Pipeline
 	decodeLaneW4F16                 bool
 	axF16, mxF16, cxF16             Buffer // half-typed activation buffers for the f16 lane (QKV-in, gate/up-in, o-proj-in)
-	// The q4k lane (docs/tasks/task-metal-q4k-2026-10.md): a model loaded at --quant q4k runs every projection on f32
+	// The q4k lane (docs/completed/task-metal-q4k-2026-10.md): a model loaded at --quant q4k runs every projection on f32
 	// activations (no activation quantization), over Q4_K super-blocks or int8 rows. axF32 is a projection's input (the
 	// normed residual), swF32 the down-projection's (SwiGLU's output).
 	q4kLane                                                    bool
@@ -436,12 +436,12 @@ type resident struct {
 	posEmbed                         *linalg.WeightMat // [MaxPositions, H] learned position embedding table (learnedPos only)
 	uLNHasBias                       Buffer            // layernorm_quant's hasBias uniform (r.layerNormBias as 0/1)
 
-	// G5 (docs/tasks/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-R7B.
+	// G5 (docs/completed/task-gpu-paths-2026-09.md), the last row: Cohere/Command-R + Cohere2/Command-R7B.
 	pairwiseRoPE  bool    // FeatPairwiseRoPE: pRope/pRope2 and the prefill's rope pipelines are the GPT-J pairwise twins (rope_pw, ...)
 	parallelBlock bool    // FeatParallelBlock: ONE shared input norm feeds attn AND MLP independently (x_final = x_orig + attn_out + mlp_out) — encodeLayer reuses encodeAttention's r.aq/r.aSc instead of re-normalizing r.x; no post-attn/post-MLP norm exists for this family
 	logitScale    float32 // host-side final-logit multiplier (1/arch.LogitScale), applied in finalizeLogits; 0 ⇒ none (FeatLogitScale)
 
-	// R7b Mac half (docs/tasks/red-october.md): device-side temperature-only sampling by
+	// R7b Mac half (docs/completed/red-october.md): device-side temperature-only sampling by
 	// Gumbel-max, decoder.ResidentSample (gumbel_sample.go). Always built (like attnFAPartial
 	// above): SampleAvailable is a per-call gate (finalSoftcap/logitScale), not a build-time one.
 	pGumbel1, pGumbel2 Pipeline
@@ -496,7 +496,7 @@ type resident struct {
 	embedScale float32
 	embed      *linalg.WeightMat
 
-	// attnTempBeta/attnTempOrigMaxPos (Ministral 3, FeatAttnTemp, G5 docs/tasks/task-gpu-paths-2026-09.md):
+	// attnTempBeta/attnTempOrigMaxPos (Ministral 3, FeatAttnTemp, G5 docs/completed/task-gpu-paths-2026-09.md):
 	// the raw params behind the post-RoPE query scale (Model.AttnTempParams) — 0 for every family
 	// without it. uQTempScale (below) is the per-forward-call scale computed from these plus the
 	// CURRENT position, mutated in place at every uPos.SetU32 call site the same way uPos itself is.
@@ -510,7 +510,7 @@ type resident struct {
 	// through the bound slot's table (kvHostRow).
 	kc, vc []Buffer
 	ks, vs []Buffer
-	// kvSlotBufs: MC1's resident KV slots (docs/tasks/task-concurrency-2026-09.md), each its block table; useKVSlot binds one
+	// kvSlotBufs: MC1's resident KV slots (docs/tasks/parked/task-concurrency-2026-09.md), each its block table; useKVSlot binds one
 	// by binding its table (kt). One entry for one slot with a pool, so the batched step can prefill a prompt on it.
 	// kvSlot is the bound index.
 	kvSlotBufs []kvSlotBuf
@@ -549,7 +549,7 @@ type resident struct {
 	stepHeadroom int64
 	stepDecline  string
 	// moeStep is Options.ResidentMoEStep: a generic MoE model may run on the batched step, whose MoE block runs decode's
-	// MoE dispatches on each row in turn (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-d3).
+	// MoE dispatches on each row in turn (docs/completed/task-forward-architecture-2026-10.md §4.9, OP4m-d3).
 	moeStep bool
 	// recurrentStep is Options.ResidentRecurrentStep: a Qwen3.5-family model may run on the batched step, whose per-row
 	// blocks run decode's Gated-DeltaNet (on each row's own slot state) and gated-attention dispatches on each row in turn
@@ -582,12 +582,12 @@ type resident struct {
 	// the sequential Forward loop: correct, just a slower TTFT.
 	prefillOK bool
 	// prefillResidNonFinite reports that the last batched pass ended with a non-finite value in its last residual row: the
-	// f16 residual overflowed (Gemma 3 4B's outgrows 65,504 by layer 6, docs/tasks/task-multimodal-support-2026-10.md S17).
+	// f16 residual overflowed (Gemma 3 4B's outgrows 65,504 by layer 6, docs/completed/task-multimodal-support-2026-10.md S17).
 	// batchedPrefillImg declines on it. poisonPrefillResidForTest writes an inf there first, for the test of that decline.
 	prefillResidNonFinite, poisonPrefillResidForTest bool
 
 	// w8: every dense body projection runs as W8A8 on its int8 weights instead of being re-quantized to int4
-	// (docs/tasks/task-metal-int8-2026-10.md, slice 1). Set by buildResident (w8Eligible). The GEMV pipelines are then
+	// (docs/completed/task-metal-int8-2026-10.md, slice 1). Set by buildResident (w8Eligible). The GEMV pipelines are then
 	// the int8 twins, and the paths that only read int4 are off: the R18 rows kernels, the f16 lane, fast prefill and
 	// the MC3 batched step.
 	w8 bool
@@ -749,12 +749,12 @@ func q4kLaneProjOn(line string, d *Device, kq *decoder.KQuantReader, wms ...*lin
 	return segs
 }
 
-// q4kLaneBuf uploads parts of one kind for the q4k lane (docs/tasks/task-metal-q4k-2026-10.md): GGUF Q4_K super-blocks
+// q4kLaneBuf uploads parts of one kind for the q4k lane (docs/completed/task-metal-q4k-2026-10.md): GGUF Q4_K super-blocks
 // verbatim; the file's Q5_K blocks verbatim and its Q6_K blocks in planes over the segment (q6kPlanarRow), read through kq;
 // else int8 rows with their per-row scales (the scale buffer is unused for the block kinds). A part of another kind panics;
 // buildResident recovers that into a decline. Each part is copied straight into the device buffer at its offset, with no
 // host-side concatenation: a staging slice per projection is garbage the build does not collect, and on a 16 GB Mac it
-// pushed phi3's load into swap (docs/tasks/task-never-swap-2026-09.md, "Addendum, 2026-10-18").
+// pushed phi3's load into swap (docs/completed/task-never-swap-2026-09.md, "Addendum, 2026-10-18").
 func q4kLaneBufOn(line string, d *Device, kq *decoder.KQuantReader, kind string, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 	switch kind {
 	case "q4k":
@@ -1034,7 +1034,7 @@ func f16Into(dst []uint16, src []float32) {
 func int4ConcatOn(line string, d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 	// The buffers are allocated at their final size (N*K/8 words and N*K/32 f16 scales per group-32 tensor) and every part
 	// is written straight into them: a whole-projection staging copy is garbage the build does not collect
-	// (docs/tasks/task-never-swap-2026-09.md, "Addendum, 2026-10-18").
+	// (docs/completed/task-never-swap-2026-09.md, "Addendum, 2026-10-18").
 	var totalWords, totalScales int
 	for _, w := range wms {
 		// K%32==0 is a hard W4A8 invariant (group=32); see int4BufA. int4Concat has no error return and runs only on the
@@ -1074,15 +1074,15 @@ func int4Concat(d *Device, wms ...*linalg.WeightMat) (Buffer, Buffer) {
 }
 
 // nativeInt8 turns the native int8 path on (w8Eligible). Tests turn it off for the int4 re-quant arm; it is not an
-// option or an environment variable. Grades: docs/tasks/task-metal-int8-2026-10.md.
+// option or an environment variable. Grades: docs/completed/task-metal-int8-2026-10.md.
 var nativeInt8 = true
 
 // nativeInt4Mix turns on int4mix's native path (w8AttnEligible: attention W8A8, FFN int4). Tests turn it off for the
-// re-quant arm. Grades: docs/tasks/task-metal-int8-2026-10.md, "Slice 4: int4mix".
+// re-quant arm. Grades: docs/completed/task-metal-int8-2026-10.md, "Slice 4: int4mix".
 var nativeInt4Mix = true
 
 // nativeInt8MoE admits a generic resident MoE to the native int8 path (w8Eligible; int8 expert GEMVs gemv_w8a8_moe*);
-// tests turn it off. Grades: docs/tasks/task-metal-int8-2026-10.md, "Slice 4: MoE int8".
+// tests turn it off. Grades: docs/completed/task-metal-int8-2026-10.md, "Slice 4: MoE int8".
 var nativeInt8MoE = true
 
 // w8FastMath keeps fast math for a native int8 model (w8PreciseMath off): test-only, gate S's fast-math arm, which
@@ -1091,7 +1091,7 @@ var w8FastMath = false
 
 // w8Eligible reports whether m runs on the native int8 path (r.w8): every dense body projection is int8-kind
 // (int8int8, or weight-only int8, which CUDA and WebGPU also run against int8 activations) with K a multiple of 4,
-// and the model is one slice 1 of docs/tasks/task-metal-int8-2026-10.md covers: no MoE, no Gemma-4 MoE, no DeltaNet
+// and the model is one slice 1 of docs/completed/task-metal-int8-2026-10.md covers: no MoE, no Gemma-4 MoE, no DeltaNet
 // (whose families also carry the gated-softmax layers). Anything else keeps the int4 re-quantization. A K=V layer
 // has no v_proj and fails the check, so it is never fused as int8.
 func w8Eligible(m *decoder.Model, r *resident) bool {
@@ -1142,7 +1142,7 @@ func w8Weights(m *decoder.Model) bool {
 	return true
 }
 
-// w8AttnEligible reports whether m runs int4mix natively (r.w8Attn, docs/tasks/task-metal-int8-2026-10.md slice 4):
+// w8AttnEligible reports whether m runs int4mix natively (r.w8Attn, docs/completed/task-metal-int8-2026-10.md slice 4):
 // every layer's attention projections int8-kind and its FFN int4-kind (int4mix's per-tensor split), on the plain
 // dense path whose qkv and o-proj run pSABias and pSAResid alone. Sandwich, post-only and parallel-block layers run the
 // o-proj on pSA, which the FFN shares; non-gated MLPs and output biases run other handles; MoE, DeltaNet and K=V layers
@@ -1196,13 +1196,13 @@ func f32Projection(m *decoder.Model) string {
 }
 
 // attnSoftcapDropForTest builds every resident without its attention-score softcap while the CPU keeps it: the planted
-// defect OP1's Gemma 2 gates must catch (docs/tasks/task-forward-architecture-2026-10.md §4.6, G2-D and G2-R's arm P).
+// defect OP1's Gemma 2 gates must catch (docs/completed/task-forward-architecture-2026-10.md §4.6, G2-D and G2-R's arm P).
 // Tests in this package set it directly.
 var attnSoftcapDropForTest bool
 
 // w8PreciseMath compiles the library of a model headed for the native int8 path without fast math: at int8int8 any
 // difference from the CPU is amplified by the activation quantization, and fast math was a large part of gate F3's gap
-// (docs/tasks/task-metal-int8-2026-10.md). It is decided before the build from the model alone, so a model that passes
+// (docs/completed/task-metal-int8-2026-10.md). It is decided before the build from the model alone, so a model that passes
 // w8Weights but is MoE (Gemma 4's parallel dense||MoE) is excluded here too.
 func w8PreciseMath(m *decoder.Model) bool {
 	if !nativeInt8 || w8FastMath || m.HasGemma4MoEResident() {
@@ -1368,7 +1368,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// N/row>=N guard (see the note on the kernel in kernels.go): it is a reduction, so mask the logit to -INF, do
 	// not early-return past the barrier.
 	r.pRope, r.pRope2, r.pKv, r.pAttn = pipe("rope"), pipe("rope2"), pipe("kv_store"), pipe("attention")
-	// Pairwise rope (docs/tasks/task-metal-pairwise-rope-2026-10.md): a GPT-J pairwise family (Cohere, Command-R7B, Aya,
+	// Pairwise rope (docs/completed/task-metal-pairwise-rope-2026-10.md): a GPT-J pairwise family (Cohere, Command-R7B, Aya,
 	// GLM-OCR) binds the pairwise twins into the same fields, so no dispatch site changes; every other family keeps these.
 	if r.pairwiseRoPE = bv.PairwiseRoPE(); r.pairwiseRoPE {
 		r.pRope, r.pRope2 = pipe("rope_pw"), pipe("rope2_pw")
@@ -1396,7 +1396,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.gumbelNB = gumbelBlocks(V)
 	r.pQKNorm, r.pRmsF32 = pipe("qk_norm"), pipe("rmsnorm_f32")
 	r.qkNorm = shape.QKNorm
-	r.qkNormWhole = shape.QKNormWhole // G5 (docs/tasks/task-gpu-paths-2026-09.md): Olmo 3/Olmo Hybrid
+	r.qkNormWhole = shape.QKNormWhole // G5 (docs/completed/task-gpu-paths-2026-09.md): Olmo 3/Olmo Hybrid
 	r.sandwich = shape.Sandwich
 	r.attnSoftcap = attnSoftcap
 	r.postOnly = shape.PostOnly // G5: Olmo 3/Olmo Hybrid
@@ -1472,7 +1472,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.pDnRuleSeq, r.pDnGNormRows, r.pDnProjW8Rows = pipe("delta_rule_seq"), pipe("delta_gnorm_rows"), pipe("delta_proj_w8_rows")
 		r.pDnRuleSeqTG, r.pDnConvSeqReg = pipe("delta_rule_seq_tg"), pipe("delta_conv_seq_reg")
 	}
-	// Native int8 (docs/tasks/task-metal-int8-2026-10.md): a dense model whose body projections are all int8 runs
+	// Native int8 (docs/completed/task-metal-int8-2026-10.md): a dense model whose body projections are all int8 runs
 	// them as W8A8 instead of re-quantizing them to int4. The int4-only paths cannot read those buffers, so they are
 	// off for it: the f16 lane here, the R18 rows kernels and the MC3 step below. The batched prefill pass reads
 	// them through its W8 tiles (gemm_w8f16_*).
@@ -1507,7 +1507,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	if why := f32Projection(m); why != "" {
 		// An f32 load reaches here only when f32 was asked for; this backend runs int4 or int8 weights and does not
-		// quantize them behind the request (docs/tasks/task-metal-int8-2026-10.md, slice 4). A clear decline instead of
+		// quantize them behind the request (docs/completed/task-metal-int8-2026-10.md, slice 4). A clear decline instead of
 		// int4Concat's panic on an f32 kind.
 		return nil, fmt.Errorf("weights loaded at f32 (%s); metal runs int4 or int8 weights: load with -quant int4 or int8int8 to use the GPU", why)
 	}
@@ -3216,11 +3216,11 @@ func (r *resident) encodeLayerScaleStep(e *Encoder, L *residLayer, x Buffer) {
 }
 
 // q4kGemvRows and w8F32GemvRows are the q4k lane's rows a simdgroup for its Q4_K and int8 GEMVs (gemv_q4k_f32_rows<R>,
-// gemv_w8_f32_rows<R>), KS-C1's C1-G0 reading (docs/tasks/task-kernel-survey-2026-10.md, "KS-C1 (a)+(b) gates").
+// gemv_w8_f32_rows<R>), KS-C1's C1-G0 reading (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-C1 (a)+(b) gates").
 const q4kGemvRows, w8F32GemvRows = 8, 2
 
 // q5kGemvRows and q6kGemvRows are the rows a simdgroup of the q4k lane's native Q5_K and Q6_K GEMVs (gemv_q5k_f32_rows<R>,
-// gemv_q6k_f32_rows<R>), KS-O1's O1-G0 reading (docs/tasks/task-kernel-survey-2026-10.md, "KS-O1 on Metal: gates"). Only
+// gemv_q6k_f32_rows<R>), KS-O1's O1-G0 reading (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-O1 on Metal: gates"). Only
 // these R are instantiated.
 const q5kGemvRows, q6kGemvRows = 4, 4
 
@@ -3340,7 +3340,7 @@ func saRowsPick(shipped, rowsKernel Pipeline, rows, R int) (Pipeline, int) {
 }
 
 // canUseF16Lane reports whether layer l's attention block and FFN gate/up can use the W4F16 decode lane
-// (docs/tasks/red-october.md) instead of the shipped W4A8 path. It covers the plainest dense layer only: every special
+// (docs/completed/red-october.md) instead of the shipped W4A8 path. It covers the plainest dense layer only: every special
 // case (Gemma sandwich, Olmo postOnly/qkNorm-whole, Cohere parallelBlock, GPT-2 non-gated MLP or FeatOutBias, qGate's
 // double-width Q, MoE/Gemma-4 MoE, DeltaNet, compute-time LoRA) keeps the int8 path, since each changes which kernel
 // family or epilogue is dispatched and none is ported. Down-proj (the coal family, a different kernel shape) is out of
@@ -3373,7 +3373,7 @@ const attnFACoreCount = 14
 const attnFABlkSplit = 16
 
 // attnFADepthFloor is where attention_fa takes over from the shipped kernel: 1024 keys
-// (docs/tasks/task-metal-audit-2026-10.md, B-P03). Below it the two kernels were level. S=1 (no split) is not a
+// (docs/completed/task-metal-audit-2026-10.md, B-P03). Below it the two kernels were level. S=1 (no split) is not a
 // shallow-depth fallback within attention_fa: it measured uniformly worse than the shipped kernel at every depth, so
 // below the floor canUseAttnFA declines entirely and the shipped kernel runs.
 // A revert to 1536 on the evidence of TestSpecNgram_copyOnStepVerify was a test artifact (its spec arm reused the
@@ -3404,7 +3404,7 @@ func attnFAHeadDimOK(hd, nH, nKV int) bool {
 // gemvExtOn routes the int4 GEMVs R18 never reached (DeltaNet's qkv and z projections, a shared expert's gate|up and
 // down) through the rows-per-simdgroup kernels. Each rows kernel is bit-identical to the one it replaces (same
 // lane-strided words, per-word sum and simd_sum; TestGemvExt_bitIdentical). Grade:
-// docs/tasks/task-metal-audit-2026-10.md, "D-B04".
+// docs/completed/task-metal-audit-2026-10.md, "D-B04".
 var gemvExtOn = true
 
 // gemvExtKind names the shipped kernel family a gemvExt site runs: the plain coal projection, the SA projection, or
@@ -3453,12 +3453,12 @@ func (r *resident) gemvExt(e *Encoder, kind gemvExtKind, rows, K int, args ...Bu
 
 // attnFABlkAnyG selects the block kernel for the dense group sizes other than the graded 6 and 7 (G = 2, 3, 4, 5 and
 // 8). The kernel agrees with g7 head for head (TestAttnFABlk_anyGMatchesG7). Grade:
-// docs/tasks/task-metal-audit-2026-10.md, "B-P02".
+// docs/completed/task-metal-audit-2026-10.md, "B-P02".
 var attnFABlkAnyG = true
 
 // attnFABlk64On admits hd = 64 layers to attention_fa through the block kernel's hd = 64 twin. The twin is not
 // bit-identical to the per-query-head kernel, which is why it was graded on fidelity rather than identity. Grade:
-// docs/tasks/task-metal-audit-2026-10.md, "B-P01".
+// docs/completed/task-metal-audit-2026-10.md, "B-P01".
 var attnFABlk64On = true
 
 // fanSplitBuf is the attention_fa split-count uniform the command buffer being encoded binds: the greedy chain's own
@@ -3705,14 +3705,14 @@ func (r *resident) ForwardBatch(embeddings [][]float32, startPos int) ([][]float
 	return out, nil
 }
 
-// S1.0 test seams (docs/tasks/task-multimodal-support-2026-10.md): re-drop each Gemma 4 fix, so a gate can show it
+// S1.0 test seams (docs/completed/task-multimodal-support-2026-10.md): re-drop each Gemma 4 fix, so a gate can show it
 // reproduces the before-fix numbers. Never set outside tests.
 var (
 	g4DropLayerScalarForTest bool
 	g4DropVNormForTest       bool
 )
 
-// S1 G2 planted defects (docs/tasks/task-multimodal-support-2026-10.md): each re-introduces one E-model mistake on the
+// S1 G2 planted defects (docs/completed/task-multimodal-support-2026-10.md): each re-introduces one E-model mistake on the
 // Metal side only, so G1 (Metal resident against the CPU) must turn red under it. Never set outside tests.
 var (
 	g4KeepSharedKVStoreForTest bool // (5) a shared layer stores its K/V over its source's cache

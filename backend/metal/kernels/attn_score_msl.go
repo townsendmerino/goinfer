@@ -32,7 +32,7 @@ inline float attn_score_log2(float x) { const float c = %[1]s * 1.44269504088896
 //
 // The softcap is a variant of the source and not a kernel argument so that a model without one runs no branch per
 // score, and so that its kernels are the same text as before the softcap existed
-// (docs/tasks/task-forward-architecture-2026-10.md §4.6).
+// (docs/completed/task-forward-architecture-2026-10.md §4.6).
 func WithAttnSoftcap(src string, cap float32) (string, error) {
 	if cap == 0 {
 		return src, nil

@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// OP6's Metal half, tier 0 (docs/tasks/task-forward-architecture-2026-10.md §4.7): the q4k lane on MC3's batched step.
+// OP6's Metal half, tier 0 (docs/completed/task-forward-architecture-2026-10.md §4.7): the q4k lane on MC3's batched step.
 // Every check is bit for bit against the lane's own decode. The model is Qwen2.5-Coder-0.5B q4_k_m, whose attn_v is Q6_K
 // (int8 on the lane) in half the layers, so both rows GEMVs and the multi-segment projections run.
 

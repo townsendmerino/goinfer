@@ -31,7 +31,7 @@ func TestS2KernelsCompile(t *testing.T) {
 }
 
 // gemmS2Kernels holds R16's prototypes (1-4; prototype 4 became production) and the retired production kernel
-// gemm_w4f16_store_r15. It began as R16's first prototype (docs/tasks/red-october.md; design in
+// gemm_w4f16_store_r15. It began as R16's first prototype (docs/completed/red-october.md; design in
 // docs/measurements/metal-prefill-gemm-s2-2026-09-25.md): the int4 prefill GEMM restructured in the shape of llama.cpp's
 // classic kernel_mul_mm. TEST-ONLY: nothing in production compiles it.
 //

@@ -17,7 +17,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// G-S3c's root cause, the Metal-binary half (docs/tasks/task-multimodal-support-2026-10.md, S3). Served, the Qwen2.5-VL
+// G-S3c's root cause, the Metal-binary half (docs/completed/task-multimodal-support-2026-10.md, S3). Served, the Qwen2.5-VL
 // image turn's first token is "Table" under --backend metal and "Quarter" under --backend cpu, and the first token comes
 // from GenerateQwenVL's CPU prefill (prefillLogitsQwenVL) in both. decoder/qwen25vl_layout_split_real_test.go ran that
 // prefill in a binary WITHOUT Metal and found every CPU layout identical ("Quarter"). This runs the same prefill, on the

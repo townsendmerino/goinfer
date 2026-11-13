@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
-// The Gemma 4 audio tower's conformer blocks on Metal (Phase A's AM, docs/tasks/task-embeddinggemma2.md): aikit's
+// The Gemma 4 audio tower's conformer blocks on Metal (Phase A's AM, docs/completed/task-embeddinggemma2.md): aikit's
 // audio.Gemma4AudioEncoder blocks in float32, from its exported Layers. The GEMMs and RMSNorm are aikit's ViT kernels
 // and the ClippableLinear clamps the vision tower's (gemma4_vision.go); this file adds the SiLU, the weighted residual,
 // the GLU, the causal depthwise conv, the query/key scales and a sliding-window attention kernel (one threadgroup per
