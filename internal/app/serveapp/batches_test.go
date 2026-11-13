@@ -1,6 +1,9 @@
 package serveapp
 
-import "testing"
+import (
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
+	"testing"
+)
 
 func TestBatchStore_createAndGet(t *testing.T) {
 	bs := newBatchStore(0)
@@ -77,19 +80,19 @@ func TestBatchStore_unboundedWhenCapIsZero(t *testing.T) {
 
 // TestBatchRecord_requestCancel_marksCancellingAndCancelsJobs: cancelling a batch must mark it
 // cancelling AND reach every constituent job's cancel func — the batch-level analogue of
-// DELETE /v1/jobs/{id} (jobStore.cancel), applied to every line at once.
+// DELETE /v1/jobs/{id} (jobs.Store.Cancel), applied to every line at once.
 func TestBatchRecord_requestCancel_marksCancellingAndCancelsJobs(t *testing.T) {
-	jobs, err := newJobStore("", 0)
+	jobs, err := jobs.NewStore("", 0)
 	if err != nil {
-		t.Fatalf("newJobStore: %v", err)
+		t.Fatalf("jobs.NewStore: %v", err)
 	}
-	j1 := jobs.createPending("j1", "m", nil)
-	j2 := jobs.createPending("j2", "m", nil)
+	j1 := jobs.CreatePending("j1", "m", nil)
+	j2 := jobs.CreatePending("j2", "m", nil)
 	_ = j1
 	_ = j2
 	var cancelled1, cancelled2 bool
-	jobs.setCancel("j1", func() { cancelled1 = true })
-	jobs.setCancel("j2", func() { cancelled2 = true })
+	jobs.SetCancel("j1", func() { cancelled1 = true })
+	jobs.SetCancel("j2", func() { cancelled2 = true })
 
 	bs := newBatchStore(0)
 	b := bs.create("openai_chat", "/v1/chat/completions", "", "f", []string{"a", "b"})
@@ -109,12 +112,12 @@ func TestBatchRecord_requestCancel_marksCancellingAndCancelsJobs(t *testing.T) {
 }
 
 // TestBatchRecord_requestCancel_noOpOnceTerminal: a batch that already finished must not be
-// reopened into "cancelling" by a late cancel request — mirrors jobStore.cancel's own
+// reopened into "cancelling" by a late cancel request — mirrors jobs.Store.Cancel's own
 // idempotence (TestJobStore_cancelUnknownIDIsNotAnError, jobs_test.go).
 func TestBatchRecord_requestCancel_noOpOnceTerminal(t *testing.T) {
-	jobs, err := newJobStore("", 0)
+	jobs, err := jobs.NewStore("", 0)
 	if err != nil {
-		t.Fatalf("newJobStore: %v", err)
+		t.Fatalf("jobs.NewStore: %v", err)
 	}
 	bs := newBatchStore(0)
 	b := bs.create("openai_chat", "/v1/chat/completions", "", "f", []string{"a"})

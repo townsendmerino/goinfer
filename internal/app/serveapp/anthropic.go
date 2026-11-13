@@ -3,6 +3,7 @@ package serveapp
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"net/http"
 	"strings"
 
@@ -17,19 +18,19 @@ import (
 // --- request shapes (the subset we honor) ---
 
 type anthropicReq struct {
-	Model         string             `json:"model"`
-	MaxTokens     *int               `json:"max_tokens"` // REQUIRED for /v1/messages (400 if missing/<=0)
-	System        json.RawMessage    `json:"system"`     // string | [{"type":"text","text":…}, …]
-	Messages      []anthropicMessage `json:"messages"`
-	Tools         []anthropicTool    `json:"tools"`
-	ToolChoice    json.RawMessage    `json:"tool_choice"` // {"type":"auto"|"any"|"tool","name":…}
-	Temperature   *float64           `json:"temperature"` // Anthropic range 0..1 (no rescale)
-	TopP          *float64           `json:"top_p"`
-	TopK          *int               `json:"top_k"`
-	StopSequences []string           `json:"stop_sequences"`
-	Stream        bool               `json:"stream"`
-	LogitBias     map[string]float64 `json:"logit_bias"` // goinfer extension, as on the OpenAI routes (sampling.LogitBias)
-	Goinfer       *vendorOptions     `json:"goinfer"`    // goinfer vendor options, as on the OpenAI routes (sampling.Goinfer)
+	Model         string              `json:"model"`
+	MaxTokens     *int                `json:"max_tokens"` // REQUIRED for /v1/messages (400 if missing/<=0)
+	System        json.RawMessage     `json:"system"`     // string | [{"type":"text","text":…}, …]
+	Messages      []anthropicMessage  `json:"messages"`
+	Tools         []anthropicTool     `json:"tools"`
+	ToolChoice    json.RawMessage     `json:"tool_choice"` // {"type":"auto"|"any"|"tool","name":…}
+	Temperature   *float64            `json:"temperature"` // Anthropic range 0..1 (no rescale)
+	TopP          *float64            `json:"top_p"`
+	TopK          *int                `json:"top_k"`
+	StopSequences []string            `json:"stop_sequences"`
+	Stream        bool                `json:"stream"`
+	LogitBias     map[string]float64  `json:"logit_bias"` // goinfer extension, as on the OpenAI routes (sampling.LogitBias)
+	Goinfer       *jobs.VendorOptions `json:"goinfer"`    // goinfer vendor options, as on the OpenAI routes (sampling.Goinfer)
 	// Thinking: {type: enabled|adaptive|disabled, budget_tokens}. enabled/adaptive render the model's thinking mode on
 	// and return `thinking` content blocks (think.go); budget_tokens is enforced as a ceiling on the thinking block
 	// (budget.go): serve forces the block closed there, clamped so a quarter of max_tokens is left to answer. metadata is accepted and ignored.
@@ -857,7 +858,7 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 	if fromReasoning {
 		msg[fromReasoningField] = true
 	}
-	writeJSON(w, http.StatusOK, gr.clock.addTurn(msg))
+	writeJSON(w, http.StatusOK, gr.clock.AddTurn(msg))
 }
 
 // anthropicUsage is a finished Messages reply's usage, in the Messages API's split: cache_read_input_tokens is the leading

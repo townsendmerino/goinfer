@@ -139,6 +139,7 @@ func scriptedServer(t *testing.T, reply string) *httptest.Server {
 	}
 	s := &server{}
 	lm := &loadedModel{tk: tk, name: "m", scripted: append([]int{}, ids...)} // non-nil even when empty: an end of turn at the first token
+	lm.fakeEngine = scriptedEngine{lm}
 	lm.tmpl = s.cfg.tuneTemplate(mellum21Template(t))
 	s.models = map[string]*loadedModel{"m": lm}
 	mux := http.NewServeMux()

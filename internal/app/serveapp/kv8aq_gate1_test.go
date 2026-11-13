@@ -42,6 +42,7 @@ func TestKV8aQ_gate1Scopes(t *testing.T) {
 	}
 	s := &server{}
 	lm := &loadedModel{tk: tk, name: "m", scripted: reply, scriptedRecurrent: true}
+	lm.fakeEngine = scriptedEngine{lm}
 	lm.tmpl = s.cfg.tuneTemplate(tmpl)
 	var prompts [][]int
 	var scopes []kvScope

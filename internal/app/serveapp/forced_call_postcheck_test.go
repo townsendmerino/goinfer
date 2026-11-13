@@ -21,6 +21,7 @@ func postCheckServer(t *testing.T, tmpl *chat.Template, reply string) *httptest.
 	}
 	s := &server{}
 	lm := &loadedModel{tk: tk, name: "m", scripted: append([]int{}, ids...)}
+	lm.fakeEngine = scriptedEngine{lm}
 	lm.tmpl = s.cfg.tuneTemplate(tmpl)
 	s.models = map[string]*loadedModel{"m": lm}
 	mux := http.NewServeMux()

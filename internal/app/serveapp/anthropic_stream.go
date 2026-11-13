@@ -3,6 +3,7 @@ package serveapp
 import (
 	"encoding/json"
 	"errors"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"net/http"
 	"strings"
 
@@ -355,8 +356,8 @@ func streamTextBlock(ss *sseWriter, index int, text string) {
 // end_turn. A non-nil empty (a turn with no answer) rides the message_delta as goinfer_empty_answer, and fromReasoning
 // as goinfer_tool_calls_from_reasoning. The turn's timings and, when asked, its cost ride beside the usage (clock, nil for
 // none).
-func anthropicMessageEnd(ss *sseWriter, clock *turnClock, reason string, seq any, usage map[string]any, cancelReason string, empty *emptyAnswer, fromReasoning bool) {
-	md := clock.addTurn(map[string]any{
+func anthropicMessageEnd(ss *sseWriter, clock *jobs.TurnClock, reason string, seq any, usage map[string]any, cancelReason string, empty *emptyAnswer, fromReasoning bool) {
+	md := clock.AddTurn(map[string]any{
 		"type":  "message_delta",
 		"delta": map[string]any{"stop_reason": reason, "stop_sequence": seq},
 		"usage": usage,

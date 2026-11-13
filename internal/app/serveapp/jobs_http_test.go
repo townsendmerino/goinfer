@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/townsendmerino/goinfer/internal/app/loadflags"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -112,8 +113,8 @@ func TestJobs_submitPollReattachMatchesSyncRun(t *testing.T) {
 	if err := json.NewDecoder(jobResp.Body).Decode(&created); err != nil {
 		t.Fatalf("decode job creation response: %v", err)
 	}
-	if created.Status != string(jobPending) {
-		t.Fatalf("initial status = %q, want %q", created.Status, jobPending)
+	if created.Status != string(jobs.Pending) {
+		t.Fatalf("initial status = %q, want %q", created.Status, jobs.Pending)
 	}
 
 	// Connect to /events, read a FEW frames, then disconnect early (simulating a client that
@@ -158,7 +159,7 @@ func TestJobs_submitPollReattachMatchesSyncRun(t *testing.T) {
 		if derr != nil {
 			t.Fatalf("decode poll response: %v", derr)
 		}
-		if polled.Status == string(jobDone) {
+		if polled.Status == string(jobs.Done) {
 			if polled.Result == nil {
 				t.Fatal("job done but result is nil")
 			}
@@ -167,7 +168,7 @@ func TestJobs_submitPollReattachMatchesSyncRun(t *testing.T) {
 			}
 			break
 		}
-		if polled.Status == string(jobFailed) || polled.Status == string(jobCancelled) {
+		if polled.Status == string(jobs.Failed) || polled.Status == string(jobs.Cancelled) {
 			t.Fatalf("job ended as %q, want done", polled.Status)
 		}
 		if time.Now().After(deadline) {
@@ -260,10 +261,10 @@ func TestJobs_deleteCancelsAQueuedJob(t *testing.T) {
 		var polled struct{ Status string }
 		json.NewDecoder(st.Body).Decode(&polled)
 		st.Body.Close()
-		if polled.Status == string(jobCancelled) {
+		if polled.Status == string(jobs.Cancelled) {
 			return
 		}
-		if polled.Status == string(jobDone) {
+		if polled.Status == string(jobs.Done) {
 			t.Fatal("queued job ran to completion instead of being cancelled — DELETE did not reach a still-queued job")
 		}
 		if time.Now().After(deadline) {

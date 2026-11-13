@@ -43,6 +43,7 @@ func TestScriptedServe_forHarness(t *testing.T) {
 	}
 	s := &server{}
 	lm := &loadedModel{tk: tk, name: os.Getenv("SCRIPTED_MODEL"), scripted: append([]int{}, ids...)}
+	lm.fakeEngine = scriptedEngine{lm}
 	if lm.name == "" {
 		lm.name = "scripted"
 	}
