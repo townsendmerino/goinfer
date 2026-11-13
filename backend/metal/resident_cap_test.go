@@ -152,10 +152,7 @@ func TestMetalBuildResident_explicitCtxHonoured(t *testing.T) {
 		t.Fatalf("BuildResident(ResidentContext=%d): ok=%v err=%v", want, ok, err)
 	}
 	defer b.Close()
-	capped, isCapped := rf.(decoder.ResidentCapsReporter)
-	if !isCapped {
-		t.Fatalf("resident does not implement decoder.ResidentCapsReporter: %T", rf)
-	}
+	capped := decoder.SubsystemsOf(rf).Runtime
 	if got := capped.ResidentCaps().ContextCap; got != want {
 		t.Fatalf("ContextCap() = %d, want %d — the explicit request did not reach the built resident", got, want)
 	}

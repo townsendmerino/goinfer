@@ -36,7 +36,8 @@ func TestPromptHiddenAllResidentCUDA(t *testing.T) {
 			if rf == nil {
 				t.Skipf("%s did not go resident on this box — decode path %q; decline: %s", ckpt, mRes.DecodePath(), mRes.ResidentDecline())
 			}
-			rr, ok := rf.(decoder.ResidentResidualAll)
+			rr := decoder.SubsystemsOf(rf).Prefill
+			ok := rr.ResidualAllAvailable()
 			if !ok {
 				t.Fatal("the cuda resident runner does not implement decoder.ResidentResidualAll")
 			}
