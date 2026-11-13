@@ -191,6 +191,7 @@ func wireServer(t *testing.T, flags ...string) (*http.Client, *loadedModel, io.C
 	tiny := srv.models["tiny"]
 	sc := &loadedModel{tk: tiny.tk, tmpl: tiny.tmpl, stopIDs: tiny.stopIDs, eosIDs: tiny.eosIDs, vocab: tiny.vocab,
 		sampling: tiny.sampling, name: "scripted", scripted: []int{}}
+	sc.fakeEngine = scriptedEngine{sc}
 	srv.models["scripted"] = sc
 	srv.regMu.Unlock()
 	return &http.Client{Transport: inproc.Transport(h)}, sc, closer

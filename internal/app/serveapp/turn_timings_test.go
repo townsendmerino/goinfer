@@ -33,6 +33,7 @@ func turnWireServer(t *testing.T, reply string) *httptest.Server {
 	}
 	s := &server{gens: newGenerationRegistry(), jobs: jobs}
 	lm := &loadedModel{tk: tk, name: "m", scripted: append([]int{}, ids...)}
+	lm.fakeEngine = scriptedEngine{lm}
 	lm.tmpl = s.cfg.tuneTemplate(mellum21Template(t))
 	s.models = map[string]*loadedModel{"m": lm}
 	mux := http.NewServeMux()

@@ -147,6 +147,17 @@
         "cmd"
       ],
       "why": "The engine package (SB7) is what the serving shell asks of a model; the shell imports it and its fakes, never the reverse, so a fake engine needs no server."
+    },
+    {
+      "name": "serveapp-fakes-test-only",
+      "from": [
+        "internal/app/serveapp"
+      ],
+      "tests": false,
+      "forbid_goinfer": [
+        "engine/enginetest"
+      ],
+      "why": "The engine fakes are test code: the serving shell's production files do not link them. A test supplies its engine through loadedModel.fakeEngine."
     }
   ],
   "arrows": {
@@ -396,7 +407,6 @@
       "decoder/fit",
       "embeddinggemma2",
       "engine",
-      "engine/enginetest",
       "internal/app/cliutil",
       "internal/app/connect",
       "internal/app/loadflags",
@@ -710,6 +720,7 @@
       "decoder/fit",
       "embeddinggemma2",
       "engine",
+      "engine/enginetest",
       "internal/app/chatapp",
       "internal/app/connect",
       "internal/app/inproc",

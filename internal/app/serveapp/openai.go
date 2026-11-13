@@ -185,7 +185,7 @@ type loadedModel struct {
 	gemma4AudioDevice string
 	gemma4AudioAcc    embeddinggemma2.AudioAccelerator
 
-	// scripted is a test seam: when non-nil, drive streams these token ids (at most the request's max tokens; the end of the
+	// scripted is a test seam (a test sets fakeEngine to scriptedEngine): when non-nil, drive streams these token ids (at most the request's max tokens; the end of the
 	// slice is the model's end of turn) instead of running model. Production never sets it.
 	scripted []int
 	// onScripted, when set with scripted, receives each scripted generation's prompt ids.
