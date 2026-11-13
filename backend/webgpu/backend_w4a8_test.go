@@ -12,7 +12,7 @@ import (
 )
 
 // TestWebGPUBackend_MatmulW4A8_matchesCPU is the staged-int4 gate
-// (docs/tasks/task-gpu-paths-2026-09.md, G6): webgpuBackend.MatmulW4A8, the decoder.QuantBackend4
+// (docs/completed/task-gpu-paths-2026-09.md, G6): webgpuBackend.MatmulW4A8, the decoder.QuantBackend4
 // entry point matmulInto/matmul call, against the CPU reference linalg.MatmulBTW4A8Into.
 //
 // K=517 is deliberately not a multiple of 32 (w4a8GroupSize): it takes the fallback

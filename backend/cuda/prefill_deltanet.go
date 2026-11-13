@@ -7,7 +7,7 @@ import (
 )
 
 // dnPrefillBufs are the M-row buffers a batched prefill of a Gated-DeltaNet model uses
-// (docs/tasks/task-cuda-deltanet-prefill-2026-09.md). Rows are packed at each projection's own width.
+// (docs/completed/task-cuda-deltanet-prefill-2026-09.md). Rows are packed at each projection's own width.
 type dnPrefillBufs struct {
 	mix, bt, at, z Buffer // the four input projections, [M × convDim | nv | nv | valueDim]
 	conv           Buffer // the conv output [q|k|v] per row, [M × convDim]
@@ -74,7 +74,7 @@ func (r *cudaResident) prefillDeltaNetRows(Ly *cudaLayer, xB, aqB, aScB Buffer, 
 		return e
 	}
 	// For hk == hv == 128 (every released model) the scan holds each state row in registers across the rows (the measured cost
-	// of the generic scan: docs/tasks/task-cuda-deltanet-prefill-2026-09.md).
+	// of the generic scan: docs/completed/task-cuda-deltanet-prefill-2026-09.md).
 	if e := r.launchRuleRows(r.dnSpecOn, b.qn, b.kn, b.conv, b.headP, Ly.dnState, b.core, M, pend, pM); e != nil {
 		return e
 	}

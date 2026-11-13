@@ -99,7 +99,7 @@ fn main() {
 }
 `
 
-// route_gptoss (FeatAttnSink's MoE half, G6 docs/tasks/task-gpu-paths-2026-09.md): gpt-oss's router
+// route_gptoss (FeatAttnSink's MoE half, G6 docs/completed/task-gpu-paths-2026-09.md): gpt-oss's router
 // disagrees with moeRouteWGSL about what the bias means, so it is its own kernel rather than a
 // parameter on that one — mirroring cuda/gptoss_act.cu's route_gptoss and metal/moe.go's twin
 // exactly (same contract, same math):
@@ -486,7 +486,7 @@ func (c *Context) ensureMoERoute() error {
 	return nil
 }
 
-// G6 (docs/tasks/task-gpu-paths-2026-09.md): gpt-oss's three MoE kernels — own router, own
+// G6 (docs/completed/task-gpu-paths-2026-09.md): gpt-oss's three MoE kernels — own router, own
 // clamped-gated activation, own biased down-combine — each ensure-once, mirroring
 // ensureMoERoute/ensureMoEExpert exactly.
 func (c *Context) ensureRouteGptOss() error {

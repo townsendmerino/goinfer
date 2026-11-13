@@ -54,7 +54,7 @@ type webgpuBackend struct {
 	mu         sync.Mutex // Context is not goroutine-safe
 	resident   map[*float32]*ResidentMatrix
 	qresident  map[*int8]*qResident  // W8A8 weights kept resident (+ a decode runner)
-	q4resident map[*byte]*q4Resident // G6 (docs/tasks/task-gpu-paths-2026-09.md): W4A8 twin — the "staged int4" item
+	q4resident map[*byte]*q4Resident // G6 (docs/completed/task-gpu-paths-2026-09.md): W4A8 twin — the "staged int4" item
 	fallbacks  int
 }
 

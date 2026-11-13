@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// The Whisper-style audio encoder on CUDA (docs/tasks/task-multimodal-support-2026-10.md, S14.6 lever B): aikit's audio.WhisperEncoder (Whisper's, and Voxtral's tower) run in
+// The Whisper-style audio encoder on CUDA (docs/completed/task-multimodal-support-2026-10.md, S14.6 lever B): aikit's audio.WhisperEncoder (Whisper's, and Voxtral's tower) run in
 // float32 on the SigLIP tower's machinery: the two Conv1d stems as im2col + GEMM (audio_encoder.cu), the learned positions added, pre-LayerNorm layers (biased q, v and out; no bias
 // on k) with the fused attention kernel, an exact-GELU MLP, a final LayerNorm. Nothing is quantized: the result is held to the CPU encoder by cosine, not by bits.
 

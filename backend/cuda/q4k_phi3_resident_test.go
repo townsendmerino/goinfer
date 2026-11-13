@@ -22,7 +22,7 @@ import (
 //
 // It runs the int8 lane (decoder.SetKQuantNativeOffForTest): the CPU q4k reference keeps the int8 copies of the Q5_K and Q6_K
 // tensors, so only that lane can meet the agreement bar. The native lane fails the quality bar on this repeated filler (open item
-// KS-O1-F, docs/tasks/task-kernel-survey-2026-10.md); its gates are TestKSO1C_realPhi3NonInferiority, TestKSO1C_towardTheFile and,
+// KS-O1-F, docs/tasks/parked/task-kernel-survey-2026-10.md); its gates are TestKSO1C_realPhi3NonInferiority, TestKSO1C_towardTheFile and,
 // for long context, TestKSO1C_longContextQuality.
 func TestQ4K_phi3ResidentMatchesCPU(t *testing.T) {
 	path := os.Getenv("GOINFER_PHI3_MINI_GGUF")

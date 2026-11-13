@@ -20,7 +20,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// GLM-OCR on the CUDA resident, on a REAL page through the REAL tower (gate O3 item 3, docs/tasks/task-glm-ocr-2026-10.md).
+// GLM-OCR on the CUDA resident, on a REAL page through the REAL tower (gate O3 item 3, docs/completed/task-glm-ocr-2026-10.md).
 // TestGlmOcrResidentParityCUDA proves the pairwise kernels on a tiny fixture; these prove the composition on the real
 // 1.1 B checkpoint: the image prefill through rope_kv_mrope_batched_pw, then decode past the image through ForwardMRoPE at
 // ropePos != pos. int4 on both arms (the resident and the CPU), the images are the procedurally rendered documents of

@@ -916,7 +916,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 	r.planning = true
 	// A MoE build whose context is planned opens its device and pays moe_route's local-memory pool (payRoutePool) before the plan
 	// reads free VRAM, on the context it keeps: the startup self-test's pool is released with its own context before the build, so
-	// nothing else has paid it (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build, review amendment"). It checks the weights
+	// nothing else has paid it (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-H6 build, review amendment"). It checks the weights
 	// first, against the margin at the floor, so a model that does not fit gets checkWeightsFit's decline rather than a warm-up's
 	// failure. The setup job keeps this device and stream, and checks the weights again against the margin it plans.
 	if _, floor, plans := ctxPlanRange(m, m.ResidentContextRequest(), m.Config().MaxPositions); r.moe && plans {
@@ -1133,7 +1133,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		if r.fGumbel2, e = r.dev.NewComputePipeline(gumod, "gumbel_stage2"); e != nil {
 			return e
 		}
-		// Compute-time LoRA (docs/tasks/task-gpu-paths-2026-09.md): own module, loaded unconditionally (cheap, and whether an
+		// Compute-time LoRA (docs/completed/task-gpu-paths-2026-09.md): own module, loaded unconditionally (cheap, and whether an
 		// adapter will arrive is not known here).
 		lmod, e2 := r.dev.CompileLibrary(loraPTX)
 		if e2 != nil {
@@ -1534,7 +1534,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			loadD(&r.dnNorm, "delta_norm")
 			loadD(&r.dnRule, "delta_rule")
 			loadD(&r.dnGNorm, "delta_gnorm")
-			// Row-batched twins for prompt prefill (docs/tasks/task-cuda-deltanet-prefill-2026-09.md).
+			// Row-batched twins for prompt prefill (docs/completed/task-cuda-deltanet-prefill-2026-09.md).
 			loadD(&r.dnConvRows, "delta_conv_rows")
 			loadD(&r.dnGatesRows, "delta_gates_rows")
 			loadD(&r.dnNormRows, "delta_norm_rows")
@@ -2167,7 +2167,7 @@ var routePoolOffForTest bool
 // load: on the RTX 2070 SUPER the launch demands about 289 MB and retains about 138 MB. A MoE build whose context is planned pays
 // it before the plan (openForPlan); every MoE build pays it here before the fit check, where, once the pool exists, it costs one
 // launch and no memory. The startup self-test's own pool goes with its context, so it does not count
-// (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build, review amendment").
+// (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-H6 build, review amendment").
 //
 // Naming moe_route is safe because the backing store is shared and sized by the largest kernel launched, and
 // TestKernelLocalMemoryCensus enumerates every entry point in every embedded module and fails, naming this site, if another kernel
@@ -2250,7 +2250,7 @@ var prePlanPoolOffForTest bool
 
 // cudaKVSlotsRequest is how many resident KV slots a build asks checkKVFits for: the model's request on this backend
 // (decoder.Model.ResidentKVSlotsRequestFor), forced to 1 on expert streaming (MoECacheExperts), which takes whatever VRAM is
-// left, so every extra KV slot is an expert-cache slot lost (docs/tasks/task-concurrency-2026-09.md).
+// left, so every extra KV slot is an expert-cache slot lost (docs/tasks/parked/task-concurrency-2026-09.md).
 func cudaKVSlotsRequest(m *decoder.Model) int {
 	if m.MoECacheExperts() {
 		return 1

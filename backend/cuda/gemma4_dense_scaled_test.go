@@ -106,7 +106,7 @@ func TestGemma4DenseScaled_residentParity(t *testing.T) {
 	// pos-0 kernel correctness (no KV accumulation): the 256-local + 512-global geometry must compose
 	// correctly. cuda-vs-cpu-int4 differs only in W4A8 activation rounding, so pos 0 is close even when
 	// the int4-vs-f32 floor is chaotic. The 0.999 bar sits between the readings before and after the v_norm fix on
-	// the sliding layers (the fix is the mechanism) and is never loosened: docs/tasks/task-multimodal-support-2026-10.md,
+	// the sliding layers (the fix is the mechanism) and is never loosened: docs/completed/task-multimodal-support-2026-10.md,
 	// S1.0 amendment.
 	if pos0 < 0.999 {
 		t.Errorf("pos-0 CUDA-vs-CPUint4 %.6f < 0.999 — the 256-local/512-global resident geometry diverges from CPU at the first token", pos0)

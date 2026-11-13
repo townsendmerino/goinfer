@@ -181,7 +181,7 @@ func kso1cSpeed(t *testing.T, path, label string) (float64, int) {
 	return med, faster
 }
 
-// TestKSO1C_speed is O1C-G7 (docs/tasks/task-kernel-survey-2026-10.md, "KS-O1 on CUDA: gates"): kso1cSpeed on Phi-3 mini q4, then
+// TestKSO1C_speed is O1C-G7 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-O1 on CUDA: gates"): kso1cSpeed on Phi-3 mini q4, then
 // on Qwen2.5-Coder-1.5B q4_k_m. SHIP iff Phi-3 is faster on at least 9 of 10 pairs and the 1.5B's median native/int8 is <= 1.00;
 // PARK if Phi-3 is faster on 6-8; KILL if on 5 or fewer, or if the 1.5B's median is above 1.00. A timed run: hold the timing lock.
 //

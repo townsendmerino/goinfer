@@ -14,7 +14,7 @@ import (
 
 var _ decoder.ResidentKVSnapshotter = (*cudaResident)(nil)
 
-// Prefix snapshots (docs/tasks/task-kv7-prefix-snapshot-2026-10.md): a slot's KV rows in pinned host memory, and back. It is CopyKV with
+// Prefix snapshots (docs/completed/task-kv7-prefix-snapshot-2026-10.md): a slot's KV rows in pinned host memory, and back. It is CopyKV with
 // a host buffer for the other slot, over the same slot storage:
 //
 //   - A full-attention or MLA latent layer holds rows [0, end) of each buffer it has.

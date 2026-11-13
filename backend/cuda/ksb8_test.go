@@ -15,7 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestKSB8_widthChooser is B8-G1 (docs/tasks/task-kernel-survey-2026-10.md, "KS-B8 build"): prefillWidthFor on a table of rooms, then
+// TestKSB8_widthChooser is B8-G1 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-B8 build"): prefillWidthFor on a table of rooms, then
 // the knob and the learned cap over the chosen width through prefillBaseRows. The planted chooser ignores the margin and must pick
 // a wider pass than the rule at the row whose room exists only inside the margin.
 func TestKSB8_widthChooser(t *testing.T) {

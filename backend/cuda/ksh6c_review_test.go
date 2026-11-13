@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestKSH6C_marginAtTheReturnedContext is H6C-G1c (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build, review amendment"): every
+// TestKSH6C_marginAtTheReturnedContext is H6C-G1c (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-H6 build, review amendment"): every
 // return of resolveCtxCapFit, the shortcuts and the floor included, gives the margin at the context it returns, whatever context
 // the plan priced.
 func TestKSH6C_marginAtTheReturnedContext(t *testing.T) {

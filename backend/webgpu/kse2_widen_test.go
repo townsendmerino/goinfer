@@ -75,7 +75,7 @@ func kse2Run(t *testing.T, c *Context, label, code string, ins [][]uint32, outs 
 	return res
 }
 
-// TestKSE2_widenedMatchesNarrow is E2-G1 (a) (docs/tasks/task-kernel-survey-2026-10.md, "KS-E2 gates"): each of the six
+// TestKSE2_widenedMatchesNarrow is E2-G1 (a) (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-E2 gates"): each of the six
 // single-workgroup quantizers widened to 256 lanes (widenQuant) against its 64-lane source, and the three prefill row forms
 // built by a wide and a narrow Context, on random inputs at n = 1, 3, 255, 896, 4864, 8960 (rows M = 1, 3, 17). The packed int8
 // words and the scales byte-equal. GOINFER_KSE2_PLANT=1 widens rmsnorm's sum of squares to all 256 lanes and expects red.
@@ -345,7 +345,7 @@ func TestKSE2_contextWiresEveryQuantizer(t *testing.T) {
 	}
 }
 
-// TestKSE2_decodeSpeed is E2-G2's re-run (docs/tasks/task-kernel-survey-2026-10.md, "E2-G2 re-run" and its amendments): the
+// TestKSE2_decodeSpeed is E2-G2's re-run (docs/tasks/parked/task-kernel-survey-2026-10.md, "E2-G2 re-run" and its amendments): the
 // 1.5B's .gguf at int8int8 on WebGPU, one resident alive at a time (each arm builds its resident, warms it twice and times 128
 // greedy decode tokens after a 32-token prompt), A B B A over 10 valid pairs: the A/A control (narrow against narrow) first, then
 // the A/B (narrow against wide), in one process. It refuses to run outside the timing lock and under 6 GB reclaimable before its

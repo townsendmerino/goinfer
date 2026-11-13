@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-// Windowed KV (docs/tasks/task-cuda-windowed-kv-2026-10.md). A sliding-window layer reads only the last `window` positions, so with
+// Windowed KV (docs/completed/task-cuda-windowed-kv-2026-10.md). A sliding-window layer reads only the last `window` positions, so with
 // Options.ResidentWindowedKV its K and V live in the window group's pool (kvpool.go), and a slot maps only the blocks that cover the
 // positions it still holds, [base, end): window+slack positions at most, against the context's worth a full layer maps. Every kernel
 // addresses K and V by absolute position through the slot's table, so nothing moves: when the next write would pass base+window+slack,

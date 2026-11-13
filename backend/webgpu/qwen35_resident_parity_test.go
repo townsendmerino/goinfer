@@ -222,7 +222,7 @@ func residentParityWebGPU(t *testing.T, ckpt string, o decoder.Options) deltaNet
 
 // TestOlmoHybridResidentParityWebGPU holds the three families the claims admit (FeatNoPE, FeatPostOnlyNorm, FeatQKNormWhole, and
 // Olmo Hybrid's NegEigval and ONormEps) to the CPU at the same options over 128 tokens, and requires a plant on each setting to fall
-// outside the bar on a fixture that uses it (docs/tasks/task-olmo-hybrid-metal-webgpu-2026-11.md, § WebGPU).
+// outside the bar on a fixture that uses it (docs/completed/task-olmo-hybrid-metal-webgpu-2026-11.md, § WebGPU).
 func TestOlmoHybridResidentParityWebGPU(t *testing.T) {
 	if _, err := New(); err != nil {
 		t.Skipf("no webgpu: %v", err)

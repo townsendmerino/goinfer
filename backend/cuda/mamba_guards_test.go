@@ -19,7 +19,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-// OP2b on CUDA, step 2c (docs/tasks/task-forward-architecture-2026-10.md §4.7): the sites that tested r.dnet read "recurrent", so a Mamba-2 resident is
+// OP2b on CUDA, step 2c (docs/completed/task-forward-architecture-2026-10.md §4.7): the sites that tested r.dnet read "recurrent", so a Mamba-2 resident is
 // declined where a Gated-DeltaNet one is; and the KV plan prices attention layers only, plus the Mamba state.
 
 type guardCase struct {
@@ -179,7 +179,7 @@ func TestNemotronResidentCUDA_pricing(t *testing.T) {
 	t.Logf("nemotron-tiny: %d attention layers of %d price %d KV bytes at %d positions; %d Mamba layers' state is %d bytes", attn, len(r.layers), want, ctx, nMamba, stateBytes)
 }
 
-// TestRecurrentStatePlanned_matchesTheBuild is MM8's CUDA gate (docs/tasks/task-subsystems-2026-10.md, MM8): the recurrent state the
+// TestRecurrentStatePlanned_matchesTheBuild is MM8's CUDA gate (docs/completed/task-subsystems-2026-10.md, MM8): the recurrent state the
 // pre-build context plan prices (each layer's conv window and state, at the driver's allocation quantum) equals what the build charges
 // for it, on Gated-DeltaNet, Mamba-2 and Olmo Hybrid fixtures; and it is all on the device, on the ledger's state line, before checkKVFits reads
 // free VRAM.

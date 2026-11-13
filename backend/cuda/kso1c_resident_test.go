@@ -65,7 +65,7 @@ func kso1cDeviceBytes(w cudaWQ) int64 {
 	return n + int64(w.ws.Len())*4 + int64(w.ws16.Len())*2
 }
 
-// TestKSO1C_laneBytes is O1C-G3 (docs/tasks/task-kernel-survey-2026-10.md, "KS-O1 on CUDA: gates"): each model loaded on CUDA at
+// TestKSO1C_laneBytes is O1C-G3 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-O1 on CUDA: gates"): each model loaded on CUDA at
 // --quant q4k twice, the int8 arm (decoder.SetKQuantNativeOffForTest) and the native arm, after one discarded warm-up load. The
 // native arm's device weight bytes must fall by exactly the fit pricing's saving, each native buffer must hold exactly the file's
 // bytes for its weight, layer 0's native buffers and the head must read back as the file's blocks (Q6_K through its planes), and

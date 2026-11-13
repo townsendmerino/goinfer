@@ -20,7 +20,7 @@ type ksh6cModel struct {
 	moeCache bool
 }
 
-// H6C-G2's models (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build: gates"), one test per heavy-tier group, since a process
+// H6C-G2's models (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-H6 build: gates"), one test per heavy-tier group, since a process
 // holds at most one large checkpoint (cmd/gate's heavyFamilies). KSH6C_MODELS (a comma-separated list of file names) narrows each.
 
 func TestKSH6C_marginPriced(t *testing.T) {

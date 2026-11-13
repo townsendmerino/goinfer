@@ -36,7 +36,7 @@ func eModelPrompt(t *testing.T) []int {
 	return append(append([]int(nil), g.PromptIDs...), g.ContinuationIDs...)
 }
 
-// eModelG1 is what G-S12.1a grades (docs/tasks/task-multimodal-support-2026-10.md, S12): the WebGPU resident against
+// eModelG1 is what G-S12.1a grades (docs/completed/task-multimodal-support-2026-10.md, S12): the WebGPU resident against
 // the CPU, int4 on both sides, teacher-forced over eModelPrompt, with the CPU's own int4-against-float32 agreement
 // as the envelope.
 type eModelG1 struct {

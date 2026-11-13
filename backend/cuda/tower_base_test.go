@@ -12,7 +12,7 @@ import (
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 )
 
-// The CUDA vision-tower base against plain Go (S4 step 1, docs/tasks/task-multimodal-support-2026-10.md): every GEMM branch the towers reach (the register
+// The CUDA vision-tower base against plain Go (S4 step 1, docs/completed/task-multimodal-support-2026-10.md): every GEMM branch the towers reach (the register
 // kernel on aligned shapes, the bias kernel at any M, the tiled kernel plus add_bias at a K that is not a multiple of 16: real GLM-OCR's patch embed is K = 1176),
 // the norms, and the tower_base.cu kernels. The tiny fixtures never reach these production branches, which is aikit visioncuda's failure class (tiny passes, real is
 // wrong), so each branch is checked here on its own. Needs a CUDA device; skips without one.

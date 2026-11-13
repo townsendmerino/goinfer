@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestGemma4_26B_s10DumpCUDA is the separating test the 26B's near-tie read proposed (docs/tasks/task-multimodal-support-2026-10.md, S1.0): the CUDA resident's full logits at every position of the
+// TestGemma4_26B_s10DumpCUDA is the separating test the 26B's near-tie read proposed (docs/completed/task-multimodal-support-2026-10.md, S1.0): the CUDA resident's full logits at every position of the
 // sequences the Mac's Metal dump used (seqs.json, teacher-forced, the same .int4.metal.giw), written as logits-cuda.f32 beside them, so the CPU grade (decoder TestGemma4_26B_s10Grade) can add CUDA as a
 // third arm. If CUDA agrees with the CPU at the early positions where Metal does not, the divergence is Metal-specific; if it diverges the same way, the CPU or a shared stage is the suspect.
 // A correctness run, not a measurement: the 26B runs paged (C' streaming) on the 8 GB card. Heavy.

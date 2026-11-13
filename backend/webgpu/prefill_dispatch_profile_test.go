@@ -18,7 +18,7 @@ import (
 // TestPrefill_dispatchProfile gives each batched-prefill class (the GEMM, the attention, the
 // batched norms/rope, the KV write) a per-class time at P in {256, 1024}, plus the GEMM class's
 // achieved GFLOPS against the card's naive-f32 and shared-memory-tiled expectations
-// (docs/tasks/red-october.md, R10).
+// (docs/completed/red-october.md, R10).
 //
 // TestDecode_dispatchProfile's ablation method (re-record R times into one pass, omit one
 // pipeline class) does not transfer: PrefillLastW8A8 is not a replayable step list (it builds
