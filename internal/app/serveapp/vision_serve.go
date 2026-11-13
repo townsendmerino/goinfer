@@ -527,7 +527,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 	if gr.conf != nil {
 		vresp["goinfer_confidence"] = gr.conf.payload()
 	}
-	writeJSON(w, http.StatusOK, gr.clock.addTurn(vresp))
+	writeJSON(w, http.StatusOK, gr.clock.AddTurn(vresp))
 }
 
 // serveVisionMessages handles an Anthropic /v1/messages request carrying an image
@@ -671,7 +671,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 	if e := emptyAnswerOf(gr, finish, stopSeq, 0, nComp); e != nil {
 		vmsg["goinfer_empty_answer"] = e
 	}
-	writeJSON(w, http.StatusOK, gr.clock.addTurn(vmsg))
+	writeJSON(w, http.StatusOK, gr.clock.AddTurn(vmsg))
 }
 
 // qwenASRMaxSeconds is the longest clip a request may carry. The model has no 30 s window (its encoder attends within 8 s blocks), so this is a cost bound, not the model's limit: a

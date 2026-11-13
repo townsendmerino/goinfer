@@ -130,6 +130,7 @@ func TestServe_nemotronRendersItsMarkersAndStops(t *testing.T) {
 	}
 
 	lm.scripted = encode("ok")
+	lm.fakeEngine = scriptedEngine{lm}
 	var prompt []int
 	lm.onScripted = func(p []int) { prompt = slices.Clone(p) }
 	ask(nil)

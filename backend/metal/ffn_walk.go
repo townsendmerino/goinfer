@@ -194,7 +194,7 @@ func (r *resident) emitFFNNorm(e *Encoder, n *program.NormParams, x, w, bias, mq
 func (r *resident) encodeFFNWalk(e *Encoder, st layerStep, l int, L *residLayer, ops []program.Op, x Buffer) {
 	if st == stepMoE && L.moe.pool != nil {
 		e.FinishEncoding()
-		panic("metal: encodeMoEFFNWithX reached a paged MoE layer — route through forwardLogitsMoEPaged instead (C-02)")
+		panic("metal: encodeFFNWalk reached a paged MoE layer — route through forwardLogitsMoEPaged instead (C-02)")
 	}
 	f16Lane := st == stepDenseFFN && r.canUseF16Lane(l)
 	gq, gSc := r.mq, r.mSc

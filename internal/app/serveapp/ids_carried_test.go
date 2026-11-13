@@ -495,6 +495,7 @@ func scriptedIDsServer(t *testing.T, reply string) (*httptest.Server, []int, *se
 	}
 	s := &server{idsKey: newIDsKey([]byte("scripted test key, 32 bytes long"))}
 	lm := &loadedModel{tk: tk, name: "m", scripted: append([]int{}, ids...)}
+	lm.fakeEngine = scriptedEngine{lm}
 	lm.tmpl = s.cfg.tuneTemplate(mellum21Template(t))
 	s.models = map[string]*loadedModel{"m": lm}
 	mux := http.NewServeMux()

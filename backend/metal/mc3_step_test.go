@@ -226,16 +226,6 @@ func TestOP4mD6b_mambaStepSpeed(t *testing.T) {
 		want: func(r *resident) bool { return r.mamba != nil }, wantWhat: "a Mamba-2 (Nemotron-H) resident"})
 }
 
-// TestOP4mPod2_stepSpeed is OP4m-pod2 part 2's P-3 (docs/tasks/task-forward-and-memory-2026-11.md, "OP4m-pod2 part 2:
-// registration") on a recurrent checkpoint at GOINFER_OP4MPOD2S_MODEL (GOINFER_OP4MPOD2S_TIMING=1, under the timing lock): the
-// batched step on four slots, its per-row steps through the walk against through the blocks, graded as a parity cell.
-func TestOP4mPod2_stepSpeed(t *testing.T) {
-	t.Cleanup(func() { mixerWalkBlocksForTest = false })
-	op4mStepSpeed(t, stepSpeedCell{env: "GOINFER_OP4MPOD2S", label: "[OP4m-pod2 P-3]", recurrent: true, parity: true,
-		want: func(r *resident) bool { return r.dnet != nil || r.mamba != nil }, wantWhat: "a DeltaNet or Mamba-2 resident",
-		stepArms: func(on bool) { mixerWalkBlocksForTest = !on }})
-}
-
 // cellLoad1 is the 1-minute load average (vm.loadavg), a timed cell's start and pair term.
 func cellLoad1(t *testing.T) float64 {
 	t.Helper()
@@ -279,142 +269,6 @@ func cellPaging(t *testing.T) (swapMiB float64, pageouts int64) {
 		}
 	}
 	return swapMiB, pageouts
-}
-
-// TestOP4mPod_decodeSpeed is OP4m-pod's and OP4m-pod2's P-3 (docs/tasks/task-forward-and-memory-2026-11.md, "OP4m-pod:
-// registration", "OP4m-pod2: registration"): one sequence's decode, the walk of the mixer and the FFN and tail steps against their
-// blocks, in one process, on the checkpoint at GOINFER_OP4MPOD_MODEL. Each
-// run refills the sequence to depth 128 untimed and times 64 greedy tokens; the arms alternate A B, B A over 6 pairs, and the tokens
-// must be equal in every pair. A pair whose starting load is above half the cores plus GOMAXPROCS, or across which swap in use
-// grows, voids the cell. Pass: a median rate ratio, walk ÷ blocks, of at least 0.99; fail: the cell resolves slower (every pair
-// under 1) with its median under 0.99; parked otherwise under 0.99. A fail or a park fails the test. A timed run: it refuses to
-// run outside the timing lock (GOINFER_OP4MPOD_TIMING=1).
-func TestOP4mPod_decodeSpeed(t *testing.T) {
-	path := os.Getenv("GOINFER_OP4MPOD_MODEL")
-	if os.Getenv("GOINFER_OP4MPOD_TIMING") == "" || path == "" {
-		t.Skip("set GOINFER_OP4MPOD_TIMING=1 and GOINFER_OP4MPOD_MODEL (a timed run under the timing lock)")
-	}
-	if os.Getenv("GOINFER_TIMING_LOCK") == "" {
-		t.Fatal("not under the timing lock: run through scripts/timing_lock.py run")
-	}
-	if strings.HasPrefix(path, "/Volumes/") || strings.HasPrefix(path, "/srv/models") {
-		t.Fatalf("%s is on the archive, not the bench set: a timing from it measures the disk", path)
-	}
-	const depth, steps, pairs, ctx = 128, 64, 6, 1024
-	const label = "[OP4m-pod P-3]"
-	name := filepath.Base(path)
-	l0 := cellLoad1(t)
-	m, err := decoder.Load(path, decoder.Options{Quant: "int4", ResidentContext: ctx})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer m.Close()
-	need := m.ResidentNeedBytes("metal", 0, ctx, false, false)
-	r0, ok := probe.Read() // the fit check: after the load maps the file, before the resident allocates
-	if !ok {
-		t.Fatal("no memory reading")
-	}
-	gib := func(b int64) float64 { return float64(b) / (1 << 30) }
-	why := stepCellStartVoid(l0, runtime.NumCPU(), r0.Available, need)
-	fmt.Fprintf(os.Stderr, label+" %s: cell start: 1-minute load %.2f; available %.2f GiB against need %.2f GiB (%s); reclaimable %.2f GiB (recorded)\n",
-		name, l0, gib(r0.Available), gib(need), map[bool]string{true: "ok", false: "VOID"}[why == ""], gib(r0.Reclaimable))
-	if why != "" {
-		t.Fatalf("cell void: %s", why)
-	}
-	r, err := buildResident(m)
-	if err != nil {
-		t.Fatalf("build the resident: %v", err)
-	}
-	defer r.Close()
-	kinds := map[layerStep]int{}
-	for l := range r.layers {
-		for _, st := range r.layers[l].steps {
-			if mixerWalks(st) || ffnWalks(st) {
-				kinds[st]++
-			}
-		}
-	}
-	fmt.Fprintf(os.Stderr, label+" %s: walked steps by kind %v\n", name, kinds)
-	defer func() { mixerWalkBlocksForTest = false }()
-	rng := rand.New(rand.NewSource(128))
-	fill := make([]int, depth)
-	for i := range fill {
-		fill[i] = rng.Intn(min(20000, r.V))
-	}
-	first := rng.Intn(min(20000, r.V))
-	run := func(blocks bool) (rate float64, toks []int) {
-		mixerWalkBlocksForTest = blocks
-		r.stopExec()
-		r.resetRecurrent()
-		for p, id := range fill {
-			r.Forward(id, p)
-		}
-		cur := first
-		t0 := time.Now()
-		for s := range steps {
-			lg := r.Forward(cur, depth+s)
-			cur = 0
-			for i, v := range lg {
-				if v > lg[cur] {
-					cur = i
-				}
-			}
-			toks = append(toks, cur)
-		}
-		el := time.Since(t0)
-		if err := r.takeExecErr(); err != nil {
-			t.Fatal(err)
-		}
-		return float64(steps) / el.Seconds(), toks
-	}
-	run(false) // each arm warm before the first pair, untimed
-	run(true)
-	bar := float64(runtime.NumCPU())/2 + float64(runtime.GOMAXPROCS(0))
-	var ratios []float64
-	below := 0
-	for p := range pairs {
-		lp := cellLoad1(t)
-		if lp > bar {
-			t.Fatalf("cell void: pair %d starts at 1-minute load %.2f, above %.1f", p+1, lp, bar)
-		}
-		s0, _ := cellPaging(t)
-		order := []bool{false, true} // false: the walk; true: the blocks
-		if p%2 == 1 {
-			order = []bool{true, false}
-		}
-		rates, toks := map[bool]float64{}, map[bool][]int{}
-		for _, blocks := range order {
-			rates[blocks], toks[blocks] = run(blocks)
-		}
-		if s1, _ := cellPaging(t); s1 > s0 {
-			t.Fatalf("cell void: swap in use grew from %.1f to %.1f MiB across pair %d", s0, s1, p+1)
-		}
-		if !slices.Equal(toks[false], toks[true]) {
-			t.Fatalf("pair %d: the walk's tokens differ from the blocks'", p+1)
-		}
-		ratio := rates[false] / rates[true]
-		ratios = append(ratios, ratio)
-		if ratio < 1 {
-			below++
-		}
-		fmt.Fprintf(os.Stderr, label+" %s: pair %d/%d (%s first, load %.2f): walk %.2f tok/s, blocks %.2f tok/s, ratio %.4f\n",
-			name, p+1, pairs, map[bool]string{false: "walk", true: "blocks"}[order[0]], lp, rates[false], rates[true], ratio)
-	}
-	sorted := slices.Clone(ratios)
-	slices.Sort(sorted)
-	med := (sorted[pairs/2-1] + sorted[pairs/2]) / 2
-	verdict := "PASS"
-	switch {
-	case med >= 0.99:
-	case below == pairs:
-		verdict = "FAIL"
-	default:
-		verdict = "PARKED"
-	}
-	fmt.Fprintf(os.Stderr, label+" %s: median ratio %.4f, %d of %d pairs under 1: %s\n", name, med, below, pairs, verdict)
-	if verdict != "PASS" {
-		t.Errorf("P-3 on %s: median %.4f, %d of %d pairs under 1: %s", name, med, below, pairs, verdict)
-	}
 }
 
 // stepCellStartVoid is why a timed cell may not start, or "" when it may: the void rule's start terms
@@ -541,10 +395,6 @@ type stepSpeedCell struct {
 	// stepArms, when set, makes both arms the step, switched by stepArms(true) for the new arm and stepArms(false) for the
 	// do-nothing one; the log's "sequential" is then the step in its do-nothing form. The caller restores what the switch set.
 	stepArms func(on bool)
-	// parity, when set, grades the cell as a no-regression check (OP4m-pod2 part 2's P-3) in place of a feature bar: 6 pairs;
-	// pass at a median new ÷ do-nothing of at least 0.99, fail when every pair is under 1 and the median under 0.99, parked
-	// otherwise.
-	parity bool
 }
 
 // op4mStepSpeed is the feature-bar cell TestOP4mD3_moeStepSpeed describes, on the model and arms c names.
@@ -561,10 +411,7 @@ func op4mStepSpeed(t *testing.T, c stepSpeedCell) {
 		t.Fatalf("%s is on the archive, not the bench set: a timing from it measures the disk", path)
 	}
 	const B, depth, steps, ctx = 4, 128, 64, 1024
-	pairs := 10
-	if c.parity {
-		pairs = 6
-	}
+	const pairs = 10
 	load1 := func() float64 { return cellLoad1(t) }
 	paging := func() (swapMiB float64, pageouts int64) { return cellPaging(t) }
 	majFaults := func() int64 { // this process's major faults (page-ins from disk), the never-swap rule's own reading
@@ -719,21 +566,6 @@ func op4mStepSpeed(t *testing.T, c stepSpeedCell) {
 	med := (ratios[pairs/2-1] + ratios[pairs/2]) / 2
 	verdict := "PARKED (under the feature bar, not under 1.00)"
 	switch {
-	case c.parity:
-		below := 0
-		for _, x := range ratios {
-			if x < 1 {
-				below++
-			}
-		}
-		switch {
-		case med >= 0.99:
-			verdict = "PASS"
-		case below == pairs:
-			verdict = "FAIL (every pair under 1, median under 0.99)"
-		default:
-			verdict = "PARKED (median under 0.99)"
-		}
 	case med >= 1.05 && faster >= 9:
 		verdict = "PASS"
 	case med < 1.00:

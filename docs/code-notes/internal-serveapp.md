@@ -1560,7 +1560,7 @@ mu guards Status/Results/OutputFileID/ErrorFileID/CompletedAt: many line gorouti
 Results[i] concurrently (disjoint indices, so the writes themselves never race each other) but
 Status and the two file-id fields are read by every GET and written by exactly one finalizer,
 so they need the same discipline job.go's own mu gained in J3 after -race caught a real bug
-there (internal/app/serveapp/job.go:jobStore's doc comment) — written locked from the start here instead of finding the
+there (internal/app/serveapp/jobs/job.go:Store's doc comment) — written locked from the start here instead of finding the
 same class of defect twice.
 ```
 
@@ -1577,7 +1577,7 @@ has no Results entry yet either way).
 JobIDs is copied under b.mu before ranging over it — found by -race, not by inspection: each
 line's goroutine writes its own slot via setJobID (batches_run.go) under the same lock, and a
 plain read of the slice here raced those writes even though every write lands at a disjoint
-index (internal/app/serveapp/job.go:jobStore's doc comment names the same class of bug in J3's job store).
+index (internal/app/serveapp/jobs/job.go:Store's doc comment names the same class of bug in J3's job store).
 ```
 
 ## setJobID
@@ -1586,7 +1586,7 @@ Moved from `internal/app/serveapp/batches_run.go` (the comment above `setJobID`)
 
 ```text
 setJobID records line i's job id under the batch's own lock. Found by -race, not by
-inspection, the same way job.go's own mu gained coverage in J3 (internal/app/serveapp/job.go:jobStore's doc comment):
+inspection, the same way job.go's own mu gained coverage in J3 (internal/app/serveapp/jobs/job.go:Store's doc comment):
 requestCancel (batches.go) reads the whole JobIDs slice from a different goroutine while lines
 are still writing their own slot — disjoint indices don't save a plain slice write from racing a
 concurrent read of the slice's backing array with no synchronization between them.

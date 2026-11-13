@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -269,7 +270,7 @@ func (s *schedSim) step(e schedEvent) schedStep {
 			continue
 		}
 		switch {
-		case r.why.state == jobFailed:
+		case r.why.state == jobs.Failed:
 			r.out.Outcome = "queue_full"
 		case r.ctx.Err() != nil && r.why.reason == "cancelled before a turn was granted":
 			r.out.Outcome = "cancelled"

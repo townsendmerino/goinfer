@@ -3,6 +3,7 @@ package serveapp
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -75,32 +76,29 @@ func TestPanicGuard_runBatchChatLineFailsAloneAndTheBatchStillFinalizes(t *testi
 }
 
 func TestPanicGuard_runJobFailsTheJobAndClosesItsStream(t *testing.T) {
-	js, err := newJobStore("", 8)
+	js, err := jobs.NewStore("", 8)
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := &server{jobs: js}
-	js.createPending("job_p", "m", nil)
+	js.CreatePending("job_p", "m", nil)
 	released := false
 	// lm is nil: tryEnter dereferences it, which is the panic.
 	runJob(s, nil, func() { released = true }, genRequest{id: "job_p"}, admissionRecord{}, 1)
 	if !released {
 		t.Error("the model was not released after the panic: an /admin unload would wait on it forever")
 	}
-	j, ok := js.snapshot("job_p")
-	if !ok || j.State != jobFailed || j.Error != "internal error" {
+	j, ok := js.Snapshot("job_p")
+	if !ok || j.State != jobs.Failed || j.Error != "internal error" {
 		t.Fatalf("job after a panic: ok=%v %+v; want failed with 'internal error'", ok, j)
 	}
-	js.mu.Lock()
-	log := js.logs["job_p"]
-	js.mu.Unlock()
+	log := js.EventLog("job_p")
 	if log == nil {
 		t.Fatal("no event log")
 	}
-	log.mu.Lock()
-	defer log.mu.Unlock()
-	if !log.done || len(log.events) == 0 {
-		t.Errorf("the event stream: done=%v events=%d; want closed with the failure events written", log.done, len(log.events))
+	events, _, done := log.Snapshot(0)
+	if !done || len(events) == 0 {
+		t.Errorf("the event stream: done=%v events=%d; want closed with the failure events written", done, len(events))
 	}
 }
 
