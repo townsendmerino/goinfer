@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -468,6 +469,232 @@ func (bs *webgpuBuild) attnMixer(i int, lw *decoder.LayerWeights, rl *kernels.Ru
 	}
 	if rl.O, e = bs.projMul(&lw.OProj, bs.rmul); e != nil {
 		return e
+	}
+	return nil
+}
+
+// g4MoEFFN uploads layer i's Gemma 4 feed-forward, the parallel dense and MoE block (decoder's gemma4MoEFFN), into rl.
+func (bs *webgpuBuild) g4MoEFFN(i int, g4b decoder.Gemma4MoEResidentBundle, rl *kernels.RunLayer) error {
+	m := bs.m
+	rd := bs.rd
+	var e error
+	g := &kernels.G4MoELayer{NE: g4b.NE, TopK: g4b.TopK, DenseInter: g4b.DenseInter, MoeInter: g4b.MoeInter}
+	if g4b.NE <= 0 || g4b.TopK <= 0 || g4b.TopK > g4b.NE || len(g4b.ExpertsGateUp) != g4b.NE || len(g4b.ExpertsDown) != g4b.NE ||
+		len(g4b.RouterProjScaled) != g4b.NE*bs.hidden || len(g4b.PerExpertScale) != g4b.NE {
+		return fmt.Errorf("gpu: layer %d: Gemma 4 MoE block with %d experts (top %d), router %d values, %d per-expert scales, %d/%d expert projections",
+			i, g4b.NE, g4b.TopK, len(g4b.RouterProjScaled), len(g4b.PerExpertScale), len(g4b.ExpertsGateUp), len(g4b.ExpertsDown))
+	}
+	for _, nb := range []struct {
+		dst *(*wgpu.Buffer)
+		v   []float32
+	}{{&g.PreFFNNorm, g4b.PreFFNNorm}, {&g.PostFFNNorm1, g4b.PostFFNNorm1}, {&g.PreFFNNorm2, g4b.PreFFNNorm2},
+		{&g.PostFFNNorm2, g4b.PostFFNNorm2}, {&g.PostFFNNorm, g4b.PostFFNNorm}} {
+		if len(nb.v) != bs.hidden {
+			return fmt.Errorf("gpu: layer %d: a Gemma 4 MoE block norm has %d weights, want %d", i, len(nb.v), bs.hidden)
+		}
+		if *nb.dst, e = bs.up32(nb.v); e != nil {
+			return e
+		}
+	}
+	// The router's norm has no weight. The runner's RMSNorm multiplies by 1+w when the arch adds one and by w otherwise, so
+	// the weight that makes it weightless is 0 or 1.
+	flat := make([]float32, bs.hidden)
+	if !m.RMSAddOne() {
+		for j := range flat {
+			flat[j] = 1
+		}
+	}
+	if g.RouterNorm, e = bs.up32(flat); e != nil {
+		return e
+	}
+	if g.Router, e = bs.up32(g4b.RouterProjScaled); e != nil {
+		return e
+	}
+	if g.PerExpertScale, e = bs.up32(g4b.PerExpertScale); e != nil {
+		return e
+	}
+	if g.ZeroBias, e = bs.up32(make([]float32, g4b.NE)); e != nil {
+		return e
+	}
+	if g.Gate, e = bs.proj(g4b.MlpGate); e != nil {
+		return e
+	}
+	if g.Up, e = bs.proj(g4b.MlpUp); e != nil {
+		return e
+	}
+	if g.Down, e = bs.proj(g4b.MlpDown); e != nil {
+		return e
+	}
+	if g.ExpGateUp, e = bs.buildStacked(g4b.NE, func(x int) *linalg.WeightMat { return g4b.ExpertsGateUp[x] }, 1); e != nil {
+		return e
+	}
+	bs.keep(g.ExpGateUp.Release)
+	if g.ExpDown, e = bs.buildStacked(g4b.NE, func(x int) *linalg.WeightMat { return g4b.ExpertsDown[x] }, 1); e != nil {
+		return e
+	}
+	bs.keep(g.ExpDown.Release)
+	if (*kernels.ResidentStackedW8A8Rows(g.ExpGateUp)) != 2*g4b.MoeInter || (*kernels.ResidentStackedW8A8Rows(g.ExpDown)) != bs.hidden {
+		return fmt.Errorf("gpu: layer %d: Gemma 4 expert projections have %d and %d rows, want %d and %d", i, (*kernels.ResidentStackedW8A8Rows(g.ExpGateUp)), (*kernels.ResidentStackedW8A8Rows(g.ExpDown)), 2*g4b.MoeInter, bs.hidden)
+	}
+	rl.G4moe, rd.rm.G4moe = g, true
+	rl.LayerScalar = g4b.LayerScalar
+	if kernels.G4DropLayerScalarForTest {
+		rl.LayerScalar = 1
+	}
+	return nil
+}
+
+// sparseMoEFFN uploads a Mixtral-class sparse MoE feed-forward for layer i (the stacked experts, the router, gpt-oss's bias tables
+// and the shared expert when the model has one) into rl.
+func (bs *webgpuBuild) sparseMoEFFN(i int, lw *decoder.LayerWeights, rl *kernels.RunLayer) error {
+	m := bs.m
+	rd := bs.rd
+	var e error
+	rl.IsMoE = true
+	if rl.Router, e = bs.proj(&lw.Router); e != nil {
+		return e
+	}
+	if len(lw.RouterBias) > 0 {
+		if rl.RouterBias, e = bs.up32(lw.RouterBias); e != nil {
+			return e
+		}
+	}
+	if rl.ExpGate, e = bs.buildStacked(len(lw.Experts), func(x int) *linalg.WeightMat { return &lw.Experts[x].Gate }, 1); e != nil {
+		return e
+	}
+	bs.keep(rl.ExpGate.Release)
+	if rl.ExpUp, e = bs.buildStacked(len(lw.Experts), func(x int) *linalg.WeightMat { return &lw.Experts[x].Up }, 1); e != nil {
+		return e
+	}
+	bs.keep(rl.ExpUp.Release)
+	if rl.ExpDown, e = bs.buildStacked(len(lw.Experts), func(x int) *linalg.WeightMat { return &lw.Experts[x].Down }, bs.rmul); e != nil {
+		return e
+	}
+	bs.keep(rl.ExpDown.Release)
+	// gpt-oss (FeatAttnSink): expert-major gate‖up and down bias tables.
+	if rd.rm.Moe != nil && rd.rm.Moe.Gptoss {
+		if rl.GateUpBias, e = bs.up32(m.GptOssExpertBiasResident(i)); e != nil {
+			return e
+		}
+		if rl.DownBias, e = bs.up32(m.GptOssExpertDownBiasResident(i)); e != nil {
+			return e
+		}
+	}
+	if bs.shInter > 0 { // always-on shared expert (qwen2_moe gated / GLM ungated)
+		if rl.ShGate, e = bs.proj(&lw.SharedExpert.Gate); e != nil {
+			return e
+		}
+		if rl.ShUp, e = bs.proj(&lw.SharedExpert.Up); e != nil {
+			return e
+		}
+		if rl.ShDown, e = bs.projMul(&lw.SharedExpert.Down, bs.rmul); e != nil {
+			return e
+		}
+		if !bs.shUngated { // qwen2_moe: the [1,hidden] sigmoid gate
+			if rl.ShGateW, e = bs.proj(&lw.SharedGate); e != nil {
+				return e
+			}
+		}
+	}
+	return nil
+}
+
+// denseFFN uploads a dense gate/up/down feed-forward, and a Gemma 4 E-model's per-layer-embedding branch, into rl.
+func (bs *webgpuBuild) denseFFN(lw *decoder.LayerWeights, rl *kernels.RunLayer) error {
+	rd := bs.rd
+	var e error
+	if rl.Gate, e = bs.proj(&lw.GateProj); e != nil {
+		return e
+	}
+	if rl.Up, e = bs.proj(&lw.UpProj); e != nil {
+		return e
+	}
+	if rl.Down, e = bs.projMul(&lw.DownProj, bs.rmul); e != nil {
+		return e
+	}
+	// Gemma 4 E-model: the per-layer-embedding branch's two projections and its norm.
+	if rd.rm.PleDim > 0 {
+		if rl.PleGate, e = bs.proj(&lw.PLEGate); e != nil {
+			return e
+		}
+		if rl.PleProj, e = bs.proj(&lw.PLEProj); e != nil {
+			return e
+		}
+		if rl.PostPLENorm, e = bs.up32(lw.PostPLENorm); e != nil {
+			return e
+		}
+	}
+	return nil
+}
+
+// layerTail uploads what every layer carries after its mixer and feed-forward: q/k/v and output biases, QK-norms, sandwich or
+// post-only norms and the attention sinks. isG4MoE and postOnlyHere are the layer's norm placement, decided by the caller.
+func (bs *webgpuBuild) layerTail(i int, lw *decoder.LayerWeights, rl *kernels.RunLayer, isG4MoE, postOnlyHere bool) error {
+	m := bs.m
+	lhd, lnKV := m.HeadDimAtResident(i), m.KVHeadsAtResident(i) // the layer's own head dim and KV heads, for the QK-norm width check
+	var e error
+	if len(lw.QBias) > 0 { // Qwen2 q/k/v bias
+		if rl.QBias, e = bs.up32(lw.QBias); e != nil {
+			return e
+		}
+		if rl.KBias, e = bs.up32(lw.KBias); e != nil {
+			return e
+		}
+		if rl.VBias, e = bs.up32(lw.VBias); e != nil {
+			return e
+		}
+	}
+	if len(lw.QNorm) > 0 { // Qwen3/GLM per-head QK-norm, or Olmo 3/Olmo Hybrid whole-vector QK-norm (applied before RoPE)
+		if bs.qkNormWhole {
+			if len(lw.QNorm) != bs.nH*lhd || (!rl.KvShared && len(lw.KNorm) != lnKV*lhd) {
+				return fmt.Errorf("gpu: layer %d: QKNormWhole weights len(QNorm)=%d len(KNorm)=%d, want %d/%d",
+					i, len(lw.QNorm), len(lw.KNorm), bs.nH*lhd, lnKV*lhd)
+			}
+		}
+		if rl.QNorm, e = bs.up32(lw.QNorm); e != nil {
+			return e
+		}
+		if rl.KNorm, e = bs.up32(lw.KNorm); e != nil {
+			return e
+		}
+	}
+	// FeatOutBias (gpt-oss o_proj bias) and FeatSandwichNorm / FeatPostOnlyNorm (Gemma's / Olmo 3's / Olmo Hybrid's
+	// post-sublayer norms): the same "len>0, else leave nil" gate as QBias/QNorm above.
+	if len(lw.OBias) > 0 {
+		if rl.OBias, e = bs.up32(lw.OBias); e != nil {
+			return e
+		}
+	}
+	if bs.sandwichOK || postOnlyHere { // both present together when the layer uses sandwich or post-only norms
+		if len(lw.PostAttnNorm) != bs.hidden || (!isG4MoE && len(lw.PostMLPNorm) != bs.hidden) {
+			return fmt.Errorf("gpu: layer %d: arch declares sandwich/postOnly norms but PostAttnNorm/PostMLPNorm are not len==hidden(%d) (got %d/%d)",
+				i, bs.hidden, len(lw.PostAttnNorm), len(lw.PostMLPNorm))
+		}
+		if rl.PostAttnNorm, e = bs.up32(lw.PostAttnNorm); e != nil {
+			return e
+		}
+		if !isG4MoE {
+			if rl.PostMLPNorm, e = bs.up32(lw.PostMLPNorm); e != nil {
+				return e
+			}
+		}
+		if postOnlyNormOffForTest {
+			rl.PostAttnNorm, rl.PostMLPNorm = nil, nil
+		}
+	}
+	// FeatAttnSink (gpt-oss): attnSinks is ALWAYS bound (a one-element dummy when the layer has none) because WGSL bind groups
+	// cannot bind a null storage buffer; Metal does the same, CUDA uses a null-pointer sentinel. DecodeRunner's noAttnSinks is a
+	// separate runner-local fallback for hand-built test fixtures that skip BuildResident. The two buffers have different owners
+	// and lifetimes (resident, shared across runners, vs per-runner), so they are deliberately not unified.
+	if sinks := m.GptOssSinksResident(i); len(sinks) > 0 {
+		if rl.AttnSinks, e = bs.up32(sinks); e != nil {
+			return e
+		}
+		rl.HasSink = true
+	} else {
+		if rl.AttnSinks, e = bs.up32([]float32{0}); e != nil {
+			return e
+		}
 	}
 	return nil
 }
