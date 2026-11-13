@@ -158,6 +158,15 @@ func TestSequenceState_ScoreRewindReconcileAndShare(t *testing.T) {
 		t.Fatalf("root-mismatch RewindSequence = %d, truncates=%v, want 0 and [0]", got, mismatchSt.truncates)
 	}
 
+	inexactSt := &fakeSeqState{tokens: []int{1, 2, 3, 4, 5}, root: root, truncOK: func(target int) bool { return target == 0 }}
+	if got := RewindSequence(inexactSt, Request{Root: root, Tokens: []int{1, 2, 3, 9, 9}}, false); got != 0 || !slices.Equal(inexactSt.truncates, []int{3, 0}) || len(inexactSt.tokens) != 0 {
+		t.Fatalf("inexact-cut RewindSequence = %d, truncates=%v, tokens=%v, want 0, [3 0] and an emptied sequence", got, inexactSt.truncates, inexactSt.tokens)
+	}
+	exactSt := &fakeSeqState{tokens: []int{1, 2, 3, 4, 5}, root: root}
+	if got := RewindSequence(exactSt, Request{Root: root, Tokens: []int{1, 2, 3, 9, 9}}, false); got != 3 || !slices.Equal(exactSt.truncates, []int{3}) {
+		t.Fatalf("exact-cut RewindSequence = %d, truncates=%v, want 3 and [3]", got, exactSt.truncates)
+	}
+
 	// Recurrent ReconcileSequence resets to 0 on mid-write rollback; non-recurrent clamps to pos.
 	var recTrunc []int
 	toks, keep := ReconcileSequence(3, []int{1, 2, 3, 4, 5}, func() bool { return true }, func(p int) bool {

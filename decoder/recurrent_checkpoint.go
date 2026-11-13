@@ -10,7 +10,7 @@ import (
 // KV8a (docs/tasks/task-kv-architecture-2026-10.md, KV8a): one recurrent checkpoint for the one resident slot a hybrid model has.
 // The generation saves the recurrent state once its prefill has processed the whole prompt, before the first decode step, at
 // c = len(prompt). A next request that matches the slot's sequence through c but does not extend all of it restores the state
-// and prefills from c (kvmgr's scoreRecurrent), where today it prefills from 0. The attention KV is positional and stays.
+// and prefills from c (kvmgr's scoreRecurrentTokens), where today it prefills from 0. The attention KV is positional and stays.
 
 // ResidentRecurrentCheckpoint is the optional capability of a resident with recurrent state to keep one copy of it, every
 // recurrent layer's state and conv window, beside the live state. RecurrentCheckpointBytes is the copy's size, 0 when the resident
