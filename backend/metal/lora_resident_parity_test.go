@@ -41,7 +41,8 @@ func TestLoRAResidentParityMetal(t *testing.T) {
 		t.Fatalf("llama-tiny did not go resident (BuildResident refused) — decode path %q; decline: %s",
 			mRes.DecodePath(), mRes.ResidentDecline())
 	}
-	ra, ok := rf.(decoder.ResidentAdapter)
+	ra := decoder.SubsystemsOf(rf).Runtime
+	ok := ra.AdapterAvailable()
 	if !ok {
 		t.Fatalf("metal resident runner does not implement decoder.ResidentAdapter")
 	}
@@ -134,7 +135,8 @@ func TestLoRAResidentParityMetal_armedExecutorThenBind(t *testing.T) {
 		t.Fatalf("llama-tiny did not go resident (BuildResident refused) — decode path %q; decline: %s",
 			mRes.DecodePath(), mRes.ResidentDecline())
 	}
-	ra, ok := rf.(decoder.ResidentAdapter)
+	ra := decoder.SubsystemsOf(rf).Runtime
+	ok := ra.AdapterAvailable()
 	if !ok {
 		t.Fatalf("metal resident runner does not implement decoder.ResidentAdapter")
 	}

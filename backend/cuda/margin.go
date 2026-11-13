@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"github.com/townsendmerino/goinfer/backend/cuda/internal/fitdecide"
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -62,35 +63,14 @@ func kvChargedBytes(cap, slots int, layers []cudaLayer) int64 {
 	return n + chargedBytes(int64(slots*kvGroups*kvBlocksFor(cap))*4)
 }
 
-// kvChargedCapForBytes is the largest capacity in [lo, hi] whose slots slots of pools charge at most budget (ok=false when even lo
-// does not). kvChargedBytes is non-decreasing in the capacity, so a search finds the edge.
+// kvChargedCapForBytes is the largest capacity in [lo, hi] whose slots slots of pools charge at most budget (fitdecide.CapForBytes).
 func kvChargedCapForBytes(budget int64, slots, lo, hi int, layers []cudaLayer) (c int, ok bool) {
-	if hi < lo || kvChargedBytes(lo, slots, layers) > budget {
-		return lo, false
-	}
-	for hi > lo {
-		mid := lo + (hi-lo+1)/2
-		if kvChargedBytes(mid, slots, layers) <= budget {
-			lo = mid
-		} else {
-			hi = mid - 1
-		}
-	}
-	return lo, true
+	return fitdecide.CapForBytes(func(cap, n int) int64 { return kvChargedBytes(cap, n, layers) }, budget, slots, lo, hi)
 }
 
-// kvChargedSlotsFit is the largest n in [1, want] whose n slots of pools charge at most free less reserve; never below 1 (the first
-// slot is checkKVFits' own and is refused there). free is read after the weights are on the device and the pools count KV only:
-// a weights-inclusive base compared with it counts the weights twice.
+// kvChargedSlotsFit is the largest n in [1, want] whose n slots of pools charge at most free less reserve (fitdecide.SlotsFit).
 func kvChargedSlotsFit(want int, free int64, cap int, layers []cudaLayer, reserve, slotState int64) int {
-	n := 1
-	for k := 2; k <= want; k++ {
-		if kvChargedBytes(cap, k, layers)+int64(k-1)*slotState+reserve > free {
-			break
-		}
-		n = k
-	}
-	return n
+	return fitdecide.SlotsFit(func(c, n int) int64 { return kvChargedBytes(c, n, layers) }, want, free, cap, reserve, slotState)
 }
 
 // kvRoundingBound is the most the device's rounding can add to the linear KV price the plan uses (decoder's per-position KV):

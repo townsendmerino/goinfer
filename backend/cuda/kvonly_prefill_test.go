@@ -28,7 +28,7 @@ func TestKVOnlyPrefill_byteIdentical_tiny(t *testing.T) {
 		}
 		mc, rf := loadG4MoECache(t, dir, false)
 		defer mc.Close()
-		if _, ok := rf.(decoder.ResidentPrefillKV); !ok {
+		if ok := decoder.SubsystemsOf(rf).Decode.NoLogitsAvailable(); !ok {
 			t.Fatal("cudaResident does not implement ResidentPrefillKV")
 		}
 		out, _ := mc.Generate(context.Background(), prompt, 24, decoder.SamplingParams{})
