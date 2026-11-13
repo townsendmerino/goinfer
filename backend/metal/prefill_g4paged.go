@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// g4LayerMajorOn routes a paged Gemma 4 MoE's prompt through prefillG4Paged (docs/tasks/task-m26-mac-2026-10.md, 4b)
+// g4LayerMajorOn routes a paged Gemma 4 MoE's prompt through prefillG4Paged (docs/completed/task-m26-mac-2026-10.md, 4b)
 // instead of the sequential loop. On by default (docs/code-notes/metal.md#g4LayerMajorOn).
 var g4LayerMajorOn = true
 

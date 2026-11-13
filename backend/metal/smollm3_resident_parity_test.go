@@ -8,7 +8,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestSmolLM3ResidentSmokeMetal is the smoke gate for FeatNoPE (docs/tasks/task-gpu-paths-2026-09.md, G5): the model goes resident
+// TestSmolLM3ResidentSmokeMetal is the smoke gate for FeatNoPE (docs/completed/task-gpu-paths-2026-09.md, G5): the model goes resident
 // with its last layer NoPE (testdata/smollm3-tiny, no_rope_layers=[1,1,1,0]; 1=has-rope, 0=NoPE), no logit of a 32-token decode or
 // of the batched prefill is NaN, the prefill path is batched, and the batched-prefill logits match the sequential decode's at
 // cosine >= 0.98.

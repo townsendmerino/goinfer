@@ -33,7 +33,7 @@ func eg2Pool(h []float32, T, d int) []float32 {
 	return out
 }
 
-// TestEG2Metal_matchesCPU is Phase M's Gate 1 (docs/tasks/task-embeddinggemma2.md): on the tiny fixture, the Metal
+// TestEG2Metal_matchesCPU is Phase M's Gate 1 (docs/completed/task-embeddinggemma2.md): on the tiny fixture, the Metal
 // accelerator's forward matches the CPU forward (itself gated against transformers, Gate 1 of the CPU path) to cosine
 // 0.9999 on every layer's input, on the projected last hidden state and on the pooled embedding. Cases: the golden's
 // four (1, 2, 9 and 17 tokens; sliding radius 3 and full layers of different head dims and KV-head counts) and two

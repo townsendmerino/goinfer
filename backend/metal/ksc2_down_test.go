@@ -15,7 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestKSC2_stagedMatchShipped is C2b-G1's kernel half (docs/tasks/task-kernel-survey-2026-10.md, "KS-C2 wiring gates"):
+// TestKSC2_stagedMatchShipped is C2b-G1's kernel half (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-C2 wiring gates"):
 // gemv_w4a8_resid_staged<2,4> against gemv_w4a8_resid and gemv_w4a8_coal_staged<2,4> against gemv_w4a8_coal at the 1.5B's
 // (1,536 x 8,960) and the 7B's (3,584 x 18,944) down shapes, random int4 weights, f16 scales and int8 activations, in the
 // fast-math and the precise library. Every output byte-equal.

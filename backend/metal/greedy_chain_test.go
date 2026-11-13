@@ -135,7 +135,7 @@ func greedyChainBitIdentical(t *testing.T, tied bool) {
 	}
 }
 
-// TestHeadID_mapsNoIDToZero is G-MA2 (docs/tasks/task-subsystems-2026-10.md §8, "The device argmax on Metal: NaN rows"): the
+// TestHeadID_mapsNoIDToZero is G-MA2 (docs/completed/task-subsystems-2026-10.md §8, "The device argmax on Metal: NaN rows"): the
 // fused head's id passes through when it is a token, and an id at or past V, which the head writes only for a row that is NaN
 // throughout, becomes argmaxF32's 0 for that row.
 func TestHeadID_mapsNoIDToZero(t *testing.T) {

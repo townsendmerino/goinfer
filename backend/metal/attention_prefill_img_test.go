@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// G-IP1 (S17's Metal image prefill, docs/tasks/task-multimodal-support-2026-10.md), and G-S11c's kernel half (S11, several
+// G-IP1 (S17's Metal image prefill, docs/completed/task-multimodal-support-2026-10.md), and G-S11c's kernel half (S11, several
 // blocks): attention_prefill_img against a float64 reference of the CPU's rule (KVCache.attendHi, WindowStart): a query
 // inside an image block [start, end) sees keys up to that block's end-1, every other query is causal, and the sliding
 // window's lower bound stays at the causal position's. Max abs diff <= 4e-3 (f16 output). Control: attention_prefill

@@ -538,7 +538,7 @@ func (r *resident) encodeMoERouteForForm(e *Encoder, L *residLayer, form program
 }
 
 // moeKSlotsOn selects the k-slot dispatches (the k selected experts in four dispatches instead of 3k) where the shape
-// admits them. Off: parked, bit-identical but too small a gain (docs/tasks/task-metal-audit-2026-10.md, "D-P03").
+// admits them. Off: parked, bit-identical but too small a gain (docs/completed/task-metal-audit-2026-10.md, "D-P03").
 // Tests turn it on for the k-slot arm.
 var moeKSlotsOn = false
 

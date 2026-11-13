@@ -11,7 +11,7 @@ import (
 
 func init() { decoder.RegisterHardwareInfo("metal", metalHardwareInfo) }
 
-// metalHardwareInfo is the device facts `check --hardware` prints for the Metal backend (docs/tasks/task-hardware-coverage-2026-10.md,
+// metalHardwareInfo is the device facts `check --hardware` prints for the Metal backend (docs/completed/task-hardware-coverage-2026-10.md,
 // H3). It opens the device only when asked, and says so plainly when there is none. The GPU's name is its model, not a
 // machine identifier. aikit/gpu exposes no GPU family or recommended working-set size, so the report says it cannot report
 // them rather than leaving the gap unexplained. The memory is the machine's: on Apple silicon the GPU shares it.

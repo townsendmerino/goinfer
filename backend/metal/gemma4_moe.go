@@ -629,7 +629,7 @@ var pagedAsyncPhase2On = true
 // phase 1 of layer l also runs layer l+1's router on l's residual, the host starts reading those experts into l+1's pool, and the
 // reads overlap the GPU's phase 2 of l and phase 1 of l+1. The true router still picks; a wrong guess costs an evicted slot,
 // never a wrong bit. OFF: the extra reads compete with demand reads on the SSD and it measured slower than not guessing
-// (docs/tasks/task-m26-mac-2026-10.md, "Lever 3"). Kept, gated bit-exact, for a better guess.
+// (docs/completed/task-m26-mac-2026-10.md, "Lever 3"). Kept, gated bit-exact, for a better guess.
 var g4PrefetchOn = false
 
 // g4PrefetchTop is how many of the guess's experts are prefetched, highest score first.

@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// G-S3b's Gemma 3 divergence, phase 1 (docs/tasks/task-multimodal-support-2026-10.md, S3): the projected image features
+// G-S3b's Gemma 3 divergence, phase 1 (docs/completed/task-multimodal-support-2026-10.md, S3): the projected image features
 // serve splices into the prompt for one image (GOINFER_G3_IMAGE under testdata/, default glm_ocr/table.png), from aikit's
 // CPU SigLIP tower, the Metal f16 tower and the Metal int8 tower (vl_towers.go), written to GOINFER_G3_FEATS as
 // {"cpu": [...], "metal": [...], "metal_int8": [...]} for the decoder-side test

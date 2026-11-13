@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// Compute-time LoRA on the resident path (G3, docs/tasks/task-gpu-paths-2026-09.md).
+// Compute-time LoRA on the resident path (G3, docs/completed/task-gpu-paths-2026-09.md).
 //
 // A LoRA delta is additive: y[o] += scale·Σ_r B[o,r]·(A·x)[r], applied AFTER the base projection's matmul on the SAME input
 // x the base matmul consumed (decoder/lora.go's applyLoRA, the CPU reference this mirrors). On Metal that input is the

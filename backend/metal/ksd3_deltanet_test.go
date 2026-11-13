@@ -64,7 +64,7 @@ func ksd3Run(t *testing.T, ckpt string, old bool) ([][]float32, string) {
 	return out, ""
 }
 
-// TestKSD3_deltaNetModelsBitIdentical is D3-G2 (docs/tasks/task-kernel-survey-2026-10.md, "KS-D3 gates"): on every
+// TestKSD3_deltaNetModelsBitIdentical is D3-G2 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-D3 gates"): on every
 // Gated-DeltaNet fixture, the resident's batched prefill and 8 decode steps after give the same logits, bit for bit, with the
 // on-chip scan kernels as with the device-memory ones. A fixture whose Metal prefill is not batched never runs the scan kernels
 // and is named, not compared (TestDeltaNetSeqKernels_matchDecodeBitwise covers its geometry).

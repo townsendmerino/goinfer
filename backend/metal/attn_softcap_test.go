@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// The attention-score softcap at kernel level (OP1's gate G2-K, docs/tasks/task-forward-architecture-2026-10.md §4.6):
+// The attention-score softcap at kernel level (OP1's gate G2-K, docs/completed/task-forward-architecture-2026-10.md §4.6):
 // each kernel a capped layer can take, compiled with the cap, against a float64 reference that applies
 // cap·tanh(score/cap) to every scaled score. The inputs carry planted keys aligned with a query, in two sets: one whose
 // scores compete inside ±50 (Gemma 2's cap) and cross ±5, and one whose scores cross ±50. Competing keys matter: with a

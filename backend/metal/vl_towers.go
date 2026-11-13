@@ -9,7 +9,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// Gemma 3's SigLIP tower and Qwen2.5-VL's tower on Metal (S3 of docs/tasks/task-multimodal-support-2026-10.md), on the
+// Gemma 3's SigLIP tower and Qwen2.5-VL's tower on Metal (S3 of docs/completed/task-multimodal-support-2026-10.md), on the
 // same base as the Qwen3.5+ and GLM-OCR towers (grid_vision.go), in float32. They plug into aikit's own resident seams,
 // vision.RegisterResident and vision.RegisterQwenResident, so serve's EnableResident routes the tower's Forward here
 // under --backend metal. aikit's tagged gpu/visionmetal and gpu/qwenmetal register on the same seams and are not

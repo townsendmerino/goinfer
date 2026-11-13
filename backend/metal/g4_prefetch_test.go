@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/prequant"
 )
 
-// TestG4Prefetch_bitExactAndRuns is lever 3's gate (docs/tasks/task-m26-mac-2026-10.md): on the tiny Gemma 4 MoE as a
+// TestG4Prefetch_bitExactAndRuns is lever 3's gate (docs/completed/task-m26-mac-2026-10.md): on the tiny Gemma 4 MoE as a
 // metal .giw, paged at 3 slots with pread staging (M26's shape), every logit of 8 positions is equal with the next-layer
 // prefetch on, off, and with every expert resident; and on the prefetch arm experts were prefetched.
 func TestG4Prefetch_bitExactAndRuns(t *testing.T) {

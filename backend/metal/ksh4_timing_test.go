@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
-// TestKSH4_repeatCallTiming is H4-G3 (docs/tasks/task-kernel-survey-2026-10.md, "KS-H4 gates"): Qwen3-VL-2B's grid tower at 4K,
+// TestKSH4_repeatCallTiming is H4-G3 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-H4 gates"): Qwen3-VL-2B's grid tower at 4K,
 // the wall time of a repeat Hidden issued right after the previous one, with the release on (A) and off (B), A B B A over 5 pairs
 // after a warm call. One tower serves both arms: a repeat call inside the idle window cancels the pending release, so the arms
 // differ only in arming and cancelling it. Then, read and not graded, the first call after a release against a warm call. A timed

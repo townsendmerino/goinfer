@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// G-PR1 (docs/tasks/task-metal-pairwise-rope-2026-10.md): the pairwise rope twins against a float64 reference written
+// G-PR1 (docs/completed/task-metal-pairwise-rope-2026-10.md): the pairwise rope twins against a float64 reference written
 // from decoder/rope.go's semantics (applyRoPEInterleaved, applyMRoPEPairwise): pair dd is dims (2dd, 2dd+1) at invf[dd],
 // partial rotary rotates [0, 2*rhalf) and leaves the tail alone, mscale scales cos and sin, the Q temperature multiplies
 // rotated Q only. Tolerances as registered: 2e-5 on the f32 kernels, 4e-3 on the f16 ones (inputs in [-2, 2]). Every

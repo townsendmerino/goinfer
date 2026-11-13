@@ -15,7 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// G-NF1 (S17, docs/tasks/task-multimodal-support-2026-10.md): Gemma 3 4B's residual outgrows the batched pass's f16
+// G-NF1 (S17, docs/completed/task-multimodal-support-2026-10.md): Gemma 3 4B's residual outgrows the batched pass's f16
 // (inf at layer 6), and the int8 head reads the NaN row that follows as finite zeros, so without the residual check every
 // Gemma 3 prompt of 16+ tokens on Metal answers "<pad>" and noise. With it the pass declines, naming the overflow, and
 // Generate's greedy tokens equal the sequential path's (ExactPrefill). The residual scale (G-RS2) now keeps Gemma 3

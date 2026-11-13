@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestMoEW8_X1_kernelsMatchReference is MoE int8's gate X1 (docs/tasks/task-metal-int8-2026-10.md, "Slice 4: MoE
+// TestMoEW8_X1_kernelsMatchReference is MoE int8's gate X1 (docs/completed/task-metal-int8-2026-10.md, "Slice 4: MoE
 // int8"): gemv_w8a8_moe (overwrite) and gemv_w8a8_moe_wacc (weighted accumulate) against a Go reference, bit for bit,
 // over a stacked buffer of experts, every slot of a routed set, at the Qwen1.5-MoE expert shapes (gate|up K = 2048,
 // down K = 1408). Compiled precise, as production compiles a native int8 model (w8PreciseMath). The reference is

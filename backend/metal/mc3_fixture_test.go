@@ -195,7 +195,7 @@ func mc3PrefillResident(t *testing.T, slots, ctx int) *metalResident {
 	return &metalResident{r: r, hidden: r.H}
 }
 
-// TestAttnFAFloorOverride_stepsPlanAlike: attnFAFloorOverride (T1.2's hook, docs/tasks/task-metal-audit-2026-10.md)
+// TestAttnFAFloorOverride_stepsPlanAlike: attnFAFloorOverride (T1.2's hook, docs/completed/task-metal-audit-2026-10.md)
 // moves the key count where attention_fa takes over for the single-token plan, canUseAttnFA and the batched step
 // together. A step whose sequences straddle the lowered floor stays bit-identical to production's single-token
 // forward, which it would not if one of the three read the constant.

@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestCB01ChainAB is C-B01's grade (docs/tasks/task-metal-audit-2026-10.md, "C-B01: built, pending its grade"): greedy
+// TestCB01ChainAB is C-B01's grade (docs/completed/task-metal-audit-2026-10.md, "C-B01: built, pending its grade"): greedy
 // Generate on Metal with the greedy chain against the same request with it off (greedyChainOff, the path production
 // ran before), one model, in one process, interleaved. Each rep runs both arms, in the order off-on on even reps and
 // on-off on odd ones, after one discarded warm-up of each. An arm's rate is its decode rate: generated tokens after the

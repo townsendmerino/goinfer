@@ -15,7 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
 )
 
-// TestG4AMetal_realParity is Phase A's gates AM1 and AM2 (docs/tasks/task-embeddinggemma2.md) on the real
+// TestG4AMetal_realParity is Phase A's gates AM1 and AM2 (docs/completed/task-embeddinggemma2.md) on the real
 // google/embeddinggemma-2 (GOINFER_EG2_DIR, default ~/models/embeddinggemma-2, never the archive), with the encoder and
 // the audio tower's blocks on Metal, on the committed clips (testdata/embeddinggemma2-audio):
 //

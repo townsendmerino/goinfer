@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestKSD5_guFShare is KS-D5's first measurement (docs/tasks/task-kernel-survey-2026-10.md): the batched prefill's scratch
+// TestKSD5_guFShare is KS-D5's first measurement (docs/tasks/parked/task-kernel-survey-2026-10.md): the batched prefill's scratch
 // on Qwen2.5-Coder-1.5B (the Metal .giw in ~/models) for one 3,900-token pass, read from the scratch counter
 // (prefillScratchSeen) while the prefill runs as one block, against the planned bytes (prefillScratchBytes) and guF's share
 // of them (Mpad × 2 × maxI halves). It changes no product code. Not timed; a real checkpoint (GOINFER_HEAVY_TESTS=1).

@@ -28,7 +28,7 @@ var prefillAttnRanForTest map[string]int
 
 // gemmTilePolicy picks gemmTile's rule: "" the default (D-B02's padding rule below), "a01" A-P01's rule as it shipped,
 // "shipped" every GEMM on gemm_w4f16_store's 64 × 64 tile, "bm32" / "bn32" only A-P01's 32-token / 32-feature rule.
-// Test-only: the arms of the grades (docs/tasks/task-metal-audit-2026-10.md); not an option or an environment variable.
+// Test-only: the arms of the grades (docs/completed/task-metal-audit-2026-10.md); not an option or an environment variable.
 var gemmTilePolicy = ""
 
 // gemmTile is the tile selector for a rows x N prefill GEMM. Every choice is bit-identical (gemm_w4f16_tile's comment,
@@ -37,7 +37,7 @@ var gemmTilePolicy = ""
 // The default: a threadgroup costs the same whatever share of its rows is real, so a smaller token tile is taken when
 // it pads the pass to strictly fewer rows: 32 tokens up to 128 rows, 16 up to 16 rows and, when N <= 8192, up to 48.
 // Past those, more row tiles cost more than the padding they save, and a gate|up GEMM as wide as the 1.5B's or 7B's
-// already fills the cores at 64 (docs/tasks/task-metal-audit-2026-10.md "D-B02: the 16-row tile";
+// already fills the cores at 64 (docs/completed/task-metal-audit-2026-10.md "D-B02: the 16-row tile";
 // TestGemmTile16_probe). A 16-token tile always takes 32 features; otherwise 32 features when N <= 2048 and rows <=
 // 64, so the narrow GEMMs fill more cores.
 //
@@ -129,11 +129,11 @@ type prefillState struct {
 	// A-P01: gemm_w4f16_tile at the smaller tiles (tokens × features), picked by gemmTile.
 	pGemmM32N64, pGemmM64N32, pGemmM32N32 Pipeline
 	pGemmM16N32                           Pipeline // D-B02's 16-token tile
-	// int8 slice 2 (docs/tasks/task-metal-int8-2026-10.md): a native int8 resident's GEMMs, gemm_w4f16_tile<TM, TN,
+	// int8 slice 2 (docs/completed/task-metal-int8-2026-10.md): a native int8 resident's GEMMs, gemm_w4f16_tile<TM, TN,
 	// true> by (TM, TN); w8 selects them in gemmTile.
 	w8  bool
 	pW8 map[[2]int]Pipeline
-	// G8 (docs/tasks/task-gpu-paths-2026-09.md): the MoE row loop's F32-scratch bridge (see
+	// G8 (docs/completed/task-gpu-paths-2026-09.md): the MoE row loop's F32-scratch bridge (see
 	// residual_f16_from_f32/zero_f32's own comments).
 	pResF32, pZeroF32 Pipeline
 	pResScaled        Pipeline // S17: residual_f16_scaled, the add into a residual stored scaled by 1/s
@@ -163,7 +163,7 @@ type prefillState struct {
 }
 
 // ropeF16Name is the batched prefill's rope kernel: rope_f16, or rope_mrope_f16 for the m-RoPE pass, and their pairwise
-// twins for a GPT-J pairwise model (docs/tasks/task-metal-pairwise-rope-2026-10.md).
+// twins for a GPT-J pairwise model (docs/completed/task-metal-pairwise-rope-2026-10.md).
 func ropeF16Name(pairwise, mrope bool) string {
 	n := "rope_f16"
 	if mrope {
@@ -510,7 +510,7 @@ type prefillDeep struct {
 	sets     [][]float32
 }
 
-// prefillParallelDefectForTest is a planted defect (docs/tasks/task-metal-pairwise-followups-2026-10.md, G-B2): a
+// prefillParallelDefectForTest is a planted defect (docs/completed/task-metal-pairwise-followups-2026-10.md, G-B2): a
 // parallel block's MLP fed from the post-attention residual instead of the layer's shared input norm. Tests set it.
 var prefillParallelDefectForTest bool
 
@@ -524,7 +524,7 @@ var prefillResidScaleForTest float32
 const gemmaPrefillResidScale = 32
 
 // prefillResidScale is the s the batched pass stores its residual divided by (S17,
-// docs/tasks/task-multimodal-support-2026-10.md): Gemma 3 4B's residual outgrows f16 (inf at layer 6). It applies where
+// docs/completed/task-multimodal-support-2026-10.md): Gemma 3 4B's residual outgrows f16 (inf at layer 6). It applies where
 // every read of the residual is an RMSNorm, which ignores scale except through eps, and every write is an embedding
 // upload or a post-normed branch's residual add: sandwich norms with no post-only norm, PLE, MoE or DeepStack rows. s is
 // a power of two, so the scaled pass equals the unscaled one wherever that one does not overflow (eps and subnormals
@@ -884,7 +884,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		}
 		e.Dispatch(pf.pResF32, (hi-lo)*H, 256, xF.At((lo-startPos)*H*2), deepB[k].At((lo-deep.start)*H*4))
 	}
-	// The batched pass's blocks, one for each layer step it implements (docs/tasks/task-forward-architecture-2026-10.md §4.9,
+	// The batched pass's blocks, one for each layer step it implements (docs/completed/task-forward-architecture-2026-10.md §4.9,
 	// OP4m-d1). Each emits the dispatches the pass has always emitted for that block. moeBlock reports false when an encoder
 	// error stops the pass.
 	attnBlock := func(l int, L *residLayer) {

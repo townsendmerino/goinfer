@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// The Gemma 4 vision tower on Metal (Phase VM, docs/tasks/task-embeddinggemma2.md): aikit's Gemma4Encoder.Forward up
+// The Gemma 4 vision tower on Metal (Phase VM, docs/completed/task-embeddinggemma2.md): aikit's Gemma4Encoder.Forward up
 // to its pool, in float32, from aikit's export (Gemma4Encoder.Weights). The patch embed and the 16 layers run here,
 // with the text encoder's GEMMs, RMSNorm and attention blocks (eg2Ops, embeddinggemma2.go: full attention, scale 1.0,
 // one head per KV head), plus the position-table add, the ClippableLinear clamps and the axial 2-D RoPE below. The

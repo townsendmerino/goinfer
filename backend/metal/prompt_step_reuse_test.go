@@ -18,7 +18,7 @@ import (
 // cold bit for bit (the control arm, asserted). With it on, the suffix's K/V come from decode's int8 activations
 // instead of the pass's f16 ones. Per prompt and suffix length it reports the seed row's KL(cold ‖ reuse), whether its
 // argmax agrees, and where 32 greedy tokens decoded from each first diverge. It decides nothing by itself; the owner
-// decides with these numbers (docs/tasks/task-metal-audit-2026-10.md).
+// decides with these numbers (docs/completed/task-metal-audit-2026-10.md).
 //
 //	GOINFER_METAL_MC3=1 GOINFER_PREFILL_GATE_PROMPTS=b go test -tags goinfer_testhooks -count=1 -run '^TestPromptStepAboveFloor_reuseVsCold$' -v ./metal/
 func TestPromptStepAboveFloor_reuseVsCold(t *testing.T) {

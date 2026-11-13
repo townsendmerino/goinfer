@@ -521,7 +521,7 @@ func TestOptionPathMetal_moeStep(t *testing.T) {
 }
 
 // TestOptionPathMetal_recurrentStep is ResidentRecurrentStep through decoder.Load, EnableResidentConcurrency and Generate
-// (OP4m-d4c, docs/tasks/task-forward-architecture-2026-10.md §4.9), as TestOptionPathMetal_moeStep is for the MoE block, on a
+// (OP4m-d4c, docs/completed/task-forward-architecture-2026-10.md §4.9), as TestOptionPathMetal_moeStep is for the MoE block, on a
 // Qwen3.5-family fixture with the MoE block on in both arms. With the recurrent blocks on, its generations equal the
 // blocks-off model's in every token and log-probability. At two slots it is batch capable, and two concurrent generations,
 // each on its own slot's DeltaNet state, decoded together on the step, each equal their own run with the blocks off.
@@ -650,7 +650,7 @@ func mgStepOption(t *testing.T, dir string, set func(*decoder.Options, bool), wh
 }
 
 // TestOptionPathMetal_gemma4Step is ResidentGemma4Step through decoder.Load, EnableResidentConcurrency and Generate (OP4m-d5c,
-// docs/tasks/task-forward-architecture-2026-10.md §4.9), as TestOptionPathMetal_moeStep is for the MoE block, on the Gemma 4
+// docs/completed/task-forward-architecture-2026-10.md §4.9), as TestOptionPathMetal_moeStep is for the MoE block, on the Gemma 4
 // E-model fixture. With the blocks on, its generations equal the blocks-off model's in every token and log-probability, and
 // at two slots two concurrent generations decode together on the step, each equal to its own run with the blocks off.
 func TestOptionPathMetal_gemma4Step(t *testing.T) {

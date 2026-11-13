@@ -9,7 +9,7 @@ import (
 )
 
 // emodelLayerMajorOn routes a Gemma 4 E-model's prompt (E2B, E4B: per-layer embeddings, KV-shared layers) through
-// prefillEModel instead of declining PrefillLast (S9 of docs/tasks/task-multimodal-support-2026-10.md). The f16-MMA pass
+// prefillEModel instead of declining PrefillLast (S9 of docs/completed/task-multimodal-support-2026-10.md). The f16-MMA pass
 // declines every dense Gemma 4 (head size varies by layer), so without this a text prompt prefilled one token at a time on
 // the GPU and an image turn prefilled on the CPU. The pass is bit-identical to the sequential loop by construction. On by
 // default; docs/code-notes/metal.md#emodelLayerMajorOn.
@@ -29,7 +29,7 @@ type emRow struct {
 }
 
 // emodelBatchedOn routes a Gemma 4 E-model's prompt through the f16 batched pass (S9 of
-// docs/tasks/task-multimodal-support-2026-10.md) instead of the layer-major one, at or above the fast-prefill floor. On by
+// docs/completed/task-multimodal-support-2026-10.md) instead of the layer-major one, at or above the fast-prefill floor. On by
 // default (speed: docs/code-notes/metal.md#emodelBatchedOn). Below the floor, on any decline, or with --exact-prefill, the
 // layer-major pass (bit-identical to sequential) keeps the route.
 var emodelBatchedOn = true

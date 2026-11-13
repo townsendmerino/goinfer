@@ -7,7 +7,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-// KS-D9's batched phase 2 for the generic paged MoE prefill (docs/tasks/task-kernel-survey-2026-10.md, "KS-D9"): D-P01's
+// KS-D9's batched phase 2 for the generic paged MoE prefill (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-D9"): D-P01's
 // batched expert GEMM (prefill_g4batch.go) on moeLayerMajorRows' slot groups. Bit-identical to the per-row phase 2
 // (encodeMoEExpertsPaged) by construction: moe_batch_gemv is sa_rows_acc per pair, as gemv_w4a8_moe_rows is per row;
 // mc3_swiglu_quant_rows is swiglu_quant per pair; moe_batch_combine_acc adds a row's k down sums into its residual in route

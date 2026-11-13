@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestG2R_registered is OP1's real Gemma 2 gate, G2-R, run as registered in docs/tasks/task-forward-architecture-2026-10.md
+// TestG2R_registered is OP1's real Gemma 2 gate, G2-R, run as registered in docs/completed/task-forward-architecture-2026-10.md
 // §4.6 ("G2-R's baseline step", and the 2026-10-15 amendment): the Metal process, reading the CPU side from the file
 // TestG2R_cpuReference wrote (g2r_split_test.go), in this order.
 //
