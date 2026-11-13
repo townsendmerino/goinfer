@@ -1,0 +1,216 @@
+=== RUN   TestCUDAStepRagged_rowsMatchTheirShapes
+=== RUN   TestCUDAStepRagged_rowsMatchTheirShapes/llama-tiny/
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7078 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7078 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7078 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6946 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7046 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:405: step 11 seq 2 (slot 2) row 1 at position 49: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 1 at position 107: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 2 at position 108: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 3 at position 109: not bit-identical to its own shape
+    batchstep_test.go:442: plant 1: 4 rows differ, 3 past the first KV block (red, as it must be)
+    batchstep_test.go:405: step 12 seq 2 (slot 2) row 0 at position 50: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 2 (slot 2) row 1 at position 51: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 0 at position 110: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 1 at position 111: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 2 at position 112: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 3 at position 113: not bit-identical to its own shape
+    batchstep_test.go:442: plant 2: 6 rows differ, 4 past the first KV block (red, as it must be)
+    batchstep_test.go:405: step 14 seq 1 (slot 1) row 0 at position 68: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 2 (slot 2) row 0 at position 52: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 2 (slot 2) row 1 at position 53: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 0 at position 114: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 1 at position 115: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 2 at position 116: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 3 at position 117: not bit-identical to its own shape
+    batchstep_test.go:442: plant 4: 7 rows differ, 5 past the first KV block (red, as it must be)
+=== RUN   TestCUDAStepRagged_rowsMatchTheirShapes/llama-tiny/i8
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:405: step 11 seq 2 (slot 2) row 1 at position 49: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 1 at position 107: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 2 at position 108: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 3 at position 109: not bit-identical to its own shape
+    batchstep_test.go:442: plant 1: 4 rows differ, 3 past the first KV block (red, as it must be)
+    batchstep_test.go:405: step 12 seq 2 (slot 2) row 0 at position 50: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 2 (slot 2) row 1 at position 51: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 0 at position 110: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 1 at position 111: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 2 at position 112: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 3 at position 113: not bit-identical to its own shape
+    batchstep_test.go:442: plant 2: 6 rows differ, 4 past the first KV block (red, as it must be)
+    batchstep_test.go:405: step 14 seq 1 (slot 1) row 0 at position 68: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 2 (slot 2) row 0 at position 52: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 2 (slot 2) row 1 at position 53: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 0 at position 114: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 1 at position 115: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 2 at position 116: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 3 at position 117: not bit-identical to its own shape
+    batchstep_test.go:442: plant 4: 7 rows differ, 5 past the first KV block (red, as it must be)
+=== RUN   TestCUDAStepRagged_rowsMatchTheirShapes/mistral-tiny-window/
+cuda: prefill width 2048 rows (11 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:405: step 11 seq 2 (slot 2) row 1 at position 209: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 1 at position 50: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 2 at position 51: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 3 at position 52: not bit-identical to its own shape
+    batchstep_test.go:442: plant 1: 4 rows differ, 1 past the first KV block (red, as it must be)
+    batchstep_test.go:405: step 12 seq 2 (slot 2) row 0 at position 210: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 2 (slot 2) row 1 at position 211: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 0 at position 53: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 1 at position 54: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 2 at position 55: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 3 at position 56: not bit-identical to its own shape
+    batchstep_test.go:442: plant 2: 6 rows differ, 2 past the first KV block (red, as it must be)
+    batchstep_test.go:405: step 14 seq 1 (slot 1) row 0 at position 76: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 2 (slot 2) row 0 at position 212: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 2 (slot 2) row 1 at position 213: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 0 at position 57: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 1 at position 58: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 2 at position 59: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 3 at position 60: not bit-identical to its own shape
+    batchstep_test.go:442: plant 4: 7 rows differ, 3 past the first KV block (red, as it must be)
+=== RUN   TestCUDAStepRagged_rowsMatchTheirShapes/gemma4-dense-twogeom-tiny/
+cuda: prefill width 2048 rows (64 MiB of scratch; 6938 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:405: step 11 seq 2 (slot 2) row 1 at position 49: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 1 at position 28: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 2 at position 29: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 3 at position 30: not bit-identical to its own shape
+    batchstep_test.go:442: plant 1: 4 rows differ, 0 past the first KV block (red, as it must be)
+    batchstep_test.go:405: step 12 seq 2 (slot 2) row 0 at position 50: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 2 (slot 2) row 1 at position 51: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 0 at position 31: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 1 at position 32: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 2 at position 33: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 3 at position 34: not bit-identical to its own shape
+    batchstep_test.go:442: plant 2: 6 rows differ, 0 past the first KV block (red, as it must be)
+    batchstep_test.go:405: step 14 seq 1 (slot 1) row 0 at position 29: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 2 (slot 2) row 0 at position 52: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 2 (slot 2) row 1 at position 53: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 0 at position 35: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 1 at position 36: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 2 at position 37: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 3 at position 38: not bit-identical to its own shape
+    batchstep_test.go:442: plant 4: 7 rows differ, 0 past the first KV block (red, as it must be)
+=== RUN   TestCUDAStepRagged_rowsMatchTheirShapes/granite-dense-tiny/
+cuda: prefill width 2048 rows (5 MiB of scratch; 7064 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:405: step 11 seq 2 (slot 2) row 1 at position 49: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 1 at position 28: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 2 at position 29: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 3 at position 30: not bit-identical to its own shape
+    batchstep_test.go:442: plant 1: 4 rows differ, 0 past the first KV block (red, as it must be)
+    batchstep_test.go:405: step 12 seq 2 (slot 2) row 0 at position 50: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 2 (slot 2) row 1 at position 51: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 0 at position 31: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 1 at position 32: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 2 at position 33: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 3 at position 34: not bit-identical to its own shape
+    batchstep_test.go:442: plant 2: 6 rows differ, 0 past the first KV block (red, as it must be)
+    batchstep_test.go:405: step 14 seq 1 (slot 1) row 0 at position 29: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 2 (slot 2) row 0 at position 52: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 2 (slot 2) row 1 at position 53: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 0 at position 35: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 1 at position 36: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 2 at position 37: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 3 at position 38: not bit-identical to its own shape
+    batchstep_test.go:442: plant 4: 7 rows differ, 0 past the first KV block (red, as it must be)
+=== RUN   TestCUDAStepRagged_rowsMatchTheirShapes/llama-attnfa-tiny/
+cuda: prefill width 2048 rows (26 MiB of scratch; 6998 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:405: step 11 seq 2 (slot 2) row 1 at position 39: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 1 at position 107: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 2 at position 108: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 3 at position 109: not bit-identical to its own shape
+    batchstep_test.go:442: plant 1: 4 rows differ, 3 past the first KV block (red, as it must be)
+    batchstep_test.go:405: step 12 seq 2 (slot 2) row 0 at position 40: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 2 (slot 2) row 1 at position 41: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 0 at position 110: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 1 at position 111: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 2 at position 112: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 3 at position 113: not bit-identical to its own shape
+    batchstep_test.go:442: plant 2: 6 rows differ, 4 past the first KV block (red, as it must be)
+    batchstep_test.go:405: step 14 seq 1 (slot 1) row 0 at position 66: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 2 (slot 2) row 0 at position 42: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 2 (slot 2) row 1 at position 43: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 0 at position 114: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 1 at position 115: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 2 at position 116: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 3 at position 117: not bit-identical to its own shape
+    batchstep_test.go:442: plant 4: 7 rows differ, 5 past the first KV block (red, as it must be)
+=== RUN   TestCUDAStepRagged_rowsMatchTheirShapes/llama-attnfa-tiny/i8
+cuda: prefill width 2048 rows (26 MiB of scratch; 7044 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:405: step 11 seq 2 (slot 2) row 1 at position 39: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 1 at position 107: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 2 at position 108: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 3 at position 109: not bit-identical to its own shape
+    batchstep_test.go:442: plant 1: 4 rows differ, 3 past the first KV block (red, as it must be)
+    batchstep_test.go:405: step 12 seq 2 (slot 2) row 0 at position 40: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 2 (slot 2) row 1 at position 41: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 0 at position 110: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 1 at position 111: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 2 at position 112: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 3 at position 113: not bit-identical to its own shape
+    batchstep_test.go:442: plant 2: 6 rows differ, 4 past the first KV block (red, as it must be)
+    batchstep_test.go:405: step 14 seq 1 (slot 1) row 0 at position 66: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 2 (slot 2) row 0 at position 42: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 2 (slot 2) row 1 at position 43: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 0 at position 114: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 1 at position 115: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 2 at position 116: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 3 at position 117: not bit-identical to its own shape
+    batchstep_test.go:442: plant 4: 7 rows differ, 5 past the first KV block (red, as it must be)
+=== RUN   TestCUDAStepRagged_rowsMatchTheirShapes/llama-tiny/#01
+cuda: prefill width 2048 rows (6 MiB of scratch; 7046 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:405: step 11 seq 2 (slot 2) row 1 at position 39: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 1 at position 107: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 2 at position 108: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 3 at position 109: not bit-identical to its own shape
+    batchstep_test.go:442: plant 1: 4 rows differ, 3 past the first KV block (red, as it must be)
+    batchstep_test.go:405: step 12 seq 2 (slot 2) row 1 at position 41: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 0 at position 110: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 1 at position 111: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 2 at position 112: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 3 at position 113: not bit-identical to its own shape
+    batchstep_test.go:442: plant 2: 5 rows differ, 4 past the first KV block (red, as it must be)
+    batchstep_test.go:405: step 14 seq 1 (slot 1) row 0 at position 68: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 2 (slot 2) row 0 at position 42: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 2 (slot 2) row 1 at position 43: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 0 at position 114: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 1 at position 115: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 2 at position 116: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 3 at position 117: not bit-identical to its own shape
+    batchstep_test.go:442: plant 4: 7 rows differ, 5 past the first KV block (red, as it must be)
+=== RUN   TestCUDAStepRagged_rowsMatchTheirShapes/llama-tiny/i8#01
+cuda: prefill width 2048 rows (6 MiB of scratch; 7074 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    batchstep_test.go:405: step 11 seq 2 (slot 2) row 1 at position 39: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 1 at position 107: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 2 at position 108: not bit-identical to its own shape
+    batchstep_test.go:405: step 11 seq 3 (slot 3) row 3 at position 109: not bit-identical to its own shape
+    batchstep_test.go:442: plant 1: 4 rows differ, 3 past the first KV block (red, as it must be)
+    batchstep_test.go:405: step 12 seq 2 (slot 2) row 0 at position 40: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 2 (slot 2) row 1 at position 41: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 0 at position 110: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 1 at position 111: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 2 at position 112: not bit-identical to its own shape
+    batchstep_test.go:405: step 12 seq 3 (slot 3) row 3 at position 113: not bit-identical to its own shape
+    batchstep_test.go:442: plant 2: 6 rows differ, 4 past the first KV block (red, as it must be)
+    batchstep_test.go:405: step 14 seq 1 (slot 1) row 0 at position 68: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 2 (slot 2) row 0 at position 42: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 2 (slot 2) row 1 at position 43: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 0 at position 114: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 1 at position 115: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 2 at position 116: not bit-identical to its own shape
+    batchstep_test.go:405: step 14 seq 3 (slot 3) row 3 at position 117: not bit-identical to its own shape
+    batchstep_test.go:442: plant 4: 7 rows differ, 5 past the first KV block (red, as it must be)
+--- PASS: TestCUDAStepRagged_rowsMatchTheirShapes (4.07s)
+    --- PASS: TestCUDAStepRagged_rowsMatchTheirShapes/llama-tiny/ (1.89s)
+    --- PASS: TestCUDAStepRagged_rowsMatchTheirShapes/llama-tiny/i8 (0.27s)
+    --- PASS: TestCUDAStepRagged_rowsMatchTheirShapes/mistral-tiny-window/ (0.28s)
+    --- PASS: TestCUDAStepRagged_rowsMatchTheirShapes/gemma4-dense-twogeom-tiny/ (0.28s)
+    --- PASS: TestCUDAStepRagged_rowsMatchTheirShapes/granite-dense-tiny/ (0.27s)
+    --- PASS: TestCUDAStepRagged_rowsMatchTheirShapes/llama-attnfa-tiny/ (0.28s)
+    --- PASS: TestCUDAStepRagged_rowsMatchTheirShapes/llama-attnfa-tiny/i8 (0.29s)
+    --- PASS: TestCUDAStepRagged_rowsMatchTheirShapes/llama-tiny/#01 (0.25s)
+    --- PASS: TestCUDAStepRagged_rowsMatchTheirShapes/llama-tiny/i8#01 (0.26s)
+PASS
+ledger: 13 device(s) released in this run

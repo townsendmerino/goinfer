@@ -1,0 +1,35 @@
+    sb2_census_test.go:2618: testdata/flint-tiny int4: line "dense": built: leased 113056 bytes against a plan of 112736: 320 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2618: testdata/flint-tiny int4: line "dense": generated: leased 113056 bytes against a plan of 112736: 320 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2618: testdata/flint-tiny int4/ssm: line "dense": built: leased 113056 bytes against a plan of 112736: 320 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2618: testdata/flint-tiny int4/ssm: line "dense": generated: leased 113056 bytes against a plan of 112736: 320 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2618: testdata/flint-tiny int4/kv-f16: line "dense": built: leased 113056 bytes against a plan of 112736: 320 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2618: testdata/flint-tiny int4/kv-f16: line "dense": generated: leased 113056 bytes against a plan of 112736: 320 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2618: testdata/flint-tiny int4/kv-i8: line "dense": built: leased 113056 bytes against a plan of 112736: 320 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2618: testdata/flint-tiny int4/kv-i8: line "dense": generated: leased 113056 bytes against a plan of 112736: 320 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2618: testdata/flint-tiny int4/windowed: line "dense": built: leased 113056 bytes against a plan of 112736: 320 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2618: testdata/flint-tiny int4/windowed: line "dense": generated: leased 113056 bytes against a plan of 112736: 320 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2618: testdata/flint-tiny int4/expert-cache: line "dense": built: leased 113056 bytes against a plan of 112736: 320 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2618: testdata/flint-tiny int4/expert-cache: line "dense": generated: leased 113056 bytes against a plan of 112736: 320 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2618: testdata/flint-tiny int4/slots4: line "dense": built: leased 113056 bytes against a plan of 112736: 320 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2618: testdata/flint-tiny int4/slots4: line "dense": generated: leased 113056 bytes against a plan of 112736: 320 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2618: testdata/flint-tiny int4/windowed+expert-cache: line "dense": built: leased 113056 bytes against a plan of 112736: 320 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2618: testdata/flint-tiny int4/windowed+expert-cache: line "dense": generated: leased 113056 bytes against a plan of 112736: 320 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2618: testdata/flint-tiny int4/slots2: line "dense": built: leased 113056 bytes against a plan of 112736: 320 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2618: testdata/flint-tiny int4/slots2: line "dense": generated: leased 113056 bytes against a plan of 112736: 320 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2618: testdata/nemotron-tiny int4/kv-f16: line "dense": built: leased 78144 bytes against a plan of 78080: 64 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2618: testdata/nemotron-tiny int4/kv-f16: line "dense": generated: leased 78144 bytes against a plan of 78080: 64 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2664: testdata/mistral-tiny-window@window32768 int4/windowed/ctx8192: 1 slots, kv leased 1967104 against a plan of 1082368
+    sb2_census_test.go:2664: testdata/llama-tiny@window32768 int4/slots4/ctx8192: 4 slots, kv leased 50335744 against a plan of 33820672
+    sb2_census_test.go:2664: testdata/glm-tiny@experts16384 int4/expert-cache: 1 slots, kv leased 2130432 against a plan of 2130432
+    sb2_census_test.go:2666: 484 builds held, 160 options declined by CUDA's own build
+    sb2_census_test.go:2668: testdata/flint-tiny int4 built resident and is not in testdata/memgate_rows.txt: add it, with -memgate.rows.update
+    sb2_census_test.go:2668: testdata/flint-tiny int4/ssm built resident and is not in testdata/memgate_rows.txt: add it, with -memgate.rows.update
+    sb2_census_test.go:2668: testdata/flint-tiny int4/kv-f16 built resident and is not in testdata/memgate_rows.txt: add it, with -memgate.rows.update
+    sb2_census_test.go:2668: testdata/flint-tiny int4/kv-i8 built resident and is not in testdata/memgate_rows.txt: add it, with -memgate.rows.update
+    sb2_census_test.go:2668: testdata/flint-tiny int4/windowed built resident and is not in testdata/memgate_rows.txt: add it, with -memgate.rows.update
+    sb2_census_test.go:2668: testdata/flint-tiny int4/expert-cache built resident and is not in testdata/memgate_rows.txt: add it, with -memgate.rows.update
+    sb2_census_test.go:2668: testdata/flint-tiny int4/slots4 built resident and is not in testdata/memgate_rows.txt: add it, with -memgate.rows.update
+    sb2_census_test.go:2668: testdata/flint-tiny int4/windowed+expert-cache built resident and is not in testdata/memgate_rows.txt: add it, with -memgate.rows.update
+    sb2_census_test.go:2668: testdata/flint-tiny int4/slots2 built resident and is not in testdata/memgate_rows.txt: add it, with -memgate.rows.update
+    sb2_census_test.go:2668: testdata/nemotron-tiny int4/kv-f16 built resident and is not in testdata/memgate_rows.txt: add it, with -memgate.rows.update
+--- FAIL: TestMemGate_cuda (118.98s)

@@ -1,0 +1,62 @@
+  NOT RUN          bailing_hybrid     nothing ran — see NOT RUN
+  NOT RUN          deepseek_v2        nothing ran — see NOT RUN
+  NOT RUN          gpt2               nothing ran — see NOT RUN
+  NOT RUN          granitemoehybrid   nothing ran — see NOT RUN
+  NOT RUN          laguna             nothing ran — see NOT RUN
+  NOT RUN          lfm2               nothing ran — see NOT RUN
+  NOT RUN          llama4_text        nothing ran — see NOT RUN
+  NOT RUN          mellum             nothing ran — see NOT RUN
+  NOT RUN          phi3               nothing ran — see NOT RUN
+  NOT RUN          qwen2_moe          nothing ran — see NOT RUN
+  NOT RUN          qwen3_asr          nothing ran — see NOT RUN
+  NOT RUN          qwen3_vl_moe       nothing ran — see NOT RUN
+  NOT RUN          spark2_5           nothing ran — see NOT RUN
+  NOT RUN          voxtral            nothing ran — see NOT RUN
+  NOT RUN  bailing_hybrid     tiny                   [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: layer 0: operation 1 (kda): cuda has
+  NOT RUN  bailing_hybrid     tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: layer 0: operation 1 (kda): 
+  NOT RUN  deepseek_v3        tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 1: MoE experts a
+  NOT RUN  flint              tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 2: MoE experts a
+  NOT RUN  gemma4             moe-tiny               [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 0: gemma4 expert
+  NOT RUN  gemma4             moe-unified-tiny       [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 0: gemma4 expert
+  NOT RUN  gemma4             dense-scaled           [int4,int8int8] asset missing: /home/francis/wt/v1-2026-11-12/testdata/gemma4-dense-scaled
+  NOT RUN  gemma4             moe-kv-tiny            [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: cuda: gemma4 MoE int4 needs moeInter
+  NOT RUN  gemma4             moe-kv-tiny            [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: gemma4 MoE int4 needs 
+  NOT RUN  glm4_moe           tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 1: MoE experts a
+  NOT RUN  glm4_moe           tiny-bias              [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 1: MoE experts a
+  NOT RUN  glm_ocr            tiny                   [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: cuda: cuda: int4 K=48 not a multiple
+  NOT RUN  gpt-oss            tiny-gguf              [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 0: MoE experts a
+  NOT RUN  gpt2               124m                   [int4,int8int8] asset missing: /home/francis/wt/v1-2026-11-12/testdata/gpt2
+  NOT RUN  granitemoehybrid   tiny                   [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: arch is not eligible for the residen
+  NOT RUN  granitemoehybrid   tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: arch is not eligible for the
+  NOT RUN  kimi_k2            tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 1: MoE experts a
+  NOT RUN  laguna             m1-tiny                [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: layer 0: operation 5 (out-gate): cud
+  NOT RUN  laguna             m1-tiny                [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: layer 0: operation 5 (out-ga
+  NOT RUN  laguna             xs2-tiny               [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: arch is not eligible for the residen
+  NOT RUN  laguna             xs2-tiny               [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: arch is not eligible for the
+  NOT RUN  laguna             xs21-tiny              [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: arch is not eligible for the residen
+  NOT RUN  laguna             xs21-tiny              [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: arch is not eligible for the
+  NOT RUN  lfm2               tiny                   [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: arch is not eligible for the residen
+  NOT RUN  lfm2               tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: arch is not eligible for the
+  NOT RUN  llama4_text        tiny                   [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: arch is not eligible for the residen
+  NOT RUN  llama4_text        tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: arch is not eligible for the
+  NOT RUN  mellum             mellum2-slice          [int4,int8int8] its fixture is a 4.2 GB slice of the real model, not a tiny checkpoint
+  NOT RUN  mixtral            tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 0: MoE experts a
+  NOT RUN  nemotron_h         tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: Nemotron-H runs resident wit
+  NOT RUN  nemotron_h         3nano-tiny             [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: Nemotron-H MoE FFN block has no GPU 
+  NOT RUN  nemotron_h         3nano-tiny             [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: Nemotron-H MoE FFN block has
+  NOT RUN  phi3               tiny                   [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: every resident cuda projection quant
+  NOT RUN  phi3               tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: every resident cuda projecti
+  NOT RUN  qwen2_moe          tiny                   [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: cuda: MoE int4 needs moeInter(44) an
+  NOT RUN  qwen2_moe          tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: MoE int4 needs moeInte
+  NOT RUN  qwen3_5_moe        tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 0: MoE experts a
+  NOT RUN  qwen3_5_moe        qwen35-tiny            [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 0: MoE experts a
+  NOT RUN  qwen3_moe          tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 0: MoE experts a
+  NOT RUN  qwen3_moe          tiny-k3                [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 0: MoE experts a
+  NOT RUN  qwen3_next         tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 0: MoE experts a
+  NOT RUN  qwen3_vl_moe       tiny                   [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: cuda: MoE int4 needs moeInter(24) an
+  NOT RUN  qwen3_vl_moe       tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: MoE int4 needs moeInte
+  NOT RUN  spark2_5           tiny                   [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: arch is not eligible for the residen
+  NOT RUN  spark2_5           tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: arch is not eligible for the
+  NOT RUN  deepseek_v2        -                      [-] no deepseek_v2 tiny fixture (deepseek-tiny is model_type deepseek_v3; v2's gate is the real V2-Lite)
+  NOT RUN  qwen3_asr          -                      [-] its tiny checkpoint (testdata/qwen3asr-tiny) keeps its golden as golden.zip, the text path AND the audio composition, not the JSON text golden 
+  NOT RUN  voxtral            -                      [-] its tiny checkpoint (testdata/voxtral-tiny) keeps its golden as golden.zip, the text path AND the audio composition, not the JSON text golden t

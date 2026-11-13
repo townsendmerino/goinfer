@@ -218,7 +218,7 @@ Every `KVCache` field belongs to one of these kinds, or is declared geometry, a 
 - image blocks × share: a span is taken whole, and only when the request claims the same image at the same place; otherwise the match stops at its start
 - image blocks × evict: residentForgetIDs clears resImgBlocks with the ids, always
 - image blocks × checkpoint save: the saving path (generateInto) takes text prompts: no image block is in what it saves
-- image blocks × checkpoint restore: scoreRecurrent gives no checkpoint hit to a sequence or a request with an image span
+- image blocks × checkpoint restore: scoreRecurrentTokens gives no checkpoint hit to a sequence or a request with an image span
 - m-RoPE positions × partial rewind: positions and the decode delta are set by the image prefill and have no per-position rewind
 - m-RoPE positions × full reset: resetMultimodal (audit M-25)
 - m-RoPE positions × snapshot: the snapshot format does not carry m-RoPE positions
