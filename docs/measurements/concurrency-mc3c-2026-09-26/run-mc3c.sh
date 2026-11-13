@@ -1,5 +1,5 @@
 #!/bin/bash
-# MC3c W7 measurement (docs/tasks/task-concurrency-2026-09.md gates 3-5): CPU backend, qwen2.5-coder-1.5b int4, 1/2/4
+# MC3c W7 measurement (docs/tasks/parked/task-concurrency-2026-09.md gates 3-5): CPU backend, qwen2.5-coder-1.5b int4, 1/2/4
 # clients. Arms: old = the MC1 build (serialized, pre-MC3c); n1 = the MC3c build at -max-concurrent 1 (default);
 # n4 = the MC3c build at -max-concurrent 4. Idle-gated.
 set -u

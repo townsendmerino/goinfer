@@ -1,5 +1,5 @@
 #!/bin/bash
-# TE1 night run (docs/tasks/task-test-efficiency-2026-09.md, TE1): the instant idle gate against the load gate, on the
+# TE1 night run (docs/completed/task-test-efficiency-2026-09.md, TE1): the instant idle gate against the load gate, on the
 # MacBook, at night. Pre-registered in that section before this was queued. Analysed by te1_analyze.py in this directory.
 #
 #   A/A  — one binary in both arms (goinfer = goinfer_old = serve-cpu-b9fcde67), CPU, 0.5B / 1.5B / 7B, depth 128,

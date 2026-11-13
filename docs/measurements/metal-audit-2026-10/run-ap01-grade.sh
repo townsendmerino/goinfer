@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job: A-P01's grade (docs/tasks/task-metal-audit-2026-10.md, "A-P01: built, pending its grade"), pre-registered
+# Night job: A-P01's grade (docs/completed/task-metal-audit-2026-10.md, "A-P01: built, pending its grade"), pre-registered
 # there on 2026-10-02 before any graded run. From a test binary pinned at REV: the kernel identity gate first
 # (TestGemmTile_bitIdentical, any difference kills), then on the 1.5B and the 7B TestAuditAP01_gemmSmallM (each prefill
 # GEMM alone, shipped tile against the selector's, M = 16..64) and TestAuditAP01_passCost (PrefillLast at startPos 64
@@ -8,7 +8,7 @@
 # Build: (cd ~/tmcode/goinfer-metal-audit && go test -c -o ~/goinfer-bench/metal-audit-2026-10/metal-<REV>.test ./metal/)
 # Queued with:
 #   python3 scripts/night.py add metal-audit-ap01 --est 15 --by "Claude, Metal audit A-P01 grade" \
-#     --doc docs/tasks/task-metal-audit-2026-10.md -- bash ~/goinfer-bench/metal-audit-2026-10/run-ap01-grade.sh
+#     --doc docs/completed/task-metal-audit-2026-10.md -- bash ~/goinfer-bench/metal-audit-2026-10/run-ap01-grade.sh
 # The runner holds the timing lock. Logs: ~/goinfer-logs/metal-audit-2026-10/ap01/; RESULT lines in results.txt.
 set -uo pipefail
 REV=e8c1e13a

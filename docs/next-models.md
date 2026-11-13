@@ -105,7 +105,7 @@ current tracks.
   - Nemotron 3.5 Bolt E4B: NVIDIA's post-training of Gemma 4 E4B (8B total, 4B effective, 64K context, Q4_K_M GGUF of
     6.18 GB). Expected to be a `gemma4` checkpoint swap; its Gate 0 checks the architecture, the license and the chat
     template's reasoning toggle and tool format. Its DFlash drafter is a candidate windowed target for SP0
-    (`tasks/task-forward-architecture-2026-10.md` §6a).
+    (`completed/task-forward-architecture-2026-10.md` §6a).
   - Bolt 74B-A9B: item 4 above, unchanged.
 - **Out:**
   - Nemotron 3.5 Super (120B-A12B, vision, ~76 GB in NVFP4): rule 2.

@@ -1,5 +1,5 @@
 #!/bin/bash
-# MC1 on WebGPU — W7 grading (docs/tasks/task-concurrency-2026-09.md "MC1 on WebGPU", pre-registered before any timing):
+# MC1 on WebGPU — W7 grading (docs/tasks/parked/task-concurrency-2026-09.md "MC1 on WebGPU", pre-registered before any timing):
 # the MacBook (M1 Pro 16 GB), WebGPU through wgpu-native's Metal backend, qwen2.5-coder-1.5b-instruct q4_k_m int4 from
 # ~/models, serve defaults (-kv-sessions 4), greedy, 6 turns x 128 tokens, --fixed-nonce, a fresh server per cell.
 # old = serve-webgpu @ $OLD (one KV slot); new = serve-webgpu @ $NEW (MC1-WebGPU).

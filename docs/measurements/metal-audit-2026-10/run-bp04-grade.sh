@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job: B-P04's grade (docs/tasks/task-metal-audit-2026-10.md, "B-P04: built, pending its grade"), pre-registered
+# Night job: B-P04's grade (docs/completed/task-metal-audit-2026-10.md, "B-P04: built, pending its grade"), pre-registered
 # there on 2026-10-02 before any graded run. TestR18InSequence (R18's grading instrument) on the 1.5B and the 7B at
 # depths 128 and 2048, 7 reps (the harness default is 5), and its defaults otherwise (20 step pairs per category, 16
 # identity tokens, 3 after-idle samples). Its arms: shipped (one row per simdgroup), production (the lane-balanced SA rows kernels,
@@ -11,7 +11,7 @@
 #     -o ~/goinfer-bench/metal-audit-2026-10/metal-tagged-<REV>.test ./metal/)
 # Queued with:
 #   python3 scripts/night.py add metal-audit-bp04 --est 25 --by "Claude, Metal audit B-P04 grade" \
-#     --doc docs/tasks/task-metal-audit-2026-10.md -- bash ~/goinfer-bench/metal-audit-2026-10/run-bp04-grade.sh
+#     --doc docs/completed/task-metal-audit-2026-10.md -- bash ~/goinfer-bench/metal-audit-2026-10/run-bp04-grade.sh
 # The runner holds the timing lock. Logs: ~/goinfer-logs/metal-audit-2026-10/bp04/; METRIC lines in results.txt.
 set -uo pipefail
 REV=22819cc8

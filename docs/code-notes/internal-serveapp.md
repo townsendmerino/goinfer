@@ -50,7 +50,7 @@ first being granted the lock. Zero value ready to use, same as the mutex it repl
 sessMu guards the sessionLRU, which is not goroutine-safe (sessions.go): drive's acquire and checkin, and the
 background goroutines (admin.go's load-time restore, liveness.go's idle-close save, main.go's graceful-shutdown
 save and idle-demote ticker). It is held around those operations only, NOT across a generation (MC3c,
-docs/tasks/task-concurrency-2026-09.md): the session a generation is using is CHECKED OUT instead
+docs/tasks/parked/task-concurrency-2026-09.md): the session a generation is using is CHECKED OUT instead
 (sessionLRU.busy), and the LRU never hands out, evicts, demotes, saves or even reads a busy session. That is
 what lets several generations of one CPU model run at once (-max-concurrent), and it keeps the old safety
 property — nothing frees or moves memory out from under a running generation — for one generation too.
@@ -495,7 +495,7 @@ specialized case would be the wrong trade for a three-method primitive this repo
 test directly (task-work-queue-2026-09.md's own ground rule 4: "no new root module dependency").
 
 Zero value is ready to use — no constructor needed — and admits ONE holder. setCap widens it (MC3c,
-docs/tasks/task-concurrency-2026-09.md: -max-concurrent on a CPU model): up to cap holders at once, still strict FIFO
+docs/tasks/parked/task-concurrency-2026-09.md: -max-concurrent on a CPU model): up to cap holders at once, still strict FIFO
 for everyone waiting.
 ```
 
@@ -1157,7 +1157,7 @@ pickSession is acquire's choice: bestExtend's candidate, unless the LRU has room
 reusing the candidate would throw away more of it than it keeps. bestExtend's floor learns the shared preamble only
 from OTHER resident sessions, so with a single one it cannot tell a chat-template preamble from a continuation: two
 interleaved conversations then took each other's session on every turn, each truncating the other to the preamble,
-and the LRU never grew past one session (MC0, docs/tasks/task-concurrency-2026-09.md, 2026-09-26: 7 tokens reused per
+and the LRU never grew past one session (MC0, docs/tasks/parked/task-concurrency-2026-09.md, 2026-09-26: 7 tokens reused per
 turn at 2 clients, 0.69x the 1-client aggregate on CPU). A fresh session costs only re-prefilling the shared lead;
 the truncation costs the other conversation its history. P-18's partial matches (a stop-string tail, an edited last
 message) keep most of their session and still reuse. With no room, reusing the candidate IS the eviction, so it
@@ -1169,7 +1169,7 @@ stands. -1 means take a fresh session.
 Moved from `internal/app/serveapp/systemone.go` (the comment above `handleSystemOne`) on 2026-10-09.
 
 ```text
-POST /v1/systemone — TypeSafe's decisions wire shape (D5 of docs/tasks/task-constrained-confidence.md; the request
+POST /v1/systemone — TypeSafe's decisions wire shape (D5 of docs/tasks/parked/task-constrained-confidence.md; the request
 and response JSON are recorded verbatim in docs/measurements/decisions-d0-prior-art-2026-09-27.md §3), answered by
 label scoring on the served model (Route A, internal/decide). It exists so jevx and TypeSafe's SDKs (JS, Python,
 Vercel, LangChain), which all take a base-URL override, work against goinfer unchanged.
@@ -1658,7 +1658,7 @@ is far worse than the int8 tower.
 Moved from `internal/app/serveapp/glm_ocr_vision.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
-GLM-OCR image serving (O3, docs/tasks/task-glm-ocr-2026-10.md). The route is the Qwen2.5-VL / Qwen3.5+ one —
+GLM-OCR image serving (O3, docs/completed/task-glm-ocr-2026-10.md). The route is the Qwen2.5-VL / Qwen3.5+ one —
 preprocess -> tower -> GenerateQwenVL with m-RoPE, the merged tower rows replacing the <|image|> run — with these
 differences, all of which live here or in the loadedModel.glm branches of vision_serve.go:
   - the tower is aikit's GlmOcrVisionEncoder, loaded on first use (like qwen3Tower);
@@ -1750,7 +1750,7 @@ numbers for the same env var.
 Moved from `internal/app/serveapp/systemone_clef.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
-Route C of POST /v1/systemone (D13 of docs/tasks/task-constrained-confidence.md): a model directory that carries joint_head.safetensors is Cloudflare's Clef
+Route C of POST /v1/systemone (D13 of docs/tasks/parked/task-constrained-confidence.md): a model directory that carries joint_head.safetensors is Cloudflare's Clef
 decision model, and one backbone pass over the whole record answers every question (internal/clef). The request is the same TypeSafe shape; what differs is
 that it is read as the reference's encoder reads it, from the raw body, and answered in the reference's own shape (systemone_answer in the checkpoint's
 joint_schema_model.py, read in full for docs/measurements/decisions-d10-clef-2026-10-02.md):
@@ -2708,7 +2708,7 @@ invisible tail).
 Moved from `internal/app/serveapp/sessions_test.go` (the comment above `TestPickSession_sparePreambleGoesFresh`) on 2026-10-09.
 
 ```text
-TestPickSession_sparePreambleGoesFresh is the bug MC0 found (docs/tasks/task-concurrency-2026-09.md, 2026-09-26):
+TestPickSession_sparePreambleGoesFresh is the bug MC0 found (docs/tasks/parked/task-concurrency-2026-09.md, 2026-09-26):
 with one resident session, bestExtend's floor (what a candidate shares with every OTHER session) is 0, so the shared
 chat-template preamble alone qualified. Two interleaved conversations then took each other's single session, each
 truncating the other to the 7-token preamble, and the LRU never grew past one session despite -kv-sessions 4. On the
@@ -2994,7 +2994,7 @@ Moved from `internal/app/serveapp/exactprefill_test.go` (the comment above `Test
 
 ```text
 The prompt-ingestion flags reach each model through its decoder.Options, never the process environment
-(phase 5, docs/tasks/task-env-config-2026-09.md — they used to be applied by applyExactPrefillEnv's
+(phase 5, docs/completed/task-env-config-2026-09.md — they used to be applied by applyExactPrefillEnv's
 os.Setenv, process-wide). M-48 still holds: --exact-prefill covers all three backends, now because
 Options.ExactPrefill is consulted by each (CPU, CUDA resident build, Metal resident) per model.
 ```

@@ -123,7 +123,7 @@ to start offline — the opposite of what Resolve's own doc comment promised.
 Moved from `pull/checkpoint.go` (the comment at the top of `pull/checkpoint.go`) on 2026-10-09.
 
 ```text
-A safetensors checkpoint as a pull target (docs/tasks/task-checkpoint-fetch-2026-09.md, P1-P3 and P5). GGUF is one
+A safetensors checkpoint as a pull target (docs/completed/task-checkpoint-fetch-2026-09.md, P1-P3 and P5). GGUF is one
 file; a safetensors checkpoint is a SET: config.json, the tokenizer files, and either model.safetensors or an index
 plus the shards it names. decoder.Load already opens such a directory, so this only gets the set onto disk, with the
 guarantees a single file has: every file digest-verified, resumable, and nothing at the final path until the whole set

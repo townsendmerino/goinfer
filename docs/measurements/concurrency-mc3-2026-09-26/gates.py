@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MC3's W7 gates (docs/tasks/task-concurrency-2026-09.md, pre-registered in 505cc6fc) from bench_w7_plain.py's JSON.
+"""MC3's W7 gates (docs/tasks/parked/task-concurrency-2026-09.md, pre-registered in 505cc6fc) from bench_w7_plain.py's JSON.
 
 Cells are keyed <arm><clients>_<pair>: old4_1 .. new1_3. p99 is nearest-rank over every turn of a cell (24 turns at 4
 clients, 6 at 1 client, so it is the cell's worst turn); p50 likewise.

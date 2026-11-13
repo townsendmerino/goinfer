@@ -1,5 +1,5 @@
 #!/bin/bash
-# Metal spec verify on the step kernels — served grading (docs/tasks/task-concurrency-2026-09.md MC4, registered in
+# Metal spec verify on the step kernels — served grading (docs/tasks/parked/task-concurrency-2026-09.md MC4, registered in
 # 8bb80b1f). 1 client, greedy. plain and spec-new: serve-metal @ 1e153876 (plain's path is unchanged by it);
 # spec-old: @ 8bb80b1f, the build's parent. Arms rotate per round.
 set -u

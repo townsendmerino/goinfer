@@ -1,5 +1,5 @@
 #!/bin/bash
-# MC3c step 2 S1 (docs/tasks/task-concurrency-2026-09.md, pre-registered in 5f7480e0): fused vs unfused batched W4A8
+# MC3c step 2 S1 (docs/tasks/parked/task-concurrency-2026-09.md, pre-registered in 5f7480e0): fused vs unfused batched W4A8
 # projections, TestCPUBatchS1_fusedVsUnfused on the 7B, depths 128 and 512, one go test per depth, idle-gated.
 export PATH=/usr/local/go/bin:$PATH
 cd ~/mycode/goinfer || exit 1

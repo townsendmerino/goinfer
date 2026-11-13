@@ -2,7 +2,7 @@
 
 > **Status: J0/J1/J2/J3/J4 DONE 2026-09-15 (J3/J4 text-chat scope only); J6 KILLED 2026-09-15
 > (measured 1.024× against a 1.3–2.0× pass band, not shipped); J8 FOLDED 2026-09-26 into
-> `task-concurrency-2026-09.md` MC2 (owner decision); J7/J9 unstarted (J5 built 2026-09-30).** This doc
+> `parked/task-concurrency-2026-09.md` MC2 (owner decision); J7/J9 unstarted (J5 built 2026-09-30).** This doc
 > was first written 2026-09-12 and was never committed. It was deleted the next morning by a
 > workaround, not by a decision — see "How this doc was lost" below, which is kept because the
 > failure is structural and the fix was J0. The rebuild is faithful to the J1–J9 scope as filed,
@@ -183,7 +183,7 @@ from touching `sessionLRU` while a generation was using it. `admission` is a FIF
 lockable mutex a background goroutine can take on a whim, so this needed a second, dedicated field
 (`loadedModel.sessMu`), held for the identical `tryEnter..exit` span the old `lm.mu` covered — the
 safety property is unchanged; only the *wait for a turn* gained context-awareness. **Superseded
-2026-09-26 by MC3c** (`task-concurrency-2026-09.md`, `serve -max-concurrent`): `sessMu` now covers LRU operations only,
+2026-09-26 by MC3c** (`parked/task-concurrency-2026-09.md`, `serve -max-concurrent`): `sessMu` now covers LRU operations only,
 and the same safety property comes from checking the in-use session out (`sessionLRU.busy`). The LRU never hands
 out, evicts, demotes, saves or reads a session a generation holds, and admission is N-wide on a CPU model.
 
@@ -491,7 +491,7 @@ would plausibly turn a clean 1.024× into 1.3×, so not chased further).
 
 ## J8 — N decode workers per model: kill or earn
 
-**Folded 2026-09-26 into [`task-concurrency-2026-09.md`](parked/task-concurrency-2026-09.md) MC2 (owner decision 2).** J8's
+**Folded 2026-09-26 into [`parked/task-concurrency-2026-09.md`](parked/task-concurrency-2026-09.md) MC2 (owner decision 2).** J8's
 N-independent-workers cell is measured there, in the same session as batched decode, so the two answers land side by
 side. Its band below is kept. It is not built as a feature either way. **Measured 2026-09-26 (Mac CPU,
 `concurrency-mc2-2026-09-26.md`):** 4 workers reach 2.00–2.48× aggregate, clearing the 1.25× half. **The p99 half, measured

@@ -1,5 +1,5 @@
 #!/bin/bash
-# D6a (docs/tasks/task-constrained-confidence.md, pre-registered before any graded run): Route A on Qwen3.5-9B through
+# D6a (docs/tasks/parked/task-constrained-confidence.md, pre-registered before any graded run): Route A on Qwen3.5-9B through
 # the production CLI — `goinfer-chat decisions-calibrate` on calib-sample.jsonl, then `goinfer-chat decide` (raw, no
 # calibration) on eval-sample.jsonl; analyze.py applies each arm's fitted temperature and the decision rule.
 #   A: Qwen3.5-9B, chat-v1 (graded)    B: Qwen3.5-9B, bare-v1 (control: reproduces the authors' B0?)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job: B-P01's grade (docs/tasks/task-metal-audit-2026-10.md, "B-P01: built, pending its grade"), pre-registered
+# Night job: B-P01's grade (docs/completed/task-metal-audit-2026-10.md, "B-P01: built, pending its grade"), pre-registered
 # there on 2026-10-03 before any graded run. Four steps, each from a pinned tagged test binary, each run from its
 # package directory (the tests read ../testdata relative to it):
 #   1. the 0.5B's CPU f32 reference cell Q05 at K = 2048 and 3900, prompt set B (decoder TestPrefillGateReference)
@@ -13,7 +13,7 @@
 #     && go test -c -tags goinfer_testhooks -o ~/goinfer-bench/metal-audit-2026-10/metal-tagged-<REV>.test ./metal/)
 # Queued with:
 #   python3 scripts/night.py add metal-audit-bp01 --est 75 --by "Claude (Mac session), Metal audit B-P01 grade" \
-#     --doc docs/tasks/task-metal-audit-2026-10.md -- bash docs/measurements/metal-audit-2026-10/run-bp01-grade.sh
+#     --doc docs/completed/task-metal-audit-2026-10.md -- bash docs/measurements/metal-audit-2026-10/run-bp01-grade.sh
 # The runner holds the timing lock. Logs: ~/goinfer-logs/metal-audit-2026-10/bp01/.
 set -uo pipefail
 REV=5103bd40

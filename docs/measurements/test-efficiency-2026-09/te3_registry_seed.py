@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """te3_registry_seed.py: the computed rows of TE3's noise registry, from records already on disk.
 
-Item TE3 of docs/tasks/task-test-efficiency-2026-09.md. Read-only and stdlib-only; it runs, serves and times nothing.
+Item TE3 of docs/completed/task-test-efficiency-2026-09.md. Read-only and stdlib-only; it runs, serves and times nothing.
 docs/measurements/noise-registry.json carries the values this prints (each entry's `values`, so `scripts/power.py
 verify` recomputes its sd), and noise-registry.md explains them.
 

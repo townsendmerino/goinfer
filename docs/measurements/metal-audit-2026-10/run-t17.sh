@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night job: Batch B's T1.7 (docs/tasks/task-metal-audit-2026-10.md, "Batch B: pre-registration"), pre-registered
+# Night job: Batch B's T1.7 (docs/completed/task-metal-audit-2026-10.md, "Batch B: pre-registration"), pre-registered
 # there on 2026-10-02 before any graded run. TestAuditT17_attnStaircase on the 1.5B and the 7B: in-sequence attention
 # work per key at 1536..6144 keys in 128-key steps, production against a no-op attention (R17's method), 5 reps of 8
 # tokens per arm per depth.
@@ -8,7 +8,7 @@
 #   (cd ~/tmcode/goinfer-metal-audit && go test -c -o ~/goinfer-bench/metal-audit-2026-10/metal-<REV>.test ./metal/)
 # Queued with:
 #   python3 scripts/night.py add metal-audit-t17 --est 25 --by "Claude (Mac session), Metal audit Batch B T1.7" \
-#     --doc docs/tasks/task-metal-audit-2026-10.md -- bash ~/goinfer-bench/metal-audit-2026-10/run-t17.sh
+#     --doc docs/completed/task-metal-audit-2026-10.md -- bash ~/goinfer-bench/metal-audit-2026-10/run-t17.sh
 # The runner holds the timing lock. Logs: ~/goinfer-logs/metal-audit-2026-10/batch-b/; RESULT/METRIC lines in t17-results.txt.
 set -uo pipefail
 REV=48d25e5c
