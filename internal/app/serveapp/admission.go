@@ -2,6 +2,7 @@ package serveapp
 
 import (
 	"context"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/scheduler"
 )
@@ -11,7 +12,7 @@ import (
 type admissionRecord struct {
 	promptIDs []int
 	id        string
-	clock     *turnClock // the turn's clock: tryEnter stamps its queue entry and its admission; nil for none
+	clock     *jobs.TurnClock // the turn's clock: tryEnter stamps its queue entry and its admission; nil for none
 }
 
 // admission is the model's turn granter, scheduler.Admission (FIFO, context-aware, -max-concurrent wide), with the

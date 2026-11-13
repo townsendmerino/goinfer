@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"github.com/townsendmerino/goinfer/internal/cost"
 )
 
@@ -27,12 +28,13 @@ func turnWireServer(t *testing.T, reply string) *httptest.Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	jobs, err := newJobStore("", 64)
+	jobs, err := jobs.NewStore("", 64)
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := &server{gens: newGenerationRegistry(), jobs: jobs}
 	lm := &loadedModel{tk: tk, name: "m", scripted: append([]int{}, ids...)}
+	lm.fakeEngine = scriptedEngine{lm}
 	lm.tmpl = s.cfg.tuneTemplate(mellum21Template(t))
 	s.models = map[string]*loadedModel{"m": lm}
 	mux := http.NewServeMux()
@@ -107,7 +109,7 @@ func turnObjects(t *testing.T, ts *httptest.Server, route string, body map[strin
 		var j map[string]any
 		json.NewDecoder(r.Body).Decode(&j)
 		r.Body.Close()
-		if j["status"] == string(jobDone) {
+		if j["status"] == string(jobs.Done) {
 			return []map[string]any{j}
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -225,28 +227,28 @@ func TestTurnWire_golden(t *testing.T) {
 // drive's start against another's end, and a drive with no token adds to neither; ttft runs from the admission to the turn's
 // first token.
 func TestTurnClock_sumsItsDrives(t *testing.T) {
-	c := newTurnClock(false)
-	c.queue()
-	c.admit()
+	c := jobs.NewTurnClock(false)
+	c.Queue()
+	c.Admit()
 	pause := func() { time.Sleep(20 * time.Millisecond) }
 	// Drive 1: 20 ms to its first token, 20 ms of decode.
-	c.start()
+	c.Start()
 	pause()
-	c.firstToken()
+	c.FirstToken()
 	pause()
-	c.end()
+	c.End()
 	pause() // between the drives: in neither stage
 	// Drive 2: no token at all.
-	c.start()
+	c.Start()
 	pause()
-	c.end()
+	c.End()
 	// Drive 3: 20 ms and 20 ms again.
-	c.start()
+	c.Start()
 	pause()
-	c.firstToken()
+	c.FirstToken()
 	pause()
-	c.end()
-	tm := c.timings()
+	c.End()
+	tm := c.Timings()
 	if tm.PrefillMs == nil || tm.DecodeMs == nil || tm.TtftMs == nil {
 		t.Fatalf("timings %+v: want prefill, decode and ttft", tm)
 	}
@@ -348,14 +350,14 @@ func TestTurnWire_absentNotZero(t *testing.T) {
 			t.Errorf("%s: queue_wait_ms %v", route, tm["queue_wait_ms"])
 		}
 	}
-	if c := newTurnClock(false); c.costCounter() != nil || c.costReport() != nil {
+	if c := jobs.NewTurnClock(false); c.CostCounter() != nil || c.CostReport() != nil {
 		t.Error("a turn that did not ask has a cost counter")
 	}
-	if cost.FromContext(cost.WithCounter(t.Context(), newTurnClock(false).costCounter())) != nil {
+	if cost.FromContext(cost.WithCounter(t.Context(), jobs.NewTurnClock(false).CostCounter())) != nil {
 		t.Error("a turn that did not ask put a counter on the generation's context")
 	}
-	var nilClock *turnClock
-	if m := nilClock.addTurn(map[string]any{}); len(m) != 0 {
+	var nilClock *jobs.TurnClock
+	if m := nilClock.AddTurn(map[string]any{}); len(m) != 0 {
 		t.Errorf("a nil clock added %v", m)
 	}
 }

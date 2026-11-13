@@ -1,6 +1,7 @@
 package serveapp
 
 import (
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"sync"
 	"time"
 )
@@ -26,7 +27,7 @@ type batchLineResult struct {
 //
 // mu guards Status/Results/OutputFileID/ErrorFileID/CompletedAt: many line goroutines write Results[i] concurrently
 // (disjoint indices, so those writes never race each other), but Status and the two file-id fields are read by every GET
-// and written by exactly one finalizer, so they need the same discipline as jobStore's mu.
+// and written by exactly one finalizer, so they need the same discipline as jobs.Store's mu.
 type batchRecord struct {
 	ID               string
 	Kind             string // "openai_chat" | "anthropic_messages"
@@ -47,13 +48,13 @@ type batchRecord struct {
 	CompletedAt  *time.Time
 }
 
-// requestCancel is the batch-level analogue of jobStore.cancel: mark cancelling, then cancel every constituent job not
-// yet terminal (checked live against jobStore, not against Results, since Results is only written by a line's OWN
+// requestCancel is the batch-level analogue of jobs.Store.Cancel: mark cancelling, then cancel every constituent job not
+// yet terminal (checked live against jobs.Store, not against Results, since Results is only written by a line's OWN
 // goroutine as it finishes).
 //
 // JobIDs is copied under b.mu before ranging over it: each line's goroutine writes its own slot via setJobID under the
 // same lock, and a plain read of the slice raced those writes even though every write lands at a disjoint index.
-func (b *batchRecord) requestCancel(jobs *jobStore) {
+func (b *batchRecord) requestCancel(js *jobs.Store) {
 	b.mu.Lock()
 	if b.Status == "completed" || b.Status == "cancelled" {
 		b.mu.Unlock()
@@ -64,12 +65,12 @@ func (b *batchRecord) requestCancel(jobs *jobStore) {
 	b.mu.Unlock()
 	for _, id := range ids {
 		if id != "" { // a line still validating (before setJobID) has no job to cancel yet
-			jobs.cancel(id)
+			js.Cancel(id)
 		}
 	}
 }
 
-// batchStore is a bounded, in-memory, process-wide registry that mirrors jobStore's shape, including the FIFO eviction
+// batchStore is a bounded, in-memory, process-wide registry that mirrors jobs.Store's shape, including the FIFO eviction
 // that skips a live entry: a batch a client is still polling must never disappear (see evictLocked).
 type batchStore struct {
 	mu      sync.Mutex
@@ -109,7 +110,7 @@ func (bs *batchStore) get(id string) *batchRecord {
 }
 
 // evictLocked drops the oldest COMPLETED/CANCELLED batches once len(batches) exceeds cap. Called with bs.mu held.
-// Mirrors jobStore.evictLocked, including the reason: a batch in flight must never disappear out from under a client
+// Mirrors jobs.Store.evictLocked, including the reason: a batch in flight must never disappear out from under a client
 // polling it.
 func (bs *batchStore) evictLocked() {
 	if bs.cap <= 0 {

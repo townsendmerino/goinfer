@@ -1,0 +1,34 @@
+rev 8c292a4457021f24dbd0cd6db1ac41e0f33ad35d 2026-11-13 09:19:16 PST load 2.10 1.37 1.08
+=== RUN   TestCH4_giwByteIdentity
+    ch4_giw_gate_test.go:77: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf config f3639f5b5082a6685ef983002dc1ef6c866131a90d69285a0a734065fe258ff6
+    ch4_giw_gate_test.go:86: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf config: sha256 f3639f5b5082a6685ef983002dc1ef6c866131a90d69285a0a734065fe258ff6, recorded b7f4284d1af2406d0bec91aa2bd816449871f5fbb74e0e30c441f8f14083208d: the transcode's bytes changed
+    ch4_giw_gate_test.go:77: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf q4k 32ed6f87736b6b6332cbf1fd0ef6bdc11d9a631fd7bdf07808b259f5e850521e
+    ch4_giw_gate_test.go:86: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf q4k: sha256 32ed6f87736b6b6332cbf1fd0ef6bdc11d9a631fd7bdf07808b259f5e850521e, recorded 53e637a2eb6ed11b6a28d07c32878db5d548d25971f64a5a155a00c7ed3a4922: the transcode's bytes changed
+    ch4_giw_gate_test.go:77: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf int4 1f59e2d80e3e8cf0228148d0ea475a1159d0818c0e99e6a879b8b35a4e760c0d
+    ch4_giw_gate_test.go:86: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf int4: sha256 1f59e2d80e3e8cf0228148d0ea475a1159d0818c0e99e6a879b8b35a4e760c0d, recorded c29dfe6465674df186725b346c1f660cbc5abc1b93532bc471e825d5631f23de: the transcode's bytes changed
+    ch4_giw_gate_test.go:77: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf int8int8 547cccabbaedda67b297a155cad4a590d156c14714fcbf8f002649e340f7f73a
+    ch4_giw_gate_test.go:86: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf int8int8: sha256 547cccabbaedda67b297a155cad4a590d156c14714fcbf8f002649e340f7f73a, recorded dd4859a06d8e15316d45c80765be0906163d307f5fbb876b248cb1bef537d429: the transcode's bytes changed
+    ch4_giw_gate_test.go:77: gemma3-1b-q4_k_m.gguf config bce6af6af66843e29b89493748d5ca6a38c85ac31b1fa060232ecda311fd471e
+    ch4_giw_gate_test.go:86: gemma3-1b-q4_k_m.gguf config: sha256 bce6af6af66843e29b89493748d5ca6a38c85ac31b1fa060232ecda311fd471e, recorded 3e78e25bf17a26f9b17974804e09d3dd134ceb3d902de5e01b01bf2bb37caefd: the transcode's bytes changed
+    ch4_giw_gate_test.go:77: gemma3-1b-q4_k_m.gguf q4k de963ed759202ce8035cd3855a2257460553a2cabd7ead6ab1113759655fb971
+    ch4_giw_gate_test.go:86: gemma3-1b-q4_k_m.gguf q4k: sha256 de963ed759202ce8035cd3855a2257460553a2cabd7ead6ab1113759655fb971, recorded c39f65edc974bc69cc32e11b0c9ab9de05423eb43c50f05921227773620d25e6: the transcode's bytes changed
+    ch4_giw_gate_test.go:77: gemma3-1b-q4_k_m.gguf int4 a8fb06921f0e06a546fd042738bb2d34555bde6903d119564bf4156e147d795a
+    ch4_giw_gate_test.go:86: gemma3-1b-q4_k_m.gguf int4: sha256 a8fb06921f0e06a546fd042738bb2d34555bde6903d119564bf4156e147d795a, recorded 0219e84625f67021ee5cdb12f09ce562c5e493558ad945777cefa603704e91b3: the transcode's bytes changed
+    ch4_giw_gate_test.go:77: gemma3-1b-q4_k_m.gguf int8int8 17f39fc0e6e731b49b74065c3b340886b41fb84f999ebfe16cd30b61292faa94
+    ch4_giw_gate_test.go:86: gemma3-1b-q4_k_m.gguf int8int8: sha256 17f39fc0e6e731b49b74065c3b340886b41fb84f999ebfe16cd30b61292faa94, recorded 36e23c173a3d8079e25108cab97727ddaa15db61ba41d3d407945d1f69bd4ef9: the transcode's bytes changed
+    ch4_giw_gate_test.go:77: Phi-3-mini-4k-instruct-q4.gguf config e04075d7003866e43d99173530834eebf660ec157e83b5494451fce703876484
+    ch4_giw_gate_test.go:86: Phi-3-mini-4k-instruct-q4.gguf config: sha256 e04075d7003866e43d99173530834eebf660ec157e83b5494451fce703876484, recorded c42224facfc063aa22f2f17ec2c0354da7ee79a07bacf06b8a8f946227bc77e5: the transcode's bytes changed
+    ch4_giw_gate_test.go:77: Phi-3-mini-4k-instruct-q4.gguf q4k 60bc1aec1eb9141c38a4e1e408938871b542808aba643829e004733bc8a2cc9f
+    ch4_giw_gate_test.go:86: Phi-3-mini-4k-instruct-q4.gguf q4k: sha256 60bc1aec1eb9141c38a4e1e408938871b542808aba643829e004733bc8a2cc9f, recorded e7440c06908ea93bf0816d34e8f091a54099b2b51c5f11210947ff9a80f844d4: the transcode's bytes changed
+    ch4_giw_gate_test.go:77: Phi-3-mini-4k-instruct-q4.gguf int4 129212a736acf7cbf7a2169fd7a441e74222a6a5b8953a6dfe8583fe8d87576b
+    ch4_giw_gate_test.go:86: Phi-3-mini-4k-instruct-q4.gguf int4: sha256 129212a736acf7cbf7a2169fd7a441e74222a6a5b8953a6dfe8583fe8d87576b, recorded 0838b00a453eca5291384ad1681399a51c2dd2373e01f1ce32c39c6ce98a244a: the transcode's bytes changed
+    ch4_giw_gate_test.go:77: Phi-3-mini-4k-instruct-q4.gguf int8int8 36864588a71fa158ecef09e53da4f01bf19bede0d4adcb31f3a722a4070c0b37
+    ch4_giw_gate_test.go:86: Phi-3-mini-4k-instruct-q4.gguf int8int8: sha256 36864588a71fa158ecef09e53da4f01bf19bede0d4adcb31f3a722a4070c0b37, recorded 4b20fd7d05595d72aaaab0391c60ec5b2af09c7cd935cf9c2b47d915c816d32d: the transcode's bytes changed
+    ch4_giw_gate_test.go:122: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: plant (one dequantized value past its group scale) changes the int4 hash (red, as it must be)
+    ch4_giw_gate_test.go:122: gemma3-1b-q4_k_m.gguf: plant (one dequantized value past its group scale) changes the int4 hash (red, as it must be)
+    ch4_giw_gate_test.go:122: Phi-3-mini-4k-instruct-q4.gguf: plant (one dequantized value past its group scale) changes the int4 hash (red, as it must be)
+--- FAIL: TestCH4_giwByteIdentity (43.16s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	43.182s
+FAIL
+exit 1

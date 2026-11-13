@@ -4,9 +4,11 @@ package metal
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"maps"
 	"math"
 	"os"
@@ -14,6 +16,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -1156,13 +1159,72 @@ func TestMetalDensePrice_isTheBuildsLeases(t *testing.T) {
 	}
 }
 
-// TestMixerWalk_issuesTheBlocksDispatches is OP4m-pod's P-1 and P-2 and OP4m-pod2's (docs/tasks/task-forward-and-memory-2026-11.md,
-// "OP4m-pod: registration", "OP4m-pod2: registration"): on every census fixture and option cell whose build goes resident, eight
-// decode tokens issue the same pipelines, dispatch for dispatch, and the same logits, bit for bit, under the walk as under the
-// blocks. mixerWalkBlocksForTest switches the mixer steps and the FFN and tail steps together, so one comparison covers both. The
-// cells that walk a mixer step and the cells that walk an FFN or tail step are counted separately, so a walk nothing reaches cannot
-// pass.
-func TestMixerWalk_issuesTheBlocksDispatches(t *testing.T) {
+var walkUpdate = flag.Bool("walk.update", false, "rewrite this architecture's testdata/metal_walk_dispatch.<goarch>.txt.gz and metal_multiseq_dispatch.<goarch>.txt.gz")
+
+// walkObservation is what a run of the walk issued: each step's pipeline names in order, and the logits that came out.
+type walkObservation struct {
+	seqs   [][]string
+	logits [][]float32
+}
+
+// line is the observation as one golden line under row: the dispatch count of each step and a digest of every pipeline name in
+// order. The logits are not in it: they are the machine's, and `go run ./cmd/gate identity` holds them.
+func (o walkObservation) line(row string) string {
+	h := sha256.New()
+	counts := make([]string, len(o.seqs))
+	for i, s := range o.seqs {
+		counts[i] = strconv.Itoa(len(s))
+		for _, n := range s {
+			io.WriteString(h, n)
+			h.Write([]byte{0})
+		}
+		h.Write([]byte{1})
+	}
+	return fmt.Sprintf("%s d=%s h=%x", strings.ReplaceAll(row, " ", "/"), strings.Join(counts, ","), h.Sum(nil)[:8])
+}
+
+// differs names how o and p differ: a step whose pipeline sequence differs, or logits that differ in any bit. Nil is the same.
+func (o walkObservation) differs(p walkObservation) []string {
+	var out []string
+	for i := range o.seqs {
+		if !slices.Equal(o.seqs[i], p.seqs[i]) {
+			out = append(out, fmt.Sprintf("step %d: %d and %d dispatches, first apart at %d", i, len(o.seqs[i]), len(p.seqs[i]), firstApart(o.seqs[i], p.seqs[i])))
+		}
+	}
+	for i := range o.logits {
+		if !slices.EqualFunc(o.logits[i], p.logits[i], func(x, y float32) bool { return math.Float32bits(x) == math.Float32bits(y) }) {
+			out = append(out, fmt.Sprintf("logits %d differ", i))
+		}
+	}
+	return out
+}
+
+// checkWalkGolden holds lines to the architecture's golden under name, or rewrites it under -walk.update.
+func checkWalkGolden(t *testing.T, name string, lines []string) {
+	t.Helper()
+	golden := sb2census.Golden("testdata", name)
+	if *walkUpdate {
+		if err := sb2census.Write(golden, lines); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("wrote %s", golden)
+		return
+	}
+	diffs, err := sb2census.Diff(golden, lines, 1)
+	if err != nil {
+		t.Fatalf("%v: run with -walk.update to record this architecture's dispatch sequences", err)
+	}
+	if len(diffs) > 0 {
+		t.Errorf("the dispatch sequences differ from %s in %d line(s):\n%s", golden, len(diffs), strings.Join(diffs[:min(len(diffs), 30)], "\n"))
+	}
+}
+
+// TestMixerWalk_dispatchSequences is OP4m-pod's and OP4m-pod2's P-1 (docs/tasks/task-forward-and-memory-2026-11.md, "OP4m-pod:
+// registration", "OP4m-pod2: registration"), held to a recorded golden now that the blocks it compared with are gone: on every
+// census fixture and option cell whose build goes resident, eight decode tokens issue the pipelines the golden records, dispatch for
+// dispatch. The golden was recorded while the walk and the blocks agreed on every cell. The cells that walk a mixer step and the
+// cells that walk an FFN or tail step are counted separately, so a walk nothing reaches cannot pass.
+func TestMixerWalk_dispatchSequences(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
@@ -1170,7 +1232,8 @@ func TestMixerWalk_issuesTheBlocksDispatches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	checked, walked, ffnWalked := 0, 0, 0
+	var lines []string
+	walked, ffnWalked := 0, 0
 	for _, f := range d.Fixtures {
 		path, err := sb2census.Path("../..", f)
 		if err != nil {
@@ -1200,27 +1263,24 @@ func TestMixerWalk_issuesTheBlocksDispatches(t *testing.T) {
 			if slices.ContainsFunc(a.r.layers, func(L residLayer) bool { return slices.ContainsFunc(L.steps, ffnWalks) }) {
 				ffnWalked++
 			}
-			diffs := mixerWalkDiffs(t, m, a)
+			lines = append(lines, mixerWalkObserve(t, m, a).line(row))
 			m.Close()
-			for _, d := range diffs {
-				t.Errorf("%s: %s", row, d)
-			}
-			checked++
 		}
 	}
-	t.Logf("%d resident cells checked, %d of them walk a mixer step, %d an FFN or tail step", checked, walked, ffnWalked)
+	t.Logf("%d resident cells recorded, %d of them walk a mixer step, %d an FFN or tail step", len(lines), walked, ffnWalked)
 	if walked < 6 {
 		t.Errorf("only %d cells walk a mixer step: a gate the walk barely reaches covers little", walked)
 	}
 	if ffnWalked < 6 {
 		t.Errorf("only %d cells walk an FFN or tail step: a gate the walk barely reaches covers little", ffnWalked)
 	}
+	checkWalkGolden(t, "metal_walk_dispatch", lines)
 }
 
-// TestMixerWalk_plantsGoRed: each of P-1's planted defects in the walk differs from the blocks on the fixtures it can show on. A
-// residual added again after an output projection that adds it (DeltaNet's out_proj, a fused attention o-proj) is an extra
+// TestMixerWalk_plantsGoRed: each of P-1's planted defects in the walk differs from the clean walk on the fixtures it can show on.
+// A residual added again after an output projection that adds it (DeltaNet's out_proj, a fused attention o-proj) is an extra
 // dispatch; the input norm ignoring (1 + w) moves the logits wherever a walked step's RMSNorm has it, Gemma's among them, and
-// stays quiet elsewhere.
+// stays quiet elsewhere. The golden holds the dispatch sequence and not the logits, so the second plant is shown on the logits.
 func TestMixerWalk_plantsGoRed(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -1250,9 +1310,10 @@ func TestMixerWalk_plantsGoRed(t *testing.T) {
 				addOne = addOne || (ops[0].Norm.AddOne && ops[0].Norm.Form == program.NormRMS && !a.r.q4kLane && !(st == stepAttention && a.r.canUseF16Lane(l)))
 			}
 		}
+		clean := mixerWalkObserve(t, m, a)
 		for plant, wantRed := range map[int]bool{mixerWalkPlantResidual: fused, mixerWalkPlantAddOne: addOne} {
 			mixerWalkPlantForTest = plant
-			diffs := mixerWalkDiffs(t, m, a)
+			diffs := clean.differs(mixerWalkObserve(t, m, a))
 			mixerWalkPlantForTest = 0
 			if red := len(diffs) > 0; red != wantRed {
 				t.Errorf("%s, plant %d: red %v, want %v (%v)", f, plant, red, wantRed, diffs)
@@ -1268,7 +1329,7 @@ func TestMixerWalk_plantsGoRed(t *testing.T) {
 	}
 }
 
-// TestFFNWalk_plantsGoRed verifies that each planted defect in the FFN walk differs from the FFN blocks on every fixture whose
+// TestFFNWalk_plantsGoRed verifies that each planted defect in the FFN walk differs from the clean walk on every fixture whose
 // FFN sublayer exercises that path, and stays quiet on fixtures that do not.
 func TestFFNWalk_plantsGoRed(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
@@ -1301,13 +1362,14 @@ func TestFFNWalk_plantsGoRed(t *testing.T) {
 				parallel = true
 			}
 		}
+		clean := mixerWalkObserve(t, m, a)
 		for plant, wantRed := range map[int]bool{
 			ffnWalkPlantResidual:          fused,
 			ffnWalkPlantDropPostNorm:      postNorm,
 			ffnWalkPlantFreshParallelNorm: parallel,
 		} {
 			ffnWalkPlantForTest = plant
-			diffs := mixerWalkDiffs(t, m, a)
+			diffs := clean.differs(mixerWalkObserve(t, m, a))
 			ffnWalkPlantForTest = 0
 			if red := len(diffs) > 0; red != wantRed {
 				t.Errorf("%s, plant %d: red %v, want %v (%v)", f, plant, red, wantRed, diffs)
@@ -1326,42 +1388,26 @@ func TestFFNWalk_plantsGoRed(t *testing.T) {
 	}
 }
 
-// mixerWalkDiffs runs eight decode tokens on a under the mixer steps' blocks and then under their walk, and names each token whose
-// pipeline sequence or logits differ.
-func mixerWalkDiffs(t *testing.T, m *decoder.Model, a *metalResident) []string {
+// mixerWalkObserve runs eight decode tokens on a through the walk and returns each token's pipeline sequence and logits.
+func mixerWalkObserve(t *testing.T, m *decoder.Model, a *metalResident) walkObservation {
 	t.Helper()
 	names := a.r.pipelineNames()
-	run := func(blocks bool) (seqs [][]string, logits [][]float32) {
-		mixerWalkBlocksForTest = blocks
-		defer func() { mixerWalkBlocksForTest = false }()
-		a.r.stopExec()
-		a.Reset()
-		var cur []string
-		a.r.d.SetDispatchHook(func(pl Pipeline) { cur = append(cur, names[pl]) })
-		defer a.r.d.SetDispatchHook(nil)
-		for pos := range 8 {
-			cur = nil
-			lg, err := a.Forward(m.EmbedResidentForTest((pos*7+3)%a.r.V), pos)
-			if err != nil {
-				t.Fatalf("forward at %d: %v", pos, err)
-			}
-			seqs, logits = append(seqs, cur), append(logits, slices.Clone(lg))
-		}
-		a.r.stopExec()
-		return seqs, logits
-	}
-	sb, lb := run(true)
-	sw, lw := run(false)
-	var out []string
+	a.r.stopExec()
+	a.Reset()
+	var cur []string
+	a.r.d.SetDispatchHook(func(pl Pipeline) { cur = append(cur, names[pl]) })
+	defer a.r.d.SetDispatchHook(nil)
+	var o walkObservation
 	for pos := range 8 {
-		if !slices.Equal(sb[pos], sw[pos]) {
-			out = append(out, fmt.Sprintf("token %d: the walk issues %d dispatches and the blocks %d, first apart at %d", pos, len(sw[pos]), len(sb[pos]), firstApart(sb[pos], sw[pos])))
+		cur = nil
+		lg, err := a.Forward(m.EmbedResidentForTest((pos*7+3)%a.r.V), pos)
+		if err != nil {
+			t.Fatalf("forward at %d: %v", pos, err)
 		}
-		if !slices.EqualFunc(lb[pos], lw[pos], func(x, y float32) bool { return math.Float32bits(x) == math.Float32bits(y) }) {
-			out = append(out, fmt.Sprintf("token %d: the logits differ", pos))
-		}
+		o.seqs, o.logits = append(o.seqs, cur), append(o.logits, slices.Clone(lg))
 	}
-	return out
+	a.r.stopExec()
+	return o
 }
 
 // firstApart is the first index where a and b differ, or the shorter length.
@@ -1744,10 +1790,9 @@ func multiSeqWalkCells(t *testing.T) []multiSeqWalkCell {
 	return cells
 }
 
-// multiSeqWalkDiffs runs the batched step on b rows (each on its own slot, at depths from 3 to 40) for four steps under the
-// blocks and then under the walk, each from the same refill, and names each step whose pipeline sequence or logits differ.
-// The refill runs on the walk in both arms, so it is the same state; only the step's own per-row steps switch.
-func multiSeqWalkDiffs(t *testing.T, c multiSeqWalkCell, b int) []string {
+// multiSeqWalkObserve runs the batched step on b rows (each on its own slot, at depths from 3 to 40) for four steps from a fresh
+// refill, and returns each step's pipeline sequence and each row's logits.
+func multiSeqWalkObserve(t *testing.T, c multiSeqWalkCell, b int) walkObservation {
 	t.Helper()
 	r := c.r
 	depths := []int{3, 11, 20, 40}[:b]
@@ -1772,60 +1817,41 @@ func multiSeqWalkDiffs(t *testing.T, c multiSeqWalkCell, b int) []string {
 		}
 	}
 	names := r.pipelineNames()
-	run := func(blocks bool) (seqs [][]string, logits [][]float32) {
-		mixerWalkBlocksForTest = false
-		stepCellFill(t, r, fills, c.row, c.full)
-		mixerWalkBlocksForTest = blocks
-		defer func() { mixerWalkBlocksForTest = false }()
-		var cur []string
-		r.d.SetDispatchHook(func(pl Pipeline) { cur = append(cur, names[pl]) })
-		defer r.d.SetDispatchHook(nil)
-		for st := range toks {
-			rows := make([]batchSeq, b)
-			for m := range b {
-				rows[m] = batchSeq{slot: m, pos: depths[m] + st, emb: c.row(toks[st][m])}
-			}
-			cur = nil
-			out := mc3Step(t, r, rows)
-			seqs = append(seqs, cur)
-			for m := range out {
-				logits = append(logits, slices.Clone(out[m]))
-			}
+	stepCellFill(t, r, fills, c.row, c.full)
+	var cur []string
+	r.d.SetDispatchHook(func(pl Pipeline) { cur = append(cur, names[pl]) })
+	defer r.d.SetDispatchHook(nil)
+	var o walkObservation
+	for st := range toks {
+		rows := make([]batchSeq, b)
+		for m := range b {
+			rows[m] = batchSeq{slot: m, pos: depths[m] + st, emb: c.row(toks[st][m])}
 		}
-		return seqs, logits
-	}
-	bs, bl := run(true)
-	ws, wl := run(false)
-	var diffs []string
-	for st := range bs {
-		if !slices.Equal(bs[st], ws[st]) {
-			diffs = append(diffs, fmt.Sprintf("step %d: %d dispatches under the blocks, %d under the walk, or a pipeline differs", st, len(bs[st]), len(ws[st])))
+		cur = nil
+		out := mc3Step(t, r, rows)
+		o.seqs = append(o.seqs, cur)
+		for m := range out {
+			o.logits = append(o.logits, slices.Clone(out[m]))
 		}
 	}
-	for i := range bl {
-		for j := range bl[i] {
-			if j >= len(wl[i]) || math.Float32bits(bl[i][j]) != math.Float32bits(wl[i][j]) {
-				diffs = append(diffs, fmt.Sprintf("row %d logit %d differs", i, j))
-				break
-			}
-		}
-	}
-	return diffs
+	return o
 }
 
-// TestMultiSeqWalk_issuesTheBlocksDispatches is OP4m-pod2 part 2's P-1 and P-2 (docs/tasks/task-forward-and-memory-2026-11.md,
-// "OP4m-pod2 part 2: registration"): on every fixture that builds the batched step, at 2 and 4 rows, the step's per-row steps issue
-// the same pipelines, dispatch for dispatch, and the same logits, bit for bit, through the walk as through the blocks.
-func TestMultiSeqWalk_issuesTheBlocksDispatches(t *testing.T) {
+// TestMultiSeqWalk_dispatchSequences is OP4m-pod2 part 2's P-1 (docs/tasks/task-forward-and-memory-2026-11.md, "OP4m-pod2 part 2:
+// registration"), held to a recorded golden now that the blocks are gone: on every fixture that builds the batched step, at 2 and
+// 4 rows, the step's per-row steps issue the pipelines the golden records, dispatch for dispatch. The golden was recorded while the
+// walk and the blocks agreed on every cell.
+func TestMultiSeqWalk_dispatchSequences(t *testing.T) {
+	var lines []string
 	for _, c := range multiSeqWalkCells(t) {
 		for _, b := range []int{2, 4} {
-			t.Run(fmt.Sprintf("%s/B=%d", c.name, b), func(t *testing.T) {
-				for _, d := range multiSeqWalkDiffs(t, c, b) {
-					t.Error(d)
-				}
-			})
+			lines = append(lines, multiSeqWalkObserve(t, c, b).line(fmt.Sprintf("%s/B=%d", c.name, b)))
 		}
 	}
+	if len(lines) < 10 {
+		t.Errorf("only %d cells recorded: a gate the step barely reaches covers little", len(lines))
+	}
+	checkWalkGolden(t, "metal_multiseq_dispatch", lines)
 }
 
 // TestMultiSeqWalk_plantsGoRed: the walk's extra residual after an output projection that already adds it (DeltaNet's out_proj)
@@ -1835,8 +1861,9 @@ func TestMultiSeqWalk_plantsGoRed(t *testing.T) {
 	reds := 0
 	for _, c := range multiSeqWalkCells(t) {
 		delta := slices.ContainsFunc(c.r.layers, func(L residLayer) bool { return L.delta != nil })
+		clean := multiSeqWalkObserve(t, c, 4)
 		mixerWalkPlantForTest = mixerWalkPlantResidual
-		diffs := multiSeqWalkDiffs(t, c, 4)
+		diffs := clean.differs(multiSeqWalkObserve(t, c, 4))
 		mixerWalkPlantForTest = 0
 		if delta && len(diffs) == 0 {
 			t.Errorf("%s: the extra-residual plant is red nowhere on a fixture with DeltaNet layers", c.name)

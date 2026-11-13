@@ -139,3 +139,32 @@ func forEachChunk(n int, fn func(c, lo, hi int)) {
 func chunkedZ(logits []float32, maxv, temperature float64, scratch []float64) float64 {
 	return foldChunkSums(expChunked(logits, scratch, maxv, temperature))
 }
+
+// minPCandidates returns the ids whose logit is at least thr, in ascending id order, in scratch's backing array (grown to
+// len(logits) when its capacity is short). Each chunk writes its ids into its own span of the array, and the runs are then
+// moved to the front in chunk order, so the result is the serial scan's, element for element. The parallel form is P42's
+// measured win at Gemma vocab (docs/queue-performance.md, P42).
+func minPCandidates(logits []float32, thr float64, scratch []int) []int {
+	n := len(logits)
+	if cap(scratch) < n {
+		scratch = make([]int, n)
+	}
+	cand := scratch[:n]
+	var counts [numChunks]int
+	forEachChunk(n, func(c, lo, hi int) {
+		k := lo
+		for i := lo; i < hi; i++ {
+			if float64(logits[i]) >= thr {
+				cand[k] = i
+				k++
+			}
+		}
+		counts[c] = k - lo
+	})
+	m := 0
+	for c := range numChunks { // m never passes chunk c's start, so each run moves toward the front or stays
+		lo, _ := chunkBounds(n, c)
+		m += copy(cand[m:], cand[lo:lo+counts[c]])
+	}
+	return cand[:m]
+}

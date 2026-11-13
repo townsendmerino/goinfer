@@ -1,5 +1,7 @@
 # OP4m-pod: readings (2026-11-09, mac-sb11m)
 
+<!-- citations-at: b5cceb8e5 -->
+
 These are the readings for the registration in `docs/tasks/task-forward-and-memory-2026-11.md`, "OP4m-pod: registration" (#817).
 Part 1 (#820) walks the DeltaNet, Mamba-2 and MLA steps by their operations; part 2 walks the attention step.
 

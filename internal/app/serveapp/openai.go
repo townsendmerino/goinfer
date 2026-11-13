@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"maps"
 	"math"
 	"math/rand"
@@ -185,7 +186,7 @@ type loadedModel struct {
 	gemma4AudioDevice string
 	gemma4AudioAcc    embeddinggemma2.AudioAccelerator
 
-	// scripted is a test seam: when non-nil, drive streams these token ids (at most the request's max tokens; the end of the
+	// scripted is a test seam (a test sets fakeEngine to scriptedEngine): when non-nil, drive streams these token ids (at most the request's max tokens; the end of the
 	// slice is the model's end of turn) instead of running model. Production never sets it.
 	scripted []int
 	// onScripted, when set with scripted, receives each scripted generation's prompt ids.
@@ -350,10 +351,10 @@ func (lm *loadedModel) tryEnter(ctx context.Context, rec admissionRecord, haltSt
 			return "", false
 		}
 	}
-	rec.clock.queue()
+	rec.clock.Queue()
 	ok, haltReason = scheduler.Admit(ctx, &lm.turns.Admission, lm.queue, scheduler.Record{PromptIDs: rec.promptIDs, ID: rec.id}, halted)
 	if ok {
-		rec.clock.admit()
+		rec.clock.Admit()
 	}
 	return ok, haltReason
 }
@@ -450,7 +451,7 @@ type server struct {
 	// jobs is the job registry (docs/tasks/task-work-queue-2026-09.md), shared by every generation surface the way
 	// gens is. Never nil after newServer: every generation gets a job whether or not -job-dir is set; jobs.journal is
 	// what is nil without it.
-	jobs *jobStore
+	jobs *jobs.Store
 
 	// files and batches hold OpenAI's uploaded and assembled files and both dialects' batch records. Never nil after
 	// newServer.
@@ -636,8 +637,8 @@ type sampling struct {
 	// and silently drop the result.
 	Confidence   bool `json:"goinfer_confidence"`
 	confidenceOK bool
-	// Goinfer is the request's "goinfer" vendor object (vendorOptions): {"cost": true} asks for the turn's cost report.
-	Goinfer *vendorOptions `json:"goinfer"`
+	// Goinfer is the request's "goinfer" vendor object (jobs.VendorOptions): {"cost": true} asks for the turn's cost report.
+	Goinfer *jobs.VendorOptions `json:"goinfer"`
 	// minP has no request field; withRecommended sets it from the model's recommended sampling.
 	minP *float64
 	// fixedTokens measures the request's fixed part (system prompt and tool definitions) in tokens, for a route that
@@ -816,32 +817,11 @@ type completionReq struct {
 
 // --- response shapes ---
 
-type usage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
-	// PrefillReusedTokens is a goinfer vendor extension (not part of the OpenAI schema; the same convention as
-	// pathFields's decode_path and prefill_path on /v1/models): how many leading prompt tokens this generation's
-	// prefill skipped because a prior turn left them resident (decoder.Generation.PrefillReused). 0 on a cold
-	// prefill, on a path that does not track reuse, or when nothing was reused; the number alone cannot tell those
-	// apart. An unrecognised JSON key, so any standard OpenAI client ignores it.
-	PrefillReusedTokens int `json:"prefill_reused_tokens"`
-	// PrefillReuse is the vendor extension beside it that says where those tokens came from
-	// (docs/tasks/task-kv-architecture-2026-10.md §5.16); absent when nothing was reused.
-	PrefillReuse *prefillReuseSources `json:"prefill_reuse,omitempty"`
-}
-
-// prefillReuseSources splits prefill_reused_tokens by source. own_tokens were already in the KV record the request ran on (its own
-// continuation, or a previous conversation's matching prefix left in that slot), shared_tokens came from another slot's KV (a copy or a
-// shared block), host_tokens a host snapshot restored onto the device, disk_tokens the disk tier. promoted_blocks counts blocks that came back from host memory, the slot's own or a copy's source; the
-// slot's own rows count in host_tokens with a host snapshot's, and rows that came through a copy in shared_tokens. The disk tier is KV7-rest's, so disk_tokens is 0 until it lands.
-type prefillReuseSources struct {
-	OwnTokens      int `json:"own_tokens"`
-	SharedTokens   int `json:"shared_tokens"`
-	HostTokens     int `json:"host_tokens"`
-	DiskTokens     int `json:"disk_tokens"`
-	PromotedBlocks int `json:"promoted_blocks"`
-}
+// usage and prefillReuseSources are the generation accounting a job records (internal/app/serveapp/jobs).
+type (
+	usage               = jobs.Usage
+	prefillReuseSources = jobs.PrefillReuseSources
+)
 
 // prefillReuse is how many leading prompt tokens a generation's prefill skipped, and from which source (engine.Report's PrefillReused,
 // PrefillShared, KVSnapRestored and KVPromotedRows).
@@ -1088,7 +1068,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 	if gr.conf != nil {
 		resp["goinfer_confidence"] = gr.conf.payload()
 	}
-	writeJSON(w, http.StatusOK, gr.clock.addTurn(resp))
+	writeJSON(w, http.StatusOK, gr.clock.AddTurn(resp))
 }
 
 func (s *server) handleCompletions(w http.ResponseWriter, r *http.Request) {
@@ -1194,7 +1174,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 	if gr.conf != nil {
 		resp["goinfer_confidence"] = gr.conf.payload()
 	}
-	writeJSON(w, http.StatusOK, gr.clock.addTurn(resp))
+	writeJSON(w, http.StatusOK, gr.clock.AddTurn(resp))
 }
 
 // genRequest is a prepared generation: prompt ids, sampling params (with the
@@ -1230,9 +1210,9 @@ type genRequest struct {
 	// callPostCheck is a must-call tool_choice on a family with no JSON call form (forcedCallEnforcement "post-check"):
 	// runToolTurn streams no prose and returns errNoForcedCall when the reply holds no call.
 	callPostCheck bool
-	// clock is the turn's stage boundaries and, when asked, its cost counter (turn_timings.go). Set by prepare; shared by the
+	// clock is the turn's stage boundaries and, when asked, its cost counter (jobs/turn_timings.go). Set by prepare; shared by the
 	// copies a genRequest value makes as it is passed along.
-	clock *turnClock
+	clock *jobs.TurnClock
 }
 
 // kvScope is the request's KV sharing scope, of which the shell sets Boundary, the end of the system-and-tools section a
@@ -1382,7 +1362,7 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 		stopStrings: stops,
 		outcome:     &turnOutcome{},
 		fromModel:   fromModel,
-		clock:       newTurnClock(sm.Goinfer.wantsCost()),
+		clock:       jobs.NewTurnClock(sm.Goinfer.WantsCost()),
 	}
 	// Reject a prompt that does not fit the context window, then clamp max_tokens to the room left (clampMaxTokens).
 	if lm.model != nil {
@@ -1605,7 +1585,7 @@ func genErr(err error) error {
 // through here or driveVL, so that bookkeeping lives here and not at each call site (see generations.go). jobs is the
 // job store, nil only in a unit test calling drive directly; it is gated on the same gr.id != "" and shares the id,
 // so the job and registry records join by id.
-func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []decoder.SampleInfo, stopHitOut string, prefillReused prefillReuse, cancelReason string, err error) {
+func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *generationRegistry, js *jobs.Store, onText func(string)) (finish string, nComp int, logprobs []decoder.SampleInfo, stopHitOut string, prefillReused prefillReuse, cancelReason string, err error) {
 	defer lm.logExpertCache(lm.expertCacheNow())
 	var g *generation
 	if gens != nil && gr.id != "" {
@@ -1625,8 +1605,8 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 			gr.think.onReasoning = func(t string) { g.tokens.Add(1); wr(t) }
 		}
 	}
-	if jobs != nil && gr.id != "" {
-		j := jobs.getOrCreate(gr.id, lm.name, gr.promptIDs)
+	if js != nil && gr.id != "" {
+		j := js.GetOrCreate(gr.id, lm.name, gr.promptIDs)
 		// The job's result text accumulates independently of whatever the caller's own onText does, so every job gets
 		// one uniformly.
 		var resultText strings.Builder
@@ -1635,28 +1615,28 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 		// Reads the named return values, so it sees the final finish, nComp, prefillReused, cancelReason and err
 		// whichever return statement ran.
 		defer func() {
-			state := jobDone
+			state := jobs.Done
 			var errMsg string
 			switch {
 			case cancelReason != "":
-				state = jobCancelled
+				state = jobs.Cancelled
 			case err != nil:
-				state, errMsg = jobFailed, err.Error()
+				state, errMsg = jobs.Failed, err.Error()
 			}
 			u := newUsage(len(gr.promptIDs), nComp, prefillReused)
-			jobs.finishTurn(j, state, &u, gr.clock, errMsg, &jobResult{Content: resultText.String(), FinishReason: finish, StopSeq: stopHitOut})
+			js.FinishTurn(j, state, &u, gr.clock, errMsg, &jobs.Result{Content: resultText.String(), FinishReason: finish, StopSeq: stopHitOut})
 		}()
 	}
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
-	gr.clock.start()
-	st := lm.genEngine().Start(cost.WithCounter(ctx, gr.clock.costCounter()), engine.Request{
+	gr.clock.Start()
+	st := lm.genEngine().Start(cost.WithCounter(ctx, gr.clock.CostCounter()), engine.Request{
 		PromptIDs: gr.promptIDs, MaxTokens: gr.maxTokens, Sampling: decoder.SamplingParams(gr.sp), Masker: gr.masker, Lazy: gr.lazy,
 		NoSpeculation: gr.conf != nil, Scope: gr.kvScope(),
 	})
 	defer st.Close()
 	finish, n, stopHit := lm.streamTokens(parent, cancel, st.Tokens(), gr, st.Report, onText)
-	gr.clock.end()
+	gr.clock.End()
 	rep := st.Report()
 	if rep == nil { // an engine that keeps no report (the scripted seam): no cancelled finish, logprobs, reuse or error
 		return finish, n, nil, stopHit, prefillReuse{}, cancelledReason(g, parent, stopHit), nil
@@ -1687,7 +1667,7 @@ func cancelledReason(g *generation, parent context.Context, stopHit string) stri
 // prefix reuse), but on a resident backend GenerateVL and GenerateQwenVL reuse the resident GPU KV when the same
 // image is resent, and vi.features is then never invoked. Its results and its gens and jobs parameters are drive's;
 // see drive.
-func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []decoder.SampleInfo, stopHitOut string, prefillReused prefillReuse, cancelReason string, err error) {
+func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, gens *generationRegistry, js *jobs.Store, onText func(string)) (finish string, nComp int, logprobs []decoder.SampleInfo, stopHitOut string, prefillReused prefillReuse, cancelReason string, err error) {
 	defer lm.logExpertCache(lm.expertCacheNow())
 	var g *generation
 	if gens != nil && gr.id != "" {
@@ -1700,22 +1680,22 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 		wrapped := onText
 		onText = func(t string) { g.tokens.Add(1); wrapped(t) }
 	}
-	if jobs != nil && gr.id != "" {
-		j := jobs.getOrCreate(gr.id, lm.name, gr.promptIDs)
+	if js != nil && gr.id != "" {
+		j := js.GetOrCreate(gr.id, lm.name, gr.promptIDs)
 		var resultText strings.Builder
 		wrapped := onText
 		onText = func(t string) { resultText.WriteString(t); wrapped(t) }
 		defer func() {
-			state := jobDone
+			state := jobs.Done
 			var errMsg string
 			switch {
 			case cancelReason != "":
-				state = jobCancelled
+				state = jobs.Cancelled
 			case err != nil:
-				state, errMsg = jobFailed, err.Error()
+				state, errMsg = jobs.Failed, err.Error()
 			}
 			u := newUsage(len(gr.promptIDs), nComp, prefillReused)
-			jobs.finishTurn(j, state, &u, gr.clock, errMsg, &jobResult{Content: resultText.String(), FinishReason: finish, StopSeq: stopHitOut})
+			js.FinishTurn(j, state, &u, gr.clock, errMsg, &jobs.Result{Content: resultText.String(), FinishReason: finish, StopSeq: stopHitOut})
 		}()
 	}
 	ctx, cancel := context.WithCancel(parent)
@@ -1725,8 +1705,8 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	if len(spans) == 0 {
 		spans, grids = []decoder.ImageSpan{{Pos: vi.imgPos, Len: vi.imgLen, Hash: vi.imgHash}}, [][3]int{vi.grid}
 	}
-	gr.clock.start()
-	st := lm.genEngine().Start(cost.WithCounter(ctx, gr.clock.costCounter()), engine.Request{
+	gr.clock.Start()
+	st := lm.genEngine().Start(cost.WithCounter(ctx, gr.clock.CostCounter()), engine.Request{
 		PromptIDs: gr.promptIDs, MaxTokens: gr.maxTokens, Sampling: decoder.SamplingParams(gr.sp),
 		Media: vi.media(spans, grids, lm),
 	})
@@ -1735,7 +1715,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 		onText(vi.replyPrefix)
 	}
 	finish, n, stopHit := lm.streamTokens(parent, cancel, st.Tokens(), gr, st.Report, onText)
-	gr.clock.end()
+	gr.clock.End()
 	rep := st.Report()
 	if rep == nil { // an engine that keeps no report (the scripted seam): no cancelled finish, logprobs, reuse or error
 		return finish, n, nil, stopHit, prefillReuse{}, cancelledReason(g, parent, stopHit), nil
@@ -1843,7 +1823,7 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 	}
 	tr := traceFrom(parent) // -log-requests (reqlog.go); nil when it is off
 	for id := range stream {
-		gr.clock.firstToken() // the turn's first token received; later calls keep it
+		gr.clock.FirstToken() // the turn's first token received; later calls keep it
 		if stopping {
 			continue // drain so the generation goroutine exits cleanly
 		}

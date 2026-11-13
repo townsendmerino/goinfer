@@ -9,12 +9,9 @@ import (
 	"math"
 	"os"
 	"runtime"
-	"slices"
 	"sync"
 	"unsafe"
 
-	"github.com/townsendmerino/goinfer/internal/runtime/logs"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -1243,7 +1240,8 @@ func int8ConcatOn(line string, d *Device, a *weightAlias, wms ...*linalg.WeightM
 
 // buildResident builds a Metal resident decoder from a loaded Model: it uploads the weights, creates the pipelines and
 // allocates the KV slots. It returns an error, which the caller treats as a decline to the CPU path, when the model's
-// shape or the device cannot run it resident.
+// shape or the device cannot run it resident. The work is residentBuild's phases (resident_build.go), run in the order the
+// calls below list; the order is the order of the allocations the memory gate and the lease census read.
 func buildResident(m *decoder.Model) (res *resident, err error) {
 	// Entry point: convert the build-time panics (pipeline-compile failure, non-int4 expert weights, buffer OOM in
 	// model.go, moe.go and gemma4_moe.go) into the error this signature promises, so a direct caller gets a decline,
@@ -1293,416 +1291,35 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if err := b.compileKernels(); err != nil {
 		return nil, err
 	}
-	r, pipe := b.r, b.pipe
-	H, nL, nH, I, V := r.H, r.nL, r.nH, r.I, r.V
+	r := b.r
 	b.bindPipelines()
 	if err := b.buildMixers(); err != nil {
 		return nil, err
 	}
-	addOne, win := b.addOne, b.win
 	if err := b.selectLanes(); err != nil {
 		return nil, err
 	}
 	if err := b.uploadLayers(); err != nil {
 		return nil, err
 	}
-	w, alias := b.w, b.alias
-	maxNHhd, maxKvDim, maxHd, maxAttnFAPartial := b.maxNHhd, b.maxKvDim, b.maxHd, b.maxAttnFAPartial
-	// MC1: the resident KV slots (kvSlots: the model's request, clamped to what the memory guard allows, priced at the top of this
-	// build; 1 for a family with recurrent state). A slot is its block table over the layers' shared pools, set below.
-	switch {
-	case kvSlots > 1:
-		r.kvSlotBufs = make([]kvSlotBuf, kvSlots)
-	case r.kvContig:
-		r.kvSlotBufs = make([]kvSlotBuf, 1)
-	}
-	if slices.ContainsFunc(r.kvNullBytes, func(n int) bool { return n > 0 }) {
-		// The pools above hold every slot's share, the context the plan priced; one conversation's cap may then rise past it (kvRaise).
-		// The tables start unmapped and take blocks as the slots write (kvWrite).
-		slots := max(kvSlots, 1)
-		r.kvShareCtx, r.kvShareBlocks = r.ctxCap, kvBlocksFor(r.ctxCap)
-		r.ctxCap = kvRaise(m, slots, r.kvShareCtx)
-		r.kvTabBlocks = kvBlocksFor(r.ctxCap)
-		r.kvTab = NewBufferUint32sOn(mem.LineKV, d, make([]uint32, slots*r.kvTabBlocks))
-		r.kvTabU32 = r.kvTab.U32s()
-		r.kvRefs = make([]int32, 1+slots*r.kvShareBlocks)
-		r.kvOrder = kvBlockOrder(slots * r.kvShareBlocks)
-		r.kvSlotSt = make([]kvSlotState, slots)
-		r.kt = r.kvTab
-		for s := range r.kvSlotBufs {
-			r.kvSlotBufs[s].kt = r.kvTab.At(4 * s * r.kvTabBlocks)
-		}
-	}
-	if err := r.allocRecurrentSlots(m, kvSlots); err != nil {
+	if err := b.allocKVTables(); err != nil {
 		return nil, err
 	}
-	r.finalNorm = NewBufferFloatsOn(mem.LineDense, d, w.FinalNorm)
-	if r.layerNorm && r.layerNormBias {
-		r.finalNormBias = NewBufferFloatsOn(mem.LineDense, d, w.FinalNormBias)
-	}
-	lm := &w.LMHead
-	if lm.Rows() == 0 {
-		lm = &w.Embed // tied
-		r.lmTied = true
-	}
-	// The LM head is logit-critical and must stay int8: at int4 it flips the argmax and tanks the cosine (a tied
-	// head dots every logit against it), which is why the decoder pins the embedding and LM head at int8 even in
-	// int4 mode (decoder/weightmat.go). Worst for a tied head such as Gemma's, 262k x 2560.
-	if r.lmW, r.lmS, err = int8BufAOn(mem.LineDense, d, alias, lm); err != nil {
+	if err := b.uploadHead(); err != nil {
 		return nil, err
 	}
-
-	// The gate|up and down scratch must fit the widest FFN width: the dense I, or (for MoE) the
-	// larger of the expert and shared-expert intermediate dims.
-	guDim, maxFFNI := I, I // maxFFNI: the widest dense FFN (a Gemma 4 E-model's double-wide shared layers, S1.3)
-	for l := range r.layers {
-		maxFFNI = max(maxFFNI, r.layers[l].ffnI)
-	}
-	guDim = maxFFNI
-	if r.moe != nil {
-		guDim = max(guDim, max(r.moe.inter, r.moe.sharedInter))
-	}
-	if r.g4moe != nil { // Gemma-4 dense‖MoE: the gate|up/down scratch must fit BOTH the dense branch and the experts
-		guDim = max(guDim, max(r.g4moe.denseInter, r.g4moe.moeInter))
-	}
-	// The SA-GEMV decode kernels (gemv_w4a8_sa, _sa_bias, _sa_resid and the MoE variants) derive the output row
-	// from the runtime threadgroup size and, unlike gemv_w4a8_sa_bk, carry no `row >= N` guard. An output width
-	// N%8 != 0 therefore makes the tail threadgroup rewrite an already-written row while the true tail rows stay
-	// uninitialised scratch: plausible-looking wrong logits, no error. The attention widths (qDim = nH*hd, kvDim =
-	// nKV*hd) are structurally %8 (hd is 64 or 128), so the risk is the model-level FFN widths below: decline any
-	// that is not a multiple of 8, and the CPU path serves it. The deeper fix (an N parameter and a `row >= N`
-	// guard in the SA-family and MoE kernels) would touch every dispatch binding and is not done.
-	//
-	// Vocab is not checked: it never routes through an SA-family kernel. The LM head is pinned int8 and dispatches
-	// only gemv_w8a8_coal (forwardLogits) or gemv_w8a8_amax (ForwardArgmax). gemv_w8a8_coal addresses its row
-	// directly via threadgroup_position_in_grid, correct whatever a threadgroup's uniformity. gemv_w8a8_amax uses
-	// the same hazardous tgs-derived formula as the SA family, so ForwardArgmax routes a non-%8 vocab around it
-	// (full logits plus host argmax) instead of declining the family; GPT-2 (50257) is the first family this
-	// reaches.
-	bad8 := func(name string, n int) error {
-		if n%8 != 0 {
-			return fmt.Errorf("metal: %s width %d is not a multiple of 8 — SA-GEMV tail-write hazard (audit C-10); use the CPU path", name, n)
-		}
-		return nil
-	}
-	// Include the attention widths too: the fused-QKV projection dispatches (nH*hd + 2*nKV*hd) rows through
-	// pSABias, so both the q-width (nH*hd) and the kv-width (nKV*hd), and hence their sum, must be %8. "hd is 64
-	// or 128" is not guaranteed for every admitted arch; one with hd%8 != 0 declines instead of corrupting.
-	widthChecks := []error{bad8("hidden", H), bad8("intermediate", I)}
-	// Check each layer's geom, not the maxima: a two-geom arch (Gemma 4 local/global) whose smaller q or kv width
-	// is non-%8 while the larger is %8 would pass a max-only check yet corrupt that layer's SA-GEMV. Duplicate
-	// widths across uniform layers are harmless.
-	for l := range r.layers {
-		if r.layers[l].geom == nil {
-			continue // a recurrent or mixer-less layer: no attention geometry at all, L.geom is nil by design
-		}
-		g := r.layers[l].geom
-		widthChecks = append(widthChecks,
-			bad8(fmt.Sprintf("layer %d attn q-width (nH·hd)", l), r.nH*g.hd),
-			bad8(fmt.Sprintf("layer %d attn kv-width (nKV·hd)", l), g.kvDim))
-		if fi := r.layers[l].ffnI; fi != 0 && fi != I {
-			widthChecks = append(widthChecks, bad8(fmt.Sprintf("layer %d intermediate", l), fi))
-		}
-	}
-	if r.moe != nil {
-		widthChecks = append(widthChecks, bad8("MoE expert intermediate", r.moe.inter), bad8("MoE shared-expert intermediate", r.moe.sharedInter))
-	}
-	if r.g4moe != nil {
-		widthChecks = append(widthChecks, bad8("gemma-4 dense intermediate", r.g4moe.denseInter), bad8("gemma-4 MoE intermediate", r.g4moe.moeInter))
-	}
-	for _, e := range widthChecks {
-		if e != nil {
-			return nil, e
-		}
-	}
-	// The SA-GEMV and MoE kernels stage the contraction row into threadgroup memory (see
-	// maxThreadgroupStageBytes). A dispatch whose threadgroup memory exceeds the device tile limit aborts the
-	// command buffer, and the host would then read stale logits. Decline here so the caller falls back to CPU.
-	// (Mixtral's inter=14336 is 28672 B, already 87% of a 32 KiB budget; inter >= 16384 exceeds it. The dense
-	// down-proj is not counted: R18's staged kernel checks its own I-byte fit below, else coal.)
-	moeInter, g4Inter := 0, 0
-	if r.moe != nil {
-		moeInter = r.moe.inter
-	}
-	if r.g4moe != nil {
-		g4Inter = r.g4moe.moeInter
-	}
-	dnValueDim := 0
-	if r.dnet != nil {
-		dnValueDim = r.dnet.valueDim
-	}
-	if tg, lim := maxThreadgroupStageBytes(H, maxNHhd, moeInter, g4Inter, dnValueDim), d.MaxThreadgroupMemoryLength(); tg > lim {
-		return nil, fmt.Errorf("metal: threadgroup staging needs %d B (2×K) > device tile-memory max %d B — declining to CPU (audit M-11)", tg, lim)
-	}
-	// R18: the dense decode GEMVs at R rows per simdgroup — 4 for qkv, gate/up and down, 2 for o: R18's confirmed
-	// configuration (docs/measurements/metal-decode-gemv-r18-2026-09-26.md) with qkv moved to 4 by R18b's
-	// (metal-decode-gemv-r18b-2026-09-26.md), whose kernel form changed what the best qkv width is. Each is taken only where every layer's row
-	// count fills whole threadgroups (gemvRowsFor), and down only where its K = I bytes of staged activations fit the
-	// threadgroup memory; anything else keeps the shipped kernel.
-	{
-		qkvR := 4
-		for _, L := range r.layers {
-			if L.geom != nil { // a DeltaNet layer has no attention geometry (and no qkv GEMV)
-				rows := nH*L.geom.hd + 2*L.geom.kvDim
-				if L.kvShared {
-					rows = nH * L.geom.hd // Q only (S1.4)
-				}
-				qkvR = min(qkvR, gemvRowsFor(rows, 4))
-			}
-		}
-		guR := gemvRowsFor(2*I, 4)
-		for _, L := range r.layers { // every dense width must tile at R (halving R keeps the widths already tiled)
-			if L.ffnI != 0 {
-				guR = gemvRowsFor(2*L.ffnI, guR)
-			}
-		}
-		r.gemvRows.qkv, r.gemvRows.o, r.gemvRows.gu = qkvR, gemvRowsFor(H, 2), guR
-		// down stages K = the layer's FFN width of int8 activations: the widest must fit, and every width be %4.
-		downOK := maxFFNI <= d.MaxThreadgroupMemoryLength()
-		for _, L := range r.layers {
-			if fi := max(L.ffnI, I); fi%4 != 0 {
-				downOK = false
-			}
-		}
-		if downOK {
-			r.gemvRows.down = gemvRowsFor(H, 4)
-		}
-		rowsPipe := func(base string, R int) Pipeline {
-			if R == 0 {
-				return Pipeline{}
-			}
-			return pipe(fmt.Sprintf("%s%d", base, R))
-		}
-		r.pSABiasRows = rowsPipe("gemv_w4a8_sa_bias_rows", r.gemvRows.qkv)
-		r.pSAResidRows = rowsPipe("gemv_w4a8_sa_resid_rows", r.gemvRows.o)
-		r.pSARows = rowsPipe("gemv_w4a8_sa_rows", r.gemvRows.gu)
-		r.pSABiasRowsAdj = rowsPipe("mc3_gemv_w4a8_sa_bias_rows_adj", r.gemvRows.qkv)
-		r.pSARowsAdj = rowsPipe("mc3_gemv_w4a8_sa_rows_adj", r.gemvRows.gu)
-		r.pGemvResidStaged = rowsPipe("gemv_w4a8_resid_staged", r.gemvRows.down)
-		for _, R := range []int{2, 4} {
-			r.gemvExtCoal[R] = pipe(fmt.Sprintf("gemv_w4a8_coal_staged%d", R))
-			r.gemvExtSA[R] = pipe(fmt.Sprintf("gemv_w4a8_sa_rows%d", R))
-			r.gemvExtResid[R] = pipe(fmt.Sprintf("gemv_w4a8_resid_staged%d", R))
-		}
-		r.gemvExtTGMax = d.MaxThreadgroupMemoryLength()
-	}
-	if r.w8Attn {
-		// int4mix (slice 4): the attention projections' handles swap to their int8 twins (same arguments, same launch
-		// shape); the FFN keeps its int4 kernels and R18 rows forms. w8AttnEligible admits only the families whose
-		// qkv and o-proj run exactly these two handles.
-		r.gemvRows.qkv, r.gemvRows.o = 0, 0
-		r.pSABias, r.pSAResid = pipe("gemv_w8a8_sa_bias"), pipe("gemv_w8a8_sa_resid")
-		for B := 2; B <= batchMaxSeqs; B++ {
-			r.pW8Rows[B] = pipe(fmt.Sprintf("mc3_gemv_w8a8_rows%d", B))
-		}
-	}
-	if r.w8 {
-		// Each int8 twin takes its int4 kernel's arguments in the same order at the same launch shape, so swapping
-		// the handles is the whole dispatch change. The R18 rows kernels keep their widths through their int8 twins
-		// (KS-C3) where every K is a multiple of 16 (w8RowsOK); the batched step's int4 adjacency kernels never run here.
-		rows := r.gemvRows
-		r.gemvRows = struct{ qkv, o, gu, down int }{}
-		r.pSABiasRowsAdj, r.pSARowsAdj = Pipeline{}, Pipeline{}
-		if !w8RowsOffForTest && r.w8RowsOK() {
-			r.gemvRows = rows
-			rowsPipe := func(base string, R int) Pipeline {
-				if R == 0 {
-					return Pipeline{}
-				}
-				return pipe(fmt.Sprintf("%s%d", base, R))
-			}
-			r.pSABiasRows = rowsPipe("gemv_w8a8_sa_bias_rows", rows.qkv)
-			r.pSAResidRows = rowsPipe("gemv_w8a8_sa_resid_rows", rows.o)
-			r.pSARows = rowsPipe("gemv_w8a8_sa_rows", rows.gu)
-			r.pGemvResidStaged = rowsPipe("gemv_w8a8_body_resid_staged", rows.down)
-		}
-		r.pGemv, r.pGemvResid, r.pCoalBiasResid = pipe("gemv_w8a8_body"), pipe("gemv_w8a8_body_resid"), pipe("gemv_w8a8_body_resid_bias")
-		r.pSA, r.pSABias, r.pSAResid = pipe("gemv_w8a8_sa"), pipe("gemv_w8a8_sa_bias"), pipe("gemv_w8a8_sa_resid")
-		r.pSABiasResid = pipe("gemv_w8a8_sa_bias_resid")
-		for B := 2; B <= batchMaxSeqs; B++ { // the batched step's projections, B rows per weight read (batch_rows.go)
-			r.pW8Rows[B] = pipe(fmt.Sprintf("mc3_gemv_w8a8_rows%d", B))
-		}
-	}
-	if maxNHhd == 0 { // no attention layer (an all-MLA model): the attention scratch below is never dispatched, but sized
-		maxNHhd, maxKvDim, maxHd = 4, 4, 4
-	}
-	// attnFAPartial is independent of context depth (nSplit is capped, not depth-proportional; see
-	// canUseAttnFA/attnFASplitFor), so it is sized once here, not per token. It is zero-size on a model this
-	// kernel can never engage for (no layer attnFAHeadDimOK admits): canUseAttnFA's hd guard then always declines,
-	// so the zero buffer is never dispatched into.
-	r.attnFAMaxSplit = attnFAPartialSplits
-	// For the group sizes it was graded at (G = 6 and 7), attention_fa's first pass is the block-of-32 kernel
-	// attention_fa_blk at the fixed split count attnFABlkSplit (same grid shape, partial layout and combine). G =
-	// 2 to 8 take it too while attnFABlkAnyG; every other group size keeps attention_fa and its core-count rule.
-	if r.attnFANKV > 0 {
-		switch g := r.nH / r.attnFANKV; {
-		case r.layers[r.attnFALayer].geom.hd == 64: // B-P01: attnFAHeadDimOK admitted hd = 64 only where blk64 exists
-			r.pAttnFA = pipe(fmt.Sprintf("attention_fa_blk64_g%d", g))
-			r.pAttnFARows = pipe(fmt.Sprintf("mc3_attention_fa_blk64_rows_g%d", g))
-			r.attnFABlkSplit = attnFABlkSplit
-		case g == 6 || g == 7, attnFABlkAnyG && g >= 2 && g <= 8:
-			r.pAttnFA = pipe(fmt.Sprintf("attention_fa_blk_g%d", g))
-			r.pAttnFARows = pipe(fmt.Sprintf("mc3_attention_fa_blk_rows_g%d", g))
-			r.attnFABlkSplit = attnFABlkSplit
-		}
-	}
-	r.attnFAPartialLen = maxAttnFAPartial
-	r.decode = decodeShape{H: H, V: V, I: I, nH: nH, nHhd: maxNHhd, kvDim: maxKvDim, guDim: guDim, faPartial: maxAttnFAPartial,
-		q4k: r.q4kLane, attnScale: m.AttnScale(), normEps: m.NormEps(), act: uint32(m.GatedActResident()), addOne: addOne, window: uint32(win),
-		gumbelNB: r.gumbelNB, nL: nL, pleP: r.pleP, dnet: r.dnet, mamba: r.mamba, mla: r.mla}
-	if r.layerNormBias {
-		r.decode.lnHasBias = 1
-	}
-	if r.qkNormWhole {
-		r.decode.qkWholeHD = nH * m.HeadDimAtResident(0) // one model-level width: the build declines a non-uniform geometry for it
-	}
-	if r.attnSink {
-		r.decode.attnSink = 1
-	}
-	r.decode.layers = make([]decodeLayer, len(r.layers))
-	seen := map[*attnGeom]bool{}
-	for l := range r.layers {
-		L := &r.layers[l]
-		if L.ffnI == 0 || L.ffnI == I || g4OneFFNWidthForTest { // the seam: G2 defect (4)
-			L.ffnI = I
-		} else {
-			r.decode.layers[l].ffnI = L.ffnI
-		}
-		if g := L.geom; g != nil {
-			r.decode.layers[l].attn, r.decode.layers[l].window = true, L.window
-			r.decode.qGate = r.decode.qGate || L.qGate
-			if !seen[g] {
-				seen[g] = true
-				r.decode.geoms = append(r.decode.geoms, g)
-			}
-		}
-	}
-	if r.moe != nil {
-		r.decode.families = append(r.decode.families, r.moe.scratch...)
-	}
-	if r.g4moe != nil {
-		r.decode.families = append(r.decode.families, r.g4moe.scratch...)
-	}
-	rows := m.MetalDecodeRowWidths()
-	if decodeRowsPlantForTest != nil {
-		decodeRowsPlantForTest(rows)
-	}
-	if err := r.decodeRowsCheck(rows); err != nil {
+	if err := b.checkWidths(); err != nil {
 		return nil, err
 	}
-	for _, sb := range r.decode.buffers(r) {
-		sb.set(sb.alloc(d))
+	b.selectGemvRows()
+	if err := b.sizeDecodeScratch(); err != nil {
+		return nil, err
 	}
-	for l := range r.layers {
-		if r.decode.layers[l].ffnI == 0 {
-			r.layers[l].uFFNI = r.uI
-		}
+	b.pinResidencySet()
+	if err := b.finish(); err != nil {
+		return nil, err
 	}
-	// Model-level rope table for the (uniform-only) prefill path; decode uses each layer's L.invf.
-	// GPT-2 (FeatLearnedPos): no RoPE at all, so this is empty — NewBufferFloats panics on empty;
-	// r.invf stays unused (prefillOK is false for a learned-pos family — see prefillFeatures).
-	if invf0 := m.RopeInvFreq(); len(invf0) > 0 {
-		r.invf = NewBufferFloatsOn(mem.LineDense, d, invf0)
-	}
-	if r.dnet != nil && r.uDnONormEps == (Buffer{}) {
-		r.uDnONormEps = r.uEps
-	}
-	r.attnTempBeta, r.attnTempOrigMaxPos = m.AttnTempParams()
-	// Scale-less v_norm plumbing for K=V layers (Gemma 4 globals): a unit-1.0 weight and the shared zero uniform (uZero, in the
-	// decode list) so qk_norm reduces to x·rms·1 on the V slot. Sized to the widest head.
-	ones := make([]float32, maxHd)
-	for i := range ones {
-		ones[i] = 1
-	}
-	r.vNormUnit = NewBufferFloatsOn(mem.LineDense, d, ones)
-	// HF and the CPU apply Gemma 4's scale-less v_norm on EVERY layer that owns its K/V, not only on K=V layers
-	// (S1.0); a K=V layer's V slot holds the raw k_proj output, any other's the v_proj output, and both take it.
-	r.g4VNorm = m.IsGemma4Resident()
-	r.finalSoftcap = m.FinalLogitSoftcapResident() // Gemma 4: 30 (host-side softcap); 0 for every other family
-	r.embedScale = float32(m.EmbedScaleResident()) // Gemma: √hidden; 0 for every non-scaled family (G-02)
-	r.logitsHost = make([]float32, V)
-	r.ensureBatchCap(16)
-
-	// Residency set (on by default when supported and paged; GOINFER_MOE_RESIDENCY=0 opts out). The paged path
-	// submits per layer, and the pread stage CPU-writes the slot buffers each token, dirtying their residency so
-	// the driver re-validates them on every phase-2 commit. Pinning the slot pool resident holds it across those
-	// writes. Slots only: pinning anything more (weights, KV, scratch) regresses phase 1 in proportion to the
-	// pin-set size, read/write-agnostic; pinning helps only the pread-invalidated buffers. Footprint: the slot
-	// pool is N x MoE-layers x per-expert-bytes, permanently requested resident, so re-measure the win if N grows
-	// or the box is under other load. Capability-gated (macOS 15+); older OSes keep the correct, slower per-submit
-	// path. It gates on any paged MoE, generic (moe.go) or Gemma 4 (g4moe): both have pread-invalidated slot
-	// buffers.
-	paged := (r.g4moe != nil && r.g4moe.paged) || (r.moe != nil && r.moe.paged)
-	if paged && modelKnob(m, "GOINFER_MOE_RESIDENCY") != "0" && ResidencySetsSupported() {
-		rs, rerr := d.NewResidencySet()
-		if rerr != nil {
-			logs.Warnf("metal: residency set unavailable (%v) — per-submit validation stands", rerr)
-		} else {
-			slots := r.slotBuffers()      // GPU-read-only (CPU-written by pread)
-			written := r.writtenBuffers() // GPU-WRITTEN per token: KV cache + intermediates/scratch
-			kv := r.kvBuffers()
-			scratch := r.scratchBuffers()
-			// pinned accumulates exactly what addAll() adds, so r.residencyBufs is the true pinned list in every
-			// slot-scoped arm, not just the default (the teardown-consistency gate reads it).
-			var pinned []Buffer
-			addAll := func(bs []Buffer) {
-				for _, b := range bs {
-					rs.Add(b)
-					pinned = append(pinned, b)
-				}
-			}
-			switch modelKnob(m, "GOINFER_MOE_RESIDENCY_SCOPE") {
-			case "slots":
-				addAll(slots)
-			case "slots+kv": // bisect: does the KV cache cause the phase-1 regression?
-				addAll(slots)
-				addAll(kv)
-			case "slots+scratch": // bisect: do the intermediates cause it?
-				addAll(slots)
-				addAll(scratch)
-			case "readonly", "slots+weights": // diagnostic: pin all buffers EXCEPT the written set
-				rs.AddAllDeviceBuffersExcept(d, written) // whole-device: not slot-scoped, pinned stays nil
-			case "all": // diagnostic: pin every device buffer (regresses phase 1 — set-size overhead)
-				rs.AddAllDeviceBuffers(d) // whole-device: not slot-scoped, pinned stays nil
-			default: // SHIP DEFAULT: slots only. The five-arm bisect showed pinning anything BEYOND the
-				// pread-invalidated slot buffers regresses phase 1 in proportion to the pinned set size
-				// (read/write-agnostic), so slots-only is the sole net win (phase 2 idle 9→0.44 ms/CB).
-				addAll(slots)
-				_ = kv
-				_ = scratch
-			}
-			r.residencyBufs = pinned
-			rs.Commit()
-			rs.RequestResidency()
-			// Attach the set per encoder, only on phase 2's command buffers (the callers of encodeG4Phase2Paged and
-			// encodeMoEExpertsPaged, via Encoder.UseResidencySet, aikit gpu/v0.33.1+), the buffer category that reads it,
-			// not at the queue (r.q.AddResidencySet): at the queue it rides on every command buffer, and phase 1 carries
-			// the pinned slots in its referenced set though it never touches them.
-			r.residency = rs
-		}
-	}
-
-	r.alias = alias
-	if line := alias.summary(); line != "" {
-		logs.InfoText(line)
-	}
-	// S16: the m-RoPE prefill's per-pair axis table, from the decoder's own layout rule; nil for a model without a
-	// three-way m-RoPE section, whose PrefillMRoPELast then declines.
-	if g := r.prefillGeom(); g != nil && r.prefillOK {
-		if ax := m.MRopeAxisResident(g.half); ax != nil {
-			u := make([]uint32, len(ax))
-			for i, v := range ax {
-				u[i] = uint32(v)
-			}
-			r.mropeAxis = NewBufferUint32sOn(mem.LineDense, d, u)
-		}
-	}
-	if err := r.buildLayerSteps(m.Program()); err != nil {
-		return nil, fmt.Errorf("metal: %w", err)
-	}
-	r.allocRecurrentCheckpoint(m) // KV8a, once the KV and scratch are up (recurrent_checkpoint.go)
-	r.buildBatch()                // MC3: the batched decode step, when this resident can run one (batch.go)
-	ok = true                     // construction complete — the resident owns everything; Close (not the defer) frees it
+	ok = true // construction complete — the resident owns everything; Close (not the defer) frees it
 	return r, nil
 }
 
@@ -2445,147 +2062,14 @@ func (rec stepState) orPair(win, state Buffer) (Buffer, Buffer) {
 	return rec.win, rec.state
 }
 
-// encodeLayerStep encodes step i of layer l, st, on residual x: from its operations through the walk (resident.encodeMixerWalk,
-// resident.encodeFFNWalk), or through its block when mixerWalkBlocksForTest is set. rec names a recurrent step's own state.
+// encodeLayerStep encodes step i of layer l, st, on residual x, from its operations through the walk (resident.encodeMixerWalk,
+// resident.encodeFFNWalk). rec names a recurrent step's own state.
 func (r *resident) encodeLayerStep(e *Encoder, st layerStep, i, l int, L *residLayer, x, uPos, uNKeys, uQTempScale, rp Buffer, rec stepState) {
-	if !mixerWalkBlocksForTest {
-		if mixerWalks(st) {
-			r.encodeMixerWalk(e, l, L, L.stepOps[i], x, uPos, uNKeys, uQTempScale, rp, rec)
-			return
-		}
-		if ffnWalks(st) {
-			r.encodeFFNWalk(e, st, l, L, L.stepOps[i], x)
-			return
-		}
+	if mixerWalks(st) {
+		r.encodeMixerWalk(e, l, L, L.stepOps[i], x, uPos, uNKeys, uQTempScale, rp, rec)
+		return
 	}
-	r.encodeStep(e, st, l, L, x, uPos, uNKeys, uQTempScale, rp, rec)
-}
-
-// encodeStep encodes one step of layer l through its block.
-func (r *resident) encodeStep(e *Encoder, st layerStep, l int, L *residLayer, x, uPos, uNKeys, uQTempScale, rp Buffer, rec stepState) {
-	switch st {
-	case stepAttention:
-		r.encodeAttentionResidualWith(e, l, x, uPos, uNKeys, uQTempScale, rp)
-	case stepDeltaNet:
-		win, state := rec.orPair(L.delta.win, L.delta.state)
-		r.encodeDeltaNetMixerOn(e, L, x, win, state)
-	case stepMamba:
-		win, ssm := rec.orPair(L.mamba.win, L.mamba.ssm)
-		r.encodeMambaMixerOn(e, L, x, win, ssm)
-	case stepMLA:
-		r.encodeMLAMixer(e, l, L, x, uPos, rp, uNKeys)
-	case stepGemma4MoE, stepMoE, stepNonGatedFFN, stepDenseFFN:
-		r.encodeFFNBlock(e, l, L, x)
-	case stepPLE:
-		r.encodePLEStep(e, l, L, x)
-	case stepLayerScale:
-		r.encodeLayerScaleStep(e, L, x)
-	}
-}
-
-// encodeFFNBlock encodes layer l's FFN sublayer, whose form its build chose (Gemma 4's parallel dense and MoE block, a MoE, a
-// non-gated or a gated dense FFN).
-func (r *resident) encodeFFNBlock(e *Encoder, l int, L *residLayer, x Buffer) {
-	// --- ffn block (dense SwiGLU/GeGLU, generic MoE, or Gemma-4 parallel dense‖MoE) ---
-	if L.g4moe != nil {
-		r.encodeGemma4MoEFFN(e, L)
-	} else if L.moe != nil {
-		r.encodeMoEFFNWithX(e, L, x)
-		if r.moeCap.idx != (Buffer{}) {
-			r.encodeMoECapture(e, l)
-		}
-	} else if r.nonGatedMLP {
-		// GPT-2: up, act, down with no gate: a single up-proj (K=hidden, covered by buildResident's threadgroup-memory
-		// check) feeding act_quant (glu_act with no multiply), then the coal-family down-proj (K=intermediate, always
-		// past the SA cap) fused with its bias and the residual add.
-		r.encodeNorm(e, x, L.postNorm, L.postNormBias, r.mq, r.mSc)
-		e.DispatchTG(r.pSABias, r.I*32, 256, r.H*2, L.upW, L.upS, r.mq, r.mSc, r.gu, L.upBias, r.uH)
-		e.Dispatch(r.pActQuant, 256, 256, r.gu, r.dq, r.dSc, r.uI, r.uAct)
-		e.Dispatch(r.pCoalBiasResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, x, L.downBias, r.uI)
-	} else {
-		// postOnly is model-level, but this FFN half is SHARED with DeltaNet layers (the mixer
-		// above only replaces the attention half) — Olmo Hybrid's DeltaNet layers reach NormPre2
-		// via NormPlacementLinear instead and carry a REAL pre-MLP norm (L.postNorm), so gate on
-		// the per-layer truth, matching cuda/resident.go segBFFN's postOnlyHere.
-		postOnlyHere := r.postOnly && L.geom != nil
-		if r.q4kLane { // f32 activations throughout: norm, fused gate|up, SwiGLU, down + residual
-			e.Dispatch(r.pRmsF32Out, tgReduceNorm, tgReduceNorm, x, L.postNorm, r.axF32, r.uH, r.uEps, r.uAddOne)
-			r.q4kGemv(e, L.guSegs, false, Buffer{}, r.axF32, r.gu, r.uH)
-			e.Dispatch(r.pSwF32, L.ffnI, 256, r.gu, r.gu.At(L.ffnI*4), r.swF32, L.uFFNI, r.uAct)
-			r.q4kGemv(e, L.dSegs, true, Buffer{}, r.swF32, x, L.uFFNI)
-			return
-		}
-		f16Lane := r.canUseF16Lane(l)
-		gq, gSc := r.mq, r.mSc
-		switch {
-		case r.parallelBlock:
-			// Cohere/Command-R: reuse encodeAttention's shared input norm (r.aq/r.aSc) — the MLP
-			// consumes the SAME normed+quantized activation the attention branch already computed,
-			// not a fresh norm of the post-attention residual (Model.ParallelBlockResident's
-			// comment). No dispatch needed here at all.
-			gq, gSc = r.aq, r.aSc
-		case postOnlyHere:
-			// Olmo 3/Olmo Hybrid: no pre-MLP norm either — quantize the raw residual directly.
-			e.Dispatch(r.pQv, 256, 256, x, r.mq, r.mSc, r.uH)
-		case f16Lane:
-			e.Dispatch(r.pRmsF16, tgReduceNorm, tgReduceNorm, x, L.postNorm, r.mxF16, r.uH, r.uEps, r.uAddOne)
-		default:
-			r.encodeNorm(e, x, L.postNorm, L.postNormBias, r.mq, r.mSc)
-		}
-		if f16Lane {
-			e.DispatchTG(r.pSAf16, (2*L.ffnI)*32, 256, r.H*2, L.guW, L.guS, r.mxF16, r.gu, r.uH) // fused gate|up
-		} else {
-			p, n := saRowsPick(r.pSA, r.pSARows, 2*L.ffnI, r.gemvRows.gu)
-			e.DispatchTG(p, n, 256, r.H*2, L.guW, L.guS, gq, gSc, r.gu, r.uH) // fused gate|up
-		}
-		if r.loraLayers != nil {
-			// G3: added into r.gu BEFORE the activation (r.pSw) below — matching applyLoRA's CPU
-			// order exactly ("delta into gate/up before the activation", decoder/mlp.go). gq/gSc
-			// is whichever input the base gate/up projection just used (r.aq/r.aSc for
-			// parallelBlock, r.mq/r.mSc otherwise) — the same input applyLoRA takes on CPU.
-			LA := &r.loraLayers[l]
-			r.applyResidentLoRA(e, LA.gate, gq, gSc, r.gu)
-			r.applyResidentLoRA(e, LA.up, gq, gSc, r.gu.At(L.ffnI*4))
-		}
-		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(L.ffnI*4), r.dq, r.dSc, L.uFFNI, r.uAct) // gate @0, up @I
-		if r.sandwich || postOnlyHere || r.parallelBlock {
-			e.Dispatch(r.pGemv, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, r.dO, L.uFFNI) // down → scratch
-			if r.loraLayers != nil {
-				// Added BEFORE the post-MLP norm (sandwich/postOnly) or the deferred residual add
-				// (parallelBlock, which has none) — same "delta before any subsequent norm" order.
-				r.applyResidentLoRA(e, r.loraLayers[l].down, r.dq, r.dSc, r.dO)
-			}
-			// parallelBlock has no post-MLP norm at all (L.postMLPNorm is never built for it — see
-			// the build loop), so it skips straight to the deferred residual add.
-			if r.sandwich || postOnlyHere {
-				e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, r.dO, L.postMLPNorm, r.uH, r.uEps, r.uAddOne)
-			}
-			e.Dispatch(r.pRes, r.H, 256, x, r.dO)
-		} else {
-			if R := r.gemvRows.down; R > 0 { // R18: staged activations, R rows per simdgroup
-				e.DispatchTG(r.pGemvResidStaged, r.H*32/R, 256, L.ffnI, L.dW, L.dS, r.dq, r.dSc, x, L.uFFNI) // down + residual
-			} else {
-				e.Dispatch(r.pGemvResid, r.H*32, 32, L.dW, L.dS, r.dq, r.dSc, x, L.uFFNI) // down + residual
-			}
-			if r.loraLayers != nil {
-				r.applyResidentLoRA(e, r.loraLayers[l].down, r.dq, r.dSc, x)
-			}
-		}
-	}
-}
-
-// encodePLEStep encodes Gemma 4's per-layer-embedding branch for layer l, when the layer has one.
-func (r *resident) encodePLEStep(e *Encoder, l int, L *residLayer, x Buffer) {
-	if L.pleGW != (Buffer{}) && !g4SkipPLEForTest {
-		r.encodePLE(e, l, x)
-	}
-}
-
-// encodeLayerScaleStep encodes Gemma 4's per-layer output scalar, when the layer's is neither 1 nor absent.
-func (r *resident) encodeLayerScaleStep(e *Encoder, L *residLayer, x Buffer) {
-	if L.uLayerScalar != (Buffer{}) && !g4DropLayerScalarForTest {
-		e.Dispatch(r.pLayerScale, r.H, 256, x, L.uLayerScalar) // Gemma 4 dense layer: h *= layer_scalar (S1.0)
-	}
+	r.encodeFFNWalk(e, st, l, L, L.stepOps[i], x)
 }
 
 // q4kGemvRows and w8F32GemvRows are the q4k lane's rows a simdgroup for its Q4_K and int8 GEMVs (gemv_q4k_f32_rows<R>,

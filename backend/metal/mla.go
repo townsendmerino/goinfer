@@ -142,16 +142,6 @@ func buildMLAScratch(d *Device, m *decoder.Model) *mlaScratch {
 // mlaKVCopyDeclineOffForTest removes CopyKV's MLA decline: the guard test's planted defect.
 var mlaKVCopyDeclineOffForTest bool
 
-// encodeMLAMixer is an MLA layer's attention block: the input norm, q (q-LoRA or direct) and the KV down-projection, the
-// latent stored at uPos, q absorbed through W_UK and its rope slice rotated, attention over the slot's latent rows (the pool from its
-// start, through the bound slot's table), the lift
-// through W_UV, the output projection, and the residual add into x.
-func (r *resident) encodeMLAMixer(e *Encoder, l int, L *residLayer, x, uPos, uRopePos, uNKeys Buffer) {
-	r.encodeNorm(e, x, L.preNorm, L.preNormBias, r.aq, r.aSc)
-	r.encodeMLACore(e, l, L, uPos, uRopePos, uNKeys)
-	e.Dispatch(r.pRes, r.H, 256, x, r.dO)
-}
-
 // encodeMLACore is the MLA mixer from its normed input in aq and aSc through the output projection, into dO.
 func (r *resident) encodeMLACore(e *Encoder, l int, L *residLayer, uPos, uRopePos, uNKeys Buffer) {
 	p, M, s := r.mla, L.mla, r.mlaS

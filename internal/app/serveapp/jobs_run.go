@@ -3,6 +3,7 @@ package serveapp
 import (
 	"context"
 	"encoding/json"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"net/http"
 )
 
@@ -23,7 +24,7 @@ func mustJSON(v any) []byte {
 // model's queue being full. Keep the queue-full case distinct: reporting it as a cancellation tells a user they cancelled
 // something they did not.
 type refusal struct {
-	state   jobState
+	state   jobs.State
 	status  int    // for a batch line's per-line error
 	errType string // OpenAI error type, for the job's closing error event
 	reason  string
@@ -32,11 +33,11 @@ type refusal struct {
 func notAdmitted(ctx context.Context, haltReason string, lm *loadedModel) refusal {
 	switch {
 	case haltReason != "":
-		return refusal{jobCancelled, statusCancelled, "cancelled", haltReason}
+		return refusal{jobs.Cancelled, statusCancelled, "cancelled", haltReason}
 	case ctx.Err() != nil:
-		return refusal{jobCancelled, statusCancelled, "cancelled", "cancelled before a turn was granted"}
+		return refusal{jobs.Cancelled, statusCancelled, "cancelled", "cancelled before a turn was granted"}
 	default:
-		return refusal{jobFailed, http.StatusTooManyRequests, "rate_limit_error", lm.queueFullMsg()}
+		return refusal{jobs.Failed, http.StatusTooManyRequests, "rate_limit_error", lm.queueFullMsg()}
 	}
 }
 
@@ -44,18 +45,18 @@ func notAdmitted(ctx context.Context, haltReason string, lm *loadedModel) refusa
 // /v1/chat/completions ends a stream with (a chunk carrying finish_reason, and a usage chunk) or, for a job that failed, an
 // OpenAI-style error event. Without them a client re-attaching through GET /v1/jobs/{id}/events gets the text and then [DONE],
 // and has to poll to learn whether the reply was complete, how many tokens it used, or that it failed at all.
-func jobTerminalEvents(j job, created int64, errType string) [][]byte {
+func jobTerminalEvents(j jobs.Job, created int64, errType string) [][]byte {
 	var out [][]byte
 	switch {
-	case j.State == jobFailed:
+	case j.State == jobs.Failed:
 		if errType == "" {
 			errType = "api_error"
 		}
 		out = append(out, mustJSON(map[string]any{"error": map[string]any{"message": j.Error, "type": errType}}))
-	case j.result != nil && j.result.FinishReason != "":
-		f := j.result.FinishReason
+	case j.Result != nil && j.Result.FinishReason != "":
+		f := j.Result.FinishReason
 		out = append(out, mustJSON(chatChunk(j.ID, created, j.Model, delta{}, &f)))
-	case j.State == jobCancelled:
+	case j.State == jobs.Cancelled:
 		f := "cancelled"
 		out = append(out, mustJSON(chatChunk(j.ID, created, j.Model, delta{}, &f)))
 	}
@@ -79,9 +80,9 @@ func jobTerminalEvents(j job, created int64, errType string) [][]byte {
 // returned (docs/tasks/task-work-queue-2026-09.md).
 func runJob(s *server, lm *loadedModel, release func(), gr genRequest, rec admissionRecord, created int64) {
 	defer release()
-	log := newJobEventLog()
-	s.jobs.attach(gr.id, log)
-	defer log.markDone()
+	log := jobs.NewEventLog()
+	s.jobs.Attach(gr.id, log)
+	defer log.MarkDone()
 	defer s.recoverJob(gr.id, log, created) // after markDone: runs first, so the failure events land before the stream closes
 
 	// bgCtx, not any http.Request's context: this job outlives the POST that created it. Stored
@@ -89,17 +90,17 @@ func runJob(s *server, lm *loadedModel, release func(), gr genRequest, rec admis
 	// just a running one — cancelling it propagates to whatever drive derives from it once
 	// admission is granted, the same way any other context cancellation in this codebase does.
 	bgCtx, bgCancel := context.WithCancel(context.Background())
-	s.jobs.setCancel(gr.id, bgCancel)
+	s.jobs.SetCancel(gr.id, bgCancel)
 	defer bgCancel() // release resources tied to bgCtx once this job is fully done, either way
 
 	rec.id = gr.id // so GET /v1/jobs/{id} can report this job's place in line while it waits
 	ok, haltReason := lm.tryEnter(bgCtx, rec, s.haltState)
 	if !ok {
 		why := notAdmitted(bgCtx, haltReason, lm)
-		s.jobs.finish(s.jobs.get(gr.id), why.state, nil, why.reason, nil)
-		if j, found := s.jobs.snapshot(gr.id); found {
+		s.jobs.Finish(s.jobs.Get(gr.id), why.state, nil, why.reason, nil)
+		if j, found := s.jobs.Snapshot(gr.id); found {
 			for _, e := range jobTerminalEvents(j, created, why.errType) {
-				log.append(e)
+				log.Append(e)
 			}
 		}
 		return
@@ -108,17 +109,17 @@ func runJob(s *server, lm *loadedModel, release func(), gr genRequest, rec admis
 
 	if gr.think != nil {
 		gr.think.onReasoning = func(t string) {
-			log.append(mustJSON(chatChunk(gr.id, created, lm.name, delta{ReasoningContent: t}, nil)))
+			log.Append(mustJSON(chatChunk(gr.id, created, lm.name, delta{ReasoningContent: t}, nil)))
 		}
 	}
 	_, _, _, _, _, _, _ = lm.drive(bgCtx, gr, s.gens, s.jobs, func(t string) {
-		log.append(mustJSON(chatChunk(gr.id, created, lm.name, delta{Content: t}, nil)))
+		log.Append(mustJSON(chatChunk(gr.id, created, lm.name, delta{Content: t}, nil)))
 	})
 	// drive's own J2/J3 integration (openai.go's job block) already recorded the terminal transition and
 	// result on this job; the stream closes with the same finish/usage/error events the chat route ends on.
-	if j, found := s.jobs.snapshot(gr.id); found {
+	if j, found := s.jobs.Snapshot(gr.id); found {
 		for _, e := range jobTerminalEvents(j, created, "") {
-			log.append(e)
+			log.Append(e)
 		}
 	}
 }
