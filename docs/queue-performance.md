@@ -35,7 +35,7 @@
   with the Gemma 4 bundles and about 75 GB free; no pager code before it (`decoder/moepaging.go:newExpertPager`). Moved from
   `docs/completed/task-recompute-audit.md`, R-05.
 
-- **P42 · Parallel `topKByLogit` and min-p scan at Gemma vocab (R15's open half) — OPEN, unfunded, filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions).** `darwin`. Sized
+- **P42 · Parallel `topKByLogit` and min-p scan at Gemma vocab (R15's open half) — min-p SHIPPED, top-k held for Francis (2026-11-13): the wired min-p scan reads 2.686x at vocab 262144 (10/10 pairs), 1.884x at 151936 and 1.050x at 32064; top-k wins at k ≤ 8 and loses 0.615x at k = 40, so it needs a registered k cutoff first (`docs/measurements/p42-r15-2026-11-09/README.md`). Filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions).** `darwin`. Sized
   (about 250 µs and 167 µs a token), not measured for a parallel form; the max-scan half lost (1.39x to 3.78x slower). Ships
   at ≥ 1.2x at Gemma vocab with bit-identity, the min-p candidate order preserved; killed otherwise. The design and band are
   in `docs/completed/red-october.md` § "R15".

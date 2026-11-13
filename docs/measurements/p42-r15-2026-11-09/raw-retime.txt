@@ -1,0 +1,80 @@
+=== pair 1: iter-1-rerun1
+16:26:26 iter-1-rerun1 load1=3.16 reclaimable=5688410112 void=0
+BenchmarkMinPScan_gemmaVocab-8            	    2000	    178390 ns/op
+BenchmarkMinPScan_152kVocab-8             	    2000	     96109 ns/op
+BenchmarkMinPScan_32kVocab-8              	    2000	     20285 ns/op
+BenchmarkMinPScan_gemmaVocab_parallel-8   	    2000	     66582 ns/op
+BenchmarkMinPScan_152kVocab_parallel-8    	    2000	     51782 ns/op
+BenchmarkMinPScan_32kVocab_parallel-8     	    2000	     19166 ns/op
+=== pair 2: iter-2-rerun1
+16:26:57 iter-2-rerun1 load1=3.29 reclaimable=5636685824 void=0
+BenchmarkMinPScan_gemmaVocab-8            	    2000	    177986 ns/op
+BenchmarkMinPScan_152kVocab-8             	    2000	     95244 ns/op
+BenchmarkMinPScan_32kVocab-8              	    2000	     20223 ns/op
+BenchmarkMinPScan_gemmaVocab_parallel-8   	    2000	     66351 ns/op
+BenchmarkMinPScan_152kVocab_parallel-8    	    2000	     50521 ns/op
+BenchmarkMinPScan_32kVocab_parallel-8     	    2000	     18907 ns/op
+=== pair 3: iter-3-rerun1
+16:27:29 iter-3-rerun1 load1=3.56 reclaimable=5587091456 void=0
+BenchmarkMinPScan_gemmaVocab-8            	    2000	    179122 ns/op
+BenchmarkMinPScan_152kVocab-8             	    2000	     95469 ns/op
+BenchmarkMinPScan_32kVocab-8              	    2000	     20044 ns/op
+BenchmarkMinPScan_gemmaVocab_parallel-8   	    2000	     66588 ns/op
+BenchmarkMinPScan_152kVocab_parallel-8    	    2000	     50921 ns/op
+BenchmarkMinPScan_32kVocab_parallel-8     	    2000	     19359 ns/op
+=== pair 4: iter-4-rerun4
+12:51:18 iter-4-rerun4 load1=3.68 reclaimable=6962561024 void=0 waited=20s
+BenchmarkMinPScan_gemmaVocab-8            	    2000	    181030 ns/op
+BenchmarkMinPScan_152kVocab-8             	    2000	     98107 ns/op
+BenchmarkMinPScan_32kVocab-8              	    2000	     20767 ns/op
+BenchmarkMinPScan_gemmaVocab_parallel-8   	    2000	     66628 ns/op
+BenchmarkMinPScan_152kVocab_parallel-8    	    2000	     51751 ns/op
+BenchmarkMinPScan_32kVocab_parallel-8     	    2000	     19772 ns/op
+=== pair 5: iter-5-rerun1
+16:29:34 iter-5-rerun1 load1=3.98 reclaimable=5852643328 void=0
+BenchmarkMinPScan_gemmaVocab-8            	    2000	    167313 ns/op
+BenchmarkMinPScan_152kVocab-8             	    2000	     96306 ns/op
+BenchmarkMinPScan_32kVocab-8              	    2000	     20937 ns/op
+BenchmarkMinPScan_gemmaVocab_parallel-8   	    2000	     71040 ns/op
+BenchmarkMinPScan_152kVocab_parallel-8    	    2000	     53955 ns/op
+BenchmarkMinPScan_32kVocab_parallel-8     	    2000	     24303 ns/op
+=== pair 6: iter-6-rerun4
+12:51:19 iter-6-rerun4 load1=3.62 reclaimable=6966312960 void=0 waited=0s
+BenchmarkMinPScan_gemmaVocab-8            	    2000	    182658 ns/op
+BenchmarkMinPScan_152kVocab-8             	    2000	     98157 ns/op
+BenchmarkMinPScan_32kVocab-8              	    2000	     20745 ns/op
+BenchmarkMinPScan_gemmaVocab_parallel-8   	    2000	     67409 ns/op
+BenchmarkMinPScan_152kVocab_parallel-8    	    2000	     51675 ns/op
+BenchmarkMinPScan_32kVocab_parallel-8     	    2000	     19751 ns/op
+=== pair 7: iter-7
+16:24:50 iter-7 load1=3.82 reclaimable=5651660800 void=0
+BenchmarkMinPScan_gemmaVocab-8            	    2000	    177322 ns/op
+BenchmarkMinPScan_152kVocab-8             	    2000	     96017 ns/op
+BenchmarkMinPScan_32kVocab-8              	    2000	     20407 ns/op
+BenchmarkMinPScan_gemmaVocab_parallel-8   	    2000	     65683 ns/op
+BenchmarkMinPScan_152kVocab_parallel-8    	    2000	     50996 ns/op
+BenchmarkMinPScan_32kVocab_parallel-8     	    2000	     19132 ns/op
+=== pair 8: iter-8
+16:25:06 iter-8 load1=3.64 reclaimable=5513838592 void=0
+BenchmarkMinPScan_gemmaVocab-8            	    2000	    178451 ns/op
+BenchmarkMinPScan_152kVocab-8             	    2000	     97018 ns/op
+BenchmarkMinPScan_32kVocab-8              	    2000	     20217 ns/op
+BenchmarkMinPScan_gemmaVocab_parallel-8   	    2000	     66367 ns/op
+BenchmarkMinPScan_152kVocab_parallel-8    	    2000	     50896 ns/op
+BenchmarkMinPScan_32kVocab_parallel-8     	    2000	     18683 ns/op
+=== pair 9: iter-9
+16:25:23 iter-9 load1=3.42 reclaimable=5633622016 void=0
+BenchmarkMinPScan_gemmaVocab-8            	    2000	    178731 ns/op
+BenchmarkMinPScan_152kVocab-8             	    2000	     96265 ns/op
+BenchmarkMinPScan_32kVocab-8              	    2000	     20380 ns/op
+BenchmarkMinPScan_gemmaVocab_parallel-8   	    2000	     66759 ns/op
+BenchmarkMinPScan_152kVocab_parallel-8    	    2000	     51395 ns/op
+BenchmarkMinPScan_32kVocab_parallel-8     	    2000	     19884 ns/op
+=== pair 10: iter-10
+16:25:39 iter-10 load1=3.36 reclaimable=5646991360 void=0
+BenchmarkMinPScan_gemmaVocab-8            	    2000	    177696 ns/op
+BenchmarkMinPScan_152kVocab-8             	    2000	     95977 ns/op
+BenchmarkMinPScan_32kVocab-8              	    2000	     20209 ns/op
+BenchmarkMinPScan_gemmaVocab_parallel-8   	    2000	     66990 ns/op
+BenchmarkMinPScan_152kVocab_parallel-8    	    2000	     50493 ns/op
+BenchmarkMinPScan_32kVocab_parallel-8     	    2000	     19288 ns/op
