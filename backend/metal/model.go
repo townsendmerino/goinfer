@@ -1524,7 +1524,7 @@ func (r *resident) finalizeLogits() {
 	}
 	// Cohere/Command-R's logits_scaling (FeatLogitScale): a plain host-side multiply, the same
 	// site and shape as the softcap just above. 0 or 1 for every non-FeatLogitScale family
-	// (Model.LogitScaleResident's own no-op value) — a single serial pass, since a multiply is
+	// (BackendModelView.LogitScale's own no-op value) — a single serial pass, since a multiply is
 	// memory- not compute-bound at any vocab size this repo has seen (unlike softcap's tanh).
 	if r.logitScale != 0 && r.logitScale != 1 {
 		for i, v := range r.logitsHost {
