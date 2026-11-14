@@ -61,7 +61,7 @@ func (b *webgpuBackend) newBuild(m *decoder.Model, avail0 int64) *webgpuBuild {
 	c := b.ctx
 	w := m.Weights()
 	hidden, _, nH, nKV, hd, inter, vocab := m.Dims() // arch-backed (Cfg may be zero for GGUF/.giw)
-	half := m.RotaryDimResident() / 2
+	half := m.BackendView().RotaryDim() / 2
 	eps := m.NormEps()
 	kvDelivered := m.KVDeliveredFor("webgpu") // the resolver's answer, not the raw request (decoder.ResolveKV)
 	kvF16, kvI8 := kvDelivered == "f16", kvDelivered == "i8"
@@ -71,7 +71,7 @@ func (b *webgpuBackend) newBuild(m *decoder.Model, avail0 int64) *webgpuBuild {
 	ctxCap = slotsBeforeContext(m, ctxCap, kvF16, kvI8, avail0)
 	kvDim := nKV * hd
 
-	rd := &residentDecoder{c: c, nKV: nKV, hd: hd, ctxCap: ctxCap, finalSoftcap: m.FinalLogitSoftcapResident(), hidden: hidden, inter: inter, nH: nH, vocab: vocab}
+	rd := &residentDecoder{c: c, nKV: nKV, hd: hd, ctxCap: ctxCap, finalSoftcap: m.BackendView().FinalLogitSoftcap(), hidden: hidden, inter: inter, nH: nH, vocab: vocab}
 	return &webgpuBuild{
 		m: m, c: c, rd: rd, w: w,
 		hidden: hidden, nH: nH, nKV: nKV, hd: hd, inter: inter, half: half, eps: eps,
@@ -284,7 +284,7 @@ func (bs *webgpuBuild) buildStacked(nE int, get func(e int) *linalg.WeightMat, m
 // keyed on table equality); a family with local/global RoPE has two. Layer 0 resolves a NoPE or NoPositionEncoding layer (SmolLM3,
 // Olmo Hybrid) to the rotaryDim/2 zero table rather than an empty slice.
 func (bs *webgpuBuild) ropeInvBuf(layer int) (*wgpu.Buffer, error) {
-	invf := bs.m.RopeInvFreqLayerResident(layer)
+	invf := bs.m.BackendView().Layer(layer).RopeInvFreq()
 	if len(invf) == 0 {
 		return nil, nil
 	}
@@ -310,14 +310,14 @@ func (bs *webgpuBuild) ropeInvBuf(layer int) (*wgpu.Buffer, error) {
 func (bs *webgpuBuild) uploadModelLevel() error {
 	m, w, rd := bs.m, bs.w, bs.rd
 	hidden, hd := bs.hidden, bs.hd
-	invFreq := m.RopeInvFreqLayerResident(0)
+	invFreq := m.BackendView().Layer(0).RopeInvFreq()
 	finalNorm, err := bs.up32(w.FinalNorm)
 	if err != nil {
 		return err
 	}
 	// Granite-4.0-H, the Mamba/attention hybrid: rmul folds ResidMul into every residual-add weight; lmMult folds
 	// 1/LogitScale into the head. mambaP carries the model-level SSM geometry (per-layer mixer kind from m.GraniteMambaLayer).
-	gNH, gHd, gDS, gNG, gK, _, gResidMul, gLogitScale, _, granOK := m.GraniteResidentParams()
+	gNH, gHd, gDS, gNG, gK, _, gResidMul, gLogitScale, _, granOK := graniteParams(m.BackendView().Spec())
 	rmul := float32(1)
 	lmMult := float32(1)
 	if granOK {
@@ -334,7 +334,7 @@ func (bs *webgpuBuild) uploadModelLevel() error {
 	}
 	// Nemotron-H (dense squared-ReLU hybrid): the same Mamba-2 geometry but the gated RMSNorm
 	// is PER GROUP (normGroups = NGroups), and there are NO multipliers (rmul/lmMult stay 1).
-	nNH, nHd, nDS, nNG, nK, nNormG, _, nemoOK := m.NemotronResidentParams()
+	nNH, nHd, nDS, nNG, nK, nNormG, _, nemoOK := nemotronParams(m.BackendView().Spec())
 	var nemoZeroInvFreq *wgpu.Buffer // NoPE: a zeroed invFreq makes the rope kernel an identity
 	if nemoOK {
 		nIn := nNH * nHd
@@ -359,24 +359,24 @@ func (bs *webgpuBuild) uploadModelLevel() error {
 	}
 	// ropeHalf = len(invFreq) = rotaryDim/2 drives the rope dispatch (partial RoPE rotates only the first rotaryDim dims of
 	// each head).
-	rd.rm.FinalNorm, rd.rm.LmHead, rd.rm.RopeHalf, rd.rm.SlidingWindow = finalNorm, lmHead, len(invFreq), m.SlidingWindowResident()
+	rd.rm.FinalNorm, rd.rm.LmHead, rd.rm.RopeHalf, rd.rm.SlidingWindow = finalNorm, lmHead, len(invFreq), m.BackendView().SlidingWindow()
 
 	// MoE: models route to stacked experts on-device. moeOK gates the per-layer FFN build below; the params are model-level.
-	nExp, topK, moeInter, shInter, sig, normTopK, shUngated, rScale, nGroup, topkGroup, moeOK := m.MoEResidentParams()
+	nExp, topK, moeInter, shInter, sig, normTopK, shUngated, rScale, nGroup, topkGroup, moeOK := moeParams(m.BackendView().Spec())
 	if moeOK {
 		rd.rm.Moe = &kernels.MoeRunParams{
 			NE: nExp, K: topK, Inter: moeInter, Sigmoid: sig, Norm: normTopK, Scale: float32(rScale),
 			SharedInter: shInter, SharedUngated: shUngated, NGroup: nGroup, TopkGroup: topkGroup,
 		}
 		// gpt-oss's clamped-SwiGLU constants, uniform across every gpt-oss layer.
-		if alpha, limit, isGptOss := m.GptOssActResident(); isGptOss {
+		if alpha, limit, isGptOss := m.BackendView().GptOssAct(); isGptOss {
 			rd.rm.Moe.Gptoss = true
 			rd.rm.Moe.GptossAlpha, rd.rm.Moe.GptossLimit = alpha, limit
 		}
 	}
 	// MLA: latent attention replaces the q/k/v/o block. mlaOK gates the per-layer MLA build below; the geometry is
 	// model-level. attnScale overrides the GQA 1/√HeadDim with the resolved qk_head_dim score scale.
-	qLoRA, kvLoRA, qkNope, qkRope, vHead, interleave, mlaAttnScale, mlaRopeScale, mlaOK := m.MLAResidentParams()
+	qLoRA, kvLoRA, qkNope, qkRope, vHead, interleave, mlaAttnScale, mlaRopeScale, mlaOK := mlaParams(m.BackendView().Spec())
 	if mlaOK {
 		rd.rm.Mla = &kernels.MlaRunParams{
 			QLoRARank: qLoRA, KvLoRARank: kvLoRA, QkNope: qkNope, QkRope: qkRope,
@@ -386,7 +386,7 @@ func (bs *webgpuBuild) uploadModelLevel() error {
 	// Gated-DeltaNet hybrid. Two things make this family its own branch rather than a flag on the generic one: most layers are
 	// the recurrent delta rule instead of attention, and its FULL-attention layers carry a per-head output gate fused into a
 	// double-width q_proj (when dnAttnGate is true; Olmo Hybrid's full-attention layer uses the plain scheme).
-	dnConvK, dnHK, dnHV, dnNK, dnNV, dnAttnGate, dnetOK := m.Qwen35ResidentParams()
+	dnConvK, dnHK, dnHV, dnNK, dnNV, dnAttnGate, dnetOK := qwen35Params(m.BackendView().Spec())
 	var dnZeroConvB *wgpu.Buffer // DeltaNet's causal conv is bias-free; mambaConv binds a bias
 	if dnetOK {
 		dnBetaScale, dnONormEps, dnErr := deltaNetOpParams(m)
@@ -406,15 +406,15 @@ func (bs *webgpuBuild) uploadModelLevel() error {
 	}
 	// Gemma's NormSandwich4 (FeatSandwichNorm) and Olmo 3 / Olmo Hybrid's NormPostOnly (FeatPostOnlyNorm): norms on each
 	// sublayer OUTPUT, applied before the residual add.
-	sandwichOK := m.SandwichNormResident()
-	postOnlyOK := m.PostOnlyNormResident()
-	qkNormWhole := m.QKNormWholeResident() && !qkNormWholeOffForTest
+	sandwichOK := m.BackendView().SandwichNorm()
+	postOnlyOK := m.BackendView().PostOnlyNorm()
+	qkNormWhole := m.BackendView().QKNormWhole() && !qkNormWholeOffForTest
 	rd.rm.QKNormWhole, rd.rm.PostOnlyNorm = qkNormWhole, postOnlyOK
-	g4MoE := m.HasGemma4MoEResident() // some layers' feed-forward is Gemma 4's parallel dense and MoE block, which carries its own norms
+	g4MoE := m.BackendView().HasGemma4MoE() // some layers' feed-forward is Gemma 4's parallel dense and MoE block, which carries its own norms
 	if sandwichOK {
 		for i := range w.Layers {
 			lw := &w.Layers[i]
-			_, moeLayer := m.Gemma4MoEResidentLayer(i)
+			_, moeLayer := m.BackendView().Layer(i).Gemma4MoEBundle()
 			if len(lw.PostAttnNorm) != hidden || (!moeLayer && len(lw.PostMLPNorm) != hidden) {
 				return fmt.Errorf("gpu: layer %d: arch declares sandwich norms but PostAttnNorm/PostMLPNorm are not len==hidden(%d) (got %d/%d)",
 					i, hidden, len(lw.PostAttnNorm), len(lw.PostMLPNorm))
@@ -442,9 +442,9 @@ func (bs *webgpuBuild) uploadModelLevel() error {
 // prefill over rd.rm, and creates the first runner. The caller releases the partly built decoder on its error.
 func (bs *webgpuBuild) bindRunner() error {
 	m, rd := bs.m, bs.rd
-	rd.rm.KvF16 = bs.kvF16                      // the runner picks the f16 attn/store kernels off this
-	rd.rm.KvI8 = bs.kvI8                        // …or the int8 kernels + scale binds
-	rd.rm.GatedGELU = m.GatedActResident() == 0 // FeatGatedGELU — decoder's ActKind 0=GELU-tanh (Gemma)
+	rd.rm.KvF16 = bs.kvF16                            // the runner picks the f16 attn/store kernels off this
+	rd.rm.KvI8 = bs.kvI8                              // …or the int8 kernels + scale binds
+	rd.rm.GatedGELU = m.BackendView().GatedAct() == 0 // FeatGatedGELU — decoder's ActKind 0=GELU-tanh (Gemma)
 	scale, addOne := m.AttnScale(), m.RMSAddOne()
 	if bs.mlaOK { // MLA scores over qk_head_dim, not HeadDim — use the resolved score scale
 		scale = float32(bs.mlaAttnScale)

@@ -137,8 +137,8 @@ func staticResidentDecline(m *decoder.Model) error {
 	// The Granite-4.0-H and Nemotron-H SSM hybrids are buildable independent of DecodeRunnerEligible (Granite's admission
 	// there is knob-gated), so they can be parity-gated first. Production routing still goes through withResidency()'s
 	// admission.
-	_, _, _, _, _, _, _, _, _, granOK := m.GraniteResidentParams()
-	_, _, _, _, _, _, _, nemoOK := m.NemotronResidentParams()
+	_, _, _, _, _, _, _, _, _, granOK := graniteParams(m.BackendView().Spec())
+	_, _, _, _, _, _, _, nemoOK := nemotronParams(m.BackendView().Spec())
 	if !m.DecodeRunnerEligible() && !granOK && !nemoOK {
 		return decoder.DeclineResident("arch is not eligible for the webgpu resident decode runner")
 	}
@@ -160,13 +160,13 @@ func staticResidentDecline(m *decoder.Model) error {
 	// decoder's declaration (decoder.ResidentBackendMoECap), never restated here: a private copy once disagreed with the map and
 	// both published matrices (docs/code-notes/gpu.md#webgpuBackend.BuildResident.routercap).
 	if capE, capG, capOK := decoder.ResidentBackendMoECap("webgpu"); capOK {
-		if nE, _, _, _, _, _, _, _, nGroup, _, moeOK := m.MoEResidentParams(); moeOK &&
+		if nE, _, _, _, _, _, _, _, nGroup, _, moeOK := moeParams(m.BackendView().Spec()); moeOK &&
 			((capE > 0 && nE > capE) || (capG > 0 && nGroup > capG)) {
 			return decoder.DeclineResident("MoE nE=%d/nGroup=%d exceeds webgpu's router-kernel cap (%d experts / %d groups)",
 				nE, nGroup, capE, capG)
 		}
 	}
-	if m.HasGemma4MoEResident() && !m.Gemma4MoEOK("webgpu") {
+	if m.BackendView().HasGemma4MoE() && !m.Gemma4MoEOK("webgpu") {
 		return decoder.DeclineResident("Gemma 4's parallel dense+MoE FFN is not implemented on webgpu")
 	}
 	// Only the generic GQA branch honours the KV precision flag: the Nemotron, gated Qwen3.5 and MLA branches always allocate f32
@@ -177,8 +177,8 @@ func staticResidentDecline(m *decoder.Model) error {
 	// resident path back.
 	kvDelivered := m.KVDeliveredFor("webgpu")
 	if kvI8, kvF16 := kvDelivered == "i8", kvDelivered == "f16"; kvI8 || kvF16 {
-		_, _, _, _, _, _, _, _, mlaOK := m.MLAResidentParams()
-		_, _, _, _, _, attnGate, dnetOK := m.Qwen35ResidentParams()
+		_, _, _, _, _, _, _, _, mlaOK := mlaParams(m.BackendView().Spec())
+		_, _, _, _, _, attnGate, dnetOK := qwen35Params(m.BackendView().Spec())
 		if family := map[bool]string{true: "nemotron"}[nemoOK] + map[bool]string{true: "qwen3_5"}[dnetOK && attnGate] +
 			map[bool]string{true: "mla"}[mlaOK]; family != "" && !quantKVDeclineOffForTest {
 			flag := map[bool]string{true: "--kv i8"}[kvI8] + map[bool]string{true: "--kv f16"}[kvF16]
