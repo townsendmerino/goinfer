@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1541,109 +1540,10 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			r.cache.costPhase = cost.Decode
 		}
 	}
-	// Greedy fast path: when the resident can pick the argmax on-device AND the sampler's choice is exactly argmax(raw logits)
-	// with nothing else reading them, skip the full-logits readback. Emitted tokens are identical; GOINFER_NO_GREEDY_FASTPATH
-	// forces the logits path (escape hatch / A-B check). fastNext >= 0 means "the resident already picked the next token"; the
-	// first token still comes from the prefill logits through the sampler.
-	//
-	// `top_k=1` takes this path too (GreedyEquivalent), at any temperature: monotone scaling preserves ordering and a one-token
-	// distribution is deterministic. Both predicates are consulted and neither is widened.
-	//
-	// The speculative paths are deliberately not affected: they gate on `sp.Temperature <= 0` directly (speculative.go,
-	// spec_grammar.go, spec_ngram.go), so `top_k=1` with a temperature stays speculative-ineligible. Making it eligible would be
-	// correct (argmax verification reproduces greedy) but is a second behaviour change and must not ride along here.
-	//
-	// RNG: this path skips the per-token rng.Float64() draw SampleWithInfo would make. That is unobservable: under top_k=1 every
-	// step is deterministic, so no later draw's value can depend on the skipped ones and no emitted token can differ. The RNG
-	// stream position does advance differently, so nothing may depend on it downstream.
-	r.fastNext = -1
-	// A GATED processor (SamplingParams.LogitProcessorGate) leaves the fast paths armed: each step
-	// then asks the gate, and only a step it opens takes the full-logits path below (needFull).
-	r.gated = r.sp.LogitProcessor != nil && r.sp.LogitProcessorGate != nil
-	r.procFree = r.sp.LogitProcessor == nil || r.gated
-	r.hasGreedy = m.canDecode(outArgmax)
-	r.fastGreedy = r.useGPU && r.hasGreedy && r.procFree &&
-		(r.sampler.ArgmaxEquivalent() || r.sampler.GreedyEquivalent()) &&
-		m.knobs.get(knobNoGreedyFastpath) == ""
-	// The greedy chain (ResidentGreedyChain): the same tokens with the next token's forward queued on the device before the host
-	// has seen this one. With no processor, or a gated one while its gate is closed (outside MC3: a step the gate opens stops the
-	// chain and takes the full-logits path below, which the chain would otherwise skip), no adapter, and where the embedding
-	// lookup is a plain table row, which the resident's gather reproduces. Under MC3 it runs only on the tokens this generation
-	// decodes alone, with the resident held across them (holdSolo); every other token takes the batcher as before, so fastGreedy
-	// stays the path for those.
-	r.chainRF = m.resDecode()
-	r.useChain = r.useGPU && r.resCost == nil && (r.sp.LogitProcessor == nil || (r.gated && r.mc3 == nil)) && r.lora == nil &&
-		(r.sampler.ArgmaxEquivalent() || r.sampler.GreedyEquivalent()) && m.knobs.get(knobNoGreedyFastpath) == "" &&
-		m.embedIsTableRow() && r.chainRF.GreedyChainAvailable()
-	if r.useChain && r.mc3 == nil {
-		r.fastGreedy = false
-	}
-	r.chainTok = r.mc3 == nil // this token may run the chain: always unbatched, under MC3 only on a held token
-	r.chainOpen, r.chainPos = false, 0
-	r.stopChain = func() {
-		if r.chainOpen {
-			r.chainRF.GreedyChainStop()
-			r.chainOpen = false
-		}
-	}
+	r.chooseDecodePath()
 	defer r.stopChain()
 
-	// Optimistic forward (spec_optfwd.go): sampled decode's (Temperature>0) sibling of the greedy fast path, overlapping the CPU
-	// sampler with a speculative Forward instead of skipping it. Excludes the rare overlap with fastGreedy (Temperature>0 AND
-	// top_k==1) so the two never drive the same step. GOINFER_NO_OPTFWD forces the plain sequential path (escape hatch / A-B
-	// check). Off under MC3: optFwdStep drives the resident outside the batcher's exclusive section.
-	r.optFwd = r.useGPU && r.mc3 == nil && r.resCost == nil && !r.fastGreedy && !r.useChain && m.optFwdEligible(r.sp) && m.knobs.get(knobNoOptFwd) == ""
-
-	// Device top-K fast path (sampler_topk.go): a filtered sampler (top_k / top_p / min_p at temperature > 0) needs only the K
-	// best logits, so the resident reduces the row on-device and the host filters K candidates instead of V. Excluded: anything
-	// that needs or rewrites the full row (bias, penalties, logprobs, a LogitProcessor), the greedy and optimistic-forward paths,
-	// and backends whose logits are transformed on the host after readback. GOINFER_NO_TOPK_FASTPATH forces the full-row path
-	// (escape hatch / A-B check), same convention as GOINFER_NO_GREEDY_FASTPATH.
-	r.topKOn = false
-	r.topKWidth, r.topKVocab = 0, len(r.logits)
-	// Under MC3 a TopKRow's Full() reads the resident's logits, which a later step of another generation may have overwritten, so
-	// the draw is resolved inside the resident call (topKPre / topKPreFull below) while this generation still holds the resident,
-	// not at the top of the next iteration. Do not switch it off under MC3: that sent every CUDA top-p request down the
-	// full-row path (docs/measurements/topp-regression-2026-09-30.md).
-	if r.useGPU && !r.fastGreedy && !r.useChain && !r.optFwd && r.procFree && m.knobs.get(knobNoTopKFastpath) == "" && r.sampler.TopKEligible() {
-		if m.canDecode(outTopK) {
-			if w, wok := r.sampler.TopKWidth(len(r.logits)); wok {
-				r.topKOn, r.topKWidth = true, w
-			}
-		}
-	}
-	// Device temperature-only sampling (sampler_gumbel.go): the resident draws the next token by Gumbel-max on-device and returns
-	// just the id, reusing the greedy fast path's fastNext mechanism. Same exclusions as the top-K path;
-	// GOINFER_NO_SAMPLE_FASTPATH forces the host draw (A/B check, escape hatch).
-	r.sampleOn = r.useGPU && !r.fastGreedy && !r.useChain && !r.optFwd && r.procFree && m.knobs.get(knobNoSampleFastpath) == "" &&
-		r.sampler.SampleEligible() && m.canDecode(outSample)
-	// A greedy generation's batched token asks the step for its argmax id (a Greedy draw) where the resident offers that, instead
-	// of its whole logits row; the id is the argmax the sampler would take from that row. Rows run alone keep residentCall's path.
-	r.batchGreedy = false
-	if r.mc3 != nil && !r.fastGreedy && !r.sampleOn && r.procFree && (r.sampler.ArgmaxEquivalent() || r.sampler.GreedyEquivalent()) {
-		r.batchGreedy = residentCapsOf(m.resident).BatchGreedyDraw
-	}
-	// The sampled chain (ResidentSampleChain): where the device draw serves the token, the same draw with the next token's forward
-	// queued on the device first, as the greedy chain does for the argmax. Same exclusions as the greedy chain, and not where
-	// ForwardSample itself takes the argmax (a temperature so small 1/T is infinite).
-
-	if r.sampleOn && r.resCost == nil && r.sp.LogitProcessor == nil && r.lora == nil && m.embedIsTableRow() &&
-		!math.IsInf(1/r.sp.Temperature, 0) && r.chainRF.SampleChainAvailable() {
-		r.sChainRF = r.chainRF
-	}
-	// Under MC3 the top-K draw is made inside the resident call (see topKOn above): topKPre is the drawn token when the row
-	// held the whole retained set, else topKPreFull says topKFullBuf holds this step's full row, copied before the resident
-	// was released. Both are consumed, and cleared, where topKRow is.
-
-	// mc3Logits holds an MC3 solo token's logits: a resident's Forward returns its one host buffer, reused by every call, and this
-	// generation reads the logits after leaving the resident (in its LogitProcessor and its sampler) while another generation's
-	// solo token may already be rewriting that buffer.
-
-	if r.optFwd {
-		r.optGate = &optFwdGate{}
-		r.g.OptFwd = &OptFwdStats{}
-	}
-
+	r.chooseFastPaths()
 	// Clamp the decode length to the resident KV cap up front. A Forward past the cap is refused mid-generation (the
 	// silent-corruption guard), but a resident that exposes its cap lets us stop cleanly at it. gpuPos is the next decode
 	// position; the last valid one is ctxCap-1, and the prefill loop guarantees gpuPos <= ctxCap.
@@ -1662,31 +1562,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// embScratch is reused across iterations: each token's embedding is consumed synchronously by Forward/ForwardArgmax before the
 	// next is requested, so one buffer replaces a fresh [hidden]float32 per token.
 
-	// commitResident records what the resident KV now holds for this generation (residentCommitIDs). Under MC3 it binds
-	// this generation's slot first, with the resident to itself, and stops counting it as decoding (so no run waits for
-	// its token while it commits).
-	r.decoding = false
-	r.exitDecode = func() {
-		if r.decoding {
-			r.decoding = false
-			r.mc3.exitDecode()
-		}
-	}
-	r.commitResident = func(generated []int) {
-		r.stopChain() // every exit commits; nothing queued on the device may outlive the decode loop
-		if r.mc3 == nil {
-			m.residentCommitIDs(r.prompt, generated, nil, r.lora)
-			return
-		}
-		r.mc3.releaseHold(r.stopChain) // before the exclusive section below, which waits for the resident a hold keeps
-		r.exitDecode()
-		r.mc3.exclusive(func() {
-			if m.residentBind(r.mc3Slot) == nil {
-				m.residentCommitIDs(r.prompt, generated, nil, r.lora)
-				r.mc3Committed = true
-			}
-		})
-	}
+	r.bindDecodeExits()
 	if r.mc3 != nil {
 		r.mc3.enterDecode()
 		r.decoding = true
@@ -1709,44 +1585,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		defer r.cb.exitDecode()
 	}
 
-	r.tg = decodeTarget{logits: func() []float32 { return r.logits }}
-	r.tg.pick = r.pick
-	if r.mc3 != nil {
-		// A kept hold (a chained decode alone under MC3) must not keep the resident while the consumer is not reading: a
-		// newcomer would wait on this send. Give the consumer a short grace, then let go before blocking.
-		r.tg.send = func(next int) bool {
-			if !r.mc3.isHolding() {
-				return false
-			}
-			select {
-			case r.out <- next:
-				return true
-			default:
-			}
-			r.holdGrace.Reset(mc3HoldSendGrace)
-			select {
-			case r.out <- next:
-				r.holdGrace.Stop()
-				return true
-			case <-r.holdGrace.C:
-				r.mc3.releaseHold(r.stopChain)
-			case <-r.ctx.Done():
-				r.holdGrace.Stop()
-			}
-			return false
-		}
-	}
-	if r.useGPU {
-		r.tg.finish = r.commitResident
-	}
-	r.tg.advance = r.advance
-	// A counted resident decode is one span over the loop (SB11b): its tokens are the forwards advance ran, one per emitted
-	// token.
-	r.decoded = 0
-	if r.resCost != nil && r.tg.advance != nil {
-		adv := r.tg.advance
-		r.tg.advance = func(next int, needFull bool, clk *decodeClock) error { r.decoded++; return adv(next, needFull, clk) }
-	}
+	r.buildTarget()
 	r.completed = false
 	_ = costSpan(r.resCost, cost.FromContext(r.ctx), cost.Decode, func() (int, error) {
 		r.completed = plainDecodeLoop(r.ctx, r.tg, r.out, r.g, r.sampler, r.sp, r.maxTokens, func(id int) bool { return m.isStop(id, r.sp) }, r.commit, &r.clk)
@@ -1755,22 +1594,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	if !r.completed {
 		return
 	}
-	if decodeTiming && r.clk.n > 0 {
-		ms := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 / float64(r.clk.n) }
-		logs.Infof("DECODE TIMING (%d tok, gpu=%v): forward %.1f ms | sample %.2f ms | logitProc %.2f ms | embed %.2f ms /token",
-			r.clk.n, r.useGPU, ms(r.clk.fwd), ms(r.clk.sample), ms(r.clk.proc), ms(r.clk.embed))
-		d := func(p *int64) float64 { return ms(time.Duration(atomic.SwapInt64(p, 0))) }
-		a, ml, hd := d(&dtAttn), d(&dtMLP), d(&dtHead)
-		gu, act, ad := d(&dtGU), d(&dtAct), d(&dtActDown)
-		qkv, o, aa := d(&dtQKV), d(&dtO), d(&dtAttnAll)
-		logs.Infof("DECODE SPLIT: attention %.2f ms | MLP %.2f ms | LM head %.2f ms | residual %.2f ms /token",
-			a, ml, hd, ms(r.clk.fwd)-a-ml-hd)
-		logs.Infof("DECODE SPLIT MLP: gate+up matmuls %.2f ms | activation %.2f ms | down matmul %.2f ms /token", gu, act, ad-act)
-		logs.Infof("DECODE SPLIT ATTN: q/k/v matmuls %.2f ms | rope+KV+scores/softmax/AV core %.2f ms | o matmul %.2f ms /token", qkv, aa-qkv-o, o)
-		lastDecodeSplit.fwd, lastDecodeSplit.attn, lastDecodeSplit.mlp, lastDecodeSplit.head = ms(r.clk.fwd), a, ml, hd
-		lastDecodeSplit.gu, lastDecodeSplit.act, lastDecodeSplit.down = gu, act, ad-act
-		lastDecodeSplit.qkv, lastDecodeSplit.core, lastDecodeSplit.o = qkv, aa-qkv-o, o
-	}
+	r.logDecodeTiming()
 }
 
 // kvPoolFullEnds reports whether err is the resident pool's refusal of a conversation past its guaranteed share (ErrKVPoolFull), and if so
