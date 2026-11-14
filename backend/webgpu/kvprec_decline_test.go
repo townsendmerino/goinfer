@@ -57,7 +57,7 @@ func TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches(t *testing.T) {
 
 	// The decline must consult all three family probes, or a family it misses keeps the old
 	// silent-wrong behaviour.
-	for _, probe := range []string{"MLAResidentParams", "Qwen35ResidentParams", "nemoOK"} {
+	for _, probe := range []string{"mlaParams", "qwen35Params", "nemoOK"} {
 		if !strings.Contains(src, probe) {
 			t.Errorf("staticResidentDecline does not consult %s when deciding the KV-precision "+
 				"decline; that family still allocates f32 under --kv i8/f16 (M-32)", probe)
