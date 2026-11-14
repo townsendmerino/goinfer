@@ -65,7 +65,7 @@ func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
 	}
 	maxHd := 0
 	for l := range nLayers {
-		if h := m.HeadDimAtResident(l); h > maxHd {
+		if h := m.BackendView().Layer(l).HeadDim(); h > maxHd {
 			maxHd = h
 		}
 	}

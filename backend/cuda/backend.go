@@ -334,7 +334,7 @@ func (r *cudaResident) openForPlan(m *decoder.Model) error {
 	if r.fRoute, e = r.dev.NewComputePipeline(mod, "moe_route"); e != nil {
 		return e
 	}
-	if _, _, isGptOss := m.GptOssActResident(); isGptOss {
+	if _, _, isGptOss := m.BackendView().GptOssAct(); isGptOss {
 		gmod, ge := r.dev.CompileLibrary(gptOssActPTX)
 		if ge != nil {
 			return ge
