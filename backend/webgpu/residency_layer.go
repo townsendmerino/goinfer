@@ -19,16 +19,16 @@ import (
 // geometry when it differs from the model's.
 func (bs *webgpuBuild) newRunLayer(i int) kernels.RunLayer {
 	m := bs.m
-	lhd := m.HeadDimAtResident(i)
-	lnKV := m.KVHeadsAtResident(i)
-	lrot := m.RotaryDimAtResident(i)
+	lhd := m.BackendView().Layer(i).HeadDim()
+	lnKV := m.BackendView().Layer(i).KVHeads()
+	lrot := m.BackendView().Layer(i).RotaryDim()
 	lrhalf := lrot / 2
-	kEqV := m.VFromKResident(i)
+	kEqV := m.BackendView().Layer(i).VFromK()
 	rl := kernels.RunLayer{
-		IsLocal:     m.LayerIsLocalResident(i),     // sliding-window layer
-		RopeScale:   float32(m.RopeMscaleLayer(i)), // per-layer YaRN mscale
-		LayerScalar: m.Gemma4DenseLayerScalarAtResident(i),
-		VNorm:       m.IsGemma4Resident() && !kernels.G4DropVNormForTest,
+		IsLocal:     m.BackendView().Layer(i).IsLocal(),             // sliding-window layer
+		RopeScale:   float32(m.BackendView().Layer(i).RopeMscale()), // per-layer YaRN mscale
+		LayerScalar: m.BackendView().Layer(i).Gemma4DenseScalar(),
+		VNorm:       m.BackendView().IsGemma4() && !kernels.G4DropVNormForTest,
 	}
 	if kernels.G4DropLayerScalarForTest {
 		rl.LayerScalar = 1
@@ -57,12 +57,12 @@ func (bs *webgpuBuild) nemotronLayer(i int, lw *decoder.LayerWeights, rl *kernel
 	}
 	rl.MlpNorm = rl.AttnNorm // the relu²-MLP block reuses the single pre-norm
 	mp := rd.rm.Mamba
-	switch m.NemotronBlockKind(i) {
+	switch m.BackendView().Layer(i).NemotronBlockKind() {
 	case 0: // Mamba-2 mixer
 		rl.NemoKind = kernels.NemoKMamba
 		rl.IsMamba = true
-		inP, cW, cB, aLog, dW, dtB, nW, outP := m.GraniteMambaWeights(i)
-		if inQ, outQ := m.MambaProjInt8(i); inQ != nil { // a quantized load holds them as int8: projF32's codes
+		inP, cW, cB, aLog, dW, dtB, nW, outP := m.BackendView().Layer(i).GraniteMambaWeights()
+		if inQ, outQ := m.BackendView().Layer(i).MambaProjInt8(); inQ != nil { // a quantized load holds them as int8: projF32's codes
 			if rl.MambaInProj, e = bs.projInt8(inQ, mp.ProjDim, bs.hidden); e != nil {
 				return e
 			}
@@ -172,7 +172,7 @@ func (bs *webgpuBuild) nemotronLayer(i int, lw *decoder.LayerWeights, rl *kernel
 		// "the one predicate every backend's admission funnels through", so this switch is the last place the shape is checked.
 		// Reachable through the exported ResidencyBackend.BuildResident.
 		return fmt.Errorf("gpu: nemotron block kind %d at layer %d is not "+
-			"implemented by this runner", m.NemotronBlockKind(i), i)
+			"implemented by this runner", m.BackendView().Layer(i).NemotronBlockKind(), i)
 	}
 	return nil
 }
@@ -188,7 +188,7 @@ func (bs *webgpuBuild) deltaNetMixer(i int, rl *kernels.RunLayer) error {
 	// all-zero bias per layer.
 	rl.IsDeltaNet = true
 	dp := rd.rm.Dnet
-	qkv, z, outP, inB, inA, cW, dtB, negA, nW := m.Qwen35DeltaWeights(i)
+	qkv, z, outP, inB, inA, cW, dtB, negA, nW := m.BackendView().Layer(i).Qwen35DeltaWeights()
 	if rl.DnQKV, e = bs.proj(qkv); e != nil {
 		return e
 	}
@@ -247,7 +247,7 @@ func (bs *webgpuBuild) gatedAttnMixer(i int, lw *decoder.LayerWeights, rl *kerne
 	bs.keep(kc.Release)
 	bs.keep(vc.Release)
 	rl.KCache, rl.VCache = (*kernels.DeviceBufferBuf(kc)), (*kernels.DeviceBufferBuf(vc))
-	qP, kP, vP, oP, qN, kN := m.Qwen35AttnWeights(i)
+	qP, kP, vP, oP, qN, kN := m.BackendView().Layer(i).Qwen35AttnWeights()
 	if rl.Q, e = bs.proj(qP); e != nil {
 		return e
 	}
@@ -279,7 +279,7 @@ func (bs *webgpuBuild) graniteMambaMixer(i int, rl *kernels.RunLayer) error {
 	// isMamba).
 	rl.IsMamba = true
 	mp := rd.rm.Mamba
-	inP, cW, cB, aLog, dW, dtB, nW, outP := m.GraniteMambaWeights(i)
+	inP, cW, cB, aLog, dW, dtB, nW, outP := m.BackendView().Layer(i).GraniteMambaWeights()
 	// int8 projections: f16 projections do not recover the quality lost to the SSM's f32 (vs f64) exp feeding the router
 	// (docs/ssm-int8-quality.md).
 	if rl.MambaInProj, e = bs.projF32(inP, mp.ProjDim, bs.hidden); e != nil {
@@ -328,7 +328,7 @@ func (bs *webgpuBuild) mlaMixer(i int, rl *kernels.RunLayer) error {
 	}
 	bs.keep(lc.Release)
 	rl.LatCache = (*kernels.DeviceBufferBuf(lc))
-	qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj := m.MLALayerWeights(i)
+	qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj := m.BackendView().Layer(i).MLAWeights()
 	qAQ, qBQ, qQ, kvAQ, oQ := m.MLALayerInt8(i)
 	// mlaProj uploads a projection's int8 form when the load holds one (the codes projF32 makes from the f32), else the f32.
 	mlaProj := func(q *linalg.WeightMat, f []float32, N, K int) (kernels.DecodeWeight, error) {
@@ -401,10 +401,10 @@ func (bs *webgpuBuild) attnMixer(i int, lw *decoder.LayerWeights, rl *kernels.Ru
 	}
 	// A Gemma 4 E-model's tail layers attend over an earlier layer's K/V (Model.KVSrcAtResident): such a layer owns no
 	// cache, binds its source's, and projects Q only.
-	kvSrc := m.KVSrcAtResident(i)
+	kvSrc := m.BackendView().Layer(i).KVSrc()
 	if kernels.G4KVSrcOffForTest && kvSrc != i {
 		for j := kvSrc - 1; j >= 0; j-- {
-			if m.LayerIsLocalResident(j) == m.LayerIsLocalResident(i) {
+			if m.BackendView().Layer(j).IsLocal() == m.BackendView().Layer(i).IsLocal() {
 				kvSrc = j
 				break
 			}
@@ -499,7 +499,7 @@ func (bs *webgpuBuild) g4MoEFFN(i int, g4b decoder.Gemma4MoEResidentBundle, rl *
 	// The router's norm has no weight. The runner's RMSNorm multiplies by 1+w when the arch adds one and by w otherwise, so
 	// the weight that makes it weightless is 0 or 1.
 	flat := make([]float32, bs.hidden)
-	if !m.RMSAddOne() {
+	if !m.BackendView().RMSAddOne() {
 		for j := range flat {
 			flat[j] = 1
 		}
@@ -573,10 +573,10 @@ func (bs *webgpuBuild) sparseMoEFFN(i int, lw *decoder.LayerWeights, rl *kernels
 	bs.keep(rl.ExpDown.Release)
 	// gpt-oss (FeatAttnSink): expert-major gate‖up and down bias tables.
 	if rd.rm.Moe != nil && rd.rm.Moe.Gptoss {
-		if rl.GateUpBias, e = bs.up32(m.GptOssExpertBiasResident(i)); e != nil {
+		if rl.GateUpBias, e = bs.up32(m.BackendView().Layer(i).GptOssExpertBias()); e != nil {
 			return e
 		}
-		if rl.DownBias, e = bs.up32(m.GptOssExpertDownBiasResident(i)); e != nil {
+		if rl.DownBias, e = bs.up32(m.BackendView().Layer(i).GptOssExpertDownBias()); e != nil {
 			return e
 		}
 	}
@@ -631,7 +631,7 @@ func (bs *webgpuBuild) denseFFN(lw *decoder.LayerWeights, rl *kernels.RunLayer) 
 // post-only norms and the attention sinks. isG4MoE and postOnlyHere are the layer's norm placement, decided by the caller.
 func (bs *webgpuBuild) layerTail(i int, lw *decoder.LayerWeights, rl *kernels.RunLayer, isG4MoE, postOnlyHere bool) error {
 	m := bs.m
-	lhd, lnKV := m.HeadDimAtResident(i), m.KVHeadsAtResident(i) // the layer's own head dim and KV heads, for the QK-norm width check
+	lhd, lnKV := m.BackendView().Layer(i).HeadDim(), m.BackendView().Layer(i).KVHeads() // the layer's own head dim and KV heads, for the QK-norm width check
 	var e error
 	if len(lw.QBias) > 0 { // Qwen2 q/k/v bias
 		if rl.QBias, e = bs.up32(lw.QBias); e != nil {
@@ -686,7 +686,7 @@ func (bs *webgpuBuild) layerTail(i int, lw *decoder.LayerWeights, rl *kernels.Ru
 	// cannot bind a null storage buffer; Metal does the same, CUDA uses a null-pointer sentinel. DecodeRunner's noAttnSinks is a
 	// separate runner-local fallback for hand-built test fixtures that skip BuildResident. The two buffers have different owners
 	// and lifetimes (resident, shared across runners, vs per-runner), so they are deliberately not unified.
-	if sinks := m.GptOssSinksResident(i); len(sinks) > 0 {
+	if sinks := m.BackendView().Layer(i).AttnSinks(); len(sinks) > 0 {
 		if rl.AttnSinks, e = bs.up32(sinks); e != nil {
 			return e
 		}
@@ -704,7 +704,7 @@ func (bs *webgpuBuild) layerTail(i int, lw *decoder.LayerWeights, rl *kernels.Ru
 // shares an earlier layer's K/V needs that layer built before it.
 func (bs *webgpuBuild) uploadLayers() error {
 	m, rd := bs.m, bs.rd
-	rd.rm.PleDim = m.Gemma4PLEDimResident()
+	rd.rm.PleDim = m.BackendView().Gemma4PLEDim()
 	for i := range bs.w.Layers {
 		lw := &bs.w.Layers[i]
 		rl := bs.newRunLayer(i)
@@ -716,11 +716,11 @@ func (bs *webgpuBuild) uploadLayers() error {
 			rd.rm.Layers = append(rd.rm.Layers, rl)
 			continue
 		}
-		isDelta := bs.dnetOK && m.Qwen35LinearLayer(i)
+		isDelta := bs.dnetOK && m.BackendView().Layer(i).Qwen35Linear()
 		// postOnlyOK (Olmo 3, Olmo Hybrid) is model-level, but Olmo Hybrid's DeltaNet layers reach NormPre2 through
 		// NormPlacementLinear and carry real pre-norm weights regardless; gate on the per-layer truth.
 		postOnlyHere := bs.postOnlyOK && !isDelta
-		g4b, isG4MoE := m.Gemma4MoEResidentLayer(i)
+		g4b, isG4MoE := m.BackendView().Layer(i).Gemma4MoEBundle()
 		if !postOnlyHere {
 			if rl.AttnNorm, e = bs.up32(lw.PreAttnNorm); e != nil {
 				return e
@@ -738,7 +738,7 @@ func (bs *webgpuBuild) uploadLayers() error {
 			e = bs.deltaNetMixer(i, &rl)
 		} else if bs.dnetOK && bs.dnAttnGate {
 			e = bs.gatedAttnMixer(i, lw, &rl)
-		} else if bs.granOK && m.GraniteMambaLayer(i) {
+		} else if bs.granOK && m.BackendView().Layer(i).GraniteMamba() {
 			e = bs.graniteMambaMixer(i, &rl)
 		} else if bs.mlaOK {
 			e = bs.mlaMixer(i, &rl)

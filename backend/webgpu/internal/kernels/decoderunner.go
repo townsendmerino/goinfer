@@ -278,7 +278,7 @@ type RunModel struct {
 	// ropeHalf/slidingWindow, since every gated-MLP family shares one activation. It is deliberately a bool with SiLU as the
 	// zero value, NOT decoder.ActKind's ordinal (where 0 = GELU-tanh): a runModel built by hand (every gpu/*_test.go that
 	// does not go through BuildResident) leaves it at its Go zero value, and that must stay the SiLU behavior those tests
-	// assume. BuildResident sets it to `m.GatedActResident() == 0`. Why: docs/code-notes/gpu.md#runModel.gatedGELU.
+	// assume. BuildResident sets it to `m.BackendView().GatedAct() == 0`. Why: docs/code-notes/gpu.md#runModel.gatedGELU.
 	GatedGELU bool
 	// pleDim is a Gemma 4 E-model's per-layer input width; 0 for every other model. With it the resident row is
 	// [hidden ‖ layers·pleDim] and each dense layer runs the per-layer-embedding branch.
