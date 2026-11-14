@@ -60,7 +60,7 @@ type ropeEntry struct {
 func (b *webgpuBackend) newBuild(m *decoder.Model, avail0 int64) *webgpuBuild {
 	c := b.ctx
 	w := m.Weights()
-	hidden, _, nH, nKV, hd, inter, vocab := m.Dims() // arch-backed (Cfg may be zero for GGUF/.giw)
+	hidden, _, nH, nKV, hd, inter, vocab := m.BackendView().Dims() // arch-backed (Cfg may be zero for GGUF/.giw)
 	half := m.BackendView().RotaryDim() / 2
 	eps := m.NormEps()
 	kvDelivered := m.KVDeliveredFor("webgpu") // the resolver's answer, not the raw request (decoder.ResolveKV)
@@ -288,7 +288,7 @@ func (bs *webgpuBuild) ropeInvBuf(layer int) (*wgpu.Buffer, error) {
 	if len(invf) == 0 {
 		return nil, nil
 	}
-	if nonzero := bs.m.RopeInvFreq(); noPEOffForTest && len(nonzero) > 0 && !slices.ContainsFunc(invf, func(v float32) bool { return v != 0 }) {
+	if nonzero := bs.m.BackendView().RopeInvFreq(); noPEOffForTest && len(nonzero) > 0 && !slices.ContainsFunc(invf, func(v float32) bool { return v != 0 }) {
 		invf = nonzero
 	}
 	for _, ent := range bs.ropeInvCache {
@@ -445,7 +445,7 @@ func (bs *webgpuBuild) bindRunner() error {
 	rd.rm.KvF16 = bs.kvF16                            // the runner picks the f16 attn/store kernels off this
 	rd.rm.KvI8 = bs.kvI8                              // …or the int8 kernels + scale binds
 	rd.rm.GatedGELU = m.BackendView().GatedAct() == 0 // FeatGatedGELU — decoder's ActKind 0=GELU-tanh (Gemma)
-	scale, addOne := m.AttnScale(), m.RMSAddOne()
+	scale, addOne := m.AttnScale(), m.BackendView().RMSAddOne()
 	if bs.mlaOK { // MLA scores over qk_head_dim, not HeadDim — use the resolved score scale
 		scale = float32(bs.mlaAttnScale)
 	}
