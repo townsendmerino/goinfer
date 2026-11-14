@@ -20,11 +20,11 @@ const generateIdentityGolden = "../testdata/generate_identity.json"
 // forward, the on-device argmax and the greedy chain all agree on every token, and a decode that reads a stale position or the
 // wrong token's embedding changes the stream. The counters record which path ran.
 type identResident struct {
-	vocab                                       int
-	m                                           *Model
-	forwards, argmaxes, chainStarts, chainNexts int
-	chainTemp                                   float64
-	chainID, chainPos                           int
+	vocab                                                                int
+	m                                                                    *Model
+	forwards, argmaxes, chainStarts, chainNexts, topKs, topKFulls, draws int
+	chainTemp                                                            float64
+	chainID, chainPos                                                    int
 }
 
 func (f *identResident) logits(emb []float32, pos int) []float32 {
@@ -94,6 +94,7 @@ type identTopK struct{ *identResident }
 
 func (f identTopK) TopKAvailable() bool { return true }
 func (f identTopK) ForwardTopK(emb []float32, pos, k int, temperature float64, wantZ bool) (TopKRow, error) {
+	f.topKs++
 	l := f.logits(emb, pos)
 	idx := make([]int, len(l))
 	for i := range idx {
@@ -106,7 +107,7 @@ func (f identTopK) ForwardTopK(emb []float32, pos, k int, temperature float64, w
 		return idx[a] < idx[b]
 	})
 	k = min(k, len(l))
-	row := TopKRow{IDs: make([]int32, k), Logits: make([]float32, k), Full: func() ([]float32, error) { return l, nil }}
+	row := TopKRow{IDs: make([]int32, k), Logits: make([]float32, k), Full: func() ([]float32, error) { f.topKFulls++; return l, nil }}
 	for i := 0; i < k; i++ {
 		row.IDs[i], row.Logits[i] = int32(idx[i]), l[idx[i]]
 	}
@@ -142,7 +143,7 @@ type identSample struct{ *identResident }
 
 func (f identSample) SampleAvailable() bool { return true }
 func (f identSample) ForwardSample(emb []float32, pos int, temperature float64, seed, draw uint64) (int, error) {
-	f.argmaxes++
+	f.draws++
 	return f.gumbelPick(f.logits(emb, pos), temperature, seed, draw), nil
 }
 
@@ -151,7 +152,7 @@ type identSampleChain struct{ identChain }
 func (f identSampleChain) SampleAvailable() bool      { return true }
 func (f identSampleChain) SampleChainAvailable() bool { return true }
 func (f identSampleChain) ForwardSample(emb []float32, pos int, temperature float64, seed, draw uint64) (int, error) {
-	f.argmaxes++
+	f.draws++
 	return f.gumbelPick(f.logits(emb, pos), temperature, seed, draw), nil
 }
 func (f identSampleChain) SampleChainStart(id, pos int, temperature float64, seed, draw uint64) error {
@@ -199,7 +200,7 @@ func (b *identBackend) Close() error { return nil }
 type identCase struct {
 	Name   string  `json:"name"`
 	Tokens [][]int `json:"tokens"`
-	Counts [5]int  `json:"counts"` // forwards, argmaxes, chain starts, chain nexts, tokens emitted
+	Counts [8]int  `json:"counts"` // forwards, argmaxes, chain starts, chain nexts, tokens emitted, top-K rows, top-K full reads, device draws
 }
 
 func collect(t *testing.T, ch <-chan int, g *Generation) []int {
@@ -266,6 +267,7 @@ func identityRun(t *testing.T) []identCase {
 		if be != nil {
 			c.Counts[0], c.Counts[1] = be.rf.forwards, be.rf.argmaxes
 			c.Counts[2], c.Counts[3] = be.rf.chainStarts, be.rf.chainNexts
+			c.Counts[5], c.Counts[6], c.Counts[7] = be.rf.topKs, be.rf.topKFulls, be.rf.draws
 		}
 		out = append(out, c)
 	}
@@ -334,6 +336,18 @@ func TestGenerateInto_tokenStreamIdentity(t *testing.T) {
 		case "resident/greedy-chain":
 			if c.Counts[3] == 0 {
 				t.Errorf("%s: the greedy chain never ran", c.Name)
+			}
+		case "resident/topk-sampled":
+			if c.Counts[5] == 0 {
+				t.Errorf("%s: the device top-K row was never asked for", c.Name)
+			}
+		case "resident/temperature-draw":
+			if c.Counts[7] == 0 {
+				t.Errorf("%s: the device draw never ran", c.Name)
+			}
+		case "resident/sampled-chain", "resident/top1-sampled-chain":
+			if c.Counts[3] == 0 {
+				t.Errorf("%s: the chain never ran", c.Name)
 			}
 		}
 	}
