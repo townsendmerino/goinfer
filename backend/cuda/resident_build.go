@@ -1854,3 +1854,49 @@ func (s *buildState) sizeAttnScratch(r *cudaResident) error {
 	s.maxQDim, s.maxHd = maxQDim, maxHd
 	return nil
 }
+
+// allocKV prices the KV cache against the free VRAM, checks each layer's cache width against the model, and allocates the pools and
+// every slot's tables, keeping the slots that fit. It runs inside the setup job after sizeAttnScratch; a resident context the
+// operator asked for that does not fit returns errKVWontFit, which the build returns as a hard error rather than a decline.
+func (s *buildState) allocKV(r *cudaResident) error {
+	m := s.m
+	r.kvWindowSetup(m) // before checkKVFits: windowed layers price and allocate at window+slack, not at the context
+	// r.ctxCap was resolved at construction (several earlier buffers size from it). The fit check
+	// belongs HERE, though: it needs the per-layer kvDims, and running it immediately before the
+	// caches are allocated is what makes `free` mean "what is actually left for KV".
+	if e := r.payRoutePool(); e != nil {
+		return e
+	}
+	if e := r.checkKVFits(); e != nil {
+		return e
+	}
+	for l := range r.kc {
+		// Each layer's KV pool is sized by its own kvDim (Gemma 4's local 2048 vs global 1024), matching the row*Ly.kvDim stride
+		// the kernels index it with. The kvDim the pool is sized with must equal the one the accessors derive: a stale model-level
+		// kvDim would index off the end into garbage output rather than panic, so fail loudly at plan time.
+		if r.layers[l].noKV() {
+			// No KV cache for a recurrent mixer. Allocating one would be pure waste on the
+			// family least able to afford it: 3 of every 4 layers are this kind.
+			continue
+		}
+		if r.layers[l].isMLA() {
+			if r.layers[l].kvDim != r.mlaLatDim {
+				return fmt.Errorf("cuda: layer %d MLA latent cache kvDim=%d != latDim=%d", l, r.layers[l].kvDim, r.mlaLatDim)
+			}
+			continue
+		}
+		if want := m.KVHeadsAtResident(l) * m.HeadDimAtResident(l); r.layers[l].kvDim != want {
+			return fmt.Errorf("cuda: layer %d KV cache kvDim=%d != nKV*hd=%d (accessor-derived) — geometry/cache-size mismatch", l, r.layers[l].kvDim, want)
+		}
+	}
+	// The pools and every slot's tables (kvpool.go). checkKVFits granted r.kvSlotsN of the request against the free VRAM read before
+	// the build's own scratch, with the margin as the only slack, so the pools can miss by the scratch: keep the slots that fit
+	// instead of dropping the whole resident to the CPU; one slot that does not fit still declines.
+	if e := r.kvAllocPoolsFit(); e != nil {
+		return e
+	}
+	if kvPoolsDoneForTest != nil {
+		kvPoolsDoneForTest()
+	}
+	return nil
+}
