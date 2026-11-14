@@ -1288,14 +1288,78 @@ func (m *Model) kvRowCeiling() int {
 	return m.w.Cfg.MaxPositions
 }
 
+// genRun is the state of one generateInto call: its parameters and the locals its phases and closures share, so a phase can read
+// and write them as fields instead of capturing them.
+type genRun struct {
+	ctx            context.Context
+	out            chan<- int
+	g              *Generation
+	cache          *KVCache
+	newCache       func() *KVCache
+	prompt         []int
+	prefillFrom    int
+	maxTokens      int
+	sp             SamplingParams
+	commit         func(int)
+	sampler        *Sampler
+	lora           *loraRuntime
+	resAdapter     ResidentAdapter
+	useGPU         bool
+	mc3            *residentBatcher // non-nil: this generation holds an MC3 place and, after prefill, the KV slot mc3Slot
+	mc3Slot        int
+	mc3Committed   bool
+	gpuPos         int
+	logits         []float32
+	err            error
+	resCost        ResidentCost
+	fastNext       int
+	gated          bool
+	procFree       bool
+	hasGreedy      bool
+	fastGreedy     bool
+	chainRF        ResidentDecodeSubsystem
+	useChain       bool
+	chainTok       bool
+	chainOpen      bool
+	chainPos       int
+	stopChain      func()
+	optFwd         bool
+	topKOn         bool
+	topKWidth      int
+	topKVocab      int
+	sampleOn       bool
+	batchGreedy    bool
+	sChainRF       ResidentSampleChain
+	stepRow        [1][]float32 // the decode token's one-row batch, reused across tokens so a step allocates nothing
+	topKRow        *TopKRow     // this step's device top-K row, set instead of logits when topKOn
+	topKPre        *SampleInfo
+	topKPreFull    bool
+	topKFullBuf    []float32
+	mc3Logits      []float32
+	optGate        *optFwdGate
+	clk            decodeClock
+	embScratch     []float32
+	decoding       bool
+	exitDecode     func()
+	commitResident func(generated []int)
+	holdGrace      *time.Timer // the send grace for a kept hold (one timer per generation, reset per token)
+	cb             *cpuBatcher
+	optResolved    bool
+	optNextLogits  []float32
+	tg             decodeTarget
+	decoded        int
+	completed      bool
+}
+
 func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation, cache *KVCache, newCache func() *KVCache, prompt []int, prefillFrom, maxTokens int, sp SamplingParams, commit func(int)) {
-	if len(prompt) == 0 {
-		g.err = fmt.Errorf("decoder.Generate: empty prompt")
+	r := &genRun{ctx: ctx, out: out, g: g, cache: cache, newCache: newCache, prompt: prompt, prefillFrom: prefillFrom, maxTokens: maxTokens, sp: sp, commit: commit}
+	if len(r.prompt) == 0 {
+		r.g.err = fmt.Errorf("decoder.Generate: empty prompt")
 		return
 	}
-	sampler := NewSampler(sp)
-	defer sampler.release()
-	sampler.Observe(prompt...) // repetition penalties see the whole prompt, reused prefix included
+	r.sampler = NewSampler(r.sp)
+	defer r.sampler.release()
+	r.sampler.Observe(r.prompt...) // repetition penalties see the whole prompt, reused prefix included
 	// Prefill the (divergent suffix of the) prompt and seed the first token's logits. On the batched archs this runs the layers at
 	// M=len in one pass (each weight streamed once), LM head on the last position only; len here is the suffix, not the whole
 	// prompt.
@@ -1312,21 +1376,20 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	//
 	// cache may be nil here (Model.Generate defers allocation to the branch that needs it). Only Session.Generate's cache ever
 	// carries lora, so the nil-safe read gives the same value either caller would have produced.
-	var lora *loraRuntime
-	if cache != nil {
-		lora = cache.lora
+
+	if r.cache != nil {
+		r.lora = r.cache.lora
 	}
-	var resAdapter ResidentAdapter
-	if lora != nil {
+
+	if r.lora != nil {
 		if rt := m.resRuntime(); rt.AdapterAvailable() {
-			resAdapter = rt
+			r.resAdapter = rt
 		}
 	}
-	useGPU := m.resident != nil && prefillFrom == 0 && (commit == nil || (lora != nil && resAdapter != nil))
-	var mc3 *residentBatcher // non-nil: this generation holds an MC3 place and, after prefill, the KV slot mc3Slot
-	mc3Slot := -1
-	mc3Committed := false // the generation committed its slot (commitResident); else its published prompt is forgotten
-	if useGPU {
+	r.useGPU = m.resident != nil && r.prefillFrom == 0 && (r.commit == nil || (r.lora != nil && r.resAdapter != nil))
+	r.mc3Slot = -1
+	r.mc3Committed = false // the generation committed its slot (commitResident); else its published prompt is forgotten
+	if r.useGPU {
 		// The resident path drives the model's one shared positional KV; two concurrent generations would interleave writes at
 		// overlapping positions and corrupt it. Claim it non-blockingly: a loser falls back to the staged CPU path, which uses this
 		// call's own cache, so both complete correctly and only resident speed is lost.
@@ -1334,31 +1397,31 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		// The claim also makes binding an adapter race-free even though N adapters of one base share this runner: only the resBusy
 		// winner's SetAdapter/Forward/SetAdapter(nil) sequence runs at a time, so two adapter sessions (or an adapter session and a
 		// base-model session) never observe each other's bound delta.
-		if ctxCap := m.ResidentContextCap(); ctxCap > 0 && len(prompt) > ctxCap {
+		if ctxCap := m.ResidentContextCap(); ctxCap > 0 && len(r.prompt) > ctxCap {
 			// Decline before claiming the resident when the prompt exceeds its fixed KV cap: a prefill past it fails mid-write (there is
 			// no CPU fallback once it commits), so fall through to the staged CPU path exactly as "not resident" does. Chiefly the adapter
 			// case: an adapter's first turn (prefillFrom==0) reaches this branch, and prepare() enforces MaxPositions for it unless the
 			// caller derives residentPath from ResidentActive(). This is the decoder-seam half, defense in depth for any caller that
 			// does not.
-			useGPU = false
-			g.ResidentDeclined = fmt.Sprintf("the prompt's %d tokens pass the resident's context of %d", len(prompt), ctxCap)
-			m.warnResidentCap(g.ResidentDeclined)
-		} else if bt := m.batcher; bt != nil && lora == nil && bt.claim(&m.resBusy) {
+			r.useGPU = false
+			r.g.ResidentDeclined = fmt.Sprintf("the prompt's %d tokens pass the resident's context of %d", len(r.prompt), ctxCap)
+			m.warnResidentCap(r.g.ResidentDeclined)
+		} else if bt := m.batcher; bt != nil && r.lora == nil && bt.claim(&m.resBusy) {
 			// MC3: one of several concurrent generations on the resident, on its own KV slot (mc3_batch.go).
-			mc3 = bt
+			r.mc3 = bt
 			defer bt.release()
 		} else if m.tryClaimResident() {
-			if resAdapter != nil {
-				if err := resAdapter.SetAdapter(residentAdapterLayers(lora)); err != nil {
+			if r.resAdapter != nil {
+				if err := r.resAdapter.SetAdapter(residentAdapterLayers(r.lora)); err != nil {
 					// Bind failed after claiming resBusy — release immediately (not via defer)
 					// and fall back to CPU, which applies the adapter correctly on its own
 					// (applyLoRA); do NOT proceed resident with no delta bound.
 					atomic.StoreInt32(&m.resBusy, 0)
-					useGPU = false
-					g.ResidentDeclined = "the adapter could not be bound on the resident: " + err.Error()
+					r.useGPU = false
+					r.g.ResidentDeclined = "the adapter could not be bound on the resident: " + err.Error()
 				} else {
 					defer func() {
-						resAdapter.SetAdapter(nil)
+						r.resAdapter.SetAdapter(nil)
 						atomic.StoreInt32(&m.resBusy, 0)
 					}()
 				}
@@ -1366,29 +1429,28 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				defer atomic.StoreInt32(&m.resBusy, 0)
 			}
 		} else {
-			useGPU = false
-			g.ResidentDeclined = "another generation held the resident"
+			r.useGPU = false
+			r.g.ResidentDeclined = "another generation held the resident"
 		}
 	}
 	// Allocate the host KV cache here, not before the CAS above: this covers both "never going to be resident" and "lost the race
 	// for the shared resident KV", the only two ways to reach the CPU path below. A resident-and-won call never allocates one, and
 	// newCache is never called when cache is non-nil (every Session.Generate call).
-	if !useGPU && cache == nil {
-		cache = newCache()
+	if !r.useGPU && r.cache == nil {
+		r.cache = r.newCache()
 	}
-	gpuPos := 0
-	var logits []float32
-	var err error
+	r.gpuPos = 0
+
 	// resCost is set when this generation counts its cost on a resident that can (SB11b; never under MC3). A counted generation
 	// takes no decode path that queues a forward ahead of the host (the greedy and sampled chains, the optimistic forward), so
 	// its launches are exactly its emitted tokens'.
-	var resCost ResidentCost
-	if useGPU {
+
+	if r.useGPU {
 		// A request cancelled while waiting for the model lock (tryEnter blocks with no context) reaches here with ctx already done;
 		// residentForgetIDs below would discard a warm cache for a prefill residentPrefillSeed is about to refuse anyway. Check
 		// before the forget: residentPrefillSeed's own ctx check runs too late to matter.
-		if err := ctx.Err(); err != nil {
-			g.err = err
+		if err := r.ctx.Err(); err != nil {
+			r.g.err = err
 			return
 		}
 		// Prefix reuse: skip the leading tokens already committed to the resident positional
@@ -1396,86 +1458,86 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		// generation completes the cache is mid-write, and any early return must leave the
 		// next turn cold rather than trusting a half-written cache (resident_reuse.go).
 		var acq kvAcquired
-		scope := kvScopeOf(ctx)
-		if mc3 != nil {
+		scope := kvScopeOf(r.ctx)
+		if r.mc3 != nil {
 			// MC3: choose a slot no other running generation holds, and prefill into it, with the resident to
 			// ourselves (between the other generations' steps).
-			mc3.exclusive(func() {
-				acq = m.residentAcquireIn(prompt, nil, lora, mc3.busySlots(), scope)
-				mc3Slot = acq.slot
-				if mc3Slot < 0 {
-					err = fmt.Errorf("decoder: no free resident KV slot for a concurrent generation")
+			r.mc3.exclusive(func() {
+				acq = m.residentAcquireIn(r.prompt, nil, r.lora, r.mc3.busySlots(), scope)
+				r.mc3Slot = acq.slot
+				if r.mc3Slot < 0 {
+					r.err = fmt.Errorf("decoder: no free resident KV slot for a concurrent generation")
 					return
 				}
-				mc3.markSlot(mc3Slot, true)
+				r.mc3.markSlot(r.mc3Slot, true)
 				m.residentForgetIDs()
 				if acq.reuse <= 0 {
 					m.residentWritesFromZero()
 				}
 			})
-			if mc3Slot >= 0 {
-				defer mc3.markSlot(mc3Slot, false) // after the commit below: the slot is free again once it holds our ids
+			if r.mc3Slot >= 0 {
+				defer r.mc3.markSlot(r.mc3Slot, false) // after the commit below: the slot is free again once it holds our ids
 			}
-			if err == nil {
-				logits, err = m.mc3Prefill(ctx, mc3, mc3Slot, prompt, acq.reuse)
+			if r.err == nil {
+				r.logits, r.err = m.mc3Prefill(r.ctx, r.mc3, r.mc3Slot, r.prompt, acq.reuse)
 			}
-			if kvPoolFullEnds(g, err, 0) {
+			if kvPoolFullEnds(r.g, r.err, 0) {
 				return
 			}
-			if err != nil {
-				g.err = err
+			if r.err != nil {
+				r.g.err = r.err
 				return
 			}
 			// The prompt's rows are final: publish them for a request that arrives while this one decodes. A generation
 			// that ends without its commit forgets them, as it would anything it wrote (before markSlot frees the slot).
-			mc3.exclusive(func() {
-				m.residentPublishPrompt(mc3Slot, prompt, lora)
-				m.residentSnapshotPrompt(mc3Slot, prompt, lora, scope, acq)
+			r.mc3.exclusive(func() {
+				m.residentPublishPrompt(r.mc3Slot, r.prompt, r.lora)
+				m.residentSnapshotPrompt(r.mc3Slot, r.prompt, r.lora, scope, acq)
 			})
 			defer func() {
-				if !mc3Committed {
-					mc3.exclusive(func() { m.kvSlots().Forget(mc3Slot) })
+				if !r.mc3Committed {
+					r.mc3.exclusive(func() { m.kvSlots().Forget(r.mc3Slot) })
 				}
 			}()
 		} else {
-			scope.checkpoint = m.recurrentCheckpointer() != nil      // KV8a: this path restores, and saves after its prefill
-			acq = m.residentAcquireIn(prompt, nil, lora, nil, scope) // MC1: binds the KV slot this prompt will use
+			scope.checkpoint = m.recurrentCheckpointer() != nil          // KV8a: this path restores, and saves after its prefill
+			acq = m.residentAcquireIn(r.prompt, nil, r.lora, nil, scope) // MC1: binds the KV slot this prompt will use
 			m.residentForgetIDs()
-			mk := m.kvPrefillMark(acq.slot, prompt, acq.reuse, lora, scope, &acq) // the boundary snapshot, taken between two passes
-			resCost = m.residentCostFor(cost.FromContext(ctx), false)
-			err = costSpan(resCost, cost.FromContext(ctx), cost.Prefill, func() (int, error) {
+			mk := m.kvPrefillMark(acq.slot, r.prompt, acq.reuse, r.lora, scope, &acq) // the boundary snapshot, taken between two passes
+			r.resCost = m.residentCostFor(cost.FromContext(r.ctx), false)
+			r.err = costSpan(r.resCost, cost.FromContext(r.ctx), cost.Prefill, func() (int, error) {
 				var perr error
-				logits, perr = m.residentPrefillSeedMarked(ctx, prompt, acq.reuse, lora != nil, mk)
-				return prefillComputed(len(prompt), acq.reuse), perr
+				r.logits, perr = m.residentPrefillSeedMarked(r.ctx, r.prompt, acq.reuse, r.lora != nil, mk)
+				return prefillComputed(len(r.prompt), acq.reuse), perr
 			})
-			if err != nil {
-				if !kvPoolFullEnds(g, err, 0) {
-					g.err = err
+			if r.err != nil {
+				if !kvPoolFullEnds(r.g, r.err, 0) {
+					r.g.err = r.err
 				}
 				return
 			}
-			m.residentSnapshotPrompt(acq.slot, prompt, lora, scope, acq)           // before the first decode step writes past the prompt
-			g.CheckpointSave, g.CheckpointSaved = m.residentCheckpointSave(prompt) // likewise: the state at the end of the prompt
+			m.residentSnapshotPrompt(acq.slot, r.prompt, r.lora, scope, acq)             // before the first decode step writes past the prompt
+			r.g.CheckpointSave, r.g.CheckpointSaved = m.residentCheckpointSave(r.prompt) // likewise: the state at the end of the prompt
 		}
-		g.PrefillReused, g.PrefillSlot, g.PrefillMatch = acq.reuse, acq.slotLen, acq.match
-		g.PrefillShared, g.KVCopy, g.KVCopyDeclined = acq.shared, acq.copyDur, acq.declined
-		g.KVSnapRestored, g.KVSnapRestore = acq.snapRows, acq.snapDur
-		g.KVPromotedBlocks, g.KVPromotedRows = acq.promotedBlocks, acq.promotedRows
-		g.CheckpointRestored, g.CheckpointRestore, g.CheckpointDeclined = acq.ckptRestored, acq.ckptDur, acq.ckptDeclined
-		gpuPos = len(prompt)
+		r.g.PrefillReused, r.g.PrefillSlot, r.g.PrefillMatch = acq.reuse, acq.slotLen, acq.match
+		r.g.PrefillShared, r.g.KVCopy, r.g.KVCopyDeclined = acq.shared, acq.copyDur, acq.declined
+		r.g.KVSnapRestored, r.g.KVSnapRestore = acq.snapRows, acq.snapDur
+		r.g.KVPromotedBlocks, r.g.KVPromotedRows = acq.promotedBlocks, acq.promotedRows
+		r.g.CheckpointRestored, r.g.CheckpointRestore, r.g.CheckpointDeclined = acq.ckptRestored, acq.ckptDur, acq.ckptDeclined
+		r.gpuPos = len(r.prompt)
 	} else {
 		counted := false
-		if c := cost.FromContext(ctx); c != nil { // SB11b: the request asked for its cost; the walker counts into c
-			cache.cost, cache.costPhase, counted = c, cost.Prefill, true
-			defer func() { cache.cost = nil }() // a session's cache outlives this generation
+		if c := cost.FromContext(r.ctx); c != nil { // SB11b: the request asked for its cost; the walker counts into c
+			r.cache.cost, r.cache.costPhase, counted = c, cost.Prefill, true
+			defer func() { r.cache.cost = nil }() // a session's cache outlives this generation
 		}
-		cache.planRequest(len(prompt), maxTokens, m.kvRowCeiling()) // the KV is sized once for the prompt and its budget
-		if logits, err = m.prefillLogits(ctx, prompt[prefillFrom:], cache); err != nil {
-			g.err = err
+		r.cache.planRequest(len(r.prompt), r.maxTokens, m.kvRowCeiling()) // the KV is sized once for the prompt and its budget
+		if r.logits, r.err = m.prefillLogits(r.ctx, r.prompt[r.prefillFrom:], r.cache); r.err != nil {
+			r.g.err = r.err
 			return
 		}
 		if counted {
-			cache.costPhase = cost.Decode
+			r.cache.costPhase = cost.Decode
 		}
 	}
 	// Greedy fast path: when the resident can pick the argmax on-device AND the sampler's choice is exactly argmax(raw logits)
@@ -1493,14 +1555,14 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// RNG: this path skips the per-token rng.Float64() draw SampleWithInfo would make. That is unobservable: under top_k=1 every
 	// step is deterministic, so no later draw's value can depend on the skipped ones and no emitted token can differ. The RNG
 	// stream position does advance differently, so nothing may depend on it downstream.
-	fastNext := -1
+	r.fastNext = -1
 	// A GATED processor (SamplingParams.LogitProcessorGate) leaves the fast paths armed: each step
 	// then asks the gate, and only a step it opens takes the full-logits path below (needFull).
-	gated := sp.LogitProcessor != nil && sp.LogitProcessorGate != nil
-	procFree := sp.LogitProcessor == nil || gated
-	hasGreedy := m.canDecode(outArgmax)
-	fastGreedy := useGPU && hasGreedy && procFree &&
-		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) &&
+	r.gated = r.sp.LogitProcessor != nil && r.sp.LogitProcessorGate != nil
+	r.procFree = r.sp.LogitProcessor == nil || r.gated
+	r.hasGreedy = m.canDecode(outArgmax)
+	r.fastGreedy = r.useGPU && r.hasGreedy && r.procFree &&
+		(r.sampler.ArgmaxEquivalent() || r.sampler.GreedyEquivalent()) &&
 		m.knobs.get(knobNoGreedyFastpath) == ""
 	// The greedy chain (ResidentGreedyChain): the same tokens with the next token's forward queued on the device before the host
 	// has seen this one. With no processor, or a gated one while its gate is closed (outside MC3: a step the gate opens stops the
@@ -1508,261 +1570,254 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// lookup is a plain table row, which the resident's gather reproduces. Under MC3 it runs only on the tokens this generation
 	// decodes alone, with the resident held across them (holdSolo); every other token takes the batcher as before, so fastGreedy
 	// stays the path for those.
-	chainRF := m.resDecode()
-	useChain := useGPU && resCost == nil && (sp.LogitProcessor == nil || (gated && mc3 == nil)) && lora == nil &&
-		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) && m.knobs.get(knobNoGreedyFastpath) == "" &&
-		m.embedIsTableRow() && chainRF.GreedyChainAvailable()
-	if useChain && mc3 == nil {
-		fastGreedy = false
+	r.chainRF = m.resDecode()
+	r.useChain = r.useGPU && r.resCost == nil && (r.sp.LogitProcessor == nil || (r.gated && r.mc3 == nil)) && r.lora == nil &&
+		(r.sampler.ArgmaxEquivalent() || r.sampler.GreedyEquivalent()) && m.knobs.get(knobNoGreedyFastpath) == "" &&
+		m.embedIsTableRow() && r.chainRF.GreedyChainAvailable()
+	if r.useChain && r.mc3 == nil {
+		r.fastGreedy = false
 	}
-	chainTok := mc3 == nil // this token may run the chain: always unbatched, under MC3 only on a held token
-	chainOpen, chainPos := false, 0
-	stopChain := func() {
-		if chainOpen {
-			chainRF.GreedyChainStop()
-			chainOpen = false
+	r.chainTok = r.mc3 == nil // this token may run the chain: always unbatched, under MC3 only on a held token
+	r.chainOpen, r.chainPos = false, 0
+	r.stopChain = func() {
+		if r.chainOpen {
+			r.chainRF.GreedyChainStop()
+			r.chainOpen = false
 		}
 	}
-	defer stopChain()
+	defer r.stopChain()
 
 	// Optimistic forward (spec_optfwd.go): sampled decode's (Temperature>0) sibling of the greedy fast path, overlapping the CPU
 	// sampler with a speculative Forward instead of skipping it. Excludes the rare overlap with fastGreedy (Temperature>0 AND
 	// top_k==1) so the two never drive the same step. GOINFER_NO_OPTFWD forces the plain sequential path (escape hatch / A-B
 	// check). Off under MC3: optFwdStep drives the resident outside the batcher's exclusive section.
-	optFwd := useGPU && mc3 == nil && resCost == nil && !fastGreedy && !useChain && m.optFwdEligible(sp) && m.knobs.get(knobNoOptFwd) == ""
+	r.optFwd = r.useGPU && r.mc3 == nil && r.resCost == nil && !r.fastGreedy && !r.useChain && m.optFwdEligible(r.sp) && m.knobs.get(knobNoOptFwd) == ""
 
 	// Device top-K fast path (sampler_topk.go): a filtered sampler (top_k / top_p / min_p at temperature > 0) needs only the K
 	// best logits, so the resident reduces the row on-device and the host filters K candidates instead of V. Excluded: anything
 	// that needs or rewrites the full row (bias, penalties, logprobs, a LogitProcessor), the greedy and optimistic-forward paths,
 	// and backends whose logits are transformed on the host after readback. GOINFER_NO_TOPK_FASTPATH forces the full-row path
 	// (escape hatch / A-B check), same convention as GOINFER_NO_GREEDY_FASTPATH.
-	topKOn := false
-	topKWidth, topKVocab := 0, len(logits)
+	r.topKOn = false
+	r.topKWidth, r.topKVocab = 0, len(r.logits)
 	// Under MC3 a TopKRow's Full() reads the resident's logits, which a later step of another generation may have overwritten, so
 	// the draw is resolved inside the resident call (topKPre / topKPreFull below) while this generation still holds the resident,
 	// not at the top of the next iteration. Do not switch it off under MC3: that sent every CUDA top-p request down the
 	// full-row path (docs/measurements/topp-regression-2026-09-30.md).
-	if useGPU && !fastGreedy && !useChain && !optFwd && procFree && m.knobs.get(knobNoTopKFastpath) == "" && sampler.TopKEligible() {
+	if r.useGPU && !r.fastGreedy && !r.useChain && !r.optFwd && r.procFree && m.knobs.get(knobNoTopKFastpath) == "" && r.sampler.TopKEligible() {
 		if m.canDecode(outTopK) {
-			if w, wok := sampler.TopKWidth(len(logits)); wok {
-				topKOn, topKWidth = true, w
+			if w, wok := r.sampler.TopKWidth(len(r.logits)); wok {
+				r.topKOn, r.topKWidth = true, w
 			}
 		}
 	}
 	// Device temperature-only sampling (sampler_gumbel.go): the resident draws the next token by Gumbel-max on-device and returns
 	// just the id, reusing the greedy fast path's fastNext mechanism. Same exclusions as the top-K path;
 	// GOINFER_NO_SAMPLE_FASTPATH forces the host draw (A/B check, escape hatch).
-	sampleOn := useGPU && !fastGreedy && !useChain && !optFwd && procFree && m.knobs.get(knobNoSampleFastpath) == "" &&
-		sampler.SampleEligible() && m.canDecode(outSample)
+	r.sampleOn = r.useGPU && !r.fastGreedy && !r.useChain && !r.optFwd && r.procFree && m.knobs.get(knobNoSampleFastpath) == "" &&
+		r.sampler.SampleEligible() && m.canDecode(outSample)
 	// A greedy generation's batched token asks the step for its argmax id (a Greedy draw) where the resident offers that, instead
 	// of its whole logits row; the id is the argmax the sampler would take from that row. Rows run alone keep residentCall's path.
-	batchGreedy := false
-	if mc3 != nil && !fastGreedy && !sampleOn && procFree && (sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) {
-		batchGreedy = residentCapsOf(m.resident).BatchGreedyDraw
+	r.batchGreedy = false
+	if r.mc3 != nil && !r.fastGreedy && !r.sampleOn && r.procFree && (r.sampler.ArgmaxEquivalent() || r.sampler.GreedyEquivalent()) {
+		r.batchGreedy = residentCapsOf(m.resident).BatchGreedyDraw
 	}
 	// The sampled chain (ResidentSampleChain): where the device draw serves the token, the same draw with the next token's forward
 	// queued on the device first, as the greedy chain does for the argmax. Same exclusions as the greedy chain, and not where
 	// ForwardSample itself takes the argmax (a temperature so small 1/T is infinite).
-	var sChainRF ResidentSampleChain
-	if sampleOn && resCost == nil && sp.LogitProcessor == nil && lora == nil && m.embedIsTableRow() &&
-		!math.IsInf(1/sp.Temperature, 0) && chainRF.SampleChainAvailable() {
-		sChainRF = chainRF
+
+	if r.sampleOn && r.resCost == nil && r.sp.LogitProcessor == nil && r.lora == nil && m.embedIsTableRow() &&
+		!math.IsInf(1/r.sp.Temperature, 0) && r.chainRF.SampleChainAvailable() {
+		r.sChainRF = r.chainRF
 	}
-	var stepRow [1][]float32 // the decode token's one-row batch, reused across tokens so a step allocates nothing
-	var topKRow *TopKRow     // this step's device top-K row, set instead of logits when topKOn
 	// Under MC3 the top-K draw is made inside the resident call (see topKOn above): topKPre is the drawn token when the row
 	// held the whole retained set, else topKPreFull says topKFullBuf holds this step's full row, copied before the resident
 	// was released. Both are consumed, and cleared, where topKRow is.
-	var topKPre *SampleInfo
-	var topKPreFull bool
-	var topKFullBuf []float32
+
 	// mc3Logits holds an MC3 solo token's logits: a resident's Forward returns its one host buffer, reused by every call, and this
 	// generation reads the logits after leaving the resident (in its LogitProcessor and its sampler) while another generation's
 	// solo token may already be rewriting that buffer.
-	var mc3Logits []float32
-	var optGate *optFwdGate
-	if optFwd {
-		optGate = &optFwdGate{}
-		g.OptFwd = &OptFwdStats{}
+
+	if r.optFwd {
+		r.optGate = &optFwdGate{}
+		r.g.OptFwd = &OptFwdStats{}
 	}
 
 	// Clamp the decode length to the resident KV cap up front. A Forward past the cap is refused mid-generation (the
 	// silent-corruption guard), but a resident that exposes its cap lets us stop cleanly at it. gpuPos is the next decode
 	// position; the last valid one is ctxCap-1, and the prefill loop guarantees gpuPos <= ctxCap.
-	if useGPU {
-		if c, clamped := m.clampToResidentCap(gpuPos, maxTokens); clamped {
-			maxTokens, g.BudgetClamped = c, true
+	if r.useGPU {
+		if c, clamped := m.clampToResidentCap(r.gpuPos, r.maxTokens); clamped {
+			r.maxTokens, r.g.BudgetClamped = c, true
 		}
 	}
 	// Publish the effective budget so the caller reports finish_reason "length" when this clamp, not an EOS, ends the turn. Set
 	// before any send; read after close. BudgetClamped disambiguates a genuine clamp-to-0 (the prompt fills the cap) from an
 	// unclamped turn whose Budget is coincidentally 0.
-	g.Budget = maxTokens
+	r.g.Budget = r.maxTokens
 
 	// The decode loop is plainDecodeLoop (policy_decode.go); the hooks below are this generation's paths.
-	var clk decodeClock
+
 	// embScratch is reused across iterations: each token's embedding is consumed synchronously by Forward/ForwardArgmax before the
 	// next is requested, so one buffer replaces a fresh [hidden]float32 per token.
-	var embScratch []float32
+
 	// commitResident records what the resident KV now holds for this generation (residentCommitIDs). Under MC3 it binds
 	// this generation's slot first, with the resident to itself, and stops counting it as decoding (so no run waits for
 	// its token while it commits).
-	decoding := false
-	exitDecode := func() {
-		if decoding {
-			decoding = false
-			mc3.exitDecode()
+	r.decoding = false
+	r.exitDecode = func() {
+		if r.decoding {
+			r.decoding = false
+			r.mc3.exitDecode()
 		}
 	}
-	commitResident := func(generated []int) {
-		stopChain() // every exit commits; nothing queued on the device may outlive the decode loop
-		if mc3 == nil {
-			m.residentCommitIDs(prompt, generated, nil, lora)
+	r.commitResident = func(generated []int) {
+		r.stopChain() // every exit commits; nothing queued on the device may outlive the decode loop
+		if r.mc3 == nil {
+			m.residentCommitIDs(r.prompt, generated, nil, r.lora)
 			return
 		}
-		mc3.releaseHold(stopChain) // before the exclusive section below, which waits for the resident a hold keeps
-		exitDecode()
-		mc3.exclusive(func() {
-			if m.residentBind(mc3Slot) == nil {
-				m.residentCommitIDs(prompt, generated, nil, lora)
-				mc3Committed = true
+		r.mc3.releaseHold(r.stopChain) // before the exclusive section below, which waits for the resident a hold keeps
+		r.exitDecode()
+		r.mc3.exclusive(func() {
+			if m.residentBind(r.mc3Slot) == nil {
+				m.residentCommitIDs(r.prompt, generated, nil, r.lora)
+				r.mc3Committed = true
 			}
 		})
 	}
-	if mc3 != nil {
-		mc3.enterDecode()
-		decoding = true
-		defer exitDecode()
+	if r.mc3 != nil {
+		r.mc3.enterDecode()
+		r.decoding = true
+		defer r.exitDecode()
 		// Runs before exitDecode (defers unwind last-first): any exit, an error's included, ends a kept hold.
-		defer mc3.releaseHold(stopChain)
+		defer r.mc3.releaseHold(r.stopChain)
 	}
-	var holdGrace *time.Timer // the send grace for a kept hold (one timer per generation, reset per token)
-	if mc3 != nil {
-		holdGrace = time.NewTimer(mc3HoldSendGrace)
-		holdGrace.Stop()
-		defer holdGrace.Stop()
+	if r.mc3 != nil {
+		r.holdGrace = time.NewTimer(mc3HoldSendGrace)
+		r.holdGrace.Stop()
+		defer r.holdGrace.Stop()
 	}
 	// MC3c step 2 (cpu_batch.go): a CPU generation on an eligible cache submits its decode tokens to the model's CPU
 	// batcher, which joins them with other generations' into one batched step; alone, a token runs m.forward as always.
 	// A generation that counts its cost (SB11b) decodes alone: a batched step's work is not attributed per generation.
-	var cb *cpuBatcher
-	if !useGPU && m.cpuBatch != nil && cpuBatchCacheEligible(cache) == nil && cache.cost == nil {
-		cb = m.cpuBatch
-		cb.enterDecode()
-		defer cb.exitDecode()
+
+	if !r.useGPU && m.cpuBatch != nil && cpuBatchCacheEligible(r.cache) == nil && r.cache.cost == nil {
+		r.cb = m.cpuBatch
+		r.cb.enterDecode()
+		defer r.cb.exitDecode()
 	}
-	var optResolved bool
-	var optNextLogits []float32
-	tg := decodeTarget{logits: func() []float32 { return logits }}
-	tg.pick = func(clk *decodeClock) (SampleInfo, int, bool, error) {
-		optResolved = false
-		if fastNext >= 0 {
+
+	r.tg = decodeTarget{logits: func() []float32 { return r.logits }}
+	r.tg.pick = func(clk *decodeClock) (SampleInfo, int, bool, error) {
+		r.optResolved = false
+		if r.fastNext >= 0 {
 			// The resident already picked this token's argmax on-device (greedy fast
 			// path): nothing reads logits this step, so there is nothing to process or
 			// sample. Identical to the logits path — guarded by ArgmaxEquivalent/GreedyEquivalent.
-			return SampleInfo{}, fastNext, true, nil
+			return SampleInfo{}, r.fastNext, true, nil
 		}
-		if optFwd && optGate.Should() {
+		if r.optFwd && r.optGate.Should() {
 			// Optimistic forward (spec_optfwd.go): samples AND resolves gpuPos+1's logits
 			// together, overlapping the real sampler with a speculative Forward on a free
 			// argmax guess. decodeTiming intentionally does not split this into
 			// tProc/tSample/tEmbed — the whole overlapped operation folds into tFwd below
 			// (t0 was set at the top of this iteration, untouched here), since sample and
 			// forward no longer have a clean sequential boundary to attribute separately.
-			res, operr := m.optFwdStep(sampler, logits, gpuPos, optGate, g.OptFwd)
+			res, operr := m.optFwdStep(r.sampler, r.logits, r.gpuPos, r.optGate, r.g.OptFwd)
 			if operr != nil {
 				return SampleInfo{}, 0, false, operr
 			}
-			optNextLogits = res.nextLogits
-			optResolved = true
+			r.optNextLogits = res.nextLogits
+			r.optResolved = true
 			return res.info, res.info.ID, true, nil
 		}
 		// Device top-K row from the previous forward: draw from it if the K candidates prove they
 		// hold the whole retained set; otherwise read the full row for this token (no randomness
 		// has been consumed, so the fallback is invisible) and take the ordinary path below.
-		if topKRow == nil {
+		if r.topKRow == nil {
 			return SampleInfo{}, 0, false, nil
 		}
 		var info SampleInfo
 		drew := false
-		if topKPre != nil {
-			info, drew = *topKPre, true
-			g.TopKServed++
-		} else if topKPreFull {
-			logits = topKFullBuf
-			g.TopKFallbacks++
-		} else if inf, ok := sampler.SampleFromTopK(*topKRow, topKVocab); ok {
+		if r.topKPre != nil {
+			info, drew = *r.topKPre, true
+			r.g.TopKServed++
+		} else if r.topKPreFull {
+			r.logits = r.topKFullBuf
+			r.g.TopKFallbacks++
+		} else if inf, ok := r.sampler.SampleFromTopK(*r.topKRow, r.topKVocab); ok {
 			info, drew = inf, true
-			g.TopKServed++
+			r.g.TopKServed++
 		} else {
-			full, ferr := topKRow.Full()
+			full, ferr := r.topKRow.Full()
 			if ferr != nil {
 				return SampleInfo{}, 0, false, ferr
 			}
-			logits = full
-			g.TopKFallbacks++
+			r.logits = full
+			r.g.TopKFallbacks++
 		}
-		topKRow, topKPre, topKPreFull = nil, nil, false
+		r.topKRow, r.topKPre, r.topKPreFull = nil, nil, false
 		if decodeTiming {
 			clk.sample += time.Since(clk.t0)
 		}
 		return info, info.ID, drew, nil
 	}
-	if mc3 != nil {
+	if r.mc3 != nil {
 		// A kept hold (a chained decode alone under MC3) must not keep the resident while the consumer is not reading: a
 		// newcomer would wait on this send. Give the consumer a short grace, then let go before blocking.
-		tg.send = func(next int) bool {
-			if !mc3.isHolding() {
+		r.tg.send = func(next int) bool {
+			if !r.mc3.isHolding() {
 				return false
 			}
 			select {
-			case out <- next:
+			case r.out <- next:
 				return true
 			default:
 			}
-			holdGrace.Reset(mc3HoldSendGrace)
+			r.holdGrace.Reset(mc3HoldSendGrace)
 			select {
-			case out <- next:
-				holdGrace.Stop()
+			case r.out <- next:
+				r.holdGrace.Stop()
 				return true
-			case <-holdGrace.C:
-				mc3.releaseHold(stopChain)
-			case <-ctx.Done():
-				holdGrace.Stop()
+			case <-r.holdGrace.C:
+				r.mc3.releaseHold(r.stopChain)
+			case <-r.ctx.Done():
+				r.holdGrace.Stop()
 			}
 			return false
 		}
 	}
-	if useGPU {
-		tg.finish = commitResident
+	if r.useGPU {
+		r.tg.finish = r.commitResident
 	}
-	tg.advance = func(next int, needFull bool, clk *decodeClock) error {
+	r.tg.advance = func(next int, needFull bool, clk *decodeClock) error {
 		var err error
-		if optResolved {
+		if r.optResolved {
 			// optFwdStep already produced (or redid) this position's Forward and its
 			// result logits for gpuPos+1 — nothing left to do but advance the position.
-			logits = optNextLogits
-			gpuPos++
-		} else if useGPU {
+			r.logits = r.optNextLogits
+			r.gpuPos++
+		} else if r.useGPU {
 			var emb []float32
 			if decodeTiming {
 				clk.t0 = time.Now()
-				emb = m.embedResidentInto(next, embScratch)
+				emb = m.embedResidentInto(next, r.embScratch)
 				clk.embed += time.Since(clk.t0)
 				clk.t0 = time.Now()
 			} else {
-				emb = m.embedResidentInto(next, embScratch)
+				emb = m.embedResidentInto(next, r.embScratch)
 			}
-			embScratch = emb
-			fastNext = -1 // set again below only by a path that picks the next token on-device
-			pos := gpuPos
+			r.embScratch = emb
+			r.fastNext = -1 // set again below only by a path that picks the next token on-device
+			pos := r.gpuPos
 			// A device-drawn token takes its draw HERE, once, whichever path then serves it — the sampler's RNG
 			// stream advances exactly as it always has.
 			var draw *ResidentBatchDraw
-			if !needFull && !fastGreedy && sampleOn {
-				seed, d := sampler.NextDraw()
-				draw = &ResidentBatchDraw{Temperature: sp.Temperature, Seed: seed, Draw: d}
-			} else if batchGreedy && !needFull {
+			if !needFull && !r.fastGreedy && r.sampleOn {
+				seed, d := r.sampler.NextDraw()
+				draw = &ResidentBatchDraw{Temperature: r.sp.Temperature, Seed: seed, Draw: d}
+			} else if r.batchGreedy && !needFull {
 				draw = &ResidentBatchDraw{Greedy: true}
 			}
 			// residentCall is this token's production resident call.
@@ -1773,174 +1828,174 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 					// The gated processor needs this position's full logits (it is about to mask them). A chain still open stops
 					// first: it has queued the forward for this position, which Forward then rewrites, and it reopens at the
 					// next closed step.
-					stopChain()
-					logits, ferr = m.resident.Forward(emb, pos)
+					r.stopChain()
+					r.logits, ferr = m.resident.Forward(emb, pos)
 					viaForward = true
-				} else if useChain && chainTok {
+				} else if r.useChain && r.chainTok {
 					// The chain fed itself this token: it is the argmax of the chain's previous forward. The first token
 					// (from the prompt's seed logits) opens it.
-					if !chainOpen {
-						if ferr = chainRF.GreedyChainStart(next, pos); ferr == nil {
-							chainOpen, chainPos = true, pos
+					if !r.chainOpen {
+						if ferr = r.chainRF.GreedyChainStart(next, pos); ferr == nil {
+							r.chainOpen, r.chainPos = true, pos
 						}
 					}
-					if ferr == nil && pos != chainPos {
-						ferr = fmt.Errorf("decoder: greedy chain is at position %d, the decode loop at %d", chainPos, pos)
+					if ferr == nil && pos != r.chainPos {
+						ferr = fmt.Errorf("decoder: greedy chain is at position %d, the decode loop at %d", r.chainPos, pos)
 					}
 					if ferr == nil {
-						fastNext, ferr = chainRF.GreedyChainNext()
-						chainPos++
+						r.fastNext, ferr = r.chainRF.GreedyChainNext()
+						r.chainPos++
 					}
-				} else if sChainRF != nil && chainTok {
+				} else if r.sChainRF != nil && r.chainTok {
 					// The sampled chain: as the greedy chain, with this token's draw (taken above, as ForwardSample's is).
-					if !chainOpen {
-						if ferr = sChainRF.SampleChainStart(next, pos, draw.Temperature, draw.Seed, draw.Draw); ferr == nil {
-							chainOpen, chainPos = true, pos
+					if !r.chainOpen {
+						if ferr = r.sChainRF.SampleChainStart(next, pos, draw.Temperature, draw.Seed, draw.Draw); ferr == nil {
+							r.chainOpen, r.chainPos = true, pos
 						}
 					}
-					if ferr == nil && pos != chainPos {
-						ferr = fmt.Errorf("decoder: sampled chain is at position %d, the decode loop at %d", chainPos, pos)
+					if ferr == nil && pos != r.chainPos {
+						ferr = fmt.Errorf("decoder: sampled chain is at position %d, the decode loop at %d", r.chainPos, pos)
 					}
 					if ferr == nil {
-						fastNext, ferr = sChainRF.SampleChainNext(draw.Seed, draw.Draw)
-						chainPos++
+						r.fastNext, ferr = r.sChainRF.SampleChainNext(draw.Seed, draw.Draw)
+						r.chainPos++
 					}
 					if ferr == nil {
-						g.DeviceSampled++
+						r.g.DeviceSampled++
 					}
-				} else if fastGreedy {
+				} else if r.fastGreedy {
 					// Greedy fast path: the resident picks the argmax on-device and returns
 					// just the id, skipping the full-logits readback.
-					stepRow[0] = emb
+					r.stepRow[0] = emb
 					var sr stepResult
-					sr, ferr = m.step(stepBatch{Pass: passToken, Emb: stepRow[:], Pos: pos, Out: outArgmax})
-					fastNext = sr.ID
-				} else if sampleOn {
-					stepRow[0] = emb
+					sr, ferr = m.step(stepBatch{Pass: passToken, Emb: r.stepRow[:], Pos: pos, Out: outArgmax})
+					r.fastNext = sr.ID
+				} else if r.sampleOn {
+					r.stepRow[0] = emb
 					var sr stepResult
-					sr, ferr = m.step(stepBatch{Pass: passToken, Emb: stepRow[:], Pos: pos, Out: outSample,
+					sr, ferr = m.step(stepBatch{Pass: passToken, Emb: r.stepRow[:], Pos: pos, Out: outSample,
 						Temperature: draw.Temperature, Seed: draw.Seed, Draw: draw.Draw})
-					fastNext = sr.ID
+					r.fastNext = sr.ID
 					if ferr == nil {
-						g.DeviceSampled++
+						r.g.DeviceSampled++
 					}
-				} else if topKOn {
-					stepRow[0] = emb
+				} else if r.topKOn {
+					r.stepRow[0] = emb
 					var sr stepResult
-					sr, ferr = m.step(stepBatch{Pass: passToken, Emb: stepRow[:], Pos: pos, Out: outTopK, K: topKWidth,
-						Temperature: sp.Temperature, WantZ: sampler.topPActive()})
+					sr, ferr = m.step(stepBatch{Pass: passToken, Emb: r.stepRow[:], Pos: pos, Out: outTopK, K: r.topKWidth,
+						Temperature: r.sp.Temperature, WantZ: r.sampler.topPActive()})
 					row := sr.TopK
-					if ferr == nil && mc3 != nil {
+					if ferr == nil && r.mc3 != nil {
 						// Resolve the draw now, while this generation holds the resident (see topKOn). The sampler is this
 						// generation's own and nothing else draws from it before the next iteration would have, so the RNG
 						// is consumed in the same order as the unbatched path.
-						if inf, ok := sampler.SampleFromTopK(row, topKVocab); ok {
-							topKPre = &inf
+						if inf, ok := r.sampler.SampleFromTopK(row, r.topKVocab); ok {
+							r.topKPre = &inf
 						} else if full, e := row.Full(); e != nil {
 							ferr = e
 						} else {
-							topKFullBuf = append(topKFullBuf[:0], full...) // the resident's host buffer is shared
-							topKPreFull = true
+							r.topKFullBuf = append(r.topKFullBuf[:0], full...) // the resident's host buffer is shared
+							r.topKPreFull = true
 						}
 					}
 					if ferr == nil {
-						topKRow = &row
+						r.topKRow = &row
 					}
 				} else {
-					logits, ferr = m.resident.Forward(emb, pos)
+					r.logits, ferr = m.resident.Forward(emb, pos)
 					viaForward = true
 				}
 				return ferr
 			}
-			if mc3 != nil {
+			if r.mc3 != nil {
 				// MC3: submit the token; it runs in a shared step with the other generations' tokens, or — alone — as
 				// residentCall on our own slot. A step's row is bit-identical to this token's own call: Forward's
 				// logits, or ForwardSample's id for a device-drawn token (the same draw). A greedy token served by a
 				// step continues on the full-logits path, which production's fast path equals by its own contract
 				// (ArgmaxEquivalent/GreedyEquivalent above).
 				solo := func() error {
-					if berr := m.residentBind(mc3Slot); berr != nil {
+					if berr := m.residentBind(r.mc3Slot); berr != nil {
 						return berr
 					}
 					if ferr := residentCall(); ferr != nil {
 						return ferr
 					}
 					if viaForward { // copy while this generation still holds the resident (mc3Logits)
-						mc3Logits = append(mc3Logits[:0], logits...)
-						logits = mc3Logits
+						r.mc3Logits = append(r.mc3Logits[:0], r.logits...)
+						r.logits = r.mc3Logits
 					}
 					return nil
 				}
 				// Alone on the batcher, a chainable token runs the chain with the resident held across tokens; the
 				// first token anyone else wants the resident, the chain stops and this token takes the batcher.
 				held := false
-				if (useChain || sChainRF != nil) && !needFull {
-					chainTok = true
-					held, err = mc3.holdSolo(solo, stopChain)
-					chainTok = false
+				if (r.useChain || r.sChainRF != nil) && !needFull {
+					r.chainTok = true
+					held, err = r.mc3.holdSolo(solo, r.stopChain)
+					r.chainTok = false
 				}
-				q := &batchReq{seq: ResidentBatchSeq{Slot: mc3Slot, Pos: pos, Emb: emb, Draw: draw}, solo: solo}
+				q := &batchReq{seq: ResidentBatchSeq{Slot: r.mc3Slot, Pos: pos, Emb: emb, Draw: draw}, solo: solo}
 				if !held {
-					err = mc3.forward(q)
+					err = r.mc3.forward(q)
 				}
 				if !held && err == nil && q.out != nil {
 					if draw != nil {
-						fastNext = q.out.ID
+						r.fastNext = q.out.ID
 						if !draw.Greedy {
-							g.DeviceSampled++
+							r.g.DeviceSampled++
 						}
 					} else {
-						logits, fastNext = q.out.Logits, -1
+						r.logits, r.fastNext = q.out.Logits, -1
 					}
 				}
 			} else {
 				err = residentCall()
 			}
-			gpuPos++
-		} else if cb != nil {
+			r.gpuPos++
+		} else if r.cb != nil {
 			// A batched step's row is bit-identical to this token's own m.forward (decodeMultiStep's contract).
-			q := &batchReq{id: next, cache: cache, solo: func() error {
+			q := &batchReq{id: next, cache: r.cache, solo: func() error {
 				var ferr error
-				logits, ferr = m.forward(next, cache)
+				r.logits, ferr = m.forward(next, r.cache)
 				return ferr
 			}}
-			err = cb.forward(q)
+			err = r.cb.forward(q)
 			if err == nil && q.out != nil {
-				logits = q.out.Logits
+				r.logits = q.out.Logits
 			}
 		} else {
-			logits, err = m.forward(next, cache)
+			r.logits, err = m.forward(next, r.cache)
 		}
 		return err
 	}
 	// A counted resident decode is one span over the loop (SB11b): its tokens are the forwards advance ran, one per emitted
 	// token.
-	decoded := 0
-	if resCost != nil && tg.advance != nil {
-		adv := tg.advance
-		tg.advance = func(next int, needFull bool, clk *decodeClock) error { decoded++; return adv(next, needFull, clk) }
+	r.decoded = 0
+	if r.resCost != nil && r.tg.advance != nil {
+		adv := r.tg.advance
+		r.tg.advance = func(next int, needFull bool, clk *decodeClock) error { r.decoded++; return adv(next, needFull, clk) }
 	}
-	completed := false
-	_ = costSpan(resCost, cost.FromContext(ctx), cost.Decode, func() (int, error) {
-		completed = plainDecodeLoop(ctx, tg, out, g, sampler, sp, maxTokens, func(id int) bool { return m.isStop(id, sp) }, commit, &clk)
-		return decoded, nil
+	r.completed = false
+	_ = costSpan(r.resCost, cost.FromContext(r.ctx), cost.Decode, func() (int, error) {
+		r.completed = plainDecodeLoop(r.ctx, r.tg, r.out, r.g, r.sampler, r.sp, r.maxTokens, func(id int) bool { return m.isStop(id, r.sp) }, r.commit, &r.clk)
+		return r.decoded, nil
 	})
-	if !completed {
+	if !r.completed {
 		return
 	}
-	if decodeTiming && clk.n > 0 {
-		ms := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 / float64(clk.n) }
+	if decodeTiming && r.clk.n > 0 {
+		ms := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 / float64(r.clk.n) }
 		logs.Infof("DECODE TIMING (%d tok, gpu=%v): forward %.1f ms | sample %.2f ms | logitProc %.2f ms | embed %.2f ms /token",
-			clk.n, useGPU, ms(clk.fwd), ms(clk.sample), ms(clk.proc), ms(clk.embed))
+			r.clk.n, r.useGPU, ms(r.clk.fwd), ms(r.clk.sample), ms(r.clk.proc), ms(r.clk.embed))
 		d := func(p *int64) float64 { return ms(time.Duration(atomic.SwapInt64(p, 0))) }
 		a, ml, hd := d(&dtAttn), d(&dtMLP), d(&dtHead)
 		gu, act, ad := d(&dtGU), d(&dtAct), d(&dtActDown)
 		qkv, o, aa := d(&dtQKV), d(&dtO), d(&dtAttnAll)
 		logs.Infof("DECODE SPLIT: attention %.2f ms | MLP %.2f ms | LM head %.2f ms | residual %.2f ms /token",
-			a, ml, hd, ms(clk.fwd)-a-ml-hd)
+			a, ml, hd, ms(r.clk.fwd)-a-ml-hd)
 		logs.Infof("DECODE SPLIT MLP: gate+up matmuls %.2f ms | activation %.2f ms | down matmul %.2f ms /token", gu, act, ad-act)
 		logs.Infof("DECODE SPLIT ATTN: q/k/v matmuls %.2f ms | rope+KV+scores/softmax/AV core %.2f ms | o matmul %.2f ms /token", qkv, aa-qkv-o, o)
-		lastDecodeSplit.fwd, lastDecodeSplit.attn, lastDecodeSplit.mlp, lastDecodeSplit.head = ms(clk.fwd), a, ml, hd
+		lastDecodeSplit.fwd, lastDecodeSplit.attn, lastDecodeSplit.mlp, lastDecodeSplit.head = ms(r.clk.fwd), a, ml, hd
 		lastDecodeSplit.gu, lastDecodeSplit.act, lastDecodeSplit.down = gu, act, ad-act
 		lastDecodeSplit.qkv, lastDecodeSplit.core, lastDecodeSplit.o = qkv, aa-qkv-o, o
 	}

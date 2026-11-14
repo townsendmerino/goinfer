@@ -7,6 +7,7 @@ import (
 	"hash/fnv"
 	"math"
 	"os"
+	"runtime"
 	"sort"
 	"testing"
 )
@@ -378,7 +379,15 @@ func TestGenerateInto_allocsPerGenerate(t *testing.T) {
 			_ = g
 		}
 		run() // warm the caches the first generation fills
-		t.Logf("%-24s %.0f allocs per Generate", c.name, testing.AllocsPerRun(5, run))
+		allocs := testing.AllocsPerRun(5, run)
+		var a, b runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&a)
+		for range 5 {
+			run()
+		}
+		runtime.ReadMemStats(&b)
+		t.Logf("%-24s %.0f allocs, %d bytes per Generate", c.name, allocs, (b.TotalAlloc-a.TotalAlloc)/5)
 		m.Close()
 	}
 }
