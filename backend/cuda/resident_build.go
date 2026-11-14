@@ -2014,3 +2014,26 @@ func (s *buildState) allocDecodeScratch(r *cudaResident) error {
 	}
 	return nil
 }
+
+// grantSlots takes what is left of the device after the KV, weights and scratch: the recurrent checkpoint, then the expert slot
+// cache (sized net of the windowed-KV grant's floor), then the windowed-KV grant itself. It runs last in the setup job, so every
+// allocation these must not cost has been made. It is the one place the grants are ordered.
+func (s *buildState) grantSlots(r *cudaResident) error {
+	// KV8a: the recurrent checkpoint comes out of what is left before the expert cache and the windowed grant are sized from it.
+	if postPoolDoneForTest != nil {
+		postPoolDoneForTest()
+	}
+	r.allocRecurrentCheckpoint()
+	// C′: the core + KV + scratch are now up, so free VRAM reflects them — size the expert slot
+	// cache to what actually fits (cap-and-log, never OOM) and allocate it.
+	if r.cacheExperts {
+		r.kvGrantRollback(r.expertCacheFloorBytes()) // before the cache is sized: the grant comes out of it, never below its minimum
+	}
+	if e := r.allocSlots(); e != nil {
+		return e
+	}
+	if !r.cacheExperts {
+		r.kvGrantRollback(0) // last: everything it must not cost is allocated
+	}
+	return nil
+}

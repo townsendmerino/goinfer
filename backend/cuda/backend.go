@@ -235,21 +235,8 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		if e = s.allocDecodeScratch(r); e != nil {
 			return e
 		}
-		// KV8a: the recurrent checkpoint comes out of what is left before the expert cache and the windowed grant are sized from it.
-		if postPoolDoneForTest != nil {
-			postPoolDoneForTest()
-		}
-		r.allocRecurrentCheckpoint()
-		// C′: the core + KV + scratch are now up, so free VRAM reflects them — size the expert slot
-		// cache to what actually fits (cap-and-log, never OOM) and allocate it.
-		if r.cacheExperts {
-			r.kvGrantRollback(r.expertCacheFloorBytes()) // before the cache is sized: the grant comes out of it, never below its minimum
-		}
-		if e := r.allocSlots(); e != nil {
+		if e = s.grantSlots(r); e != nil {
 			return e
-		}
-		if !r.cacheExperts {
-			r.kvGrantRollback(0) // last: everything it must not cost is allocated
 		}
 		r.pk = nil // the packing staging blocks: the garbage the build leaves behind is a few blocks, not a packed copy
 		return r.setupErr
