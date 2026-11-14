@@ -187,7 +187,7 @@ func staticResidentDecline(m *decoder.Model) error {
 		}
 	}
 	// The stacked-expert kernels take int8 or int4 (buildStacked); an f32 or other expert kind would fail mid-upload.
-	if k := m.MoEExpertKind(); k != "" && k != "int8" && k != "int4" {
+	if k := m.BackendView().MoEExpertKind(); k != "" && k != "int8" && k != "int4" {
 		return decoder.DeclineResident("the routed experts are %s, and webgpu's MoE kernels take int8 or int4 (load with Quant int4 or int8int8)", k)
 	}
 	return nil
