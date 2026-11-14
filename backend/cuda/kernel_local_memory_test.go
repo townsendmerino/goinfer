@@ -169,6 +169,9 @@ func TestKernelLocalMemoryCensus(t *testing.T) {
 		"moe_route":       4416, // two float[MOE_MAX_E] at MOE_MAX_E=512, plus the group scratch
 		"rope_kv":         32,
 		"rope_kv_batched": 32,
+		// The ragged step's twin of rope_kv_batched (prefill_batched.cu): the same 28 B cosf/sinf slow-path scratch, so the same
+		// 1.2 MiB at full occupancy, and no larger than the largest kernel already pinned.
+		"rope_kv_ragged": 32,
 		// The next two come from modules the census reads only because ptxModules() is derived from
 		// kernels.go's embeds.
 		"route_gptoss":          4608, // gptoss_act.ptx; larger than moe_route, so backend.go forces it too
