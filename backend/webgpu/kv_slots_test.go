@@ -1189,9 +1189,7 @@ func (fakeSlotModel) ResidentHostCopyBytes(slots int) int64 { return 0 }
 func (fakeSlotModel) Dims() (hidden, nLayers, nH, nKV, hd, inter, vocab int) {
 	return 16, 2, 2, 2, 8, 32, 100
 }
-func (fakeSlotModel) MLAResidentParams() (qLoRA, kvLoRA, qkNope, qkRope, vHead int, interleave bool, attnScale, ropeScale float64, ok bool) {
-	return
-}
+func (fakeSlotModel) ResidentSpec() decoder.ResidentSpec { return decoder.ResidentSpec{} }
 
 // TestSlotPricing_countsTheCompanion: a companion priced into ExtraResidentBytes (a vision tower, which serve prices before the load)
 // takes the same RAM as the weights on darwin, so a build with one coming gets a shorter context (slotsBeforeContextOn) and fewer

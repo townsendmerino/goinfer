@@ -197,13 +197,15 @@ func planLayerGeometry(m *decoder.Model, hls []hlayer, nH int, r *cudaResident) 
 		case decoder.MixerMLA:
 			L.hd, L.nKV, L.qDim, L.kvDim = r.mlaQKHead, 1, nH*r.mlaVHead, r.mlaLatDim
 		default:
-			L.hd, L.nKV = m.HeadDimAtResident(l), m.KVHeadsAtResident(l)
+			v := m.BackendView()
+			lv := v.Layer(l)
+			L.hd, L.nKV = lv.HeadDim(), lv.KVHeads()
 			L.qDim, L.kvDim = nH*L.hd, L.nKV*L.hd
-			if src := m.KVSrcAtResident(l); src != l {
+			if src := lv.KVSrc(); src != l {
 				L.kvShared, L.kvSrc = true, src
 			}
-			L.kEqV = m.VFromKResident(l) && !L.kvShared
-			L.vNorm = !L.kvShared && (L.kEqV || m.IsGemma4Resident())
+			L.kEqV = lv.VFromK() && !L.kvShared
+			L.vNorm = !L.kvShared && (L.kEqV || v.IsGemma4())
 		}
 		L.kvHalf = r.kvF16 && !L.noKV() && !L.kvShared
 		L.kvI8 = r.kvI8 && !L.noKV() && !L.kvShared
