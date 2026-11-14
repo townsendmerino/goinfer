@@ -12,6 +12,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
@@ -1897,6 +1898,119 @@ func (s *buildState) allocKV(r *cudaResident) error {
 	}
 	if kvPoolsDoneForTest != nil {
 		kvPoolsDoneForTest()
+	}
+	return nil
+}
+
+// allocDecodeScratch allocates the activation, projection, MoE, sampling and readback scratch the decode and prefill paths share,
+// sized from the widest attention layer (s.maxQDim, s.maxHd), and loads the float-activation GEMV kernels when the model takes them.
+// It runs inside the setup job after allocKV, before the recurrent checkpoint and the expert slots are sized from what is left.
+func (s *buildState) allocDecodeScratch(r *cudaResident) error {
+	var e error
+	H, I, vocab, nE, topK, moeInter, sharedInter, isMoE := s.H, s.I, s.vocab, s.nE, s.topK, s.moeInter, s.sharedInter, s.isMoE
+	maxQDim, maxHd := s.maxQDim, s.maxHd
+	if r.actG32 && maxQDim%32 != 0 {
+		return fmt.Errorf("per-32 activations need the attention width (%d) to be a multiple of 32", maxQDim)
+	}
+	r.cctx, r.cSc, r.cq = r.af(maxQDim), r.af(r.actScaleLen(maxQDim)), r.ai(maxQDim/4)
+	// v_norm (Gemma 4: every K/V-owning layer; K=V layers also derive V = v_norm(k)) reuses qk_norm with a UNIT
+	// weight [maxHd] (so x*inv*w = x*inv, scale-less; addOne=0). Allocate it only when needed.
+	for l := range r.layers {
+		if r.layers[l].vNorm {
+			ones := make([]float32, maxHd)
+			for i := range ones {
+				ones[i] = 1.0
+			}
+			r.vNormUnit = r.upOn(mem.LineDense, ones)
+			break
+		}
+	}
+	r.oO = r.af(H)
+	r.mSc, r.mq = r.af(r.actScaleLen(H)), r.ai(H/4)
+	if r.layerNorm {
+		r.zeroBias = r.af(H)
+		if err := gpu.Upload(r.zeroBias, make([]float32, H)); err != nil {
+			return err
+		}
+	}
+	// Dense-FFN scratch, only if the model has a dense FFN: a model whose every layer is routed reports intermediate_size 0
+	// (Qwen3.6-35B-A3B's config omits the key), and these would be 0-byte allocations, which this driver rejects as "invalid
+	// length". The dense branch of segBFFN is unreachable for such a model. Scratch is sized to the widest dense layer: an
+	// E-model's layers differ, and the launches take each layer's own width (cudaLayer.ffnI).
+	maxI := I
+	for l := range r.layers {
+		maxI = max(maxI, r.layers[l].ffnI)
+	}
+	if maxI > 0 {
+		r.gO, r.uO = r.af(maxI), r.af(maxI)
+		r.dSc, r.dScr, r.dq = r.af(r.actScaleLen(maxI)), r.af(maxI), r.ai(maxI/4)
+	} else if !isMoE {
+		return fmt.Errorf("cuda: intermediate_size is 0 on a DENSE model — no FFN to run")
+	}
+	if r.moe {
+		// Sized to the MoE expert width, not the dense one (Mellum's moe_intermediate_size
+		// differs from intermediate_size).
+		r.rLogits, r.rIdx, r.rWgt = r.af(nE), r.au32(topK), r.af(topK)
+		if r.cacheExperts { // C′: per-token slot-id buffer (uploaded per layer) + readback scratch
+			r.slotIdx = r.au32(topK)
+			r.hostIdx = make([]uint32, topK)
+			r.hostSlot = make([]uint32, topK)
+			if hb, e := gpu.NewHostBufferOn[uint8](r.dev, mem.LineScratch, topK*4); e != nil {
+				return e
+			} else {
+				r.slotIdxHost = hb
+			}
+		}
+		r.moeGU = r.af(2 * moeInter)
+		r.moeSc, r.moeScr, r.moeQ = r.af(1), r.af(moeInter), r.ai(moeInter/4)
+		if sharedInter > 0 {
+			r.shGUout = r.af(2 * sharedInter)
+			r.shSc, r.shScr, r.shQ = r.af(1), r.af(sharedInter), r.ai(sharedInter/4)
+			r.shDownOut = r.af(H)
+			r.shGl = r.af(1) // the sigmoid gate logit; allocated unconditionally (one float)
+		}
+	}
+	if r.gemma4Moe { // parallel dense‖MoE branch scratch
+		r.g4x1, r.g4x2, r.g4rn = r.af(H), r.af(H), r.af(H)
+	}
+	if why := r.floatActDecline(); why == "" {
+		fmod, e2 := r.dev.CompileLibrary(gemvW4F32PTX)
+		if e2 != nil {
+			return e2
+		}
+		for _, f := range []struct {
+			dst  *Pipeline
+			name string
+		}{
+			{&r.fW4F32, "gemv_w4f32"}, {&r.fMoEGemvF32, "gemv_w4f32_moe"}, {&r.fMoEWaccF32, "gemv_w4f32_moe_wacc"}, {&r.fGluF32, "glu_f32"},
+		} {
+			if *f.dst, e = r.dev.NewComputePipeline(fmod, f.name); e != nil {
+				return e
+			}
+		}
+		r.xF, r.dF, r.moeGLUF = r.af(H), r.af(max(maxI, 1)), r.af(moeInter)
+		r.floatAct = true
+		logs.Debugf("cuda: decode activations: f32 into every int4 projection (gemv_w4f32)")
+	} else if r.gemma4Moe {
+		logs.Debugf("cuda: decode activations: int8 (W4A8): %s", why)
+	}
+	r.dO, r.logits = r.af(H), r.af(vocab)
+	r.argIdx, r.argVal = r.ai(1), r.af(1) // greedy fast-path readback (4 B vs 594 KB)
+	r.topkOut = r.ai(2*topkMaxK + 2)      // sampled fast-path readback (~2 KB vs 594 KB)
+	r.topkCV, r.topkCI, r.topkMx, r.topkPart = r.af(topkCap), r.ai(topkCap), r.af(1), r.af(topkThreads)
+	r.topkCnt, r.topkDone = r.ai(1), r.ai(1)
+	if e := gpu.Upload(r.topkCnt, []int32{0}); e != nil {
+		return e
+	}
+	if e := gpu.Upload(r.topkDone, []int32{0}); e != nil {
+		return e
+	}
+	nGb := launchgeom.GumbelBlocks(vocab)
+	r.gbKey, r.gbIdx, r.gbOut = r.af(nGb), r.ai(nGb), r.ai(1) // Gumbel-max sampling scratch (R7b)
+	if hb, e := gpu.NewHostBufferOn[float32](r.dev, mem.LineScratch, vocab); e != nil {
+		return e
+	} else {
+		r.logitsPinned, r.logitsHost = hb, hb.Slice()
 	}
 	return nil
 }
