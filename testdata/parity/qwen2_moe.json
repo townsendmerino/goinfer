@@ -8,7 +8,7 @@
   "own": [
     "decoder/arch_qwen2_moe.go"
   ],
-  "deps_hash": "sha256:63c53a5d2caa4cef3fa74b9bacc0c4479262af229f5d7c0190675ff9448d7c1e",
+  "deps_hash": "sha256:16d56a78e97eb4354b274a9a5bb424f6863e28cbcd49c4d4e7736e689c61da07",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
