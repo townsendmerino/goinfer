@@ -41,14 +41,15 @@ func (p *mambaParams) ssmFloats() int { return p.nHeads * p.headDim * p.dState }
 // buildMambaParams returns the model's Mamba-2 geometry, or nil for a model with no Mamba layer. Granite-4.0-H and an int8 load decline by name:
 // Granite's embedding and residual multipliers are not folded here, and int8 projections would be re-quantized to int4 without notice.
 func buildMambaParams(m *decoder.Model) (*mambaParams, error) {
-	if _, _, _, _, _, _, _, _, _, ok := m.GraniteResidentParams(); ok {
+	bv := m.BackendView()
+	if _, _, _, _, _, _, _, _, _, ok := bv.GraniteParams(); ok {
 		return nil, fmt.Errorf("Granite-4.0-H's embedding and residual multipliers are not folded on CUDA; it runs on the CPU")
 	}
-	nh, hd, ds, ng, k, normG, _, ok := m.NemotronResidentParams()
+	nh, hd, ds, ng, k, normG, _, ok := bv.NemotronParams()
 	if !ok {
 		return nil, nil
 	}
-	if (!m.ResidentProjsInt4() || recurrentInt8Load(m)) && !mambaInt8DeclineOffForTest {
+	if (!bv.ProjsInt4() || recurrentInt8Load(m)) && !mambaInt8DeclineOffForTest {
 		return nil, fmt.Errorf("Nemotron-H runs resident at int4 only; its int8 projections would be re-quantized to int4 here, so it runs on the CPU")
 	}
 	if normG < 1 || ng < 1 || nh%ng != 0 || (nh*hd)%normG != 0 || k < 2 || k > 8 || (nh*hd)%8 != 0 {
@@ -82,9 +83,10 @@ type hostMamba struct {
 // packMambaLayer plans layer l's Mamba-2 weights: in_proj [projDim, hidden] and out_proj [hidden, dInner] as per-row int8 (the codes the load holds, or
 // quantized at upload from the f32, the same codes either way), and packs headP = {-exp(aLog) in f64, dtBias, D} per head.
 func packMambaLayer(m *decoder.Model, l, hidden int, p *mambaParams) (hostMamba, error) {
-	inProj, convW, convB, aLog, dW, dtBias, normW, outProj := m.GraniteMambaWeights(l)
+	bv := m.BackendView()
+	inProj, convW, convB, aLog, dW, dtBias, normW, outProj := bv.Layer(l).GraniteMambaWeights()
 	var inWM, outWM linalg.WeightMat
-	if in, out := m.MambaProjInt8(l); in != nil {
+	if in, out := bv.Layer(l).MambaProjInt8(); in != nil {
 		inWM, outWM = *in, *out
 	} else {
 		if len(inProj) != p.projDim*hidden || len(outProj) != hidden*p.dInner {

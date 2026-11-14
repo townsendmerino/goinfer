@@ -20,6 +20,13 @@ type BackendModelView interface {
 	Spec() ResidentSpec
 	Weights() *Weights
 
+	// The per-family resident geometry, each ok=false (zeros) when the model carries no such subsystem.
+	MoEParams() (nE, k, inter, sharedInter int, sigmoid, norm, sharedUngated bool, scale float64, nGroup, topkGroup int, ok bool)
+	MLAParams() (qLoRA, kvLoRA, qkNope, qkRope, vHead int, interleave bool, attnScale, ropeScale float64, ok bool)
+	Qwen35Params() (convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numValueHeads int, attnGate, ok bool)
+	NemotronParams() (nHeads, headDim, dState, nGroups, dConv, normGroups int, attnScale float32, ok bool)
+	GraniteParams() (nHeads, headDim, dState, nGroups, dConv int, embMul, residMul, logitScale, attnScale float32, ok bool)
+
 	NormEps() float32
 	AttnScale() float32
 	AttnTempScale(pos int) float32
@@ -147,6 +154,48 @@ func (v backendModelView) HasAttnSinks() bool          { return v.m.w.arch.hasAt
 func (v backendModelView) IsGemma4() bool              { return v.m.w.arch.gemma4 != nil }
 func (v backendModelView) ProjsInt4() bool             { return v.m.residentProjsInt4() }
 func (v backendModelView) LoadAbort() <-chan struct{}  { return v.m.loadAbort }
+
+func (v backendModelView) MoEParams() (nE, k, inter, sharedInter int, sigmoid, norm, sharedUngated bool, scale float64, nGroup, topkGroup int, ok bool) {
+	mo := v.m.ResidentSpec().MoE
+	if mo == nil {
+		return 0, 0, 0, 0, false, false, false, 0, 0, 0, false
+	}
+	return mo.NumExperts, mo.TopK, mo.IntermediateDim, mo.SharedIntermediateDim,
+		mo.RouterSigmoid, mo.NormTopKProb, mo.SharedUngated, mo.RoutedScale, mo.NGroup, mo.TopkGroup, true
+}
+
+func (v backendModelView) MLAParams() (qLoRA, kvLoRA, qkNope, qkRope, vHead int, interleave bool, attnScale, ropeScale float64, ok bool) {
+	p := v.m.ResidentSpec().MLA
+	if p == nil {
+		return 0, 0, 0, 0, 0, false, 0, 0, false
+	}
+	return p.QLoRARank, p.KVLoRARank, p.QKNopeHeadDim, p.QKRopeHeadDim, p.VHeadDim,
+		p.RopeInterleave, p.AttnScale, p.RopeScale, true
+}
+
+func (v backendModelView) Qwen35Params() (convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numValueHeads int, attnGate, ok bool) {
+	g := v.m.ResidentSpec().Qwen35
+	if g == nil {
+		return 0, 0, 0, 0, 0, false, false
+	}
+	return g.ConvKernel, g.KeyHeadDim, g.ValueHeadDim, g.NumKeyHeads, g.NumValueHeads, g.AttnGate, true
+}
+
+func (v backendModelView) NemotronParams() (nHeads, headDim, dState, nGroups, dConv, normGroups int, attnScale float32, ok bool) {
+	np := v.m.ResidentSpec().Nemotron
+	if np == nil {
+		return 0, 0, 0, 0, 0, 0, 0, false
+	}
+	return np.NHeads, np.HeadDim, np.DState, np.NGroups, np.DConv, np.NormGroups, np.AttnScale, true
+}
+
+func (v backendModelView) GraniteParams() (nHeads, headDim, dState, nGroups, dConv int, embMul, residMul, logitScale, attnScale float32, ok bool) {
+	g := v.m.ResidentSpec().Granite
+	if g == nil {
+		return 0, 0, 0, 0, 0, 0, 0, 0, 0, false
+	}
+	return g.NHeads, g.HeadDim, g.DState, g.NGroups, g.DConv, g.EmbMul, g.ResidMul, g.LogitScale, g.AttnScale, true
+}
 
 func (v backendModelView) AttnTempScale(pos int) float32 {
 	a := v.m.w.arch
