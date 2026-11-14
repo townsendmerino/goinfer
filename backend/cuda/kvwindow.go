@@ -43,7 +43,7 @@ func (r *cudaResident) kvWindowSetup(m *decoder.Model) {
 	if !m.ResidentWindowedKV() {
 		return
 	}
-	window := m.SlidingWindowResident()
+	window := m.BackendView().SlidingWindow()
 	if window <= 0 || r.ctxCap <= window+kvWindowSlack {
 		return
 	}

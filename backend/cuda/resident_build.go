@@ -125,9 +125,9 @@ func (s *buildState) admit() error {
 	H, nLayers, nH, _, _, I, vocab := m.Dims() // nKV, hd are per-layer now (KVHeadsAtResident/HeadDimAtResident); model-level unused
 	// Gemma 4 E-model PLE width P (0 for every other model). The resident embedding row is then [hidden ‖ nLayers*P] (ResidentEmbedLen):
 	// the host computes the per-layer inputs, and each layer's PLE branch reads its slice of the tail (S1 on CUDA).
-	pleP := m.Gemma4PLEDimResident()
-	if want := H + nLayers*pleP; pleP > 0 && m.ResidentEmbedLen() != want {
-		return decline(fmt.Errorf("gemma4 E-model: the decoder's resident embedding row is %d floats, but hidden+layers*P is %d", m.ResidentEmbedLen(), want))
+	pleP := m.BackendView().Gemma4PLEDim()
+	if want := H + nLayers*pleP; pleP > 0 && m.BackendView().EmbedLen() != want {
+		return decline(fmt.Errorf("gemma4 E-model: the decoder's resident embedding row is %d floats, but hidden+layers*P is %d", m.BackendView().EmbedLen(), want))
 	}
 
 	// ---- MoE knobs (ok=false for a dense model; every field then stays zero) ----
@@ -140,8 +140,8 @@ func (s *buildState) admit() error {
 	// gemma4MoeMLP (parallel dense‖MoE + join), so it bypasses the generic-MoE admission checks below
 	// (gelu-tanh act, the attention sandwich norm) and gets its own int4-shape checks. Its nE/topK/
 	// moeInter still come from arch.MoE (MoEResidentParams), matching the bundle.
-	isG4MoE := m.HasGemma4MoEResident()
-	isGemma4 := m.IsGemma4Resident()
+	isG4MoE := m.BackendView().HasGemma4MoE()
+	isGemma4 := m.BackendView().IsGemma4()
 	if isMoE && !isG4MoE {
 		// Decline anything the dispatch does not implement loudly rather than dropping it; FeatMoE is one flag and cannot
 		// express these sub-shapes. The gated shared expert (Qwen-MoE) is a derived feature (FeatMoEGatedShared,
@@ -154,8 +154,8 @@ func (s *buildState) admit() error {
 			return decline(fmt.Errorf("MoE nE=%d exceeds moe_route's MOE_MAX_E=%d", nE, capE))
 		case nGroup > capG:
 			return decline(fmt.Errorf("MoE nGroup=%d exceeds moe_route's MOE_MAX_G=%d", nGroup, capG))
-		case m.GatedActResident() != 1: // decoder.ActSiLU — decoder/mlp.go errors on any other
-			return decline(fmt.Errorf("MoE experts are SwiGLU-only, arch act=%d", m.GatedActResident()))
+		case m.BackendView().GatedAct() != 1: // decoder.ActSiLU — decoder/mlp.go errors on any other
+			return decline(fmt.Errorf("MoE experts are SwiGLU-only, arch act=%d", m.BackendView().GatedAct()))
 		case shape.Sandwich:
 			return decline(fmt.Errorf("MoE + sandwich norms: the combine accumulates straight into " +
 				"the residual, so there is no seam to normalize the block output at"))
@@ -212,7 +212,7 @@ func (s *buildState) admit() error {
 	// Cohere/Command-R and Cohere2/Command-R7B: LayerNorm and parallel blocks.
 	layerNorm := shape.LayerNorm
 	parallelBlock := shape.Parallel
-	logitScale, _ := m.LogitScaleResident() // ok=false ⇒ 1, already the applyLogitScale no-op value
+	logitScale, _ := m.BackendView().LogitScale() // ok=false ⇒ 1, already the applyLogitScale no-op value
 	// Per-32 ACTIVATION quantization (decoder.Options.ActQuantGroup, actgroup.cu): implemented for the
 	// plain dense RMSNorm decode path. Every path whose kernels read ONE activation scale per vector
 	// declines by name rather than reading a per-group buffer as a per-vector one.
@@ -302,7 +302,7 @@ func (s *buildState) planLayers() error {
 			return decline(fmt.Errorf("layer %d: %w", l, stepErr))
 		}
 		hl.steps = progSteps
-		g4b, isG4 := m.Gemma4MoEResidentLayer(l)
+		g4b, isG4 := m.BackendView().Layer(l).Gemma4MoEBundle()
 		hl.g4moe = isG4
 		var proj []struct {
 			dst *hostW
@@ -407,12 +407,12 @@ func (s *buildState) planLayers() error {
 			}
 			hl.mlaWUK, hl.mlaWUV = wuk, wuv
 		default:
-			if m.KVSrcAtResident(l) != l {
+			if m.BackendView().Layer(l).KVSrc() != l {
 				// A KV-shared layer (Gemma 4 E-model) carries only Q and O: its K/V are its source layer's.
 				proj = []projEnt{{&hl.q, &lw.QProj}, {&hl.o, &lw.OProj}}
 			} else {
 				proj = []projEnt{{&hl.q, &lw.QProj}, {&hl.k, &lw.KProj}, {&hl.o, &lw.OProj}}
-				if !m.VFromKResident(l) { // K=V (attention_k_eq_v) global layers carry NO v_proj — V=v_norm(k)
+				if !m.BackendView().Layer(l).VFromK() { // K=V (attention_k_eq_v) global layers carry NO v_proj — V=v_norm(k)
 					proj = append(proj, projEnt{&hl.v, &lw.VProj})
 				}
 			}
@@ -596,13 +596,13 @@ func (s *buildState) planLayers() error {
 		// Uniform-rope families hand back the same slice for every layer.
 		if mambaP != nil {
 			// Nemotron-H's attention is NoPE: an all-zero table makes rope_kv the identity rotation (cos 0 = 1, sin 0 = 0), as WebGPU's zeroed invFreq does.
-			hl.invFreq = make([]float32, m.RotaryDimAtResident(l)/2)
+			hl.invFreq = make([]float32, m.BackendView().Layer(l).RotaryDim()/2)
 		} else if hl.mixer != decoder.MixerDeltaNet {
-			hl.invFreq = m.RopeInvFreqLayerResident(l) // Gemma 4: real per-layer table, not the generic one
+			hl.invFreq = m.BackendView().Layer(l).RopeInvFreq() // Gemma 4: real per-layer table, not the generic one
 		}
 		// Per-layer window: only LOCAL layers are windowed; global layers stay full causal.
-		if m.LayerIsLocalResident(l) {
-			hl.window = int32(m.SlidingWindowResident())
+		if m.BackendView().Layer(l).IsLocal() {
+			hl.window = int32(m.BackendView().SlidingWindow())
 		}
 		if hl.mixer == decoder.MixerDeltaNet {
 			// A DeltaNet layer has no attention geometry, QK-norm or rope table, which the checks below read; its own shapes are
@@ -632,20 +632,20 @@ func (s *buildState) planLayers() error {
 					l, H, len(hl.postAttnNorm), len(hl.postMLPNorm)))
 			}
 		}
-		if hdL := m.HeadDimAtResident(l); shape.QKNorm {
+		if hdL := m.BackendView().Layer(l).HeadDim(); shape.QKNorm {
 			// Per-layer head_dim: Gemma 4's global layers have q_norm/k_norm of GlobalHeadDim, not the model HeadDim, so validate
 			// against the layer's own width. QKNormWhole (Olmo 3/Olmo Hybrid): the norm reduces over the whole q/k vector, so the
 			// weight is nH*hdL / nKV*hdL wide, and the resident launch (one Q block plus one K block, see segA) sizes both blocks
 			// from a single hd, which is correct only when nH==nKV (MHA). Decline rather than mis-normalize a GQA family.
 			wantQ, wantK := hdL, hdL
-			nKVL := m.KVHeadsAtResident(l)
+			nKVL := m.BackendView().Layer(l).KVHeads()
 			if qkNormWhole {
 				if nH != nKVL {
 					return decline(fmt.Errorf("layer %d: arch claims QKNormWhole but nH=%d != nKV=%d — the resident whole-vector kernel launch requires MHA", l, nH, nKVL))
 				}
 				wantQ, wantK = nH*hdL, nKVL*hdL
 			}
-			if m.KVSrcAtResident(l) != l {
+			if m.BackendView().Layer(l).KVSrc() != l {
 				wantK = 0 // a KV-shared layer has no k_norm either
 			}
 			if len(hl.qNorm) != wantQ || len(hl.kNorm) != wantK {
@@ -721,7 +721,7 @@ func (s *buildState) newResident(planOnly bool, mp *memPlanRun) (*cudaResident, 
 	if allocSlackSeenForTest != nil && mp == nil {
 		allocSlackSeenForTest(allocSlack, packedAllocSlack([]any{hls, hlm}))
 	}
-	attnCap := m.AttnLogitSoftcapResident()
+	attnCap := m.BackendView().AttnLogitSoftcap()
 	if attnSoftcapDropForTest {
 		attnCap = 0
 	}
@@ -735,10 +735,10 @@ func (s *buildState) newResident(planOnly bool, mp *memPlanRun) (*cudaResident, 
 		kvF16:     m.KVCacheF16(),
 		kvI8:      m.KVDeliveredFor("cuda") == mem.KVI8,
 		hidden:    H, nLayers: nLayers, nH: nH, inter: I, vocab: vocab,
-		eps: m.NormEps(), attnScale: m.AttnScale(), finalSoftcap: m.FinalLogitSoftcapResident(), attnCap: attnCap, faSoftcap: m.FlashDecodeSoftcap(),
+		eps: m.NormEps(), attnScale: m.AttnScale(), finalSoftcap: m.BackendView().FinalLogitSoftcap(), attnCap: attnCap, faSoftcap: m.FlashDecodeSoftcap(),
 		attnTempBeta: attnTempBeta, attnTempOrigMaxPos: attnTempOrigMaxPos,
 		qkNorm: shape.QKNorm, qkNormWhole: qkNormWhole, rmsAddOne: m.RMSAddOne(),
-		act: int32(m.GatedActResident()), sandwich: sandwich, postOnly: postOnly,
+		act: int32(m.BackendView().GatedAct()), sandwich: sandwich, postOnly: postOnly,
 		layerNorm: layerNorm, parallelBlock: parallelBlock, logitScale: logitScale, actG32: actG32,
 		moe: isMoE, nE: nE, topK: topK, moeInter: moeInter,
 		moeScale: float32(moeScale), nGroup: nGroup, topkGroup: topkGroup,
@@ -947,7 +947,7 @@ func (s *buildState) bindKernels(r *cudaResident) error {
 	// rope_kv (cuda/rope_pairwise.cu, same argument list and launch geometry) into the same field, so no launch site
 	// changes. A load failure declines: the NeoX kernel on a pairwise model is silently wrong from position 1, so there is
 	// no fallback.
-	r.pairwiseRoPE = m.PairwiseRoPEResident()
+	r.pairwiseRoPE = m.BackendView().PairwiseRoPE()
 	if r.pairwiseRoPE {
 		pwmod, pe := r.compileKV(r.kvPTX(ropePairwisePTX, ropePairwiseKV16PTX))
 		if pe != nil {
@@ -1180,7 +1180,7 @@ func (s *buildState) bindKernels(r *cudaResident) error {
 	if r.prefillReady {
 		// GLM-OCR's pairwise m-RoPE kernel writes f32 rows, so an f16 cache never compiles or loads it, whatever the policy says: the
 		// batched m-RoPE prefill stays unready and PrefillMRoPELast declines to the CPU prefill and upload (TestKV16_pairwiseMRoPENeverF16).
-		if sec := m.MRopeSectionResident(); len(sec) == 3 && !(r.pairwiseRoPE && r.kvF16) && !r.kvI8 {
+		if sec := m.BackendView().MRopeSection(); len(sec) == 3 && !(r.pairwiseRoPE && r.kvF16) && !r.kvI8 {
 			// Pairwise m-RoPE (GLM-OCR) rotates (2d, 2d+1): its own kernel in rope_pairwise.ptx. A
 			// model that needs it and cannot load it must NOT fall back to the NeoX m-RoPE kernel.
 			mropePTX, mropeName := r.kvPTX(ropeMRopePrefillPTX, ropeMRopePrefillKV16PTX), "rope_kv_mrope_batched"
@@ -1198,7 +1198,7 @@ func (s *buildState) bindKernels(r *cudaResident) error {
 				if r.mropePrefillReady {
 					r.mropeTakesMode = !r.pairwiseRoPE
 					r.mropeSec0, r.mropeSec1 = int32(sec[0]), int32(sec[0]+sec[1])
-					if m.MRopeInterleavedResident() {
+					if m.BackendView().MRopeInterleaved() {
 						if r.pairwiseRoPE {
 							// Pairwise rotation over the interleaved layout is a combination no checkpoint registers (decoder.ropeAt),
 							// and rope_kv_mrope_batched_pw has no such mode: decline rather than rotate by the wrong rule.
@@ -1270,7 +1270,7 @@ func (s *buildState) bindKernels(r *cudaResident) error {
 	// gpt-oss's clamped interleaved-SwiGLU expert epilogue: own module, so the audited glue.ptx/moe.ptx stay untouched.
 	// Loaded only for that family; launchGluSplitExpert branches on this pipeline being populated. A load failure is not
 	// fatal.
-	if alpha, limit, isGptOss := m.GptOssActResident(); isGptOss {
+	if alpha, limit, isGptOss := m.BackendView().GptOssAct(); isGptOss {
 		if gmod, ge := r.dev.CompileLibrary(gptOssActPTX); ge == nil {
 			// Loader closure, not a plain assignment: see the pipeline-lint note at the L3 load above.
 			loadG := func(dst *Pipeline, name string) {
@@ -1322,7 +1322,7 @@ func (s *buildState) bindKernels(r *cudaResident) error {
 					// head_dim is 256 where hidden/heads is not.
 					maxHd := 0
 					for l := range nLayers {
-						if h := m.HeadDimAtResident(l); h > maxHd {
+						if h := m.BackendView().Layer(l).HeadDim(); h > maxHd {
 							maxHd = h
 						}
 					}
@@ -1417,7 +1417,7 @@ func (s *buildState) bindFamilyState(r *cudaResident) error {
 	// tables. Uploaded once here rather than per token — they are weights, not
 	// activations. Both are nil for every other family, and r.af/r.up32 are not called
 	// at all in that case (Alloc(0) is an error, not a no-op).
-	if m.HasAttnSinksResident() {
+	if m.BackendView().HasAttnSinks() {
 		// The glue `attention` fallback (taken when !prefillReady) has no sink parameter, so a model whose
 		// prefill_batched.ptx fails to JIT would decode through a kernel that silently omits the learned per-head sink. Refuse
 		// that case: decoder/features.go says the sink reaches both paths, and this is what makes that true.
@@ -1428,21 +1428,21 @@ func (s *buildState) bindFamilyState(r *cudaResident) error {
 		}
 		r.gptOssSinks = make([]Buffer, nLayers)
 		for l := range nLayers {
-			if sk := m.GptOssSinksResident(l); len(sk) > 0 {
+			if sk := m.BackendView().Layer(l).AttnSinks(); len(sk) > 0 {
 				r.gptOssSinks[l] = r.upOn(mem.LineDense, sk)
 			}
 		}
 	}
-	if _, _, isGptOss := m.GptOssActResident(); isGptOss {
+	if _, _, isGptOss := m.BackendView().GptOssAct(); isGptOss {
 		r.gptOssExpBias = make([]Buffer, nLayers)
 		r.gptOssDownBias = make([]Buffer, nLayers)
 		for l := range nLayers {
-			if gb := m.GptOssExpertBiasResident(l); len(gb) > 0 {
+			if gb := m.BackendView().Layer(l).GptOssExpertBias(); len(gb) > 0 {
 				r.gptOssExpBias[l] = r.upOn(mem.LineDense, gb)
 			}
 			// The per-expert DOWN bias, consumed by gemv_w4a8_moe_wacc_bias inside the router-weight product; omitting it costs min
 			// cosine 0.75 against 0.997.
-			if db := m.GptOssExpertDownBiasResident(l); len(db) > 0 {
+			if db := m.BackendView().Layer(l).GptOssExpertDownBias(); len(db) > 0 {
 				r.gptOssDownBias[l] = r.upOn(mem.LineDense, db)
 			}
 		}
@@ -1606,7 +1606,7 @@ func (s *buildState) uploadLayers(r *cudaResident) error {
 			L.mscale = float32(m.RopeMscaleLayer(l))
 		} else {
 			L.q, L.o = r.upW(h.q), r.upW(h.o)
-			if m.KVSrcAtResident(l) == l {
+			if m.BackendView().Layer(l).KVSrc() == l {
 				L.k = r.upW(h.k) // a KV-shared layer has no k_proj; v below (K=V layers have none)
 			}
 			L.invF = r.up32(h.invFreq)
@@ -1630,7 +1630,7 @@ func (s *buildState) uploadLayers(r *cudaResident) error {
 			// Gemma 4's per-layer output scalar (out = h*layerScalar after the dense MLP residual add): present on every dense
 			// gemma4 layer (1 when the checkpoint's tensor is absent, decoder/weights.go); g4moe layers override it below with their
 			// bundle's value. Zero, the skip sentinel segB's dense tail checks, for every non-gemma4 family.
-			L.layerScalar = m.Gemma4DenseLayerScalarAtResident(l)
+			L.layerScalar = m.BackendView().Layer(l).Gemma4DenseScalar()
 		}
 		if (r.sandwich || r.postOnly) && h.mixer != decoder.MixerDeltaNet {
 			// h.mixer == decoder.MixerDeltaNet: postOnly is model-level, but Olmo Hybrid's DeltaNet layers use NormPre2 and were never given
@@ -1679,7 +1679,7 @@ func (s *buildState) uploadLayers(r *cudaResident) error {
 		// the *Resident wrappers), never a recomputed interleave, so the runner cannot drift from the Gemma 4 program walk. Uniform
 		// families collapse to the model-level fields; Gemma 4's global layers report the wide head, fewer KV heads and partial
 		// rotary.
-		L.hd, L.nKV, L.rhalf = m.HeadDimAtResident(l), m.KVHeadsAtResident(l), m.RotaryDimAtResident(l)/2
+		L.hd, L.nKV, L.rhalf = m.BackendView().Layer(l).HeadDim(), m.BackendView().Layer(l).KVHeads(), m.BackendView().Layer(l).RotaryDim()/2
 		L.qDim, L.kvDim = nH*L.hd, L.nKV*L.hd
 		if h.mixer == decoder.MixerDeltaNet || h.mixer == decoder.MixerMamba || h.mixer == decoder.MixerNone {
 			// A recurrent mixer or a feed-forward-only block has no attention geometry to validate or rope table to bind. A non-zero kvDim would
@@ -1697,11 +1697,11 @@ func (s *buildState) uploadLayers(r *cudaResident) error {
 			r.layers[l] = L
 			continue
 		}
-		if src := m.KVSrcAtResident(l); src != l {
+		if src := m.BackendView().Layer(l).KVSrc(); src != l {
 			if g4KVSrcOffForTest {
 				// Test defect: the source one OWNING layer of the same attention type earlier (when there is one).
 				for j := src - 1; j >= 0; j-- {
-					if m.KVSrcAtResident(j) == j && m.HeadDimAtResident(j) == m.HeadDimAtResident(src) {
+					if m.BackendView().Layer(j).KVSrc() == j && m.BackendView().Layer(j).HeadDim() == m.BackendView().Layer(src).HeadDim() {
 						src = j
 						break
 					}
@@ -1716,7 +1716,7 @@ func (s *buildState) uploadLayers(r *cudaResident) error {
 			}
 			L.kvShared, L.kvSrc = true, src
 		}
-		L.kEqV = m.VFromKResident(l) && !L.kvShared
+		L.kEqV = m.BackendView().Layer(l).VFromK() && !L.kvShared
 		// Gemma 4 applies v_norm on every layer that owns its K/V; K=V layers always did. g4DropVNormForTest re-drops it on the
 		// non-K=V layers so a test can reproduce the pre-fix numbers.
 		L.vNorm = L.walk.Attn.G4VNorm && (L.kEqV || !g4DropVNormForTest)
@@ -1782,7 +1782,7 @@ func (s *buildState) sizeAttnScratch(r *cudaResident) error {
 		if k := r.layers[l].kvDim; k > maxKVDim {
 			maxKVDim = k
 		}
-		if d := m.HeadDimAtResident(l); d > maxHd {
+		if d := m.BackendView().Layer(l).HeadDim(); d > maxHd {
 			maxHd = d
 		}
 	}
@@ -1806,7 +1806,7 @@ func (s *buildState) sizeAttnScratch(r *cudaResident) error {
 			if k := r.layers[l].kvDim; k > maxKVDim {
 				maxKVDim = k
 			}
-			if d := m.HeadDimAtResident(l); d > maxHd {
+			if d := m.BackendView().Layer(l).HeadDim(); d > maxHd {
 				maxHd = d
 			}
 		}
@@ -1886,7 +1886,7 @@ func (s *buildState) allocKV(r *cudaResident) error {
 			}
 			continue
 		}
-		if want := m.KVHeadsAtResident(l) * m.HeadDimAtResident(l); r.layers[l].kvDim != want {
+		if want := m.BackendView().Layer(l).KVHeads() * m.BackendView().Layer(l).HeadDim(); r.layers[l].kvDim != want {
 			return fmt.Errorf("cuda: layer %d KV cache kvDim=%d != nKV*hd=%d (accessor-derived) — geometry/cache-size mismatch", l, r.layers[l].kvDim, want)
 		}
 	}
@@ -2011,6 +2011,120 @@ func (s *buildState) allocDecodeScratch(r *cudaResident) error {
 		return e
 	} else {
 		r.logitsPinned, r.logitsHost = hb, hb.Slice()
+	}
+	return nil
+}
+
+// grantSlots takes what is left of the device after the KV, weights and scratch: the recurrent checkpoint, then the expert slot
+// cache (sized net of the windowed-KV grant's floor), then the windowed-KV grant itself. It runs last in the setup job, so every
+// allocation these must not cost has been made. It is the one place the grants are ordered.
+func (s *buildState) grantSlots(r *cudaResident) error {
+	// KV8a: the recurrent checkpoint comes out of what is left before the expert cache and the windowed grant are sized from it.
+	if postPoolDoneForTest != nil {
+		postPoolDoneForTest()
+	}
+	r.allocRecurrentCheckpoint()
+	// C′: the core + KV + scratch are now up, so free VRAM reflects them — size the expert slot
+	// cache to what actually fits (cap-and-log, never OOM) and allocate it.
+	if r.cacheExperts {
+		r.kvGrantRollback(r.expertCacheFloorBytes()) // before the cache is sized: the grant comes out of it, never below its minimum
+	}
+	if e := r.allocSlots(); e != nil {
+		return e
+	}
+	if !r.cacheExperts {
+		r.kvGrantRollback(0) // last: everything it must not cost is allocated
+	}
+	return nil
+}
+
+// selectFusion fixes the build's dispatch flags from the uploaded layers: whether the fused QKV and per-32 paths run, whether decode
+// replays captured graphs, whether the expert DMA overlaps compute, and whether the batched prefill has steps on every layer. A
+// decline here returns before the width choice, and the caller closes r. It runs after the setup job, which has already released the
+// packing blocks.
+func (s *buildState) selectFusion(r *cudaResident) error {
+	H, postOnly, parallelBlock, hls := s.H, s.postOnly, s.parallelBlock, s.hls
+	// The fused path needs int4 projections on the layers it runs on (layerFusable). Anything else falls back to the unfused
+	// chain, which handles mixed quant correctly.
+	r.fuseQKV = true
+	for l := range hls {
+		h := &hls[l]
+		if !layerFusable(
+			h.q.kind == "int4" && h.k.kind == "int4" && h.v.kind == "int4",
+			h.isMoE,
+			h.g.kind == "int4" && h.u.kind == "int4" && h.d.kind == "int4") {
+			r.fuseQKV = false
+			break
+		}
+	}
+	if r.knobValue("GOINFER_CUDA_NO_FUSE") != "" {
+		r.fuseQKV = false
+	}
+	if postOnly {
+		// fQKV bakes a real pre-norm weight into its rmsnorm+quant dispatch, and a postOnly arch has none (Ly.preNorm is never
+		// uploaded), so it takes the unfused segA chain, which quantizes the raw residual.
+		r.fuseQKV = false
+	}
+	if parallelBlock {
+		// fQKV goes straight from x to Q/K/V and never materializes the normed, quantized activation that segBFFN's MLP branch
+		// reuses as its own input (FeatParallelBlock: segA's r.aq/r.aSc); the fused path has nowhere to hand it back.
+		r.fuseQKV = false
+	}
+	if r.isMLA {
+		r.fuseQKV = false
+	}
+	if r.actG32 {
+		// fused_rms_qkv / fused_rms_gu quantize per vector internally.
+		r.fuseQKV = false
+		// Their per-32 twins (fused_rms_qkv_g32 / fused_rms_gu_g32) take any per-32 weight kind, per projection, with fuseQKV's
+		// structural exclusions (no pre-norm, parallel block, MLA, gated q, MoE layers). Size-gated (fusedG32MaxHidden): every
+		// block redoes the rmsnorm and per-32 quant, which grows with H while the launches saved matter less as the GEMVs grow.
+		// Fusion paid off at H=1536 and lost at 3072 and 3584.
+		r.fuseG32 = r.knobValue("GOINFER_CUDA_NO_FUSE") == "" && !postOnly && !parallelBlock && !r.isMLA &&
+			H <= fusedG32MaxHidden
+		for l := range hls {
+			h := &hls[l]
+			if h.isMoE || h.qGate || !g32Fusable(h.q.kind, h.k.kind, h.v.kind, h.g.kind, h.u.kind) {
+				r.fuseG32 = false
+				break
+			}
+		}
+	}
+	// CUDA graphs (GOINFER_CUDA_GRAPHS): capture each layer's static launch segments now that fuseQKV is final (segA/segB
+	// branch on it), so decode replays them instead of re-issuing the launches. Off, launchToken is unchanged. Incompatible
+	// with the g4cap diagnostic, which syncs inside a segment. admitGraphs gates it: replay is bit-exact only under
+	// EXCLUSIVE_PROCESS tenancy or MPS, so a shared-GPU box under DEFAULT declines to the live path
+	// (docs/cuda-graphs-investigation.md).
+	// A windowed layer's K/V pointer moves with its base, so a captured graph would replay a stale one: graphs decline under windowed KV.
+	r.graphs = os.Getenv("GOINFER_CUDA_GRAPHS") != "" && !r.g4cap && !r.isMLA && !r.kvWin && r.mamba == nil &&
+		!(r.dnet != nil && r.KVSlots() > 1) // a captured segment holds one slot's window and state
+	r.graphsSync = os.Getenv("GOINFER_CUDA_GRAPHS_SYNC") != "" // debug: serialize replays (bisect ordering hazards)
+	r.graphMask = os.Getenv("GOINFER_CUDA_GRAPHS_ONLY")        // debug: replay only these segments (A/B/C), rest live
+	if e := r.admitGraphs(); e != nil {
+		return decline(fmt.Errorf("cuda: %w", e))
+	}
+	// C′ compute/DMA overlap (see the overlap field). Not under graphs: a captured segB cannot record
+	// the router event mid-segment and a captured segC cannot wait per miss.
+	r.overlap = r.cacheExperts && !r.graphs && r.knobValue("GOINFER_MOE_DMA_OVERLAP") != "0"
+	if r.overlap {
+		if e := r.initOverlap(); e != nil {
+			return decline(fmt.Errorf("cuda: overlap: %w", e))
+		}
+	}
+	// A model the batched prefill's guards batch has steps on every layer; a layer without would send it to the sequential
+	// path with nothing said, so the build declines naming the layer.
+	if !prefillStepsBuildChecksOffForTest && r.prefillFlagsDecline() == nil {
+		for l := range r.layers {
+			if len(r.layers[l].prefillSteps) == 0 {
+				return decline(fmt.Errorf("cuda: layer %d: the batched prefill's guards admit the model and the program gives the layer no batched steps", l))
+			}
+		}
+	}
+	// KS-B8: the default pass width, from what the build left free.
+	if r.prefillReady {
+		if e := r.do(func() error { r.choosePrefillWidth(); return nil }); e != nil {
+			return decline(fmt.Errorf("cuda: prefill width: %w", e))
+		}
 	}
 	return nil
 }
