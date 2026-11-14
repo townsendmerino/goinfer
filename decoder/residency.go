@@ -1145,9 +1145,6 @@ func (m *Model) Dims() (hidden, nLayers, nH, nKV, hd, inter, vocab int) {
 // (temporal,height,width) position components — nil/empty for every non-m-RoPE family.
 func (m *Model) MRopeSectionResident() []int { return m.BackendView().MRopeSection() }
 
-// MRopeInterleavedResident reports whether the model's m-RoPE assigns position components per frequency INDEX.
-func (m *Model) MRopeInterleavedResident() bool { return m.BackendView().MRopeInterleaved() }
-
 // MRopeAxisResident is the m-RoPE position component (0 temporal, 1 height, 2 width) of each of the first half rotary pairs.
 func (m *Model) MRopeAxisResident(half int) []int { return m.BackendView().MRopeAxis(half) }
 
@@ -1696,9 +1693,6 @@ func (m *Model) QKNormWholeResident() bool { return m.BackendView().QKNormWhole(
 
 // ParallelBlockResident reports whether the arch computes attention and MLP from ONE shared input norm.
 func (m *Model) ParallelBlockResident() bool { return m.BackendView().ParallelBlock() }
-
-// LogitScaleResident returns the host-side final-logit multiplier for FeatLogitScale families outside Granite's own SSM bundle.
-func (m *Model) LogitScaleResident() (inv float32, ok bool) { return m.BackendView().LogitScale() }
 
 // GatedActResident returns the MLP activation as its ActKind ordinal.
 func (m *Model) GatedActResident() int { return m.BackendView().GatedAct() }

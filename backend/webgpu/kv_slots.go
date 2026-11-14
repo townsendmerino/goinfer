@@ -237,8 +237,8 @@ const webgpuSlotCtxFloor = 4096
 // TestWebGPUKVSlots_perPositionMatchesTheBuild pins it against kvBytesPerSlot on each KV layout.
 func kvBytesPerPosition(m slotModel, kvF16, kvI8 bool) int64 {
 	_, nLayers, _, nKV, hd, _, _ := m.Dims()
-	if _, kvLoRA, _, qkRope, _, _, _, _, mlaOK := m.MLAResidentParams(); mlaOK {
-		return int64(nLayers) * int64(kvLoRA+qkRope) * 4
+	if ml := m.ResidentSpec().MLA; ml != nil {
+		return int64(nLayers) * int64(ml.KVLoRARank+ml.QKRopeHeadDim) * 4
 	}
 	kvDim := int64(nKV * hd)
 	per := kvDim * 4
@@ -328,7 +328,7 @@ type slotModel interface {
 	ExtraResidentBytes() int64
 	ResidentHostCopyBytes(slots int) int64
 	Dims() (hidden, nLayers, nH, nKV, hd, inter, vocab int)
-	MLAResidentParams() (qLoRA, kvLoRA, qkNope, qkRope, vHead int, interleave bool, attnScale, ropeScale float64, ok bool)
+	ResidentSpec() decoder.ResidentSpec
 }
 
 // grantedSlots is how many of want KV slots a build sets out to allocate on a machine with ram bytes of RAM, avail0 available before the
