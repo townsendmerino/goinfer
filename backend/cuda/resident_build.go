@@ -2037,3 +2037,94 @@ func (s *buildState) grantSlots(r *cudaResident) error {
 	}
 	return nil
 }
+
+// selectFusion fixes the build's dispatch flags from the uploaded layers: whether the fused QKV and per-32 paths run, whether decode
+// replays captured graphs, whether the expert DMA overlaps compute, and whether the batched prefill has steps on every layer. A
+// decline here returns before the width choice, and the caller closes r. It runs after the setup job, which has already released the
+// packing blocks.
+func (s *buildState) selectFusion(r *cudaResident) error {
+	H, postOnly, parallelBlock, hls := s.H, s.postOnly, s.parallelBlock, s.hls
+	// The fused path needs int4 projections on the layers it runs on (layerFusable). Anything else falls back to the unfused
+	// chain, which handles mixed quant correctly.
+	r.fuseQKV = true
+	for l := range hls {
+		h := &hls[l]
+		if !layerFusable(
+			h.q.kind == "int4" && h.k.kind == "int4" && h.v.kind == "int4",
+			h.isMoE,
+			h.g.kind == "int4" && h.u.kind == "int4" && h.d.kind == "int4") {
+			r.fuseQKV = false
+			break
+		}
+	}
+	if r.knobValue("GOINFER_CUDA_NO_FUSE") != "" {
+		r.fuseQKV = false
+	}
+	if postOnly {
+		// fQKV bakes a real pre-norm weight into its rmsnorm+quant dispatch, and a postOnly arch has none (Ly.preNorm is never
+		// uploaded), so it takes the unfused segA chain, which quantizes the raw residual.
+		r.fuseQKV = false
+	}
+	if parallelBlock {
+		// fQKV goes straight from x to Q/K/V and never materializes the normed, quantized activation that segBFFN's MLP branch
+		// reuses as its own input (FeatParallelBlock: segA's r.aq/r.aSc); the fused path has nowhere to hand it back.
+		r.fuseQKV = false
+	}
+	if r.isMLA {
+		r.fuseQKV = false
+	}
+	if r.actG32 {
+		// fused_rms_qkv / fused_rms_gu quantize per vector internally.
+		r.fuseQKV = false
+		// Their per-32 twins (fused_rms_qkv_g32 / fused_rms_gu_g32) take any per-32 weight kind, per projection, with fuseQKV's
+		// structural exclusions (no pre-norm, parallel block, MLA, gated q, MoE layers). Size-gated (fusedG32MaxHidden): every
+		// block redoes the rmsnorm and per-32 quant, which grows with H while the launches saved matter less as the GEMVs grow.
+		// Fusion paid off at H=1536 and lost at 3072 and 3584.
+		r.fuseG32 = r.knobValue("GOINFER_CUDA_NO_FUSE") == "" && !postOnly && !parallelBlock && !r.isMLA &&
+			H <= fusedG32MaxHidden
+		for l := range hls {
+			h := &hls[l]
+			if h.isMoE || h.qGate || !g32Fusable(h.q.kind, h.k.kind, h.v.kind, h.g.kind, h.u.kind) {
+				r.fuseG32 = false
+				break
+			}
+		}
+	}
+	// CUDA graphs (GOINFER_CUDA_GRAPHS): capture each layer's static launch segments now that fuseQKV is final (segA/segB
+	// branch on it), so decode replays them instead of re-issuing the launches. Off, launchToken is unchanged. Incompatible
+	// with the g4cap diagnostic, which syncs inside a segment. admitGraphs gates it: replay is bit-exact only under
+	// EXCLUSIVE_PROCESS tenancy or MPS, so a shared-GPU box under DEFAULT declines to the live path
+	// (docs/cuda-graphs-investigation.md).
+	// A windowed layer's K/V pointer moves with its base, so a captured graph would replay a stale one: graphs decline under windowed KV.
+	r.graphs = os.Getenv("GOINFER_CUDA_GRAPHS") != "" && !r.g4cap && !r.isMLA && !r.kvWin && r.mamba == nil &&
+		!(r.dnet != nil && r.KVSlots() > 1) // a captured segment holds one slot's window and state
+	r.graphsSync = os.Getenv("GOINFER_CUDA_GRAPHS_SYNC") != "" // debug: serialize replays (bisect ordering hazards)
+	r.graphMask = os.Getenv("GOINFER_CUDA_GRAPHS_ONLY")        // debug: replay only these segments (A/B/C), rest live
+	if e := r.admitGraphs(); e != nil {
+		return decline(fmt.Errorf("cuda: %w", e))
+	}
+	// C′ compute/DMA overlap (see the overlap field). Not under graphs: a captured segB cannot record
+	// the router event mid-segment and a captured segC cannot wait per miss.
+	r.overlap = r.cacheExperts && !r.graphs && r.knobValue("GOINFER_MOE_DMA_OVERLAP") != "0"
+	if r.overlap {
+		if e := r.initOverlap(); e != nil {
+			return decline(fmt.Errorf("cuda: overlap: %w", e))
+		}
+	}
+	// A model the batched prefill's guards batch has steps on every layer; a layer without would send it to the sequential
+	// path with nothing said, so the build declines naming the layer.
+	if !prefillStepsBuildChecksOffForTest && r.prefillFlagsDecline() == nil {
+		for l := range r.layers {
+			if len(r.layers[l].prefillSteps) == 0 {
+				return decline(fmt.Errorf("cuda: layer %d: the batched prefill's guards admit the model and the program gives the layer no batched steps", l))
+			}
+		}
+	}
+	// KS-B8: the default pass width, from what the build left free.
+	if r.prefillReady {
+		if e := r.do(func() error { r.choosePrefillWidth(); return nil }); e != nil {
+			return decline(fmt.Errorf("cuda: prefill width: %w", e))
+		}
+	}
+	return nil
+}
