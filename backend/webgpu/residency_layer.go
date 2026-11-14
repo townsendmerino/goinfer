@@ -25,8 +25,8 @@ func (bs *webgpuBuild) newRunLayer(i int) kernels.RunLayer {
 	lrhalf := lrot / 2
 	kEqV := m.BackendView().Layer(i).VFromK()
 	rl := kernels.RunLayer{
-		IsLocal:     m.BackendView().Layer(i).IsLocal(), // sliding-window layer
-		RopeScale:   float32(m.RopeMscaleLayer(i)),      // per-layer YaRN mscale
+		IsLocal:     m.BackendView().Layer(i).IsLocal(),             // sliding-window layer
+		RopeScale:   float32(m.BackendView().Layer(i).RopeMscale()), // per-layer YaRN mscale
 		LayerScalar: m.BackendView().Layer(i).Gemma4DenseScalar(),
 		VNorm:       m.BackendView().IsGemma4() && !kernels.G4DropVNormForTest,
 	}
@@ -57,12 +57,12 @@ func (bs *webgpuBuild) nemotronLayer(i int, lw *decoder.LayerWeights, rl *kernel
 	}
 	rl.MlpNorm = rl.AttnNorm // the relu²-MLP block reuses the single pre-norm
 	mp := rd.rm.Mamba
-	switch m.NemotronBlockKind(i) {
+	switch m.BackendView().Layer(i).NemotronBlockKind() {
 	case 0: // Mamba-2 mixer
 		rl.NemoKind = kernels.NemoKMamba
 		rl.IsMamba = true
-		inP, cW, cB, aLog, dW, dtB, nW, outP := m.GraniteMambaWeights(i)
-		if inQ, outQ := m.MambaProjInt8(i); inQ != nil { // a quantized load holds them as int8: projF32's codes
+		inP, cW, cB, aLog, dW, dtB, nW, outP := m.BackendView().Layer(i).GraniteMambaWeights()
+		if inQ, outQ := m.BackendView().Layer(i).MambaProjInt8(); inQ != nil { // a quantized load holds them as int8: projF32's codes
 			if rl.MambaInProj, e = bs.projInt8(inQ, mp.ProjDim, bs.hidden); e != nil {
 				return e
 			}
@@ -172,7 +172,7 @@ func (bs *webgpuBuild) nemotronLayer(i int, lw *decoder.LayerWeights, rl *kernel
 		// "the one predicate every backend's admission funnels through", so this switch is the last place the shape is checked.
 		// Reachable through the exported ResidencyBackend.BuildResident.
 		return fmt.Errorf("gpu: nemotron block kind %d at layer %d is not "+
-			"implemented by this runner", m.NemotronBlockKind(i), i)
+			"implemented by this runner", m.BackendView().Layer(i).NemotronBlockKind(), i)
 	}
 	return nil
 }
@@ -188,7 +188,7 @@ func (bs *webgpuBuild) deltaNetMixer(i int, rl *kernels.RunLayer) error {
 	// all-zero bias per layer.
 	rl.IsDeltaNet = true
 	dp := rd.rm.Dnet
-	qkv, z, outP, inB, inA, cW, dtB, negA, nW := m.Qwen35DeltaWeights(i)
+	qkv, z, outP, inB, inA, cW, dtB, negA, nW := m.BackendView().Layer(i).Qwen35DeltaWeights()
 	if rl.DnQKV, e = bs.proj(qkv); e != nil {
 		return e
 	}
@@ -247,7 +247,7 @@ func (bs *webgpuBuild) gatedAttnMixer(i int, lw *decoder.LayerWeights, rl *kerne
 	bs.keep(kc.Release)
 	bs.keep(vc.Release)
 	rl.KCache, rl.VCache = (*kernels.DeviceBufferBuf(kc)), (*kernels.DeviceBufferBuf(vc))
-	qP, kP, vP, oP, qN, kN := m.Qwen35AttnWeights(i)
+	qP, kP, vP, oP, qN, kN := m.BackendView().Layer(i).Qwen35AttnWeights()
 	if rl.Q, e = bs.proj(qP); e != nil {
 		return e
 	}
@@ -279,7 +279,7 @@ func (bs *webgpuBuild) graniteMambaMixer(i int, rl *kernels.RunLayer) error {
 	// isMamba).
 	rl.IsMamba = true
 	mp := rd.rm.Mamba
-	inP, cW, cB, aLog, dW, dtB, nW, outP := m.GraniteMambaWeights(i)
+	inP, cW, cB, aLog, dW, dtB, nW, outP := m.BackendView().Layer(i).GraniteMambaWeights()
 	// int8 projections: f16 projections do not recover the quality lost to the SSM's f32 (vs f64) exp feeding the router
 	// (docs/ssm-int8-quality.md).
 	if rl.MambaInProj, e = bs.projF32(inP, mp.ProjDim, bs.hidden); e != nil {
@@ -328,7 +328,7 @@ func (bs *webgpuBuild) mlaMixer(i int, rl *kernels.RunLayer) error {
 	}
 	bs.keep(lc.Release)
 	rl.LatCache = (*kernels.DeviceBufferBuf(lc))
-	qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj := m.MLALayerWeights(i)
+	qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj := m.BackendView().Layer(i).MLAWeights()
 	qAQ, qBQ, qQ, kvAQ, oQ := m.MLALayerInt8(i)
 	// mlaProj uploads a projection's int8 form when the load holds one (the codes projF32 makes from the f32), else the f32.
 	mlaProj := func(q *linalg.WeightMat, f []float32, N, K int) (kernels.DecodeWeight, error) {
@@ -499,7 +499,7 @@ func (bs *webgpuBuild) g4MoEFFN(i int, g4b decoder.Gemma4MoEResidentBundle, rl *
 	// The router's norm has no weight. The runner's RMSNorm multiplies by 1+w when the arch adds one and by w otherwise, so
 	// the weight that makes it weightless is 0 or 1.
 	flat := make([]float32, bs.hidden)
-	if !m.RMSAddOne() {
+	if !m.BackendView().RMSAddOne() {
 		for j := range flat {
 			flat[j] = 1
 		}
@@ -716,7 +716,7 @@ func (bs *webgpuBuild) uploadLayers() error {
 			rd.rm.Layers = append(rd.rm.Layers, rl)
 			continue
 		}
-		isDelta := bs.dnetOK && m.Qwen35LinearLayer(i)
+		isDelta := bs.dnetOK && m.BackendView().Layer(i).Qwen35Linear()
 		// postOnlyOK (Olmo 3, Olmo Hybrid) is model-level, but Olmo Hybrid's DeltaNet layers reach NormPre2 through
 		// NormPlacementLinear and carry real pre-norm weights regardless; gate on the per-layer truth.
 		postOnlyHere := bs.postOnlyOK && !isDelta
@@ -738,7 +738,7 @@ func (bs *webgpuBuild) uploadLayers() error {
 			e = bs.deltaNetMixer(i, &rl)
 		} else if bs.dnetOK && bs.dnAttnGate {
 			e = bs.gatedAttnMixer(i, lw, &rl)
-		} else if bs.granOK && m.GraniteMambaLayer(i) {
+		} else if bs.granOK && m.BackendView().Layer(i).GraniteMamba() {
 			e = bs.graniteMambaMixer(i, &rl)
 		} else if bs.mlaOK {
 			e = bs.mlaMixer(i, &rl)
