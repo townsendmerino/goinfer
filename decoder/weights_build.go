@@ -32,6 +32,8 @@ type stBuild struct {
 	loadF32Merged    func(name string, shape ...int) ([]float32, error)
 	loadMatMerged    func(name string, rows, cols int) (linalg.WeightMat, error)
 	optNorm          func(i int, suffix string) ([]float32, error)
+	mp               func(n string) string
+	id               string
 }
 
 // Layers load in parallel — each is independent over the read-only mmap, and
@@ -343,4 +345,77 @@ func (b *stBuild) loadLayer(i int) error {
 		return err
 	}
 	return nil
+}
+
+// finish seeds what only some families need after the per-layer loader is built (Gemma 4's per-layer-embedding inputs and per-layer
+// FFN widths, before the layers load) and loads the layers.
+func (b *stBuild) finish() (*Weights, error) {
+	cfg, arch, s, st, quant, needCanonical, sink, hd, w, tn, loadProj, mp, id := b.cfg, b.arch, b.s, b.st, b.quant, b.needCanonical, b.sink, b.hd, b.w, b.tn, b.loadProj, b.mp, b.id
+	loadLayer := b.loadLayer
+	var err error
+	// Gemma 4 per-layer FFN width: a safetensors checkpoint can vary intermediate_size by layer, but config.json carries one
+	// scalar (GGUF stores an explicit per-layer array: ggufIntArray -> cfg.FFNPerLayer). The forward calls arch.ffnAt(i) per
+	// layer, so it is seeded here, sequentially, before the parallel loop above reads it: each layer's width comes from its
+	// own GateProj tensor's on-disk shape (a header lookup; Tensor() does not decode data), not from a rule guessed from the
+	// KV-shared boundary, which is correlated on one checkpoint but is not something the config asserts.
+	if arch.gemma4 != nil {
+		// Per-Layer-Embedding (PLE) model-level inputs: the same three tensors GGUF loads, at the same precisions. The token
+		// table takes the embedding policy and streams a row at a time; the projection is a plain matmul weight; the norm is
+		// taken as-is (safetensors norms carry the HF convention already, where GGUF's vnorm has to undo llama.cpp's baked +1).
+		// Leaving them nil would crash runLayersFromEmbedPLE's rmsNorm on an E-model.
+		if pleDim := arch.gemma4.HiddenSizePerLayerInput; pleDim > 0 {
+			pleVocab := arch.gemma4.VocabSizePerLayerInput
+			if pleVocab == 0 {
+				pleVocab = cfg.VocabSize
+			}
+			// The forward indexes the table by the main-vocab token id (forward_gemma4.go), with no
+			// HF-style "ids past vocab_size_per_layer_input read row 0" mask, so a smaller table would
+			// read past its end. Every released E-model has the two equal.
+			if pleVocab != cfg.VocabSize {
+				return nil, fmt.Errorf("gemma4: vocab_size_per_layer_input %d != vocab_size %d is not supported", pleVocab, cfg.VocabSize)
+			}
+			pleTotal := cfg.NumLayers * pleDim
+			name := mp("model.embed_tokens_per_layer.weight")
+			t, terr := st.Tensor(name)
+			if terr != nil {
+				return nil, terr
+			}
+			if len(t.Shape) != 2 || t.Shape[0] != pleVocab || t.Shape[1] != pleTotal {
+				return nil, fmt.Errorf("gemma4: %q shape %v, want [%d %d]", name, t.Shape, pleVocab, pleTotal)
+			}
+			readPLE := func(r int, dst []float32) error { // keeps no state: every row range shares it
+				row, rerr := t.SubF32(r*pleTotal, pleTotal)
+				copy(dst, row)
+				return rerr
+			}
+			if w.PerLayerTokenEmbed, err = streamQuantizedEmbed(pleVocab, pleTotal, quant.gatherTable(), needCanonical, !repackForDecode(sink), 1, func() rowReader { return readPLE }); err != nil {
+				return nil, err
+			}
+			if w.PerLayerModelProj, err = loadProj(mp("model.per_layer_model_projection.weight"), pleTotal, hd, false); err != nil {
+				return nil, err
+			}
+			if w.PerLayerProjNorm, err = st.TensorF32(mp("model.per_layer_projection_norm.weight"), pleDim); err != nil {
+				return nil, err
+			}
+		}
+		ffnPerLayer := make([]int, cfg.NumLayers)
+		varies := false
+		for i := range ffnPerLayer {
+			ffnPerLayer[i] = cfg.IntermediateDim
+			if gt, terr := st.Tensor(tn(i, s.GateProj)); terr == nil && len(gt.Shape) == 2 {
+				ffnPerLayer[i] = gt.Shape[0]
+			}
+			if ffnPerLayer[i] != cfg.IntermediateDim {
+				varies = true
+			}
+		}
+		// Record it only when it genuinely varies: FeatGemma4EModel (features.go) reads "FFNPerLayer is non-empty" as "this
+		// checkpoint declared real per-layer FFN metadata", as GGUF's ggufIntArray does only for a checkpoint that carries the
+		// key. Setting it unconditionally would make every safetensors gemma4 checkpoint, including a uniform-width dense or MoE
+		// fixture, report FeatGemma4EModel.
+		if varies {
+			arch.gemma4.FFNPerLayer = ffnPerLayer
+		}
+	}
+	return finishLayers(w, arch, loadLayer, sink, id)
 }
