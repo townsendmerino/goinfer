@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"runtime"
+	"slices"
 	"strconv"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -56,6 +57,8 @@ type buildState struct {
 	sandwich, postOnly, qkNormWhole, layerNorm, parallelBlock bool
 	logitScale                                                float32
 	actG32                                                    bool
+
+	maxQDim, maxHd int // the widest attention width and head dim over the softmax layers, set by sizeAttnScratch
 
 	hls       []hlayer // each layer's planned weights, filled by planLayers
 	hlm       hostW    // the head's
@@ -1730,5 +1733,124 @@ func (s *buildState) uploadLayers(r *cudaResident) error {
 	r.lmW = r.upW(hlm)
 	r.finalNorm = r.up32(hFinal)
 	endWeights()
+	return nil
+}
+
+// checkSublayers declines a layer whose uploaded buffers are not the program's sublayers, whose walk CUDA's table lacks, or whose
+// batched prefill steps are not the ones its kind runs. It runs inside the setup job after uploadLayers and allocates nothing.
+func (s *buildState) checkSublayers(r *cudaResident) error {
+	m := s.m
+	// Each layer's program sublayers must be what its upload holds (loadedSublayers reads the built layer's buffers), so a
+	// block the walk would run on missing or miswired weights declines here (OP4cu-b2).
+	for l := range r.layers {
+		if legacyLayerForTest != nil {
+			break
+		}
+		prog, progParallel, err := cudaSublayersOf(m.Program().Layers[l])
+		if err == nil {
+			err = checkLoadedSublayers(prog, progParallel, loadedSublayers(&r.layers[l]), r.parallelBlock)
+		}
+		if err == nil {
+			err = r.checkCUDALayerWalk(&r.layers[l], m.Program().Layers[l])
+		}
+		// The batched prefill's steps, where it has any, must be the blocks the layer's kind chose before (OP4cu-d1).
+		if ps := r.layers[l].prefillSteps; err == nil && !prefillStepsBuildChecksOffForTest && len(ps) > 0 && !slices.Equal(ps, prefillStepsFromFlags(&r.layers[l])) {
+			err = fmt.Errorf("the program's batched prefill steps are %v and the layer's kind runs %v", ps, prefillStepsFromFlags(&r.layers[l]))
+		}
+		if err != nil {
+			return fmt.Errorf("cuda: layer %d: %w", l, err)
+		}
+	}
+	return nil
+}
+
+// sizeAttnScratch allocates the activation and KV-projection scratch the layers share, sized to the widest layer (a hybrid's
+// recurrent layers excluded), declares each layer's KV buffers against the model, and loads the int8 KV kernels. It leaves the widest
+// attention width and head dim in s.maxQDim and s.maxHd for the later scratch. It runs inside the setup job after checkSublayers.
+func (s *buildState) sizeAttnScratch(r *cudaResident) error {
+	m, nLayers, nH, H, pleP := s.m, s.nLayers, s.nH, s.H, s.pleP
+	dnetP, mambaP, dnAttnGate := s.dnetP, s.mambaP, s.dnAttnGate
+	// Scratch (Q/K/V projections, attention context) is allocated ONCE and shared across
+	// layers, so it must fit the WIDEST per-layer geometry — Gemma 4's 512-global head, not
+	// a model-level value. maxQDim/maxKVDim reduce to nH*hd / nKV*hd for uniform families.
+	maxQDim, maxKVDim, maxHd := 0, 0, 0
+	for l := range r.layers {
+		if q := r.layers[l].qDim; q > maxQDim {
+			maxQDim = q
+		}
+		if k := r.layers[l].kvDim; k > maxKVDim {
+			maxKVDim = k
+		}
+		if d := m.HeadDimAtResident(l); d > maxHd {
+			maxHd = d
+		}
+	}
+	// The scratch MUST size to the widest head over LAYERS, not m.Dims() — which reports the
+	// LOCAL head_dim (256 for the real 26B), not the 512 the global layers need. Cross-check
+	// maxQDim (from per-layer qDim) against nH*maxHd (from the accessors independently): a
+	// mismatch means the per-layer geometry drifted from its source. GPU OOB writes don't
+	// reliably fault, so assert at plan time rather than wait for a parity red.
+	if dnetP != nil || mambaP != nil {
+		// A DeltaNet layer reports zero attention geometry, so it must not drag maxQDim/maxHd
+		// to zero for the SOFTMAX layers that share this scratch. Recompute over the
+		// attention layers only, and check the invariant against those.
+		maxQDim, maxKVDim, maxHd = 0, 0, 0
+		for l := range r.layers {
+			if r.layers[l].noKV() {
+				continue
+			}
+			if q := r.layers[l].qDim; q > maxQDim {
+				maxQDim = q
+			}
+			if k := r.layers[l].kvDim; k > maxKVDim {
+				maxKVDim = k
+			}
+			if d := m.HeadDimAtResident(l); d > maxHd {
+				maxHd = d
+			}
+		}
+		if maxQDim == 0 {
+			return fmt.Errorf("cuda: every layer is a recurrent mixer or a feed-forward block — no softmax layer to size attention scratch from; a hybrid with none is a loader bug, not a valid shape")
+		}
+		if dnAttnGate {
+			// The softmax layers' fused q_proj is double width; both halves live in dnQg
+			// until delta_qsplit separates them into qB and the gate.
+			r.dnQg, r.dnAGate = r.af(2*maxQDim), r.af(maxQDim)
+		}
+	}
+	if !r.isMLA && maxQDim != nH*maxHd {
+		return fmt.Errorf("cuda: scratch maxQDim=%d != nH*maxHd=%d*%d=%d — per-layer geometry inconsistent with the accessors", maxQDim, nH, maxHd, nH*maxHd)
+	}
+	// r.x carries the embedding row: for an E-model that is [hidden ‖ nLayers*P PLE inputs], uploaded in ONE copy, and each layer's
+	// PLE branch reads its slice with an element offset (glu_quant's uOff), so no buffer view is needed. Every other model: hidden floats.
+	r.pleP, r.embLen = pleP, H+nLayers*pleP
+	r.eModel = pleP > 0
+	for l := range r.layers {
+		r.eModel = r.eModel || r.layers[l].kvShared
+	}
+	r.x, r.aSc, r.aq = r.af(r.embLen), r.af(r.actScaleLen(H)), r.ai(H/4)
+	if pleP > 0 {
+		r.pleG = r.af(pleP)
+	}
+	qBufDim := maxQDim
+	if r.isMLA {
+		qBufDim = nH * r.mlaQKHead
+	}
+	r.qB, r.kB, r.vB = r.af(qBufDim), r.af(maxKVDim), r.af(maxKVDim)
+	r.kc, r.vc = make([]Buffer, nLayers), make([]Buffer, nLayers)
+	r.ksc, r.vsc = make([]Buffer, nLayers), make([]Buffer, nLayers)
+	for l := range r.layers {
+		r.layers[l].kvHalf = r.kvF16 && !r.layers[l].noKV() && !r.layers[l].kvShared
+		r.layers[l].kvI8 = r.kvI8 && !r.layers[l].noKV() && !r.layers[l].kvShared
+		if e := kvCheckDeclared(l, m.LayerBuffers(l), &r.layers[l]); e != nil {
+			return e
+		}
+	}
+	if r.kvI8 {
+		if e := r.loadKV8(); e != nil {
+			return e
+		}
+	}
+	s.maxQDim, s.maxHd = maxQDim, maxHd
 	return nil
 }
