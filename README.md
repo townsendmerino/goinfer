@@ -431,6 +431,7 @@ is the one to read if you read only one. Source: [docs/book/](docs/book).
 | [docs/giw-bundles.md](docs/giw-bundles.md) | prequantized `.giw` bundles and `cmd/prequant` |
 | [docs/positioning.md](docs/positioning.md) | what goinfer is for, and what it is not |
 | [docs/api-tiers.md](docs/api-tiers.md) | which surfaces v1.0 will semver-bind |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | how to build, test and send a change, for a person or an AI tool |
 
 Demos: `demo/chat` (single-binary local chat), `demo/agent` (fully-local stdlib RAG coding agent).
 
