@@ -152,6 +152,10 @@ func kvBlockOrder(blocks int, window bool) []uint32 {
 // Buffer.U32s asks Metal for them on every call, and the pool reads entries per row. kvRefs counts the entries that name each block
 // (above one, slots share it, CopyKV), kvInUse the blocks some entry names, kvOrder the order a take scans for a free one, and
 // kvShareBlocks is each slot's guaranteed share.
+//
+// A window group (win > 0, KV5-7c) keeps only the recent positions of each sequence: kvBase[s] is the first position slot s still holds,
+// a multiple of 64, and the entries below it name block 0, whose zero rows a window kernel's tile over-read lands in. A block that falls
+// behind the base is retired (kvRetired), not freed: its entry stays until every command buffer committed before it left has completed.
 type kvGroup struct {
 	kvTab, kt     Buffer
 	kvTabU32      []uint32
@@ -160,6 +164,17 @@ type kvGroup struct {
 	kvInUse       int
 	kvOrder       []uint32
 	kvShareBlocks int
+	win           int         // the window length in positions, or 0 for a group that keeps every position
+	kvBase        []int       // each slot's first held position (a window group)
+	retired       []kvRetired // blocks behind a base whose entries are not yet repointed
+}
+
+// kvRetired is slot s's table entry b, naming block id, which fell behind its group's base when tag command buffers had been committed:
+// it is repointed to block 0 and the block freed once that many have completed (kvReap).
+type kvRetired struct {
+	s, b int
+	id   uint32
+	tag  int64
 }
 
 // kvClaim gives block id its first reference.
@@ -227,6 +242,23 @@ func kvWindowLayers(g decoder.KVGeometry) map[int]bool {
 	return set
 }
 
+// kvWindowSpan is the window length KVGeometry gives the window-retention layers, 0 when they differ (a group keeps one length); allWindow
+// is whether every K/V layer of the model slides, so the primary group is the window group.
+func kvWindowSpan(g decoder.KVGeometry) (span int, allWindow bool) {
+	win, other := false, false
+	for _, grp := range g.Groups {
+		switch {
+		case grp.Retention != decoder.KVRetainWindow:
+			other = true
+		case !win:
+			win, span = true, grp.Span
+		case span != grp.Span:
+			span = 0
+		}
+	}
+	return span, win && !other
+}
+
 // kvGroupOf is the group layer l's attention reads: the window group for a sliding layer of a model that has both kinds, else the
 // primary group.
 func (r *resident) kvGroupOf(l int) *kvGroup {
@@ -276,6 +308,135 @@ func (r *resident) kvKTRead(l int) Buffer {
 
 // kvWindowReadPlantForTest makes a window layer's decode attention read the primary group's table (kvKTRead).
 var kvWindowReadPlantForTest bool
+
+// kvWindowKeep is how many positions a window group keeps behind the start of the window a write reads: the rollback budget, the floor
+// kvmgr.WindowNextBase's callers use (docs/tasks/task-kv-architecture-2026-10.md §5.4), so an edit late in a prompt still finds its
+// window held.
+const kvWindowKeep = 448
+
+// kvRetainOffForTest keeps every position in the window group, as KV5-7b did: the arm KV5-7c's identity readings compare against.
+var kvRetainOffForTest bool
+
+// kvActivityForTest, when set, replaces the device's own count of command buffers committed and waited on, so a test can say when a
+// buffer has completed.
+var kvActivityForTest func() (submits, waits int64)
+
+// kvActivity is how many command buffers this device has committed and how many the host has waited on. Buffers complete in the order
+// they are committed, so a block retired when n had been committed is free to reuse once n have been waited on.
+func (r *resident) kvActivity() (submits, waits int64) {
+	if kvActivityForTest != nil {
+		return kvActivityForTest()
+	}
+	_, submits, waits = r.d.Activity()
+	return submits, waits
+}
+
+// kvWindowFloor is the first position a window group keeps after a write of [lo, hi) when it held from base: the lower of what the
+// write's own reads reach (lo - win + 1) and the end's window less kvWindowKeep (kvmgr.WindowNextBase), in whole blocks, never below base.
+func kvWindowFloor(win, base, lo, hi int) int {
+	f := min(lo-win+1, hi-(win-1)-kvWindowKeep)
+	if kvRetainEarlyPlantForTest {
+		f += kvWindowKeep + win + decoder.KVBlockRows // keeps nothing behind the window start, and drops the block being written
+	}
+	return max(base, f/decoder.KVBlockRows*decoder.KVBlockRows)
+}
+
+// kvRetainEarlyPlantForTest releases the window group's blocks up to the end of the write, the window's own rows included: the plant
+// TestKVWindow_retentionIsBitIdentical must catch.
+var kvRetainEarlyPlantForTest bool
+
+// kvRetain moves every window group's base for slot s after a write of [lo, hi): the blocks wholly behind it are retired, each tagged
+// with the command buffers committed so far. A write at 0 starts a sequence: the base goes back to 0 and the blocks it had retired,
+// which the write is about to use again, are not retired any more.
+func (r *resident) kvRetain(s, lo, hi int) {
+	if kvRetainOffForTest {
+		return
+	}
+	for _, g := range r.kvGs {
+		if g.win == 0 {
+			continue
+		}
+		if lo == 0 {
+			g.kvBase[s] = 0
+		}
+		g.dropRetired(s, lo/decoder.KVBlockRows, g.kvTabBlocks)
+		from := g.kvBase[s]
+		to := kvWindowFloor(g.win, from, lo, hi)
+		if to <= from {
+			continue
+		}
+		submits, _ := r.kvActivity()
+		for b := from / decoder.KVBlockRows; b < to/decoder.KVBlockRows && b < g.kvTabBlocks; b++ {
+			if e := *g.kvRow(s, b); e != 0 {
+				g.retired = append(g.retired, kvRetired{s: s, b: b, id: e, tag: submits})
+			}
+		}
+		g.kvBase[s] = to
+	}
+}
+
+// kvReap repoints each retired entry to block 0 and frees its block once the command buffers committed before it was retired have
+// completed; with all set, which only a caller with nothing in flight may do, it does so for every one.
+func (r *resident) kvReap(all bool) {
+	_, waits := r.kvActivity()
+	for _, g := range r.kvGs {
+		keep := g.retired[:0]
+		for _, x := range g.retired {
+			if !all && x.tag > waits && !kvReapEarlyPlantForTest {
+				keep = append(keep, x)
+				continue
+			}
+			if e := g.kvRow(x.s, x.b); *e == x.id {
+				if !kvNoRepointPlantForTest {
+					*e = 0
+				}
+				g.kvUnref(x.id)
+				if kvRetainEarlyPlantForTest {
+					r.kvClearBlock(g, x.id)
+				}
+			}
+		}
+		g.retired = keep
+	}
+}
+
+// kvClearBlock zeroes block id's rows in every layer of group g, K and V and int8's scales: what a freed block's next owner would find
+// there. Only the early plant does it, so that releasing rows a window needs shows as lost rows.
+func (r *resident) kvClearBlock(g *kvGroup, id uint32) {
+	for l := range r.layers {
+		if L := &r.layers[l]; L.kvShared || r.kvSlotBytes[l] == 0 || r.kvGroupOf(l) != g {
+			continue
+		}
+		n := r.kvNullBytes[l]
+		clear(r.kc[l].Int8s()[int(id)*n : (int(id)+1)*n])
+		if r.vc[l] != r.kc[l] {
+			clear(r.vc[l].Int8s()[int(id)*n : (int(id)+1)*n])
+		}
+		if r.kvI8 && r.ks[l] != (Buffer{}) {
+			s := r.layers[l].geom.nKV * decoder.KVBlockRows
+			clear(r.ks[l].Floats()[int(id)*s : (int(id)+1)*s])
+			clear(r.vs[l].Floats()[int(id)*s : (int(id)+1)*s])
+		}
+	}
+}
+
+// kvReapEarlyPlantForTest frees a retired block without waiting for the buffers committed before it: the plant
+// TestKVWindow_retiredBlocksWaitForTheirBuffers must catch.
+var kvReapEarlyPlantForTest bool
+
+// kvNoRepointPlantForTest frees a retired block and leaves its entry naming it: the plant TestKVWindow_retentionIsBitIdentical must catch.
+var kvNoRepointPlantForTest bool
+
+// dropRetired forgets slot s's retired entries for blocks [from, to): whoever put an entry there since owns it.
+func (g *kvGroup) dropRetired(s, from, to int) {
+	keep := g.retired[:0]
+	for _, x := range g.retired {
+		if x.s != s || x.b < from || x.b >= to {
+			keep = append(keep, x)
+		}
+	}
+	g.retired = keep
+}
 
 // kvTableBytes is what every group's tables hold.
 func (r *resident) kvTableBytes() int64 {
@@ -354,6 +515,7 @@ var kvEvictOrderPlantForTest bool
 // (kvSlotState.valid): no block past it is held, counted in kvHeld and kvInUse, or offered to CopyKV.
 func (r *resident) kvTrim(s, end int) {
 	for _, g := range r.kvGs {
+		g.dropRetired(s, kvBlocksFor(end), g.kvTabBlocks)
 		for b := kvBlocksFor(end); b < g.kvTabBlocks; b++ {
 			if e := g.kvRow(s, b); *e != 0 {
 				g.kvUnref(*e)
@@ -400,6 +562,8 @@ func (r *resident) kvReleaseAll(s int) {
 			g.kvUnref(*e)
 			*e = 0
 		}
+		g.kvBase[s] = 0
+		g.dropRetired(s, 0, g.kvTabBlocks)
 	}
 }
 
@@ -451,6 +615,7 @@ func (r *resident) kvReclaim(g *kvGroup, s int) bool {
 		return false
 	}
 	for _, h := range r.kvGs {
+		h.dropRetired(t, h.kvShareBlocks, h.kvTabBlocks)
 		for b := h.kvShareBlocks; b < h.kvTabBlocks; b++ {
 			e := h.kvRow(t, b)
 			h.kvUnref(*e)
@@ -475,7 +640,12 @@ func (r *resident) kvWrite(s, lo, hi int) error {
 	if len(r.kvRefs) == 0 || hi <= lo || s >= len(r.kvSlotSt) {
 		return nil
 	}
+	r.kvReap(false)
+	if err := r.kvWindowReads(s, lo); err != nil {
+		return err
+	}
 	if r.kvWriteInPlace(s, lo, hi) {
+		r.kvRetain(s, lo, hi)
 		return nil
 	}
 	tx := r.kvBegin()
@@ -483,7 +653,25 @@ func (r *resident) kvWrite(s, lo, hi int) error {
 		tx.abort()
 		return err
 	}
-	return tx.commit()
+	if err := tx.commit(); err != nil {
+		return err
+	}
+	r.kvRetain(s, lo, hi)
+	return nil
+}
+
+// kvWindowReads refuses a write from lo that a window group no longer holds the rows for: its first query reads from lo - win + 1, and
+// the group released everything below its base. ReusableKV answers 0 for such a prefix, so only a caller that ignored it gets here.
+func (r *resident) kvWindowReads(s, lo int) error {
+	if kvRetainOffForTest || kvRetainEarlyPlantForTest || lo == 0 {
+		return nil
+	}
+	for _, g := range r.kvGs {
+		if g.win > 0 && max(lo-g.win+1, 0) < g.kvBase[s] {
+			return fmt.Errorf("metal: KV slot %d's window group holds rows from %d; a write from %d reads rows below it", s, g.kvBase[s], lo)
+		}
+	}
+	return nil
 }
 
 // kvWriteInPlace is kvWrite with nothing to map, most decode tokens: every entry the write reaches holds a block of the slot's alone,
@@ -711,6 +899,14 @@ func (tx *kvTx) commit() error {
 // one of the step's own slots (whose rows would then lack blocks), the mapping is undone and the step must launch nothing; a refusal is
 // decoder.ErrKVPoolFull, which the decoder answers by running each row alone. A reclaim of a slot outside the step does not stop it.
 func (r *resident) kvMapStep(seqs []batchSeq) error {
+	r.kvReap(false)
+	for _, q := range seqs {
+		if q.slot < len(r.kvSlotSt) {
+			if err := r.kvWindowReads(q.slot, q.pos); err != nil {
+				return err
+			}
+		}
+	}
 	tx := r.kvBegin()
 	share := r.kvShareBlocks * decoder.KVBlockRows
 	last := map[int]int{} // one past each slot's last row in the step
@@ -739,7 +935,15 @@ func (r *resident) kvMapStep(seqs []batchSeq) error {
 			return fmt.Errorf("metal: batched step: slot %d's blocks were reclaimed while the step mapped its rows: %w", t, decoder.ErrKVPoolFull)
 		}
 	}
-	return tx.commit()
+	if err := tx.commit(); err != nil {
+		return err
+	}
+	for _, q := range seqs {
+		if q.slot < len(r.kvSlotSt) {
+			r.kvRetain(q.slot, q.pos, q.pos+1)
+		}
+	}
+	return nil
 }
 
 // kvWriteMust is kvWrite where no caller can take an error back: setPos, reached from the executor's commit and the synchronous forwards,
@@ -777,8 +981,17 @@ func (r *resident) kvReusable(s, prefix int) int {
 	if st.released || st.stopped || prefix > valid {
 		return 0
 	}
+	for _, g := range r.kvGs { // a window group answers for the rows it still holds
+		if g.win > 0 && !kvRetainOffForTest && !decoder.KVWindowReusable(g.kvBase[s]-kvReusableBasePlantForTest, prefix, g.win) {
+			return 0
+		}
+	}
 	return prefix
 }
+
+// kvReusableBasePlantForTest lowers the base ReusableKV reads by that many positions: the plant TestKVWindow_reusableKVIsTheWindowOracle
+// must catch with 64, a block.
+var kvReusableBasePlantForTest int
 
 // ReusableKV implements decoder.ResidentKVSubsystem for the bound slot.
 func (a *metalResident) ReusableKV(prefix int) int { return a.r.kvReusable(a.r.kvSlot, prefix) }

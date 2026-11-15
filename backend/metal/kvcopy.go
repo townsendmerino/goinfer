@@ -40,8 +40,13 @@ func (a *metalResident) CopyKV(src, dst, start, end int) error {
 	if st := &r.kvSlotSt[dst]; start > 0 && (st.released || st.stopped || st.valid < start) {
 		return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d holds no rows up to %d, where the copy starts", dst, start)}
 	}
+	r.kvReap(true) // nothing is in flight: every block a window group retired is free now, and no record of one outlives the copy
 	for _, g := range r.kvGs {
-		for b := start / decoder.KVBlockRows; b < end/decoder.KVBlockRows; b++ {
+		low := start / decoder.KVBlockRows
+		if g.win > 0 && !kvRetainOffForTest { // a window group holds from its base: what it released is not offered
+			low = max(low, g.kvBase[src]/decoder.KVBlockRows)
+		}
+		for b := low; b < end/decoder.KVBlockRows; b++ {
 			if *g.kvRow(src, b) == 0 {
 				return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d holds no block for rows from %d", src, b*decoder.KVBlockRows)}
 			}
@@ -53,9 +58,22 @@ func (a *metalResident) CopyKV(src, dst, start, end int) error {
 			if s == *d {
 				continue
 			}
-			g.kvRefs[s]++
+			if s != 0 {
+				g.kvRefs[s]++
+			}
 			g.kvUnref(*d)
 			*d = s
+		}
+		if g.win > 0 && !kvRetainOffForTest {
+			// dst holds [start, end) as src does, from src's base when that is past start; the rows below its new base are gone.
+			if base := g.kvBase[src]; start == 0 || base > start {
+				for b := 0; b < base/decoder.KVBlockRows && b < g.kvTabBlocks; b++ {
+					e := g.kvRow(dst, b)
+					g.kvUnref(*e)
+					*e = 0
+				}
+				g.kvBase[dst] = base
+			}
 		}
 	}
 	// dst now holds [start, end) as src does and below start what it held: its sequence ends where src's does, within the range, and the

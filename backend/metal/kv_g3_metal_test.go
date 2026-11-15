@@ -1790,3 +1790,369 @@ func TestKVPages_windowGroup(t *testing.T) {
 		t.Errorf("only %d fixtures have a window group, want at least 6", len(withWin))
 	}
 }
+
+// kvWinScenario is KV5-7c's long sequence on a fixture with a window group: 1,536 positions prefilled in blocks of 256 and 64 decoded,
+// on scrambled tables, then the cases retention must survive.
+type kvWinScenario struct {
+	off, early, noRepoint            bool // retention off (KV5-7b's arm); the two plants
+	rewind, belowBase, reset, copyKV bool
+	basePlant                        int
+}
+
+type kvWinResult struct {
+	rows        [][]float32
+	hasWin      bool
+	win         int
+	base, valid int // slot 0's window base and sequence end after the decode
+	released    int // blocks below the base whose entries are repointed to block 0
+	audit       error
+	belowErr    error // the error of a write the window group no longer holds the rows for
+	reusable    map[int]int
+	afterReset  string
+	why         string // why the fixture was not run
+	submits     int64  // the device's command buffers committed and waited on, at the end of the decode
+	waits       int64
+	pending     int // blocks still retired, not yet freed, at the end of the decode
+}
+
+// kvAudit checks a group's counts against its tables: every block's references are the entries that name it, the in-use count is the
+// blocks named, and no entry below a window base still names a block once the retired ones are freed.
+func kvAudit(g *kvGroup, slots int) error {
+	counts := map[uint32]int32{}
+	for s := range slots {
+		for b := range g.kvTabBlocks {
+			if e := *g.kvRow(s, b); e != 0 {
+				counts[e]++
+			}
+		}
+	}
+	inUse := 0
+	for id := 1; id < len(g.kvRefs); id++ {
+		if g.kvRefs[id] != counts[uint32(id)] {
+			return fmt.Errorf("block %d has %d references and %d entries name it", id, g.kvRefs[id], counts[uint32(id)])
+		}
+		if g.kvRefs[id] > 0 {
+			inUse++
+		}
+	}
+	if inUse != g.kvInUse {
+		return fmt.Errorf("%d blocks are named, the pool counts %d in use", inUse, g.kvInUse)
+	}
+	if g.win > 0 {
+		for s := range slots {
+			for b := 0; b < g.kvBase[s]/decoder.KVBlockRows; b++ {
+				if e := *g.kvRow(s, b); e != 0 && !slices.ContainsFunc(g.retired, func(x kvRetired) bool { return x.s == s && x.b == b }) {
+					return fmt.Errorf("slot %d's entry %d is below its base %d and still names block %d", s, b, g.kvBase[s], e)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func kvWinRun(t *testing.T, dir string, sc kvWinScenario) (res kvWinResult) {
+	t.Helper()
+	kvScrambleForTest, kvRetainOffForTest, kvRetainEarlyPlantForTest, kvNoRepointPlantForTest = true, sc.off, sc.early, sc.noRepoint
+	kvReusableBasePlantForTest = sc.basePlant
+	defer func() {
+		kvScrambleForTest, kvRetainOffForTest, kvRetainEarlyPlantForTest, kvNoRepointPlantForTest = false, false, false, false
+		kvReusableBasePlantForTest, kvActivityForTest = 0, nil
+	}()
+	m, err := decoder.Load(kvLongFixture(t, dir), decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 2048, ResidentKVSlots: 3,
+		ResidentMoEStep: true, ResidentRecurrentStep: true, ResidentGemma4Step: true})
+	if err != nil {
+		res.why = "load: " + err.Error()
+		return res
+	}
+	defer m.Close()
+	a, ok := m.ResidentForwardForTest().(*metalResident)
+	if !ok {
+		res.why = "no Metal resident: " + m.ResidentDecline()
+		return res
+	}
+	r := a.r
+	var g *kvGroup
+	for _, x := range r.kvGs {
+		if x.win > 0 {
+			g = x
+		}
+	}
+	if g == nil {
+		res.why = fmt.Sprintf("no window group (%d groups, span %v)", len(r.kvGs), func() int { s, _ := kvWindowSpan(m.KVGeometry()); return s }())
+		return res
+	}
+	res.hasWin, res.win = true, g.win
+	_, _, _, _, _, _, vocab := m.Dims()
+	emb := func(i int) []float32 { return m.EmbedResidentForTest((i*97 + 3) % vocab) }
+	const chunk, prompt, decodeN = 256, 1536, 64
+	embs := make([][]float32, prompt)
+	for i := range embs {
+		embs[i] = emb(i)
+	}
+	fwd := func(x []float32, pos int) ([]float32, error) {
+		l, err := a.Forward(x, pos)
+		if err == nil {
+			res.rows = append(res.rows, slices.Clone(l))
+		}
+		return l, err
+	}
+	fill := func(from, to int) {
+		for at := from; at < to; at += chunk {
+			end := min(at+chunk, to)
+			if _, err := a.PrefillLast(context.Background(), embs[at:end], at); err != nil {
+				for i := at; i < end; i++ { // a family without a batched prefill: the rows one at a time
+					if _, err := a.Forward(embs[i], i); err != nil {
+						t.Fatalf("fill %d: %v", i, err)
+					}
+				}
+			}
+		}
+	}
+	fill(0, prompt)
+	for i := range decodeN {
+		if _, err := fwd(emb(prompt+i), prompt+i); err != nil {
+			t.Fatalf("decode %d: %v", prompt+i, err)
+		}
+	}
+	end := prompt + decodeN
+	if sc.rewind { // an edit inside the retained rollback: the window and 100 positions of it are rewritten
+		for i := range 40 {
+			if _, err := fwd(emb(9000+i), end-100+i); err != nil {
+				t.Fatalf("rewind %d: %v", end-100+i, err)
+			}
+		}
+		end = end - 100 + 40
+	}
+	res.submits, res.waits = r.kvActivity()
+	res.pending = len(g.retired)
+	r.kvReap(true)
+	res.base, res.valid = g.kvBase[0], r.kvSlotSt[0].valid
+	for b := range res.base / decoder.KVBlockRows {
+		if *g.kvRow(0, b) == 0 {
+			res.released++
+		}
+	}
+	res.audit = kvAudit(g, len(r.kvSlotSt))
+	if sc.belowBase {
+		_, res.belowErr = a.Forward(emb(0), res.base)
+		res.reusable = map[int]int{}
+		for _, p := range []int{res.base, res.base + g.win - 2, res.base + g.win - 1, res.base + g.win, res.valid} {
+			res.reusable[p] = a.ReusableKV(p)
+		}
+	}
+	if sc.copyKV {
+		cut := end / decoder.KVBlockRows * decoder.KVBlockRows
+		if err := a.CopyKV(0, 1, 0, cut); err != nil {
+			var decline *decoder.KVCopyDecline
+			if errors.As(err, &decline) { // a recurrent or MLA model, or a source the pool released: not a case for this fixture
+				return res
+			}
+			t.Fatalf("CopyKV: %v", err)
+		}
+		if err := a.UseKVSlot(1); err != nil {
+			t.Fatal(err)
+		}
+		for i := range 16 {
+			if _, err := fwd(emb(7000+i), cut+i); err != nil {
+				t.Fatalf("decode on the copy at %d: %v", cut+i, err)
+			}
+		}
+		if err := kvAudit(g, len(r.kvSlotSt)); err != nil && res.audit == nil {
+			res.audit = err
+		}
+	}
+	if sc.reset { // a new sequence on the slot: a write at 0 starts it, and what the window group retired is its own again
+		a.Reset()
+		fill(0, 300)
+		for i := range 8 {
+			if _, err := fwd(emb(300+i), 300+i); err != nil {
+				t.Fatalf("decode after the reset at %d: %v", 300+i, err)
+			}
+		}
+		r.kvReap(true)
+		res.afterReset = fmt.Sprintf("base %d, %d retired", g.kvBase[r.kvSlot], len(g.retired))
+		if g.kvBase[r.kvSlot] != 0 || len(g.retired) != 0 {
+			res.audit = errors.Join(res.audit, fmt.Errorf("after the reset: %s", res.afterReset))
+		}
+		res.audit = errors.Join(res.audit, kvAudit(g, len(r.kvSlotSt)))
+	}
+	return res
+}
+
+func kvRowsDiffer(a, b [][]float32) int {
+	if len(a) != len(b) {
+		return -1
+	}
+	n := 0
+	for i := range a {
+		for j := range a[i] {
+			if math.Float32bits(a[i][j]) != math.Float32bits(b[i][j]) {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+// TestKVWindow_retentionIsBitIdentical is KV5-7c's G1a-W and G1c, Mac form (docs/tasks/task-kv-architecture-2026-10.md §6): on every tiny
+// fixture whose build has a window group, a 1,536-position prefill in blocks and 64 decoded tokens leave the window group holding only
+// what the window and kvWindowKeep behind it need, and every logit is bit-identical to the same build with retention off (every
+// position kept). Then each case retention must survive: a rewind inside the retained rollback, a write below the base (refused,
+// ReusableKV answers 0), CopyKV from a released sequence, and a reset (the base back to 0, nothing retired left). The plants must go red:
+// one that releases the window's own rows, and one that frees a block and leaves its entry naming it.
+func TestKVWindow_retentionIsBitIdentical(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	n := 0
+	for _, dir := range kvWindowFixtures() {
+		name := filepath.Base(dir)
+		sc := kvWinScenario{rewind: true, belowBase: true, reset: true}
+		on := kvWinRun(t, dir, sc)
+		if !on.hasWin {
+			continue
+		}
+		n++
+		offSc := sc
+		offSc.off, offSc.belowBase = true, false
+		off := kvWinRun(t, dir, offSc)
+		if d := kvRowsDiffer(on.rows, off.rows); d != 0 {
+			t.Errorf("%s: %d decoded logits differ between retention on and off", name, d)
+		}
+		if on.audit != nil {
+			t.Errorf("%s: %v", name, on.audit)
+		}
+		want := (on.valid - on.win - kvWindowKeep) / decoder.KVBlockRows
+		if on.base == 0 || on.released < want-2 || on.base%decoder.KVBlockRows != 0 {
+			t.Errorf("%s: the window group holds from %d with %d blocks released at %d positions of a %d-position window, want about %d released", name, on.base, on.released, on.valid, on.win, want)
+		}
+		if on.belowErr == nil {
+			t.Errorf("%s: a write at %d, below the base, was accepted", name, on.base)
+		}
+		for p, got := range on.reusable {
+			want := 0
+			if p <= on.valid && (on.base == 0 || p-on.win+1 >= on.base) {
+				want = p
+			}
+			if got != want {
+				t.Errorf("%s: ReusableKV(%d) = %d with the window group holding from %d, want %d", name, p, got, on.base, want)
+			}
+		}
+		cp := kvWinRun(t, dir, kvWinScenario{copyKV: true})
+		cpOff := kvWinRun(t, dir, kvWinScenario{copyKV: true, off: true})
+		if d := kvRowsDiffer(cp.rows, cpOff.rows); d != 0 {
+			t.Errorf("%s: %d logits decoded on a CopyKV destination differ between retention on and off", name, d)
+		}
+		if cp.audit != nil {
+			t.Errorf("%s after CopyKV: %v", name, cp.audit)
+		}
+		early := kvWinRun(t, dir, kvWinScenario{early: true})
+		if d := kvRowsDiffer(early.rows, off.rows[:len(early.rows)]); d == 0 {
+			t.Errorf("%s: the window group released the window's own rows and no logit moved: the plant is not red", name)
+		}
+		noRep := kvWinRun(t, dir, kvWinScenario{noRepoint: true})
+		if noRep.audit == nil {
+			t.Errorf("%s: a freed block's entry still named it and the audit found nothing: the plant is not red", name)
+		}
+		t.Logf("%s: window %d, base %d of %d, %d blocks released; rewind, write below the base, CopyKV and reset hold; both plants red", name, on.win, on.base, on.valid, on.released)
+	}
+	if n < 6 {
+		t.Errorf("only %d fixtures have a window group, want at least 6", n)
+	}
+}
+
+// TestKVWindow_retiredBlocksWaitForTheirBuffers: a block that falls behind the base keeps its entry and its reference until the buffers
+// committed before it left have completed, and is repointed to block 0 and freed when they have. The device's counts are stood in for
+// by kvActivityForTest. The plant frees it without waiting.
+func TestKVWindow_retiredBlocksWaitForTheirBuffers(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	run := func(plant bool) (pending, mappedEarly, mappedLate int) {
+		kvReapEarlyPlantForTest = plant
+		defer func() { kvReapEarlyPlantForTest = false }()
+		var submits, waits int64 = 100, 50
+		kvActivityForTest = func() (int64, int64) { return submits, waits }
+		m, err := decoder.Load(kvLongFixture(t, filepath.Join("../../testdata", "gemma2-tiny")), decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 2048, ResidentKVSlots: 2})
+		if err != nil {
+			t.Skipf("load: %v", err)
+		}
+		defer m.Close()
+		a, ok := m.ResidentForwardForTest().(*metalResident)
+		if !ok {
+			t.Skipf("no Metal resident: %s", m.ResidentDecline())
+		}
+		r := a.r
+		defer func() { kvActivityForTest = nil }()
+		var g *kvGroup
+		for _, x := range r.kvGs {
+			if x.win > 0 {
+				g = x
+			}
+		}
+		if g == nil {
+			t.Skip("no window group")
+		}
+		_, _, _, _, _, _, vocab := m.Dims()
+		for p := range 1100 {
+			if _, err := a.Forward(m.EmbedResidentForTest((p*97+3)%vocab), p); err != nil {
+				t.Fatal(err)
+			}
+		}
+		count := func() (n int) {
+			for _, x := range g.retired {
+				if *g.kvRow(x.s, x.b) == x.id {
+					n++
+				}
+			}
+			return n
+		}
+		pending = len(g.retired)
+		r.kvReap(false) // 50 of the 100 buffers have completed
+		mappedEarly = count()
+		waits = 100
+		r.kvReap(false)
+		mappedLate = len(g.retired)
+		return pending, mappedEarly, mappedLate
+	}
+	pending, early, late := run(false)
+	if pending == 0 {
+		t.Fatal("no block was retired: the case did not reach the retention")
+	}
+	if early != pending || late != 0 {
+		t.Errorf("%d blocks retired; %d still named by their entries with 50 of 100 buffers complete (want all), %d still pending after all 100 (want 0)", pending, early, late)
+	}
+	if _, plantEarly, _ := run(true); plantEarly == pending {
+		t.Errorf("the plant freed retired blocks before their buffers completed and every entry still names its block: the plant is not red")
+	}
+}
+
+// TestKVWindow_reusableKVIsTheWindowOracle: ReusableKV over a window group answers what decoder.KVWindowReusable says of the group's base,
+// at every prefix; the plant lowers the base it reads by one block.
+func TestKVWindow_reusableKVIsTheWindowOracle(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	probe := func(plant int) (bad int, base int) {
+		r := kvWinRun(t, filepath.Join("../../testdata", "gemma2-tiny"), kvWinScenario{belowBase: true, basePlant: plant})
+		if !r.hasWin {
+			t.Skip(r.why)
+		}
+		for p, got := range r.reusable {
+			want := 0
+			if p <= r.valid && (r.base == 0 || p-r.win+1 >= r.base) {
+				want = p
+			}
+			if got != want {
+				bad++
+			}
+		}
+		return bad, r.base
+	}
+	if bad, base := probe(0); bad != 0 || base == 0 {
+		t.Errorf("ReusableKV disagrees with the window oracle at %d probes with the base at %d", bad, base)
+	}
+	if bad, _ := probe(decoder.KVBlockRows); bad == 0 {
+		t.Error("the base read one block low and ReusableKV still agreed with the oracle: the plant is not red")
+	}
+}
