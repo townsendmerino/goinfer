@@ -48,7 +48,6 @@ var (
 	_ decoder.ResidencyPricer      = (*metalBackend)(nil)
 	_ decoder.ResidentForward      = (*metalResident)(nil)
 	_ decoder.ResidentCapsReporter = (*metalResident)(nil)
-	_ decoder.ResidentAdapter      = (*metalResident)(nil)
 	_ decoder.Prefiller            = (*metalResident)(nil)
 	_ decoder.PrefillPathReporter  = (*metalResident)(nil)
 	_ decoder.VerifyPathReporter   = (*metalResident)(nil)
@@ -1128,9 +1127,7 @@ func (a *metalResident) PrefillImageBlocksLast(ctx context.Context, embeddings [
 	return a.batchedPrefillImg(embeddings, startPos, 0, nil, nil, blocks)
 }
 
-var (
-	_ decoder.ResidentImagePrefill = (*metalResident)(nil)
-)
+var ()
 
 // batchedPrefillImg is batchedPrefill with optional bidirectional image blocks (nil: none).
 func (a *metalResident) batchedPrefillImg(embeddings [][]float32, startPos, floor int, mrope [][3]int, deep *prefillDeep, blocks [][2]int) ([]float32, error) {
@@ -1542,8 +1539,6 @@ func (a *metalResident) Reset() {
 	a.r.resetRecurrent()
 }
 
-var _ decoder.ResidentGreedyChain = (*metalResident)(nil)
-
 // GreedyChainAvailable (decoder.ResidentGreedyChain, C-B01): the greedy chain is exact on this resident
 // (greedyChainWhyNot, greedy_chain.go) and its gather table is on the device, or fits there now (chainEmbedTable).
 func (a *metalResident) GreedyChainAvailable() bool {
@@ -1567,8 +1562,6 @@ func (a *metalResident) GreedyChainNext() (int, error) { return a.r.chainNext() 
 
 // GreedyChainStop closes the chain.
 func (a *metalResident) GreedyChainStop() { a.r.stopChain() }
-
-var _ decoder.ResidentSampleChain = (*metalResident)(nil)
 
 // SampleChainAvailable (decoder.ResidentSampleChain, C-P02): the chain is available and so is the device draw.
 func (a *metalResident) SampleChainAvailable() bool {
@@ -1662,8 +1655,6 @@ func (a *metalResident) prefillBlockBudget() int64 {
 
 // PrefillScratchBytes (decoder.ResidentPrefillBlocks) is what one batched pass over rows rows allocates.
 func (a *metalResident) PrefillScratchBytes(rows int) int64 { return a.r.prefillScratchBytes(rows) }
-
-var _ decoder.ResidentPrefillBlocks = (*metalResident)(nil)
 
 // PrefillTailExact (decoder.PrefillTailExact): a short PrefillLast continuing a prefix the pass prefilled reproduces the cold pass
 // bit for bit (TestPrefillLast_tailContinuationMatchesCold), and the routing (floor, step range) is on the whole prompt's length.

@@ -13,8 +13,6 @@ import (
 // ones, copied on the device after the executor has drained. A load the memory guard cannot also fit it into keeps none, and the
 // slot behaves as before KV8a.
 
-var _ decoder.ResidentRecurrentCheckpoint = (*metalResident)(nil)
-
 // ckptFits reports whether the guard's budget holds the load's need plus the checkpoint's bytes (residentMemoryDecline's quantities,
 // not the OS's account of free memory), and why not. A variable so a test can stand in a machine with no room.
 var ckptFits = func(m *decoder.Model, bytes int64) (bool, string) {

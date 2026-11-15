@@ -5,7 +5,6 @@ package cuda
 import (
 	"time"
 
-	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/cost"
 )
 
@@ -19,8 +18,6 @@ var kernelUnmeasured = []string{cost.FieldBytesRead, cost.FieldBytesWritten, cos
 
 // noLedgerUnmeasured is the alloc operation's, on a device without a ledger.
 var noLedgerUnmeasured = []string{cost.FieldAllocBytes, cost.FieldAllocs, cost.FieldBytesRead, cost.FieldBytesWritten, cost.FieldTime}
-
-var _ decoder.ResidentCost = (*cudaResident)(nil)
 
 // costPlantForTest plants SB11's CUDA defects: 1 launches one kernel a token twice, 2 adds a host wait after the token.
 var costPlantForTest int

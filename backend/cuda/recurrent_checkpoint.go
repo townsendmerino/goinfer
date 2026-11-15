@@ -26,8 +26,6 @@ type ckptCopy struct {
 	saved uint64 // the save count when it was last saved: the least recently saved goes first
 }
 
-var _ decoder.ResidentRecurrentCheckpoint = (*cudaResident)(nil)
-
 // ckptFreeVRAM is allocRecurrentCheckpoint's free-VRAM probe, a variable so a test can stand in a card with no room.
 var ckptFreeVRAM = func(r *cudaResident) (uint64, error) { return cudaFreeVRAM(r) }
 

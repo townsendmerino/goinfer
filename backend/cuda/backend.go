@@ -47,7 +47,6 @@ var (
 	_ decoder.Backend          = (*cudaBackend)(nil)
 	_ decoder.ResidencyBackend = (*cudaBackend)(nil)
 	_ decoder.ResidentForward  = (*cudaResident)(nil)
-	_ decoder.ResidentAdapter  = (*cudaResident)(nil)
 )
 
 // cudaBackend implements decoder.Backend + decoder.ResidencyBackend.

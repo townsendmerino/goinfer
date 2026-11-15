@@ -74,7 +74,6 @@ func uploadProj(c *Context, w *linalg.WeightMat) (kernels.DecodeWeight, error) {
 
 var (
 	_ decoder.ResidentForward = (*residentDecoder)(nil)
-	_ decoder.ResidentAdapter = (*residentDecoder)(nil)
 )
 
 // residentDecoder is the gpu side of decoder.ResidentForward: a persistent
@@ -484,8 +483,6 @@ func (rd *residentDecoder) prefillBlocks(ctx context.Context, embeddings [][]flo
 // out because the CPU route is the faster one there. A backend goes in on its own run of that gate
 // (docs/completed/task-multimodal-support-2026-10.md, "G-S12.4b-4a-5").
 var mropePrefillBackends = map[string]bool{"vulkan": true}
-
-var _ decoder.ResidentMRoPEPrefill = (*residentDecoder)(nil)
 
 // PrefillMRoPELast is decoder.ResidentMRoPEPrefill: PrefillLast for rows whose rotary position is three numbers.
 // mropePos is prompt-absolute and covers [0, startPos+len(embeddings)). It declines on a backend outside

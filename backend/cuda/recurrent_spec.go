@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
-	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
@@ -18,8 +17,6 @@ import (
 // next verify's twins fold them into the live window and state before scanning their own rows, and FlushFold folds them through
 // prefill's own kernels when something other than a verify comes next. Either way the committed state is the bits a prefill of
 // those rows would leave, and no copy of the state is ever made.
-
-var _ decoder.ResidentRecurrentSpec = (*cudaResident)(nil)
 
 // dnSpecArena holds, per DeltaNet layer, a verify's rows in two banks: the conv input, the conv output, the normed q and k and the
 // gates, at most rows of each, in one device allocation (Buffer.At slices it). A verify writes one bank while the twins fold the

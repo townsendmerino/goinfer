@@ -12,8 +12,6 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-var _ decoder.ResidentKVSnapshotter = (*cudaResident)(nil)
-
 // Prefix snapshots (docs/completed/task-kv7-prefix-snapshot-2026-10.md): a slot's KV rows in pinned host memory, and back. It is CopyKV with
 // a host buffer for the other slot, over the same slot storage:
 //

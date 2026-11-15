@@ -10,9 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
 
-var (
-	_ decoder.ResidentReusableKVSlot = (*cudaResident)(nil)
-)
+var ()
 
 // kvCopyF16 is whether CopyKV serves a load whose KV cache is f16. False declines every such copy, so an f16 load shares
 // nothing across conversations and an f32 load is unaffected: the one switch for holding cross-conversation sharing to
