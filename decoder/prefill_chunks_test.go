@@ -6,14 +6,14 @@ import (
 	"testing"
 )
 
-// chunkFake is mc3Fake as a resident that cuts its own long prefill (ResidentPrefillChunks, CUDA's shape): it reports a chunk, a
+// chunkFake is mc3Fake as a resident that cuts its own long prefill (legacyPrefillChunks, CUDA's shape): it reports a chunk, a
 // per-row scratch figure and a tail minimum, and is NOT a ResidentPrefillBlocks, so the decoder does not split its prompts.
 type chunkFake struct {
 	*mc3Fake
 	chunk   int
 	perRow  int64
 	tailMin int
-	perKey  int64 // ResidentPrefillSpanScratch: bytes a pass adds per attended key (0: none)
+	perKey  int64 // legacyPrefillSpanScratch: bytes a pass adds per attended key (0: none)
 }
 
 func (f *chunkFake) PrefillChunkRows() int              { return f.chunk }
@@ -105,7 +105,7 @@ func TestAdmitPrefillMemory_pricesAChunkingResidentByItsChunk(t *testing.T) {
 }
 
 // TestAdmitPrefillMemory_addsTheSpanScratch: a chunking resident whose pass allocates more as its rows attend more keys
-// (ResidentPrefillSpanScratch) is priced at its chunk's scratch plus that figure at the request's prompt length, and a request
+// (legacyPrefillSpanScratch) is priced at its chunk's scratch plus that figure at the request's prompt length, and a request
 // the sum does not fit is refused.
 func TestAdmitPrefillMemory_addsTheSpanScratch(t *testing.T) {
 	injectHostRAM(t, 64<<30)

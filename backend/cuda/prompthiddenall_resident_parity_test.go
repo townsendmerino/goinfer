@@ -10,12 +10,12 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// decoder.Model.PromptHiddenAll on a CUDA-resident Qwen3.5 answers from the device through the ResidentResidualAll seam
+// decoder.Model.PromptHiddenAll on a CUDA-resident Qwen3.5 answers from the device through the ResidentPrefillSubsystem seam
 // (docs/tasks/parked/task-constrained-confidence.md, Route C), and every row stays within promptHiddenAllResidentBarCUDA of the
 // CPU's PromptHiddenAll on the same weights. Three checks:
 //
 //   - the answer is the runner's own pre-norm residual rows with the decoder's f32 final norm applied (so the dispatch took the resident, and the norm is the host's, not the
-//     int8-requantized vector ResidentHiddenLast returns);
+//     int8-requantized vector ResidentPrefillSubsystem returns);
 //   - it tracks the CPU path per row (the device kernels, DeltaNet included, compute the right thing at EVERY position, not only the last);
 //   - a prompt split into passes of 16 rows (GOINFER_PREFILL_CHUNK) gives the rows of the unchunked one: the chunk loop keeps every chunk's rows, not just the last.
 //
@@ -39,7 +39,7 @@ func TestPromptHiddenAllResidentCUDA(t *testing.T) {
 			rr := decoder.SubsystemsOf(rf).Prefill
 			ok := rr.ResidualAllAvailable()
 			if !ok {
-				t.Fatal("the cuda resident runner does not implement decoder.ResidentResidualAll")
+				t.Fatal("the cuda resident runner does not implement decoder.ResidentPrefillSubsystem")
 			}
 			opts.Backend = "cpu"
 			mCPU, err := decoder.Load(ckpt, opts)
@@ -98,7 +98,7 @@ func TestPromptHiddenAllResidentCUDA(t *testing.T) {
 				lastCPU, err2 := mCPU.PromptHidden(context.Background(), ids)
 				if err1 == nil && err2 == nil {
 					c, _ := cosF32(lastCPU, lastRes)
-					t.Logf("%d tokens: the existing last-row path (ResidentHiddenLast, int8-requantized) vs CPU: cosine %.8f; the new path's last row: %.8f", n, c, func() float64 { c2, _ := cosF32(cpu[n-1], got[n-1]); return c2 }())
+					t.Logf("%d tokens: the existing last-row path (ResidentPrefillSubsystem, int8-requantized) vs CPU: cosine %.8f; the new path's last row: %.8f", n, c, func() float64 { c2, _ := cosF32(cpu[n-1], got[n-1]); return c2 }())
 				}
 				t.Logf("%d tokens: resident vs CPU, per-row cosine: worst %.8f, mean %.8f, last %.8f; worst |diff| %.3g", n, worstCos, meanCos, lastCos, worstAbs)
 				// DENSE: every row within the bar. MoE: a random-init router has near-tied top-k scores, so a few positions choose a

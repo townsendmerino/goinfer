@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestForwardMRoPE_constantShiftInvariance is the correctness test for ForwardMRoPE (decoder.ResidentMRoPE) and
+// TestForwardMRoPE_constantShiftInvariance is the correctness test for ForwardMRoPE (decoder.ResidentDecodeSubsystem) and
 // the rope_kv kernel's ropePos parameter it depends on.
 //
 // It does NOT try to reproduce Qwen2.5-VL's specific (non-constant) mropeDelta end to end — that
@@ -66,7 +66,7 @@ func TestForwardMRoPE_constantShiftInvariance(t *testing.T) {
 			mrope := decoder.SubsystemsOf(rf).Decode
 			ok := mrope.MRoPEDecodeAvailable()
 			if !ok {
-				t.Fatal("cudaResident does not satisfy decoder.ResidentMRoPE — interface wiring broken")
+				t.Fatal("cudaResident does not satisfy decoder.ResidentDecodeSubsystem — interface wiring broken")
 			}
 			_, _, _, _, _, _, vocab := mc.Dims()
 
@@ -136,7 +136,7 @@ func TestForwardMRoPE_equalArgsMatchesForward(t *testing.T) {
 	mrope := decoder.SubsystemsOf(rf).Decode
 	ok := mrope.MRoPEDecodeAvailable()
 	if !ok {
-		t.Fatal("cudaResident does not satisfy decoder.ResidentMRoPE")
+		t.Fatal("cudaResident does not satisfy decoder.ResidentDecodeSubsystem")
 	}
 	_, _, _, _, _, _, vocab := mc.Dims()
 	rng := rand.New(rand.NewSource(3))

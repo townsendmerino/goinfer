@@ -341,7 +341,7 @@ func TestUploadKV_matchesSequentialForward_KVI8(t *testing.T) {
 	}
 }
 
-// TestUploadKV_slidingLayerStartsLate: the decoder's own upload (one pass, decoder.ResidentKVUploadPass) on a Gemma 2 shape whose sliding
+// TestUploadKV_slidingLayerStartsLate: the decoder's own upload (one pass, decoder.ResidentKVSubsystem) on a Gemma 2 shape whose sliding
 // layers' rings have wrapped at 20 positions (window 4), so they start late: the pass takes them, and decode continues from the uploaded rows
 // as it does from a sequential resident prefill. The bar is the cross-path one (a CPU prefill's K/V against the resident's own), as in
 // TestUploadKV_matchesSequentialForward_KVI8.

@@ -78,18 +78,18 @@ type ResidentKVSlotter interface {
 	UseKVSlot(i int) error
 }
 
-// ResidentBatchStepper is an OPTIONAL ResidentKVSlotter extension (MC3, docs/tasks/parked/task-concurrency-2026-09.md): one
+// legacyBatchStepper is an OPTIONAL ResidentKVSlotter extension (MC3, docs/tasks/parked/task-concurrency-2026-09.md): one
 // decode token for several sequences at once, each on its own KV slot at its own position, in one step. It reads and
 // writes only the named slots — never the bound one's binding — and each returned row must equal what that sequence's
 // own call would return on its slot, bit for bit (the identity gate MC3 keeps): Forward's logits, or, for a sequence
-// that carries a Draw, ResidentSample.ForwardSample's id. BatchStepRange is the batch sizes the step serves better than
+// that carries a Draw, legacySample.ForwardSample's id. BatchStepRange is the batch sizes the step serves better than
 // per-sequence calls; hi == 0 means the resident cannot batch at all.
-type ResidentBatchStepper interface {
+type legacyBatchStepper interface {
 	BatchStepRange() (lo, hi int)
 	StepBatch(seqs []ResidentBatchSeq) ([]ResidentBatchOut, error)
 }
 
-// ResidentBatchSeq is one sequence of a ResidentBatchStepper step: its KV slot, the position it decodes, its input
+// ResidentBatchSeq is one sequence of a legacyBatchStepper step: its KV slot, the position it decodes, its input
 // embedding (embedResident's), and, when its token is drawn on-device, that draw.
 type ResidentBatchSeq struct {
 	Slot, Pos int
@@ -114,16 +114,16 @@ type ResidentBatchOut struct {
 	ID     int
 }
 
-// ResidentRaggedStepper is an optional ResidentForward extension: one step over several sequences, each with one row or more
+// legacyRaggedStepper is an optional ResidentForward extension: one step over several sequences, each with one row or more
 // at consecutive positions from its Pos on its own KV slot, every row in the kernel class its own shape runs today (a row
 // alone is a decode token, a sequence's rows a verify). Row j of a sequence equals that sequence's own Forward at Pos+j bit
 // for bit, or ForwardSample's id for a last row that carries the Draw. The slots are distinct; the bound slot is restored.
 // Docs: docs/tasks/task-forward-and-memory-2026-11.md, "RF2: registration".
-type ResidentRaggedStepper interface {
+type legacyRaggedStepper interface {
 	StepRagged(seqs []ResidentRaggedSeq) ([]ResidentRaggedOut, error)
 }
 
-// ResidentRaggedSeq is one sequence of a ResidentRaggedStepper step: its KV slot, the position of its first row, its rows'
+// ResidentRaggedSeq is one sequence of a legacyRaggedStepper step: its KV slot, the position of its first row, its rows'
 // embeddings (embedResident's), and, when its last row's token is drawn on-device, that draw. Prefill marks the rows as one
 // chunk of a prompt's prefill instead of decode or verify rows; such a sequence carries no Draw.
 type ResidentRaggedSeq struct {
@@ -149,13 +149,13 @@ type ResidentRaggedOut struct {
 	ID     int
 }
 
-// ResidentMRoPE is an OPTIONAL ResidentForward extension: a resident backend whose rotation kernel takes a
+// legacyMRoPE is an OPTIONAL ResidentForward extension: a resident backend whose rotation kernel takes a
 // rope-angle position (ropePos) separate from the KV-cache/attention position (pos). Qwen2.5-VL decode past
 // an image block needs it: decoder/rope.go's CPU reference rotates by pos+mropeDelta while storage and
 // attention still use plain pos. A new capability rather than a Forward signature change, since only Qwen-VL
 // decode needs the split. ForwardMRoPE(emb, pos, pos) must equal Forward(emb, pos) exactly. Without it
 // GenerateQwenVL's resident path declines to the CPU/staged decode.
-type ResidentMRoPE interface {
+type legacyMRoPE interface {
 	ForwardMRoPE(embedding []float32, pos, ropePos int) (logits []float32, err error)
 }
 
@@ -185,7 +185,7 @@ type ResidentGreedyChain interface {
 }
 
 // ResidentSampleChain is ResidentGreedyChain's temperature-only sibling (C-P02): the chained forward ends with the
-// resident's own Gumbel-max draw (ResidentSample's ForwardSample) instead of the argmax. SampleChainStart opens it with
+// resident's own Gumbel-max draw (legacySample's ForwardSample) instead of the argmax. SampleChainStart opens it with
 // the draw of the forward at pos; the resident draws each later forward with the next one, which is how
 // Sampler.NextDraw advances. Each SampleChainNext passes the caller's own draw for the forward it returns, and the
 // resident refuses one that is not the draw it used. GreedyChainStop closes it. The decode loop uses it where it would
@@ -210,37 +210,37 @@ type TopKRow struct {
 	Full   func() ([]float32, error)
 }
 
-// ResidentTopK is an optional ResidentForward extension: run a token's forward and return only the K
+// legacyTopK is an optional ResidentForward extension: run a token's forward and return only the K
 // best logits (plus Z when wantZ), instead of the whole vocab-wide row. The decode loop uses it only
 // for a filtered sampler (top_k / top_p / min_p at temperature > 0) with no bias, penalties, logprobs
 // or logit processor — anything that needs, or rewrites, the full row keeps the full path.
 // TopKAvailable is false for a backend whose logits are transformed on the host after readback
 // (final-logit softcap, logit scale): ranking the raw device row would not be ranking what the
 // sampler sees.
-type ResidentTopK interface {
+type legacyTopK interface {
 	TopKAvailable() bool
 	ForwardTopK(embedding []float32, pos, k int, temperature float64, wantZ bool) (TopKRow, error)
 }
 
-// ResidentSample is an optional ResidentForward extension: run a token's forward and DRAW the next token
+// legacySample is an optional ResidentForward extension: run a token's forward and DRAW the next token
 // on-device by Gumbel-max (sampler_gumbel.go), returning just the id — no logits readback and no host
 // normalisation. It serves the temperature-only configuration (temperature > 0, no top-k / top-p / min-p), the
 // server's default sampling shape. (seed, draw) are the sampler's own (Sampler.NextDraw), so whichever path
 // serves a step the stream is a function of (seed, step, logits) only. SampleAvailable is false for a backend
 // whose logits are transformed on the host after readback (final-logit softcap, logit scale).
-type ResidentSample interface {
+type legacySample interface {
 	SampleAvailable() bool
 	ForwardSample(embedding []float32, pos int, temperature float64, seed, draw uint64) (int, error)
 }
 
-// ResidentPrefillKV is an OPTIONAL ResidentForward extension: run a token's forward to build ONLY its
+// legacyPrefillKV is an OPTIONAL ResidentForward extension: run a token's forward to build ONLY its
 // resident KV, skipping the final norm + LM head matmul + full-logits readback (+ any host-side
 // softcap). generateInto uses it for prompt[:-1] — every prefill token except the last needs only its
 // K/V in the cache; only the LAST prompt token's logits seed decode. The layer chain (hence the KV
 // written) is identical to Forward, so decode is byte-identical; the LM head on a big-vocab model is
 // a large share of a forward (262144×hidden MACs + a ~1 MB D2H + softcap), so skipping it on every
 // prompt token but the last cuts prefill/TTFT materially. Backends without it keep full-logits prefill.
-type ResidentPrefillKV interface {
+type legacyPrefillKV interface {
 	ForwardNoLogits(embedding []float32, pos int) error
 }
 
@@ -283,24 +283,24 @@ func prefillResume(from int, err error) int {
 	return from
 }
 
-// ResidentHiddenLast is an OPTIONAL ResidentForward extension: ingest a whole sequence at positions
+// legacyHiddenLast is an OPTIONAL ResidentForward extension: ingest a whole sequence at positions
 // startPos..startPos+len-1 and return the LAST position's hidden state AFTER the model's final norm — the resident
 // twin of Prefiller, stopping before the LM head. Used by HiddenLast (G4) so an embedding request on a GPU box does
 // not run the whole text decoder on the CPU. Bit-identical to the CPU path is the bar (embed.go): a backend whose
 // batched forward is not bit-identical to its own sequential one must implement this as a per-token forward that
 // stops before the head, or not at all, never reuse a declining Prefiller.
-type ResidentHiddenLast interface {
+type legacyHiddenLast interface {
 	HiddenLast(ctx context.Context, embeddings [][]float32, startPos int) (hidden []float32, err error)
 }
 
-// ResidentResidualAll is an OPTIONAL ResidentForward extension: ingest a whole sequence at positions
+// legacyResidualAll is an OPTIONAL ResidentForward extension: ingest a whole sequence at positions
 // startPos..startPos+len-1 and return the residual stream of EVERY row after the last layer and BEFORE the final
 // norm, [len][hidden] f32, each row a fresh slice the caller owns: the resident twin of Model.PromptHiddenAll
 // (docs/tasks/parked/task-constrained-confidence.md, Route C). It stops before the norm because the decoder applies it on
-// the host in f32, as its CPU path does; ResidentHiddenLast cannot serve this (post-norm, last row only, and on CUDA
+// the host in f32, as its CPU path does; legacyHiddenLast cannot serve this (post-norm, last row only, and on CUDA
 // already through the int8 activation quantization). A backend whose batched forward is not what its decode computes
 // must take the exact path; a decline falls back to the CPU, a cancellation returns.
-type ResidentResidualAll interface {
+type legacyResidualAll interface {
 	ResidualAll(ctx context.Context, embeddings [][]float32, startPos int) (residuals [][]float32, err error)
 }
 
@@ -355,11 +355,11 @@ type ResidentImagePrefill interface {
 	PrefillImageLast(ctx context.Context, embeddings [][]float32, startPos, imgStart, imgEnd int) (logits []float32, err error)
 }
 
-// ResidentImageBlocksPrefill is ResidentImagePrefill for a prompt with several images (S11,
+// legacyImageBlocksPrefill is ResidentImagePrefill for a prompt with several images (S11,
 // docs/completed/task-multimodal-support-2026-10.md): blocks are each image's [start, end), in order and disjoint, each its
 // own bidirectional block. OPTIONAL: a backend without it takes a multi-image turn through the CPU-prefill + UploadKV
 // bridge, which handles any number of blocks.
-type ResidentImageBlocksPrefill interface {
+type legacyImageBlocksPrefill interface {
 	PrefillImageBlocksLast(ctx context.Context, embeddings [][]float32, startPos int, blocks [][2]int) (logits []float32, err error)
 }
 
@@ -370,22 +370,22 @@ type ExpertCacheStats struct {
 	Hits, Misses uint64
 }
 
-// ResidentExpertCache is an OPTIONAL ResidentForward extension, implemented by a resident that pages MoE experts through a
+// legacyExpertCache is an OPTIONAL ResidentForward extension, implemented by a resident that pages MoE experts through a
 // device cache. ExpertCacheStats' ok is false when this build keeps no cache; its counters are written by the generation in
 // flight, so a caller reads them between generations. ResizeExpertCache sizes the cache to what free device memory holds
 // with reserve bytes left over, up to the slots the load asked for, and returns the slots it now has; the cache restarts
 // empty. It is called between generations, and an error leaves the cache as it was.
-type ResidentExpertCache interface {
+type legacyExpertCache interface {
 	ExpertCacheStats() (s ExpertCacheStats, ok bool)
 	ResizeExpertCache(reserve int64) (slots int, err error)
 }
 
-// ResidentSpanPrefill is an OPTIONAL ResidentForward extension: the batched prefill of a Gemma 4 bidirectional
+// legacySpanPrefill is an OPTIONAL ResidentForward extension: the batched prefill of a Gemma 4 bidirectional
 // ("vision") prompt. spans are each image's or audio clip's [start, end), absolute, in order and disjoint, and a row
 // attends as gemma4BatchRange says: inside a span it sees the whole span, and a sliding layer's window reaches back to
 // the span's start; elsewhere it is causal. The backend may cut passes, but never inside a span. Any error other than a
 // cancel is a decline, and GenerateGemma4VLSpans takes the CPU prefill and upload instead.
-type ResidentSpanPrefill interface {
+type legacySpanPrefill interface {
 	PrefillSpansLast(ctx context.Context, embeddings [][]float32, startPos int, spans [][2]int) (logits []float32, err error)
 }
 
@@ -400,7 +400,7 @@ type ResidentHybridMRoPEPrefill interface {
 }
 
 // ResidentMRoPEPrefill is an OPTIONAL Prefiller extension: batched prefill under Qwen2.5-VL's m-RoPE 3D rotary
-// positions, the resident twin of prefillLogitsQwenVL's CPU forward. Unlike ResidentMRoPE (decode's single ropePos
+// positions, the resident twin of prefillLogitsQwenVL's CPU forward. Unlike legacyMRoPE (decode's single ropePos
 // split) it needs every row's own position up front: mropePos is decoder/rope.go's mropePositions output, one (t,h,w)
 // triple per ABSOLUTE position over the WHOLE prompt, which GenerateQwenVL already computes, so a backend must not
 // re-derive it. embeddings are the ALREADY-SPLICED vectors (ResidentImagePrefill's convention). Unlike it,
@@ -410,12 +410,12 @@ type ResidentMRoPEPrefill interface {
 	PrefillMRoPELast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int) (logits []float32, err error)
 }
 
-// ResidentMRoPEDeepstackPrefill is an OPTIONAL extension of ResidentMRoPEPrefill for Qwen3-VL (S16): the same batched m-RoPE
+// legacyMRoPEDeepstackPrefill is an OPTIONAL extension of ResidentMRoPEPrefill for Qwen3-VL (S16): the same batched m-RoPE
 // prefill, which also adds DeepStack set l to the image rows [imgStart, imgStart+imgLen) after decoder layer l, as the CPU
 // prefill does (addDeepstack; HF's hidden_states[visual_pos_masks] += deepstack_visual_embeds[l]). deep holds one set per
 // injected layer, imgLen rows of the hidden size each. Without it GenerateQwenVLDeepstack keeps a turn that has DeepStack
 // sets on the CPU prefill.
-type ResidentMRoPEDeepstackPrefill interface {
+type legacyMRoPEDeepstackPrefill interface {
 	PrefillMRoPEDeepstackLast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int, deep [][]float32, imgStart, imgLen int) (logits []float32, err error)
 }
 
@@ -531,7 +531,7 @@ func (m *Model) prefillBlockRows(promptLen int) int {
 // residentPrefillScratch is the memory a resident request's prefill takes at its largest pass, when the resident
 // splits its prefill (prefillBlockRows): that pass's scratch by the resident's own figure, plus the host embeddings
 // built for it. The last pass is the longest, at most a block and the resident's tail minimum less one rows. A resident that
-// chunks its own prefill (ResidentPrefillChunks) is priced at one chunk and the embeddings of the whole suffix. ok is false for a
+// chunks its own prefill (legacyPrefillChunks) is priced at one chunk and the embeddings of the whole suffix. ok is false for a
 // resident that does neither, whose request is priced by prefillScratchBytes.
 func (m *Model) residentPrefillScratch(promptTokens int) (bytes int64, ok bool) {
 	B := m.prefillBlockRows(promptTokens)

@@ -20,8 +20,6 @@ import (
 // kernel and position-dependent scales its own decode would, the flash-decode lane past 2048 keys included. The head is
 // per row, decode's, with Forward's host tail; a row whose token is drawn on-device ends in ForwardSample's pick.
 
-var _ decoder.ResidentBatchStepper = (*cudaResident)(nil)
-
 // stepRow is one sequence of a step: its KV slot, the position it decodes, and its on-device draw (nil: logits).
 type stepRow struct {
 	slot, pos int
@@ -45,7 +43,7 @@ func (r *cudaResident) BatchStepRange() (lo, hi int) {
 	return 2, r.KVSlots()
 }
 
-// StepBatch runs one decode token for every sequence in seqs (decoder.ResidentBatchStepper). Each row equals that
+// StepBatch runs one decode token for every sequence in seqs (decoder.ResidentDecodeSubsystem). Each row equals that
 // sequence's own Forward on its slot bit for bit, or ForwardSample's id when it carries a Draw. The bound slot's binding
 // is restored before it returns.
 func (r *cudaResident) StepBatch(seqs []decoder.ResidentBatchSeq) ([]decoder.ResidentBatchOut, error) {
@@ -79,8 +77,6 @@ func (r *cudaResident) StepBatch(seqs []decoder.ResidentBatchSeq) ([]decoder.Res
 	return res, nil
 }
 
-var _ decoder.ResidentRaggedStepper = (*cudaResident)(nil)
-
 // raggedPlantForTest plants a defect in StepRagged's rows, for its identity test's controls: 1 binds a sequence's second row
 // to the next sequence's slot (a row reading another sequence's tables), 2 gives each row of a sequence its first row's
 // position (a verify row run as a decode row), 3 runs a prefill chunk on the exact kernels (a chunk out of its pass's class),
@@ -105,7 +101,7 @@ func (c raggedChunk) headFrom() int {
 	return c.rows
 }
 
-// StepRagged runs one step over seqs (decoder.ResidentRaggedStepper): every sequence's rows in one pass of prefillCore's
+// StepRagged runs one step over seqs (decoder.ResidentDecodeSubsystem): every sequence's rows in one pass of prefillCore's
 // multi-sequence mode, a sequence's rows in order, so each row's attention reads the rows before it. Each row runs the exact
 // kernels and decode's attention at its own slot and position, as a decode token does and as a batched verify does
 // (forceExactKernels under tailAllLogits, TestSpecDecodeCurve's lossless check). The model and slot count are StepBatch's;

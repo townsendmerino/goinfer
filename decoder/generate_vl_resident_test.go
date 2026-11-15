@@ -225,9 +225,9 @@ func loadQwen25VLTiny(t *testing.T) (*Model, qwen25vlGolden) {
 }
 
 // TestGenerateQwenVL_residentDecodeUsesForwardMRoPE is gap 0's wiring gate for GenerateQwenVL,
-// extended for P9(a): with a ResidentMRoPE-capable resident attached, decode past the image block
+// extended for P9(a): with a legacyMRoPE-capable resident attached, decode past the image block
 // must dispatch through ForwardMRoPE (not the base Forward), with ropePos = pos + mropeDelta — the
-// exact distinction Forward alone cannot express (decoder/residency.go's ResidentMRoPE doc
+// exact distinction Forward alone cannot express (decoder/residency.go's legacyMRoPE doc
 // comment) — and the turn must COMMIT resIDs + the image block afterward (see the Gemma 3 sibling
 // test's doc comment for why commit, not forget).
 func TestGenerateQwenVL_residentDecodeUsesForwardMRoPE(t *testing.T) {
@@ -280,7 +280,7 @@ func TestGenerateQwenVL_residentContextCapPublishesBudgetClamped(t *testing.T) {
 }
 
 // TestGenerateQwenVL_declinesResidentWithoutMRoPE: a resident that satisfies ResidentForward but
-// NOT ResidentMRoPE (residentForwardOnly, below — the shape a hypothetical backend without m-RoPE
+// NOT legacyMRoPE (residentForwardOnly, below — the shape a hypothetical backend without m-RoPE
 // support has) must never be claimed for Qwen decode — the claim attempt is gated on the type
 // assertion BEFORE calling tryClaimResident, so this must fall back to CPU without ever touching
 // resBusy/resIDs.
@@ -304,7 +304,7 @@ func TestGenerateQwenVL_declinesResidentWithoutMRoPE(t *testing.T) {
 		t.Fatal("GenerateQwenVL streamed no tokens on the CPU fallback path")
 	}
 	if rf.fakeResident.forwards != 0 {
-		t.Errorf("resident Forward called %d times — a resident without ResidentMRoPE must never be claimed for Qwen decode", rf.fakeResident.forwards)
+		t.Errorf("resident Forward called %d times — a resident without legacyMRoPE must never be claimed for Qwen decode", rf.fakeResident.forwards)
 	}
 	if !equalIntSlices(m.resIDs, []int{4, 5, 6}) {
 		t.Errorf("resIDs = %v, want unchanged [4 5 6] — the claim must never be attempted for a resident this call cannot use", m.resIDs)
@@ -513,7 +513,7 @@ func TestGenerateQwenVL_imageReuseFastPath_declinesPastResidentCap(t *testing.T)
 // residentForwardOnly exposes exactly decoder.ResidentForward from a *fakeResident, without
 // ForwardMRoPE — Go interface satisfaction is structural, so a wrapper that does NOT itself
 // define ForwardMRoPE, and does not embed fakeResident in a way that promotes it, fails the
-// decoder.ResidentMRoPE assertion even though the underlying fake could serve it.
+// decoder.legacyMRoPE assertion even though the underlying fake could serve it.
 type residentForwardOnly struct{ fakeResident *fakeResident }
 
 func (r *residentForwardOnly) Forward(embedding []float32, pos int) ([]float32, error) {

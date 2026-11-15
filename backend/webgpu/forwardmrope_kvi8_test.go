@@ -51,7 +51,7 @@ func TestKVI8ScaleWrittenAtTruePosition(t *testing.T) {
 		ok := mrope.MRoPEDecodeAvailable()
 		if !ok {
 			mc.Close()
-			t.Fatal("residentDecoder does not satisfy decoder.ResidentMRoPE — interface wiring broken")
+			t.Fatal("residentDecoder does not satisfy decoder.ResidentDecodeSubsystem — interface wiring broken")
 		}
 		_, _, _, _, _, _, vocab := mc.Dims()
 		rng := rand.New(rand.NewSource(11))

@@ -357,7 +357,7 @@ func TestKV3_chunkerKeepsPassStartsOnTheGrid(t *testing.T) {
 }
 
 // MEM6 on CUDA (docs/measurements/mem6-cuda-2026-11/README.md): a resident prefill reads the suffix's embeddings a pass at a time into one reused slab
-// (decoder.ResidentPrefillRows), so the host holds a pass of them, not the suffix. The most embedding rows the decoder holds at once during a prefill of 2,048
+// (decoder.ResidentPrefillSubsystem), so the host holds a pass of them, not the suffix. The most embedding rows the decoder holds at once during a prefill of 2,048
 // rows is at most one pass (prefillPassRows), and the last logits and 32 decode steps after them are byte-equal to the slice entry point's.
 //
 //	go test -count=1 -tags 'cuda goinfer_testhooks' -run '^TestMEM6_cudaPrefillHostRows$' -v ./backend/cuda/

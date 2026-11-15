@@ -70,14 +70,14 @@ type ResidentDrafterHost interface {
 	BatchedCapture() [][]float32
 }
 
-// ResidentSeedArgmax is an OPTIONAL narrowing of PrefillLastNArgmax for the prompt seed, the one place the loop asks for M rows of argmax
+// legacySeedArgmax is an OPTIONAL narrowing of PrefillLastNArgmax for the prompt seed, the one place the loop asks for M rows of argmax
 // and reads exactly one of them. Without it the seed materialises the batched logits (M x vocab: gigabytes on a large-vocab target at
 // prompt lengths over ~1k) and runs the head over every row to obtain one token id. The capture the seed needs comes from the layer loop,
 // not the head, so heading one row loses nothing.
 //
 // Optional rather than part of ResidentDrafterHost, following ResidentGreedy: a backend without it keeps working
 // through the wide path.
-type ResidentSeedArgmax interface {
+type legacySeedArgmax interface {
 	// PrefillSeedArgmax runs the same batched forward and returns only the LAST row's argmax.
 	// The batched capture seam must be armed and filled exactly as PrefillLastNArgmax fills it.
 	PrefillSeedArgmax(embeddings [][]float32, startPos int) (int, error)
@@ -350,7 +350,7 @@ func (s *BlockSpec) Generate(prompt []int, opt BlockSpecOptions) ([]int, int, er
 }
 
 // seedAnchor runs the prompt suffix embs from pos through the host and returns the seed's id, the argmax of its last row. It asks for
-// the id alone when the backend can (ResidentSeedArgmax), which skips an M x vocab logits buffer, copy and host argmax.
+// the id alone when the backend can (legacySeedArgmax), which skips an M x vocab logits buffer, copy and host argmax.
 func (s *BlockSpec) seedAnchor(embs [][]float32, pos int) (int, error) {
 	if canStep(s.host, stepBatch{Pass: passRows, Emb: stepProbe, Out: outArgmax}) {
 		sr, err := stepOn(s.host, stepBatch{Pass: passRows, Emb: embs, Pos: pos, Out: outArgmax})

@@ -1502,7 +1502,7 @@ func (a *metalResident) BatchGreedyDraw() bool {
 	return a.r != nil && a.r.batch != nil && len(a.r.kvSlotBufs) >= 2
 }
 
-// BatchStepRange is decoder.ResidentBatchStepper's: the batch sizes StepBatch serves well (batchMinSeqs..the smaller
+// BatchStepRange is decoder.ResidentDecodeSubsystem's: the batch sizes StepBatch serves well (batchMinSeqs..the smaller
 // of batchMaxSeqs and the slot count), or (0, 0) when this resident cannot batch.
 func (a *metalResident) BatchStepRange() (lo, hi int) {
 	if a.r.batch == nil || len(a.r.kvSlotBufs) < 2 {
@@ -1511,7 +1511,7 @@ func (a *metalResident) BatchStepRange() (lo, hi int) {
 	return batchMinSeqs, min(batchMaxSeqs, len(a.r.kvSlotBufs))
 }
 
-// StepBatch is decoder.ResidentBatchStepper's: one decode token for each sequence, each on its own KV slot.
+// StepBatch is decoder.ResidentDecodeSubsystem's: one decode token for each sequence, each on its own KV slot.
 func (a *metalResident) StepBatch(seqs []decoder.ResidentBatchSeq) ([]decoder.ResidentBatchOut, error) {
 	bs := make([]batchSeq, len(seqs))
 	for i, q := range seqs {

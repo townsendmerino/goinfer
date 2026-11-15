@@ -1539,7 +1539,7 @@ func kvUploadLayers(r *resident) []int {
 }
 
 // TestKVPages_uploadPass: the UploadKV calls between BeginKVUpload and EndKVUpload are one write of the bound slot from position 0
-// (decoder.ResidentKVUploadPass). On the MC3 fixture, every layer full attention: the slot holds the rows once every layer has landed the same
+// (decoder.ResidentKVSubsystem). On the MC3 fixture, every layer full attention: the slot holds the rows once every layer has landed the same
 // end; a full-attention layer that starts past 0, a layer uploaded twice, or one ending elsewhere is refused at its call; a pass a layer
 // missed, or one the caller fails, leaves the slot holding no block and answering 0. TestUploadKV_slidingLayerStartsLate has a windowed
 // layer starting late through the decoder's own pass.
@@ -1548,7 +1548,7 @@ func TestKVPages_uploadPass(t *testing.T) {
 	p := decoder.SubsystemsOf(a).KV
 	ok := p.KVUploadPassAvailable()
 	if !ok {
-		t.Fatal("Metal's resident has no upload pass (decoder.ResidentKVUploadPass)")
+		t.Fatal("Metal's resident has no upload pass (decoder.ResidentKVSubsystem)")
 	}
 	ls := kvUploadLayers(r)
 	if len(ls) < 2 {

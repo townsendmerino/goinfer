@@ -496,39 +496,39 @@ func (d *legacyDecodeSub) ForwardArgmax(embedding []float32, pos int) (int, erro
 }
 
 func (d *legacyDecodeSub) TopKAvailable() bool {
-	tk, ok := d.r.(ResidentTopK)
+	tk, ok := d.r.(legacyTopK)
 	return ok && tk.TopKAvailable()
 }
 
 func (d *legacyDecodeSub) ForwardTopK(embedding []float32, pos, k int, temperature float64, wantZ bool) (TopKRow, error) {
-	return d.r.(ResidentTopK).ForwardTopK(embedding, pos, k, temperature, wantZ)
+	return d.r.(legacyTopK).ForwardTopK(embedding, pos, k, temperature, wantZ)
 }
 
 func (d *legacyDecodeSub) SampleAvailable() bool {
-	sm, ok := d.r.(ResidentSample)
+	sm, ok := d.r.(legacySample)
 	return ok && sm.SampleAvailable()
 }
 
 func (d *legacyDecodeSub) ForwardSample(embedding []float32, pos int, temperature float64, seed, draw uint64) (int, error) {
-	return d.r.(ResidentSample).ForwardSample(embedding, pos, temperature, seed, draw)
+	return d.r.(legacySample).ForwardSample(embedding, pos, temperature, seed, draw)
 }
 
 func (d *legacyDecodeSub) MRoPEDecodeAvailable() bool {
-	_, ok := d.r.(ResidentMRoPE)
+	_, ok := d.r.(legacyMRoPE)
 	return ok
 }
 
 func (d *legacyDecodeSub) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]float32, error) {
-	return d.r.(ResidentMRoPE).ForwardMRoPE(embedding, pos, ropePos)
+	return d.r.(legacyMRoPE).ForwardMRoPE(embedding, pos, ropePos)
 }
 
 func (d *legacyDecodeSub) NoLogitsAvailable() bool {
-	_, ok := d.r.(ResidentPrefillKV)
+	_, ok := d.r.(legacyPrefillKV)
 	return ok
 }
 
 func (d *legacyDecodeSub) ForwardNoLogits(embedding []float32, pos int) error {
-	return d.r.(ResidentPrefillKV).ForwardNoLogits(embedding, pos)
+	return d.r.(legacyPrefillKV).ForwardNoLogits(embedding, pos)
 }
 
 func (d *legacyDecodeSub) GreedyChainAvailable() bool {
@@ -564,28 +564,28 @@ func (d *legacyDecodeSub) SampleChainNext(seed, draw uint64) (int, error) {
 }
 
 func (d *legacyDecodeSub) BatchStepperAvailable() bool {
-	_, ok := d.r.(ResidentBatchStepper)
+	_, ok := d.r.(legacyBatchStepper)
 	return ok
 }
 
 func (d *legacyDecodeSub) BatchStepRange() (lo, hi int) {
-	if st, ok := d.r.(ResidentBatchStepper); ok {
+	if st, ok := d.r.(legacyBatchStepper); ok {
 		return st.BatchStepRange()
 	}
 	return 0, 0
 }
 
 func (d *legacyDecodeSub) StepBatch(seqs []ResidentBatchSeq) ([]ResidentBatchOut, error) {
-	return d.r.(ResidentBatchStepper).StepBatch(seqs)
+	return d.r.(legacyBatchStepper).StepBatch(seqs)
 }
 
 func (d *legacyDecodeSub) RaggedStepperAvailable() bool {
-	_, ok := d.r.(ResidentRaggedStepper)
+	_, ok := d.r.(legacyRaggedStepper)
 	return ok
 }
 
 func (d *legacyDecodeSub) StepRagged(seqs []ResidentRaggedSeq) ([]ResidentRaggedOut, error) {
-	return d.r.(ResidentRaggedStepper).StepRagged(seqs)
+	return d.r.(legacyRaggedStepper).StepRagged(seqs)
 }
 
 type legacyPrefillSub struct{ r any }
@@ -600,28 +600,28 @@ func (p *legacyPrefillSub) PrefillLast(ctx context.Context, embeddings [][]float
 }
 
 func (p *legacyPrefillSub) PrefillRowsAvailable() bool {
-	_, ok := p.r.(ResidentPrefillRows)
+	_, ok := p.r.(legacyPrefillRows)
 	return ok
 }
 
 func (p *legacyPrefillSub) PrefillLastRows(ctx context.Context, n, startPos int, rows func(lo, hi int) [][]float32) ([]float32, error) {
-	return p.r.(ResidentPrefillRows).PrefillLastRows(ctx, n, startPos, rows)
+	return p.r.(legacyPrefillRows).PrefillLastRows(ctx, n, startPos, rows)
 }
 
 func (p *legacyPrefillSub) PrefillMarkedAvailable() bool {
-	_, ok := p.r.(ResidentPrefillMarked)
+	_, ok := p.r.(legacyPrefillMarked)
 	return ok
 }
 
 func (p *legacyPrefillSub) PrefillMarkAlign() int {
-	if mp, ok := p.r.(ResidentPrefillMarked); ok {
+	if mp, ok := p.r.(legacyPrefillMarked); ok {
 		return mp.PrefillMarkAlign()
 	}
 	return 0
 }
 
 func (p *legacyPrefillSub) PrefillLastMarked(ctx context.Context, embeddings [][]float32, startPos, mark int, at func(pos int)) ([]float32, error) {
-	return p.r.(ResidentPrefillMarked).PrefillLastMarked(ctx, embeddings, startPos, mark, at)
+	return p.r.(legacyPrefillMarked).PrefillLastMarked(ctx, embeddings, startPos, mark, at)
 }
 
 func (p *legacyPrefillSub) PrefillPathInfo() (bool, string, bool) {
@@ -650,12 +650,12 @@ func (p *legacyPrefillSub) PrefillBlockRows() int {
 }
 
 func (p *legacyPrefillSub) PrefillChunksAvailable() bool {
-	_, ok := p.r.(ResidentPrefillChunks)
+	_, ok := p.r.(legacyPrefillChunks)
 	return ok
 }
 
 func (p *legacyPrefillSub) PrefillChunkRows() int {
-	if pc, ok := p.r.(ResidentPrefillChunks); ok {
+	if pc, ok := p.r.(legacyPrefillChunks); ok {
 		return pc.PrefillChunkRows()
 	}
 	return 0
@@ -665,35 +665,35 @@ func (p *legacyPrefillSub) PrefillScratchBytes(rows int) int64 {
 	if pb, ok := p.r.(ResidentPrefillBlocks); ok {
 		return pb.PrefillScratchBytes(rows)
 	}
-	if pc, ok := p.r.(ResidentPrefillChunks); ok {
+	if pc, ok := p.r.(legacyPrefillChunks); ok {
 		return pc.PrefillScratchBytes(rows)
 	}
 	return 0
 }
 
 func (p *legacyPrefillSub) PrefillSpanScratchBytes(rows, keys int) int64 {
-	if ss, ok := p.r.(ResidentPrefillSpanScratch); ok {
+	if ss, ok := p.r.(legacyPrefillSpanScratch); ok {
 		return ss.PrefillSpanScratchBytes(rows, keys)
 	}
 	return 0
 }
 
 func (p *legacyPrefillSub) HiddenLastAvailable() bool {
-	_, ok := p.r.(ResidentHiddenLast)
+	_, ok := p.r.(legacyHiddenLast)
 	return ok
 }
 
 func (p *legacyPrefillSub) HiddenLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
-	return p.r.(ResidentHiddenLast).HiddenLast(ctx, embeddings, startPos)
+	return p.r.(legacyHiddenLast).HiddenLast(ctx, embeddings, startPos)
 }
 
 func (p *legacyPrefillSub) ResidualAllAvailable() bool {
-	_, ok := p.r.(ResidentResidualAll)
+	_, ok := p.r.(legacyResidualAll)
 	return ok
 }
 
 func (p *legacyPrefillSub) ResidualAll(ctx context.Context, embeddings [][]float32, startPos int) ([][]float32, error) {
-	return p.r.(ResidentResidualAll).ResidualAll(ctx, embeddings, startPos)
+	return p.r.(legacyResidualAll).ResidualAll(ctx, embeddings, startPos)
 }
 
 func (p *legacyPrefillSub) ImagePrefillAvailable() bool {
@@ -706,21 +706,21 @@ func (p *legacyPrefillSub) PrefillImageLast(ctx context.Context, embeddings [][]
 }
 
 func (p *legacyPrefillSub) ImageBlocksPrefillAvailable() bool {
-	_, ok := p.r.(ResidentImageBlocksPrefill)
+	_, ok := p.r.(legacyImageBlocksPrefill)
 	return ok
 }
 
 func (p *legacyPrefillSub) PrefillImageBlocksLast(ctx context.Context, embeddings [][]float32, startPos int, blocks [][2]int) ([]float32, error) {
-	return p.r.(ResidentImageBlocksPrefill).PrefillImageBlocksLast(ctx, embeddings, startPos, blocks)
+	return p.r.(legacyImageBlocksPrefill).PrefillImageBlocksLast(ctx, embeddings, startPos, blocks)
 }
 
 func (p *legacyPrefillSub) SpanPrefillAvailable() bool {
-	_, ok := p.r.(ResidentSpanPrefill)
+	_, ok := p.r.(legacySpanPrefill)
 	return ok
 }
 
 func (p *legacyPrefillSub) PrefillSpansLast(ctx context.Context, embeddings [][]float32, startPos int, spans [][2]int) ([]float32, error) {
-	return p.r.(ResidentSpanPrefill).PrefillSpansLast(ctx, embeddings, startPos, spans)
+	return p.r.(legacySpanPrefill).PrefillSpansLast(ctx, embeddings, startPos, spans)
 }
 
 func (p *legacyPrefillSub) HybridMRoPEPrefill() bool {
@@ -738,12 +738,12 @@ func (p *legacyPrefillSub) PrefillMRoPELast(ctx context.Context, embeddings [][]
 }
 
 func (p *legacyPrefillSub) MRoPEDeepstackPrefillAvailable() bool {
-	_, ok := p.r.(ResidentMRoPEDeepstackPrefill)
+	_, ok := p.r.(legacyMRoPEDeepstackPrefill)
 	return ok
 }
 
 func (p *legacyPrefillSub) PrefillMRoPEDeepstackLast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int, deep [][]float32, imgStart, imgLen int) ([]float32, error) {
-	return p.r.(ResidentMRoPEDeepstackPrefill).PrefillMRoPEDeepstackLast(ctx, embeddings, startPos, mropePos, deep, imgStart, imgLen)
+	return p.r.(legacyMRoPEDeepstackPrefill).PrefillMRoPEDeepstackLast(ctx, embeddings, startPos, mropePos, deep, imgStart, imgLen)
 }
 
 type legacyKVSub struct{ r any }
@@ -768,13 +768,13 @@ func (k *legacyKVSub) UseKVSlot(i int) error {
 }
 
 func (k *legacyKVSub) SetKVSlotBusy(slot int, busy bool) {
-	if act, ok := k.r.(ResidentKVSlotActivity); ok {
+	if act, ok := k.r.(legacyKVSlotActivity); ok {
 		act.SetKVSlotBusy(slot, busy)
 	}
 }
 
 func (k *legacyKVSub) KVPool() KVPoolDetail {
-	if p, ok := k.r.(ResidentKVPoolInfo); ok {
+	if p, ok := k.r.(legacyKVPoolInfo); ok {
 		return p.KVPool()
 	}
 	return KVPoolDetail{}
@@ -800,25 +800,25 @@ func (k *legacyKVSub) ReusableKVSlot(slot, prefix int) int {
 }
 
 func (k *legacyKVSub) KVUploadPassAvailable() bool {
-	_, ok := k.r.(ResidentKVUploadPass)
+	_, ok := k.r.(legacyKVUploadPass)
 	return ok
 }
 
 func (k *legacyKVSub) BeginKVUpload() error {
-	return k.r.(ResidentKVUploadPass).BeginKVUpload()
+	return k.r.(legacyKVUploadPass).BeginKVUpload()
 }
 
 func (k *legacyKVSub) EndKVUpload(failed bool) error {
-	return k.r.(ResidentKVUploadPass).EndKVUpload(failed)
+	return k.r.(legacyKVUploadPass).EndKVUpload(failed)
 }
 
 func (k *legacyKVSub) KVCopierAvailable() bool {
-	_, ok := k.r.(ResidentKVCopier)
+	_, ok := k.r.(legacyKVCopier)
 	return ok
 }
 
 func (k *legacyKVSub) CopyKV(src, dst, start, end int) error {
-	return k.r.(ResidentKVCopier).CopyKV(src, dst, start, end)
+	return k.r.(legacyKVCopier).CopyKV(src, dst, start, end)
 }
 
 func (k *legacyKVSub) KVSnapshotterAvailable() bool {
@@ -854,26 +854,26 @@ func (k *legacyKVSub) KVSnapshotRecurrent() bool {
 }
 
 func (k *legacyKVSub) KVDemoterAvailable() bool {
-	_, ok := k.r.(ResidentKVDemoter)
+	_, ok := k.r.(legacyKVDemoter)
 	return ok
 }
 
 func (k *legacyKVSub) SetKVHostBudget(b KVHostBudget) {
-	if d, ok := k.r.(ResidentKVDemoter); ok {
+	if d, ok := k.r.(legacyKVDemoter); ok {
 		d.SetKVHostBudget(b)
 	}
 }
 
 func (k *legacyKVSub) PromoteKV(slot, rows int) (int, error) {
-	return k.r.(ResidentKVDemoter).PromoteKV(slot, rows)
+	return k.r.(legacyKVDemoter).PromoteKV(slot, rows)
 }
 
 func (k *legacyKVSub) CopyDemotedKV(src, dst, start, end int) (int, bool, error) {
-	return k.r.(ResidentKVDemoter).CopyDemotedKV(src, dst, start, end)
+	return k.r.(legacyKVDemoter).CopyDemotedKV(src, dst, start, end)
 }
 
 func (k *legacyKVSub) ReserveKVHost(n int64) bool {
-	if d, ok := k.r.(ResidentKVDemoter); ok {
+	if d, ok := k.r.(legacyKVDemoter); ok {
 		return d.ReserveKVHost(n)
 	}
 	return false
@@ -931,19 +931,19 @@ func (rt *legacyRuntimeSub) SetAdapter(layers []ResidentAdapterLayer) error {
 }
 
 func (rt *legacyRuntimeSub) ExpertCacheAvailable() bool {
-	_, ok := rt.r.(ResidentExpertCache)
+	_, ok := rt.r.(legacyExpertCache)
 	return ok
 }
 
 func (rt *legacyRuntimeSub) ExpertCacheStats() (ExpertCacheStats, bool) {
-	if ec, ok := rt.r.(ResidentExpertCache); ok {
+	if ec, ok := rt.r.(legacyExpertCache); ok {
 		return ec.ExpertCacheStats()
 	}
 	return ExpertCacheStats{}, false
 }
 
 func (rt *legacyRuntimeSub) ResizeExpertCache(reserve int64) (int, error) {
-	return rt.r.(ResidentExpertCache).ResizeExpertCache(reserve)
+	return rt.r.(legacyExpertCache).ResizeExpertCache(reserve)
 }
 
 func (rt *legacyRuntimeSub) VerifyPathInfo() (bool, string, bool) {
@@ -976,12 +976,12 @@ func (rt *legacyRuntimeSub) EnterExactAttention() func() {
 }
 
 func (rt *legacyRuntimeSub) SeedArgmaxAvailable() bool {
-	_, ok := rt.r.(ResidentSeedArgmax)
+	_, ok := rt.r.(legacySeedArgmax)
 	return ok
 }
 
 func (rt *legacyRuntimeSub) PrefillSeedArgmax(embeddings [][]float32, startPos int) (int, error) {
-	return rt.r.(ResidentSeedArgmax).PrefillSeedArgmax(embeddings, startPos)
+	return rt.r.(legacySeedArgmax).PrefillSeedArgmax(embeddings, startPos)
 }
 
 func (rt *legacyRuntimeSub) LastNArgmaxAvailable() bool {

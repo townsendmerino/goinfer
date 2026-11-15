@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-// callLogResident is fakeResident with the decode and verify shapes RF1-5 moves behind step (ResidentGreedy, ResidentTopK,
-// ResidentSample, the argmax-only batched verify), logging every forward call by method and arguments. Each shape's answer is
+// callLogResident is fakeResident with the decode and verify shapes RF1-5 moves behind step (ResidentGreedy, legacyTopK,
+// legacySample, the argmax-only batched verify), logging every forward call by method and arguments. Each shape's answer is
 // derived from the same row Forward returns, as the real backends' are.
 type callLogResident struct {
 	*fakeResident
@@ -275,7 +275,7 @@ func TestStepCallers_prefillCallLog(t *testing.T) {
 	}
 }
 
-// callLogSeedHost is callLogHost that also seeds by ResidentSeedArgmax.
+// callLogSeedHost is callLogHost that also seeds by legacySeedArgmax.
 type callLogSeedHost struct{ *callLogHost }
 
 func (h callLogSeedHost) PrefillSeedArgmax(embs [][]float32, start int) (int, error) {
@@ -283,7 +283,7 @@ func (h callLogSeedHost) PrefillSeedArgmax(embs [][]float32, start int) (int, er
 	return h.id, nil
 }
 
-// TestStepCallers_blockSpecSeedCallLog: a drafter host that offers ResidentSeedArgmax seeds by it, not by the wide verify.
+// TestStepCallers_blockSpecSeedCallLog: a drafter host that offers legacySeedArgmax seeds by it, not by the wide verify.
 func TestStepCallers_blockSpecSeedCallLog(t *testing.T) {
 	m, be := loadWithCallLog(t)
 	host := callLogSeedHost{&callLogHost{rf: be.rf, id: 7}}
@@ -469,7 +469,7 @@ func TestStepCallers_multimodalAndHiddenCallLog(t *testing.T) {
 	}
 }
 
-// TestStepCallers_gemma4SpanPrefillCallLog: a bidirectional Gemma 4 image turn on a resident with ResidentSpanPrefill takes one span
+// TestStepCallers_gemma4SpanPrefillCallLog: a bidirectional Gemma 4 image turn on a resident with legacySpanPrefill takes one span
 // prefill over the whole prompt, the image run its one block, then decodes on the resident from the prompt's end. Its fixture is
 // generated (scripts/pin_gemma4_vl_bidir_tiny.py), so the call is checked by its form rather than a recorded log.
 func TestStepCallers_gemma4SpanPrefillCallLog(t *testing.T) {

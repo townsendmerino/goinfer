@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
-// copyFake is mc3Fake with a slot-to-slot copy (ResidentKVCopier). mc3Fake's rows are a hash of each position's input
+// copyFake is mc3Fake with a slot-to-slot copy (legacyKVCopier). mc3Fake's rows are a hash of each position's input
 // and its logits a hash of the slot's whole history, so a copy that moves the wrong rows changes every later token.
 // plant makes the copy wrong in one way, to show the gate goes red: "short" copies a block less than it claims, "wrong"
 // writes another slot than dst (a slot index mixed up), "noop" reports success and copies nothing.
