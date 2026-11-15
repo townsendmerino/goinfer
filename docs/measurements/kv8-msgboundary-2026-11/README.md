@@ -146,7 +146,7 @@ The coordinator's decision of 2026-11-15, on T1's PARKED: keep #1007 a draft and
 - **The cut rests on the split being bit-identical** (`TestB35SplitPrefill`, C2, and these replies). It is read on a tiny DeltaNet fixture and on one real checkpoint's greedy replies, 24 tokens each, not on the logits of a real model.
 - **Not read:** the 9B, Claude Code's traffic, a pass width other than 2,048 on a real model, Metal, Mamba-2.
 
-## Third addendum: the 9B and recorded agent traffic (registered 2026-11-15 15:50 PST, before any run; nobara-kv8)
+## Third addendum: the 9B and recorded agent traffic (registered 2026-11-15 15:42 PST, before any run; nobara-kv8)
 
 The coordinator's instruction of 2026-11-15, for the reads #1007 left owed. Both are by day, under the exclusive timing lock, A B B A, one server per cell, a cell above load 8.0 void and re-run once. Metal and Mamba-2 stay owed.
 
