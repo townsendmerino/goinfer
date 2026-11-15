@@ -49,8 +49,8 @@ func TestS9EModelBatched_tiny(t *testing.T) {
 	if !ok {
 		t.Fatalf("not Metal-resident: %s", m.ResidentDecline())
 	}
+	defer func(v bool) { emodelBatchedOn, emodelBatchDefect = v, 0 }(emodelBatchedOn)
 	emodelBatchedOn = true
-	defer func() { emodelBatchedOn, emodelBatchDefect = false, 0 }()
 	if !a.emodelBatched() {
 		t.Fatal("the batched pass does not claim this E-model")
 	}
@@ -163,7 +163,7 @@ func TestS9EModelBatched_realE2B(t *testing.T) {
 	if !ok {
 		t.Fatalf("not Metal-resident: %s", m.ResidentDecline())
 	}
-	defer func() { emodelBatchedOn = false }()
+	defer func(v bool) { emodelBatchedOn = v }(emodelBatchedOn)
 	emodelBatchedOn = true
 	if !a.emodelBatched() {
 		t.Fatal("the batched pass does not claim E2B")
