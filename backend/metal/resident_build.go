@@ -1049,7 +1049,7 @@ func (b *residentBuild) sizeDecodeScratch() error {
 		r.decode.lnHasBias = 1
 	}
 	if r.qkNormWhole {
-		r.decode.qkWholeHD = nH * m.HeadDimAtResident(0) // one model-level width: the build declines a non-uniform geometry for it
+		r.decode.qkWholeHD = nH * m.BackendView().Layer(0).HeadDim() // one model-level width: the build declines a non-uniform geometry for it
 	}
 	if r.attnSink {
 		r.decode.attnSink = 1

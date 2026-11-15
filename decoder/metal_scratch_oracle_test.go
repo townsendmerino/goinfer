@@ -30,11 +30,11 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 	moeOK = moeOK && !g4
 	q4k := m.Quant() == "q4k"
 	for l := range nL {
-		mixer, hasFFN := m.ResidentLayerOps(l)
+		mixer, hasFFN := m.BackendView().Layer(l).Ops()
 		if mixer == MixerAttention {
-			hd, kv := m.HeadDimAtResident(l), m.KVHeadsAtResident(l)
-			kEqV := m.VFromKResident(l) && m.KVSrcAtResident(l) == l
-			geoms[geomKey{hd, kv, len(m.RopeInvFreqLayerResident(l)), kEqV}] = true
+			hd, kv := m.BackendView().Layer(l).HeadDim(), m.BackendView().Layer(l).KVHeads()
+			kEqV := m.BackendView().Layer(l).VFromK() && m.BackendView().Layer(l).KVSrc() == l
+			geoms[geomKey{hd, kv, len(m.BackendView().Layer(l).RopeInvFreq()), kEqV}] = true
 			nHhd, kvDim = max(nHhd, nH*hd), max(kvDim, kv*hd)
 			fa = max(fa, metalAttnFAPartialFloats(hd, nH, kv))
 			attn++

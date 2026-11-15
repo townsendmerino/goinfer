@@ -61,7 +61,7 @@ func TestResidentKVBytes_excludesDeltaNetLayers(t *testing.T) {
 		if m.BackendView().Layer(l).Qwen35Linear() {
 			continue
 		}
-		kvDim := int64(m.KVHeadsAtResident(l)) * int64(m.HeadDimAtResident(l))
+		kvDim := int64(m.BackendView().Layer(l).KVHeads()) * int64(m.BackendView().Layer(l).HeadDim())
 		want += 2 * (int64(kvBlocksFor(ctxCap)) + 1) * decoder.KVBlockRows * kvDim * bytesPerElem // the layer's blocks, and its pool's null block
 	}
 	want += 4 * int64(kvBlocksFor(ctxCap)) // the slot's table

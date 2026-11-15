@@ -266,7 +266,7 @@ on a CPU. Over HTTP the same request is an `image_url` part plus `response_forma
   `PromptHiddenAll`, `PromptHiddenMany`, `PromptLogitsMany`, `ForwardCapture`,
   `OutputEmbeddingRow`, `NewBlockSpec` and `LoadAdapter`. One running at `Close` is cancelled (or
   waited for, when it takes no context) and one made afterward returns `decoder.ErrClosed`.
-- Not guarded: the accessors that return slices of the weights (`Weights`, `MLALayerWeights` and
+- Not guarded: the accessors that return slices of the weights (`Weights`, `Layer(l).MLAWeights` and
   the like) hand out views of the file mapping, which is gone after `Close`; keep them only while
   the model is open. `Config`, `Dims`, `Quant`, `NewCache` and `NewSession` only read the config or
   allocate, and still work afterward.

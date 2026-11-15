@@ -67,7 +67,7 @@ func TestMambaResidentCapture(t *testing.T) {
 	projDim := 2*dInner + 2*gSize + nHeads
 	repeat := nHeads / nGroups
 	eps := float64(m.NormEps())
-	_, convW, convB, aLog, dW, dtBias, normW, _ := m.GraniteMambaWeights(0)
+	_, convW, convB, aLog, dW, dtBias, normW, _ := m.BackendView().Layer(0).GraniteMambaWeights()
 
 	// CPU reference mixer (mamba2.go steps 2-5), fed the resident's OWN proj, fresh state.
 	var win [][]float32

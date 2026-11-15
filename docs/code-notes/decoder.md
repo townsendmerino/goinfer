@@ -293,7 +293,7 @@ G5 (docs/completed/task-gpu-paths-2026-09.md), FeatNoPE: a NoPE layer (SmolLM3's
 Cohere2's every-Nth global layer — arch.isNoPELayer) gets an all-ZERO table instead of the
 real one, same length. The resident rope kernels compute cos=cos(pos·invFreq)·mscale,
 sin=sin(pos·invFreq)·mscale (backend/cuda/gemv_fwd.cu, backend/metal/kernels.go); at invFreq==0 that is
-cos=mscale, sin=0 — the identity rotation ONLY when mscale==1 (RopeMscaleLayer). Every family
+cos=mscale, sin=0 — the identity rotation ONLY when mscale==1 (Layer(i).RopeMscale). Every family
 that sets layerNoPE today (SmolLM3) also has no YaRN scaling on those layers, so this holds;
 it is NOT a general "any NoPE layer is safe" claim, and a future family combining YaRN with
 NoPE would need this revisited (a parity test would catch it — a wrong scale is not a

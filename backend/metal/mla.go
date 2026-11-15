@@ -67,7 +67,7 @@ func int8Proj(d *Device, f []float32, rows, cols int, name string, l int) (Buffe
 
 // buildMLALayer uploads layer l's MLA weights.
 func buildMLALayer(d *Device, m *decoder.Model, l, H int, p *mlaParams) (*mlaLayer, error) {
-	qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj := m.MLALayerWeights(l)
+	qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj := m.BackendView().Layer(l).MLAWeights()
 	qAQ, qBQ, qQ, kvAQ, oQ := m.MLALayerInt8(l)
 	// proj uploads a projection's int8 form when the load holds one (the codes int8Proj would make from the f32), else quantizes the f32.
 	proj := func(q *linalg.WeightMat, f []float32, rows, cols int, name string) (Buffer, Buffer, error) {

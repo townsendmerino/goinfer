@@ -1609,14 +1609,14 @@ func (s *buildState) uploadLayers(r *cudaResident) error {
 			L.mlaWUV = r.up32(h.mlaWUV)
 			L.o = r.upW(h.o)
 			L.invF = r.up32(h.invFreq)
-			L.mscale = float32(m.RopeMscaleLayer(l))
+			L.mscale = float32(m.BackendView().Layer(l).RopeMscale())
 		} else {
 			L.q, L.o = r.upW(h.q), r.upW(h.o)
 			if bv.Layer(l).KVSrc() == l {
 				L.k = r.upW(h.k) // a KV-shared layer has no k_proj; v below (K=V layers have none)
 			}
 			L.invF = r.up32(h.invFreq)
-			L.mscale = float32(m.RopeMscaleLayer(l)) // YaRN attention_factor; 1.0 for every family without it
+			L.mscale = float32(m.BackendView().Layer(l).RopeMscale()) // YaRN attention_factor; 1.0 for every family without it
 			L.qGate = h.qGate
 		}
 		if h.mixer == decoder.MixerNone {

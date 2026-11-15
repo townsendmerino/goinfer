@@ -769,7 +769,7 @@ func (a *Architecture) runnerShapeDeclineSSM(ssmResident bool) string {
 
 // ropeResidentCompatible is a coarse ARCH-level screen on the GENERIC (finalizeRoPE) local/global inv-freq tables:
 // they must share a length. Gemma passes it trivially (both come from one model-level rd), and that is NOT proof the
-// runner ropes Gemma correctly: its REAL per-layer tables (RopeInvFreqLayerResident) differ in length, an inequality
+// runner ropes Gemma correctly: its REAL per-layer tables (Layer(i).RopeInvFreq) differ in length, an inequality
 // this check never sees. The real invariant (each bound invFreq buffer has exactly rhalf entries) is asserted per layer
 // where the buffer meets the geometry (cuda/backend.go).
 func (a *Architecture) ropeResidentCompatible() bool {
@@ -977,14 +977,6 @@ func (m *Model) MLAResidentParams() (qLoRA, kvLoRA, qkNope, qkRope, vHead int, i
 	return m.BackendView().MLAParams()
 }
 
-// MLALayerWeights returns layer l's MLA projection weights (f32) for the resident
-// bridge: the q-LoRA bottleneck (qA/qANorm/qB) or direct qProj, the KV down-proj
-// (kvA) + its latent norm (kvANorm), the per-head kv up-proj kvB (sliced into W_UK /
-// W_UV on the GPU side), and the output proj. nil qA ⇒ the direct qProj (V2-Lite).
-func (m *Model) MLALayerWeights(l int) (qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj []float32) {
-	return m.BackendView().Layer(l).MLAWeights()
-}
-
 // SlidingWindowResident returns the sliding-window size for the resident runner (0 when
 // the model is full-attention). Local (windowed) layers attend only the last `window`
 // positions; the runner computes the per-token window start (Lever C6).
@@ -993,37 +985,12 @@ func (m *Model) SlidingWindowResident() int { return m.BackendView().SlidingWind
 // EmbedScaleResident is the token-embedding multiplier (Gemma = √hidden; 0/1 = none).
 func (m *Model) EmbedScaleResident() float64 { return m.BackendView().EmbedScale() }
 
-// LayerIsLocalResident reports whether layer i is a sliding-window (local) layer — i.e. a
-// window is set AND the arch marks the layer non-global. Mistral is all-local; Mellum
-// interleaves (3:1 sliding/full).
-func (m *Model) LayerIsLocalResident(i int) bool { return m.BackendView().Layer(i).IsLocal() }
-
-// HeadDimAtResident / KVHeadsAtResident / RotaryDimAtResident expose layer i's attention
-// geometry to a resident runner that plumbs per-layer widths (9a-P2).
-func (m *Model) HeadDimAtResident(i int) int { return m.BackendView().Layer(i).HeadDim() }
-func (m *Model) KVHeadsAtResident(i int) int { return m.BackendView().Layer(i).KVHeads() }
-
-// VFromKResident reports whether layer i is a K=V layer (attention_k_eq_v): it carries NO v_proj, V is
-// v_norm(the raw k_proj output).
-func (m *Model) VFromKResident(i int) bool { return m.BackendView().Layer(i).VFromK() }
-
-// KVSrcAtResident is the layer index whose K/V a resident runner should actually attend over for layer i.
-func (m *Model) KVSrcAtResident(i int) int { return m.BackendView().Layer(i).KVSrc() }
-
-// RotaryDimAtResident is the rotary width the resident rope_kv kernel pairs over for layer i, i.e. 2×rhalf.
-func (m *Model) RotaryDimAtResident(i int) int { return m.BackendView().Layer(i).RotaryDim() }
-
-// RopeInvFreqLayerResident is layer i's inverse-frequency table for the resident runner.
-func (m *Model) RopeInvFreqLayerResident(i int) []float32 {
-	return m.BackendView().Layer(i).RopeInvFreq()
-}
-
 // RopeInvFreqLayer returns layer i's RoPE inverse-frequency table as float32: the global or local table per
 // the layer's attention type (Mellum YaRN-on-global vs default-local).
 //
 // A NoPE layer (SmolLM3's no_rope_layers, Cohere2's every-Nth global layer: arch.isNoPELayer, FeatNoPE) gets an
 // all-ZERO table of the same width. The resident rope kernels compute cos=cos(pos·invFreq)·mscale and
-// sin=sin(pos·invFreq)·mscale, so invFreq==0 is the identity rotation ONLY when mscale==1 (RopeMscaleLayer).
+// sin=sin(pos·invFreq)·mscale, so invFreq==0 is the identity rotation ONLY when mscale==1 (Layer(i).RopeMscale).
 // That holds for every family that sets layerNoPE today; a family combining YaRN with NoPE needs this revisited.
 // A RESIDENT-ONLY accessor: the CPU forward skips ropeAt for a NoPE layer.
 //
@@ -1047,10 +1014,6 @@ func (m *Model) RopeInvFreqLayer(i int) []float32 {
 	}
 	return out
 }
-
-// RopeMscaleLayer returns layer i's RoPE cos/sin scale (YaRN attention_factor; 1.0 for
-// non-YaRN layers) — folded into the resident rope kernel per layer.
-func (m *Model) RopeMscaleLayer(i int) float64 { return m.BackendView().Layer(i).RopeMscale() }
 
 // AttnTempParams returns Ministral 3's raw attention-temperature parameters (beta, origMaxPos).
 func (m *Model) AttnTempParams() (beta, origMaxPos float64) { return m.BackendView().AttnTempParams() }
@@ -1278,16 +1241,6 @@ func (m *Model) GraniteResidentParams() (nHeads, headDim, dState, nGroups, dConv
 // hybrid: Mamba-2 / NoPE-GQA / non-gated relu² MLP, single-op-per-block, no multipliers, no MoE).
 func (m *Model) NemotronResidentParams() (nHeads, headDim, dState, nGroups, dConv, normGroups int, attnScale float32, ok bool) {
 	return m.BackendView().NemotronParams()
-}
-
-// GraniteMambaWeights returns layer i's f32 Mamba-2 mixer tensors (nil if the layer is an attention layer).
-func (m *Model) GraniteMambaWeights(i int) (inProj, convW, convB, aLog, dW, dtBias, normW, outProj []float32) {
-	return m.BackendView().Layer(i).GraniteMambaWeights()
-}
-
-// MambaProjInt8 returns layer i's Mamba in_proj and out_proj as per-row int8 weight matrices when the load holds them so.
-func (m *Model) MambaProjInt8(i int) (in, out *linalg.WeightMat) {
-	return m.BackendView().Layer(i).MambaProjInt8()
 }
 
 // ResidentActive reports whether the GPU full-residency decode path is built and
@@ -1609,19 +1562,6 @@ func (m *Model) GptOssActResident() (alpha, limit float32, ok bool) {
 // HasAttnSinksResident reports whether the arch carries per-query-head attention sink logits in the softmax denominator on every layer.
 func (m *Model) HasAttnSinksResident() bool { return m.BackendView().HasAttnSinks() }
 
-// GptOssSinksResident returns layer l's per-head attention sink logits ([NumHeads]), or nil when the family has none.
-func (m *Model) GptOssSinksResident(l int) []float32 { return m.BackendView().Layer(l).AttnSinks() }
-
-// GptOssExpertBiasResident returns layer l's per-expert gate‖up bias table, packed expert-major.
-func (m *Model) GptOssExpertBiasResident(l int) []float32 {
-	return m.BackendView().Layer(l).GptOssExpertBias()
-}
-
-// GptOssExpertDownBiasResident returns layer l's per-expert down-projection bias table, expert-major.
-func (m *Model) GptOssExpertDownBiasResident(l int) []float32 {
-	return m.BackendView().Layer(l).GptOssExpertDownBias()
-}
-
 // Qwen35ResidentParams returns the Gated-DeltaNet geometry (ok=false for every other family).
 func (m *Model) Qwen35ResidentParams() (convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numValueHeads int, attnGate, ok bool) {
 	return m.BackendView().Qwen35Params()
@@ -1640,16 +1580,6 @@ const (
 
 // Recurrent reports whether the mixer keeps per-sequence recurrent state instead of a KV cache.
 func (x ResidentMixer) Recurrent() bool { return x == MixerDeltaNet || x == MixerMamba }
-
-// ResidentLayerOps is layer i's operations in a resident's layer walk: its mixer, then a feed-forward block when ffn is true.
-func (m *Model) ResidentLayerOps(i int) (mixer ResidentMixer, ffn bool) {
-	return m.BackendView().Layer(i).Ops()
-}
-
-// Qwen35DeltaWeights returns layer i's DeltaNet parameters.
-func (m *Model) Qwen35DeltaWeights(i int) (inQKV, inZ, outProj *linalg.WeightMat, inB, inA, convW, dtBias, negExpA, normW []float32) {
-	return m.BackendView().Layer(i).Qwen35DeltaWeights()
-}
 
 // BackendReport renders the load banner's backend field. It NEVER names a backend that is not executing: when the
 // requested one was unavailable it reads "requested metal → running on cpu: <reason>" instead of "metal" (see

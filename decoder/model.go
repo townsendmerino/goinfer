@@ -299,7 +299,7 @@ func (m *Model) ResidentGemma4Step() bool { return m.gemma4Step }
 // a sliding-window attention layer with a real K/V cache (not an MLA latent, not a recurrent mixer, whose kvDimAt is not a K/V width
 // bounded by a window). Every windowed layer shares SlidingWindowResident's one window.
 func (m *Model) WindowedKVLayer(l int) bool {
-	if !m.windowedKV || m.SlidingWindowResident() <= 0 || !m.LayerIsLocalResident(l) {
+	if !m.windowedKV || m.SlidingWindowResident() <= 0 || !m.BackendView().Layer(l).IsLocal() {
 		return false
 	}
 	a := m.w.arch
@@ -795,7 +795,7 @@ func (m *Model) Config() *Config {
 // ForwardCapture, OutputEmbeddingRow, NewBlockSpec, LoadAdapter): one running at Close is cancelled when it takes a context
 // and waited for when it does not, and one made afterward returns ErrClosed. Do not call Close from inside a LogitProcessor
 // or another callback these run, which would wait on itself. Calling Close again is safe and returns nil. The accessors that
-// return slices of the weights (Weights, MLALayerWeights and the like) hand out views of the mapping, which is gone after
+// return slices of the weights (Weights, Layer(l).MLAWeights and the like) hand out views of the mapping, which is gone after
 // Close; Config, Dims, Quant, NewCache and NewSession only read the config or allocate, and keep working.
 func (m *Model) Close() error {
 	m.endGenerations()

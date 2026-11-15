@@ -54,7 +54,7 @@ func TestBackendResidentWired(t *testing.T) {
 		}
 		for l := range cr.layers {
 			want := int32(0)
-			if mc.LayerIsLocalResident(l) {
+			if mc.BackendView().Layer(l).IsLocal() {
 				want = int32(w)
 			}
 			if got := cr.layers[l].window; got != want {

@@ -148,7 +148,7 @@ func TestNemotronResidentCUDA_pricing(t *testing.T) {
 		switch m.BackendView().Layer(l).NemotronBlockKind() { // the family's own kinds, not the resident's
 		case 1:
 			attn++
-			want += 2 * int64(m.KVHeadsAtResident(l)*m.HeadDimAtResident(l)) * elem * ctx
+			want += 2 * int64(m.BackendView().Layer(l).KVHeads()*m.BackendView().Layer(l).HeadDim()) * elem * ctx
 			if r.kc[l].Len() == 0 || r.vc[l].Len() == 0 {
 				t.Errorf("attention layer %d has no KV buffer", l)
 			}

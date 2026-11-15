@@ -450,8 +450,8 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 		}
 	}
 	if mo.isGptOss {
-		ml.expGuBias = NewBufferFloatsOn(mem.LineExperts, d, m.GptOssExpertBiasResident(l))
-		ml.expDBias = NewBufferFloatsOn(mem.LineExperts, d, m.GptOssExpertDownBiasResident(l))
+		ml.expGuBias = NewBufferFloatsOn(mem.LineExperts, d, m.BackendView().Layer(l).GptOssExpertBias())
+		ml.expDBias = NewBufferFloatsOn(mem.LineExperts, d, m.BackendView().Layer(l).GptOssExpertDownBias())
 	}
 	return ml
 }

@@ -178,9 +178,9 @@ func metalStepInputs(m *decoder.Model) *stepInputs {
 		if r := w.Layers[l].GateProj.Rows(); r > 0 {
 			info.ffnI = r
 		}
-		if mixer, _ := m.ResidentLayerOps(l); mixer == decoder.MixerAttention {
-			info.hd, info.nKV = m.HeadDimAtResident(l), m.KVHeadsAtResident(l)
-			info.hasGeom, info.kEqV = info.hd > 0, m.VFromKResident(l) && m.KVSrcAtResident(l) == l
+		if mixer, _ := m.BackendView().Layer(l).Ops(); mixer == decoder.MixerAttention {
+			info.hd, info.nKV = m.BackendView().Layer(l).HeadDim(), m.BackendView().Layer(l).KVHeads()
+			info.hasGeom, info.kEqV = info.hd > 0, m.BackendView().Layer(l).VFromK() && m.BackendView().Layer(l).KVSrc() == l
 			in.oneKVAllocation = true
 			in.faPartial = max(in.faPartial, attnFAPartialFloats(info.hd, nH, info.nKV))
 		} else if mixer == decoder.MixerMLA {

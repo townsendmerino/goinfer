@@ -77,11 +77,11 @@ func TestMetalCoverageFlags(t *testing.T) {
 			if win > 0 {
 				local := 0
 				for l := range nL {
-					if m.LayerIsLocalResident(l) {
+					if m.BackendView().Layer(l).IsLocal() {
 						local++
 					}
 				}
-				t.Logf("  window=%d; LayerIsLocalResident true on %d/%d layers", win, local, nL)
+				t.Logf("  window=%d; Layer(i).IsLocal() true on %d/%d layers", win, local, nL)
 			}
 
 			// Flag the deltas vs what the Mac's prompt expects.
