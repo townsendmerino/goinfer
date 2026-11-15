@@ -119,7 +119,7 @@ type Options struct {
 	// ResidentKVSlots asks a GPU-resident backend for this many independent KV caches ("slots"), so several interleaved
 	// conversations each keep their own prefix resident instead of evicting one another's (docs/tasks/parked/task-concurrency-2026-09.md).
 	// Still one generation at a time unless MC3 is enabled: a slot is bound per generation. 0 or 1 = one slot. A backend clamps it
-	// to what its fit guard allows and says so; a backend that does not implement ResidentKVSlotter, and every family with
+	// to what its fit guard allows and says so; a backend that does not implement legacyKVSlotter, and every family with
 	// recurrent state, keep one slot. serve sets it from -kv-sessions.
 	ResidentKVSlots int
 	// ResidentKVSlotsDefault says ResidentKVSlots is the caller's default, not a count the operator chose (serve sets it when

@@ -2319,7 +2319,7 @@ func (r *cudaResident) checkCap(pos, n int) error {
 // up front rather than discover the limit mid-generation).
 func (r *cudaResident) ContextCap() int { return r.ctxCap }
 
-// ResidentCaps is decoder.ResidentCapsReporter's. The batched prefill always reports a fast-kernel floor, 0 when the fast kernels are off.
+// ResidentCaps is decoder.ResidentRuntimeSubsystem's. The batched prefill always reports a fast-kernel floor, 0 when the fast kernels are off.
 func (r *cudaResident) ResidentCaps() decoder.ResidentCaps {
 	return decoder.ResidentCaps{
 		ContextCap:       r.ContextCap(),
@@ -2566,7 +2566,7 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 // are never read and get overwritten (matches the WebGPU path).
 func (r *cudaResident) TruncateTo(pos int) {}
 
-// KVSlots / UseKVSlot implement decoder.ResidentKVSlotter (MC1, docs/tasks/parked/task-concurrency-2026-09.md): how many
+// KVSlots / UseKVSlot implement decoder.ResidentKVSubsystem (MC1, docs/tasks/parked/task-concurrency-2026-09.md): how many
 // resident KV slots the build allocated, and binding one.
 //
 // Binding selects the slot's tables, done on the executor so it is ordered after every job already posted. That is
@@ -4163,7 +4163,7 @@ func (r *cudaResident) step(emb []float32, pos, ropePos int) ([]float32, error) 
 	return r.logitsHost, nil
 }
 
-// ForwardArgmax is the greedy fast path (decoder.ResidentGreedy): reduce the argmax on-device
+// ForwardArgmax is the greedy fast path (decoder.ResidentDecodeSubsystem): reduce the argmax on-device
 // and read back 4 B instead of the whole logits vector. Same kernel chain, same numerics —
 // only the readback differs, so the id equals argmax(Forward(...)) exactly.
 func (r *cudaResident) ForwardArgmax(embedding []float32, pos int) (int, error) {

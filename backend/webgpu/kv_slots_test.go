@@ -800,7 +800,7 @@ func webgpuRealClampScenario(t *testing.T, path string) {
 	}
 
 	// Run one short conversation per granted slot, >= 32 tokens over >= 2 turns, as kvSlotsScenario's own turns do. The
-	// decoder binds the slot each conversation uses, as it does when serving (ResidentKVSlotter): each conversation has its own
+	// decoder binds the slot each conversation uses, as it does when serving (ResidentKVSubsystem): each conversation has its own
 	// prompt, so none takes another's slot in place, and the slot it ran on is read back afterwards. A recurrent family would
 	// have declined multiple slots long before this point (kvSlotsRequest), so every slot here owns independent KV.
 	_, _, _, _, _, _, vocab := m.Dims()

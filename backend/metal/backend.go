@@ -705,7 +705,7 @@ func (a *metalResident) checkCap(pos, n int) error {
 // up front instead of erroring mid-decode.
 func (a *metalResident) ContextCap() int { return a.ctxCap() }
 
-// ResidentCaps is decoder.ResidentCapsReporter's. The batched prefill always reports a kernel-class floor, 0 when one class runs
+// ResidentCaps is decoder.ResidentRuntimeSubsystem's. The batched prefill always reports a kernel-class floor, 0 when one class runs
 // at every length.
 func (a *metalResident) ResidentCaps() decoder.ResidentCaps {
 	return decoder.ResidentCaps{
@@ -1519,7 +1519,7 @@ func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 	return nil
 }
 
-// KVSlots and UseKVSlot implement decoder.ResidentKVSlotter (docs/tasks/parked/task-concurrency-2026-09.md): the slots metalKVSlots
+// KVSlots and UseKVSlot implement decoder.ResidentKVSubsystem (docs/tasks/parked/task-concurrency-2026-09.md): the slots metalKVSlots
 // allocated, and binding one.
 func (a *metalResident) KVSlots() int          { return a.r.kvSlotCount() }
 func (a *metalResident) UseKVSlot(i int) error { return a.r.useKVSlot(i) }

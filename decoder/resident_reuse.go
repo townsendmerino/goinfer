@@ -243,7 +243,7 @@ func (m *Model) boundReuseLen(prompt []int, imgs []residentImageClaim, lora *lor
 	return m.residentReuseFloor(m.reuseLenOf(a.Bound(), prompt, imgs, lora, ns, ckpt))
 }
 
-// legacyKVCopier is the optional capability of a resident with several KV slots (ResidentKVSlotter) to copy rows
+// legacyKVCopier is the optional capability of a resident with several KV slots (legacyKVSlotter) to copy rows
 // between them. CopyKV copies rows [start, end) of every layer from slot src to slot dst, src != dst, start and end
 // multiples of kvmgr.BlockRows; dst then continues at position end, and src is unchanged. A range the backend cannot
 // serve (a window that no longer holds rows dst will attend to, a layout it does not copy) returns a *KVCopyDecline
@@ -315,7 +315,7 @@ type KVCopyDecline struct{ Reason string }
 
 func (d *KVCopyDecline) Error() string { return "kv copy declined: " + d.Reason }
 
-// legacyReusableKVSlot is ResidentReusableKV's question for any slot, bound or not: of the first prefix positions
+// legacyReusableKVSlot is legacyReusableKV's question for any slot, bound or not: of the first prefix positions
 // of slot's sequence, how many it can serve to a forward that continues at position prefix (prefix or 0).
 type legacyReusableKVSlot interface {
 	ReusableKVSlot(slot, prefix int) int
@@ -377,15 +377,15 @@ func (m *Model) residentPromote(acq *kvAcquired) {
 	}
 }
 
-// ResidentReusableKV is implemented by a resident whose KV for some layers holds only a recent window of positions (Options.ResidentWindowedKV).
+// legacyReusableKV is implemented by a resident whose KV for some layers holds only a recent window of positions (Options.ResidentWindowedKV).
 // ReusableKV(prefix) is how many of the first prefix positions of the bound slot's sequence it can serve to a forward that continues at
 // position prefix: prefix itself, or 0 when the window that forward attends to has already been dropped, in which case the caller prefills
 // the prompt from the start. A positive answer other than prefix is never returned.
-type ResidentReusableKV interface {
+type legacyReusableKV interface {
 	ReusableKV(prefix int) int
 }
 
-// residentReuseFloor caps a reuse length of the BOUND slot at what its resident can serve (ResidentReusableKV); a resident that keeps every
+// residentReuseFloor caps a reuse length of the BOUND slot at what its resident can serve (legacyReusableKV); a resident that keeps every
 // position is untouched. A cap only ever lengthens the prefill, never changes what it computes.
 func (m *Model) residentReuseFloor(reuse int) int {
 	if reuse <= 0 {
@@ -405,7 +405,7 @@ func (m *Model) reuseLenOf(slot int, prompt []int, imgs []residentImageClaim, lo
 }
 
 // residentSlotCount is how many resident KV slots a generation may choose among: what the resident allocated
-// (ResidentKVSlotter), else 1. A family with recurrent state keeps one unless the resident's backend keeps that state
+// (legacyKVSlotter), else 1. A family with recurrent state keeps one unless the resident's backend keeps that state
 // once per slot (recurrentSlotsOn): otherwise its state is mutated in place outside any slot, so two conversations could
 // not both keep theirs.
 func (m *Model) residentSlotCount() int {

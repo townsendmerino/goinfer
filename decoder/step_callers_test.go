@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// callLogResident is fakeResident with the decode and verify shapes RF1-5 moves behind step (ResidentGreedy, legacyTopK,
+// callLogResident is fakeResident with the decode and verify shapes RF1-5 moves behind step (legacyGreedy, legacyTopK,
 // legacySample, the argmax-only batched verify), logging every forward call by method and arguments. Each shape's answer is
 // derived from the same row Forward returns, as the real backends' are.
 type callLogResident struct {

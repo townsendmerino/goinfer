@@ -156,9 +156,9 @@ Every `KVCache` field belongs to one of these kinds, or is declared geometry, a 
 - sliding-window ring × session prefix reuse: rewindForReuse goes cold on an inexact TruncateTo
 - sliding-window ring × speculative rollback: specRollbackSafe refuses every SlidingWindow > 0 model: rollback sites do not consume an inexact rewind (audit C-04)
 - sliding-window ring × publish: a resident may keep only a window of these layers' rows; the block is published and the resident answers for what it still holds
-- sliding-window ring × share: residentReuseFloor asks the resident (ResidentReusableKV): a prefix whose window was dropped is served as 0, and the prompt is prefilled whole
+- sliding-window ring × share: residentReuseFloor asks the resident (legacyReusableKV): a prefix whose window was dropped is served as 0, and the prompt is prefilled whole
 - sliding-window ring × checkpoint save: not copied: the ring stays in the slot
-- sliding-window ring × checkpoint restore: exact while the window holds what c attends to; once dropped, ResidentReusableKV's floor sends the request cold before any restore
+- sliding-window ring × checkpoint restore: exact while the window holds what c attends to; once dropped, legacyReusableKV's floor sends the request cold before any restore
 - int8 KV + scales × publish: the scales are stored with the rows they scale
 - int8 KV + scales × share: the KV element type is in the root every block is keyed under: rows of another precision match nothing
 - int8 KV + scales × checkpoint save: not copied: the rows stay in the slot by position

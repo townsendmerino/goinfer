@@ -270,7 +270,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 // hitting the mid-generation cap error.
 func (rd *residentDecoder) ContextCap() int { return rd.ctxCap }
 
-// ResidentCaps is decoder.ResidentCapsReporter's: the context cap, and nothing else.
+// ResidentCaps is decoder.ResidentRuntimeSubsystem's: the context cap, and nothing else.
 func (rd *residentDecoder) ResidentCaps() decoder.ResidentCaps {
 	return decoder.ResidentCaps{ContextCap: rd.ContextCap()}
 }
