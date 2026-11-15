@@ -146,7 +146,7 @@ func TestGlmOcrCUDAResidentRealImage(t *testing.T) {
 				t.Fatal(err)
 			}
 			fmt.Fprintf(os.Stderr, "[glm-ocr cuda] %s: CPU prefill %.0fs\n", name, time.Since(t0).Seconds())
-			resLogits, gpuPos, err := mc.ResidentMRoPEPrefillForTest(context.Background(), rmp, g.InputIDs, feats, g.ImageStart, g.NImgTokens, mropePos)
+			resLogits, gpuPos, err := mc.ResidentMRoPEPrefillForTest(context.Background(), mc.ResidentForwardForTest(), g.InputIDs, feats, g.ImageStart, g.NImgTokens, mropePos)
 			if err != nil {
 				t.Fatalf("resident m-RoPE prefill: %v", err)
 			}
@@ -294,7 +294,7 @@ func TestGlmOcrCUDAResidentFullBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	fmt.Fprintf(os.Stderr, "[glm-ocr cuda] full budget: CPU prefill of %d tokens %.0fs\n", len(ids), time.Since(t0).Seconds())
-	resLogits, gpuPos, err := mc.ResidentMRoPEPrefillForTest(context.Background(), rmp, ids, feats, 5, nImg, mropePos)
+	resLogits, gpuPos, err := mc.ResidentMRoPEPrefillForTest(context.Background(), mc.ResidentForwardForTest(), ids, feats, 5, nImg, mropePos)
 	if err != nil {
 		t.Fatalf("resident m-RoPE prefill at %d tokens: %v", len(ids), err)
 	}

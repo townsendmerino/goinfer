@@ -144,7 +144,7 @@ func TestGlmOcrResidentParityCUDA(t *testing.T) {
 			t.Fatalf("cpu image prefill: %v", err)
 		}
 		cr.Reset()
-		gotImg, gpuPos, err := mRes.ResidentMRoPEPrefillForTest(context.Background(), rmp, g.PromptIDs, feats, g.ImageStart, g.NImage, mropePos)
+		gotImg, gpuPos, err := mRes.ResidentMRoPEPrefillForTest(context.Background(), rf, g.PromptIDs, feats, g.ImageStart, g.NImage, mropePos)
 		if err != nil {
 			t.Fatalf("resident m-RoPE prefill: %v", err)
 		}
