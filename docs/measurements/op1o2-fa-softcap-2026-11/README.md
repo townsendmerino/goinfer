@@ -155,9 +155,15 @@ The README above registers the cell's rule and shape. This fixes the parts it le
   depth 128; **REGRESSION** under 0.98 at depth 2,048; otherwise parked. A block with an errored or missing arm is void.
   `grade_cell.py` prints each block's ratio beside the median.
 - **Both arms must really differ.** The serve log has no line for the lane being taken, so `probe_arms.py` runs first, untimed: the
-  same depth-2,048 prompt, greedy, 64 tokens, once per arm. The lane's outputs differ from the exact lane's (the README above: 24 of
-  24 steps differ), so identical text means the flag did not reach the lane and the cell does not run. Neither arm's serve log may
-  carry a "flash-decode lane unavailable" warning.
+  same depth-2,048 prompt with an instruction that forces a long reply, greedy, 256 tokens, on the exact arm twice and on the lane arm
+  once. The exact arm must repeat itself, both replies must run past 200 tokens, and the lane arm's text must differ from the exact
+  arm's (the lane's outputs differ from the exact lane's: the README above reads 24 of 24 steps differing); identical text means the
+  flag did not reach the lane and the cell does not run. Neither arm's serve log may carry a "flash-decode lane unavailable" warning.
+  - **Amendments, before any timed run.** The probe first compared a 64-token greedy reply on the lane and the exact arm; the reply was
+    a short generic sentence and read identical on both (`probe-first-run.log`), which cannot tell a lane not taken from an argmax that
+    did not move. The second version compared the top-5 log-probabilities and read bit-identical on both arms and twice on the exact
+    arm: serve scopes a request that asks for log-probabilities to exact attention (`EnterExactAttention`), so that probe could never
+    show a difference. The version above asks for neither.
 - **Wall time:** 8 restarted cells of about 2 to 3 minutes, plus idle-gate waits: about 25 min. Started and finished times are in the
   reading below.
 - **A default change needs Francis.** A SHIP here, with the fidelity gate's PASS, is the evidence for that decision, not the decision.

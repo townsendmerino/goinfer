@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""OP1-o2's untimed arm probe: the same depth-2,048 prompt, greedy, 64 tokens, on the exact lane and on the capped flash-decode lane
-(the flag on). Exit 0 when both answer and the texts DIFFER; the lane's outputs differ from the exact lane's, so identical text means the
-flag did not reach the lane. Usage: probe_arms.py <serve binary> <out dir>."""
+"""OP1-o2's untimed arm probe: the depth-2,048 prompt plus an instruction that forces a long reply, greedy, 256 tokens, on the exact lane
+(twice, for determinism) and on the capped flash-decode lane (the flag on). Exit 0 when the exact lane repeats itself and the lane's text
+DIFFERS from it: the lane's outputs differ from the exact lane's, so identical text over a long reply means the flag did not reach the
+lane. No log-probabilities are requested: serve scopes a request that asks for them to exact attention. Usage: probe_arms.py <serve binary> <out dir>."""
 import json, os, signal, socket, subprocess, sys, time, urllib.request
 
 BIN, OUT = sys.argv[1], sys.argv[2]
 MODEL = os.path.expanduser("~/models/gemma-2-2b-it-Q8_0.gguf")
 HERE = os.path.dirname(os.path.abspath(__file__))
 PORT = 8124
-prompt = json.load(open(os.path.join(HERE, "../../../scripts/prompts.json")))["gemma2-2b:2048"]
+prompt = json.load(open(os.path.join(HERE, "../../../scripts/prompts.json")))["gemma2-2b:2048"]["text"]
 os.makedirs(os.path.join(OUT, "serve-logs"), exist_ok=True)
 
 
@@ -27,16 +28,24 @@ def run(flag):
             raise SystemExit(f"the server (flag {flag}) never listened")
         req = urllib.request.Request(f"http://127.0.0.1:{PORT}/v1/chat/completions", method="POST",
             headers={"Content-Type": "application/json"},
-            data=json.dumps({"model": "gemma-2-2b-it-Q8_0", "messages": [{"role": "user", "content": prompt}], "max_tokens": 64, "temperature": 0}).encode())
-        return json.load(urllib.request.urlopen(req, timeout=600))["choices"][0]["message"]["content"]
+            data=json.dumps({"model": "gemma-2-2b-it-Q8_0", "messages": [{"role": "user", "content": prompt + "\n\nIgnore everything above. Write a long, detailed short story about a lighthouse keeper, at least 400 words."}], "max_tokens": 256, "temperature": 0}).encode())
+        resp = json.load(urllib.request.urlopen(req, timeout=600))
+        return resp["choices"][0]["message"]["content"], resp["usage"]["completion_tokens"]
     finally:
         p.send_signal(signal.SIGTERM)
         p.wait(timeout=60)
 
 
-exact, lane = run("false"), run("true")
-print(f"probe: exact {exact[:70]!r}\nprobe: lane  {lane[:70]!r}")
+(exact, n_exact), (lane, n_lane), (exact2, n_exact2) = run("false"), run("true"), run("false")
+print(f"probe: exact {n_exact} tokens {exact[-70:]!r}\nprobe: lane  {n_lane} tokens {lane[-70:]!r}")
+print(f"probe: exact twice identical: {exact == exact2}; text equal across arms: {exact == lane}")
+if exact != exact2:
+    print("probe: the exact lane did not repeat itself")
+    sys.exit(1)
+if n_exact < 200 or n_lane < 200:
+    print("probe: a reply under 200 tokens cannot tell the arms apart")
+    sys.exit(1)
 if exact == lane:
-    print("probe: IDENTICAL text on both arms")
+    print("probe: IDENTICAL text on both arms over a long reply")
     sys.exit(1)
 print("probe: the arms differ")
