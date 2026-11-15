@@ -225,7 +225,8 @@ func TestDB04AB(t *testing.T) {
 	if r.dnet == nil {
 		t.Fatalf("%s has no DeltaNet layers", name)
 	}
-	defer func() { gemvExtOn = false; r.stopExec() }()
+	prevGemvExt := gemvExtOn
+	defer func() { gemvExtOn = prevGemvExt; r.stopExec() }()
 	embs := auditEmbs(r, depths[len(depths)-1]+tokens, 29)
 	reps := auditReps(7)
 	for _, D := range depths {
