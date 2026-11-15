@@ -54,6 +54,7 @@ type Flags struct {
 	MoEStep            bool                // --moe-step
 	RecurrentStep      bool                // --recurrent-step
 	Gemma4Step         bool                // --gemma4-step
+	FlashDecodeSoftcap bool                // --flash-decode-softcap
 	RecurrentStepSet   bool                // --recurrent-step was given on the command line, not left at its default
 	Gemma4StepSet      bool                // --gemma4-step was given on the command line, not left at its default
 }
@@ -95,6 +96,7 @@ func register(fs *flag.FlagSet, app App, goos string, ggufDirect bool) *Flags {
 	fs.BoolVar(&f.CPUExactPrefill, "cpu-exact-prefill", boolDef("cpu-exact-prefill"), use("cpu-exact-prefill"))
 	fs.BoolVar(&f.WindowedKV, "windowed-kv", boolDef("windowed-kv"), use("windowed-kv"))
 	fs.BoolVar(&f.MoEStep, "moe-step", boolDef("moe-step"), use("moe-step"))
+	fs.BoolVar(&f.FlashDecodeSoftcap, "flash-decode-softcap", boolDef("flash-decode-softcap"), use("flash-decode-softcap"))
 	f.RecurrentStep, f.Gemma4Step = boolDef("recurrent-step"), boolDef("gemma4-step")
 	fs.Var(givenBool{&f.RecurrentStep, &f.RecurrentStepSet}, "recurrent-step", use("recurrent-step"))
 	fs.Var(givenBool{&f.Gemma4Step, &f.Gemma4StepSet}, "gemma4-step", use("gemma4-step"))
@@ -180,6 +182,7 @@ func Resolve(f Flags, m Machine, ov Overrides) decoder.Options {
 		ResidentMoEStep:       f.MoEStep,
 		ResidentRecurrentStep: f.RecurrentStep,
 		ResidentGemma4Step:    f.Gemma4Step,
+		FlashDecodeSoftcap:    f.FlashDecodeSoftcap,
 		Knobs:                 f.Knobs(),
 	}
 	if sv := ov.Serve; sv != nil {

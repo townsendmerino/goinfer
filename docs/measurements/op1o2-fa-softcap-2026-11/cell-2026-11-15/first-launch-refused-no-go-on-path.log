@@ -1,0 +1,13 @@
+started: 2026-11-15 11:57:51 PST
+binary: /home/francis/goinfer-bench/op1o2-2026-11/bin/serve-cuda (8f4273a32c29f5260d1c269c2d856a9684f0a245)
+gpu: NVIDIA GeForce RTX 2070 SUPER, 595.112.07, 487 MiB
+load: 0.59 0.83 2.02 1/696 84538
+mem: Mem:              62           2          18           0          42          60
+probe: exact 256 tokens 'testament to the ingenuity of a man who dared to defy the elements. It'
+probe: lane  256 tokens 'uiet urgency that sent a shiver down his spine.\n\nHe rushed to the lamp'
+probe: exact twice identical: True; text equal across arms: False
+probe: the arms differ
+REFUSED: no free-memory reading (scripts/hostmem.py runs `go run ./cmd/hostmem`: is go on PATH?), so the heavy-load void's memory term cannot apply. Put go on PATH, or set BENCH_ALLOW_NO_FREE_MEM=1 to run without it (recorded).
+!! the run failed or wrote no results (bench_peer exits 0 when it refuses a busy box)
+VERDICT VOID
+finished: 2026-11-15 11:58:34 PST rc=1
