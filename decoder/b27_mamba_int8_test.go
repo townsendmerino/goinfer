@@ -50,7 +50,7 @@ func b27MambaLayers(t *testing.T, m *Model) []int {
 // b27Dims is the two projections' [rows, cols].
 func b27Dims(t *testing.T, m *Model) (d struct{ in, out [2]int }) {
 	t.Helper()
-	nh, hd, ds, ng, _, _, _, ok := m.NemotronResidentParams()
+	nh, hd, ds, ng, _, _, _, ok := m.BackendView().NemotronParams()
 	if !ok {
 		t.Fatal("not a Nemotron-H model")
 	}
@@ -283,7 +283,7 @@ func TestB27_cpuFidelitySlice(t *testing.T) {
 		return m
 	}
 	ref, got := load(true), load(false)
-	if in, _ := got.MambaProjInt8(0); in == nil {
+	if in, _ := got.BackendView().Layer(0).MambaProjInt8(); in == nil {
 		t.Fatal("the int8 arm's layer 0 holds no int8 projections")
 	}
 	minCos, agree := b27Lockstep(t, ref, got, []int{1, 17, 113, 29, 71, 5}, 32)

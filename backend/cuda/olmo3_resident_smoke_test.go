@@ -23,7 +23,7 @@ import (
 //
 // Olmo Hybrid additionally gates a bug fix: both backends assumed every qwen35Params-carrying
 // family's full-attention layer used qwen3.5's own double-width q-gate scheme
-// (Qwen35ResidentParams hardcoded attnGate=true), while Olmo Hybrid's is plain (olmo3's own scheme);
+// (Qwen35Params hardcoded attnGate=true), while Olmo Hybrid's is plain (olmo3's own scheme);
 // Architecture.qwen35.AttnGate now carries it. This smoke test is the regression gate for that fix:
 // without it BuildResident declines ("qwen35 softmax layer has empty q_norm/k_norm").
 func TestOlmo3ResidentSmokeCUDA(t *testing.T) {

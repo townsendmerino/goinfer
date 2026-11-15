@@ -252,7 +252,7 @@ func TestNemotronResidentCUDA_blockKinds(t *testing.T) {
 		Ly := &r.layers[l]
 		var wantMixer decoder.ResidentMixer
 		var wantFFN bool
-		switch m.NemotronBlockKind(l) {
+		switch m.BackendView().Layer(l).NemotronBlockKind() {
 		case 0:
 			wantMixer, wantFFN = decoder.MixerMamba, false
 		case 1:
@@ -260,7 +260,7 @@ func TestNemotronResidentCUDA_blockKinds(t *testing.T) {
 		case 2:
 			wantMixer, wantFFN = decoder.MixerNone, true
 		default:
-			t.Fatalf("layer %d: block kind %d is not built in this test", l, m.NemotronBlockKind(l))
+			t.Fatalf("layer %d: block kind %d is not built in this test", l, m.BackendView().Layer(l).NemotronBlockKind())
 		}
 		if Ly.mixer != wantMixer || Ly.ffn != wantFFN {
 			t.Errorf("layer %d: built as (%v, ffn %v), the family says (%v, ffn %v)", l, Ly.mixer, Ly.ffn, wantMixer, wantFFN)

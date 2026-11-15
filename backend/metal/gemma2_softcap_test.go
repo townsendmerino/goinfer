@@ -32,8 +32,8 @@ func TestGemma2Softcap_lanesAndPrefillMetal(t *testing.T) {
 				t.Fatalf("resident: %v", err)
 			}
 			defer r.Close()
-			if r.attnSoftcap == 0 || r.attnSoftcap != m.AttnLogitSoftcapResident() {
-				t.Fatalf("resident cap %v, model cap %v: the fixture no longer has a cap, or the resident did not take it", r.attnSoftcap, m.AttnLogitSoftcapResident())
+			if r.attnSoftcap == 0 || r.attnSoftcap != m.BackendView().AttnLogitSoftcap() {
+				t.Fatalf("resident cap %v, model cap %v: the fixture no longer has a cap, or the resident did not take it", r.attnSoftcap, m.BackendView().AttnLogitSoftcap())
 			}
 			if fused, steel := r.prefillAttnKernels(); fused || steel {
 				t.Errorf("a capped model would take the fused (%v) or steel (%v) prefill kernel, which the softcap is not gated on", fused, steel)

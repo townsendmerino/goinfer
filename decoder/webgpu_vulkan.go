@@ -134,7 +134,7 @@ func (m *Model) webgpuLayerCaches(i, ctx int, kvF16, kvI8 bool) (bufs []int64, k
 	case kvF16:
 		perElem = 2
 	}
-	mixer, _ := m.ResidentLayerOps(i)
+	mixer, _ := m.BackendView().Layer(i).Ops()
 	switch mixer {
 	case MixerAttention:
 		if m.w.arch != nil && m.w.arch.gemma4KVSrcAt(i) != i {
@@ -144,14 +144,14 @@ func (m *Model) webgpuLayerCaches(i, ctx int, kvF16, kvI8 bool) (bufs []int64, k
 		if m.w.arch != nil {
 			kvDim = m.w.arch.kvDimAt(i)
 		} else {
-			kvDim = m.KVHeadsAtResident(i) * m.HeadDimAtResident(i)
+			kvDim = m.BackendView().Layer(i).KVHeads() * m.BackendView().Layer(i).HeadDim()
 		}
 		if kvDim == 0 || ctx <= 0 {
 			return nil, true
 		}
 		c := int64(float64(kvDim) * perElem * float64(ctx))
 		if kvI8 {
-			sc := 4 * int64(m.KVHeadsAtResident(i)) * int64(ctx) // one f32 scale a KV head a position, its own buffer for K and for V
+			sc := 4 * int64(m.BackendView().Layer(i).KVHeads()) * int64(ctx) // one f32 scale a KV head a position, its own buffer for K and for V
 			return []int64{c, c, sc, sc}, true
 		}
 		return []int64{c, c}, true
@@ -166,16 +166,16 @@ func (m *Model) webgpuLayerCaches(i, ctx int, kvF16, kvI8 bool) (bufs []int64, k
 		}
 		return nil, true
 	case MixerDeltaNet:
-		convK, hk, hv, nk, nv, _, ok := m.Qwen35ResidentParams()
+		convK, hk, hv, nk, nv, _, ok := m.BackendView().Qwen35Params()
 		if !ok {
 			return nil, false
 		}
 		return []int64{int64(convK-1) * int64(2*nk*hk+nv*hv) * 4, int64(nv*hv*hk) * 4}, false
 	case MixerMamba:
-		nH, hd, dS, nG, dConv, _, _, _, _, ok := m.GraniteResidentParams()
+		nH, hd, dS, nG, dConv, _, _, _, _, ok := m.BackendView().GraniteParams()
 		if !ok {
 			var nok bool
-			nH, hd, dS, nG, dConv, _, _, nok = m.NemotronResidentParams()
+			nH, hd, dS, nG, dConv, _, _, nok = m.BackendView().NemotronParams()
 			if !nok {
 				return nil, false
 			}
@@ -272,7 +272,7 @@ func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []
 		}
 		if a := l.mla; a != nil {
 			// Each projection W8A8, from its int8 form or its f32 (mlaProj), then kv_b split into W_UKᵀ and W_UV, f32.
-			qLoRA, kvLoRA, qkNope, qkRope, vHead, _, _, _, _ := m.MLAResidentParams()
+			qLoRA, kvLoRA, qkNope, qkRope, vHead, _, _, _, _ := m.BackendView().MLAParams()
 			_, _, nH, _, _, _, _ := m.Dims()
 			proj := func(q *linalg.WeightMat, rows, cols int) {
 				if q.Rows() != 0 {
@@ -362,18 +362,18 @@ func (m *Model) webgpuDerivedTableBytes() int64 {
 	var tabs [][]float32
 	var n int64
 	for i := range m.w.arch.NumLayers {
-		if inv := m.RopeInvFreqLayerResident(i); len(inv) > 0 && !slices.ContainsFunc(tabs, func(t []float32) bool { return slices.Equal(t, inv) }) {
+		if inv := m.BackendView().Layer(i).RopeInvFreq(); len(inv) > 0 && !slices.ContainsFunc(tabs, func(t []float32) bool { return slices.Equal(t, inv) }) {
 			tabs = append(tabs, inv)
 			n += 4 * int64(len(inv))
 		}
-		if len(m.GptOssSinksResident(i)) == 0 {
+		if len(m.BackendView().Layer(i).AttnSinks()) == 0 {
 			n += 4
 		}
 		if g4 := m.w.Layers[i].gemma4moe; g4 != nil {
 			n += 4 * (int64(m.w.arch.HiddenDim) + int64(g4.nE) - int64(len(g4.routerScale)))
 		}
 	}
-	if _, hk, hv, nk, nv, _, ok := m.Qwen35ResidentParams(); ok {
+	if _, hk, hv, nk, nv, _, ok := m.BackendView().Qwen35Params(); ok {
 		n += 4 * int64(2*nk*hk+nv*hv)
 	}
 	return n

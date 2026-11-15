@@ -21,7 +21,7 @@ func (m *Model) metalDerivedDenseBytes() int64 {
 	}
 	w := m.w
 	_, _, nH, _, _, _, _ := m.Dims()
-	_, _, _, _, _, attnGate, dnetOK := m.Qwen35ResidentParams()
+	_, _, _, _, _, attnGate, dnetOK := m.BackendView().Qwen35Params()
 	nE, _, isMoE := m.moeGeometry()
 	nonGated := false
 	if p := m.Program(); p != nil {
@@ -33,15 +33,15 @@ func (m *Model) metalDerivedDenseBytes() int64 {
 	maxHd, firstHalf := 0, -1
 	for l := range w.Layers {
 		lw := &w.Layers[l]
-		mixer, hasFFN := m.ResidentLayerOps(l)
+		mixer, hasFFN := m.BackendView().Layer(l).Ops()
 		if mixer == MixerAttention {
-			hd := m.HeadDimAtResident(l)
-			kvDim := m.KVHeadsAtResident(l) * hd
+			hd := m.BackendView().Layer(l).HeadDim()
+			kvDim := m.BackendView().Layer(l).KVHeads() * hd
 			maxHd = max(maxHd, hd)
 			if len(lw.AttnSinks) == 0 {
 				floats++
 			}
-			half := len(m.RopeInvFreqLayerResident(l))
+			half := len(m.BackendView().Layer(l).RopeInvFreq())
 			if half > 0 {
 				floats += int64(half) + 1
 			}
@@ -52,7 +52,7 @@ func (m *Model) metalDerivedDenseBytes() int64 {
 				if lw.QBias == nil {
 					floats += int64(nH*hd+2*kvDim) - int64(len(lw.KBias)+len(lw.VBias))
 				}
-				if m.KVSrcAtResident(l) == l && m.VFromKResident(l) {
+				if m.BackendView().Layer(l).KVSrc() == l && m.BackendView().Layer(l).VFromK() {
 					bytes += metalW4A8Bytes(lw.KProj.Rows(), lw.KProj.Cols())
 				}
 			}
@@ -80,13 +80,13 @@ func (m *Model) metalDerivedDenseBytes() int64 {
 			}
 		}
 	}
-	floats += int64(len(m.RopeInvFreq()))
+	floats += int64(len(m.BackendView().RopeInvFreq()))
 	if maxHd == 0 {
 		maxHd = 4 // no attention layer: the build sizes its attention buffers at 4
 	}
 	floats += int64(maxHd)
 	if firstHalf > 0 {
-		floats += int64(len(m.MRopeAxisResident(firstHalf)))
+		floats += int64(len(m.BackendView().MRopeAxis(firstHalf)))
 	}
 	return 4*floats + bytes
 }

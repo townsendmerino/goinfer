@@ -151,12 +151,12 @@ func metalStepInputs(m *decoder.Model) *stepInputs {
 	in := &stepInputs{prog: p, H: H, V: V, I: I, nH: nH, moeStep: m.ResidentMoEStep(), recurrentStep: m.ResidentRecurrentStepOn(wanted),
 		gemma4Step: m.ResidentGemma4StepOn(wanted), q4k: m.Quant() == "q4k"}
 	in.w4f16Lane = modelKnob(m, "GOINFER_METAL_DECODE_LANE") == "w4f16" && m.Quant() == "int4"
-	in.attnSink = m.HasAttnSinksResident()
-	if nE, _, _, _, _, _, _, _, _, _, ok := m.MoEResidentParams(); ok {
+	in.attnSink = m.BackendView().HasAttnSinks()
+	if nE, _, _, _, _, _, _, _, _, _, ok := m.BackendView().MoEParams(); ok {
 		n := metalMoESlotsFromEnv(m)
 		in.pagedMoE = n > 0 && (n < nE || moePagedAllSlotsForTest)
 	}
-	if P := m.Gemma4PLEDimResident(); P > 0 {
+	if P := m.BackendView().Gemma4PLEDim(); P > 0 {
 		in.pleIn = nL * P
 	}
 	w := m.Weights()
@@ -178,9 +178,9 @@ func metalStepInputs(m *decoder.Model) *stepInputs {
 		if r := w.Layers[l].GateProj.Rows(); r > 0 {
 			info.ffnI = r
 		}
-		if mixer, _ := m.ResidentLayerOps(l); mixer == decoder.MixerAttention {
-			info.hd, info.nKV = m.HeadDimAtResident(l), m.KVHeadsAtResident(l)
-			info.hasGeom, info.kEqV = info.hd > 0, m.VFromKResident(l) && m.KVSrcAtResident(l) == l
+		if mixer, _ := m.BackendView().Layer(l).Ops(); mixer == decoder.MixerAttention {
+			info.hd, info.nKV = m.BackendView().Layer(l).HeadDim(), m.BackendView().Layer(l).KVHeads()
+			info.hasGeom, info.kEqV = info.hd > 0, m.BackendView().Layer(l).VFromK() && m.BackendView().Layer(l).KVSrc() == l
 			in.oneKVAllocation = true
 			in.faPartial = max(in.faPartial, attnFAPartialFloats(info.hd, nH, info.nKV))
 		} else if mixer == decoder.MixerMLA {

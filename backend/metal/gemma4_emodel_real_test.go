@@ -526,7 +526,7 @@ func TestGemma4EModel_realE2BPLEHostCost(t *testing.T) {
 		}
 	}
 	t.Logf("E2B embedding row + PLE inputs on the host: mean %.3f ms/token, median %.3f, p90 %.3f over %d tokens (row length %d)",
-		sum/n, sorted[n/2], sorted[n*9/10], n, m.ResidentEmbedLen())
+		sum/n, sorted[n/2], sorted[n*9/10], n, m.BackendView().EmbedLen())
 }
 
 // TestGemma4EModel_realE4BNonInferiority is S6's G-E4B-1b (docs/completed/task-multimodal-support-2026-10.md, registered

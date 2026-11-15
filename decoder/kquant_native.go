@@ -131,9 +131,9 @@ func (m *Model) kquantLane(backend string) []*linalg.WeightMat {
 		ps := []*linalg.WeightMat{&lw.QProj, &lw.KProj, &lw.VProj, &lw.OProj, &lw.GateProj, &lw.UpProj, &lw.DownProj}
 		if backend == "cuda" {
 			switch {
-			case m.KVSrcAtResident(l) != l:
+			case m.BackendView().Layer(l).KVSrc() != l:
 				ps = []*linalg.WeightMat{&lw.QProj, &lw.OProj, &lw.GateProj, &lw.UpProj, &lw.DownProj}
-			case m.VFromKResident(l):
+			case m.BackendView().Layer(l).VFromK():
 				ps = []*linalg.WeightMat{&lw.QProj, &lw.KProj, &lw.OProj, &lw.GateProj, &lw.UpProj, &lw.DownProj}
 			}
 		}

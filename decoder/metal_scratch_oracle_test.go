@@ -25,16 +25,16 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 	geoms := map[geomKey]bool{}
 	nHhd, kvDim, fa, attn, layerFFN := 0, 0, 0, 0, 0
 	maxFFNI := I
-	nE, k, inter, sharedInter, _, _, _, _, _, _, moeOK := m.MoEResidentParams()
-	g4 := m.HasGemma4MoEResident()
+	nE, k, inter, sharedInter, _, _, _, _, _, _, moeOK := m.BackendView().MoEParams()
+	g4 := m.BackendView().HasGemma4MoE()
 	moeOK = moeOK && !g4
 	q4k := m.Quant() == "q4k"
 	for l := range nL {
-		mixer, hasFFN := m.ResidentLayerOps(l)
+		mixer, hasFFN := m.BackendView().Layer(l).Ops()
 		if mixer == MixerAttention {
-			hd, kv := m.HeadDimAtResident(l), m.KVHeadsAtResident(l)
-			kEqV := m.VFromKResident(l) && m.KVSrcAtResident(l) == l
-			geoms[geomKey{hd, kv, len(m.RopeInvFreqLayerResident(l)), kEqV}] = true
+			hd, kv := m.BackendView().Layer(l).HeadDim(), m.BackendView().Layer(l).KVHeads()
+			kEqV := m.BackendView().Layer(l).VFromK() && m.BackendView().Layer(l).KVSrc() == l
+			geoms[geomKey{hd, kv, len(m.BackendView().Layer(l).RopeInvFreq()), kEqV}] = true
 			nHhd, kvDim = max(nHhd, nH*hd), max(kvDim, kv*hd)
 			fa = max(fa, metalAttnFAPartialFloats(hd, nH, kv))
 			attn++
@@ -43,8 +43,8 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 			continue
 		}
 		lw := &w.Layers[l]
-		_, isG4 := m.Gemma4MoEResidentLayer(l)
-		denseFFN := hasFFN && !isG4 && !(moeOK && len(lw.Experts) > 0) && !m.NonGatedMLPResident()
+		_, isG4 := m.BackendView().Layer(l).Gemma4MoEBundle()
+		denseFFN := hasFFN && !isG4 && !(moeOK && len(lw.Experts) > 0) && !m.BackendView().NonGatedMLP()
 		if denseFFN {
 			if fi := lw.GateProj.Rows(); fi != 0 {
 				maxFFNI = max(maxFFNI, fi)
@@ -71,7 +71,7 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 	var g4b Gemma4MoEResidentBundle
 	if g4 {
 		for l := range nL {
-			if b, ok := m.Gemma4MoEResidentLayer(l); ok {
+			if b, ok := m.BackendView().Layer(l).Gemma4MoEBundle(); ok {
 				g4b = b
 				break
 			}
@@ -91,16 +91,16 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 	if fa > 0 {
 		u32s += 2
 	}
-	if m.QKNormWholeResident() {
+	if m.BackendView().QKNormWhole() {
 		u32s += 2
 	}
 	u32s += int64(7*len(geoms) + 2*attn + layerFFN) // each geometry's seven; each attention layer's sink flag and window; a distinct FFN width's
-	if P := m.Gemma4PLEDimResident(); P > 0 {
+	if P := m.BackendView().Gemma4PLEDim(); P > 0 {
 		f32 += int64(nL*P + P + 1)
 		bytes += int64(P)
 		u32s++
 	}
-	if _, hk, hv, nk, nv, attnGate, ok := m.Qwen35ResidentParams(); ok { // the Gated DeltaNet mixer and gated attention's [query ‖ gate]
+	if _, hk, hv, nk, nv, attnGate, ok := m.BackendView().Qwen35Params(); ok { // the Gated DeltaNet mixer and gated attention's [query ‖ gate]
 		keyDim, valueDim := nk*hk, nv*hv
 		f32 += int64(2*(2*keyDim+valueDim) + 2*nv + 2*nv + 2*keyDim + 3*valueDim + 1)
 		if attnGate {
@@ -112,20 +112,20 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 			u32s++
 		}
 	}
-	if nh, hd, ds, ng, _, normG, _, ok := m.NemotronResidentParams(); ok && normG > 0 { // the Mamba-2 mixer
+	if nh, hd, ds, ng, _, normG, _, ok := m.BackendView().NemotronParams(); ok && normG > 0 { // the Mamba-2 mixer
 		dInner, gSize := nh*hd, ng*ds
 		f32 += int64(2*dInner + 2*gSize + nh + dInner + 2*gSize + 2*dInner + 1)
 		bytes += int64(dInner)
 		u32s += 13
 	}
-	if qLoRA, rank, nope, rope, vHead, _, _, _, ok := m.MLAResidentParams(); ok { // Multi-head Latent Attention
+	if qLoRA, rank, nope, rope, vHead, _, _, _, ok := m.BackendView().MLAParams(); ok { // Multi-head Latent Attention
 		qkHead, latDim := nope+rope, rank+rope
 		f32 += int64(max(qLoRA, 1) + 1 + nH*qkHead + latDim + nH*latDim + nH*rank + nH*vHead + 1)
 		bytes += int64(max(qLoRA, 4) + nH*vHead + 4*(3+5+5+7+3)) // qaQ, ctxQ, and the five packed shapes
 		u32s += 5
 	}
 	if moeOK { // the generic MoE's router, shared expert and k slots
-		_, _, gptOss := m.GptOssActResident()
+		_, _, gptOss := m.BackendView().GptOssAct()
 		f32 += int64(nE + k + 1 + H)
 		bytes += int64(4 * k)
 		u32s += int64(10 + k)

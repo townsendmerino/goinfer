@@ -35,7 +35,7 @@ type mlaLayer struct {
 
 // buildMLA returns the model's MLA geometry, (nil, nil) for a model without MLA, or the reason this resident cannot run it.
 func buildMLA(m *decoder.Model, nH, H int) (*mlaParams, error) {
-	qLoRA, kvLoRA, qkNope, qkRope, vHead, interleave, attnScale, ropeScale, ok := m.MLAResidentParams()
+	qLoRA, kvLoRA, qkNope, qkRope, vHead, interleave, attnScale, ropeScale, ok := m.BackendView().MLAParams()
 	if !ok {
 		return nil, nil
 	}
@@ -50,7 +50,7 @@ func buildMLA(m *decoder.Model, nH, H int) (*mlaParams, error) {
 	case H%4 != 0 || qLoRA%4 != 0 || (nH*vHead)%4 != 0:
 		return nil, fmt.Errorf("metal: MLA widths (hidden %d, q_lora_rank %d, heads·v_head_dim %d) are not multiples of 4, which the int8 GEMV reads", H, qLoRA, nH*vHead)
 	}
-	if inv := m.RopeInvFreq(); len(inv) != qkRope/2 {
+	if inv := m.BackendView().RopeInvFreq(); len(inv) != qkRope/2 {
 		return nil, fmt.Errorf("metal: MLA's rope table has %d frequencies, want qk_rope_head_dim/2 = %d", len(inv), qkRope/2)
 	}
 	return p, nil
@@ -67,7 +67,7 @@ func int8Proj(d *Device, f []float32, rows, cols int, name string, l int) (Buffe
 
 // buildMLALayer uploads layer l's MLA weights.
 func buildMLALayer(d *Device, m *decoder.Model, l, H int, p *mlaParams) (*mlaLayer, error) {
-	qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj := m.MLALayerWeights(l)
+	qA, qANorm, qB, qProj, kvA, kvANorm, kvB, oProj := m.BackendView().Layer(l).MLAWeights()
 	qAQ, qBQ, qQ, kvAQ, oQ := m.MLALayerInt8(l)
 	// proj uploads a projection's int8 form when the load holds one (the codes int8Proj would make from the f32), else quantizes the f32.
 	proj := func(q *linalg.WeightMat, f []float32, rows, cols int, name string) (Buffer, Buffer, error) {
@@ -136,7 +136,7 @@ type mlaScratch struct {
 // buildMLAScratch holds the latent rope table, on the dense line. The rows and uniforms of mlaScratch are decode's scratch: the decode
 // list allocates them (decodeShape.buffers).
 func buildMLAScratch(d *Device, m *decoder.Model) *mlaScratch {
-	return &mlaScratch{invf: NewBufferFloatsOn(mem.LineDense, d, m.RopeInvFreq())}
+	return &mlaScratch{invf: NewBufferFloatsOn(mem.LineDense, d, m.BackendView().RopeInvFreq())}
 }
 
 // mlaKVCopyDeclineOffForTest removes CopyKV's MLA decline: the guard test's planted defect.

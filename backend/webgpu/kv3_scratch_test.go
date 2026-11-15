@@ -102,7 +102,7 @@ func TestKV3_admissionPricesTheChunk(t *testing.T) {
 	}
 	const prompt, maxTok = 20954, 8
 	whole := m.WholePromptScratchBytesForTest(prompt)
-	chunk := rd.PrefillScratchBytes(rd.PrefillChunkRows()) + int64(prompt)*4*int64(m.ResidentEmbedLen())
+	chunk := rd.PrefillScratchBytes(rd.PrefillChunkRows()) + int64(prompt)*4*int64(m.BackendView().EmbedLen())
 	const frac = 0.7 // decoder.prefillAvailFraction
 	t.Logf("whole-prompt price %.2f GB, per-chunk price %.3f GB", float64(whole)/(1<<30), float64(chunk)/(1<<30))
 	if chunk*4 > whole {

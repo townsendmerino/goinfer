@@ -28,7 +28,7 @@ func TestWebGPUKV_int8HoldsOneScaleAPositionAKVHead(t *testing.T) {
 				if m.w.arch.hasNoAttentionKVAt(l) || m.w.arch.gemma4KVSrcAt(l) != l || m.w.arch.mla != nil {
 					continue
 				}
-				want += 2 * int64(ctx) * (int64(m.w.arch.kvDimAt(l)) + 4*int64(m.KVHeadsAtResident(l)))
+				want += 2 * int64(ctx) * (int64(m.w.arch.kvDimAt(l)) + 4*int64(m.BackendView().Layer(l).KVHeads()))
 			}
 			if want == 0 {
 				t.Fatal("VOID: no attention layer holds K/V")

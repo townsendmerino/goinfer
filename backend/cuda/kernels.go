@@ -191,7 +191,7 @@ var ropeMRopePrefillKV16PTX []byte
 
 // ropePairwisePTX: rope_kv_pw / rope_kv_batched_pw / rope_kv_mrope_batched_pw, the GPT-J pairwise (dims 2d, 2d+1) twins
 // of rope_kv / rope_kv_batched / rope_kv_mrope_batched, with the same argument lists and launch geometry, bound in their
-// place when decoder.Model.PairwiseRoPEResident() says so. The NeoX kernels rotate (d, d+half), so a pairwise family run
+// place when decoder.Model.BackendView().PairwiseRoPE() says so. The NeoX kernels rotate (d, d+half), so a pairwise family run
 // through them is exact at position 0 and wrong afterwards. Built at NVRTC 12.6.85, the pinned toolchain (the control is
 // in docs/measurements/cuda-pairwise-rope-2026-10-01.md). See cuda/rope_pairwise.cu.
 //

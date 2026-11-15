@@ -155,7 +155,7 @@ func stateBuffersOn(d *Device, m *decoder.Model, l int) (win, state Buffer, err 
 // (nil, nil) for a dense model (no qwen35 family) — the same "ok=false -> not this family" shape
 // buildMoE uses, so buildResident's caller can no-op it uniformly.
 func buildDeltaNet(d *Device, m *decoder.Model, pipe func(string) Pipeline) (*dnetParams, error) {
-	convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numValueHeads, _, ok := m.Qwen35ResidentParams()
+	convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numValueHeads, _, ok := m.BackendView().Qwen35Params()
 	if !ok {
 		return nil, nil
 	}
@@ -210,7 +210,7 @@ var dnetNegEigvalOffForTest, dnetONormEpsOffForTest = false, false
 // dozen rows), so this rides Metal's existing int8 GEMV path (pGemvW8) rather than adding a
 // dedicated f32 GEMV kernel for two small projections.
 func buildDeltaNetLayer(d *Device, m *decoder.Model, l int, dnet *dnetParams, mk func(*linalg.WeightMat) (Buffer, Buffer)) (*deltaNetLayer, error) {
-	inQKV, inZ, outProj, inB, inA, convW, dtBias, negExpA, normW := m.Qwen35DeltaWeights(l)
+	inQKV, inZ, outProj, inB, inA, convW, dtBias, negExpA, normW := m.BackendView().Layer(l).Qwen35DeltaWeights()
 	// Name the missing tensor (as cuda/backend.go's identical check does): an empty slice becomes a 0-byte device upload that
 	// fails as "invalid length" with no hint which of the four small tensors was missing.
 	// History: docs/code-notes/metal.md#buildDeltaNetLayer.

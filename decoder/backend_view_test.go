@@ -44,26 +44,14 @@ func TestBackendModelView_FlintTinyParity(t *testing.T) {
 	if bv.AttnScale() != m.AttnScale() {
 		t.Fatalf("AttnScale = %v, want %v", bv.AttnScale(), m.AttnScale())
 	}
-	if bv.SlidingWindow() != m.SlidingWindowResident() {
-		t.Fatalf("SlidingWindow = %d, want %d", bv.SlidingWindow(), m.SlidingWindowResident())
+	if bv.SlidingWindow() != m.BackendView().SlidingWindow() {
+		t.Fatalf("SlidingWindow = %d, want %d", bv.SlidingWindow(), m.BackendView().SlidingWindow())
 	}
-	if bv.HasQKNorm() != m.HasQKNorm() {
-		t.Fatalf("HasQKNorm = %v, want %v", bv.HasQKNorm(), m.HasQKNorm())
-	}
-	if bv.QKNormWhole() != m.QKNormWholeResident() {
-		t.Fatalf("QKNormWhole = %v, want %v", bv.QKNormWhole(), m.QKNormWholeResident())
-	}
-	if bv.RotaryDim() != m.RotaryDimResident() {
-		t.Fatalf("RotaryDim = %d, want %d", bv.RotaryDim(), m.RotaryDimResident())
-	}
-	if !slices.Equal(bv.RopeInvFreq(), m.RopeInvFreq()) {
+	if !slices.Equal(bv.RopeInvFreq(), m.BackendView().RopeInvFreq()) {
 		t.Fatalf("RopeInvFreq mismatch")
 	}
-	if bv.HasAttnSinks() != m.HasAttnSinksResident() {
-		t.Fatalf("HasAttnSinks = %v, want %v", bv.HasAttnSinks(), m.HasAttnSinksResident())
-	}
-	if bv.MoEExpertKind() != m.MoEExpertKind() {
-		t.Fatalf("MoEExpertKind = %q, want %q", bv.MoEExpertKind(), m.MoEExpertKind())
+	if bv.HasAttnSinks() != m.BackendView().HasAttnSinks() {
+		t.Fatalf("HasAttnSinks = %v, want %v", bv.HasAttnSinks(), m.BackendView().HasAttnSinks())
 	}
 	if bv.ProjsInt4() != m.ResidentProjsInt4() {
 		t.Fatalf("ProjsInt4 = %v, want %v", bv.ProjsInt4(), m.ResidentProjsInt4())
@@ -75,35 +63,32 @@ func TestBackendModelView_FlintTinyParity(t *testing.T) {
 			t.Fatalf("layer %d: Index() = %d", i, lv.Index())
 		}
 		mix1, ffn1 := lv.Ops()
-		mix2, ffn2 := m.ResidentLayerOps(i)
+		mix2, ffn2 := m.BackendView().Layer(i).Ops()
 		if mix1 != mix2 || ffn1 != ffn2 {
 			t.Fatalf("layer %d: Ops() = (%v,%v), want (%v,%v)", i, mix1, ffn1, mix2, ffn2)
 		}
-		if lv.HeadDim() != m.HeadDimAtResident(i) {
-			t.Fatalf("layer %d: HeadDim() = %d, want %d", i, lv.HeadDim(), m.HeadDimAtResident(i))
+		if lv.HeadDim() != m.BackendView().Layer(i).HeadDim() {
+			t.Fatalf("layer %d: HeadDim() = %d, want %d", i, lv.HeadDim(), m.BackendView().Layer(i).HeadDim())
 		}
-		if lv.KVHeads() != m.KVHeadsAtResident(i) {
-			t.Fatalf("layer %d: KVHeads() = %d, want %d", i, lv.KVHeads(), m.KVHeadsAtResident(i))
+		if lv.KVHeads() != m.BackendView().Layer(i).KVHeads() {
+			t.Fatalf("layer %d: KVHeads() = %d, want %d", i, lv.KVHeads(), m.BackendView().Layer(i).KVHeads())
 		}
-		if lv.RotaryDim() != m.RotaryDimAtResident(i) {
-			t.Fatalf("layer %d: RotaryDim() = %d, want %d", i, lv.RotaryDim(), m.RotaryDimAtResident(i))
+		if lv.RotaryDim() != m.BackendView().Layer(i).RotaryDim() {
+			t.Fatalf("layer %d: RotaryDim() = %d, want %d", i, lv.RotaryDim(), m.BackendView().Layer(i).RotaryDim())
 		}
-		if lv.KVSrc() != m.KVSrcAtResident(i) {
-			t.Fatalf("layer %d: KVSrc() = %d, want %d", i, lv.KVSrc(), m.KVSrcAtResident(i))
+		if lv.KVSrc() != m.BackendView().Layer(i).KVSrc() {
+			t.Fatalf("layer %d: KVSrc() = %d, want %d", i, lv.KVSrc(), m.BackendView().Layer(i).KVSrc())
 		}
-		if lv.IsLocal() != m.LayerIsLocalResident(i) {
-			t.Fatalf("layer %d: IsLocal() = %v, want %v", i, lv.IsLocal(), m.LayerIsLocalResident(i))
+		if lv.IsLocal() != m.BackendView().Layer(i).IsLocal() {
+			t.Fatalf("layer %d: IsLocal() = %v, want %v", i, lv.IsLocal(), m.BackendView().Layer(i).IsLocal())
 		}
-		if lv.RopeGlobal() != m.LayerRopeGlobal(i) {
-			t.Fatalf("layer %d: RopeGlobal() = %v, want %v", i, lv.RopeGlobal(), m.LayerRopeGlobal(i))
-		}
-		if !slices.Equal(lv.RopeInvFreq(), m.RopeInvFreqLayerResident(i)) {
+		if !slices.Equal(lv.RopeInvFreq(), m.BackendView().Layer(i).RopeInvFreq()) {
 			t.Fatalf("layer %d: RopeInvFreq() mismatch", i)
 		}
-		if lv.RopeMscale() != m.RopeMscaleLayer(i) {
-			t.Fatalf("layer %d: RopeMscale() = %v, want %v", i, lv.RopeMscale(), m.RopeMscaleLayer(i))
+		if lv.RopeMscale() != m.BackendView().Layer(i).RopeMscale() {
+			t.Fatalf("layer %d: RopeMscale() = %v, want %v", i, lv.RopeMscale(), m.BackendView().Layer(i).RopeMscale())
 		}
-		if !slices.Equal(lv.AttnSinks(), m.GptOssSinksResident(i)) {
+		if !slices.Equal(lv.AttnSinks(), m.BackendView().Layer(i).AttnSinks()) {
 			t.Fatalf("layer %d: AttnSinks() mismatch", i)
 		}
 	}
@@ -142,9 +127,6 @@ func TestBackendModelView_HybridLayerOps(t *testing.T) {
 		if mix != want.mixer || ffn != want.ffn {
 			t.Errorf("layer %d: Ops() = (%v,%v), want (%v,%v)", i, mix, ffn, want.mixer, want.ffn)
 		}
-		if lv.NemotronBlockKind() != m.NemotronBlockKind(i) {
-			t.Errorf("layer %d: NemotronBlockKind() = %d, want %d", i, lv.NemotronBlockKind(), m.NemotronBlockKind(i))
-		}
 	}
 }
 
@@ -172,9 +154,4 @@ func TestBackendModelView_familyParams(t *testing.T) {
 		t.Error("MLAParams ok for a model with no MLA subsystem")
 	}
 
-	// The forwarders delegate to the view, so what the view returns is what the model returns.
-	a1, b1, c1, d1, e1, f1, g1, h1, i1, j1, k1 := m.MoEResidentParams()
-	if a1 != nE || b1 != k || c1 != inter || d1 != shared || e1 != sigmoid || f1 != norm || g1 != ungated || h1 != scale || i1 != nGroup || j1 != topkGroup || k1 != ok {
-		t.Error("Model.MoEResidentParams differs from the view's MoEParams")
-	}
 }

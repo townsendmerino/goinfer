@@ -110,7 +110,7 @@ func g2rCPUArmFrom(t *testing.T, load, quant string, seed []int, steps int, soft
 	m := g2rLoad(t, load, "", quant)
 	decoder.SetAttnSoftcapOffForTest(was)
 	defer m.Close()
-	if got := m.AttnLogitSoftcapResident(); wantCap && (got == 0) != softcapOff {
+	if got := m.BackendView().AttnLogitSoftcap(); wantCap && (got == 0) != softcapOff {
 		t.Fatalf("VOID: the CPU model's cap is %v with the softcap removed = %v", got, softcapOff)
 	}
 	_, nL, _, nKV, hd, _, _ := m.Dims()

@@ -561,7 +561,7 @@ func TestPairwiseRoPE_derivationScope(t *testing.T) {
 	}
 	for _, a := range []*Architecture{base(), mla, q35} {
 		m := &Model{w: &Weights{arch: a}}
-		if got, want := m.PairwiseRoPEResident(), slices.Contains(a.residentFeatures(), FeatPairwiseRoPE); got != want {
+		if got, want := m.BackendView().PairwiseRoPE(), slices.Contains(a.residentFeatures(), FeatPairwiseRoPE); got != want {
 			t.Errorf("PairwiseRoPEResident()=%v but the feature derivation says %v", got, want)
 		}
 	}

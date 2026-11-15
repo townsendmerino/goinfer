@@ -115,7 +115,7 @@ func bisectModel(t *testing.T, path string) {
 		ref := hidden[l-1]
 		cos, gn, rn := cosNorm(got, ref)
 		tag := "global"
-		if m4.LayerIsLocalResident(l - 1) {
+		if m4.BackendView().Layer(l - 1).IsLocal() {
 			tag = "local "
 		}
 		flips := ""

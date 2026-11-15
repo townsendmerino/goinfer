@@ -82,7 +82,7 @@ const (
 	// FeatPairwiseRoPE is GPT-J pairwise rotation (dims 2d, 2d+1) in the scalar decode/prefill rope (Cohere, Cohere2, Aya, GLM-OCR's text
 	// rows). Every generic resident rope kernel is the NeoX half-split rotation of pairs (d, d+half); a runner on those is exact at position 0
 	// (the rotation is the identity there) and wrong at every later one, with no error and fluent-looking logits. A backend declares it only
-	// with pairwise rope kernels, bound in place of the NeoX ones when Model.PairwiseRoPEResident(); its gate must use peaked attention and
+	// with pairwise rope kernels, bound in place of the NeoX ones when Model.BackendView().PairwiseRoPE(); its gate must use peaked attention and
 	// non-flat weights, because flat 0.02-std fixtures hide a wrong rotation. MLA carries its own interleave flag and is gated by FeatMLA.
 	// History: docs/code-notes/decoder.md#FeatPairwiseRoPE; the kernel port notes are in docs/measurements/cuda-pairwise-rope-2026-10-01.md.
 	FeatPairwiseRoPE ResidentFeature = "pairwise-rope"
@@ -91,7 +91,7 @@ const (
 	// image-prefill kernels are NeoX. Needed in addition to FeatPairwiseRoPE, since the family's text rows and decode use the scalar kernel.
 	FeatPairwiseMRoPE ResidentFeature = "pairwise-mrope"
 	// FeatGatedGELUErf is a gated MLP whose activation is the exact erf GELU (ActGelu), not FeatGatedGELU's tanh approximation. The
-	// gated kernels select by GatedActResident's ordinal and know GELU-tanh and SiLU only, so any other ordinal runs one of those two
+	// gated kernels select by GatedAct's ordinal and know GELU-tanh and SiLU only, so any other ordinal runs one of those two
 	// with no error. A backend declares this only with an erf branch in every gated kernel it runs and an end-to-end gate.
 	FeatGatedGELUErf ResidentFeature = "gated-gelu-erf"
 	// FeatNonGatedGELUErf is the same activation in a non-gated MLP (a GPT-2 checkpoint declaring "gelu" rather than "gelu_new"),
@@ -155,7 +155,7 @@ func (a *Architecture) residentFeatures() []ResidentFeature {
 	add(a.Norm != NormRMS, FeatLayerNorm)
 	// The MLP activation, not just the gate's presence: a glue kernel that hardcodes SwiGLU would run Gemma's gated GELU-tanh block silently
 	// wrong. One feature per gated activation, and the default arm is deliberate: a gated activation without a feature of its own must
-	// not derive one a backend declares, or GatedActResident hands its ordinal to a kernel that knows only GELU-tanh and SiLU. An arch
+	// not derive one a backend declares, or GatedAct hands its ordinal to a kernel that knows only GELU-tanh and SiLU. An arch
 	// that forgets to set Act reads as ActGeluTanh (ActKind's zero value) on the CPU and on a backend alike. A non-gated arch
 	// derives one feature per activation in the same way.
 	switch {

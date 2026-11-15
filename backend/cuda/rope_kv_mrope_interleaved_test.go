@@ -45,7 +45,7 @@ func TestRopeKVMRoPEBatched_interleavedModeMatchesCPUReference(t *testing.T) {
 	if !r.mropePrefillReady {
 		t.Skip("rope_kv_mrope_batched did not load on this build")
 	}
-	if sec := m.MRopeSectionResident(); r.mropeMode != 1 || r.mropeSec0 != int32(3*sec[1]) || r.mropeSec1 != int32(3*sec[2]) {
+	if sec := m.BackendView().MRopeSection(); r.mropeMode != 1 || r.mropeSec0 != int32(3*sec[1]) || r.mropeSec1 != int32(3*sec[2]) {
 		t.Fatalf("the resident for an interleaved model has mode %d sec0 %d sec1 %d, want mode 1 and 3*section[1], 3*section[2] of %v", r.mropeMode, r.mropeSec0, r.mropeSec1, sec)
 	}
 

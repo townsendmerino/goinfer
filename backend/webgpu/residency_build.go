@@ -453,7 +453,7 @@ func (bs *webgpuBuild) bindRunner() error {
 		return kernels.ContextNewDecodeRunner(bs.c, rm, bs.hidden, bs.nH, bs.nKV, bs.hd, bs.inter, 0, bs.eps, scale, addOne)
 	}
 	rd.newRunner = func() (*DecodeRunner, error) { return rd.runnerFor(rd.rm) }
-	rd.mropeAxis = m.MRopeAxisResident
+	rd.mropeAxis = m.BackendView().MRopeAxis
 	rd.prefillLast = func(xs [][]float32, startPos int, mrope [][3]int) ([]float32, error) {
 		mw, pp, ok := kernels.RunModelToPrefill(&rd.rm, bs.hd)
 		pp.MropeAxis = rd.mropeAxis

@@ -69,15 +69,15 @@ func TestGemma4_26B_localize(t *testing.T) {
 	type key struct{ hd, nKV, half, kEqV int }
 	seen := map[key][]int{}
 	for l := range 64 {
-		half := len(m.RopeInvFreqLayerResident(l))
+		half := len(m.BackendView().Layer(l).RopeInvFreq())
 		if half == 0 {
 			continue
 		}
 		kv := 0
-		if m.VFromKResident(l) {
+		if m.BackendView().Layer(l).VFromK() {
 			kv = 1
 		}
-		k := key{m.HeadDimAtResident(l), m.KVHeadsAtResident(l), half, kv}
+		k := key{m.BackendView().Layer(l).HeadDim(), m.BackendView().Layer(l).KVHeads(), half, kv}
 		seen[k] = append(seen[k], l)
 	}
 	t.Logf("geometry map (hd,nKV,half,kEqV → layers):")
@@ -132,18 +132,18 @@ func TestGemma4_26B_localize(t *testing.T) {
 	var worstLocal, worstGlobal = 1.0, 1.0
 	for l := 0; l < r.nL; l++ {
 		c, _ := cosMaxAbs(cpu[l+1], metal[l])
-		if m.VFromKResident(l) {
+		if m.BackendView().Layer(l).VFromK() {
 			if c < worstGlobal {
 				worstGlobal = c
 			}
 		} else if c < worstLocal {
 			worstLocal = c
 		}
-		isGlobal := m.VFromKResident(l)
+		isGlobal := m.BackendView().Layer(l).VFromK()
 		tag := "dense "
 		if isGlobal {
-			tag = "GLOBAL(K=V hd=" + strconv.Itoa(m.HeadDimAtResident(l)) + ")"
-		} else if m.LayerIsLocalResident(l) {
+			tag = "GLOBAL(K=V hd=" + strconv.Itoa(m.BackendView().Layer(l).HeadDim()) + ")"
+		} else if m.BackendView().Layer(l).IsLocal() {
 			tag = "local "
 		}
 		mark := ""
@@ -161,7 +161,7 @@ func TestGemma4_26B_localize(t *testing.T) {
 	t.Logf("worst cosine at pos %d — LOCAL layers %.4f | GLOBAL(K=V) layers %.4f", last, worstLocal, worstGlobal)
 	if firstDrop >= 0 {
 		t.Logf("FIRST DISCONTINUITY at layer %d (local=%v kEqV=%v hd=%d nKV=%d)", firstDrop,
-			m.LayerIsLocalResident(firstDrop), m.VFromKResident(firstDrop), m.HeadDimAtResident(firstDrop), m.KVHeadsAtResident(firstDrop))
+			m.BackendView().Layer(firstDrop).IsLocal(), m.BackendView().Layer(firstDrop).VFromK(), m.BackendView().Layer(firstDrop).HeadDim(), m.BackendView().Layer(firstDrop).KVHeads())
 	} else {
 		t.Logf("NO step discontinuity — divergence is smooth (quant drift), not a composition bug")
 	}

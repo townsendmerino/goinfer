@@ -64,7 +64,7 @@ func TestLocalize_BiasEpilogue(t *testing.T) {
 	}
 	hidden, _, _, _, _, _, _ := m.Dims()
 	eps := float32(m.NormEps())
-	addOne := m.RMSAddOne()
+	addOne := m.BackendView().RMSAddOne()
 
 	c := rd.c
 	for _, f := range []func() error{kernels.ContextEnsureFuseFunc(c), kernels.ContextEnsureGEMVBiasFunc(c), kernels.ContextEnsureTiledFunc(c), kernels.ContextEnsureLayerFunc(c)} {

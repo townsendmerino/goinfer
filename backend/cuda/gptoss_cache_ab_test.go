@@ -118,8 +118,8 @@ func TestFlintResidentParityCUDA(t *testing.T) {
 	}
 	defer mRes.Close()
 
-	if !mRes.HasAttnSinksResident() {
-		t.Fatalf("flint-tiny HasAttnSinksResident() = false, want true")
+	if !mRes.BackendView().HasAttnSinks() {
+		t.Fatalf("flint-tiny HasAttnSinks() = false, want true")
 	}
 	rf := mRes.ResidentForwardForTest()
 	cr, ok := rf.(*cudaResident)

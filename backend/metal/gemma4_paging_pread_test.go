@@ -95,7 +95,7 @@ func TestGemma4PagingPread_matchesNonPaged(t *testing.T) {
 					}
 				}
 			}
-			if b, ok := m.Gemma4MoEResidentLayer(l); ok {
+			if b, ok := m.BackendView().Layer(l).Gemma4MoEBundle(); ok {
 				for _, w := range append(append(b.ExpertsGateUp[:0:0], b.ExpertsGateUp...), b.ExpertsDown...) {
 					o.scalesTotal++
 					if inMap(w.Int4ScalesF16()) {

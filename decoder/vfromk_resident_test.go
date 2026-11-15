@@ -2,7 +2,7 @@ package decoder
 
 import "testing"
 
-// VFromKResident feeds every resident backend's K=V decision (Metal, CUDA, WebGPU). A GGUF-derived
+// Layer(i).VFromK() feeds every resident backend's K=V decision (Metal, CUDA, WebGPU). A GGUF-derived
 // Gemma 4 marks a K=V layer only per layer (VFromK, by attn_v.weight's absence) and leaves the
 // config-level attention_k_eq_v false, so the config flag alone mis-reported it and Metal fused an
 // empty V matrix. These pin each source on its own, and the cases that must stay false.
@@ -34,11 +34,11 @@ func TestVFromKResident_sources(t *testing.T) {
 			}
 			m := &Model{w: &Weights{arch: tc.arch, Layers: layers}}
 			for i, want := range tc.want {
-				if got := m.VFromKResident(i); got != want {
-					t.Errorf("layer %d: VFromKResident = %v, want %v", i, got, want)
+				if got := m.BackendView().Layer(i).VFromK(); got != want {
+					t.Errorf("layer %d: VFromK() = %v, want %v", i, got, want)
 				}
 			}
-			if m.VFromKResident(-1) || m.VFromKResident(len(layers)+3) {
+			if m.BackendView().Layer(-1).VFromK() || m.BackendView().Layer(len(layers)+3).VFromK() {
 				t.Errorf("an out-of-range layer index must report false, not panic or read past Layers")
 			}
 		})
