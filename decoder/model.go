@@ -1055,6 +1055,16 @@ func (m *Model) prefillSeedFrom(prompt []int, from int) int {
 // A resident that cannot, a prefill that does not reach the position at a pass boundary, or one that falls to the sequential loop, calls nothing.
 func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, from int, hasAdapter bool, mk *prefillMark) ([]float32, error) {
 	from = m.prefillSeedFrom(prompt, from)
+	if mk != nil && mk.pre != nil {
+		// An earlier mark: prefill up to it as a prompt of its own length (its position is a pass boundary, so the passes are the cold run's), call it, and go on.
+		pre := mk.pre
+		if _, err := m.residentPrefillSeedMarked(ctx, prompt[:pre.q], from, hasAdapter, nil); err != nil {
+			return nil, err
+		}
+		pre.at(pre.q)
+		from = pre.q
+		mk = &prefillMark{q: mk.q, at: mk.at}
+	}
 	suffix := prompt[from:]
 	// Offer the batched path suffixes of 8 tokens or more (a shorter one is cheaper token by token) -- and, when
 	// the backend's short continuation is exact (PrefillTailExact), any suffix of a prompt the cold run would have

@@ -50,6 +50,39 @@ func (lm *loadedModel) recurrentKeep(tm *chat.Template, system string, turns []c
 	return k
 }
 
+// recurrentMsgBoundary is how many leading ids of ids, the prompt rendered from (system, turns, tools), come before the last turn's content: the
+// part a next prompt that keeps every earlier turn and rewrites the last one still repeats (KVScope.MsgBoundary, docs/measurements/kv8-msgboundary-2026-11).
+// Found as prefixBoundaryOf finds the system section, by rendering again with the last turn's content changed. 0 for a model whose snapshots
+// do not carry its state, for a single turn (the system section is Boundary's), or when the ids of the shared segments are not a prefix of ids.
+func (lm *loadedModel) recurrentMsgBoundary(tm *chat.Template, system string, turns []chat.Turn, tools []chat.Tool, ids []int) int {
+	if !lm.keepsRecurrentSnapshots() || tm == nil || len(turns) < 2 {
+		return 0
+	}
+	render := func(ts []chat.Turn) []chat.Segment {
+		if len(tools) > 0 {
+			return tm.RenderToolsSegments(system, ts, tools)
+		}
+		return tm.RenderSegments(system, ts)
+	}
+	a := render(turns)
+	changed := slices.Clone(turns)
+	last := len(changed) - 1
+	changed[last].Content = "\x01" + changed[last].Content
+	b := render(changed)
+	k := 0
+	for k < len(a) && k < len(b) && a[k] == b[k] {
+		k++
+	}
+	if k == 0 || k == len(a) {
+		return 0
+	}
+	pre, err := lm.tk.EncodeSegments(a[:k], false)
+	if err != nil || len(pre) == 0 || len(pre) >= len(ids) || !slices.Equal(pre, ids[:len(pre)]) {
+		return 0
+	}
+	return len(pre)
+}
+
 // keepsRecurrentSnapshots reports whether the model's snapshots carry its recurrent state, so a Keep is worth computing.
 func (lm *loadedModel) keepsRecurrentSnapshots() bool {
 	if lm.scripted != nil {

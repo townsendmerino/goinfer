@@ -206,6 +206,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 	}
 	gr.boundary = lm.prefixBoundary(tm, system, turns, nil, ids)
 	gr.keep = lm.recurrentKeep(tm, system, turns, nil, ids)
+	gr.msgBoundary = lm.recurrentMsgBoundary(tm, system, turns, nil, ids)
 	gr.id = id                                // registers this generation for cancel-by-id
 	s.routeThink(lm, &gr, tm, turns, ts, nil) // the reasoning becomes a reasoning item (reasoning_items.go)
 	mint := s.mintFor(lm, r, gr)
@@ -386,6 +387,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	}
 	gr.boundary = lm.prefixBoundary(tm, system, turns, tools, ids)
 	gr.keep = lm.recurrentKeep(tm, system, turns, tools, ids)
+	gr.msgBoundary = lm.recurrentMsgBoundary(tm, system, turns, tools, ids)
 	gr.id = id // registers this generation for cancel-by-id
 	forced := forcedTool(req.ToolChoice, tools, endsWithToolResult(turns))
 	namedForce := toolChoiceMode(req.ToolChoice) == "function"

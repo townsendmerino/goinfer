@@ -1,4 +1,4 @@
-# KV8's message-boundary checkpoint on CUDA (registered 2026-11-15 13:25 PST, before any code; nobara-kv8)
+# KV8's message-boundary checkpoint on CUDA (registered 2026-11-15 13:09 PST, before any code; nobara-kv8)
 
 Plan of record: `docs/tasks/task-kv-architecture-2026-10.md`, KV8, "Next concrete step on CUDA" (2026-11-02) and its Claude Code note. Evidence for the position: KV0-H's A5
 (`docs/measurements/kv0h-hybrid-traffic-2026-10.md`): 2 of 8 Claude Code D requests left the previous prompt 3 ids into a 1,386-token user message, 25 ids before that prompt's

@@ -1400,7 +1400,7 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
     2. **`TestMemGate_cudaTightCheckpointRoom` plans at a figure that cancels algebraically.** It works out free memory from the plan's own terms, so the plan's arithmetic is not read against the card. Plan at the free memory the build actually read.
     3. **Metal's reset of its checkpoint is in `Reset`, not `resetRecurrent`.** CUDA does it in `resetState`, which every path that zeroes the state takes. Clear `ckptSlot` in `resetRecurrent`, and run it on Metal, where nothing of #658 has run.
 
-- **Third slice, registered 2026-11-15 13:25 PST before any code (nobara-kv8; the coordinator's item, Francis's "yes" of ~11:10): the message-boundary checkpoint.** A recurrent
+- **Third slice, registered 2026-11-15 13:09 PST before any code (nobara-kv8; the coordinator's item, Francis's "yes" of ~11:10): the message-boundary checkpoint.** A recurrent
   snapshot at the prompt's last message's start beside B35's `Keep` one, so a request that rewrites the last message from near its start restores instead of prefilling from 0
   (KV0-H's A5 note above). Gates M0 to M4 on tiny fixtures and T1, a served reading on `qwen3.5-0.8b` against main, A B B A, with the cost on every cold request graded:
   `docs/measurements/kv8-msgboundary-2026-11/README.md`. Not in it: Marconi admission, Metal, Mamba-2.
