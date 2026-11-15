@@ -83,3 +83,39 @@ Written after the runs, from `date` and the logs named. The registration above d
 - **What it costs.** A second snapshot a cold request: 4,096 rows is 115 MiB of host memory and 97.6 ms, beside Keep's 163 MiB and 98.1 ms (`serve-B1.log`). The request's first token did not move (r1 1.000 and 1.012), so the copy sits behind it. The restore of the 4,096-row snapshot took 11.7 ms.
 - **Reported, not graded:** the snapshots held after the three requests are 4,096, 6,144 and 6,144 rows on the change; main holds two of 6,144. r2 on the change takes both of its points (its message boundary and Keep) and replaces the snapshot it restored from; r1's boundary snapshot stays because r2's prompt shares its prefix, and the store keeps it until the budget needs it.
 - **Not read:** the 9B, Claude Code's real traffic, Metal, Mamba-2. A real `Keep` grid of 512 rows (B35's e2e) was not the width here.
+
+## Second slice: cut the prefill at the snapshot points, not on the pass grid (registered 2026-11-15 14:07 PST, before any code; nobara-kv8)
+
+The coordinator's decision of 2026-11-15, on T1's PARKED: keep #1007 a draft and build B35's named follow-up on its branch. T1 found 4,096 of a 6,100-id boundary served because a snapshot falls on a 2,048-row pass boundary.
+
+**The question.** Does a snapshot taken at its point itself, rounded down only to a 64-row block (the snapshot's own unit), serve a rewritten last message at the bar, without moving any other request's bits or cost?
+
+**What changes (recurrent models only; attention models keep the grid).** The prefill is cut at each snapshot point, the message boundary's and Keep's, each rounded down to 64 rows: `decoder/model.go:Model.residentPrefillSeedMarked` prefills up to a point as a prefill of its own, takes the snapshot, and goes on, in place of waiting for a pass boundary. A point is dropped, or lowered by a block, when the prefill after it would be shorter than the resident's final-pass minimum (`Model.prefillTailMinRows`). **Keep is cut too, not only the message's:** a request that restores from an off-grid point has no pass boundary before its own Keep, so on the grid it would take no Keep snapshot, and the next turn of an edited conversation would prefill whole. A 2,048-row grid hides this on #1007's own T1 prompt only because 4,096 is on it.
+
+**Why it should hold, and what that rests on.** `TestB35SplitPrefill` (qwen35-tiny): a prompt prefilled in two calls, each pass 16 rows or more, equals one call bit for bit. That is read on a tiny fixture; the gates below read it again at the decoder, on `qwen3next-tiny`, and on the real model through T2's replies.
+
+| | tier | what | bar |
+|---|---|---|---|
+| **C0** | 0, hash fake with 128-row passes | turn 1: 1,200 ids, message start 1,000, Keep 1,196. Snapshots land at 960 and 1,152 (a 64-row block below each, where the grid gives 896 and 1,152). A turn rewriting the message from id 1,003 reuses 960, and its reply equals a cold run | **red on #1007 first** (it reuses 896). Plants, red: the points rounded up; a cut with no tail minimum (a 3-row final pass) |
+| **C1** | 0, the same fake | a turn that restored the off-grid 960 takes its own Keep snapshot, and the next turn restores it | held rows named; **red** with Keep left on the grid |
+| **C2** | 0, nobara CUDA, `qwen3next-tiny` | 128-row passes, message start 1,500, Keep 2,396: snapshots at 1,472 and 2,368; the restore at 1,472 leaves the reply, every recurrent buffer and the K/V rows bit-identical to a cold prefill | 0 differing words. Plant (grid-rounded points) is red on the reuse |
+| **C3** | 0 | M0 to M3 and the B35 tests still pass; `gate identity -backend cuda` against current main: every family that ran IDENTICAL (a default load sets no scope) | 0 DIFFERENT |
+| **T2** | 1, nobara | T1's script and conversation (`served_msgboundary.py`), main (current `origin/main`) against the combined change (#1007 plus this slice), `~/models/qwen3.5-0.8b`, A B B A, one server per cell, the exclusive timing lock, a cell above load 8.0 void and re-run once | below |
+
+**T2's bars, worst of the two pairs. PASS needs every row; PARKED is for Francis; FAIL stops the merge.**
+
+| | PASS | PARKED | FAIL |
+|---|---|---|---|
+| r3 (last message rewritten): first token, change over main | at most 0.5 | above 0.5, at most 0.7 | above 0.7 |
+| r3 rows reused | exactly the smaller of r1's two snapshots, and that is a block of 64 within 63 rows of the boundary (not the 2,048 grid's) | | anything else |
+| **r1, r2, r3 replies** (all three, not r3 only: the cut moves every cold request's passes) | each equals main's | | any differs |
+| r1 first token (cold), change over main | at most 1.05 | above 1.05, at most 1.10 | above 1.10 |
+| r2 first token, and rows reused | at most 1.10 of main's; not fewer rows | | slower than 1.10, or fewer rows |
+| **the cold request's added cost, read explicitly from `serve-*.log`:** the boundary snapshot's copy time, and its host MiB | at most 150 ms and at most 175 MiB (#1007's T1 measured 97.6 ms and 115 MiB at 4,096 rows; Keep's 98.1 ms and 163 MiB at 6,144) | above either, at most 250 ms and 250 MiB: **the owner weighs it** | above either |
+| r4, the turn after r3 (r3's history, its reply, a new question): rows reused | at least main's r4 reuse | | fewer: a restored turn lost its Keep point |
+| peak `VmSwap` | at most 512 MB | | above |
+
+- **Reported, not graded:** r4's first token against main's; snapshots held after each request; Keep's copy time and bytes now that its point moved up.
+- **Not read:** the 9B, Claude Code's real traffic, Metal, Mamba-2, a pass width other than 2,048.
+- **Void if:** a timed cell outside the lock, the model read from `/srv/models`, a NOT RUN counted as a pass, a bar moved after a reading. **Stopping rule:** the four cells, no early stop. **Cost:** about 3 minutes for the cells, start and finish from `date`.
+- **The merge.** PASS: #1007 and this slice go up together, and the coordinator is told (the cold cost is the owner's to weigh where it is above #1007's measured 97.6 ms and 115 MiB, which this registration's PASS band allows up to 150 ms and 175 MiB). PARKED or FAIL: both stay drafts.
