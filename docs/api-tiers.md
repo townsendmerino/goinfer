@@ -109,7 +109,7 @@ patch. Pin a version if you depend on them. Each graduates when it settles.
   `Model.EffectiveBackend`, `BackendReport` and `CPUConcurrentSafe`: what a load or a backend decided, and why.
 - **Embeddings.** The `embeddinggemma2` package (EmbeddingGemma 2's text, image and audio encoders).
 - **The backend/residency seam.** `decoder.Backend`, `RegisterBackend`, `QuantBackend`,
-  `QuantBatchBackend`, `ResidencyBackend`, `Prefiller`, `ResidentForward`, `ResidentGreedy`,
+  `QuantBatchBackend`, `ResidencyBackend`, `Prefiller`, `ResidentForward`,
   `ResidentCapped`, `ResidentDrafterHost`, `ResidentBlockDrafter`,
   `ResidentFeature`, `ResidentEligible`, `ResidentBackendFeatures`, and **every `*Resident*`
   method on `Model`**. This is the seam the `backend/webgpu/`, `backend/cuda/` and `backend/metal/` submodules bind to; it

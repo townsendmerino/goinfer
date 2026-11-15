@@ -1956,7 +1956,7 @@ Code, read at `e2ffb953`:
   - `decoder/resident_reuse.go:Model.reuseLenOf`, `decoder/resident_reuse.go:pickResidentSlot`,
     `decoder/resident_reuse.go:Model.residentAcquireSlotAll`, `decoder/resident_reuse.go:Model.declineShortLeadReuse`,
     `decoder/resident_reuse.go:Model.residentSlotCount`, `decoder/resident_reuse.go:Model.residentReuseFloor`;
-  - `decoder/residency.go:ResidentForward`, `decoder/residency.go:ResidentKVSlotter`,
+  - `decoder/residency.go:ResidentForward`, `decoder/residency.go:legacyKVSlotter`,
     `decoder/residency.go:legacyBatchStepper`, `decoder/residency.go:ResidentCaps`,
     `decoder/residency.go:Model.ResidentKVPrecision`;
   - `decoder/session.go:Session.rewindForReuse`, `decoder/kvsnapshot.go:Session.Snapshot`,

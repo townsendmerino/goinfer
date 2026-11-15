@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// slotResident is a fake ResidentKVSlotter: it records every UseKVSlot bind. Its ResidentForward half is
+// slotResident is a fake legacyKVSlotter: it records every UseKVSlot bind. Its ResidentForward half is
 // fakeResident's and is never exercised here — residentAcquire only chooses and binds.
 type slotResident struct {
 	*fakeResident

@@ -19,9 +19,7 @@ import (
 // stops the borrower; a slot past its share that still finds none gets decoder.ErrKVPoolFull, which ends its turn as the context cap
 // does. Every mutation runs on the thread that encodes the write, with nothing of the resident in flight.
 
-var (
-	_ decoder.ResidentReusableKV = (*metalResident)(nil)
-)
+var ()
 
 // kvUploadPass is an upload in progress (decoder.ResidentKVSubsystem): one write of slot s from position 0, which its first layer maps
 // through end and every layer that owns K/V must land.
@@ -627,7 +625,7 @@ func (r *resident) setPosAheadForTest(pos int, ropePos ...int) {
 }
 
 // kvReusable is how much of prefix slot s can serve from its own rows: prefix, or 0 when its blocks were released or reclaimed or it
-// holds fewer rows (ResidentReusableKV's contract: prefix or 0, never another positive value). A slot with a greedy chain open holds its
+// holds fewer rows (ResidentKVSubsystem's contract: prefix or 0, never another positive value). A slot with a greedy chain open holds its
 // caller's sequence, not the look-ahead's (chainEnd).
 func (r *resident) kvReusable(s, prefix int) int {
 	if len(r.kvRefs) == 0 || s >= len(r.kvSlotSt) {
@@ -644,7 +642,7 @@ func (r *resident) kvReusable(s, prefix int) int {
 	return prefix
 }
 
-// ReusableKV implements decoder.ResidentReusableKV for the bound slot.
+// ReusableKV implements decoder.ResidentKVSubsystem for the bound slot.
 func (a *metalResident) ReusableKV(prefix int) int { return a.r.kvReusable(a.r.kvSlot, prefix) }
 
 // ReusableKVSlot implements decoder.ResidentKVSubsystem.

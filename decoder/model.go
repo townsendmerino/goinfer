@@ -307,7 +307,7 @@ func (m *Model) WindowedKVLayer(l int) bool {
 }
 
 // ResidentKVSlotsRequest returns the requested number of resident KV slots (Options.ResidentKVSlots), at least 1, and 1 for a
-// family with recurrent state. A residency builder that supports slots (ResidentKVSlotter) allocates up to this many,
+// family with recurrent state. A residency builder that supports slots (legacyKVSlotter) allocates up to this many,
 // clamped by its fit guard.
 func (m *Model) ResidentKVSlotsRequest() int { return m.ResidentKVSlotsRequestFor("") }
 
@@ -330,7 +330,7 @@ func (m *Model) recurrentSlotsOn(backend string) bool {
 }
 
 // ResidentKVSlots reports how many resident KV slots this model's generations choose among — what the resident
-// allocated (ResidentKVSlotter), 1 for a resident without slots, 0 off the resident path.
+// allocated (legacyKVSlotter), 1 for a resident without slots, 0 off the resident path.
 func (m *Model) ResidentKVSlots() int {
 	if m.resident == nil {
 		return 0

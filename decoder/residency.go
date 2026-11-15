@@ -67,18 +67,18 @@ type ResidentForward interface {
 	Close() error
 }
 
-// ResidentKVSlotter is an OPTIONAL ResidentForward extension (MC1, docs/tasks/parked/task-concurrency-2026-09.md): a resident
+// legacyKVSlotter is an OPTIONAL ResidentForward extension (MC1, docs/tasks/parked/task-concurrency-2026-09.md): a resident
 // that holds several independent KV caches ("slots") and binds exactly one at a time. Every ResidentForward method —
 // Forward, ForwardN, UploadKV, TruncateTo, Reset — reads and writes the BOUND slot only, so a slot switch is the whole
 // interface: the decoder keeps each slot's reuse bookkeeping and binds the slot a generation will use before it
 // prefills. KVSlots is the count actually allocated (>= 1, after the backend's fit guard); UseKVSlot(i) binds slot i
 // and must leave nothing encoded against the previous one. A resident without it has one slot.
-type ResidentKVSlotter interface {
+type legacyKVSlotter interface {
 	KVSlots() int
 	UseKVSlot(i int) error
 }
 
-// legacyBatchStepper is an OPTIONAL ResidentKVSlotter extension (MC3, docs/tasks/parked/task-concurrency-2026-09.md): one
+// legacyBatchStepper is an OPTIONAL legacyKVSlotter extension (MC3, docs/tasks/parked/task-concurrency-2026-09.md): one
 // decode token for several sequences at once, each on its own KV slot at its own position, in one step. It reads and
 // writes only the named slots — never the bound one's binding — and each returned row must equal what that sequence's
 // own call would return on its slot, bit for bit (the identity gate MC3 keeps): Forward's logits, or, for a sequence
@@ -159,12 +159,12 @@ type legacyMRoPE interface {
 	ForwardMRoPE(embedding []float32, pos, ropePos int) (logits []float32, err error)
 }
 
-// ResidentGreedy is an optional capability on a ResidentForward: compute the token's greedy
+// legacyGreedy is an optional capability on a ResidentForward: compute the token's greedy
 // argmax on-device and hand back just the id, skipping the full-logits readback. The decode loop
 // uses it ONLY when Sampler.ArgmaxEquivalent() OR Sampler.GreedyEquivalent() (the `top_k=1` shape)
 // holds and no LogitProcessor is set, so the emitted tokens are identical to the logits path.
 // Backends may skip implementing it.
-type ResidentGreedy interface {
+type legacyGreedy interface {
 	ForwardArgmax(embedding []float32, pos int) (int, error)
 }
 
@@ -175,7 +175,7 @@ type ResidentGreedy interface {
 // each GreedyChainNext returns the argmax of the forward at the chain's next position (pos, pos+1, ...), which is also
 // that forward's successor's input; GreedyChainStop closes it, waiting out any forward queued past the last token
 // taken. Between Start and Stop the caller makes no other call on the resident. The decode loop uses it under the
-// same conditions as ResidentGreedy, and only where its own embedding lookup is a plain table row (embedIsTableRow),
+// same conditions as legacyGreedy, and only where its own embedding lookup is a plain table row (embedIsTableRow),
 // with no MC3 concurrency, adapter or processor; the tokens are those of the full-logits path.
 type legacyGreedyChain interface {
 	GreedyChainAvailable() bool
@@ -447,7 +447,7 @@ type VerifyPathReporter interface {
 	VerifyPath() (batched bool, reason string)
 }
 
-// ResidentCaps is what a resident reports about itself (ResidentCapsReporter), read at each use. The zero value is what a
+// ResidentCaps is what a resident reports about itself (legacyCapsReporter), read at each use. The zero value is what a
 // resident that reports nothing gives, and each field's zero means "none".
 type ResidentCaps struct {
 	// ContextCap is the KV capacity in positions. A write past it is an out-of-bounds device write: the backends refuse one
@@ -478,8 +478,8 @@ type ResidentCaps struct {
 	BatchGreedyDraw bool
 }
 
-// ResidentCapsReporter is the optional capability of a resident to report its ResidentCaps.
-type ResidentCapsReporter interface {
+// legacyCapsReporter is the optional capability of a resident to report its ResidentCaps.
+type legacyCapsReporter interface {
 	ResidentCaps() ResidentCaps
 }
 

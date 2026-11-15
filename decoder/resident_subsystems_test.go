@@ -85,10 +85,10 @@ func TestResidentSubsystems_DirectProviderAndZeroAlloc(t *testing.T) {
 		caps:      ResidentCaps{ContextCap: 8192, Quant: "int4"},
 		tailExact: true,
 	}
-	// Note: providerFakeResident intentionally does NOT implement ResidentGreedy, ResidentKVSlotter, ResidentCapsReporter,
+	// Note: providerFakeResident intentionally does NOT implement legacyGreedy, legacyKVSlotter, legacyCapsReporter,
 	// or PrefillTailExact on the outer struct — proving callers go through ResidentSubsystemProvider rather than legacy assertions.
-	if _, ok := any(prov).(ResidentGreedy); ok {
-		t.Fatal("providerFakeResident must not implement ResidentGreedy directly")
+	if _, ok := any(prov).(legacyGreedy); ok {
+		t.Fatal("providerFakeResident must not implement legacyGreedy directly")
 	}
 
 	m := &Model{resident: prov}
@@ -156,11 +156,11 @@ func TestResidentSubsystems_UncomparableValueResidentDoesNotPanic(t *testing.T) 
 // bannedMicroAssertions names the legacy resident capability micro-interfaces that callers no longer type-assert; they
 // reach a capability through ResidentSubsystems instead. The legacy interfaces themselves stay declared.
 var bannedMicroAssertions = map[string]bool{
-	"ResidentKVSlotter":           true,
+	"legacyKVSlotter":             true,
 	"legacyBatchStepper":          true,
 	"legacyRaggedStepper":         true,
 	"legacyMRoPE":                 true,
-	"ResidentGreedy":              true,
+	"legacyGreedy":                true,
 	"legacyGreedyChain":           true,
 	"legacySampleChain":           true,
 	"legacyTopK":                  true,
@@ -180,7 +180,7 @@ var bannedMicroAssertions = map[string]bool{
 	"PrefillPathReporter":         true,
 	"PrefillTailExact":            true,
 	"VerifyPathReporter":          true,
-	"ResidentCapsReporter":        true,
+	"legacyCapsReporter":          true,
 	"legacyPrefillBlocks":         true,
 	"legacyKVCopier":              true,
 	"legacyKVSlotActivity":        true,
@@ -188,7 +188,7 @@ var bannedMicroAssertions = map[string]bool{
 	"legacyReusableKVSlot":        true,
 	"legacyKVUploadPass":          true,
 	"legacyKVDemoter":             true,
-	"ResidentReusableKV":          true,
+	"legacyReusableKV":            true,
 	"legacyKVSnapshotter":         true,
 	"legacyPrefillMarked":         true,
 	"legacyPrefillChunks":         true,

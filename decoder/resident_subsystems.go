@@ -487,12 +487,12 @@ func (m *Model) resRuntime() ResidentRuntimeSubsystem { return m.subsystems().Ru
 type legacyDecodeSub struct{ r any }
 
 func (d *legacyDecodeSub) GreedyAvailable() bool {
-	_, ok := d.r.(ResidentGreedy)
+	_, ok := d.r.(legacyGreedy)
 	return ok
 }
 
 func (d *legacyDecodeSub) ForwardArgmax(embedding []float32, pos int) (int, error) {
-	return d.r.(ResidentGreedy).ForwardArgmax(embedding, pos)
+	return d.r.(legacyGreedy).ForwardArgmax(embedding, pos)
 }
 
 func (d *legacyDecodeSub) TopKAvailable() bool {
@@ -749,19 +749,19 @@ func (p *legacyPrefillSub) PrefillMRoPEDeepstackLast(ctx context.Context, embedd
 type legacyKVSub struct{ r any }
 
 func (k *legacyKVSub) KVSlotterAvailable() bool {
-	_, ok := k.r.(ResidentKVSlotter)
+	_, ok := k.r.(legacyKVSlotter)
 	return ok
 }
 
 func (k *legacyKVSub) KVSlots() int {
-	if sl, ok := k.r.(ResidentKVSlotter); ok {
+	if sl, ok := k.r.(legacyKVSlotter); ok {
 		return sl.KVSlots()
 	}
 	return 1
 }
 
 func (k *legacyKVSub) UseKVSlot(i int) error {
-	if sl, ok := k.r.(ResidentKVSlotter); ok {
+	if sl, ok := k.r.(legacyKVSlotter); ok {
 		return sl.UseKVSlot(i)
 	}
 	return nil
@@ -781,7 +781,7 @@ func (k *legacyKVSub) KVPool() KVPoolDetail {
 }
 
 func (k *legacyKVSub) ReusableKV(prefix int) int {
-	if rk, ok := k.r.(ResidentReusableKV); ok {
+	if rk, ok := k.r.(legacyReusableKV); ok {
 		return rk.ReusableKV(prefix)
 	}
 	return prefix
@@ -906,7 +906,7 @@ type legacyLastNArgmax interface {
 type legacyRuntimeSub struct{ r any }
 
 func (rt *legacyRuntimeSub) ResidentCaps() ResidentCaps {
-	if c, ok := rt.r.(ResidentCapsReporter); ok {
+	if c, ok := rt.r.(legacyCapsReporter); ok {
 		return c.ResidentCaps()
 	}
 	return ResidentCaps{}

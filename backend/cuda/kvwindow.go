@@ -298,7 +298,7 @@ func (r *cudaResident) kvRoomFor(p0, n int) bool {
 	return p0+n-max(0, p0-(r.kvWindow-1)) <= min(r.ctxCap, r.kvWindow+r.kvSlack)
 }
 
-// ReusableKV implements decoder.ResidentReusableKV: of the first prefix positions of a sequence this resident's bound slot holds, how many
+// ReusableKV implements decoder.ResidentKVSubsystem: of the first prefix positions of a sequence this resident's bound slot holds, how many
 // it can serve to a forward that continues at position prefix. A slot whose blocks were released to make room holds nothing: 0. A
 // windowed layer has dropped everything before its base, so a prefix shorter than base+window-1 has lost the history the next row attends
 // to: 0 (prefill cold). Everything else is valid: the full layers hold every position, and a windowed layer holds [base, end).

@@ -37,7 +37,7 @@ func (m *oldReuse) residentReuseFloor(reuse int) int {
 	if reuse <= 0 {
 		return reuse
 	}
-	if rk, ok := m.resident.(ResidentReusableKV); ok {
+	if rk, ok := m.resident.(legacyReusableKV); ok {
 		return rk.ReusableKV(reuse)
 	}
 	return reuse
@@ -120,7 +120,7 @@ func findImageClaim(imgs []residentImageClaim, pos int) (residentImageClaim, boo
 }
 
 func (m *oldReuse) residentSlotCount() int {
-	sl, ok := m.resident.(ResidentKVSlotter)
+	sl, ok := m.resident.(legacyKVSlotter)
 	if !ok || m.recurrent {
 		return 1
 	}
@@ -136,7 +136,7 @@ func (m *oldReuse) declineShortLeadReuse(prompt []int, reuse int) int {
 	if reuse <= 0 || reuse >= 64 {
 		return reuse
 	}
-	cr, ok := m.resident.(ResidentCapsReporter)
+	cr, ok := m.resident.(legacyCapsReporter)
 	if !ok || !cr.ResidentCaps().HasFastPrefill {
 		return reuse
 	}
@@ -181,7 +181,7 @@ func (m *oldReuse) residentBind(slot int) error {
 	if slot == m.resCur || m.residentSlotCount() <= 1 {
 		return nil
 	}
-	sl := m.resident.(ResidentKVSlotter)
+	sl := m.resident.(legacyKVSlotter)
 	if err := sl.UseKVSlot(slot); err != nil {
 		return err
 	}
