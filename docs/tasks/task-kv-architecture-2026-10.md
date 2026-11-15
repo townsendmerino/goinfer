@@ -285,7 +285,7 @@ slot is gone; and every KV feature is built three or four times.
 **What is already right and carries over:**
 - **The cache-state grid** (`decoder/cachestate.go`). It is exactly the correctness skeleton the new manager needs.
 - **The four reuse rules.** They become key properties instead of per-site checks.
-- **Kernel-class awareness.** `decoder/residency.go:ResidentCaps` (its fast-prefill and kernel floors)
+- **Kernel-class awareness.** `decoder/residentalias.go:ResidentCaps` (its fast-prefill and kernel floors)
   and `decoder/resident_reuse.go:Model.declineShortLeadReuse` become the class component of the key (§5.5, §5.6).
 - **MC1 and MC3.** Binding a slot and stepping several rows become "pass a sequence's block table" and "pass a table per row".
 - **Chunked prefill.** It is chunk-invariant on Metal: 0 of 14,336,000 KV elements and 0 of 151,936 last-token logits
@@ -644,7 +644,7 @@ type BlockStore interface {
   `ResidentTopK.ForwardTopK`, `ResidentSample.ForwardSample`, `ResidentHiddenLast.HiddenLast`,
   `ResidentResidualAll.ResidualAll`, and `ResidentBatchStepper.StepBatch`'s `ResidentBatchSeq`) take a `SeqView` (or bind it
   for the step) instead of acting on "the bound slot".
-- **Device-chained decode** (`decoder/resident_subsystems.go:ResidentDecodeSubsystem`, `decoder/resident_subsystems.go:ResidentDecodeSubsystem`): a chain
+- **Device-chained decode** (`decoder/residentalias.go:ResidentDecodeSubsystem`, `decoder/residentalias.go:ResidentDecodeSubsystem`): a chain
   queues the next token's forward on the device before the host has seen the token. Under paged storage (KV4/KV5), `Append` must either keep
   at least one uncommitted lookahead block mapped in the device's block table before `pos` reaches the last row of the current
   block (`(pos + 1) % B == 0`), or close and re-open the chain at block boundaries so a queued lookahead forward never writes
@@ -1381,7 +1381,7 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
     - **C-6:** 20 census lines change, every one a recurrent family's `int4/slots4`.
     - **C-7: PASS** (`docs/measurements/kv8-2026-11/README.md`): 12 of 12 follow-ups reuse rows, 16 of 16 turns equal that client alone, ratio 0.008.
     - **The registered "room for fewer" clause on a served load is not read:** C-3 stands in a card with room for one by its test seam.
-    - **#658's review:** with fewer copies than slots, a save took a slot's copy while its record still named the position, so a branch of that conversation picked its slot over an empty one, the restore failed, and the conversation lost its sequence (red on three fixtures: a next turn reused 0 of 38 rows). A load of several slots now scores only a checkpoint its slot holds (`decoder/resident_subsystems.go:ResidentKVSubsystem`, its `RecurrentCheckpointHeld`), and a reset frees the slot's copy. The least-recently-saved rule has its own test at three slots and two copies. The served reading ran a third time, with both slots restoring.
+    - **#658's review:** with fewer copies than slots, a save took a slot's copy while its record still named the position, so a branch of that conversation picked its slot over an empty one, the restore failed, and the conversation lost its sequence (red on three fixtures: a next turn reused 0 of 38 rows). A load of several slots now scores only a checkpoint its slot holds (`decoder/residentalias.go:ResidentKVSubsystem`, its `RecurrentCheckpointHeld`), and a reset frees the slot's copy. The least-recently-saved rule has its own test at three slots and two copies. The served reading ran a third time, with both slots restoring.
     - **The plan follows the build's order:** it counts checkpoint copies beside the weights and every slot's KV and state, and a named reserve stands in for the expert cache and the companion, which a build sizes after them. `Placement` and `NeedBytes` stay one slot's, deliberately: a caller sizing a context for several slots prices the further ones through `ExtraBytes`.
     - **With #645:** the plan priced one checkpoint a load, so its `CheckpointCopies` field now says how many the load keeps: on a backend that keeps one a slot, as CUDA does, one for each slot that fits beside every slot's KV and state and the reserve, which the caller names (`decoder/fit/fit.go:PlanRequest`), and the gate's state line reads it. A plant pricing one copy is red on the `slots2` and `slots4` rows.
   - **Follow-ups, from #658's fifth review, after that PR's review rounds closed (coordinator, 2026-11-04). Not done:**
@@ -1438,7 +1438,7 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
      fail-closed.
   4. **The cost on every turn.** The save runs on every request, used or not. Its added time to first token on A turns stays
      inside noise against KV0-H's A medians (2.2 s opencode, 0.6 s Codex). With device-chained decode
-     (`decoder/resident_subsystems.go:ResidentDecodeSubsystem`, `decoder/resident_subsystems.go:ResidentDecodeSubsystem`), the save is ordered before the
+     (`decoder/residentalias.go:ResidentDecodeSubsystem`, `decoder/residentalias.go:ResidentDecodeSubsystem`), the save is ordered before the
      first chained decode step.
   5. **The measured win.** Rerun KV0-H's opencode and Codex configuration with KV8a on: same model, card, tasks, f32 KV and
      ids key. The bar: B turns' median time to first token falls by at least half the projected 34.2 s, and A turns do not
@@ -1498,7 +1498,7 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
     for KV7's snapshot (`decoder/kvscope.go`).
   - **Restore:** the deepest held point the request matches through: live state, `latest`, `question`, KV7's prefix
     snapshot, then 0.
-  - **Interface:** `decoder/resident_subsystems.go:ResidentKVSubsystem` grows an index for the copy (or a second
+  - **Interface:** `decoder/residentalias.go:ResidentKVSubsystem` grows an index for the copy (or a second
     instance). `Model.residentCheckpointSave` and `Model.residentCheckpointRestore` choose the copy.
   - **Memory:** the second copy is charged to the memory plan. When two do not fit, keep `latest` only, as today: fail
     closed. Host memory suits `question`, since it is restored once per user question, not per tool turn. Register the
@@ -1956,8 +1956,8 @@ Code, read at `e2ffb953`:
   - `decoder/resident_reuse.go:Model.reuseLenOf`, `decoder/resident_reuse.go:pickResidentSlot`,
     `decoder/resident_reuse.go:Model.residentAcquireSlotAll`, `decoder/resident_reuse.go:Model.declineShortLeadReuse`,
     `decoder/resident_reuse.go:Model.residentSlotCount`, `decoder/resident_reuse.go:Model.residentReuseFloor`;
-  - `decoder/residency.go:ResidentForward`, `decoder/resident_subsystems.go:ResidentKVSubsystem`,
-    `decoder/resident_subsystems.go:ResidentDecodeSubsystem`, `decoder/residency.go:ResidentCaps`,
+  - `decoder/residentalias.go:ResidentForward`, `decoder/residentalias.go:ResidentKVSubsystem`,
+    `decoder/residentalias.go:ResidentDecodeSubsystem`, `decoder/residentalias.go:ResidentCaps`,
     `decoder/residency.go:Model.ResidentKVPrecision`;
   - `decoder/session.go:Session.rewindForReuse`, `decoder/kvsnapshot.go:Session.Snapshot`,
     `decoder/kvsnapshot.go:Model.LoadSession`;

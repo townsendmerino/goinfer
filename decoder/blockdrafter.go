@@ -2,68 +2,6 @@ package decoder
 
 import "github.com/townsendmerino/aikit/linalg"
 
-// BlockDrafterWeights is the read-only view a backend needs to make a block drafter GPU-resident.
-//
-// It is an interface rather than exported blockTrunk fields because exporting those would publish the drafter's layout
-// as API, and blockTrunk is shared between DFlash and DSpark so that it can be refactored as more families land. A
-// backend learns the geometry and gets the weights; the struct behind them stays free to change. It also inverts the
-// dependency the way ResidentForward does: decoder declares what a backend may read and the backend consumes it.
-//
-// Both families satisfy it through blockTrunk, which DFlashDrafter and DSparkDrafter embed, so a resident path written
-// against it serves either without a type switch.
-//
-// Everything returned is read-only. The WeightMat pointers alias the drafter's own storage (hundreds of MB), so a
-// backend packs and uploads from them and must not write through them.
-type BlockDrafterWeights interface {
-	// DrafterGeometry describes the shapes a backend must allocate for.
-	DrafterGeometry() DrafterGeometry
-	// DrafterFC is the [hidden, nTaps*hidden] fusion projection over the concatenated tap
-	// hidden states — the one projection with no counterpart in a normal decoder layer.
-	DrafterFC() *linalg.WeightMat
-	// DrafterHiddenNorm normalizes the fused context; DrafterFinalNorm ends the trunk.
-	DrafterHiddenNorm() []float32
-	DrafterFinalNorm() []float32
-	// DrafterLayer is layer i's weights, 0 <= i < DrafterGeometry().Layers.
-	DrafterLayer(i int) DrafterLayerWeights
-	// MaskTokenID is the trained token the drafter expects at unfilled block positions. It is on the interface because
-	// passing any other id fails silently: the drafter still runs and stays lossless, and simply drafts badly.
-	MaskTokenID() int
-	// BlockSize is the trained block width: how many positions the drafter drafts at once. It lives on the concrete family
-	// rather than the shared trunk, which runs whatever width it is handed. How many positions the target then verifies is
-	// a separate, tunable choice, and the optimum is narrower than the trained width (docs/spec/08), so the two are not the
-	// same number.
-	BlockSize() int
-}
-
-// DrafterGeometry is the drafter's shape. It is deliberately flat rather than a reference to
-// Architecture: a drafter is not a model (it has no embedding and no LM head — it borrows the
-// target's), and handing a backend an Architecture would invite it to assume otherwise.
-type DrafterGeometry struct {
-	Layers       int
-	Hidden       int
-	NumHeads     int
-	NumKVHeads   int
-	HeadDim      int
-	Intermediate int
-	NormEps      float64
-	// InvFreq is the RoPE inverse-frequency table, already built for this drafter's theta.
-	InvFreq []float64
-}
-
-// DrafterLayerWeights is one trunk layer. The projections match a standard Qwen3-shaped layer,
-// which is why a resident backend can reuse its existing per-layer kernels for everything except
-// the attention MASK — the drafter's block is bidirectional (see attn_block_full).
-type DrafterLayerWeights struct {
-	Q, K, V, O     *linalg.WeightMat
-	Gate, Up, Down *linalg.WeightMat
-	// QNorm/KNorm are the per-head RMSNorm weights (Qwen3 qk-norm); nil when the family has none.
-	QNorm, KNorm []float32
-	// InputNorm normalizes the BLOCK only — never the context, whose K/V are projected from the
-	// fused rows raw. Norming both is the natural-looking port and is wrong (see blockTrunk.layer).
-	InputNorm    []float32
-	PostAttnNorm []float32
-}
-
 // blockTrunk implements BlockDrafterWeights once, for every family that embeds it.
 
 func (d *blockTrunk) DrafterGeometry() DrafterGeometry {

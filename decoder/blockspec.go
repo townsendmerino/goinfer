@@ -33,43 +33,6 @@ func ErrBlockSpecResidentBusy(err error) bool { return errors.Is(err, errBlockSp
 // Both are OPTIONAL capabilities: a ResidentForward that does not implement them simply cannot
 // host block drafting, and GenerateBlockSpec declines to plain generation rather than failing.
 
-// ResidentBlockDrafter is a block drafter's trunk living on a backend's device, attached to that
-// backend's resident target. Obtained from ResidentDrafterHost.AttachBlockDrafter.
-type ResidentBlockDrafter interface {
-	// FuseContext projects concatenated tap hidden states to the trunk's width and norms them.
-	FuseContext(rows [][]float32) ([][]float32, error)
-	// ExtendContext appends fused rows to the drafter's own K/V at the current context end. Incremental by contract: rebuilding the whole
-	// context per block costs more, and the gap widens with length (docs/spec/08).
-	ExtendContext(fused [][]float32) error
-	// ContextLen is how many positions the drafter's context currently holds.
-	ContextLen() int
-	// TruncateContext drops context positions >= n — the rollback after a partial accept.
-	TruncateContext(n int)
-	// DraftBlock runs the trunk over one block, returning its output rows.
-	DraftBlock(blockIn [][]float32) ([][]float32, error)
-	// DraftTokens turns trunk rows into token ids using the TARGET's LM head — a block drafter
-	// ships none of its own, which is why the pairing is fixed.
-	DraftTokens(trunk [][]float32) ([]int, error)
-}
-
-// ResidentDrafterHost is a resident target that can host a block drafter and hand back the
-// hidden states it needs. A backend implements this alongside ResidentForward.
-type ResidentDrafterHost interface {
-	// AttachBlockDrafter uploads a drafter's weights to this target's device. It must reject a
-	// geometry mismatch rather than resize: a drafter reads the target's residual stream, so a
-	// mismatch is the wrong PAIRING, and the failure mode is a drafter that runs and drafts noise.
-	AttachBlockDrafter(w BlockDrafterWeights) (ResidentBlockDrafter, error)
-	// PrefillLastNArgmax verifies M rows in one batched pass, returning each row's argmax token
-	// — all the accept decision reads. Only the ARGMAX must match a sequential Forward, not the
-	// logits bit-for-bit, which is what lets the LM head be batched (docs/spec/08).
-	PrefillLastNArgmax(embeddings [][]float32, startPos int) ([]int, error)
-	// SetBatchedCapture arms the hidden-state seam for the whole batch: the next PrefillLastNArgmax records the residual at each named layer
-	// for ALL its rows. The per-token seam costs a sync and a download per tap per token; this pays one per tap for the block.
-	SetBatchedCapture(taps []int) error
-	// BatchedCapture returns the last batched forward's rows as [tap][M*hidden].
-	BatchedCapture() [][]float32
-}
-
 // RecurrentSpecMaxRows is the widest verify a RecurrentSpecAvailable arena is sized for: a DFlash block.
 const RecurrentSpecMaxRows = 16
 

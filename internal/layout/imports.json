@@ -18,6 +18,23 @@
       "why": "decoder/fit (Tier 3, docs/layout.md) holds the fit guard's and the planner's exchange types so a caller can name them without importing the loader. It sits below decoder, which re-exports them: it imports internal/runtime/mem and no other goinfer package, decoder included."
     },
     {
+      "name": "resident-leaf",
+      "from": [
+        "decoder/resident"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_goinfer": {
+        "decoder/resident": [
+          "internal/cost",
+          "internal/runtime/adapter"
+        ]
+      },
+      "why": "decoder/resident holds the contract a resident backend implements (the four subsystem interfaces, the provider, ResidentForward, the drafter host and the small data their signatures carry) so a reader can hold it without the loader (MZ5 option B, docs/sub1-resident-interfaces.md). It sits below decoder, which aliases every name in decoder/residentalias.go: it imports internal/cost and internal/runtime/adapter and no other goinfer package, decoder included."
+    },
+    {
       "name": "config-leaf",
       "from": [
         "decoder/config"
@@ -309,6 +326,7 @@
       "decoder/config",
       "decoder/fit",
       "decoder/quant",
+      "decoder/resident",
       "internal/cost",
       "internal/runtime/adapter",
       "internal/runtime/diskfree",
@@ -326,6 +344,10 @@
     ],
     "decoder/fit": [
       "internal/runtime/mem"
+    ],
+    "decoder/resident": [
+      "internal/cost",
+      "internal/runtime/adapter"
     ],
     "demo/agent/agent": [
       "chat",
@@ -662,6 +684,7 @@
       "chat",
       "constrain",
       "decoder/fit",
+      "decoder/resident",
       "internal/audio",
       "internal/cost",
       "internal/diag/sb2census",
