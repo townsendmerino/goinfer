@@ -184,7 +184,7 @@ func TestCUDAKVF16AutoDecline_table(t *testing.T) {
 }
 
 // TestResidentSpec_matchesLegacyAccessors verifies that Model.ResidentSpec() populates all sub-specs
-// and agrees with the legacy positional accessors (MoEResidentParams, MLAResidentParams, Qwen35ResidentParams).
+// and agrees with the legacy positional accessors (MoEParams, MLAParams, Qwen35Params).
 func TestResidentSpec_matchesLegacyAccessors(t *testing.T) {
 	m := &Model{
 		w: &Weights{
@@ -226,22 +226,22 @@ func TestResidentSpec_matchesLegacyAccessors(t *testing.T) {
 	if spec.MoE == nil || spec.MLA == nil || spec.Qwen35 == nil {
 		t.Fatalf("ResidentSpec() missing sub-spec: %+v", spec)
 	}
-	nE, k, inter, sharedInter, sigmoid, norm, sharedUngated, scale, nGroup, topkGroup, ok := m.MoEResidentParams()
+	nE, k, inter, sharedInter, sigmoid, norm, sharedUngated, scale, nGroup, topkGroup, ok := m.BackendView().MoEParams()
 	if !ok || spec.MoE.NumExperts != nE || spec.MoE.TopK != k || spec.MoE.IntermediateDim != inter ||
 		spec.MoE.SharedIntermediateDim != sharedInter || spec.MoE.RouterSigmoid != sigmoid ||
 		spec.MoE.NormTopKProb != norm || spec.MoE.SharedUngated != sharedUngated ||
 		spec.MoE.RoutedScale != scale || spec.MoE.NGroup != nGroup || spec.MoE.TopkGroup != topkGroup {
-		t.Errorf("ResidentSpec().MoE = %+v, disagrees with MoEResidentParams()", *spec.MoE)
+		t.Errorf("ResidentSpec().MoE = %+v, disagrees with MoEParams()", *spec.MoE)
 	}
-	qL, kvL, nope, rope, vDim, interleave, aScale, rScale, mlaOK := m.MLAResidentParams()
+	qL, kvL, nope, rope, vDim, interleave, aScale, rScale, mlaOK := m.BackendView().MLAParams()
 	if !mlaOK || spec.MLA.QLoRARank != qL || spec.MLA.KVLoRARank != kvL || spec.MLA.QKNopeHeadDim != nope ||
 		spec.MLA.QKRopeHeadDim != rope || spec.MLA.VHeadDim != vDim || spec.MLA.RopeInterleave != interleave ||
 		spec.MLA.AttnScale != aScale || spec.MLA.RopeScale != rScale {
-		t.Errorf("ResidentSpec().MLA = %+v, disagrees with MLAResidentParams()", *spec.MLA)
+		t.Errorf("ResidentSpec().MLA = %+v, disagrees with MLAParams()", *spec.MLA)
 	}
-	ck, khd, vhd, nkh, nvh, gate, qOK := m.Qwen35ResidentParams()
+	ck, khd, vhd, nkh, nvh, gate, qOK := m.BackendView().Qwen35Params()
 	if !qOK || spec.Qwen35.ConvKernel != ck || spec.Qwen35.KeyHeadDim != khd || spec.Qwen35.ValueHeadDim != vhd ||
 		spec.Qwen35.NumKeyHeads != nkh || spec.Qwen35.NumValueHeads != nvh || spec.Qwen35.AttnGate != gate {
-		t.Errorf("ResidentSpec().Qwen35 = %+v, disagrees with Qwen35ResidentParams()", *spec.Qwen35)
+		t.Errorf("ResidentSpec().Qwen35 = %+v, disagrees with Qwen35Params()", *spec.Qwen35)
 	}
 }

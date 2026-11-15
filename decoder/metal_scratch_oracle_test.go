@@ -25,7 +25,7 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 	geoms := map[geomKey]bool{}
 	nHhd, kvDim, fa, attn, layerFFN := 0, 0, 0, 0, 0
 	maxFFNI := I
-	nE, k, inter, sharedInter, _, _, _, _, _, _, moeOK := m.MoEResidentParams()
+	nE, k, inter, sharedInter, _, _, _, _, _, _, moeOK := m.BackendView().MoEParams()
 	g4 := m.BackendView().HasGemma4MoE()
 	moeOK = moeOK && !g4
 	q4k := m.Quant() == "q4k"
@@ -100,7 +100,7 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 		bytes += int64(P)
 		u32s++
 	}
-	if _, hk, hv, nk, nv, attnGate, ok := m.Qwen35ResidentParams(); ok { // the Gated DeltaNet mixer and gated attention's [query ‖ gate]
+	if _, hk, hv, nk, nv, attnGate, ok := m.BackendView().Qwen35Params(); ok { // the Gated DeltaNet mixer and gated attention's [query ‖ gate]
 		keyDim, valueDim := nk*hk, nv*hv
 		f32 += int64(2*(2*keyDim+valueDim) + 2*nv + 2*nv + 2*keyDim + 3*valueDim + 1)
 		if attnGate {
@@ -112,13 +112,13 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 			u32s++
 		}
 	}
-	if nh, hd, ds, ng, _, normG, _, ok := m.NemotronResidentParams(); ok && normG > 0 { // the Mamba-2 mixer
+	if nh, hd, ds, ng, _, normG, _, ok := m.BackendView().NemotronParams(); ok && normG > 0 { // the Mamba-2 mixer
 		dInner, gSize := nh*hd, ng*ds
 		f32 += int64(2*dInner + 2*gSize + nh + dInner + 2*gSize + 2*dInner + 1)
 		bytes += int64(dInner)
 		u32s += 13
 	}
-	if qLoRA, rank, nope, rope, vHead, _, _, _, ok := m.MLAResidentParams(); ok { // Multi-head Latent Attention
+	if qLoRA, rank, nope, rope, vHead, _, _, _, ok := m.BackendView().MLAParams(); ok { // Multi-head Latent Attention
 		qkHead, latDim := nope+rope, rank+rope
 		f32 += int64(max(qLoRA, 1) + 1 + nH*qkHead + latDim + nH*latDim + nH*rank + nH*vHead + 1)
 		bytes += int64(max(qLoRA, 4) + nH*vHead + 4*(3+5+5+7+3)) // qaQ, ctxQ, and the five packed shapes

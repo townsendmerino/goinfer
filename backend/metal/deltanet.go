@@ -155,7 +155,7 @@ func stateBuffersOn(d *Device, m *decoder.Model, l int) (win, state Buffer, err 
 // (nil, nil) for a dense model (no qwen35 family) — the same "ok=false -> not this family" shape
 // buildMoE uses, so buildResident's caller can no-op it uniformly.
 func buildDeltaNet(d *Device, m *decoder.Model, pipe func(string) Pipeline) (*dnetParams, error) {
-	convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numValueHeads, _, ok := m.Qwen35ResidentParams()
+	convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numValueHeads, _, ok := m.BackendView().Qwen35Params()
 	if !ok {
 		return nil, nil
 	}

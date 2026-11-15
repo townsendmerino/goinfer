@@ -828,7 +828,7 @@ dnetOK family: Olmo Hybrid's full-attention layer is olmo3's plain scheme instea
 dnAttnGate=false, and falls through to default below — G5,
 docs/completed/task-gpu-paths-2026-09.md. This used to be a bare `dnetOK` case, silently
 wrong the moment a non-gated hybrid family reached residency, since
-Qwen35ResidentParams hardcoded attnGate=true). Its weights live off lw.QProj (the
+Qwen35Params hardcoded attnGate=true). Its weights live off lw.QProj (the
 family keeps them in its own struct), and q_proj is DOUBLE WIDTH — [query ‖ gate]
 per head.
 ```
@@ -6030,7 +6030,7 @@ Moved from `backend/cuda/olmo3_resident_smoke_test.go` (the comment above `TestO
 ```text
 Olmo Hybrid additionally exercises a REAL bug found while bringing this up: both backends
 assumed every qwen35Params-carrying family's full-attention layer used qwen3.5's own
-double-width q-gate scheme (Qwen35ResidentParams hardcoded attnGate=true) — Olmo Hybrid's is
+double-width q-gate scheme (Qwen35Params hardcoded attnGate=true) — Olmo Hybrid's is
 plain (olmo3's own scheme), fixed via a new Architecture.qwen35.AttnGate field. This smoke test
 going from "BuildResident declined: qwen35 softmax layer has empty q_norm/k_norm" to passing is
 the regression gate for that fix.

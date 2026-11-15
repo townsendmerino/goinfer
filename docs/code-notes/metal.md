@@ -742,7 +742,7 @@ dnetOK family: Olmo Hybrid's full-attention layer is olmo3's plain scheme instea
 AttnGate=false, and falls through to the ordinary branch below — G5,
 docs/completed/task-gpu-paths-2026-09.md. This used to be a bare `dnetOK` check, silently
 wrong the moment a non-gated hybrid family reached residency, since
-Qwen35ResidentParams hardcoded attnGate=true). Its q/k/v/o live off qattn, not
+Qwen35Params hardcoded attnGate=true). Its q/k/v/o live off qattn, not
 lw.QProj/KProj/VProj/OProj,
 and q_proj is DOUBLE WIDTH ([query ‖ gate] per head, interleaved — NOT two
 concatenated blocks; treating it as an ordinary q_proj yields the first nH/2
@@ -1579,7 +1579,7 @@ recovered "metal build panicked").
 Moved from `backend/metal/moe.go` (the comment in `buildMoE`, above the `HasGemma4MoEResident` check) on 2026-10-09.
 
 ```text
-Gemma 4's enable_moe_block (gemma4_text, 26B-A4B) sets arch.MoE, so MoEResidentParams reports
+Gemma 4's enable_moe_block (gemma4_text, 26B-A4B) sets arch.MoE, so MoEParams reports
 ok — but it is NOT the generic Mixtral/Qwen shape this path implements. It is a parallel
 dense‖MoE FFN with gelu-tanh experts (gemv_w4a8_moe's epilogue is SiLU), a weightless router
 pre-norm + learned [hidden] scale + per_expert_scale, and seven norms. Building it here would

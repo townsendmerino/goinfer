@@ -46,10 +46,10 @@ type mambaLayer struct {
 // buildMamba returns the model's Mamba-2 geometry, or nil for a model with no Mamba layer. Granite-4.0-H declines: its
 // embedding and residual multipliers are not folded on Metal.
 func buildMamba(m *decoder.Model) (*mambaParams, error) {
-	if _, _, _, _, _, _, _, _, _, ok := m.GraniteResidentParams(); ok {
+	if _, _, _, _, _, _, _, _, _, ok := m.BackendView().GraniteParams(); ok {
 		return nil, fmt.Errorf("metal: Granite-4.0-H's embedding and residual multipliers are not folded on Metal; it runs on the CPU")
 	}
-	nh, hd, ds, ng, k, normG, _, ok := m.NemotronResidentParams()
+	nh, hd, ds, ng, k, normG, _, ok := m.BackendView().NemotronParams()
 	if !ok {
 		return nil, nil
 	}
