@@ -810,6 +810,17 @@ func (b *residentBuild) allocKVTables() error {
 			r.kvWin = w
 			r.kvGs = append(r.kvGs, w)
 		}
+		// KV5-7c: a window group keeps the window and what kvWindowKeep adds behind it, the primary group when every layer slides.
+		span, allWindow := kvWindowSpan(m.KVGeometry())
+		switch {
+		case r.kvWin != nil:
+			r.kvWin.win = span
+		case allWindow:
+			r.kvGroup.win = span
+		}
+		for _, g := range r.kvGs {
+			g.kvBase = make([]int, slots)
+		}
 		for s := range r.kvSlotBufs {
 			r.kvSlotBufs[s].kt = r.kvTab.At(4 * s * r.kvTabBlocks)
 			if r.kvWin != nil {
