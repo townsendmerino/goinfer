@@ -84,7 +84,7 @@ Written after the runs, from `date` and the logs named. The registration above d
 - **Reported, not graded:** the snapshots held after the three requests are 4,096, 6,144 and 6,144 rows on the change; main holds two of 6,144. r2 on the change takes both of its points (its message boundary and Keep) and replaces the snapshot it restored from; r1's boundary snapshot stays because r2's prompt shares its prefix, and the store keeps it until the budget needs it.
 - **Not read:** the 9B, Claude Code's real traffic, Metal, Mamba-2. A real `Keep` grid of 512 rows (B35's e2e) was not the width here.
 
-## Second slice: cut the prefill at the snapshot points, not on the pass grid (registered 2026-11-15 14:07 PST, before any code; nobara-kv8)
+## Second slice: cut the prefill at the snapshot points, not on the pass grid (registered 2026-11-15 14:06 PST, before any code; nobara-kv8)
 
 The coordinator's decision of 2026-11-15, on T1's PARKED: keep #1007 a draft and build B35's named follow-up on its branch. T1 found 4,096 of a 6,100-id boundary served because a snapshot falls on a 2,048-row pass boundary.
 
