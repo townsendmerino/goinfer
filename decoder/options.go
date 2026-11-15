@@ -163,7 +163,7 @@ type Options struct {
 	// §5.15). serve sets it for -kv-share off and when it answers the network without an API key.
 	KVShareOff bool
 	// KVHostBytes is the host memory budget for prefix snapshots (docs/completed/task-kv7-prefix-snapshot-2026-10.md): after a cold
-	// first prefill of a long prompt a GPU-resident backend that implements ResidentKVSnapshotter copies the prompt's KV to pinned
+	// first prefill of a long prompt a GPU-resident backend that implements legacyKVSnapshotter copies the prompt's KV to pinned
 	// host memory, and a later request that starts with the same ids restores it instead of prefilling it. 0 turns it off, and
 	// nothing is held while no snapshot is. Pinned memory is allocated when a snapshot is taken and freed when it is dropped.
 	// serve sets it from -kv-host-bytes.

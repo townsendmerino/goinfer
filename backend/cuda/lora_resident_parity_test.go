@@ -22,7 +22,7 @@ import (
 // q/k/v sites are all genuinely exercised), same synthetic 7-projection/4-layer adapter, same
 // 0.95 floor (gpt2_resident_parity_test.go's established resident-vs-CPU decode-logit bar on
 // Metal — the anchor every backend's LoRA parity test uses), same vacuousness
-// check. Drives decoder.ResidentAdapter directly via ResidentForwardForTest/
+// check. Drives decoder.ResidentRuntimeSubsystem directly via ResidentForwardForTest/
 // ResidentAdapterLayersForTest to isolate the KERNEL correctness question from the WIRING
 // question decoder/resident_adapter_seam_test.go already gates.
 func TestLoRAResidentParityCUDA(t *testing.T) {
@@ -43,7 +43,7 @@ func TestLoRAResidentParityCUDA(t *testing.T) {
 	ra := decoder.SubsystemsOf(rf).Runtime
 	ok := ra.AdapterAvailable()
 	if !ok {
-		t.Fatalf("cuda resident runner does not implement decoder.ResidentAdapter")
+		t.Fatalf("cuda resident runner does not implement decoder.ResidentRuntimeSubsystem")
 	}
 	if err := mRes.LoadAdapter("a", adapterDir); err != nil {
 		t.Fatalf("LoadAdapter (cuda side): %v", err)

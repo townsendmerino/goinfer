@@ -74,7 +74,6 @@ func uploadProj(c *Context, w *linalg.WeightMat) (kernels.DecodeWeight, error) {
 
 var (
 	_ decoder.ResidentForward = (*residentDecoder)(nil)
-	_ decoder.ResidentAdapter = (*residentDecoder)(nil)
 )
 
 // residentDecoder is the gpu side of decoder.ResidentForward: a persistent
@@ -485,9 +484,7 @@ func (rd *residentDecoder) prefillBlocks(ctx context.Context, embeddings [][]flo
 // (docs/completed/task-multimodal-support-2026-10.md, "G-S12.4b-4a-5").
 var mropePrefillBackends = map[string]bool{"vulkan": true}
 
-var _ decoder.ResidentMRoPEPrefill = (*residentDecoder)(nil)
-
-// PrefillMRoPELast is decoder.ResidentMRoPEPrefill: PrefillLast for rows whose rotary position is three numbers.
+// PrefillMRoPELast is decoder.ResidentPrefillSubsystem: PrefillLast for rows whose rotary position is three numbers.
 // mropePos is prompt-absolute and covers [0, startPos+len(embeddings)). It declines on a backend outside
 // mropePrefillBackends, on a model without m-RoPE, and wherever PrefillLast would.
 func (rd *residentDecoder) PrefillMRoPELast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int) ([]float32, error) {
@@ -530,7 +527,7 @@ var prefillBlockRows = 512
 // (see the ResidentForward.TruncateTo contract).
 func (rd *residentDecoder) TruncateTo(pos int) {}
 
-// SetAdapter implements decoder.ResidentAdapter: generateInto calls it to bind/clear a compute-time LoRA adapter for an
+// SetAdapter implements decoder.ResidentRuntimeSubsystem: generateInto calls it to bind/clear a compute-time LoRA adapter for an
 // admitted session. It forwards to rd.runner only: the adapter-admission path calls Forward exclusively, and the ForwardN
 // verify runners (rd.batch) are speculative-decode-only, a path this backend's LoRA support does not cover (see the file
 // comment of gpu/lora.go). The adapter is recorded too, because generateInto binds it BEFORE acquiring a KV slot and

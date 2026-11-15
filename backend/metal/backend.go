@@ -48,7 +48,6 @@ var (
 	_ decoder.ResidencyPricer      = (*metalBackend)(nil)
 	_ decoder.ResidentForward      = (*metalResident)(nil)
 	_ decoder.ResidentCapsReporter = (*metalResident)(nil)
-	_ decoder.ResidentAdapter      = (*metalResident)(nil)
 	_ decoder.Prefiller            = (*metalResident)(nil)
 	_ decoder.PrefillPathReporter  = (*metalResident)(nil)
 	_ decoder.VerifyPathReporter   = (*metalResident)(nil)
@@ -1089,7 +1088,7 @@ func (a *metalResident) batchedPrefill(embeddings [][]float32, startPos, floor i
 	return a.batchedPrefillImg(embeddings, startPos, floor, mrope, deep, nil)
 }
 
-// PrefillImageLast (decoder.ResidentImagePrefill) is the batched f16 pass over an image turn's spliced embeddings, with the image
+// PrefillImageLast (decoder.ResidentPrefillSubsystem) is the batched f16 pass over an image turn's spliced embeddings, with the image
 // block [imgStart, imgEnd) attending bidirectionally (attention_prefill_img), as CUDA's PrefillImageLast and the CPU's
 // prefillLogitsVL do. The whole prompt is one pass, never chunked across the block. It takes the plain uniform pass only: a
 // Gemma 4 E-model (its rows carry per-layer inputs this route does not build), a layer-major family or a recurrent hybrid
@@ -1128,9 +1127,7 @@ func (a *metalResident) PrefillImageBlocksLast(ctx context.Context, embeddings [
 	return a.batchedPrefillImg(embeddings, startPos, 0, nil, nil, blocks)
 }
 
-var (
-	_ decoder.ResidentImagePrefill = (*metalResident)(nil)
-)
+var ()
 
 // batchedPrefillImg is batchedPrefill with optional bidirectional image blocks (nil: none).
 func (a *metalResident) batchedPrefillImg(embeddings [][]float32, startPos, floor int, mrope [][3]int, deep *prefillDeep, blocks [][2]int) ([]float32, error) {
@@ -1216,7 +1213,7 @@ func (a *metalResident) batchedPrefillSrc(src rowSource, startPos, floor int, mr
 	return logits, nil
 }
 
-// PrefillMRoPELast (decoder.ResidentMRoPEPrefill, S16 of docs/completed/task-multimodal-support-2026-10.md) is PrefillLast for a
+// PrefillMRoPELast (decoder.ResidentPrefillSubsystem, S16 of docs/completed/task-multimodal-support-2026-10.md) is PrefillLast for a
 // Qwen image turn: the batched f16 pass with every row rotated by its own (temporal, height, width) m-RoPE triple, so the
 // image turn prefills here instead of on the CPU with its K/V uploaded after. mropePos covers the whole prompt from 0. It
 // declines (the decoder then takes the CPU-prefill+UploadKV bridge) when the model has no m-RoPE axis table, when a
@@ -1417,7 +1414,7 @@ func (a *metalResident) VerifyPath() (bool, string) {
 	return true, "batched layer-major single-command-buffer"
 }
 
-// SetAdapter implements decoder.ResidentAdapter (G3, docs/completed/task-gpu-paths-2026-09.md) —
+// SetAdapter implements decoder.ResidentRuntimeSubsystem (G3, docs/completed/task-gpu-paths-2026-09.md) —
 // generateInto calls this to bind/clear a compute-time LoRA adapter for an admitted session.
 func (a *metalResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 	return a.r.SetAdapter(layers)
@@ -1542,9 +1539,7 @@ func (a *metalResident) Reset() {
 	a.r.resetRecurrent()
 }
 
-var _ decoder.ResidentGreedyChain = (*metalResident)(nil)
-
-// GreedyChainAvailable (decoder.ResidentGreedyChain, C-B01): the greedy chain is exact on this resident
+// GreedyChainAvailable (decoder.ResidentDecodeSubsystem, C-B01): the greedy chain is exact on this resident
 // (greedyChainWhyNot, greedy_chain.go) and its gather table is on the device, or fits there now (chainEmbedTable).
 func (a *metalResident) GreedyChainAvailable() bool {
 	if a.r.greedyChainWhyNot() != "" {
@@ -1568,9 +1563,7 @@ func (a *metalResident) GreedyChainNext() (int, error) { return a.r.chainNext() 
 // GreedyChainStop closes the chain.
 func (a *metalResident) GreedyChainStop() { a.r.stopChain() }
 
-var _ decoder.ResidentSampleChain = (*metalResident)(nil)
-
-// SampleChainAvailable (decoder.ResidentSampleChain, C-P02): the chain is available and so is the device draw.
+// SampleChainAvailable (decoder.ResidentDecodeSubsystem, C-P02): the chain is available and so is the device draw.
 func (a *metalResident) SampleChainAvailable() bool {
 	return a.r.SampleAvailable() && a.GreedyChainAvailable()
 }
@@ -1605,7 +1598,7 @@ const prefillBlockRowsMin = 256
 // short prompt. It does not make a resident block that otherwise would not.
 var prefillBlockRowsForTest int
 
-// PrefillBlockRows (decoder.ResidentPrefillBlocks) is the most rows the decoder hands one batched pass: as many as fit
+// PrefillBlockRows (decoder.ResidentPrefillSubsystem) is the most rows the decoder hands one batched pass: as many as fit
 // prefillBlockBudget, a multiple of 64, never under prefillBlockRowsMin. The pass allocates its scratch per row, so
 // without a block a prompt's prefill takes memory in proportion to its length. 0, meaning the prefill is not split, for a
 // resident whose prompts do not take the batched pass at every length: a paged layer-major route, an E-model without its
@@ -1660,10 +1653,8 @@ func (a *metalResident) prefillBlockBudget() int64 {
 	return budget
 }
 
-// PrefillScratchBytes (decoder.ResidentPrefillBlocks) is what one batched pass over rows rows allocates.
+// PrefillScratchBytes (decoder.ResidentPrefillSubsystem) is what one batched pass over rows rows allocates.
 func (a *metalResident) PrefillScratchBytes(rows int) int64 { return a.r.prefillScratchBytes(rows) }
-
-var _ decoder.ResidentPrefillBlocks = (*metalResident)(nil)
 
 // PrefillTailExact (decoder.PrefillTailExact): a short PrefillLast continuing a prefix the pass prefilled reproduces the cold pass
 // bit for bit (TestPrefillLast_tailContinuationMatchesCold), and the routing (floor, step range) is on the whole prompt's length.

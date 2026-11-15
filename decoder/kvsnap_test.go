@@ -18,7 +18,7 @@ import (
 // of the slot's whole history, so a restore that puts back the wrong rows changes every token after it. One slot, as on the 8 GB
 // card, so a second conversation overwrites the first and only a snapshot can bring its prefix back.
 
-// snapFake is mc3Fake with a host snapshot (ResidentKVSnapshotter): a snapshot is a copy of a slot's rows, a restore writes them back.
+// snapFake is mc3Fake with a host snapshot (legacyKVSnapshotter): a snapshot is a copy of a slot's rows, a restore writes them back.
 // serveFloor stands in for a windowed ring's rollback: Serves(end) needs end >= rows-serveFloor (0: any end). plant makes the
 // restore wrong in one way, to show the gate goes red: "shift" restores every row one position off (a ring based wrong), "noop" reports
 // success and writes nothing (the slot keeps the conversation that overwrote it), "short" restores a block less than it claims.
@@ -54,7 +54,7 @@ func (s *snapFakeSnap) Release() {
 	}
 }
 
-var _ ResidentKVSnapshotter = (*snapFake)(nil)
+var _ legacyKVSnapshotter = (*snapFake)(nil)
 
 func (f *snapFake) KVSnapshotBytes(end int) int64 { return int64(end) * 1024 }
 func (f *snapFake) KVSnapshotRecurrent() bool     { return false }

@@ -15,18 +15,18 @@ import (
 // resident_embed_seam_test.go's G4 tests: a resident capability nothing ever calls is
 // indistinguishable from one that was never wired. Model.generateInto's useGPU gate was widened
 // to admit an adapter session (cache.lora != nil) onto the resident path ONLY when the resident
-// backend implements ResidentAdapter — these tests pin both halves of that with a fake backend
+// backend implements legacyAdapter — these tests pin both halves of that with a fake backend
 // and an in-memory synthetic base+adapter, so no GPU and no downloaded model are needed:
 //
-//   - a ResidentAdapter-capable backend must actually be bound (SetAdapter with the adapter's
+//   - a legacyAdapter-capable backend must actually be bound (SetAdapter with the adapter's
 //     per-layer deltas) before decode and cleared (SetAdapter(nil)) after — never silently run
 //     the adapter session's tokens through the base model's unmodified resident weights, which
 //     would return correct-looking but WRONG output (audit R-01's failure mode).
-//   - a resident backend that does NOT implement ResidentAdapter must decline the WHOLE request
+//   - a resident backend that does NOT implement legacyAdapter must decline the WHOLE request
 //     to the CPU/staged path (which applies the adapter correctly via applyLoRA) rather than
 //     running it resident with the adapter dropped.
 
-// fakeResidentAdapter extends fakeResident with ResidentAdapter, recording every bind/clear.
+// fakeResidentAdapter extends fakeResident with legacyAdapter, recording every bind/clear.
 // lastBind is NOT cleared by SetAdapter(nil) — a clear call is recorded via clears/boundNow so
 // tests can inspect what was bound even after generation has cleared it.
 //
@@ -165,7 +165,7 @@ func loadWithFakeAdapterResident(t *testing.T, base string) (*Model, *fakeAdapte
 	})
 	m, err := Load(base, Options{Backend: name})
 	if err != nil {
-		t.Fatalf("Load with fake ResidentAdapter backend: %v", err)
+		t.Fatalf("Load with fake legacyAdapter backend: %v", err)
 	}
 	t.Cleanup(func() { _ = m.Close() })
 	return m, be
@@ -173,7 +173,7 @@ func loadWithFakeAdapterResident(t *testing.T, base string) (*Model, *fakeAdapte
 
 // TestSeam_AdapterSessionBindsAndClearsResidentAdapter is the main G3 gate: a session with an
 // adapter bound (cache.lora != nil) must, on a resident backend that implements
-// ResidentAdapter, drive SetAdapter(layers) before decode and SetAdapter(nil) after.
+// legacyAdapter, drive SetAdapter(layers) before decode and SetAdapter(nil) after.
 func TestSeam_AdapterSessionBindsAndClearsResidentAdapter(t *testing.T) {
 	base, adapter := buildLoRAFixture(t)
 	m, be := loadWithFakeAdapterResident(t, base)
@@ -274,7 +274,7 @@ func TestSeam_AdapterSessionNeverUsesBatchedPrefill(t *testing.T) {
 }
 
 // TestSeam_AdapterSessionDeclinesToCPUWithoutResidentAdapter pins the other half: a resident
-// backend that does NOT implement ResidentAdapter must never run an adapter session's tokens
+// backend that does NOT implement legacyAdapter must never run an adapter session's tokens
 // through it — generateInto must decline the whole request to the CPU/staged path, which
 // applies the adapter correctly via applyLoRA, exactly like any other missing resident
 // capability (compare legacyHiddenLast's own fallback).
@@ -325,7 +325,7 @@ func TestSeam_AdapterSessionDeclinesToCPUWithoutResidentAdapter(t *testing.T) {
 	}
 	if be.rf.forwards != 0 {
 		t.Fatalf("resident Forward was called %d times for an adapter session on a backend without "+
-			"ResidentAdapter — the G3 defect in reverse: base weights ran resident while the adapter's "+
+			"legacyAdapter — the G3 defect in reverse: base weights ran resident while the adapter's "+
 			"delta was silently dropped", be.rf.forwards)
 	}
 	if got != argmax(want) {

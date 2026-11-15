@@ -296,7 +296,7 @@ func TestGlmOcrResidentParityMetal(t *testing.T) {
 	rmp := decoder.SubsystemsOf(mRes.ResidentForwardForTest()).Prefill
 	ok := rmp.MRoPEPrefillAvailable()
 	if !ok {
-		t.Fatal("the Metal resident is not a decoder.ResidentMRoPEPrefill")
+		t.Fatal("the Metal resident is not a decoder.ResidentPrefillSubsystem")
 	}
 	_, _, _, _, _, _, vocab := cpuRow.Dims()
 	text := make([]int, 48)

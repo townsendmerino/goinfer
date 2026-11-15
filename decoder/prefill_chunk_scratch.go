@@ -3,7 +3,7 @@ package decoder
 // legacyPrefillChunks is the optional capability of a Prefiller that splits a long prompt into passes itself: the decoder hands it
 // the whole suffix in one PrefillLast call and the resident cuts it. PrefillChunkRows is the most rows one of its passes takes, and
 // PrefillScratchBytes what a pass of that many rows allocates beyond the resident's standing buffers. Admission prices a request at
-// that one pass instead of the whole-prompt figure (residentPrefillScratch). It is not ResidentPrefillBlocks: that interface makes the
+// that one pass instead of the whole-prompt figure (residentPrefillScratch). It is not legacyPrefillBlocks: that interface makes the
 // decoder split the prompt and needs PrefillTailExact, which a resident whose passes differ in kernel class by length cannot claim.
 type legacyPrefillChunks interface {
 	PrefillChunkRows() int

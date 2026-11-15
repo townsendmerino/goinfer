@@ -12,8 +12,6 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-var _ decoder.ResidentKVSnapshotter = (*cudaResident)(nil)
-
 // Prefix snapshots (docs/completed/task-kv7-prefix-snapshot-2026-10.md): a slot's KV rows in pinned host memory, and back. It is CopyKV with
 // a host buffer for the other slot, over the same slot storage:
 //
@@ -104,7 +102,7 @@ func (r *cudaResident) snapshotDecline(end int) *decoder.KVCopyDecline {
 	return nil
 }
 
-// KVSnapshotRecurrent is decoder.ResidentKVSnapshotter's: a Gated-DeltaNet model's snapshots carry its state; a Mamba-2 model's
+// KVSnapshotRecurrent is decoder.ResidentKVSubsystem's: a Gated-DeltaNet model's snapshots carry its state; a Mamba-2 model's
 // are declined (snapshotDecline).
 func (r *cudaResident) KVSnapshotRecurrent() bool { return r.dnet != nil && r.mamba == nil }
 
@@ -163,7 +161,7 @@ func (r *cudaResident) snapshotLayout(end, lo int) ([]snapLayer, int) {
 	return out, words
 }
 
-// KVSnapshotBytes implements decoder.ResidentKVSnapshotter. A windowed layer's start is taken at its earliest, so it is an upper bound.
+// KVSnapshotBytes implements decoder.ResidentKVSubsystem. A windowed layer's start is taken at its earliest, so it is an upper bound.
 func (r *cudaResident) KVSnapshotBytes(end int) int64 {
 	if end <= 0 || end%decoder.KVBlockRows != 0 || r.snapshotDecline(end) != nil {
 		return 0
@@ -177,7 +175,7 @@ func (r *cudaResident) KVSnapshotBytes(end int) int64 {
 	return int64(words) * 4
 }
 
-// KVSnapshotRollback implements decoder.ResidentKVSnapshotter.
+// KVSnapshotRollback implements decoder.ResidentKVSubsystem.
 func (r *cudaResident) KVSnapshotRollback() int {
 	if !r.kvWin {
 		return 0
@@ -185,7 +183,7 @@ func (r *cudaResident) KVSnapshotRollback() int {
 	return r.kvRollback()
 }
 
-// SnapshotKV implements decoder.ResidentKVSnapshotter.
+// SnapshotKV implements decoder.ResidentKVSubsystem.
 func (r *cudaResident) SnapshotKV(slot, end int) (decoder.ResidentKVSnapshot, error) {
 	switch {
 	case slot < 0 || slot >= r.KVSlots():
@@ -283,7 +281,7 @@ func (r *cudaResident) snapshotKV(slot, end int) (*cudaKVSnapshot, error) {
 	return s, nil
 }
 
-// RestoreKV implements decoder.ResidentKVSnapshotter.
+// RestoreKV implements decoder.ResidentKVSubsystem.
 func (r *cudaResident) RestoreKV(h decoder.ResidentKVSnapshot, slot, end int) error {
 	s, ok := h.(*cudaKVSnapshot)
 	switch {

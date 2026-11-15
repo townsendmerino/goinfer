@@ -8,12 +8,10 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
 
-// KV8a's recurrent checkpoint on Metal (decoder.ResidentRecurrentCheckpoint; docs/measurements/kv8a-metal-2026-10/README.md): one copy
+// KV8a's recurrent checkpoint on Metal (decoder.ResidentKVSubsystem; docs/measurements/kv8a-metal-2026-10/README.md): one copy
 // of every recurrent layer's conv window and state, Gated-DeltaNet (win, state) and Mamba-2 (win, ssm), in buffers beside the live
 // ones, copied on the device after the executor has drained. A load the memory guard cannot also fit it into keeps none, and the
 // slot behaves as before KV8a.
-
-var _ decoder.ResidentRecurrentCheckpoint = (*metalResident)(nil)
 
 // ckptFits reports whether the guard's budget holds the load's need plus the checkpoint's bytes (residentMemoryDecline's quantities,
 // not the OS's account of free memory), and why not. A variable so a test can stand in a machine with no room.
@@ -66,7 +64,7 @@ func (r *resident) allocRecurrentCheckpoint(m *decoder.Model) {
 
 func mib(b int64) float64 { return float64(b) / (1 << 20) }
 
-// RecurrentCheckpointBytes (decoder.ResidentRecurrentCheckpoint) is the checkpoint's bytes, 0 when the load kept none.
+// RecurrentCheckpointBytes (decoder.ResidentKVSubsystem) is the checkpoint's bytes, 0 when the load kept none.
 func (a *metalResident) RecurrentCheckpointBytes() int64 { return a.r.ckptBytes }
 
 // recurrentLive is every recurrent layer's live conv window and state, in layer order: the bound KV slot's (useKVSlot).
@@ -94,7 +92,7 @@ func (r *resident) bindCheckpoint() {
 	}
 }
 
-// RecurrentCheckpointHeld is decoder.ResidentRecurrentCheckpoint's: the one copy is the slot's that last saved it.
+// RecurrentCheckpointHeld is decoder.ResidentKVSubsystem's: the one copy is the slot's that last saved it.
 func (a *metalResident) RecurrentCheckpointHeld(slot int) bool {
 	return slot >= 0 && len(a.r.ckptBufs) > 0 && a.r.ckptSlot == slot
 }

@@ -315,9 +315,9 @@ type KVCopyDecline struct{ Reason string }
 
 func (d *KVCopyDecline) Error() string { return "kv copy declined: " + d.Reason }
 
-// ResidentReusableKVSlot is ResidentReusableKV's question for any slot, bound or not: of the first prefix positions
+// legacyReusableKVSlot is ResidentReusableKV's question for any slot, bound or not: of the first prefix positions
 // of slot's sequence, how many it can serve to a forward that continues at position prefix (prefix or 0).
-type ResidentReusableKVSlot interface {
+type legacyReusableKVSlot interface {
 	ReusableKVSlot(slot, prefix int) int
 }
 
@@ -329,7 +329,7 @@ type legacyKVUploadPass interface {
 }
 
 // legacyKVDemoter is the optional capability of a resident to keep a released slot's rows in host memory (the slot still answers
-// ResidentReusableKVSlot for them) and put them back when a request reuses it (docs/measurements/kv7-demote-2026-11/README.md).
+// legacyReusableKVSlot for them) and put them back when a request reuses it (docs/measurements/kv7-demote-2026-11/README.md).
 // SetKVHostBudget gives it the budget it charges them to; without one it keeps none.
 type legacyKVDemoter interface {
 	SetKVHostBudget(b KVHostBudget)
@@ -558,7 +558,7 @@ func (m *Model) residentAcquireSlotAll(prompt []int, imgs []residentImageClaim, 
 }
 
 // kvChooseDonor picks the slot to copy from: of the slots other than dst whose capped hit beats reuse, the longest hit
-// (the lower slot on a tie) that the resident says still holds the rows (ResidentReusableKVSlot; a resident without it
+// (the lower slot on a tie) that the resident says still holds the rows (legacyReusableKVSlot; a resident without it
 // holds every row it has). src is -1 when none beats reuse, and when every candidate's window has moved past its rows,
 // in which case declined says so.
 func kvChooseDonor(res ResidentForward, hits []int, cm kvmgr.ClassMap, n, dst, reuse int) (src, hit int, declined string) {
@@ -586,7 +586,7 @@ func kvChooseDonor(res ResidentForward, hits []int, cm kvmgr.ClassMap, n, dst, r
 // kvOtherDonors states, for a declined copy, how many slots other than src and dst hold a hit longer than reuse that their
 // windows still hold. It changes nothing; it is the G5-C diagnostic of how much of a decline is the choice of donor
 // (docs/measurements/kv2-cuda-2026-10-15.md, §6).
-func kvOtherDonors(rk ResidentReusableKVSlot, hits []int, cm kvmgr.ClassMap, n, src, dst, reuse int) string {
+func kvOtherDonors(rk legacyReusableKVSlot, hits []int, cm kvmgr.ClassMap, n, src, dst, reuse int) string {
 	k := 0
 	for s, h := range hits {
 		if s == src || s == dst {

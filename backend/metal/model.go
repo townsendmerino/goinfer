@@ -1932,7 +1932,7 @@ func (r *resident) LastGPUTimes() (gpuBusy, kernTotal float64) {
 // ForwardArgmax runs the identical trunk but replaces the full lm head and logits readback with the fused block-argmax
 // (per-tile (maxLogit, rowIdx), then argmax_finish, then a 4-byte token). It returns argmax(Forward's logits), first
 // max wins, without materializing the logit vector. Production greedy decode does not call it: Metal has no
-// ResidentGreedy implementation, so greedy runs through the greedy chain (ResidentGreedyChain, greedy_chain.go) when
+// ResidentGreedy implementation, so greedy runs through the greedy chain (ResidentDecodeSubsystem, greedy_chain.go) when
 // it is available and otherwise through the full-logits ForwardEmbPipe with a host argmax. Only tests and gates call
 // this.
 func (r *resident) ForwardArgmax(id, pos int) uint32 {

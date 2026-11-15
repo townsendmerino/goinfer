@@ -63,7 +63,7 @@ func (m *Model) PrefillLogitsWithAdapterForTest(ctx context.Context, prompt []in
 }
 
 // ResidentAdapterLayersForTest exposes residentAdapterLayers, the conversion generateInto applies to a loaded adapter, so
-// a backend parity test can call ResidentAdapter.SetAdapter directly with exactly the deltas a request would bind.
+// a backend parity test can call legacyAdapter.SetAdapter directly with exactly the deltas a request would bind.
 func (m *Model) ResidentAdapterLayersForTest(adapterName string) []ResidentAdapterLayer {
 	return residentAdapterLayers(m.adapter(adapterName))
 }

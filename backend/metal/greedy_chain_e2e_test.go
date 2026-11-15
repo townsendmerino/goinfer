@@ -14,7 +14,7 @@ import (
 )
 
 // TestGreedyChain_generateMatchesFullLogits is C-B01 through the decoder: greedy Generate on Metal with the chain
-// (ResidentGreedyChain, the default where it is exact) against the same request with the chain off (greedyChainOff:
+// (ResidentDecodeSubsystem, the default where it is exact) against the same request with the chain off (greedyChainOff:
 // the full-logits ForwardEmbPipe path production ran before). One generation of 90 tokens, past the chain's pool drain;
 // then two turns, the second's prompt the first's prompt and reply plus three tokens, so the resident reuses the
 // prefix and the forward the chain queued past turn one's last token must not leak into turn two. (A Session is not
@@ -36,7 +36,7 @@ func TestGreedyChain_generateMatchesFullLogits(t *testing.T) {
 }
 
 // TestSampleChain_generateMatchesForwardSample is C-P02 through the decoder: temperature-only sampling on Metal with the
-// sampled chain (ResidentSampleChain) against the same request with it off, where every token is ForwardSample's draw.
+// sampled chain (ResidentDecodeSubsystem) against the same request with it off, where every token is ForwardSample's draw.
 // The same generations as the greedy test, at temperature 0.9 with a fixed seed: the tokens must be equal, every token
 // device-drawn on both arms, and all of the chain arm's served by the chain.
 func TestSampleChain_generateMatchesForwardSample(t *testing.T) {

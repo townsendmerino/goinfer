@@ -12,7 +12,7 @@ import (
 // c = len(prompt). A next request that matches the slot's sequence through c but does not extend all of it restores the state
 // and prefills from c (kvmgr's scoreRecurrentTokens), where today it prefills from 0. The attention KV is positional and stays.
 
-// ResidentRecurrentCheckpoint is the optional capability of a resident with recurrent state to keep one copy of it, every
+// legacyRecurrentCheckpoint is the optional capability of a resident with recurrent state to keep one copy of it, every
 // recurrent layer's state and conv window, beside the live state. RecurrentCheckpointBytes is the copy's size, 0 when the resident
 // keeps none (its load did not admit it). SaveRecurrentCheckpoint copies the live state into it and RestoreRecurrentCheckpoint
 // copies it back; neither touches the attention KV. An error leaves the live state unknown to the caller.
@@ -20,7 +20,7 @@ import (
 // RecurrentCheckpointHeld reports whether slot holds a checkpoint now. A checkpoint can be taken from a slot, by another slot's save
 // or by a reset, while the slot's record still names its position, so a load of several slots scores only a checkpoint its slot holds:
 // a restore that fails has already cost that slot its sequence. A resident that cannot tell returns false, and scores none on such a load.
-type ResidentRecurrentCheckpoint interface {
+type legacyRecurrentCheckpoint interface {
 	RecurrentCheckpointBytes() int64
 	SaveRecurrentCheckpoint() error
 	RestoreRecurrentCheckpoint() error
@@ -34,7 +34,7 @@ func (m *Model) checkpointHeld(slot int) bool {
 }
 
 // recurrentCheckpointer is the resident's checkpoint, or nil when the model has no recurrent state or the resident keeps none.
-func (m *Model) recurrentCheckpointer() ResidentRecurrentCheckpoint {
+func (m *Model) recurrentCheckpointer() ResidentKVSubsystem {
 	if m.resident == nil || !m.hasRecurrentState() {
 		return nil
 	}

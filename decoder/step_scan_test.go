@@ -12,8 +12,8 @@ import (
 // stepShapes are the forward-shape interfaces step resolves: asserting one of them on a resident is stepDo's job alone.
 var stepShapes = map[string]bool{
 	"Prefiller": true, "ResidentGreedy": true, "legacySample": true, "legacyTopK": true, "legacyPrefillKV": true,
-	"legacyHiddenLast": true, "legacyResidualAll": true, "legacyMRoPE": true, "ResidentMRoPEPrefill": true,
-	"legacyMRoPEDeepstackPrefill": true, "ResidentHybridMRoPEPrefill": true, "ResidentImagePrefill": true,
+	"legacyHiddenLast": true, "legacyResidualAll": true, "legacyMRoPE": true, "legacyMRoPEPrefill": true,
+	"legacyMRoPEDeepstackPrefill": true, "ResidentHybridMRoPEPrefill": true, "legacyImagePrefill": true,
 	"legacyImageBlocksPrefill": true, "legacySpanPrefill": true, "legacyPrefillRows": true, "legacyPrefillMarked": true,
 	"legacySeedArgmax": true, "legacyBatchStepper": true, "legacyRaggedStepper": true,
 }

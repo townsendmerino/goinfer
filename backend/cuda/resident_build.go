@@ -1154,7 +1154,7 @@ func (s *buildState) bindKernels(r *cudaResident) error {
 			r.prefillReady = ok
 		}
 	}
-	// Gemma 3 image-block prefill attention (decoder.ResidentImagePrefill): own module, prefill_batched.ptx untouched. A
+	// Gemma 3 image-block prefill attention (decoder.ResidentPrefillSubsystem): own module, prefill_batched.ptx untouched. A
 	// load failure is not fatal: bAttnImg stays zero and PrefillImageLast declines to the CPU-prefill-then-UploadKV bridge.
 	// It depends on r.prefillReady, as L2 does.
 	if r.prefillReady && !r.kvI8 { // no int8 twin: an int8 cache leaves the image and span prefills declined
@@ -1177,7 +1177,7 @@ func (s *buildState) bindKernels(r *cudaResident) error {
 			}
 		}
 	}
-	// Qwen2.5-VL m-RoPE batched prefill (decoder.ResidentMRoPEPrefill): own module, prefill_batched.ptx untouched. Loaded
+	// Qwen2.5-VL m-RoPE batched prefill (decoder.ResidentPrefillSubsystem): own module, prefill_batched.ptx untouched. Loaded
 	// only for an m-RoPE model, since it needs the model's MRopeSection for sec0/sec1 (unlike bAttnImg above, which loads
 	// unconditionally). A load failure or a non-m-RoPE model is not fatal: PrefillMRoPELast declines to the
 	// CPU-prefill-then-UploadKV bridge.

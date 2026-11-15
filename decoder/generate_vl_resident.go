@@ -67,7 +67,7 @@ func (m *Model) residentUploadPrefill(cache *KVCache) (err error) {
 // residentImagePrefill builds the same spliced embedding rows prefillLogitsVL's CPU path would
 // have built (embedN + the raw-feature splice of every span, no embed scale — matching HF's
 // masked_scatter) and hands them to the resident backend's image prefill, skipping the CPU prefill
-// and the UploadKV bridge entirely. One span goes to ResidentImagePrefill; several need
+// and the UploadKV bridge entirely. One span goes to legacyImagePrefill; several need
 // legacyImageBlocksPrefill. Any error is a DECLINE, not fatal — the caller falls through to the
 // CPU-prefill+UploadKV bridge (gap 0, docs/multimodal.md).
 func (m *Model) residentImagePrefill(ctx context.Context, r any, ids []int, imageEmbeds []float32, spans []ImageSpan) (logits []float32, gpuPos int, err error) {
@@ -101,7 +101,7 @@ func (m *Model) residentImagePrefill(ctx context.Context, r any, ids []int, imag
 // embedding rows prefillLogitsQwenVL's CPU path would have built (embedN + the raw-feature
 // splice at [imgPos,imgPos+imgLen), no embed scale — matching HF's scatter into inputs_embeds)
 // and hands them, together with mropePos (GenerateQwenVL's own mropePositions output, already
-// computed for its other branches), to the resident backend's ResidentMRoPEPrefill. Any error is
+// computed for its other branches), to the resident backend's legacyMRoPEPrefill. Any error is
 // a DECLINE, not fatal — the caller falls through to the CPU-prefill+UploadKV bridge.
 //
 // With Qwen3-VL's DeepStack sets, deep is non-nil and the resident must implement legacyMRoPEDeepstackPrefill, or

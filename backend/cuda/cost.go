@@ -5,7 +5,6 @@ package cuda
 import (
 	"time"
 
-	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/cost"
 )
 
@@ -19,8 +18,6 @@ var kernelUnmeasured = []string{cost.FieldBytesRead, cost.FieldBytesWritten, cos
 
 // noLedgerUnmeasured is the alloc operation's, on a device without a ledger.
 var noLedgerUnmeasured = []string{cost.FieldAllocBytes, cost.FieldAllocs, cost.FieldBytesRead, cost.FieldBytesWritten, cost.FieldTime}
-
-var _ decoder.ResidentCost = (*cudaResident)(nil)
 
 // costPlantForTest plants SB11's CUDA defects: 1 launches one kernel a token twice, 2 adds a host wait after the token.
 var costPlantForTest int
@@ -44,7 +41,7 @@ func (r *cudaResident) costToken(c *cost.Counter, p cost.Phase, token func() err
 	return r.CostSpan(c, p, func() (int, error) { return 1, token() })
 }
 
-// CostSpan is decoder.ResidentCost: work runs with c counting into phase p, then the span's device-level counts, its wall
+// CostSpan is decoder.ResidentRuntimeSubsystem: work runs with c counting into phase p, then the span's device-level counts, its wall
 // time and the tokens work reports are added; a span that covered no token and touched the device not at all adds nothing.
 // work must not return while a job it queued is still running on the executor: the executor reads r.cost inside the jobs,
 // and the job's channel send orders this write before it.

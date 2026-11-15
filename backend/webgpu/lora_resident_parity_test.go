@@ -21,7 +21,7 @@ import (
 // heads so o-proj and the differently-widthed q/k/v sites are all genuinely exercised), same
 // vacuousness check, same 0.95 floor (gpt2_resident_parity_test.go's resident-vs-CPU decode-logit
 // bar; this backend has no narrower whole-model floor of its own). It drives
-// decoder.ResidentAdapter directly via ResidentForwardForTest/ResidentAdapterLayersForTest to
+// decoder.ResidentRuntimeSubsystem directly via ResidentForwardForTest/ResidentAdapterLayersForTest to
 // isolate the KERNEL correctness question.
 //
 // This backend's SetAdapter (gpu/lora_resident.go) is a different mechanism from Metal's, a flat
@@ -44,7 +44,7 @@ func TestLoRAResidentParityWebGPU(t *testing.T) {
 	ra := decoder.SubsystemsOf(rf).Runtime
 	ok := ra.AdapterAvailable()
 	if !ok {
-		t.Fatalf("webgpu resident runner does not implement decoder.ResidentAdapter")
+		t.Fatalf("webgpu resident runner does not implement decoder.ResidentRuntimeSubsystem")
 	}
 	if err := mRes.LoadAdapter("a", adapterDir); err != nil {
 		t.Fatalf("LoadAdapter (webgpu side): %v", err)

@@ -6,20 +6,17 @@ import (
 	"fmt"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
-	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-// SP2's speculative verify on a Gated-DeltaNet resident (decoder.ResidentRecurrentSpec; design and gates in
+// SP2's speculative verify on a Gated-DeltaNet resident (decoder.ResidentRuntimeSubsystem; design and gates in
 // docs/completed/task-forward-architecture-2026-10.md §6a, "SP2 on nobara"). A verify pass runs the DeltaNet layers through the
 // conv and scan twins that never store (delta_conv_rows_spec, delta_rule_rows_128_spec, delta_rule_rows_spec), and writes
 // each row's recurrence inputs into dnSpecArena instead of the pass's scratch. FoldVerified marks the rows the loop commits; the
 // next verify's twins fold them into the live window and state before scanning their own rows, and FlushFold folds them through
 // prefill's own kernels when something other than a verify comes next. Either way the committed state is the bits a prefill of
 // those rows would leave, and no copy of the state is ever made.
-
-var _ decoder.ResidentRecurrentSpec = (*cudaResident)(nil)
 
 // dnSpecArena holds, per DeltaNet layer, a verify's rows in two banks: the conv input, the conv output, the normed q and k and the
 // gates, at most rows of each, in one device allocation (Buffer.At slices it). A verify writes one bank while the twins fold the
@@ -48,7 +45,7 @@ const (
 // and k (keyDim each) and (beta, gt) per value head. decoder.RecurrentSpecArenaBytes prices the same formula, for both banks.
 func recurrentSpecFloats(dp *dnetParams) int { return 2*dp.convDim + 2*dp.keyDim + 2*dp.nv }
 
-// PrepareRecurrentSpec (decoder.ResidentRecurrentSpec) allocates the arena for verify passes of up to rows rows, once, before a
+// PrepareRecurrentSpec (decoder.ResidentRuntimeSubsystem) allocates the arena for verify passes of up to rows rows, once, before a
 // block drafter attaches. It keeps none, and says why, for a model whose recurrent layers are not all Gated DeltaNet, whose heads are
 // wider than the scan twins hold, or whose card has no room for it. An arena already holding rows rows is kept; a narrower one is
 // released and replaced. Called on the caller's goroutine.
@@ -153,7 +150,7 @@ func (r *cudaResident) specPending(l int) (p dnPrefillBufs, pM int) {
 	return a.slots[a.bank][l], a.pend
 }
 
-// RecurrentSpecRows (decoder.ResidentRecurrentSpec) is the widest verify the arena holds, 0 when this load kept none.
+// RecurrentSpecRows (decoder.ResidentRuntimeSubsystem) is the widest verify the arena holds, 0 when this load kept none.
 func (r *cudaResident) RecurrentSpecRows() int {
 	if r.dnSpec == nil {
 		return 0
@@ -169,7 +166,7 @@ func (r *cudaResident) RecurrentSpecBytes() int64 {
 	return r.dnSpec.bytes
 }
 
-// VerifyLastNArgmax (decoder.ResidentRecurrentSpec) is PrefillLastNArgmax's pass with every DeltaNet layer's twins: the rows the
+// VerifyLastNArgmax (decoder.ResidentRuntimeSubsystem) is PrefillLastNArgmax's pass with every DeltaNet layer's twins: the rows the
 // last verify marked fold into the window and state first, then this pass's rows scan without writing them. Its rows wait in the
 // other bank for FoldVerified. On an error the committed state is unknown, and the caller treats the sequence as lost.
 func (r *cudaResident) VerifyLastNArgmax(embeddings [][]float32, startPos int) ([]int, error) {
@@ -193,7 +190,7 @@ func (r *cudaResident) VerifyLastNArgmax(embeddings [][]float32, startPos int) (
 	return ids, err
 }
 
-// FoldVerified (decoder.ResidentRecurrentSpec) marks the last verify's first n rows committed. They fold at the next verify, or at
+// FoldVerified (decoder.ResidentRuntimeSubsystem) marks the last verify's first n rows committed. They fold at the next verify, or at
 // FlushFold.
 func (r *cudaResident) FoldVerified(n int) error {
 	a := r.dnSpec
@@ -210,14 +207,14 @@ func (r *cudaResident) FoldVerified(n int) error {
 	return nil
 }
 
-// DropFold (decoder.ResidentRecurrentSpec) forgets the marked rows and the last verify's rows without folding them.
+// DropFold (decoder.ResidentRuntimeSubsystem) forgets the marked rows and the last verify's rows without folding them.
 func (r *cudaResident) DropFold() {
 	if a := r.dnSpec; a != nil {
 		a.avail, a.pend = 0, 0
 	}
 }
 
-// FlushFold (decoder.ResidentRecurrentSpec) folds the marked rows now, through delta_conv_rows and the scan prefill runs: n rank-1
+// FlushFold (decoder.ResidentRuntimeSubsystem) folds the marked rows now, through delta_conv_rows and the scan prefill runs: n rank-1
 // updates per value head per layer, in place. Nothing marked is a no-op.
 func (r *cudaResident) FlushFold() error {
 	a := r.dnSpec

@@ -151,7 +151,7 @@ var loraPTX []byte
 var attnBlockPTX []byte
 
 // attnImgPrefillPTX: attn_img_batched, Gemma 3's image-block bidirectional prefill attention
-// (decoder.ResidentImagePrefill / cuda.PrefillImageLast). A verbatim copy of attn_batched, except that a query row whose
+// (decoder.ResidentPrefillSubsystem / cuda.PrefillImageLast). A verbatim copy of attn_batched, except that a query row whose
 // own position lies inside a caller-supplied [imgStart,imgEnd) range sees the whole block; text before and after stays
 // exactly causal (unlike attn_block_full's uniform widening).
 //
@@ -171,7 +171,7 @@ var attnImgPrefillPTX []byte
 //go:embed testdata/attn_img_prefill_kv16.ptx
 var attnImgPrefillKV16PTX []byte
 
-// ropeMRopePrefillPTX: rope_kv_mrope_batched, Qwen2.5-VL's m-RoPE batched-prefill rotation (decoder.ResidentMRoPEPrefill
+// ropeMRopePrefillPTX: rope_kv_mrope_batched, Qwen2.5-VL's m-RoPE batched-prefill rotation (decoder.ResidentPrefillSubsystem
 // / cuda.PrefillMRoPELast). A copy of rope_kv_batched whose rotation angle is a per-row, per-frequency-section lookup:
 // frequency index d rotates by pos[comp(d)]*invFreq[d], where comp(d) picks temporal/height/width from the model's
 // MRopeSection cumulative boundaries.

@@ -97,7 +97,7 @@ func loraLayersIdentical(layers, cached []decoder.ResidentAdapterLayer) bool {
 	return true
 }
 
-// SetAdapter implements decoder.ResidentAdapter: uploads (layers != nil) or clears (layers == nil) the compute-time LoRA
+// SetAdapter implements decoder.ResidentRuntimeSubsystem: uploads (layers != nil) or clears (layers == nil) the compute-time LoRA
 // delta for every subsequent Forward/ForwardN call until the next SetAdapter. A bind that returns an error leaves NO adapter
 // bound (r.loraLayers is nil), which is what generateInto's fallback-to-CPU path assumes.
 //

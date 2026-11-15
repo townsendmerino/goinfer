@@ -152,7 +152,7 @@ func (r *cudaResident) PrefillLastMarked(ctx context.Context, embeddings [][]flo
 	return r.prefillChunkedMarked(ctx, embeddings, startPos, tailLastLogits, nil, mark, at)
 }
 
-// PrefillImageLast satisfies decoder.ResidentImagePrefill: PrefillLast for a turn whose prompt carries a bidirectional
+// PrefillImageLast satisfies decoder.ResidentPrefillSubsystem: PrefillLast for a turn whose prompt carries a bidirectional
 // image block [imgStart,imgEnd) (docs/multimodal.md; decoder/kvcache.go's SetImageBlocks/attendHi is the CPU reference
 // it must match bit for bit). embeddings already carry the spliced vision features.
 //
@@ -316,7 +316,7 @@ const (
 	spanDefectNoReachBack
 )
 
-// PrefillMRoPELast satisfies decoder.ResidentMRoPEPrefill: PrefillLast for Qwen2.5-VL under m-RoPE 3D positions
+// PrefillMRoPELast satisfies decoder.ResidentPrefillSubsystem: PrefillLast for Qwen2.5-VL under m-RoPE 3D positions
 // (docs/multimodal.md; decoder/rope.go's applyMRoPE/mropePositions is the CPU reference, bit for bit). embeddings carry
 // the spliced vision features. mropePos is mropePositions' output, one (t,h,w) triple per ABSOLUTE position over the
 // WHOLE prompt; it is never pre-sliced because mropePosWindow slices it inside prefillCore.
@@ -763,7 +763,7 @@ func imgBlocksMaxNWin(causalMaxNWin, window int, blocks [][2]int) int {
 	return launchgeom.ImgBlocksMaxNWin(causalMaxNWin, window, blocks)
 }
 
-// checkPrefillShmemImg is checkPrefillShmem's image-aware twin (decoder.ResidentImagePrefill): it sizes the check with
+// checkPrefillShmemImg is checkPrefillShmem's image-aware twin (decoder.ResidentPrefillSubsystem): it sizes the check with
 // imgBlockMaxNWin, the formula prefillCore's attn_img_batched launch uses, so it neither declines a shape the launch
 // would run nor misses one it would fail. It is a separate call from checkPrefillShmem, not a replacement (see
 // prefillCore).
@@ -992,7 +992,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	} else if !r.kvRoomFor(startPos, M) {
 		return nil, nil, fmt.Errorf("cuda prefill: %d rows at position %d do not fit the windowed KV (window %d + %d slack): %w", M, startPos, r.kvWindow, r.kvSlack, errPrefillDeclined)
 	}
-	// Image-block prefill (decoder.ResidentImagePrefill); empty blocks is the "no block" case. checkPrefillShmemImgBlocks is
+	// Image-block prefill (decoder.ResidentPrefillSubsystem); empty blocks is the "no block" case. checkPrefillShmemImgBlocks is
 	// a separate call from checkPrefillShmem above, not a replacement: TestPrefillCoreAndDraftBlockCallTheShmemGuards pins
 	// prefillCore's call to checkPrefillShmem by name (see the header of cuda/attn_img_prefill.cu).
 	if img {
@@ -1003,7 +1003,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			return nil, nil, e
 		}
 	}
-	// m-RoPE prefill (decoder.ResidentMRoPEPrefill); nil mropePos means not m-RoPE, as in decoder/rope.go's ropeAt. No
+	// m-RoPE prefill (decoder.ResidentPrefillSubsystem); nil mropePos means not m-RoPE, as in decoder/rope.go's ropeAt. No
 	// shared-memory widening check: m-RoPE changes the rotation angle, not attention geometry.
 	if mropePos != nil && !r.mropePrefillReady {
 		return nil, nil, fmt.Errorf("cuda prefill: m-RoPE batched kernel unavailable: %w", errPrefillDeclined)

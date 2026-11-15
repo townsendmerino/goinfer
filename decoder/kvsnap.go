@@ -44,10 +44,10 @@ type ResidentKVSnapshot interface {
 	Release()
 }
 
-// ResidentKVSnapshotter is the optional capability of a resident to hold a slot's KV rows in host memory and put them back. Like
+// legacyKVSnapshotter is the optional capability of a resident to hold a slot's KV rows in host memory and put them back. Like
 // legacyKVCopier it works on today's slot storage: a windowed layer's rows are those its window and the rollback need, and the
 // restore sets the slot's ring base as a copy does.
-type ResidentKVSnapshotter interface {
+type legacyKVSnapshotter interface {
 	// SnapshotKV copies rows [0, end) of slot into pinned host memory, end a whole number of blocks; for a windowed layer, the rows
 	// [end-(window-1)-rollback, end) its slot holds. A *KVCopyDecline, before anything is allocated, refuses what it cannot hold.
 	SnapshotKV(slot, end int) (ResidentKVSnapshot, error)
@@ -64,7 +64,7 @@ type ResidentKVSnapshotter interface {
 }
 
 // KeepsRecurrentSnapshots reports whether this model's prefix snapshots carry its recurrent state: it has recurrent state, and its resident's
-// snapshots hold it (ResidentKVSnapshotter.KVSnapshotRecurrent). A route computes KVScope.Keep only for such a model.
+// snapshots hold it (legacyKVSnapshotter.KVSnapshotRecurrent). A route computes KVScope.Keep only for such a model.
 func (m *Model) KeepsRecurrentSnapshots() bool {
 	return m.hasRecurrentState() && m.recurrentSnapshots()
 }
@@ -408,7 +408,7 @@ func (m *Model) KVHostBytes() int64 {
 }
 
 // snapshotter is the resident's snapshot capability, nil when snapshots are off for this model or the resident has none.
-func (m *Model) snapshotter() ResidentKVSnapshotter {
+func (m *Model) snapshotter() ResidentKVSubsystem {
 	if m.kvSnaps == nil || m.resident == nil {
 		return nil
 	}

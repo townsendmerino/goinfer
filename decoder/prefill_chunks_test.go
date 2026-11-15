@@ -7,7 +7,7 @@ import (
 )
 
 // chunkFake is mc3Fake as a resident that cuts its own long prefill (legacyPrefillChunks, CUDA's shape): it reports a chunk, a
-// per-row scratch figure and a tail minimum, and is NOT a ResidentPrefillBlocks, so the decoder does not split its prompts.
+// per-row scratch figure and a tail minimum, and is NOT a legacyPrefillBlocks, so the decoder does not split its prompts.
 type chunkFake struct {
 	*mc3Fake
 	chunk   int
