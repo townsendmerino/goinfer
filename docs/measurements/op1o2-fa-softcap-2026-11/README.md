@@ -132,7 +132,7 @@ built.
   - Gemma 2's window, 4,096, is not crossed at K = 3,900.
   - The registered timed cell (README above) is the other half of a default decision, and it has not run.
 
-## Addendum, 2026-11-15 11:55 PST, before the timed cell's first run: the instrument, written down
+## Addendum, 2026-11-15 11:53 PST (commit `20bb8e0f8`; first typed as 11:55, corrected from the commit time), before the timed cell's first run: the instrument, written down
 
 The README above registers the cell's rule and shape. This fixes the parts it left to the harness, before any timed run.
 
