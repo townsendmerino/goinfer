@@ -70,48 +70,10 @@ type ResidentDrafterHost interface {
 	BatchedCapture() [][]float32
 }
 
-// legacySeedArgmax is an OPTIONAL narrowing of PrefillLastNArgmax for the prompt seed, the one place the loop asks for M rows of argmax
-// and reads exactly one of them. Without it the seed materialises the batched logits (M x vocab: gigabytes on a large-vocab target at
-// prompt lengths over ~1k) and runs the head over every row to obtain one token id. The capture the seed needs comes from the layer loop,
-// not the head, so heading one row loses nothing.
-//
-// Optional rather than part of ResidentDrafterHost, following legacyGreedy: a backend without it keeps working
-// through the wide path.
-type legacySeedArgmax interface {
-	// PrefillSeedArgmax runs the same batched forward and returns only the LAST row's argmax.
-	// The batched capture seam must be armed and filled exactly as PrefillLastNArgmax fills it.
-	PrefillSeedArgmax(embeddings [][]float32, startPos int) (int, error)
-}
-
-// legacyRecurrentSpec is the OPTIONAL capability that lets a resident with recurrent state verify speculatively (SP2,
-// docs/completed/task-forward-architecture-2026-10.md §6a, "SP2 on nobara"). Without it, BlockSpec refuses every recurrent model,
-// because PrefillLastNArgmax advances the state by every row it verifies, rejected or not.
-type legacyRecurrentSpec interface {
-	// PrepareRecurrentSpec allocates what verifies of up to rows rows need, before a drafter attaches; a later call for no more
-	// rows is a no-op.
-	// It returns why when this load cannot take the path (a recurrent layer it does not serve, no room for the rows), and
-	// RecurrentSpecRows then stays 0.
-	PrepareRecurrentSpec(rows int) error
-	// RecurrentSpecRows is the widest verify the path holds: 0 when this load cannot take it (a recurrent layer it does not
-	// serve, or no room for its rows).
-	RecurrentSpecRows() int
-	// VerifyLastNArgmax is PrefillLastNArgmax that writes none of its own rows into any recurrent layer's committed state or conv
-	// window. It first folds the rows the previous verify had marked (FoldVerified). Each row starts from the row above it, so the
-	// rows are a chain.
-	VerifyLastNArgmax(embeddings [][]float32, startPos int) ([]int, error)
-	// FoldVerified marks the last verify's first n rows committed. They fold into the state, leaving it as a prefill of those
-	// rows would, at the next VerifyLastNArgmax or FlushFold, whichever comes first.
-	FoldVerified(n int) error
-	// FlushFold folds the marked rows now. Called before anything other than a verify reads or advances the state.
-	FlushFold() error
-	// DropFold forgets the marked rows without folding them: an exit that commits nothing leaves no rows for a later turn to fold.
-	DropFold()
-}
-
-// RecurrentSpecMaxRows is the widest verify a legacyRecurrentSpec arena is sized for: a DFlash block.
+// RecurrentSpecMaxRows is the widest verify a RecurrentSpecAvailable arena is sized for: a DFlash block.
 const RecurrentSpecMaxRows = 16
 
-// RecurrentSpecArenaBytes is the device memory a legacyRecurrentSpec resident keeps for verify passes of up to rows rows on a model of
+// RecurrentSpecArenaBytes is the device memory a RecurrentSpecAvailable resident keeps for verify passes of up to rows rows on a model of
 // arch a: two banks (a verify writes one while the previous verify's committed rows fold from the other) of, per Gated-DeltaNet layer and
 // row, the conv input and output, the normed q and k and two gates per value head, plus one fold output, f32, rounded up to the 2 MiB
 // cuMemAlloc gives a buffer that size. 0 for a model the path refuses: no recurrent
@@ -282,7 +244,7 @@ func (m *Model) prepareRecurrentSpec(host ResidentDrafterHost, dw BlockDrafterWe
 	}
 	rt := SubsystemsOf(host).Runtime
 	if !rt.RecurrentSpecAvailable() {
-		return fmt.Errorf("decoder: this model has recurrent state and its resident cannot verify without writing it (no legacyRecurrentSpec)")
+		return fmt.Errorf("decoder: this model has recurrent state and its resident cannot verify without writing it (no RecurrentSpecAvailable)")
 	}
 	// The architecture first, so a model the path refuses has no arena allocated either; the arena's price is 0 exactly there.
 	if RecurrentSpecArenaBytes(m.w.arch, 1) == 0 {
@@ -350,7 +312,7 @@ func (s *BlockSpec) Generate(prompt []int, opt BlockSpecOptions) ([]int, int, er
 }
 
 // seedAnchor runs the prompt suffix embs from pos through the host and returns the seed's id, the argmax of its last row. It asks for
-// the id alone when the backend can (legacySeedArgmax), which skips an M x vocab logits buffer, copy and host argmax.
+// the id alone when the backend can (SeedArgmaxAvailable), which skips an M x vocab logits buffer, copy and host argmax.
 func (s *BlockSpec) seedAnchor(embs [][]float32, pos int) (int, error) {
 	if canStep(s.host, stepBatch{Pass: passRows, Emb: stepProbe, Out: outArgmax}) {
 		sr, err := stepOn(s.host, stepBatch{Pass: passRows, Emb: embs, Pos: pos, Out: outArgmax})
@@ -391,7 +353,7 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	// advance the state by every row, rejected or not.
 	fold := s.recurrentFold(width)
 	if m.hasRecurrentState() && fold == nil {
-		return nil, 0, fmt.Errorf("decoder: block-spec verify width %d on a recurrent model needs the resident's fold path (legacyRecurrentSpec)", width)
+		return nil, 0, fmt.Errorf("decoder: block-spec verify width %d on a recurrent model needs the resident's fold path (RecurrentSpecAvailable)", width)
 	}
 	if fold != nil {
 		// Every exit leaves nothing marked: the committing one flushes below, and an early one (a stopped stream, a device or

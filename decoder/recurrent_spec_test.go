@@ -38,7 +38,7 @@ func TestSpecRollbackSafeVia_admitsOnlyTheFoldPath(t *testing.T) {
 	for _, c := range []struct {
 		name  string
 		arch  *Architecture
-		fold  legacyRecurrentSpec
+		fold  ResidentRuntimeSubsystem
 		width int
 		want  bool
 	}{

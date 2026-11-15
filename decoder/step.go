@@ -434,7 +434,7 @@ var (
 // stepProbeSpan is a one-span image input for asking canStep about the image and DeepStack shapes; canStep reads only its count.
 var stepProbeSpan = [][2]int{{0, 1}}
 
-// stepBatchRange is legacyBatchStepper's BatchStepRange on r, the batch sizes its multi-sequence step serves; ok is false when r
+// stepBatchRange is BatchStepperAvailable's BatchStepRange on r, the batch sizes its multi-sequence step serves; ok is false when r
 // has no multi-sequence step (canStep refuses a passSeqs batch).
 func stepBatchRange(r any) (lo, hi int, ok bool) {
 	dec := SubsystemsOf(r).Decode
@@ -445,7 +445,7 @@ func stepBatchRange(r any) (lo, hi int, ok bool) {
 	return lo, hi, true
 }
 
-// stepMarkAlign is legacyPrefillMarked's PrefillMarkAlign on r, the pass width a marked prefill's mark must fall on; ok is false
+// stepMarkAlign is PrefillMarkedAvailable's PrefillMarkAlign on r, the pass width a marked prefill's mark must fall on; ok is false
 // when r cannot mark a prefill (canStep refuses a passRows batch with At).
 func stepMarkAlign(r any) (align int, ok bool) {
 	pf := SubsystemsOf(r).Prefill

@@ -32,7 +32,7 @@ type fakeResident struct {
 	closed      bool
 	uploadKVs   []fakeUploadKVCall // records every UploadKV call, in order — gap-0 resident tests
 	resetCalls  int
-	lastRopePos int // last ForwardMRoPE ropePos argument (legacyMRoPE gap-0 tests)
+	lastRopePos int // last ForwardMRoPE ropePos argument (MRoPEDecodeAvailable gap-0 tests)
 }
 
 func (f *fakeResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
@@ -44,7 +44,7 @@ type fakeUploadKVCall struct {
 	keys, vals  []float32
 }
 
-// ForwardMRoPE makes fakeResident satisfy decoder.legacyMRoPE too — ropePos is recorded but
+// ForwardMRoPE makes fakeResident serve MRoPEDecodeAvailable too — ropePos is recorded but
 // otherwise ignored (the fake's output only needs to be deterministic and distinct per pos, the
 // numeric RoPE correctness itself is gated for real against the CUDA/WebGPU kernels, not here).
 func (f *fakeResident) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]float32, error) {

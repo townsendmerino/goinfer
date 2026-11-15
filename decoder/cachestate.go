@@ -113,10 +113,10 @@ var cacheStateGrid = map[cacheState]map[lifecyclePath]stateCell{
 		lcReuse:        {hExactUnlessWrapped, "rewindForReuse goes cold on an inexact TruncateTo"},
 		lcSpecRollback: {hRefused, "specRollbackSafe refuses every SlidingWindow > 0 model: rollback sites do not consume an inexact rewind (audit C-04)"},
 		lcPublish:      {hExactUnlessWrapped, "a resident may keep only a window of these layers' rows; the block is published and the resident answers for what it still holds"},
-		lcShare:        {hExactUnlessWrapped, "residentReuseFloor asks the resident (legacyReusableKV): a prefix whose window was dropped is served as 0, and the prompt is prefilled whole"},
+		lcShare:        {hExactUnlessWrapped, "residentReuseFloor asks the resident (ReusableKV): a prefix whose window was dropped is served as 0, and the prompt is prefilled whole"},
 		lcEvict:        {hCleared, ""},
 		lcCkptSave:     {hKept, "not copied: the ring stays in the slot"},
-		lcCkptRestore:  {hExactUnlessWrapped, "exact while the window holds what c attends to; once dropped, legacyReusableKV's floor sends the request cold before any restore"},
+		lcCkptRestore:  {hExactUnlessWrapped, "exact while the window holds what c attends to; once dropped, ReusableKV's floor sends the request cold before any restore"},
 	},
 	stateInt8KV: {
 		lcRewind:       {hExact, ""},
@@ -227,11 +227,11 @@ var recurrentCells = map[lifecyclePath]stateCell{
 	lcReset:        {hCleared, "resetRecurrent (audit C-01, C-03)"},
 	lcSnapshot:     {hRefused, "the snapshot format does not carry recurrent state"},
 	lcReuse:        {hInexact, "follows the rewind; rewindForReuse goes cold"},
-	lcSpecRollback: {hRefused, "specRollbackSafe refuses every model with recurrent state on a loop that rolls back with TruncateTo; BlockSpec on a resident whose fold path serves every recurrent layer (legacyRecurrentSpec, SP2: Gated DeltaNet on CUDA) verifies without writing it and folds the committed rows in"},
+	lcSpecRollback: {hRefused, "specRollbackSafe refuses every model with recurrent state on a loop that rolls back with TruncateTo; BlockSpec on a resident whose fold path serves every recurrent layer (RecurrentSpecAvailable, SP2: Gated DeltaNet on CUDA) verifies without writing it and folds the committed rows in"},
 	lcPublish:      {hKept, "the state is not in any block: it stays live in the resident, which is why such a model has one slot (residentSlotCount)"},
-	lcShare:        {hInexact, "a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (legacyKVSnapshotter.KVSnapshotRecurrent: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold"},
+	lcShare:        {hInexact, "a strict extension of the whole sequence continues from where the state stopped; a request that matches it only through its checkpoint restarts from there (lcCkptRestore); on a resident whose prefix snapshots carry the state (KVSnapshotterAvailable.KVSnapshotRecurrent: CUDA, Gated-DeltaNet), a prompt that repeats a snapshot's exact prefix restores it and continues (B35, kvsnap.go); anything else is cold"},
 	lcEvict:        {hCleared, "the resident re-zeroes it at position 0 of the prefill that follows; the sequence's checkpoint record goes with it"},
-	lcCkptSave:     {hExact, "the resident copies every recurrent layer's state and conv window at c, the end of the prompt (legacyRecurrentCheckpoint); one that cannot copy every recurrent kind the model has keeps none"},
+	lcCkptSave:     {hExact, "the resident copies every recurrent layer's state and conv window at c, the end of the prompt (RecurrentCheckpointBytes); one that cannot copy every recurrent kind the model has keeps none"},
 	lcCkptRestore:  {hExact, "copied back whole at c, conv window included; the prefill continues from c"},
 }
 

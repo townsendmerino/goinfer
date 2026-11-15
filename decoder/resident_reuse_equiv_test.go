@@ -37,10 +37,7 @@ func (m *oldReuse) residentReuseFloor(reuse int) int {
 	if reuse <= 0 {
 		return reuse
 	}
-	if rk, ok := m.resident.(legacyReusableKV); ok {
-		return rk.ReusableKV(reuse)
-	}
-	return reuse
+	return SubsystemsOf(m.resident).KV.ReusableKV(reuse)
 }
 
 func (m *oldReuse) reuseLenOf(resIDs []int, resLora *loraRuntime, resImgBlocks []residentImageBlock, prompt []int, imgs []residentImageClaim, lora *loraRuntime) int {
@@ -120,11 +117,11 @@ func findImageClaim(imgs []residentImageClaim, pos int) (residentImageClaim, boo
 }
 
 func (m *oldReuse) residentSlotCount() int {
-	sl, ok := m.resident.(legacyKVSlotter)
-	if !ok || m.recurrent {
+	kv := SubsystemsOf(m.resident).KV
+	if !kv.KVSlotterAvailable() || m.recurrent {
 		return 1
 	}
-	return max(1, sl.KVSlots())
+	return max(1, kv.KVSlots())
 }
 
 func (m *oldReuse) residentAcquireSlot(prompt []int, imgs []residentImageClaim, lora *loraRuntime, busy []bool) (reuse, slot int) {
@@ -136,11 +133,11 @@ func (m *oldReuse) declineShortLeadReuse(prompt []int, reuse int) int {
 	if reuse <= 0 || reuse >= 64 {
 		return reuse
 	}
-	cr, ok := m.resident.(legacyCapsReporter)
-	if !ok || !cr.ResidentCaps().HasFastPrefill {
+	caps := SubsystemsOf(m.resident).Runtime.ResidentCaps()
+	if !caps.HasFastPrefill {
 		return reuse
 	}
-	if floor := cr.ResidentCaps().FastPrefillFloor; floor <= 0 || len(prompt) < floor {
+	if floor := caps.FastPrefillFloor; floor <= 0 || len(prompt) < floor {
 		return reuse
 	}
 	return 0
@@ -181,8 +178,7 @@ func (m *oldReuse) residentBind(slot int) error {
 	if slot == m.resCur || m.residentSlotCount() <= 1 {
 		return nil
 	}
-	sl := m.resident.(legacyKVSlotter)
-	if err := sl.UseKVSlot(slot); err != nil {
+	if err := SubsystemsOf(m.resident).KV.UseKVSlot(slot); err != nil {
 		return err
 	}
 	if len(m.resSlots) != m.residentSlotCount() {

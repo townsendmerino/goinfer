@@ -60,7 +60,7 @@ Generated 2026-11-14 from origin/main 12bf57d5b by an AST scan (identifier uses,
 ## What "delete" means here
 
 Every method of every deletable interface is already a method of a contract (the table), so no contract changes. A deleted interface is removed from the exported surface: the legacy* wrappers in `decoder/resident_subsystems.go` keep their structural probe for test fakes as an unexported interface of the same method set (a fake that implements `ForwardArgmax` still satisfies the Decode contract through the bridge); the backends' pins are deleted, since each backend already pins the four contracts in `subsystems.go`; tests that name an old interface assert on the contract through `SubsystemsOf`. No method body changes.
-Not planned here: removing the legacy* wrappers (every test fake would have to implement a contract or the provider), MZ5's leaf move, `ResidentLayerView` (MZ4).
+Removing the legacy* wrappers waited on every test fake implementing a contract; that is done ("Bridge tail" below). Not planned here: MZ5's leaf move, `ResidentLayerView` (MZ4).
 
 ## Progress
 
@@ -70,7 +70,7 @@ Not planned here: removing the legacy* wrappers (every test fake would have to i
 
 ## Where this leaves the exported surface
 
-Six old interfaces stay exported, each for a stated reason: `ResidentForward` (the base), `ResidentDrafterHost` (the raw host `BlockSpec` drives), `ResidentBlockDrafter` and `ResidentKVSnapshot` (values the contracts return), `ResidentLayerView` (BackendModelView's layer), `ResidentHybridMRoPEPrefill` (a type-level check the backends' support tests make). The other 37 are unexported probes inside the bridge; the four contracts and `ResidentSubsystemProvider` are the surface a backend implements. Not done: removing the unexported probes and the legacy wrappers (every test fake would have to implement a contract), and MZ5's leaf move.
+Six old interfaces stay exported, each for a stated reason: `ResidentForward` (the base), `ResidentDrafterHost` (the raw host `BlockSpec` drives), `ResidentBlockDrafter` and `ResidentKVSnapshot` (values the contracts return), `ResidentLayerView` (BackendModelView's layer), `ResidentHybridMRoPEPrefill` (a type-level check the backends' support tests make). The other 37 were unexported probes inside the bridge and are gone ("Bridge tail" below); the four contracts and `ResidentSubsystemProvider` are the surface a backend implements. Not done: MZ5's leaf move.
 
 ## Bridge tail (the last step)
 
@@ -195,3 +195,11 @@ Also asserted structurally by the bridge, and kept: `Prefiller`, `PrefillPathRep
 | stepPrefillOnly | decoder/step_test.go | embeds `stepPlainResident` | Prefiller |
 | stepNoAllocResident | decoder/step_test.go | embeds `stepPlainResident` | legacyGreedy, legacySample, legacyTopK |
 | fakeResident | internal/app/serveapp/residentpath_test.go | root fake (runtime contract only) | ResidentCapsReporter |
+
+### Result
+
+- `SubsystemsOf` returns a `ResidentSubsystemProvider`'s own subsystems and the no-op subsystems for anything else (nil included). The four bridge types, the 38 probes (the doc comment of each moved onto its capability in `decoder/resident_subsystems.go`), `cachedResidentSubsystems`, `sameResident` and `Model.resSubP` are deleted.
+- Test fakes: `decoder/resident_fakes_test.go:fakeSubsystems` (the four `Noop*` types) is embedded by a fake that serves contract methods; it overrides the methods and `*Available` gates it serves and returns itself from `ResidentSubsystems`. A BlockSpec host embeds `NoopResidentRuntime` and serves the runtime contract only. A fake that models a plain resident (`stepPlainResident`, `noCapResident`, `erroringResident`, `stubResident`, `residentForwardOnly`) stays a non-provider and gets the no-op subsystems. A fake that embeds another through a pointer a test may leave nil embeds `fakeSubsystems` too, so the defaults stay reachable.
+- Retyped: `specRollbackSafeVia` takes a `ResidentRuntimeSubsystem`, `kvOtherDonors` a `ResidentKVSubsystem`, and the four `Resident*PrefillForTest` hooks take `any` (a resident; they resolve the prefill contract inside).
+- No contract gained or lost a method. The exported surface is unchanged: the four contracts, `ResidentSubsystemProvider`, and the six interfaces with reasons above.
+- A test that checked only the bridge: `TestResidentSubsystems_DirectProviderAndZeroAlloc` asserted that `providerFakeResident` does not implement `legacyGreedy`; it now asserts the outer struct is not a `ResidentDecodeSubsystem`. `bannedMicroAssertions` drops the 38 names (a new assertion on one cannot compile) and keeps the exported ones.

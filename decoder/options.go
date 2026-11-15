@@ -119,7 +119,7 @@ type Options struct {
 	// ResidentKVSlots asks a GPU-resident backend for this many independent KV caches ("slots"), so several interleaved
 	// conversations each keep their own prefix resident instead of evicting one another's (docs/tasks/parked/task-concurrency-2026-09.md).
 	// Still one generation at a time unless MC3 is enabled: a slot is bound per generation. 0 or 1 = one slot. A backend clamps it
-	// to what its fit guard allows and says so; a backend that does not implement legacyKVSlotter, and every family with
+	// to what its fit guard allows and says so; a backend that does not implement KVSlotterAvailable, and every family with
 	// recurrent state, keep one slot. serve sets it from -kv-sessions.
 	ResidentKVSlots int
 	// ResidentKVSlotsDefault says ResidentKVSlots is the caller's default, not a count the operator chose (serve sets it when
@@ -163,13 +163,13 @@ type Options struct {
 	// §5.15). serve sets it for -kv-share off and when it answers the network without an API key.
 	KVShareOff bool
 	// KVHostBytes is the host memory budget for prefix snapshots (docs/completed/task-kv7-prefix-snapshot-2026-10.md): after a cold
-	// first prefill of a long prompt a GPU-resident backend that implements legacyKVSnapshotter copies the prompt's KV to pinned
+	// first prefill of a long prompt a GPU-resident backend that implements KVSnapshotterAvailable copies the prompt's KV to pinned
 	// host memory, and a later request that starts with the same ids restores it instead of prefilling it. 0 turns it off, and
 	// nothing is held while no snapshot is. Pinned memory is allocated when a snapshot is taken and freed when it is dropped.
 	// serve sets it from -kv-host-bytes.
 	KVHostBytes int64
 	// KVDemote keeps a released idle conversation's rows in host memory under the KVHostBytes budget, for a resident that implements
-	// legacyKVDemoter, and brings them back when it returns (docs/measurements/kv7-demote-2026-11/README.md). The copy waits on the
+	// KVDemoterAvailable, and brings them back when it returns (docs/measurements/kv7-demote-2026-11/README.md). The copy waits on the
 	// request taking the blocks, so it is off until a timed reading says otherwise. serve sets it when -kv-host-bytes names a budget. KVShareOff
 	// turns it off, as it does the snapshots.
 	KVDemote bool

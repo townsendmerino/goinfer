@@ -1,15 +1,5 @@
 package decoder
 
-import "context"
-
-// legacyPrefillRows is the optional capability of a Prefiller that reads a suffix's embeddings a range of rows at a time, so the
-// host holds a chunk of them instead of the whole suffix (MEM6, docs/completed/task-memory-campaign-2026-10.md). PrefillLastRows is
-// PrefillLast for n rows at startPos: rows(lo, hi) returns rows [lo, hi) of the suffix, valid only until the next call, and the
-// resident may ask for a range more than once (a declined route re-reads it).
-type legacyPrefillRows interface {
-	PrefillLastRows(ctx context.Context, n, startPos int, rows func(lo, hi int) [][]float32) ([]float32, error)
-}
-
 // embedRowsObserver, when set (tests only, SetEmbedRowsObserverForTest), is told how many rows each embedding of a prefill's
 // suffix holds at once.
 var embedRowsObserver func(rows int)

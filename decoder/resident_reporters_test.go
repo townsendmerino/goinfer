@@ -48,21 +48,24 @@ func (r *kernelFloorResident) ResidentCaps() ResidentCaps {
 	return c
 }
 
+// capsReporter is the ResidentCaps method a fake reports through.
+type capsReporter interface{ ResidentCaps() ResidentCaps }
+
 // Each fake that reports a value overrides the ResidentCaps it embeds; a fake that fell out of the interface would report nothing.
 var (
-	_ legacyCapsReporter = (*fakeResident)(nil)
-	_ legacyCapsReporter = (*residentForwardOnly)(nil)
-	_ legacyCapsReporter = quantReportingResident{}
-	_ legacyCapsReporter = quantReporting{}
-	_ legacyCapsReporter = (*fastPrefillResident)(nil)
-	_ legacyCapsReporter = (*equivResident)(nil)
-	_ legacyCapsReporter = (*chunkFake)(nil)
-	_ legacyCapsReporter = (*blockFake)(nil)
-	_ legacyCapsReporter = (*twoClassFake)(nil)
-	_ legacyCapsReporter = (*fastFloorResident)(nil)
-	_ legacyCapsReporter = (*kernelFloorResident)(nil)
-	_ legacyCapsReporter = (*contextNoteResident)(nil)
-	_ legacyCapsReporter = (*mc3Fake)(nil)
+	_ capsReporter = (*fakeResident)(nil)
+	_ capsReporter = (*residentForwardOnly)(nil)
+	_ capsReporter = quantReportingResident{}
+	_ capsReporter = quantReporting{}
+	_ capsReporter = (*fastPrefillResident)(nil)
+	_ capsReporter = (*equivResident)(nil)
+	_ capsReporter = (*chunkFake)(nil)
+	_ capsReporter = (*blockFake)(nil)
+	_ capsReporter = (*twoClassFake)(nil)
+	_ capsReporter = (*fastFloorResident)(nil)
+	_ capsReporter = (*kernelFloorResident)(nil)
+	_ capsReporter = (*contextNoteResident)(nil)
+	_ capsReporter = (*mc3Fake)(nil)
 )
 
 // TestResidentContextNote_readsTheCaps: Model.ResidentContextNote is the resident's ResidentCaps.ContextNote, and "" with no

@@ -273,7 +273,7 @@ func (r *genRun) chooseDecodePath() {
 	r.fastGreedy = r.useGPU && r.hasGreedy && r.procFree &&
 		(r.sampler.ArgmaxEquivalent() || r.sampler.GreedyEquivalent()) &&
 		m.knobs.get(knobNoGreedyFastpath) == ""
-	// The greedy chain (legacyGreedyChain): the same tokens with the next token's forward queued on the device before the host
+	// The greedy chain (GreedyChainAvailable): the same tokens with the next token's forward queued on the device before the host
 	// has seen this one. With no processor, or a gated one while its gate is closed (outside MC3: a step the gate opens stops the
 	// chain and takes the full-logits path below, which the chain would otherwise skip), no adapter, and where the embedding
 	// lookup is a plain table row, which the resident's gather reproduces. Under MC3 it runs only on the tokens this generation
@@ -334,7 +334,7 @@ func (r *genRun) chooseFastPaths() {
 	if r.mc3 != nil && !r.fastGreedy && !r.sampleOn && r.procFree && (r.sampler.ArgmaxEquivalent() || r.sampler.GreedyEquivalent()) {
 		r.batchGreedy = residentCapsOf(m.resident).BatchGreedyDraw
 	}
-	// The sampled chain (legacySampleChain): where the device draw serves the token, the same draw with the next token's forward
+	// The sampled chain (SampleChainAvailable): where the device draw serves the token, the same draw with the next token's forward
 	// queued on the device first, as the greedy chain does for the argmax. Same exclusions as the greedy chain, and not where
 	// ForwardSample itself takes the argmax (a temperature so small 1/T is infinite).
 

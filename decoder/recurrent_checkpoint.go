@@ -12,21 +12,6 @@ import (
 // c = len(prompt). A next request that matches the slot's sequence through c but does not extend all of it restores the state
 // and prefills from c (kvmgr's scoreRecurrentTokens), where today it prefills from 0. The attention KV is positional and stays.
 
-// legacyRecurrentCheckpoint is the optional capability of a resident with recurrent state to keep one copy of it, every
-// recurrent layer's state and conv window, beside the live state. RecurrentCheckpointBytes is the copy's size, 0 when the resident
-// keeps none (its load did not admit it). SaveRecurrentCheckpoint copies the live state into it and RestoreRecurrentCheckpoint
-// copies it back; neither touches the attention KV. An error leaves the live state unknown to the caller.
-//
-// RecurrentCheckpointHeld reports whether slot holds a checkpoint now. A checkpoint can be taken from a slot, by another slot's save
-// or by a reset, while the slot's record still names its position, so a load of several slots scores only a checkpoint its slot holds:
-// a restore that fails has already cost that slot its sequence. A resident that cannot tell returns false, and scores none on such a load.
-type legacyRecurrentCheckpoint interface {
-	RecurrentCheckpointBytes() int64
-	SaveRecurrentCheckpoint() error
-	RestoreRecurrentCheckpoint() error
-	RecurrentCheckpointHeld(slot int) bool
-}
-
 // checkpointHeld reports whether slot holds a checkpoint a request on a load of several slots may score.
 func (m *Model) checkpointHeld(slot int) bool {
 	rc := m.recurrentCheckpointer()

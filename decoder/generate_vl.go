@@ -74,7 +74,7 @@ func (m *Model) GenerateVL(ctx context.Context, ids []int, imgPos, imgLen int, i
 // GenerateVLSpans is GenerateVL for a prompt with several images: spans are the images' placeholder runs in prompt
 // order, each its own bidirectional block, and features returns every span's rows concatenated in span order. Reuse
 // claims every span; the resident image prefill takes them all when the backend implements
-// legacyImageBlocksPrefill (one span needs only legacyImagePrefill), and otherwise the turn takes the CPU-prefill +
+// ImageBlocksPrefillAvailable (one span needs only ImagePrefillAvailable), and otherwise the turn takes the CPU-prefill +
 // UploadKV bridge with the reason in Generation.ImgPrefillDecline.
 func (m *Model) GenerateVLSpans(ctx context.Context, ids []int, spans []ImageSpan, features func() ([]float32, error), maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
 	return m.generateVLSpans(ctx, ids, spans, features, maxTokens, sp, false)
@@ -164,7 +164,7 @@ func (m *Model) generateVLSpans(ctx context.Context, ids []int, spans []ImageSpa
 		}
 
 		// Resident image-prefill fast path, tried before the CPU prefillLogitsVL call: a cold image turn's prefill, not only
-		// its decode, runs on the resident GPU when the backend implements legacyImagePrefill. Any decline (no capability,
+		// its decode, runs on the resident GPU when the backend implements ImagePrefillAvailable. Any decline (no capability,
 		// prompt too large for one chunk, resident busy) falls through unchanged to the CPU-prefill + UploadKV bridge; the
 		// claim is released first so the tower and CPU-prefill work never run while holding it.
 		var resPrefill func() ([]float32, int, error)
@@ -265,10 +265,10 @@ func (m *Model) generateVLSpans(ctx context.Context, ids []int, spans []ImageSpa
 // the prompt resumes scalar positions at the block max + 1 (the cache's m-RoPE delta). imgHash and the lazy features:
 // see GenerateVL.
 //
-// Resident GPU decode additionally needs legacyMRoPE, not only the base ResidentForward GenerateVL uses: decode past
+// Resident GPU decode additionally needs MRoPEDecodeAvailable, not only the base ResidentForward GenerateVL uses: decode past
 // an image block needs the rope-angle position (pos+mropeDelta) and the KV/attention position (pos) to differ, which
 // only ForwardMRoPE can express. A resident backend without it falls back to the CPU decode loop as if no resident were
-// configured, including for image reuse: that fast path is gated on legacyMRoPE too, for the same reason.
+// configured, including for image reuse: that fast path is gated on MRoPEDecodeAvailable too, for the same reason.
 func (m *Model) GenerateQwenVL(ctx context.Context, ids []int, imgPos, imgLen int, imgHash uint64, features func() ([]float32, error), gridTHW [][3]int, merge, imageToken, maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
 	return m.GenerateQwenVLDeepstack(ctx, ids, imgPos, imgLen, imgHash, func() ([]float32, [][]float32, error) {
 		f, err := features()
@@ -307,7 +307,7 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 		mropeDelta := mropeDelta(mropePos, len(ids))
 
 		// A recurrent family (the Gated DeltaNet hybrids) takes no resident reuse branch and no CPU-prefill-then-UploadKV bridge
-		// here, and must be refused them, not merely not engaged: every resident executor implements legacyMRoPE, so the type
+		// here, and must be refused them, not merely not engaged: every resident executor implements MRoPEDecodeAvailable, so the type
 		// assertions below succeed on a CUDA-resident qwen3.5, and the bridge copies only layers that have KV. A DeltaNet layer
 		// has none, so resident decode would start from a zeroed recurrent state, with no error and wrong tokens. Its one
 		// resident route is the resident m-RoPE prefill, taken only when the resident says it builds the recurrent state itself
@@ -367,7 +367,7 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 
 		// Resident m-RoPE prefill fast path (Qwen2.5-VL's twin of GenerateVL's resident image-prefill branch), tried before the
 		// CPU prefillLogitsQwenVL call: a cold image turn's prefill, not only its decode, runs on the resident GPU when the
-		// backend implements legacyMRoPEPrefill. It needs that and legacyMRoPE (this path's decode continuation via
+		// backend implements MRoPEPrefillAvailable. It needs that and MRoPEDecodeAvailable (this path's decode continuation via
 		// ForwardMRoPE): a resident that can prefill but not decode m-RoPE would strand the turn right after prefill. Any
 		// decline (no capability, prompt too large for one chunk, resident busy) falls through unchanged to the CPU-prefill +
 		// UploadKV bridge; the claim is released first so the CPU prefill never runs while holding it.
@@ -434,7 +434,7 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 		useGPU := false
 		gpuPos := 0
 		committed := false
-		// Gate the resBusy claim on legacyMRoPE support BEFORE claiming — a resident that
+		// Gate the resBusy claim on MRoPEDecodeAvailable support BEFORE claiming — a resident that
 		// cannot do Qwen decode (no m-RoPE support) shouldn't contend with a concurrent
 		// plain-text Generate for a claim it can't use. Safe on a nil m.resident: a type
 		// assertion on a nil interface value just reports ok=false.

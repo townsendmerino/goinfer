@@ -12,11 +12,11 @@ import (
 // WHY THIS EXISTS. Same shape as resident_seam_test.go's TestSeam_GenerateRunsOnTheResident: a
 // resident capability that nothing ever calls is indistinguishable from one that was never
 // wired. These tests fake the resident backend and use the committed tiny fixture, so the G4
-// wiring in decoder/embed.go (HiddenLast trying legacyHiddenLast before falling to the CPU
+// wiring in decoder/embed.go (HiddenLast trying HiddenLastAvailable before falling to the CPU
 // path) is gated on every push with no GPU and no downloaded model — real per-backend numerics
 // (the cosine ≥ 0.9999 bar) are a separate, backend-specific gate this does not replace.
 
-// fakeResidentHiddenLast extends fakeResident with legacyHiddenLast, recording whether and how
+// fakeResidentHiddenLast extends fakeResident with HiddenLastAvailable, recording whether and how
 // it was called, and optionally forcing a decline to exercise the CPU fallback.
 type fakeResidentHiddenLast struct {
 	*fakeResident
@@ -77,7 +77,7 @@ func loadWithFakeHiddenLastResident(t *testing.T) (*Model, *fakeHiddenLastBacken
 }
 
 // TestSeam_HiddenLastUsesResidentWhenAvailable is the gate for G4 itself: a resident model whose
-// backend implements legacyHiddenLast must actually be asked for the vector, not silently run
+// backend implements HiddenLastAvailable must actually be asked for the vector, not silently run
 // the CPU path with a resident backend sitting idle (the exact class of bug
 // TestSeam_GenerateRunsOnTheResident exists to catch for Generate).
 func TestSeam_HiddenLastUsesResidentWhenAvailable(t *testing.T) {

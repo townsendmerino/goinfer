@@ -156,60 +156,24 @@ func TestResidentSubsystems_UncomparableValueResidentDoesNotPanic(t *testing.T) 
 	}
 }
 
-// bannedMicroAssertions names the legacy resident capability micro-interfaces that callers no longer type-assert; they
-// reach a capability through ResidentSubsystems instead. The legacy interfaces themselves stay declared.
+// bannedMicroAssertions names the exported resident capability micro-interfaces that callers no longer type-assert; they
+// reach a capability through ResidentSubsystems instead. (The unexported probes that once sat beside them are deleted, so a
+// new assertion on one cannot compile.)
 var bannedMicroAssertions = map[string]bool{
-	"legacyKVSlotter":             true,
-	"legacyBatchStepper":          true,
-	"legacyRaggedStepper":         true,
-	"legacyMRoPE":                 true,
-	"legacyGreedy":                true,
-	"legacyGreedyChain":           true,
-	"legacySampleChain":           true,
-	"legacyTopK":                  true,
-	"legacySample":                true,
-	"legacyPrefillKV":             true,
-	"Prefiller":                   true,
-	"legacyHiddenLast":            true,
-	"legacyResidualAll":           true,
-	"legacyAdapter":               true,
-	"legacyImagePrefill":          true,
-	"legacyImageBlocksPrefill":    true,
-	"legacyExpertCache":           true,
-	"legacySpanPrefill":           true,
-	"ResidentHybridMRoPEPrefill":  true,
-	"legacyMRoPEPrefill":          true,
-	"legacyMRoPEDeepstackPrefill": true,
-	"PrefillPathReporter":         true,
-	"PrefillTailExact":            true,
-	"VerifyPathReporter":          true,
-	"legacyCapsReporter":          true,
-	"legacyPrefillBlocks":         true,
-	"legacyKVCopier":              true,
-	"legacyKVSlotActivity":        true,
-	"legacyKVPoolInfo":            true,
-	"legacyReusableKVSlot":        true,
-	"legacyKVUploadPass":          true,
-	"legacyKVDemoter":             true,
-	"legacyReusableKV":            true,
-	"legacyKVSnapshotter":         true,
-	"legacyPrefillMarked":         true,
-	"legacyPrefillChunks":         true,
-	"legacyPrefillSpanScratch":    true,
-	"legacyPrefillRows":           true,
-	"legacyRecurrentCheckpoint":   true,
-	"ResidentDrafterHost":         true,
-	"legacySeedArgmax":            true,
-	"legacyRecurrentSpec":         true,
-	"StreamingDrafterHost":        true,
-	"legacyCost":                  true,
-	"VerifyCostReporter":          true,
-	"DecodeVerifyDiverger":        true,
-	"ExactAttentionScoper":        true,
+	"Prefiller":                  true,
+	"ResidentHybridMRoPEPrefill": true,
+	"PrefillPathReporter":        true,
+	"PrefillTailExact":           true,
+	"VerifyPathReporter":         true,
+	"ResidentDrafterHost":        true,
+	"StreamingDrafterHost":       true,
+	"VerifyCostReporter":         true,
+	"DecodeVerifyDiverger":       true,
+	"ExactAttentionScoper":       true,
 }
 
 // TestResidentSubsystems_NoScatteredMicroAssertions enforces the subsystem boundary across package decoder: no production
-// file outside resident_subsystems.go may type-assert any of the 42 optional resident capability micro-interfaces.
+// file outside resident_subsystems.go may type-assert one of the exported optional resident capability micro-interfaces.
 func TestResidentSubsystems_NoScatteredMicroAssertions(t *testing.T) {
 	banned := bannedMicroAssertions
 

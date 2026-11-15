@@ -318,7 +318,7 @@ func TestOutputEmbeddingRow_isTheLMHeadOnAnUntiedModel(t *testing.T) {
 	}
 }
 
-// stubResidualAll is a resident that implements only legacyResidualAll (the embedded interface is nil: PromptHiddenAll must call nothing else on it).
+// stubResidualAll is a resident that implements only ResidualAllAvailable (the embedded interface is nil: PromptHiddenAll must call nothing else on it).
 type stubResidualAll struct {
 	fakeSubsystems
 	ResidentForward

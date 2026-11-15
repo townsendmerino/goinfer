@@ -108,9 +108,9 @@ func (m *Model) specRollbackSafe() bool { return m.specRollbackSafeVia(nil, 0) }
 // specRollbackSafeVia is specRollbackSafe for a loop that verifies through fold, a resident's recurrent fold path, in passes of up
 // to width rows (BlockSpec; nil for a loop that rolls back with TruncateTo or ForwardN). A recurrent model is admitted only there:
 // the fold path never writes the committed recurrent state during a verify and folds only the committed rows into it
-// (legacyRecurrentSpec, SP2). The resident reports rows only when it serves every recurrent layer, and the model's own layers must
+// (RecurrentSpecAvailable, SP2). The resident reports rows only when it serves every recurrent layer, and the model's own layers must
 // all be Gated DeltaNet (RecurrentSpecArenaBytes), the kind the path is built for.
-func (m *Model) specRollbackSafeVia(fold legacyRecurrentSpec, width int) bool {
+func (m *Model) specRollbackSafeVia(fold ResidentRuntimeSubsystem, width int) bool {
 	a := m.w.arch
 	if m.hasRecurrentState() && (fold == nil || width < 1 || width > fold.RecurrentSpecRows() || RecurrentSpecArenaBytes(a, 1) == 0) {
 		return false

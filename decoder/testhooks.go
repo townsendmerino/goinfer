@@ -112,25 +112,25 @@ func (m *Model) AutoPinResidentContextForTest(ctx int) { m.resCtxReq, m.resCtxPi
 // ResidentImagePrefillForTest wraps residentImagePrefill, the primitive GenerateVL's resident image-prefill fast path calls,
 // so a real-checkpoint gate (cuda/) can compare its logits with PrefillLogitsVLForTest's CPU reference at matched precision
 // on the same model instance and the same real image.
-func (m *Model) ResidentImagePrefillForTest(ctx context.Context, rip legacyImagePrefill, ids []int, imageEmbeds []float32, imgPos, imgLen int) ([]float32, int, error) {
+func (m *Model) ResidentImagePrefillForTest(ctx context.Context, rip any, ids []int, imageEmbeds []float32, imgPos, imgLen int) ([]float32, int, error) {
 	return m.residentImagePrefill(ctx, rip, ids, imageEmbeds, []ImageSpan{{Pos: imgPos, Len: imgLen}})
 }
 
 // ResidentImagePrefillSpansForTest is ResidentImagePrefillForTest for several images.
-func (m *Model) ResidentImagePrefillSpansForTest(ctx context.Context, rip legacyImagePrefill, ids []int, imageEmbeds []float32, spans []ImageSpan) ([]float32, int, error) {
+func (m *Model) ResidentImagePrefillSpansForTest(ctx context.Context, rip any, ids []int, imageEmbeds []float32, spans []ImageSpan) ([]float32, int, error) {
 	return m.residentImagePrefill(ctx, rip, ids, imageEmbeds, spans)
 }
 
 // ResidentMRoPEPrefillForTest wraps residentMRoPEPrefillDeep (no DeepStack sets), the primitive GenerateQwenVL's resident
 // m-RoPE prefill fast path calls, mirroring ResidentImagePrefillForTest for a real-checkpoint gate comparing its logits
 // against PrefillLogitsQwenVLForTest.
-func (m *Model) ResidentMRoPEPrefillForTest(ctx context.Context, rmp legacyMRoPEPrefill, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int) ([]float32, int, error) {
+func (m *Model) ResidentMRoPEPrefillForTest(ctx context.Context, rmp any, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int) ([]float32, int, error) {
 	return m.residentMRoPEPrefillDeep(ctx, rmp, ids, imageFeats, []ImageSpan{{Pos: imgPos, Len: imgLen}}, mropePos, nil)
 }
 
 // ResidentMRoPEDeepstackPrefillForTest wraps residentMRoPEPrefillDeep with Qwen3-VL's DeepStack sets, for the Metal gate
 // that compares it with the CPU prefill.
-func (m *Model) ResidentMRoPEDeepstackPrefillForTest(ctx context.Context, rmp legacyMRoPEPrefill, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int, deep [][]float32) ([]float32, int, error) {
+func (m *Model) ResidentMRoPEDeepstackPrefillForTest(ctx context.Context, rmp any, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int, deep [][]float32) ([]float32, int, error) {
 	return m.residentMRoPEPrefillDeep(ctx, rmp, ids, imageFeats, []ImageSpan{{Pos: imgPos, Len: imgLen}}, mropePos, deep)
 }
 
