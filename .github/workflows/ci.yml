@@ -965,7 +965,7 @@ jobs:
       - name: census golden as this host would write it (artifact only)
         if: failure()
         run: |
-          go test -timeout 30m -tags goinfer_testhooks -run '^TestDecisionCensus$' -census.update ./decoder/ || true
+          go test ./decoder/ -timeout 30m -tags goinfer_testhooks -run '^TestDecisionCensus$' -census.update || true
           mkdir -p census-out
           git ls-files --modified --others --exclude-standard -- testdata/census | xargs -r -I{} cp {} census-out/
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -1062,7 +1062,7 @@ jobs:
       - name: census golden as this host would write it (artifact only)
         if: failure()
         run: |
-          go test -timeout 30m -tags goinfer_testhooks -run '^TestDecisionCensus$' -census.update ./decoder/ || true
+          go test ./decoder/ -timeout 30m -tags goinfer_testhooks -run '^TestDecisionCensus$' -census.update || true
           mkdir -p census-out
           git ls-files --modified --others --exclude-standard -- testdata/census | xargs -r -I{} cp {} census-out/
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
