@@ -29,7 +29,7 @@
 - **P44 · Recompute audit's leftovers (R-14 rest, R-17 rest, R-24 drafter trips) — as they come up, filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions).** `either`. Moved
   from `docs/completed/task-recompute-audit.md` when it was archived: R-14's aikit-side activation re-quantization and R-17's
   small CPU duplicates are taken as they come up (their "Not done" lists); R-24's drafter round trips are parked until the
-  transfer time is measured (`decoder/blockspec.go:ResidentBlockDrafter`).
+  transfer time is measured (`decoder/residentalias.go:ResidentBlockDrafter`).
 
 - **P43 · Re-run `TestGemma4EndToEndThroughput` before any expert-pager work (R-05) — OPEN, filed 2026-11-09 (mbp2-fit, from Francis's doc-review decisions).** `either`. One run on a box
   with the Gemma 4 bundles and about 75 GB free; no pager code before it (`decoder/moepaging.go:newExpertPager`). Moved from

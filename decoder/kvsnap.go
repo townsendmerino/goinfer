@@ -30,19 +30,6 @@ var kvSnapMinPrompt = 2048
 // a first prompt that does not qualify.
 const kvSnapMinShared = 512
 
-// ResidentKVSnapshot is one prefix's KV held in host memory by a resident. Release frees it; it is idempotent.
-type ResidentKVSnapshot interface {
-	// Rows is how many leading positions it holds, a whole number of blocks.
-	Rows() int
-	// Bytes is the host memory it occupies.
-	Bytes() int64
-	// Serves reports whether RestoreKV can restore its first end rows into a slot: false when a windowed layer's rows behind the
-	// snapshot's end, which the window of position end needs, are not among those it holds, or when the resident's geometry has
-	// changed since it was taken.
-	Serves(end int) bool
-	Release()
-}
-
 // KeepsRecurrentSnapshots reports whether this model's prefix snapshots carry its recurrent state: it has recurrent state, and its resident's
 // snapshots hold it (KVSnapshotterAvailable.KVSnapshotRecurrent). A route computes KVScope.Keep only for such a model.
 func (m *Model) KeepsRecurrentSnapshots() bool {

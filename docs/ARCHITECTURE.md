@@ -635,7 +635,7 @@ silicon only, and keeps a non-int4 model on the CPU rather than re-quantize it
 **Two seams.** `decoder.Backend` (`decoder/backend.go`) is per matmul. The CPU implements it, and
 WebGPU implements it on the device for its staged path (below).
 
-`decoder.ResidentForward` (`decoder/residency.go`) is the whole token, built by the backend's
+`decoder.ResidentForward` (declared in `decoder/resident` as `resident.Forward`, with the four subsystem contracts and the data their signatures carry, and aliased in `decoder/residentalias.go`) is the whole token, built by the backend's
 `BuildResident`:
 
 - `Forward(embedding, pos)` returns one token's logits and appends its K/V on the device.
@@ -659,7 +659,7 @@ The four contracts are in `decoder/resident_subsystems.go`:
 - `ResidentRuntimeSubsystem`: `ResidentCaps` (the context cap among them), cost spans, compute-time LoRA, the MoE
   expert cache, the speculative verify path and its guards, and the block drafter host.
 
-A resident gets them to the decoder by implementing `decoder/resident_subsystems.go:ResidentSubsystemProvider`, whose
+A resident gets them to the decoder by implementing `decoder/residentalias.go:ResidentSubsystemProvider`, whose
 `ResidentSubsystems()` returns four pre-built wrappers. Each backend pins that at compile time in its
 `subsystems.go`, and each wrapper embeds `NoopResidentDecode`, `NoopResidentPrefill`, `NoopResidentKV` or
 `NoopResidentRuntime`, so a capability the backend lacks answers false. The decoder asks `GreedyAvailable()` and the
@@ -1136,8 +1136,9 @@ Every import from one goinfer package to another, by repository-relative directo
 | `cmd/serve` | `internal/app/serveapp` |  |
 | `cmd/testcmdtags` | `internal/guard/testcmdtags` |  |
 | `constrain` |  | `tokenizer` |
-| `decoder` | `chat`, `constrain`, `decoder/config`, `decoder/fit`, `decoder/quant`, `internal/cost`, `internal/runtime/adapter`, `internal/runtime/diskfree`, `internal/runtime/f16`, `internal/runtime/giw`, `internal/runtime/hybridattn`, `internal/runtime/kvmgr`, `internal/runtime/logs`, `internal/runtime/mamba2`, `internal/runtime/mem`, `internal/runtime/mem/probe`, `internal/runtime/program`, `internal/runtime/sampling`, `tokenizer` | `internal/audio`, `internal/diag/sb2census`, `internal/fidelity`, `internal/guard/paritykey`, `internal/vision`, `multimodal` |
+| `decoder` | `chat`, `constrain`, `decoder/config`, `decoder/fit`, `decoder/quant`, `decoder/resident`, `internal/cost`, `internal/runtime/adapter`, `internal/runtime/diskfree`, `internal/runtime/f16`, `internal/runtime/giw`, `internal/runtime/hybridattn`, `internal/runtime/kvmgr`, `internal/runtime/logs`, `internal/runtime/mamba2`, `internal/runtime/mem`, `internal/runtime/mem/probe`, `internal/runtime/program`, `internal/runtime/sampling`, `tokenizer` | `internal/audio`, `internal/diag/sb2census`, `internal/fidelity`, `internal/guard/paritykey`, `internal/vision`, `multimodal` |
 | `decoder/fit` | `internal/runtime/mem` |  |
+| `decoder/resident` | `internal/cost`, `internal/runtime/adapter` |  |
 | `demo/agent/agent` | `chat`, `constrain`, `decoder`, `multimodal`, `tokenizer` |  |
 | `demo/agent/cmd/agent-web` | `backend/webgpu`, `demo/agent/agent`, `demo/agent/internal/embedmodel` |  |
 | `demo/agent/cmd/stdlib-agent` | `demo/agent/agent`, `demo/agent/internal/embedmodel` |  |
@@ -1178,6 +1179,7 @@ No import, made or recorded, may break one; they are edited by hand in `imports.
 | rule | packages | may not import | why |
 |---|---|---|---|
 | fit-leaf | `decoder/fit`, tests included | any goinfer package; (`decoder/fit` may import `internal/runtime/mem`) | decoder/fit (Tier 3, docs/layout.md) holds the fit guard's and the planner's exchange types so a caller can name them without importing the loader. It sits below decoder, which re-exports them: it imports internal/runtime/mem and no other goinfer package, decoder included. |
+| resident-leaf | `decoder/resident`, tests included | any goinfer package; (`decoder/resident` may import `internal/cost`, `internal/runtime/adapter`) | decoder/resident holds the contract a resident backend implements (the four subsystem interfaces, the provider, ResidentForward, the drafter host and the small data their signatures carry) so a reader can hold it without the loader (MZ5 option B, docs/sub1-resident-interfaces.md). It sits below decoder, which aliases every name in decoder/residentalias.go: it imports internal/cost and internal/runtime/adapter and no other goinfer package, decoder included. |
 | config-leaf | `decoder/config`, tests included | any goinfer package | decoder/config holds a checkpoint's Config, its validators and its loader, so they test in seconds without compiling decoder (DC1, docs/completed/task-decoder-config-2026-11.md). It sits below decoder, which aliases Config: it imports no goinfer package, decoder included. |
 | quant-leaf | `decoder/quant`, tests included | any goinfer package | decoder/quant (Tier 3, docs/layout.md) parses safetensors checkpoint quantization configs and reconstructs FP8, GPTQ, AWQ, NVFP4 and MLX quantized weights behind Reconstructor/RowStreamReconstructor. It sits below decoder and imports no goinfer package, decoder included. |
 | towers-standalone | `internal/vision`, `internal/audio`, tests included | any goinfer package; (`internal/audio` may import `internal/vision`); anything outside the standard library but `github.com/townsendmerino/aikit/linalg`, `github.com/townsendmerino/aikit/embed` | The towers moved from aikit (AX) as model semantics over aikit's kernels: no goinfer package, and from outside the standard library only aikit's linalg and embed. One exception: internal/audio may import internal/vision, whose tower program type the audio towers walk (Francis, 2026-10-29). |
