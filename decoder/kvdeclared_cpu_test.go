@@ -1,7 +1,6 @@
 package decoder
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
@@ -100,6 +99,6 @@ func TestKVBytesForRows_plantedShortRowGoesRed(t *testing.T) {
 		}
 	}
 	if planted == 0 {
-		t.Fatal(fmt.Sprint("VOID: no fixture holds a K/V row to plant on"))
+		t.Fatal("VOID: no fixture holds a K/V row to plant on")
 	}
 }
