@@ -1,0 +1,3 @@
+depth 128: lane/exact median 0.9990 over 2 blocks (177.23 vs 177.40 tok/s); by block 0.9997 0.9984
+depth 2048: lane/exact median 1.6927 over 2 blocks (143.17 vs 84.58 tok/s); by block 1.6917 1.6936
+VERDICT SHIP (>= 1.02 at 2048, >= 0.98 at 128): the evidence for Francis's default decision, not the decision

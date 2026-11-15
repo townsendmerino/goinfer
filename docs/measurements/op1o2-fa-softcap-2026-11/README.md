@@ -167,3 +167,32 @@ The README above registers the cell's rule and shape. This fixes the parts it le
 - **Wall time:** 8 restarted cells of about 2 to 3 minutes, plus idle-gate waits: about 25 min. Started and finished times are in the
   reading below.
 - **A default change needs Francis.** A SHIP here, with the fidelity gate's PASS, is the evidence for that decision, not the decision.
+
+## Reading, 2026-11-15 12:00 to 12:05 PST (nobara, RTX 2070 SUPER, driver 595.112.07): **SHIP** by the registered rule
+
+- **Run.** Binary built from `8f4273a32` (PR #998), the registration above (`8e50ba4c2`) committed first; both arms on that one file, the lane
+  arm `-flash-decode-softcap`, the exact arm `-flash-decode-softcap=false`. Exclusive timing lock, `BENCH_RUNS=2`, `BENCH_ABBA=1`: 8
+  restarted cells, 4 a depth, blocks in A B / B A order. Records in `cell-2026-11-15/`: `decode-cuda-all.json`, `decode-cuda.log`,
+  `provenance.txt`, `verdict.txt`, the serve logs; graded by `grade_cell.py`.
+  - **Start state.** Load 0.20 and 60 GB available at the start; the harness's own idle gate held three cells for a 1-minute load of 1.03
+    to 1.15 and let them go under 1.00. No cell started under the void rule's 8.0, none was voided, and none errored.
+  - **Before it:** the untimed probe passed twice more inside the script (the arms' 256-token greedy texts differ, the exact arm repeats
+    itself). A first launch (`first-launch-refused-no-go-on-path.log`) refused to measure, after its probe: `go` was not on the harness's
+    PATH, so it had no free-memory reading, and it wrote no results. It was re-launched with `go` on PATH; nothing else changed.
+  - **Wall time:** 4 min 41 s, against the 25 min the registration above estimated; a cell is about 30 s, not 2 to 3 minutes.
+
+| depth | lane (capped flash-decode) | exact (split-KV) | lane / exact, per block | median |
+|---|---|---|---|---|
+| 128 | 177.23 tok/s | 177.40 tok/s | 0.9997, 0.9984 | **0.9990** |
+| 2,048 | 143.17 tok/s | 84.58 tok/s | 1.6917, 1.6936 | **1.6927** |
+
+- **Verdict: SHIP.** The median is at least 1.02 at depth 2,048 (1.693) and at least 0.98 at depth 128 (0.999).
+- **Depth 128 is flat on purpose.** The lane acts only once a layer's attended span reaches 2,048 keys (`flashDecodeDefaultMinKeys`), so a
+  129-token prompt with its decode never leaves the exact path on either arm; 0.999 is the noise between two identical paths.
+- **The spread is small.** Each cell's two runs agree within 0.2 tok/s and the two blocks' ratios within 0.002, so the 2,048 reading does not
+  rest on one lucky pair. There are two blocks, as registered; the paired median is their mean.
+- **What it decides goes to Francis.** SHIP with the fidelity gate's PASS (above, 2026-11-09) is the evidence for making the lane the
+  default for capped models; it does not flip `FlashDecodeSoftcap`'s default, and `--flash-decode-softcap` stays off.
+  - Two points from the fidelity reading still stand: paired wins were exactly 5/10 and hard flips pass only the amended bar.
+  - Gemma 2's window, 4,096, is not crossed at K = 3,900 or at this cell's depths. The windowed lane is held by G2-K, not by either gate.
+  - Not measured: depths past 2,048, other capped models, a longer decode, int8 KV (refused for capped families), and TTFT.
