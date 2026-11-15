@@ -119,3 +119,29 @@ The coordinator's decision of 2026-11-15, on T1's PARKED: keep #1007 a draft and
 - **Not read:** the 9B, Claude Code's real traffic, Metal, Mamba-2, a pass width other than 2,048.
 - **Void if:** a timed cell outside the lock, the model read from `/srv/models`, a NOT RUN counted as a pass, a bar moved after a reading. **Stopping rule:** the four cells, no early stop. **Cost:** about 3 minutes for the cells, start and finish from `date`.
 - **The merge.** PASS: #1007 and this slice go up together, and the coordinator is told (the cold cost is the owner's to weigh where it is above #1007's measured 97.6 ms and 115 MiB, which this registration's PASS band allows up to 150 ms and 175 MiB). PARKED or FAIL: both stay drafts.
+
+### Second slice, readings (2026-11-15, nobara-kv8)
+
+| | reading |
+|---|---|
+| **C0** | `decoder/kv8_msgboundary_test.go:TestKV8Cut_snapshotsLandOnTheirBlocks`: **red on #1007 first** (snapshots of 896 and 1,152 rows where 960 and 1,216 are wanted). Plants, each red: points rounded up (5 tests); no tail minimum (`TestKV8Cut_theFinalPassKeepsItsMinimum`) |
+| **C1** | `TestKV8Cut_aRestoredTurnKeepsItsOwnPoint`: red with Keep left on the grid (a plant: on #1007 the 128-row grid happened to contain the restore point, so C1 is not red on #1007) |
+| **C2** | `backend/cuda/kv8a_checkpoint_test.go:TestKV8Msg_cudaRestoreAtTheBoundaryEqualsCold`, `qwen3next-tiny`, passes of 64 and of 128 rows: snapshots at 1,472 and 2,368 (the 128-row grid has neither); turn 2 reuses 1,472; the reply, every recurrent buffer and the K/V rows are bit-identical to a cold prefill's. Plant (pass-grid points) is red on the held rows. Log: `c2-cuda.log` |
+| **C3** | `gate identity -backend cuda d44de0aa3 HEAD` at `688809f3c`: **GREEN, 25 IDENTICAL, 0 DIFFERENT, 19 NOT RUN** (the same missing ignored fixtures as before), `identity-cut.log`. Parity refresh: manifest unchanged. gofmt, vet (tagged), pinned staticcheck, citation lint, comment census clean |
+
+**T2: PASS** (14:20 to 14:22 PST; `served-t2/run.log`, `turns.jsonl`). Main `d44de0aa3` against the combined change `688809f3c` (#1007 plus this slice), `~/models/qwen3.5-0.8b`, `--ctx 12288`, one slot, A B B A, the exclusive timing lock, no void cell, peak `VmSwap` 0 MB. The 1-minute load at the cells' start was 4.81, 3.51, 2.71, 2.15 (the first two carry the build that had just finished; the void line is 8.0).
+
+| | main | change | change over main, pair 1 / pair 2 | bar |
+|---|---|---|---|---|
+| **r3 (last message rewritten): first token** | 7.39 s, 7.39 s | 2.41 s, 2.41 s | **0.326 / 0.326** | at most 0.5 |
+| r3 rows reused | 0 | **6,016** (r1's boundary snapshot; the boundary is about 6,044) | | the block within 63 rows of the boundary |
+| r1, r2, r3, r4 replies | | **equal to main's, all four, both pairs** | | equal |
+| r1 (cold): first token | 7.41 s, 7.39 s | 7.41 s, 7.42 s | 1.000 / 1.004 | at most 1.05 |
+| r2: first token, rows | 2.16 s, 6,144 | 0.36 s, 7,360 | 0.166 / 0.160 | at most 1.10, not fewer |
+| r4 (the turn after r3): rows | 6,144 | 7,360 | | not fewer |
+| **the cold request's boundary snapshot** | | 160 MiB host, 99.2 and 99.5 ms | | at most 175 MiB and 150 ms |
+
+- **The cold cost, read explicitly (the owner weighs it).** #1007 on its own measured 115 MiB and 97.6 ms at 4,096 rows; the same snapshot, now at 6,016 rows, is **160 MiB and 99.2 ms**: the rows grew, the time did not. **A cold request now also takes Keep's snapshot at 7,360 rows, 192 MiB and 114.9 ms, where main takes it at 6,144 rows, 163 MiB and 98 ms.** So a cold request copies **352 MiB and about 214 ms of snapshots against main's 163 MiB and 98 ms**, and its first token did not move (1.000, 1.004): the extra copy is inside a 7.4 s prefill, about 1.5%. The registration graded only the boundary snapshot; the Keep snapshot's growth is the larger part of the extra bytes and is reported here for the owner to weigh.
+- **A result the registration did not grade:** cutting Keep took r2 from 6,144 to 7,360 rows reused and 2.16 s to 0.36 s (ratio 0.16), a gain for every recurrent chat turn, on the 2,048-row grid that rounded Keep down by 1,286 rows. Its replies equal main's.
+- **The cut rests on the split being bit-identical** (`TestB35SplitPrefill`, C2, and these replies). It is read on a tiny DeltaNet fixture and on one real checkpoint's greedy replies, 24 tokens each, not on the logits of a real model.
+- **Not read:** the 9B, Claude Code's traffic, a pass width other than 2,048 on a real model, Metal, Mamba-2.
