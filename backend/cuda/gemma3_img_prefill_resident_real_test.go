@@ -14,7 +14,7 @@ import (
 )
 
 // TestGemma3ImgPrefillResidentReal_gate is the real-checkpoint gate for the resident image-prefill
-// fast path (finishing gap 0, decoder.ResidentImagePrefill) — the direct sibling of
+// fast path (finishing gap 0, decoder.ResidentPrefillSubsystem) — the direct sibling of
 // gemma3_resident_real_test.go's TestGemma3ResidentReal_gate, same methodology, but exercising a
 // COLD (first-time) image turn's PREFILL on the resident GPU instead of the CPU-prefill-then-
 // UploadKV bridge that gate covers.
@@ -98,7 +98,7 @@ func TestGemma3ImgPrefillResidentReal_gate(t *testing.T) {
 	rip := decoder.SubsystemsOf(rf).Prefill
 	ok := rip.ImagePrefillAvailable()
 	if !ok {
-		t.Fatal("attn_img_batched did not load on this build — ResidentImagePrefill unavailable: the gate has nothing to test, which is a failure, not a skip")
+		t.Fatal("attn_img_batched did not load on this build — ResidentPrefillSubsystem unavailable: the gate has nothing to test, which is a failure, not a skip")
 	}
 
 	// --- Half 1: primitive-level logits comparison ---

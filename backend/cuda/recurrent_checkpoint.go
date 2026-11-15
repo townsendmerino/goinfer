@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-// KV8a's recurrent checkpoint on CUDA (decoder.ResidentRecurrentCheckpoint; docs/measurements/kv8a-2026-10/README.md, "Where the
+// KV8a's recurrent checkpoint on CUDA (decoder.ResidentKVSubsystem; docs/measurements/kv8a-2026-10/README.md, "Where the
 // checkpoint lives on CUDA"): device copies of every recurrent layer's state and conv window, DeltaNet (dnWin, dnState) and
 // Mamba-2 (mbWin, mbSSM), one per KV slot when they fit. They live in device memory because the save runs on every request, and a
 // device-to-device copy keeps that cheap; there is no host fallback. A slot saves into its own copy; with fewer copies than slots,
@@ -183,7 +183,7 @@ func (r *cudaResident) allocCheckpointCopy() (bufs []Buffer, ok bool) {
 
 func mib(b int64) float64 { return float64(b) / (1 << 20) }
 
-// RecurrentCheckpointBytes (decoder.ResidentRecurrentCheckpoint) is every checkpoint's device bytes together, 0 when the load kept none.
+// RecurrentCheckpointBytes (decoder.ResidentKVSubsystem) is every checkpoint's device bytes together, 0 when the load kept none.
 func (r *cudaResident) RecurrentCheckpointBytes() int64 { return r.ckptBytes }
 
 // bindCheckpoint points the save and restore copies at checkpoint k and the bound slot's live state. Runs on the executor.
@@ -215,7 +215,7 @@ func (r *cudaResident) ckptCopyOf(s int) int {
 	return -1
 }
 
-// RecurrentCheckpointHeld is decoder.ResidentRecurrentCheckpoint's.
+// RecurrentCheckpointHeld is decoder.ResidentKVSubsystem's.
 func (r *cudaResident) RecurrentCheckpointHeld(slot int) bool {
 	held := false
 	_ = r.do(func() error {

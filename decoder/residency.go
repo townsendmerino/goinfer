@@ -168,7 +168,7 @@ type ResidentGreedy interface {
 	ForwardArgmax(embedding []float32, pos int) (int, error)
 }
 
-// ResidentGreedyChain is an optional capability on a ResidentForward (C-B01, docs/audit-metal-2026-09-30.md): greedy
+// legacyGreedyChain is an optional capability on a ResidentForward (C-B01, docs/audit-metal-2026-09-30.md): greedy
 // decode with the token chained on the device. The resident picks each token's argmax on-device and gathers its
 // embedding as the next forward's input itself, so it can queue the next forward before the host has seen the token;
 // the host reads 4 bytes per token. GreedyChainStart opens a chain whose first input is token id at position pos;
@@ -177,21 +177,21 @@ type ResidentGreedy interface {
 // taken. Between Start and Stop the caller makes no other call on the resident. The decode loop uses it under the
 // same conditions as ResidentGreedy, and only where its own embedding lookup is a plain table row (embedIsTableRow),
 // with no MC3 concurrency, adapter or processor; the tokens are those of the full-logits path.
-type ResidentGreedyChain interface {
+type legacyGreedyChain interface {
 	GreedyChainAvailable() bool
 	GreedyChainStart(id, pos int) error
 	GreedyChainNext() (int, error)
 	GreedyChainStop()
 }
 
-// ResidentSampleChain is ResidentGreedyChain's temperature-only sibling (C-P02): the chained forward ends with the
+// legacySampleChain is legacyGreedyChain's temperature-only sibling (C-P02): the chained forward ends with the
 // resident's own Gumbel-max draw (legacySample's ForwardSample) instead of the argmax. SampleChainStart opens it with
 // the draw of the forward at pos; the resident draws each later forward with the next one, which is how
 // Sampler.NextDraw advances. Each SampleChainNext passes the caller's own draw for the forward it returns, and the
 // resident refuses one that is not the draw it used. GreedyChainStop closes it. The decode loop uses it where it would
 // call ForwardSample, with no MC3, adapter or processor and a plain table-row embedding; the tokens are ForwardSample's.
-type ResidentSampleChain interface {
-	ResidentGreedyChain
+type legacySampleChain interface {
+	legacyGreedyChain
 	SampleChainAvailable() bool
 	SampleChainStart(id, pos int, temperature float64, seed, draw uint64) error
 	SampleChainNext(seed, draw uint64) (int, error)
@@ -311,13 +311,13 @@ type (
 	ResidentAdapterLayer = adapter.ResidentAdapterLayer
 )
 
-// ResidentAdapter is an OPTIONAL ResidentForward extension: a backend that can apply a compute-time LoRA
+// legacyAdapter is an OPTIONAL ResidentForward extension: a backend that can apply a compute-time LoRA
 // delta on the resident decode path. SetAdapter(nil) clears a previously-bound adapter. generateInto holds the
 // same resBusy exclusive-access window a Forward/ForwardN call requires for the WHOLE bind→forward→clear
 // sequence, so an implementation needs no locking and two adapters sharing one base model's resident runner
 // never race. A backend without it is simply not type-asserted: generateInto declines to the CPU/staged path,
 // never running an adapter session's tokens through the base weights.
-type ResidentAdapter interface {
+type legacyAdapter interface {
 	SetAdapter(layers []ResidentAdapterLayer) error
 }
 
@@ -344,18 +344,18 @@ func residentAdapterLayers(rt *loraRuntime) []ResidentAdapterLayer {
 	return out
 }
 
-// ResidentImagePrefill is an OPTIONAL Prefiller extension: bidirectional attention over a contiguous
+// legacyImagePrefill is an OPTIONAL Prefiller extension: bidirectional attention over a contiguous
 // [imgStart,imgEnd) sub-range (Gemma 3's image-block mask, SetImageBlocks/attendHi in decoder/kvcache.go), the
 // resident twin of prefillLogitsVL's CPU forward. embeddings are the ALREADY-SPLICED per-position vectors (text
 // embeddings with the projected vision features overwritten at [imgStart,imgEnd), no embed scale). The whole prompt,
 // image block included, must fit in ONE weight-stationary pass; a longer prompt or any other decline returns an
 // error rather than chunking, because a bidirectional block split across a chunk boundary is unverified. Without it
 // GenerateVL takes the CPU-prefill-then-UploadKV bridge (docs/multimodal.md).
-type ResidentImagePrefill interface {
+type legacyImagePrefill interface {
 	PrefillImageLast(ctx context.Context, embeddings [][]float32, startPos, imgStart, imgEnd int) (logits []float32, err error)
 }
 
-// legacyImageBlocksPrefill is ResidentImagePrefill for a prompt with several images (S11,
+// legacyImageBlocksPrefill is legacyImagePrefill for a prompt with several images (S11,
 // docs/completed/task-multimodal-support-2026-10.md): blocks are each image's [start, end), in order and disjoint, each its
 // own bidirectional block. OPTIONAL: a backend without it takes a multi-image turn through the CPU-prefill + UploadKV
 // bridge, which handles any number of blocks.
@@ -389,7 +389,7 @@ type legacySpanPrefill interface {
 	PrefillSpansLast(ctx context.Context, embeddings [][]float32, startPos int, spans [][2]int) (logits []float32, err error)
 }
 
-// ResidentHybridMRoPEPrefill is an OPTIONAL marker for a ResidentMRoPEPrefill implementer: its batched m-RoPE prefill is correct for a
+// ResidentHybridMRoPEPrefill is an OPTIONAL marker for a legacyMRoPEPrefill implementer: its batched m-RoPE prefill is correct for a
 // model with RECURRENT state (the Gated-DeltaNet hybrids, Qwen3.5+), building that state itself from the spliced embeddings. Without
 // it GenerateQwenVL keeps a recurrent family on the CPU prefill, because the CPU-prefill-then-UploadKV bridge copies only the layers
 // that have a KV and would leave the recurrent state zeroed (docs/multimodal.md, P8 record, item 5). HybridMRoPEPrefill reports
@@ -399,18 +399,18 @@ type ResidentHybridMRoPEPrefill interface {
 	HybridMRoPEPrefill() bool
 }
 
-// ResidentMRoPEPrefill is an OPTIONAL Prefiller extension: batched prefill under Qwen2.5-VL's m-RoPE 3D rotary
+// legacyMRoPEPrefill is an OPTIONAL Prefiller extension: batched prefill under Qwen2.5-VL's m-RoPE 3D rotary
 // positions, the resident twin of prefillLogitsQwenVL's CPU forward. Unlike legacyMRoPE (decode's single ropePos
 // split) it needs every row's own position up front: mropePos is decoder/rope.go's mropePositions output, one (t,h,w)
 // triple per ABSOLUTE position over the WHOLE prompt, which GenerateQwenVL already computes, so a backend must not
-// re-derive it. embeddings are the ALREADY-SPLICED vectors (ResidentImagePrefill's convention). Unlike it,
+// re-derive it. embeddings are the ALREADY-SPLICED vectors (legacyImagePrefill's convention). Unlike it,
 // implementations MAY chunk: Qwen's image tokens attend causally and each row's rotation is independent. Without it
 // GenerateQwenVL falls back to the CPU-prefill+UploadKV bridge.
-type ResidentMRoPEPrefill interface {
+type legacyMRoPEPrefill interface {
 	PrefillMRoPELast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int) (logits []float32, err error)
 }
 
-// legacyMRoPEDeepstackPrefill is an OPTIONAL extension of ResidentMRoPEPrefill for Qwen3-VL (S16): the same batched m-RoPE
+// legacyMRoPEDeepstackPrefill is an OPTIONAL extension of legacyMRoPEPrefill for Qwen3-VL (S16): the same batched m-RoPE
 // prefill, which also adds DeepStack set l to the image rows [imgStart, imgStart+imgLen) after decoder layer l, as the CPU
 // prefill does (addDeepstack; HF's hidden_states[visual_pos_masks] += deepstack_visual_embeds[l]). deep holds one set per
 // injected layer, imgLen rows of the hidden size each. Without it GenerateQwenVLDeepstack keeps a turn that has DeepStack
@@ -488,20 +488,20 @@ func residentCapsOf(rf ResidentForward) ResidentCaps {
 	return SubsystemsOf(rf).Runtime.ResidentCaps()
 }
 
-// ResidentPrefillBlocks is the optional capability of a Prefiller whose pass allocates scratch for every row it is
+// legacyPrefillBlocks is the optional capability of a Prefiller whose pass allocates scratch for every row it is
 // handed, so a long prompt's scratch grows with the prompt. PrefillBlockRows is the most rows one pass should take,
 // or 0 when the resident does not want its prefill split; PrefillScratchBytes is what a pass of that many rows
 // allocates beyond the resident's standing buffers. residentPrefillSeed takes a longer suffix in passes of
 // PrefillBlockRows, and AdmitPrefillMemoryShare prices a resident request at one pass instead of the whole prompt.
 // Splitting changes no bit only for a resident whose continuation equals the whole pass, so both callers also require
 // PrefillTailExact (prefillBlockRows).
-type ResidentPrefillBlocks interface {
+type legacyPrefillBlocks interface {
 	PrefillBlockRows() int
 	PrefillScratchBytes(rows int) int64
 }
 
-// prefillBlocks is the resident's ResidentPrefillBlocks, or nil when it reports none.
-func (m *Model) prefillBlocks() ResidentPrefillBlocks {
+// prefillBlocks is the resident's legacyPrefillBlocks, or nil when it reports none.
+func (m *Model) prefillBlocks() ResidentPrefillSubsystem {
 	pf := m.resPrefill()
 	if !pf.PrefillBlocksAvailable() {
 		return nil
@@ -1584,7 +1584,7 @@ func (m *Model) PrefillPath() (batched bool, reason string) {
 func (m *Model) embedResident(id int) []float32 { return m.embedResidentInto(id, nil) }
 
 // embedIsTableRow reports whether embedResidentInto is exactly m.w.Embed.Row: no embedding multiplier of either kind is
-// applied. A resident that gathers the next token's embedding itself (ResidentGreedyChain) is exact only then.
+// applied. A resident that gathers the next token's embedding itself (legacyGreedyChain) is exact only then.
 func (m *Model) embedIsTableRow() bool {
 	if sc := m.w.arch.EmbedScale; sc != 0 && sc != 1 {
 		return false

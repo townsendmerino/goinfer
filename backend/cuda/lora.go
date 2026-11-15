@@ -125,7 +125,7 @@ func sameLoraKey(x, y [][7]loraProjKey) bool {
 	return true
 }
 
-// SetAdapter implements decoder.ResidentAdapter: binds (layers != nil) or clears (layers == nil) the compute-time LoRA
+// SetAdapter implements decoder.ResidentRuntimeSubsystem: binds (layers != nil) or clears (layers == nil) the compute-time LoRA
 // delta for every subsequent Forward call, until the next SetAdapter. It runs on the executor thread (r.do), like every
 // device-touching call here: CUDA contexts are thread-affine.
 //

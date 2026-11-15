@@ -20,8 +20,8 @@ import (
 // logits (hiddenlast_resident_parity_test.go explains why 0.9999 does not apply once the LM head amplifies quantization
 // noise), here with a LoRA delta on both sides.
 //
-// It drives decoder.ResidentAdapter directly (ResidentForwardForTest/ResidentAdapterLayersForTest) to isolate kernel
-// correctness; the wiring (does an adapter session reach ResidentAdapter, does a backend without it decline) is gated by
+// It drives decoder.ResidentRuntimeSubsystem directly (ResidentForwardForTest/ResidentAdapterLayersForTest) to isolate kernel
+// correctness; the wiring (does an adapter session reach ResidentRuntimeSubsystem, does a backend without it decline) is gated by
 // decoder/resident_adapter_seam_test.go's fake-backend tests.
 //
 // Fixture: testdata/llama-tiny, a committed resident-eligible safetensors checkpoint with GQA (4 heads/2 kv heads), so the
@@ -44,7 +44,7 @@ func TestLoRAResidentParityMetal(t *testing.T) {
 	ra := decoder.SubsystemsOf(rf).Runtime
 	ok := ra.AdapterAvailable()
 	if !ok {
-		t.Fatalf("metal resident runner does not implement decoder.ResidentAdapter")
+		t.Fatalf("metal resident runner does not implement decoder.ResidentRuntimeSubsystem")
 	}
 	if err := mRes.LoadAdapter("a", adapterDir); err != nil {
 		t.Fatalf("LoadAdapter (metal side): %v", err)
@@ -138,7 +138,7 @@ func TestLoRAResidentParityMetal_armedExecutorThenBind(t *testing.T) {
 	ra := decoder.SubsystemsOf(rf).Runtime
 	ok := ra.AdapterAvailable()
 	if !ok {
-		t.Fatalf("metal resident runner does not implement decoder.ResidentAdapter")
+		t.Fatalf("metal resident runner does not implement decoder.ResidentRuntimeSubsystem")
 	}
 	if err := mRes.LoadAdapter("a", adapterDir); err != nil {
 		t.Fatalf("LoadAdapter (metal side): %v", err)

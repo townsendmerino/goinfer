@@ -647,7 +647,7 @@ func (r *resident) kvReusable(s, prefix int) int {
 // ReusableKV implements decoder.ResidentReusableKV for the bound slot.
 func (a *metalResident) ReusableKV(prefix int) int { return a.r.kvReusable(a.r.kvSlot, prefix) }
 
-// ReusableKVSlot implements decoder.ResidentReusableKVSlot.
+// ReusableKVSlot implements decoder.ResidentKVSubsystem.
 func (a *metalResident) ReusableKVSlot(slot, prefix int) int { return a.r.kvReusable(slot, prefix) }
 
 // SetKVSlotBusy implements decoder.ResidentKVSubsystem: a busy slot's blocks are never released to make room for another.

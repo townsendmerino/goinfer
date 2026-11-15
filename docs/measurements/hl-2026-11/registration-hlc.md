@@ -7,7 +7,7 @@ HL-C is the CUDA half of HL (`docs/completed/task-forward-architecture-2026-10.m
 `README.md`, merged #765). It borrows HL-R's loop and bands; the chain itself is new on CUDA.
 
 **Mechanism.** CUDA today picks the argmax on the device (`backend/cuda/resident.go:cudaResident.ForwardArgmax`) but syncs and uploads
-the next token's embedding row every token. The chain implements `decoder/residency.go:ResidentGreedyChain` on `cudaResident`: the
+the next token's embedding row every token. The chain implements `decoder/residency.go:legacyGreedyChain` on `cudaResident`: the
 argmax kernel's index feeds a device gather of the next embedding row, the next forward is queued on the same stream, and the host reads 4
 bytes per token. `Model.generateInto` already runs a chain under a gated processor while the gate is closed and stops it at each opening
 (HL-R), so the loop needs no change. `GreedyChainAvailable` is false where the chain would not be exact: graphs on, a windowed or MLA

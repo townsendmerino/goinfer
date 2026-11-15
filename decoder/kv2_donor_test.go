@@ -9,7 +9,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
-// donorFake is copyFake with a sliding window per slot (ResidentReusableKVSlot): held[s] is how many of a slot's first
+// donorFake is copyFake with a sliding window per slot (legacyReusableKVSlot): held[s] is how many of a slot's first
 // rows its window still holds (absent = all of them). It records each copy's source slot.
 type donorFake struct {
 	*copyFake

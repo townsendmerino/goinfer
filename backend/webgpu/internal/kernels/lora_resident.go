@@ -93,7 +93,7 @@ func releaseLoraLayers(layers []loraRunLayer) {
 	}
 }
 
-// SetAdapter implements decoder.ResidentAdapter: uploads (layers != nil) or clears (layers ==
+// SetAdapter implements decoder.ResidentRuntimeSubsystem: uploads (layers != nil) or clears (layers ==
 // nil) the compute-time LoRA delta for every subsequent Run call, until the next SetAdapter.
 // Always releases whatever was previously bound first — a bind that returns an error leaves NO
 // adapter bound (r.loraLayers is nil, r.steps restored to r.baseSteps), matching

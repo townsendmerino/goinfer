@@ -1303,7 +1303,7 @@ type genRun struct {
 	commit         func(int)
 	sampler        *Sampler
 	lora           *loraRuntime
-	resAdapter     ResidentAdapter
+	resAdapter     ResidentRuntimeSubsystem
 	useGPU         bool
 	mc3            *residentBatcher // non-nil: this generation holds an MC3 place and, after prefill, the KV slot mc3Slot
 	mc3Slot        int
@@ -1311,7 +1311,7 @@ type genRun struct {
 	gpuPos         int
 	logits         []float32
 	err            error
-	resCost        ResidentCost
+	resCost        ResidentRuntimeSubsystem
 	fastNext       int
 	gated          bool
 	procFree       bool
@@ -1329,7 +1329,7 @@ type genRun struct {
 	topKVocab      int
 	sampleOn       bool
 	batchGreedy    bool
-	sChainRF       ResidentSampleChain
+	sChainRF       ResidentDecodeSubsystem
 	stepRow        [1][]float32 // the decode token's one-row batch, reused across tokens so a step allocates nothing
 	topKRow        *TopKRow     // this step's device top-K row, set instead of logits when topKOn
 	topKPre        *SampleInfo
@@ -1370,7 +1370,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	//
 	// An adapter session (cache.lora != nil) is admitted: going through Session.UseAdapter -> cache.lora -> applyLoRA is the only
 	// way a compute-time LoRA is applied, and with prefillFrom==0 it never meets the reused-prefix conflict. It is admitted only if
-	// the resident implements ResidentAdapter; otherwise it declines to CPU like any other missing resident capability, never
+	// the resident implements legacyAdapter; otherwise it declines to CPU like any other missing resident capability, never
 	// running an adapter session's tokens through the base model's resident weights, which returns correct-looking but wrong
 	// output.
 	//
@@ -1653,7 +1653,7 @@ type Generation struct {
 	CheckpointDeclined string
 	CheckpointSaved    bool
 	CheckpointSave     time.Duration
-	// ImgPrefillResident reports whether GenerateVL's resident image-prefill fast path (ResidentImagePrefill, the bidirectional
+	// ImgPrefillResident reports whether GenerateVL's resident image-prefill fast path (legacyImagePrefill, the bidirectional
 	// image-block kernel) ran this turn's prefill on the GPU; false means it fell through to the CPU-prefill+UploadKV bridge,
 	// whether because no resident implements it, the prompt was too long for one chunk, or any other decline. Diagnostic: a
 	// real-checkpoint gate needs it to confirm the fast path fired rather than passing vacuously through the (correct) fallback.

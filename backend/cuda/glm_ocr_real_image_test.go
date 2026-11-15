@@ -95,7 +95,7 @@ func TestGlmOcrCUDAResidentRealImage(t *testing.T) {
 	rmp := decoder.SubsystemsOf(mc.ResidentForwardForTest()).Prefill
 	ok := rmp.MRoPEPrefillAvailable()
 	if !ok {
-		t.Fatal("the resident does not satisfy ResidentMRoPEPrefill")
+		t.Fatal("the resident does not satisfy ResidentPrefillSubsystem")
 	}
 	mcpu, err := decoder.Load(ckpt, decoder.Options{Backend: "cpu", Quant: "int4"})
 	if err != nil {
@@ -277,7 +277,7 @@ func TestGlmOcrCUDAResidentFullBudget(t *testing.T) {
 	rmp := decoder.SubsystemsOf(mc.ResidentForwardForTest()).Prefill
 	ok := rmp.MRoPEPrefillAvailable()
 	if !ok {
-		t.Fatal("no ResidentMRoPEPrefill")
+		t.Fatal("no ResidentPrefillSubsystem")
 	}
 	mcpu, err := decoder.Load(ckpt, decoder.Options{Backend: "cpu", Quant: "int4"})
 	if err != nil {

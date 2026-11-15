@@ -30,7 +30,7 @@ func TestSetAdapter_partialBindErrorReleasesBuffers(t *testing.T) {
 	ra := decoder.SubsystemsOf(rf).Runtime
 	ok := ra.AdapterAvailable()
 	if !ok {
-		t.Fatalf("metal resident runner does not implement decoder.ResidentAdapter")
+		t.Fatalf("metal resident runner does not implement decoder.ResidentRuntimeSubsystem")
 	}
 	mr, ok := rf.(*metalResident)
 	if !ok {

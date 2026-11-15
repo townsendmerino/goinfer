@@ -37,7 +37,7 @@ func TestSetAdapter_partialBindErrorRestoresSteps(t *testing.T) {
 	ra := decoder.SubsystemsOf(rf).Runtime
 	ok := ra.AdapterAvailable()
 	if !ok {
-		t.Fatalf("webgpu resident runner does not implement decoder.ResidentAdapter")
+		t.Fatalf("webgpu resident runner does not implement decoder.ResidentRuntimeSubsystem")
 	}
 	rd, ok := rf.(*residentDecoder)
 	if !ok {

@@ -152,7 +152,7 @@ func (r *cudaResident) kvBudgetText() string {
 	return fmt.Sprintf("rollback budget %d = %d planned + %d from free VRAM", r.kvRollback(), planned, r.kvRollback()-planned)
 }
 
-// ReusableKVSlot implements decoder.ResidentReusableKVSlot: ReusableKV's answer for any slot, bound or not.
+// ReusableKVSlot implements decoder.ResidentKVSubsystem: ReusableKV's answer for any slot, bound or not.
 func (r *cudaResident) ReusableKVSlot(slot, prefix int) int {
 	if prefix <= 0 {
 		return prefix

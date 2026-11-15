@@ -13,7 +13,7 @@ import (
 )
 
 // TestQwen25VLMRoPEPrefillResidentReal_gate is the real-checkpoint gate for the resident m-RoPE prefill fast path
-// (decoder.ResidentMRoPEPrefill): the Qwen2.5-VL sibling of gemma3_img_prefill_resident_real_test.go's
+// (decoder.ResidentPrefillSubsystem): the Qwen2.5-VL sibling of gemma3_img_prefill_resident_real_test.go's
 // TestGemma3ImgPrefillResidentReal_gate, same two-half structure, exercising a COLD (first-time) image turn's PREFILL
 // through the m-RoPE batched-rotation kernel.
 //
@@ -80,7 +80,7 @@ func TestQwen25VLMRoPEPrefillResidentReal_gate(t *testing.T) {
 	rmp := decoder.SubsystemsOf(rf).Prefill
 	ok := rmp.MRoPEPrefillAvailable()
 	if !ok {
-		t.Skip("rope_kv_mrope_batched did not load on this build — ResidentMRoPEPrefill unavailable")
+		t.Skip("rope_kv_mrope_batched did not load on this build — ResidentPrefillSubsystem unavailable")
 	}
 
 	// --- Half 1: primitive-level logits comparison ---

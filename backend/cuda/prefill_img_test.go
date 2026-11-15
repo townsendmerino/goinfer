@@ -11,7 +11,7 @@ import (
 
 // TestPrefillImageLast_declinesOverChunk pins that a bidirectional image block is never split across a
 // prefillChunked chunk boundary (unverified, likely unsafe: see PrefillImageLast's doc comment and
-// decoder.ResidentImagePrefill's), so a prompt wider than one weight-stationary pass must DECLINE cleanly
+// decoder.ResidentPrefillSubsystem's), so a prompt wider than one weight-stationary pass must DECLINE cleanly
 // rather than truncate, crash or return a wrong answer with no error. Needs no device: the M>chunk check
 // runs before prefillCore touches the executor.
 //

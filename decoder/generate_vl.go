@@ -74,7 +74,7 @@ func (m *Model) GenerateVL(ctx context.Context, ids []int, imgPos, imgLen int, i
 // GenerateVLSpans is GenerateVL for a prompt with several images: spans are the images' placeholder runs in prompt
 // order, each its own bidirectional block, and features returns every span's rows concatenated in span order. Reuse
 // claims every span; the resident image prefill takes them all when the backend implements
-// legacyImageBlocksPrefill (one span needs only ResidentImagePrefill), and otherwise the turn takes the CPU-prefill +
+// legacyImageBlocksPrefill (one span needs only legacyImagePrefill), and otherwise the turn takes the CPU-prefill +
 // UploadKV bridge with the reason in Generation.ImgPrefillDecline.
 func (m *Model) GenerateVLSpans(ctx context.Context, ids []int, spans []ImageSpan, features func() ([]float32, error), maxTokens int, sp SamplingParams) (<-chan int, *Generation) {
 	return m.generateVLSpans(ctx, ids, spans, features, maxTokens, sp, false)
@@ -164,7 +164,7 @@ func (m *Model) generateVLSpans(ctx context.Context, ids []int, spans []ImageSpa
 		}
 
 		// Resident image-prefill fast path, tried before the CPU prefillLogitsVL call: a cold image turn's prefill, not only
-		// its decode, runs on the resident GPU when the backend implements ResidentImagePrefill. Any decline (no capability,
+		// its decode, runs on the resident GPU when the backend implements legacyImagePrefill. Any decline (no capability,
 		// prompt too large for one chunk, resident busy) falls through unchanged to the CPU-prefill + UploadKV bridge; the
 		// claim is released first so the tower and CPU-prefill work never run while holding it.
 		var resPrefill func() ([]float32, int, error)
@@ -367,7 +367,7 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 
 		// Resident m-RoPE prefill fast path (Qwen2.5-VL's twin of GenerateVL's resident image-prefill branch), tried before the
 		// CPU prefillLogitsQwenVL call: a cold image turn's prefill, not only its decode, runs on the resident GPU when the
-		// backend implements ResidentMRoPEPrefill. It needs that and legacyMRoPE (this path's decode continuation via
+		// backend implements legacyMRoPEPrefill. It needs that and legacyMRoPE (this path's decode continuation via
 		// ForwardMRoPE): a resident that can prefill but not decode m-RoPE would strand the turn right after prefill. Any
 		// decline (no capability, prompt too large for one chunk, resident busy) falls through unchanged to the CPU-prefill +
 		// UploadKV bridge; the claim is released first so the CPU prefill never runs while holding it.

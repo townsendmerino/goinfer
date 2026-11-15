@@ -41,7 +41,7 @@ func (r *cudaResident) costToken(c *cost.Counter, p cost.Phase, token func() err
 	return r.CostSpan(c, p, func() (int, error) { return 1, token() })
 }
 
-// CostSpan is decoder.ResidentCost: work runs with c counting into phase p, then the span's device-level counts, its wall
+// CostSpan is decoder.ResidentRuntimeSubsystem: work runs with c counting into phase p, then the span's device-level counts, its wall
 // time and the tokens work reports are added; a span that covered no token and touched the device not at all adds nothing.
 // work must not return while a job it queued is still running on the executor: the executor reads r.cost inside the jobs,
 // and the job's channel send orders this write before it.
