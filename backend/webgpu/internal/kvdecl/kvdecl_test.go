@@ -1,6 +1,4 @@
-//go:build gpu
-
-package webgpu
+package kvdecl
 
 import (
 	"strings"
@@ -9,10 +7,10 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-// TestKVCheckDeclared holds the build's check of a layer's declared rows (MM5's WebGPU half, G-MP2w's refusal half): the rows its caches
-// are sized from are accepted, and each way a declaration can differ from them is refused: a row missing, extra, twice, or of another width,
-// head count or precision, and a row on a layer that reads another's cache. Each refusal is a plant that goes red if the check is removed.
-func TestKVCheckDeclared(t *testing.T) {
+// TestCheck holds the build's check of a layer's declared rows (MM5's WebGPU half, G-MP2w's refusal half): the rows its caches are sized
+// from are accepted, and each way a declaration can differ from them is refused: a row missing, extra, twice, or of another width, head
+// count or precision, and a row on a layer that reads another's cache. Each refusal is a plant that goes red if the check is removed.
+func TestCheck(t *testing.T) {
 	kv := func(name string, elems, heads int) program.Buf {
 		return program.Buf{Name: name, Unit: program.PerPosition, Prec: program.PrecKV, Elems: elems, Heads: heads}
 	}
@@ -39,7 +37,7 @@ func TestKVCheckDeclared(t *testing.T) {
 		{"a latent declared at the KV precision", []program.Buf{{Name: "latent", Unit: program.PerPosition, Prec: program.PrecKV, Elems: 72}}, true, true, 72, 0, "precision"},
 		{"rows on a layer that reads another's cache", []program.Buf{kv("k", 64, 2), kv("v", 64, 2)}, false, false, 64, 2, "has no cache for"},
 	} {
-		err := kvCheckDeclared(3, c.bufs, c.owns, c.latent, c.kvDim, c.nKV)
+		err := Check(3, c.bufs, c.owns, c.latent, c.kvDim, c.nKV)
 		switch {
 		case c.wantErr == "" && err != nil:
 			t.Errorf("%s: refused: %v", c.name, err)

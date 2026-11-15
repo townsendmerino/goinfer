@@ -12,6 +12,7 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
+	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kvdecl"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
@@ -322,7 +323,7 @@ func (bs *webgpuBuild) mlaMixer(i int, rl *kernels.RunLayer) error {
 	// MLA: a single compressed-latent cache [ctxCap·latDim] replaces the per-head
 	// K/V caches; the per-head K/V are rebuilt in rank-space, never materialized.
 	latDim := bs.kvLoRA + bs.qkRope
-	if err := kvCheckDeclared(i, m.LayerBuffers(i), true, true, latDim, 0); err != nil {
+	if err := kvdecl.Check(i, m.LayerBuffers(i), true, true, latDim, 0); err != nil {
 		return err
 	}
 	lc, e1 := bs.c.NewKVCache(nil, bs.ctxCap*latDim)
@@ -406,7 +407,7 @@ func (bs *webgpuBuild) attnMixer(i int, lw *decoder.LayerWeights, rl *kernels.Ru
 	// cache, binds its source's, and projects Q only.
 	kvSrc := m.BackendView().Layer(i).KVSrc()
 	owns := kvSrc == i // before a test knob moves kvSrc
-	if err := kvCheckDeclared(i, m.LayerBuffers(i), owns, false, lkvDim, lnKV); err != nil {
+	if err := kvdecl.Check(i, m.LayerBuffers(i), owns, false, lkvDim, lnKV); err != nil {
 		return err
 	}
 	if kernels.G4KVSrcOffForTest && kvSrc != i {

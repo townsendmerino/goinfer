@@ -1,6 +1,6 @@
-//go:build gpu
-
-package webgpu
+// Package kvdecl holds WebGPU's check of a layer's declared K/V rows against what its build allocates. It takes plain numbers and the
+// declaration (internal/runtime/program), and imports no decoder, so the check is testable without a device or a model.
+package kvdecl
 
 import (
 	"fmt"
@@ -8,12 +8,12 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-// kvCheckDeclared holds layer l's declared per-position rows (decoder.Model.LayerBuffers) to what its build allocates, before the
-// caches are sized from its geometry: on a layer that owns an attention cache, K and V of kvDim elements in nKV heads at the KV
-// precision; on an MLA layer one latent of kvDim elements declared f32; on a layer that reads another's cache, none. A row missing,
+// Check holds layer l's declared per-position rows (decoder.Model.LayerBuffers) to what its build allocates, before the caches are sized
+// from its geometry: on a layer that owns an attention cache, K and V of kvDim elements in nKV heads at the KV precision; on an MLA
+// layer (latent) one latent of kvDim elements declared f32; on a layer that reads another's cache (owns false), none. A row missing,
 // extra, declared twice, or of another width, head count or precision is refused: the plan prices the declaration, so caches sized
 // otherwise would not be what fit priced. A window is not compared: WebGPU holds the full context on every layer.
-func kvCheckDeclared(l int, bufs []program.Buf, owns, latent bool, kvDim, nKV int) error {
+func Check(l int, bufs []program.Buf, owns, latent bool, kvDim, nKV int) error {
 	rows := map[string]program.Buf{}
 	for _, b := range bufs {
 		if b.Unit != program.PerPosition {
