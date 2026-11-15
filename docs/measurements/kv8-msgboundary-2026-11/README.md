@@ -145,3 +145,39 @@ The coordinator's decision of 2026-11-15, on T1's PARKED: keep #1007 a draft and
 - **A result the registration did not grade:** cutting Keep took r2 from 6,144 to 7,360 rows reused and 2.16 s to 0.36 s (ratio 0.16), a gain for every recurrent chat turn, on the 2,048-row grid that rounded Keep down by 1,286 rows. Its replies equal main's.
 - **The cut rests on the split being bit-identical** (`TestB35SplitPrefill`, C2, and these replies). It is read on a tiny DeltaNet fixture and on one real checkpoint's greedy replies, 24 tokens each, not on the logits of a real model.
 - **Not read:** the 9B, Claude Code's traffic, a pass width other than 2,048 on a real model, Metal, Mamba-2.
+
+## Third addendum: the 9B and recorded agent traffic (registered 2026-11-15 15:50 PST, before any run; nobara-kv8)
+
+The coordinator's instruction of 2026-11-15, for the reads #1007 left owed. Both are by day, under the exclusive timing lock, A B B A, one server per cell, a cell above load 8.0 void and re-run once. Metal and Mamba-2 stay owed.
+
+**R1, the 9B.** T2's shape (`served_msgboundary.py`, requests r1 to r4) on `~/models/Qwen3.5-9B-Q4_K_M.gguf` from NVMe, `--ctx 8192` (the prompts are 7,434 to 7,465 ids), one slot. Builds: main before #1007 (`a01046150`, the first parent of the merge) against main with it (`a9824eb2d`; the tree after it differs from that only in docs). **Fit check first**, by the server's own banner (`--fit-only`): if the fit guard refuses the 9B with its snapshots on the 8 GB card, the read stops and says so; no threshold moves, no bypass flag.
+
+| | PASS | PARKED | FAIL |
+|---|---|---|---|
+| r3 (last message rewritten): first token, change over main | at most 0.5 | above 0.5, at most 0.7 | above 0.7 |
+| r3 rows reused | exactly the smaller of r1's two snapshots, a 64-row block within 63 rows of the boundary | | anything else |
+| r1 to r4 replies | each equals main's | | any differs |
+| r1 (cold): first token, change over main | at most 1.05 | above 1.05, at most 1.10 | above 1.10 |
+| r2: first token and rows | at most 1.10 of main's; not fewer rows | | slower than 1.10, or fewer rows |
+| r4: rows | not fewer than main's | | fewer |
+| peak `VmSwap` | at most 512 MB | | above |
+
+- **The cold cost is read explicitly and the 0.8B's bars are not applied to it:** a 9B snapshot is several times larger per row (T2's 160 MiB and 192 MiB were the 0.8B's), so 175 MiB and 150 ms would fail it by arithmetic, not by effect. The 9B reports each cold request's snapshots (rows, host MiB, copy ms), r1's first-token difference in seconds against main's, and how many cold conversations the auto budget holds against main's. **The graded cost is r1's first token**, with T2's bars above, and its ambiguous band (1.05 to 1.10) goes to the owner.
+- **Cost:** about 8 minutes (9B loads, cold prefills of 7.4k ids). Start and finish from `date` when it runs.
+
+**R2, KV0-H's recorded requests.** `replay_kv0h.py` replays KV0-H's recorded request bodies, each to its own route as recorded (chat completions, responses, messages): its 10 opencode and Codex sessions (84 requests) and the Claude Code chain of its 32,768-token check (10 requests), in the study's order through one slot, on `~/models/qwen3.5-0.8b` (same vocabulary as the 9B they were recorded against), `--ctx 24576`, greedy, 8 new tokens, main `a01046150` against `a9824eb2d`. The bodies stay outside the repository (KV0-H's policy); this record carries counts and times only. The server is not restarted inside a cell, so a session's first request meets what the previous session left, as in KV0-H.
+
+- **Limit, stated first:** the 0.8B's replies are not the 9B's that the recorded histories carry, so a follow-up never continues from the live state: what serves it is a snapshot, the end-of-prompt checkpoint, or nothing. This reads the restore paths on real agent prompt shapes; it is not the 9B's traffic and not a rate of any one agent's turns.
+- **Counted per follow-up (every request after a session's first), both arms:** what served it (the message-boundary snapshot, another snapshot, the end-of-prompt checkpoint, live state, nothing: `snap=`, `ckpt_restore=` and `reused=` of the request line, and the snapshots the previous request took), its rows reused and its first token.
+
+| | PASS | PARKED | FAIL |
+|---|---|---|---|
+| every request's reply (the generated ids, `--log-token-ids`) | equals main's | | any differs |
+| rows reused, per request | not fewer than main's on any | | fewer on any |
+| follow-ups served by a snapshot | not fewer than main's | | fewer |
+| first token per follow-up, change over main: the median, and the total | at most 1.00 each | above 1.00, at most 1.10 | above 1.10 |
+| peak `VmSwap` | at most 512 MB | | above |
+
+- **Reported, not graded:** the count each source serves on each arm; how many follow-ups the boundary snapshot serves that main served from nothing; snapshot rows, host MiB and ms per request; the budget held.
+- **Cost:** 94 requests a cell, prompts up to about 19k ids, so about 25 to 45 minutes for the four cells (cold prefills of up to 19k ids at the 0.8B's rate, main's cells longer). Start and finish from `date` when it runs.
+- **Void if:** a timed cell outside the lock, a model read from `/srv/models`, a NOT RUN counted as a pass, a bar moved after a reading. **Stopping rule:** the four cells of each read, no early stop; a refused fit check ends R1 and is reported.

@@ -14,7 +14,7 @@ import argparse, importlib.util, json, os, re, statistics, subprocess, sys, time
 spec = importlib.util.spec_from_file_location("two", os.path.join(os.path.dirname(os.path.abspath(__file__)), "../kv8-2026-11/served_two_clients.py"))
 h = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(h)
-h.CTX = 12288
+h.CTX = 12288  # --ctx overrides
 
 SYSTEM_LINES, HIST_LINES, LAST_LINES = 105, 61, 49
 PASS_BAR, FAIL_BAR, R2_BAR, R1_BAR, R1_FAIL = 0.5, 0.7, 1.10, 1.05, 1.10
@@ -117,7 +117,10 @@ def main():
     p.add_argument("--model", required=True)
     p.add_argument("--out", required=True)
     p.add_argument("--fit-only", action="store_true")
+    p.add_argument("--ctx", type=int, default=12288)
+    p.add_argument("--report-cost-only", action="store_true", help="the 9B: the snapshot copy's host MiB and ms are reported, not graded against the 0.8B's bars (the first-token bars still apply)")
     a = p.parse_args()
+    h.CTX = a.ctx
     os.makedirs(a.out, exist_ok=True)
     if a.fit_only:
         s = h.Server(A(a.change, a.model), 1, os.path.join(a.out, "fit.log"))
@@ -184,7 +187,7 @@ def main():
         cost = rec_by[new]["snapshot_cost"][:2]
         for c in cost:
             print(f"{pair}: cold request's snapshot at {c['rows']} rows: {c['mib']} MiB host, {c['ms']} ms")
-        if cost:
+        if cost and not a.report_cost_only:
             c = cost[0]  # the boundary snapshot, the smaller
             if c["ms"] > COST_FAIL_MS or c["mib"] > COST_FAIL_MIB:
                 notes.append(f"{pair}: the boundary snapshot costs {c['ms']} ms and {c['mib']} MiB"); worse("FAIL")
