@@ -1,5 +1,7 @@
 # Task: one KV architecture — paged, content-addressed, tiered (KV0–KV11) — 2026-10
 
+> **Status 2026-11-15: re-read against main at 3331d4aac (docs only).** SEQ's device reads are on record (nobara and the Mac, 2026-11-12: SEQ's row). Flint's G5 range survey passes on the real checkpoint (nobara, 2026-11-13, `docs/measurements/flint-g5-range-2026-11-13/README.md`: worst max |V| 129.80, worst max |K| 49.85, no NaN); `auto` stays f32 until a G4 passes, and `docs/kv-precision-matrix.md` has no flint-tiny row. KV5, KV7-rest, KV8 and KV10 stand as their rows say; the Mac lane (KV5-7) and nobara's (KV8) restart on them from 2026-11-15. §7a carries a note of what happened to each step.
+>
 > **Status 2026-11-12: the ledger re-read against main at 93a183f82, after ten commits that went straight to main on
 > 2026-11-11 and 2026-11-12.** No open row advanced, and none of those commits changed this ledger beyond one renamed
 > citation. 90e4d44f8 moved the reuse arithmetic into `internal/runtime/kvmgr/sequence.go` behind `kvmgr.SequenceState`
@@ -1645,6 +1647,8 @@ the forward and memory side is in `docs/tasks/task-forward-and-memory-2026-11.md
    with two Claude Code ones and committed lengths of 640 to 26,184. The file it reads,
    `docs/measurements/kv0h-2026-10/study-h20-stats-h.json`, holds ten codex and opencode sessions on one model. The rollback
    distances it reports (9, 31 and 271) match the file; the description does not. It goes to the record's owner.
+
+**What happened to this plan (2026-11-15).** Step 1, SEQ's device reads: done (CUDA window replay, G1a and G3b on nobara and G1a with flint-tiny on the Mac, 2026-11-12; SEQ's row). Step 2, Flint's KV precision: the G5 range survey is done and passes (above); P4's remaining gates and the matrix row are open, and the `cudaKVF16Delivered` entry stands until they are read. Steps 3 and 4 (KV5-7 on the Mac; KV8's checkpoint and KV7-rest on nobara) are taken up from 2026-11-15. Steps 5 and 6 have no change on record.
 
 ## 8. Owner decisions
 
