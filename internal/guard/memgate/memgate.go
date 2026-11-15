@@ -230,7 +230,7 @@ func GeometryOf(m *decoder.Model, ctx, slots int, kv string, rings bool) Geometr
 			}
 			window += 2 * width * formula * (float64(ctx) - rows)
 			if kv == mem.KVI8 {
-				scale += 2 * rows * (width*elem + 4*float64(m.KVHeadsAtResident(l)) - width*formula)
+				scale += 2 * rows * (width*elem + 4*float64(m.BackendView().Layer(l).KVHeads()) - width*formula)
 			}
 		}
 	}

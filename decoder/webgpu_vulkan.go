@@ -134,7 +134,7 @@ func (m *Model) webgpuLayerCaches(i, ctx int, kvF16, kvI8 bool) (bufs []int64, k
 	case kvF16:
 		perElem = 2
 	}
-	mixer, _ := m.ResidentLayerOps(i)
+	mixer, _ := m.BackendView().Layer(i).Ops()
 	switch mixer {
 	case MixerAttention:
 		if m.w.arch != nil && m.w.arch.gemma4KVSrcAt(i) != i {
@@ -144,14 +144,14 @@ func (m *Model) webgpuLayerCaches(i, ctx int, kvF16, kvI8 bool) (bufs []int64, k
 		if m.w.arch != nil {
 			kvDim = m.w.arch.kvDimAt(i)
 		} else {
-			kvDim = m.KVHeadsAtResident(i) * m.HeadDimAtResident(i)
+			kvDim = m.BackendView().Layer(i).KVHeads() * m.BackendView().Layer(i).HeadDim()
 		}
 		if kvDim == 0 || ctx <= 0 {
 			return nil, true
 		}
 		c := int64(float64(kvDim) * perElem * float64(ctx))
 		if kvI8 {
-			sc := 4 * int64(m.KVHeadsAtResident(i)) * int64(ctx) // one f32 scale a KV head a position, its own buffer for K and for V
+			sc := 4 * int64(m.BackendView().Layer(i).KVHeads()) * int64(ctx) // one f32 scale a KV head a position, its own buffer for K and for V
 			return []int64{c, c, sc, sc}, true
 		}
 		return []int64{c, c}, true
@@ -362,11 +362,11 @@ func (m *Model) webgpuDerivedTableBytes() int64 {
 	var tabs [][]float32
 	var n int64
 	for i := range m.w.arch.NumLayers {
-		if inv := m.RopeInvFreqLayerResident(i); len(inv) > 0 && !slices.ContainsFunc(tabs, func(t []float32) bool { return slices.Equal(t, inv) }) {
+		if inv := m.BackendView().Layer(i).RopeInvFreq(); len(inv) > 0 && !slices.ContainsFunc(tabs, func(t []float32) bool { return slices.Equal(t, inv) }) {
 			tabs = append(tabs, inv)
 			n += 4 * int64(len(inv))
 		}
-		if len(m.GptOssSinksResident(i)) == 0 {
+		if len(m.BackendView().Layer(i).AttnSinks()) == 0 {
 			n += 4
 		}
 		if g4 := m.w.Layers[i].gemma4moe; g4 != nil {

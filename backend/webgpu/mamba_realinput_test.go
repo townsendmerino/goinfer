@@ -91,7 +91,7 @@ func TestMambaRealInputParity(t *testing.T) {
 	}
 
 	// Real layer-0 weights → GPU compose (conv → ssm → gatedNorm), fresh persistent state.
-	_, convW, convB, aLog, dW, dtBias, normW, _ := m.GraniteMambaWeights(0)
+	_, convW, convB, aLog, dW, dtBias, normW, _ := m.BackendView().Layer(0).GraniteMambaWeights()
 	headP := make([]float32, nHeads*3)
 	for h := range nHeads {
 		headP[h*3] = float32(-math.Exp(float64(aLog[h])))

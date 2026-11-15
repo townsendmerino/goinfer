@@ -44,7 +44,7 @@ func TestGraniteResidentBridge(t *testing.T) {
 			continue
 		}
 		mamba++
-		inProj, convW, convB, aLog, dW, dtBias, normW, outProj := m.GraniteMambaWeights(l)
+		inProj, convW, convB, aLog, dW, dtBias, normW, outProj := m.BackendView().Layer(l).GraniteMambaWeights()
 		got := map[string]int{"inProj": len(inProj), "convW": len(convW), "convB": len(convB),
 			"aLog": len(aLog), "d": len(dW), "dtBias": len(dtBias), "normW": len(normW), "outProj": len(outProj)}
 		for k, w := range want {

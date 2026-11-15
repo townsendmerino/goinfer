@@ -52,7 +52,7 @@ func resolveMRoPETestModel(t *testing.T) string {
 	return ""
 }
 
-// TestForwardMRoPE_constantShiftInvariance is ForwardMRoPE's (decoder.ResidentMRoPE) FIRST real
+// TestForwardMRoPE_constantShiftInvariance is ForwardMRoPE's (decoder.ResidentDecodeSubsystem) FIRST real
 // correctness test on the Metal backend — the CUDA twin lives in cuda/forwardmrope_parity_test.go;
 // the WebGPU twin lives in gpu/forwardmrope_parity_test.go.
 //
@@ -80,7 +80,7 @@ func TestForwardMRoPE_constantShiftInvariance(t *testing.T) {
 			mrope := decoder.SubsystemsOf(rf).Decode
 			ok := mrope.MRoPEDecodeAvailable()
 			if !ok {
-				t.Fatal("metalResident does not satisfy decoder.ResidentMRoPE — interface wiring broken")
+				t.Fatal("metalResident does not satisfy decoder.ResidentDecodeSubsystem — interface wiring broken")
 			}
 			_, _, _, _, _, _, vocab := mc.Dims()
 
@@ -139,7 +139,7 @@ func TestForwardMRoPE_equalArgsMatchesForward(t *testing.T) {
 	mrope := decoder.SubsystemsOf(rf).Decode
 	ok := mrope.MRoPEDecodeAvailable()
 	if !ok {
-		t.Fatal("metalResident does not satisfy decoder.ResidentMRoPE")
+		t.Fatal("metalResident does not satisfy decoder.ResidentDecodeSubsystem")
 	}
 	_, _, _, _, _, _, vocab := mc.Dims()
 	rng := rand.New(rand.NewSource(3))

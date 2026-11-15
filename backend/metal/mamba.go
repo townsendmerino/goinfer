@@ -72,11 +72,11 @@ func buildMamba(m *decoder.Model) (*mambaParams, error) {
 
 // buildMambaLayer uploads layer l's Mamba-2 weights and allocates its state, zeroed.
 func buildMambaLayer(d *Device, m *decoder.Model, l, hidden int, p *mambaParams) (*mambaLayer, error) {
-	inProj, convW, convB, aLog, dW, dtBias, normW, outProj := m.GraniteMambaWeights(l)
+	inProj, convW, convB, aLog, dW, dtBias, normW, outProj := m.BackendView().Layer(l).GraniteMambaWeights()
 	// The projections as the load holds them: int8 already on a quantized load, else quantized here from the f32, the same
 	// codes either way.
 	var inWM, outWM linalg.WeightMat
-	if in, out := m.MambaProjInt8(l); in != nil {
+	if in, out := m.BackendView().Layer(l).MambaProjInt8(); in != nil {
 		inWM, outWM = *in, *out
 	} else {
 		if len(inProj) != p.projDim*hidden || len(outProj) != hidden*p.dInner {

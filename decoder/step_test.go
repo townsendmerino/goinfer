@@ -346,7 +346,7 @@ func TestStep_absentShapeDeclines(t *testing.T) {
 			t.Errorf("malformed batch %d: err %v, calls %q; want errStepShape and no call", i, err, f.calls)
 		}
 	}
-	// A plain Prefiller without ResidentPrefillMarked declines a marked prefill instead of dropping the mark.
+	// A plain Prefiller without legacyPrefillMarked declines a marked prefill instead of dropping the mark.
 	pf := &stepPrefillOnly{}
 	marked := stepBatch{Pass: passRows, Emb: two, Mark: 1, At: func(int) {}}
 	if canStep(pf, marked) || !canStep(pf, stepBatch{Pass: passRows, Emb: two}) {

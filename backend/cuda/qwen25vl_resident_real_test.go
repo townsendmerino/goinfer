@@ -82,7 +82,7 @@ func TestQwen25VLResidentReal_gate(t *testing.T) {
 	mrope := decoder.SubsystemsOf(rf).Decode
 	ok := mrope.MRoPEDecodeAvailable()
 	if !ok {
-		t.Fatal("cudaResident does not satisfy decoder.ResidentMRoPE")
+		t.Fatal("cudaResident does not satisfy decoder.ResidentDecodeSubsystem")
 	}
 	_, nLayers, _, _, _, _, _ := mc.Dims()
 

@@ -11,7 +11,6 @@ import (
 )
 
 var (
-	_ decoder.ResidentKVCopier       = (*cudaResident)(nil)
 	_ decoder.ResidentReusableKVSlot = (*cudaResident)(nil)
 )
 
@@ -20,7 +19,7 @@ var (
 // f32 (docs/measurements/kv2-cuda-2026-10-15.md, G0-C).
 var kvCopyF16 = true
 
-// CopyKV implements decoder.ResidentKVCopier: rows [start, end) of every layer's KV, from slot src to slot dst, so dst
+// CopyKV implements decoder.ResidentKVSubsystem: rows [start, end) of every layer's KV, from slot src to slot dst, so dst
 // continues at position end. It is one executor job, so it is ordered on the one stream after everything posted before
 // it (a busy source's prefill included) and runs between MC3 steps, never inside one. A busy source's decode writes only
 // rows past its prompt, which the decoder never asks for. The job synchronises the stream before it returns, so the

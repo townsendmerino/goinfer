@@ -22,7 +22,7 @@ func TestResidentLayerOps_kinds(t *testing.T) {
 	nemo := loadTinyOps(t, "nemotron-tiny")
 	seen := map[ResidentMixer]int{}
 	for l, k := range nemo.w.arch.nemotron.blockKind {
-		mixer, ffn := nemo.ResidentLayerOps(l)
+		mixer, ffn := nemo.BackendView().Layer(l).Ops()
 		var want ResidentMixer
 		wantFFN := false
 		switch k {
@@ -44,7 +44,7 @@ func TestResidentLayerOps_kinds(t *testing.T) {
 	q := loadTinyOps(t, "qwen35-tiny")
 	delta := 0
 	for l := range q.w.arch.NumLayers {
-		mixer, ffn := q.ResidentLayerOps(l)
+		mixer, ffn := q.BackendView().Layer(l).Ops()
 		if want := map[bool]ResidentMixer{true: MixerDeltaNet, false: MixerAttention}[q.w.arch.isLinearLayer(l)]; mixer != want || !ffn {
 			t.Errorf("qwen35-tiny layer %d: ops (%d, %v), want (%d, true)", l, mixer, ffn, want)
 		}
@@ -57,7 +57,7 @@ func TestResidentLayerOps_kinds(t *testing.T) {
 	}
 	ll := loadTinyOps(t, "llama-tiny")
 	for l := range ll.w.arch.NumLayers {
-		if mixer, ffn := ll.ResidentLayerOps(l); mixer != MixerAttention || !ffn {
+		if mixer, ffn := ll.BackendView().Layer(l).Ops(); mixer != MixerAttention || !ffn {
 			t.Errorf("llama-tiny layer %d: ops (%d, %v), want attention with an FFN", l, mixer, ffn)
 		}
 	}
@@ -74,11 +74,11 @@ func TestResidentKVBytes_attentionLayersOnly(t *testing.T) {
 		var want int64
 		attn := 0
 		for l := range m.w.arch.NumLayers {
-			if mixer, _ := m.ResidentLayerOps(l); mixer != MixerAttention {
+			if mixer, _ := m.BackendView().Layer(l).Ops(); mixer != MixerAttention {
 				continue
 			}
 			attn++
-			want += 2 * (blocks + 1) * metalKVPad * int64(m.KVHeadsAtResident(l)*m.HeadDimAtResident(l)) * 2 // a pool's null block and the slot's blocks
+			want += 2 * (blocks + 1) * metalKVPad * int64(m.BackendView().Layer(l).KVHeads()*m.BackendView().Layer(l).HeadDim()) * 2 // a pool's null block and the slot's blocks
 		}
 		want += blocks * 4 // the slot's table
 		if got := m.ResidentKVBytes("metal", ctx, false, false); got != want {
@@ -97,11 +97,11 @@ func TestRopeInvFreqLayer_nemotronIsNoPE(t *testing.T) {
 	nemo := loadTinyOps(t, "nemotron-tiny")
 	checked := 0
 	for l := range nemo.w.arch.NumLayers {
-		if mixer, _ := nemo.ResidentLayerOps(l); mixer != MixerAttention {
+		if mixer, _ := nemo.BackendView().Layer(l).Ops(); mixer != MixerAttention {
 			continue
 		}
 		checked++
-		for j, v := range nemo.RopeInvFreqLayerResident(l) {
+		for j, v := range nemo.BackendView().Layer(l).RopeInvFreq() {
 			if v != 0 {
 				t.Fatalf("nemotron-tiny attention layer %d: inv-freq[%d] = %g, want 0 (NoPE)", l, j, v)
 			}
@@ -111,7 +111,7 @@ func TestRopeInvFreqLayer_nemotronIsNoPE(t *testing.T) {
 		t.Fatal("nemotron-tiny has no attention layer")
 	}
 	ll := loadTinyOps(t, "llama-tiny")
-	if f := ll.RopeInvFreqLayerResident(0); len(f) == 0 || f[0] == 0 {
+	if f := ll.BackendView().Layer(0).RopeInvFreq(); len(f) == 0 || f[0] == 0 {
 		t.Errorf("llama-tiny layer 0's RoPE table is %v: a roped family must keep its table", f)
 	}
 }

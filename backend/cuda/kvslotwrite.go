@@ -25,7 +25,7 @@ type kvUploadPass struct {
 	floor   int         // the shortest prefix whose windows its rows cover
 }
 
-// BeginKVUpload implements decoder.ResidentKVUploadPass.
+// BeginKVUpload implements decoder.ResidentKVSubsystem.
 func (r *cudaResident) BeginKVUpload() error {
 	return r.do(func() error {
 		w := r.kvWriteBegin(r.kvSlot, 0)
@@ -35,7 +35,7 @@ func (r *cudaResident) BeginKVUpload() error {
 	})
 }
 
-// EndKVUpload implements decoder.ResidentKVUploadPass. The slot holds the rows only if some landed and every layer with a KV cache reached the same end; UploadKV
+// EndKVUpload implements decoder.ResidentKVSubsystem. The slot holds the rows only if some landed and every layer with a KV cache reached the same end; UploadKV
 // has already refused a layer that uploaded twice, a full-attention layer that did not start at position 0, and a sliding layer whose rows do not cover its window.
 // Anything else fails the pass, whatever order the layers came in.
 func (r *cudaResident) EndKVUpload(failed bool) error {

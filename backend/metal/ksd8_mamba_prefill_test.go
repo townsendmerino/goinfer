@@ -314,7 +314,7 @@ func TestKSD8_downBiasDeclines(t *testing.T) {
 	set := false
 	for l := range m.Weights().Layers {
 		lw := &m.Weights().Layers[l]
-		if _, hasFFN := m.ResidentLayerOps(l); hasFFN {
+		if _, hasFFN := m.BackendView().Layer(l).Ops(); hasFFN {
 			lw.DownBias = make([]float32, lw.DownProj.Rows())
 			lw.DownBias[0] = 1
 			set = true

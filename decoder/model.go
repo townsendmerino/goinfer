@@ -299,7 +299,7 @@ func (m *Model) ResidentGemma4Step() bool { return m.gemma4Step }
 // a sliding-window attention layer with a real K/V cache (not an MLA latent, not a recurrent mixer, whose kvDimAt is not a K/V width
 // bounded by a window). Every windowed layer shares SlidingWindowResident's one window.
 func (m *Model) WindowedKVLayer(l int) bool {
-	if !m.windowedKV || m.SlidingWindowResident() <= 0 || !m.LayerIsLocalResident(l) {
+	if !m.windowedKV || m.SlidingWindowResident() <= 0 || !m.BackendView().Layer(l).IsLocal() {
 		return false
 	}
 	a := m.w.arch
@@ -351,13 +351,13 @@ func (m *Model) ExtraResidentBytes() int64 { return m.extraBytes }
 // locally (see decoder.DrafterKVBytesPerPosition). 0 means the companion, if any, has no ctx-scaling K/V term.
 func (m *Model) ExtraResidentKVPerPosition() int64 { return m.extraKVPerPos }
 
-// ExpertCacheStats reports the resident's MoE expert cache (ResidentExpertCache); ok is false off the resident path or when
+// ExpertCacheStats reports the resident's MoE expert cache (legacyExpertCache); ok is false off the resident path or when
 // the resident keeps no cache.
 func (m *Model) ExpertCacheStats() (ExpertCacheStats, bool) {
 	return m.resRuntime().ExpertCacheStats()
 }
 
-// ResizeExpertCache resizes the resident's MoE expert cache (ResidentExpertCache) to leave reserve bytes of device memory
+// ResizeExpertCache resizes the resident's MoE expert cache (legacyExpertCache) to leave reserve bytes of device memory
 // free, and returns its slots per layer. It errors when there is no resident or the resident keeps no cache.
 func (m *Model) ResizeExpertCache(reserve int64) (int, error) {
 	rt := m.resRuntime()
@@ -795,7 +795,7 @@ func (m *Model) Config() *Config {
 // ForwardCapture, OutputEmbeddingRow, NewBlockSpec, LoadAdapter): one running at Close is cancelled when it takes a context
 // and waited for when it does not, and one made afterward returns ErrClosed. Do not call Close from inside a LogitProcessor
 // or another callback these run, which would wait on itself. Calling Close again is safe and returns nil. The accessors that
-// return slices of the weights (Weights, MLALayerWeights and the like) hand out views of the mapping, which is gone after
+// return slices of the weights (Weights, Layer(l).MLAWeights and the like) hand out views of the mapping, which is gone after
 // Close; Config, Dims, Quant, NewCache and NewSession only read the config or allocate, and keep working.
 func (m *Model) Close() error {
 	m.endGenerations()
@@ -1051,7 +1051,7 @@ func (m *Model) prefillSeedFrom(prompt []int, from int) int {
 	return from
 }
 
-// residentPrefillSeedMarked is residentPrefillSeed that, given a mark, has a resident that can (ResidentPrefillMarked) call it back between two
+// residentPrefillSeedMarked is residentPrefillSeed that, given a mark, has a resident that can (legacyPrefillMarked) call it back between two
 // passes of the batched prefill, at the mark's position: the prefix snapshot of a prompt whose tail after the stable section is long (kvsnap.go).
 // A resident that cannot, a prefill that does not reach the position at a pass boundary, or one that falls to the sequential loop, calls nothing.
 func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, from int, hasAdapter bool, mk *prefillMark) ([]float32, error) {
@@ -1632,7 +1632,7 @@ type Generation struct {
 	// 0 on paths that do not report them.
 	PrefillSlot, PrefillMatch int
 	// PrefillShared is how many of the PrefillReused rows were copied from another conversation's KV slot
-	// (ResidentKVCopier); KVCopy is that copy's wall time, and KVCopyDeclined why a copy the index offered was not
+	// (legacyKVCopier); KVCopy is that copy's wall time, and KVCopyDeclined why a copy the index offered was not
 	// made ("" when none was declined). Diagnostics for the sharing gate (docs/measurements/kv2-2026-10-14.md).
 	PrefillShared  int
 	KVCopy         time.Duration
@@ -1641,7 +1641,7 @@ type Generation struct {
 	// restore's wall time. 0 when none did.
 	KVSnapRestored int
 	KVSnapRestore  time.Duration
-	// KVPromotedBlocks is how many blocks came back from host memory after the pool released them (ResidentKVDemoter): the bound slot's own, or
+	// KVPromotedBlocks is how many blocks came back from host memory after the pool released them (legacyKVDemoter): the bound slot's own, or
 	// those of another slot's copy written into it. KVPromotedRows is how many of the PrefillReused rows the bound slot's serve; rows that reached it
 	// through a copy count in PrefillShared. 0 when none did.
 	KVPromotedBlocks, KVPromotedRows int

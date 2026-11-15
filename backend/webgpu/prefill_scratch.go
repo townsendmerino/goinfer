@@ -2,7 +2,7 @@
 
 package webgpu
 
-// PrefillChunkRows (decoder.ResidentPrefillChunks, matched structurally) is the most rows one batched pass takes: the block
+// PrefillChunkRows (decoder.ResidentPrefillSubsystem, matched structurally) is the most rows one batched pass takes: the block
 // PrefillLast cuts a longer prompt into.
 func (rd *residentDecoder) PrefillChunkRows() int { return prefillBlockRows }
 
@@ -10,7 +10,7 @@ func (rd *residentDecoder) PrefillChunkRows() int { return prefillBlockRows }
 // dozen a layer).
 const prefillUniformBytes = 64
 
-// PrefillScratchBytes (decoder.ResidentPrefillChunks) is what one batched pass over rows rows allocates on the device beyond the
+// PrefillScratchBytes (decoder.ResidentPrefillSubsystem) is what one batched pass over rows rows allocates on the device beyond the
 // standing buffers, as an upper bound: the activation buffers of ONE layer with none of them recycled (the pass recycles a dead
 // layer's buffers into the next, so it holds about one layer's) plus the residual stream, and the fixed part: the head's
 // vocab-sized staging buffers (two are created), the last row, and the uniform buffers. The per-row part carries a 5% margin: the

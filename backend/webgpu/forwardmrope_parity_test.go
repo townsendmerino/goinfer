@@ -47,7 +47,7 @@ func TestForwardMRoPE_constantShiftInvariance(t *testing.T) {
 			mrope := decoder.SubsystemsOf(rf).Decode
 			ok := mrope.MRoPEDecodeAvailable()
 			if !ok {
-				t.Fatal("residentDecoder does not satisfy decoder.ResidentMRoPE — interface wiring broken")
+				t.Fatal("residentDecoder does not satisfy decoder.ResidentDecodeSubsystem — interface wiring broken")
 			}
 			_, _, _, _, _, _, vocab := mc.Dims()
 
@@ -116,7 +116,7 @@ func TestForwardMRoPE_equalArgsMatchesForward(t *testing.T) {
 	mrope := decoder.SubsystemsOf(rf).Decode
 	ok := mrope.MRoPEDecodeAvailable()
 	if !ok {
-		t.Fatal("residentDecoder does not satisfy decoder.ResidentMRoPE")
+		t.Fatal("residentDecoder does not satisfy decoder.ResidentDecodeSubsystem")
 	}
 	_, _, _, _, _, _, vocab := mc.Dims()
 	rng := rand.New(rand.NewSource(3))

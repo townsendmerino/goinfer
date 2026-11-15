@@ -240,7 +240,7 @@ func (r *cudaResident) kvHoldsWindow(s int) bool {
 	return false
 }
 
-// SetKVSlotBusy implements decoder.ResidentKVSlotActivity.
+// SetKVSlotBusy implements decoder.ResidentKVSubsystem.
 func (r *cudaResident) SetKVSlotBusy(slot int, busy bool) {
 	_ = r.do(func() error {
 		if slot >= 0 && slot < len(r.kvSlotBusy) {
@@ -732,7 +732,7 @@ func (r *cudaResident) kvPoolLine() string {
 		r.kvSlotsN*r.kvShareBlocks*kvBlock, r.kvSlotsN*r.kvShareBlocks, kvBlock, r.kvSlotsN, r.ctxCap, r.kvShareCtx)
 }
 
-// KVPool implements decoder.ResidentKVPoolInfo: the context positions across every slot (the figure kvPoolLine and the plan name, a
+// KVPool implements decoder.ResidentKVSubsystem: the context positions across every slot (the figure kvPoolLine and the plan name, a
 // windowed layer serving them from fewer rows), each slot's guaranteed share, the groups the owning layers use, the rows a window
 // group keeps per conversation, the pools' precision and their device bytes (each owning layer's K and V pools and the block tables,
 // at the driver's charge).

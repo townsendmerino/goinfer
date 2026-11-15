@@ -139,15 +139,13 @@ func (r *cudaResident) PrefillLast(ctx context.Context, embeddings [][]float32, 
 	return r.prefillChunked(ctx, embeddings, startPos, tailLastLogits, nil)
 }
 
-var _ decoder.ResidentPrefillMarked = (*cudaResident)(nil)
-
 // markLatePlantForTest calls the mark's callback one pass late, when the slot's ring has moved on: KV7 step 2's planted defect, set by tests only.
 var markLatePlantForTest bool
 
-// PrefillMarkAlign (decoder.ResidentPrefillMarked) is the width of this prefill's passes: a mark fires only at startPos plus a multiple of it.
+// PrefillMarkAlign (decoder.ResidentPrefillSubsystem) is the width of this prefill's passes: a mark fires only at startPos plus a multiple of it.
 func (r *cudaResident) PrefillMarkAlign() int { return r.prefillPassRows() }
 
-// PrefillLastMarked (decoder.ResidentPrefillMarked) is PrefillLast that calls at(mark) between two of its passes, after the one that ends exactly at
+// PrefillLastMarked (decoder.ResidentPrefillSubsystem) is PrefillLast that calls at(mark) between two of its passes, after the one that ends exactly at
 // position mark and before the next starts: the prompt's first mark rows are written, a windowed layer's ring holds what a prompt of mark ids would
 // leave, and nothing newer has moved it. A prompt of one pass, or a mark that is not at a pass boundary, calls nothing.
 func (r *cudaResident) PrefillLastMarked(ctx context.Context, embeddings [][]float32, startPos, mark int, at func(pos int)) ([]float32, error) {
@@ -165,7 +163,7 @@ func (r *cudaResident) PrefillImageLast(ctx context.Context, embeddings [][]floa
 	return r.PrefillImageBlocksLast(ctx, embeddings, startPos, [][2]int{{imgStart, imgEnd}})
 }
 
-// PrefillImageBlocksLast (decoder.ResidentImageBlocksPrefill) is PrefillImageLast for several blocks, each [start, end),
+// PrefillImageBlocksLast (decoder.ResidentPrefillSubsystem) is PrefillImageLast for several blocks, each [start, end),
 // in order and disjoint, each attending bidirectionally within itself.
 func (r *cudaResident) PrefillImageBlocksLast(ctx context.Context, embeddings [][]float32, startPos int, blocks [][2]int) ([]float32, error) {
 	M := len(embeddings)
@@ -208,9 +206,7 @@ func (r *cudaResident) PrefillImageBlocksLast(ctx context.Context, embeddings []
 	return outs[len(outs)-1], nil
 }
 
-var _ decoder.ResidentSpanPrefill = (*cudaResident)(nil)
-
-// PrefillSpansLast (decoder.ResidentSpanPrefill) is the batched prefill of a Gemma 4 bidirectional prompt: spans are each
+// PrefillSpansLast (decoder.ResidentPrefillSubsystem) is the batched prefill of a Gemma 4 bidirectional prompt: spans are each
 // image's [start, end), absolute, in order and disjoint, and attention is attn_span_batched's (gemma4AttendRange). The
 // passes are prefillPassRows wide and cut outside the spans, so a span longer than a pass gets a pass of its own. Every
 // pass takes attn_span_batched, with or without a span in it, so where the passes fall does not change a bit. An OOM is
@@ -368,7 +364,7 @@ const (
 	deepDefectTextRows
 )
 
-// PrefillMRoPEDeepstackLast satisfies decoder.ResidentMRoPEDeepstackPrefill: PrefillMRoPELast that also adds DeepStack
+// PrefillMRoPEDeepstackLast satisfies decoder.ResidentPrefillSubsystem: PrefillMRoPELast that also adds DeepStack
 // set l to the image rows [imgStart, imgStart+imgLen) after layer l, as the CPU prefill does. Only plain dense layers
 // are claimed; a layer with an MoE, DeltaNet or Gemma 4 branch declines and the turn keeps the CPU prefill and upload.
 func (r *cudaResident) PrefillMRoPEDeepstackLast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int, deep [][]float32, imgStart, imgLen int) ([]float32, error) {
@@ -413,7 +409,7 @@ func (r *cudaResident) HybridMRoPEPrefill() bool {
 	return delta
 }
 
-// HiddenLast (decoder.ResidentHiddenLast) is prefillChunked's twin for embedding requests: same chunking, same K/V,
+// HiddenLast (decoder.ResidentPrefillSubsystem) is prefillChunked's twin for embedding requests: same chunking, same K/V,
 // bit-identical per-row math, but the final tail returns the last row's post-final-norm hidden state and never
 // dispatches the LM head, which an embedder does not need (decoder/embed.go's HiddenLast). startPos is taken so it
 // shares prefillChunked's chunk bookkeeping.
@@ -421,7 +417,7 @@ func (r *cudaResident) HiddenLast(ctx context.Context, embeddings [][]float32, s
 	return r.prefillChunked(ctx, embeddings, startPos, tailHiddenLast, nil)
 }
 
-// ResidualAll (decoder.ResidentResidualAll) returns every row's residual stream after the last layer and before the
+// ResidualAll (decoder.ResidentPrefillSubsystem) returns every row's residual stream after the last layer and before the
 // final norm, for a head that reads every position. The passes are prefillChunked's, except that each chunk keeps its
 // rows and all of them take the exact kernels (as does every tail but an ordinary single-row prefill, and any DeltaNet
 // model). The rows are the f32 residual the pass already downloads, so nothing is quantized and the decoder's f32 final
@@ -489,9 +485,7 @@ func (r *cudaResident) prefillChunkedMarked(ctx context.Context, embeddings [][]
 	return r.prefillChunkedRows(ctx, len(embeddings), func(lo, hi int) [][]float32 { return embeddings[lo:hi] }, startPos, finalTail, mropePos, mark, at)
 }
 
-var _ decoder.ResidentPrefillRows = (*cudaResident)(nil)
-
-// PrefillLastRows (decoder.ResidentPrefillRows) is PrefillLast for n rows at startPos that reads the suffix's embeddings a pass at a time from rows, so the host holds one
+// PrefillLastRows (decoder.ResidentPrefillSubsystem) is PrefillLast for n rows at startPos that reads the suffix's embeddings a pass at a time from rows, so the host holds one
 // pass of them. A pass that is retried at half the width asks for its range again; each range is used before the next is read.
 func (r *cudaResident) PrefillLastRows(ctx context.Context, n, startPos int, rows func(lo, hi int) [][]float32) ([]float32, error) {
 	return r.prefillChunkedRows(ctx, n, rows, startPos, tailLastLogits, nil, 0, nil)
@@ -622,12 +616,12 @@ func (r *cudaResident) PrefillLastNArgmax(embeddings [][]float32, startPos int) 
 	return ids, err
 }
 
-// PrefillSeedArgmax satisfies decoder.ResidentSeedArgmax: the same batched forward and capture, but the head runs over
+// PrefillSeedArgmax satisfies decoder.ResidentRuntimeSubsystem: the same batched forward and capture, but the head runs over
 // ONE row (tailLastLogits), since the block-spec prompt seed needs only the last row's argmax. Heading all M rows
 // allocates M x vocab of logits on device and host (1.24 GB at a 2048-token prompt, vocab 151,936), and an OOM there can
 // leave the context launching kernels that "return SUCCESS and execute NOTHING" (prefillChunkCap in resident.go).
 func (r *cudaResident) PrefillSeedArgmax(embeddings [][]float32, startPos int) (int, error) {
-	// No context: decoder.ResidentSeedArgmax carries none, so a cancelled block-spec seed runs to completion. Known gap;
+	// No context: decoder.ResidentRuntimeSubsystem carries none, so a cancelled block-spec seed runs to completion. Known gap;
 	// closing it is an interface change (docs/code-notes/cuda.md#PrefillSeedArgmax: cancellation gap). The passes are
 	// PrefillLast's, so the seed writes the K/V and state a plain prefill of the prompt writes.
 	row, err := r.prefillChunked(context.Background(), embeddings, startPos, tailLastLogits, nil)

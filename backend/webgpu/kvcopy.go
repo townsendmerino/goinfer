@@ -10,9 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-var _ decoder.ResidentKVCopier = (*residentDecoder)(nil)
-
-// CopyKV (decoder.ResidentKVCopier) copies rows [start, end) of every per-sequence buffer (slotKVBuffers) from slot src
+// CopyKV (decoder.ResidentKVSubsystem) copies rows [start, end) of every per-sequence buffer (slotKVBuffers) from slot src
 // to slot dst. Each buffer is position-major over the resident context, so a row is its size over ctxCap bytes and a
 // range is one buffer-to-buffer copy. The copies run in one command buffer on the queue, after everything submitted
 // before them, and the call waits for them.

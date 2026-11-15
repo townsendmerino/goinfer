@@ -59,7 +59,7 @@ func loadMambaFixture(t *testing.T, dir string) mambaFixture {
 	if first < 0 {
 		t.Fatalf("%s has no Mamba layer", dir)
 	}
-	_, convW, convB, aLog, dW, dtBias, normW, _ := m.GraniteMambaWeights(first)
+	_, convW, convB, aLog, dW, dtBias, normW, _ := m.BackendView().Layer(first).GraniteMambaWeights()
 	// Copied: the slices alias the model's weights, which Close releases (the deferred Close above runs before the replay).
 	f.convW, f.convB, f.normW = slices.Clone(convW), slices.Clone(convB), slices.Clone(normW)
 	f.headP = make([]float32, f.nHeads*3)

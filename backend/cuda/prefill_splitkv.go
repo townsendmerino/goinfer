@@ -103,7 +103,7 @@ func (r *cudaResident) prefillSplitKVPlan(M, keys int, fused func(hd int) bool, 
 	return stride, min(M, max(1, prefillSplitKVBudget/4/(r.nH*stride)))
 }
 
-// PrefillSpanScratchBytes (decoder.ResidentPrefillSpanScratch, matched structurally) bounds what any pass of rows rows of a prompt
+// PrefillSpanScratchBytes (decoder.ResidentPrefillSubsystem, matched structurally) bounds what any pass of rows rows of a prompt
 // whose last row attends keys keys allocates beyond PrefillScratchBytes(rows): the row-batched exact attention's scores and
 // inverses. It is not the last pass's own figure (prefillSpanScratchPass). A launch group holds as many rows as the split-KV
 // budget allows at its span, so an earlier pass at a shorter span can take a little more. The bound is a group of up to rows rows

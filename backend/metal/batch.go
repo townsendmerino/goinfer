@@ -178,9 +178,9 @@ func metalStepInputs(m *decoder.Model) *stepInputs {
 		if r := w.Layers[l].GateProj.Rows(); r > 0 {
 			info.ffnI = r
 		}
-		if mixer, _ := m.ResidentLayerOps(l); mixer == decoder.MixerAttention {
-			info.hd, info.nKV = m.HeadDimAtResident(l), m.KVHeadsAtResident(l)
-			info.hasGeom, info.kEqV = info.hd > 0, m.VFromKResident(l) && m.KVSrcAtResident(l) == l
+		if mixer, _ := m.BackendView().Layer(l).Ops(); mixer == decoder.MixerAttention {
+			info.hd, info.nKV = m.BackendView().Layer(l).HeadDim(), m.BackendView().Layer(l).KVHeads()
+			info.hasGeom, info.kEqV = info.hd > 0, m.BackendView().Layer(l).VFromK() && m.BackendView().Layer(l).KVSrc() == l
 			in.oneKVAllocation = true
 			in.faPartial = max(in.faPartial, attnFAPartialFloats(info.hd, nH, info.nKV))
 		} else if mixer == decoder.MixerMLA {
@@ -1502,7 +1502,7 @@ func (a *metalResident) BatchGreedyDraw() bool {
 	return a.r != nil && a.r.batch != nil && len(a.r.kvSlotBufs) >= 2
 }
 
-// BatchStepRange is decoder.ResidentBatchStepper's: the batch sizes StepBatch serves well (batchMinSeqs..the smaller
+// BatchStepRange is decoder.ResidentDecodeSubsystem's: the batch sizes StepBatch serves well (batchMinSeqs..the smaller
 // of batchMaxSeqs and the slot count), or (0, 0) when this resident cannot batch.
 func (a *metalResident) BatchStepRange() (lo, hi int) {
 	if a.r.batch == nil || len(a.r.kvSlotBufs) < 2 {
@@ -1511,7 +1511,7 @@ func (a *metalResident) BatchStepRange() (lo, hi int) {
 	return batchMinSeqs, min(batchMaxSeqs, len(a.r.kvSlotBufs))
 }
 
-// StepBatch is decoder.ResidentBatchStepper's: one decode token for each sequence, each on its own KV slot.
+// StepBatch is decoder.ResidentDecodeSubsystem's: one decode token for each sequence, each on its own KV slot.
 func (a *metalResident) StepBatch(seqs []decoder.ResidentBatchSeq) ([]decoder.ResidentBatchOut, error) {
 	bs := make([]batchSeq, len(seqs))
 	for i, q := range seqs {

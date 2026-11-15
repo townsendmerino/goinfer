@@ -2,20 +2,14 @@
 
 package webgpu
 
-import (
-	"math"
-
-	"github.com/townsendmerino/goinfer/decoder"
-)
-
-var _ decoder.ResidentSample = (*residentDecoder)(nil)
+import "math"
 
 // SampleAvailable reports whether the device may draw the next token: only when the device row IS the raw
 // LM-head output the host sampler would see (a final-logit softcap is applied on the host after readback).
 func (rd *residentDecoder) SampleAvailable() bool { return rd.finalSoftcap == 0 }
 
 // ForwardSample runs one token's forward and draws the next token on-device by Gumbel-max
-// (decoder.ResidentSample). It mirrors Forward's preamble exactly (capacity check, sequence reset).
+// (decoder.ResidentDecodeSubsystem). It mirrors Forward's preamble exactly (capacity check, sequence reset).
 func (rd *residentDecoder) ForwardSample(embedding []float32, pos int, temperature float64, seed, draw uint64) (int, error) {
 	if err := rd.checkCap(pos, 1); err != nil {
 		return 0, err

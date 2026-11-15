@@ -77,7 +77,7 @@ func (m *Model) MetalDecodeScratchBytes(slots int) int64 {
 	for l, rows := range d.layers {
 		s := d.shapes[l]
 		if rows["q"] > 0 { // an attention layer: its geometry, its sink flag and window, and the fused attention's partial
-			geoms[geomKey{s.HeadDim, s.KVHeads, len(m.RopeInvFreqLayerResident(l)), m.VFromKResident(l) && d.ownsKV[l]}] = true
+			geoms[geomKey{s.HeadDim, s.KVHeads, len(m.BackendView().Layer(l).RopeInvFreq()), m.BackendView().Layer(l).VFromK() && d.ownsKV[l]}] = true
 			fa = max(fa, metalAttnFAPartialFloats(s.HeadDim, s.Heads, s.KVHeads))
 			attn++
 		}
