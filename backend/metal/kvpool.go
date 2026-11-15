@@ -141,35 +141,52 @@ func kvBlockOrder(blocks int) []uint32 {
 	return out
 }
 
+// kvGroup is the table and the counts over one layer group's pools (KV5-7, docs/tasks/task-kv-architecture-2026-10.md §6): the layers of
+// a group share one block id space, so a block id names the same block in each. kvTab holds each slot's table in one allocation,
+// kvTabBlocks entries a slot, and kt is the bound slot's view of it. An entry is the block a sequence's 64 positions are in, so a kernel
+// bound to a table reads the pool from its start (Buffer.At(0)) (kv_row, KVRowMSL). kvTabU32 is kvTab's shared contents, taken once:
+// Buffer.U32s asks Metal for them on every call, and the pool reads entries per row. kvRefs counts the entries that name each block
+// (above one, slots share it, CopyKV), kvInUse the blocks some entry names, kvOrder the order a take scans for a free one, and
+// kvShareBlocks is each slot's guaranteed share.
+type kvGroup struct {
+	kvTab, kt     Buffer
+	kvTabU32      []uint32
+	kvTabBlocks   int
+	kvRefs        []int32
+	kvInUse       int
+	kvOrder       []uint32
+	kvShareBlocks int
+}
+
 // kvClaim gives block id its first reference.
-func (r *resident) kvClaim(id uint32) uint32 {
-	r.kvRefs[id] = 1
-	r.kvInUse++
+func (g *kvGroup) kvClaim(id uint32) uint32 {
+	g.kvRefs[id] = 1
+	g.kvInUse++
 	return id
 }
 
 // kvUnref drops one table entry's reference to block id; the last one frees it. The null block is never counted.
-func (r *resident) kvUnref(id uint32) {
+func (g *kvGroup) kvUnref(id uint32) {
 	if id == 0 {
 		return
 	}
-	if r.kvRefs[id]--; r.kvRefs[id] == 0 {
-		r.kvInUse--
+	if g.kvRefs[id]--; g.kvRefs[id] == 0 {
+		g.kvInUse--
 	}
 }
 
 // kvBlocksInUse is how many blocks some table names, the null block not counted: the pool's own count of what its slots hold, a
 // block several slots share counted once.
-func (r *resident) kvBlocksInUse() int { return r.kvInUse }
+func (g *kvGroup) kvBlocksInUse() int { return g.kvInUse }
 
 // kvRow is slot s's table entry for its block b.
-func (r *resident) kvRow(s, b int) *uint32 { return &r.kvTabU32[s*r.kvTabBlocks+b] }
+func (g *kvGroup) kvRow(s, b int) *uint32 { return &g.kvTabU32[s*g.kvTabBlocks+b] }
 
 // kvHeld is how many entries slot s's table maps, shared blocks included.
-func (r *resident) kvHeld(s int) int {
+func (g *kvGroup) kvHeld(s int) int {
 	n := 0
-	for b := range r.kvTabBlocks {
-		if *r.kvRow(s, b) != 0 {
+	for b := range g.kvTabBlocks {
+		if *g.kvRow(s, b) != 0 {
 			n++
 		}
 	}
@@ -177,9 +194,9 @@ func (r *resident) kvHeld(s int) int {
 }
 
 // kvFreeBlock is a block no entry names, in kvOrder.
-func (r *resident) kvFreeBlock() (uint32, bool) {
-	for _, id := range r.kvOrder {
-		if r.kvRefs[id] == 0 {
+func (g *kvGroup) kvFreeBlock() (uint32, bool) {
+	for _, id := range g.kvOrder {
+		if g.kvRefs[id] == 0 {
 			return id, true
 		}
 	}
