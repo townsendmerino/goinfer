@@ -148,13 +148,13 @@ func (r *resident) attnCore(e *Encoder, a *attnEnc) {
 	storeKV := !L.kvShared || g4KeepSharedKVStoreForTest
 	if r.kvI8 {
 		if storeKV {
-			e.Dispatch(r.pKvI8, g.nKV, 1, r.qkv.At(a.kOff), r.qkv.At(a.vOff), r.kc[l].At(0), r.vc[l].At(0), r.ks[l].At(0), r.vs[l].At(0), g.uNKV, g.uHd, a.uPos, r.kt)
+			e.Dispatch(r.pKvI8, g.nKV, 1, r.qkv.At(a.kOff), r.qkv.At(a.vOff), r.kc[l].At(0), r.vc[l].At(0), r.ks[l].At(0), r.vs[l].At(0), g.uNKV, g.uHd, a.uPos, r.kvKT(l))
 		}
-		e.Dispatch(r.pAttnI8, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l].At(0), r.vc[l].At(0), r.ks[l].At(0), r.vs[l].At(0), r.ctx, r.uNH, g.uNKV, g.uHd, a.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kt)
+		e.Dispatch(r.pAttnI8, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l].At(0), r.vc[l].At(0), r.ks[l].At(0), r.vs[l].At(0), r.ctx, r.uNH, g.uNKV, g.uHd, a.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kvKTRead(l))
 		return
 	}
 	if storeKV {
-		e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(a.kOff), r.qkv.At(a.vOff), r.kc[l].At(0), r.vc[l].At(0), g.uKvDim, a.uPos, r.kt)
+		e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(a.kOff), r.qkv.At(a.vOff), r.kc[l].At(0), r.vc[l].At(0), g.uKvDim, a.uPos, r.kvKT(l))
 	}
 	if r.canUseAttnFA(l) {
 		// nSplit here sizes the dispatch grid only, which is fixed once a command buffer is encoded. It is not written
@@ -172,11 +172,11 @@ func (r *resident) attnCore(e *Encoder, a *attnEnc) {
 		}
 		shmBytes := 128 * 6 * (r.nH / g.nKV) * 4
 		e.DispatchTG(r.pAttnFA, g.nKV*nSplit*128, 128, shmBytes, r.qkv, r.kc[l].At(0), r.vc[l].At(0), r.attnFAPartial,
-			g.uNKV, r.uAttnFAG, a.uNKeys, r.uScale, L.uWindow, r.fanSplitBuf(), r.kt)
+			g.uNKV, r.uAttnFAG, a.uNKeys, r.uScale, L.uWindow, r.fanSplitBuf(), r.kvKTRead(l))
 		e.Dispatch(r.pAttnFACombine, r.nH*g.hd, g.hd, r.attnFAPartial, r.ctx, r.uAttnFAG, g.uHd, r.fanSplitBuf())
 		return
 	}
-	e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l].At(0), r.vc[l].At(0), r.ctx, r.uNH, g.uNKV, g.uHd, a.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kt)
+	e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l].At(0), r.vc[l].At(0), r.ctx, r.uNH, g.uNKV, g.uHd, a.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kvKTRead(l))
 }
 
 // attnOutGate is a gated layer's ctx *= sigmoid(gate), before o-proj — matches the CPU qwen35Attention.

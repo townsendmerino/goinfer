@@ -153,10 +153,10 @@ func (r *resident) encodeMLACore(e *Encoder, l int, L *residLayer, uPos, uRopePo
 		e.Dispatch(r.pGemvW8, p.nH*p.qkHead*32, 32, r.aq, r.aSc, M.qW, M.qS, s.q, r.uH)
 	}
 	e.Dispatch(r.pGemvW8, p.latDim*32, 32, r.aq, r.aSc, M.kvAW, M.kvAS, s.kv, r.uH)
-	e.Dispatch(r.pMlaStore, 64, 64, s.kv, M.kvANorm, s.invf, r.kc[l].At(0), s.uStore, uPos, uRopePos, r.uEps, s.uRopeScale, r.kt)
+	e.Dispatch(r.pMlaStore, 64, 64, s.kv, M.kvANorm, s.invf, r.kc[l].At(0), s.uStore, uPos, uRopePos, r.uEps, s.uRopeScale, r.kvKT(l))
 	e.Dispatch(r.pMlaHeadMV, p.nH*p.rank*32, 256, s.q, M.wuk, s.qAbs, s.uAbsorb)
 	e.Dispatch(r.pMlaQRope, p.nH*(p.qkRope/2), 64, s.q, s.invf, s.qAbs, s.uQRope, uRopePos, s.uRopeScale)
-	e.Dispatch(r.pMlaAttn, p.nH*128, 128, s.qAbs, r.kc[l].At(0), s.wsum, s.uAttn, uNKeys, s.uScale, r.kt)
+	e.Dispatch(r.pMlaAttn, p.nH*128, 128, s.qAbs, r.kc[l].At(0), s.wsum, s.uAttn, uNKeys, s.uScale, r.kvKT(l))
 	e.Dispatch(r.pMlaHeadMV, p.nH*p.vHead*32, 256, s.wsum, M.wuv, s.ctx, s.uLift)
 	e.Dispatch(r.pQv, 256, 256, s.ctx, s.ctxQ, s.ctxSc, s.uOK)
 	e.Dispatch(r.pGemvW8, r.H*32, 32, s.ctxQ, s.ctxSc, M.oW, M.oS, r.dO, s.uOK)

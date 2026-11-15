@@ -1468,7 +1468,7 @@ func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 		kc, vc := a.r.kc[layer].Int8s(), a.r.vc[layer].Int8s()
 		ks, vs := a.r.ks[layer].Floats(), a.r.vs[layer].Floats()
 		for p := range n {
-			row := a.r.kvHostRow(base + p)
+			row := a.r.kvHostRow(layer, base+p)
 			for h := range nKV {
 				kHead := keys[p*kvDim+h*hd : p*kvDim+(h+1)*hd]
 				vHead := vals[p*kvDim+h*hd : p*kvDim+(h+1)*hd]
@@ -1505,7 +1505,7 @@ func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 		// A run of positions inside one block is consecutive rows, so each block's run is one copy.
 		for p := 0; p < n; {
 			run := min(n-p, decoder.KVBlockRows-(base+p)%decoder.KVBlockRows)
-			at, src := a.r.kvHostRow(base+p)*kvDim, p*kvDim
+			at, src := a.r.kvHostRow(layer, base+p)*kvDim, p*kvDim
 			if a.r.kvF32 {
 				copy(a.r.kc[layer].Floats()[at:at+run*kvDim], keys[src:src+run*kvDim])
 				copy(a.r.vc[layer].Floats()[at:at+run*kvDim], vals[src:src+run*kvDim])

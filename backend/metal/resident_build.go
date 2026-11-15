@@ -40,6 +40,7 @@ type residentBuild struct {
 	mk               func(wm *linalg.WeightMat) (Buffer, Buffer) // the layer upload helpers, which close over r and the alias
 	fuse             func(wms ...*linalg.WeightMat) (Buffer, Buffer)
 	geomCache        map[[4]int]*attnGeom
+	kvWinSet         map[int]bool // the layers that read the window group (kvWindowLayers), taken once from the model's KV geometry
 	attnGate, dnetOK bool
 	maxAttnFAPartial int // R2: attnFAPartialFloats at its widest layer; see attnFAPartial's own comment
 }
@@ -725,6 +726,14 @@ func (b *residentBuild) buildLayer(l int) error {
 		// load; a tile lies inside a block, so that read stays in the block. An int8 cache keeps one f32 scale per position and
 		// head beside its one-byte codes, block for block.
 		blocks := kvBlocksFor(r.ctxCap)
+		if b.kvWinSet == nil {
+			b.kvWinSet = kvWindowLayers(m.KVGeometry())
+		}
+		if b.kvWinSet[l] {
+			L.kvg = 1
+		} else if L.kvShared {
+			L.kvg = r.layers[L.kvSrc].kvg
+		}
 		want := kvLayerWant{kvDim: L.geom.kvDim, nKV: L.geom.nKV, shared: L.kvShared}
 		kw, e := kvCheckRows(l, m.LayerBuffers(l), want)
 		if e != nil {
@@ -786,11 +795,26 @@ func (b *residentBuild) allocKVTables() error {
 		r.kvTab = NewBufferUint32sOn(mem.LineKV, d, make([]uint32, slots*r.kvTabBlocks))
 		r.kvTabU32 = r.kvTab.U32s()
 		r.kvRefs = make([]int32, 1+slots*r.kvShareBlocks)
-		r.kvOrder = kvBlockOrder(slots * r.kvShareBlocks)
+		r.kvOrder = kvBlockOrder(slots*r.kvShareBlocks, false)
 		r.kvSlotSt = make([]kvSlotState, slots)
 		r.kt = r.kvTab
+		r.kvGs = []*kvGroup{&r.kvGroup}
+		if slices.ContainsFunc(r.layers, func(L residLayer) bool { return L.kvg == 1 }) {
+			// The window group: the sliding layers' own block ids and table, as large as the primary's (KV5-7b holds every position).
+			w := &kvGroup{kvTabBlocks: r.kvTabBlocks, kvShareBlocks: r.kvShareBlocks}
+			w.kvTab = NewBufferUint32sOn(mem.LineKV, d, make([]uint32, slots*w.kvTabBlocks))
+			w.kvTabU32 = w.kvTab.U32s()
+			w.kvRefs = make([]int32, 1+slots*w.kvShareBlocks)
+			w.kvOrder = kvBlockOrder(slots*w.kvShareBlocks, true)
+			w.kt = w.kvTab
+			r.kvWin = w
+			r.kvGs = append(r.kvGs, w)
+		}
 		for s := range r.kvSlotBufs {
 			r.kvSlotBufs[s].kt = r.kvTab.At(4 * s * r.kvTabBlocks)
+			if r.kvWin != nil {
+				r.kvSlotBufs[s].ktw = r.kvWin.kvTab.At(4 * s * r.kvWin.kvTabBlocks)
+			}
 		}
 	}
 	if err := r.allocRecurrentSlots(m, kvSlots); err != nil {

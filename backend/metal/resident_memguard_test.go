@@ -769,6 +769,7 @@ func testSwitches() []leakSwitch {
 		sw("kvScrambleForTest", &kvScrambleForTest),
 		sw("kvTakeFailAfterForTest", &kvTakeFailAfterForTest),
 		sw("kvTakeFailForTest", &kvTakeFailForTest),
+		sw("kvWindowReadPlantForTest", &kvWindowReadPlantForTest),
 		sw("ledgerChargeDeltaForTest", &ledgerChargeDeltaForTest),
 		sw("ledgerChargeLineForTest", &ledgerChargeLineForTest),
 		sw("mambaPrefillOn", &mambaPrefillOn),

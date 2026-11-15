@@ -53,7 +53,7 @@ func TestResidentKVBytes_matchesMetalAllocation(t *testing.T) {
 			for l := range r.ks {
 				got += 4 * int64(r.ks[l].Len()+r.vs[l].Len())
 			}
-			got += 4 * int64(r.kvTab.Len())
+			got += r.kvTableBytes() // every group's table: a model with sliding and other layers holds two
 			t.Logf("ctxCap %d: allocated %d B, ResidentKVBytes %d B", r.ctxCap, got, want)
 			if got == 0 {
 				t.Fatal("no KV buffers found — the comparison would be vacuous")

@@ -1665,3 +1665,128 @@ func TestKVPages_chainEndsAtTheLastTokenTaken(t *testing.T) {
 		t.Errorf("slot %d holds %d blocks and %d rows after the turn; want 1 and 64 (the decoder's sequence, positions 0 to 63)", s, held, st.valid)
 	}
 }
+
+// kvWindowFixtures is every tiny fixture directory the KV page tests walk.
+func kvWindowFixtures() []string {
+	var out []string
+	for _, root := range []string{"../../testdata", "../../decoder/testdata"} {
+		dirs, _ := filepath.Glob(filepath.Join(root, "*-tiny"))
+		for _, d := range dirs {
+			ws, _ := filepath.Glob(filepath.Join(d, "*.safetensors"))
+			if _, err := os.Stat(filepath.Join(d, "config.json")); err == nil && len(ws) > 0 {
+				out = append(out, d)
+			}
+		}
+	}
+	return out
+}
+
+// kvWindowRun loads dir on Metal with three KV slots, prefills 300 positions into slot 0 and decodes 24, and returns every decoded
+// logit row. hasWin is whether the build has a window group; differ is whether the two groups' tables name different physical blocks
+// for slot 0's second block (so a read through the wrong group's table would show).
+func kvWindowRun(t *testing.T, dir string, scramble, plant bool) (rows [][]float32, hasWin, differ bool, why string) {
+	t.Helper()
+	kvScrambleForTest, kvWindowReadPlantForTest = scramble, plant
+	defer func() { kvScrambleForTest, kvWindowReadPlantForTest = false, false }()
+	m, err := decoder.Load(kvLongFixture(t, dir), decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 3,
+		ResidentMoEStep: true, ResidentRecurrentStep: true, ResidentGemma4Step: true})
+	if err != nil {
+		return nil, false, false, "load: " + err.Error()
+	}
+	defer m.Close()
+	a, ok := m.ResidentForwardForTest().(*metalResident)
+	if !ok {
+		return nil, false, false, "no Metal resident: " + m.ResidentDecline()
+	}
+	r := a.r
+	if r.kvTabBlocks == 0 {
+		return nil, false, false, "no KV pool"
+	}
+	_, _, _, _, _, _, vocab := m.Dims()
+	emb := func(i int) []float32 { return m.EmbedResidentForTest((i*97 + 3) % vocab) }
+	prompt := make([][]float32, 300)
+	for i := range prompt {
+		prompt[i] = emb(i)
+	}
+	if _, err := a.PrefillLast(context.Background(), prompt, 0); err != nil {
+		for i, x := range prompt { // a family without a batched prefill: the rows one at a time, as the decoder fills them
+			if _, err := a.Forward(x, i); err != nil {
+				return nil, false, false, "prefill: " + err.Error()
+			}
+		}
+	}
+	hasWin = r.kvWin != nil
+	if hasWin {
+		differ = *r.kvRow(0, 1) != *r.kvWin.kvRow(0, 1)
+	}
+	for i := range 24 {
+		l, err := a.Forward(emb(300+i), 300+i)
+		if err != nil {
+			return nil, hasWin, differ, "decode: " + err.Error()
+		}
+		rows = append(rows, slices.Clone(l))
+	}
+	return rows, hasWin, differ, ""
+}
+
+// TestKVPages_windowGroup is KV5-7b's G1a-W (docs/tasks/task-kv-architecture-2026-10.md §6): on every tiny fixture whose build has a window
+// group, the sliding layers read their own group's table. The groups hand out different blocks under scrambled tables, so a layer that read
+// the other group's would read other rows: logits are bit-identical to the in-order build, and a plant binding a window layer's decode
+// attention read to the primary table must make them differ.
+func TestKVPages_windowGroup(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	var withWin []string
+	for _, dir := range kvWindowFixtures() {
+		ref, hasWin, _, why := kvWindowRun(t, dir, false, false)
+		if why != "" {
+			t.Logf("%s: not counted (%s)", filepath.Base(dir), why)
+			continue
+		}
+		if !hasWin {
+			continue
+		}
+		withWin = append(withWin, filepath.Base(dir))
+		got, _, differ, why := kvWindowRun(t, dir, true, false)
+		if why != "" {
+			t.Errorf("%s: scrambled build: %s", filepath.Base(dir), why)
+			continue
+		}
+		if !differ {
+			t.Errorf("%s: scrambled, the two groups' tables name the same block for slot 0's block 1: a wrong-group read could not show", filepath.Base(dir))
+		}
+		diff := 0
+		for i := range ref {
+			for j := range ref[i] {
+				if math.Float32bits(ref[i][j]) != math.Float32bits(got[i][j]) {
+					diff++
+				}
+			}
+		}
+		if diff != 0 {
+			t.Errorf("%s: %d decoded logits differ between in-order and scrambled tables", filepath.Base(dir), diff)
+		}
+		bad, _, _, why := kvWindowRun(t, dir, true, true)
+		if why != "" {
+			t.Errorf("%s: plant build: %s", filepath.Base(dir), why)
+			continue
+		}
+		plant := 0
+		for i := range ref {
+			for j := range ref[i] {
+				if math.Float32bits(ref[i][j]) != math.Float32bits(bad[i][j]) {
+					plant++
+				}
+			}
+		}
+		if plant == 0 {
+			t.Errorf("%s: the window layer read the primary group's table and no logit moved: the plant is not red", filepath.Base(dir))
+		}
+		t.Logf("%s: window group; scrambled == in-order (%d logits differ); plant moves %d logits", filepath.Base(dir), diff, plant)
+	}
+	t.Logf("%d fixtures have a window group: %v", len(withWin), withWin)
+	if len(withWin) < 6 {
+		t.Errorf("only %d fixtures have a window group, want at least 6", len(withWin))
+	}
+}

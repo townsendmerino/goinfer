@@ -1727,7 +1727,11 @@ func mm5CheckPools(t *testing.T, f string, m *decoder.Model, r *resident) int {
 		pools++
 	}
 	if pools > 0 {
-		total += 4 * int64(r.kvSlotCount()*r.kvTabBlocks) // the tables, one entry a block
+		tables := 1 // the primary group's, and the window group's beside it when the build has one (KV5-7b)
+		if r.kvWin != nil {
+			tables++
+		}
+		total += 4 * int64(tables*r.kvSlotCount()*r.kvTabBlocks) // the tables, one entry a block
 		if want := m.MetalKVBytes(r.kvSlotCount(), r.ctxCap); total != want {
 			t.Errorf("%s: the build holds %d bytes of KV, MetalKVBytes(%d, %d) prices %d", f, total, r.kvSlotCount(), r.ctxCap, want)
 		}
