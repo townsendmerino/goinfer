@@ -60,6 +60,13 @@ in-process kernels, so beside a peer it divides a kernel throughput by an end-to
 ratio (`docs/measurements/noise-registry.md`, TE3). CUDA rows are anchored to an NVIDIA driver version; a driver change
 needs a deliberate re-anchor, not a carry-forward.
 
+## Public text
+
+**Public docs, comments, commit messages and PR bodies name no session, no coordinator and no machine nickname;** describe a
+box by its hardware ("an RTX 2070 SUPER, 8 GB"). **Record a decision as what was decided, with the date and the reason in a
+sentence,** not as a quoted owner message. **Commit messages and PR bodies end with the `Co-Authored-By` line; no session
+URL line.** Existing text is not rewritten for this rule; the private working record holds the history.
+
 ## Code comments
 
 **A Go comment says what is true now:** what the code does, its contract (ownership, units, concurrency, what a caller must
