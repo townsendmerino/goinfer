@@ -208,6 +208,13 @@
    "see": "docs/completed/task-forward-architecture-2026-10.md"
   },
   {
+   "name": "flash-decode-softcap",
+   "group": "Backend, precision and context",
+   "summary": "CUDA only: a model with an attention softcap (Gemma 2) decodes on the flash-decode lane, in its capped variant, instead of the exact split-KV lane. Off by default; its outputs differ from the exact lane's. No effect on a model without a softcap.",
+   "type": "bool",
+   "see": "docs/measurements/op1o2-fa-softcap-2026-11/README.md"
+  },
+  {
    "name": "gemma4-step",
    "group": "Backend, precision and context",
    "summary": "Metal only: a Gemma 4 dense model batches concurrent requests in one decode step. Bit-identical output. In serve, on with 2 or more KV sessions, the default included, for about 10 MB; off in `goinfer-chat`. Not with a vision tower attached.",
