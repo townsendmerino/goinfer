@@ -22,6 +22,9 @@ type rideFake struct {
 	rides    []rideCall
 }
 
+func (f *rideFake) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *rideFake) RaggedStepperAvailable() bool           { return true }
+
 type rideCall struct{ chunkRows, decodeRows, promptLen int }
 
 func (f *rideFake) StepRagged(seqs []ResidentRaggedSeq) ([]ResidentRaggedOut, error) {

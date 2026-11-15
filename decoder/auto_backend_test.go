@@ -88,9 +88,12 @@ type fakeNamedResidency struct {
 
 // quantReporting is a fake resident that reports the precision it runs at (ResidentCaps.Quant).
 type quantReporting struct {
+	fakeSubsystems
 	ResidentForward
 	q string
 }
+
+func (f quantReporting) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
 
 func (r quantReporting) ResidentCaps() ResidentCaps {
 	c := residentCapsOf(r.ResidentForward)
@@ -101,7 +104,7 @@ func (r quantReporting) ResidentCaps() ResidentCaps {
 func (b *fakeNamedResidency) BuildResident(m *Model) (ResidentForward, bool, error) {
 	rf, ok, err := b.fakeResidencyBackend.BuildResident(m)
 	if b.report != "" {
-		return quantReporting{rf, b.report}, ok, err
+		return quantReporting{ResidentForward: rf, q: b.report}, ok, err
 	}
 	return rf, ok, err
 }

@@ -46,6 +46,10 @@ type fakeResidentAdapter struct {
 	prefillCalls int32
 }
 
+func (f *fakeResidentAdapter) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *fakeResidentAdapter) PrefillAvailable() bool                 { return true }
+func (f *fakeResidentAdapter) AdapterAvailable() bool                 { return true }
+
 func (f *fakeResidentAdapter) PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
 	atomic.AddInt32(&f.prefillCalls, 1)
 	var last []float32

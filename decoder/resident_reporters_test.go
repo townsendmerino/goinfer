@@ -14,6 +14,8 @@ type fastFloorResident struct {
 	floor int
 }
 
+func (f *fastFloorResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+
 func (r *fastFloorResident) ResidentCaps() ResidentCaps {
 	c := r.fakeResident.ResidentCaps()
 	c.HasFastPrefill, c.FastPrefillFloor = true, r.floor
@@ -25,6 +27,8 @@ type contextNoteResident struct {
 	note string
 }
 
+func (f *contextNoteResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+
 func (r *contextNoteResident) ResidentCaps() ResidentCaps {
 	c := r.fakeResident.ResidentCaps()
 	c.ContextNote = r.note
@@ -35,6 +39,8 @@ type kernelFloorResident struct {
 	*fakeResident
 	floor int
 }
+
+func (f *kernelFloorResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
 
 func (r *kernelFloorResident) ResidentCaps() ResidentCaps {
 	c := r.fakeResident.ResidentCaps()

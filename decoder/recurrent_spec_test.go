@@ -6,9 +6,13 @@ import "testing"
 // arena's price, and the loop's fold accounting.
 
 type recurrentSpecStub struct {
+	NoopResidentRuntime
 	rows    int
 	prepErr error
 }
+
+func (f recurrentSpecStub) ResidentSubsystems() ResidentSubsystems { return runtimeSubsystems(f) }
+func (f recurrentSpecStub) RecurrentSpecAvailable() bool           { return true }
 
 func (s recurrentSpecStub) PrepareRecurrentSpec(int) error                  { return s.prepErr }
 func (s recurrentSpecStub) RecurrentSpecRows() int                          { return s.rows }
@@ -94,14 +98,24 @@ func TestRecurrentSpecArenaBytes_formula(t *testing.T) {
 // prepHost is a drafter host with a fold capability whose attach must not be reached: prepareRecurrentSpec runs before it. It
 // counts the preparations asked of it.
 type prepHost struct {
-	recurrentSpecStub
+	stub recurrentSpecStub
 	*blockspecWriteHost
 	prepared *int
 }
 
+func (f prepHost) ResidentSubsystems() ResidentSubsystems { return runtimeSubsystems(f) }
+func (f prepHost) RecurrentSpecAvailable() bool           { return true }
+func (f prepHost) RecurrentSpecRows() int                 { return f.stub.RecurrentSpecRows() }
+func (f prepHost) VerifyLastNArgmax(e [][]float32, p int) ([]int, error) {
+	return f.stub.VerifyLastNArgmax(e, p)
+}
+func (f prepHost) FoldVerified(n int) error { return f.stub.FoldVerified(n) }
+func (f prepHost) FlushFold() error         { return f.stub.FlushFold() }
+func (f prepHost) DropFold()                { f.stub.DropFold() }
+
 func (h prepHost) PrepareRecurrentSpec(rows int) error {
 	*h.prepared++
-	return h.recurrentSpecStub.PrepareRecurrentSpec(rows)
+	return h.stub.PrepareRecurrentSpec(rows)
 }
 
 // TestPrepareRecurrentSpec_refusesBeforeAttach: NewBlockSpec readies the fold path before the drafter's weights go to the
@@ -159,6 +173,7 @@ func TestPrepareRecurrentSpec_refusesBeforeAttach(t *testing.T) {
 // foldHost is a drafter host with the fold path: the seed answers 7, every verify answers script, and it records each verify's
 // rows and each fold.
 type foldHost struct {
+	NoopResidentRuntime
 	script  []int
 	folds   []int
 	verify  []int
@@ -166,6 +181,11 @@ type foldHost struct {
 	drops   int // DropFold calls that found rows marked
 	marked  bool
 }
+
+func (f *foldHost) ResidentSubsystems() ResidentSubsystems { return runtimeSubsystems(f) }
+func (f *foldHost) DrafterHostAvailable() bool             { return true }
+func (f *foldHost) LastNArgmaxAvailable() bool             { return true }
+func (f *foldHost) RecurrentSpecAvailable() bool           { return true }
 
 func (h *foldHost) DropFold() {
 	if h.marked {
@@ -273,8 +293,13 @@ func TestBlockSpecGenerate_foldsTheEmittedRows(t *testing.T) {
 // captureHost is a dense drafter host whose batched capture is one tap holding each row's absolute position, so a test can read
 // which rows reached the drafter and in what order. Every row answers 7.
 type captureHost struct {
+	NoopResidentRuntime
 	hidden, rows, start int
 }
+
+func (f *captureHost) ResidentSubsystems() ResidentSubsystems { return runtimeSubsystems(f) }
+func (f *captureHost) DrafterHostAvailable() bool             { return true }
+func (f *captureHost) LastNArgmaxAvailable() bool             { return true }
 
 func (h *captureHost) AttachBlockDrafter(BlockDrafterWeights) (ResidentBlockDrafter, error) {
 	panic("not reached")

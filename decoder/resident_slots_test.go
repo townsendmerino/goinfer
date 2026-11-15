@@ -10,10 +10,14 @@ import (
 // fakeResident's and is never exercised here — residentAcquire only chooses and binds.
 type slotResident struct {
 	*fakeResident
-	n, bound int
-	binds    []int
-	fail     bool
+	fakeSubsystems // keeps the contract defaults reachable when fakeResident is nil, as these tests leave it
+	n, bound       int
+	binds          []int
+	fail           bool
 }
+
+func (f *slotResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *slotResident) KVSlotterAvailable() bool               { return true }
 
 func (s *slotResident) KVSlots() int { return s.n }
 func (s *slotResident) UseKVSlot(i int) error {

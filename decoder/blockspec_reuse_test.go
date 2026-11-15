@@ -8,9 +8,14 @@ import "testing"
 // opt.MaxTokens == 1 (the round loop never runs), matching blockspecCommitStubHost's shape but
 // tracking calls instead of assuming there is only one.
 type blockspecReuseStubHost struct {
+	NoopResidentRuntime
 	anchor    int
 	seedCalls []struct{ startPos, n int }
 }
+
+func (f *blockspecReuseStubHost) ResidentSubsystems() ResidentSubsystems { return runtimeSubsystems(f) }
+func (f *blockspecReuseStubHost) DrafterHostAvailable() bool             { return true }
+func (f *blockspecReuseStubHost) LastNArgmaxAvailable() bool             { return true }
 
 func (h *blockspecReuseStubHost) AttachBlockDrafter(BlockDrafterWeights) (ResidentBlockDrafter, error) {
 	panic("not reached")

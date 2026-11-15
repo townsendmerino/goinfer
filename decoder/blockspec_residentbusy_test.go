@@ -15,9 +15,14 @@ import (
 // bookkeeping done BEFORE that point, not the verify loop itself (that needs a real device, per
 // R-00's own gate note on CUDA being the only ResidentDrafterHost).
 type blockspecStubHost struct {
+	NoopResidentRuntime
 	setBatchedCaptureErr   error
 	setBatchedCaptureCalls int32
 }
+
+func (f *blockspecStubHost) ResidentSubsystems() ResidentSubsystems { return runtimeSubsystems(f) }
+func (f *blockspecStubHost) DrafterHostAvailable() bool             { return true }
+func (f *blockspecStubHost) LastNArgmaxAvailable() bool             { return true }
 
 func (h *blockspecStubHost) Forward([]float32, int) ([]float32, error)      { return nil, nil }
 func (h *blockspecStubHost) ForwardN([][]float32, int) ([][]float32, error) { return nil, nil }

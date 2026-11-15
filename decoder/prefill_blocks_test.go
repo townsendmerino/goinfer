@@ -28,6 +28,9 @@ type blockFake struct {
 	dropped                int // Forward at a position below this fails; 0: none
 }
 
+func (f *blockFake) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *blockFake) PrefillBlocksAvailable() bool           { return true }
+
 func (f *blockFake) PrefillLast(ctx context.Context, embs [][]float32, startPos int) ([]float32, error) {
 	f.calls = append(f.calls, [2]int{startPos, len(embs)})
 	if f.onCall != nil {

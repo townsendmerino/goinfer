@@ -15,6 +15,10 @@ type callLogResident struct {
 	log []string
 }
 
+func (f *callLogResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *callLogResident) GreedyAvailable() bool                  { return true }
+func (f *callLogResident) LastNArgmaxAvailable() bool             { return true }
+
 func (f *callLogResident) row(emb []float32, pos int) []float32 {
 	r, _ := f.fakeResident.Forward(emb, pos)
 	f.fakeResident.forwards--
@@ -164,9 +168,14 @@ func drainGen(ch <-chan int, g *Generation) ([]int, error) {
 // callLogHost is a ResidentDrafterHost that answers every verify row with id and logs into the resident's call log, so a block
 // speculation run's host calls and resident calls land in one order.
 type callLogHost struct {
+	NoopResidentRuntime
 	rf *callLogResident
 	id int
 }
+
+func (f *callLogHost) ResidentSubsystems() ResidentSubsystems { return runtimeSubsystems(f) }
+func (f *callLogHost) DrafterHostAvailable() bool             { return true }
+func (f *callLogHost) LastNArgmaxAvailable() bool             { return true }
 
 func (h *callLogHost) AttachBlockDrafter(BlockDrafterWeights) (ResidentBlockDrafter, error) {
 	panic("not reached")
@@ -211,6 +220,27 @@ type (
 	callLogKVOnly  struct{ *callLogResident }
 	callLogBlocks  struct{ callLogPrefill }
 )
+
+// Each wrapper serves itself as the four contracts, so the capability it adds is the one the code under test sees.
+func (f callLogPrefill) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f callLogPrefill) PrefillAvailable() bool                 { return true }
+func (f callLogRows) ResidentSubsystems() ResidentSubsystems    { return selfSubsystems(f) }
+func (f callLogRows) PrefillRowsAvailable() bool                { return true }
+func (f callLogKVOnly) ResidentSubsystems() ResidentSubsystems  { return selfSubsystems(f) }
+func (f callLogKVOnly) NoLogitsAvailable() bool                 { return true }
+func (f callLogBlocks) ResidentSubsystems() ResidentSubsystems  { return selfSubsystems(f) }
+func (f callLogBlocks) PrefillBlocksAvailable() bool            { return true }
+func (f callLogImage) ResidentSubsystems() ResidentSubsystems   { return selfSubsystems(f) }
+func (f callLogImage) ImagePrefillAvailable() bool              { return true }
+func (f callLogMRoPEPf) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f callLogMRoPEPf) MRoPEPrefillAvailable() bool            { return true }
+func (f callLogHidden) ResidentSubsystems() ResidentSubsystems  { return selfSubsystems(f) }
+func (f callLogHidden) HiddenLastAvailable() bool               { return true }
+func (f callLogHidden) ResidualAllAvailable() bool              { return true }
+func (f callLogMarked) ResidentSubsystems() ResidentSubsystems  { return selfSubsystems(f) }
+func (f callLogMarked) PrefillMarkedAvailable() bool            { return true }
+func (f callLogSpans) ResidentSubsystems() ResidentSubsystems   { return selfSubsystems(f) }
+func (f callLogSpans) SpanPrefillAvailable() bool               { return true }
 
 func (f callLogPrefill) PrefillLast(_ context.Context, embs [][]float32, start int) ([]float32, error) {
 	f.log = append(f.log, fmt.Sprintf("PrefillLast %d+%d", start, len(embs)))
@@ -277,6 +307,9 @@ func TestStepCallers_prefillCallLog(t *testing.T) {
 
 // callLogSeedHost is callLogHost that also seeds by legacySeedArgmax.
 type callLogSeedHost struct{ *callLogHost }
+
+func (f callLogSeedHost) ResidentSubsystems() ResidentSubsystems { return runtimeSubsystems(f) }
+func (f callLogSeedHost) SeedArgmaxAvailable() bool              { return true }
 
 func (h callLogSeedHost) PrefillSeedArgmax(embs [][]float32, start int) (int, error) {
 	h.rf.log = append(h.rf.log, fmt.Sprintf("host PrefillSeedArgmax %d+%d", start, len(embs)))

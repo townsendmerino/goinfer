@@ -85,10 +85,10 @@ func TestResidentSubsystems_DirectProviderAndZeroAlloc(t *testing.T) {
 		caps:      ResidentCaps{ContextCap: 8192, Quant: "int4"},
 		tailExact: true,
 	}
-	// Note: providerFakeResident intentionally does NOT implement legacyGreedy, legacyKVSlotter, legacyCapsReporter,
-	// or PrefillTailExact on the outer struct — proving callers go through ResidentSubsystemProvider rather than legacy assertions.
-	if _, ok := any(prov).(legacyGreedy); ok {
-		t.Fatal("providerFakeResident must not implement legacyGreedy directly")
+	// providerFakeResident embeds only the plain stepPlainResident, so the outer struct is not itself a subsystem value:
+	// callers must go through ResidentSubsystemProvider.
+	if _, ok := any(prov).(ResidentDecodeSubsystem); ok {
+		t.Fatal("providerFakeResident must not implement ResidentDecodeSubsystem directly")
 	}
 
 	m := &Model{resident: prov}
@@ -133,9 +133,12 @@ func TestResidentSubsystems_DirectProviderAndZeroAlloc(t *testing.T) {
 }
 
 type uncomparableValueResident struct {
+	fakeSubsystems
 	ResidentForward
 	curve []float64
 }
+
+func (f uncomparableValueResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
 
 func (u uncomparableValueResident) VerifyCost() []float64 { return u.curve }
 

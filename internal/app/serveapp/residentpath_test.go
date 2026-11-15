@@ -10,14 +10,25 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// fakeResident is a minimal decoder.ResidentForward + decoder.ResidentCapsReporter, built only from
+// fakeResident is a minimal decoder.ResidentForward + decoder.ResidentSubsystemProvider (runtime contract only), built only from
 // decoder's exported API (mirroring decoder/resident_seam_test.go's own unexported fakeResident,
 // which internal/serveapp cannot import) — enough to make ResidentActive()/ResidentContextCap()
 // report real values without a GPU, so M-01's fix (docs/audit-2026-09-10.md) can be tested
 // end-to-end instead of only by source-text assertion.
 type fakeResident struct {
+	decoder.NoopResidentRuntime
 	vocab  int
 	capPos int
+}
+
+// ResidentSubsystems serves only the runtime contract (ResidentCaps); the other three are the exported no-op defaults.
+func (f *fakeResident) ResidentSubsystems() decoder.ResidentSubsystems {
+	return decoder.ResidentSubsystems{
+		Decode:  decoder.NoopResidentDecode{},
+		Prefill: decoder.NoopResidentPrefill{},
+		KV:      decoder.NoopResidentKV{},
+		Runtime: f,
+	}
 }
 
 func (f *fakeResident) Forward(embedding []float32, pos int) ([]float32, error) {

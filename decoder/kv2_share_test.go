@@ -22,6 +22,9 @@ type copyFake struct {
 	declinePrefill bool
 }
 
+func (f *copyFake) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *copyFake) KVCopierAvailable() bool                { return true }
+
 // PrefillLast declines while declinePrefill is set, as a backend whose batched pass refuses a prompt at call time.
 func (f *copyFake) PrefillLast(ctx context.Context, embs [][]float32, startPos int) ([]float32, error) {
 	if f.declinePrefill {

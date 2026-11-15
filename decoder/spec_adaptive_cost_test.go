@@ -42,9 +42,12 @@ func TestAdaptiveDepth_costCurve(t *testing.T) {
 }
 
 type costReportingResident struct {
+	fakeSubsystems
 	ResidentForward
 	cost []float64
 }
+
+func (f costReportingResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
 
 func (c costReportingResident) VerifyCost() []float64 { return c.cost }
 

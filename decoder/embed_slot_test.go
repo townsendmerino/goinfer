@@ -21,6 +21,11 @@ type slotHiddenLastResident struct {
 	lastWrite []string
 }
 
+func (f *slotHiddenLastResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *slotHiddenLastResident) HiddenLastAvailable() bool              { return true }
+func (f *slotHiddenLastResident) KVSlotterAvailable() bool               { return true }
+func (f *slotHiddenLastResident) ResidualAllAvailable() bool             { return true }
+
 // embedCall is one embeddings call the resident answered: which seam, and the slot bound when it ran.
 type embedCall struct {
 	seam string // "HiddenLast" or "ResidualAll"

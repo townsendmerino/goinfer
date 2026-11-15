@@ -15,9 +15,13 @@ import (
 // forcing residentPrefillSeed onto the sequential per-token fallback every time.
 type decliningPrefiller struct {
 	fakeResident
-	reason string
-	calls  int
+	fakeSubsystems // the contract defaults stay reachable when the embedded fake is left nil
+	reason         string
+	calls          int
 }
+
+func (f *decliningPrefiller) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *decliningPrefiller) PrefillAvailable() bool                 { return true }
 
 func (d *decliningPrefiller) PrefillLast(_ context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
 	d.calls++

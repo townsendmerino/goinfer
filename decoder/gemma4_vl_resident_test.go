@@ -84,6 +84,8 @@ func loadGemma4VLBidirTiny(t *testing.T) (*Model, gemma4VLBidirImageGolden) {
 // GenerateGemma4VL's fallback-to-CPU-decode path can be exercised directly.
 type uploadFailResident struct{ *fakeResident }
 
+func (f *uploadFailResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+
 func (u *uploadFailResident) UploadKV(layer, base int, keys, vals []float32) error {
 	_ = u.fakeResident.UploadKV(layer, base, keys, vals) // still record the attempt
 	return errors.New("uploadFailResident: forced decline")

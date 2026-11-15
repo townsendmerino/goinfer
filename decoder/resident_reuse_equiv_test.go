@@ -247,11 +247,15 @@ func (m *oldReuse) residentForgetIDs() {
 // fast-prefill floor (0: off) and a windowed floor that drops some prefixes.
 type equivResident struct {
 	*fakeResident
-	n, bound int
-	fail     bool
-	floor    int
-	window   int // 0: every position is kept; else a prefix is served only when prefix%window != 0
+	fakeSubsystems // the contract defaults stay reachable when the embedded fake is left nil
+	n, bound       int
+	fail           bool
+	floor          int
+	window         int // 0: every position is kept; else a prefix is served only when prefix%window != 0
 }
+
+func (f *equivResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *equivResident) KVSlotterAvailable() bool               { return true }
 
 func (r *equivResident) KVSlots() int { return r.n }
 func (r *equivResident) UseKVSlot(i int) error {

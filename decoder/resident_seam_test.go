@@ -25,6 +25,7 @@ import (
 // It returns a deterministic non-nil logit row so callers proceed normally; the point is the
 // call count, not the values.
 type fakeResident struct {
+	fakeSubsystems
 	vocab       int
 	capPos      int // resident KV cap in positions (0 = unbounded); ContextCap exposes it
 	forwards    int
@@ -33,6 +34,9 @@ type fakeResident struct {
 	resetCalls  int
 	lastRopePos int // last ForwardMRoPE ropePos argument (legacyMRoPE gap-0 tests)
 }
+
+func (f *fakeResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *fakeResident) MRoPEDecodeAvailable() bool             { return true }
 
 // fakeUploadKVCall is one recorded UploadKV(layer, base, keys, vals) invocation.
 type fakeUploadKVCall struct {

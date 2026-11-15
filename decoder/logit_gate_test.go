@@ -18,6 +18,9 @@ type fakeGreedyResident struct {
 	argmaxCalls int
 }
 
+func (f *fakeGreedyResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *fakeGreedyResident) GreedyAvailable() bool                  { return true }
+
 func (f *fakeGreedyResident) ForwardArgmax(emb []float32, pos int) (int, error) {
 	row, err := f.fakeResident.Forward(emb, pos)
 	if err != nil {

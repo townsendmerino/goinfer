@@ -21,6 +21,8 @@ type recurrentSnapFake struct {
 	declineRestore bool
 }
 
+func (f *recurrentSnapFake) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+
 func (f *recurrentSnapFake) KVSnapshotRecurrent() bool { return f.carries }
 
 func (f *recurrentSnapFake) RestoreKV(h ResidentKVSnapshot, slot, end int) error {

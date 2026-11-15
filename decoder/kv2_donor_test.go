@@ -17,6 +17,9 @@ type donorFake struct {
 	srcs []int
 }
 
+func (f *donorFake) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *donorFake) ReusableKVSlotAvailable() bool          { return true }
+
 func (f *donorFake) ReusableKVSlot(slot, prefix int) int {
 	if h, ok := f.held[slot]; ok {
 		return min(prefix, h)

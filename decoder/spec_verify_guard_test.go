@@ -18,6 +18,8 @@ type divergingResident struct {
 	diverge bool
 }
 
+func (f *divergingResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+
 func (d *divergingResident) DecodeVerifyDivergence() error {
 	if d.diverge {
 		return errFakeDivergence

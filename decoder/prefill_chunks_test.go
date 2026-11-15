@@ -16,6 +16,9 @@ type chunkFake struct {
 	perKey  int64 // legacyPrefillSpanScratch: bytes a pass adds per attended key (0: none)
 }
 
+func (f *chunkFake) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *chunkFake) PrefillChunksAvailable() bool           { return true }
+
 func (f *chunkFake) PrefillChunkRows() int              { return f.chunk }
 func (f *chunkFake) PrefillScratchBytes(rows int) int64 { return int64(rows) * f.perRow }
 func (f *chunkFake) ResidentCaps() ResidentCaps {

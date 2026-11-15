@@ -30,6 +30,9 @@ type recurrentFake struct {
 	savedAfter bool   // the last save copied the state PrefillLast left
 }
 
+func (f *recurrentFake) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *recurrentFake) PrefillAvailable() bool                 { return true }
+
 func (f *recurrentFake) step(emb []float32, pos int) []float32 {
 	if pos == 0 {
 		f.st = 1469598103934665603
@@ -242,6 +245,9 @@ type slottedRecurrentFake struct {
 	held         []bool
 }
 
+func (f *slottedRecurrentFake) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *slottedRecurrentFake) KVSlotterAvailable() bool               { return true }
+
 func (f *slottedRecurrentFake) KVSlots() int { return len(f.states) }
 func (f *slottedRecurrentFake) UseKVSlot(i int) error {
 	f.states[f.bound], f.bound = f.st, i
@@ -346,6 +352,8 @@ type oneCopyRecurrentFake struct {
 	*slottedRecurrentFake
 	owner int
 }
+
+func (f *oneCopyRecurrentFake) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
 
 func (f *oneCopyRecurrentFake) SaveRecurrentCheckpoint() error {
 	f.owner, f.saved = f.bound, f.st

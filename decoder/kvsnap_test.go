@@ -35,6 +35,10 @@ type snapFake struct {
 	markLate                    bool
 }
 
+func (f *snapFake) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *snapFake) KVSnapshotterAvailable() bool           { return true }
+func (f *snapFake) PrefillMarkedAvailable() bool           { return true }
+
 type snapFakeSnap struct {
 	f        *snapFake
 	rows     int

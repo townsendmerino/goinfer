@@ -417,6 +417,9 @@ type uploadPassFails struct {
 	fail *bool
 }
 
+func (f uploadPassFails) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f uploadPassFails) KVUploadPassAvailable() bool            { return true }
+
 func (uploadPassFails) BeginKVUpload() error { return nil }
 func (u uploadPassFails) EndKVUpload(failed bool) error {
 	if *u.fail {

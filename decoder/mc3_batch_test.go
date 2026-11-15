@@ -46,6 +46,11 @@ type mc3Fake struct {
 	greedyDraws int
 }
 
+func (f *mc3Fake) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *mc3Fake) PrefillAvailable() bool                 { return true }
+func (f *mc3Fake) BatchStepperAvailable() bool            { return true }
+func (f *mc3Fake) KVSlotterAvailable() bool               { return true }
+
 func (f *mc3Fake) ResidentCaps() ResidentCaps {
 	c := f.fakeResident.ResidentCaps()
 	c.BatchGreedyDraw = f.greedyDraw

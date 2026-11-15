@@ -28,6 +28,9 @@ type fakeResidentHiddenLast struct {
 	lastLen      int
 }
 
+func (f *fakeResidentHiddenLast) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *fakeResidentHiddenLast) HiddenLastAvailable() bool              { return true }
+
 func (f *fakeResidentHiddenLast) HiddenLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
 	atomic.AddInt32(&f.calls, 1)
 	f.lastStartPos = startPos

@@ -15,6 +15,8 @@ import (
 // one class, a reply re-prefilled from a copy equals the reply that continued in place.
 type twoClassFake struct{ *copyFake }
 
+func (f *twoClassFake) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+
 // batchedTag is mixed into every row a batched pass writes.
 const batchedTag = 0x9E3779B97F4A7C15
 

@@ -361,7 +361,7 @@ func TestGPUProbe_aReQuantizingResidentIsNotJudgedAtTheLoadQuant(t *testing.T) {
 	} {
 		var rf ResidentForward = &fakeResident{}
 		if c.report != "" {
-			rf = quantReporting{rf, c.report}
+			rf = quantReporting{ResidentForward: rf, q: c.report}
 		}
 		if got := residentPrecision(c.backend, c.quant, rf); got != c.want {
 			t.Errorf("residentPrecision(%s, %s, reports %q) = %q, want %q", c.backend, c.quant, c.report, got, c.want)
