@@ -197,7 +197,7 @@ func TestRopePairwise_f16PrefillKernels(t *testing.T) {
 				pos3[3*m], pos3[3*m+1], pos3[3*m+2] = uint32(1+m%7), uint32(2+(m*3)%11), uint32(3+(m*5)%13)
 			}
 		}
-		// Contiguous sections [2,3,3] over rhalf 8 (GLM-OCR's layout through MRopeAxisResident), scaled down for rhalf 3.
+		// Contiguous sections [2,3,3] over rhalf 8 (GLM-OCR's layout through MRopeAxis), scaled down for rhalf 3.
 		axis := make([]uint32, tc.rhalf)
 		for dd := range axis {
 			switch {

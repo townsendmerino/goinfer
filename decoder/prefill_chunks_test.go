@@ -84,11 +84,11 @@ func TestAdmitPrefillMemory_pricesAChunkingResidentByItsChunk(t *testing.T) {
 	if err := m.AdmitPrefillMemoryShare(promptTokens, maxTokens, true, 1); err != nil {
 		t.Errorf("a chunking resident's request was refused though one chunk fits: %v", err)
 	}
-	want := int64(rf.chunk)*rf.perRow + int64(promptTokens)*4*int64(m.ResidentEmbedLen())
+	want := int64(rf.chunk)*rf.perRow + int64(promptTokens)*4*int64(m.BackendView().EmbedLen())
 	if got, ok := m.residentPrefillScratch(promptTokens); !ok || got != want {
 		t.Errorf("residentPrefillScratch = %d, %v; want one chunk's scratch plus the whole suffix's embeddings, %d", got, ok, want)
 	}
-	if got, _ := m.residentPrefillScratch(100); got != 100*rf.perRow+int64(100)*4*int64(m.ResidentEmbedLen()) {
+	if got, _ := m.residentPrefillScratch(100); got != 100*rf.perRow+int64(100)*4*int64(m.BackendView().EmbedLen()) {
 		t.Errorf("a prompt shorter than the chunk is priced at its own rows, got %d", got)
 	}
 	if err := m.AdmitPrefillMemoryShare(promptTokens, maxTokens, false, 1); err == nil {
@@ -112,7 +112,7 @@ func TestAdmitPrefillMemory_addsTheSpanScratch(t *testing.T) {
 	injectHostRAMAvailable(t, 300<<20)
 	const promptTokens, maxTokens = 20000, 4096
 	m, rf := loadWithChunkFake(t, func(f *chunkFake) { f.chunk, f.perRow, f.tailMin, f.perKey = 512, 1000, 16, 100 })
-	want := int64(rf.chunk)*rf.perRow + int64(promptTokens)*rf.perKey + int64(promptTokens)*4*int64(m.ResidentEmbedLen())
+	want := int64(rf.chunk)*rf.perRow + int64(promptTokens)*rf.perKey + int64(promptTokens)*4*int64(m.BackendView().EmbedLen())
 	if got, ok := m.residentPrefillScratch(promptTokens); !ok || got != want {
 		t.Errorf("residentPrefillScratch = %d, %v; want the chunk's scratch, the span scratch at %d keys and the embeddings, %d", got, ok, promptTokens, want)
 	}

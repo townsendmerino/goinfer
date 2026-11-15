@@ -133,7 +133,7 @@ func (bs *webgpuBuild) nemotronLayer(i int, lw *decoder.LayerWeights, rl *kernel
 			return e
 		}
 	case 3: // MoE FFN
-		// rd.rm.moe is already populated MODEL-level by MoEResidentParams (it reads arch.MoE generically, which Nemotron also sets);
+		// rd.rm.moe is already populated MODEL-level by MoEParams (it reads arch.MoE generically, which Nemotron also sets);
 		// this is the PER-LAYER weight build. There is no expGate/shGate/shGateW: this family's experts, and its shared expert, have
 		// only up_proj/down_proj (see decoder/forward_nemotron.go).
 		rl.NemoKind = kernels.NemoKMoE

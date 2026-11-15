@@ -284,7 +284,7 @@ func TestKV3_admissionPricesTheChunk(t *testing.T) {
 	g := kv0LoadCtx(t, path, "f16", 21000, kv0TextTokens(t, path))
 	const prompt, maxTok = 20954, 8
 	whole := g.m.WholePromptScratchBytesForTest(prompt)
-	chunk := g.r.PrefillScratchBytes(g.r.PrefillChunkRows()) + int64(prompt)*4*int64(g.m.ResidentEmbedLen())
+	chunk := g.r.PrefillScratchBytes(g.r.PrefillChunkRows()) + int64(prompt)*4*int64(g.m.BackendView().EmbedLen())
 	frac := 0.7 // decoder.prefillAvailFraction: the share of available memory a request may take
 	t.Logf("whole-prompt price %.2f GB, per-chunk price %.3f GB (device scratch for %d rows plus the suffix's host embeddings)", float64(whole)/(1<<30), float64(chunk)/(1<<30), g.r.PrefillChunkRows())
 	if chunk*4 > whole {
@@ -477,7 +477,7 @@ func TestMEM6_cudaPrefillAllocatesNoRowCopy(t *testing.T) {
 	}
 	b1, b2 := bytesFor(1024), bytesFor(2048)
 	perRow := float64(int64(b2)-int64(b1)) / 1024
-	embRow := float64(4 * m.ResidentEmbedLen())
+	embRow := float64(4 * m.BackendView().EmbedLen())
 	t.Logf("Go bytes allocated by the prefill: %d at 1,024 rows, %d at 2,048; %.0f B per prompt row against %.0f B per embedding row (%.2f)", b1, b2, perRow, embRow, perRow/embRow)
 	if perRow > embRow {
 		t.Errorf("a prompt row adds %.0f B of Go allocation, over one embedding row (%.0f B): a pass copies its embeddings again", perRow, embRow)

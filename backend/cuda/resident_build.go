@@ -124,7 +124,7 @@ func (s *buildState) admit() error {
 	}
 
 	H, nLayers, nH, _, _, I, vocab := bv.Dims() // nKV, hd are per-layer now (KVHeadsAtResident/HeadDimAtResident); model-level unused
-	// Gemma 4 E-model PLE width P (0 for every other model). The resident embedding row is then [hidden ‖ nLayers*P] (ResidentEmbedLen):
+	// Gemma 4 E-model PLE width P (0 for every other model). The resident embedding row is then [hidden ‖ nLayers*P] (EmbedLen):
 	// the host computes the per-layer inputs, and each layer's PLE branch reads its slice of the tail (S1 on CUDA).
 	pleP := bv.Gemma4PLEDim()
 	if want := H + nLayers*pleP; pleP > 0 && bv.EmbedLen() != want {
@@ -140,7 +140,7 @@ func (s *buildState) admit() error {
 	// Gemma-4 enable_moe_block sets arch.MoE (so isMoE is true) but is NOT the generic MoE: it runs
 	// gemma4MoeMLP (parallel dense‖MoE + join), so it bypasses the generic-MoE admission checks below
 	// (gelu-tanh act, the attention sandwich norm) and gets its own int4-shape checks. Its nE/topK/
-	// moeInter still come from arch.MoE (MoEResidentParams), matching the bundle.
+	// moeInter still come from arch.MoE (MoEParams), matching the bundle.
 	isG4MoE := bv.HasGemma4MoE()
 	isGemma4 := bv.IsGemma4()
 	if isMoE && !isG4MoE {
@@ -707,7 +707,7 @@ func (s *buildState) newResident(planOnly bool, mp *memPlanRun) (*cudaResident, 
 	sandwich, postOnly, qkNormWhole, layerNorm, parallelBlock := s.sandwich, s.postOnly, s.qkNormWhole, s.layerNorm, s.parallelBlock
 	logitScale, actG32 := s.logitScale, s.actG32
 	hls, hlm, loadAbort := s.hls, s.hlm, s.loadAbort
-	attnTempBeta, attnTempOrigMaxPos := m.AttnTempParams() // Ministral 3, FeatAttnTemp; 0 for every other family
+	attnTempBeta, attnTempOrigMaxPos := m.BackendView().AttnTempParams() // Ministral 3, FeatAttnTemp; 0 for every other family
 	// Computed once: both ctxCap and extraBytes below need it, and a struct literal cannot read a sibling field set in the
 	// same literal.
 	kvSlotsReq := cudaKVSlotsRequest(m)
@@ -1609,14 +1609,14 @@ func (s *buildState) uploadLayers(r *cudaResident) error {
 			L.mlaWUV = r.up32(h.mlaWUV)
 			L.o = r.upW(h.o)
 			L.invF = r.up32(h.invFreq)
-			L.mscale = float32(m.RopeMscaleLayer(l))
+			L.mscale = float32(m.BackendView().Layer(l).RopeMscale())
 		} else {
 			L.q, L.o = r.upW(h.q), r.upW(h.o)
 			if bv.Layer(l).KVSrc() == l {
 				L.k = r.upW(h.k) // a KV-shared layer has no k_proj; v below (K=V layers have none)
 			}
 			L.invF = r.up32(h.invFreq)
-			L.mscale = float32(m.RopeMscaleLayer(l)) // YaRN attention_factor; 1.0 for every family without it
+			L.mscale = float32(m.BackendView().Layer(l).RopeMscale()) // YaRN attention_factor; 1.0 for every family without it
 			L.qGate = h.qGate
 		}
 		if h.mixer == decoder.MixerNone {

@@ -48,7 +48,7 @@ func TestMambaRealInputParity(t *testing.T) {
 
 	hidden, nLayers, _, _, _, _, _ := m.Dims()
 	_ = hidden
-	nHeads, headDim, dState, nGroups, dConv, _, _, _, _, ok := m.GraniteResidentParams()
+	nHeads, headDim, dState, nGroups, dConv, _, _, _, _, ok := m.BackendView().GraniteParams()
 	if !ok {
 		t.Fatal("not granite")
 	}
@@ -60,7 +60,7 @@ func TestMambaRealInputParity(t *testing.T) {
 	eps := float32(m.NormEps())
 	nMamba := 0
 	for i := range nLayers {
-		if m.GraniteMambaLayer(i) {
+		if m.BackendView().Layer(i).GraniteMamba() {
 			nMamba++
 		}
 	}
@@ -91,7 +91,7 @@ func TestMambaRealInputParity(t *testing.T) {
 	}
 
 	// Real layer-0 weights → GPU compose (conv → ssm → gatedNorm), fresh persistent state.
-	_, convW, convB, aLog, dW, dtBias, normW, _ := m.GraniteMambaWeights(0)
+	_, convW, convB, aLog, dW, dtBias, normW, _ := m.BackendView().Layer(0).GraniteMambaWeights()
 	headP := make([]float32, nHeads*3)
 	for h := range nHeads {
 		headP[h*3] = float32(-math.Exp(float64(aLog[h])))

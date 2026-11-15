@@ -293,7 +293,7 @@ G5 (docs/completed/task-gpu-paths-2026-09.md), FeatNoPE: a NoPE layer (SmolLM3's
 Cohere2's every-Nth global layer — arch.isNoPELayer) gets an all-ZERO table instead of the
 real one, same length. The resident rope kernels compute cos=cos(pos·invFreq)·mscale,
 sin=sin(pos·invFreq)·mscale (backend/cuda/gemv_fwd.cu, backend/metal/kernels.go); at invFreq==0 that is
-cos=mscale, sin=0 — the identity rotation ONLY when mscale==1 (RopeMscaleLayer). Every family
+cos=mscale, sin=0 — the identity rotation ONLY when mscale==1 (Layer(i).RopeMscale). Every family
 that sets layerNoPE today (SmolLM3) also has no YaRN scaling on those layers, so this holds;
 it is NOT a general "any NoPE layer is safe" claim, and a future family combining YaRN with
 NoPE would need this revisited (a parity test would catch it — a wrong scale is not a
@@ -3352,7 +3352,7 @@ existing pre-attn norm+quant (r.aq/r.aSc) as the MLP's input too, instead of seg
 re-normalizing the post-attention residual — no new kernel, a sequencing change (see
 Model.ParallelBlockResident's comment). FeatLogitScale is a host-side multiply after
 readback, the same shape as FeatFinalLogitSoftcap, via Model.LogitScaleResident (NOT
-GraniteResidentParams' own copy of the same arch field — Granite's SSM path isn't CUDA-
+GraniteParams' own copy of the same arch field — Granite's SSM path isn't CUDA-
 resident, so this is the first consumer here).
 ```
 
@@ -3501,7 +3501,7 @@ hd=nH_orig*hd_orig): no new kernel. Valid only for MHA (nH==nKV); BuildResident 
 FeatQKNormWhole: true,
 Cohere/Command-R and Cohere2. FeatLayerNorm is a new kernel (layernorm_quant, backend/cuda/glue.cu), bias-free only: a LayerNorm family with a
 learned bias needs its own kernel. FeatParallelBlock reuses segA's pre-attn norm+quant as the MLP input (Model.ParallelBlockResident),
-a sequencing change. FeatLogitScale is a host-side multiply after readback via Model.LogitScaleResident, not GraniteResidentParams'
+a sequencing change. FeatLogitScale is a host-side multiply after readback via Model.LogitScaleResident, not GraniteParams'
 copy of the same arch field.
 FeatLayerNorm:     true,
 FeatParallelBlock: true,
@@ -19951,7 +19951,7 @@ with each feature's evidence:
 	// (Model.ParallelBlockResident). FeatLogitScale is a host-side multiply in finalizeLogits via Model.LogitScaleResident.
 	FeatParallelBlock: true,
 	FeatLogitScale:    true,
-	// The Gemma 4 E-model shape: PLE inputs arrive as the embedding row's tail (ResidentEmbedLen) and run through encodePLE; a KV-shared
+	// The Gemma 4 E-model shape: PLE inputs arrive as the embedding row's tail (EmbedLen) and run through encodePLE; a KV-shared
 	// layer aliases its source's cache (residLayer.kvShared); each dense layer carries its FFN width (residLayer.ffnI). The f16 prefill and
 	// the MC3 batched step decline it.
 	FeatGemma4EModel: true,

@@ -369,8 +369,8 @@ func TestPrefillStepsDecline_equalsTheHandChecks(t *testing.T) {
 				return
 			}
 		}
-		_, _, _, _, _, _, _, _, mla := m.MLAResidentParams()
-		hand := m.HasGemma4MoEResident() || mla
+		_, _, _, _, _, _, _, _, mla := m.BackendView().MLAParams()
+		hand := m.BackendView().HasGemma4MoE() || mla
 		why := prefillStepsDecline(p)
 		if hand != (why != "") {
 			t.Errorf("%s: the hand checks decline %v, the steps %q", name, hand, why)

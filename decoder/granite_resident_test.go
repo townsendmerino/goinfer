@@ -22,9 +22,9 @@ func TestGraniteResidentBridge(t *testing.T) {
 	}
 	defer m.Close()
 
-	nHeads, headDim, dState, nGroups, dConv, embMul, residMul, logitScale, attnScale, ok := m.GraniteResidentParams()
+	nHeads, headDim, dState, nGroups, dConv, embMul, residMul, logitScale, attnScale, ok := m.BackendView().GraniteParams()
 	if !ok {
-		t.Fatal("GraniteResidentParams ok=false for a granite model")
+		t.Fatal("GraniteParams ok=false for a granite model")
 	}
 	dInner := nHeads * headDim
 	convDim := dInner + 2*nGroups*dState
@@ -39,12 +39,12 @@ func TestGraniteResidentBridge(t *testing.T) {
 	want := map[string]int{"inProj": projDim * hidden, "convW": convDim * dConv, "convB": convDim,
 		"aLog": nHeads, "d": nHeads, "dtBias": nHeads, "normW": dInner, "outProj": hidden * dInner}
 	for l := 0; l < nLayers; l++ {
-		if !m.GraniteMambaLayer(l) {
+		if !m.BackendView().Layer(l).GraniteMamba() {
 			attn++
 			continue
 		}
 		mamba++
-		inProj, convW, convB, aLog, dW, dtBias, normW, outProj := m.GraniteMambaWeights(l)
+		inProj, convW, convB, aLog, dW, dtBias, normW, outProj := m.BackendView().Layer(l).GraniteMambaWeights()
 		got := map[string]int{"inProj": len(inProj), "convW": len(convW), "convB": len(convB),
 			"aLog": len(aLog), "d": len(dW), "dtBias": len(dtBias), "normW": len(normW), "outProj": len(outProj)}
 		for k, w := range want {

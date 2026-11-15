@@ -98,7 +98,7 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 		share = res.kvShareCtx
 	}
 	b.resident.ctxNote = metalContextNote(m, fit, share, res.kvSlotCount())
-	if got, want := b.resident.embLen(), m.ResidentEmbedLen(); got != want {
+	if got, want := b.resident.embLen(), m.BackendView().EmbedLen(); got != want {
 		_ = res.Close()
 		b.resident = nil
 		return nil, false, decoder.DeclineResident("metal: resident takes %d-float embedding rows, the decoder builds %d", got, want)
@@ -354,13 +354,13 @@ func metalMoESlotsRequest(m *decoder.Model) string {
 // TestMoESlotsViaOptions_belowTopKRefusesWithNumbers). Gemma 4's MoE and the generic MoE families keep top-k in different Config
 // fields, so it branches on the shape.
 func moeTopK(m *decoder.Model) int {
-	if m.HasGemma4MoEResident() {
+	if m.BackendView().HasGemma4MoE() {
 		if k := m.Config().TopKExperts; k > 0 {
 			return k
 		}
 		return 1
 	}
-	if _, k, _, _, _, _, _, _, _, _, ok := m.MoEResidentParams(); ok && k > 0 {
+	if _, k, _, _, _, _, _, _, _, _, ok := m.BackendView().MoEParams(); ok && k > 0 {
 		return k
 	}
 	return 1
@@ -582,9 +582,9 @@ func residentMemoryDecline(m *decoder.Model) string {
 	const gb = 1 << 30
 	// A model with routed experts that does not fit resident may still fit paged: the decline names how to reach it.
 	moeHint := ""
-	if m.HasGemma4MoEResident() {
+	if m.BackendView().HasGemma4MoE() {
 		moeHint = " This model routes MoE experts — try --moe-cache-experts (Metal pages them; auto-sizes the slot count from free RAM) or --moe-cache-slots N to pick one yourself."
-	} else if _, _, _, _, _, _, _, _, _, _, ok := m.MoEResidentParams(); ok {
+	} else if _, _, _, _, _, _, _, _, _, _, ok := m.BackendView().MoEParams(); ok {
 		moeHint = " This model routes MoE experts — try --moe-cache-experts (Metal pages them; auto-sizes the slot count from free RAM) or --moe-cache-slots N to pick one yourself."
 	}
 	tightened := ""
@@ -770,7 +770,7 @@ func (a *metalResident) ForwardSample(embedding []float32, pos int, temperature 
 }
 
 // embLen is every embedding row's length: hidden, or for a Gemma 4 E-model hidden + L·P PLE inputs (S1.5), the
-// decoder's ResidentEmbedLen. Derived from the resident, so a test-built metalResident gets it right too.
+// decoder's EmbedLen. Derived from the resident, so a test-built metalResident gets it right too.
 func (a *metalResident) embLen() int {
 	if a.r == nil {
 		return a.hidden
@@ -1146,7 +1146,7 @@ func (a *metalResident) batchedPrefillSrc(src rowSource, startPos, floor int, mr
 	// The f16 MMA prefill kernels implement a dense gated FFN (SiLU or GeGLU) and a generically shaped gated-SwiGLU MoE FFN
 	// (expert-major by default, the per-token decode MoE chain row by row with GOINFER_MOE_EXPERT_MAJOR=0), with per-layer
 	// rope/window, per-head QK-norm and Gemma's sandwich norms. They do NOT implement per-layer-varying attention geometry (dense
-	// Gemma 4's local/global head_dim split; prefillOK) or Gemma 4's enable_moe_block variant (HasGemma4MoEResident, a third FFN
+	// Gemma 4's local/global head_dim split; prefillOK) or Gemma 4's enable_moe_block variant (HasGemma4MoE, a third FFN
 	// shape). Any of these declines here, and the caller re-runs the prompt through the sequential Forward loop.
 	if a.r.kvF32 {
 		return nil, fmt.Errorf("metal: prefill writes half-precision K/V and this model's KV cache is f32 (-kv f32); using sequential path")

@@ -74,7 +74,7 @@ func TestGemma2ResidentParityMetal(t *testing.T) {
 			if rf == nil {
 				t.Fatalf("did not go resident: decode path %q; decline: %s", mRes.DecodePath(), mRes.ResidentDecline())
 			}
-			if mRes.AttnLogitSoftcapResident() == 0 {
+			if mRes.BackendView().AttnLogitSoftcap() == 0 {
 				t.Fatal("the fixture has no attention softcap: this test no longer gates what it claims")
 			}
 			mCPU, err := decoder.Load(ckpt, decoder.Options{Backend: "cpu", Quant: "int4"})

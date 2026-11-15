@@ -134,17 +134,17 @@ var moePagedAllSlotsForTest bool
 // declares an MoE FFN. It returns nil when the model is not MoE, and an error for an MoE variant this path does not
 // implement, so BuildResident declines to the CPU rather than running wrong.
 func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*moeResident, error) {
-	nE, k, inter, sharedInter, sigmoid, norm, sharedUngated, scale, nGroup, topkGroup, ok := m.MoEResidentParams()
+	nE, k, inter, sharedInter, sigmoid, norm, sharedUngated, scale, nGroup, topkGroup, ok := m.BackendView().MoEParams()
 	if !ok {
 		return nil, nil // dense model — no MoE
 	}
-	// Gemma 4's enable_moe_block (gemma4_text, 26B-A4B) sets arch.MoE, so MoEResidentParams reports ok, but it is
+	// Gemma 4's enable_moe_block (gemma4_text, 26B-A4B) sets arch.MoE, so MoEParams reports ok, but it is
 	// not the generic Mixtral/Qwen shape this path implements: it is a parallel dense||MoE FFN with gelu-tanh
 	// experts (gemv_w4a8_moe's epilogue is SiLU), a weightless router pre-norm with a learned [hidden] scale and
 	// per_expert_scale, and seven norms. Building it here would run a wrong MoE. It runs encodeGemma4MoEFFN
-	// (gemma4_moe.go) instead, routed around here via HasGemma4MoEResident as CUDA's isG4MoE split does. Dense
+	// (gemma4_moe.go) instead, routed around here via HasGemma4MoE as CUDA's isG4MoE split does. Dense
 	// Gemma 4 has no MoE, so it returns nil,nil above and admits normally.
-	if m.HasGemma4MoEResident() {
+	if m.BackendView().HasGemma4MoE() {
 		// Return nil (not MoE for this builder): r.moe stays nil, BuildResident builds r.g4moe instead, and the
 		// per-layer loop routes on the bundle.
 		return nil, nil
@@ -154,7 +154,7 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 	if capE, capG, _ := decoder.ResidentBackendMoECap("metal"); nE > capE || nGroup > capG {
 		return nil, fmt.Errorf("metal MoE: nE=%d / nGroup=%d exceeds the router cap (%d / %d)", nE, nGroup, capE, capG)
 	}
-	_, _, isGptOss := m.GptOssActResident()
+	_, _, isGptOss := m.BackendView().GptOssAct()
 	mo := &moeResident{
 		pRouter: pipe("gemv_wf32_a8"), pRoute: pipe("moe_route_sg"),
 		pSharedGate:   pipe("shared_gate_combine"),
@@ -167,7 +167,7 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 	}
 	mo.pGU, mo.pDownWacc, mo.guR, mo.downR = moeExpertRows(pipe, 2*inter, H, !isGptOss)
 	if isGptOss {
-		alpha, limit, _ := m.GptOssActResident()
+		alpha, limit, _ := m.BackendView().GptOssAct()
 		mo.pRouteGptOss = pipe("route_gptoss_sg")
 		mo.pActGptOss = pipe("swiglu_quant_gptoss")
 		mo.pDownWaccBias = pipe("gemv_w4a8_moe_wacc_bias")
@@ -450,8 +450,8 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 		}
 	}
 	if mo.isGptOss {
-		ml.expGuBias = NewBufferFloatsOn(mem.LineExperts, d, m.GptOssExpertBiasResident(l))
-		ml.expDBias = NewBufferFloatsOn(mem.LineExperts, d, m.GptOssExpertDownBiasResident(l))
+		ml.expGuBias = NewBufferFloatsOn(mem.LineExperts, d, m.BackendView().Layer(l).GptOssExpertBias())
+		ml.expDBias = NewBufferFloatsOn(mem.LineExperts, d, m.BackendView().Layer(l).GptOssExpertDownBias())
 	}
 	return ml
 }

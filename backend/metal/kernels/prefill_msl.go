@@ -554,7 +554,7 @@ kernel void rope_mrope_f16(device half* x[[buffer(0)]], device const float* invf
 // rope_f16_pw / rope_mrope_f16_pw (docs/completed/task-metal-pairwise-rope-2026-10.md): rope_f16 / rope_mrope_f16 for GPT-J
 // PAIRWISE rotation, pair dd = dims (2dd, 2dd+1), as decoder's rope.go's applyRoPEInterleaved and applyMRoPEPairwise (GLM-OCR's
 // contiguous m-RoPE sections come in through the same host axis table). Same arguments and grid; bound for a model whose
-// decoder.Model.PairwiseRoPEResident() is true, and nowhere else.
+// decoder.Model.BackendView().PairwiseRoPE() is true, and nowhere else.
 kernel void rope_f16_pw(device half* x[[buffer(0)]], device const float* invf[[buffer(1)]],
     constant uint& hd[[buffer(2)]], device const uint* positions[[buffer(3)]],
     constant uint& total[[buffer(4)]], constant uint& stride[[buffer(5)]],

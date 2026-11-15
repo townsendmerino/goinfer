@@ -17,7 +17,7 @@ var embedRowsObserver func(rows int)
 // suffixRows is the rows callback for ids: each call embeds rows [lo, hi) into one slab reused across calls, grown to the
 // largest range asked for, with one per-layer-input scratch for every row.
 func (m *Model) suffixRows(ids []int) func(lo, hi int) [][]float32 {
-	n := m.ResidentEmbedLen()
+	n := m.BackendView().EmbedLen()
 	var slab, pleScratch []float32
 	var view [][]float32
 	if g4 := m.w.arch.gemma4; g4 != nil && g4.HiddenSizePerLayerInput > 0 {

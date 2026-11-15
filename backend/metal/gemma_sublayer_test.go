@@ -171,7 +171,7 @@ func TestGemmaSublayer_MetalContribution(t *testing.T) {
 	t.Logf("=== per-layer cos(Metal ctx, int4-ref ctx) — where the attention context first breaks ===")
 	for l := range nL {
 		tag := "global"
-		if m4.LayerIsLocalResident(l) {
+		if m4.BackendView().Layer(l).IsLocal() {
 			tag = "local "
 		}
 		t.Logf("  L%2d [%s]: cos(Metal,int4-ref)=%.4f", l, tag, cosCtx(ctx[l], i4Ctx[l]))

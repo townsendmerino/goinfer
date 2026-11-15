@@ -56,7 +56,7 @@ func TestMambaResidentCapture(t *testing.T) {
 		t.Fatalf("resident forward is %T, not *residentDecoder", m.ResidentForwardForTest())
 	}
 
-	nHeads, headDim, dState, nGroups, dConv, _, _, _, _, gok := m.GraniteResidentParams()
+	nHeads, headDim, dState, nGroups, dConv, _, _, _, _, gok := m.BackendView().GraniteParams()
 	if !gok {
 		t.Fatal("not granite")
 	}
@@ -67,7 +67,7 @@ func TestMambaResidentCapture(t *testing.T) {
 	projDim := 2*dInner + 2*gSize + nHeads
 	repeat := nHeads / nGroups
 	eps := float64(m.NormEps())
-	_, convW, convB, aLog, dW, dtBias, normW, _ := m.GraniteMambaWeights(0)
+	_, convW, convB, aLog, dW, dtBias, normW, _ := m.BackendView().Layer(0).GraniteMambaWeights()
 
 	// CPU reference mixer (mamba2.go steps 2-5), fed the resident's OWN proj, fresh state.
 	var win [][]float32
@@ -137,7 +137,7 @@ func TestMambaResidentCapture(t *testing.T) {
 	}
 	nMamba := 0
 	for i := 0; i < nLayers; i++ {
-		if m.GraniteMambaLayer(i) {
+		if m.BackendView().Layer(i).GraniteMamba() {
 			nMamba++
 		}
 	}

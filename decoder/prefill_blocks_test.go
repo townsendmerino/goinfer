@@ -308,7 +308,7 @@ func TestAdmitPrefillMemory_pricesABlockedResidentByTheBlock(t *testing.T) {
 		t.Errorf("a blocked resident's request was refused though one block fits: %v", err)
 	}
 	wantRows := int64(rf.block + prefillTailMin - 1)
-	if got, ok := m.residentPrefillScratch(promptTokens); !ok || got != wantRows*rf.perRow+wantRows*4*int64(m.ResidentEmbedLen()) {
+	if got, ok := m.residentPrefillScratch(promptTokens); !ok || got != wantRows*rf.perRow+wantRows*4*int64(m.BackendView().EmbedLen()) {
 		t.Errorf("residentPrefillScratch = %d, %v; want the longest pass's %d rows of scratch and embeddings", got, ok, wantRows)
 	}
 	if err := m.AdmitPrefillMemoryShare(promptTokens, maxTokens, false, 1); err == nil {

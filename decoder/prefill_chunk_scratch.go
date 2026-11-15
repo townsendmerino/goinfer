@@ -36,5 +36,5 @@ func (m *Model) residentChunkedScratch(promptTokens int) (bytes int64, ok bool) 
 	}
 	rows := min(promptTokens, C)
 	dev := pf.PrefillScratchBytes(rows) + pf.PrefillSpanScratchBytes(rows, promptTokens)
-	return dev + int64(promptTokens)*4*int64(m.ResidentEmbedLen()), true
+	return dev + int64(promptTokens)*4*int64(m.BackendView().EmbedLen()), true
 }

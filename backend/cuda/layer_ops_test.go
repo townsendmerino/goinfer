@@ -28,19 +28,19 @@ func TestLayerOps_buildTheKindsTheFamilyHas(t *testing.T) {
 		{"llama-tiny", func(*decoder.Model, int) kind { return kind{decoder.MixerAttention, true} }},
 		{"deepseek-tiny", func(*decoder.Model, int) kind { return kind{decoder.MixerMLA, true} }},
 		{"qwen35-tiny", func(m *decoder.Model, l int) kind {
-			if m.Qwen35LinearLayer(l) {
+			if m.BackendView().Layer(l).Qwen35Linear() {
 				return kind{decoder.MixerDeltaNet, true}
 			}
 			return kind{decoder.MixerAttention, true}
 		}},
 		{"olmo_hybrid-tiny", func(m *decoder.Model, l int) kind {
-			if m.Qwen35LinearLayer(l) {
+			if m.BackendView().Layer(l).Qwen35Linear() {
 				return kind{decoder.MixerDeltaNet, true}
 			}
 			return kind{decoder.MixerAttention, true}
 		}},
 		{"nemotron-tiny", func(m *decoder.Model, l int) kind {
-			switch m.NemotronBlockKind(l) {
+			switch m.BackendView().Layer(l).NemotronBlockKind() {
 			case 0:
 				return kind{decoder.MixerMamba, false}
 			case 1:

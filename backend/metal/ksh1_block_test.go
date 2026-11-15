@@ -160,7 +160,7 @@ func TestKSH1_exactAttentionBlocks(t *testing.T) {
 	price, ok := m.ResidentPrefillScratchForTest(20000)
 	fmt.Fprintf(os.Stderr, "[KH1] admission at 20,000 tokens: blocked price %d B (ok %v), block %d rows\n", price, ok, a.PrefillBlockRows())
 	rows := min(20000, a.PrefillBlockRows()+8-1) // the decoder's longest pass: a block plus the tail minimum (prefillTailMin, 8) less one
-	if want := a.PrefillScratchBytes(rows) + int64(rows)*4*int64(m.ResidentEmbedLen()); !ok || price != want {
+	if want := a.PrefillScratchBytes(rows) + int64(rows)*4*int64(m.BackendView().EmbedLen()); !ok || price != want {
 		t.Errorf("admission priced %d B (ok %v), want the blocked pass's %d B", price, ok, want)
 	}
 }

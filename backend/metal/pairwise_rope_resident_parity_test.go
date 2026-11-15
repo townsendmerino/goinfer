@@ -439,7 +439,7 @@ func TestPairwiseRoPE_neoxFamiliesUnchanged(t *testing.T) {
 	if !ok {
 		t.Skipf("llama-tiny not Metal-resident: %s", m.ResidentDecline())
 	}
-	if m.PairwiseRoPEResident() || a.r.pairwiseRoPE {
-		t.Fatalf("a NeoX family (llama) reads pairwise: model %v, resident %v", m.PairwiseRoPEResident(), a.r.pairwiseRoPE)
+	if m.BackendView().PairwiseRoPE() || a.r.pairwiseRoPE {
+		t.Fatalf("a NeoX family (llama) reads pairwise: model %v, resident %v", m.BackendView().PairwiseRoPE(), a.r.pairwiseRoPE)
 	}
 }

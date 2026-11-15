@@ -49,7 +49,7 @@ func TestRealForwardParity(t *testing.T) {
 	H, nLayers, nH, nKV, hd, I, vocab := m.Dims()
 	qDim, kvDim := nH*hd, nKV*hd
 	eps := m.NormEps()
-	invFreq := m.RopeInvFreq()
+	invFreq := m.BackendView().RopeInvFreq()
 	attnScale := m.AttnScale()
 	half := hd / 2
 

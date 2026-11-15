@@ -77,7 +77,7 @@ func TestStagedLayerSweep(t *testing.T) {
 		}
 		cos, _ := cosSim(cpuLogits[L], lg)
 		kind := "mamba"
-		if !ms.GraniteMambaLayer(L) {
+		if !ms.BackendView().Layer(L).GraniteMamba() {
 			kind = "ATTN"
 		}
 		t.Logf("  after layer %2d (%-5s): STAGED-vs-f32 cosine=%.6f", L, kind, cos)

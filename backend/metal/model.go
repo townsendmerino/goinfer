@@ -1201,12 +1201,12 @@ var attnSoftcapDropForTest bool
 // (docs/completed/task-metal-int8-2026-10.md). It is decided before the build from the model alone, so a model that passes
 // w8Weights but is MoE (Gemma 4's parallel dense||MoE) is excluded here too.
 func w8PreciseMath(m *decoder.Model) bool {
-	if !nativeInt8 || w8FastMath || m.HasGemma4MoEResident() {
+	if !nativeInt8 || w8FastMath || m.BackendView().HasGemma4MoE() {
 		return false
 	}
-	if _, _, _, _, _, _, _, _, _, _, moe := m.MoEResidentParams(); moe {
+	if _, _, _, _, _, _, _, _, _, _, moe := m.BackendView().MoEParams(); moe {
 		// slice 4's MoE, as w8Eligible will admit it: not gpt-oss, not paged
-		if _, _, gptoss := m.GptOssActResident(); !nativeInt8MoE || gptoss || metalMoESlotsRequest(m) != "" {
+		if _, _, gptoss := m.BackendView().GptOssAct(); !nativeInt8MoE || gptoss || metalMoESlotsRequest(m) != "" {
 			return false
 		}
 		return w8Weights(m)

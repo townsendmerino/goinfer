@@ -152,7 +152,7 @@ func g2rRun(t *testing.T, path, quant string, seed []int, steps int, softcapOff 
 		t.Fatalf("load (cpu): %v", err)
 	}
 	defer m.Close()
-	if got := m.AttnLogitSoftcapResident(); (got == 0) != softcapOff {
+	if got := m.BackendView().AttnLogitSoftcap(); (got == 0) != softcapOff {
 		t.Fatalf("VOID: the CPU model's cap is %v with the softcap removed = %v", got, softcapOff)
 	}
 	_, nL, _, nKV, hd, _, _ := m.Dims()

@@ -25,14 +25,14 @@ func TestResidentKVBytes_excludesDeltaNetLayers(t *testing.T) {
 	}
 	defer m.Close()
 
-	_, _, _, _, _, _, dnetOK := m.Qwen35ResidentParams()
+	_, _, _, _, _, _, dnetOK := m.BackendView().Qwen35Params()
 	if !dnetOK {
 		t.Fatal("test setup: qwen35-tiny did not resolve to a DeltaNet-hybrid model")
 	}
 	_, nLayers, _, _, _, _, _ := m.Dims()
 	var wantAttnLayers, wantLinearLayers int
 	for l := range nLayers {
-		if m.Qwen35LinearLayer(l) {
+		if m.BackendView().Layer(l).Qwen35Linear() {
 			wantLinearLayers++
 		} else {
 			wantAttnLayers++
@@ -58,10 +58,10 @@ func TestResidentKVBytes_excludesDeltaNetLayers(t *testing.T) {
 	const bytesPerElem = 2
 	var want int64
 	for l := range nLayers {
-		if m.Qwen35LinearLayer(l) {
+		if m.BackendView().Layer(l).Qwen35Linear() {
 			continue
 		}
-		kvDim := int64(m.KVHeadsAtResident(l)) * int64(m.HeadDimAtResident(l))
+		kvDim := int64(m.BackendView().Layer(l).KVHeads()) * int64(m.BackendView().Layer(l).HeadDim())
 		want += 2 * (int64(kvBlocksFor(ctxCap)) + 1) * decoder.KVBlockRows * kvDim * bytesPerElem // the layer's blocks, and its pool's null block
 	}
 	want += 4 * int64(kvBlocksFor(ctxCap)) // the slot's table

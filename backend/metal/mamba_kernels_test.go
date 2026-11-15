@@ -38,11 +38,11 @@ func loadMambaFixture(t *testing.T, dir string) mambaFixture {
 	defer m.Close()
 	f := mambaFixture{name: dir, eps: m.NormEps()}
 	_, nLayers, _, _, _, _, vocab := m.Dims()
-	isMamba := func(i int) bool { return m.GraniteMambaLayer(i) }
-	if nh, hd, ds, ng, k, normG, _, ok := m.NemotronResidentParams(); ok {
+	isMamba := func(i int) bool { return m.BackendView().Layer(i).GraniteMamba() }
+	if nh, hd, ds, ng, k, normG, _, ok := m.BackendView().NemotronParams(); ok {
 		f.nHeads, f.headDim, f.dState, f.nGroups, f.K, f.normGroups = nh, hd, ds, ng, k, normG
-		isMamba = func(i int) bool { return m.NemotronBlockKind(i) == 0 }
-	} else if nh, hd, ds, ng, k, _, _, _, _, ok := m.GraniteResidentParams(); ok {
+		isMamba = func(i int) bool { return m.BackendView().Layer(i).NemotronBlockKind() == 0 }
+	} else if nh, hd, ds, ng, k, _, _, _, _, ok := m.BackendView().GraniteParams(); ok {
 		f.nHeads, f.headDim, f.dState, f.nGroups, f.K, f.normGroups = nh, hd, ds, ng, k, 1
 	} else {
 		t.Fatalf("%s is neither Nemotron-H nor Granite-4.0-H", dir)
@@ -59,7 +59,7 @@ func loadMambaFixture(t *testing.T, dir string) mambaFixture {
 	if first < 0 {
 		t.Fatalf("%s has no Mamba layer", dir)
 	}
-	_, convW, convB, aLog, dW, dtBias, normW, _ := m.GraniteMambaWeights(first)
+	_, convW, convB, aLog, dW, dtBias, normW, _ := m.BackendView().Layer(first).GraniteMambaWeights()
 	// Copied: the slices alias the model's weights, which Close releases (the deferred Close above runs before the replay).
 	f.convW, f.convB, f.normW = slices.Clone(convW), slices.Clone(convB), slices.Clone(normW)
 	f.headP = make([]float32, f.nHeads*3)

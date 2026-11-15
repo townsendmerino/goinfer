@@ -203,7 +203,7 @@ func TestAttnTempScale_matchesSequentialFormula(t *testing.T) {
 			"exercises FeatAttnTemp; if the fixture changed, this test no longer gates what it claims")
 	}
 
-	beta, origMaxPos := m.AttnTempParams()
+	beta, origMaxPos := m.BackendView().AttnTempParams()
 	if beta != m.w.arch.AttnTempBeta || origMaxPos != m.w.arch.AttnTempOrigMaxPos {
 		t.Fatalf("AttnTempParams() = (%v, %v), want (%v, %v)", beta, origMaxPos, m.w.arch.AttnTempBeta, m.w.arch.AttnTempOrigMaxPos)
 	}
@@ -213,7 +213,7 @@ func TestAttnTempScale_matchesSequentialFormula(t *testing.T) {
 	// comment warns about), 8-15 give floor=1, 16-23 give floor=2. Covers both.
 	for pos := range 24 {
 		want := float32(1 + m.w.arch.AttnTempBeta*math.Log1p(math.Floor(float64(pos)/m.w.arch.AttnTempOrigMaxPos)))
-		got := m.AttnTempScale(pos)
+		got := m.BackendView().AttnTempScale(pos)
 		if got != want {
 			t.Errorf("AttnTempScale(%d) = %v, want %v (sequential formula)", pos, got, want)
 		}
@@ -224,7 +224,7 @@ func TestAttnTempScale_matchesSequentialFormula(t *testing.T) {
 			t.Errorf("formula from AttnTempParams() at pos %d = %v, want %v", pos, gotFromParams, want)
 		}
 	}
-	if s := m.AttnTempScale(3); s != 1 {
+	if s := m.BackendView().AttnTempScale(3); s != 1 {
 		t.Errorf("AttnTempScale(3) = %v, want exactly 1 (pos < origMaxPos=8 ⇒ floor==0 ⇒ identity)", s)
 	}
 }

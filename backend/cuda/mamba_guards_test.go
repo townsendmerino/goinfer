@@ -145,19 +145,19 @@ func TestNemotronResidentCUDA_pricing(t *testing.T) {
 	var nMamba int
 	var stateBytes int64
 	for l := range r.layers {
-		switch m.NemotronBlockKind(l) { // the family's own kinds, not the resident's
+		switch m.BackendView().Layer(l).NemotronBlockKind() { // the family's own kinds, not the resident's
 		case 1:
 			attn++
-			want += 2 * int64(m.KVHeadsAtResident(l)*m.HeadDimAtResident(l)) * elem * ctx
+			want += 2 * int64(m.BackendView().Layer(l).KVHeads()*m.BackendView().Layer(l).HeadDim()) * elem * ctx
 			if r.kc[l].Len() == 0 || r.vc[l].Len() == 0 {
 				t.Errorf("attention layer %d has no KV buffer", l)
 			}
 		default:
 			if r.kc[l].Len() != 0 || r.vc[l].Len() != 0 {
-				t.Errorf("layer %d (block kind %d) holds a KV buffer of %d elements", l, m.NemotronBlockKind(l), r.kc[l].Len())
+				t.Errorf("layer %d (block kind %d) holds a KV buffer of %d elements", l, m.BackendView().Layer(l).NemotronBlockKind(), r.kc[l].Len())
 			}
 		}
-		if m.NemotronBlockKind(l) == 0 {
+		if m.BackendView().Layer(l).NemotronBlockKind() == 0 {
 			nMamba++
 			stateBytes += int64(r.layers[l].mbWin.Len()+r.layers[l].mbSSM.Len()) * 4
 		}

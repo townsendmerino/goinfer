@@ -45,16 +45,16 @@ func TestMetalCoverageFlags(t *testing.T) {
 			defer m.Close()
 
 			H, nL, nH, nKV, hd, I, vocab := m.Dims()
-			qkn := m.HasQKNorm()
-			pr := m.PartialRotary()
-			win := m.SlidingWindowResident()
-			addOne := m.RMSAddOne()
+			qkn := m.BackendView().HasQKNorm()
+			pr := m.BackendView().PartialRotary()
+			win := m.BackendView().SlidingWindow()
+			addOne := m.BackendView().RMSAddOne()
 			elig := m.DecodeRunnerEligible()
-			invF := len(m.RopeInvFreq())
+			invF := len(m.BackendView().RopeInvFreq())
 
 			t.Logf("%s: H=%d L=%d nH=%d nKV=%d hd=%d I=%d vocab=%d", c.family, H, nL, nH, nKV, hd, I, vocab)
 			t.Logf("  HasQKNorm=%v  PartialRotary=%v  SlidingWindow=%d  RMSAddOne=%v  EmbedScale=%v",
-				qkn, pr, win, addOne, m.EmbedScaleResident())
+				qkn, pr, win, addOne, m.BackendView().EmbedScale())
 			t.Logf("  len(RopeInvFreq)=%d (headDim/2=%d ⇒ %s)  DecodeRunnerEligible=%v",
 				invF, hd/2, map[bool]string{true: "FULL rotary", false: "PARTIAL rotary"}[invF == hd/2], elig)
 
@@ -77,11 +77,11 @@ func TestMetalCoverageFlags(t *testing.T) {
 			if win > 0 {
 				local := 0
 				for l := range nL {
-					if m.LayerIsLocalResident(l) {
+					if m.BackendView().Layer(l).IsLocal() {
 						local++
 					}
 				}
-				t.Logf("  window=%d; LayerIsLocalResident true on %d/%d layers", win, local, nL)
+				t.Logf("  window=%d; Layer(i).IsLocal() true on %d/%d layers", win, local, nL)
 			}
 
 			// Flag the deltas vs what the Mac's prompt expects.

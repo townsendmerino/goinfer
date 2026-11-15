@@ -190,7 +190,7 @@ func (b *residentBuild) bindPipelines() {
 	// The resolver's answer, not the raw request (decoder.ResolveKV). It names the GQA K/V cache; an MLA model's latent is f32
 	// whatever it says (metal/mla.go), so neither flag applies there.
 	kvDelivered := m.KVDeliveredFor("metal")
-	if _, _, _, _, _, _, _, _, isMLA := m.MLAResidentParams(); isMLA {
+	if _, _, _, _, _, _, _, _, isMLA := m.BackendView().MLAParams(); isMLA {
 		kvDelivered = ""
 	}
 	r.kvF32 = kvDelivered == "f32"
@@ -215,10 +215,10 @@ func (b *residentBuild) buildMixers() error {
 	// Gated-MLP activation: ordinals ARE decoder.ActKind's iota (0=GELU-tanh, 1=SiLU), so this
 	// passes straight through to glu_act. Gemma is GeGLU; everything else admitted is SwiGLU.
 	addOne := uint32(0)
-	if m.RMSAddOne() {
+	if m.BackendView().RMSAddOne() {
 		addOne = 1
 	}
-	win := max(m.SlidingWindowResident(), 0)              // 0 = full causal; Mistral is all-local with this window
+	win := max(m.BackendView().SlidingWindow(), 0)        // 0 = full causal; Mistral is all-local with this window
 	if r.moe, err = buildMoE(d, m, pipe, H); err != nil { // nil for a dense (or gemma4-MoE) model; error ⇒ decline
 		return err
 	}
@@ -409,7 +409,7 @@ func (b *residentBuild) uploadLayers() error {
 	// layer to one geom; Gemma 4's local/global interleave resolves to two. maxNHhd/maxKvDim size
 	// the shared per-token scratch to the widest layer (== the model shape for a uniform family).
 	geomCache := map[[4]int]*attnGeom{}
-	_, _, _, _, _, attnGate, dnetOK := m.Qwen35ResidentParams()
+	_, _, _, _, _, attnGate, dnetOK := m.BackendView().Qwen35Params()
 	b.w, b.alias, b.mk, b.fuse, b.geomCache, b.attnGate, b.dnetOK = w, alias, mk, fuse, geomCache, attnGate, dnetOK
 	for l := range nL {
 		if err := b.buildLayer(l); err != nil {
@@ -1043,13 +1043,13 @@ func (b *residentBuild) sizeDecodeScratch() error {
 	}
 	r.attnFAPartialLen = maxAttnFAPartial
 	r.decode = decodeShape{H: H, V: V, I: I, nH: nH, nHhd: maxNHhd, kvDim: maxKvDim, guDim: guDim, faPartial: maxAttnFAPartial,
-		q4k: r.q4kLane, attnScale: m.AttnScale(), normEps: m.NormEps(), act: uint32(m.GatedActResident()), addOne: addOne, window: uint32(win),
+		q4k: r.q4kLane, attnScale: m.AttnScale(), normEps: m.NormEps(), act: uint32(m.BackendView().GatedAct()), addOne: addOne, window: uint32(win),
 		gumbelNB: r.gumbelNB, nL: nL, pleP: r.pleP, dnet: r.dnet, mamba: r.mamba, mla: r.mla}
 	if r.layerNormBias {
 		r.decode.lnHasBias = 1
 	}
 	if r.qkNormWhole {
-		r.decode.qkWholeHD = nH * m.HeadDimAtResident(0) // one model-level width: the build declines a non-uniform geometry for it
+		r.decode.qkWholeHD = nH * m.BackendView().Layer(0).HeadDim() // one model-level width: the build declines a non-uniform geometry for it
 	}
 	if r.attnSink {
 		r.decode.attnSink = 1
@@ -1096,13 +1096,13 @@ func (b *residentBuild) sizeDecodeScratch() error {
 	// Model-level rope table for the (uniform-only) prefill path; decode uses each layer's L.invf.
 	// GPT-2 (FeatLearnedPos): no RoPE at all, so this is empty — NewBufferFloats panics on empty;
 	// r.invf stays unused (prefillOK is false for a learned-pos family — see prefillFeatures).
-	if invf0 := m.RopeInvFreq(); len(invf0) > 0 {
+	if invf0 := m.BackendView().RopeInvFreq(); len(invf0) > 0 {
 		r.invf = NewBufferFloatsOn(mem.LineDense, d, invf0)
 	}
 	if r.dnet != nil && r.uDnONormEps == (Buffer{}) {
 		r.uDnONormEps = r.uEps
 	}
-	r.attnTempBeta, r.attnTempOrigMaxPos = m.AttnTempParams()
+	r.attnTempBeta, r.attnTempOrigMaxPos = m.BackendView().AttnTempParams()
 	// Scale-less v_norm plumbing for K=V layers (Gemma 4 globals): a unit-1.0 weight and the shared zero uniform (uZero, in the
 	// decode list) so qk_norm reduces to x·rms·1 on the V slot. Sized to the widest head.
 	ones := make([]float32, maxHd)
@@ -1112,9 +1112,9 @@ func (b *residentBuild) sizeDecodeScratch() error {
 	r.vNormUnit = NewBufferFloatsOn(mem.LineDense, d, ones)
 	// HF and the CPU apply Gemma 4's scale-less v_norm on EVERY layer that owns its K/V, not only on K=V layers
 	// (S1.0); a K=V layer's V slot holds the raw k_proj output, any other's the v_proj output, and both take it.
-	r.g4VNorm = m.IsGemma4Resident()
-	r.finalSoftcap = m.FinalLogitSoftcapResident() // Gemma 4: 30 (host-side softcap); 0 for every other family
-	r.embedScale = float32(m.EmbedScaleResident()) // Gemma: √hidden; 0 for every non-scaled family (G-02)
+	r.g4VNorm = m.BackendView().IsGemma4()
+	r.finalSoftcap = m.BackendView().FinalLogitSoftcap() // Gemma 4: 30 (host-side softcap); 0 for every other family
+	r.embedScale = float32(m.BackendView().EmbedScale()) // Gemma: √hidden; 0 for every non-scaled family (G-02)
 	r.logitsHost = make([]float32, V)
 	r.ensureBatchCap(16)
 
@@ -1197,7 +1197,7 @@ func (b *residentBuild) finish() error {
 	// S16: the m-RoPE prefill's per-pair axis table, from the decoder's own layout rule; nil for a model without a
 	// three-way m-RoPE section, whose PrefillMRoPELast then declines.
 	if g := r.prefillGeom(); g != nil && r.prefillOK {
-		if ax := m.MRopeAxisResident(g.half); ax != nil {
+		if ax := m.BackendView().MRopeAxis(g.half); ax != nil {
 			u := make([]uint32, len(ax))
 			for i, v := range ax {
 				u[i] = uint32(v)

@@ -14,7 +14,7 @@ import (
 
 // TestProgramShape_matchesTheAccessors is OP4cu-b1's B-1 (docs/completed/task-forward-architecture-2026-10.md §4.9a): on every tracked
 // tiny checkpoint the decoder loads on the CPU, program.ShapeOf equals the nine Architecture accessors the residents read, and
-// program.MixerOf equals ResidentLayerOps on every layer: the mixer where a resident runs it, and the FFN everywhere. A layer
+// program.MixerOf equals Layer(i).Ops() on every layer: the mixer where a resident runs it, and the FFN everywhere. A layer
 // holding KDA or LFM2's short convolution, which have no ResidentMixer, must map to its own mixer. Each plant must add a
 // difference on at least one fixture.
 func TestProgramShape_matchesTheAccessors(t *testing.T) {
@@ -90,15 +90,15 @@ func programShapeDiffs(m *Model) []string {
 		name      string
 		got, want bool
 	}{
-		{"sandwich", s.Sandwich, m.SandwichNormResident()},
-		{"postOnly", s.PostOnly, m.PostOnlyNormResident()},
-		{"parallel", s.Parallel, m.ParallelBlockResident()},
-		{"nonGated", s.NonGated, m.NonGatedMLPResident()},
-		{"layerNorm", s.LayerNorm, m.LayerNormResident()},
-		{"qkNorm", s.QKNorm, m.HasQKNorm()},
-		{"qkNormWhole", s.QKNormWhole, m.QKNormWholeResident()},
-		{"outBias", s.OutBias, m.OutBiasResident()},
-		{"learnedPos", s.LearnedPos, m.LearnedPosResident()},
+		{"sandwich", s.Sandwich, m.BackendView().SandwichNorm()},
+		{"postOnly", s.PostOnly, m.BackendView().PostOnlyNorm()},
+		{"parallel", s.Parallel, m.BackendView().ParallelBlock()},
+		{"nonGated", s.NonGated, m.BackendView().NonGatedMLP()},
+		{"layerNorm", s.LayerNorm, m.BackendView().LayerNorm()},
+		{"qkNorm", s.QKNorm, m.BackendView().HasQKNorm()},
+		{"qkNormWhole", s.QKNormWhole, m.BackendView().QKNormWhole()},
+		{"outBias", s.OutBias, m.BackendView().OutBias()},
+		{"learnedPos", s.LearnedPos, m.BackendView().LearnedPos()},
 	} {
 		if c.got != c.want {
 			d = append(d, fmt.Sprintf("%s: program %v, accessor %v", c.name, c.got, c.want))
@@ -108,9 +108,9 @@ func programShapeDiffs(m *Model) []string {
 		program.MixerDeltaNet: MixerDeltaNet, program.MixerMamba: MixerMamba, program.MixerMLA: MixerMLA}
 	for l, ops := range p.Layers {
 		gm, gf := program.MixerOf(ops)
-		wm, wf := m.ResidentLayerOps(l)
+		wm, wf := m.BackendView().Layer(l).Ops()
 		if gf != wf {
-			d = append(d, fmt.Sprintf("layer %d: MixerOf's ffn %v, ResidentLayerOps' %v", l, gf, wf))
+			d = append(d, fmt.Sprintf("layer %d: MixerOf's ffn %v, Layer(i).Ops()' %v", l, gf, wf))
 		}
 		// KDA and the short convolution have no ResidentMixer, and every backend declines their families first: such a layer,
 		// read from its operations, must map to its own mixer, and its ResidentMixer is not compared.

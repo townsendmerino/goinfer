@@ -37,7 +37,7 @@ var kvWindowRollbackMax = 1024
 // kvWindowSetup decides, once the layers are built and before the caches are sized, whether windowed KV engages, and marks the layers
 // that use it. It engages only when the option is on, some layer is a windowed attention layer, and the context is longer than a
 // window plus its slack (below that a layer would hold the whole context anyway). Every windowed layer shares one window
-// (SlidingWindowResident), so one base per slot serves them all.
+// (SlidingWindow), so one base per slot serves them all.
 func (r *cudaResident) kvWindowSetup(m *decoder.Model) {
 	r.kvWin, r.kvWindow = false, 0
 	if !m.ResidentWindowedKV() {
