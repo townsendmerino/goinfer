@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -46,11 +47,12 @@ type recurrentSnapBackend struct {
 	Backend
 	rf      *recurrentSnapFake
 	carries bool
+	align   int // the fake's pass width: b35Align when 0
 }
 
 func (b *recurrentSnapBackend) BuildResident(m *Model) (ResidentForward, bool, error) {
 	_, _, _, _, _, _, vocab := m.Dims()
-	b.rf = &recurrentSnapFake{snapFake: &snapFake{mc3Fake: newMC3Fake(vocab, 1), markAlign: b35Align}, carries: b.carries}
+	b.rf = &recurrentSnapFake{snapFake: &snapFake{mc3Fake: newMC3Fake(vocab, 1), markAlign: cmp.Or(b.align, b35Align)}, carries: b.carries}
 	return b.rf, true, nil
 }
 func (b *recurrentSnapBackend) Close() error { return nil }
@@ -59,7 +61,13 @@ const b35Align = 64
 
 func loadRecurrentSnapFake(t *testing.T, carries bool, budget int64) (*Model, *recurrentSnapFake) {
 	t.Helper()
-	be := &recurrentSnapBackend{carries: carries}
+	return loadRecurrentSnapFakeAlign(t, carries, budget, 0)
+}
+
+// loadRecurrentSnapFakeAlign is loadRecurrentSnapFake with passes align rows wide (b35Align when 0).
+func loadRecurrentSnapFakeAlign(t *testing.T, carries bool, budget int64, align int) (*Model, *recurrentSnapFake) {
+	t.Helper()
+	be := &recurrentSnapBackend{carries: carries, align: align}
 	name := fmt.Sprintf("fake-b35-%d", mc3FakeBackends.Add(1))
 	RegisterBackend(name, func() (Backend, error) {
 		cpu, err := NewBackend("cpu")

@@ -1,0 +1,35 @@
+[14:20:43] cell A1 (main): load 4.81, 61192 MB available, 487 MiB on the card
+[14:20:55]   A1 r1: 7434 tokens, reused 0, first token 7.41 s
+[14:20:57]   A1 r2: 7464 tokens, reused 6144, first token 2.16 s
+[14:21:05]   A1 r3: 7435 tokens, reused 0, first token 7.39 s
+[14:21:07]   A1 r4: 7465 tokens, reused 6144, first token 2.16 s
+[14:21:07]   A1: loaded in 4.5 s, peak VmSwap 0 MB, snapshots taken (rows) [6144, 6144]
+[14:21:10] cell B1 (change): load 3.51, 61392 MB available, 487 MiB on the card
+[14:21:22]   B1 r1: 7434 tokens, reused 0, first token 7.41 s
+[14:21:23]   B1 r2: 7464 tokens, reused 7360, first token 0.36 s
+[14:21:25]   B1 r3: 7435 tokens, reused 6016, first token 2.41 s
+[14:21:26]   B1 r4: 7465 tokens, reused 7360, first token 0.35 s
+[14:21:26]   B1: loaded in 4.5 s, peak VmSwap 0 MB, snapshots taken (rows) [6016, 7360, 7424, 7360, 7424]
+[14:21:29] cell B2 (change): load 2.71, 61378 MB available, 487 MiB on the card
+[14:21:41]   B2 r1: 7434 tokens, reused 0, first token 7.42 s
+[14:21:41]   B2 r2: 7464 tokens, reused 7360, first token 0.35 s
+[14:21:44]   B2 r3: 7435 tokens, reused 6016, first token 2.41 s
+[14:21:44]   B2 r4: 7465 tokens, reused 7360, first token 0.35 s
+[14:21:45]   B2: loaded in 4.5 s, peak VmSwap 0 MB, snapshots taken (rows) [6016, 7360, 7424, 7360, 7424]
+[14:21:48] cell A2 (main): load 2.15, 61381 MB available, 487 MiB on the card
+[14:22:00]   A2 r1: 7434 tokens, reused 0, first token 7.39 s
+[14:22:02]   A2 r2: 7464 tokens, reused 6144, first token 2.16 s
+[14:22:09]   A2 r3: 7435 tokens, reused 0, first token 7.39 s
+[14:22:12]   A2 r4: 7465 tokens, reused 6144, first token 2.16 s
+[14:22:12]   A2: loaded in 4.5 s, peak VmSwap 0 MB, snapshots taken (rows) [6144, 6144]
+pair 1: r1 7.41 -> 7.41 s (x1.000); r2 2.16 -> 0.36 s (x0.166); r3 7.39 -> 2.41 s (x0.326); r4 2.16 -> 0.35 s (x0.161, reported)
+pair 1: r4 reuse change 7360, main 6144
+pair 1: r3 reuse change 6016, main 0; the message-boundary snapshot of r1 6016; boundary estimate 6044; snapshots taken [6016, 7360, 7424, 7360, 7424]
+pair 1: cold request's snapshot at 6016 rows: 160 MiB host, 99.2 ms
+pair 1: cold request's snapshot at 7360 rows: 192 MiB host, 114.9 ms
+pair 2: r1 7.39 -> 7.42 s (x1.004); r2 2.16 -> 0.35 s (x0.160); r3 7.39 -> 2.41 s (x0.326); r4 2.16 -> 0.35 s (x0.161, reported)
+pair 2: r4 reuse change 7360, main 6144
+pair 2: r3 reuse change 6016, main 0; the message-boundary snapshot of r1 6016; boundary estimate 6044; snapshots taken [6016, 7360, 7424, 7360, 7424]
+pair 2: cold request's snapshot at 6016 rows: 160 MiB host, 99.5 ms
+pair 2: cold request's snapshot at 7360 rows: 192 MiB host, 114.8 ms
+VERDICT: PASS 

@@ -1050,11 +1050,34 @@ func (m *Model) prefillSeedFrom(prompt []int, from int) int {
 	return from
 }
 
+// cutMarks is the marks of mk's chain that split the prefill, earliest first: mk's earlier marks, and mk itself when it is a cut.
+func cutMarks(mk *prefillMark) []*prefillMark {
+	var out []*prefillMark
+	for ; mk != nil; mk = mk.pre {
+		if mk.cut {
+			out = append([]*prefillMark{mk}, out...)
+		}
+	}
+	return out
+}
+
 // residentPrefillSeedMarked is residentPrefillSeed that, given a mark, has a resident that can (PrefillMarkedAvailable) call it back between two
 // passes of the batched prefill, at the mark's position: the prefix snapshot of a prompt whose tail after the stable section is long (kvsnap.go).
 // A resident that cannot, a prefill that does not reach the position at a pass boundary, or one that falls to the sequential loop, calls nothing.
 func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, from int, hasAdapter bool, mk *prefillMark) ([]float32, error) {
 	from = m.prefillSeedFrom(prompt, from)
+	for _, c := range cutMarks(mk) {
+		// A cut: prefill up to the point as a prompt of its own length, call the mark, and go on from it. Its rows are written between passes,
+		// which is where a recurrent state exists.
+		if _, err := m.residentPrefillSeedMarked(ctx, prompt[:c.q], from, hasAdapter, nil); err != nil {
+			return nil, err
+		}
+		c.at(c.q)
+		from = c.q
+	}
+	if mk != nil && mk.cut {
+		mk = nil
+	}
 	suffix := prompt[from:]
 	// Offer the batched path suffixes of 8 tokens or more (a shorter one is cheaper token by token) -- and, when
 	// the backend's short continuation is exact (PrefillTailExact), any suffix of a prompt the cold run would have
