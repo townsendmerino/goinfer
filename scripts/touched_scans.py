@@ -78,6 +78,8 @@ SCANS = [
                                             "decoder/statebytes.go", "decoder/membufs.go", "decoder/program.go",
                                             "internal/runtime/program/buffers.go") +
          NT("internal/runtime/mem")),
+    # docs/option-state-grid.md is generated from the cache-state table's text (decoder/cachestate.go), and the test also checks the function and test names it cites: any non-test decoder file can move it.
+    Scan("decoder", "TestOptionStateGrid_fresh", NT("decoder") + F("decoder/optiongrid_test.go", "docs/option-state-grid.md")),
     # MM5's G-MP4: KV and state pricing names no family or mixer.
     Scan("decoder", "TestMM5_noFamilySwitchInPricing", F("decoder/residentneed.go", "decoder/statebytes.go")),
     # MM5b's G-MS4: Metal's decode scratch pricing names no family, mixer or FFN form.
