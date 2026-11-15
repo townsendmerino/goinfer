@@ -70,7 +70,7 @@ func TestGlmOcrResidentParityCUDA(t *testing.T) {
 	mrope := decoder.SubsystemsOf(rf).Decode
 	ok = mrope.MRoPEDecodeAvailable()
 	if !ok {
-		t.Fatal("cudaResident does not satisfy decoder.ResidentMRoPE")
+		t.Fatal("cudaResident does not satisfy decoder.ResidentDecodeSubsystem")
 	}
 	rmp := decoder.SubsystemsOf(rf).Prefill
 	ok = rmp.MRoPEPrefillAvailable()

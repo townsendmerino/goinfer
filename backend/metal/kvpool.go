@@ -20,14 +20,11 @@ import (
 // does. Every mutation runs on the thread that encodes the write, with nothing of the resident in flight.
 
 var (
-	_ decoder.ResidentKVPoolInfo     = (*metalResident)(nil)
-	_ decoder.ResidentKVSlotActivity = (*metalResident)(nil)
 	_ decoder.ResidentReusableKV     = (*metalResident)(nil)
 	_ decoder.ResidentReusableKVSlot = (*metalResident)(nil)
-	_ decoder.ResidentKVUploadPass   = (*metalResident)(nil)
 )
 
-// kvUploadPass is an upload in progress (decoder.ResidentKVUploadPass): one write of slot s from position 0, which its first layer maps
+// kvUploadPass is an upload in progress (decoder.ResidentKVSubsystem): one write of slot s from position 0, which its first layer maps
 // through end and every layer that owns K/V must land.
 type kvUploadPass struct {
 	s, end  int
@@ -35,7 +32,7 @@ type kvUploadPass struct {
 	wrote   bool        // the first layer mapped the slot and wrote its rows: a failed pass has changed the slot
 }
 
-// BeginKVUpload (decoder.ResidentKVUploadPass) starts one write of the bound slot from position 0: the UploadKV calls until EndKVUpload
+// BeginKVUpload (decoder.ResidentKVSubsystem) starts one write of the bound slot from position 0: the UploadKV calls until EndKVUpload
 // are its layers.
 func (a *metalResident) BeginKVUpload() error {
 	if a.r == nil {
@@ -46,7 +43,7 @@ func (a *metalResident) BeginKVUpload() error {
 	return nil
 }
 
-// EndKVUpload (decoder.ResidentKVUploadPass) ends the pass. The slot holds the rows only if some layer landed some and every layer that
+// EndKVUpload (decoder.ResidentKVSubsystem) ends the pass. The slot holds the rows only if some layer landed some and every layer that
 // owns K/V landed the same end. Otherwise, and when failed, a pass that wrote leaves it holding none, since its rows are part one
 // sequence's and part another's; one that failed before its first layer wrote leaves it as it was.
 func (a *metalResident) EndKVUpload(failed bool) error {
@@ -654,14 +651,14 @@ func (a *metalResident) ReusableKV(prefix int) int { return a.r.kvReusable(a.r.k
 // ReusableKVSlot implements decoder.ResidentReusableKVSlot.
 func (a *metalResident) ReusableKVSlot(slot, prefix int) int { return a.r.kvReusable(slot, prefix) }
 
-// SetKVSlotBusy implements decoder.ResidentKVSlotActivity: a busy slot's blocks are never released to make room for another.
+// SetKVSlotBusy implements decoder.ResidentKVSubsystem: a busy slot's blocks are never released to make room for another.
 func (a *metalResident) SetKVSlotBusy(slot int, busy bool) {
 	if slot >= 0 && slot < len(a.r.kvSlotSt) {
 		a.r.kvSlotSt[slot].busy.Store(busy)
 	}
 }
 
-// KVPool implements decoder.ResidentKVPoolInfo: the positions every slot's blocks hold together, each slot's guaranteed share, and the
+// KVPool implements decoder.ResidentKVSubsystem: the positions every slot's blocks hold together, each slot's guaranteed share, and the
 // bytes the pools and tables take.
 func (a *metalResident) KVPool() decoder.KVPoolDetail {
 	r := a.r

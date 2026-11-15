@@ -2,13 +2,9 @@
 
 package metal
 
-import (
-	"context"
+import "context"
 
-	"github.com/townsendmerino/goinfer/decoder"
-)
-
-// rowSource is a suffix's embeddings read a range of rows at a time (decoder.ResidentPrefillRows, MEM6): n rows, rows(lo, hi)
+// rowSource is a suffix's embeddings read a range of rows at a time (decoder.ResidentPrefillSubsystem, MEM6): n rows, rows(lo, hi)
 // returning rows [lo, hi), valid until the next call, and width the length every row has (-1 when the rows disagree).
 type rowSource struct {
 	n, width int
@@ -33,7 +29,7 @@ func sliceRows(embs [][]float32) rowSource {
 	return rowSource{n: len(embs), width: w, rows: func(lo, hi int) [][]float32 { return embs[lo:hi] }}
 }
 
-// PrefillLastRows (decoder.ResidentPrefillRows) is PrefillLast reading the suffix a chunk at a time from rows: every route takes
+// PrefillLastRows (decoder.ResidentPrefillSubsystem) is PrefillLast reading the suffix a chunk at a time from rows: every route takes
 // its rows per chunk (the layer-major routes per 256 rows, the step per piece, the batched pass per rowChunk while it fills its
 // input buffers), so the host holds a chunk of embeddings, not the suffix.
 func (a *metalResident) PrefillLastRows(ctx context.Context, n, startPos int, rows func(lo, hi int) [][]float32) ([]float32, error) {
@@ -43,5 +39,3 @@ func (a *metalResident) PrefillLastRows(ctx context.Context, n, startPos int, ro
 	}
 	return a.prefillLastSrc(ctx, src, startPos)
 }
-
-var _ decoder.ResidentPrefillRows = (*metalResident)(nil)

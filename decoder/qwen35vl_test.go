@@ -186,7 +186,7 @@ func TestQwen35VL_e2eChain(t *testing.T) {
 }
 
 // TestGenerateQwenVL_recurrentTakesNoResidentBranch: with a resident that implements
-// ResidentMRoPE attached (every real executor does), an image turn on a Gated-DeltaNet hybrid must
+// legacyMRoPE attached (every real executor does), an image turn on a Gated-DeltaNet hybrid must
 // not touch it — not UploadKV (which would skip the KV-less DeltaNet layers and leave their state
 // zeroed), not ForwardMRoPE — and must produce the CPU continuation. The fake fails the test if
 // any resident method runs.

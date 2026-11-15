@@ -16,7 +16,7 @@ import (
 // ForwardNoLogits called directly, as in TestForwardNoLogits_byteIdenticalKV) must emit the exact
 // same token ids whether the KV-only skip is enabled or forced off via
 // GOINFER_NO_KVONLY_PREFILL — proving decoder.Model actually reaches metalResident.ForwardNoLogits
-// now that it implements decoder.ResidentPrefillKV, not just that the method is correct in
+// now that it implements decoder.ResidentDecodeSubsystem, not just that the method is correct in
 // isolation.
 func TestResidentPrefillSeed_metalKVOnly_byteIdentical(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
@@ -43,7 +43,7 @@ func TestResidentPrefillSeed_metalKVOnly_byteIdentical(t *testing.T) {
 		}
 		defer m.Close()
 		if ok := decoder.SubsystemsOf(m.ResidentForwardForTest()).Decode.NoLogitsAvailable(); !ok {
-			t.Fatal("metalResident does not implement decoder.ResidentPrefillKV")
+			t.Fatal("metalResident does not implement decoder.ResidentDecodeSubsystem")
 		}
 		out, _ := m.Generate(context.Background(), prompt, 16, decoder.SamplingParams{})
 		var ids []int

@@ -28,7 +28,7 @@ func (r *cudaResident) TopKAvailable() bool {
 }
 
 // ForwardTopK runs one token's forward and reduces the logits row on-device to its k best entries
-// (decoder.ResidentTopK). Same kernel chain as Forward; only the readback differs — ~2 KB instead of
+// (decoder.ResidentDecodeSubsystem). Same kernel chain as Forward; only the readback differs — ~2 KB instead of
 // vocab*4 bytes. The returned Full closure reads the whole row for the token where k is not enough and
 // is valid only until the next forward.
 func (r *cudaResident) ForwardTopK(embedding []float32, pos, k int, temperature float64, wantZ bool) (decoder.TopKRow, error) {
@@ -110,5 +110,3 @@ func (r *cudaResident) topkReadback(v, k int, temperature float64, wantZ bool) (
 	}
 	return row, nil
 }
-
-var _ decoder.ResidentTopK = (*cudaResident)(nil)

@@ -41,7 +41,7 @@ import (
 // strictly load-bearing past the floor; it is kept so this test's precondition never depends on the floor's current value or
 // default. Below the floor (or with the override removed), PrefillLast declines and generateInto falls through to the same
 // per-token loop the speculative path uses, so there would be NO asymmetry to measure and the slope would read ~0 for a reason
-// unrelated to the fix. Metal also implements ResidentPrefillKV (M-01: ForwardNoLogits skips the LM head on every prefill token
+// unrelated to the fix. Metal also implements ResidentDecodeSubsystem (M-01: ForwardNoLogits skips the LM head on every prefill token
 // but the last), but that lives inside residentPrefillSeed, which genNgramInto already shares with generateInto, so both arms of
 // this comparison benefit identically: Metal's one exposure to the original bug is the batched-vs-per-token prefill seam this
 // test targets, gated behind that variable.

@@ -167,7 +167,7 @@ func (s *Sampler) NextDraw() (seed, draw uint64) {
 	return s.impl.NextDraw()
 }
 
-// SampleEligible reports whether this sampler's configuration can be drawn on-device by ResidentSample:
+// SampleEligible reports whether this sampler's configuration can be drawn on-device by legacySample:
 // temperature-only sampling with nothing that needs or rewrites the full row (logprobs, bias, penalties). The
 // decode loop additionally requires no LogitProcessor.
 func (s *Sampler) SampleEligible() bool {

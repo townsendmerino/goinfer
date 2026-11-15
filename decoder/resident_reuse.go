@@ -243,12 +243,12 @@ func (m *Model) boundReuseLen(prompt []int, imgs []residentImageClaim, lora *lor
 	return m.residentReuseFloor(m.reuseLenOf(a.Bound(), prompt, imgs, lora, ns, ckpt))
 }
 
-// ResidentKVCopier is the optional capability of a resident with several KV slots (ResidentKVSlotter) to copy rows
+// legacyKVCopier is the optional capability of a resident with several KV slots (ResidentKVSlotter) to copy rows
 // between them. CopyKV copies rows [start, end) of every layer from slot src to slot dst, src != dst, start and end
 // multiples of kvmgr.BlockRows; dst then continues at position end, and src is unchanged. A range the backend cannot
 // serve (a window that no longer holds rows dst will attend to, a layout it does not copy) returns a *KVCopyDecline
 // before anything is written. The caller treats any error as having written nothing it may trust from start on.
-type ResidentKVCopier interface {
+type legacyKVCopier interface {
 	CopyKV(src, dst, start, end int) error
 }
 
@@ -257,10 +257,10 @@ type ResidentKVCopier interface {
 // sees it. The generation it stops ends as at the context cap: finish_reason "length", with what it emitted.
 var ErrKVPoolFull = errors.New("decoder: resident KV pool is full")
 
-// ResidentKVSlotActivity is the optional capability of a resident whose slots share one block pool to be told which slots a running
+// legacyKVSlotActivity is the optional capability of a resident whose slots share one block pool to be told which slots a running
 // generation holds (MC3's busy slots), so that it releases the blocks of an idle slot to make room, never a running one's. The bound
 // slot counts as running whether or not it is marked.
-type ResidentKVSlotActivity interface {
+type legacyKVSlotActivity interface {
 	SetKVSlotBusy(slot int, busy bool)
 }
 
@@ -276,12 +276,12 @@ type KVPoolDetail struct {
 	Bytes                                        int64
 }
 
-// ResidentKVPoolInfo is the optional capability of a resident whose slots share one block pool to say what it holds.
-type ResidentKVPoolInfo interface {
+// legacyKVPoolInfo is the optional capability of a resident whose slots share one block pool to say what it holds.
+type legacyKVPoolInfo interface {
 	KVPool() KVPoolDetail
 }
 
-// ResidentKVPool reports the resident's KV pool (ResidentKVPoolInfo), the zero value when it has none.
+// ResidentKVPool reports the resident's KV pool (legacyKVPoolInfo), the zero value when it has none.
 func (m *Model) ResidentKVPool() KVPoolDetail {
 	return m.resKV().KVPool()
 }
@@ -321,17 +321,17 @@ type ResidentReusableKVSlot interface {
 	ReusableKVSlot(slot, prefix int) int
 }
 
-// ResidentKVUploadPass is the optional capability of a resident to treat the UploadKV calls between BeginKVUpload and EndKVUpload as one write of the
+// legacyKVUploadPass is the optional capability of a resident to treat the UploadKV calls between BeginKVUpload and EndKVUpload as one write of the
 // bound slot: it holds the rows only once every layer's have landed, and failed says one did not.
-type ResidentKVUploadPass interface {
+type legacyKVUploadPass interface {
 	BeginKVUpload() error
 	EndKVUpload(failed bool) error
 }
 
-// ResidentKVDemoter is the optional capability of a resident to keep a released slot's rows in host memory (the slot still answers
+// legacyKVDemoter is the optional capability of a resident to keep a released slot's rows in host memory (the slot still answers
 // ResidentReusableKVSlot for them) and put them back when a request reuses it (docs/measurements/kv7-demote-2026-11/README.md).
 // SetKVHostBudget gives it the budget it charges them to; without one it keeps none.
-type ResidentKVDemoter interface {
+type legacyKVDemoter interface {
 	SetKVHostBudget(b KVHostBudget)
 	// PromoteKV puts back the blocks holding slot's first rows of its demoted copy and returns them, 0 when the slot holds its rows. The copy is
 	// then gone, and the slot answers for those rows only. An error leaves the slot released and the copy in place.
@@ -459,7 +459,7 @@ type kvAcquired struct {
 }
 
 // residentAcquireIn is residentAcquireSlot for a request under scope sc. When another slot's published blocks hold
-// more of the prompt than the bound slot does, it copies them into the bound slot (ResidentKVCopier) and skips them.
+// more of the prompt than the bound slot does, it copies them into the bound slot (legacyKVCopier) and skips them.
 func (m *Model) residentAcquireIn(prompt []int, imgs []residentImageClaim, lora *loraRuntime, busy []bool, sc KVScope) kvAcquired {
 	acq := m.residentAcquireSlotAll(prompt, imgs, lora, busy, sc)
 	if imgs == nil {
@@ -601,7 +601,7 @@ func kvOtherDonors(rk ResidentReusableKVSlot, hits []int, cm kvmgr.ClassMap, n, 
 
 // residentShare copies into the bound slot acq.slot the longest run of prompt another slot's published blocks hold
 // (kvmgr.Slots.Hits, capped by kvmgr.ClassMap.CapHit), when that is more than acq.reuse, the rows the slot itself
-// holds. It does nothing under an Off scope or Options.KVShareOff, for a recurrent family, without ResidentKVCopier, or when the source's
+// holds. It does nothing under an Off scope or Options.KVShareOff, for a recurrent family, without legacyKVCopier, or when the source's
 // window no longer holds the rows. A decline or an error leaves acq.reuse at what the slot can still trust.
 func (m *Model) residentShare(prompt []int, imgs []residentImageClaim, lora *loraRuntime, sc KVScope, acq *kvAcquired) {
 	kv := m.resKV()

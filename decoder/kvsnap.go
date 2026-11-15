@@ -45,7 +45,7 @@ type ResidentKVSnapshot interface {
 }
 
 // ResidentKVSnapshotter is the optional capability of a resident to hold a slot's KV rows in host memory and put them back. Like
-// ResidentKVCopier it works on today's slot storage: a windowed layer's rows are those its window and the rollback need, and the
+// legacyKVCopier it works on today's slot storage: a windowed layer's rows are those its window and the rollback need, and the
 // restore sets the slot's ring base as a copy does.
 type ResidentKVSnapshotter interface {
 	// SnapshotKV copies rows [0, end) of slot into pinned host memory, end a whole number of blocks; for a windowed layer, the rows
@@ -78,10 +78,10 @@ func (m *Model) recurrentSnapshots() bool {
 // snapshotsBlocked reports whether this model's state is outside what a snapshot holds: recurrent state its snapshotter does not carry.
 func (m *Model) snapshotsBlocked() bool { return m.hasRecurrentState() && !m.recurrentSnapshots() }
 
-// ResidentPrefillMarked is the optional capability of a resident to tell its caller when a batched prefill has just written a given position,
+// legacyPrefillMarked is the optional capability of a resident to tell its caller when a batched prefill has just written a given position,
 // between two of its passes: the one moment a windowed layer's ring holds exactly what a shorter prompt would leave there, so a prefix snapshot
 // can be taken in the middle of a cold prefill (docs/completed/task-kv7-step2-boundary-snapshot-2026-10.md).
-type ResidentPrefillMarked interface {
+type legacyPrefillMarked interface {
 	Prefiller
 	// PrefillMarkAlign is the width of the passes of a batched prefill, in positions: a mark can fire only at startPos plus a multiple of it.
 	PrefillMarkAlign() int

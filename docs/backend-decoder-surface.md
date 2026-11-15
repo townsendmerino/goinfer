@@ -2,6 +2,8 @@
 
 Row **SUB1** of `docs/tasks/task-forward-and-memory-2026-11.md` (the question that closes it: which `decoder` names could a leaf package own so a backend stops importing the 55,000-line loader).
 
+**Since this scan.** SUB1's cleanup retires the old `Resident*` micro-interfaces from the exported surface in tiers (`docs/sub1-resident-interfaces.md`); names in the table below that it retired are no longer `decoder.X`.
+
 **Provenance.** An AST scan at `311afd331`: every selector `decoder.X` in the non-test `.go` files under `backend/cuda`, `backend/metal` and `backend/webgpu` (subdirectories included; comments and tests excluded) is a use. Distinct symbols: cuda 90, metal 102, webgpu 37; 149 across the three. Each symbol's declaration was read from the non-test files of `decoder/`.
 
 **Method.** "Movable" is a syntactic reading, not a trial move: the symbol's declaration, plus every method declared on it, plus every package-level name those mention, transitively, reaches none of `Model`, `Weights`, `LayerWeights`, `Architecture`, `Options`, `Cache`, `Session` or `Generation`. A movable symbol would stay in `decoder` as an alias (`type X = leaf.X`), as `decoder/fit` did, so no caller changes until it chooses to. The scan does not check imports a moved declaration would need (a leaf may import `internal/runtime/*`), cycles with the other leaves, or the tests that name a symbol. Those are the questions for the row that moves one. 136 of 149 read as movable and 13 do not.

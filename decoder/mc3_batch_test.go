@@ -32,7 +32,7 @@ type mc3Fake struct {
 	delay     time.Duration
 	stepDraws int    // rows a StepBatch drew on-device
 	events    []byte // P: a PrefillLast call, S: a StepBatch, F: a single-sequence Forward
-	// topK makes the fake a ResidentTopK. last is the resident's ONE logits buffer, written by every forward and every
+	// topK makes the fake a legacyTopK. last is the resident's ONE logits buffer, written by every forward and every
 	// step whatever slot it serves, as on the device, and a TopKRow's Full reads it when CALLED: so a Full called after
 	// another generation's step returns that generation's row, which is the hazard MC3 must avoid.
 	topK      bool
@@ -168,7 +168,7 @@ func (f *mc3Fake) StepBatch(seqs []ResidentBatchSeq) ([]ResidentBatchOut, error)
 	return out, nil
 }
 
-// SampleAvailable / ForwardSample make mc3Fake a device sampler (ResidentSample), so temperature-only generations take
+// SampleAvailable / ForwardSample make mc3Fake a device sampler (legacySample), so temperature-only generations take
 // the device-draw path; fakeDraw is its draw, a function of the row and (seed, draw) only, as the real one is.
 func (f *mc3Fake) SampleAvailable() bool { return true }
 func (f *mc3Fake) ForwardSample(emb []float32, pos int, temperature float64, seed, draw uint64) (int, error) {
@@ -179,7 +179,7 @@ func (f *mc3Fake) ForwardSample(emb []float32, pos int, temperature float64, see
 	return fakeDraw(f.fwd(f.bound, emb, pos), seed, draw), nil
 }
 
-// TopKAvailable / ForwardTopK make mc3Fake a ResidentTopK when topK is set. The row is exact (sorted, with Z), so the
+// TopKAvailable / ForwardTopK make mc3Fake a legacyTopK when topK is set. The row is exact (sorted, with Z), so the
 // sampler's draw from it must equal its draw from the full row; Full reads the shared buffer at call time.
 func (f *mc3Fake) TopKAvailable() bool { return f.topK }
 func (f *mc3Fake) ForwardTopK(emb []float32, pos, k int, temperature float64, wantZ bool) (TopKRow, error) {

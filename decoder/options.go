@@ -169,7 +169,7 @@ type Options struct {
 	// serve sets it from -kv-host-bytes.
 	KVHostBytes int64
 	// KVDemote keeps a released idle conversation's rows in host memory under the KVHostBytes budget, for a resident that implements
-	// ResidentKVDemoter, and brings them back when it returns (docs/measurements/kv7-demote-2026-11/README.md). The copy waits on the
+	// legacyKVDemoter, and brings them back when it returns (docs/measurements/kv7-demote-2026-11/README.md). The copy waits on the
 	// request taking the blocks, so it is off until a timed reading says otherwise. serve sets it when -kv-host-bytes names a budget. KVShareOff
 	// turns it off, as it does the snapshots.
 	KVDemote bool

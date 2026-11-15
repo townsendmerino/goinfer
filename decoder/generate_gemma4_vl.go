@@ -227,7 +227,7 @@ func (m *Model) GenerateGemma4VLSpans(ctx context.Context, ids []int, spans []Im
 }
 
 // gemma4VLResidentPrefill is GenerateGemma4VL's resident image prefill, then resident decode. An E-model (causal) runs
-// the whole prompt through the backend's Prefiller; a bidirectional non-E checkpoint through its ResidentSpanPrefill,
+// the whole prompt through the backend's Prefiller; a bidirectional non-E checkpoint through its legacySpanPrefill,
 // with each span its own block. It reports whether it ran the turn (true: the generation is done, g holds its result);
 // false means the backend has no such prefill, the resident is busy, or the prefill declined, and the caller runs the
 // CPU path. A cancelled prefill is not a decline: it ends the turn.

@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// rideFake is mc3Fake plus a ragged step (ResidentRaggedStepper): a prefill chunk's rows write their positions as PrefillLast
+// rideFake is mc3Fake plus a ragged step (legacyRaggedStepper): a prefill chunk's rows write their positions as PrefillLast
 // would, and a decode row is its StepBatch row. rides records each step that carried a chunk; rideErr makes the step refuse a
 // chunk before it writes anything, as a backend that declines one does.
 type rideFake struct {

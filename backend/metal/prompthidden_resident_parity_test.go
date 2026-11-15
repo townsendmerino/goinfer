@@ -10,7 +10,7 @@ import (
 )
 
 // TestPromptHiddenResidentMetal: decoder.Model.PromptHidden on a Metal-resident Qwen3.5 (the JEV decision models' family)
-// with a PEFT adapter merged at load answers from the device, through the ResidentHiddenLast seam HiddenLast uses, and
+// with a PEFT adapter merged at load answers from the device, through the ResidentPrefillSubsystem seam HiddenLast uses, and
 // stays within hiddenLastResidentBar of the CPU PromptHidden on the same weights. Two checks: PromptHidden's answer is
 // bit-identical to the runner's own HiddenLast on the same ids (so the dispatch took the resident, not a silent CPU
 // fallback), and it tracks the CPU path's (so the device kernels, DeltaNet included, compute the right thing). Two
@@ -35,7 +35,7 @@ func TestPromptHiddenResidentMetal(t *testing.T) {
 	rh := decoder.SubsystemsOf(rf).Prefill
 	ok := rh.HiddenLastAvailable()
 	if !ok {
-		t.Fatal("the metal resident runner does not implement decoder.ResidentHiddenLast")
+		t.Fatal("the metal resident runner does not implement decoder.ResidentPrefillSubsystem")
 	}
 	opts.Backend = "cpu"
 	mCPU, err := decoder.Load(ckpt, opts)

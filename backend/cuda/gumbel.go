@@ -7,7 +7,6 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // SampleAvailable reports whether this resident can draw a temperature-only sample on-device: the same
@@ -15,7 +14,7 @@ import (
 func (r *cudaResident) SampleAvailable() bool { return r.TopKAvailable() }
 
 // ForwardSample runs one token's forward and draws the NEXT token on-device by Gumbel-max
-// (decoder.ResidentSample), returning just the id — no logits readback, no host normalisation. (seed, draw)
+// (decoder.ResidentDecodeSubsystem), returning just the id — no logits readback, no host normalisation. (seed, draw)
 // are the sampler's own (Sampler.NextDraw), so this is the draw the host would have made.
 func (r *cudaResident) ForwardSample(embedding []float32, pos int, temperature float64, seed, draw uint64) (int, error) {
 	invT := float32(1 / temperature)
@@ -63,5 +62,3 @@ func (r *cudaResident) gumbelPick(v int, invT float32, seed, draw uint64) (int, 
 	// Nothing comparable (an all -inf row): the host draws the argmax; so does the device.
 	return r.argmaxPick(v)
 }
-
-var _ decoder.ResidentSample = (*cudaResident)(nil)

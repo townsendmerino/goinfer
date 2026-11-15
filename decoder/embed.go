@@ -65,7 +65,7 @@ func (m *Model) hiddenLast(ids []int) ([]float32, error) {
 
 // hiddenLastResident runs the resident twin of hiddenLastBatched: embed ids on the host (the
 // same embedResident the plain resident forward uses) and hand the whole sequence to the
-// backend's ResidentHiddenLast in one call, starting at position 0 — HiddenLast never reuses a
+// backend's legacyHiddenLast in one call, starting at position 0 — HiddenLast never reuses a
 // previous resident KV (each call is a fresh sequence), unlike Generate's prefix reuse.
 func (m *Model) hiddenLastResident(ctx context.Context, ids []int) ([]float32, error) {
 	m.residentForgetScratch()
@@ -145,7 +145,7 @@ func (m *Model) checkHiddenIDs(who string, ids []int) error {
 // take hiddenLastBatched, which ends at the same final norm, and Qwen3.5 takes runLayersQwen35N;
 // TestPromptHidden_batchedMatchesSequential bounds both against the per-token forward.
 //
-// On a resident backend it runs on the device first, through ResidentHiddenLast, and falls back to the CPU on a decline.
+// On a resident backend it runs on the device first, through legacyHiddenLast, and falls back to the CPU on a decline.
 // The resident's numerics are its kernels', not the CPU reference's; TestPromptHidden_residentMatchesCPU in the backend
 // modules bounds the difference. ctx is checked between tokens (CPU) or at the backend's own granularity, so a long
 // prompt can be abandoned.

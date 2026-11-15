@@ -11,11 +11,11 @@ import (
 
 // stepShapes are the forward-shape interfaces step resolves: asserting one of them on a resident is stepDo's job alone.
 var stepShapes = map[string]bool{
-	"Prefiller": true, "ResidentGreedy": true, "ResidentSample": true, "ResidentTopK": true, "ResidentPrefillKV": true,
-	"ResidentHiddenLast": true, "ResidentResidualAll": true, "ResidentMRoPE": true, "ResidentMRoPEPrefill": true,
-	"ResidentMRoPEDeepstackPrefill": true, "ResidentHybridMRoPEPrefill": true, "ResidentImagePrefill": true,
-	"ResidentImageBlocksPrefill": true, "ResidentSpanPrefill": true, "ResidentPrefillRows": true, "ResidentPrefillMarked": true,
-	"ResidentSeedArgmax": true, "ResidentBatchStepper": true, "ResidentRaggedStepper": true,
+	"Prefiller": true, "ResidentGreedy": true, "legacySample": true, "legacyTopK": true, "legacyPrefillKV": true,
+	"legacyHiddenLast": true, "legacyResidualAll": true, "legacyMRoPE": true, "ResidentMRoPEPrefill": true,
+	"legacyMRoPEDeepstackPrefill": true, "ResidentHybridMRoPEPrefill": true, "ResidentImagePrefill": true,
+	"legacyImageBlocksPrefill": true, "legacySpanPrefill": true, "legacyPrefillRows": true, "legacyPrefillMarked": true,
+	"legacySeedArgmax": true, "legacyBatchStepper": true, "legacyRaggedStepper": true,
 }
 
 // TestStepShapes_assertedOnlyInStep refuses a type assertion or type-switch case naming a forward-shape interface in any

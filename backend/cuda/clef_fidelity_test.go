@@ -20,7 +20,7 @@ import (
 )
 
 // D13's CUDA-resident arm (docs/measurements/decisions-d13-clef-fidelity-2026-10-03.md, amendment 5b): the same run harness as internal/clef's TestFidelityArm_run, but with the
-// backbone loaded on the CUDA backend so PromptHiddenAll answers from the device (decoder.ResidentResidualAll; decisions-d11-resident-hidden-2026-10-03.md). It lives here because
+// backbone loaded on the CUDA backend so PromptHiddenAll answers from the device (decoder.ResidentPrefillSubsystem; decisions-d11-resident-hidden-2026-10-03.md). It lives here because
 // the root module may not depend on this one, while this module may import the root's internal packages (the rule is by import path). Rows are full precision, in the same format
 // the CPU arms write, so decisions-d13-clef-fidelity-2026-10/grade.py grades them with the same reference.
 //

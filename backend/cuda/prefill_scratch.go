@@ -92,7 +92,7 @@ func (r *cudaResident) prefillPassRowsAt(width int) int {
 	return chunk
 }
 
-// PrefillChunkRows (decoder.ResidentPrefillChunks, matched structurally: TestKV3_residentReportsItsChunks holds the wiring) is the most rows one pass of a long prompt's prefill takes.
+// PrefillChunkRows (decoder.ResidentPrefillSubsystem, matched structurally: TestKV3_residentReportsItsChunks holds the wiring) is the most rows one pass of a long prompt's prefill takes.
 func (r *cudaResident) PrefillChunkRows() int { return r.prefillPassRows() }
 
 // PrefillTailMinRows (decoder.ResidentCaps.TailMinRows) is the fewest rows a prefill's last pass may have: a shorter one runs the
@@ -125,7 +125,7 @@ func (r *cudaResident) StepScratchBytes(rows int) int64 {
 	return s
 }
 
-// PrefillScratchBytes (decoder.ResidentPrefillChunks) is what one ordinary prefill pass of rows rows allocates on the device beyond
+// PrefillScratchBytes (decoder.ResidentPrefillSubsystem) is what one ordinary prefill pass of rows rows allocates on the device beyond
 // the standing buffers: the M-row buffers prefillCore creates, each after the allocator's rounding. It prices a pass whose tail is
 // the last row only (PrefillLast), text only; the all-logits tails of speculative verify add an M x vocab logits block, an image pass
 // its block table, and neither is a prompt's prefill. It mirrors prefillCore's allocations by the same arithmetic, and
