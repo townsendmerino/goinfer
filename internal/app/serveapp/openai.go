@@ -985,6 +985,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 	}
 	gr.boundary = lm.prefixBoundary(tm, system, turns, nil, ids)
 	gr.keep = lm.recurrentKeep(tm, system, turns, nil, ids)
+	gr.msgBoundary = lm.recurrentMsgBoundary(tm, system, turns, nil, ids)
 	if req.Stream && req.Logprobs { // the stream path has no logprobs field — reject rather than silently drop
 		writeErr(w, http.StatusBadRequest, "logprobs is not supported together with stream:true")
 		return
@@ -1205,6 +1206,9 @@ type genRequest struct {
 	// keep is how many leading ids of promptIDs the next turn's prompt repeats (loadedModel.recurrentKeep), 0 when unknown or not a recurrent model
 	// whose snapshots carry its state. It reaches the decoder as KVScope.Keep, where the state is kept for the next turn.
 	keep int
+	// msgBoundary is how many leading ids of promptIDs come before the last turn's content (loadedModel.recurrentMsgBoundary), 0 when unknown or not
+	// a recurrent model whose snapshots carry its state. It reaches the decoder as KVScope.MsgBoundary.
+	msgBoundary int
 	// fromModel names the sampling fields prepare took from the model's recommended sampling (withRecommended).
 	fromModel []string
 	// callPostCheck is a must-call tool_choice on a family with no JSON call form (forcedCallEnforcement "post-check"):
@@ -1220,7 +1224,9 @@ type genRequest struct {
 type kvScope = decoder.KVScope
 
 // kvScope is the KV sharing scope the request hands the engine.
-func (gr *genRequest) kvScope() kvScope { return kvScope{Boundary: gr.boundary, Keep: gr.keep} }
+func (gr *genRequest) kvScope() kvScope {
+	return kvScope{Boundary: gr.boundary, Keep: gr.keep, MsgBoundary: gr.msgBoundary}
+}
 
 // confResult is a generation's per-field confidence (or why there is none).
 type confResult struct {

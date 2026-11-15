@@ -1,0 +1,147 @@
+# KV8's message-boundary checkpoint on CUDA (registered 2026-11-15 13:09 PST, before any code; nobara-kv8)
+
+Plan of record: `docs/tasks/task-kv-architecture-2026-10.md`, KV8, "Next concrete step on CUDA" (2026-11-02) and its Claude Code note. Evidence for the position: KV0-H's A5
+(`docs/measurements/kv0h-hybrid-traffic-2026-10.md`): 2 of 8 Claude Code D requests left the previous prompt 3 ids into a 1,386-token user message, 25 ids before that prompt's
+end. Two requests, under that study's bar of three, so this registers whether the position works and what it costs, not that traffic needs it.
+
+## The question
+
+For a recurrent model on CUDA, when the next request keeps every earlier message and rewrites the last one from near its start, does a state kept at that message's start serve
+it, and what does keeping it cost every request?
+
+## What is built (one mark more in the cold prefill, nothing new at restore)
+
+- **The position.** serve finds `KVScope.MsgBoundary`: the ids before the prompt's last turn's content, by `prefixBoundaryOf`'s method (render again with the last turn's content
+  changed; the segments that render identically are the boundary). 0 for one turn, an unknown template, or a model whose snapshots do not carry its state.
+- **The mark.** `MsgBoundary` rounded down to the 512-row pass grid, kept as a recurrent snapshot beside B35's `Keep` one, in the same store, under the same budget and admission
+  (`decoder/kvsnap.go:Model.kvBoundaryPlan`, `residentSnapshotRows`). Taken only when it lies above the restore point (or 0), above `kvSnapMinShared`, on a block, and below Keep's.
+- **Restore** is today's: the deepest held snapshot the prompt matches through (`covering`). A recurrent snapshot serves only its own end (`kvSnapHolds`), so nothing in the restore changes.
+- **Not built:** a checkpoint per message beyond the last, Marconi admission, Metal (no recurrent snapshot there), Mamba-2 (refused on CUDA).
+
+## Gates
+
+| | tier | what | bar |
+|---|---|---|---|
+| **M0** | 0, no device (hash fake, CI reads it) | turn 2 repeats turn 1 through its last message's start and rewrites the message from id +3; turn 3 extends turn 2 normally. Reply equal to a cold run; rows reused equal the pass-grid-rounded boundary | passes, and **red on main first** (main reuses 0 rows: the plant is main). Plants, all red: MsgBoundary ignored; the point rounded up instead of down; the boundary snapshot replacing Keep's |
+| **M1** | 0, no device | `MsgBoundary` from the real Qwen3.5 template with and without tools equals the id count before the last turn's opening marker; 0 for one turn; EncodeSegments prefix checked, not assumed | equal on all cases; a plant that renders the wrong turn is red |
+| **M2** | 0, nobara CUDA, tiny | `qwen35-tiny` and `olmo_hybrid-tiny` (nemotron-tiny: refused, asserted refused): the restore at the boundary and the suffix prefill give logits **bit-identical** to a cold prefill of the same prompt, every position past it; conv window included | 0 differing logits. Plants, red: restoring the Keep snapshot's state at the boundary's rows; the conv window skipped |
+| **M3** | 0 | the store's budget holds with two recurrent snapshots a request; a budget for one keeps Keep's and says why; counters (`kvSnaps` stats) name each decline | exact bytes; a plant that admits past the budget is red |
+| **M4** | 0, nobara | `gate identity -backend cuda` at the change: every family that ran stays IDENTICAL (the library path sets no MsgBoundary) | 0 DIFFERENT |
+| **T1** | 1, nobara | served, `~/models/qwen3.5-0.8b`, `-backend cuda`, thinking off, greedy, 24 new tokens, local NVMe. Conversation of about 8,000 ids: system 3,000, history 3,500, last user message 1,400. Requests: r1 cold; r2 the next turn (Keep restore, today's path); r3 rewrites the last message from +3 | see below |
+
+**T1's cells:** one server per cell, built at main (`8aaea899b`) and at the change, **A B B A**, same session, exclusive timing lock, the 1-minute load and `MemAvailable` recorded at each
+start, a cell above 8.0 load void and re-run in order. Fit check first: the banner at the change, by the server's own plan; a refusal is NOT RUN.
+
+**T1 decision, worst of the two pairs:**
+
+| | |
+|---|---|
+| **PASS** | r3's first token, change over main, at most 0.5; r3 reuses exactly the rounded boundary's rows (main: 0); r3's reply equals main's cold reply; r2 reuses what main's r2 reuses and its first token is at most 1.10 of main's; r1's first token at most 1.05 of main's; peak server `VmSwap` at most 512 MB |
+| **PARKED** | r3's ratio above 0.5 and at most 0.7, or r1's above 1.05 and at most 1.10, the others holding |
+| **FAIL** | r3's ratio above 0.7, a reply that differs, r3 not reusing the boundary's rows, r1 over 1.10, r2 slower than 1.10 or reusing less, or `VmSwap` over 512 MB |
+
+- **The do-nothing arm is main.** A FAIL on the cost row (r1) stands even when r3 wins: the mark runs on every cold request, used or not.
+- **Reported, not graded:** snapshot bytes and copy time at the boundary and at Keep, host memory held.
+- **Not read:** the 9B (a second size only if the 0.8B resolves, for a reason that the copy's cost changes with the state's size), Claude Code's real traffic, Metal.
+- **Void if:** a timed cell outside the lock, the model read from `/srv/models`, a NOT RUN counted as a pass, a bar moved after a reading.
+- **Stopping rule:** the four cells, no early stop. **Cost:** fit check about 1 minute; each cell about 1 minute; start and finish times from `date` when it runs.
+- **Meanings.** PASS: ship by PR, default on for models whose snapshots carry state. PARKED: Francis decides. FAIL: the branch stays, the record says what failed.
+
+## Readings, 2026-11-15 (nobara-kv8)
+
+Written after the runs, from `date` and the logs named. The registration above did not change after its commit except one stamp (below).
+
+- **The registration's time was corrected.** It was first written as 13:25 PST, a guess; its commit (`77ab5fcc4`) is 13:09:54 PST, and both pages now say 13:09. No gate had run.
+
+### M0 to M3 and M4
+
+| | reading |
+|---|---|
+| **M0** | `decoder/kv8_msgboundary_test.go`: `TestKV8Msg_aRewrittenLastMessageRestoresTheBoundary` was **red on main** first (1 snapshot taken, not 2). Plants, each red: the point rounded up instead of down (2 tests); Keep's snapshot allowed to replace the message's (2 tests); the snapshot a request restored from dropped twice (the store's byte count goes wrong, 1 test). All pass on the change |
+| **M1** | `internal/app/serveapp/kv8_msgboundary_test.go`: the boundary is the ids before the last turn's role and content (the template renders `<|im_start|>` as its own segment, so the boundary sits just before the role word, which this page's registration called "the opening marker"), on all four chat routes, with and without tools; 0 for one turn and for a model whose snapshots do not carry its state. **Not red first:** the serve code was written before its tests; the plant (rendering the first turn's content, not the last's) is red. |
+| **M2** | `backend/cuda/kv8a_checkpoint_test.go:TestKV8Msg_cudaRestoreAtTheBoundaryEqualsCold`, `qwen3next-tiny`, 64-row passes, turn 1's snapshots at 1,472 and 2,368: turn 2 reuses exactly 1,472 rows, and its reply, every recurrent buffer and the K/V rows are **bit-identical** to a cold prefill's. Plant (the restore skips the conv window): state and K/V rows differ, red. Log: `m2-cuda.log` |
+| **M2, as registered, not met** | the registration named `qwen35-tiny` and `olmo_hybrid-tiny`. Both declare 64 positions: a prompt of the 2,048 ids a snapshot needs runs on the CPU, and a snapshot is whole 64-row blocks, so none fits below their cap. The DeltaNet device mechanism is read on `qwen3next-tiny` instead, and the split of one prefill into two calls on `qwen35-tiny` is `TestB35SplitPrefill`'s. **`olmo_hybrid-tiny` has no CUDA read of this.** Mamba-2 (`nemotron-tiny`) keeps no snapshot: `TestKV8Msg_cudaMamba2KeepsNoBoundarySnapshot` passes |
+| **M3** | `TestKV8Msg_theBudgetHoldsWithTwoSnapshotsARequest`: room for both holds both; room for one holds Keep's; room for none holds none; bytes never exceed the budget. Plant (the reserve always succeeds) is red on "room for one" |
+| **M4** | `gate identity -backend cuda 8aaea899b HEAD` at `5009ee053`: **GREEN, 25 IDENTICAL, 0 DIFFERENT, 19 NOT RUN** (`identity.log`). The hybrids ran: qwen3_5, qwen3_next, olmo_hybrid, nemotron_h. The NOT RUN count is higher than the last reading's 14 because this fresh worktree lacks the gitignored fixtures (`gemma4`'s four assets, among others), so those cells skip |
+
+### T1: PARKED by the registered rule (13:26 to 13:28 PST)
+
+`served-t1/run.log`, `turns.jsonl`, `fit-check.log`. Main `8aaea899b` against the change `5009ee053`, `~/models/qwen3.5-0.8b` from NVMe, `--ctx 12288`, one slot, A B B A, the exclusive timing lock, the 1-minute load 0.59 to 0.82 and about 61 GB available at each cell's start, no void cell, peak `VmSwap` 0 MB. The fit check read 1,394 MiB on the card and a 6.3 GiB snapshot budget. The prompts are 7,434 to 7,464 ids.
+
+| | main | change | change over main, pair 1 / pair 2 | bar |
+|---|---|---|---|---|
+| **r3, the last message rewritten**: first token | 7.36 s, 7.38 s | 4.80 s, 4.83 s | **0.652 / 0.654** | at most 0.5 |
+| r3 rows reused | 0, 0 | **4,096**, 4,096 (r1's boundary snapshot, exactly) | | exactly the boundary's |
+| r3's reply | | equals main's cold reply, both pairs | | equal |
+| r2, the next turn (Keep): first token | 2.15 s, 2.17 s | 2.14 s, 2.20 s | 0.994 / 1.013 | at most 1.10 |
+| r2 rows reused | 6,144 | 6,144 | | not less |
+| r1, cold: first token | 7.39 s, 7.42 s | 7.39 s, 7.50 s | 1.000 / 1.012 | at most 1.05 |
+
+**The verdict is PARKED:** r3's ratio is above 0.5 and at most 0.7, every other clause holds. **Francis decides.**
+
+- **Why only 4,096 of 7,435.** The resident's passes are 2,048 rows wide here, and the mark falls on a pass boundary. The last message starts at about 6,100 ids; rounding down to the grid gives 4,096, so r3 re-prefills 3,339 ids of 7,435 where the boundary alone would leave about 1,330. This is B35's rounding ("a warm turn re-prefills up to about one pass"; its follow-up, a cut at the point itself, removes it), and it takes up to 2,047 rows of this mechanism's win at this width. A cut at the point is a separate slice with its own registration: `TestB35SplitPrefill` says a split whose passes are all 16 rows or more is bit-identical, which is the gate it would have to re-read at the decoder.
+- **What it costs.** A second snapshot a cold request: 4,096 rows is 115 MiB of host memory and 97.6 ms, beside Keep's 163 MiB and 98.1 ms (`serve-B1.log`). The request's first token did not move (r1 1.000 and 1.012), so the copy sits behind it. The restore of the 4,096-row snapshot took 11.7 ms.
+- **Reported, not graded:** the snapshots held after the three requests are 4,096, 6,144 and 6,144 rows on the change; main holds two of 6,144. r2 on the change takes both of its points (its message boundary and Keep) and replaces the snapshot it restored from; r1's boundary snapshot stays because r2's prompt shares its prefix, and the store keeps it until the budget needs it.
+- **Not read:** the 9B, Claude Code's real traffic, Metal, Mamba-2. A real `Keep` grid of 512 rows (B35's e2e) was not the width here.
+
+## Second slice: cut the prefill at the snapshot points, not on the pass grid (registered 2026-11-15 14:06 PST, before any code; nobara-kv8)
+
+The coordinator's decision of 2026-11-15, on T1's PARKED: keep #1007 a draft and build B35's named follow-up on its branch. T1 found 4,096 of a 6,100-id boundary served because a snapshot falls on a 2,048-row pass boundary.
+
+**The question.** Does a snapshot taken at its point itself, rounded down only to a 64-row block (the snapshot's own unit), serve a rewritten last message at the bar, without moving any other request's bits or cost?
+
+**What changes (recurrent models only; attention models keep the grid).** The prefill is cut at each snapshot point, the message boundary's and Keep's, each rounded down to 64 rows: `decoder/model.go:Model.residentPrefillSeedMarked` prefills up to a point as a prefill of its own, takes the snapshot, and goes on, in place of waiting for a pass boundary. A point is dropped, or lowered by a block, when the prefill after it would be shorter than the resident's final-pass minimum (`Model.prefillTailMinRows`). **Keep is cut too, not only the message's:** a request that restores from an off-grid point has no pass boundary before its own Keep, so on the grid it would take no Keep snapshot, and the next turn of an edited conversation would prefill whole. A 2,048-row grid hides this on #1007's own T1 prompt only because 4,096 is on it.
+
+**Why it should hold, and what that rests on.** `TestB35SplitPrefill` (qwen35-tiny): a prompt prefilled in two calls, each pass 16 rows or more, equals one call bit for bit. That is read on a tiny fixture; the gates below read it again at the decoder, on `qwen3next-tiny`, and on the real model through T2's replies.
+
+| | tier | what | bar |
+|---|---|---|---|
+| **C0** | 0, hash fake with 128-row passes | turn 1: 1,200 ids, message start 1,000, Keep 1,196. Snapshots land at 960 and 1,152 (a 64-row block below each, where the grid gives 896 and 1,152). A turn rewriting the message from id 1,003 reuses 960, and its reply equals a cold run | **red on #1007 first** (it reuses 896). Plants, red: the points rounded up; a cut with no tail minimum (a 3-row final pass) |
+| **C1** | 0, the same fake | a turn that restored the off-grid 960 takes its own Keep snapshot, and the next turn restores it | held rows named; **red** with Keep left on the grid |
+| **C2** | 0, nobara CUDA, `qwen3next-tiny` | 128-row passes, message start 1,500, Keep 2,396: snapshots at 1,472 and 2,368; the restore at 1,472 leaves the reply, every recurrent buffer and the K/V rows bit-identical to a cold prefill | 0 differing words. Plant (grid-rounded points) is red on the reuse |
+| **C3** | 0 | M0 to M3 and the B35 tests still pass; `gate identity -backend cuda` against current main: every family that ran IDENTICAL (a default load sets no scope) | 0 DIFFERENT |
+| **T2** | 1, nobara | T1's script and conversation (`served_msgboundary.py`), main (current `origin/main`) against the combined change (#1007 plus this slice), `~/models/qwen3.5-0.8b`, A B B A, one server per cell, the exclusive timing lock, a cell above load 8.0 void and re-run once | below |
+
+**T2's bars, worst of the two pairs. PASS needs every row; PARKED is for Francis; FAIL stops the merge.**
+
+| | PASS | PARKED | FAIL |
+|---|---|---|---|
+| r3 (last message rewritten): first token, change over main | at most 0.5 | above 0.5, at most 0.7 | above 0.7 |
+| r3 rows reused | exactly the smaller of r1's two snapshots, and that is a block of 64 within 63 rows of the boundary (not the 2,048 grid's) | | anything else |
+| **r1, r2, r3 replies** (all three, not r3 only: the cut moves every cold request's passes) | each equals main's | | any differs |
+| r1 first token (cold), change over main | at most 1.05 | above 1.05, at most 1.10 | above 1.10 |
+| r2 first token, and rows reused | at most 1.10 of main's; not fewer rows | | slower than 1.10, or fewer rows |
+| **the cold request's added cost, read explicitly from `serve-*.log`:** the boundary snapshot's copy time, and its host MiB | at most 150 ms and at most 175 MiB (#1007's T1 measured 97.6 ms and 115 MiB at 4,096 rows; Keep's 98.1 ms and 163 MiB at 6,144) | above either, at most 250 ms and 250 MiB: **the owner weighs it** | above either |
+| r4, the turn after r3 (r3's history, its reply, a new question): rows reused | at least main's r4 reuse | | fewer: a restored turn lost its Keep point |
+| peak `VmSwap` | at most 512 MB | | above |
+
+- **Reported, not graded:** r4's first token against main's; snapshots held after each request; Keep's copy time and bytes now that its point moved up.
+- **Not read:** the 9B, Claude Code's real traffic, Metal, Mamba-2, a pass width other than 2,048.
+- **Void if:** a timed cell outside the lock, the model read from `/srv/models`, a NOT RUN counted as a pass, a bar moved after a reading. **Stopping rule:** the four cells, no early stop. **Cost:** about 3 minutes for the cells, start and finish from `date`.
+- **The merge.** PASS: #1007 and this slice go up together, and the coordinator is told (the cold cost is the owner's to weigh where it is above #1007's measured 97.6 ms and 115 MiB, which this registration's PASS band allows up to 150 ms and 175 MiB). PARKED or FAIL: both stay drafts.
+
+### Second slice, readings (2026-11-15, nobara-kv8)
+
+| | reading |
+|---|---|
+| **C0** | `decoder/kv8_msgboundary_test.go:TestKV8Cut_snapshotsLandOnTheirBlocks`: **red on #1007 first** (snapshots of 896 and 1,152 rows where 960 and 1,216 are wanted). Plants, each red: points rounded up (5 tests); no tail minimum (`TestKV8Cut_theFinalPassKeepsItsMinimum`) |
+| **C1** | `TestKV8Cut_aRestoredTurnKeepsItsOwnPoint`: red with Keep left on the grid (a plant: on #1007 the 128-row grid happened to contain the restore point, so C1 is not red on #1007) |
+| **C2** | `backend/cuda/kv8a_checkpoint_test.go:TestKV8Msg_cudaRestoreAtTheBoundaryEqualsCold`, `qwen3next-tiny`, passes of 64 and of 128 rows: snapshots at 1,472 and 2,368 (the 128-row grid has neither); turn 2 reuses 1,472; the reply, every recurrent buffer and the K/V rows are bit-identical to a cold prefill's. Plant (pass-grid points) is red on the held rows. Log: `c2-cuda.log` |
+| **C3** | `gate identity -backend cuda d44de0aa3 HEAD` at `688809f3c`: **GREEN, 25 IDENTICAL, 0 DIFFERENT, 19 NOT RUN** (the same missing ignored fixtures as before), `identity-cut.log`. Parity refresh: manifest unchanged. gofmt, vet (tagged), pinned staticcheck, citation lint, comment census clean |
+
+**T2: PASS** (14:20 to 14:22 PST; `served-t2/run.log`, `turns.jsonl`). Main `d44de0aa3` against the combined change `688809f3c` (#1007 plus this slice), `~/models/qwen3.5-0.8b`, `--ctx 12288`, one slot, A B B A, the exclusive timing lock, no void cell, peak `VmSwap` 0 MB. The 1-minute load at the cells' start was 4.81, 3.51, 2.71, 2.15 (the first two carry the build that had just finished; the void line is 8.0).
+
+| | main | change | change over main, pair 1 / pair 2 | bar |
+|---|---|---|---|---|
+| **r3 (last message rewritten): first token** | 7.39 s, 7.39 s | 2.41 s, 2.41 s | **0.326 / 0.326** | at most 0.5 |
+| r3 rows reused | 0 | **6,016** (r1's boundary snapshot; the boundary is about 6,044) | | the block within 63 rows of the boundary |
+| r1, r2, r3, r4 replies | | **equal to main's, all four, both pairs** | | equal |
+| r1 (cold): first token | 7.41 s, 7.39 s | 7.41 s, 7.42 s | 1.000 / 1.004 | at most 1.05 |
+| r2: first token, rows | 2.16 s, 6,144 | 0.36 s, 7,360 | 0.166 / 0.160 | at most 1.10, not fewer |
+| r4 (the turn after r3): rows | 6,144 | 7,360 | | not fewer |
+| **the cold request's boundary snapshot** | | 160 MiB host, 99.2 and 99.5 ms | | at most 175 MiB and 150 ms |
+
+- **The cold cost, read explicitly (the owner weighs it).** #1007 on its own measured 115 MiB and 97.6 ms at 4,096 rows; the same snapshot, now at 6,016 rows, is **160 MiB and 99.2 ms**: the rows grew, the time did not. **A cold request now also takes Keep's snapshot at 7,360 rows, 192 MiB and 114.9 ms, where main takes it at 6,144 rows, 163 MiB and 98 ms.** So a cold request copies **352 MiB and about 214 ms of snapshots against main's 163 MiB and 98 ms**, and its first token did not move (1.000, 1.004): the extra copy is inside a 7.4 s prefill, about 1.5%. The registration graded only the boundary snapshot; the Keep snapshot's growth is the larger part of the extra bytes and is reported here for the owner to weigh.
+- **A result the registration did not grade:** cutting Keep took r2 from 6,144 to 7,360 rows reused and 2.16 s to 0.36 s (ratio 0.16), a gain for every recurrent chat turn, on the 2,048-row grid that rounded Keep down by 1,286 rows. Its replies equal main's.
+- **The cut rests on the split being bit-identical** (`TestB35SplitPrefill`, C2, and these replies). It is read on a tiny DeltaNet fixture and on one real checkpoint's greedy replies, 24 tokens each, not on the logits of a real model.
+- **Not read:** the 9B, Claude Code's traffic, a pass width other than 2,048 on a real model, Metal, Mamba-2.

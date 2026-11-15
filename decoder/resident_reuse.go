@@ -365,6 +365,8 @@ type kvAcquired struct {
 	snapFrom *kvSnap // the snapshot those rows came from
 	// markFired is set when the prefill reached its snapshot mark and offered a boundary snapshot (taken or declined): the end of the prompt takes none.
 	markFired bool
+	// msgRows is the row count of the message-boundary snapshot this request's prefill offered (0: none), which Keep's snapshot does not replace.
+	msgRows int
 	// slotLen and match are the bound slot's record length before this request and the prompt's common prefix with it
 	// (Generation.PrefillSlot and PrefillMatch).
 	slotLen, match int
