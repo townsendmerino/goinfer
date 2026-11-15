@@ -109,29 +109,29 @@ func QGateContextForTest(ctx, gate []float32) { qGateContext(ctx, gate) }
 // state the load-time fit guard's auto-pin leaves, which only a load under memory pressure produces.
 func (m *Model) AutoPinResidentContextForTest(ctx int) { m.resCtxReq, m.resCtxPinned = ctx, false }
 
-// ResidentImagePrefillForTest wraps residentImagePrefill, the primitive GenerateVL's resident image-prefill fast path calls,
+// ResidentImagePrefillForTest wraps residentImagePrefill (res is the resident, never one of its subsystems), the primitive GenerateVL's resident image-prefill fast path calls,
 // so a real-checkpoint gate (cuda/) can compare its logits with PrefillLogitsVLForTest's CPU reference at matched precision
 // on the same model instance and the same real image.
-func (m *Model) ResidentImagePrefillForTest(ctx context.Context, rip any, ids []int, imageEmbeds []float32, imgPos, imgLen int) ([]float32, int, error) {
-	return m.residentImagePrefill(ctx, rip, ids, imageEmbeds, []ImageSpan{{Pos: imgPos, Len: imgLen}})
+func (m *Model) ResidentImagePrefillForTest(ctx context.Context, res ResidentForward, ids []int, imageEmbeds []float32, imgPos, imgLen int) ([]float32, int, error) {
+	return m.residentImagePrefill(ctx, res, ids, imageEmbeds, []ImageSpan{{Pos: imgPos, Len: imgLen}})
 }
 
 // ResidentImagePrefillSpansForTest is ResidentImagePrefillForTest for several images.
-func (m *Model) ResidentImagePrefillSpansForTest(ctx context.Context, rip any, ids []int, imageEmbeds []float32, spans []ImageSpan) ([]float32, int, error) {
-	return m.residentImagePrefill(ctx, rip, ids, imageEmbeds, spans)
+func (m *Model) ResidentImagePrefillSpansForTest(ctx context.Context, res ResidentForward, ids []int, imageEmbeds []float32, spans []ImageSpan) ([]float32, int, error) {
+	return m.residentImagePrefill(ctx, res, ids, imageEmbeds, spans)
 }
 
 // ResidentMRoPEPrefillForTest wraps residentMRoPEPrefillDeep (no DeepStack sets), the primitive GenerateQwenVL's resident
 // m-RoPE prefill fast path calls, mirroring ResidentImagePrefillForTest for a real-checkpoint gate comparing its logits
 // against PrefillLogitsQwenVLForTest.
-func (m *Model) ResidentMRoPEPrefillForTest(ctx context.Context, rmp any, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int) ([]float32, int, error) {
-	return m.residentMRoPEPrefillDeep(ctx, rmp, ids, imageFeats, []ImageSpan{{Pos: imgPos, Len: imgLen}}, mropePos, nil)
+func (m *Model) ResidentMRoPEPrefillForTest(ctx context.Context, res ResidentForward, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int) ([]float32, int, error) {
+	return m.residentMRoPEPrefillDeep(ctx, res, ids, imageFeats, []ImageSpan{{Pos: imgPos, Len: imgLen}}, mropePos, nil)
 }
 
 // ResidentMRoPEDeepstackPrefillForTest wraps residentMRoPEPrefillDeep with Qwen3-VL's DeepStack sets, for the Metal gate
 // that compares it with the CPU prefill.
-func (m *Model) ResidentMRoPEDeepstackPrefillForTest(ctx context.Context, rmp any, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int, deep [][]float32) ([]float32, int, error) {
-	return m.residentMRoPEPrefillDeep(ctx, rmp, ids, imageFeats, []ImageSpan{{Pos: imgPos, Len: imgLen}}, mropePos, deep)
+func (m *Model) ResidentMRoPEDeepstackPrefillForTest(ctx context.Context, res ResidentForward, ids []int, imageFeats []float32, imgPos, imgLen int, mropePos [][3]int, deep [][]float32) ([]float32, int, error) {
+	return m.residentMRoPEPrefillDeep(ctx, res, ids, imageFeats, []ImageSpan{{Pos: imgPos, Len: imgLen}}, mropePos, deep)
 }
 
 // SetDeepstackForTest gives c the DeepStack sets its next prefill adds after each decoder layer (GenerateQwenVLDeepstack's
@@ -761,14 +761,14 @@ func (m *Model) ResidentPrefillScratchForTest(promptTokens int) (int64, bool) {
 // gates drive the real loop with a drafter whose proposals they choose. dw stands for the drafter's weights; the loop reads
 // only its BlockSize and MaskTokenID. The fold path's preparation and refusal are NewBlockSpec's.
 func (m *Model) NewBlockSpecForTest(rd ResidentBlockDrafter, dw BlockDrafterWeights, taps []int) (*BlockSpec, error) {
-	rt := m.resRuntime()
-	if !rt.DrafterHostAvailable() {
+	host, _, ok := m.blockSpecHost()
+	if !ok {
 		return nil, errBlockSpecUnsupported
 	}
-	if err := m.prepareRecurrentSpec(rt, dw); err != nil {
+	if err := m.prepareRecurrentSpec(host, dw); err != nil {
 		return nil, err
 	}
-	return &BlockSpec{m: m, host: rt, rd: rd, dw: dw, taps: taps}, nil
+	return &BlockSpec{m: m, host: host, rd: rd, dw: dw, taps: taps}, nil
 }
 
 // TripBlockSpecGuardForTest makes every BlockSpec generation's acceptance guard stop speculating after its window, whatever
