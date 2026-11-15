@@ -41,6 +41,7 @@ type residentBuild struct {
 	fuse             func(wms ...*linalg.WeightMat) (Buffer, Buffer)
 	geomCache        map[[4]int]*attnGeom
 	kvWinSet         map[int]bool // the layers that read the window group (kvWindowLayers), taken once from the model's KV geometry
+	kvWinBlocks      int          // the blocks a slot's window group holds when its pool is bounded (windowPoolBlocks), 0 for the context's
 	attnGate, dnetOK bool
 	maxAttnFAPartial int // R2: attnFAPartialFloats at its widest layer; see attnFAPartial's own comment
 }
@@ -728,11 +729,15 @@ func (b *residentBuild) buildLayer(l int) error {
 		blocks := kvBlocksFor(r.ctxCap)
 		if b.kvWinSet == nil {
 			b.kvWinSet = kvWindowLayers(m.KVGeometry())
+			b.kvWinBlocks = windowPoolBlocks(m) // the plan prices by the same function (decoder.Model.MetalWindowBlocks)
 		}
 		if b.kvWinSet[l] {
 			L.kvg = 1
 		} else if L.kvShared {
 			L.kvg = r.layers[L.kvSrc].kvg
+		}
+		if L.kvg == 1 && b.kvWinBlocks > 0 {
+			blocks = min(blocks, b.kvWinBlocks) // a bounded window group's pool: its window and retention, not the context
 		}
 		want := kvLayerWant{kvDim: L.geom.kvDim, nKV: L.geom.nKV, shared: L.kvShared}
 		kw, e := kvCheckRows(l, m.LayerBuffers(l), want)
@@ -801,7 +806,12 @@ func (b *residentBuild) allocKVTables() error {
 		r.kvGs = []*kvGroup{&r.kvGroup}
 		if slices.ContainsFunc(r.layers, func(L residLayer) bool { return L.kvg == 1 }) {
 			// The window group: the sliding layers' own block ids and table, as large as the primary's (KV5-7b holds every position).
-			w := &kvGroup{kvTabBlocks: r.kvTabBlocks, kvShareBlocks: r.kvShareBlocks}
+			bounded := b.kvWinBlocks > 0 && b.kvWinBlocks < r.kvShareBlocks
+			share := r.kvShareBlocks
+			if bounded {
+				share = b.kvWinBlocks
+			}
+			w := &kvGroup{kvTabBlocks: r.kvTabBlocks, kvShareBlocks: share, bounded: bounded}
 			w.kvTab = NewBufferUint32sOn(mem.LineKV, d, make([]uint32, slots*w.kvTabBlocks))
 			w.kvTabU32 = w.kvTab.U32s()
 			w.kvRefs = make([]int32, 1+slots*w.kvShareBlocks)

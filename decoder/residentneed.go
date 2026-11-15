@@ -121,7 +121,7 @@ func metalKVTables(a *Architecture) int {
 // metalKVParts is one slot's KV on Metal at the precision ResolveKV delivers for this model's load, and its pools' null blocks
 // (metalKVPartsFor over the memoized LayerBuffers).
 func (m *Model) metalKVParts(ctx int) (slot, null int64) {
-	return metalKVPartsFor(m.w.arch, ctx, m.KVDeliveredFor("metal"), m.LayerBuffers)
+	return metalKVPartsFor(m.w.arch, ctx, m.KVDeliveredFor("metal"), m.LayerBuffers, m.MetalWindowBlocks())
 }
 
 // metalKVBytesFor is ResidentKVBytes("metal") for arch at precision delivered, read from the architecture alone: what the host guards
@@ -130,26 +130,44 @@ func metalKVBytesFor(a *Architecture, ctx int, delivered string) int64 {
 	if a == nil || ctx <= 0 {
 		return 0
 	}
-	slot, null := metalKVPartsFor(a, ctx, delivered, func(l int) []program.Buf { return layerBuffers(a, l) })
+	slot, null := metalKVPartsFor(a, ctx, delivered, func(l int) []program.Buf { return layerBuffers(a, l) }, 0)
 	return slot + null
 }
 
 // metalKVPartsFor is one slot's KV on Metal at precision delivered, and its pools' null blocks, once per load: per 64-row block,
 // every row bufs declares for a layer at Metal's size for it (MetalKVRowBytes), and the slot's tables, 4 B a block each (metalKVTables).
-func metalKVPartsFor(a *Architecture, ctx int, delivered string, bufs func(l int) []program.Buf) (slot, null int64) {
+// winBlocks, when positive, is the blocks a slot's window group holds (MetalWindowBlocks): the layers of a window-retention group take
+// no more than that many; 0 prices every layer at the context's blocks, which the host guards do before any model exists and a binary
+// without the Metal backend does always: more than a bounded build allocates, the safe direction.
+func metalKVPartsFor(a *Architecture, ctx int, delivered string, bufs func(l int) []program.Buf, winBlocks int) (slot, null int64) {
 	blocks := int64((ctx + KVBlockRows - 1) / KVBlockRows)
-	var perBlock int64
+	win := map[int]bool{}
+	if winBlocks > 0 {
+		for _, g := range a.KVGeometry().Groups {
+			if g.Retention == KVRetainWindow {
+				for _, l := range g.Layers {
+					win[l] = true
+				}
+			}
+		}
+	}
+	var perBlock, perBlockWin int64
 	for l := range a.NumLayers {
 		for _, b := range bufs(l) {
-			if b.Unit == program.PerPosition {
+			if b.Unit != program.PerPosition {
+				continue
+			}
+			if win[l] {
+				perBlockWin += KVBlockRows * MetalKVRowBytes(b, delivered)
+			} else {
 				perBlock += KVBlockRows * MetalKVRowBytes(b, delivered)
 			}
 		}
 	}
-	if perBlock == 0 {
+	if perBlock+perBlockWin == 0 {
 		return 0, 0
 	}
-	return blocks*perBlock + int64(metalKVTables(a))*blocks*4, perBlock
+	return blocks*perBlock + min(blocks, int64(winBlocks))*perBlockWin + int64(metalKVTables(a))*blocks*4, perBlock + perBlockWin
 }
 
 // MetalKVRowBytes is one position's row of b in Metal's KV pools when the cache is delivered at precision delivered (ResolveKV's

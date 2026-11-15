@@ -1563,7 +1563,7 @@ func (a *metalResident) PrefillLastNArgmax(embeddings [][]float32, startPos int)
 	if a.VerifyCost() == nil {
 		return nil, fmt.Errorf("metal: no step-kernel verify on this resident")
 	}
-	if e := a.checkCap(startPos, len(embeddings)); e != nil {
+	if e := a.checkPass(startPos, len(embeddings)); e != nil {
 		return nil, e
 	}
 	ids := make([]int, 0, len(embeddings))

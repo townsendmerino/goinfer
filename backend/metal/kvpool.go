@@ -98,7 +98,7 @@ func (r *resident) kvUploadMap(layer, base, end int) error {
 		return fmt.Errorf("metal: upload pass: layer %d ends at %d, the pass's first layer at %d", layer, end, p.end)
 	}
 	if p.end == 0 {
-		if err := r.kvWrite(p.s, 0, end); err != nil {
+		if err := r.kvWriteUpload(p.s, end); err != nil {
 			return err
 		}
 		p.end, p.wrote = end, true
@@ -165,6 +165,7 @@ type kvGroup struct {
 	kvOrder       []uint32
 	kvShareBlocks int
 	win           int         // the window length in positions, or 0 for a group that keeps every position
+	bounded       bool        // its pool holds decoder.MetalKVWindowBlocks a slot, not the context's (KV5-7c-ii): no slot borrows from another's share
 	kvBase        []int       // each slot's first held position (a window group)
 	retired       []kvRetired // blocks behind a base whose entries are not yet repointed
 }
@@ -312,7 +313,7 @@ var kvWindowReadPlantForTest bool
 // kvWindowKeep is how many positions a window group keeps behind the start of the window a write reads: the rollback budget, the floor
 // kvmgr.WindowNextBase's callers use (docs/tasks/task-kv-architecture-2026-10.md §5.4), so an edit late in a prompt still finds its
 // window held.
-const kvWindowKeep = 448
+const kvWindowKeep = decoder.MetalKVWindowKeep
 
 // kvRetainOffForTest keeps every position in the window group, as KV5-7b did: the arm KV5-7c's identity readings compare against.
 var kvRetainOffForTest bool
@@ -336,7 +337,7 @@ func (r *resident) kvActivity() (submits, waits int64) {
 func kvWindowFloor(win, base, lo, hi int) int {
 	f := min(lo-win+1, hi-(win-1)-kvWindowKeep)
 	if kvRetainEarlyPlantForTest {
-		f += kvWindowKeep + win + decoder.KVBlockRows // keeps nothing behind the window start, and drops the block being written
+		f = hi - 1 // keeps nothing behind the block being written: a window that straddles a block edge reads released rows
 	}
 	return max(base, f/decoder.KVBlockRows*decoder.KVBlockRows)
 }
@@ -486,6 +487,16 @@ func (r *resident) kvTake(g *kvGroup, s, b int, cow bool) (uint32, error) {
 		if id, ok := g.kvFreeBlock(); ok && !refuse {
 			return g.kvClaim(id), nil
 		}
+		if g.bounded { // every slot's window fits its own share: nothing to borrow, so free what a finished buffer has released, or refuse
+			if len(g.retired) > 0 && !refuse {
+				before := len(g.retired)
+				r.kvReap(false)
+				if len(g.retired) < before {
+					continue
+				}
+			}
+			return 0, fmt.Errorf("metal: KV slot %d's window group holds %d blocks and its pool has none free: %w", s, g.kvHeld(s), decoder.ErrKVPoolFull)
+		}
 		if r.kvEvictIdle(s) {
 			continue
 		}
@@ -615,6 +626,9 @@ func (r *resident) kvReclaim(g *kvGroup, s int) bool {
 		return false
 	}
 	for _, h := range r.kvGs {
+		if h.bounded { // a bounded window group's share is its whole bound: its blocks are the slot's newest window, never a borrower's excess
+			continue
+		}
 		h.dropRetired(t, h.kvShareBlocks, h.kvTabBlocks)
 		for b := h.kvShareBlocks; b < h.kvTabBlocks; b++ {
 			e := h.kvRow(t, b)
@@ -644,8 +658,12 @@ func (r *resident) kvWrite(s, lo, hi int) error {
 	if err := r.kvWindowReads(s, lo); err != nil {
 		return err
 	}
+	// Retention first: what the write's own reads leave behind goes before its blocks are taken, so a bounded window pool never holds
+	// the old window and the whole pass at once (the floor depends on the write's range, not on its mapping). Blocks whose buffers have
+	// completed are free at once; any others wait for them, as in the pool's slack.
+	r.kvRetain(s, lo, hi)
+	r.kvReap(false)
 	if r.kvWriteInPlace(s, lo, hi) {
-		r.kvRetain(s, lo, hi)
 		return nil
 	}
 	tx := r.kvBegin()
@@ -653,10 +671,40 @@ func (r *resident) kvWrite(s, lo, hi int) error {
 		tx.abort()
 		return err
 	}
+	return tx.commit()
+}
+
+// kvWriteUpload is kvWrite(s, 0, end) for an upload (UploadKV): a pass that runs no attention, so a bounded window group maps only the
+// tail it can hold and its base is where that tail starts; every other group maps all of it. The rows before the tail are never read.
+func (r *resident) kvWriteUpload(s, end int) error {
+	if len(r.kvRefs) == 0 || end <= 0 || s >= len(r.kvSlotSt) {
+		return nil
+	}
+	r.kvReap(false)
+	tail := map[*kvGroup]int{}
+	for _, g := range r.kvGs {
+		if g.bounded && g.win > 0 && !kvRetainOffForTest {
+			if from := max(0, end-(g.kvShareBlocks-decoder.MetalKVWindowSlack)*decoder.KVBlockRows) / decoder.KVBlockRows * decoder.KVBlockRows; from > 0 {
+				tail[g] = from
+			}
+		}
+	}
+	tx := r.kvBegin()
+	tx.tail = tail
+	if err := tx.write(s, 0, end); err != nil {
+		tx.abort()
+		return err
+	}
 	if err := tx.commit(); err != nil {
 		return err
 	}
-	r.kvRetain(s, lo, hi)
+	for _, g := range r.kvGs {
+		if g.win == 0 || kvRetainOffForTest {
+			continue
+		}
+		g.dropRetired(s, 0, g.kvTabBlocks)
+		g.kvBase[s] = tail[g]
+	}
 	return nil
 }
 
@@ -706,6 +754,7 @@ type kvTx struct {
 	saved   map[int]kvTxStanding // each slot's standing before the mapping
 	pending map[int]kvTxStanding // and as the mapping leaves it
 	cows    []kvTxCOW
+	tail    map[*kvGroup]int // an upload's first mapped position in a bounded window group (kvWriteUpload); absent groups map from the write's start
 }
 
 // kvTxEdit is one entry change: slot s's entry b named prev and now names next; take marks next as a block a take handed the entry, and
@@ -781,7 +830,7 @@ func (tx *kvTx) write(s, lo, hi int) error {
 	tx.trim(s, hi)
 	for b := lo / decoder.KVBlockRows; b < kvBlocksFor(hi); b++ {
 		for gi, g := range r.kvGs {
-			if b >= g.kvTabBlocks {
+			if b >= g.kvTabBlocks || b*decoder.KVBlockRows < tx.tail[g] {
 				continue
 			}
 			old := *g.kvRow(s, b)

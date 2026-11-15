@@ -701,6 +701,18 @@ func (a *metalResident) checkCap(pos, n int) error {
 	return nil
 }
 
+// checkPass is checkCap for a batched pass of n rows: a bounded window group takes at most decoder.MetalKVWindowPass rows in one, so a
+// longer pass (an image turn, say) declines and the decoder runs it sequentially.
+func (a *metalResident) checkPass(pos, n int) error {
+	if e := a.checkCap(pos, n); e != nil {
+		return e
+	}
+	if g := a.r.kvWin; g != nil && g.bounded && n > decoder.MetalKVWindowPass {
+		return fmt.Errorf("metal: a pass of %d rows exceeds the %d a bounded window group takes: run it in blocks or sequentially", n, decoder.MetalKVWindowPass)
+	}
+	return nil
+}
+
 // ContextCap is the resident KV capacity in positions (ResidentCaps' ContextCap), so generateInto clamps maxTokens to the cap
 // up front instead of erroring mid-decode.
 func (a *metalResident) ContextCap() int { return a.ctxCap() }
@@ -1009,7 +1021,7 @@ func (a *metalResident) prefillLastSrc(ctx context.Context, src rowSource, start
 		}
 	}
 	if a.g4LayerMajor() || a.moeLayerMajor() || a.emodelLayerMajor() {
-		if e := a.checkCap(startPos, src.n); e != nil {
+		if e := a.checkPass(startPos, src.n); e != nil {
 			return nil, e
 		}
 		if startPos == 0 {
@@ -1041,7 +1053,7 @@ func (a *metalResident) prefillLastSrc(ctx context.Context, src rowSource, start
 	promptLen := startPos + src.n
 	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
 	if a.promptStepOK(src.n, startPos, floor) {
-		if e := a.checkCap(startPos, src.n); e != nil {
+		if e := a.checkPass(startPos, src.n); e != nil {
 			return nil, e
 		}
 		if startPos == 0 {
@@ -1291,7 +1303,7 @@ func (a *metalResident) HiddenLast(ctx context.Context, embeddings [][]float32, 
 	if (a.r.g4moe != nil && a.r.g4moe.paged) || (a.r.moe != nil && a.r.moe.paged) {
 		return nil, fmt.Errorf("metal: HiddenLast not implemented for paged MoE (no headless paged forward); use the CPU path")
 	}
-	if e := a.checkCap(startPos, len(embeddings)); e != nil {
+	if e := a.checkPass(startPos, len(embeddings)); e != nil {
 		return nil, e
 	}
 	if startPos == 0 {
@@ -1339,7 +1351,7 @@ func (a *metalResident) ResidualAll(ctx context.Context, embeddings [][]float32,
 	if (a.r.g4moe != nil && a.r.g4moe.paged) || (a.r.moe != nil && a.r.moe.paged) {
 		return nil, fmt.Errorf("metal: ResidualAll not implemented for paged MoE (no headless paged forward); use the CPU path")
 	}
-	if e := a.checkCap(startPos, len(embeddings)); e != nil {
+	if e := a.checkPass(startPos, len(embeddings)); e != nil {
 		return nil, e
 	}
 	if startPos == 0 {
@@ -1372,7 +1384,7 @@ func (a *metalResident) ResidualAll(ctx context.Context, embeddings [][]float32,
 func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]float32, error) {
 	// Fail-fast before any write: checking the whole batch up front refuses an over-cap run
 	// without partial KV writes.
-	if e := a.checkCap(startPos, len(embeddings)); e != nil {
+	if e := a.checkPass(startPos, len(embeddings)); e != nil {
 		return nil, e
 	}
 	if len(embeddings) == 0 {
@@ -1461,13 +1473,18 @@ func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 	if err := a.r.kvUploadMap(layer, base, base+n); err != nil {
 		return err
 	}
-	// Each position goes to its row through the bound slot's table (kvHostRow), the pool's contents indexed from its start.
+	// Each position goes to its row through the bound slot's table (kvHostRow), the pool's contents indexed from its start. A bounded
+	// window group holds the slot from its base (kvWriteUpload): the rows below it have no block, so they are not written.
+	lowest := 0
+	if gr := a.r.kvGroupOf(layer); gr.win > 0 && gr.bounded && !kvRetainOffForTest {
+		lowest = gr.kvBase[a.r.kvSlot]
+	}
 	if a.r.kvI8 {
 		nKV := g.nKV
 		hd := g.hd
 		kc, vc := a.r.kc[layer].Int8s(), a.r.vc[layer].Int8s()
 		ks, vs := a.r.ks[layer].Floats(), a.r.vs[layer].Floats()
-		for p := range n {
+		for p := max(0, lowest-base); p < n; p++ {
 			row := a.r.kvHostRow(layer, base+p)
 			for h := range nKV {
 				kHead := keys[p*kvDim+h*hd : p*kvDim+(h+1)*hd]
@@ -1503,7 +1520,7 @@ func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 		}
 	} else {
 		// A run of positions inside one block is consecutive rows, so each block's run is one copy.
-		for p := 0; p < n; {
+		for p := max(0, lowest-base); p < n; {
 			run := min(n-p, decoder.KVBlockRows-(base+p)%decoder.KVBlockRows)
 			at, src := a.r.kvHostRow(layer, base+p)*kvDim, p*kvDim
 			if a.r.kvF32 {
@@ -1629,6 +1646,9 @@ func (a *metalResident) PrefillBlockRows() int {
 	}
 	for B > prefillBlockRowsMin && r.prefillScratchBytes(B) > budget {
 		B -= 64
+	}
+	if r.kvWin != nil && r.kvWin.bounded { // a bounded window group takes a pass of at most decoder.MetalKVWindowPass rows
+		B = min(B, decoder.MetalKVWindowPass)
 	}
 	return B
 }
