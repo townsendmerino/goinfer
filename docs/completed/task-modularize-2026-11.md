@@ -1,5 +1,18 @@
 # Task: modularize goinfer further — cut the long functions first (2026-11)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
+> STATE: stopped
+> UPDATED: 2026-11-14 18:38 PST
+> NOW: MZ4 closed: #984 merged, #985 and the final PR (branch mz4-fw4) armed; Dims stays by design; modularize doc archived in the last push. Device tests (cuda, metal) not run, listed in the PRs.
+> BRANCHES READY: #984 c45746d10de0b39d9e5414534f5989af030d06e5, #985 174690c51f8a7b39460ead8b78becd36418fe8d5
+> KEN: 38 go_references calls (3 configs, ~0 to 7 s each) plus 0 go_check_edit; useful: type-resolved per-package counts for all 37 forwarders in two minutes, and the exact test callers; misses: none new found (the compiler loop over all configs was the authority and found no site ken lacked); go_check_edit unused: a one-line method deletion plus caller rewrites is checked faster by the compiler over the configs than by whole-file content edits; grep fallbacks: 4 (stale name mentions in comments and docs, which no type-resolved tool lists)
+
 > **Status 2026-11-13: SCOPED, nothing started.** Opened from a read of the tree at df4d023fc, prompted by a Gemini
 > list of five suggestions (§1). The finding: goinfer's monoliths are a handful of very long functions and two very wide
 > state structs, and they sit in the files that change most. Splitting those files leaves every one of them whole, so the
