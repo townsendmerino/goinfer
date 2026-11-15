@@ -345,7 +345,10 @@ func TestKVPages_everyResidentFixture(t *testing.T) {
 
 // kvLongFixture copies a fixture with its window raised to 2,048 positions, so a prompt of a few hundred rows fits a tiny model's cache;
 // the weights are hard-linked where the filesystem allows it, else copied.
-func kvLongFixture(t *testing.T, dir string) string {
+func kvLongFixture(t *testing.T, dir string) string { return kvLongFixtureN(t, dir, 2048) }
+
+// kvLongFixtureN is kvLongFixture with n positions.
+func kvLongFixtureN(t *testing.T, dir string, n int) string {
 	out := filepath.Join(t.TempDir(), filepath.Base(dir))
 	if err := os.Mkdir(out, 0o755); err != nil {
 		t.Fatal(err)
@@ -368,9 +371,9 @@ func kvLongFixture(t *testing.T, dir string) string {
 			if err := json.Unmarshal(b, &raw); err != nil {
 				t.Fatal(err)
 			}
-			raw["max_position_embeddings"] = 2048
+			raw["max_position_embeddings"] = n
 			if tc, ok := raw["text_config"].(map[string]any); ok {
-				tc["max_position_embeddings"] = 2048
+				tc["max_position_embeddings"] = n
 			}
 			if b, err = json.Marshal(raw); err != nil {
 				t.Fatal(err)
@@ -1794,7 +1797,8 @@ func TestKVPages_windowGroup(t *testing.T) {
 // kvWinScenario is KV5-7c's long sequence on a fixture with a window group: 1,536 positions prefilled in blocks of 256 and 64 decoded,
 // on scrambled tables, then the cases retention must survive.
 type kvWinScenario struct {
-	off, early, noRepoint            bool // retention off (KV5-7b's arm); the two plants
+	off, early, noRepoint            bool // KV5-7b's arm (every position kept, the context's pool); the two plants
+	force                            bool // bound the window pool whatever kv_window_pool.go's conditions say (the passes here are one row each)
 	rewind, belowBase, reset, copyKV bool
 	basePlant                        int
 }
@@ -1809,6 +1813,7 @@ type kvWinResult struct {
 	belowErr    error // the error of a write the window group no longer holds the rows for
 	reusable    map[int]int
 	afterReset  string
+	bounded     bool   // the window group's pool was sized to the bound (KV5-7c-ii)
 	why         string // why the fixture was not run
 	submits     int64  // the device's command buffers committed and waited on, at the end of the decode
 	waits       int64
@@ -1854,11 +1859,13 @@ func kvWinRun(t *testing.T, dir string, sc kvWinScenario) (res kvWinResult) {
 	t.Helper()
 	kvScrambleForTest, kvRetainOffForTest, kvRetainEarlyPlantForTest, kvNoRepointPlantForTest = true, sc.off, sc.early, sc.noRepoint
 	kvReusableBasePlantForTest = sc.basePlant
+	kvWindowPoolOffForTest, kvWindowPoolForceForTest = sc.off, sc.force
 	defer func() {
 		kvScrambleForTest, kvRetainOffForTest, kvRetainEarlyPlantForTest, kvNoRepointPlantForTest = false, false, false, false
 		kvReusableBasePlantForTest, kvActivityForTest = 0, nil
+		kvWindowPoolOffForTest, kvWindowPoolForceForTest = false, false
 	}()
-	m, err := decoder.Load(kvLongFixture(t, dir), decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 2048, ResidentKVSlots: 3,
+	m, err := decoder.Load(kvLongFixtureN(t, dir, 8192), decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 8192, ResidentKVSlots: 3,
 		ResidentMoEStep: true, ResidentRecurrentStep: true, ResidentGemma4Step: true})
 	if err != nil {
 		res.why = "load: " + err.Error()
@@ -1881,7 +1888,7 @@ func kvWinRun(t *testing.T, dir string, sc kvWinScenario) (res kvWinResult) {
 		res.why = fmt.Sprintf("no window group (%d groups, span %v)", len(r.kvGs), func() int { s, _ := kvWindowSpan(m.KVGeometry()); return s }())
 		return res
 	}
-	res.hasWin, res.win = true, g.win
+	res.hasWin, res.win, res.bounded = true, g.win, g.bounded
 	_, _, _, _, _, _, vocab := m.Dims()
 	emb := func(i int) []float32 { return m.EmbedResidentForTest((i*97 + 3) % vocab) }
 	const chunk, prompt, decodeN = 256, 1536, 64
@@ -2022,6 +2029,26 @@ func TestKVWindow_retentionIsBitIdentical(t *testing.T) {
 		if on.audit != nil {
 			t.Errorf("%s: %v", name, on.audit)
 		}
+		// KV5-7c-ii: the window pool bounded (forced, since the passes of this scenario are one row each on a fixture whose prefill is not
+		// blocked): the same rows as the context's pool with every position kept, and the audit clean.
+		forced := kvWinRun(t, dir, kvWinScenario{rewind: true, reset: true, force: true})
+		if !forced.bounded {
+			t.Errorf("%s: forced, the window group's pool was not bounded", name)
+		}
+		if d := kvRowsDiffer(forced.rows, off.rows); d != 0 {
+			t.Errorf("%s: %d decoded logits differ between the bounded pool and the context's pool with every position kept", name, d)
+		}
+		if forced.audit != nil {
+			t.Errorf("%s bounded: %v", name, forced.audit)
+		}
+		cpForced := kvWinRun(t, dir, kvWinScenario{copyKV: true, force: true})
+		cpFull := kvWinRun(t, dir, kvWinScenario{copyKV: true, off: true})
+		if d := kvRowsDiffer(cpForced.rows, cpFull.rows); d != 0 {
+			t.Errorf("%s: %d logits decoded on a CopyKV destination differ between the bounded pool and the full one", name, d)
+		}
+		if cpForced.audit != nil {
+			t.Errorf("%s bounded, after CopyKV: %v", name, cpForced.audit)
+		}
 		want := (on.valid - on.win - kvWindowKeep) / decoder.KVBlockRows
 		if on.base == 0 || on.released < want-2 || on.base%decoder.KVBlockRows != 0 {
 			t.Errorf("%s: the window group holds from %d with %d blocks released at %d positions of a %d-position window, want about %d released", name, on.base, on.released, on.valid, on.win, want)
@@ -2154,5 +2181,205 @@ func TestKVWindow_reusableKVIsTheWindowOracle(t *testing.T) {
 	}
 	if bad, _ := probe(decoder.KVBlockRows); bad == 0 {
 		t.Error("the base read one block low and ReusableKV still agreed with the oracle: the plant is not red")
+	}
+}
+
+// TestKVWindow_gemma3PricingTable prints ResidentKVBytes on Metal for the two gemma3 checkpoints at 4,096, 16,384 and 32,768 positions,
+// the window pool as KV5-7b held it (the context's blocks) and as KV5-7c-ii bounds it: the reading the registration asks for before
+// the census moves. It opts in with GOINFER_HEAVY_TESTS=1 and skips a load the memory guard refuses.
+func TestKVWindow_gemma3PricingTable(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a real checkpoint from ~/models)")
+	}
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	home, _ := os.UserHomeDir()
+	for _, name := range []string{"gemma3-1b-q4_k_m.int4.metal.v17.giw", "gemma-3-4b-it-gguf/gemma-3-4b-it-Q4_K_M.gguf"} {
+		path := filepath.Join(home, "models", name)
+		if _, err := os.Stat(path); err != nil {
+			t.Logf("%s: not present", name)
+			continue
+		}
+		m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4"})
+		if err != nil {
+			t.Logf("%s: not loaded: %v", name, err)
+			continue
+		}
+		g := m.KVGeometry()
+		span, _ := kvWindowSpan(g)
+		t.Logf("%s: window %d, bounded pool %d blocks a slot, conditions failing %v, KV delivered %s", name, span, m.MetalWindowBlocks(), windowConditionsFailing(m), m.KVDeliveredFor("metal"))
+		for _, ctx := range []int{4096, 16384, 32768} {
+			kvWindowPoolOffForTest = true
+			full := m.ResidentKVBytes("metal", ctx, false, false)
+			kvWindowPoolOffForTest = false
+			bounded := m.ResidentKVBytes("metal", ctx, false, false)
+			t.Logf("  ctx %6d: one slot's KV %8.1f MiB with every position held, %8.1f MiB bounded (%.2fx)", ctx, float64(full)/(1<<20), float64(bounded)/(1<<20), float64(full)/float64(bounded))
+		}
+		m.Close()
+	}
+}
+
+// TestKVWindow_gemma3RealIdentity is KV5-7c-ii's tier-1 reading: gemma3-1b through the decoder's own prefill route, a 3,000-token prompt
+// and 96 greedy tokens, then a second turn that reuses the first turn's KV (ReusableKV over the window group's base), with the window
+// pool bounded and with every position held in the context's pool: the same tokens. It opts in with GOINFER_HEAVY_TESTS=1.
+func TestKVWindow_gemma3RealIdentity(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a real checkpoint from ~/models)")
+	}
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	home, _ := os.UserHomeDir()
+	path := filepath.Join(home, "models", "gemma3-1b-q4_k_m.int4.metal.v17.giw")
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no checkpoint at %s", path)
+	}
+	run := func(full bool) (turn1, turn2 []int, bounded bool, blocks int) {
+		kvWindowPoolOffForTest, kvRetainOffForTest = full, full
+		defer func() { kvWindowPoolOffForTest, kvRetainOffForTest = false, false }()
+		m, err := decoder.Load(path, decoder.Options{Backend: "metal", ResidentContext: 8192, ResidentKVSlots: 1})
+		if err != nil {
+			t.Skipf("not loaded (the fit guard or memory): %v", err)
+		}
+		defer m.Close()
+		a, ok := m.ResidentForwardForTest().(*metalResident)
+		if !ok || a.r.kvWin == nil {
+			t.Skipf("no Metal resident with a window group: %v", m.ResidentDecline())
+		}
+		bounded = a.r.kvWin.bounded
+		blocks = (len(a.r.kvWin.kvRefs) - 1) / max(1, len(a.r.kvSlotSt))
+		t.Logf("full %v: context cap %d, share %d positions, slots %d, note %q", full, a.r.ctxCap, a.r.kvShareCtx, len(a.r.kvSlotSt), m.ResidentContextNote())
+		_, _, _, _, _, _, vocab := m.Dims()
+		prompt := make([]int, 6000)
+		for i := range prompt {
+			prompt[i] = 100 + (i*7919+13)%(vocab-200)
+		}
+		gen := func(p []int, n int) []int {
+			ch, g := m.Generate(context.Background(), p, n, decoder.SamplingParams{})
+			var out []int
+			for id := range ch {
+				out = append(out, id)
+			}
+			if err := g.Err(); err != nil {
+				t.Fatalf("generate (full %v): %v", full, err)
+			}
+			t.Logf("full %v: a %d-token prompt generated %d of %d tokens (budget %d, clamped %v, resident declined %q)", full, len(p), len(out), n, g.Budget, g.BudgetClamped, g.ResidentDeclined)
+			return out
+		}
+		turn1 = gen(prompt, 96)
+		p2 := append(append(slices.Clone(prompt), turn1...), 100+(vocab/3)%(vocab-200), 200, 300, 400, 500)
+		turn2 = gen(p2, 64)
+		return turn1, turn2, bounded, blocks
+	}
+	f1, f2, fb, fblocks := run(true)
+	b1, b2, bb, bblocks := run(false)
+	t.Logf("full: bounded %v, window pool %d blocks a slot; bounded arm: bounded %v, %d blocks a slot", fb, fblocks, bb, bblocks)
+	if !bb || fb {
+		t.Fatalf("the arms are not what they claim: full arm bounded %v, bounded arm bounded %v", fb, bb)
+	}
+	if !slices.Equal(f1, b1) {
+		t.Errorf("turn 1: the bounded pool generated %v, the context's pool %v", b1, f1)
+	}
+	if !slices.Equal(f2, b2) {
+		t.Errorf("turn 2 (reusing turn 1's KV): the bounded pool generated %v, the context's pool %v", b2, f2)
+	}
+	t.Logf("gemma3-1b: %d + %d greedy tokens identical between the bounded pool and the context's", len(b1), len(b2))
+}
+
+// kvWindowAgreement loads dir with the options mod sets and reports whether the plan and the build agree on its window pool: the plan's
+// answer (decoder.Model.MetalWindowBlocks) bounds the pool exactly when the build sized it so, and a bounded build blocks its prefill
+// (PrefillBlockRows is positive and within the pass bound). hasWin is false for a fixture with no window group beside a full one.
+func kvWindowAgreement(t *testing.T, dir string, mod func(*decoder.Options), ignore string) (hasWin, bounded bool, err error) {
+	t.Helper()
+	kvWindowIgnoreForTest = ignore
+	defer func() { kvWindowIgnoreForTest = "" }()
+	o := decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 8192, ResidentKVSlots: 3,
+		ResidentMoEStep: true, ResidentRecurrentStep: true, ResidentGemma4Step: true}
+	if mod != nil {
+		mod(&o)
+	}
+	m, lerr := decoder.Load(kvLongFixtureN(t, dir, 8192), o)
+	if lerr != nil {
+		return false, false, nil
+	}
+	defer m.Close()
+	a, ok := m.ResidentForwardForTest().(*metalResident)
+	if !ok || a.r.kvWin == nil {
+		return false, false, nil
+	}
+	r := a.r
+	if ignore == "" && mod == nil {
+		t.Logf("%s: conditions that keep the pool full-size: %v", filepath.Base(dir), windowConditionsFailing(m))
+	}
+	plan := m.MetalWindowBlocks()
+	bounded = r.kvWin.bounded
+	switch rows := a.PrefillBlockRows(); {
+	case plan > 0 && plan < kvBlocksFor(r.kvShareCtx) && !bounded:
+		err = fmt.Errorf("the plan bounds the window pool at %d blocks and the build allocated the context's", plan)
+	case plan == 0 && bounded:
+		err = fmt.Errorf("the plan prices the window pool at the context's blocks and the build bounded it")
+	case bounded && (rows <= 0 || rows > decoder.MetalKVWindowPass):
+		err = fmt.Errorf("the window pool is bounded and PrefillBlockRows is %d: a pass is not bounded by %d rows", rows, decoder.MetalKVWindowPass)
+	}
+	return true, bounded, err
+}
+
+// TestKVWindow_planAndBuildAgree is KV5-7c-ii's tier-0 agreement (docs/tasks/task-kv-architecture-2026-10.md §6): the Metal backend
+// registered the function that decides whether a window pool is bounded (a binary that forgot would price every window pool full-size
+// and lose the gain), and on every fixture with a window group, with the options that flip each condition, the plan and the build
+// agree. For each condition that guards a route that is not bounded, the plant that ignores it makes them disagree.
+func TestKVWindow_planAndBuildAgree(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	if !decoder.MetalWindowPoolRegistered() {
+		t.Fatal("the Metal backend did not register its window pool function: every window pool would be priced full-size and the gain lost")
+	}
+	variants := []struct {
+		name, condition string
+		mod             func(*decoder.Options)
+	}{
+		{"kv f32", "kv-not-f32", func(o *decoder.Options) { o.KVPrecision = "f32" }},
+		{"fast prefill off by knob", "fast-prefill", func(o *decoder.Options) {
+			o.Knobs = &decoder.Knobs{"GOINFER_METAL_FAST_PREFILL": "0"}
+		}},
+		{"exact prefill", "fast-prefill", func(o *decoder.Options) { o.ExactPrefill = true }},
+	}
+	nWin, nBounded, reds := 0, 0, map[string]int{}
+	for _, dir := range kvWindowFixtures() {
+		name := filepath.Base(dir)
+		has, bounded, err := kvWindowAgreement(t, dir, nil, "")
+		if !has {
+			continue
+		}
+		nWin++
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+		if !bounded {
+			continue
+		}
+		nBounded++
+		for _, v := range variants {
+			if _, b, err := kvWindowAgreement(t, dir, v.mod, ""); err != nil || b {
+				t.Errorf("%s, %s: the condition %q did not keep the pool full-size (bounded %v, %v)", name, v.name, v.condition, b, err)
+			}
+			if _, _, err := kvWindowAgreement(t, dir, v.mod, v.condition); err != nil {
+				reds[v.name]++
+			}
+		}
+	}
+	t.Logf("%d fixtures have a window group beside a full one; %d are bounded by the conditions; plants red per variant: %v", nWin, nBounded, reds)
+	if nWin < 6 {
+		t.Errorf("only %d fixtures have a window group, want at least 6", nWin)
+	}
+	if nBounded == 0 {
+		t.Error("no fixture is bounded by the conditions: the agreement test never saw a bounded pool, and no plant can show")
+	}
+	for _, v := range variants {
+		if nBounded > 0 && reds[v.name] == 0 {
+			t.Errorf("ignoring the condition %q (%s) did not make the plan and the build disagree on any fixture: the plant is not red", v.condition, v.name)
+		}
 	}
 }
