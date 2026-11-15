@@ -140,7 +140,7 @@ func (s *buildState) admit() error {
 	// Gemma-4 enable_moe_block sets arch.MoE (so isMoE is true) but is NOT the generic MoE: it runs
 	// gemma4MoeMLP (parallel dense‖MoE + join), so it bypasses the generic-MoE admission checks below
 	// (gelu-tanh act, the attention sandwich norm) and gets its own int4-shape checks. Its nE/topK/
-	// moeInter still come from arch.MoE (MoEResidentParams), matching the bundle.
+	// moeInter still come from arch.MoE (MoEParams), matching the bundle.
 	isG4MoE := bv.HasGemma4MoE()
 	isGemma4 := bv.IsGemma4()
 	if isMoE && !isG4MoE {

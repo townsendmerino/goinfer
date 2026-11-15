@@ -22,9 +22,9 @@ func TestGraniteResidentBridge(t *testing.T) {
 	}
 	defer m.Close()
 
-	nHeads, headDim, dState, nGroups, dConv, embMul, residMul, logitScale, attnScale, ok := m.GraniteResidentParams()
+	nHeads, headDim, dState, nGroups, dConv, embMul, residMul, logitScale, attnScale, ok := m.BackendView().GraniteParams()
 	if !ok {
-		t.Fatal("GraniteResidentParams ok=false for a granite model")
+		t.Fatal("GraniteParams ok=false for a granite model")
 	}
 	dInner := nHeads * headDim
 	convDim := dInner + 2*nGroups*dState

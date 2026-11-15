@@ -931,14 +931,6 @@ func (m *Model) ResidentSpec() ResidentSpec {
 	return spec
 }
 
-// MoEResidentParams returns the MoE knobs the GPU resident runner needs (ok=false for
-// a dense model). sharedInter > 0 marks an always-on shared expert; sharedUngated picks
-// the GLM/DeepSeek (no sigmoid gate) combine; nGroup > 1 is DeepSeek group-limited
-// routing (topkGroup groups kept).
-func (m *Model) MoEResidentParams() (nE, k, inter, sharedInter int, sigmoid, norm, sharedUngated bool, scale float64, nGroup, topkGroup int, ok bool) {
-	return m.BackendView().MoEParams()
-}
-
 // Gemma4MoEResidentBundle is everything the CUDA resident build needs to construct one gemma4 enable_moe_block layer
 // (the parallel dense‖MoE FFN). RouterProjScaled has the learned routerScale and the hidden^-0.5 factor FOLDED into its
 // columns (exact in f32), so the resident router is rmsnorm_nw(h) → gemv_f32_f32(RouterProjScaled) → moe_route with
@@ -951,14 +943,6 @@ type Gemma4MoEResidentBundle struct {
 	ExpertsGateUp, ExpertsDown                                       []*linalg.WeightMat // per expert (gate‖up fused; down)
 	LayerScalar                                                      float32
 	DenseInter, MoeInter, NE, TopK                                   int
-}
-
-// MLAResidentParams returns the DeepSeek/Kimi MLA geometry the GPU resident runner
-// needs (ok=false when the arch is not MLA). attnScale is the resolved q·k softmax
-// multiplier (qk_head_dim^-0.5, with any YaRN mscale²); ropeScale is the YaRN
-// attention factor folded into the decoupled RoPE cos/sin (1.0 when none).
-func (m *Model) MLAResidentParams() (qLoRA, kvLoRA, qkNope, qkRope, vHead int, interleave bool, attnScale, ropeScale float64, ok bool) {
-	return m.BackendView().MLAParams()
 }
 
 // RopeInvFreqLayer returns layer i's RoPE inverse-frequency table as float32: the global or local table per
@@ -1188,20 +1172,6 @@ var releaseHostMemory = debug.FreeOSMemory
 // These expose the hybrid's per-layer mixer-kind + Mamba-2 mixer weights + scalar multipliers
 // to the gpu resident builder. Additive accessors; the eligibility flip (P6) is separate and
 // still gated, so production routing is unchanged until then.
-
-// GraniteResidentParams returns the Mamba-2 geometry + the four Granite scalar multipliers the
-// resident SSM path needs (ok=false for non-granite). logitScale divides the final logits;
-// attnScale is the attention q·k multiplier (folded into the resident attention scale). Granite
-// gated-RMSNorm is over the full dInner (NormGroups=1).
-func (m *Model) GraniteResidentParams() (nHeads, headDim, dState, nGroups, dConv int, embMul, residMul, logitScale, attnScale float32, ok bool) {
-	return m.BackendView().GraniteParams()
-}
-
-// NemotronResidentParams returns the resident geometry for Nemotron-H (the dense squared-ReLU
-// hybrid: Mamba-2 / NoPE-GQA / non-gated relu² MLP, single-op-per-block, no multipliers, no MoE).
-func (m *Model) NemotronResidentParams() (nHeads, headDim, dState, nGroups, dConv, normGroups int, attnScale float32, ok bool) {
-	return m.BackendView().NemotronParams()
-}
 
 // ResidentActive reports whether the GPU full-residency decode path is built and
 // will run for a plain stateless Generate (webgpu backend + eligible arch).
@@ -1504,11 +1474,6 @@ func (m *Model) embedResidentScratch(id int, dst, pleScratch []float32) []float3
 // token-identity term missing from the resident row's PLE inputs, which G1 (resident against the CPU) must catch.
 // Set only through SetGemma4PLEDropTokenForTest (goinfer_testhooks).
 var gemma4PLEDropTokenForTest bool
-
-// Qwen35ResidentParams returns the Gated-DeltaNet geometry (ok=false for every other family).
-func (m *Model) Qwen35ResidentParams() (convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numValueHeads int, attnGate, ok bool) {
-	return m.BackendView().Qwen35Params()
-}
 
 // ResidentMixer is the sequence-mixing operation of one layer in a resident's layer walk.
 type ResidentMixer uint8

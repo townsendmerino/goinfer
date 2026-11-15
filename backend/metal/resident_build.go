@@ -190,7 +190,7 @@ func (b *residentBuild) bindPipelines() {
 	// The resolver's answer, not the raw request (decoder.ResolveKV). It names the GQA K/V cache; an MLA model's latent is f32
 	// whatever it says (metal/mla.go), so neither flag applies there.
 	kvDelivered := m.KVDeliveredFor("metal")
-	if _, _, _, _, _, _, _, _, isMLA := m.MLAResidentParams(); isMLA {
+	if _, _, _, _, _, _, _, _, isMLA := m.BackendView().MLAParams(); isMLA {
 		kvDelivered = ""
 	}
 	r.kvF32 = kvDelivered == "f32"
@@ -409,7 +409,7 @@ func (b *residentBuild) uploadLayers() error {
 	// layer to one geom; Gemma 4's local/global interleave resolves to two. maxNHhd/maxKvDim size
 	// the shared per-token scratch to the widest layer (== the model shape for a uniform family).
 	geomCache := map[[4]int]*attnGeom{}
-	_, _, _, _, _, attnGate, dnetOK := m.Qwen35ResidentParams()
+	_, _, _, _, _, attnGate, dnetOK := m.BackendView().Qwen35Params()
 	b.w, b.alias, b.mk, b.fuse, b.geomCache, b.attnGate, b.dnetOK = w, alias, mk, fuse, geomCache, attnGate, dnetOK
 	for l := range nL {
 		if err := b.buildLayer(l); err != nil {

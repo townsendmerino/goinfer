@@ -48,7 +48,7 @@ func TestMambaRealInputParity(t *testing.T) {
 
 	hidden, nLayers, _, _, _, _, _ := m.Dims()
 	_ = hidden
-	nHeads, headDim, dState, nGroups, dConv, _, _, _, _, ok := m.GraniteResidentParams()
+	nHeads, headDim, dState, nGroups, dConv, _, _, _, _, ok := m.BackendView().GraniteParams()
 	if !ok {
 		t.Fatal("not granite")
 	}

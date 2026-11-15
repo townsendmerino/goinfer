@@ -143,7 +143,7 @@ func (m *Model) cudaDerivedTableBytes() int64 {
 			hybrid = true
 		}
 	}
-	nE, _, _, _, _, _, _, _, _, _, isMoE := m.MoEResidentParams()
+	nE, _, _, _, _, _, _, _, _, _, isMoE := m.BackendView().MoEParams()
 	var n int64
 	for l, ops := range layers {
 		if x, _ := program.MixerOf(ops); x == program.MixerAttention || x == program.MixerMLA {

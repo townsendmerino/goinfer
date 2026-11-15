@@ -25,7 +25,7 @@ func TestResidentKVBytes_excludesDeltaNetLayers(t *testing.T) {
 	}
 	defer m.Close()
 
-	_, _, _, _, _, _, dnetOK := m.Qwen35ResidentParams()
+	_, _, _, _, _, _, dnetOK := m.BackendView().Qwen35Params()
 	if !dnetOK {
 		t.Fatal("test setup: qwen35-tiny did not resolve to a DeltaNet-hybrid model")
 	}

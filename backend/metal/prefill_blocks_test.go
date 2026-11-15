@@ -369,7 +369,7 @@ func TestPrefillStepsDecline_equalsTheHandChecks(t *testing.T) {
 				return
 			}
 		}
-		_, _, _, _, _, _, _, _, mla := m.MLAResidentParams()
+		_, _, _, _, _, _, _, _, mla := m.BackendView().MLAParams()
 		hand := m.BackendView().HasGemma4MoE() || mla
 		why := prefillStepsDecline(p)
 		if hand != (why != "") {

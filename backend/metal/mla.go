@@ -35,7 +35,7 @@ type mlaLayer struct {
 
 // buildMLA returns the model's MLA geometry, (nil, nil) for a model without MLA, or the reason this resident cannot run it.
 func buildMLA(m *decoder.Model, nH, H int) (*mlaParams, error) {
-	qLoRA, kvLoRA, qkNope, qkRope, vHead, interleave, attnScale, ropeScale, ok := m.MLAResidentParams()
+	qLoRA, kvLoRA, qkNope, qkRope, vHead, interleave, attnScale, ropeScale, ok := m.BackendView().MLAParams()
 	if !ok {
 		return nil, nil
 	}

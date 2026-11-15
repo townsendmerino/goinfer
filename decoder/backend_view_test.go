@@ -154,9 +154,4 @@ func TestBackendModelView_familyParams(t *testing.T) {
 		t.Error("MLAParams ok for a model with no MLA subsystem")
 	}
 
-	// The forwarders delegate to the view, so what the view returns is what the model returns.
-	a1, b1, c1, d1, e1, f1, g1, h1, i1, j1, k1 := m.MoEResidentParams()
-	if a1 != nE || b1 != k || c1 != inter || d1 != shared || e1 != sigmoid || f1 != norm || g1 != ungated || h1 != scale || i1 != nGroup || j1 != topkGroup || k1 != ok {
-		t.Error("Model.MoEResidentParams differs from the view's MoEParams")
-	}
 }
