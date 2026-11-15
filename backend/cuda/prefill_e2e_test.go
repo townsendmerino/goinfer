@@ -65,7 +65,7 @@ func prefillE2EGate(t *testing.T, path, quant string) {
 	if !rf.prefillReady {
 		t.Fatal("batched prefill kernels did not load — PrefillLast would decline")
 	}
-	win := mc.SlidingWindowResident()
+	win := mc.BackendView().SlidingWindow()
 	if win <= 0 {
 		t.Fatalf("fixture declares no window (%d)", win)
 	}

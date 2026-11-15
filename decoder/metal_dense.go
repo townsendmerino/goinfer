@@ -80,13 +80,13 @@ func (m *Model) metalDerivedDenseBytes() int64 {
 			}
 		}
 	}
-	floats += int64(len(m.RopeInvFreq()))
+	floats += int64(len(m.BackendView().RopeInvFreq()))
 	if maxHd == 0 {
 		maxHd = 4 // no attention layer: the build sizes its attention buffers at 4
 	}
 	floats += int64(maxHd)
 	if firstHalf > 0 {
-		floats += int64(len(m.MRopeAxisResident(firstHalf)))
+		floats += int64(len(m.BackendView().MRopeAxis(firstHalf)))
 	}
 	return 4*floats + bytes
 }

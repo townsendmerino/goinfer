@@ -44,14 +44,14 @@ func TestBackendModelView_FlintTinyParity(t *testing.T) {
 	if bv.AttnScale() != m.AttnScale() {
 		t.Fatalf("AttnScale = %v, want %v", bv.AttnScale(), m.AttnScale())
 	}
-	if bv.SlidingWindow() != m.SlidingWindowResident() {
-		t.Fatalf("SlidingWindow = %d, want %d", bv.SlidingWindow(), m.SlidingWindowResident())
+	if bv.SlidingWindow() != m.BackendView().SlidingWindow() {
+		t.Fatalf("SlidingWindow = %d, want %d", bv.SlidingWindow(), m.BackendView().SlidingWindow())
 	}
-	if !slices.Equal(bv.RopeInvFreq(), m.RopeInvFreq()) {
+	if !slices.Equal(bv.RopeInvFreq(), m.BackendView().RopeInvFreq()) {
 		t.Fatalf("RopeInvFreq mismatch")
 	}
-	if bv.HasAttnSinks() != m.HasAttnSinksResident() {
-		t.Fatalf("HasAttnSinks = %v, want %v", bv.HasAttnSinks(), m.HasAttnSinksResident())
+	if bv.HasAttnSinks() != m.BackendView().HasAttnSinks() {
+		t.Fatalf("HasAttnSinks = %v, want %v", bv.HasAttnSinks(), m.BackendView().HasAttnSinks())
 	}
 	if bv.ProjsInt4() != m.ResidentProjsInt4() {
 		t.Fatalf("ProjsInt4 = %v, want %v", bv.ProjsInt4(), m.ResidentProjsInt4())

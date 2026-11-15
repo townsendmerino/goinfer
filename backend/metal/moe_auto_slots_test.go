@@ -83,7 +83,7 @@ func TestMoeTopK_realFixtures(t *testing.T) {
 		t.Fatalf("load gemma4-moe-tiny: %v", err)
 	}
 	defer mg.Close()
-	if !mg.HasGemma4MoEResident() {
+	if !mg.BackendView().HasGemma4MoE() {
 		t.Fatal("gemma4-moe-tiny did not resolve to a Gemma-4 MoE resident")
 	}
 	if want := mg.Config().TopKExperts; want > 0 {

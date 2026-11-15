@@ -96,18 +96,18 @@ type gemma4MoeLayer struct {
 // and an error for a shape this path cannot express (so BuildResident declines → CPU fallback rather
 // than mis-running). Mirrors cuda/backend.go's isG4MoE build and its int4-width shape checks.
 func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, nL int) (*gemma4MoeResident, error) {
-	if !m.HasGemma4MoEResident() {
+	if !m.BackendView().HasGemma4MoE() {
 		return nil, nil
 	}
 	var b decoder.Gemma4MoEResidentBundle
 	var ok bool
 	for l := range nL {
-		if b, ok = m.Gemma4MoEResidentLayer(l); ok {
+		if b, ok = m.BackendView().Layer(l).Gemma4MoEBundle(); ok {
 			break
 		}
 	}
 	if !ok {
-		return nil, fmt.Errorf("metal gemma4 MoE: HasGemma4MoEResident but no layer bundle")
+		return nil, fmt.Errorf("metal gemma4 MoE: HasGemma4MoE but no layer bundle")
 	}
 	// int4/W4A8 width checks: the GEMVs stride by the group size (hidden) and the 8-nibble word
 	// (moeInter/denseInter), so all three must be multiples of 32. Same checks as cuda/backend.go.
@@ -166,7 +166,7 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 				if skipPagedInt4CheckForTest {
 					break
 				}
-				if bl, ok := m.Gemma4MoEResidentLayer(l); ok && len(bl.ExpertsGateUp) > 0 {
+				if bl, ok := m.BackendView().Layer(l).Gemma4MoEBundle(); ok && len(bl.ExpertsGateUp) > 0 {
 					_, _, ok1 := int4DirectWords(bl.ExpertsGateUp[0])
 					_, _, ok2 := int4DirectWords(bl.ExpertsDown[0])
 					if !ok1 || !ok2 {
@@ -202,7 +202,7 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 // buildGemma4MoELayer packs one enable_moe_block layer's weights. The dense MLP and the experts are
 // row-stacked into fused gate|up buffers via int4Concat (gate rows then up rows, per the swiglu
 // gate@0/up@inter split); the router (RouterProjScaled, f32) has routerScale·hidden^-0.5 folded into
-// its columns at build (decoder Gemma4MoEResidentLayer), so the resident router is rmsnorm_nw(h) →
+// its columns at build (decoder Layer(l).Gemma4MoEBundle), so the resident router is rmsnorm_nw(h) →
 // gemv_f32_f32(RouterProjScaled) — the algebraic dual of the CPU's scaled-rn · raw-proj.
 func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEResidentBundle, g *gemma4MoeResident) *gemma4MoeLayer {
 	ml := &gemma4MoeLayer{}

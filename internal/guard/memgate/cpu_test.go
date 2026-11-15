@@ -126,7 +126,7 @@ func TestMemGate_cpuRingsAcrossTheWindow(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		w := m.SlidingWindowResident()
+		w := m.BackendView().SlidingWindow()
 		m.Close()
 		if w <= 1 || w >= cpuGateCtx {
 			t.Fatalf("%s: window %d, want one between 1 and %d", fx, w, cpuGateCtx)

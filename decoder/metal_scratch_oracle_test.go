@@ -26,7 +26,7 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 	nHhd, kvDim, fa, attn, layerFFN := 0, 0, 0, 0, 0
 	maxFFNI := I
 	nE, k, inter, sharedInter, _, _, _, _, _, _, moeOK := m.MoEResidentParams()
-	g4 := m.HasGemma4MoEResident()
+	g4 := m.BackendView().HasGemma4MoE()
 	moeOK = moeOK && !g4
 	q4k := m.Quant() == "q4k"
 	for l := range nL {
@@ -43,7 +43,7 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 			continue
 		}
 		lw := &w.Layers[l]
-		_, isG4 := m.Gemma4MoEResidentLayer(l)
+		_, isG4 := m.BackendView().Layer(l).Gemma4MoEBundle()
 		denseFFN := hasFFN && !isG4 && !(moeOK && len(lw.Experts) > 0) && !m.BackendView().NonGatedMLP()
 		if denseFFN {
 			if fi := lw.GateProj.Rows(); fi != 0 {
@@ -71,7 +71,7 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 	var g4b Gemma4MoEResidentBundle
 	if g4 {
 		for l := range nL {
-			if b, ok := m.Gemma4MoEResidentLayer(l); ok {
+			if b, ok := m.BackendView().Layer(l).Gemma4MoEBundle(); ok {
 				g4b = b
 				break
 			}
@@ -95,7 +95,7 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 		u32s += 2
 	}
 	u32s += int64(7*len(geoms) + 2*attn + layerFFN) // each geometry's seven; each attention layer's sink flag and window; a distinct FFN width's
-	if P := m.Gemma4PLEDimResident(); P > 0 {
+	if P := m.BackendView().Gemma4PLEDim(); P > 0 {
 		f32 += int64(nL*P + P + 1)
 		bytes += int64(P)
 		u32s++
@@ -125,7 +125,7 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 		u32s += 5
 	}
 	if moeOK { // the generic MoE's router, shared expert and k slots
-		_, _, gptOss := m.GptOssActResident()
+		_, _, gptOss := m.BackendView().GptOssAct()
 		f32 += int64(nE + k + 1 + H)
 		bytes += int64(4 * k)
 		u32s += int64(10 + k)

@@ -131,7 +131,7 @@ since `9593bd70`). The first test prints only the runner-shape reason when that 
 - **A hazard, not a decline: Spark-X2.5's activation.**
   - Spark-X2.5 is a gated MLP with exact-erf GELU (`ActGelu`, `gegluExact` in `decoder/mlp.go`).
   - `residentFeatures` maps any gated non-SiLU activation to `gated-gelu`, which every backend implements as tanh-GELU.
-  - `decoder/residency.go:Model.GatedActResident` passes the activation's ordinal (3 for `ActGelu`) to a CUDA kernel that knows
+  - `decoder/backend_view.go:backendModelView.GatedAct` passes the activation's ordinal (3 for `ActGelu`) to a CUDA kernel that knows
     0 (tanh-GELU) and 1 (SiLU). `decoder/arch.go`'s comment on `ActGelu`, "Only non-gated archs reach it today", predates
     Spark-X2.5.
   - Nothing runs wrong today: the runner shape and `attn-output-gate` decline Spark-X2.5 first. Once both are lifted, it would

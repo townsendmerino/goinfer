@@ -213,7 +213,7 @@ func TestDirSidecar_keepsMRopeSection(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := direct.MRopeAxisResident(half)
+			want := direct.BackendView().MRopeAxis(half)
 			direct.Close()
 			if len(want) == 0 {
 				t.Fatal("the direct load has no m-RoPE axis table: the rewritten config is not the released layout")
@@ -226,7 +226,7 @@ func TestDirSidecar_keepsMRopeSection(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got := side.MRopeAxisResident(half)
+			got := side.BackendView().MRopeAxis(half)
 			side.Close()
 			if !slices.Equal(got, want) {
 				t.Errorf("m-RoPE axis table through the sidecar %v, direct %v", got, want)

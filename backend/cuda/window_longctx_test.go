@@ -39,7 +39,7 @@ func TestSlidingWindowLongContext(t *testing.T) {
 		t.Fatalf("load (cuda): %v", err)
 	}
 	defer mc.Close()
-	win := mc.SlidingWindowResident()
+	win := mc.BackendView().SlidingWindow()
 	if win <= 0 {
 		t.Fatalf("fixture declares no window (got %d) — the whole point of this fixture is that "+
 			"config.json carries sliding_window; regenerate it", win)

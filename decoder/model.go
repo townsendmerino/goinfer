@@ -297,9 +297,9 @@ func (m *Model) ResidentGemma4Step() bool { return m.gemma4Step }
 
 // WindowedKVLayer reports whether layer l's resident K/V is windowed under Options.ResidentWindowedKV: the option is on and the layer is
 // a sliding-window attention layer with a real K/V cache (not an MLA latent, not a recurrent mixer, whose kvDimAt is not a K/V width
-// bounded by a window). Every windowed layer shares SlidingWindowResident's one window.
+// bounded by a window). Every windowed layer shares SlidingWindow's one window.
 func (m *Model) WindowedKVLayer(l int) bool {
-	if !m.windowedKV || m.SlidingWindowResident() <= 0 || !m.BackendView().Layer(l).IsLocal() {
+	if !m.windowedKV || m.BackendView().SlidingWindow() <= 0 || !m.BackendView().Layer(l).IsLocal() {
 		return false
 	}
 	a := m.w.arch

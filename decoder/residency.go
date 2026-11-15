@@ -539,7 +539,7 @@ func (m *Model) residentPrefillScratch(promptTokens int) (bytes int64, ok bool) 
 		return m.residentChunkedScratch(promptTokens)
 	}
 	rows := min(promptTokens, B+m.prefillTailMinRows()-1)
-	return m.prefillBlocks().PrefillScratchBytes(rows) + int64(rows)*4*int64(m.ResidentEmbedLen()), true
+	return m.prefillBlocks().PrefillScratchBytes(rows) + int64(rows)*4*int64(m.BackendView().EmbedLen()), true
 }
 
 // prefillKernelFloor is the resident's kernel-class boundary for chunking: PrefillKernelFloor when the resident
@@ -703,7 +703,7 @@ func (a *Architecture) runnerShapeDeclineSSM(ssmResident bool) string {
 		// as caution and functions as a coverage hole). The gates are cuda.TestGemma4MoEScaled_residentParity and
 		// TestGemma4DenseScaled_residentParity. Dense and MoE both fall through to the common checks below; softcap and the
 		// E-model's PLE (FeatGemma4EModel) are per-backend feature gates. The parallel dense‖MoE FFN runs on cuda's own path,
-		// routed around the generic MoE checks via HasGemma4MoEResident.
+		// routed around the generic MoE checks via HasGemma4MoE.
 	case a.qwen35 != nil:
 		// Gated-DeltaNet hybrids (qwen3_5, qwen3_5_moe, qwen3_next) fall through, same discipline as gemma4/gpt-oss: the
 		// recurrence and the fused output gate are a BACKEND capability (FeatDeltaNet), so a backend without them declines at
@@ -953,22 +953,6 @@ type Gemma4MoEResidentBundle struct {
 	DenseInter, MoeInter, NE, TopK                                   int
 }
 
-// Gemma4MoEResidentLayer returns the build bundle for gemma4 MoE layer l, or ok=false for a
-// non-gemma4 model / dense layer. Used by the CUDA backend's resident build (task 2c).
-func (m *Model) Gemma4MoEResidentLayer(l int) (Gemma4MoEResidentBundle, bool) {
-	return m.BackendView().Layer(l).Gemma4MoEBundle()
-}
-
-// IsGemma4Resident reports whether this is a gemma4 model at all (dense or MoE, shared-KV or
-// not) — the broader signal for resident build steps that apply to every gemma4 checkpoint, not
-// just the enable_moe_block ones HasGemma4MoEResident gates.
-func (m *Model) IsGemma4Resident() bool { return m.BackendView().IsGemma4() }
-
-// HasGemma4MoEResident reports whether this is a gemma4 model with any enable_moe_block layer — the
-// signal the CUDA backend uses to route around the generic MoE build (which can't express the
-// parallel dense‖MoE join) into gemma4MoeMLP.
-func (m *Model) HasGemma4MoEResident() bool { return m.BackendView().HasGemma4MoE() }
-
 // MLAResidentParams returns the DeepSeek/Kimi MLA geometry the GPU resident runner
 // needs (ok=false when the arch is not MLA). attnScale is the resolved q·k softmax
 // multiplier (qk_head_dim^-0.5, with any YaRN mscale²); ropeScale is the YaRN
@@ -976,14 +960,6 @@ func (m *Model) HasGemma4MoEResident() bool { return m.BackendView().HasGemma4Mo
 func (m *Model) MLAResidentParams() (qLoRA, kvLoRA, qkNope, qkRope, vHead int, interleave bool, attnScale, ropeScale float64, ok bool) {
 	return m.BackendView().MLAParams()
 }
-
-// SlidingWindowResident returns the sliding-window size for the resident runner (0 when
-// the model is full-attention). Local (windowed) layers attend only the last `window`
-// positions; the runner computes the per-token window start (Lever C6).
-func (m *Model) SlidingWindowResident() int { return m.BackendView().SlidingWindow() }
-
-// EmbedScaleResident is the token-embedding multiplier (Gemma = √hidden; 0/1 = none).
-func (m *Model) EmbedScaleResident() float64 { return m.BackendView().EmbedScale() }
 
 // RopeInvFreqLayer returns layer i's RoPE inverse-frequency table as float32: the global or local table per
 // the layer's attention type (Mellum YaRN-on-global vs default-local).
@@ -1015,13 +991,6 @@ func (m *Model) RopeInvFreqLayer(i int) []float32 {
 	return out
 }
 
-// AttnTempParams returns Ministral 3's raw attention-temperature parameters (beta, origMaxPos).
-func (m *Model) AttnTempParams() (beta, origMaxPos float64) { return m.BackendView().AttnTempParams() }
-
-// RopeInvFreq returns the rotary inverse frequencies (layer 0; uniform across an
-// eligible model's dense layers) as float32 — the GPU bridge's RoPE table.
-func (m *Model) RopeInvFreq() []float32 { return m.BackendView().RopeInvFreq() }
-
 // AttnScale is the attention softmax q·k multiplier the resident backends (CUDA/Metal/WebGPU) apply: the
 // registry-RESOLVED arch.AttnScale, which is 1/√headDim for the common case but deliberately not for several
 // archs (Gemma-3 uses query_pre_attn_scalar^-0.5, == headDim for 1B/4B/12B but hidden/heads for 27B; Granite uses
@@ -1034,18 +1003,12 @@ func (m *Model) AttnScale() float32 {
 	return float32(1.0 / math.Sqrt(float64(m.w.arch.HeadDim)))
 }
 
-// RMSAddOne reports the Gemma (1+w) RMSNorm offset (false for Qwen/Llama).
-func (m *Model) RMSAddOne() bool { return m.BackendView().RMSAddOne() }
-
 // Dims returns the model shape from the resolved Architecture — authoritative,
 // unlike Config() (Cfg), which a GGUF-loaded or .giw model may leave partly
 // zero. The forward pass reads these.
 func (m *Model) Dims() (hidden, nLayers, nH, nKV, hd, inter, vocab int) {
 	return m.BackendView().Dims()
 }
-
-// MRopeAxisResident is the m-RoPE position component (0 temporal, 1 height, 2 width) of each of the first half rotary pairs.
-func (m *Model) MRopeAxisResident(half int) []int { return m.BackendView().MRopeAxis(half) }
 
 // NormEps is the RMSNorm epsilon (arch-backed).
 func (m *Model) NormEps() float32 {
@@ -1054,9 +1017,6 @@ func (m *Model) NormEps() float32 {
 	}
 	return 1e-6
 }
-
-// FinalLogitSoftcapResident is the Gemma final-logit softcap (30 for Gemma 4; 0 for every non-softcapped family).
-func (m *Model) FinalLogitSoftcapResident() float32 { return m.BackendView().FinalLogitSoftcap() }
 
 // withResidency builds the GPU resident decoder if the backend supports it and
 // the arch is eligible, then returns m. A no-op for the CPU backend / ineligible
@@ -1489,7 +1449,7 @@ func (m *Model) embedIsTableRow() bool {
 // (embed → Forward → discard, one token at a time) — never where more than one live embedding
 // must exist at once.
 //
-// A Gemma 4 E-model's row is [h ‖ PLE inputs], ResidentEmbedLen() long: the per-layer inputs need the token id,
+// A Gemma 4 E-model's row is [h ‖ PLE inputs], EmbedLen() long: the per-layer inputs need the token id,
 // which the resident interface does not carry, so the host computes them here with the CPU's own helper
 // (gemma4PLEInputs) and the backend reads them from the row's tail (S1.2, docs/completed/task-multimodal-support-2026-10.md).
 func (m *Model) embedResidentInto(id int, dst []float32) []float32 {
@@ -1500,7 +1460,7 @@ func (m *Model) embedResidentInto(id int, dst []float32) []float32 {
 // so embedding row after row allocates nothing per row.
 func (m *Model) embedResidentScratch(id int, dst, pleScratch []float32) []float32 {
 	hidden := m.w.arch.HiddenDim
-	n := m.ResidentEmbedLen()
+	n := m.BackendView().EmbedLen()
 	var row []float32
 	if cap(dst) >= n {
 		row = dst[:n]
@@ -1544,23 +1504,6 @@ func (m *Model) embedResidentScratch(id int, dst, pleScratch []float32) []float3
 // token-identity term missing from the resident row's PLE inputs, which G1 (resident against the CPU) must catch.
 // Set only through SetGemma4PLEDropTokenForTest (goinfer_testhooks).
 var gemma4PLEDropTokenForTest bool
-
-// ResidentEmbedLen is the length of every embedding row a ResidentForward receives.
-func (m *Model) ResidentEmbedLen() int { return m.BackendView().EmbedLen() }
-
-// Gemma4PLEDimResident is a Gemma 4 E-model's per-layer input width (hidden_size_per_layer_input), 0 for every other model.
-func (m *Model) Gemma4PLEDimResident() int { return m.BackendView().Gemma4PLEDim() }
-
-// GatedActResident returns the MLP activation as its ActKind ordinal.
-func (m *Model) GatedActResident() int { return m.BackendView().GatedAct() }
-
-// GptOssActResident exposes gpt-oss's clamped interleaved-SwiGLU constants to a resident backend.
-func (m *Model) GptOssActResident() (alpha, limit float32, ok bool) {
-	return m.BackendView().GptOssAct()
-}
-
-// HasAttnSinksResident reports whether the arch carries per-query-head attention sink logits in the softmax denominator on every layer.
-func (m *Model) HasAttnSinksResident() bool { return m.BackendView().HasAttnSinks() }
 
 // Qwen35ResidentParams returns the Gated-DeltaNet geometry (ok=false for every other family).
 func (m *Model) Qwen35ResidentParams() (convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numValueHeads int, attnGate, ok bool) {
