@@ -95,7 +95,27 @@ func (m *Model) MetalKVTableRaiseBytes(slots, ctx int) int64 {
 		return 0
 	}
 	blocks := func(n int) int64 { return int64((n + KVBlockRows - 1) / KVBlockRows) }
-	return int64(slots) * (blocks(m.MetalKVCap(slots, ctx)) - blocks(ctx)) * 4
+	return int64(metalKVTables(m.w.arch)) * int64(slots) * (blocks(m.MetalKVCap(slots, ctx)) - blocks(ctx)) * 4
+}
+
+// metalKVTables is how many block tables a Metal resident holds for each slot: the primary group's and, when sliding layers and
+// layers of another group both hold K/V, the window group's (KV5-7b). It reads the geometry the build reads.
+func metalKVTables(a *Architecture) int {
+	if a == nil {
+		return 1
+	}
+	win, other := false, false
+	for _, g := range a.KVGeometry().Groups {
+		if g.Retention == KVRetainWindow {
+			win = true
+		} else {
+			other = true
+		}
+	}
+	if win && other {
+		return 2
+	}
+	return 1
 }
 
 // metalKVParts is one slot's KV on Metal at the precision ResolveKV delivers for this model's load, and its pools' null blocks
@@ -115,7 +135,7 @@ func metalKVBytesFor(a *Architecture, ctx int, delivered string) int64 {
 }
 
 // metalKVPartsFor is one slot's KV on Metal at precision delivered, and its pools' null blocks, once per load: per 64-row block,
-// every row bufs declares for a layer at Metal's size for it (MetalKVRowBytes), and the slot's table, 4 B a block.
+// every row bufs declares for a layer at Metal's size for it (MetalKVRowBytes), and the slot's tables, 4 B a block each (metalKVTables).
 func metalKVPartsFor(a *Architecture, ctx int, delivered string, bufs func(l int) []program.Buf) (slot, null int64) {
 	blocks := int64((ctx + KVBlockRows - 1) / KVBlockRows)
 	var perBlock int64
@@ -129,7 +149,7 @@ func metalKVPartsFor(a *Architecture, ctx int, delivered string, bufs func(l int
 	if perBlock == 0 {
 		return 0, 0
 	}
-	return blocks*perBlock + blocks*4, perBlock
+	return blocks*perBlock + int64(metalKVTables(a))*blocks*4, perBlock
 }
 
 // MetalKVRowBytes is one position's row of b in Metal's KV pools when the cache is delivered at precision delivered (ResolveKV's

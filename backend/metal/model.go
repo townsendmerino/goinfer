@@ -145,6 +145,7 @@ type residLayer struct {
 	// layer kvSrc's cache, which r.kc[l]/r.vc[l] (and every slot's) alias.
 	kvShared                  bool
 	kvSrc                     int
+	kvg                       int    // the KV group whose table this layer's attention reads: 0 the primary group (resident.kvGroup), 1 the window group (resident.kvWin); a shared layer takes its source's
 	postAttnNorm, postMLPNorm Buffer // Gemma sandwich norms on each sublayer OUTPUT (zero if !sandwich)
 	invf                      Buffer // per-layer RoPE inv-freq (Gemma local 10k vs global 1M base)
 	mscale                    Buffer // per-layer YaRN mscale (RopeMscaleLayer; 1.0 = no-op for every family without it)
@@ -519,6 +520,10 @@ type resident struct {
 	// the resident's own (r.kvTab, r.kt, r.kvRefs, ...).
 	kvNullBytes []int
 	kvGroup
+	// kvWin is the window group (KV5-7b): the sliding layers' own block ids and tables, beside the primary group; nil when the model
+	// has no sliding layer, or only sliding ones (the primary group is then the window group's). kvGs lists the groups, primary first.
+	kvWin *kvGroup
+	kvGs  []*kvGroup
 	// Each slot is guaranteed kvShareBlocks of its group (kvShareCtx positions, the planned per-slot context); kvSlotSt is each
 	// slot's standing, kvUseTick the write clock, kvEvictions a count of slots released to make room, and kvReclaimed the slots a
 	// reclaim stopped while a batched step mapped its rows (kvMapStep).
@@ -1750,7 +1755,11 @@ func (r *resident) kvBuffers() []Buffer {
 	out = append(out, r.vc...)
 	out = append(out, r.ks...)
 	out = append(out, r.vs...)
-	return append(out, r.kvTab)
+	out = append(out, r.kvTab)
+	if r.kvWin != nil {
+		out = append(out, r.kvWin.kvTab)
+	}
+	return out
 }
 
 // scratchBuffers returns the per-token GPU-WRITTEN intermediates (attention/MLP staging, MoE scratch,
@@ -1772,9 +1781,10 @@ func (r *resident) writtenBuffers() []Buffer {
 	return append(r.kvBuffers(), r.scratchBuffers()...)
 }
 
-// kvSlotBuf is one resident KV slot (MC1): its block table, a view of kvTab.
+// kvSlotBuf is one resident KV slot (MC1): its block table in each group, a view of that group's kvTab (kt the primary group's, ktw
+// the window group's).
 type kvSlotBuf struct {
-	kt Buffer
+	kt, ktw Buffer
 }
 
 // kvBlocksFor is how many 64-row blocks hold positions rows.
@@ -1787,11 +1797,12 @@ func kvBlocksFor(positions int) int {
 // kernel addressing KV goes through the table.
 var kvScrambleForTest = false
 
-// kvHostRow is the row position pos of the bound slot occupies in a layer's pool, counted from the pool's start as the host sees
-// its contents (the null block is rows 0 to 63): the block the slot's table names, at the position's offset inside it. Positions
-// pos to the end of its block are the consecutive rows after it.
-func (r *resident) kvHostRow(pos int) int {
-	return int(r.kvTabU32[r.kvSlot*r.kvTabBlocks+pos/decoder.KVBlockRows])*decoder.KVBlockRows + pos%decoder.KVBlockRows
+// kvHostRow is the row position pos of the bound slot occupies in layer l's pool, counted from the pool's start as the host sees
+// its contents (the null block is rows 0 to 63): the block the slot's table in l's group names, at the position's offset inside it.
+// Positions pos to the end of its block are the consecutive rows after it.
+func (r *resident) kvHostRow(l, pos int) int {
+	g := r.kvGroupOf(l)
+	return int(g.kvTabU32[r.kvSlot*g.kvTabBlocks+pos/decoder.KVBlockRows])*decoder.KVBlockRows + pos%decoder.KVBlockRows
 }
 
 // kvElemBytes is one element of the K/V cache: 1 for int8, 4 for f32, 2 for f16.
@@ -1871,8 +1882,7 @@ func (r *resident) useKVSlot(i int) error {
 		return nil
 	}
 	r.stopExec()
-	b := r.kvSlotBufs[i]
-	r.kt = b.kt
+	r.kvBindTables(i)
 	for l := range r.layers { // a recurrent layer's window and state are the slot's own (allocRecurrentSlots)
 		if D := r.layers[l].delta; D != nil && i < len(D.slotWin) {
 			D.win, D.state = D.slotWin[i], D.slotState[i]

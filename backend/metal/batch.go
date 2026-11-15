@@ -1159,14 +1159,14 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		// (tabOffB). One dispatch stores every row's K/V; one runs every per-head-kernel row's attention.
 		kcPool, vcPool := r.kc[l].At(0), r.vc[l].At(0)
 		if r.kvI8 { // one thread per (row, KV head), as kv_store_i8 is one per head
-			e.Dispatch(r.pKvI8Rows, B*g.nKV, 32, b.qkvB.At(b.kOff), b.qkvB.At(b.vOff), kcPool, vcPool, r.ks[l].At(0), r.vs[l].At(0), g.uNKV, g.uHd, b.posB, b.uQKV, b.uM, r.kvTab, b.tabOffB)
+			e.Dispatch(r.pKvI8Rows, B*g.nKV, 32, b.qkvB.At(b.kOff), b.qkvB.At(b.vOff), kcPool, vcPool, r.ks[l].At(0), r.vs[l].At(0), g.uNKV, g.uHd, b.posB, b.uQKV, b.uM, r.kvTabOf(l), b.tabOffB)
 		} else {
-			e.Dispatch(r.pKvRows, B*g.kvDim, 64, b.qkvB.At(b.kOff), b.qkvB.At(b.vOff), kcPool, vcPool, g.uKvDim, b.posB, b.uQKV, b.uM, r.kvTab, b.tabOffB)
+			e.Dispatch(r.pKvRows, B*g.kvDim, 64, b.qkvB.At(b.kOff), b.qkvB.At(b.vOff), kcPool, vcPool, g.uKvDim, b.posB, b.uQKV, b.uM, r.kvTabOf(l), b.tabOffB)
 		}
 		if faRows {
 			shmBytes := 128 * 6 * (r.nH / g.nKV) * 4
 			e.DispatchTG(r.pAttnFARows, nFA*g.nKV*maxS*128, 128, shmBytes, b.qkvB, kcPool, vcPool, b.faPartB, g.uNKV, r.uAttnFAG,
-				b.nKeysB, r.uScale, L.uWindow, b.nSplitB, b.uCount[nFA], b.rowmapFA, b.tabOffB, b.uQKV, b.uPartStride, b.uMaxS, r.kvTab)
+				b.nKeysB, r.uScale, L.uWindow, b.nSplitB, b.uCount[nFA], b.rowmapFA, b.tabOffB, b.uQKV, b.uPartStride, b.uMaxS, r.kvTabOf(l))
 			e.Dispatch(r.pAttnFACombineRows, nFA*r.nH*g.hd, g.hd, b.faPartB, b.ctxB, r.uAttnFAG, g.uHd, b.nSplitB, r.uNH,
 				b.uCount[nFA], b.rowmapFA, b.uPartStride, g.uNHhd)
 		}
@@ -1174,19 +1174,18 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 			if !faRow[m] || faRows {
 				continue
 			}
-			sb := r.kvSlotBufs[q.slot]
 			nSplit := r.attnFASplitFor(q.pos+1, g.nKV)
 			shmBytes := 128 * 6 * (r.nH / g.nKV) * 4
 			e.DispatchTG(r.pAttnFA, g.nKV*nSplit*128, 128, shmBytes, b.qkvB.At(4*m*b.qkvRows), kcPool, vcPool, r.attnFAPartial,
-				g.uNKV, r.uAttnFAG, b.uNKeys[m], r.uScale, L.uWindow, b.uFANSplit[m], sb.kt)
+				g.uNKV, r.uAttnFAG, b.uNKeys[m], r.uScale, L.uWindow, b.uFANSplit[m], r.kvSlotKT(l, q.slot))
 			e.Dispatch(r.pAttnFACombine, r.nH*g.hd, g.hd, r.attnFAPartial, f32(b.ctxB, m, nHhd), r.uAttnFAG, g.uHd, b.uFANSplit[m])
 		}
 		if nPlain > 0 && r.kvI8 {
 			e.Dispatch(r.pAttnI8Rows, nPlain*r.nH*tgReduceAttn, tgReduceAttn, b.qkvB, kcPool, vcPool, r.ks[l].At(0), r.vs[l].At(0),
-				b.ctxB, r.uNH, g.uNKV, g.uHd, b.nKeysB, r.uScale, L.uWindow, b.uCount[nPlain], b.rowmapB, r.kvTab, b.tabOffB)
+				b.ctxB, r.uNH, g.uNKV, g.uHd, b.nKeysB, r.uScale, L.uWindow, b.uCount[nPlain], b.rowmapB, r.kvTabOf(l), b.tabOffB)
 		} else if nPlain > 0 {
 			e.Dispatch(r.pAttnRows, nPlain*r.nH*tgReduceAttn, tgReduceAttn, b.qkvB, kcPool, vcPool, b.ctxB, r.uNH, g.uNKV, g.uHd,
-				b.nKeysB, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kvTab, b.uCount[nPlain], b.rowmapB, b.tabOffB)
+				b.nKeysB, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kvTabOf(l), b.uCount[nPlain], b.rowmapB, b.tabOffB)
 		}
 		if r.q4kLane { // o-proj + residual reads the f32 ctx rows directly
 			r.q4kStepGemv(e, B, L.oSegs, Buffer{}, b.ctxB, nHhd, b.xB, H, g.uNHhd, true)
@@ -1242,7 +1241,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		if r.stepWholeLayer(l) {
 			// Decode's layer encoder on each row in turn (OP4m-d5a): the row's position uniforms, its slot's K/V, its attention
 			// plan and its per-layer embedding input bound at encode time, all restored after.
-			kt, pleIn := r.kt, r.pleIn
+			kt, pleIn := r.kvBoundTables(), r.pleIn
 			// steps runs layer l's steps from..to-1 on each row in turn, with that row's binding.
 			steps := func(from, to int) {
 				for m, q := range seqs {
@@ -1250,7 +1249,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 					if stepAttnRow0PlantForTest {
 						src = 0
 					}
-					r.kt = r.kvSlotBufs[q.slot].kt
+					r.kvBindTables(q.slot)
 					r.encNKeys = seqs[src].pos + 1
 					if r.attnFANKV > 0 {
 						r.encFANSplit = b.uFANSplit[src]
@@ -1274,7 +1273,8 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 			} else {
 				steps(0, len(L.steps))
 			}
-			r.kt, r.pleIn = kt, pleIn
+			r.kvRestoreTables(kt)
+			r.pleIn = pleIn
 			r.encNKeys, r.encFANSplit = 0, Buffer{}
 			continue
 		}
@@ -1287,20 +1287,20 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 				}
 				// decode's gated attention on each row in turn: the row's own position uniforms, its slot's K/V bound and
 				// its key count as the attention plan's, all at encode time, restored after.
-				kt := r.kt
+				kt := r.kvBoundTables()
 				for m, q := range seqs {
 					src := m
 					if stepAttnRow0PlantForTest {
 						src = 0
 					}
-					r.kt = r.kvSlotBufs[q.slot].kt
+					r.kvBindTables(q.slot)
 					r.encNKeys = seqs[src].pos + 1
 					if r.attnFANKV > 0 {
 						r.encFANSplit = b.uFANSplit[src]
 					}
 					r.encodeLayerStep(e, st, i, l, L, f32(b.xB, m, H), b.uPos[src], b.uNKeys[src], b.uQTemp[src], b.uPos[src], stepState{})
 				}
-				r.kt = kt
+				r.kvRestoreTables(kt)
 				r.encNKeys, r.encFANSplit = 0, Buffer{}
 			case stepDeltaNet, stepMamba:
 				for m, q := range seqs { // decode's recurrent mixer on each row in turn, on the row's own slot state (OP4m-d4a, OP4m-d6a)

@@ -124,7 +124,7 @@ func kvRaise(m *decoder.Model, slots, share int) int { return m.MetalKVCap(slots
 
 // kvBlockOrder is the order kvFreeBlock scans the pool's blocks: ascending, or with kvScrambleForTest, alternately from the two ends,
 // so a sequence's consecutive blocks are physically far apart and out of order.
-func kvBlockOrder(blocks int) []uint32 {
+func kvBlockOrder(blocks int, window bool) []uint32 {
 	out := make([]uint32, 0, blocks)
 	if !kvScrambleForTest {
 		for i := 1; i <= blocks; i++ {
@@ -133,9 +133,13 @@ func kvBlockOrder(blocks int) []uint32 {
 		return out
 	}
 	for i, j := 1, blocks; i <= j; i, j = i+1, j-1 {
-		out = append(out, uint32(j))
+		first, second := uint32(j), uint32(i)
+		if window { // the window group starts from the other end, so the two groups' tables name different blocks for one position
+			first, second = second, first
+		}
+		out = append(out, first)
 		if i != j {
-			out = append(out, uint32(i))
+			out = append(out, second)
 		}
 	}
 	return out
@@ -203,32 +207,122 @@ func (g *kvGroup) kvFreeBlock() (uint32, bool) {
 	return 0, false
 }
 
+// kvWindowLayers is the set of layers that read the window group: the layers KVGeometry puts in a window-retention group, when the model
+// also has layers in another group. A model whose every layer slides has one group, the primary, and the set is empty. Never nil.
+func kvWindowLayers(g decoder.KVGeometry) map[int]bool {
+	set := map[int]bool{}
+	other := false
+	for _, grp := range g.Groups {
+		if grp.Retention == decoder.KVRetainWindow {
+			for _, l := range grp.Layers {
+				set[l] = true
+			}
+		} else {
+			other = true
+		}
+	}
+	if !other {
+		clear(set)
+	}
+	return set
+}
+
+// kvGroupOf is the group layer l's attention reads: the window group for a sliding layer of a model that has both kinds, else the
+// primary group.
+func (r *resident) kvGroupOf(l int) *kvGroup {
+	if r.layers[l].kvg == 1 && r.kvWin != nil {
+		return r.kvWin
+	}
+	return &r.kvGroup
+}
+
+// kvBindTables points every group's bound table view at slot s's.
+func (r *resident) kvBindTables(s int) {
+	b := r.kvSlotBufs[s]
+	r.kt = b.kt
+	if r.kvWin != nil {
+		r.kvWin.kt = b.ktw
+	}
+}
+
+// kvBoundTables is the views the groups have bound now (kvBindTables), the primary group's first, for kvRestoreTables.
+func (r *resident) kvBoundTables() [2]Buffer {
+	v := [2]Buffer{r.kt, {}}
+	if r.kvWin != nil {
+		v[1] = r.kvWin.kt
+	}
+	return v
+}
+
+// kvRestoreTables puts back the views kvBoundTables read.
+func (r *resident) kvRestoreTables(v [2]Buffer) {
+	r.kt = v[0]
+	if r.kvWin != nil {
+		r.kvWin.kt = v[1]
+	}
+}
+
+// kvKT is the bound slot's table for layer l, the buffer l's kernels bind.
+func (r *resident) kvKT(l int) Buffer { return r.kvGroupOf(l).kt }
+
+// kvKTRead is kvKT for a decode attention read. kvWindowReadPlantForTest binds the primary group's table there for a window layer, whose
+// stores still go through its own: the plant TestKVPages_windowGroup must catch.
+func (r *resident) kvKTRead(l int) Buffer {
+	if kvWindowReadPlantForTest && r.kvWin != nil && r.layers[l].kvg == 1 {
+		return r.kt
+	}
+	return r.kvKT(l)
+}
+
+// kvWindowReadPlantForTest makes a window layer's decode attention read the primary group's table (kvKTRead).
+var kvWindowReadPlantForTest bool
+
+// kvHeldAny is how many entries slot s's tables map in every group together.
+func (r *resident) kvHeldAny(s int) int {
+	n := 0
+	for _, g := range r.kvGs {
+		n += g.kvHeld(s)
+	}
+	return n
+}
+
+// kvSlotKT is slot s's table for layer l, whichever slot is bound.
+func (r *resident) kvSlotKT(l, s int) Buffer {
+	if r.kvWin != nil && r.kvGroupOf(l) == r.kvWin {
+		return r.kvSlotBufs[s].ktw
+	}
+	return r.kvSlotBufs[s].kt
+}
+
+// kvTabOf is layer l's whole table buffer (every slot's), which a batched step's rows index with their own offsets.
+func (r *resident) kvTabOf(l int) Buffer { return r.kvGroupOf(l).kvTab }
+
 // kvTake hands slot s a block for its block b: its own home block within the share when that is free (in order, so a slot's rows lie
 // as they did before the pool; kvScrambleForTest skips it), else any free one, else one made free (the package comment's order). cow
 // marks a copy on write, which holds no more blocks after it, so a slot at its share still counts as within it.
-func (r *resident) kvTake(s, b int, cow bool) (uint32, error) {
+func (r *resident) kvTake(g *kvGroup, s, b int, cow bool) (uint32, error) {
 	refuse := kvTakeFailForTest
 	if kvTakeFailAfterForTest == 0 {
 		refuse = true
 	} else if kvTakeFailAfterForTest > 0 {
 		kvTakeFailAfterForTest--
 	}
-	if !kvScrambleForTest && !refuse && b < r.kvShareBlocks {
-		if h := uint32(1 + s*r.kvShareBlocks + b); r.kvRefs[h] == 0 {
-			return r.kvClaim(h), nil
+	if !kvScrambleForTest && !refuse && b < g.kvShareBlocks {
+		if h := uint32(1 + s*g.kvShareBlocks + b); g.kvRefs[h] == 0 {
+			return g.kvClaim(h), nil
 		}
 	}
 	for {
-		if id, ok := r.kvFreeBlock(); ok && !refuse {
-			return r.kvClaim(id), nil
+		if id, ok := g.kvFreeBlock(); ok && !refuse {
+			return g.kvClaim(id), nil
 		}
 		if r.kvEvictIdle(s) {
 			continue
 		}
-		if held := r.kvHeld(s); (held < r.kvShareBlocks || cow && held <= r.kvShareBlocks) && r.kvReclaim(s) {
+		if held := g.kvHeld(s); (held < g.kvShareBlocks || cow && held <= g.kvShareBlocks) && r.kvReclaim(g, s) {
 			continue
 		}
-		return 0, fmt.Errorf("metal: KV slot %d holds %d blocks and the pool has none free: %w", s, r.kvHeld(s), decoder.ErrKVPoolFull)
+		return 0, fmt.Errorf("metal: KV slot %d holds %d blocks and the pool has none free: %w", s, g.kvHeld(s), decoder.ErrKVPoolFull)
 	}
 }
 
@@ -250,10 +344,12 @@ var kvEvictOrderPlantForTest bool
 // kvTrim unmaps every entry of slot s's table wholly at or past position end. Every write and copy keeps a slot to its sequence this way
 // (kvSlotState.valid): no block past it is held, counted in kvHeld and kvInUse, or offered to CopyKV.
 func (r *resident) kvTrim(s, end int) {
-	for b := kvBlocksFor(end); b < r.kvTabBlocks; b++ {
-		if e := r.kvRow(s, b); *e != 0 {
-			r.kvUnref(*e)
-			*e = 0
+	for _, g := range r.kvGs {
+		for b := kvBlocksFor(end); b < g.kvTabBlocks; b++ {
+			if e := g.kvRow(s, b); *e != 0 {
+				g.kvUnref(*e)
+				*e = 0
+			}
 		}
 	}
 }
@@ -266,10 +362,12 @@ func (r *resident) kvTrim(s, end int) {
 // outright, which ends the chain too.
 func (r *resident) kvQuiesce(s, hi int) {
 	r.stopChain()
-	for b := kvBlocksFor(hi); b < r.kvTabBlocks; b++ {
-		if *r.kvRow(s, b) != 0 {
-			r.stopExec()
-			return
+	for _, g := range r.kvGs {
+		for b := kvBlocksFor(hi); b < g.kvTabBlocks; b++ {
+			if *g.kvRow(s, b) != 0 {
+				r.stopExec()
+				return
+			}
 		}
 	}
 }
@@ -287,10 +385,12 @@ func (r *resident) kvEndAt(s, end int) {
 
 // kvReleaseAll unmaps every entry of slot s's table.
 func (r *resident) kvReleaseAll(s int) {
-	for b := range r.kvTabBlocks {
-		e := r.kvRow(s, b)
-		r.kvUnref(*e)
-		*e = 0
+	for _, g := range r.kvGs {
+		for b := range g.kvTabBlocks {
+			e := g.kvRow(s, b)
+			g.kvUnref(*e)
+			*e = 0
+		}
 	}
 }
 
@@ -301,7 +401,7 @@ func (r *resident) kvEvictIdle(s int) bool {
 	t := -1
 	for c := range r.kvSlotSt {
 		st := &r.kvSlotSt[c]
-		if c == s || st.busy.Load() || r.kvHeld(c) == 0 {
+		if c == s || st.busy.Load() || r.kvHeldAny(c) == 0 {
 			continue
 		}
 		if t < 0 || (st.use < r.kvSlotSt[t].use) != kvEvictOrderPlantForTest {
@@ -322,15 +422,15 @@ func (r *resident) kvEvictIdle(s int) bool {
 // kvReclaim stops the slot other than s that holds the most blocks past its share, busy or not, giving those blocks back, and reports
 // whether there was one. Its next write past position 0 is decoder.ErrKVPoolFull (kvWrite), and it joins kvReclaimed, which a batched
 // step mapping its rows reads (kvMapStep).
-func (r *resident) kvReclaim(s int) bool {
+func (r *resident) kvReclaim(g *kvGroup, s int) bool {
 	t, most := -1, 0
 	for c := range r.kvSlotSt {
 		if c == s || r.kvSlotSt[c].stopped {
 			continue
 		}
 		past := 0
-		for b := r.kvShareBlocks; b < r.kvTabBlocks; b++ {
-			if *r.kvRow(c, b) != 0 {
+		for b := g.kvShareBlocks; b < g.kvTabBlocks; b++ {
+			if *g.kvRow(c, b) != 0 {
 				past++
 			}
 		}
@@ -341,10 +441,12 @@ func (r *resident) kvReclaim(s int) bool {
 	if t < 0 {
 		return false
 	}
-	for b := r.kvShareBlocks; b < r.kvTabBlocks; b++ {
-		e := r.kvRow(t, b)
-		r.kvUnref(*e)
-		*e = 0
+	for _, h := range r.kvGs {
+		for b := h.kvShareBlocks; b < h.kvTabBlocks; b++ {
+			e := h.kvRow(t, b)
+			h.kvUnref(*e)
+			*e = 0
+		}
 	}
 	st := &r.kvSlotSt[t]
 	st.stopped, st.valid = true, min(st.valid, r.kvShareBlocks*decoder.KVBlockRows)
@@ -383,10 +485,12 @@ func (r *resident) kvWriteInPlace(s, lo, hi int) bool {
 	if lo > st.valid || st.stopped || st.released {
 		return false
 	}
-	for b := lo / decoder.KVBlockRows; b < r.kvTabBlocks; b++ {
-		e := *r.kvRow(s, b)
-		if past := b >= kvBlocksFor(hi); (past && e != 0) || (!past && (e == 0 || (r.kvRefs[e] > 1 && !kvOwnOffForTest))) {
-			return false
+	for _, g := range r.kvGs {
+		for b := lo / decoder.KVBlockRows; b < g.kvTabBlocks; b++ {
+			e := *g.kvRow(s, b)
+			if past := b >= kvBlocksFor(hi); (past && e != 0) || (!past && (e == 0 || (g.kvRefs[e] > 1 && !kvOwnOffForTest))) {
+				return false
+			}
 		}
 	}
 	st.valid = hi
@@ -410,7 +514,7 @@ type kvTx struct {
 // kvTxEdit is one entry change: slot s's entry b named prev and now names next; take marks next as a block a take handed the entry, and
 // cow a take whose entry gave its reference to prev back (a copy on write).
 type kvTxEdit struct {
-	s, b       int
+	g, s, b    int // g indexes resident.kvGs
 	prev, next uint32
 	take, cow  bool
 }
@@ -423,7 +527,7 @@ type kvTxStanding struct {
 
 // kvTxCOW is a copy on write to run at commit: the first keep rows of block from into block to, which slot s's entry b now names.
 type kvTxCOW struct {
-	s, b     int
+	g, s, b  int // g indexes resident.kvGs
 	from, to uint32
 	keep     int
 }
@@ -449,15 +553,17 @@ func (tx *kvTx) standing(s int) kvTxStanding {
 func (tx *kvTx) trim(s, end int) {
 	r := tx.r
 	p := tx.standing(s)
-	for b := kvBlocksFor(end); b < r.kvTabBlocks; b++ {
-		e := r.kvRow(s, b)
-		if *e == 0 {
-			continue
+	for gi, g := range r.kvGs {
+		for b := kvBlocksFor(end); b < g.kvTabBlocks; b++ {
+			e := g.kvRow(s, b)
+			if *e == 0 {
+				continue
+			}
+			id := *e
+			g.kvUnref(id)
+			tx.log = append(tx.log, kvTxEdit{g: gi, s: s, b: b, prev: id})
+			*e = 0
 		}
-		id := *e
-		r.kvUnref(id)
-		tx.log = append(tx.log, kvTxEdit{s: s, b: b, prev: id})
-		*e = 0
 	}
 	p.valid = min(p.valid, end)
 	tx.pending[s] = p
@@ -476,26 +582,31 @@ func (tx *kvTx) write(s, lo, hi int) error {
 		return fmt.Errorf("metal: KV slot %d holds rows to %d; a write from %d would leave the rows between unmapped", s, p.valid, lo)
 	}
 	tx.trim(s, hi)
-	for b := lo / decoder.KVBlockRows; b < min(kvBlocksFor(hi), r.kvTabBlocks); b++ {
-		old := *r.kvRow(s, b)
-		if old != 0 && (r.kvRefs[old] <= 1 || kvOwnOffForTest) {
-			continue
-		}
-		nb, err := r.kvTake(s, b, old != 0)
-		if err != nil {
-			return err
-		}
-		tx.log = append(tx.log, kvTxEdit{s: s, b: b, prev: old, next: nb, take: true, cow: old != 0})
-		*r.kvRow(s, b) = nb
-		if old != 0 {
-			// The entry's reference goes now, so a later row of the mapping finds the block as running the rows alone would: another slot's
-			// alone, which that slot writes in place. A shared block keeps a reference, so its rows stay as they are until the copy at commit.
-			r.kvUnref(old)
-			keep := max(lo-b*decoder.KVBlockRows, 0)
-			if kvKeepShortForTest && keep > 0 {
-				keep--
+	for b := lo / decoder.KVBlockRows; b < kvBlocksFor(hi); b++ {
+		for gi, g := range r.kvGs {
+			if b >= g.kvTabBlocks {
+				continue
 			}
-			tx.cows = append(tx.cows, kvTxCOW{s: s, b: b, from: old, to: nb, keep: keep})
+			old := *g.kvRow(s, b)
+			if old != 0 && (g.kvRefs[old] <= 1 || kvOwnOffForTest) {
+				continue
+			}
+			nb, err := r.kvTake(g, s, b, old != 0)
+			if err != nil {
+				return err
+			}
+			tx.log = append(tx.log, kvTxEdit{g: gi, s: s, b: b, prev: old, next: nb, take: true, cow: old != 0})
+			*g.kvRow(s, b) = nb
+			if old != 0 {
+				// The entry's reference goes now, so a later row of the mapping finds the block as running the rows alone would: another slot's
+				// alone, which that slot writes in place. A shared block keeps a reference, so its rows stay as they are until the copy at commit.
+				g.kvUnref(old)
+				keep := max(lo-b*decoder.KVBlockRows, 0)
+				if kvKeepShortForTest && keep > 0 {
+					keep--
+				}
+				tx.cows = append(tx.cows, kvTxCOW{g: gi, s: s, b: b, from: old, to: nb, keep: keep})
+			}
 		}
 	}
 	p = tx.pending[s]
@@ -513,17 +624,18 @@ func (tx *kvTx) abort() {
 	r := tx.r
 	for i := len(tx.log) - 1; i >= 0; i-- {
 		e := tx.log[i]
-		if e.take && *r.kvRow(e.s, e.b) == e.next { // a release or reclaim meanwhile gave next back with the entry
-			r.kvUnref(e.next)
+		g := r.kvGs[e.g]
+		if e.take && *g.kvRow(e.s, e.b) == e.next { // a release or reclaim meanwhile gave next back with the entry
+			g.kvUnref(e.next)
 		}
 		if !e.take || e.cow { // a trim or a copy on write gave its reference to prev back: take it again
-			if r.kvRefs[e.prev] == 0 {
-				r.kvClaim(e.prev)
+			if g.kvRefs[e.prev] == 0 {
+				g.kvClaim(e.prev)
 			} else {
-				r.kvRefs[e.prev]++
+				g.kvRefs[e.prev]++
 			}
 		}
-		*r.kvRow(e.s, e.b) = e.prev
+		*g.kvRow(e.s, e.b) = e.prev
 	}
 	share := r.kvShareBlocks * decoder.KVBlockRows
 	for s, p := range tx.saved {
@@ -557,7 +669,7 @@ func (tx *kvTx) commit() error {
 		if c.keep == 0 {
 			continue
 		}
-		err := gpu.CopyDeviceBatch(r.kvBlockCopies(c.from, c.to, c.keep))
+		err := gpu.CopyDeviceBatch(r.kvBlockCopies(r.kvGs[c.g], c.from, c.to, c.keep))
 		if kvCopyFailForTest || kvCopyFailAfterForTest == 0 {
 			err = errors.New("planted copy failure")
 		} else if kvCopyFailAfterForTest > 0 {
@@ -567,7 +679,7 @@ func (tx *kvTx) commit() error {
 			tx.abort()
 			for _, d := range tx.cows[:i+1] {
 				for _, e := range tx.log {
-					if d.keep > 0 && (!e.take || e.cow) && e.prev == d.to {
+					if d.keep > 0 && (!e.take || e.cow) && e.prev == d.to && e.g == d.g {
 						r.kvEndAt(e.s, e.b*decoder.KVBlockRows)
 					}
 				}
@@ -693,6 +805,11 @@ func (a *metalResident) KVPool() decoder.KVPoolDetail {
 		}
 	}
 	bytes += 4 * int64(r.kvTab.Len())
+	groups := []string{"full"}
+	if r.kvWin != nil {
+		bytes += 4 * int64(r.kvWin.kvTab.Len())
+		groups = append(groups, "window")
+	}
 	prec := "f16"
 	switch {
 	case r.kvI8:
@@ -701,5 +818,5 @@ func (a *metalResident) KVPool() decoder.KVPoolDetail {
 		prec = "f32"
 	}
 	return decoder.KVPoolDetail{Positions: (len(r.kvRefs) - 1) * decoder.KVBlockRows, Guaranteed: r.kvShareCtx, BlockRows: decoder.KVBlockRows,
-		Groups: []string{"full"}, Precision: prec, Bytes: bytes}
+		Groups: groups, Precision: prec, Bytes: bytes}
 }

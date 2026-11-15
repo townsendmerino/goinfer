@@ -84,11 +84,11 @@ func (r *resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, 
 		}
 		e.Dispatch(r.pRope2, r.nH*g.half+g.nKV*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd, r.uQTempScale)
 		if r.kvI8 {
-			e.Dispatch(r.pKvI8, g.nKV, 1, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l].At(0), r.vc[l].At(0), r.ks[l].At(0), r.vs[l].At(0), g.uNKV, g.uHd, r.uPos, r.kt)
-			e.Dispatch(r.pAttnI8, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l].At(0), r.vc[l].At(0), r.ks[l].At(0), r.vs[l].At(0), r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kt)
+			e.Dispatch(r.pKvI8, g.nKV, 1, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l].At(0), r.vc[l].At(0), r.ks[l].At(0), r.vs[l].At(0), g.uNKV, g.uHd, r.uPos, r.kvKT(l))
+			e.Dispatch(r.pAttnI8, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l].At(0), r.vc[l].At(0), r.ks[l].At(0), r.vs[l].At(0), r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kvKT(l))
 		} else {
-			e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l].At(0), r.vc[l].At(0), g.uKvDim, r.uPos, r.kt)
-			e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l].At(0), r.vc[l].At(0), r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kt)
+			e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[l].At(0), r.vc[l].At(0), g.uKvDim, r.uPos, r.kvKT(l))
+			e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l].At(0), r.vc[l].At(0), r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kvKT(l))
 		}
 		e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
 		e.DispatchTG(r.pSA, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, g.uNHhd)
@@ -149,11 +149,11 @@ func (r *resident) l0GegluForTest(emb []float32, pos int) (gateUp, geglu8 []floa
 	}
 	e.Dispatch(r.pRope2, r.nH*g.half+g.nKV*g.half, 64, r.qkv, L.invf, g.uHd, r.uPos, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd, r.uQTempScale)
 	if r.kvI8 {
-		e.Dispatch(r.pKvI8, g.nKV, 1, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[0].At(0), r.vc[0].At(0), r.ks[0].At(0), r.vs[0].At(0), g.uNKV, g.uHd, r.uPos, r.kt)
-		e.Dispatch(r.pAttnI8, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[0].At(0), r.vc[0].At(0), r.ks[0].At(0), r.vs[0].At(0), r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kt)
+		e.Dispatch(r.pKvI8, g.nKV, 1, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[0].At(0), r.vc[0].At(0), r.ks[0].At(0), r.vs[0].At(0), g.uNKV, g.uHd, r.uPos, r.kvKT(0))
+		e.Dispatch(r.pAttnI8, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[0].At(0), r.vc[0].At(0), r.ks[0].At(0), r.vs[0].At(0), r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kvKT(0))
 	} else {
-		e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[0].At(0), r.vc[0].At(0), g.uKvDim, r.uPos, r.kt)
-		e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[0].At(0), r.vc[0].At(0), r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kt)
+		e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[0].At(0), r.vc[0].At(0), g.uKvDim, r.uPos, r.kvKT(0))
+		e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[0].At(0), r.vc[0].At(0), r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kvKT(0))
 	}
 	e.Dispatch(r.pQv, 256, 256, r.ctx, r.cq, r.cSc, g.uNHhd)
 	e.DispatchTG(r.pSA, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, g.uNHhd)
@@ -200,7 +200,7 @@ func (r *resident) attnConfirmForTest(resid, kHist, vHist []float32, layer, pos 
 		// crater is walked-value drift, not storage of the right ones).
 		// Each position goes to its row through the bound slot's table (kvHostRow).
 		for p := range len(kHist) / g.kvDim {
-			at, src := r.kvHostRow(p)*g.kvDim, p*g.kvDim
+			at, src := r.kvHostRow(layer, p)*g.kvDim, p*g.kvDim
 			if r.kvF32 {
 				copy(r.kc[layer].Floats()[at:at+g.kvDim], kHist[src:src+g.kvDim])
 				copy(r.vc[layer].Floats()[at:at+g.kvDim], vHist[src:src+g.kvDim])
@@ -225,15 +225,15 @@ func (r *resident) attnConfirmForTest(resid, kHist, vHist []float32, layer, pos 
 		// f16-KV drift of positions 0..pos-1 from Metal's walk, with a matched residual).
 		e.Dispatch(r.pRope, g.nKV*g.half, 64, r.qkv.At(kOff), L.invf, g.uHd, r.uPos, g.uKtotal, g.uHalf, L.mscale)
 		if r.kvI8 {
-			e.Dispatch(r.pKvI8, g.nKV, 1, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[layer].At(0), r.vc[layer].At(0), r.ks[layer].At(0), r.vs[layer].At(0), g.uNKV, g.uHd, r.uPos, r.kt)
+			e.Dispatch(r.pKvI8, g.nKV, 1, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[layer].At(0), r.vc[layer].At(0), r.ks[layer].At(0), r.vs[layer].At(0), g.uNKV, g.uHd, r.uPos, r.kvKT(layer))
 		} else {
-			e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[layer].At(0), r.vc[layer].At(0), g.uKvDim, r.uPos, r.kt)
+			e.Dispatch(r.pKv, g.kvDim, 64, r.qkv.At(kOff), r.qkv.At(vOff), r.kc[layer].At(0), r.vc[layer].At(0), g.uKvDim, r.uPos, r.kvKT(layer))
 		}
 	}
 	if r.kvI8 {
-		e.Dispatch(r.pAttnI8, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[layer].At(0), r.vc[layer].At(0), r.ks[layer].At(0), r.vs[layer].At(0), r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kt)
+		e.Dispatch(r.pAttnI8, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[layer].At(0), r.vc[layer].At(0), r.ks[layer].At(0), r.vs[layer].At(0), r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kvKT(layer))
 	} else {
-		e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[layer].At(0), r.vc[layer].At(0), r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kt)
+		e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[layer].At(0), r.vc[layer].At(0), r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kvKT(layer))
 	}
 	e.End()
 	return append([]float32(nil), r.ctx.Floats()[:nHhd]...)
