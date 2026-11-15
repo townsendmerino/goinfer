@@ -52,7 +52,15 @@ func TestVerifyTheta_asksWhetherForwardNIsBatched(t *testing.T) {
 // fakeThetaResident reports a prefill path; everything else is unused by verifyTheta.
 type fakeThetaResident struct {
 	fakeResident
-	batched bool
+	fakeSubsystems // the contract defaults stay reachable when the embedded fake is left nil
+	batched        bool
+}
+
+func (f *fakeThetaResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *fakeThetaResident) PrefillAvailable() bool                 { return true }
+func (f *fakeThetaResident) PrefillPathInfo() (bool, string, bool) {
+	b, why := f.PrefillPath()
+	return b, why, true
 }
 
 func (f *fakeThetaResident) PrefillLast(_ context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
@@ -68,7 +76,14 @@ func (f *fakeThetaResident) PrefillPath() (bool, string) {
 
 type fakeVerifyResident struct {
 	fakeResident
-	batched bool
+	fakeSubsystems // the contract defaults stay reachable when the embedded fake is left nil
+	batched        bool
+}
+
+func (f *fakeVerifyResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *fakeVerifyResident) VerifyPathInfo() (bool, string, bool) {
+	b, why := f.VerifyPath()
+	return b, why, true
 }
 
 func (f *fakeVerifyResident) VerifyPath() (bool, string) {

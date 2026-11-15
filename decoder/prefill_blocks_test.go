@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// blockFake is mc3Fake as a resident that splits its prefill (legacyPrefillBlocks): it reports a block and a
+// blockFake is mc3Fake as a resident that splits its prefill (PrefillBlocksAvailable): it reports a block and a
 // per-row scratch figure, records every PrefillLast call, and can decline or cancel at a chosen call. mc3Fake's pass
 // writes each position as a Forward would, so a continuation equals the whole pass by construction and any difference
 // a test sees comes from how the decoder cut the prompt.
@@ -27,6 +27,9 @@ type blockFake struct {
 	partialAt, partialRows int
 	dropped                int // Forward at a position below this fails; 0: none
 }
+
+func (f *blockFake) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *blockFake) PrefillBlocksAvailable() bool           { return true }
 
 func (f *blockFake) PrefillLast(ctx context.Context, embs [][]float32, startPos int) ([]float32, error) {
 	f.calls = append(f.calls, [2]int{startPos, len(embs)})

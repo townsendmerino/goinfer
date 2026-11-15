@@ -6,7 +6,16 @@ import "testing"
 // fixed anchor token, non-EOS by construction (the tiny fixture's own EOS set is empty) — enough
 // to drive generate() through its SEED step and straight to the fully-completed exit with
 // opt.MaxTokens == 1, never entering the round loop at all.
-type blockspecCommitStubHost struct{ anchor int }
+type blockspecCommitStubHost struct {
+	NoopResidentRuntime
+	anchor int
+}
+
+func (f *blockspecCommitStubHost) ResidentSubsystems() ResidentSubsystems {
+	return runtimeSubsystems(f)
+}
+func (f *blockspecCommitStubHost) DrafterHostAvailable() bool { return true }
+func (f *blockspecCommitStubHost) LastNArgmaxAvailable() bool { return true }
 
 func (h *blockspecCommitStubHost) AttachBlockDrafter(BlockDrafterWeights) (ResidentBlockDrafter, error) {
 	panic("not reached")
@@ -84,9 +93,14 @@ func TestBlockSpecGenerate_commitsResIDsOnFullCompletion(t *testing.T) {
 // blockspecWriteHost records every position the target is asked to write (a PrefillLastNArgmax call writes K/V at
 // startPos..startPos+n-1) and answers every row with the same id, so a drafter that drafts that id is fully accepted.
 type blockspecWriteHost struct {
+	NoopResidentRuntime
 	id      int
 	written map[int]bool
 }
+
+func (f *blockspecWriteHost) ResidentSubsystems() ResidentSubsystems { return runtimeSubsystems(f) }
+func (f *blockspecWriteHost) DrafterHostAvailable() bool             { return true }
+func (f *blockspecWriteHost) LastNArgmaxAvailable() bool             { return true }
 
 func (h *blockspecWriteHost) AttachBlockDrafter(BlockDrafterWeights) (ResidentBlockDrafter, error) {
 	panic("not reached")

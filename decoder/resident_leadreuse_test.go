@@ -8,6 +8,8 @@ type fastPrefillResident struct {
 	floor int
 }
 
+func (f *fastPrefillResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+
 func (f *fastPrefillResident) ResidentCaps() ResidentCaps {
 	c := f.slotResident.ResidentCaps()
 	c.HasFastPrefill, c.FastPrefillFloor = true, f.floor

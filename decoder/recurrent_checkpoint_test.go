@@ -15,11 +15,13 @@ type ckptResident struct {
 	failSave, failRes bool
 }
 
+func (f *ckptResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+
 func newCkptResident() *ckptResident {
 	return &ckptResident{slotResident: &slotResident{n: 1}, bytes: 4096, live: []float32{1, 2, 3}}
 }
 
-var _ legacyRecurrentCheckpoint = (*ckptResident)(nil)
+var _ ResidentKVSubsystem = (*ckptResident)(nil)
 
 func (r *ckptResident) RecurrentCheckpointBytes() int64  { return r.bytes }
 func (r *ckptResident) RecurrentCheckpointHeld(int) bool { return false }
@@ -206,6 +208,8 @@ type ckptWindowResident struct {
 	*ckptResident
 	dropped bool
 }
+
+func (f *ckptWindowResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
 
 func (w *ckptWindowResident) ReusableKV(prefix int) int {
 	if w.dropped {

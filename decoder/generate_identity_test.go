@@ -20,12 +20,15 @@ const generateIdentityGolden = "../testdata/generate_identity.json"
 // forward, the on-device argmax and the greedy chain all agree on every token, and a decode that reads a stale position or the
 // wrong token's embedding changes the stream. The counters record which path ran.
 type identResident struct {
+	fakeSubsystems
 	vocab                                                                int
 	m                                                                    *Model
 	forwards, argmaxes, chainStarts, chainNexts, topKs, topKFulls, draws int
 	chainTemp                                                            float64
 	chainID, chainPos                                                    int
 }
+
+func (f *identResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
 
 func (f *identResident) logits(emb []float32, pos int) []float32 {
 	h := fnv.New64a()
@@ -66,12 +69,17 @@ func (f *identResident) ResidentCaps() ResidentCaps                           { 
 // identArgmax adds the on-device argmax; identChain adds the greedy chain on top of it.
 type identArgmax struct{ *identResident }
 
+func (f identArgmax) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f identArgmax) GreedyAvailable() bool                  { return true }
+
 func (f identArgmax) ForwardArgmax(emb []float32, pos int) (int, error) {
 	f.argmaxes++
 	return argmaxF32(f.logits(emb, pos)), nil
 }
 
 type identChain struct{ identArgmax }
+
+func (f identChain) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
 
 func (f identChain) GreedyChainAvailable() bool { return true }
 func (f identChain) GreedyChainStart(id, pos int) error {
@@ -91,6 +99,8 @@ func (f identChain) GreedyChainStop() {}
 
 // identTopK adds the device top-K row, identSample the device Gumbel draw, identSampleChain the chained draw (with the greedy chain).
 type identTopK struct{ *identResident }
+
+func (f identTopK) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
 
 func (f identTopK) TopKAvailable() bool { return true }
 func (f identTopK) ForwardTopK(emb []float32, pos, k int, temperature float64, wantZ bool) (TopKRow, error) {
@@ -141,6 +151,8 @@ func (f *identResident) gumbelPick(l []float32, temperature float64, seed, draw 
 
 type identSample struct{ *identResident }
 
+func (f identSample) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+
 func (f identSample) SampleAvailable() bool { return true }
 func (f identSample) ForwardSample(emb []float32, pos int, temperature float64, seed, draw uint64) (int, error) {
 	f.draws++
@@ -148,6 +160,8 @@ func (f identSample) ForwardSample(emb []float32, pos int, temperature float64, 
 }
 
 type identSampleChain struct{ identChain }
+
+func (f identSampleChain) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
 
 func (f identSampleChain) SampleAvailable() bool      { return true }
 func (f identSampleChain) SampleChainAvailable() bool { return true }

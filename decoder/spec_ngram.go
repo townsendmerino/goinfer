@@ -316,7 +316,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 		}
 		// Argmax-only verify (greedy, resident, no tracer): the accept decision only compares draft tokens with the target's
 		// argmax, so reading back and arg-maxing a full logits row per verified row is overhead. A one-row round takes the
-		// device-argmax fast path Model.Generate uses (legacyGreedy); a multi-row round takes the batched argmax pass block
+		// device-argmax fast path Model.Generate uses (GreedyAvailable); a multi-row round takes the batched argmax pass block
 		// speculation uses (PrefillLastNArgmax). The ids equal the logits path's argmax (TestPrefillLastNArgmax_matchesPerRow),
 		// so output is unchanged. Any error falls back once to the full-logits ForwardN and turns this path off, so a backend
 		// whose batched pass declines (MoE) keeps working. nil when not applicable.

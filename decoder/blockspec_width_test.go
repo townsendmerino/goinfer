@@ -8,7 +8,14 @@ import (
 )
 
 // widthHost is a dense drafter host that records the rows of every batched call and answers 7 for each.
-type widthHost struct{ calls []int }
+type widthHost struct {
+	NoopResidentRuntime
+	calls []int
+}
+
+func (f *widthHost) ResidentSubsystems() ResidentSubsystems { return runtimeSubsystems(f) }
+func (f *widthHost) DrafterHostAvailable() bool             { return true }
+func (f *widthHost) LastNArgmaxAvailable() bool             { return true }
 
 func (h *widthHost) AttachBlockDrafter(BlockDrafterWeights) (ResidentBlockDrafter, error) {
 	panic("not reached")

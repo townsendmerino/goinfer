@@ -28,6 +28,9 @@ type chainGateFake struct {
 	events                                []string
 }
 
+func (f *chainGateFake) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *chainGateFake) GreedyAvailable() bool                  { return true }
+
 func (f *chainGateFake) write(emb []float32, pos int) {
 	h := fnv.New64a()
 	for _, x := range emb {

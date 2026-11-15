@@ -1,7 +1,6 @@
 package decoder
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -44,27 +43,8 @@ type ResidentKVSnapshot interface {
 	Release()
 }
 
-// legacyKVSnapshotter is the optional capability of a resident to hold a slot's KV rows in host memory and put them back. Like
-// legacyKVCopier it works on today's slot storage: a windowed layer's rows are those its window and the rollback need, and the
-// restore sets the slot's ring base as a copy does.
-type legacyKVSnapshotter interface {
-	// SnapshotKV copies rows [0, end) of slot into pinned host memory, end a whole number of blocks; for a windowed layer, the rows
-	// [end-(window-1)-rollback, end) its slot holds. A *KVCopyDecline, before anything is allocated, refuses what it cannot hold.
-	SnapshotKV(slot, end int) (ResidentKVSnapshot, error)
-	// RestoreKV writes the first end rows of snap into slot, so that the slot continues at position end. A *KVCopyDecline, before
-	// anything is written, refuses what it cannot serve.
-	RestoreKV(snap ResidentKVSnapshot, slot, end int) error
-	// KVSnapshotBytes is the host memory SnapshotKV(_, end) would hold, 0 when it would decline for a reason that needs no slot.
-	KVSnapshotBytes(end int) int64
-	// KVSnapshotRollback is how many positions before a snapshot's end a windowed layer still serves a restore; 0 with no windowed layer.
-	KVSnapshotRollback() int
-	// KVSnapshotRecurrent reports whether a snapshot carries a recurrent model's state with its rows: a snapshot to end holds the state
-	// as it stood after position end-1, so it serves a restore to exactly end and to no shorter prefix. False when it carries none.
-	KVSnapshotRecurrent() bool
-}
-
 // KeepsRecurrentSnapshots reports whether this model's prefix snapshots carry its recurrent state: it has recurrent state, and its resident's
-// snapshots hold it (legacyKVSnapshotter.KVSnapshotRecurrent). A route computes KVScope.Keep only for such a model.
+// snapshots hold it (KVSnapshotterAvailable.KVSnapshotRecurrent). A route computes KVScope.Keep only for such a model.
 func (m *Model) KeepsRecurrentSnapshots() bool {
 	return m.hasRecurrentState() && m.recurrentSnapshots()
 }
@@ -77,19 +57,6 @@ func (m *Model) recurrentSnapshots() bool {
 
 // snapshotsBlocked reports whether this model's state is outside what a snapshot holds: recurrent state its snapshotter does not carry.
 func (m *Model) snapshotsBlocked() bool { return m.hasRecurrentState() && !m.recurrentSnapshots() }
-
-// legacyPrefillMarked is the optional capability of a resident to tell its caller when a batched prefill has just written a given position,
-// between two of its passes: the one moment a windowed layer's ring holds exactly what a shorter prompt would leave there, so a prefix snapshot
-// can be taken in the middle of a cold prefill (docs/completed/task-kv7-step2-boundary-snapshot-2026-10.md).
-type legacyPrefillMarked interface {
-	Prefiller
-	// PrefillMarkAlign is the width of the passes of a batched prefill, in positions: a mark can fire only at startPos plus a multiple of it.
-	PrefillMarkAlign() int
-	// PrefillLastMarked is PrefillLast that calls at(mark) on the caller's goroutine after the pass that ends exactly at position mark, with no
-	// pass running. A mark that is not at a pass boundary of this prefill (a single pass, a start that is not aligned to it, the passes cut
-	// differently) calls nothing. at must not fail the prefill; a snapshot it cannot take is the caller's to count.
-	PrefillLastMarked(ctx context.Context, embeddings [][]float32, startPos, mark int, at func(pos int)) ([]float32, error)
-}
 
 // KVSnapshotStats is a model's host snapshots, for /admin/status and the request log.
 type KVSnapshotStats struct {

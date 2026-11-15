@@ -31,6 +31,8 @@ type windowResident struct {
 	dropped bool
 }
 
+func (f *windowResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+
 func (w *windowResident) ReusableKV(prefix int) int {
 	if w.dropped {
 		return 0

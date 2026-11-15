@@ -1,22 +1,5 @@
 package decoder
 
-// legacyPrefillChunks is the optional capability of a Prefiller that splits a long prompt into passes itself: the decoder hands it
-// the whole suffix in one PrefillLast call and the resident cuts it. PrefillChunkRows is the most rows one of its passes takes, and
-// PrefillScratchBytes what a pass of that many rows allocates beyond the resident's standing buffers. Admission prices a request at
-// that one pass instead of the whole-prompt figure (residentPrefillScratch). It is not legacyPrefillBlocks: that interface makes the
-// decoder split the prompt and needs PrefillTailExact, which a resident whose passes differ in kernel class by length cannot claim.
-type legacyPrefillChunks interface {
-	PrefillChunkRows() int
-	PrefillScratchBytes(rows int) int64
-}
-
-// legacyPrefillSpanScratch is the optional capability of a chunking resident whose pass allocates more when its rows attend
-// many keys: PrefillSpanScratchBytes is at least what any pass of rows rows of a prompt whose last row attends keys keys
-// allocates beyond PrefillScratchBytes(rows). Admission adds it at the request's prompt length.
-type legacyPrefillSpanScratch interface {
-	PrefillSpanScratchBytes(rows, keys int) int64
-}
-
 // prefillTailMinRows is the shortest final pass the resident takes: its own figure when it reports one above the default.
 func (m *Model) prefillTailMinRows() int {
 	return max(prefillTailMin, residentCapsOf(m.resident).TailMinRows)

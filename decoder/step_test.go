@@ -11,12 +11,32 @@ import (
 // stepLogResident implements every forward shape and logs each call as its method name and arguments, so a test can
 // compare what step called with what today's callers call. Each call returns a distinct value the test checks came back.
 type stepLogResident struct {
+	fakeSubsystems
 	calls   []string
 	ctxs    []any // each ctx-taking call's ctx.Value(stepCtxKey{}), nil for a background context
 	noTopK  bool  // TopKAvailable answers false
 	noSamp  bool  // SampleAvailable answers false
 	noHyMRP bool  // HybridMRoPEPrefill answers false
 }
+
+func (f *stepLogResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *stepLogResident) PrefillAvailable() bool                 { return true }
+func (f *stepLogResident) BatchStepperAvailable() bool            { return true }
+func (f *stepLogResident) GreedyAvailable() bool                  { return true }
+func (f *stepLogResident) HiddenLastAvailable() bool              { return true }
+func (f *stepLogResident) ImageBlocksPrefillAvailable() bool      { return true }
+func (f *stepLogResident) ImagePrefillAvailable() bool            { return true }
+func (f *stepLogResident) LastNArgmaxAvailable() bool             { return true }
+func (f *stepLogResident) MRoPEDecodeAvailable() bool             { return true }
+func (f *stepLogResident) MRoPEDeepstackPrefillAvailable() bool   { return true }
+func (f *stepLogResident) MRoPEPrefillAvailable() bool            { return true }
+func (f *stepLogResident) NoLogitsAvailable() bool                { return true }
+func (f *stepLogResident) PrefillMarkedAvailable() bool           { return true }
+func (f *stepLogResident) PrefillRowsAvailable() bool             { return true }
+func (f *stepLogResident) RaggedStepperAvailable() bool           { return true }
+func (f *stepLogResident) ResidualAllAvailable() bool             { return true }
+func (f *stepLogResident) SeedArgmaxAvailable() bool              { return true }
+func (f *stepLogResident) SpanPrefillAvailable() bool             { return true }
 
 // stepCtxKey tags the caller's context, so a test sees which context reached the resident.
 type stepCtxKey struct{}
@@ -248,7 +268,9 @@ func TestStep_eachShapeMakesTodaysCall(t *testing.T) {
 }
 
 // stepPlainResident has only the required seam, so every optional shape is absent.
-type stepPlainResident struct{ calls int }
+type stepPlainResident struct {
+	calls int
+}
 
 func (p *stepPlainResident) Forward([]float32, int) ([]float32, error) {
 	p.calls++
@@ -264,7 +286,13 @@ func (p *stepPlainResident) Reset()                                        {}
 func (p *stepPlainResident) Close() error                                  { return nil }
 
 // stepPrefillOnly is a Prefiller and nothing more optional.
-type stepPrefillOnly struct{ stepPlainResident }
+type stepPrefillOnly struct {
+	stepPlainResident
+	fakeSubsystems
+}
+
+func (f *stepPrefillOnly) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *stepPrefillOnly) PrefillAvailable() bool                 { return true }
 
 func (p *stepPrefillOnly) PrefillLast(context.Context, [][]float32, int) ([]float32, error) {
 	p.calls++
@@ -346,7 +374,7 @@ func TestStep_absentShapeDeclines(t *testing.T) {
 			t.Errorf("malformed batch %d: err %v, calls %q; want errStepShape and no call", i, err, f.calls)
 		}
 	}
-	// A plain Prefiller without legacyPrefillMarked declines a marked prefill instead of dropping the mark.
+	// A plain Prefiller without PrefillMarkedAvailable declines a marked prefill instead of dropping the mark.
 	pf := &stepPrefillOnly{}
 	marked := stepBatch{Pass: passRows, Emb: two, Mark: 1, At: func(int) {}}
 	if canStep(pf, marked) || !canStep(pf, stepBatch{Pass: passRows, Emb: two}) {
@@ -358,7 +386,13 @@ func TestStep_absentShapeDeclines(t *testing.T) {
 }
 
 // stepNoAllocResident answers each decode shape without allocating, so an allocation in a step is step's own.
-type stepNoAllocResident struct{ stepPlainResident }
+type stepNoAllocResident struct {
+	stepPlainResident
+	fakeSubsystems
+}
+
+func (f *stepNoAllocResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *stepNoAllocResident) GreedyAvailable() bool                  { return true }
 
 func (*stepNoAllocResident) ForwardArgmax([]float32, int) (int, error) { return 1, nil }
 func (*stepNoAllocResident) TopKAvailable() bool                       { return true }

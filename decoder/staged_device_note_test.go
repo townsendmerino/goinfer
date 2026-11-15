@@ -100,6 +100,8 @@ type quantReportingResident struct {
 	quant string
 }
 
+func (f quantReportingResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+
 func (r quantReportingResident) ResidentCaps() ResidentCaps {
 	c := r.fakeResident.ResidentCaps()
 	c.Quant = r.quant

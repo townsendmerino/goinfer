@@ -3,9 +3,6 @@ package decoder
 import (
 	"context"
 	"errors"
-	"reflect"
-	"sync/atomic"
-	"unsafe"
 
 	"github.com/townsendmerino/goinfer/internal/cost"
 )
@@ -17,8 +14,7 @@ var errSubsystemUnavailable = errors.New("decoder: resident subsystem capability
 // wrappers to ResidentDecodeSubsystem, ResidentPrefillSubsystem, ResidentKVSubsystem and ResidentRuntimeSubsystem at
 // compile time, so signature drift fails the build instead of silently disarming an optional fast path at runtime.
 //
-// In-package test doubles that implement only ResidentForward plus one or two legacy micro-interfaces need not implement
-// ResidentSubsystemProvider: SubsystemsOf bridges them automatically.
+// A resident that is not a provider has no optional capability: SubsystemsOf returns the no-op subsystems for it.
 type ResidentSubsystemProvider interface {
 	ResidentSubsystems() ResidentSubsystems
 }
@@ -35,34 +31,91 @@ type ResidentSubsystems struct {
 // ResidentDecodeSubsystem covers single-token decode fast paths (argmax, top-K, device Gumbel sample, m-RoPE, KV-only),
 // device-chained greedy and sampled decode, and multi-sequence batched / ragged decode steps.
 type ResidentDecodeSubsystem interface {
+	// GreedyAvailable is an optional capability on a ResidentForward: compute the token's greedy
+	// argmax on-device and hand back just the id, skipping the full-logits readback. The decode loop
+	// uses it ONLY when Sampler.ArgmaxEquivalent() OR Sampler.GreedyEquivalent() (the `top_k=1` shape)
+	// holds and no LogitProcessor is set, so the emitted tokens are identical to the logits path.
+	// Backends may skip implementing it.
 	GreedyAvailable() bool
 	ForwardArgmax(embedding []float32, pos int) (int, error)
 
+	// TopKAvailable is an optional ResidentForward extension: run a token's forward and return only the K
+	// best logits (plus Z when wantZ), instead of the whole vocab-wide row. The decode loop uses it only
+	// for a filtered sampler (top_k / top_p / min_p at temperature > 0) with no bias, penalties, logprobs
+	// or logit processor — anything that needs, or rewrites, the full row keeps the full path.
+	// TopKAvailable is false for a backend whose logits are transformed on the host after readback
+	// (final-logit softcap, logit scale): ranking the raw device row would not be ranking what the
+	// sampler sees.
 	TopKAvailable() bool
 	ForwardTopK(embedding []float32, pos, k int, temperature float64, wantZ bool) (TopKRow, error)
 
+	// SampleAvailable is an optional ResidentForward extension: run a token's forward and DRAW the next token
+	// on-device by Gumbel-max (sampler_gumbel.go), returning just the id — no logits readback and no host
+	// normalisation. It serves the temperature-only configuration (temperature > 0, no top-k / top-p / min-p), the
+	// server's default sampling shape. (seed, draw) are the sampler's own (Sampler.NextDraw), so whichever path
+	// serves a step the stream is a function of (seed, step, logits) only. SampleAvailable is false for a backend
+	// whose logits are transformed on the host after readback (final-logit softcap, logit scale).
 	SampleAvailable() bool
 	ForwardSample(embedding []float32, pos int, temperature float64, seed, draw uint64) (int, error)
 
+	// MRoPEDecodeAvailable is an OPTIONAL ResidentForward extension: a resident backend whose rotation kernel takes a
+	// rope-angle position (ropePos) separate from the KV-cache/attention position (pos). Qwen2.5-VL decode past
+	// an image block needs it: decoder/rope.go's CPU reference rotates by pos+mropeDelta while storage and
+	// attention still use plain pos. A new capability rather than a Forward signature change, since only Qwen-VL
+	// decode needs the split. ForwardMRoPE(emb, pos, pos) must equal Forward(emb, pos) exactly. Without it
+	// GenerateQwenVL's resident path declines to the CPU/staged decode.
 	MRoPEDecodeAvailable() bool
 	ForwardMRoPE(embedding []float32, pos, ropePos int) (logits []float32, err error)
 
+	// NoLogitsAvailable is an OPTIONAL ResidentForward extension: run a token's forward to build ONLY its
+	// resident KV, skipping the final norm + LM head matmul + full-logits readback (+ any host-side
+	// softcap). generateInto uses it for prompt[:-1] — every prefill token except the last needs only its
+	// K/V in the cache; only the LAST prompt token's logits seed decode. The layer chain (hence the KV
+	// written) is identical to Forward, so decode is byte-identical; the LM head on a big-vocab model is
+	// a large share of a forward (262144×hidden MACs + a ~1 MB D2H + softcap), so skipping it on every
+	// prompt token but the last cuts prefill/TTFT materially. Backends without it keep full-logits prefill.
 	NoLogitsAvailable() bool
 	ForwardNoLogits(embedding []float32, pos int) error
 
+	// GreedyChainAvailable is an optional capability on a ResidentForward (C-B01, docs/audit-metal-2026-09-30.md): greedy
+	// decode with the token chained on the device. The resident picks each token's argmax on-device and gathers its
+	// embedding as the next forward's input itself, so it can queue the next forward before the host has seen the token;
+	// the host reads 4 bytes per token. GreedyChainStart opens a chain whose first input is token id at position pos;
+	// each GreedyChainNext returns the argmax of the forward at the chain's next position (pos, pos+1, ...), which is also
+	// that forward's successor's input; GreedyChainStop closes it, waiting out any forward queued past the last token
+	// taken. Between Start and Stop the caller makes no other call on the resident. The decode loop uses it under the
+	// same conditions as GreedyAvailable, and only where its own embedding lookup is a plain table row (embedIsTableRow),
+	// with no MC3 concurrency, adapter or processor; the tokens are those of the full-logits path.
 	GreedyChainAvailable() bool
 	GreedyChainStart(id, pos int) error
 	GreedyChainNext() (int, error)
 	GreedyChainStop()
 
+	// SampleChainAvailable is GreedyChainAvailable's temperature-only sibling (C-P02): the chained forward ends with the
+	// resident's own Gumbel-max draw (SampleAvailable's ForwardSample) instead of the argmax. SampleChainStart opens it with
+	// the draw of the forward at pos; the resident draws each later forward with the next one, which is how
+	// Sampler.NextDraw advances. Each SampleChainNext passes the caller's own draw for the forward it returns, and the
+	// resident refuses one that is not the draw it used. GreedyChainStop closes it. The decode loop uses it where it would
+	// call ForwardSample, with no MC3, adapter or processor and a plain table-row embedding; the tokens are ForwardSample's.
 	SampleChainAvailable() bool
 	SampleChainStart(id, pos int, temperature float64, seed, draw uint64) error
 	SampleChainNext(seed, draw uint64) (int, error)
 
+	// BatchStepperAvailable is an OPTIONAL KVSlotterAvailable extension (MC3, docs/tasks/parked/task-concurrency-2026-09.md): one
+	// decode token for several sequences at once, each on its own KV slot at its own position, in one step. It reads and
+	// writes only the named slots — never the bound one's binding — and each returned row must equal what that sequence's
+	// own call would return on its slot, bit for bit (the identity gate MC3 keeps): Forward's logits, or, for a sequence
+	// that carries a Draw, SampleAvailable.ForwardSample's id. BatchStepRange is the batch sizes the step serves better than
+	// per-sequence calls; hi == 0 means the resident cannot batch at all.
 	BatchStepperAvailable() bool
 	BatchStepRange() (lo, hi int)
 	StepBatch(seqs []ResidentBatchSeq) ([]ResidentBatchOut, error)
 
+	// RaggedStepperAvailable is an optional ResidentForward extension: one step over several sequences, each with one row or more
+	// at consecutive positions from its Pos on its own KV slot, every row in the kernel class its own shape runs today (a row
+	// alone is a decode token, a sequence's rows a verify). Row j of a sequence equals that sequence's own Forward at Pos+j bit
+	// for bit, or ForwardSample's id for a last row that carries the Draw. The slots are distinct; the bound slot is restored.
+	// Docs: docs/tasks/task-forward-and-memory-2026-11.md, "RF2: registration".
 	RaggedStepperAvailable() bool
 	StepRagged(seqs []ResidentRaggedSeq) ([]ResidentRaggedOut, error)
 }
@@ -73,43 +126,110 @@ type ResidentPrefillSubsystem interface {
 	PrefillAvailable() bool
 	PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) (logits []float32, err error)
 
+	// PrefillRowsAvailable is the optional capability of a Prefiller that reads a suffix's embeddings a range of rows at a time, so the
+	// host holds a chunk of them instead of the whole suffix (MEM6, docs/completed/task-memory-campaign-2026-10.md). PrefillLastRows is
+	// PrefillLast for n rows at startPos: rows(lo, hi) returns rows [lo, hi) of the suffix, valid only until the next call, and the
+	// resident may ask for a range more than once (a declined route re-reads it).
 	PrefillRowsAvailable() bool
 	PrefillLastRows(ctx context.Context, n, startPos int, rows func(lo, hi int) [][]float32) ([]float32, error)
 
+	// PrefillMarkedAvailable is the optional capability of a resident to tell its caller when a batched prefill has just written a given position,
+	// between two of its passes: the one moment a windowed layer's ring holds exactly what a shorter prompt would leave there, so a prefix snapshot
+	// can be taken in the middle of a cold prefill (docs/completed/task-kv7-step2-boundary-snapshot-2026-10.md).
+	// PrefillMarkAlign is the width of the passes of a batched prefill, in positions: a mark can fire only at startPos plus a multiple of it.
 	PrefillMarkedAvailable() bool
 	PrefillMarkAlign() int
+	// PrefillLastMarked is PrefillLast that calls at(mark) on the caller's goroutine after the pass that ends exactly at position mark, with no
+	// pass running. A mark that is not at a pass boundary of this prefill (a single pass, a start that is not aligned to it, the passes cut
+	// differently) calls nothing. at must not fail the prefill; a snapshot it cannot take is the caller's to count.
 	PrefillLastMarked(ctx context.Context, embeddings [][]float32, startPos, mark int, at func(pos int)) ([]float32, error)
 
 	PrefillPathInfo() (batched bool, reason string, ok bool)
 	PrefillTailExact() bool
 
+	// PrefillBlocksAvailable is the optional capability of a Prefiller whose pass allocates scratch for every row it is
+	// handed, so a long prompt's scratch grows with the prompt. PrefillBlockRows is the most rows one pass should take,
+	// or 0 when the resident does not want its prefill split; PrefillScratchBytes is what a pass of that many rows
+	// allocates beyond the resident's standing buffers. residentPrefillSeed takes a longer suffix in passes of
+	// PrefillBlockRows, and AdmitPrefillMemoryShare prices a resident request at one pass instead of the whole prompt.
+	// Splitting changes no bit only for a resident whose continuation equals the whole pass, so both callers also require
+	// PrefillTailExact (prefillBlockRows).
 	PrefillBlocksAvailable() bool
 	PrefillBlockRows() int
+	// PrefillChunksAvailable is the optional capability of a Prefiller that splits a long prompt into passes itself: the decoder hands it
+	// the whole suffix in one PrefillLast call and the resident cuts it. PrefillChunkRows is the most rows one of its passes takes, and
+	// PrefillScratchBytes what a pass of that many rows allocates beyond the resident's standing buffers. Admission prices a request at
+	// that one pass instead of the whole-prompt figure (residentPrefillScratch). It is not PrefillBlocksAvailable: that interface makes the
+	// decoder split the prompt and needs PrefillTailExact, which a resident whose passes differ in kernel class by length cannot claim.
 	PrefillChunksAvailable() bool
 	PrefillChunkRows() int
 	PrefillScratchBytes(rows int) int64
+	// PrefillSpanScratchBytes is the optional capability of a chunking resident whose pass allocates more when its rows attend
+	// many keys: PrefillSpanScratchBytes is at least what any pass of rows rows of a prompt whose last row attends keys keys
+	// allocates beyond PrefillScratchBytes(rows). Admission adds it at the request's prompt length.
 	PrefillSpanScratchBytes(rows, keys int) int64
 
+	// HiddenLastAvailable is an OPTIONAL ResidentForward extension: ingest a whole sequence at positions
+	// startPos..startPos+len-1 and return the LAST position's hidden state AFTER the model's final norm — the resident
+	// twin of Prefiller, stopping before the LM head. Used by HiddenLast (G4) so an embedding request on a GPU box does
+	// not run the whole text decoder on the CPU. Bit-identical to the CPU path is the bar (embed.go): a backend whose
+	// batched forward is not bit-identical to its own sequential one must implement this as a per-token forward that
+	// stops before the head, or not at all, never reuse a declining Prefiller.
 	HiddenLastAvailable() bool
 	HiddenLast(ctx context.Context, embeddings [][]float32, startPos int) (hidden []float32, err error)
 
+	// ResidualAllAvailable is an OPTIONAL ResidentForward extension: ingest a whole sequence at positions
+	// startPos..startPos+len-1 and return the residual stream of EVERY row after the last layer and BEFORE the final
+	// norm, [len][hidden] f32, each row a fresh slice the caller owns: the resident twin of Model.PromptHiddenAll
+	// (docs/tasks/parked/task-constrained-confidence.md, Route C). It stops before the norm because the decoder applies it on
+	// the host in f32, as its CPU path does; HiddenLastAvailable cannot serve this (post-norm, last row only, and on CUDA
+	// already through the int8 activation quantization). A backend whose batched forward is not what its decode computes
+	// must take the exact path; a decline falls back to the CPU, a cancellation returns.
 	ResidualAllAvailable() bool
 	ResidualAll(ctx context.Context, embeddings [][]float32, startPos int) (residuals [][]float32, err error)
 
+	// ImagePrefillAvailable is an OPTIONAL Prefiller extension: bidirectional attention over a contiguous
+	// [imgStart,imgEnd) sub-range (Gemma 3's image-block mask, SetImageBlocks/attendHi in decoder/kvcache.go), the
+	// resident twin of prefillLogitsVL's CPU forward. embeddings are the ALREADY-SPLICED per-position vectors (text
+	// embeddings with the projected vision features overwritten at [imgStart,imgEnd), no embed scale). The whole prompt,
+	// image block included, must fit in ONE weight-stationary pass; a longer prompt or any other decline returns an
+	// error rather than chunking, because a bidirectional block split across a chunk boundary is unverified. Without it
+	// GenerateVL takes the CPU-prefill-then-UploadKV bridge (docs/multimodal.md).
 	ImagePrefillAvailable() bool
 	PrefillImageLast(ctx context.Context, embeddings [][]float32, startPos, imgStart, imgEnd int) (logits []float32, err error)
 
+	// ImageBlocksPrefillAvailable is ImagePrefillAvailable for a prompt with several images (S11,
+	// docs/completed/task-multimodal-support-2026-10.md): blocks are each image's [start, end), in order and disjoint, each its
+	// own bidirectional block. OPTIONAL: a backend without it takes a multi-image turn through the CPU-prefill + UploadKV
+	// bridge, which handles any number of blocks.
 	ImageBlocksPrefillAvailable() bool
 	PrefillImageBlocksLast(ctx context.Context, embeddings [][]float32, startPos int, blocks [][2]int) (logits []float32, err error)
 
+	// SpanPrefillAvailable is an OPTIONAL ResidentForward extension: the batched prefill of a Gemma 4 bidirectional
+	// ("vision") prompt. spans are each image's or audio clip's [start, end), absolute, in order and disjoint, and a row
+	// attends as gemma4BatchRange says: inside a span it sees the whole span, and a sliding layer's window reaches back to
+	// the span's start; elsewhere it is causal. The backend may cut passes, but never inside a span. Any error other than a
+	// cancel is a decline, and GenerateGemma4VLSpans takes the CPU prefill and upload instead.
 	SpanPrefillAvailable() bool
 	PrefillSpansLast(ctx context.Context, embeddings [][]float32, startPos int, spans [][2]int) (logits []float32, err error)
 
 	HybridMRoPEPrefill() bool
 
+	// MRoPEPrefillAvailable is an OPTIONAL Prefiller extension: batched prefill under Qwen2.5-VL's m-RoPE 3D rotary
+	// positions, the resident twin of prefillLogitsQwenVL's CPU forward. Unlike MRoPEDecodeAvailable (decode's single ropePos
+	// split) it needs every row's own position up front: mropePos is decoder/rope.go's mropePositions output, one (t,h,w)
+	// triple per ABSOLUTE position over the WHOLE prompt, which GenerateQwenVL already computes, so a backend must not
+	// re-derive it. embeddings are the ALREADY-SPLICED vectors (ImagePrefillAvailable's convention). Unlike it,
+	// implementations MAY chunk: Qwen's image tokens attend causally and each row's rotation is independent. Without it
+	// GenerateQwenVL falls back to the CPU-prefill+UploadKV bridge.
 	MRoPEPrefillAvailable() bool
 	PrefillMRoPELast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int) (logits []float32, err error)
 
+	// MRoPEDeepstackPrefillAvailable is an OPTIONAL extension of MRoPEPrefillAvailable for Qwen3-VL (S16): the same batched m-RoPE
+	// prefill, which also adds DeepStack set l to the image rows [imgStart, imgStart+imgLen) after decoder layer l, as the CPU
+	// prefill does (addDeepstack; HF's hidden_states[visual_pos_masks] += deepstack_visual_embeds[l]). deep holds one set per
+	// injected layer, imgLen rows of the hidden size each. Without it GenerateQwenVLDeepstack keeps a turn that has DeepStack
+	// sets on the CPU prefill.
 	MRoPEDeepstackPrefillAvailable() bool
 	PrefillMRoPEDeepstackLast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int, deep [][]float32, imgStart, imgLen int) (logits []float32, err error)
 }
@@ -117,37 +237,89 @@ type ResidentPrefillSubsystem interface {
 // ResidentKVSubsystem covers multi-slot KV binding, shared block-pool telemetry, slot activity, cross-slot KV copy,
 // windowed reuse queries, atomic upload passes, host prefix snapshots, host KV demotion, and recurrent checkpoints.
 type ResidentKVSubsystem interface {
+	// KVSlotterAvailable is an OPTIONAL ResidentForward extension (MC1, docs/tasks/parked/task-concurrency-2026-09.md): a resident
+	// that holds several independent KV caches ("slots") and binds exactly one at a time. Every ResidentForward method —
+	// Forward, ForwardN, UploadKV, TruncateTo, Reset — reads and writes the BOUND slot only, so a slot switch is the whole
+	// interface: the decoder keeps each slot's reuse bookkeeping and binds the slot a generation will use before it
+	// prefills. KVSlots is the count actually allocated (>= 1, after the backend's fit guard); UseKVSlot(i) binds slot i
+	// and must leave nothing encoded against the previous one. A resident without it has one slot.
 	KVSlotterAvailable() bool
 	KVSlots() int
 	UseKVSlot(i int) error
 
+	// SetKVSlotBusy is the optional capability of a resident whose slots share one block pool to be told which slots a running
+	// generation holds (MC3's busy slots), so that it releases the blocks of an idle slot to make room, never a running one's. The bound
+	// slot counts as running whether or not it is marked.
 	SetKVSlotBusy(slot int, busy bool)
+	// KVPool is the optional capability of a resident whose slots share one block pool to say what it holds.
 	KVPool() KVPoolDetail
 
+	// ReusableKV is implemented by a resident whose KV for some layers holds only a recent window of positions (Options.ResidentWindowedKV).
+	// ReusableKV(prefix) is how many of the first prefix positions of the bound slot's sequence it can serve to a forward that continues at
+	// position prefix: prefix itself, or 0 when the window that forward attends to has already been dropped, in which case the caller prefills
+	// the prompt from the start. A positive answer other than prefix is never returned.
 	ReusableKV(prefix int) int
+	// ReusableKVSlotAvailable is ReusableKV's question for any slot, bound or not: of the first prefix positions
+	// of slot's sequence, how many it can serve to a forward that continues at position prefix (prefix or 0).
 	ReusableKVSlotAvailable() bool
 	ReusableKVSlot(slot, prefix int) int
 
+	// KVUploadPassAvailable is the optional capability of a resident to treat the UploadKV calls between BeginKVUpload and EndKVUpload as one write of the
+	// bound slot: it holds the rows only once every layer's have landed, and failed says one did not.
 	KVUploadPassAvailable() bool
 	BeginKVUpload() error
 	EndKVUpload(failed bool) error
 
+	// KVCopierAvailable is the optional capability of a resident with several KV slots (KVSlotterAvailable) to copy rows
+	// between them. CopyKV copies rows [start, end) of every layer from slot src to slot dst, src != dst, start and end
+	// multiples of kvmgr.BlockRows; dst then continues at position end, and src is unchanged. A range the backend cannot
+	// serve (a window that no longer holds rows dst will attend to, a layout it does not copy) returns a *KVCopyDecline
+	// before anything is written. The caller treats any error as having written nothing it may trust from start on.
 	KVCopierAvailable() bool
 	CopyKV(src, dst, start, end int) error
 
+	// KVSnapshotterAvailable is the optional capability of a resident to hold a slot's KV rows in host memory and put them back. Like
+	// KVCopierAvailable it works on today's slot storage: a windowed layer's rows are those its window and the rollback need, and the
+	// restore sets the slot's ring base as a copy does.
+	// SnapshotKV copies rows [0, end) of slot into pinned host memory, end a whole number of blocks; for a windowed layer, the rows
+	// [end-(window-1)-rollback, end) its slot holds. A *KVCopyDecline, before anything is allocated, refuses what it cannot hold.
 	KVSnapshotterAvailable() bool
 	SnapshotKV(slot, end int) (ResidentKVSnapshot, error)
+	// RestoreKV writes the first end rows of snap into slot, so that the slot continues at position end. A *KVCopyDecline, before
+	// anything is written, refuses what it cannot serve.
 	RestoreKV(snap ResidentKVSnapshot, slot, end int) error
+	// KVSnapshotBytes is the host memory SnapshotKV(_, end) would hold, 0 when it would decline for a reason that needs no slot.
 	KVSnapshotBytes(end int) int64
+	// KVSnapshotRollback is how many positions before a snapshot's end a windowed layer still serves a restore; 0 with no windowed layer.
 	KVSnapshotRollback() int
+	// KVSnapshotRecurrent reports whether a snapshot carries a recurrent model's state with its rows: a snapshot to end holds the state
+	// as it stood after position end-1, so it serves a restore to exactly end and to no shorter prefix. False when it carries none.
 	KVSnapshotRecurrent() bool
 
+	// KVDemoterAvailable is the optional capability of a resident to keep a released slot's rows in host memory (the slot still answers
+	// ReusableKVSlotAvailable for them) and put them back when a request reuses it (docs/measurements/kv7-demote-2026-11/README.md).
+	// SetKVHostBudget gives it the budget it charges them to; without one it keeps none.
 	KVDemoterAvailable() bool
 	SetKVHostBudget(b KVHostBudget)
+	// PromoteKV puts back the blocks holding slot's first rows of its demoted copy and returns them, 0 when the slot holds its rows. The copy is
+	// then gone, and the slot answers for those rows only. An error leaves the slot released and the copy in place.
 	PromoteKV(slot, rows int) (blocks int, err error)
+	// CopyDemotedKV writes rows [start, end) of src's demoted copy into dst, which holds the rows below start, and returns the blocks written. A
+	// released dst holds none and takes them all. src stays released with its copy, for its own conversation's return. held is false when src is
+	// not released, which is CopyKV's case. A *KVCopyDecline leaves dst as it was.
 	CopyDemotedKV(src, dst, start, end int) (blocks int, held bool, err error)
+	// ReserveKVHost charges n bytes of the budget for a prefix snapshot, dropping demoted copies and then held snapshots to make room, and dropping
+	// nothing when that could not make it fit.
 	ReserveKVHost(n int64) bool
 
+	// RecurrentCheckpointBytes is the optional capability of a resident with recurrent state to keep one copy of it, every
+	// recurrent layer's state and conv window, beside the live state. RecurrentCheckpointBytes is the copy's size, 0 when the resident
+	// keeps none (its load did not admit it). SaveRecurrentCheckpoint copies the live state into it and RestoreRecurrentCheckpoint
+	// copies it back; neither touches the attention KV. An error leaves the live state unknown to the caller.
+	//
+	// RecurrentCheckpointHeld reports whether slot holds a checkpoint now. A checkpoint can be taken from a slot, by another slot's save
+	// or by a reset, while the slot's record still names its position, so a load of several slots scores only a checkpoint its slot holds:
+	// a restore that fails has already cost that slot its sequence. A resident that cannot tell returns false, and scores none on such a load.
 	RecurrentCheckpointBytes() int64
 	SaveRecurrentCheckpoint() error
 	RestoreRecurrentCheckpoint() error
@@ -158,14 +330,30 @@ type ResidentKVSubsystem interface {
 // cache management, speculative verify path / cost / divergence guards, batched argmax verify, block-drafting host, and
 // recurrent speculative fold.
 type ResidentRuntimeSubsystem interface {
+	// ResidentCaps is the optional capability of a resident to report its ResidentCaps.
 	ResidentCaps() ResidentCaps
 
+	// CostAvailable is a resident that counts SB11's device costs (internal/cost) over a span of its work: CostSpan runs work with c
+	// counting into phase p, adds the span's device-level counts and wall time, and counts the tokens work reports it covered.
+	// Optional. A generation that asks for its cost on a resident without it, or on one shared with other generations (MC3), gets
+	// no phase from the resident (docs/completed/task-subsystems-2026-10.md §8, "SB11b").
 	CostAvailable() bool
 	CostSpan(c *cost.Counter, p cost.Phase, work func() (tokens int, err error)) error
 
+	// AdapterAvailable is an OPTIONAL ResidentForward extension: a backend that can apply a compute-time LoRA
+	// delta on the resident decode path. SetAdapter(nil) clears a previously-bound adapter. generateInto holds the
+	// same resBusy exclusive-access window a Forward/ForwardN call requires for the WHOLE bind→forward→clear
+	// sequence, so an implementation needs no locking and two adapters sharing one base model's resident runner
+	// never race. A backend without it is simply not type-asserted: generateInto declines to the CPU/staged path,
+	// never running an adapter session's tokens through the base weights.
 	AdapterAvailable() bool
 	SetAdapter(layers []ResidentAdapterLayer) error
 
+	// ExpertCacheAvailable is an OPTIONAL ResidentForward extension, implemented by a resident that pages MoE experts through a
+	// device cache. ExpertCacheStats' ok is false when this build keeps no cache; its counters are written by the generation in
+	// flight, so a caller reads them between generations. ResizeExpertCache sizes the cache to what free device memory holds
+	// with reserve bytes left over, up to the slots the load asked for, and returns the slots it now has; the cache restarts
+	// empty. It is called between generations, and an error leaves the cache as it was.
 	ExpertCacheAvailable() bool
 	ExpertCacheStats() (s ExpertCacheStats, ok bool)
 	ResizeExpertCache(reserve int64) (slots int, err error)
@@ -175,6 +363,15 @@ type ResidentRuntimeSubsystem interface {
 	DecodeVerifyDivergence() error
 	EnterExactAttention() (leave func())
 
+	// SeedArgmaxAvailable is an OPTIONAL narrowing of PrefillLastNArgmax for the prompt seed, the one place the loop asks for M rows of argmax
+	// and reads exactly one of them. Without it the seed materialises the batched logits (M x vocab: gigabytes on a large-vocab target at
+	// prompt lengths over ~1k) and runs the head over every row to obtain one token id. The capture the seed needs comes from the layer loop,
+	// not the head, so heading one row loses nothing.
+	//
+	// Optional rather than part of ResidentDrafterHost, following GreedyAvailable: a backend without it keeps working
+	// through the wide path.
+	// PrefillSeedArgmax runs the same batched forward and returns only the LAST row's argmax.
+	// The batched capture seam must be armed and filled exactly as PrefillLastNArgmax fills it.
 	SeedArgmaxAvailable() bool
 	PrefillSeedArgmax(embeddings [][]float32, startPos int) (int, error)
 
@@ -187,32 +384,37 @@ type ResidentRuntimeSubsystem interface {
 	SetBatchedCapture(taps []int) error
 	BatchedCapture() [][]float32
 
+	// RecurrentSpecAvailable is the OPTIONAL capability that lets a resident with recurrent state verify speculatively (SP2,
+	// docs/completed/task-forward-architecture-2026-10.md §6a, "SP2 on nobara"). Without it, BlockSpec refuses every recurrent model,
+	// because PrefillLastNArgmax advances the state by every row it verifies, rejected or not.
+	// PrepareRecurrentSpec allocates what verifies of up to rows rows need, before a drafter attaches; a later call for no more
+	// rows is a no-op.
+	// It returns why when this load cannot take the path (a recurrent layer it does not serve, no room for the rows), and
+	// RecurrentSpecRows then stays 0.
 	RecurrentSpecAvailable() bool
 	PrepareRecurrentSpec(rows int) error
+	// RecurrentSpecRows is the widest verify the path holds: 0 when this load cannot take it (a recurrent layer it does not
+	// serve, or no room for its rows).
 	RecurrentSpecRows() int
+	// VerifyLastNArgmax is PrefillLastNArgmax that writes none of its own rows into any recurrent layer's committed state or conv
+	// window. It first folds the rows the previous verify had marked (FoldVerified). Each row starts from the row above it, so the
+	// rows are a chain.
 	VerifyLastNArgmax(embeddings [][]float32, startPos int) ([]int, error)
+	// FoldVerified marks the last verify's first n rows committed. They fold into the state, leaving it as a prefill of those
+	// rows would, at the next VerifyLastNArgmax or FlushFold, whichever comes first.
 	FoldVerified(n int) error
+	// FlushFold folds the marked rows now. Called before anything other than a verify reads or advances the state.
 	FlushFold() error
+	// DropFold forgets the marked rows without folding them: an exit that commits nothing leaves no rows for a later turn to fold.
 	DropFold()
 }
 
-// Compile-time checks that the four subsystem interfaces satisfy the legacy composite interfaces callers pass around,
-// and that the NoopResident* embeddable defaults cover every method.
+// Compile-time checks that the NoopResident* embeddable defaults cover every contract method.
 var (
 	_ ResidentDecodeSubsystem  = NoopResidentDecode{}
 	_ ResidentPrefillSubsystem = NoopResidentPrefill{}
 	_ ResidentKVSubsystem      = NoopResidentKV{}
 	_ ResidentRuntimeSubsystem = NoopResidentRuntime{}
-
-	_ legacySampleChain         = (ResidentDecodeSubsystem)(nil)
-	_ legacyPrefillBlocks       = (ResidentPrefillSubsystem)(nil)
-	_ legacyKVSnapshotter       = (ResidentKVSubsystem)(nil)
-	_ legacyRecurrentCheckpoint = (ResidentKVSubsystem)(nil)
-	_ legacyReusableKVSlot      = (ResidentKVSubsystem)(nil)
-	_ legacyAdapter             = (ResidentRuntimeSubsystem)(nil)
-	_ legacyCost                = (ResidentRuntimeSubsystem)(nil)
-	_ ResidentDrafterHost       = (ResidentRuntimeSubsystem)(nil)
-	_ legacyRecurrentSpec       = (ResidentRuntimeSubsystem)(nil)
 )
 
 func noopLeave() {}
@@ -402,652 +604,24 @@ func (NoopResidentRuntime) FoldVerified(int) error { return errSubsystemUnavaila
 func (NoopResidentRuntime) FlushFold() error       { return errSubsystemUnavailable }
 func (NoopResidentRuntime) DropFold()              {}
 
-// SubsystemsOf resolves r's four resident subsystems. Production GPU backends implement ResidentSubsystemProvider and
-// return pre-built zero-allocation wrappers directly; nil returns no-op subsystems; an existing subsystem value wraps
-// itself; and legacy / test stubs are bridged through the single compatibility adapter in this file.
+// SubsystemsOf resolves r's four resident subsystems: a ResidentSubsystemProvider returns its own pre-built wrappers
+// (zero allocation); nil, and any value that is not a provider, has no capability and gets the no-op subsystems.
 func SubsystemsOf(r any) ResidentSubsystems {
-	if r == nil {
-		return noopResidentSubsystems
-	}
 	if p, ok := r.(ResidentSubsystemProvider); ok {
 		return p.ResidentSubsystems()
 	}
-	if s, ok := r.(ResidentRuntimeSubsystem); ok {
-		out := noopResidentSubsystems
-		out.Runtime = s
-		return out
-	}
-	if s, ok := r.(ResidentDecodeSubsystem); ok {
-		out := noopResidentSubsystems
-		out.Decode = s
-		return out
-	}
-	if s, ok := r.(ResidentPrefillSubsystem); ok {
-		out := noopResidentSubsystems
-		out.Prefill = s
-		return out
-	}
-	if s, ok := r.(ResidentKVSubsystem); ok {
-		out := noopResidentSubsystems
-		out.KV = s
-		return out
-	}
-	return ResidentSubsystems{
-		Decode:  &legacyDecodeSub{r: r},
-		Prefill: &legacyPrefillSub{r: r},
-		KV:      &legacyKVSub{r: r},
-		Runtime: &legacyRuntimeSub{r: r},
-	}
+	return noopResidentSubsystems
 }
 
-type cachedResidentSubsystems struct {
-	res any
-	sub ResidentSubsystems
-}
-
-// sameResident compares two ResidentForward values without panicking when a test assigns an uncomparable value struct
-// (for example, one holding a slice) to Model.resident.
-func sameResident(a, b any) bool {
-	if a == nil || b == nil {
-		return a == nil && b == nil
-	}
-	ta := reflect.TypeOf(a)
-	if ta != reflect.TypeOf(b) || !ta.Comparable() {
-		return false
-	}
-	return a == b
-}
-
-// subsystems returns m.resident's four subsystems with zero steady-state allocations on the decode hot path.
+// subsystems returns m.resident's four subsystems.
 func (m *Model) subsystems() ResidentSubsystems {
 	if m == nil || m.resident == nil {
 		return noopResidentSubsystems
 	}
-	r := m.resident
-	if p, ok := r.(ResidentSubsystemProvider); ok {
-		return p.ResidentSubsystems()
-	}
-	if c := (*cachedResidentSubsystems)(atomic.LoadPointer(&m.resSubP)); c != nil && sameResident(c.res, r) {
-		return c.sub
-	}
-	sub := SubsystemsOf(r)
-	if t := reflect.TypeOf(r); t != nil && t.Comparable() {
-		atomic.StorePointer(&m.resSubP, unsafe.Pointer(&cachedResidentSubsystems{res: r, sub: sub}))
-	}
-	return sub
+	return SubsystemsOf(m.resident)
 }
 
 func (m *Model) resDecode() ResidentDecodeSubsystem   { return m.subsystems().Decode }
 func (m *Model) resPrefill() ResidentPrefillSubsystem { return m.subsystems().Prefill }
 func (m *Model) resKV() ResidentKVSubsystem           { return m.subsystems().KV }
 func (m *Model) resRuntime() ResidentRuntimeSubsystem { return m.subsystems().Runtime }
-
-// --- Legacy compatibility adapters (sole place legacy micro-interfaces are asserted) ---
-
-type legacyDecodeSub struct{ r any }
-
-func (d *legacyDecodeSub) GreedyAvailable() bool {
-	_, ok := d.r.(legacyGreedy)
-	return ok
-}
-
-func (d *legacyDecodeSub) ForwardArgmax(embedding []float32, pos int) (int, error) {
-	return d.r.(legacyGreedy).ForwardArgmax(embedding, pos)
-}
-
-func (d *legacyDecodeSub) TopKAvailable() bool {
-	tk, ok := d.r.(legacyTopK)
-	return ok && tk.TopKAvailable()
-}
-
-func (d *legacyDecodeSub) ForwardTopK(embedding []float32, pos, k int, temperature float64, wantZ bool) (TopKRow, error) {
-	return d.r.(legacyTopK).ForwardTopK(embedding, pos, k, temperature, wantZ)
-}
-
-func (d *legacyDecodeSub) SampleAvailable() bool {
-	sm, ok := d.r.(legacySample)
-	return ok && sm.SampleAvailable()
-}
-
-func (d *legacyDecodeSub) ForwardSample(embedding []float32, pos int, temperature float64, seed, draw uint64) (int, error) {
-	return d.r.(legacySample).ForwardSample(embedding, pos, temperature, seed, draw)
-}
-
-func (d *legacyDecodeSub) MRoPEDecodeAvailable() bool {
-	_, ok := d.r.(legacyMRoPE)
-	return ok
-}
-
-func (d *legacyDecodeSub) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]float32, error) {
-	return d.r.(legacyMRoPE).ForwardMRoPE(embedding, pos, ropePos)
-}
-
-func (d *legacyDecodeSub) NoLogitsAvailable() bool {
-	_, ok := d.r.(legacyPrefillKV)
-	return ok
-}
-
-func (d *legacyDecodeSub) ForwardNoLogits(embedding []float32, pos int) error {
-	return d.r.(legacyPrefillKV).ForwardNoLogits(embedding, pos)
-}
-
-func (d *legacyDecodeSub) GreedyChainAvailable() bool {
-	gc, ok := d.r.(legacyGreedyChain)
-	return ok && gc.GreedyChainAvailable()
-}
-
-func (d *legacyDecodeSub) GreedyChainStart(id, pos int) error {
-	return d.r.(legacyGreedyChain).GreedyChainStart(id, pos)
-}
-
-func (d *legacyDecodeSub) GreedyChainNext() (int, error) {
-	return d.r.(legacyGreedyChain).GreedyChainNext()
-}
-
-func (d *legacyDecodeSub) GreedyChainStop() {
-	if gc, ok := d.r.(legacyGreedyChain); ok {
-		gc.GreedyChainStop()
-	}
-}
-
-func (d *legacyDecodeSub) SampleChainAvailable() bool {
-	sc, ok := d.r.(legacySampleChain)
-	return ok && sc.SampleChainAvailable()
-}
-
-func (d *legacyDecodeSub) SampleChainStart(id, pos int, temperature float64, seed, draw uint64) error {
-	return d.r.(legacySampleChain).SampleChainStart(id, pos, temperature, seed, draw)
-}
-
-func (d *legacyDecodeSub) SampleChainNext(seed, draw uint64) (int, error) {
-	return d.r.(legacySampleChain).SampleChainNext(seed, draw)
-}
-
-func (d *legacyDecodeSub) BatchStepperAvailable() bool {
-	_, ok := d.r.(legacyBatchStepper)
-	return ok
-}
-
-func (d *legacyDecodeSub) BatchStepRange() (lo, hi int) {
-	if st, ok := d.r.(legacyBatchStepper); ok {
-		return st.BatchStepRange()
-	}
-	return 0, 0
-}
-
-func (d *legacyDecodeSub) StepBatch(seqs []ResidentBatchSeq) ([]ResidentBatchOut, error) {
-	return d.r.(legacyBatchStepper).StepBatch(seqs)
-}
-
-func (d *legacyDecodeSub) RaggedStepperAvailable() bool {
-	_, ok := d.r.(legacyRaggedStepper)
-	return ok
-}
-
-func (d *legacyDecodeSub) StepRagged(seqs []ResidentRaggedSeq) ([]ResidentRaggedOut, error) {
-	return d.r.(legacyRaggedStepper).StepRagged(seqs)
-}
-
-type legacyPrefillSub struct{ r any }
-
-func (p *legacyPrefillSub) PrefillAvailable() bool {
-	_, ok := p.r.(Prefiller)
-	return ok
-}
-
-func (p *legacyPrefillSub) PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
-	return p.r.(Prefiller).PrefillLast(ctx, embeddings, startPos)
-}
-
-func (p *legacyPrefillSub) PrefillRowsAvailable() bool {
-	_, ok := p.r.(legacyPrefillRows)
-	return ok
-}
-
-func (p *legacyPrefillSub) PrefillLastRows(ctx context.Context, n, startPos int, rows func(lo, hi int) [][]float32) ([]float32, error) {
-	return p.r.(legacyPrefillRows).PrefillLastRows(ctx, n, startPos, rows)
-}
-
-func (p *legacyPrefillSub) PrefillMarkedAvailable() bool {
-	_, ok := p.r.(legacyPrefillMarked)
-	return ok
-}
-
-func (p *legacyPrefillSub) PrefillMarkAlign() int {
-	if mp, ok := p.r.(legacyPrefillMarked); ok {
-		return mp.PrefillMarkAlign()
-	}
-	return 0
-}
-
-func (p *legacyPrefillSub) PrefillLastMarked(ctx context.Context, embeddings [][]float32, startPos, mark int, at func(pos int)) ([]float32, error) {
-	return p.r.(legacyPrefillMarked).PrefillLastMarked(ctx, embeddings, startPos, mark, at)
-}
-
-func (p *legacyPrefillSub) PrefillPathInfo() (bool, string, bool) {
-	if rep, ok := p.r.(PrefillPathReporter); ok {
-		b, reason := rep.PrefillPath()
-		return b, reason, true
-	}
-	return false, "", false
-}
-
-func (p *legacyPrefillSub) PrefillTailExact() bool {
-	te, ok := p.r.(PrefillTailExact)
-	return ok && te.PrefillTailExact()
-}
-
-func (p *legacyPrefillSub) PrefillBlocksAvailable() bool {
-	_, ok := p.r.(legacyPrefillBlocks)
-	return ok
-}
-
-func (p *legacyPrefillSub) PrefillBlockRows() int {
-	if pb, ok := p.r.(legacyPrefillBlocks); ok {
-		return pb.PrefillBlockRows()
-	}
-	return 0
-}
-
-func (p *legacyPrefillSub) PrefillChunksAvailable() bool {
-	_, ok := p.r.(legacyPrefillChunks)
-	return ok
-}
-
-func (p *legacyPrefillSub) PrefillChunkRows() int {
-	if pc, ok := p.r.(legacyPrefillChunks); ok {
-		return pc.PrefillChunkRows()
-	}
-	return 0
-}
-
-func (p *legacyPrefillSub) PrefillScratchBytes(rows int) int64 {
-	if pb, ok := p.r.(legacyPrefillBlocks); ok {
-		return pb.PrefillScratchBytes(rows)
-	}
-	if pc, ok := p.r.(legacyPrefillChunks); ok {
-		return pc.PrefillScratchBytes(rows)
-	}
-	return 0
-}
-
-func (p *legacyPrefillSub) PrefillSpanScratchBytes(rows, keys int) int64 {
-	if ss, ok := p.r.(legacyPrefillSpanScratch); ok {
-		return ss.PrefillSpanScratchBytes(rows, keys)
-	}
-	return 0
-}
-
-func (p *legacyPrefillSub) HiddenLastAvailable() bool {
-	_, ok := p.r.(legacyHiddenLast)
-	return ok
-}
-
-func (p *legacyPrefillSub) HiddenLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
-	return p.r.(legacyHiddenLast).HiddenLast(ctx, embeddings, startPos)
-}
-
-func (p *legacyPrefillSub) ResidualAllAvailable() bool {
-	_, ok := p.r.(legacyResidualAll)
-	return ok
-}
-
-func (p *legacyPrefillSub) ResidualAll(ctx context.Context, embeddings [][]float32, startPos int) ([][]float32, error) {
-	return p.r.(legacyResidualAll).ResidualAll(ctx, embeddings, startPos)
-}
-
-func (p *legacyPrefillSub) ImagePrefillAvailable() bool {
-	_, ok := p.r.(legacyImagePrefill)
-	return ok
-}
-
-func (p *legacyPrefillSub) PrefillImageLast(ctx context.Context, embeddings [][]float32, startPos, imgStart, imgEnd int) ([]float32, error) {
-	return p.r.(legacyImagePrefill).PrefillImageLast(ctx, embeddings, startPos, imgStart, imgEnd)
-}
-
-func (p *legacyPrefillSub) ImageBlocksPrefillAvailable() bool {
-	_, ok := p.r.(legacyImageBlocksPrefill)
-	return ok
-}
-
-func (p *legacyPrefillSub) PrefillImageBlocksLast(ctx context.Context, embeddings [][]float32, startPos int, blocks [][2]int) ([]float32, error) {
-	return p.r.(legacyImageBlocksPrefill).PrefillImageBlocksLast(ctx, embeddings, startPos, blocks)
-}
-
-func (p *legacyPrefillSub) SpanPrefillAvailable() bool {
-	_, ok := p.r.(legacySpanPrefill)
-	return ok
-}
-
-func (p *legacyPrefillSub) PrefillSpansLast(ctx context.Context, embeddings [][]float32, startPos int, spans [][2]int) ([]float32, error) {
-	return p.r.(legacySpanPrefill).PrefillSpansLast(ctx, embeddings, startPos, spans)
-}
-
-func (p *legacyPrefillSub) HybridMRoPEPrefill() bool {
-	hp, ok := p.r.(ResidentHybridMRoPEPrefill)
-	return ok && hp.HybridMRoPEPrefill()
-}
-
-func (p *legacyPrefillSub) MRoPEPrefillAvailable() bool {
-	_, ok := p.r.(legacyMRoPEPrefill)
-	return ok
-}
-
-func (p *legacyPrefillSub) PrefillMRoPELast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int) ([]float32, error) {
-	return p.r.(legacyMRoPEPrefill).PrefillMRoPELast(ctx, embeddings, startPos, mropePos)
-}
-
-func (p *legacyPrefillSub) MRoPEDeepstackPrefillAvailable() bool {
-	_, ok := p.r.(legacyMRoPEDeepstackPrefill)
-	return ok
-}
-
-func (p *legacyPrefillSub) PrefillMRoPEDeepstackLast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int, deep [][]float32, imgStart, imgLen int) ([]float32, error) {
-	return p.r.(legacyMRoPEDeepstackPrefill).PrefillMRoPEDeepstackLast(ctx, embeddings, startPos, mropePos, deep, imgStart, imgLen)
-}
-
-type legacyKVSub struct{ r any }
-
-func (k *legacyKVSub) KVSlotterAvailable() bool {
-	_, ok := k.r.(legacyKVSlotter)
-	return ok
-}
-
-func (k *legacyKVSub) KVSlots() int {
-	if sl, ok := k.r.(legacyKVSlotter); ok {
-		return sl.KVSlots()
-	}
-	return 1
-}
-
-func (k *legacyKVSub) UseKVSlot(i int) error {
-	if sl, ok := k.r.(legacyKVSlotter); ok {
-		return sl.UseKVSlot(i)
-	}
-	return nil
-}
-
-func (k *legacyKVSub) SetKVSlotBusy(slot int, busy bool) {
-	if act, ok := k.r.(legacyKVSlotActivity); ok {
-		act.SetKVSlotBusy(slot, busy)
-	}
-}
-
-func (k *legacyKVSub) KVPool() KVPoolDetail {
-	if p, ok := k.r.(legacyKVPoolInfo); ok {
-		return p.KVPool()
-	}
-	return KVPoolDetail{}
-}
-
-func (k *legacyKVSub) ReusableKV(prefix int) int {
-	if rk, ok := k.r.(legacyReusableKV); ok {
-		return rk.ReusableKV(prefix)
-	}
-	return prefix
-}
-
-func (k *legacyKVSub) ReusableKVSlotAvailable() bool {
-	_, ok := k.r.(legacyReusableKVSlot)
-	return ok
-}
-
-func (k *legacyKVSub) ReusableKVSlot(slot, prefix int) int {
-	if rk, ok := k.r.(legacyReusableKVSlot); ok {
-		return rk.ReusableKVSlot(slot, prefix)
-	}
-	return prefix
-}
-
-func (k *legacyKVSub) KVUploadPassAvailable() bool {
-	_, ok := k.r.(legacyKVUploadPass)
-	return ok
-}
-
-func (k *legacyKVSub) BeginKVUpload() error {
-	return k.r.(legacyKVUploadPass).BeginKVUpload()
-}
-
-func (k *legacyKVSub) EndKVUpload(failed bool) error {
-	return k.r.(legacyKVUploadPass).EndKVUpload(failed)
-}
-
-func (k *legacyKVSub) KVCopierAvailable() bool {
-	_, ok := k.r.(legacyKVCopier)
-	return ok
-}
-
-func (k *legacyKVSub) CopyKV(src, dst, start, end int) error {
-	return k.r.(legacyKVCopier).CopyKV(src, dst, start, end)
-}
-
-func (k *legacyKVSub) KVSnapshotterAvailable() bool {
-	_, ok := k.r.(legacyKVSnapshotter)
-	return ok
-}
-
-func (k *legacyKVSub) SnapshotKV(slot, end int) (ResidentKVSnapshot, error) {
-	return k.r.(legacyKVSnapshotter).SnapshotKV(slot, end)
-}
-
-func (k *legacyKVSub) RestoreKV(snap ResidentKVSnapshot, slot, end int) error {
-	return k.r.(legacyKVSnapshotter).RestoreKV(snap, slot, end)
-}
-
-func (k *legacyKVSub) KVSnapshotBytes(end int) int64 {
-	if sn, ok := k.r.(legacyKVSnapshotter); ok {
-		return sn.KVSnapshotBytes(end)
-	}
-	return 0
-}
-
-func (k *legacyKVSub) KVSnapshotRollback() int {
-	if sn, ok := k.r.(legacyKVSnapshotter); ok {
-		return sn.KVSnapshotRollback()
-	}
-	return 0
-}
-
-func (k *legacyKVSub) KVSnapshotRecurrent() bool {
-	sn, ok := k.r.(legacyKVSnapshotter)
-	return ok && sn.KVSnapshotRecurrent()
-}
-
-func (k *legacyKVSub) KVDemoterAvailable() bool {
-	_, ok := k.r.(legacyKVDemoter)
-	return ok
-}
-
-func (k *legacyKVSub) SetKVHostBudget(b KVHostBudget) {
-	if d, ok := k.r.(legacyKVDemoter); ok {
-		d.SetKVHostBudget(b)
-	}
-}
-
-func (k *legacyKVSub) PromoteKV(slot, rows int) (int, error) {
-	return k.r.(legacyKVDemoter).PromoteKV(slot, rows)
-}
-
-func (k *legacyKVSub) CopyDemotedKV(src, dst, start, end int) (int, bool, error) {
-	return k.r.(legacyKVDemoter).CopyDemotedKV(src, dst, start, end)
-}
-
-func (k *legacyKVSub) ReserveKVHost(n int64) bool {
-	if d, ok := k.r.(legacyKVDemoter); ok {
-		return d.ReserveKVHost(n)
-	}
-	return false
-}
-
-func (k *legacyKVSub) RecurrentCheckpointBytes() int64 {
-	if rc, ok := k.r.(legacyRecurrentCheckpoint); ok {
-		return rc.RecurrentCheckpointBytes()
-	}
-	return 0
-}
-
-func (k *legacyKVSub) SaveRecurrentCheckpoint() error {
-	return k.r.(legacyRecurrentCheckpoint).SaveRecurrentCheckpoint()
-}
-
-func (k *legacyKVSub) RestoreRecurrentCheckpoint() error {
-	return k.r.(legacyRecurrentCheckpoint).RestoreRecurrentCheckpoint()
-}
-
-func (k *legacyKVSub) RecurrentCheckpointHeld(slot int) bool {
-	rc, ok := k.r.(legacyRecurrentCheckpoint)
-	return ok && rc.RecurrentCheckpointHeld(slot)
-}
-
-type legacyLastNArgmax interface {
-	PrefillLastNArgmax(embeddings [][]float32, startPos int) ([]int, error)
-}
-
-type legacyRuntimeSub struct{ r any }
-
-func (rt *legacyRuntimeSub) ResidentCaps() ResidentCaps {
-	if c, ok := rt.r.(legacyCapsReporter); ok {
-		return c.ResidentCaps()
-	}
-	return ResidentCaps{}
-}
-
-func (rt *legacyRuntimeSub) CostAvailable() bool {
-	_, ok := rt.r.(legacyCost)
-	return ok
-}
-
-func (rt *legacyRuntimeSub) CostSpan(c *cost.Counter, p cost.Phase, work func() (int, error)) error {
-	return rt.r.(legacyCost).CostSpan(c, p, work)
-}
-
-func (rt *legacyRuntimeSub) AdapterAvailable() bool {
-	_, ok := rt.r.(legacyAdapter)
-	return ok
-}
-
-func (rt *legacyRuntimeSub) SetAdapter(layers []ResidentAdapterLayer) error {
-	return rt.r.(legacyAdapter).SetAdapter(layers)
-}
-
-func (rt *legacyRuntimeSub) ExpertCacheAvailable() bool {
-	_, ok := rt.r.(legacyExpertCache)
-	return ok
-}
-
-func (rt *legacyRuntimeSub) ExpertCacheStats() (ExpertCacheStats, bool) {
-	if ec, ok := rt.r.(legacyExpertCache); ok {
-		return ec.ExpertCacheStats()
-	}
-	return ExpertCacheStats{}, false
-}
-
-func (rt *legacyRuntimeSub) ResizeExpertCache(reserve int64) (int, error) {
-	return rt.r.(legacyExpertCache).ResizeExpertCache(reserve)
-}
-
-func (rt *legacyRuntimeSub) VerifyPathInfo() (bool, string, bool) {
-	if vp, ok := rt.r.(VerifyPathReporter); ok {
-		b, reason := vp.VerifyPath()
-		return b, reason, true
-	}
-	return false, "", false
-}
-
-func (rt *legacyRuntimeSub) VerifyCost() []float64 {
-	if cr, ok := rt.r.(VerifyCostReporter); ok {
-		return cr.VerifyCost()
-	}
-	return nil
-}
-
-func (rt *legacyRuntimeSub) DecodeVerifyDivergence() error {
-	if dv, ok := rt.r.(DecodeVerifyDiverger); ok {
-		return dv.DecodeVerifyDivergence()
-	}
-	return nil
-}
-
-func (rt *legacyRuntimeSub) EnterExactAttention() func() {
-	if sc, ok := rt.r.(ExactAttentionScoper); ok {
-		return sc.EnterExactAttention()
-	}
-	return noopLeave
-}
-
-func (rt *legacyRuntimeSub) SeedArgmaxAvailable() bool {
-	_, ok := rt.r.(legacySeedArgmax)
-	return ok
-}
-
-func (rt *legacyRuntimeSub) PrefillSeedArgmax(embeddings [][]float32, startPos int) (int, error) {
-	return rt.r.(legacySeedArgmax).PrefillSeedArgmax(embeddings, startPos)
-}
-
-func (rt *legacyRuntimeSub) LastNArgmaxAvailable() bool {
-	_, ok := rt.r.(legacyLastNArgmax)
-	return ok
-}
-
-func (rt *legacyRuntimeSub) PrefillLastNArgmax(embeddings [][]float32, startPos int) ([]int, error) {
-	return rt.r.(legacyLastNArgmax).PrefillLastNArgmax(embeddings, startPos)
-}
-
-func (rt *legacyRuntimeSub) DrafterHostAvailable() bool {
-	_, ok := rt.r.(ResidentDrafterHost)
-	return ok
-}
-
-func (rt *legacyRuntimeSub) CanStreamDrafterRows() bool {
-	_, ok := rt.r.(StreamingDrafterHost)
-	return ok
-}
-
-func (rt *legacyRuntimeSub) AttachBlockDrafter(w BlockDrafterWeights) (ResidentBlockDrafter, error) {
-	return rt.r.(ResidentDrafterHost).AttachBlockDrafter(w)
-}
-
-func (rt *legacyRuntimeSub) SetBatchedCapture(taps []int) error {
-	return rt.r.(ResidentDrafterHost).SetBatchedCapture(taps)
-}
-
-func (rt *legacyRuntimeSub) BatchedCapture() [][]float32 {
-	if dh, ok := rt.r.(ResidentDrafterHost); ok {
-		return dh.BatchedCapture()
-	}
-	return nil
-}
-
-func (rt *legacyRuntimeSub) RecurrentSpecAvailable() bool {
-	_, ok := rt.r.(legacyRecurrentSpec)
-	return ok
-}
-
-func (rt *legacyRuntimeSub) PrepareRecurrentSpec(rows int) error {
-	return rt.r.(legacyRecurrentSpec).PrepareRecurrentSpec(rows)
-}
-
-func (rt *legacyRuntimeSub) RecurrentSpecRows() int {
-	if rs, ok := rt.r.(legacyRecurrentSpec); ok {
-		return rs.RecurrentSpecRows()
-	}
-	return 0
-}
-
-func (rt *legacyRuntimeSub) VerifyLastNArgmax(embeddings [][]float32, startPos int) ([]int, error) {
-	return rt.r.(legacyRecurrentSpec).VerifyLastNArgmax(embeddings, startPos)
-}
-
-func (rt *legacyRuntimeSub) FoldVerified(n int) error {
-	return rt.r.(legacyRecurrentSpec).FoldVerified(n)
-}
-
-func (rt *legacyRuntimeSub) FlushFold() error {
-	return rt.r.(legacyRecurrentSpec).FlushFold()
-}
-
-func (rt *legacyRuntimeSub) DropFold() {
-	if rs, ok := rt.r.(legacyRecurrentSpec); ok {
-		rs.DropFold()
-	}
-}

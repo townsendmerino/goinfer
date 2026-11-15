@@ -18,8 +18,16 @@ import (
 // shape a reporting backend (cuda) presents. prefillerOnly below is the non-reporting shape.
 type prefillingResident struct {
 	fakeResident
-	batched bool
-	reason  string
+	fakeSubsystems // the contract defaults stay reachable when the embedded fake is left nil
+	batched        bool
+	reason         string
+}
+
+func (f *prefillingResident) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *prefillingResident) PrefillAvailable() bool                 { return true }
+func (f *prefillingResident) PrefillPathInfo() (bool, string, bool) {
+	b, why := f.PrefillPath()
+	return b, why, true
 }
 
 func (p *prefillingResident) PrefillLast(_ context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
@@ -80,7 +88,7 @@ func TestPrefillPath_noPrefillerIsSequential(t *testing.T) {
 // so rather than overclaim.
 func TestPrefillPath_prefillerWithoutReporter(t *testing.T) {
 	rf := &prefillingResident{batched: true}
-	var res ResidentForward = &prefillerOnly{rf}
+	var res ResidentForward = &prefillerOnly{p: rf}
 	batched, why := residentModel(res).PrefillPath()
 	if !batched {
 		t.Fatalf("unreporting Prefiller treated as a decline: %s", why)
@@ -92,7 +100,13 @@ func TestPrefillPath_prefillerWithoutReporter(t *testing.T) {
 
 // prefillerOnly wraps a resident to expose Prefiller WITHOUT PrefillPathReporter (embedding the
 // struct directly would promote its PrefillPath method).
-type prefillerOnly struct{ p *prefillingResident }
+type prefillerOnly struct {
+	fakeSubsystems
+	p *prefillingResident
+}
+
+func (f *prefillerOnly) ResidentSubsystems() ResidentSubsystems { return selfSubsystems(f) }
+func (f *prefillerOnly) PrefillAvailable() bool                 { return true }
 
 func (w *prefillerOnly) Forward(e []float32, pos int) ([]float32, error) { return w.p.Forward(e, pos) }
 func (w *prefillerOnly) ForwardN(e [][]float32, s int) ([][]float32, error) {

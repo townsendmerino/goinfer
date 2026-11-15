@@ -51,7 +51,6 @@ type Model struct {
 	be          Backend
 	eosIDs      []int           // end-of-sequence ids from config (generation stops on these)
 	resident    ResidentForward // GPU full-residency decode path (webgpu + eligible arch); nil ⇒ staged/CPU
-	resSubP     unsafe.Pointer  // *cachedResidentSubsystems: lock-free legacy-bridge cache; raw pointer so Model stays copyable
 	lifeP       unsafe.Pointer  // *modelLife (lifecycle.go): the in-flight generations Close ends; made on first use
 	resBusy     int32           // atomic: claims the single shared resident KV for one in-flight generation. Raw int32 (not atomic.Bool) so Model stays copyable for the value-copy test seam.
 	capWarned   int32           // atomic: the first prompt past the resident's context has been reported (warnResidentCap)
@@ -307,7 +306,7 @@ func (m *Model) WindowedKVLayer(l int) bool {
 }
 
 // ResidentKVSlotsRequest returns the requested number of resident KV slots (Options.ResidentKVSlots), at least 1, and 1 for a
-// family with recurrent state. A residency builder that supports slots (legacyKVSlotter) allocates up to this many,
+// family with recurrent state. A residency builder that supports slots (KVSlotterAvailable) allocates up to this many,
 // clamped by its fit guard.
 func (m *Model) ResidentKVSlotsRequest() int { return m.ResidentKVSlotsRequestFor("") }
 
@@ -330,7 +329,7 @@ func (m *Model) recurrentSlotsOn(backend string) bool {
 }
 
 // ResidentKVSlots reports how many resident KV slots this model's generations choose among — what the resident
-// allocated (legacyKVSlotter), 1 for a resident without slots, 0 off the resident path.
+// allocated (KVSlotterAvailable), 1 for a resident without slots, 0 off the resident path.
 func (m *Model) ResidentKVSlots() int {
 	if m.resident == nil {
 		return 0
@@ -351,13 +350,13 @@ func (m *Model) ExtraResidentBytes() int64 { return m.extraBytes }
 // locally (see decoder.DrafterKVBytesPerPosition). 0 means the companion, if any, has no ctx-scaling K/V term.
 func (m *Model) ExtraResidentKVPerPosition() int64 { return m.extraKVPerPos }
 
-// ExpertCacheStats reports the resident's MoE expert cache (legacyExpertCache); ok is false off the resident path or when
+// ExpertCacheStats reports the resident's MoE expert cache (ExpertCacheAvailable); ok is false off the resident path or when
 // the resident keeps no cache.
 func (m *Model) ExpertCacheStats() (ExpertCacheStats, bool) {
 	return m.resRuntime().ExpertCacheStats()
 }
 
-// ResizeExpertCache resizes the resident's MoE expert cache (legacyExpertCache) to leave reserve bytes of device memory
+// ResizeExpertCache resizes the resident's MoE expert cache (ExpertCacheAvailable) to leave reserve bytes of device memory
 // free, and returns its slots per layer. It errors when there is no resident or the resident keeps no cache.
 func (m *Model) ResizeExpertCache(reserve int64) (int, error) {
 	rt := m.resRuntime()
@@ -1051,7 +1050,7 @@ func (m *Model) prefillSeedFrom(prompt []int, from int) int {
 	return from
 }
 
-// residentPrefillSeedMarked is residentPrefillSeed that, given a mark, has a resident that can (legacyPrefillMarked) call it back between two
+// residentPrefillSeedMarked is residentPrefillSeed that, given a mark, has a resident that can (PrefillMarkedAvailable) call it back between two
 // passes of the batched prefill, at the mark's position: the prefix snapshot of a prompt whose tail after the stable section is long (kvsnap.go).
 // A resident that cannot, a prefill that does not reach the position at a pass boundary, or one that falls to the sequential loop, calls nothing.
 func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, from int, hasAdapter bool, mk *prefillMark) ([]float32, error) {
@@ -1370,7 +1369,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	//
 	// An adapter session (cache.lora != nil) is admitted: going through Session.UseAdapter -> cache.lora -> applyLoRA is the only
 	// way a compute-time LoRA is applied, and with prefillFrom==0 it never meets the reused-prefix conflict. It is admitted only if
-	// the resident implements legacyAdapter; otherwise it declines to CPU like any other missing resident capability, never
+	// the resident implements AdapterAvailable; otherwise it declines to CPU like any other missing resident capability, never
 	// running an adapter session's tokens through the base model's resident weights, which returns correct-looking but wrong
 	// output.
 	//
@@ -1632,7 +1631,7 @@ type Generation struct {
 	// 0 on paths that do not report them.
 	PrefillSlot, PrefillMatch int
 	// PrefillShared is how many of the PrefillReused rows were copied from another conversation's KV slot
-	// (legacyKVCopier); KVCopy is that copy's wall time, and KVCopyDeclined why a copy the index offered was not
+	// (KVCopierAvailable); KVCopy is that copy's wall time, and KVCopyDeclined why a copy the index offered was not
 	// made ("" when none was declined). Diagnostics for the sharing gate (docs/measurements/kv2-2026-10-14.md).
 	PrefillShared  int
 	KVCopy         time.Duration
@@ -1641,7 +1640,7 @@ type Generation struct {
 	// restore's wall time. 0 when none did.
 	KVSnapRestored int
 	KVSnapRestore  time.Duration
-	// KVPromotedBlocks is how many blocks came back from host memory after the pool released them (legacyKVDemoter): the bound slot's own, or
+	// KVPromotedBlocks is how many blocks came back from host memory after the pool released them (KVDemoterAvailable): the bound slot's own, or
 	// those of another slot's copy written into it. KVPromotedRows is how many of the PrefillReused rows the bound slot's serve; rows that reached it
 	// through a copy count in PrefillShared. 0 when none did.
 	KVPromotedBlocks, KVPromotedRows int
@@ -1653,7 +1652,7 @@ type Generation struct {
 	CheckpointDeclined string
 	CheckpointSaved    bool
 	CheckpointSave     time.Duration
-	// ImgPrefillResident reports whether GenerateVL's resident image-prefill fast path (legacyImagePrefill, the bidirectional
+	// ImgPrefillResident reports whether GenerateVL's resident image-prefill fast path (ImagePrefillAvailable, the bidirectional
 	// image-block kernel) ran this turn's prefill on the GPU; false means it fell through to the CPU-prefill+UploadKV bridge,
 	// whether because no resident implements it, the prompt was too long for one chunk, or any other decline. Diagnostic: a
 	// real-checkpoint gate needs it to confirm the fast path fired rather than passing vacuously through the (correct) fallback.
