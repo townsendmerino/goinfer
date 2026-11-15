@@ -277,6 +277,15 @@ func (r *resident) kvKTRead(l int) Buffer {
 // kvWindowReadPlantForTest makes a window layer's decode attention read the primary group's table (kvKTRead).
 var kvWindowReadPlantForTest bool
 
+// kvTableBytes is what every group's tables hold.
+func (r *resident) kvTableBytes() int64 {
+	n := 0
+	for _, g := range r.kvGs {
+		n += g.kvTab.Len()
+	}
+	return 4 * int64(n)
+}
+
 // kvHeldAny is how many entries slot s's tables map in every group together.
 func (r *resident) kvHeldAny(s int) int {
 	n := 0
@@ -804,10 +813,9 @@ func (a *metalResident) KVPool() decoder.KVPoolDetail {
 			bytes += 4 * int64(r.ks[l].Len()+r.vs[l].Len())
 		}
 	}
-	bytes += 4 * int64(r.kvTab.Len())
+	bytes += r.kvTableBytes()
 	groups := []string{"full"}
 	if r.kvWin != nil {
-		bytes += 4 * int64(r.kvWin.kvTab.Len())
 		groups = append(groups, "window")
 	}
 	prec := "f16"

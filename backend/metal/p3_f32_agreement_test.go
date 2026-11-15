@@ -132,7 +132,7 @@ func TestP3_metalF32BytesAndPaths(t *testing.T) {
 					elems += 2 * int64((1+kvBlocksFor(r.ctxCap)*max(1, len(r.kvSlotBufs)))*decoder.KVBlockRows) * int64(g.kvDim)
 				}
 			}
-			if want, tables := m.ResidentKVBytes("metal", r.ctxCap, false, false), 4*int64(r.kvTab.Len()); got+tables != want {
+			if want, tables := m.ResidentKVBytes("metal", r.ctxCap, false, false), r.kvTableBytes(); got+tables != want {
 				t.Errorf("allocated %d B of K/V and %d B of tables, ResidentKVBytes prices %d B", got, tables, want)
 			}
 			if r.mla == nil && got != 4*elems {
