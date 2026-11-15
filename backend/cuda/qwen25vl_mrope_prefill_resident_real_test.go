@@ -94,7 +94,7 @@ func TestQwen25VLMRoPEPrefillResidentReal_gate(t *testing.T) {
 		t.Fatalf("CPU prefill logits vs golden: cosine %.6f < %.2f — the reference itself doesn't hold, stop here", cos, cpuInt4VsF32GoldenFloor)
 	}
 
-	residentLogits, gpuPos, err := mc.ResidentMRoPEPrefillForTest(context.Background(), rmp, g.InputIDs, feats, g.ImageStart, g.NImageTokens, mropePos)
+	residentLogits, gpuPos, err := mc.ResidentMRoPEPrefillForTest(context.Background(), rf, g.InputIDs, feats, g.ImageStart, g.NImageTokens, mropePos)
 	if err != nil {
 		t.Fatalf("ResidentMRoPEPrefillForTest: %v", err)
 	}
