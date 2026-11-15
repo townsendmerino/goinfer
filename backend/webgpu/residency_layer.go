@@ -322,6 +322,9 @@ func (bs *webgpuBuild) mlaMixer(i int, rl *kernels.RunLayer) error {
 	// MLA: a single compressed-latent cache [ctxCap·latDim] replaces the per-head
 	// K/V caches; the per-head K/V are rebuilt in rank-space, never materialized.
 	latDim := bs.kvLoRA + bs.qkRope
+	if err := kvCheckDeclared(i, m.LayerBuffers(i), true, true, latDim, 0); err != nil {
+		return err
+	}
 	lc, e1 := bs.c.NewKVCache(nil, bs.ctxCap*latDim)
 	if e1 != nil {
 		return fmt.Errorf("gpu: residency latent alloc (layer %d): %w", i, e1)
@@ -402,6 +405,10 @@ func (bs *webgpuBuild) attnMixer(i int, lw *decoder.LayerWeights, rl *kernels.Ru
 	// A Gemma 4 E-model's tail layers attend over an earlier layer's K/V (Model.KVSrcAtResident): such a layer owns no
 	// cache, binds its source's, and projects Q only.
 	kvSrc := m.BackendView().Layer(i).KVSrc()
+	owns := kvSrc == i // before a test knob moves kvSrc
+	if err := kvCheckDeclared(i, m.LayerBuffers(i), owns, false, lkvDim, lnKV); err != nil {
+		return err
+	}
 	if kernels.G4KVSrcOffForTest && kvSrc != i {
 		for j := kvSrc - 1; j >= 0; j-- {
 			if m.BackendView().Layer(j).IsLocal() == m.BackendView().Layer(i).IsLocal() {
