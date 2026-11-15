@@ -248,18 +248,6 @@ func (m *Model) boundReuseLen(prompt []int, imgs []residentImageClaim, lora *lor
 // sees it. The generation it stops ends as at the context cap: finish_reason "length", with what it emitted.
 var ErrKVPoolFull = errors.New("decoder: resident KV pool is full")
 
-// KVPoolDetail is a resident's shared KV block pool as the load banner names it (docs/tasks/task-kv-architecture-2026-10.md
-// §5.16): the context positions it serves across every slot, the positions each slot is guaranteed (one conversation's cap,
-// ResidentCaps.ContextCap, may exceed it), the rows in a block, the layer groups that hold pools, the precision the rows are stored at, and the
-// device bytes the pools and block tables take. WindowRows is how many rows a sliding-window layer keeps for one conversation, its
-// newest (0 when no layer has a window group): such a layer serves every position of Positions while holding only these.
-type KVPoolDetail struct {
-	Positions, Guaranteed, BlockRows, WindowRows int
-	Groups                                       []string
-	Precision                                    string
-	Bytes                                        int64
-}
-
 // ResidentKVPool reports the resident's KV pool (KVPool), the zero value when it has none.
 func (m *Model) ResidentKVPool() KVPoolDetail {
 	return m.resKV().KVPool()
@@ -293,18 +281,6 @@ func (m *Model) KVShareState() (state, why string) {
 type KVCopyDecline struct{ Reason string }
 
 func (d *KVCopyDecline) Error() string { return "kv copy declined: " + d.Reason }
-
-// KVHostBudget is the host byte budget a resident's demoted copies share with the prefix snapshots.
-type KVHostBudget interface {
-	// Fits reports whether n bytes would fit with held snapshots and copies bytes of demoted copies dropped: bytes reserved by anyone else stay.
-	Fits(n, copies int64) bool
-	// Reserve charges n bytes when they fit, dropping held snapshots to make them fit when dropSnapshots is set.
-	Reserve(n int64, dropSnapshots bool) bool
-	Release(n int64)
-	Kept()    // a slot's rows were kept
-	Dropped() // a kept copy was dropped for room
-	Refused() // a slot's rows did not fit
-}
 
 // residentPromote brings the bound slot's demoted rows back when this request reuses them. A failure leaves nothing of the slot's to
 // trust, so the request prefills cold.
