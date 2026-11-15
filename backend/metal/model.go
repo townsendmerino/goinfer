@@ -438,7 +438,7 @@ type resident struct {
 	logitScale    float32 // host-side final-logit multiplier (1/arch.LogitScale), applied in finalizeLogits; 0 ⇒ none (FeatLogitScale)
 
 	// R7b Mac half (docs/completed/red-october.md): device-side temperature-only sampling by
-	// Gumbel-max, decoder.ResidentSample (gumbel_sample.go). Always built (like attnFAPartial
+	// Gumbel-max, decoder.ResidentDecodeSubsystem (gumbel_sample.go). Always built (like attnFAPartial
 	// above): SampleAvailable is a per-call gate (finalSoftcap/logitScale), not a build-time one.
 	pGumbel1, pGumbel2 Pipeline
 	gumbelNB           int    // stage-1 dispatch size: ceil(V / (4*GB_THREADS))
@@ -1466,7 +1466,7 @@ func (r *resident) ForwardEmbMRoPE(emb []float32, pos, ropePos int) []float32 {
 
 // forwardHiddenNoHead encodes the trunk (all layers plus final norm) for one token at absolute position pos, writing
 // this position's K/V into the resident cache as ForwardEmb does, but never dispatching the LM head:
-// decoder.ResidentHiddenLast never needs logits, and the head is the most expensive matmul in a forward. want is false
+// decoder.ResidentPrefillSubsystem never needs logits, and the head is the most expensive matmul in a forward. want is false
 // for every position but the last of a HiddenLast sequence: those still need their K/V written (attention over the
 // whole sequence, matching hiddenLastBatched's causal chain) but their hidden state is never read, so nil comes back
 // without the int8-to-float32 dequant loop.

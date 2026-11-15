@@ -11,9 +11,9 @@ import (
 // docs/tasks/parked/task-constrained-confidence.md: Clef's joint schema head, docs/measurements/decisions-d10-clef-2026-10-02.md);
 // PromptHidden returns only the last row.
 //
-// A resident backend that implements ResidentResidualAll answers first: the whole prompt runs on the device, the
+// A resident backend that implements legacyResidualAll answers first: the whole prompt runs on the device, the
 // residual stream of every row comes back, and the final norm is applied HERE on the host in f32, so the rows are not the
-// int8-requantized vectors ResidentHiddenLast returns. Its numerics are the device kernels', not the CPU reference's (the
+// int8-requantized vectors legacyHiddenLast returns. Its numerics are the device kernels', not the CPU reference's (the
 // backend modules bound the difference); a decline falls through to the CPU exactly as if there were no resident, and a
 // cancellation returns. Otherwise it takes the same CPU paths PromptHidden takes, in the same order, so the last row is
 // the row PromptHidden returns on a model with no resident:

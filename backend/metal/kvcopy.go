@@ -9,7 +9,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// CopyKV (decoder.ResidentKVCopier) makes rows [start, end) of slot dst those of slot src, by reference (KV4a-2's rule): each of dst's
+// CopyKV (decoder.ResidentKVSubsystem) makes rows [start, end) of slot dst those of slot src, by reference (KV4a-2's rule): each of dst's
 // table entries in the range names src's block for it, counted in kvRefs, and the block dst held there is released. No row moves; a
 // slot that later writes into a block another slot also names first takes its own (kvWrite). It declines a range src holds no block for (a slot
 // maps none past its sequence), a src whose blocks went to make room, and a start past dst's sequence. Tables are read when a command buffer runs, so nothing may be in flight: the executor and any open chain are stopped before either slot is read, as useKVSlot does.

@@ -50,7 +50,7 @@ func TestHiddenLastResidentParityMetal(t *testing.T) {
 	rh := decoder.SubsystemsOf(rf).Prefill
 	ok := rh.HiddenLastAvailable()
 	if !ok {
-		t.Fatalf("metal resident runner does not implement decoder.ResidentHiddenLast")
+		t.Fatalf("metal resident runner does not implement decoder.ResidentPrefillSubsystem")
 	}
 
 	mCPU, err := decoder.Load(ckpt, decoder.Options{Backend: "cpu", Quant: "int8int8"})

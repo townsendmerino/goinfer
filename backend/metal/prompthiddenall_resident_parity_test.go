@@ -13,7 +13,7 @@ import (
 )
 
 // D11's follow-up on Metal (docs/measurements/decisions-d11-resident-hidden-2026-10-03.md): decoder.Model.PromptHiddenAll on a Metal-resident Qwen3.5 answers from
-// the device through the ResidentResidualAll seam, and every row stays within promptHiddenAllResidentBarMetal of the CPU's PromptHiddenAll on the same weights. The
+// the device through the ResidentPrefillSubsystem seam, and every row stays within promptHiddenAllResidentBarMetal of the CPU's PromptHiddenAll on the same weights. The
 // Metal twin of cuda/prompthiddenall_resident_parity_test.go. Two checks:
 //
 //   - the answer is the runner's own pre-norm residual rows with the decoder's f32 final norm applied (so the dispatch took the resident, and the norm is the host's,
@@ -47,7 +47,7 @@ func TestPromptHiddenAllResidentMetal(t *testing.T) {
 			rr := decoder.SubsystemsOf(rf).Prefill
 			ok := rr.ResidualAllAvailable()
 			if !ok {
-				t.Fatal("the metal resident runner does not implement decoder.ResidentResidualAll")
+				t.Fatal("the metal resident runner does not implement decoder.ResidentPrefillSubsystem")
 			}
 			opts.Backend = "cpu"
 			mCPU, err := decoder.Load(ckpt, opts)

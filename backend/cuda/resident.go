@@ -957,7 +957,7 @@ type cudaResident struct {
 	kvTabNext       int
 	// The pool's capacity rule (kvpool.go, KV4a-3): every slot is guaranteed kvShareBlocks blocks of the full group, the context the
 	// plan chose for one slot (kvShareCtx); kvRaise lets one conversation's cap (ctxCap) grow to the pool, up to modelCtx. kvSlotBusy marks
-	// the slots a running generation holds (decoder.ResidentKVSlotActivity), kvSlotUse each slot's last write, kvEvicted the slots whose
+	// the slots a running generation holds (decoder.ResidentKVSubsystem), kvSlotUse each slot's last write, kvEvicted the slots whose
 	// blocks were released to make room.
 	kvShareCtx, kvShareBlocks int
 	kvRaise                   bool
@@ -1765,7 +1765,7 @@ func (r *cudaResident) allocSlotStacks(moeLayers []int, record bool) {
 	}
 }
 
-// ResizeExpertCache implements decoder.ResidentExpertCache: it sizes the C′ cache to what fits in free VRAM with reserve
+// ResizeExpertCache implements decoder.ResidentRuntimeSubsystem: it sizes the C′ cache to what fits in free VRAM with reserve
 // bytes left over for an allocation that comes after it, up to the slot count the load asked for. A resize frees and
 // reallocates every routed layer's slot stacks, so the cache restarts empty; the hit and miss counts carry over. It runs on
 // the executor between forwards. It refuses under CUDA graphs, whose captured segments hold the stacks' addresses. A fit
@@ -1831,7 +1831,7 @@ func (r *cudaResident) ResizeExpertCache(reserve int64) (slots int, err error) {
 	return r.cacheSlots, err
 }
 
-// ExpertCacheStats implements decoder.ResidentExpertCache: the granted slots per layer and the C′ cache's lookups summed over
+// ExpertCacheStats implements decoder.ResidentRuntimeSubsystem: the granted slots per layer and the C′ cache's lookups summed over
 // the MoE layers.
 func (r *cudaResident) ExpertCacheStats() (decoder.ExpertCacheStats, bool) {
 	if !r.cacheExperts {
@@ -2352,7 +2352,7 @@ func (r *cudaResident) Forward(embedding []float32, pos int) ([]float32, error) 
 	return out, err
 }
 
-// ForwardMRoPE is decoder.ResidentMRoPE: like Forward, but the rotation angle (ropePos) and the KV-cache/attention
+// ForwardMRoPE is decoder.ResidentDecodeSubsystem: like Forward, but the rotation angle (ropePos) and the KV-cache/attention
 // position (pos) are supplied separately: Qwen2.5-VL decode past an image block needs them to differ (see
 // gemv_fwd.cu's rope_kv doc comment; decoder/rope.go's CPU reference is the ground truth this mirrors). Forward is
 // the pos == ropePos case.
@@ -2375,7 +2375,7 @@ func (r *cudaResident) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]fl
 	return out, err
 }
 
-// ForwardNoLogits (ResidentPrefillKV) runs the token's forward to build ONLY its resident K/V —
+// ForwardNoLogits (ResidentDecodeSubsystem) runs the token's forward to build ONLY its resident K/V —
 // skipping the final norm + LM head matmul + logits readback + softcap. Used for prompt[:-1] during
 // prefill; the layer chain (hence the K/V written at pos) is identical to Forward, so decode from the
 // last prompt token is byte-identical. No readback, so nothing is returned but the error.

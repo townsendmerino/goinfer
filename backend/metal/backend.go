@@ -720,7 +720,7 @@ func (a *metalResident) ResidentCaps() decoder.ResidentCaps {
 	}
 }
 
-// ForwardMRoPE is decoder.ResidentMRoPE: like Forward, but the rotation angle (ropePos) and the
+// ForwardMRoPE is decoder.ResidentDecodeSubsystem: like Forward, but the rotation angle (ropePos) and the
 // KV-cache/attention position (pos) are supplied separately — Qwen2.5-VL decode past an image
 // block needs them to differ. Forward itself is ForwardMRoPE(pos, pos).
 func (a *metalResident) ForwardMRoPE(embedding []float32, pos, ropePos int) ([]float32, error) {
@@ -752,7 +752,7 @@ func (a *metalResident) Forward(embedding []float32, pos int) ([]float32, error)
 	return a.ForwardMRoPE(embedding, pos, pos)
 }
 
-// SampleAvailable and ForwardSample (decoder.ResidentSample, gumbel_sample.go) delegate to *resident. They must exist on
+// SampleAvailable and ForwardSample (decoder.ResidentDecodeSubsystem, gumbel_sample.go) delegate to *resident. They must exist on
 // *metalResident because decoder holds one, and Go does not promote a named field's methods.
 func (a *metalResident) SampleAvailable() bool { return a.r != nil && a.r.SampleAvailable() }
 
@@ -779,7 +779,7 @@ func (a *metalResident) embLen() int {
 	return a.r.H + a.r.nL*a.r.pleP
 }
 
-// ForwardNoLogits (decoder.ResidentPrefillKV) runs the token's forward to build only its resident K/V: no final-norm LM-head
+// ForwardNoLogits (decoder.ResidentDecodeSubsystem) runs the token's forward to build only its resident K/V: no final-norm LM-head
 // dispatch, no logits readback, no softcap. residentPrefillSeed calls it for every prompt token but the last; the layers, hence
 // the K/V written at pos, are identical to Forward, so decode from the last prompt token is byte-identical. It runs through the
 // encode-ahead executor (ForwardEmbNoLogitsPipe, a noHead bit on execJob). A paged MoE has no paged branch in the executor's
@@ -1098,7 +1098,7 @@ func (a *metalResident) PrefillImageLast(ctx context.Context, embeddings [][]flo
 	return a.PrefillImageBlocksLast(ctx, embeddings, startPos, [][2]int{{imgStart, imgEnd}})
 }
 
-// PrefillImageBlocksLast (decoder.ResidentImageBlocksPrefill; S11) is PrefillImageLast for several images: each block
+// PrefillImageBlocksLast (decoder.ResidentPrefillSubsystem; S11) is PrefillImageLast for several images: each block
 // [start, end), in order and disjoint, attends bidirectionally within itself.
 func (a *metalResident) PrefillImageBlocksLast(ctx context.Context, embeddings [][]float32, startPos int, blocks [][2]int) ([]float32, error) {
 	if e := ctx.Err(); e != nil {
@@ -1226,7 +1226,7 @@ func (a *metalResident) PrefillMRoPELast(ctx context.Context, embeddings [][]flo
 	return a.prefillMRoPE(ctx, embeddings, startPos, mropePos, nil)
 }
 
-// PrefillMRoPEDeepstackLast (decoder.ResidentMRoPEDeepstackPrefill, S16) is PrefillMRoPELast for Qwen3-VL: the same pass,
+// PrefillMRoPEDeepstackLast (decoder.ResidentPrefillSubsystem, S16) is PrefillMRoPELast for Qwen3-VL: the same pass,
 // which also adds DeepStack set l to the image rows after decoder layer l. Each set must be imgLen rows of the hidden size.
 func (a *metalResident) PrefillMRoPEDeepstackLast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int, deep [][]float32, imgStart, imgLen int) ([]float32, error) {
 	if imgStart < 0 || imgLen <= 0 || len(deep) > a.r.nL {
@@ -1278,7 +1278,7 @@ func firstNonFinite(v []float32) int {
 	return -1
 }
 
-// HiddenLast (decoder.ResidentHiddenLast) ingests a whole sequence at startPos and returns the last position's hidden state after
+// HiddenLast (decoder.ResidentPrefillSubsystem) ingests a whole sequence at startPos and returns the last position's hidden state after
 // the model's final norm, for embedding requests: the resident twin of PrefillLast that never runs the LM head. It runs the same
 // per-token sequential kernels as decode (one forwardHiddenNoHead and one command-buffer submit per position), so it does not
 // match the CPU reference bit for bit: the decode kernels round differently and forwardHiddenNoHead returns the
@@ -1325,7 +1325,7 @@ func (a *metalResident) HiddenLast(ctx context.Context, embeddings [][]float32, 
 	return out, nil
 }
 
-// ResidualAll (decoder.ResidentResidualAll) ingests a whole sequence at startPos and returns every position's residual stream
+// ResidualAll (decoder.ResidentPrefillSubsystem) ingests a whole sequence at startPos and returns every position's residual stream
 // after the last layer and before the final norm, each row a fresh f32 slice. The decoder applies the final norm on the host in
 // f32 (decoder.Model.residualAllResident), so the rows never pass through the int8 the head path reads: Metal fuses the final
 // norm into the trunk (encodeTrunkWith: layers, then encodeNorm into r.aq/r.aSc), and that int8 vector is what this avoids.

@@ -277,7 +277,7 @@ func TestSeam_AdapterSessionNeverUsesBatchedPrefill(t *testing.T) {
 // backend that does NOT implement ResidentAdapter must never run an adapter session's tokens
 // through it — generateInto must decline the whole request to the CPU/staged path, which
 // applies the adapter correctly via applyLoRA, exactly like any other missing resident
-// capability (compare ResidentHiddenLast's own fallback).
+// capability (compare legacyHiddenLast's own fallback).
 func TestSeam_AdapterSessionDeclinesToCPUWithoutResidentAdapter(t *testing.T) {
 	base, adapter := buildLoRAFixture(t)
 	be := &fakeResidencyBackend{}

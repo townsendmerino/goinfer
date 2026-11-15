@@ -26,7 +26,7 @@ var _ decoder.ResidentKVSnapshotter = (*cudaResident)(nil)
 // Rows are read and written through the slot's tables (kvpool.go).
 //
 //   - A Gated-DeltaNet model's snapshot also holds every DeltaNet layer's conv ring and recurrent state as they stand after row end-1, so it
-//     restores to exactly end (docs/queue-engineering.md, B35). It is taken between two passes of a prefill (ResidentPrefillMarked), when
+//     restores to exactly end (docs/queue-engineering.md, B35). It is taken between two passes of a prefill (ResidentPrefillSubsystem), when
 //     the state belongs to that position. A Mamba-2 model's state is not held.
 //
 // The host buffer is one pinned allocation per snapshot, made when the snapshot is taken and freed when it is dropped: nothing is

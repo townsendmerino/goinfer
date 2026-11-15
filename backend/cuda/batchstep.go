@@ -43,7 +43,7 @@ func (r *cudaResident) BatchStepRange() (lo, hi int) {
 	return 2, r.KVSlots()
 }
 
-// StepBatch runs one decode token for every sequence in seqs (decoder.ResidentBatchStepper). Each row equals that
+// StepBatch runs one decode token for every sequence in seqs (decoder.ResidentDecodeSubsystem). Each row equals that
 // sequence's own Forward on its slot bit for bit, or ForwardSample's id when it carries a Draw. The bound slot's binding
 // is restored before it returns.
 func (r *cudaResident) StepBatch(seqs []decoder.ResidentBatchSeq) ([]decoder.ResidentBatchOut, error) {
@@ -101,7 +101,7 @@ func (c raggedChunk) headFrom() int {
 	return c.rows
 }
 
-// StepRagged runs one step over seqs (decoder.ResidentRaggedStepper): every sequence's rows in one pass of prefillCore's
+// StepRagged runs one step over seqs (decoder.ResidentDecodeSubsystem): every sequence's rows in one pass of prefillCore's
 // multi-sequence mode, a sequence's rows in order, so each row's attention reads the rows before it. Each row runs the exact
 // kernels and decode's attention at its own slot and position, as a decode token does and as a batched verify does
 // (forceExactKernels under tailAllLogits, TestSpecDecodeCurve's lossless check). The model and slot count are StepBatch's;

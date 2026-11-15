@@ -30,7 +30,7 @@ func (r *resident) SampleAvailable() bool {
 	return true
 }
 
-// ForwardSample runs one token's forward and draws the NEXT token on-device by Gumbel-max (decoder.ResidentSample), returning just
+// ForwardSample runs one token's forward and draws the NEXT token on-device by Gumbel-max (decoder.ResidentDecodeSubsystem), returning just
 // the id: no logits readback, no host normalisation. (seed, draw) are the sampler's own (decoder.Sampler.NextDraw), so this is the
 // draw the host would have made. It mirrors ForwardEmb/forwardLogits's preamble (LockOSThread, copy into r.x, addLearnedPos,
 // setPos), then extends the same command buffer with the two gumbel dispatches instead of a separate Begin/End round trip.

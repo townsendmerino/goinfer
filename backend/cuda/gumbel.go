@@ -14,7 +14,7 @@ import (
 func (r *cudaResident) SampleAvailable() bool { return r.TopKAvailable() }
 
 // ForwardSample runs one token's forward and draws the NEXT token on-device by Gumbel-max
-// (decoder.ResidentSample), returning just the id — no logits readback, no host normalisation. (seed, draw)
+// (decoder.ResidentDecodeSubsystem), returning just the id — no logits readback, no host normalisation. (seed, draw)
 // are the sampler's own (Sampler.NextDraw), so this is the draw the host would have made.
 func (r *cudaResident) ForwardSample(embedding []float32, pos int, temperature float64, seed, draw uint64) (int, error) {
 	invT := float32(1 / temperature)

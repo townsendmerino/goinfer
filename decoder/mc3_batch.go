@@ -14,7 +14,7 @@ import (
 // A resident is one command queue with one set of scratch buffers, so everything that touches it (a prefill, a
 // single-sequence forward, a batched step, the slot bookkeeping) runs one at a time, inside the batcher's exclusive
 // section. What MC3 adds is what runs there at a decode token: the batcher coalesces the tokens every decoding
-// generation submits into one run. A run of at least lo batch-eligible tokens goes to ResidentBatchStepper.StepBatch
+// generation submits into one run. A run of at least lo batch-eligible tokens goes to legacyBatchStepper.StepBatch
 // (every row bit-identical to that sequence's own Forward); anything else, a lone generation above all, runs
 // production's own per-sequence call unchanged, so a request served alone takes exactly the path it takes without MC3.
 //
@@ -62,7 +62,7 @@ func (c *tokenCoalescer) init() { c.cond = sync.NewCond(&c.mu) }
 // resident's slot holders. A resident is one command queue, so its runs and exclusive sections are one at a time.
 type residentBatcher struct {
 	tokenCoalescer
-	stepper    ResidentForward // a ResidentBatchStepper; its StepBatch goes through stepOn
+	stepper    ResidentForward // a legacyBatchStepper; its StepBatch goes through stepOn
 	maxHolders int             // generations that may hold a slot at once
 
 	holders  int    // generations holding a slot (claimed, not yet released); guarded by mu
@@ -126,7 +126,7 @@ type chunkReq struct {
 }
 
 // EnableResidentConcurrency lets up to n generations use this model's resident at once (MC3), and returns the n it
-// allowed: 1 — nothing enabled — unless the resident can batch (ResidentBatchStepper) over at least two KV slots, and
+// allowed: 1 — nothing enabled — unless the resident can batch (legacyBatchStepper) over at least two KV slots, and
 // never more than the slot count, since each running generation holds a slot. Call it before any generation starts.
 func (m *Model) EnableResidentConcurrency(n int) int {
 	lo, hi, ok := stepBatchRange(m.resident)
@@ -512,7 +512,7 @@ func (b *residentBatcher) stepResident(run []*batchReq) {
 
 // rideResident is the resident batcher's ride: one StepRagged of the chunk (first) and one decode row for each of the
 // run's tokens. A decode row equals its StepBatch row bit for bit, and the chunk equals the same pass of its prompt's
-// prefill (ResidentRaggedStepper's contract). When the step fails, the chunk takes the error back to mc3Prefill and the
+// prefill (legacyRaggedStepper's contract). When the step fails, the chunk takes the error back to mc3Prefill and the
 // run is served as a run without it: a step that fails has written nothing, or the bits a re-run writes at the same
 // positions.
 func (b *residentBatcher) rideResident(c *chunkReq, run []*batchReq) {

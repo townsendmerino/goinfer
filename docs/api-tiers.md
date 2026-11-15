@@ -110,7 +110,7 @@ patch. Pin a version if you depend on them. Each graduates when it settles.
 - **Embeddings.** The `embeddinggemma2` package (EmbeddingGemma 2's text, image and audio encoders).
 - **The backend/residency seam.** `decoder.Backend`, `RegisterBackend`, `QuantBackend`,
   `QuantBatchBackend`, `ResidencyBackend`, `Prefiller`, `ResidentForward`, `ResidentGreedy`,
-  `ResidentPrefillKV`, `ResidentCapped`, `ResidentDrafterHost`, `ResidentBlockDrafter`,
+  `ResidentCapped`, `ResidentDrafterHost`, `ResidentBlockDrafter`,
   `ResidentFeature`, `ResidentEligible`, `ResidentBackendFeatures`, and **every `*Resident*`
   method on `Model`**. This is the seam the `backend/webgpu/`, `backend/cuda/` and `backend/metal/` submodules bind to; it
   moves whenever a family is ported.

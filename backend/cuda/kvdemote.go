@@ -22,7 +22,7 @@ var kvTakeFailForTest func(slot int) bool
 // kvDemoteFailForTest, when set, is the error a demote's copy fails with. Only a test sets it.
 var kvDemoteFailForTest error
 
-// SetKVHostBudget implements decoder.ResidentKVDemoter.
+// SetKVHostBudget implements decoder.ResidentKVSubsystem.
 func (r *cudaResident) SetKVHostBudget(b decoder.KVHostBudget) {
 	_ = r.do(func() error {
 		r.kvHost = b
@@ -109,7 +109,7 @@ func (r *cudaResident) kvOldestDemoted(a, b int) int {
 	return best
 }
 
-// ReserveKVHost implements decoder.ResidentKVDemoter.
+// ReserveKVHost implements decoder.ResidentKVSubsystem.
 func (r *cudaResident) ReserveKVHost(n int64) bool {
 	var ok bool
 	_ = r.do(func() error {
@@ -164,7 +164,7 @@ func (r *cudaResident) kvPromote(s, rows int) (blocks int, err error) {
 	return end / kvBlock, nil
 }
 
-// PromoteKV implements decoder.ResidentKVDemoter.
+// PromoteKV implements decoder.ResidentKVSubsystem.
 func (r *cudaResident) PromoteKV(slot, rows int) (blocks int, err error) {
 	if slot < 0 || slot >= r.KVSlots() {
 		return 0, fmt.Errorf("cuda: PromoteKV slot %d of %d", slot, r.KVSlots())
@@ -177,7 +177,7 @@ func (r *cudaResident) PromoteKV(slot, rows int) (blocks int, err error) {
 	return blocks, err
 }
 
-// CopyDemotedKV implements decoder.ResidentKVDemoter.
+// CopyDemotedKV implements decoder.ResidentKVSubsystem.
 func (r *cudaResident) CopyDemotedKV(src, dst, start, end int) (blocks int, held bool, err error) {
 	if src < 0 || src >= r.KVSlots() || dst < 0 || dst >= r.KVSlots() || src == dst {
 		return 0, false, fmt.Errorf("cuda: CopyDemotedKV slots %d -> %d of %d", src, dst, r.KVSlots())
