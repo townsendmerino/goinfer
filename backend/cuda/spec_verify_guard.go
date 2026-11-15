@@ -46,7 +46,6 @@ func (r *cudaResident) DecodeVerifyDivergence() error {
 // exact-attention scope (decoder.ExactAttentionScoper): while one is active the lane is bypassed, so decode and verify both run
 // the exact tree. Pinned at compile time for the same fail-open reason as DecodeVerifyDiverger above.
 var _ decoder.ExactAttentionScoper = (*cudaResident)(nil)
-var _ decoder.ResidentCapsReporter = (*cudaResident)(nil) // ResidentCaps: a signature drift would silently disable decoder.declineShortLeadReuse
 
 // EnterExactAttention holds the exact-attention scope: while the count is non-zero the lane is bypassed. Counted, so nested or
 // overlapping scopes compose; atomic, because it is entered on a caller goroutine and read on the executor.

@@ -388,8 +388,6 @@ func (rd *residentDecoder) buildKVSlots(m *decoder.Model, want int, avail0 int64
 	}
 }
 
-var _ decoder.ResidentKVSlotter = (*residentDecoder)(nil)
-
 // KVSlots / UseKVSlot implement decoder.ResidentKVSlotter (MC1): the slots buildKVSlots allocated, and binding one.
 func (rd *residentDecoder) KVSlots() int { return max(1, len(rd.slots)) }
 

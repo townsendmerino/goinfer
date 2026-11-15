@@ -275,8 +275,6 @@ func (rd *residentDecoder) ResidentCaps() decoder.ResidentCaps {
 	return decoder.ResidentCaps{ContextCap: rd.ContextCap()}
 }
 
-var _ decoder.ResidentCapsReporter = (*residentDecoder)(nil)
-
 // checkCap refuses a write that would land at/past the resident cap. Every KV buffer is
 // sized ctxCap positions; a write for absolute position p lands at [p*kvDim…], so p ≥
 // ctxCap is an out-of-bounds device write — WGSL robust-access silently clamps it and

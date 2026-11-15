@@ -19,9 +19,7 @@ import (
 // stops the borrower; a slot past its share that still finds none gets decoder.ErrKVPoolFull, which ends its turn as the context cap
 // does. Every mutation runs on the thread that encodes the write, with nothing of the resident in flight.
 
-var (
-	_ decoder.ResidentReusableKV = (*metalResident)(nil)
-)
+var ()
 
 // kvUploadPass is an upload in progress (decoder.ResidentKVSubsystem): one write of slot s from position 0, which its first layer maps
 // through end and every layer that owns K/V must land.

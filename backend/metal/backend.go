@@ -43,14 +43,13 @@ func init() {
 
 // Compile-time seams: catch signature drift against decoder/residency.go + decoder/backend.go.
 var (
-	_ decoder.Backend              = (*metalBackend)(nil)
-	_ decoder.ResidencyBackend     = (*metalBackend)(nil)
-	_ decoder.ResidencyPricer      = (*metalBackend)(nil)
-	_ decoder.ResidentForward      = (*metalResident)(nil)
-	_ decoder.ResidentCapsReporter = (*metalResident)(nil)
-	_ decoder.Prefiller            = (*metalResident)(nil)
-	_ decoder.PrefillPathReporter  = (*metalResident)(nil)
-	_ decoder.VerifyPathReporter   = (*metalResident)(nil)
+	_ decoder.Backend             = (*metalBackend)(nil)
+	_ decoder.ResidencyBackend    = (*metalBackend)(nil)
+	_ decoder.ResidencyPricer     = (*metalBackend)(nil)
+	_ decoder.ResidentForward     = (*metalResident)(nil)
+	_ decoder.Prefiller           = (*metalResident)(nil)
+	_ decoder.PrefillPathReporter = (*metalResident)(nil)
+	_ decoder.VerifyPathReporter  = (*metalResident)(nil)
 )
 
 // metalBackend implements decoder.Backend + decoder.ResidencyBackend.
