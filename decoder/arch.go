@@ -468,31 +468,45 @@ func kvBytesForCtx(a *Architecture, ctx int, f16, i8 bool) int64 {
 	} else if f16 && a.kvF16OK() {
 		quant = kvqF16
 	}
+	return kvBytesForRows(a, ctx, quant, layerBuffersOf(a))
+}
+
+// layerBuffersOf is layerBuffers over a, as the per-layer source kvBytesForRows takes.
+func layerBuffersOf(a *Architecture) func(l int) []program.Buf {
+	return func(l int) []program.Buf { return layerBuffers(a, l) }
+}
+
+// kvBytesForRows prices a CPU cache from the per-position rows each layer declares (bufsOf) at the precision quant: a K, V or latent
+// row of b.Elems elements. A window is a ring, which holds its window's rows from the first write and at f32 twice that once a read
+// wraps (ctx past the window). An MLA latent is declared f32 and stays f32 at any KV precision; an int8 K or V row is one byte an
+// element plus one f32 scale a KV head. A layer that declares no row (it reads another's KV, or keeps none) adds nothing.
+func kvBytesForRows(a *Architecture, ctx int, quant kvQuant, bufsOf func(l int) []program.Buf) int64 {
 	var total int64
 	for l := range a.NumLayers {
-		if a.hasNoAttentionKVAt(l) || a.gemma4KVSrcAt(l) != l {
+		if a.hasNoAttentionKVAt(l) { // an architecture that marks a layer recurrent holds no row for it, whatever its operation list says
 			continue
 		}
-		width := int64(a.kvDimAt(l))
-		if a.mla != nil {
-			total += 4 * width * int64(ctx)
-			continue
-		}
-		rows := int64(ctx)
-		if a.ringLayerAt(l) {
-			rows = int64(a.SlidingWindow)
-			if quant == kvqF32 && ctx > a.SlidingWindow {
-				rows *= 2
+		for _, b := range bufsOf(l) {
+			if b.Unit != program.PerPosition {
+				continue
 			}
+			rows := int64(ctx)
+			if b.Window > 0 && a.ringLayerAt(l) { // a window is a ring only where the CPU keeps one (Gemma 4's local layers hold the whole context)
+				rows = int64(b.Window)
+				if quant == kvqF32 && ctx > b.Window {
+					rows *= 2
+				}
+			}
+			row := 4 * int64(b.Elems)
+			switch {
+			case b.Prec != program.PrecKV:
+			case quant == kvI8:
+				row = int64(b.Elems) + 4*int64(b.Heads)
+			case quant == kvqF16:
+				row = 2 * int64(b.Elems)
+			}
+			total += rows * row
 		}
-		row := 4 * width
-		switch quant {
-		case kvI8:
-			row = width + 4*int64(a.NumKVHeads)
-		case kvqF16:
-			row = 2 * width
-		}
-		total += 2 * rows * row
 	}
 	return total
 }

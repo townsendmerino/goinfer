@@ -5,6 +5,8 @@ import (
 	"slices"
 
 	"github.com/townsendmerino/aikit/linalg"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
 // WebGPU's device memory as Vulkan allocates it (M1′, docs/measurements/sb2-vk-2026-10-31/README.md): wgpu-native's gpu-allocator
@@ -122,6 +124,47 @@ func webgpuStackedBuffers(nE int, w *linalg.WeightMat) []int64 {
 	return wmBuffers(w)
 }
 
+// webgpuKVRowBytes is one position's row of b in a WebGPU cache at the KV precision, and the f32 scales it carries in their own
+// buffer: a K or V row is 4 B an element at f32, 2 at f16, and at int8 one byte an element plus one scale a KV head; a row declared f32
+// whatever the KV precision (MLA's latent) is 4 B an element and has no scale. WebGPU holds the full context on every layer, so a
+// declared window does not shorten it.
+func webgpuKVRowBytes(b program.Buf, f16, i8 bool) (row, scale int64) {
+	switch {
+	case b.Prec != program.PrecKV:
+		return 4 * int64(b.Elems), 0
+	case i8:
+		return int64(b.Elems), 4 * int64(b.Heads)
+	case f16:
+		return 2 * int64(b.Elems), 0
+	}
+	return 4 * int64(b.Elems), 0
+}
+
+// webgpuKVBuffers is layer i's cache buffers at ctx as its declared per-position rows size them: one buffer a row (K, V or the latent),
+// then at int8 one scale buffer a row. A layer that reads another's cache or keeps none declares no row and has no buffer.
+func (m *Model) webgpuKVBuffers(i, ctx int, kvF16, kvI8 bool) []int64 {
+	return webgpuKVBuffersOf(m.LayerBuffers(i), ctx, kvF16, kvI8)
+}
+
+// webgpuKVBuffersOf is webgpuKVBuffers over a layer's declared buffers.
+func webgpuKVBuffersOf(declared []program.Buf, ctx int, kvF16, kvI8 bool) []int64 {
+	if ctx <= 0 {
+		return nil
+	}
+	var bufs, scales []int64
+	for _, b := range declared {
+		if b.Unit != program.PerPosition {
+			continue
+		}
+		row, scale := webgpuKVRowBytes(b, kvF16, kvI8)
+		bufs = append(bufs, row*int64(ctx))
+		if scale > 0 {
+			scales = append(scales, scale*int64(ctx))
+		}
+	}
+	return append(bufs, scales...)
+}
+
 // webgpuLayerCaches is layer i's per-sequence buffers on a WebGPU build at ctx, as the build allocates them: K and V on an
 // attention layer that owns its cache (a Gemma 4 KV-shared layer aliases its source's), the latent cache on an MLA layer, and the
 // conv window and recurrent state on a DeltaNet or Mamba-2 layer. kv is false for the recurrent state, which is not context and which
@@ -137,15 +180,10 @@ func (m *Model) webgpuLayerCaches(i, ctx int, kvF16, kvI8 bool) (bufs []int64, k
 	mixer, _ := m.BackendView().Layer(i).Ops()
 	switch mixer {
 	case MixerAttention:
-		if m.w.arch != nil && m.w.arch.gemma4KVSrcAt(i) != i {
-			return nil, true
-		}
-		var kvDim int
 		if m.w.arch != nil {
-			kvDim = m.w.arch.kvDimAt(i)
-		} else {
-			kvDim = m.BackendView().Layer(i).KVHeads() * m.BackendView().Layer(i).HeadDim()
+			return m.webgpuKVBuffers(i, ctx, kvF16, kvI8), true
 		}
+		kvDim := m.BackendView().Layer(i).KVHeads() * m.BackendView().Layer(i).HeadDim() // no resolved architecture: the layer view's own width
 		if kvDim == 0 || ctx <= 0 {
 			return nil, true
 		}
@@ -158,13 +196,10 @@ func (m *Model) webgpuLayerCaches(i, ctx int, kvF16, kvI8 bool) (bufs []int64, k
 	case MixerMLA:
 		// The latent row (kv_lora_rank + the rope key) is f32 at any precision. kvDimAt is 0 on a layer with no latent, such as a
 		// Kimi Delta Attention layer that ResidentLayerOps reports as MLA.
-		if m.w.arch == nil || ctx <= 0 {
+		if m.w.arch == nil {
 			return nil, true
 		}
-		if d := m.w.arch.kvDimAt(i); d > 0 {
-			return []int64{int64(ctx) * int64(d) * 4}, true
-		}
-		return nil, true
+		return m.webgpuKVBuffers(i, ctx, kvF16, kvI8), true
 	case MixerDeltaNet:
 		convK, hk, hv, nk, nv, _, ok := m.BackendView().Qwen35Params()
 		if !ok {

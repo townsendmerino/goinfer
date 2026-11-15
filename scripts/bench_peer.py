@@ -117,6 +117,10 @@ MODELS = {
     # head dimension 256 on the exact attention kernel, new against base (BENCH_ENGINES=goinfer,goinfer_old). The peer
     # tag is a placeholder: no peer row is taken for it.
     "gemma3-4b":  (os.path.expanduser("~/models/gemma-3-4b-it-gguf/gemma-3-4b-it-Q4_K_M.gguf"), "g34b-none"),
+    # gemma2-2b added 2026-11-15 for OP1-o2's timed cell (docs/measurements/op1o2-fa-softcap-2026-11/README.md): the capped flash-decode lane
+    # (--flash-decode-softcap) against the exact split-KV lane on one binary, BENCH_ENGINES=goinfer,goinfer_old with the flag in
+    # BENCH_GOINFER_ARGS. The checkpoint is the one the fidelity gate read (the Q8_0 GGUF, loaded at int4). The peer tag is a placeholder.
+    "gemma2-2b":  (os.path.expanduser("~/models/gemma-2-2b-it-Q8_0.gguf"), "g22b-none"),
     # M35/M26 added 2026-09-04 (docs/tasks/task-peer-benchmarks.md §2, tier 1). The GGUF path here is
     # what ollama and llama-server load -- Q4_K_M, same quant family as every other row. Neither
     # checkpoint had a Q4_K_M GGUF on this box: the archive only carried M35 as Q8_0 and M26 as a

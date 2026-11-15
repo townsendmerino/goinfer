@@ -8,6 +8,9 @@ page adds no rule. It lists the ones an agent that did not load `CLAUDE.md` has 
   docs-only change (`scripts/ci_docs_only.sh`) or a release goes straight to `main`.
 - **Before a push:** `gofmt -l .` in every module you touched prints nothing; `go run ./cmd/lint` and
   `python3 scripts/touched.py` each end in a VERDICT line that says PASS; never `--no-verify`.
+- **Public text names no session, coordinator or machine nickname (describe a box by its hardware), quotes no owner message
+  (record the decision, the date and the reason), and a commit ends with `Co-Authored-By`, no session URL** (`CLAUDE.md`,
+  "Public text").
 - **Stage explicit paths.** Never `git add -A` or `git add .`. No rebase and no force-push: merge `origin/main`.
 - **A change that lands structure or closes work changes its task doc's ledger row in the same commit** (`CLAUDE.md`, "Task
   docs: the ledger"). If no row owns the work, add one.

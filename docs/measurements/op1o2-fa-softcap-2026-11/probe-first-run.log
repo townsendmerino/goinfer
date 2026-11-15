@@ -1,0 +1,9 @@
+started: 2026-11-15 11:53:34 PST
+binary: /home/francis/goinfer-bench/op1o2-2026-11/bin/serve-cuda (8f4273a32c29f5260d1c269c2d856a9684f0a245)
+gpu: NVIDIA GeForce RTX 2070 SUPER, 595.112.07, 487 MiB
+load: 0.51 1.12 2.48 2/692 82069
+mem: Mem:              62           2          18           0          42          60
+probe: exact 'Please provide me with more context or information!  \n\nWhat would you '
+probe: lane  'Please provide me with more context or information!  \n\nWhat would you '
+probe: IDENTICAL text on both arms
+!! the arms did not differ (or a probe failed): the cell does not run

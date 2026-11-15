@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
 // ctxPlanFloor is the smallest context Plan will shrink to before giving up (docs/tasks/task-fit-to-hardware.md §2: shrink context
@@ -26,29 +27,28 @@ func (m *Model) kvBytesPerPositionAllLayers(f16, i8 bool) int64 {
 		perElem = 2
 	}
 	bv := m.BackendView()
-	arch := m.w.arch
 	_, nLayers, _, _, _, _, _ := bv.Dims()
 	var perPos float64
-	for l := range nLayers {
-		var kvDim int
-		if arch != nil {
-			if arch.gemma4KVSrcAt(l) != l {
-				continue // a Gemma 4 E-model's KV-shared layer aliases its source's cache
+	if m.w.arch != nil {
+		for l := range nLayers {
+			for _, b := range m.LayerBuffers(l) {
+				if b.Unit != program.PerPosition {
+					continue
+				}
+				row, scale := webgpuKVRowBytes(b, f16, i8)
+				perPos += float64(row + scale)
 			}
-			kvDim = arch.kvDimAt(l)
-		} else {
-			lv := bv.Layer(l)
-			kvDim = lv.KVHeads() * lv.HeadDim()
 		}
-		if arch != nil && arch.mla != nil {
-			perPos += 4 * float64(kvDim)
+		return int64(perPos)
+	}
+	for l := range nLayers { // a model with no resolved architecture: the layer view's own width
+		lv := bv.Layer(l)
+		kvDim := lv.KVHeads() * lv.HeadDim()
+		if i8 && kvDim > 0 {
+			perPos += 2 * (float64(kvDim) + 4*float64(lv.KVHeads()))
 			continue
 		}
-		if i8 && kvDim > 0 { // a layer that holds no K/V holds no scales
-			perPos += 2 * (float64(kvDim) + 4*float64(bv.Layer(l).KVHeads())) // ×2 for K and V
-			continue
-		}
-		perPos += 2 * float64(kvDim) * perElem // ×2 for K and V
+		perPos += 2 * float64(kvDim) * perElem
 	}
 	return int64(perPos)
 }
