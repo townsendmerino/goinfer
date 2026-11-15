@@ -175,9 +175,11 @@ The coordinator's instruction of 2026-11-15, for the reads #1007 left owed. Both
 | every request's reply (the generated ids, `--log-token-ids`) | equals main's | | any differs |
 | rows reused, per request | not fewer than main's on any | | fewer on any |
 | follow-ups served by a snapshot | not fewer than main's | | fewer |
-| first token per follow-up, change over main: the median, and the total | at most 1.00 each | above 1.00, at most 1.10 | above 1.10 |
+| first token per follow-up, change over main: the median, and the total | at most 1.05 each | above 1.05, at most 1.10 | above 1.10 |
 | peak `VmSwap` | at most 512 MB | | above |
 
 - **Reported, not graded:** the count each source serves on each arm; how many follow-ups the boundary snapshot serves that main served from nothing; snapshot rows, host MiB and ms per request; the budget held.
 - **Cost:** 94 requests a cell, prompts up to about 19k ids, so about 25 to 45 minutes for the four cells (cold prefills of up to 19k ids at the 0.8B's rate, main's cells longer). Start and finish from `date` when it runs.
 - **Void if:** a timed cell outside the lock, a model read from `/srv/models`, a NOT RUN counted as a pass, a bar moved after a reading. **Stopping rule:** the four cells of each read, no early stop; a refused fit check ends R1 and is reported.
+
+**Amendment, 2026-11-15 15:51 PST, before R2's run (R1 had read PASS).** R2's first-token bar read "at most 1.00" for change over main. A smoke of the script on two of the sessions (28 requests, not a reading, nothing recorded from it) showed that bar cannot hold: with the arms serving all 12 follow-ups identically (same sources, same rows, same replies), the median of per-request ratios read 1.032 and 1.008, because the follow-ups' first tokens are 0.1 to 0.9 s. The bar is now **at most 1.05 for the median and for the total** (the cold-request bar T2 used), PARKED above 1.05 and at most 1.10, FAIL above 1.10. No other clause moves; the replies, the rows and the snapshot counts are exact comparisons and keep their bars.

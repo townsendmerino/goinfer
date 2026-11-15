@@ -12,7 +12,7 @@ import argparse, glob, json, os, re, statistics, subprocess, sys, threading, tim
 PORT = 18219
 BASE = f"http://127.0.0.1:{PORT}"
 LOAD_VOID, SWAP_MB = 8.0, 512
-RATIO_PASS, RATIO_FAIL = 1.00, 1.10
+RATIO_PASS, RATIO_FAIL = 1.05, 1.10
 
 
 def readings():
