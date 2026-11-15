@@ -131,3 +131,33 @@ built.
   - Two points sit at a line, worth weighing: paired wins are exactly 5/10, and hard flips pass only the amended bar.
   - Gemma 2's window, 4,096, is not crossed at K = 3,900.
   - The registered timed cell (README above) is the other half of a default decision, and it has not run.
+
+## Addendum, 2026-11-15 11:55 PST, before the timed cell's first run: the instrument, written down
+
+The README above registers the cell's rule and shape. This fixes the parts it left to the harness, before any timed run.
+
+- **Binary and flag.** One serve binary from `8f4273a32` (PR #998: `--flash-decode-softcap`, the load flag the cell needed), built
+  `CGO_ENABLED=0 go build -tags cuda ./backend/cuda/cmd/serve`. `GOINFER_SERVE_CUDA` and `GOINFER_SERVE_CUDA_OLD` name that one file; the
+  `goinfer` arm adds `-flash-decode-softcap` through `BENCH_GOINFER_ARGS` (the harness gives that to both engines) and the
+  `goinfer_old` arm adds `-flash-decode-softcap=false` through `BENCH_GOINFER_OLD_ARGS`, after it, so the exact split-KV lane is
+  `goinfer_old`'s. No peer arm.
+- **Checkpoint.** `~/models/gemma-2-2b-it-Q8_0.gguf` (local NVMe), `-quant int4` (the harness's default), the checkpoint the fidelity
+  gate read. `bench_peer.py`'s `gemma2-2b` key. The fit check by serve's banner, flag on, passes: "4 KV slots at a 8192-token cap hold
+  5.0 GB KV (weights 1.4 GB, budget 42.0 GB)" (`cell-fit.log`).
+- **Prompts.** `scripts/prompts.json` gains `gemma2-2b:128` (129 tokens) and `gemma2-2b:2048` (2,048), calibrated against this binary's
+  `usage.prompt_tokens` by `scripts/bench_prompts_calibrate.py`.
+- **Shape.** `BENCH_PHASES` default, `BENCH_DEPTHS=2048` (phase A is the depth-128 prompt, phase B depth 2,048), `BENCH_RUNS=2`,
+  `BENCH_ABBA=1`: one counterbalanced quad per depth, the engine order the plan's in block 1 and reversed in block 2. That is the
+  registered "two passes in reversed arm order" in the harness's own form (`abba_plan`), each cell a restarted server. Exclusive
+  timing lock; the harness's idle gate (`BENCH_MAX_LOADAVG=1.0`) and the void rule stand, and a void cell is re-run in order and listed.
+- **The statistic.** Per depth, per block, `goinfer`'s mean rate over its runs divided by `goinfer_old`'s; the "paired median" is the
+  median of the blocks' ratios (two blocks, so their mean). The rule is the README's: **SHIP** at ≥ 1.02 at depth 2,048 and ≥ 0.98 at
+  depth 128; **REGRESSION** under 0.98 at depth 2,048; otherwise parked. A block with an errored or missing arm is void.
+  `grade_cell.py` prints each block's ratio beside the median.
+- **Both arms must really differ.** The serve log has no line for the lane being taken, so `probe_arms.py` runs first, untimed: the
+  same depth-2,048 prompt, greedy, 64 tokens, once per arm. The lane's outputs differ from the exact lane's (the README above: 24 of
+  24 steps differ), so identical text means the flag did not reach the lane and the cell does not run. Neither arm's serve log may
+  carry a "flash-decode lane unavailable" warning.
+- **Wall time:** 8 restarted cells of about 2 to 3 minutes, plus idle-gate waits: about 25 min. Started and finished times are in the
+  reading below.
+- **A default change needs Francis.** A SHIP here, with the fidelity gate's PASS, is the evidence for that decision, not the decision.
