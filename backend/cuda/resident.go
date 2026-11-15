@@ -33,7 +33,6 @@ import (
 var (
 	_ decoder.ResidentForward    = (*cudaResident)(nil)
 	_ decoder.ResidentGreedy     = (*cudaResident)(nil)
-	_ decoder.ResidentMRoPE      = (*cudaResident)(nil)
 	_ decoder.VerifyPathReporter = (*cudaResident)(nil)
 	_ decoder.ResidentKVSlotter  = (*cudaResident)(nil)
 )

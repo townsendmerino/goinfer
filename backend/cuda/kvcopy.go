@@ -11,7 +11,6 @@ import (
 )
 
 var (
-	_ decoder.ResidentKVCopier       = (*cudaResident)(nil)
 	_ decoder.ResidentReusableKVSlot = (*cudaResident)(nil)
 )
 

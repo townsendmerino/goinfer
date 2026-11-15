@@ -139,8 +139,6 @@ func (r *cudaResident) PrefillLast(ctx context.Context, embeddings [][]float32, 
 	return r.prefillChunked(ctx, embeddings, startPos, tailLastLogits, nil)
 }
 
-var _ decoder.ResidentPrefillMarked = (*cudaResident)(nil)
-
 // markLatePlantForTest calls the mark's callback one pass late, when the slot's ring has moved on: KV7 step 2's planted defect, set by tests only.
 var markLatePlantForTest bool
 
@@ -207,8 +205,6 @@ func (r *cudaResident) PrefillImageBlocksLast(ctx context.Context, embeddings []
 	}
 	return outs[len(outs)-1], nil
 }
-
-var _ decoder.ResidentSpanPrefill = (*cudaResident)(nil)
 
 // PrefillSpansLast (decoder.ResidentSpanPrefill) is the batched prefill of a Gemma 4 bidirectional prompt: spans are each
 // image's [start, end), absolute, in order and disjoint, and attention is attn_span_batched's (gemma4AttendRange). The
@@ -488,8 +484,6 @@ func (r *cudaResident) prefillChunked(ctx context.Context, embeddings [][]float3
 func (r *cudaResident) prefillChunkedMarked(ctx context.Context, embeddings [][]float32, startPos int, finalTail int, mropePos [][3]int, mark int, at func(pos int)) ([]float32, error) {
 	return r.prefillChunkedRows(ctx, len(embeddings), func(lo, hi int) [][]float32 { return embeddings[lo:hi] }, startPos, finalTail, mropePos, mark, at)
 }
-
-var _ decoder.ResidentPrefillRows = (*cudaResident)(nil)
 
 // PrefillLastRows (decoder.ResidentPrefillRows) is PrefillLast for n rows at startPos that reads the suffix's embeddings a pass at a time from rows, so the host holds one
 // pass of them. A pass that is retried at half the width asks for its range again; each range is used before the next is read.

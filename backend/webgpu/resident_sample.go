@@ -2,13 +2,7 @@
 
 package webgpu
 
-import (
-	"math"
-
-	"github.com/townsendmerino/goinfer/decoder"
-)
-
-var _ decoder.ResidentSample = (*residentDecoder)(nil)
+import "math"
 
 // SampleAvailable reports whether the device may draw the next token: only when the device row IS the raw
 // LM-head output the host sampler would see (a final-logit softcap is applied on the host after readback).

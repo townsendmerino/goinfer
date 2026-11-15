@@ -7,7 +7,6 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // SampleAvailable reports whether this resident can draw a temperature-only sample on-device: the same
@@ -63,5 +62,3 @@ func (r *cudaResident) gumbelPick(v int, invT float32, seed, draw uint64) (int, 
 	// Nothing comparable (an all -inf row): the host draws the argmax; so does the device.
 	return r.argmaxPick(v)
 }
-
-var _ decoder.ResidentSample = (*cudaResident)(nil)

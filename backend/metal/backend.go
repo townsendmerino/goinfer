@@ -48,7 +48,6 @@ var (
 	_ decoder.ResidencyPricer      = (*metalBackend)(nil)
 	_ decoder.ResidentForward      = (*metalResident)(nil)
 	_ decoder.ResidentCapsReporter = (*metalResident)(nil)
-	_ decoder.ResidentMRoPE        = (*metalResident)(nil)
 	_ decoder.ResidentAdapter      = (*metalResident)(nil)
 	_ decoder.Prefiller            = (*metalResident)(nil)
 	_ decoder.PrefillPathReporter  = (*metalResident)(nil)
@@ -753,8 +752,6 @@ func (a *metalResident) Forward(embedding []float32, pos int) ([]float32, error)
 	return a.ForwardMRoPE(embedding, pos, pos)
 }
 
-var _ decoder.ResidentSample = (*metalResident)(nil)
-
 // SampleAvailable and ForwardSample (decoder.ResidentSample, gumbel_sample.go) delegate to *resident. They must exist on
 // *metalResident because decoder holds one, and Go does not promote a named field's methods.
 func (a *metalResident) SampleAvailable() bool { return a.r != nil && a.r.SampleAvailable() }
@@ -1132,8 +1129,7 @@ func (a *metalResident) PrefillImageBlocksLast(ctx context.Context, embeddings [
 }
 
 var (
-	_ decoder.ResidentImagePrefill       = (*metalResident)(nil)
-	_ decoder.ResidentImageBlocksPrefill = (*metalResident)(nil)
+	_ decoder.ResidentImagePrefill = (*metalResident)(nil)
 )
 
 // batchedPrefillImg is batchedPrefill with optional bidirectional image blocks (nil: none).
@@ -1328,8 +1324,6 @@ func (a *metalResident) HiddenLast(ctx context.Context, embeddings [][]float32, 
 	}
 	return out, nil
 }
-
-var _ decoder.ResidentResidualAll = (*metalResident)(nil)
 
 // ResidualAll (decoder.ResidentResidualAll) ingests a whole sequence at startPos and returns every position's residual stream
 // after the last layer and before the final norm, each row a fresh f32 slice. The decoder applies the final norm on the host in

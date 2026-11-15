@@ -20,11 +20,8 @@ import (
 // does. Every mutation runs on the thread that encodes the write, with nothing of the resident in flight.
 
 var (
-	_ decoder.ResidentKVPoolInfo     = (*metalResident)(nil)
-	_ decoder.ResidentKVSlotActivity = (*metalResident)(nil)
 	_ decoder.ResidentReusableKV     = (*metalResident)(nil)
 	_ decoder.ResidentReusableKVSlot = (*metalResident)(nil)
-	_ decoder.ResidentKVUploadPass   = (*metalResident)(nil)
 )
 
 // kvUploadPass is an upload in progress (decoder.ResidentKVUploadPass): one write of slot s from position 0, which its first layer maps

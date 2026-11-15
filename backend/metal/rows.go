@@ -2,11 +2,7 @@
 
 package metal
 
-import (
-	"context"
-
-	"github.com/townsendmerino/goinfer/decoder"
-)
+import "context"
 
 // rowSource is a suffix's embeddings read a range of rows at a time (decoder.ResidentPrefillRows, MEM6): n rows, rows(lo, hi)
 // returning rows [lo, hi), valid until the next call, and width the length every row has (-1 when the rows disagree).
@@ -43,5 +39,3 @@ func (a *metalResident) PrefillLastRows(ctx context.Context, n, startPos int, ro
 	}
 	return a.prefillLastSrc(ctx, src, startPos)
 }
-
-var _ decoder.ResidentPrefillRows = (*metalResident)(nil)

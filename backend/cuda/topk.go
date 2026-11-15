@@ -110,5 +110,3 @@ func (r *cudaResident) topkReadback(v, k int, temperature float64, wantZ bool) (
 	}
 	return row, nil
 }
-
-var _ decoder.ResidentTopK = (*cudaResident)(nil)

@@ -6,11 +6,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"math"
 	"runtime"
-
-	"github.com/townsendmerino/goinfer/decoder"
 )
-
-var _ decoder.ResidentSample = (*resident)(nil)
 
 // gumbelBlocks is the stage-1 dispatch size for a vocabulary of v entries (GB_THREADS threads x
 // 4 vocabulary entries each — gumbel.go's gumbel_stage1).

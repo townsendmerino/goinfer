@@ -208,5 +208,3 @@ func (r *cudaResident) CopyDemotedKV(src, dst, start, end int) (blocks int, held
 	})
 	return blocks, held, err
 }
-
-var _ decoder.ResidentKVDemoter = (*cudaResident)(nil)

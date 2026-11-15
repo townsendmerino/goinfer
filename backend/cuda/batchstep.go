@@ -20,8 +20,6 @@ import (
 // kernel and position-dependent scales its own decode would, the flash-decode lane past 2048 keys included. The head is
 // per row, decode's, with Forward's host tail; a row whose token is drawn on-device ends in ForwardSample's pick.
 
-var _ decoder.ResidentBatchStepper = (*cudaResident)(nil)
-
 // stepRow is one sequence of a step: its KV slot, the position it decodes, and its on-device draw (nil: logits).
 type stepRow struct {
 	slot, pos int
@@ -78,8 +76,6 @@ func (r *cudaResident) StepBatch(seqs []decoder.ResidentBatchSeq) ([]decoder.Res
 	}
 	return res, nil
 }
-
-var _ decoder.ResidentRaggedStepper = (*cudaResident)(nil)
 
 // raggedPlantForTest plants a defect in StepRagged's rows, for its identity test's controls: 1 binds a sequence's second row
 // to the next sequence's slot (a row reading another sequence's tables), 2 gives each row of a sequence its first row's

@@ -9,8 +9,6 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-var _ decoder.ResidentKVCopier = (*metalResident)(nil)
-
 // CopyKV (decoder.ResidentKVCopier) makes rows [start, end) of slot dst those of slot src, by reference (KV4a-2's rule): each of dst's
 // table entries in the range names src's block for it, counted in kvRefs, and the block dst held there is released. No row moves; a
 // slot that later writes into a block another slot also names first takes its own (kvWrite). It declines a range src holds no block for (a slot

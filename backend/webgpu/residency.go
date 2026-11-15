@@ -73,9 +73,8 @@ func uploadProj(c *Context, w *linalg.WeightMat) (kernels.DecodeWeight, error) {
 }
 
 var (
-	_ decoder.ResidentForward   = (*residentDecoder)(nil)
-	_ decoder.ResidentAdapter   = (*residentDecoder)(nil)
-	_ decoder.ResidentPrefillKV = (*residentDecoder)(nil)
+	_ decoder.ResidentForward = (*residentDecoder)(nil)
+	_ decoder.ResidentAdapter = (*residentDecoder)(nil)
 )
 
 // residentDecoder is the gpu side of decoder.ResidentForward: a persistent
@@ -290,8 +289,6 @@ func (rd *residentDecoder) checkCap(pos, n int) error {
 	}
 	return nil
 }
-
-var _ decoder.ResidentMRoPE = (*residentDecoder)(nil)
 
 func (rd *residentDecoder) Forward(embedding []float32, pos int) ([]float32, error) {
 	if err := rd.checkCap(pos, 1); err != nil {
