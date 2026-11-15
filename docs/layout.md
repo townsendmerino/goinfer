@@ -41,7 +41,7 @@ Untagged, `backend/cuda/` does not build on its own (`backend/cuda/internal/gpud
 | `decoder/` | the decoder-only transformer runtime: loaders, forward passes, KV cache, fit guards, the `.giw` sidecar |
 | `decoder/config/` | checkpoint `Config` JSON loading, family defaults and validation; a leaf importing no goinfer package |
 | `decoder/fit/` | the types the fit guard and the placement planner hand their callers (`Plan`, `PlanRequest`, `Placement`, `FitAnswer`, `FitDeclineError`); a leaf over `internal/runtime/mem` |
-| `decoder/quant/` | safetensors checkpoint quantization config parsing and weight reconstruction (`Reconstructor`, `RowStreamReconstructor` for FP8, GPTQ, AWQ, NVFP4, MLX); a leaf over `aikit/safetensors` |
+| `decoder/quant/` | safetensors checkpoint quantization config parsing and weight reconstruction (`Reconstructor`, `RowStreamReconstructor` for FP8, GPTQ, AWQ, NVFP4, MLX); a leaf over `aikit/embed` (its `SafetensorsFile`; it imports no goinfer package, rule `quant-leaf` in `internal/layout/imports.json`) |
 | `engine/` | what the serving shell asks of a model: a generation from a prepared request |
 | `server/` | the HTTP API (OpenAI and Anthropic routes, web UI) as a library handler |
 | `chat/` | chat templates and tool-call rendering and parsing, no Jinja engine |
@@ -63,6 +63,13 @@ Untagged, `backend/cuda/` does not build on its own (`backend/cuda/internal/gpud
 caller until the caller chooses to name the subpackage, and a backend that does so stops depending on the loader (the
 `decoderRatchet` in `internal/layout`). Each subpackage has a rule in `internal/layout/imports.json` naming the goinfer
 packages it may import; `TestLayout_arrows` enforces it. Aliases are deleted when the last caller has moved.
+
+**The subpackages so far.** `decoder/fit` (the Order below), `decoder/config` (DC1) and `decoder/quant`. `quant` has no Order
+of its own: it holds the FP8, GPTQ, AWQ, NVFP4 and MLX config parsing and reconstruction behind `Reconstructor` and
+`RowStreamReconstructor`, and `decoder` calls it through thin forwarders (`decoder/awq.go`, `decoder/gptq.go`). The rules are
+`fit-leaf` (may import `internal/runtime/mem`), `config-leaf` and `quant-leaf` (no goinfer package). `quant-leaf` forbids goinfer
+packages only, so `quant` importing `aikit/embed` for `SafetensorsFile` is inside it; the rule is right and the layout row
+now says so.
 
 **Why `fit` cannot move whole.** The three files (`fitguard.go`, `fitplan.go`, `fitquery.go`) are the loader's front
 end, not a leaf. Moving them and reading the compiler's errors names 43 identifiers they need from `decoder`:

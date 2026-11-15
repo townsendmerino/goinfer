@@ -227,7 +227,7 @@ To get the exact path back, use `--cpu-exact-prefill` (CPU only) or `--exact-pre
 backend). Speculative verify always uses the exact path.
 
 **On a resident backend.** `residentPrefillSeed` hands a suffix of 8 or more tokens to the backend's
-batched prefill (`Prefiller.PrefillLast`) when no adapter is bound. A shorter suffix runs token by
+batched prefill (`ResidentPrefillSubsystem.PrefillLast`) when no adapter is bound. A shorter suffix runs token by
 token. Each backend's floor for its fast prefill kernels is in §3.
 
 `Model.PrefillPath()` states at load which path this model will take, and why. serve prints it in
@@ -644,17 +644,43 @@ WebGPU implements it on the device for its staged path (below).
 - `UploadKV` writes K/V computed on the CPU (an image prefill, say) into the device cache.
 - `TruncateTo`, `Reset`, `Close`.
 
-34 optional interfaces sit around it, found by type assertion on a resident (28 of them are declared in
-`decoder/residency.go`). Among them:
-- batched prefill (`Prefiller`);
-- device sampling;
-- prefill without logits;
-- hidden-state readout;
-- compute-time LoRA (`ResidentAdapter`);
-- image and m-RoPE prefill;
-- a context cap (`ResidentCapped`);
-- the load-time reporters (`PrefillPathReporter`, `VerifyPathReporter`), which say which path a
-  model will take.
+Everything optional is reached through four subsystem contracts, not by asking a resident which methods it has.
+
+### The resident's contracts
+
+The four contracts are in `decoder/resident_subsystems.go`:
+
+- `ResidentDecodeSubsystem`: the single-token fast paths (argmax, top-K, device sampling, m-RoPE, KV-only), the
+  device-chained greedy and sampled decode, and multi-sequence batched and ragged steps.
+- `ResidentPrefillSubsystem`: batched, row-chunked and boundary-marked prefill, block and chunk scratch pricing,
+  hidden-state and residual readout, and image, m-RoPE and span prefill.
+- `ResidentKVSubsystem`: slot binding, the shared block pool, cross-slot copy, reuse queries, host snapshots and
+  demotion, and recurrent checkpoints.
+- `ResidentRuntimeSubsystem`: `ResidentCaps` (the context cap among them), cost spans, compute-time LoRA, the MoE
+  expert cache, the speculative verify path and its guards, and the block drafter host.
+
+A resident gets them to the decoder by implementing `decoder/resident_subsystems.go:ResidentSubsystemProvider`, whose
+`ResidentSubsystems()` returns four pre-built wrappers. Each backend pins that at compile time in its
+`subsystems.go`, and each wrapper embeds `NoopResidentDecode`, `NoopResidentPrefill`, `NoopResidentKV` or
+`NoopResidentRuntime`, so a capability the backend lacks answers false. The decoder asks `GreedyAvailable()` and the
+like, then calls the method; it makes no type assertion on a resident. `SubsystemsOf` returns a provider's subsystems and
+the no-op subsystems for anything else, so a resident that implements only `ResidentForward` runs on the plain path. The
+exported capability types outside the four, each kept for a stated reason, and the inventory are in
+[sub1-resident-interfaces.md](sub1-resident-interfaces.md).
+
+### The model view and the layer walk
+
+`decoder/backend_view.go:BackendModelView` is the read-only seam a resident builder and the placement code use to inspect
+a loaded model, in place of the 200-odd methods on `*Model`; `Model.BackendView()` returns it. It carries the dimensions,
+the per-family geometry (`MoEParams`, `MLAParams`, `Qwen35Params`, and so on), the norm, RoPE and softcap scalars, and the
+`Weights`. Its per-layer half is `decoder/backend_view.go:ResidentLayerView` (head geometry, RoPE schedule, and the
+family-specific weights). All three backends' resident builders read it, as do the fit and placement code in `decoder`.
+
+The layer walk is `internal/runtime/program/walk.go:DecodeLayerWalk`. A layer's operation list (`Model.Program()`) goes in,
+with the backend's name; the sublayers are partitioned, the backend's claim on each is checked, and a `LayerWalk` comes out:
+the mixer kind, the attention walk and an `FFNWalk` carrying how each sublayer takes its input and joins the residual
+stream. A backend that walks it follows the model's topology (pre-norm, sandwich, parallel, post-only) instead of
+re-deriving it per family. Metal's decode FFN steps and CUDA's decode and prefill read it; WebGPU does not yet.
 
 ### Admission: which models run resident
 
@@ -785,7 +811,7 @@ The `backend/webgpu/` module (`package webgpu`), built with `-tags gpu`, and cgo
   - Where a backend's long prompts run kernels that are not bit-identical to its short ones (CUDA
     from 512 tokens, in passes of 16 rows or more), a reused lead shorter than 64 tokens is dropped
     and the prompt is prefilled whole, so that one class of kernel writes it.
-- **Context caps** differ per backend (the KV table in §2). `ResidentCapped` lets generation refuse
+- **Context caps** differ per backend (the KV table in §2). `ResidentCaps.ContextCap` lets generation refuse
   or clamp a request before it starts, instead of failing after N tokens.
 - **Performance numbers** (kernels, time to first token, decode) are in
   [benchmarks.md](benchmarks.md). CUDA rows are anchored to one NVIDIA driver version.
