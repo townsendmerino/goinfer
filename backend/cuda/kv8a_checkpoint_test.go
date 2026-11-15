@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"path/filepath"
 	"slices"
@@ -318,17 +319,19 @@ func msgGen(t *testing.T, m *decoder.Model, prompt []int, sc decoder.KVScope) ([
 
 func TestKV8Msg_cudaRestoreAtTheBoundaryEqualsCold(t *testing.T) {
 	requireCUDADevice(t)
-	for _, fixture := range []string{"qwen3next-tiny"} {
-		t.Run(fixture, func(t *testing.T) {
-			m, r := msgLoad(t, fixture, 64)
+	// Passes of 64 rows put the points on the pass grid; passes of 128 leave them off it (the second slice's C2: the prefill is cut at the
+	// point, rounded to a 64-row block, so the restore at 1,472 follows passes that no cold prefill has there).
+	for _, pass := range []int{64, 128} {
+		t.Run(fmt.Sprintf("qwen3next-tiny/pass%d", pass), func(t *testing.T) {
+			const fixture = "qwen3next-tiny"
+			m, r := msgLoad(t, fixture, pass)
 			if !m.KeepsRecurrentSnapshots() {
 				t.Fatalf("%s: snapshots do not carry the recurrent state", fixture)
 			}
 			_, _, _, _, _, _, vocab := m.Dims()
-			align := r.PrefillMarkAlign()
 			const nA, msg, nB, shared = 2400, 1500, 2500, 1503 // turn 1; its last message's start; turn 2; ids turn 2 shares with turn 1
-			q := msg / align * align
-			keepQ := (nA - 4) / align * align
+			q := msg / 64 * 64                                 // the point, rounded down to a snapshot block
+			keepQ := (nA - 4) / 64 * 64                        // Keep, likewise: 32 rows remain, over the final pass's minimum
 			a := kv8aIDs(1, nA, vocab)
 			b := append(slices.Clone(a[:shared]), kv8aIDs(2, nB-shared, vocab)...)
 
@@ -345,7 +348,7 @@ func TestKV8Msg_cudaRestoreAtTheBoundaryEqualsCold(t *testing.T) {
 			}
 			slices.Sort(held)
 			if want := []int{q, keepQ}; !slices.Equal(held, want) {
-				t.Fatalf("turn 1 left snapshots of %v rows, want %v (the message's start and Keep, on the %d-row pass grid)", held, want, align)
+				t.Fatalf("turn 1 left snapshots of %v rows, want %v (the message's start and Keep, each on its own 64-row block)", held, want)
 			}
 			got, g := msgGen(t, m, b, decoder.KVScope{Keep: nB - 4, MsgBoundary: 1700})
 			if g.PrefillReused != q || g.KVSnapRestored != q {
@@ -353,7 +356,7 @@ func TestKV8Msg_cudaRestoreAtTheBoundaryEqualsCold(t *testing.T) {
 			}
 			warmRec, warmKV := kv8aRec(t, r), kv8aKV(t, r, nB)
 
-			cm, cr := msgLoad(t, fixture, 64)
+			cm, cr := msgLoad(t, fixture, pass)
 			want, cg := msgGen(t, cm, b, decoder.KVScope{})
 			if cg.PrefillReused != 0 {
 				t.Fatalf("the cold arm reused %d rows", cg.PrefillReused)

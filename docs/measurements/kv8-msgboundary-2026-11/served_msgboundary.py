@@ -3,8 +3,10 @@
 
   python3 served_msgboundary.py --main <bin> --change <bin> --model <path> --out <dir> [--fit-only]
 
-Each cell: r1 (a cold conversation of about 8,000 ids), r2 (r1's history, a scripted reply, a short new question: the Keep restore) and r3 (r1 with
-its last message rewritten from its first words: the case the message-boundary snapshot serves). Greedy, thinking off, 24 new tokens. Prints a VERDICT
+Each cell: r1 (a cold conversation of about 8,000 ids), r2 (r1's history, a scripted reply, a short new question: the Keep restore), r3 (r1 with
+its last message rewritten from its first words: the case the message-boundary snapshot serves) and, from the second slice's T2, r4 (r3's history, a
+scripted reply, a new question: the turn after an edit). Greedy, thinking off, 24 new tokens. T1's bars graded r1 to r3 on rows and replies as below;
+T2 (README.md, second slice) grades every reply, r4's rows and the cold request's copy cost too. Prints a VERDICT
 line and writes <out>/turns.jsonl. Exit 0 PASS, 1 FAIL, 2 VOID, 3 PARKED.
 """
 import argparse, importlib.util, json, os, re, statistics, subprocess, sys, time, urllib.request
@@ -16,6 +18,7 @@ h.CTX = 12288
 
 SYSTEM_LINES, HIST_LINES, LAST_LINES = 105, 61, 49
 PASS_BAR, FAIL_BAR, R2_BAR, R1_BAR, R1_FAIL = 0.5, 0.7, 1.10, 1.05, 1.10
+COST_MS, COST_MIB, COST_FAIL_MS, COST_FAIL_MIB = 150, 175, 250, 250
 REPLY = "Acknowledged. Nothing else to add on that."
 
 
@@ -57,6 +60,20 @@ def chat(msgs):
     return "".join(text), (first or time.time()) - t0, usage
 
 
+def boundary_estimate():
+    """About where r1's last message starts: the tokens of the history before it, by /v1/messages/count_tokens, plus the opening marker. None if the route refuses."""
+    msgs = conversation(False)
+    hist = [{"role": m["role"], "content": m["content"]} for m in msgs[1:5]]
+    body = {"model": h.model_id(), "system": msgs[0]["content"], "messages": hist + [{"role": "user", "content": "x"}]}
+    try:
+        req = urllib.request.Request(h.BASE + "/v1/messages/count_tokens", json.dumps(body).encode(), {"Content-Type": "application/json"})
+        n = json.load(urllib.request.urlopen(req, timeout=30))["input_tokens"]
+    except Exception as e:  # noqa: BLE001
+        print("boundary estimate unavailable:", e)
+        return None
+    return n - 4  # "x" and its turn's role and end markers, and the generation prompt, are not history; read as an estimate within a few ids
+
+
 class A:  # the h.Server's argument holder
     def __init__(self, serve, model):
         self.serve, self.model = serve, model
@@ -73,8 +90,11 @@ def cell(label, which, binary, model, out):
     s = h.Server(A(binary, model), 1, log)
     rec["load_s"], rec["vram_loaded_mib"] = s.load_s, h.readings()[2]
     turns = []
+    rec["boundary_est"] = boundary_estimate()
     r1 = conversation(False)
-    plan = [("r1", r1), ("r2", r1 + [{"role": "assistant", "content": REPLY}, {"role": "user", "content": "Question 4: and which shelf after that?"}]), ("r3", conversation(True))]
+    r3 = conversation(True)
+    plan = [("r1", r1), ("r2", r1 + [{"role": "assistant", "content": REPLY}, {"role": "user", "content": "Question 4: and which shelf after that?"}]), ("r3", r3),
+            ("r4", r3 + [{"role": "assistant", "content": REPLY}, {"role": "user", "content": "Question 5: and which shelf after that?"}])]
     try:
         for name, msgs in plan:
             text, ttft, u = chat(msgs)
@@ -83,7 +103,9 @@ def cell(label, which, binary, model, out):
     finally:
         rec["peak_swap_mb"], rec["peak_hwm_mb"] = s.peak_swap, s.peak_hwm
         s.close()
-    rec["snapshots_taken"] = [int(m) for m in re.findall(r"kv snapshot: took (\d+) rows", open(log).read())]
+    took = re.findall(r"kv snapshot: took (\d+) rows \((\d+) MiB host\) from slot \d+ in ([\d.]+) ms", open(log).read())
+    rec["snapshots_taken"] = [int(r) for r, _, _ in took]
+    rec["snapshot_cost"] = [{"rows": int(r), "mib": int(mib), "ms": float(ms)} for r, mib, ms in took]
     print(f"[{time.strftime('%H:%M:%S')}]   {label}: loaded in {rec['load_s']:.1f} s, peak VmSwap {s.peak_swap} MB, snapshots taken (rows) {rec['snapshots_taken']}", flush=True)
     return rec, turns
 
@@ -136,21 +158,38 @@ def main():
     rec_by = {c["cell"]: c for c in cells}
     for pair, (old, new) in {"pair 1": ("A1", "B1"), "pair 2": ("A2", "B2")}.items():
         r1, r2, r3 = (by(new, r)["ttft_s"] / by(old, r)["ttft_s"] for r in ("r1", "r2", "r3"))
-        print(f"{pair}: r1 {by(old, 'r1')['ttft_s']:.2f} -> {by(new, 'r1')['ttft_s']:.2f} s (x{r1:.3f}); r2 {by(old, 'r2')['ttft_s']:.2f} -> {by(new, 'r2')['ttft_s']:.2f} s (x{r2:.3f}); r3 {by(old, 'r3')['ttft_s']:.2f} -> {by(new, 'r3')['ttft_s']:.2f} s (x{r3:.3f})")
+        r4 = by(new, "r4")["ttft_s"] / by(old, "r4")["ttft_s"]
+        print(f"{pair}: r1 {by(old, 'r1')['ttft_s']:.2f} -> {by(new, 'r1')['ttft_s']:.2f} s (x{r1:.3f}); r2 {by(old, 'r2')['ttft_s']:.2f} -> {by(new, 'r2')['ttft_s']:.2f} s (x{r2:.3f}); r3 {by(old, 'r3')['ttft_s']:.2f} -> {by(new, 'r3')['ttft_s']:.2f} s (x{r3:.3f}); r4 {by(old, 'r4')['ttft_s']:.2f} -> {by(new, 'r4')['ttft_s']:.2f} s (x{r4:.3f}, reported)")
         worse("FAIL" if r3 > FAIL_BAR else "PARKED" if r3 > PASS_BAR else "PASS")
         worse("FAIL" if r1 > R1_FAIL else "PARKED" if r1 > R1_BAR else "PASS")
         if r2 > R2_BAR:
             notes.append(f"{pair}: r2 slower than {R2_BAR} of main's"); worse("FAIL")
         if by(new, "r2")["reused"] < by(old, "r2")["reused"]:
             notes.append(f"{pair}: r2 reuses {by(new, 'r2')['reused']}, main {by(old, 'r2')['reused']}"); worse("FAIL")
+        if by(new, "r4")["reused"] < by(old, "r4")["reused"]:
+            notes.append(f"{pair}: r4 reuses {by(new, 'r4')['reused']}, main {by(old, 'r4')['reused']}: a restored turn lost its Keep point"); worse("FAIL")
+        print(f"{pair}: r4 reuse change {by(new, 'r4')['reused']}, main {by(old, 'r4')['reused']}")
         taken = rec_by[new]["snapshots_taken"]
         want = min(taken[:2]) if len(taken) >= 2 else None  # r1's two snapshots: the message's start is the smaller
         got = by(new, "r3")["reused"]
-        print(f"{pair}: r3 reuse change {got}, main {by(old, 'r3')['reused']}; the message-boundary snapshot of r1 {want}; snapshots taken {taken}")
-        if want is None or got != want or by(old, "r3")["reused"]:
-            notes.append(f"{pair}: r3 reuse is not exactly the boundary's rows"); worse("FAIL")
-        if by(new, "r3")["reply"] != by(old, "r3")["reply"]:
-            notes.append(f"{pair}: r3's reply differs from main's cold reply"); worse("FAIL")
+        est = rec_by[new].get("boundary_est")
+        print(f"{pair}: r3 reuse change {got}, main {by(old, 'r3')['reused']}; the message-boundary snapshot of r1 {want}; boundary estimate {est}; snapshots taken {taken}")
+        if want is None or got != want or by(old, "r3")["reused"] or want % 64:
+            notes.append(f"{pair}: r3 reuse is not exactly the boundary's block"); worse("FAIL")
+        elif est is not None and not (est - 70 <= want <= est + 4):
+            notes.append(f"{pair}: the snapshot {want} is not within a block of the estimated boundary {est}"); worse("FAIL")
+        for r in ("r1", "r2", "r3", "r4"):
+            if by(new, r)["reply"] != by(old, r)["reply"]:
+                notes.append(f"{pair}: {r}'s reply differs from main's"); worse("FAIL")
+        cost = rec_by[new]["snapshot_cost"][:2]
+        for c in cost:
+            print(f"{pair}: cold request's snapshot at {c['rows']} rows: {c['mib']} MiB host, {c['ms']} ms")
+        if cost:
+            c = cost[0]  # the boundary snapshot, the smaller
+            if c["ms"] > COST_FAIL_MS or c["mib"] > COST_FAIL_MIB:
+                notes.append(f"{pair}: the boundary snapshot costs {c['ms']} ms and {c['mib']} MiB"); worse("FAIL")
+            elif c["ms"] > COST_MS or c["mib"] > COST_MIB:
+                notes.append(f"{pair}: the boundary snapshot costs {c['ms']} ms and {c['mib']} MiB: the owner weighs it"); worse("PARKED")
     for c in cells:
         if c.get("peak_swap_mb", 0) > h.SWAP_MB:
             notes.append(f"{c['cell']}: VmSwap {c['peak_swap_mb']} MB"); worse("FAIL")

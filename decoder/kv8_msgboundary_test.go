@@ -122,3 +122,54 @@ func TestKV8Msg_theBudgetHoldsWithTwoSnapshotsARequest(t *testing.T) {
 		})
 	}
 }
+
+// The cut (docs/measurements/kv8-msgboundary-2026-11/README.md, second slice, C0 and C1): a recurrent model's snapshots are taken at their
+// points rounded down to a 64-row block, not to a pass. Here the passes are 128 rows, so the grid would give 896 and 1,152.
+
+// cutRun loads the 128-row-pass fake and runs turn 1: 1,236 ids, the last message from 1,000, Keep 1,230.
+func cutTurn1(t *testing.T) (*Model, *recurrentSnapFake, []int, int) {
+	t.Helper()
+	m, rf := loadRecurrentSnapFakeAlign(t, true, 1<<40, 128)
+	_, _, _, _, _, _, vocab := m.Dims()
+	a := snapToks(1236, 11, vocab)
+	msgRun(t, m, a, KVScope{Keep: 1230, MsgBoundary: 1000})
+	return m, rf, a, vocab
+}
+
+func TestKV8Cut_snapshotsLandOnTheirBlocks(t *testing.T) {
+	m, rf, a, vocab := cutTurn1(t)
+	b35Held(t, m, 960, 1216)
+	b := append(slices.Clone(a[:1003]), snapToks(200, 12, vocab)...)
+	got, reused := msgRun(t, m, b, KVScope{Keep: len(b) - 4, MsgBoundary: 1100})
+	if reused != 960 || rf.restored != 1 {
+		t.Fatalf("a rewritten last message reused %d rows (%d restores), want the block-rounded boundary's 960", reused, rf.restored)
+	}
+	if want := b35Cold(t, b); !slices.Equal(got, want) {
+		t.Fatalf("reply after the restore %v, cold %v", got, want)
+	}
+}
+
+// A request that restored the off-grid 960 still takes its own Keep snapshot, and the next turn restores it.
+func TestKV8Cut_aRestoredTurnKeepsItsOwnPoint(t *testing.T) {
+	m, _, a, vocab := cutTurn1(t)
+	b := append(slices.Clone(a[:1003]), snapToks(200, 12, vocab)...) // 1,203 ids
+	msgRun(t, m, b, KVScope{Keep: len(b) - 4, MsgBoundary: 1100})
+	b35Held(t, m, 1088, 1152, 1216)
+	c := append(slices.Clone(b[:len(b)-4]), snapToks(80, 13, vocab)...)
+	got, reused := msgRun(t, m, c, KVScope{})
+	if reused != 1152 {
+		t.Fatalf("the turn after an edit reused %d rows, want the edit turn's own Keep point 1152", reused)
+	}
+	if want := b35Cold(t, c); !slices.Equal(got, want) {
+		t.Fatalf("reply after the restore %v, cold %v", got, want)
+	}
+}
+
+// A point that would leave a final pass under the resident's minimum is lowered a block.
+func TestKV8Cut_theFinalPassKeepsItsMinimum(t *testing.T) {
+	m, _ := loadRecurrentSnapFakeAlign(t, true, 1<<40, 128)
+	_, _, _, _, _, _, vocab := m.Dims()
+	a := snapToks(1219, 11, vocab) // Keep 1,217 rounds to 1,216, 3 rows from the end: under the 8-row minimum
+	msgRun(t, m, a, KVScope{Keep: 1217})
+	b35Held(t, m, 1152)
+}

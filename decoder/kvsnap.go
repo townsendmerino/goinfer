@@ -522,16 +522,12 @@ func (m *Model) kvBoundaryPlan(prompt []int, sc KVScope, lora *loraRuntime) (q i
 	}
 	n := len(prompt)
 	if m.hasRecurrentState() {
-		// A recurrent model's snapshot is taken where the next turn's prompt parts from this one (KVScope.Keep), on a pass boundary: the
-		// state exists only between passes, and the next turn re-prefills from there on the same pass grid as a cold prefill.
+		// A recurrent model's snapshot is taken where the next turn's prompt parts from this one (KVScope.Keep): the prefill is cut there
+		// (recurrentCut), so the state exists at that row and the next turn re-prefills from it.
 		if align <= 0 || n < kvSnapMinPrompt || sc.Keep <= 0 || sc.Keep >= n {
 			return 0, false
 		}
-		q = sc.Keep / align * align
-		if q < kvSnapMinShared || q%kvmgr.BlockRows != 0 {
-			return 0, false
-		}
-		return q, true
+		return m.recurrentCut(n, sc.Keep)
 	}
 	if sc.Boundary <= 0 {
 		return 0, false
@@ -544,6 +540,24 @@ func (m *Model) kvBoundaryPlan(prompt []int, sc KVScope, lora *loraRuntime) (q i
 		return 0, false
 	}
 	return q, true
+}
+
+// recurrentCut is the row a recurrent model's snapshot for point is cut at in a prompt of n ids: point rounded down to a snapshot block, and
+// lowered a block at a time while fewer rows than the resident's final-pass minimum would follow it (a shorter last pass runs other kernels
+// than a cold prefill's). ok is false below a snapshot's minimum.
+func (m *Model) recurrentCut(n, point int) (q int, ok bool) {
+	q = point / kvmgr.BlockRows * kvmgr.BlockRows
+	for q > 0 && n-q < m.prefillTailMinRows() {
+		q -= kvmgr.BlockRows
+	}
+	return q, q >= kvSnapMinShared
+}
+
+// cutSegmentOK reports whether a prefill of rows rows from a restore point or a cut keeps every pass at or above the resident's final-pass
+// minimum: passes are align rows wide, so the last is rows mod align, or align itself when that divides.
+func (m *Model) cutSegmentOK(rows, align int) bool {
+	last := rows % align
+	return rows >= m.prefillTailMinRows() && (last == 0 || last >= m.prefillTailMinRows())
 }
 
 // kvMarkGuard is the width of the resident's marked passes, and ok when a snapshot mark may be planned for this request at all.
@@ -562,11 +576,7 @@ func (m *Model) kvMsgPlan(prompt []int, sc KVScope, lora *loraRuntime) (q int, o
 	if !ok || !m.hasRecurrentState() || align <= 0 || len(prompt) < kvSnapMinPrompt || sc.MsgBoundary <= 0 || sc.MsgBoundary >= len(prompt) {
 		return 0, false
 	}
-	q = sc.MsgBoundary / align * align
-	if q < kvSnapMinShared || q%kvmgr.BlockRows != 0 {
-		return 0, false
-	}
-	return q, true
+	return m.recurrentCut(len(prompt), sc.MsgBoundary)
 }
 
 // kvMsgMark is the mark for the message-boundary snapshot, or nil. It is taken beside Keep's, which a prompt that rewrites its last message from
@@ -578,15 +588,15 @@ func (m *Model) kvMsgMark(slot int, prompt []int, from int, lora *loraRuntime, s
 	if !ok || q <= from || (keep != nil && q >= keep.q) {
 		return nil
 	}
-	if align, _ := stepMarkAlign(m.resident); (q-from)%align != 0 {
-		return nil // the passes of this prefill do not end at q
+	if align, _ := stepMarkAlign(m.resident); !m.cutSegmentOK(q-from, align) {
+		return nil
 	}
 	st := m.kvSnaps
 	if c := st.covering(m.kvRootIn(nil, sc.Namespace), prompt, q, 0); c != nil && m.kvSnapHolds(c, q) {
 		st.decline("held")
 		return nil
 	}
-	return &prefillMark{q: q, at: func(pos int) {
+	return &prefillMark{q: q, cut: true, at: func(pos int) {
 		acq.markFired = true
 		m.residentSnapshotRows(slot, prompt, pos, lora, sc, *acq)
 		acq.msgRows = pos
@@ -620,7 +630,12 @@ func (m *Model) kvKeepMark(slot int, prompt []int, from int, lora *loraRuntime, 
 	if !ok || (acq.snapRows > 0 && !m.hasRecurrentState()) || q <= from {
 		return nil
 	}
-	if align, _ := stepMarkAlign(m.resident); (q-from)%align != 0 {
+	align, _ := stepMarkAlign(m.resident)
+	if m.hasRecurrentState() {
+		if !m.cutSegmentOK(q-from, align) {
+			return nil
+		}
+	} else if (q-from)%align != 0 {
 		return nil // the passes of this prefill do not end at q
 	}
 	if st := m.kvSnaps; st != nil {
@@ -629,16 +644,18 @@ func (m *Model) kvKeepMark(slot int, prompt []int, from int, lora *loraRuntime, 
 			return nil
 		}
 	}
-	return &prefillMark{q: q, at: func(pos int) {
+	return &prefillMark{q: q, cut: m.hasRecurrentState(), at: func(pos int) {
 		acq.markFired = true
 		m.residentSnapshotRows(slot, prompt, pos, lora, sc, *acq)
 	}}
 }
 
-// prefillMark is a position at which a batched prefill is to call back between two passes.
+// prefillMark is a position at which a prefill is to call back: between two passes of its batched prefill, or, when cut, where it was split.
 type prefillMark struct {
 	q  int
 	at func(pos int)
+	// cut: the prefill is split at q (a recurrent model's snapshot points), not called back at a pass boundary.
+	cut bool
 	// pre is an earlier mark of the same prefill (q below this one's): residentPrefillSeedMarked prefills up to it, calls it, and goes on.
 	pre *prefillMark
 }
