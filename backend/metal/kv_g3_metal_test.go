@@ -2220,6 +2220,40 @@ func TestKVWindow_gemma3PricingTable(t *testing.T) {
 	}
 }
 
+// TestKV58_perSlotTable prints what KV5-8's gate prices (docs/tasks/task-kv-architecture-2026-10.md §6): for each checkpoint this Mac can
+// load, the load's fixed bytes (everything but KV, at one slot) and the KV of one slot and of 1, 2 and 4 slots at 4,096, 16,384 and
+// 32,768 positions, with the window pool bounded where the conditions allow. It opts in with GOINFER_HEAVY_TESTS=1 and skips a load the
+// memory guard refuses.
+func TestKV58_perSlotTable(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a real checkpoint from ~/models)")
+	}
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	home, _ := os.UserHomeDir()
+	gib := func(b int64) float64 { return float64(b) / (1 << 30) }
+	for _, name := range []string{"qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw", "qwen2.5-7b-instruct-q4_k_m.int4.metal.v17.giw", "gemma3-1b-q4_k_m.int4.metal.v17.giw"} {
+		path := filepath.Join(home, "models", name)
+		if _, err := os.Stat(path); err != nil {
+			t.Logf("%s: not present", name)
+			continue
+		}
+		m, err := decoder.Load(path, decoder.Options{Backend: "metal"})
+		if err != nil {
+			t.Logf("%s: not loaded: %v", name, err)
+			continue
+		}
+		span, _ := kvWindowSpan(m.KVGeometry())
+		fixed := m.ResidentNeedBytes("metal", 0, 4096, false, false) - m.ResidentKVBytes("metal", 4096, false, false)
+		t.Logf("%s: max positions %d, window %d (pool bound %d blocks a slot), fixed bytes at one slot %.2f GiB, MetalFitMarginBytes %.2f GiB", name, m.Config().MaxPositions, span, m.MetalWindowBlocks(), gib(fixed), gib(decoder.MetalFitMarginBytes))
+		for _, ctx := range []int{4096, 16384, 32768} {
+			t.Logf("  ctx %6d: one slot %.3f GiB; all slots' KV with 1 / 2 / 4 slots %.2f / %.2f / %.2f GiB", ctx, gib(m.MetalKVSlotBytes(ctx)), gib(m.MetalKVBytes(1, ctx)), gib(m.MetalKVBytes(2, ctx)), gib(m.MetalKVBytes(4, ctx)))
+		}
+		m.Close()
+	}
+}
+
 // TestKVWindow_gemma3RealIdentity is KV5-7c-ii's tier-1 reading: gemma3-1b through the decoder's own prefill route, a 3,000-token prompt
 // and 96 greedy tokens, then a second turn that reuses the first turn's KV (ReusableKV over the window group's base), with the window
 // pool bounded and with every position held in the context's pool: the same tokens. It opts in with GOINFER_HEAVY_TESTS=1.
