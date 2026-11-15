@@ -123,7 +123,9 @@ const defaultVerifyWidth = 8
 // and doing it per request costs more than the speedup earns (a several-fold loss) while the loop stays lossless and acceptance looks
 // fine. Attach once per process, generate per request.
 type BlockSpec struct {
-	m     *Model
+	m *Model
+	// host is the resident itself, never one of its subsystems: step and SubsystemsOf resolve a resident, and a subsystem handed to
+	// either has no capability (blockSpecHost).
 	host  ResidentDrafterHost
 	rd    ResidentBlockDrafter
 	dw    BlockDrafterWeights
@@ -181,22 +183,34 @@ func (m *Model) newBlockSpec(dw BlockDrafterWeights, taps []int) (*BlockSpec, er
 	if err := m.SpecDecodeConflict(); err != nil {
 		return nil, err
 	}
-	rt := m.resRuntime()
-	if !rt.DrafterHostAvailable() {
+	host, rt, ok := m.blockSpecHost()
+	if !ok {
 		return nil, errBlockSpecUnsupported
 	}
 	if sw, ok := dw.(StreamedDrafterWeights); ok && sw.Streamed() && !rt.CanStreamDrafterRows() {
 		return nil, fmt.Errorf("decoder: this resident cannot take a drafter opened to stream its matrices (OpenDFlashDrafter); load it with LoadDFlashDrafter")
 	}
 	// Before the attach, so a refused model has no drafter uploaded to its device.
-	if err := m.prepareRecurrentSpec(rt, dw); err != nil {
+	if err := m.prepareRecurrentSpec(host, dw); err != nil {
 		return nil, err
 	}
 	rd, err := rt.AttachBlockDrafter(dw)
 	if err != nil {
 		return nil, err
 	}
-	return &BlockSpec{m: m, host: rt, rd: rd, dw: dw, taps: taps}, nil
+	return &BlockSpec{m: m, host: host, rd: rd, dw: dw, taps: taps}, nil
+}
+
+// blockSpecHost is m's resident as a drafter host with its runtime subsystem; ok is false where the resident cannot host a block
+// drafter. The host is the resident, not rt: a backend's subsystems are not ResidentSubsystemProviders, so SubsystemsOf(rt) is the
+// no-op subsystems.
+func (m *Model) blockSpecHost() (host ResidentDrafterHost, rt ResidentRuntimeSubsystem, ok bool) {
+	rt = m.resRuntime()
+	if !rt.DrafterHostAvailable() {
+		return nil, nil, false
+	}
+	host, ok = drafterHostOf(m.resident)
+	return host, rt, ok
 }
 
 // prepareRecurrentSpec readies a recurrent target's fold path for dw's block, or says why block drafting would decode from
