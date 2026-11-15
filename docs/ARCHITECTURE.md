@@ -1125,10 +1125,11 @@ Every import from one goinfer package to another, by repository-relative directo
 | `backend/metal/internal/qwenmetal` | `backend/metal/internal/gpudev`, `internal/runtime/mem`, `internal/vision` |  |
 | `backend/metal/internal/visionmetal` | `backend/metal/internal/gpudev`, `internal/runtime/mem`, `internal/vision` |  |
 | `backend/metal/kernels` | `internal/runtime/f16` | `backend/metal/internal/gpudev`, `internal/runtime/hybridattn`, `internal/runtime/mamba2`, `internal/runtime/sampling` |
-| `backend/webgpu` | `backend/webgpu/internal/kernels`, `decoder`, `internal/cost`, `internal/runtime/logs`, `internal/runtime/mem`, `internal/runtime/program` | `chat`, `decoder/fit`, `internal/diag/sb2census`, `internal/diag/towerid`, `internal/fidelity`, `internal/guard/memgate`, `internal/runtime/giw`, `internal/runtime/mem/probe`, `internal/vision`, `internal/wrappedupload`, `multimodal`, `tokenizer` |
+| `backend/webgpu` | `backend/webgpu/internal/kernels`, `backend/webgpu/internal/kvdecl`, `decoder`, `internal/cost`, `internal/runtime/logs`, `internal/runtime/mem`, `internal/runtime/program` | `chat`, `decoder/fit`, `internal/diag/sb2census`, `internal/diag/towerid`, `internal/fidelity`, `internal/guard/memgate`, `internal/runtime/giw`, `internal/runtime/mem/probe`, `internal/vision`, `internal/wrappedupload`, `multimodal`, `tokenizer` |
 | `backend/webgpu/cmd/chat` | `backend/webgpu`, `internal/app/chatapp` |  |
 | `backend/webgpu/cmd/serve` | `backend/webgpu`, `internal/app/serveapp` |  |
 | `backend/webgpu/internal/kernels` | `internal/cost`, `internal/runtime/adapter`, `internal/runtime/mem`, `internal/vision`, `multimodal` | `internal/runtime/hybridattn`, `internal/runtime/sampling` |
+| `backend/webgpu/internal/kvdecl` | `internal/runtime/program` |  |
 | `chat` | `constrain`, `tokenizer` | `internal/codec`, `multimodal` |
 | `cmd/gate` | `internal/guard/paritykey`, `internal/runtime/mem/probe`, `tokenizer` |  |
 | `cmd/hostmem` | `internal/runtime/mem/probe` |  |

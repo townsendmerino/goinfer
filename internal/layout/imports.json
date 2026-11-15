@@ -277,6 +277,7 @@
     ],
     "backend/webgpu": [
       "backend/webgpu/internal/kernels",
+      "backend/webgpu/internal/kvdecl",
       "decoder",
       "internal/cost",
       "internal/runtime/logs",
@@ -297,6 +298,9 @@
       "internal/runtime/mem",
       "internal/vision",
       "multimodal"
+    ],
+    "backend/webgpu/internal/kvdecl": [
+      "internal/runtime/program"
     ],
     "chat": [
       "constrain",
@@ -665,6 +669,9 @@
       "internal/runtime/sampling",
       "internal/vision",
       "multimodal"
+    ],
+    "backend/webgpu/internal/kvdecl": [
+      "internal/runtime/program"
     ],
     "chat": [
       "internal/codec",
