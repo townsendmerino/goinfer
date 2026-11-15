@@ -40,19 +40,23 @@ func (a *metalResident) CopyKV(src, dst, start, end int) error {
 	if st := &r.kvSlotSt[dst]; start > 0 && (st.released || st.stopped || st.valid < start) {
 		return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d holds no rows up to %d, where the copy starts", dst, start)}
 	}
-	for b := start / decoder.KVBlockRows; b < end/decoder.KVBlockRows; b++ {
-		if *r.kvRow(src, b) == 0 {
-			return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d holds no block for rows from %d", src, b*decoder.KVBlockRows)}
+	for _, g := range r.kvGs {
+		for b := start / decoder.KVBlockRows; b < end/decoder.KVBlockRows; b++ {
+			if *g.kvRow(src, b) == 0 {
+				return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d holds no block for rows from %d", src, b*decoder.KVBlockRows)}
+			}
 		}
 	}
-	for b := start / decoder.KVBlockRows; b < end/decoder.KVBlockRows; b++ {
-		s, d := *r.kvRow(src, b), r.kvRow(dst, b)
-		if s == *d {
-			continue
+	for _, g := range r.kvGs {
+		for b := start / decoder.KVBlockRows; b < end/decoder.KVBlockRows; b++ {
+			s, d := *g.kvRow(src, b), g.kvRow(dst, b)
+			if s == *d {
+				continue
+			}
+			g.kvRefs[s]++
+			g.kvUnref(*d)
+			*d = s
 		}
-		r.kvRefs[s]++
-		r.kvUnref(*d)
-		*d = s
 	}
 	// dst now holds [start, end) as src does and below start what it held: its sequence ends where src's does, within the range, and the
 	// blocks of a longer one go back.
@@ -76,12 +80,12 @@ var kvKeepShortForTest bool
 
 // kvBlockCopies is the copies of block from's first rows rows into block to, in every layer that owns K/V, its int8 scales with it.
 // Buffer.At sets an absolute offset, so each block is addressed from its pool's start, where the null block is.
-func (r *resident) kvBlockCopies(from, to uint32, rows int) []gpu.DeviceCopy {
+func (r *resident) kvBlockCopies(g *kvGroup, from, to uint32, rows int) []gpu.DeviceCopy {
 	var copies []gpu.DeviceCopy
 	for l := range r.layers {
 		L := &r.layers[l]
-		if L.kvShared || r.kvSlotBytes[l] == 0 {
-			continue // a shared layer reads its source's pool; a layer with no attention has none
+		if L.kvShared || r.kvSlotBytes[l] == 0 || r.kvGroupOf(l) != g {
+			continue // a shared layer reads its source's pool; a layer with no attention has none; a block id names a block of its own group's layers
 		}
 		block, row := r.kvNullBytes[l], r.kvNullBytes[l]/decoder.KVBlockRows
 		pools, rowBytes, blockBytes := []Buffer{r.kc[l], r.vc[l]}, []int{row, row}, []int{block, block}

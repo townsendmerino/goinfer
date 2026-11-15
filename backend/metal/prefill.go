@@ -951,13 +951,13 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		// bound from its start (Buffer.At is absolute), and a position's row is the bound slot's table's (kv_row).
 		kcPool, vcPool := r.kc[l].At(0), r.vc[l].At(0)
 		if !L.kvShared && r.kvI8 {
-			e.Dispatch(pf.pKvI8, M*lu.g.nKV, 32, qkvF, posB, kcPool, vcPool, r.ks[l].At(0), r.vs[l].At(0), lu.g.uNKV, lu.g.uHd, lu.uStride, lu.uKOff, lu.uVOff, uMReal, r.kt)
+			e.Dispatch(pf.pKvI8, M*lu.g.nKV, 32, qkvF, posB, kcPool, vcPool, r.ks[l].At(0), r.vs[l].At(0), lu.g.uNKV, lu.g.uHd, lu.uStride, lu.uKOff, lu.uVOff, uMReal, r.kvKT(l))
 		} else if !L.kvShared {
-			e.Dispatch(pf.pKv, M*lu.kvDim, 128, qkvF, kcPool, vcPool, posB, lu.g.uKvDim, lu.uStride, lu.uKOff, lu.uVOff, r.kt)
+			e.Dispatch(pf.pKv, M*lu.kvDim, 128, qkvF, kcPool, vcPool, posB, lu.g.uKvDim, lu.uStride, lu.uKOff, lu.uVOff, r.kvKT(l))
 		}
-		kc, vc, kt := kcPool, vcPool, r.kt
+		kc, vc, kt := kcPool, vcPool, r.kvKT(l)
 		if r.kvI8 { // the attention kernels read f16: this layer's cache, dequantized into contiguous rows read through an identity table
-			e.Dispatch(pf.pDeqI8, (startPos+M)*lu.kvDim, 256, kcPool, vcPool, r.ks[l].At(0), r.vs[l].At(0), kScrI8, vScrI8, lu.g.uNKV, lu.g.uHd, uEndI8, r.kt)
+			e.Dispatch(pf.pDeqI8, (startPos+M)*lu.kvDim, 256, kcPool, vcPool, r.ks[l].At(0), r.vs[l].At(0), kScrI8, vScrI8, lu.g.uNKV, lu.g.uHd, uEndI8, r.kvKT(l))
 			kc, vc, kt = kScrI8, vScrI8, idTab
 		}
 		if L.kvShared && emodelBatchDefect == 1 {
