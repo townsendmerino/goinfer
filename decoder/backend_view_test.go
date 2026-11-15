@@ -47,23 +47,11 @@ func TestBackendModelView_FlintTinyParity(t *testing.T) {
 	if bv.SlidingWindow() != m.SlidingWindowResident() {
 		t.Fatalf("SlidingWindow = %d, want %d", bv.SlidingWindow(), m.SlidingWindowResident())
 	}
-	if bv.HasQKNorm() != m.HasQKNorm() {
-		t.Fatalf("HasQKNorm = %v, want %v", bv.HasQKNorm(), m.HasQKNorm())
-	}
-	if bv.QKNormWhole() != m.QKNormWholeResident() {
-		t.Fatalf("QKNormWhole = %v, want %v", bv.QKNormWhole(), m.QKNormWholeResident())
-	}
-	if bv.RotaryDim() != m.RotaryDimResident() {
-		t.Fatalf("RotaryDim = %d, want %d", bv.RotaryDim(), m.RotaryDimResident())
-	}
 	if !slices.Equal(bv.RopeInvFreq(), m.RopeInvFreq()) {
 		t.Fatalf("RopeInvFreq mismatch")
 	}
 	if bv.HasAttnSinks() != m.HasAttnSinksResident() {
 		t.Fatalf("HasAttnSinks = %v, want %v", bv.HasAttnSinks(), m.HasAttnSinksResident())
-	}
-	if bv.MoEExpertKind() != m.MoEExpertKind() {
-		t.Fatalf("MoEExpertKind = %q, want %q", bv.MoEExpertKind(), m.MoEExpertKind())
 	}
 	if bv.ProjsInt4() != m.ResidentProjsInt4() {
 		t.Fatalf("ProjsInt4 = %v, want %v", bv.ProjsInt4(), m.ResidentProjsInt4())
@@ -93,9 +81,6 @@ func TestBackendModelView_FlintTinyParity(t *testing.T) {
 		}
 		if lv.IsLocal() != m.LayerIsLocalResident(i) {
 			t.Fatalf("layer %d: IsLocal() = %v, want %v", i, lv.IsLocal(), m.LayerIsLocalResident(i))
-		}
-		if lv.RopeGlobal() != m.LayerRopeGlobal(i) {
-			t.Fatalf("layer %d: RopeGlobal() = %v, want %v", i, lv.RopeGlobal(), m.LayerRopeGlobal(i))
 		}
 		if !slices.Equal(lv.RopeInvFreq(), m.RopeInvFreqLayerResident(i)) {
 			t.Fatalf("layer %d: RopeInvFreq() mismatch", i)
@@ -141,9 +126,6 @@ func TestBackendModelView_HybridLayerOps(t *testing.T) {
 		mix, ffn := lv.Ops()
 		if mix != want.mixer || ffn != want.ffn {
 			t.Errorf("layer %d: Ops() = (%v,%v), want (%v,%v)", i, mix, ffn, want.mixer, want.ffn)
-		}
-		if lv.NemotronBlockKind() != m.NemotronBlockKind(i) {
-			t.Errorf("layer %d: NemotronBlockKind() = %d, want %d", i, lv.NemotronBlockKind(), m.NemotronBlockKind(i))
 		}
 	}
 }

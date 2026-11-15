@@ -44,7 +44,7 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 		}
 		lw := &w.Layers[l]
 		_, isG4 := m.Gemma4MoEResidentLayer(l)
-		denseFFN := hasFFN && !isG4 && !(moeOK && len(lw.Experts) > 0) && !m.NonGatedMLPResident()
+		denseFFN := hasFFN && !isG4 && !(moeOK && len(lw.Experts) > 0) && !m.BackendView().NonGatedMLP()
 		if denseFFN {
 			if fi := lw.GateProj.Rows(); fi != 0 {
 				maxFFNI = max(maxFFNI, fi)
@@ -91,7 +91,7 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 	if fa > 0 {
 		u32s += 2
 	}
-	if m.QKNormWholeResident() {
+	if m.BackendView().QKNormWhole() {
 		u32s += 2
 	}
 	u32s += int64(7*len(geoms) + 2*attn + layerFFN) // each geometry's seven; each attention layer's sink flag and window; a distinct FFN width's

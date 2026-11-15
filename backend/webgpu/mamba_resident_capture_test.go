@@ -137,7 +137,7 @@ func TestMambaResidentCapture(t *testing.T) {
 	}
 	nMamba := 0
 	for i := 0; i < nLayers; i++ {
-		if m.GraniteMambaLayer(i) {
+		if m.BackendView().Layer(i).GraniteMamba() {
 			nMamba++
 		}
 	}

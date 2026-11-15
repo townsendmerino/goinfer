@@ -953,11 +953,6 @@ type Gemma4MoEResidentBundle struct {
 	DenseInter, MoeInter, NE, TopK                                   int
 }
 
-// MoEExpertKind is the precision of the routed experts' weights as a resident build stacks them (the first routed expert's
-// first projection: Gemma 4's fused gate‖up, else gate, up or down), or "" when the model has no routed experts. A backend
-// whose stacked-expert kernels take only some kinds declines a model by it before uploading anything, and Plan mirrors that.
-func (m *Model) MoEExpertKind() string { return m.BackendView().MoEExpertKind() }
-
 // Gemma4MoEResidentLayer returns the build bundle for gemma4 MoE layer l, or ok=false for a
 // non-gemma4 model / dense layer. Used by the CUDA backend's resident build (task 2c).
 func (m *Model) Gemma4MoEResidentLayer(l int) (Gemma4MoEResidentBundle, bool) {
@@ -995,20 +990,6 @@ func (m *Model) MLALayerWeights(l int) (qA, qANorm, qB, qProj, kvA, kvANorm, kvB
 // positions; the runner computes the per-token window start (Lever C6).
 func (m *Model) SlidingWindowResident() int { return m.BackendView().SlidingWindow() }
 
-// HasQKNorm reports per-head RMSNorm on Q/K before RoPE (Qwen3, Gemma3). The WebGPU/CUDA
-// runner handles it (Lever C1); a backend that doesn't must decline such models.
-func (m *Model) HasQKNorm() bool { return m.BackendView().HasQKNorm() }
-
-// PartialRotary reports RoPE that rotates only the first RotaryDim (<HeadDim) dims (Phi's
-// partial_rotary_factor). A full-rotary backend must decline these.
-func (m *Model) PartialRotary() bool { return m.BackendView().PartialRotary() }
-
-// RotaryDimResident is the number of head dims RoPE actually rotates, resolved: HeadDim for
-// the full-rotary families, RotaryDim (< HeadDim) for partial rotary. Backends need the WIDTH,
-// not just PartialRotary()'s yes/no — the un-rotated tail still has to reach the KV cache, so a
-// backend that knows only "this is partial" cannot dispatch it.
-func (m *Model) RotaryDimResident() int { return m.BackendView().RotaryDim() }
-
 // EmbedScaleResident is the token-embedding multiplier (Gemma = √hidden; 0/1 = none).
 func (m *Model) EmbedScaleResident() float64 { return m.BackendView().EmbedScale() }
 
@@ -1026,11 +1007,6 @@ func (m *Model) KVHeadsAtResident(i int) int { return m.BackendView().Layer(i).K
 // v_norm(the raw k_proj output).
 func (m *Model) VFromKResident(i int) bool { return m.BackendView().Layer(i).VFromK() }
 
-// Gemma4DenseLayerScalarAtResident is layer i's per-layer output scalar for a plain dense gemma4 layer.
-func (m *Model) Gemma4DenseLayerScalarAtResident(i int) float32 {
-	return m.BackendView().Layer(i).Gemma4DenseScalar()
-}
-
 // KVSrcAtResident is the layer index whose K/V a resident runner should actually attend over for layer i.
 func (m *Model) KVSrcAtResident(i int) int { return m.BackendView().Layer(i).KVSrc() }
 
@@ -1041,9 +1017,6 @@ func (m *Model) RotaryDimAtResident(i int) int { return m.BackendView().Layer(i)
 func (m *Model) RopeInvFreqLayerResident(i int) []float32 {
 	return m.BackendView().Layer(i).RopeInvFreq()
 }
-
-// LayerRopeGlobal reports whether layer i uses the global RoPE table (vs the local one).
-func (m *Model) LayerRopeGlobal(i int) bool { return m.BackendView().Layer(i).RopeGlobal() }
 
 // RopeInvFreqLayer returns layer i's RoPE inverse-frequency table as float32: the global or local table per
 // the layer's attention type (Mellum YaRN-on-global vs default-local).
@@ -1079,9 +1052,6 @@ func (m *Model) RopeInvFreqLayer(i int) []float32 {
 // non-YaRN layers) — folded into the resident rope kernel per layer.
 func (m *Model) RopeMscaleLayer(i int) float64 { return m.BackendView().Layer(i).RopeMscale() }
 
-// AttnTempScale returns the query-side attention-temperature scale for the resident forward at absolute position pos (FeatAttnTemp).
-func (m *Model) AttnTempScale(pos int) float32 { return m.BackendView().AttnTempScale(pos) }
-
 // AttnTempParams returns Ministral 3's raw attention-temperature parameters (beta, origMaxPos).
 func (m *Model) AttnTempParams() (beta, origMaxPos float64) { return m.BackendView().AttnTempParams() }
 
@@ -1104,26 +1074,6 @@ func (m *Model) AttnScale() float32 {
 // RMSAddOne reports the Gemma (1+w) RMSNorm offset (false for Qwen/Llama).
 func (m *Model) RMSAddOne() bool { return m.BackendView().RMSAddOne() }
 
-// LayerNormResident reports whether this arch normalizes with mean-centered LayerNorm
-// (GPT-2, Cohere) rather than RMSNorm — FeatLayerNorm.
-func (m *Model) LayerNormResident() bool { return m.BackendView().LayerNorm() }
-
-// NonGatedMLPResident reports whether the FFN is a plain up→act→down, no gate
-// (GPT-2, Nemotron relu²) — FeatNonGatedMLP.
-func (m *Model) NonGatedMLPResident() bool { return m.BackendView().NonGatedMLP() }
-
-// OutBiasResident reports an additive bias on the attention output projection
-// (GPT-2, gpt-oss) — FeatOutBias.
-func (m *Model) OutBiasResident() bool { return m.BackendView().OutBias() }
-
-// LearnedPosResident reports learned absolute position embeddings with no RoPE at
-// all (GPT-2) — FeatLearnedPos.
-func (m *Model) LearnedPosResident() bool { return m.BackendView().LearnedPos() }
-
-// PosEmbedResident returns the learned position-embedding table (GPT-2's wpe) —
-// nil/zero-value WeightMat for any family without LearnedPosResident.
-func (m *Model) PosEmbedResident() *linalg.WeightMat { return m.BackendView().PosEmbed() }
-
 // Dims returns the model shape from the resolved Architecture — authoritative,
 // unlike Config() (Cfg), which a GGUF-loaded or .giw model may leave partly
 // zero. The forward pass reads these.
@@ -1131,15 +1081,8 @@ func (m *Model) Dims() (hidden, nLayers, nH, nKV, hd, inter, vocab int) {
 	return m.BackendView().Dims()
 }
 
-// MRopeSectionResident exposes Qwen2.5-VL's m-RoPE head_dim/2 split across the
-// (temporal,height,width) position components — nil/empty for every non-m-RoPE family.
-func (m *Model) MRopeSectionResident() []int { return m.BackendView().MRopeSection() }
-
 // MRopeAxisResident is the m-RoPE position component (0 temporal, 1 height, 2 width) of each of the first half rotary pairs.
 func (m *Model) MRopeAxisResident(half int) []int { return m.BackendView().MRopeAxis(half) }
-
-// PairwiseRoPEResident reports whether the generic scalar rope is GPT-J PAIRWISE.
-func (m *Model) PairwiseRoPEResident() bool { return m.BackendView().PairwiseRoPE() }
 
 // NormEps is the RMSNorm epsilon (arch-backed).
 func (m *Model) NormEps() float32 {
@@ -1151,9 +1094,6 @@ func (m *Model) NormEps() float32 {
 
 // FinalLogitSoftcapResident is the Gemma final-logit softcap (30 for Gemma 4; 0 for every non-softcapped family).
 func (m *Model) FinalLogitSoftcapResident() float32 { return m.BackendView().FinalLogitSoftcap() }
-
-// AttnLogitSoftcapResident is the attention-score softcap (FeatAttnLogitSoftcap), 0 when the model has none.
-func (m *Model) AttnLogitSoftcapResident() float32 { return m.BackendView().AttnLogitSoftcap() }
 
 // withResidency builds the GPU resident decoder if the backend supports it and
 // the arch is eligible, then returns m. A no-op for the CPU backend / ineligible
@@ -1334,17 +1274,11 @@ func (m *Model) GraniteResidentParams() (nHeads, headDim, dState, nGroups, dConv
 	return m.BackendView().GraniteParams()
 }
 
-// GraniteMambaLayer reports whether layer i is a Mamba-2 mixer (vs GQA attention).
-func (m *Model) GraniteMambaLayer(i int) bool { return m.BackendView().Layer(i).GraniteMamba() }
-
 // NemotronResidentParams returns the resident geometry for Nemotron-H (the dense squared-ReLU
 // hybrid: Mamba-2 / NoPE-GQA / non-gated relu² MLP, single-op-per-block, no multipliers, no MoE).
 func (m *Model) NemotronResidentParams() (nHeads, headDim, dState, nGroups, dConv, normGroups int, attnScale float32, ok bool) {
 	return m.BackendView().NemotronParams()
 }
-
-// NemotronBlockKind returns layer i's single-op kind: 0 mamba · 1 attention · 2 mlp.
-func (m *Model) NemotronBlockKind(i int) uint8 { return m.BackendView().Layer(i).NemotronBlockKind() }
 
 // GraniteMambaWeights returns layer i's f32 Mamba-2 mixer tensors (nil if the layer is an attention layer).
 func (m *Model) GraniteMambaWeights(i int) (inProj, convW, convB, aLog, dW, dtBias, normW, outProj []float32) {
@@ -1664,18 +1598,6 @@ func (m *Model) ResidentEmbedLen() int { return m.BackendView().EmbedLen() }
 // Gemma4PLEDimResident is a Gemma 4 E-model's per-layer input width (hidden_size_per_layer_input), 0 for every other model.
 func (m *Model) Gemma4PLEDimResident() int { return m.BackendView().Gemma4PLEDim() }
 
-// SandwichNormResident reports whether the arch uses Gemma's 4-norm sandwich.
-func (m *Model) SandwichNormResident() bool { return m.BackendView().SandwichNorm() }
-
-// PostOnlyNormResident reports whether the arch has NO pre-norm at all (NormPlacement == NormPostOnly).
-func (m *Model) PostOnlyNormResident() bool { return m.BackendView().PostOnlyNorm() }
-
-// QKNormWholeResident reports whether QK-norm (HasQKNorm) reduces over the WHOLE projected q/k vector.
-func (m *Model) QKNormWholeResident() bool { return m.BackendView().QKNormWhole() }
-
-// ParallelBlockResident reports whether the arch computes attention and MLP from ONE shared input norm.
-func (m *Model) ParallelBlockResident() bool { return m.BackendView().ParallelBlock() }
-
 // GatedActResident returns the MLP activation as its ActKind ordinal.
 func (m *Model) GatedActResident() int { return m.BackendView().GatedAct() }
 
@@ -1705,9 +1627,6 @@ func (m *Model) Qwen35ResidentParams() (convKernel, keyHeadDim, valueHeadDim, nu
 	return m.BackendView().Qwen35Params()
 }
 
-// Qwen35LinearLayer reports whether layer i is a Gated-DeltaNet mixer (vs gated softmax attention).
-func (m *Model) Qwen35LinearLayer(i int) bool { return m.BackendView().Layer(i).Qwen35Linear() }
-
 // ResidentMixer is the sequence-mixing operation of one layer in a resident's layer walk.
 type ResidentMixer uint8
 
@@ -1730,11 +1649,6 @@ func (m *Model) ResidentLayerOps(i int) (mixer ResidentMixer, ffn bool) {
 // Qwen35DeltaWeights returns layer i's DeltaNet parameters.
 func (m *Model) Qwen35DeltaWeights(i int) (inQKV, inZ, outProj *linalg.WeightMat, inB, inA, convW, dtBias, negExpA, normW []float32) {
 	return m.BackendView().Layer(i).Qwen35DeltaWeights()
-}
-
-// Qwen35AttnWeights returns a full-attention layer's projections and QK-norm weights.
-func (m *Model) Qwen35AttnWeights(i int) (qProj, kProj, vProj, oProj *linalg.WeightMat, qNorm, kNorm []float32) {
-	return m.BackendView().Layer(i).Qwen35AttnWeights()
 }
 
 // BackendReport renders the load banner's backend field. It NEVER names a backend that is not executing: when the

@@ -59,7 +59,7 @@ func gemma2TinyCosine(t *testing.T, fx, quant string, capOff bool) (worst float6
 		cos, _ := cosF32(lc, lr)
 		worst = min(worst, cos)
 	}
-	return worst, mRes.AttnLogitSoftcapResident()
+	return worst, mRes.BackendView().AttnLogitSoftcap()
 }
 
 // TestGemma2ResidentParityCUDA is G2-T, a diagnostic: both tiny fixtures at both quants, the cap on both sides and, beside it, the

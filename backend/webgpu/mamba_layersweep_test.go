@@ -87,7 +87,7 @@ func TestMambaResidentLayerSweep(t *testing.T) {
 		cos, _ := cosSim(cpuLogits[L], lg)
 		mark := ""
 		kind := "mamba"
-		if !m.GraniteMambaLayer(L) {
+		if !m.BackendView().Layer(L).GraniteMamba() {
 			kind = "ATTN"
 		}
 		if cos < prev-0.01 {

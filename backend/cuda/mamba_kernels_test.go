@@ -48,10 +48,10 @@ func loadMambaFixture(t *testing.T, dir string) mambaFixture {
 	defer m.Close()
 	f := mambaFixture{name: dir, eps: m.NormEps()}
 	_, nLayers, _, _, _, _, vocab := m.Dims()
-	isMamba := func(i int) bool { return m.GraniteMambaLayer(i) }
+	isMamba := func(i int) bool { return m.BackendView().Layer(i).GraniteMamba() }
 	if nh, hd, ds, ng, k, normG, _, ok := m.NemotronResidentParams(); ok {
 		f.nHeads, f.headDim, f.dState, f.nGroups, f.K, f.normGroups = nh, hd, ds, ng, k, normG
-		isMamba = func(i int) bool { return m.NemotronBlockKind(i) == 0 }
+		isMamba = func(i int) bool { return m.BackendView().Layer(i).NemotronBlockKind() == 0 }
 	} else if nh, hd, ds, ng, k, _, _, _, _, ok := m.GraniteResidentParams(); ok {
 		f.nHeads, f.headDim, f.dState, f.nGroups, f.K, f.normGroups = nh, hd, ds, ng, k, 1
 	} else {

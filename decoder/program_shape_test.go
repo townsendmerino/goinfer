@@ -90,15 +90,15 @@ func programShapeDiffs(m *Model) []string {
 		name      string
 		got, want bool
 	}{
-		{"sandwich", s.Sandwich, m.SandwichNormResident()},
-		{"postOnly", s.PostOnly, m.PostOnlyNormResident()},
-		{"parallel", s.Parallel, m.ParallelBlockResident()},
-		{"nonGated", s.NonGated, m.NonGatedMLPResident()},
-		{"layerNorm", s.LayerNorm, m.LayerNormResident()},
-		{"qkNorm", s.QKNorm, m.HasQKNorm()},
-		{"qkNormWhole", s.QKNormWhole, m.QKNormWholeResident()},
-		{"outBias", s.OutBias, m.OutBiasResident()},
-		{"learnedPos", s.LearnedPos, m.LearnedPosResident()},
+		{"sandwich", s.Sandwich, m.BackendView().SandwichNorm()},
+		{"postOnly", s.PostOnly, m.BackendView().PostOnlyNorm()},
+		{"parallel", s.Parallel, m.BackendView().ParallelBlock()},
+		{"nonGated", s.NonGated, m.BackendView().NonGatedMLP()},
+		{"layerNorm", s.LayerNorm, m.BackendView().LayerNorm()},
+		{"qkNorm", s.QKNorm, m.BackendView().HasQKNorm()},
+		{"qkNormWhole", s.QKNormWhole, m.BackendView().QKNormWhole()},
+		{"outBias", s.OutBias, m.BackendView().OutBias()},
+		{"learnedPos", s.LearnedPos, m.BackendView().LearnedPos()},
 	} {
 		if c.got != c.want {
 			d = append(d, fmt.Sprintf("%s: program %v, accessor %v", c.name, c.got, c.want))

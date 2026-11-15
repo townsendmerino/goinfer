@@ -45,8 +45,8 @@ func TestMetalCoverageFlags(t *testing.T) {
 			defer m.Close()
 
 			H, nL, nH, nKV, hd, I, vocab := m.Dims()
-			qkn := m.HasQKNorm()
-			pr := m.PartialRotary()
+			qkn := m.BackendView().HasQKNorm()
+			pr := m.BackendView().PartialRotary()
 			win := m.SlidingWindowResident()
 			addOne := m.RMSAddOne()
 			elig := m.DecodeRunnerEligible()

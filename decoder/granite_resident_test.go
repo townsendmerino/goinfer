@@ -39,7 +39,7 @@ func TestGraniteResidentBridge(t *testing.T) {
 	want := map[string]int{"inProj": projDim * hidden, "convW": convDim * dConv, "convB": convDim,
 		"aLog": nHeads, "d": nHeads, "dtBias": nHeads, "normW": dInner, "outProj": hidden * dInner}
 	for l := 0; l < nLayers; l++ {
-		if !m.GraniteMambaLayer(l) {
+		if !m.BackendView().Layer(l).GraniteMamba() {
 			attn++
 			continue
 		}

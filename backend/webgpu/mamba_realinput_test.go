@@ -60,7 +60,7 @@ func TestMambaRealInputParity(t *testing.T) {
 	eps := float32(m.NormEps())
 	nMamba := 0
 	for i := range nLayers {
-		if m.GraniteMambaLayer(i) {
+		if m.BackendView().Layer(i).GraniteMamba() {
 			nMamba++
 		}
 	}
