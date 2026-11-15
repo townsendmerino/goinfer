@@ -382,7 +382,7 @@ func TestGlmOcrResidentParityMetal(t *testing.T) {
 		// this family, else the CPU prefill uploaded; then decode past the image through ForwardMRoPE.
 		a.Reset()
 		gpuPos := len(g.PromptIDs)
-		if li, gp, err := mRes.ResidentMRoPEPrefillForTest(ctx, rmp, g.PromptIDs, feats, g.ImageStart, g.NImage, mropePos); err != nil {
+		if li, gp, err := mRes.ResidentMRoPEPrefillForTest(ctx, a, g.PromptIDs, feats, g.ImageStart, g.NImage, mropePos); err != nil {
 			if !strings.Contains(err.Error(), "multiple of 32") {
 				t.Fatalf("image m-RoPE prefill declined for a reason other than the 32-alignment: %v", err)
 			}
