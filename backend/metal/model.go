@@ -514,28 +514,21 @@ type resident struct {
 	// kvContig: some layer holds a KV pool. kvSlotBytes[l] is one slot's share of layer l's pool, in bytes.
 	kvContig    bool
 	kvSlotBytes []int
-	// A layer's pool is one allocation: block 0, zero-filled and never handed out (kvNullBytes), then every slot's blocks. kvTab holds
-	// each slot's table in one allocation, kvTabBlocks entries a slot, and kt is the bound slot's view of it. An entry is the block a
-	// sequence's 64 positions are in, so a kernel bound to a table reads the pool from its start (Buffer.At(0)) (kv_row, KVRowMSL).
-	// kvTabU32 is kvTab's shared contents, taken once: Buffer.U32s asks Metal for them on every call, and the pool reads entries per row.
+	// A layer's pool is one allocation: block 0, zero-filled and never handed out (kvNullBytes), then every slot's blocks. The table
+	// and the counts over the pool are a kvGroup (kvpool.go); the embedded one is the full group, whose fields and methods read as
+	// the resident's own (r.kvTab, r.kt, r.kvRefs, ...).
 	kvNullBytes []int
-	kvTab, kt   Buffer
-	kvTabU32    []uint32
-	kvTabBlocks int
-	// The pool's state (kvpool.go): kvRefs counts the table entries that name each block (above one, slots share it, CopyKV), kvInUse the
-	// blocks some entry names, kvOrder the order a take scans for a free one. Each slot is guaranteed kvShareBlocks (kvShareCtx
-	// positions, the planned per-slot context); kvSlotSt is each slot's standing, kvUseTick the write clock, kvEvictions a count of
-	// slots released to make room, and kvReclaimed the slots a reclaim stopped while a batched step mapped its rows (kvMapStep).
-	kvRefs                    []int32
-	kvInUse                   int
-	kvOrder                   []uint32
-	kvShareCtx, kvShareBlocks int
-	kvSlotSt                  []kvSlotState
-	kvUseTick                 uint64
-	kvEvictions               int
-	kvReclaimed               []int
-	kvUpload                  *kvUploadPass // the upload in progress between BeginKVUpload and EndKVUpload, nil when none
-	decode                    decodeShape   // what decode's scratch list was sized from (decodeShape.buffers)
+	kvGroup
+	// Each slot is guaranteed kvShareBlocks of its group (kvShareCtx positions, the planned per-slot context); kvSlotSt is each
+	// slot's standing, kvUseTick the write clock, kvEvictions a count of slots released to make room, and kvReclaimed the slots a
+	// reclaim stopped while a batched step mapped its rows (kvMapStep).
+	kvShareCtx  int
+	kvSlotSt    []kvSlotState
+	kvUseTick   uint64
+	kvEvictions int
+	kvReclaimed []int
+	kvUpload    *kvUploadPass // the upload in progress between BeginKVUpload and EndKVUpload, nil when none
+	decode      decodeShape   // what decode's scratch list was sized from (decodeShape.buffers)
 	// batch: MC3's batched decode step over those slots (batch.go); nil when this resident cannot batch. preciseMath
 	// is the build's fast-math choice, which the batched kernels must share to round like the kernels they reproduce.
 	batch       *batchState

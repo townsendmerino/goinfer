@@ -112,7 +112,7 @@ func TestGemma3ImgPrefillResidentReal_gate(t *testing.T) {
 		t.Fatalf("CPU prefill logits vs golden: cosine %.6f < %.2f — the reference itself doesn't hold, stop here", cos, cpuInt4VsF32GoldenFloor)
 	}
 
-	residentLogits, gpuPos, err := mc.ResidentImagePrefillForTest(context.Background(), rip, g.InputIDs, feats, g.ImageTokenStart, g.MMTokens)
+	residentLogits, gpuPos, err := mc.ResidentImagePrefillForTest(context.Background(), rf, g.InputIDs, feats, g.ImageTokenStart, g.MMTokens)
 	if err != nil {
 		t.Fatalf("ResidentImagePrefillForTest: %v", err)
 	}

@@ -23,6 +23,7 @@ func TestMM5_noFamilySwitchInPricing(t *testing.T) {
 	scanPricingBodies(t, map[string][]string{
 		"residentneed.go":  {"metalKVParts", "MetalKVRowBytes", "cudaKVParts", "cudaKVRowBytes"},
 		"statebytes.go":    {"stateSpecs", "stateBuffers", "recurrentCheckpointBuffers"},
+		"arch.go":          {"kvBytesForCtx", "kvBytesForRows"},                          // the CPU's K/V price (MM5's CPU half)
 		"fitplan.go":       {"kvBytesPerPositionAllLayers"},                              // WebGPU's K/V rate (MM5's WebGPU half)
 		"webgpu_vulkan.go": {"webgpuKVRowBytes", "webgpuKVBuffers", "webgpuKVBuffersOf"}, // and its per-layer cache buffers
 	}, banned, "KV and state pricing reads the operations' declarations (LayerBuffers), not the family")

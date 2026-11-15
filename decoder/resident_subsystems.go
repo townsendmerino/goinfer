@@ -205,12 +205,21 @@ func (NoopResidentRuntime) FlushFold() error       { return errSubsystemUnavaila
 func (NoopResidentRuntime) DropFold()              {}
 
 // SubsystemsOf resolves r's four resident subsystems: a ResidentSubsystemProvider returns its own pre-built wrappers
-// (zero allocation); nil, and any value that is not a provider, has no capability and gets the no-op subsystems.
+// (zero allocation); nil, and any value that is not a provider, has no capability and gets the no-op subsystems. r is a resident:
+// a subsystem is not a provider, so passing one is that silent no-capability answer, and under goinfer_testhooks it panics.
 func SubsystemsOf(r any) ResidentSubsystems {
 	if p, ok := r.(ResidentSubsystemProvider); ok {
 		return p.ResidentSubsystems()
 	}
+	checkSubsystemsOfArg(r)
 	return noopResidentSubsystems
+}
+
+// drafterHostOf is the resident r itself as a drafter host. A BlockSpec keeps the resident, not its Runtime subsystem, because step and
+// SubsystemsOf resolve a resident; ok is false where r does not implement it.
+func drafterHostOf(r ResidentForward) (host ResidentDrafterHost, ok bool) {
+	host, ok = r.(ResidentDrafterHost)
+	return host, ok
 }
 
 // subsystems returns m.resident's four subsystems.
