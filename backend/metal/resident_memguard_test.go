@@ -678,6 +678,7 @@ var (
 // TestMain (G-MM3c-2): a test's own buffers lease on the test line, and every device the run releases must have had nothing
 // unplanned and must close to zero.
 func TestMain(m *testing.M) {
+	switchesBefore := readSwitches(testSwitches())
 	gpu.UnlinedLine = mem.LineTest
 	gpu.ReleasedForTest = func(d *Device) {
 		b := metalLedgerBreak(metalLedgerOf(d))
@@ -699,7 +700,222 @@ func TestMain(m *testing.M) {
 		code = 1
 	}
 	releasedMu.Unlock()
+	if leaks := switchLeaks(testSwitches(), switchesBefore); len(leaks) > 0 {
+		fmt.Fprintf(os.Stderr, "FAIL: %d package-level switch(es) were left changed by a test; each test restores the value it found:\n", len(leaks))
+		for _, l := range leaks {
+			fmt.Fprintln(os.Stderr, "  "+l)
+		}
+		code = 1
+	}
 	os.Exit(code)
+}
+
+// leakSwitch reads one package-level variable a test may assign.
+type leakSwitch struct {
+	name string
+	read func() any
+}
+
+func sw[T comparable](name string, p *T) leakSwitch {
+	return leakSwitch{name, func() any { return *p }}
+}
+
+// testSwitches lists every package-level scalar a test in this package assigns; TestMain fails the run when a test leaves one
+// changed. A new switch is one line here, and TestSwitchGuard_coversEveryAssignedSwitch fails until it has one. A test that
+// changes a switch restores what it found (`defer func(v bool) { x = v }(x)`), never a constant.
+func testSwitches() []leakSwitch {
+	return []leakSwitch{
+		sw("attnFABlk64On", &attnFABlk64On),
+		sw("attnFABlkAnyG", &attnFABlkAnyG),
+		sw("attnSoftcapDropForTest", &attnSoftcapDropForTest),
+		sw("chainFallbackAtForTest", &chainFallbackAtForTest),
+		sw("chainNaNAtForTest", &chainNaNAtForTest),
+		sw("costPlantForTest", &costPlantForTest),
+		sw("dg01Mutation", &dg01Mutation),
+		sw("dnSeqOldForTest", &dnSeqOldForTest),
+		sw("dnetInt8DeclineOffForTest", &dnetInt8DeclineOffForTest),
+		sw("dnetPrefillOn", &dnetPrefillOn),
+		sw("eg2Block", &eg2Block),
+		sw("emodelBatchDefect", &emodelBatchDefect),
+		sw("emodelBatchedOn", &emodelBatchedOn),
+		sw("exactAttnTileForTest", &exactAttnTileForTest),
+		sw("expertPoolDefect", &expertPoolDefect),
+		sw("ffnWalkPlantForTest", &ffnWalkPlantForTest),
+		sw("g4DropLayerScalarForTest", &g4DropLayerScalarForTest),
+		sw("g4DropVNormForTest", &g4DropVNormForTest),
+		sw("g4ExpertBatchOn", &g4ExpertBatchOn),
+		sw("g4KVSrcOffForTest", &g4KVSrcOffForTest),
+		sw("g4KeepSharedKVStoreForTest", &g4KeepSharedKVStoreForTest),
+		sw("g4LayerMajorOn", &g4LayerMajorOn),
+		sw("g4OneFFNWidthForTest", &g4OneFFNWidthForTest),
+		sw("g4PrefetchOn", &g4PrefetchOn),
+		sw("g4SkipPLEForTest", &g4SkipPLEForTest),
+		sw("gemmTilePolicy", &gemmTilePolicy),
+		sw("gemma4FFNSplitOffForTest", &gemma4FFNSplitOffForTest),
+		sw("gemvExtOn", &gemvExtOn),
+		sw("greedyChainOff", &greedyChainOff),
+		sw("gridIdleRelease", &gridIdleRelease),
+		sw("gridReleaseCeiling", &gridReleaseCeiling),
+		sw("gridReleaseOffForTest", &gridReleaseOffForTest),
+		sw("gridScratchAllForTest", &gridScratchAllForTest),
+		sw("gvKeepF32ForAB", &gvKeepF32ForAB),
+		sw("ksc2OldDownForTest", &ksc2OldDownForTest),
+		sw("ksd7OldDequantForTest", &ksd7OldDequantForTest),
+		sw("kvCopyFailAfterForTest", &kvCopyFailAfterForTest),
+		sw("kvCopyFailForTest", &kvCopyFailForTest),
+		sw("kvEvictOrderPlantForTest", &kvEvictOrderPlantForTest),
+		sw("kvKeepShortForTest", &kvKeepShortForTest),
+		sw("kvOwnOffForTest", &kvOwnOffForTest),
+		sw("kvScrambleForTest", &kvScrambleForTest),
+		sw("kvTakeFailAfterForTest", &kvTakeFailAfterForTest),
+		sw("kvTakeFailForTest", &kvTakeFailForTest),
+		sw("ledgerChargeDeltaForTest", &ledgerChargeDeltaForTest),
+		sw("ledgerChargeLineForTest", &ledgerChargeLineForTest),
+		sw("mambaPrefillOn", &mambaPrefillOn),
+		sw("mambaResetSkipForTest", &mambaResetSkipForTest),
+		sw("mc3AdjRowsOn", &mc3AdjRowsOn),
+		sw("mc3DeviceArgmaxOn", &mc3DeviceArgmaxOn),
+		sw("mc3FARowsOn", &mc3FARowsOn),
+		sw("mc3W8RowsOn", &mc3W8RowsOn),
+		sw("metalDeepstackPrefillOn", &metalDeepstackPrefillOn),
+		sw("metalFitFreeUnknownForTest", &metalFitFreeUnknownForTest),
+		sw("metalMRoPEPrefillOn", &metalMRoPEPrefillOn),
+		sw("metalMemoryCeilingForTest", &metalMemoryCeilingForTest),
+		sw("mixerWalkPlantForTest", &mixerWalkPlantForTest),
+		sw("mlaKVCopyDeclineOffForTest", &mlaKVCopyDeclineOffForTest),
+		sw("moeExpertBatchOn", &moeExpertBatchOn),
+		sw("moeExpertRowsOn", &moeExpertRowsOn),
+		sw("moeKSlotsOn", &moeKSlotsOn),
+		sw("moeLayerMajorOn", &moeLayerMajorOn),
+		sw("nativeInt4Mix", &nativeInt4Mix),
+		sw("nativeInt8", &nativeInt8),
+		sw("nativeInt8MoE", &nativeInt8MoE),
+		sw("pagedAsyncPhase2On", &pagedAsyncPhase2On),
+		sw("pagedFenceCheckForTest", &pagedFenceCheckForTest),
+		sw("pagedFenceOn", &pagedFenceOn),
+		sw("preciseMathCompile", &preciseMathCompile),
+		sw("prefillAttnSkipForTest", &prefillAttnSkipForTest),
+		sw("prefillBlockRowsForTest", &prefillBlockRowsForTest),
+		sw("prefillParallelDefectForTest", &prefillParallelDefectForTest),
+		sw("prefillR20Copy", &prefillR20Copy),
+		sw("prefillResidScaleForTest", &prefillResidScaleForTest),
+		sw("prefillScratchCopy", &prefillScratchCopy),
+		sw("prefillScratchPoison", &prefillScratchPoison),
+		sw("prefillSteelAttnOff", &prefillSteelAttnOff),
+		sw("promptStepAboveFloor", &promptStepAboveFloor),
+		sw("q4kNativeOffForTest", &q4kNativeOffForTest),
+		sw("siglipForceInt8", &siglipForceInt8),
+		sw("skipPagedInt4CheckForTest", &skipPagedInt4CheckForTest),
+		sw("stepNonGatedRow0PlantForTest", &stepNonGatedRow0PlantForTest),
+		sw("stepPrefillAllHeads", &stepPrefillAllHeads),
+		sw("stepSlotOffsetPlantForTest", &stepSlotOffsetPlantForTest),
+		sw("swigluFusedOffForTest", &swigluFusedOffForTest),
+		sw("w8FastMath", &w8FastMath),
+	}
+}
+
+func readSwitches(ss []leakSwitch) map[string]any {
+	v := make(map[string]any, len(ss))
+	for _, s := range ss {
+		v[s.name] = s.read()
+	}
+	return v
+}
+
+// switchLeaks names each switch whose value differs from before, sorted.
+func switchLeaks(ss []leakSwitch, before map[string]any) []string {
+	var out []string
+	for _, s := range ss {
+		if now := s.read(); now != before[s.name] {
+			out = append(out, fmt.Sprintf("%s: %v at start, %v now", s.name, before[s.name], now))
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// TestSwitchGuard_namesALeak: the guard reports a switch a test left changed, and nothing when it is restored.
+func TestSwitchGuard_namesALeak(t *testing.T) {
+	ss := testSwitches()
+	before := readSwitches(ss)
+	if l := switchLeaks(ss, before); len(l) != 0 {
+		t.Fatalf("no switch changed, yet the guard reports %v", l)
+	}
+	prev := gemvExtOn
+	defer func() { gemvExtOn = prev }()
+	gemvExtOn = !prev
+	l := switchLeaks(ss, before)
+	if len(l) != 1 || !strings.HasPrefix(l[0], "gemvExtOn: ") {
+		t.Fatalf("gemvExtOn flipped: the guard reports %v, want one line naming gemvExtOn", l)
+	}
+}
+
+// TestSwitchGuard_coversEveryAssignedSwitch: every package-level scalar (bool, int, string or a literal-initialised one) that a
+// _test.go file in this directory assigns is in testSwitches, so a new switch cannot be left out of the guard.
+func TestSwitchGuard_coversEveryAssignedSwitch(t *testing.T) {
+	fset := token.NewFileSet()
+	pkgs, err := parser.ParseDir(fset, ".", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scalar := map[string]bool{"bool": true, "int": true, "int64": true, "float32": true, "string": true}
+	vars := map[string]bool{}
+	for _, p := range pkgs {
+		for fn, f := range p.Files {
+			if strings.HasSuffix(fn, "_test.go") {
+				continue
+			}
+			for _, d := range f.Decls {
+				g, ok := d.(*ast.GenDecl)
+				if !ok || g.Tok != token.VAR {
+					continue
+				}
+				for _, sp := range g.Specs {
+					vs := sp.(*ast.ValueSpec)
+					for i, n := range vs.Names {
+						if id, ok := vs.Type.(*ast.Ident); ok && scalar[id.Name] {
+							vars[n.Name] = true
+						} else if vs.Type == nil && i < len(vs.Values) {
+							if lit, ok := vs.Values[i].(*ast.BasicLit); ok && lit.Kind != token.IMAG {
+								vars[n.Name] = true
+							} else if id, ok := vs.Values[i].(*ast.Ident); ok && (id.Name == "true" || id.Name == "false") {
+								vars[n.Name] = true
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	listed := map[string]bool{}
+	for _, s := range testSwitches() {
+		listed[s.name] = true
+	}
+	var missing []string
+	for _, p := range pkgs {
+		for fn, f := range p.Files {
+			if !strings.HasSuffix(fn, "_test.go") {
+				continue
+			}
+			ast.Inspect(f, func(n ast.Node) bool {
+				if a, ok := n.(*ast.AssignStmt); ok {
+					for _, l := range a.Lhs {
+						if id, ok := l.(*ast.Ident); ok && vars[id.Name] && !listed[id.Name] && !slices.Contains(missing, id.Name) {
+							missing = append(missing, id.Name)
+						}
+					}
+				}
+				return true
+			})
+		}
+	}
+	slices.Sort(missing)
+	if len(missing) > 0 {
+		t.Errorf("a test assigns these package-level switches, which testSwitches does not list (add one sw line each): %v", missing)
+	}
+	if len(listed) < 40 {
+		t.Errorf("only %d switches listed: the scan or the table is broken", len(listed))
+	}
 }
 
 // metalLedgerOf is the ledger the metal package attached to d, or nil.

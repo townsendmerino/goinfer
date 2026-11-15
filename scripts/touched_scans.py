@@ -235,6 +235,7 @@ SCANS = [
     # metal module
     Scan("backend/metal", "TestGptOssBiasDispatches_alwaysIndexedByRealExpert", F("backend/metal/moe.go")),
     Scan("backend/metal", "TestLedger_everyMetalAllocationNamesALine", NT("backend/metal", "backend/metal/internal/gpudev", "backend/metal/internal/qwenmetal", "backend/metal/internal/visionmetal")),
+    Scan("backend/metal", "TestSwitchGuard_coversEveryAssignedSwitch", NT("backend/metal") + T("backend/metal")),
     Scan("backend/metal/internal/gpudev", "TestOutputContract_newBufferDocsAgreeWithBackends",
          F("backend/cuda/internal/gpudev/cuda.go", "backend/metal/internal/gpudev/metal.go")),
     Scan("backend/metal/internal/gpudev", "TestOutputContract_hostWritersStateTheirs",
