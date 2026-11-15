@@ -302,7 +302,7 @@ func (m *Model) gemma4VLResidentPrefill(ctx context.Context, out chan<- int, g *
 // identity (as runLayersFromEmbedPLE computes them).
 func (m *Model) gemma4ResidentMediaRow(feature []float32) []float32 {
 	hidden := m.w.arch.HiddenDim
-	row := make([]float32, m.ResidentEmbedLen())
+	row := make([]float32, m.BackendView().EmbedLen())
 	copy(row[:hidden], feature)
 	if len(row) > hidden {
 		m.gemma4PLEInputs(row[:hidden], m.w.arch.gemma4.PadTokenID, row[hidden:])
@@ -333,7 +333,7 @@ func (m *Model) gemma4EModelImageRowsSpans(ids []int, feats []float32, spans []I
 		f := feats[r*hidden : (r+1)*hidden]
 		switch gemma4VLRowsDefectForTest {
 		case 1: // planted: the placeholder's own id instead of the pad id
-			row := make([]float32, m.ResidentEmbedLen())
+			row := make([]float32, m.BackendView().EmbedLen())
 			copy(row[:hidden], f)
 			m.gemma4PLEInputs(row[:hidden], id, row[hidden:])
 			rows[i] = row

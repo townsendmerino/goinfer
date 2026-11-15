@@ -50,7 +50,7 @@ func buildMLA(m *decoder.Model, nH, H int) (*mlaParams, error) {
 	case H%4 != 0 || qLoRA%4 != 0 || (nH*vHead)%4 != 0:
 		return nil, fmt.Errorf("metal: MLA widths (hidden %d, q_lora_rank %d, heads·v_head_dim %d) are not multiples of 4, which the int8 GEMV reads", H, qLoRA, nH*vHead)
 	}
-	if inv := m.RopeInvFreq(); len(inv) != qkRope/2 {
+	if inv := m.BackendView().RopeInvFreq(); len(inv) != qkRope/2 {
 		return nil, fmt.Errorf("metal: MLA's rope table has %d frequencies, want qk_rope_head_dim/2 = %d", len(inv), qkRope/2)
 	}
 	return p, nil
@@ -136,7 +136,7 @@ type mlaScratch struct {
 // buildMLAScratch holds the latent rope table, on the dense line. The rows and uniforms of mlaScratch are decode's scratch: the decode
 // list allocates them (decodeShape.buffers).
 func buildMLAScratch(d *Device, m *decoder.Model) *mlaScratch {
-	return &mlaScratch{invf: NewBufferFloatsOn(mem.LineDense, d, m.RopeInvFreq())}
+	return &mlaScratch{invf: NewBufferFloatsOn(mem.LineDense, d, m.BackendView().RopeInvFreq())}
 }
 
 // mlaKVCopyDeclineOffForTest removes CopyKV's MLA decline: the guard test's planted defect.

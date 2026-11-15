@@ -37,7 +37,7 @@ func TestGemma4Admission_unconditional(t *testing.T) {
 	}
 
 	// enable_moe_block is admitted like the dense variant: the parallel dense||MoE FFN has its own cuda path (gemma4MoeMLP,
-	// routed around the generic MoE checks via HasGemma4MoEResident). Every backend in residentGemma4MoEBackends ships the
+	// routed around the generic MoE checks via HasGemma4MoE). Every backend in residentGemma4MoEBackends ships the
 	// block (CUDA, Metal, WebGPU); a backend outside it is refused by the feature gate (the same no-overclaim shape as dense).
 	// It is the PLE-free 26B-A4B shape, so no FeatGemma4EModel.
 	moe, _, err := resolveArchitecture(representativeConfig("gemma4_text"))

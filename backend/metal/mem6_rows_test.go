@@ -128,7 +128,7 @@ func TestMEM6_prefillHostBytes(t *testing.T) {
 			b1, h1 := bytesFor(1024)
 			b2, h2 := bytesFor(2048)
 			perRow := float64(int64(b2)-int64(b1)) / 1024
-			embRow := float64(4 * m.ResidentEmbedLen())
+			embRow := float64(4 * m.BackendView().EmbedLen())
 			fmt.Fprintf(os.Stderr, "[MEM6] %s: at most %d embedding rows held at once; Go bytes allocated by the prefill: %d at 1,024 rows, %d at 2,048; %.0f B per prompt row against %.0f B per embedding row (%.3f); logits+decode hash %#x (1,024) %#x (2,048)\n",
 				route, held, b1, b2, perRow, embRow, perRow/embRow, h1, h2)
 			if held > 256 {

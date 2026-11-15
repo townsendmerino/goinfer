@@ -21,7 +21,7 @@ func loadWindowFixture(t *testing.T, on bool) *Model {
 
 func TestWindowedKV_planPrices(t *testing.T) {
 	off, on := loadWindowFixture(t, false), loadWindowFixture(t, true)
-	window := on.SlidingWindowResident()
+	window := on.BackendView().SlidingWindow()
 	if window <= 0 {
 		t.Fatalf("fixture has no sliding window")
 	}

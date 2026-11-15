@@ -19951,7 +19951,7 @@ with each feature's evidence:
 	// (Model.ParallelBlockResident). FeatLogitScale is a host-side multiply in finalizeLogits via Model.LogitScaleResident.
 	FeatParallelBlock: true,
 	FeatLogitScale:    true,
-	// The Gemma 4 E-model shape: PLE inputs arrive as the embedding row's tail (ResidentEmbedLen) and run through encodePLE; a KV-shared
+	// The Gemma 4 E-model shape: PLE inputs arrive as the embedding row's tail (EmbedLen) and run through encodePLE; a KV-shared
 	// layer aliases its source's cache (residLayer.kvShared); each dense layer carries its FFN width (residLayer.ffnI). The f16 prefill and
 	// the MC3 batched step decline it.
 	FeatGemma4EModel: true,

@@ -47,7 +47,7 @@ func TestBackendResidentWired(t *testing.T) {
 	// (TestSlidingWindowAttention), but a window only engages past `window` keys — so if the
 	// per-layer value were silently 0, the short-prompt parity below could not tell. Assert the
 	// resident carries the arch's window on exactly the layers the decoder marks local.
-	if w := mc.SlidingWindowResident(); w > 0 {
+	if w := mc.BackendView().SlidingWindow(); w > 0 {
 		cr, ok := rf.(*cudaResident)
 		if !ok {
 			t.Fatalf("resident is %T, want *cudaResident", rf)

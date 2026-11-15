@@ -115,7 +115,7 @@ func TestGemma4EModel_safetensorsParity(t *testing.T) {
 }
 
 // TestGemma4EModel_residentEmbedRow is S1.2's check: the row a GPU backend receives for an E-model is
-// [h ‖ PLE inputs], ResidentEmbedLen() long, where h is the scaled token embedding and the tail matches HF's own
+// [h ‖ PLE inputs], EmbedLen() long, where h is the scaled token embedding and the tail matches HF's own
 // per-layer inputs (get_per_layer_inputs + project_per_layer_inputs, recorded by the pin script) at every prompt
 // position. The oracle is HF, not gemma4PLEInputs, so a helper that drifted from the CPU forward's old inline code
 // would show here even though both goinfer paths now share it. The reuse path (a caller-owned buffer)
@@ -148,9 +148,9 @@ func TestGemma4EModel_residentEmbedRow(t *testing.T) {
 	}
 	defer m.Close()
 	H := m.w.arch.HiddenDim
-	LP := m.w.arch.NumLayers * m.Gemma4PLEDimResident()
-	if LP != 6*32 || m.ResidentEmbedLen() != H+LP {
-		t.Fatalf("ResidentEmbedLen %d, PLE %d; want %d + %d", m.ResidentEmbedLen(), LP, H, 6*32)
+	LP := m.w.arch.NumLayers * m.BackendView().Gemma4PLEDim()
+	if LP != 6*32 || m.BackendView().EmbedLen() != H+LP {
+		t.Fatalf("EmbedLen %d, PLE %d; want %d + %d", m.BackendView().EmbedLen(), LP, H, 6*32)
 	}
 	var scratch []float32
 	worst := 0.0

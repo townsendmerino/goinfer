@@ -107,7 +107,7 @@ func uploaded(t *testing.T, backend, fixture string) (m *decoder.Model, ids []in
 	}
 	for l := range layers {
 		if _, _, base := cache.LayerKVForTest(l); base > 0 {
-			floor = max(floor, base+m.SlidingWindowResident()-1)
+			floor = max(floor, base+m.BackendView().SlidingWindow()-1)
 		}
 	}
 	if floor == 0 {

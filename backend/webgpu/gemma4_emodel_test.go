@@ -212,8 +212,8 @@ func TestGemma4EModel_webgpuRowLength(t *testing.T) {
 		t.Fatal("webgpu declined the tiny E-model")
 	}
 	row := mg.EmbedResidentForTest(1)
-	if len(row) != mg.ResidentEmbedLen() || len(row) != 256+6*32 {
-		t.Fatalf("the row is %d floats, ResidentEmbedLen %d, want 256 + 6·32", len(row), mg.ResidentEmbedLen())
+	if len(row) != mg.BackendView().EmbedLen() || len(row) != 256+6*32 {
+		t.Fatalf("the row is %d floats, EmbedLen %d, want 256 + 6·32", len(row), mg.BackendView().EmbedLen())
 	}
 	for _, short := range [][]float32{row[:256], row[:len(row)-1], append(append([]float32(nil), row...), 0)} {
 		entries := map[string]func() error{

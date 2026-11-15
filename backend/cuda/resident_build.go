@@ -124,7 +124,7 @@ func (s *buildState) admit() error {
 	}
 
 	H, nLayers, nH, _, _, I, vocab := bv.Dims() // nKV, hd are per-layer now (KVHeadsAtResident/HeadDimAtResident); model-level unused
-	// Gemma 4 E-model PLE width P (0 for every other model). The resident embedding row is then [hidden ‖ nLayers*P] (ResidentEmbedLen):
+	// Gemma 4 E-model PLE width P (0 for every other model). The resident embedding row is then [hidden ‖ nLayers*P] (EmbedLen):
 	// the host computes the per-layer inputs, and each layer's PLE branch reads its slice of the tail (S1 on CUDA).
 	pleP := bv.Gemma4PLEDim()
 	if want := H + nLayers*pleP; pleP > 0 && bv.EmbedLen() != want {
@@ -707,7 +707,7 @@ func (s *buildState) newResident(planOnly bool, mp *memPlanRun) (*cudaResident, 
 	sandwich, postOnly, qkNormWhole, layerNorm, parallelBlock := s.sandwich, s.postOnly, s.qkNormWhole, s.layerNorm, s.parallelBlock
 	logitScale, actG32 := s.logitScale, s.actG32
 	hls, hlm, loadAbort := s.hls, s.hlm, s.loadAbort
-	attnTempBeta, attnTempOrigMaxPos := m.AttnTempParams() // Ministral 3, FeatAttnTemp; 0 for every other family
+	attnTempBeta, attnTempOrigMaxPos := m.BackendView().AttnTempParams() // Ministral 3, FeatAttnTemp; 0 for every other family
 	// Computed once: both ctxCap and extraBytes below need it, and a struct literal cannot read a sibling field set in the
 	// same literal.
 	kvSlotsReq := cudaKVSlotsRequest(m)

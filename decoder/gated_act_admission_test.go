@@ -8,7 +8,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-// gatedActBackends are the resident backends whose gated kernels select the activation by GatedActResident's ordinal.
+// gatedActBackends are the resident backends whose gated kernels select the activation by GatedAct's ordinal.
 var gatedActBackends = []string{"cuda", "metal", "webgpu"}
 
 // plainGatedArch is a dense gated block that needs no feature beyond its activation's, so a decline is the activation's.
@@ -16,7 +16,7 @@ func plainGatedArch(act ActKind) *Architecture {
 	return &Architecture{NumLayers: 1, HeadDim: 128, NormPlacement: NormPre2, Act: act}
 }
 
-// TestGatedAct_onlyTanhAndSiLUAdmitted pins what GatedActResident may hand a resident kernel for a gated MLP: 0 (GELU-tanh) and 1
+// TestGatedAct_onlyTanhAndSiLUAdmitted pins what GatedAct may hand a resident kernel for a gated MLP: 0 (GELU-tanh) and 1
 // (SiLU), the two ordinals the kernels know. Every other ordinal, including one past the last ActKind, must fail the feature check
 // (or a table backend's operation table) on every backend, and the check each backend's BuildResident runs itself.
 func TestGatedAct_onlyTanhAndSiLUAdmitted(t *testing.T) {
@@ -37,8 +37,8 @@ func TestGatedAct_onlyTanhAndSiLUAdmitted(t *testing.T) {
 				t.Errorf("act %d on %s: ResidentEligible=%v but MissingResidentFeatures=%v", act, be, admitted, missing)
 			}
 			if kernelKnows := act == ActGeluTanh || act == ActSiLU; admitted != kernelKnows {
-				t.Errorf("act %d (%v) on %s: admitted=%v, want %v (GatedActResident=%d reaches a kernel that knows 0 and 1)",
-					act, act, be, admitted, kernelKnows, m.GatedActResident())
+				t.Errorf("act %d (%v) on %s: admitted=%v, want %v (GatedAct=%d reaches a kernel that knows 0 and 1)",
+					act, act, be, admitted, kernelKnows, m.BackendView().GatedAct())
 			}
 		}
 	}

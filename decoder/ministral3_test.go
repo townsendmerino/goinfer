@@ -203,7 +203,7 @@ func TestAttnTempScale_matchesSequentialFormula(t *testing.T) {
 			"exercises FeatAttnTemp; if the fixture changed, this test no longer gates what it claims")
 	}
 
-	beta, origMaxPos := m.AttnTempParams()
+	beta, origMaxPos := m.BackendView().AttnTempParams()
 	if beta != m.w.arch.AttnTempBeta || origMaxPos != m.w.arch.AttnTempOrigMaxPos {
 		t.Fatalf("AttnTempParams() = (%v, %v), want (%v, %v)", beta, origMaxPos, m.w.arch.AttnTempBeta, m.w.arch.AttnTempOrigMaxPos)
 	}

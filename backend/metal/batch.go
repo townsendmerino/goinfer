@@ -151,12 +151,12 @@ func metalStepInputs(m *decoder.Model) *stepInputs {
 	in := &stepInputs{prog: p, H: H, V: V, I: I, nH: nH, moeStep: m.ResidentMoEStep(), recurrentStep: m.ResidentRecurrentStepOn(wanted),
 		gemma4Step: m.ResidentGemma4StepOn(wanted), q4k: m.Quant() == "q4k"}
 	in.w4f16Lane = modelKnob(m, "GOINFER_METAL_DECODE_LANE") == "w4f16" && m.Quant() == "int4"
-	in.attnSink = m.HasAttnSinksResident()
+	in.attnSink = m.BackendView().HasAttnSinks()
 	if nE, _, _, _, _, _, _, _, _, _, ok := m.MoEResidentParams(); ok {
 		n := metalMoESlotsFromEnv(m)
 		in.pagedMoE = n > 0 && (n < nE || moePagedAllSlotsForTest)
 	}
-	if P := m.Gemma4PLEDimResident(); P > 0 {
+	if P := m.BackendView().Gemma4PLEDim(); P > 0 {
 		in.pleIn = nL * P
 	}
 	w := m.Weights()

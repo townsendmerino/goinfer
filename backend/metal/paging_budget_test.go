@@ -32,7 +32,7 @@ func TestPagingBudget(t *testing.T) {
 	nMoE := 0
 	firstL := -1
 	for l := range 64 {
-		if bb, ok := m.Gemma4MoEResidentLayer(l); ok {
+		if bb, ok := m.BackendView().Layer(l).Gemma4MoEBundle(); ok {
 			if firstL < 0 {
 				b = bb
 				firstL = l

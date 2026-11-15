@@ -47,14 +47,14 @@ func TestMetalCoverageFlags(t *testing.T) {
 			H, nL, nH, nKV, hd, I, vocab := m.Dims()
 			qkn := m.BackendView().HasQKNorm()
 			pr := m.BackendView().PartialRotary()
-			win := m.SlidingWindowResident()
-			addOne := m.RMSAddOne()
+			win := m.BackendView().SlidingWindow()
+			addOne := m.BackendView().RMSAddOne()
 			elig := m.DecodeRunnerEligible()
-			invF := len(m.RopeInvFreq())
+			invF := len(m.BackendView().RopeInvFreq())
 
 			t.Logf("%s: H=%d L=%d nH=%d nKV=%d hd=%d I=%d vocab=%d", c.family, H, nL, nH, nKV, hd, I, vocab)
 			t.Logf("  HasQKNorm=%v  PartialRotary=%v  SlidingWindow=%d  RMSAddOne=%v  EmbedScale=%v",
-				qkn, pr, win, addOne, m.EmbedScaleResident())
+				qkn, pr, win, addOne, m.BackendView().EmbedScale())
 			t.Logf("  len(RopeInvFreq)=%d (headDim/2=%d ⇒ %s)  DecodeRunnerEligible=%v",
 				invF, hd/2, map[bool]string{true: "FULL rotary", false: "PARTIAL rotary"}[invF == hd/2], elig)
 
