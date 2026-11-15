@@ -71,3 +71,127 @@ Not planned here: removing the legacy* wrappers (every test fake would have to i
 ## Where this leaves the exported surface
 
 Six old interfaces stay exported, each for a stated reason: `ResidentForward` (the base), `ResidentDrafterHost` (the raw host `BlockSpec` drives), `ResidentBlockDrafter` and `ResidentKVSnapshot` (values the contracts return), `ResidentLayerView` (BackendModelView's layer), `ResidentHybridMRoPEPrefill` (a type-level check the backends' support tests make). The other 37 are unexported probes inside the bridge; the four contracts and `ResidentSubsystemProvider` are the surface a backend implements. Not done: removing the unexported probes and the legacy wrappers (every test fake would have to implement a contract), and MZ5's leaf move.
+
+## Bridge tail (the last step)
+
+Goal: no resident in the tree reaches the legacy bridge in `decoder/resident_subsystems.go`, so the bridge and its probes go. State before this step: 38 unexported `legacy*` probes (below; `legacyLastNArgmax` is declared inline in the bridge file), four bridge types (`legacyDecodeSub`, `legacyPrefillSub`, `legacyKVSub`, `legacyRuntimeSub`), `SubsystemsOf` falling back to them for any value that is not a `ResidentSubsystemProvider`. No backend resident reaches the bridge: `cudaResident`, `metalResident` and `residentDecoder` (webgpu) each pin `ResidentSubsystemProvider` at compile time (`backend/*/subsystems.go`). Only test fakes did.
+
+Method: a temporary probe (not committed) logged the dynamic type of every value that took a non-provider path in `SubsystemsOf` while `go test ./decoder/ ./internal/app/serveapp/ ./internal/runtime/program/` ran, then a reflection census over every type declared in the decoder test files under the four build-tag configs (default, `goinfer_testhooks`, `realckpt`, both) listed those that implement a probe and are not providers, so a fake only a tagged or skipped test builds is counted too.
+
+### Probes
+
+| probe | file | methods | test fakes that satisfied it |
+|---|---|---|---|
+| legacyAdapter | decoder/residency.go | SetAdapter | 1 |
+| legacyBatchStepper | decoder/residency.go | BatchStepRange, StepBatch | 10 |
+| legacyCapsReporter | decoder/residency.go | ResidentCaps | 44 |
+| legacyCost | decoder/cost_resident.go | CostSpan | 0 |
+| legacyExpertCache | decoder/residency.go | ExpertCacheStats, ResizeExpertCache | 0 |
+| legacyGreedy | decoder/residency.go | ForwardArgmax | 8 |
+| legacyGreedyChain | decoder/residency.go | GreedyChainAvailable, GreedyChainStart, GreedyChainNext, GreedyChainStop | 6 |
+| legacyHiddenLast | decoder/residency.go | HiddenLast | 3 |
+| legacyImageBlocksPrefill | decoder/residency.go | PrefillImageBlocksLast | 1 |
+| legacyImagePrefill | decoder/residency.go | PrefillImageLast | 1 |
+| legacyKVCopier | decoder/resident_reuse.go | CopyKV | 3 |
+| legacyKVDemoter | decoder/resident_reuse.go | SetKVHostBudget, PromoteKV, CopyDemotedKV, ReserveKVHost | 0 |
+| legacyKVPoolInfo | decoder/resident_reuse.go | KVPool | 0 |
+| legacyKVSlotActivity | decoder/resident_reuse.go | SetKVSlotBusy | 0 |
+| legacyKVSlotter | decoder/residency.go | KVSlots, UseKVSlot | 18 |
+| legacyKVSnapshotter | decoder/kvsnap.go | SnapshotKV, RestoreKV, KVSnapshotBytes, KVSnapshotRollback, KVSnapshotRecurrent | 2 |
+| legacyKVUploadPass | decoder/resident_reuse.go | BeginKVUpload, EndKVUpload | 1 |
+| legacyLastNArgmax | decoder/resident_subsystems.go | PrefillLastNArgmax | 12 |
+| legacyMRoPE | decoder/residency.go | ForwardMRoPE | 37 |
+| legacyMRoPEDeepstackPrefill | decoder/residency.go | PrefillMRoPEDeepstackLast | 1 |
+| legacyMRoPEPrefill | decoder/residency.go | PrefillMRoPELast | 1 |
+| legacyPrefillBlocks | decoder/residency.go | PrefillBlockRows, PrefillScratchBytes | 1 |
+| legacyPrefillChunks | decoder/prefill_chunk_scratch.go | PrefillChunkRows, PrefillScratchBytes | 1 |
+| legacyPrefillKV | decoder/residency.go | ForwardNoLogits | 1 |
+| legacyPrefillMarked | decoder/kvsnap.go | PrefillMarkAlign, PrefillLastMarked | 3 |
+| legacyPrefillRows | decoder/prefill_rows.go | PrefillLastRows | 1 |
+| legacyPrefillSpanScratch | decoder/prefill_chunk_scratch.go | PrefillSpanScratchBytes | 1 |
+| legacyRaggedStepper | decoder/residency.go | StepRagged | 2 |
+| legacyRecurrentCheckpoint | decoder/recurrent_checkpoint.go | RecurrentCheckpointBytes, SaveRecurrentCheckpoint, RestoreRecurrentCheckpoint, RecurrentCheckpointHeld | 5 |
+| legacyRecurrentSpec | decoder/blockspec.go | PrepareRecurrentSpec, RecurrentSpecRows, VerifyLastNArgmax, FoldVerified, FlushFold, DropFold | 3 |
+| legacyResidualAll | decoder/residency.go | ResidualAll | 3 |
+| legacyReusableKV | decoder/resident_reuse.go | ReusableKV | 4 |
+| legacyReusableKVSlot | decoder/resident_reuse.go | ReusableKVSlot | 2 |
+| legacySample | decoder/residency.go | SampleAvailable, ForwardSample | 14 |
+| legacySampleChain | decoder/residency.go | SampleChainAvailable, SampleChainStart, SampleChainNext | 1 |
+| legacySeedArgmax | decoder/blockspec.go | PrefillSeedArgmax | 2 |
+| legacySpanPrefill | decoder/residency.go | PrefillSpansLast | 1 |
+| legacyTopK | decoder/residency.go | TopKAvailable, ForwardTopK | 13 |
+
+Also asserted structurally by the bridge, and kept: `Prefiller`, `PrefillPathReporter`, `PrefillTailExact`, `VerifyPathReporter`, `VerifyCostReporter`, `DecodeVerifyDiverger`, `ExactAttentionScoper`, `ResidentDrafterHost`, `StreamingDrafterHost`, `ResidentHybridMRoPEPrefill` (exported; the fakes that satisfied them are in the next table).
+
+### Test fakes that reached the bridge
+
+| type | file | role | probes it satisfied |
+|---|---|---|---|
+| quantReporting | decoder/auto_backend_test.go | root fake | legacyCapsReporter |
+| recurrentSnapFake | decoder/b35_snapshot_test.go | embeds `snapFake` | Prefiller, legacyBatchStepper, legacyCapsReporter, legacyKVSlotter, legacyKVSnapshotter, legacyMRoPE, legacyPrefillMarked, legacySample, legacyTopK |
+| blockspecCommitStubHost | decoder/blockspec_commit_test.go | host (runtime contract only) | ResidentDrafterHost, legacyLastNArgmax |
+| blockspecWriteHost | decoder/blockspec_commit_test.go | host (runtime contract only) | ResidentDrafterHost, legacyLastNArgmax |
+| blockspecStubHost | decoder/blockspec_residentbusy_test.go | host (runtime contract only) | ResidentDrafterHost, legacyLastNArgmax |
+| blockspecReuseStubHost | decoder/blockspec_reuse_test.go | host (runtime contract only) | ResidentDrafterHost, legacyLastNArgmax |
+| widthHost | decoder/blockspec_width_test.go | host (runtime contract only) | ResidentDrafterHost, legacyLastNArgmax |
+| windowResident | decoder/cachestate_kvmgr_test.go | embeds `slotResident` | legacyCapsReporter, legacyKVSlotter, legacyMRoPE, legacyReusableKV |
+| slotHiddenLastResident | decoder/embed_slot_test.go | embeds `fakeResident` | legacyCapsReporter, legacyHiddenLast, legacyKVSlotter, legacyMRoPE, legacyResidualAll |
+| flintWindowResidentStub | decoder/flint_parity_test.go | root fake | legacyReusableKV |
+| uploadFailResident | decoder/gemma4_vl_resident_test.go | embeds `fakeResident` | legacyCapsReporter, legacyMRoPE |
+| identResident | decoder/generate_identity_test.go | root fake | legacyCapsReporter |
+| identArgmax | decoder/generate_identity_test.go | embeds `identResident` | legacyCapsReporter, legacyGreedy |
+| identChain | decoder/generate_identity_test.go | embeds `identArgmax` | legacyCapsReporter, legacyGreedy, legacyGreedyChain |
+| identTopK | decoder/generate_identity_test.go | embeds `identResident` | legacyCapsReporter, legacyTopK |
+| identSample | decoder/generate_identity_test.go | embeds `identResident` | legacyCapsReporter, legacySample |
+| identSampleChain | decoder/generate_identity_test.go | embeds `identChain` | legacyCapsReporter, legacyGreedy, legacyGreedyChain, legacySample, legacySampleChain |
+| residentForwardOnly | decoder/generate_vl_resident_test.go | root fake | legacyCapsReporter |
+| chainGateFake | decoder/hl_chain_gate_test.go | embeds `fakeResident` | legacyCapsReporter, legacyGreedy, legacyGreedyChain, legacyMRoPE |
+| donorFake | decoder/kv2_donor_test.go | embeds `copyFake` | Prefiller, legacyBatchStepper, legacyCapsReporter, legacyKVCopier, legacyKVSlotter, legacyMRoPE, legacyReusableKVSlot, legacySample, legacyTopK |
+| twoClassFake | decoder/kv2_fu1_test.go | embeds `copyFake` | PrefillTailExact, Prefiller, legacyBatchStepper, legacyCapsReporter, legacyKVCopier, legacyKVSlotter, legacyMRoPE, legacySample, legacyTopK |
+| copyFake | decoder/kv2_share_test.go | embeds `mc3Fake` | Prefiller, legacyBatchStepper, legacyCapsReporter, legacyKVCopier, legacyKVSlotter, legacyMRoPE, legacySample, legacyTopK |
+| recurrentFake | decoder/kv8a_generate_test.go | embeds `fakeResident` | Prefiller, legacyCapsReporter, legacyGreedyChain, legacyMRoPE, legacyRecurrentCheckpoint |
+| slottedRecurrentFake | decoder/kv8a_generate_test.go | embeds `recurrentFake` | Prefiller, legacyCapsReporter, legacyGreedyChain, legacyKVSlotter, legacyMRoPE, legacyRecurrentCheckpoint |
+| oneCopyRecurrentFake | decoder/kv8a_generate_test.go | embeds `slottedRecurrentFake` | Prefiller, legacyCapsReporter, legacyGreedyChain, legacyKVSlotter, legacyMRoPE, legacyRecurrentCheckpoint |
+| snapFake | decoder/kvsnap_test.go | embeds `mc3Fake` | Prefiller, legacyBatchStepper, legacyCapsReporter, legacyKVSlotter, legacyKVSnapshotter, legacyMRoPE, legacyPrefillMarked, legacySample, legacyTopK |
+| fakeGreedyResident | decoder/logit_gate_test.go | embeds `fakeResident` | legacyCapsReporter, legacyGreedy, legacyMRoPE |
+| mc3Fake | decoder/mc3_batch_test.go | embeds `fakeResident` | Prefiller, legacyBatchStepper, legacyCapsReporter, legacyKVSlotter, legacyMRoPE, legacySample, legacyTopK |
+| erroringResident | decoder/model_cancel_commit_test.go | root fake |  |
+| blockFake | decoder/prefill_blocks_test.go | embeds `mc3Fake` | PrefillTailExact, Prefiller, legacyBatchStepper, legacyCapsReporter, legacyKVSlotter, legacyMRoPE, legacyPrefillBlocks, legacySample, legacyTopK |
+| chunkFake | decoder/prefill_chunks_test.go | embeds `mc3Fake` | Prefiller, legacyBatchStepper, legacyCapsReporter, legacyKVSlotter, legacyMRoPE, legacyPrefillChunks, legacyPrefillSpanScratch, legacySample, legacyTopK |
+| decliningPrefiller | decoder/prefill_decline_warn_test.go | embeds `fakeResident` | Prefiller, legacyCapsReporter, legacyMRoPE |
+| prefillingResident | decoder/prefillpath_test.go | embeds `fakeResident` | PrefillPathReporter, Prefiller, legacyCapsReporter, legacyMRoPE |
+| prefillerOnly | decoder/prefillpath_test.go | root fake | Prefiller |
+| stubResidualAll | decoder/prompt_hidden_all_test.go | root fake | legacyResidualAll |
+| ckptResident | decoder/recurrent_checkpoint_test.go | embeds `slotResident` | legacyCapsReporter, legacyKVSlotter, legacyMRoPE, legacyRecurrentCheckpoint |
+| ckptWindowResident | decoder/recurrent_checkpoint_test.go | embeds `ckptResident` | legacyCapsReporter, legacyKVSlotter, legacyMRoPE, legacyRecurrentCheckpoint, legacyReusableKV |
+| recurrentSpecStub | decoder/recurrent_spec_test.go | host (runtime contract only) | legacyRecurrentSpec |
+| prepHost | decoder/recurrent_spec_test.go | host (runtime contract only) | ResidentDrafterHost, legacyLastNArgmax, legacyRecurrentSpec |
+| foldHost | decoder/recurrent_spec_test.go | host (runtime contract only) | ResidentDrafterHost, legacyLastNArgmax, legacyRecurrentSpec |
+| captureHost | decoder/recurrent_spec_test.go | host (runtime contract only) | ResidentDrafterHost, legacyLastNArgmax |
+| fakeResidentAdapter | decoder/resident_adapter_seam_test.go | embeds `fakeResident` | Prefiller, legacyAdapter, legacyCapsReporter, legacyMRoPE |
+| fakeResidentHiddenLast | decoder/resident_embed_seam_test.go | embeds `fakeResident` | legacyCapsReporter, legacyHiddenLast, legacyMRoPE |
+| fastPrefillResident | decoder/resident_leadreuse_test.go | embeds `slotResident` | legacyCapsReporter, legacyKVSlotter, legacyMRoPE |
+| noCapResident | decoder/resident_reporters_test.go | root fake |  |
+| fastFloorResident | decoder/resident_reporters_test.go | embeds `fakeResident` | legacyCapsReporter, legacyMRoPE |
+| contextNoteResident | decoder/resident_reporters_test.go | embeds `fakeResident` | legacyCapsReporter, legacyMRoPE |
+| kernelFloorResident | decoder/resident_reporters_test.go | embeds `fakeResident` | legacyCapsReporter, legacyMRoPE |
+| equivResident | decoder/resident_reuse_equiv_test.go | embeds `fakeResident` | legacyCapsReporter, legacyKVSlotter, legacyMRoPE, legacyReusableKV |
+| uploadPassFails | decoder/resident_reuse_test.go | embeds `fakeResident` | legacyCapsReporter, legacyKVUploadPass, legacyMRoPE |
+| fakeResident | decoder/resident_seam_test.go | root fake | legacyCapsReporter, legacyMRoPE |
+| slotResident | decoder/resident_slots_test.go | embeds `fakeResident` | legacyCapsReporter, legacyKVSlotter, legacyMRoPE |
+| uncomparableValueResident | decoder/resident_subsystems_test.go | root fake | VerifyCostReporter |
+| rideFake | decoder/rf3_ride_test.go | embeds `mc3Fake` | Prefiller, legacyBatchStepper, legacyCapsReporter, legacyKVSlotter, legacyMRoPE, legacyRaggedStepper, legacySample, legacyTopK |
+| costReportingResident | decoder/spec_adaptive_cost_test.go | root fake | VerifyCostReporter |
+| fakeThetaResident | decoder/spec_adaptive_test.go | embeds `fakeResident` | PrefillPathReporter, Prefiller, legacyCapsReporter, legacyMRoPE |
+| fakeVerifyResident | decoder/spec_adaptive_test.go | embeds `fakeResident` | VerifyPathReporter, legacyCapsReporter, legacyMRoPE |
+| stubResident | decoder/spec_ngram_test.go | root fake |  |
+| divergingResident | decoder/spec_verify_guard_test.go | embeds `fakeResident` | DecodeVerifyDiverger, legacyCapsReporter, legacyMRoPE |
+| quantReportingResident | decoder/staged_device_note_test.go | embeds `fakeResident` | legacyCapsReporter, legacyMRoPE |
+| callLogResident | decoder/step_callers_test.go | embeds `fakeResident` | legacyCapsReporter, legacyGreedy, legacyLastNArgmax, legacyMRoPE, legacySample, legacyTopK |
+| callLogHost | decoder/step_callers_test.go | host (runtime contract only) | ResidentDrafterHost, legacyLastNArgmax |
+| callLogSeedHost | decoder/step_callers_test.go | host (runtime contract only) | ResidentDrafterHost, legacyLastNArgmax, legacySeedArgmax |
+| stepLogResident | decoder/step_test.go | root fake | Prefiller, ResidentHybridMRoPEPrefill, legacyBatchStepper, legacyGreedy, legacyHiddenLast, legacyImageBlocksPrefill, legacyImagePrefill, legacyLastNArgmax, legacyMRoPE, legacyMRoPEDeepstackPrefill, legacyMRoPEPrefill, legacyPrefillKV, legacyPrefillMarked, legacyPrefillRows, legacyRaggedStepper, legacyResidualAll, legacySample, legacySeedArgmax, legacySpanPrefill, legacyTopK |
+| stepPlainResident | decoder/step_test.go | root fake |  |
+| stepPrefillOnly | decoder/step_test.go | embeds `stepPlainResident` | Prefiller |
+| stepNoAllocResident | decoder/step_test.go | embeds `stepPlainResident` | legacyGreedy, legacySample, legacyTopK |
+| fakeResident | internal/app/serveapp/residentpath_test.go | root fake (runtime contract only) | ResidentCapsReporter |
