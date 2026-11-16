@@ -7,8 +7,8 @@ import (
 )
 
 // -kv-host-bytes: the host memory prefix snapshots may hold (decoder.Options.KVHostBytes, docs/completed/task-kv7-prefix-snapshot-2026-10.md).
-// The default is a tenth of the machine's physical RAM, at most 8 GiB; pinned memory is allocated when a snapshot is taken and
-// freed when it is dropped, so a server that never takes one holds nothing.
+// The default is a tenth of the machine's physical RAM, at most 8 GiB; host memory is allocated when a snapshot is taken and
+// released when it is dropped, so a server that never takes one holds nothing.
 
 const (
 	kvHostFraction = 10      // the default budget is 1/kvHostFraction of physical RAM

@@ -174,11 +174,27 @@ own list:
 not name. The list used to be restated per consumer. One copy fell a family behind, and a two-token
 LFM2 prompt panicked (audit 2026-09-02, C-01).
 
-**Recurrent state cannot be rewound.** DeltaNet, KDA, Mamba-2 and short-conv state is overwritten
-in place at every token, and no backend can checkpoint and restore it. Two consequences follow:
-- These families refuse rollback-based speculative decoding (`specRollbackSafe`).
-- They reuse a cached prefix only when the new prompt extends the cached one exactly. An edited
-  conversation is prefilled again.
+**Recurrent state cannot be truncated, so a resident keeps copies of it.** DeltaNet, KDA, Mamba-2 and
+short-conv state is overwritten in place at every token: there is no earlier position to cut back to.
+A sequence can leave its own history only at a position where a copy of the state was kept. The
+residents keep three kinds:
+- **State slots.** CUDA and Metal hold one conv window and one state per recurrent layer *for each KV
+  slot*, as attention KV is held per slot, so two conversations on a hybrid do not share a state.
+- **The checkpoint (KV8a).** One device copy of every recurrent layer's window and state, saved where a
+  prompt ends, before the reply (CUDA keeps one per slot where they fit; Metal keeps one). A request
+  whose prompt matches the sequence only through the checkpoint restarts from it instead of from zero.
+  A load whose memory plan cannot hold the copy keeps none.
+- **Host snapshots (CUDA, KV7's store, below).** A snapshot carries the state with its KV rows, for
+  Gated-DeltaNet and Mamba-2, so a snapshot restores to exactly the row it was taken at and no other.
+  A recurrent model's prefill is cut at each snapshot point, rounded down to a 64-row block: the end
+  of the prompt less its generation tail (`KVScope.Keep`), the start of its last message
+  (`KVScope.MsgBoundary`) and the end of its system-and-tools preamble (`KVScope.Boundary`).
+
+With no copy to restore, a recurrent family reuses a cached prefix only when the new prompt extends
+the cached one exactly, and an edited conversation is prefilled again. The same property keeps these
+families off rollback-based speculative decoding (`specRollbackSafe`); a CUDA Gated-DeltaNet resident
+verifies drafts without rewinding at all, folding only the rows a verify commits
+(`backend/cuda/recurrent_spec.go`).
 
 `specRollbackSafe` refuses a sliding-window ring for the same reason: a wrapped ring cannot rewind
 exactly.
@@ -485,8 +501,9 @@ kernels are bit-identical, so a matmul gives the same answer in decode and in pr
   only for generic-loop, non-MoE families.
 - A sliding-window layer keeps a ring the size of its window.
 
-A resident backend keeps its own cache on the device, one fixed reservation per KV slot
-(`--kv-sessions`), laid out its own way:
+A resident backend keeps its own cache on the device, laid out its own way: CUDA and Metal as a pool of
+64-row blocks behind a table per KV slot (below), WebGPU as one fixed reservation per KV slot
+(`--kv-sessions`):
 
 | | K/V precision | MLA | sliding-window layers | context when not pinned |
 |---|---|---|---|---|
@@ -532,9 +549,27 @@ backends").
   turns sharing off (`decoder.Options.KVShareOff`) under `--kv-share off` and when it answers the network without
   an API key; a request then reuses only its own conversation's rows. `docs/server.md` states the timing limit that
   remains.
-- **Not yet.** Paged storage and the geometry's use (`decoder.Architecture.KVGeometry`: the layer groups by row width
-  and retention, and the recurrent state) are later steps of
-  [tasks/task-kv-architecture-2026-10.md](tasks/task-kv-architecture-2026-10.md).
+- **Storage.** On CUDA and Metal a slot is its block table: KV lives in per-group pools of 64-row blocks
+  (`backend/cuda/kvpool.go`, `backend/metal/kvpool.go`; the groups are `decoder.Architecture.KVGeometry`'s layer
+  groups by row width and retention). Preamble blocks are shared by reference and copied on write, and one
+  conversation can use the whole pool, so a single request's context is bounded by the pool, not by a slot. WebGPU keeps
+  fixed slots.
+- **Host memory (KV7), CUDA only.** One budget, `--kv-host-bytes` (`decoder.Options.KVHostBytes`; by default a tenth of the
+  machine's RAM, at most 8 GiB; the fit guard counts it), holds two things in host memory, each only while it is held:
+  - *Prefix snapshots* (`decoder.kvSnapStore`): after a cold first prefill of 2,048 ids or more, the KV rows of the
+    prompt's full blocks (and, for a recurrent model, its state at each snapshot point) are copied out, keyed like the
+    index (namespace, model, adapter, KV precision). A later request that starts with the same ids restores them by device
+    copy and prefills only the rest. They are prefill-class rows copied before any decode step, so the reply is the cold
+    one. The least recently restored snapshot goes first, and a longer prompt of a held prefix replaces the shorter.
+  - *Host demotion* (`backend/cuda/kvdemote.go`, off unless `--kv-host-bytes` names a budget, experimental): when the pool
+    takes the blocks of an idle conversation, its rows are copied to host memory first and brought back when it returns,
+    bit-identical. It is per slot, not a block-granular host pool, and it is not done for windowed KV or a recurrent model.
+- **The sequence contract.** `kvmgr.SequenceState` is the live KV state of one sequence, in a CPU session or a resident slot:
+  its tokens, root, image spans, kernel classes, whether it is recurrent and where its checkpoint is (`Checkpoint`), its
+  floor, how much of a prefix is still physically servable (`ReusablePrefix`) and whether a cut-back is exact (`Truncate`).
+  Prefix scoring, sharing and turn rewinding run on it, so CPU and resident KV share one set of rules.
+- **Not yet.** A disk tier and a block-granular host pool (the rest of KV7), and Metal's host memory: snapshots and
+  demotion are CUDA's. See [tasks/task-kv-architecture-2026-10.md](tasks/task-kv-architecture-2026-10.md).
 
 ### Fitting to the machine
 
@@ -805,7 +840,8 @@ The `backend/webgpu/` module (`package webgpu`), built with `-tags gpu`, and cgo
   - The match is on token ids, never text, and the last token is always recomputed.
   - A slot is forgotten on any generation that does not complete.
   - It is adapter-aware, and it survives image turns through the image hash.
-  - On the recurrent families it covers only an exact extension of what the slot holds.
+  - On the recurrent families it covers an exact extension of what the slot holds, or the position of a
+    state copy that was kept (the checkpoint, a CUDA snapshot).
   - A continuation keeps its slot. A prompt that shares only a short lead with a slot (a chat
     template's preamble) takes an empty slot, or the least recently used one.
   - Where a backend's long prompts run kernels that are not bit-identical to its short ones (CUDA

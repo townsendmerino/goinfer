@@ -109,6 +109,44 @@ func webgpuScratchHandMoE(h, v, qW, kvW int, ffn []int, nE, k, inter, shared int
 	return want
 }
 
+// webgpuScratchHandQwen35Tiny is qwen35-tiny's figure from its config (layer_types: three linear-attention layers then a full-attention one;
+// hidden 64, vocabulary 256; 2 key heads of 16 and 4 value heads of 16; 4 query heads of 16 over 2 KV heads, with an output gate and a
+// QK-norm; every FFN routed: 4 experts, top 2, width 32, and a sigmoid-gated shared expert of width 32).
+func webgpuScratchHandQwen35Tiny() map[string]int64 {
+	const H, V, L, nE, K, inter, shared = 64, 256, 4, 4, 2, 32, 32
+	pk := func(n int) int64 { return int64((n + 31) &^ 31) }
+	keyDim, valDim := 2*16, 4*16
+	conv := 2*keyDim + valDim // the mixed projection's rows
+	qW, kvW := 4*16, 2*16
+	want := map[string]int64{"build": 4 + 4*256, "residual": 4 * H, "logitsStaging": 4 * V, "geomFor": 16 + 32, "qkvFinUniFor": 32,
+		"rmsQuant": pk(H) + 20, "gemv": 4*V + 16, "deltaSetup": 16 + 16 + 32 + 32 + 32, "moeZeroBias": 4 * nE}
+	add := func(role string, n int64) { want[role] += n }
+	for l := 0; l < L; l++ {
+		add("rmsQuant", 2*(pk(H)+20))
+		add("gemvAdd", 16)
+		if l < 3 { // linear attention: the mixed, beta, alpha and z projections; the conv, q, k, head-parameter, core and gated rows
+			add("gemv", 4*int64(conv+4+4+valDim)+4*16)
+			add("deltaLayer", 4*int64(conv+2*keyDim+2*4+valDim+valDim))
+			add("quant", pk(valDim)+20)
+		} else { // full attention: the wide query projection, k, v, the split, the gate, the QK-norm, the context
+			add("gemv", 4*int64(2*qW+2*kvW)+3*16)
+			add("qSplit", 4*2*int64(qW)+16)
+			add("attnGate", 16)
+			add("qkNorm", 2*16)
+			add("attnLayer", 4*int64(qW)+16)
+			add("quant", pk(qW)+20)
+		}
+		add("gemv", 4*int64(nE)+16)
+		add("moeFFN", 4*2*K+4*2*inter)
+		add("moeRoute", 32)
+		add("moeExpert", 3*K*16)
+		add("swigluQuant", int64(K)*(pk(inter)+20)+pk(shared)+20)
+		add("gemv", 4*2*shared+2*16+4*H+16+4+16)
+		add("sharedGatedCombine", 16)
+	}
+	return want
+}
+
 func withTerm(m map[string]int64, role string, b int64) map[string]int64 {
 	m[role] = b
 	return m
@@ -133,6 +171,7 @@ func TestWebGPUDecodeScratch_handTable(t *testing.T) {
 		{"mixtral (routed FFN)", "mixtral-tiny", Options{}, webgpuScratchHandMoE(64, 512, 64, 64, []int{0, 0, 0, 0}, 8, 2, 128, 0, false, false)},
 		{"qwen3moe (routed FFN, qk-norm)", "qwen3moe-tiny", Options{}, webgpuScratchHandMoE(64, 512, 64, 16, []int{0, 0, 0, 0}, 8, 2, 32, 0, false, true)},
 		{"glm (dense prefix, ungated shared expert, qk-norm)", "glm-tiny", Options{}, webgpuScratchHandMoE(64, 256, 64, 32, []int{128, 0, 0}, 8, 2, 32, 32, false, true)},
+		{"qwen35 (delta-net, gated attention, routed FFN)", "qwen35-tiny", Options{}, webgpuScratchHandQwen35Tiny()},
 		{"glm-ocr (post norms)", "glm-ocr-tiny", Options{}, webgpuScratchHand(48, 3, 160, 128, 64, 144, false, true, "f32", "", false, false)},
 	} {
 		m, err := Load("../testdata/"+c.fx, c.o)
@@ -157,12 +196,12 @@ func TestWebGPUDecodeScratch_handTable(t *testing.T) {
 		}
 		m.Close()
 	}
-	m, err := Load("../testdata/qwen35-tiny", Options{})
+	m, err := Load("../testdata/nemotron-tiny", Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer m.Close()
 	if _, ok := m.WebGPUDecodeScratch(); ok {
-		t.Error("qwen35-tiny has delta-net layers, whose scratch is not derived: the plan must give no figure")
+		t.Error("nemotron-tiny has Mamba-2 layers, whose scratch is not derived: the plan must give no figure")
 	}
 }

@@ -239,7 +239,7 @@ func kv7DemoteAndPromote(t *testing.T, kv string) {
 			t.Fatalf("stats after the release: demoted %d, used %d; the copy is %d bytes", st.Demoted, st.Used, held)
 		}
 		if plant {
-			clear(r.kvDemoted[1].host.Slice())
+			clear(r.kvDemoted[1].hostRows())
 		}
 		blocks, err := r.PromoteKV(1, conv)
 		if err != nil {
@@ -609,7 +609,7 @@ func TestKV7_copyFromDemotedIsBitExact(t *testing.T) {
 		m, r := kv7Load(t, 4, 1<<30)
 		conv, ids := kv7Release(t, m, r)
 		if plant {
-			clear(r.kvDemoted[1].host.Slice())
+			clear(r.kvDemoted[1].hostRows())
 		}
 		r.SetKVSlotBusy(2, true) // the continuations below take blocks from slot 0, the borrower, and not from this
 		t.Cleanup(func() { r.SetKVSlotBusy(2, false) })

@@ -792,7 +792,7 @@ func recurrentSlotSnapshotOfUnbound(t *testing.T, fixture string, plant bool) {
 		if len(s.rec) == 0 {
 			t.Fatalf("%s: the snapshot holds no recurrent layer", fixture)
 		}
-		buf := s.host.Slice()
+		buf := s.hostRows()
 		for _, d := range s.rec {
 			p := r.layers[d.layer].recurrentOf(1)
 			if err := gpu.Download(p.win, buf[d.winOff:d.winOff+d.winWords]); err != nil {
