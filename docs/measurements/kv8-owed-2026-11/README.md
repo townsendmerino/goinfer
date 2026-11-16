@@ -43,3 +43,24 @@ Both gates are correctness gates, not timed ones: they hold the timing lock shar
 | **Means** | PASS: the cut's bit-identity rests on a real checkpoint's logits, state and K/V, not only tiny fixtures and greedy replies. AMBIGUOUS: Francis decides what the cut may claim. FAIL: the cut changes a real model's numbers; the second slice's identity claim is withdrawn and the cut stays opt-in until a mechanism is found. |
 
 **Void if:** a run outside the shared timing lock, a model read from `/srv/models`, a skip counted as a pass, a bar moved after a reading.
+
+## What the fit check found (07:26 PST, `fit-*/fit.log`, written before G-M2)
+
+- **`~/models/granite-4.2-3b` is not a Mamba-2 hybrid.** Its config is `GraniteForCausalLM`, 40 dense layers; it loads resident and keeps no recurrent checkpoint. The Mamba-2 hybrids on this box are
+  `nemotron-h-4b-instruct-128k` (`NemotronHForCausalLM`, 52 layers, `M-M-M-M*-...`; the CUDA bundle loads resident: 4,322 MiB on the card, a 98.5 MiB recurrent checkpoint kept, 12,288-token context)
+  and `granite-hf` / `granite-4.0-h-tiny` (a 7B mixture-of-experts hybrid, whose resident Mamba-2 path is recorded as quality-degraded and is not read here). **G-M2 runs on nemotron-h-4b.**
+
+## G-M2: what a served Mamba-2 hybrid gets today, in T2's shape (tier 1, `nemotron-h-4b-instruct-128k`, one cell)
+
+| | |
+|---|---|
+| **Question** | In `served_msgboundary.py`'s conversation (about 7,400 ids; r1 cold, r2 the next turn, r3 the last message rewritten from its first words, r4 the turn after r3), what does serve reuse and what does the first token cost on a Mamba-2 hybrid, given that its host snapshots are refused? |
+| **Instrument** | `served_msgboundary.py:cell`, one cell of the build at `8a2412048`'s tree (`CGO_ENABLED=0 go build -tags cuda ./backend/cuda/cmd/serve`), `--ctx 12288`, greedy, thinking off, 24 new tokens, `~/models/nemotron-h-4b-instruct-128k` (local NVMe, its CUDA bundle), the exclusive timing lock, the 1-minute load and available memory recorded at the start, a cell started above 8.0 load void |
+| **Reported, not graded** | each request's prompt ids, rows reused, first token; the server's snapshot lines; peak server `VmSwap` |
+| **Expected, from the code** | no snapshot taken (0 rows); r2 reuses r1's Keep checkpoint rows (Keep is the device checkpoint, which Mamba-2 has); r3 reuses 0 rows and pays a full per-token prefill; r4 reuses r3's Keep rows |
+| **PASS** (the status quo is as the code says) | the snapshot count is 0 and r3 reuses 0 rows and r2 reuses at least one row and `VmSwap` at most 512 MB |
+| **FAIL** | any snapshot taken on a Mamba-2 model, or r2 reusing 0 rows (the Keep checkpoint not serving), or `VmSwap` over 512 MB |
+| **Ambiguous** | none: counts, not timings, decide. A timing is not graded |
+| **Stopping rule** | one cell, no repeat; a void cell is re-run once |
+| **Cost** | load about 9 s, four requests: r1 and r3 are per-token prefills of about 7,400 ids, each about 1 to 3 minutes by the sequential path (measured only by this run); **expected about 6 to 10 minutes**, stated before the run; over 20 minutes stops it and says so |
+| **Means** | PASS: the cost of lacking the message-boundary and preamble snapshots on a Mamba-2 hybrid is r3's first token, on record, and whether to build them is the owner's decision with that figure in hand. FAIL: the Keep path or the refusal is not what the code says. |
