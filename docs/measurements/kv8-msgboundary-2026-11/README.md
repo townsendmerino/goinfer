@@ -315,4 +315,6 @@ Main `69b05e1a4` against the branch's code, A B B A, the exclusive lock, no void
 
 **The verdict is PARKED, by the registered rule: the 9B passes every clause, and on the 0.8B r3 in pair 1 reads 1.023 (2.37 s to 2.42 s), above the 1.02 PASS edge and inside the 0.95 to 1.05 ambiguous band.** The other pair reads 1.004 and the 9B's r3 reads 1.001 in both pairs, with the same rows and the same replies. Nothing moves. The one reading outside the PASS band is a 0.05 s difference on a 2.4 s request that the preamble snapshot does not touch (r3 restores the boundary snapshot on both arms); the registration's allowance for sub-second requests (0.03 s) did not cover it. The decision goes to the owner.
 
+**Decided 2026-11-15 (owner): T3b' is taken as a pass.** The one reading in the ambiguous band is a 0.05 s difference on a request the preamble snapshot does not serve, with the other pair at 1.004 and the 9B at 1.001 in both; the bars above are unchanged. #1014 merged on this.
+
 **The cold cost, as in T3b, run again:** the preamble snapshot is 2,752 rows, **84 MiB and 77 ms on the 0.8B, 222 MiB and 165 ms on the 9B**; the boundary and Keep snapshots are as before (0.8B 160 and 192 MiB, 98 to 142 ms; 9B 426 and 510 MiB, 277 to 321 ms). r1's first token on the 9B is 0.50 to 0.56 s slower than main's (1.4% to 1.6%) and on the 0.8B 0.03 to 0.04 s faster.
