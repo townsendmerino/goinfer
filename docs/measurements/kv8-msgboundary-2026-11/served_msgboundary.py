@@ -199,7 +199,7 @@ def main():
             notes.append(f"{pair}: r4 reuses {by(new, 'r4')['reused']}, main {by(old, 'r4')['reused']}: a restored turn lost its Keep point"); worse("FAIL")
         print(f"{pair}: r4 reuse change {by(new, 'r4')['reused']}, main {by(old, 'r4')['reused']}")
         taken = rec_by[new]["snapshots_taken"]
-        want = min(taken[:2]) if len(taken) >= 2 else None  # r1's two snapshots: the message's start is the smaller
+        want = sorted(taken)[-2] if len(taken) >= 2 else None  # the message's start: the second largest of r1's snapshots (Keep's is the largest; a preamble snapshot, when taken, the smallest)
         got = by(new, "r3")["reused"]
         est = rec_by[new].get("boundary_est")
         print(f"{pair}: r3 reuse change {got}, main {by(old, 'r3')['reused']}; the message-boundary snapshot of r1 {want}; boundary estimate {est}; snapshots taken {taken}")
@@ -210,7 +210,7 @@ def main():
         for r in ("r1", "r2", "r3", "r4"):
             if by(new, r)["reply"] != by(old, r)["reply"]:
                 notes.append(f"{pair}: {r}'s reply differs from main's"); worse("FAIL")
-        cost = rec_by[new]["snapshot_cost"][:2]
+        cost = rec_by[new]["snapshot_cost"][:3]
         for c in cost:
             print(f"{pair}: cold request's snapshot at {c['rows']} rows: {c['mib']} MiB host, {c['ms']} ms")
         if cost and not a.report_cost_only:
