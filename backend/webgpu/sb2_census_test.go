@@ -1023,7 +1023,7 @@ func webgpuScratchListHolds(rd *residentDecoder, l *mem.Ledger) error {
 func TestScratchList_plantsGoRed(t *testing.T) {
 	m, err := decoder.Load("../../testdata/llama-tiny", decoder.Options{Backend: "webgpu", Quant: "int4", ResidentContext: 256})
 	if err != nil {
-		t.Fatal(err)
+		t.Skipf("no WebGPU device: %v", err)
 	}
 	defer m.Close()
 	rd, ok := m.ResidentForwardForTest().(*residentDecoder)
