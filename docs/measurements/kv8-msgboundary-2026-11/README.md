@@ -262,7 +262,7 @@ Decided 2026-11-15: the replay's one failing request is a regression on main sin
 
 The request that failed R2 (the second of the opencode edit session) is now served from a snapshot. The 0.5 total is not the preamble snapshot alone: against the earlier R2 cells, main here is 158 s and the change 84 s, and the 3 requests the preamble snapshot serves were cold, 6 to 7 s each, on main.
 
-**T3b, the served r1 to r4: FAIL by its registration, and the registration is the flaw.** `served-t3b-08b/` and `served-t3b-9b/`, the same script and bars as T2 and the 9B's, run against `69b05e1a4` as main. Both arms already carry #1007's boundary snapshot, so r3 is served from it on both: **r3's first token is 0.992 to 1.005 of main's on the 0.8B and 0.997 to 0.999 on the 9B, the registered bar was at most 0.5, and the script's "r3 reuses exactly the smaller of r1's two snapshots" clause now names the preamble's snapshot, not the boundary's.** Both clauses compare the change with a build that already has the boundary snapshot, so a change that does not touch r3 cannot meet them. Nothing moves: T3b is recorded FAIL. What the runs do show:
+**T3b, the served r1 to r4: FAIL by its registration, and the registration is the flaw.** `served-t3b-08b/` and `served-t3b-9b/`, the same script and bars as T2 and the 9B's, run against `69b05e1a4` as main. Both arms already carry #1007's boundary snapshot, so r3 is served from it on both: **r3's first token is 0.992 to 1.005 of main's on the 0.8B and 0.997 to 0.999 on the 9B, the registered bar was at most 0.5, and the script's "r3 reuses exactly the smaller of r1's two snapshots" clause now names the preamble's snapshot, not the boundary's.** Both clauses compare the change with a build that already has the boundary snapshot, so a change that does not touch r3 cannot meet them. Nothing moves: T3b is recorded FAIL, as written. Its bars were copied from T2 against a main that already has #1007, so it tests r3, which this change does not touch; they could not apply. What the runs do show:
 
 | | 0.8B | 9B |
 |---|---|---|
@@ -282,3 +282,21 @@ The request that failed R2 (the second of the opencode edit session) is now serv
 - **The budget:** the preamble snapshot is shared, so its bytes are taken once per distinct preamble and dropped only by the budget's least-recently-used rule.
 
 **What a correct T3b would ask:** r1 to r4 not slower and not fewer rows than a main that has #1007 (no-regression bars), and the r3 gain is T2's and R1's reading against a build without #1007. That is a new registration, made after this reading; it is not run here.
+
+## T3b': the served r1 to r4 as a no-regression read (registered 2026-11-15 16:42 PST, before it runs; an RTX 2070 SUPER, 8 GB)
+
+Decided 2026-11-15, replacing T3b's bars (above, recorded FAIL as written). **The question:** does the preamble snapshot change anything for a request that does not need it? Main `69b05e1a4` (with #1007; the Go tree of `origin/main` is the same) against `a38e9d697`'s code (this branch's, the Go tree unchanged since), `served_msgboundary.py --no-regression`, r1 to r4 as T2, A B B A, one server per cell, the exclusive timing lock, a cell above load 8.0 void and re-run once, on `qwen3.5-0.8b` (`--ctx 12288`) and on the 9B (`--ctx 8192`, fit-checked as R1 was, `--report-cost-only`).
+
+| | PASS | PARKED (the ambiguous band; the owner weighs it) | FAIL |
+|---|---|---|---|
+| r3 first token, change over main | 0.98 to 1.02 | 0.95 to 0.98, or 1.02 to 1.05 | outside 0.95 to 1.05 |
+| r3 rows reused | equal to main's | | different |
+| r1 (cold) first token | at most 1.05 | above 1.05, at most 1.10 | above 1.10 |
+| r2 and r4 first token | at most 1.05, or at most 0.03 s slower | above that, at most 1.10 or 0.06 s slower | beyond |
+| r2 and r4 rows reused | not fewer than main's | | fewer |
+| replies r1 to r4 | equal to main's | | any differs |
+| peak `VmSwap` | at most 512 MB | | above |
+
+- **The 0.03 s allowance on r2 and r4** is a noise floor, stated here before the run: their first tokens are 0.3 s on the 0.8B (1.1 s on the 9B), and T3b's own cells read 0.33 against 0.35 s (1.079 as a ratio) with nothing different between the arms. A ratio bar alone would grade that noise.
+- **Worst of the two pairs, on each model; PASS needs both models.** The cold cost is reported as in T3b: the preamble snapshot's rows, host MiB and copy ms, and r1's first-token difference in seconds.
+- **Void if:** a timed cell outside the lock, a NOT RUN counted as a pass, a bar moved after a reading. **Stopping rule:** the four cells per model, no early stop. **Cost:** about 2 minutes on the 0.8B and 6 on the 9B; times from `date` when it runs.
