@@ -1,0 +1,4 @@
+{"cell": "S1", "build": "main", "req": "r1", "ttft_s": 74.9859049320221, "reused": 0, "prompt_tokens": 7419, "reply": "Acknowledged. Nothing else to add on that.\n"}
+{"cell": "S1", "build": "main", "req": "r2", "ttft_s": 0.17052173614501953, "reused": 7430, "prompt_tokens": 7446, "reply": "Acknowledged. Nothing else to add on that.\n"}
+{"cell": "S1", "build": "main", "req": "r3", "ttft_s": 74.95258235931396, "reused": 0, "prompt_tokens": 7420, "reply": "Acknowledged. Nothing else to add on that.\n"}
+{"cell": "S1", "build": "main", "req": "r4", "ttft_s": 0.17075300216674805, "reused": 7431, "prompt_tokens": 7447, "reply": "Acknowledged. Nothing else to add on that.\n"}

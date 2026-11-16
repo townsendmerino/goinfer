@@ -1,0 +1,11 @@
+[07:26:42] cell S1 (main): load 0.85, 61395 MB available, 503 MiB on the card
+[07:28:03]   S1 r1: 7419 tokens, reused 0, first token 74.99 s
+[07:28:04]   S1 r2: 7446 tokens, reused 7430, first token 0.17 s
+[07:29:19]   S1 r3: 7420 tokens, reused 0, first token 74.95 s
+[07:29:19]   S1 r4: 7447 tokens, reused 7431, first token 0.17 s
+[07:29:19]   S1: loaded in 6.0 s, peak VmSwap 0 MB, snapshots taken (rows) []
+  no snapshot taken: True
+  r3 reuses 0 rows: True
+  r2 reuses at least one row: True
+  VmSwap at most 512 MB: True
+VERDICT: PASS
