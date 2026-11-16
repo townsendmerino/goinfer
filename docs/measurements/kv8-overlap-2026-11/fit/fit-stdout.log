@@ -1,0 +1,8 @@
+loaded in 4.5 s, 1410 MiB on the card
+  cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+  cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+  cuda: recurrent checkpoint: 19.3 MiB on the device (36 buffers, KV8a)
+    fit: 12288-token cap needs 0.3 GB KV (weights 0.4 GB, budget 41.6 GB, 41.3 GB left for a request's own prefill)
+    KV plan: 1 conversation x 12288 positions (--ctx 12288; 0.7 GB held back for the vision tower)
+    prefix snapshots: budget 6.3 GiB (auto: 1/10 of 62.7 GiB of RAM, at most 8.0 GiB), 0 B held; host memory is pinned only while a snapshot is held (taken after a cold first prefill of 2048 ids or more
+  "qwen3.5-0.8b" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
