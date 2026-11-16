@@ -1,0 +1,380 @@
+=== RUN   TestResidentDrafter_fuseContextReleasesScratch
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (20 MiB of scratch; 7000 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7000 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7000 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6868 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (292 MiB of scratch; 2090 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    drafter_leak_test.go:99: free VRAM before ramp: 1815281664, after: 1811087360 (drop 4194304 bytes; one call's own buffers ≈ 4751616 bytes)
+--- PASS: TestResidentDrafter_fuseContextReleasesScratch (19.47s)
+=== RUN   TestDFlashLoop_lossless
+cuda: prefill width 2048 rows (292 MiB of scratch; 2090 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    drafter_loop_test.go:168: spec loop: 25 tokens in 10 rounds, 300 ms (2.50 tok/round)
+    drafter_loop_test.go:200: LOSSLESS: 25 tokens identical to plain greedy
+--- PASS: TestDFlashLoop_lossless (14.71s)
+=== RUN   TestResidentDrafter_fuseParity
+cuda: prefill width 2048 rows (292 MiB of scratch; 2090 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    drafter_test.go:74: drafter attached: 5 layers, hidden 2560, fc 2560x12800
+    drafter_test.go:124: row 0: cosine 0.999653
+    drafter_test.go:124: row 1: cosine 0.999684
+    drafter_test.go:124: row 2: cosine 0.999703
+    drafter_test.go:124: row 3: cosine 0.999705
+    drafter_test.go:124: row 4: cosine 0.999699
+    drafter_test.go:124: row 5: cosine 0.999679
+--- PASS: TestResidentDrafter_fuseParity (14.19s)
+=== RUN   TestResidentDrafter_extendContext
+    drafter_test.go:145: ISOLATED-RUN: AttachDrafter's second resident hit CUDA_ERROR_OUT_OF_MEMORY in the one-process heavy tier; passes alone
+cuda: prefill width 2048 rows (292 MiB of scratch; 2090 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    drafter_test.go:238: incremental (4+4) is BIT-IDENTICAL to one-shot (8) across 8192 K values
+--- PASS: TestResidentDrafter_extendContext (14.64s)
+=== RUN   TestResidentDrafter_blockParity
+cuda: prefill width 2048 rows (292 MiB of scratch; 2090 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    drafter_test.go:341: row  0: cosine 0.998299
+    drafter_test.go:341: row  1: cosine 0.998422
+    drafter_test.go:341: row  2: cosine 0.998363
+    drafter_test.go:341: row  3: cosine 0.998656
+    drafter_test.go:341: row  4: cosine 0.998657
+    drafter_test.go:341: row  5: cosine 0.998392
+    drafter_test.go:341: row  6: cosine 0.998381
+    drafter_test.go:341: row  7: cosine 0.997858
+    drafter_test.go:341: row  8: cosine 0.997839
+    drafter_test.go:341: row  9: cosine 0.998039
+    drafter_test.go:341: row 10: cosine 0.997463
+    drafter_test.go:341: row 11: cosine 0.997717
+    drafter_test.go:341: row 12: cosine 0.997758
+    drafter_test.go:341: row 13: cosine 0.997278
+    drafter_test.go:341: row 14: cosine 0.998087
+    drafter_test.go:341: row 15: cosine 0.998247
+    drafter_test.go:343: worst row cosine 0.997278 over 16 rows, ctx=24, 5 layers
+--- PASS: TestResidentDrafter_blockParity (15.45s)
+=== RUN   TestResidentDrafter_streamedAttachMatchesHeld
+cuda: prefill width 2048 rows (292 MiB of scratch; 2090 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestResidentDrafter_streamedAttachMatchesHeld (15.42s)
+=== RUN   TestResidentDrafter_bf16AttachMatchesF32
+cuda: prefill width 2048 rows (292 MiB of scratch; 2090 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestResidentDrafter_bf16AttachMatchesF32/held
+=== RUN   TestResidentDrafter_bf16AttachMatchesF32/opened
+--- PASS: TestResidentDrafter_bf16AttachMatchesF32 (16.48s)
+    --- PASS: TestResidentDrafter_bf16AttachMatchesF32/held (1.47s)
+    --- PASS: TestResidentDrafter_bf16AttachMatchesF32/opened (1.11s)
+=== RUN   TestGemma4MoE_floatParity
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (62 MiB of scratch; 6830 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    floatact_test.go:52: pos  0: cosine 1.0000000 argmax gpu 216 cpu 216
+    floatact_test.go:52: pos  1: cosine 1.0000000 argmax gpu 53 cpu 53
+    floatact_test.go:52: pos  2: cosine 1.0000000 argmax gpu 42 cpu 42
+    floatact_test.go:52: pos  3: cosine 1.0000000 argmax gpu 100 cpu 100
+    floatact_test.go:52: pos  4: cosine 1.0000000 argmax gpu 42 cpu 42
+    floatact_test.go:52: pos  5: cosine 1.0000000 argmax gpu 200 cpu 200
+    floatact_test.go:52: pos  6: cosine 1.0000000 argmax gpu 111 cpu 111
+    floatact_test.go:52: pos  7: cosine 1.0000000 argmax gpu 88 cpu 88
+    floatact_test.go:52: pos  8: cosine 1.0000000 argmax gpu 3 cpu 3
+    floatact_test.go:52: pos  9: cosine 1.0000000 argmax gpu 71 cpu 71
+    floatact_test.go:52: pos 10: cosine 1.0000000 argmax gpu 99 cpu 99
+    floatact_test.go:52: pos 11: cosine 1.0000000 argmax gpu 161 cpu 161
+    floatact_test.go:52: pos 12: cosine 1.0000000 argmax gpu 150 cpu 150
+    floatact_test.go:52: pos 13: cosine 1.0000000 argmax gpu 13 cpu 13
+    floatact_test.go:52: pos 14: cosine 1.0000000 argmax gpu 87 cpu 87
+    floatact_test.go:52: pos 15: cosine 1.0000000 argmax gpu 104 cpu 104
+--- PASS: TestGemma4MoE_floatParity (0.34s)
+=== RUN   TestGemma4_26B_1bBound
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.4 GB free — capping to 29 (3.0 GB)
+cuda: prefill width 1024 rows (144 MiB of scratch; 232 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+    gemma4_26b_bound_test.go:113: Lever-1b BOUND (26B, 30 MoE layers):
+    gemma4_26b_bound_test.go:114:   dense branch:  0.0515 ms/layer → 1.54 ms/token  (the COVER — 1b's ceiling)
+    gemma4_26b_bound_test.go:115:   router:        0.0309 ms/layer → 0.93 ms/token
+    gemma4_26b_bound_test.go:116:   readback drain ≈ 12.0 ms/token (probe-derived)
+    gemma4_26b_bound_test.go:117:   MAX recoverable by 1b ≈ 1.54 ms/token → 59 ms would become ~57.5 ms (~17.4 tok/s)
+    gemma4_26b_bound_test.go:120:   VERDICT: THIN COVER — dense branch hides <half the drain; 1b not worth the primitive+reorder. Prefer cross-layer pipelining (larger design) or dispatch reduction. densePerTok=1.54 < 6.00
+--- PASS: TestGemma4_26B_1bBound (61.92s)
+=== RUN   TestGemma4_26B_cache_B
+    gemma4_26b_cache_test.go:48: ISOLATED-RUN: the 26B's resident declined (4.00 GB free beside the weights) in the one-process heavy tier; passes alone
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.4 GB free — capping to 29 (3.0 GB)
+cuda: prefill width 1024 rows (144 MiB of scratch; 232 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+    gemma4_26b_cache_test.go:90: loaded 26B resident + C′ staging in 58s (11.4 GB experts host-pinned; ~0.7 GB slots + ~1.3 GB core in VRAM)
+    gemma4_26b_cache_test.go:191: B′ OK — 26B resident via C′ (29 slots/layer): 64 tok, distinct-trigram 0.822, 38 ms/tok (26.26 tok/s — capture OFF; sync H2D; informative capability number, NOT a same-machine benchmark)
+          cont: "The capital of France is **Paris**.\n\nParis is world-famous for many things, including:\n\n*   **Iconic Landmarks:** It is home to the **Eiffel Tower**, the **Louvre Museum** (the world's largest art museum), the **Notre-Dame Cathedral**, and the **Arc"
+    gemma4_26b_cache_test.go:194: C′ cache: 11900 hits / 5056 misses = 70.2% hit rate (each hit is one skipped expert DMA; nSlots=29, topK=8, nE=128) — set GOINFER_MOE_CACHE_SLOTS>topK for cross-token reuse
+--- PASS: TestGemma4_26B_cache_B (63.44s)
+=== RUN   TestGemma4_26B_s10DumpCUDA
+    gemma4_26b_s10dump_cuda_test.go:29: set GOINFER_S10_DUMP_DIR and GOINFER_S10_GIW
+--- SKIP: TestGemma4_26B_s10DumpCUDA (0.00s)
+=== RUN   TestGemma4BidirSpanPrefill_matchesCPU
+cuda: prefill width 2048 rows (56 MiB of scratch; 6926 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    gemma4_bidir_span_prefill_test.go:146: ../../testdata/gemma4-vl-bidir-tiny span-first  cos 1.000000 argmax gpu=149 cpu=149
+    gemma4_bidir_span_prefill_test.go:146: ../../testdata/gemma4-vl-bidir-tiny span-middle cos 0.999974 argmax gpu=100 cpu=100
+    gemma4_bidir_span_prefill_test.go:146: ../../testdata/gemma4-vl-bidir-tiny span-last   cos 1.000000 argmax gpu=48 cpu=48
+    gemma4_bidir_span_prefill_test.go:146: ../../testdata/gemma4-vl-bidir-tiny two-spans   cos 1.000000 argmax gpu=100 cpu=100
+    gemma4_bidir_span_prefill_test.go:167: ../../testdata/gemma4-vl-bidir-tiny control, text only: shipped PrefillLast vs CPU int4 cos 0.999917 argmax gpu=100 cpu=100
+    gemma4_bidir_span_prefill_test.go:194: ../../testdata/gemma4-vl-bidir-tiny span-first  one pass == 4-row passes: bit-identical
+    gemma4_bidir_span_prefill_test.go:194: ../../testdata/gemma4-vl-bidir-tiny span-middle one pass == 4-row passes: bit-identical
+    gemma4_bidir_span_prefill_test.go:194: ../../testdata/gemma4-vl-bidir-tiny span-last   one pass == 4-row passes: bit-identical
+    gemma4_bidir_span_prefill_test.go:194: ../../testdata/gemma4-vl-bidir-tiny two-spans   one pass == 4-row passes: bit-identical
+    gemma4_bidir_span_prefill_test.go:203: ../../testdata/gemma4-vl-bidir-tiny span-first  causal (spans dropped): cos 0.651606 argmax gpu=100 cpu=149
+    gemma4_bidir_span_prefill_test.go:203: ../../testdata/gemma4-vl-bidir-tiny span-middle causal (spans dropped): cos 0.823157 argmax gpu=100 cpu=100
+    gemma4_bidir_span_prefill_test.go:203: ../../testdata/gemma4-vl-bidir-tiny span-last   causal (spans dropped): cos 0.640544 argmax gpu=76 cpu=48
+    gemma4_bidir_span_prefill_test.go:203: ../../testdata/gemma4-vl-bidir-tiny two-spans   causal (spans dropped): cos 0.621540 argmax gpu=100 cpu=100
+cuda: prefill width 2048 rows (108 MiB of scratch; 6588 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    gemma4_bidir_span_prefill_test.go:146: ../../testdata/gemma4-vl-bidir-scaled span-first  cos 0.997578 argmax gpu=127 cpu=127
+    gemma4_bidir_span_prefill_test.go:146: ../../testdata/gemma4-vl-bidir-scaled span-middle cos 0.998004 argmax gpu=127 cpu=127
+    gemma4_bidir_span_prefill_test.go:146: ../../testdata/gemma4-vl-bidir-scaled span-last   cos 0.980072 argmax gpu=62 cpu=62
+    gemma4_bidir_span_prefill_test.go:146: ../../testdata/gemma4-vl-bidir-scaled two-spans   cos 0.994742 argmax gpu=127 cpu=127
+    gemma4_bidir_span_prefill_test.go:167: ../../testdata/gemma4-vl-bidir-scaled control, text only: shipped PrefillLast vs CPU int4 cos 0.995896 argmax gpu=127 cpu=127
+    gemma4_bidir_span_prefill_test.go:194: ../../testdata/gemma4-vl-bidir-scaled span-first  one pass == 4-row passes: bit-identical
+    gemma4_bidir_span_prefill_test.go:194: ../../testdata/gemma4-vl-bidir-scaled span-middle one pass == 4-row passes: bit-identical
+    gemma4_bidir_span_prefill_test.go:194: ../../testdata/gemma4-vl-bidir-scaled span-last   one pass == 4-row passes: bit-identical
+    gemma4_bidir_span_prefill_test.go:194: ../../testdata/gemma4-vl-bidir-scaled two-spans   one pass == 4-row passes: bit-identical
+    gemma4_bidir_span_prefill_test.go:203: ../../testdata/gemma4-vl-bidir-scaled span-first  causal (spans dropped): cos 0.862557 argmax gpu=127 cpu=127
+    gemma4_bidir_span_prefill_test.go:203: ../../testdata/gemma4-vl-bidir-scaled span-middle causal (spans dropped): cos 0.684939 argmax gpu=127 cpu=127
+    gemma4_bidir_span_prefill_test.go:203: ../../testdata/gemma4-vl-bidir-scaled span-last   causal (spans dropped): cos 0.641078 argmax gpu=62 cpu=62
+    gemma4_bidir_span_prefill_test.go:203: ../../testdata/gemma4-vl-bidir-scaled two-spans   causal (spans dropped): cos 0.509619 argmax gpu=127 cpu=127
+--- PASS: TestGemma4BidirSpanPrefill_matchesCPU (2.70s)
+=== RUN   TestGemma4BidirSpanPrefill_plantedDefects
+cuda: prefill width 2048 rows (56 MiB of scratch; 6926 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    gemma4_bidir_span_prefill_test.go:235:   [mask left causal] ../../testdata/gemma4-vl-bidir-tiny span-first  cos 0.651606 argmax gpu=100 cpu=149 pass=false
+    gemma4_bidir_span_prefill_test.go:235:   [mask left causal] ../../testdata/gemma4-vl-bidir-tiny span-middle cos 0.823157 argmax gpu=100 cpu=100 pass=false
+    gemma4_bidir_span_prefill_test.go:235:   [mask left causal] ../../testdata/gemma4-vl-bidir-tiny span-last   cos 0.640544 argmax gpu=76 cpu=48 pass=false
+    gemma4_bidir_span_prefill_test.go:235:   [mask left causal] ../../testdata/gemma4-vl-bidir-tiny two-spans   cos 0.621540 argmax gpu=100 cpu=100 pass=false
+    gemma4_bidir_span_prefill_test.go:246: G-S19b: "mask left causal" red on 4 layouts
+    gemma4_bidir_span_prefill_test.go:235:   [span end one row short] ../../testdata/gemma4-vl-bidir-tiny span-first  cos 0.868805 argmax gpu=149 cpu=149 pass=false
+    gemma4_bidir_span_prefill_test.go:235:   [span end one row short] ../../testdata/gemma4-vl-bidir-tiny span-middle cos 0.847202 argmax gpu=100 cpu=100 pass=false
+    gemma4_bidir_span_prefill_test.go:235:   [span end one row short] ../../testdata/gemma4-vl-bidir-tiny span-last   cos 0.565339 argmax gpu=76 cpu=48 pass=false
+    gemma4_bidir_span_prefill_test.go:235:   [span end one row short] ../../testdata/gemma4-vl-bidir-tiny two-spans   cos 0.943744 argmax gpu=100 cpu=100 pass=false
+    gemma4_bidir_span_prefill_test.go:246: G-S19b: "span end one row short" red on 4 layouts
+    gemma4_bidir_span_prefill_test.go:235:   [no reach-back to the span start (Gemma 3's window rule)] ../../testdata/gemma4-vl-bidir-tiny span-first  cos 0.923022 argmax gpu=100 cpu=149 pass=false
+    gemma4_bidir_span_prefill_test.go:235:   [no reach-back to the span start (Gemma 3's window rule)] ../../testdata/gemma4-vl-bidir-tiny span-middle cos 0.889074 argmax gpu=16 cpu=100 pass=false
+    gemma4_bidir_span_prefill_test.go:235:   [no reach-back to the span start (Gemma 3's window rule)] ../../testdata/gemma4-vl-bidir-tiny span-last   cos 0.564941 argmax gpu=76 cpu=48 pass=false
+    gemma4_bidir_span_prefill_test.go:235:   [no reach-back to the span start (Gemma 3's window rule)] ../../testdata/gemma4-vl-bidir-tiny two-spans   cos 0.784708 argmax gpu=100 cpu=100 pass=false
+    gemma4_bidir_span_prefill_test.go:246: G-S19b: "no reach-back to the span start (Gemma 3's window rule)" red on 4 layouts
+    gemma4_bidir_span_prefill_test.go:235:   [image rows scaled by the embed scale] ../../testdata/gemma4-vl-bidir-tiny span-first  cos 0.729828 argmax gpu=100 cpu=149 pass=false
+    gemma4_bidir_span_prefill_test.go:235:   [image rows scaled by the embed scale] ../../testdata/gemma4-vl-bidir-tiny span-middle cos 0.786207 argmax gpu=100 cpu=100 pass=false
+    gemma4_bidir_span_prefill_test.go:235:   [image rows scaled by the embed scale] ../../testdata/gemma4-vl-bidir-tiny span-last   cos 0.573333 argmax gpu=20 cpu=48 pass=false
+    gemma4_bidir_span_prefill_test.go:235:   [image rows scaled by the embed scale] ../../testdata/gemma4-vl-bidir-tiny two-spans   cos 0.711753 argmax gpu=100 cpu=100 pass=false
+    gemma4_bidir_span_prefill_test.go:246: G-S19b: "image rows scaled by the embed scale" red on 4 layouts
+--- PASS: TestGemma4BidirSpanPrefill_plantedDefects (0.43s)
+=== RUN   TestGemma4BidirSpanPrefill_real26B
+decoder: gemma4-26b-int4.giw is not in memory: reading its 14.6 GB once before the load
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.4 GB free — capping to 29 (3.0 GB)
+cuda: prefill width 1024 rows (144 MiB of scratch; 232 MiB free beyond the 173 MiB kept beside a pass); passes take up to 1024 rows
+    gemma4_bidir_span_real_test.go:117: inv01.png: 548 rows (span [5,525)), tower 30.8s | resident span prefill 4.93s, CPU prefill 90.0s | last-position cosine 0.996878, argmax gpu=69572 "Invoice" cpu=69572 "Invoice"
+    gemma4_bidir_span_real_test.go:117: inv02.png: 553 rows (span [5,530)), tower 30.7s | resident span prefill 4.97s, CPU prefill 81.7s | last-position cosine 0.994045, argmax gpu=51344 "Bright" cpu=51344 "Bright"
+    gemma4_bidir_span_real_test.go:117: table.png: 568 rows (span [5,545)), tower 32.0s | resident span prefill 5.08s, CPU prefill 96.1s | last-position cosine 0.991305, argmax gpu=5010 "Table" cpu=5010 "Table"
+--- PASS: TestGemma4BidirSpanPrefill_real26B (406.02s)
+=== RUN   TestGemma4BidirSpanPrefill_real26BDecode
+cuda: windowed KV: sliding-window layers hold 1536 positions (window 1024 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 16384
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: windowed KV: 576 more positions from free VRAM (225 MB of 3803 MB free); a follow-up may now diverge 1024 before the newest
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.8 GB free — capping to 32 (3.3 GB)
+    gemma4_bidir_span_real_test.go:294: turn 1 span:inv01: "Invoice No: A-01778\\nDate: 10/24/2026\\nDue: 11/24/2026\\n\\nFrom: Harbor Light Supply Co.\\nAddress: 711 Ridge Park Drive, Austin, TX 78701\\n\\nBill To: Thistle & Rowan Ltd\\nAddress: 9 Foundry Way, Bristol BS1 5TR\\n\\nNo: 1\\nDescription: Binding spine strips"
+    gemma4_bidir_span_real_test.go:294: turn 2 span:inv02: "Brightwater Logistics Ltd: TAX INVOICE\\n402 Harbour Road, Denver, CO 80202\\nBilled to: Orchid Bay Hospitality\\n3300 Cascade Blvd, Portland, OR 97209\\nInvoice number: 06824\\nIssued: 03/13/2026\\nPayment due: 04/13/2026\\n\\nNo: 1\\nDescription: A4 paper"
+    gemma4_bidir_span_real_test.go:294: turn 3 span:table: "Table 2. Quarterly unit sales by region (thousands)\\n\\n| Region | Q1 | Q2 | Q3 | Q4 | Total |\\n| :--- | :--- | :--- | :--- | :--- | :--- |\\n| North | 128.4 | 135.9 | 142.2 | 151.0 | 557.5 |\\n| South | 97.1 | "
+    gemma4_bidir_span_real_test.go:294: turn 4 cpu:inv01: "Invoice No: A-01778\\nDate: 10/24/2026\\nDue: 11/24/2026\\n\\nFrom: Harbor Light Supply Co.\\nAddress: 711 Ridge Park Drive, Austin, TX 78701\\n\\nBill To: Thistle & Rowan Ltd\\nAddress: 9 Foundry Way, Bristol BS1 5TR\\n\\nNo: 1\\nDescription: Binding spine strips"
+    gemma4_bidir_span_real_test.go:294: turn 5 cpu:inv02: "Brightwater Logistics Ltd: TAX INVOICE\\n402 Harbour Road, Denver, CO 80202\\nBilled to: Orchid Bay Hospitality\\nBilled to Address: 3300 Cascade Blvd, Portland, OR 97209\\nInvoice number: 06824\\nIssued: 03/13/2026\\nPayment due: 04/13/2026\\n\\nNo: 1"
+    gemma4_bidir_span_real_test.go:294: turn 6 cpu:table: "Table 2. Quarterly unit sales by region (thousands)\\n\\n| Region | Q1 | Q2 | Q3 | Q4 | Total |\\n| :--- | :--- | :--- | :--- | :--- | :--- |\\n| North | 128.4 | 135.9 | 142.2 | 151.0 | 557.5 |\\n| South | 97.1 | "
+    gemma4_bidir_span_real_test.go:294: turn 7 span:table: "Table 2. Quarterly unit sales by region (thousands)\\n\\n| Region | Q1 | Q2 | Q3 | Q4 | Total |\\n| :--- | :--- | :--- | :--- | :--- | :--- |\\n| North | 128.4 | 135.9 | 142.2 | 151.0 | 557.5 |\\n| South | 97.1 | "
+    gemma4_bidir_span_real_test.go:294: turn 8 span:inv01: "Invoice No: A-01778\\nDate: 10/24/2026\\nDue: 11/24/2026\\n\\nFrom: Harbor Light Supply Co.\\nAddress: 711 Ridge Park Drive, Austin, TX 78701\\n\\nBill To: Thistle & Rowan Ltd\\nAddress: 9 Foundry Way, Bristol BS1 5TR\\n\\nNo: 1\\nDescription: Binding spine strips"
+    gemma4_bidir_span_real_test.go:299: inv01 span run 1 vs CPU+upload: first difference at decode step -1
+    gemma4_bidir_span_real_test.go:299: inv01 span run 2 vs CPU+upload: first difference at decode step -1
+    gemma4_bidir_span_real_test.go:299: inv02 span run 1 vs CPU+upload: first difference at decode step 34
+    gemma4_bidir_span_real_test.go:299: table span run 1 vs CPU+upload: first difference at decode step -1
+    gemma4_bidir_span_real_test.go:299: table span run 2 vs CPU+upload: first difference at decode step -1
+--- PASS: TestGemma4BidirSpanPrefill_real26BDecode (432.99s)
+=== RUN   TestGemma4_26BDecodeLocalize
+cuda: windowed KV: sliding-window layers hold 1536 positions (window 1024 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 16384
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: windowed KV: 576 more positions from free VRAM (225 MB of 3803 MB free); a follow-up may now diverge 1024 before the newest
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.8 GB free — capping to 32 (3.3 GB)
+    gemma4_bidir_span_real_test.go:350: resident decode activations: float=true
+    gemma4_bidir_span_real_test.go:383: step   0 pos 568: logits cos 1.000000 argmax gpu 5010 "Table" cpu 5010 "Table"
+    gemma4_bidir_span_real_test.go:383: step   1 pos 569: logits cos 0.988963 argmax gpu 236743 " " cpu 236743 " "
+    gemma4_bidir_span_real_test.go:383: step   2 pos 570: logits cos 0.995300 argmax gpu 236778 "2" cpu 236778 "2"
+    gemma4_bidir_span_real_test.go:383: step   3 pos 571: logits cos 0.960368 argmax gpu 236761 "." cpu 236761 "."
+    gemma4_bidir_span_real_test.go:383: step   4 pos 572: logits cos 0.999239 argmax gpu 63919 " Quarterly" cpu 63919 " Quarterly"
+    gemma4_bidir_span_real_test.go:383: step   5 pos 573: logits cos 0.999893 argmax gpu 4360 " unit" cpu 4360 " unit"
+    gemma4_bidir_span_real_test.go:383: step   6 pos 574: logits cos 0.999848 argmax gpu 5886 " sales" cpu 5886 " sales"
+    gemma4_bidir_span_real_test.go:383: step   7 pos 575: logits cos 0.999431 argmax gpu 684 " by" cpu 684 " by"
+    gemma4_bidir_span_real_test.go:383: step   8 pos 576: logits cos 0.999137 argmax gpu 4128 " region" cpu 4128 " region"
+    gemma4_bidir_span_real_test.go:383: step   9 pos 577: logits cos 0.997227 argmax gpu 568 " (" cpu 568 " ("
+    gemma4_bidir_span_real_test.go:383: step  10 pos 578: logits cos 0.999977 argmax gpu 212346 "thousands" cpu 212346 "thousands"
+    gemma4_bidir_span_real_test.go:383: step  11 pos 579: logits cos 0.997557 argmax gpu 236768 ")" cpu 236768 ")"
+    gemma4_bidir_span_real_test.go:383: step  12 pos 580: logits cos 0.987206 argmax gpu 108 "\\n\\n" cpu 108 "\\n\\n"
+    gemma4_bidir_span_real_test.go:383: step  13 pos 581: logits cos 0.997211 argmax gpu 236909 "|" cpu 236909 "|"
+    gemma4_bidir_span_real_test.go:383: step  14 pos 582: logits cos 0.996828 argmax gpu 19037 " Region" cpu 19037 " Region"
+    gemma4_bidir_span_real_test.go:383: step  15 pos 583: logits cos 0.993821 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  16 pos 584: logits cos 0.998676 argmax gpu 1366 " Q" cpu 1366 " Q"
+    gemma4_bidir_span_real_test.go:383: step  17 pos 585: logits cos 0.998572 argmax gpu 236770 "1" cpu 236770 "1"
+    gemma4_bidir_span_real_test.go:383: step  18 pos 586: logits cos 0.996018 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  19 pos 587: logits cos 0.999611 argmax gpu 1366 " Q" cpu 1366 " Q"
+    gemma4_bidir_span_real_test.go:383: step  20 pos 588: logits cos 0.999244 argmax gpu 236778 "2" cpu 236778 "2"
+    gemma4_bidir_span_real_test.go:383: step  21 pos 589: logits cos 0.999710 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  22 pos 590: logits cos 0.999794 argmax gpu 1366 " Q" cpu 1366 " Q"
+    gemma4_bidir_span_real_test.go:383: step  23 pos 591: logits cos 0.999848 argmax gpu 236800 "3" cpu 236800 "3"
+    gemma4_bidir_span_real_test.go:383: step  24 pos 592: logits cos 0.999549 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  25 pos 593: logits cos 0.999803 argmax gpu 1366 " Q" cpu 1366 " Q"
+    gemma4_bidir_span_real_test.go:383: step  26 pos 594: logits cos 0.999416 argmax gpu 236812 "4" cpu 236812 "4"
+    gemma4_bidir_span_real_test.go:383: step  27 pos 595: logits cos 0.999426 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  28 pos 596: logits cos 0.999763 argmax gpu 12613 " Total" cpu 12613 " Total"
+    gemma4_bidir_span_real_test.go:383: step  29 pos 597: logits cos 0.999366 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  30 pos 598: logits cos 0.990778 argmax gpu 107 "\\n" cpu 107 "\\n"
+    gemma4_bidir_span_real_test.go:383: step  31 pos 599: logits cos 0.998043 argmax gpu 236909 "|" cpu 236909 "|"
+    gemma4_bidir_span_real_test.go:383: step  32 pos 600: logits cos 0.998829 argmax gpu 1017 " :" cpu 1017 " :"
+    gemma4_bidir_span_real_test.go:383: step  33 pos 601: logits cos 0.999492 argmax gpu 7243 "---" cpu 7243 "---"
+    gemma4_bidir_span_real_test.go:383: step  34 pos 602: logits cos 0.998270 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  35 pos 603: logits cos 0.998699 argmax gpu 1017 " :" cpu 1017 " :"
+    gemma4_bidir_span_real_test.go:383: step  36 pos 604: logits cos 0.996352 argmax gpu 7243 "---" cpu 7243 "---"
+    gemma4_bidir_span_real_test.go:383: step  37 pos 605: logits cos 0.995129 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  38 pos 606: logits cos 0.999660 argmax gpu 1017 " :" cpu 1017 " :"
+    gemma4_bidir_span_real_test.go:383: step  39 pos 607: logits cos 0.998960 argmax gpu 7243 "---" cpu 7243 "---"
+    gemma4_bidir_span_real_test.go:383: step  40 pos 608: logits cos 0.998668 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  41 pos 609: logits cos 0.999361 argmax gpu 1017 " :" cpu 1017 " :"
+    gemma4_bidir_span_real_test.go:383: step  42 pos 610: logits cos 0.997794 argmax gpu 7243 "---" cpu 7243 "---"
+    gemma4_bidir_span_real_test.go:383: step  43 pos 611: logits cos 0.997511 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  44 pos 612: logits cos 0.999519 argmax gpu 1017 " :" cpu 1017 " :"
+    gemma4_bidir_span_real_test.go:383: step  45 pos 613: logits cos 0.998970 argmax gpu 7243 "---" cpu 7243 "---"
+    gemma4_bidir_span_real_test.go:383: step  46 pos 614: logits cos 0.999079 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  47 pos 615: logits cos 0.999731 argmax gpu 1017 " :" cpu 1017 " :"
+    gemma4_bidir_span_real_test.go:383: step  48 pos 616: logits cos 0.997853 argmax gpu 7243 "---" cpu 7243 "---"
+    gemma4_bidir_span_real_test.go:383: step  49 pos 617: logits cos 0.992340 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  50 pos 618: logits cos 0.998494 argmax gpu 107 "\\n" cpu 107 "\\n"
+    gemma4_bidir_span_real_test.go:383: step  51 pos 619: logits cos 0.996599 argmax gpu 236909 "|" cpu 236909 "|"
+    gemma4_bidir_span_real_test.go:383: step  52 pos 620: logits cos 0.999441 argmax gpu 4695 " North" cpu 4695 " North"
+    gemma4_bidir_span_real_test.go:383: step  53 pos 621: logits cos 0.999050 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  54 pos 622: logits cos 0.997732 argmax gpu 236743 " " cpu 236743 " "
+    gemma4_bidir_span_real_test.go:383: step  55 pos 623: logits cos 0.997362 argmax gpu 236770 "1" cpu 236770 "1"
+    gemma4_bidir_span_real_test.go:383: step  56 pos 624: logits cos 0.999522 argmax gpu 236778 "2" cpu 236778 "2"
+    gemma4_bidir_span_real_test.go:383: step  57 pos 625: logits cos 0.999675 argmax gpu 236828 "8" cpu 236828 "8"
+    gemma4_bidir_span_real_test.go:383: step  58 pos 626: logits cos 0.998979 argmax gpu 236761 "." cpu 236761 "."
+    gemma4_bidir_span_real_test.go:383: step  59 pos 627: logits cos 0.999205 argmax gpu 236812 "4" cpu 236812 "4"
+    gemma4_bidir_span_real_test.go:383: step  60 pos 628: logits cos 0.999649 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  61 pos 629: logits cos 0.999463 argmax gpu 236743 " " cpu 236743 " "
+    gemma4_bidir_span_real_test.go:383: step  62 pos 630: logits cos 0.996043 argmax gpu 236770 "1" cpu 236770 "1"
+    gemma4_bidir_span_real_test.go:383: step  63 pos 631: logits cos 0.999348 argmax gpu 236800 "3" cpu 236800 "3"
+    gemma4_bidir_span_real_test.go:383: step  64 pos 632: logits cos 0.999736 argmax gpu 236810 "5" cpu 236810 "5"
+    gemma4_bidir_span_real_test.go:383: step  65 pos 633: logits cos 0.999604 argmax gpu 236761 "." cpu 236761 "."
+    gemma4_bidir_span_real_test.go:383: step  66 pos 634: logits cos 0.995788 argmax gpu 236819 "9" cpu 236819 "9"
+    gemma4_bidir_span_real_test.go:383: step  67 pos 635: logits cos 0.999820 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  68 pos 636: logits cos 0.998701 argmax gpu 236743 " " cpu 236743 " "
+    gemma4_bidir_span_real_test.go:383: step  69 pos 637: logits cos 0.998587 argmax gpu 236770 "1" cpu 236770 "1"
+    gemma4_bidir_span_real_test.go:383: step  70 pos 638: logits cos 0.998362 argmax gpu 236812 "4" cpu 236812 "4"
+    gemma4_bidir_span_real_test.go:383: step  71 pos 639: logits cos 0.999669 argmax gpu 236778 "2" cpu 236778 "2"
+    gemma4_bidir_span_real_test.go:383: step  72 pos 640: logits cos 0.999375 argmax gpu 236761 "." cpu 236761 "."
+    gemma4_bidir_span_real_test.go:383: step  73 pos 641: logits cos 0.998960 argmax gpu 236778 "2" cpu 236778 "2"
+    gemma4_bidir_span_real_test.go:383: step  74 pos 642: logits cos 0.999855 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  75 pos 643: logits cos 0.999322 argmax gpu 236743 " " cpu 236743 " "
+    gemma4_bidir_span_real_test.go:383: step  76 pos 644: logits cos 0.999322 argmax gpu 236770 "1" cpu 236770 "1"
+    gemma4_bidir_span_real_test.go:383: step  77 pos 645: logits cos 0.999136 argmax gpu 236810 "5" cpu 236810 "5"
+    gemma4_bidir_span_real_test.go:383: step  78 pos 646: logits cos 0.999569 argmax gpu 236770 "1" cpu 236770 "1"
+    gemma4_bidir_span_real_test.go:383: step  79 pos 647: logits cos 0.999580 argmax gpu 236761 "." cpu 236761 "."
+    gemma4_bidir_span_real_test.go:383: step  80 pos 648: logits cos 0.998405 argmax gpu 236771 "0" cpu 236771 "0"
+    gemma4_bidir_span_real_test.go:383: step  81 pos 649: logits cos 0.999740 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  82 pos 650: logits cos 0.995876 argmax gpu 236743 " " cpu 236743 " "
+    gemma4_bidir_span_real_test.go:383: step  83 pos 651: logits cos 0.999560 argmax gpu 236810 "5" cpu 236810 "5"
+    gemma4_bidir_span_real_test.go:383: step  84 pos 652: logits cos 0.999626 argmax gpu 236810 "5" cpu 236810 "5"
+    gemma4_bidir_span_real_test.go:383: step  85 pos 653: logits cos 0.999663 argmax gpu 236832 "7" cpu 236832 "7"
+    gemma4_bidir_span_real_test.go:383: step  86 pos 654: logits cos 0.998952 argmax gpu 236761 "." cpu 236761 "."
+    gemma4_bidir_span_real_test.go:383: step  87 pos 655: logits cos 0.994721 argmax gpu 236810 "5" cpu 236810 "5"
+    gemma4_bidir_span_real_test.go:383: step  88 pos 656: logits cos 0.999396 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  89 pos 657: logits cos 0.998521 argmax gpu 107 "\\n" cpu 107 "\\n"
+    gemma4_bidir_span_real_test.go:383: step  90 pos 658: logits cos 0.999404 argmax gpu 236909 "|" cpu 236909 "|"
+    gemma4_bidir_span_real_test.go:383: step  91 pos 659: logits cos 0.999806 argmax gpu 4257 " South" cpu 4257 " South"
+    gemma4_bidir_span_real_test.go:383: step  92 pos 660: logits cos 0.999708 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step  93 pos 661: logits cos 0.998940 argmax gpu 236743 " " cpu 236743 " "
+    gemma4_bidir_span_real_test.go:383: step  94 pos 662: logits cos 0.997731 argmax gpu 236819 "9" cpu 236819 "9"
+    gemma4_bidir_span_real_test.go:383: step  95 pos 663: logits cos 0.999562 argmax gpu 236832 "7" cpu 236832 "7"
+    gemma4_bidir_span_real_test.go:446: step  95 (input "7" at pos 663) per-layer residual cos gpu/cpu: L0 0.99985 L1 0.99973 L2 0.99912 L3 0.99956 L4 0.99960 L5 0.99950 L6 0.99943 L7 0.99945 L8 0.99952 L9 0.99942 L10 0.99934 L11 0.99928 L12 0.99792 L13 0.99500 L14 0.99269 L15 0.99570 L16 0.99552 L17 0.99468 L18 0.99286 L19 0.99700 L20 0.99783 L21 0.99796 L22 0.99709 L23 0.99680 L24 0.99657 L25 0.99684 L26 0.99608 L27 0.99505 L28 0.99490 L29 0.99939
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236761 "." 25.542; 1480 "::" 4.516; 236764 "," 4.218; 569 " de" 4.000; 236770 "1" 3.903;  | cpu 236761 "." 25.800; 236764 "," 4.368; 569 " de" 3.926; 1480 "::" 3.666; 236770 "1" 3.065;  | gpu residual + cpu head 236761 "." 25.542; 1480 "::" 4.516; 236764 "," 4.218; 569 " de" 4.000; 236770 "1" 3.903; 
+    gemma4_bidir_span_real_test.go:455:   token 236761 ".": gpu 25.5422 cpu 25.7996 gpu-residual+cpu-head 25.5422
+    gemma4_bidir_span_real_test.go:455:   token 236761 ".": gpu 25.5422 cpu 25.7996 gpu-residual+cpu-head 25.5422
+    gemma4_bidir_span_real_test.go:383: step  96 pos 664: logits cos 0.999572 argmax gpu 236761 "." cpu 236761 "."
+    gemma4_bidir_span_real_test.go:446: step  96 (input "." at pos 664) per-layer residual cos gpu/cpu: L0 0.99990 L1 0.99987 L2 0.99948 L3 0.99970 L4 0.99961 L5 0.99971 L6 0.99899 L7 0.99508 L8 0.98560 L9 0.96616 L10 0.95908 L11 0.94066 L12 0.93893 L13 0.93388 L14 0.92510 L15 0.90084 L16 0.90404 L17 0.83536 L18 0.71900 L19 0.80953 L20 0.79316 L21 0.77333 L22 0.74729 L23 0.68052 L24 0.66448 L25 0.66807 L26 0.53307 L27 0.56798 L28 0.63417 L29 0.99198
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236770 "1" 26.464; 115241 " ١" 8.099; 236771 "0" 7.925; 128458 " ၁" 7.596; 152646 " ૧" 7.319;  | cpu 236770 "1" 25.551; 1346 " most" 7.845; 759 " la" 7.146; 569 " de" 6.758; 1595 " way" 6.680;  | gpu residual + cpu head 236770 "1" 26.464; 115241 " ١" 8.099; 236771 "0" 7.925; 128458 " ၁" 7.596; 152646 " ૧" 7.319; 
+    gemma4_bidir_span_real_test.go:455:   token 236770 "1": gpu 26.4635 cpu 25.5509 gpu-residual+cpu-head 26.4635
+    gemma4_bidir_span_real_test.go:455:   token 236770 "1": gpu 26.4635 cpu 25.5509 gpu-residual+cpu-head 26.4635
+    gemma4_bidir_span_real_test.go:383: step  97 pos 665: logits cos 0.993366 argmax gpu 236770 "1" cpu 236770 "1"
+    gemma4_bidir_span_real_test.go:446: step  97 (input "1" at pos 665) per-layer residual cos gpu/cpu: L0 0.99981 L1 0.99959 L2 0.99937 L3 0.99970 L4 0.99963 L5 0.99963 L6 0.99937 L7 0.99924 L8 0.99931 L9 0.99951 L10 0.99952 L11 0.99948 L12 0.99925 L13 0.99819 L14 0.99706 L15 0.99793 L16 0.99809 L17 0.99760 L18 0.99627 L19 0.99782 L20 0.99846 L21 0.99849 L22 0.99780 L23 0.99726 L24 0.99714 L25 0.99618 L26 0.99562 L27 0.99451 L28 0.99426 L29 0.99923
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 1109 " |" 20.699; 236909 "|" 9.375; 138 "  " 2.422; 140 "    " 0.616; 4916 " hands" 0.432;  | cpu 1109 " |" 19.825; 236909 "|" 7.852; 138 "  " 1.443; 569 " de" -0.163; 140 "    " -0.363;  | gpu residual + cpu head 1109 " |" 20.699; 236909 "|" 9.375; 138 "  " 2.422; 140 "    " 0.616; 4916 " hands" 0.432; 
+    gemma4_bidir_span_real_test.go:455:   token 1109 " |": gpu 20.6994 cpu 19.8245 gpu-residual+cpu-head 20.6994
+    gemma4_bidir_span_real_test.go:455:   token 1109 " |": gpu 20.6994 cpu 19.8245 gpu-residual+cpu-head 20.6994
+    gemma4_bidir_span_real_test.go:383: step  98 pos 666: logits cos 0.999755 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:446: step  98 (input " |" at pos 666) per-layer residual cos gpu/cpu: L0 0.99986 L1 0.99985 L2 0.99974 L3 0.99983 L4 0.99979 L5 0.99543 L6 0.99682 L7 0.99676 L8 0.99768 L9 0.99885 L10 0.99859 L11 0.99898 L12 0.99910 L13 0.99886 L14 0.99865 L15 0.99890 L16 0.99876 L17 0.99855 L18 0.99728 L19 0.99874 L20 0.99888 L21 0.99885 L22 0.99831 L23 0.99762 L24 0.99756 L25 0.99783 L26 0.99702 L27 0.99472 L28 0.98890 L29 0.99903
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236743 " " 24.084; 236770 "1" 8.310; 138 "  " 7.319; 237050 "な" 6.333; 642 " {" 4.962;  | cpu 236743 " " 23.545; 236770 "1" 7.645; 138 "  " 6.551; 642 " {" 5.607; 237050 "な" 5.031;  | gpu residual + cpu head 236743 " " 24.084; 236770 "1" 8.310; 138 "  " 7.319; 237050 "な" 6.333; 642 " {" 4.962; 
+    gemma4_bidir_span_real_test.go:455:   token 236743 " ": gpu 24.0842 cpu 23.5454 gpu-residual+cpu-head 24.0842
+    gemma4_bidir_span_real_test.go:455:   token 236743 " ": gpu 24.0842 cpu 23.5454 gpu-residual+cpu-head 24.0842
+    gemma4_bidir_span_real_test.go:383: step  99 pos 667: logits cos 0.999190 argmax gpu 236743 " " cpu 236743 " "
+    gemma4_bidir_span_real_test.go:446: step  99 (input " " at pos 667) per-layer residual cos gpu/cpu: L0 0.99991 L1 0.99987 L2 0.99950 L3 0.99967 L4 0.99960 L5 0.99956 L6 0.99919 L7 0.99836 L8 0.99736 L9 0.99776 L10 0.99761 L11 0.99677 L12 0.99639 L13 0.99388 L14 0.98728 L15 0.98484 L16 0.98352 L17 0.94486 L18 0.83375 L19 0.87553 L20 0.87424 L21 0.84041 L22 0.76866 L23 0.68241 L24 0.65257 L25 0.75022 L26 0.68467 L27 0.72658 L28 0.86029 L29 0.99377
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236770 "1" 25.990; 236778 "2" 6.088; 236819 "9" 5.585; 107 "\\n" 4.646; 128458 " ၁" 4.482;  | cpu 236770 "1" 24.081; 236819 "9" 1.934; 569 " de" 1.825; 236778 "2" 1.805; 236771 "0" 1.313;  | gpu residual + cpu head 236770 "1" 25.990; 236778 "2" 6.088; 236819 "9" 5.585; 107 "\\n" 4.646; 128458 " ၁" 4.482; 
+    gemma4_bidir_span_real_test.go:455:   token 236770 "1": gpu 25.9901 cpu 24.0806 gpu-residual+cpu-head 25.9901
+    gemma4_bidir_span_real_test.go:455:   token 236770 "1": gpu 25.9901 cpu 24.0806 gpu-residual+cpu-head 25.9901
+    gemma4_bidir_span_real_test.go:383: step 100 pos 668: logits cos 0.993738 argmax gpu 236770 "1" cpu 236770 "1"
+    gemma4_bidir_span_real_test.go:446: step 100 (input "1" at pos 668) per-layer residual cos gpu/cpu: L0 0.99991 L1 0.99982 L2 0.99928 L3 0.99941 L4 0.99887 L5 0.99853 L6 0.99706 L7 0.99750 L8 0.99666 L9 0.99156 L10 0.96171 L11 0.90386 L12 0.75991 L13 0.45337 L14 0.05907 L15 -0.12923 L16 -0.28144 L17 -0.27178 L18 -0.32312 L19 -0.50803 L20 -0.51685 L21 -0.47817 L22 -0.17223 L23 -0.22263 L24 -0.21575 L25 -0.27328 L26 0.17007 L27 0.34665 L28 0.43394 L29 0.44516
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236771 "0" 22.485; 236770 "1" 9.934; 1346 " most" 6.373; 569 " de" 4.519; 236812 "4" 3.542;  | cpu 236771 "0" 1.179; 236758 "p" -8.362; 64709 " ស" -8.810; 1031 " ," -9.508; 236751 "s" -9.779;  | gpu residual + cpu head 236771 "0" 22.485; 236770 "1" 9.934; 1346 " most" 6.373; 569 " de" 4.519; 236812 "4" 3.542; 
+    gemma4_bidir_span_real_test.go:455:   token 236771 "0": gpu 22.4851 cpu 1.1786 gpu-residual+cpu-head 22.4851
+    gemma4_bidir_span_real_test.go:455:   token 236771 "0": gpu 22.4851 cpu 1.1786 gpu-residual+cpu-head 22.4851
+    gemma4_bidir_span_real_test.go:383: step 101 pos 669: logits cos 0.979269 argmax gpu 236771 "0" cpu 236771 "0"
+    gemma4_bidir_span_real_test.go:446: step 101 (input "0" at pos 669) per-layer residual cos gpu/cpu: L0 0.99979 L1 0.99959 L2 0.99920 L3 0.99962 L4 0.99956 L5 0.99966 L6 0.99951 L7 0.99929 L8 0.99880 L9 0.99906 L10 0.99724 L11 0.99423 L12 0.99562 L13 0.99552 L14 0.99075 L15 0.98912 L16 0.98256 L17 0.94492 L18 0.92832 L19 0.98217 L20 0.99030 L21 0.99390 L22 0.99327 L23 0.99199 L24 0.99345 L25 0.99352 L26 0.99263 L27 0.98912 L28 0.98927 L29 0.99920
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236770 "1" 24.509; 236761 "." 5.753; 236778 "2" 5.273; 236743 " " 4.776; 236771 "0" 4.532;  | cpu 236770 "1" 23.889; 236761 "." 4.640; 236778 "2" 4.568; 236771 "0" 3.624; 236743 " " 3.464;  | gpu residual + cpu head 236770 "1" 24.509; 236761 "." 5.753; 236778 "2" 5.273; 236743 " " 4.776; 236771 "0" 4.532; 
+    gemma4_bidir_span_real_test.go:455:   token 236770 "1": gpu 24.5087 cpu 23.8892 gpu-residual+cpu-head 24.5087
+    gemma4_bidir_span_real_test.go:455:   token 236770 "1": gpu 24.5087 cpu 23.8892 gpu-residual+cpu-head 24.5087
+    gemma4_bidir_span_real_test.go:383: step 102 pos 670: logits cos 0.999321 argmax gpu 236770 "1" cpu 236770 "1"
+    gemma4_bidir_span_real_test.go:446: step 102 (input "1" at pos 670) per-layer residual cos gpu/cpu: L0 0.99983 L1 0.99984 L2 0.99965 L3 0.99979 L4 0.99972 L5 0.99973 L6 0.99966 L7 0.99961 L8 0.99950 L9 0.99956 L10 0.99950 L11 0.99947 L12 0.99947 L13 0.99833 L14 0.99792 L15 0.99881 L16 0.99856 L17 0.99826 L18 0.99695 L19 0.99829 L20 0.99877 L21 0.99861 L22 0.99805 L23 0.99701 L24 0.99667 L25 0.99685 L26 0.99682 L27 0.99653 L28 0.99679 L29 0.99928
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236761 "." 24.762; 236786 "/" 2.721; 236764 "," 2.139; 236779 "_" 1.643; 1480 "::" 0.558;  | cpu 236761 "." 24.751; 236786 "/" 2.313; 236764 "," 1.955; 236779 "_" 0.914; 1595 " way" 0.848;  | gpu residual + cpu head 236761 "." 24.762; 236786 "/" 2.721; 236764 "," 2.139; 236779 "_" 1.643; 1480 "::" 0.558; 
+    gemma4_bidir_span_real_test.go:455:   token 236761 ".": gpu 24.7615 cpu 24.7506 gpu-residual+cpu-head 24.7615
+    gemma4_bidir_span_real_test.go:455:   token 236761 ".": gpu 24.7615 cpu 24.7506 gpu-residual+cpu-head 24.7615
+    gemma4_bidir_span_real_test.go:383: step 103 pos 671: logits cos 0.999708 argmax gpu 236761 "." cpu 236761 "."
+    gemma4_bidir_span_real_test.go:446: step 103 (input "." at pos 671) per-layer residual cos gpu/cpu: L0 0.99986 L1 0.99978 L2 0.99936 L3 0.99970 L4 0.99968 L5 0.99970 L6 0.99947 L7 0.99700 L8 0.99642 L9 0.99683 L10 0.99717 L11 0.99791 L12 0.99762 L13 0.99671 L14 0.99506 L15 0.99218 L16 0.97517 L17 0.97387 L18 0.96497 L19 0.98276 L20 0.98306 L21 0.98402 L22 0.98432 L23 0.98228 L24 0.98102 L25 0.97542 L26 0.95537 L27 0.96543 L28 0.98287 L29 0.99809
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236825 "6" 23.479; 236770 "1" 7.616; 236810 "5" 6.901; 236812 "4" 6.824; 236800 "3" 6.004;  | cpu 236825 "6" 23.089; 236770 "1" 7.883; 236812 "4" 6.829; 236810 "5" 6.495; 236800 "3" 6.269;  | gpu residual + cpu head 236825 "6" 23.479; 236770 "1" 7.616; 236810 "5" 6.901; 236812 "4" 6.824; 236800 "3" 6.004; 
+    gemma4_bidir_span_real_test.go:455:   token 236825 "6": gpu 23.4792 cpu 23.0887 gpu-residual+cpu-head 23.4792
+    gemma4_bidir_span_real_test.go:455:   token 236825 "6": gpu 23.4792 cpu 23.0887 gpu-residual+cpu-head 23.4792
+    gemma4_bidir_span_real_test.go:383: step 104 pos 672: logits cos 0.999121 argmax gpu 236825 "6" cpu 236825 "6"
+    gemma4_bidir_span_real_test.go:446: step 104 (input "6" at pos 672) per-layer residual cos gpu/cpu: L0 0.99977 L1 0.99971 L2 0.99948 L3 0.99973 L4 0.99970 L5 0.99938 L6 0.99950 L7 0.99934 L8 0.99936 L9 0.99951 L10 0.99959 L11 0.99952 L12 0.99933 L13 0.99898 L14 0.99856 L15 0.99872 L16 0.99848 L17 0.99821 L18 0.99691 L19 0.99843 L20 0.99879 L21 0.99719 L22 0.99564 L23 0.99078 L24 0.99145 L25 0.99258 L26 0.99341 L27 0.99313 L28 0.98916 L29 0.99881
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 1109 " |" 20.333; 236909 "|" 6.213; 1017 " :" -0.790; 900 " +" -1.670; 138 "  " -1.690;  | cpu 1109 " |" 20.628; 236909 "|" 6.853; 900 " +" -0.712; 1017 " :" -1.296; 138 "  " -1.475;  | gpu residual + cpu head 1109 " |" 20.333; 236909 "|" 6.213; 1017 " :" -0.790; 900 " +" -1.670; 138 "  " -1.690; 
+    gemma4_bidir_span_real_test.go:455:   token 1109 " |": gpu 20.3327 cpu 20.6283 gpu-residual+cpu-head 20.3327
+    gemma4_bidir_span_real_test.go:455:   token 1109 " |": gpu 20.3327 cpu 20.6283 gpu-residual+cpu-head 20.3327
+    gemma4_bidir_span_real_test.go:383: step 105 pos 673: logits cos 0.999802 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:446: step 105 (input " |" at pos 673) per-layer residual cos gpu/cpu: L0 0.99991 L1 0.99989 L2 0.99976 L3 0.99985 L4 0.99977 L5 0.99971 L6 0.99950 L7 0.99947 L8 0.99932 L9 0.99926 L10 0.99930 L11 0.99896 L12 0.99873 L13 0.99883 L14 0.99888 L15 0.99893 L16 0.99881 L17 0.99850 L18 0.99723 L19 0.99802 L20 0.99831 L21 0.99848 L22 0.99791 L23 0.99673 L24 0.99683 L25 0.99694 L26 0.99682 L27 0.99506 L28 0.99531 L29 0.99931
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236743 " " 25.788; 138 "  " 10.857; 642 " {" 7.414; 237050 "な" 5.450; 753 " -" 5.288;  | cpu 236743 " " 25.621; 138 "  " 10.443; 642 " {" 6.709; 609 " $" 5.474; 569 " de" 5.219;  | gpu residual + cpu head 236743 " " 25.788; 138 "  " 10.857; 642 " {" 7.414; 237050 "な" 5.450; 753 " -" 5.288; 
+    gemma4_bidir_span_real_test.go:455:   token 236743 " ": gpu 25.7884 cpu 25.6209 gpu-residual+cpu-head 25.7884
+    gemma4_bidir_span_real_test.go:455:   token 236743 " ": gpu 25.7884 cpu 25.6209 gpu-residual+cpu-head 25.7884
+    gemma4_bidir_span_real_test.go:383: step 106 pos 674: logits cos 0.999194 argmax gpu 236743 " " cpu 236743 " "
+    gemma4_bidir_span_real_test.go:446: step 106 (input " " at pos 674) per-layer residual cos gpu/cpu: L0 0.99989 L1 0.99987 L2 0.99951 L3 0.99965 L4 0.99954 L5 0.99916 L6 0.99889 L7 0.99895 L8 0.99720 L9 0.99554 L10 0.99342 L11 0.98970 L12 0.99069 L13 0.98962 L14 0.98835 L15 0.98717 L16 0.99130 L17 0.98680 L18 0.97521 L19 0.98594 L20 0.98532 L21 0.98560 L22 0.98053 L23 0.97656 L24 0.97560 L25 0.97739 L26 0.95491 L27 0.96376 L28 0.98402 L29 0.99712
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236819 "9" 25.421; 236770 "1" 13.876; 236771 "0" 9.792; 236800 "3" 7.913; 236812 "4" 7.498;  | cpu 236819 "9" 24.882; 236770 "1" 12.244; 236771 "0" 8.622; 236778 "2" 6.618; 236812 "4" 6.164;  | gpu residual + cpu head 236819 "9" 25.421; 236770 "1" 13.876; 236771 "0" 9.792; 236800 "3" 7.913; 236812 "4" 7.498; 
+    gemma4_bidir_span_real_test.go:455:   token 236819 "9": gpu 25.4209 cpu 24.8822 gpu-residual+cpu-head 25.4209
+    gemma4_bidir_span_real_test.go:455:   token 236819 "9": gpu 25.4209 cpu 24.8822 gpu-residual+cpu-head 25.4209
+    gemma4_bidir_span_real_test.go:383: step 107 pos 675: logits cos 0.996929 argmax gpu 236819 "9" cpu 236819 "9"
+    gemma4_bidir_span_real_test.go:446: step 107 (input "9" at pos 675) per-layer residual cos gpu/cpu: L0 0.99986 L1 0.99960 L2 0.99915 L3 0.99961 L4 0.99961 L5 0.99950 L6 0.99938 L7 0.99856 L8 0.99544 L9 0.99373 L10 0.98921 L11 0.98958 L12 0.98717 L13 0.98198 L14 0.96840 L15 0.94778 L16 0.94647 L17 0.81241 L18 0.65389 L19 0.87703 L20 0.94396 L21 0.97377 L22 0.97604 L23 0.97622 L24 0.97965 L25 0.98213 L26 0.98343 L27 0.98193 L28 0.98964 L29 0.99857
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236819 "9" 25.305; 236828 "8" 8.423; 236770 "1" 7.657; 236812 "4" 7.425; 236761 "." 7.131;  | cpu 236819 "9" 25.425; 236828 "8" 9.459; 236812 "4" 7.982; 236770 "1" 7.931; 236761 "." 7.903;  | gpu residual + cpu head 236819 "9" 25.305; 236828 "8" 8.423; 236770 "1" 7.657; 236812 "4" 7.425; 236761 "." 7.131; 
+    gemma4_bidir_span_real_test.go:455:   token 236819 "9": gpu 25.3049 cpu 25.4252 gpu-residual+cpu-head 25.3049
+    gemma4_bidir_span_real_test.go:455:   token 236819 "9": gpu 25.3049 cpu 25.4252 gpu-residual+cpu-head 25.3049
+    gemma4_bidir_span_real_test.go:383: step 108 pos 676: logits cos 0.998842 argmax gpu 236819 "9" cpu 236819 "9"
+    gemma4_bidir_span_real_test.go:446: step 108 (input "9" at pos 676) per-layer residual cos gpu/cpu: L0 0.99983 L1 0.99962 L2 0.99929 L3 0.99963 L4 0.99968 L5 0.99970 L6 0.99970 L7 0.99957 L8 0.99932 L9 0.99948 L10 0.99878 L11 0.99907 L12 0.99906 L13 0.99783 L14 0.99704 L15 0.99776 L16 0.99699 L17 0.99685 L18 0.99424 L19 0.99756 L20 0.99830 L21 0.99829 L22 0.99747 L23 0.99664 L24 0.99674 L25 0.99654 L26 0.99634 L27 0.99548 L28 0.99382 L29 0.99909
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236761 "." 25.363; 236786 "/" 2.511; 236764 "," 2.289; 783 " ." 0.601; 236751 "s" 0.083;  | cpu 236761 "." 25.286; 236786 "/" 2.389; 236764 "," 1.632; 783 " ." 1.097; 1480 "::" 0.340;  | gpu residual + cpu head 236761 "." 25.363; 236786 "/" 2.511; 236764 "," 2.289; 783 " ." 0.601; 236751 "s" 0.083; 
+    gemma4_bidir_span_real_test.go:455:   token 236761 ".": gpu 25.3628 cpu 25.2862 gpu-residual+cpu-head 25.3628
+    gemma4_bidir_span_real_test.go:455:   token 236761 ".": gpu 25.3628 cpu 25.2862 gpu-residual+cpu-head 25.3628
+    gemma4_bidir_span_real_test.go:383: step 109 pos 677: logits cos 0.999630 argmax gpu 236761 "." cpu 236761 "."
+    gemma4_bidir_span_real_test.go:446: step 109 (input "." at pos 677) per-layer residual cos gpu/cpu: L0 0.99992 L1 0.99982 L2 0.99937 L3 0.99973 L4 0.99967 L5 0.99970 L6 0.99865 L7 0.99626 L8 0.98822 L9 0.99216 L10 0.99283 L11 0.99451 L12 0.99578 L13 0.99552 L14 0.99559 L15 0.99576 L16 0.99117 L17 0.97564 L18 0.94621 L19 0.96406 L20 0.90024 L21 0.88618 L22 0.82489 L23 0.71128 L24 0.70067 L25 0.71681 L26 0.60967 L27 0.76143 L28 0.94646 L29 0.99557
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 236828 "8" 22.660; 236770 "1" 5.708; 236812 "4" 5.142; 236810 "5" 4.137; 236800 "3" 3.816;  | cpu 236828 "8" 23.395; 236770 "1" 6.707; 236812 "4" 4.163; 236800 "3" 3.151; 236778 "2" 3.086;  | gpu residual + cpu head 236828 "8" 22.660; 236770 "1" 5.708; 236812 "4" 5.142; 236810 "5" 4.137; 236800 "3" 3.816; 
+    gemma4_bidir_span_real_test.go:455:   token 236828 "8": gpu 22.6595 cpu 23.3952 gpu-residual+cpu-head 22.6595
+    gemma4_bidir_span_real_test.go:455:   token 236828 "8": gpu 22.6595 cpu 23.3952 gpu-residual+cpu-head 22.6595
+    gemma4_bidir_span_real_test.go:383: step 110 pos 678: logits cos 0.999187 argmax gpu 236828 "8" cpu 236828 "8"
+    gemma4_bidir_span_real_test.go:446: step 110 (input "8" at pos 678) per-layer residual cos gpu/cpu: L0 0.99989 L1 0.99932 L2 0.99940 L3 0.99969 L4 0.99969 L5 0.99961 L6 0.99955 L7 0.99892 L8 0.99896 L9 0.99935 L10 0.99939 L11 0.99943 L12 0.99927 L13 0.99868 L14 0.99847 L15 0.99843 L16 0.99815 L17 0.99747 L18 0.99522 L19 0.99728 L20 0.99802 L21 0.99794 L22 0.99753 L23 0.99598 L24 0.99454 L25 0.99428 L26 0.99078 L27 0.99059 L28 0.98999 L29 0.99907
+    gemma4_bidir_span_real_test.go:453:   next-token top 5: gpu 1109 " |" 17.851; 236909 "|" 5.968; 138 "  " 0.653; 569 " de" -1.609; 578 " =" -1.912;  | cpu 1109 " |" 18.447; 236909 "|" 6.989; 138 "  " 0.131; 236786 "/" -1.289; 965 " /" -1.403;  | gpu residual + cpu head 1109 " |" 17.851; 236909 "|" 5.968; 138 "  " 0.653; 569 " de" -1.609; 578 " =" -1.912; 
+    gemma4_bidir_span_real_test.go:455:   token 1109 " |": gpu 17.8507 cpu 18.4465 gpu-residual+cpu-head 17.8507
+    gemma4_bidir_span_real_test.go:455:   token 1109 " |": gpu 17.8507 cpu 18.4465 gpu-residual+cpu-head 17.8507
+    gemma4_bidir_span_real_test.go:383: step 111 pos 679: logits cos 0.999793 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step 112 pos 680: logits cos 0.998914 argmax gpu 236743 " " cpu 236743 " "
+    gemma4_bidir_span_real_test.go:383: step 113 pos 681: logits cos 0.999165 argmax gpu 236770 "1" cpu 236770 "1"
+    gemma4_bidir_span_real_test.go:383: step 114 pos 682: logits cos 0.999551 argmax gpu 236771 "0" cpu 236771 "0"
+    gemma4_bidir_span_real_test.go:383: step 115 pos 683: logits cos 0.999452 argmax gpu 236828 "8" cpu 236828 "8"
+    gemma4_bidir_span_real_test.go:383: step 116 pos 684: logits cos 0.999559 argmax gpu 236761 "." cpu 236761 "."
+    gemma4_bidir_span_real_test.go:383: step 117 pos 685: logits cos 0.993585 argmax gpu 236800 "3" cpu 236800 "3"
+    gemma4_bidir_span_real_test.go:383: step 118 pos 686: logits cos 0.999773 argmax gpu 1109 " |" cpu 1109 " |"
+    gemma4_bidir_span_real_test.go:383: step 119 pos 687: logits cos 0.999105 argmax gpu 236743 " " cpu 236743 " "
+    gemma4_bidir_span_real_test.go:460: first step where the resident's argmax departs from the CPU's: -1
+--- PASS: TestGemma4_26BDecodeLocalize (189.99s)
+=== RUN   TestGemma4_26BActQuantSensitivity
+decoder: .giw context capped at 137971 (model allows 262144) so that KV+scratch fits: needs ~58.14 GB of 59.15 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+decoder: predicted mapped-MoE decode rate ~1527.29 tok/s (a prior, not a measurement — see moeHitRatePrior's own doc comment)

@@ -151,7 +151,7 @@ func (r *cudaResident) PrefillScratchBytes(rows int) int64 {
 		M * maxQDim / 4, M, // cqB, cScB
 		M * hidden / 4, M, // mqB, mScB
 		M * inter, M * inter, // gOb, uOb
-		M * inter / 4, M, M * inter, // dqB, dScB, dScrB
+		M * inter / 4, M, // dqB, dScB: glu_quant_batched writes its product into gOb, so there is no third M x inter buffer
 	} {
 		sum += scratchBufBytes(n)
 	}

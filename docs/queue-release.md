@@ -900,6 +900,11 @@ It was never a tag risk: `realckpt`+heavy, so CI never built it, and the `qwen3_
 a different test from `TestQwen35GGUF_weightDiff`**, whose failure is separately bisected to
 `6d4fc79`; conflating the two misattributes both — and that one is still open.
 
+## An accepted heavy-gate red at tag time: `TestKSH6C_marginPriced` on `gemma-3-4b-it` (2026-11-16)
+
+Francis accepted it ("1", 2026-11-16, KV3-S1). It runs only with `GOINFER_HEAVY_TESTS=1 KSH6C_MARGIN=1`, so CI never builds it. KV3-S1 removed one `M x inter` prefill buffer from the context margin, and Gemma-3-4B's plan went 15,296 -> 15,360 positions while the build trims it back to 15,296, so the served context is unchanged; the gate's "the build kept the planned context" assertion is red for that one model.
+The other models in the gate (0.5B, 1.5B, Qwen2.5-VL-3B, Gemma-4-E2B) keep their contexts. Cause and numbers: `docs/measurements/kv3-s1-2026-11/g3-residual.md` (the driver's 2 MiB page packing of sub-2 MiB allocations is not priced by the plan; ledger row KV3-S1-residual). **Recognise it, do not loosen the assertion, and do not re-investigate;** it goes green when the plan prices that term.
+
 ## Draft: contents of the next release
 
 **STALE — checked 2026-10-06.** Every release since this section was written has shipped (v0.12.0 to v0.21.0, and v0.22.0 is cut), so it is not a draft of anything. The release notes are `CHANGELOG.md`; read that. Kept, not deleted, because the text below carries findings other entries cite.
