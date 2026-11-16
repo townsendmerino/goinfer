@@ -101,15 +101,8 @@ func TestNemotronResidentCUDA_guards(t *testing.T) {
 			if !strings.Contains(res.copyDecl, "recurrent") {
 				t.Errorf("CopyKV on %s: decline %q (err %v), want the recurrent-state decline", c.fixture, res.copyDecl, res.copyErr)
 			}
-			switch c.fixture {
-			case "qwen35-tiny": // B35: a Gated-DeltaNet snapshot carries the recurrent state, so it is admitted
-				if res.snapDecl != "" {
-					t.Errorf("the prefix snapshot of %s: decline %q, want it admitted (B35)", c.fixture, res.snapDecl)
-				}
-			default:
-				if !strings.Contains(res.snapDecl, "Mamba-2") {
-					t.Errorf("the prefix snapshot of %s: decline %q, want the Mamba-2 state decline", c.fixture, res.snapDecl)
-				}
+			if res.snapDecl != "" { // a recurrent snapshot carries the state, Gated-DeltaNet's (B35) and Mamba-2's (KV8) alike
+				t.Errorf("the prefix snapshot of %s: decline %q, want it admitted", c.fixture, res.snapDecl)
 			}
 			if res.verifyBatched {
 				t.Errorf("ForwardN's verify pass on %s reports a batched path", c.fixture)
@@ -757,12 +750,22 @@ func TestRecurrentSlots_decoderChoosesAmongSlots(t *testing.T) {
 // TestRecurrentSlots_snapshotHoldsTheSlotItNames is S-5, Gated-DeltaNet only: a snapshot taken and restored with another slot bound
 // holds and writes the slot it names, so that slot's sequence continues as if never moved.
 func TestRecurrentSlots_snapshotHoldsTheSlotItNames(t *testing.T) {
-	const mark, n = 64, 72
-	m, r := recurrentSlotsLoad(t, "qwen35-tiny", decoder.Options{ResidentKVSlots: 2})
-	if !r.KVSnapshotRecurrent() {
-		t.Fatal("a Gated-DeltaNet resident's snapshots do not carry its state")
+	for _, fixture := range recurrentSlotFixtures {
+		for _, plant := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/plant=%v", fixture, plant), func(t *testing.T) { recurrentSlotSnapshotOfUnbound(t, fixture, plant) })
+		}
 	}
-	_, one := recurrentSlotsLoad(t, "qwen35-tiny", decoder.Options{ResidentKVSlots: 1})
+}
+
+// recurrentSlotSnapshotOfUnbound takes a snapshot of slot 0 while slot 1 is bound and restores it after slot 0 moved on. With plant, the snapshot's
+// state is overwritten with slot 1's, which is what a snapshot that read the bound pair would hold: the sequence must then differ from its solo run.
+func recurrentSlotSnapshotOfUnbound(t *testing.T, fixture string, plant bool) {
+	const mark, n = 64, 72
+	m, r := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 2})
+	if !r.KVSnapshotRecurrent() {
+		t.Fatalf("%s: a recurrent resident's snapshots do not carry its state", fixture)
+	}
+	_, one := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 1})
 	A, B := recurrentSlotSeqs(m, n)
 	refA := recurrentSlotSolo(t, one, A)
 	recurrentSlotBind(t, r, 0)
@@ -784,6 +787,22 @@ func TestRecurrentSlots_snapshotHoldsTheSlotItNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer snap.Release()
+	if plant {
+		s := snap.(*cudaKVSnapshot)
+		if len(s.rec) == 0 {
+			t.Fatalf("%s: the snapshot holds no recurrent layer", fixture)
+		}
+		buf := s.host.Slice()
+		for _, d := range s.rec {
+			p := r.layers[d.layer].recurrentOf(1)
+			if err := gpu.Download(p.win, buf[d.winOff:d.winOff+d.winWords]); err != nil {
+				t.Fatal(err)
+			}
+			if err := gpu.Download(p.state, buf[d.stOff:d.stOff+d.stW]); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 	recurrentSlotBind(t, r, 0)
 	for i := mark; i < n; i++ { // moves slot 0's state past the snapshot
 		if _, err := r.Forward(B[i], i); err != nil {
@@ -795,14 +814,19 @@ func TestRecurrentSlots_snapshotHoldsTheSlotItNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	recurrentSlotBind(t, r, 0)
+	differ := 0
 	for i := mark; i < n; i++ {
 		l, err := r.Forward(A[i], i)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if d := logitsDiffer(l, refA[i]); d != 0 {
-			t.Fatalf("after the restore, position %d: %d logits differ from the sequence's solo run", i, d)
-		}
+		differ += logitsDiffer(l, refA[i])
+	}
+	switch {
+	case !plant && differ != 0:
+		t.Fatalf("after the restore, %d logits differ from the sequence's solo run", differ)
+	case plant && differ == 0:
+		t.Fatalf("the snapshot holding slot 1's state changed nothing: the comparison cannot see which slot's state the snapshot holds")
 	}
 }
 

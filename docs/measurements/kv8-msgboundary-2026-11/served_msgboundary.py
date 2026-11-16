@@ -117,6 +117,7 @@ def main():
     p.add_argument("--model", required=True)
     p.add_argument("--out", required=True)
     p.add_argument("--fit-only", action="store_true")
+    p.add_argument("--regrade", metavar="TURNS_JSONL", help="grade the cells and turns a previous run wrote, without running any")
     p.add_argument("--ctx", type=int, default=12288)
     p.add_argument("--no-regression", action="store_true", help="T3b': both arms already serve r3 from the boundary snapshot; grade that nothing moved")
     p.add_argument("--report-cost-only", action="store_true", help="the 9B: the snapshot copy's host MiB and ms are reported, not graded against the 0.8B's bars (the first-token bars still apply)")
@@ -133,6 +134,11 @@ def main():
         return 0
     plan = [("A1", "main", a.main), ("B1", "change", a.change), ("B2", "change", a.change), ("A2", "main", a.main)]
     cells, done = [], {}
+    if a.regrade:
+        recs = [json.loads(l) for l in open(a.regrade)]
+        cells = [r for r in recs if "snapshots_taken" in r]
+        done = {c["cell"]: [r for r in recs if r.get("cell") == c["cell"] and "req" in r] for c in cells}
+        plan = []
     for label, which, binary in plan:
         rec, ts = cell(label, which, binary, a.model, a.out)
         if rec["void"]:  # re-run in the same order, once, and the record lists it
@@ -142,12 +148,13 @@ def main():
         cells.append(rec)
         done[label] = ts
         time.sleep(3)
-    with open(os.path.join(a.out, "turns.jsonl"), "w") as f:
-        for c in cells:
-            f.write(json.dumps(c) + "\n")
-        for ts in done.values():
-            for t in ts:
-                f.write(json.dumps(t) + "\n")
+    if not a.regrade:
+        with open(os.path.join(a.out, "turns.jsonl"), "w") as f:
+            for c in cells:
+                f.write(json.dumps(c) + "\n")
+            for ts in done.values():
+                for t in ts:
+                    f.write(json.dumps(t) + "\n")
     if any(c["void"] for c in cells if c["cell"].endswith("r")):
         print("VERDICT: VOID (a re-run cell was also void)")
         return 2
@@ -199,9 +206,12 @@ def main():
             notes.append(f"{pair}: r4 reuses {by(new, 'r4')['reused']}, main {by(old, 'r4')['reused']}: a restored turn lost its Keep point"); worse("FAIL")
         print(f"{pair}: r4 reuse change {by(new, 'r4')['reused']}, main {by(old, 'r4')['reused']}")
         taken = rec_by[new]["snapshots_taken"]
-        want = min(taken[:2]) if len(taken) >= 2 else None  # r1's two snapshots: the message's start is the smaller
-        got = by(new, "r3")["reused"]
         est = rec_by[new].get("boundary_est")
+        # the message's start: the snapshot within a block of the boundary estimate; a request whose next turn repeats the whole prompt has no Keep snapshot,
+        # so no rank among r1's snapshots names it. Without an estimate, the second largest.
+        near = [x for x in taken if est is not None and est - 70 <= x <= est + 4]
+        want = near[0] if near else (sorted(taken)[-2] if len(taken) >= 2 else None)
+        got = by(new, "r3")["reused"]
         print(f"{pair}: r3 reuse change {got}, main {by(old, 'r3')['reused']}; the message-boundary snapshot of r1 {want}; boundary estimate {est}; snapshots taken {taken}")
         if want is None or got != want or by(old, "r3")["reused"] or want % 64:
             notes.append(f"{pair}: r3 reuse is not exactly the boundary's block"); worse("FAIL")
@@ -210,7 +220,7 @@ def main():
         for r in ("r1", "r2", "r3", "r4"):
             if by(new, r)["reply"] != by(old, r)["reply"]:
                 notes.append(f"{pair}: {r}'s reply differs from main's"); worse("FAIL")
-        cost = rec_by[new]["snapshot_cost"][:2]
+        cost = rec_by[new]["snapshot_cost"][:3]
         for c in cost:
             print(f"{pair}: cold request's snapshot at {c['rows']} rows: {c['mib']} MiB host, {c['ms']} ms")
         if cost and not a.report_cost_only:
