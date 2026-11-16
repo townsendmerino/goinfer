@@ -183,3 +183,38 @@ The coordinator's instruction of 2026-11-15, for the reads #1007 left owed. Both
 - **Void if:** a timed cell outside the lock, a model read from `/srv/models`, a NOT RUN counted as a pass, a bar moved after a reading. **Stopping rule:** the four cells of each read, no early stop; a refused fit check ends R1 and is reported.
 
 **Amendment, 2026-11-15 15:51 PST, before R2's run (R1 had read PASS).** R2's first-token bar read "at most 1.00" for change over main. A smoke of the script on two of the sessions (28 requests, not a reading, nothing recorded from it) showed that bar cannot hold: with the arms serving all 12 follow-ups identically (same sources, same rows, same replies), the median of per-request ratios read 1.032 and 1.008, because the follow-ups' first tokens are 0.1 to 0.9 s. The bar is now **at most 1.05 for the median and for the total** (the cold-request bar T2 used), PARKED above 1.05 and at most 1.10, FAIL above 1.10. No other clause moves; the replies, the rows and the snapshot counts are exact comparisons and keep their bars.
+
+### Third addendum, readings (2026-11-15, nobara-kv8)
+
+**R1, the 9B: PASS** (15:43 to 15:49 PST; `served-9b/run.log`, `turns.jsonl`, `fit-check.log`). `a01046150` against `a9824eb2d` (the binary for the second is that merge's code plus these scripts), `Qwen3.5-9B-Q4_K_M.gguf` from NVMe, `--ctx 8192`, one slot, A B B A, the exclusive lock, load 0.33 to 1.16 at the cells' start, no void cell, peak `VmSwap` 0 MB. The fit check passed: 5,640 MiB on the card, a 1 x 8,192 KV plan, the 6.3 GiB snapshot budget.
+
+| | main | change | change over main, pair 1 / pair 2 | bar |
+|---|---|---|---|---|
+| r3 (last message rewritten): first token | 35.24 s, 35.25 s | 9.57 s, 9.57 s | **0.272 / 0.272** | at most 0.5 |
+| r3 rows reused | 0 | 6,016, the boundary's block (the boundary is about 6,044) | | exactly that block |
+| r1 (cold): first token | 35.38 s, 35.23 s | 35.44 s, 35.49 s | 1.002 / 1.007 | at most 1.05 |
+| r2: first token, rows | 8.63 s, 6,144 | 1.13 s, 7,360 | 0.130 / 0.130 | at most 1.10, not fewer |
+| r4: rows | 6,144 | 7,360 | | not fewer |
+| r1 to r4 replies | | equal to main's, both pairs | | equal |
+
+- **The cold cost, reported (the 0.8B's 175 MiB and 150 ms bars were not applied):** main's cold request takes one snapshot, **434 MiB and about 281 ms** (6,144 rows). The change's takes two: 426 MiB and 260 ms at the boundary (6,016 rows), 510 MiB and 300 ms at Keep (7,360 rows): **936 MiB and about 560 ms**. In pair 2 r1's first token was 0.26 s slower than main's (pair 1: 0.06 s), about the size of the extra copy: on the 9B the copy shows on the path. On the 6.3 GiB auto budget a cold request's pair is about 6.7 conversations, against main's 14.5 (the figure for the owner's weighing).
+- Each request that restored a snapshot also took a snapshot of its own (r2: 514 MiB, 305 ms at 7,424 rows), on both arms' rules; the change's r2 and r4 are 0.13 of main's.
+
+**R2, KV0-H's recorded requests: FAIL by the registered rule** (15:51 to 16:05 PST; `replay-kv0h/run.log`, `requests.jsonl`, the four `serve-*.log` and `tokenids-*.jsonl`). 11 sessions, 94 requests a cell, `qwen3.5-0.8b`, `--ctx 24576`, `a01046150` against `a9824eb2d`, A B B A, the exclusive lock, load 0.65 to 1.07, no void cell, `VmSwap` 0 MB. The bars are the registration's with the 15:51 amendment.
+
+| | main | change |
+|---|---|---|
+| replies (generated ids), 94 requests, both pairs | | **0 differ** |
+| follow-ups (83): first token, change over main, median | | 1.023, 1.011 (bar 1.05) |
+| follow-ups: total first token | 168.0 s, 168.6 s | 159.7 s, 159.6 s = **0.951, 0.946** (bar 1.05) |
+| follow-ups served by: cold / end-of-prompt checkpoint / snapshot / live state | 4 / 33 / 9 / 37 | 5 / 33 / 8 / 37 |
+| requests reusing fewer rows than main | | **1, in both pairs** (bar: none) |
+| follow-ups served by a snapshot | 9 | **8** (bar: not fewer) |
+
+**Two clauses fail, in both pairs, so the verdict is FAIL and no bar moves.** They are one request: the second request of KV0-H's opencode `edit` session (7,265 ids). Main restores 6,144 rows and starts in 1.8 s; the change reuses 0 rows and starts in 7.1 s (+5.3 s).
+
+- **The cause, from the logs and the code:** that request follows a 564-id one, so it is its session's first long prompt, and what main restored is a snapshot an earlier session left. Main's snapshot sits at 6,144 because Keep rounds down to a 2,048-row pass; the prompt's system-and-tools preamble, which every opencode session shares, is about that long, so the rounded point happened to fall inside it. The change's snapshots sit at their exact points, which are past the shared preamble, and a recurrent snapshot serves only its own end, so none of them is a prefix of this prompt. The coarse grid was acting as a cross-session preamble snapshot nobody had asked it to be. Recurrent models take no snapshot at the system-and-tools boundary (`decoder/kvsnap.go:Model.kvBoundaryPlan` takes only Keep for them), which is the preamble-boundary mark KV8's plan lists and nothing has built.
+- **Everything else the cut changed went the other way:** 18 follow-ups restore more rows than main's (the Claude Code chain's: 16,384 against 17,920, 18,048 and others; Codex's 4,096 against 5,888 to 5,952), and the total first-token time over the 83 follow-ups is 5% lower. The net is a gain with one regression the registration forbids.
+- **The message-boundary snapshot, #1007's headline, served none of the 83 follow-ups here.** One request of 94 took one (`requests.jsonl`, `took`), because its mark falls below any prefill that restores from a deeper point, and in these chains almost every follow-up does. The gains above are the Keep cut's. The two D-category cases KV0-H's A5 named (3 ids into a new user message) are a boundary-snapshot case, and this replay does not reach them, since the 0.8B's replies are not the recorded 9B's and no follow-up here starts before its predecessor's last message.
+- **Cold cost across the 94 requests (per cell):** the change takes 12 snapshots, 4,082 MiB and 2,593 ms, main 6, 1,890 MiB and 1,218 ms.
+- **Not read:** Metal, Mamba-2; the 9B on these recorded requests (the replay is on the 0.8B); an agent's live traffic. The replay's limit stands: no follow-up continues from the 0.8B's own reply.
