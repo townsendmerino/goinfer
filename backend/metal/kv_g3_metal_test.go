@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -348,7 +350,10 @@ func TestKVPages_everyResidentFixture(t *testing.T) {
 func kvLongFixture(t *testing.T, dir string) string { return kvLongFixtureN(t, dir, 2048) }
 
 // kvLongFixtureN is kvLongFixture with n positions.
-func kvLongFixtureN(t *testing.T, dir string, n int) string {
+func kvLongFixtureN(t *testing.T, dir string, n int) string { return kvLongFixtureWN(t, dir, n, 0) }
+
+// kvLongFixtureWN is kvLongFixtureN with the sliding window raised to window positions when window is positive.
+func kvLongFixtureWN(t *testing.T, dir string, n, window int) string {
 	out := filepath.Join(t.TempDir(), filepath.Base(dir))
 	if err := os.Mkdir(out, 0o755); err != nil {
 		t.Fatal(err)
@@ -372,8 +377,14 @@ func kvLongFixtureN(t *testing.T, dir string, n int) string {
 				t.Fatal(err)
 			}
 			raw["max_position_embeddings"] = n
+			if _, ok := raw["sliding_window"]; ok && window > 0 {
+				raw["sliding_window"] = window
+			}
 			if tc, ok := raw["text_config"].(map[string]any); ok {
 				tc["max_position_embeddings"] = n
+				if _, ok := tc["sliding_window"]; ok && window > 0 {
+					tc["sliding_window"] = window
+				}
 			}
 			if b, err = json.Marshal(raw); err != nil {
 				t.Fatal(err)
@@ -1801,6 +1812,8 @@ type kvWinScenario struct {
 	force                            bool // bound the window pool whatever kv_window_pool.go's conditions say (the passes here are one row each)
 	rewind, belowBase, reset, copyKV bool
 	basePlant                        int
+	prompt, ctx, window              int  // the prompt length (default 1,536), the resident context and the raised window (default 8,192 and the fixture's own)
+	count                            bool // count the decode and prefill attention launches into kvWinResult.counts
 }
 
 type kvWinResult struct {
@@ -1817,7 +1830,8 @@ type kvWinResult struct {
 	why         string // why the fixture was not run
 	submits     int64  // the device's command buffers committed and waited on, at the end of the decode
 	waits       int64
-	pending     int // blocks still retired, not yet freed, at the end of the decode
+	pending     int            // blocks still retired, not yet freed, at the end of the decode
+	counts      map[string]int // attention launches by kernel (prefill) or pipeline field (decode), when the scenario counts
 }
 
 // kvAudit checks a group's counts against its tables: every block's references are the entries that name it, the in-use count is the
@@ -1865,7 +1879,8 @@ func kvWinRun(t *testing.T, dir string, sc kvWinScenario) (res kvWinResult) {
 		kvReusableBasePlantForTest, kvActivityForTest = 0, nil
 		kvWindowPoolOffForTest, kvWindowPoolForceForTest = false, false
 	}()
-	m, err := decoder.Load(kvLongFixtureN(t, dir, 8192), decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 8192, ResidentKVSlots: 3,
+	ctx := cmp.Or(sc.ctx, 8192)
+	m, err := decoder.Load(kvLongFixtureWN(t, dir, ctx, sc.window), decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: ctx, ResidentKVSlots: 3,
 		ResidentMoEStep: true, ResidentRecurrentStep: true, ResidentGemma4Step: true})
 	if err != nil {
 		res.why = "load: " + err.Error()
@@ -1891,7 +1906,26 @@ func kvWinRun(t *testing.T, dir string, sc kvWinScenario) (res kvWinResult) {
 	res.hasWin, res.win, res.bounded = true, g.win, g.bounded
 	_, _, _, _, _, _, vocab := m.Dims()
 	emb := func(i int) []float32 { return m.EmbedResidentForTest((i*97 + 3) % vocab) }
-	const chunk, prompt, decodeN = 256, 1536, 64
+	const chunk, decodeN = 256, 64
+	prompt := cmp.Or(sc.prompt, 1536)
+	if sc.count {
+		res.counts = map[string]int{}
+		names := r.pipelineNames()
+		r.stopExec()
+		r.d.SetDispatchHook(func(pl Pipeline) {
+			if n := names[pl]; strings.HasPrefix(n, "pAttn") {
+				res.counts[n]++
+			}
+		})
+		prefillAttnRanForTest = map[string]int{}
+		defer func() {
+			r.d.SetDispatchHook(nil)
+			for k, v := range prefillAttnRanForTest {
+				res.counts[k] += v
+			}
+			prefillAttnRanForTest = nil
+		}()
+	}
 	embs := make([][]float32, prompt)
 	for i := range embs {
 		embs[i] = emb(i)
@@ -2085,6 +2119,65 @@ func TestKVWindow_retentionIsBitIdentical(t *testing.T) {
 	}
 	if n < 6 {
 		t.Errorf("only %d fixtures have a window group, want at least 6", n)
+	}
+}
+
+// TestKVWindow_retention9000 is KV5-7c's G1c, Mac form, hard (docs/tasks/task-kv-architecture-2026-10.md §6): a tiny windowed fixture with its
+// window raised to 4,096 and its positions to 16,384, a 9,000-token prompt and 64 decoded. The window group must have released at least 40
+// blocks and every decoded logit must be bit-identical to the same build with retention off. The attention kernels that ran are counted (the
+// decode pipeline's launches by field, prefill's by kernel); a fixture whose counters are all zero proves nothing and is reported VOID.
+func TestKVWindow_retention9000(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	sc := kvWinScenario{prompt: 9000, ctx: 16384, window: 4096, count: true}
+	n := 0
+	seen := map[string]int{}
+	for _, dir := range kvWindowFixtures() {
+		name := filepath.Base(dir)
+		on := kvWinRun(t, dir, sc)
+		if !on.hasWin {
+			continue
+		}
+		offSc := sc
+		offSc.off, offSc.count = true, false
+		off := kvWinRun(t, dir, offSc)
+		launched := 0
+		for _, v := range on.counts {
+			launched += v
+		}
+		t.Logf("%s: window %d, base %d, %d blocks released, launches %v", name, on.win, on.base, on.released, on.counts)
+		if launched == 0 {
+			t.Logf("%s: VOID: no attention kernel launched", name)
+			continue
+		}
+		n++
+		for k, v := range on.counts {
+			seen[k] += v
+		}
+		if on.win != 4096 {
+			t.Errorf("%s: window %d, want the raised 4096", name, on.win)
+		}
+		if on.released < 40 {
+			t.Errorf("%s: %d blocks released, want at least 40", name, on.released)
+		}
+		if on.audit != nil {
+			t.Errorf("%s: audit: %v", name, on.audit)
+		}
+		if d := kvRowsDiffer(on.rows, off.rows); d != 0 {
+			t.Errorf("%s: %d decoded logits differ between retention on and off", name, d)
+		}
+	}
+	if n == 0 {
+		t.Skip("VOID: no fixture with a window group launched an attention kernel at 9,000 tokens")
+	}
+	t.Logf("%d fixtures read", n)
+	// The registered kernels: a zero counter makes that part of the case VOID (reported, not a pass). Decode's attention_fa, _blk and _blk64
+	// all bind to the pAttnFA field, so their launches count together.
+	for _, k := range []string{"pAttnFA", "attention_prefill_fused", "attention_prefill_steel_hd64"} {
+		if seen[k] == 0 {
+			t.Logf("VOID: %s launched on no fixture at 9,000 tokens", k)
+		}
 	}
 }
 
