@@ -1,0 +1,20 @@
+{"cell": "A1", "build": "main", "load": 1.30078125, "avail_mb": 61319, "vram_before_mib": 503, "void": false, "load_s": 6.009551286697388, "vram_loaded_mib": 4322, "boundary_est": 6030, "peak_swap_mb": 0, "peak_hwm_mb": 3337, "snapshots_taken": [], "snapshot_cost": []}
+{"cell": "B1", "build": "change", "load": 1.44091796875, "avail_mb": 61376, "vram_before_mib": 503, "void": false, "load_s": 6.006906747817993, "vram_loaded_mib": 4322, "boundary_est": 6030, "peak_swap_mb": 0, "peak_hwm_mb": 3725, "snapshots_taken": [2752, 6016], "snapshot_cost": [{"rows": 2752, "mib": 173, "ms": 134.4}, {"rows": 6016, "mib": 275, "ms": 163.3}]}
+{"cell": "B2", "build": "change", "load": 1.43603515625, "avail_mb": 61371, "vram_before_mib": 503, "void": false, "load_s": 6.006751298904419, "vram_loaded_mib": 4322, "boundary_est": 6030, "peak_swap_mb": 0, "peak_hwm_mb": 3757, "snapshots_taken": [2752, 6016], "snapshot_cost": [{"rows": 2752, "mib": 173, "ms": 133.9}, {"rows": 6016, "mib": 275, "ms": 191.8}]}
+{"cell": "A2", "build": "main", "load": 1.7216796875, "avail_mb": 61379, "vram_before_mib": 503, "void": false, "load_s": 6.007730960845947, "vram_loaded_mib": 4322, "boundary_est": 6030, "peak_swap_mb": 0, "peak_hwm_mb": 3321, "snapshots_taken": [], "snapshot_cost": []}
+{"cell": "A1", "build": "main", "req": "r1", "ttft_s": 75.07980942726135, "reused": 0, "prompt_tokens": 7419, "reply": "Acknowledged. Nothing else to add on that.\n"}
+{"cell": "A1", "build": "main", "req": "r2", "ttft_s": 0.17117047309875488, "reused": 7430, "prompt_tokens": 7446, "reply": "Acknowledged. Nothing else to add on that.\n"}
+{"cell": "A1", "build": "main", "req": "r3", "ttft_s": 75.04663968086243, "reused": 0, "prompt_tokens": 7420, "reply": "Acknowledged. Nothing else to add on that.\n"}
+{"cell": "A1", "build": "main", "req": "r4", "ttft_s": 0.17099690437316895, "reused": 7431, "prompt_tokens": 7447, "reply": "Acknowledged. Nothing else to add on that.\n"}
+{"cell": "B1", "build": "change", "req": "r1", "ttft_s": 75.35516166687012, "reused": 0, "prompt_tokens": 7419, "reply": "Acknowledged. Nothing else to add on that.\n"}
+{"cell": "B1", "build": "change", "req": "r2", "ttft_s": 0.1753101348876953, "reused": 7430, "prompt_tokens": 7446, "reply": "Acknowledged. Nothing else to add on that.\n"}
+{"cell": "B1", "build": "change", "req": "r3", "ttft_s": 14.530612468719482, "reused": 6016, "prompt_tokens": 7420, "reply": "Acknowledged. Nothing else to add on that.\n"}
+{"cell": "B1", "build": "change", "req": "r4", "ttft_s": 0.17301130294799805, "reused": 7431, "prompt_tokens": 7447, "reply": "Acknowledged. Nothing else to add on that.\n"}
+{"cell": "B2", "build": "change", "req": "r1", "ttft_s": 75.38930296897888, "reused": 0, "prompt_tokens": 7419, "reply": "Acknowledged. Nothing else to add on that.\n"}
+{"cell": "B2", "build": "change", "req": "r2", "ttft_s": 0.17326021194458008, "reused": 7430, "prompt_tokens": 7446, "reply": "Acknowledged. Nothing else to add on that.\n"}
+{"cell": "B2", "build": "change", "req": "r3", "ttft_s": 14.525941610336304, "reused": 6016, "prompt_tokens": 7420, "reply": "Acknowledged. Nothing else to add on that.\n"}
+{"cell": "B2", "build": "change", "req": "r4", "ttft_s": 0.1775972843170166, "reused": 7431, "prompt_tokens": 7447, "reply": "Acknowledged. Nothing else to add on that.\n"}
+{"cell": "A2", "build": "main", "req": "r1", "ttft_s": 75.05307483673096, "reused": 0, "prompt_tokens": 7419, "reply": "Acknowledged. Nothing else to add on that.\n"}
+{"cell": "A2", "build": "main", "req": "r2", "ttft_s": 0.1707296371459961, "reused": 7430, "prompt_tokens": 7446, "reply": "Acknowledged. Nothing else to add on that.\n"}
+{"cell": "A2", "build": "main", "req": "r3", "ttft_s": 75.04960036277771, "reused": 0, "prompt_tokens": 7420, "reply": "Acknowledged. Nothing else to add on that.\n"}
+{"cell": "A2", "build": "main", "req": "r4", "ttft_s": 0.17093324661254883, "reused": 7431, "prompt_tokens": 7447, "reply": "Acknowledged. Nothing else to add on that.\n"}

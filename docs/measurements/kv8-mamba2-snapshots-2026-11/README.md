@@ -45,3 +45,42 @@ lines print the first three snapshots.
 | **Means** | PASS: ship by PR, default on for Mamba-2 models whose snapshots carry state. PARKED: Francis decides. FAIL: the branch stays and the record says what failed. |
 
 **Void if:** a timed cell outside the exclusive lock, the model read from `/srv/models`, a NOT RUN counted as a pass, a bar moved after a reading.
+
+## Readings, 2026-11-16
+
+Build `abb4d2ac0` (the change) against `87a8b0e32` (main), each `CGO_ENABLED=0 go build -tags cuda ./backend/cuda/cmd/serve`. Driver 595.112.07 as anchored. The registration above did not change after its commit.
+
+### Tier 0
+
+| | verdict | reading |
+|---|---|---|
+| **N0** | PASS, red first | `n0-n1-red.log`: on main `nemotron-tiny` failed at "snapshots do not carry the recurrent state" (both pass widths) while `qwen3next-tiny` passed. `n0-n1-green.log`: with the change, turn 2 reuses exactly the boundary's block and its reply, every recurrent buffer and the K/V rows equal a cold prefill's, on `nemotron-tiny` at 64 and 128 rows. The recurrent comparison reads the buffers the Keep checkpoint covers; `TestKV8Mamba_snapshotRestoreEqualsColdAndPlantsAreRed` reads the live Mamba-2 layers directly and asserts it compared Mamba-2 layers |
+| **N1** | PASS, red first | on main the preamble test left `[]` snapshots (want 640, 1472, 2368); with the change it passes on `nemotron-tiny`, bit-identical |
+| **Plants** | red as registered | `n2-n3.log`: a snapshot whose conv window was zeroed, and one holding no recurrent state, each differ from a cold prefill (the test fails if either is equal) |
+| **N2** | PASS | `n2-n3.log`: `TestRecurrentSlots_snapshotHoldsTheSlotItNames` now runs on `qwen35-tiny`, `olmo_hybrid-tiny` and `nemotron-tiny`; a snapshot of an unbound slot restores that slot's state. Its plant (the snapshot's state overwritten with the bound slot's, which is what a read of the bound pair would hold) changes the logits on all three |
+| **N3** | PASS | the snapshot's `Bytes()` equals `KVSnapshotBytes`, and its recurrent layer count equals `recurrentLayers()` |
+| **N4** | PASS | `n4-identity.log`: `gate identity -backend cuda 8d8ac2102 abb4d2ac0`: 25 IDENTICAL, 0 DIFFERENT, 19 NOT RUN (a fresh worktree lacks the gitignored fixtures); `nemotron_h`, `olmo_hybrid` and `qwen3_5` ran |
+| **N5** | PASS | `n5.log`: 60 top-level passes, 0 fails; the 8 skips are heavy-tier tests (`GOINFER_HEAVY_TESTS`), a diagnostic (`GOINFER_KV8_DIAG`) and a gitignored fixture a fresh worktree lacks, none of them touched by this change |
+| **Also** | | a guard that asserted the refusal (`TestNemotronResidentCUDA_guards`) now asserts admission; the cache-state grid's text and `docs/option-state-grid.md` name Mamba-2 |
+
+### Tier 1: T-N, `nemotron-h-4b-instruct-128k`, A B B A (08:10:42 to 08:19:20 PST, 8 min 38 s)
+
+`tn-run1.log`, `served-tn/` (`turns.jsonl`, one `serve-*.log` a cell). Fit check first (`fit/`): 4,322 MiB on the card, a 98.5 MiB device checkpoint, a 6.3 GiB snapshot budget. The 1-minute load was 1.30 to 1.72 and about 61 GB were available at each start; no void cell; peak `VmSwap` 0 MB in all four.
+
+| | main (A1, A2) | change (B1, B2) | change over main, pair 1 / pair 2 | bar |
+|---|---|---|---|---|
+| **r3, the last message rewritten**: first token | 75.05 s, 75.05 s | 14.53 s, 14.53 s | **0.194 / 0.194** | at most 0.5 |
+| r3 rows reused | 0, 0 | **6,016**, 6,016 | | exactly the message boundary's block |
+| r2, the next turn: first token | 0.17 s, 0.17 s | 0.18 s, 0.17 s | 1.024 / 1.015 | at most 1.10 |
+| r2 and r4 rows reused | 7,430 and 7,431 | 7,430 and 7,431 | equal | not less |
+| r1, cold: first token | 75.08 s, 75.05 s | 75.36 s, 75.39 s | 1.004 / 1.004 | at most 1.05 |
+| replies, r1 to r4 | | equal to main's, all four, both pairs | | equal |
+
+**The verdict is PASS.** Cost of the snapshots on r1 (reported, not graded; `--report-cost-only`): the preamble's at 2,752 rows **173 MiB host, 134 ms** (133.9 and 134.4), the message boundary's at 6,016 rows **275 MiB, 163 and 192 ms**; together 448 MiB and about 300 to 325 ms of r1's 75 s (0.4%). Host memory held 447 of 6,424 MiB. The 0.8B's were 84 to 163 MiB and 55 to 98 ms.
+
+- **The harness printed FAIL on the first grading, and the bars were met.** The registered rule named the message-boundary snapshot as r1's second largest; r1 took **two** snapshots, not three. A request whose next turn repeats the whole prompt has `Keep` 0
+  (`internal/app/serveapp/kv_boundary.go:loadedModel.recurrentKeep`: "the slot's own state serves it"), which is the case for this model's template, so there is no Keep snapshot and the second largest was the preamble's (2,752). The harness then
+  reported r3's 6,016 rows as not the boundary's block. The boundary is 6,016 by the route's own count (the estimate is 6,030, and 6,016 is its 64-row block); the harness now picks the snapshot within a block of the estimate, and a `--regrade` option grades a
+  recorded `turns.jsonl` without running a cell (`tn-regrade.log`, from the same four cells, nothing re-measured). The first output is `tn-run1.log`'s last line, kept verbatim.
+- **r2 and r4 are served by the device checkpoint, as before**, not by a host snapshot: no Keep snapshot is taken here, so the Keep path's cost is unchanged (r2 x1.015 to x1.024 is inside the bar and the run-to-run spread of a 0.17 s figure).
+- **Not read:** Claude Code's live traffic on a Mamba-2 hybrid, a Mamba-2 model whose template rewrites the end of the prompt (a Keep snapshot of a Mamba-2 state), Metal.

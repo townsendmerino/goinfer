@@ -1,0 +1,11 @@
+pair 1: r1 75.08 -> 75.36 s (x1.004); r2 0.17 -> 0.18 s (x1.024); r3 75.05 -> 14.53 s (x0.194); r4 0.17 -> 0.17 s (x1.012, reported)
+pair 1: r4 reuse change 7431, main 7431
+pair 1: r3 reuse change 6016, main 0; the message-boundary snapshot of r1 6016; boundary estimate 6030; snapshots taken [2752, 6016]
+pair 1: cold request's snapshot at 2752 rows: 173 MiB host, 134.4 ms
+pair 1: cold request's snapshot at 6016 rows: 275 MiB host, 163.3 ms
+pair 2: r1 75.05 -> 75.39 s (x1.004); r2 0.17 -> 0.17 s (x1.015); r3 75.05 -> 14.53 s (x0.194); r4 0.17 -> 0.18 s (x1.039, reported)
+pair 2: r4 reuse change 7431, main 7431
+pair 2: r3 reuse change 6016, main 0; the message-boundary snapshot of r1 6016; boundary estimate 6030; snapshots taken [2752, 6016]
+pair 2: cold request's snapshot at 2752 rows: 173 MiB host, 133.9 ms
+pair 2: cold request's snapshot at 6016 rows: 275 MiB host, 191.8 ms
+VERDICT: PASS 
