@@ -240,3 +240,45 @@ Decided 2026-11-15: the replay's one failing request is a regression on main sin
 
 - **The cold cost is read explicitly, per snapshot (rows, host MiB, copy ms), per cold request and per cell,** against main's. A request pays the preamble snapshot only when none is held, so the cost lands once per distinct preamble; the first-token bars (r1 at most 1.05, PARKED to 1.10) grade it, and the ambiguous band goes to the owner. The 0.8B's 175 MiB and 150 ms bars apply to the boundary snapshot as in T2; the preamble's size is reported.
 - **Void if:** a timed cell outside the exclusive lock, a NOT RUN counted as a pass, a bar moved after a reading. **Stopping rule:** the four cells of each read, no early stop. **Cost:** replay about 15 minutes, the 0.8B about 3, the 9B about 8; times from `date` when they run.
+
+### Fourth addendum, readings (2026-11-15, an RTX 2070 SUPER, 8 GB)
+
+| | reading |
+|---|---|
+| **P0, P1** | `decoder/kv8_msgboundary_test.go:TestKV8Preamble_*`: **red on main first** (snapshots of 960 and 1,216 where 640, 960 and 1,216 are wanted). Plants, each red: a deeper snapshot replacing the preamble's; the request that restored it dropping it; the covering-search replacement. The budget test (room for three, two, none) and the held-once and no-state cases pass |
+| **P2** | `backend/cuda/kv8a_checkpoint_test.go:TestKV8Preamble_cudaRestoreAtTheSharedPreambleEqualsCold`, `qwen3next-tiny`, 128-row passes: turn 1 leaves 640, 1,472 and 2,368 rows; a second conversation sharing 700 ids reuses 640, and its reply, every recurrent buffer and the K/V rows are bit-identical to a cold prefill's. Plant (the conv window not restored) red. `p2-cuda.log` |
+| **P3** | M0 to M3, C0 to C2 and the B35 tests pass; `gate identity -backend cuda` against current main: **GREEN, 25 IDENTICAL, 0 DIFFERENT, 19 NOT RUN** (the missing ignored fixtures of this worktree), `identity-preamble.log`. Parity refresh: manifest unchanged. gofmt, tagged vet, staticcheck, citation lint, comment census clean |
+
+**T3a, the replay: PASS** (16:21 to 16:31 PST, `replay-preamble/run.log`, `requests.jsonl`). Main `69b05e1a4` (with #1007) against the change, the same 94 requests, A B B A, the exclusive lock, no swap. The first cell started at load 6.12 (my build had just finished; the void line is 8.0), the others at 0.93 to 1.14.
+
+| | main | change | bar |
+|---|---|---|---|
+| replies, 94 requests, both pairs | | 0 differ | equal |
+| requests reusing fewer rows than main | | **0** | none |
+| follow-ups served by a snapshot | 8 | 9 plus **3 served by the preamble snapshot** | not fewer |
+| follow-ups served cold | 5 | 1 | |
+| follow-ups' total first token | 158.4 s, 159.6 s | 83.8 s, 84.0 s = **0.529, 0.526** | at most 1.05 |
+| follow-ups' median per-request ratio | | 1.000, 1.000 | at most 1.05 |
+
+The request that failed R2 (the second of the opencode edit session) is now served from a snapshot. The 0.5 total is not the preamble snapshot alone: against the earlier R2 cells, main here is 158 s and the change 84 s, and the 3 requests the preamble snapshot serves were cold, 6 to 7 s each, on main.
+
+**T3b, the served r1 to r4: FAIL by its registration, and the registration is the flaw.** `served-t3b-08b/` and `served-t3b-9b/`, the same script and bars as T2 and the 9B's, run against `69b05e1a4` as main. Both arms already carry #1007's boundary snapshot, so r3 is served from it on both: **r3's first token is 0.992 to 1.005 of main's on the 0.8B and 0.997 to 0.999 on the 9B, the registered bar was at most 0.5, and the script's "r3 reuses exactly the smaller of r1's two snapshots" clause now names the preamble's snapshot, not the boundary's.** Both clauses compare the change with a build that already has the boundary snapshot, so a change that does not touch r3 cannot meet them. Nothing moves: T3b is recorded FAIL. What the runs do show:
+
+| | 0.8B | 9B |
+|---|---|---|
+| r3 rows reused | 6,016 both arms, the boundary's block | 6,016 both arms |
+| r1 (cold) first token, change over main | 0.995 / 1.002 | 1.013 / 1.011 |
+| r2 and r4 first token, change over main | 0.99 to 1.08 (0.33 to 0.36 s, noise) | 1.00 to 1.03 |
+| r2, r4 rows reused | 7,360 both arms | 7,360 both arms |
+| replies r1 to r4 | equal | equal |
+| preamble snapshot (taken by r1, the first cold request of the preamble) | 2,752 rows, 84 MiB, 55 to 82 ms | 2,752 rows, **222 MiB, 140 to 161 ms** |
+| boundary / Keep snapshots (as T2 and R1) | 160 MiB, 121 to 126 ms / 192 MiB | 426 MiB, 253 to 274 ms / 510 MiB |
+
+**The cold cost, as asked.**
+- **First cold request of a preamble:** three snapshots. On the 0.8B that is 436 MiB and about 300 ms, on the 9B **1,158 MiB and about 740 ms**, against main's two (352 MiB and about 214 ms; 936 MiB and about 560 ms). The preamble's snapshot adds **84 MiB and about 55 to 82 ms (0.8B), 222 MiB and 140 to 161 ms (9B)**.
+- **Later cold requests with the preamble held:** the same two snapshots as main's.
+- **First token:** r1 on the 9B is 1.1% to 1.3% slower than main's (0.4 s of 35.6 s); on the 0.8B it did not move.
+- **Over the replay's 94 requests, per cell:** 14 snapshots, 4,623 MiB and 2,904 ms against main's 12, 4,082 MiB and 2,576 ms (+13% bytes, +13% copy time).
+- **The budget:** the preamble snapshot is shared, so its bytes are taken once per distinct preamble and dropped only by the budget's least-recently-used rule.
+
+**What a correct T3b would ask:** r1 to r4 not slower and not fewer rows than a main that has #1007 (no-regression bars), and the r3 gain is T2's and R1's reading against a build without #1007. That is a new registration, made after this reading; it is not run here.
