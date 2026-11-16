@@ -10,7 +10,7 @@ func TestMM5b_webgpuDecodeScratchNamesNoFamily(t *testing.T) {
 	banned := []string{"ResidentLayerOps", "Mixer", "KVSrcAtResident", "HeadDimAtResident", "KVHeadsAtResident",
 		"Qwen35", "Nemotron", "MLA", "Gemma4", "GptOss", "DeltaNet", "Mamba", "KDA", "ShortConv", "PLE", "MoEResident", "QKNormWhole",
 		"NonGatedMLP", "OpAttention", "OpGatedAttn", "Ffn", ".qwen35", ".lfm2", ".kda", ".granite", ".nemotron", ".gemma4", ".mla"}
-	scanPricingBodies(t, map[string][]string{"webgpu_scratch.go": {"WebGPUDecodeScratch", "WebGPUDecodeScratchBytes"}}, banned,
+	scanPricingBodies(t, map[string][]string{"webgpu_scratch.go": {"WebGPUDecodeScratch", "WebGPUDecodeScratchBytes", "webgpuDecodeScratch", "WebGPUDecodeScratchWhy"}}, banned,
 		"WebGPU's decode scratch is priced from the operations' per-row declarations, not the family")
 }
 
@@ -61,6 +61,54 @@ func webgpuScratchHand(h, l, v, qW, kvW, ffn int, qkNorm, post bool, kv, bias st
 	return want
 }
 
+// webgpuScratchHandMoE is the figure for an f32-KV model with no bias or post norms, layer by layer: each layer's attention, then its FFN, dense
+// (ffn[l] > 0, that width) or routed (ffn[l] == 0, with nE experts of width inter, top k, and a shared expert of width shared, 0 for none,
+// sigmoid-gated when gated).
+func webgpuScratchHandMoE(h, v, qW, kvW int, ffn []int, nE, k, inter, shared int, gated, qkNorm bool) map[string]int64 {
+	pk := func(n int) int64 { return int64((n + 31) &^ 31) }
+	H, V := int64(h), int64(v)
+	want := map[string]int64{"build": 4 + 4*256, "residual": 4 * H, "logitsStaging": 4 * V, "geomFor": 16 + 32, "qkvFinUniFor": 32,
+		"rmsQuant": pk(h) + 20, "gemv": 4*V + 16}
+	add := func(role string, n int64) { want[role] += n }
+	anyMoE := false
+	for _, f := range ffn {
+		add("rmsQuant", 2*(pk(h)+20))
+		add("gemv", 4*int64(qW+2*kvW)+3*16)
+		add("quant", pk(qW)+20)
+		add("attnLayer", 4*int64(qW)+16)
+		add("gemvAdd", 16) // the output projection
+		if qkNorm {
+			add("qkNorm", 2*16)
+		}
+		if f > 0 {
+			add("gemv", 4*int64(2*f)+2*16)
+			add("actQuantPad", pk(f)+20)
+			add("gemvAdd", 16)
+			continue
+		}
+		anyMoE = true
+		add("gemv", 4*int64(nE)+16)                  // the router's logits
+		add("moeFFN", 4*int64(2*k)+4*int64(2*inter)) // the selection rows, the experts' gate and up rows
+		add("moeRoute", 32)                          // the router's uniform
+		add("moeExpert", 3*int64(k)*16)              // gate, up and down, a uniform each, per slot
+		add("swigluQuant", int64(k)*(pk(inter)+20))  // per slot: the int8 row, its scale, its uniform
+		if shared > 0 {
+			add("gemv", 4*int64(2*shared)+2*16)
+			add("swigluQuant", pk(shared)+20)
+			if gated {
+				add("gemv", 4*H+16+4+16)
+				add("sharedGatedCombine", 16)
+			} else {
+				add("gemvAdd", 16)
+			}
+		}
+	}
+	if anyMoE {
+		want["moeZeroBias"] = 4 * int64(nE)
+	}
+	return want
+}
+
 func withTerm(m map[string]int64, role string, b int64) map[string]int64 {
 	m[role] = b
 	return m
@@ -82,6 +130,9 @@ func TestWebGPUDecodeScratch_handTable(t *testing.T) {
 		{"qwen25vl int8 (bias)", "qwen25vl-tiny", Options{Quant: "int8int8"}, webgpuScratchHand(64, 2, 300, 64, 32, 128, false, false, "f32", "int8", false, false)},
 		{"olmo3 (window, qk-norm, post-only norms)", "olmo3-tiny", Options{}, withTerm(webgpuScratchHand(64, 4, 512, 64, 64, 128, true, true, "f32", "", true, true), "qkvFinUniFor", 2*32)}, // two rope scales: the sliding layers' and the full ones'
 		{"mistral window", "mistral-tiny-window", Options{}, webgpuScratchHand(128, 3, 128, 128, 64, 256, false, false, "f32", "", true, false)},
+		{"mixtral (routed FFN)", "mixtral-tiny", Options{}, webgpuScratchHandMoE(64, 512, 64, 64, []int{0, 0, 0, 0}, 8, 2, 128, 0, false, false)},
+		{"qwen3moe (routed FFN, qk-norm)", "qwen3moe-tiny", Options{}, webgpuScratchHandMoE(64, 512, 64, 16, []int{0, 0, 0, 0}, 8, 2, 32, 0, false, true)},
+		{"glm (dense prefix, ungated shared expert, qk-norm)", "glm-tiny", Options{}, webgpuScratchHandMoE(64, 256, 64, 32, []int{128, 0, 0}, 8, 2, 32, 32, false, true)},
 		{"glm-ocr (post norms)", "glm-ocr-tiny", Options{}, webgpuScratchHand(48, 3, 160, 128, 64, 144, false, true, "f32", "", false, false)},
 	} {
 		m, err := Load("../testdata/"+c.fx, c.o)
