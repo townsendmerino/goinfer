@@ -220,3 +220,23 @@ Decided 2026-11-15: the reads #1007 left owed. Both are by day, under the exclus
 - **Not read:** Metal, Mamba-2; the 9B on these recorded requests (the replay is on the 0.8B); an agent's live traffic. The replay's limit stands: no follow-up continues from the 0.8B's own reply.
 
 - **What `replay-kv0h/` keeps:** `requests.jsonl` carries each request's counters and times and a SHA-256 of its generated ids, not the ids. The token-id logs the servers wrote (generated ids and prompt hashes of KV0-H's recorded requests) are not kept, following KV0-H's policy that ids and bodies stay outside the repository. The replies' equality was graded on the ids before they were reduced to hashes.
+
+## Fourth addendum: a snapshot at the end of the system-and-tools preamble, for recurrent models (registered 2026-11-15 16:12 PST, before any code; an RTX 2070 SUPER, 8 GB)
+
+Decided 2026-11-15: the replay's one failing request is a regression on main since #1007, so the preamble mark KV8's plan lists is built, in KV8's scope. On a recurrent model the decoder already receives `KVScope.Boundary` (the ids before the first conversation turn, found by serve from the template) and ignores it.
+
+**The question.** Does a snapshot at the end of the shared preamble serve a session's first long request after another session's, without costing a request that does not need it?
+
+**What changes (recurrent models, CUDA).** A cold prefill is also cut at `Boundary` rounded down to a 64-row block, below the message boundary's and Keep's cuts (the same split, `decoder/model.go:Model.residentPrefillSeedMarked`), and keeps a snapshot there when none is held at those rows. That snapshot is **kept apart from the rule that replaces a shorter snapshot of the same prefix with a longer one**: a request's own deeper snapshots, and a later session's, must not replace it, and the snapshot a request restored it from is not dropped when the request takes deeper ones. It leaves the store by the budget's least-recently-used rule only. The prefix is shared across sessions, so one snapshot is taken per distinct preamble, by the first cold request that reaches it.
+
+| | tier | what | bar |
+|---|---|---|---|
+| **P0** | 0, hash fake, 128-row passes | turn 1 (1,236 ids, preamble 700, message start 1,000, Keep 1,230) leaves snapshots at 640, 960 and 1,216; a second conversation that shares the first 700 ids and then differs restores 640 and its reply equals a cold run; after a third request the 640 snapshot is still held; a request that restored 640 does not drop it | **red on main first** (main holds no snapshot at 640, so the second conversation reuses 0). Plants, each red: the preamble snapshot replaced by a deeper one; dropped by the request that restored it |
+| **P1** | 0, hash fake | no preamble snapshot when one is held at those rows; none below `kvSnapMinShared`; the store's budget with three snapshots (room for two keeps the two deepest, none takes none); a model whose snapshots do not carry its state takes none | exact rows and bytes |
+| **P2** | 0, CUDA, `qwen3next-tiny` | 128-row passes: the restore at the preamble's block leaves the reply, every recurrent buffer and the K/V rows bit-identical to a cold prefill | 0 differing words; plant (the state not restored) red |
+| **P3** | 0 | M0 to M3, C0 to C2 and the B35 tests still pass; `gate identity -backend cuda` against current main: every family that ran IDENTICAL | 0 DIFFERENT |
+| **T3a** | 1, replay | `replay_kv0h.py` as R2, main (`69b05e1a4`) against the change, the same clauses and bars | PASS needs every R2 clause, the failing request included |
+| **T3b** | 1, `served_msgboundary.py` | r1 to r4 as T2 on `qwen3.5-0.8b` (ctx 12,288) and on the 9B (ctx 8,192, `--report-cost-only`), A B B A, bars as T2 and the 9B's registration | every clause as there |
+
+- **The cold cost is read explicitly, per snapshot (rows, host MiB, copy ms), per cold request and per cell,** against main's. A request pays the preamble snapshot only when none is held, so the cost lands once per distinct preamble; the first-token bars (r1 at most 1.05, PARKED to 1.10) grade it, and the ambiguous band goes to the owner. The 0.8B's 175 MiB and 150 ms bars apply to the boundary snapshot as in T2; the preamble's size is reported.
+- **Void if:** a timed cell outside the exclusive lock, a NOT RUN counted as a pass, a bar moved after a reading. **Stopping rule:** the four cells of each read, no early stop. **Cost:** replay about 15 minutes, the 0.8B about 3, the 9B about 8; times from `date` when they run.
