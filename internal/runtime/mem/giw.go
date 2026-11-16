@@ -11,6 +11,9 @@ type GIWLoad struct {
 	DeviceKV      bool    // the KV and the prefill scratch are on a device: only the pinned experts are host memory
 	Scratch       int64   // the prefill attention scratch cap
 	PinnedExperts int64   // the page-locked expert copy, 0 for none; the same at every context
+	// SnapshotBytes is the prefix-snapshot store's budget (-kv-host-bytes), 0 where the load keeps no store: host memory the server holds once it is
+	// serving, the same at every context.
+	SnapshotBytes int64
 }
 
 // GIWFit is SolveGIW's answer and the numbers behind it. Known is false when it could not price (proceed).
@@ -37,11 +40,20 @@ func SolveGIW(l GIWLoad, m Machine, p Policy) GIWFit {
 	if l.PinnedExperts > 0 {
 		what += " + the pinned MoE expert copy"
 	}
+	if l.SnapshotBytes > 0 {
+		what += " + the prefix-snapshot store (-kv-host-bytes)"
+	}
 	needAt := func(ctx int) int64 {
 		if l.DeviceKV {
-			return l.PinnedExperts
+			return l.PinnedExperts + l.SnapshotBytes
 		}
-		return l.KV(ctx) + l.Scratch + l.PinnedExperts
+		return l.KV(ctx) + l.Scratch + l.PinnedExperts + l.SnapshotBytes
+	}
+	snapHint := func(need int64) string {
+		if l.SnapshotBytes <= 0 || need-l.SnapshotBytes > budget {
+			return ""
+		}
+		return "; or lower -kv-host-bytes (the snapshot store's budget; 0 turns snapshots off)"
 	}
 	margin := float64(p.GIWMargin) / gb
 	need := needAt(l.Ctx)
@@ -54,7 +66,7 @@ func SolveGIW(l GIWLoad, m Machine, p Policy) GIWFit {
 			"decoder: pinned context %d needs ~%.2f GB (%s) but only %.2f GB of this "+
 				"machine's %.2f GB currently-available memory would be left as a %.0f GB safety "+
 				"margin — pass a smaller -ctx, or set GOINFER_NO_FIT_GUARD=1 to allow it anyway%s",
-			l.Ctx, float64(need)/gb, what, float64(budget)/gb, float64(avail)/gb, margin, unpinnedHintIf(l.PinnedExperts, need, budget))
+			l.Ctx, float64(need)/gb, what, float64(budget)/gb, float64(avail)/gb, margin, unpinnedHintIf(l.PinnedExperts, need, budget)+snapHint(need))
 		return d
 	}
 	floor := p.CtxFloor
@@ -64,7 +76,7 @@ func SolveGIW(l GIWLoad, m Machine, p Policy) GIWFit {
 			"decoder: this model needs ~%.2f GB (%s) even at the %d-token floor, but only "+
 				"%.2f GB of this machine's %.2f GB currently-available memory would be left as a "+
 				"%.0f GB safety margin — set GOINFER_NO_FIT_GUARD=1 to allow it anyway%s",
-			float64(floorNeed)/gb, what, floor, float64(budget)/gb, float64(avail)/gb, margin, unpinnedHintIf(l.PinnedExperts, floorNeed, budget))
+			float64(floorNeed)/gb, what, floor, float64(budget)/gb, float64(avail)/gb, margin, unpinnedHintIf(l.PinnedExperts, floorNeed, budget)+snapHint(floorNeed))
 		return d
 	}
 	lo, hi := floor, l.Ctx
