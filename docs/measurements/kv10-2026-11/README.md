@@ -16,7 +16,7 @@ Every other layer runs the exact `attn_batched`. The census applies that rule to
 
 | | |
 |---|---|
-| **Instrument** | `docs/measurements/kv10-2026-11/fused_census.py` (reads configs, applies the rule) and `backend/cuda/kv10_fused_rule_test.go:TestKV10_fusedPrefillRule` (a resident loaded on the card: `useAttnFused` answers yes for head dims 64 and 128 and no for 32, 80, 96, 192 and 256, and no under a softcap) |
+| **Instrument** | `docs/measurements/kv10-2026-11/fused_census.py` (reads configs, applies the rule) and `backend/cuda/kv3_longprefill_test.go:TestKV10_fusedPrefillRule` (a resident loaded on the card: `useAttnFused` answers yes for head dims 64 and 128 and no for 32, 80, 96, 192 and 256, and no under a softcap) |
 | **PASS** | the list is written with its rule and sources; the test passes; a plant (the test with `attnFusedFor` answering for 96) is red |
 | **Not claimed** | tiny fixtures' head dims (16 and 32) say nothing about a real family; the list is by real configs. A family whose config is not on this box is not listed |
 
@@ -25,7 +25,7 @@ Every other layer runs the exact `attn_batched`. The census applies that rule to
 | | |
 |---|---|
 | **Question** | At depth, does the engine's lower-precision KV (f16) stay as faithful to its f32 KV as it does at the depths already graded (KV4b's G4: 3,900 and 8,000)? Is anything NaN, or refused, at 64K and 128K? |
-| **Instrument** | `backend/cuda/kv10_longctx_fidelity_test.go:TestKV10_longContextFidelity` (heavy tier, `GOINFER_HEAVY_TESTS=1`): `~/models/qwen3.5-0.8b` (local NVMe, int4 resident), text of this repository's `decoder/*.go` as the prompt (real tokens, no cycling), prefill depth - 16 tokens, then the **last 16 rows' logits** by `PrefillLastN`, once with `--kv f32` and once with `--kv f16`, fresh load each. Depths **3,900 (the control, graded depth)**, **65,536** and **131,000**; chunking at the build's default |
+| **Instrument** | `backend/cuda/kv3_longprefill_test.go:TestKV10_longContextFidelity` (heavy tier, `GOINFER_HEAVY_TESTS=1`): `~/models/qwen3.5-0.8b` (local NVMe, int4 resident), text of this repository's `decoder/*.go` as the prompt (real tokens, no cycling), prefill depth - 16 tokens, then the **last 16 rows' logits** by `PrefillLastN`, once with `--kv f32` and once with `--kv f16`, fresh load each. Depths **3,900 (the control, graded depth)**, **65,536** and **131,000**; chunking at the build's default |
 | **Metric** | over the 16 rows: min cosine of f16's logits against f32's; the argmax agreement count, and over the rows where f32's top-1 margin is at least 0.5 logit; the mean KL(f32 &#124;&#124; f16) in nats; any NaN or Inf |
 | **HOLDS** | min cosine at least 0.999, argmax agrees on every row whose f32 margin is at least 0.5, no NaN or Inf, at the depth |
 | **DEGRADES (parked for Francis)** | min cosine in [0.99, 0.999), or one or more disagreeing rows with margin at least 0.5, or mean KL above 2 x the control's |
@@ -41,7 +41,7 @@ Every other layer runs the exact `attn_batched`. The census applies that rule to
 
 ## Readings, 2026-11-16
 
-Build `5ecc0d73d`'s tree plus the two tests (`backend/cuda/kv3_longprefill_test.go:TestKV10_fusedPrefillRule`, `TestKV10_longContextFidelity`). Driver 595.112.07 as anchored. All loads from `~/models` on NVMe, under the shared timing lock (a correctness read, not a timed one). The registration above did not change after its commit except two typos in its fit-check bullet.
+Build `5ecc0d73d`'s tree plus the two tests (`backend/cuda/kv3_longprefill_test.go:TestKV10_fusedPrefillRule`, `TestKV10_longContextFidelity`). Driver 595.112.07 as anchored. All loads from `~/models` on NVMe, under the shared timing lock (a correctness read, not a timed one). The registration above did not change after its commit except a typo in its fit-check bullet and the two tests' file path in the instrument rows (they live in `backend/cuda/kv3_longprefill_test.go`, a new CUDA test file importing `decoder` being refused by `internal/layout`'s ratchet).
 
 ### KV10-a: the census (tier 0): PASS
 
