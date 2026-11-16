@@ -1150,7 +1150,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		cqB, cScB := ai(M*maxQDim/4), af(M)
 		mqB, mScB := ai(M*hidden/4), af(M)
 		gOb, uOb := af(M*inter), af(M*inter)
-		dqB, dScB, dScrB := ai(M*inter/4), af(M), af(M*inter)
+		dqB, dScB := ai(M*inter/4), af(M)
 		// Gated-DeltaNet families (qwen3_5 / qwen3_5_moe / qwen3_next): the M-row buffers the recurrence reads row
 		// by row, and the softmax layers' double-width q projection and output gate.
 		var dnB dnPrefillBufs
@@ -1655,8 +1655,8 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 					r.profToc(gemvCat, t)
 					t = r.profTic()
 					if e := r.launch(r.bSw, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
-						Arg(gOb), Arg(uOb), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(ffn)),
-						gpu.ArgValue(int32(fw.FFN.Act)), Arg(dqB), Arg(dScB), Arg(dScrB), gpu.ArgValue(int32(M))); e != nil {
+						Arg(gOb), Arg(uOb), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(ffn)),
+						gpu.ArgValue(int32(fw.FFN.Act)), Arg(dqB), Arg(dScB), gpu.ArgValue(int32(M))); e != nil {
 						return e
 					}
 					r.profToc(glueCat, t)
@@ -1692,8 +1692,8 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 							return e
 						}
 						if e := r.launch(r.bSw, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
-							Arg(pleGB), Arg(pleB.At(pl*M*P*4)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(P)),
-							gpu.ArgValue(int32(0)), Arg(dqB), Arg(dScB), Arg(dScrB), gpu.ArgValue(int32(M))); e != nil {
+							Arg(pleGB), Arg(pleB.At(pl*M*P*4)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(P)),
+							gpu.ArgValue(int32(0)), Arg(dqB), Arg(dScB), gpu.ArgValue(int32(M))); e != nil {
 							return e
 						}
 						if e := r.bGemvB(Ly.pleProj, dqB, dScB, ArgNull(), sbB, M, 0); e != nil {

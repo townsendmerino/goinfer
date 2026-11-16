@@ -293,8 +293,9 @@ func BenchmarkQuantVecBatched(b *testing.B) {
 
 func BenchmarkGluQuantBatched(b *testing.B) {
 	benchBatched(b, "glu_quant_batched", 8, 4096, func(dx, dw *gc.Buffer[float32], dq *gc.Buffer[int32], dsc, dscr *gc.Buffer[float32]) []gcArg {
-		return []gcArg{gc.Arg(dx), gc.Arg(dx), gc.ArgValue(int32(0)), gc.ArgValue(int32(4096)),
-			gc.ArgValue(int32(4096)), gc.ArgValue(int32(1)), gc.Arg(dq), gc.Arg(dsc), gc.Arg(dscr),
+		// the gate is dx's first half and the up its second (read at the offset), the product written over the gate
+		return []gcArg{gc.Arg(dx), gc.Arg(dx), gc.ArgValue(int32(8 * 4096)),
+			gc.ArgValue(int32(4096)), gc.ArgValue(int32(1)), gc.Arg(dq), gc.Arg(dsc),
 			gc.ArgValue(int32(8))}
 	})
 }

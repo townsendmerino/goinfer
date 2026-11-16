@@ -483,3 +483,37 @@ func TestMEM6_cudaPrefillAllocatesNoRowCopy(t *testing.T) {
 		t.Errorf("a prompt row adds %.0f B of Go allocation, over one embedding row (%.0f B): a pass copies its embeddings again", perRow, embRow)
 	}
 }
+
+// TestKV3_gluQuantWritesInPlace is KV3-S1's red-first gate (docs/measurements/kv3-s1-2026-11/README.md): glu_quant_batched leaves its product in the gate
+// buffer, so a pass allocates two M x inter float buffers (the gate's and the up's) and no third for the product, and PrefillScratchBytes prices the pass without it.
+func TestKV3_gluQuantWritesInPlace(t *testing.T) {
+	const base = "../../testdata/llama-tiny" // intermediate width 128 against a hidden width of 64: no other scratch row is that wide
+	requireDeviceAndFixture(t, base)
+	g := kv0LoadCtx(t, base, "f16", 2048, kv0RandomTokens)
+	r := g.r
+	maxQDim, maxKvDim := r.prefillMaxGeom()
+	for _, d := range []int{r.hidden, maxQDim, maxKvDim, r.hidden / 4, maxQDim / 4} {
+		if d == r.inter || d*4 == r.inter*4 {
+			t.Fatalf("VOID: the fixture's intermediate width %d equals another scratch row width, so counting M x inter buffers proves nothing", r.inter)
+		}
+	}
+	for _, M := range []int{16, 100} {
+		var sizes []int64
+		var seen int64
+		prefillScratchSeenForTest = func(b int64) { sizes = append(sizes, b); seen += b + allocRoundSlack(b) }
+		g.prefill(g.embs(g.tokens(M, 5)), 0)
+		prefillScratchSeenForTest = nil
+		n := 0
+		for _, b := range sizes {
+			if b == int64(M)*int64(r.inter)*4 {
+				n++
+			}
+		}
+		if n != 2 {
+			t.Errorf("M=%d: the pass allocated %d buffers of M x inter floats (%d B), want 2: the gate's and the up's, the product written into the gate's", M, n, int64(M)*int64(r.inter)*4)
+		}
+		if want := r.PrefillScratchBytes(M); want != seen {
+			t.Errorf("M=%d: PrefillScratchBytes %d B, the pass allocated %d B", M, want, seen)
+		}
+	}
+}
