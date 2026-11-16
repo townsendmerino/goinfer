@@ -1,0 +1,56 @@
+11 sessions, 94 requests per cell
+[15:51:07] cell A1 (main): load 0.65, 61409 MB available
+[15:51:17]   A1 h-qwen35-9b-20k-codex-chain-r1: 3 requests
+[15:51:19]   A1 h-qwen35-9b-20k-codex-chain-r2: 4 requests
+[15:51:23]   A1 h-qwen35-9b-20k-codex-edit-r1: 7 requests
+[15:51:29]   A1 h-qwen35-9b-20k-codex-fix-r1: 13 requests
+[15:51:33]   A1 h-qwen35-9b-20k-codex-fix-r2: 7 requests
+[15:51:46]   A1 h-qwen35-9b-20k-opencode-chain-r1: 10 requests
+[15:51:53]   A1 h-qwen35-9b-20k-opencode-chain-r2: 10 requests
+[15:51:59]   A1 h-qwen35-9b-20k-opencode-edit-r1: 11 requests
+[15:52:05]   A1 h-qwen35-9b-20k-opencode-fix-r1: 10 requests
+[15:52:10]   A1 h-qwen35-9b-20k-opencode-fix-r2: 9 requests
+[15:54:46]   A1 check-qwen35-9b-32768-cc-claude-code-chain-r1: 10 requests
+[15:54:49] cell B1 (change): load 0.92, 61450 MB available
+[15:55:00]   B1 h-qwen35-9b-20k-codex-chain-r1: 3 requests
+[15:55:01]   B1 h-qwen35-9b-20k-codex-chain-r2: 4 requests
+[15:55:02]   B1 h-qwen35-9b-20k-codex-edit-r1: 7 requests
+[15:55:08]   B1 h-qwen35-9b-20k-codex-fix-r1: 13 requests
+[15:55:10]   B1 h-qwen35-9b-20k-codex-fix-r2: 7 requests
+[15:55:23]   B1 h-qwen35-9b-20k-opencode-chain-r1: 10 requests
+[15:55:28]   B1 h-qwen35-9b-20k-opencode-chain-r2: 10 requests
+[15:55:39]   B1 h-qwen35-9b-20k-opencode-edit-r1: 11 requests
+[15:55:44]   B1 h-qwen35-9b-20k-opencode-fix-r1: 10 requests
+[15:55:47]   B1 h-qwen35-9b-20k-opencode-fix-r2: 9 requests
+[15:58:14]   B1 check-qwen35-9b-32768-cc-claude-code-chain-r1: 10 requests
+[15:58:18] cell B2 (change): load 1.07, 61444 MB available
+[15:58:28]   B2 h-qwen35-9b-20k-codex-chain-r1: 3 requests
+[15:58:29]   B2 h-qwen35-9b-20k-codex-chain-r2: 4 requests
+[15:58:31]   B2 h-qwen35-9b-20k-codex-edit-r1: 7 requests
+[15:58:36]   B2 h-qwen35-9b-20k-codex-fix-r1: 13 requests
+[15:58:38]   B2 h-qwen35-9b-20k-codex-fix-r2: 7 requests
+[15:58:51]   B2 h-qwen35-9b-20k-opencode-chain-r1: 10 requests
+[15:58:57]   B2 h-qwen35-9b-20k-opencode-chain-r2: 10 requests
+[15:59:08]   B2 h-qwen35-9b-20k-opencode-edit-r1: 11 requests
+[15:59:13]   B2 h-qwen35-9b-20k-opencode-fix-r1: 10 requests
+[15:59:16]   B2 h-qwen35-9b-20k-opencode-fix-r2: 9 requests
+[16:01:42]   B2 check-qwen35-9b-32768-cc-claude-code-chain-r1: 10 requests
+[16:01:46] cell A2 (main): load 0.95, 61442 MB available
+[16:01:56]   A2 h-qwen35-9b-20k-codex-chain-r1: 3 requests
+[16:01:59]   A2 h-qwen35-9b-20k-codex-chain-r2: 4 requests
+[16:02:03]   A2 h-qwen35-9b-20k-codex-edit-r1: 7 requests
+[16:02:11]   A2 h-qwen35-9b-20k-codex-fix-r1: 13 requests
+[16:02:15]   A2 h-qwen35-9b-20k-codex-fix-r2: 7 requests
+[16:02:28]   A2 h-qwen35-9b-20k-opencode-chain-r1: 10 requests
+[16:02:35]   A2 h-qwen35-9b-20k-opencode-chain-r2: 10 requests
+[16:02:41]   A2 h-qwen35-9b-20k-opencode-edit-r1: 11 requests
+[16:02:47]   A2 h-qwen35-9b-20k-opencode-fix-r1: 10 requests
+[16:02:52]   A2 h-qwen35-9b-20k-opencode-fix-r2: 9 requests
+[16:05:28]   A2 check-qwen35-9b-32768-cc-claude-code-chain-r1: 10 requests
+pair 1: 83 follow-ups; first token change over main, median 1.023, total 159.7 s over 168.0 s = 0.951
+pair 1: follow-ups by what served them, main {'cold': 4, 'end-of-prompt checkpoint': 33, 'keep/other snapshot': 9, 'live state': 37}; change {'cold': 5, 'end-of-prompt checkpoint': 33, 'keep/other snapshot': 8, 'live state': 37}
+pair 1: requests with a different reply 0; requests reusing fewer rows than main 1
+pair 2: 83 follow-ups; first token change over main, median 1.011, total 159.6 s over 168.6 s = 0.946
+pair 2: follow-ups by what served them, main {'cold': 4, 'end-of-prompt checkpoint': 33, 'keep/other snapshot': 9, 'live state': 37}; change {'cold': 5, 'end-of-prompt checkpoint': 33, 'keep/other snapshot': 8, 'live state': 37}
+pair 2: requests with a different reply 0; requests reusing fewer rows than main 1
+VERDICT: FAIL pair 1: 1 requests reuse fewer rows; pair 1: fewer snapshot restores than main; pair 2: 1 requests reuse fewer rows; pair 2: fewer snapshot restores than main

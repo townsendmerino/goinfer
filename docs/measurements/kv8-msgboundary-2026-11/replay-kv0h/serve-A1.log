@@ -1,0 +1,148 @@
+swap guard (load): armed for ~/models/qwen3.5-0.8b.int4.e4h.cuda.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7010 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7014 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7014 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6882 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+swap guard: baseline 0.60 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+cuda: recurrent checkpoint: 19.3 MiB on the device (36 buffers, KV8a)
+cuda: prefill width 2048 rows (441 MiB of scratch; 5290 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+loaded "qwen3.5-0.8b": 24-layer model (vocab 248320) in 3.899s [chat: chatml, thinking: template default off, serving template, tools: goinfer's own form (-tool-format template for the model's own)]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 2048 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 24576 tokens (--ctx; model maximum 262144) · KV f32 (requested auto: f16 KV is delivered on request (--kv f16); auto keeps f32: the hybrids' quality gate did not pass (mean KL 1.21x f32's at 3,900 keys))
+  fit: 24576-token cap needs 0.6 GB KV (weights 0.4 GB, budget 41.8 GB, 41.2 GB left for a request's own prefill)
+  KV plan: 1 conversation x 24576 positions (--ctx 24576; 0.7 GB held back for the vision tower)
+  KV pool: 24,576 tokens in blocks of 64 (f32, 600.0 MB; group: full); no conversation takes another's KV rows (one KV slot); one conversation can use all of it.
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions applies to the CPU path only)
+  prefix snapshots: budget 6.3 GiB (auto: 1/10 of 62.7 GiB of RAM, at most 8.0 GiB), 0 B held; host memory is pinned only while a snapshot is held (taken after a cold first prefill of 2048 ids or more; /admin/status reports the use)
+  features: tools (constrainable call form) · structured output
+Qwen3.5 vision for "qwen3.5-0.8b": tower (CUDA) loads on first image (merge 2, image-pad id 248056, <= 1024 tokens/image) from ~/models/qwen3.5-0.8b
+"qwen3.5-0.8b" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:18219 [chat:[qwen3.5-0.8b]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 128.0 MiB (text) / 160.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 0.60 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+kv snapshot: took 4096 rows (115 MiB host) from slot 0 in 97.6 ms; 115 of 6424 MiB held
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=6004 completion_tokens=8 ttft=4606ms total=4637ms reused=0 slot=0 div=- canon=1 ids=0/0 ids_fallback=- kv=f32 ckpt_save_ms=1.026
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=6139 completion_tokens=8 ttft=165ms total=195ms reused=6004 slot=6012 div=6005 canon=1 ids=0/0 ids_fallback=- kv=f32 ckpt_restore=6004 ckpt_restore_ms=0.804 ckpt_save_ms=0.612
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=6512 completion_tokens=8 ttft=428ms total=459ms reused=6139 slot=6147 div=6139 canon=1 ids=0/0 ids_fallback=- kv=f32 ckpt_restore=6139 ckpt_restore_ms=0.614 ckpt_save_ms=0.840
+kv snapshot: restored 4096 rows of 4096 into slot 0 in 11.7 ms
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=6004 completion_tokens=8 ttft=1850ms total=1881ms reused=4096 slot=4096 div=- canon=1 ids=0/0 ids_fallback=- kv=f32 snap=4096 ckpt_save_ms=0.711
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=6096 completion_tokens=8 ttft=120ms total=172ms reused=6004 slot=6012 div=6004 canon=1 ids=0/1 ids_fallback=key kv=f32 ckpt_restore=6004 ckpt_restore_ms=0.609 ckpt_save_ms=0.610
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=6215 completion_tokens=8 ttft=169ms total=221ms reused=6096 slot=6104 div=6096 canon=1 ids=0/1 ids_fallback=key kv=f32 ckpt_restore=6096 ckpt_restore_ms=0.687 ckpt_save_ms=0.849
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=6344 completion_tokens=8 ttft=176ms total=207ms reused=6215 slot=6223 div=6215 canon=1 ids=0/1 ids_fallback=key kv=f32 ckpt_restore=6215 ckpt_restore_ms=0.931 ckpt_save_ms=0.896
+kv snapshot: restored 4096 rows of 4096 into slot 0 in 11.7 ms
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=5955 completion_tokens=8 ttft=1808ms total=1838ms reused=4096 slot=4096 div=- canon=1 ids=0/0 ids_fallback=- kv=f32 snap=4096 ckpt_save_ms=0.835
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=6192 completion_tokens=8 ttft=285ms total=316ms reused=5955 slot=5963 div=5957 canon=1 ids=0/0 ids_fallback=- kv=f32 ckpt_restore=5955 ckpt_restore_ms=0.688 ckpt_save_ms=0.795
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=6305 completion_tokens=8 ttft=150ms total=198ms reused=6192 slot=6200 div=6192 canon=1 ids=0/0 ids_fallback=- kv=f32 ckpt_restore=6192 ckpt_restore_ms=0.593 ckpt_save_ms=0.772
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=6407 completion_tokens=8 ttft=139ms total=191ms reused=6313 slot=6313 div=- canon=1 ids=0/1 ids_fallback=key kv=f32 ckpt_save_ms=0.588
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=6505 completion_tokens=8 ttft=121ms total=171ms reused=6415 slot=6415 div=- canon=1 ids=0/2 ids_fallback=key,key kv=f32 ckpt_save_ms=0.643
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=6628 completion_tokens=8 ttft=149ms total=201ms reused=6513 slot=6513 div=- canon=1 ids=0/3 ids_fallback=key,key,key kv=f32 ckpt_save_ms=0.939
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=6837 completion_tokens=8 ttft=270ms total=322ms reused=6636 slot=6636 div=- canon=1 ids=0/4 ids_fallback=key,key,key,key kv=f32 ckpt_save_ms=0.792
+kv snapshot: restored 4096 rows of 4096 into slot 0 in 12.0 ms
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=5959 completion_tokens=8 ttft=1800ms total=1831ms reused=4096 slot=4096 div=- canon=1 ids=0/0 ids_fallback=- kv=f32 snap=4096 ckpt_save_ms=0.742
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=6059 completion_tokens=8 ttft=126ms total=176ms reused=5959 slot=5967 div=5959 canon=1 ids=0/1 ids_fallback=key kv=f32 ckpt_restore=5959 ckpt_restore_ms=0.922 ckpt_save_ms=0.728
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=6190 completion_tokens=8 ttft=152ms total=205ms reused=6067 slot=6067 div=- canon=1 ids=0/2 ids_fallback=key,key kv=f32 ckpt_save_ms=0.602
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=6351 completion_tokens=8 ttft=204ms total=256ms reused=6198 slot=6198 div=- canon=1 ids=0/3 ids_fallback=key,key,key kv=f32 ckpt_save_ms=0.688
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=6471 completion_tokens=8 ttft=160ms total=211ms reused=6359 slot=6359 div=- canon=1 ids=0/4 ids_fallback=key,key,key,key kv=f32 ckpt_save_ms=0.654
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=6744 completion_tokens=8 ttft=311ms total=364ms reused=6479 slot=6479 div=- canon=1 ids=0/5 ids_fallback=key,key,key,key,key kv=f32 ckpt_save_ms=0.768
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=6837 completion_tokens=8 ttft=120ms total=167ms reused=6752 slot=6752 div=- canon=1 ids=0/6 ids_fallback=key,key,key,key,key,key kv=f32 ckpt_save_ms=1.209
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=7646 completion_tokens=8 ttft=1178ms total=1231ms reused=6845 slot=6845 div=- canon=1 ids=0/7 ids_fallback=key,key,key,key,key,key,key kv=f32 ckpt_save_ms=0.649
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=7808 completion_tokens=8 ttft=215ms total=267ms reused=7654 slot=7654 div=- canon=1 ids=0/8 ids_fallback=key,key,key,key,key,key,key,key kv=f32 ckpt_save_ms=0.697
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=8087 completion_tokens=8 ttft=467ms total=498ms reused=7808 slot=7816 div=7808 canon=1 ids=0/8 ids_fallback=key,key,key,key,key,key,key,key kv=f32 ckpt_restore=7808 ckpt_restore_ms=0.682 ckpt_save_ms=0.583
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=8323 completion_tokens=8 ttft=410ms total=458ms reused=8087 slot=8095 div=8087 canon=1 ids=0/9 ids_fallback=key,key,key,key,key,key,key,key,key kv=f32 ckpt_restore=8087 ckpt_restore_ms=0.651 ckpt_save_ms=0.841
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=8739 completion_tokens=8 ttft=730ms total=781ms reused=8323 slot=8331 div=8323 canon=1 ids=0/9 ids_fallback=key,key,key,key,key,key,key,key,key kv=f32 ckpt_restore=8323 ckpt_restore_ms=0.644 ckpt_save_ms=0.816
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=8863 completion_tokens=8 ttft=226ms total=278ms reused=8747 slot=8747 div=- canon=1 ids=0/10 ids_fallback=key,key,key,key,key,key,key,key,key,key kv=f32 ckpt_save_ms=0.775
+kv snapshot: restored 4096 rows of 4096 into slot 0 in 11.8 ms
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=5959 completion_tokens=8 ttft=1834ms total=1864ms reused=4096 slot=4096 div=- canon=1 ids=0/0 ids_fallback=- kv=f32 snap=4096 ckpt_save_ms=0.789
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=6153 completion_tokens=8 ttft=232ms total=284ms reused=5959 slot=5967 div=5961 canon=1 ids=0/0 ids_fallback=- kv=f32 ckpt_restore=5959 ckpt_restore_ms=0.734 ckpt_save_ms=0.712
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=6205 completion_tokens=8 ttft=86ms total=134ms reused=6161 slot=6161 div=- canon=1 ids=0/1 ids_fallback=key kv=f32 ckpt_save_ms=0.791
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=6425 completion_tokens=8 ttft=271ms total=302ms reused=6205 slot=6213 div=6211 canon=1 ids=0/2 ids_fallback=key,key kv=f32 ckpt_restore=6205 ckpt_restore_ms=0.898 ckpt_save_ms=0.645
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=6654 completion_tokens=8 ttft=300ms total=352ms reused=6425 slot=6433 div=6425 canon=1 ids=0/3 ids_fallback=key,key,key kv=f32 ckpt_restore=6425 ckpt_restore_ms=0.784 ckpt_save_ms=0.839
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=7021 completion_tokens=8 ttft=467ms total=520ms reused=6654 slot=6662 div=6654 canon=1 ids=0/3 ids_fallback=key,key,key kv=f32 ckpt_restore=6654 ckpt_restore_ms=0.911 ckpt_save_ms=0.709
+request: POST /v1/responses model=qwen3.5-0.8b status=200 prompt_tokens=7141 completion_tokens=8 ttft=155ms total=186ms reused=7029 slot=7029 div=- canon=1 ids=0/4 ids_fallback=key,key,key,key kv=f32 ckpt_save_ms=0.763
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=613 completion_tokens=3 ttft=261ms total=272ms reused=0 slot=7149 div=6 canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.801
+kv snapshot: took 6144 rows (163 MiB host) from slot 0 in 124.8 ms; 279 of 6424 MiB held
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=7314 completion_tokens=8 ttft=7141ms total=7172ms reused=0 slot=616 div=5 canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.716
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=7403 completion_tokens=8 ttft=148ms total=179ms reused=7314 slot=7322 div=7314 canon=1 ids=- ids_fallback=- kv=f32 ckpt_restore=7314 ckpt_restore_ms=0.733 ckpt_save_ms=0.751
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=7787 completion_tokens=8 ttft=618ms total=650ms reused=7403 slot=7411 div=7403 canon=1 ids=- ids_fallback=- kv=f32 ckpt_restore=7403 ckpt_restore_ms=0.764 ckpt_save_ms=0.723
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=8180 completion_tokens=8 ttft=655ms total=686ms reused=7787 slot=7795 div=7787 canon=1 ids=- ids_fallback=- kv=f32 ckpt_restore=7787 ckpt_restore_ms=0.736 ckpt_save_ms=0.718
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=8571 completion_tokens=8 ttft=679ms total=711ms reused=8188 slot=8188 div=- canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.818
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=8955 completion_tokens=8 ttft=692ms total=724ms reused=8579 slot=8579 div=- canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.740
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=9336 completion_tokens=8 ttft=708ms total=740ms reused=8963 slot=8963 div=- canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.788
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=9719 completion_tokens=8 ttft=711ms total=744ms reused=9344 slot=9344 div=- canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.582
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=10111 completion_tokens=8 ttft=773ms total=806ms reused=9727 slot=9727 div=- canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.708
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=613 completion_tokens=3 ttft=261ms total=272ms reused=0 slot=10119 div=5 canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.645
+kv snapshot: restored 6144 rows of 6144 into slot 0 in 16.2 ms
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=7314 completion_tokens=8 ttft=1849ms total=1880ms reused=6144 slot=6144 div=- canon=1 ids=- ids_fallback=- kv=f32 snap=6144 ckpt_save_ms=0.876
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=7403 completion_tokens=8 ttft=130ms total=162ms reused=7314 slot=7322 div=7314 canon=1 ids=- ids_fallback=- kv=f32 ckpt_restore=7314 ckpt_restore_ms=0.739 ckpt_save_ms=0.745
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=7801 completion_tokens=8 ttft=638ms total=670ms reused=7403 slot=7411 div=7403 canon=1 ids=- ids_fallback=- kv=f32 ckpt_restore=7403 ckpt_restore_ms=0.681 ckpt_save_ms=0.768
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=8207 completion_tokens=8 ttft=682ms total=713ms reused=7801 slot=7809 div=7804 canon=1 ids=- ids_fallback=- kv=f32 ckpt_restore=7801 ckpt_restore_ms=0.731 ckpt_save_ms=0.796
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=8601 completion_tokens=8 ttft=689ms total=721ms reused=8215 slot=8215 div=- canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.823
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=8988 completion_tokens=8 ttft=694ms total=726ms reused=8609 slot=8609 div=- canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.825
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=9371 completion_tokens=8 ttft=705ms total=737ms reused=8996 slot=8996 div=- canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.762
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=9756 completion_tokens=8 ttft=736ms total=769ms reused=9379 slot=9379 div=- canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.743
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=10150 completion_tokens=8 ttft=783ms total=816ms reused=9764 slot=9764 div=- canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.819
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=564 completion_tokens=3 ttft=240ms total=251ms reused=0 slot=10158 div=5 canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.768
+kv snapshot: restored 6144 rows of 6144 into slot 0 in 15.8 ms
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=7265 completion_tokens=8 ttft=1799ms total=1831ms reused=6144 slot=6144 div=- canon=1 ids=- ids_fallback=- kv=f32 snap=6144 ckpt_save_ms=0.804
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=7367 completion_tokens=8 ttft=164ms total=218ms reused=7265 slot=7273 div=7265 canon=1 ids=- ids_fallback=- kv=f32 ckpt_restore=7265 ckpt_restore_ms=0.814 ckpt_save_ms=0.695
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=7557 completion_tokens=8 ttft=286ms total=339ms reused=7367 slot=7375 div=7373 canon=1 ids=- ids_fallback=- kv=f32 ckpt_restore=7367 ckpt_restore_ms=0.633 ckpt_save_ms=0.619
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=7869 completion_tokens=8 ttft=484ms total=539ms reused=7565 slot=7565 div=- canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.695
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=8097 completion_tokens=8 ttft=371ms total=426ms reused=7877 slot=7877 div=- canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.769
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=8409 completion_tokens=8 ttft=537ms total=592ms reused=8105 slot=8105 div=- canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.734
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=8480 completion_tokens=8 ttft=148ms total=201ms reused=8417 slot=8417 div=- canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.749
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=8573 completion_tokens=8 ttft=184ms total=235ms reused=8488 slot=8488 div=- canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.791
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=8898 completion_tokens=8 ttft=570ms total=625ms reused=8581 slot=8581 div=- canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.715
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=9093 completion_tokens=8 ttft=353ms total=408ms reused=8906 slot=8906 div=- canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.729
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=567 completion_tokens=8 ttft=242ms total=271ms reused=0 slot=9101 div=5 canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.695
+kv snapshot: restored 6144 rows of 6144 into slot 0 in 15.3 ms
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=7268 completion_tokens=8 ttft=1810ms total=1841ms reused=6144 slot=6144 div=- canon=1 ids=- ids_fallback=- kv=f32 snap=6144 ckpt_save_ms=0.860
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=7367 completion_tokens=8 ttft=159ms total=213ms reused=7268 slot=7276 div=7268 canon=1 ids=- ids_fallback=- kv=f32 ckpt_restore=7268 ckpt_restore_ms=0.810 ckpt_save_ms=0.636
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=7895 completion_tokens=8 ttft=850ms total=904ms reused=7375 slot=7375 div=- canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.874
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=8358 completion_tokens=8 ttft=780ms total=835ms reused=7903 slot=7903 div=- canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.717
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=8480 completion_tokens=8 ttft=230ms total=282ms reused=8366 slot=8366 div=- canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.702
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=8753 completion_tokens=8 ttft=505ms total=559ms reused=8480 slot=8488 div=8486 canon=1 ids=- ids_fallback=- kv=f32 ckpt_restore=8480 ckpt_restore_ms=0.783 ckpt_save_ms=0.803
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=9043 completion_tokens=8 ttft=527ms total=582ms reused=8761 slot=8761 div=- canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.882
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=9416 completion_tokens=8 ttft=695ms total=741ms reused=9043 slot=9051 div=9043 canon=1 ids=- ids_fallback=- kv=f32 ckpt_restore=9043 ckpt_restore_ms=0.660 ckpt_save_ms=0.891
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=9510 completion_tokens=8 ttft=204ms total=254ms reused=9424 slot=9424 div=- canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.580
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=567 completion_tokens=8 ttft=241ms total=270ms reused=0 slot=9518 div=5 canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.668
+kv snapshot: restored 6144 rows of 6144 into slot 0 in 15.5 ms
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=7268 completion_tokens=8 ttft=1796ms total=1827ms reused=6144 slot=6144 div=- canon=1 ids=- ids_fallback=- kv=f32 snap=6144 ckpt_save_ms=0.750
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=7370 completion_tokens=8 ttft=167ms total=199ms reused=7268 slot=7276 div=7269 canon=1 ids=- ids_fallback=- kv=f32 ckpt_restore=7268 ckpt_restore_ms=0.940 ckpt_save_ms=0.785
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=7436 completion_tokens=8 ttft=107ms total=161ms reused=7370 slot=7378 div=7370 canon=1 ids=- ids_fallback=- kv=f32 ckpt_restore=7370 ckpt_restore_ms=0.675 ckpt_save_ms=0.730
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=7709 completion_tokens=8 ttft=389ms total=440ms reused=7444 slot=7444 div=- canon=1 ids=- ids_fallback=- kv=f32 ckpt_save_ms=0.602
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=8010 completion_tokens=8 ttft=466ms total=497ms reused=7709 slot=7717 div=7709 canon=1 ids=- ids_fallback=- kv=f32 ckpt_restore=7709 ckpt_restore_ms=0.828 ckpt_save_ms=0.796
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=8211 completion_tokens=8 ttft=367ms total=398ms reused=8010 slot=8018 div=8013 canon=1 ids=- ids_fallback=- kv=f32 ckpt_restore=8010 ckpt_restore_ms=0.822 ckpt_save_ms=0.645
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=8568 completion_tokens=8 ttft=640ms total=691ms reused=8211 slot=8219 div=8213 canon=1 ids=- ids_fallback=- kv=f32 ckpt_restore=8211 ckpt_restore_ms=0.692 ckpt_save_ms=0.846
+request: POST /v1/chat/completions model=qwen3.5-0.8b status=200 prompt_tokens=8660 completion_tokens=8 ttft=199ms total=231ms reused=8568 slot=8576 div=8568 canon=1 ids=- ids_fallback=- kv=f32 ckpt_restore=8568 ckpt_restore_ms=0.759 ckpt_save_ms=0.585
+kv snapshot: took 16384 rows (403 MiB host) from slot 0 in 237.4 ms; 682 of 6424 MiB held
+request: POST /v1/messages model=qwen3.5-0.8b status=200 prompt_tokens=17960 completion_tokens=8 ttft=29065ms total=29103ms reused=0 slot=8668 div=5 canon=1 ids=0/0 ids_fallback=- kv=f32 ckpt_save_ms=0.689
+request: POST /v1/messages model=qwen3.5-0.8b status=200 prompt_tokens=18083 completion_tokens=8 ttft=408ms total=446ms reused=17960 slot=17968 div=17962 canon=1 ids=0/1 ids_fallback=key kv=f32 ckpt_restore=17960 ckpt_restore_ms=0.806 ckpt_save_ms=0.990
+kv snapshot: restored 16384 rows of 16384 into slot 0 in 35.2 ms
+request: POST /v1/messages model=qwen3.5-0.8b status=200 prompt_tokens=19446 completion_tokens=8 ttft=8496ms total=8534ms reused=16384 slot=16384 div=- canon=1 ids=0/1 ids_fallback=key kv=f32 snap=16384 ckpt_save_ms=0.723
+kv snapshot: took 16384 rows (403 MiB host) from slot 0 in 237.3 ms; 1085 of 6424 MiB held
+request: POST /v1/messages model=qwen3.5-0.8b status=200 prompt_tokens=17704 completion_tokens=8 ttft=28602ms total=28640ms reused=0 slot=19454 div=15809 canon=1 ids=0/1 ids_fallback=key kv=f32 ckpt_save_ms=0.757
+kv snapshot: restored 16384 rows of 16384 into slot 0 in 35.1 ms
+request: POST /v1/messages model=qwen3.5-0.8b status=200 prompt_tokens=19067 completion_tokens=8 ttft=7404ms total=7443ms reused=16384 slot=16384 div=- canon=1 ids=0/1 ids_fallback=key kv=f32 snap=16384 ckpt_save_ms=0.862
+kv snapshot: restored 16384 rows of 16384 into slot 0 in 35.6 ms
+request: POST /v1/messages model=qwen3.5-0.8b status=200 prompt_tokens=18085 completion_tokens=8 ttft=4585ms total=4623ms reused=16384 slot=16384 div=- canon=1 ids=0/2 ids_fallback=key,key kv=f32 snap=16384 ckpt_save_ms=0.727
+kv snapshot: restored 16384 rows of 16384 into slot 0 in 34.9 ms
+request: POST /v1/messages model=qwen3.5-0.8b status=200 prompt_tokens=19448 completion_tokens=8 ttft=8529ms total=8568ms reused=16384 slot=16384 div=- canon=1 ids=0/2 ids_fallback=key,key kv=f32 snap=16384 ckpt_save_ms=0.736
+kv snapshot: took 16384 rows (403 MiB host) from slot 0 in 261.1 ms; 1488 of 6424 MiB held
+request: POST /v1/messages model=qwen3.5-0.8b status=200 prompt_tokens=18091 completion_tokens=8 ttft=29678ms total=29716ms reused=0 slot=19456 div=15843 canon=1 ids=0/1 ids_fallback=key kv=f32 ckpt_save_ms=0.758
+kv snapshot: restored 16384 rows of 16384 into slot 0 in 35.4 ms
+request: POST /v1/messages model=qwen3.5-0.8b status=200 prompt_tokens=19454 completion_tokens=8 ttft=8537ms total=8576ms reused=16384 slot=16384 div=- canon=1 ids=0/1 ids_fallback=key kv=f32 snap=16384 ckpt_save_ms=0.626
+kv snapshot: took 16384 rows (403 MiB host) from slot 0 in 260.1 ms; 1892 of 6424 MiB held
+request: POST /v1/messages model=qwen3.5-0.8b status=200 prompt_tokens=18220 completion_tokens=8 ttft=29990ms total=30028ms reused=0 slot=19462 div=15841 canon=1 ids=0/1 ids_fallback=key kv=f32 ckpt_save_ms=0.719
+
+shutting down…
