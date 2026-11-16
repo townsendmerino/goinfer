@@ -811,6 +811,12 @@ func webgpuGateRow(t *testing.T, row, path string, o decoder.Options, census boo
 		t.Errorf("%s: %v", row, err)
 	} else if covered {
 		webgpuScratchPlanCovered++
+	} else {
+		why := m.WebGPUDecodeScratchWhy()
+		if i := strings.Index(why, ": "); strings.HasPrefix(why, "layer ") && i > 0 {
+			why = why[i+2:] // the layer's number varies, the reason is the row's
+		}
+		webgpuScratchPlanWhy[why]++
 	}
 	ch, g := m.Generate(context.Background(), []int{1, 2, 3, 4, 5}, 4, decoder.SamplingParams{})
 	for range ch {
@@ -876,6 +882,9 @@ func TestMemGate_webgpu(t *testing.T) {
 		}
 	}
 	t.Logf("%d builds held, %d options declined by WebGPU's own build; the plan's decode scratch covered %d", len(built), declined, webgpuScratchPlanCovered)
+	for why, n := range webgpuScratchPlanWhy {
+		t.Logf("no plan figure for %d rows: %s", n, why)
+	}
 	if webgpuScratchPlanCovered == 0 {
 		t.Error("VOID: Model.WebGPUDecodeScratch gave a figure for no row, so the plan-side gate compared nothing")
 	}
@@ -1028,6 +1037,9 @@ func webgpuScratchListHolds(rd *residentDecoder, l *mem.Ledger) error {
 
 // webgpuScratchPlanCovered counts the rows webgpuScratchPlanHolds found the plan's figure for, so a gate that covers none is VOID.
 var webgpuScratchPlanCovered int
+
+// webgpuScratchPlanWhy counts the rows the plan gave no figure for, by the reason it gave (logged, so the next layer shape to derive is read, not guessed).
+var webgpuScratchPlanWhy = map[string]int{}
 
 // webgpuScratchPlanHolds is G-MS2w's second half (MM5b): where the plan gives a figure for m (Model.WebGPUDecodeScratch), the build's
 // scratch list equals it role by role, once for each runner the build made. covered is false where the plan gives none.

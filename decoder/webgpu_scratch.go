@@ -1,6 +1,8 @@
 package decoder
 
 import (
+	"fmt"
+
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
@@ -21,9 +23,20 @@ type WebGPUScratchTerm struct {
 // plain attention sublayer and a gated dense FFN with one geometry (the runner's other mixers are not yet derived): no figure is
 // given for it, rather than a guess. Reported, not charged: no admission decision reads it.
 func (m *Model) WebGPUDecodeScratch() (terms []WebGPUScratchTerm, ok bool) {
+	terms, why := m.webgpuDecodeScratch()
+	return terms, why == ""
+}
+
+// WebGPUDecodeScratchWhy is the first reason WebGPUDecodeScratch gives no figure for m, or "" where it gives one.
+func (m *Model) WebGPUDecodeScratchWhy() string {
+	_, why := m.webgpuDecodeScratch()
+	return why
+}
+
+func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 	H, _, _, _, _, _, V := m.Dims()
 	if m.w == nil || H <= 0 || V <= 0 {
-		return nil, false
+		return nil, "the model has no hidden or vocabulary width"
 	}
 	d := m.metalDecodeRows(H, V)
 	view := m.BackendView()
@@ -35,34 +48,45 @@ func (m *Model) WebGPUDecodeScratch() (terms []WebGPUScratchTerm, ok bool) {
 	var gemv, gemvAdd, actQuant, attnLayer, quantB, rmsQuantB, qkNormB, rmsnormB, biasAddB, gemvBiasB int64
 	pk := func(k int) int64 { return int64((k + 31) &^ 31) }
 	rmsQuantB = pk(H) + 20 // one call per sublayer norm and the final norm: the int8 row, its scale, its uniform
-	nRms := int64(1)
+	nRms, nQuant := int64(1), int64(0)
 	for l, ops := range m.Program().Layers {
 		shape, isDense := denseAttnLayer(ops)
 		if !isDense || d.routed[l] {
-			return nil, false
+			return nil, fmt.Sprintf("layer %d: operations are not a plain attention and dense FFN sublayer", l)
 		}
 		rows := d.layers[l]
 		if len(rows) != 6 || rows["q"] == 0 || rows["k"] == 0 || rows["v"] == 0 || rows["ctx"] == 0 || rows["gate"] == 0 || rows["up"] == 0 {
-			return nil, false
+			return nil, fmt.Sprintf("layer %d: not the gated dense FFN's six declared rows", l)
 		}
 		lv := view.Layer(l)
 		w := &m.w.Layers[l]
 		rs := float32(lv.RopeMscale())
-		if rs == 0 || lv.IsLocal() || lv.VFromK() || len(w.OBias) > 0 {
-			return nil, false
+		switch {
+		case rs == 0:
+			return nil, fmt.Sprintf("layer %d: rope scale 0", l)
+		case lv.VFromK():
+			return nil, fmt.Sprintf("layer %d: V from K", l)
+		case len(w.OBias) > 0:
+			return nil, fmt.Sprintf("layer %d: an output bias", l)
 		}
 		// Each optional operation is held by the weights it runs on: the build creates its dispatches from the weights, not the program.
 		if shape.qkNorm != (len(w.QNorm) > 0) || shape.postAttn != (len(w.PostAttnNorm) > 0) || shape.postMLP != (len(w.PostMLPNorm) > 0) {
-			return nil, false
+			return nil, fmt.Sprintf("layer %d: a norm or QK-norm the weights and the operations disagree on", l)
 		}
 		g := geom{lv.HeadDim(), lv.KVHeads(), len(lv.RopeInvFreq())}
 		if l == 0 {
 			g0 = g
 		} else if g != g0 {
-			return nil, false
+			return nil, fmt.Sprintf("layer %d: its geometry differs from layer 0's", l)
 		}
 		scales[rs] = true
-		nRms += 2
+		for _, pre := range [][]float32{w.PreAttnNorm, w.PreMLPNorm} {
+			if len(pre) == 0 { // a family with no pre-norm (norms after the sublayer only) quantizes the raw residual
+				nQuant++
+			} else {
+				nRms++
+			}
+		}
 		gemv += 4*int64(rows["q"]+rows["k"]+rows["v"]+rows["gate"]+rows["up"]) + 5*16
 		gemvAdd += 2 * 16
 		if shape.qkNorm {
@@ -92,7 +116,7 @@ func (m *Model) WebGPUDecodeScratch() (terms []WebGPUScratchTerm, ok bool) {
 		quantB += pk(rows["ctx"]) + 20
 	}
 	if len(scales) == 0 {
-		return nil, false
+		return nil, "the model has no layers"
 	}
 	gemv += 4*int64(V) + 16 // the head
 	geomB := int64(16 + 32) // the v-store and attention uniforms
@@ -108,7 +132,7 @@ func (m *Model) WebGPUDecodeScratch() (terms []WebGPUScratchTerm, ok bool) {
 		{"residual", 4 * int64(H)},
 		{"logitsStaging", 4 * int64(V)},
 		{"rmsQuant", nRms * rmsQuantB},
-		{"quant", quantB},
+		{"quant", quantB + nQuant*(pk(H)+20)},
 		{"gemv", gemv},
 		{"gemvBias", gemvBiasB},
 		{"gemvAdd", gemvAdd},
@@ -130,7 +154,7 @@ func (m *Model) WebGPUDecodeScratch() (terms []WebGPUScratchTerm, ok bool) {
 			kept = append(kept, t)
 		}
 	}
-	return kept, true
+	return kept, ""
 }
 
 // WebGPUDecodeScratchBytes is the sum of WebGPUDecodeScratch's terms; ok is false where it gives none.
