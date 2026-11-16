@@ -963,7 +963,7 @@ to ignore.**
   precision); a later request whose prompt starts with those ids **restores** the rows into its slot by device copy and prefills only
   the rest. The rows are prefill-class rows copied before any decode step, so the restored prefix is the prefix computed and the reply
   is the cold one. The budget defaults to **a tenth of the machine's RAM, at most 8 GiB** (`-kv-host-bytes` sets it: `0` turns the
-  feature off, or a byte count with an optional K, M or G). Memory is pinned only while a snapshot is held, so an idle server holds
+  feature off, or a byte count with an optional K, M or G). Memory is held only while a snapshot is, so an idle server holds
   none; the least recently restored snapshot goes first, and a longer prompt of a held prefix replaces the shorter snapshot. A
   snapshot is never written to disk, never crosses a namespace, and `-kv-share off` turns snapshots off too. A windowed model serves
   a restore only within the window's rollback of the snapshot's end, so a prompt whose part after the shared prefix is longer than
