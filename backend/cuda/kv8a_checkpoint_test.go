@@ -387,3 +387,42 @@ func TestKV8Msg_cudaMamba2KeepsNoBoundarySnapshot(t *testing.T) {
 		t.Fatalf("took %d snapshots of a Mamba-2 state", st.Taken)
 	}
 }
+
+// The preamble snapshot (the fourth addendum, P2): a second conversation that shares the first 700 ids restores the snapshot taken at their
+// block, 640 rows, and leaves the reply, every recurrent buffer and the K/V rows bit-identical to a cold prefill's.
+func TestKV8Preamble_cudaRestoreAtTheSharedPreambleEqualsCold(t *testing.T) {
+	requireCUDADevice(t)
+	const fixture, pass = "qwen3next-tiny", 128
+	m, r := msgLoad(t, fixture, pass)
+	_, _, _, _, _, _, vocab := m.Dims()
+	const nA, nB, preamble = 2400, 2500, 700
+	a := kv8aIDs(1, nA, vocab)
+	b := append(slices.Clone(a[:preamble+3]), kv8aIDs(2, nB-preamble-3, vocab)...)
+	msgGen(t, m, a, decoder.KVScope{Keep: nA - 4, MsgBoundary: 1500, Boundary: preamble})
+	st, _ := m.KVSnapshotStats()
+	var held []int
+	for _, s := range st.Snapshots {
+		held = append(held, s.Rows)
+	}
+	slices.Sort(held)
+	if want := []int{640, 1472, 2368}; !slices.Equal(held, want) {
+		t.Fatalf("turn 1 left snapshots of %v rows, want %v (the preamble's, the message's and Keep's)", held, want)
+	}
+	got, g := msgGen(t, m, b, decoder.KVScope{Keep: nB - 4, MsgBoundary: 1700, Boundary: preamble})
+	if g.PrefillReused != 640 || g.KVSnapRestored != 640 {
+		t.Fatalf("the second conversation reused %d rows, snapshot restored %d: want the preamble's 640", g.PrefillReused, g.KVSnapRestored)
+	}
+	warmRec, warmKV := kv8aRec(t, r), kv8aKV(t, r, nB)
+
+	cm, cr := msgLoad(t, fixture, pass)
+	want, _ := msgGen(t, cm, b, decoder.KVScope{})
+	if !slices.Equal(got, want) {
+		t.Fatalf("reply after the restore %v, cold %v", got, want)
+	}
+	if !kv8aSame(warmRec, kv8aRec(t, cr)) {
+		t.Errorf("the recurrent state after the restore at 640 differs from a cold prefill's")
+	}
+	if !kv8aSame(warmKV, kv8aKV(t, cr, nB)) {
+		t.Errorf("the attention K/V rows after the restore at 640 differ from a cold prefill's")
+	}
+}

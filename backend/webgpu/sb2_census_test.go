@@ -803,6 +803,9 @@ func webgpuGateRow(t *testing.T, row, path string, o decoder.Options, census boo
 	read.Exact = []mem.LineID{mem.LineKV, mem.LineState}
 	facts := memgate.GeometryOf(m, rd.ctxCap, rd.KVSlots(), kv, false).Facts()
 	read.Open = append(read.Open, memgate.Snap("built", l, facts))
+	if err := webgpuScratchListHolds(rd, l); err != nil {
+		t.Errorf("%s: %v", row, err)
+	}
 	ch, g := m.Generate(context.Background(), []int{1, 2, 3, 4, 5}, 4, decoder.SamplingParams{})
 	for range ch {
 	}
@@ -975,5 +978,79 @@ func TestWebGPUDeviceBuffers_inTheBuildsOrder(t *testing.T) {
 				t.Fatalf("the planner's %d buffers are not the build's %d weight, KV, state and expert buffers in order, with only vectors between", len(plan), len(led))
 			}
 		})
+	}
+}
+
+// webgpuScratchListHolds is G-MS2w (docs/tasks/task-forward-and-memory-2026-11.md, "MM5b, WebGPU's decode scratch: registration"): the
+// scratch line the ledger shows after a build is the sum of the build's named scratch list, summed over every runner the build made (one a
+// KV slot), and no lease on it is unnamed. A lease made beside the list, or one no builder names, is red here.
+func webgpuScratchListHolds(rd *residentDecoder, l *mem.Ledger) error {
+	runners := []*DecodeRunner{rd.runner}
+	if len(rd.slots) > 0 {
+		runners = runners[:0]
+		for _, s := range rd.slots {
+			runners = append(runners, s.runner)
+		}
+	}
+	var listed, unnamed int64
+	roles := map[string]int64{}
+	for _, r := range runners {
+		for _, e := range r.ScratchList() {
+			listed += e.Bytes
+			roles[e.Role] += e.Bytes
+			if e.Role == "" {
+				unnamed += e.Bytes
+			}
+		}
+	}
+	held := l.Usage().ByLine[mem.LineScratch]
+	var parts []string
+	for role, n := range roles {
+		parts = append(parts, fmt.Sprintf("%q=%d", role, n))
+	}
+	switch {
+	case unnamed != 0:
+		return fmt.Errorf("%d B of the build's scratch leases name no builder (list %d B of the ledger's %d B: %s)", unnamed, listed, held, strings.Join(parts, " "))
+	case listed != held:
+		return fmt.Errorf("the build's scratch list sums to %d B and the ledger's scratch line holds %d B (%+d B beside the list)", listed, held, held-listed)
+	}
+	return nil
+}
+
+// TestScratchList_plantsGoRed holds G-MS2w to its plants (MM5b): on a built resident, the list and the ledger agree; a scratch buffer leased
+// beside the list makes them disagree by exactly its bytes; and the list names every lease with a builder (no empty role) on a family that
+// builds the plain attention path.
+func TestScratchList_plantsGoRed(t *testing.T) {
+	m, err := decoder.Load("../../testdata/llama-tiny", decoder.Options{Backend: "webgpu", Quant: "int4", ResidentContext: 256})
+	if err != nil {
+		t.Skipf("no WebGPU device: %v", err)
+	}
+	defer m.Close()
+	rd, ok := m.ResidentForwardForTest().(*residentDecoder)
+	if !ok {
+		t.Skip("llama-tiny did not build resident on this adapter")
+	}
+	l := rd.c.Ledger()
+	if err := webgpuScratchListHolds(rd, l); err != nil {
+		t.Fatalf("unplanted: %v", err)
+	}
+	var listed int64
+	for _, e := range rd.runner.ScratchList() {
+		if e.Role == "" {
+			t.Errorf("an unnamed role holds %d B in %d buffers", e.Bytes, e.Count)
+		}
+		listed += e.Bytes
+	}
+	if listed == 0 || listed != rd.runner.ScratchBytes() {
+		t.Fatalf("VOID: the list sums to %d B and ScratchBytes says %d B", listed, rd.runner.ScratchBytes())
+	}
+	extra, err := kernels.CreateBufferOn(rd.c, string(mem.LineScratch), &wgpu.BufferDescriptor{Label: "plant", Size: 4096, Usage: wgpu.BufferUsageStorage})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kernels.ReleaseBuffer(extra)
+	err = webgpuScratchListHolds(rd, l)
+	if err == nil || !strings.Contains(err.Error(), "+4096 B beside the list") {
+		t.Fatalf("a 4096 B scratch buffer leased beside the list: err = %v, want one naming +4096 B beside the list", err)
 	}
 }

@@ -367,6 +367,8 @@ type kvAcquired struct {
 	markFired bool
 	// msgRows is the row count of the message-boundary snapshot this request's prefill offered (0: none), which Keep's snapshot does not replace.
 	msgRows int
+	// preambleRows is the row count of the preamble snapshot this request's prefill offered (0: none).
+	preambleRows int
 	// slotLen and match are the bound slot's record length before this request and the prompt's common prefix with it
 	// (Generation.PrefillSlot and PrefillMatch).
 	slotLen, match int

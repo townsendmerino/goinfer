@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
@@ -87,6 +88,9 @@ type kvSnap struct {
 	restores int
 	last     uint64
 	created  time.Time
+	// preamble marks a recurrent snapshot taken at the end of the system-and-tools preamble (KVScope.Boundary): other conversations share its
+	// prefix, so no deeper snapshot of the same prefix replaces it; only the store's budget drops it.
+	preamble bool
 }
 
 // kvSnapStore is a model's held snapshots under a host byte budget, most recently used first.
@@ -612,16 +616,49 @@ func (m *Model) kvMsgMark(slot int, prompt []int, from int, lora *loraRuntime, s
 // Keep past the restored point, so the kept state moves to each new question instead of staying at the first one
 // (docs/measurements/b35-keep-advance-2026-10/README.md); admission then replaces the snapshot it restored from (residentSnapshotRows).
 func (m *Model) kvPrefillMark(slot int, prompt []int, from int, lora *loraRuntime, sc KVScope, acq *kvAcquired) *prefillMark {
-	keep := m.kvKeepMark(slot, prompt, from, lora, sc, acq)
-	msg := m.kvMsgMark(slot, prompt, from, lora, sc, acq, keep)
-	if msg == nil {
-		return keep
+	top := m.kvKeepMark(slot, prompt, from, lora, sc, acq)
+	msg := m.kvMsgMark(slot, prompt, from, lora, sc, acq, top)
+	lowest := top
+	if msg != nil {
+		msg.pre, top, lowest = nil, cmp.Or(top, msg), msg
+		if top != msg {
+			top.pre = msg
+		}
 	}
-	if keep == nil {
-		return msg
+	if pre := m.kvPreambleMark(slot, prompt, from, lora, sc, acq, lowest); pre != nil {
+		if lowest == nil {
+			return pre
+		}
+		lowest.pre = pre
 	}
-	keep.pre = msg
-	return keep
+	return top
+}
+
+// kvPreambleMark is the mark for a recurrent model's snapshot at the end of the system-and-tools preamble (KVScope.Boundary), or nil. above is the
+// request's lowest other mark: the preamble's point must lie below it. It is taken when no snapshot is held at that row, which is the first cold
+// request to reach a preamble; the snapshot is kept apart from the replacement rule (kvSnap.preamble).
+func (m *Model) kvPreambleMark(slot int, prompt []int, from int, lora *loraRuntime, sc KVScope, acq *kvAcquired, above *prefillMark) *prefillMark {
+	align, ok := m.kvMarkGuard(sc, lora)
+	if !ok || !m.hasRecurrentState() || align <= 0 || len(prompt) < kvSnapMinPrompt || sc.Boundary <= 0 || sc.Boundary >= len(prompt) {
+		return nil
+	}
+	q, ok := m.recurrentCut(len(prompt), sc.Boundary)
+	if !ok || q <= from || (above != nil && q >= above.q) || !m.cutSegmentOK(q-from, align) {
+		return nil
+	}
+	st := m.kvSnaps
+	if c := st.covering(m.kvRootIn(nil, sc.Namespace), prompt, q, 0); c != nil && m.kvSnapHolds(c, q) {
+		st.decline("held")
+		return nil
+	}
+	return &prefillMark{q: q, cut: true, at: func(pos int) {
+		acq.markFired = true
+		acq.preambleRows = pos
+		m.residentSnapshotRows(slot, prompt, pos, lora, sc, *acq)
+		if x := acq.snapFrom; x != nil && !st.holds(x) {
+			acq.snapFrom = nil
+		}
+	}}
 }
 
 // kvKeepMark is the boundary snapshot's mark: Keep's for a recurrent model, the prefix boundary's otherwise.
@@ -721,7 +758,7 @@ func (m *Model) residentSnapshotRows(slot int, prompt []int, b int, lora *loraRu
 	case x != nil && recurrent && m.kvSnapHolds(x, b):
 		st.decline("held")
 		return
-	case x != nil && x.h.Rows() < b:
+	case x != nil && x.h.Rows() < b && !x.preamble:
 		replaced = x
 	case x != nil:
 		// A recurrent snapshot longer than b: a different point, kept beside the new one.
@@ -731,7 +768,7 @@ func (m *Model) residentSnapshotRows(slot int, prompt []int, b int, lora *loraRu
 				st.decline("held")
 				return
 			}
-			if c.h.Rows() < b && !(recurrent && acq.msgRows > 0 && c.h.Rows() == acq.msgRows) {
+			if c.h.Rows() < b && !c.preamble && !(recurrent && acq.msgRows > 0 && c.h.Rows() == acq.msgRows) {
 				replaced = c // a longer prompt of the same prefix: take it, then drop the shorter
 			}
 		}
@@ -771,7 +808,7 @@ func (m *Model) residentSnapshotRows(slot int, prompt []int, b int, lora *loraRu
 		st.mu.Unlock()
 		return
 	}
-	x := &kvSnap{root: root, ids: append([]int(nil), prompt[:b]...), classes: clipRuns(cold, b), h: h}
+	x := &kvSnap{root: root, ids: append([]int(nil), prompt[:b]...), classes: clipRuns(cold, b), h: h, preamble: recurrent && acq.preambleRows == b && b > 0}
 	st.add(x, replaced, d, need)
 	used := st.stats().Used
 	fmt.Fprintf(stderrKV, "kv snapshot: took %d rows (%.0f MiB host) from slot %d in %.1f ms; %.0f of %.0f MiB held\n",
