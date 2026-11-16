@@ -15,8 +15,8 @@ func TestMM5b_webgpuDecodeScratchNamesNoFamily(t *testing.T) {
 }
 
 // webgpuScratchHand is the figure for a plain-attention model written as arithmetic on its config: hidden h, l layers, vocabulary v, the
-// query, key and FFN widths, a QK-norm per layer, and a norm on each sublayer's output, at a KV precision.
-func webgpuScratchHand(h, l, v, qW, kvW, ffn int, qkNorm, post bool, kv string) map[string]int64 {
+// query, key and FFN widths, a QK-norm per layer, a norm on each sublayer's output, at a KV precision, and the q/k/v bias an int4 or int8 weight carries.
+func webgpuScratchHand(h, l, v, qW, kvW, ffn int, qkNorm, post bool, kv, bias string) map[string]int64 {
 	pk := func(k int) int64 { return int64((k + 31) &^ 31) }
 	H, L, V := int64(h), int64(l), int64(v)
 	want := map[string]int64{
@@ -37,6 +37,14 @@ func webgpuScratchHand(h, l, v, qW, kvW, ffn int, qkNorm, post bool, kv string) 
 	} else {
 		want["qkvFinUniFor"] = 32
 	}
+	switch bias { // q, k and v's bias: a separate add each on an int4 weight, folded into the projection on an int8 one
+	case "int4":
+		want["biasAdd"] = L * 3 * 16
+	case "int8":
+		q3 := L * (4*int64(qW+2*kvW) + 3*16)
+		want["gemv"] -= q3
+		want["gemvBias"] = q3
+	}
 	if qkNorm {
 		want["qkNorm"] = L * 2 * 16
 	}
@@ -44,7 +52,7 @@ func webgpuScratchHand(h, l, v, qW, kvW, ffn int, qkNorm, post bool, kv string) 
 		delete(want, "gemvAdd") // no sublayer's output projection is fused
 		want["gemv"] += L * 2 * (4*H + 16)
 		want["rmsnormF32"] = L * 2 * (4*H + 16)
-		want["biasAdd"] = L * 2 * 16
+		want["biasAdd"] += L * 2 * 16
 	}
 	return want
 }
@@ -57,11 +65,13 @@ func TestWebGPUDecodeScratch_handTable(t *testing.T) {
 		o        Options
 		want     map[string]int64
 	}{
-		{"llama f32", "llama-tiny", Options{}, webgpuScratchHand(64, 4, 256, 64, 32, 128, false, false, "f32")},
-		{"llama f16", "llama-tiny", Options{KVPrecision: "f16"}, webgpuScratchHand(64, 4, 256, 64, 32, 128, false, false, "f16")},
-		{"llama i8", "llama-tiny", Options{KVPrecision: "i8"}, webgpuScratchHand(64, 4, 256, 64, 32, 128, false, false, "i8")},
-		{"qwen3asr (qk-norm)", "qwen3asr-tiny", Options{}, webgpuScratchHand(24, 2, 160, 24, 12, 48, true, false, "f32")},
-		{"glm-ocr (post norms)", "glm-ocr-tiny", Options{}, webgpuScratchHand(48, 3, 160, 128, 64, 144, false, true, "f32")},
+		{"llama f32", "llama-tiny", Options{}, webgpuScratchHand(64, 4, 256, 64, 32, 128, false, false, "f32", "")},
+		{"llama f16", "llama-tiny", Options{KVPrecision: "f16"}, webgpuScratchHand(64, 4, 256, 64, 32, 128, false, false, "f16", "")},
+		{"llama i8", "llama-tiny", Options{KVPrecision: "i8"}, webgpuScratchHand(64, 4, 256, 64, 32, 128, false, false, "i8", "")},
+		{"qwen3asr (qk-norm)", "qwen3asr-tiny", Options{}, webgpuScratchHand(24, 2, 160, 24, 12, 48, true, false, "f32", "")},
+		{"qwen25vl int4 (bias)", "qwen25vl-tiny", Options{Quant: "int4"}, webgpuScratchHand(64, 2, 300, 64, 32, 128, false, false, "f32", "int4")},
+		{"qwen25vl int8 (bias)", "qwen25vl-tiny", Options{Quant: "int8int8"}, webgpuScratchHand(64, 2, 300, 64, 32, 128, false, false, "f32", "int8")},
+		{"glm-ocr (post norms)", "glm-ocr-tiny", Options{}, webgpuScratchHand(48, 3, 160, 128, 64, 144, false, true, "f32", "")},
 	} {
 		m, err := Load("../testdata/"+c.fx, c.o)
 		if err != nil {
