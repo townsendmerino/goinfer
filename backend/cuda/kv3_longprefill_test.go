@@ -743,6 +743,8 @@ func TestKV10_longContextFidelity(t *testing.T) {
 				t.Errorf("depth %d FAILS: min cosine %.6f, NaN/Inf %v", depth, minCos, bad)
 			}
 		})
+	}
+}
 
 // TestKV3_gluQuantWritesInPlace is KV3-S1's red-first gate (docs/measurements/kv3-s1-2026-11/README.md): glu_quant_batched leaves its product in the gate
 // buffer, so a pass allocates two M x inter float buffers (the gate's and the up's) and no third for the product, and PrefillScratchBytes prices the pass without it.
