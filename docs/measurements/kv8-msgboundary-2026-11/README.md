@@ -245,7 +245,7 @@ Decided 2026-11-15: the replay's one failing request is a regression on main sin
 
 | | reading |
 |---|---|
-| **P0, P1** | `decoder/kv8_msgboundary_test.go:TestKV8Preamble_*`: **red on main first** (snapshots of 960 and 1,216 where 640, 960 and 1,216 are wanted). Plants, each red: a deeper snapshot replacing the preamble's; the request that restored it dropping it; the covering-search replacement. The budget test (room for three, two, none) and the held-once and no-state cases pass |
+| **P0, P1** | `decoder/kv8_msgboundary_test.go:TestKV8Preamble_aSecondConversationRestoresTheSharedPreamble` and the other `TestKV8Preamble` tests beside it: **red on main first** (snapshots of 960 and 1,216 where 640, 960 and 1,216 are wanted). Plants, each red: a deeper snapshot replacing the preamble's; the request that restored it dropping it; the covering-search replacement. The budget test (room for three, two, none) and the held-once and no-state cases pass |
 | **P2** | `backend/cuda/kv8a_checkpoint_test.go:TestKV8Preamble_cudaRestoreAtTheSharedPreambleEqualsCold`, `qwen3next-tiny`, 128-row passes: turn 1 leaves 640, 1,472 and 2,368 rows; a second conversation sharing 700 ids reuses 640, and its reply, every recurrent buffer and the K/V rows are bit-identical to a cold prefill's. Plant (the conv window not restored) red. `p2-cuda.log` |
 | **P3** | M0 to M3, C0 to C2 and the B35 tests pass; `gate identity -backend cuda` against current main: **GREEN, 25 IDENTICAL, 0 DIFFERENT, 19 NOT RUN** (the missing ignored fixtures of this worktree), `identity-preamble.log`. Parity refresh: manifest unchanged. gofmt, tagged vet, staticcheck, citation lint, comment census clean |
 
