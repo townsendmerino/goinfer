@@ -32,12 +32,13 @@ func (m *Model) WebGPUDecodeScratch() (terms []WebGPUScratchTerm, ok bool) {
 	type geom struct{ hd, nKV, half int }
 	var g0 geom
 	scales := map[float32]bool{}
-	var gemv, gemvAdd, actQuant, attnLayer, quantB, rmsQuantB int64
+	var gemv, gemvAdd, actQuant, attnLayer, quantB, rmsQuantB, qkNormB, rmsnormB, biasAddB int64
 	pk := func(k int) int64 { return int64((k + 31) &^ 31) }
 	rmsQuantB = pk(H) + 20 // one call per sublayer norm and the final norm: the int8 row, its scale, its uniform
 	nRms := int64(1)
 	for l, ops := range m.Program().Layers {
-		if !denseAttnLayer(ops) || d.routed[l] {
+		shape, isDense := denseAttnLayer(ops)
+		if !isDense || d.routed[l] {
 			return nil, false
 		}
 		rows := d.layers[l]
@@ -47,7 +48,11 @@ func (m *Model) WebGPUDecodeScratch() (terms []WebGPUScratchTerm, ok bool) {
 		lv := view.Layer(l)
 		w := &m.w.Layers[l]
 		rs := float32(lv.RopeMscale())
-		if rs == 0 || lv.IsLocal() || lv.VFromK() || len(w.QBias) > 0 || len(w.OBias) > 0 || len(w.QNorm) > 0 {
+		if rs == 0 || lv.IsLocal() || lv.VFromK() || len(w.QBias) > 0 || len(w.OBias) > 0 {
+			return nil, false
+		}
+		// Each optional operation is held by the weights it runs on: the build creates its dispatches from the weights, not the program.
+		if shape.qkNorm != (len(w.QNorm) > 0) || shape.postAttn != (len(w.PostAttnNorm) > 0) || shape.postMLP != (len(w.PostMLPNorm) > 0) {
 			return nil, false
 		}
 		g := geom{lv.HeadDim(), lv.KVHeads(), len(lv.RopeInvFreq())}
@@ -60,6 +65,19 @@ func (m *Model) WebGPUDecodeScratch() (terms []WebGPUScratchTerm, ok bool) {
 		nRms += 2
 		gemv += 4*int64(rows["q"]+rows["k"]+rows["v"]+rows["gate"]+rows["up"]) + 5*16
 		gemvAdd += 2 * 16
+		if shape.qkNorm {
+			qkNormB += 2 * 16 // q's and k's
+		}
+		// A post-sublayer norm splits the fused output projection into a bare gemv (its own output row), a norm (its own row and
+		// uniform) and a separate residual add (one uniform).
+		for _, post := range []bool{shape.postAttn, shape.postMLP} {
+			if post {
+				gemvAdd -= 16
+				gemv += 4*int64(H) + 16
+				rmsnormB += 4*int64(H) + 16
+				biasAddB += 16
+			}
+		}
 		actQuant += pk(rows["gate"]) + 20
 		attnLayer += 4*int64(rows["ctx"]) + 16
 		quantB += pk(rows["ctx"]) + 20
@@ -86,6 +104,9 @@ func (m *Model) WebGPUDecodeScratch() (terms []WebGPUScratchTerm, ok bool) {
 		{"gemvAdd", gemvAdd},
 		{"actQuantPad", actQuant},
 		{"attnLayer", attnLayer},
+		{"qkNorm", qkNormB},
+		{"rmsnormF32", rmsnormB},
+		{"biasAdd", biasAddB},
 		{"geomFor", geomB},
 	}
 	if kv == mem.KVF16 || kv == mem.KVI8 {
@@ -93,7 +114,13 @@ func (m *Model) WebGPUDecodeScratch() (terms []WebGPUScratchTerm, ok bool) {
 	} else {
 		terms = append(terms, WebGPUScratchTerm{"qkvFinUniFor", 32 * nScale})
 	}
-	return terms, true
+	kept := terms[:0]
+	for _, t := range terms {
+		if t.Bytes != 0 { // a role the model's layers never run
+			kept = append(kept, t)
+		}
+	}
+	return kept, true
 }
 
 // WebGPUDecodeScratchBytes is the sum of WebGPUDecodeScratch's terms; ok is false where it gives none.
@@ -106,18 +133,33 @@ func (m *Model) WebGPUDecodeScratchBytes() (int64, bool) {
 	return n, ok
 }
 
-// denseAttnLayer reports whether a layer's operations are exactly a plain attention sublayer and a dense FFN, each behind its own
-// pre-norm, with nothing else (no QK-norm, output gate, post-norm or layer scale).
-func denseAttnLayer(ops []op) bool {
-	want := []program.OpKind{program.OpNorm, program.OpProjQKV, program.OpRope, program.OpAttention, program.OpProjO, program.OpResidual,
-		program.OpNorm, program.OpFFN, program.OpResidual}
-	if len(ops) != len(want) {
+// denseShape is the optional operations a plain attention layer carries: a QK-norm after the projections, and a norm on each
+// sublayer's output before its residual add.
+type denseShape struct{ qkNorm, postAttn, postMLP bool }
+
+// denseAttnLayer reports whether a layer's operations are a plain attention sublayer and a dense FFN, each behind its own pre-norm,
+// with only the optional operations of denseShape and nothing else (no output gate, temperature or layer scale).
+func denseAttnLayer(ops []op) (s denseShape, ok bool) {
+	i := 0
+	next := func(k program.OpKind) bool {
+		if i < len(ops) && ops[i].Kind == k {
+			i++
+			return true
+		}
 		return false
 	}
-	for i, o := range ops {
-		if o.Kind != want[i] {
-			return false
-		}
+	opt := func(k program.OpKind) bool { return next(k) }
+	if !next(program.OpNorm) || !next(program.OpProjQKV) {
+		return s, false
 	}
-	return true
+	s.qkNorm = opt(program.OpQKNorm)
+	if !next(program.OpRope) || !next(program.OpAttention) || !next(program.OpProjO) {
+		return s, false
+	}
+	s.postAttn = opt(program.OpNorm)
+	if !next(program.OpResidual) || !next(program.OpNorm) || !next(program.OpFFN) {
+		return s, false
+	}
+	s.postMLP = opt(program.OpNorm)
+	return s, next(program.OpResidual) && i == len(ops)
 }
