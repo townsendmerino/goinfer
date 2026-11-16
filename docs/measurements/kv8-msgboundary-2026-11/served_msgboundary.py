@@ -118,6 +118,7 @@ def main():
     p.add_argument("--out", required=True)
     p.add_argument("--fit-only", action="store_true")
     p.add_argument("--ctx", type=int, default=12288)
+    p.add_argument("--no-regression", action="store_true", help="T3b': both arms already serve r3 from the boundary snapshot; grade that nothing moved")
     p.add_argument("--report-cost-only", action="store_true", help="the 9B: the snapshot copy's host MiB and ms are reported, not graded against the 0.8B's bars (the first-token bars still apply)")
     a = p.parse_args()
     h.CTX = a.ctx
@@ -159,6 +160,31 @@ def main():
         verdict = max(verdict, v, key=order.index)
 
     rec_by = {c["cell"]: c for c in cells}
+    if a.no_regression:
+        for pair, (old, new) in {"pair 1": ("A1", "B1"), "pair 2": ("A2", "B2")}.items():
+            for r in ("r1", "r2", "r3", "r4"):
+                o, n = by(old, r), by(new, r)
+                ratio, delta = n["ttft_s"] / o["ttft_s"], n["ttft_s"] - o["ttft_s"]
+                print(f"{pair}: {r} {o['ttft_s']:.2f} -> {n['ttft_s']:.2f} s (x{ratio:.3f}, {delta:+.2f} s); rows {o['reused']} -> {n['reused']}")
+                if r == "r3":
+                    worse("PASS" if 0.98 <= ratio <= 1.02 else "PARKED" if 0.95 <= ratio <= 1.05 else "FAIL")
+                    if n["reused"] != o["reused"]:
+                        notes.append(f"{pair}: r3 rows {n['reused']} against main's {o['reused']}"); worse("FAIL")
+                elif r == "r1":
+                    worse("PASS" if ratio <= R1_BAR else "PARKED" if ratio <= R1_FAIL else "FAIL")
+                else:
+                    worse("PASS" if ratio <= 1.05 or delta <= 0.03 else "PARKED" if ratio <= 1.10 or delta <= 0.06 else "FAIL")
+                    if n["reused"] < o["reused"]:
+                        notes.append(f"{pair}: {r} rows {n['reused']} against main's {o['reused']}"); worse("FAIL")
+                if n["reply"] != o["reply"]:
+                    notes.append(f"{pair}: {r}'s reply differs from main's"); worse("FAIL")
+            for c in rec_by[new]["snapshot_cost"][:3]:
+                print(f"{pair}: cold request's snapshot at {c['rows']} rows: {c['mib']} MiB host, {c['ms']} ms")
+        for c in cells:
+            if c.get("peak_swap_mb", 0) > h.SWAP_MB:
+                notes.append(f"{c['cell']}: VmSwap {c['peak_swap_mb']} MB"); worse("FAIL")
+        print("VERDICT:", verdict, "; ".join(notes))
+        return {"PASS": 0, "FAIL": 1, "PARKED": 3}[verdict]
     for pair, (old, new) in {"pair 1": ("A1", "B1"), "pair 2": ("A2", "B2")}.items():
         r1, r2, r3 = (by(new, r)["ttft_s"] / by(old, r)["ttft_s"] for r in ("r1", "r2", "r3"))
         r4 = by(new, "r4")["ttft_s"] / by(old, "r4")["ttft_s"]
