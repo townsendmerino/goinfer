@@ -1,0 +1,7 @@
+--- SKIP: TestGluQuantBlockSizeInvariant (0.00s)
+    kv3_longprefill_test.go:513: M=16: the pass allocated 3 buffers of M x inter floats (8192 B), want 2: the gate's and the up's, the product written into the gate's
+    kv3_longprefill_test.go:513: M=100: the pass allocated 3 buffers of M x inter floats (51200 B), want 2: the gate's and the up's, the product written into the gate's
+--- FAIL: TestKV3_gluQuantWritesInPlace (1.84s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/backend/cuda	1.899s
+FAIL

@@ -1,0 +1,5 @@
+(main 5a8742643, PrefillScratchBytes, qwen2.5 int4 resident at --ctx 4096, GOINFER_HEAVY_TESTS=1, a throwaway probe test)
+qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: PrefillScratchBytes(512) = 78913536 B (75.26 MiB); inter 8960 hidden 1536
+qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: PrefillScratchBytes(2048) = 293634048 B (280.03 MiB); inter 8960 hidden 1536
+qwen2.5-7b-instruct-q4_k_m.gguf: PrefillScratchBytes(512) = 162799616 B (155.26 MiB); inter 18944 hidden 3584
+qwen2.5-7b-instruct-q4_k_m.gguf: PrefillScratchBytes(2048) = 627081216 B (598.03 MiB); inter 18944 hidden 3584

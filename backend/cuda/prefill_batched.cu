@@ -302,13 +302,16 @@ __global__ void attn_ragged(const float* __restrict__ q, const KV_T* __restrict_
 #define ACT_GELU_TANH 0
 #define ACT_SILU      1
 // glu_quant_batched: M rows, one block per row. act(g)*u then symmetric int8 quant. Copy of glu_quant.
-__global__ void glu_quant_batched(const float* __restrict__ g, const float* __restrict__ u,
-                                  int gOff, int uOff, int I, int act, int* __restrict__ q,
-                                  float* __restrict__ scale, float* __restrict__ dscr, int M) {
+// The product is written back over the gate row, in place: each thread reads g[i] and writes the same index, and the quantize loop reads the row only after
+// the reduction's __syncthreads. g therefore carries no __restrict__ (a restrict pointer that aliases what it is written through is undefined behaviour);
+// u is a different buffer. The gate row starts at row * I, so the caller's gate buffer is [M, I] with no column offset.
+__global__ void glu_quant_batched(float* g, const float* __restrict__ u,
+                                  int uOff, int I, int act, int* __restrict__ q,
+                                  float* __restrict__ scale, int M) {
     int m = blockIdx.x;
-    const float* gr = g + (long)m * I + gOff;
+    float* gr = g + (long)m * I;
     const float* ur = u + (long)m * I + uOff;
-    float* dr = dscr + (long)m * I;
+    float* dr = gr;
     extern __shared__ float sm[];
     float* red = sm;
     int t = threadIdx.x, nt = blockDim.x;

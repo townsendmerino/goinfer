@@ -1,0 +1,25 @@
+[g3] read site=plan free=7525826560 (7177.19 MiB) ok=true
+[g3] read site=weights free=7525826560 (7177.19 MiB) ok=true
+[g3] read site=kv free=4707254272 (4489.19 MiB) ok=true
+[g3] read site=prefill free=426967040 (407.19 MiB) ok=true
+[g3] ctxPlanned 15360 ctxCap 15296 slots 1 extra 0 margin 325607424 (310.52 MiB) postPool 2097152 scratch512 77078528 span 67125248
+[g3] allocations before the KV pools: 726, 2621.17 MiB charged; dense priced 2363.83 MiB; allocSlack 256.84 MiB
+[g3]   102 x 12.500 MiB = 1275.00 MiB
+[g3]   1 x 640.156 MiB = 640.16 MiB
+[g3]   68 x 2.500 MiB = 170.00 MiB
+[g3]   102 x 1.562 MiB = 159.38 MiB
+[g3]   68 x 1.250 MiB = 85.00 MiB
+[g3]   68 x 0.312 MiB = 21.25 MiB
+[g3]   68 x 0.156 MiB = 10.62 MiB
+[g3]   138 x 0.010 MiB = 1.35 MiB
+[g3]   1 x 1.000 MiB = 1.00 MiB
+[g3]   1 x 0.469 MiB = 0.47 MiB
+[g3]   69 x 0.001 MiB = 0.07 MiB
+[g3]   34 x 0.000 MiB = 0.02 MiB
+[g3]   1 x 0.008 MiB = 0.01 MiB
+[g3]   2 x 0.004 MiB = 0.01 MiB
+[g3] kvChargedBytes(15232, 1) = 4278191984 (4080.00 MiB)
+[g3] kvChargedBytes(15296, 1) = 4278191992 (4080.00 MiB)
+[g3] kvChargedBytes(15360, 1) = 4420798336 (4216.00 MiB)
+[g3] kvChargedBytes(15424, 1) = 4420798344 (4216.00 MiB)
+ok  	github.com/townsendmerino/goinfer/backend/cuda	13.342s

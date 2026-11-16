@@ -412,7 +412,7 @@ type blockScratch struct {
 	aSc, mSc, cSc, dSc Buffer
 	q, k, v            Buffer
 	cctx               Buffer // attention output, [M, qDim]
-	g, u, dScr         Buffer
+	g, u               Buffer // gate and up; glu_quant_batched writes its product back into g
 }
 
 // checkDrafterShmem is DraftBlock's shared-memory guard, extracted so it is testable without a device: the attnBlock
@@ -470,10 +470,10 @@ func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {
 	err := d.r.doOn(mem.LineCompanion, func() error {
 		s := &d.blk
 		if M > s.cap {
-			// Release before growing (see FuseContext); all 16 buffers, as the allocation below.
+			// Release before growing (see FuseContext); all 15 buffers, as the allocation below.
 			if s.cap > 0 {
 				for _, b := range []Buffer{s.x, s.aq, s.aSc, s.mq, s.mSc, s.cq, s.cSc, s.dq, s.dSc,
-					s.q, s.k, s.v, s.cctx, s.g, s.u, s.dScr} {
+					s.q, s.k, s.v, s.cctx, s.g, s.u} {
 					d.r.dev.ReleaseBuf(b)
 				}
 			}
@@ -484,7 +484,7 @@ func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {
 			s.dq, s.dSc = d.r.ai(M*(inter/4)), d.r.af(M)
 			s.q, s.k, s.v = d.r.af(M*qDim), d.r.af(M*kvDim), d.r.af(M*kvDim)
 			s.cctx = d.r.af(M * qDim)
-			s.g, s.u, s.dScr = d.r.af(M*inter), d.r.af(M*inter), d.r.af(M*inter)
+			s.g, s.u = d.r.af(M*inter), d.r.af(M*inter)
 			s.cap = M
 		}
 		flat := make([]float32, 0, M*hidden)
@@ -573,9 +573,9 @@ func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {
 			// a Gemma target would hand GELU-tanh to a SwiGLU drafter, silently.
 			if e := d.r.launch(d.r.bSw, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1,
 				BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
-				Arg(s.g), Arg(s.u), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)),
+				Arg(s.g), Arg(s.u), gpu.ArgValue(int32(0)),
 				gpu.ArgValue(int32(inter)), gpu.ArgValue(int32(1)),
-				Arg(s.dq), Arg(s.dSc), Arg(s.dScr), gpu.ArgValue(int32(M))); e != nil {
+				Arg(s.dq), Arg(s.dSc), gpu.ArgValue(int32(M))); e != nil {
 				return e
 			}
 			if e := d.r.bGemvB(L.down, s.dq, s.dSc, ArgNull(), s.x, M, 1); e != nil {

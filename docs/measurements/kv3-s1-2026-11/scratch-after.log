@@ -1,0 +1,5 @@
+    zz_scratch_probe_test.go:24: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: PrefillScratchBytes(512) = 60039168 B (57.26 MiB); inter 8960 hidden 1536
+    zz_scratch_probe_test.go:24: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: PrefillScratchBytes(2048) = 220233728 B (210.03 MiB); inter 8960 hidden 1536
+    zz_scratch_probe_test.go:24: qwen2.5-7b-instruct-q4_k_m.gguf: PrefillScratchBytes(512) = 122953728 B (117.26 MiB); inter 18944 hidden 3584
+    zz_scratch_probe_test.go:24: qwen2.5-7b-instruct-q4_k_m.gguf: PrefillScratchBytes(2048) = 471891968 B (450.03 MiB); inter 18944 hidden 3584
+ok  	github.com/townsendmerino/goinfer/backend/cuda	17.240s
