@@ -1,0 +1,271 @@
+[1m== identity provenance ==[0m
+  repo        63ea35a07
+  date (UTC)  2026-11-16T20:50:37Z
+  host        Linux x86_64
+  old         5a8742643 Merge pull request #1026 from townsendmerino/kv8-hostguard-2026-11-16
+  new         63ea35a07 KV3-S1: glu_quant_batched writes in place; a prefill pass allocates on
+  backend     cuda
+  mode        logits from each cell's own checkpoint
+  assets      tiny — the forward goldens' fixtures under /home/francis/mycode/goinfer-kv8b, each golden's prompt ids (+ a longer cycled prompt where the context allows)
+  quants      int4,int8int8
+  steps       8 per prompt (the first dumped step is the prefill's logits)
+  env         GOINFER_* removed from both sides' dumpers (GOINFER_TIMING_LOCK) — the code is the only difference
+  build       go build -trimpath; dumper in backend/cuda/ with -tags cuda, ephemeral go.work: . ./backend/cuda
+  run dir     /tmp/gate-identity-20261116-125037-1426021062
+  started     12:50:37 PST
+  tree        the revs are commits, built in temporary worktrees; the main tree supplies only the fixtures, identically to both
+== identity: 100 cell(s) over 44 family(ies), started 12:50:37 — building 5a8742643 and 63ea35a07 ==
+   built both in 4s (old 4s, new 4s)
+   [1/40] bailing_hybrid     2 cell(s): new1 100ms, old 100ms, new2 100ms — 300ms total, elapsed 4s (started 12:50:37)
+   [2/40] cohere             2 cell(s): new1 3.2s, old 3.3s, new2 3.2s — 9.7s total, elapsed 14s (started 12:50:37)
+   [3/40] cohere2            2 cell(s): new1 3.1s, old 3.2s, new2 3.1s — 9.4s total, elapsed 23s (started 12:50:37)
+   [4/40] deepseek_v3        2 cell(s): new1 2.9s, old 2.9s, new2 3s — 8.8s total, elapsed 32s (started 12:50:37)
+   ... identity: 34s elapsed (started 12:50:37), running flint (5/40 families, 4 done)
+   [5/40] flint              2 cell(s): new1 2.9s, old 3.1s, new2 3s — 9.1s total, elapsed 41s (started 12:50:37)
+   [6/40] gemma3             2 cell(s): new1 3.3s, old 3.2s, new2 3.3s — 9.7s total, elapsed 51s (started 12:50:37)
+   ... identity: 1m4s elapsed (started 12:50:37), running gemma4 (7/40 families, 6 done)
+   [7/40] gemma4             10 cell(s): new1 5.9s, old 5.3s, new2 5.4s — 16.5s total, elapsed 1m7s (started 12:50:37)
+   [8/40] glm4_moe           4 cell(s): new1 3.2s, old 3.2s, new2 3.3s — 9.8s total, elapsed 1m17s (started 12:50:37)
+   [9/40] glm_ocr            2 cell(s): new1 3.1s, old 3s, new2 2.9s — 9s total, elapsed 1m26s (started 12:50:37)
+   ... identity: 1m34s elapsed (started 12:50:37), running gpt-oss (10/40 families, 9 done)
+   [10/40] gpt-oss            2 cell(s): new1 3s, old 3.1s, new2 2.9s — 9s total, elapsed 1m35s (started 12:50:37)
+   [11/40] gpt2               2 cell(s): new1 4.8s, old 2.5s, new2 2.6s — 9.8s total, elapsed 1m45s (started 12:50:37)
+   [12/40] granite            2 cell(s): new1 3.4s, old 3.1s, new2 3.2s — 9.7s total, elapsed 1m55s (started 12:50:37)
+   [13/40] granitemoehybrid   2 cell(s): new1 100ms, old 100ms, new2 100ms — 200ms total, elapsed 1m55s (started 12:50:37)
+   ... identity: 2m4s elapsed (started 12:50:37), running internlm2 (14/40 families, 13 done)
+   [14/40] internlm2          2 cell(s): new1 3.2s, old 3.2s, new2 3.2s — 9.5s total, elapsed 2m4s (started 12:50:37)
+   [15/40] kimi_k2            2 cell(s): new1 3.1s, old 3s, new2 3.1s — 9.2s total, elapsed 2m14s (started 12:50:37)
+   [16/40] laguna             6 cell(s): new1 200ms, old 200ms, new2 200ms — 600ms total, elapsed 2m14s (started 12:50:37)
+   [17/40] lfm2               2 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 2m14s (started 12:50:37)
+   [18/40] llama              2 cell(s): new1 3.2s, old 3.3s, new2 3.2s — 9.6s total, elapsed 2m24s (started 12:50:37)
+   [19/40] llama4_text        2 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 2m24s (started 12:50:37)
+   [20/40] mistral            2 cell(s): new1 3.2s, old 3.2s, new2 3.2s — 9.6s total, elapsed 2m34s (started 12:50:37)
+   ... identity: 2m34s elapsed (started 12:50:37), running mistral3 (21/40 families, 20 done)
+   [21/40] mistral3           2 cell(s): new1 3.2s, old 3.1s, new2 3.2s — 9.4s total, elapsed 2m43s (started 12:50:37)
+   [22/40] mixtral            2 cell(s): new1 3s, old 3s, new2 2.9s — 8.9s total, elapsed 2m52s (started 12:50:37)
+   [23/40] nemotron_h         4 cell(s): new1 2s, old 2s, new2 1.9s — 5.9s total, elapsed 2m58s (started 12:50:37)
+   ... identity: 3m4s elapsed (started 12:50:37), running olmo3 (24/40 families, 23 done)
+   [24/40] olmo3              2 cell(s): new1 3.2s, old 3.1s, new2 3.1s — 9.5s total, elapsed 3m7s (started 12:50:37)
+   [25/40] gemma              2 cell(s): new1 3.1s, old 3.2s, new2 3.1s — 9.5s total, elapsed 3m17s (started 12:50:37)
+   [26/40] gemma2             2 cell(s): new1 3.1s, old 3.2s, new2 3.2s — 9.5s total, elapsed 3m26s (started 12:50:37)
+   ... identity: 3m34s elapsed (started 12:50:37), running olmo_hybrid (27/40 families, 26 done)
+   [27/40] olmo_hybrid        2 cell(s): new1 3.3s, old 3.3s, new2 3.2s — 9.7s total, elapsed 3m36s (started 12:50:37)
+   [28/40] phi3               2 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 3m36s (started 12:50:37)
+   [29/40] qwen2              2 cell(s): new1 7.8s, old 5.4s, new2 5.5s — 18.8s total, elapsed 3m55s (started 12:50:37)
+   ... identity: 4m4s elapsed (started 12:50:37), running qwen2_5_vl (30/40 families, 29 done)
+   [30/40] qwen2_5_vl         2 cell(s): new1 3.2s, old 3.1s, new2 3.1s — 9.5s total, elapsed 4m4s (started 12:50:37)
+   [31/40] qwen2_moe          2 cell(s): new1 3.4s, old 2.9s, new2 2.8s — 9.1s total, elapsed 4m13s (started 12:50:37)
+   ... identity: 4m34s elapsed (started 12:50:37), running qwen3 (32/40 families, 31 done)
+   [32/40] qwen3              2 cell(s): new1 17.5s, old 9.7s, new2 10.2s — 37.5s total, elapsed 4m51s (started 12:50:37)
+   [33/40] qwen3_5            2 cell(s): new1 3.2s, old 3.2s, new2 3.2s — 9.6s total, elapsed 5m0s (started 12:50:37)
+   ... identity: 5m4s elapsed (started 12:50:37), running qwen3_5_moe (34/40 families, 33 done)
+   [34/40] qwen3_5_moe        4 cell(s): new1 3.3s, old 3.4s, new2 3.4s — 10.1s total, elapsed 5m11s (started 12:50:37)
+   [35/40] qwen3_moe          4 cell(s): new1 3.3s, old 3.2s, new2 3.2s — 9.7s total, elapsed 5m20s (started 12:50:37)
+   [36/40] qwen3_next         2 cell(s): new1 3s, old 3.1s, new2 3s — 9.1s total, elapsed 5m29s (started 12:50:37)
+   ... identity: 5m34s elapsed (started 12:50:37), running qwen3_vl (37/40 families, 36 done)
+   [37/40] qwen3_vl           2 cell(s): new1 3.2s, old 3.3s, new2 3.2s — 9.6s total, elapsed 5m39s (started 12:50:37)
+   [38/40] qwen3_vl_moe       2 cell(s): new1 2.7s, old 2.7s, new2 2.7s — 8.1s total, elapsed 5m47s (started 12:50:37)
+   [39/40] smollm3            2 cell(s): new1 3.2s, old 3.2s, new2 3.1s — 9.5s total, elapsed 5m57s (started 12:50:37)
+   [40/40] spark2_5           2 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 5m57s (started 12:50:37)
+
+[1m== determinism: the new build (63ea35a07) run twice, separate processes, on cuda ==[0m
+  56 cell(s) byte-identical to themselves, 0 not, 0 unchecked (second run failed)
+
+[1m== identity: old 5a8742643 vs new 63ea35a07, per family ==[0m
+  [33mNOT RUN         [0m bailing_hybrid     nothing ran — see NOT RUN
+  [32mIDENTICAL       [0m cohere             2/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  tiny @ int4                            cuda-resident (int4)
+      IDENTICAL  tiny @ int8int8                        cuda-resident (int8int8)
+  [32mIDENTICAL       [0m cohere2            2/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  tiny @ int4                            cuda-resident (int4)
+      IDENTICAL  tiny @ int8int8                        cuda-resident (int8int8)
+  [33mNOT RUN         [0m deepseek_v2        nothing ran — see NOT RUN
+  [32mIDENTICAL       [0m deepseek_v3        1/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  tiny @ int4                            cuda-resident (int4)
+  [32mIDENTICAL       [0m flint              1/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  tiny @ int4                            cuda-resident (int4)
+  [32mIDENTICAL       [0m gemma              2/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  gemma1-tiny @ int4                     cuda-resident (int4)
+      IDENTICAL  gemma1-tiny @ int8int8                 cuda-resident (int8int8)
+  [32mIDENTICAL       [0m gemma2             2/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  tiny @ int4                            cuda-resident (int4)
+      IDENTICAL  tiny @ int8int8                        cuda-resident (int8int8)
+  [32mIDENTICAL       [0m gemma3             2/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  vl-tiny-text @ int4                    cuda-resident (int4)
+      IDENTICAL  vl-tiny-text @ int8int8                cuda-resident (int8int8)
+  [32mIDENTICAL       [0m gemma4             6/10 cell(s) ran validation inheritable from 5a8742643
+      IDENTICAL  moe-tiny @ int4                        cuda-resident (int4)
+      IDENTICAL  moe-unified-tiny @ int4                cuda-resident (int4)
+      IDENTICAL  dense-twogeom-tiny @ int4              cuda-resident (int4)
+      IDENTICAL  dense-twogeom-tiny @ int8int8          cuda-resident (int8int8)
+      IDENTICAL  dense-scaled @ int4                    cuda-resident (int4)
+      IDENTICAL  dense-scaled @ int8int8                cuda-resident (int8int8)
+  [32mIDENTICAL       [0m glm4_moe           2/4 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  tiny @ int4                            cuda-resident (int4)
+      IDENTICAL  tiny-bias @ int4                       cuda-resident (int4)
+  [32mIDENTICAL       [0m glm_ocr            1/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  tiny @ int8int8                        cuda-resident (int8int8)
+  [32mIDENTICAL       [0m gpt-oss            1/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  tiny-gguf @ int4                       cuda-resident (int4)
+  [33mNOT RUN         [0m gpt2               nothing ran — see NOT RUN
+  [32mIDENTICAL       [0m granite            2/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  dense-tiny @ int4                      cuda-resident (int4)
+      IDENTICAL  dense-tiny @ int8int8                  cuda-resident (int8int8)
+  [33mNOT RUN         [0m granitemoehybrid   nothing ran — see NOT RUN
+  [32mIDENTICAL       [0m internlm2          2/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  tiny @ int4                            cuda-resident (int4)
+      IDENTICAL  tiny @ int8int8                        cuda-resident (int8int8)
+  [32mIDENTICAL       [0m kimi_k2            1/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  tiny @ int4                            cuda-resident (int4)
+  [33mNOT RUN         [0m laguna             nothing ran — see NOT RUN
+  [33mNOT RUN         [0m lfm2               nothing ran — see NOT RUN
+  [32mIDENTICAL       [0m llama              2/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  tiny @ int4                            cuda-resident (int4)
+      IDENTICAL  tiny @ int8int8                        cuda-resident (int8int8)
+  [33mNOT RUN         [0m llama4_text        nothing ran — see NOT RUN
+  [33mNOT RUN         [0m mellum             nothing ran — see NOT RUN
+  [32mIDENTICAL       [0m mistral            2/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  tiny-window @ int4                     cuda-resident (int4)
+      IDENTICAL  tiny-window @ int8int8                 cuda-resident (int8int8)
+  [32mIDENTICAL       [0m mistral3           2/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  ministral3-tiny @ int4                 cuda-resident (int4)
+      IDENTICAL  ministral3-tiny @ int8int8             cuda-resident (int8int8)
+  [32mIDENTICAL       [0m mixtral            1/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  tiny @ int4                            cuda-resident (int4)
+  [32mIDENTICAL       [0m nemotron_h         1/4 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  tiny @ int4                            cuda-resident (int4)
+  [32mIDENTICAL       [0m olmo3              2/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  tiny @ int4                            cuda-resident (int4)
+      IDENTICAL  tiny @ int8int8                        cuda-resident (int8int8)
+  [32mIDENTICAL       [0m olmo_hybrid        2/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  tiny @ int4                            cuda-resident (int4)
+      IDENTICAL  tiny @ int8int8                        cuda-resident (int8int8)
+  [33mNOT RUN         [0m phi3               nothing ran — see NOT RUN
+  [32mIDENTICAL       [0m qwen2              2/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  0.5b @ int4                            cuda-resident (int4)
+      IDENTICAL  0.5b @ int8int8                        cuda-resident (int8int8)
+  [32mIDENTICAL       [0m qwen2_5_vl         2/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  tiny-text @ int4                       cuda-resident (int4)
+      IDENTICAL  tiny-text @ int8int8                   cuda-resident (int8int8)
+  [33mNOT RUN         [0m qwen2_moe          nothing ran — see NOT RUN
+  [32mIDENTICAL       [0m qwen3              2/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  1.7b @ int4                            cuda-resident (int4)
+      IDENTICAL  1.7b @ int8int8                        cuda-resident (int8int8)
+  [32mIDENTICAL       [0m qwen3_5            2/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  tiny @ int4                            cuda-resident (int4)
+      IDENTICAL  tiny @ int8int8                        cuda-resident (int8int8)
+  [32mIDENTICAL       [0m qwen3_5_moe        2/4 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  tiny @ int4                            cuda-resident (int4)
+      IDENTICAL  qwen35-tiny @ int4                     cuda-resident (int4)
+  [33mNOT RUN         [0m qwen3_asr          nothing ran — see NOT RUN
+  [32mIDENTICAL       [0m qwen3_moe          2/4 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  tiny @ int4                            cuda-resident (int4)
+      IDENTICAL  tiny-k3 @ int4                         cuda-resident (int4)
+  [32mIDENTICAL       [0m qwen3_next         1/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  tiny @ int4                            cuda-resident (int4)
+  [32mIDENTICAL       [0m qwen3_vl           2/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  tiny-text @ int4                       cuda-resident (int4)
+      IDENTICAL  tiny-text @ int8int8                   cuda-resident (int8int8)
+  [33mNOT RUN         [0m qwen3_vl_moe       nothing ran — see NOT RUN
+  [32mIDENTICAL       [0m smollm3            2/2 cell(s) ran  validation inheritable from 5a8742643
+      IDENTICAL  tiny @ int4                            cuda-resident (int4)
+      IDENTICAL  tiny @ int8int8                        cuda-resident (int8int8)
+  [33mNOT RUN         [0m spark2_5           nothing ran — see NOT RUN
+  [33mNOT RUN         [0m voxtral            nothing ran — see NOT RUN
+
+[1m== NOT RUN (49 cell(s)) — reported, never counted as a pass ==[0m
+  [33mNOT RUN [0m bailing_hybrid     tiny                   [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: layer 0: operation 1 (kda): cuda has no step for it,
+  [33mNOT RUN [0m bailing_hybrid     tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: layer 0: operation 1 (kda): cuda has no step for
+  [33mNOT RUN [0m deepseek_v3        tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 1: MoE experts are \"int8\"/\"int8\"
+  [33mNOT RUN [0m flint              tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 2: MoE experts are \"int8\"/\"int8\"
+  [33mNOT RUN [0m gemma4             moe-tiny               [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 0: gemma4 experts are \"int8\"/\"int
+  [33mNOT RUN [0m gemma4             moe-unified-tiny       [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 0: gemma4 experts are \"int8\"/\"int
+  [33mNOT RUN [0m gemma4             moe-kv-tiny            [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(
+  [33mNOT RUN [0m gemma4             moe-kv-tiny            [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: gemma4 MoE int4 needs moeInter(16) and hid
+  [33mNOT RUN [0m glm4_moe           tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 1: MoE experts are \"int8\"/\"int8\"
+  [33mNOT RUN [0m glm4_moe           tiny-bias              [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 1: MoE experts are \"int8\"/\"int8\"
+  [33mNOT RUN [0m glm_ocr            tiny                   [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: cuda: cuda: int4 K=48 not a multiple of 32, and cuda
+  [33mNOT RUN [0m gpt-oss            tiny-gguf              [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 0: MoE experts are \"int8\"/\"int8\"
+  [33mNOT RUN [0m gpt2               124m                   [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: the embedding stage: cuda does not implement learned
+  [33mNOT RUN [0m gpt2               124m                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: the embedding stage: cuda does not implement lea
+  [33mNOT RUN [0m granitemoehybrid   tiny                   [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: arch is not eligible for the resident decode runner:
+  [33mNOT RUN [0m granitemoehybrid   tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: arch is not eligible for the resident decode run
+  [33mNOT RUN [0m kimi_k2            tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 1: MoE experts are \"int8\"/\"int8\"
+  [33mNOT RUN [0m laguna             m1-tiny                [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: layer 0: operation 5 (out-gate): cuda has no step fo
+  [33mNOT RUN [0m laguna             m1-tiny                [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: layer 0: operation 5 (out-gate): cuda has no ste
+  [33mNOT RUN [0m laguna             xs2-tiny               [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: arch is not eligible for the resident decode runner:
+  [33mNOT RUN [0m laguna             xs2-tiny               [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: arch is not eligible for the resident decode run
+  [33mNOT RUN [0m laguna             xs21-tiny              [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: arch is not eligible for the resident decode runner:
+  [33mNOT RUN [0m laguna             xs21-tiny              [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: arch is not eligible for the resident decode run
+  [33mNOT RUN [0m lfm2               tiny                   [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: arch is not eligible for the resident decode runner:
+  [33mNOT RUN [0m lfm2               tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: arch is not eligible for the resident decode run
+  [33mNOT RUN [0m llama4_text        tiny                   [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: arch is not eligible for the resident decode runner:
+  [33mNOT RUN [0m llama4_text        tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: arch is not eligible for the resident decode run
+  [33mNOT RUN [0m mellum             mellum2-slice          [int4,int8int8] its fixture is a 4.2 GB slice of the real model, not a tiny checkpoint
+  [33mNOT RUN [0m mixtral            tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 0: MoE experts are \"int8\"/\"int8\"
+  [33mNOT RUN [0m nemotron_h         tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: Nemotron-H runs resident with int4 projections o
+  [33mNOT RUN [0m nemotron_h         3nano-tiny             [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: Nemotron-H MoE FFN block has no GPU resident impleme
+  [33mNOT RUN [0m nemotron_h         3nano-tiny             [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: Nemotron-H MoE FFN block has no GPU resident imp
+  [33mNOT RUN [0m phi3               tiny                   [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: every resident cuda projection quantizes activations
+  [33mNOT RUN [0m phi3               tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: every resident cuda projection quantizes activat
+  [33mNOT RUN [0m qwen2_moe          tiny                   [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: cuda: MoE int4 needs moeInter(44) and hidden(32) bot
+  [33mNOT RUN [0m qwen2_moe          tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: MoE int4 needs moeInter(44) and hidden(32)
+  [33mNOT RUN [0m qwen3_5_moe        tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 0: MoE experts are \"int8\"/\"int8\"
+  [33mNOT RUN [0m qwen3_5_moe        qwen35-tiny            [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 0: MoE experts are \"int8\"/\"int8\"
+  [33mNOT RUN [0m qwen3_moe          tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 0: MoE experts are \"int8\"/\"int8\"
+  [33mNOT RUN [0m qwen3_moe          tiny-k3                [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 0: MoE experts are \"int8\"/\"int8\"
+  [33mNOT RUN [0m qwen3_next         tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: layer 0: MoE experts are \"int8\"/\"int8\"
+  [33mNOT RUN [0m qwen3_vl_moe       tiny                   [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: cuda: MoE int4 needs moeInter(24) and hidden(64) bot
+  [33mNOT RUN [0m qwen3_vl_moe       tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: cuda: MoE int4 needs moeInter(24) and hidden(64)
+  [33mNOT RUN [0m spark2_5           tiny                   [int4] backend cuda declined by both builds — the new ran "cpu (int4) — requested cuda → running on cpu: arch is not eligible for the resident decode runner:
+  [33mNOT RUN [0m spark2_5           tiny                   [int8int8] backend cuda declined by both builds — the new ran "cpu (int8int8) — requested cuda → running on cpu: arch is not eligible for the resident decode run
+  [33mNOT RUN [0m deepseek_v2        -                      [-] no deepseek_v2 tiny fixture (deepseek-tiny is model_type deepseek_v3; v2's gate is the real V2-Lite)
+  [33mNOT RUN [0m qwen3_asr          -                      [-] its tiny checkpoint (testdata/qwen3asr-tiny) keeps its golden as golden.zip, the text path AND the audio composition, not the JSON text golden this to
+  [33mNOT RUN [0m voxtral            -                      [-] its tiny checkpoint (testdata/voxtral-tiny) keeps its golden as golden.zip, the text path AND the audio composition, not the JSON text golden this too
+
+[1m== would record (the parity manifest is NOT written by this item) ==[0m
+  cohere             method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  cohere2            method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  deepseek_v3        method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 1 cell(s); today: real-model-oracle @ d5c5a1d53 (linux-amd64)
+  flint              method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 1 cell(s); today: tiny-golden @ d29d1ba4 (darwin-arm64)
+  gemma              method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  gemma2             method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  gemma3             method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  gemma4             method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 6 cell(s); today: full-forward-oracle @ 310a2e44 (linux-amd64)
+  glm4_moe           method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: tiny-golden @ 7b50947a (linux-amd64)
+  glm_ocr            method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 1 cell(s); today: tiny-golden @ 7b50947a (linux-amd64)
+  gpt-oss            method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 1 cell(s); today: real-model-oracle @ 960ef65a7 (linux-62gb)
+  granite            method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  internlm2          method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  kimi_k2            method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 1 cell(s); today: shared-path (via deepseek_v3) @ d5c5a1d53 (linux-62gb)
+  llama              method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  mistral            method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  mistral3           method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  mixtral            method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 1 cell(s); today: tiny-golden @ 7b50947a (linux-amd64)
+  nemotron_h         method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 1 cell(s); today: real-model-oracle @ 0b74e671 (linux-amd64)
+  olmo3              method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  olmo_hybrid        method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  qwen2              method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  qwen2_5_vl         method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  qwen3              method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  qwen3_5            method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: real-model-oracle @ 7b50947a (linux-amd64)
+  qwen3_5_moe        method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  qwen3_moe          method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: real-model-oracle @ 7b50947a (linux-amd64)
+  qwen3_next         method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 1 cell(s); today: real-model-oracle @ 426ca57d (linux-amd64)
+  qwen3_vl           method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7ee05f0a (linux-amd64)
+  smollm3            method "identity-inherited from 5a8742643" at 63ea35a07 — cuda, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  [33mNOTE[0m old 5a8742643 is not the validated_at of 30 of these: identity inherits only what 5a8742643 itself carries —
+       chain through the revs that were checked, or pass the family's validated_at as <old-rev>:
+       cohere@7b50947a cohere2@7b50947a deepseek_v3@d5c5a1d53 flint@d29d1ba4 gemma@7b50947a
+       gemma2@7b50947a gemma3@7b50947a gemma4@310a2e44 glm4_moe@7b50947a glm_ocr@7b50947a
+       gpt-oss@960ef65a7 granite@7b50947a internlm2@7b50947a kimi_k2@d5c5a1d53 llama@7b50947a
+       mistral@7b50947a mistral3@7b50947a mixtral@7b50947a nemotron_h@0b74e671 olmo3@7b50947a
+       olmo_hybrid@7b50947a qwen2@7b50947a qwen2_5_vl@7b50947a qwen3@7b50947a qwen3_5@7b50947a
+       qwen3_5_moe@7b50947a qwen3_moe@7b50947a qwen3_next@426ca57d qwen3_vl@7ee05f0a smollm3@7b50947a
+  scope: this machine (Linux/x86_64) and backend (cuda) only — identity is per machine and per backend (the CPU reference is bit-identical within an arch, not across).
+
+[1m== verdict ==[0m
+  families 44: 30 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+  wall     5m57s (12:50:37 → 12:56:33): builds 4s, runs 5m53s
+  logs     /tmp/gate-identity-20261116-125037-1426021062/logs (dumps/binaries removed (pass -keep to retain dumps); worktrees removed)
+  [32mGREEN — every family that ran is IDENTICAL[0m
