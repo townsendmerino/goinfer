@@ -173,3 +173,92 @@ func TestKV8Cut_theFinalPassKeepsItsMinimum(t *testing.T) {
 	msgRun(t, m, a, KVScope{Keep: 1217})
 	b35Held(t, m, 1152)
 }
+
+// The preamble snapshot (the fourth addendum, P0 and P1): a recurrent model keeps a snapshot at the end of the system-and-tools preamble
+// (KVScope.Boundary), cut like the others, which a conversation that shares the preamble restores and which no deeper snapshot replaces.
+
+// preambleTurn1 is cutTurn1 with the preamble ending at 700: snapshots at 640, 960 and 1,216.
+func preambleTurn1(t *testing.T) (*Model, *recurrentSnapFake, []int, int) {
+	t.Helper()
+	m, rf := loadRecurrentSnapFakeAlign(t, true, 1<<40, 128)
+	_, _, _, _, _, _, vocab := m.Dims()
+	a := snapToks(1236, 11, vocab)
+	msgRun(t, m, a, KVScope{Keep: 1230, MsgBoundary: 1000, Boundary: 700})
+	return m, rf, a, vocab
+}
+
+func TestKV8Preamble_aSecondConversationRestoresTheSharedPreamble(t *testing.T) {
+	m, rf, a, vocab := preambleTurn1(t)
+	b35Held(t, m, 640, 960, 1216)
+	c := append(slices.Clone(a[:700]), snapToks(500, 21, vocab)...) // the same preamble, then its own conversation
+	got, reused := msgRun(t, m, c, KVScope{Keep: len(c) - 4, MsgBoundary: 1000, Boundary: 700})
+	if reused != 640 || rf.restored != 1 {
+		t.Fatalf("a conversation sharing the preamble reused %d rows (%d restores), want the preamble's 640", reused, rf.restored)
+	}
+	if want := b35Cold(t, c); !slices.Equal(got, want) {
+		t.Fatalf("reply after the restore %v, cold %v", got, want)
+	}
+}
+
+// The preamble snapshot stays: neither the conversation that restored it nor the deeper snapshots it takes replace it.
+func TestKV8Preamble_noDeeperSnapshotReplacesIt(t *testing.T) {
+	m, _, a, vocab := preambleTurn1(t)
+	c := append(slices.Clone(a[:700]), snapToks(500, 21, vocab)...)
+	msgRun(t, m, c, KVScope{Keep: len(c) - 4, MsgBoundary: 1000, Boundary: 700})
+	st, _ := m.KVSnapshotStats()
+	var rows []int
+	for _, s := range st.Snapshots {
+		rows = append(rows, s.Rows)
+	}
+	if n := len(slices.DeleteFunc(slices.Clone(rows), func(r int) bool { return r != 640 })); n != 1 {
+		t.Fatalf("held snapshots of %v rows: want the preamble's 640 once", rows)
+	}
+	d := append(slices.Clone(a[:700]), snapToks(300, 22, vocab)...) // a third conversation, after deeper snapshots exist
+	if _, reused := msgRun(t, m, d, KVScope{Boundary: 700}); reused != 640 {
+		t.Fatalf("a third conversation reused %d rows, want the preamble's 640", reused)
+	}
+}
+
+// No second snapshot at rows one is held at, none below a snapshot's minimum, and none for a model whose snapshots carry no state.
+func TestKV8Preamble_takenOnceAndOnlyWhereItCounts(t *testing.T) {
+	m, rf, a, vocab := preambleTurn1(t)
+	before := rf.taken
+	c := append(slices.Clone(a[:700]), snapToks(500, 21, vocab)...)
+	msgRun(t, m, c, KVScope{Boundary: 700}) // restores 640: the preamble's point is not past the restore point
+	d := append(slices.Clone(a[:20]), snapToks(1300, 23, vocab)...)
+	msgRun(t, m, d, KVScope{Boundary: 20}) // a preamble under kvSnapMinShared
+	b35Held(t, m, 640, 960, 1216)
+	if rf.taken != before {
+		t.Fatalf("%d snapshots taken by requests that needed none", rf.taken-before)
+	}
+	m2, rf2 := loadRecurrentSnapFakeAlign(t, false, 1<<40, 128)
+	_, _, _, _, _, _, v2 := m2.Dims()
+	msgRun(t, m2, snapToks(1236, 11, v2), KVScope{Keep: 1230, MsgBoundary: 1000, Boundary: 700})
+	if rf2.taken != 0 {
+		t.Fatalf("a model whose snapshots carry no state took %d", rf2.taken)
+	}
+}
+
+// With three snapshots to keep, the budget's least-recently-used rule drops the oldest, the preamble's: room for two keeps the two deepest, room
+// for none takes none, and used bytes never pass the budget.
+func TestKV8Preamble_theBudgetHoldsWithThreeSnapshots(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		budget int64
+		held   []int
+	}{
+		{"room for three", (640 + 960 + 1216) * 1024, []int{640, 960, 1216}},
+		{"room for two", (960 + 1216) * 1024, []int{960, 1216}},
+		{"room for none", 600 * 1024, nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m, _ := loadRecurrentSnapFakeAlign(t, true, c.budget, 128)
+			_, _, _, _, _, _, vocab := m.Dims()
+			msgRun(t, m, snapToks(1236, 11, vocab), KVScope{Keep: 1230, MsgBoundary: 1000, Boundary: 700})
+			b35Held(t, m, c.held...)
+			if st, _ := m.KVSnapshotStats(); st.Used > st.Budget {
+				t.Fatalf("the store holds %d bytes of a %d budget", st.Used, st.Budget)
+			}
+		})
+	}
+}
