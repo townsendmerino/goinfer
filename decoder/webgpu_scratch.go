@@ -45,18 +45,35 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 	type geom struct{ hd, nKV, half int }
 	var g0 geom
 	scales := map[float32]bool{}
-	var gemv, gemvAdd, actQuant, attnLayer, quantB, rmsQuantB, qkNormB, rmsnormB, biasAddB, gemvBiasB int64
+	var gemv, gemvAdd, actQuant, attnLayer, quantB, rmsQuantB, qkNormB, rmsnormB, biasAddB, gemvBiasB, moeFFN, moeRoute, moeExpert, swiglu, sharedCombine int64
+	var moeNE int
 	pk := func(k int) int64 { return int64((k + 31) &^ 31) }
 	rmsQuantB = pk(H) + 20 // one call per sublayer norm and the final norm: the int8 row, its scale, its uniform
 	nRms, nQuant := int64(1), int64(0)
 	for l, ops := range m.Program().Layers {
 		shape, isDense := denseAttnLayer(ops)
-		if !isDense || d.routed[l] {
-			return nil, fmt.Sprintf("layer %d: operations are not a plain attention and dense FFN sublayer", l)
+		if !isDense {
+			return nil, fmt.Sprintf("layer %d: operations %v are not a plain attention and dense FFN sublayer", l, opKinds(ops))
+		}
+		if d.routed[l] != shape.moe {
+			return nil, fmt.Sprintf("layer %d: a routed-experts FFN of a form not derived", l)
 		}
 		rows := d.layers[l]
-		if len(rows) != 6 || rows["q"] == 0 || rows["k"] == 0 || rows["v"] == 0 || rows["ctx"] == 0 || rows["gate"] == 0 || rows["up"] == 0 {
-			return nil, fmt.Sprintf("layer %d: not the gated dense FFN's six declared rows", l)
+		want := 6
+		var nE, topK, shared int
+		hasShared := shape.moe && m.w.Layers[l].SharedExpert.Gate.Rows() > 0
+		if shape.moe {
+			nE, topK, shared = rows["moe-router"], rows["moe-experts"], rows["shared-gate"]
+			want = 9
+			if hasShared {
+				want = 11
+			}
+			if nE == 0 || topK == 0 || rows["moe-weights"] != topK || hasShared != (shared > 0) || rows["shared-up"] != shared {
+				return nil, fmt.Sprintf("layer %d: the routed FFN's declared rows are not the generic router's", l)
+			}
+		}
+		if len(rows) != want || rows["q"] == 0 || rows["k"] == 0 || rows["v"] == 0 || rows["ctx"] == 0 || rows["gate"] == 0 || rows["up"] == 0 {
+			return nil, fmt.Sprintf("layer %d: not the dense FFN's six declared rows", l)
 		}
 		lv := view.Layer(l)
 		w := &m.w.Layers[l]
@@ -87,8 +104,8 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 				nRms++
 			}
 		}
-		gemv += 4*int64(rows["q"]+rows["k"]+rows["v"]+rows["gate"]+rows["up"]) + 5*16
-		gemvAdd += 2 * 16
+		gemv += 4*int64(rows["q"]+rows["k"]+rows["v"]) + 3*16
+		gemvAdd += 16 // the output projection, fused with its residual add
 		if shape.qkNorm {
 			qkNormB += 2 * 16 // q's and k's
 		}
@@ -111,7 +128,34 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 				biasAddB += 16
 			}
 		}
-		actQuant += pk(rows["gate"]) + 20
+		inter := int64(rows["gate"])
+		if !shape.moe {
+			gemv += 4*(inter+int64(rows["up"])) + 2*16
+			gemvAdd += 16
+			actQuant += pk(rows["gate"]) + 20
+		} else {
+			if shape.postMLP {
+				return nil, fmt.Sprintf("layer %d: a routed FFN with an output norm", l)
+			}
+			// The router's logits row; the selection rows and the experts' gate and up rows (reused over the top-k slots); the router's
+			// uniform; per slot the expert projections' uniforms and the fused activation's int8 row, scale and uniform.
+			gemv += 4*int64(nE) + 16
+			moeFFN += 4*int64(2*topK) + 4*2*inter
+			moeRoute += 32
+			moeExpert += 3 * int64(topK) * 16
+			swiglu += int64(topK) * (pk(rows["gate"]) + 20)
+			moeNE = nE
+			if hasShared { // the shared expert: a gated SwiGLU MLP, sigmoid-gated by a one-row projection or added ungated
+				gemv += 4*2*int64(shared) + 2*16
+				swiglu += pk(shared) + 20
+				if m.w.Layers[l].SharedGate.Rows() > 0 {
+					gemv += 4*int64(H) + 16 + 4 + 16
+					sharedCombine += 16
+				} else {
+					gemvAdd += 16
+				}
+			}
+		}
 		attnLayer += 4*int64(rows["ctx"]) + 16
 		quantB += pk(rows["ctx"]) + 20
 	}
@@ -136,6 +180,12 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 		{"gemv", gemv},
 		{"gemvBias", gemvBiasB},
 		{"gemvAdd", gemvAdd},
+		{"moeFFN", moeFFN},
+		{"moeRoute", moeRoute},
+		{"moeExpert", moeExpert},
+		{"swigluQuant", swiglu},
+		{"sharedGatedCombine", sharedCombine},
+		{"moeZeroBias", 4 * int64(moeNE)},
 		{"actQuantPad", actQuant},
 		{"attnLayer", attnLayer},
 		{"qkNorm", qkNormB},
@@ -169,7 +219,7 @@ func (m *Model) WebGPUDecodeScratchBytes() (int64, bool) {
 
 // denseShape is the optional operations a plain attention layer carries: a QK-norm after the projections, and a norm on each
 // sublayer's output before its residual add.
-type denseShape struct{ qkNorm, postAttn, postMLP bool }
+type denseShape struct{ qkNorm, postAttn, postMLP, moe bool }
 
 // denseAttnLayer reports whether a layer's operations are a plain attention sublayer and a dense FFN, each behind its own pre-norm,
 // with only the optional operations of denseShape and nothing else (no output gate, temperature or layer scale).
@@ -194,6 +244,22 @@ func denseAttnLayer(ops []op) (s denseShape, ok bool) {
 	if !next(program.OpResidual) || !next(program.OpNorm) || !next(program.OpFFN) {
 		return s, false
 	}
+	switch ops[i-1].FFN.Form {
+	case program.FfnMoE:
+		s.moe = true
+	case program.FfnGated, program.FfnNonGated:
+	default: // gpt-oss, Llama 4, Nemotron and Gemma 4's own routed forms are other builders
+		return s, false
+	}
 	s.postMLP = opt(program.OpNorm)
 	return s, next(program.OpResidual) && i == len(ops)
+}
+
+// opKinds is a layer's operation kinds in order, for the reason a layer has no figure.
+func opKinds(ops []op) []program.OpKind {
+	ks := make([]program.OpKind, len(ops))
+	for i, o := range ops {
+		ks[i] = o.Kind
+	}
+	return ks
 }
