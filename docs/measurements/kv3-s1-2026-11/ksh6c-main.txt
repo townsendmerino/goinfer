@@ -1,0 +1,15 @@
+[H6C-G2] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: post-pool 25 buffers, 2.00 MiB charged against postPoolBytes 2.00 MiB; pools 49 buffers, 288.00 MiB charged against kvChargedBytes 288.00 MiB; margin 214.1 MiB planned, 214.1 MiB on the built resident (at 16384 positions)
+[H6C-G5] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: context 16384 (planned 16384), 1 KV slots, margin 214.1 MiB
+[H6C-G3] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: planned 16384, the build's exact figure allows 16384 (ceiling 16384); the rounding bound 8363 positions, Plan's dense residual 411 positions; 0 below, 8427 allowed
+[H6C-G2] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: post-pool 25 buffers, 2.00 MiB charged against postPoolBytes 2.00 MiB; pools 57 buffers, 560.00 MiB charged against kvChargedBytes 560.00 MiB; margin 248.3 MiB planned, 248.3 MiB on the built resident (at 16384 positions)
+[H6C-G5] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: context 16384 (planned 16384), 1 KV slots, margin 248.3 MiB
+[H6C-G3] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: planned 16384, the build's exact figure allows 16384 (ceiling 16384); the rounding bound 4169 positions, Plan's dense residual 193 positions; 0 below, 4233 allowed
+[H6C-G2] gemma-3-4b-it: post-pool 25 buffers, 2.00 MiB charged against postPoolBytes 2.00 MiB; pools 69 buffers, 4080.00 MiB charged against kvChargedBytes 4080.00 MiB; margin 330.5 MiB planned, 330.5 MiB on the built resident (at 15296 positions)
+[H6C-G5] gemma-3-4b-it: context 15296 (planned 15296), 1 KV slots, margin 330.5 MiB
+[H6C-G3] gemma-3-4b-it: planned 15296, the build's exact figure allows 15296 (ceiling 16384); the rounding bound 520 positions, Plan's dense residual 253 positions; 0 below, 584 allowed
+[H6C-G2] qwen25vl-3b-instruct: post-pool 25 buffers, 2.00 MiB charged against postPoolBytes 2.00 MiB; pools 73 buffers, 720.00 MiB charged against kvChargedBytes 720.00 MiB; margin 261.0 MiB planned, 261.0 MiB on the built resident (at 16384 positions)
+[H6C-G5] qwen25vl-3b-instruct: context 16384 (planned 16384), 1 KV slots, margin 261.0 MiB
+[H6C-G3] qwen25vl-3b-instruct: planned 16384, the build's exact figure allows 16384 (ceiling 16384); the rounding bound 4153 positions, Plan's dense residual 999 positions; 0 below, 4217 allowed
+[H6C-G2] gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf: post-pool 26 buffers, 2.00 MiB charged against postPoolBytes 2.00 MiB; pools 31 buffers, 636.00 MiB charged against kvChargedBytes 636.00 MiB; margin 363.0 MiB planned, 363.0 MiB on the built resident (at 16384 positions)
+[H6C-G5] gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf: context 16384 (planned 16384), 1 KV slots, margin 363.0 MiB
+[H6C-G3] gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf: planned 16384, the build's exact figure allows 16384 (ceiling 16384); the rounding bound 1764 positions, Plan's dense residual 1620 positions; 0 below, 1828 allowed
