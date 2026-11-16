@@ -37,3 +37,9 @@ Route, prompt ids, **rows reused**, **what served it** (a host snapshot of N row
 | a session of fewer than 10 requests | NOT ENOUGH: a fourth prompt is added once, before any replay, and the registration says so |
 
 **Stopping rule:** one recorded session, two replay passes. **Cost** (stated before the run): recording about 5 to 15 minutes (a 20k-id first request is about 20 s cold on the 0.8B, and tool-calling turns are short), each replay pass about 5 to 10 minutes; **about 25 to 40 minutes of card time in all**, started about 09:50 PST.
+
+## Amendment, 2026-11-16 09:45 PST (before any replay)
+
+The first recording, on `qwen3.5-0.8b` at 32,768, is **NOT ENOUGH** by the table above: 4 requests (11k ids each, 12 tools), and the model answered in text and never called a tool, so no file was read or edited. It is kept (counts only) and not replayed as the session.
+The session is recorded again on **`~/models/Qwen3.5-9B-Q4_K_M.gguf` at `--ctx 24576`**, fit-checked at 09:44 by the server's own banner: 6,680 MiB on the card, a **50.2 MiB device checkpoint kept**, 1.5 GB of KV, swap guard armed at its defaults. 24,576 holds this client's requests here (11k ids with 12 tools, `-p` mode)
+and its compaction point (the window less a 4,096 output cap) is not reached by a short session. The 9B at 32,768 stays refused for this read (no checkpoint kept). Every other line above stands, including the rule and the outcomes.
