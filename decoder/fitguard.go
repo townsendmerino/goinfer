@@ -85,6 +85,10 @@ type fitCheck struct {
 	deviceKV  bool
 	packBytes int64
 
+	// snapshotBytes is the prefix-snapshot store's budget (Options.KVHostBytes) where the load will keep one: host memory the server holds once it is
+	// serving, beside what stays on the host (snapshotStoreBytes). 0 for a load with no store.
+	snapshotBytes int64
+
 	// cfg, effCtx, pinned, kvF16, kvI8 carry what re-pricing needs to recompute KV at a SMALLER context when the load does not fit and the
 	// caller never pinned one (see smallerFittingContext). cfg is nil when the GGUF's config could not be read: kvBytes stays 0 and unknown
 	// proceeds.
@@ -122,7 +126,7 @@ func (f fitCheck) ratio() float64 { return f.check().Ratio() }
 // The int4-against-int8 comparison a refusal's last line reads is measured only for a load not already at int4.
 func (f fitCheck) check() mem.HostCheck {
 	l := mem.HostLoad{Name: f.name, Quant: f.quant, WeightBytes: f.weightBytes, KVBytes: f.kvBytes, SourceBytes: f.srcFileBytes,
-		CUDABuildBytes: f.cudaBuildBytes, ExpertBytes: f.expertBytes, PackBytes: f.packBytes, DeviceKV: f.deviceKV,
+		CUDABuildBytes: f.cudaBuildBytes, ExpertBytes: f.expertBytes, PackBytes: f.packBytes, DeviceKV: f.deviceKV, SnapshotBytes: f.snapshotBytes,
 		Ctx: f.effCtx, Pinned: f.pinned, NoGuard: f.noGuard, GGUF: f.isGGUF, DenseStreamable: f.denseStreamable}
 	if f.quant != "int4" && f.quant != "int4mix" {
 		l.Int4Smaller = quantBytesPerElem(quantInt4) < quantBytesPerElem(quantInt8)
@@ -259,10 +263,24 @@ func decideGIWFitAt(cfg *Config, opts Options, read func() int64) giwFit {
 		return d // no pin and the model's own max is unknown ⇒ can't price KV; proceed
 	}
 	r := mem.SolveGIW(mem.GIWLoad{Ctx: p.ctx, Pinned: p.pinned, DeviceKV: p.deviceKV, Scratch: prefillAttnScratchBudget,
-		PinnedExperts: giwPinnedExpertBytes(cfg, opts), KV: func(ctx int) int64 { return p.bytes(cfg, ctx) }},
+		PinnedExperts: giwPinnedExpertBytes(cfg, opts), SnapshotBytes: snapshotStoreBytes(cfg, opts),
+		KV: func(ctx int) int64 { return p.bytes(cfg, ctx) }},
 		mem.HostMachine(avail), mem.DefaultPolicy())
 	return giwFit{known: r.Known, avail: r.Avail, budget: r.Budget, need: r.Need, pinnedExperts: r.PinnedExperts, ctx: r.Ctx,
 		pinned: r.Pinned, pinCtx: r.PinCtx, err: r.Err, note: r.Note}
+}
+
+// snapshotStoreBytes is the prefix-snapshot store's budget the host guards price: Options.KVHostBytes for a load whose backend goes resident (the
+// stores of a CPU load, or one that streams its weights, are not built), 0 when snapshots are off (-kv-host-bytes 0, or -kv-share off). It is the
+// budget, not what is held: the store fills as requests arrive, and a server that outgrows the machine's memory pages to swap.
+func snapshotStoreBytes(cfg *Config, opts Options) int64 {
+	if opts.KVHostBytes <= 0 || opts.KVShareOff || cfg == nil {
+		return 0
+	}
+	if d := buildDemandFor(cfg, opts, 0, 0, false); !d.Resident && !d.KVOnDevice {
+		return 0
+	}
+	return opts.KVHostBytes
 }
 
 // giwPinnedExpertBytes is the host memory a CUDA C' expert cache (--moe-cache-experts) holds for a .giw load that will be resident: every
@@ -543,6 +561,7 @@ func FitDescribe(path string, opts Options) (string, error) {
 // share. Price at opts.ResidentContext when pinned, else the model's own MaxPositions, the worst case a real request can reach.
 func (f fitCheck) priceCtxAndKV(cfg *Config, opts Options) fitCheck {
 	f.cfg = cfg
+	f.snapshotBytes = snapshotStoreBytes(cfg, opts)
 	f.denseStreamable = denseStreamable(cfg) && mem.QuantPages(f.quant) // TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers
 	p, ok := kvPricingFor(cfg, opts)
 	f.pinned = p.pinned

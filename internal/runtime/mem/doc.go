@@ -24,6 +24,7 @@
 //	I3 the ledger agrees with the device               cuda's TestLedger_closesAgainstDevice
 //	a build leases what its plan prices, line by line  internal/memgate, with metal's TestMemGate_metal, backend/webgpu's TestMemGate_webgpu and memgate's TestMemGate_cpu (MM7)
 //	I6 no guard threshold is applied outside mem       TestNoGuardThresholdOutsideMem (the backends' own guards ratcheted)
+//	the snapshot store's budget is priced              TestSolveHost_snapshotStore; decoder's TestFitGuard_snapshotBudgetCounts, decoder's TestDecideGIWFit_snapshotBudgetCounts
 //	the decisions are today's, byte for byte           decoder's TestDecisionCensus
 //
 // I5 holds MoE included because a placement's experts are reserved before the context grows (resident first, then the expert
