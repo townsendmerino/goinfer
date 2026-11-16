@@ -1,0 +1,82 @@
+[09:52:44] pass A1: load 0.22, 61305 MB available
+[09:57:02] pass A2: load 1.05, 61372 MB available
+
+== pass L
+ #    ids reused  lcp>= first token  served by
+ 1  11188      0      0      60.69s  none
+                                  took a snapshot of 8896 rows: 606 MiB, 374.9 ms
+                                  took a snapshot of 11136 rows: 746 MiB, 433.9 ms
+ 2  11311  11279   9155       0.28s  the slot's own rows
+ 3  12678  11136  11249      10.91s  snapshot of 11136 rows, taken by request 1 (its snapshot 2)
+ 4  12141   8896   8993      24.56s  snapshot of 8896 rows, taken by request 1 (its snapshot 1)
+                                  took a snapshot of 9792 rows: 662 MiB, 413.0 ms
+                                  took a snapshot of 12096 rows: 806 MiB, 498.6 ms
+ 5  13710  12141  10125      11.61s  device checkpoint of 12141 rows
+ 6  12049   8896   8993      23.51s  snapshot of 8896 rows, taken by request 1 (its snapshot 1)
+                                  took a snapshot of 12032 rows: 802 MiB, 474.1 ms
+ 7  12095  12032  10016       0.63s  snapshot of 12032 rows, taken by request 6 (its snapshot 1)
+ 8  13458  12032  12110      11.29s  snapshot of 12032 rows, taken by request 6 (its snapshot 1)
+                                  took a snapshot of 13440 rows: 890 MiB, 526.5 ms
+ 9  12357   8896   8993      25.69s  snapshot of 8896 rows, taken by request 1 (its snapshot 1)
+                                  took a snapshot of 10048 rows: 678 MiB, 424.0 ms
+10  13873  12357  10344      11.35s  device checkpoint of 12357 rows
+11  11923   8896   8993      22.62s  snapshot of 8896 rows, taken by request 1 (its snapshot 1)
+                                  took a snapshot of 11904 rows: 794 MiB, 492.1 ms
+12  13717  11923   9890      13.18s  device checkpoint of 11923 rows
+13  12334   8896   8993      24.65s  snapshot of 8896 rows, taken by request 1 (its snapshot 1)
+                                  took a snapshot of 12288 rows: 818 MiB, 483.9 ms
+
+== pass A1
+ #    ids reused  lcp>= first token  served by
+ 1  11247      0      0      60.84s  none
+                                  took a snapshot of 8960 rows: 610 MiB, 385.3 ms
+                                  took a snapshot of 11200 rows: 750 MiB, 464.2 ms
+ 2  11370  11247   9155       1.01s  device checkpoint of 11247 rows
+ 3  12737  11200  11249      11.66s  snapshot of 11200 rows, taken by request 1 (its snapshot 2)
+                                  took a snapshot of 11328 rows: 758 MiB, 448.4 ms
+ 4  12200   8960   8993      24.65s  snapshot of 8960 rows, taken by request 1 (its snapshot 1)
+                                  took a snapshot of 9856 rows: 666 MiB, 396.1 ms
+                                  took a snapshot of 12160 rows: 810 MiB, 501.3 ms
+ 5  13775  12200  10125      11.70s  device checkpoint of 12200 rows
+ 6  12108   8960   8993      23.53s  snapshot of 8960 rows, taken by request 1 (its snapshot 1)
+                                  took a snapshot of 12032 rows: 802 MiB, 469.3 ms
+ 7  12154  12032  10016       1.71s  snapshot of 12032 rows, taken by request 6 (its snapshot 1)
+                                  took a snapshot of 12096 rows: 806 MiB, 471.1 ms
+ 8  13517  12096  12110      11.25s  snapshot of 12096 rows, taken by request 7 (its snapshot 1)
+                                  took a snapshot of 13440 rows: 890 MiB, 522.9 ms
+ 9  12419   8960   8993      25.74s  snapshot of 8960 rows, taken by request 1 (its snapshot 1)
+                                  took a snapshot of 10112 rows: 682 MiB, 425.5 ms
+10  13936  12419  10344      11.44s  device checkpoint of 12419 rows
+11  11982   8960   8993      22.60s  snapshot of 8960 rows, taken by request 1 (its snapshot 1)
+                                  took a snapshot of 11904 rows: 794 MiB, 490.8 ms
+12  13789  11982   9890      13.32s  device checkpoint of 11982 rows
+13  12393   8960   8993      24.80s  snapshot of 8960 rows, taken by request 1 (its snapshot 1)
+                                  took a snapshot of 12352 rows: 822 MiB, 508.1 ms
+
+== pass A2
+ #    ids reused  lcp>= first token  served by
+ 1  11247      0      0      60.85s  none
+                                  took a snapshot of 8960 rows: 610 MiB, 391.8 ms
+                                  took a snapshot of 11200 rows: 750 MiB, 440.7 ms
+ 2  11370  11247   9155       0.98s  device checkpoint of 11247 rows
+ 3  12737  11200  11249      11.64s  snapshot of 11200 rows, taken by request 1 (its snapshot 2)
+                                  took a snapshot of 11328 rows: 758 MiB, 451.2 ms
+ 4  12200   8960   8993      24.66s  snapshot of 8960 rows, taken by request 1 (its snapshot 1)
+                                  took a snapshot of 9856 rows: 666 MiB, 417.8 ms
+                                  took a snapshot of 12160 rows: 810 MiB, 477.0 ms
+ 5  13775  12200  10125      11.77s  device checkpoint of 12200 rows
+ 6  12108   8960   8993      23.59s  snapshot of 8960 rows, taken by request 1 (its snapshot 1)
+                                  took a snapshot of 12032 rows: 802 MiB, 500.0 ms
+ 7  12154  12032  10016       1.73s  snapshot of 12032 rows, taken by request 6 (its snapshot 1)
+                                  took a snapshot of 12096 rows: 806 MiB, 476.8 ms
+ 8  13517  12096  12110      11.31s  snapshot of 12096 rows, taken by request 7 (its snapshot 1)
+                                  took a snapshot of 13440 rows: 890 MiB, 529.6 ms
+ 9  12419   8960   8993      25.77s  snapshot of 8960 rows, taken by request 1 (its snapshot 1)
+                                  took a snapshot of 10112 rows: 682 MiB, 426.1 ms
+10  13936  12419  10344      11.41s  device checkpoint of 12419 rows
+11  11982   8960   8993      22.65s  snapshot of 8960 rows, taken by request 1 (its snapshot 1)
+                                  took a snapshot of 11904 rows: 794 MiB, 490.0 ms
+12  13789  11982   9890      13.33s  device checkpoint of 11982 rows
+13  12393   8960   8993      24.77s  snapshot of 8960 rows, taken by request 1 (its snapshot 1)
+                                  took a snapshot of 12352 rows: 822 MiB, 497.1 ms
+VERDICT: no MISS in either pass
