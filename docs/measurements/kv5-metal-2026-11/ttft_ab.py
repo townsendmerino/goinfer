@@ -15,7 +15,8 @@ import bench_peer as bench  # noqa: E402
 import bench_peer_prefill as bp  # noqa: E402
 
 old, new, out = sys.argv[1:4]
-MODELS = {"1.5B": os.path.expanduser("~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"), "7B": os.path.expanduser("~/models/qwen2.5-7b-instruct-q4_k_m.gguf")}
+MODELS = {"1.5B": os.path.expanduser("~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"), "7B": os.path.expanduser("~/models/qwen2.5-7b-instruct-q4_k_m.gguf"),
+          "gemma3-1b": os.path.expanduser("~/models/gemma3-1b-q4_k_m.int4.metal.v17.giw")}
 MK = os.environ.get("TTFT_MODEL", "1.5B")
 MODEL = MODELS[MK]
 DEPTHS = (512, 3900)
