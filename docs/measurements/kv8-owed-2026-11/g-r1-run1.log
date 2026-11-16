@@ -1,0 +1,76 @@
+=== RUN   TestKV8Real_cutEqualsUninterrupted
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7000 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7000 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7000 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6868 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 19.3 MiB on the device (36 buffers, KV8a)
+cuda: prefill width 2048 rows (377 MiB of scratch; 6308 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv8_real_cut_test.go:203: /home/francis/models/qwen3.5-0.8b: 3000 ids, passes of 2048 rows, 1 slots
+    kv8_real_cut_test.go:230:   plant: state zeroed between the calls: last-row logits: 248320 words differ, max |diff| 1.72
+    kv8_real_cut_test.go:230:   plant: state zeroed between the calls: decode-step logits: 1986560 words differ, max |diff| 1.97
+    kv8_real_cut_test.go:230:   plant: state zeroed between the calls: conv rings: 313344 words differ, max |diff| 1.23
+    kv8_real_cut_test.go:230:   plant: state zeroed between the calls: recurrent states: 4631460 words differ, max |diff| 5.29
+    kv8_real_cut_test.go:230:   plant: state zeroed between the calls: K/V rows: 11354110 words differ, max |diff| 13.5
+    kv8_real_cut_test.go:255: cut [64]: bit-identical to U1: true (gated true)
+    kv8_real_cut_test.go:255: restore at 64 (cut [64]): bit-identical to U1: true (gated true)
+    kv8_real_cut_test.go:230:   plant: restore at 64 (cut [64]) without the state: last-row logits: 248320 words differ, max |diff| 1.98
+    kv8_real_cut_test.go:230:   plant: restore at 64 (cut [64]) without the state: decode-step logits: 1986560 words differ, max |diff| 23.4
+    kv8_real_cut_test.go:230:   plant: restore at 64 (cut [64]) without the state: conv rings: 313344 words differ, max |diff| 1.49
+    kv8_real_cut_test.go:230:   plant: restore at 64 (cut [64]) without the state: recurrent states: 4629016 words differ, max |diff| 1.04
+    kv8_real_cut_test.go:230:   plant: restore at 64 (cut [64]) without the state: K/V rows: 18038782 words differ, max |diff| 12.4
+    kv8_real_cut_test.go:240:   plant: restore at 64 (cut [64]) without the state: the arg-max differs at row 0: 198 against 279
+    kv8_real_cut_test.go:255: cut [960]: bit-identical to U1: true (gated true)
+    kv8_real_cut_test.go:255: restore at 960 (cut [960]): bit-identical to U1: true (gated true)
+    kv8_real_cut_test.go:230:   plant: restore at 960 (cut [960]) without the state: last-row logits: 248320 words differ, max |diff| 2.24
+    kv8_real_cut_test.go:230:   plant: restore at 960 (cut [960]) without the state: decode-step logits: 1986560 words differ, max |diff| 2.48
+    kv8_real_cut_test.go:230:   plant: restore at 960 (cut [960]) without the state: conv rings: 313344 words differ, max |diff| 1.97
+    kv8_real_cut_test.go:230:   plant: restore at 960 (cut [960]) without the state: recurrent states: 4630911 words differ, max |diff| 1.13
+    kv8_real_cut_test.go:230:   plant: restore at 960 (cut [960]) without the state: K/V rows: 12533757 words differ, max |diff| 9.09
+    kv8_real_cut_test.go:240:   plant: restore at 960 (cut [960]) without the state: the arg-max differs at row 8: 1719 against 269
+    kv8_real_cut_test.go:255: cut [1152]: bit-identical to U1: true (gated true)
+    kv8_real_cut_test.go:255: restore at 1152 (cut [1152]): bit-identical to U1: true (gated true)
+    kv8_real_cut_test.go:230:   plant: restore at 1152 (cut [1152]) without the state: last-row logits: 248320 words differ, max |diff| 1.9
+    kv8_real_cut_test.go:230:   plant: restore at 1152 (cut [1152]) without the state: decode-step logits: 1986560 words differ, max |diff| 2.25
+    kv8_real_cut_test.go:230:   plant: restore at 1152 (cut [1152]) without the state: conv rings: 313344 words differ, max |diff| 2.08
+    kv8_real_cut_test.go:230:   plant: restore at 1152 (cut [1152]) without the state: recurrent states: 4631297 words differ, max |diff| 1.03
+    kv8_real_cut_test.go:230:   plant: restore at 1152 (cut [1152]) without the state: K/V rows: 11354109 words differ, max |diff| 6.99
+    kv8_real_cut_test.go:240:   plant: restore at 1152 (cut [1152]) without the state: the arg-max differs at row 8: 1719 against 269
+    kv8_real_cut_test.go:255: cut [2048]: bit-identical to U1: true (gated true)
+    kv8_real_cut_test.go:255: restore at 2048 (cut [2048]): bit-identical to U1: true (gated true)
+    kv8_real_cut_test.go:230:   plant: restore at 2048 (cut [2048]) without the state: last-row logits: 248320 words differ, max |diff| 2.27
+    kv8_real_cut_test.go:230:   plant: restore at 2048 (cut [2048]) without the state: decode-step logits: 1986560 words differ, max |diff| 21.2
+    kv8_real_cut_test.go:230:   plant: restore at 2048 (cut [2048]) without the state: conv rings: 313344 words differ, max |diff| 1.97
+    kv8_real_cut_test.go:230:   plant: restore at 2048 (cut [2048]) without the state: recurrent states: 4633175 words differ, max |diff| 2.39
+    kv8_real_cut_test.go:230:   plant: restore at 2048 (cut [2048]) without the state: K/V rows: 5849087 words differ, max |diff| 10.2
+    kv8_real_cut_test.go:240:   plant: restore at 2048 (cut [2048]) without the state: the arg-max differs at row 0: 198 against 279
+    kv8_real_cut_test.go:255: cut [2368]: bit-identical to U1: true (gated true)
+    kv8_real_cut_test.go:255: restore at 2368 (cut [2368]): bit-identical to U1: true (gated true)
+    kv8_real_cut_test.go:230:   plant: restore at 2368 (cut [2368]) without the state: last-row logits: 248320 words differ, max |diff| 2.69
+    kv8_real_cut_test.go:230:   plant: restore at 2368 (cut [2368]) without the state: decode-step logits: 1986560 words differ, max |diff| 20.9
+    kv8_real_cut_test.go:230:   plant: restore at 2368 (cut [2368]) without the state: conv rings: 313344 words differ, max |diff| 2.3
+    kv8_real_cut_test.go:230:   plant: restore at 2368 (cut [2368]) without the state: recurrent states: 4634262 words differ, max |diff| 2.71
+    kv8_real_cut_test.go:230:   plant: restore at 2368 (cut [2368]) without the state: K/V rows: 3883006 words differ, max |diff| 8.64
+    kv8_real_cut_test.go:240:   plant: restore at 2368 (cut [2368]) without the state: the arg-max differs at row 0: 198 against 279
+    kv8_real_cut_test.go:255: cut [960 2368]: bit-identical to U1: true (gated true)
+    kv8_real_cut_test.go:255: restore at 2368 (cut [960 2368]): bit-identical to U1: true (gated true)
+    kv8_real_cut_test.go:230:   plant: restore at 2368 (cut [960 2368]) without the state: last-row logits: 248320 words differ, max |diff| 2.69
+    kv8_real_cut_test.go:230:   plant: restore at 2368 (cut [960 2368]) without the state: decode-step logits: 1986560 words differ, max |diff| 20.9
+    kv8_real_cut_test.go:230:   plant: restore at 2368 (cut [960 2368]) without the state: conv rings: 313344 words differ, max |diff| 2.3
+    kv8_real_cut_test.go:230:   plant: restore at 2368 (cut [960 2368]) without the state: recurrent states: 4634262 words differ, max |diff| 2.71
+    kv8_real_cut_test.go:230:   plant: restore at 2368 (cut [960 2368]) without the state: K/V rows: 3883006 words differ, max |diff| 8.64
+    kv8_real_cut_test.go:240:   plant: restore at 2368 (cut [960 2368]) without the state: the arg-max differs at row 0: 198 against 279
+    kv8_real_cut_test.go:255: cut [64 1152 2368]: bit-identical to U1: true (gated true)
+    kv8_real_cut_test.go:255: restore at 2368 (cut [64 1152 2368]): bit-identical to U1: true (gated true)
+    kv8_real_cut_test.go:230:   plant: restore at 2368 (cut [64 1152 2368]) without the state: last-row logits: 248320 words differ, max |diff| 2.69
+    kv8_real_cut_test.go:230:   plant: restore at 2368 (cut [64 1152 2368]) without the state: decode-step logits: 1986560 words differ, max |diff| 20.9
+    kv8_real_cut_test.go:230:   plant: restore at 2368 (cut [64 1152 2368]) without the state: conv rings: 313344 words differ, max |diff| 2.3
+    kv8_real_cut_test.go:230:   plant: restore at 2368 (cut [64 1152 2368]) without the state: recurrent states: 4634262 words differ, max |diff| 2.71
+    kv8_real_cut_test.go:230:   plant: restore at 2368 (cut [64 1152 2368]) without the state: K/V rows: 3883006 words differ, max |diff| 8.64
+    kv8_real_cut_test.go:240:   plant: restore at 2368 (cut [64 1152 2368]) without the state: the arg-max differs at row 0: 198 against 279
+    kv8_real_cut_test.go:338: PASS: every gated cut and restore is bit-identical to the uninterrupted prefill
+--- PASS: TestKV8Real_cutEqualsUninterrupted (67.55s)
+PASS
+ledger: 5 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/backend/cuda	67.602s

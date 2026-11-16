@@ -1,0 +1,15 @@
+{
+ "cell": "S1",
+ "build": "main",
+ "load": 0.84912109375,
+ "avail_mb": 61395,
+ "vram_before_mib": 503,
+ "void": false,
+ "load_s": 6.0094733238220215,
+ "vram_loaded_mib": 4322,
+ "boundary_est": 6030,
+ "peak_swap_mb": 0,
+ "peak_hwm_mb": 3330,
+ "snapshots_taken": [],
+ "snapshot_cost": []
+}

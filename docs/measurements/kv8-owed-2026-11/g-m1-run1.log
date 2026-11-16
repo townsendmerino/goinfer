@@ -1,0 +1,397 @@
+=== RUN   TestKV8a_checkpointBitExact
+=== RUN   TestKV8a_checkpointBitExact/qwen3next-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7000 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7000 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7000 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6868 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6868 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv8a_checkpoint_test.go:170: qwen3next-tiny: checkpoint 8960 bytes (0.01 MiB) in 10 buffers; restored == saved: true
+=== RUN   TestKV8a_checkpointBitExact/nemotron-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6998 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv8a_checkpoint_test.go:170: nemotron-tiny: checkpoint 10496 bytes (0.01 MiB) in 4 buffers; restored == saved: true
+--- PASS: TestKV8a_checkpointBitExact (2.21s)
+    --- PASS: TestKV8a_checkpointBitExact/qwen3next-tiny (1.83s)
+    --- PASS: TestKV8a_checkpointBitExact/nemotron-tiny (0.30s)
+=== RUN   TestKV8a_restoreEqualsColdPrefill
+=== RUN   TestKV8a_restoreEqualsColdPrefill/qwen3next-tiny/under_the_fast_floor
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6868 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6864 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv8a_checkpoint_test.go:239: qwen3next-tiny n1=300 n2=360 plant="": restore then suffix bit-identical to a cold prefill: true
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6860 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv8a_checkpoint_test.go:239: qwen3next-tiny n1=300 n2=360 plant="no conv window": restore then suffix bit-identical to a cold prefill: false
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6860 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv8a_checkpoint_test.go:239: qwen3next-tiny n1=300 n2=360 plant="from c-1": restore then suffix bit-identical to a cold prefill: false
+=== RUN   TestKV8a_restoreEqualsColdPrefill/qwen3next-tiny/over_the_fast_floor
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6868 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6864 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv8a_checkpoint_test.go:239: qwen3next-tiny n1=700 n2=760 plant="": restore then suffix bit-identical to a cold prefill: true
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6860 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv8a_checkpoint_test.go:239: qwen3next-tiny n1=700 n2=760 plant="no conv window": restore then suffix bit-identical to a cold prefill: false
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6860 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv8a_checkpoint_test.go:239: qwen3next-tiny n1=700 n2=760 plant="from c-1": restore then suffix bit-identical to a cold prefill: false
+=== RUN   TestKV8a_restoreEqualsColdPrefill/nemotron-tiny/under_the_fast_floor
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6998 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6994 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv8a_checkpoint_test.go:239: nemotron-tiny n1=300 n2=360 plant="": restore then suffix bit-identical to a cold prefill: true
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6992 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv8a_checkpoint_test.go:239: nemotron-tiny n1=300 n2=360 plant="no conv window": restore then suffix bit-identical to a cold prefill: false
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6986 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv8a_checkpoint_test.go:239: nemotron-tiny n1=300 n2=360 plant="from c-1": restore then suffix bit-identical to a cold prefill: false
+=== RUN   TestKV8a_restoreEqualsColdPrefill/nemotron-tiny/over_the_fast_floor
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6998 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6994 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv8a_checkpoint_test.go:239: nemotron-tiny n1=700 n2=760 plant="": restore then suffix bit-identical to a cold prefill: true
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6992 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv8a_checkpoint_test.go:239: nemotron-tiny n1=700 n2=760 plant="no conv window": restore then suffix bit-identical to a cold prefill: false
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6986 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv8a_checkpoint_test.go:239: nemotron-tiny n1=700 n2=760 plant="from c-1": restore then suffix bit-identical to a cold prefill: false
+--- PASS: TestKV8a_restoreEqualsColdPrefill (3.36s)
+    --- PASS: TestKV8a_restoreEqualsColdPrefill/qwen3next-tiny/under_the_fast_floor (0.77s)
+    --- PASS: TestKV8a_restoreEqualsColdPrefill/qwen3next-tiny/over_the_fast_floor (1.08s)
+    --- PASS: TestKV8a_restoreEqualsColdPrefill/nemotron-tiny/under_the_fast_floor (0.63s)
+    --- PASS: TestKV8a_restoreEqualsColdPrefill/nemotron-tiny/over_the_fast_floor (0.89s)
+=== RUN   TestKV8a_noRoomKeepsNone
+cuda: recurrent checkpoint: none kept (0.0 MiB needed beside a 386 MiB reserve, 1 MiB free); a reply rendered back differently re-prefills the whole prompt
+cuda: prefill width 2048 rows (7 MiB of scratch; 6868 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestKV8a_noRoomKeepsNone (0.23s)
+=== RUN   TestKV8Msg_cudaMamba2KeepsNoBoundarySnapshot
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6998 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+goinfer: batched prefill declined for a 2400-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): cuda prefill: Mamba-2 mixer weight at layer 0 needs the sequential path: cuda prefill: batched path declined (arch/geometry)
+--- PASS: TestKV8Msg_cudaMamba2KeepsNoBoundarySnapshot (0.67s)
+=== RUN   TestRecurrentSlots_sequencesKeepTheirOwnState
+=== RUN   TestRecurrentSlots_sequencesKeepTheirOwnState/qwen35-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6866 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6862 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestRecurrentSlots_sequencesKeepTheirOwnState/olmo_hybrid-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6992 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6988 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestRecurrentSlots_sequencesKeepTheirOwnState/nemotron-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (8 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6994 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6992 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestRecurrentSlots_sequencesKeepTheirOwnState (0.89s)
+    --- PASS: TestRecurrentSlots_sequencesKeepTheirOwnState/qwen35-tiny (0.31s)
+    --- PASS: TestRecurrentSlots_sequencesKeepTheirOwnState/olmo_hybrid-tiny (0.29s)
+    --- PASS: TestRecurrentSlots_sequencesKeepTheirOwnState/nemotron-tiny (0.29s)
+=== RUN   TestRecurrentSlots_sharedStateGoesRed
+=== RUN   TestRecurrentSlots_sharedStateGoesRed/qwen35-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6866 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6862 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:337: planted: 5632 logits differ
+=== RUN   TestRecurrentSlots_sharedStateGoesRed/olmo_hybrid-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6992 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6988 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:337: planted: 11264 logits differ
+=== RUN   TestRecurrentSlots_sharedStateGoesRed/nemotron-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (8 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6994 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6992 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:337: planted: 5632 logits differ
+--- PASS: TestRecurrentSlots_sharedStateGoesRed (0.86s)
+    --- PASS: TestRecurrentSlots_sharedStateGoesRed/qwen35-tiny (0.31s)
+    --- PASS: TestRecurrentSlots_sharedStateGoesRed/olmo_hybrid-tiny (0.28s)
+    --- PASS: TestRecurrentSlots_sharedStateGoesRed/nemotron-tiny (0.27s)
+=== RUN   TestRecurrentSlots_expertCacheKeepsOne
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6866 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6856 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestRecurrentSlots_expertCacheKeepsOne (0.27s)
+=== RUN   TestRecurrentSlots_keepsOneSlotAtTheDefaultRequest
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6868 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6862 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6858 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestRecurrentSlots_keepsOneSlotAtTheDefaultRequest (0.31s)
+=== RUN   TestRecurrentSlots_resetIsTheSlotsOwn
+=== RUN   TestRecurrentSlots_resetIsTheSlotsOwn/qwen35-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6866 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6862 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6858 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:472: planted, a reset zeroes every slot: [a reset with slot 1 bound changed slot 0: 0 non-zero elements, 4224 before slot 0's sequence at position 6: 256 logits differ from its solo run]
+=== RUN   TestRecurrentSlots_resetIsTheSlotsOwn/olmo_hybrid-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6992 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6988 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6978 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:472: planted, a reset zeroes every slot: [a reset with slot 1 bound changed slot 0: 0 non-zero elements, 2688 before slot 0's sequence at position 6: 512 logits differ from its solo run]
+=== RUN   TestRecurrentSlots_resetIsTheSlotsOwn/nemotron-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (8 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6994 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6992 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (8 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6984 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:472: planted, a reset zeroes every slot: [a reset with slot 1 bound changed slot 0: 0 non-zero elements, 2624 before slot 0's sequence at position 6: 256 logits differ from its solo run]
+=== RUN   TestRecurrentSlots_resetIsTheSlotsOwn/a_reset_that_does_nothing
+cuda: recurrent checkpoint: 0.0 MiB on the device (8 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6994 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6992 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:488: planted: [a reset left 2624 of the bound slot's state elements non-zero]
+--- PASS: TestRecurrentSlots_resetIsTheSlotsOwn (1.28s)
+    --- PASS: TestRecurrentSlots_resetIsTheSlotsOwn/qwen35-tiny (0.36s)
+    --- PASS: TestRecurrentSlots_resetIsTheSlotsOwn/olmo_hybrid-tiny (0.34s)
+    --- PASS: TestRecurrentSlots_resetIsTheSlotsOwn/nemotron-tiny (0.31s)
+    --- PASS: TestRecurrentSlots_resetIsTheSlotsOwn/a_reset_that_does_nothing (0.27s)
+=== RUN   TestRecurrentSlots_stateLinePerSlot
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6868 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:520: qwen35-tiny at 1 slots: 33792 bytes on the state line, one slot's 16896
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6862 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:520: qwen35-tiny at 2 slots: 67584 bytes on the state line, one slot's 16896
+cuda: recurrent checkpoint: 0.1 MiB on the device (24 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6852 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:520: qwen35-tiny at 4 slots: 135168 bytes on the state line, one slot's 16896
+cuda: 1 of 2 resident KV slots granted: the device ran out of memory allocating the KV pools beside the build's own scratch
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6852 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6846 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:520: olmo_hybrid-tiny at 1 slots: 21504 bytes on the state line, one slot's 10752
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6836 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:520: olmo_hybrid-tiny at 2 slots: 43008 bytes on the state line, one slot's 10752
+cuda: recurrent checkpoint: 0.0 MiB on the device (24 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6824 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:520: olmo_hybrid-tiny at 4 slots: 86016 bytes on the state line, one slot's 10752
+cuda: 1 of 2 resident KV slots granted: the device ran out of memory allocating the KV pools beside the build's own scratch
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6818 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6814 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:520: nemotron-tiny at 1 slots: 20992 bytes on the state line, one slot's 10496
+cuda: recurrent checkpoint: 0.0 MiB on the device (8 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6806 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:520: nemotron-tiny at 2 slots: 41984 bytes on the state line, one slot's 10496
+cuda: recurrent checkpoint: 0.0 MiB on the device (16 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6788 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:520: nemotron-tiny at 4 slots: 83968 bytes on the state line, one slot's 10496
+cuda: 1 of 2 resident KV slots granted: the device ran out of memory allocating the KV pools beside the build's own scratch
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6786 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestRecurrentSlots_stateLinePerSlot (0.60s)
+=== RUN   TestRecurrentSlots_fitPricesTheState
+--- PASS: TestRecurrentSlots_fitPricesTheState (0.00s)
+=== RUN   TestRecurrentSlots_roomForOneCheckpoint
+=== RUN   TestRecurrentSlots_roomForOneCheckpoint/qwen35-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6866 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6862 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: none kept (0.0 MiB needed beside a 385 MiB reserve, 385 MiB free); a reply rendered back differently re-prefills the whole prompt
+cuda: prefill width 2048 rows (8 MiB of scratch; 6858 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestRecurrentSlots_roomForOneCheckpoint/olmo_hybrid-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6992 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6988 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: none kept (0.0 MiB needed beside a 387 MiB reserve, 387 MiB free); a reply rendered back differently re-prefills the whole prompt
+cuda: prefill width 2048 rows (12 MiB of scratch; 6978 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestRecurrentSlots_roomForOneCheckpoint/nemotron-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6994 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6992 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: none kept (0.0 MiB needed beside a 387 MiB reserve, 387 MiB free); a reply rendered back differently re-prefills the whole prompt
+cuda: prefill width 2048 rows (6 MiB of scratch; 6984 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestRecurrentSlots_roomForOneCheckpoint (0.99s)
+    --- PASS: TestRecurrentSlots_roomForOneCheckpoint/qwen35-tiny (0.34s)
+    --- PASS: TestRecurrentSlots_roomForOneCheckpoint/olmo_hybrid-tiny (0.35s)
+    --- PASS: TestRecurrentSlots_roomForOneCheckpoint/nemotron-tiny (0.30s)
+=== RUN   TestRecurrentSlots_aFailedCopyIsNotCounted
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6866 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestRecurrentSlots_aFailedCopyIsNotCounted (0.24s)
+=== RUN   TestRecurrentSlots_decoderChoosesAmongSlots
+=== RUN   TestRecurrentSlots_decoderChoosesAmongSlots/qwen35-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6866 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6862 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:744: P, 24 tokens: reused 0; reply [252 181 93 120 215 6], cold [252 181 93 120 215 6]
+    mamba_guards_test.go:744: Q, 24 tokens: reused 0; reply [41 64 107 251 106 176], cold [41 64 107 251 106 176]
+    mamba_guards_test.go:744: P, 32 tokens: reused 30; reply [139 46 255 70 112 159], cold [139 46 255 70 112 159]
+    mamba_guards_test.go:744: Q, 32 tokens: reused 30; reply [139 109 30 166 61 60], cold [139 109 30 166 61 60]
+    mamba_guards_test.go:744: P, 40 tokens: reused 38; reply [219 129 207 122 105 133], cold [219 129 207 122 105 133]
+=== RUN   TestRecurrentSlots_decoderChoosesAmongSlots/olmo_hybrid-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6992 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6988 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:744: P, 24 tokens: reused 0; reply [247 175 237 496 263 10], cold [247 175 237 496 263 10]
+    mamba_guards_test.go:744: Q, 24 tokens: reused 0; reply [208 45 461 32 404 275], cold [208 45 461 32 404 275]
+    mamba_guards_test.go:744: P, 32 tokens: reused 30; reply [26 485 413 237 47 57], cold [26 485 413 237 47 57]
+    mamba_guards_test.go:744: Q, 32 tokens: reused 30; reply [32 404 275 261 32 73], cold [32 404 275 261 32 73]
+    mamba_guards_test.go:744: P, 40 tokens: reused 38; reply [399 237 404 393 270 404], cold [399 237 404 393 270 404]
+=== RUN   TestRecurrentSlots_decoderChoosesAmongSlots/nemotron-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (8 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6994 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6992 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:744: P, 24 tokens: reused 0; reply [157 122 213 180 182 243], cold [157 122 213 180 182 243]
+    mamba_guards_test.go:744: Q, 24 tokens: reused 0; reply [139 63 224 128 108 117], cold [139 63 224 128 108 117]
+    mamba_guards_test.go:744: P, 32 tokens: reused 30; reply [44 119 8 29 60 174], cold [44 119 8 29 60 174]
+    mamba_guards_test.go:744: Q, 32 tokens: reused 30; reply [44 119 8 29 60 174], cold [44 119 8 29 60 174]
+    mamba_guards_test.go:744: P, 40 tokens: reused 38; reply [4 23 13 62 245 212], cold [4 23 13 62 245 212]
+--- PASS: TestRecurrentSlots_decoderChoosesAmongSlots (1.02s)
+    --- PASS: TestRecurrentSlots_decoderChoosesAmongSlots/qwen35-tiny (0.40s)
+    --- PASS: TestRecurrentSlots_decoderChoosesAmongSlots/olmo_hybrid-tiny (0.30s)
+    --- PASS: TestRecurrentSlots_decoderChoosesAmongSlots/nemotron-tiny (0.33s)
+=== RUN   TestRecurrentSlots_snapshotHoldsTheSlotItNames
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6866 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6862 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestRecurrentSlots_snapshotHoldsTheSlotItNames (0.37s)
+=== RUN   TestRecurrentSlots_markedRowsFoldIntoTheirSlot
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6866 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6862 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: speculative recurrent rows: 0.0 MiB on the device (4 rows x 3 DeltaNet layers, SP2)
+cuda: speculative recurrent rows: 0.0 MiB on the device (4 rows x 3 DeltaNet layers, SP2)
+--- PASS: TestRecurrentSlots_markedRowsFoldIntoTheirSlot (0.30s)
+=== RUN   TestRecurrentSlots_eachSlotKeepsItsCheckpoint
+=== RUN   TestRecurrentSlots_eachSlotKeepsItsCheckpoint/qwen35-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6866 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6862 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestRecurrentSlots_eachSlotKeepsItsCheckpoint/olmo_hybrid-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6992 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6988 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestRecurrentSlots_eachSlotKeepsItsCheckpoint/nemotron-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (8 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6994 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6992 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestRecurrentSlots_eachSlotKeepsItsCheckpoint (0.91s)
+    --- PASS: TestRecurrentSlots_eachSlotKeepsItsCheckpoint/qwen35-tiny (0.30s)
+    --- PASS: TestRecurrentSlots_eachSlotKeepsItsCheckpoint/olmo_hybrid-tiny (0.32s)
+    --- PASS: TestRecurrentSlots_eachSlotKeepsItsCheckpoint/nemotron-tiny (0.28s)
+=== RUN   TestRecurrentSlots_restoreThroughGenerate
+=== RUN   TestRecurrentSlots_restoreThroughGenerate/qwen35-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6866 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:961: P: restored at 32, reused 32, declined ""; reply [234 82 5 189 15 58]
+    mamba_guards_test.go:961: Q: restored at 32, reused 32, declined ""; reply [162 127 211 250 127 211]
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6860 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6858 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6856 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestRecurrentSlots_restoreThroughGenerate/olmo_hybrid-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6992 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:961: P: restored at 32, reused 32, declined ""; reply [160 263 200 294 265 263]
+    mamba_guards_test.go:961: Q: restored at 32, reused 32, declined ""; reply [217 28 75 508 217 492]
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6982 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6972 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestRecurrentSlots_restoreThroughGenerate/nemotron-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (8 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6994 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:961: P: restored at 32, reused 32, declined ""; reply [186 32 32 15 13 207]
+    mamba_guards_test.go:961: Q: restored at 32, reused 32, declined ""; reply [154 70 79 128 174 244]
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6984 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6984 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6980 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestRecurrentSlots_restoreThroughGenerate (1.40s)
+    --- PASS: TestRecurrentSlots_restoreThroughGenerate/qwen35-tiny (0.53s)
+    --- PASS: TestRecurrentSlots_restoreThroughGenerate/olmo_hybrid-tiny (0.42s)
+    --- PASS: TestRecurrentSlots_restoreThroughGenerate/nemotron-tiny (0.45s)
+=== RUN   TestRecurrentSlots_aTakenCheckpointIsNotScored
+=== RUN   TestRecurrentSlots_aTakenCheckpointIsNotScored/qwen35-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6866 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:1041: qwen35-tiny: the branch restored at 0, reused 0, declined ""
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6862 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestRecurrentSlots_aTakenCheckpointIsNotScored/olmo_hybrid-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6992 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:1041: olmo_hybrid-tiny: the branch restored at 0, reused 0, declined ""
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6988 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestRecurrentSlots_aTakenCheckpointIsNotScored/nemotron-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6994 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_guards_test.go:1041: nemotron-tiny: the branch restored at 0, reused 0, declined ""
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6988 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestRecurrentSlots_aTakenCheckpointIsNotScored (1.04s)
+    --- PASS: TestRecurrentSlots_aTakenCheckpointIsNotScored/qwen35-tiny (0.38s)
+    --- PASS: TestRecurrentSlots_aTakenCheckpointIsNotScored/olmo_hybrid-tiny (0.33s)
+    --- PASS: TestRecurrentSlots_aTakenCheckpointIsNotScored/nemotron-tiny (0.33s)
+=== RUN   TestRecurrentSlots_leastRecentlySavedGoesFirst
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6866 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestRecurrentSlots_leastRecentlySavedGoesFirst (0.26s)
+=== RUN   TestRecurrentSlots_resetFreesTheSlotsCheckpoint
+cuda: recurrent checkpoint: 0.0 MiB on the device (12 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6866 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestRecurrentSlots_resetFreesTheSlotsCheckpoint (0.25s)
+=== RUN   TestNemotronResidentCUDA_slots
+cuda: recurrent checkpoint: 0.0 MiB on the device (16 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6984 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (16 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6966 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (16 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6950 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_resident_test.go:187: alone A [232 32 135 140 84 27 208 244 27 121], B [70 199 8 2 186 166 71 102 165 2]; turns A [232 32 135 140 84 27 208 244 27 121], B [70 199 8 2 186 166 71 102 165 2], A [232 32 135 140 84 27 208 244 27 121]
+cuda: recurrent checkpoint: 0.0 MiB on the device (16 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6932 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    mamba_resident_test.go:195: plant (reset leaves the Mamba-2 state): turns A [232 32 135 140 84 27 208 244 27 121], B [8 146 166 26 6 243 104 47 53 68], A [232 26 6 94 185 127 70 122 251 117]
+--- PASS: TestNemotronResidentCUDA_slots (0.36s)
+PASS
+ledger: 114 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/backend/cuda	17.925s

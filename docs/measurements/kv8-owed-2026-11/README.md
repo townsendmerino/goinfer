@@ -1,4 +1,4 @@
-# KV8's owed reads on CUDA: Mamba-2 and a real model's cut (registered 2026-11-16 07:40 PST, before any run; nobara: 16-core amd64, 62 GB RAM, one RTX 2070 SUPER 8 GB)
+# KV8's owed reads on CUDA: Mamba-2 and a real model's cut (registered 2026-11-16 07:40 PST, before any run; a 16-core amd64 box with 62 GB of RAM and one 8 GB RTX 2070 SUPER)
 
 Plan of record: `docs/tasks/task-kv-architecture-2026-10.md`, the KV8 row ("Owed: ... Mamba-2, and a real model's logits for the cut's bit-identity") and
 `docs/measurements/kv8-msgboundary-2026-11/README.md` (the second slice's "The cut rests on the split being bit-identical ... not on the logits of a real model").
@@ -29,7 +29,7 @@ Both gates are correctness gates, not timed ones: they hold the timing lock shar
 | | |
 |---|---|
 | **Question** | On a real checkpoint, is a prefill cut at a snapshot point (the second slice's split), and a restore from a snapshot taken at that point, bit-identical to the uninterrupted prefill? |
-| **Instrument** | `backend/cuda/kv8_real_cut_test.go:TestKV8Real_cutEqualsUninterrupted`. `~/models/qwen3.5-0.8b` loaded as the other real CUDA tests load it (`Quant: int4`, 4,096 context). A prompt of 3,000 real ids (the repository's `CLAUDE.md` text through the model's tokenizer). Default 2,048-row passes. |
+| **Instrument** | `backend/cuda/b35_split_prefill_test.go:TestKV8Real_cutEqualsUninterrupted`. `~/models/qwen3.5-0.8b` loaded as the other real CUDA tests load it (`Quant: int4`, 4,096 context). A prompt of 3,000 real ids (the repository's `CLAUDE.md` text through the model's tokenizer). Default 2,048-row passes. |
 | **Arms** | **U**, one `PrefillLast` over [0, 3000), twice (U1 and U2). **Cut**, `PrefillLast` over [0, q) then [q, 3000), for q in {64, 960, 1152, 2048, 2368} and the two-cut sets {960, 2368} and {64, 1152, 2368} (the preamble, message and Keep points of the real flow). **Restore**, a snapshot of slot 0 at q taken after [0, q), the slot then run on a different prompt, `RestoreKV` to q, then `PrefillLast` over [q, 3000), for the same q. |
 | **Metric** | per arm against U1: the number of float32 words whose bits differ in (a) the last row's logits, (b) the logits of 8 greedy decode steps after the prompt, (c) every DeltaNet layer's conv ring and recurrent state, (d) every f32 attention layer's K and V rows [0, 3000). Plus the arg-max of every logit row compared. |
 | **Gated arms** | every arm whose passes are all at least 16 rows (a shorter pass runs decode's GEMV, `TestB35SplitPrefill`); a split with a shorter pass is reported, not gated, as production lowers such a point by a block. |
@@ -55,7 +55,7 @@ Both gates are correctness gates, not timed ones: they hold the timing lock shar
 | | |
 |---|---|
 | **Question** | In `served_msgboundary.py`'s conversation (about 7,400 ids; r1 cold, r2 the next turn, r3 the last message rewritten from its first words, r4 the turn after r3), what does serve reuse and what does the first token cost on a Mamba-2 hybrid, given that its host snapshots are refused? |
-| **Instrument** | `served_msgboundary.py:cell`, one cell of the build at `8a2412048`'s tree (`CGO_ENABLED=0 go build -tags cuda ./backend/cuda/cmd/serve`), `--ctx 12288`, greedy, thinking off, 24 new tokens, `~/models/nemotron-h-4b-instruct-128k` (local NVMe, its CUDA bundle), the exclusive timing lock, the 1-minute load and available memory recorded at the start, a cell started above 8.0 load void |
+| **Instrument** | `docs/measurements/kv8-msgboundary-2026-11/served_msgboundary.py` (its `cell`), one cell of the build at `8a2412048`'s tree (`CGO_ENABLED=0 go build -tags cuda ./backend/cuda/cmd/serve`), `--ctx 12288`, greedy, thinking off, 24 new tokens, `~/models/nemotron-h-4b-instruct-128k` (local NVMe, its CUDA bundle), the exclusive timing lock, the 1-minute load and available memory recorded at the start, a cell started above 8.0 load void |
 | **Reported, not graded** | each request's prompt ids, rows reused, first token; the server's snapshot lines; peak server `VmSwap` |
 | **Expected, from the code** | no snapshot taken (0 rows); r2 reuses r1's Keep checkpoint rows (Keep is the device checkpoint, which Mamba-2 has); r3 reuses 0 rows and pays a full per-token prefill; r4 reuses r3's Keep rows |
 | **PASS** (the status quo is as the code says) | the snapshot count is 0 and r3 reuses 0 rows and r2 reuses at least one row and `VmSwap` at most 512 MB |
@@ -64,3 +64,32 @@ Both gates are correctness gates, not timed ones: they hold the timing lock shar
 | **Stopping rule** | one cell, no repeat; a void cell is re-run once |
 | **Cost** | load about 9 s, four requests: r1 and r3 are per-token prefills of about 7,400 ids, each about 1 to 3 minutes by the sequential path (measured only by this run); **expected about 6 to 10 minutes**, stated before the run; over 20 minutes stops it and says so |
 | **Means** | PASS: the cost of lacking the message-boundary and preamble snapshots on a Mamba-2 hybrid is r3's first token, on record, and whether to build them is the owner's decision with that figure in hand. FAIL: the Keep path or the refusal is not what the code says. |
+
+## Readings, 2026-11-16 (the registrations above did not change after their commits except the header's box description, reworded to hardware)
+
+Tree: `c2e024504` plus the test file; serve built from it (`CGO_ENABLED=0 go build -tags cuda ./backend/cuda/cmd/serve`). Driver 595.112.07 as anchored. The 1-minute load was 0.13 to 0.85 and about 60 GB were available at every start; no void cell.
+
+| gate | verdict | reading |
+|---|---|---|
+| **G-R1** | **PASS** | `g-r1-run1.log`, 07:23:35 PST, 67.6 s. `qwen3.5-0.8b` (`Quant: int4`), 3,000 ids of `CLAUDE.md`'s text, 2,048-row passes. U1 equals U2. The cuts {64}, {960}, {1152}, {2048}, {2368}, {960, 2368} and {64, 1152, 2368}, each followed by a snapshot at its last point, another conversation on the slot, a restore and the suffix: **0 differing words** in the last row's logits, 8 decode steps' logits, every DeltaNet conv ring and state and every f32 K/V row, on all 14 arms (every pass at least 16 rows). Plants, both red as registered: state zeroed between the calls (248,320 last-row logits differ, max 1.72), and a restore without the state (248,320 differ, max 1.98 to 2.27, the arg-max differs in each). |
+| **G-M1** | **PASS** | `g-m1-run1.log`: 22 top-level tests, 53 runs with subtests, 0 skips, 0 fails (`TestKV8a_*`, `TestKV8Msg_cudaMamba2KeepsNoBoundarySnapshot`, `TestNemotronResidentCUDA_slots`, `TestRecurrentSlots_*`; the `nemotron-tiny` cells included): Mamba-2's slots, per-slot state and per-slot Keep checkpoint hold, and the boundary snapshot is refused (0 taken). |
+| **G-M2** | **PASS** | `g-m2-run1.log`, `served-nemotron-h-4b/`, 07:26:42 to 07:29:19 PST, 2 min 37 s, peak `VmSwap` 0 MB, 0 snapshots taken. |
+
+G-M2's requests (`nemotron-h-4b-instruct-128k`, 4,322 MiB on the card, a 98.5 MiB device checkpoint):
+
+| request | prompt ids | rows reused | first token |
+|---|---|---|---|
+| r1, cold | 7,419 | 0 | 74.99 s |
+| r2, the next turn | 7,446 | 7,430 | 0.17 s |
+| r3, the last message rewritten from its first words | 7,420 | **0** | **74.95 s** |
+| r4, the turn after r3 | 7,447 | 7,431 | 0.17 s |
+
+- **What the figures say about Mamba-2.** Keep's device checkpoint serves the next turn at 0.17 s. A rewrite of the last message re-prefills the whole prompt at about 99 ids per second (one forward a token), 75 s here;
+  the message-boundary snapshot on the 0.8B DeltaNet model is what turns that case into a partial one. On this prompt the boundary sits near id 6,100, so a snapshot there would leave about 1,300 ids, about 13 s at the same rate (an
+  estimate from the rate above, not a measurement).
+- **Why those snapshots do not exist for Mamba-2.** `backend/cuda/kvsnap.go:cudaResident.snapshotDecline` refuses it, and the snapshots are taken between two passes of a batched prefill
+  (`PrefillLastMarked`) that a Mamba-2 prompt never runs. A build would need a snapshot that carries `mbWin` and `mbSSM`, and a mark in the sequential per-token path. That is a design and a registration of its own:
+  **the owner decides whether to build it.**
+- **Not read:** the 9B-class size for Mamba-2 (there is none on this box), `granite-hf` (a 7B mixture-of-experts hybrid, resident quality recorded as degraded), Claude Code's live traffic, Metal.
+
+The G-R1 log names `kv8_real_cut_test.go`, where the test first lived; it moved unchanged into `b35_split_prefill_test.go` (a new CUDA test file importing `decoder` trips `internal/layout`'s ratchet), and was not re-run (an unchanged arm).
