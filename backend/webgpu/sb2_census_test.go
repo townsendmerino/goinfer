@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -806,6 +807,11 @@ func webgpuGateRow(t *testing.T, row, path string, o decoder.Options, census boo
 	if err := webgpuScratchListHolds(rd, l); err != nil {
 		t.Errorf("%s: %v", row, err)
 	}
+	if covered, err := webgpuScratchPlanHolds(m, rd); err != nil {
+		t.Errorf("%s: %v", row, err)
+	} else if covered {
+		webgpuScratchPlanCovered++
+	}
 	ch, g := m.Generate(context.Background(), []int{1, 2, 3, 4, 5}, 4, decoder.SamplingParams{})
 	for range ch {
 	}
@@ -869,7 +875,10 @@ func TestMemGate_webgpu(t *testing.T) {
 			run(f+" int4/kvprecision-i8", path, decoder.Options{Quant: "int4", KVPrecision: "i8"}, false)
 		}
 	}
-	t.Logf("%d builds held, %d options declined by WebGPU's own build", len(built), declined)
+	t.Logf("%d builds held, %d options declined by WebGPU's own build; the plan's decode scratch covered %d", len(built), declined, webgpuScratchPlanCovered)
+	if webgpuScratchPlanCovered == 0 {
+		t.Error("VOID: Model.WebGPUDecodeScratch gave a figure for no row, so the plan-side gate compared nothing")
+	}
 	memgate.HoldRows(t, webgpuGateRowsPath, built, *webgpuGateRowsUpdate)
 	g.Finish(t)
 }
@@ -1017,6 +1026,57 @@ func webgpuScratchListHolds(rd *residentDecoder, l *mem.Ledger) error {
 	return nil
 }
 
+// webgpuScratchPlanCovered counts the rows webgpuScratchPlanHolds found the plan's figure for, so a gate that covers none is VOID.
+var webgpuScratchPlanCovered int
+
+// webgpuScratchPlanHolds is G-MS2w's second half (MM5b): where the plan gives a figure for m (Model.WebGPUDecodeScratch), the build's
+// scratch list equals it role by role, once for each runner the build made. covered is false where the plan gives none.
+func webgpuScratchPlanHolds(m *decoder.Model, rd *residentDecoder) (covered bool, err error) {
+	terms, ok := m.WebGPUDecodeScratch()
+	if !ok {
+		return false, nil
+	}
+	return true, webgpuScratchTermsHold(terms, rd)
+}
+
+// webgpuScratchTermsHold compares terms with the build's scratch list, role by role, for each runner the build made.
+func webgpuScratchTermsHold(terms []decoder.WebGPUScratchTerm, rd *residentDecoder) error {
+	n := int64(max(1, len(rd.slots)))
+	want := map[string]int64{}
+	for _, tm := range terms {
+		want[tm.Role] += n * tm.Bytes
+	}
+	got := map[string]int64{}
+	runners := []*DecodeRunner{rd.runner}
+	if len(rd.slots) > 0 {
+		runners = runners[:0]
+		for _, s := range rd.slots {
+			runners = append(runners, s.runner)
+		}
+	}
+	for _, r := range runners {
+		for _, e := range r.ScratchList() {
+			got[e.Role] += e.Bytes
+		}
+	}
+	var diffs []string
+	for role := range want {
+		if got[role] != want[role] {
+			diffs = append(diffs, fmt.Sprintf("%s: plan %d B, build %d B", role, want[role], got[role]))
+		}
+	}
+	for role, b := range got {
+		if _, ok := want[role]; !ok {
+			diffs = append(diffs, fmt.Sprintf("%s: the build leases %d B the plan names no term for", role, b))
+		}
+	}
+	if len(diffs) > 0 {
+		sort.Strings(diffs)
+		return fmt.Errorf("the plan's decode scratch and the build's list differ: %s", strings.Join(diffs, "; "))
+	}
+	return nil
+}
+
 // TestScratchList_plantsGoRed holds G-MS2w to its plants (MM5b): on a built resident, the list and the ledger agree; a scratch buffer leased
 // beside the list makes them disagree by exactly its bytes; and the list names every lease with a builder (no empty role) on a family that
 // builds the plain attention path.
@@ -1052,5 +1112,38 @@ func TestScratchList_plantsGoRed(t *testing.T) {
 	err = webgpuScratchListHolds(rd, l)
 	if err == nil || !strings.Contains(err.Error(), "+4096 B beside the list") {
 		t.Fatalf("a 4096 B scratch buffer leased beside the list: err = %v, want one naming +4096 B beside the list", err)
+	}
+}
+
+// TestScratchPlan_plantsGoRed holds the plan-side gate to its plants (MM5b): on llama-tiny the plan equals the build's list; a term one
+// uniform short (a dispatch the plan does not count) is red naming its role and the 16 B; and a build role the plan has no term for is red.
+func TestScratchPlan_plantsGoRed(t *testing.T) {
+	m, err := decoder.Load("../../testdata/llama-tiny", decoder.Options{Backend: "webgpu", Quant: "int4", ResidentContext: 256})
+	if err != nil {
+		t.Skipf("no WebGPU device: %v", err)
+	}
+	defer m.Close()
+	rd, ok := m.ResidentForwardForTest().(*residentDecoder)
+	if !ok {
+		t.Skip("llama-tiny did not build resident on this adapter")
+	}
+	terms, ok := m.WebGPUDecodeScratch()
+	if !ok {
+		t.Fatal("VOID: no plan figure for llama-tiny")
+	}
+	if err := webgpuScratchTermsHold(terms, rd); err != nil {
+		t.Fatalf("unplanted: %v", err)
+	}
+	short := append([]decoder.WebGPUScratchTerm(nil), terms...)
+	for i := range short {
+		if short[i].Role == "gemvAdd" {
+			short[i].Bytes -= 16
+		}
+	}
+	if err := webgpuScratchTermsHold(short, rd); err == nil || !strings.Contains(err.Error(), "gemvAdd: plan 112 B, build 128 B") {
+		t.Errorf("a gemvAdd term 16 B short: err = %v, want one naming gemvAdd, plan 112 B, build 128 B", err)
+	}
+	if err := webgpuScratchTermsHold(terms[1:], rd); err == nil || !strings.Contains(err.Error(), "build: the build leases 1028 B the plan names no term for") {
+		t.Errorf("the build term dropped: err = %v, want one naming the build role the plan has no term for", err)
 	}
 }
