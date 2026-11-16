@@ -300,3 +300,19 @@ Decided 2026-11-15, replacing T3b's bars (above, recorded FAIL as written). **Th
 - **The 0.03 s allowance on r2 and r4** is a noise floor, stated here before the run: their first tokens are 0.3 s on the 0.8B (1.1 s on the 9B), and T3b's own cells read 0.33 against 0.35 s (1.079 as a ratio) with nothing different between the arms. A ratio bar alone would grade that noise.
 - **Worst of the two pairs, on each model; PASS needs both models.** The cold cost is reported as in T3b: the preamble snapshot's rows, host MiB and copy ms, and r1's first-token difference in seconds.
 - **Void if:** a timed cell outside the lock, a NOT RUN counted as a pass, a bar moved after a reading. **Stopping rule:** the four cells per model, no early stop. **Cost:** about 2 minutes on the 0.8B and 6 on the 9B; times from `date` when it runs.
+
+### T3b', readings (2026-11-15, 16:42 to 16:48 PST; `served-t3bp-08b/`, `served-t3bp-9b/`)
+
+Main `69b05e1a4` against the branch's code, A B B A, the exclusive lock, no void cell, `VmSwap` 0 MB, one slot. The 9B's fit check passed as R1's did (5,640 MiB on the card, a 1 x 8,192 KV plan). Replies equal and rows reused equal on every request of both models.
+
+| first token, change over main (pair 1 / pair 2) | 0.8B | 9B | bar |
+|---|---|---|---|
+| r3 | **1.023** (+0.05 s) / 1.004 | 1.001 / 1.001 | 0.98 to 1.02 |
+| r1 (cold) | 0.996 / 0.994 | 1.016 (+0.56 s) / 1.014 (+0.50 s) | at most 1.05 |
+| r2 | 1.011 / 1.015 | 1.013 / 1.001 | at most 1.05 or 0.03 s |
+| r4 | 0.985 / 1.066 (+0.02 s) | 1.004 / 0.953 | at most 1.05 or 0.03 s |
+| r3 rows | 6,016 both arms | 6,016 both arms | equal |
+
+**The verdict is PARKED, by the registered rule: the 9B passes every clause, and on the 0.8B r3 in pair 1 reads 1.023 (2.37 s to 2.42 s), above the 1.02 PASS edge and inside the 0.95 to 1.05 ambiguous band.** The other pair reads 1.004 and the 9B's r3 reads 1.001 in both pairs, with the same rows and the same replies. Nothing moves. The one reading outside the PASS band is a 0.05 s difference on a 2.4 s request that the preamble snapshot does not touch (r3 restores the boundary snapshot on both arms); the registration's allowance for sub-second requests (0.03 s) did not cover it. The decision goes to the owner.
+
+**The cold cost, as in T3b, run again:** the preamble snapshot is 2,752 rows, **84 MiB and 77 ms on the 0.8B, 222 MiB and 165 ms on the 9B**; the boundary and Keep snapshots are as before (0.8B 160 and 192 MiB, 98 to 142 ms; 9B 426 and 510 MiB, 277 to 321 ms). r1's first token on the 9B is 0.50 to 0.56 s slower than main's (1.4% to 1.6%) and on the 0.8B 0.03 to 0.04 s faster.
