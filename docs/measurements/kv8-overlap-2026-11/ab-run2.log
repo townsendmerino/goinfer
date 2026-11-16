@@ -1,0 +1,132 @@
+[11:30:35] cell 1a (main): load 2.92, 61131 MB available, 503 MiB on the card
+[11:30:47]   1a r1: 7434 tokens, reused 0, first token 7.42 s
+[11:30:48]   1a r2: 7464 tokens, reused 7360, first token 0.31 s
+[11:30:50]   1a r3: 7435 tokens, reused 6016, first token 2.43 s
+[11:30:51]   1a r4: 7465 tokens, reused 7360, first token 0.36 s
+[11:30:51]   1a: loaded in 4.5 s, peak VmSwap 0 MB, snapshots taken (rows) [2752, 6016, 7360, 7424, 7360, 7424]
+[11:30:51] cell 1b (change): load 2.63, 61266 MB available, 503 MiB on the card
+[11:31:03]   1b r1: 7434 tokens, reused 0, first token 7.20 s
+[11:31:03]   1b r2: 7464 tokens, reused 7360, first token 0.22 s
+[11:31:05]   1b r3: 7435 tokens, reused 6016, first token 2.33 s
+[11:31:06]   1b r4: 7465 tokens, reused 7360, first token 0.22 s
+[11:31:06]   1b: loaded in 4.5 s, peak VmSwap 0 MB, snapshots taken (rows) [2752, 6016, 7360, 7424, 7360, 7424]
+[11:31:06] cell 1b (change): load 2.47, 61284 MB available, 503 MiB on the card
+[11:31:18]   1b r1: 7434 tokens, reused 0, first token 7.19 s
+[11:31:18]   1b r2: 7464 tokens, reused 7360, first token 0.22 s
+[11:31:20]   1b r3: 7435 tokens, reused 6016, first token 2.33 s
+[11:31:21]   1b r4: 7465 tokens, reused 7360, first token 0.22 s
+[11:31:21]   1b: loaded in 4.5 s, peak VmSwap 0 MB, snapshots taken (rows) [2752, 6016, 7360, 7424, 7360, 7424]
+[11:31:21] cell 1a (main): load 2.43, 61299 MB available, 503 MiB on the card
+[11:31:33]   1a r1: 7434 tokens, reused 0, first token 7.38 s
+[11:31:33]   1a r2: 7464 tokens, reused 7360, first token 0.34 s
+[11:31:35]   1a r3: 7435 tokens, reused 6016, first token 2.43 s
+[11:31:36]   1a r4: 7465 tokens, reused 7360, first token 0.33 s
+[11:31:36]   1a: loaded in 4.0 s, peak VmSwap 0 MB, snapshots taken (rows) [2752, 6016, 7360, 7424, 7360, 7424]
+[11:31:36] pair 1: r1 x0.9704 r2 x0.6996 r3 x0.9599 r4 x0.6211; snapshot copy ms main 676 change 214
+[11:31:36] pair 2: r1 x0.9741 r2 x0.6457 r3 x0.9583 r4 x0.6506; snapshot copy ms main 634 change 214
+[11:31:36] cell 2a (main): load 2.11, 60965 MB available, 503 MiB on the card
+[11:31:48]   2a r1: 7434 tokens, reused 0, first token 7.44 s
+[11:31:48]   2a r2: 7464 tokens, reused 7360, first token 0.35 s
+[11:31:51]   2a r3: 7435 tokens, reused 6016, first token 2.43 s
+[11:31:51]   2a r4: 7465 tokens, reused 7360, first token 0.33 s
+[11:31:51]   2a: loaded in 4.0 s, peak VmSwap 0 MB, snapshots taken (rows) [2752, 6016, 7360, 7424, 7360, 7424]
+[11:31:51] cell 2b (change): load 1.87, 61109 MB available, 503 MiB on the card
+[11:32:03]   2b r1: 7434 tokens, reused 0, first token 7.18 s
+[11:32:03]   2b r2: 7464 tokens, reused 7360, first token 0.21 s
+[11:32:06]   2b r3: 7435 tokens, reused 6016, first token 2.32 s
+[11:32:06]   2b r4: 7465 tokens, reused 7360, first token 0.22 s
+[11:32:06]   2b: loaded in 4.5 s, peak VmSwap 0 MB, snapshots taken (rows) [2752, 6016, 7360, 7424, 7360, 7424]
+[11:32:06] cell 2b (change): load 1.67, 61226 MB available, 503 MiB on the card
+[11:32:18]   2b r1: 7434 tokens, reused 0, first token 7.18 s
+[11:32:18]   2b r2: 7464 tokens, reused 7360, first token 0.21 s
+[11:32:21]   2b r3: 7435 tokens, reused 6016, first token 2.32 s
+[11:32:21]   2b r4: 7465 tokens, reused 7360, first token 0.22 s
+[11:32:21]   2b: loaded in 4.5 s, peak VmSwap 0 MB, snapshots taken (rows) [2752, 6016, 7360, 7424, 7360, 7424]
+[11:32:21] cell 2a (main): load 1.52, 61297 MB available, 503 MiB on the card
+[11:32:33]   2a r1: 7434 tokens, reused 0, first token 7.31 s
+[11:32:33]   2a r2: 7464 tokens, reused 7360, first token 0.34 s
+[11:32:36]   2a r3: 7435 tokens, reused 6016, first token 2.39 s
+[11:32:36]   2a r4: 7465 tokens, reused 7360, first token 0.34 s
+[11:32:36]   2a: loaded in 4.0 s, peak VmSwap 0 MB, snapshots taken (rows) [2752, 6016, 7360, 7424, 7360, 7424]
+[11:32:36] pair 3: r1 x0.9655 r2 x0.6084 r3 x0.9545 r4 x0.6808; snapshot copy ms main 689 change 214
+[11:32:36] pair 4: r1 x0.9824 r2 x0.6220 r3 x0.9723 r4 x0.6645; snapshot copy ms main 631 change 213
+[11:32:36] cell 3a (main): load 1.41, 61302 MB available, 503 MiB on the card
+[11:32:48]   3a r1: 7434 tokens, reused 0, first token 7.42 s
+[11:32:49]   3a r2: 7464 tokens, reused 7360, first token 0.35 s
+[11:32:51]   3a r3: 7435 tokens, reused 6016, first token 2.36 s
+[11:32:52]   3a r4: 7465 tokens, reused 7360, first token 0.37 s
+[11:32:52]   3a: loaded in 4.5 s, peak VmSwap 0 MB, snapshots taken (rows) [2752, 6016, 7360, 7424, 7360, 7424]
+[11:32:52] cell 3b (change): load 1.32, 61061 MB available, 503 MiB on the card
+[11:33:04]   3b r1: 7434 tokens, reused 0, first token 7.18 s
+[11:33:04]   3b r2: 7464 tokens, reused 7360, first token 0.21 s
+[11:33:07]   3b r3: 7435 tokens, reused 6016, first token 2.31 s
+[11:33:07]   3b r4: 7465 tokens, reused 7360, first token 0.22 s
+[11:33:07]   3b: loaded in 4.5 s, peak VmSwap 0 MB, snapshots taken (rows) [2752, 6016, 7360, 7424, 7360, 7424]
+[11:33:07] cell 3b (change): load 1.38, 61260 MB available, 503 MiB on the card
+[11:33:19]   3b r1: 7434 tokens, reused 0, first token 7.16 s
+[11:33:19]   3b r2: 7464 tokens, reused 7360, first token 0.22 s
+[11:33:22]   3b r3: 7435 tokens, reused 6016, first token 2.29 s
+[11:33:22]   3b r4: 7465 tokens, reused 7360, first token 0.22 s
+[11:33:22]   3b: loaded in 4.5 s, peak VmSwap 0 MB, snapshots taken (rows) [2752, 6016, 7360, 7424, 7360, 7424]
+[11:33:22] cell 3a (main): load 1.30, 61342 MB available, 503 MiB on the card
+[11:33:34]   3a r1: 7434 tokens, reused 0, first token 7.45 s
+[11:33:34]   3a r2: 7464 tokens, reused 7360, first token 0.34 s
+[11:33:37]   3a r3: 7435 tokens, reused 6016, first token 2.46 s
+[11:33:37]   3a r4: 7465 tokens, reused 7360, first token 0.35 s
+[11:33:37]   3a: loaded in 4.0 s, peak VmSwap 0 MB, snapshots taken (rows) [2752, 6016, 7360, 7424, 7360, 7424]
+[11:33:37] pair 5: r1 x0.9673 r2 x0.6059 r3 x0.9816 r4 x0.5812; snapshot copy ms main 670 change 210
+[11:33:37] pair 6: r1 x0.9611 r2 x0.6310 r3 x0.9299 r4 x0.6223; snapshot copy ms main 688 change 218
+[11:33:37] cell 4a (main): load 1.23, 61283 MB available, 503 MiB on the card
+[11:33:49]   4a r1: 7434 tokens, reused 0, first token 7.36 s
+[11:33:50]   4a r2: 7464 tokens, reused 7360, first token 0.34 s
+[11:33:52]   4a r3: 7435 tokens, reused 6016, first token 2.40 s
+[11:33:53]   4a r4: 7465 tokens, reused 7360, first token 0.35 s
+[11:33:53]   4a: loaded in 4.5 s, peak VmSwap 0 MB, snapshots taken (rows) [2752, 6016, 7360, 7424, 7360, 7424]
+[11:33:53] cell 4b (change): load 1.16, 61061 MB available, 503 MiB on the card
+[11:34:05]   4b r1: 7434 tokens, reused 0, first token 7.16 s
+[11:34:05]   4b r2: 7464 tokens, reused 7360, first token 0.21 s
+[11:34:08]   4b r3: 7435 tokens, reused 6016, first token 2.31 s
+[11:34:08]   4b r4: 7465 tokens, reused 7360, first token 0.22 s
+[11:34:08]   4b: loaded in 4.5 s, peak VmSwap 0 MB, snapshots taken (rows) [2752, 6016, 7360, 7424, 7360, 7424]
+[11:34:08] cell 4b (change): load 1.13, 61154 MB available, 503 MiB on the card
+[11:34:20]   4b r1: 7434 tokens, reused 0, first token 7.14 s
+[11:34:20]   4b r2: 7464 tokens, reused 7360, first token 0.22 s
+[11:34:23]   4b r3: 7435 tokens, reused 6016, first token 2.29 s
+[11:34:23]   4b r4: 7465 tokens, reused 7360, first token 0.22 s
+[11:34:23]   4b: loaded in 4.5 s, peak VmSwap 0 MB, snapshots taken (rows) [2752, 6016, 7360, 7424, 7360, 7424]
+[11:34:23] cell 4a (main): load 1.10, 61280 MB available, 503 MiB on the card
+[11:34:35]   4a r1: 7434 tokens, reused 0, first token 7.33 s
+[11:34:35]   4a r2: 7464 tokens, reused 7360, first token 0.34 s
+[11:34:38]   4a r3: 7435 tokens, reused 6016, first token 2.32 s
+[11:34:38]   4a r4: 7465 tokens, reused 7360, first token 0.35 s
+[11:34:39]   4a: loaded in 4.5 s, peak VmSwap 0 MB, snapshots taken (rows) [2752, 6016, 7360, 7424, 7360, 7424]
+[11:34:39] pair 7: r1 x0.9727 r2 x0.6195 r3 x0.9651 r4 x0.6168; snapshot copy ms main 633 change 212
+[11:34:39] pair 8: r1 x0.9748 r2 x0.6480 r3 x0.9867 r4 x0.6214; snapshot copy ms main 664 change 218
+[11:34:39] cell 5a (main): load 1.08, 61288 MB available, 503 MiB on the card
+[11:34:51]   5a r1: 7434 tokens, reused 0, first token 7.39 s
+[11:34:51]   5a r2: 7464 tokens, reused 7360, first token 0.35 s
+[11:34:53]   5a r3: 7435 tokens, reused 6016, first token 2.40 s
+[11:34:54]   5a r4: 7465 tokens, reused 7360, first token 0.35 s
+[11:34:54]   5a: loaded in 4.5 s, peak VmSwap 0 MB, snapshots taken (rows) [2752, 6016, 7360, 7424, 7360, 7424]
+[11:34:54] cell 5b (change): load 1.21, 61306 MB available, 503 MiB on the card
+[11:35:06]   5b r1: 7434 tokens, reused 0, first token 7.21 s
+[11:35:06]   5b r2: 7464 tokens, reused 7360, first token 0.22 s
+[11:35:09]   5b r3: 7435 tokens, reused 6016, first token 2.32 s
+[11:35:09]   5b r4: 7465 tokens, reused 7360, first token 0.22 s
+[11:35:09]   5b: loaded in 4.5 s, peak VmSwap 0 MB, snapshots taken (rows) [2752, 6016, 7360, 7424, 7360, 7424]
+[11:35:09] cell 5b (change): load 1.39, 61249 MB available, 503 MiB on the card
+[11:35:21]   5b r1: 7434 tokens, reused 0, first token 7.20 s
+[11:35:21]   5b r2: 7464 tokens, reused 7360, first token 0.23 s
+[11:35:24]   5b r3: 7435 tokens, reused 6016, first token 2.30 s
+[11:35:24]   5b r4: 7465 tokens, reused 7360, first token 0.23 s
+[11:35:24]   5b: loaded in 4.5 s, peak VmSwap 0 MB, snapshots taken (rows) [2752, 6016, 7360, 7424, 7360, 7424]
+[11:35:24] cell 5a (main): load 1.87, 61316 MB available, 503 MiB on the card
+[11:35:36]   5a r1: 7434 tokens, reused 0, first token 7.39 s
+[11:35:36]   5a r2: 7464 tokens, reused 7360, first token 0.34 s
+[11:35:39]   5a r3: 7435 tokens, reused 6016, first token 2.43 s
+[11:35:39]   5a r4: 7465 tokens, reused 7360, first token 0.35 s
+[11:35:40]   5a: loaded in 4.0 s, peak VmSwap 0 MB, snapshots taken (rows) [2752, 6016, 7360, 7424, 7360, 7424]
+[11:35:40] pair 9: r1 x0.9764 r2 x0.6404 r3 x0.9648 r4 x0.6173; snapshot copy ms main 663 change 218
+[11:35:40] pair 10: r1 x0.9744 r2 x0.6591 r3 x0.9484 r4 x0.6459; snapshot copy ms main 656 change 215
+r1 faster in 10 of 10 pairs (median ratio 0.9734); r3 median ratio 0.9624; replies equal True; peak VmSwap 0 MB, peak VmHWM 1276 MB
+VERDICT: PASS
