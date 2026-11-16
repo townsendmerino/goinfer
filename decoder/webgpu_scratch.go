@@ -32,7 +32,7 @@ func (m *Model) WebGPUDecodeScratch() (terms []WebGPUScratchTerm, ok bool) {
 	type geom struct{ hd, nKV, half int }
 	var g0 geom
 	scales := map[float32]bool{}
-	var gemv, gemvAdd, actQuant, attnLayer, quantB, rmsQuantB, qkNormB, rmsnormB, biasAddB int64
+	var gemv, gemvAdd, actQuant, attnLayer, quantB, rmsQuantB, qkNormB, rmsnormB, biasAddB, gemvBiasB int64
 	pk := func(k int) int64 { return int64((k + 31) &^ 31) }
 	rmsQuantB = pk(H) + 20 // one call per sublayer norm and the final norm: the int8 row, its scale, its uniform
 	nRms := int64(1)
@@ -48,7 +48,7 @@ func (m *Model) WebGPUDecodeScratch() (terms []WebGPUScratchTerm, ok bool) {
 		lv := view.Layer(l)
 		w := &m.w.Layers[l]
 		rs := float32(lv.RopeMscale())
-		if rs == 0 || lv.IsLocal() || lv.VFromK() || len(w.QBias) > 0 || len(w.OBias) > 0 {
+		if rs == 0 || lv.IsLocal() || lv.VFromK() || len(w.OBias) > 0 {
 			return nil, false
 		}
 		// Each optional operation is held by the weights it runs on: the build creates its dispatches from the weights, not the program.
@@ -67,6 +67,15 @@ func (m *Model) WebGPUDecodeScratch() (terms []WebGPUScratchTerm, ok bool) {
 		gemvAdd += 2 * 16
 		if shape.qkNorm {
 			qkNormB += 2 * 16 // q's and k's
+		}
+		if len(w.QBias) > 0 { // q, k and v's bias: folded into an int8 weight's projection, else a separate add each
+			if w.QProj.Kind() == "int4" {
+				biasAddB += 3 * 16
+			} else {
+				q3 := 4*int64(rows["q"]+rows["k"]+rows["v"]) + 3*16
+				gemv -= q3
+				gemvBiasB += q3
+			}
 		}
 		// A post-sublayer norm splits the fused output projection into a bare gemv (its own output row), a norm (its own row and
 		// uniform) and a separate residual add (one uniform).
@@ -101,6 +110,7 @@ func (m *Model) WebGPUDecodeScratch() (terms []WebGPUScratchTerm, ok bool) {
 		{"rmsQuant", nRms * rmsQuantB},
 		{"quant", quantB},
 		{"gemv", gemv},
+		{"gemvBias", gemvBiasB},
 		{"gemvAdd", gemvAdd},
 		{"actQuantPad", actQuant},
 		{"attnLayer", attnLayer},
