@@ -16,7 +16,7 @@ func TestMM5b_webgpuDecodeScratchNamesNoFamily(t *testing.T) {
 
 // webgpuScratchHand is the figure for a plain-attention model written as arithmetic on its config: hidden h, l layers, vocabulary v, the
 // query, key and FFN widths, a QK-norm per layer, a norm on each sublayer's output, at a KV precision, and the q/k/v bias an int4 or int8 weight carries.
-func webgpuScratchHand(h, l, v, qW, kvW, ffn int, qkNorm, post bool, kv, bias string) map[string]int64 {
+func webgpuScratchHand(h, l, v, qW, kvW, ffn int, qkNorm, post bool, kv, bias string, window, noPre bool) map[string]int64 {
 	pk := func(k int) int64 { return int64((k + 31) &^ 31) }
 	H, L, V := int64(h), int64(l), int64(v)
 	want := map[string]int64{
@@ -29,8 +29,12 @@ func webgpuScratchHand(h, l, v, qW, kvW, ffn int, qkNorm, post bool, kv, bias st
 		"attnLayer":   L * (4*int64(qW) + 16),
 		"geomFor":     16 + 32,
 	}
-	if kv == "i8" {
+	if kv == "i8" || window { // the int8 V store's uniform; a sliding window's second attention uniform
 		want["geomFor"] += 32
+	}
+	if noPre { // norms after the sublayer only: the raw residual is quantized in place of each pre-norm's fused norm
+		want["rmsQuant"] = pk(h) + 20
+		want["quant"] += 2 * L * (pk(h) + 4 + 16)
 	}
 	if kv == "f16" || kv == "i8" {
 		want["ropeQUniFor"], want["ropeKUniFor"] = 32, 32
@@ -57,6 +61,11 @@ func webgpuScratchHand(h, l, v, qW, kvW, ffn int, qkNorm, post bool, kv, bias st
 	return want
 }
 
+func withTerm(m map[string]int64, role string, b int64) map[string]int64 {
+	m[role] = b
+	return m
+}
+
 // TestWebGPUDecodeScratch_handTable is G-MS3w: the figure for llama-tiny at each KV precision, qwen3asr-tiny (a QK-norm) and glm-ocr-tiny
 // (a norm on each sublayer's output), term by term as arithmetic on the config; and no figure where a layer is not a plain shape.
 func TestWebGPUDecodeScratch_handTable(t *testing.T) {
@@ -65,13 +74,15 @@ func TestWebGPUDecodeScratch_handTable(t *testing.T) {
 		o        Options
 		want     map[string]int64
 	}{
-		{"llama f32", "llama-tiny", Options{}, webgpuScratchHand(64, 4, 256, 64, 32, 128, false, false, "f32", "")},
-		{"llama f16", "llama-tiny", Options{KVPrecision: "f16"}, webgpuScratchHand(64, 4, 256, 64, 32, 128, false, false, "f16", "")},
-		{"llama i8", "llama-tiny", Options{KVPrecision: "i8"}, webgpuScratchHand(64, 4, 256, 64, 32, 128, false, false, "i8", "")},
-		{"qwen3asr (qk-norm)", "qwen3asr-tiny", Options{}, webgpuScratchHand(24, 2, 160, 24, 12, 48, true, false, "f32", "")},
-		{"qwen25vl int4 (bias)", "qwen25vl-tiny", Options{Quant: "int4"}, webgpuScratchHand(64, 2, 300, 64, 32, 128, false, false, "f32", "int4")},
-		{"qwen25vl int8 (bias)", "qwen25vl-tiny", Options{Quant: "int8int8"}, webgpuScratchHand(64, 2, 300, 64, 32, 128, false, false, "f32", "int8")},
-		{"glm-ocr (post norms)", "glm-ocr-tiny", Options{}, webgpuScratchHand(48, 3, 160, 128, 64, 144, false, true, "f32", "")},
+		{"llama f32", "llama-tiny", Options{}, webgpuScratchHand(64, 4, 256, 64, 32, 128, false, false, "f32", "", false, false)},
+		{"llama f16", "llama-tiny", Options{KVPrecision: "f16"}, webgpuScratchHand(64, 4, 256, 64, 32, 128, false, false, "f16", "", false, false)},
+		{"llama i8", "llama-tiny", Options{KVPrecision: "i8"}, webgpuScratchHand(64, 4, 256, 64, 32, 128, false, false, "i8", "", false, false)},
+		{"qwen3asr (qk-norm)", "qwen3asr-tiny", Options{}, webgpuScratchHand(24, 2, 160, 24, 12, 48, true, false, "f32", "", false, false)},
+		{"qwen25vl int4 (bias)", "qwen25vl-tiny", Options{Quant: "int4"}, webgpuScratchHand(64, 2, 300, 64, 32, 128, false, false, "f32", "int4", false, false)},
+		{"qwen25vl int8 (bias)", "qwen25vl-tiny", Options{Quant: "int8int8"}, webgpuScratchHand(64, 2, 300, 64, 32, 128, false, false, "f32", "int8", false, false)},
+		{"olmo3 (window, qk-norm, post-only norms)", "olmo3-tiny", Options{}, withTerm(webgpuScratchHand(64, 4, 512, 64, 64, 128, true, true, "f32", "", true, true), "qkvFinUniFor", 2*32)}, // two rope scales: the sliding layers' and the full ones'
+		{"mistral window", "mistral-tiny-window", Options{}, webgpuScratchHand(128, 3, 128, 128, 64, 256, false, false, "f32", "", true, false)},
+		{"glm-ocr (post norms)", "glm-ocr-tiny", Options{}, webgpuScratchHand(48, 3, 160, 128, 64, 144, false, true, "f32", "", false, false)},
 	} {
 		m, err := Load("../testdata/"+c.fx, c.o)
 		if err != nil {
