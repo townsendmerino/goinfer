@@ -70,7 +70,7 @@ Build `cc96d256a` (main), `qwen3.5-0.8b` for the first recording and `Qwen3.5-9B
 | 12 | 13,717 | 11,923 / 11,982 / 11,982 | the device checkpoint | 13.2 / 13.3 / 13.3 s |
 | 13 | 12,334 | 8,896 / 8,960 / 8,960 | the preamble snapshot | 24.7 / 24.8 / 24.8 s |
 
-(The replay's prompts are 59 ids longer than the live ones, from its shorter recorded replies' re-rendering, so its snapshot rows sit one 64-row block higher; `requests.jsonl` has every request's counts.)
+(Every replay prompt is 59 ids longer than its live one, request 1 included, so it is not a reply's re-rendering; the replay sets `max_tokens` 8 and temperature 0 where the recording had 4,096, and which of the two adds the 59 ids was not traced. The shift moves the replay's snapshot rows up by a 64-row block and changes no count above. `requests.jsonl` has every request's counts.)
 
 - **Rule:** no MISS; no SHORT (no request reused 1,024 or more rows less than the shared prefix `replay_cc_live.py` can count, which is a lower bound at message granularity: system blocks, tools, whole messages). The five requests that start a conversation share only the preamble with anything earlier, and reuse exactly it.
 - **Where the time goes, reported not graded:** the five conversation starts (4, 6, 9, 11, 13) each re-prefill about 3.2k ids past the preamble, 22.6 to 25.8 s each of the session's 241 s of first-token time; nothing earlier shares those ids (their first messages differ). The continuations take 0.3 to 13 s.
