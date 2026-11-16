@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"fmt"
+	"runtime"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -27,9 +28,9 @@ import (
 //     dnWin and dnState, Mamba-2's mbWin and mbSSM), so it restores to exactly end (docs/queue-engineering.md, B35). It is taken between two
 //     calls of a prefill (ResidentPrefillSubsystem, or the decoder's cut of a per-token one), when the state belongs to that position.
 //
-// The host buffer is one allocation of ordinary (pageable) memory per snapshot, made when the snapshot is taken and dropped when it is
-// released: nothing is held while no snapshot is. It is not page-locked: locking costs about 0.5 ms a MiB (a 275 MiB snapshot paid 139 ms to
-// allocate and 49 ms to free against 22 ms to copy), where an ordinary buffer copies at 5 to 9 GB/s with nothing to free
+// The host buffer is one allocation of ordinary (pageable) memory per snapshot (allocHostRows), made when the snapshot is taken and returned
+// when it is released: nothing is held while no snapshot is. It is not page-locked: locking costs about 0.5 ms a MiB (a 275 MiB snapshot paid
+// 139 ms to allocate and 49 ms to free against 22 ms to copy), where an ordinary buffer copies at 5 to 9 GB/s
 // (docs/measurements/kv8-overlap-2026-11/README.md). Every device copy is an executor job that synchronises the stream, so a snapshot read after the prefill that
 // wrote the rows and before the decode that would move the ring, and a restore is complete before the prefill that continues from it.
 
@@ -39,6 +40,7 @@ type cudaKVSnapshot struct {
 	rows   int                       // positions [0, rows) are held; for a windowed layer only [lo, rows)
 	lo     int                       // the first row a windowed layer holds, 0 with none
 	host   atomic.Pointer[[]float32] // nil once released
+	free   func()                    // returns the host buffer to the system
 	layers []snapLayer
 	rec    []snapRecurrent // a recurrent model's per-layer state, empty otherwise
 	bytes  int64
@@ -96,6 +98,9 @@ func (s *cudaKVSnapshot) Serves(end int) bool {
 func (s *cudaKVSnapshot) Release() {
 	s.once.Do(func() {
 		s.host.Store(nil)
+		if s.free != nil {
+			s.free()
+		}
 	})
 }
 
@@ -230,10 +235,11 @@ func (r *cudaResident) snapshotKV(slot, end int) (*cudaKVSnapshot, error) {
 	if err := r.stream.Sync(); err != nil { // the prefill that wrote the rows has finished
 		return nil, err
 	}
-	buf := make([]float32, words)
-	s := &cudaKVSnapshot{r: r, rows: end, lo: lo, layers: layers, rec: rec, bytes: int64(words) * 4,
+	buf, free := allocHostRows(words)
+	s := &cudaKVSnapshot{r: r, rows: end, lo: lo, layers: layers, rec: rec, bytes: int64(words) * 4, free: free,
 		ctxCap: r.ctxCap, window: r.kvWindow, slack: r.kvSlack, win: r.kvWin, half: r.kvF16, i8: r.kvI8}
 	s.host.Store(&buf)
+	runtime.SetFinalizer(s, (*cudaKVSnapshot).Release) // a backstop: the store releases every snapshot it drops
 	for l := range r.layers {
 		sl := layers[l]
 		if !sl.held {
