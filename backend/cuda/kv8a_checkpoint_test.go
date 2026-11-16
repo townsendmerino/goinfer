@@ -514,7 +514,7 @@ func TestKV8Mamba_snapshotRestoreEqualsColdAndPlantsAreRed(t *testing.T) {
 		kv8aPrefill(t, m, r, other, 0) // another conversation takes the slot
 		switch plant {
 		case "the conv window zeroed":
-			buf := s.host.Slice()
+			buf := s.hostRows()
 			for _, d := range s.rec {
 				clear(buf[d.winOff : d.winOff+d.winWords])
 			}
@@ -532,5 +532,41 @@ func TestKV8Mamba_snapshotRestoreEqualsColdAndPlantsAreRed(t *testing.T) {
 		case plant != "" && ok:
 			t.Errorf("plant %q: a restore with %s equals a cold prefill, so the comparison cannot see it", plant, plant)
 		}
+	}
+}
+
+// TestKVSnapHost_aSnapshotPinsNothing is KV8-overlap's O1 and O2 (docs/measurements/kv8-overlap-2026-11/README.md): taking a snapshot allocates no page-locked
+// host buffer (locking costs about 0.5 ms a MiB, six times the copy), it holds exactly Bytes() of host memory, and a released snapshot holds none and serves nothing.
+func TestKVSnapHost_aSnapshotPinsNothing(t *testing.T) {
+	requireCUDADevice(t)
+	for _, fixture := range kv8aFixtures {
+		t.Run(fixture, func(t *testing.T) {
+			m, r := msgLoad(t, fixture, 64)
+			_, _, _, _, _, _, vocab := m.Dims()
+			ids := kv8aIDs(1, 192, vocab)
+			kv8aPrefill(t, m, r, ids, 0)
+			before := r.dev.PinnedHostBuffers()
+			snap, err := r.SnapshotKV(0, 128)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if n := r.dev.PinnedHostBuffers(); n != before {
+				t.Errorf("taking a snapshot left %d page-locked host buffers, %d before", n, before)
+			}
+			s := snap.(*cudaKVSnapshot)
+			if got := int64(len(s.hostRows())) * 4; got != s.Bytes() || got != r.KVSnapshotBytes(128) {
+				t.Errorf("the snapshot holds %d host bytes, Bytes() %d, KVSnapshotBytes %d", got, s.Bytes(), r.KVSnapshotBytes(128))
+			}
+			if !snap.Serves(128) {
+				t.Fatal("a fresh snapshot does not serve its own end")
+			}
+			snap.Release()
+			if s.hostRows() != nil || snap.Serves(128) {
+				t.Errorf("a released snapshot still holds its rows or serves a restore")
+			}
+			if err := r.RestoreKV(snap, 0, 128); err == nil {
+				t.Errorf("RestoreKV of a released snapshot succeeded")
+			}
+		})
 	}
 }

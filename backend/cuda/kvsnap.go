@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"sync/atomic"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-// Prefix snapshots (docs/completed/task-kv7-prefix-snapshot-2026-10.md): a slot's KV rows in pinned host memory, and back. It is CopyKV with
+// Prefix snapshots (docs/completed/task-kv7-prefix-snapshot-2026-10.md): a slot's KV rows in host memory, and back. It is CopyKV with
 // a host buffer for the other slot, over the same slot storage:
 //
 //   - A full-attention or MLA latent layer holds rows [0, end) of each buffer it has.
@@ -27,16 +27,18 @@ import (
 //     dnWin and dnState, Mamba-2's mbWin and mbSSM), so it restores to exactly end (docs/queue-engineering.md, B35). It is taken between two
 //     calls of a prefill (ResidentPrefillSubsystem, or the decoder's cut of a per-token one), when the state belongs to that position.
 //
-// The host buffer is one pinned allocation per snapshot, made when the snapshot is taken and freed when it is dropped: nothing is
-// held while no snapshot is. Every device copy is an executor job that synchronises the stream, so a snapshot read after the prefill that
+// The host buffer is one allocation of ordinary (pageable) memory per snapshot, made when the snapshot is taken and dropped when it is
+// released: nothing is held while no snapshot is. It is not page-locked: locking costs about 0.5 ms a MiB (a 275 MiB snapshot paid 139 ms to
+// allocate and 49 ms to free against 22 ms to copy), where an ordinary buffer copies at 5 to 9 GB/s with nothing to free
+// (docs/measurements/kv8-overlap-2026-11/README.md). Every device copy is an executor job that synchronises the stream, so a snapshot read after the prefill that
 // wrote the rows and before the decode that would move the ring, and a restore is complete before the prefill that continues from it.
 
-// cudaKVSnapshot is one prefix's KV in pinned host memory.
+// cudaKVSnapshot is one prefix's KV in host memory.
 type cudaKVSnapshot struct {
 	r      *cudaResident
-	rows   int // positions [0, rows) are held; for a windowed layer only [lo, rows)
-	lo     int // the first row a windowed layer holds, 0 with none
-	host   *gpu.HostBuffer[float32]
+	rows   int                       // positions [0, rows) are held; for a windowed layer only [lo, rows)
+	lo     int                       // the first row a windowed layer holds, 0 with none
+	host   atomic.Pointer[[]float32] // nil once released
 	layers []snapLayer
 	rec    []snapRecurrent // a recurrent model's per-layer state, empty otherwise
 	bytes  int64
@@ -64,13 +66,21 @@ type snapRecurrent struct {
 	winOff, winWords, stOff, stW int
 }
 
+// hostRows is the snapshot's host buffer, nil once it is released.
+func (s *cudaKVSnapshot) hostRows() []float32 {
+	if p := s.host.Load(); p != nil {
+		return *p
+	}
+	return nil
+}
+
 func (s *cudaKVSnapshot) Rows() int    { return s.rows }
 func (s *cudaKVSnapshot) Bytes() int64 { return s.bytes }
 
 // Serves implements decoder.ResidentKVSnapshot.
 func (s *cudaKVSnapshot) Serves(end int) bool {
 	r := s.r
-	if end <= 0 || end > s.rows || end%decoder.KVBlockRows != 0 || s.host == nil {
+	if end <= 0 || end > s.rows || end%decoder.KVBlockRows != 0 || s.hostRows() == nil {
 		return false
 	}
 	if len(s.rec) > 0 && end != s.rows {
@@ -85,9 +95,7 @@ func (s *cudaKVSnapshot) Serves(end int) bool {
 // Release implements decoder.ResidentKVSnapshot.
 func (s *cudaKVSnapshot) Release() {
 	s.once.Do(func() {
-		if s.host != nil {
-			_ = s.host.Close() // idempotent, and safe once the device has released it
-		}
+		s.host.Store(nil)
 	})
 }
 
@@ -222,13 +230,10 @@ func (r *cudaResident) snapshotKV(slot, end int) (*cudaKVSnapshot, error) {
 	if err := r.stream.Sync(); err != nil { // the prefill that wrote the rows has finished
 		return nil, err
 	}
-	host, err := gpu.NewHostBufferOn[float32](r.dev, mem.LineKV, words)
-	if err != nil {
-		return nil, &decoder.KVCopyDecline{Reason: fmt.Sprintf("no pinned host memory for %d MiB: %v", int64(words)*4>>20, err)}
-	}
-	s := &cudaKVSnapshot{r: r, rows: end, lo: lo, host: host, layers: layers, rec: rec, bytes: int64(words) * 4,
+	buf := make([]float32, words)
+	s := &cudaKVSnapshot{r: r, rows: end, lo: lo, layers: layers, rec: rec, bytes: int64(words) * 4,
 		ctxCap: r.ctxCap, window: r.kvWindow, slack: r.kvSlack, win: r.kvWin, half: r.kvF16, i8: r.kvI8}
-	buf := host.Slice()
+	s.host.Store(&buf)
 	for l := range r.layers {
 		sl := layers[l]
 		if !sl.held {
@@ -347,7 +352,10 @@ func (r *cudaResident) restoreKVRows(s *cudaKVSnapshot, slot, from, end int) (ma
 	if err := r.kvFlushTabs(slot); err != nil {
 		return false, err
 	}
-	buf := s.host.Slice()
+	buf := s.hostRows()
+	if buf == nil {
+		return false, fmt.Errorf("cuda: RestoreKV of a released snapshot")
+	}
 	for l := range r.layers {
 		sl := s.layers[l]
 		if !sl.held {
