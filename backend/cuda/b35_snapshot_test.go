@@ -130,7 +130,7 @@ func TestB35Snapshot_restoreEqualsCold(t *testing.T) {
 			t.Fatal(err)
 		}
 		if plant {
-			snap.(*cudaKVSnapshot).dn = nil // PLANT: the rows without the state
+			snap.(*cudaKVSnapshot).rec = nil // PLANT: the rows without the state
 		}
 		if err := r.RestoreKV(snap, 0, mark); err != nil {
 			t.Fatalf("RestoreKV(%d): %v", mark, err)

@@ -1,0 +1,64 @@
+=== RUN   TestKV8Msg_cudaRestoreAtTheBoundaryEqualsCold
+=== RUN   TestKV8Msg_cudaRestoreAtTheBoundaryEqualsCold/qwen3next-tiny/pass64
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7000 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7000 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7000 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6868 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6868 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+kv snapshot: took 1472 rows (0 MiB host) from slot 0 in 0.3 ms; 0 of 1024 MiB held
+kv snapshot: took 2368 rows (1 MiB host) from slot 0 in 0.3 ms; 1 of 1024 MiB held
+kv snapshot: restored 1472 rows of 1472 into slot 0 in 0.6 ms
+kv snapshot: took 1664 rows (0 MiB host) from slot 0 in 0.3 ms; 1 of 1024 MiB held
+kv snapshot: took 2432 rows (1 MiB host) from slot 0 in 0.6 ms; 2 of 1024 MiB held
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6864 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV8Msg_cudaRestoreAtTheBoundaryEqualsCold/qwen3next-tiny/pass128
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6868 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+kv snapshot: took 1472 rows (0 MiB host) from slot 0 in 0.2 ms; 0 of 1024 MiB held
+kv snapshot: took 2368 rows (1 MiB host) from slot 0 in 0.3 ms; 1 of 1024 MiB held
+kv snapshot: restored 1472 rows of 1472 into slot 0 in 0.9 ms
+kv snapshot: took 1664 rows (0 MiB host) from slot 0 in 0.3 ms; 1 of 1024 MiB held
+kv snapshot: took 2432 rows (1 MiB host) from slot 0 in 0.3 ms; 2 of 1024 MiB held
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6864 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV8Msg_cudaRestoreAtTheBoundaryEqualsCold/nemotron-tiny/pass64
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6998 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv8a_checkpoint_test.go:332: nemotron-tiny: snapshots do not carry the recurrent state
+=== RUN   TestKV8Msg_cudaRestoreAtTheBoundaryEqualsCold/nemotron-tiny/pass128
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6998 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv8a_checkpoint_test.go:332: nemotron-tiny: snapshots do not carry the recurrent state
+--- FAIL: TestKV8Msg_cudaRestoreAtTheBoundaryEqualsCold (5.36s)
+    --- PASS: TestKV8Msg_cudaRestoreAtTheBoundaryEqualsCold/qwen3next-tiny/pass64 (3.16s)
+    --- PASS: TestKV8Msg_cudaRestoreAtTheBoundaryEqualsCold/qwen3next-tiny/pass128 (1.64s)
+    --- FAIL: TestKV8Msg_cudaRestoreAtTheBoundaryEqualsCold/nemotron-tiny/pass64 (0.24s)
+    --- FAIL: TestKV8Msg_cudaRestoreAtTheBoundaryEqualsCold/nemotron-tiny/pass128 (0.24s)
+=== RUN   TestKV8Preamble_cudaRestoreAtTheSharedPreambleEqualsCold
+=== RUN   TestKV8Preamble_cudaRestoreAtTheSharedPreambleEqualsCold/qwen3next-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6868 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+kv snapshot: took 640 rows (0 MiB host) from slot 0 in 0.4 ms; 0 of 1024 MiB held
+kv snapshot: took 1472 rows (0 MiB host) from slot 0 in 0.9 ms; 1 of 1024 MiB held
+kv snapshot: took 2368 rows (1 MiB host) from slot 0 in 0.3 ms; 1 of 1024 MiB held
+kv snapshot: restored 640 rows of 640 into slot 0 in 0.7 ms
+kv snapshot: took 1664 rows (0 MiB host) from slot 0 in 0.3 ms; 2 of 1024 MiB held
+kv snapshot: took 2432 rows (1 MiB host) from slot 0 in 2.6 ms; 2 of 1024 MiB held
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6864 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV8Preamble_cudaRestoreAtTheSharedPreambleEqualsCold/nemotron-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6998 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+goinfer: batched prefill declined for a 2400-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): cuda prefill: Mamba-2 mixer weight at layer 0 needs the sequential path: cuda prefill: batched path declined (arch/geometry)
+    kv8a_checkpoint_test.go:403: turn 1 left snapshots of [] rows, want [640 1472 2368] (the preamble's, the message's and Keep's)
+--- FAIL: TestKV8Preamble_cudaRestoreAtTheSharedPreambleEqualsCold (2.46s)
+    --- PASS: TestKV8Preamble_cudaRestoreAtTheSharedPreambleEqualsCold/qwen3next-tiny (1.81s)
+    --- FAIL: TestKV8Preamble_cudaRestoreAtTheSharedPreambleEqualsCold/nemotron-tiny (0.65s)
+FAIL
+ledger: 13 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/backend/cuda	7.882s
+FAIL

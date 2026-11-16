@@ -32,7 +32,7 @@ func TestB35SnapshotLayout_followsEachLayersKind(t *testing.T) {
 	if want := end * kvDim; words != want {
 		t.Errorf("the rows take %d words, want %d: only layer 1's K rows (its V buffer is empty here)", words, want)
 	}
-	dn, _ := r.snapshotDeltaLayout(words)
+	dn, _ := r.snapshotRecurrentLayout(words)
 	if len(dn) != 2 || dn[0].layer != 0 || dn[1].layer != 2 {
 		t.Errorf("DeltaNet state laid out for %+v, want layers 0 and 2", dn)
 	}

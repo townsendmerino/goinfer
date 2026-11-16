@@ -442,7 +442,7 @@ func TestKV8Real_cutEqualsUninterrupted(t *testing.T) {
 				t.Fatal(err)
 			}
 			if plant {
-				snap.(*cudaKVSnapshot).dn = nil // PLANT: the rows without the state
+				snap.(*cudaKVSnapshot).rec = nil // PLANT: the rows without the state
 			}
 			if err := r.RestoreKV(snap, 0, q); err != nil {
 				t.Fatalf("RestoreKV(%d): %v", q, err)
