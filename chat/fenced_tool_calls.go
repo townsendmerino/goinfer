@@ -7,7 +7,7 @@ import (
 )
 
 // WithLenientToolCalls returns a copy of the template that also reads ONE fenced JSON call at the end of a reply
-// as a tool call (docs/queue-correctness.md G39). Off by default, and a no-op for every family that does not accept a
+// as a tool call. Off by default, and a no-op for every family that does not accept a
 // bare call (chatml, mellum2). It is a separate, opt-in rule because the shape it accepts is also what a model writes when
 // asked to SHOW an example call; see fencedToolCall for how narrow it is made.
 func (t *Template) WithLenientToolCalls(on bool) *Template {
