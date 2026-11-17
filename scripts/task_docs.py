@@ -360,7 +360,8 @@ def actual_counts() -> tuple[int, int, int]:
 
 
 def archive_count() -> int:
-    return len(list((S() / COMPLETED).iterdir()))  # the skill's `ls docs/completed | wc -l`
+    d = S() / COMPLETED  # the skill's `ls docs/completed | wc -l`; a notes checkout has no completed/ until the archive moves into it
+    return len(list(d.iterdir())) if d.is_dir() else 0
 
 
 def references(rel: str) -> list[str]:
@@ -496,7 +497,14 @@ def cmd_evidence(a) -> int:
 # --------------------------------------------------------------------------------------------------------- archive
 
 def canonical_header() -> str:
-    lines = read(HEADER_SOURCE).splitlines()
+    """The ARCHIVED header, copied from the reference archive. The notes checkout has no completed/ until the archive moves into
+    it, so the copy still in goinfer's docs/completed/ is used then."""
+    src = S() / HEADER_SOURCE
+    if not src.is_file():
+        src = ROOT / "docs/completed" / pathlib.Path(HEADER_SOURCE).name
+    if not src.is_file():
+        sys.exit(f"the reference archive {HEADER_SOURCE} is in neither {S()} nor {ROOT / 'docs/completed'}")
+    lines = src.read_text(encoding="utf-8").splitlines()
     start = next(i for i, l in enumerate(lines) if l.startswith(HEADER_START))
     end = start
     while end < len(lines) and lines[end].startswith(">"):
@@ -626,6 +634,7 @@ def cmd_archive(a) -> int:
         print("\n(dry run: nothing written; add --apply)")
         return 0
 
+    (S() / new).parent.mkdir(parents=True, exist_ok=True)  # a notes checkout has no completed/ until the first archive
     subprocess.run(["git", "mv", old, new], cwd=S(), check=True)
     for f, out in planned.items():
         (S() / f).write_text(out, encoding="utf-8")
