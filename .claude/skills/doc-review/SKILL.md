@@ -5,8 +5,9 @@ description: "Review a goinfer docs/*.md task, scoping, plan or spec doc: verify
 
 # goinfer doc review
 
-Input: one path under `docs/` (a `task-*.md`, `scoping-*.md`, `plan-*.md`, `spec/*.md`, or a
-reference doc). Output: a verdict, the disk changes made, the remaining unblocked work, and an
+Input: one doc: a task, scoping or plan doc in the private notes checkout beside goinfer
+(`../goinfer-notes`: `tasks/`, `tasks/parked/`, `plans/`), or a `docs/spec/*.md` or reference doc in goinfer.
+Six task docs the website cites as evidence still live in goinfer's `docs/tasks/` (the notes README lists them). Output: a verdict, the disk changes made, the remaining unblocked work, and an
 opinion on whether that work is worth doing for goinfer. Francis commits; you do not.
 
 Repo: `~/tmcode/goinfer` on the Mac (`aikit` is the sibling). In Cowork it is mounted at
@@ -44,8 +45,10 @@ a decision, an aikit-side citation — see the script's own docstring for why th
 
 Then, per claim in the doc:
 - **"X shipped / is open"** → grep the code for the symbol, kernel file, flag or env var; check
-  the matrices; check `docs/queue-*.md` and `docs/completed/queue-*.md` for the item's G/P/E/Q
-  entry and whether it was archived; check `docs/completed/` for a sibling that already closed it.
+  the matrices; check the queues (`../goinfer-notes/queues/queue-*.md`; `docs/QUEUE.md` and
+  `docs/queue-engineering.md` are still in goinfer) for the item's G/P/E/Q entry and whether it was
+  archived; check the archive (goinfer's `docs/completed/` until it moves to the notes' `completed/`)
+  for a sibling that already closed it.
 - **"X is blocked on Y"** → confirm Y still holds (hardware, upstream binding, a decision, an
   aikit version — `grep aikit go.mod`).
 - **"X is impossible / not our fight"** → grep for a later doc that says "corrects", "supersedes",
@@ -58,22 +61,22 @@ Then, per claim in the doc:
 
 | verdict | meaning | action |
 |---|---|---|
-| **COMPLETE** | every item shipped, killed, measured, or moved to a doc that owns it | archive to `docs/completed/` |
-| **SUPERSEDED** | the verdict or premise was overturned elsewhere | archive to `docs/completed/`, with a retraction status block naming what overturned it and where |
-| **LIVE, STALE** | still the owner of open work, but carries wrong claims | correct in place (dated notes, retraction-in-place); move to `docs/tasks/` if not there already |
-| **PARKED** | open, blocked, trigger named | correct in place if needed; move to `docs/tasks/parked/` if not there already; restate the trigger in the report; check the trigger still holds |
+| **COMPLETE** | every item shipped, killed, measured, or moved to a doc that owns it | archive (step 3) |
+| **SUPERSEDED** | the verdict or premise was overturned elsewhere | archive (step 3), with a retraction status block naming what overturned it and where |
+| **LIVE, STALE** | still the owner of open work, but carries wrong claims | correct in place (dated notes, retraction-in-place); move to the notes' `tasks/` if not there already |
+| **PARKED** | open, blocked, trigger named | correct in place if needed; move to the notes' `tasks/parked/` if not there already; restate the trigger in the report; check the trigger still holds |
 
 A doc with one live section and the rest complete: check whether the live section is a summary of
 something that already has a canonical home (`spec/`, an audit R-item, a queue entry). If so,
 correct it in place, then archive and re-point citers to the canonical home.
 
-**Where a doc lives, by verdict — this repo's migration convention, started 2026-09-13.**
-`docs/task-*.md` files no longer sit flat in `docs/` root: a COMPLETE/SUPERSEDED verdict archives
-to `docs/completed/<name>.md` exactly as step 3 below always did; a LIVE-STALE or
-verified-accurate-but-open verdict moves to `docs/tasks/<name>.md`; a PARKED verdict moves to
-`docs/tasks/parked/<name>.md`. There is no `docs/prompts/` any more: a brief written for another session or
-box is a section of its task doc or a file under `docs/tasks/`, and follows the same split. If the doc is already in the
-right place for its verdict, no move is needed. Do not invent a fourth location.
+**Where a doc lives, by verdict (the working record moved to the private notes repo on 2026-11-17).**
+Task, queue, plan and scoping docs live in `townsendmerino/goinfer-notes`, checked out beside goinfer
+(`../goinfer-notes`). A COMPLETE/SUPERSEDED verdict archives with `task_docs.py archive` (step 3); a
+LIVE-STALE or verified-accurate-but-open verdict lives in the notes' `tasks/<name>.md`; a PARKED verdict in
+`tasks/parked/<name>.md`; plans and scoping docs in `plans/`. A brief written for another session or box is a
+section of its task doc, in the notes. If the doc is already in the right place for its verdict, no move is
+needed. Do not invent another location, and never move a working doc back into goinfer's public tree.
 
 ## 3. Archive procedure (COMPLETE or SUPERSEDED — house conventions, follow exactly)
 
@@ -86,9 +89,10 @@ right place for its verdict, no move is needed. Do not invent a fourth location.
 3. Strip imperatives per `docs/parity-coverage-policy.md` §"archiving a doc strips its
    imperatives". Lightest correct touch: one sentence in the status block saying every instruction
    below is a record of what was asked, not a task.
-4. `git mv docs/<name> docs/completed/<name>`. If the Cowork VM refuses (stale `.git/index.lock`,
-   or `rm` returns "Operation not permitted"), write the new file, move the original to
-   `goinfer/_to_delete/`, and tell Francis; git pairs them as a rename at commit.
+4. From goinfer, `python3 scripts/task_docs.py archive <doc> --status <file>` prints the plan (it finds
+   `../goinfer-notes`, or takes `--notes PATH`); read it, then add `--apply --stage`, and commit in the
+   notes checkout. A doc still in goinfer's `docs/tasks/` (one of the six the site cites) archives inside
+   goinfer as before.
 5. **References.** Live docs that name it: light load → fix each to the `completed/` path (the
    2026-09-12 precedent); heavy load or many `path:line` cites into it → leave a pointer stub at
    the old path in `docs/plan-still-slow.md`'s shape (title, **Moved.**, new path, one line on what
@@ -108,21 +112,18 @@ Apply corrections in place first (dated notes, retraction-in-place, per the doc'
 convention — a blockquote correction beside the stale claim, not a silent rewrite). Then, if the
 doc is not already at the right location for its verdict:
 
-1. `git mv docs/task-<name>.md docs/tasks/task-<name>.md` (LIVE-STALE / accurate-but-open) or
-   `docs/tasks/parked/task-<name>.md` (PARKED). No ARCHIVED header, no status-block-strips-
+1. In the notes checkout, `git mv tasks/task-<name>.md tasks/parked/task-<name>.md` (PARKED), or
+   the reverse (back to LIVE-STALE / accurate-but-open). No ARCHIVED header, no status-block-strips-
    imperatives step — this is still a live, actionable doc, just relocated.
 2. **Fix every downstream reference, thoroughly — this is the part most likely to be skipped.**
    Grep the WHOLE repo (not just `docs/`) for the basename and any bare prose mentions of it —
    markdown links, backtick prose citations, and Go/shell code comments (the citation lint does
    not check code comments pointing at docs, so they rot silently if missed). Fix each one to the
    new path:
-   - A same-directory `docs/*.md` markdown link becomes `tasks/task-<name>.md` (or
-     `tasks/parked/task-<name>.md`).
-   - A `docs/measurements/*.md` file, one level down, needs `../tasks/...`.
-   - If the moved doc itself has outbound relative links (to `measurements/`, sibling `task-*.md`
-     docs, `examples/`), they need `../` prepended since the doc is now one level deeper — and if a
-     link target has ALSO already moved into `docs/tasks/` or `docs/tasks/parked/`, that link
-     becomes same-directory (or a `parked/` subpath) instead of `../`.
+   - Inside the notes, links between task docs are relative (`parked/task-<name>.md`, `../task-<name>.md`).
+   - A notes doc names a goinfer file by its repo path in backticks (`docs/spec/x.md`), not a relative
+     link, because the two repos are separate checkouts.
+   - A public goinfer doc or comment never links into the notes (the public-text rules in `CLAUDE.md`).
    - **Leave these alone even if they cite the old path** — frozen/historical by this repo's own
      convention: `docs/completed/*.md`, `docs/measurements/*.md`, anything under `testdata/`,
      `CHANGELOG.md`. Editing a frozen record to match a live move defeats the point of freezing it.
@@ -136,13 +137,13 @@ doc is not already at the right location for its verdict:
 
 ## 3b. Every pass, regardless of verdict — the doc-reviewed footer
 
-`docs/tasks/*.md` and `docs/tasks/parked/*.md` each carry a trailing
+Task docs (the notes' `tasks/*.md` and `tasks/parked/*.md`, and the six still in goinfer's `docs/tasks/`) each carry a trailing
 `<!-- doc-reviewed: YYYY-MM-DD -->` footer, checked by `scripts/doc_review_staleness.py` (step 1).
 **Add it if missing, update the date if present, on every pass that verifies the doc — including a
 pass that changes nothing at all.** A doc confirmed accurate today and left untouched still needs
 its footer bumped to today, or the staleness script has no way to know it was actually looked at;
 this genuinely means a no-op review still produces a one-line commit (`git add` the file, commit
-just the footer). `docs/completed/` files do **not** get this footer — they are frozen and excluded
+just the footer, in the repo that holds the doc). Archived docs do **not** get this footer — they are frozen and excluded
 from the staleness check the same way they are excluded from the citation lint.
 
 ## 4. Remaining work
@@ -151,7 +152,7 @@ For every open item in the doc: **unblocked / blocked (by what) / superseded**, 
 owns it now. The finding that matters most is usually an **orphan** — an open item no live doc
 owns — or a **false block** ("tested and negative" where the test measured a different mechanism;
 check what was actually measured before repeating the claim). Name orphans explicitly and say
-where they should land (a `queue-*.md` entry, an existing task doc, or nowhere with a reason).
+where they should land (a queue entry in the notes' `queues/`, an existing task doc, or nowhere with a reason).
 
 ## 5. Worth-it opinion
 

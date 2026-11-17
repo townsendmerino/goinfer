@@ -47,7 +47,8 @@ For each prose rule that cites an incident with a date (in its own text, or in t
 than 60 days:
 
 - Search for a recurrence since that date: `git log --since=<date> -i --grep='<the failure's words>'` in the repo, the
-  measurement and task docs written since (`git log --since=<date> --name-only -- docs/measurements docs/tasks`), and the
+  measurement and task docs written since (`git log --since=<date> --name-only -- docs/measurements docs/tasks` here, and
+  `git -C ../goinfer-notes log --since=<date> --name-only -- tasks queues plans` for the working record), and the
   sessions' memory index. A keyword hit is a lead, not a recurrence: read the commit or record and decide whether the same
   failure happened again, or only the same word.
 - Note whether a script or guard now enforces the rule (`cmd/lint`, `touched.py`, the citation lint, `claude-guard`, a
