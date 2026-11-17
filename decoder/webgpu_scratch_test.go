@@ -259,6 +259,44 @@ func webgpuScratchHandGptoss(bias string) map[string]int64 {
 	return want
 }
 
+// webgpuScratchHandGemma4Tiny is gemma4-moe-kv-tiny's figure from its config: hidden 64, vocabulary 256, two layers, each a parallel dense (48) and routed
+// (8 experts, top 2, width 16) block after attention with a QK-norm, a sliding window of 4 and a norm on its output. Layer 0 is local (4 heads of 16 over 2 KV
+// heads); layer 1 is global (4 heads of 512 over 1 KV head, V the same projection as K, so it has no V projection). Both carry an output scalar.
+func webgpuScratchHandGemma4Tiny() map[string]int64 {
+	const H, V, nE, K, dense, moeInter = 64, 256, 8, 2, 48, 16
+	pk := func(n int) int64 { return int64((n + 31) &^ 31) }
+	want := map[string]int64{"build": 4 + 4*256, "residual": 4 * H, "logitsStaging": 4 * V, "geomFor": 2 * (16 + 32 + 32), "qkvFinUniFor": 2 * 32,
+		"rmsQuant": pk(H) + 20, "gemv": 4*V + 16, "moeZeroBias": 4 * nE}
+	add := func(role string, n int64) { want[role] += n }
+	for _, c := range []struct {
+		qW, kvW int
+		vFromK  bool
+	}{{4 * 16, 2 * 16, false}, {4 * 512, 512, true}} {
+		add("rmsQuant", 3*(pk(H)+20)) // the attention's pre-norm and the block's two
+		if c.vFromK {
+			add("gemv", 4*int64(c.qW+c.kvW)+2*16)
+		} else {
+			add("gemv", 4*int64(c.qW+2*c.kvW)+3*16)
+		}
+		add("attnLayer", 4*int64(c.qW)+16+4*int64(c.kvW)) // the context, the sink flag, and the scale-less V norm's output row
+		add("vNorm", 16)
+		add("qkNorm", 2*16)
+		add("quant", pk(c.qW)+20)
+		add("gemv", 4*H+16) // the output projection is bare: its norm and the residual add follow
+		add("rmsnormF32", 4*H+16)
+		add("biasAdd", 16)
+		// The block: the router's norm and the three post-norms; the router's rows and uniforms; the dense branch; the experts.
+		add("rmsnormF32", 4*(4*H+16))
+		add("gemma4MoE", 4*nE+4*2*K+4*H+4*3*moeInter+16+32+16+K*16)
+		add("gemv", 4*2*dense+2*16+4*H+16)
+		add("actQuantPad", pk(dense)+20+K*(pk(moeInter)+20))
+		add("moeExpert", 2*K*16)
+		add("scaleVec", 16+16) // the expert sum's clear, and the layer's output scalar
+		add("biasAdd", 2*16)
+	}
+	return want
+}
+
 func withTerm(m map[string]int64, role string, b int64) map[string]int64 {
 	m[role] = b
 	return m
@@ -290,6 +328,7 @@ func TestWebGPUDecodeScratch_handTable(t *testing.T) {
 		{"gpt-oss int4 (bias, output bias, window, clamped router)", "gptoss_tiny.gguf", Options{Quant: "int4"}, webgpuScratchHandGptoss("int4")},
 		{"gpt-oss int8 (bias folded into the projection)", "gptoss_tiny.gguf", Options{Quant: "int8int8"}, webgpuScratchHandGptoss("int8")},
 		{"nemotron3nano (routed blocks)", "nemotron3nano-tiny", Options{}, webgpuScratchHandNemotron([]string{"ssm", "moe", "ssm", "attn", "ssm", "moe"})},
+		{"gemma4 (parallel dense and routed block, two geometries, V from K)", "gemma4-moe-kv-tiny", Options{}, webgpuScratchHandGemma4Tiny()},
 		{"glm-ocr (post norms)", "glm-ocr-tiny", Options{}, webgpuScratchHand(48, 3, 160, 128, 64, 144, false, true, "f32", "", false, false)},
 	} {
 		path := "../testdata/" + c.fx
@@ -318,12 +357,12 @@ func TestWebGPUDecodeScratch_handTable(t *testing.T) {
 		}
 		m.Close()
 	}
-	m, err := Load("../testdata/gemma4-moe-kv-tiny", Options{})
+	m, err := Load("../testdata/cohere-tiny", Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer m.Close()
 	if _, ok := m.WebGPUDecodeScratch(); ok {
-		t.Error("gemma4-moe-kv-tiny has Gemma 4 layers, whose scratch is not derived: the plan must give no figure")
+		t.Error("cohere-tiny runs its attention and FFN in parallel, a layer shape whose scratch is not derived: the plan must give no figure")
 	}
 }
