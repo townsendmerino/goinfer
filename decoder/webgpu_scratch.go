@@ -311,7 +311,12 @@ func denseAttnLayer(ops []op) (s denseShape, ok bool) {
 			return s, false
 		}
 		s.qkNorm = opt(program.OpQKNorm)
-		if !next(program.OpRope) || !next(program.OpAttention) || !next(program.OpProjO) {
+		// A layer with no rotary embedding still runs the rope dispatch (over a zeroed frequency table, an identity), and a temperature
+		// operation scales the query in a dispatch of its own that the runner folds into the attention's uniform.
+		opt(program.OpRope)
+		opt(program.OpAttnTemp)
+		opt(program.OpRope)
+		if !next(program.OpAttention) || !next(program.OpProjO) {
 			return s, false
 		}
 		s.postAttn = opt(program.OpNorm)
