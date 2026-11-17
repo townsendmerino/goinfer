@@ -212,6 +212,38 @@ func webgpuScratchHandNemotronTiny() map[string]int64 {
 	return want
 }
 
+// webgpuScratchHandGptoss is gptoss_tiny's figure from its config: hidden 64, vocabulary 128, 4 layers of attention (8 query heads of 8 over 2 KV
+// heads of 8, q/k/v bias, an output bias, a sliding window) and a routed FFN of 4 experts, top 2, width 32 with the clamped router. bias is
+// "int4" or "int8", the weight kind that decides where q/k/v's bias goes.
+func webgpuScratchHandGptoss(bias string) map[string]int64 {
+	const H, V, L, qW, kvW, nE, K, inter = 64, 128, 4, 64, 16, 4, 2, 32
+	pk := func(n int) int64 { return int64((n + 31) &^ 31) }
+	want := map[string]int64{"build": 4 + 4*256, "residual": 4 * H, "logitsStaging": 4 * V, "geomFor": 16 + 32 + 32, "qkvFinUniFor": 32,
+		"rmsQuant": pk(H) + 20, "gemv": 4*V + 16, "moeZeroBias": 4 * nE}
+	add := func(role string, n int64) { want[role] += n }
+	for l := 0; l < L; l++ {
+		add("rmsQuant", 2*(pk(H)+20))
+		add("quant", pk(qW)+20)
+		add("attnLayer", 4*qW+16)
+		qkv := int64(4*(qW+2*kvW) + 3*16)
+		if bias == "int4" {
+			add("gemv", qkv)
+			add("biasAdd", 3*16)
+		} else {
+			add("gemvBias", qkv)
+		}
+		add("gemv", 4*H+16) // the output projection, bare: its bias is added, then it is added to the residual
+		add("biasAdd", 2*16)
+		add("gemv", 4*nE+16)
+		add("moeFFN", 4*2*K+4*2*inter)
+		add("routeGptOss", 16)
+		add("moeExpert", 2*K*16)
+		add("gptossActQuant", K*(pk(inter)+4+32))
+		add("moeExpertGptOssDown", K*16)
+	}
+	return want
+}
+
 func withTerm(m map[string]int64, role string, b int64) map[string]int64 {
 	m[role] = b
 	return m
@@ -240,9 +272,15 @@ func TestWebGPUDecodeScratch_handTable(t *testing.T) {
 		{"smollm3 (a layer with no rope operation)", "smollm3-tiny", Options{}, webgpuScratchHand(64, 4, 512, 64, 16, 128, false, false, "f32", "", false, false)},
 		{"deepseek (latent attention, dense then routed FFN)", "deepseek-tiny", Options{}, webgpuScratchHandDeepseekTiny()},
 		{"nemotron (a layer of one operation: state-space, attention, non-gated FFN)", "nemotron-tiny", Options{}, webgpuScratchHandNemotronTiny()},
+		{"gpt-oss int4 (bias, output bias, window, clamped router)", "gptoss_tiny.gguf", Options{Quant: "int4"}, webgpuScratchHandGptoss("int4")},
+		{"gpt-oss int8 (bias folded into the projection)", "gptoss_tiny.gguf", Options{Quant: "int8int8"}, webgpuScratchHandGptoss("int8")},
 		{"glm-ocr (post norms)", "glm-ocr-tiny", Options{}, webgpuScratchHand(48, 3, 160, 128, 64, 144, false, true, "f32", "", false, false)},
 	} {
-		m, err := Load("../testdata/"+c.fx, c.o)
+		path := "../testdata/" + c.fx
+		if c.fx == "gptoss_tiny.gguf" {
+			path = "testdata/" + c.fx
+		}
+		m, err := Load(path, c.o)
 		if err != nil {
 			t.Fatal(err)
 		}
