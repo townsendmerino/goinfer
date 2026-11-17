@@ -1286,52 +1286,58 @@ var attnSoftcapDropForTest bool
 
 var hostWType = reflect.TypeFor[hostW]()
 
-// packedAllocSlack is the allocation rounding of every packed weight the build is about to upload: each hostW found
-// under v (a struct, slice, array or pointer, however nested), as the two buffers upW allocates for it. Walking by
-// reflection, not by field name, is what keeps a family's extra projections (DeltaNet, MLA, Mamba, experts) counted
-// without this function learning about them -- the per-family struct literal that omits a field is the defect class
-// this repo has been bitten by. Experts under C' are slot-cached rather than uploaded whole, so they are over-counted
-// there, which only shrinks the planned context.
+// packedAllocSlack is what the driver charges beyond the requested bytes of every weight buffer the build is about to upload: the
+// rounding of each buffer of a quantum or more (allocRoundSlack) and the pages the smaller ones leave part empty (pagePacker),
+// in upload order. It walks every hostW found under v (a struct, slice, array or pointer, however nested) as the buffers upW
+// allocates for it (wpk, then ws, ws16 and nBytes), and every plain numeric vector beside them (norms, biases, tables) as the
+// one buffer up32 makes of it. Walking by reflection, not by field name, is what keeps a family's extra projections (DeltaNet,
+// MLA, Mamba, experts) counted without this function learning about them -- the per-family struct literal that omits a field is
+// the defect class this repo has been bitten by. The walk follows struct order, not the setup job's order within a layer; the
+// packing is insensitive to that (docs/measurements/kv3-s1-2026-11/packing-model.md). Experts under C' are slot-cached rather
+// than uploaded whole, so they are over-counted there, which only shrinks the planned context.
 func packedAllocSlack(v any) int64 {
-	var walk func(rv reflect.Value) int64
-	walk = func(rv reflect.Value) int64 {
+	var (
+		pk    pagePacker
+		slack int64
+	)
+	emit := func(n int64) {
+		slack += allocRoundSlack(n)
+		pk.add(n)
+	}
+	var walk func(rv reflect.Value)
+	walk = func(rv reflect.Value) {
 		switch rv.Kind() {
 		case reflect.Pointer, reflect.Interface:
-			if rv.IsNil() {
-				return 0
+			if !rv.IsNil() {
+				walk(rv.Elem())
 			}
-			return walk(rv.Elem())
 		case reflect.Slice, reflect.Array:
 			switch rv.Type().Elem().Kind() {
 			case reflect.Struct, reflect.Pointer, reflect.Interface, reflect.Slice, reflect.Array:
-			default:
-				return 0 // a vector of numbers (biases, norms) holds no hostW: do not walk its elements
+				for i := 0; i < rv.Len(); i++ {
+					walk(rv.Index(i))
+				}
+			case reflect.Float32, reflect.Int32, reflect.Uint32: // a vector of numbers (biases, norms) holds no hostW: it is one buffer
+				emit(int64(rv.Len()) * 4)
 			}
-			var n int64
-			for i := 0; i < rv.Len(); i++ {
-				n += walk(rv.Index(i))
-			}
-			return n
 		case reflect.Struct:
 			if rv.Type() == hostWType {
 				elems := func(packed, planned string) int64 { // a planned hostW carries its counts, a packed one its slices
 					return max(int64(rv.FieldByName(packed).Len()), rv.FieldByName(planned).Int())
 				}
-				n := allocRoundSlack(elems("wpk", "nWpk") * 4)
-				n += allocRoundSlack(elems("ws", "nWs") * 4)
-				n += allocRoundSlack(elems("ws16", "nWs16") * 2)
-				n += allocRoundSlack(rv.FieldByName("nBytes").Int())
-				return n
+				emit(elems("wpk", "nWpk") * 4)
+				emit(elems("ws", "nWs") * 4)
+				emit(elems("ws16", "nWs16") * 2)
+				emit(rv.FieldByName("nBytes").Int())
+				return
 			}
-			var n int64
 			for _, field := range rv.Fields() {
-				n += walk(field)
+				walk(field)
 			}
-			return n
 		}
-		return 0
 	}
-	return walk(reflect.ValueOf(v))
+	walk(reflect.ValueOf(v))
+	return slack + pk.waste()
 }
 
 // slotRequirement is the device VRAM n slots/layer costs (fitdecide.SlotRequirement).

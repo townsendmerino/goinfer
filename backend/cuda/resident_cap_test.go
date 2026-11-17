@@ -174,8 +174,8 @@ func TestResolveCtxCapFit_agreesWithCheckKVFits(t *testing.T) {
 	for i := range layers {
 		layers[i].kvDim = nKV * hd
 	}
-	perPos := kvBytesForCap(kvBlock, layers) / kvBlock // one position, read over the block it is priced in
-	dense := probe.ResidentDenseWeightBytes()
+	perPos := kvBytesForCap(kvBlock, layers) / kvBlock                  // one position, read over the block it is priced in
+	dense := probe.ResidentDenseWeightBytes() + probe.PlanSlack("cuda") // the weights and the driver's charge over them: what Plan prices
 	probe.Close()
 
 	free, ok := decoder.FreeBytesFor("cuda")
@@ -487,8 +487,11 @@ func TestBuildDemand_matchesDecoderDefault(t *testing.T) {
 		}
 		if s, ok := planSlack(m); ok {
 			planned++
-			if s != 0 {
-				t.Errorf("%s: CUDA's rounding report is %d bytes, decoder's default 0", dir, s)
+			// Nothing here is at the quantum, so nothing rounds up; what the report prices is the pages these buffers share (pagePacker,
+			// TestPagePacker), which is under a page's remainder for each page the weights fill. Decoder's default of 0 stays the figure for
+			// a build with no CUDA planner linked, which has no layout to pack.
+			if d := m.ResidentDenseWeightBytesFor("cuda"); s < 0 || s >= allocQuantumBytes*(1+d/allocQuantumBytes) {
+				t.Errorf("%s: CUDA's report is %d bytes for %d bytes of weights all under the quantum: more than the pages' remainders", dir, s, d)
 			}
 		}
 		_ = m.Close()

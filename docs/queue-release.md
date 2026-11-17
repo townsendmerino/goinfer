@@ -900,10 +900,9 @@ It was never a tag risk: `realckpt`+heavy, so CI never built it, and the `qwen3_
 a different test from `TestQwen35GGUF_weightDiff`**, whose failure is separately bisected to
 `6d4fc79`; conflating the two misattributes both — and that one is still open.
 
-## An accepted heavy-gate red at tag time: `TestKSH6C_marginPriced` on `gemma-3-4b-it` (2026-11-16)
+## `TestKSH6C_marginPriced` on `gemma-3-4b-it`: red 2026-11-16, green 2026-11-17
 
-Francis accepted it ("1", 2026-11-16, KV3-S1). It runs only with `GOINFER_HEAVY_TESTS=1 KSH6C_MARGIN=1`, so CI never builds it. KV3-S1 removed one `M x inter` prefill buffer from the context margin, and Gemma-3-4B's plan went 15,296 -> 15,360 positions while the build trims it back to 15,296, so the served context is unchanged; the gate's "the build kept the planned context" assertion is red for that one model.
-The other models in the gate (0.5B, 1.5B, Qwen2.5-VL-3B, Gemma-4-E2B) keep their contexts. Cause and numbers: `docs/measurements/kv3-s1-2026-11/g3-residual.md` (the driver's 2 MiB page packing of sub-2 MiB allocations is not priced by the plan; ledger row KV3-S1-residual). **Recognise it, do not loosen the assertion, and do not re-investigate;** it goes green when the plan prices that term.
+It was an accepted heavy-gate red at tag time (Francis, "1", 2026-11-16, KV3-S1), run only with `GOINFER_HEAVY_TESTS=1 KSH6C_MARGIN=1`. The plan did not price the driver's page packing of sub-2 MiB allocations; ledger row KV3-S1-residual priced it (`docs/measurements/kv3-s1-2026-11/packing-model.md`), and the gate passes on all seven models with its assertion unchanged. Gemma-3-4B's planned and served context on the 8 GB card is now 15,040 (it was 15,296 served, 15,360 planned, before). Nothing to recognise or work around any more.
 
 ## Draft: contents of the next release
 

@@ -49,6 +49,10 @@ type deviceLedger struct{ mem.Ledger }
 // goroutine, so a test can name the call site of an unplanned byte. A test seam, nil in production.
 var unplannedForTest func(l *deviceLedger, line string, charged int64)
 
+// leaseSeenForTest, when set, is told of every lease (the ledger's own release func comes back wrapped), on the allocating goroutine:
+// a test records the order of a build's allocations and frees through it. A test seam, nil in production.
+var leaseSeenForTest func(onDevice bool, line string, requested int64, release func()) func()
+
 func (l *deviceLedger) Lease(onDevice bool, line string, requested, charged int64) func() {
 	tier := mem.HostAnon
 	if onDevice {
@@ -57,5 +61,9 @@ func (l *deviceLedger) Lease(onDevice bool, line string, requested, charged int6
 	if unplannedForTest != nil && !mem.LineID(line).Known() {
 		unplannedForTest(l, line, charged)
 	}
-	return l.Reserve(tier, mem.LineID(line), requested, charged).Release
+	release := l.Reserve(tier, mem.LineID(line), requested, charged).Release
+	if leaseSeenForTest != nil {
+		return leaseSeenForTest(onDevice, line, requested, release)
+	}
+	return release
 }

@@ -1,5 +1,7 @@
 # Gemma-3-4B's planned-context residual (2026-11-16, found while taking KV3-S1's census refresh; a 16-core amd64 box, one 8 GB RTX 2070 SUPER)
 
+**Resolved 2026-11-17 (`packing-model.md`):** the plan prices the term now. Two statements below are corrected there: the 1.5B's difference was not "frees between allocations" (no build frees anything before the fit check) but a small buffer taking an older page's room, which a bump allocator misses, and the pricing needed no per-family order model (one rule, best fit over partly used pages). Gemma-3-4B's served context is now 15,040, not the 15,296 option 1 said it would keep.
+
 **What happened.** KV3-S1 removes one `M x inter` float buffer from a prefill pass, so `ctxMarginFor` (the build's context margin) falls by that buffer's charged bytes. `TestKSH6C_marginPriced` (heavy: `GOINFER_HEAVY_TESTS=1 KSH6C_MARGIN=1`, not run by CI) then fails on **Gemma-3-4B only**: the plan goes 15,296 -> 15,360 positions (margin 330.5 -> 310.5 MiB), `checkKVFits` trims it back to 15,296 at its own free-VRAM reading, and the gate's "the build kept the planned context" goes red.
 `ksh6c-mine.txt` and `ksh6c-main.txt` hold the gate's lines on the change and on main. Every other model keeps its context (the 0.5B, 1.5B, Qwen2.5-VL-3B and Gemma-4-E2B at 16,384; the 7B passes). The census golden's 764 lines move only in `margin=`, and no fit decision in it changes.
 
