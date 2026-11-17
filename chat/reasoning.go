@@ -9,7 +9,7 @@ package chat
 //     ThinkSplitter separates it into reasoning and content, chunk-boundary safe, so a wire layer can put the answer in
 //     `content` and the reasoning somewhere a client can ignore.
 //
-// Why it is per checkpoint (docs/tasks/task-qwen35-think-prompt-2026-09.md): the generic ChatML renderer writes nothing after
+// Why it is per checkpoint: the generic ChatML renderer writes nothing after
 // "<|im_start|>assistant\n", but Qwen3.5's own template writes a think block there, and WHICH block depends on the checkpoint: the
 // 0.8B defaults to thinking OFF (closed empty block), the 9B to ON (open `<think>\n`), Qwen3 to ON with nothing written. The same knob
 // (`enable_thinking`) means different things per family and size, so nothing here hard-wires "Qwen does X".

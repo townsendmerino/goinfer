@@ -9,8 +9,7 @@ type ToolSpec struct {
 	Parameters []byte
 }
 
-// ToolCallsGrammar constrains ONE tool call to any of several tools
-// (docs/tasks/task-tool-grammar-union-2026-09.md). It is the union of the single-tool
+// ToolCallsGrammar constrains ONE tool call to any of several tools. It is the union of the single-tool
 // grammars ToolCallGrammar already builds, run as parallel branches: a byte is legal iff at
 // least one live branch accepts it, and a branch that rejects a committed byte is dropped.
 // Every branch shares the wrapper and the object shape; they differ only in the "name"

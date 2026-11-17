@@ -7,8 +7,6 @@ import (
 	"testing"
 )
 
-// Pre-registered in docs/queue-correctness.md G39.
-//
 // The opt-in fenced-call rule. A chatml-family model that writes its tool call as a fenced JSON block in prose
 // (Qwen2.5-Coder-7B under opencode) makes no call without the option. With
 // Template.WithLenientToolCalls(true) a reply is read as ONE call when ALL of these hold, and as prose otherwise:

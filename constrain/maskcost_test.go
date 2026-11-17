@@ -135,8 +135,8 @@ func TestMaskCost_P20(t *testing.T) {
 		}
 	}
 
-	// The comparison P-20 asks for, against the cheaper (harder) end of this box's resident-GPU decode
-	// step for the 1.5B after the G35/G36 kernel work (docs/QUEUE.md): a pre-G36 figure would flatter the mask.
+	// The comparison against the cheaper (harder) end of the resident-GPU decode step for the 1.5B with
+	// the current kernels: an older, slower step would flatter the mask.
 	t.Logf("")
 	t.Logf("WORST STATE (an upper bound, not a typical step):")
 	for _, step := range []struct {
