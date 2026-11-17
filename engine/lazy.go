@@ -12,8 +12,8 @@ import (
 // sampling sp. err reports a phase that cannot start (a speculative path's sampler validation), before it touches any state.
 type lazyPhase func(ctx context.Context, prompt []int, max int, sp decoder.SamplingParams) (<-chan int, *decoder.Generation, func(), error)
 
-// lazyTurn is a tool_choice auto turn with a lazy tool-call union on a server that speculates (docs/tasks/task-tool-grammar-union-2026-09.md,
-// row R2). Phase 1 runs free, the server's speculative path with no processor, and each token it emits is folded into lazy before it is
+// lazyTurn is a tool_choice auto turn with a lazy tool-call union on a server that speculates.
+// Phase 1 runs free, the server's speculative path with no processor, and each token it emits is folded into lazy before it is
 // forwarded. The token that arms lazy (its trigger, the call's opener, completes in the output) is forwarded too; phase 1 is then
 // cancelled and drained, so nothing it drafted past the opener reaches the caller, and phase 2 runs the rest of the turn from prompt
 // plus the output so far, gated by lazy (its Process and Gate, offset past phase 1's tokens): what a constrained turn takes on this
