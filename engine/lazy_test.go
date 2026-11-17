@@ -159,7 +159,7 @@ func wellFormedCall(text string) bool {
 	return json.Unmarshal([]byte(strings.TrimSpace(body)), &call) == nil && call.Name == "get" && call.Arguments != nil
 }
 
-// TestLazyTurn_malformedFreeCallComesBackWellFormed is R2's red-first gate (docs/tasks/task-tool-grammar-union-2026-09.md): a model whose
+// TestLazyTurn_malformedFreeCallComesBackWellFormed is the red-first gate for a model whose
 // free-running call is malformed (a trailing comma, so not JSON), on a speculating server under tool_choice auto. Today that server skips
 // the union, so the turn is the free run alone and its call does not parse; through lazyTurn the call is constrained from its opener and
 // parses. Nothing phase 1 drafted past the opener reaches the caller.
