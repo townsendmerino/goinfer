@@ -214,4 +214,4 @@ line). Your machine's numbers will differ. Measured on 2026-10-02 with the v0.20
 
 *Sources: `decoder/model.go` (`forward`, `runLayers`, `logitsFromHidden`),
 [`docs/how-inference-works.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/how-inference-works.md) §Step 2, [`docs/benchmarks.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/benchmarks.md) (decode-only, greedy, depth 128,
-quiet box), [`docs/queue-performance.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/queue-performance.md) (G16/G20 prefill).*
+quiet box), the performance queue (kept privately) (G16/G20 prefill).*

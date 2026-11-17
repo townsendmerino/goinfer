@@ -259,7 +259,7 @@ release ([record](https://github.com/townsendmerino/goinfer/blob/main/docs/measu
 
 ---
 
-*Sources: [`docs/queue-performance.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/queue-performance.md) (G16/G20 prefill baselines), `docs/benchmarks.md`
+*Sources: the performance queue (kept privately) (G16/G20 prefill baselines), `docs/benchmarks.md`
 (peer prefill ratio), [`docs/measurements/mellum2-moe-prefill-split-RESULT.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/mellum2-moe-prefill-split-RESULT.md) (attention share,
 the slice-versus-model correction, and the 3.11×/1.52× figures), [`docs/ollama-chase.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/ollama-chase.md)
 (§7, the bit-identity fork — Phase 0/0b and the tensor-core decision), and [`CLAUDE.md`](https://github.com/townsendmerino/goinfer/blob/main/CLAUDE.md) (measurement

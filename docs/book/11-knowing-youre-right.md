@@ -374,4 +374,4 @@ printing "ok". Measured on 2026-10-02 with the v0.20.0 release ([record](https:/
 ---
 
 *Sources: `CLAUDE.md` (measurement discipline, tests), `docs/benchmarks.md` (provenance rule,
-re-anchor banner), [`docs/parity-coverage-policy.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/parity-coverage-policy.md), [`docs/QUEUE.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/QUEUE.md) (retraction record).*
+re-anchor banner), [`docs/parity-coverage-policy.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/parity-coverage-policy.md), the open-work queue (kept privately) (retraction record).*

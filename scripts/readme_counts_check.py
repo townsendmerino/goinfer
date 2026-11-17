@@ -15,10 +15,8 @@ should equal), not one generic rule. New sections in docs/README.md that carry a
 entry added here by hand — there is no way to discover "this is a count claim" mechanically without
 false-positiving on every other parenthetical number in the file (a date, a version, a file size).
 
-Deliberately NOT checked: "cited from 88 code comments" (docs/README.md's Design records section) —
-which task docs' comments count, and by what exact grep pattern, is a real judgment call, not a
-single directory listing; automating it would need a precise, arguable definition this script
-should not invent unilaterally. The opening line's "~270 files" is deliberately approximate (the
+The task docs, queues and plans left docs/ for the private notes checkout, so their counts are not claimed here.
+The opening line's "~270 files" is deliberately approximate (the
 tilde says so) and is reported as a soft note, not a hard mismatch.
 
 This is a read-only report, not a push gate and not an auto-rewriter — prose around a stale number
@@ -39,21 +37,6 @@ def count_md(relglob: str) -> int:
 
 # (label, regex with the count(s) as named groups, {group_name: actual_count_fn})
 CHECKS = [
-    (
-        "Design records heading — total",
-        re.compile(r"## Design records .*?\((\d+):"),
-        lambda: count_md("docs/tasks/*.md") + count_md("docs/tasks/parked/*.md"),
-    ),
-    (
-        "Design records heading — tasks/",
-        re.compile(r"## Design records .*?\(\d+: (\d+) in `tasks/`"),
-        lambda: count_md("docs/tasks/*.md"),
-    ),
-    (
-        "Design records heading — tasks/parked/",
-        re.compile(r"## Design records .*?in `tasks/`, (\d+) in `tasks/parked/`"),
-        lambda: count_md("docs/tasks/parked/*.md"),
-    ),
     (
         "`spec/` inline count",
         re.compile(r"`spec/` \((\d+)\)"),

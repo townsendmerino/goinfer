@@ -161,7 +161,7 @@ log). Archive logs somewhere durable, never `/tmp`. Prefer committed increments 
 
 ## Citations and the pre-push hook
 
-`scripts/queue_citation_lint.py` is a pre-push hook that refuses a red push (index: `docs/citation-index.md`); it ends with
+`scripts/queue_citation_lint.py` is a pre-push hook that refuses a red push (the generated index sits beside the queue, in the notes checkout); it ends with
 a VERDICT line, so never read its exit code through a pipe. A backtick-quoted path under a **gitignored** directory is a
 forbidden destination, in any repo: describe the record in prose. **Cite code by declaration, never by line**
 (`chat/chat.go:Template.Render`); a dated record (audit, review, measurement write-up) is instead pinned with
@@ -174,12 +174,15 @@ a fresh worktree): `python3 scripts/queue_citation_lint.py --pinned-modules | xa
 
 ## Task docs: the ledger, and closing as you go
 
-A live task doc carries one ledger under its status block: `<!-- ledger -->`, then `| id | state | next | evidence |`, one
-row per item (open, active, blocked, decision, done, killed, moved: the row names where; prose below is history). **Change
-the row in the same commit as the work;** a move leaves a link back in the destination. **The commit that closes the last
-row archives the doc, in the same push:** `python3 scripts/task_docs.py archive <doc> --status <file>` prints the plan; read
-it, then add `--apply --stage`. A new task doc starts with a ledger, and commit subjects name items by an ID the doc owns
-(`KV4`, not a bare `S4`). `task_docs.py rank` and `check` list recent and closable docs.
+Task docs, queues and plans live in the maintainer's private notes checkout (a sibling `../goinfer-notes`: `tasks/`, `queues/`,
+`plans/`); the scripts read them there, fall back to `docs/` without it, and CI has no checkout. A live task doc carries one
+ledger under its status block: `<!-- ledger -->`, then `| id | state | next | evidence |`, one row per item (open, active,
+blocked, decision, done, killed, moved: the row names where; prose below is history). **Change the row when the work lands**
+(a commit in the notes checkout; the goinfer commit subject names the item ID); a move leaves a link back in the destination.
+**Closing the last row archives the doc:** `python3 scripts/task_docs.py archive <doc> --status <file>` prints the plan; read
+it, then add `--apply --stage` (in the notes layout it moves inside the notes repository and leaves no stub). A new task doc
+starts with a ledger, and commit subjects name items by an ID the doc owns (`KV4`, not a bare `S4`). `task_docs.py rank` and
+`check` list recent and closable docs.
 
 ## Measurement discipline
 

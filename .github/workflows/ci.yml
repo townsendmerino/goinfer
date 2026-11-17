@@ -266,6 +266,8 @@ jobs:
         run: python3 -B scripts/test_touched.py
       - name: task_docs.py unstub
         run: python3 -B scripts/test_task_docs.py
+      - name: queue and task-doc readers (notes checkout or docs/)
+        run: python3 -B scripts/test_notes_readers.py
       - name: CHANGELOG fragments (scripts/changelog.py)
         run: python3 -B scripts/test_changelog.py && python3 -B scripts/changelog.py render > /dev/null
 

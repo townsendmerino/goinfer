@@ -161,5 +161,5 @@ does to them. Measured on 2026-10-02 with the v0.20.0 release ([record](https://
 
 ---
 
-*Sources: [`decoder/spec_optfwd.go`](https://github.com/townsendmerino/goinfer/blob/main/decoder/spec_optfwd.go), [`docs/QUEUE.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/QUEUE.md) (G26 ladder, sampler-share and crossover
+*Sources: [`decoder/spec_optfwd.go`](https://github.com/townsendmerino/goinfer/blob/main/decoder/spec_optfwd.go), the open-work queue (kept privately) (G26 ladder, sampler-share and crossover
 measurements, the prompt-confound retraction), [`scripts/prompts.json`](https://github.com/townsendmerino/goinfer/blob/main/scripts/prompts.json).*
