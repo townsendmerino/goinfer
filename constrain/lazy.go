@@ -8,7 +8,7 @@ import "bytes"
 // complete. Under tool_choice "auto" a prose answer must stay legal, so the constraint cannot start
 // at token 1: it arms on the model's own decision to call, and from there the call cannot be malformed.
 // Disarming after each complete call means a second call in the same turn is constrained
-// independently. Design: docs/tasks/task-tool-grammar-union-2026-09.md.
+// independently.
 //
 // The grammar must START with the trigger's bytes (build it with the trigger as its prefix):
 // on arming, the bytes from the trigger's first byte through the end of the latest token are
