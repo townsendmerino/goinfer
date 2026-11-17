@@ -1,0 +1,3 @@
+{"agree":15,"agree_margin":14,"ckpt":"qwen3.5-0.8b","control_kl":0.01490808953608066,"depth":3900,"mean_kl":0.01490808953608066,"min_cos":0.9934641567702915,"nan_inf":false,"rows":16,"rows_margin":14,"seconds":12.936807057,"verdict":"DEGRADES"}
+{"agree":16,"agree_margin":12,"ckpt":"qwen3.5-0.8b","control_kl":0.01490808953608066,"depth":65536,"mean_kl":0.012412510429789178,"min_cos":0.9853234643651604,"nan_inf":false,"rows":16,"rows_margin":12,"seconds":703.684756641,"verdict":"FAILS"}
+{"agree":15,"agree_margin":14,"ckpt":"qwen3.5-0.8b","control_kl":0.01490808953608066,"depth":131000,"mean_kl":0.013440647878725053,"min_cos":0.9892442240082377,"nan_inf":false,"rows":16,"rows_margin":14,"seconds":2770.623390029,"verdict":"FAILS"}

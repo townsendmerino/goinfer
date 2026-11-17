@@ -4,8 +4,10 @@ package cuda
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
 	"hash/fnv"
 	"math"
 	"os"
@@ -13,6 +15,9 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"sort"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -481,6 +486,263 @@ func TestMEM6_cudaPrefillAllocatesNoRowCopy(t *testing.T) {
 	t.Logf("Go bytes allocated by the prefill: %d at 1,024 rows, %d at 2,048; %.0f B per prompt row against %.0f B per embedding row (%.2f)", b1, b2, perRow, embRow, perRow/embRow)
 	if perRow > embRow {
 		t.Errorf("a prompt row adds %.0f B of Go allocation, over one embedding row (%.0f B): a pass copies its embeddings again", perRow, embRow)
+	}
+}
+
+// TestKV10_fusedPrefillRule is KV10-a's rule test (docs/measurements/kv10-2026-11/README.md): on a resident whose fused attention module loaded, useAttnFused answers
+// yes for exactly the head dims 64 and 128 of every width from 1 to 512, and no under an attention softcap. docs/measurements/kv10-2026-11/fused_census.py applies the
+// same rule to the checkpoints' configs.
+func TestKV10_fusedPrefillRule(t *testing.T) {
+	const base = "../../testdata/llama-tiny"
+	requireDeviceAndFixture(t, base)
+	g := kv0LoadCtx(t, base, "f16", 128, kv0RandomTokens)
+	r := g.r
+	if r.bAttnFused64 == (Pipeline{}) || r.bAttnFused128 == (Pipeline{}) || !r.fastAttn {
+		t.Fatalf("VOID: the fused modules did not load (64 %v, 128 %v, fastAttn %v), so every answer would be no", r.bAttnFused64 != (Pipeline{}), r.bAttnFused128 != (Pipeline{}), r.fastAttn)
+	}
+	g.floorKnob("0") // fast kernels at any prompt length, so the floor does not answer for the head dim
+	r.passPromptLen = 4096
+	var served []int
+	for hd := 1; hd <= 512; hd++ {
+		if _, ok := r.useAttnFused(hd, attnFusedMinRows); ok {
+			served = append(served, hd)
+		}
+	}
+	if !slices.Equal(served, []int{64, 128}) {
+		t.Errorf("the fused kernel serves head dims %v, want exactly [64 128]", served)
+	}
+	r.attnCap = 30
+	if _, ok := r.useAttnFused(128, attnFusedMinRows); ok {
+		t.Errorf("the fused kernel serves head dim 128 under an attention softcap")
+	}
+	r.attnCap = 0
+	if _, ok := r.useAttnFused(128, attnFusedMinRows-1); ok {
+		t.Errorf("the fused kernel serves a pass of %d rows, under attnFusedMinRows", attnFusedMinRows-1)
+	}
+}
+
+// kv10Beat prints a heartbeat to stderr every 45 seconds while a long step runs (with -v it streams), and returns the function that stops it.
+func kv10Beat(label string) func() {
+	t0, done := time.Now(), make(chan struct{})
+	go func() {
+		tk := time.NewTicker(45 * time.Second)
+		defer tk.Stop()
+		for {
+			select {
+			case <-tk.C:
+				fmt.Fprintf(os.Stderr, "[kv10] %s: %.0f s elapsed\n", label, time.Since(t0).Seconds())
+			case <-done:
+				return
+			}
+		}
+	}()
+	return func() {
+		close(done)
+		fmt.Fprintf(os.Stderr, "[kv10] %s: done in %.1f s\n", label, time.Since(t0).Seconds())
+	}
+}
+
+// kv10Tail loads the checkpoint at kv precision with room for depth rows, prefills depth-tail rows, then reads the last tail rows' logits
+// (PrefillLastN: row m predicts position start+m+1). A load the fit check refuses skips the test as NOT RUN.
+func kv10Tail(t *testing.T, ckpt, kv string, ids []int, tail int) [][]float32 {
+	t.Helper()
+	depth := len(ids)
+	m, err := decoder.Load(ckpt, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: depth + 64, KVPrecision: kv})
+	if err != nil {
+		t.Skipf("NOT RUN: %s at depth %d, kv %s: %v", filepath.Base(ckpt), depth, kv, err)
+	}
+	defer m.Close()
+	r, ok := m.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Skipf("NOT RUN: %s is not CUDA-resident at depth %d, kv %s: %s", filepath.Base(ckpt), depth, kv, m.ResidentDecline())
+	}
+	if batched, why := r.PrefillPath(); !batched {
+		t.Fatalf("batched prefill declined: %s", why)
+	}
+	for l := range r.layers {
+		if r.layers[l].kvHalf != (kv == "f16") && !r.layers[l].isDeltaNet() && !r.layers[l].noKV() {
+			t.Fatalf("layer %d holds f16=%v, kv %s was asked for", l, r.layers[l].kvHalf, kv)
+		}
+	}
+	embs := make([][]float32, depth)
+	for i, id := range ids {
+		embs[i] = m.EmbedResidentForTest(id)
+	}
+	stop := kv10Beat(fmt.Sprintf("depth %d kv %s: prefill of %d rows", depth, kv, depth-tail))
+	if _, err := r.PrefillLast(context.Background(), embs[:depth-tail], 0); err != nil {
+		stop()
+		t.Fatalf("PrefillLast(%d rows): %v", depth-tail, err)
+	}
+	stop()
+	outs, err := r.PrefillLastN(embs[depth-tail:], depth-tail)
+	if err != nil {
+		t.Fatalf("PrefillLastN(%d rows at %d): %v", tail, depth-tail, err)
+	}
+	out := make([][]float32, len(outs))
+	for i := range outs {
+		out[i] = append([]float32(nil), outs[i]...)
+	}
+	return out
+}
+
+// kv10Compare is the metric over the tail rows: the min cosine of b against a, the argmax agreement (all rows, and rows where a's top-1 margin is at least
+// 0.5), the mean KL(a || b) in nats, and whether any logit is NaN or Inf.
+func kv10Compare(a, b [][]float32) (minCos float64, agree, agreeM, rows, rowsM int, meanKL float64, bad bool) {
+	minCos = 1
+	for i := range a {
+		for j := range a[i] {
+			if x, y := float64(a[i][j]), float64(b[i][j]); math.IsNaN(x) || math.IsInf(x, 0) || math.IsNaN(y) || math.IsInf(y, 0) {
+				bad = true
+			}
+		}
+		if c := kv0Cosine(a[i], b[i]); c < minCos {
+			minCos = c
+		}
+		top, second := float32(math.Inf(-1)), float32(math.Inf(-1))
+		for _, v := range a[i] {
+			if v > top {
+				top, second = v, top
+			} else if v > second {
+				second = v
+			}
+		}
+		rows++
+		same := kv0Argmax(a[i]) == kv0Argmax(b[i])
+		if same {
+			agree++
+		}
+		if top-second >= 0.5 {
+			rowsM++
+			if same {
+				agreeM++
+			}
+		}
+		meanKL += kv10KL(a[i], b[i])
+	}
+	return minCos, agree, agreeM, rows, rowsM, meanKL / float64(len(a)), bad
+}
+
+// kv10KL is KL(softmax(p) || softmax(q)) in nats, in float64.
+func kv10KL(p, q []float32) float64 {
+	lse := func(v []float32) float64 {
+		mx := math.Inf(-1)
+		for _, x := range v {
+			mx = math.Max(mx, float64(x))
+		}
+		var s float64
+		for _, x := range v {
+			s += math.Exp(float64(x) - mx)
+		}
+		return mx + math.Log(s)
+	}
+	lp, lq := lse(p), lse(q)
+	var kl float64
+	for i := range p {
+		lpi := float64(p[i]) - lp
+		kl += math.Exp(lpi) * (lpi - (float64(q[i]) - lq))
+	}
+	return kl
+}
+
+// kv10Text is this repository's source and docs as tokens of the checkpoint's tokenizer, at least n of them (real text, never cycled).
+func kv10Text(t *testing.T, ckpt string, n int) []int {
+	t.Helper()
+	tk, err := modelload.Tokenizer(ckpt)
+	if err != nil {
+		t.Fatalf("tokenizer: %v", err)
+	}
+	var files []string
+	for _, g := range []string{"../../decoder/*.go", "../../docs/*.md", "../../backend/cuda/*.go"} {
+		m, _ := filepath.Glob(g)
+		sort.Strings(m)
+		files = append(files, m...)
+	}
+	var sb strings.Builder
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sb.Write(b)
+		if sb.Len() > 3_000_000 {
+			break
+		}
+	}
+	ids, err := tk.Encode(sb.String(), false)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	if len(ids) < n {
+		t.Fatalf("VOID: the repository's text is %d tokens, the deepest cell needs %d", len(ids), n)
+	}
+	return ids[:n]
+}
+
+// TestKV10_longContextFidelity is KV10-b's harness (docs/measurements/kv10-2026-11/README.md): at each depth, the last 16 rows' logits of the checkpoint with KV f16 against
+// KV f32, on this repository's text. GOINFER_KV10_DEPTHS (default "3900,65536,131000"), KV10_CKPT (default ~/models/qwen3.5-0.8b), KV10_OUT (a JSON-lines file).
+//
+//	GOINFER_HEAVY_TESTS=1 KV10_OUT=<file> go test -tags 'cuda goinfer_testhooks' -run '^TestKV10_longContextFidelity$' -v -timeout 90m ./backend/cuda/
+func TestKV10_longContextFidelity(t *testing.T) {
+	requireCUDADevice(t)
+	requireHeavyModel(t)
+	ckpt := os.Getenv("KV10_CKPT")
+	if ckpt == "" {
+		ckpt = os.ExpandEnv("$HOME/models/qwen3.5-0.8b")
+	}
+	depths := []int{3900, 65536, 131000}
+	if v := os.Getenv("GOINFER_KV10_DEPTHS"); v != "" {
+		depths = nil
+		for _, f := range strings.Split(v, ",") {
+			n, err := strconv.Atoi(strings.TrimSpace(f))
+			if err != nil || n < 64 {
+				t.Fatalf("GOINFER_KV10_DEPTHS: %q", f)
+			}
+			depths = append(depths, n)
+		}
+	}
+	const tail = 16
+	ids := kv10Text(t, ckpt, slices.Max(depths))
+	var out *os.File
+	if p := os.Getenv("KV10_OUT"); p != "" {
+		f, err := os.OpenFile(p, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		out = f
+	}
+	var control float64
+	for _, depth := range depths {
+		t.Run(fmt.Sprintf("depth%d", depth), func(t *testing.T) {
+			t0 := time.Now()
+			fmt.Fprintf(os.Stderr, "[kv10] depth %d: start %s\n", depth, t0.Format("15:04:05"))
+			f32 := kv10Tail(t, ckpt, "f32", ids[:depth], tail)
+			f16 := kv10Tail(t, ckpt, "f16", ids[:depth], tail)
+			minCos, agree, agreeM, rows, rowsM, kl, bad := kv10Compare(f32, f16)
+			verdict := "HOLDS"
+			switch {
+			case bad || minCos < 0.99:
+				verdict = "FAILS"
+			case minCos < 0.999 || agreeM < rowsM || (control > 0 && kl > 2*control):
+				verdict = "DEGRADES"
+			}
+			if depth == depths[0] {
+				control = kl
+			}
+			t.Logf("depth %d: min cosine %.6f, argmax agrees on %d of %d rows (%d of %d with a margin of 0.5+), mean KL %.3e nats (control %.3e), NaN/Inf %v: %s; %.0f s",
+				depth, minCos, agree, rows, agreeM, rowsM, kl, control, bad, verdict, time.Since(t0).Seconds())
+			if out != nil {
+				rec, _ := json.Marshal(map[string]any{"depth": depth, "min_cos": minCos, "agree": agree, "rows": rows, "agree_margin": agreeM, "rows_margin": rowsM, "mean_kl": kl,
+					"control_kl": control, "nan_inf": bad, "verdict": verdict, "seconds": time.Since(t0).Seconds(), "ckpt": filepath.Base(ckpt)})
+				fmt.Fprintf(out, "%s\n", rec)
+			}
+			if verdict == "FAILS" {
+				t.Errorf("depth %d FAILS: min cosine %.6f, NaN/Inf %v", depth, minCos, bad)
+			}
+		})
 	}
 }
 
