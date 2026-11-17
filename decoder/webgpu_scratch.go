@@ -50,7 +50,7 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 	var moeNE int
 	var deltaLayer, qSplit, attnGate, mlaLayer, mlaAbsorb, mlaLift, nRmsExtra int64
 	anyDelta, anyLatent, anySSM := false, false, false
-	var mambaLayer, relu2, clampedRoute, clampedAct, clampedDown int64
+	var routedRows, mambaLayer, relu2, clampedRoute, clampedAct, clampedDown int64
 	pk := func(k int) int64 { return int64((k + 31) &^ 31) }
 	rmsQuantB = pk(H) + 20 // one call per sublayer norm and the final norm: the int8 row, its scale, its uniform
 	nRms, nQuant := int64(1), int64(0)
@@ -103,7 +103,7 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 		if !isDense {
 			return nil, fmt.Sprintf("layer %d: operations %v (FFN form %d) are not a plain attention and dense FFN sublayer", l, opKinds(ops), shape.otherForm)
 		}
-		if d.routed[l] != shape.moe {
+		if d.routed[l] != (shape.moe || shape.block == blockRouted) {
 			return nil, fmt.Sprintf("layer %d: a routed-experts FFN of a form not derived", l)
 		}
 		rows := d.layers[l]
@@ -115,6 +115,9 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 			mixer = []string{"mb-conv", "mb-gated", "mb-proj", "mb-y"}
 		case shape.block == blockMLP:
 			mixer = []string{"up"}
+		case shape.block == blockRouted:
+			p := shape.routedPrefix
+			mixer = []string{"up", "shared-up", p + "-router", p + "-experts", p + "-weights"}
 		case shape.latent:
 			mixer = []string{"mla-ctx", "mla-kv", "mla-q", "mla-q-abs", "mla-wsum"}
 			if rows["mla-qa"] > 0 { // a low-rank query projection
@@ -154,6 +157,23 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 		}
 		if len(rows) != want {
 			return nil, fmt.Sprintf("layer %d: declared rows beyond the derived ones", l)
+		}
+		if shape.block == blockRouted {
+			p := shape.routedPrefix
+			nE, topK, inter, sh := rows[p+"-router"], rows[p+"-experts"], rows["up"], rows["shared-up"]
+			if nE == 0 || topK == 0 || rows[p+"-weights"] != topK || len(m.w.Layers[l].PreAttnNorm) == 0 {
+				return nil, fmt.Sprintf("layer %d: the routed block's declared rows or its norm are not the derived ones", l)
+			}
+			nRms++
+			gemv += 4*int64(nE) + 16
+			routedRows += 4*int64(2*topK) + 4*int64(topK)*int64(inter)
+			moeRoute += 32
+			moeExpert += 2 * int64(topK) * 16
+			relu2 += int64(topK)*(pk(inter)+20) + pk(sh) + 20
+			gemv += 4*int64(sh) + 16
+			gemvAdd += 16
+			moeNE = nE
+			continue
 		}
 		if shape.block == blockSSM || shape.block == blockMLP {
 			if len(m.w.Layers[l].PreAttnNorm) == 0 {
@@ -336,6 +356,7 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 		{"mambaLayer", mambaLayer},
 		{"mambaSetup", mambaSetupB},
 		{"relu2Quant", relu2},
+		{"nemoMoE", routedRows},
 		{clampedRoles[0], clampedRoute},
 		{clampedRoles[1], clampedAct},
 		{clampedRoles[2], clampedDown},
@@ -388,6 +409,7 @@ func (m *Model) WebGPUDecodeScratchBytes() (int64, bool) {
 // sublayer's output before its residual add.
 type denseShape struct {
 	qkNorm, postAttn, postMLP, moe, gated, delta, latent, clamped bool
+	routedPrefix                                                  string          // the declared rows' name prefix of a one-operation routed layer
 	otherForm                                                     program.FFNForm // the routed form a layer has that is not derived
 	block                                                         int             // blockPair, or a layer of one operation behind its one norm
 }
@@ -397,7 +419,11 @@ const (
 	blockSSM
 	blockAttn
 	blockMLP
+	blockRouted
 )
+
+// routedPrefixOf names the declared router rows of the routed forms that stand alone in a layer.
+var routedPrefixOf = map[program.FFNForm]string{program.FfnNemotronMoE: "nemotronmoe"}
 
 // denseAttnLayer reports whether a layer's operations are a plain attention sublayer and a dense FFN, each behind its own pre-norm,
 // with only the optional operations of denseShape and nothing else (no output gate, temperature or layer scale).
@@ -420,8 +446,16 @@ func denseAttnLayer(ops []op) (s denseShape, ok bool) {
 		s.block = blockSSM
 		return s, next(program.OpResidual) && i == len(ops)
 	case next(program.OpFFN):
-		s.block = blockMLP
-		return s, ops[i-1].FFN.Form == program.FfnNonGated && next(program.OpResidual) && i == len(ops)
+		switch ops[i-1].FFN.Form {
+		case program.FfnNonGated:
+			s.block = blockMLP
+		case program.FfnNemotronMoE:
+			s.block, s.routedPrefix = blockRouted, routedPrefixOf[ops[i-1].FFN.Form]
+		default:
+			s.otherForm = ops[i-1].FFN.Form
+			return s, false
+		}
+		return s, next(program.OpResidual) && i == len(ops)
 	}
 	switch {
 	case next(program.OpDeltaNet):
