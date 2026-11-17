@@ -183,6 +183,35 @@ func webgpuScratchHandDeepseekTiny() map[string]int64 {
 	return want
 }
 
+// webgpuScratchHandNemotronTiny is nemotron-tiny's figure from its config: hidden 64, vocabulary 256, five layers of one operation each behind
+// one norm (a state-space mixer whose input projection has 168 rows over an inner width of 64 and a conv of 96, attention of 4 heads of 16 over
+// 2 KV heads, a non-gated FFN of 128, then a mixer and attention again).
+func webgpuScratchHandNemotronTiny() map[string]int64 {
+	const H, V, inner, convDim, projRows, nH, hd, nKV, up = 64, 256, 64, 96, 168, 4, 16, 2, 128
+	pk := func(n int) int64 { return int64((n + 31) &^ 31) }
+	want := map[string]int64{"build": 4 + 4*256, "residual": 4 * H, "logitsStaging": 4 * V, "geomFor": 16 + 32, "qkvFinUniFor": 32,
+		"rmsQuant": pk(H) + 20, "gemv": 4*V + 16, "mambaSetup": 16 + 32 + 32}
+	add := func(role string, n int64) { want[role] += n }
+	for _, kind := range []string{"ssm", "attn", "mlp", "ssm", "attn"} {
+		add("rmsQuant", pk(H)+20) // the layer's one norm
+		add("gemvAdd", 16)
+		switch kind {
+		case "ssm":
+			add("gemv", 4*projRows+16)
+			add("mambaLayer", 4*(convDim+inner+inner))
+			add("quant", pk(inner)+20)
+		case "attn":
+			add("gemv", 4*int64(nH*hd+2*nKV*hd)+3*16)
+			add("attnLayer", 4*int64(nH*hd)+16)
+			add("quant", pk(nH*hd)+20)
+		case "mlp":
+			add("gemv", 4*up+16)
+			add("relu2Quant", pk(up)+20)
+		}
+	}
+	return want
+}
+
 func withTerm(m map[string]int64, role string, b int64) map[string]int64 {
 	m[role] = b
 	return m
@@ -210,6 +239,7 @@ func TestWebGPUDecodeScratch_handTable(t *testing.T) {
 		{"qwen35 (delta-net, gated attention, routed FFN)", "qwen35-tiny", Options{}, webgpuScratchHandQwen35Tiny()},
 		{"smollm3 (a layer with no rope operation)", "smollm3-tiny", Options{}, webgpuScratchHand(64, 4, 512, 64, 16, 128, false, false, "f32", "", false, false)},
 		{"deepseek (latent attention, dense then routed FFN)", "deepseek-tiny", Options{}, webgpuScratchHandDeepseekTiny()},
+		{"nemotron (a layer of one operation: state-space, attention, non-gated FFN)", "nemotron-tiny", Options{}, webgpuScratchHandNemotronTiny()},
 		{"glm-ocr (post norms)", "glm-ocr-tiny", Options{}, webgpuScratchHand(48, 3, 160, 128, 64, 144, false, true, "f32", "", false, false)},
 	} {
 		m, err := Load("../testdata/"+c.fx, c.o)
@@ -234,12 +264,12 @@ func TestWebGPUDecodeScratch_handTable(t *testing.T) {
 		}
 		m.Close()
 	}
-	m, err := Load("../testdata/nemotron-tiny", Options{})
+	m, err := Load("../testdata/gemma4-moe-kv-tiny", Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer m.Close()
 	if _, ok := m.WebGPUDecodeScratch(); ok {
-		t.Error("nemotron-tiny has Mamba-2 layers, whose scratch is not derived: the plan must give no figure")
+		t.Error("gemma4-moe-kv-tiny has Gemma 4 layers, whose scratch is not derived: the plan must give no figure")
 	}
 }

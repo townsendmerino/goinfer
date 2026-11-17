@@ -49,7 +49,8 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 	var gemv, gemvAdd, actQuant, attnLayer, quantB, rmsQuantB, qkNormB, rmsnormB, biasAddB, gemvBiasB, moeFFN, moeRoute, moeExpert, swiglu, sharedCombine int64
 	var moeNE int
 	var deltaLayer, qSplit, attnGate, mlaLayer, mlaAbsorb, mlaLift, nRmsExtra int64
-	anyDelta, anyLatent := false, false
+	anyDelta, anyLatent, anySSM := false, false, false
+	var mambaLayer, relu2 int64
 	pk := func(k int) int64 { return int64((k + 31) &^ 31) }
 	rmsQuantB = pk(H) + 20 // one call per sublayer norm and the final norm: the int8 row, its scale, its uniform
 	nRms, nQuant := int64(1), int64(0)
@@ -103,6 +104,10 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 		switch {
 		case shape.gated:
 			mixer = append(mixer, "q-gate", "attn-gate")
+		case shape.block == blockSSM:
+			mixer = []string{"mb-conv", "mb-gated", "mb-proj", "mb-y"}
+		case shape.block == blockMLP:
+			mixer = []string{"up"}
 		case shape.latent:
 			mixer = []string{"mla-ctx", "mla-kv", "mla-q", "mla-q-abs", "mla-wsum"}
 			if rows["mla-qa"] > 0 { // a low-rank query projection
@@ -112,6 +117,9 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 			mixer = []string{"dn-ba", "dn-beta", "dn-conv", "dn-core", "dn-decay", "dn-gated", "dn-k", "dn-mixed", "dn-q", "dn-z"}
 		}
 		want := len(mixer) + 2 // and the FFN's gate and up
+		if shape.block != blockPair {
+			want = len(mixer) // a layer of one operation has no FFN rows beside it
+		}
 		var nE, topK, shared int
 		hasShared := shape.moe && m.w.Layers[l].SharedExpert.Gate.Rows() > 0
 		if shape.moe {
@@ -124,13 +132,35 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 				return nil, fmt.Sprintf("layer %d: the routed FFN's declared rows are not the generic router's", l)
 			}
 		}
-		for _, k := range append(mixer, "gate", "up") {
+		need := append(mixer, "gate", "up")
+		if shape.block != blockPair {
+			need = mixer
+		}
+		for _, k := range need {
 			if rows[k] == 0 {
 				return nil, fmt.Sprintf("layer %d: the declared row %q is missing", l, k)
 			}
 		}
 		if len(rows) != want {
 			return nil, fmt.Sprintf("layer %d: declared rows beyond the derived ones", l)
+		}
+		if shape.block == blockSSM || shape.block == blockMLP {
+			if len(m.w.Layers[l].PreAttnNorm) == 0 {
+				nQuant++
+			} else {
+				nRms++
+			}
+			if shape.block == blockSSM {
+				anySSM = true
+				gemv += 4*int64(rows["mb-proj"]) + 16
+				mambaLayer += 4 * int64(rows["mb-conv"]+rows["mb-y"]+rows["mb-gated"])
+				quantB += pk(rows["mb-gated"]) + 20
+			} else {
+				gemv += 4*int64(rows["up"]) + 16
+				relu2 += pk(rows["up"]) + 20
+			}
+			gemvAdd += 16
+			continue
 		}
 		if shape.latent {
 			anyLatent = true
@@ -207,7 +237,11 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 			return nil, fmt.Sprintf("layer %d: its geometry differs from the first attention layer's", l)
 		}
 		scales[rs] = true
-		for _, pre := range [][]float32{w.PreAttnNorm, w.PreMLPNorm} {
+		pres := [][]float32{w.PreAttnNorm, w.PreMLPNorm}
+		if shape.block == blockAttn {
+			pres = pres[:1]
+		}
+		for _, pre := range pres {
 			if len(pre) == 0 { // a family with no pre-norm (norms after the sublayer only) quantizes the raw residual
 				nQuant++
 			} else {
@@ -241,13 +275,15 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 			rmsnormB += 4*int64(H) + 16
 			biasAddB += 16
 		}
-		if err := ffnTerms(l, shape, rows, nE, topK, shared, hasShared); err != "" {
-			return nil, err
+		if shape.block == blockPair {
+			if err := ffnTerms(l, shape, rows, nE, topK, shared, hasShared); err != "" {
+				return nil, err
+			}
 		}
 		attnLayer += 4*int64(rows["ctx"]) + 16
 		quantB += pk(rows["ctx"]) + 20
 	}
-	if !haveGeom && !anyDelta && !anyLatent {
+	if !haveGeom && !anyDelta && !anyLatent && !anySSM {
 		return nil, "the model has no layers"
 	}
 	gemv += 4*int64(V) + 16 // the head
@@ -260,6 +296,10 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 		if kv == mem.KVI8 {
 			geomB += 32
 		}
+	}
+	mambaSetupB := int64(0)
+	if anySSM {
+		mambaSetupB = 16 + 32 + 32 // the conv's, the scan's and the gated norm's uniforms, shared across layers
 	}
 	mlaSetupB := int64(0)
 	if anyLatent {
@@ -279,6 +319,9 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 		{"mlaAbsorb", mlaAbsorb},
 		{"mlaLift", mlaLift},
 		{"mlaSetup", mlaSetupB},
+		{"mambaLayer", mambaLayer},
+		{"mambaSetup", mambaSetupB},
+		{"relu2Quant", relu2},
 		{"quant", quantB + nQuant*(pk(H)+20)},
 		{"gemv", gemv},
 		{"gemvBias", gemvBiasB},
@@ -326,7 +369,17 @@ func (m *Model) WebGPUDecodeScratchBytes() (int64, bool) {
 
 // denseShape is the optional operations a plain attention layer carries: a QK-norm after the projections, and a norm on each
 // sublayer's output before its residual add.
-type denseShape struct{ qkNorm, postAttn, postMLP, moe, gated, delta, latent bool }
+type denseShape struct {
+	qkNorm, postAttn, postMLP, moe, gated, delta, latent bool
+	block                                                int // blockPair, or a layer of one operation behind its one norm
+}
+
+const (
+	blockPair = iota
+	blockSSM
+	blockAttn
+	blockMLP
+)
 
 // denseAttnLayer reports whether a layer's operations are a plain attention sublayer and a dense FFN, each behind its own pre-norm,
 // with only the optional operations of denseShape and nothing else (no output gate, temperature or layer scale).
@@ -342,6 +395,15 @@ func denseAttnLayer(ops []op) (s denseShape, ok bool) {
 	opt := func(k program.OpKind) bool { return next(k) }
 	if !next(program.OpNorm) {
 		return s, false
+	}
+	// A layer of one operation behind its one norm: a state-space mixer, an attention sublayer or a non-gated FFN.
+	switch {
+	case next(program.OpMamba2):
+		s.block = blockSSM
+		return s, next(program.OpResidual) && i == len(ops)
+	case next(program.OpFFN):
+		s.block = blockMLP
+		return s, ops[i-1].FFN.Form == program.FfnNonGated && next(program.OpResidual) && i == len(ops)
 	}
 	switch {
 	case next(program.OpDeltaNet):
@@ -362,6 +424,10 @@ func denseAttnLayer(ops []op) (s denseShape, ok bool) {
 		opt(program.OpRope)
 		if !next(program.OpAttention) || !next(program.OpProjO) {
 			return s, false
+		}
+		if i == len(ops)-1 && next(program.OpResidual) { // an attention block: no FFN follows in the layer
+			s.block = blockAttn
+			return s, true
 		}
 		s.postAttn = opt(program.OpNorm)
 	}
