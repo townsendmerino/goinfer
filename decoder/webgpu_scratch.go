@@ -50,7 +50,7 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 	var moeNE int
 	var deltaLayer, qSplit, attnGate, mlaLayer, mlaAbsorb, mlaLift, nRmsExtra int64
 	anyDelta, anyLatent, anySSM := false, false, false
-	var mambaLayer, relu2 int64
+	var mambaLayer, relu2, clampedRoute, clampedAct, clampedDown int64
 	pk := func(k int) int64 { return int64((k + 31) &^ 31) }
 	rmsQuantB = pk(H) + 20 // one call per sublayer norm and the final norm: the int8 row, its scale, its uniform
 	nRms, nQuant := int64(1), int64(0)
@@ -74,9 +74,16 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 			// uniform; per slot the expert projections' uniforms and the fused activation's int8 row, scale and uniform.
 			gemv += 4*int64(nE) + 16
 			moeFFN += 4*int64(2*topK) + 4*2*inter
-			moeRoute += 32
-			moeExpert += 3 * int64(topK) * 16
-			swiglu += int64(topK) * (pk(rows["gate"]) + 20)
+			if shape.clamped { // the router's four words, the gate and up uniforms, the clamped activation's eight, the down's four
+				clampedRoute += 16
+				moeExpert += 2 * int64(topK) * 16
+				clampedAct += int64(topK) * (pk(rows["gate"]) + 4 + 32)
+				clampedDown += int64(topK) * 16
+			} else {
+				moeRoute += 32
+				moeExpert += 3 * int64(topK) * 16
+				swiglu += int64(topK) * (pk(rows["gate"]) + 20)
+			}
 			moeNE = nE
 			if hasShared { // the shared expert: a gated SwiGLU MLP, sigmoid-gated by a one-row projection or added ungated
 				gemv += 4*2*int64(shared) + 2*16
@@ -94,7 +101,7 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 	for l, ops := range m.Program().Layers {
 		shape, isDense := denseAttnLayer(ops)
 		if !isDense {
-			return nil, fmt.Sprintf("layer %d: operations %v are not a plain attention and dense FFN sublayer", l, opKinds(ops))
+			return nil, fmt.Sprintf("layer %d: operations %v (FFN form %d) are not a plain attention and dense FFN sublayer", l, opKinds(ops), shape.otherForm)
 		}
 		if d.routed[l] != shape.moe {
 			return nil, fmt.Sprintf("layer %d: a routed-experts FFN of a form not derived", l)
@@ -123,12 +130,16 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 		var nE, topK, shared int
 		hasShared := shape.moe && m.w.Layers[l].SharedExpert.Gate.Rows() > 0
 		if shape.moe {
-			nE, topK, shared = rows["moe-router"], rows["moe-experts"], rows["shared-gate"]
+			pre := "moe" // the router's declared rows are named by the form
+			if shape.clamped {
+				pre = "gptoss"
+			}
+			nE, topK, shared = rows[pre+"-router"], rows[pre+"-experts"], rows["shared-gate"]
 			want += 3
 			if hasShared {
 				want += 2
 			}
-			if nE == 0 || topK == 0 || rows["moe-weights"] != topK || hasShared != (shared > 0) || rows["shared-up"] != shared {
+			if nE == 0 || topK == 0 || rows[pre+"-weights"] != topK || hasShared != (shared > 0) || rows["shared-up"] != shared {
 				return nil, fmt.Sprintf("layer %d: the routed FFN's declared rows are not the generic router's", l)
 			}
 		}
@@ -215,8 +226,6 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 			return nil, fmt.Sprintf("layer %d: rope scale 0", l)
 		case lv.VFromK():
 			return nil, fmt.Sprintf("layer %d: V from K", l)
-		case len(w.OBias) > 0:
-			return nil, fmt.Sprintf("layer %d: an output bias", l)
 		}
 		// Each optional operation is held by the weights it runs on: the build creates its dispatches from the weights, not the program.
 		if shape.gated && (len(w.QBias) > 0 || len(w.OBias) > 0 || len(w.PostAttnNorm) > 0 || len(w.PostMLPNorm) > 0) {
@@ -269,11 +278,16 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 		}
 		// A post-sublayer norm splits the fused output projection into a bare gemv (its own output row), a norm (its own row and
 		// uniform) and a separate residual add (one uniform).
-		if shape.postAttn {
+		if shape.postAttn || len(w.OBias) > 0 { // an output bias splits it the same way
 			gemvAdd -= 16
 			gemv += 4*int64(H) + 16
-			rmsnormB += 4*int64(H) + 16
 			biasAddB += 16
+		}
+		if shape.postAttn {
+			rmsnormB += 4*int64(H) + 16
+		}
+		if len(w.OBias) > 0 {
+			biasAddB += 16 // the bias add on the bare output
 		}
 		if shape.block == blockPair {
 			if err := ffnTerms(l, shape, rows, nE, topK, shared, hasShared); err != "" {
@@ -322,6 +336,9 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 		{"mambaLayer", mambaLayer},
 		{"mambaSetup", mambaSetupB},
 		{"relu2Quant", relu2},
+		{clampedRoles[0], clampedRoute},
+		{clampedRoles[1], clampedAct},
+		{clampedRoles[2], clampedDown},
 		{"quant", quantB + nQuant*(pk(H)+20)},
 		{"gemv", gemv},
 		{"gemvBias", gemvBiasB},
@@ -370,8 +387,9 @@ func (m *Model) WebGPUDecodeScratchBytes() (int64, bool) {
 // denseShape is the optional operations a plain attention layer carries: a QK-norm after the projections, and a norm on each
 // sublayer's output before its residual add.
 type denseShape struct {
-	qkNorm, postAttn, postMLP, moe, gated, delta, latent bool
-	block                                                int // blockPair, or a layer of one operation behind its one norm
+	qkNorm, postAttn, postMLP, moe, gated, delta, latent, clamped bool
+	otherForm                                                     program.FFNForm // the routed form a layer has that is not derived
+	block                                                         int             // blockPair, or a layer of one operation behind its one norm
 }
 
 const (
@@ -437,8 +455,11 @@ func denseAttnLayer(ops []op) (s denseShape, ok bool) {
 	switch ops[i-1].FFN.Form {
 	case program.FfnMoE:
 		s.moe = true
+	case program.FfnGptOss: // a router with a logit bias and clamped experts: its own builders, but the same dispatch shape
+		s.moe, s.clamped = true, true
 	case program.FfnGated, program.FfnNonGated:
 	default: // gpt-oss, Llama 4, Nemotron and Gemma 4's own routed forms are other builders
+		s.otherForm = ops[i-1].FFN.Form
 		return s, false
 	}
 	s.postMLP = opt(program.OpNorm)
@@ -460,3 +481,7 @@ func gatedAttnQKNorm(lv ResidentLayerView) bool {
 	_, _, _, _, qn, _ := lv.Qwen35AttnWeights()
 	return len(qn) > 0
 }
+
+// clampedRoles are the runner's role names for the clamped router's three builders: the route, the clamped activation and the biased
+// down projection. They are the runner's names for builders it names by family, so they live beside the matcher, not in the pricing.
+var clampedRoles = [3]string{"routeGptOss", "gptossActQuant", "moeExpertGptOssDown"}
