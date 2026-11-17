@@ -187,12 +187,19 @@ func webgpuScratchHandDeepseekTiny() map[string]int64 {
 // one norm (a state-space mixer whose input projection has 168 rows over an inner width of 64 and a conv of 96, attention of 4 heads of 16 over
 // 2 KV heads, a non-gated FFN of 128, then a mixer and attention again).
 func webgpuScratchHandNemotronTiny() map[string]int64 {
+	return webgpuScratchHandNemotron([]string{"ssm", "attn", "mlp", "ssm", "attn"})
+}
+
+// webgpuScratchHandNemotron is the same layout over any run of its layer kinds; a "moe" layer is a routed block of 4 experts, top 2, width 32, with
+// a shared expert of 64, each expert non-gated.
+func webgpuScratchHandNemotron(kinds []string) map[string]int64 {
 	const H, V, inner, convDim, projRows, nH, hd, nKV, up = 64, 256, 64, 96, 168, 4, 16, 2, 128
 	pk := func(n int) int64 { return int64((n + 31) &^ 31) }
 	want := map[string]int64{"build": 4 + 4*256, "residual": 4 * H, "logitsStaging": 4 * V, "geomFor": 16 + 32, "qkvFinUniFor": 32,
 		"rmsQuant": pk(H) + 20, "gemv": 4*V + 16, "mambaSetup": 16 + 32 + 32}
 	add := func(role string, n int64) { want[role] += n }
-	for _, kind := range []string{"ssm", "attn", "mlp", "ssm", "attn"} {
+	const nE, K, expInter, shared = 4, 2, 32, 64
+	for _, kind := range kinds {
 		add("rmsQuant", pk(H)+20) // the layer's one norm
 		add("gemvAdd", 16)
 		switch kind {
@@ -207,6 +214,14 @@ func webgpuScratchHandNemotronTiny() map[string]int64 {
 		case "mlp":
 			add("gemv", 4*up+16)
 			add("relu2Quant", pk(up)+20)
+		case "moe": // the router's logits; the selection rows and each slot's up row; the router's uniform; the experts' uniforms; the activations; the shared expert
+			add("gemv", 4*nE+16)
+			add("nemoMoE", 4*2*K+4*K*expInter)
+			add("moeRoute", 32)
+			add("moeExpert", 2*K*16)
+			add("relu2Quant", K*(pk(expInter)+20)+pk(shared)+20)
+			add("gemv", 4*shared+16)
+			want["moeZeroBias"] = 4 * nE
 		}
 	}
 	return want
@@ -274,6 +289,7 @@ func TestWebGPUDecodeScratch_handTable(t *testing.T) {
 		{"nemotron (a layer of one operation: state-space, attention, non-gated FFN)", "nemotron-tiny", Options{}, webgpuScratchHandNemotronTiny()},
 		{"gpt-oss int4 (bias, output bias, window, clamped router)", "gptoss_tiny.gguf", Options{Quant: "int4"}, webgpuScratchHandGptoss("int4")},
 		{"gpt-oss int8 (bias folded into the projection)", "gptoss_tiny.gguf", Options{Quant: "int8int8"}, webgpuScratchHandGptoss("int8")},
+		{"nemotron3nano (routed blocks)", "nemotron3nano-tiny", Options{}, webgpuScratchHandNemotron([]string{"ssm", "moe", "ssm", "attn", "ssm", "moe"})},
 		{"glm-ocr (post norms)", "glm-ocr-tiny", Options{}, webgpuScratchHand(48, 3, 160, 128, 64, 144, false, true, "f32", "", false, false)},
 	} {
 		path := "../testdata/" + c.fx
