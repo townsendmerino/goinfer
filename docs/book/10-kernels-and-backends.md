@@ -309,7 +309,7 @@ chapter 10).
 
 *Sources: `docs/benchmarks.md` (lane statement, peer standings, re-anchor banner),
 `docs/capability-matrix.md`, [`docs/cuda-backend.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/cuda-backend.md), [`docs/hardware-matrix.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/hardware-matrix.md),
-[`docs/queue-performance.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/queue-performance.md) (P14 item 3: the 1.12× kernel result, the AVX2 accumulator
+the performance queue (kept privately) (P14 item 3: the 1.12× kernel result, the AVX2 accumulator
 refutation, and the wiring),
 [`docs/measurements/w4a8-splithalf-decode-ab-PREREGISTERED.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/w4a8-splithalf-decode-ab-PREREGISTERED.md) (the +2.10% A/B, its floor, the
 profile-vs-wall-clock bound, and the 4% bar fixed in advance),

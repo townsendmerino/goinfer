@@ -162,7 +162,7 @@ Not part of the library; nothing in the root imports them. `sdktest/`, `site/` a
 ## Documentation
 
 `docs/` holds design docs, `docs/book/` the inference primer, `docs/code-notes/` per-package notes, `docs/measurements/`
-records, and `docs/citation-index.md` plus `docs/QUEUE.md`. `changelog.d/` holds unreleased changelog fragments (folded into
+records. The queues, task docs, plans and the generated citation index are in a private notes checkout beside the repository (`../goinfer-notes`: `queues/`, `tasks/`, `plans/`; see `docs/README.md`). `changelog.d/` holds unreleased changelog fragments (folded into
 `CHANGELOG.md` at release).
 
 ## scripts/
@@ -177,7 +177,7 @@ About 316 files, referenced by path from CI, skills, the night runner and docs: 
 | `touched.py`, `touched_scans.py` | the day loop: build, vet and test what the diff touches |
 | `timing_lock.py`, `night.py`, `install-night-agent.sh` | the timing lock and the night queue |
 | `queue_citation_lint.py`, `book_link_lint.py`, `comment_census.py`, `readme_counts_check.py`, `doc_id_collisions.py`, `ci_checks.py` | lints (some run from the pre-push hook, `pre-push.sh`) |
-| `task_docs.py`, `doc_review_staleness.py` | task-doc ledgers and archiving |
+| `task_docs.py`, `doc_review_staleness.py` | task-doc ledgers and archiving (the docs are read from the notes checkout) |
 | `webui*` | browser gates for the web UI |
 | `s14*`, `s896*`, `g31*`, `q3vlmoe*`, `gemma4*` and other task-named files | one-off graders and probes from a named task |
 | `make_work.sh` | creates `go.work` from `go.work.example` |

@@ -50,11 +50,21 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 BULLET_RE = re.compile(r"^(?:-\s+)?\*\*([A-Z]{1,4}-?\d{1,4}[a-z]?)\s*(\([^)]*\))?\s*·")
 
 
+def queue_dir():
+    """Where the queue docs are: queues/ in the private notes checkout (`--notes PATH`, else a sibling ../goinfer-notes) when it has
+    one, else docs/ here."""
+    argv = sys.argv
+    cand = (pathlib.Path(argv[argv.index("--notes") + 1]).expanduser() if "--notes" in argv and argv.index("--notes") + 1 < len(argv)
+            else ROOT.parent / "goinfer-notes")
+    return cand / "queues" if (cand / "queues").is_dir() else ROOT / "docs"
+
+
 def scoped_files():
-    """docs/queue-*.md and docs/QUEUE.md itself — where this ID convention actually lives.
-    Excludes docs/completed/ (frozen; a duplicate there is historical, not something to fix)."""
-    out = list(sorted((ROOT / "docs").glob("queue-*.md")))
-    queue_md = ROOT / "docs" / "QUEUE.md"
+    """queue-*.md and QUEUE.md itself in queue_dir() — where this ID convention actually lives.
+    Excludes completed/ (frozen; a duplicate there is historical, not something to fix)."""
+    base = queue_dir()
+    out = list(sorted(base.glob("queue-*.md")))
+    queue_md = base / "QUEUE.md"
     if queue_md.exists():
         out.append(queue_md)
     return out
@@ -82,12 +92,16 @@ def find_collisions(path: pathlib.Path):
 
 def main() -> int:
     any_collision = False
-    for path in scoped_files():
+    files = scoped_files()
+    if not files:
+        print(f"doc_id_collisions: no queue docs under {queue_dir()}: nothing to check (pass --notes PATH for the notes checkout).")
+        return 0
+    for path in files:
         collisions = find_collisions(path)
         if not collisions:
             continue
         any_collision = True
-        rel = path.relative_to(ROOT)
+        rel = path.relative_to(ROOT) if ROOT in path.parents else path
         print(f"{rel}:")
         for item_id, hits in sorted(collisions.items()):
             print(f"  {item_id} defined {len(hits)} times:")
@@ -97,7 +111,7 @@ def main() -> int:
         print()
 
     if not any_collision:
-        print("doc_id_collisions: no duplicate queue-item IDs found in docs/QUEUE.md or docs/queue-*.md.")
+        print(f"doc_id_collisions: no duplicate queue-item IDs found in the {len(files)} queue doc(s) under {queue_dir()}.")
         return 0
 
     print(

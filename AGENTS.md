@@ -12,8 +12,8 @@ page adds no rule. It lists the ones an agent that did not load `CLAUDE.md` has 
   (record the decision, the date and the reason), and a commit ends with `Co-Authored-By`, no session URL** (`CLAUDE.md`,
   "Public text").
 - **Stage explicit paths.** Never `git add -A` or `git add .`. No rebase and no force-push: merge `origin/main`.
-- **A change that lands structure or closes work changes its task doc's ledger row in the same commit** (`CLAUDE.md`, "Task
-  docs: the ledger"). If no row owns the work, add one.
+- **A change that lands structure or closes work changes its task doc's ledger row when it lands** (`CLAUDE.md`, "Task
+  docs: the ledger"; the doc is in the maintainer's notes checkout). If no row owns the work, add one.
 - **A golden is never regenerated to turn a test green.** A moved decision census is a red run first, and the commit says
   which groups moved and why before `-census.update` (`internal/runtime/mem/CLAUDE.md`). A ratchet or pin that may only
   shrink is not raised without the owner's word.

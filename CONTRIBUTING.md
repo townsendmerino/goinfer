@@ -71,7 +71,7 @@ message or a doc. Say each thing once, at the declaration it binds, and cite cod
 - Changes you did not make in a file you are editing are someone else's in-flight work: commit your hunks and leave theirs.
 - A golden is never regenerated to turn a test green. A ratchet or pin that may only shrink is not raised without the
   maintainer's agreement.
-- A change that lands structure or closes tracked work updates the ledger row of its task doc in the same commit
+- A change that lands structure or closes tracked work updates the ledger row of its task doc when it lands
   (`CLAUDE.md`, "Task docs: the ledger").
 - Releases follow [`RELEASING.md`](RELEASING.md).
 

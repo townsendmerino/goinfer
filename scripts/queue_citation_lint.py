@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""queue_citation_lint.py — every citation in docs/QUEUE.md must resolve, and its target must match.
+"""queue_citation_lint.py — every citation in the queue must resolve, and its target must match.
 
-Commit citations (sha -> subject) are recorded in a generated index (docs/citation-index.md) and compared on every run. Code
+The queue is queues/QUEUE.md in the private notes checkout (a sibling ../goinfer-notes, or --notes PATH) when that holds one, else
+docs/QUEUE.md; with neither, the queue's commit citations are skipped and the run says so.
+
+Commit citations (sha -> subject) are recorded in a generated index (citation-index.md, beside the queue) and compared on every run. Code
 citations come in two forms since CC0 (docs/completed/task-code-comments-2026-10.md):
 
   - `path.go:Name` / `path.go:Type.Method` in a LIVE doc names a declaration, and the lint checks the file declares it NOW. Nothing is
@@ -1739,7 +1742,7 @@ def _main() -> int:
     # citation(s) across K live document(s)") let "across K live documents" read as covering both
     # clauses; it covers only the second.
     print(f"queue_citation_lint: VALIDATED {len(resolved) - len(allowed)} commit citation(s) in "
-          f"docs/QUEUE.md, {len(paths) - len(unkeyable)} path:line citation(s) across {ndocs} live "
+          f"the queue, {len(paths) - len(unkeyable)} path:line citation(s) across {ndocs} live "
           f"document(s), and {len(bresolved)} bare file reference(s) in the queue (existence only).")
     if unkeyable:
         print(f"  {len(unkeyable)} path citation(s) are EXISTENCE-CHECKED ONLY — their line content "

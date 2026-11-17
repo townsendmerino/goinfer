@@ -1,13 +1,15 @@
 # The docs, and how they fit together
 
-`docs/` holds ~675 files. They are not one kind of thing, and reading them as if they were is the
-main way people get a wrong answer here: a **design record** explains why something is built as it
-is, a **queue** holds what is still open, a **measurement** is evidence with a machine and a date
-on it, and an **archive** is finished work kept for its reasoning. Only some of them are current
-claims about the engine.
+`docs/` holds the public record. It is not one kind of thing, and reading it as if it were is the
+main way people get a wrong answer here: a **current-state page** says what is true of the engine
+now, a **measurement** is evidence with a machine and a date on it, and an **archive** is finished
+work kept for its reasoning. Only some of them are current claims about the engine.
 
-This page is the map. [`QUEUE.md`](QUEUE.md) is the map of *open work* specifically, and is the
-better starting point if you are picking something up.
+The queues of open work, the task docs (design records with their item ledgers) and the plans and
+scoping notes are the maintainer's working record and are not in this tree; see
+[Open work, task docs and plans](#open-work-task-docs-and-plans) below.
+
+This page is the map.
 
 ## Start here
 
@@ -15,7 +17,6 @@ better starting point if you are picking something up.
 |---|---|
 | [**use-from-go.md**](use-from-go.md) | importing goinfer into your own Go program: the working `go get`, the smallest program, output shaped like a Go struct or a JSON Schema, per-field confidence, and what v1.0 will bind; every code block is copied from `apps/examples/` and tested |
 | [**book/**](book/) · [read online](https://goinfer.dev/book/) | eleven-chapter inference primer for Go engineers — concepts from zero, each chapter ending in a measured number |
-| [task-download-and-load.md](tasks/task-download-and-load.md) | which checkpoints to download and what a load actually costs — plus why the load is compute-bound, not storage-bound |
 | [bigger-than-memory.md](bigger-than-memory.md) | running a model bigger than your RAM or your GPU: `-stream-weights`, `-moe-cache-experts`, and the swap-tripwire history |
 | [small-devices.md](small-devices.md) | a Raspberry Pi, not a microcontroller: cross-compile and copy, what memory floor and CPU features to expect, and why no board figure is published yet |
 | [quantization.md](quantization.md) | which quants goinfer stands behind, which it measured and refused, and where there is no evidence — reading a format is not endorsing it |
@@ -31,7 +32,7 @@ These are the pages to trust, and to update when reality moves.
 | [ARCHITECTURE.md](ARCHITECTURE.md) | how the pieces fit: the forward pass, loading and memory, the GPU backends and how residency is admitted, serving, configuration, modules and where cgo is quarantined |
 | [capability-matrix.md](capability-matrix.md) | **generated** from the `decoder` registry — 39 model families as of 2026-09-30. The registry is the source of truth; do not hand-edit |
 | [option-state-grid.md](option-state-grid.md) | **generated** from `decoder/optiongrid.go` and `decoder/cachestate.go` — every load option × execution path (tested, declined, admitted untested, n/a) and every kind of cache state × lifecycle path. The untested count only falls; do not hand-edit |
-| [citation-index.md](citation-index.md) | **generated** by `scripts/queue_citation_lint.py --update` — every `path:line`, SHA and bare-file citation in the live docs with the content it was keyed to. The lint's state, not reading material; do not edit or cite |
+| [citation-index.md](citation-index.md) | **generated** by `scripts/queue_citation_lint.py --update` — the commit citations of the queue with the subject each resolved to. The lint's state, not reading material; do not edit or cite |
 | [tool-call-coverage.md](tool-call-coverage.md) | per family: tool calls **constrained**, parsed only, or none — from a census of real checkpoints through `chat.Detect` (2026-09-24). What "tools: yes" does and does not promise |
 | [benchmarks.md](benchmarks.md) | **current claims only**, provenance-gated: machine, checkpoint, quant, date, thermal note. Section IDs are stable; a *Retired section IDs* index maps the ones that moved |
 | [legacy-benchmarks.md](legacy-benchmarks.md) | the retired, superseded and historical rows `benchmarks.md` used to carry — moved verbatim 2026-08-31 and 2026-09-05 (was `benchmarks-archive.md`). **Never a current claim**; kept so a retraction can be audited |
@@ -42,193 +43,19 @@ These are the pages to trust, and to update when reality moves.
 | [next-models.md](next-models.md) | which model families next, and why; what became of the last list (was `post-v1.0-models.md`) |
 | [capability-matrix.md](capability-matrix.md), [hardware-matrix.md](hardware-matrix.md), [env-vars.md](env-vars.md), [giw-bundles.md](giw-bundles.md) | generated or reference tables |
 
-## Open work — five queues by success criterion
+## Open work, task docs and plans
 
-[`QUEUE.md`](QUEUE.md) indexes them and holds the cross-cutting material. An entry lives in
-exactly one queue, keyed by *the question it answers*:
+What is still open, and why a thing is built the way it is, is kept in a private notes checkout beside this repository
+(`../goinfer-notes`), not here: `queues/` (`QUEUE.md` and the per-question queues, with the generated `citation-index.md`),
+`tasks/` (`task-*.md` design records, each with an item ledger, and `tasks/parked/`) and `plans/` (`plan-*.md`,
+`scoping-*.md`). `scripts/task_docs.py`, `scripts/queue_citation_lint.py`, `scripts/doc_id_collisions.py` and
+`scripts/doc_review_staleness.py` read them there when the checkout is present (`--notes PATH` names it) and say what they skipped
+when it is not; CI has no checkout. What the engine does and why is on the current-state pages above,
+[`ARCHITECTURE.md`](ARCHITECTURE.md), `code-notes/` and `spec/`. A code comment that points at a task doc or a queue points into the notes. A few of them still sit in `docs/` (`QUEUE.md` with its generated
+[`citation-index.md`](citation-index.md), `queue-engineering.md`, and six task docs) because the website's writeups cite them as their evidence.
 
-| queue | the question |
-|---|---|
-| [queue-performance.md](queue-performance.md) | how fast, how much memory — **four open items as of 2026-09-23** (P21, P23, P24, P25; was briefly empty on 2026-08-31); the closed record is [completed/queue-performance.md](completed/queue-performance.md) |
-| [queue-correctness.md](queue-correctness.md) | does it compute the right thing — one open item (G12, LFM2 GGUF loader) plus one PARKED item (G8, unvalidatable on hardware here); closed entries in [completed/queue-correctness.md](completed/queue-correctness.md) |
-| [queue-engineering.md](queue-engineering.md) | would we find out |
-| [queue-release.md](queue-release.md) | can we tag |
-| [queue-presentation.md](queue-presentation.md) | what a user sees, reads, or can find — filed 2026-09-15 |
-
-## Design records — `task-*.md`
-
-Why a thing is built the way it is. **These are cited from 88 code comments**, which is why they
-stay put rather than collapsing into queue entries: a queue entry cannot carry a design argument.
-A `task-*.md` is not a claim that the work is open — read its status header.
-
-**`tasks/` is the home for these** (`tasks/parked/` for a doc-review PARKED verdict — blocked,
-trigger named). Migration finished 2026-09-13: every `task-*.md` that was still live moved out of
-the flat `docs/` root during a full `/doc-review` sweep, on top of the 7 moved a few hours earlier;
-`docs/README.md`'s own migration note above this line is now historical, not a live caveat — a new
-`task-*.md` doc should be filed directly into `tasks/` (or `tasks/parked/`) rather than the root.
-One exception, by design: [`task-demo-refresh.md`](task-demo-refresh.md) stays in the root as a
-two-line pointer stub (the `docs/plan-still-slow.md` shape) because its real content already lives
-at `docs/completed/task-demo-refresh.md` and other pages still link the old path — it is not a
-design record itself, so it is not counted above.
-
-One is a program rather than a single design, and is named without the `task-` prefix:
-[`red-october.md`](completed/red-october.md) — the backend × area performance gap matrix (CPU / WebGPU /
-CUDA / Metal against the peers, as of 2026-09-18), the mechanism behind each cell, the registered
-projection bands, and the twelve briefs R1–R12 that would close them. It is the one place the whole
-chase is on a page; `benchmarks.md` stays the source of every ratio it quotes.
-
-[`task-never-swap-2026-09.md`](completed/task-never-swap-2026-09.md) (S0–S6, filed 2026-09-22; **complete and archived 2026-10-21**) is its
-memory-side companion: what is anonymous and what is file-backed on each load path (why a plain
-`.gguf` load and a Metal resident build swap on the MacBook and a CPU `.giw` load does not), and the
-briefs for file-backed weights by default, a swap tripwire in the binary, the fit guard on the
-`.giw` path, Metal aliasing the mapping instead of copying it, and a firm cap for the MoE pager
-where darwin allows one.
-
-[`task-minimax-code-compat-2026-09.md`](tasks/task-minimax-code-compat-2026-09.md) (M0–M7, filed
-2026-09-25) scopes goinfer as a backend for MiniMax's `mcode` coding agent: what already works by
-reading both codebases, the measured run that gates the rest, and the fixes — a context default an
-agent fits in, a thinking switch, and reasoning emitted separately.
-
-[`task-cpu-kv-f16-2026-10.md`](completed/task-cpu-kv-f16-2026-10.md) (filed 2026-10-12; **complete and archived 2026-10-21**: way A shipped as the opt-in `--kv f16`, way B is P27, parked) scoped a
-half-precision KV cache on the CPU as the command lines' default, with f32 kept as the reference: what the cache and
-its readers are today, why the earlier int8 task rejected f16 and what has changed since, a recommendation on its two
-decisions (2026-10-14), and its gates, registered that day before any code.
-
-[`task-subsystems-2026-10.md`](completed/task-subsystems-2026-10.md) (VK0–VK6, MM0–MM8, AX0–AX7, SB1–SB14 and PW1–PW6, filed
-2026-10-26; **archived 2026-11-08** as the record, its open rows in [`task-forward-and-memory-2026-11.md`](tasks/task-forward-and-memory-2026-11.md); SD1 decided the same day) starts from where session time went in October (CI waits first, then
-local tests and gates; the hour-long runs are timed and real-checkpoint gates, and most night-queue failures are the
-box's state, not a test) and proposes subsystems whose contracts are checked in seconds and whose fingerprints the
-validations above them key on: parity keyed on behavior instead of source files and aikit's version (VK); one
-memory-management subsystem with a pure planner, a ledger with leases and one arbiter (MM); the towers and GPU backends
-moving from aikit into goinfer (AX, decided); the backend interface, admission, formats, engine policies, the scheduler,
-the serving shell, the codec, configuration, counters and gate infrastructure (SB); and the waiting itself (PW). Its
-census is [`measurements/subsystems-2026-10.md`](measurements/subsystems-2026-10.md).
-
-[`task-claude-code-hygiene-2026-10.md`](completed/task-claude-code-hygiene-2026-10.md) (DX1–DX10, filed 2026-10-30) is one
-plan across goinfer, ken and tack for the Claude Code setup around them: shorter `CLAUDE.md` files, staticcheck and two
-lints that end in a VERDICT line, a PreToolUse hook that refuses the known-bad commands and logs each refusal, and a
-monthly rule review that proposes cuts from that log.
-
-[`task-kernel-survey-2026-10.md`](tasks/parked/task-kernel-survey-2026-10.md) (survey, filed 2026-10-22) is a static read of
-every kernel in goinfer and aikit for speed and memory: about seventy candidates by backend (KS-A to KS-H), each with its
-arithmetic, identity class and first measurement, four owner decisions, and eleven places a doc or comment no longer
-matches the code. Nothing in it is built or measured.
-
-[`task-kv-precision-everywhere-2026-10.md`](tasks/task-kv-precision-everywhere-2026-10.md) (filed 2026-10-20; live) makes
-`--kv f32|f16|i8` deliver the precision asked for on every backend, family and path, or refuse the load by name. Phase 0 (the
-resolver, the refusals and the generated matrix) shipped 2026-10-20; CUDA int8 for the dense families (B39) is staged S1 to S5,
-S4 open.
-
-[`task-cpu-prefill-memory-2026-10.md`](completed/task-cpu-prefill-memory-2026-10.md) (G40, registered 2026-10-14) diagnoses the
-CPU prefill's memory high-water: every working buffer sized by the whole prompt, the KV regrowing as it is written, and Go
-keeping the freed heap. It registers the fix (2,048-row chunks with the suffix's fast-attention decision, the KV reserved
-once, memory returned after a long prompt) and its parity, memory and speed gates.
-
-[`task-kv-architecture-2026-10.md`](tasks/task-kv-architecture-2026-10.md) (KV0–KV11, filed 2026-10-13; KV0 done the same day)
-proposes one KV architecture for every backend: a manager in the decoder that owns sequences, per-layer-group block
-tables, a content-addressed prefix index and tiers, with backends reduced to block storage and recurrent state as a
-checkpointed second pool. It lists what today's per-slot design costs, what must not change, the phases and their
-gates, and the owner decisions. The first, D1, is decided: the owner un-parked paged KV on 2026-10-13, for memory and
-reuse, with continuous batching still parked. KV11, added the same day, puts KV blocks and paged MoE experts under one
-memory budget in place of today's fixed split.
-
-[`task-memory-campaign-2026-10.md`](completed/task-memory-campaign-2026-10.md) (MEM0–MEM17, filed 2026-10-17; **archived 2026-11-08**: MEM10's build is in [`task-forward-and-memory-2026-11.md`](tasks/task-forward-and-memory-2026-11.md), the parked rest P37 to P40 in `queue-performance.md`)
-picks up where never-swap and the KV program stop: every large structure in goinfer and aikit with its share of a
-typical session, how each is held today, and the briefs for what is left — a public mapped load for library callers,
-multimodal towers (f32 heap copies, host copies beside GPU copies, Metal tower scratch never freed), prefill scratch
-for the families G40 did not chunk, the Metal int8 head pin, MoE expert copies on Metal and CUDA, f32 islands, the CPU
-heap, and aikit's BM25, HNSW, encoder and chunk-text items.
-
-[`task-clairic-2026-10.md`](tasks/parked/task-clairic-2026-10.md) (E0–E5, filed 2026-10-19, waiting on weights) scopes
-Cloudflare's Clairic, a System One extraction model (typed values from unstructured input in one forward pass, no
-output tokens), on goinfer. It sits beside the parked decisions work and does not reopen it; its own trigger is the
-weights published under a licence that permits redistribution, and only E0, desk work on the API, can run before that.
-
-[`task-forward-and-memory-2026-11.md`](tasks/task-forward-and-memory-2026-11.md) (filed 2026-11-08, live) holds the open and
-parked rows of the forward-architecture and subsystems programs, both archived that day, plus the memory campaign's MEM10:
-the ragged step (RF2 to RF6), the remaining operations (OP1 on WebGPU, OP5, OP6), HL on CUDA, the memory planner's CUDA half
-and gap fixes (MM5, MM5b, MM8), and WebGPU fit planning (SB2-vk). Each row names the archived section it comes from.
-
-[`task-forward-architecture-2026-10.md`](completed/task-forward-architecture-2026-10.md) (OP0–OP6, RF0–RF6 and HL, filed
-2026-10-13; **archived 2026-11-08** as the record: OP0 to OP4, RF0, RF1 and HL on Metal done, the open rows in [`task-forward-and-memory-2026-11.md`](tasks/task-forward-and-memory-2026-11.md)) is the compute half of the same redesign.
-- **Track OP** describes a model to the GPU backends as a per-layer list of operations, so a backend implements operations
-  rather than families.
-- **Track RF** replaces the resident's one entry point per request shape with one ragged forward call, which carries decode,
-  verify, prefill and image rows from any number of conversations.
-- **It starts from where a query's time goes** and from why each CPU-only family declines; its baseline record,
-  [`measurements/forward-arch-baseline-2026-10-13.md`](measurements/forward-arch-baseline-2026-10-13.md), has both
-  readings.
-- **Its first steps stand alone:** attention softcapping so Gemma 2 runs on every GPU, per-turn timing on the wire, and
-  run-ahead decode under tool and thinking-budget processors.
-
-[`task-constrained-confidence.md`](tasks/parked/task-constrained-confidence.md) (C0–C2 and D0–D14, filed
-2026-09-27, **parked 2026-10-05**: what is open and the trigger to reopen it are at its top) is confidence on answers.
-- **Shipped:** per-field probabilities on schema-constrained output (C0–C2), and a TypeSafe-compatible decisions
-  endpoint, `POST /v1/systemone` (D5). It takes a state plus typed questions in and returns a distribution over the
-  allowed answers, with one prefill per question and no decode, by label-token scoring on any model (D1).
-- **Route B:** D6a graded "build", and autotrust's JEV decision heads on `qwen3_5` are built (D2–D4). D6b passed at f32; the
-  quantized arms keep calibration but miss the 98% top-1 bar, so the decision-model default quant is the owner's call.
-- **Added 2026-10-01:** Route C, Cloudflare's Clef and Clef-flash (D10–D14): a joint head over all positions' hidden states on a
-  merged `qwen3_5` backbone, one backbone pass for every question.
-
-[`task-glm-ocr-2026-10.md`](completed/task-glm-ocr-2026-10.md) (O0–O7, filed 2026-10-01, closed and archived 2026-10-04) scoped GLM-OCR, a 0.9B
-document-OCR model: the text decoder on the generic path from existing parts, a new aikit tower, a pixel budget
-for laptops, and schema-bound extraction (an invoice image into a Go struct) as the demo. O0 (reading) is done
-2026-10-01 and stops nothing: O1 (decoder) and O2 (tower, from aikit's Qwen3.5+ encoder) are unblocked.
-
-[`task-metal-audit-2026-10.md`](completed/task-metal-audit-2026-10.md) (filed 2026-10-01, **closed and archived 2026-10-05**; its live remainder is
-[`tasks/parked/task-metal-audit-followups-2026-10.md`](tasks/parked/task-metal-audit-followups-2026-10.md)) ran the Metal audit's §10 items
-([`audit-metal-2026-09-30.md`](audit-metal-2026-09-30.md), which stays live): guards and gates first, night probes, then the builds in order. Among
-what shipped: the hd = 64 and G = 2–8 block attention kernels, the batched step's rows forms and device argmax, batched DeltaNet prefill
-(8.06×), exact layer-major paged MoE prefill, and the serve chain; the peer refresh after it put Metal decode ahead of Ollama in all 12 cells.
-
-[`task-hardware-coverage-2026-10.md`](completed/task-hardware-coverage-2026-10.md) (H0–H6, filed 2026-10-01, **closed and archived 2026-10-05**; its live remainder is
-[`tasks/parked/task-hardware-followups-2026-10.md`](tasks/parked/task-hardware-followups-2026-10.md)) was about the hardware goinfer is not built on: a checked census of every path selected by a CPU feature,
-a GPU attribute or a memory size (`hardware-coverage.json`, and the generated "Verified on" section of `hardware-matrix.md`), ways to reach those paths without owning the machine (CI runners including windows-arm64,
-Intel SDE, forced fallbacks, faked probes), a startup self-test on CPU, CUDA, WebGPU and Metal that declines rather than answers wrong, and a pasteable `check --hardware` report.
-
-[`task-pull-to-giw-2026-09.md`](tasks/parked/task-pull-to-giw-2026-09.md) (a proposal, filed 2026-09-25; P0 done, parked 2026-11-09 with its five decisions taken) is about disk:
-`pull` converting to `.giw` after a verified download and keeping the `.gguf` only on request, and a load that finds the `.giw` without its source. It was indexed nowhere before the review.
-
-[`task-test-efficiency-2026-09.md`](completed/task-test-efficiency-2026-09.md) (TE0–TE12, filed 2026-09-28, **closed and archived 2026-10-04**; its live rules are in `CLAUDE.md`'s "Run budget" and "Gate tiers") was the
-verification-cost campaign: a census of where the machine time goes (served gates that are mostly idle-gate waiting
-and start-up, measurement gates that live in `go test`, fidelity gates whose fixed prompt count ignores what each
-criterion needs, parity bookkeeping that re-validates every family for a local edit) and the items that cut it — an idle
-gate that reads current load, sequential counterbalanced gates, prompt budgets sized per criterion, the cheapest
-instrument that resolves the bar, identity against the last validated build, and `gate quick` — each with a proof
-that it still detects what it did.
-
-[`task-code-comments-2026-10.md`](completed/task-code-comments-2026-10.md) (CC0–CC6, filed 2026-10-09, scoped) moves the history
-out of the Go comments and keeps the guardrails: a census of where it sits (long comments, most of them dated, cited or
-carrying figures), docs linking to code by declaration name and dated records pinned to their own commit (CC0, first),
-a `gate comments-only` check, notes files for moved text, a pilot with its band written first, and the package order.
-Its rule is `CLAUDE.md` § "Code comments".
-
-[`task-giw-cold-load-2026-10.md`](completed/task-giw-cold-load-2026-10.md) (filed 2026-10-11, **complete and archived the same day**: built on Linux and macOS, every gate read) is the cold
-load of a `.giw`. The loader's header walk reads nearly the whole file of an MoE bundle in scattered windows (btrfs); reading
-it front to back first took a cold 35B's first reply from 38.5 s to 23.0 s in its gate, and a dense model is unaffected. On macOS
-a cold bundle that fits is prefetched before a CPU load (a 7 GB MoE's first reply from 8.8 s to 5.4 s); a Metal load is left alone.
-
-[`task-giw-v16-transcode-2026-10.md`](completed/task-giw-v16-transcode-2026-10.md) (T0–T8 and V1–V7, filed 2026-10-10, **complete and archived 2026-10-11**)
-makes the transcode fast, then makes `.giw` one readable layout. The transcode half is byte-identical work: windowed layer
-parallelism in the nine streaming loops, row-parallel logit tables, parallel safetensors experts, a fast int4 quantizer
-in aikit, a tiled transpose, and no in-RAM repack while building for a sink. The format half is v16: the reader reads
-exactly one version, kinds 4 and 7 and the Metal files' dead f32 scale arrays go, and so does the f16 side map. Its
-exploratory profile is [`measurements/transcode-audit-2026-10/`](measurements/transcode-audit-2026-10/README.md).
-
-Two are the outside view rather than a design. [`task-first-hour.md`](completed/task-first-hour.md)
-records what a cold user hit against a published tag, what was fixed, and the protocol for running
-it again — `RELEASING.md`'s pre-flight now calls for one before each release.
-[`task-library-surface-review-2026-10.md`](tasks/task-library-surface-review-2026-10.md) applies
-the same protocol to the Go library as the embedding developer's product, before v1.0 binds it.
-[`task-option-path-admission-2026-10.md`](completed/task-option-path-admission-2026-10.md) (**closed and archived 2026-10-21**) treated the audits'
-findings as a dataset: "an option or family not registered with a guard" was common enough (27.2% of 261 findings, 2026-10-08) to become a
-fail-closed options × paths gate, built the same day; the grids and the rule for joining one are in [`option-state-grid.md`](option-state-grid.md).
-[`task-harness-reliability-2026-10.md`](tasks/task-harness-reliability-2026-10.md)
-asks how many wire dialects the coding-agent harnesses speak and how often a tool call breaks a whole session.
-
-`spec/` (13) is the same kind of thing for speculative decoding specifically, run as a numbered
-series with pre-registered kill-gates.
+`spec/` (13) holds the design series for speculative decoding, run as numbered documents with
+pre-registered kill-gates.
 
 ## Evidence — `measurements/` (275)
 
@@ -249,7 +76,6 @@ separate sweep because this step kept being skipped at move time.
 ## Other kinds
 
 - `releases/` (12) — per-release records; `RELEASING.md` at the repo root is the authority on ritual.
-- `scoping-*.md`, `plan-*.md` — pre-build scoping, some superseded; check the status header.
 - [`what-parity-gated-means.md`](what-parity-gated-means.md) — the reader-facing explanation of
   what a parity claim covers and does not; `parity-coverage-policy.md` and `parity-hunt-playbook.md`
   below are the internal detail on how it is established and chased.
