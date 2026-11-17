@@ -1,5 +1,8 @@
 # goinfer — agent notes
 
+Rules here are true for any contributor. A maintainer's machine names, home-directory paths, guard decisions and session
+procedures live in a gitignored `CLAUDE.local.md` that Claude Code loads beside this file; nothing here depends on it.
+
 ## Working in the tree
 
 **Layout:** `docs/layout.md` maps every directory, module and `scripts/` prefix. `scripts/make_work.sh` creates `go.work` from `go.work.example`.
@@ -17,12 +20,12 @@ the proxy at its last published tag, so "method not found" on good code is expec
 `go run ./cmd/lint`, which checks the binary is CI's pinned build (and prints the build command if not), proves it analyses
 with a canary, runs CI's targets under `GOOS=linux` itself, and ends with a VERDICT line. An empty staticcheck result is
 indistinguishable from one that never ran. Never combine `go run …staticcheck` with `GOOS=linux`: it builds a Linux binary
-the Mac cannot exec, and the shell still reports exit 0.
+a darwin host cannot exec, and the shell still reports exit 0.
 
-**Product code reaches `main` through a pull request that merges itself; do not watch CI** (Francis, `docs/completed/task-subsystems-2026-10.md` §12 PW1).
+**Product code reaches `main` through a pull request that merges itself; do not watch CI** (maintainer decision, October 2026).
 - Push your branch, open a PR, and at once, checks still pending, run `gh pr merge <n> --repo <owner/repo> --auto --merge`
   as its own bare command (no `cd`, no `&&`); then print `BRANCHES READY: #<n> <head sha>`. Never a plain `gh pr merge`
-  without `--auto`. If `--auto` is denied, print `BRANCHES READY` and say so; the coordinator takes it to Francis. **Never
+  without `--auto`. If `--auto` is denied, print `BRANCHES READY` and say so in the PR. **Never
   route around a denial** (no other merge command, no API call, no asking another session).
 - The PR need not be rebased onto the newest `main`; a conflict leaves it open. Nobody holds a turn open on its checks or main's CI, polls them, or
   schedules wake-ups for them. Read the result at the next natural point (`gh pr view <n> --json state`, `gh run list
@@ -30,28 +33,29 @@ the Mac cannot exec, and the shell still reports exit 0.
   cover several merges, each green on its own.
 - Branch protection does not enforce this (admins are exempt); the rule does. Only two pushes go straight to `main`: a
   docs-only change (`scripts/ci_docs_only.sh`: `docs/**`, `RELEASING.md`, `.claude/**`) and a release, per `RELEASING.md`.
-- **If a hook holds a push you believe is wrong, stop and report it to Francis. Never `--no-verify`.** A background push job
+- **If a hook holds a push you believe is wrong, stop and report it to the maintainer. Never `--no-verify`.** A background push job
   pushes a named commit (`git push origin <sha>:<branch>`), never `HEAD`, from a worktree no one else edits.
 
 **No new production env reads.** `testdata/env_reads.txt` lists every `GOINFER_*` variable production code reads, and
 `TestEnvVars_docAndCodeAgree` fails on one not listed. A new operator choice is a `decoder.Options` field with a per-model
 accessor; a new diagnostic is a test hook. The list only shrinks (`docs/env-vars.md` § "Policy — where a new setting goes").
 
-**A change to any guard threshold (swap, fit, memory) needs Francis's word, the same as a bypass flag.** The swap guard's
-default is 512 MB. Nobara's plans set `swap_guard_mb` 4096 only as Francis's decision of 2026-10-17, and only until a build
-carries the per-process guard (dba04134 or later); a plan then drops `swap_guard_mb` and takes the default. No other plan,
-script or box takes 4096 on its own, and only Francis writes `swap_guard_approved_by` (the timed-run skill, § "Guard thresholds").
+**A change to any guard threshold (swap, fit, memory) needs the maintainer's word, the same as a bypass flag.** The swap guard's
+default is 512 MB. A night plan that pins another value records who approved it and when (`swap_guard_approved_by` and
+`swap_guard_approved_on`, which `night.py add` enforces); only the maintainer writes `swap_guard_approved_by`, and an agent that
+writes it has made the slip a bypass flag is (the timed-run skill, § "Guard thresholds").
 
 **Never `git add -A` / `git add .`.** It sweeps generated fixture metadata into git, and dir-only skip-guards then read a
 fixture as present. Stage explicit paths.
 
-**`main` moves under you.** `git fetch` and rebase before pushing. Changes you did not make in a file you are editing are
+**`main` moves under you.** `git fetch` and merge `origin/main` into your branch before pushing: no rebase and no force-push,
+because a cited commit id must stay valid. Changes you did not make in a file you are editing are
 someone else's in-flight work: commit *your* hunks, leave theirs in the tree.
 
 ## Models and benchmarks
 
-**Every timed run reads its checkpoint from `~/models` on the machine doing the timing; a row measured from `/srv/models`
-or `/Volumes/` (the archive) is void.** `bench_peer.py` refuses those paths; `docs/benchmarks.md` § "Model storage" is the authority.
+**Every timed run reads its checkpoint from fast local disk on the machine doing the timing, never from an archive or a network
+share; a row measured from one is void.** `bench_peer.py` refuses those paths; `docs/benchmarks.md` § "Model storage" is the authority.
 
 `docs/benchmarks.md` is provenance-gated: a number enters a table only with machine, checkpoint+quant, greedy/seed, pinned
 versions, date, thermal note and local-disk path; read its Methodology first. Peer comparisons go through
@@ -106,7 +110,7 @@ Each rule's story is in the model-bring-up skill, `.claude/skills/model-bring-up
 
 ## Rigor matched to stakes
 
-Francis, 2026-10-30: match the process to what the result decides.
+Maintainer decision, 2026-10-30: match the process to what the result decides.
 - **Full measurement discipline** (pre-registration, registered gates, stopping rules, a measurement record) only when a
   number will be published, or will settle a direction: adopt or kill a feature, choose a model, a default or a guard threshold.
 - **Ordinary engineering** (refactors, test moves, tooling, bug fixes, docs): a red-first test where behavior changes,
@@ -121,7 +125,7 @@ Francis, 2026-10-30: match the process to what the result decides.
 counters, bit-identity on tiny fixtures) by default; tier 1 (one small real model, by day, wall time stated first); tier 2
 only for a published number or a small-effect decision. Never re-measure an unchanged arm; stop when the answer is clear;
 fit-check every load before a timed run or night job. **Tier 1 GPU runs hold the timing lock exclusively**
-(`timing_lock.py run`), so two sessions' GPU checks do not share the card. Never-swap gates, nobara's fit checks, the desktop
+(`timing_lock.py run`), so two sessions' GPU checks do not share the card. Never-swap gates, fit checks on an 8 GB CUDA card, the desktop
 compositor's CUDA context and `cuMemAlloc`'s 2 MiB rounding: the timed-run skill, § "Testing tiers".
 
 ## Day loop
@@ -138,11 +142,11 @@ A change that forces a long run by day is a modularity bug: say so, naming the e
 **Read the timed-run skill, `.claude/skills/timed-run/SKILL.md`, before any timed run, night job or gate
 registration;** it has the full rules and the gate-tiers table. In short: timed runs go by day, through the timing lock
 (`timing_lock.py run`, or a harness that takes it), one per box, with the start and expected finish time stated first.
-Night (`night.py`) is only for a Mac job the fit guard refuses while Francis's apps are open, or one over about 2 hours.
+Night (`night.py`) is only for a job the fit guard refuses while the owner's desktop apps are open, or one over about 2 hours.
 Any other build or test you run holds the lock shared (`timing_lock.py run --shared --label <what> -- <cmd>`); never delete
 the lock file; a command that touches the other box checks its lock in the same command and ends if held. Comparisons run
-A B B A in one session on one box; a cell started under heavy load is void (re-run, listed, never averaged). "Run it now"
-from Francis means run it now.
+A B B A in one session on one box; a cell started under heavy load is void (re-run, listed, never averaged). An explicit
+instruction from the maintainer to run now means run now.
 
 ## Gate tiers
 
@@ -186,7 +190,7 @@ The measurements are the product; each rule's evidence is in the timed-run skill
   test-only switch back is not one). The registered bar still decides any change that alters outputs.
 - **A lossless opt-in feature merges at median ≥ 1.05× with at least 9 of 10 timed pairs faster** (bit-identical, or inside a
   registered fidelity gate); its PR states device and host bytes and any effect on the longest context that fits.
-  **Changing a default** also needs the gain judged against its memory and Francis's call. An investment bar is not a merge bar.
+  **Changing a default** also needs the gain judged against its memory and the maintainer's call. An investment bar is not a merge bar.
 - **Include the do-nothing arm. Pre-register the decision rule** for a number that will be published or a result that
   settles a direction ("Rigor matched to stakes"), with an explicit *ambiguous → parked* band. **Commit negative results** with the same care; move a bar only with a mechanism.
 - **Read prior art before re-deriving,** for what it concluded: a doc may say something narrower than its headline.
@@ -198,4 +202,4 @@ The measurements are the product; each rule's evidence is in the timed-run skill
 ## Releases
 
 `RELEASING.md` is the authority: seven workspace modules (five tagged in a two-step release; `apps/sdktest` and `apps/site` are never tagged), and a GitHub Release on the root tag only as a non-optional
-final step. Do not restate its version numbers; read them with the command it gives. `gh` uses the **townsendmerino** account.
+final step. Do not restate its version numbers; read them with the command it gives.
