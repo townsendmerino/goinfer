@@ -147,6 +147,42 @@ func webgpuScratchHandQwen35Tiny() map[string]int64 {
 	return want
 }
 
+// webgpuScratchHandDeepseekTiny is deepseek-tiny's figure from its config (hidden 64, vocabulary 128, 4 layers of latent attention: 4 heads,
+// query rank 24, latent rank 16, qk nope 16 and rope 8, v head 16; layer 0 a dense FFN of 128, layers 1 to 3 routed: 8 experts, top 2,
+// width 32, an ungated shared expert of 32). Latent attention builds no per-geometry attention uniforms.
+func webgpuScratchHandDeepseekTiny() map[string]int64 {
+	const H, V, L, nH, qRank, rank, nope, rope, vHead = 64, 128, 4, 4, 24, 16, 16, 8, 16
+	const nE, K, inter, shared, dense = 8, 2, 32, 32, 128
+	pk := func(n int) int64 { return int64((n + 31) &^ 31) }
+	qkHead, latDim := nope+rope, rank+rope
+	want := map[string]int64{"build": 4 + 4*256, "residual": 4 * H, "logitsStaging": 4 * V, "mlaSetup": 32 + 48 + 32,
+		"rmsQuant": pk(H) + 20, "gemv": 4*V + 16, "moeZeroBias": 4 * nE}
+	add := func(role string, n int64) { want[role] += n }
+	for l := 0; l < L; l++ {
+		add("rmsQuant", 2*(pk(H)+20)+pk(qRank)+20) // the two pre-norms, and the query bottleneck's norm
+		add("gemv", 4*int64(qRank)+16+4*int64(nH*qkHead)+16+4*int64(latDim)+16)
+		add("mlaLayer", 4*int64(nH*latDim+nH*rank+nH*vHead)) // the absorbed query, the rank-space sum, the lifted context
+		add("mlaAbsorb", 32)
+		add("mlaLift", 32)
+		add("quant", pk(nH*vHead)+20)
+		add("gemvAdd", 16)
+		if l == 0 {
+			add("gemv", 4*2*dense+2*16)
+			add("actQuantPad", pk(dense)+20)
+			add("gemvAdd", 16)
+			continue
+		}
+		add("gemv", 4*nE+16)
+		add("moeFFN", 4*2*K+4*2*inter)
+		add("moeRoute", 32)
+		add("moeExpert", 3*K*16)
+		add("swigluQuant", int64(K)*(pk(inter)+20)+pk(shared)+20)
+		add("gemv", 4*2*shared+2*16)
+		add("gemvAdd", 16) // the shared expert's down projection, fused
+	}
+	return want
+}
+
 func withTerm(m map[string]int64, role string, b int64) map[string]int64 {
 	m[role] = b
 	return m
@@ -173,6 +209,7 @@ func TestWebGPUDecodeScratch_handTable(t *testing.T) {
 		{"glm (dense prefix, ungated shared expert, qk-norm)", "glm-tiny", Options{}, webgpuScratchHandMoE(64, 256, 64, 32, []int{128, 0, 0}, 8, 2, 32, 32, false, true)},
 		{"qwen35 (delta-net, gated attention, routed FFN)", "qwen35-tiny", Options{}, webgpuScratchHandQwen35Tiny()},
 		{"smollm3 (a layer with no rope operation)", "smollm3-tiny", Options{}, webgpuScratchHand(64, 4, 512, 64, 16, 128, false, false, "f32", "", false, false)},
+		{"deepseek (latent attention, dense then routed FFN)", "deepseek-tiny", Options{}, webgpuScratchHandDeepseekTiny()},
 		{"glm-ocr (post norms)", "glm-ocr-tiny", Options{}, webgpuScratchHand(48, 3, 160, 128, 64, 144, false, true, "f32", "", false, false)},
 	} {
 		m, err := Load("../testdata/"+c.fx, c.o)

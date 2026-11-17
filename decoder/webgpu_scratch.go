@@ -48,8 +48,8 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 	scales := map[float32]bool{}
 	var gemv, gemvAdd, actQuant, attnLayer, quantB, rmsQuantB, qkNormB, rmsnormB, biasAddB, gemvBiasB, moeFFN, moeRoute, moeExpert, swiglu, sharedCombine int64
 	var moeNE int
-	var deltaLayer, qSplit, attnGate int64
-	anyDelta := false
+	var deltaLayer, qSplit, attnGate, mlaLayer, mlaAbsorb, mlaLift, nRmsExtra int64
+	anyDelta, anyLatent := false, false
 	pk := func(k int) int64 { return int64((k + 31) &^ 31) }
 	rmsQuantB = pk(H) + 20 // one call per sublayer norm and the final norm: the int8 row, its scale, its uniform
 	nRms, nQuant := int64(1), int64(0)
@@ -103,6 +103,11 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 		switch {
 		case shape.gated:
 			mixer = append(mixer, "q-gate", "attn-gate")
+		case shape.latent:
+			mixer = []string{"mla-ctx", "mla-kv", "mla-q", "mla-q-abs", "mla-wsum"}
+			if rows["mla-qa"] > 0 { // a low-rank query projection
+				mixer = append(mixer, "mla-qa")
+			}
 		case shape.delta:
 			mixer = []string{"dn-ba", "dn-beta", "dn-conv", "dn-core", "dn-decay", "dn-gated", "dn-k", "dn-mixed", "dn-q", "dn-z"}
 		}
@@ -126,6 +131,32 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 		}
 		if len(rows) != want {
 			return nil, fmt.Sprintf("layer %d: declared rows beyond the derived ones", l)
+		}
+		if shape.latent {
+			anyLatent = true
+			for _, pre := range [][]float32{m.w.Layers[l].PreAttnNorm, m.w.Layers[l].PreMLPNorm} {
+				if len(pre) == 0 {
+					nQuant++
+				} else {
+					nRms++
+				}
+			}
+			// The query projection (through a low-rank bottleneck and its norm where there is one), the latent projection; the absorbed
+			// query, the rank-space context sum and the lifted context rows; the absorb and lift dispatches' uniforms.
+			gemv += 4*int64(rows["mla-q"]+rows["mla-kv"]) + 2*16
+			if qa := rows["mla-qa"]; qa > 0 {
+				gemv += 4*int64(qa) + 16
+				nRmsExtra += pk(qa) + 20
+			}
+			mlaLayer += 4 * int64(rows["mla-q-abs"]+rows["mla-wsum"]+rows["mla-ctx"])
+			mlaAbsorb += 32
+			mlaLift += 32
+			quantB += pk(rows["mla-ctx"]) + 20
+			gemvAdd += 16
+			if err := ffnTerms(l, shape, rows, nE, topK, shared, hasShared); err != "" {
+				return nil, err
+			}
+			continue
 		}
 		if shape.delta {
 			anyDelta = true
@@ -216,16 +247,23 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 		attnLayer += 4*int64(rows["ctx"]) + 16
 		quantB += pk(rows["ctx"]) + 20
 	}
-	if len(scales) == 0 {
+	if !haveGeom && !anyDelta && !anyLatent {
 		return nil, "the model has no layers"
 	}
 	gemv += 4*int64(V) + 16 // the head
-	geomB := int64(16 + 32) // the v-store and attention uniforms
-	if win {
-		geomB += 32
+	geomB := int64(0)
+	if haveGeom {
+		geomB = 16 + 32 // the v-store and attention uniforms
+		if win {
+			geomB += 32
+		}
+		if kv == mem.KVI8 {
+			geomB += 32
+		}
 	}
-	if kv == mem.KVI8 {
-		geomB += 32
+	mlaSetupB := int64(0)
+	if anyLatent {
+		mlaSetupB = 32 + 48 + 32 // the latent store's, the query rope's (twelve words) and the attention's uniforms, shared across layers
 	}
 	deltaSetupB := int64(0)
 	if anyDelta {
@@ -236,7 +274,11 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 		{"build", 4 + 4*webgpuLoRAScratchRows},
 		{"residual", 4 * int64(H)},
 		{"logitsStaging", 4 * int64(V)},
-		{"rmsQuant", nRms * rmsQuantB},
+		{"rmsQuant", nRms*rmsQuantB + nRmsExtra},
+		{"mlaLayer", mlaLayer},
+		{"mlaAbsorb", mlaAbsorb},
+		{"mlaLift", mlaLift},
+		{"mlaSetup", mlaSetupB},
 		{"quant", quantB + nQuant*(pk(H)+20)},
 		{"gemv", gemv},
 		{"gemvBias", gemvBiasB},
@@ -284,7 +326,7 @@ func (m *Model) WebGPUDecodeScratchBytes() (int64, bool) {
 
 // denseShape is the optional operations a plain attention layer carries: a QK-norm after the projections, and a norm on each
 // sublayer's output before its residual add.
-type denseShape struct{ qkNorm, postAttn, postMLP, moe, gated, delta bool }
+type denseShape struct{ qkNorm, postAttn, postMLP, moe, gated, delta, latent bool }
 
 // denseAttnLayer reports whether a layer's operations are a plain attention sublayer and a dense FFN, each behind its own pre-norm,
 // with only the optional operations of denseShape and nothing else (no output gate, temperature or layer scale).
@@ -306,6 +348,8 @@ func denseAttnLayer(ops []op) (s denseShape, ok bool) {
 		s.delta = true
 	case next(program.OpGatedAttn):
 		s.gated = true
+	case next(program.OpMLA):
+		s.latent = true
 	default:
 		if !next(program.OpProjQKV) {
 			return s, false
