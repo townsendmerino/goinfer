@@ -1446,8 +1446,8 @@ var cardWeightMiB = map[string]float64{
 }
 
 // TestPlanSlack_pricesThePacking (KV3-S1-residual): on every real checkpoint whose weight upload was read against the card, the
-// plan's weight figure (dense bytes plus the planned slack) is within 2 MiB of the card's drop. Before the packing was priced the
-// 1.5B was 2.5 MiB under, Gemma-3-4B 65 MiB under, the others between.
+// plan's weight figure (dense bytes plus the planned slack) is within 2 MiB of the card's drop; the readings and the figures the plan gave
+// before the packing was priced are in docs/measurements/kv3-s1-2026-11/packing-model.md.
 func TestPlanSlack_pricesThePacking(t *testing.T) {
 	ran := 0
 	for rel, want := range cardWeightMiB {

@@ -79,7 +79,7 @@ func TestPackedAllocSlack_packsTheSmallOnes(t *testing.T) {
 	if want := int64(4) * (allocQuantumBytes - 3<<19); got != want {
 		t.Errorf("packedAllocSlack = %d, want %d", got, want)
 	}
-	// A vector of numbers is a buffer too: 0.25 MiB of norms fits the room beside the first.
+	// A vector of numbers is a buffer too: a quarter of a MiB of norms fits the room beside the first.
 	type withNorm struct {
 		w    hostW
 		norm []float32
