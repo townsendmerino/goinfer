@@ -168,6 +168,55 @@ def unlisted():
     return flagged
 
 
+class NotesCheckout(unittest.TestCase):
+    """Task, queue, plan and scoping docs live in a sibling notes checkout once they leave the public tree; touched.py maps its
+    changes to the docs/ paths the scans read, and adds nothing when there is no checkout."""
+
+    def setUp(self):
+        import tempfile
+        self._td = tempfile.TemporaryDirectory()
+        self.root = os.path.join(self._td.name, "goinfer")
+        self.notes = os.path.join(self._td.name, "goinfer-notes")
+        os.mkdir(self.root)
+
+    def tearDown(self):
+        self._td.cleanup()
+
+    def git(self, *a):
+        subprocess.run(["git", "-C", self.notes, "-c", "user.email=t@example.com", "-c", "user.name=T", *a], check=True,
+                       capture_output=True)
+
+    def make_notes(self):
+        os.mkdir(self.notes)
+        self.git("init", "-q")
+        for rel in ("tasks/task-a.md", "queues/QUEUE.md", "plans/plan-x.md", "completed/old.md", "README.md"):
+            os.makedirs(os.path.dirname(os.path.join(self.notes, rel)), exist_ok=True)
+            open(os.path.join(self.notes, rel), "w").write("one\n")
+        self.git("add", ".")
+        self.git("commit", "-q", "-m", "init")
+
+    def test_no_checkout_adds_nothing(self):
+        self.assertEqual(touched_scans.notes_changes(self.root), set())
+
+    def test_a_clean_checkout_adds_nothing(self):
+        self.make_notes()
+        self.assertEqual(touched_scans.notes_changes(self.root), set())
+
+    def test_edits_and_new_files_map_to_their_docs_paths(self):
+        self.make_notes()
+        for rel in ("tasks/task-a.md", "queues/QUEUE.md", "completed/old.md", "README.md"):
+            open(os.path.join(self.notes, rel), "a").write("two\n")
+        open(os.path.join(self.notes, "plans/plan-new.md"), "w").write("x\n")  # untracked
+        self.assertEqual(touched_scans.notes_changes(self.root),
+                         {"docs/tasks/task-a.md", "docs/QUEUE.md", "docs/completed/old.md", "docs/plan-new.md"})
+
+    def test_a_notes_change_selects_the_scan_that_reads_docs(self):
+        self.make_notes()
+        open(os.path.join(self.notes, "tasks/task-a.md"), "a").write("two\n")
+        got = selected(touched_scans.notes_changes(self.root))
+        self.assertIn(("internal/guard/testcmdtags", "TestDocs_goTestCommandsCompileTheTestsTheyName"), got)
+
+
 class TableIsComplete(unittest.TestCase):
     def test_every_source_reading_test_is_listed_or_excluded(self):
         self.maxDiff = None

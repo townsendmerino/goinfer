@@ -285,6 +285,7 @@ def run(args, run_for):
         args = args[3:]
     base = os.environ.get("TOUCHED_BASE") or sh("git", "merge-base", "HEAD", "origin/main").stdout.strip() or "HEAD~1"
     changed = set(sh("git", "diff", "--name-only", base).stdout.split()) | set(sh("git", "ls-files", "--others", "--exclude-standard").stdout.split())
+    changed |= touched_scans.notes_changes(ROOT)  # the notes checkout's docs, as the docs/ paths the scans read
     gofiles = sorted(f for f in changed if f.endswith(".go") and os.path.exists(f))
     tests, skipped = plan(changed, run_for)
     if not gofiles and not tests:

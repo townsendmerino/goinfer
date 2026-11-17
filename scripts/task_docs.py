@@ -58,16 +58,23 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(os.environ.get("TASK_DOCS_ROOT") or pathlib.Path(__file__).resolve().parent.parent).expanduser()
+# Where the task docs live. In the public tree they are under docs/ of ROOT, the goinfer checkout. When the private notes
+# checkout (a sibling ../goinfer-notes, or --notes PATH) carries a tasks/ directory they are read from there instead, and
+# every path below is relative to the NOTES root, not to ROOT. configure() sets these once per run.
+NOTES = None
 TASKS = "docs/tasks/"
 PARKED = "docs/tasks/parked/"
 COMPLETED = "docs/completed/"
+MEASUREMENTS = "docs/measurements/"
 HEADER_SOURCE = "docs/completed/task-cuda-cgofree-spike.md"
+DOCS_SCOPE = ("docs",)  # the paths an "uncommitted docs" scan looks under
+LEGACY = ""  # a path prefix older text still writes in front of a task-doc path ("docs/" in the notes layout)
 HEADER_START = "> **ARCHIVED — a record, not instructions.**"
 FOOTER_RE = re.compile(r"\n*<!--\s*doc-reviewed:\s*(\d{4}-\d{2}-\d{2})\s*-->[ \t]*")
 LEDGER_MARK = "<!-- ledger -->"
 TERMINAL = {"done", "killed", "moved"}
 STATES = TERMINAL | {"open", "active", "blocked", "decision"}
-FROZEN_PREFIXES = ("docs/completed/", "docs/releases/", "testdata/")
+FROZEN_PREFIXES = ("docs/completed/", "docs/releases/", "testdata/")  # configure() narrows it for the notes layout
 FROZEN_FILES = ("CHANGELOG.md",)
 LIVE_IN_MEASUREMENTS = (".sh", ".py")
 DOCS_ONLY_PREFIXES = ("docs/", ".claude/")
@@ -79,7 +86,44 @@ GENERATED_RE = re.compile(r"(?i)do not edit")  # in a doc's first lines
 REGEN_RE = re.compile(r"go test [^`\n—]*?-update")
 
 
+def S() -> pathlib.Path:
+    """The store: the repository that holds the task docs. The notes checkout when configure() found one, else ROOT."""
+    return NOTES or ROOT
+
+
+def find_notes(arg=None):
+    """The notes checkout whose tasks/ directory holds the task docs, or None. `arg` is --notes PATH, else the sibling
+    ../goinfer-notes. A checkout without tasks/ (the private repo before the docs move into it) does not count, so the
+    tool keeps reading docs/ until the move has happened."""
+    cand = pathlib.Path(arg).expanduser().resolve() if arg else (ROOT.parent / "goinfer-notes")
+    return cand if (cand / "tasks").is_dir() else None
+
+
+def configure(notes_arg=None) -> None:
+    global NOTES, TASKS, PARKED, COMPLETED, MEASUREMENTS, HEADER_SOURCE, DOCS_SCOPE, LEGACY, FROZEN_PREFIXES
+    NOTES = find_notes(notes_arg)
+    if NOTES is None:
+        TASKS, PARKED, COMPLETED = "docs/tasks/", "docs/tasks/parked/", "docs/completed/"
+        MEASUREMENTS, DOCS_SCOPE, LEGACY = "docs/measurements/", ("docs",), ""
+        FROZEN_PREFIXES = ("docs/completed/", "docs/releases/", "testdata/")
+    else:
+        TASKS, PARKED, COMPLETED = "tasks/", "tasks/parked/", "completed/"
+        MEASUREMENTS, DOCS_SCOPE, LEGACY = "measurements/", (".",), "docs/"
+        FROZEN_PREFIXES = ("completed/",)
+    HEADER_SOURCE = COMPLETED + "task-cuda-cgofree-spike.md"
+
+
 def git(*args: str, check: bool = True) -> str:
+    """git in the store (the notes checkout, or ROOT)."""
+    r = subprocess.run(["git", *args], cwd=S(), capture_output=True, text=True,
+                       env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"})
+    if check and r.returncode != 0:
+        sys.exit(f"git {' '.join(args)}: {r.stderr.strip()}")
+    return r.stdout
+
+
+def rgit(*args: str, check: bool = True) -> str:
+    """git in the goinfer checkout: the work commits are there whichever repository holds the task docs."""
     r = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True,
                        env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"})
     if check and r.returncode != 0:
@@ -88,12 +132,12 @@ def git(*args: str, check: bool = True) -> str:
 
 
 def is_ancestor(sha: str, ref: str) -> bool:
-    return subprocess.run(["git", "merge-base", "--is-ancestor", sha, ref], cwd=ROOT,
+    return subprocess.run(["git", "merge-base", "--is-ancestor", sha, ref], cwd=S(),
                           capture_output=True).returncode == 0
 
 
 def read(rel: str) -> str:
-    return (ROOT / rel).read_text(encoding="utf-8")
+    return (S() / rel).read_text(encoding="utf-8")
 
 
 def tracked_files() -> list[str]:
@@ -108,7 +152,7 @@ def is_stub(text: str) -> bool:
 def is_frozen(rel: str) -> bool:
     if rel in FROZEN_FILES or rel.startswith(FROZEN_PREFIXES):
         return True
-    return rel.startswith("docs/measurements/") and not rel.endswith(LIVE_IN_MEASUREMENTS)
+    return rel.startswith(MEASUREMENTS) and not rel.endswith(LIVE_IN_MEASUREMENTS)
 
 
 _read_cache: dict[str, bool] = {}
@@ -117,7 +161,9 @@ _read_cache: dict[str, bool] = {}
 def read_by_go(rel: str) -> bool:
     """Rule 2 of the docs-only push, asked of scripts/ci_docs_only.sh itself: does Go code read this file? A generated
     page (its `_fresh` test reads it) and a generator's input (docs/flags.meta.json) both answer yes. Fails closed:
-    anything but a clear "not-read" counts as read."""
+    anything but a clear "not-read" counts as read. Nothing in the notes checkout is read by Go code."""
+    if NOTES:
+        return False
     if rel not in _read_cache:
         sh = ROOT / "scripts" / "ci_docs_only.sh"
         if sh.exists():
@@ -130,6 +176,8 @@ def read_by_go(rel: str) -> bool:
 
 def is_docs_only(rel: str) -> bool:
     """Editing it keeps a push docs-only: under docs/ or .claude/ (or RELEASING.md), and not read by Go code."""
+    if NOTES:  # a notes-checkout file never rides a goinfer push
+        return True
     return (rel in DOCS_ONLY_FILES or rel.startswith(DOCS_ONLY_PREFIXES)) and not read_by_go(rel)
 
 
@@ -151,7 +199,7 @@ def resolve_doc(arg: str) -> str:
     name = pathlib.Path(arg).name
     name = name if name.endswith(".md") else name + ".md"
     for rel in (f"{TASKS}{name}", f"{PARKED}{name}"):
-        p = ROOT / rel
+        p = S() / rel
         if p.exists() and not is_stub(p.read_text(encoding="utf-8")):
             return rel
     sys.exit(f"{arg}: no live doc of that name in {TASKS} or {PARKED}")
@@ -160,21 +208,21 @@ def resolve_doc(arg: str) -> str:
 def live_docs_on_disk() -> list[str]:
     out = []
     for d in (TASKS, PARKED):
-        for p in sorted((ROOT / d).glob("*.md")):
+        for p in sorted((S() / d).glob("*.md")):
             if not is_stub(p.read_text(encoding="utf-8")):
-                out.append(p.relative_to(ROOT).as_posix())
+                out.append(p.relative_to(S()).as_posix())
     return out
 
 
 def stubs_on_disk() -> list[str]:
-    return [p.relative_to(ROOT).as_posix() for d in (TASKS, PARKED) for p in sorted((ROOT / d).glob("*.md"))
+    return [p.relative_to(S()).as_posix() for d in (TASKS, PARKED) for p in sorted((S() / d).glob("*.md"))
             if is_stub(p.read_text(encoding="utf-8"))]
 
 
-def uncommitted(paths=("docs",)) -> dict[str, str]:
+def uncommitted(paths=None) -> dict[str, str]:
     """{path: 'untracked' | 'modified'} for .md files under the given paths."""
     out = {}
-    for line in git("status", "--porcelain", "--untracked-files=all", "--", *paths).splitlines():
+    for line in git("status", "--porcelain", "--untracked-files=all", "--", *(paths or DOCS_SCOPE)).splitlines():
         code, rel = line[:2], line[3:].strip().strip('"')
         if rel.endswith(".md"):
             out[rel] = "untracked" if code == "??" else "modified"
@@ -185,19 +233,19 @@ def worktrees() -> list[pathlib.Path]:
     """Every worktree of this repo on this machine: the main checkout and the ~/goinfer-bench/*-wt ones alike."""
     out = [pathlib.Path(l[len("worktree "):]) for l in git("worktree", "list", "--porcelain").splitlines()
            if l.startswith("worktree ")]
-    return out or [ROOT]
+    return out or [S()]
 
 
-def uncommitted_everywhere(paths=("docs",)) -> list[tuple[pathlib.Path, str, str]]:
+def uncommitted_everywhere(paths=None) -> list[tuple[pathlib.Path, str, str]]:
     """(worktree, path, 'untracked' | 'modified') for .md files under paths, in EVERY worktree on this machine: an
     untracked design record is at risk wherever it sits, and a sweep usually runs in a fresh worktree that has none."""
     out = []
     for wt in worktrees():
-        r = subprocess.run(["git", "-C", str(wt), "status", "--porcelain", "--untracked-files=all", "--", *paths],
+        r = subprocess.run(["git", "-C", str(wt), "status", "--porcelain", "--untracked-files=all", "--", *(paths or DOCS_SCOPE)],
                            capture_output=True, text=True, env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"})
         for line in r.stdout.splitlines():
             code, rel = line[:2], line[3:].strip().strip('"')
-            if rel.endswith(".md") and not rel.startswith("docs/measurements/"):
+            if rel.endswith(".md") and not rel.startswith(MEASUREMENTS):
                 out.append((wt, rel, "untracked" if code == "??" else "modified"))
     return out
 
@@ -306,13 +354,13 @@ def cmd_rank(a) -> int:
 # ----------------------------------------------------------------------------------------------------------- check
 
 def actual_counts() -> tuple[int, int, int]:
-    in_tasks = sum(1 for p in (ROOT / TASKS).glob("task-*.md") if not is_stub(p.read_text(encoding="utf-8")))
-    in_parked = sum(1 for p in (ROOT / PARKED).glob("task-*.md") if not is_stub(p.read_text(encoding="utf-8")))
+    in_tasks = sum(1 for p in (S() / TASKS).glob("task-*.md") if not is_stub(p.read_text(encoding="utf-8")))
+    in_parked = sum(1 for p in (S() / PARKED).glob("task-*.md") if not is_stub(p.read_text(encoding="utf-8")))
     return in_tasks + in_parked, in_tasks, in_parked
 
 
 def archive_count() -> int:
-    return len(list((ROOT / COMPLETED).iterdir()))  # the skill's `ls docs/completed | wc -l`
+    return len(list((S() / COMPLETED).iterdir()))  # the skill's `ls docs/completed | wc -l`
 
 
 def references(rel: str) -> list[str]:
@@ -326,7 +374,7 @@ def references(rel: str) -> list[str]:
 
 def cmd_check(a) -> int:
     problems = 0
-    dirty = uncommitted_everywhere(("docs",))
+    dirty = uncommitted_everywhere()
     print("Uncommitted docs in this repo's worktrees (an untracked design record can be lost; commit it or say why not):")
     for wt, rel, st in sorted(dirty, key=lambda t: (t[2], t[1])):
         print(f"  {st:9}  {rel}  ({home(wt)})")
@@ -370,17 +418,23 @@ def cmd_check(a) -> int:
         users = references(rel)
         print(f"  {len(users):3} files  {rel}" + ("  <- nothing uses it; the stub can go" if not users else ""))
 
-    print("\nLive references to a docs/tasks/ path that no longer exists:")
+    print(f"\nLive references to a {TASKS} path that no longer exists:")
     dangling = 0
-    pat = re.compile(r"docs/tasks/(?:parked/)?[A-Za-z0-9._-]+\.md")
-    for f in git("grep", "-l", "-I", "-E", r"docs/tasks/", "--", ".", check=False).splitlines():
-        if is_frozen(f):
-            continue
-        body = read(f)
-        for mm in pat.finditer(body):
-            if not (ROOT / mm.group(0)).exists():
-                dangling += 1
-                print(f"  {f}:{body.count(chr(10), 0, mm.start()) + 1}  {mm.group(0)}")
+    # (checkout, the path prefix its text writes, the prefix to strip to get a path under the store)
+    scans = [(S(), re.escape(LEGACY) + "?" + re.escape(TASKS), LEGACY)]
+    if NOTES:  # until the public tree's citations are repointed it still writes docs/tasks/...; each must resolve in the notes
+        scans.append((ROOT, "docs/tasks/", "docs/"))
+    for base, head, strip in scans:
+        pat = re.compile(rf"(?<![A-Za-z0-9_-]){head}(?:parked/)?[A-Za-z0-9._-]+\.md")
+        names = (git if base == S() else rgit)("grep", "-l", "-I", "-E", head, "--", ".", check=False).splitlines()
+        for f in names:
+            if base == S() and is_frozen(f):
+                continue
+            body = (base / f).read_text(encoding="utf-8", errors="replace")
+            for mm in pat.finditer(body):
+                if not (S() / mm.group(0).removeprefix(strip)).exists():
+                    dangling += 1
+                    print(f"  {f}:{body.count(chr(10), 0, mm.start()) + 1}  {mm.group(0)}")
     print("  none" if not dangling else f"  ({dangling})")
     return 1 if (a.strict and problems) else 0
 
@@ -428,10 +482,10 @@ def cmd_evidence(a) -> int:
           f"doc ('{slug}'{f' or any {main_fam}n' if main_fam else ''}). Newest first; a hint for the reviewer, not a verdict.\n")
     for t in ids:
         pat = rf"(^|[^A-Za-z0-9-]){re.escape(t)}([^A-Za-z0-9]|$)"
-        entries = [e.split("\x1f", 1) for e in git("log", a.main, "-E", f"--grep={pat}", "--format=%h %cs %s\x1f%b\x1e")
+        entries = [e.split("\x1f", 1) for e in rgit("log", a.main, "-E", f"--grep={pat}", "--format=%h %cs %s\x1f%b\x1e")
                    .split("\x1e") if e.strip()]
         mine = [s.strip() for s, b in entries if len(prefix(t)) >= 2 or ctx_re.search(s + b)]
-        branch = git("log", "--all", "--not", a.main, "-E", f"--grep={pat}", "--format=%h").split()
+        branch = rgit("log", "--all", "--not", a.main, "-E", f"--grep={pat}", "--format=%h").split()
         print(f"{t:8} {len(mine):3} this doc's" + (f" (of {len(entries)} naming {t})" if len(entries) != len(mine) else "")
               + (f", {len(branch)} on unmerged refs" if branch else ""))
         for s in mine[: a.n]:
@@ -527,7 +581,7 @@ def cmd_archive(a) -> int:
     if old in uncommitted((TASKS,)):
         sys.exit(f"{old} has uncommitted changes; commit them first, so the archive commit is only the archive")
     new = COMPLETED + pathlib.Path(old).name
-    if (ROOT / new).exists():
+    if (S() / new).exists():
         sys.exit(f"{new} already exists")
     status = sys.stdin.read() if a.status == "-" else pathlib.Path(a.status).read_text(encoding="utf-8")
     if not status.strip():
@@ -552,6 +606,10 @@ def cmd_archive(a) -> int:
 
     print(f"archive {old} -> {new}")
     print(f"  live references (frozen records excluded): {len(refs)} file(s), {len(code_side)} outside docs/ and .claude/")
+    if NOTES:
+        public = [f for f in rgit("grep", "-l", "-I", "-F", f"docs/tasks/{pathlib.Path(old).name}", "--", ".", check=False).splitlines()
+                  if not f.startswith(("docs/completed/", "testdata/"))]
+        print(f"  public-tree files still citing docs/tasks/{pathlib.Path(old).name} (left as they are; the citation repoint does them): {len(public)}")
     print(f"  mode {mode}: re-point {len(repoint)} file(s)" + ("; leave a pointer stub at the old path" if keep_stub else ""))
     for f in sorted(set(refs) - set(repoint)):
         why = (f"  (generated: re-point its generator, then `{generated[f] or 'its regenerate command'}`)"
@@ -568,15 +626,15 @@ def cmd_archive(a) -> int:
         print("\n(dry run: nothing written; add --apply)")
         return 0
 
-    subprocess.run(["git", "mv", old, new], cwd=ROOT, check=True)
+    subprocess.run(["git", "mv", old, new], cwd=S(), check=True)
     for f, out in planned.items():
-        (ROOT / f).write_text(out, encoding="utf-8")
+        (S() / f).write_text(out, encoding="utf-8")
     changed = sorted(set(planned) | ({old} if keep_stub else set()))
-    lint = subprocess.run([sys.executable, "scripts/queue_citation_lint.py"], cwd=ROOT)
+    lint = subprocess.run([sys.executable, "scripts/queue_citation_lint.py", *(["--notes", str(NOTES)] if NOTES else [])], cwd=ROOT)
     print(f"\ncitation lint exit {lint.returncode}" + ("" if lint.returncode == 0 else
           " — read it; rows keyed to the moved doc are refreshed by `--update`, never by deleting a citation"))
     if a.stage:
-        subprocess.run(["git", "add", "--", *changed], cwd=ROOT, check=True)
+        subprocess.run(["git", "add", "--", *changed], cwd=S(), check=True)
         print("staged (with the rename): " + " ".join(changed))
     else:
         print("the rename is staged; stage the rest with: git add -- " + " ".join(changed))
@@ -599,7 +657,7 @@ def stub_target(rel: str):
     if not raw or re.match(r"^[a-z]+:|^#|^/", raw):
         return None, f"non-local link {m.group(2)!r}"
     target = posixpath.normpath(posixpath.join(posixpath.dirname(rel), raw))
-    p = ROOT / target
+    p = S() / target
     if not p.exists():
         return None, f"target {target} does not exist"
     if is_stub(read(target)):
@@ -628,7 +686,7 @@ def _matches_only(rel: str, globs: list[str]) -> bool:
 def parity_hashed_files() -> set[str]:
     """Non-Go files listed in a parity manifest's covers/own/shared_sets."""
     parity_dir = ROOT / "testdata/parity"
-    if not parity_dir.is_dir():
+    if NOTES or not parity_dir.is_dir():  # the parity manifests are goinfer's; no notes file is one of their inputs
         return set()
     out: set[str] = set()
     for p in parity_dir.glob("*.json"):
@@ -773,12 +831,12 @@ def cmd_unstub(a) -> int:
         return 0
 
     for f, out in planned.items():
-        (ROOT / f).write_text(out, encoding="utf-8")
+        (S() / f).write_text(out, encoding="utf-8")
     for s in deletable:
-        (ROOT / s).unlink()
+        (S() / s).unlink()
     changed = sorted(set(planned) | set(deletable))
     if a.stage and changed:
-        subprocess.run(["git", "add", "--", *changed], cwd=ROOT, check=True)
+        subprocess.run(["git", "add", "--", *changed], cwd=S(), check=True)
         print(f"staged {len(changed)} path(s)")
     elif changed:
         print(f"wrote {len(planned)} file(s), deleted {len(deletable)} stub(s)")
@@ -788,6 +846,8 @@ def cmd_unstub(a) -> int:
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--main", default="origin/main", help="the ref that counts as shipped (default origin/main)")
+    p.add_argument("--notes", help="the private notes checkout holding tasks/ (default: a sibling ../goinfer-notes that has one; "
+                                   "without one the task docs are read from docs/)")
     sub = p.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("rank", help="live task docs, most recently created or worked first")
     r.add_argument("--top", type=int, default=0)
@@ -811,6 +871,9 @@ def main() -> int:
     un.add_argument("--apply", action="store_true", help="write rewritten files and delete eligible stubs")
     un.add_argument("--stage", action="store_true", help="git add exactly the changed paths")
     a = p.parse_args()
+    configure(a.notes)
+    print(f"task_docs: task docs read from {NOTES if NOTES else ROOT / 'docs'}"
+          f" ({'the notes checkout' if NOTES else 'no notes checkout with a tasks/ directory'})", file=sys.stderr)
     return {"rank": cmd_rank, "check": cmd_check, "evidence": cmd_evidence,
             "archive": cmd_archive, "unstub": cmd_unstub}[a.cmd](a)
 
