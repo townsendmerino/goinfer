@@ -339,6 +339,38 @@ class LayoutTests(unittest.TestCase):
         staged = subprocess.run(["git", "diff", "--cached", "--name-only"], cwd=self.notes, capture_output=True, text=True).stdout.split()
         self.assertIn("completed/task-alpha.md", staged)
 
+    def test_archive_and_check_work_before_the_notes_have_a_completed_dir(self):
+        """The notes checkout carries tasks/ but no completed/ until the archive moves in; the ARCHIVED header is then read from
+        goinfer's docs/completed/, and the first archive creates completed/."""
+        self.write(self.notes, "tasks/task-alpha.md", LEDGER_DOC.format(n="Alpha"))
+        self.commit(self.notes)
+        self.write(self.repo, "docs/completed/task-cuda-cgofree-spike.md", f"# Spike\n\n{HEADER}\n> second line\n")
+        self.write(self.repo, "scripts/queue_citation_lint.py", "")
+        self.commit(self.repo)
+        self.assertFalse((self.notes / "completed").exists())
+        rc, out, _ = self.run_cmd("--main", "HEAD", "check")
+        self.assertEqual(rc, 0)
+        self.assertIn("archive: 0 in completed/", out)
+        status = self.repo.parent / "status.txt"
+        status.write_text("Closed 2026-11-17.\n")
+        rc, out, _ = self.run_cmd("--main", "HEAD", "archive", "task-alpha", "--status", str(status), "--apply")
+        self.assertEqual(rc, 0, out)
+        archived = (self.notes / "completed/task-alpha.md").read_text(encoding="utf-8")
+        self.assertIn(HEADER, archived)
+        self.assertIn("> second line", archived)
+        self.assertFalse((self.notes / "tasks/task-alpha.md").exists())
+
+    def test_archive_without_any_reference_archive_says_so(self):
+        self.write(self.notes, "tasks/task-alpha.md", LEDGER_DOC.format(n="Alpha"))
+        self.commit(self.notes)
+        self.write(self.repo, "README.md", "x\n")
+        self.commit(self.repo)
+        status = self.repo.parent / "status.txt"
+        status.write_text("Closed.\n")
+        with self.assertRaises(SystemExit) as cm:
+            self.run_cmd("--main", "HEAD", "archive", "task-alpha", "--status", str(status))
+        self.assertIn("reference archive", str(cm.exception))
+
     def test_unstub_inside_the_notes_checkout(self):
         self.write(self.notes, "completed/task-alpha.md", f"# Alpha\n\n{HEADER}\n")
         self.write(self.notes, "tasks/task-alpha.md",
