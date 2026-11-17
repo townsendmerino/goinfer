@@ -568,6 +568,122 @@ class _LintRepo(unittest.TestCase):
         return out
 
 
+class TestNotesCheckout(_LintRepo):
+    """The task, queue, plan and scoping docs move to a private notes checkout. With one present
+    (a sibling ../goinfer-notes, or --notes PATH) the lint reads its documents and its queue; without one, which is CI, it
+    passes and says what it skipped."""
+
+    def setUp(self):
+        super().setUp()
+        self.ntmp = tempfile.TemporaryDirectory()
+        self.notes = self.ntmp.name
+        _git(self.notes, "init", "-q")
+        _git(self.notes, "config", "user.email", "test@example.com")
+        _git(self.notes, "config", "user.name", "Test")
+        qcl._notes_tracked_cache.clear()
+
+    def tearDown(self):
+        qcl._notes_tracked_cache.clear()
+        self.ntmp.cleanup()
+        super().tearDown()
+
+    def nwrite(self, rel, text, commit=True):
+        p = os.path.join(self.notes, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w") as f:
+            f.write(text)
+        if commit:
+            _git(self.notes, "add", rel)
+            _git(self.notes, "commit", "-q", "-m", f"add {rel}")
+        qcl._notes_tracked_cache.clear()
+
+    def move_queue_to_notes(self):
+        """The state after the move: no docs/QUEUE.md or index in this repository, the queue in the notes."""
+        _git(self.repo, "rm", "-q", "docs/QUEUE.md", "docs/citation-index.md")
+        _git(self.repo, "commit", "-q", "-m", "queue leaves")
+        qcl._tracked_cache = qcl._TRACKED_SENTINEL
+        self.nwrite("queues/QUEUE.md", f"# QUEUE\n\ncommit {self.base} — init\n")
+        code, out = self.run_lint(["--update", "--notes", self.notes])
+        self.assertEqual(code, 0, out)
+        self.assertTrue(os.path.exists(os.path.join(self.notes, "queues", "citation-index.md")))
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "docs", "citation-index.md")))
+        _git(self.notes, "add", "queues/citation-index.md")
+        _git(self.notes, "commit", "-q", "-m", "index")
+        qcl._notes_tracked_cache.clear()
+
+    def test_notes_root_resolution(self):
+        base = pathlib.Path(self.ntmp.name)
+        (base / "goinfer").mkdir()
+        (base / "goinfer-notes").mkdir()
+        saved, argv = qcl.ROOT, sys.argv
+        try:
+            qcl.ROOT = base / "goinfer"
+            sys.argv = ["queue_citation_lint.py"]
+            self.assertEqual(qcl.notes_root(), (base / "goinfer-notes").resolve())  # the sibling
+            sys.argv = ["queue_citation_lint.py", "--notes", self.notes]
+            self.assertEqual(qcl.notes_root(), pathlib.Path(self.notes).resolve())  # an explicit path wins
+            (base / "goinfer-notes").rmdir()
+            sys.argv = ["queue_citation_lint.py"]
+            self.assertIsNone(qcl.notes_root())  # no checkout: no notes, and no error
+        finally:
+            qcl.ROOT, sys.argv = saved, argv
+
+    def test_without_a_notes_checkout_the_skip_is_stated(self):
+        out = self.assertGreen()
+        self.assertIn("no notes checkout", out)
+        self.assertIn("NOT examined here", out)
+
+    def test_a_notes_doc_is_linted_and_named_by_its_notes_path(self):
+        self.nwrite("tasks/task-a.md", "see `pkg/svc.go:NoSuchName`\n")
+        self.assertRed("notes:tasks/task-a.md|pkg/svc.go:NoSuchName", "SYMBOL GONE", argv=["--notes", self.notes])
+        self.assertGreen()  # without the checkout the same repository is green: CI never sees the notes
+
+    def test_a_notes_doc_with_a_declared_name_is_green(self):
+        self.nwrite("tasks/task-a.md", "see `pkg/svc.go:NewServer`\n")
+        out = self.assertGreen(argv=["--notes", self.notes])
+        self.assertIn(f"notes checkout {pathlib.Path(self.notes).resolve()}", out)
+
+    def test_a_path_line_in_an_unpinned_notes_doc_is_red(self):
+        self.nwrite("plans/scoping-a.md", "see pkg/svc.go:12\n")
+        self.assertRed("notes:plans/scoping-a.md", "unpinned doc", argv=["--notes", self.notes])
+
+    def test_a_pinned_notes_doc_is_checked_at_its_commit(self):
+        self.nwrite("plans/scoping-a.md", f"<!-- citations-at: {self.base} -->\nsee pkg/svc.go:2 and `pkg/svc.go:NoSuchName`\n")
+        self.assertRed("notes:plans/scoping-a.md|pkg/svc.go:NoSuchName", "PINNED SYMBOL GONE", argv=["--notes", self.notes])
+
+    def test_an_untracked_notes_doc_is_noted_not_linted(self):
+        self.nwrite("tasks/task-a.md", "see `pkg/svc.go:NoSuchName`\n", commit=False)
+        out = self.assertGreen(argv=["--notes", self.notes])
+        self.assertIn("untracked doc(s) not linted", out)
+        self.assertIn("notes:tasks/task-a.md", out)
+
+    def test_the_notes_archive_is_excluded(self):
+        self.nwrite("completed/task-a.md", "see `pkg/svc.go:NoSuchName` and pkg/svc.go:12\n")
+        self.assertGreen(argv=["--notes", self.notes])
+
+    def test_the_queue_and_its_index_live_in_the_notes(self):
+        self.move_queue_to_notes()
+        self.assertGreen(argv=["--notes", self.notes])
+        self.nwrite("queues/QUEUE.md", f"# QUEUE\n\ncommit {self.base} — init\ncommit deadbeef1 — nothing\n")
+        self.assertRed("deadbeef1", argv=["--notes", self.notes])
+
+    def test_without_the_notes_a_queue_in_them_is_skipped_and_said(self):
+        """CI after the move: neither docs/QUEUE.md nor a checkout. Green, the public docs still checked, the skip printed."""
+        self.move_queue_to_notes()
+        out = self.assertGreen()
+        self.assertIn("PRIVATE ROWS SKIPPED", out)
+        self.assertIn("no notes checkout", out)
+        self.doc("see `pkg/svc.go:NoSuchName`\n")
+        self.assertRed("SYMBOL GONE")  # the skip narrows what is read, not what is enforced on the public docs
+
+    def test_update_without_any_queue_writes_nothing(self):
+        self.move_queue_to_notes()
+        code, out = self.run_lint(["--update"])
+        self.assertEqual(code, 0, out)
+        self.assertIn("no queue, so no index to write", out)
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "docs", "citation-index.md")))
+
+
 class TestSymbolCitations(_LintRepo):
     """CC0.b: the file must declare the name. Survives every edit that does not rename or move it ACROSS FILES."""
 

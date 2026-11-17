@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Tests for scripts/task_docs.py unstub. Run: python3 -B scripts/test_task_docs.py"""
+"""Tests for scripts/task_docs.py: unstub, and the two layouts of the task docs (docs/ in the goinfer checkout, and tasks/ in the
+private notes checkout). Run: python3 -B scripts/test_task_docs.py"""
 import io
 import os
 import pathlib
@@ -7,7 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -54,7 +55,7 @@ class UnstubTests(unittest.TestCase):
         saved = sys.argv
         try:
             sys.argv = ["task_docs.py", "unstub", *argv]
-            with redirect_stdout(buf):
+            with redirect_stdout(buf), redirect_stderr(io.StringIO()):
                 rc = task_docs.main()
         finally:
             sys.argv = saved
@@ -193,6 +194,164 @@ class UnstubTests(unittest.TestCase):
             "# docs/completed/task-alpha.md\n",
         )
         self.assertFalse((self.root / "docs/tasks/task-alpha.md").exists())
+
+
+HEADER = "> **ARCHIVED — a record, not instructions.**"
+LEDGER_DOC = "# {n}\n\n<!-- ledger -->\n| id | state | next | evidence |\n|---|---|---|---|\n| A1 | done | | |\n| A2 | open | | |\n"
+
+
+class LayoutTests(unittest.TestCase):
+    """Task docs are read from the notes checkout (a sibling goinfer-notes, or --notes PATH) when it carries tasks/, and from
+    docs/ of the goinfer checkout when it does not."""
+
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        base = pathlib.Path(self._td.name)
+        self.repo, self.notes = base / "goinfer", base / "goinfer-notes"
+        self._orig_root = task_docs.ROOT
+        task_docs.ROOT = self.repo
+        task_docs._read_cache.clear()
+        for d in (self.repo, self.notes):
+            d.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=d, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=d, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=d, check=True)
+
+    def tearDown(self):
+        task_docs.ROOT = self._orig_root
+        task_docs.configure(None)
+        task_docs._read_cache.clear()
+        self._td.cleanup()
+
+    def write(self, base, rel, content):
+        p = base / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content, encoding="utf-8")
+
+    def commit(self, base, msg="init"):
+        subprocess.run(["git", "add", "."], cwd=base, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", msg], cwd=base, check=True)
+
+    def run_cmd(self, *argv):
+        out, err = io.StringIO(), io.StringIO()
+        saved = sys.argv
+        try:
+            sys.argv = ["task_docs.py", *argv]
+            with redirect_stdout(out), redirect_stderr(err):
+                rc = task_docs.main()
+        finally:
+            sys.argv = saved
+        return rc, out.getvalue(), err.getvalue()
+
+    def notes_with_tasks(self):
+        self.write(self.notes, "tasks/task-alpha.md", LEDGER_DOC.format(n="Alpha"))
+        self.write(self.notes, "completed/task-cuda-cgofree-spike.md", f"# Spike\n\n{HEADER}\n> second line\n")
+        self.commit(self.notes)
+
+    def test_docs_layout_without_a_notes_checkout(self):
+        self.write(self.repo, "docs/tasks/task-alpha.md", LEDGER_DOC.format(n="Alpha"))
+        self.commit(self.repo)
+        rc, out, err = self.run_cmd("--main", "HEAD", "rank")
+        self.assertEqual(rc, 0)
+        self.assertIn("tasks/task-alpha.md", out)
+        self.assertIn("1/2 closed", out)
+        self.assertIn("no notes checkout", err)
+
+    def test_notes_without_tasks_dir_keeps_reading_docs(self):
+        """The private repo before the docs move into it: plans/ only. The tool must not switch layouts yet."""
+        self.write(self.notes, "plans/scoping.md", "# Scoping\n")
+        self.commit(self.notes)
+        self.write(self.repo, "docs/tasks/task-alpha.md", LEDGER_DOC.format(n="Alpha"))
+        self.commit(self.repo)
+        rc, out, _ = self.run_cmd("--main", "HEAD", "rank")
+        self.assertEqual(rc, 0)
+        self.assertIn("tasks/task-alpha.md", out)
+
+    def test_rank_reads_the_sibling_notes_checkout(self):
+        self.notes_with_tasks()
+        self.write(self.repo, "README.md", "x\n")
+        self.commit(self.repo)
+        rc, out, err = self.run_cmd("--main", "HEAD", "rank")
+        self.assertEqual(rc, 0)
+        self.assertIn("tasks/task-alpha.md", out)
+        self.assertIn("1/2 closed", out)
+        self.assertIn("the notes checkout", err)
+
+    def test_rank_reads_an_explicit_notes_path(self):
+        self.notes_with_tasks()
+        elsewhere = self.notes.parent / "private-copy"
+        self.notes.rename(elsewhere)
+        self.write(self.repo, "README.md", "x\n")
+        self.commit(self.repo)
+        _, out, _ = self.run_cmd("--main", "HEAD", "--notes", str(elsewhere), "rank")
+        self.assertIn("tasks/task-alpha.md", out)
+
+    def test_check_counts_and_dangling_citations(self):
+        self.notes_with_tasks()
+        self.write(self.notes, "tasks/task-beta.md", "# Beta\n\nsee docs/tasks/task-alpha.md and docs/tasks/task-gone.md\n")
+        self.commit(self.notes)
+        self.write(self.repo, "pkg/a.go", "package pkg\n// docs/tasks/task-alpha.md, docs/tasks/task-missing.md\n")
+        self.commit(self.repo)
+        _, out, _ = self.run_cmd("--main", "HEAD", "check")
+        self.assertIn("design records: 2 (2 in tasks/, 0 in tasks/parked/)", out)
+        self.assertIn("1/2 closed", out)
+        self.assertIn("docs/tasks/task-gone.md", out)      # a notes doc citing a doc that is not there
+        self.assertIn("docs/tasks/task-missing.md", out)   # the public tree citing one that is not there
+        self.assertNotIn("task-alpha.md  ", out.split("no longer exists:")[1])
+
+    def test_evidence_reads_commits_from_the_goinfer_checkout(self):
+        self.write(self.notes, "tasks/task-alpha.md", "# Alpha\n\n## KV4 one\n\n## KV5 two\n")
+        self.commit(self.notes, "notes only: KV4 is mentioned here and must not be found")
+        self.write(self.repo, "a.txt", "x\n")
+        self.commit(self.repo, "KV4: the work commit")
+        _, out, _ = self.run_cmd("--main", "HEAD", "evidence", "task-alpha")
+        self.assertIn("KV4: the work commit", out)
+        self.assertNotIn("notes only", out)
+
+    def test_archive_moves_inside_the_notes_checkout(self):
+        self.notes_with_tasks()
+        self.write(self.notes, "tasks/task-beta.md", "# Beta\n\nafter [alpha](task-alpha.md), see docs/tasks/task-alpha.md\n")
+        self.write(self.notes, "queues/QUEUE.md", "- `docs/tasks/task-alpha.md` A1\n")
+        self.commit(self.notes)
+        self.write(self.repo, "pkg/a.go", "package pkg\n// docs/tasks/task-alpha.md\n")
+        self.write(self.repo, "scripts/queue_citation_lint.py",
+                   "import pathlib, sys\npathlib.Path(__file__).with_name('argv.txt').write_text(' '.join(sys.argv[1:]))\n")
+        self.commit(self.repo)
+        status = self.repo.parent / "status.txt"
+        status.write_text("Closed 2026-11-17: both items shipped.\n")
+
+        _, dry, _ = self.run_cmd("--main", "HEAD", "archive", "task-alpha", "--status", str(status))
+        self.assertIn("archive tasks/task-alpha.md -> completed/task-alpha.md", dry)
+        self.assertIn("public-tree files still citing docs/tasks/task-alpha.md (left as they are; the citation repoint does them): 1", dry)
+        self.assertTrue((self.notes / "tasks/task-alpha.md").exists())  # a dry run writes nothing
+
+        rc, out, _ = self.run_cmd("--main", "HEAD", "archive", "task-alpha", "--status", str(status), "--apply", "--stage")
+        self.assertEqual(rc, 0, out)
+        self.assertFalse((self.notes / "tasks/task-alpha.md").exists())  # and no pointer stub: nothing public could resolve one
+        archived = (self.notes / "completed/task-alpha.md").read_text(encoding="utf-8")
+        self.assertIn(HEADER, archived)
+        self.assertIn("Closed 2026-11-17", archived)
+        self.assertEqual((self.notes / "tasks/task-beta.md").read_text(encoding="utf-8"),
+                         "# Beta\n\nafter [alpha](../completed/task-alpha.md), see docs/completed/task-alpha.md\n")
+        self.assertEqual((self.notes / "queues/QUEUE.md").read_text(encoding="utf-8"), "- `docs/completed/task-alpha.md` A1\n")
+        self.assertEqual((self.repo / "pkg/a.go").read_text(encoding="utf-8"), "package pkg\n// docs/tasks/task-alpha.md\n")
+        self.assertEqual((self.repo / "scripts/argv.txt").read_text(), f"--notes {self.notes.resolve()}")  # the lint reads the notes too
+        staged = subprocess.run(["git", "diff", "--cached", "--name-only"], cwd=self.notes, capture_output=True, text=True).stdout.split()
+        self.assertIn("completed/task-alpha.md", staged)
+
+    def test_unstub_inside_the_notes_checkout(self):
+        self.write(self.notes, "completed/task-alpha.md", f"# Alpha\n\n{HEADER}\n")
+        self.write(self.notes, "tasks/task-alpha.md",
+                   "# Alpha\n\n**Moved.** Archived 2026-10-01; the doc now lives at\n[`completed/task-alpha.md`](../completed/task-alpha.md).\n")
+        self.write(self.notes, "queues/QUEUE.md", "see tasks/task-alpha.md\n")
+        self.commit(self.notes)
+        self.write(self.repo, "pkg/a.go", "package pkg\n// docs/tasks/task-alpha.md\n")
+        self.commit(self.repo)
+        rc, _, _ = self.run_cmd("unstub", "--delete-stubs", "--apply")
+        self.assertEqual(rc, 0)
+        self.assertEqual((self.notes / "queues/QUEUE.md").read_text(encoding="utf-8"), "see completed/task-alpha.md\n")
+        self.assertFalse((self.notes / "tasks/task-alpha.md").exists())
+        self.assertEqual((self.repo / "pkg/a.go").read_text(encoding="utf-8"), "package pkg\n// docs/tasks/task-alpha.md\n")
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ in neither SCANS nor EXCLUDED, so a new scanner cannot be missed silently.
 """
 import fnmatch
 import os
+import subprocess
 
 SKIP_DIRS = ("testdata/", "node_modules/", ".git/", "apps/site/")
 
@@ -320,6 +321,35 @@ EXCLUDED = {
     "TestIdentityGiw_bytesCommentOnlyChangeIsIdentical": "git clone of the tree",
     "TestIdentityGiw_headerChangeIsDifferentBytesAndIdenticalLogits": "git clone of the tree",
 }
+
+
+# The private notes checkout (a sibling goinfer-notes) holds the task, queue, plan and scoping docs once they leave this repository.
+# A scan that reads docs/ reads them from there too, so a change in the checkout counts as a change to the path it would have had.
+NOTES_AS_DOCS = (("tasks/", "docs/tasks/"), ("completed/", "docs/completed/"), ("queues/", "docs/"), ("plans/", "docs/"),
+                 ("measurements/", "docs/measurements/"))
+
+
+def notes_changes(root):
+    """The paths changed in the notes checkout beside root (against its origin/main, or its HEAD without one; untracked files
+    too), as the docs/ paths they stand for. Empty when there is no checkout, which is CI."""
+    notes = os.path.join(os.path.dirname(os.path.abspath(root)), "goinfer-notes")
+    if not os.path.isdir(os.path.join(notes, ".git")):
+        return set()
+
+    def git(*a):
+        return subprocess.run(["git", "-C", notes, *a], capture_output=True, text=True)
+
+    diff = git("diff", "--name-only", "origin/main")
+    if diff.returncode != 0:
+        diff = git("diff", "--name-only", "HEAD")
+    names = set(diff.stdout.split()) | set(git("ls-files", "--others", "--exclude-standard").stdout.split())
+    out = set()
+    for n in names:
+        for src, dst in NOTES_AS_DOCS:
+            if n.startswith(src):
+                out.add(dst + n[len(src):])
+                break
+    return out
 
 
 def select(changed):

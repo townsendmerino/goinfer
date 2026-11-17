@@ -18,16 +18,36 @@ var (
 	fenceOpen  = regexp.MustCompile("^\\s*```")
 )
 
-// docCommands lists the `go test` commands in the live docs under root/docs: inline code spans and fenced code lines. The
-// dated records (docs/completed, docs/archive, docs/measurements) are left alone: they say what was run then, at that day's paths.
+// notesCheckout is the private notes checkout beside root (../goinfer-notes), or "" when there is none, which is CI. The
+// task, queue, plan and scoping docs live there once they leave the public tree.
+func notesCheckout(root string) string {
+	n := filepath.Join(root, "..", "goinfer-notes")
+	if st, err := os.Stat(n); err == nil && st.IsDir() {
+		return n
+	}
+	return ""
+}
+
+// docCommands lists the `go test` commands in the live docs under root/docs and, when the notes checkout is present, in its
+// documents (named "notes:<path>"): inline code spans and fenced code lines. The dated records (completed, archive,
+// measurements) are left alone: they say what was run then, at that day's paths.
 func docCommands(t *testing.T, root string) []docCommand {
 	t.Helper()
+	out := walkDocCommands(t, filepath.Join(root, "docs"), root, "")
+	if n := notesCheckout(root); n != "" {
+		out = append(out, walkDocCommands(t, n, n, "notes:")...)
+	}
+	return out
+}
+
+func walkDocCommands(t *testing.T, dir, base, label string) []docCommand {
+	t.Helper()
 	var out []docCommand
-	err := filepath.WalkDir(filepath.Join(root, "docs"), func(p string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() && (d.Name() == "completed" || d.Name() == "archive" || d.Name() == "measurements") {
+		if d.IsDir() && (d.Name() == "completed" || d.Name() == "archive" || d.Name() == "measurements" || d.Name() == ".git") {
 			return filepath.SkipDir
 		}
 		if d.IsDir() || !strings.HasSuffix(p, ".md") {
@@ -37,10 +57,10 @@ func docCommands(t *testing.T, root string) []docCommand {
 		if err != nil {
 			return err
 		}
-		rel, _ := filepath.Rel(root, p)
+		rel, _ := filepath.Rel(base, p)
 		fenced := false
 		for i, line := range strings.Split(string(b), "\n") {
-			at := filepath.ToSlash(rel) + ":" + strconv.Itoa(i+1)
+			at := label + filepath.ToSlash(rel) + ":" + strconv.Itoa(i+1)
 			if fenceOpen.MatchString(line) {
 				fenced = !fenced
 				continue
@@ -61,6 +81,50 @@ func docCommands(t *testing.T, root string) []docCommand {
 		t.Fatal(err)
 	}
 	return out
+}
+
+// TestDocCommands_readsTheNotesCheckout: a notes checkout beside the repository is read like docs/, minus its archive; without
+// one only docs/ is read.
+func TestDocCommands_readsTheNotesCheckout(t *testing.T) {
+	base := t.TempDir()
+	write := func(rel, text string) {
+		p := filepath.Join(base, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	root := filepath.Join(base, "goinfer")
+	write("goinfer/docs/a.md", "run `go test ./x -run TestA`\n")
+	write("goinfer-notes/tasks/t.md", "```\ngo test ./y -run TestB\n```\n")
+	write("goinfer-notes/completed/old.md", "run `go test ./z -run TestC`\n")
+	write("goinfer-notes/measurements/m.md", "run `go test ./w -run TestD`\n")
+
+	got := map[string]string{}
+	for _, dc := range docCommands(t, root) {
+		got[dc.where] = dc.line
+	}
+	want := map[string]string{
+		"docs/a.md:1":        "go test ./x -run TestA",
+		"notes:tasks/t.md:2": "go test ./y -run TestB",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	}
+
+	if err := os.RemoveAll(filepath.Join(base, "goinfer-notes")); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(docCommands(t, root)); n != 1 {
+		t.Fatalf("without a notes checkout got %d commands, want the 1 under docs/", n)
+	}
 }
 
 // TestDocs_goTestCommandsCompileTheTestsTheyName: every `go test ... -run` command in the live docs names tests its tags
@@ -93,6 +157,9 @@ func TestDocs_goTestCommandsCompileTheTestsTheyName(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Fatal("VOID: no go test command found in the live docs")
+	}
+	if notesCheckout(root) == "" {
+		t.Log("no notes checkout beside the repository: the task, queue, plan and scoping docs kept there were not read")
 	}
 	t.Logf("%d commands checked", checked)
 }
