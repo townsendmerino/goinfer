@@ -70,9 +70,6 @@ func (s *decodeScratch) loraBuf(r int) []float32 {
 }
 
 func newDecodeScratch(a *Architecture) *decodeScratch {
-	// maxHeads, not NumHeads: a family with per-layer query heads (Laguna) must size
-	// q/ctx for its WIDEST layer, since one scratch is reused across every layer.
-	qDim, kvDim := a.maxHeads()*a.HeadDim, a.NumKVHeads*a.HeadDim
 	// aikit's opt-in worker pool (Workspace.SetWorkers) is deliberately not used: it measured neutral-to-slightly-slower than the
 	// spawn path (the batch=1 fork/join cost is a floor, not pool-fixable).
 	//
@@ -82,30 +79,72 @@ func newDecodeScratch(a *Architecture) *decodeScratch {
 	// DefaultDecodeParallelThreshold.
 	ws := &linalg.Workspace{}
 	ws.SetThreshold(DefaultDecodeParallelThreshold)
-	s := &decodeScratch{
-		knobs:  a.knobs,
-		h:      make([]float32, a.HiddenDim),
-		norm:   make([]float32, a.HiddenDim),
-		sub:    make([]float32, a.HiddenDim),
-		sub2:   make([]float32, a.HiddenDim),
-		q:      make([]float32, qDim),
-		k:      make([]float32, kvDim),
-		v:      make([]float32, kvDim),
-		ctx:    make([]float32, qDim),
-		gate:   make([]float32, a.IntermediateDim),
-		up:     make([]float32, a.IntermediateDim),
-		logits: make([]float32, a.VocabSize),
-		ws:     ws,
-	}
-	if a.MoE != nil {
-		sc := max(a.MoE.SharedIntermediateDim, a.MoE.IntermediateDim)
-		s.moeLogits = make([]float32, a.MoE.NumExperts)
-		s.moeOut = make([]float32, a.HiddenDim)
-		s.moeExpOut = make([]float32, a.HiddenDim)
-		s.moeGate = make([]float32, sc)
-		s.moeUp = make([]float32, sc)
+	s := &decodeScratch{knobs: a.knobs, ws: ws}
+	for _, r := range decodeScratchRows(a) {
+		*s.row(r.name) = make([]float32, r.elems)
 	}
 	return s
+}
+
+// scratchRow is one f32 row of a decode stream's fixed scratch: the decodeScratch field that holds it and its element count.
+type scratchRow struct {
+	name  string
+	elems int
+}
+
+// decodeScratchRows is the fixed rows newDecodeScratch allocates for a, by field name: the one list the constructor allocates from and
+// Model.CPUDecodeScratch prices, so the two cannot disagree. maxHeads, not NumHeads, sizes q and ctx (a family with per-layer query
+// heads reuses one buffer across layers); the MoE rows exist only for a mixture-of-experts architecture. Buffers grown on demand
+// (scores, the batched logits, the per-head pool, the local window, the quantization scratch) are not here.
+func decodeScratchRows(a *Architecture) []scratchRow {
+	H, qDim, kvDim := a.HiddenDim, a.maxHeads()*a.HeadDim, a.NumKVHeads*a.HeadDim
+	rows := []scratchRow{{"h", H}, {"norm", H}, {"sub", H}, {"sub2", H}, {"q", qDim}, {"k", kvDim}, {"v", kvDim}, {"ctx", qDim},
+		{"gate", a.IntermediateDim}, {"up", a.IntermediateDim}, {"logits", a.VocabSize}}
+	if a.MoE != nil {
+		sc := max(a.MoE.SharedIntermediateDim, a.MoE.IntermediateDim)
+		rows = append(rows, scratchRow{"moeLogits", a.MoE.NumExperts}, scratchRow{"moeOut", H}, scratchRow{"moeExpOut", H},
+			scratchRow{"moeGate", sc}, scratchRow{"moeUp", sc})
+	}
+	return rows
+}
+
+// row is the field a scratchRow name stands for.
+func (s *decodeScratch) row(name string) *[]float32 {
+	switch name {
+	case "h":
+		return &s.h
+	case "norm":
+		return &s.norm
+	case "sub":
+		return &s.sub
+	case "sub2":
+		return &s.sub2
+	case "q":
+		return &s.q
+	case "k":
+		return &s.k
+	case "v":
+		return &s.v
+	case "ctx":
+		return &s.ctx
+	case "gate":
+		return &s.gate
+	case "up":
+		return &s.up
+	case "logits":
+		return &s.logits
+	case "moeLogits":
+		return &s.moeLogits
+	case "moeOut":
+		return &s.moeOut
+	case "moeExpOut":
+		return &s.moeExpOut
+	case "moeGate":
+		return &s.moeGate
+	case "moeUp":
+		return &s.moeUp
+	}
+	panic("decoder: no decode scratch row named " + name)
 }
 
 // scoresBuf returns a length-n scores buffer, reusing the backing array when it is large enough. It grows with headroom
