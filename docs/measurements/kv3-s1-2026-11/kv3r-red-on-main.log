@@ -1,0 +1,28 @@
+    pagepack_test.go:100: plan 2620.67 MiB against the card's 2686.00 MiB (-65.33)
+    pagepack_test.go:102: the plan prices 2620.67 MiB of weights, the card took 2686.00: -65.33 MiB, bar 2
+    pagepack_test.go:100: plan 4427.86 MiB against the card's 4444.00 MiB (-16.14)
+    pagepack_test.go:102: the plan prices 4427.86 MiB of weights, the card took 4444.00: -16.14 MiB, bar 2
+    pagepack_test.go:100: plan 1527.03 MiB against the card's 1582.00 MiB (-54.97)
+    pagepack_test.go:102: the plan prices 1527.03 MiB of weights, the card took 1582.00: -54.97 MiB, bar 2
+    pagepack_test.go:100: plan 461.18 MiB against the card's 464.00 MiB (-2.82)
+    pagepack_test.go:102: the plan prices 461.18 MiB of weights, the card took 464.00: -2.82 MiB, bar 2
+    pagepack_test.go:100: plan 1048.73 MiB against the card's 1052.00 MiB (-3.27)
+    pagepack_test.go:102: the plan prices 1048.73 MiB of weights, the card took 1052.00: -3.27 MiB, bar 2
+    pagepack_test.go:100: plan 774.75 MiB against the card's 778.00 MiB (-3.25)
+    pagepack_test.go:102: the plan prices 774.75 MiB of weights, the card took 778.00: -3.25 MiB, bar 2
+    pagepack_test.go:100: plan 679.68 MiB against the card's 682.00 MiB (-2.32)
+    pagepack_test.go:102: the plan prices 679.68 MiB of weights, the card took 682.00: -2.32 MiB, bar 2
+    pagepack_test.go:100: plan 1922.89 MiB against the card's 1956.00 MiB (-33.11)
+    pagepack_test.go:102: the plan prices 1922.89 MiB of weights, the card took 1956.00: -33.11 MiB, bar 2
+--- FAIL: TestPlanSlack_pricesThePacking (11.29s)
+    --- FAIL: TestPlanSlack_pricesThePacking/gemma-3-4b-it (4.19s)
+    --- FAIL: TestPlanSlack_pricesThePacking/qwen2.5-7b-instruct-q4_k_m.gguf (1.25s)
+    --- FAIL: TestPlanSlack_pricesThePacking/gemma-4-E2B_q4_0-it.gguf (1.24s)
+    --- FAIL: TestPlanSlack_pricesThePacking/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (0.26s)
+    --- FAIL: TestPlanSlack_pricesThePacking/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (0.40s)
+    --- FAIL: TestPlanSlack_pricesThePacking/llama-3.2-1b-instruct-q4_k_m.gguf (0.32s)
+    --- FAIL: TestPlanSlack_pricesThePacking/gemma3-1b-q4_k_m.gguf (0.37s)
+    --- FAIL: TestPlanSlack_pricesThePacking/qwen25vl-3b-instruct (3.26s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/backend/cuda	11.335s
+FAIL

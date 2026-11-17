@@ -367,7 +367,7 @@ func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
 	for i := range layers {
 		layers[i].kvDim = nKV * hd
 	}
-	dense := probe.ResidentDenseWeightBytesFor("cuda") // what Plan prices for CUDA
+	dense := probe.ResidentDenseWeightBytesFor("cuda") + probe.PlanSlack("cuda") // what Plan prices for CUDA: the weights and the driver's charge over them
 	probe.Close()
 	free, ok := decoder.FreeBytesFor("cuda")
 	if !ok {
@@ -381,7 +381,7 @@ func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
 		wantSlots int // what checkKVFits grants at the chosen context
 	}{
 		{"interior: 4 slots fit at ~5000", 5000, func(got int) bool { return got > 4800 && got <= 5064 }, slots},
-		{"not even the floor holds 4: the floor, and the build clamps", 3000, func(got int) bool { return got == cudaCtxCapDefault }, 2},
+		{"not even the floor holds 4: the floor, and the build clamps", 2400, func(got int) bool { return got == cudaCtxCapDefault }, 2},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			// The budget holds exactly `slots` slots at the target as the pools charge them (kvChargedBytes): on this fixture the
@@ -413,7 +413,7 @@ func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
 			pinned, _ := resolveCtxCapFitSlack(mPinned, mPinned.ResidentContextRequest(), 1<<20, slots, fixedMargin(testCtxMargin), round)
 			t.Logf("one slot: ctx %d; %d slots: ctx %d (target %d); explicit 8192 with %d slots: %d", one, slots, got, c.target, slots, pinned)
 			// One slot gets the smaller of the candidate and what the forced budget holds (slots*target positions of KV beside the weights).
-			// With the candidate at 8192 that was always the candidate; at 16384 the 3000-position case holds only ~12000, which is the
+			// With the candidate at 8192 that was always the candidate; at 16384 the 2400-position case holds only ~9600, which is the
 			// budget talking, not a shrink the slots rule did.
 			room := slots * c.target
 			wantOne := min(room, fitDefaultCtx)
@@ -1428,5 +1428,49 @@ func TestCost_cudaGenerateOnTheWire(t *testing.T) {
 	cudaGenerate(t, m2, prompt, 3, c2) // the tokens and reuse are not read: only that nothing was counted
 	if r2 := c2.Report(); r2.Prefill != nil || r2.Decode != nil {
 		t.Errorf("under MC3 a generation was counted: %+v", r2)
+	}
+}
+
+// cardWeightMiB is the device's drop over a build's weight uploads, MiB, from the allocation sequence each build made
+// (docs/measurements/kv3-s1-2026-11/kv3r-seq-*.tsv.gz: free VRAM read after every allocation; the first allocation of a process
+// also takes a page of its own, 2 MiB, not counted here). The plan prices this as the dense weights plus packedAllocSlack.
+var cardWeightMiB = map[string]float64{
+	"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf":   464,
+	"qwen2.5-coder-1.5b-instruct-q4_k_m.gguf":   1052,
+	"llama-3.2-1b-instruct-q4_k_m.gguf":         778,
+	"gemma3-1b-q4_k_m.gguf":                     682,
+	"qwen25vl-3b-instruct":                      1956,
+	"gemma-3-4b-it":                             2686,
+	"qwen2.5-7b-instruct-q4_k_m.gguf":           4444,
+	"gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf": 1582,
+}
+
+// TestPlanSlack_pricesThePacking (KV3-S1-residual): on every real checkpoint whose weight upload was read against the card, the
+// plan's weight figure (dense bytes plus the planned slack) is within 2 MiB of the card's drop; the readings and the figures the plan gave
+// before the packing was priced are in docs/measurements/kv3-s1-2026-11/packing-model.md.
+func TestPlanSlack_pricesThePacking(t *testing.T) {
+	ran := 0
+	for rel, want := range cardWeightMiB {
+		paths := realSizeModels(t, rel)
+		if len(paths) == 0 {
+			t.Logf("%s: not on this box", rel)
+			continue
+		}
+		t.Run(filepath.Base(rel), func(t *testing.T) {
+			m, err := decoder.Load(paths[0], decoder.Options{Backend: "cpu", Quant: "int4"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+			got := float64(m.ResidentDenseWeightBytesFor("cuda")+m.PlanSlack("cuda")) / (1 << 20)
+			t.Logf("plan %.2f MiB against the card's %.2f MiB (%+.2f)", got, want, got-want)
+			if got < want-2 || got > want+2 {
+				t.Errorf("the plan prices %.2f MiB of weights, the card took %.2f: %+.2f MiB, bar 2", got, want, got-want)
+			}
+		})
+		ran++
+	}
+	if ran == 0 {
+		t.Skip("none of the checkpoints is on this box")
 	}
 }
