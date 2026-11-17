@@ -18,7 +18,7 @@ func NextTurns(turns []Turn) []Turn {
 //
 // It is found from the template, not per family: the conversation is rendered again with a reply and a new user message after it (the
 // next request's shape), and the tail is what the first render has past the two renders' common prefix. A recurrent model's state can
-// be kept at the end of the prompt minus this tail and continued by the next turn (docs/queue-engineering.md, B35); callers count it
+// be kept at the end of the prompt minus this tail and continued by the next turn; callers count it
 // in tokens from the two renders' common token prefix, not from this string's length.
 func (t *Template) GenerationTail(system string, turns []Turn) string {
 	gen := t.Render(system, turns)
