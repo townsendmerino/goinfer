@@ -389,3 +389,6 @@ apps/site/data/release.json
 .env.*
 *.pem
 *.key
+
+# A maintainer's private overlay for Claude Code (see CLAUDE.md).
+CLAUDE.local.md
