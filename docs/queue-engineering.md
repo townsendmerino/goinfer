@@ -3,8 +3,7 @@
 Gates, lints, censuses, tooling, process rules, and the audit sweeps. Anything whose success criterion is that **a check can be trusted** — that it runs, that it can fail, that its green means what it says. If the question is *would we find out*, it belongs here.
 
 > **One of four queues.** The work list is split by *success criterion*, not by component:
-> [performance](queue-performance.md) · [correctness](queue-correctness.md) ·
-> [engineering](queue-engineering.md) · [release](queue-release.md).
+> performance · correctness · engineering (this one) · release; the other three are kept privately.
 > [`QUEUE.md`](QUEUE.md) is the index over all four and holds the cross-cutting sweeps.
 >
 > **Task docs are NOT queues.** `docs/task-*.md` are *design records* — why a thing is built as it
@@ -593,7 +592,7 @@ used, and the next 9B job's start check read 8.13 GB against an 8.7 GB need unti
     exits, and the reload time of the same model.
 - **Size:** S to M; the darwin mechanics decide it.
 
-**B39 · CANDIDATE: 8-bit KV cache on CUDA (`--kv i8`), for a longer context on the 8 GB card** — *State 2026-11-08: delivered for the five dense families (S1 #735 to S3 #759, #764); S4, the fidelity gate and speed check, is #768 and read 2026-11-08 (the state line below); see `docs/tasks/task-kv-precision-everywhere-2026-10.md` P2. A line below that says Metal declines the MMA prefill is from before then.* Filed 2026-10-20 (owner, from tack's question: tack runs Qwen3-8B Q4_K_M at 16k because of KV memory). **Folded 2026-10-20 into `docs/tasks/task-kv-precision-everywhere-2026-10.md` as its phase 2 (the owner asked for f16 and int8 KV on every backend, family and path); the state line below is corrected there (§2).** **Candidate, not funded, not scoped past this estimate.** *Update 2026-10-20 (tack): its 4.8 screen removed about 10k tokens of instructions from a 16k window and passes on the hard tasks did not move (0/30 in both arms), so the window is no longer tack's binding limit; B39 stays a candidate with no pull from tack for now.* Tack decides after its next change (dropping or sectioning CLAUDE.md in the prompt) shows whether the window is still its main failure; no work until then.
+**B39 · CANDIDATE: 8-bit KV cache on CUDA (`--kv i8`), for a longer context on the 8 GB card** — *State 2026-11-08: delivered for the five dense families (S1 #735 to S3 #759, #764); S4, the fidelity gate and speed check, is #768 and read 2026-11-08 (the state line below); see a private task doc P2. A line below that says Metal declines the MMA prefill is from before then.* Filed 2026-10-20 (owner, from tack's question: tack runs Qwen3-8B Q4_K_M at 16k because of KV memory). **Folded 2026-10-20 into a private task doc as its phase 2 (the owner asked for f16 and int8 KV on every backend, family and path); the state line below is corrected there (§2).** **Candidate, not funded, not scoped past this estimate.** *Update 2026-10-20 (tack): its 4.8 screen removed about 10k tokens of instructions from a 16k window and passes on the hard tasks did not move (0/30 in both arms), so the window is no longer tack's binding limit; B39 stays a candidate with no pull from tack for now.* Tack decides after its next change (dropping or sectioning CLAUDE.md in the prompt) shows whether the window is still its main failure; no work until then.
 - **State today (2026-11-08):** CUDA's resident KV is f32, f16 or int8. `--kv auto` is f16 for the dense llama, mistral, qwen2, qwen3 and phi3 families (`decoder/residency.go:Model.ResidentKVPrecision`; Qwen3-8B's banner reads `KV f16`). `--kv i8` is delivered on request for those five families without a sliding window, and never as an `auto` pick (phase 2's S1 to S4, #768). Its G4 reading: about f16's quality on qwen2.5-7b at 8,000 keys (PARKED on KL 1.080x; f16 itself 1.057x), a measurable loss on the 1.5B at 3,900 keys. Its speed: decode 0.72x to 0.95x f16's at 128 and 512 keys and 0.99x at depth, and a cold prefill near f16's at 4K and 16K keys on the tensor-core tiles (S6, `docs/measurements/cuda-kv-i8-2026-11/s6-registration.md`; `docs/measurements/cuda-kv-i8-2026-11/s4-registration.md`). Every other family refuses it by name, and widening is parked (the task doc's P2-S3c and P2-S5 rows). On Metal it is delivered on the per-token path where the MMA prefill, batched decode and the Gemma 4, MoE and emodel layer-major paths decline it; on the CPU it covers the families without MoE on the batched attention kernel and refuses elsewhere; WebGPU's coverage is phase 5's survey (`docs/kv-precision-matrix.md`). 4-bit KV exists nowhere (int4 KV is deferred behind int8; a 3-bit variant was killed, `docs/quantization.md`).
 - **Sizing arithmetic (Qwen3-8B Q4_K_M, RTX 2070 SUPER; arithmetic, not a measurement; the server's own plan is the fit check):**
   - KV per position at f16: 36 layers x 8 KV heads x 128 x 2 (K and V) x 2 B = 147,456 B = 144 KiB. At 16,384 positions: 2.36 GB (the banner's "needs 2.2 GB KV", in GiB). Weights 4.3 GB (the banner).
@@ -962,7 +961,7 @@ covered by model type (also `phi3`) without having been measured. `bench_peer.py
 `-quant int8`, so it times what a user gets.
 
 **Step 1 done (2026-09-25):** the sweep of goinfer's quants against its own f32 across 12 families
-(`docs/tasks/task-actquant-pergroup-2026-09.md` § Blast radius; raw data in
+(a private task doc § Blast radius; raw data in
 `docs/measurements/actquant-sweep-2026-09-25/`). Activation damage is general and mostly confined to the
 first token; it is widespread for phi3-mini and **qwen2.5-7b** (int8int8 p10 0.83, int4 p10 0.15 on
 filler). A separate int4 WEIGHT-quality problem shows on llama3.2-1b, which per-group activation scales
@@ -992,7 +991,7 @@ cheap check to run before choosing among the options above.
 catch this doesn't exist** — `linux` (the workflow runs on GitHub-hosted runners; the fix is
 CI-only), **filed 2026-09-15**
 
-Found via `docs/queue-presentation.md` U12, itself found by checking a Go Weekly submission's
+Found via a private queue U12, itself found by checking a Go Weekly submission's
 premise against the live release rather than believing it: `v0.18.0` (current latest) has **zero**
 release assets (`gh api repos/townsendmerino/goinfer/releases/tags/v0.18.0 --jq '.assets | length'`
 → `0`), against 27 on each of the three releases before it. `release-assets.yml`'s `runtime
@@ -1277,7 +1276,7 @@ is fine; two entry points isn't, because **the verdict has to come from one plac
 CUDA-side), **filed 2026-08-16**. Decided 2026-08-12 by Francis as "the first thing after the
 release"; v0.13.0 shipped before this was recorded, and it was reconstructed from the
 conversation that produced it. Design page:
-[`docs/tasks/task-release-path-restructure.md`](tasks/task-release-path-restructure.md) — the context, the
+a private task doc — the context, the
 evidence and the acceptance criteria per item live there; this entry is the claimable work.
 
 **Why:** v0.13.0's tag took two days. Day one found real defects (the 26B slot-cap bug, goldens
@@ -1707,7 +1706,7 @@ blocked on Francis's torch-replacement research — do not attempt it or design 
 - **Mechanism: a purego NVRTC binding**, ~6 C-ABI functions (`nvrtcCreateProgram` / `nvrtcCompileProgram` / `nvrtcGetPTXSize` / `nvrtcGetPTX` / `nvrtcGetProgramLog` / `nvrtcDestroyProgram`), same shape as the Metal binding. **purego is already in the cuda/metal dependency set → no new ecosystem.** A `cuda/cmd/ptxgen` (run from `backend/cuda/build_ptx.sh` / `go:generate`) reads the `.cu`, passes the arch options (`--gpu-architecture=compute_75` for Turing, etc.), writes the `.ptx`. Build tooling only — **not** in the main `go.mod` (item-4 constraint holds by construction).
 - **Load-bearing constraint (from the split-KV / cap-bump PTX discipline):** `ptxgen` must dlopen the **PINNED** `libnvrtc.so` (explicit path, e.g. 12.6.85 — not "whatever's on the box"), or a regen is a toolchain bump masquerading as a kernel change. Acceptance = the relay's byte-identical control: the Go tool must reproduce **every currently-committed `.ptx` byte-for-byte** from the current `.cu` at the pinned version before the Python is deleted (criterion **a**), and rebuild-unchanged → identical sha.
 - **Honest limit:** removes the *Python*, not the *NVRTC dependency* — someone must still compile `.cu`→PTX, which irreducibly needs libnvrtc at regen time (the Python helper needs it too; no new burden). "No Python," not "no CUDA build dep."
-- **Priority: LAST E7 item**, after the `queue_citation_lint` capstone proves the pattern — nvrtc is hardware-gate-path and rarely invoked, unlike the CI-critical citation lint. Independent of the `oracle/` plan (`docs/tasks/parked/task-oracle-refforward.md`); shares nothing with it. Deletes `backend/cuda/nvrtc_compile.py` in the landing commit (criterion **c**).
+- **Priority: LAST E7 item**, after the `queue_citation_lint` capstone proves the pattern — nvrtc is hardware-gate-path and rarely invoked, unlike the CI-critical citation lint. Independent of the `oracle/` plan; shares nothing with it. Deletes `backend/cuda/nvrtc_compile.py` in the landing commit (criterion **c**).
 
 **Acceptance criterion per migration (non-negotiable, from Francis):**
 - **a.** Run the Python and the Go against the current tree; outputs must **agree**. Any disagreement is **investigated before the swap**, not explained after.
@@ -1725,9 +1724,9 @@ blocked on Francis's torch-replacement research — do not attempt it or design 
 
 **Item 7 — OUT OF SCOPE of E7's migration, owner named:** the pin-fixture and reference-tensor generation (the 57 torch/HF scripts). **Francis owns it.** Do not start it in parallel and do not design the tooling migration around a guess at what he finds.
 
-**Replacement research: DELIVERED as a scoping plan — `docs/tasks/parked/task-oracle-refforward.md`.** The design questions are resolved there (verdict: buildable; a pure-Go `oracle/` submodule with its own `go.mod`, independent safetensors reader + f64 math, anchored against HF once per architecture, emitting the existing golden schema — Python shrinks from ~50 per-model generators to a handful of per-architecture anchor runs, not to zero). It is a **plan, not a start**: still Francis's go/no-go to fund, and gated behind v0.13.0 (§C1 + CUDA gate) like the rest of E7. Its Phase 0 (cluster the 57 by shared forward-math to size the real kernel surface) is the first work if funded — the E7 inventory counted the scripts but did not cluster them by math.
+**Replacement research: DELIVERED as a scoping plan — a private task doc.** The design questions are resolved there (verdict: buildable; a pure-Go `oracle/` submodule with its own `go.mod`, independent safetensors reader + f64 math, anchored against HF once per architecture, emitting the existing golden schema — Python shrinks from ~50 per-model generators to a handful of per-architecture anchor runs, not to zero). It is a **plan, not a start**: still Francis's go/no-go to fund, and gated behind v0.13.0 (§C1 + CUDA gate) like the rest of E7. Its Phase 0 (cluster the 57 by shared forward-math to size the real kernel surface) is the first work if funded — the E7 inventory counted the scripts but did not cluster them by math.
 
-**PARKED, 2026-08-18 (Francis):** the v0.13.0 freeze cleared, but Francis reviewed the plan and declined to fund it now — not rejected, may be picked up someday as a low-priority item, no active trigger. See the status line at the top of `docs/tasks/parked/task-oracle-refforward.md` for the record. A future revisit should also fold in aikit's own ~23-file torch-oracle cluster (`aikit/scripts/oracle/*.py`) as one joint Phase-0 pass across both repos, not two separate plans.
+**PARKED, 2026-08-18 (Francis):** the v0.13.0 freeze cleared, but Francis reviewed the plan and declined to fund it now — not rejected, may be picked up someday as a low-priority item, no active trigger. See the status line at the top of a private task doc for the record. A future revisit should also fold in aikit's own ~23-file torch-oracle cluster (`aikit/scripts/oracle/*.py`) as one joint Phase-0 pass across both repos, not two separate plans.
 
 **E8 · One Go gate-runner over `go test -json` — collapse the tallying shell + census Python** — `linux`/`mac`, **IN PROGRESS — runner + first two configs LANDED 2026-08-20.** Decided 2026-08-12 by Francis.
 
@@ -1994,7 +1993,7 @@ bare `go test ./decoder`, `TestDecodeParityInt4` now RUNS where it used to skip.
 this gate as **already red for at least two days** — so expect it red, and do not read that as caused
 by this change. *(Resolved 2026-08-15 `8f63a7d`: red since 2026-06-14, a stale golden pinning a
 superseded W4A8 kernel — so this behaviour change did not cause it, it REVEALED it, and the "two
-days" was the visible floor. The gate is green now; `queue-correctness.md` carries the close-out.)*
+days" was the visible floor. The gate is green now; a private queue carries the close-out.)*
 
 **End-to-end proof:** `TestPhi3GGUFReal_gate` under `-tags realckpt` loads its model through
 `assetPath` and passes (argmax 3681 = golden, continuation exact). **Note the tag**: the 24
@@ -2140,7 +2139,7 @@ a standing failure; it hid **when** the failure started, and therefore what caus
 argument for the campaign at full strength: the cost of a dark gate is not the red you eventually
 see, it is the attribution you lose in between. (Resolved as a stale golden, not a defect — the
 W4A8 scale-fold kernel that bump carried made int4 *more* faithful to f32, 5 → 11 leading ids. See
-`queue-release.md`; two of the three remain in this campaign.)
+a private queue; two of the three remain in this campaign.)
 
 **After the release:** batches, each failure triaged by **(a) can a shipped path reach it** and
 **(b) is it older than the current tag**, with a **budget that stops the campaign** rather than the
@@ -2273,7 +2272,7 @@ reason can change turn to turn, which none of today's backends are.
 
 ### B15 — the `EMIT_MANIFEST=1` merge can write a method or status the tier rules reject
 
-*(This entry's heading was lost; its body sat under B20's heading with no title while `queue-release.md` and RELEASING.md kept citing `[[B15]]`. Restored 2026-10-06.)* **FIXED:** `emitParityRow` checks the method against the closed vocabulary at the source (`decoder/parity_emit_test.go`, `knownParityMethod`), and `TestParityManifest_methodTier` refuses a validated row whose method is not a T3 one. The v0.21.0 merge was checked against both.
+*(This entry's heading was lost; its body sat under B20's heading with no title while a private queue and RELEASING.md kept citing `[[B15]]`. Restored 2026-10-06.)* **FIXED:** `emitParityRow` checks the method against the closed vocabulary at the source (`decoder/parity_emit_test.go`, `knownParityMethod`), and `TestParityManifest_methodTier` refuses a validated row whose method is not a T3 one. The v0.21.0 merge was checked against both.
 
 **Found 2026-08-13 by running the sweep with `EMIT_MANIFEST=1`.** The merge wrote:
 

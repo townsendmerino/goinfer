@@ -2,7 +2,7 @@
 
 > **2026-11-09:** nothing is queued: rerun 2 ran 2026-10-02 and parked the MC4 candidate with the numbers; "spec inside a
 > batch" is now RF6 and MC4's MoE and recurrent items were built on Metal by OP4 (CUDA: OP4cu-x), both in
-> `docs/tasks/task-forward-and-memory-2026-11.md`. The ledger below is current.
+> a private task doc. The ledger below is current.
 >
 > **PARKED, 2026-10-01 (owner), with one graded run queued.** Moved to `docs/tasks/parked/`; a pointer stub stays at the
 > old path because ~60 code comments and several docs cite it. MC0–MC3 (including MC3c) and chunked prefill shipped
@@ -169,10 +169,10 @@
 |---|---|---|---|
 | MC0-MC3c | done | — | MC0, MC1 (Metal, CUDA, WebGPU), MC2, MC3 (Metal, CUDA), MC3c steps 1-2; `backend/metal/kv_slots_test.go:TestKVSlotsWithin` |
 | MC5-chunk | done | — | `backend/metal/mc5_chunk_invariance_test.go:TestMC5_prefillChunkInvariance`; `docs/measurements/chunked-prefill-2026-09-27.md` |
-| MC5-paged | moved | KV5 in `docs/tasks/task-kv-architecture-2026-10.md` | D1, 2026-10-13 |
+| MC5-paged | moved | KV5 in a private task doc | D1, 2026-10-13 |
 | MC4-cand | decision | Francis: keep `-spec-adaptive` opt-in, make it a default, or withdraw it | `docs/measurements/mc4-candidate-cuda-2026-10-01.md` "RERUN 2 RESULT" |
-| MC4-spec | moved | RF6 in `docs/tasks/task-forward-and-memory-2026-11.md` | `docs/completed/task-forward-architecture-2026-10.md` §5.4 |
-| MC4-moe, MC4-rec | moved | Metal: built by OP4; CUDA: OP4cu-x in `docs/tasks/task-forward-and-memory-2026-11.md` | `internal/config/help.go:RecurrentStepHelp` |
+| MC4-spec | moved | RF6 in a private task doc | `docs/completed/task-forward-architecture-2026-10.md` §5.4 |
+| MC4-moe, MC4-rec | moved | Metal: built by OP4; CUDA: OP4cu-x in a private task doc | `internal/config/help.go:RecurrentStepHelp` |
 | MC4-adapter | blocked | trigger: a real multi-adapter workload | "MC4 — broadening" below |
 | P10-metal | decision | Francis: pick it up (step 0, the drafter trunk's Metal cost, by day) or kill it | `docs/measurements/p10-metal-projection-2026-09-28.md` |
 | 413-e2e | open | re-run the 7B MC3 batch cells on a Mac that is not swapping, or close it as covered by the unit test | `internal/app/serveapp/prefill_share_testhooks_test.go:TestPrepare_prefillShare` |
@@ -1442,7 +1442,7 @@ Each item waits on MC3 shipping and on a measured request for it:
   §6). Investigated the same day: the real fix is a ragged-batch kernel (unscoped, real backend
   work); the cheap hypothesis (a workload-aware yield policy in the switch candidate, zero new
   kernels) does NOT work — measured worse than doing nothing, because the cost is concurrent
-  admission itself, not the per-round policy. **Parked, no design exists yet, owner's call.** *(2026-11-09: now RF6, the ragged path, in `docs/tasks/task-forward-and-memory-2026-11.md`.)*
+  admission itself, not the per-round policy. **Parked, no design exists yet, owner's call.** *(2026-11-09: now RF6, the ragged path, in a private task doc.)*
 - **Mixed adapters in one batch.** Trigger: a real multi-adapter workload.
 
 **The spec trigger, measured on Metal — pre-registered 2026-09-27, before any timing.** Today a model served with
