@@ -8,7 +8,7 @@ const ctxHelp = "GPU-resident KV capacity in positions{per-model}. 0 (default) k
 	"beside the requested KV slots) with -fit at its default of ON; on Metal the same rule against the Mac's memory budget (up to 16384, never " +
 	"under 4096; 4096 with -fit=off or when MoE experts are paged; an explicit -ctx reaches 32768); on webgpu, the ceiling -kv's precision sets. " +
 	"The real per-card ceiling is typically far higher and worth measuring for your model/quant " +
-	"(docs/tasks/parked/task-kv-cache-streaming.md: an RTX 2070 SUPER 8GB ran a dense 7B at int4 fine at -ctx 20000, " +
+	"(an RTX 2070 SUPER 8GB ran a dense 7B at int4 fine at -ctx 20000, " +
 	"refused at 24576). When set, the effective cap is min(model context window, this) and the KV it implies is " +
 	"VRAM-checked AT LOAD; if the whole model then can't build resident, it loads on the CPU path instead — measured " +
 	"~15x slower decode, same model/quant{serve-only}" +
