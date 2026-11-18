@@ -1,0 +1,11 @@
+[Unit]
+Description=Queue the weekly CUDA gate (heavy tier) on the night queue
+
+[Timer]
+# Saturday (the coordinator's word, 2026-11-17). The queue script retries once at 20:30 if nobara is booked; the job itself starts at 22:00 or later.
+OnCalendar=Sat *-*-* 18:00:00
+OnCalendar=Sat *-*-* 20:30:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target
