@@ -283,6 +283,7 @@ jobs:
         run: |
           python3 -B scripts/test_cuda_device_suite_issue.py
           python3 -B scripts/test_cuda_device_suite_queue.py
+          python3 -B scripts/test_device_suite_heartbeat.py
 
       # ci_docs_only.sh's rule 2 matches a read by the file's full path, not its basename: a docs commit adding a
       # docs/**/README.md or run.py is docs-only, while the root README.md and a docs file a test reads are code. Each case
