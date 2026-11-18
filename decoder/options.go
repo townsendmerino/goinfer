@@ -185,12 +185,12 @@ type Options struct {
 	// Honoured on the CPU and by CUDA residency; other resident backends decline to the CPU path when it is set.
 	ActQuantGroup int
 
-	// LoadAbort, if non-nil, is checked between layers during a direct GGUF weight build, during a .giw's CRC pass and layer walk, and by a
+	// LoadAbort, if non-nil, is checked between layers during a direct GGUF or resident safetensors weight build, during a .giw's CRC pass and layer walk, and by a
 	// backend's resident build (Model.LoadAbort): the load-time consumer of the swap tripwire. Closing it aborts the load with an error satisfying errors.Is(err, ErrLoadAborted). Load does not know
 	// why it closed (it does not own decoder.SwapWatch), so a caller arming a watch is expected to wrap the returned error with
 	// its own reason/pricing detail. A nil channel (the zero value) blocks forever in a select, so it is a genuine no-op.
 	//
-	// Limitation: the safetensors direct-build path and StreamTranscodeGGUF's transcode do not check it, and a backend's resident build
+	// Limitation: StreamTranscodeGGUF's and StreamTranscodeDir's transcodes do not check it, and a backend's resident build
 	// does only if it polls Model.LoadAbort (docs/code-notes/decoder.md#Options.LoadAbort).
 	LoadAbort <-chan struct{}
 

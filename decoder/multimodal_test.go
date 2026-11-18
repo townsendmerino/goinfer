@@ -18,6 +18,21 @@ import (
 // Gemma 3, the first multimodal target, also uses) with deterministic weights.
 func tinyLlamaModel(t *testing.T) (*Model, int) {
 	t.Helper()
+	const hidden = 8
+	w, err := loadWeights(tinyLlamaDir(t), quantNone, false, true, false, nil, nil)
+	if err != nil {
+		t.Fatalf("loadWeights: %v", err)
+	}
+	m, err := NewModel(w, "cpu")
+	if err != nil {
+		t.Fatalf("NewModel: %v", err)
+	}
+	return m, hidden
+}
+
+// tinyLlamaDir writes tinyLlamaModel's checkpoint (config.json and model.safetensors) to a fresh directory.
+func tinyLlamaDir(t *testing.T) string {
+	t.Helper()
 	const hidden, heads, headDim, inter, vocab, layers = 8, 2, 4, 16, 16, 2
 	qDim := heads * headDim // 8
 	base := t.TempDir()
@@ -52,16 +67,7 @@ func tinyLlamaModel(t *testing.T) (*Model, int) {
 		ts[p+"post_attention_layernorm.weight"] = stTensor{[]int{hidden}, fill(hidden)}
 	}
 	writeSafetensors(t, filepath.Join(base, "model.safetensors"), ts)
-
-	w, err := loadWeights(base, quantNone, false, true, false, nil, nil)
-	if err != nil {
-		t.Fatalf("loadWeights: %v", err)
-	}
-	m, err := NewModel(w, "cpu")
-	if err != nil {
-		t.Fatalf("NewModel: %v", err)
-	}
-	return m, hidden
+	return base
 }
 
 // TestMultimodal_embedInjectionMatchesIDPath: forwardFromEmbed(embedToken(id))
