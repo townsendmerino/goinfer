@@ -38,13 +38,17 @@ jobs:
           # guards plus the json user: the crashes' neighbourhood
           - {cell: guard-responses, run: "TestPanicGuard|TestResponses", go: "", race: false}
           # the whole package, as CI runs it
-          - {cell: package, run: ".", go: "", race: false}
+          # one -test.count per launch: the package takes about 10 minutes at count=20 and hits -test.timeout
+          - {cell: package, run: ".", go: "", race: false, count: "1", gogc: ""}
+          - {cell: package-prevgo, run: ".", go: "1.27.3", race: false, count: "1", gogc: ""}
+          - {cell: package-gogc1, run: ".", go: "", race: false, count: "1", gogc: "1"}
           # race detector (needs cgo: windows-latest ships gcc)
           - {cell: guard-race, run: "TestPanicGuard|TestResponses", go: "", race: true}
           # the previous patch release of Go
           - {cell: guard-prevgo, run: "TestPanicGuard|TestResponses", go: "1.27.3", race: false}
     env:
       GOTRACEBACK: crash
+      GOGC: ${{ matrix.gogc }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
@@ -64,7 +68,7 @@ jobs:
         shell: bash
         working-directory: internal/app/serveapp
         run: |
-          rounds=${{ inputs.rounds }}; count=${{ inputs.count }}
+          rounds=${{ inputs.rounds }}; count=${{ matrix.count || inputs.count }}
           fail=0
           for i in $(seq 1 "$rounds"); do
             if ../../../serveapp.test.exe -test.run '${{ matrix.run }}' -test.count="$count" -test.timeout 10m > "round$i.log" 2>&1; then
