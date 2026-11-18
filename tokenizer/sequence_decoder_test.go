@@ -6,8 +6,7 @@ import (
 	"testing"
 )
 
-// A tokenizer.json whose ByteLevel decoder is wrapped in a Sequence (LFM2-VL's, S10 of
-// docs/completed/task-multimodal-support-2026-10.md) loads as byte-level and encodes exactly as the bare form; a Sequence with
+// A tokenizer.json whose ByteLevel decoder is wrapped in a Sequence loads as byte-level and encodes exactly as the bare form; a Sequence with
 // anything else in it keeps the SentencePiece routing. Before the fix the wrapped form fell to the SentencePiece path and
 // refused to load ("required token <unk>"), so LFM2.5-VL could not tokenize at all.
 func TestLoad_sequenceByteLevelDecoder(t *testing.T) {
