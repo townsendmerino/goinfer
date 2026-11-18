@@ -26,11 +26,16 @@ import time
 # A skip that means "the device was not there". The skip messages are the cuda tests' own wording (t.Skipf("no device: %v"), "no CUDA device", "no cuda device",
 # "the model did not go resident on this device").
 DEVICE_SKIP = re.compile(r"(?i)\bno (?:cuda )?device\b|did not go resident")
+# The Metal module's wording: "no metal device", "no GPU device", "device: <err>" (the open failed), "not resident on Metal", "EnableResident: <err>".
+# A memory-guard decline ("not run: the Metal memory guard declined ...") is not here: it is a fact about the box right now, counted as an other skip.
+METAL_DEVICE_SKIP = re.compile(r"(?i)\bno (?:(?:cuda|metal|gpu) )?device\b|did not go resident|not resident on metal|\bdevice: |EnableResident:")
+BACKENDS = {"cuda": DEVICE_SKIP, "metal": METAL_DEVICE_SKIP}
 PROGRESS_S = 60
 
 
-def judge(events, exit_code, tail):
-    """events: decoded `go test -json` records. Returns (red, lines)."""
+def judge(events, exit_code, tail, backend="cuda"):
+    """events: decoded `go test -json` records. Returns (red, lines). The device-skip pattern is `DEVICE_SKIP` for cuda, `METAL_DEVICE_SKIP` for metal."""
+    pattern = DEVICE_SKIP if backend == "cuda" else METAL_DEVICE_SKIP
     out, status, flight = {}, {}, {}
     pkg_failed = []
     for e in events:
@@ -49,13 +54,13 @@ def judge(events, exit_code, tail):
     for (p, n), s in status.items():
         if s != "skip":
             continue
-        (device_skips if DEVICE_SKIP.search("".join(out.get((p, n), []))) else other_skips).append(f"{p}.{n}")
+        (device_skips if pattern.search("".join(out.get((p, n), []))) else other_skips).append(f"{p}.{n}")
     device_skips.sort()
     red = bool(failed or pkg_failed or device_skips or exit_code != 0 or passed == 0)
     lines = []
     if exit_code != 0 and not failed and not pkg_failed:
         lines += ["go test exited %d with no failed test in its output; its last lines:" % exit_code, *tail[-10:]]
-    lines.append(f"cuda-device-suite: {passed} passed, {len(failed)} failed, {len(device_skips)} device skips, {len(other_skips)} other skips, "
+    lines.append(f"{backend}-device-suite: {passed} passed, {len(failed)} failed, {len(device_skips)} device skips, {len(other_skips)} other skips, "
                  f"{len(pkg_failed)} failed package(s)")
     if passed == 0:
         lines.append("RED: no test passed, so nothing ran")
@@ -70,6 +75,7 @@ def judge(events, exit_code, tail):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--cwd", default=".")
+    ap.add_argument("--backend", choices=sorted(BACKENDS), default="cuda")
     ap.add_argument("--raw", help="write the command's output here, verbatim")
     ap.add_argument("cmd", nargs=argparse.REMAINDER)
     a = ap.parse_args(argv)
@@ -84,7 +90,7 @@ def main(argv=None):
 
     def ticker():
         while not stop.wait(PROGRESS_S):
-            print(f"... cuda-device-suite: {time.time() - t0:.0f}s elapsed, {state['done']} tests finished, last: {state['last']}", flush=True)
+            print(f"... {a.backend}-device-suite: {time.time() - t0:.0f}s elapsed, {state['done']} tests finished, last: {state['last']}", flush=True)
 
     threading.Thread(target=ticker, daemon=True).start()
     for line in p.stdout:
@@ -106,7 +112,7 @@ def main(argv=None):
     stop.set()
     if raw:
         raw.close()
-    red, lines = judge(events, rc, tail)
+    red, lines = judge(events, rc, tail, a.backend)
     print(f"finished in {time.time() - t0:.0f}s")
     print("\n".join(lines), flush=True)
     return 1 if red else 0

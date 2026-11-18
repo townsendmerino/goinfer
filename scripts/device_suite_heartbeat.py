@@ -7,7 +7,7 @@ This check reads those issues (the scheduled workflow .github/workflows/device-h
 expected box whose newest completed run is older than --max-age-h (36 by default), or that has no status issue, opens "device-suite heartbeat stale:
 <box>" or comments on the open one; a fresh box closes its open stale issue. Stale is "unknown", which is red before a tag.
 
-  python3 scripts/device_suite_heartbeat.py [--expect nobara] [--max-age-h 36] [--repo townsendmerino/goinfer] [--gh gh] [--now ISO]
+  python3 scripts/device_suite_heartbeat.py [--expect nobara --expect mac] [--max-age-h 36] [--repo townsendmerino/goinfer] [--gh gh] [--now ISO]
 
 Exit 0 when every expected box is fresh, 1 when any is stale or missing (the issue is filed first), 3 when a gh call failed.
 """
@@ -21,7 +21,7 @@ import tempfile
 
 STATUS = "device-suite status: "
 STALE = "device-suite heartbeat stale: "
-DEFAULT_EXPECT = ["nobara"]
+DEFAULT_EXPECT = ["nobara", "mac"]
 
 
 def parse_time(s):
@@ -95,7 +95,7 @@ def act(gh, res):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--expect", action="append", help="a box that must have a fresh heartbeat (repeatable; default nobara)")
+    ap.add_argument("--expect", action="append", help="a box that must have a fresh heartbeat (repeatable; default nobara and mac)")
     ap.add_argument("--max-age-h", type=float, default=36)
     ap.add_argument("--repo", default="townsendmerino/goinfer")
     ap.add_argument("--gh", default="gh")

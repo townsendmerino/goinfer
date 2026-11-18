@@ -50,10 +50,10 @@ class Fake:
     def body(self):
         return open(self.log + ".body").read()
 
-    def run(self, lines, sha="def5678"):
+    def run(self, lines, sha="def5678", *extra):
         vl = os.path.join(self.d, "verdict.log")
         open(vl, "w").write("\n".join(lines) + "\n")
-        return subprocess.run([sys.executable, os.path.join(HERE, "cuda_device_suite_issue.py"), "--verdict-log", vl, "--sha", sha, "--gh", self.gh],
+        return subprocess.run([sys.executable, os.path.join(HERE, "cuda_device_suite_issue.py"), "--verdict-log", vl, "--sha", sha, "--gh", self.gh, *extra],
                               capture_output=True, text=True)
 
 
@@ -105,6 +105,25 @@ class Issue(unittest.TestCase):
         f = Fake(self, open_issues=(44,))
         self.assertEqual(f.run(RED + ["a rerun follows"] + GREEN).returncode, 0)
         self.assertEqual(f.mutating()[0][:3], ["issue", "close", "44"])
+
+
+class MetalBackend(unittest.TestCase):
+    def test_redOpensAMetalTitledIssueAndSaysSo(self):
+        f = Fake(self)
+        red = [l.replace("cuda-device-suite:", "metal-device-suite:") for l in RED]
+        self.assertEqual(f.run(red, "def5678", "--backend", "metal").returncode, 0)
+        [c] = [c for c in f.mutating() if c[:2] == ["issue", "create"]]
+        self.assertEqual(c[c.index("--title") + 1], "metal-device-suite red on def5678")
+        self.assertIn("metal-device-suite: 90 passed", f.body())
+        self.assertIn("metal-device-suite-2026-11-17/README.md", f.body())
+
+    def test_metalGreenClosesOnlyTheMetalIssueNamedAsSuch(self):
+        f = Fake(self)
+        os.environ["FAKE_GH_OPEN"] = json.dumps([{"number": 9, "title": "metal-device-suite red on abc0001"}])
+        self.assertEqual(f.run(GREEN, "def5678", "--backend", "metal").returncode, 0)
+        m = f.mutating()
+        self.assertEqual(m[0][:3], ["issue", "close", "9"])
+        self.assertIn("metal-device-suite is green", m[0][m[0].index("--comment") + 1])
 
 
 class Plant(unittest.TestCase):
