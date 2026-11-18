@@ -10,7 +10,7 @@ import (
 )
 
 // TestActivationSafeQuant_ggufBackend: a Phi-3 .gguf (Phi-4's too: llama.cpp files both as phi3) defaults to q4k on the CPU, CUDA
-// and Metal backends (docs/tasks/task-int4-weight-quality-2026-09.md's phases 1a and 1b; Metal's q4k lane, OP6's default switch) and
+// and Metal backends and
 // to int8int8 + per-32 on WebGPU, which has no Q4_K kernel. An explicit quant is never replaced by q4k, on Metal as elsewhere. The
 // file is decoder.WritePhi3Q4KTinyGGUFForTest's. What -backend auto hands this function is
 // TestPhi3Default_autoRunsResidentOnTheQ4KLane's (backend/metal), through loadflags.Resolve.
