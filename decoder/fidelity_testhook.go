@@ -191,45 +191,43 @@ func KLDivergenceForTest(pLogits, qLogits []float32) float64 {
 	return kl
 }
 
-// PrefillGateProseFiles are real prose documents from this repo, read at run time, for content-dependent prefill
-// fidelity (not scripts/prompts.json's word-repetition filler, which  rules out
-// for that). Each encodes to well over 3900 tokens, so no prompt repeats to reach the deepest K. Paths are relative to a
-// package directory one level under the repo root, so the decoder and metal test packages resolve the same list: the
-// CPU reference (decoder/prefill_ref_gen_test.go) and the Metal arms (metal/prefill_gate_test.go) score the same ten
-// prompts.
+// PrefillGateProseFiles names the ten real prose documents of this repository that prompt set A was snapshotted from, for
+// content-dependent prefill fidelity (not scripts/prompts.json's word-repetition filler, which cannot exercise it). Each encodes
+// to well over 3900 tokens, so no prompt repeats to reach the deepest K. Only the base names matter: the gate reads the
+// snapshots under testdata/prefill-gate-prose-a/ (see PrefillGatePromptSet), so the decoder and backend test packages score the
+// same ten prompts whatever the live documents say now.
 var PrefillGateProseFiles = []string{
-	"../docs/completed/audit-2026-09-02.md", // moved from ../docs/audit-2026-09-02.md when archived
-	"../docs/QUEUE.md",
-	"../docs/queue-engineering.md",
-	"../docs/ollama-chase.md",
-	"../docs/benchmarks.md",
-	"../docs/parity-coverage-policy.md",
-	"../docs/completed/task-w4a8-neon-bandwidth.md", // moved from ../docs/task-w4a8-neon-bandwidth.md when archived
-	"../docs/legacy-benchmarks.md",
-	"../docs/completed/task-zeno-compare.md", // moved from ../docs/task-zeno-compare.md when archived
-	"../docs/queue-release.md",
+	"audit-2026-09-02.md",
+	"QUEUE.md",
+	"queue-engineering.md",
+	"ollama-chase.md",
+	"benchmarks.md",
+	"parity-coverage-policy.md",
+	"task-w4a8-neon-bandwidth.md",
+	"legacy-benchmarks.md",
+	"task-zeno-compare.md",
+	"queue-release.md",
 }
 
-// PrefillGateProseFilesB is prompt set B: ten more real repo documents, disjoint from set A, each over 3900 tokens, with
-// the same path convention. The gate reads the snapshot under testdata/prefill-gate-prose-b/ (see PrefillGatePromptSet),
-// not these live paths; this list records what the snapshot was populated from.
+// PrefillGateProseFilesB is prompt set B: ten more real repo documents, disjoint from set A, each over 3900 tokens, named by
+// base name like set A. The gate reads the snapshot under testdata/prefill-gate-prose-b/, not the live documents.
 var PrefillGateProseFilesB = []string{
-	"../docs/completed/task-attention-decode-cost.md", // moved from ../docs/task-attention-decode-cost.md when archived
-	"../docs/completed/task-moe-streaming.md",         // moved from ../docs/task-moe-streaming.md via docs/tasks/ to docs/completed/
-	"../docs/completed/queue-performance.md",
-	"../docs/ARCHITECTURE.md",
-	"../docs/how-inference-works.md",
-	"../docs/tasks/task-peer-benchmarks.md",     // moved from ../docs/task-peer-benchmarks.md, still LIVE
-	"../docs/completed/task-recompute-audit.md", // moved from ../docs/task-recompute-audit.md, still LIVE
-	"../docs/completed/task-gpu-paths-2026-09.md",
-	"../docs/cuda-backend.md",
-	"../docs/completed/audit-2026-08-05.md",
+	"task-attention-decode-cost.md",
+	"task-moe-streaming.md",
+	"queue-performance.md",
+	"ARCHITECTURE.md",
+	"how-inference-works.md",
+	"task-peer-benchmarks.md",
+	"task-recompute-audit.md",
+	"task-gpu-paths-2026-09.md",
+	"cuda-backend.md",
+	"audit-2026-08-05.md",
 }
 
 // PrefillGatePromptSet selects the snapshot prompt files for the L1 gate per GOINFER_PREFILL_GATE_PROMPTS ("" or "a" =
 // set A, "b" = set B). It returns the set's label, so set A and set B outputs never collide, and the snapshot paths
-// testdata/prefill-gate-prose-<label>/<basename>, resolved with the "../testdata/..." convention PrefillGateProseFiles
-// documents.
+// testdata/prefill-gate-prose-<label>/<basename>, relative to a package directory one level under the repo root (the
+// "../testdata/..." convention).
 //
 // The gate reads snapshots, not the live documents: several change most days, and a gate whose prompt content drifts
 // between the reference phase and a later re-run is not reproducible. Each set is snapshotted once.
