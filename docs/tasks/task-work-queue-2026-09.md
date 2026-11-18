@@ -19,7 +19,7 @@
 > Sibling: [`task-halt-2026-09.md`](task-halt-2026-09.md) (K1–K9) — this doc **reuses** K1 (cancel
 > by id), K2 (global halt), K4 (budgets) and K5 (the admin socket) rather than restating them, and
 > nothing here is worth building before those are stable. Also adjacent:
-> [`task-web-ui-2026-09.md`](task-web-ui-2026-09.md) W27, whose "re-attach to a generation after a
+> `task-web-ui-2026-09.md` W27, whose "re-attach to a generation after a
 > reload" is J3's browser-side consumer and has no other route to existing.
 
 <!-- ledger -->
@@ -96,7 +96,7 @@ matching advice line (edited in the generator, not the generated `.git/hooks/pre
 built exactly as specified in `scripts/test_queue_citation_lint.py`, against an isolated temp git
 repo — mutation-checked: reverted the filter, confirmed the test reds exactly as this doc's own
 loss incident describes, restored, green. Verified against the real repo: this doc's own sibling,
-`docs/queue-presentation.md`, was genuinely untracked at the time and was correctly skipped-and-
+a private queue, was genuinely untracked at the time and was correctly skipped-and-
 reported rather than reddening the lint.
 
 ---
@@ -293,7 +293,7 @@ original spec named — K4 (budgets), which that key was "the one proposed for",
 size flag (`-job-cap`, currently a hardcoded 256 matching `responseStore`'s own bound). J4/J5 (the
 batch APIs, over this same store) and J6–J9 remain open.
 
-**Additions 2026-09-15, for the web UI's W27/W28** (`docs/tasks/task-web-ui-2026-09.md` §7). All additive.
+**Additions 2026-09-15, for the web UI's W27/W28**. All additive.
 - **The events stream now closes the way `/v1/chat/completions` does:** a `finish_reason` chunk and a
   usage chunk, or an OpenAI-style `{"error":…}` event for a failed job (`jobTerminalEvents`,
   `internal/app/serveapp/jobs_run.go`). Before, it sent the text and `[DONE]`, so a re-attaching client had to
@@ -550,7 +550,7 @@ check, `drive`) · `internal/app/serveapp/helpers.go:limitInflight` (`-max-infli
 (the session LRU J6 schedules around) · `internal/app/serveapp/embeddings.go:maxEmbedInputs` (the one existing bulk
 surface) · `internal/app/chatapp/main.go:Main` (the CLI J5 extends) ·
 [`task-halt-2026-09.md`](task-halt-2026-09.md) K1/K2/K4/K5/K9 ·
-[`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md) §3.3 ·
-[`task-web-ui-2026-09.md`](task-web-ui-2026-09.md) W27–W31 · `docs/api-tiers.md` (what `serve` promises)
+`task-embed-and-harness-ux.md` §3.3 ·
+`task-web-ui-2026-09.md` W27–W31 · `docs/api-tiers.md` (what `serve` promises)
 
 <!-- doc-reviewed: 2026-11-09 -->

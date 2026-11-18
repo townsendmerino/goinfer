@@ -3,8 +3,7 @@
 Gates, lints, censuses, tooling, process rules, and the audit sweeps. Anything whose success criterion is that **a check can be trusted** — that it runs, that it can fail, that its green means what it says. If the question is *would we find out*, it belongs here.
 
 > **One of four queues.** The work list is split by *success criterion*, not by component:
-> performance · correctness ·
-> [engineering](queue-engineering.md) · release.
+> performance · correctness · engineering (this one) · release; the other three are kept privately.
 > [`QUEUE.md`](QUEUE.md) is the index over all four and holds the cross-cutting sweeps.
 >
 > **Task docs are NOT queues.** `docs/task-*.md` are *design records* — why a thing is built as it

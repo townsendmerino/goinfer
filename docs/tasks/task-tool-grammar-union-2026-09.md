@@ -20,10 +20,10 @@
 > `tool_choice: auto`) the decode is unconstrained and a botched call is possible. This doc closes
 > that, and closes **N-18** with the same primitive.
 >
-> Siblings: [`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md) owns mode 3 (point my
+> Siblings: `task-embed-and-harness-ux.md` owns mode 3 (point my
 > tools at it) and lists N-18 as one of G5's open preconditions; `docs/server.md`'s "What
 > `tool_choice` actually constrains" paragraph is the user-facing statement this work rewrites;
-> [`task-web-ui-2026-09.md`](task-web-ui-2026-09.md) W19 and W23 are downstream consumers.
+> `task-web-ui-2026-09.md` W19 and W23 are downstream consumers.
 
 <!-- ledger -->
 | id | state | next | evidence |
@@ -38,8 +38,8 @@
 | T7 | done | — | `docs/server.md` "What `tool_choice` actually constrains"; `docs/env-vars.md` (`GOINFER_TOOL_UNION`) |
 | R1 | blocked | parked (Francis, 2026-11-09). Trigger: a harness trace where prose-then-call on llama3 does real damage | `constrain/lazy.go:NewCallKeyLazyMasker` arms only at the output's start |
 | R2 | done | built 2026-11-09 (Francis: build), #850: on a speculating server an auto turn speculates until the call's opener and then takes what a constrained turn takes there (plain gated Generate), not resuming speculation after the call. CUDA read PASS (nobara, qwen2.5-7b: identical with and without -spec; the call parsed with lazy=armed, spec=8/3; a copy turn spec=16/15). Metal read PASS (the Mac, 2026-11-09, qwen2.5-7b, main 971c0bbc: the three turns byte-identical with and without -spec, the call parsed with lazy=armed, a copy turn spec=21/17, no spec field without -spec) | `engine/lazy.go:lazyTurn`; `internal/app/serveapp/tools.go:armLazy`; `engine/lazy_test.go:TestLazyTurn_malformedFreeCallComesBackWellFormed`, `engine/lazy_test.go:TestLazyTurn_realSpeculativeProseKeepsTheDrafter` |
-| R3 | moved | `docs/tasks/task-harness-reliability-2026-10.md`, row Gate-3 | its Gate 3 cells name one MoE |
-| R4 | moved | `docs/tasks/task-harness-reliability-2026-10.md`, row Gate-3 | its Gate 3 asks for three traces |
+| R3 | moved | a private task doc, row Gate-3 | its Gate 3 cells name one MoE |
+| R4 | moved | a private task doc, row Gate-3 | its Gate 3 asks for three traces |
 
 ---
 
@@ -262,7 +262,7 @@ when unambiguous", and `gr.masker` enabling grammar-fused spec) · `chat/tools.g
 wrapper families, and llama3's empty prefix) · `chat/tools.go:Template.ParseToolCalls` (`ParseToolCalls`, where a
 malformed call becomes a prose answer) · `docs/server.md:144` (the user-facing claim this rewrites)
 · `docs/QUEUE.md:201` (N-18, open) ·
-[`task-embed-and-harness-ux.md`](task-embed-and-harness-ux.md) (mode 3, G5's preconditions) ·
-[`task-web-ui-2026-09.md`](task-web-ui-2026-09.md) W19, W23 (downstream consumers)
+`task-embed-and-harness-ux.md` (mode 3, G5's preconditions) ·
+`task-web-ui-2026-09.md` W19, W23 (downstream consumers)
 
 <!-- doc-reviewed: 2026-11-09 -->

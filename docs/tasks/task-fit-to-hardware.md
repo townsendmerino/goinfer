@@ -48,7 +48,7 @@
 > record for the
 > "run something bigger than my hardware" mode of use; reads
 > `task-model-pull.md` (phase 1 shipped 2026-09-02) as the step immediately before this one in the
-> user's hour. Sibling: `tasks/task-embed-and-harness-ux.md` (modes 2 and 3). Nothing in this doc changes
+> user's hour. Sibling: a private task doc (modes 2 and 3). Nothing in this doc changes
 > numerics; every gate is an admission/accounting gate, and the do-nothing arm is today's
 > hand-tuned configuration.
 >
@@ -120,7 +120,7 @@ Metal's slot count reachable only through an environment variable, and 38 undocu
   quant step (`--embed-int4`) to make something fit without saying so in the plan and requiring the
   flag. Shrinking context is free of numerics; changing precision is not.
 - **The measurement rules.** A plan's *expected rate* is a band with provenance or nothing. No
-  multiplied projections (`docs/queue-performance.md` retracted two of those on 2026-09-01).
+  multiplied projections (a private queue retracted two of those on 2026-09-01).
 - **Single static binary, stdlib only.** Reading a checkpoint header and a machine's memory is
   already stdlib; nothing here adds a dependency.
 - **`pull` stays "get bytes onto disk."** Fitting reads what `pull` fetched; it does not change
@@ -228,7 +228,7 @@ cache is a large fraction of a full one (57% hit at 16 slots vs 82% at 38, `docs
   seconds, no model in memory. This is also the test surface.
 - **The startup banner prints the plan** — model, backend, placement and why, ctx cap, KV
   precision, sessions on/off, and the expected-rate band when one is available (§5). The banner is
-  the closest thing the product has to a UI (`tasks/task-embed-and-harness-ux.md` §3.3 owns its full
+  the closest thing the product has to a UI (a private task doc owns its full
   shape; this doc owns the placement lines).
 - **`pull` prints the verdict for the file it fetched**, on the line that already prints the
   `--model` command (`internal/app/pullcmd/pull.go`): "fits resident on this machine at int4 (9.1 GB
@@ -275,7 +275,7 @@ Two defensible options, and the plan may carry either:
   active class on a 2070-SUPER-class card ran 11–17 tok/s expert-cached"), never as a point.
 
 Not an option: a formula. The queue's own record is that every projected number this year was
-retracted by the measurement (`docs/queue-performance.md` P18/P19).
+retracted by the measurement.
 
 ## 6. Gates — pre-registered, with the do-nothing arm
 
