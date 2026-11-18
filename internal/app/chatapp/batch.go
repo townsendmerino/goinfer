@@ -1,6 +1,6 @@
 package chatapp
 
-// `goinfer-chat --batch in.jsonl -o out.jsonl` — J5 (docs/tasks/task-work-queue-2026-09.md): the same batch file serve's
+// `goinfer-chat --batch in.jsonl -o out.jsonl`: the same batch file serve's
 // POST /v1/batches reads, run locally and in-process, no server. The file format is internal/batchio's, shared with serve's
 // code rather than copied, so one file works in both places.
 //
