@@ -25,6 +25,8 @@ completed run is newer than 36 h or none is on record. Stale means unknown, whic
 
 **Metal twin.** `docs/measurements/metal-device-suite-2026-11-17/README.md`: the same runner with `--backend metal`, daily on the Mac, a day job under the timing lock.
 
+**New skips.** The runner keeps the names that passed last run in `~/goinfer-logs/<backend>-device-suite.state.json` (origin/main runs only). A test that passed then and skips now is listed under `NEW SKIPS`, and is red unless its reason is an asset or opt-in wording (`GOINFER_HEAVY_TESTS`, a missing checkpoint or fixture); it stays red until it passes again. The first run has nothing to compare with. Delete the file to reset.
+
 **Other revisions.** `REV=<sha-or-ref>` runs the same suite on a branch (queue it as `env REV=<sha> bash …/run-cuda-device-suite.sh` with its own job name); only `origin/main` files or closes the issue.
 
 **Overlap.** `gate gpu` (pre-tag, about 2 h 20 min with its heavy tier) runs this suite as its step 2a/2b; this job is the cheap daily slice of it. `night.py` has no recurring jobs: it is queued
