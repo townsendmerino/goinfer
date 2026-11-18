@@ -19,8 +19,14 @@ _tmp = tempfile.mkdtemp(prefix="night-test-")
 os.environ["NIGHT_DIR"] = os.path.join(_tmp, "night")  # read when night.py is imported
 os.environ["GOINFER_TIMING_LOCK_FILE"] = os.path.join(_tmp, "timing.lock")
 os.environ["NIGHT_HOOKS"] = os.path.join(_tmp, "night-hooks.toml")  # read when night.py is imported; absent unless a test writes it
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+SCRIPTS = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPTS)
 import night  # noqa: E402
+
+if Path(_tmp) not in night.ROOT.parents:  # night was loaded before NIGHT_DIR was set above: every test would write the box's queue
+    sys.exit(f"test_night: night.py was loaded with NIGHT_DIR={night.ROOT}, not this run's temporary directory; nothing was run")
+
+GO_DIRS = ["/usr/local/go/bin", str(Path("~/go/bin").expanduser())]
 
 # A floor far above any reading: the tests of the percentile itself pass it, so nothing is floored there (MM6 option C).
 UNBOUNDED = ("unbounded", 1 << 62)
@@ -339,6 +345,30 @@ class QueueEnvironment(unittest.TestCase):
         seen = out.read_text()
         self.assertTrue(seen.startswith(str(bindir) + os.pathsep), seen)
         self.assertIn(os.environ["PATH"], seen)
+
+    def test_a_bare_starter_path_still_gives_the_job_go(self):
+        """A launchd agent or systemd service starts the runner with a bare PATH; the job still gets go's directories, in front."""
+        out = self.dir / "path-seen"
+        self.job(script=f'printf %s "$PATH" > {out}')
+        with mock.patch.dict(os.environ, {"PATH": "/usr/bin:/bin"}):
+            self.run_queue()
+        seen = out.read_text().split(os.pathsep)
+        self.assertEqual(seen, [*GO_DIRS, "/usr/bin", "/bin"])
+
+    def test_go_dirs_already_on_the_path_keep_their_place(self):
+        p = os.pathsep.join(["/opt/x/bin", GO_DIRS[0], "/usr/bin", GO_DIRS[1]])
+        with mock.patch.dict(os.environ, {"PATH": p}):
+            self.assertEqual(night.queue_path(), p)
+
+    def test_the_runner_process_itself_gets_go(self):
+        """The runner's own readings (cmd/hostmem, a `go run`) inherit its process PATH: main() widens it before any subcommand."""
+        code = ("import os, sys; sys.path.insert(0, %r); sys.argv = ['night.py', 'list']; import night; night.main(); "
+                "print('PATH=' + os.environ['PATH'])") % SCRIPTS
+        r = subprocess.run([sys.executable, "-c", code], env=dict(os.environ, PATH="/usr/bin:/bin"), capture_output=True, text=True,
+                           timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        line = [x for x in r.stdout.splitlines() if x.startswith("PATH=")][-1]
+        self.assertEqual(line[len("PATH="):].split(os.pathsep), [*GO_DIRS, "/usr/bin", "/bin"])
 
     def test_a_missing_required_tool_refuses_the_start_and_leaves_the_queue_intact(self):
         self.toml('require_on_path = ["no-such-tool-for-night-test"]\n')
@@ -1546,6 +1576,47 @@ class NightProfile(unittest.TestCase):
             self.assertIsNone(r.avail_mb())
         finally:
             hostmem.available_mb = real
+
+
+class Morning(unittest.TestCase):
+    """`morning` and `status` read the newest night under runs/: a YYYY-MM-DD directory no later than today. A test's scratch
+    directory (wait-test_*) or a date ahead of the clock (a pinned-clock test's night) is not a night."""
+
+    def setUp(self):
+        self.today = night.RUNS / night.now().strftime("%Y-%m-%d")
+        self.today.mkdir(parents=True, exist_ok=True)
+        s = self.today / "SUMMARY.md"
+        before = s.read_text() if s.exists() else None
+        self.addCleanup(lambda: s.write_text(before) if before is not None else s.unlink(missing_ok=True))
+        s.write_text("# the real night\n")
+        for name in ("wait-test_scratch", (night.now() + dt.timedelta(days=400)).strftime("%Y-%m-%d")):
+            d = night.RUNS / name
+            d.mkdir()
+            self.addCleanup(lambda d=d: (d / "SUMMARY.md").unlink() or d.rmdir())
+            (d / "SUMMARY.md").write_text(f"# not a night: {name}\n")
+
+    def test_morning_prints_the_real_night(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            night.cmd_morning(None)
+        self.assertEqual(out.getvalue().splitlines()[0], "# the real night")
+
+    def test_latest_run_dir_is_todays(self):
+        self.assertEqual(night.latest_run_dir(), self.today)
+
+
+class Isolation(unittest.TestCase):
+    def test_loaded_against_another_night_dir_the_tests_refuse_to_run(self):
+        """night.py reads NIGHT_DIR once, at import: a process that loaded it first (with the box's real directory) and then ran
+        these tests would write their queue files and runs into it. This file refuses to run instead, and writes nothing there."""
+        real = Path(tempfile.mkdtemp(dir=_tmp)) / "the-box-night-dir"
+        code = ("import runpy, sys; sys.path.insert(0, %r); import night; sys.argv = [%r, 'WaitForAJob']; "
+                "runpy.run_path(%r, run_name='__main__')" % (SCRIPTS, __file__, os.path.abspath(__file__)))
+        r = subprocess.run([sys.executable, "-c", code], env=dict(os.environ, NIGHT_DIR=str(real)), capture_output=True, text=True,
+                           timeout=300)
+        self.assertFalse((real / "runs").exists() or (real / "queue").exists(), "the tests wrote into the directory night was loaded with")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("not this run's temporary directory", r.stderr)
 
 
 if __name__ == "__main__":

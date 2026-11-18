@@ -63,7 +63,8 @@ which.
 The same file sets the jobs' PATH once for the box: `path_prepend = ["/usr/local/go/bin"]` goes in front of the PATH every job
 (and the before_queue command) runs with, and `require_on_path = ["go", "nvidia-smi"]` names tools that must be found on that
 final PATH. `start` and `start --dry-run` check them; a missing tool refuses the start (no job starts, every job stays queued,
-SUMMARY.md names what was missing), with no warning-only mode.
+SUMMARY.md names what was missing), with no warning-only mode. Whatever the file says, the runner and every job get go's
+directories (GO_DIRS) in front of a PATH that lacks them: a launchd or systemd service starts with a bare one.
 """
 import argparse
 import datetime as dt
@@ -199,10 +200,16 @@ def parse_deadline(s, start):
     return d
 
 
+RUN_DAY_RE = re.compile(r"^\d{4}-\d\d-\d\d$")
+
+
 def latest_run_dir():
+    """The newest night's directory: runs/YYYY-MM-DD no later than today. Anything else under runs/ (a test's scratch directory,
+    a date ahead of the clock) is not a night; it would sort after the real ones."""
     if not RUNS.exists():
         return None
-    dirs = sorted(d for d in RUNS.iterdir() if d.is_dir())
+    today = now().strftime("%Y-%m-%d")
+    dirs = sorted(d for d in RUNS.iterdir() if d.is_dir() and RUN_DAY_RE.match(d.name) and d.name <= today)
     return dirs[-1] if dirs else None
 
 
@@ -626,10 +633,22 @@ def hook_list(key):
     return v, None
 
 
+# Where go and the tools `go install` writes live on every box. A launchd agent or systemd user service starts with a bare PATH,
+# and jobs, the before_queue command and the runner's own memory readings (`go run ./cmd/hostmem`) all need go.
+GO_DIRS = ("/usr/local/go/bin", "~/go/bin")
+
+
+def with_go(path):
+    """path with each GO_DIRS entry it lacks put in front, in GO_DIRS order; an entry already on it keeps its place."""
+    have = path.split(os.pathsep) if path else []
+    return os.pathsep.join([*(d for d in (str(Path(x).expanduser()) for x in GO_DIRS) if d not in have), *have])
+
+
 def queue_path():
-    """The PATH every job and the before_queue command runs with: HOOKS' path_prepend in front of the starter's PATH."""
+    """The PATH every job and the before_queue command runs with: HOOKS' path_prepend in front of the starter's PATH, which
+    with_go has given go."""
     pre, _ = hook_list("path_prepend")
-    return os.pathsep.join([*(str(Path(x).expanduser()) for x in pre), os.environ.get("PATH", "")])
+    return os.pathsep.join([*(str(Path(x).expanduser()) for x in pre), with_go(os.environ.get("PATH", ""))])
 
 
 def queue_env(**extra):
@@ -1873,6 +1892,7 @@ def main():
         argv, cmd = argv[:i], argv[i + 1:]
     a = p.parse_args(argv)
     a.cmd = cmd
+    os.environ["PATH"] = with_go(os.environ.get("PATH", ""))  # this process's own hostmem readings run go
     ROOT.mkdir(parents=True, exist_ok=True)
     a.fn(a)
 
