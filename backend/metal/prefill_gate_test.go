@@ -122,8 +122,10 @@ func runPrefillGateModel(t *testing.T, modelName, path string, depths []int, con
 		t.Fatalf("model %s: load tokenizer: %v", modelName, err)
 	}
 
-	prompts := make([][]int, 0, len(decoder.PrefillGateProseFiles))
-	for _, f := range decoder.PrefillGateProseFiles {
+	// The frozen set-A snapshots, which the CPU reference scores: the live documents change, and some have left the repository.
+	files := decoder.PrefillGatePromptSetFor("a")
+	prompts := make([][]int, 0, len(files))
+	for _, f := range files {
 		ids := decoder.PrefillGateProseIDsForTest(t, tk, f, depths[len(depths)-1])
 		prompts = append(prompts, ids)
 	}
