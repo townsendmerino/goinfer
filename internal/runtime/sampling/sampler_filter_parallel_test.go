@@ -7,8 +7,7 @@ import (
 	"testing"
 )
 
-// R15's parallel topKByLogit arm, test-only until its call is made (docs/queue-performance.md, P42; the band is in
-// docs/completed/red-october.md, "R15"), and the checks on the min-p scan that topFilterLogits runs, minPCandidates.
+// R15's parallel topKByLogit arm, test-only until its call is made, and the checks on the min-p scan that topFilterLogits runs, minPCandidates.
 
 // topKByLogitParallel is topKByLogit by chunks: each chunk's own top k, then the top k of their union. The top k under
 // (logit desc, id asc) is unique, and every member of it is in its own chunk's top k, so the set equals the serial one.

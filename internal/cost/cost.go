@@ -1,7 +1,7 @@
 // Package cost is the cost counters' schema (SB11): per phase (prefill, decode) and per operation, how many calls, bytes read
 // and written, kernel launches or command buffers, syncs, allocations and time a generation cost. One shape serves tier-0
-// tests, gates and, when the wire carries it, X1's timing block (docs/tasks/task-turn-telemetry-2026-09.md): its phase names and
-// Timings' fields are X1's.
+// tests, gates and, when the wire carries it, the timing block: its phase names and
+// Timings' fields are that block's.
 //
 // A nil *Counter is off: every method is a no-op on it, so a backend's hook costs one nil check per operation. What a backend
 // does not measure for an operation is listed in that operation's Unmeasured, never reported as 0 (X1's rule: zero means zero),

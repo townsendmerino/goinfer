@@ -11,7 +11,6 @@ import (
 // TestCUDASoloShapes_takeTodaysCalls holds RF2's decode kill: Forward, ForwardArgmax, ForwardSample and ForwardN run today's launches,
 // not a one-sequence ragged step, which G-RF2-S read slower than them; MC3's batched step keeps the ragged step. It fails on a
 // call named StepRagged or soloRagged in those methods' bodies (a direct call only, by name).
-// Docs: docs/tasks/task-forward-and-memory-2026-11.md, "RF2: registration" (the kill).
 func TestCUDASoloShapes_takeTodaysCalls(t *testing.T) {
 	solo := map[string]bool{"Forward": true, "ForwardArgmax": true, "ForwardSample": true, "ForwardN": true}
 	banned := map[string]bool{"StepRagged": true, "soloRagged": true}

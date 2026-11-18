@@ -36,8 +36,7 @@
 // bound the bytes, and mem is not consulted per block. The routed experts get what the plan leaves. Planned, not built: MM3's
 // ledger leases the KV pools' allocations, and MM4 (KV11) makes an arbiter here the one budget for KV blocks, expert slots
 // and the prefix cache. kvmgr then asks the arbiter for blocks, the arbiter decides which class sheds under pressure, and kvmgr
-// still chooses which KV block goes (its LRU). See docs/completed/task-subsystems-2026-10.md §6 and
-// docs/tasks/task-kv-architecture-2026-10.md, KV11.
+// still chooses which KV block goes (its LRU).
 //
 // Imports: the standard library only (TestImports).
 //
