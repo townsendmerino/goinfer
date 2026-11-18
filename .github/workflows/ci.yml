@@ -874,6 +874,10 @@ jobs:
       - name: staticcheck -tags cuda
         run: staticcheck -tags 'cuda goinfer_testhooks' ./backend/cuda/...
 
+      # The two cuda && realckpt test files (audio_encoder_real_test.go, lora_cost_measure_test.go) are built by no other step: vet compiles them.
+      - name: vet -tags cuda realckpt
+        run: CGO_ENABLED=0 go vet -tags 'cuda goinfer_testhooks realckpt' ./backend/cuda/...
+
       # Compile + skip cleanly on the GPU-less runner (tests t.Skip without a device).
       - name: test -tags cuda
         run: CGO_ENABLED=0 go test -short -tags 'cuda goinfer_testhooks' ./backend/cuda/...

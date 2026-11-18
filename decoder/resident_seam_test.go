@@ -200,19 +200,14 @@ func TestSeam_SessionsDoNotSilentlyDisableResidency(t *testing.T) {
 	for range stream { //nolint:revive
 	}
 	usedResident := be.rf.forwards > before
-	// This documents CURRENT, DELIBERATE behaviour: sessions and residency are mutually
-	// exclusive (model.go: commit != nil ⇒ !useGPU). The assertion is not "sessions must use the
-	// GPU" — it is that the incompatibility is REAL and known, so cmd/serve must keep bypassing
-	// sessions for resident models. If this ever starts passing, sessions learned to preserve
-	// residency and cmd/serve's bypass can be revisited.
+	// This asserts CURRENT, DELIBERATE behaviour: sessions and residency are mutually exclusive
+	// (model.go: commit != nil ⇒ !useGPU), which is why cmd/serve bypasses sessions for resident
+	// models (openai.go). If this goes red, sessions learned to preserve residency: revisit that
+	// bypass and turn this into the opposite assertion.
 	if usedResident {
-		t.Logf("NOTE: Session.Generate now uses the resident runner (%d forwards). The "+
-			"session/residency incompatibility is gone — revisit cmd/serve's resident bypass "+
-			"(openai.go), which exists only to work around it.", be.rf.forwards-before)
-	} else {
-		t.Logf("confirmed: Session.Generate does NOT use the resident runner — this is why " +
-			"cmd/serve bypasses sessions for resident models. Do not route resident requests " +
-			"back through the session cache without re-checking this.")
+		t.Fatalf("Session.Generate now uses the resident runner (%d forwards): the session/residency "+
+			"incompatibility is gone; revisit cmd/serve's resident bypass (openai.go), which exists only to work "+
+			"around it, and update this test", be.rf.forwards-before)
 	}
 }
 

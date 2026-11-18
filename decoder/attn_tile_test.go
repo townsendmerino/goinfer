@@ -105,4 +105,20 @@ func TestAttnTile_ringLayerDoesNotOutgrowThePoolSlot_acc64(t *testing.T) {
 	ctx := make([]float32, K*qDim)
 	attendBatchedHeads(q, ctx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, ring, 0, startPos, K,
 		false, arch, true, pool)
+
+	// Compared, not just run: the f32 sibling's reference, on this arm. A pool sized from this layer's own key
+	// count applies no clamp, and the row tile must be numerically inert.
+	ref := newHeadWorkerPool(1, K, nRows, hd, false)
+	refCtx := make([]float32, K*qDim)
+	attendBatchedHeads(q, refCtx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, ring, 0, startPos, K,
+		false, arch, true, ref)
+	if attendTileFor(&pool[0], K, nRows, hd) == attendTileFor(&ref[0], K, nRows, hd) {
+		t.Fatalf("the premise broke: both pools chose tile %d, so this comparison comes for free",
+			attendTileFor(&pool[0], K, nRows, hd))
+	}
+	for i := range refCtx {
+		if ctx[i] != refCtx[i] {
+			t.Fatalf("acc64 ctx[%d] = %v with the clamped tile, %v with the unclamped one", i, ctx[i], refCtx[i])
+		}
+	}
 }

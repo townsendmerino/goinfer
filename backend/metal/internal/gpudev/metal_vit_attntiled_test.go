@@ -132,6 +132,11 @@ func TestMetal_vitAttentionTiled_matchesUntiled(t *testing.T) {
 		}
 	}
 	t.Logf("attention_tiled vs production attention (both Metal, same inputs): worst Δ %.3g", worstAll)
+	// Both kernels are within 5e-5 of the double CPU reference (TestMetal_vitAttentionTiled's bound), so they are within 1e-4 of each
+	// other by the triangle inequality. A derived bar, not a measured one.
+	if worstAll > 1e-4 {
+		t.Errorf("attention_tiled differs from the production attention by %.3g, over the derived bound 1e-4", worstAll)
+	}
 }
 
 // TestAttentionTiledEligible pins the hd cutoff directly — attention_tiled's Ks/Vs arrays are

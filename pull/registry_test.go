@@ -190,7 +190,7 @@ func TestRegistry_doesNotCollideWithDemoTiers(t *testing.T) {
 // correct length. A digest can only be checked against the bytes it claims to describe.
 //
 // Skipped when the file is absent, which is most machines — set GOINFER_MODELS_DIR (or keep
-// checkpoints under ~/models) to run it. A skip here is not a pass and the log says so.
+// checkpoints under ~/models) to run it. With no file found it ends in t.Skip, never a pass.
 func TestRegistry_digestsMatchLocalFiles(t *testing.T) {
 	root := os.Getenv("GOINFER_MODELS_DIR")
 	if root == "" {
@@ -239,6 +239,9 @@ func TestRegistry_digestsMatchLocalFiles(t *testing.T) {
 			t.Errorf("%s: registry size %d, file is %d", c.Name, c.Bytes, fi.Size())
 		}
 		checked++
+	}
+	if checked == 0 {
+		t.Skipf("no registry checkpoint found under %s: nothing was verified (a skip, not a pass)", root)
 	}
 	t.Logf("verified %d of %d entries against local files", checked, len(RecommendedAll()))
 }
