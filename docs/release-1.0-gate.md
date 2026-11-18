@@ -17,7 +17,7 @@
 > except the lines that say **VERIFY** and anything whose evidence names a stale commit.
 
 
-> **This is E1's deliverable** (`queue-release.md` §E1: "write that as a checklist so 1.0 is a
+> **This is E1's deliverable** (a private queue: "write that as a checklist so 1.0 is a
 > decision against criteria rather than a feeling"). Close E1 by pointing it at this file.
 >
 > **How to use it.** v1.0 is tagged when every **REQUIRED** line is checked, and each check names
@@ -46,7 +46,7 @@ below is declaring it (§3), not proving it.
   family (23/23 at `c3e43c8`, 2026-08-15; the count grows with the registry). Nothing was
   demoted; two real loader bugs were fixed instead (granite NoPE roping, nemotron_h schema).
 - [x] **REQUIRED · B13's standing reds resolved or formally reclassified** (2026-08-18; full
-  evidence in `docs/queue-release.md`). **Both are closed: one was already green, one was
+  evidence in a private queue). **Both are closed: one was already green, one was
   reclassified on measured evidence with the decision recorded.**
   - `TestSerializeWeightsTo_matchesBuffer` — **GREEN, struck by re-running it.** B11's 2026-08-14
     fix resolved it; this line listed it as red because it was read from queue text rather than
@@ -344,7 +344,7 @@ into the gate, and so nothing in the gate is deferred *into* this list without a
 - Goldens at the tag sha, composition printed; sweep: zero blockers, gaps listed by name.
 - Heavy gate run on the RC, log archived where a later reader can find it.
 - Capability + hardware matrices regenerated at the tag sha; CHANGELOG finalized; release notes
-  in the release-notes path `tasks/task-release-path-restructure.md` settled on.
+  in the release-notes path a private task doc settled on.
 - All module tags cut from the replace-free tree; `go install` of `cmd/serve` and the demo
   verified from outside the repo, both platforms.
 - README's supported count equals the manifest's; the launch copy quotes only §6-verified numbers.

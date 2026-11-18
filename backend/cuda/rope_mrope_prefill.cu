@@ -33,7 +33,7 @@
 // attn_img_prefill.cu's header states: regenerating prefill_batched.ptx in place risks shifting
 // codegen for kernels every batched-prefill parity gate rests on. No shipped PTX changes there.
 //
-// MODE (added 2026-10-06 for the Qwen3.5 hybrids' image prefill, docs/queue-performance.md P26): 0 is Qwen2.5-VL's contiguous
+// MODE (added 2026-10-06 for the Qwen3.5 hybrids' image prefill P26): 0 is Qwen2.5-VL's contiguous
 // section layout exactly as before; 1 is Qwen3-VL's interleaved layout (see mrope_pos). GLM-OCR's pairwise twin
 // (rope_pairwise.cu's rope_kv_mrope_batched_pw) is a separate kernel with its own argument list and is untouched.
 //

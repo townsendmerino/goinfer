@@ -863,7 +863,7 @@ Read as a request it allocated KV several times the default on a tight machine a
 refused, which moved the whole forward to the CPU (C-C01, docs/audit-metal-2026-09-30.md).
 ```
 
-Since M2 (docs/tasks/task-minimax-code-compat-2026-09.md) an unpinned load no longer gets a flat 4096: it gets
+Since M2 an unpinned load no longer gets a flat 4096: it gets
 `metalFitFor`'s answer, below. The rest of the note stands, with "the default" read as "what an unpinned load takes".
 
 ## PrefillBlockRows
@@ -3401,7 +3401,7 @@ adversarial inputs.
 Moved from `backend/metal/attn_kvwidth_probe_test.go` (the comment above `TestZZ_attnKVWidthProbe`) on 2026-10-09.
 
 ```text
-TestZZ_attnKVWidthProbe — the P4 deciding measurement (docs/plan-still-slow.md §P4). Re-runs the
+TestZZ_attnKVWidthProbe — the P4 deciding measurement. Re-runs the
 2026-08-04 collapse probe with a THIRD arm: half the DRAM bytes per key at the SAME element count
 (int8 KV vs the f16 baseline — q8's exact byte profile), to separate BANDWIDTH from LATENCY.
 
@@ -4424,13 +4424,13 @@ Moved from `backend/metal/mellum_real_test.go` (the comment above `TestMellumRes
 
 ```text
 TestMellumResidentParity is G11's Metal half — the real-weight successor to the abandoned
-synthetic-random-weight attempt (G10, docs/queue-correctness.md). G10 declared FeatRopeMscale
+synthetic-random-weight attempt. G10 declared FeatRopeMscale
 for Metal to unblock gpt-oss's YaRN, which as a documented side effect also admits Mellum onto
 the Metal resident path with zero end-to-end validation there. decoder/mellum_slice_test.go
 (tag realckpt) already proved goinfer's own CPU forward matches the real HF reference on a
 REAL 4-layer weight slice (argmax 417, cosine 1.00000000) — same discipline as
 TestGPT2ResidentParity/TestGptOssResidentParity, just pointed at the sliced checkpoint
-directory instead of a small full model. Regenerate the slice per docs/queue-correctness.md
+directory instead of a small full model. Regenerate the slice per a private queue
 G11 if it's absent (4 GB, gitignored — only the golden ships).
 ```
 

@@ -122,7 +122,7 @@ it closes each MESSAGE, and one reply is several — the analysis message ends i
 model opens <|start|>assistant<|channel|>final<|message|> and ends the turn with <|return|> (or
 <|call|> for a tool call). Stopping on <|end|> ended every reply after its thinking: through serve,
 gpt-oss streamed only its analysis channel and never an answer (found 2026-09-14 by the web UI's W6
-capture, docs/tasks/task-web-ui-2026-09.md).
+capture, a private task doc).
 ```
 
 ## Phi3
@@ -455,7 +455,7 @@ rendered by that template). The generic ChatML() still has no default: TestChatM
 Moved from `chat/fenced_tool_call_test.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
-PRE-REGISTERED (written and committed before the code that satisfies it), docs/queue-correctness.md G39.
+PRE-REGISTERED (written and committed before the code that satisfies it), a private queue G39.
 
 The opt-in fenced-call rule. A chatml-family model that writes its tool call as a fenced JSON block in prose
 (Qwen2.5-Coder-7B under opencode, the cold-user run of 2026-10-05) makes no call today. With

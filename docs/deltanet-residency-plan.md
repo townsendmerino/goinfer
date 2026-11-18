@@ -7,4 +7,4 @@ CPU forward for both siblings and at the released head geometry, at 11.4–12.2�
 and Metal followed 2026-08-20.
 
 Pointer kept here because other documents link to this path — the same convention
-`plan-still-slow.md` uses.
+a private planning note uses.

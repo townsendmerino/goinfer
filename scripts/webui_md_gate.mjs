@@ -1,5 +1,4 @@
-// webui_md_gate.mjs — the W1 security and correctness gate for the web UI's Markdown renderer
-// (docs/tasks/task-web-ui-2026-09.md W1, §6.2).
+// webui_md_gate.mjs — the W1 security and correctness gate for the web UI's Markdown renderer.
 //
 //   node scripts/webui_md_gate.mjs          # exit 0 = pass, 1 = a check failed, 2 = could not run
 //

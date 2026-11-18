@@ -251,7 +251,7 @@ async function unloadModel(name, li, btn) {
     const r = await fetch("/web/models/unload", {method: "POST", headers: headers(), body: JSON.stringify({name})});
     const j = await r.json().catch(() => null);
     if (!r.ok) throw new Error((j && j.error && j.error.message) || "HTTP " + r.status);
-    // A spinner that resolved here on a 202 would be lying (task-web-ui-2026-09.md W32): the model is
+    // A spinner that resolved here on a 202 would be lying: the model is
     // already unroutable either way, but native memory is only DEFINITELY freed on freed:true.
     note.textContent = j.status === "unloading" ? "unloading — finishing an in-flight request; its memory frees as that completes"
       : j.freed ? "unloaded — memory freed" : "unloaded — its memory is shared with another loaded entry, so it was not freed";
@@ -425,7 +425,7 @@ $("pane-chat").addEventListener("drop", e => {
 // differently and no new route. A file that doesn't decode as text (a binary, a PDF, a picture) is
 // refused, not silently mangled with replacement characters. PDF extraction is its own, much larger
 // decision (a parser, in pure Go with no new root dependency, or in the browser with no external
-// script — task-embed-and-harness-ux.md §0 / task-web-ui-2026-09.md §6.1) and is out of scope here.
+// script) and is out of scope here.
 const DOC_MAX_BYTES = 262_144, DOC_MAX_FILES = 5;
 let pendingDocs = [];   // [{name, content}], most recently attached last
 const LANG_BY_EXT = {
@@ -2134,7 +2134,7 @@ $("list").onclick = async () => {
   } finally { $("list").disabled = false; }
 };
 
-// task-web-ui-2026-09.md's W33 part 2, the "coarse tag" recommendation: a rough per-file fits/
+// The "coarse tag" recommendation: a rough per-file fits/
 // tight/won't-fit read from the file's own size against free memory on this server's ACTIVE
 // backend (internal/serveapp/webui.go's fitEstimate) — no header parsing, no model load, and
 // deliberately not exact (the note below says so): it assumes the file is already at roughly the

@@ -196,7 +196,7 @@ A measurement enters a table **only if it satisfies all of**:
   abandoned prefill from a killed client was still burning a core (the defect now fixed as G18).
   It survived into three documents and a release note before a disagreeing instrument caught it.
   **A number with no recorded machine state cannot be argued with later**; that is what made this
-  one expensive rather than merely wrong. See the withdrawn G15 in `docs/queue-performance.md`.
+  one expensive rather than merely wrong. See the withdrawn G15 in a private queue.
 
   **macOS qualifier, added 2026-09-17.** The rule above was written against the Linux rig, which
   is headless and idles at load 0.00 — on that box, `BENCH_MAX_LOADAVG=1.0` (`scripts/bench_peer.py`'s
@@ -723,7 +723,7 @@ prefill attention (2026-09-27), and none has been re-measured since. The floor's
 to Ollama are not current.
 
 **Update 2026-10-05, the re-measure (T1.11's other half, pre-registered in
-`tasks/parked/task-metal-audit-followups-2026-10.md` item 1):** the same command on goinfer `93d586af` (R16, R19,
+a private task doc item 1):** the same command on goinfer `93d586af` (R16, R19,
 A-P01, A-P02's floor of 16; MacBook Pro M1 Pro 16 GB, macOS 26.6.2, the 1.5B q4_k_m from `~/models` at int4, every
 goinfer cell `metal-resident (int4)`), Ollama 0.32.5 and mlx-lm 0.31.3 interleaved per cell, 6 unique-prefix prompts a
 point. Run from the night queue at 13:17 PDT on the owner's start, with the owner away. Prompt tokens per second, each
@@ -1437,7 +1437,7 @@ distinction here is all-experts-on-GPU, which is an architecture difference rath
 ### B4.2 — What the expert-cache cap actually is, and why 38 was never safe
 
 **This section is arithmetic plus already-published measurements — it adds no new timing row.** The
-closed form is A1's (`docs/queue-performance.md`); the measured caps and rates are legacy §B4 and §B4.1.
+closed form is A1's; the measured caps and rates are legacy §B4 and §B4.1.
 
 The cache asks for `GOINFER_MOE_CACHE_SLOTS` slots per layer and the runtime caps the request to
 what free VRAM allows. **The cap is not a property of the card or of the build** — it is a function
@@ -1497,7 +1497,7 @@ the old, quantum-blind cap, which sized the request without rounding each of the
 independently and so believed 38 fit.
 
 **Two records of that run disagree, and the disagreement is left visible rather than resolved by
-choosing.** `queue-performance.md`'s A2 records it surviving on *~133 MB of leftover*; the closed
+choosing.** a private queue's A2 records it surviving on *~133 MB of leftover*; the closed
 form puts requirement(38) at 3,900,702,720, which already exceeds the 3,847,880,704 free recorded for that machine state, before the 384 MiB margin is even considered.
 Both cannot be exact. The likeliest reading is that the ~133 MB was observed at a free-VRAM figure
 that was never written down and differed from the one A1 later used to derive the form, which is
@@ -2023,7 +2023,6 @@ cell of 2026-10-18, with its own goinfer rates in brackets.
 - **Against Ollama,** goinfer is ahead in every Qwen and Gemma cell on both GPUs, level once (the Metal 1.5B under the
   preset), and behind on phi3-mini on CUDA at every config.
 - **Against llama.cpp on CUDA,** it is behind by 5–12% at matched 4-bit quants. That is filed as P31 in
-  `queue-performance.md`.
 - **Against mlx-lm on Metal,** it is behind by 24–33% on mlx-lm's single-request path.
 - **The untruncated rows move furthest from the old ones,** and on Ollama's side, not goinfer's. Sampling the whole
   vocabulary costs Ollama about 20%, while goinfer runs within 1% of its own greedy rate.
@@ -2033,7 +2032,7 @@ cell of 2026-10-18, with its own goinfer rates in brackets.
 
 ## Peer matrix 2026-09 — tier 1/2, first pass (2026-09-04/05, IN PROGRESS)
 
-Executes `docs/tasks/task-peer-benchmarks.md`'s redone matrix via `scripts/bench_peer.py`. **This is a
+Executes a private task doc's redone matrix via `scripts/bench_peer.py`. **This is a
 first pass, not the finished matrix** — W2 (prefill), W4 (agent-turn replay), the fidelity column,
 and the pass@1 row are all still unbuilt (see "Not done yet" below), and one re-measurement is
 still in flight as this section is written. Raw provenance-stamped JSON for every cell below is at
@@ -2273,7 +2272,7 @@ second look on the CUDA side before treating this as settled either way.
 
 ### W4 (Qwen2.5-7B-Instruct, GGUF Q4_K_M) — agent-turn transcript replay, nobara CUDA only
 
-First measurement of `docs/tasks/task-peer-benchmarks.md`'s W4 workload — the doc's own words, "the row
+First measurement of a private task doc's W4 workload — the doc's own words, "the row
 that did not exist before and matters most": a scripted 10-turn tool-calling conversation replayed
 as strict prefix extensions, timing per-turn TTFT and how much of each turn's prompt the resident
 cache actually reused. Harness and fixtures newly built this session; goinfer also gained a real

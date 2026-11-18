@@ -24,7 +24,7 @@ CFG=dict(vocab_size=256, hidden_size=64, num_hidden_layers=6,
     # moe_intermediate_size and shared_expert_intermediate_size are 32, not the original 16:
     # CUDA's int4 residency declines any MoE whose moeInter or sharedInter isn't a multiple of
     # 32 (cuda/backend.go's BuildResident, group-of-32 int4 packing) — at 16 this fixture could
-    # never go resident, so docs/tasks/task-cuda-deltanet-prefill-2026-09.md's batched-prefill
+    # never go resident, so the DeltaNet batched-prefill
     # gate could only skip it (item 9, 2026-09-28). Keep this a multiple of 32.
     num_experts=4, num_experts_per_tok=2, moe_intermediate_size=32,
     shared_expert_intermediate_size=32, norm_topk_prob=True,

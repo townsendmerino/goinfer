@@ -6,7 +6,7 @@ XHToken/Spark-X2.5-4B (trust_remote_code) and vendored alongside the checkpoint 
 reproduces offline — same discipline as pin_laguna_tiny.py.
 
 Deliberately exercises every real departure from a plain Llama, at a size small enough to be
-fast and byte-exact, per docs/tasks/task-spark-x2-5.md and its own corrections to the L-06 audit
+fast and byte-exact, per its own corrections to the L-06 audit
 (docs/audit-2026-09-10.md) found while scoping this: the decoder layer is the STANDARD sequential
 residual (NOT Cohere's parallel block, despite the audit's claim), and the MLP is GATED (SwiGLU-
 shaped) with exact-erf GELU as its activation (NOT "non-gated GELU", the audit's other wrong

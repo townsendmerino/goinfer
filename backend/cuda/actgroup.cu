@@ -1,5 +1,5 @@
 // actgroup.cu — per-32 ACTIVATION quantization for the resident decode path
-// (docs/tasks/task-actquant-pergroup-2026-09.md, queue-engineering.md H2).
+// (queue-engineering.md H2).
 //
 // WHY ITS OWN FILE. The per-row kernels these mirror live in glue.cu (rmsnorm_quant, quant_vec,
 // glu_quant) and aikit's gemv_quant.cu (gemv_w4a8_fwd, gemv_w8a8_fwd); glue.ptx is an audited
@@ -25,8 +25,8 @@
 
 // quantG32 quantizes vals[0 .. 32*nG) group by group: one thread per group of 32, max/127 scale into
 // aScale[g], 8 packed ints into q[8g .. 8g+8). It also writes aScale[nG + g] = aScale[g] · Σ codes,
-// the group's dequantized activation sum, which gemv_q4k_g32's per-sub-block minimum multiplies
-// (docs/tasks/task-int4-weight-quality-2026-09.md Phase 1b). So aScale holds 2·nG floats (the
+// the group's dequantized activation sum, which gemv_q4k_g32's per-sub-block minimum multiplies.
+// So aScale holds 2·nG floats (the
 // resident runner's actScaleLen), and every other kernel reads only the first nG. Called by all
 // threads of the block after vals is complete and visible.
 __device__ __forceinline__ void quantG32(const float* __restrict__ vals, int nG,
@@ -303,7 +303,7 @@ __device__ __forceinline__ float rowW8g32(const int* __restrict__ wr, const int*
 // blocks per pass and a lane 64 weights: one 16-byte header load, one scale/min unpack, two 16-byte
 // code loads, four 16-byte activation loads, 16 dp4a. (A lane per code word paid the header decode
 // per 8 weights and was compute-bound; 8 lanes per row, lever 1, was 7% slower on the 7B and did not
-// help the 1.5B — docs/tasks/task-int4-weight-quality-2026-09.md.) Code word t of pair j holds
+// help the 1.5B.) Code word t of pair j holds
 // elements 64j+4t..+3 (low nibbles, sub-block 2j) and 64j+32+4t..+3 (high, 2j+1); their activation
 // words are 64b+16j+t and +8. A block is 144 = 9·16 bytes and its codes start at byte 16, so every
 // vector load is 16-byte aligned. Per block and group:

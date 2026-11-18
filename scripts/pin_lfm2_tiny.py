@@ -14,8 +14,7 @@ NOTE: needs transformers with the `lfm2` architecture (>= 4.55 for LFM2; the LFM
 checkpoint declares transformers_version 5.2.0). If Lfm2Config rejects a kwarg, reconcile the
 param names against the installed transformers `Lfm2Config` — this fixture mirrors the real
 LFM2.5-2.6B config.json field names (layer_types, conv_L_cache, conv_bias, block_*, norm_eps,
-rope_parameters). This is FREEZE-SAFE prep (new files only); the family itself is v1.0-gated
-(see docs/scoping-lfm2.md §G).
+rope_parameters). This is FREEZE-SAFE prep (new files only); the family itself is v1.0-gated.
 """
 import json
 import os

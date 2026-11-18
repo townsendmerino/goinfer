@@ -59,8 +59,7 @@ VRAM; no measurement set it to 4096 specifically. The real per-card ceiling is t
 still and worth measuring for your own model/quant: on an RTX 2070 SUPER (8 GB) with D7
 (Qwen2.5-7B-Instruct) at `int4`, resident loads fine at `-ctx 20000` (7257/8192 MiB used) and fails
 at `-ctx 24576` (needs 2.82 GB of KV, only 2.90 GB free) — a ceiling well above even fit's own 8192
-candidate, left on the table for anyone who does not know to raise `-ctx` explicitly
-(`docs/tasks/parked/task-kv-cache-streaming.md`).
+candidate, left on the table for anyone who does not know to raise `-ctx` explicitly.
 
 **A prompt beyond the ACTIVE cap (the resolved value above, whether `-ctx` set it explicitly or
 fit-by-default did) is rejected with a clean HTTP 400
@@ -87,7 +86,7 @@ allocated and after the weights are on the device, so `free` means what is actua
 **Either decline is silent WITHOUT `-require-backend`:** the model loads and serves every
 subsequent request over the CPU-staged path instead. Measured cost, D7 at `int4`, same box: **~15×
 slower decode** (69.9→4.7 tok/s at depth 512, 48.9→3.2 tok/s at depth 4096;
-`docs/tasks/parked/task-kv-cache-streaming.md`) — not a slope from the request depth, a flat cost of being on
+a private task doc) — not a slope from the request depth, a flat cost of being on
 the wrong engine.
 
 Measured against the formula: at `-ctx 8192` the 1.5B's VRAM rose exactly **+224 MiB** over the
@@ -129,7 +128,6 @@ the resident config's own accuracy/VRAM tradeoff (a real, plausible choice — i
 `decode_bench_test.go`'s own default) and then drifts past the VRAM ceiling on a non-VNNI box gets
 a fallback that is not just slow, it is close to unusable. Not measured on a VNNI box, so this may
 be specific to non-VNNI CPUs rather than `int8int8` generally. Full numbers:
-`docs/tasks/parked/task-kv-cache-streaming.md`.
 
 ### Tensor-core fast prefill (2026-09-05) — default ON above 512 prompt tokens
 

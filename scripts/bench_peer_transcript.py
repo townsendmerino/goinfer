@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """bench_peer_transcript.py — W4: the agent-turn transcript replay
-(docs/tasks/task-peer-benchmarks.md §3/§7).
+.
 
 WHAT IT MEASURES. A scripted N-turn tool-calling conversation is replayed
 against goinfer's /v1/chat/completions as strict prefix extensions — each
@@ -78,7 +78,7 @@ GPORT = 8098  # same value bench_peer_prefill.py uses; not run concurrently with
 SERVE_CUDA = os.environ.get("GOINFER_SERVE_CUDA", os.path.expanduser("~/bench-cur/serve-cuda"))
 SERVE_METAL = os.environ.get("GOINFER_SERVE_METAL", os.path.expanduser("~/bench-cur/serve-metal"))
 SERVE = {"cuda": SERVE_CUDA, "metal": SERVE_METAL}
-# Only the model cell this pass validates against (docs/tasks/task-peer-benchmarks.md's "D7"
+# Only the model cell this pass validates against (the "D7"
 # cell) — add more MODELS entries here if a later pass extends coverage.
 MODELS = {
     "7B": (os.path.expanduser("~/models/qwen2.5-7b-instruct-q4_k_m.gguf"), "q7b"),
@@ -141,7 +141,7 @@ def wait_port(port, timeout=240):
 
 class GoinferServer:
     """A single-engine analogue of bench_peer_prefill.py's Engine — this pass validates
-    goinfer alone (docs/tasks/task-peer-benchmarks.md scoped this workload's first landing to
+    goinfer alone (this workload's first landing was scoped to
     one engine); a peer arm is future work, not dropped by oversight. cuda and metal both
     supported (R12, docs/completed/red-october.md); the request/probe shape above is unchanged
     either way, only which binary and -backend flag get launched differs."""
@@ -210,7 +210,7 @@ def run_transcript(url, fixture, max_tokens, temperature=0.0, nonce=None):
     """Replays one fixture end to end against one live server. Returns the list
     of per-turn records (see the module docstring for what probe vs real means).
 
-    nonce: prepended to the FIRST user turn only (docs/tasks/task-peer-benchmarks.md's own
+    nonce: prepended to the FIRST user turn only (the peer benchmark's own
     "nonce-prefixed prompts to defeat [the engine's] KV prefix cache" idiom, same one
     bench_peer.py/bench_peer_prefill.py already use). Every later turn is a strict prefix
     extension of turn 1, so a unique first turn is enough to make an entire replay's token

@@ -1274,7 +1274,7 @@ docs/audit-2026-09-10.md) ReleaseAll ran directly on whatever goroutine called C
 Moved from `backend/cuda/moe_expert_major.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
-R11/P20 — CUDA expert-major MoE prefill (docs/queue-performance.md P20, docs/completed/red-october.md R11(b),
+R11/P20 — CUDA expert-major MoE prefill (a private queue P20, docs/completed/red-october.md R11(b),
 docs/measurements/p20-expert-locality-2026-09-21.md). GENERIC MoE PATH ONLY (Ly.isMoE, moeMLPPre/moeMLPPost's
 own shape) — gemma4's parallel dense‖MoE FFN (gemma4MoeMLPPre/Post) is NOT covered here; that is a separate,
 structurally similar extension, not attempted in this pass (M26, the model the locality measurement used,
@@ -1352,7 +1352,7 @@ Moved from `backend/cuda/moe_expert_major_gemma4.go` (the comment at the top of 
 
 ```text
 Gemma-4 extension of backend/cuda/moe_expert_major.go's expert-major restructuring (R11/P20, this is the
-item docs/queue-performance.md's P20 entry names as "OPEN, ORPHANED: the gemma4-specific extension
+item a private queue's P20 entry names as "OPEN, ORPHANED: the gemma4-specific extension
 this needs to actually reach M26" — see docs/measurements/p20-expert-major-2026-09-21.md).
 
 gemma4MoeMLPPre/Post (backend/cuda/resident.go) is a PARALLEL dense‖MoE FFN, structurally different from
@@ -1698,7 +1698,7 @@ Moved from `backend/cuda/resident.go` (the comment above `fusedG32MaxHidden`) on
 ```text
 fusedG32MaxHidden is the widest hidden size the fused per-32 kernels are used at: the largest
 measured win (qwen2.5-coder-1.5b, H=1536, +10%). Phi-3 (3072) and qwen2.5-7b (3584) measured slower
-fused than unfused (docs/tasks/task-int4-weight-quality-2026-09.md, lever 3). Sizes between 1536 and
+fused than unfused. Sizes between 1536 and
 3072 are unmeasured and stay unfused.
 ```
 
@@ -2100,8 +2100,8 @@ resolveCtxCap). It stays 4096 so that a caller who did not ask never allocates d
 raising the default would silently multiply every resident model's KV footprint.
 
 4096 is a round, conservative choice, NOT a value tuned against real VRAM headroom — nothing has
-ever measured how much of a real card's free VRAM it leaves unused. Measured 2026-09-06
-(docs/tasks/parked/task-kv-cache-streaming.md): on an RTX 2070 SUPER (8 GB) with a dense 7B at int4,
+ever measured how much of a real card's free VRAM it leaves unused. Measured 2026-09-06:
+on an RTX 2070 SUPER (8 GB) with a dense 7B at int4,
 checkKVFits accepts -ctx 20000 (7257/8192 MiB used) and refuses -ctx 24576 (needs 2.82 GB of KV,
 2.90 GB free) — a true per-card ceiling roughly 5-6x this default. Whether that ratio holds for
 other model sizes/quants/cards is unmeasured; raise -ctx and read checkKVFits' own error to find
@@ -3585,7 +3585,7 @@ box that has a viable pairing:
 
 What it still is NOT: a second PAIRING. This box has one viable one (qwen3-4b dense + DFlash);
 the other drafters are absent and their targets are MoE, where batched verify touches ~8x the
-expert weight. The cross-pairing cell belongs on the Mac -- docs/tasks/parked/mac-default-verify-width.md.
+expert weight. The cross-pairing cell belongs on the Mac -- a private task doc.
 
 	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ \
 	  -run TestDefaultVerifyWidth -v -timeout 4h
@@ -4958,7 +4958,7 @@ discriminator below reads `freeBefore < pinnedDeviceFloor`, which can only be tr
 FLOOR EXCEEDS THE RESIDUAL. That held when the floor was 151,191,552 and has been false since
 2026-08-21, so the WARM branch is now unreachable and a warm run would go red claiming a
 broken identity. The drain group always runs this cold, which is why it has never fired. See
-P16 in docs/queue-performance.md.
+P16 in a private queue.
 ```
 
 ## TestMoERouteDemandThreshold.regime
@@ -5640,7 +5640,7 @@ Moved from `backend/cuda/gptoss_real20b_test.go` (the comment above `TestGptOssR
 ```text
 TestGptOssResidentParityCUDA is G7's gate: ONE real gpt-oss forward on a resident path.
 
-It had never been run on EITHER backend. docs/queue-correctness.md records the reason on each:
+It had never been run on EITHER backend. a private queue records the reason on each:
 this card has 8 GB against a ~12 GB checkpoint, and the MacBook has 16 GB RAM against weights
 that expand to 19.5 GB in memory (measured — it drove swap to exhaustion and never completed).
 2224441 declared FeatAttnSink on kernel-level evidence and was correctly reverted, so the
@@ -5665,7 +5665,7 @@ Moved from `backend/cuda/gptoss_real20b_test.go` (the comment above the FeatAttn
 ```text
 Skips until CUDA declares the two features, exactly as backend/metal/gptoss_real_test.go does.
 The declaration is NOT made: this gate was run on 2026-08-31 with them declared locally
-and FAILED at min cosine 0.681 (see docs/queue-correctness.md G7), so declaring would be
+and FAILED at min cosine 0.681, so declaring would be
 the 2224441 mistake a second time. The test is committed so the next attempt starts from a
 reproduction rather than a rebuild.
 ```
@@ -6075,7 +6075,7 @@ the gate must observe some misses before it can turn itself off.
 Moved from `backend/cuda/p20_expert_locality_test.go` (the comment above `TestP20ExpertLocality`) on 2026-10-09.
 
 ```text
-TestP20ExpertLocality is the "measure the split before building" step docs/queue-performance.md's
+TestP20ExpertLocality is the "measure the split before building" step a private queue's
 P20 entry asks for, before any expert-major kernel is written: expert-major batching only pays off
 if a whole M-row prefill chunk touches FEW ENOUGH distinct experts per layer to stage them all on
 the device at once — if it touches MORE than the box can hold, "fetch each distinct expert once per
@@ -6596,7 +6596,7 @@ Moved from `backend/cuda/qwen35vl_real_resident_test.go` (the comment above `Tes
 
 ```text
 TestQwen35VLReal_residentImagePrefillMatchesCPU is the real-checkpoint gate for the CUDA-resident image prefill of a Gated-DeltaNet
-hybrid (P26b, docs/queue-performance.md): Qwen3.5-0.8B, the three G2 images (docs/measurements/p8a-qwen35-vl-2026-09), HF's own
+hybrid: Qwen3.5-0.8B, the three G2 images (docs/measurements/p8a-qwen35-vl-2026-09), HF's own
 image features fed to both sides so only the decoder differs, F32 on both arms so the only difference is where it runs.
 
 WHAT THIS GATE IS, AND WHAT CHANGED AFTER THE FIRST TWO RUNS. It is a GROSS-ERROR gate, not a precision gate. It was first written

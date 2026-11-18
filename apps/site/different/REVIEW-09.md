@@ -12,7 +12,7 @@ Draft, `reviewed:` empty. Body about 840 words (tables and code included). Site 
 | Without reuse turns 1-3 8.86, 9.01, 9.13 s; with reuse 8.80, 0.58, 0.42 s; 25 tool schemas, 7B, RTX 2070 SUPER, verified 2026-09-02 | `docs/integrations/claude-code.md`, "What to expect" table and top "Verified end to end 2026-09-02" |
 | CPU path: LRU of sessions, longest shared prefix, beats what it shares with other sessions, rewound and suffix prefilled | `internal/app/serveapp/sessions.go` (`acquire` comment, `bestExtend`, `pickSession`) |
 | GPU path: `--kv-sessions` = KV slots, binds slot holding the prefix, new conversation takes empty slot else LRU; memory guard clamps; ~117 MB (1.5B, 4k, Metal) | `docs/server.md` "On Metal, CUDA and WebGPU, several conversations stay resident" |
-| `usage.prefill_reused_tokens` | `docs/server.md`; `docs/tasks/task-turn-telemetry-2026-09.md` section 1 |
+| `usage.prefill_reused_tokens` | `docs/server.md`; a private task doc section 1 |
 | Default 4, 0 disables, `--session-dir` persists warm sessions | `internal/app/serveapp/main.go` flag definitions (`kv-sessions`, `session-dir`); `docs/server.md` |
 | Banner strings | `internal/app/serveapp/banner.go` lines ~176-193 |
 | Tokens prefilled turns 2-6: 26, 27, 24, 20, 27 at 1/2/4 clients (new), 187, 342, 494, 642, 797 (old, Metal 4 clients) | `docs/measurements/concurrency-mc1-2026-09-26.md` Results table (M1 Pro 16 GB, macOS 26.6.2, qwen2.5-coder-1.5b q4_k_m int4) |

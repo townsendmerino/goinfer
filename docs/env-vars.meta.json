@@ -272,7 +272,7 @@
           "cells": [
             "ON (non-arm64) / OFF (arm64)",
             "`=0` (`=1` forces on)",
-            "R-06: a layer's W4A8 q/k/v (and gate/up where the fused gate+up does not take them) as one fork/join instead of one per projection. Bit-identical. On for non-arm64 since 2026-09-27 by owner decision: paired 1.016× / 1.030× / 1.018× (0.5B / 1.5B / 7B) on top of the fused gate+up, Ryzen 7 3700X (`docs/tasks/task-cpu-decode-peer-gap-2026-09.md`, L2). arm64 awaits a Mac measurement (a null on its 7B, `measurements/w4a8-batch-7b-2026-09-20.md`)."
+            "R-06: a layer's W4A8 q/k/v (and gate/up where the fused gate+up does not take them) as one fork/join instead of one per projection. Bit-identical. On for non-arm64 since 2026-09-27 by owner decision: paired 1.016× / 1.030× / 1.018× (0.5B / 1.5B / 7B) on top of the fused gate+up, Ryzen 7 3700X. arm64 awaits a Mac measurement (a null on its 7B, `measurements/w4a8-batch-7b-2026-09-20.md`)."
           ]
         },
         {

@@ -1,4 +1,4 @@
-// webui_app_gate.mjs — end-to-end gate for the web UI page itself (docs/tasks/task-web-ui-2026-09.md).
+// webui_app_gate.mjs — end-to-end gate for the web UI page itself.
 //
 //   node scripts/webui_app_gate.mjs        # exit 0 pass / 1 a check failed / 2 could not drive a browser
 //

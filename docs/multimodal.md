@@ -889,7 +889,7 @@ number is published without provenance.
   identical on all three images, worst-row tower cosine 0.999999987 on the third), and aikit v1.52.0 is tagged and pinned by all five modules. Still open (as of this record; resident image prefill and decode for the dense hybrids on CUDA landed 2026-10-06, `docs/measurements/p26b-cuda-hybrid-image-prefill-2026-10-06/`): resident image decode (a recurrent family
   refuses every resident branch, so Qwen3.5+ images are CPU prefill and CPU decode on every backend, run on CUDA 2026-10-02), the MoE checkpoint (serve accepts the model type; no image has
   been run through it), resize fidelity, and the think-block decision. The gates ran f32, and since 2026-10-02 so does serve unless `-vision-quant int8` is given.
-  **2026-10-06: the think-block decision is DONE** (`docs/tasks/task-qwen35-think-prompt-2026-09.md`: decided and built 2026-09-30, serve's default is
+  **2026-10-06: the think-block decision is DONE** (a private task doc: decided and built 2026-09-30, serve's default is
   `-thinking template`). Left of that list: the MoE checkpoint, and resize fidelity (§"Finishing this doc").
   **P8a STATUS 2026-09-30 (pushed since, `bfd7b554`; the "Open" list below is superseded by the UPDATE above).** G0 (tower vs HF), G0b (preprocessing), G1 (tiny fixture),
   G3 (text path byte-identical), G2 (0.8B, 3 images, 32 tokens) and G4 (serve) all met on the 0.8B; results in

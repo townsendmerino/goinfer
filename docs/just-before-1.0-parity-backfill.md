@@ -19,7 +19,7 @@
 > **Zero `pending` rows remain; the staleness tripwire enforces 23/23 families.** The last four
 > (`gpt2`, `granitemoehybrid`, `kimi_k2`, `nemotron_h`) cleared at T3 — `full-forward-oracle`,
 > `real-model-oracle` ×2, and `shared-path (via deepseek_v3)`. Nothing was demoted. Measurements and
-> the per-family narrative are in `queue-release.md` §E2; what belongs *here* is the correction to
+> the per-family narrative are in a private queue; what belongs *here* is the correction to
 > this doc's central claim.
 >
 > **"Validation + recording, NOT engineering" was wrong for half the remainder.** Neither hybrid
