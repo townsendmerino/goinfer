@@ -224,6 +224,18 @@ type ResidentPrice struct {
 	// can name it.
 	Quant, Unknown string
 	Ctx            int // the context the resident would hold
+	// Memory is the build's memory plan, from a backend that prices it (CUDA); nil otherwise.
+	Memory *ResidentMemory
+}
+
+// ResidentMemory is a backend's own plan of a resident build's device memory, taken over one free-memory reading as the build
+// takes its decisions. Ctx in ResidentPrice is one KV slot's context; ConversationCtx is what one conversation may use of the
+// shared pool (at least Ctx). KVBytes is every slot's KV pools as the device charges them. Note names what the plan could not
+// price, "" when nothing.
+type ResidentMemory struct {
+	FreeBytes, DenseBytes, SlackBytes, KVBytes, MarginBytes, ExtraBytes int64
+	KVSlots, KVSlotsAsked, ConversationCtx                              int
+	KVPrecision, Note                                                   string
 }
 
 // ResidentDeclineError is a backend's reason for not building a resident path: an ordinary decline

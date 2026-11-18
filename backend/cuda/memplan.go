@@ -45,6 +45,8 @@ type memReadings struct {
 type memPlan struct {
 	PoolPaid     bool
 	CtxPlanned   int
+	SlotCtx      int   // one slot's context after the KV fit's trim, before one conversation's cap is raised to the pool
+	KVBytes      int64 // the KV pools at SlotCtx and KVSlots as the device charges them (kvChargedBytes)
 	Margin       int64
 	ExtraBytes   int64
 	Decline      string
@@ -58,6 +60,7 @@ type memPlan struct {
 	CacheSlots   int
 	PrefillWidth int
 	Logs         []string
+	declineErr   error // the error behind Decline, as the build returns it
 }
 
 // memPlanRun carries a memory plan through buildResidentMode: the readings in, the record out. With derive set, only in.WeightsOpen
@@ -130,7 +133,7 @@ func (mp *memPlanRun) weightsCheck(m *decoder.Model, site string, margin int64) 
 		free, ok = mp.in.WeightsOpen, mp.in.WeightsOpenOK
 	}
 	if e := weightsFitDecision(m.ResidentDenseWeightBytesFor("cuda"), m.ExtraResidentBytes(), free, ok, plantedMargin(site, margin)); e != nil {
-		mp.out.Decline, mp.out.DeclineAt, mp.done = e.Error(), site, true
+		mp.out.Decline, mp.out.DeclineAt, mp.out.declineErr, mp.done = e.Error(), site, e, true
 		return errMemPlanned
 	}
 	return nil
@@ -155,12 +158,13 @@ func (r *cudaResident) finishMemPlan(m *decoder.Model, hls []hlayer, planned []c
 	}
 	d := kvFitDecision(kvFitIn{ctxCap: r.ctxCap, explicit: r.ctxExplicit, slotsReq: r.kvSlotsReq, layers: r.layers,
 		extraBytes: r.extraBytes, margin: r.ctxMargin(), slotState: r.recurrentStateCharged()}, uint64(max(mp.in.KV, 0)), mp.in.KVOK)
-	mp.out.CtxCap, mp.out.KVSlots, mp.out.Logs = d.ctxCap, d.slots, d.logs
+	mp.out.CtxCap, mp.out.SlotCtx, mp.out.KVSlots, mp.out.Logs = d.ctxCap, d.ctxCap, d.slots, d.logs
 	mp.done = true
 	if d.err != nil {
-		mp.out.Decline, mp.out.DeclineAt = d.err.Error(), "kv"
+		mp.out.Decline, mp.out.DeclineAt, mp.out.declineErr = d.err.Error(), "kv", d.err
 		return errMemPlanned
 	}
+	mp.out.KVBytes = kvChargedBytes(d.ctxCap, d.slots, r.layers)
 	r.ctxCap, r.kvSlotsN = d.ctxCap, d.slots
 	r.postAllocPlan(hls, mp)
 	return errMemPlanned
@@ -237,7 +241,7 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 		sd := slotsDecision(uint64(max(in.Slots, 0)), in.SlotsOK && !plant("slots"), r.extraBytes, n, strides, r.topK, r.cacheSlots)
 		out.Logs = append(out.Logs, sd.logs...)
 		if sd.err != nil {
-			out.Decline, out.DeclineAt, out.KVSlack = sd.err.Error(), "slots", r.kvSlack
+			out.Decline, out.DeclineAt, out.declineErr, out.KVSlack = sd.err.Error(), "slots", sd.err, r.kvSlack
 			return
 		}
 		r.cacheSlots = sd.slots

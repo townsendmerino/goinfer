@@ -396,6 +396,7 @@
     "internal/app/fitcmd": [
       "decoder",
       "decoder/fit",
+      "internal/config",
       "internal/runtime/modelload",
       "internal/runtime/prequant"
     ],
@@ -541,6 +542,7 @@
       "decoder",
       "decoder/fit",
       "embeddinggemma2",
+      "internal/app/fitcmd",
       "internal/app/loadflags",
       "internal/audio",
       "internal/clef",

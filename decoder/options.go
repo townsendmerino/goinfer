@@ -203,8 +203,8 @@ type Options struct {
 	// bundle maps it, every weight payload (mmapAliasedBytes). A load from a .giw ignores it. Per model: Model.SidecarFor.
 	SidecarFor string
 
-	// planResidency is set only by FitQuery's open of a .giw: withResidency builds nothing, so FitQuery can ask the backend what
-	// its build would decide (Model.plannedDecodePath).
+	// planResidency is set only by FitQuery's open of a .giw and by PlanResidentLoad: withResidency builds nothing, so the caller
+	// can ask the backend what its build would decide (ResidencyPricer).
 	planResidency bool
 }
 

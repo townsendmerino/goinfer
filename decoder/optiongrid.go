@@ -105,7 +105,7 @@ func ogMerge(ms ...map[ogPath]ogCell) map[ogPath]ogCell {
 // read by no execution path afterwards. Every path is n/a for it, for the reason given.
 var ogLoadOnly = map[string]string{
 	"noSelfTest":                   "the resident self-test's own fixture loads; read by the self-test at load",
-	"planResidency":                "FitQuery's open of a .giw, which builds no resident and is closed before it runs anything",
+	"planResidency":                "FitQuery's open of a .giw and PlanResidentLoad's open, which build no resident and are closed before they run anything",
 	"DirectLoad":                   "chooses the file Load opens (the source or its sidecar .giw); the paths run whatever was opened",
 	"LoRA":                         "merged into the base weights at load (\"merged into the base at load\"), so every path runs the merged weights; compute-time adapters are Session state, in the cache-state grid",
 	"AcceptSlowMoE":                "an acknowledgement checked when a paged-MoE load is planned; a no-op afterwards",
