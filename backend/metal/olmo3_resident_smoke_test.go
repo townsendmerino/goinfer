@@ -13,8 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-// TestOlmo3ResidentSmokeMetal is the smoke gate for FeatPostOnlyNorm + FeatQKNormWhole (docs/completed/task-gpu-paths-2026-09.md,
-// G5): the model goes resident, no logit of a 24-token decode or of the batched prefill is NaN, and the prefill is batched.
+// TestOlmo3ResidentSmokeMetal is the smoke gate for FeatPostOnlyNorm + FeatQKNormWhole: the model goes resident, no logit of a 24-token decode or of the batched prefill is NaN, and the prefill is batched.
 //
 // Deliberately NOT a resident-vs-CPU cosine floor: the seeded synthetic fixture (testdata/olmo3-tiny)
 // cannot separate a real bug from quantization noise. The correctness gate is one level lower: TestQKNorm_wholeVector
@@ -25,7 +24,7 @@ func TestOlmo3ResidentSmokeMetal(t *testing.T) {
 	testOlmoFamilyResidentSmoke(t, "../../testdata/olmo3-tiny", "int8int8")
 }
 
-// TestOlmoHybridResidentParityMetal is OM-1 (docs/completed/task-olmo-hybrid-metal-webgpu-2026-11.md): Olmo Hybrid's DeltaNet
+// TestOlmoHybridResidentParityMetal is OM-1: Olmo Hybrid's DeltaNet
 // widens its write gate (NegEigval) and runs its output norm at an epsilon of its own (ONormEps). olmo_hybrid-tiny goes
 // resident on Metal at int4, the one quant its build takes (TestOlmoHybridBuildDeclinesOtherQuants), and holds
 // TestQwen35ResidentParityMetal's bar against the CPU at int4. With either setting dropped at the build, it falls outside the bar.

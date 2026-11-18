@@ -16,7 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// G2-R in two processes (docs/completed/task-forward-architecture-2026-10.md §4.6, "G2-R amendment, 2026-10-15"):
+// G2-R in two processes:
 // TestG2R_cpuReference loads only CPU models and saves everything the arms read on the CPU to $GOINFER_G2R_REF;
 // TestG2R_registered then loads only Metal models and compares against that file. Each process's loads meet the fit
 // guard and Metal's memory guard alone. $GOINFER_G2R_COMMIT names the build both processes run; a file made at another
@@ -142,8 +142,8 @@ func TestG2R_cpuReference(t *testing.T) {
 	ref.GIW = g2rHashes(t, g2rCPUPath(t, g2, "int8int8"), g2rCPUPath(t, g2, "int4"), g2rCPUPath(t, g3, "int8int8"),
 		g2rCPUPath(t, dense, "int8int8"), g2rCPUPath(t, dense, "int4"))
 
-	// The precondition (amendment 2): the .giw route is the direct .gguf route, bit for bit, on the dense 1.5B (whose
-	// .gguf the fit guard admits directly), at both quants, on the gate's prompt and 24 steps. A difference voids the run.
+	// The precondition (amendment 2): the .giw route is the direct .gguf route, bit for bit, on the dense 1.5B (whose.
+	// gguf the fit guard admits directly), at both quants, on the gate's prompt and 24 steps. A difference voids the run.
 	dseed := seedPrompt(t, dense, probeText)
 	for _, q := range []string{"int8int8", "int4"} {
 		direct := g2rCPUArmFrom(t, dense, q, dseed, 24, false, false)

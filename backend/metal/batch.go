@@ -995,8 +995,7 @@ func (r *resident) forwardMultiInto(seqs []batchSeq, argmaxOnly bool) (logits []
 	return r.forwardMultiOut(seqs, multiFull)
 }
 
-// multiOut is what a step returns. multiNoHead and multiLastRow serve a prompt run on the step kernels (prefillByStep, R-19,
-// docs/completed/task-recompute-audit.md): a piece before the last needs only its K/V, so the step encodes no final norm, LM head
+// multiOut is what a step returns. multiNoHead and multiLastRow serve a prompt run on the step kernels: a piece before the last needs only its K/V, so the step encodes no final norm, LM head
 // or argmax and returns nothing; the last piece needs only its last row's logits, so only that row is copied out (the head
 // still runs for every row: it reads the whole LM head's weights once at any row count).
 type multiOut int
@@ -1127,7 +1126,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		b.uMaxS.SetU32(uint32(maxS))
 	}
 	e := r.q.Begin()
-	// The step's two blocks (docs/completed/task-forward-architecture-2026-10.md §4.9, OP4m-d2): every layer the step admits is
+	// The step's two blocks: every layer the step admits is
 	// an attention step and a dense FFN step (batchIneligible), and each block emits the dispatches the step always emitted.
 	attnRows := func(l int, L *residLayer) {
 		g := L.geom

@@ -191,11 +191,11 @@ func moeStepResident(t *testing.T, dir string, on bool) *resident {
 	return r
 }
 
-// TestMC3Step_moeBitIdentical is OP4m-d3's identity gate (docs/completed/task-forward-architecture-2026-10.md §4.9): with the
+// TestMC3Step_moeBitIdentical is OP4m-d3's identity gate: with the
 // step's MoE block on, each tracked generic-MoE fixture builds the batched step, and four sequences at different depths stepped
 // together equal production's single-token forward bit for bit, every logit of every step. With the block off, which is the
 // default, none builds it.
-// TestOP4mD3_moeStepSpeed is OP4m-d3's D3-3 (docs/completed/task-forward-architecture-2026-10.md §4.9): on the MoE checkpoint at
+// TestOP4mD3_moeStepSpeed is OP4m-d3's D3-3: on the MoE checkpoint at
 // GOINFER_OP4MD3_MODEL, loaded int4 with the step's MoE block on, four slots filled to depth 128, then 64 greedy tokens of all four
 // sequences timed two ways: the batched step (device argmax), against the do-nothing arm, each sequence decoded one token at a
 // time on its own slot as today (ForwardArgmax). A B B A over 10 pairs after one warm run each; both arms' tokens must be
@@ -933,8 +933,7 @@ func TestMC3Step_recurrentMatchesDecodeOnServeHistories(t *testing.T) {
 	}
 }
 
-// TestMC3Step_recurrentBitIdentical is OP4m-d4b's D4b-1 and OP4m-d6b's D6b-1 (docs/completed/task-forward-architecture-2026-10.md
-// §4.9): with the step's recurrent blocks on, each tracked recurrent fixture builds the batched step. Four sequences at
+// TestMC3Step_recurrentBitIdentical is OP4m-d4b's D4b-1 and OP4m-d6b's D6b-1: with the step's recurrent blocks on, each tracked recurrent fixture builds the batched step. Four sequences at
 // different depths, each on its own slot with its own recurrent state, stepped together 12 times, equal production's
 // single-token forward on every logit. With the blocks off, none builds it.
 func TestMC3Step_recurrentBitIdentical(t *testing.T) {

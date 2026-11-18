@@ -9,7 +9,7 @@ import (
 )
 
 // TestSAGemv_OutlierRegime drives the production gemv_w4a8_sa in the regime that triggers the Gemma o-proj amplitude finding
-// (docs/completed/gemma-metal-signflip-bisect.md, Fork 2: Metal's o-proj contribution inflated and flipped on the secondary
+// ( Fork 2: Metal's o-proj contribution inflated and flipped on the secondary
 // channels while CUDA's dp4a stayed clean): Gemma's o-proj K=2048 with an activation carrying ONE massive outlier channel that
 // sets the int8 scale (~558) and crushes every other channel to near-zero int8, the post-quant state of the attention context
 // feeding the o-proj. TestSAGemvLargeK proves the kernel at K=4096 with a benign random activation only.

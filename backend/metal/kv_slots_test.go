@@ -243,7 +243,7 @@ func sb11Attributed(t *testing.T, what string, r cost.Report) {
 	}
 }
 
-// TestCost_metalDecodeExact is G-SB11-16 and G-SB11-17 (docs/completed/task-subsystems-2026-10.md, SB11 "Step 4: Metal"):
+// TestCost_metalDecodeExact is G-SB11-16 and G-SB11-17:
 // llama-tiny resident on Metal at int4.
 //   - Every counted path attributes all the dispatches the device counts (no dispatch_other): the first token, whose buffer is
 //     encoded in line, tokens 1 to 3, a token without logits and the synchronous forward.
@@ -427,7 +427,7 @@ func sb11Median(xs []float64) float64 {
 	return (s[len(s)/2-1] + s[len(s)/2]) / 2
 }
 
-// TestCost_metalOffCost is G-SB11-18 (docs/completed/task-subsystems-2026-10.md, SB11 "G-SB11-18's method"): the always-on
+// TestCost_metalOffCost is G-SB11-18: the always-on
 // counting, charged as three atomic adds and a hook nil check per dispatch, times the device's dispatches per decode token, as
 // a share of the median uncounted decode token, must be under 0.5%. It also reports the on cost (counted ÷ uncounted tokens,
 // the first token of each block dropped), which is not graded. A timed run: hold the timing lock exclusively, on AC.

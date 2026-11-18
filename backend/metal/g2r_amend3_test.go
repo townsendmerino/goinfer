@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// G2-R amendment 3 (docs/completed/task-forward-architecture-2026-10.md §4.6, "G2-R amendment 3"): the Metal process loads
+// G2-R amendment 3: the Metal process loads
 // Metal .giw bundles, a refused load voids the run, and every load is fit-checked by day before the job is queued.
 
 // g2rSmall is the Metal precondition's model: its .gguf loads on Metal directly.
@@ -103,8 +103,8 @@ func g2rMetalRun(t *testing.T, load, quant string, seed, inputs []int, steps int
 	return fed, out
 }
 
-// g2rMetalPrecondition is amendment 3's precondition: on Metal, the 0.5B through its .giw gives the logits its direct
-// .gguf load gives, bit for bit, at every step, at int8int8 and int4, fed the .gguf route's greedy tokens. A difference
+// g2rMetalPrecondition is amendment 3's precondition: on Metal, the 0.5B through its .giw gives the logits its direct.
+// gguf load gives, bit for bit, at every step, at int8int8 and int4, fed the .gguf route's greedy tokens. A difference
 // voids the run.
 func g2rMetalPrecondition(t *testing.T) {
 	t.Helper()

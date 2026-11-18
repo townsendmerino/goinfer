@@ -11,8 +11,8 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestAttentionFA_endToEndReproduction is the KEEPER reproducer of the end-to-end signature that parked R2
-// (docs/completed/red-october.md): a kernel proven correct in isolation (TestAttentionFA_vsReference) whose logits diverged from the
+// TestAttentionFA_endToEndReproduction is the KEEPER reproducer of the end-to-end signature that parked R2:
+// a kernel proven correct in isolation (TestAttentionFA_vsReference) whose logits diverged from the
 // shipped kernel's from decode step 2 on. It batch-prefills a real qwen2.5-1.5b checkpoint to depth 1600 (> attnFADepthFloor),
 // then decodes 5 tokens one at a time, comparing logits against the SAME prefill+decode sequence with attention_fa disabled, and
 // asserts each step: cosine >= 0.9999 and maxAbs <= 0.1.

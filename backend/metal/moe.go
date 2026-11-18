@@ -6,7 +6,7 @@ package metal
 // (gpu/moe.go): the router runs entirely on-GPU and writes idx[k]/wgt[k] device buffers, then the host records a fixed
 // k dispatches per projection, each reading its expert index dynamically (weightRow = idx[slot]*rowsPerExpert + n).
 // The command buffer is static every token, so the encode-ahead executor (ForwardEmbPipe) still pre-encodes token t+1
-// while t runs; a host-side top-k readback would have broken that pipeline. See docs/completed/task-metal-moe.md.
+// while t runs; a host-side top-k readback would have broken that pipeline.
 
 import (
 	"errors"
@@ -513,7 +513,7 @@ func (r *resident) encodeMoERouteForForm(e *Encoder, L *residLayer, form program
 }
 
 // moeKSlotsOn selects the k-slot dispatches (the k selected experts in four dispatches instead of 3k) where the shape
-// admits them. Off: parked, bit-identical but too small a gain (docs/completed/task-metal-audit-2026-10.md, "D-P03").
+// admits them. Off: parked, bit-identical but too small a gain.
 // Tests turn it on for the k-slot arm.
 var moeKSlotsOn = false
 

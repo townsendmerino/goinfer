@@ -11,8 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestAuditAP02_shortPromptTiming is A-P02's speed half (docs/completed/task-metal-audit-2026-10.md, "A-P02:
-// pre-registration"): a fresh K-token prompt's wall time three ways, as T1.10 timed it, but on the build A-P01 changed
+// TestAuditAP02_shortPromptTiming is A-P02's speed half: a fresh K-token prompt's wall time three ways, as T1.10 timed it, but on the build A-P01 changed
 // (T1.10's step / pass figures no longer describe the pass):
 // the sequential single-token loop (what a resident without the batched step runs below the floor), the batched step in
 // 8-row pieces (what E-P01 runs below the floor where the step exists), and the batched pass with its floor off. K =

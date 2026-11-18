@@ -58,8 +58,8 @@ func TestGemma1ResidentParityMetal(t *testing.T) {
 // model that has one. Both tiny fixtures (cap 5, window 4, head dimension 32) run through the resident decode token by
 // token against the CPU at int4, 16 positions.
 //
-// A diagnostic, not a gate: it logs the worst logit cosine and asserts nothing about it. It was G2-T
-// (docs/completed/task-forward-architecture-2026-10.md §4.6), whose 0.999 bar the fixtures' own no-softcap baseline sat at; by
+// A diagnostic, not a gate: it logs the worst logit cosine and asserts nothing about it. It was G2-T,
+// whose 0.999 bar the fixtures' own no-softcap baseline sat at; by
 // owner decision OP1-M1 the tiny fixtures are diagnostics, and the softcap's evidence is the kernel gates G2-K and G2-D. The
 // lanes and the batched prefill are TestGemma2Softcap_lanesAndPrefillMetal's.
 func TestGemma2ResidentParityMetal(t *testing.T) {
