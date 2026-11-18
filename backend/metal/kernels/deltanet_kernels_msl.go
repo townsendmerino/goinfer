@@ -22,8 +22,7 @@ package kernels
 // the whole kernel library compiles under one library-wide fast-math setting (metal/model.go's preciseMathCompile). fma()
 // below is used ONLY where the CUDA reference explicitly fuses (__fmaf_rn); every site the CUDA reference deliberately
 // leaves unfused (__fmul_rn followed by a separate __fadd_rn) is written here as two separate expressions, mirroring the
-// CUDA source's literal shape rather than a mathematically-equivalent rewrite: see
-// docs/completed/task-metal-batched-verify-kernel.md on why literal source form, not just arithmetic equivalence, is what
+// CUDA source's literal shape rather than a mathematically-equivalent rewrite: literal source form, not just arithmetic equivalence, is what
 // fast-math contraction keys off.
 const DeltaNetKernels = `
 inline float dn_silu(float x) { return x / (1.0f + exp(-x)); }
