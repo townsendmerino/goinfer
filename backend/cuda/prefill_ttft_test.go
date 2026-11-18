@@ -26,8 +26,7 @@ import (
 //
 // THE DEFAULTS ARE THE REGRESSION TEST AND DO NOT MOVE. The env knobs below only widen what a deliberate measurement
 // run can ask for; with none set, the test runs exactly the model, quants and depths it always has. They exist for
-// end-to-end cells the fixed list (K up to 2048 on a 1.5B) cannot reach, such as S at K=3900 and D7 as a second model
-// (docs/completed/task-prefill-gap.md §4 L2).
+// end-to-end cells the fixed list (K up to 2048 on a 1.5B) cannot reach, such as S at K=3900 and D7 as a second model.
 //
 //	GOINFER_TTFT_MODEL   checkpoint name under the models dir, or an absolute path (default: S)
 //	GOINFER_TTFT_QUANTS  comma-separated quants          (default: "int4,int8int8")

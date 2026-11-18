@@ -11,7 +11,7 @@ import (
 	gc "github.com/eitamring/gocudrv/cuda"
 )
 
-// TestMLALatentReuse_prototype is micro-leg B of docs/completed/task-mla-cuda-residency.md, and the
+// TestMLALatentReuse_prototype is micro-leg B, and the
 // skeleton of its eventual parity gate.
 //
 // THE HYPOTHESIS. MLA's decode attention looks like a new kernel shape (score width latDim, value
@@ -37,7 +37,7 @@ import (
 //
 // NOT the WebGPU approach. gpu/mla.go uses online (FlashAttention-style) softmax and is gated on
 // tolerances; CUDA's decode attention is byte-identical by contract and Campaign A rejected online
-// rescale explicitly. See finding (a) in docs/completed/task-mla-cuda-residency.md.
+// rescale explicitly.
 func TestMLALatentReuse_prototype(t *testing.T) {
 	if err := gc.Init(); err != nil {
 		t.Skipf("cuInit: %v", err)

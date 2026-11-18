@@ -17,8 +17,8 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-// TestResidentKVBytes_matchesCUDAAllocation pins the CUDA half of docs/completed/task-memory-accounting-2026-09.md
-// item 1: decoder.Model.ResidentKVBytes("cuda", …) — what Plan("cuda") and `fit` price — equals the K/V
+// TestResidentKVBytes_matchesCUDAAllocation pins the CUDA half of the KV-bytes agreement:
+// decoder.Model.ResidentKVBytes("cuda", …) — what Plan("cuda") and `fit` price — equals the K/V
 // CUDA actually allocates, on real residents built from real fixtures, one per layout family:
 //
 //   - dense (llama-tiny, phi3-tiny, qwen2.5-0.5b), sliding window (mistral-tiny-window, gemma3-vl-tiny,
@@ -269,7 +269,7 @@ func TestKVPool_mixedGroupsAndPrecision(t *testing.T) {
 	}
 }
 
-// TestMM5_cudaPoolsAreTheDeclaredRows is G-MP2 on CUDA (docs/completed/task-forward-architecture-2026-10.md §4.9b): every census fixture
+// TestMM5_cudaPoolsAreTheDeclaredRows is G-MP2 on CUDA: every census fixture
 // layer D admits at int4 and CUDA builds resident at -kv f16 and -kv i8, at two requested slots and 256 positions, holds each layer's pools at the rows its
 // operations declare (decoder.Model.LayerBuffers): K and V, or MLA's one latent, of the declared width over the pool's rows, int8's
 // scales at one per row and declared head, and nothing on a layer that declares no row. The build's whole KV (every pool, the scales and

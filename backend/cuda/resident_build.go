@@ -1069,7 +1069,7 @@ func (s *buildState) bindKernels(r *cudaResident) error {
 	if r.fGumbel2, e = r.dev.NewComputePipeline(gumod, "gumbel_stage2"); e != nil {
 		return e
 	}
-	// Compute-time LoRA (docs/completed/task-gpu-paths-2026-09.md): own module, loaded unconditionally (cheap, and whether an
+	// Compute-time LoRA: own module, loaded unconditionally (cheap, and whether an
 	// adapter will arrive is not known here).
 	lmod, e2 := r.dev.CompileLibrary(loraPTX)
 	if e2 != nil {
@@ -1214,7 +1214,7 @@ func (s *buildState) bindKernels(r *cudaResident) error {
 			}
 		}
 	}
-	// L2 fused prefill attention (docs/completed/task-prefill-gap.md §4 L2): default on above fastPrefillFloor;
+	// L2 fused prefill attention: default on above fastPrefillFloor;
 	// GOINFER_CUDA_FAST_PREFILL=0 or Options.ExactPrefill keeps the exact path. Own module, prefill_batched.ptx untouched. A
 	// load failure is not fatal: bAttnFused* stay zero and every selection site falls back to attn_batched, the exact path.
 	r.fastAttn, r.fastGemm = fastPrefillEnabled(r.knobValue("GOINFER_CUDA_FAST_PREFILL"))
@@ -1475,7 +1475,7 @@ func (s *buildState) bindFamilyState(r *cudaResident) error {
 		loadD(&r.dnNorm, "delta_norm")
 		loadD(&r.dnRule, "delta_rule")
 		loadD(&r.dnGNorm, "delta_gnorm")
-		// Row-batched twins for prompt prefill (docs/completed/task-cuda-deltanet-prefill-2026-09.md).
+		// Row-batched twins for prompt prefill.
 		loadD(&r.dnConvRows, "delta_conv_rows")
 		loadD(&r.dnGatesRows, "delta_gates_rows")
 		loadD(&r.dnNormRows, "delta_norm_rows")

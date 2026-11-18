@@ -42,8 +42,7 @@ var fmaLintExempt = map[string]string{
 // in any kernel under a bit-identity contract. A bare MAC (`x += a*b`, `= a*b + c`) lets the compiler
 // CHOOSE fma vs mul+add, and separately-compiled kernels that share a contract (a decode kernel and
 // its batched counterpart) then compile to ~1 ULP-different, DATA-DEPENDENT numerics — invisible on
-// uniform fixtures, a token-stream divergence on real weights (docs/completed/task-batched-prefill-
-// bitidentity.md). Every MAC must be an explicit intrinsic (__fmaf_rn / __fmul_rn / __fadd_rn) so no
+// uniform fixtures, a token-stream divergence on real weights. Every MAC must be an explicit intrinsic (__fmaf_rn / __fmul_rn / __fadd_rn) so no
 // compiler discretion remains. This catches the CAUSE at compile time — before any numerical test,
 // and independent of the NVRTC version that JITs the PTX. A new bare MAC fails the build. (aikit's
 // gemv_quant.cu carries the same rule in its own repo — see its header.)

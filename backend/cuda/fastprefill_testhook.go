@@ -4,7 +4,7 @@ package cuda
 
 // SetFastPrefillForTest flips the L2/L3 lever selection on an already-loaded resident, loading the fused kernels on
 // first use if the env did not already ask for them. The seam exists because the fidelity gate
-// (docs/completed/task-prefill-gap.md Phase 3) must run the exact arm and the fast arm in one process, teacher-forced on
+// must run the exact arm and the fast arm in one process, teacher-forced on
 // the reference's tokens, while the env var is read once at model load: two residents do not fit on the 8 GB card, and
 // two processes cannot share the KV cache the continuation walks. It is a test hook, behind goinfer_testhooks, because
 // it gates a measurement and not production inference; production selection stays fastPrefillEnabled() reading the env

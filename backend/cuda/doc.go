@@ -8,8 +8,8 @@
 //     audited modules are pinned to NVRTC 12.6.85) and go:embed'd for driver-side JIT (cuModuleLoadDataEx). The census of
 //     modules is the go:embed list in kernels.go.
 //
-// Fusion is per-op (fused_qkv.cu), not one all-in-one decode-layer kernel: the megakernel design in
-// docs/completed/cuda-megakernel-spec.md did not ship (go/no-go: docs/completed/task-cuda-cgofree-spike.md).
+// Fusion is per-op (fused_qkv.cu), not one all-in-one decode-layer kernel: the megakernel design
+// did not ship (go/no-go).
 //
 // Build with `-tags cuda`. BuildResident builds a resident forward when the driver and the arch's features allow, and
 // declines (ok=false) otherwise, in which case the decoder falls back to the staged/CPU path. Blank-importing this
