@@ -57,8 +57,7 @@ type Model struct {
 	// batcher: MC3's coordinator (mc3_batch.go) — several generations on the resident at once, each on its own KV
 	// slot, their decode tokens joined into shared steps. nil unless EnableResidentConcurrency enabled it.
 	batcher *residentBatcher
-	// specAdaptive: MC4's "speculate when alone, batch under load" candidate (SetSpecAdaptive,
-	// docs/tasks/parked/task-concurrency-2026-09.md). off by default — genNgramInto's exclusive claim is unchanged unless
+	// specAdaptive: MC4's "speculate when alone, batch under load" candidate (SetSpecAdaptive). off by default — genNgramInto's exclusive claim is unchanged unless
 	// this is on AND batcher is non-nil.
 	specAdaptive bool
 	// cpuBatch: MC3c step 2's coordinator (cpu_batch.go) — several CPU generations' decode tokens joined into one
@@ -371,7 +370,7 @@ func (m *Model) SidecarFor() string { return m.sidecarFor }
 
 // FitDisabled is --fit=off (Options.DisableFit), also set by GOINFER_NO_FIT_DEFAULT (kept working as the original, narrower
 // escape hatch): every "fit by default" behavior reverts to its previous default. Checked by backend packages that implement
-// a fit-by-default policy (cuda.resolveCtxCapFit); decoder itself has none to gate. See docs/tasks/task-fit-to-hardware.md.
+// a fit-by-default policy (cuda.resolveCtxCapFit); decoder itself has none to gate.
 func (m *Model) FitDisabled() bool {
 	return m.disableFit || m.knobs.get(knobNoFitDefault) != ""
 }
@@ -551,7 +550,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		}
 		// A .giw bakes its int4 representation in at write time (giwWriter.target), so unlike a GGUF/safetensors load, where
 		// wantsCanonicalInt4 decides from this opts.Backend before a byte is quantized, the reader must check the file's promise
-		// against what this Load needs (docs/tasks/task-int4-layout-2026-09.md). giwReader.weightMat already refuses a kind-5 tensor
+		// against what this Load needs. giwReader.weightMat already refuses a kind-5 tensor
 		// this core cannot run (wrong arch/shape); this catches the other mismatch, a kind-5 file under a backend that needs canonical
 		// bytes (e.g. Metal), which withResidency's decline would not fail loudly for (it logs and falls back to CPU/staged,
 		// non-fatal by design).
@@ -613,7 +612,7 @@ func Load(dir string, opts Options) (*Model, error) {
 			return nil, rerr
 		}
 		// A MoE load that decodes from its mapping on the CPU (no -stream-weights, no resident runner) pages its experts through
-		// the page cache, so it takes the paged load's working-set refusal (docs/tasks/task-fit-to-hardware.md, SLOW) at the
+		// the page cache, so it takes the paged load's working-set refusal at the
 		// budget a pager would take here.
 		if !opts.StreamWeights && w.arch.MoE != nil && !m.ResidentActive() {
 			if predicted, ok := mappedMoEWorkingSetPrediction(m, resolveWeightCacheBudget(opts.WeightCacheBytes)); ok {

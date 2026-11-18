@@ -1,7 +1,6 @@
 //go:build realckpt
 
-// WHERE does the GGUF path diverge from the safetensors path? The localizer for B13's last standing red
-// (docs/queue-release.md; the v1.0 gate §1).
+// WHERE does the GGUF path diverge from the safetensors path? The localizer for B13's last standing red.
 //
 // THE QUESTION THIS ANSWERS, and why neither existing gate answers it. TestQwen35GGUF_vsSafetensors reports one number at
 // the TOP of the stack (min cosine over the teacher-forced steps) and calls it a loader bug. TestQwen35GGUF_weightDiff

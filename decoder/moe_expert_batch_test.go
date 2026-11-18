@@ -240,7 +240,7 @@ func loadMoEBitIdentModel(t *testing.T) (*Model, error) {
 // moeMLP's profile share is a projection this repo has retracted. So this times the real forward with the flag
 // on and off, paired and interleaved with alternating lead, at the depth the pre-registered rule names.
 //
-// Pre-registered decision rule (docs/queue-performance.md P18): fund if the net is >=15% end-to-end at
+// Pre-registered decision rule: fund if the net is >=15% end-to-end at
 // K>=4096; park if <8%; 8-15% is AMBIGUOUS and parks pending a second mechanism.
 func TestMoEExpertMajor_endToEnd(t *testing.T) {
 	if os.Getenv("GOINFER_MOE_BATCH_E2E") == "" {

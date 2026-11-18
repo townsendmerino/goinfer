@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// TestSpark25Tiny_textParity is Gate 1 (docs/tasks/task-spark-x2-5.md): "loads and matches the
+// TestSpark25Tiny_textParity is Gate 1: "loads and matches the
 // tiny golden." Pins the new spark2_5 forward — fused QKV split, sigmoid head-wise attention-
 // output gate, 1:3 sliding:full interleave with per-layer-type partial RoPE, and a GATED MLP
 // using exact-erf GELU (gegluExact) — against a tiny-random HF oracle (the real

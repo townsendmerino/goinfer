@@ -3,7 +3,7 @@ package decoder
 import "github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 
 // The KV manager's types, under decoder names for a backend to use (the manager's own package is internal, so that
-// its tests run apart from decoder's). docs/tasks/task-kv-architecture-2026-10.md §5.
+// its tests run apart from decoder's).
 type (
 	// KVGeometry is a model's KV shape: its layer groups, the layers that read another layer's KV, and its
 	// recurrent state.

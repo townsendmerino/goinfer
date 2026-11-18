@@ -36,7 +36,7 @@ import (
 //     registerAdapter retires the one it displaces rather than freeing it, so a reload under one name never compares
 //     equal.
 //
-// The bookkeeping is the KV manager's (internal/kvmgr, docs/tasks/task-kv-architecture-2026-10.md §5): one sequence per
+// The bookkeeping is the KV manager's: one sequence per
 // KV slot, its tokens, image spans, root and the kernel class that wrote each row; which slot a prompt takes; what it
 // may skip; and the index of published blocks. This file is the decoder's side of it: it asks the resident what the
 // manager cannot know (the slot count, the window a slot still holds, the prefill floor), binds slots, and keeps

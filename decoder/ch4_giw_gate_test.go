@@ -14,7 +14,7 @@ import (
 	"testing"
 )
 
-// TestCH4_giwByteIdentity is code-health CH4's gate (docs/tasks/task-code-health.md): the .giw a real GGUF transcodes to must be
+// TestCH4_giwByteIdentity is code-health CH4's gate: the .giw a real GGUF transcodes to must be
 // byte-identical before and after a gguf.go refactor. GOINFER_CH4_GGUF names the fixtures (comma-separated paths to real K-quant
 // .gguf files); each one's .giw weights body, what gguf.go produces (StreamTranscodeGGUF, no target), is hashed as it streams at q4k
 // (the source's Q4_K kept), int4 and int8int8, twice each (the output must be deterministic), and so is its parsed Config's JSON

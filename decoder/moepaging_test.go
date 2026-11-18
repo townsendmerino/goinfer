@@ -49,7 +49,7 @@ func TestExpertPaging_bitExact(t *testing.T) {
 	const budget = 512 << 20
 	// AcceptSlowMoE: the 512 MB budget is chosen to FORCE eviction, which the load-time working-set guard
 	// predicts is slower than its 2.0 tok/s floor on a big MoE; throughput is not what this gate checks, and
-	// without it the load returns an error (docs/queue-engineering.md B13).
+	// without it the load returns an error.
 	paged, err := Load(giwPath, Options{StreamWeights: true, WeightCacheBytes: budget, AcceptSlowMoE: true})
 	if err != nil {
 		t.Fatalf("load paged .giw: %v", err)

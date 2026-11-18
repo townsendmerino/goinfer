@@ -181,8 +181,7 @@ func TestCPURoofline_fusedGateUp_logitsBitIdentical(t *testing.T) {
 }
 
 // TestCPURoofline_w4a8Batch_logitsBitIdentical is the same check for R-06's fused W4A8 q/k/v (and gate/up where
-// the fused gate+up does not take it), at today's defaults otherwise. Gate 1 of L2 in
-// docs/tasks/task-cpu-decode-peer-gap-2026-09.md.
+// the fused gate+up does not take it), at today's defaults otherwise.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_NO_FIT_GUARD=1 go test -tags goinfer_testhooks ./decoder/ -run TestCPURoofline_w4a8Batch_logitsBitIdentical -v -count=1 -timeout 30m
 func TestCPURoofline_w4a8Batch_logitsBitIdentical(t *testing.T) {

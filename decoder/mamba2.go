@@ -63,7 +63,7 @@ func (w *mamba2Weights) mixer() mamba2.Weights {
 }
 
 // mambaProjInt8 reports whether a load at q holds Nemotron-H's Mamba projections as int8: every integer quant does, and
-// an f32, bf16 or f16 load keeps them f32 (docs/queue-engineering.md, B27).
+// an f32, bf16 or f16 load keeps them f32.
 func mambaProjInt8(q quantMode) bool {
 	switch q {
 	case quantInt8, quantInt8I8, quantInt4, quantInt4Mix, quantQ4K:

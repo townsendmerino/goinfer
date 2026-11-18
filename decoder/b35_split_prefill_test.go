@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// TestQwen35SplitPrefill_bitIdentical is B35's first question on the CPU (docs/queue-engineering.md, B35, step 5): a Gated-DeltaNet
+// TestQwen35SplitPrefill_bitIdentical is B35's first question on the CPU: a Gated-DeltaNet
 // prompt prefilled in two batched passes (runLayersQwen35N), [0,b) then [b,n), must leave exactly what one pass over [0,n) leaves:
 // the last row's final-norm hidden state, every DeltaNet layer's recurrent state and conv window, and every full-attention layer's
 // K/V rows. A restore at b is exact only if this holds. b runs over a cut inside the conv window, a mid-prompt cut, and B35's own

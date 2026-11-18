@@ -1,7 +1,6 @@
 //go:build realckpt
 
-// Real-model gates for Spark-X2.5-1.7B (model_type "spark2_5", Spark2_5ForCausalLM): Gate 2 of
-// docs/tasks/task-spark-x2-5.md, the T3 promotion of the family from the tiny synthetic fixture to a released checkpoint
+// Real-model gates for Spark-X2.5-1.7B (model_type "spark2_5", Spark2_5ForCausalLM): Gate 2, the T3 promotion of the family from the tiny synthetic fixture to a released checkpoint
 // (1.7B is the smaller of the two released sizes). Fixture: scripts/pin_spark2_5_real.py.
 //
 // TestSpark25Real_gate and TestSpark25Real_fitGuardLongContext need OPPOSITE fit-guard states and must be run as
@@ -113,7 +112,7 @@ func TestSpark25Real_gate(t *testing.T) {
 	emitParityRow(t, "spark2_5", "full-forward-oracle", "HF f32 (Spark-X2.5-1.7B, Spark2_5ForCausalLM)", 100.0, float64(cos), float64(cos))
 }
 
-// TestSpark25Real_fitGuardLongContext is Gate 3 (docs/tasks/task-spark-x2-5.md): the fit guard must price KV correctly
+// TestSpark25Real_fitGuardLongContext is Gate 3: the fit guard must price KV correctly
 // for a sliding-window model at long context (131072), where a naive calculation is most wrong (llama.cpp's --swa-full
 // prices every layer at full context). decoder/arch.go's kvPositionsAt/kvBytesForCtx is the generic mechanism that
 // prevents that mistake; this checks it against the REAL checkpoint's geometry (fitkv_test.go's

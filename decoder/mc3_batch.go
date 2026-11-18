@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// MC3 (docs/tasks/parked/task-concurrency-2026-09.md): several generations decoding on one resident at once, each on its own
+// MC3: several generations decoding on one resident at once, each on its own
 // resident KV slot, their decode tokens joined into shared steps.
 //
 // A resident is one command queue with one set of scratch buffers, so everything that touches it (a prefill, a
@@ -22,7 +22,7 @@ import (
 // submission has waited batchStragglerWait (a generation whose consumer is slow to read its stream must not stall the
 // rest). A newcomer's prefill runs between runs, whole or in chunks (Options.ResidentPrefillChunk), and takes precedence
 // over the next run. On a resident that takes ragged steps a chunk instead rides the next run, one step with the decode
-// rows (rideChunk; docs/tasks/task-forward-and-memory-2026-11.md, "RF3: plan and registration"); elsewhere yieldToDecode
+// rows; elsewhere yieldToDecode
 // lets one run go between chunks.
 
 // batchStragglerWait bounds how long a submitted token waits for the other decoding generations' tokens before its run
@@ -157,8 +157,8 @@ func (m *Model) ResidentConcurrency() int {
 	return m.batcher.maxHolders
 }
 
-// SetSpecAdaptive turns MC4's "speculate when alone, batch under load" candidate on or off
-// (docs/tasks/parked/task-concurrency-2026-09.md). Call it once at load, before any generation starts. It has no
+// SetSpecAdaptive turns MC4's "speculate when alone, batch under load" candidate on or off.
+// Call it once at load, before any generation starts. It has no
 // effect unless EnableResidentConcurrency also enabled a batcher — with no batcher, genNgramInto's
 // exclusive claim behaves exactly as it does with this off.
 func (m *Model) SetSpecAdaptive(on bool) { m.specAdaptive = on }
@@ -293,8 +293,7 @@ func (b *tokenCoalescer) exclusiveKind(prefill bool, fn func()) {
 	fn()
 }
 
-// prefillTailMin is chunked prefill's shortest final pass (Options.ResidentPrefillChunk;
-// docs/tasks/parked/task-concurrency-2026-09.md): residentPrefillSeed takes a suffix of at least 8 tokens through the batched
+// prefillTailMin is chunked prefill's shortest final pass (Options.ResidentPrefillChunk): residentPrefillSeed takes a suffix of at least 8 tokens through the batched
 // prefill, and the chunks must all run that same path. Chunking is sound only where the resident's prefill is
 // chunk-invariant, the same bits whole or in chunks (TestMC5_prefillChunkInvariance on Metal), so a reply never depends
 // on whether others were decoding.

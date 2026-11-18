@@ -68,7 +68,7 @@ func loadWithDonorFake(t *testing.T, slots int) (*Model, *donorFake) {
 	return m, be.rf
 }
 
-// TestKV2_donorWhoseWindowHoldsTheRows is KV2 follow-up 2 (docs/tasks/task-kv-architecture-2026-10.md): three slots,
+// TestKV2_donorWhoseWindowHoldsTheRows is KV2 follow-up 2: three slots,
 // conversations 0 and 1 leave the shared preamble's blocks in slots 0 and 1, and slot 0's window has moved past them. A
 // third conversation sharing the preamble lands in slot 2 and must copy the preamble from slot 1, the donor that still
 // holds it, not decline on slot 0 (the first of the longest hits) and prefill cold; its reply is the reply it gives

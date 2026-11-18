@@ -154,7 +154,7 @@ func SerializeWeightsTo(out io.Writer, w *Weights, id string) (int64, error) {
 	return wr.n + 4, nil
 }
 
-// SerializeWeightsForTarget is SerializeWeights for a bundle promised to ONE consumer (docs/tasks/task-int4-layout-2026-09.md):
+// SerializeWeightsForTarget is SerializeWeights for a bundle promised to ONE consumer:
 // on a cpu-arm64 target, every eligible int4 tensor (see weightMat vs weightMatKind3Only) writes kind 5 (row4-only)
 // instead of kind 3; every other target, including GIWTargetNone, writes kind 3 for every int4 tensor exactly like
 // SerializeWeights. TranscodeGIW/EnsureCachedGIW (sidecar.go) and cmd/prequant drive this.
@@ -932,7 +932,7 @@ type giwWriter struct {
 
 	// target opts weightMat into emitting kind 5 (row4-only, no canonical arrays) for every eligible int4 tensor on a
 	// cpu-arm64 target, instead of kind 3: the one-representation-per-target policy, .giw's counterpart to
-	// wantsCanonicalInt4's in-RAM decision (docs/tasks/task-int4-layout-2026-09.md). GIWTargetNone (the zero value) keeps
+	// wantsCanonicalInt4's in-RAM decision. GIWTargetNone (the zero value) keeps
 	// kind 3 for every int4 tensor.
 	target GIWTarget
 

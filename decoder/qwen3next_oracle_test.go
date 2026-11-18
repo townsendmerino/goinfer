@@ -14,7 +14,7 @@
 // QUANT IS int4 BY CAPACITY, NOT BY CHOICE, and the number has to be read knowing that: 80B at int8 is ~80 GB against 62 GB of
 // RAM, so there is no int8 run to fall back to, and a low cosine cannot be re-run at higher precision to separate quant noise
 // from a defect. The per-layer SHAPE has to do that instead (smooth and non-monotonic is noise; a cliff is a defect, and a
-// defect cannot recover). The decision rule is pre-registered in docs/queue-correctness.md G5.
+// defect cannot recover). The decision rule is pre-registered.
 //
 // The sparsity is the reason to expect trouble: 10 of 512 experts active is the sparsest in the table by a factor of two, and
 // nemotron3nano at 6/128 read far lower with int8 ACTIVATIONS than with f32 ones, from the expert-flip cliff.

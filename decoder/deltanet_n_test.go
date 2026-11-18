@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// P26c (docs/queue-performance.md). deltaNetCoreN fans the conv, the head recurrence and the gated norm out over K rows; its contract is that it changes no
+// P26c. deltaNetCoreN fans the conv, the head recurrence and the gated norm out over K rows; its contract is that it changes no
 // bit: the per-token loop is the reference, and the outputs, the recurrent state and the conv window afterwards must match it EXACTLY, from a fresh state and
 // from a non-empty one (a prompt that continues earlier tokens), for K below, at and above the conv kernel and across worker counts. The fan-out is forced onto
 // the tiny fixture (deltaNetMinWork) and counted (deltaNetFanouts) so the test cannot pass by never forking.

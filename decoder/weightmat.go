@@ -32,7 +32,7 @@ const (
 	quantInt4Mix
 	// quantQ4K keeps every tensor the GGUF stores as Q4_K in its own super-block layout
 	// (linalg.WrapQ4K, exact, 4.5 bpw) and puts every other layer matmul at int8 W8A8, with per-32
-	// activations throughout (docs/tasks/task-int4-weight-quality-2026-09.md: the re-quantization
+	// activations throughout (the re-quantization
 	// of Q4_K into symmetric int4 is the int4 quality loss). Like quantInt4Mix it is a LOAD-TIME
 	// policy resolved per tensor at the GGUF load sites. GGUF only; its .giw form is kind 8 (serialize.go).
 	quantQ4K

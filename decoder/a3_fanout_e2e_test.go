@@ -31,7 +31,7 @@ func TestA3FanoutEndToEnd(t *testing.T) {
 	ctx := deadlineCtx(t)
 	const pairs = 3
 	// 8192 is the depth the f32 flag's own headline uses; the trend over the lower three depths does not
-	// answer whether it holds there (docs/queue-performance.md).
+	// answer whether it holds there.
 	depths := []int{1024, 2048, 4096, 8192}
 
 	setKnob(t, m, knobCPUFastAttention, "1") // this item is about the f32 path only

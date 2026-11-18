@@ -27,7 +27,7 @@ var (
 	_ [int(mem.Declined) - int(PlacementDecline)]struct{}
 )
 
-// Placement is which of docs/tasks/task-fit-to-hardware.md's five strategies Plan chose for one backend. PlacementHostComputedExperts is
+// Placement is which of the five placement strategies Plan chose for one backend. PlacementHostComputedExperts is
 // reserved and never chosen, so adding it later does not rewrite the type.
 type Placement int
 
@@ -56,7 +56,7 @@ func (p Placement) String() string {
 	}
 }
 
-// PlanRequest is what the user asked for, with every default already resolved by the CALLER (docs/tasks/task-fit-to-hardware.md §2).
+// PlanRequest is what the user asked for, with every default already resolved by the CALLER.
 // Plan itself invents no defaults, so a caller (goinfer-chat fit, the startup banner, a table test) can see and vary exactly what it asked
 // for rather than a default buried inside the function under test.
 type PlanRequest struct {
@@ -65,8 +65,7 @@ type PlanRequest struct {
 	Slots     int  // an explicit --moe-cache-slots / GOINFER_METAL_MOE_SLOTS; 0 means "let Plan choose"
 
 	// KVF16/KVI8 select a lossy KV precision; both false means f32 (bit-exact, the default). They must come from an explicit flag the caller
-	// read, never be set by Plan on its own initiative: the plan never selects a lossy precision to make something fit without saying so
-	// (docs/tasks/task-fit-to-hardware.md §0).
+	// read, never be set by Plan on its own initiative: the plan never selects a lossy precision to make something fit without saying so.
 	KVF16, KVI8 bool
 
 	// KVSlots is how many KV slots the load holds, and it reaches only Plan.CheckpointCopies: Placement and NeedBytes stay one slot's, because a caller that sizes a context for
@@ -131,7 +130,7 @@ type FitDeclineError struct {
 	msg string
 
 	// DenseStreamable is true when a -stream-weights retry after this refusal would engage decoder/layerpaging.go's windowed dense pager, the
-	// path measured as sound for an automatic retry (docs/tasks/task-fit-to-hardware.md, docs/completed/task-gpu-paths-2026-09.md). It is false for
+	// path measured as sound for an automatic retry. It is false for
 	// MoE models and own-forward families: MoE CPU weight streaming is a documented, measured failure (docs/benchmarks.md "M35/M26 on the
 	// Mac": a real 20 GB MoE through the CPU-staged path ran for hours with no completions, re-reading weights from disk on essentially every
 	// token), so there the retry stays a manual, explicit choice and is never something the guard does on the caller's behalf.

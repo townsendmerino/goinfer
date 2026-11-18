@@ -665,8 +665,7 @@ func (m *Model) withResidency() *Model {
 	}
 	// H2: the backend's startup self-test, once per backend and quant per process, BEFORE the build, so the device memory its
 	// fixture builds take (the local-memory pool their kernels' first launches reserve) is released or already held when the
-	// build's plan and fit check read free memory, never taken after them (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-H6
-	// build, amendment"). A mismatch skips the build and continues on the CPU path with the reason on the decode path, instead of
+	// build's plan and fit check read free memory, never taken after them. A mismatch skips the build and continues on the CPU path with the reason on the decode path, instead of
 	// producing wrong numbers silently.
 	if r, ran := gpuProbeBeforeResident(m); ran && r.Status == SelfTestDeclined {
 		m.resDecline = describeProbe(r)

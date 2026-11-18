@@ -578,7 +578,7 @@ func perturbValue(f reflect.Value) {
 
 // TestProgram_gemma4DenseFormWithoutStateIsAnError holds the per-token walker to an error, not a nil dereference, when a model
 // without Gemma 4's per-token state carries Gemma 4's dense FFN form (gate L's ffn.Form perturbation does this). Called
-// without runProgram's recover, so a panic fails the test (docs/queue-correctness.md G50).
+// without runProgram's recover, so a panic fails the test.
 func TestProgram_gemma4DenseFormWithoutStateIsAnError(t *testing.T) {
 	for _, dir := range []string{"../testdata/llama-tiny", "../testdata/nemotron3nano-tiny"} {
 		m, err := Load(dir, Options{Backend: "cpu", Quant: "f32"})

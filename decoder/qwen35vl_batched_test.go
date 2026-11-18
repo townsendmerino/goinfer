@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// P26 (docs/queue-performance.md): the Qwen3.5 image prefill runs every projection as one matmul over the prompt
+// P26: the Qwen3.5 image prefill runs every projection as one matmul over the prompt
 // (prefillQwen35VLBatched) instead of one token at a time (prefillQwen35VLPerToken). The batched path is NOT claimed bit-identical,
 // so the bound is stated here and was fixed before the first run: over several prompt layouts around the image on the tiny
 // fixture, the last-token logits agree to cosine >= 0.999999, the argmax is the same, and the greedy continuation over the

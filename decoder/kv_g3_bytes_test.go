@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// g3Check is G3's bar on one cache readback (docs/tasks/task-kv-precision-everywhere-2026-10.md §4): every stored element is the
+// g3Check is G3's bar on one cache readback: every stored element is the
 // delivered precision's (f32 4 B, f16 2 B, i8 1 B plus a 4 B scale for each of K and V per position, head and layer), and nothing is
 // held at another precision. hd is the head width the int8 scales stride by.
 func g3Check(delivered string, r kvReadback, hd int64) string {
@@ -35,7 +35,7 @@ func g3Check(delivered string, r kvReadback, hd int64) string {
 
 // TestKVDeliveredBytes_CPU is G3's CPU half: every CPU cell the matrix delivers, loaded, 12 positions written, and its cache read
 // back layer by layer against the delivered precision's arithmetic.
-// TestKVDeliveredBytes_CPU is G3's CPU half (docs/tasks/task-kv-precision-everywhere-2026-10.md §4): every CPU cell the matrix
+// TestKVDeliveredBytes_CPU is G3's CPU half: every CPU cell the matrix
 // delivers, 12 positions decoded, its cache read back: it holds elements of the delivered precision only (the slice's element type
 // is the byte width), and at i8 one f32 scale per position, head and K or V for each head_dim int8s. Metal's half is
 // metal/kv_g3_metal_test.go.

@@ -166,7 +166,6 @@ func rideCell(t *testing.T, rideErr error) (*Model, *rideFake) {
 // TestRF3_newcomerChunksRideTheDecodeRuns: on a resident that takes ragged steps, a newcomer's prefill chunks are carried by
 // the decode runs (mc3Prefill through rideChunk and the coalescer): every chunk is one step with decode rows beside it, the
 // chunk's PromptLen is the whole prompt, and no chunk takes the resident for a pass of its own. Only the tail is a prefill pass.
-// Docs: docs/tasks/task-forward-and-memory-2026-11.md, "RF3: plan and registration" (RF3-1).
 func TestRF3_newcomerChunksRideTheDecodeRuns(t *testing.T) {
 	m, rf := rideCell(t, nil)
 	ev := string(rf.events)
