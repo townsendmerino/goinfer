@@ -134,8 +134,8 @@ func TestPrefillGateVsReferenceCUDA(t *testing.T) {
 			for _, k := range allKs {
 				maxK = max(maxK, k)
 			}
-			// THE SNAPSHOTS, NOT THE LIVE DOCS. PrefillGateProseFiles names live repo documents
-			// that are edited constantly; PrefillGatePromptSet
+			// THE SNAPSHOTS, NOT THE LIVE DOCS. PrefillGateProseFiles names the live repo documents
+			// the snapshots came from, which are edited constantly; PrefillGatePromptSet
 			// returns the frozen copies under testdata/prefill-gate-prose-<set>/ that Phase A
 			// actually built the reference from. Prefixing a LIVE document teacher-forces both arms against a
 			// reference built from the SNAPSHOT of an older revision, an input the reference never saw. It fails

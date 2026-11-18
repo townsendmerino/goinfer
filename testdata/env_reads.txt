@@ -12,9 +12,9 @@ GOINFER_CUDA_GRAPHS_UNSAFE	diagnostic: docs/cuda-graphs-investigation.md — byp
 GOINFER_CUDA_VISION_ATTN	diagnostic: docs/measurements/vision-tower-downstream-2026-09-21.md — vision-tower kernel rollback; read once per encoder (no decoder.Model behind it)
 GOINFER_DECODE_TIMING	diagnostic: docs/benchmarks.md — per-component decode timing
 GOINFER_DELTANET_TIMING	diagnostic: docs/env-vars.md — DeltaNet CPU recurrence split
-GOINFER_FAKEQUANT	diagnostic: docs/completed/task-gemma4-moe.md — fake-quant int4 quality instrument (scheme)
-GOINFER_FAKEQUANT_ACT	diagnostic: docs/completed/task-gemma4-moe.md — fake-quant activation precision
-GOINFER_FAKEQUANT_EXPERTS	diagnostic: docs/completed/task-gemma4-moe.md — fake-quant experts only
+GOINFER_FAKEQUANT	diagnostic: docs/env-vars.md — fake-quant int4 quality instrument (scheme)
+GOINFER_FAKEQUANT_ACT	diagnostic: docs/env-vars.md — fake-quant activation precision
+GOINFER_FAKEQUANT_EXPERTS	diagnostic: docs/env-vars.md — fake-quant experts only
 GOINFER_G4_CAPTURE	diagnostic: docs/env-vars.md — CUDA Gemma-4 per-sublayer capture
 GOINFER_GATE_BACKEND	startup: cmd/gate — gate runner configuration
 GOINFER_GATE_HEARTBEAT	startup: cmd/gate — gate runner heartbeat interval
@@ -23,22 +23,22 @@ GOINFER_GATE_SKIP_HEAVY	startup: cmd/gate — gate runner scope
 GOINFER_GATE_SKIP_WEBGPU	startup: cmd/gate — gate runner scope
 GOINFER_GGUF_DIRECT	startup: chat, serve (internal/loadflags, --direct-load's default) — load a .gguf directly instead of via its .giw sidecar
 GOINFER_GIW_VERIFY	startup: decoder, every .giw load — =always forces the whole-payload CRC on every load instead of once per file
-GOINFER_GPU_CAPTURE	diagnostic: docs/completed/task-webgpu-nogqa-decode-bug.md — WebGPU per-layer capture
+GOINFER_GPU_CAPTURE	diagnostic: docs/env-vars.md — WebGPU per-layer capture
 GOINFER_HEAVY_PKGS	startup: cmd/gate — heavy tier package list
 GOINFER_HEAVY_RUN	startup: cmd/gate — heavy tier test selector
 GOINFER_HEAVY_TIMEOUT	startup: cmd/gate — heavy tier timeout
 GOINFER_MODELS	startup: decoder test-asset search path (testdata/assets.json)
 GOINFER_MODEL_TMP	startup: chat — scratch directory for model staging
-GOINFER_MOE_CACHE_PROF	diagnostic: docs/completed/task-moe-streaming.md — C′ cache hit/miss profile
+GOINFER_MOE_CACHE_PROF	diagnostic: docs/env-vars.md — C′ cache hit/miss profile
 GOINFER_MOE_PROF_SPLIT	diagnostic: docs/audit-metal-2026-09-12.md — Metal MoE per-sub-step timing
-GOINFER_NORM_ULP_NOISE	diagnostic: docs/completed/task-webgpu-nogqa-decode-bug.md — ULP noise on norms, observe-only
+GOINFER_NORM_ULP_NOISE	diagnostic: docs/env-vars.md — ULP noise on norms, observe-only
 GOINFER_NVRTC_DIRS	startup: cmd/gate — extra NVRTC search directories
-GOINFER_P13_OFF	diagnostic: docs/completed/queue-performance.md (P13) — keep the source mapping; the control arm
+GOINFER_P13_OFF	diagnostic: docs/env-vars.md — keep the source mapping; the control arm
 GOINFER_REQUIRE_FIXTURES	startup: cmd/gate — fail instead of skip on a missing fixture
 GOINFER_SPLITKV_VSUM_SPLIT	diagnostic: docs/env-vars.md — opt-in V-sum spike, parked
-GOINFER_SSM_NOMUL	diagnostic: docs/completed/ssm-residency-build.md — SSM isolation seam
-GOINFER_SSM_Q8CPU	diagnostic: docs/completed/ssm-residency-build.md — SSM int8 confirmation seam
-GOINFER_SSM_SKIPFFN	diagnostic: docs/completed/ssm-residency-build.md — SSM mixer-only isolation
+GOINFER_SSM_NOMUL	diagnostic: docs/env-vars.md — SSM isolation seam
+GOINFER_SSM_Q8CPU	diagnostic: docs/env-vars.md — SSM int8 confirmation seam
+GOINFER_SSM_SKIPFFN	diagnostic: docs/env-vars.md — SSM mixer-only isolation
 GOINFER_SWAP_GUARD	startup: serve, chat — swap-guard threshold
 GOINFER_TOOL_UNION	startup: serve — tool-call union policy, read once at init
 GOINFER_W4A8_BATCH	diagnostic: docs/env-vars.md — R-06 fused q/k/v A/B; on for non-arm64, arm64 default awaits a Mac measurement

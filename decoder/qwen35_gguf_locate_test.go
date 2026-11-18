@@ -47,7 +47,7 @@ func TestQwen35GGUF_locateDivergence(t *testing.T) {
 	// from a qwen3.5 test. This way the name stays, and the sweep reports an honest SKIP.
 	if os.Getenv("GOINFER_DIAG") == "" {
 		t.Skip("DIAGNOSTIC (set GOINFER_DIAG=1): prints evidence for a judgement, asserts only what " +
-			"holds under either story. Not a gate — see B13 in docs/queue-release.md")
+			"holds under either story. Not a gate")
 	}
 	gguf := assetPath(t, "GOINFER_QWEN35_GGUF")
 	dir := realQwen35Dir(t)

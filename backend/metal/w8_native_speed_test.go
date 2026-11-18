@@ -28,7 +28,7 @@ import (
 func TestW8Native_S_decodeSpeed(t *testing.T) {
 	requireHeavyModel(t)
 	if os.Getenv("GOINFER_W8_GATE_S") == "" {
-		t.Skip("gate S is a night-queue measurement (docs/completed/task-metal-int8-2026-10.md): set GOINFER_W8_GATE_S=1")
+		t.Skip("gate S is a night-queue measurement: set GOINFER_W8_GATE_S=1")
 	}
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)

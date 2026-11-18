@@ -342,7 +342,7 @@ func TestMoERouteDemandThreshold(t *testing.T) {
 			"Run this with an exclusive device (e.g. from a TTY with the compositor stopped). "+
 			"NOTE: the demand IDENTITY held there — measured floor + residual equalled the measured "+
 			"demand to the byte — so a failure here is about the environment, NOT the kernel, and "+
-			"docs/QUEUE.md A1/A5/A7/A9 do not need re-deriving.", describeForeign(foreign))
+			"the cap analysis does not need re-deriving.", describeForeign(foreign))
 	}
 	wantDemand := int64(pinnedDeviceFloor) + int64(pinnedResidual)
 	regime := "COLD (this launch is the first context on the device and pays the reserve itself)"
@@ -359,7 +359,7 @@ func TestMoERouteDemandThreshold(t *testing.T) {
 			"2026-08-21: the floor went 151,191,552 -> 54,263,808 and the sum closed to the byte. "+
 			"(2) ONLY if the identity does not close has the KERNEL's launch requirement moved — "+
 			"which is what makes the 34-slot cap unsafe and the 33-slot cap safe, and then "+
-			"docs/QUEUE.md A1/A5/A7/A9 need re-deriving, not editing.",
+			"the cap analysis needs re-deriving, not editing.",
 			regime, firstPass.freeBefore, wantDemand, wantDemand+int64(demandWindow),
 			int64(pinnedResidual), int64(pinnedDeviceFloor))
 	}

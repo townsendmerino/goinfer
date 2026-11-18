@@ -225,7 +225,7 @@ func gradeRepoLint(ok bool, out string) groupVerdict {
 		lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
 		return groupVerdict{State: groupPass, Uncounted: true, Line: lines[len(lines)-1]}
 	}
-	v := groupVerdict{State: groupFail, Line: "docs/QUEUE.md SHA citations"}
+	v := groupVerdict{State: groupFail, Line: "the queue's SHA citations"}
 	for i, ln := range strings.Split(out, "\n") {
 		if i >= 6 {
 			break

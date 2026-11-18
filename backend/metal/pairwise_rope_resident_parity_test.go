@@ -22,7 +22,7 @@ import (
 //
 // References, as registered: the CPU int4 at per-row activation scales for every DECODE path (Metal decode's own W4A8
 // arithmetic), and the CPU int4 at per-32 scales for the BATCHED-PREFILL logits (the batched pass runs f16 activations,
-// which Step 0 of  measured as closer to that arm). Bars:
+// which Step 0 measured as closer to that arm). Bars:
 // cosine >= 0.995 and relL2 <= 0.15 on every path. Every run then rebinds the NeoX kernels into the same resident, and
 // every path must read below the cosine bar, or the gate has gone blind.
 //

@@ -156,8 +156,7 @@ func TestA13_SingleFailedAllocPoisons(t *testing.T) {
 	validateGlue(t, ctx, stream, bg, fRms2, fSw2, fAttn2, nH*hd, I, nH, nKV, hd, nKeys, scale)
 	if t.Failed() {
 		t.Logf("(c) POISONED after failed allocations — production is exposed: one model's OOM " +
-			"silently breaks another model's CUDA path in the same process, with no error anywhere. " +
-			"See docs/QUEUE.md A13.")
+			"silently breaks another model's CUDA path in the same process, with no error anywhere.")
 		return
 	}
 	t.Logf("(c) correct after %d failed allocation(s) — this many refusals do not poison the context", nfail)

@@ -100,7 +100,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
     var qd: f32 = 0.0;
     if (lane) { qd = q[qbase + d]; }
     var acc: f32 = 0.0;
-    // gpt-oss's learned per-head attention sink (FeatAttnSink, G6 docs/completed/task-gpu-paths-2026-09.md):
+    // gpt-oss's learned per-head attention sink (FeatAttnSink):
     // an extra logit with NO key and NO value, joining the softmax MAX and DENOMINATOR only —
     // seeding the online-softmax state with an imaginary zero-value key whose score is the sink
     // is exactly equivalent (m=sink, l=1 ⇒ the first real key's mnew=max(sink,x) folds it into

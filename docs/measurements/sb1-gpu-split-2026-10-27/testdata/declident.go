@@ -1,4 +1,4 @@
-// declident is G1 of the gpu split (docs/tasks/task-subsystems-2026-10.md, "SB1 — gpu's kernel layer"): every
+// declident is G1 of the gpu split: every
 // declaration of package gpu at the base appears at the head, in gpu or gpu/internal/kernels, with identical code once
 // the split's mechanical edits are mapped back. Standard library only.
 //
