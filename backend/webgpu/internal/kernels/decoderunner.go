@@ -75,8 +75,7 @@ type DecodeRunner struct {
 	// otherwise): for each generic-attention layer, the attention context (pre-o-proj, [nH*hd]) and the residual after the
 	// attention add and after the MLP add ([hidden] each), copied by an extra kv-store dispatch recorded into the plan. They
 	// hold the LAST run's values; ReadCapture reads them back. The WebGPU twin of decoder.Model.ForwardSubCapture, so a
-	// resident-vs-CPU divergence can be localised to a sublayer of a layer in one run
-	// (docs/completed/task-webgpu-nogqa-decode-bug.md).
+	// resident-vs-CPU divergence can be localised to a sublayer of a layer in one run.
 	capCtx, capAttn, capMLP []*wgpu.Buffer
 	capCtxN, capHidden      int
 
@@ -2068,7 +2067,7 @@ type DnetRunParams struct {
 }
 
 // g4DropVNormForTest turns off the v_norm that Gemma 4 layers with their own v_proj apply (runLayer.vNorm), so a test can
-// show that v_norm is what moves the parity numbers (docs/completed/task-multimodal-support-2026-10.md). Set only by a test
+// show that v_norm is what moves the parity numbers. Set only by a test
 // seam; never in production.
 var G4DropVNormForTest bool
 

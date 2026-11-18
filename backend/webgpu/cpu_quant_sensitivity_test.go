@@ -17,7 +17,7 @@ import (
 // quantized forward can reach, because the W4A8/W8A8 path re-quantizes activations to int8 at every projection and a
 // perturbation far below one int8 step flips a fraction of rounding decisions, each flip a whole step, compounding per
 // layer. A GPU that reproduces the CPU's f32 arithmetic only to ~1e-7 (reduction order) is such a perturbation. See
-// docs/completed/task-webgpu-nogqa-decode-bug.md and docs/code-notes/gpu.md#webgpuBackend.BuildResident.nogqa.
+// docs/code-notes/gpu.md#webgpuBackend.BuildResident.nogqa.
 func TestCPUQuantSensitivity(t *testing.T) {
 	dirA, dirB := os.Getenv("GOINFER_PARITY_CKPT"), os.Getenv("GOINFER_PARITY_CKPT_B")
 	if dirA == "" {

@@ -21,7 +21,7 @@ import (
 // GOINFER_PARITY_QUANT: int4 (default), int8, int8int8, or native (CPU f32 vs the resident W8A8-at-upload path, NOT a
 // same-quant comparison). GOINFER_INT4_F16_SCALES=1 makes both sides carry the f16-rounded int4 group scales the GPU stores,
 // the only single-variable form of the int4 comparison. Written against scripts/mk_phi3_synth.py's phi3-mini-shaped
-// synthetic checkpoint; runs on a real one too. Protocol and findings: docs/completed/task-webgpu-nogqa-decode-bug.md.
+// synthetic checkpoint; runs on a real one too.
 func TestResidentCaptureParityWebGPU(t *testing.T) {
 	dir := os.Getenv("GOINFER_PARITY_CKPT")
 	if dir == "" {

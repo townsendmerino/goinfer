@@ -473,7 +473,7 @@ func TestDarwinKVSlots(t *testing.T) {
 	}
 }
 
-// TestSlotsGranted is G-WS1's table (docs/completed/task-subsystems-2026-10.md, "SB2 memory reads, step 4"): slotsGranted is
+// TestSlotsGranted is G-WS1's table: slotsGranted is
 // darwinKVSlots on darwin, every slot on a discrete GPU with no figure, and the headroom rule with one; slotsBeforeContextOn leaves a
 // discrete GPU's context alone and prices darwin's as ctxWhereSlotsFit over darwinKVSlots does.
 func TestSlotsGranted(t *testing.T) {
@@ -726,7 +726,7 @@ func captureStderrGPU(t *testing.T, fn func()) string {
 }
 
 // TestWebGPUKVSlots_realClamp exercises the discrete-GPU clamp on real hardware and a real
-// checkpoint (docs/completed/nobara-mc1-webgpu-2026-09.md, §2, item 26). A slot whose allocation
+// checkpoint. A slot whose allocation
 // fails, or whose headroom probe after it fails, stops buildKVSlots; that path otherwise only
 // runs under an injected failure (TestWebGPUKVSlots_clampedBuild). It loads with 4 slots
 // requested, runs every granted slot, and checks the device comes back clean.

@@ -9,8 +9,8 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// TestPrefillLastW8A8_parity is the batched-prefill parity gate
-// (docs/completed/task-gpu-batched-prefill.md, Increment 2): PrefillLastW8A8's single returned
+// TestPrefillLastW8A8_parity is the batched-prefill parity gate:
+// PrefillLastW8A8's single returned
 // row (the last position's logits) must be BIT-IDENTICAL to the last of M sequential DecodeToken
 // calls over one shared KV cache. M=20 deliberately exceeds gemmRowMaxM=16: the point of this
 // function over DecodeTokenFusedBatched is that it is NOT capped, since real prompts run far past

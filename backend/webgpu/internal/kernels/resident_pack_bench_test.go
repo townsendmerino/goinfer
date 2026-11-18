@@ -7,12 +7,12 @@ import (
 	"time"
 )
 
-// BenchmarkResidentPackCost measures the CPU byte-shuffle that dominates an int4 resident load
-// (docs/completed/task-mellum2-fast-load.md): for every projection the bridge unpacks the
+// BenchmarkResidentPackCost measures the CPU byte-shuffle that dominates an int4 resident load:
+// for every projection the bridge unpacks the
 // decoder's 2-nibble/byte int4 into one-nibble-per-element, packNibbles re-packs it to the GPU
 // u32 layout, and packF16Pairs converts the scales; all CPU, paid each launch. It extrapolates
-// the per-pass cost to Mellum2's ~12 B params to size the lever of storing the GPU layout in the
-// .giw (a straight CreateBufferInit). A Benchmark, not a Test: it logs ms and asserts nothing, so
+// the per-pass cost to Mellum2's ~12 B params to size the lever of storing the GPU layout in the.
+// giw (a straight CreateBufferInit). A Benchmark, not a Test: it logs ms and asserts nothing, so
 // as a Test* its green would say only that the harness ran. Go runs a benchmark this slow exactly
 // once.
 func BenchmarkResidentPackCost(b *testing.B) {

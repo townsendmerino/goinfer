@@ -13,8 +13,8 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestNemotronResidentQuality measures resident int4 Nemotron-H (int8 doesn't fit 8 GB, see
-// docs/completed/nemotron-resident.md; granite showed the gap is precision-invariant, so
+// TestNemotronResidentQuality measures resident int4 Nemotron-H (int8 doesn't fit 8 GB, see;
+// granite showed the gap is precision-invariant, so
 // int4≈int8) against the f32 CPU reference: teacher-forced agreement/KL/top-5/perplexity, plus
 // free-running coherence and decode speed. Nemotron-H is the same deep hybrid + recurrent-mamba
 // architecture whose int8 resident gap granite proved fundamental, but it has no MoE router, so
