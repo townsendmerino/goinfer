@@ -120,8 +120,8 @@ func (c HostCheck) Arithmetic() string {
 		return b.String()
 	}
 	if c.CUDABuildBytes > c.WeightBytes+c.KVBytes+c.SourceBytes {
-		fmt.Fprintf(&b, "%s needs ~%.1f GB of host memory while building the CUDA expert cache (%.1f GB weights + %.1f GB packed copy + %.1f GB pinned copy of the experts)",
-			c.Name, float64(c.CUDABuildBytes)/gb, float64(c.WeightBytes)/gb, float64(c.WeightBytes)/gb, float64(c.ExpertBytes)/gb)
+		fmt.Fprintf(&b, "%s needs ~%.1f GB of host memory while building the CUDA expert cache (%.1f GB weights + %.1f GB pinned copy of the experts and packing)",
+			c.Name, float64(c.CUDABuildBytes)/gb, float64(c.WeightBytes)/gb, float64(c.CUDABuildBytes-c.WeightBytes)/gb)
 		fmt.Fprintf(&b, "; this machine currently has %.1f GB of memory available (budget %.1f GB = %.0f%% of that)",
 			float64(c.Available)/gb, float64(c.Budget())/gb, c.Policy.WeightsFraction*100)
 		return b.String()
