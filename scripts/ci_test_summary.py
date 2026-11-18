@@ -10,8 +10,9 @@ back into what a human reading the job log wants, in this order:
   1. every build failure, verbatim (Go >= 1.24 emits build output as JSON events keyed by
      ImportPath, so with stdout redirected these would otherwise be invisible);
   2. the full captured output of every failed test, verbatim;
-  3. one line per package -- ok / FAIL / skipped / `(cached)` -- with elapsed seconds;
-  4. the N slowest top-level tests (a subtest's time is inside its parent's Elapsed).
+  3. the test counts ("TESTS: P passed, S skipped, F failed", top-level tests; a package's skips are listed beside its line);
+  4. one line per package -- ok / FAIL / skipped / `(cached)` -- with elapsed seconds;
+  5. the N slowest top-level tests (a subtest's time is inside its parent's Elapsed).
 
 Exit status is 1 only when the stream holds NO package-level result at all: a capture that
 recorded nothing must not read as green (the same zero-match-guard shape as the sampler gates).
@@ -43,6 +44,8 @@ def main(argv):
     pkg_cached = set()
     failed_tests = []  # (pkg, test) in order of failure
     test_elapsed = []  # (elapsed, pkg, test) for top-level tests
+    counts = {"pass": 0, "skip": 0, "fail": 0}  # top-level tests by result
+    pkg_skips = defaultdict(int)  # pkg -> top-level tests that skipped
     non_json = []
     n_events = 0
 
@@ -80,6 +83,9 @@ def main(argv):
                         failed_tests.append((pkg, test))
                     if "/" not in test:
                         test_elapsed.append((e.get("Elapsed", 0.0), pkg, test))
+                        counts[action] += 1
+                        if action == "skip":
+                            pkg_skips[pkg] += 1
 
     lines = []
 
@@ -94,6 +100,7 @@ def main(argv):
             f"== TEST STEP: longest package {longest:.0f}s of {len(pkg_result)} packages, "
             f"{len(pkg_cached)} (cached): {cached_names} =="
         )
+        lines.append(f"== TESTS: {counts['pass']} passed, {counts['skip']} skipped, {counts['fail']} failed (top-level) ==")
         lines.append("")
 
     if build_failed or build_out:
@@ -124,6 +131,8 @@ def main(argv):
         action, elapsed = pkg_result[pkg]
         tag = {"pass": "ok  ", "fail": "FAIL", "skip": "skip"}[action]
         note = " (cached)" if pkg in pkg_cached else ""
+        if pkg_skips.get(pkg):
+            note += f" [{pkg_skips[pkg]} skipped]"
         lines.append(f"{tag} {elapsed:8.1f}s  {short(pkg)}{note}")
         total += elapsed
         wall = max(wall, elapsed)
