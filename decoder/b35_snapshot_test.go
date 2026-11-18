@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// B35 (docs/queue-engineering.md) on the hash fake: a recurrent model's prefix snapshot is taken at KVScope.Keep rounded down to a pass, during
+// B35 on the hash fake: a recurrent model's prefix snapshot is taken at KVScope.Keep rounded down to a pass, during
 // the cold prefill, and a later prompt that repeats that prefix restores it and continues; its reply equals a cold run of the same prompt. The
 // fake's restore to anything but the snapshot's own end corrupts the history, as a DeltaNet state from another position would, so a restore
 // the decoder should have refused changes the reply.

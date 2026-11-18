@@ -99,7 +99,7 @@ type DecodeSubsystem interface {
 	SampleChainStart(id, pos int, temperature float64, seed, draw uint64) error
 	SampleChainNext(seed, draw uint64) (int, error)
 
-	// BatchStepperAvailable is an OPTIONAL KVSlotterAvailable extension (MC3, docs/tasks/parked/task-concurrency-2026-09.md): one
+	// BatchStepperAvailable is an OPTIONAL KVSlotterAvailable extension: one
 	// decode token for several sequences at once, each on its own KV slot at its own position, in one step. It reads and
 	// writes only the named slots — never the bound one's binding — and each returned row must equal what that sequence's
 	// own call would return on its slot, bit for bit (the identity gate MC3 keeps): Forward's logits, or, for a sequence
@@ -113,7 +113,6 @@ type DecodeSubsystem interface {
 	// at consecutive positions from its Pos on its own KV slot, every row in the kernel class its own shape runs today (a row
 	// alone is a decode token, a sequence's rows a verify). Row j of a sequence equals that sequence's own Forward at Pos+j bit
 	// for bit, or ForwardSample's id for a last row that carries the Draw. The slots are distinct; the bound slot is restored.
-	// Docs: docs/tasks/task-forward-and-memory-2026-11.md, "RF2: registration".
 	RaggedStepperAvailable() bool
 	StepRagged(seqs []RaggedSeq) ([]RaggedOut, error)
 }
@@ -178,8 +177,8 @@ type PrefillSubsystem interface {
 
 	// ResidualAllAvailable is an OPTIONAL Forward extension: ingest a whole sequence at positions
 	// startPos..startPos+len-1 and return the residual stream of EVERY row after the last layer and BEFORE the final
-	// norm, [len][hidden] f32, each row a fresh slice the caller owns: the resident twin of Model.PromptHiddenAll
-	// (docs/tasks/parked/task-constrained-confidence.md, Route C). It stops before the norm because the decoder applies it on
+	// norm, [len][hidden] f32, each row a fresh slice the caller owns: the resident twin of Model.PromptHiddenAll.
+	// It stops before the norm because the decoder applies it on
 	// the host in f32, as its CPU path does; HiddenLastAvailable cannot serve this (post-norm, last row only, and on CUDA
 	// already through the int8 activation quantization). A backend whose batched forward is not what its decode computes
 	// must take the exact path; a decline falls back to the CPU, a cancellation returns.
@@ -235,7 +234,7 @@ type PrefillSubsystem interface {
 // KVSubsystem covers multi-slot KV binding, shared block-pool telemetry, slot activity, cross-slot KV copy,
 // windowed reuse queries, atomic upload passes, host prefix snapshots, host KV demotion, and recurrent checkpoints.
 type KVSubsystem interface {
-	// KVSlotterAvailable is an OPTIONAL Forward extension (MC1, docs/tasks/parked/task-concurrency-2026-09.md): a resident
+	// KVSlotterAvailable is an OPTIONAL Forward extension: a resident
 	// that holds several independent KV caches ("slots") and binds exactly one at a time. Every Forward method —
 	// Forward, ForwardN, UploadKV, TruncateTo, Reset — reads and writes the BOUND slot only, so a slot switch is the whole
 	// interface: the decoder keeps each slot's reuse bookkeeping and binds the slot a generation will use before it

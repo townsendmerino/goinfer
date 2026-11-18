@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 )
 
-// P26c (docs/queue-performance.md). The batched Qwen3.5 forward (runLayersQwen35N) runs every projection as one matmul over the prompt, but deltaNetCore was then called once per token on ONE thread, serializing the recurrence and the conv's SiLU between matmuls that run on all threads.
+// P26c. The batched Qwen3.5 forward (runLayersQwen35N) runs every projection as one matmul over the prompt, but deltaNetCore was then called once per token on ONE thread, serializing the recurrence and the conv's SiLU between matmuls that run on all threads.
 //
 // deltaNetCoreN is deltaNetCore over K consecutive rows with the independent parts fanned out, and NOTHING reordered inside any one element:
 //   - the depthwise conv (+SiLU) of row i reads only the mixed inputs of rows i-K+1..i, all known up front, so rows run in parallel;

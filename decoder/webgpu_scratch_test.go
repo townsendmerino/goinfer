@@ -2,8 +2,7 @@ package decoder
 
 import "testing"
 
-// TestMM5b_webgpuDecodeScratchNamesNoFamily is G-MS4w (docs/tasks/task-forward-and-memory-2026-11.md, "MM5b, WebGPU's decode scratch:
-// registration"): the figure is priced from the operations' per-row declarations, so its pricing names no family, mixer or
+// TestMM5b_webgpuDecodeScratchNamesNoFamily is G-MS4w: the figure is priced from the operations' per-row declarations, so its pricing names no family, mixer or
 // FFN form. denseAttnLayer, which names the operation kinds of the one layer shape the figure is derived for, is the coverage
 // test and not the pricing; it is not scanned.
 func TestMM5b_webgpuDecodeScratchNamesNoFamily(t *testing.T) {

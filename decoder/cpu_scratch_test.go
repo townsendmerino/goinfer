@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// cpuScratchHolds is the CPU half's gate (docs/tasks/task-forward-and-memory-2026-11.md, row MM5b): a
+// cpuScratchHolds is the CPU half's gate: a
 // stream's decode scratch, read from the struct a cache holds, equals the plan's terms row by row, and holds no float row the terms do
 // not name (a row allocated beside the list is red).
 func cpuScratchHolds(scr *decodeScratch, terms []CPUScratchTerm) error {

@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// The KV precision ratchet (docs/tasks/task-kv-precision-everywhere-2026-10.md, phase 0): for every backend path, family fixture and
+// The KV precision ratchet: for every backend path, family fixture and
 // requested precision, ResolveKV delivers what an explicit request asks for or refuses it by name; on the CPU, which every test box has,
 // each cell is also loaded and the cache it builds is checked against it. The table is docs/kv-precision-matrix.md, generated here. A
 // later phase turns refusals into deliveries; a delivery that turns back into a refusal fails until the owner's word moves it.

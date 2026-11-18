@@ -2,7 +2,7 @@ package decoder
 
 import "sync"
 
-// The Metal window group's pool (docs/tasks/task-kv-architecture-2026-10.md §6, KV5-7c-ii). A window group keeps only each
+// The Metal window group's pool. A window group keeps only each
 // sequence's recent positions, so its pool can be a bounded number of blocks a slot instead of the context's. Whether a build may
 // bound it depends on the build's own prefill routes (every pass that writes the group must fit the bound), which only the Metal
 // backend knows, so the backend registers the function that decides and both the build and the plan call it.

@@ -123,7 +123,7 @@ func oracleCosFloor(t *testing.T, quant string) float64 {
 		// Calibrated on the deepseek real gates. int8 weights with f32 or int8 activations.
 		return 0.99
 	case "int4":
-		// Pre-registered in docs/queue-correctness.md G5 for the precision the run was always going to use, before any number
+		// Pre-registered for the precision the run was always going to use, before any number
 		// existed; it is not the int8 bar relaxed after a near miss.
 		return 0.98
 	default:

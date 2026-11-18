@@ -6,7 +6,7 @@ import (
 )
 
 // spark25Architecture expresses Spark-X2.5 (model_type spark2_5; XHToken/Spark-X2.5-{1.7B,4B}). Two claims of the survey-level scoping
-// (docs/tasks/task-spark-x2-5.md) did not survive reading the real configuration_spark.py / modeling_spark.py (trust_remote_code):
+// did not survive reading the real configuration_spark.py / modeling_spark.py (trust_remote_code):
 //
 //   - It is not a parallel block (Command-R): the decoder layer is the standard sequential residual, the same shape as Llama/Qwen
 //     (NormPre2).

@@ -7,7 +7,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-// ctxPlanFloor is the smallest context Plan will shrink to before giving up (docs/tasks/task-fit-to-hardware.md §2: shrink context
+// ctxPlanFloor is the smallest context Plan will shrink to before giving up (shrink context
 // toward a floor before moving anything else). It is not fitguard.go's ctxFloor, the CPU staged-load guard's own floor: the two guards are
 // independent by design, so a change to one floor must not silently move the other's.
 const ctxPlanFloor = mem.PlanCtxFloor
@@ -91,7 +91,7 @@ const (
 	MetalCtxCeiling    = 32768
 )
 
-// Plan is the planner's pure function (docs/tasks/task-fit-to-hardware.md §2): given this model, a candidate backend, how many bytes are
+// Plan is the planner's pure function: given this model, a candidate backend, how many bytes are
 // free on it and what the caller asked for, decide a placement (resident, expert-cached, weight-paged, or decline) in §2's priority order:
 // shrink context toward ctxPlanFloor first, since it costs no numerics; then cap routed experts into a cache; dense weights always stay
 // resident; CPU alone falls to weight-paging rather than ever declining.

@@ -1,7 +1,7 @@
 //go:build goinfer_testhooks
 
 // Test-only hooks for the prefill fidelity gate (docs/completed/task-prefill-gap.md §3: a backend's fast/batched prefill
-// vs its own exact path) and the peer-benchmark fidelity column (docs/tasks/task-peer-benchmarks.md §4: goinfer vs a
+// vs its own exact path) and the peer-benchmark fidelity column (goinfer vs a
 // peer engine). Both want the same teacher-forced top-1 agreement and KL scorer, so it is written once here. They gate
 // correctness and quality, not production inference, so they stay off the public API surface.
 

@@ -1482,8 +1482,8 @@ func LoadGGUFBytes(raw []byte, opts Options) (*Model, error) {
 
 // ggufRowFilter, when non-nil, rewrites each dequantized layer-matmul row (streamMat,
 // streamMatBatched and Phi-3's fusedSplit) before it is quantized. A test seam only: set by SetGGUFRowFilterForTest under
-// goinfer_testhooks, nil in every production build. docs/tasks/task-int4-weight-quality-2026-09.md
-// Phase 0 uses it to fake-quantize rows by their source GGUF type.
+// goinfer_testhooks, nil in every production build. It is used
+// to fake-quantize rows by their source GGUF type.
 var ggufRowFilter func(name string, row []float32)
 
 // ggufRowFiltered reads one row through the dequantizer and applies ggufRowFilter.

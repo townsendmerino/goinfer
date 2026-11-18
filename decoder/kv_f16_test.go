@@ -290,7 +290,7 @@ func TestKVF16_F1Plants(t *testing.T) {
 }
 
 // TestKVF16_excludedFamilyKeepsF32: an f16 request on a family outside kvF16OK (llama4-tiny, whose own forward loop keeps f32) refuses
-// the load and says why, where before phase 0 of docs/tasks/task-kv-precision-everywhere-2026-10.md it built an f32 cache (D1: an
+// the load and says why, where it once built an f32 cache (an
 // explicit precision is delivered or refused). The test keeps its name, which the gate run log of docs/measurements/cpu-kv-f16-2026-10-16
 // records.
 func TestKVF16_excludedFamilyKeepsF32(t *testing.T) {

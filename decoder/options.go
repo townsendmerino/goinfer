@@ -96,7 +96,7 @@ type Options struct {
 	// (cuda/resident.go's resolveCtxCapFit), and a dense .gguf that will not fit resident RAM stays a plain refusal instead of
 	// getting an automatic -stream-weights retry (guardFit in fitguard.go, read by internal/modelload's Load, not by Load itself).
 	// An explicitly pinned request (ResidentContext, MoECacheSlots, StreamWeights, ...) is never affected in either direction:
-	// fit-by-default only acts on the unpinned case. See docs/tasks/task-fit-to-hardware.md.
+	// fit-by-default only acts on the unpinned case.
 	DisableFit bool
 	// ExtraResidentBytes prices a companion allocation that will claim VRAM on the same device after this model's own residency
 	// is built (a --drafter's weights; internal/serveapp's loadDecoder computes it via decoder.DrafterResidentBytesEstimate before
@@ -117,7 +117,7 @@ type Options struct {
 	// overridden. This is the library-level chokepoint docs/completed/task-prefill-gap.md describes; --exact-prefill sets it.
 	ExactPrefill bool
 	// ResidentKVSlots asks a GPU-resident backend for this many independent KV caches ("slots"), so several interleaved
-	// conversations each keep their own prefix resident instead of evicting one another's (docs/tasks/parked/task-concurrency-2026-09.md).
+	// conversations each keep their own prefix resident instead of evicting one another's.
 	// Still one generation at a time unless MC3 is enabled: a slot is bound per generation. 0 or 1 = one slot. A backend clamps it
 	// to what its fit guard allows and says so; a backend that does not implement KVSlotterAvailable, and every family with
 	// recurrent state, keep one slot. serve sets it from -kv-sessions.
@@ -154,13 +154,12 @@ type Options struct {
 	ResidentGemma4Step bool
 	// ResidentPrefillChunk, under MC3 (EnableResidentConcurrency), prefills a long prompt suffix in chunks of this many tokens
 	// while other generations are decoding, one decode step between chunks, instead of in one pass that stalls them all for the
-	// whole prompt (docs/tasks/parked/task-concurrency-2026-09.md). 0 = off: whole prefill. Sound only where the resident's batched
+	// whole prompt. 0 = off: whole prefill. Sound only where the resident's batched
 	// prefill is chunk-invariant (Metal's is: TestMC5_prefillChunkInvariance). serve defaults it to 512, the graded value
 	// (docs/measurements/chunked-prefill-2026-09-27.md).
 	ResidentPrefillChunk int
 	// KVShareOff stops a request taking KV rows another conversation computed: a resident request reuses only a
-	// continuation of a slot's own sequence (KVScope.Off for every request; docs/tasks/task-kv-architecture-2026-10.md
-	// §5.15). serve sets it for -kv-share off and when it answers the network without an API key.
+	// continuation of a slot's own sequence (KVScope.Off for every request). serve sets it for -kv-share off and when it answers the network without an API key.
 	KVShareOff bool
 	// KVHostBytes is the host memory budget for prefix snapshots (docs/completed/task-kv7-prefix-snapshot-2026-10.md): after a cold
 	// first prefill of a long prompt a GPU-resident backend that implements KVSnapshotterAvailable copies the prompt's KV to pinned
@@ -174,14 +173,14 @@ type Options struct {
 	// turns it off, as it does the snapshots.
 	KVDemote bool
 	// CPUBatchDecode chooses whether concurrent CPU generations of this model join their decode tokens into one batched
-	// forward (MC3c step 2, docs/tasks/parked/task-concurrency-2026-09.md; Model.EnableCPUBatch): CPUBatchAuto (0, the
+	// forward: CPUBatchAuto (0, the
 	// default) batches an eligible model with at least 2 GiB of dense weights; CPUBatchOn batches every
 	// eligible model; CPUBatchOff keeps step 1's independent workers. Every reply is bit-identical either way.
 	CPUBatchDecode int
 	// ActQuantGroup selects per-group activation quantization for the int8-activation projections (int4 = W4A8, int8int8 =
 	// W8A8, int4mix): 0 (the default) scales each activation vector by one max/127, 32 gives every 32 inputs their own scale. A
 	// family with massive activation outliers (Phi-3) loses nearly the whole vector under one scale; per-32 keeps an outlier's
-	// damage inside its group (docs/tasks/task-actquant-pergroup-2026-09.md). Per model: two models in one process may differ.
+	// damage inside its group. Per model: two models in one process may differ.
 	// Honoured on the CPU and by CUDA residency; other resident backends decline to the CPU path when it is set.
 	ActQuantGroup int
 

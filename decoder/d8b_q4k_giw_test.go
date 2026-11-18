@@ -284,7 +284,7 @@ func TestFitRefusal_streamableOnlyWhereItPages(t *testing.T) {
 }
 
 // TestGIW_f32WeightsAreMapped: an f32 bundle's weight matrices alias the mapping, as every other quant's do, so what
-// guardGIWFit assumes of a bundle's weights holds at f32 too (docs/queue-engineering.md, B42). The bar on heap growth is the
+// guardGIWFit assumes of a bundle's weights holds at f32 too. The bar on heap growth is the
 // registered one. Its output is bit-identical to the direct load and to a kind-1 bundle, which still loads, copied. The
 // mapping is read-only, so a forward that wrote through a weight would fault here.
 func TestGIW_f32WeightsAreMapped(t *testing.T) {

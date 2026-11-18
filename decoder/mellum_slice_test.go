@@ -2,8 +2,8 @@
 
 // REAL-WEIGHT layer-slice oracle for Mellum2 (JetBrains Mellum2-12B-A2.5B-Instruct): the CPU half of G11, and
 // the DECODER-side gate (goinfer's own CPU forward against the HF f32 reference on real weights). The Metal half
-// (metal/mellum_real_test.go) runs residentParity against the SAME slice; docs/queue-correctness.md G11 has the
-// handoff, including how to regenerate the slice bit-identically (it is 4 GB, so the checkpoint is gitignored and
+// (metal/mellum_real_test.go) runs residentParity against the SAME slice. The slice can be regenerated
+// bit-identically (it is 4 GB, so the checkpoint is gitignored and
 // only the golden is tracked).
 //
 // It is not a synthetic fixture because random weights lack a real checkpoint's outlier structure, so int4/int8

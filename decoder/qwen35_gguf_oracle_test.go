@@ -102,7 +102,7 @@ func TestQwen35GGUF_vsSafetensors(t *testing.T) {
 	t.Logf("=== GGUF int8 vs SAFETENSORS int8 (teacher-forced, %d steps): cosine min=%.6f (step %d) mean=%.6f ===",
 		len(ref), minCos, worst, mean)
 
-	// THE FLOORS (reclassified by the owner; evidence in docs/queue-release.md under B13). The gate once required `min >= 0.998`
+	// THE FLOORS. The gate once required `min >= 0.998`
 	// and called any miss a loader bug, which asks every step to be at least as good as the average, and no spread can satisfy
 	// that. Three probes say the residual is quant noise, not a defect:
 	//   1. TestQwen35GGUF_weightDiff: every transform-bearing tensor is bit-exact or at a UNIFORM relL2 (the Q8_0-vs-bf16

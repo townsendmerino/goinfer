@@ -123,8 +123,7 @@ func fu1Gen(t *testing.T, m *Model, prompt []int) ([]int, *Generation) {
 	return ids, g
 }
 
-// TestKV2FU1_ownRollbackScheduleIndependence is FU1-G3 (docs/tasks/task-kv-architecture-2026-10.md §6, KV2 follow-up
-// 1): three conversations sharing KV2's preamble, each rolling back twice to its first prompt and first reply after a
+// TestKV2FU1_ownRollbackScheduleIndependence is FU1-G3: three conversations sharing KV2's preamble, each rolling back twice to its first prompt and first reply after a
 // long turn (giving up more than it keeps), in every registered schedule at 1, 2 and 4 slots. A turn whose slot still
 // holds its conversation, and that keeps the first prompt of that slot's lineage, continues it in place, copies nothing
 // and reuses what it kept. Every turn emits and holds exactly what its reference does: its conversation's lineage

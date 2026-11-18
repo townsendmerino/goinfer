@@ -47,8 +47,7 @@ func kvBytesForCtxOracle(a *Architecture, ctx int, f16, i8 bool) int64 {
 	return total
 }
 
-// TestKVBytesForCtx_isTheDeclaredRows is G-MP2c (docs/tasks/task-forward-and-memory-2026-11.md, "MM5, the CPU and WebGPU halves:
-// registration"): over every census fixture that loads, each context around its window and each precision a caller can ask, the CPU's
+// TestKVBytesForCtx_isTheDeclaredRows is G-MP2c: over every census fixture that loads, each context around its window and each precision a caller can ask, the CPU's
 // K/V price read from the rows each layer declares equals the architecture-only arithmetic it replaced, to the byte.
 func TestKVBytesForCtx_isTheDeclaredRows(t *testing.T) {
 	var checked int

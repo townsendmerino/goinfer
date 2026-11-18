@@ -97,7 +97,7 @@ var censusList = []string{
 	// bailing_hybrid-tiny: a third hybrid-cache shape (KDA's per-head conv-window triple + matrix state, alongside MLA's
 	// latent cache on the same family's other layers); listed per the census's own default.
 	"../testdata/bailing_hybrid-tiny",
-	// spark2-5-tiny (docs/tasks/task-spark-x2-5.md): the fused q_k_v_proj split (buildSpark25Weights) and the generic
+	// spark2-5-tiny: the fused q_k_v_proj split (buildSpark25Weights) and the generic
 	// (non-MLA) sigmoid attention-output gate (GProj under Architecture.AttnGate/GateSigmoid, not the MLA-only
 	// GatedAttentionProjGranularity path laguna/bailing_hybrid exercise) are real per-layer state no other censused
 	// fixture covers.
@@ -146,7 +146,7 @@ var censusExcluded = map[string]string{
 	//  2. NO NEW FIELDS. Eight of the nine are an architecture the census already round-trips, and the field set it
 	//     compares is a function of the ARCHITECTURE. A second gemma4 or a third laguna adds bytes, not coverage.
 	//
-	// The ninth is different (docs/QUEUE.md): llama3.2-1b, tinyllama-awq and tinyllama-gptq are the only fixtures for the
+	// The ninth is different: llama3.2-1b, tinyllama-awq and tinyllama-gptq are the only fixtures for the
 	// plain `llama` arch besides llama-tiny, and none is tiny.
 	"gptoss120-slice":        "8.7 GB; gpt_oss is round-tripped by decoder/testdata/gptoss_tiny.gguf, same arch, same field set.",
 	"laguna-xs2-slice":       "5.7 GB; laguna is round-tripped by laguna-xs2-tiny, laguna-xs21-tiny and laguna-m1-tiny.",

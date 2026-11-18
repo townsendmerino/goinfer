@@ -20,5 +20,5 @@ var activationFanoutEnabled = false
 const fusedGateUpDefault = true
 
 // w4a8BatchDefault: R-06's one fork/join for q/k/v (weightmat.go). Bit-identical, and a small gain on every measured
-// model on top of the fused gate+up (docs/tasks/task-cpu-decode-peer-gap-2026-09.md, L2). On.
+// model on top of the fused gate+up. On.
 const w4a8BatchDefault = true

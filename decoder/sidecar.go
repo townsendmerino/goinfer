@@ -40,7 +40,7 @@ var freeDiskBytes = diskfree.Free
 // partial output. A cancelled ctx aborts a long streaming transcode at the next layer boundary and
 // removes the partial output.
 //
-// target names the ONE consumer this bundle is promised to (docs/tasks/task-int4-layout-2026-09.md):
+// target names the ONE consumer this bundle is promised to:
 // on a cpu-arm64 target, every eligible int4 tensor writes kind 5 (row4-only: the on-disk arm64
 // split-half, 4-row-interleaved layout, docs/completed/task-w4a8-neon-bandwidth.md) instead of kind 3
 // (decoder/serialize.go's weightMat vs weightMatKind3Only decides which tensors are eligible); every
@@ -659,8 +659,7 @@ func sidecarQuantLabel(q string) string {
 // Backend:"cpu", not Options{}: an EMPTY Backend means "needs canonical" (wantsCanonicalInt4's
 // literal-"cpu"-is-a-promise rule), so Options{} would decline every kind-5 (row4-only) bundle this
 // function itself wrote for a cpu-arm64 target. "cpu" accepts both kind 3 and kind 5 and matches how a
-// cpu-arm64-target bundle is loaded in production
-// (docs/tasks/task-int4-layout-2026-09.md).
+// cpu-arm64-target bundle is loaded in production.
 //
 // ResidentContext 1: the check runs no request, so it allocates no KV. Unpinned, the host fit guard
 // prices the CPU's per-request ceiling over the model's whole window, prints a "context capped" line

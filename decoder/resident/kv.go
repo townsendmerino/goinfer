@@ -13,8 +13,7 @@ type KVSnapshot interface {
 	Release()
 }
 
-// KVPoolDetail is a resident's shared KV block pool as the load banner names it (docs/tasks/task-kv-architecture-2026-10.md
-// §5.16): the context positions it serves across every slot, the positions each slot is guaranteed (one conversation's cap,
+// KVPoolDetail is a resident's shared KV block pool as the load banner names it: the context positions it serves across every slot, the positions each slot is guaranteed (one conversation's cap,
 // Caps.ContextCap, may exceed it), the rows in a block, the layer groups that hold pools, the precision the rows are stored at, and the
 // device bytes the pools and block tables take. WindowRows is how many rows a sliding-window layer keeps for one conversation, its
 // newest (0 when no layer has a window group): such a layer serves every position of Positions while holding only these.

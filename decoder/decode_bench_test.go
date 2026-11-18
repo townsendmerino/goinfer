@@ -86,7 +86,7 @@ func BenchmarkDecode(b *testing.B) {
 		linalg.SetParallelWidth(w)
 	}
 	// GOINFER_BENCH_ACT_GROUP sets aikit's process-wide activation group (0 = per-row, 32 =
-	// per-32): the A/B arm of docs/tasks/task-actquant-pergroup-2026-09.md's end-to-end speed gate.
+	// per-32): the A/B arm of the end-to-end speed gate.
 	if g, err := strconv.Atoi(os.Getenv("GOINFER_BENCH_ACT_GROUP")); err == nil {
 		linalg.SetActQuantGroup(g)
 		defer linalg.SetActQuantGroup(0)

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// D8's gate (docs/tasks/parked/task-constrained-confidence.md): sharing a prompt prefix across questions must give the same answers as prefilling each prompt alone, on the
+// D8's gate: sharing a prompt prefix across questions must give the same answers as prefilling each prompt alone, on the
 // Qwen3.5 checkpoints (dense, MoE), f32 and int4 and with an int8 KV cache, and the checkpoint must be a COPY: resuming from it any number of times, in any order,
 // leaves it as it was. Like the batched-versus-sequential gates beside it the difference from the unshared answer is bounded, not claimed zero.
 
@@ -79,7 +79,7 @@ func TestPromptHiddenMany_matchesSeparate(t *testing.T) {
 }
 
 // An int8 KV cache on a Gated DeltaNet model, the only kind PromptHiddenMany checkpoints, refuses the load: the family's own forward loop keeps
-// an f32 CPU cache until phase 4 of docs/tasks/task-kv-precision-everywhere-2026-10.md, so the int8 rows copyStateFrom can copy have no
+// an f32 CPU cache for now, so the int8 rows copyStateFrom can copy have no
 // reachable caller until then.
 func TestPromptHiddenMany_int8KV(t *testing.T) {
 	m, err := Load("testdata/qwen3_5-tiny-normw", Options{KVQuant: "i8"})

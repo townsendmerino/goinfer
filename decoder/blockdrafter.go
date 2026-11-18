@@ -95,7 +95,7 @@ var (
 
 // DrafterResidentBytesEstimate approximates the VRAM a resident backend will claim uploading dw. It is computed rather
 // than quoted so a caller (a fit guard pricing a --drafter attach before the target's own residency is built) gets a
-// number that tracks the pairing actually loaded (docs/tasks/task-fit-to-hardware.md §2).
+// number that tracks the pairing actually loaded.
 //
 // It prices int8 specifically, not a generic multi-quant estimate as decoder/fitguard.go's quantBytesPerElem is for the
 // main model: every drafter matrix is f32 on the host, and the only backend that hosts one (CUDA's AttachDrafter,

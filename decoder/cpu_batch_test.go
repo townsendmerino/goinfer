@@ -251,7 +251,7 @@ func at(v [][]int, i int) []int {
 	return nil
 }
 
-// TestCPUBatch_widenedCachesBatch: f16 and int8 CPU caches batch (docs/tasks/task-kv-precision-everywhere-2026-10.md, P4a): with
+// TestCPUBatch_widenedCachesBatch: f16 and int8 CPU caches batch: with
 // batched decode on, concurrent generations' decode tokens are joined into batched steps (the batcher's stats move) and every
 // conversation emits exactly the tokens it does alone with batching off, at the same precision.
 func TestCPUBatch_widenedCachesBatch(t *testing.T) {

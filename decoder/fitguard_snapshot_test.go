@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// KV8-hostguard (docs/tasks/task-kv-architecture-2026-10.md): the host fit guards price the prefix-snapshot store's budget (Options.KVHostBytes), which a
+// KV8-hostguard: the host fit guards price the prefix-snapshot store's budget (Options.KVHostBytes), which a
 // GPU-resident server holds in host memory beside what stays resident, so a load whose weights fit but whose snapshot budget does not is refused, naming
 // -kv-host-bytes. Each case runs through the guard's own caller (fitCheckFor's decide, decideGIWFit), not through the arithmetic in internal/runtime/mem.
 

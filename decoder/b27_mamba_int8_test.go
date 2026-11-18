@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// B27's tier 0 (docs/queue-engineering.md, B27, registered before any code): a quantized Nemotron-H load holds its Mamba
+// B27's tier 0: a quantized Nemotron-H load holds its Mamba
 // projections at int8, its .giw carries them so, the codes are the ones the GPU backends made before, and v17 refuses an
 // encoding it does not know by name.
 

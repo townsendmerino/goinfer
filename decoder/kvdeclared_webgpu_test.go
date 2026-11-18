@@ -74,8 +74,7 @@ func webgpuKVBuffersOracle(m *Model, i, ctx int, kvF16, kvI8 bool) []int64 {
 	return nil
 }
 
-// TestWebGPUKV_isTheDeclaredRows is G-MP2w (docs/tasks/task-forward-and-memory-2026-11.md, "MM5, the CPU and WebGPU halves:
-// registration"): over every census fixture that loads, three contexts and each KV precision, WebGPU's K/V bytes a position and each
+// TestWebGPUKV_isTheDeclaredRows is G-MP2w: over every census fixture that loads, three contexts and each KV precision, WebGPU's K/V bytes a position and each
 // attention or MLA layer's buffer list, read from the rows the layer declares, equal what the architecture-only arithmetic they
 // replaced gave, to the byte.
 func TestWebGPUKV_isTheDeclaredRows(t *testing.T) {
