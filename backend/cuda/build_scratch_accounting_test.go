@@ -179,3 +179,38 @@ func TestBuildScratchAccounting_plantedDefect(t *testing.T) {
 		}
 	}
 }
+
+// TestWeightArena_holdsEveryWeight: on the card, each family's build sub-allocates its dense weights from one arena that the plan's
+// walk sized, and the upload fills it exactly: no buffer the walk missed (missed), no byte it counted that nothing uploaded (used <
+// size). A miss would put a weight outside the slack the plan priced; a gap would hold device memory nothing reads.
+func TestWeightArena_holdsEveryWeight(t *testing.T) {
+	requireCUDADevice(t)
+	fixtures := []string{
+		"llama-tiny", "gemma2-tiny", "qwen35-tiny", "qwen3next-tiny", "deepseek-tiny", "nemotron-tiny", "qwen3moe-tiny",
+		"gemma4-moe-kv-tiny32", "cohere-tiny", "mixtral-tiny", "olmo_hybrid-tiny", "granite-dense-tiny", "glm-tiny-bias", "qwen25vl-tiny",
+	}
+	ran := 0
+	for _, f := range fixtures {
+		t.Run(f, func(t *testing.T) {
+			m, err := decoder.Load(filepath.Join("../../testdata", f), decoder.Options{Backend: "cuda", Quant: "int4"})
+			if err != nil {
+				t.Skipf("load: %v", err)
+			}
+			defer m.Close()
+			r, ok := m.ResidentForwardForTest().(*cudaResident)
+			if !ok {
+				t.Skipf("not CUDA-resident: %s", m.ResidentDecline())
+			}
+			ran++
+			s := r.wArenaStats
+			t.Logf("arena %d bytes, %d used, %d missed; plan slack %d", s.size, s.used, s.missed, r.allocSlackBytes)
+			if s.size == 0 || s.missed != 0 || s.used != s.size {
+				t.Errorf("the arena holds %d of %d bytes and %d bytes of dense weights went outside it: the walk and the upload disagree",
+					s.used, s.size, s.missed)
+			}
+		})
+	}
+	if ran == 0 {
+		t.Skip("no fixture built a CUDA resident here")
+	}
+}

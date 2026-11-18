@@ -937,14 +937,16 @@ type cudaResident struct {
 	// tables (kvTabDev their device copy), kvSlot the bound index, and kvTabSlot the slot whose tables the KV kernels read: the bound
 	// one, or an MC3 row's while its attention runs.
 	kvSlotsReq      int
-	kvF16           bool          // the K/V caches hold f16 (decoder.Model.KVCacheF16: a cleared family under -kv auto, or -kv f16); the attention and store pipelines are the _kv16 twins
-	kvI8            bool          // the K/V caches hold int8 with per-(position, head) scales (decoder.Model.KVDeliveredFor("cuda") == "i8"): the _kv8 twins, and kv8_store after every rope/store launch
-	ctxPlanned      int           // ctxCap as the plan chose it, before checkKVFits can trim it against the real free VRAM
-	deepPlan        *cudaDeepPlan // the DeepStack sets of the PrefillMRoPEDeepstackLast call in progress (prefill.go); nil otherwise
-	allocSlackBytes int64         // the driver's allocation rounding over the packed weights, priced into the plan (packedAllocSlack)
-	ctxMarginBytes  int64         // the context margin at load (ctxMarginFor at ctxMarginCtx), read by checkKVFits, checkWeightsFit and their declines
-	ctxMarginCtx    int           // the context the margin is priced at: the one the plan returned
-	kvSlotsN        int           // what checkKVFits granted (>= 1)
+	kvF16           bool             // the K/V caches hold f16 (decoder.Model.KVCacheF16: a cleared family under -kv auto, or -kv f16); the attention and store pipelines are the _kv16 twins
+	kvI8            bool             // the K/V caches hold int8 with per-(position, head) scales (decoder.Model.KVDeliveredFor("cuda") == "i8"): the _kv8 twins, and kv8_store after every rope/store launch
+	ctxPlanned      int              // ctxCap as the plan chose it, before checkKVFits can trim it against the real free VRAM
+	deepPlan        *cudaDeepPlan    // the DeepStack sets of the PrefillMRoPEDeepstackLast call in progress (prefill.go); nil otherwise
+	allocSlackBytes int64            // the driver's allocation rounding over the packed weights, priced into the plan (packedAllocSlack)
+	wArena          *weightArena     // the dense weights' arena while uploadLayers sub-allocates from it; nil otherwise
+	wArenaStats     weightArenaStats // what the arena held when uploadLayers closed it
+	ctxMarginBytes  int64            // the context margin at load (ctxMarginFor at ctxMarginCtx), read by checkKVFits, checkWeightsFit and their declines
+	ctxMarginCtx    int              // the context the margin is priced at: the one the plan returned
+	kvSlotsN        int              // what checkKVFits granted (>= 1)
 	kvSlot          int
 	kvTabSlot       int
 	kvPools         [kvGroups]kvPool
@@ -1137,17 +1139,17 @@ func (r *cudaResident) recordUpload(e error) {
 	}
 }
 func (r *cudaResident) up32(v []float32) Buffer {
-	b := r.af(len(v))
+	b := wbuf[float32](r, len(v))
 	r.recordUpload(gpu.Upload(b, v))
 	return b
 }
 func (r *cudaResident) upu32(v []uint32) Buffer {
-	b := r.au32(len(v))
+	b := wbuf[uint32](r, len(v))
 	r.recordUpload(gpu.Upload(b, v))
 	return b
 }
 func (r *cudaResident) upu16(v []uint16) Buffer {
-	b := gpu.NewBufferLenOfOn[uint16](r.dev, r.line, len(v))
+	b := wbuf[uint16](r, len(v))
 	r.recordUpload(gpu.Upload(b, v))
 	return b
 }
@@ -1165,7 +1167,10 @@ func (r *cudaResident) loadAborted() bool {
 func (r *cudaResident) upW(h hostW) cudaWQ {
 	if h.alt != nil {
 		w := r.streamW(h)
+		arena := r.wArena // the plan's walk does not count the int8 copy: it takes allocations of its own
+		r.wArena = nil
 		r.kquantAlt = append(r.kquantAlt, [2]cudaWQ{w, r.upW(*h.alt)})
+		r.wArena = arena
 		return w
 	}
 	if h.src != nil || h.readRows != nil { // planned, not packed: packed at upload
@@ -1286,57 +1291,35 @@ var attnSoftcapDropForTest bool
 
 var hostWType = reflect.TypeFor[hostW]()
 
-// packedAllocSlack is what the driver charges beyond the requested bytes of every weight buffer the build is about to upload: the
-// rounding of each buffer of a quantum or more (allocRoundSlack) and the pages the smaller ones leave part empty (pagePacker),
-// in upload order. It walks every hostW found under v (a struct, slice, array or pointer, however nested) as the buffers upW
-// allocates for it (wpk, then ws, ws16 and nBytes), and every plain numeric vector beside them (norms, biases, tables) as the
-// one buffer up32 makes of it. Walking by reflection, not by field name, is what keeps a family's extra projections (DeltaNet,
-// MLA, Mamba, experts) counted without this function learning about them -- the per-family struct literal that omits a field is
-// the defect class this repo has been bitten by. The walk follows struct order, not the setup job's order within a layer; the
-// packing is insensitive to that (docs/measurements/kv3-s1-2026-11/packing-model.md). Experts under C' are slot-cached rather
-// than uploaded whole, so they are over-counted there, which only shrinks the planned context.
+// packedAllocSlack is what the driver charges beyond the requested bytes of every weight buffer the build is about to upload
+// (walkWeightBuffers): the dense weights share one arena (weightArena), whose alignment padding and single rounding are the slack;
+// each expert-stack buffer is its own allocation, rounded when it is a quantum or more (allocRoundSlack) and packed into the pages
+// the smaller ones leave part empty (pagePacker), after the arena, in upload order. Experts under C' are slot-cached rather than
+// uploaded whole, so they are over-counted there, which only shrinks the planned context.
 func packedAllocSlack(v any) int64 {
 	var (
-		pk    pagePacker
-		slack int64
+		pk                   pagePacker
+		slack, arena, inside int64
+		own                  []int64
 	)
-	emit := func(n int64) {
+	walkWeightBuffers(v, func(n int64, isOwn bool) {
+		switch {
+		case n <= 0:
+		case isOwn:
+			own = append(own, n)
+		default:
+			arena += weightAligned(n)
+			inside += n
+		}
+	})
+	if arena > 0 {
+		slack += arena - inside + allocRoundSlack(arena)
+		pk.add(arena)
+	}
+	for _, n := range own {
 		slack += allocRoundSlack(n)
 		pk.add(n)
 	}
-	var walk func(rv reflect.Value)
-	walk = func(rv reflect.Value) {
-		switch rv.Kind() {
-		case reflect.Pointer, reflect.Interface:
-			if !rv.IsNil() {
-				walk(rv.Elem())
-			}
-		case reflect.Slice, reflect.Array:
-			switch rv.Type().Elem().Kind() {
-			case reflect.Struct, reflect.Pointer, reflect.Interface, reflect.Slice, reflect.Array:
-				for i := 0; i < rv.Len(); i++ {
-					walk(rv.Index(i))
-				}
-			case reflect.Float32, reflect.Int32, reflect.Uint32: // a vector of numbers (biases, norms) holds no hostW: it is one buffer
-				emit(int64(rv.Len()) * 4)
-			}
-		case reflect.Struct:
-			if rv.Type() == hostWType {
-				elems := func(packed, planned string) int64 { // a planned hostW carries its counts, a packed one its slices
-					return max(int64(rv.FieldByName(packed).Len()), rv.FieldByName(planned).Int())
-				}
-				emit(elems("wpk", "nWpk") * 4)
-				emit(elems("ws", "nWs") * 4)
-				emit(elems("ws16", "nWs16") * 2)
-				emit(rv.FieldByName("nBytes").Int())
-				return
-			}
-			for _, field := range rv.Fields() {
-				walk(field)
-			}
-		}
-	}
-	walk(reflect.ValueOf(v))
 	return slack + pk.waste()
 }
 

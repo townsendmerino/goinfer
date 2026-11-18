@@ -114,7 +114,7 @@ func checkHostCopy(c HostCopy, cx *gc.Context) error {
 	if c.Dst.b == nil {
 		return fmt.Errorf("cuda: upload into a nil buffer")
 	}
-	if got, want := c.Dst.b.Bytes(), uint64(c.Dst.off)+uint64(len(c.Src)); got < want {
+	if got, want := c.Dst.bytes(), uint64(c.Dst.off)+uint64(len(c.Src)); got < want {
 		return fmt.Errorf("cuda: upload of %d bytes at offset %d overruns a %d-byte buffer",
 			len(c.Src), c.Dst.off, got)
 	}

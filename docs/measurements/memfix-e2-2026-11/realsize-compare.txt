@@ -1,0 +1,22 @@
+groups 63 same outcome sequence 59 different 4
+('qwen2.5-7b-instruct-q4_k_m.gguf', -418.0) 45
+('qwen2.5-7b-instruct-q4_k_m.gguf', 0.0) 4
+('qwen2.5-coder-0.5b-instruct-q4_k_m.gguf', -138.0) 77
+('qwen2.5-coder-0.5b-instruct-q4_k_m.gguf', 0.0) 8
+('qwen2.5-coder-1.5b-instruct-q4_k_m.gguf', -124.0) 77
+('qwen2.5-coder-1.5b-instruct-q4_k_m.gguf', 0.0) 8
+DIFF D3 qwen2.5-7b-instruct-q4_k_m.gguf | cuda ctx=32768 pinned=false kv=f32 extra=0 
+ old [(4694523391, ('decline', 32768, 0)), (5134891520, ('resident', 4096, 0)), (5142231560, ('resident', 4160, 0)), (5149571600, ('resident', 4224, 0)), (5156911640, ('resident', 4288, 0)), (5164251680, ('resident', 4352, 0)), (5171591720, ('resident', 4416, 0)), (5178931760, ('resident', 4480, 0)), (5186271800, ('resident', 4544, 0)), (7630553088, ('resident', 25856, 0)), (7648378880, ('resident', 25984, 0))] 
+ new [(4694523391, ('decline', 32768, 0)), (4696586752, ('resident', 4096, 0)), (4703926792, ('resident', 4160, 0)), (4711266832, ('resident', 4224, 0)), (4718606872, ('resident', 4288, 0)), (4725946912, ('resident', 4352, 0)), (4733286952, ('resident', 4416, 0)), (4740626992, ('resident', 4480, 0)), (4747967032, ('resident', 4544, 0)), (7630553088, ('resident', 29632, 0)), (7648378880, ('resident', 29824, 0))]
+DIFF D3 qwen2.5-7b-instruct-q4_k_m.gguf | cuda ctx=32768 pinned=false kv=f32 extra=268435456 
+ old [(4962958847, ('decline', 32768, 0)), (5403326976, ('resident', 4096, 0)), (5410667016, ('resident', 4160, 0)), (5418007056, ('resident', 4224, 0)), (5425347096, ('resident', 4288, 0)), (5432687136, ('resident', 4352, 0)), (5440027176, ('resident', 4416, 0)), (5447367216, ('resident', 4480, 0)), (5454707256, ('resident', 4544, 0)), (7630553088, ('resident', 23488, 0)), (7648378880, ('resident', 23616, 0))] 
+ new [(4962958847, ('decline', 32768, 0)), (4965022208, ('resident', 4096, 0)), (4972362248, ('resident', 4160, 0)), (4979702288, ('resident', 4224, 0)), (4987042328, ('resident', 4288, 0)), (4994382368, ('resident', 4352, 0)), (5001722408, ('resident', 4416, 0)), (5009062448, ('resident', 4480, 0)), (5016402488, ('resident', 4544, 0)), (7630553088, ('resident', 27328, 0)), (7648378880, ('resident', 27456, 0))]
+DIFF D3 qwen2.5-7b-instruct-q4_k_m.gguf | cuda ctx=32768 pinned=false kv=f16 extra=0 
+ old [(4694523391, ('decline', 32768, 0)), (5134891520, ('resident', 4096, 0)), (5142231560, ('resident', 4160, 0)), (5149571600, ('resident', 4224, 0)), (5156911640, ('resident', 4288, 0)), (5164251680, ('resident', 4352, 0)), (5171591720, ('resident', 4416, 0)), (5178931760, ('resident', 4480, 0)), (5186271800, ('resident', 4544, 0)), (7630553088, ('resident', 25856, 0)), (7648378880, ('resident', 25984, 0))] 
+ new [(4694523391, ('decline', 32768, 0)), (4696586752, ('resident', 4096, 0)), (4703926792, ('resident', 4160, 0)), (4711266832, ('resident', 4224, 0)), (4718606872, ('resident', 4288, 0)), (4725946912, ('resident', 4352, 0)), (4733286952, ('resident', 4416, 0)), (4740626992, ('resident', 4480, 0)), (4747967032, ('resident', 4544, 0)), (7630553088, ('resident', 29632, 0)), (7648378880, ('resident', 29824, 0))]
+DIFF D3 qwen2.5-7b-instruct-q4_k_m.gguf | cuda ctx=32768 pinned=false kv=i8 extra=0 
+ old [(4694523391, ('decline', 32768, 0)), (5134891520, ('resident', 4096, 0)), (5142231560, ('resident', 4160, 0)), (5149571600, ('resident', 4224, 0)), (5156911640, ('resident', 4288, 0)), (5164251680, ('resident', 4352, 0)), (5171591720, ('resident', 4416, 0)), (5178931760, ('resident', 4480, 0)), (5186271800, ('resident', 4544, 0)), (7630553088, ('resident', 25856, 0)), (7648378880, ('resident', 25984, 0))] 
+ new [(4694523391, ('decline', 32768, 0)), (4696586752, ('resident', 4096, 0)), (4703926792, ('resident', 4160, 0)), (4711266832, ('resident', 4224, 0)), (4718606872, ('resident', 4288, 0)), (4725946912, ('resident', 4352, 0)), (4733286952, ('resident', 4416, 0)), (4740626992, ('resident', 4480, 0)), (4747967032, ('resident', 4544, 0)), (7630553088, ('resident', 29632, 0)), (7648378880, ('resident', 29824, 0))]
+D3 qwen2.5-7b-instruct-q4_k_m.gguf slack old 440368128 new 2063360 delta MiB -418.0
+D3 qwen2.5-coder-0.5b-instruct-q4_k_m.gguf slack old 146136576 new 1433088 delta MiB -138.0
+D3 qwen2.5-coder-1.5b-instruct-q4_k_m.gguf slack old 131554816 new 1531392 delta MiB -124.0

@@ -227,7 +227,7 @@ func (r *cudaResident) streamW(h hostW) cudaWQ {
 	if h.row != nil {
 		return r.streamKQuant(h)
 	}
-	w := cudaWQ{kind: h.kind, N: h.N, K: h.K, W: r.au32(h.nWpk)}
+	w := cudaWQ{kind: h.kind, N: h.N, K: h.K, W: wbuf[uint32](r, h.nWpk)}
 	putWords := func(st *packStage, r0, wpr int) { r.recordUpload(gpu.Upload(w.W.At(r0*wpr*4), st.outW)) }
 	switch h.kind {
 	case "int4":
@@ -236,8 +236,7 @@ func (r *cudaResident) streamW(h hostW) cudaWQ {
 			r.recordUpload(fmt.Errorf("cuda: int4 tensor lost its canonical bytes between planning and upload"))
 			return w
 		}
-		allocSeen(h.nWs16 * 2)
-		w.ws16 = gpu.NewBufferLenOfOn[uint16](r.dev, r.line, h.nWs16)
+		w.ws16 = wbuf[uint16](r, h.nWs16)
 		wpr, gpr := K/8, K/32
 		r.streamBlocks(N, rowsFor(wpr), func(st *packStage, r0, rows int) {
 			words := st.words(rows * wpr)
@@ -279,7 +278,7 @@ func (r *cudaResident) streamW(h hostW) cudaWQ {
 		if h.src != nil {
 			f32, isF32 = h.src.F32()
 		}
-		w.ws = r.af(h.nWs)
+		w.ws = wbuf[float32](r, h.nWs)
 		r.streamBlocks(N, rowsFor(wpr), func(st *packStage, r0, rows int) {
 			var src []float32
 			switch {
@@ -334,8 +333,7 @@ func kquantStageRows(rowBytes int) int { return max(1, stagePackWords/((rowBytes
 // rows in staging blocks. Q5_K rows are copied verbatim; Q6_K blocks are split into q6kPlanes, a block of rows landing in four
 // contiguous runs, one per plane.
 func (r *cudaResident) streamKQuant(h hostW) cudaWQ {
-	allocSeen(h.nBytes)
-	w := cudaWQ{kind: h.kind, N: h.N, K: h.K, W: gpu.NewBufferLenOfOn[uint8](r.dev, r.line, h.nBytes)}
+	w := cudaWQ{kind: h.kind, N: h.N, K: h.K, W: wbuf[uint8](r, h.nBytes)}
 	nSB := h.K / 256
 	if h.kind == "q5k" {
 		rb := nSB * 176

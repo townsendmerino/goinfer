@@ -104,7 +104,7 @@ func (q Queue) UploadAsyncAt(dst Buffer, src *HostBuffer[uint8], srcOff, n int) 
 	if srcOff < 0 || srcOff+n > src.Len() {
 		return fmt.Errorf("cuda: UploadAsyncAt source [%d,%d) overruns a %d-byte pinned buffer", srcOff, srcOff+n, src.Len())
 	}
-	if got, want := dst.b.Bytes(), uint64(dst.off)+uint64(n); got < want {
+	if got, want := dst.bytes(), uint64(dst.off)+uint64(n); got < want {
 		return fmt.Errorf("cuda: UploadAsyncAt of %d bytes at offset %d overruns a %d-byte buffer", n, dst.off, got)
 	}
 	s := src.h.Slice()
@@ -143,7 +143,7 @@ func (q Queue) UploadAsyncAtFrom(dst Buffer, src *MappedHostBuffer, srcOff, n in
 	if srcOff < 0 || srcOff+n > len(s) {
 		return fmt.Errorf("cuda: UploadAsyncAtFrom source [%d,%d) overruns a %d-byte pinned buffer", srcOff, srcOff+n, len(s))
 	}
-	if got, want := dst.b.Bytes(), uint64(dst.off)+uint64(n); got < want {
+	if got, want := dst.bytes(), uint64(dst.off)+uint64(n); got < want {
 		return fmt.Errorf("cuda: UploadAsyncAtFrom of %d bytes at offset %d overruns a %d-byte buffer", n, dst.off, got)
 	}
 	dptr := dst.b.DevicePtr() + cudasys.CUdeviceptr(dst.off)
@@ -167,7 +167,7 @@ func (q Queue) ZeroAsync(dst Buffer, n int) error {
 	if n <= 0 {
 		return nil
 	}
-	if got, want := dst.b.Bytes(), uint64(dst.off)+uint64(n); got < want {
+	if got, want := dst.bytes(), uint64(dst.off)+uint64(n); got < want {
 		return fmt.Errorf("cuda: ZeroAsync of %d bytes at offset %d overruns a %d-byte buffer", n, dst.off, got)
 	}
 	dptr := dst.b.DevicePtr() + cudasys.CUdeviceptr(dst.off)
