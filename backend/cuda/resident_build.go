@@ -1551,6 +1551,11 @@ func (s *buildState) uploadLayers(r *cudaResident) error {
 	bv := m.BackendView()
 	r.layers = make([]cudaLayer, nLayers)
 	endWeights := r.onLine(mem.LineDense)
+	if r.loadAborted() {
+		return fmt.Errorf("cuda: resident build aborted before uploading its weights: %w", decoder.ErrLoadAborted)
+	}
+	r.openWeightArena([]any{hls, hlm})
+	defer r.closeWeightArena()
 	for l := range nLayers {
 		if r.loadAborted() {
 			return fmt.Errorf("cuda: resident build aborted before uploading layer %d of %d: %w", l, nLayers, decoder.ErrLoadAborted)
@@ -1738,6 +1743,7 @@ func (s *buildState) uploadLayers(r *cudaResident) error {
 		r.layers[l] = L
 	}
 	r.lmW = r.upW(hlm)
+	r.closeWeightArena() // the final norm is not in the walk that sized it
 	r.finalNorm = r.up32(hFinal)
 	endWeights()
 	return nil

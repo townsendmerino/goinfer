@@ -144,10 +144,10 @@ func checkDeviceCopy(dst, src Buffer, nBytes int) error {
 	if src.cx != nil && dst.cx != nil && src.cx != dst.cx {
 		return fmt.Errorf("cuda: device copy between buffers on different contexts")
 	}
-	if got, want := src.b.Bytes(), uint64(src.off)+uint64(nBytes); got < want {
+	if got, want := src.bytes(), uint64(src.off)+uint64(nBytes); got < want {
 		return fmt.Errorf("cuda: device copy reads %d bytes at offset %d from a %d-byte buffer", nBytes, src.off, got)
 	}
-	if got, want := dst.b.Bytes(), uint64(dst.off)+uint64(nBytes); got < want {
+	if got, want := dst.bytes(), uint64(dst.off)+uint64(nBytes); got < want {
 		return fmt.Errorf("cuda: device copy writes %d bytes at offset %d to a %d-byte buffer", nBytes, dst.off, got)
 	}
 	return nil

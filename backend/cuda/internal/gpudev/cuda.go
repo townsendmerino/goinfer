@@ -321,7 +321,7 @@ func (d *Device) ReleaseObjects() {
 // swap-remove scan: fine for coarse per-request scratch, never a per-token path.
 // A zero Buffer is a no-op. Mirrors metal.go's ReleaseBuf.
 func (d *Device) ReleaseBuf(b Buffer) {
-	if b.b == nil {
+	if b.b == nil || b.lim != 0 { // a sub-allocation is freed with its allocation
 		return
 	}
 	d.mu.Lock()
@@ -429,6 +429,9 @@ type Buffer struct {
 	d   *Device     // owning device, whose Activity counts this buffer's host waits
 	n   int         // element count in the constructor's unit (floats, int8s, u32s, …)
 	off uintptr     // byte offset for binding (a sub-view into a larger buffer; 0 = whole)
+	// A sub-allocation (Sub) is the bytes [base, lim) of its allocation: At binds relative to base, and every bounds check reads
+	// lim. lim == 0 is a whole allocation.
+	base, lim uintptr
 	// raw != 0 ⇒ this Buffer is a device-usable pointer into MAPPED PINNED HOST memory (see
 	// NewMappedHostBuffer): b is nil, the bytes live in host RAM, and a kernel reads them
 	// directly over PCIe (zero-copy). arg() binds raw instead of b.b.DevicePtr().
@@ -437,7 +440,26 @@ type Buffer struct {
 
 // At returns a view of the buffer bound at byteOff — for reading a slice of a
 // combined buffer. Zero-copy; only the bind offset changes. Mirrors metal.go's At.
-func (b Buffer) At(byteOff int) Buffer { b.off = uintptr(byteOff); return b }
+func (b Buffer) At(byteOff int) Buffer { b.off = b.base + uintptr(byteOff); return b }
+
+// Sub is the sub-allocation of nBytes (more than 0) at byteOff of a whole allocation b, holding n elements of its caller's unit:
+// a buffer of its own for every verb (At, Len, the copies and their bounds checks), sharing b's device memory. It is freed with b,
+// never on its own (ReleaseBuf ignores it).
+func (b Buffer) Sub(byteOff, nBytes, n int) Buffer {
+	if b.lim != 0 || b.b == nil || byteOff < 0 || nBytes <= 0 || uint64(byteOff)+uint64(nBytes) > b.b.Bytes() {
+		panic(fmt.Sprintf("cuda: Sub [%d,%d) of a buffer that is not a whole allocation holding it", byteOff, byteOff+nBytes))
+	}
+	b.base, b.off, b.lim, b.n = uintptr(byteOff), uintptr(byteOff), uintptr(byteOff+nBytes), n
+	return b
+}
+
+// bytes is the end of the bytes this buffer may address: its allocation's size, or a sub-allocation's lim.
+func (b Buffer) bytes() uint64 {
+	if b.lim != 0 {
+		return uint64(b.lim)
+	}
+	return b.b.Bytes()
+}
 
 // Len is the buffer's element count in its constructor's unit.
 func (b Buffer) Len() int { return b.n }
@@ -470,6 +492,27 @@ func (d *Device) MustBufOn(line string, nBytes, n int, what string) Buffer {
 	d.allocs = append(d.allocs, devAlloc{b: buf, release: release})
 	d.mu.Unlock()
 	return Buffer{b: buf, cx: d.cx, d: d, n: n}
+}
+
+// MustBufSplitOn is MustBufOn for an allocation whose bytes the plan prices on two lines: the first lineBytes on line, requested
+// and charged at that size, and the rest, with all of the driver's rounding, on restLine.
+func (d *Device) MustBufSplitOn(line string, nBytes int, lineBytes int64, restLine string, what string) Buffer {
+	if d.cx == nil {
+		panic(fmt.Sprintf("cuda: allocation on a released device (%s, %d bytes)", what, nBytes))
+	}
+	if lineBytes < 0 || lineBytes > int64(nBytes) {
+		panic(fmt.Sprintf("cuda: %s: %d of %d bytes on line %q", what, lineBytes, nBytes, line))
+	}
+	buf, err := gc.Alloc[uint8](d.cx, nBytes)
+	if err != nil {
+		panic(AllocFailedPanic(what, nBytes, err))
+	}
+	relLine := d.lease(true, line, lineBytes, lineBytes)
+	relRest := d.lease(true, restLine, int64(nBytes)-lineBytes, ChargedBytes(int64(nBytes))-lineBytes)
+	d.mu.Lock()
+	d.allocs = append(d.allocs, devAlloc{b: buf, release: func() { relLine(); relRest() }})
+	d.mu.Unlock()
+	return Buffer{b: buf, cx: d.cx, d: d, n: nBytes}
 }
 
 // asBytes reinterprets a slice of fixed-size scalars as the []byte gocudrv copies.
@@ -511,7 +554,7 @@ func (b Buffer) upload(src []byte) error {
 	if len(src) == 0 {
 		return nil
 	}
-	if got, want := b.b.Bytes(), uint64(b.off)+uint64(len(src)); got < want {
+	if got, want := b.bytes(), uint64(b.off)+uint64(len(src)); got < want {
 		return fmt.Errorf("cuda: upload of %d bytes at offset %d overruns a %d-byte buffer", len(src), b.off, got)
 	}
 	// SYNCHRONIZE BEFORE THE COPY TOO, not just after (audit C-01).
@@ -551,7 +594,7 @@ func (b Buffer) download(dst []byte) error {
 	if len(dst) == 0 {
 		return nil
 	}
-	if got, want := b.b.Bytes(), uint64(b.off)+uint64(len(dst)); got < want {
+	if got, want := b.bytes(), uint64(b.off)+uint64(len(dst)); got < want {
 		return fmt.Errorf("cuda: download of %d bytes at offset %d overruns a %d-byte buffer", len(dst), b.off, got)
 	}
 	b.d.noteWait() // a blocking copy to the host
@@ -1132,6 +1175,9 @@ func (q Queue) UploadAsync(dst Buffer, src *HostBuffer[uint8]) error {
 	}
 	if src == nil || src.h == nil {
 		return fmt.Errorf("cuda: UploadAsync from a nil pinned buffer")
+	}
+	if dst.lim != 0 {
+		return fmt.Errorf("cuda: UploadAsync into a sub-allocation: it writes from the allocation's base")
 	}
 	if src.h.Bytes() > dst.b.Bytes() {
 		return fmt.Errorf("cuda: UploadAsync src %d bytes exceeds dst %d bytes", src.h.Bytes(), dst.b.Bytes())

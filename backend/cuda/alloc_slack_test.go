@@ -4,9 +4,9 @@ package cuda
 
 import "testing"
 
-// TestPackedAllocSlack pins the rounding rule and the walk that applies it: a buffer of a quantum or more rounds up to the next multiple, the
-// buffers under a quantum cost the pages they leave part empty (TestPagePacker), every hostW under a nested struct/slice/pointer is counted
-// exactly as upW allocates it (wpk, then ws or ws16), and a plain vector of numbers beside them is one buffer.
+// TestPackedAllocSlack pins the rounding rule and the walk that applies it: every hostW under a nested struct/slice/pointer is counted
+// exactly as upW allocates it (wpk, then ws or ws16), a plain vector of numbers beside them is one buffer, and all of them share one
+// arena whose only slack is each buffer's padding to weightAlign and the arena's one rounding to a quantum.
 func TestPackedAllocSlack(t *testing.T) {
 	const q = allocQuantumBytes
 	for _, c := range []struct{ n, want int64 }{{0, 0}, {1, 0}, {q - 1, 0}, {q, 0}, {q + 1, q - 1}, {3 * q / 2 * 2, 0}, {5 << 20, 1 << 20}, {9 << 20, 1 << 20}, {6 << 20, 0}} {
@@ -20,17 +20,34 @@ func TestPackedAllocSlack(t *testing.T) {
 		extras []hostW
 		nested *struct{ inner hostW }
 	}
-	// 5 MiB of wpk (1,310,720 words) slack 1 MiB; 3 MiB of ws16 (1,572,864 halfwords) slack 1 MiB; 9 MiB of ws (2,359,296 floats) slack 1 MiB.
+	// q4 is 5 MiB of wpk and 3 MiB of ws16, q8 3 MiB of wpk and 9 MiB of ws: each a multiple of weightAlign.
 	q4 := hostW{kind: "int4", wpk: make([]uint32, 5<<18), ws16: make([]uint16, 3<<19)}
 	q8 := hostW{kind: "int8", wpk: make([]uint32, 3<<18), ws: make([]float32, 9<<18)}
 	small := hostW{kind: "int4", wpk: make([]uint32, 1000), ws16: make([]uint16, 100)}
 	l := layer{q: q4, k: q8, norm: make([]float32, 8<<20), extras: []hostW{small, q4}, nested: &struct{ inner hostW }{q4}}
 	got := packedAllocSlack([]any{[]layer{l}, q8})
-	// q4 is counted three times (q, extras[1], nested): 3 x (1 MiB + 1 MiB); q8 twice: 2 x (wpk 3 MiB -> 4: 1 MiB, ws 9 MiB -> 10: 1 MiB); the
-	// 32 MiB vector rounds by nothing. small is two buffers under a quantum (4,000 and 200 bytes): no rounding, but they share one page the
-	// rest of which nothing fills, 2 MiB less their 4,200 bytes.
-	if want := int64(3*2+2*2)<<20 + allocQuantumBytes - 4200; got != want {
+	// q4 three times (24 MiB), q8 twice (24 MiB), the 32 MiB norm, and small's 4,000 and 200 bytes padded to 4,096 and 256: an arena
+	// of 80 MiB + 4,352 bytes, which rounds to 82 MiB. The slack is that less the 80 MiB + 4,200 bytes requested.
+	if want := int64(allocQuantumBytes - 4200); got != want {
 		t.Errorf("packedAllocSlack = %d, want %d", got, want)
+	}
+	if got, in := weightArenaBytes([]any{[]layer{l}, q8}); got != 80<<20+4352 || in != 80<<20+4200 {
+		t.Errorf("weightArenaBytes = %d, %d requested, want %d, %d", got, in, 80<<20+4352, 80<<20+4200)
+	}
+}
+
+// TestPackedAllocSlack_expertsOwnBuffers: an hlayer's expert stacks are not in the arena (they upload on the experts line): each of
+// their buffers is rounded and packed on its own, as every weight buffer was before the arena.
+func TestPackedAllocSlack_expertsOwnBuffers(t *testing.T) {
+	q4 := hostW{kind: "int4", wpk: make([]uint32, 5<<18), ws16: make([]uint16, 3<<19)} // 8 MiB in the arena: no slack
+	big := hostW{kind: "int4", wpk: make([]uint32, 5<<18)}                             // 5 MiB on its own: 1 MiB of rounding
+	small := hostW{kind: "int4", wpk: make([]uint32, 1000), ws16: make([]uint16, 100)} // 4,200 bytes in one page of their own
+	got := packedAllocSlack([]any{[]hlayer{{q: q4, expGU: big, expDown: small}}})
+	if want := int64(1<<20 + allocQuantumBytes - 4200); got != want {
+		t.Errorf("packedAllocSlack = %d, want %d", got, want)
+	}
+	if got, _ := weightArenaBytes([]any{[]hlayer{{q: q4, expGU: big, expDown: small}}}); got != 8<<20 {
+		t.Errorf("weightArenaBytes = %d, want %d (the experts are not in it)", got, 8<<20)
 	}
 }
 
@@ -69,23 +86,20 @@ func TestPagePacker(t *testing.T) {
 	}
 }
 
-// TestPackedAllocSlack_packsTheSmallOnes: the walk's figure is the rounding of the large buffers plus the pages the small ones
-// leave part empty, so a model of many 1.5 MiB buffers (no rounding each, a page each) is priced by the pages.
-func TestPackedAllocSlack_packsTheSmallOnes(t *testing.T) {
+// TestPackedAllocSlack_oneArena: the weights share one allocation, so many buffers of 1.5 MiB cost no page each, and an arena under a
+// quantum is one small buffer, packed into a page like any other.
+func TestPackedAllocSlack_oneArena(t *testing.T) {
 	type layer struct{ a, b hostW }
 	one := hostW{kind: "int4", wpk: make([]uint32, 3<<17)} // 1.5 MiB
-	got := packedAllocSlack([]any{[]layer{{one, one}, {one, one}}})
-	// Four 1.5 MiB buffers, one page each: 4 x 0.5 MiB left over, nothing else to fill it.
-	if want := int64(4) * (allocQuantumBytes - 3<<19); got != want {
-		t.Errorf("packedAllocSlack = %d, want %d", got, want)
+	if got := packedAllocSlack([]any{[]layer{{one, one}, {one, one}}}); got != 0 {
+		t.Errorf("packedAllocSlack of four 1.5 MiB weights = %d, want 0: they fill a 6 MiB arena", got)
 	}
-	// A vector of numbers is a buffer too: a quarter of a MiB of norms fits the room beside the first.
 	type withNorm struct {
 		w    hostW
 		norm []float32
 	}
-	got = packedAllocSlack([]any{withNorm{one, make([]float32, 1<<16)}})
-	if want := int64(allocQuantumBytes - 3<<19 - 1<<18); got != want {
+	// 1.5 MiB and a quarter of a MiB of norms: a 1.75 MiB arena in a page of its own.
+	if got, want := packedAllocSlack([]any{withNorm{one, make([]float32, 1<<16)}}), int64(allocQuantumBytes-3<<19-1<<18); got != want {
 		t.Errorf("packedAllocSlack with a norm = %d, want %d", got, want)
 	}
 }

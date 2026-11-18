@@ -1429,23 +1429,23 @@ func TestCost_cudaGenerateOnTheWire(t *testing.T) {
 	}
 }
 
-// cardWeightMiB is the device's drop over a build's weight uploads, MiB, from the allocation sequence each build made
-// (docs/measurements/kv3-s1-2026-11/kv3r-seq-*.tsv.gz: free VRAM read after every allocation; the first allocation of a process
-// also takes a page of its own, 2 MiB, not counted here). The plan prices this as the dense weights plus packedAllocSlack.
+// cardWeightMiB is the device's drop across a build's dense-line allocations (the weight arena and the final norm), MiB, from the
+// allocation sequence each build made (docs/measurements/memfix-e2-2026-11/seq-after-*.tsv.gz: free VRAM read after every
+// allocation). The scratch allocated before the weights is not in it. The plan prices this as the dense weights plus packedAllocSlack.
 var cardWeightMiB = map[string]float64{
-	"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf":   464,
-	"qwen2.5-coder-1.5b-instruct-q4_k_m.gguf":   1052,
-	"llama-3.2-1b-instruct-q4_k_m.gguf":         778,
-	"gemma3-1b-q4_k_m.gguf":                     682,
-	"qwen25vl-3b-instruct":                      1956,
-	"gemma-3-4b-it":                             2686,
-	"qwen2.5-7b-instruct-q4_k_m.gguf":           4444,
-	"gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf": 1582,
+	"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf":   324,
+	"qwen2.5-coder-1.5b-instruct-q4_k_m.gguf":   928,
+	"llama-3.2-1b-instruct-q4_k_m.gguf":         774,
+	"gemma3-1b-q4_k_m.gguf":                     664,
+	"qwen25vl-3b-instruct":                      1788,
+	"gemma-3-4b-it":                             2364,
+	"qwen2.5-7b-instruct-q4_k_m.gguf":           4024,
+	"gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf": 1386,
 }
 
 // TestPlanSlack_pricesThePacking (KV3-S1-residual): on every real checkpoint whose weight upload was read against the card, the
-// plan's weight figure (dense bytes plus the planned slack) is within 2 MiB of the card's drop; the readings and the figures the plan gave
-// before the packing was priced are in docs/measurements/kv3-s1-2026-11/packing-model.md.
+// plan's weight figure (dense bytes plus the planned slack) is within 2 MiB of the card's drop; the readings are in
+// docs/measurements/memfix-e2-2026-11/README.md.
 func TestPlanSlack_pricesThePacking(t *testing.T) {
 	ran := 0
 	for rel, want := range cardWeightMiB {

@@ -1,0 +1,9 @@
+model                                          card before  card after    saved  allocs b/a  dense allocs b/a
+gemma-3-4b-it                                      2686.00     2366.00   320.00   726/11         717/2       
+gemma-4-E2B_q4_0-it                                1582.00     1388.00   194.00   823/12         813/2       
+gemma3-1b-q4_k_m                                    682.00      666.00    16.00   558/11         549/2       
+llama-3.2-1b-instruct-q4_k_m                        778.00      778.00     0.00   284/11         275/2       
+qwen2.5-7b-instruct-q4_k_m                         4444.00     4026.00   418.00   572/11         563/2       
+qwen2.5-coder-0.5b-instruct-q4_k_m                  464.00      326.00   138.00   492/11         483/2       
+qwen2.5-coder-1.5b-instruct-q4_k_m                 1052.00      930.00   122.00   572/11         563/2       
+qwen25vl-3b-instruct                               1956.00     1790.00   166.00   732/11         723/2       
