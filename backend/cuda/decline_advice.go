@@ -4,8 +4,8 @@ package cuda
 
 import "strings"
 
-// declineAdvice turns the error that made BuildResident decline into the reason an operator reads
-// (docs/completed/task-first-hour.md). The raw error was a trace and a Go internal where the operator needs to know what to
+// declineAdvice turns the error that made BuildResident decline into the reason an operator reads.
+// The raw error was a trace and a Go internal where the operator needs to know what to
 // change (a device OOM or an unpackable weight surfaced as "executor job panicked: ..." plus a goroutine stack, or
 // `unsupported projection kind ""`), and the CPU fallback it caused said nothing about how to stay on the GPU.
 //

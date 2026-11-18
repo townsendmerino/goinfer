@@ -14,7 +14,7 @@ import (
 
 // TestMoEStreamingDecodeProfile reads the decode-side C′ DMA share (M=1: no rows to bucket by
 // expert) using GOINFER_MOE_CACHE_PROF's existing stall/host/dma split, to check whether the
-// "genuine H2D/compute overlap" condition of docs/completed/task-moe-streaming.md §6 "Revisit if"
+// "genuine H2D/compute overlap" condition "Revisit if"
 // has fired. Synthetic embeddings (EmbedResidentForTest), not a real prompt — a DMA-timing profile
 // does not need real tokens, only real routing (the model's own trained router still decides which
 // experts, from an in-vocab embedding).

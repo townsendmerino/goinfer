@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// OP1 on CUDA, the resident-level tests of the attention softcap (docs/completed/task-forward-architecture-2026-10.md §4.6a). The softcap's
+// OP1 on CUDA, the resident-level tests of the attention softcap. The softcap's
 // evidence is the kernel gates against float64 (TestAttnSoftcap_kernelsAgainstFloat64, with the cap dropped as the control) and the lane
 // test below; the tiny Gemma 2 fixtures are diagnostics, because their scores sit far inside the cap, where cap·tanh(s/cap) is nearly the
 // identity and a dropped cap can leave them green.
@@ -236,7 +236,7 @@ func flashRefCap(q, k, v []float32, nH, nKV, hd, winStart, nKeys int, scale, cap
 	return out
 }
 
-// TestGemma2Softcap_flashDecodeVsF64 is OP1-o2's resident-level check (docs/completed/task-forward-architecture-2026-10.md §4.6a, "Owed,
+// TestGemma2Softcap_flashDecodeVsF64 is OP1-o2's resident-level check ( "Owed,
 // not in OP1"; the kernel gate at both KV types is the kernels package's TestAttnSoftcap_flashDecodeAgainstFloat64): a capped model
 // loaded with decoder.Options.FlashDecodeSoftcap carries the opt-in to its resident and loads the lane's capped variant (decode_fa_cap), and
 // that lane, through the resident's own launch path, driven on

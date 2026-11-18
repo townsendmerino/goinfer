@@ -44,8 +44,7 @@ func TestDeltaNetKernels_cpuParity(t *testing.T) {
 // Olmo Hybrid-7B's real DeltaNet geometry (hk 96 ≠ hv 192, nk = nv = 30), with both of its settings: the write gate widened
 // to [0, 2) (NegEigval) and the output norm at 1e-5 beside the model's 1e-6 (ONormEps). The test requires the output norm's
 // mean square within 10x of its epsilon, where 1e-5 against 1e-6 is visible at this test's bars; at larger magnitudes it is
-// not. Each setting is then dropped on the kernel side, and the stage that reads it must go red
-// (docs/completed/task-olmo-hybrid-cuda-2026-11.md, O-1).
+// not. Each setting is then dropped on the kernel side, and the stage that reads it must go red.
 func TestDeltaNetKernels_cpuParity_olmoHybrid(t *testing.T) {
 	g := chainGeom{hk: 96, hv: 192, nk: 30, nv: 30, eps: 1e-6, negEigval: true, oNormEps: 1e-5, betaScale: 2, gnormEps: 1e-5}
 	w := runDeltaNetChain(t, g)

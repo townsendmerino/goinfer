@@ -17,7 +17,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestPrefillGateVsReferenceCUDA is docs/completed/task-prefill-gap.md §3's fidelity gate, run on CUDA for
+// TestPrefillGateVsReferenceCUDA is the §3 fidelity gate, run on CUDA for
 // the L2 (attn_fused) + L3 (gemm_w4a8_mma) fast prefill. It is the ONLY thing that can justify
 // changing the default, and until it passes both levers stay opt-in however fast they are.
 //
@@ -135,7 +135,7 @@ func TestPrefillGateVsReferenceCUDA(t *testing.T) {
 				maxK = max(maxK, k)
 			}
 			// THE SNAPSHOTS, NOT THE LIVE DOCS. PrefillGateProseFiles names live repo documents
-			// (../docs/QUEUE.md and friends) that are edited constantly; PrefillGatePromptSet
+			// that are edited constantly; PrefillGatePromptSet
 			// returns the frozen copies under testdata/prefill-gate-prose-<set>/ that Phase A
 			// actually built the reference from. Prefixing a LIVE document teacher-forces both arms against a
 			// reference built from the SNAPSHOT of an older revision, an input the reference never saw. It fails

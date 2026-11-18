@@ -385,7 +385,7 @@ func f16rne(x float32) float32 {
 // of input conditioning can distort.
 //
 // TestAttnFused_vsExact compares two GPU kernels that use different operand precision, so a disagreement
-// there cannot say which one is wrong (the trap docs/completed/task-prefill-gap.md §3.1 describes at the
+// there cannot say which one is wrong (the trap  describes at the
 // model level: a fast path scored against an exact path that is itself a quantisation). This test scores
 // attn_fused against EXACT f64 arithmetic on ITS OWN INPUTS, rounded to f16 as the kernel rounds them, so
 // any error left is the kernel's logic (a mismapped mma fragment, a dropped seam, the wrong keys, a botched

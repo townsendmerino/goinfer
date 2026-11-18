@@ -350,8 +350,7 @@ type cudaDeepPlan struct {
 // cudaDeepstackPrefillOn is the production switch for the resident DeepStack prefill. False sends a Qwen3-VL image turn
 // back to the CPU prefill and upload, exactly as before the resident path existed. It is on by owner decision, over a
 // registered gate FAIL (a small logits-cosine difference on the 896-pixel image, no located defect); the gates set it
-// explicitly and restore it. Do not change the default without reading docs/code-notes/cuda.md#cudaDeepstackPrefillOn
-// and docs/completed/task-multimodal-support-2026-10.md.
+// explicitly and restore it. Do not change the default without reading docs/code-notes/cuda.md#cudaDeepstackPrefillOn.
 var cudaDeepstackPrefillOn = true
 
 // deepDefectForTest plants a defect for the DeepStack gate to catch: 1 the sets not added, 2 each set one layer late, 3
@@ -687,8 +686,8 @@ func (r *cudaResident) prefillFlagsDecline() error {
 		}
 	}
 	// Gated-DeltaNet layers, whose conv ring and matrix state must advance one token at a time in order, are handled inside
-	// the pass: prefillCore branches on Ly.isDeltaNet() and runs the recurrence through row-batched twins of decode's kernels
-	// (prefillDeltaNetRows, docs/completed/task-cuda-deltanet-prefill-2026-09.md). Dispatch is on the layer's kind, not on which
+	// the pass: prefillCore branches on Ly.isDeltaNet() and runs the recurrence through row-batched twins of decode's kernels.
+	// Dispatch is on the layer's kind, not on which
 	// weights happen to be absent (a dense attention stack once ran over conv layers that load no q/k/v/o), and
 	// nonBatchableKind checks the projections each kind binds. ForwardN (spec verify) stays sequential for this family:
 	// verify rewinds and recurrent state does not.
@@ -897,7 +896,7 @@ func (r *cudaResident) fusedAttnNote() string {
 // Default on above fastPrefillFloor, and `=0` is a complete undo. The default rests on the fidelity gate passing at
 // every cell at or above that floor on both bench models and failing below it, which is why the floor is 512 and not
 // lower; that failure stands on the record (docs/code-notes/cuda.md#fastPrefillEnabled,
-// docs/completed/task-prefill-gap.md §3). The exact path (attn_batched, gemv_w4a8_rn) stays bit-identical to the M=1
+// ). The exact path (attn_batched, gemv_w4a8_rn) stays bit-identical to the M=1
 // decode kernels, is what spec-decode verify and the parity gates run, and serves every shape the fast kernels decline
 // (hd not in {64,128}, M below the mma row floors, int8 bundles, K%32 != 0, every prompt below the floor).
 //
@@ -1019,11 +1018,11 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	// through bGemvB's call sites (see its comment in resident.go).
 	r.forceExactKernels = tail != tailLastLogits && !(tail == tailKVOnly && r.chunkOrdinary) ||
 		// Gated-DeltaNet: the fast levers' projection error feeds the recurrent state and compounds token after token, so they
-		// stay off (docs/completed/task-cuda-deltanet-prefill-2026-09.md).
+		// stay off.
 		r.recurrent() ||
 		// Gemma 4 E-model: the fast levers have no fidelity evidence on this family, and a real E2B prompt above the floor
 		// diverged from the sequential path. It batches on the exact kernels, bit-identical to decode at every length, until the
-		// levers pass a fidelity gate of their own (docs/completed/task-multimodal-support-2026-10.md, G3p).
+		// levers pass a fidelity gate of their own.
 		r.eModel ||
 		// Qwen3-VL's DeepStack prefill: the levers have no fidelity evidence on image rows carrying DeepStack sets (the first
 		// real reading was clearly worse with them on), so such a pass runs the exact kernels, as the E-model does, until they
@@ -1296,7 +1295,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 			for _, pst := range r.prefillLayerSteps(Ly) {
 				switch pst {
 				case pstepDeltaNet:
-					// Gated-DeltaNet mixer (docs/completed/task-cuda-deltanet-prefill-2026-09.md): replaces segA + rope +
+					// Gated-DeltaNet mixer: replaces segA + rope +
 					// attention + o-proj, as deltaNetMixer does in decode — the projections batched over the M rows,
 					// the recurrence row by row in order. The FFN below is the shared one.
 					pend, pM := r.specPending(l)

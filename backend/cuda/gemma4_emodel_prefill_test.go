@@ -10,8 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// S9 on CUDA, part A: the batched text-prompt prefill for Gemma 4 E-models. The plan, the gates and the bars:
-// docs/completed/task-multimodal-support-2026-10.md ("S9 on CUDA, part A").
+// S9 on CUDA, part A: the batched text-prompt prefill for Gemma 4 E-models.
 
 // eModelRows returns n resident rows (hidden ‖ PLE tails) for the golden prompt's ids cycled, so every row has a real, distinct token-identity term.
 func eModelRows(t *testing.T, m *decoder.Model, n int) [][]float32 {
@@ -185,7 +184,7 @@ func TestGemma4EModelPrefill_plantedDefects(t *testing.T) {
 }
 
 // TestGemma4EModelPrefill_exactKernelsAboveTheFloor guards that the fast prefill levers, which engage above a 512-row prompt floor, are not bit-identical to
-// decode and have no fidelity evidence on an E-model (docs/completed/task-multimodal-support-2026-10.md). With the floor moved to 0 ("fast at any length",
+// decode and have no fidelity evidence on an E-model. With the floor moved to 0 ("fast at any length",
 // GOINFER_CUDA_FAST_PREFILL_FLOOR) an E-model's PrefillLast must therefore still be bit-identical to the sequential path, and must launch none of the fast
 // kernels. The tiny gates above never see this: their prompts are far under the floor.
 func TestGemma4EModelPrefill_exactKernelsAboveTheFloor(t *testing.T) {

@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// Prefix snapshots (docs/completed/task-kv7-prefix-snapshot-2026-10.md): a slot's KV rows in host memory, and back. It is CopyKV with
+// Prefix snapshots: a slot's KV rows in host memory, and back. It is CopyKV with
 // a host buffer for the other slot, over the same slot storage:
 //
 //   - A full-attention or MLA latent layer holds rows [0, end) of each buffer it has.
