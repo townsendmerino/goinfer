@@ -138,7 +138,7 @@ func autoBackend(linked []string, probe func(string) (int64, bool), goarch strin
 			continue
 		}
 		if b == "metal" && goarch != "arm64" {
-			// Intel Macs were scoped out (docs/completed/task-metal-cgofree-spike.md) and no record has run Metal on one, though the
+			// Intel Macs were scoped out and no record has run Metal on one, though the
 			// darwin/amd64 release asset links it.
 			passed = append(passed, "metal is built in, but has only been run on Apple silicon; -backend metal asks for it")
 			continue

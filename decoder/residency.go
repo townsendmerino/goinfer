@@ -257,7 +257,7 @@ func (m *Model) decodeRunnerDecline() string {
 }
 
 // actGroupResidentDecline is the ActQuantGroup gate (option-path admission finding 1, 2026-10-08,
-// docs/completed/task-option-path-admission-2026-10.md §4.3): per-group activation scales are implemented by
+// ): per-group activation scales are implemented by
 // CUDA residency only (actgroup.cu). Metal's and WebGPU's projections read per-vector scales and nothing
 // in either backend reads the group, so a load that asked for per-32 ran resident at per-vector, silently,
 // whenever the family had no activation hazard for the gate below to catch. The Options doc has always
@@ -592,7 +592,7 @@ type Gemma4MoEResidentBundle struct {
 // A whole-model no-RoPE arch (rope_theta absent, arch.NoPositionEncoding) never populates ropeInvFreqGlobal/Local,
 // so ropeInvFreq(i) is empty for every layer. The table is then RotaryDim()/2 wide, the width every resident rope
 // kernel launch expects (rhalf): a zero-length table would be a 0-byte device allocation, a hard error on CUDA
-// (docs/completed/task-gpu-paths-2026-09.md, G5; docs/code-notes/decoder.md#Model.RopeInvFreqLayer).
+// ( G5; docs/code-notes/decoder.md#Model.RopeInvFreqLayer).
 func (m *Model) RopeInvFreqLayer(i int) []float32 {
 	a := m.w.arch
 	inv := a.ropeInvFreq(i)
@@ -642,7 +642,7 @@ func (m *Model) NormEps() float32 {
 // archs (m.resident stays nil → staged/CPU path). Called at every model-load site.
 // attnSoftcapOffForTest removes the attention-score softcap from every model loaded while it is set, on the CPU and on
 // a resident alike, before the resident is built: OP1's real Gemma 2 gate measures its own baseline with it
-// (docs/completed/task-forward-architecture-2026-10.md §4.6, G2-R's arm B). Set only through SetAttnSoftcapOffForTest
+// ( G2-R's arm B). Set only through SetAttnSoftcapOffForTest
 // (goinfer_testhooks).
 var attnSoftcapOffForTest atomic.Bool
 
@@ -851,7 +851,7 @@ func (m *Model) residentKVFlags(backend string) (kvF16, kvI8 bool) {
 // ResidentKVPrecision is the KV-cache precision the resident runner actually allocates — "f32", "f16" or
 // "i8" — or "" when no resident runner is active. It reports what runs, not what was requested: Metal
 // ships f16 (or int8) KV only, its f32 KV kernels being compiled out (metal/model.go's r.kvF32), so a
-// Metal resident model runs f16 KV even when nothing asked for it (docs/completed/task-memory-accounting-2026-09.md
+// Metal resident model runs f16 KV even when nothing asked for it (
 // found serve's banner printing "KV f32" there).
 func (m *Model) ResidentKVPrecision() string {
 	if m.resident == nil || m.be == nil || m.w == nil {
@@ -931,9 +931,9 @@ func residentQuantLabel(backend, quant string) string {
 
 // autoMetalPrecision is why a model stays on the CPU when -backend auto chose metal, "" when it may go resident. A
 // backend the user did not name must not change the precision they loaded at (such as the int8int8 bundle a
-// model-included goinfer-chat carries; R17, docs/completed/task-first-hour.md). Metal runs int4 resident, dense
-// int8int8 natively (docs/completed/task-metal-int8-2026-10.md), and q4k on its q4k lane, which keeps the file's K-quant
-// blocks (docs/completed/task-metal-q4k-2026-10.md); it re-quantizes int8, int4mix and the int8int8 models native int8 does
+// model-included goinfer-chat carries; R17). Metal runs int4 resident, dense
+// int8int8 natively, and q4k on its q4k lane, which keeps the file's K-quant
+// blocks; it re-quantizes int8, int4mix and the int8int8 models native int8 does
 // not cover (MoE, DeltaNet) to int4, and takes no f32. So int8int8 may try the resident here and
 // autoMetalKeepsPrecision checks afterwards that it ran natively; the others stay on the CPU. A named -backend
 // metal still runs them re-quantized.
@@ -1055,7 +1055,7 @@ func (m *Model) embedIsTableRow() bool {
 //
 // A Gemma 4 E-model's row is [h ‖ PLE inputs], EmbedLen() long: the per-layer inputs need the token id,
 // which the resident interface does not carry, so the host computes them here with the CPU's own helper
-// (gemma4PLEInputs) and the backend reads them from the row's tail (S1.2, docs/completed/task-multimodal-support-2026-10.md).
+// (gemma4PLEInputs) and the backend reads them from the row's tail.
 func (m *Model) embedResidentInto(id int, dst []float32) []float32 {
 	return m.embedResidentScratch(id, dst, nil)
 }
@@ -1104,7 +1104,7 @@ func (m *Model) embedResidentScratch(id int, dst, pleScratch []float32) []float3
 	return row
 }
 
-// gemma4PLEDropTokenForTest is S1's G2 planted defect (2) (docs/completed/task-multimodal-support-2026-10.md): the
+// gemma4PLEDropTokenForTest is S1's G2 planted defect (2): the
 // token-identity term missing from the resident row's PLE inputs, which G1 (resident against the CPU) must catch.
 // Set only through SetGemma4PLEDropTokenForTest (goinfer_testhooks).
 var gemma4PLEDropTokenForTest bool

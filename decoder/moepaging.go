@@ -12,8 +12,8 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 )
 
-// expertPager bounds the resident RAM of a MoE model's expert weights by paging them on demand out of the read-only
-// .giw mapping (docs/ideas-weight-memory.md). The router's top-k selection is the demand signal: a 35B-A3B holds ~32 GB
+// expertPager bounds the resident RAM of a MoE model's expert weights by paging them on demand out of the read-only.
+// giw mapping (docs/ideas-weight-memory.md). The router's top-k selection is the demand signal: a 35B-A3B holds ~32 GB
 // of experts but activates only K*L per token. The generic span-residency pager (touch faults in with WILLNEED, eviction
 // over budget releases with DONTNEED) lives in aikit/mmap.SpanCache, which this pager runs with the frequency-aware
 // EvictLeastRecent policy (newExpertPager). This type holds the MoE-specific half: which experts alias the mapping and
@@ -180,11 +180,11 @@ func newExpertPager(w *Weights, mapping []byte, budget int64, giwPath string, po
 	// forward touches), collecting only the projections that alias the mapping. MappedSpan returns nil for heap-backed
 	// (GGUF) weights and the always-on shared expert, so those are skipped.
 	//
-	// A kind-4 tensor carries two on-disk representations (canonical and row4, docs/completed/task-w4a8-neon-bandwidth.md),
+	// A kind-4 tensor carries two on-disk representations,
 	// but the M==1 decode kernel (MatmulBTW4A8Into) reads only row4 whenever it is present, and this arch's forward is
 	// always M==1. Register only the span that will be read: row4 when present, canonical otherwise, never both.
 	// SpanCache.Touch issues MADV_WILLNEED on every span under a key, so registering both prefetches both copies from disk
-	// for twice the I/O per miss (docs/completed/task-zeno-compare.md, "At-scale acceptance run").
+	// for twice the I/O per miss.
 	addExpert := func(key unsafe.Pointer, wms ...*linalg.WeightMat) {
 		var spans [][]byte
 		var fields []expertField

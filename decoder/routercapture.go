@@ -9,7 +9,7 @@ import (
 // routerCapture is a test seam (default off; tests set it directly): when on, gemma4MoEFFN appends each MoE-layer call's
 // selected top-k expert indices to routerCaptureBuf, in call order (token-outer, layer-inner: one entry per layer per
 // token). It is observe-only: it copies out idx and changes no compute, so with it off the forward is byte-identical.
-// Probe #1 of docs/completed/task-gemma4-moe.md uses it to tell routing collapse from uniform weight noise: capture
+// Probe #1 uses it to tell routing collapse from uniform weight noise: capture
 // selections for an int8 run and a 4-bit run over the same teacher-forced token sequence, then compare per-layer top-k
 // overlap and selection entropy.
 var routerCapture bool

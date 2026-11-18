@@ -26,7 +26,7 @@ import (
 
 // ForwardSubCaptureLogitsForTest is ForwardSubCapture plus the token's logits from the same forward: the gpu package's
 // per-layer resident-vs-CPU parity gate needs both, and running the token twice would append it to the KV cache twice. Same
-// arch guard and byte-identical-output contract as ForwardSubCapture. See docs/completed/task-webgpu-nogqa-decode-bug.md.
+// arch guard and byte-identical-output contract as ForwardSubCapture.
 func (m *Model) ForwardSubCaptureLogitsForTest(id int, cache *KVCache) (logits []float32, attn, mlp, ctx, mlpPre [][]float32, err error) {
 	a := m.w.arch
 	if m.program().SubCaptureUncovered() {
@@ -490,8 +490,8 @@ func SetProbeGPUConfigMutatorForTest(mutate func(name string, cfg []byte) []byte
 // ResetSelfTestCachesForTest clears the per-(backend, quant) probe cache and the recorded results, so a test sees a first-use probe.
 func ResetSelfTestCachesForTest() { resetSelfTestCaches() }
 
-// SetGemma4PLEDropTokenForTest plants a defect: the resident embedding row's PLE inputs lose their token-identity term
-// (docs/completed/task-multimodal-support-2026-10.md), so a gate can be shown to go red. The CPU forward is unaffected.
+// SetGemma4PLEDropTokenForTest plants a defect: the resident embedding row's PLE inputs lose their token-identity term,
+// so a gate can be shown to go red. The CPU forward is unaffected.
 func SetGemma4PLEDropTokenForTest(on bool) { gemma4PLEDropTokenForTest = on }
 
 // SetGemma4VLRowsDefectForTest selects a planted defect in the E-model image-row builder (0 clears it; see gemma4VLRowsDefectForTest).
@@ -545,7 +545,7 @@ func (c *KVCache) SetCaptureLayersForTest(layers []int) {
 func (c *KVCache) CapturedForTest() [][]float32 { return c.captured }
 
 // SetStreamDirSwapForTest turns on StreamTranscodeDir's planted defect (layers 0 and 1 written in each other's place) and
-// returns the restore (docs/completed/task-prequant-dir-streaming-2026-10.md).
+// returns the restore.
 func SetStreamDirSwapForTest(on bool) func() {
 	prev := streamDirSwapForTest
 	streamDirSwapForTest = on
@@ -666,7 +666,7 @@ func TakeMoESelTraceForTest() ([][]int, [][]float32) {
 func StopMoESelTraceForTest() { moeSelTrace, moeWtsTrace = nil, nil }
 
 // SetResidentFeaturesForTest adds the given features to backend's declared set and returns a function that restores it. A backend's build
-// seam that is gated but not yet declared (docs/completed/task-forward-architecture-2026-10.md §4.7, OP2b on CUDA) is reachable from its own
+// seam that is gated but not yet declared is reachable from its own
 // tests only through this: production admission reads the unexported map and never sees a feature a test added after restore. It is not
 // safe for parallel tests, and it panics on a backend that declares no set, so a typo cannot pass as a no-op.
 func SetResidentFeaturesForTest(backend string, add ...ResidentFeature) (restore func()) {

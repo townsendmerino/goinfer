@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// TestDeltaNetTiming_gate0Split is Gate D0's sixth-outing split
-// (docs/completed/deltanet-cpu-recurrence.md): env-gated
+// TestDeltaNetTiming_gate0Split is Gate D0's sixth-outing split:
+// env-gated
 // (GOINFER_DELTANET_TIMING=1) on the real 35B-A3B checkpoint, this diagnostic
 // runs a real decode and reports the projections/recurrence/other breakdown
 // via PrintDeltaNetTiming, plus the recurrence's own ns/state-elem rate against

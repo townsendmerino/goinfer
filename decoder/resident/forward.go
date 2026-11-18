@@ -83,8 +83,7 @@ type RaggedOut struct {
 	ID     int
 }
 
-// TopKRow is one decode step's logits row reduced on-device to its K best entries (R7,
-// docs/completed/red-october.md). IDs/Logits are ordered (logit DESCENDING, token id ASCENDING) — the tie
+// TopKRow is one decode step's logits row reduced on-device to its K best entries. IDs/Logits are ordered (logit DESCENDING, token id ASCENDING) — the tie
 // order internal/sampling's topKByLogit defines, which feeds the sampler's cumulative draw — so Logits[0] is the
 // row's exact maximum and IDs[0] its argmax. Z is the full-vocabulary softmax denominator
 // Σ exp((l−max)/T) at the temperature the row was requested with; 0 unless it was asked for. Full
@@ -137,7 +136,7 @@ type Caps struct {
 	// attention's floor); every loop that cuts a prompt into passes takes the larger of it and prefillTailMin.
 	TailMinRows int
 	// Quant is the precision the weights run at, when the decoder cannot infer it from the backend and the load quant (Metal runs
-	// some int8 models natively and re-quantizes others to int4, docs/completed/task-metal-int8-2026-10.md); "" means residentQuantLabel applies.
+	// some int8 models natively and re-quantizes others to int4); "" means residentQuantLabel applies.
 	Quant string
 	// ContextNote is a few words on how the backend arrived at ContextCap, for a load banner; "" when the caller's own -ctx set it.
 	ContextNote string

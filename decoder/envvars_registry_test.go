@@ -86,7 +86,7 @@ func TestEnvVars_docAndCodeAgree(t *testing.T) {
 			referencedInNonTest[m[1]] = true
 		}
 		// A file that only builds with goinfer_testhooks is test-seam code: no shipped binary reads its env
-		// vars, so they are not production reads for the ratchet (phase 6, docs/completed/task-env-config-2026-09.md).
+		// vars, so they are not production reads for the ratchet.
 		// Only the positive, &&-joined form exists in the tree; `!goinfer_testhooks` files are production.
 		if testhooksOnly(b) {
 			return nil
@@ -166,7 +166,7 @@ func TestEnvVars_docAndCodeAgree(t *testing.T) {
 	}
 }
 
-// checkEnvReadRatchet is phase 1 of docs/completed/task-env-config-2026-09.md: testdata/env_reads.txt is
+// checkEnvReadRatchet is phase 1: testdata/env_reads.txt is
 // the committed list of every GOINFER_* variable production code reads through the environment, and
 // it may only SHRINK. A production read of a variable not on the list fails (rule 1: a new operator
 // choice is an Options field with a per-model accessor; a new diagnostic is a test hook); a listed
@@ -176,8 +176,8 @@ func TestEnvVars_docAndCodeAgree(t *testing.T) {
 func checkEnvReadRatchet(t *testing.T, root string, readInProd map[string]string) {
 	t.Helper()
 	path := filepath.Join(root, "testdata", "env_reads.txt")
-	// Each line is NAME<TAB>annotation. The annotation is the task's done criterion made checkable
-	// (docs/completed/task-env-config-2026-09.md, amended 2026-09-24): every read that remains is either
+	// Each line is NAME<TAB>annotation. The annotation is the task's done criterion made checkable:
+	// every read that remains is either
 	// "startup: <who> — <why>" (configuration read once at startup) or "diagnostic: <owning doc> — <why>".
 	listed := map[string]string{}
 	if b, err := os.ReadFile(path); err == nil {

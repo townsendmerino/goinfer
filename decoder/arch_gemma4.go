@@ -30,7 +30,7 @@ func gemma4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	localBase, globalBase := cfg.Gemma4RopeBases()
 	// Gemma 4 26B-A4B: enable_moe_block turns on the parallel dense+MoE FFN sub-block. The dense E2B/E4B/12B variants leave it false, so MoE
 	// stays nil and their forward is unchanged. The router semantics (softmax-all → top-k → UNCONDITIONAL renorm, a weightless-norm/
-	// learned-scale pre-projection, a per-expert scale) are pinned in docs/completed/task-gemma4-moe.md Phase 1a. The gemma4 forward reads
+	// learned-scale pre-projection, a per-expert scale) are pinned. The gemma4 forward reads
 	// these; the generic moeMLP/swiGLUExpert are NOT reused (experts are gelu-tanh, not SiLU).
 	var moe *MoEConfig
 	if cfg.EnableMoeBlock {

@@ -184,8 +184,8 @@ func (m *Model) SourcePath() string { return m.loadPath }
 
 // MmapByteOffset returns the byte offset of slice b within this model's .giw mmap region, or
 // ok=false if b does not alias that region (a heap-backed weight, or no .giw mapping). MapReadOnly
-// maps the whole file from offset 0, so this offset is exactly where to pread b's bytes from the
-// .giw. Pure pointer arithmetic — does NOT touch b's pages (no fault).
+// maps the whole file from offset 0, so this offset is exactly where to pread b's bytes from the.
+// giw. Pure pointer arithmetic — does NOT touch b's pages (no fault).
 func (m *Model) MmapByteOffset(b []byte) (int64, bool) {
 	if len(m.mmap) == 0 || len(b) == 0 {
 		return 0, false
@@ -415,8 +415,8 @@ func (m *Model) MoECacheSlotsRequest() int {
 // sees it.
 var ErrLoadAborted = errLoadAborted
 
-// modelFromOptions is a Model over w carrying every per-model field Options sets: the one place the constructors (Load's
-// .giw and direct paths, LoadGGUFBytes, NewModelWithOptions) read them, so they cannot drift apart (a constructor that skipped
+// modelFromOptions is a Model over w carrying every per-model field Options sets: the one place the constructors (Load's.
+// giw and direct paths, LoadGGUFBytes, NewModelWithOptions) read them, so they cannot drift apart (a constructor that skipped
 // a field silently ignored that option). Callers set what is specific to their path (the requested quant, the resolved EOS
 // ids, the file mapping), then apply backend names, knobs, streaming and residency in the order their path needs.
 func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
@@ -455,11 +455,11 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 		planResidency: opts.planResidency}
 }
 
-// Load loads a model from dir, which is a checkpoint directory (config.json and its safetensors shards), a
-// .gguf file, or a prequantized .giw bundle, for any supported family. opts chooses the backend, the
+// Load loads a model from dir, which is a checkpoint directory (config.json and its safetensors shards), a.
+// gguf file, or a prequantized .giw bundle, for any supported family. opts chooses the backend, the
 // weight quantization and the rest. "cpu" is always available. "cuda", "metal" and "webgpu" become
 // available when their module is imported: github.com/townsendmerino/goinfer/backend/cuda (built with -tags cuda),
-// .../backend/metal (on darwin) and .../backend/webgpu (built with -tags gpu). As Options.Backend says, a name not compiled
+// ../backend/metal (on darwin) and .../backend/webgpu (built with -tags gpu). As Options.Backend says, a name not compiled
 // into the binary falls back to cpu. A model that would not fit this machine's memory is refused with an
 // error wrapping ErrWontFitResident.
 func Load(dir string, opts Options) (*Model, error) {
@@ -678,8 +678,8 @@ func Load(dir string, opts Options) (*Model, error) {
 		logs.Warnf("%v", beErr)
 	}
 	if opts.StreamWeights {
-		// Weight streaming pages weights out of the read-only mmap, which only the
-		// .giw path provides; a GGUF/safetensors load dequantizes into the heap, so
+		// Weight streaming pages weights out of the read-only mmap, which only the.
+		// giw path provides; a GGUF/safetensors load dequantizes into the heap, so
 		// there's nothing to page. Make the no-op visible rather than silently
 		// running fully resident (prequant to .giw with cmd/prequant to use it).
 		logs.Warnf("decoder: --stream-weights ignored — weights are heap-resident; prequant to .giw (cmd/prequant) to enable streaming")
@@ -879,7 +879,7 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	}
 	// Ring-buffer storage on sliding-window (local) layers: keep only the W most recent positions, the only ones a future query
 	// can read. ringLayerAt names them, the same predicate that gave them no reservation above; a family whose forward does not
-	// use attendQuery/attendBatchedHeads (kvRingsOK) has none and keeps append-forever. See docs/completed/task-kv-ring-eviction.md.
+	// use attendQuery/attendBatchedHeads (kvRingsOK) has none and keeps append-forever.
 	c.enableRings(a.SlidingWindow, func(l int) bool { return !a.ringLayerAt(l) })
 	if a.gemma4 != nil {
 		c.manualPos = true // gemma4's last layer is KV-shared; pos advances via Advance()
@@ -1024,8 +1024,7 @@ func warnPrefillDeclined(n int, err error) {
 // Batched prefill (optional Prefiller) ingests the prompt in one pass, much faster TTFT for long prompts. It declines (falls
 // back) past the backend's cap, is absent for a backend without a batched forward, and is skipped for tiny prompts. It is on
 // by default and must stay bit-identical to sequential decode: every float MAC in both paths is an explicit __fmaf_rn,
-// enforced by cuda.TestKernelFMALint and guarded by TestPrefillDivergenceRate. GOINFER_BATCHED_PREFILL=0 force-disables
-// (docs/completed/task-batched-prefill-bitidentity.md).
+// enforced by cuda.TestKernelFMALint and guarded by TestPrefillDivergenceRate. GOINFER_BATCHED_PREFILL=0 force-disables.
 //
 // hasAdapter must be true whenever this call runs under a bound resident adapter (cache.lora != nil at generateInto, the only
 // caller where that is possible; GenerateVL, the n-gram spec target and GenerateSpeculative's target and draft never bind

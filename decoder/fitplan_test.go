@@ -35,8 +35,8 @@ func loadSkippableTiny(t *testing.T, dir, what string) *Model {
 
 // TestPlan_tableDriven is G4: a table over dense, MoE, hybrid, every backend
 // and every budget that pins the placement and the ctx cap. A change to the priority order is a change to this table,
-// reviewed. It runs on real tiny checkpoints through Load() rather than synthetic headers
-// (docs/completed/task-gpu-paths-2026-09.md, G11), with budgets scaled to each fixture's OWN byte counts: a literal "6 to
+// reviewed. It runs on real tiny checkpoints through Load() rather than synthetic headers,
+// with budgets scaled to each fixture's OWN byte counts: a literal "6 to
 // 64 GB" range would never reach the decline path on toy-sized fixtures.
 func TestPlan_tableDriven(t *testing.T) {
 	const ctxWant = 8192
@@ -245,8 +245,7 @@ func TestPlan_tableDriven(t *testing.T) {
 
 // TestPlan_extraBytesReservedAheadOfExperts: PlanRequest.ExtraBytes lets the CALLER price a companion allocation (a
 // drafter, a vision tower) as a FIXED term ahead of the elastic expert-slot count (every allocation is a term of the plan, including the ones that attach after load). The motivating case is a
-// --drafter attach after BuildResident taking VRAM an MoE expert cache had already claimed
-// (docs/completed/task-gpu-paths-2026-09.md).
+// --drafter attach after BuildResident taking VRAM an MoE expert cache had already claimed.
 func TestPlan_extraBytesReservedAheadOfExperts(t *testing.T) {
 	m := loadGemma4MoETiny(t)
 	nExperts, _, isMoE := m.moeGeometry()

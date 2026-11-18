@@ -606,8 +606,7 @@ type moeBatchScratch struct {
 // moeSlot is one (row, rank) pair that selected an expert.
 type moeSlot struct{ row, rank int }
 
-// moeScratchGrows counts each moeBatchScratch buffer's fresh allocations, so a gate can bar every term on its own (SCR-G1,
-// docs/completed/task-memory-campaign-2026-10.md).
+// moeScratchGrows counts each moeBatchScratch buffer's fresh allocations, so a gate can bar every term on its own.
 var moeScratchGrows struct{ out, done, logits, perRank, gathered, gate, up, outBuf atomic.Int64 }
 
 // moeGrow returns (*buf)[:n], growing *buf when it holds less and counting the growth in grows; the contents are not cleared.

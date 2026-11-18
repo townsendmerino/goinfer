@@ -13,7 +13,7 @@ import (
 
 // TestGemma4FakeQuant drives the fakequant.go diagnostic against the real gemma-4-26b-a4b-it: it loads under a base quant
 // (ZZBASE, default int4) with GOINFER_FAKEQUANT set to a 4-bit scheme and prints the greedy continuation of a fixed prompt
-// (the int4-quality matrix in docs/completed/task-gemma4-moe.md: sym/affine x int8/f32 act x full/experts-only). No
+// (the int4-quality matrix in : sym/affine x int8/f32 act x full/experts-only). No
 // assertion: it is a measurement harness; the fidelity gate that makes its output trustworthy is
 // TestFakeQuantSymMatchesRuntimeInt4 (default suite). Skipped without the ckpt.
 //

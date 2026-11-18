@@ -115,8 +115,7 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 		// otherwise prefill into the same positional device KV, interleaving writes and corrupting both streams, against a
 		// Model doc that promises concurrent distinct sequences. On loss, fall back to the staged CPU cache. The draft is a
 		// separate Model with its own claim. tryClaimResident, not a bare CAS on resBusy: MC3's batched holders never set
-		// resBusy, so only the claim that also requires no holder keeps this off a resident mid-batch
-		// (docs/completed/task-audit-followups-2026-10-06.md, A1).
+		// resBusy, so only the claim that also requires no holder keeps this off a resident mid-batch.
 		if resident {
 			if target.tryClaimResident() {
 				defer atomic.StoreInt32(&target.resBusy, 0)

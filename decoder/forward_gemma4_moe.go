@@ -10,8 +10,7 @@ import (
 
 // Gemma 4 26B-A4B parallel dense-MLP + MoE FFN sub-block (enable_moe_block). The two branches run on the same post-attention
 // residual h but through different normalizations; their outputs are joint-normed then residual-added, and a per-layer scalar
-// multiplies the whole layer output. Pinned against transformers 5.12.0's Gemma4TextDecoderLayer.forward
-// (docs/completed/task-gemma4-moe.md, Phase 1a).
+// multiplies the whole layer output. Pinned against transformers 5.12.0's Gemma4TextDecoderLayer.forward.
 //
 // The router and experts are Gemma-4-specific (a weightless-norm + learned-scale pre-projection, an unconditional renorm, a
 // per-expert scale, and gelu-tanh GeGLU experts), so this does not reuse the SiLU moeMLP/swiGLUExpert.
@@ -43,8 +42,8 @@ type gemma4MoEWeights struct {
 //
 // The router needs only h and the dense branch needs only h, so the two are independent until the join. The router runs first (to
 // learn which experts to fetch), the expert fills are issued, and the dense branch's matmuls run on the calling goroutine while a
-// second goroutine drives the fills, hiding a cold miss's fault/pread latency behind the dense compute
-// (docs/completed/task-moe-streaming.md, Lever 3). The result is bit-identical either way: the branches touch disjoint memory
+// second goroutine drives the fills, hiding a cold miss's fault/pread latency behind the dense compute.
+// The result is bit-identical either way: the branches touch disjoint memory
 // and are summed order-independently at the join (TestGemma4MoEFFN_overlapBitIdentical), and the fill goroutine never touches
 // `be`, only the pager.
 func gemma4MoEFFN(be Backend, arch *Architecture, h []float32, w *gemma4MoEWeights, pager *expertPager) []float32 {

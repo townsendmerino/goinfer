@@ -17,7 +17,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestPrefillGateReference is Phase A of docs/completed/task-prefill-gap.md §3.1's L1 re-run: it builds the CPU
+// TestPrefillGateReference is Phase A L1 re-run: it builds the CPU
 // f32-activation reference logits that BOTH Metal arms (metal/prefill_gate_ref_test.go, Phase B) are scored against.
 // Metal's exact path (int8-per-row activation) is itself a quantisation, so scoring the fast path against it blames a
 // defect for a disagreement that has nothing to do with one; this reference has no activation-precision loss to attribute
@@ -72,8 +72,7 @@ func TestPrefillGateReference(t *testing.T) {
 
 	const continuationN = 64
 	workers := refWorkers(min(8, runtime.NumCPU()))
-	// K=512 is in the decision set because a floor must be measured at the depth it is set to, not interpolated between cells
-	// (docs/completed/task-prefill-gap.md §3 and §4 L1).
+	// K=512 is in the decision set because a floor must be measured at the depth it is set to, not interpolated between cells.
 	models := []struct {
 		name        string
 		pathEnv     string
@@ -83,7 +82,7 @@ func TestPrefillGateReference(t *testing.T) {
 	}{
 		{"S", "GOINFER_CPU_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", "", refKs([]int{256, 512, 1024, 3900})},
 		{"D7", "GOINFER_CPU_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf", d7RefQuant(), refKs([]int{256, 512, 1024})},
-		// Q05, the 0.5B (head dim 64): references for B-P01's fidelity gate (docs/completed/task-metal-audit-2026-10.md), f32
+		// Q05, the 0.5B (head dim 64): references for B-P01's fidelity gate, f32
 		// like S. Built only when GOINFER_CPU_REF_MODELS names it, so the standing S/D7 run is unchanged.
 		{"Q05", "GOINFER_CPU_MODEL_Q05", "$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", "", refKs([]int{2048, 3900})},
 		// Q35, Qwen3.5-0.8B (a Gated-DeltaNet hybrid, safetensors): references for D-B01's fidelity gate, f32 like S. Built
@@ -215,8 +214,8 @@ func refWorkers(def int) int {
 // d7RefQuant picks D7's reference weight precision. The default is "int8" (weight-only per-row int8, f32 ACTIVATIONS)
 // because a f32 7B is ~28 GB and does not fit the 16 GB machine this generator targets.
 //
-// GOINFER_CPU_REF_QUANT_D7="" selects true f32 weights, as on the 62 GB Linux box for the CUDA gate
-// (docs/completed/task-prefill-gap.md Phase 3). Either is a valid reference for the property that matters: the reference
+// GOINFER_CPU_REF_QUANT_D7="" selects true f32 weights, as on the 62 GB Linux box for the CUDA gate.
+// Either is a valid reference for the property that matters: the reference
 // must have f32 ACTIVATIONS (§3.1), since that is the axis both arms differ from it on, while the weight-requantisation error
 // is common-mode (both arms share identical int4 weights) and cancels out of the PAIRED comparison the gate decides on. A
 // reference built at one precision is not comparable to one built at another, so record the choice in the measurement doc for
@@ -280,7 +279,7 @@ func preflightConcurrencySafety(t *testing.T, m *Model, prompt []int, workers in
 // worker pool, each worker owning its own *KVCache (see the concurrency-safety note on
 // TestPrefillGateReference and the preflight above).
 //
-// CONTENT-KEYED AND RESUMABLE (TE6(a)/TE8, docs/completed/task-test-efficiency-2026-09.md): each prompt's reference is
+// CONTENT-KEYED AND RESUMABLE: each prompt's reference is
 // looked up in prefill_ref_cache_testhook.go's cache by checkpoint sha256 + the prompt's ids + the reference path's
 // source + arch/quant/continuation. A hit is linked into outDir and skipped; a miss is computed, stored atomically, then
 // linked. So a rerun after an interruption computes only the prompts not yet stored, and a reference for different

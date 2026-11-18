@@ -124,7 +124,7 @@ type PrefillSubsystem interface {
 	PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) (logits []float32, err error)
 
 	// PrefillRowsAvailable is the optional capability of a Prefiller that reads a suffix's embeddings a range of rows at a time, so the
-	// host holds a chunk of them instead of the whole suffix (MEM6, docs/completed/task-memory-campaign-2026-10.md). PrefillLastRows is
+	// host holds a chunk of them instead of the whole suffix. PrefillLastRows is
 	// PrefillLast for n rows at startPos: rows(lo, hi) returns rows [lo, hi) of the suffix, valid only until the next call, and the
 	// resident may ask for a range more than once (a declined route re-reads it).
 	PrefillRowsAvailable() bool
@@ -132,7 +132,7 @@ type PrefillSubsystem interface {
 
 	// PrefillMarkedAvailable is the optional capability of a resident to tell its caller when a batched prefill has just written a given position,
 	// between two of its passes: the one moment a windowed layer's ring holds exactly what a shorter prompt would leave there, so a prefix snapshot
-	// can be taken in the middle of a cold prefill (docs/completed/task-kv7-step2-boundary-snapshot-2026-10.md).
+	// can be taken in the middle of a cold prefill.
 	// PrefillMarkAlign is the width of the passes of a batched prefill, in positions: a mark can fire only at startPos plus a multiple of it.
 	PrefillMarkedAvailable() bool
 	PrefillMarkAlign() int
@@ -195,8 +195,7 @@ type PrefillSubsystem interface {
 	ImagePrefillAvailable() bool
 	PrefillImageLast(ctx context.Context, embeddings [][]float32, startPos, imgStart, imgEnd int) (logits []float32, err error)
 
-	// ImageBlocksPrefillAvailable is ImagePrefillAvailable for a prompt with several images (S11,
-	// docs/completed/task-multimodal-support-2026-10.md): blocks are each image's [start, end), in order and disjoint, each its
+	// ImageBlocksPrefillAvailable is ImagePrefillAvailable for a prompt with several images: blocks are each image's [start, end), in order and disjoint, each its
 	// own bidirectional block. OPTIONAL: a backend without it takes a multi-image turn through the CPU-prefill + UploadKV
 	// bridge, which handles any number of blocks.
 	ImageBlocksPrefillAvailable() bool
@@ -333,7 +332,7 @@ type RuntimeSubsystem interface {
 	// CostAvailable is a resident that counts SB11's device costs (internal/cost) over a span of its work: CostSpan runs work with c
 	// counting into phase p, adds the span's device-level counts and wall time, and counts the tokens work reports it covered.
 	// Optional. A generation that asks for its cost on a resident without it, or on one shared with other generations (MC3), gets
-	// no phase from the resident (docs/completed/task-subsystems-2026-10.md §8, "SB11b").
+	// no phase from the resident.
 	CostAvailable() bool
 	CostSpan(c *cost.Counter, p cost.Phase, work func() (tokens int, err error)) error
 
@@ -381,8 +380,7 @@ type RuntimeSubsystem interface {
 	SetBatchedCapture(taps []int) error
 	BatchedCapture() [][]float32
 
-	// RecurrentSpecAvailable is the OPTIONAL capability that lets a resident with recurrent state verify speculatively (SP2,
-	// docs/completed/task-forward-architecture-2026-10.md §6a, "SP2 on nobara"). Without it, BlockSpec refuses every recurrent model,
+	// RecurrentSpecAvailable is the OPTIONAL capability that lets a resident with recurrent state verify speculatively. Without it, BlockSpec refuses every recurrent model,
 	// because PrefillLastNArgmax advances the state by every row it verifies, rejected or not.
 	// PrepareRecurrentSpec allocates what verifies of up to rows rows need, before a drafter attaches; a later call for no more
 	// rows is a no-op.

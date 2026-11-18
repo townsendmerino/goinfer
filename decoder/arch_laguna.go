@@ -32,7 +32,7 @@ import (
 //
 // Attention sinks are NOT enabled in any released checkpoint
 // (swa_attention_sink_enabled absent), so that branch of the vendor code has no
-// counterpart here. See docs/completed/task-laguna.md for the config verification.
+// counterpart here.
 func lagunaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.ValidateLaguna(); err != nil {
 		return nil, nil, err

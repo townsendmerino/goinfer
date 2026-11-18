@@ -27,8 +27,7 @@ import (
 // distinctTrigramRatio returns |distinct 3-rune windows| / |total| over s: a language-agnostic degeneracy metric.
 // Coherent prose cycles through many trigrams (high ratio); a looping forward reuses a few ("water-water-water",
 // "얓숌면-얓숌면-얓숌면", "true or true or") so the ratio collapses. A printable-ASCII-majority check is blind to this: it
-// passes English-ish repetition and flags CJK repetition though both are the SAME degeneracy
-// (docs/completed/task-gemma4-moe.md, RESOLUTION).
+// passes English-ish repetition and flags CJK repetition though both are the SAME degeneracy.
 func distinctTrigramRatio(s string) float64 {
 	r := []rune(s)
 	if len(r) < 3 {

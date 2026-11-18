@@ -45,7 +45,7 @@ const fastAttnMinPrompt = 512
 
 // attnHeadsParThreshold is the per-call work (K*nKeys, the QKᵀ/AV size driver) below which attendBatchedHeads runs its heads
 // serially through pool[0] instead of fanning out: the same "small work stays serial" rule int4ParThreshold applies. It is 0, so
-// the fan-out is never skipped on size. Campaign record: docs/completed/task-attention-decode-cost.md (move (a)).
+// the fan-out is never skipped on size.
 const attnHeadsParThreshold = 0
 
 // attnGroupedNEONSize is the query-head group size (NumHeads/NumKVHeads) the aikit grouped acc64 kernels
@@ -1015,8 +1015,7 @@ func (ps *prefillPassScratch) take(buf *[]float32, n int) []float32 {
 	return b
 }
 
-// prefillChunkRows is how many rows one pass of a long text prefill holds (docs/completed/task-cpu-prefill-memory-2026-10.md,
-// G40): the pass's working set is sized by its rows, so a chunk bounds it. A variable so a test can cross chunk boundaries on a
+// prefillChunkRows is how many rows one pass of a long text prefill holds: the pass's working set is sized by its rows, so a chunk bounds it. A variable so a test can cross chunk boundaries on a
 // tiny fixture; 2048 in production.
 var prefillChunkRows = 2048
 

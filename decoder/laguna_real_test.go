@@ -12,7 +12,7 @@
 // instruction-tuned checkpoint only measures "did the forward avoid total collapse").
 //
 // M.1 (~220B) has no gate of this kind and will not get one on this box; its code path is identical to
-// XS.2's apart from config, and this gates that path (docs/completed/task-laguna.md).
+// XS.2's apart from config, and this gates that path.
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_LAGUNA_XS2=~/models/laguna-xs2 \
 //	  go test -tags realckpt ./decoder/ -run TestLagunaReal -v -timeout 180m

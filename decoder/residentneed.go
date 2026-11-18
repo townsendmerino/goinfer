@@ -5,7 +5,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-// One memory-accounting path per backend (docs/completed/task-memory-accounting-2026-09.md).
+// One memory-accounting path per backend.
 //
 // ResidentNeedBytes is the single definition that Plan("metal") (what `fit` reports) and Metal's own pre-build guard
 // both use, so they cannot price the same load differently. Its KV half is ResidentKVBytes, which prices a backend's KV
@@ -184,8 +184,8 @@ func MetalKVRowBytes(b program.Buf, delivered string) int64 {
 
 // ResidentNeedBytes is what a resident build on backend asks the device (or, on Metal, unified memory)
 // to hold with `slots` expert slots per layer (0 = every expert resident) and a ctx-position KV cache:
-// the weights, on Metal the host copy of them (ResidentHostCopyBytes — 0 for weights aliased from a
-// .giw mapping), the buffers its build derives (metalDerivedDenseBytes) and decode's scratch (MetalDecodeScratchBytes), the KV
+// the weights, on Metal the host copy of them (ResidentHostCopyBytes — 0 for weights aliased from a.
+// giw mapping), the buffers its build derives (metalDerivedDenseBytes) and decode's scratch (MetalDecodeScratchBytes), the KV
 // cache, and one slot's recurrent state. Plan's NeedBytes and
 // Metal's resident guard are this number.
 func (m *Model) ResidentNeedBytes(backend string, slots, ctx int, kvF16, kvI8 bool) int64 {

@@ -42,7 +42,7 @@ var freeDiskBytes = diskfree.Free
 //
 // target names the ONE consumer this bundle is promised to:
 // on a cpu-arm64 target, every eligible int4 tensor writes kind 5 (row4-only: the on-disk arm64
-// split-half, 4-row-interleaved layout, docs/completed/task-w4a8-neon-bandwidth.md) instead of kind 3
+// split-half, 4-row-interleaved layout) instead of kind 3
 // (decoder/serialize.go's weightMat vs weightMatKind3Only decides which tensors are eligible); every
 // other target, including GIWTargetNone, writes kind 3 for every int4 tensor.
 // GIWTargetForBackend derives a target from a backend name (EnsureCachedGIW);
@@ -184,7 +184,7 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 	if err != nil {
 		return ph, fmt.Errorf("create %s: %w", tmp, err)
 	}
-	// Streamed one layer at a time (docs/completed/task-prequant-dir-streaming-2026-10.md): peak memory about the globals plus
+	// Streamed one layer at a time: peak memory about the globals plus
 	// one layer, byte-identical to the resident transcode. A LoRA merge, and a family whose loader does not stream yet, take
 	// the resident transcode instead.
 	body := func(w io.Writer) (int64, error) { return residentDirBody(w, dir, lora, quant, embedInt4, target, id) }
@@ -304,7 +304,7 @@ func EnsureCachedGIW(ctx context.Context, ggufPath, quant, backend string, embed
 
 // SidecarPathIfFresh returns the sidecar .giw for ggufPath at quant/backend's target and embedInt4
 // setting, and true, ONLY when a fresh one already exists: it never transcodes. For a caller like `fit`
-// (docs/completed/task-never-swap-2026-09.md) where measuring is supposed to stay cheap: forcing a
+// where measuring is supposed to stay cheap: forcing a
 // transcode just to check fit would cost as much as the resident build it avoids.
 func SidecarPathIfFresh(ggufPath, quant, backend string, embedInt4 bool) (string, bool) {
 	target := GIWTargetForBackend(backend)
@@ -346,8 +346,8 @@ func SidecarPath(ggufPath, quant, backend string, embedInt4 bool) string {
 	return streamCachePath(ggufPath, quant, embedInt4, GIWTargetForBackend(backend))
 }
 
-// DefaultToSidecar reports whether a .gguf source should resolve to its sidecar .giw by default: the
-// .gguf direct heap load is the opt-out, not the default. True on darwin (where the swap incidents
+// DefaultToSidecar reports whether a .gguf source should resolve to its sidecar .giw by default: the.
+// gguf direct heap load is the opt-out, not the default. True on darwin (where the swap incidents
 // happened) and on linux (the sidecar showed no CPU decode cost and a load that maps instead of
 // re-quantizing; docs/measurements/cpu-giw-vs-direct-2026-09-24.md); other platforms keep the direct
 // load. directLoad is the caller's already-resolved -direct-load flag / GOINFER_GGUF_DIRECT env var;

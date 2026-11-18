@@ -7,7 +7,7 @@ import (
 
 // TestRow4GiwKind_gemma4_identicalToCanonical is the kind-4 acceptance gate's real-scale
 // correctness proof: the gemma4-26b-int4-row4.giw built by re-prequanting the existing
-// kind-3 bundle (docs/completed/task-w4a8-neon-bandwidth.md's ".giw kind 4" section) must decode
+// kind-3 bundle must decode
 // byte-identical to the kind-3 original it was built from. Bit-identical dispatch was
 // already proven at 0.5B fixture scale (w4a8_row4_giwkind_test.go); this is the same
 // proof on the real 26B-A4B checkpoint. Both .giw paths default to the sidecar-naming
@@ -132,8 +132,7 @@ func TestRow4GiwKind_qwen35_pagedEviction(t *testing.T) {
 }
 
 // assertAdvisedBytesSane is the durable, contamination-proof I/O-waste check the
-// campaign's original acceptance run had no way to make (docs/completed/task-zeno-compare.md's
-// "At-scale acceptance run"/"Pass 1"): bytes actually passed to WILLNEED per miss
+// campaign's original acceptance run had no way to make: bytes actually passed to WILLNEED per miss
 // should track the pager's own average per-expert size, not exceed it by a wide
 // margin -- a member registering redundant spans (the exact kind-4 double-WILLNEED
 // bug this exists to catch) shows up here directly as roughly double, regardless of

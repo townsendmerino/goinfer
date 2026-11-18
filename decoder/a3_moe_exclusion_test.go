@@ -30,7 +30,7 @@ func TestA3MoEExclusionIsMeasured(t *testing.T) {
 	}
 	// Quant is an axis: the attention swap is quant-independent, but its share of prefill is not (int4's faster
 	// weight matmul raises attention's fraction and so the speedup). Label which quant you quote: int4 is the
-	// operator-facing number (docs/completed/mellum2-resident.md), int8int8 is the one comparable to earlier runs.
+	// operator-facing number, int8int8 is the one comparable to earlier runs.
 	quant := os.Getenv("GOINFER_BENCH_QUANT")
 	if quant == "" {
 		quant = "int8int8"
