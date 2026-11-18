@@ -229,16 +229,6 @@
       "backend/cuda",
       "internal/app/serveapp"
     ],
-    "backend/cuda/internal/qwencuda": [
-      "backend/cuda/internal/gpudev",
-      "internal/runtime/mem",
-      "internal/vision"
-    ],
-    "backend/cuda/internal/visioncuda": [
-      "backend/cuda/internal/gpudev",
-      "internal/runtime/mem",
-      "internal/vision"
-    ],
     "backend/metal": [
       "backend/metal/internal/gpudev",
       "backend/metal/kernels",
@@ -261,16 +251,6 @@
     "backend/metal/cmd/serve": [
       "backend/metal",
       "internal/app/serveapp"
-    ],
-    "backend/metal/internal/qwenmetal": [
-      "backend/metal/internal/gpudev",
-      "internal/runtime/mem",
-      "internal/vision"
-    ],
-    "backend/metal/internal/visionmetal": [
-      "backend/metal/internal/gpudev",
-      "internal/runtime/mem",
-      "internal/vision"
     ],
     "backend/metal/kernels": [
       "internal/runtime/f16"
@@ -580,13 +560,6 @@
       "multimodal",
       "tokenizer"
     ],
-    "backend/cuda/internal/qwencuda": [
-      "internal/vision"
-    ],
-    "backend/cuda/internal/visioncuda": [
-      "backend/cuda/internal/gpudev",
-      "internal/vision"
-    ],
     "backend/cuda/kernels": [
       "backend/cuda/internal/gpudev",
       "backend/cuda/internal/launchgeom",
@@ -595,10 +568,6 @@
       "internal/runtime/mamba2",
       "internal/runtime/mem",
       "internal/runtime/sampling"
-    ],
-    "backend/cuda/s4siglip": [
-      "backend/cuda/internal/visioncuda",
-      "internal/vision"
     ],
     "backend/metal": [
       "backend/metal/internal/gpudev",
@@ -627,14 +596,6 @@
       "internal/wrappedupload",
       "multimodal",
       "tokenizer"
-    ],
-    "backend/metal/internal/qwenmetal": [
-      "backend/metal/internal/gpudev",
-      "internal/vision"
-    ],
-    "backend/metal/internal/visionmetal": [
-      "backend/metal/internal/gpudev",
-      "internal/vision"
     ],
     "backend/metal/kernels": [
       "backend/metal/internal/gpudev",
