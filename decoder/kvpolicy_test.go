@@ -168,6 +168,9 @@ func TestCUDAKVF16AutoDecline_table(t *testing.T) {
 	if got := CUDAKVF16AutoDecline(KVFacts{Family: "qwen3_5", Hybrid: true}, Options{}); !strings.Contains(got, "did not pass") {
 		t.Errorf("qwen3_5: auto decline %q does not publish the hybrids' failed gate", got)
 	}
+	if got := CUDAKVF16AutoDecline(KVFacts{Family: "gemma3", SlidingWindow: true}, Options{}); !strings.Contains(got, "did not pass") {
+		t.Errorf("gemma3: auto decline %q does not publish the sliding-window group's failed gate", got)
+	}
 	// The three the owner narrowed auto away from (D-KV4-10) keep f32 under auto, each naming what would clear it.
 	for _, c := range []struct {
 		f    KVFacts
