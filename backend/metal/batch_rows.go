@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// MC3 S3 (docs/tasks/parked/task-concurrency-2026-09.md): multi-row forms of the per-row kernels a batched step runs once per
+// MC3 S3: multi-row forms of the per-row kernels a batched step runs once per
 // sequence (rmsnorm_quant, quant_vec, swiglu_quant, rope2). Each of those small dispatches ran a single threadgroup, one
 // sequence after another; one dispatch over all rows runs them side by side (cost figures:
 // docs/code-notes/metal.md#mc3RowsKernels).

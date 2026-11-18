@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// p3Fixtures are the matrix's families that build a Metal resident (docs/tasks/task-kv-precision-everywhere-2026-10.md, P3 gates).
+// p3Fixtures are the matrix's families that build a Metal resident.
 var p3Fixtures = []string{"llama-tiny", "qwen3moe-tiny", "gemma2-tiny", "cohere-tiny", "qwen25vl-tiny", "qwen35-tiny", "qwen3next-tiny",
 	"nemotron-tiny", "deepseek-tiny"}
 
@@ -25,7 +25,7 @@ func p3FixtureDir(name string) string {
 	return dir
 }
 
-// TestP3_metalF32AgreesWithCPU is P3-G2 as amended (D6, docs/tasks/task-kv-precision-everywhere-2026-10.md §6): on every resident
+// TestP3_metalF32AgreesWithCPU is P3-G2 as amended: on every resident
 // fixture, Metal at --kv f32 against the CPU at f32, teacher-forced over 32 positions, has a mean of the per-position max |logit
 // diff| no larger than Metal at f16 (the arm that ships) has, within 5%, and a top-1 agreement no lower.
 func TestP3_metalF32AgreesWithCPU(t *testing.T) {

@@ -49,7 +49,7 @@ func d5LogitsHash(t *testing.T, m *decoder.Model) uint64 {
 	return h.Sum64()
 }
 
-// TestD5_mlaOnMetal is D5-G2 and D5-G3 (docs/tasks/task-kv-precision-everywhere-2026-10.md, "D5 gates"): an MLA model on Metal
+// TestD5_mlaOnMetal is D5-G2 and D5-G3: an MLA model on Metal
 // refuses an explicit --kv f16 or i8 on the metal path naming the f32 latent, and its auto and f32 logits are byte-equal to the
 // build before D5 (the hashes below).
 func TestD5_mlaOnMetal(t *testing.T) {

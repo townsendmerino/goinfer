@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// TestP3_attentionF32MatchesF16OnExactInputs is P3-G1 (docs/tasks/task-kv-precision-everywhere-2026-10.md, P3 gates): on K/V
+// TestP3_attentionF32MatchesF16OnExactInputs is P3-G1: on K/V
 // values an f16 cache holds exactly, attention_f32 over the f32 cache and attention over the f16 cache give bit-identical outputs,
 // with an attention sink, a window, and past the 4,096-key tile; and kv_store_f32 stores what kv_store narrows.
 func TestP3_attentionF32MatchesF16OnExactInputs(t *testing.T) {

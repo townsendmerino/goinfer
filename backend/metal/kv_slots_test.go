@@ -25,7 +25,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-// TestMetalKVSlots_interleavedMatchesAlone is MC1's gate (docs/tasks/parked/task-concurrency-2026-09.md): with two resident KV
+// TestMetalKVSlots_interleavedMatchesAlone is MC1's gate: with two resident KV
 // slots, two conversations that share only a lead, interleaved turn by turn through the production Generate path,
 // must each emit exactly the token ids they emit when served alone, and reuse exactly as much of their own history
 // on every turn. A control — the same interleaving on one slot — must thrash, so this test can see the failure it
@@ -131,7 +131,7 @@ func reusedOf(ts []kvSlotTurn) []int {
 	return out
 }
 
-// TestKVSlotsWithin pins MC1's fit-guard clamp (docs/tasks/parked/task-concurrency-2026-09.md MC1 gate 4) without allocating a
+// TestKVSlotsWithin pins MC1's fit-guard clamp without allocating a
 // real clamp's worth of KV on a 16 GB machine: the largest count up to the request that fits the budget, never below 1.
 func TestKVSlotsWithin(t *testing.T) {
 	const mb = int64(1 << 20)

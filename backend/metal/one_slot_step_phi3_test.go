@@ -9,7 +9,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestOneSlotStep_phi3PrefillAB is P29's tier 1 measurement (docs/queue-performance.md, P29): Phi-3 mini 4k at --quant q4k
+// TestOneSlotStep_phi3PrefillAB is P29's tier 1 measurement: Phi-3 mini 4k at --quant q4k
 // on one KV slot, one 512-token prompt prefilled from position 0 by production's sequential decode and by the step route,
 // 5 pairs in one process with the arm order alternating. It reports each pair's sequential ÷ step wall time and their
 // median; the registration's reading is that median. It loads the real file, so it runs only with GOINFER_P29_AB=1.

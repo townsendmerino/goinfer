@@ -15,7 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// P29 (docs/queue-performance.md): a one-slot resident prefills its prompt on the batched step, verifies nothing on it, and
+// P29: a one-slot resident prefills its prompt on the batched step, verifies nothing on it, and
 // prices the step's scratch without ever refusing the load. Tier 0: the MC3 fixture on every darwin box, and the 0.5B on the
 // q4k lane where the file is present (the lane whose prefill is otherwise one token at a time).
 

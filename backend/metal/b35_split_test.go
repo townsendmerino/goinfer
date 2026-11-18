@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestB35SplitInvariance is B35's gate on Metal (docs/queue-engineering.md, B35): a Gated-DeltaNet prompt prefilled in several
+// TestB35SplitInvariance is B35's gate on Metal: a Gated-DeltaNet prompt prefilled in several
 // PrefillLast calls, cut at a save point, must leave bit for bit what one call leaves: the last row's logits, every DeltaNet layer's
 // conv window and recurrent state, and every attention layer's K/V rows. Metal runs a call's rows in one command buffer, so a call
 // boundary is the only place the state exists between rows, and the decoder may put one at a save point only if this holds. The save

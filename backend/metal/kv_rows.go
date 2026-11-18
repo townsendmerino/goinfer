@@ -4,8 +4,7 @@ package metal
 
 import "strings"
 
-// kvRowsKernels are the batched step's KV store and attention for an int8 and an f32 cache (P3b-1,
-// docs/tasks/task-kv-precision-everywhere-2026-10.md), derived at init the way mc3RowsKernels are: the int8 pair from
+// kvRowsKernels are the batched step's KV store and attention for an int8 and an f32 cache, derived at init the way mc3RowsKernels are: the int8 pair from
 // kv_store_i8 and attention_i8 by renaming the per-row parameters and adding the same prologue, the f32 pair from the f16 rows
 // kernels by the type substitution attention_f32 is made by (kv_f32.go). Bodies are never retyped, so each row computes what its
 // single-token step computes, bit for bit.

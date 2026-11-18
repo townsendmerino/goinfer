@@ -28,7 +28,7 @@ func checkMC3KV(t *testing.T, r *resident, kv string) {
 	}
 }
 
-// TestP3b_stepBitIdentical is P3B-G1 (docs/tasks/task-kv-precision-everywhere-2026-10.md, "P3b-1 gates"): at --kv i8 and f32, a
+// TestP3b_stepBitIdentical is P3B-G1: at --kv i8 and f32, a
 // batched step of four sequences at depths 5, 23, 40 and 300, each on its own slot, gives every row's logits bit-identical to
 // production's single-token step on a twin slot; and past the attention kernel's 4096-key tile, the same at depths 4200 and 100.
 func TestP3b_stepBitIdentical(t *testing.T) {

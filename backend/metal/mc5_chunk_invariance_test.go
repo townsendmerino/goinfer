@@ -10,8 +10,7 @@ import (
 	"testing"
 )
 
-// TestMC5_prefillChunkInvariance asks the question chunked prefill's design turns on (docs/tasks/task-concurrency-
-// 2026-09.md, chunked prefill): does Metal's fast prefill give the SAME bits when a prompt is ingested in chunks —
+// TestMC5_prefillChunkInvariance asks the question chunked prefill's design turns on: does Metal's fast prefill give the SAME bits when a prompt is ingested in chunks —
 // PrefillLast(chunk, startPos) one after another — as when it is ingested whole? The same 1000-token prompt is
 // prefilled whole into one resident KV slot and in chunks of C tokens into another; every K and V element of every
 // layer, and the last token's logits, are compared bit for bit. It runs by default on the generated fixture

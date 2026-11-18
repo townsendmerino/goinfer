@@ -1219,8 +1219,7 @@ func checkWalkGolden(t *testing.T, name string, lines []string) {
 	}
 }
 
-// TestMixerWalk_dispatchSequences is OP4m-pod's and OP4m-pod2's P-1 (docs/tasks/task-forward-and-memory-2026-11.md, "OP4m-pod:
-// registration", "OP4m-pod2: registration"), held to a recorded golden now that the blocks it compared with are gone: on every
+// TestMixerWalk_dispatchSequences is held to a recorded golden now that the blocks it compared with are gone: on every
 // census fixture and option cell whose build goes resident, eight decode tokens issue the pipelines the golden records, dispatch for
 // dispatch. The golden was recorded while the walk and the blocks agreed on every cell. The cells that walk a mixer step and the
 // cells that walk an FFN or tail step are counted separately, so a walk nothing reaches cannot pass.
@@ -1841,8 +1840,7 @@ func multiSeqWalkObserve(t *testing.T, c multiSeqWalkCell, b int) walkObservatio
 	return o
 }
 
-// TestMultiSeqWalk_dispatchSequences is OP4m-pod2 part 2's P-1 (docs/tasks/task-forward-and-memory-2026-11.md, "OP4m-pod2 part 2:
-// registration"), held to a recorded golden now that the blocks are gone: on every fixture that builds the batched step, at 2 and
+// TestMultiSeqWalk_dispatchSequences is held to a recorded golden now that the blocks are gone: on every fixture that builds the batched step, at 2 and
 // 4 rows, the step's per-row steps issue the pipelines the golden records, dispatch for dispatch. The golden was recorded while the
 // walk and the blocks agreed on every cell.
 func TestMultiSeqWalk_dispatchSequences(t *testing.T) {

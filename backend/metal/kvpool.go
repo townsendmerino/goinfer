@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// The KV block pool's capacity (docs/tasks/task-kv-architecture-2026-10.md, KV5's plan, "Capacity", KV4a-3's rule). Each layer's pool
+// The KV block pool's capacity. Each layer's pool
 // holds slots × kvShareBlocks blocks past the null block: the bytes the plan gives KV at the same flags. A slot's table starts with
 // every entry unmapped (block 0) and takes blocks on demand as it writes (kvWrite). Each slot is guaranteed kvShareBlocks, the
 // planned per-slot context; one conversation may borrow past it, up to its cap (r.ctxCap, kvRaise). When no block is free, idle slots
@@ -145,7 +145,7 @@ func kvBlockOrder(blocks int, window bool) []uint32 {
 	return out
 }
 
-// kvGroup is the table and the counts over one layer group's pools (KV5-7, docs/tasks/task-kv-architecture-2026-10.md §6): the layers of
+// kvGroup is the table and the counts over one layer group's pools: the layers of
 // a group share one block id space, so a block id names the same block in each. kvTab holds each slot's table in one allocation,
 // kvTabBlocks entries a slot, and kt is the bound slot's view of it. An entry is the block a sequence's 64 positions are in, so a kernel
 // bound to a table reads the pool from its start (Buffer.At(0)) (kv_row, KVRowMSL). kvTabU32 is kvTab's shared contents, taken once:
@@ -311,7 +311,7 @@ func (r *resident) kvKTRead(l int) Buffer {
 var kvWindowReadPlantForTest bool
 
 // kvWindowKeep is how many positions a window group keeps behind the start of the window a write reads: the rollback budget, the floor
-// kvmgr.WindowNextBase's callers use (docs/tasks/task-kv-architecture-2026-10.md §5.4), so an edit late in a prompt still finds its
+// kvmgr.WindowNextBase's callers use, so an edit late in a prompt still finds its
 // window held.
 const kvWindowKeep = decoder.MetalKVWindowKeep
 

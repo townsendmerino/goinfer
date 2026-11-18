@@ -37,7 +37,7 @@ var g3MetalMatrixDiffers = []string{
 	"phi3-tiny/auto", "lfm2-tiny/auto", "gemma4-moe-kv-tiny/auto",
 }
 
-// TestKVDeliveredBytes_Metal is G3's Metal half (docs/tasks/task-kv-precision-everywhere-2026-10.md §4): every Metal cell the
+// TestKVDeliveredBytes_Metal is G3's Metal half: every Metal cell the
 // matrix delivers, loaded with serve's options for --kv and a 100-position resident context, its K/V buffers read back against the
 // delivered precision: f16 2 B and f32 4 B per element, int8 1 B plus one f32 scale per position and head for each of K and V; an
 // MLA layer's latent at 4 B. A cell whose resident declines is read back on the CPU cache against the model's KVDelivered.
@@ -1743,7 +1743,7 @@ func kvWindowRun(t *testing.T, dir string, scramble, plant bool) (rows [][]float
 	return rows, hasWin, differ, ""
 }
 
-// TestKVPages_windowGroup is KV5-7b's G1a-W (docs/tasks/task-kv-architecture-2026-10.md §6): on every tiny fixture whose build has a window
+// TestKVPages_windowGroup is KV5-7b's G1a-W: on every tiny fixture whose build has a window
 // group, the sliding layers read their own group's table. The groups hand out different blocks under scrambled tables, so a layer that read
 // the other group's would read other rows: logits are bit-identical to the in-order build, and a plant binding a window layer's decode
 // attention read to the primary table must make them differ.
@@ -2035,7 +2035,7 @@ func kvRowsDiffer(a, b [][]float32) int {
 	return n
 }
 
-// TestKVWindow_retentionIsBitIdentical is KV5-7c's G1a-W and G1c, Mac form (docs/tasks/task-kv-architecture-2026-10.md §6): on every tiny
+// TestKVWindow_retentionIsBitIdentical is KV5-7c's G1a-W and G1c, Mac form: on every tiny
 // fixture whose build has a window group, a 1,536-position prefill in blocks and 64 decoded tokens leave the window group holding only
 // what the window and kvWindowKeep behind it need, and every logit is bit-identical to the same build with retention off (every
 // position kept). Then each case retention must survive: a rewind inside the retained rollback, a write below the base (refused,
@@ -2122,7 +2122,7 @@ func TestKVWindow_retentionIsBitIdentical(t *testing.T) {
 	}
 }
 
-// TestKVWindow_retention9000 is KV5-7c's G1c, Mac form, hard (docs/tasks/task-kv-architecture-2026-10.md §6): a tiny windowed fixture with its
+// TestKVWindow_retention9000 is KV5-7c's G1c, Mac form, hard: a tiny windowed fixture with its
 // window raised to 4,096 and its positions to 16,384, a 9,000-token prompt and 64 decoded. The window group must have released at least 40
 // blocks and every decoded logit must be bit-identical to the same build with retention off. The attention kernels that ran are counted (the
 // decode pipeline's launches by field, prefill's by kernel); a fixture whose counters are all zero proves nothing and is reported VOID.
@@ -2313,7 +2313,7 @@ func TestKVWindow_gemma3PricingTable(t *testing.T) {
 	}
 }
 
-// TestKV58_perSlotTable prints what KV5-8's gate prices (docs/tasks/task-kv-architecture-2026-10.md §6): for each checkpoint this Mac can
+// TestKV58_perSlotTable prints what KV5-8's gate prices: for each checkpoint this Mac can
 // load, the load's fixed bytes (everything but KV, at one slot) and the KV of one slot and of 1, 2 and 4 slots at 4,096, 16,384 and
 // 32,768 positions, with the window pool bounded where the conditions allow. It opts in with GOINFER_HEAVY_TESTS=1 and skips a load the
 // memory guard refuses.
@@ -2452,7 +2452,7 @@ func kvWindowAgreement(t *testing.T, dir string, mod func(*decoder.Options), ign
 	return true, bounded, err
 }
 
-// TestKVWindow_planAndBuildAgree is KV5-7c-ii's tier-0 agreement (docs/tasks/task-kv-architecture-2026-10.md §6): the Metal backend
+// TestKVWindow_planAndBuildAgree is KV5-7c-ii's tier-0 agreement: the Metal backend
 // registered the function that decides whether a window pool is bounded (a binary that forgot would price every window pool full-size
 // and lose the gain), and on every fixture with a window group, with the options that flip each condition, the plan and the build
 // agree. For each condition that guards a route that is not bounded, the plant that ignores it makes them disagree.

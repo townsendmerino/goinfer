@@ -7,11 +7,11 @@ import (
 	"testing"
 )
 
-// TestMellumResidentParity is G11's Metal half (docs/queue-correctness.md): the real-weight validation of Mellum on the Metal
+// TestMellumResidentParity is G11's Metal half: the real-weight validation of Mellum on the Metal
 // resident path, which G10's FeatRopeMscale declaration (for gpt-oss's YaRN) admits as a side effect.
 // decoder/mellum_slice_test.go (tag realckpt) already proved goinfer's CPU forward matches the HF reference on a real
 // 4-layer weight slice; this is the same discipline as TestGPT2ResidentParity/TestGptOssResidentParity pointed at the sliced
-// checkpoint directory. Regenerate the slice per docs/queue-correctness.md G11 if absent (4 GB, gitignored; only the golden
+// checkpoint directory. Regenerate the slice if absent (4 GB, gitignored; only the golden
 // ships).
 func TestMellumResidentParity(t *testing.T) {
 	requireHeavyModel(t)

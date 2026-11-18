@@ -18,7 +18,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// MC3 (docs/tasks/parked/task-concurrency-2026-09.md): batched decode, one decode token for up to batchMaxSeqs sequences in ONE
+// MC3: batched decode, one decode token for up to batchMaxSeqs sequences in ONE
 // command buffer, each sequence on its own resident KV slot at its own position, and every logit bit-identical to
 // production's single-token forward on that sequence (TestMC3Step_bitIdentical). Per-row work runs production's own
 // kernels, per sequence: norm + int8 quantisation, RoPE, the KV store into that sequence's slot, attention over that slot
@@ -859,7 +859,7 @@ var mc3AdjRowsOn = true
 const batchTGBytes = 4 * 2 * 32 * 8
 
 // calibrateRows decides, once, at which batch sizes qkv and gate|up are cheaper as B per-row production GEMVs than as one
-// fragment dispatch (docs/tasks/parked/task-concurrency-2026-09.md, MC3 S4). The fragment's cost is fixed for any B up to 8 and a
+// fragment dispatch. The fragment's cost is fixed for any B up to 8 and a
 // GEMV's is per row, so on large shapes (a bandwidth-bound GEMV against an ALU-bound fragment) the GEMVs win at small B.
 // Both arms run on the real weights of the first layers, one layer's weights per dispatch so the cache does not serve
 // them, and the fastest of 7 command buffers after 3 warm-ups decides. The choice changes speed only: the per-row path is

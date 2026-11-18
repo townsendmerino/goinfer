@@ -6,7 +6,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// The window group's bounded pool (docs/tasks/task-kv-architecture-2026-10.md §6, KV5-7c-ii). A window group keeps only each sequence's
+// The window group's bounded pool. A window group keeps only each sequence's
 // recent positions (kvRetain), so its pool can hold decoder.MetalKVWindowBlocks a slot instead of the context's blocks, as long as no
 // pass writes more rows into it than that holds. windowPoolBlocks decides, from the model alone, whether every pass that writes the
 // group is bounded; the build sizes the pool by it and the plan (decoder.Model.MetalWindowBlocks) prices it by the same function,
