@@ -1,7 +1,7 @@
 // Package servecheck drives a running goinfer server through the conversation a HARNESS
 // would, over the real routes, and prints a per-feature verdict with a number.
 //
-// It exists because of a gap docs/tasks/task-embed-and-harness-ux.md §3.4 names: ten of the
+// It exists because of a gap: ten of the
 // serveapp test files skip without a model, so the routes Claude Code, dsh, Open-WebUI and
 // Continue actually drive are exercised by nothing. A route a harness uses that no test
 // touches is the "gate that cannot fail" one level up — the same defect class this project
@@ -239,7 +239,7 @@ func sharedTail(topic string) string {
 		"In one word, what is the note about?"
 }
 
-// SharedPreamble is KV4's §5.16 row (docs/tasks/task-kv-architecture-2026-10.md): a second conversation that opens with the first's
+// SharedPreamble: a second conversation that opens with the first's
 // preamble takes it from the first's KV. Each conversation sends the shared system message and a long message of its own, so the second
 // must run on another slot, and it must report shared_tokens above zero, covering at least a third of its prompt. A server that cannot
 // share at all (kv_share "none": off the resident path, one KV slot, recurrent state) is a skip; one turned off by its operator is
@@ -580,7 +580,7 @@ func (c *Client) Vision(ctx context.Context, model string) Result {
 // installed on the machine, so the sub-test did not run
 // (docs/measurements/cold-user-2026-09-06.md). This row is the part of that coverage which does
 // not depend on a third-party CLI being present, and it is the "checkable" half
-// docs/tasks/task-embed-and-harness-ux.md §3.4 lists under `serve check`.
+// of what `serve check` covers.
 //
 // The tool is deliberately one a small model can get right: one required string argument, an
 // obvious call site. A model too small to emit a tool call at all is reported as a SKIP, not a
