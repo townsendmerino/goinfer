@@ -5,6 +5,7 @@ package cuda
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -106,7 +107,10 @@ func TestLoadAbort_aStreamedUploadStopsBetweenBlocksAndLeavesThePoolWhole(t *tes
 // unpinned load under the same reading keeps its historical decline and runs on the CPU, and with the real reading an unpinned
 // load goes resident at the context its plan chooses.
 func TestPinnedCtx_wontFitStopsTheLoad(t *testing.T) {
-	const path = "../../testdata/glm-tiny.gguf"
+	path := filepath.Join(t.TempDir(), "phi3.gguf") // a tiny GGUF with an embedded tokenizer, which modelload.Load reads
+	if err := decoder.WritePhi3Q4KTinyGGUFForTest(path); err != nil {
+		t.Fatal(err)
+	}
 	requireDeviceAndFixtureFile(t, path)
 	load := func(ctx int) (*decoder.Model, error) {
 		t.Helper()
