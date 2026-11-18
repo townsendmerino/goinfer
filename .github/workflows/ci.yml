@@ -286,6 +286,7 @@ jobs:
           python3 -B scripts/test_gate_gpu_weekly_queue.py
           python3 -B scripts/test_device_suite_heartbeat.py
           python3 -B scripts/test_ci_test_summary.py
+          python3 -B scripts/test_ci_skip_count.py
           python3 -B scripts/test_metal_device_suite.py
 
       # ci_docs_only.sh's rule 2 matches a read by the file's full path, not its basename: a docs commit adding a
@@ -966,7 +967,16 @@ jobs:
         # package that tripped it) -- generous now without the detector, but a hang still fails.
         # The two census determinism tests are skipped here, not silenced: twoRunsAgree runs in shard test-decoder-a and secondProcess in
         # test-decoder-d. This lane still checks its own host class against its golden (TestDecisionCensus), one build instead of three.
-        run: go test -timeout 25m -tags goinfer_testhooks -skip '^TestDecisionCensus_(twoRunsAgree|secondProcess)$' ./...
+        shell: bash
+        # one `run:` line: TestOracle_runsInFullSomewhere and TestRaceSubset_runsInFullSomewhere read it
+        run: go test -timeout 25m -tags goinfer_testhooks -json -skip '^TestDecisionCensus_(twoRunsAgree|secondProcess)$' ./... > test.json
+      - name: test counts (and what failed)
+        if: always()
+        shell: bash
+        run: |
+          bash scripts/ci_skip_count.sh test.json
+          # -json hides go test's plain output: print what a red lane needs (failure lines, panics, build output)
+          grep -E '"Action":"(output|build-output)".*(--- FAIL|FAIL|panic|fatal error|_test.go:[0-9]+|\.go:[0-9]+:[0-9]+:)' test.json | head -300 || true
       # MM10: when anything above is red, take this host class's decision census golden as the job's artifact, so a class can be
       # taken from CI instead of from a person's machine. The file is rewritten only in this runner's checkout and only the changed
       # one is uploaded; nothing is committed. Download it into testdata/census/ and review the diff.
@@ -1010,7 +1020,16 @@ jobs:
       - name: test
         # The two census determinism tests are skipped here, not silenced: twoRunsAgree runs in shard test-decoder-a and secondProcess in
         # test-decoder-d. This lane still checks its own host class against its golden (TestDecisionCensus), one build instead of three.
-        run: go test -timeout 30m -tags goinfer_testhooks -skip '^TestDecisionCensus_(twoRunsAgree|secondProcess)$' ./...
+        shell: bash
+        # one `run:` line: TestOracle_runsInFullSomewhere and TestRaceSubset_runsInFullSomewhere read it
+        run: go test -timeout 30m -tags goinfer_testhooks -json -skip '^TestDecisionCensus_(twoRunsAgree|secondProcess)$' ./... > test.json
+      - name: test counts (and what failed)
+        if: always()
+        shell: bash
+        run: |
+          bash scripts/ci_skip_count.sh test.json
+          # -json hides go test's plain output: print what a red lane needs (failure lines, panics, build output)
+          grep -E '"Action":"(output|build-output)".*(--- FAIL|FAIL|panic|fatal error|_test.go:[0-9]+|\.go:[0-9]+:[0-9]+:)' test.json | head -300 || true
 
   # H1.1's missing half (docs/completed/task-hardware-coverage-2026-10.md): the release ships windows-arm64 binaries, and until this job nothing had built or run one. GitHub's windows-11-arm runner is free and unlimited
   # for public repositories (Azure Cobalt 100, 4 CPUs, 16 GB). aikit cannot detect DotProd on a non-Linux, non-Darwin arm64 OS (dotprod_arm64_other.go assumes none), so this job runs the base SMULL/SADALP kernels
@@ -1037,7 +1056,16 @@ jobs:
       - name: test
         # The two census determinism tests are skipped here, not silenced: twoRunsAgree runs in shard test-decoder-a and secondProcess in
         # test-decoder-d. This lane still checks its own host class against its golden (TestDecisionCensus), one build instead of three.
-        run: go test -timeout 30m -tags goinfer_testhooks -skip '^TestDecisionCensus_(twoRunsAgree|secondProcess)$' ./...
+        shell: bash
+        # one `run:` line: TestOracle_runsInFullSomewhere and TestRaceSubset_runsInFullSomewhere read it
+        run: go test -timeout 30m -tags goinfer_testhooks -json -skip '^TestDecisionCensus_(twoRunsAgree|secondProcess)$' ./... > test.json
+      - name: test counts (and what failed)
+        if: always()
+        shell: bash
+        run: |
+          bash scripts/ci_skip_count.sh test.json
+          # -json hides go test's plain output: print what a red lane needs (failure lines, panics, build output)
+          grep -E '"Action":"(output|build-output)".*(--- FAIL|FAIL|panic|fatal error|_test.go:[0-9]+|\.go:[0-9]+:[0-9]+:)' test.json | head -300 || true
 
   root-linux-arm64:
     needs: changes
@@ -1069,7 +1097,16 @@ jobs:
       - name: test
         # The two census determinism tests are skipped here, not silenced: twoRunsAgree runs in shard test-decoder-a and secondProcess in
         # test-decoder-d. This lane still checks its own host class against its golden (TestDecisionCensus), one build instead of three.
-        run: go test -timeout 30m -tags goinfer_testhooks -skip '^TestDecisionCensus_(twoRunsAgree|secondProcess)$' ./...
+        shell: bash
+        # one `run:` line: TestOracle_runsInFullSomewhere and TestRaceSubset_runsInFullSomewhere read it
+        run: go test -timeout 30m -tags goinfer_testhooks -json -skip '^TestDecisionCensus_(twoRunsAgree|secondProcess)$' ./... > test.json
+      - name: test counts (and what failed)
+        if: always()
+        shell: bash
+        run: |
+          bash scripts/ci_skip_count.sh test.json
+          # -json hides go test's plain output: print what a red lane needs (failure lines, panics, build output)
+          grep -E '"Action":"(output|build-output)".*(--- FAIL|FAIL|panic|fatal error|_test.go:[0-9]+|\.go:[0-9]+:[0-9]+:)' test.json | head -300 || true
       # MM10: when anything above is red, take this host class's decision census golden as the job's artifact, so a class can be
       # taken from CI instead of from a person's machine. The file is rewritten only in this runner's checkout and only the changed
       # one is uploaded; nothing is committed. Download it into testdata/census/ and review the diff.
