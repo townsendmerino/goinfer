@@ -106,7 +106,7 @@ func TestLoadAbort_aStreamedUploadStopsBetweenBlocksAndLeavesThePoolWhole(t *tes
 // unpinned load under the same reading keeps its historical decline and runs on the CPU, and with the real reading an unpinned
 // load goes resident at the context its plan chooses.
 func TestPinnedCtx_wontFitStopsTheLoad(t *testing.T) {
-	const path = "../../testdata/gemma1-tiny.gguf"
+	const path = "../../testdata/glm-tiny.gguf"
 	requireDeviceAndFixtureFile(t, path)
 	load := func(ctx int) (*decoder.Model, error) {
 		t.Helper()
