@@ -17,11 +17,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/decoder/fit"
+	"github.com/townsendmerino/goinfer/internal/config"
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
 	"github.com/townsendmerino/goinfer/internal/runtime/prequant"
 )
@@ -155,15 +158,21 @@ func Run(args []string) int {
 	}
 	// One load per distinct source, closed before the next: two quantized copies at once could trip the guard being priced.
 	req := fit.PlanRequest{Ctx: *ctx, CtxPinned: ctxPinned, KVF16: *kvF16, KVI8: *kvI8, Slots: *slots}
+	fa := Args{Ctx: *ctx, CtxPinned: ctxPinned, Quant: *quant, ExplicitQuant: explicitQuant, KVF16: *kvF16, KVI8: *kvI8}
 	planned := make([]bool, len(lines))
 	for i := range lines {
 		if !lines[i].known || planned[i] {
 			continue
 		}
+		if lines[i].backend == "cuda" {
+			c, err := planCUDA(lines[i].src, fa)
+			lines[i].plan, lines[i].loadErr, planned[i] = c.Plan, err, true
+			continue
+		}
 		src := lines[i].src
 		m, err := decoder.Load(src.path, fitLoadOptions(src, residentCtx))
 		for j := i; j < len(lines); j++ {
-			if lines[j].known && !planned[j] && sameSource(lines[j].src, src) {
+			if lines[j].known && !planned[j] && lines[j].backend != "cuda" && sameSource(lines[j].src, src) {
 				if planned[j], lines[j].loadErr = true, err; err == nil {
 					lines[j].plan = planFor(m, lines[j].backend, lines[j].free, req)
 				}
@@ -442,7 +451,7 @@ func sidecarIfFresh(path, quant, backend string) (string, bool) {
 	return "", false
 }
 
-// Args are the flags that choose what a fit line plans: -ctx (pinned when given), -quant (ExplicitQuant when given), -kv-f16
+// Args are the flags that choose what a fit line plans: -ctx (CtxPinned when given), -quant (ExplicitQuant when given), -kv-f16
 // and -kv-i8.
 type Args struct {
 	Ctx                  int
@@ -451,28 +460,79 @@ type Args struct {
 	KVF16, KVI8          bool
 }
 
-// CUDALine is what fit's CUDA line reports: the plan and the KV slots it keeps.
+// CUDALine is fit's CUDA line: the plan it prints, and the KV slots the build keeps.
 type CUDALine struct {
 	Plan    fit.Plan
 	KVSlots int
 }
 
-// PlanCUDA is fit's CUDA line for path under a, as Run prints it.
+// PlanCUDA is fit's CUDA line for path under a, as Run prints it (planCUDA on sourceFor's source).
 func PlanCUDA(path string, a Args) (CUDALine, error) {
 	src, err := sourceFor(path, a.Quant, a.ExplicitQuant, "cuda")
 	if err != nil {
 		return CUDALine{}, err
 	}
+	return planCUDA(src, a)
+}
+
+// serveKVSlots is the KV slot count a serve load asks a GPU resident for when --kv-sessions is not given.
+func serveKVSlots() int {
+	n, err := strconv.Atoi(config.Lookup("kv-sessions").DefaultFor(runtime.GOOS))
+	if err != nil || n < 1 {
+		return 1
+	}
+	return n
+}
+
+// planCUDA is the CUDA build's own plan of the load serve makes from src: the model opened on "cuda" so its KV precision resolves
+// as that load's does (-kv-f16 and -kv-i8 are the load's --kv), serve's default KV slots, and the build's memory decisions over the
+// free VRAM read now (decoder.PlanResidentLoad): the context, the slots kept, the KV pools as the device charges them and the
+// margin. A build that would not go resident is a decline with its reason; the error is the load's.
+func planCUDA(src fitSource, a Args) (CUDALine, error) {
 	residentCtx := 0
 	if a.CtxPinned {
 		residentCtx = a.Ctx
 	}
-	m, err := decoder.Load(src.path, fitLoadOptions(src, residentCtx))
+	opts := fitLoadOptions(src, residentCtx)
+	opts.Backend, opts.ResidentKVSlots = "cuda", serveKVSlots()
+	switch {
+	case a.KVI8:
+		opts.KVPrecision = "i8"
+	case a.KVF16:
+		opts.KVPrecision = "f16"
+	}
+	price, why, err := decoder.PlanResidentLoad(src.path, opts)
 	if err != nil {
 		return CUDALine{}, err
 	}
-	defer m.Close()
-	free, _ := decoder.FreeBytesFor("cuda")
-	p := planFor(m, "cuda", free, fit.PlanRequest{Ctx: a.Ctx, CtxPinned: a.CtxPinned, KVF16: a.KVF16, KVI8: a.KVI8})
-	return CUDALine{Plan: p, KVSlots: 1}, nil
+	p := fit.Plan{Backend: "cuda"}
+	mem := price.Memory
+	switch {
+	case why != "":
+		p.Placement, p.Reason = fit.PlacementDecline, why
+		return CUDALine{Plan: p}, nil
+	case mem == nil:
+		p.Placement, p.Ctx, p.Reason = fit.PlacementResident, price.Ctx, "goes resident; "+price.Unknown
+		return CUDALine{Plan: p}, nil
+	}
+	p.Placement, p.Ctx, p.DenseBytes, p.AllocSlackBytes, p.KVBytes, p.ExtraBytes, p.FreeBytes =
+		fit.PlacementResident, price.Ctx, mem.DenseBytes, mem.SlackBytes, mem.KVBytes, mem.ExtraBytes, mem.FreeBytes
+	gb := func(n int64) float64 { return float64(n) / (1 << 30) }
+	extra := ""
+	if mem.ExtraBytes > 0 {
+		extra = fmt.Sprintf(" + companion %.2f GB", gb(mem.ExtraBytes))
+	}
+	p.Reason = fmt.Sprintf("dense %.2f GB + allocation rounding %.2f GB + KV %.2f GB (%d slot(s) x %d positions, %s, as the device "+
+		"charges it)%s + margin %.2f GB fits %.2f GB free — the CUDA build's own plan", gb(mem.DenseBytes), gb(mem.SlackBytes),
+		gb(mem.KVBytes), mem.KVSlots, price.Ctx, mem.KVPrecision, extra, gb(mem.MarginBytes), gb(mem.FreeBytes))
+	if mem.KVSlots < mem.KVSlotsAsked {
+		p.Reason += fmt.Sprintf("; keeps %d of the %d KV slots a serve load asks for (--kv-sessions)", mem.KVSlots, mem.KVSlotsAsked)
+	}
+	if mem.ConversationCtx > price.Ctx {
+		p.Reason += fmt.Sprintf("; one conversation can use up to %d positions of the shared pool", mem.ConversationCtx)
+	}
+	if mem.Note != "" {
+		p.Reason += "; " + mem.Note
+	}
+	return CUDALine{Plan: p, KVSlots: mem.KVSlots}, nil
 }

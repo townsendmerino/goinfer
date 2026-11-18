@@ -221,8 +221,12 @@ func solvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy, withRe
 			return decline("context %d exceeds webgpu's fixed %d-position ceiling at this KV precision (M-32) — pass a smaller -ctx or drop --kv-f16/--kv-i8",
 				req.Ctx, l.CtxCeiling)
 		}
-		return decline("context %d does not fit even at the %d-position floor: dense %.2f GB%s + KV %.2f GB exceeds %.2f GB free",
-			req.Ctx, floor, gbf(weights), stateNote(l.StateBytes)+scratchNote(l.ScratchBytes+paged)+slackNote(l.FixedSlack)+hostCopyNote(l.HostFixed), gbf(kv), gbf(free))
+		at := fmt.Sprintf("even at the %d-position floor", floor)
+		if req.CtxPinned {
+			at = "as pinned (a pinned context is never shrunk)"
+		}
+		return decline("context %d does not fit %s: dense %.2f GB%s + KV %.2f GB exceeds %.2f GB free",
+			req.Ctx, at, gbf(weights), stateNote(l.StateBytes)+scratchNote(l.ScratchBytes+paged)+slackNote(l.FixedSlack)+hostCopyNote(l.HostFixed), gbf(kv), gbf(free))
 	}
 	if l.NExperts == 0 {
 		p.Placement = Resident

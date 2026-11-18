@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -116,6 +117,35 @@ func planGIWResidency(path string, opts Options) (decodePath, unknown string, ct
 	}
 	defer m.Close()
 	return m.plannedDecodePath()
+}
+
+// PlanResidentLoad opens path as Load does with opts (on opts.Backend, so its KV precision resolves as that load's does), builds
+// no resident, and returns the backend's own price of the build (ResidencyPricer). why is set, with a zero price, when the load
+// would not go resident: the model is not eligible, or the build declines or refuses it (its reason or error text), or the backend
+// cannot price its build. err is the load's own error.
+func PlanResidentLoad(path string, opts Options) (p ResidentPrice, why string, err error) {
+	opts.planResidency = true
+	m, err := Load(path, opts)
+	if err != nil {
+		return ResidentPrice{}, "", err
+	}
+	defer m.Close()
+	rb, why := m.residencyGate()
+	if why != "" {
+		return ResidentPrice{}, why, nil
+	}
+	pr, ok := rb.(ResidencyPricer)
+	if !ok {
+		return ResidentPrice{}, m.be.Name() + " decides its residency only by building it", nil
+	}
+	if p, err = pr.PriceResident(m); err != nil {
+		var d *ResidentDeclineError
+		if errors.As(err, &d) {
+			return ResidentPrice{}, d.Reason, nil
+		}
+		return ResidentPrice{}, err.Error(), nil
+	}
+	return p, "", nil
 }
 
 // GIWHeaderCheck reports whether path is a .giw this build reads, from its header alone: the bundle container, the weights
