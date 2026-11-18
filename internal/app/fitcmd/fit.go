@@ -441,3 +441,38 @@ func sidecarIfFresh(path, quant, backend string) (string, bool) {
 	}
 	return "", false
 }
+
+// Args are the flags that choose what a fit line plans: -ctx (pinned when given), -quant (ExplicitQuant when given), -kv-f16
+// and -kv-i8.
+type Args struct {
+	Ctx                  int
+	CtxPinned            bool
+	Quant, ExplicitQuant string
+	KVF16, KVI8          bool
+}
+
+// CUDALine is what fit's CUDA line reports: the plan and the KV slots it keeps.
+type CUDALine struct {
+	Plan    fit.Plan
+	KVSlots int
+}
+
+// PlanCUDA is fit's CUDA line for path under a, as Run prints it.
+func PlanCUDA(path string, a Args) (CUDALine, error) {
+	src, err := sourceFor(path, a.Quant, a.ExplicitQuant, "cuda")
+	if err != nil {
+		return CUDALine{}, err
+	}
+	residentCtx := 0
+	if a.CtxPinned {
+		residentCtx = a.Ctx
+	}
+	m, err := decoder.Load(src.path, fitLoadOptions(src, residentCtx))
+	if err != nil {
+		return CUDALine{}, err
+	}
+	defer m.Close()
+	free, _ := decoder.FreeBytesFor("cuda")
+	p := planFor(m, "cuda", free, fit.PlanRequest{Ctx: a.Ctx, CtxPinned: a.CtxPinned, KVF16: a.KVF16, KVI8: a.KVI8})
+	return CUDALine{Plan: p, KVSlots: 1}, nil
+}
