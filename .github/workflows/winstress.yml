@@ -1,0 +1,83 @@
+name: winstress
+
+# On-demand stress of the windows/amd64 serveapp test binary. Three root-windows runs died about 12 s into
+# internal/app/serveapp, each right after the TestPanicGuard_* tests recovered an access violation: one with
+# `fatal error: acquireSudog: found s.elem != nil in cache`, one with a nil dereference inside encoding/json/v2, one with no
+# test named. Each cell builds the test binary once and runs it `rounds` times, so a crash costs one round, not the cell, and
+# the summary line counts crashes per cell. GOTRACEBACK=crash makes a runtime fatal error dump every goroutine.
+# Dispatch: gh workflow run winstress.yml --repo townsendmerino/goinfer [-f rounds=20 -f count=20]
+on:
+  workflow_dispatch:
+    inputs:
+      rounds:
+        description: "process launches per cell"
+        default: "20"
+      count:
+        description: "-test.count per launch"
+        default: "20"
+
+permissions:
+  contents: read
+
+jobs:
+  stress:
+    name: ${{ matrix.cell }}
+    runs-on: windows-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # the three recovered-panic tests together, and each alone
+          - {cell: guard-all, run: "TestPanicGuard", go: "", race: false}
+          - {cell: guard-batchline, run: "TestPanicGuard_runBatchChatLine", go: "", race: false}
+          - {cell: guard-job, run: "TestPanicGuard_runJob", go: "", race: false}
+          - {cell: guard-finalize, run: "TestPanicGuard_finalizeBatch", go: "", race: false}
+          # the second victim in the logs, without the guards
+          - {cell: responses-only, run: "TestResponses", go: "", race: false}
+          # guards plus the json user: the crashes' neighbourhood
+          - {cell: guard-responses, run: "TestPanicGuard|TestResponses", go: "", race: false}
+          # the whole package, as CI runs it
+          - {cell: package, run: ".", go: "", race: false}
+          # race detector (needs cgo: windows-latest ships gcc)
+          - {cell: guard-race, run: "TestPanicGuard|TestResponses", go: "", race: true}
+          # the previous patch release of Go
+          - {cell: guard-prevgo, run: "TestPanicGuard|TestResponses", go: "1.27.3", race: false}
+    env:
+      GOTRACEBACK: crash
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: ${{ matrix.go != '' && matrix.go || '' }}
+          go-version-file: ${{ matrix.go == '' && 'go.mod' || '' }}
+          cache: false
+      - name: build the test binary
+        shell: bash
+        env:
+          GOTOOLCHAIN: local
+        run: |
+          go version
+          flags=""; if [ "${{ matrix.race }}" = "true" ]; then flags="-race"; fi
+          go test -c $flags -tags goinfer_testhooks -o serveapp.test.exe ./internal/app/serveapp/
+      - name: run
+        shell: bash
+        working-directory: internal/app/serveapp
+        run: |
+          rounds=${{ inputs.rounds }}; count=${{ inputs.count }}
+          fail=0
+          for i in $(seq 1 "$rounds"); do
+            if ../../../serveapp.test.exe -test.run '${{ matrix.run }}' -test.count="$count" -test.timeout 10m > "round$i.log" 2>&1; then
+              rm -f "round$i.log"
+            else
+              fail=$((fail+1)); echo "::warning::round $i FAILED (${{ matrix.cell }})"; grep -nE "fatal error|panic:|signal 0x|^--- FAIL" "round$i.log" | head -5
+            fi
+          done
+          echo "RESULT cell=${{ matrix.cell }} go=$(go version) rounds=$rounds count=$count failed_rounds=$fail" | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$fail" = 0 ]
+      - name: keep failing round logs
+        if: failure()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: winstress-${{ matrix.cell }}
+          path: internal/app/serveapp/round*.log
