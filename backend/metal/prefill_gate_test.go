@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestPrefillGate is docs/completed/task-prefill-gap.md §3's gate: may Metal's batched (f16-MMA) PrefillLast
+// TestPrefillGate is the L1 gate: may Metal's batched (f16-MMA) PrefillLast
 // become the DEFAULT prompt-ingestion path, in place of today's shipped sequential Forward-per-
 // token prefill? It runs both paths on the SAME model, SAME prompts, and scores the batched path
 // against the sequential one as the oracle — sequential decode is what every other gate in this

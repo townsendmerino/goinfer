@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// TestALS_G3_towerHashes is MEM4(a)'s ALS-G3 (docs/completed/task-memory-campaign-2026-10.md, "MEM4(a) gates"): every tower of
+// TestALS_G3_towerHashes is MEM4(a)'s ALS-G3: every tower of
 // mem2Towers over its committed tiny fixture and growing inputs, the SHA-256 of each output's bits, built from aikit with and
 // without the aliased tower weights (two workspaces); every line must match. The comparison across workspaces is a diff of the
 // printed [ALS-G3] lines; what this test asserts itself is that each output is non-empty and finite and that a second forward of

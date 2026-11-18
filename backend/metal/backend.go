@@ -69,7 +69,7 @@ func (b *metalBackend) MatmulBT(a, bmat, dst []float32, M, K, N int) {
 // BuildResident builds the resident Metal decoder from a loaded Model. A panic in the build (MSL compile, device creation) is
 // recovered into a decline (ok=false), and the decoder falls back to the CPU. Callers gate on DecodeRunnerEligible first.
 // Weights load as int4 or int8 (Options.Quant "int4" / "int8int8"); an f32 projection declines naming the quant to use
-// (f32Projection). A dense int8 model runs natively on W8A8 kernels (r.w8, docs/completed/task-metal-int8-2026-10.md); one native
+// (f32Projection). A dense int8 model runs natively on W8A8 kernels; one native
 // int8 does not cover (MoE, DeltaNet, int4mix) is re-quantized to int4 through the W4A8 packer an int4 load uses, and
 // decoder.Model.DecodePath() names that re-quantization rather than repeating the requested quant.
 func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForward, ok bool, err error) {
@@ -216,7 +216,7 @@ func metalContextNote(m *decoder.Model, fit decoder.MetalFit, ctx, slots int) st
 }
 
 // metalCtxCeiling is the context shrinkCtxToFit lowered an unpinned resident to, per model, read by resolveMetalCtxCap. A map
-// keyed by the model so the decoder keeps no backend state; resident.Close deletes the entry (docs/completed/task-multimodal-support-2026-10.md).
+// keyed by the model so the decoder keeps no backend state; resident.Close deletes the entry.
 var metalCtxCeiling sync.Map // *decoder.Model -> int
 
 // metalCtxFloor is the shortest context shrinkCtxToFit gives a model before the guard declines: an image turn (Gemma 3's
@@ -296,7 +296,7 @@ func fitsResidentBudget(need int64, ram uint64) bool {
 }
 
 // metalMemoryCeiling is the one budget both residentMemoryDecline (the load-time guard) and the registered "metal" memory probe
-// (decoder.Model.Plan) use, so `fit` and the guard cannot disagree (docs/completed/task-never-swap-2026-09.md). It is the static
+// (decoder.Model.Plan) use, so `fit` and the guard cannot disagree. It is the static
 // ceiling (residentMemFraction of ram) min'd with decoder.HostRAMAvailableBytes, so the live figure can only tighten the ceiling.
 // That direction is deliberate: under pressure darwin's UBC reclaim makes "available" look generous, so a guard keyed on the live
 // figure alone would invert exactly when needed, while min() cannot make the ceiling scarcer than the static bound already
@@ -366,7 +366,7 @@ func moeTopK(m *decoder.Model) int {
 }
 
 // autoMoESlotsMax is the per-layer slot ceiling the auto-sizer requests even when memory allows more; N=64 is the default
-// docs/completed/task-metal-expert-streaming-at-scale.md recommends. Raise it only if a later measurement moves that.
+// the expert-streaming measurements recommend. Raise it only if a later measurement moves that.
 const autoMoESlotsMax = 64
 
 // autoMoESlotsFor is autoMoESlots' formula against the static ceiling, split out so a test can drive it with a small ram value.
@@ -428,8 +428,8 @@ func residentKVBytes(m *decoder.Model) int64 {
 	if err != nil {
 		ctxCap = metalCtxCapMax
 	}
-	// decoder.Model.ResidentKVBytes is the one definition shared with Plan("metal"), so `fit` and this guard price KV identically
-	// (docs/completed/task-memory-accounting-2026-09.md): f16, or int8 plus per-head scales, every attention layer at the full ctx padded
+	// decoder.Model.ResidentKVBytes is the one definition shared with Plan("metal"), so `fit` and this guard price KV identically:
+	// f16, or int8 plus per-head scales, every attention layer at the full ctx padded
 	// to 8, no Gated-DeltaNet layer.
 	return m.ResidentKVBytes("metal", ctxCap, false, false)
 }
@@ -816,13 +816,13 @@ func (a *metalResident) ForwardNoLogits(embedding []float32, pos int) error {
 // the sequential per-token loop runs instead (or, on a resident with the batched step, the exact step: metalStepPrefillCeiling).
 // It is the lowest K at which the §3.2 pooled fidelity gate passed and the pass beat the sequential loop; below it no decision
 // cell has passed. Lowering it needs that gate at the new K (docs/measurements/metal-prefill-floor-2026-09-20.md,
-// docs/completed/task-metal-audit-2026-10.md). GOINFER_METAL_FAST_PREFILL_FLOOR overrides it, 0 = no floor.
+// ). GOINFER_METAL_FAST_PREFILL_FLOOR overrides it, 0 = no floor.
 const metalFastPrefillFloor = 16
 
 // metalStepPrefillCeiling bounds the batched step's range: a resident with the step runs a prompt that ends below this many
 // tokens as exact decode rows on it (E-P01) rather than the pass. The step is bit-identical to the sequential loop and the pass
 // is not, so it keeps every length where it is not slower (the step is faster at K = 16, the pass at K = 32, on both measured
-// models; docs/completed/task-metal-audit-2026-10.md, A-P02).
+// models A-P02).
 const metalStepPrefillCeiling = 32
 
 // metalFastPrefillEnabled reports whether the batched f16-MMA prefill is selected. Default on above metalFastPrefillFloor
@@ -882,7 +882,7 @@ func metalFastPrefillFloorFor(v string) int {
 }
 
 // metalFusedAttentionEnabled reports whether attention_prefill_fused (the simdgroup_matrix flash-attention twin of
-// attention_prefill, docs/completed/task-prefill-gap.md §4) runs in place of the exact scalar kernel. Default on
+// attention_prefill) runs in place of the exact scalar kernel. Default on
 // (docs/measurements/prefill-l2-metal-fused-attn-2026-09-09.md §5); GOINFER_METAL_FUSED_ATTENTION=0 or --exact-prefill (which
 // also covers metalFastPrefillEnabled) opts back to the exact kernel. The fused kernel needs hd%8==0 && hd<=128 (ATTN_MAXHD in
 // prefill.go); head dims 256 and 512 take attention_prefill_steel_split under the same flag (exactAttnLayer), and every other
@@ -1002,7 +1002,7 @@ func (a *metalResident) prefillLastSrc(ctx context.Context, src rowSource, start
 	}
 	// A paged Gemma 4 MoE, a paged generic MoE and a Gemma 4 E-model run their prompts layer by layer on decode's own kernels,
 	// bit-identical to the sequential loop, so neither the floor nor --exact-prefill applies to them (each behind its own switch;
-	// docs/completed/task-m26-mac-2026-10.md). An E-model prompt at or above the floor takes the batched pass when it is on; below the
+	// ). An E-model prompt at or above the floor takes the batched pass when it is on; below the
 	// floor, or on any decline, the layer-major pass below runs it.
 	if a.emodelBatched() && a.fastPrefill() && startPos+src.n >= metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR")) {
 		if src.width == a.embLen() {
@@ -1072,8 +1072,7 @@ func (a *metalResident) prefillLastSrc(ctx context.Context, src rowSource, start
 
 // prefillUnaligned names the first reduction length the batched pass's GEMMs cannot take, or "" when every one is a multiple of
 // 32: gemm_w4f16_tile and its int8 twin stage K in slabs of 32 with no partial-slab handling (prefill.go). An int4 resident
-// cannot violate it (int4Buf refuses K%32 != 0 at build), but a native int8 one can (docs/completed/task-metal-pairwise-followups-2026-10.md,
-// Part A). Real checkpoints are 32-aligned; this keeps an unaligned model on the sequential path instead of computing garbage.
+// cannot violate it (int4Buf refuses K%32 != 0 at build), but a native int8 one can. Real checkpoints are 32-aligned; this keeps an unaligned model on the sequential path instead of computing garbage.
 func (r *resident) prefillUnaligned() string {
 	if r.H%32 != 0 {
 		return fmt.Sprintf("the hidden size is %d", r.H)
@@ -1224,7 +1223,7 @@ func (a *metalResident) batchedPrefillSrc(src rowSource, startPos, floor int, mr
 	return logits, nil
 }
 
-// PrefillMRoPELast (decoder.ResidentPrefillSubsystem, S16 of docs/completed/task-multimodal-support-2026-10.md) is PrefillLast for a
+// PrefillMRoPELast (decoder.ResidentPrefillSubsystem, S16 of ) is PrefillLast for a
 // Qwen image turn: the batched f16 pass with every row rotated by its own (temporal, height, width) m-RoPE triple, so the
 // image turn prefills here instead of on the CPU with its K/V uploaded after. mropePos covers the whole prompt from 0. It
 // declines (the decoder then takes the CPU-prefill+UploadKV bridge) when the model has no m-RoPE axis table, when a
@@ -1250,8 +1249,7 @@ func (a *metalResident) PrefillMRoPEDeepstackLast(ctx context.Context, embedding
 
 // metalMRoPEPrefillOn and metalDeepstackPrefillOn turn the resident m-RoPE prefill on, for a turn without DeepStack sets
 // (Qwen2.5-VL; Qwen3.5+ is not claimed) and with them (Qwen3-VL). Off, an image turn takes the CPU prefill and the upload. Both
-// are on by owner decision after the real-checkpoint gates (docs/completed/task-multimodal-support-2026-10.md,
-// docs/completed/task-metal-prefill-precision-2026-10.md). Tests set them.
+// are on by owner decision after the real-checkpoint gates. Tests set them.
 var metalMRoPEPrefillOn, metalDeepstackPrefillOn = true, true
 
 func (a *metalResident) prefillMRoPE(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int, deep *prefillDeep) ([]float32, error) {
@@ -1425,7 +1423,7 @@ func (a *metalResident) VerifyPath() (bool, string) {
 	return true, "batched layer-major single-command-buffer"
 }
 
-// SetAdapter implements decoder.ResidentRuntimeSubsystem (G3, docs/completed/task-gpu-paths-2026-09.md) —
+// SetAdapter implements decoder.ResidentRuntimeSubsystem —
 // generateInto calls this to bind/clear a compute-time LoRA adapter for an admitted session.
 func (a *metalResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 	return a.r.SetAdapter(layers)
@@ -1603,7 +1601,7 @@ func (a *metalResident) SampleChainNext(seed, draw uint64) (int, error) {
 func (a *metalResident) Close() error { return a.r.Close() }
 
 // prefillBlockScratch is the most row-sized scratch one pass of a blocked prefill may allocate (prefillBlockBudget may
-// give less): PrefillBlockRows is the number of rows that fit the budget. The speed reading that keeps it is docs/completed/task-integration-harness-2026-10.md, "I8".
+// give less): PrefillBlockRows is the number of rows that fit the budget.
 const prefillBlockScratch = 512 << 20
 
 // prefillBlockRowsMin is the shortest block PrefillBlockRows reports, for a model whose rows are so wide that fewer

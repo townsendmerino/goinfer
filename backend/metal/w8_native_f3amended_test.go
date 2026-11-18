@@ -18,8 +18,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestW8Native_F3amended_closerToF32 is gate F3 as the owner amended it (docs/completed/task-metal-int8-2026-10.md,
-// "F3′"): Metal's native int8int8 (precise math, the owner's other decision) against the CPU's int8int8 at Metal's
+// TestW8Native_F3amended_closerToF32 is gate F3 as the owner amended it: Metal's native int8int8 (precise math, the owner's other decision) against the CPU's int8int8 at Metal's
 // own KV precision (every K and V rounded to f16 as it is stored), over 8 prompts instead of one. Each prompt is the first
 // 16 tokens of a prefill-gate set-A file, then 16 tokens of the CPU f32 model's greedy continuation; positions 2-31 are
 // scored, 240 in all. Bar: the pooled mean KL(f32 ‖ Metal int8int8) is at most 1.10 × the pooled mean KL(f32 ‖ CPU

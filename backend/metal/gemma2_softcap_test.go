@@ -12,8 +12,8 @@ import (
 
 // TestGemma2Softcap_lanesAndPrefillMetal builds a resident for each Gemma 2 tiny fixture directly (Metal does not
 // declare the attention softcap, so a load declines: TestGemma2DeclinesResidentMetal) and checks two things about a
-// model with a cap. It is not the Gemma 2 parity gate; that is registered in
-// docs/completed/task-forward-architecture-2026-10.md §4.6 and runs with the declaration.
+// model with a cap. It is not the Gemma 2 parity gate; that is registered separately
+// and runs with the declaration.
 //
 //   - The lanes: a capped model takes the exact attention kernels only, the ones the softcap is gated on
 //     (TestAttnSoftcap_decodeKernels, TestAttnSoftcap_prefillKernel). The fixtures' head dimension is 32, which without a

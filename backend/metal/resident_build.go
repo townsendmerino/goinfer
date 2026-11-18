@@ -138,7 +138,7 @@ func (b *residentBuild) bindPipelines() {
 	// N/row>=N guard (see the note on the kernel in kernels.go): it is a reduction, so mask the logit to -INF, do
 	// not early-return past the barrier.
 	r.pRope, r.pRope2, r.pKv, r.pAttn = pipe("rope"), pipe("rope2"), pipe("kv_store"), pipe("attention")
-	// Pairwise rope (docs/completed/task-metal-pairwise-rope-2026-10.md): a GPT-J pairwise family (Cohere, Command-R7B, Aya,
+	// Pairwise rope: a GPT-J pairwise family (Cohere, Command-R7B, Aya,
 	// GLM-OCR) binds the pairwise twins into the same fields, so no dispatch site changes; every other family keeps these.
 	if r.pairwiseRoPE = bv.PairwiseRoPE(); r.pairwiseRoPE {
 		r.pRope, r.pRope2 = pipe("rope_pw"), pipe("rope2_pw")
@@ -166,7 +166,7 @@ func (b *residentBuild) bindPipelines() {
 	r.gumbelNB = gumbelBlocks(V)
 	r.pQKNorm, r.pRmsF32 = pipe("qk_norm"), pipe("rmsnorm_f32")
 	r.qkNorm = shape.QKNorm
-	r.qkNormWhole = shape.QKNormWhole // G5 (docs/completed/task-gpu-paths-2026-09.md): Olmo 3/Olmo Hybrid
+	r.qkNormWhole = shape.QKNormWhole // G5: Olmo 3/Olmo Hybrid
 	r.sandwich = shape.Sandwich
 	r.attnSoftcap = attnSoftcap
 	r.postOnly = shape.PostOnly // G5: Olmo 3/Olmo Hybrid
@@ -260,7 +260,7 @@ func (b *residentBuild) buildMixers() error {
 func (b *residentBuild) selectLanes() error {
 	m, r, pipe := b.m, b.r, b.pipe
 	var err error
-	// Native int8 (docs/completed/task-metal-int8-2026-10.md): a dense model whose body projections are all int8 runs
+	// Native int8: a dense model whose body projections are all int8 runs
 	// them as W8A8 instead of re-quantizing them to int4. The int4-only paths cannot read those buffers, so they are
 	// off for it: the f16 lane here, the R18 rows kernels and the MC3 step below. The batched prefill pass reads
 	// them through its W8 tiles (gemm_w8f16_*).
@@ -293,7 +293,7 @@ func (b *residentBuild) selectLanes() error {
 	}
 	if why := f32Projection(m); why != "" {
 		// An f32 load reaches here only when f32 was asked for; this backend runs int4 or int8 weights and does not
-		// quantize them behind the request (docs/completed/task-metal-int8-2026-10.md, slice 4). A clear decline instead of
+		// quantize them behind the request. A clear decline instead of
 		// int4Concat's panic on an f32 kind.
 		return fmt.Errorf("weights loaded at f32 (%s); metal runs int4 or int8 weights: load with -quant int4 or int8int8 to use the GPU", why)
 	}

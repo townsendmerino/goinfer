@@ -15,7 +15,7 @@ import (
 // TestSpecVerifyCurveMetal is the Metal side of cuda/spec_verify_ceiling_test.go (D1/P10): the
 // batched-verify curve T(M) = W + C*M a resident Metal target needs so P10's speedup formula
 // (decode_ms*(1+accepted)/(draft_ms+verify_ms(k))) can be projected on this backend instead of
-// only CUDA's. See docs/completed/metal-verify-curve.md for the full task.
+// only CUDA's.
 //
 // CRITICAL: `PrefillLast`, the batched primitive this test times, is NOT bit-identical to decode's int8 path (its f16-MMA
 // activation path diverged from decode's token stream on a measured fraction of prompts: §A2-Metal, docs/ollama-chase.md; the

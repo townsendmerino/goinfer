@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// TestQ4KLaneKernels is G-Q1 of docs/completed/task-metal-q4k-2026-10.md (registered before this code), and since KS-C1 its C1-G1:
+// TestQ4KLaneKernels is G-Q1, and since KS-C1 its C1-G1:
 // the q4k lane's two GEMVs (the rows kernels at every built R; plain, residual and
 // bias variants) against a float64 reference on the host, which dequantizes the same bytes through aikit (linalg.WrapQ4K's Row for
 // Q4_K; the per-row scale for int8) and dots them with the same f32 activations. Bar: per row, |got - ref| at most 1e-5

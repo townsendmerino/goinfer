@@ -97,7 +97,7 @@ type expertPool struct {
 	stagePread  func(e int, s expertSlot)
 	scalePreads atomic.Int64 // stages whose f16 scales were pread from the file too (C-P01); atomic: batch stages run concurrently
 
-	// Lever 3 (docs/completed/task-m26-mac-2026-10.md): experts guessed for this layer's next use, claimed on the caller's
+	// Lever 3: experts guessed for this layer's next use, claimed on the caller's
 	// thread and read in the background (prefetchAsync); finishPrefetch, which ensureResidentBatch runs first, waits for
 	// the reads and only then marks them resident, so the GPU never reads a slot still being written.
 	prefetchWG      sync.WaitGroup
@@ -373,7 +373,7 @@ func (p *expertPool) ensureResidentBatch(ids []int) []expertSlot {
 	return out
 }
 
-// expertPoolDefect plants G-1's defects (docs/completed/task-option-path-admission-2026-10.md §4.3, finding 2); 0 in
+// expertPoolDefect plants G-1's defects; 0 in
 // production. 1: a slot whose expert is evicted keeps the evicted expert's bytes (the new one is not staged). 2: the
 // GPU is told the next slot along. 3: each staged expert takes the next expert's scales.
 var expertPoolDefect int

@@ -216,8 +216,8 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 	}
 	if g.paged {
 		// Paged: do not stack the experts (the all-E buffers are what cannot be afforded). Build a bounded LRU slot pool and a stage fn
-		// that reads expert e's W4A8 bytes straight from the bundle's mmap-backed WeightMats on demand (int4DirectWords aliases the
-		// .giw). Per-expert buffer sizes come from expert 0. The .giw expert weights MUST be int4-direct (group-32) for this
+		// that reads expert e's W4A8 bytes straight from the bundle's mmap-backed WeightMats on demand (int4DirectWords aliases the.
+		// giw). Per-expert buffer sizes come from expert 0. The .giw expert weights MUST be int4-direct (group-32) for this
 		// zero-intermediate path.
 		gw0, gs0, ok1 := int4DirectWords(b.ExpertsGateUp[0])
 		dw0, ds0, ok2 := int4DirectWords(b.ExpertsDown[0])
@@ -628,8 +628,8 @@ var pagedAsyncPhase2On = true
 // g4PrefetchOn guesses a paged Gemma 4 MoE layer's experts from the layer before it and reads the misses in the background:
 // phase 1 of layer l also runs layer l+1's router on l's residual, the host starts reading those experts into l+1's pool, and the
 // reads overlap the GPU's phase 2 of l and phase 1 of l+1. The true router still picks; a wrong guess costs an evicted slot,
-// never a wrong bit. OFF: the extra reads compete with demand reads on the SSD and it measured slower than not guessing
-// (docs/completed/task-m26-mac-2026-10.md, "Lever 3"). Kept, gated bit-exact, for a better guess.
+// never a wrong bit. OFF: the extra reads compete with demand reads on the SSD and it measured slower than not guessing.
+// Kept, gated bit-exact, for a better guess.
 var g4PrefetchOn = false
 
 // g4PrefetchTop is how many of the guess's experts are prefetched, highest score first.

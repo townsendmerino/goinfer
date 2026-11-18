@@ -16,9 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestR2_decodeFidelityGate is R2's gate (3) (docs/completed/red-october.md: "the same teacher-forced
-// fidelity gate R1 uses, S at depth 3900 as the decision cell, W4A8 + shipped attention as the exact
-// arm"). Same construction as metal/r1_gate3_test.go, two substitutions: the toggle is
+// TestR2_decodeFidelityGate is R2's gate (3). Same construction as metal/r1_gate3_test.go, two substitutions: the toggle is
 // r.decodeAttnFA (attention_fa vs the shipped attention kernel; canUseAttnFA reads the field on
 // every dispatch, pipelines and the partial buffer are always built), and the cell is K=3900 —
 // above attnFADepthFloor (1024), so every one of the 64 teacher-forced continuation positions
@@ -46,8 +44,8 @@ func runDecodeFidelityGate(t *testing.T, tag, candName string, prep func(t *test
 	if testing.Short() {
 		t.Skip("long-running gate: skipped in -short")
 	}
-	// GOINFER_METAL_GATE_MODEL and GOINFER_METAL_GATE_CELL run another model against its own references: the 7B's
-	// .int4.metal.giw sidecar with cell "D7" (D7-K<K> files: int8-weight CPU references, so read beside the 1.5B's S
+	// GOINFER_METAL_GATE_MODEL and GOINFER_METAL_GATE_CELL run another model against its own references: the 7B's.
+	// int4.metal.giw sidecar with cell "D7" (D7-K<K> files: int8-weight CPU references, so read beside the 1.5B's S
 	// cells, not graded by them). The defaults are the 1.5B and "S".
 	path := os.Getenv("GOINFER_METAL_GATE_MODEL")
 	if path == "" {
@@ -69,7 +67,7 @@ func runDecodeFidelityGate(t *testing.T, tag, candName string, prep func(t *test
 	}
 	// K is the decision cell's depth: 3900 by default (R2, R17). GOINFER_METAL_GATE_K picks another cell that has CPU
 	// references (S-K<K> files); GOINFER_METAL_GATE_FLOOR sets attnFAFloorOverride so the candidate arm engages below
-	// the production floor (B-P03, docs/completed/task-metal-audit-2026-10.md: K = 1024 with the floor at 1024). Without
+	// the production floor (B-P03: K = 1024 with the floor at 1024). Without
 	// the override a K below the floor fails the arm's own canUseAttnFA check rather than comparing a kernel with
 	// itself.
 	K := 3900

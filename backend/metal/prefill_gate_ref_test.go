@@ -17,7 +17,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestPrefillGateVsReference is Phase B of docs/completed/task-prefill-gap.md §4 L1's fresh-prompt decision
+// TestPrefillGateVsReference is Phase B L1's fresh-prompt decision
 // run, superseding the §3.1 per-cell form this file used before. TestPrefillGate
 // (prefill_gate_test.go) scored Metal's fast (f16-activation) path against Metal's own exact
 // (int8-per-row-activation) path and treated the exact path as truth; §3.1 found that comparison
@@ -38,7 +38,7 @@ import (
 // per-position agreement is attributable to the arm alone, not to which one's tokens happened to
 // be used as the "ground truth" stream.
 //
-// §3.2's POOLED form (docs/completed/task-prefill-gap.md §3, as amended by §3.1 and §3.2) — the per-cell
+// §3.2's POOLED form ( as amended by §3.1 and §3.2) — the per-cell
 // binary form this file used has NO resolving power at these sample sizes (§3.2's
 // own arithmetic: a per-cell veto over N criteria fails an arm of EQUAL quality most of the time).
 // The decision is now pooled over every decision-set cell for one model (K ∈ {256, 512, 1024} —
@@ -107,7 +107,7 @@ func TestPrefillGateVsReference(t *testing.T) {
 	// meaning "sequential Forward, with attention_fa engaged past 1536" on any future re-run,
 	// changing what this gate's already-recorded results compare against.
 	t.Setenv("GOINFER_METAL_ATTN_FA", "0")
-	// R19 (docs/completed/red-october.md): GOINFER_METAL_R19_BASELINE=1 runs the fast arm on the retired
+	// R19: GOINFER_METAL_R19_BASELINE=1 runs the fast arm on the retired
 	// attention_prefill_fused where production now runs attention_prefill_steel — the baseline of R19's precondition 1.
 	if os.Getenv("GOINFER_METAL_R19_BASELINE") == "1" {
 		prefillSteelAttnOff = true
@@ -173,7 +173,7 @@ func TestPrefillGateVsReference(t *testing.T) {
 			// which fails this test's *metalResident type assertion. Pinning to metalCtxCapMax instead would make the fit guard price a
 			// 32k KV and refuse loads that fit. 4096 covers every decision/confirm cell: the widest, K=3900 + continuationN(64)
 			// teacher-forced steps, tops out at pos 3962.
-			// GOINFER_METAL_GATE_QUANT=int8int8 grades the native int8 path (docs/completed/task-metal-int8-2026-10.md, slice 2): an int8int8
+			// GOINFER_METAL_GATE_QUANT=int8int8 grades the native int8 path: an int8int8
 			// load with nativeInt8 on, both arms on its W8 kernels.
 			quant := "int4"
 			switch q := os.Getenv("GOINFER_METAL_GATE_QUANT"); q {

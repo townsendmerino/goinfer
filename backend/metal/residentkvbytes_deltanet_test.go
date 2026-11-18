@@ -81,8 +81,7 @@ func TestResidentKVBytes_excludesDeltaNetLayers(t *testing.T) {
 	}
 }
 
-// deltaNetSlotFixtures are the tracked Gated-DeltaNet checkpoints the per-slot state is checked on (OP4m-d4a,
-// docs/completed/task-forward-architecture-2026-10.md §4.9).
+// deltaNetSlotFixtures are the tracked Gated-DeltaNet checkpoints the per-slot state is checked on.
 var deltaNetSlotFixtures = []string{"../../testdata/qwen35-tiny", "../../testdata/qwen3next-tiny"}
 
 // mambaSlotFixture is the tracked Mamba-2 hybrid (Nemotron-H) the per-slot state is checked on (OP4m-d6a).

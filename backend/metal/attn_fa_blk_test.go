@@ -21,8 +21,7 @@ import (
 
 // r17Kernels is the graded attention_fa_blk, rebuilt from the shipped section of allKernels into the standalone library form the R17
 // harnesses compile (the prototype's own macro name, its own #include): the shipped text less the score function and the block table
-// (r17GradedKernelSource, r17WithoutTable). The prototype is R17's step 2 (docs/completed/red-october.md;
-// docs/measurements/metal-decode-attn-r17-2026-09-25.md): attention_fa's first pass restructured in the shape of
+// (r17GradedKernelSource, r17WithoutTable). The prototype is R17's step 2 (// docs/measurements/metal-decode-attn-r17-2026-09-25.md): attention_fa's first pass restructured in the shape of
 // llama.cpp's flash_attn_ext_vec. TestR17GradedArm_isTheGradedText holds it to the SHA-256 of the source that was graded.
 var r17Kernels = r17WithoutTable(r17GradedKernelSource())
 
@@ -369,8 +368,8 @@ func TestAttnFABlkSelection(t *testing.T) {
 	}
 }
 
-// newestMetalSidecar is the path among paths to stem's Metal int4 sidecar with the highest format version: its name ends
-// .int4.metal.vN.giw, and an unversioned .int4.metal.giw is version 0. Any other name is not a sidecar.
+// newestMetalSidecar is the path among paths to stem's Metal int4 sidecar with the highest format version: its name ends.
+// int4.metal.vN.giw, and an unversioned .int4.metal.giw is version 0. Any other name is not a sidecar.
 func newestMetalSidecar(stem string, paths []string) (string, bool) {
 	best, bestV := "", -1
 	for _, p := range paths {

@@ -10,8 +10,7 @@ import (
 	"time"
 )
 
-// s17GemmVariants are the lever B design probe's candidate kernels (docs/completed/task-multimodal-support-2026-10.md, "the
-// f32-input kernel's design, amended"): kept so the probe that chose tower_gemm_w16's shape can be re-run.
+// s17GemmVariants are the lever B design probe's candidate kernels: kept so the probe that chose tower_gemm_w16's shape can be re-run.
 const s17GemmVariants = `
 // 2x4 fragments per simdgroup (16x32), 4 simdgroups as 2x2 -> 32x64 tile, direct device loads
 kernel void gemm_f32_reg24(device const float* A [[buffer(0)]], device const float* B [[buffer(1)]], device float* C [[buffer(2)]],

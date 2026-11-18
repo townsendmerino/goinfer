@@ -195,7 +195,7 @@ func TestQwen35_35B_pagedRuns(t *testing.T) {
 // TestQwen35_35B_cpuPagedBaseline is the DO-NOTHING ARM for the run above: the same checkpoint, box and session, decoded
 // through the CPU expert pager (StreamWeights, decoder/moepaging.go) instead of the Metal one. Without it, "Metal paging is
 // faster" would be a cross-session ratio against a number measured on another day, which can drift by multiples from machine
-// load alone (docs/completed/task-zeno-compare.md).
+// load alone.
 //
 // IT LIVES IN metal/ AND USES NO METAL. That is deliberate: its only reason to exist is to be the baseline for the Metal
 // number, and a baseline that drifts away from its comparand into another package (and another run) goes stale. Same helpers,
@@ -214,7 +214,7 @@ func TestQwen35_35B_cpuPagedBaseline(t *testing.T) {
 	if _, err := os.Stat(giw); err != nil {
 		t.Skipf("no 35B .giw (%s)", giw)
 	}
-	budgetGB := 6.0 // matches the 6 GB kind-3 row in docs/completed/task-zeno-compare.md (1.605 tok/s, 3-run avg)
+	budgetGB := 6.0 // matches the 6 GB kind-3 row (1.605 tok/s, 3-run avg)
 	if v := os.Getenv("GOINFER_CPU_BUDGET_GB"); v != "" {
 		budgetGB, _ = strconv.ParseFloat(v, 64)
 	}
