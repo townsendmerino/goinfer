@@ -1746,8 +1746,8 @@ func TestMC3StepWallVsGPU(t *testing.T) {
 	}
 }
 
-// TestMC3Verify_sameSlotRowsBitIdentical is the first gate of Metal spec verify on the step kernels
-// (docs/tasks/parked/task-concurrency-2026-09.md, MC4): a step whose rows are CONSECUTIVE positions of one sequence on one slot
+// TestMC3Verify_sameSlotRowsBitIdentical is the first gate of Metal spec verify on the step kernels:
+// a step whose rows are CONSECUTIVE positions of one sequence on one slot
 // (a verify round) gives every logit and every K/V element bit-identical to production decoding those tokens one after
 // another. Twin slots are filled with the same history; M = 2, 4, 8 rows at depths 128 and 2048, and a run straddling
 // attnFADepthFloor, so one step mixes per-head and attention_fa rows.

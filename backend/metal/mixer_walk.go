@@ -6,7 +6,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-// The mixer steps' operation walk (OP4m-pod; docs/tasks/task-forward-and-memory-2026-11.md, "OP4m-pod: registration"): the
+// The mixer steps' operation walk: the
 // per-token decode emits a recurrent or latent mixer step, DeltaNet, Mamba-2 or MLA, from its operations, each through its
 // emitter: the input norm, the mixer, the residual add. Where one dispatch serves two adjacent operations, the pair is emitted
 // once: DeltaNet's out_proj adds into the residual. checkMixerWalk holds every step's operations to what the walk emits when the

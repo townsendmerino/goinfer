@@ -507,7 +507,7 @@ type resident struct {
 	// through the bound slot's table (kvHostRow).
 	kc, vc []Buffer
 	ks, vs []Buffer
-	// kvSlotBufs: MC1's resident KV slots (docs/tasks/parked/task-concurrency-2026-09.md), each its block table; useKVSlot binds one
+	// kvSlotBufs: MC1's resident KV slots, each its block table; useKVSlot binds one
 	// by binding its table (kt). One entry for one slot with a pool, so the batched step can prefill a prompt on it.
 	// kvSlot is the bound index.
 	kvSlotBufs []kvSlotBuf
@@ -2076,11 +2076,11 @@ func (r *resident) encodeLayerStep(e *Encoder, st layerStep, i, l int, L *residL
 }
 
 // q4kGemvRows and w8F32GemvRows are the q4k lane's rows a simdgroup for its Q4_K and int8 GEMVs (gemv_q4k_f32_rows<R>,
-// gemv_w8_f32_rows<R>), KS-C1's C1-G0 reading (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-C1 (a)+(b) gates").
+// gemv_w8_f32_rows<R>).
 const q4kGemvRows, w8F32GemvRows = 8, 2
 
 // q5kGemvRows and q6kGemvRows are the rows a simdgroup of the q4k lane's native Q5_K and Q6_K GEMVs (gemv_q5k_f32_rows<R>,
-// gemv_q6k_f32_rows<R>), KS-O1's O1-G0 reading (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-O1 on Metal: gates"). Only
+// gemv_q6k_f32_rows<R>), KS-O1's O1-G0 reading. Only
 // these R are instantiated.
 const q5kGemvRows, q6kGemvRows = 4, 4
 

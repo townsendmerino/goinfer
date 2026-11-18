@@ -10,8 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// MLA, DeepSeek and Kimi's multi-head latent attention, on the resident decode path (docs/tasks/task-forward-architecture-
-// 2026-10.md §4.7, OP2a), in gpu/mla.go's absorbed form: kernels/mla_kernels_msl.go has the four kernels. A layer's KV cache is
+// MLA, DeepSeek and Kimi's multi-head latent attention, on the resident decode path, in gpu/mla.go's absorbed form: kernels/mla_kernels_msl.go has the four kernels. A layer's KV cache is
 // one latent row per position, [cn (kvLoRA) | krj (qkRope)] f32, held in r.kc[l] so the KV slot code gives each slot its own
 // rows (r.vc[l] aliases it; MLA stores no separate V). The projections run on the int8 GEMV (W8A8), as WebGPU's do; W_UK and
 // W_UV, sliced from kv_b on the host, stay f32 for the per-head matvecs.

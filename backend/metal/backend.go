@@ -455,7 +455,7 @@ func residentNeedBytes(m *decoder.Model) int64 {
 // model reporting zero bytes must not silently disable residency for everyone.
 func residentFitsMemory(m *decoder.Model) bool { return residentMemoryDecline(m) == "" }
 
-// metalKVSlots is how many resident KV slots buildResident allocates for m (MC1, docs/tasks/parked/task-concurrency-2026-09.md):
+// metalKVSlots is how many resident KV slots buildResident allocates for m:
 // the model's request (decoder.Model.ResidentKVSlotsRequestFor("metal"), 1 for a family with recurrent state that
 // program.Metal does not keep per slot), reduced while the extra slots would take the build over the memory guard's budget.
 // The first slot is the build's own KV, which residentMemoryDecline prices; each further one costs metalSlotBytes. The guard's own override
@@ -1536,7 +1536,7 @@ func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 	return nil
 }
 
-// KVSlots and UseKVSlot implement decoder.ResidentKVSubsystem (docs/tasks/parked/task-concurrency-2026-09.md): the slots metalKVSlots
+// KVSlots and UseKVSlot implement decoder.ResidentKVSubsystem: the slots metalKVSlots
 // allocated, and binding one.
 func (a *metalResident) KVSlots() int          { return a.r.kvSlotCount() }
 func (a *metalResident) UseKVSlot(i int) error { return a.r.useKVSlot(i) }
@@ -1620,7 +1620,7 @@ var prefillBlockRowsForTest int
 // resident whose prompts do not take the batched pass at every length: a paged layer-major route, an E-model without its
 // batched pass, an f32 KV cache, fast prefill off, an arch or norm the pass does not implement. An exact-attention layer
 // blocks only at head dim ≤ 256, where the exact and tiled kernels a block may choose are bit-identical; at 512 the choice
-// would have to key on the whole prompt's length (KS-H1, docs/tasks/parked/task-kernel-survey-2026-10.md).
+// would have to key on the whole prompt's length.
 func (a *metalResident) PrefillBlockRows() int {
 	r := a.r
 	emodel := a.emodelLayerMajor() && a.emodelBatched()

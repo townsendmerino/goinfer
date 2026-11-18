@@ -33,8 +33,7 @@ func d7Load1() float64 {
 	return l1
 }
 
-// TestD7_int8StepVsF16Pass is D7's measurement and P3B2-G3's instrument (docs/tasks/task-kv-precision-everywhere-2026-10.md, "D7
-// measurement", "P3b-2 gates"): on Qwen2.5-Coder-1.5B from ~/models, the resident prefill of a 2,048- and an 8,192-token prose
+// TestD7_int8StepVsF16Pass is D7's measurement and P3B2-G3's instrument: on Qwen2.5-Coder-1.5B from ~/models, the resident prefill of a 2,048- and an 8,192-token prose
 // prompt with an f16 cache against an int8 cache, a warm-up pair and five order-alternating pairs per length, in one process. D7
 // ran with the int8 arm on the step kernels (main 725c840c); since P3b-2 both arms take the MMA pass, and the median int8 / f16
 // ratio must be at most 1.25 at both lengths. A timed run: hold the timing lock.

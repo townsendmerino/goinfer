@@ -19,8 +19,8 @@ import (
 //
 // WHY IT EXISTS. Metal declares FeatAttnSink/FeatOutBias/FeatRopeMscale, but the evidence under
 // that declaration is TestGptOssResidentParity on a hand-built 2-layer tiny fixture — sub-T3 by
-// this repo's own tiering. docs/queue-correctness.md G7 records that "nothing has run a whole
-// gpt-oss forward on the resident path" on EITHER backend, and a declaration made on kernel-level parity was once
+// this repo's own tiering. Nothing has run a whole
+// gpt-oss forward on the resident path on EITHER backend, and a declaration made on kernel-level parity was once
 // correctly reverted for want of exactly that. This is that
 // missing run, on the backend where it is reachable.
 //

@@ -2,8 +2,7 @@
 
 package metal
 
-// kvI8PrefillKernels are the two kernels the f16 MMA prefill adds for an int8 KV cache (P3b-2, D9 (b),
-// docs/tasks/task-kv-precision-everywhere-2026-10.md), appended to the prefill library so no f16 kernel changes.
+// kvI8PrefillKernels are the two kernels the f16 MMA prefill adds for an int8 KV cache, appended to the prefill library so no f16 kernel changes.
 //
 //   - kv_store_i8_prefill stores a block's K/V rows into the int8 cache. It is kv_store_i8's source with each K/V read widened
 //     from the pass's half values (one thread per row and KV head), so its codes and scales are the ones kv_store_i8 writes

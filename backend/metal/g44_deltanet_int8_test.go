@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestG44_deltaNetInt8Declines is G44's tier 0 gate (docs/queue-correctness.md): qwen35-tiny at int8int8 does not go
+// TestG44_deltaNetInt8Declines is G44's tier 0 gate: qwen35-tiny at int8int8 does not go
 // resident on Metal, where int8 projections would be re-quantized to int4; at int4 it builds as before. (int4mix declines by
 // the same predicate, recurrentInt8Load, but is GGUF-only, so the tiny safetensors fixture cannot load it.) With the
 // decline removed (dnetInt8DeclineOffForTest, the planted defect) the int8int8 build goes through, which turns it red.

@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// TestP3b2_storeMatchesKvStoreI8 is P3B2-G1 (i) (docs/tasks/task-kv-precision-everywhere-2026-10.md, "P3b-2 gates"):
+// TestP3b2_storeMatchesKvStoreI8 is P3B2-G1 (i):
 // kv_store_i8_prefill, storing M rows of a pass's half K/V at scattered positions, writes the codes and scales kv_store_i8
 // writes for the same values widened to f32, one row at a time; a zero head (scale 1) included. kv_dequant_i8_f16's output
 // is half(code × scale), each element rounded as the host rounds it.

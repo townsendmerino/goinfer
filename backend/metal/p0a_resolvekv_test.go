@@ -8,7 +8,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestP0a_metalBuildFollowsResolveKV is P0A-G1's Metal half (docs/tasks/task-kv-precision-everywhere-2026-10.md, P0a′ gates):
+// TestP0a_metalBuildFollowsResolveKV is P0A-G1's Metal half:
 // with the resolver made to deliver int8 for an auto request, the resident build allocates the int8 cache; unhooked it does not.
 func TestP0a_metalBuildFollowsResolveKV(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
