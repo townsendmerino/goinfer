@@ -198,8 +198,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 // FIRST token (a forced or lone tool, or union "required"): the requests think.go must render thinking-off, because an open
 // think block in the prompt contradicts a mask that demands `<tool_call>` immediately. Conservative by design — a grammar
 // that then fails to compile still gets the thinking-off prompt. The lazy "auto" union is NOT included: it arms on the
-// family's call opener, so reasoning before it is legal (a model quoting the opener inside its reasoning would arm it early;
-// that hazard is recorded in docs/tasks/task-qwen35-think-prompt-2026-09.md).
+// family's call opener, so reasoning before it is legal (a model quoting the opener inside its reasoning would arm it early).
 func toolsConstrainedFromStart(forced *chat.Tool, namedForce bool, union string, tools []chat.Tool) bool {
 	if forced != nil {
 		return true
@@ -216,7 +215,7 @@ func toolsConstrainedFromStart(forced *chat.Tool, namedForce bool, union string,
 // Anthropic Messages surface so all three degrade identically.
 //
 // union ("", "auto" or "required") says what to do when no single tool is forced (usually two or more tools; also Anthropic
-// auto's lone tool; docs/tasks/task-tool-grammar-union-2026-09.md): "required" (OpenAI required, Anthropic any) constrains the
+// auto's lone tool): "required" (OpenAI required, Anthropic any) constrains the
 // call to ANY supplied tool from token 1; "auto" arms the same union lazily, on the family's call opener, so a prose answer
 // stays legal.
 func constrainForcedTool(lm *loadedModel, gr *genRequest, forced *chat.Tool, namedForce bool, union string, tools []chat.Tool) error {

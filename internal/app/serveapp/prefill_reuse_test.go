@@ -25,7 +25,7 @@ func (e reuseEngine) Start(context.Context, engine.Request) *engine.Stream {
 	return engine.NewStream(ch, func() *engine.Report { return &rep }, nil)
 }
 
-// TestUsage_prefillReuseSources is KV4's §5.16 reuse-source extension (docs/tasks/task-kv-architecture-2026-10.md): beside
+// TestUsage_prefillReuseSources is KV4's §5.16 reuse-source extension: beside
 // usage.prefill_reused_tokens, usage.prefill_reuse splits them into own continuation, shared (from another conversation), host and
 // disk, with the blocks promoted, on a streamed and a whole chat completion and text completion. With no reuse it is absent.
 func TestUsage_prefillReuseSources(t *testing.T) {

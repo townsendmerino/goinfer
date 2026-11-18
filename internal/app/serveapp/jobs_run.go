@@ -77,7 +77,7 @@ func jobTerminalEvents(j jobs.Job, created int64, errType string) [][]byte {
 // request's lifetime. Launched with `go runJob(...)` from handleCreateJob BEFORE that handler returns. release is
 // s.resolveAndLock's release func: normally deferred by withModel for one synchronous handler, here it is deferred for this
 // WHOLE job, so /admin unload cannot free the model out from under a generation still running after its submitting POST has
-// returned (docs/tasks/task-work-queue-2026-09.md).
+// returned.
 func runJob(s *server, lm *loadedModel, release func(), gr genRequest, rec admissionRecord, created int64) {
 	defer release()
 	log := jobs.NewEventLog()

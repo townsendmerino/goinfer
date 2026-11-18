@@ -609,7 +609,7 @@ func TestBanner_cpuKVBothCaches(t *testing.T) {
 	}
 }
 
-// TestBanner_kvPoolLine is KV4's §5.16 pool banner (docs/tasks/task-kv-architecture-2026-10.md): a resident's shared KV pool is
+// TestBanner_kvPoolLine is KV4's §5.16 pool banner: a resident's shared KV pool is
 // named in tokens and block size, with its precision, device bytes, groups, sharing scope and what one conversation can use.
 func TestBanner_kvPoolLine(t *testing.T) {
 	pool := decoder.KVPoolDetail{Positions: 58000, Guaranteed: 14500, BlockRows: 64, Groups: []string{"full"}, Precision: "f16", Bytes: 3_543_348_019}

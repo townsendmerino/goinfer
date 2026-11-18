@@ -1,6 +1,6 @@
 package serveapp
 
-// Thinking on the wire (docs/tasks/task-qwen35-think-prompt-2026-09.md).
+// Thinking on the wire.
 //
 // The invariant every route keeps: `content` is the answer and never carries think markup; reasoning, when the model
 // produced any, travels in a separate field a client is free to ignore. chat.Template says what the checkpoint's template

@@ -17,7 +17,7 @@ const minDrafterWidth = 4
 // take the block-speculative path.
 //
 // The caller loads dw in loadDecoder before the target model, because drafter-aware sizing needs the drafter's byte
-// footprint priced into Options.ExtraResidentBytes ahead of BuildResident (docs/tasks/task-fit-to-hardware.md section 2). Taking
+// footprint priced into Options.ExtraResidentBytes ahead of BuildResident. Taking
 // the loaded value here means that pricing and this attach see the same weights, not two independent reads of one
 // file.
 //

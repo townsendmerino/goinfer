@@ -12,7 +12,7 @@ import (
 //
 // A harness user reads exactly one thing before their first request: the lines `serve` prints before it says it is
 // listening. Everything below is a fact the runtime already knows, so nobody has to discover one request at a time
-// that their agent loop re-prefills every turn (docs/tasks/task-embed-and-harness-ux.md section 3.3, and the dsh
+// that their agent loop re-prefills every turn (the dsh
 // recipe in docs/server.md: "set expectations, don't let the harness discover them").
 //
 // The banner is built as a function returning lines, not a run of Fprintf calls, so a test can assert it against the
@@ -329,8 +329,7 @@ func serverBanner(s *server, cfg config) []string {
 	out := []string{"routes: " + strings.Join(routes, " ")}
 	// Load cost, split by phase. The split is what makes it actionable: "load 9.2s" is a number to be annoyed by,
 	// "9.2s, 82% build" says the disk is not the problem and a different quant might be. Printed only for a model
-	// whose loader instrumented it (docs/tasks/task-embed-and-harness-ux.md section 3.3 names the banner as the
-	// harness user's UI).
+	// whose loader instrumented it.
 	for _, lm := range s.models {
 		if sum := lm.mdl().LoadProfile().Summary(); sum != "" {
 			out = append(out, sum)
@@ -447,7 +446,7 @@ func kvPlanLine(f bannerFacts, cfg config) string {
 	return line
 }
 
-// kvPoolBannerLine names a resident's shared KV pool (docs/tasks/task-kv-architecture-2026-10.md §5.16): its tokens and block
+// kvPoolBannerLine names a resident's shared KV pool: its tokens and block
 // size, precision and device bytes, the layer groups that hold pools and what a window group keeps, the sharing scope, and how much of
 // it one conversation can use. A sliding-window layer keeps only a conversation's newest rows, so a windowed pool never reads as all
 // one conversation's. "" without a pool.

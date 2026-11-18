@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// A global, no-restart halt (docs/tasks/task-halt-2026-09.md). The model stays loaded; resume is instant. Distinct from
+// A global, no-restart halt. The model stays loaded; resume is instant. Distinct from
 // graceful shutdown (SIGINT/SIGTERM, main.go), which drains and exits; this stops taking and running work until told
 // otherwise.
 
@@ -56,7 +56,7 @@ func (s *server) resume(trigger string) {
 
 // haltGate is a chain-level wrapper (alongside auth/inf, main.go) for inference routes only. Checked AFTER auth (a bad
 // key is still rejected during a halt) and BEFORE inf (a halt must not have to wait for an inflight slot: "a halt that
-// has to wait for a slot is not a halt", docs/tasks/task-halt-2026-09.md). /admin/* and /health are never wrapped in
+// has to wait for a slot is not a halt"). /admin/* and /health are never wrapped in
 // this: an operator must always be able to resume a halted server and check its status.
 func (s *server) haltGate(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

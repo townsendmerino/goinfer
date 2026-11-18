@@ -417,7 +417,7 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	_, _ = w.Write(buf.Bytes())
 }
 
-// statusCancelled is the non-streaming status for an admin-cancelled generation (docs/tasks/task-halt-2026-09.md).
+// statusCancelled is the non-streaming status for an admin-cancelled generation.
 // 499 is not a registered HTTP status (net/http has no constant for it): it is nginx's "client closed request",
 // repurposed for "the server ended this request on someone's behalf, not a normal 4xx/5xx".
 // http.ResponseWriter.WriteHeader accepts any int, so it works like any other status.

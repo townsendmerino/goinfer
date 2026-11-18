@@ -12,8 +12,7 @@ import (
 
 // The two batch APIs (OpenAI /v1/batches, Anthropic /v1/messages/batches): thin translations onto the job store.
 // batches_run.go does the per-line execution and batches_finalize.go completion and output assembly. This file is
-// HTTP-shape only: decode, project, translate status vocabulary. Text-only chat scope
-// (docs/tasks/task-work-queue-2026-09.md).
+// HTTP-shape only: decode, project, translate status vocabulary. Text-only chat scope.
 
 // --- OpenAI: POST /v1/files, GET /v1/files/{id}, GET /v1/files/{id}/content ---
 

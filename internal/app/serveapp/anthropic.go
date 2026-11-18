@@ -634,7 +634,7 @@ func toolUseBlock(c chat.ToolCall) map[string]any {
 // stop_sequence (with the sequence); otherwise (EOS / turn-stop) → end_turn.
 func anthropicStopReason(finish, stopSeq string) (string, any) {
 	switch {
-	case finish == "cancelled": // not a real Anthropic stop_reason: a deliberate goinfer extension (docs/tasks/task-halt-2026-09.md)
+	case finish == "cancelled": // not a real Anthropic stop_reason: a deliberate goinfer extension
 		return "cancelled", nil
 	case finish == "length":
 		return "max_tokens", nil

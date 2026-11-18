@@ -671,8 +671,8 @@ func TestLimitInflight_M01(t *testing.T) {
 	}
 }
 
-// TestConstrainToolUnion_wiring pins the tool-grammar union's routing decisions
-// (docs/tasks/task-tool-grammar-union-2026-09.md): 2+ tools under auto arm the union LAZILY (a LogitProcessor,
+// TestConstrainToolUnion_wiring pins the tool-grammar union's routing decisions:
+// 2+ tools under auto arm the union LAZILY (a LogitProcessor,
 // never the fused-spec masker, which assumes a grammar live from token 1); required forces it from token 1
 // (masker set, so fused spec applies); a family with no opener (llama3) stays unconstrained under auto but is
 // still constrained under required; GOINFER_TOOL_UNION=0 restores the behaviour before the union exactly.

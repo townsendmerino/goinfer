@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// B35 at the serve layer (docs/queue-engineering.md, B35): for a model whose snapshots carry its recurrent state, every chat route hands
+// B35 at the serve layer: for a model whose snapshots carry its recurrent state, every chat route hands
 // the decoder a KVScope.Keep, and the next turn's real request, as a client sends it (the reply, then a new question), repeats the
 // prompt's first Keep ids, so the state kept there is the one turn 2 continues from. Run on the scripted server with Qwen3.5-9B's own
 // template, whose history render rewrites the end of the prompt: a state kept at the prompt's end would serve no later turn.

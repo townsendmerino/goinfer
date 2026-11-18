@@ -444,11 +444,11 @@ type server struct {
 	// tokenLog is --log-token-ids' file, nil when the flag is off.
 	tokenLog *tokenIDLog
 
-	// gens is the cancel-by-id registry (docs/tasks/task-halt-2026-09.md), shared by every generation surface. Never
+	// gens is the cancel-by-id registry, shared by every generation surface. Never
 	// nil after newServer.
 	gens *generationRegistry
 
-	// jobs is the job registry (docs/tasks/task-work-queue-2026-09.md), shared by every generation surface the way
+	// jobs is the job registry, shared by every generation surface the way
 	// gens is. Never nil after newServer: every generation gets a job whether or not -job-dir is set; jobs.journal is
 	// what is nil without it.
 	jobs *jobs.Store
@@ -458,7 +458,7 @@ type server struct {
 	files   *fileStore
 	batches *batchStore
 
-	// halted is the global halt state (docs/tasks/task-halt-2026-09.md); nil = running normally. See halt.go. The
+	// halted is the global halt state; nil = running normally. See halt.go. The
 	// zero value is nil, so newServer needs no init.
 	halted atomic.Pointer[haltInfo]
 
@@ -631,7 +631,7 @@ type sampling struct {
 	// before sampling; -100 bans the token in practice. /v1/messages takes it as a goinfer extension.
 	LogitBias      map[string]float64 `json:"logit_bias"`
 	ResponseFormat *respFormat        `json:"response_format"`
-	// Confidence is the goinfer_confidence vendor extension (docs/tasks/parked/task-constrained-confidence.md): with
+	// Confidence is the goinfer_confidence vendor extension: with
 	// response_format json_schema, the response carries each enum, boolean and integer field's confidence. Only the
 	// routes that write it back set confidenceOK; prepare refuses the flag everywhere else, so no route can accept it
 	// and silently drop the result.
