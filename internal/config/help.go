@@ -10,13 +10,13 @@ const ctxHelp = "GPU-resident KV capacity in positions{per-model}. 0 (default) k
 	"The real per-card ceiling is typically far higher and worth measuring for your model/quant " +
 	"(an RTX 2070 SUPER 8GB ran a dense 7B at int4 fine at -ctx 20000, " +
 	"refused at 24576). When set, the effective cap is min(model context window, this) and the KV it implies is " +
-	"VRAM-checked AT LOAD; if the whole model then can't build resident, it loads on the CPU path instead — measured " +
-	"~15x slower decode, same model/quant{serve-only}" +
+	"VRAM-checked AT LOAD: on CUDA a cap whose KV does not fit stops the load with an error naming the shortfall; if the whole " +
+	"model can't build resident for any other reason, it loads on the CPU path instead — measured ~15x slower decode, same model/quant{serve-only}" +
 	". On webgpu this LOWERS the backend cap when smaller; a value LARGER than the backend cap is ignored " +
 	"rather than honoured, since those caps are proven-fit ceilings"
 
 // ctxServeHelp is --ctx's serve-only clause.
-const ctxServeHelp = " — unless -require-backend is set, which refuses to start the server and names the GB shortfall instead. " +
+const ctxServeHelp = " — unless -require-backend is set, which refuses to start the server instead. " +
 	"That is a WHOLE-MODEL decision made once at load; a single request whose PROMPT exceeds the active cap is " +
 	"rejected with a clean 400 context_length_exceeded (audit R-10), never silently moved to a slower path"
 

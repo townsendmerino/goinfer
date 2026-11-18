@@ -170,7 +170,7 @@
   {
    "name": "ctx",
    "group": "Backend, precision and context",
-   "summary": "GPU-resident KV capacity in positions. 0 keeps the backend default, which `--fit` may raise."
+   "summary": "GPU-resident KV capacity in positions. 0 keeps the backend default, which `--fit` may raise. On CUDA a context given here whose KV does not fit the card stops startup with an error naming the bytes, rather than running on the CPU."
   },
   {
    "name": "direct-load",
