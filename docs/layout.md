@@ -176,6 +176,7 @@ About 316 files, referenced by path from CI, skills, the night runner and docs: 
 | `test_*` | tests of the scripts themselves (Python) |
 | `touched.py`, `touched_scans.py` | the day loop: build, vet and test what the diff touches |
 | `timing_lock.py`, `night.py`, `install-night-agent.sh` | the timing lock and the night queue |
+| `hostmem.py`, `mem_darwin.py` | memory: `cmd/hostmem`'s figures for the scripts, and the Mac memory instrument (a served model through two long prompts) |
 | `queue_citation_lint.py`, `book_link_lint.py`, `comment_census.py`, `readme_counts_check.py`, `doc_id_collisions.py`, `ci_checks.py` | lints (some run from the pre-push hook, `pre-push.sh`) |
 | `task_docs.py`, `doc_review_staleness.py` | task-doc ledgers and archiving (the docs are read from the notes checkout) |
 | `webui*` | browser gates for the web UI |

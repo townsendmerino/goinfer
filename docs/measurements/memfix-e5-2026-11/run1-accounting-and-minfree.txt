@@ -1,0 +1,37 @@
+start 2026-11-18 14:06:02 PST
+ 14:06:02 up 1 day,  5:42,  2 users,  load average: 0.66, 0.63, 1.44
+    [margin accounting] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf    device before KV   328 MiB | Plan   323 + slack    1 -> residual    4 MiB | ctx planned 16384 final 16384 (1 slots, KV   480 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 204 MiB margin
+    [margin accounting] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf    device before KV   932 MiB | Plan   927 + slack    1 -> residual    4 MiB | ctx planned 16384 final 16384 (1 slots, KV  1008 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 230 MiB margin
+    [margin accounting] qwen2.5-7b-instruct-q4_k_m.gguf            device before KV  4028 MiB | Plan  4022 + slack    2 -> residual    4 MiB | ctx planned 16384 final 16384 (1 slots, KV  1904 MiB) | post-KV scratch    2, first-use    0 MiB, against the 290 MiB margin
+    [margin accounting] gemma-3-4b-it                              device before KV  2368 MiB | Plan  2364 + slack    0 -> residual    4 MiB | ctx planned 15936 final 15936 (1 slots, KV  4352 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 311 MiB margin
+    [margin accounting] qwen25vl-3b-instruct                       device before KV  1792 MiB | Plan  1787 + slack    1 -> residual    4 MiB | ctx planned 16384 final 16384 (1 slots, KV  1296 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 239 MiB margin
+    [margin accounting] gemma-4-E2B_q4_0-it.gguf                   device before KV  1390 MiB | Plan  1386 + slack    0 -> residual    4 MiB | ctx planned 16384 final 16384 (1 slots, KV   636 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 339 MiB margin
+    [margin accounting] Qwen3-8B-Q4_K_M.gguf                       device before KV  4326 MiB | Plan  4321 + slack    1 -> residual    4 MiB | ctx planned  8192 final  8192 (1 slots, KV  2448 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 261 MiB margin
+--- PASS: TestBuildScratchAccounting (65.36s)
+    --- PASS: TestBuildScratchAccounting/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (1.38s)
+    --- PASS: TestBuildScratchAccounting/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (5.14s)
+    --- PASS: TestBuildScratchAccounting/qwen2.5-7b-instruct-q4_k_m.gguf (9.56s)
+    --- PASS: TestBuildScratchAccounting/gemma-3-4b-it (13.95s)
+    --- PASS: TestBuildScratchAccounting/qwen25vl-3b-instruct (11.38s)
+    --- PASS: TestBuildScratchAccounting/gemma-4-E2B_q4_0-it.gguf (8.17s)
+    --- PASS: TestBuildScratchAccounting/Qwen3-8B-Q4_K_M.gguf (13.34s)
+    [margin accounting slack on ] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf    device before KV   932 MiB | Plan   927 + slack    1 -> residual    4 MiB | ctx planned 16384 final 16384 (1 slots, KV  1008 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 230 MiB margin
+    [margin accounting slack off] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf    device before KV   932 MiB | Plan   927 + slack    0 -> residual    5 MiB | ctx planned 16384 final 16384 (1 slots, KV  1008 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 230 MiB margin
+    [margin accounting slack on ] qwen2.5-7b-instruct-q4_k_m.gguf            device before KV  4028 MiB | Plan  4022 + slack    2 -> residual    4 MiB | ctx planned 16384 final 16384 (1 slots, KV  1904 MiB) | post-KV scratch    2, first-use    0 MiB, against the 290 MiB margin
+    [margin accounting slack off] qwen2.5-7b-instruct-q4_k_m.gguf            device before KV  4028 MiB | Plan  4022 + slack    0 -> residual    6 MiB | ctx planned 16384 final 16384 (1 slots, KV  1904 MiB) | post-KV scratch    2, first-use    0 MiB, against the 290 MiB margin
+    [margin accounting slack on ] gemma-3-4b-it                              device before KV  2368 MiB | Plan  2364 + slack    0 -> residual    4 MiB | ctx planned 15936 final 15936 (1 slots, KV  4352 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 311 MiB margin
+    [margin accounting slack off] gemma-3-4b-it                              device before KV  2368 MiB | Plan  2364 + slack    0 -> residual    4 MiB | ctx planned 15936 final 15936 (1 slots, KV  4352 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 311 MiB margin
+    [margin accounting slack on ] qwen25vl-3b-instruct                       device before KV  1792 MiB | Plan  1787 + slack    1 -> residual    4 MiB | ctx planned 16384 final 16384 (1 slots, KV  1296 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 239 MiB margin
+    [margin accounting slack off] qwen25vl-3b-instruct                       device before KV  1792 MiB | Plan  1787 + slack    0 -> residual    5 MiB | ctx planned 16384 final 16384 (1 slots, KV  1296 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 239 MiB margin
+    [margin accounting slack on ] gemma-4-E2B_q4_0-it.gguf                   device before KV  1390 MiB | Plan  1386 + slack    0 -> residual    4 MiB | ctx planned 16384 final 16384 (1 slots, KV   636 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 339 MiB margin
+    [margin accounting slack off] gemma-4-E2B_q4_0-it.gguf                   device before KV  1390 MiB | Plan  1386 + slack    0 -> residual    4 MiB | ctx planned 16384 final 16384 (1 slots, KV   636 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 339 MiB margin
+    [margin accounting slack on ] Qwen3-8B-Q4_K_M.gguf                       device before KV  4326 MiB | Plan  4321 + slack    1 -> residual    4 MiB | ctx planned  8192 final  8192 (1 slots, KV  2448 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 261 MiB margin
+    [margin accounting slack off] Qwen3-8B-Q4_K_M.gguf                       device before KV  4326 MiB | Plan  4321 + slack    0 -> residual    5 MiB | ctx planned  8192 final  8192 (1 slots, KV  2448 MiB) | post-KV scratch   -0, first-use    0 MiB, against the 261 MiB margin
+--- FAIL: TestBuildScratchAccounting_plantedDefect (108.93s)
+    [margin accounting serve] qwen2.5-7b-instruct-q4_k_m.gguf            device before KV  3800 MiB | Plan  3794 + slack    2 -> residual    4 MiB | ctx planned  6528 final 26112 (4 slots, KV 11536 MiB) | post-KV scratch -8620, first-use    0 MiB, against the 290 MiB margin
+--- PASS: TestBuildScratchAccounting_serveShape (9.56s)
+[E5-minfree] loaded: 4 KV slots at 26112 positions, concurrency 4; free 7064.9 MiB before the load, 348.9 after; margin 290.3 MiB
+[E5-minfree] four generations in 11.595s, 5797 samples at 2 ms: lowest free 228.9 MiB (120.0 below the loaded figure), 73.9 above the 155 MiB allocation floor
+--- PASS: TestConcurrentMinFree_7BServe (19.22s)
+FAIL
+end 14:09:25

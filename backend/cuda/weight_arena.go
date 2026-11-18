@@ -24,6 +24,10 @@ type weightArena struct {
 	missed     int64 // bytes of dense-line weight buffers the arena could not hold, each allocated on its own
 }
 
+// weightArenaOffForTest uploads every weight as its own allocation while the plan still prices the arena: the planted defect of
+// TestBuildScratchAccounting_plantedDefect, a build and a plan that disagree about the weights' rounding.
+var weightArenaOffForTest bool
+
 // weightArenaStats is what a build's arena held, kept on the resident after the upload: used equals size and missed is 0 when the
 // walk that sized it counted exactly the buffers uploadLayers made.
 type weightArenaStats struct{ used, size, missed int64 }
@@ -32,7 +36,7 @@ type weightArenaStats struct{ used, size, missed int64 }
 // dense line and the padding and rounding on the slack line, where the plan prices them (packedAllocSlack).
 func (r *cudaResident) openWeightArena(v any) {
 	n, inside := weightArenaBytes(v)
-	if n == 0 {
+	if n == 0 || weightArenaOffForTest {
 		return
 	}
 	allocSeen(int(n))

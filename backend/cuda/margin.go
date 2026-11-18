@@ -83,6 +83,10 @@ func kvRoundingBound(owners, mla int) int64 {
 // allocation floor and the decode allowance. BuildResident computes it once, on the planned geometry (planLayerGeometry) before the
 // context is planned, and keeps it in ctxMarginBytes: the plan, checkKVFits, checkWeightsFit and their declines read that one
 // figure. TestKSH6C_marginPriced holds it to the built resident's.
+//
+// The margin stays free, and part of it cannot be used: allocFloorBytes (155 MiB) is VRAM the driver will not hand out at any
+// request size. The usable reserve is the 512-row pass plus the post-pool buffers and decodeAllowanceBytes (about 18 MiB on the
+// models read: a 2 MiB post-pool page and the 16 MiB allowance).
 func (r *cudaResident) ctxMarginFor(ctx int) int64 {
 	return r.postPoolBytes() + r.PrefillScratchBytes(prefillDefaultChunk) + r.PrefillSpanScratchBytes(prefillDefaultChunk, ctx) +
 		allocFloorBytes + decodeAllowanceBytes
