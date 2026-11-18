@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -53,6 +54,9 @@ func TestPinnedCtx_wontFitStopsTheLoad(t *testing.T) {
 	m, err = load(64)
 	if err == nil {
 		t.Fatalf("-ctx 64 pinned, no free VRAM for the KV: loaded on %s; want the load stopped with the build's refusal", m.DecodePath())
+	}
+	if !errors.Is(err, decoder.ErrPinnedContextWontFit) {
+		t.Errorf("the refusal %v does not match decoder.ErrPinnedContextWontFit", err)
 	}
 	for _, want := range []string{"64 positions", "-ctx"} {
 		if !strings.Contains(err.Error(), want) {

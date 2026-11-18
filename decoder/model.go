@@ -124,7 +124,7 @@ type Model struct {
 	faSoftcap     bool          // a capped model may take CUDA's flash-decode lane (Options.FlashDecodeSoftcap)
 
 	loadAbort    <-chan struct{} // Options.LoadAbort, read by a backend's resident build through LoadAbort(); nil off a guarded load
-	loadAbortErr error           // set by withResidency when the build returned ErrLoadAborted; Load turns it into the load's error
+	loadAbortErr error           // set by withResidency when the build returned ErrLoadAborted or ErrPinnedContextWontFit; Load turns it into the load's error
 
 	moeSlots      int          // per-layer expert slot request (Options.MoECacheSlots); 0 ⇒ ask for all, auto-cap to VRAM
 	actGroup      int          // activation quantization group (Options.ActQuantGroup); 0 = per-vector
@@ -414,6 +414,21 @@ func (m *Model) MoECacheSlotsRequest() int {
 // with errors.Is, not ==, since it may be wrapped with additional context by the time a caller
 // sees it.
 var ErrLoadAborted = errLoadAborted
+
+// ErrPinnedContextWontFit marks a resident build's refusal of a context the caller pinned (Options.ResidentContext) whose KV does
+// not fit the device. Load returns it as the load's error instead of continuing on the CPU: a pinned context asked for the
+// device, so running it slowly elsewhere would hide the configuration error. Check with errors.Is.
+var ErrPinnedContextWontFit = errors.New("decoder: the pinned resident context does not fit the device")
+
+// PinnedContextRefusal is err, a backend's refusal of a pinned context, marked so that errors.Is matches ErrPinnedContextWontFit
+// as well as err's own chain. Its text is err's.
+func PinnedContextRefusal(err error) error { return &pinnedRefusal{err} }
+
+type pinnedRefusal struct{ err error }
+
+func (e *pinnedRefusal) Error() string        { return e.err.Error() }
+func (e *pinnedRefusal) Unwrap() error        { return e.err }
+func (e *pinnedRefusal) Is(target error) bool { return target == ErrPinnedContextWontFit }
 
 // modelFromOptions is a Model over w carrying every per-model field Options sets: the one place the constructors (Load's.
 // giw and direct paths, LoadGGUFBytes, NewModelWithOptions) read them, so they cannot drift apart (a constructor that skipped
