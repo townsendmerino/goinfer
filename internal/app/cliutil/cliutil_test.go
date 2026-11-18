@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-// TestOnOff_accepts pins that OnOff accepts the on/off spellings: --fit=off is the spelling --fit's own help text and
-// docs/tasks/task-fit-to-hardware.md promise, and a plain flag.Bool rejects it with exit 2. Origin (M-14):
+// TestOnOff_accepts pins that OnOff accepts the on/off spellings: --fit=off is the spelling --fit's own help text
+// promises, and a plain flag.Bool rejects it with exit 2. Origin (M-14):
 // docs/code-notes/internal-cliutil.md#TestOnOff_accepts.
 func TestOnOff_accepts(t *testing.T) {
 	cases := []struct {

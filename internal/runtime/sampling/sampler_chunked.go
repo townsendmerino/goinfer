@@ -142,8 +142,8 @@ func chunkedZ(logits []float32, maxv, temperature float64, scratch []float64) fl
 
 // minPCandidates returns the ids whose logit is at least thr, in ascending id order, in scratch's backing array (grown to
 // len(logits) when its capacity is short). Each chunk writes its ids into its own span of the array, and the runs are then
-// moved to the front in chunk order, so the result is the serial scan's, element for element. The parallel form is P42's
-// measured win at Gemma vocab (docs/queue-performance.md, P42).
+// moved to the front in chunk order, so the result is the serial scan's, element for element. The parallel form is a
+// measured win at Gemma vocab.
 func minPCandidates(logits []float32, thr float64, scratch []int) []int {
 	n := len(logits)
 	if cap(scratch) < n {
