@@ -2,7 +2,7 @@ package kvmgr
 
 import "testing"
 
-// TestPickSlotFor_deepOwnRollback is the slot rule of KV2 follow-up 1 (docs/tasks/task-kv-architecture-2026-10.md §6):
+// TestPickSlotFor_deepOwnRollback is the slot rule:
 // a request that keeps its slot's whole first prompt takes that slot in place even when it gives up more than it keeps,
 // with an empty slot free and with the least recently used slot elsewhere; a busy own slot is still never taken; and
 // without first-prompt lengths the keep-at-least-as-much-as-it-overwrites rule holds.

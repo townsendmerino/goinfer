@@ -2,7 +2,7 @@ package kvmgr
 
 import "testing"
 
-// KV8a (docs/tasks/task-kv-architecture-2026-10.md, KV8a): a recurrent sequence with a checkpoint at c, the end of its last prompt,
+// A recurrent sequence with a checkpoint at c, the end of its last prompt,
 // scores c for a request that matches it through c, carries a token past c and does not extend the whole sequence, when the caller
 // restores the checkpoint. Every other request scores as before.
 func TestScoreRecurrent_checkpoint(t *testing.T) {

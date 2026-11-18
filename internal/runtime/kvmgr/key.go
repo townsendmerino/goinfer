@@ -1,7 +1,7 @@
 // Package kvmgr is the KV manager: the one owner of KV metadata for a model's resident sequences. It holds sequences,
 // their tables of logical blocks, the content-addressed index of published blocks, reference counts and the LRU of
 // cached blocks, and it decides what a new request may reuse. It stores no KV: a backend does, and the manager says
-// where each logical block lives. The design is docs/tasks/task-kv-architecture-2026-10.md §5.
+// where each logical block lives.
 //
 // It imports nothing from decoder, so its tests run apart from decoder's; decoder derives the Geometry from an
 // Architecture and re-exports the types a backend needs.
