@@ -4166,6 +4166,8 @@ pressure, so there is no allocation peak for a guard to price). Zero when not ap
 caller is unaffected.
 ```
 
+> **Note, 2026-11-18 (memory audit, phase 2).** "No allocation peak for a guard to price" held for a dense `.giw` (7B read: VmHWM at ready 4,159 MiB, 3,902 MiB of it the mapped file). It does not hold for a CUDA expert-cache load: its pinned expert copy has been priced since `9641b42d9` (2026-10-18), through `mem.SolveGIW` and `GIWLoad.PinnedExperts` in `guardGIWFit`. A build's anonymous transients remain unpriced.
+
 ## fitCheck.deviceKV
 
 A load that will be CUDA-resident (`cudaWillBeResident`: CUDA compiled in, the resolved backend, weights not streamed, the architecture inside CUDA's feature gate) has its KV in VRAM, which the context plan sizes; the host guard

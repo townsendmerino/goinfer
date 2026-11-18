@@ -126,8 +126,10 @@ func (r *cudaResident) StepScratchBytes(rows int) int64 {
 
 // PrefillScratchBytes (decoder.ResidentPrefillSubsystem) is what one ordinary prefill pass of rows rows allocates on the device beyond
 // the standing buffers: the M-row buffers prefillCore creates, each after the allocator's rounding. It prices a pass whose tail is
-// the last row only (PrefillLast), text only; the all-logits tails of speculative verify add an M x vocab logits block, an image pass
-// its block table, and neither is a prompt's prefill. It mirrors prefillCore's allocations by the same arithmetic, and
+// the last row only (PrefillLast), text only. The all-logits tails add a retained logits block of rows x vocab f32, grown on demand (speculative verify's
+// batchedHeadArgmax, and StepBatch's batchedHeadFull, whose row count is the draft block or the slot count: about 2.3 MiB at four
+// slots on a 151,936-entry vocabulary), and an image pass adds its block table; neither is a prompt's prefill, and neither is in
+// this figure or in ctxMarginFor. It mirrors prefillCore's allocations by the same arithmetic, and
 // TestKV3_prefillScratchBytes_matchesThePass holds it to them.
 func (r *cudaResident) PrefillScratchBytes(rows int) int64 {
 	M := rows
