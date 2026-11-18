@@ -224,8 +224,9 @@ func TestToolGoldens_callResult_byteExact(t *testing.T) {
 // [TOOL_RESULTS] {"content": …, "call_id": "abc123def"} — and goinfer emits neither.
 //
 // That is semantic, not formatting: with two calls in one turn the model has nothing to
-// correlate the results by. This is a check that documents the gap and passes today, flipping to a
-// real assertion when the renderer carries the id.
+// correlate the results by. The test asserts today's behavior, so the day the renderer carries
+// the id it goes red: render both directions, then turn this into the real assertion and drop
+// the note from the M-20 disposition.
 func TestMistral_toolCallIDIsNotYetRendered(t *testing.T) {
 	turns := []Turn{
 		{Role: "user", Content: "Weather in Paris?"},
@@ -236,14 +237,10 @@ func TestMistral_toolCallIDIsNotYetRendered(t *testing.T) {
 	got := byName(t, "mistral").RenderTools("", turns, []Tool{weatherTool})
 	hasID := strings.Contains(got, `"id": "abc123def"`) || strings.Contains(got, `"id":"abc123def"`)
 	hasCallID := strings.Contains(got, `"call_id": "abc123def"`) || strings.Contains(got, `"call_id":"abc123def"`)
-	if hasID && hasCallID {
-		t.Log("mistral now renders id/call_id — turn this into an assertion and drop the note " +
-			"from the M-20 disposition")
-		return
+	if hasID != false || hasCallID != false {
+		t.Fatalf("mistral now renders id=%v call_id=%v: the known gap (upstream carries both) has moved; "+
+			"assert that both are rendered and drop the note from the M-20 disposition", hasID, hasCallID)
 	}
-	t.Logf("KNOWN GAP (filed, not fixed): mistral omits id=%v call_id=%v. Upstream's template "+
-		"carries both; without them a turn with two calls cannot correlate its results.",
-		hasID, hasCallID)
 }
 
 // M-20's other half: a nested argument must survive render → parse unchanged. gemmaValue must not

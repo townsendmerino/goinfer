@@ -65,7 +65,11 @@ func gpuMemUsedMiB() int {
 }
 
 func TestAudioEncoder_realMatchesCPU(t *testing.T) {
-	for name, dir := range realAudioEncoderDirs(t) {
+	dirs := realAudioEncoderDirs(t)
+	if len(dirs) == 0 {
+		t.Skip("no real audio checkpoint under ~/models: nothing was compared (a skip, not a pass)")
+	}
+	for name, dir := range dirs {
 		t.Run(name, func(t *testing.T) {
 			enc, err := audio.LoadWhisperEncoder(dir)
 			if err != nil {
@@ -134,7 +138,11 @@ func TestAudioEncoderSpeed_record(t *testing.T) {
 		t.Skip("set GOINFER_SPEED_ROUNDS (5 for the record)")
 	}
 	rounds, _ := strconv.Atoi(os.Getenv("GOINFER_SPEED_ROUNDS"))
-	for name, dir := range realAudioEncoderDirs(t) {
+	dirs := realAudioEncoderDirs(t)
+	if len(dirs) == 0 {
+		t.Skip("no real audio checkpoint under ~/models: nothing was timed (a skip, not a pass)")
+	}
+	for name, dir := range dirs {
 		enc, err := audio.LoadWhisperEncoder(dir)
 		if err != nil {
 			t.Fatal(err)

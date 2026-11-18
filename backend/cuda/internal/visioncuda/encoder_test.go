@@ -125,8 +125,15 @@ func TestVisionCUDA_parityWithCPU(t *testing.T) {
 func TestVisionCUDA_registersBackend(t *testing.T) {
 	e := loadTower(t)
 	defer e.Close()
+	if _, derr := gpu.CreateSystemDefaultDevice(); derr != nil {
+		t.Skipf("no CUDA device: %v", derr)
+	}
+	// A device is there, so any EnableResident error is a failure: "no resident encoder backend" is the registration this test is for.
 	if err := e.EnableResident(); err != nil {
-		t.Skipf("EnableResident: %v", err)
+		t.Fatalf("EnableResident on a machine with a CUDA device: %v", err)
+	}
+	if !e.ResidentEnabled() {
+		t.Fatal("EnableResident returned nil but no resident backend is attached")
 	}
 	t.Log("vision.RegisterResident wired: EnableResident attached the CUDA tower")
 }

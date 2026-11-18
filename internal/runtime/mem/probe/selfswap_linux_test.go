@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -72,9 +73,26 @@ func TestSelfSwap_unknownWithoutVmSwap(t *testing.T) {
 	}
 }
 
-// The real probe reads this test process's own status.
+// The real probe reads this test process's own status. A kernel without swap accounting has no VmSwap line and the probe may report
+// nothing (a skip); with the line present, the probe must report at least the process's own figure.
 func TestSelfSwap_realProc(t *testing.T) {
-	if v, ok := SelfSwap(); !ok || v < 0 {
-		t.Skipf("this kernel reports no VmSwap for the test process (%d, %v)", v, ok)
+	status, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		t.Skipf("no /proc/self/status: %v", err)
+	}
+	var kb int64 = -1
+	for _, l := range strings.Split(string(status), "\n") {
+		if rest, ok := strings.CutPrefix(l, "VmSwap:"); ok {
+			if _, err := fmt.Sscanf(strings.TrimSpace(rest), "%d kB", &kb); err != nil {
+				t.Fatalf("unparsable VmSwap line %q: %v", l, err)
+			}
+		}
+	}
+	if kb < 0 {
+		t.Skip("this kernel reports no VmSwap for the test process")
+	}
+	v, ok := SelfSwap()
+	if !ok || v < kb*1024 {
+		t.Fatalf("SelfSwap() = (%d, %v) with VmSwap %d kB in /proc/self/status", v, ok, kb)
 	}
 }
