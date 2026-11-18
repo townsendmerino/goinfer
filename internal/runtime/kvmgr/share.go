@@ -1,7 +1,6 @@
 package kvmgr
 
-// Sharing between slots: a request takes the published blocks another slot holds by copying them into its own slot
-// (docs/tasks/task-kv-architecture-2026-10.md §6, KV2). The rows are the same bytes only when the chain hashes agree,
+// Sharing between slots: a request takes the published blocks another slot holds by copying them into its own slot. The rows are the same bytes only when the chain hashes agree,
 // and the chain carries the root, the tokens, the image spans and the class of every row, so a hash match is the whole
 // test.
 

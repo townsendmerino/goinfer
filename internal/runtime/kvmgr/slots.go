@@ -188,7 +188,7 @@ func PickSlotFor(scores, lens, firsts []int, uses []uint64, busy []bool, allowan
 }
 
 // RollbackFloor is the least a window group's rollback budget can be: its base compacts in 64-token steps, so it keeps
-// at least this much behind the window (docs/tasks/task-kv-architecture-2026-10.md §5.12).
+// at least this much behind the window.
 const RollbackFloor = 448
 
 // PickSlotWithin chooses a slot for a prompt from each slot's score (tokens of the prompt it holds), its length and
