@@ -133,9 +133,9 @@ func TestBuildScratchAccounting(t *testing.T) {
 	measureBuild(t, accountingModels[0], false)
 	// The lower bound is -16: the device figure reads 14-18 MiB lower in a process that has already built models than in a cold one (as in
 	// TestResidentDenseBytes), and a negative residual is the conservative direction (Plan priced more than the device gave up).
-	bands := map[string][2]int64{ // residual in MiB: [-16, +64] on the Qwen text models, [-8, +128] on the others
-		"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf": {-16, 64}, "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf": {-16, 64}, "qwen2.5-7b-instruct-q4_k_m.gguf": {-16, 64},
-		"qwen3-8b-gguf/Qwen3-8B-Q4_K_M.gguf": {-16, 64},
+	bands := map[string][2]int64{ // residual in MiB: [-16, +16] on the Qwen text models, [-8, +16] on the others
+		"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf": {-16, 16}, "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf": {-16, 16}, "qwen2.5-7b-instruct-q4_k_m.gguf": {-16, 16},
+		"qwen3-8b-gguf/Qwen3-8B-Q4_K_M.gguf": {-16, 16},
 	}
 	for _, rel := range accountingModels {
 		t.Run(filepath.Base(rel), func(t *testing.T) {
@@ -144,7 +144,7 @@ func TestBuildScratchAccounting(t *testing.T) {
 				t.Skip("model absent or not CUDA-resident")
 			}
 			row.log(t, "")
-			lo, hi := int64(-8), int64(128)
+			lo, hi := int64(-8), int64(16)
 			if b, has := bands[rel]; has {
 				lo, hi = b[0], b[1]
 			}
@@ -162,7 +162,7 @@ func TestBuildScratchAccounting(t *testing.T) {
 // TestBuildScratchAccounting_plantedDefect uploads the weights without their arena while the plan prices it (weightArenaOffForTest): a build
 // and a plan that disagree about the weights' rounding, which G-M1 must catch.
 //   - every model: the residual is larger with the defect than without it;
-//   - the 7B: without the defect the residual is in the Qwen band (under 64 MiB), with it the residual is past the band, so G-M1 goes red;
+//   - the 7B: without the defect the residual is in the Qwen band (at most 16 MiB), with it the residual is past the band, so G-M1 goes red;
 //   - Gemma 3 4B, whose plan is limited by free VRAM at one slot: the build trims the planned context with the defect, not without it.
 //
 // Heavy.
@@ -185,8 +185,8 @@ func TestBuildScratchAccounting_plantedDefect(t *testing.T) {
 		}
 		switch rel {
 		case "qwen2.5-7b-instruct-q4_k_m.gguf":
-			if clean.residual() >= 64<<20 || planted.residual() <= 64<<20 {
-				t.Errorf("7B: residual %d MiB clean (want < 64) and %d MiB planted (want past G-M1's 64)", clean.residual()>>20, planted.residual()>>20)
+			if clean.residual() > 16<<20 || planted.residual() <= 16<<20 {
+				t.Errorf("7B: residual %d MiB clean (want at most 16) and %d MiB planted (want past G-M1's 16)", clean.residual()>>20, planted.residual()>>20)
 			}
 		case "gemma-3-4b-it":
 			if planted.ctxPlanned-planted.ctxFinal <= clean.ctxPlanned-clean.ctxFinal {
@@ -252,8 +252,8 @@ func TestBuildScratchAccounting_serveShape(t *testing.T) {
 		t.Skip("model absent or not CUDA-resident")
 	}
 	row.log(t, " serve")
-	if res := row.residual() >> 20; res < -16 || res > 64 {
-		t.Errorf("serve shape: residual %d MiB outside [-16, 64]: the build puts %d MiB on the device before the KV, Plan %d + slack %d",
+	if res := row.residual() >> 20; res < -16 || res > 16 {
+		t.Errorf("serve shape: residual %d MiB outside [-16, 16]: the build puts %d MiB on the device before the KV, Plan %d + slack %d",
 			res, row.preKV>>20, row.plan>>20, row.slack>>20)
 	}
 	if row.postKV+row.lazy > row.margin {
