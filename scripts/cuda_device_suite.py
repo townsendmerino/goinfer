@@ -29,12 +29,42 @@ DEVICE_SKIP = re.compile(r"(?i)\bno (?:cuda )?device\b|did not go resident")
 # The Metal module's wording: "no metal device", "no GPU device", "device: <err>" (the open failed), "not resident on Metal", "EnableResident: <err>".
 # A memory-guard decline ("not run: the Metal memory guard declined ...") is not here: it is a fact about the box right now, counted as an other skip.
 METAL_DEVICE_SKIP = re.compile(r"(?i)\bno (?:(?:cuda|metal|gpu) )?device\b|did not go resident|not resident on metal|\bdevice: |EnableResident:")
+# A skip whose reason is a missing asset or an opt-in variable: expected on a box that lacks the file or does not set the flag.
+ASSET_SKIP = re.compile(r"(?i)GOINFER_HEAVY_TESTS|\bset GOINFER_|\bno [\w .-]*(?:checkpoint|fixture|model|asset)|not found|missing|under ~/models")
 BACKENDS = {"cuda": DEVICE_SKIP, "metal": METAL_DEVICE_SKIP}
 PROGRESS_S = 60
 
 
-def judge(events, exit_code, tail, backend="cuda"):
-    """events: decoded `go test -json` records. Returns (red, lines). The device-skip pattern is `DEVICE_SKIP` for cuda, `METAL_DEVICE_SKIP` for metal."""
+def classify_new_skips(status, out, prev_passed, device_skips=()):
+    """(new, bad): tests that passed last time and skipped now; bad is those whose reason is not an asset or opt-in wording."""
+    new, bad = [], []
+    for (p, n), s_ in sorted(status.items()):
+        name = f"{p}.{n}"
+        if s_ == "skip" and name in (prev_passed or ()) and name not in device_skips:
+            new.append(name)
+            if not ASSET_SKIP.search("".join(out.get((p, n), []))):
+                bad.append(name)
+    return new, bad
+
+
+def next_state(events, prev_passed):
+    """The --state file's content after this run: the names that passed, plus the unresolved bad new skips (so they stay red until fixed), plus what was not run."""
+    out, status = {}, {}
+    for e in events:
+        t = (e.get("Package", ""), e.get("Test", ""))
+        if e.get("Action") == "output" and t[1]:
+            out.setdefault(t, []).append(e.get("Output", ""))
+        elif e.get("Action") in ("pass", "fail", "skip") and t[1]:
+            status[t] = e["Action"]
+    _, bad = classify_new_skips(status, out, prev_passed)
+    ran = {f"{p}.{n}" for (p, n) in status}
+    passed = {f"{p}.{n}" for (p, n), s_ in status.items() if s_ == "pass"}
+    return {"passed": sorted((set(prev_passed or ()) - ran) | passed | set(bad))}
+
+
+def judge(events, exit_code, tail, backend="cuda", prev_passed=None):
+    """events: decoded `go test -json` records. Returns (red, lines). The device-skip pattern is `DEVICE_SKIP` for cuda, `METAL_DEVICE_SKIP` for metal.
+    prev_passed, the names that passed last time (the --state file), turns a skip of one of them into NEW SKIPS, red unless its reason is an asset or opt-in wording."""
     pattern = DEVICE_SKIP if backend == "cuda" else METAL_DEVICE_SKIP
     out, status, flight = {}, {}, {}
     pkg_failed = []
@@ -56,7 +86,8 @@ def judge(events, exit_code, tail, backend="cuda"):
             continue
         (device_skips if pattern.search("".join(out.get((p, n), []))) else other_skips).append(f"{p}.{n}")
     device_skips.sort()
-    red = bool(failed or pkg_failed or device_skips or exit_code != 0 or passed == 0)
+    new_skips, bad_new_skips = classify_new_skips(status, out, prev_passed, device_skips)
+    red = bool(failed or pkg_failed or device_skips or bad_new_skips or exit_code != 0 or passed == 0)
     lines = []
     if exit_code != 0 and not failed and not pkg_failed:
         lines += ["go test exited %d with no failed test in its output; its last lines:" % exit_code, *tail[-10:]]
@@ -64,7 +95,9 @@ def judge(events, exit_code, tail, backend="cuda"):
                  f"{len(pkg_failed)} failed package(s)")
     if passed == 0:
         lines.append("RED: no test passed, so nothing ran")
-    for title, names in (("FAILED TESTS", failed), ("DEVICE SKIPS (a skip is a failure here)", device_skips), ("FAILED PACKAGES", sorted(set(pkg_failed)))):
+    for title, names in (("FAILED TESTS", failed), ("DEVICE SKIPS (a skip is a failure here)", device_skips), ("FAILED PACKAGES", sorted(set(pkg_failed))),
+                         ("NEW SKIPS, passed last time, skipped now for a reason that is not an asset or an opt-in (a skip is a failure here)", bad_new_skips),
+                         ("NEW SKIPS, asset or opt-in wording (counted, not red)", [n for n in new_skips if n not in bad_new_skips])):
         if names:
             lines.append(f"{title} ({len(names)}):")
             lines += [f"  {n}" for n in names[:40]] + ([f"  ... and {len(names) - 40} more (the raw log has them)"] if len(names) > 40 else [])
@@ -75,6 +108,7 @@ def judge(events, exit_code, tail, backend="cuda"):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--cwd", default=".")
+    ap.add_argument("--state", help="a JSON file of the names that passed last run: a skip of one of them is NEW SKIPS, red unless its reason is an asset or opt-in; rewritten after a run with passes")
     ap.add_argument("--backend", choices=sorted(BACKENDS), default="cuda")
     ap.add_argument("--raw", help="write the command's output here, verbatim")
     ap.add_argument("cmd", nargs=argparse.REMAINDER)
@@ -112,7 +146,16 @@ def main(argv=None):
     stop.set()
     if raw:
         raw.close()
-    red, lines = judge(events, rc, tail, a.backend)
+    prev = None
+    if a.state:
+        try:
+            prev = set(json.load(open(a.state)).get("passed", []))
+        except (OSError, ValueError):
+            prev = None  # no state yet: the first run has no previous pass to compare with
+    red, lines = judge(events, rc, tail, a.backend, prev)
+    if a.state and any(e.get("Action") == "pass" and e.get("Test") for e in events):
+        with open(a.state, "w") as f:
+            json.dump(next_state(events, prev), f)
     print(f"finished in {time.time() - t0:.0f}s")
     print("\n".join(lines), flush=True)
     return 1 if red else 0

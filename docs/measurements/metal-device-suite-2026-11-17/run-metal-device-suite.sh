@@ -31,8 +31,10 @@ export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.excludesFile GIT_CONFIG_VALUE_0=
 go work init . ./backend/webgpu ./backend/cuda ./backend/metal ./demo/agent || { echo "FATAL: go work init"; exit 2; }
 { echo "rev:      $(git rev-parse HEAD) ($REV)"; echo "started:  $(date '+%F %T %Z')"; echo "fixtures: $fixtures"
   echo "go:       $(go version)"; echo "machine:  $(sysctl -n machdep.cpu.brand_string 2>/dev/null) $(sw_vers -productVersion 2>/dev/null)"; } | tee "$LOG/provenance.txt"
+# The previous passing set (--state) is kept on this box, for origin/main runs only: a test that passed then and skips now is NEW SKIPS in the verdict.
+STATE=(); [ "$REV" = "origin/main" ] && STATE=(--state "$HOME/goinfer-logs/metal-device-suite.state.json")
 # The runner is the SRC checkout's copy, so a REV from before it existed can still be judged by it.
-CGO_ENABLED=0 python3 "$SRC/scripts/cuda_device_suite.py" --backend metal --cwd "$WT/backend/metal" --raw "$LOG/go-test.jsonl" -- \
+CGO_ENABLED=0 python3 "$SRC/scripts/cuda_device_suite.py" ${STATE[@]+"${STATE[@]}"} --backend metal --cwd "$WT/backend/metal" --raw "$LOG/go-test.jsonl" -- \
   go test -json -count=1 -p 1 -timeout 25m -tags goinfer_testhooks ${TESTARGS:-} ./... 2>&1 | tee "$LOG/verdict.log"
 rc=${PIPESTATUS[0]}
 # Only main's run is the standing verdict and the heartbeat: a run of another REV files no issue and closes none.

@@ -123,6 +123,61 @@ class Metal(unittest.TestCase):
         self.assertIn("TestBroken", "\n".join(out.splitlines()[-25:]))
 
 
+class NewSkips(unittest.TestCase):
+    """--state: a test that passed last run and skips now is NEW SKIPS; a reason that is not an asset or opt-in is red, and stays red until it passes."""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        self.state = os.path.join(self.d, "state.json")
+
+    def night(self, events, rc=0):
+        return run(events, rc, "--state", self.state)
+
+    def test_theFirstRunHasNothingToCompareWithAndWritesTheState(self):
+        rc, out = self.night(passing("TestA") + passing("TestB"))
+        self.assertEqual(rc, 0)
+        self.assertNotIn("NEW SKIPS", out)
+        self.assertEqual(sorted(json.load(open(self.state))["passed"]), [PKG + ".TestA", PKG + ".TestB"])
+
+    def test_aTestThatPassedAndNowSkipsForAnUnexplainedReasonIsRed(self):
+        self.night(passing("TestA") + passing("TestB"))
+        rc, out = self.night(passing("TestA") + skipping("TestB", "resident path declined"))
+        self.assertEqual(rc, 1, out)
+        self.assertIn("NEW SKIPS, passed last time", out)
+        self.assertIn(PKG + ".TestB", "\n".join(out.splitlines()[-25:]))
+
+    def test_itStaysRedUntilTheTestPassesAgain(self):
+        self.night(passing("TestA") + passing("TestB"))
+        self.night(passing("TestA") + skipping("TestB", "resident path declined"))
+        rc, _ = self.night(passing("TestA") + skipping("TestB", "resident path declined"))
+        self.assertEqual(rc, 1)
+        rc, _ = self.night(passing("TestA") + passing("TestB"))
+        self.assertEqual(rc, 0)
+
+    def test_anAssetOrOptInReasonIsCountedNotRed(self):
+        for why in ("GOINFER_HEAVY_TESTS not set", "no checkpoint at ~/models/x", "model not found"):
+            self.setUp()
+            self.night(passing("TestA") + passing("TestB"))
+            rc, out = self.night(passing("TestA") + skipping("TestB", why))
+            self.assertEqual(rc, 0, (why, out))
+            self.assertIn("NEW SKIPS, asset or opt-in wording", out)
+
+    def test_aTestThatWasAlwaysSkippedIsNotNew(self):
+        self.night(passing("TestA") + skipping("TestB", "resident path declined"))
+        rc, out = self.night(passing("TestA") + skipping("TestB", "resident path declined"))
+        self.assertEqual(rc, 0, out)
+
+    def test_aFailedRunWithNoPassesLeavesTheStateAlone(self):
+        self.night(passing("TestA"))
+        self.night(failing("TestA"), 1)
+        self.assertEqual(json.load(open(self.state))["passed"], [PKG + ".TestA"])
+
+    def test_withoutAStateFileNothingChanges(self):
+        rc, out = run(passing("TestA") + skipping("TestB", "resident path declined"))
+        self.assertEqual(rc, 0)
+        self.assertNotIn("NEW SKIPS", out)
+
+
 class Plant(unittest.TestCase):
     """The check that this suite can go wrong: classify device skips as passes and the device-skip case reads GREEN."""
 
