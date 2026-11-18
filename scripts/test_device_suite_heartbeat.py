@@ -62,6 +62,7 @@ class Fake:
                               capture_output=True, text=True)
 
     def check(self, now, *extra):
+        extra = extra if "--expect" in extra else ("--expect", "nobara", *extra)
         return subprocess.run([sys.executable, os.path.join(HERE, "device_suite_heartbeat.py"), "--now", now, "--gh", self.gh, *extra], capture_output=True, text=True)
 
 
@@ -149,13 +150,20 @@ class Check(unittest.TestCase):
         self.assertEqual(f.check("2026-11-17T18:00:00Z").returncode, 3)
 
 
+    def test_theDefaultExpectsBothBoxes(self):
+        f = Fake([status("nobara", "2026-11-17T01:30:00Z")])
+        p = subprocess.run([sys.executable, os.path.join(HERE, "device_suite_heartbeat.py"), "--now", "2026-11-17T18:00:00Z", "--gh", f.gh], capture_output=True, text=True)
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertEqual([i["title"] for i in stale_issues(f)], ["device-suite heartbeat stale: mac"])
+
+
 class Plant(unittest.TestCase):
     def test_readingEveryBoxAsFreshFilesNothingForTheThirteenNightGap(self):
         saved = hb.judge
         hb.judge = lambda issues, expect, now, max_age: {b: (True, "plant") for b in expect}
         try:
             f = Fake([status("nobara", "2026-11-04T01:30:00Z")])
-            rc = hb.main(["--now", "2026-11-17T18:00:00Z", "--gh", f.gh])
+            rc = hb.main(["--now", "2026-11-17T18:00:00Z", "--gh", f.gh, "--expect", "nobara"])
             self.assertEqual(rc, 0)
             self.assertEqual(stale_issues(f), [], "the plant must file nothing, or the replay test cannot see the defect it plants")
         finally:

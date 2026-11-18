@@ -37,13 +37,13 @@ def failing(name):
     return [ev("run", name), ev("output", name, "    x_test.go:9: boom\n"), ev("fail", name)]
 
 
-def run(events, rc=0):
+def run(events, rc=0, *extra):
     """The runner on a fake `go test -json` that prints the events and exits rc. Returns (exit, output)."""
     with tempfile.TemporaryDirectory() as d:
         fake = os.path.join(d, "fake.py")
         with open(fake, "w") as f:
             f.write("import sys\nfor l in %r:\n    print(l)\nsys.exit(%d)\n" % (events, rc))
-        p = subprocess.run([sys.executable, os.path.join(HERE, "cuda_device_suite.py"), "--", sys.executable, fake],
+        p = subprocess.run([sys.executable, os.path.join(HERE, "cuda_device_suite.py"), *extra, "--", sys.executable, fake],
                            capture_output=True, text=True)
     return p.returncode, p.stdout
 
@@ -91,6 +91,36 @@ class Verdict(unittest.TestCase):
         rc, out = run(passing("TestA"), rc=2)
         self.assertEqual(rc, 1, out)
         self.assertIn("exited 2", out)
+
+
+class Metal(unittest.TestCase):
+    """--backend metal: the Metal module's own skip wording is a device skip, and the summary line carries the backend."""
+
+    def test_eachMetalDeviceSkipWordingIsRed(self):
+        for why in ("no metal device: x", "no Metal device: x", "no GPU device: x", "device: open failed", "EnableResident: nope (no Metal device?)",
+                    "not resident on Metal: tiny"):
+            rc, out = run(passing("TestA") + skipping("TestNeedsGPU", why), 0, "--backend", "metal")
+            self.assertEqual(rc, 1, why)
+            self.assertIn("metal-device-suite: 1 passed, 0 failed, 1 device skips", out)
+            self.assertIn("VERDICT: RED", out)
+
+    def test_theCudaPatternDoesNotCatchMetalWordingAndViceVersa(self):
+        rc, _ = run(passing("TestA") + skipping("TestNeedsGPU", "no metal device: x"), 0)
+        self.assertEqual(rc, 0)
+        rc, _ = run(passing("TestA") + skipping("TestNeedsGPU", "no CUDA device"), 0, "--backend", "metal")
+        self.assertEqual(rc, 1)  # "no CUDA device" still matches the shared "no ... device" arm
+
+    def test_assetAndMemoryGuardSkipsAreGreen(self):
+        for why in ("GOINFER_HEAVY_TESTS not set", "model not found under ~/models",
+                    "not run: the Metal memory guard declined the resident build on this machine right now (x)", "this device makes no residency set: x",
+                    "Metal does not build this fixture resident"):
+            rc, out = run(passing("TestA") + skipping("TestAsset", why), 0, "--backend", "metal")
+            self.assertEqual(rc, 0, (why, out))
+
+    def test_aFailingMetalTestIsRedAndNamed(self):
+        rc, out = run(passing("TestA") + failing("TestBroken"), 1, "--backend", "metal")
+        self.assertEqual(rc, 1)
+        self.assertIn("TestBroken", "\n".join(out.splitlines()[-25:]))
 
 
 class Plant(unittest.TestCase):
