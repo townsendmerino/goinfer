@@ -1,0 +1,6 @@
+[Unit]
+Description=Queue this week's gate-gpu-weekly on the goinfer night queue (adds the job; does not start the queue)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash %h/mycode/goinfer/docs/measurements/gate-gpu-weekly-2026-11-17/queue-gate-gpu-weekly.sh
