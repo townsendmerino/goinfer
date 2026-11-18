@@ -11,8 +11,8 @@ import (
 
 // TestAttnBatched_parity pins that ONE grid-(nH,M) dispatch of attnBatchedKernel's chosen kernel
 // matches M separate dispatches of attnKernel's chosen kernel (what PrefillLastW8A8 did before
-// batching, and what decode still does) over the same fully populated K/V cache
-// (docs/completed/task-gpu-batched-prefill.md, Increment 1). No checkpoint: synthetic Q/K/V, a
+// batching, and what decode still does) over the same fully populated K/V cache.
+// No checkpoint: synthetic Q/K/V, a
 // fresh cache (basePos=0), M rows each attending to keys [0, row].
 //
 // Two geometries, one per attnKernel/attnBatchedKernel branch (attnKeysEligible): hd=64/kvDim=128

@@ -16,7 +16,7 @@ import (
 // including the CI software one: the oracle runs the same int4/int8 math, so a pass (cosine >= 0.9999) is a kernel/wiring
 // pass for the geometry, independent of what a real checkpoint's activations do to int8 quantization. Position 0 is covered
 // as well as a mid-context one: with one key attention is the identity on V, so only the projection/norm/MLP/LM-head chain
-// can differ there. Context: docs/completed/task-webgpu-nogqa-decode-bug.md.
+// can differ there.
 func TestDecodeRunnerW4A8_geometries(t *testing.T) {
 	ctx := newOrSkip(t)
 	defer ctx.Close()

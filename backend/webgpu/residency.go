@@ -245,7 +245,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	// evidence. The tests that establish this: TestDecodeRunnerW4A8_geometries (the production plan at phi3-mini's shape against
 	// a bit-exact oracle), TestResidentCaptureParityWebGPU (per-sublayer differencing on a real checkpoint) and
 	// TestCPUQuantSensitivity (the CPU against itself). Full account:
-	// docs/code-notes/gpu.md#webgpuBackend.BuildResident.nogqa and docs/completed/task-webgpu-nogqa-decode-bug.md.
+	// docs/code-notes/gpu.md#webgpuBackend.BuildResident.nogqa.
 
 	bs := b.newBuild(m, avail0)
 	rd := bs.rd
@@ -407,7 +407,7 @@ func (rd *residentDecoder) VerifyPath() (bool, string) {
 var _ decoder.Prefiller = (*residentDecoder)(nil)
 
 // PrefillLast is decoder.Prefiller: process the whole embeddings slice in ONE on-device batched pass
-// (docs/completed/task-gpu-batched-prefill.md) and return only the LAST position's logits, the sub-linear-TTFT alternative
+// and return only the LAST position's logits, the sub-linear-TTFT alternative
 // to residentPrefillSeed's per-token Forward loop. It declines (the caller falls back to that loop; warnPrefillDeclined logs
 // it) when the model is outside the plain dense pass (rd.prefillLast's runModelToPrefill guard); a decline is not fatal.
 func (rd *residentDecoder) PrefillLast(ctx context.Context, embeddings [][]float32, startPos int) ([]float32, error) {
@@ -478,8 +478,7 @@ func (rd *residentDecoder) prefillBlocks(ctx context.Context, embeddings [][]flo
 // other PrefillMRoPELast declines and the turn keeps the CPU's prefill and the upload. Vulkan is in it on a fidelity
 // gate against the float32 reference: the device prefill and the CPU's are two int4 readings of the model, and the
 // device's is not the further one. They are not each other's reference, so a reply can differ between them. Metal is
-// out because the CPU route is the faster one there. A backend goes in on its own run of that gate
-// (docs/completed/task-multimodal-support-2026-10.md, "G-S12.4b-4a-5").
+// out because the CPU route is the faster one there. A backend goes in on its own run of that gate.
 var mropePrefillBackends = map[string]bool{"vulkan": true}
 
 // PrefillMRoPELast is decoder.ResidentPrefillSubsystem: PrefillLast for rows whose rotary position is three numbers.

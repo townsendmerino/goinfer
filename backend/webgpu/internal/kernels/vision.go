@@ -10,7 +10,7 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// Resident SigLIP vision encoder, the path to a GPU-fast image prefill (docs/completed/task-gpu-vision-tower.md). Per-call
+// Resident SigLIP vision encoder, the path to a GPU-fast image prefill. Per-call
 // matmul offload is a dead end: the submit+readback overhead per matmul is about the whole runtime. The fix is residency:
 // keep the [np, hidden] activation in device buffers through all layers, chaining each op as a Submit with NO Poll (queue
 // order guarantees the dependency), so the forward syncs once. This file builds the batched (M = np patches) kernels the
