@@ -1,4 +1,4 @@
-// libload.go: MEM0's "library path before" (docs/tasks/task-memory-campaign-2026-10.md, MEM1): what a caller in another module gets from
+// libload.go: MEM0's "library path before": what a caller in another module gets from
 // decoder.Load on a .gguf, with no sidecar. One load per process, then the process's own memory: RssAnon / RssFile / VmHWM from
 // /proc/self/status and the Go heap (runtime.MemStats) after the load, and after runtime.GC + debug.FreeOSMemory.
 //

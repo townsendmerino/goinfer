@@ -82,8 +82,8 @@ func TestSlotCapArithmetic_search(t *testing.T) {
 	division := int((free26B - SlotMarginBytes) / nLayers26B / perLayerRaw)
 	search, _ := CapSlots(free26B, nLayers26B, strides26B, topK26B, 128)
 	if division != 34 {
-		t.Errorf("the raw-sum division no longer returns 34 (got %d) — the historical figures in "+
-			"docs/QUEUE.md A1 were derived from it and need re-checking", division)
+		t.Errorf("the raw-sum division no longer returns 34 (got %d) — the historical cap figures "+
+			"were derived from it and need re-checking", division)
 	}
 	if search != 33 {
 		t.Fatalf("the search returns %d, want 33", search)

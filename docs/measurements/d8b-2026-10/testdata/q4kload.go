@@ -1,4 +1,4 @@
-// q4kload.go: D8B-G4 (docs/tasks/task-memory-campaign-2026-10.md, §4 MEM13, D8b-build gates). One load at --quant q4k on
+// q4kload.go: D8B-G4. One load at --quant q4k on
 // the CPU, direct (arg "direct") or through the sidecar (arg "sidecar", Load's default), then the Go heap in use after
 // runtime.GC + debug.FreeOSMemory and 16 greedy tokens.
 //

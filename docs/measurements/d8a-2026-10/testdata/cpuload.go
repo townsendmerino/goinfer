@@ -1,4 +1,4 @@
-// cpuload.go: D8A-G4 (docs/tasks/task-memory-campaign-2026-10.md, §4 MEM13, D8a-build gates). One direct heap load with
+// cpuload.go: D8A-G4. One direct heap load with
 // Backend "cpu" at int4, then the Go heap in use after runtime.GC + debug.FreeOSMemory, and 16 greedy tokens.
 //
 //	go run docs/measurements/d8a-2026-10/testdata/cpuload.go <gguf>

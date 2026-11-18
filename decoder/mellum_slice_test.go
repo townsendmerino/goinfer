@@ -34,7 +34,7 @@ func TestMellumSlice_realWeightOracle(t *testing.T) {
 
 	raw, err := os.ReadFile(golden)
 	if errors.Is(err, fs.ErrNotExist) {
-		t.Skipf("no golden — see the regeneration recipe in docs/queue-correctness.md (G11)")
+		t.Skipf("no golden — see the regeneration recipe in this file's header")
 	}
 	if err != nil {
 		t.Fatalf("read golden: %v", err)

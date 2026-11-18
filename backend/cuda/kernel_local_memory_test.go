@@ -203,7 +203,7 @@ func TestKernelLocalMemoryCensus(t *testing.T) {
 	for fn, want := range pinned {
 		if g, ok := got[fn]; !ok {
 			t.Errorf("PINNED: %s no longer declares local memory (was %d B/thread) — its deferred "+
-				"first-launch reservation has changed and the figures in docs/QUEUE.md A9 are stale", fn, want)
+				"first-launch reservation has changed and the recorded figures are stale", fn, want)
 		} else if g != want {
 			t.Errorf("PINNED: %s local memory %d B/thread, pinned at %d. A change here moves a "+
 				"deferred first-launch reservation that the expert-cache sizing does not account "+

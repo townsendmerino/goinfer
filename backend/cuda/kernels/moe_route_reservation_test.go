@@ -195,7 +195,7 @@ func TestMoERouteFirstLaunchReservation(t *testing.T) {
 	if routeCost != pinnedReservation {
 		t.Errorf("moe_route's first-launch reservation is %d B, pinned at %d B. This is a deferred "+
 			"fixed cost the expert-cache sizing does not account for, so a change here invalidates "+
-			"the cap analysis in docs/QUEUE.md A1/A5/A9 — re-run TestMoERouteDemandThreshold and "+
+			"the cap analysis — re-run TestMoERouteDemandThreshold and "+
 			"update both figures together, or the residual and the peak drift apart",
 			routeCost, int64(pinnedReservation))
 	}

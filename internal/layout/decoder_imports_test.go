@@ -323,7 +323,7 @@ func TestServeappTests_decoderImportsOnlyFall(t *testing.T) {
 	sort.Strings(got)
 	switch n := len(got); {
 	case n > serveappDecoderTests:
-		t.Errorf("%d internal/app/serveapp test files import decoder, above the ratchet's %d: test the serving shell on the fake engine instead (docs/completed/task-subsystems-2026-10.md, SB7). Files: %s",
+		t.Errorf("%d internal/app/serveapp test files import decoder, above the ratchet's %d: test the serving shell on the fake engine instead. Files: %s",
 			n, serveappDecoderTests, strings.Join(got, ", "))
 	case n < serveappDecoderTests:
 		t.Errorf("%d internal/app/serveapp test files import decoder, below the ratchet's %d: lower serveappDecoderTests to %d in this change", n, serveappDecoderTests, n)
