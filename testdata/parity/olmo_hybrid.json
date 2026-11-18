@@ -11,7 +11,8 @@
     "decoder/olmo_hybrid_test.go",
     "scripts/pin_olmo_hybrid_real.py",
     "scripts/pin_olmo_hybrid_tiny.py",
-    "decoder/arch_olmo_hybrid.go"
+    "decoder/arch_olmo_hybrid.go",
+    "decoder/gguf_build_qwen35.go"
   ],
   "programs": [
     "testdata/olmo_hybrid-tiny"

@@ -6,7 +6,8 @@
   "own": [
     "decoder/lfm2.go",
     "decoder/forward_lfm2.go",
-    "decoder/arch_lfm2.go"
+    "decoder/arch_lfm2.go",
+    "decoder/island.go"
   ],
   "programs": [
     "testdata/lfm2-tiny"

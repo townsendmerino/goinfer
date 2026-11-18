@@ -15,7 +15,8 @@
     "decoder/text_parity_test.go",
     "scripts/pin_qwen3next_tiny.py",
     "scripts/pin_slice_oracle.py",
-    "decoder/arch_qwen3_next.go"
+    "decoder/arch_qwen3_next.go",
+    "decoder/gguf_build_qwen35.go"
   ],
   "programs": [
     "testdata/qwen3next-tiny"

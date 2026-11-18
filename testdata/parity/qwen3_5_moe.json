@@ -10,7 +10,8 @@
     "decoder/forward_qwen35.go",
     "decoder/gguf_qwen35.go",
     "decoder/arch_qwen3_5_moe.go",
-    "decoder/generate_vl_qwen35.go"
+    "decoder/generate_vl_qwen35.go",
+    "decoder/gguf_build_qwen35.go"
   ],
   "programs": [
     "testdata/qwen35-tiny"
