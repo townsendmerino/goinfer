@@ -241,7 +241,10 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		// A silent decline suits a shape this backend does not implement (the staged path serves it, slower). It is wrong when
 		// the operator explicitly asked for a resident context that does not fit: degrading quietly turns that into a latency
 		// mystery under load, so errKVWontFit is a hard startup error naming the GB. Everything else keeps the decline.
-		if errors.Is(setupErr, errKVWontFit) || errors.Is(setupErr, decoder.ErrLoadAborted) {
+		if errors.Is(setupErr, errKVWontFit) {
+			return nil, false, decoder.PinnedContextRefusal(setupErr) // decoder.Load stops the load on it
+		}
+		if errors.Is(setupErr, decoder.ErrLoadAborted) {
 			return nil, false, setupErr // the tripwire stopping the load is the load's error, not a decline that carries on on the CPU
 		}
 		return declined(setupErr)

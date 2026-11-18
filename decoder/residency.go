@@ -685,8 +685,9 @@ func (m *Model) withResidency() *Model {
 		return m
 	}
 	rf, ok, err := rb.BuildResident(m)
-	if errors.Is(err, ErrLoadAborted) {
-		// The swap tripwire stopped the build: not a decline (which would continue on the CPU and keep loading), but the load's error.
+	if errors.Is(err, ErrLoadAborted) || errors.Is(err, ErrPinnedContextWontFit) {
+		// The swap tripwire stopped the build, or the build refused a pinned context: not a decline (which would continue on the
+		// CPU and keep loading), but the load's error.
 		m.loadAbortErr = err
 		return m
 	}
@@ -716,8 +717,9 @@ func (m *Model) withResidency() *Model {
 	return m
 }
 
-// withResidencyOrAbort is withResidency for Load: a resident build that the swap tripwire aborted (Options.LoadAbort closed during it)
-// closes the model and returns the build's error, which wraps ErrLoadAborted, instead of continuing on the CPU path.
+// withResidencyOrAbort is withResidency for Load: a resident build that the swap tripwire aborted (Options.LoadAbort closed during it),
+// or that refused a pinned context (ErrPinnedContextWontFit), closes the model and returns the build's error instead of continuing on
+// the CPU path.
 func (m *Model) withResidencyOrAbort() (*Model, error) {
 	m = m.withResidency()
 	if err := m.loadAbortErr; err != nil {
