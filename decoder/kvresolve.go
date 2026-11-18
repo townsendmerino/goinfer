@@ -163,7 +163,7 @@ func CUDAKVF16AutoDecline(f KVFacts, o Options) string {
 	case f.PairwiseRoPE:
 		return "f16 KV is delivered on request (--kv f16); auto keeps f32: the pairwise-RoPE quality gate did not pass at 8,000 keys (a passing K=8,000 cell would clear it)"
 	case f.SlidingWindow:
-		return "f16 KV is delivered on request (--kv f16); auto keeps f32: the sliding-window quality gate read AMBIGUOUS at 8,000 keys (a passing K=8,000 cell would clear it)"
+		return "f16 KV is delivered on request (--kv f16); auto keeps f32: the sliding-window quality gate did not pass at 8,000 keys (mean KL 1.16x f32's over ten prompts, against a 1.10x bar)"
 	case f.Family == "nemotron_h":
 		return "f16 KV is delivered on request (--kv f16); auto keeps f32: no quality gate has read a Mamba-2 hybrid yet (a passing G4 cell would clear it)"
 	}
