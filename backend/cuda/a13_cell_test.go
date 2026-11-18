@@ -22,7 +22,7 @@ import (
 //	           and the variable is the module route rather than the thread
 //	clean   -> nothing has ever poisoned this route; the multi-model null means nothing yet
 //
-// Record: docs/queue-engineering.md, section A13. Detail: docs/code-notes/cuda.md#TestA13_LoadModuleOnResidentExecutor.
+// Detail: docs/code-notes/cuda.md#TestA13_LoadModuleOnResidentExecutor.
 func TestA13_LoadModuleOnResidentExecutor(t *testing.T) {
 	if os.Getenv("GOINFER_A13_CELL") == "" {
 		t.Skip("set GOINFER_A13_CELL=1 — A13 probe, deliberately not part of the tier")

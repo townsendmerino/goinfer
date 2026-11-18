@@ -15,7 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
 )
 
-// TestB35SplitPrefill is B35's first question on CUDA (docs/queue-engineering.md, B35, step 5): does a Gated-DeltaNet prompt
+// TestB35SplitPrefill is B35's first question on CUDA: does a Gated-DeltaNet prompt
 // prefilled in two PrefillLast calls, [0,b) then [b,n), leave what one call over [0,n) leaves? It compares the last row's logits,
 // every DeltaNet layer's conv ring and recurrent state, and every full-attention layer's K/V rows, bit for bit.
 //

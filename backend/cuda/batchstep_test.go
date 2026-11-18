@@ -14,8 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestCUDAStepBatch_matchesForward is MC3-on-CUDA's step-identity gate (docs/tasks/parked/task-concurrency-2026-09.md, "MC3 on
-// CUDA", correctness 1). For B = 2, 3 and 4 sequences, each on its own KV slot at its own depth, one StepBatch row must
+// TestCUDAStepBatch_matchesForward is MC3-on-CUDA's step-identity gate. For B = 2, 3 and 4 sequences, each on its own KV slot at its own depth, one StepBatch row must
 // equal that sequence's own Forward on its slot bit for bit — or ForwardSample's id for a row that carries a Draw (the
 // last row of each step does). Four teacher-forced steps per B.
 //
@@ -147,8 +146,7 @@ func TestCUDAStepBatch_matchesForward(t *testing.T) {
 	}
 }
 
-// TestCUDAStepBatch_concurrentMatchesAlone is MC3-on-CUDA's production-path gate (docs/tasks/parked/task-concurrency-2026-09.md,
-// "MC3 on CUDA", correctness 2). 4 conversations run through Model.Generate at once on a CUDA model with
+// TestCUDAStepBatch_concurrentMatchesAlone is MC3-on-CUDA's production-path gate. 4 conversations run through Model.Generate at once on a CUDA model with
 // EnableResidentConcurrency(4): the decoder's MC3 batcher joins their decode tokens into CUDA StepBatch steps, each on its
 // own KV slot. Every turn's ids must equal what the same conversation emits alone on a model where concurrency is never
 // enabled — greedy, and sampled with a fixed seed per conversation (on-device draws). Conversation 0 opens with a long
@@ -272,8 +270,8 @@ func at(v [][]int, i int) []int {
 	return nil
 }
 
-// TestCUDAStepRagged_rowsMatchTheirShapes is G-RF2-I's batch-invariance gate for a ragged step of decode and verify rows
-// (docs/tasks/task-forward-and-memory-2026-11.md, "RF2: registration" and "RF2: addendum 1"): four sequences on their own KV
+// TestCUDAStepRagged_rowsMatchTheirShapes is G-RF2-I's batch-invariance gate for a ragged step of decode and verify rows:
+// four sequences on their own KV
 // slots in one StepRagged, one a single row with an on-device draw, one a single row of logits, one 2 verify rows and one 4,
 // for four teacher-forced steps. Every single row must equal its sequence's Forward (or ForwardSample's id) and every
 // sequence's rows its ForwardN at the same positions, bit for bit. The references run after the step at the same positions:
@@ -445,8 +443,7 @@ func TestCUDAStepRagged_rowsMatchTheirShapes(t *testing.T) {
 	}
 }
 
-// TestCUDAStepRagged_prefillChunkMatchesItsPass is RF2-2's gate (docs/tasks/task-forward-and-memory-2026-11.md, "RF2: steps",
-// and addendum 1's mixed batch): a 64-row prompt prefilled as two 32-row passes, each inside a ragged step beside two MC3 decode
+// TestCUDAStepRagged_prefillChunkMatchesItsPass is RF2-2's gate for addendum 1's mixed batch: a 64-row prompt prefilled as two 32-row passes, each inside a ragged step beside two MC3 decode
 // rows (one drawn) and verifies at k = 2 and 4, the chunk first in the first step and third in the second (StepRagged reorders
 // it), against the same two passes run alone (prefillChunkedRows' chunkOrdinary and
 // chunkPromptLen) on a spare slot. The final pass's last-row logits see every K/V row both passes wrote, and must match bit

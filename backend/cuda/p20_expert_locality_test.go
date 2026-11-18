@@ -13,8 +13,7 @@ import (
 	gc "github.com/eitamring/gocudrv/cuda"
 )
 
-// TestP20ExpertLocality measures the split expert-major batching depends on (docs/queue-performance.md,
-// P20): it only pays off if a whole M-row prefill chunk touches FEW ENOUGH distinct experts per layer
+// TestP20ExpertLocality measures the split expert-major batching depends on: it only pays off if a whole M-row prefill chunk touches FEW ENOUGH distinct experts per layer
 // to stage them all on the device at once. If it touches MORE than the box can hold, "fetch each
 // distinct expert once per chunk" is not achievable at that chunk width regardless of kernel design,
 // and the item needs a smaller batch width (or is dead on this box), not a kernel.

@@ -17,8 +17,8 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestMC3CUDAS0_batchedRowsVsDecode is an EXPLORATORY probe (not a gate) for an MC3 port to CUDA
-// (docs/tasks/parked/task-concurrency-2026-09.md): how much a batched M-row pass through the EXACT kernels (gemv_w4a8_rn,
+// TestMC3CUDAS0_batchedRowsVsDecode is an EXPLORATORY probe (not a gate) for an MC3 port to CUDA:
+// how much a batched M-row pass through the EXACT kernels (gemv_w4a8_rn,
 // attn_batched: the verify path, bit-identical to decode per row by construction) costs against M single-token
 // decodes. It times, at depth 1024, for M in {2, 4, 8}:
 //   - PrefillLastN: every row's full logits, the LM head run once per row (the logits-exact tail);
@@ -126,8 +126,7 @@ func TestMC3CUDAS0_batchedRowsVsDecode(t *testing.T) {
 	}
 }
 
-// TestRF3CUDA_rideIdentity is G-RF3-I's in-process half (docs/tasks/task-forward-and-memory-2026-11.md, "RF3: plan and
-// registration"): on the real CUDA resident, two decoders and a newcomer with a long prompt run concurrently through the
+// TestRF3CUDA_rideIdentity is G-RF3-I's in-process half: on the real CUDA resident, two decoders and a newcomer with a long prompt run concurrently through the
 // coalescer, the newcomer's prefill chunks ride the decode runs, and every reply equals the same conversation served alone
 // (the alternation's own reference). It fails if no chunk rode: RidePasses must be positive, so the test cannot pass on the
 // alternation alone.

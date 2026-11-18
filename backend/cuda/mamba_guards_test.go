@@ -204,7 +204,7 @@ func TestRecurrentStatePlanned_matchesTheBuild(t *testing.T) {
 }
 
 // recurrentSlotFixtures are the recurrent models the state-slot gates run on: Gated-DeltaNet, Gated-DeltaNet with its own
-// settings, and Mamba-2 (docs/tasks/task-kv-architecture-2026-10.md, KV8's plan of 2026-11-03).
+// settings, and Mamba-2.
 var recurrentSlotFixtures = []string{"qwen35-tiny", "olmo_hybrid-tiny", "nemotron-tiny"}
 
 func recurrentSlotsLoad(t *testing.T, fixture string, o decoder.Options) (*decoder.Model, *cudaResident) {

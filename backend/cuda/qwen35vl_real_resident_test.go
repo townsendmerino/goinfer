@@ -13,7 +13,7 @@ import (
 )
 
 // TestQwen35VLReal_residentImagePrefillMatchesCPU is the real-checkpoint gate for the CUDA-resident image prefill of a
-// Gated-DeltaNet hybrid (P26b, docs/queue-performance.md): Qwen3.5-0.8B, the three G2 images
+// Gated-DeltaNet hybrid: Qwen3.5-0.8B, the three G2 images
 // (docs/measurements/p8a-qwen35-vl-2026-09), HF's own image features fed to both sides so only the decoder differs, F32
 // on both arms so the only difference is where it runs.
 //

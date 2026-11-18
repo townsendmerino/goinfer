@@ -37,7 +37,7 @@ type kvSlotTurn struct {
 	reused int
 }
 
-// kvSlotsScenario is MC1's identity gate on CUDA (docs/tasks/parked/task-concurrency-2026-09.md; the Metal twin is
+// kvSlotsScenario is MC1's identity gate on CUDA (the Metal twin is
 // TestMetalKVSlots_interleavedMatchesAlone): with two resident KV slots, two conversations that share only a lead,
 // interleaved turn by turn through the production Generate path, must each emit exactly the token ids they emit
 // when served alone, and reuse exactly as much of their own history on every turn. A control — the same interleaving
@@ -343,8 +343,7 @@ func TestCUDAKVSlots_pricedAgainstWhatIsLeft(t *testing.T) {
 	}
 }
 
-// TestResolveCtxCapFit_slotsShrinkTheContext pins the owner's decision (docs/tasks/parked/task-concurrency-2026-09.md
-// MC1 on CUDA): an unpinned load that asks for N resident KV slots gives up context until all N fit, instead of taking
+// TestResolveCtxCapFit_slotsShrinkTheContext pins the owner's decision: an unpinned load that asks for N resident KV slots gives up context until all N fit, instead of taking
 // the one-slot context and clamping the slots. The free-VRAM budget is forced (ExtraResidentBytes, from a real probe,
 // the way TestResolveCtxCapFit_agreesWithCheckKVFits does it) so that one slot fits the full candidate while 4 fit only
 // at about 5000 positions. It checks the planning-time choice against the build-time one: at the chosen context

@@ -443,7 +443,7 @@ func TestKV8_flashLaneCompiledFromItsPrecisionsTwin(t *testing.T) {
 	}
 }
 
-// TestKV8_deliveredBytes is G3 for the CUDA int8 cache (docs/tasks/task-kv-precision-everywhere-2026-10.md §4): at -kv i8 every layer that
+// TestKV8_deliveredBytes is G3 for the CUDA int8 cache: at -kv i8 every layer that
 // keeps K/V holds int8 pools with as many elements as the f32 build's and one f32 scale per (row, KV head) for each of K and V; the build
 // ALLOCATES exactly 1 B an element plus 8 B of scales per position, head and layer (the f32 build's bytes / 4, plus the scales); and
 // decoder.ResidentKVBytes prices exactly what it allocated; a second slot costs exactly CUDAKVSlotBytes more. The pool says i8.
@@ -785,7 +785,7 @@ func TestKV8_everyAttentionPathStaysCloseToF32(t *testing.T) {
 	}
 }
 
-// TestKV8_G2_matchesTheCPUInt8Cache is G2 for the CUDA int8 cache (docs/tasks/task-kv-precision-everywhere-2026-10.md §4): the same model and
+// TestKV8_G2_matchesTheCPUInt8Cache is G2 for the CUDA int8 cache: the same model and
 // prose at -kv i8 on the CUDA resident against the CPU path's int8 cache (the same quantizer, decoder/kvcache.go), with the same pair at f32 as
 // the reference for what two backends' arithmetic alone moves. Prefill 300 tokens, then 64 teacher-forced decode steps; 65 rows.
 //

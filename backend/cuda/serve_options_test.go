@@ -16,7 +16,7 @@ import (
 // The real-model harnesses load through serveOptions: the decoder.Options `goinfer serve` builds for the same flags (internal/loadflags, the code serve
 // runs, plus serve's own -kv-sessions request), so a flag serve gains reaches the harness and a load takes the memory serve's takes. A harness that wrote its
 // own Options{Backend, Quant, ResidentContext, MoECacheExperts} left ResidentWindowedKV off (serve's default is on) and planned 26 expert slots a layer where the
-// server planned 53 (docs/queue-engineering.md B37).
+// server planned 53.
 
 // serveKVSessions is serve's -kv-sessions default (internal/serveapp/main.go): the number of KV slots it asks a resident backend for.
 const serveKVSessions = 4

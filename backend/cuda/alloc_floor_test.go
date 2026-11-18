@@ -11,8 +11,8 @@ import (
 // TestAllocFloor measures how far cuMemAlloc will actually drain the device, against what cuMemGetInfo
 // reports as free at that moment. The shortfall is a FLOOR, not contiguity: some quantity cuMemGetInfo
 // counts as free that cuMemAlloc will not hand out, at any request size. No model, no 26B: it drains in
-// shrinking chunks until even a 2 MiB request is refused, then reports what free says. Record:
-// docs/queue-engineering.md, section A10; the figures that led to it: docs/code-notes/cuda.md#TestAllocFloor.
+// shrinking chunks until even a 2 MiB request is refused, then reports what free says.
+// The figures that led to it: docs/code-notes/cuda.md#TestAllocFloor.
 func TestAllocFloor(t *testing.T) {
 	drainsDevice(t, "drains the device in shrinking chunks until a 1 MiB request is refused")
 	dev, err := CreateSystemDefaultDevice()

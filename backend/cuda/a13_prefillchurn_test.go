@@ -26,7 +26,7 @@ import (
 // process and code path and confirm it does poison. A clean result from a harness that cannot poison
 // is not evidence.
 //
-// Record: docs/queue-engineering.md, section A13. Detail: docs/code-notes/cuda.md#TestA13_PrefillChurnPoisons.
+// Detail: docs/code-notes/cuda.md#TestA13_PrefillChurnPoisons.
 func TestA13_PrefillChurnPoisons(t *testing.T) {
 	if os.Getenv("GOINFER_A13_CHURN") == "" {
 		t.Skip("set GOINFER_A13_CHURN=1 — A13 probe, deliberately not part of the tier")

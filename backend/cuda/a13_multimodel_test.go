@@ -20,7 +20,7 @@ import (
 // correctness bug. A clean result means nothing until TestA13_LoadModuleOnResidentExecutor shows this
 // route is poisonable at all.
 //
-// Record: docs/queue-engineering.md, section A13. Detail: docs/code-notes/cuda.md#TestA13_MultiModelUnloadPoisons.
+// Detail: docs/code-notes/cuda.md#TestA13_MultiModelUnloadPoisons.
 func TestA13_MultiModelUnloadPoisons(t *testing.T) {
 	if os.Getenv("GOINFER_A13_MULTI") == "" {
 		t.Skip("set GOINFER_A13_MULTI=1 — A13 probe, deliberately not part of the tier")

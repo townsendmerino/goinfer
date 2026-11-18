@@ -34,7 +34,7 @@ import (
 // the buffers' bytes == kvBytesForCap (the resident's own fit figure) == ResidentKVBytes("cuda"), and each
 // buffer's driver allocation stays within one allocQuantumBytes (2 MiB) of its bytes.
 //
-// Every fixture is built with 2 resident KV slots (MC1, docs/tasks/parked/task-concurrency-2026-09.md) over the paged pools
+// Every fixture is built with 2 resident KV slots over the paged pools
 // (kvpool.go): the pools and tables hold exactly 2 × kvBytesForCap plus the null blocks, and ResidentKVBytes("cuda") is
 // a one-slot load's figure, kvBytesForCap plus the null blocks. The DeltaNet hybrid must build one slot (recurrent state
 // is not part of a slot); every other layout, 2.
@@ -152,7 +152,7 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 // window): asked for int8, they price the int8 pools; every other fixture prices f32.
 var kv8PricedFixtures = map[string]bool{"llama-tiny": true, "phi3-tiny": true, "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf": true}
 
-// TestKVPool_detailNamesThePool is the CUDA half of KV4's §5.16 pool banner (docs/tasks/task-kv-architecture-2026-10.md): the pool's
+// TestKVPool_detailNamesThePool is the CUDA half of KV4's §5.16 pool banner: the pool's
 // detail (decoder.KVPoolDetail) names the groups its layers use, the context positions kvPoolLine names, what a window group keeps per
 // conversation, its 64-row blocks and its precision, and its bytes are what the plan charges for the pools and tables (kvChargedBytes at the guaranteed share,
 // which TestKSH6C_marginPriced holds to the device buffers). A windowed pool also holds what kvGrantRollback added from free VRAM after

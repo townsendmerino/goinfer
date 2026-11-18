@@ -84,7 +84,7 @@ func kvWindowGrant(free, reserve, perPos int64, step, maxExtra int) int {
 // are fixed, so it never costs either. A load without an expert cache calls it last. An expert-cache load calls it just before the cache is
 // sized, with holdBack the cache's minimum (expertCacheFloorBytes), so the grant comes out of the elastic cache and never makes the load
 // decline: an expert-cache load of a windowed model would otherwise keep the floor rollback, which refuses a follow-up that rewrites more
-// than about 448 tokens of the end (docs/queue-performance.md, P34, cause 2). Also held back: the companion and vision-tower reserve
+// than about 448 tokens of the end. Also held back: the companion and vision-tower reserve
 // (extraBytes), the decode margin, and two default prefill passes' scratch, which prefillCore allocates per request. The windowed buffers are
 // reallocated (nothing is written yet); a failed allocation keeps the planned ones.
 func (r *cudaResident) kvGrantRollback(holdBack int64) {

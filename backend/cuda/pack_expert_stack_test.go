@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// B36's gates (docs/queue-engineering.md B36): under the C' expert cache the routed experts are packed straight into their pinned host copy.
+// B36's gates: under the C' expert cache the routed experts are packed straight into their pinned host copy.
 //
 //	go test -count=1 -timeout 10m -tags 'cuda goinfer_testhooks' -run '^TestExpertStackPack_' -v ./cuda/
 

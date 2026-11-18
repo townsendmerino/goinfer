@@ -9,8 +9,7 @@ import (
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 )
 
-// Gemma-4 extension of moe_expert_major.go's expert-major restructuring (docs/queue-performance.md P20,
-// docs/measurements/p20-expert-major-2026-09-21.md).
+// Gemma-4 extension of moe_expert_major.go's expert-major restructuring (docs/measurements/p20-expert-major-2026-09-21.md).
 //
 // gemma4MoeMLPPre/Post (resident.go) is a parallel dense||MoE FFN, structurally different from the generic
 // moeMLPPre/Post:

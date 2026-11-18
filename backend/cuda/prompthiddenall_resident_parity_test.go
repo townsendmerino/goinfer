@@ -10,8 +10,8 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// decoder.Model.PromptHiddenAll on a CUDA-resident Qwen3.5 answers from the device through the ResidentPrefillSubsystem seam
-// (docs/tasks/parked/task-constrained-confidence.md, Route C), and every row stays within promptHiddenAllResidentBarCUDA of the
+// decoder.Model.PromptHiddenAll on a CUDA-resident Qwen3.5 answers from the device through the ResidentPrefillSubsystem seam,
+// and every row stays within promptHiddenAllResidentBarCUDA of the
 // CPU's PromptHiddenAll on the same weights. Three checks:
 //
 //   - the answer is the runner's own pre-norm residual rows with the decoder's f32 final norm applied (so the dispatch took the resident, and the norm is the host's, not the
