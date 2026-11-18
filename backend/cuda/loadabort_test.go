@@ -114,8 +114,8 @@ func TestPinnedCtx_wontFitStopsTheLoad(t *testing.T) {
 	requireDeviceAndFixtureFile(t, path)
 	load := func(ctx int) (*decoder.Model, error) {
 		t.Helper()
-		opts := decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: ctx}
-		res, err := modelload.Load(context.Background(), modelload.Request{Spec: path, Opts: opts, DirectLoad: true, ExplicitQuant: "int4"})
+		opts := decoder.Options{Backend: "cuda", Quant: "int8int8", ResidentContext: ctx} // Phi-3 goes resident on CUDA at int8int8 with per-32 activations, not int4
+		res, err := modelload.Load(context.Background(), modelload.Request{Spec: path, Opts: opts, DirectLoad: true, ExplicitQuant: "int8int8"})
 		if err != nil {
 			return nil, err
 		}
