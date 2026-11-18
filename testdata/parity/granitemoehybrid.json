@@ -8,9 +8,10 @@
   ],
   "own": [
     "decoder/forward_granite.go",
-    "decoder/arch_granitemoehybrid.go"
+    "decoder/arch_granitemoehybrid.go",
+    "decoder/gguf_build_granite.go"
   ],
-  "deps_hash": "sha256:4216b0a7cc9a70a2f88b00dca85f4ec0387bd52188cc7231d27a15e28bde2e12",
+  "deps_hash": "sha256:d576787c37ca9e5d30900df11f2c50d783f80b67ea213c2f8d2dffa0d70020b5",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

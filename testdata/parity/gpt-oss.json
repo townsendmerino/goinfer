@@ -10,9 +10,10 @@
     "decoder/gptoss120_test.go",
     "decoder/gptoss_safetensors.go",
     "decoder/gptoss_safetensors_test.go",
-    "decoder/arch_gpt_oss.go"
+    "decoder/arch_gpt_oss.go",
+    "decoder/gguf_build_gptoss.go"
   ],
-  "deps_hash": "sha256:85d60907d92961d0443073830391c73f689e6f599e969a3da3efd0546341cfc6",
+  "deps_hash": "sha256:b703206d498544d8b67f8d4a9a2eef3e31739008ff46dcaa03c33af54367a613",
   "status": "validated",
   "validated_at": "960ef65a7",
   "date": "2026-10-26",

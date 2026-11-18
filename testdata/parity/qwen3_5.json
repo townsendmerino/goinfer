@@ -10,12 +10,13 @@
     "decoder/qwen3_5_test.go",
     "scripts/pin_qwen3_5_forward.py",
     "decoder/arch_qwen3_5.go",
-    "decoder/generate_vl_qwen35.go"
+    "decoder/generate_vl_qwen35.go",
+    "decoder/gguf_build_qwen35.go"
   ],
   "programs": [
     "testdata/qwen35vl-tiny"
   ],
-  "deps_hash": "sha256:1a5f57a90177db8dd7ab296f5cec0fd4957fdf4c3137023271bcb01a86d110c2",
+  "deps_hash": "sha256:aed508375ba3607adb411a5b9f739c2a77eb49199ac5c528f8dbdc5ff81d22b4",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

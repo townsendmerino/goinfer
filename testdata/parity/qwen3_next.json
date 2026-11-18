@@ -15,12 +15,13 @@
     "decoder/text_parity_test.go",
     "scripts/pin_qwen3next_tiny.py",
     "scripts/pin_slice_oracle.py",
-    "decoder/arch_qwen3_next.go"
+    "decoder/arch_qwen3_next.go",
+    "decoder/gguf_build_qwen35.go"
   ],
   "programs": [
     "testdata/qwen3next-tiny"
   ],
-  "deps_hash": "sha256:0c501d0cde7dcffd25a1e557da366c9a6d5c48beb8228737719bf842fd57f70d",
+  "deps_hash": "sha256:b5e8d4295edcefd6fd8f80428d9807e87379d84df5abcef00ece0ff04b68fdb7",
   "status": "validated",
   "validated_at": "426ca57d",
   "date": "2026-09-29",

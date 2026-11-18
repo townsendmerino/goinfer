@@ -46,7 +46,13 @@
   ],
   "loaders": [
     "decoder/weights.go",
-    "decoder/gguf.go"
+    "decoder/gguf.go",
+    "decoder/weights_build.go",
+    "decoder/gguf_build.go",
+    "decoder/gguf_split.go",
+    "decoder/stream_layers.go",
+    "decoder/stream_table.go",
+    "decoder/config/nonfinite.go"
   ],
   "mamba2": [
     "decoder/mamba2.go"
@@ -57,7 +63,18 @@
   "quant": [
     "decoder/weightmat.go",
     "decoder/gptq.go",
-    "decoder/awq.go"
+    "decoder/awq.go",
+    "decoder/fakequant.go",
+    "decoder/kquant_native.go",
+    "decoder/mlx_safetensors.go",
+    "decoder/w4a8_row4_emit_other.go",
+    "decoder/w4a8_row4_emit_arm64.go",
+    "decoder/quant/awq.go",
+    "decoder/quant/config.go",
+    "decoder/quant/fp8.go",
+    "decoder/quant/gptq.go",
+    "decoder/quant/mlx.go",
+    "decoder/quant/nvfp4.go"
   ],
   "serialize": [
     "decoder/serialize.go"

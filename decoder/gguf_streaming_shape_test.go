@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/printer"
 	"go/token"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -22,9 +23,14 @@ import (
 // checkpoint's numbers.
 func TestStreamableFamilyClosures_onlyReadPerLayerTensors(t *testing.T) {
 	fset := token.NewFileSet()
-	// The family closures live in gguf.go and in gguf_build.go (the family builders moved out of buildWeightsFromGGUF).
+	// The family closures live in gguf.go and in the gguf_build*.go family builders.
 	var files []*ast.File
-	for _, name := range []string{"gguf.go", "gguf_build.go"} {
+	names := []string{"gguf.go"}
+	builders, err := filepath.Glob("gguf_build*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range append(names, builders...) {
 		af, err := parser.ParseFile(fset, name, nil, 0)
 		if err != nil {
 			t.Fatalf("parse %s: %v", name, err)
@@ -66,7 +72,7 @@ func TestStreamableFamilyClosures_onlyReadPerLayerTensors(t *testing.T) {
 			ast.Inspect(af, find)
 		}
 		if lit == nil {
-			t.Errorf("%s: closure not found in gguf.go or gguf_build.go — this guard is watching nothing for this family", want)
+			t.Errorf("%s: closure not found in gguf.go or gguf_build*.go — this guard is watching nothing for this family", want)
 			continue
 		}
 		found[want] = true
