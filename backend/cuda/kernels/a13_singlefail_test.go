@@ -22,7 +22,7 @@ import (
 //	               path in the same process with no error
 //
 // Three repeats either way: A13's failures vary run to run, so a single negative clears nothing.
-// Record: docs/queue-engineering.md, section A13. Detail: docs/code-notes/cuda.md#TestA13_SingleFailedAllocPoisons.
+// Detail: docs/code-notes/cuda.md#TestA13_SingleFailedAllocPoisons.
 func TestA13_SingleFailedAllocPoisons(t *testing.T) {
 	if os.Getenv("GOINFER_A13_SINGLEFAIL") == "" {
 		t.Skip("set GOINFER_A13_SINGLEFAIL=1 — A13 probe, deliberately not part of the tier")
