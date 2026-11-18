@@ -26,7 +26,7 @@ func TestMellumResidentParityCUDA(t *testing.T) {
 	requireHeavyModel(t)
 	path := "../../decoder/testdata/mellum-mellum2-slice"
 	if _, err := os.Stat(path + "/model.safetensors"); err != nil {
-		t.Skipf("no Mellum2 slice at %s (4 GB, gitignored) — regenerate per docs/completed/queue-correctness.md G11", path)
+		t.Skipf("no Mellum2 slice at %s (4 GB, gitignored) — regenerate the slice", path)
 	}
 	// The prompt is the one residentCosineParity's round-trip precondition is written against
 	// ("capitalofFrance"), not a code prompt, and that is deliberate rather than lazy: this gate

@@ -98,7 +98,7 @@ func TestPrefillGate(t *testing.T) {
 			}
 			if runPrefillGateModel(t, mc.name, path, depths, continuationN) {
 				t.Fatalf("§3 GATE FAILED for model %s — see log above for which (model, K) cell; "+
-					"the default stays exact there (docs/completed/task-prefill-gap.md §3, §7)", mc.name)
+					"the default stays exact there", mc.name)
 			}
 		})
 	}

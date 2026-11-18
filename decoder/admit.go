@@ -62,7 +62,7 @@ func admitWhy(f AdmitFacts, ad Admission) string {
 	}
 	if f.QuantLabel == "q4k" && f.Backend != "cuda" && f.Backend != "metal" {
 		// CUDA has gemv_q4k_g32 and Metal the q4k lane; WebGPU has no Q4_K kernel yet.
-		return "--quant q4k (native Q4_K) has no resident kernel on " + f.Backend + " yet (docs/tasks/task-int4-weight-quality-2026-09.md)"
+		return "--quant q4k (native Q4_K) has no resident kernel on " + f.Backend + " yet"
 	}
 	if why := autoMetalPrecision(f.BackendAuto, f.Backend, f.QuantLabel); why != "" {
 		return why

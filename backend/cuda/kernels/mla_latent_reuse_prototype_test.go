@@ -172,8 +172,8 @@ func TestMLALatentReuse_prototype(t *testing.T) {
 	t.Logf("rank-prefix vs CPU absorb reference: max|Δ| = %.3e  max relΔ = %.3e", maxAbs, maxRel)
 	if maxAbs > 1e-5 {
 		t.Errorf("REUSE DOES NOT HOLD: attn_batched at nKV=1/hd=latDim does not reproduce the "+
-			"absorb-path rank collapse (max|Δ| = %.3e) — the bespoke-kernel row in "+
-			"docs/completed/task-mla-cuda-residency.md activates", maxAbs)
+			"absorb-path rank collapse (max|Δ| = %.3e) — the bespoke-kernel path "+
+			"activates", maxAbs)
 	}
 
 	// ---- (2b) per-dim independence VERIFIED, not assumed: the wasted rope-tail accumulate must not
@@ -247,5 +247,5 @@ func TestMLALatentReuse_prototype(t *testing.T) {
 		latDim, full, rank, narrow, full/narrow, qkRope, latDim, 100*float64(qkRope)/latDim)
 
 	t.Log("VERDICT: attn_batched reuse HOLDS at the latent geometry — " +
-		"docs/completed/task-mla-cuda-residency.md's ~3-day path is the live one")
+		"the ~3-day path is the live one")
 }
