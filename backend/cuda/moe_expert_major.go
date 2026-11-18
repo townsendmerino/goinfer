@@ -9,7 +9,7 @@ import (
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 )
 
-// CUDA expert-major MoE prefill (docs/queue-performance.md P20, docs/measurements/p20-expert-locality-2026-09-21.md).
+// CUDA expert-major MoE prefill (docs/measurements/p20-expert-locality-2026-09-21.md).
 // Generic MoE path only (Ly.isMoE, moeMLPPre/moeMLPPost's shape); gemma4's parallel dense||MoE FFN is
 // moe_expert_major_gemma4.go.
 //

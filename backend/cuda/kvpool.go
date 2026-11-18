@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-// Paged KV storage (docs/tasks/task-kv-architecture-2026-10.md §5.3, KV4). Every layer that keeps K/V holds them in a pool of
+// Paged KV storage. Every layer that keeps K/V holds them in a pool of
 // kvBlock-row blocks, [blocks][kvBlock][kvDim], one allocation per layer for K and one for V. A layer belongs to one group: the full
 // group keeps every position (full attention, MLA latent rows), the window group keeps what a sliding window and the rollback need
 // (kvwindow.go). A block id names the same block in every layer of its group. Block 0 of every pool is zero-filled and never handed

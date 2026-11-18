@@ -46,8 +46,7 @@ var prefillBatchedPTX []byte
 
 // decodeSplitKVPTX: the high-occupancy, bit-identical decode attention (splitkv_scores, splitkv_softmax, splitkv_vsum).
 // attn_batched(M=1) is split along its independent axes (scores over keys, V-sum over dims), so every order-dependent
-// softmax fold stays whole and in order and the result is byte-identical, but fills the SMs. See
-// docs/tasks/task-decode-splitkv-attention.md.
+// softmax fold stays whole and in order and the result is byte-identical, but fills the SMs.
 //
 //go:embed testdata/decode_splitkv.ptx
 var decodeSplitKVPTX []byte
@@ -75,8 +74,7 @@ var deltaNetPTX []byte
 var gptOssActPTX []byte
 
 // actGroupPTX: per-32 activation quantization for the resident decode path: rmsnorm_quant_g32, quant_vec_g32,
-// glu_quant_g32 and the gemv_w4a8_g32 / gemv_w8a8_g32 GEMVs that read one activation scale per 32 elements (actgroup.cu;
-// docs/tasks/task-actquant-pergroup-2026-09.md). A per-row model never loads it.
+// glu_quant_g32 and the gemv_w4a8_g32 / gemv_w8a8_g32 GEMVs that read one activation scale per 32 elements (actgroup.cu). A per-row model never loads it.
 //
 //go:embed testdata/actgroup.ptx
 var actGroupPTX []byte

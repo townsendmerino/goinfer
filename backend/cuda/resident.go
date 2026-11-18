@@ -63,14 +63,14 @@ func resolveCtxCap(request, modelCtx int) int {
 }
 
 // fitDefaultCtx is the candidate context resolveCtxCapFit asks Plan for on an UNPINNED request: the size of a
-// coding agent's turn, not the model's full window (docs/tasks/task-fit-to-hardware.md §8). 8192 refused a real
+// coding agent's turn, not the model's full window. 8192 refused a real
 // first agent request; 16384 holds it with headroom (docs/code-notes/cuda.md#fitDefaultCtx). It is a CANDIDATE,
 // not a grant: Plan shrinks it to what the card holds and ctxForSlots shrinks it further until the requested KV
 // slots all fit, so a card or model that cannot hold it lands where it always did. goinfer-chat fit's own -ctx
 // default (internal/fitcmd/fit.go) uses the same figure so the dry run and the real load agree.
 const fitDefaultCtx = 16384
 
-// resolveCtxCapFit is the "fit by default" resident context for CUDA (docs/tasks/task-fit-to-hardware.md Phase 2):
+// resolveCtxCapFit is the "fit by default" resident context for CUDA:
 // an UNPINNED load asks Plan for a larger candidate (fitDefaultCtx, clamped to the model's window) instead of a
 // flat cudaCtxCapDefault, and uses whatever Plan lands on. Because of the floor checks below that is never less
 // than cudaCtxCapDefault, except under a guard pin (below). A caller with m.FitDisabled() (--fit=off), or whose
@@ -196,8 +196,8 @@ func cudaExtraSlotKVBytes(m *decoder.Model, ctx int) int64 {
 	return m.CUDAKVSlotBytes(ctx, m.KVCacheF16(), m.KVDeliveredFor("cuda") == mem.KVI8)
 }
 
-// ctxForSlots is resolveCtxCapFit's answer when MC1's resident KV slots are requested
-// (docs/tasks/parked/task-concurrency-2026-09.md MC1 on CUDA): the largest context in [floor, oneSlot] at which Plan fits
+// ctxForSlots is resolveCtxCapFit's answer when MC1's resident KV slots are requested:
+// the largest context in [floor, oneSlot] at which Plan fits
 // every requested slot (the build's own KV plus slots-1 more copies, priced as ExtraBytes), so an unpinned load
 // gives up context before conversations (owner decision). When not even floor holds them all it returns floor and
 // checkKVFits clamps the count. An explicit -ctx never reaches here.
@@ -932,7 +932,7 @@ type cudaResident struct {
 	kc, vc                                              []Buffer // each layer's K/V pool (kvpool.go); a KV-shared layer holds its source's
 	ksc, vsc                                            []Buffer // an int8 layer's K and V scale pools, one f32 per (pool row, KV head), laid out like kc/vc; empty otherwise
 
-	// MC1's resident KV slots (docs/tasks/parked/task-concurrency-2026-09.md) over the paged pools (kvpool.go). kvSlotsReq is the model's
+	// MC1's resident KV slots over the paged pools (kvpool.go). kvSlotsReq is the model's
 	// request (decoder.Model.ResidentKVSlotsRequest; 1 for a recurrent family and under expert streaming), kvTabs each slot's block
 	// tables (kvTabDev their device copy), kvSlot the bound index, and kvTabSlot the slot whose tables the KV kernels read: the bound
 	// one, or an MC3 row's while its attention runs.
@@ -1042,7 +1042,7 @@ type cudaResident struct {
 	dbgProbe bool
 	// routeRecord, when non-nil, is called once per loadRoutedExperts call with the layer index and that call's routed
 	// expert ids (r.hostIdx[:topK]): a measurement hook for how many DISTINCT experts a whole M-row chunk touches per
-	// layer (docs/queue-performance.md P20). A field for the same reason dbgProbe is.
+	// layer. A field for the same reason dbgProbe is.
 	routeRecord   func(layer int, ids []uint32)
 	cacheSlotsReq int   // slots REQUESTED (pre-cap), so errors can name both
 	dbgAllocSizes []int // every requested slot-buffer size, recording only
@@ -2572,7 +2572,7 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 // are never read and get overwritten (matches the WebGPU path).
 func (r *cudaResident) TruncateTo(pos int) {}
 
-// KVSlots / UseKVSlot implement decoder.ResidentKVSubsystem (MC1, docs/tasks/parked/task-concurrency-2026-09.md): how many
+// KVSlots / UseKVSlot implement decoder.ResidentKVSubsystem: how many
 // resident KV slots the build allocated, and binding one.
 //
 // Binding selects the slot's tables, done on the executor so it is ordered after every job already posted. That is
@@ -2920,8 +2920,7 @@ func (r *cudaResident) norm(src, nrm Buffer, qOut Buffer, sOut Buffer) error {
 // splitKVAttnDecode runs the high-occupancy, bit-identical decode attention for layer l at position pos (M=1):
 // three launches replacing the single attn_batched(M=1). scores tile over keys (nH·⌈nWin/128⌉ blocks), softmax
 // keeps the exact 128-wide partition+tree (byte-identical max + denominator), vsum tiles over output dims
-// (nH·⌈hd/32⌉ blocks, each thread the whole per-d fold). Writes r.cctx exactly as attn_batched would. See
-// docs/tasks/task-decode-splitkv-attention.md.
+// (nH·⌈hd/32⌉ blocks, each thread the whole per-d fold). Writes r.cctx exactly as attn_batched would.
 func (r *cudaResident) splitKVAttnDecode(l, pos int) error {
 	r.skLaunches++
 	Ly := &r.layers[l]
@@ -4561,8 +4560,8 @@ func wkScale(w cudaWQ) KernelArg {
 }
 
 // fusedG32MaxHidden is the widest hidden size the fused per-32 kernels are used at: the largest size measured to
-// win (H=1536). Wider measured sizes (Phi-3 at 3072, qwen2.5-7b at 3584) were slower fused than unfused
-// (docs/tasks/task-int4-weight-quality-2026-09.md, lever 3), and the sizes between are unmeasured and stay unfused.
+// win (H=1536). Wider measured sizes (Phi-3 at 3072, qwen2.5-7b at 3584) were slower fused than unfused,
+// and the sizes between are unmeasured and stay unfused.
 const fusedG32MaxHidden = 1536
 
 // fusedG32Shmem is fused_rms_qkv_g32 / fused_rms_gu_g32's shared memory for hidden size H:

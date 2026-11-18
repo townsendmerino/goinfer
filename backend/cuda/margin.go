@@ -8,7 +8,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// The context margin computed from its parts (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-H6 build"): what the build allocates
+// The context margin computed from its parts: what the build allocates
 // after the KV pools, one 512-row prefill pass, the allocation floor and a decode allowance, beside the KV priced as the card
 // charges it. slotMarginBytes is not this.
 
@@ -16,8 +16,7 @@ import (
 // (148–155 MiB, docs/code-notes/cuda.md, "TestAllocFloor").
 const allocFloorBytes = 155 << 20
 
-// decodeAllowanceBytes is decode's transient allocations beyond the prefill pass: H6-R measured none on a dense decode
-// (docs/tasks/parked/task-kernel-survey-2026-10.md, "H6-R read").
+// decodeAllowanceBytes is decode's transient allocations beyond the prefill pass: H6-R measured none on a dense decode.
 const decodeAllowanceBytes = 16 << 20
 
 // grantReserveBytes is the reserve the runtime grants (kvGrantRollback, allocRecurrentCheckpoint) keep beside two prefill passes.
@@ -80,8 +79,7 @@ func kvRoundingBound(owners, mla int) int64 {
 	return int64(2*owners+mla+1) * allocQuantumBytes
 }
 
-// ctxMarginFor is the context margin at load for a context of ctx positions (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-H6
-// build"): the build's own allocations after the KV pools (postPoolBytes), one 512-row prefill pass at that context, the
+// ctxMarginFor is the context margin at load for a context of ctx positions: the build's own allocations after the KV pools (postPoolBytes), one 512-row prefill pass at that context, the
 // allocation floor and the decode allowance. BuildResident computes it once, on the planned geometry (planLayerGeometry) before the
 // context is planned, and keeps it in ctxMarginBytes: the plan, checkKVFits, checkWeightsFit and their declines read that one
 // figure. TestKSH6C_marginPriced holds it to the built resident's.

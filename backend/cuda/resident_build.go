@@ -846,7 +846,7 @@ func (s *buildState) newResident(planOnly bool, mp *memPlanRun) (*cudaResident, 
 	r.planning = true
 	// A MoE build whose context is planned opens its device and pays moe_route's local-memory pool (payRoutePool) before the plan
 	// reads free VRAM, on the context it keeps: the startup self-test's pool is released with its own context before the build, so
-	// nothing else has paid it (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-H6 build, review amendment"). It checks the weights
+	// nothing else has paid it. It checks the weights
 	// first, against the margin at the floor, so a model that does not fit gets checkWeightsFit's decline rather than a warm-up's
 	// failure. The setup job keeps this device and stream, and checks the weights again against the margin it plans.
 	if _, floor, plans := ctxPlanRange(m, m.ResidentContextRequest(), m.Config().MaxPositions); r.moe && plans {
@@ -930,7 +930,7 @@ func (s *buildState) bindKernels(r *cudaResident) error {
 	//
 	// Any change that drives the device to refusal and then keeps using the same context breaks this, silently, as zeros. A
 	// retry loop, an eviction-and-rebuild or a "just try a smaller cache" must re-load rather than reuse these handles.
-	// Evidence, path by path: docs/QUEUE.md A13; the full record: docs/code-notes/cuda.md#BuildResident: device exhaustion.
+	// Evidence, path by path: docs/code-notes/cuda.md#BuildResident: device exhaustion.
 	gmod, e := r.compileKV(r.kvPTX8(gemvFwdPTX, gemvFwdKV16PTX, gemvFwdKV8PTX))
 	if e != nil {
 		return e
@@ -1317,7 +1317,7 @@ func (s *buildState) bindKernels(r *cudaResident) error {
 				r.skInvBuf = r.af(r.nH)
 				// Flash-decode V-sum SPIKE, opt-in and NOT bit-identical. Loaded and allocated
 				// only when asked for, so a stock binary carries neither the pipelines nor the
-				// scratch. See docs/scoping-decode-tree-recanon.md §6.
+				// scratch.
 				if v, err := strconv.Atoi(os.Getenv("GOINFER_SPLITKV_VSUM_SPLIT")); err == nil && v > 1 {
 					// maxHd comes from the MODEL, not r.layers: r.layers is not populated until
 					// later in BuildResident, so reading it here silently yielded 0 and the

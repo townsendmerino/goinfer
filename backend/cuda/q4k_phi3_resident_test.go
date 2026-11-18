@@ -13,7 +13,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestQ4K_phi3ResidentMatchesCPU: Phase 1b of docs/tasks/task-int4-weight-quality-2026-09.md. Phi-3
+// TestQ4K_phi3ResidentMatchesCPU: Phi-3
 // at --quant q4k on CUDA, at the DEFAULT resident context (the capacity criterion: int8int8 does not
 // fit there on the 8 GB card), with gemv_q4k_g32 actually bound, against the CPU q4k path on the H2
 // resident test's 141-token filler prompt. The registered bars are relative:
@@ -21,8 +21,7 @@ import (
 //   - quality: p10 against f32 no more than 0.01 below CPU q4k's own on the same prompt.
 //
 // It runs the int8 lane (decoder.SetKQuantNativeOffForTest): the CPU q4k reference keeps the int8 copies of the Q5_K and Q6_K
-// tensors, so only that lane can meet the agreement bar. The native lane fails the quality bar on this repeated filler (open item
-// KS-O1-F, docs/tasks/parked/task-kernel-survey-2026-10.md); its gates are TestKSO1C_realPhi3NonInferiority, TestKSO1C_towardTheFile and,
+// tensors, so only that lane can meet the agreement bar. The native lane fails the quality bar on this repeated filler (an open item); its gates are TestKSO1C_realPhi3NonInferiority, TestKSO1C_towardTheFile and,
 // for long context, TestKSO1C_longContextQuality.
 func TestQ4K_phi3ResidentMatchesCPU(t *testing.T) {
 	path := os.Getenv("GOINFER_PHI3_MINI_GGUF")

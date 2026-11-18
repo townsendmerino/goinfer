@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestB35Snapshot_restoreEqualsCold is B35's CUDA gate (docs/queue-engineering.md, B35): a Gated-DeltaNet model's prefix snapshot, taken
+// TestB35Snapshot_restoreEqualsCold is B35's CUDA gate: a Gated-DeltaNet model's prefix snapshot, taken
 // between two passes of turn 1's cold prefill at the mark, then restored after another prompt has overwritten the slot, continues turn 2
 // exactly as a cold prefill of turn 2 does: the last row's logits, every DeltaNet layer's conv ring and state, and the full-attention K/V
 // rows, bit for bit. The pass width is pinned to 64 so a short prompt has several passes. A plant (the restore without the state) must differ.

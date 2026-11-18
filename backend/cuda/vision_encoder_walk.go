@@ -9,8 +9,7 @@ import (
 )
 
 // int8Regs are the int8 SigLIP tower's registers. Each is held as float32 (f), as int8 rows and their scales (q8), or both:
-// the int8 form is the walker's storage for a register only linears read, not part of the program (docs/tasks/
-// task-subsystems-2026-10.md §8, "CUDA's int8 SigLIP tower"). A register starts with its float buffer current.
+// the int8 form is the walker's storage for a register only linears read, not part of the program. A register starts with its float buffer current.
 type int8Regs struct {
 	f     map[vision.TowerReg]Buffer
 	q8    map[vision.TowerReg][2]Buffer

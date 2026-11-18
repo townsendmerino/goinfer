@@ -11,7 +11,7 @@ import (
 )
 
 // TestResidentCloseFreesVRAM_7B is TestResidentCloseFreesVRAM's shape at the scale that reproduces
-// A12 (docs/QUEUE.md): qwen2.5-7B and a real decode loop, rather than the 0.5B coder and one token.
+// A12: qwen2.5-7B and a real decode loop, rather than the 0.5B coder and one token.
 //
 // A SECOND GATE RATHER THAN WIDENING THE FIRST. The existing gate is correctly scoped and silently
 // narrow, which is the variant that looks most like a working gate; keeping both makes the scopes

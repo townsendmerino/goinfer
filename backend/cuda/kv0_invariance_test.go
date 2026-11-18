@@ -524,7 +524,7 @@ func kv0Invariance(t *testing.T, g *kv0Rig) {
 	log("done in %s", time.Since(start).Round(time.Second))
 }
 
-// TestKV0_continuationEffect measures §5.6 property 3 of docs/tasks/task-kv-architecture-2026-10.md on CUDA: the K/V rows
+// TestKV0_continuationEffect measures the continuation effect on CUDA: the K/V rows
 // decode writes for a token against the rows a prefill pass writes for the same token, and what that does to the next-token
 // logits. Per trial, with the same teacher-forced tokens:
 //

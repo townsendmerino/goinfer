@@ -12,8 +12,8 @@ import (
 )
 
 // BenchmarkResidentDecode times greedy resident decode (ForwardArgmax, the serve fast path) on CUDA
-// after prefilling GOINFER_BENCH_DEPTH positions: one op is one decoded token. It is the Phase 1b
-// speed-gate instrument of docs/tasks/task-int4-weight-quality-2026-09.md (goinfer against goinfer,
+// after prefilling GOINFER_BENCH_DEPTH positions: one op is one decoded token. It is the
+// speed-gate instrument for the q4k lane (goinfer against goinfer,
 // separate processes per quant). Env: GOINFER_BENCH_MODEL (a .gguf), GOINFER_BENCH_QUANT,
 // GOINFER_BENCH_ACT_GROUP (0 or 32), GOINFER_BENCH_DEPTH (default 128), GOINFER_BENCH_NO_FUSE (non-empty: fused kernels off). Prefill is outside the timer.
 func BenchmarkResidentDecode(b *testing.B) {

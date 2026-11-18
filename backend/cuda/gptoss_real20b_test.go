@@ -12,8 +12,7 @@ import (
 )
 
 // TestGptOssResidentParityCUDA is G7's gate: ONE real gpt-oss forward on a resident path. The
-// FeatAttnSink declaration waits on this gate passing, not the other way round
-// (docs/queue-correctness.md G7).
+// FeatAttnSink declaration waits on this gate passing, not the other way round.
 //
 // IT FITS AN 8 GB CARD VIA MACHINERY THAT ALREADY EXISTED: --moe-cache-experts holds the experts in
 // pinned host memory and DMAs the routed ones into device slots per token, the path that already
@@ -27,8 +26,8 @@ func TestGptOssResidentParityCUDA(t *testing.T) {
 		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 (loads a 12 GB model)")
 	}
 	// Skips until CUDA declares the two features, exactly as metal/gptoss_real_test.go does. The
-	// declaration is NOT made: this gate FAILED (min cosine 0.681) with them declared locally
-	// (docs/queue-correctness.md G7), so declaring on kernel-level evidence would repeat the mistake that
+	// declaration is NOT made: this gate FAILED (min cosine 0.681) with them declared locally,
+	// so declaring on kernel-level evidence would repeat the mistake that
 	// was reverted. The test is committed so the next attempt starts from a reproduction rather than a
 	// rebuild.
 	// decoder.AssetPathForTest, NOT modelPath: modelPath reads GOINFER_MODELS_DIR, a different variable

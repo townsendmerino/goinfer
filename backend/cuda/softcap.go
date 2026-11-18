@@ -23,7 +23,7 @@ const softcapParallelMin = 32768
 //
 // Sibling set: the identical loop also lives in decoder/forwardn.go, decoder/model.go, metal/model.go and
 // gpu/softcap.go. The decoder and metal copies are deliberately left alone (decoder/ is under a numerics freeze and
-// metal/ is on hold; docs/QUEUE.md B6 records the pair).
+// metal/ is on hold).
 func applySoftcap(logits []float32, sc float32) {
 	if sc <= 0 {
 		return

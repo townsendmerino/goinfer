@@ -14,7 +14,7 @@ import (
 //
 // WHY IT EXISTS. The GPU gate's heavy tier runs the whole package in one process, and real-model
 // tests whose model sits at the edge of the card fail there with a resident decline or
-// CUDA_ERROR_OUT_OF_MEMORY while passing as their own process. This is NOT a leak (A12, docs/QUEUE.md,
+// CUDA_ERROR_OUT_OF_MEMORY while passing as their own process. This is NOT a leak (measurement
 // refuted both a leak and parallelism) and the in-process shortfall is still unexplained. The marker
 // does not explain it either; it keeps an unexplained tens-of-MB drift from turning a correct test red.
 //

@@ -56,7 +56,7 @@ func TestWindowedKV_grantArithmetic(t *testing.T) {
 }
 
 // TestWindowedKV_expertCacheGetsTheGrant: an expert-cache load of a windowed model is granted rollback like any other load, before its cache
-// is sized (docs/queue-performance.md, P34, cause 2), and a card with only the reserve and the cache's minimum free gets no grant and still
+// is sized, and a card with only the reserve and the cache's minimum free gets no grant and still
 // loads. The control (the same load without the expert cache) is granted the same, so a skipped grant reads red. The 512 is pinned here
 // because the expert cache is sized beside the planner's figure.
 func TestWindowedKV_expertCacheGetsTheGrant(t *testing.T) {
@@ -112,8 +112,8 @@ func TestWindowedKV_expertCacheGetsTheGrant(t *testing.T) {
 	}
 }
 
-// TestWindowedKV_e0ResendReplay replays kvWindowNextBase over the shape of tack's E0 resend on Mellum2.1's 1,024-position window
-// (docs/queue-performance.md, P34, cause 2): a prompt of n positions prefilled in 512-row passes and one generated token, then a resend
+// TestWindowedKV_e0ResendReplay replays kvWindowNextBase over the shape of tack's E0 resend on Mellum2.1's 1,024-position window:
+// a prompt of n positions prefilled in 512-row passes and one generated token, then a resend
 // that diverges d positions before the newest, rounded down to 64-position blocks. At the floor rollback (slack 512, step 64: 448) a
 // resend that diverges 518 or 600 back is refused and one that diverges 406 back is reused; at the granted rollback (1,024) all three
 // are reused. These are the pattern the by-day probe on nobara must show, before and after the fix.

@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// P26b (docs/queue-performance.md): an image turn on a Gated-DeltaNet hybrid runs its prefill AND decode on the CUDA resident, through
+// P26b: an image turn on a Gated-DeltaNet hybrid runs its prefill AND decode on the CUDA resident, through
 // GenerateQwenVL's resident m-RoPE prefill branch, which a recurrent family could not enter before (it had no hybrid m-RoPE prefill and
 // no way to upload recurrent state). The tiny Qwen3.5 vision-language fixture, the same image prompt and features on both sides, both at
 // int4 so the only difference is where it runs.

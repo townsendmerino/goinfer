@@ -25,7 +25,7 @@ import (
 // Rows are read and written through the slot's tables (kvpool.go).
 //
 //   - A recurrent model's snapshot also holds every recurrent layer's conv ring and state as they stand after row end-1 (Gated-DeltaNet's
-//     dnWin and dnState, Mamba-2's mbWin and mbSSM), so it restores to exactly end (docs/queue-engineering.md, B35). It is taken between two
+//     dnWin and dnState, Mamba-2's mbWin and mbSSM), so it restores to exactly end. It is taken between two
 //     calls of a prefill (ResidentPrefillSubsystem, or the decoder's cut of a per-token one), when the state belongs to that position.
 //
 // The host buffer is one allocation of ordinary (pageable) memory per snapshot (allocHostRows), made when the snapshot is taken and returned
