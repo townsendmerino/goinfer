@@ -65,7 +65,7 @@ func loadWebGPUResident(t *testing.T, dir string, opts decoder.Options, slots in
 	return m, rd
 }
 
-// kvSlotsScenario is MC1's identity gate on WebGPU (docs/tasks/parked/task-concurrency-2026-09.md; the twins are
+// kvSlotsScenario is the identity gate for KV slots on WebGPU (the twins are
 // TestMetalKVSlots_interleavedMatchesAlone and TestCUDAKVSlots_interleavedMatchesAlone): with two resident KV slots,
 // two conversations that share only a lead, interleaved turn by turn through the production Generate path, must each
 // emit exactly the token ids they emit when served alone, and reuse exactly as much of their own history on every

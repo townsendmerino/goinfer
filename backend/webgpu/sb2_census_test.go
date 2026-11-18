@@ -999,7 +999,7 @@ func TestWebGPUDeviceBuffers_inTheBuildsOrder(t *testing.T) {
 	}
 }
 
-// webgpuScratchListHolds is G-MS2w (docs/tasks/task-forward-and-memory-2026-11.md, "MM5b, WebGPU's decode scratch: registration"): the
+// webgpuScratchListHolds: the
 // scratch line the ledger shows after a build is the sum of the build's named scratch list, summed over every runner the build made (one a
 // KV slot), and no lease on it is unnamed. A lease made beside the list, or one no builder names, is red here.
 func webgpuScratchListHolds(rd *residentDecoder, l *mem.Ledger) error {
