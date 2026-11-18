@@ -21,7 +21,7 @@ import (
 // correctness break.
 //
 // It measures Stage A, where the batched ForwardN amortizes only the (K-1) Submit/Poll syncs, not
-// the K×~420 dispatch records (docs/completed/gpu-next-levers-assessment.md §7). The speedup is
+// the K×~420 dispatch records. The speedup is
 // logged, not asserted as a floor; only parity is hard-gated.
 //
 //	GOINFER_SPEC_TARGET=~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf \

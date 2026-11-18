@@ -51,8 +51,7 @@ func TestSupport_eachParameterCheckDeclines(t *testing.T) {
 }
 
 // TestSupport_metalClaimsOlmoHybridsDeltaNet: Metal's table takes Olmo Hybrid's DeltaNet, both of its parameters, and its step
-// tables do not, so the model runs resident and stays off the multi-sequence step
-// (docs/completed/task-olmo-hybrid-metal-webgpu-2026-11.md).
+// tables do not, so the model runs resident and stays off the multi-sequence step.
 func TestSupport_metalClaimsOlmoHybridsDeltaNet(t *testing.T) {
 	op := Op{Kind: OpDeltaNet, Delta: DeltaNetOpParams{Eps: 1e-6, ONormEps: 1e-5, NegEigval: true}}
 	if gaps := Metal.Gaps(layer(op)); len(gaps) != 0 {

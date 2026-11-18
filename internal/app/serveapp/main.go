@@ -593,7 +593,7 @@ func (srv *server) routes(cfg config, authKey string, stderr io.Writer) (*http.S
 	// These routes are registered whether or not a model is loaded at startup: a server started with only --web,
 	// --allow-admin or --admin-socket loads its model later, and the mux is built once. Every handler resolves its model
 	// through resolveAndLock, which answers an unknown or absent model with the OpenAI-shaped 404 "model not found (served:
-	// ...)".
+	// ..)".
 	// -log-requests wraps the four generation routes OUTERMOST, so a request the auth, halt or queue gates turned away is
 	// logged with its status too.
 	rl := func(h http.HandlerFunc) http.HandlerFunc { return srv.traceRequests(reqLog, h) }
@@ -650,14 +650,13 @@ func (srv *server) routes(cfg config, authKey string, stderr io.Writer) (*http.S
 		// "GET /{$}" matches the root path EXACTLY; a bare "GET /" is a catch-all that would answer every unknown GET with the
 		// UI page instead of a 404.
 		// UNAUTHENTICATED on purpose: the page embeds no secrets (handleWebUI) and is the only place a user can type the key in,
-		// so auth() here would make the key unenterable whenever -api-key is set. auth stays on the routes below, which act
-		// (docs/completed/review-2026-09-04.md, V-02).
+		// so auth() here would make the key unenterable whenever -api-key is set. auth stays on the routes below, which act.
 		mux.HandleFunc("GET /{$}", srv.handleWebUI)
 		// The page's own CSS and JS, unauthenticated for the same reason as the page.
 		// {file} is one path segment, so "GET /ui/{file}" cannot become a catch-all.
 		mux.HandleFunc("GET /ui/{file}", srv.handleWebAsset)
 		// sameOrigin: on the key-free loopback default auth() alone is a no-op, and these routes act (pull starts a caller-named
-		// multi-gigabyte download). See sameOrigin in webui.go (docs/completed/review-2026-09-04.md, V-20).
+		// multi-gigabyte download). See sameOrigin in webui.go.
 		mux.HandleFunc("POST /web/models/list", sameOrigin(auth(maxBytes(textCap, srv.handleWebList))))
 		// Live search-as-you-type suggestions over the repo box (pull.Search): read-only, same origin/auth stack as list.
 		mux.HandleFunc("POST /web/models/search", sameOrigin(auth(maxBytes(textCap, srv.handleWebSearch))))
@@ -706,8 +705,8 @@ func Main() {
 	// disclosed. This adds a map ABOVE it rather than trimming it. Do not shorten the flag help to fix a long --help.
 	flag.Usage = func() {
 		out := flag.CommandLine.Output()
-		// The examples use the name the binary was actually INVOKED as, not a hardcoded "goinfer-serve": `go install
-		// .../cmd/serve@latest` installs a binary called `serve`.
+		// The examples use the name the binary was actually INVOKED as, not a hardcoded "goinfer-serve": `go install.
+		// ../cmd/serve@latest` installs a binary called `serve`.
 		self := filepath.Base(os.Args[0])
 		fmt.Fprintf(out, `%[1]s — OpenAI/Anthropic-compatible local inference server.
 
@@ -1077,8 +1076,7 @@ func newServer(cfg config) (*server, error) {
 		}
 	}
 	// Armed last, after every startup load that could itself grow swap has finished: the guard's baseline should be steady
-	// state after startup, not a mid-load reading that counts every startup byte as its own delta
-	// (docs/completed/task-never-swap-2026-09.md).
+	// state after startup, not a mid-load reading that counts every startup byte as its own delta.
 	s.startSwapGuard()
 	return s, nil
 }
@@ -1130,7 +1128,7 @@ func (s *server) loadAdapters(cfg config) error {
 
 // towerBackend is the backend a device tower (vision or audio) is chosen for: the model's own, unless -vision-device cpu keeps the
 // tower on the CPU, which also isolates the tower in a served comparison with the language model on the same backend in
-// both arms (docs/completed/task-multimodal-support-2026-10.md).
+// both arms.
 func (cfg config) towerBackend() string {
 	if cfg.visionDevice == "cpu" {
 		return "cpu"
@@ -1297,8 +1295,7 @@ func (s *server) loadVisionTower(cfg config) error {
 	// attaches the int8 device tower instead of leaving the CPU one (an explicit -vision-quant never falls back). The unset
 	// default was settled before the plan was made: resolveGemma3VisionQuant makes it int8 on a card too tight for the
 	// decoder, one KV slot and the float32 tower. Both are in gemma3_tower.go. The CUDA default is float32 because the int8
-	// tower changes the reply, at the cost of about 1.7 GiB of VRAM against 0.56 (docs/completed/task-multimodal-support-2026-10.md,
-	// "Gemma 3's CUDA default is now float32"). The CUDA resident tower registers its factory with vision.RegisterResident
+	// tower changes the reply, at the cost of about 1.7 GiB of VRAM against 0.56. The CUDA resident tower registers its factory with vision.RegisterResident
 	// (cuda/vision_register.go) through cuda/cmd/serve's blank import.
 	towerBE := vbe
 	enc, int8Tower, residentOK, err := attachGemma3Tower(siglipLoader(dir, towerBE == "metal"), int8Tower, gemma3FloatDefault(cfg, int8Tower), towerBE, cfg.requireBE, os.Stderr)
@@ -1333,7 +1330,7 @@ func (s *server) loadVisionTower(cfg config) error {
 // towerInt8 says whether a vision tower loads with int8 matmul weights. Gemma 3's SigLIP defaults to float32 on every
 // backend, because the int8 tower is lossy at real size (docs/measurements/siglip-int8-fidelity-2026-10-07.md). Under
 // WebGPU the default is the float32 device tower (G-S12.3a-4: 0.43 of the CPU tower's encode time,
-// docs/completed/task-multimodal-support-2026-10.md); -vision-quant int8 asks for the int8 one.
+// ); -vision-quant int8 asks for the int8 one.
 // Every other tower gets int8 only when asked for, whatever the backend: its device towers are float32 and its gates ran
 // float32, and forcing int8 under cuda/webgpu bought no speed (the CPU int8 tower is not faster) and cost fidelity
 // (docs/measurements/vision-tower-int8-fidelity-2026-10-02.md). A new vision model type must be added to the list below,
@@ -1381,7 +1378,7 @@ func attachResidentTower(family string, enc interface{ EnableResident() error },
 // load them again on its CPU path's first use (aikit's ReleaseBlocks).
 type blockReleaser interface{ ReleaseBlocks() error }
 
-// releaseTowerBlocks drops a device-attached tower's host blocks (D2, docs/completed/task-memory-campaign-2026-10.md §7): the
+// releaseTowerBlocks drops a device-attached tower's host blocks: the
 // device tower serves the images, and a CPU fallback reloads them. Called once per tower, after its device tower is built
 // and before any request runs it. A variable so a test can count the calls.
 var releaseTowerBlocks = func(family string, enc any) {
@@ -1604,7 +1601,7 @@ func gemma4TowerSwap(models map[string]*loadedModel, enc *vision.Gemma4Encoder, 
 // registers a tower for it, and says where it runs. The device tower is float32, so an int8 tower (-vision-quant int8)
 // stays on the CPU; a tower that fails to start falls back to the CPU with the reason, unless -require-backend asks for a
 // refusal. WebGPU's device tower is the default like the others' (its speed gate, G-S12.3d-4,
-// docs/completed/task-multimodal-support-2026-10.md); -vision-device cpu arrives here as backend "cpu". Other backends run
+// ); -vision-device cpu arrives here as backend "cpu". Other backends run
 // it on the CPU.
 func chooseGemma4Tower(enc *vision.Gemma4Encoder, int8Tower bool, backend string, require bool) (multimodal.Gemma4TowerAccelerator, string, error) {
 	name, ok := deviceTowerName(backend)
@@ -1885,7 +1882,7 @@ var resolveEmbedModel = func(ctx context.Context, spec string) (string, error) {
 func (s *server) loadEncoder(cfg config) error {
 	// A causal decoder used as an embedder (qwen3-embedding / embeddinggemma) arrives as a .gguf
 	// FILE; the aikit encoder path takes an HF directory. Dispatch on that rather than adding
-	// another flag — see docs/completed/task-decoder-as-embedder.md.
+	// another flag —
 	if fi, statErr := os.Stat(cfg.embedPath); statErr == nil && !fi.IsDir() {
 		return s.loadDecoderEmbedder(cfg)
 	}
@@ -2079,7 +2076,7 @@ func visionPathError(dir string) error {
 
 // qwenTowerPlacement decides where Qwen2.5-VL's vision tower runs and attaches it: the device tower under --backend
 // cuda or webgpu when the binary registers one (cuda/vision_towers.go imports aikit's gpu/qwencuda) and the tower is
-// float32; the CPU everywhere else, with the reason named (docs/completed/task-multimodal-support-2026-10.md).
+// float32; the CPU everywhere else, with the reason named.
 // -require-backend turns each CPU fallback on a device backend into a refusal. -vision-device cpu arrives here as backend
 // "cpu". Metal's tower is attached by loadQwenVisionTower.
 func qwenTowerPlacement(backend string, int8Tower, require bool, attach func() error, warn io.Writer) (string, error) {

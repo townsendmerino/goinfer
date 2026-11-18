@@ -699,7 +699,7 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mro
 	// VRAM exhaustion is an error the caller falls back on rather than a panic or a
 	// downstream nil-buffer deref.
 	var buildErr error
-	// R-25 (docs/completed/task-recompute-audit.md): a layer's buffers are dead once the layer is encoded (the residual
+	// R-25: a layer's buffers are dead once the layer is encoded (the residual
 	// stream is updated in place, K/V are copied into the cache), so each layer recycles the one before it: storF hands
 	// out a free buffer of the same size before it creates one. A recycled buffer was written before, so wgpu does not
 	// zero-fill it again, and the pass holds one layer's intermediates instead of every layer's. The queue orders the
@@ -1042,7 +1042,7 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mro
 	// instead of a separate add: the add has to be fused into the GEMM's expression to stay bit-exact with production's
 	// gemvBias (docs/code-notes/gpu.md#runModelToModelW). An int4 matrix adds it in a separate dispatch, as decode does.
 	var projQB func(aqC, asC *wgpu.Buffer, rowsM int, rm prefillProj, bias *wgpu.Buffer) *wgpu.Buffer
-	// sharedQ returns the projections of one quantized input through rms. R-25 (docs/completed/task-recompute-audit.md): the
+	// sharedQ returns the projections of one quantized input through rms. R-25: the
 	// input is quantized once when every projection has the same K and reads it at the same padding, which q/k/v and
 	// gate/up of one precision always do. Quantization is deterministic, so each projection reads the bytes it would
 	// have read from its own copy; prefillQuantPerProj (tests only) restores a quantization each.
@@ -1305,8 +1305,7 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mro
 			}
 		} else {
 			// ONE dispatch, grid (nH, M), against attnBatchedKernel's chosen kernel (the same tiled-vs-plain preference as
-			// attnKernel, attention.go); q/ctxv are read and written at each row's own offset inside the shader
-			// (docs/completed/task-gpu-batched-prefill.md, Increment 1).
+			// attnKernel, attention.go); q/ctxv are read and written at each row's own offset inside the shader.
 			attnPl, attnLy := c.attnBatchedKernel(lhd, lkvDim, m.KVF16)
 			ap := uni([]uint32{uint32(nH), uint32(lnKV), uint32(lhd), uint32(positions[0]), uint32(nH / lnKV), F32bits(scale), uint32(M), 0})
 			disp(attnPl, bind(attnLy, q, kCache, vCache, ctxv, ap), uint32(nH), uint32(M))

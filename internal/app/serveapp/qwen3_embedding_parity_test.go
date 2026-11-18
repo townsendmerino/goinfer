@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
 )
 
-// Qwen3-Embedding parity gates (docs/completed/task-decoder-as-embedder.md §5).
+// Qwen3-Embedding parity gates.
 //
 // These are the SEMANTIC gates the mechanical ones in decoder_embedder_test.go cannot replace: a
 // decoder-backed embedder can be perfectly self-consistent and still be wrong (wrong pooled
@@ -22,8 +22,8 @@ import (
 //     while ranking is wrong, and ranking is what an embedder is actually FOR.
 //
 // Both skip until the golden and the embedding-tuned checkpoint are present:
-//
-//	.venv/bin/python scripts/pin_qwen3_embedding.py     # writes testdata/qwen3_embedding_golden.json
+//.
+// venv/bin/python scripts/pin_qwen3_embedding.py     # writes testdata/qwen3_embedding_golden.json
 //	# and place Qwen3-Embedding-0.6B GGUF in $HOME/models/
 //
 // Skipping is deliberate and visible — see TestQwen3Embedding_gatesAreWired, which fails loudly if

@@ -463,7 +463,7 @@ func (bs *webgpuBuild) bindRunner() error {
 		// q/k/v bias (Qwen2) on an int8 projection is admitted on Vulkan only: the fused-epilogue tiled GEMM
 		// (matmulTiledW8A8BiasKernelWGSL, see runModelToPrefill) is bit-exact there but still diverges on Metal past nKeys~15
 		// (cosine ~0.998, a real gap, not float noise). Do not widen this gate to another backend without a bit-exactness check
-		// on it, or a check against the real ship gate (docs/completed/task-prefill-gap.md §3.2);
+		// on it, or a check against the real ship gate;
 		// docs/code-notes/gpu.md#webgpuBackend.BuildResident.biasgate has the measurements. An int4 projection adds its bias in
 		// a separate step, as decode does, and is not behind this gate.
 		if pp.Int4() && !kernels.W4MultiVerified[bs.c.Backend()] {

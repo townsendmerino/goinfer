@@ -12,9 +12,8 @@ import (
 )
 
 // TestGenerate_batchedPrefillMatchesSequential is the integration gate for batched prefill
-// through the REAL production entry point, not an isolated PrefillLast call
-// (docs/completed/task-gpu-batched-prefill.md, Increment 3: "TestDecodeParity-class greedy
-// continuation unchanged"). decoder/model.go's residentPrefillSeed (shared by every resident
+// through the REAL production entry point, not an isolated PrefillLast call.
+// decoder/model.go's residentPrefillSeed (shared by every resident
 // generation path) takes the batched path whenever the resident type satisfies decoder.Prefiller,
 // and gpu.residentDecoder does, so every WebGPU resident Generate() on an eligible prompt (>=8
 // tokens, no adapter) takes PrefillLastW8A8; before this test only PrefillLast itself was gated,

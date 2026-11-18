@@ -6,7 +6,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// MEM13 (docs/completed/task-memory-campaign-2026-10.md): the job store keeps a capped number of jobs, each with its prompt's token
+// MEM13: the job store keeps a capped number of jobs, each with its prompt's token
 // ids, and an adapter reads its base model's token-bytes table instead of building its own.
 
 // loadAdapters gives every adapter its base's token-bytes table, built once. Through the real caller: the adapters of

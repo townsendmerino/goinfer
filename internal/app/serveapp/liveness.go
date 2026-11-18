@@ -6,7 +6,7 @@ import (
 	"sync"
 )
 
-// Model liveness and the drain-based unload path (docs/completed/task-admin-unload-drain.md has the design; reciprocal
+// Model liveness and the drain-based unload path ( has the design; reciprocal
 // comments at handleAdminUnload and resident.Close).
 //
 // Freeing a model's native memory on unload (purego has no ARC or finalizers) is a use-after-free unless every in-flight

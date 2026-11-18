@@ -1,5 +1,5 @@
-// Package sb2census is the shared plumbing of the backend layers of SB2's admission and routing census
-// (docs/completed/task-subsystems-2026-10.md, "SB2 step 2"): layer D's fixtures and option cells, read from its golden so every
+// Package sb2census is the shared plumbing of the backend layers of SB2's admission and routing census:
+// layer D's fixtures and option cells, read from its golden so every
 // layer censuses the same checkpoints, and the golden each layer is held to. Only tests import it.
 package sb2census
 
