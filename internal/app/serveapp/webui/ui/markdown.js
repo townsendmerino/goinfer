@@ -1,7 +1,7 @@
 "use strict";
 // markdown.js — renders model output as Markdown by BUILDING DOM NODES, never by assembling HTML.
 //
-// WHY THIS FILE EXISTS AS IT DOES. The page is served
+// WHY THIS FILE EXISTS AS IT DOES (docs/tasks/task-web-ui-2026-09.md W1, §6.2). The page is served
 // from the API's own origin with the user's key in a field on it, and the text rendered here comes
 // from a model — possibly one pulled from a stranger's Hugging Face repo minutes earlier. So:
 //
