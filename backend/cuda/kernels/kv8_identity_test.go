@@ -15,7 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
 )
 
-// G1 of CUDA int8 KV (docs/tasks/task-kv-precision-everywhere-2026-10.md §4; docs/measurements/cuda-kv-i8-2026-11/scope.md): on a cache that holds int8 values times
+// G1 of CUDA int8 KV: on a cache that holds int8 values times
 // power-of-two scales, the i8 reader gives the f32 original's context BIT FOR BIT, because the product is exact and the kernel folds in the original's order. The f32
 // reference reads the same values written out as floats. A reader that applied the wrong (position, head) scale, or the scale of a different row under a scrambled block
 // table, cannot match.

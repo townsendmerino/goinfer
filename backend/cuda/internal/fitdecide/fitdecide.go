@@ -58,8 +58,8 @@ func SlotRequirement(n int, nLayers int64, strides []int64) int64 {
 
 // SlotMarginBytes is the launch-time headroom the cap must leave free. It is a flat constant that TestAllocFloor
 // CHECKS against the measured driver allocation floor, not one derived from what it must cover: the floor is
-// unattributed and sits inside it (docs/queue-release.md, the "margin derived rather than asserted" item;
-// docs/code-notes/cuda.md#slotMarginBytes).
+// unattributed and sits inside it
+// (docs/code-notes/cuda.md#slotMarginBytes).
 const SlotMarginBytes = 384 << 20
 
 // CapSlots is the sizing arithmetic, and it is a SEARCH rather than a division. Per-buffer 2 MiB rounding makes
@@ -124,7 +124,7 @@ func SlotsDecision(free uint64, ok bool, extra int64, nLayers int, strides []int
 	// docs/parity-coverage-policy.md).
 	//
 	// budget, not free, goes into CapSlots: extra reserves room for a companion attach (--drafter) coming after
-	// this build (Model.ExtraResidentBytes's doc; docs/tasks/task-fit-to-hardware.md §2). Without it a 26B auto-sized
+	// this build. Without it a 26B auto-sized
 	// to 31 slots/layer left the drafter no room. 0 when nothing attaches, so budget == free then.
 	budget := ReservedBudget(int64(free), extra)
 	fit, decline := CapSlots(budget, int64(nLayers), strides, topK, want)
