@@ -26,7 +26,7 @@ import (
 // /v1/chat/completions routes any other client uses. It adds no second inference path to keep in sync and cannot drift from
 // the API, because it IS a client of it. Being asset-free keeps the offline story intact: a CDN reference would make the UI of
 // an offline-capable engine require the network. A native desktop app was rejected: every realistic toolkit needs cgo or a
-// bundled webview runtime, which this project is built to avoid (docs/completed/task-model-pull.md §4).
+// bundled webview runtime, which this project is built to avoid.
 //
 // OFF BY DEFAULT (-web). The page itself is static and harmless; the pull route is not: it triggers an outbound download of a
 // caller-named repo and writes it to disk. It therefore sits behind the same two gates -allow-admin uses: an explicit opt-in
@@ -91,7 +91,7 @@ func (p *pullState) release() {
 // browser can send a cross-origin POST (browsers block reading the response, not sending the request). A browser's own
 // fetch()/XHR from the web UI's page always carries a same-origin Origin header; a cross-origin POST carries a foreign one
 // (refused here) or, for a plain form post from outside a browser, none at all, which is why this only checks an Origin header
-// that IS present rather than requiring one (docs/completed/review-2026-09-04.md, V-20).
+// that IS present rather than requiring one.
 func sameOrigin(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if o := r.Header.Get("Origin"); o != "" {
@@ -170,7 +170,7 @@ type webPullReq struct {
 	Quant string `json:"quant"`
 	File  string `json:"file"`
 	// Checkpoint names the repo's whole safetensors checkpoint (pull's ":safetensors" selector) rather than one GGUF file: the
-	// shape a family with no GGUF loader is published in (docs/completed/task-checkpoint-fetch-2026-09.md).
+	// shape a family with no GGUF loader is published in.
 	Checkpoint bool `json:"checkpoint"`
 }
 
@@ -681,7 +681,7 @@ func (s *server) handleWebLoad(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleWebCache answers the page's "On disk" card (docs/completed/task-checkpoint-fetch-2026-09.md): every model the pull cache
+// handleWebCache answers the page's "On disk" card: every model the pull cache
 // holds, with its size, its .giw sidecars, whether its pull finished, and the name it is loaded under, if it is. On disk and
 // loaded are different questions, and this is the one the Resident card does not answer: what a pull put here that nothing has
 // loaded, or loaded since. Sizes only (pull.CacheEntries), so it is fast on a large cache; a load still verifies in full.

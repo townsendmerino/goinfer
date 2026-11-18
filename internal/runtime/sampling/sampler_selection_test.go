@@ -143,7 +143,7 @@ func TestTopFilterLogits_MatchesReference(t *testing.T) {
 	// rather than truncating keeps the selection spread across the range, so both logit shapes (tie-heavy / tie-free,
 	// alternating on seed parity) stay represented; all 15 configs and all 4 temperatures run for every selected seed
 	// either way. The check right after the loop is the guard the stride needs: a build that declares a stride must be
-	// seen to apply it (a go fix rewrite of the loop once dropped it silently; docs/completed/task-ci-speed-2026-09.md, C8).
+	// seen to apply it (a go fix rewrite of the loop once dropped it silently C8).
 	var seedList []int
 	for s := range seeds {
 		if s%sweepSeedStride == 0 { // not `s += sweepSeedStride`: go fix rewrites that to `range seeds` where the stride is the constant 1, and drops it from the -race build too

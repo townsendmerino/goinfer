@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
 )
 
-// Decoder-as-embedder gates (docs/completed/task-decoder-as-embedder.md).
+// Decoder-as-embedder gates.
 //
 // These are the MECHANICAL properties — interface fit, instruction prefix, batch/sequential
 // agreement, concurrency safety, honest token counting — and they run against a base Qwen3 decoder,

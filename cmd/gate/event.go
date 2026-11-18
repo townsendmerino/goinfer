@@ -172,8 +172,7 @@ func (r *results) add(ev testEvent) {
 // runLines counts EVERY `=== RUN` line, top-level and subtest alike, which is not the same unit as the
 // top-level skip count beside it: go test does NOT indent a subtest's `=== RUN` line (only its `--- PASS`
 // result line is indented). A pair like "ran 238 tests, skipped 22" therefore mixes units (tests and
-// subtests started against top-level skips); anyone quoting it should say which unit it is in
-// (docs/completed/task-gate-runner.md §10).
+// subtests started against top-level skips); anyone quoting it should say which unit it is in.
 func (r *results) noteOutput(out string) {
 	if strings.HasPrefix(out, "=== RUN ") {
 		r.runLines++

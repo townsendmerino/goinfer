@@ -453,8 +453,8 @@ func SelectSet(files []File, ref Ref) ([]File, error) {
 // freeDiskBytes is indirected so a test can name a disk's free space instead of needing one.
 var freeDiskBytes = diskfree.Free
 
-// bytesLeft is what fetching f into dir still needs on disk: nothing for a file already at its final path, the tail for a
-// .part, and nothing for a .part at or past f's size, which Download rewrites from its first byte, releasing what it holds.
+// bytesLeft is what fetching f into dir still needs on disk: nothing for a file already at its final path, the tail for a.
+// part, and nothing for a .part at or past f's size, which Download rewrites from its first byte, releasing what it holds.
 // It reads sizes only; Download still verifies a file's digest, and refetches a corrupt one.
 func bytesLeft(f File, dir string) int64 {
 	final := filepath.Join(dir, filepath.Base(f.Path))
@@ -714,8 +714,8 @@ func CacheRoot() (string, error) {
 	return filepath.Join(base, "goinfer", "models"), nil
 }
 
-// CacheHelp is the sentence --help prints about where `pull` puts models and what moves it
-// (docs/completed/task-first-hour.md). It names the directory this process would actually use, because
+// CacheHelp is the sentence --help prints about where `pull` puts models and what moves it.
+// It names the directory this process would actually use, because
 // "the user cache dir" is a different place on each OS; the variable is named for Linux, where
 // XDG_CACHE_HOME is what os.UserCacheDir reads.
 func CacheHelp() string {
@@ -789,8 +789,8 @@ func Download(ctx context.Context, repo string, f File, dir string, progress fun
 		// resumeFrom is at or past EOF: the .part file already covers everything the server has. The common
 		// cause is f.Size <= 0 (a non-LFS file with no declared size), where the resume guard above admits ANY
 		// existing .part, so a prior run that fetched every byte but was interrupted before the digest check
-		// re-requests a Range starting exactly at EOF and gets 416, not 206/200. h already covers the whole
-		// .part (hashPrefix, above); verify it directly instead of copying a body a 416 response does not have.
+		// re-requests a Range starting exactly at EOF and gets 416, not 206/200. h already covers the whole.
+		// part (hashPrefix, above); verify it directly instead of copying a body a 416 response does not have.
 		if f.SHA256 != "" {
 			if got := hex.EncodeToString(h.Sum(nil)); got != f.SHA256 {
 				os.Remove(part)

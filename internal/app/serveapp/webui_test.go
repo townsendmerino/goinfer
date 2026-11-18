@@ -155,7 +155,7 @@ func TestWebUI_pullRefReplacesSelector(t *testing.T) {
 
 // TestWebUI_pageIsSelfContained guards the offline property: the UI of an engine that runs offline must not
 // need the network to RENDER, and a CDN <script>/<link> would break that silently. It does not forbid an
-// out-bound <a href="https://…"> (the book link, docs/completed/task-web-ui-ambient.md): only an asset the
+// out-bound <a href="https://…"> (the book link): only an asset the
 // page's own load depends on counts, and a blanket "no http(s):// anywhere" check would ban the link too.
 func TestWebUI_pageIsSelfContained(t *testing.T) {
 	// EVERY EMBEDDED FILE, not just index.html: the page is split across webui/, and a check reading only index.html would pass with a CDN import in ui/app.js.

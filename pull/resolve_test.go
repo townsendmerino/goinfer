@@ -70,7 +70,7 @@ func TestResolve_badRefsFailBeforeTheNetwork(t *testing.T) {
 	}
 }
 
-// TestResolveOffline_verifiedCacheHitNeedsNoNetwork pins V-16 (docs/completed/review-2026-09-04.md):
+// TestResolveOffline_verifiedCacheHitNeedsNoNetwork pins V-16:
 // when a ref's exact file, size AND digest are all known WITHOUT asking HuggingFace anything
 // (a demo: ref's shape — File+Pin+Bytes all set from curated.json), an already-cached, matching
 // copy resolves offline. resolveOffline only ever touches CacheDir + the filesystem, so this

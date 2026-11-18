@@ -5,8 +5,7 @@ import (
 	"strings"
 )
 
-// The graders of the gates that read records: each decides from records and recorded lookups alone (SB12,
-// docs/completed/task-subsystems-2026-10.md §8). TestGraders_arePure holds every file named grade_*.go to that: no exec,
+// The graders of the gates that read records: each decides from records and recorded lookups alone. TestGraders_arePure holds every file named grade_*.go to that: no exec,
 // environment, clock or file I/O, and no call to a package function outside such a file.
 
 // valid says whether the run itself is one a release can lean on: a PASS, on a clean tree, with the whole heavy tier run.

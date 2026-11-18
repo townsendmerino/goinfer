@@ -29,8 +29,8 @@ var decoderRatchet = map[string]struct{ Direct, Reach int }{
 	"gpu":   {Direct: 85, Reach: 95},
 }
 
-// decoderRatchetExempt names the test files decoderRatchet does not count: the backend layers of SB2's admission census
-// (docs/completed/task-subsystems-2026-10.md, "SB2 step 2"). A census of the decoder's admission has to reach decoder, since it
+// decoderRatchetExempt names the test files decoderRatchet does not count: the backend layers of SB2's admission census.
+// A census of the decoder's admission has to reach decoder, since it
 // loads models through it. The exemption is by exact path, so no other test can shelter under it.
 var decoderRatchetExempt = map[string]bool{
 	"backend/cuda/sb2_census_test.go":   true,

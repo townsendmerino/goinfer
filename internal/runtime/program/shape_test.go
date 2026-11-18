@@ -5,8 +5,7 @@ import (
 	"testing"
 )
 
-// The pure tests of ShapeOf, moved from metal's resident_memguard_test.go with the derivation (OP4cu-b1,
-// docs/completed/task-forward-architecture-2026-10.md §4.9a); their assertions are unchanged.
+// The pure tests of ShapeOf, moved from metal's resident_memguard_test.go with the derivation; their assertions are unchanged.
 
 // shapeLayer builds one layer of a hand-written program: an input norm (a copy for post-only), q/k/v with an optional QK-norm,
 // attention or a recurrent mixer, the post-attention norm for sandwich, the output projection, and an FFN, with a residual add of

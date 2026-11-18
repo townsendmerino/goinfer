@@ -923,7 +923,7 @@ func (c *Context) attentionOn(pl *wgpu.ComputePipeline, ly *wgpu.BindGroupLayout
 		return nil, fmt.Errorf("gpu: attentionOn: attn-p: %w", err)
 	}
 	defer releaseBuf(pBuf)
-	// FeatAttnSink (docs/completed/task-gpu-paths-2026-09.md): always bound (WGSL bind groups can't bind a null storage buffer); this
+	// FeatAttnSink: always bound (WGSL bind groups can't bind a null storage buffer); this
 	// test helper never carries a real sink, so a one-element dummy + hasSink=0, matching attnShaderWGSL's convention.
 	sinksBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-sinks", Contents: wgpu.ToBytes([]float32{0}), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
