@@ -8,8 +8,7 @@ import (
 	"path/filepath"
 )
 
-// identityRunRecord is what a `gate identity` run leaves for its grader (SB12, docs/completed/task-subsystems-2026-10.md
-// §8), in its run directory beside the dumps: what it printed before the verdict, the options and revisions the report
+// identityRunRecord is what a `gate identity` run leaves for its grader, in its run directory beside the dumps: what it printed before the verdict, the options and revisions the report
 // names, each cell, why a run of a family ended badly, the selected families' manifest rows, the grade inputs, and how
 // the -record write went. The dumps it judges stay in dumps/<run>/<family>/ and survive only with -keep, so `gate
 // identity -replay FILE` refuses a record whose run did not keep them.

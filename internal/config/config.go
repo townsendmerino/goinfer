@@ -1,8 +1,7 @@
 // Package config is the one inventory of goinfer's load and serve configuration: every exported
 // decoder.Options field, every GOINFER_* variable production code reads, every per-model knob, and every
 // flag the shared loading set and goinfer-serve register, each claimed by exactly one Setting.
-// TestInventory holds the table total against those four surfaces (docs/completed/task-subsystems-2026-10.md
-// § "SB10's scope and step 1's gates"). Chat's sampling and REPL flags are not load configuration and are
+// TestInventory holds the table total against those four surfaces. Chat's sampling and REPL flags are not load configuration and are
 // not in it.
 package config
 

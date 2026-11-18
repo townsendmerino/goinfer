@@ -14,6 +14,4 @@
 // the tree stops making must be removed; no arrow, made or recorded, may break a rule, and -update never edits the rules.
 //
 //	go test -v -run TestLayout_arrows ./internal/layout/
-//
-// The plan this serves is docs/completed/task-subsystems-2026-10.md, SB1 and SB13.
 package layout

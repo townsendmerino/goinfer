@@ -160,8 +160,8 @@ func topKMatchesFullPathCell(t *testing.T, v int, kind string, cfgs []topKCfg, m
 			draws = 40
 		}
 		// Under -race the DRAW axis is strided by the same constant as the exactness sweep's seeds: every (vocab, shape, config)
-		// cell still runs, with 1/sweepSeedStride of its draws, because this is pure computation the detector finds nothing in
-		// (docs/completed/task-ci-speed-2026-09.md, C8). The full draw count runs in ci.yml's non-race sampler-gates step, which
+		// cell still runs, with 1/sweepSeedStride of its draws, because this is pure computation the detector finds nothing in.
+		// The full draw count runs in ci.yml's non-race sampler-gates step, which
 		// TestSweepCoverage_fullSweepRunsSomewhere requires to name this test.
 		if sweepSeedStride > 1 {
 			draws = max(1, draws/sweepSeedStride)
