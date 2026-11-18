@@ -163,7 +163,7 @@ func TestByteLevelKnobs_gptOssSelectsTheO200kWalker(t *testing.T) {
 	}
 }
 
-// TestClassifySplit_realGPT2PatternIsNotUnknown pins V-15 (docs/completed/review-2026-09-04.md): the real
+// TestClassifySplit_realGPT2PatternIsNotUnknown pins V-15: the real
 // GPT-2 regex (split_gpt2orig.go's own docstring, transcribed from OpenAI's source) DOES carry a
 // contraction clause — just case-sensitive and unwrapped, unlike cl100k's `(?i:...)` one.
 // classifySplit's shapeGPT2Original case must not require the clause's ABSENCE

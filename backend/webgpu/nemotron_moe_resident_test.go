@@ -16,8 +16,8 @@ import (
 // tokenizer — same convention as gemma3ParityPrompt/gptOssParityPrompt.
 var nemotronMoEParityPrompt = []int{1, 7, 42, 20, 5, 30, 13, 40}
 
-// TestNemotronMoEResidentParityWebGPU is the gate for Nemotron-H's fourth block kind
-// (docs/completed/task-gpu-paths-2026-09.md, G7 part 2): the MoE FFN (routed NON-GATED relu² experts
+// TestNemotronMoEResidentParityWebGPU is the gate for Nemotron-H's fourth block kind:
+// the MoE FFN (routed NON-GATED relu² experts
 // plus an always-on ungated shared expert of the same shape, NOT moeMLP's gated SwiGLU) against
 // testdata/nemotron3nano-tiny, whose 6-layer block pattern (linear_attention, moe,
 // linear_attention, full_attention, moe, linear_attention) exercises mamba, attention AND moe

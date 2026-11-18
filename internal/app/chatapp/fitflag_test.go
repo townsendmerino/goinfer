@@ -46,7 +46,7 @@ func TestFitFlag_realBinaryAcceptsOff(t *testing.T) {
 	}
 }
 
-// TestExactPrefillFlag_realBinaryParses pins that --exact-prefill (documented in docs/completed/task-prefill-gap.md as a
+// TestExactPrefillFlag_realBinaryParses pins that --exact-prefill (documented in  as a
 // flag of this REPL) is REGISTERED on the real flag.CommandLine, not just present in source: a typo'd flag.Bool name
 // would exit 2 with "flag provided but not defined". Same discipline as TestFitFlag_realBinaryAcceptsOff; --version
 // exits before touching a model. Origin (M-26):

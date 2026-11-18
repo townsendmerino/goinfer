@@ -121,8 +121,7 @@ var identityReal = []identityAsset{
 // identityRealPrompts are L1's two prose prompts (docs/measurements/cpu-decode-peer-gap-2026-09-27/
 // f16xbuild-mac.go.txt): 145 and 621 tokens on the qwen2.5 tokenizer.
 //
-// long adds a third of about 2,500 tokens, so a CPU prefill crosses its 2,048-row chunk (OP3's gate T1,
-// docs/completed/task-forward-architecture-2026-10.md §4.8).
+// long adds a third of about 2,500 tokens, so a CPU prefill crosses its 2,048-row chunk.
 func identityRealPrompts(long bool) []string {
 	base := "Rivers shape the land they cross. Over thousands of years a river carves valleys, deposits silt on its floodplain, and builds deltas where it meets the sea. "
 	reps := []int{4, 18}

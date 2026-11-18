@@ -1,7 +1,6 @@
 // Package program is a model's forward written as data, shared by decoder (which builds it from an Architecture and walks it
 // on the CPU) and the GPU backends (which read it at build time). A model's Program is built once and shared by every walker and
-// backend, so nothing modifies one after decoder builds it, including its slices (Layers, a rotation's InvFreq). Design and steps:
-// docs/completed/task-forward-architecture-2026-10.md §4.8 and §4.9.
+// backend, so nothing modifies one after decoder builds it, including its slices (Layers, a rotation's InvFreq).
 package program
 
 // Program is a model's forward written as data: an embedding stage, one list of operations per layer, and a head stage, built
@@ -233,7 +232,7 @@ type MoEConfig struct {
 
 	// Gemma 4 26B-A4B router extras (Gemma4TextRouter; false for every other MoE family). Selection is still softmax over all
 	// experts, top-k, renorm (NormTopKProb is unconditionally true), so routeExperts applies; these two flags add the parts it
-	// lacks (docs/completed/task-gemma4-moe.md).
+	// lacks.
 	RouterPreNorm  bool // before the router projection, the hidden state passes a WEIGHTLESS RMSNorm, a learned [hidden] scale (LayerWeights.RouterScale), and a hidden^-0.5 constant — not a bare Linear on the raw hidden state.
 	PerExpertScale bool // the renormalized top-k weights are multiplied by a learned per-expert scale (LayerWeights.PerExpertScale), indexed by the chosen experts.
 }

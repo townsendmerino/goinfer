@@ -1,6 +1,6 @@
 package serveapp
 
-// Decoder-as-embedder (docs/completed/task-decoder-as-embedder.md).
+// Decoder-as-embedder.
 //
 // qwen3-embedding and embeddinggemma are causal decoders used as embedders. Beyond running the decoder and serving
 // /v1/embeddings, the only new piece is a pooling head and an instruction-prefix convention: decoder forward,

@@ -123,8 +123,8 @@ func runTiledKernelTile(c *Context, code string, tile uint32, aq []int8, aScales
 }
 
 // TestTiledDP4A_parity pins that the dot4I8Packed tiled-GEMM kernel matches both the int32 CPU
-// reference and the scalar-unpack kernel at odd dims that exercise every tile tail
-// (docs/completed/task-gpu-batched-prefill.md, Increment 1). It runs both variants explicitly via
+// reference and the scalar-unpack kernel at odd dims that exercise every tile tail.
+// It runs both variants explicitly via
 // runTiledKernel regardless of what Context.hasDP4A probed, so the DP4A path stays covered on a
 // non-DP4A box and the fallback kernel on a DP4A box, which ensureTiled's live selection alone
 // would not.
@@ -190,7 +190,7 @@ func TestTiledDP4A_parity(t *testing.T) {
 
 // TestTiledDP4A_microbench compares the DP4A kernel's throughput against the scalar-unpack kernel
 // and the M=1 GEMV at realistic prefill M: the tiled GEMM must clear the bandwidth-bound M=1 GEMV
-// for batching to be worth it at all (docs/completed/task-gpu-batched-prefill.md). Skips (not
+// for batching to be worth it at all. Skips (not
 // fails) when the adapter does not accept dot4I8Packed; informational, not a correctness gate.
 func TestTiledDP4A_microbench(t *testing.T) {
 	if testing.Short() {
@@ -214,8 +214,7 @@ func TestTiledDP4A_microbench(t *testing.T) {
 
 	// sequentialGEMV runs M real single-token GEMV dispatches (MatmulW8A8GEMV, the actual
 	// decode-path kernel): the per-layer-projection cost of a per-token prefill loop, and the
-	// baseline the tiled GEMM must beat for batching to pay off
-	// (docs/completed/task-gpu-batched-prefill.md).
+	// baseline the tiled GEMM must beat for batching to pay off.
 	sequentialGEMV := func(aq []int8, aScales []float32, M int) error {
 		for m := range M {
 			if _, err := ctx.MatmulW8A8GEMV(aq[m*K:(m+1)*K], aScales[m], rm); err != nil {

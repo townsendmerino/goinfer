@@ -324,8 +324,8 @@ func TestRealckptCellCanReachEveryGate(t *testing.T) {
 	}
 }
 
-// The base cell must stay unfiltered: every non-realckpt required gate lives in ./decoder/ or
-// ./tokenizer/ and is reached only because nothing narrows it.
+// The base cell must stay unfiltered: every non-realckpt required gate lives in ./decoder/ or.
+// /tokenizer/ and is reached only because nothing narrows it.
 func TestBaseCellIsUnfiltered(t *testing.T) {
 	cells := parityCells(nil, false, "1m", nil, "")
 	if len(cells) != 1 {
@@ -872,7 +872,7 @@ func TestExitsHard(t *testing.T) { os.Exit(3) }
 
 // EVERY GATE-SHAPED, goinfer_testhooks-TAGGED METAL TEST IS LISTED, ONE WAY OR THE OTHER.
 //
-// V-07 (docs/completed/review-2026-09-04.md): a Metal gate matched by none of metal-parity's -run
+// V-07: a Metal gate matched by none of metal-parity's -run
 // alternatives could pass `gate gpu` on the Mac with nothing ever forwarded for it, and no report
 // naming the gap. This is the Metal twin of TestRealckptGateIsListedOrExplicitlyNotRequired,
 // checked against metalParityRun (a REGEX match, not a JSON-result tally like the realckpt side's
