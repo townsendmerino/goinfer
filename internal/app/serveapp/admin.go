@@ -11,8 +11,8 @@ import (
 
 // Dynamic model load/unload, gated behind --allow-admin: loading an attacker-supplied path is RCE-adjacent, so it is off
 // by default (403 when off). Unload unpublishes the model immediately, then DRAINS in-flight requests before freeing its
-// native memory (purego has no ARC or finalizers, so GC never reclaims it); see handleAdminUnload and
-// docs/completed/task-admin-unload-drain.md. The drain snapshots warm KV, and the response is 200 (freed) or 202
+// native memory (purego has no ARC or finalizers, so GC never reclaims it); see handleAdminUnload.
+// The drain snapshots warm KV, and the response is 200 (freed) or 202
 // (draining) per the wait.
 
 // adminCancelReq is the body of POST /admin/generations/{id}/cancel. reason is required so a cancelled generation's
@@ -224,7 +224,7 @@ func (s *server) publishLoaded(lm *loadedModel) bool {
 // enter() holds the *lm pointer and touches lm.model in its preamble (tokenize/prepare) with no lock, so a Close there
 // frees weights mid-request (on CUDA, a driver SIGSEGV). Instead every in-flight holder takes a per-model liveness RLock
 // via withModel (spanning the preamble and the generation), and unload waits that lock out before closing. See
-// docs/completed/task-admin-unload-drain.md and the reciprocal note at resident.Close.
+// the reciprocal note at resident.Close.
 //
 // Two phases, in unloadByName (shared with the web route). Phase 1 (under regMu): unpublish the entry and decide
 // last-ownership, delete-before-decide, so two concurrent sibling unloads cannot both decline (releaseLocked). Phase 2

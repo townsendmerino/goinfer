@@ -412,7 +412,7 @@ type server struct {
 	// liveness tracks, per underlying *decoder.Model, the request holders (rw) and the number of registry entries
 	// backed by it (refs), so unload can drain in-flight work before freeing native memory instead of racing it into
 	// a use-after-free. A base and its compute-time adapters share one *decoder.Model and thus one entry. Guarded by
-	// regMu; see liveness.go and docs/completed/task-admin-unload-drain.md.
+	// regMu; see liveness.go.
 	liveness map[modelHandle]*modelLiveness
 	// draining is the set of served names whose entry has been unpublished but whose native memory
 	// is not yet freed (the detached drain is still running). Surfaced by /health so an operator can
@@ -462,7 +462,7 @@ type server struct {
 	// zero value is nil, so newServer needs no init.
 	halted atomic.Pointer[haltInfo]
 
-	// swapGuardTripped and swapWatch are the serving-side swap tripwire (docs/completed/task-never-swap-2026-09.md); see
+	// swapGuardTripped and swapWatch are the serving-side swap tripwire; see
 	// swapguard.go. The zero values mean not armed yet: startSwapGuard sets swapWatch during newServer, and a nil
 	// swapWatch (GOINFER_SWAP_GUARD=off) is a valid, permanent state.
 	swapGuardTripped atomic.Bool

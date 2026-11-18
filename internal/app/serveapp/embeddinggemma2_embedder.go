@@ -24,8 +24,8 @@ func isEmbeddingGemma2(dir string) bool {
 	return json.Unmarshal(raw, &c) == nil && c.ModelType == "embedding_gemma2"
 }
 
-// loadEmbeddingGemma2 loads an EmbeddingGemma 2 checkpoint as the /v1/embeddings model
-// (docs/completed/task-embeddinggemma2.md). It runs in float32, on the CPU or, where chooseEG2Device picks it, on Metal,
+// loadEmbeddingGemma2 loads an EmbeddingGemma 2 checkpoint as the /v1/embeddings model.
+// It runs in float32, on the CPU or, where chooseEG2Device picks it, on Metal,
 // so -embed-quant other than f32 is refused rather than dropped (a quant flag that silently does nothing).
 // `dimensions` takes exactly the model's Matryoshka widths.
 func (s *server) loadEmbeddingGemma2(cfg config) error {
