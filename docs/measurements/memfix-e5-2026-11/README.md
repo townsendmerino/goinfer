@@ -53,3 +53,6 @@ G-M1's live bands are [−16, +64] MiB on the Qwen text models and [−8, +128] 
 and on all seven models, is +4 MiB (+2 to +4 before E2). The smallest planted residual is +112 MiB. Proposal for Francis: **the upper
 bound to +16 MiB on every model, the lower bounds unchanged** ([−16, +16] on the Qwen text models, [−8, +16] on the others). +16 leaves
 12 MiB above today's reading and catches the smallest plant by 96 MiB. This PR changes no band.
+
+**Adopted 2026-11-18 (Francis, about 15:03 PST, relayed by the coordinator):** the upper bounds are +16 MiB on every model, the lower
+bounds unchanged; the plant's 7B clause reads against the same +16.
