@@ -68,6 +68,7 @@
     "decoder/kquant_native.go",
     "decoder/mlx_safetensors.go",
     "decoder/w4a8_row4_emit_other.go",
+    "decoder/w4a8_row4_emit_arm64.go",
     "decoder/quant/awq.go",
     "decoder/quant/config.go",
     "decoder/quant/fp8.go",
