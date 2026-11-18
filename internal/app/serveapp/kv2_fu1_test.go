@@ -56,7 +56,7 @@ type fu1CPUTurn struct {
 	reused, shared int
 }
 
-// TestKV2FU1_cpuOwnRollback is FU1-G3's CPU arm (docs/tasks/task-kv-architecture-2026-10.md §6, KV2 follow-up 1),
+// TestKV2FU1_cpuOwnRollback is FU1-G3's CPU arm,
 // through serve's session LRU on the CPU forward: a conversation that rolls back to its first prompt and first reply,
 // giving up more than it keeps, is handed its own session again, reuses what it kept, copies nothing, and replies, to
 // the bit of every step's log-probabilities, as it does alone in an LRU of one, with room in the LRU and without.

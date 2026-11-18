@@ -35,8 +35,7 @@ func setJobID(batch *batchRecord, i int, id string) {
 // synchronously in this line's own goroutine and hand back a result." Every EXPENSIVE step (admission, lm.drive) is the
 // identical shared call, not a second implementation.
 //
-// A validation failure is THIS LINE'S error, never the whole batch's, as in the real batch API
-// (docs/tasks/task-work-queue-2026-09.md).
+// A validation failure is THIS LINE'S error, never the whole batch's, as in the real batch API.
 func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 	customID := batch.CustomIDs[i]
 	defer batch.wg.Done()

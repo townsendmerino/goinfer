@@ -19,7 +19,7 @@ const (
 // Journal is the optional durability layer: one JSONL line per job state transition, appended to <dir>/jobs.jsonl. Each
 // line is a FULL snapshot of the job at that point, not a diff, so reconstruction on restart is "keep the last line per id".
 // dir is created at dirPerm and the file opened at filePerm, owner-only like the session KV blobs (sessionDirPerm and
-// sessionFilePerm in package serveapp): a job record replays the prompt (docs/tasks/task-work-queue-2026-09.md).
+// sessionFilePerm in package serveapp): a job record replays the prompt.
 type Journal struct {
 	mu sync.Mutex
 	f  *os.File

@@ -18,8 +18,7 @@ type batchLineResult struct {
 }
 
 // batchRecord is the unit of work over the job store: N lines, submitted as N ordinary jobs (batches_run.go), tracked
-// here only for what a job alone cannot answer: aggregate status, original input order, and the assembled output
-// (docs/tasks/task-work-queue-2026-09.md).
+// here only for what a job alone cannot answer: aggregate status, original input order, and the assembled output.
 //
 // wg is Add(n) once at creation (batchStore.create) and Done() once per line as its own last act (batches_run.go). It is
 // this record's own completion signal, not a job-store concept, so finalizeBatch needs no polling: wg.Wait() IS "every

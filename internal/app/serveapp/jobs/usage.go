@@ -12,8 +12,8 @@ type Usage struct {
 	// prefill, on a path that does not track reuse, or when nothing was reused; the number alone cannot tell those
 	// apart. An unrecognised JSON key, so any standard OpenAI client ignores it.
 	PrefillReusedTokens int `json:"prefill_reused_tokens"`
-	// PrefillReuse is the vendor extension beside it that says where those tokens came from
-	// (docs/tasks/task-kv-architecture-2026-10.md §5.16); absent when nothing was reused.
+	// PrefillReuse is the vendor extension beside it that says where those tokens came from;
+	// absent when nothing was reused.
 	PrefillReuse *PrefillReuseSources `json:"prefill_reuse,omitempty"`
 }
 

@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// K2 gate (docs/tasks/task-halt-2026-09.md): 32 concurrent generations at -max-inflight 32 (saturated), halt,
+// K2 gate: 32 concurrent generations at -max-inflight 32 (saturated), halt,
 // assert every one of them stopped because of the halt (not a natural completion), and measure
 // time-to-quiescence. Then resume and assert a request succeeds.
 //

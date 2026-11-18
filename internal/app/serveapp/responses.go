@@ -769,7 +769,7 @@ func withCachedTokens(resp map[string]any, reused int) map[string]any {
 // "incomplete"; everything else is "completed".
 func respStatus(finish string) string {
 	switch finish {
-	case "cancelled": // docs/tasks/task-halt-2026-09.md: a real value in OpenAI's own Responses status enum
+	case "cancelled": // a real value in OpenAI's own Responses status enum
 		return "cancelled"
 	case "length":
 		return "incomplete"

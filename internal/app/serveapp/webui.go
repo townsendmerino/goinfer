@@ -33,7 +33,7 @@ import (
 // flag, and the startup rule that a non-loopback bind must carry an -api-key. Loopback stays key-free so the single-user
 // desktop case has no auth friction.
 
-// The page is index.html plus webui/ui/app.css and webui/ui/app.js, not one file (docs/tasks/task-web-ui-2026-09.md §6.1).
+// The page is index.html plus webui/ui/app.css and webui/ui/app.js, not one file.
 // There is deliberately still no build step, bundler or toolchain: plain files, embedded verbatim, one binary, fully offline.
 // The assets live under ui/ and are referenced relatively ("ui/app.js"), so the same page also loads from file:// with no
 // server, which is how a headless browser can check it on a box whose sandbox blocks loopback HTTP.
@@ -207,12 +207,12 @@ func (s *server) freeBytesForActiveBackend() (int64, bool) {
 }
 
 // fitEstimate is a COARSE per-file verdict for the file listing, using only the file's own on-disk size against free memory
-// for the backend this server actually runs: no header parsing, no model load (docs/tasks/task-fit-to-hardware.md §3). NOT
+// for the backend this server actually runs: no header parsing, no model load. NOT
 // exact, and the UI note beside this field says so: a GGUF's size only approximates its resident bytes when the file is
 // already at roughly the quant this server loads at, since `-quant` re-quantizes at load (decoder/gguf.go's buildGGUFWeights),
 // so a Q8_0 file pulled onto an int4 server loads far smaller than its size suggests and the reverse overshoots. Correcting
 // for that by parsing the quant out of the file name would need a real quant-name table this coarse check has no business
-// building (docs/tasks/task-web-ui-2026-09.md, W33 part 2).
+// building.
 //
 // Bands are deliberately conservative (fewer false "fits"): a resident load also needs KV cache and context on top of raw
 // weight bytes, so "file size == everything free" already does not fit.
@@ -522,7 +522,7 @@ type webLoadReq struct {
 
 // webLoadPath decides whether the page may load p, and returns the resolved file to load.
 //
-// THIS IS THE WHOLE POLICY OF THE LOAD ROUTE (docs/tasks/task-web-ui-2026-09.md). The admin load takes any caller-named path
+// THIS IS THE WHOLE POLICY OF THE LOAD ROUTE. The admin load takes any caller-named path
 // and is gated behind -allow-admin for exactly that reason; the web UI is not widened into it. The page can load only what the
 // pull flow can put on disk: a regular .gguf file under pull.CacheRoot(), or a directory there that is a complete checkpoint
 // the pull flow published (its marker present and every file it names verified: pull.CachedCheckpoint). A checkpoint still
@@ -770,7 +770,7 @@ func (s *server) unloadSuggestion(err error) string {
 // key, and the only keys that exist are the ones GET /v1/models already publishes to every client. s.models[req.Name] under
 // regMu (the lookup unloadByName does) IS the whole policy: a name not currently loaded is a 404. No new containment logic, no
 // -allow-admin, no widening of the admin surface: unloadByName is the function the admin route calls, so a model unloaded from
-// the page drains exactly as one unloaded through /admin does (docs/tasks/task-web-ui-2026-09.md).
+// the page drains exactly as one unloaded through /admin does.
 func (s *server) handleWebUnload(w http.ResponseWriter, r *http.Request) {
 	if !s.webEnabled(w) {
 		return

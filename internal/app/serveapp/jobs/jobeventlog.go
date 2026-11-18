@@ -2,7 +2,7 @@ package jobs
 
 import "sync"
 
-// EventLog is a job's replay-then-live buffer (docs/tasks/task-work-queue-2026-09.md): every event a job emits is
+// EventLog is a job's replay-then-live buffer: every event a job emits is
 // appended here in order and kept for the job's lifetime. A client reconnecting to GET /v1/jobs/{id}/events is a new
 // reader starting its own snapshot(0), not a resumed one, so it gets the full backlog before going live. No
 // per-reader registration or cleanup is needed: a reader holds a position (an int) and re-snapshots.

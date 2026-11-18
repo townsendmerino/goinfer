@@ -296,7 +296,7 @@ type config struct {
 	kvHostBytes       int64         // the resolved budget for prefix snapshots (0: off); a config built without the flag keeps none
 	kvHostBytesHow    string        // how it was reached, for the startup line
 	kvDemote          bool          // the flag names a budget, not auto: released conversations' rows wait in it too
-	jobDir            string        // -job-dir (docs/tasks/task-work-queue-2026-09.md): optional dir for the job journal (one JSONL line per state transition); "" = in-memory job tracking only, no durability
+	jobDir            string        // -job-dir: optional dir for the job journal (one JSONL line per state transition); "" = in-memory job tracking only, no durability
 	maxInflight       int           // -max-inflight: global cap on concurrent inference handlers (bounds pre-queue work; 0 = unbounded)
 	maxBodyBytes      int64         // -max-body-bytes: request-body cap (0 = derive from the model's context window)
 	maxFileStoreBytes int64         // -max-file-store-bytes: what uploaded files and batch results may hold in memory (0 = no limit on bytes)
@@ -322,7 +322,7 @@ type config struct {
 	visionMaxPixels   int           // -vision-max-pixels: lowers GLM-OCR's image pixel budget (0 = the model's own 4.82 MP ceiling)
 	visionQuant       string        // -vision-quant: "" (unset: f32; Gemma 3 on cuda may fall back to int8) | "f32" (explicit) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
 	visionDevice      string        // -vision-device: "auto" (default: the backend's device tower when it has one) | "cpu" | "gpu" (as auto, and it also puts on the device the towers auto keeps on the CPU under webgpu: on a discrete GPU, and a Qwen3.5+ .gguf mmproj tower)
-	// decisions (D5, docs/tasks/parked/task-constrained-confidence.md): POST /v1/systemone's label-scoring template, and an
+	// decisions: POST /v1/systemone's label-scoring template, and an
 	// optional calibration.json of per-kind temperatures ("" = none: every answer is uncalibrated).
 	decisionsTemplate string
 	decisionsCal      string
@@ -338,8 +338,8 @@ type config struct {
 	// toolFormat is -tool-format (auto | hermes | template): how a family whose own template declares a native tool form (Qwen3.5, Gemma 4's canonical
 	// template) has its tools put in the prompt (chat/qwen_xml_tools.go, chat/gemma4_tools.go). Applied to the model's template at load, like -thinking.
 	toolFormat string
-	// lenientToolCalls is -lenient-tool-calls: also read ONE fenced JSON call at the end of a reply as a tool call, on the <tool_call> families
-	// (chat.Template.WithLenientToolCalls, docs/queue-correctness.md G39). Off by default. Applied to the model's template at load.
+	// lenientToolCalls is -lenient-tool-calls: also read ONE fenced JSON call at the end of a reply as a tool call, on the <tool_call> families.
+	// Off by default. Applied to the model's template at load.
 	lenientToolCalls bool
 
 	embedPath  string // encoder (-embed-model); "" = no /v1/embeddings
@@ -589,7 +589,7 @@ func (srv *server) routes(cfg config, authKey string, stderr io.Writer) (*http.S
 	mux.HandleFunc("GET /health", auth(srv.handleHealth))
 	// haltGate runs AFTER auth (a bad key is still rejected during a halt) and BEFORE inf (a halt must not wait for an
 	// inflight slot). /admin/* and /health are deliberately NOT wrapped in it: an operator must always be able to resume and
-	// check status (docs/tasks/task-halt-2026-09.md).
+	// check status.
 	// These routes are registered whether or not a model is loaded at startup: a server started with only --web,
 	// --allow-admin or --admin-socket loads its model later, and the mux is built once. Every handler resolves its model
 	// through resolveAndLock, which answers an unknown or absent model with the OpenAI-shaped 404 "model not found (served:
@@ -609,12 +609,12 @@ func (srv *server) routes(cfg config, authKey string, stderr io.Writer) (*http.S
 	mux.HandleFunc("POST /v1/audio/transcriptions", rl(auth(srv.haltGate(inf(maxBytes(audioCap, srv.handleTranscriptions))))))
 	mux.HandleFunc("POST /v1/messages/count_tokens", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCountTokens)))))
 	// POST /v1/systemone is TypeSafe's wire shape, served by label scoring (internal/decide), so jevx and the TypeSafe SDKs
-	// work against goinfer through their base-URL override (docs/tasks/parked/task-constrained-confidence.md).
+	// work against goinfer through their base-URL override.
 	mux.HandleFunc("POST /v1/systemone", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleSystemOne)))))
 	// Submitting a job starts new admission, so POST /v1/jobs gets the same haltGate/inf/maxBytes stack as every other POST
 	// above. Polling (GET), the event stream and cancel (DELETE) are not new inference work: haltGate would 503 a client
 	// trying to learn that its job was halted, and inf's cap bounds pre-queue decode and tokenization, which these do not
-	// do. They get auth only (docs/tasks/task-work-queue-2026-09.md).
+	// do. They get auth only.
 	mux.HandleFunc("POST /v1/jobs", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCreateJob)))))
 	mux.HandleFunc("GET /v1/jobs/{id}", auth(srv.handleGetJob))
 	mux.HandleFunc("GET /v1/jobs/{id}/events", auth(srv.handleJobEvents))
@@ -642,7 +642,7 @@ func (srv *server) routes(cfg config, authKey string, stderr io.Writer) (*http.S
 			"the body cap bounds their total", maxEmbedInputs, maxEmbedInputBytes))))))
 	// /admin/* lives on EITHER the TCP listener (auth + -allow-admin) OR the admin socket when -admin-socket is set, never
 	// both, so a request against the surface that was not chosen 404s instead of being refused: a 403 would confirm the
-	// surface exists. See admin_socket.go for the socket side (docs/tasks/task-halt-2026-09.md).
+	// surface exists. See admin_socket.go for the socket side.
 	if cfg.adminSocket == "" {
 		registerAdminRoutes(mux, srv, textCap, func(h http.HandlerFunc) http.HandlerFunc { return auth(srv.requireAdmin(h)) })
 	}
@@ -653,7 +653,7 @@ func (srv *server) routes(cfg config, authKey string, stderr io.Writer) (*http.S
 		// so auth() here would make the key unenterable whenever -api-key is set. auth stays on the routes below, which act
 		// (docs/completed/review-2026-09-04.md, V-02).
 		mux.HandleFunc("GET /{$}", srv.handleWebUI)
-		// The page's own CSS and JS (docs/tasks/task-web-ui-2026-09.md §6.1), unauthenticated for the same reason as the page.
+		// The page's own CSS and JS, unauthenticated for the same reason as the page.
 		// {file} is one path segment, so "GET /ui/{file}" cannot become a catch-all.
 		mux.HandleFunc("GET /ui/{file}", srv.handleWebAsset)
 		// sameOrigin: on the key-free loopback default auth() alone is a no-op, and these routes act (pull starts a caller-named
@@ -697,7 +697,7 @@ func Main() {
 		os.Exit(connect.Run(os.Args[2:], filepath.Base(os.Args[0]), os.Stdout))
 	}
 	// `status|ls|cancel|halt|resume` are a CLIENT talking to a RUNNING server's admin socket (-admin-socket), not the
-	// server itself: the same dispatch shape as pull/check above (docs/tasks/task-halt-2026-09.md).
+	// server itself: the same dispatch shape as pull/check above.
 	if len(os.Args) > 1 && isAdminCLICmd(os.Args[1]) {
 		os.Exit(runAdminCLI(os.Args[1], os.Args[2:], filepath.Base(os.Args[0])))
 	}
@@ -826,7 +826,7 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 
 	mux, textCap := srv.routes(cfg, authKey, os.Stderr)
 
-	// The admin socket (docs/tasks/task-halt-2026-09.md). closeAdminSock is a no-op when -admin-socket is unset, so the
+	// The admin socket. closeAdminSock is a no-op when -admin-socket is unset, so the
 	// shutdown handler below can call it unconditionally.
 	closeAdminSock := func() {}
 	if cfg.adminSocket != "" {
@@ -922,8 +922,8 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 		srv.checkpointSessions(cfg)
 	}()
 
-	// SIGUSR1 halts, SIGUSR2 resumes, so a supervisor can pull this switch without a socket or an HTTP client
-	// (docs/tasks/task-halt-2026-09.md). Separate from the one-shot SIGINT/SIGTERM channel above: these repeat for the life
+	// SIGUSR1 halts, SIGUSR2 resumes, so a supervisor can pull this switch without a socket or an HTTP client.
+	// Separate from the one-shot SIGINT/SIGTERM channel above: these repeat for the life
 	// of the process, so they get their own Notify and a loop. Platform-specific (haltsignal_unix.go /
 	// haltsignal_windows.go): SIGUSR1/SIGUSR2 are undefined identifiers on Windows.
 	startHaltSignalLoop(srv)
@@ -1687,7 +1687,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	// sizes against live free VRAM (CUDA's expert-cache slots, its unpinned ctx-by-default) cannot know it is coming unless
 	// something prices it first. So the drafter is opened HERE, before decoder.Load, and Options.ExtraResidentBytes carries
 	// its size into BuildResident: without that a 26B auto-sizes its expert cache to every free byte and the later attach
-	// fails with nowhere left to go (docs/tasks/task-fit-to-hardware.md §2). Opened, not loaded (OpenDFlashDrafter): its header
+	// fails with nowhere left to go. Opened, not loaded (OpenDFlashDrafter): its header
 	// prices it, and the attach streams its matrices from the file, so the host never holds the drafter beside the target's
 	// load. Opened once and reused at the attach call site, so pricing and the actual attach see the same weights.
 	var drafter *decoder.DFlashDrafter
@@ -2109,7 +2109,7 @@ func qwenTowerPlacement(backend string, int8Tower, require bool, attach func() e
 
 // kvShareOffFor is whether requests may not take KV rows another conversation computed (decoder.Options.KVShareOff):
 // when -kv-share is off, and when the server answers the network without an API key. serve has one key, so every
-// request that passes it is one sharing scope (docs/tasks/task-kv-architecture-2026-10.md §8, D4). Without a key
+// request that passes it is one sharing scope. Without a key
 // only loopback may be bound, but a loopback bind answering an -allowed-hosts name is a reverse proxy's public
 // face, and is treated as the network.
 func kvShareOffFor(kvShare, apiKey, addr, allowedHosts string) bool {

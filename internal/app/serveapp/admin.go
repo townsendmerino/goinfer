@@ -16,7 +16,7 @@ import (
 // (draining) per the wait.
 
 // adminCancelReq is the body of POST /admin/generations/{id}/cancel. reason is required so a cancelled generation's
-// finish_reason and log line always say WHY, not just THAT (docs/tasks/task-halt-2026-09.md: every halt and cancel is
+// finish_reason and log line always say WHY, not just THAT (every halt and cancel is
 // loud and attributed).
 type adminCancelReq struct {
 	Reason string `json:"reason"`
@@ -59,8 +59,7 @@ type adminUnloadReq struct {
 
 // requireAdmin is the TCP-listener gate for /admin/*. It is chain-level (alongside auth/haltGate/inf in main.go), not a
 // handler-internal check, so it can be left off when the same handlers are registered on the admin socket, where the
-// socket's file permissions (mode 0600) are the auth and -allow-admin has no meaning to enforce
-// (docs/tasks/task-halt-2026-09.md).
+// socket's file permissions (mode 0600) are the auth and -allow-admin has no meaning to enforce.
 func (s *server) requireAdmin(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !s.cfg.allowAdmin {
@@ -74,7 +73,7 @@ func (s *server) requireAdmin(h http.HandlerFunc) http.HandlerFunc {
 // registerAdminRoutes registers every /admin/* route (model load/unload, generation list/cancel/status, halt/resume)
 // onto mux, each wrapped with wrap. main.go calls it for the TCP mux (wrap = auth+requireAdmin) or, when -admin-socket
 // is set, for the admin socket (wrap = identity: the socket's file permissions are the auth); the socket replaces the
-// TCP registration rather than adding to it (docs/tasks/task-halt-2026-09.md).
+// TCP registration rather than adding to it.
 func registerAdminRoutes(mux *http.ServeMux, s *server, textCap int64, wrap func(http.HandlerFunc) http.HandlerFunc) {
 	mux.HandleFunc("POST /admin/models/load", wrap(maxBytes(textCap, s.handleAdminLoad)))
 	mux.HandleFunc("POST /admin/models/fit", wrap(maxBytes(textCap, s.handleAdminFit)))
@@ -101,7 +100,7 @@ func (s *server) handleAdminStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	// The resident batcher's counters per model running several generations at once (the numbers serve prints at
 	// shutdown), so a harness can difference them across one cell rather than across the server's whole life: load,
-	// warm-up and first-use pipeline compiles excluded (docs/tasks/parked/task-concurrency-2026-09.md).
+	// warm-up and first-use pipeline compiles excluded.
 	rb := map[string]any{}
 	for _, lm := range s.modelList() {
 		if lm.model != nil && lm.mdl().ResidentConcurrency() > 1 {
@@ -209,7 +208,7 @@ func (s *server) publishLoaded(lm *loadedModel) bool {
 	s.regMu.Unlock()
 	if s.cfg.sessionDir != "" && s.cfg.kvSessions > 0 {
 		// The model is now published, so a request can already acquire it. lm.sessMu guards the sessionLRU
-		// (drive/driveVL take it around their own sessions.acquire; docs/tasks/task-work-queue-2026-09.md) and load does
+		// and load does
 		// not take it, so hold it here to serialize this not-goroutine-safe restore against a handler that reaches the
 		// LRU first.
 		lm.sessMu.Lock()

@@ -7,7 +7,7 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 )
 
-// PRE-REGISTERED (docs/queue-correctness.md G39). With exactly ONE tool and tool_choice auto, forcedTool must
+// PRE-REGISTERED. With exactly ONE tool and tool_choice auto, forcedTool must
 // not constrain the reply to that tool's call on EVERY turn: on the turn after the tool's result a client with
 // a single tool could never get an answer (`serve check`'s `tools, OpenAI` row failed with "turn two asked for
 // the tool again instead of answering — the agent-livelock shape").

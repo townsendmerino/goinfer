@@ -158,8 +158,7 @@ func TestWebUI_pullRefReplacesSelector(t *testing.T) {
 // out-bound <a href="https://…"> (the book link, docs/completed/task-web-ui-ambient.md): only an asset the
 // page's own load depends on counts, and a blanket "no http(s):// anywhere" check would ban the link too.
 func TestWebUI_pageIsSelfContained(t *testing.T) {
-	// EVERY EMBEDDED FILE, not just index.html: the page is split across webui/ (docs/tasks/task-web-ui-2026-09.md
-	// §6.1), and a check reading only index.html would pass with a CDN import in ui/app.js.
+	// EVERY EMBEDDED FILE, not just index.html: the page is split across webui/, and a check reading only index.html would pass with a CDN import in ui/app.js.
 	var all strings.Builder
 	nFiles := 0
 	if err := fs.WalkDir(webUIFS, "webui", func(p string, d fs.DirEntry, err error) error {
@@ -290,7 +289,7 @@ func TestWebUI_assetRoute(t *testing.T) {
 	}
 }
 
-// TestWebUI_noHTMLStringSinks makes §6.2 of docs/tasks/task-web-ui-2026-09.md a build failure rather
+// TestWebUI_noHTMLStringSinks makes this rule a build failure rather
 // than a convention: nothing in the embedded page may turn a string into markup or code. The page is
 // served from the API's own origin with the user's key on it and renders text from models, some
 // pulled from strangers' repos — so model output goes in through createTextNode and createElement

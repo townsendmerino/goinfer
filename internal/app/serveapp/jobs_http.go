@@ -10,8 +10,8 @@ import (
 
 // POST /v1/jobs submits a generation and returns its id immediately; GET /v1/jobs/{id} polls state and result; GET
 // /v1/jobs/{id}/events re-attaches to its output (replay, then live); DELETE /v1/jobs/{id} cancels it. The body is a
-// text-only chat body: images and tools are refused, and docs/tasks/task-work-queue-2026-09.md has what else is
-// scoped out (see jobs_run.go).
+// text-only chat body: images and tools are refused, and jobs_run.go says what else is
+// scoped out.
 
 // handleCreateJob is POST /v1/jobs. It is deliberately not routed through withModel/handleChat: those hold the model
 // for exactly one synchronous handler's lifetime, which is wrong here. resolveAndLock is called directly so the
@@ -129,8 +129,8 @@ func (s *server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	if j.Result != nil {
 		out["result"] = j.Result
 	}
-	// A waiting job's place in line: its own request's state, the only queue information the page may see
-	// (docs/tasks/task-web-ui-2026-09.md). Absent once it runs, and briefly before it joins the line.
+	// A waiting job's place in line: its own request's state, the only queue information the page may see.
+	// Absent once it runs, and briefly before it joins the line.
 	if j.State == jobs.Pending {
 		if lm := s.modelByName(j.Model); lm != nil {
 			if place, waiting, running, ok := lm.turns.position(j.ID); ok {

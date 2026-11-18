@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/cost"
 )
 
-// State is a job's lifecycle stage (docs/tasks/task-work-queue-2026-09.md). interrupted is written ONLY by restart recovery
+// State is a job's lifecycle stage. interrupted is written ONLY by restart recovery
 // (LoadJournal): a job never transitions into it live.
 type State string
 
@@ -67,7 +67,7 @@ type Result struct {
 // Joined with generationRegistry by SHARING AN ID, not by a structural link: cancelling a job calls the SAME cancel this store
 // holds for it (see cancel), and drive/driveVL separately register that same id in the generation registry once actually
 // running, so /admin/generations/{id}/cancel and DELETE /v1/jobs/{id} both reach the same generation without either registry
-// knowing about the other (docs/tasks/task-work-queue-2026-09.md).
+// knowing about the other.
 //
 // cap bounds jobs (FIFO eviction of the oldest FINISHED job, never one still pending/running), mirroring responseStore's cap
 // pattern; 0 = unbounded (only used by tests and the zero-value case main.go never constructs).

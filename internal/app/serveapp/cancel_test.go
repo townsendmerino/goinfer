@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// K1 gate (docs/tasks/task-halt-2026-09.md): start a long generation, cancel it by id partway through, and
+// K1 gate: start a long generation, cancel it by id partway through, and
 // assert (1) the stream stops promptly after the cancel request completes (the practical form of "no token
 // timestamped after the cancel"; there is no per-token wall-clock instrumentation), (2) the final SSE event
 // names the cancel reason, the finish_reason chunk says "cancelled", and the registry no longer lists the id,
