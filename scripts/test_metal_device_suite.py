@@ -3,6 +3,7 @@
 Run: python3 -B scripts/test_metal_device_suite.py"""
 import os
 import plistlib
+import re
 import subprocess
 import sys
 import unittest
@@ -21,6 +22,19 @@ class Files(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(ROOT, "docs/measurements/metal-device-suite-2026-11-17/run-metal-device-suite.sh")))
         self.assertEqual(set(p["StartCalendarInterval"]), {"Hour", "Minute"})
         self.assertFalse(p["RunAtLoad"])
+
+    def test_theCheckoutThePlistCdsToIsTheOneTheReadmeTellsTheOwnerToHold(self):
+        cmd = plistlib.load(open(os.path.join(D, "com.goinfer.metal-device-suite.plist"), "rb"))["ProgramArguments"][-1]
+        m = re.search(r'cd "\$HOME/([^"]+)"', cmd)
+        self.assertIsNotNone(m, cmd)
+        self.assertIn("`~/" + m.group(1) + "`", open(os.path.join(D, "README.md")).read())
+        self.assertNotIn("mycode", cmd)
+
+    def test_aFailedCdOrStartIsLoggedNotSentToDevNull(self):
+        p = plistlib.load(open(os.path.join(D, "com.goinfer.metal-device-suite.plist"), "rb"))
+        cmd = p["ProgramArguments"][-1]
+        self.assertLess(cmd.index("goinfer-logs/metal-device-suite-launchd.log"), cmd.index("cd "))
+        self.assertIn("2>&1", cmd)
 
     def test_theScriptParses(self):
         self.assertEqual(subprocess.run(["bash", "-n", SCRIPT]).returncode, 0)

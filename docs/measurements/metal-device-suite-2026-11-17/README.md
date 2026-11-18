@@ -14,11 +14,11 @@ LaunchAgent calendar job at 06:30 local, before the apps open; a Mac asleep at t
 **Issues.** A run of `origin/main` files "metal-device-suite red on <sha>" (or comments on the open one; green closes it) and rewrites the standing heartbeat issue "device-suite status: mac".
 `scripts/device_suite_heartbeat.py` (daily workflow `device-heartbeat.yml`) opens "device-suite heartbeat stale: mac" when no completed run is newer than 36 h. A `REV=` run files nothing.
 
-**Install (the owner's; a session does not load a launchd job).** The Mac's main checkout (`~/mycode/goinfer`) must hold this directory (`git pull` there).
+**Install (the owner's; a session does not load a launchd job).** The Mac's checkout is `~/tmcode/goinfer` (the path the plist `cd`s to) and must hold this directory (`git pull` there). A failed `cd` or script start is written to `~/goinfer-logs/metal-device-suite-launchd.log`, and it leaves no completed run, so the heartbeat check opens "device-suite heartbeat stale: mac" within 36 h.
 ```
 cp docs/measurements/metal-device-suite-2026-11-17/com.goinfer.metal-device-suite.plist ~/Library/LaunchAgents/ && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.goinfer.metal-device-suite.plist
 ```
 First run now, to see the plumbing: `launchctl kickstart gui/$(id -u)/com.goinfer.metal-device-suite`. Remove: `launchctl bootout gui/$(id -u)/com.goinfer.metal-device-suite`.
-The job's own log is `~/goinfer-logs/metal-device-suite-<date>/verdict.log` (the agent's stdout goes nowhere).
+The job's log is `~/goinfer-logs/metal-device-suite-<date>/verdict.log` (the agent's own stdout and stderr go to `~/goinfer-logs/metal-device-suite-launchd.log`).
 
 **Tier 0.** `python3 -B scripts/test_cuda_device_suite.py` (the Metal wording), `python3 -B scripts/test_metal_device_suite.py` (the plist parses and names this script; the script refuses off macOS).
