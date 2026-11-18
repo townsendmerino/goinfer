@@ -8,6 +8,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 )
 
 // BackstopMB is the system-wide swap growth that trips the guard on a machine where the per-process figure is read (CLAUDE.md, "guard
@@ -23,15 +24,15 @@ var (
 
 // Source is one swap figure the guard watches and the growth over its baseline that trips it.
 type Source struct {
-	Name      string // what a trip message calls it: "server swap" or "system swap"
+	Name      string // what a trip message calls it: probe.SelfSwapName ("server swap", "server compressed" on macOS) or "system swap"
 	Read      decoder.SwapReader
 	Threshold int64 // bytes of growth over the first reading
 }
 
-// Select picks what the guard watches. own is the per-process reader (nil, with ownWhy, where the platform has none); sys is the
-// system-wide one. Where own reads, the guard has two sources: the server's own swap at the GOINFER_SWAP_GUARD threshold (512 MB by
-// default), and system swap at BackstopMB. Where it does not (no per-process figure, or this kernel reports no VmSwap), it has one: system
-// swap at the GOINFER_SWAP_GUARD threshold, as before, and banner says why. ok is false for GOINFER_SWAP_GUARD=off.
+// Select picks what the guard watches. own is the per-process reader (probe.SelfSwapReader: VmSwap on Linux, the server's compressed
+// pages on macOS; nil, with ownWhy, where the platform has none); sys is the system-wide one. Where own reads, the guard has two
+// sources: the server's own figure at the GOINFER_SWAP_GUARD threshold (512 MB by default), and system swap at BackstopMB. Where it
+// does not, it has one: system swap at the GOINFER_SWAP_GUARD threshold, and banner says why. ok is false for GOINFER_SWAP_GUARD=off.
 func Select(own decoder.SwapReader, ownWhy string, sys decoder.SwapReader) (srcs []Source, banner string, ok bool) {
 	threshold, mb, on := ThresholdBytes()
 	if !on {
@@ -39,7 +40,7 @@ func Select(own decoder.SwapReader, ownWhy string, sys decoder.SwapReader) (srcs
 	}
 	if own != nil {
 		if _, readable := own(); !readable {
-			own, ownWhy = nil, "this process's VmSwap is not readable (a kernel without swap accounting?)"
+			own, ownWhy = nil, "the per-process figure ("+probe.SelfSwapWhat+") is not readable"
 		}
 	}
 	if own == nil {
@@ -47,8 +48,8 @@ func Select(own decoder.SwapReader, ownWhy string, sys decoder.SwapReader) (srcs
 			fmt.Sprintf("system swap +%d MB over baseline (the per-process reader is not armed: %s)", mb, ownWhy), true
 	}
 	back := max(int64(BackstopMB), mb)
-	return []Source{{"server swap", own, threshold}, {"system swap", sys, back * 1024 * 1024}},
-		fmt.Sprintf("server swap (VmSwap of this process and its descendants) +%d MB over baseline, system swap +%d MB as a backstop", mb, back), true
+	return []Source{{probe.SelfSwapName, own, threshold}, {"system swap", sys, back * 1024 * 1024}},
+		fmt.Sprintf("%s (%s) +%d MB over baseline, system swap +%d MB as a backstop", probe.SelfSwapName, probe.SelfSwapWhat, mb, back), true
 }
 
 // Watch is the running samplers of a guard, one per Source.
