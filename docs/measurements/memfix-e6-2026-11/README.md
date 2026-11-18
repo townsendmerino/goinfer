@@ -54,8 +54,25 @@ comment carried, which was measured when the build still held a packed copy. The
 which priced these loads the same way before; the over-priced build term hid it. The guard compares the need against 70% of available
 memory, so these loads still sit 30% inside what is free, but the need itself is not an upper bound on the process.
 
-**This loosens what the host guard admits** by about 9.5 GB on these two loads (the 26B's need goes 38.4 → 28.9 GB, gpt-oss's
-32.0 → 22.3). No threshold, fraction or margin moves; it is a priced term corrected to what the process holds. A host that
+### Heap slack: 1% of the weights (Francis, 2026-11-18, about 15:00 PST: "merge and 1%")
+
+On reading the margin above, Francis chose to merge with a heap-slack margin of 1% of the weights added to the weights + source term
+(`internal/runtime/mem/host.go:HeapSlackBytes`, used by `HostCheck.Need`, its unpinned twin, `SmallerFittingContext` and
+`decoder.FitQuery`). It applies only where the term carries a mapped source, which is what was read: every direct `.gguf` load, on every
+backend. A load with no source term is unchanged. The margins against the same readings, exact bytes:
+
+| | need with the slack | measured `VmHWM` | **margin** |
+|---|---|---|---|
+| Gemma-4-26B | 31,134,029,238 B = 28.996 GiB | 31,239,774,208 B = 29.094 GiB | **−0.098 GiB (0.34% under the peak)** |
+| gpt-oss-20b | 24,015,965,295 B = 22.367 GiB | 24,033,034,240 B = 22.383 GiB | **−0.016 GiB (0.07% under)** |
+
+The need is still just under the process's high-water mark on both: the anonymous excess was 2.8% and 2.2% of the weights, and 1% covers
+part of it. The decision census moves by the new need on every direct `.gguf` group (cpu, cuda and metal) and by the availability
+boundaries derived from it; the amd64 golden is regenerated here, the arm64 classes from CI.
+
+**This loosens what the host guard admits** on these two loads by 9.41 GiB (the 26B's need goes 38.406 → 28.996 GiB) and 9.60 GiB
+(gpt-oss, 31.969 → 22.367). The build term is corrected to what the process holds; the one margin added is the 1% heap slack, on
+Francis's word. A host that
 refused these loads before may now admit them. Whether to take it is Francis's call.
 
 ## Not read

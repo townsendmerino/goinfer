@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // FitQuery answers FitAnswer for path and opts. An error is a load that would fail before its memory check, for a reason
@@ -65,7 +66,7 @@ func fitQueryAt(path string, opts Options, read func() int64) (FitAnswer, error)
 	if pin > 0 {
 		a.Ctx, a.CtxCapped = pin, true
 		a.KVBytes = f.kvAt(pin)
-		a.NeedBytes = max(f.cudaBuildBytes, f.weightBytes+a.KVBytes+f.srcFileBytes)
+		a.NeedBytes = max(f.cudaBuildBytes, f.weightBytes+a.KVBytes+f.srcFileBytes+mem.HeapSlackBytes(f.weightBytes, f.srcFileBytes))
 	}
 	if f.noGuard || !f.known() {
 		a.Unpriced = unpricedReason(opts, f.cfg != nil && f.weightBytes > 0)

@@ -290,3 +290,29 @@ func TestUnpinnedExpertsHint_onlyWhenTheCopyIsWhatDoesNotFit(t *testing.T) {
 		t.Errorf("a load the flag would not save names it (fits %v): %s", kvBound.Fits(), kvBound.Decline().Msg)
 	}
 }
+
+// TestHostCheck_heapSlackBesideTheSource: a load that maps its source is priced 1% of its weights more, for its own heap beside them
+// (HeapSlackBytes); a load with no source term is not; and SmallerFittingContext takes the slack out of the budget as it does the source.
+func TestHostCheck_heapSlackBesideTheSource(t *testing.T) {
+	const GB = int64(1) << 30
+	const w, src = 100 * GB, 50 * GB
+	m, p := HostMachine(400*GB), DefaultPolicy()
+	with := NewHostCheck(HostLoad{Name: "m", Quant: "int4", GGUF: true, WeightBytes: w, SourceBytes: src}, m, p)
+	if got, want := with.Need(), int64(w+src+w/100); got != want {
+		t.Errorf("with a source: need %d, want weights + source + 1%% of the weights = %d", got, want)
+	}
+	if !strings.Contains(with.Arithmetic(), "1.0 GB heap beside it") {
+		t.Errorf("the arithmetic does not name the heap slack: %q", with.Arithmetic())
+	}
+	without := NewHostCheck(HostLoad{Name: "m", Quant: "int4", WeightBytes: w}, m, p)
+	if got := without.Need(); got != w {
+		t.Errorf("with no source: need %d, want the weights alone %d", got, int64(w))
+	}
+	// A KV curve of 1 byte a position, with the budget leaving exactly 1,000 positions beside weights, source and slack.
+	kv := func(ctx int) int64 { return int64(ctx) }
+	c := HostCheck{HostLoad: HostLoad{Name: "m", GGUF: true, WeightBytes: w, SourceBytes: src, KV: kv, Ctx: 1 << 20}, Policy: Policy{WeightsFraction: 1, CtxFloor: 1}}
+	c.Available = w + src + w/100 + 1000
+	if got, ok := c.SmallerFittingContext(); !ok || got != 1000 {
+		t.Errorf("SmallerFittingContext = %d, %v; want 1000 positions once the slack is out of the budget", got, ok)
+	}
+}
