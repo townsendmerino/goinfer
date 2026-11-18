@@ -14,8 +14,8 @@ import (
 // vision-specific: a quantized GEMM, a LayerNorm, a GELU, a bidirectional attention
 // and a per-row int8 quantizer are the same ops a text encoder needs (Phase 4). The
 // vision-specific part — how a SigLIP tower is wired out of these — lives in
-// gpu/visioncuda, which is also where the aikit/vision import lives, so this package
-// stays aikit-import-free like the rest of the device layer.
+// backend/cuda (tower_base.go), which is also where the vision import lives, so this package
+// stays vision-import-free like the rest of the device layer.
 //
 // Every kernel mirrors vision/encoder.go's arithmetic exactly (double-accumulated
 // reductions, tanh-GELU, max-subtract softmax); see vit.cu for why that matters and
@@ -168,7 +168,7 @@ const GEMMTile = 16
 // host code, where no kernel-level rule reaches.
 //
 // Do not sweep it for a speed win without re-baselining the ViT parity gate. That
-// gate (gpu/visioncuda/encoder_test.go) is a cosine bound, deliberately — the CPU
+// gate (backend/cuda's tower parity tests) is a cosine bound, deliberately — the CPU
 // tower accumulates in float64 while these kernels work in f32/int32, so bit
 // equality is impossible by construction — and a small consistent shift passes a
 // tolerance while the numbers have moved. Change ViTBlock and LNBLOCK together; the

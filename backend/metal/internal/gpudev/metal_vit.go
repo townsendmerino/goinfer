@@ -266,8 +266,7 @@ kernel void attention(
 // see AttentionTiledEligible below, which callers MUST check before dispatching this
 // rather than after a silent wrong answer or an out-of-bounds write into Ks/Vs.
 //
-// Wired into gpu/visionmetal's and gpu/qwenmetal's attn calls via
-// AttentionTiledEligible(hd) plus the AttentionTiledMinNP crossover (see cuda_vit.go);
+// Callers gate on AttentionTiledEligible(hd) plus the AttentionTiledMinNP crossover (see cuda_vit.go);
 // verified standalone (metal_vit_w8a8reg_test.go's sibling — see
 // TestMetal_vitAttentionTiled).
 #define AT_MAXHD 128
@@ -1308,6 +1307,12 @@ func AttentionSegTiledDispatch(seq, nH int) (n, tg int) {
 // have moved. Change ViTBlock and LNBLOCK together (see the cross-thread `+=` reductions
 // in vitMSL, each tagged as bit-identity-coupled).
 const ViTBlock = 256
+
+// AttentionThreadgroupBytes is the threadgroup memory one `attention` or `attention_seg` dispatch needs when its
+// dynamic score row holds n floats (n patches, or the longest segment): 4 bytes per element plus the kernel's two static
+// ViTBlock-float reduction arrays. A dispatch over Device.MaxThreadgroupMemoryLength aborts its command buffer yet reports
+// Completed, so a caller sizing n from model or image dimensions checks this first and declines.
+func AttentionThreadgroupBytes(n int) int { return n*4 + 2*ViTBlock*4 }
 
 // ViT holds the compiled encoder kernel pipelines — identical shape to the CUDA ViT.
 type ViT struct {

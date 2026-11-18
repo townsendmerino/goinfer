@@ -520,8 +520,8 @@ func (b Buffer) upload(src []byte) error {
 	// the read-after-write race the comment above describes. It does nothing
 	// about the mirror image: a launch ALREADY QUEUED on the (non-blocking)
 	// stream that READS this buffer, while the null-stream DMA lands new bytes
-	// underneath it. That write-after-read is how qwencuda's mid-forward segment
-	// upload could feed full-image bounds to layers still running with shared
+	// underneath it. That write-after-read let a mid-forward segment
+	// upload feed full-image bounds to layers still running with shared
 	// memory sized for the windowed ones.
 	//
 	// Same reasoning as the trailing sync: a full device sync is heavier than
