@@ -1,5 +1,7 @@
 # CUDA resident build: stream the packing into the device buffer, and correct the fit guard's host term (pre-registration, 2026-10-18)
 
+> **Note, 2026-11-18 (memory audit, phase 2; the readings below are not rewritten).** The 4121 MiB in the results table is the pre-change anonymous peak of the 7B sidecar load, as measured then. It is gone on current main: VmHWM at ready is 4,159 MiB in total, 3,902 MiB of it the mapped file.
+
 **Registered before any code of the change is written** (owner, 2026-10-18; question and measurements in
 `docs/measurements/cuda-build-heap-2026-10-18/README.md`). Branch `cuda-stream-pack`. The results are appended below the line when they are read, and no bar
 above is moved afterwards without a mechanism.
