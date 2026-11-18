@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// TestZZ_attnKVWidthProbe — the P4 deciding measurement (docs/plan-still-slow.md §P4): the collapse probe re-run with a THIRD
+// TestZZ_attnKVWidthProbe — the P4 deciding measurement: the collapse probe re-run with a THIRD
 // arm, half the DRAM bytes per key at the SAME element count (int8 KV vs the f16 baseline — q8's exact byte profile), to
 // separate BANDWIDTH from LATENCY.
 //
