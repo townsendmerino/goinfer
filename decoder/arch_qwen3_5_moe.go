@@ -8,7 +8,7 @@ import (
 // qwen35Architecture expresses Qwen3.5/3.6-MoE (model_type qwen3_5_moe): a 3:1 hybrid where most layers are Gated DeltaNet (linear attention
 // with a recurrent matrix state, its own forward path) and the rest are QK-norm softmax attention with partial RoPE, over a routed + shared
 // MoE on every layer. The descriptor marks the per-layer kind (layerIsLinear) and carries the DeltaNet geometry; the softmax layers reuse the
-// uniform attention fields. See docs/completed/qwen3_5_moe.md.
+// uniform attention fields.
 func qwen35Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.ValidateQwen35(); err != nil {
 		return nil, nil, err

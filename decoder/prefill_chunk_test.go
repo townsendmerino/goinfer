@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// G40-1 (docs/completed/task-cpu-prefill-memory-2026-10.md §4): a text prefill run in chunks equals the single pass bit for
+// G40-1: a text prefill run in chunks equals the single pass bit for
 // bit, in its last-row logits and in every K/V element of every layer (the ring contents of a sliding-window layer
 // included), cold and warm, under fast attention and under the exact path.
 

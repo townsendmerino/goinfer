@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// kv-quant Increment 1 gate (docs/completed/task-cpu-kv-quant.md): int8 KV decode quality.
+// kv-quant Increment 1 gate: int8 KV decode quality.
 // int8 is lossy, so the bar is cosine vs the f32 cache (not bit-exact). Covers
 // BOTH int8 layer kinds — a global (append-forever) layer and a ring
 // (sliding-window) layer that wraps — since attendQueryI8 reads them differently.

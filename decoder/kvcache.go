@@ -12,7 +12,7 @@ import (
 // kvQuant selects the CPU KV-cache storage precision. kvF32 (default) is
 // bit-exact; kvI8 stores K and V as per-(position,KV-head) symmetric int8 + a
 // f32 scale each — 4× smaller, and decode reads them with the SDOT integer dot
-// (DotI8) instead of scalar f64. Opt-in (lossy); see docs/completed/task-cpu-kv-quant.md.
+// (DotI8) instead of scalar f64. Opt-in (lossy);
 type kvQuant uint8
 
 const (
@@ -24,8 +24,8 @@ const (
 // widened reports whether stored rows are read by widening them into f32 scratch (int8, f16) rather than in place (f32).
 func (q kvQuant) widened() bool { return q != kvqF32 }
 
-// kvRoundF16ForTest rounds each K and V row to f16 and back where it reaches an f32 cache: gate F1's reference
-// (docs/completed/task-cpu-kv-f16-2026-10.md). The planted defects F1 must see: kvF16NewRowsF32ForTest (a prefill's new ring rows
+// kvRoundF16ForTest rounds each K and V row to f16 and back where it reaches an f32 cache: gate F1's reference.
+// The planted defects F1 must see: kvF16NewRowsF32ForTest (a prefill's new ring rows
 // attended at f32) and kvF16RingOffsetForTest (the ring window read one slot late).
 var kvRoundF16ForTest, kvF16NewRowsF32ForTest, kvF16RingOffsetForTest bool
 
@@ -101,7 +101,7 @@ type KVCache struct {
 	// rings holds a fixed-W ring buffer for each sliding-window (local) layer; a nil entry is a global layer that append-forevers
 	// into keys/vals above. Set by enableRings (from NewCache) for the families on the attendQuery/attendBatchedHeads paths. A local
 	// layer stores only the W most recent positions (the only ones any future query can read), so its KV is O(W), not O(context).
-	// See docs/completed/task-kv-ring-eviction.md.
+	//
 	rings    []*ring
 	localAny bool // any ring layer present (gates prefill's assembly scratch)
 	// skipAppend reports the layers that reserve no append-forever capacity (NewKVCache's skipLayer; nil: none).
@@ -127,7 +127,7 @@ type KVCache struct {
 
 	// delta holds the Gated DeltaNet recurrent state for qwen3_5_moe's linear
 	// layers (nil entry on softmax layers, nil slice on every other family). This
-	// is the recurrent half of the hybrid cache — see docs/completed/qwen3_5_moe.md.
+	// is the recurrent half of the hybrid cache —
 	delta []*deltaState
 
 	// conv holds the LFM2 gated short-convolution rolling window for the conv layers

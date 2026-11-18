@@ -1,6 +1,6 @@
 package decoder
 
-// The option grid (docs/completed/task-option-path-admission-2026-10.md §4.0): every decoder.Options field against every
+// The option grid: every decoder.Options field against every
 // execution path, with what that path does with it and the evidence. It guards against a load option that no guard on
 // some path knew about (docs/measurements/audit-classes-2026-10-08.md).
 //
@@ -189,7 +189,7 @@ var ogGrid = map[string]map[ogPath]ogCell{
 		},
 	),
 
-	// Metal's expert cache (docs/completed/task-option-path-admission-2026-10.md §4.3): bit-identical to fully resident when both
+	// Metal's expert cache: bit-identical to fully resident when both
 	// prefill the same way. A paged model's prompt takes the layer-major prefill, bit-identical to sequential, so the
 	// reference is the resident load with ExactPrefill (the default resident's batched f16 prefill differs, and only
 	// --exact-prefill reproduces the paged one). int8 experts decline by name (errPagedExpertsNotInt4) rather than via a
@@ -286,7 +286,7 @@ var ogGrid = map[string]map[ogPath]ogCell{
 			pathSessionLifecycle: ogTestedBy("TestOptionPathMetal_neutralOptions"),
 		},
 	),
-	// CUDA's windowed KV (docs/completed/task-cuda-windowed-kv-2026-10.md): a sliding-window layer holds window+slack positions instead of the
+	// CUDA's windowed KV: a sliding-window layer holds window+slack positions instead of the
 	// context. Metal and WebGPU ignore it. The identity tests live in cuda/kvwindow_test.go (a GPU job, tags cuda goinfer_testhooks) and
 	// compare logits bit for bit against the same load without the option.
 	"KVShareOff": ogMerge(

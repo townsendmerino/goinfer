@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
-// Prefix snapshots in host memory (docs/completed/task-kv7-prefix-snapshot-2026-10.md). After a cold first prefill of a long prompt the
+// Prefix snapshots in host memory. After a cold first prefill of a long prompt the
 // resident's KV for the prompt's full blocks is copied to pinned host memory, keyed by the token ids and the root KV2 keys on
 // (namespace, model identity, adapter, KV precision). A later request whose prompt starts with those ids restores the rows into its
 // slot by device copy and prefills only the rest. It keeps a prefix that a one-slot card would overwrite when the next session

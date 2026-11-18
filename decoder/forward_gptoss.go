@@ -8,7 +8,7 @@ import (
 // gpt-oss's two operations that differ from the generic ones: attention adds a learned per-head SINK to the softmax denominator
 // (an escape valve that bleeds attention mass, with no value), and the MoE experts use a clamped interleaved-SwiGLU with an
 // α-scaled sigmoid, a +1 on the linear branch, and per-expert biases. Its program is otherwise the generic pre-norm layer
-// (Architecture.layerOps). Parity-first and arch-neutral (no SIMD); see docs/completed/task-mxfp4-gptoss.md.
+// (Architecture.layerOps). Parity-first and arch-neutral (no SIMD);
 
 // attendSinksToken is the attnSinksF64 attention: it appends this position's k and v to layer l, then writes into ctx the
 // attention of q over keys [start, pos], where start is p's window, with one extra logit per head, the learned sink, joining the

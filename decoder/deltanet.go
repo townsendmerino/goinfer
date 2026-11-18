@@ -70,7 +70,7 @@ func PrintDeltaNetTiming() {
 // Gated DeltaNet, the linear-attention primitive of Qwen3.5/3.6-MoE (qwen3_5_moe). It replaces softmax attention on most layers
 // with a gated delta-rule recurrence over a fixed-size per-head matrix state, so memory is O(1) in sequence length rather than a
 // growing KV cache. The math mirrors HF's torch_recurrent_gated_delta_rule plus the surrounding conv, gates and gated RMSNorm,
-// validated op-for-op against a traced golden (deltanet_test.go); see docs/completed/qwen3_5_moe.md.
+// validated op-for-op against a traced golden (deltanet_test.go);
 //
 // The CPU reference implementation lives in internal/hybridattn so backend kernel tests (metal/kernels) can exercise the single
 // production implementation without importing decoder.
@@ -140,7 +140,7 @@ func softplusf(x float32) float32 { return hybridattn.Softplusf(x) }
 // the recurrent matrix state S (one [head_k_dim, head_v_dim] block per value
 // head). Fixed size — independent of sequence length, and NOT position-
 // truncatable (why qwen3_5_moe falls back from prefix reuse / speculative; see
-// docs/completed/qwen3_5_moe.md).
+// ).
 type deltaState struct {
 	convWin [][]float32 // up to K-1 prior mixed_qkv vectors, oldest first
 	s       []float32   // [numV * head_k_dim * head_v_dim]

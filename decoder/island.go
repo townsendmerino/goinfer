@@ -10,8 +10,7 @@ import (
 
 // islandMat holds an f32 island tensor [rows, cols] (a family's projections kept at full precision) as the bf16 WeightMat kind
 // when every value is exactly a bf16 value, as a bf16 checkpoint widened by its loader is, and as f32 otherwise. The bf16 kind's
-// matmul widens a tile and runs the f32 kernel, so the forward is bit-identical either way at half the bytes (MEM11-bf16,
-// docs/completed/task-memory-campaign-2026-10.md). f is not retained on the bf16 path.
+// matmul widens a tile and runs the f32 kernel, so the forward is bit-identical either way at half the bytes. f is not retained on the bf16 path.
 func islandMat(f []float32, rows, cols int) linalg.WeightMat {
 	for _, x := range f {
 		if math.Float32bits(linalg.BF16ToF32(linalg.F32ToBF16(x))) != math.Float32bits(x) {

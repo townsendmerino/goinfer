@@ -12,8 +12,7 @@ import (
 
 // Options.EmbedInt4 must reach every safetensors loader: a loader that quantizes its embedding and LM head with
 // quant.embedding() never sees the flag, so --embed-int4 (the default everywhere but Metal) does nothing on it and the
-// head stays int8 whatever the flag says. Option D's registered HeadTable() assertion is what catches it
-// (docs/completed/task-multimodal-support-2026-10.md).
+// head stays int8 whatever the flag says. Option D's registered HeadTable() assertion is what catches it.
 
 // A tiny fixture per family that has one. spark2_5, gpt_oss and internlm2 have none on disk; the source guard below covers their loaders structurally.
 var embedInt4Fixtures = []struct{ name, dir string }{

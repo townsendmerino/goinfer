@@ -12,7 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// TestGemma4CoherenceProbe runs the two "free checks" for the int4 investigation (docs/completed/task-gemma4-moe.md):
+// TestGemma4CoherenceProbe runs the two "free checks" for the int4 investigation:
 // is the semi-coherent 4-bit output a GREEDY artifact (sampling fixes it), and is it a CHAT-TEMPLATE / off-distribution
 // artifact (a properly rendered Gemma-4 turn fixes it)? For the env-configured quant it generates {raw, templated} x
 // {greedy, sampled} from one model load. Set ZZBASE / GOINFER_FAKEQUANT[_ACT] as usual.

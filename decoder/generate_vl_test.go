@@ -45,7 +45,7 @@ func TestGenerateVL_streams(t *testing.T) {
 	}
 	defer m.Close()
 
-	// V-11 (docs/completed/review-2026-09-04.md): this model has no resident backend (Options{}, plain CPU), so GenerateVL's
+	// V-11: this model has no resident backend (Options{}, plain CPU), so GenerateVL's
 	// resident-touching branches (gap 0, P9a) never engage: a pre-existing resIDs describing an UNRELATED resident
 	// generation must survive this call untouched.
 	m.resIDs = []int{9, 9, 9}

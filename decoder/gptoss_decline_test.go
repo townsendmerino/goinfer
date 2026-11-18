@@ -7,7 +7,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-// TestGptOss_webgpuDecline asserts the load-bearing guarantee (docs/completed/task-mxfp4-gptoss.md §3/§6.4): a backend that
+// TestGptOss_webgpuDecline asserts the load-bearing guarantee: a backend that
 // does NOT implement gpt-oss's novel ops must DECLINE it and fall back to CPU, never mis-run it, and a backend that DOES ship
 // and dispatch them must actually ADMIT, not stay declined by a stale check. All three resident backends are on the admit
 // side; the name is historical.

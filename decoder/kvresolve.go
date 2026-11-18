@@ -8,7 +8,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-// The KV precision a load delivers (docs/tasks/task-kv-precision-everywhere-2026-10.md, phase 0). ResolveKV is the one answer every
+// The KV precision a load delivers. ResolveKV is the one answer every
 // backend's build, the fit guard's pricing, the banner and serve's request log read; an explicit precision it cannot deliver refuses the
 // load (KVRefusal), so no path runs a precision the caller did not ask for without saying so.
 

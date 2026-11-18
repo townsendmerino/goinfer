@@ -7,8 +7,8 @@ import (
 
 // olmoHybridArchitecture expresses Olmo Hybrid (Ai2, model_type olmo_hybrid): qwen3_5's Gated DeltaNet on 3 of every 4 layers and olmo3's
 // own full-attention shape (whole-vector QK-norm) on the rest, but not simply composed side by side: the full-attention layers use olmo3's
-// NormPostOnly while the DeltaNet layers use plain NormPre2, two placements in ONE model, which is what NormPlacementLinear exists for
-// (docs/completed/task-families-2026-09.md, G2 section). Every departure from a straight qwen3_5-DeltaNet + olmo3-attention composition is a
+// NormPostOnly while the DeltaNet layers use plain NormPre2, two placements in ONE model, which is what NormPlacementLinear exists for.
+// Every departure from a straight qwen3_5-DeltaNet + olmo3-attention composition is a
 // parameterization of shared code, not new math, checked against the real modeling_olmo_hybrid.py and a real checkpoint's header:
 //   - linear_allow_neg_eigval (default true) doubles the write-gate beta to [0,2) after the sigmoid: NegEigval.
 //   - q_proj/k_proj/v_proj are three fully separate tensors (SeparateQKVProj), and the depthwise causal conv is also three separate tensors

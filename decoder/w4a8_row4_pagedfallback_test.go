@@ -3,9 +3,9 @@ package decoder
 import "testing"
 
 // TestSerializedInt4Weights_neverRepacked_pagedFallback proves the plumbing
-// brief's paged-MoE carve-out (docs/completed/w4a8-plumbing.md, docs/task-w4a8-
-// neon-bandwidth.md) BY TEST rather than by construction argument alone: a
-// .giw-loaded (zero-copy mmap-alias-shaped, via SerializeWeights/
+// brief's paged-MoE carve-out ( docs/task-w4a8-
+// neon-bandwidth.md) BY TEST rather than by construction argument alone: a.
+// giw-loaded (zero-copy mmap-alias-shaped, via SerializeWeights/
 // LoadSerializedWeights — the same round-trip path real .giw loading uses)
 // int4 model must have NO repacked row4 layout on any weight (repackW4A8Row4
 // IfEligible is wired only into streamQuantized/quantizeWM, the GGUF/
@@ -14,7 +14,7 @@ import "testing"
 // IDENTICAL to a model whose weights WERE eligible for the row4 repack. That
 // second half is the real proof: it's not enough that the paged path takes a
 // different branch, it has to be the SAME branch MatmulBTW4A8Row4Into's own
-// fallback already is (docs/completed/task-w4a8-neon-bandwidth.md's bit-identity
+// fallback already is ('s bit-identity
 // finding), cross-checked here end-to-end through a real model rather than
 // only at the raw-kernel level.
 func TestSerializedInt4Weights_neverRepacked_pagedFallback(t *testing.T) {

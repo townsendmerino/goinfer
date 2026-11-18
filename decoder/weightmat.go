@@ -95,7 +95,7 @@ func (q quantMode) embeddingWith(embedInt4 bool) quantMode {
 
 // gatherTable is the precision of a table that is only gathered by row on the host, never multiplied (Gemma 4's per-layer
 // token table): int4 at int4, whatever the head pin (EmbedInt4) says, since the pin exists for the logit GEMV and the Metal
-// head kernel, neither of which reads it (D10, docs/completed/task-memory-campaign-2026-10.md §7).
+// head kernel, neither of which reads it.
 func (q quantMode) gatherTable() quantMode { return q.embeddingWith(true) }
 
 // int4GroupSize is the number of consecutive input features that share one f32
@@ -444,8 +444,8 @@ var w4a8Row4RepackEnabled = true
 // AVX2-without-VNNI hosts only.
 //
 // Wired into the same two call sites as the row4 repack and for the same reason (see that function for why the .giw
-// loader is excluded). The repack allocates a second buffer and never writes through the canonical bytes, which for a
-// .giw kind=3 tensor are a zero-copy mmap alias of the file; rewriting them in place would silently misdecode every
+// loader is excluded). The repack allocates a second buffer and never writes through the canonical bytes, which for a.
+// giw kind=3 tensor are a zero-copy mmap alias of the file; rewriting them in place would silently misdecode every
 // existing bundle (aikit's TestWeightMatSplitHalf_canonicalUntouched pins that it does not).
 //
 // Memory: a second copy of every eligible tensor's nibbles, with canonical kept. The cost and why it is default-off live

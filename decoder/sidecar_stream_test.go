@@ -31,8 +31,8 @@ func TestGIWRoundTripPreservesRouterBias(t *testing.T) {
 		t.Skipf("no tiny GLM GGUF at %s — run scripts/pin_glm_tiny_gguf.py", gguf)
 	}
 	// The tiny fixture carries no tokenizer, so go through the weights serializer
-	// directly (StreamTranscodeGGUF → LoadSerializedWeights) rather than the full
-	// .giw bundle — it's the serialize round-trip we're guarding.
+	// directly (StreamTranscodeGGUF → LoadSerializedWeights) rather than the full.
+	// giw bundle — it's the serialize round-trip we're guarding.
 	var body bytes.Buffer
 	if _, err := StreamTranscodeGGUF(context.Background(), gguf, &body, "int4", false, GIWTargetNone, "glm-tiny"); err != nil {
 		t.Fatalf("StreamTranscodeGGUF: %v", err)
@@ -416,7 +416,7 @@ func TestSidecar_failedTranscodeLeavesNoFinalFile(t *testing.T) {
 	}
 }
 
-// V-01 (docs/completed/review-2026-09-04.md): a SUCCESSFUL GGUF TranscodeGIW must be driven end to end —
+// V-01: a SUCCESSFUL GGUF TranscodeGIW must be driven end to end —
 // the M-12 tests above assert failure on a non-GGUF source and an AST shape, neither of which
 // exercises selfCheck on a real bundle (a temp name `out + ".tmp"`, not ending in ".giw", could never
 // route Load's suffix dispatch in selfCheck to the bundle loader, so every real TranscodeGIW

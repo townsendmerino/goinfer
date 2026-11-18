@@ -7,7 +7,7 @@ import (
 	"os"
 )
 
-// knobDrift is the phase-2a tripwire (docs/completed/task-env-config-2026-09.md). A knob is read once, at Load;
+// knobDrift is the phase-2a tripwire. A knob is read once, at Load;
 // a test that sets its environment variable AFTER loading a model and expects the loaded model to follow
 // would, silently, now compare a path with itself — an identity A/B passing for the wrong reason. In test
 // builds every snapshot read therefore checks the live environment and panics when it has moved for a knob

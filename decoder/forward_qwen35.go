@@ -5,7 +5,7 @@ import "github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 // The Qwen3.5/3.6 family (qwen3_5_moe, qwen3_5, qwen3_next, olmo_hybrid), a hybrid: most layers are Gated DeltaNet (linear
 // attention, recurrent state in the cache), the rest gated softmax attention (KV cache), each followed by a routed+shared MoE or
 // a dense SwiGLU. Its per-token program is the generic layer with Architecture.mixerOps' mixers; runLayersQwen35N is the batched
-// twin. See docs/completed/qwen3_5_moe.md.
+// twin.
 
 // qwen35AttentionWith is the gated softmax attention of a full-attention layer (opGatedAttn):
 // double-width q_proj (query ‖ gate per head), per-head QK-norm, partial RoPE,

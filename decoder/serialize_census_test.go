@@ -72,7 +72,7 @@ var censusList = []string{
 	// tinyllama-awq / tinyllama-gptq, none tiny). scripts/pin_llama_tiny.py regenerates it.
 	"../testdata/llama-tiny",
 	// qwen3moe-tiny / granite-dense-tiny: QK-norm + MoE with no shared expert, and llama + scalar multipliers; no other
-	// censused fixture exercises either combination (docs/completed/task-families-2026-09.md, F1/F3).
+	// censused fixture exercises either combination.
 	"../testdata/qwen3moe-tiny", "../testdata/granite-dense-tiny",
 	// ministral3-tiny: AttnTempBeta/AttnTempOrigMaxPos are per-Architecture scalars, not per-layer state, so this repeats the
 	// llama field set every dense fixture covers; listed per the census's own default.
@@ -105,7 +105,7 @@ var censusList = []string{
 	// gemma1-tiny / gemma2-tiny: Gemma 1's Pre2 + (1+w) RMSNorm + MQA and Gemma 2's Sandwich4 without QK-norm, sliding/full
 	// alternating, both softcaps; and their GGUF copies, whose loader derives what the file omits.
 	"../testdata/gemma1-tiny", "../testdata/gemma2-tiny", "../testdata/gemma1-tiny.gguf", "../testdata/gemma2-hd-tiny.gguf",
-	// flint-tiny (docs/completed/task-flint-2026-10.md): generic-path AttnSinks (LayerWeights.AttnSinks on a non-gptoss family) +
+	// flint-tiny: generic-path AttnSinks (LayerWeights.AttnSinks on a non-gptoss family) +
 	// per-layer NoPE + dense prefix + sigmoid-routed MoE + ungated shared expert.
 	"../testdata/flint-tiny",
 }

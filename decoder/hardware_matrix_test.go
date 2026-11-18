@@ -1,6 +1,6 @@
 package decoder
 
-// Generated model × hardware matrix (docs/completed/task-hardware-matrix.md).
+// Generated model × hardware matrix.
 //
 // Mirrors capability_matrix_test.go's registry walk, but the columns are one thing: does each
 // backend run each family on its RESIDENT (GPU) decode path? The cells are 100% derived from
@@ -361,7 +361,7 @@ func TestHardwareMatrix_declineReasonsNotHidden(t *testing.T) {
 	}
 }
 
-// Verified on (hardware-coverage H6, docs/completed/task-hardware-coverage-2026-10.md): the table above is CAPABILITY. This section is what has actually RUN, generated from the H0 census
+// Verified on: the table above is CAPABILITY. This section is what has actually RUN, generated from the H0 census
 // (docs/hardware-coverage.json), so it cannot say more than the census records and goes stale, and red here, the moment a record is added. The census is per hardware-selected code path, not
 // per model family, so the section is a machine table and a never-executed list, not a per-family column; a per-family cell would have to be invented.
 type censusFile struct {

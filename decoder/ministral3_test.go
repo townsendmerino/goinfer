@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// G3 (docs/completed/task-families-2026-09.md, batch 2) Ministral 3 parity (mistralai/Ministral-3-{3b,8b,
+// G3 Ministral 3 parity (mistralai/Ministral-3-{3b,8b,
 // 14b}, model_type "mistral3" — the outer VL wrapper's type, "ministral3" nested): Mistral's GQA
 // skeleton plus YaRN RoPE with a DeepSeek-style mscale/mscale_all_dim override and Llama4-style
 // attention-temperature tuning on every layer (AttnTempBeta/AttnTempOrigMaxPos). The fixture's
@@ -183,8 +183,8 @@ func TestMinistral3_batchedMatchesSequential(t *testing.T) {
 	t.Logf("mistral3 batched==sequential: %d logits bit-identical", len(seqLogits))
 }
 
-// TestAttnTempScale_matchesSequentialFormula is G5's real gate for FeatAttnTemp
-// (docs/completed/task-gpu-paths-2026-09.md): a resident backend calls Model.AttnTempScale(pos) (decode) or
+// TestAttnTempScale_matchesSequentialFormula is G5's real gate for FeatAttnTemp:
+// a resident backend calls Model.AttnTempScale(pos) (decode) or
 // Model.AttnTempParams() (CUDA's batched prefill, which recomputes the formula PER ROW device-side) instead of a new
 // per-model constant, so this is a pure, backend-agnostic check that both give exactly the formula
 // decoder/attention.go's sequential path applies: scale = 1 + beta·ln(1 + floor(pos/origMaxPos)). No GPU and no

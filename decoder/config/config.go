@@ -65,7 +65,7 @@ type Config struct {
 	MoeIntermediateSize int   `json:"moe_intermediate_size"`
 	// Gemma 4 26B-A4B MoE (model_type gemma4, text_config.enable_moe_block=true). It spells the per-token expert count
 	// top_k_experts (not num_experts_per_tok) and gates the whole parallel dense+MoE FFN sub-block on enable_moe_block; the dense
-	// E2B/E4B/12B variants leave both zero/false (docs/completed/task-gemma4-moe.md).
+	// E2B/E4B/12B variants leave both zero/false.
 	EnableMoeBlock bool `json:"enable_moe_block"`
 	TopKExperts    int  `json:"top_k_experts"`
 	// SharedExpertIntermediateSize is the always-on shared expert's FFN width
@@ -544,7 +544,7 @@ func (c *Config) ValidateQwen2Moe() error {
 
 // ValidateGemma4MoE pins the Gemma 4 26B-A4B MoE config, checked only when enable_moe_block is set (the dense E2B/E4B/12B
 // variants never reach here): num_experts > 0, 1 <= top_k_experts <= num_experts, moe_intermediate_size > 0. The
-// router.scale / per_expert_scale tensors are checked at load (docs/completed/task-gemma4-moe.md).
+// router.scale / per_expert_scale tensors are checked at load.
 func (c *Config) ValidateGemma4MoE() error {
 	switch {
 	case c.NumExperts <= 0:
@@ -1428,8 +1428,7 @@ func (c *Config) LagunaFirstKDense() (int, error) {
 	return maxL + 1, nil
 }
 
-// ValidateLaguna pins the assumptions the Laguna forward is built on, read against the three released configs
-// (docs/completed/task-laguna.md).
+// ValidateLaguna pins the assumptions the Laguna forward is built on, read against the three released configs.
 func (c *Config) ValidateLaguna() error {
 	switch {
 	case c.HiddenDim <= 0 || c.NumLayers <= 0 || c.NumHeads <= 0 || c.NumKVHeads <= 0:

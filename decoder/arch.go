@@ -285,8 +285,8 @@ type graniteParams struct {
 	EmbMul, ResidMul                        float32 // embedding scale, residual-add scale (attention scale is Architecture.AttnScale)
 }
 
-// qwen35Params carries the Gated DeltaNet geometry for a qwen3_5_moe model's linear-attention layers
-// (docs/completed/qwen3_5_moe.md). The softmax layers use the uniform Architecture attention fields; only the linear layers
+// qwen35Params carries the Gated DeltaNet geometry for a qwen3_5_moe model's linear-attention layers.
+// The softmax layers use the uniform Architecture attention fields; only the linear layers
 // read these.
 type qwen35Params struct {
 	ConvKernel    int // depthwise causal conv width over [q;k;v] (linear_conv_kernel_dim)
@@ -365,7 +365,7 @@ func (a *Architecture) headDimAt(i int) int {
 }
 
 // lagunaParams describes how Laguna (poolside) departs from an otherwise Qwen2-MoE-shaped decoder; both fields are read
-// straight from the released configs (docs/completed/task-laguna.md).
+// straight from the released configs.
 type lagunaParams struct {
 	// HeadsPerLayer is num_attention_heads_per_layer: layer i's QUERY head count,
 	// which varies with the layer's attention type on the XS generations (48 on

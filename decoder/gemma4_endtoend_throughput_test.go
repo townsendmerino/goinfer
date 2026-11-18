@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// TestGemma4EndToEndThroughput re-measures the END-TO-END paged-decode gap (docs/completed/task-zeno-compare.md,
+// TestGemma4EndToEndThroughput re-measures the END-TO-END paged-decode gap (
 // "Quiet-machine re-measure": gemma4-26b kind-4 vs kind-3 at 4GB/8GB, budget-invariant). It is NOT the isolated kernel
 // microbenchmark: it is the real production path (Load with StreamWeights+WeightCacheBytes, then Model.Generate), with the
 // steady-state total_tokens/wall_time metric the original measurement used, called in-process so there is no HTTP round-trip

@@ -1,6 +1,6 @@
 //go:build goinfer_testhooks
 
-// Test-only hooks for the prefill fidelity gate (docs/completed/task-prefill-gap.md §3: a backend's fast/batched prefill
+// Test-only hooks for the prefill fidelity gate ( a backend's fast/batched prefill
 // vs its own exact path) and the peer-benchmark fidelity column (goinfer vs a
 // peer engine). Both want the same teacher-forced top-1 agreement and KL scorer, so it is written once here. They gate
 // correctness and quality, not production inference, so they stay off the public API surface.
@@ -192,7 +192,7 @@ func KLDivergenceForTest(pLogits, qLogits []float32) float64 {
 }
 
 // PrefillGateProseFiles are real prose documents from this repo, read at run time, for content-dependent prefill
-// fidelity (not scripts/prompts.json's word-repetition filler, which docs/completed/task-prefill-gap.md §0 rules out
+// fidelity (not scripts/prompts.json's word-repetition filler, which  rules out
 // for that). Each encodes to well over 3900 tokens, so no prompt repeats to reach the deepest K. Paths are relative to a
 // package directory one level under the repo root, so the decoder and metal test packages resolve the same list: the
 // CPU reference (decoder/prefill_ref_gen_test.go) and the Metal arms (metal/prefill_gate_test.go) score the same ten
@@ -304,7 +304,7 @@ func PrefillGateProseIDsForTest(t *testing.T, tk *tokenizer.Tokenizer, f string,
 	return ids
 }
 
-// WritePrefillReferenceForTest serializes the CPU f32-activation reference (docs/completed/task-prefill-gap.md §3.1)
+// WritePrefillReferenceForTest serializes the CPU f32-activation reference
 // for a cross-process read by ReadPrefillReferenceForTest: the CPU-only phase (decoder/prefill_ref_gen_test.go) writes
 // it and the Metal phase (metal/prefill_gate_ref_test.go) scores both arms against it. Layout, little-endian: int32
 // vocab, int32 continuationN, seedLogits [vocab]float32, refTokens [continuationN]int32, then continuationN rows of
@@ -384,7 +384,7 @@ func ReadPrefillReferenceForTest(path string) (seedLogits []float32, refTokens [
 	return seedLogits, refTokens, refLogits, nil
 }
 
-// W8F3Ref is the CPU f32 reference for the metal W8 F3′ gate (docs/completed/task-metal-int8-2026-10.md): the 8 prompts,
+// W8F3Ref is the CPU f32 reference for the metal W8 F3′ gate: the 8 prompts,
 // the f32 model's greedy continuation (the tokens every arm is teacher-forced on) and its logits at every position.
 // TestW8F3Reference_write writes it where the f32 model fits; metal's TestW8Native_F3amended_closerToF32 reads it
 // through GOINFER_W8_F3_REF_IN.

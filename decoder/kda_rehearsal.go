@@ -2,8 +2,8 @@ package decoder
 
 import "math"
 
-// KDA (Kimi Delta Attention) recurrence for the linear-attention mixer of Ling-3.0-tiny / Kimi K3
-// (docs/completed/task-families-2026-09.md, F4). It began as a rehearsal that proved the one new piece of KDA's math
+// KDA (Kimi Delta Attention) recurrence for the linear-attention mixer of Ling-3.0-tiny / Kimi K3.
+// It began as a rehearsal that proved the one new piece of KDA's math
 // against a real reference; kdaMixerStep (kda.go, run by the program walker's opKDA for bailing_hybrid) now reuses
 // kdaLowerBoundGate and kdaRecurrentStep directly, so this is production code.
 //

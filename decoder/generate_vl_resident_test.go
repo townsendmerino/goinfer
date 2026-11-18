@@ -154,7 +154,7 @@ func TestGenerateVL_residentBusyDeclinesToCPU(t *testing.T) {
 	}
 }
 
-// TestGenerateVL_residentConcurrencyRace is the regression guard for V-11's bug shape (docs/completed/review-2026-09-04.md): a
+// TestGenerateVL_residentConcurrencyRace is the regression guard for V-11's bug shape: a
 // resident-touching plain Generate and a resident-touching GenerateVL running concurrently on the SAME *Model must not
 // corrupt resIDs or double-claim resBusy. Run with -race.
 func TestGenerateVL_residentConcurrencyRace(t *testing.T) {

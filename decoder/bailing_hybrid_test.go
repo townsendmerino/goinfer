@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// Bailing Hybrid parity (G5, docs/completed/task-families-2026-09.md; inclusionAI Ling 3.0, model_type
+// Bailing Hybrid parity (G5; inclusionAI Ling 3.0, model_type
 // "bailing_hybrid"): DeepSeek-style Multi-head Latent Attention alternating with Kimi Delta Attention (KDA),
 // every layer_group_size-th layer being MLA, over a DeepSeekMoE FFN. MLA and the MoE router compose the existing
 // deepseekArchitecture primitives (two parameterized naming departures: both mixers are self.attention, and

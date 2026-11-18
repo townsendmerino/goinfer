@@ -82,8 +82,7 @@ func planAgreement(t *testing.T, verdict planVerdict) (diffs []string, cells, no
 	return diffs, cells, noModel
 }
 
-// TestPlanAgreesWithAdmission holds Plan's eligibility to the decoder's admission on every census cell (SB2,
-// docs/completed/task-subsystems-2026-10.md, "SB2 — Plan asks Admit"), and shows the comparison goes red on the verdict Plan used
+// TestPlanAgreesWithAdmission holds Plan's eligibility to the decoder's admission on every census cell, and shows the comparison goes red on the verdict Plan used
 // before it asked Admit.
 func TestPlanAgreesWithAdmission(t *testing.T) {
 	slowTest(t)
