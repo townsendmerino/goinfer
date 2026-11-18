@@ -17,8 +17,7 @@ import (
 	"time"
 )
 
-// `gate identity -giw bytes|logits <old-rev> <new-rev>`: identity through each revision's OWN transcode
-// (docs/completed/task-giw-v16-transcode-2026-10.md, T0).
+// `gate identity -giw bytes|logits <old-rev> <new-rev>`: identity through each revision's OWN transcode.
 //
 // Each revision builds its own cmd/prequant in its worktree and transcodes the shared source into a directory that
 // belongs to that revision and run.

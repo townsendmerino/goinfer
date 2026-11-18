@@ -42,8 +42,8 @@ func Resolve(ctx context.Context, spec string) (string, error) {
 	return path, nil
 }
 
-// Tokenizer loads the tokenizer for a model path, by extension: a .giw carries it in its tok half, a
-// .gguf in its own metadata, and anything else is an HF / SentencePiece directory.
+// Tokenizer loads the tokenizer for a model path, by extension: a .giw carries it in its tok half, a.
+// gguf in its own metadata, and anything else is an HF / SentencePiece directory.
 func Tokenizer(path string) (*tokenizer.Tokenizer, error) {
 	switch {
 	case strings.HasSuffix(path, ".giw"):
@@ -232,7 +232,7 @@ const (
 // (its Q4_K tensors are the .giw's kind 8). -stream-weights is refused at a quant weight paging cannot read (mem.QuantPages),
 // where it would bound nothing. A directory's sidecar keeps its
 // weights as mmap aliases rather than a heap copy, which on Metal's unified memory is the difference between the weights
-// counted once and counted twice (docs/completed/task-multimodal-support-2026-10.md, S18).
+// counted once and counted twice.
 func routeFor(src string, opts decoder.Options, directLoad bool) (sourceRoute, error) {
 	gguf := strings.HasSuffix(src, ".gguf")
 	if opts.StreamWeights && strings.HasSuffix(src, ".giw") {
@@ -324,7 +324,7 @@ func isDir(p string) bool {
 //     activation (OP6's default switch: docs/measurements/peer-vetted-2026-10-07-macbook.md, "M1 on main after #775: read");
 //   - int8int8 with per-32 activation scales anywhere else (WebGPU: no Q4_K kernel). Only CUDA
 //     residency implements per-group activation scales, so on WebGPU such a load declines to the
-//     CPU (decoder's actGroupResidentDecline; docs/completed/task-option-path-admission-2026-10.md §4.3), which
+//     CPU (decoder's actGroupResidentDecline), which
 //     honours the group.
 //
 // An explicit int8int8 gets per-32 too. An explicit int4/int4mix is honoured with a warning, because
@@ -350,7 +350,7 @@ func activationSafeQuant(src, quant string, group int, explicitQuant, backend st
 	return quant, group, fmt.Sprintf("warning: --quant %s quantizes activations to int8, and %s; expect degraded output (--quant int8int8 runs it with per-32 activation scales).", quant, why)
 }
 
-// loadGuarded is decoder.Load under S3's load-time swap tripwire (docs/completed/task-never-swap-2026-09.md).
+// loadGuarded is decoder.Load under S3's load-time swap tripwire.
 // A .gguf direct build and a .giw load observe Options.LoadAbort (the .giw loader's CRC pass and layer walk, and the resident build through
 // Model.LoadAbort), so both arm the watch; an HF-dir or streamed load arms nothing.
 func loadGuarded(path string, opts decoder.Options, advice string) (*decoder.Model, error) {

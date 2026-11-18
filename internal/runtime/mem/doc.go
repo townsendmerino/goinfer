@@ -41,6 +41,4 @@
 // Imports: the standard library only (TestImports).
 //
 // Test it: go test ./internal/runtime/mem/ (seconds; no model, no device). The census: go test ./decoder -run TestDecisionCensus.
-//
-// Plan and phases: docs/completed/task-subsystems-2026-10.md, Track MM.
 package mem
