@@ -715,9 +715,6 @@ func (s *buildState) newResident(planOnly bool, mp *memPlanRun) (*cudaResident, 
 	// report): the plan prices it as a fixed term, so the context it picks already leaves room for it, and the build adds no
 	// copy of its own. Plan-only, it is computed here, over the buffers just planned.
 	if planOnly {
-		if allocSlackOffForTest {
-			return nil, planOnlySlack(0) // the planted defect of TestBuildScratchAccounting_plantedDefect: a plan that prices no slack
-		}
 		return nil, planOnlySlack(packedAllocSlack([]any{hls, hlm}))
 	}
 	allocSlack := m.PlanSlack("cuda")
