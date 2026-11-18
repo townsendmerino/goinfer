@@ -72,7 +72,7 @@ func TestTokenText_reconstructs(t *testing.T) {
 	t.Logf("TokenText reconstruction verified on %d tokenizer(s)", exercised)
 }
 
-// TestTokenText_addedTokenIsVerbatimInByteLevelMode pins V-13 (docs/completed/review-2026-09-04.md):
+// TestTokenText_addedTokenIsVerbatimInByteLevelMode pins V-13:
 // TokenText's byte-level branch must not push added/special tokens through byteDecoder: their surface is
 // stored VERBATIM rather than byte-level-encoded (the category error N-24 fixed in decodeByteLevel,
 // tokenizer/bytelevel.go). A rune in U+0080–U+0143 in an added token's text (é, ü, ñ — any chat template

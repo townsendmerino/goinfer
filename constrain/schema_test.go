@@ -587,7 +587,7 @@ func TestSchemaFromStruct_namedEmbeddedIsNotPromoted(t *testing.T) {
 	}
 }
 
-// TestSchemaFromStruct_unexportedEmbedIsStillPromoted pins V-14 (docs/completed/review-2026-09-04.md):
+// TestSchemaFromStruct_unexportedEmbedIsStillPromoted pins V-14:
 // an anonymous field's reflect name IS its type name, so an embedded struct of UNEXPORTED type reads
 // f.IsExported()==false, and structSchema must not skip it on that check alone. encoding/json does not:
 // its own typeFields has the identical special case ("do not ignore embedded fields of unexported struct
