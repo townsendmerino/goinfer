@@ -44,7 +44,7 @@ rc=${PIPESTATUS[0]}
 # The verdict becomes a GitHub issue (red: open one or comment on the open one; green: close it). A failure here is reported, not fatal: the verdict is the job's.
 # Only main's run is the standing verdict: a run of another REV (a branch checked before it merges) files no issue and closes none.
 if [ "$REV" = "origin/main" ]; then
-  python3 "$SRC/scripts/cuda_device_suite_issue.py" --verdict-log "$LOG/verdict.log" --sha "$(git -C "$WT" rev-parse --short=8 HEAD)" 2>&1 | tee -a "$LOG/verdict.log.issue"
+  python3 "$SRC/scripts/cuda_device_suite_issue.py" --verdict-log "$LOG/verdict.log" --box nobara --backend cuda --sha "$(git -C "$WT" rev-parse --short=8 HEAD)" 2>&1 | tee -a "$LOG/verdict.log.issue"
 else
   echo "REV is $REV, not origin/main: no GitHub issue is filed or closed for this run" | tee -a "$LOG/verdict.log.issue"
 fi
