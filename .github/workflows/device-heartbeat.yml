@@ -1,0 +1,20 @@
+# Reads the device suites' run-completed heartbeats ("device-suite status: <box>" issues, rewritten by every completed run) and files
+# "device-suite heartbeat stale: <box>" when no completed run is newer than 36 h. A green device suite leaves no other trace.
+# scripts/device_suite_heartbeat.py; the box list is its --expect arguments.
+name: device-heartbeat
+on:
+  schedule:
+    - cron: '17 15 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: check the heartbeats
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B scripts/device_suite_heartbeat.py --expect nobara --expect mac

@@ -8,10 +8,10 @@ import (
 	"testing"
 )
 
-// TestMetal_gemmW8A8Fused pins the fused register kernels Metal's SigLIP tower uses (gpu/visionmetal: GEMMW8A8Bias for
+// TestMetal_gemmW8A8Fused pins the fused register kernels Metal's SigLIP tower uses (GEMMW8A8Bias for
 // fc1, GEMMW8A8BiasAdd for o-proj and fc2) against the plain register kernel (TestMetal_gemmW8A8Reg checks it against the
 // bounds-checked tiled one) plus the bias, and the residual, added on the host. Only the CUDA twins were tested; goinfer's
-// S3 found visionmetal right at the tiny tower's aligned shapes and wrong at SigLIP-so400m's (hidden 1152, MLP 4304,
+// S3 found the fused kernels right at the tiny tower's aligned shapes and wrong at SigLIP-so400m's (hidden 1152, MLP 4304,
 // 4096 patches), and the shapes here include those.
 func TestMetal_gemmW8A8Fused(t *testing.T) {
 	d, q, v := vitSetupM(t)

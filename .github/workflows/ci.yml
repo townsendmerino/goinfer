@@ -283,6 +283,9 @@ jobs:
         run: |
           python3 -B scripts/test_cuda_device_suite_issue.py
           python3 -B scripts/test_cuda_device_suite_queue.py
+          python3 -B scripts/test_gate_gpu_weekly_queue.py
+          python3 -B scripts/test_device_suite_heartbeat.py
+          python3 -B scripts/test_metal_device_suite.py
 
       # ci_docs_only.sh's rule 2 matches a read by the file's full path, not its basename: a docs commit adding a
       # docs/**/README.md or run.py is docs-only, while the root README.md and a docs file a test reads are code. Each case
@@ -407,24 +410,24 @@ jobs:
             grep -E '"Action":"(build-output|build-fail|fail)"' test.json | head -300
             exit 1
           }
-      # One of MM1's two census tests, on its own step: each takes minutes under -race, and the tail skips both. They keep
+      # MM1's census (the golden, then the in-process determinism check, which reuses its first build) on its own step: minutes under -race, and the tail skips both. They keep
       # -race because the census starts its own goroutines (parallelEach). PW2a, docs/completed/task-subsystems-2026-10.md §12.2.
       - name: census exists (zero-match guard)
         run: |
-          pattern='^TestDecisionCensus$'
+          pattern='^TestDecisionCensus$|^TestDecisionCensus_twoRunsAgree$'
           if ! listed=$(go test -list "$pattern" -tags goinfer_testhooks ./decoder/ 2>&1); then
             echo "::error::go test -list failed on ./decoder/: a build failure, not a missing test"
             echo "$listed"
             exit 1
           fi
           matched=$(echo "$listed" | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
-          if [ -z "$matched" ]; then
-            echo "::error::pattern '$pattern' matched NO test in ./decoder/ — renamed or deleted? the next step would silently run nothing"
+          if [ "$(echo "$matched" | grep -c .)" != 2 ]; then
+            echo "::error::pattern '$pattern' must match exactly 2 tests in ./decoder/ (renamed or deleted?); matched: $matched"
             exit 1
           fi
       - name: test (decoder census)
         id: census
-        run: go test -race -timeout 25m -tags goinfer_testhooks -json -run '^TestDecisionCensus$' ./decoder/ > test-census.json
+        run: go test -race -timeout 25m -tags goinfer_testhooks -json -run '^TestDecisionCensus$|^TestDecisionCensus_twoRunsAgree$' ./decoder/ > test-census.json
       - name: test summary (decoder census)
         if: always() && steps.census.outcome != 'skipped'
         run: |
@@ -651,7 +654,7 @@ jobs:
       # (measured: 562.0s package total minus the 14 named tests' own 534.6s).
       - name: test (decoder shard tail)
         id: test
-        run: go test -race -timeout 25m -tags goinfer_testhooks -json -skip 'TestSampleFromTopK_matchesFullPath|TestSample_DrawIdentity|TestEnvVars_docAndCodeAgree|TestTopFilterLogits_MatchesReference|TestSampleFromTopK_deviceRoundedZ|TestChunkedSoftmax_MatchesReference|TestTopK1_MatchesGreedy|TestGumbelDraw_edgeRows|TestChunkedSoftmax_MachineIndependent|TestGumbelDraw_largeVocabTailAndHead|TestGumbelDraw_equivalentToLegacyDistribution|TestGumbelDraw_goodnessOfFit|TestDistVectorHistMatchesSampler|TestChunkedSoftmax_ChunkBoundaryDraws|^TestDecisionCensus$|^TestDecisionCensus_secondProcess$' ./decoder/ > test.json
+        run: go test -race -timeout 25m -tags goinfer_testhooks -json -skip 'TestSampleFromTopK_matchesFullPath|TestSample_DrawIdentity|TestEnvVars_docAndCodeAgree|TestTopFilterLogits_MatchesReference|TestSampleFromTopK_deviceRoundedZ|TestChunkedSoftmax_MatchesReference|TestTopK1_MatchesGreedy|TestGumbelDraw_edgeRows|TestChunkedSoftmax_MachineIndependent|TestGumbelDraw_largeVocabTailAndHead|TestGumbelDraw_equivalentToLegacyDistribution|TestGumbelDraw_goodnessOfFit|TestDistVectorHistMatchesSampler|TestChunkedSoftmax_ChunkBoundaryDraws|^TestDecisionCensus$|^TestDecisionCensus_twoRunsAgree$|^TestDecisionCensus_secondProcess$' ./decoder/ > test.json
       - name: test summary
         if: always() && steps.test.outcome != 'skipped'
         run: |
@@ -960,7 +963,9 @@ jobs:
       - name: test
         # -timeout 25m kept from the -race era (the default is 10m PER PACKAGE; ./decoder was the
         # package that tripped it) -- generous now without the detector, but a hang still fails.
-        run: go test -timeout 25m -tags goinfer_testhooks ./...
+        # The two census determinism tests are skipped here, not silenced: twoRunsAgree runs in shard test-decoder-a and secondProcess in
+        # test-decoder-d. This lane still checks its own host class against its golden (TestDecisionCensus), one build instead of three.
+        run: go test -timeout 25m -tags goinfer_testhooks -skip '^TestDecisionCensus_(twoRunsAgree|secondProcess)$' ./...
       # MM10: when anything above is red, take this host class's decision census golden as the job's artifact, so a class can be
       # taken from CI instead of from a person's machine. The file is rewritten only in this runner's checkout and only the changed
       # one is uploaded; nothing is committed. Download it into testdata/census/ and review the diff.
@@ -1002,7 +1007,9 @@ jobs:
       - name: build
         run: go build ./...
       - name: test
-        run: go test -timeout 30m -tags goinfer_testhooks ./...
+        # The two census determinism tests are skipped here, not silenced: twoRunsAgree runs in shard test-decoder-a and secondProcess in
+        # test-decoder-d. This lane still checks its own host class against its golden (TestDecisionCensus), one build instead of three.
+        run: go test -timeout 30m -tags goinfer_testhooks -skip '^TestDecisionCensus_(twoRunsAgree|secondProcess)$' ./...
 
   # H1.1's missing half (docs/completed/task-hardware-coverage-2026-10.md): the release ships windows-arm64 binaries, and until this job nothing had built or run one. GitHub's windows-11-arm runner is free and unlimited
   # for public repositories (Azure Cobalt 100, 4 CPUs, 16 GB). aikit cannot detect DotProd on a non-Linux, non-Darwin arm64 OS (dotprod_arm64_other.go assumes none), so this job runs the base SMULL/SADALP kernels
@@ -1027,7 +1034,9 @@ jobs:
       - name: build
         run: go build ./...
       - name: test
-        run: go test -timeout 30m -tags goinfer_testhooks ./...
+        # The two census determinism tests are skipped here, not silenced: twoRunsAgree runs in shard test-decoder-a and secondProcess in
+        # test-decoder-d. This lane still checks its own host class against its golden (TestDecisionCensus), one build instead of three.
+        run: go test -timeout 30m -tags goinfer_testhooks -skip '^TestDecisionCensus_(twoRunsAgree|secondProcess)$' ./...
 
   root-linux-arm64:
     needs: changes
@@ -1057,7 +1066,9 @@ jobs:
       - name: build
         run: go build ./...
       - name: test
-        run: go test -timeout 30m -tags goinfer_testhooks ./...
+        # The two census determinism tests are skipped here, not silenced: twoRunsAgree runs in shard test-decoder-a and secondProcess in
+        # test-decoder-d. This lane still checks its own host class against its golden (TestDecisionCensus), one build instead of three.
+        run: go test -timeout 30m -tags goinfer_testhooks -skip '^TestDecisionCensus_(twoRunsAgree|secondProcess)$' ./...
       # MM10: when anything above is red, take this host class's decision census golden as the job's artifact, so a class can be
       # taken from CI instead of from a person's machine. The file is rewritten only in this runner's checkout and only the changed
       # one is uploaded; nothing is committed. Download it into testdata/census/ and review the diff.

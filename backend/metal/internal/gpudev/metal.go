@@ -1176,7 +1176,7 @@ func (q Queue) Run1DBatchTG(p Pipeline, n, tg, reps, tgBytes int, bufs ...Buffer
 	// Consumers that already pin are unaffected: LockOSThread nests. Missed here
 	// originally — every sibling helper (Run1D, Run2D, Run1DBatch) pins; this one
 	// didn't, and Run1DTG delegates straight to it (goinfer audit-metal-2026-09-12.md
-	// C-05; qwenmetal.ForwardViT's own caller-side pin masked it in production).
+	// C-05).
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 

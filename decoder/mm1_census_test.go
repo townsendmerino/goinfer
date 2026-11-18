@@ -309,19 +309,11 @@ func d1Line(f fitCheck) string {
 		f.availBytes, d1Outcome(f), pin, f.known(), f.need(), f.budget(), f.ratio(), line, f.arithmetic())
 }
 
-// TestDecisionCensus records the census and holds it to the golden for this host class (G-MM1-C1 to C3).
+// TestDecisionCensus records the census and holds it to the golden for this host class (G-MM1-C1, C3). Determinism is
+// TestDecisionCensus_twoRunsAgree's (C2) and TestDecisionCensus_secondProcess's, so a lane that checks each host class
+// against its golden pays for one build.
 func TestDecisionCensus(t *testing.T) {
 	c1 := buildCensus(t)
-	c2 := buildCensus(t)
-	if c1.total() != c2.total() {
-		var diff []string
-		for k, v := range c1.groups {
-			if w := c2.groups[k]; w != v && len(diff) < 3 {
-				diff = append(diff, fmt.Sprintf("%s\n  first:  %.600s\n  second: %.600s", k, v, w))
-			}
-		}
-		t.Fatalf("two runs in one process differ (G-MM1-C2): %s, %s\n%s", c1.total(), c2.total(), strings.Join(diff, "\n"))
-	}
 	censusTotalHere = c1.total()
 	checkCensusCoverage(t, c1)
 	class := censusHostClass()
@@ -365,9 +357,32 @@ func TestDecisionCensus(t *testing.T) {
 		len(diffs), strings.Join(diffs[:min(len(diffs), 40)], "\n  "))
 }
 
-// censusTotalHere is the total of the census TestDecisionCensus built in this process, once it has. A whole-package run has both tests in
-// one process, so the second need not pay for a third build; a census is minutes on CI's slower hosts.
+// censusTotalHere is the total of the census TestDecisionCensus built in this process, once it has. A whole-package run has all three
+// census tests in one process, so the others need not pay for their own first build; a census is minutes on CI's slower hosts.
 var censusTotalHere string
+
+// TestDecisionCensus_twoRunsAgree (G-MM1-C2) builds the census a second time in this process and requires the first's total. Run alone it
+// builds both; after TestDecisionCensus it builds one. The OS lanes skip it: the Linux shard that runs it names it in ci.yml.
+func TestDecisionCensus_twoRunsAgree(t *testing.T) {
+	first, ref := censusTotalHere, (*census)(nil)
+	if first == "" {
+		ref = buildCensus(t)
+		first = ref.total()
+	}
+	c2 := buildCensus(t)
+	if first == c2.total() {
+		return
+	}
+	var diff []string
+	if ref != nil {
+		for k, v := range ref.groups {
+			if w := c2.groups[k]; w != v && len(diff) < 3 {
+				diff = append(diff, fmt.Sprintf("%s\n  first:  %.600s\n  second: %.600s", k, v, w))
+			}
+		}
+	}
+	t.Fatalf("two runs in one process differ (G-MM1-C2): %s, %s\n%s", first, c2.total(), strings.Join(diff, "\n"))
+}
 
 // TestDecisionCensus_secondProcess (G-MM1-C2) runs the census in a fresh process and requires the same total as this one.
 func TestDecisionCensus_secondProcess(t *testing.T) {

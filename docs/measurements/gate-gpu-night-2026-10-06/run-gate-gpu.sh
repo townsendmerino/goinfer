@@ -32,7 +32,9 @@ EXC="$LOG/untracked-fixtures.exclude"
 fixtures=$(bash "$SRC/scripts/worktree_fixtures.sh" "$SRC" "$WT" "$EXC") || { echo "FATAL: placing the fixtures: $fixtures"; exit 2; }
 cd "$WT" || exit 2
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.excludesFile GIT_CONFIG_VALUE_0="$EXC"
-go work init . ./gpu ./cuda ./metal ./demo/agent || { echo "FATAL: go work init"; exit 2; }
+# Layout Tier 2 moved the backends under backend/; a REV from before the move still has them at the root.
+if [ -d backend/cuda ]; then WG=backend/webgpu; BK=backend/cuda; MT=backend/metal; else WG=gpu; BK=cuda; MT=metal; fi
+go work init . "./$WG" "./$BK" "./$MT" ./demo/agent || { echo "FATAL: go work init"; exit 2; }
 { echo "rev:      $(git rev-parse HEAD) ($REV)"; echo "started:  $(date '+%F %T %Z')"; echo "fixtures: $fixtures"
   echo "go:       $(go version)"; echo "gpu:      $(nvidia-smi --query-gpu=name,driver_version,memory.used --format=csv,noheader)"
   echo "heavy:    $([ -n "${GOINFER_GATE_SKIP_HEAVY:-}" ] && echo SKIPPED || echo on)"; } | tee "$LOG/provenance.txt"

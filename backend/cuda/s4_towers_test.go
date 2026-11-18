@@ -19,9 +19,8 @@ import (
 // G-S4q of docs/completed/task-multimodal-support-2026-10.md (S4), the CUDA twin of metal/s3_towers_test.go (G-S3a). It grades
 // whatever EnableResident attaches, which is goinfer's own Qwen2.5-VL tower (qwen25_vision.go; aikit's gpu/qwencuda is no
 // longer imported), against aikit's CPU tower, f32 on both sides, every output token at cosine >= 0.9999; 0.999-0.9999 is
-// ambiguous (parked). aikit's CUDA SigLIP tower (gpu/visioncuda) is read in cuda/s4siglip, a package of its own, because
-// inside package cuda goinfer's own SigLIP tower (cuda/vision_register.go) registers last and wins the global hook; that
-// read is information for the aikit defect report, not a gate. The tiny towers always; the real ones (~/models, never the
+// ambiguous (parked). aikit's CUDA SigLIP tower (gpu/visioncuda) is not read here: inside package cuda
+// goinfer's own SigLIP tower (cuda/vision_register.go) registers last and wins the global hook. The tiny towers always; the real ones (~/models, never the
 // archive) under GOINFER_HEAVY_TESTS=1, on the four images F2a uses. Times are exploratory.
 
 // s4Worst is the lowest per-token cosine between got and want, both [tokens x width] row-major (the grading helper of metal/grid_vision_test.go gvWorst).

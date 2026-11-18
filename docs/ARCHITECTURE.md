@@ -310,9 +310,10 @@ Vision in, text out, and on serve only (`--vision`).
 - **Splicing.** The image's embeddings go into the prompt at its placeholder tokens (`GenerateVL`,
   `GenerateQwenVL` with m-RoPE positions, `GenerateGemma4VL`). The text decoder is unchanged.
 - **Qwen3-VL** loads as a text-only decoder, and a `mistral3` checkpoint's tower is ignored.
-- **Where towers run.** Resident vision towers live in `backend/cuda/internal/{qwencuda,visioncuda}` and
-  `backend/metal/internal/{qwenmetal,visionmetal}` (plus SigLIP on WebGPU via `vision.RegisterResident`); the other towers run
-  on the CPU.
+- **Where towers run.** Each backend's resident towers are its own, registered through `vision.RegisterResident` and
+  `vision.RegisterQwenResident`: on CUDA, `backend/cuda/tower_base.go` with `vision_register.go`, `siglip_vision.go`,
+  `qwen25_vision.go`, `grid_vision.go` and `gemma4_vision.go`; on Metal, `backend/metal/vl_towers.go`, `grid_vision.go` and
+  `gemma4_vision.go`; SigLIP on WebGPU. aikit's own GPU towers are not imported. The other towers run on the CPU.
 - **Where the decode runs after the image.** Resident for Gemma 3, Qwen2.5-VL and Gemma 4 26B/31B (the CPU's
   image-block prefill is uploaded with `UploadKV`; CUDA also prefills the image resident), and for GLM-OCR on CUDA.
   **Not resident:** Qwen3.5+ (a recurrent family refuses every resident branch), Gemma 4 E2B/E4B, and GLM-OCR off CUDA.
@@ -1151,15 +1152,10 @@ Every import from one goinfer package to another, by repository-relative directo
 | `backend/cuda` | `backend/cuda/internal/fitdecide`, `backend/cuda/internal/gpudev`, `backend/cuda/internal/launchgeom`, `backend/cuda/internal/wpack`, `decoder`, `decoder/fit`, `internal/audio`, `internal/cost`, `internal/runtime/logs`, `internal/runtime/mem`, `internal/runtime/program`, `internal/runtime/sampling`, `internal/vision`, `multimodal` | `chat`, `embeddinggemma2`, `internal/app/loadflags`, `internal/clef`, `internal/diag/sb2census`, `internal/diag/towerid`, `internal/guard/memgate`, `internal/runtime/giw`, `internal/runtime/mem/probe`, `internal/runtime/modelload`, `internal/runtime/whisper`, `internal/wrappedupload`, `tokenizer` |
 | `backend/cuda/cmd/chat` | `backend/cuda`, `internal/app/chatapp` |  |
 | `backend/cuda/cmd/serve` | `backend/cuda`, `internal/app/serveapp` |  |
-| `backend/cuda/internal/qwencuda` | `backend/cuda/internal/gpudev`, `internal/runtime/mem`, `internal/vision` |  |
-| `backend/cuda/internal/visioncuda` | `backend/cuda/internal/gpudev`, `internal/runtime/mem`, `internal/vision` |  |
 | `backend/cuda/kernels` |  | `backend/cuda/internal/gpudev`, `backend/cuda/internal/launchgeom`, `backend/cuda/internal/wpack`, `internal/runtime/hybridattn`, `internal/runtime/mamba2`, `internal/runtime/mem`, `internal/runtime/sampling` |
-| `backend/cuda/s4siglip` |  | `backend/cuda/internal/visioncuda`, `internal/vision` |
 | `backend/metal` | `backend/metal/internal/gpudev`, `backend/metal/kernels`, `decoder`, `embeddinggemma2`, `internal/audio`, `internal/cost`, `internal/runtime/f16`, `internal/runtime/logs`, `internal/runtime/mem`, `internal/runtime/mem/probe`, `internal/runtime/program`, `internal/vision`, `multimodal` | `chat`, `constrain`, `decoder/fit`, `internal/app/loadflags`, `internal/confidence`, `internal/diag/sb2census`, `internal/diag/towerid`, `internal/fidelity`, `internal/guard/memgate`, `internal/runtime/giw`, `internal/runtime/modelload`, `internal/runtime/prequant`, `internal/wrappedupload`, `tokenizer` |
 | `backend/metal/cmd/chat` | `backend/metal`, `internal/app/chatapp` |  |
 | `backend/metal/cmd/serve` | `backend/metal`, `internal/app/serveapp` |  |
-| `backend/metal/internal/qwenmetal` | `backend/metal/internal/gpudev`, `internal/runtime/mem`, `internal/vision` |  |
-| `backend/metal/internal/visionmetal` | `backend/metal/internal/gpudev`, `internal/runtime/mem`, `internal/vision` |  |
 | `backend/metal/kernels` | `internal/runtime/f16` | `backend/metal/internal/gpudev`, `internal/runtime/hybridattn`, `internal/runtime/mamba2`, `internal/runtime/sampling` |
 | `backend/webgpu` | `backend/webgpu/internal/kernels`, `backend/webgpu/internal/kvdecl`, `decoder`, `internal/cost`, `internal/runtime/logs`, `internal/runtime/mem`, `internal/runtime/program` | `chat`, `decoder/fit`, `internal/diag/sb2census`, `internal/diag/towerid`, `internal/fidelity`, `internal/guard/memgate`, `internal/runtime/giw`, `internal/runtime/mem/probe`, `internal/vision`, `internal/wrappedupload`, `multimodal`, `tokenizer` |
 | `backend/webgpu/cmd/chat` | `backend/webgpu`, `internal/app/chatapp` |  |
