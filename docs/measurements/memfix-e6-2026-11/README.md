@@ -38,9 +38,21 @@ layer, once the config gives the layer count, and the staging blocks (`packStage
 prices. The guard asks again after it reads the config, so the packed layer is in the figure it uses. Both copies of the formula
 (`backend/cuda/builddemand.go:buildDemand` and `decoder/builddemand.go:defaultCUDABuildDemand`) move together.
 
-The guard on this tree (`guard-terms-after.txt`): the build term is now 13.2 + 12.0 + 0.4 + 0.1 = 25.7 GB for the 26B, below the
-weights + source term, which now binds: 28.9 GB (26B) and 22.3 GB (gpt-oss). `VmHWM` reads 0.2 and 0.08 GiB above those, the
-Go heap slack this guard has never priced.
+### The margin, in one unit (GiB = 2^30, the guard's own "GB"; exact bytes from `decoder.FitQuery` and `/proc`)
+
+| | need before | need after (the max of the guard's terms) | measured `VmHWM` | margin before | **margin after** |
+|---|---|---|---|---|---|
+| Gemma-4-26B | 38.406 | 28.864 (weights 13.221 + source 15.643) | 29.094 | +9.312 | **−0.231 (0.79% under the peak)** |
+| gpt-oss-20b | 31.969 | 22.257 (weights 10.979 + source 11.278) | 22.383 | +9.586 | **−0.126 (0.56% under)** |
+
+After the correction the build term (weights + pinned experts + one packed layer + staging: 25.7 GiB on the 26B) is below the weights
++ source term, which binds. **The priced need is then below the measured high-water mark, by 0.231 and 0.126 GiB.** The gap is
+anonymous memory beyond the priced weights: RssAnon peaked at 13.589 GiB against 13.221 priced (+0.368, 2.8% of the weights) and 11.223
+against 10.979 (+0.244, 2.2%), while the mapped source's resident pages read slightly under the file (15.485 against 15.643; 11.223
+against 11.278). That is Go heap and runtime slack, which this guard has never priced, and it is smaller than the "about 9%" the old
+comment carried, which was measured when the build still held a packed copy. The shortfall belongs to the weights + source term,
+which priced these loads the same way before; the over-priced build term hid it. The guard compares the need against 70% of available
+memory, so these loads still sit 30% inside what is free, but the need itself is not an upper bound on the process.
 
 **This loosens what the host guard admits** by about 9.5 GB on these two loads (the 26B's need goes 38.4 → 28.9 GB, gpt-oss's
 32.0 → 22.3). No threshold, fraction or margin moves; it is a priced term corrected to what the process holds. A host that
