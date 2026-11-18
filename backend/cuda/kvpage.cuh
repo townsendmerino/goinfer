@@ -1,4 +1,4 @@
-// kvpage.cuh — paged KV addressing (docs/tasks/task-kv-architecture-2026-10.md §5.3).
+// kvpage.cuh — paged KV addressing.
 //
 // A resident layer's K and V live in a pool of 64-row blocks, [numBlocks][64][kvDim]. A sequence's table names, for each 64 positions
 // of it, the pool block that holds them; entry 0 is the zero-filled null block, so a released or unused entry reads zeros, never

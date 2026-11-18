@@ -215,7 +215,7 @@ extern "C" __global__ void splitkv_vsum_ragged(
 
 // ---------------------------------------------------------------------------------------------
 // FLASH-DECODE V-SUM SPIKE — OPT-IN, and deliberately NOT bit-identical.
-// docs/scoping-decode-tree-recanon.md §6 is the decision rule this exists to feed.
+// The decision rule this exists to feed is in a private scoping note.
 //
 // splitkv_vsum above is pinned at nH*hd threads BY the bit-identity constraint: each output dim's
 // fold must stay whole and in ascending s. ncu on D7 @8000 measured it at 9.09% occupancy and

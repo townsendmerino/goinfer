@@ -1,6 +1,6 @@
 # What the backends take from `decoder`, and what could move to a leaf
 
-Row **SUB1** of `docs/tasks/task-forward-and-memory-2026-11.md` (the question that closes it: which `decoder` names could a leaf package own so a backend stops importing the 55,000-line loader).
+Row **SUB1** of a private task doc (the question that closes it: which `decoder` names could a leaf package own so a backend stops importing the 55,000-line loader).
 
 **Since this scan.** SUB1's cleanup retires the old `Resident*` micro-interfaces from the exported surface in tiers (`docs/sub1-resident-interfaces.md`); names in the table below that it retired are no longer `decoder.X`.
 

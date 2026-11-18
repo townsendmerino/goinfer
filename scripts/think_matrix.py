@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Client matrix for thinking on the wire (docs/tasks/task-qwen35-think-prompt-2026-09.md).
+"""Client matrix for thinking on the wire.
 
     python3 scripts/think_matrix.py --url http://127.0.0.1:8099 [--model NAME] [--max 200] [--json OUT]
 

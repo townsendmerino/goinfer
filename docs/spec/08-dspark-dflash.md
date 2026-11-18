@@ -1,7 +1,7 @@
 # 08 — DSpark / DFlash block drafters
 
 > Status: **proposal — not built** (cut 2026-08-15, queued as **P10** in
-> [queue-performance](../queue-performance.md)). This is the α lever
+> queue-performance). This is the α lever
 > [05](./05-eagle3-head.md)/[06](./06-acceptance-analysis.md) named, arriving pretrained:
 > block drafters whose draft cost is per-*block* instead of per-token, with published
 > acceptance far above EAGLE's measured ~1.6 tok/verify. Depends on
@@ -344,7 +344,7 @@ and we import no Python either way. Record the decision in the PR as 05 did.
    `LICENSE` are `DeepSeek-V4-{Flash,Pro}-DSpark` at **166.9 GB / 892.8 GB**, which are full-size
    V4 models rather than standalone drafters. Increment 1's own summary said the 8b/14b were
    MIT; that was an artifact of the HF *list* endpoint, which reports `license=None` for every
-   repo including the two that really are MIT — corrected in `queue-performance.md`. **No weights
+   repo including the two that really are MIT — corrected in a private queue. **No weights
    were downloaded.**
 
    **What replaced the weights, and why it is stronger than a skim.** mlx-dspark's `NOTICE`
@@ -809,7 +809,7 @@ they line up with the performance problem gate 3 exposed.
 (2026-08-15) — the `dspark_*_block7` drafters are in scope for the spike. Filing one upstream
 issue is still worth it (DeepSpec is MIT and lists these as releases — likely an oversight),
 but that is for eventual distribution/ship, not a blocker on exploring. Draft issue kept at
-`docs/tasks/parked/dspark-license-issue.md`. The apache-2.0 PARO family in the same org remains a
+a private task doc. The apache-2.0 PARO family in the same org remains a
 cleanly-licensed fallback.
 
 **Sequencing — explore DSpark first.** (1) Reframe against routed economics (free);
@@ -823,7 +823,7 @@ projection before committing either trunk.
 
 **Autoresearch tie-in:** the confidence-head threshold + block length are a bounded search
 with a clean metric (blended tok/s) and the airtight lossless gate 1 — an E9 target
-([task-autoresearch-loop](../tasks/task-autoresearch-loop.md)) once the DSpark path runs.
+(task-autoresearch-loop) once the DSpark path runs.
 
 ### DSpark RE-PRICED against the corrected build cost (2026-08-15)
 

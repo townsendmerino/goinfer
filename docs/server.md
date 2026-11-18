@@ -507,7 +507,7 @@ block is the last thing in it, its tag is `json` or absent, it holds a single ob
 `arguments` validate against that tool's schema (required properties present, declared types and enums, `additionalProperties: false`). The text before the fence is the call's `content`. A reply that
 does not meet all of it is prose exactly as before: a second block, an explanation after the fence, another language tag, a missing required argument, an unsupplied tool. **It cannot tell a shown call
 from a meant one when a demonstration ends on a single valid call**, which is why it is off by default: use it with an agent whose client confirms before it edits or runs anything. Other families
-and requests without the flag are unchanged. The rule and its pre-registered cases are in `chat/fenced_tool_call_test.go`; the open question is `docs/queue-correctness.md` G39.
+and requests without the flag are unchanged. The rule and its pre-registered cases are in `chat/fenced_tool_call_test.go`; the open question is a private queue G39.
 
 The `messages` array accepts **only `user` and `assistant`**, as upstream does; any
 other role is a `400 invalid_request_error` naming the offending role. In particular
@@ -717,7 +717,7 @@ sent. Outside a shared scope only a continuation reuses rows: a request whose pr
 giving up less than one 64-token block of it. **Known limit:** a client that already knows all but the last 63 tokens
 of another conversation can learn from its time to first token how far its guess matched. It learns nothing about a
 conversation it cannot already reproduce up to that tail. API keys do not remove this limit: a continuation is
-recognised by its tokens, not by who sent it. The design is `tasks/task-kv-architecture-2026-10.md` §5.15.
+recognised by its tokens, not by who sent it. The design is a private task doc.
 - **On WebGPU**, each slot is the full f32 KV at the resident context (~0.94 GB for Qwen2.5-1.5B at the default 16k).
   WebGPU has no free-memory query. On a Mac, slots are clamped to 70% of RAM and to what was available before the
   build, and **slots come before context there as on CUDA** (owner decision 2026-09-27): when `--ctx` is not set, the

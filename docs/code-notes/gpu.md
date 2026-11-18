@@ -1577,7 +1577,7 @@ Moved from `backend/webgpu/residency.go` (the comment above `residentDecoder.Ver
 ```text
 VerifyPath (decoder.VerifyPathReporter) reports whether this resident's ForwardN executes a
 batched pass whose marginal per-node cost approaches zero, or a sequential one whose marginal
-cost approaches a full extra step. P22 (docs/queue-performance.md): before this, WebGPU
+cost approaches a full extra step. P22: before this, WebGPU
 implemented neither VerifyPathReporter nor PrefillPathReporter, so decoder.verifyTheta() fell
 through to thetaFor("webgpu")'s unmeasured 0.5 default — the same "worst available choice"
 defect Metal had (a smaller Theta drafts DEEPER, not shallower; spec_adaptive.go's Depth() is
@@ -3186,7 +3186,7 @@ Moved from `backend/webgpu/theta_ab_test.go` (the comment above `TestWebGPUTheta
 TestWebGPUThetaAB — does wiring the MEASURED Theta actually make WebGPU speculative decode
 faster (or at least no worse)?
 
-Theta was reachable only as 0.5 on this backend (P22, docs/queue-performance.md): WebGPU's
+Theta was reachable only as 0.5 on this backend: WebGPU's
 residentDecoder implemented neither VerifyPathReporter nor PrefillPathReporter, so
 decoder.verifyTheta() fell through to the unmeasured default. Theta actually measures
 0.978-1.028 (backend/webgpu/theta_probe_test.go) — ForwardN's single-submit structure does not make the
@@ -3212,7 +3212,7 @@ WHY THIS EXISTS. decoder/spec_adaptive.go says Theta "is the relative cost of on
 node on *this backend* — measure it", ships 0.5 as the batched-CPU value, and CPU/CUDA/Metal
 have each had a real probe since (decoder/theta_probe_test.go, backend/cuda/theta_probe_test.go,
 backend/metal/theta_probe_test.go — docs/measurements/theta-per-backend-2026-09-01.md,
-theta-cuda-ab-2026-09-01.md) — P22 (docs/queue-performance.md) named WebGPU as the one backend
+theta-cuda-ab-2026-09-01.md) — P22 named WebGPU as the one backend
 still falling through to the unmeasured 0.5 default, filed open rather than assumed either way.
 The Metal probe found the domain check itself excluded Metal's real value (1.00–1.05) and
 silently substituted 0.5 — the WORST available choice, since a smaller Theta drafts deeper, not

@@ -1307,7 +1307,6 @@ cache geometry (§B5: **24.0 KB/position** on the 0.5B, **56.0 KB/position** on 
 **goinfer moves KV at 6–10% of peak bandwidth at depth**, and **Ollama is ~3.2× faster reading
 identical bytes.** Whatever bounds deep decode here, it is not DRAM traffic — which is why a
 byte-count reduction (KV quantization) cannot be the CUDA speed lever; see P4 in
-`docs/plan-still-slow.md`.
 
 *The competing read model is ruled out, not waved away.* If each GQA query head re-read its own KV
 head's bytes (×7 on the 0.5B, ×6 on the 1.5B), Ollama would sit at **147–190% of peak — physically

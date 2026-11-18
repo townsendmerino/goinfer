@@ -2,7 +2,7 @@
 """Pin a tiny-random GLM-OCR text decoder (model_type "glm_ocr" / "glm_ocr_text") forward +
 greedy decode as a goinfer parity golden, and pin the pairwise m-RoPE rotation directly against
 HF's own cos/sin construction. The independent HF oracle for the glm_ocr family
-(docs/tasks/task-glm-ocr-2026-10.md, O1).
+.
 
 Builds a SMALL random GlmOcrForConditionalGeneration (transformers >= 5.12, the model class the
 real zai-org/GLM-OCR checkpoint uses) and writes:

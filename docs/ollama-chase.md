@@ -38,7 +38,6 @@ degrades (227 → 124). The decode crossover is ~1000 tokens. A1 coalescing + sp
 remaining long-context lever is a bit-identical flash-attention-style decode (the §A2 split-KV is the
 start; the arithmetic says parity is reachable but not yet built). **Execution method for this search:**
 an autonomous edit→bench→keep/revert loop over the gates is scoped in
-`docs/tasks/task-autoresearch-loop.md`
 (queue-engineering E9) — its primary target is this lever's fast-mode lane, since the exact-path
 bit-identical levers are largely exhausted (Campaign A ceiling).
 
@@ -307,7 +306,7 @@ The A1-reprofile refuted the KV-layout hypothesis (reads already coalesced) and 
 12 blocks on 40 SMs. The fix is parallelism over the *independent* axes, **not** a relayout and not
 FA's non-bit-exact online rescale. Full design + the associativity argument (why a contiguous
 key-split fails but a scores-over-keys / V-sum-over-dims split is byte-identical) in
-`docs/tasks/task-decode-splitkv-attention.md`. D4 confirmed Ollama does exactly this via flash attention.
+a private task doc. D4 confirmed Ollama does exactly this via flash attention.
 
 Built as a 3-kernel split (`decode_splitkv.cu`, own file): `splitkv_scores` (tile over keys),
 `splitkv_softmax` (exact 128-wide partition+tree → byte-identical max/denominator), `splitkv_vsum`
@@ -358,7 +357,7 @@ one bit-identical lever left — a **V-sum ILP unroll** — was **tried and REFU
 pipelines the scalar loop's independent loads, so a clean unroll landed 158 vs 160 (no gain) and a
 naive-indexed one regressed to 111. Pushing past ~160 needs a non-bit-identical reduction (the §7
 fork), which Campaign A does not take. The tiling primitive still stands to be shared with **B1**
-(prefill query-tiling). See `docs/tasks/task-decode-splitkv-attention.md`.
+(prefill query-tiling). See a private task doc.
 
 ### A2-old. KV cache layout (kept for the record) — *not indicated*
 
@@ -682,7 +681,7 @@ TTFT is 2.1 s, down from 13.1 s) and cannot reach parity.
 
 > **Superseded (2026-09-21, doc review).** "Banked / can't reach parity" below was overtaken by the L2/L3 prefill campaign: path (3), a tolerance-gated FlashAttention-style kernel, shipped as
 > `backend/cuda/attn_fused.cu` on 2026-09-05 (default ON above a 512-token floor; 1.70× end-to-end), with `gemm_w4a8_mma` beside it, taking CUDA prefill from 12–15× to **1.9–3.2× behind** Ollama.
-> The live owners are `docs/completed/red-october.md` R5 and `queue-performance.md` P24 (`attn_fused` at 1.72% of tensor peak). Kept as written, per this file's retraction discipline.
+> The live owners are `docs/completed/red-october.md` R5 and a private queue P24 (`attn_fused` at 1.72% of tensor peak). Kept as written, per this file's retraction discipline.
 
 Design-first (before writing the kernel) found the clean ~1.3× is **not bit-identical-buildable on
 Turing**: bit-identity pins the denom to the 128-strided tree ⇒ Bk=128, but a Bk=128 K-tile at hd=128 =
@@ -1198,7 +1197,7 @@ kernel.
   (AVX2/AVX-512, threaded) are **~4× goinfer's pure-Go path**, not because its split is cleverer.
 - **To close toward 24.5, two independent knobs, both outside this item:** (a) a **faster CPU
   kernel** — exactly the `cpubrrr` Q8_K integer-accumulation lane in
-  `plan-cpubrrr-steal-and-bindings.md`. That work was **built, proved bit-exact, and declined** on a
+  a private planning note. That work was **built, proved bit-exact, and declined** on a
   **Q6_K byte-ratio ceiling of 1.22×**, with the **Q4_K variant (ceiling 1.78×) explicitly left
   open** — declined at the time *because the CPU path did not matter*. **D5 is the reason it would
   matter.** (b) A **larger GPU fraction** (more VRAM — a card the model nearly fits).
@@ -1323,13 +1322,13 @@ the filtered path). Given-seed sampled output changed once, for both paths; dist
    and on real qwen2.5-coder-0.5b decode logits the gap is 5.29 nats at K=32 (**R/S_K = 366**), 8.97
    at K=256 (8.65), reaching 11.6 only at K=2048 (0.60) — where the interval still spans 60% so most
    draws straddle a boundary and grow again, each growth costing a full O(V) pass. Reverted; table in
-   `docs/plan-still-slow.md` P2.
+   a private planning note P2.
 2. **On-device sampling — BANKED, and no longer the finisher.** *(Superseded 2026-09-20 for filtered samplers on CUDA: see the R7 update at the top of D6 — the ~2% premise did not survive a post-P2b attribution.)* The host term is ~78% of the
    temperature-only penalty and the readback ~2% (measured 2026-08-09), and **P2b then took the host
    term down 3.06× at 152k / 4.72× at 262k** with deterministic parallel chunked normalization —
    host-only, no kernels. So on-device sampling now addresses the ~2% readback of an already-shrunk
    gap, at the cost of new kernels on two backends plus per-backend given-seed divergence (device
-   `exp` ≠ host `math.Exp` at ULP level). Re-scope and the number to beat: `docs/plan-still-slow.md` P3.
+   `exp` ≠ host `math.Exp` at ULP level). Re-scope and the number to beat: a private planning note P3.
 
 ### `top_k=1` should route to greedy — **DONE (P1, 2026-08-09)**
 
@@ -1373,7 +1372,7 @@ v0.10.3 established in `topFilterLogits`). It does, on both backends:
   confirmed green on the box 2026-08-09 (3.91 s — it loads the 0.5B, so it ran rather than skipped).
 - **Metal** — live greedy dispatches `gemv_w8a8_amax` + `argmax_finish`, both merging on
   `(v desc, i asc)` → lowest tied index. The `w4a8` fused amax is the N-09 variant and is unwired,
-  so it does not touch the live path (confirmed on the Mac, `docs/plan-still-slow.md` P0.3).
+  so it does not touch the live path (confirmed on the Mac, a private planning note P0.3).
 
 *Earlier revisions of this section called the tie-break an "open audit critical" and used it as the
 reason NOT to implement `top_k=1` routing. That text was written after the audit recorded the fix

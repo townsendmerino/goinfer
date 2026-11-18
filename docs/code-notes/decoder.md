@@ -1696,7 +1696,7 @@ ActQuantGroup selects per-group ACTIVATION quantization for the int8-activation 
 (int4 = W4A8, int8int8 = W8A8, int4mix): 0 (the default) scales each activation vector by one
 max/127, 32 gives every 32 inputs their own scale. A family with massive activation outliers
 (Phi-3: max/rms ~80-90) loses nearly the whole vector under one scale; per-32 keeps an outlier's
-damage inside its group (docs/tasks/task-actquant-pergroup-2026-09.md). Per model: two models in
+damage inside its group. Per model: two models in
 one process may differ. Honoured on the CPU and by CUDA residency; other resident backends
 decline to the CPU path when it is set.
 ```
@@ -2419,7 +2419,7 @@ the common case) — applied to opts here, before opts.ResidentContext is read a
 Moved from `decoder/model.go` (the comment in `Load`) on 2026-10-09.
 
 ```text
-L2 (docs/tasks/task-int4-layout-2026-09.md): a .giw bakes its int4 representation
+L2: a .giw bakes its int4 representation
 in at WRITE time (giwWriter.target), so unlike a GGUF/safetensors load —
 where wantsCanonicalInt4 decides needCanonical from THIS opts.Backend before
 a byte is quantized — the reader has to check the file's promise against
@@ -4859,7 +4859,7 @@ Moved from `decoder/registry.go` (the comment above `spark25Architecture`) on 20
 
 ```text
 spark25Architecture expresses Spark-X2.5 (model_type spark2_5; XHToken/Spark-X2.5-{1.7B,4B}).
-docs/tasks/task-spark-x2-5.md / docs/audit-2026-09-10.md L-06 scoped this from a survey-level
+a private task doc / docs/audit-2026-09-10.md L-06 scoped this from a survey-level
 summary; TWO of its claims did not survive reading the real configuration_spark.py /
 modeling_spark.py (fetched directly, trust_remote_code) and are corrected here:
 
@@ -7410,7 +7410,7 @@ cpu_tuning_{arm64,other}.go); GOINFER_W4A8_BATCH=0 opts out, =1 forces it on.
 
 History: parked by audit R-06 at 1.08x on the 1.5B against S-02's ≥1.15x ship bar (ambiguous), and a null on
 the M1 Pro's 7B (docs/measurements/w4a8-batch-7b-2026-09-20.md). Turned on for non-arm64 by owner
-decision 2026-09-27 under docs/tasks/task-cpu-decode-peer-gap-2026-09.md's L2 gates: logits
+decision 2026-09-27 under a private task doc's L2 gates: logits
 bit-identical on the real 0.5B/1.5B/7B, and on top of today's fused gate+up (so only q/k/v changes)
 paired ABBA 1.016x / 1.030x / 1.018x on the Ryzen 7 3700X, no size regressing.
 ```
@@ -7553,7 +7553,7 @@ Moved from `decoder/weightmat.go` (the comment above `GIWTarget`) on 2026-10-09.
 ```text
 GIWTarget names the single consumer a .giw bundle (or one cmd/prequant run) is
 built for, so the writer can choose the one on-disk int4 layout that consumer
-actually reads (docs/tasks/task-int4-layout-2026-09.md's L2 — the .giw analogue of
+actually reads (a private task doc's L2 — the .giw analogue of
 wantsCanonicalInt4's load-time decision). GIWTargetNone ("") means
 unknown/multi-consumer and always keeps every int4 tensor canonical (kind 3) —
 the safe default: a bundle nobody has promised to a single reader must stay
@@ -7718,7 +7718,7 @@ Moved from `decoder/weights.go` (the comment above `repackedOnlyInt4Count`) on 2
 ```text
 repackedOnlyInt4Count reports how many of w's matmulWeights() tensors are
 int4-resident with NO canonical bytes at all (IsInt4() true, Int4()'s ok
-false) — a kind-5 .giw tensor (docs/tasks/task-int4-layout-2026-09.md's L2), or (in
+false) — a kind-5 .giw tensor, or (in
 principle, never produced by any writer today) an in-RAM repacked-only build
 that somehow reached a .giw round-trip. Used by decoder.Load's .giw branch to
 refuse loading such a file under a backend that needs canonical bytes.
@@ -8246,7 +8246,7 @@ needsResidentSerialize list that routed families around this path is gone with i
 needCanonical=true unconditionally, regardless of target: the writer needs canonical bytes IN RAM
 to choose what to write (repackRow4ForEmit computes row4 from canonical), even on a cpu-arm64
 target that will write kind 5 (canonical-absent) to DISK — per layer, that is one layer's
-canonical bytes. See docs/tasks/task-int4-layout-2026-09.md's L2. abort=nil: this is the
+canonical bytes. See a private task doc's L2. abort=nil: this is the
 cmd/prequant transcode path, which observes ctx per layer via M-21's ctxWriter (S3 scopes the
 swap tripwire's load-time consumer to decoder.Load's resident build only — see Options.LoadAbort).
 ```
@@ -8509,8 +8509,8 @@ weightMat = uint8 kind (0 empty|1 f32|2 q8|3 q4|4 q4-row4|5 q4-row4-only); if
             still writes kind 3.
 
             kind 5 (v11+) is q4Row4Scales, q4Row4 ALONE — no canonical arrays at
-            all, the on-disk form of aikit audit M-22's repacked-only WeightMat
-            (docs/tasks/task-int4-layout-2026-09.md's L2). Chosen per tensor by
+            all, the on-disk form of aikit audit M-22's repacked-only WeightMat.
+            Chosen per tensor by
             giwWriter.target: only on a cpu-arm64 target, only for a tensor whose
             call site opted into kind-5 eligibility (weightMat, not
             weightMatKind3Only — see that function's doc for which tensors are
@@ -8604,7 +8604,7 @@ Moved from `decoder/serialize.go` (the comment above `SerializeWeightsForTarget`
 
 ```text
 SerializeWeightsForTarget is SerializeWeights for a bundle promised to ONE
-consumer (docs/tasks/task-int4-layout-2026-09.md's L2): on a cpu-arm64 target, every
+consumer: on a cpu-arm64 target, every
 eligible int4 tensor (see weightMat vs weightMatKind3Only) writes kind 5
 (row4-only — no canonical arrays at all) instead of kind 3; every other target,
 including GIWTargetNone, writes kind 3 for every int4 tensor exactly like
@@ -8750,7 +8750,7 @@ Moved from `decoder/serialize.go` (the comment above `giwWriter.weightMatKind3On
 weightMatKind3Only is weightMat for a tensor that must never take kind 5
 regardless of target — it always writes kind 3 (or, under the legacy row4
 opt-in, kind 4) for an int4 tensor. Two independent reasons land a call site
-here, per docs/tasks/task-int4-layout-2026-09.md's L2:
+here, per a private task doc's L2:
 
   - MoE-paged experts (l.Experts[*], gemma4's mo.expertsGateUp/expertsDown): the
     doc's ground rule — decoder/moepaging.go reads these off the mmap with no
@@ -8824,7 +8824,7 @@ nil-dereferenced in kdaMixerStep on the first KDA layer.
 Moved from `decoder/serialize.go` (the trailing comments on `giwVersion` and `giwMinReadV`, and the stray `// v3: ...` line above `maxSerializedLayers`) on 2026-10-09.
 
 ```text
-v15: every target — int4 kinds 3/4/5 store their group scales as binary16 (a u32 count + little-endian uint16 payload, 16-aligned like every array) instead of f32: aikit v1.50.0's in-RAM representation, so the reader aliases them as the WeightMat's storage (v12's scale aliasing, which converting at load had lost); kinds 6/7 keep their v14 layout and the reader takes their f16 block as the storage; a pre-v15 reader refuses the file via the version guard, a v15 reader converts an older file's f32 scales at load (the same rounding fresh quantization applies); v14: metal target only — every canonical group-32 int4 tensor also carries its group scales pre-converted to f16 (decoder.F16Bits, the kernels' own conversion), so a Metal no-copy buffer can alias them too: a kind-6 group gains an f16 block after its nibbles (members' scales back to back), and an eligible SINGLE int4 tensor is written as kind 7 (f32 scales, nibbles, f16 scales, each 16-aligned) — a distinct kind so a group's per-member fallback records can never be mistaken for group members; other targets still emit v12; v13: adds kind 6 — an int4 tensor whose nibbles live in a shared GROUP BLOCK after the group's headers, so the members' nibbles are ADJACENT in the file (a Metal fused QKV / gate|up buffer can then alias them, S6); written only for GIWTargetMetal, which is the only writer that emits version 13 (every other target still emits 12, so a pre-v13 reader keeps reading them); a pre-v13 reader refuses a v13 file via the version guard, a v13 reader still reads every older layout; v12: NO new kind — every weight-matrix payload array (int8 scales+codes, int4 scales+nibbles, row4 scales+row4 nibbles) is now preceded by zero padding so its bytes start 16-aligned relative to the blob start (giwAlignArray), which lets the reader ALIAS the group scales instead of copying them to the heap (docs/measurements/moe-pager-mode-darwin-2026-09-23.md, "Finding"); needs the v3 bundle header (blob at offset 64) to be aligned in the FILE; a pre-v12 reader refuses the file via the version guard, a v12 reader still reads every older layout; v11: no layout change to existing kinds — adds kind 5 (row4-only, docs/tasks/task-int4-layout-2026-09.md L2), gated on version so a pre-v11 reader refuses the file via the version guard rather than hitting an unknown kind byte; v10: a dense-granite bundle below it may hold llama.cpp-permuted q/k and is refused (audit C-05); v9: Bailing Hybrid's KDA mixer + MLA's optional attention-output gate — see the format comment above
+v15: every target — int4 kinds 3/4/5 store their group scales as binary16 (a u32 count + little-endian uint16 payload, 16-aligned like every array) instead of f32: aikit v1.50.0's in-RAM representation, so the reader aliases them as the WeightMat's storage (v12's scale aliasing, which converting at load had lost); kinds 6/7 keep their v14 layout and the reader takes their f16 block as the storage; a pre-v15 reader refuses the file via the version guard, a v15 reader converts an older file's f32 scales at load (the same rounding fresh quantization applies); v14: metal target only — every canonical group-32 int4 tensor also carries its group scales pre-converted to f16 (decoder.F16Bits, the kernels' own conversion), so a Metal no-copy buffer can alias them too: a kind-6 group gains an f16 block after its nibbles (members' scales back to back), and an eligible SINGLE int4 tensor is written as kind 7 (f32 scales, nibbles, f16 scales, each 16-aligned) — a distinct kind so a group's per-member fallback records can never be mistaken for group members; other targets still emit v12; v13: adds kind 6 — an int4 tensor whose nibbles live in a shared GROUP BLOCK after the group's headers, so the members' nibbles are ADJACENT in the file (a Metal fused QKV / gate|up buffer can then alias them, S6); written only for GIWTargetMetal, which is the only writer that emits version 13 (every other target still emits 12, so a pre-v13 reader keeps reading them); a pre-v13 reader refuses a v13 file via the version guard, a v13 reader still reads every older layout; v12: NO new kind — every weight-matrix payload array (int8 scales+codes, int4 scales+nibbles, row4 scales+row4 nibbles) is now preceded by zero padding so its bytes start 16-aligned relative to the blob start (giwAlignArray), which lets the reader ALIAS the group scales instead of copying them to the heap (docs/measurements/moe-pager-mode-darwin-2026-09-23.md, "Finding"); needs the v3 bundle header (blob at offset 64) to be aligned in the FILE; a pre-v12 reader refuses the file via the version guard, a v12 reader still reads every older layout; v11: no layout change to existing kinds — adds kind 5, gated on version so a pre-v11 reader refuses the file via the version guard rather than hitting an unknown kind byte; v10: a dense-granite bundle below it may hold llama.cpp-permuted q/k and is refused (audit C-05); v9: Bailing Hybrid's KDA mixer + MLA's optional attention-output gate — see the format comment above
 read v3/v4 too (each version only ADDS: v4 the gemma4-gated tail, v5 the quant-label field, v7 kind 4, v8 shortConv, v9 KDA/MLA-gate, v11 kind 5; older bundles stay valid and fall back to inference)
 ```
 
@@ -10623,7 +10623,7 @@ Moved from `decoder/fidelity_testhook.go` (the comment above `PrefillGateProseFi
 ```text
 PrefillGateProseFilesB is prompt set B (docs/completed/task-prefill-gap.md §4 L1's fresh-prompt decision
 run, 2026-09-09): ten more real repo documents, disjoint from set A above, each verified >3900
-tokens against S's own tokenizer (queue-correctness.md, the brief's own tenth candidate, was
+tokens against S's own tokenizer (a private queue, the brief's own tenth candidate, was
 dropped at 1571 tokens — task-gpu-paths-2026-09.md substitutes, at 48027). LIVE paths, same
 "resolves from decoder/ or metal/" convention as set A — but the gate itself reads the SNAPSHOT
 under testdata/prefill-gate-prose-b/ (see PrefillGatePromptSet), not these live paths, so a run
@@ -11515,7 +11515,7 @@ vs serial — and thr=0 shows no over-parallelize penalty, so it stays comfortab
 Moved from `decoder/deltanet_n.go` (the comment above `deltaNetCoreN`) on 2026-10-09.
 
 ```text
-P26c (docs/queue-performance.md). The batched Qwen3.5 forward (runLayersQwen35N) runs every projection as one matmul over the prompt, but then called
+P26c. The batched Qwen3.5 forward (runLayersQwen35N) runs every projection as one matmul over the prompt, but then called
 deltaNetCore once per token on ONE thread: on Qwen3.5-0.8B at int4 that was ~6.8 s of an 11 s, 684-token prefill (a CPU profile: deltaNetRecurrence
 ~4.9 s, the conv's SiLU ~2 s), while the matmuls it sits between ran on all 16 threads in about 2 s.
 
@@ -11568,7 +11568,7 @@ Moved from `decoder/cpu_tuning_other.go` (the comment above `w4a8BatchDefault`) 
 
 ```text
 w4a8BatchDefault: R-06's one fork/join for q/k/v (weightmat.go). Bit-identical; paired ABBA on top of the
-fused gate+up, Ryzen 7 3700X: 0.5B 1.016×, 1.5B 1.030×, 7B 1.018× (docs/tasks/task-cpu-decode-peer-gap-2026-09.md,
+fused gate+up, Ryzen 7 3700X: 0.5B 1.016×, 1.5B 1.030×, 7B 1.018× (a private task doc,
 L2; owner decision 2026-09-27). On.
 ```
 
@@ -11809,7 +11809,7 @@ Moved from `decoder/fidelity_testhook.go` (a comment block rewritten to the rule
 
 ```text
 Code added for docs/completed/task-prefill-gap.md §3's fidelity gate (a backend's fast/batched prefill
-vs its own exact/sequential path) and docs/tasks/task-peer-benchmarks.md §4's fidelity column
+vs its own exact/sequential path) and a private task doc's fidelity column
 (goinfer vs a peer engine) -- both want the same teacher-forced top-1 agreement and KL
 divergence scorer, so it is written once here rather than twice. Test-only hook (B-08): these
 gate correctness/quality, not production inference, so they stay off the public API surface.
@@ -12508,7 +12508,7 @@ hand-supplied calling convention.
 Moved from `decoder/a3_fanout_e2e_test.go` (the comment above `TestA3FanoutEndToEnd.depths`) on 2026-10-09.
 
 ```text
-8192 added 2026-09-23 (P23, docs/queue-performance.md): the doc's own text says
+8192 added 2026-09-23: the doc's own text says
 "K=8192 is NOT measured here and is deliberately not extrapolated to" — the trend across
 1024/2048/4096 is monotone but a fourth point is what actually answers whether it holds,
 keeps climbing, or plateaus/reverses at the depth the f32 flag's own headline uses.
@@ -13058,7 +13058,7 @@ Moved from `decoder/capability_matrix_test.go` (the comment above `recommendedCh
 ```text
 Not yet measured against `serve check`'s tools rows (R11 gate: never guessed). This
 checkpoint is multimodal (image-text-to-text); Gemma-4's tool template was a known
-partial (M-20, docs/tasks/task-embed-and-harness-ux.md §3.1) but that was fixed
+partial but that was fixed
 2026-09-02 (chat/gemma4_tools.go's gemmaValue/gemmaParseValue, byte-exact call_result) —
 the remaining reason to run this deliberately rather than infer it is simply that it is
 not yet measured, not a template gap.
@@ -14004,7 +14004,7 @@ against the real checkpoint (TestGPT2ResidentParity, min cosine 0.999) — not a
 declaration ahead of the evidence. gpt-oss's attention sink + clamped-SwiGLU MoE +
 custom router + YaRN rope mscale also landed (TestGptOssResidentParity, min cosine
 0.9989 on the tiny fixture) — FeatRopeMscale ALSO admits Mellum as a documented side
-effect (see docs/queue-correctness.md G10/G11): declared anyway on explicit user call,
+effect: declared anyway on explicit user call,
 Mellum's own real-weight Metal gate is tracked as G11, not yet landed. Gated-DeltaNet
 mixer + fused attn output gate (deltanet.go/deltanet_kernels.go) landed with its own
 end-to-end whole-model gate (TestQwen35ResidentParityMetal, qwen3_5-tiny: worst cosine
@@ -16126,7 +16126,7 @@ fallback, and it went red on its first execution. A dependency bump moved a
 numerics path with the one gate that watches it dark.
 
 RE-CAPTURED 2026-09-28 for L1's binary16 int4 group scales (aikit v1.50.0, and v1.50.1's
-bit-identical arm64 fix; docs/tasks/task-cpu-decode-peer-gap-2026-09.md). That change moves int4
+bit-identical arm64 fix; a private task doc). That change moves int4
 numerics by design, and was owner-approved on 2026-09-27. This golden was not re-baselined with it:
 only TestInt4_forwardParity was, and this one went red on arm64 at the merge (3cd62e6d passes,
 5c85f7c0 fails, drift at id 13). It was found the next day by a whole-package run. The evidence:
@@ -16281,7 +16281,7 @@ repo retracted twice on 2026-09-01.
 So this times the real forward with the flag on and off, paired and
 interleaved with alternating lead, at the depth the pre-registered rule names.
 
-PRE-REGISTERED DECISION RULE (docs/queue-performance.md P18, committed before
+PRE-REGISTERED DECISION RULE (a private queue P18, committed before
 this ran): fund if the net is >=15% end-to-end at K>=4096; park if <8%;
 8-15% is AMBIGUOUS and parks pending a second mechanism.
 ```
@@ -16362,7 +16362,7 @@ Mellum2 long-prefill profiler — the ATTENTION-vs-MoE-FFN split of a batched
 MoE prefill, at a chosen prompt length.
 
 WHY THIS EXISTS, and why the dense profile does not answer it. The K=8192
-profile quoted in queue-performance.md (`MatmulAVAcc64` 51.1%, `MatmulQKAcc64`
+profile quoted in a private queue (`MatmulAVAcc64` 51.1%, `MatmulQKAcc64`
 18.7%, ~70% attention) is a DENSE 1.5B. Two levers are live for long-context
 prefill and they attack different terms:
 
@@ -16876,7 +16876,7 @@ config before slicing rather than assumed.
 
 This is the DECODER-side gate: it proves goinfer's own CPU forward matches the HF f32
 reference on real weights. The Metal half (backend/metal/mellum_real_test.go) runs residentParity
-against the SAME slice; see docs/queue-correctness.md G11 for the handoff, including how
+against the SAME slice; see a private queue G11 for the handoff, including how
 to regenerate this slice bit-identically (it is 4 GB, so the checkpoint is gitignored and
 only the golden is tracked).
 
@@ -18100,7 +18100,7 @@ Moved from `decoder/qwen35_gguf_locate_test.go` (the comment at the top of the f
 
 ```text
 WHERE does the GGUF path diverge from the safetensors path? — the localizer for B13's last
-standing red (docs/queue-release.md; the v1.0 gate §1).
+standing red.
 
 THE QUESTION THIS ANSWERS, and why neither existing gate answers it.
 TestQwen35GGUF_vsSafetensors reports one number at the TOP of the stack (min cosine 0.987835
@@ -18134,7 +18134,7 @@ Moved from `decoder/qwen35_gguf_oracle_test.go` (the comment in `TestQwen35GGUF_
 
 ```text
 THE FLOORS, AND WHY THEY ARE WHAT THEY ARE (reclassified 2026-08-18, decider Francis;
-evidence in docs/queue-release.md under B13).
+evidence in a private queue under B13).
 
 This gate previously asserted `min >= 0.998` and called any miss "loader bug (not Q8_0
 quant)". It failed at min 0.987835 (step 63) with mean 0.998114 — i.e. it required EVERY
@@ -18381,7 +18381,7 @@ that. 80B at int8 is ~80 GB against 62 GB of RAM; int4 is ~40 GB and fits. There
 to fall back to on this box, so a low cosine here cannot be re-run at higher precision to
 separate quant noise from a defect — the per-layer SHAPE has to do that instead (smooth and
 non-monotonic is noise; a cliff is a defect, and a defect cannot recover). The decision rule
-was pre-registered in docs/queue-correctness.md G5 before this ran.
+was pre-registered in a private queue G5 before this ran.
 
 The sparsity is the reason to expect trouble: 10 of 512 experts is 1.95% active, sparsest in the
 table by a factor of two. nemotron3nano at 6/128 (4.7%) measured 0.978 with int8 ACTIVATIONS
@@ -19216,8 +19216,8 @@ whether NoPE is implemented correctly, which is worse than no gate — this test
 Moved from `decoder/spark25_real_test.go` (the comment above the package clause) on 2026-10-09.
 
 ```text
-Real-model gates for Spark-X2.5-1.7B (model_type "spark2_5", Spark2_5ForCausalLM) — Gate 2
-(docs/tasks/task-spark-x2-5.md): the T3 promotion of the spark2_5 family from Gate 1's
+Real-model gates for Spark-X2.5-1.7B (model_type "spark2_5", Spark2_5ForCausalLM) — Gate 2:
+the T3 promotion of the spark2_5 family from Gate 1's
 tiny-random synthetic fixture to a released checkpoint. 1.7B is the smaller of the two
 released sizes (task doc's own "start with the 1.7B... then the 4B"). Fixture:
 scripts/pin_spark2_5_real.py.
@@ -19238,7 +19238,7 @@ refusal" assertion fails on an unrelated cause).
 Moved from `decoder/spark25_real_test.go` (the comment above the test) on 2026-10-09.
 
 ```text
-TestSpark25Real_fitGuardLongContext is Gate 3 (docs/tasks/task-spark-x2-5.md): "the fit guard
+TestSpark25Real_fitGuardLongContext is Gate 3: "the fit guard
 must price KV correctly for a sliding-window model at long context — which is exactly the case
 where a naive calculation is most wrong. Verify the guard's behaviour on spark2_5 at 131072
 explicitly." The task doc's own hazard is real: an HF user hit a kernel OOM running

@@ -21,8 +21,7 @@ What DSpark adds beyond the trunk, and which this also dumps:
     -> testdata/dspark_qwen3_4b_golden.json      (committed)
     -> testdata/dspark_qwen3_4b_ref.safetensors  (committed via .gitignore exception)
 
-Checkpoint license=None; Francis accepted for exploration 2026-08-15 (see
-docs/tasks/parked/dspark-license-issue.md).
+Checkpoint license=None; Francis accepted for exploration 2026-08-15.
 """
 import json
 import os

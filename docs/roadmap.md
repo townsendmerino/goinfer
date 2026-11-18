@@ -58,12 +58,12 @@ promoting are separate decisions with separate gates (see the last section).
 4. **Fit to hardware** — [`tasks/task-fit-to-hardware.md`](tasks/task-fit-to-hardware.md): phases 0–3 done,
    4 partial (`goinfer-chat fit` dry run and self-measure ship; startup banner and `pull` verdict
    open). `completed/task-model-pull.md` phase 1 shipped.
-5. **First hour / cold user** — [`task-embed-and-harness-ux.md`](tasks/task-embed-and-harness-ux.md)
+5. **First hour / cold user** — `task-embed-and-harness-ux.md`
    (the five modes of use); the cold-user protocol on published tags; owed: the formal Mac
    two-scenario re-run on v0.17.2.
-6. **Peer measurement** — [`task-peer-benchmarks.md`](tasks/task-peer-benchmarks.md) (the matrix, with
+6. **Peer measurement** — `task-peer-benchmarks.md` (the matrix, with
    the 10-turn agent-turn TTFT as headline) and
-   [`task-llamacpp-inproc.md`](tasks/task-llamacpp-inproc.md) (in-process llama.cpp via purego, drafted
+   `task-llamacpp-inproc.md` (in-process llama.cpp via purego, drafted
    2026-09-12 — the fidelity column and per-token cost vs depth).
 7. **Speculative decoding** — `spec/` (13 docs). Adaptive verify width failed all four ship gates
    and was removed; the grammar-prior premise is dead; DSpark/DFlash block drafters queued
@@ -71,11 +71,11 @@ promoting are separate decisions with separate gates (see the last section).
 8. **Multimodal** — [`multimodal.md`](multimodal.md) P6–P11.
 9. **Correctness programs** — [`audit-2026-09-10.md`](audit-2026-09-10.md)'s 8-step program in
    progress; [`task-recompute-audit.md`](completed/task-recompute-audit.md) R-01 phase 1;
-   [`task-int4-layout-2026-09.md`](tasks/task-int4-layout-2026-09.md) (one int4 layout per tensor, L1–L5)
+   `task-int4-layout-2026-09.md` (one int4 layout per tensor, L1–L5)
    and [`task-halt-2026-09.md`](tasks/task-halt-2026-09.md) (cancel / halt / lease, K1–K9), both drafted
    this week.
 10. **The book** — `book/`, the chaptered inference primer for a Go engineer new to ML.
-11. **KV architecture** — [`task-kv-architecture-2026-10.md`](tasks/task-kv-architecture-2026-10.md) (KV0–KV10,
+11. **KV architecture** — `task-kv-architecture-2026-10.md` (KV0–KV10,
     filed 2026-10-13): one paged, content-addressed, tiered KV store for every backend. Paged attention un-parked by
     the owner the same day (D1).
 
@@ -84,7 +84,7 @@ promoting are separate decisions with separate gates (see the last section).
 - **Continuous batching** — not this engine's weight class; unchanged since v0.2 (MC5 of
   `tasks/parked/task-concurrency-2026-09.md`, parked with a trigger). **Paged attention was parked with it until
   2026-10-13, when the owner un-parked it** ("un park paged attention for sure"): paged KV for memory and reuse within
-  one user's conversations and agents, [`task-kv-architecture-2026-10.md`](tasks/task-kv-architecture-2026-10.md).
+  one user's conversations and agents, `task-kv-architecture-2026-10.md`.
   Continuous batching's small cousin got its kill-or-earn
   measurement (MC2 earned) and shipped in 2026-09:
   - N CPU decode workers (MC3c), then batched CPU decode behind them (MC3c step 2: 2.19× the workers at 4 clients
@@ -93,7 +93,7 @@ promoting are separate decisions with separate gates (see the last section).
     (1.380× on the 1.5B, 1.826× on the 7B);
   - per-conversation resident KV slots on Metal, CUDA and WebGPU (MC1).
 - **Bindings** (sidecar for desktop, c-archive for mobile) — scoped in
-  [`task-bindings.md`](tasks/parked/task-bindings.md), not started. Gate: the B0.1 on-device iPhone spike.
+  `task-bindings.md`, not started. Gate: the B0.1 on-device iPhone spike.
 - **Browser / WASM** (`GOOS=js` → `navigator.gpu`, cgo-free) — a demo, not a binding strategy;
   unscheduled.
 - **WebGPU dp4a / batched WebGPU prefill** — upstream-blocked on the binding exposing
@@ -106,7 +106,7 @@ promoting are separate decisions with separate gates (see the last section).
 - **int4 KV, TurboQuant (NO-GO), `.giw` f16 scales, W4A8 VNNI** — triggers as written in the June
   archive; none has fired.
 - **Pure-Go reference oracle** replacing the `pin_*.py` generators —
-  [`task-oracle-refforward.md`](tasks/parked/task-oracle-refforward.md); post-1.0 infrastructure, and the
+  `task-oracle-refforward.md`; post-1.0 infrastructure, and the
   carve-out named in the v1.0 gate's "no Python in the repo" line.
 
 ## Superseded — June claims and what replaced them
@@ -130,7 +130,7 @@ Retractions kept visible so the archive is read correctly:
 
 June's criterion — a second hybrid family lands on the deltanet/hybrid-cache shapes without
 breaking them — was met in June. v1.0 is now a checklist, not a feeling:
-[`queue-release.md`](queue-release.md) **E1**, one of five boxes ticked (parity coverage complete,
+a private queue **E1**, one of five boxes ticked (parity coverage complete,
 2026-08-15). Open: verification machinery sound; loader and descriptor surface *actually* frozen;
 a clean out-of-tree audit against the release candidate; no Python in the repo (E7).
 [`api-tiers.md`](api-tiers.md) (signed off 2026-08-18) fixes which surfaces semver-bind. Not

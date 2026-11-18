@@ -75,7 +75,7 @@ precedent says isolated GEMV wins can vanish end to end.
 **Memory: a Metal-backed int4 load keeps three copies of every dense projection** — host canonical,
 host row4 repack (read by nothing once resident), and the Metal buffer — 889.6 MB of dead host
 memory on the 1.5B by commit `3931ae1`'s own measurement, ~4 GB at 7B, on the box whose 26B cell
-misses the budget by 3.75 GB (M-07). This is L4 of `docs/tasks/task-int4-layout-2026-09.md`, now with
+misses the budget by 3.75 GB (M-07). This is L4 of a private task doc, now with
 its number.
 
 **The paged path (26B/35B/gpt-oss on the Mac) is opt-in, serialised, and measured against the wrong
@@ -355,7 +355,7 @@ re-baked by the code it checks (G-04).
   the row4 repack — the CPU fallback then runs the canonical kernel, ~1.1–1.3× slower on a path that
   is already the slow one); after `BuildResident` succeeds, release the layer projections' host
   `WeightMat`s (keep `Embed`/`LMHead` for the host lookup). This is **L4 of
-  `docs/tasks/task-int4-layout-2026-09.md`**, now with its number and a second half (drop after upload).
+  a private task doc**, now with its number and a second half (drop after upload).
 - **Confidence:** confirmed (three allocation sites traced; the 889.6 MB is the commit's own
   measurement). **Prior:** audit-2026-09-10 M-24 (the guard's 2× double-count — the real footprint
   is 3×); aikit M-22; task-int4-layout L4 (filed, not scheduled — schedule it).
@@ -1145,7 +1145,7 @@ re-baked by the code it checks (G-04).
 #### G-04 · The absolute snapshot golden is re-baked by the code it checks after each accepted kernel round; the autoresearch ledger is outside the tree
 - **Where:** `metal/snapshot_golden_test.go:21,200-207` ("the ABSOLUTE STORED REFERENCE";
   `GOINFER_UPDATE_GOLDENS` writes whatever current code produces), `metal/kernels.go:37-29` ("only
-  deep-mantissa sha bits move — see the round's own commit"); `docs/tasks/task-autoresearch-loop.md:3`
+  deep-mantissa sha bits move — see the round's own commit"); a private task doc
   ("not started") and §3 ("Do NOT point it at Metal") vs `metal/kernels.go:135,147,1041-1066` (Metal rounds
   ran on the norm-class kernels); `scripts/autoresearch_rmsnorm_results.tsv` not in
   `docs/measurements/`.
@@ -1156,7 +1156,7 @@ re-baked by the code it checks (G-04).
   golden is declared an OS-drift detector only; move the tsv into `docs/measurements/`; fix the
   autoresearch doc's status. **Confidence:** plausible (the tsv is not here).
 - **PARTIALLY CLOSED 2026-09-13 — doc corrected, tsv/gate-line not done.** Fixed
-  `docs/tasks/task-autoresearch-loop.md`'s stale "not started" status to note the contradiction directly
+  a private task doc's stale "not started" status to note the contradiction directly
   (kernels.go's own comments cite the tsv as a real Metal experiment) rather than restate the
   wrong claim. The tsv itself could not be moved into `docs/measurements/` — it is not anywhere in
   the tree, not merely misplaced; whatever generated it either never committed the file or it was
@@ -1308,7 +1308,7 @@ re-baked by the code it checks (G-04).
   archived every Critical/Gate/Major finding, C-08 included.
   **FIXED 2026-09-13**: the doc's own "what remains" summary line corrected (C-08 fully closed,
   G-08 partially) — the per-finding entries themselves already carried accurate closure notes.
-- N-06 `docs/tasks/task-autoresearch-loop.md:3` "not started" / §3 "do NOT point it at Metal" — it ran on
+- N-06 a private task doc / §3 "do NOT point it at Metal" — it ran on
   Metal (norm-class kernels); ledger tsv outside the tree (G-04). Already resolved independently
   (a further doc-review pass corrected the doc's status beyond even G-04's own scope) — no action
   needed.

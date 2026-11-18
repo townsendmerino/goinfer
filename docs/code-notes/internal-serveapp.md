@@ -1936,7 +1936,7 @@ Gemma 4's image and audio towers included) at withFeatureCache.
 Moved from `internal/app/serveapp/webui.go` (the comment above `webUIFS`) on 2026-10-09.
 
 ```text
-ONE DIRECTORY, NOT ONE FILE (docs/tasks/task-web-ui-2026-09.md §6.1). The page was a single
+ONE DIRECTORY, NOT ONE FILE. The page was a single
 1,828-line HTML file; the web-UI plan roughly doubles it, so it is split into index.html plus
 webui/ui/app.css and webui/ui/app.js. What is deliberately NOT given up: still no build step, no
 bundler, no toolchain — plain files, embedded verbatim, one binary, fully offline. The assets
@@ -3032,7 +3032,7 @@ CPU tower even when the user had asked never to leave the backend).
 Moved from `internal/app/serveapp/lone_tool_livelock_test.go` (the comment above `TestForcedTool_loneToolConvenienceEndsAtTheToolResult`) on 2026-10-09.
 
 ```text
-PRE-REGISTERED (docs/queue-correctness.md G39). `serve check`'s `tools, OpenAI` row failed with "turn two asked for the tool
+PRE-REGISTERED. `serve check`'s `tools, OpenAI` row failed with "turn two asked for the tool
 again instead of answering — the agent-livelock shape" on BOTH Qwen2.5-Coder-7B and Qwen2.5-7B-Instruct, and the same turn
 with a second tool in the request, or with the identical prompt sent as a raw completion, got a normal answer. Cause: with
 exactly ONE tool and tool_choice auto, forcedTool constrained the reply to that tool's call from its first token on EVERY turn,
@@ -3269,7 +3269,7 @@ Moved from `internal/app/serveapp/webui_test.go` (the comment at the start of th
 
 ```text
 EVERY EMBEDDED FILE, not just index.html. The page is split across webui/ (§6.1 of
-docs/tasks/task-web-ui-2026-09.md); a check that still read only index.html would pass while
+a private task doc); a check that still read only index.html would pass while
 a CDN import sat in ui/app.js — narrowing silently exactly when the page grew.
 ```
 

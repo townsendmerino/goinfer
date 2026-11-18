@@ -270,7 +270,7 @@ regenerate it) both have to move with it.
 ## Queue-gated follow-ups — consult QUEUE.md at each tag (B5)
 
 A tag is the natural checkpoint to review what is outstanding, and the release process is read at
-exactly the moment those triggers fire. **After pushing the tags, open the four queues — `docs/queue-release.md` first, then
+exactly the moment those triggers fire. **After pushing the tags, open the four queues — a private queue first, then
 performance/correctness/engineering (`docs/QUEUE.md` indexes them) — and action any
 item whose trigger is a release or an aikit bump.** The queue is the list; this line is what makes a
 tagger look at it — a file nothing reads is inert the first week nobody opens it.
@@ -445,7 +445,7 @@ has been green on the Mac since. Re-confirmed green again 2026-09-06
 ## §C1-C — the CUDA device gate (manual, the other half of the same command)
 
 **CI cannot run this one either, for the other reason: it has no GPU.** `ci.yml` only BUILDS and VETS under `-tags cuda`; every CUDA correctness claim rests on a human running the gate on the Linux/NVIDIA box.
-It is the SAME command as §C1-M and was left unnamed here. v0.21.0 and v0.22.0 were tagged with a recorded Metal run and no recorded CUDA one (found 2026-10-06, `docs/queue-release.md` R1), so this
+It is the SAME command as §C1-M and was left unnamed here. v0.21.0 and v0.22.0 were tagged with a recorded Metal run and no recorded CUDA one, so this
 section exists to stop that happening a third time.
 
 **The exact command**, on the Linux box with the checkpoints in `$HOME/models` and an IDLE GPU (it refuses to run beside a stray goinfer process):
@@ -457,7 +457,7 @@ GOINFER_GATE_BACKEND=cuda go run ./cmd/gate gpu    # explicit
 
 **As a night job** (the timing lock, an idle GPU and about 2 h 20 min rule out running it by day): `docs/measurements/gate-gpu-night-2026-10-06/run-gate-gpu.sh` tests a detached worktree of `origin/main` with the
 gitignored fixtures linked in and a `go.work` (the cuda module must build against THIS tree's root, not the last published tag), counts a missing PASS verdict as a failure, and writes `provenance.txt`
-and the log to `~/goinfer-logs/gate-gpu-night-<date>/`. Queue it with `python3 scripts/night.py add gate-gpu-cuda --est 150 --by "<who>, <release>" --doc docs/queue-release.md -- bash docs/measurements/gate-gpu-night-2026-10-06/run-gate-gpu.sh`.
+and the log to `~/goinfer-logs/gate-gpu-night-<date>/`. Queue it with `python3 scripts/night.py add gate-gpu-cuda --est 150 --by "<who>, <release>" --doc a private queue -- bash docs/measurements/gate-gpu-night-2026-10-06/run-gate-gpu.sh`.
 
 **What it costs, measured:** everything outside the heavy real-model tier took **4 min 54 s** on 2026-10-06; the heavy tier (`GOINFER_HEAVY_TESTS=1`, set by the gate itself) is now about 2 h 15 min. Its main group runs as two
 processes split by test name, each about an hour under its own 120 m timeout, then the fresh-process tests (about 11 min) and the drain

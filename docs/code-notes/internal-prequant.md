@@ -163,7 +163,7 @@ selfCheck verifies a freshly written bundle loads through the real mmap path —
 weights deserialize, and the whole-payload CRC passes (a full read of the file; the pass is
 recorded so it is not repeated for an unchanged file — decoder/giwverify.go).
 
-Backend:"cpu", not Options{} (found writing L2, docs/tasks/task-int4-layout-2026-09.md):
+Backend:"cpu", not Options{} (found writing L2, a private task doc):
 an EMPTY Backend means "needs canonical" (wantsCanonicalInt4's own literal-"cpu"-
 is-a-promise rule, L1), so Options{} declined every kind-5 (row4-only) bundle
 this function itself just wrote for a cpu-arm64 target — self-check would have

@@ -8,7 +8,7 @@ and a zeroed AttnScale, both fixed) — this script/gate is the permanent, re-ru
 of that ad-hoc diff, not a new investigation.
 
 Exercises the hybrid layer_types split on real weights: LFM2.5-2.6B is 30 layers, 22 short-conv
-+ 8 full-attention (docs/scoping-lfm2.md).
++ 8 full-attention.
 
 Dumps the last-token logits + argmax + a short greedy continuation (token IDs) for a fixed
 prompt; the goinfer side (lfm2_real_test.go, build tag realckpt) loads the same safetensors at

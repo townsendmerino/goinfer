@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Real-model parity golden for Spark-X2.5-1.7B (model_type "spark2_5", Spark2_5ForCausalLM) —
-Gate 2 (docs/tasks/task-spark-x2-5.md): the T3 promotion from Gate 1's tiny-random synthetic
+Gate 2: the T3 promotion from Gate 1's tiny-random synthetic
 fixture to a released checkpoint. 1.7B is the smaller of the two released sizes (task doc's own
 "start with the 1.7B... then the 4B").
 

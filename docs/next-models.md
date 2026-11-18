@@ -16,7 +16,7 @@
 | 2 | Qwen3-Next (`G5`) | **landed**, resident on WebGPU, CUDA and Metal | matrix |
 | 3 | Laguna (`G6`) | **landed**, CPU path (softplus attention gating and per-layer RoPE scales were the new primitives, as scoped) | matrix |
 | 4 | gpt-oss residency (`G7`) | **landed**, resident on all three backends. The one real forward its gate demanded found three silent wiring defects that a 100%-green kernel suite could not see — the lesson `G8` now rests on | [`completed/queue-correctness.md`](completed/queue-correctness.md) |
-| 5 | DeepSeek V4-Flash (`G8`) | **PARKED — unvalidatable here.** 0.16 TB against 62 GB of host RAM; no configuration runs one whole forward on hardware this project has. The fp8 prerequisite is half lifted: e4m3 with blockwise f32 scales reads (`decoder/fp8.go`), V4's `ue8m0` scale format does not | [`queue-correctness.md`](queue-correctness.md) |
+| 5 | DeepSeek V4-Flash (`G8`) | **PARKED — unvalidatable here.** 0.16 TB against 62 GB of host RAM; no configuration runs one whole forward on hardware this project has. The fp8 prerequisite is half lifted: e4m3 with blockwise f32 scales reads (`decoder/fp8.go`), V4's `ue8m0` scale format does not | a private queue |
 
 From the watch list: **Ling 3.0 landed** as `bailing_hybrid` (v0.17.0) — KDA became the fifth
 sequence-mixing family, the exact thing the old text said would be "natural" and told us to
@@ -51,7 +51,7 @@ rule 2 outright (listed under Watching). What is left is short:
    int4 is ~15–16 GB, so not resident on the 16 GB M1 Pro; the Linux box runs it. An HF
    reference forward at bf16 is ~60 GB against 62 GB of host RAM — plan the oracle (layer
    streaming, or the llama.cpp route in
-   [`tasks/task-llamacpp-inproc.md`](tasks/task-llamacpp-inproc.md) I2) before estimating.
+   a private task doc I2) before estimating.
    Text decoder first; the 2B Perception Encoder tower follows [`multimodal.md`](multimodal.md)'s
    policy.
 
@@ -242,7 +242,7 @@ Field check for this doc covering open-weight releases from **2026-10-26 to 2026
 - **Qwen3.8-Flash-Next (Qwen4 architecture preview)** — `qwen4_exp`, 125B on disk / ~6B active:
   Gated DeltaNet + a new sparse-attention mixer (QSA) + a 4-branch gated residual + an n-gram
   embedding + native MTP. Doesn't fit either rig. Scoped in
-  [`scoping-qwen38-flash-next.md`](scoping-qwen38-flash-next.md). As of 2026-10-15 Alibaba says
+  a private planning note. As of 2026-10-15 Alibaba says
   Qwen 4 is "in training" with no sizes or date; no smaller carrier of the architecture exists.
   Qwen3.8-27B remains the newest open-weight Qwen that fits.
 - **Mistral Medium 3.5 (128B dense) — config check done 2026-10-15.** Outer `mistral3`, text
@@ -265,7 +265,7 @@ Field check for this doc covering open-weight releases from **2026-10-26 to 2026
 - **Gated Residual — a primitive bet, not a family bet.** The 4-branch gated-residual mixer
   scoped for Qwen3.8-Flash-Next (above) is now shared by **three** families: this one, DeepSeek
   V4-Flash, and Tencent Hy4-preview — `docs/audit-2026-09-10.md`'s **L-02**. Fully specified
-  (`docs/scoping-qwen38-flash-next.md` §"What's genuinely new" item 2): ~3 days on CPU with a
+  (a private planning note §"What's genuinely new" item 2): ~3 days on CPU with a
   tiny golden, no kernel novelty. The risk is blast radius, not the math —
   `decoder/forwardn.go` is in the core hashed-file set, so the edit re-stales every family's
   `deps_hash`, the same cost `docs/completed/scoping-lfm2.md` §G paid for a much smaller change.
@@ -313,7 +313,7 @@ Superseding the Tier A/B/C ordering below for near-term work. Read through
 `docs/capability-matrix.md` first before picking one up — it's the source of truth for what's
 actually landed, not this doc. Filtered for goinfer's niche: single-user, batch-1, consumer
 hardware, text-only, parity-gateable against HF, weights in safetensors/GGUF. Queued as
-`G7`/`G8` in `docs/queue-correctness.md`; `G4`-`G6` closed and archived to
+`G7`/`G8` in a private queue; `G4`-`G6` closed and archived to
 `docs/completed/queue-correctness.md` on 2026-08-31.
 
 1. **Nemotron 3 Nano (30B-A3B) — best payoff per unit of work (`G4`).** Hybrid Mamba-Transformer
@@ -411,7 +411,7 @@ hardware, text-only, parity-gateable against HF, weights in safetensors/GGUF. Qu
   residual stream + a 20M-entry n-gram embedding table + a native MTP head. The checkpoint itself
   doesn't fit either rig — bigger than `Qwen3-Next-80B-A3B`, which already can't get a full
   reference forward on the 62GB box (G5). Scoped in
-  [`docs/scoping-qwen38-flash-next.md`](scoping-qwen38-flash-next.md): the GDN and
+  a private planning note: the GDN and
   MoE-expert-paging pieces ride substrate already shipped and parity-gated; QSA, the gated
   residual, and the n-gram embed are the real new work, sized there for a synthetic-tiny bring-up
   rather than the 180B itself. Revisit when a real Qwen4 checkpoint ships at a size that fits.

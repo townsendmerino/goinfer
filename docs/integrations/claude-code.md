@@ -142,7 +142,7 @@ thinking, send `thinking: {"type": "disabled"}` or start serve with `-thinking o
 
 ## Retiring this page
 
-Per `docs/tasks/task-embed-and-harness-ux.md` §3.5, a recipe is retired when `serve check` covers
+Per a private task doc, a recipe is retired when `serve check` covers
 what it says. `goinfer-serve check <url>` already covers the model list, streamed chat with
 usage, structured output, stop sequences and `count_tokens`; the tool-loop and agent-turn-TTFT
 rows above are what it does not cover yet.

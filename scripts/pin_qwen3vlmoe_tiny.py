@@ -1,6 +1,5 @@
 #!/usr/bin/env python
-"""Tiny random Qwen3-VL MoE checkpoint + golden for goinfer's qwen3_vl_moe decoder (S10, G-S10q-a;
-docs/tasks/task-multimodal-support-2026-10.md, "S10, Qwen3-VL MoE").
+"""Tiny random Qwen3-VL MoE checkpoint + golden for goinfer's qwen3_vl_moe decoder (S10, G-S10q-a).
 
 A small Qwen3VLMoeForConditionalGeneration (transformers' own, float32, eager attention): a 4-layer MoE text decoder
 (8 experts, top 2, interleaved m-RoPE section [4, 2, 2]) and a tiny vision config the golden never runs. Every norm
