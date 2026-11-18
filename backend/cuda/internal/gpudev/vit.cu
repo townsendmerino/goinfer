@@ -4,8 +4,8 @@
 // on any GPU — but cgo-free.
 //
 // BIT-IDENTITY-EXEMPT: no bit-identity contract exists for this tower, so the bare float
-// MACs below are free to contract. The gate is gpu/visioncuda/encoder_test.go, which
-// requires cosine >= 1-1e-6 against the pure-Go CPU tower — a TOLERANCE, deliberately:
+// MACs below are free to contract. The gate is the whole-tower parity tests in
+// backend/cuda (tower_base_test.go), which require cosine >= 1-1e-6 against the pure-Go CPU tower — a TOLERANCE, deliberately:
 // that tower accumulates LayerNorm/softmax/GELU in float64 while these kernels work in
 // f32/int32, so bit-equality is impossible BY CONSTRUCTION, not merely unachieved. The
 // int8 dots are exact, so the residual divergence is float reassociation only, which is

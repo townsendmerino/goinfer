@@ -23,6 +23,8 @@ or comments the same on the newest open issue of that title; green closes every 
 `.github/workflows/device-heartbeat.yml` runs `scripts/device_suite_heartbeat.py` daily and opens "device-suite heartbeat stale: nobara" (or comments on the open one; closes it when fresh) when no
 completed run is newer than 36 h or none is on record. Stale means unknown, which is red before a tag. `python3 -B scripts/test_device_suite_heartbeat.py` replays the 13 silent nights from 2026-11-04.
 
+**Metal twin.** `docs/measurements/metal-device-suite-2026-11-17/README.md`: the same runner with `--backend metal`, daily on the Mac, a day job under the timing lock.
+
 **Other revisions.** `REV=<sha-or-ref>` runs the same suite on a branch (queue it as `env REV=<sha> bash …/run-cuda-device-suite.sh` with its own job name); only `origin/main` files or closes the issue.
 
 **Overlap.** `gate gpu` (pre-tag, about 2 h 20 min with its heavy tier) runs this suite as its step 2a/2b; this job is the cheap daily slice of it. `night.py` has no recurring jobs: it is queued

@@ -18,6 +18,7 @@ type stBuild struct {
 	needCanonical    bool
 	skipRow4         bool
 	sink             *giwWriter
+	abort            <-chan struct{}
 	hd               int
 	headDim          int
 	qDim             int
@@ -417,5 +418,5 @@ func (b *stBuild) finish() (*Weights, error) {
 			arch.gemma4.FFNPerLayer = ffnPerLayer
 		}
 	}
-	return finishLayers(w, arch, loadLayer, sink, id)
+	return finishLayers(w, arch, loadLayer, sink, id, b.abort)
 }

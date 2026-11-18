@@ -2,7 +2,10 @@
 
 package gpudev
 
-import "testing"
+import (
+	"math/rand"
+	"testing"
+)
 
 // TestCUDA_graphDependentChain stresses whether a captured MULTI-kernel segment preserves its
 // intra-graph data dependencies. It captures N in-place increments of one buffer (vadd(x,one,x) — each
@@ -151,4 +154,59 @@ func TestCUDA_graphReplay(t *testing.T) {
 		}
 	}
 	t.Logf("Graph: captured vadd replays bit-identically and reads current buffer contents across replays")
+}
+
+// TestCUDA_vitGraphReplayMatchesDirect captures a short chain of ViT kernels (LayerNorm, then the tanh GELU in place) and
+// requires the replay to be bit-identical to dispatching the same launches directly, with fresh input bytes in the same
+// buffer on the second replay: the property a whole-tower graph depends on, at kernel level and without a checkpoint.
+func TestCUDA_vitGraphReplayMatchesDirect(t *testing.T) {
+	d, q, v := vitSetup(t)
+	rng := rand.New(rand.NewSource(9))
+	const rows, dim = 16, 64
+	n := rows * dim
+	w, b := randF32(rng, dim, 1), randF32(rng, dim, 1)
+	dx := NewBufferLenOf[float32](d, n)
+	dw, db := NewBufferOf(d, w), NewBufferOf(d, b)
+	dn := NewBufferLenOf[float32](d, n)
+	chain := func() error {
+		if err := q.Launch(v.LayerNorm, RowGrid(rows),
+			Arg(dx), Arg(dw), Arg(db), Arg(dn),
+			ArgValue(int32(rows)), ArgValue(int32(dim)), ArgValue(float32(1e-6))); err != nil {
+			return err
+		}
+		return q.Launch(v.GELUTanh, Grid1D(n, 256), Arg(dn), ArgValue(int32(n)))
+	}
+	run := func(x []float32, replay func() error) []float32 {
+		if err := Upload(dx, x); err != nil {
+			t.Fatalf("Upload: %v", err)
+		}
+		if err := replay(); err != nil {
+			t.Fatalf("dispatch: %v", err)
+		}
+		if err := q.Sync(); err != nil {
+			t.Fatalf("Sync: %v", err)
+		}
+		out := make([]float32, n)
+		if err := Download(dn, out); err != nil {
+			t.Fatalf("Download: %v", err)
+		}
+		return out
+	}
+
+	g, err := q.Capture(chain)
+	if err != nil {
+		t.Fatalf("Capture: %v", err)
+	}
+	defer func() { _ = g.Close() }()
+
+	for i := range 2 {
+		x := randF32(rng, n, 2)
+		direct := run(x, chain)
+		replayed := run(x, g.Replay)
+		for j := range direct {
+			if direct[j] != replayed[j] {
+				t.Fatalf("input %d: element %d diverged: graph %v != direct %v", i, j, replayed[j], direct[j])
+			}
+		}
+	}
 }
