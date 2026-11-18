@@ -10,7 +10,7 @@
   "programs": [
     "testdata/smollm3-tiny"
   ],
-  "deps_hash": "sha256:ea41061007cc7463440c23cb7c93f33be614fe5dfa95afc5fa36794182cedc1a",
+  "deps_hash": "sha256:5537df371a17cdaa099018550c215fa051fb80f301e1c68982639b328ac8fc28",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-06",
