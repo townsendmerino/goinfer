@@ -12,7 +12,7 @@ import (
 // shared with the other binary and unit-tested in internal/cliutil. What stays here is the part
 // that is per-binary: that THIS binary registers --fit with it.
 
-// TestFitFlag_realBinaryAcceptsOff pins that --fit=off (the spelling docs/tasks/task-fit-to-hardware.md promises) parses
+// TestFitFlag_realBinaryAcceptsOff pins that --fit=off (the spelling the --fit help text promises) parses
 // through the FULL registered flag.CommandLine, not just cliutil.OnOff.Set in isolation: a plain flag.BoolVar would exit
 // 2 with "invalid boolean value". --version exits before touching a model, so this is cheap.
 func TestFitFlag_realBinaryAcceptsOff(t *testing.T) {

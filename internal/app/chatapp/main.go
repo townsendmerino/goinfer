@@ -179,7 +179,7 @@ func Main() {
 	if len(os.Args) > 1 && os.Args[1] == "check" {
 		os.Exit(hwreport.Run(os.Args[2:], filepath.Base(os.Args[0])))
 	}
-	// `decide` / `decisions-calibrate` — D1 of docs/tasks/parked/task-constrained-confidence.md: decisions by label-token
+	// `decide` / `decisions-calibrate` — decisions by label-token
 	// scoring (one prefill per line, a distribution over the line's options) and the per-kind temperature fit.
 	if len(os.Args) > 1 && os.Args[1] == "decide" {
 		os.Exit(decidecmd.Run(os.Args[2:]))
