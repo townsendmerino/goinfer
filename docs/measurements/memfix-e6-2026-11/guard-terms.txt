@@ -1,0 +1,4 @@
+/home/francis/models/gemma4-26b-q4_k_m.gguf
+  gemma4-26b-q4_k_m.gguf needs ~38.4 GB of host memory while building the CUDA expert cache (13.2 GB weights + 13.2 GB packed copy + 12.0 GB pinned copy of the experts); this machine currently has 58.6 GB of memory available (budget 41.0 GB = 70% of that) <nil>
+/home/francis/models/gpt-oss-20b-MXFP4.gguf
+  gpt-oss-20b-MXFP4.gguf needs ~32.0 GB of host memory while building the CUDA expert cache (11.0 GB weights + 11.0 GB packed copy + 10.0 GB pinned copy of the experts); this machine currently has 58.5 GB of memory available (budget 40.9 GB = 70% of that) <nil>

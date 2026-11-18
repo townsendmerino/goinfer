@@ -103,8 +103,8 @@ func TestFitCheck_cudaResident7BAt32KIsAdmitted(t *testing.T) {
 	if !cuda.fits() || cpu.fits() {
 		t.Errorf("at 14 GiB available: CUDA fits=%v (need %d, budget %d), CPU fits=%v (need %d); want CUDA admitted and the CPU pricing refused", cuda.fits(), cuda.need(), cuda.budget(), cpu.fits(), cpu.need())
 	}
-	if want := base.weightBytes + base.srcFileBytes; cuda.need() != want {
-		t.Errorf("direct-path need %d, want weights + source file %d", cuda.need(), want)
+	if want := base.weightBytes + base.srcFileBytes + base.weightBytes/100; cuda.need() != want {
+		t.Errorf("direct-path need %d, want weights + source file + 1%% of the weights as heap slack %d", cuda.need(), want)
 	}
 	if !strings.Contains(cuda.arithmetic(), "KV is in VRAM") {
 		t.Errorf("the arithmetic does not say where the KV is: %q", cuda.arithmetic())

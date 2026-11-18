@@ -21,7 +21,8 @@ const pinnedExpertNum, pinnedExpertDen = 9, 16
 
 // buildDemand: resident when the load is CUDA's, does not stream, and the architecture is covered; its KV is then device
 // memory, and packing adds one packed layer beside the weights and the staging. A C' expert cache built from a .gguf holds the
-// weights, a packed copy and a pinned copy of the experts at once; a .giw load's cache pins every routed expert.
+// weights, a pinned copy of the experts and that packing at once (the packing streams: no packed copy of the model); a .giw load's
+// cache pins every routed expert.
 func buildDemand(q decoder.BuildQuery) decoder.BuildDemand {
 	o := q.Options
 	var d decoder.BuildDemand
@@ -31,9 +32,12 @@ func buildDemand(q decoder.BuildQuery) decoder.BuildDemand {
 		d.HostPackBytes = q.WeightBytes/int64(max(q.Layers, 1)) + packStageHostBytes
 	}
 	if o.Backend == "cuda" && q.GGUF && !o.StreamWeights && q.ExpertBytes > 0 && q.ExpertCache {
-		d.HostBuildPeak = 2*q.WeightBytes + q.ExpertBytes
-		if o.MoEExpertsUnpinned { // the packed experts are file pages (MoEExpertsUnpinned), not a host copy
-			d.HostBuildPeak = 2 * q.WeightBytes
+		d.HostBuildPeak = q.WeightBytes + packStageHostBytes
+		if q.Layers > 0 {
+			d.HostBuildPeak += q.WeightBytes / int64(q.Layers)
+		}
+		if !o.MoEExpertsUnpinned { // unpinned, the packed experts are file pages, not a host copy
+			d.HostBuildPeak += q.ExpertBytes
 		}
 	}
 	if q.ExpertCache && d.Resident && q.NumExperts > 0 && q.ExpertIntermediate > 0 && !o.MoEExpertsUnpinned {

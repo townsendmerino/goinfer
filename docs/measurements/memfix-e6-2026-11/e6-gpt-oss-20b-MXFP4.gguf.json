@@ -1,0 +1,19 @@
+{
+ "model": "/home/francis/models/gpt-oss-20b-MXFP4.gguf",
+ "load1_at_start": "4.07",
+ "MemAvailable_at_start": 63392669696,
+ "SystemSwapUsed_at_start": 1241755648,
+ "SystemSwapUsed_at_end": 1253871616,
+ "ready_s": 22.273926258087158,
+ "exited_early_rc": null,
+ "answer": "",
+ "peak": {
+  "VmHWM": 24033034240,
+  "VmRSS": 23947431936,
+  "RssAnon": 12050251776,
+  "RssFile": 12050690048,
+  "RssShmem": 10848346112,
+  "VmSwap": 0,
+  "hwm_last": 24033034240
+ }
+}

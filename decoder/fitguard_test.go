@@ -113,8 +113,8 @@ func TestFitGuard_pricesTheOnDiskGGUFDuringLoadNotJustFinalWeights(t *testing.T)
 	}
 }
 
-// TestFitGuard_pricesTheCUDAExpertCacheBuildPeak: --backend cuda --moe-cache-experts holds the canonical weights, a packed
-// copy of them and a pinned copy of the experts on the host at once. In the regime that matters that exceeds the CPU path's
+// TestFitGuard_pricesTheCUDAExpertCacheBuildPeak: --backend cuda --moe-cache-experts holds the canonical weights, a pinned copy
+// of the experts and the packing (one packed layer and the staging) on the host at once. In the regime that matters that exceeds the CPU path's
 // weights+KV+file total, and it does not stack with the file term (the source is unmapped before the build), so need()
 // takes the larger.
 //
@@ -128,8 +128,11 @@ func TestFitGuard_pricesTheCUDAExpertCacheBuildPeak(t *testing.T) {
 	if probe.expertBytes <= 0 {
 		t.Fatal("no routed-expert bytes found in a MoE GGUF — the '_exps' tensor match is broken")
 	}
-	if want := 2*probe.weightBytes + probe.expertBytes; probe.cudaBuildBytes != want {
-		t.Fatalf("cudaBuildBytes = %d, want 2*weights+experts = %d", probe.cudaBuildBytes, want)
+	if probe.cfg == nil || probe.cfg.NumLayers < 1 {
+		t.Fatal("the tiny GGUF's config did not resolve: the packed layer cannot be priced")
+	}
+	if want := probe.weightBytes + probe.expertBytes + probe.weightBytes/int64(probe.cfg.NumLayers) + cudaPackStageBytes; probe.cudaBuildBytes != want {
+		t.Fatalf("cudaBuildBytes = %d, want weights + experts + one packed layer + staging = %d", probe.cudaBuildBytes, want)
 	}
 	if plain := fitCheckFor(gguf, "int4", quantInt4, Options{Quant: "int4", Backend: "cuda"}); plain.cudaBuildBytes != 0 {
 		t.Errorf("cudaBuildBytes = %d without --moe-cache-experts; the term is only for the expert-cache build", plain.cudaBuildBytes)
