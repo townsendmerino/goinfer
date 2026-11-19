@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# pre-push: refuse to push when the committed citation lint fails.
+# pre-push: refuse to push when gofmt, the main-branch rule (scripts/pre_push_range.sh) or the committed citation lint fails.
 #
 # It invokes scripts/queue_citation_lint.py — the SAME entry point CI runs — rather than
 # reimplementing any part of it. Same reasoning as the claims rule: the check that counts is the
@@ -35,6 +35,17 @@ fi
 
 # git feeds one "<local ref> <local sha> <remote ref> <remote sha>" line per pushed ref on stdin; read it before anything else can.
 refs="$(cat)"
+
+# gofmt over the pushed .go files, and product code pushed straight to main: milliseconds, so first.
+if [ ! -f scripts/pre_push_range.sh ]; then
+    echo "pre-push: scripts/pre_push_range.sh is missing — not silently passing." >&2
+    exit 1
+fi
+printf '%s\n' "$refs" | bash scripts/pre_push_range.sh
+rstatus=$?
+if [ "$rstatus" -ne 0 ]; then
+    exit 1
+fi
 
 if [ ! -f scripts/queue_citation_lint.py ]; then
     echo "pre-push: scripts/queue_citation_lint.py is missing — not silently passing." >&2
