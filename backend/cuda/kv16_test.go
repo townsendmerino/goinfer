@@ -1668,12 +1668,12 @@ func TestMoEExpertsUnpinned_identityAndPricing(t *testing.T) {
 	q := decoder.BuildQuery{Options: decoder.Options{Backend: "cuda", MoECacheExperts: true}, ExpertCache: true, FeaturesCovered: true,
 		MoELayers: 2, NumExperts: 8, ExpertIntermediate: 64, Hidden: 32, GGUF: true, WeightBytes: 10 << 30, ExpertBytes: 7 << 30}
 	pinned := buildDemand(q)
-	if pinned.PinnedExpertBytes <= 0 || pinned.HostBuildPeak != 27<<30 {
+	if pinned.PinnedExpertBytes <= 0 || pinned.HostBuildPeak != 17<<30+packStageHostBytes {
 		t.Fatalf("the pinned load prices a %d-byte copy and a %d-byte build peak: the comparison below is vacuous", pinned.PinnedExpertBytes, pinned.HostBuildPeak)
 	}
 	q.Options.MoEExpertsUnpinned = true
-	if got := buildDemand(q); got.PinnedExpertBytes != 0 || got.HostBuildPeak != 20<<30 {
-		t.Errorf("the unpinned load prices a %d-byte pinned copy and a %d-byte build peak (want 0 and %d)", got.PinnedExpertBytes, got.HostBuildPeak, int64(20<<30))
+	if got := buildDemand(q); got.PinnedExpertBytes != 0 || got.HostBuildPeak != 10<<30+packStageHostBytes {
+		t.Errorf("the unpinned load prices a %d-byte pinned copy and a %d-byte build peak (want 0 and %d)", got.PinnedExpertBytes, got.HostBuildPeak, int64(10<<30+packStageHostBytes))
 	}
 }
 

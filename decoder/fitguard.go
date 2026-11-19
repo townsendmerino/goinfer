@@ -68,12 +68,11 @@ type fitCheck struct {
 	// unaffected. The measurement: docs/code-notes/decoder.md#fitCheck.srcFileBytes.
 	srcFileBytes int64
 
-	// cudaBuildBytes is the HOST peak of building a CUDA C' expert cache (--backend cuda --moe-cache-experts) from a plain .gguf:
-	// 2*weightBytes + expertBytes (the canonical weights on the Go heap, a second host-packed copy, and a pinned host copy of the experts).
-	// Zero when that path is not in play. It REPLACES the weights+KV+srcFileBytes total when it is larger rather than adding to it, because
-	// the phases do not overlap: decoder.Load unmaps the source file before cuda.BuildResident starts, and on the resident path KV lives in
-	// VRAM. Go heap slack (about 9% over this estimate on the measured model) is not priced. The measurement:
-	// docs/code-notes/decoder.md#fitCheck.cudaBuildBytes.
+	// cudaBuildBytes is the HOST peak of building a CUDA C' expert cache (--backend cuda --moe-cache-experts) from a plain .gguf: the
+	// backend's BuildDemand.HostBuildPeak, the weights, the experts' pinned copy and the packing (one packed layer once the config is
+	// read, and the staging). Zero when that path is not in play. It REPLACES the weights+KV+srcFileBytes total when it is larger rather
+	// than adding to it, because the phases do not overlap: decoder.Load unmaps the source file before cuda.BuildResident starts, and on
+	// the resident path KV lives in VRAM. The measurement: docs/measurements/memfix-e6-2026-11/README.md.
 	cudaBuildBytes int64
 	expertBytes    int64
 
@@ -569,6 +568,11 @@ func (f fitCheck) priceCtxAndKV(cfg *Config, opts Options) fitCheck {
 		return f // no pin and the model's own max is unknown ⇒ can't price KV; proceed as before
 	}
 	f.effCtx, f.kvF16, f.kvI8, f.metalKV = p.ctx, p.kvF16, p.kvI8, p.metalKV
+	if f.cudaBuildBytes > 0 { // the config gives the layer count: the build peak now prices its packed layer
+		if peak := buildDemandFor(cfg, opts, f.weightBytes, f.expertBytes, f.isGGUF).HostBuildPeak; peak > 0 {
+			f.cudaBuildBytes = peak
+		}
+	}
 	if p.deviceKV {
 		f.deviceKV = true
 		if f.cudaBuildBytes == 0 {

@@ -74,3 +74,20 @@ scratch buffers is exactly 2 MiB, which the old per-buffer packing happened to a
   (10:25 to 10:40 PST), `TestMemGate_cuda` among the passes.
 
 Red first: `TestPackedAllocSlack_oneArena` on `main` reads 2,097,152 bytes of slack for four 1.5 MiB weights, against 0.
+
+## E3 (audit F3 b): sized, then closed (Francis, 2026-11-18)
+
+E3 asked to let the KV pool use the room its rounded buffers already hold, or to move the null block into its own small buffer. Both
+were sized on 2026-11-18 from the models' geometry, mirroring `backend/cuda/margin.go:kvChargedBytes` (derived, not read on the card),
+and **Francis closed E3: neither is built.** Reopen it if a one-slot long-context case starts to matter.
+
+- **The null block in its own buffer** saves real VRAM: net of the new small buffers, about 94 MiB (0.5B), 110 (1.5B), 140 (VL-3B),
+  108 (7B), 134 (Qwen3-8B) and 118 (Gemma-3-4B) at one slot at 16,384 or a pinned 32,768. At serve's four-slot defaults it saves 110
+  on the 1.5B and 118 on Gemma-3-4B, and nothing on the 7B (4 × 11,520) or Qwen3-8B (4 × 4,544), whose pools do not end on a quantum.
+  It needs a kernel change: block id 0 addresses row 0 of every pool through `KV_ROW` (`backend/cuda/kvpage.cuh`), which 14 kernel
+  sources use, each with f16 and int8 twins and generated PTX.
+- **The pool using its buffers' room** saves no bytes. It adds free blocks a pool of two or more slots can lend before a borrower is
+  stopped or an idle slot's prefix is dropped (serve's defaults: 1.5B 4,032 positions, 7B 960, Qwen3-8B 192, Gemma-3-4B 448); one slot
+  cannot use them. It was built and tested first as a red test, then not merged: it breaks the requested-equals-priced KV invariant that
+  `TestResidentKVBytes_matchesCUDAAllocation`, `TestMM5_cudaPoolsAreTheDeclaredRows` and the f16/int8 KV decision gates' first
+  precondition hold.

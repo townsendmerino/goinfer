@@ -1,0 +1,19 @@
+{
+ "model": "/home/francis/models/gemma4-26b-q4_k_m.gguf",
+ "load1_at_start": "3.79",
+ "MemAvailable_at_start": 63068401664,
+ "SystemSwapUsed_at_start": 1174179840,
+ "SystemSwapUsed_at_end": 1241755648,
+ "ready_s": 23.09339189529419,
+ "exited_early_rc": null,
+ "answer": "I say hello to you.",
+ "peak": {
+  "VmHWM": 31239774208,
+  "VmRSS": 30953906176,
+  "RssAnon": 14591365120,
+  "RssFile": 16627257344,
+  "RssShmem": 12945170432,
+  "VmSwap": 0,
+  "hwm_last": 31239774208
+ }
+}

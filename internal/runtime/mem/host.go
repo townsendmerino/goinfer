@@ -48,12 +48,31 @@ func NewHostCheck(l HostLoad, m Machine, p Policy) HostCheck {
 	return HostCheck{HostLoad: l, Available: m.Available(HostAnon), Policy: p}
 }
 
+// heapSlackDen prices the process's own heap beside the weights it builds, while a load maps its source: 1/heapSlackDen of the weights.
+// A margin, on Francis's word; the reading behind it is docs/measurements/memfix-e6-2026-11/README.md (the anonymous peak 2.2-2.8% over
+// the weights on two direct .gguf loads).
+const heapSlackDen = 100
+
+// HeapSlackBytes is the heap slack the guard prices beside weights bytes of weights for a load mapping source bytes of its source: 0 with
+// no source term.
+func HeapSlackBytes(weights, source int64) int64 {
+	if source <= 0 {
+		return 0
+	}
+	return weights / heapSlackDen
+}
+
+// loadTerm is the load's own peak: the weights, the KV, the mapped source and the heap slack beside them (HeapSlackBytes).
+func (c HostCheck) loadTerm() int64 {
+	return c.WeightBytes + c.KVBytes + c.SourceBytes + HeapSlackBytes(c.WeightBytes, c.SourceBytes)
+}
+
 // Need is the host memory the load takes at its peak: the build's, or the serving state's with the snapshot store full, whichever is larger.
 func (c HostCheck) Need() int64 { return max(c.buildPeak(), c.servingNeed()) }
 
 // buildPeak is the host memory the build takes at its peak.
 func (c HostCheck) buildPeak() int64 {
-	n := max(c.CUDABuildBytes, c.WeightBytes+c.KVBytes+c.SourceBytes)
+	n := max(c.CUDABuildBytes, c.loadTerm())
 	if c.PackBytes > 0 {
 		n = max(n, c.WeightBytes+c.PackBytes)
 	}
@@ -79,7 +98,7 @@ func (c HostCheck) snapshotBinds() bool { return c.servingNeed() > c.buildPeak()
 // needUnpinned is Need with the CUDA expert cache's pinned copy out of the build peak, as --moe-experts-unpinned prices it: every other
 // term Need takes stays.
 func (c HostCheck) needUnpinned() int64 {
-	n := max(c.CUDABuildBytes-c.ExpertBytes, c.WeightBytes+c.KVBytes+c.SourceBytes)
+	n := max(c.CUDABuildBytes-c.ExpertBytes, c.loadTerm())
 	if c.PackBytes > 0 {
 		n = max(n, c.WeightBytes+c.PackBytes)
 	}
@@ -119,9 +138,9 @@ func (c HostCheck) Arithmetic() string {
 			float64(c.Available)/gb, float64(c.Budget())/gb, c.Policy.WeightsFraction*100)
 		return b.String()
 	}
-	if c.CUDABuildBytes > c.WeightBytes+c.KVBytes+c.SourceBytes {
-		fmt.Fprintf(&b, "%s needs ~%.1f GB of host memory while building the CUDA expert cache (%.1f GB weights + %.1f GB packed copy + %.1f GB pinned copy of the experts)",
-			c.Name, float64(c.CUDABuildBytes)/gb, float64(c.WeightBytes)/gb, float64(c.WeightBytes)/gb, float64(c.ExpertBytes)/gb)
+	if c.CUDABuildBytes > c.loadTerm() {
+		fmt.Fprintf(&b, "%s needs ~%.1f GB of host memory while building the CUDA expert cache (%.1f GB weights + %.1f GB pinned copy of the experts and packing)",
+			c.Name, float64(c.CUDABuildBytes)/gb, float64(c.WeightBytes)/gb, float64(c.CUDABuildBytes-c.WeightBytes)/gb)
 		fmt.Fprintf(&b, "; this machine currently has %.1f GB of memory available (budget %.1f GB = %.0f%% of that)",
 			float64(c.Available)/gb, float64(c.Budget())/gb, c.Policy.WeightsFraction*100)
 		return b.String()
@@ -136,7 +155,8 @@ func (c HostCheck) Arithmetic() string {
 	if c.SourceBytes > 0 {
 		// The source stays mapped resident for the whole load beside the weights built from it, named so this does not read as
 		// a doubled weight estimate.
-		fmt.Fprintf(&b, " + %.1f GB reading the checkpoint (the .gguf stays mapped resident for the whole load)", float64(c.SourceBytes)/gb)
+		fmt.Fprintf(&b, " + %.1f GB reading the checkpoint (the .gguf stays mapped resident for the whole load) + %.1f GB heap beside it",
+			float64(c.SourceBytes)/gb, float64(HeapSlackBytes(c.WeightBytes, c.SourceBytes))/gb)
 	}
 	if c.KVBytes > 0 || c.SourceBytes > 0 {
 		fmt.Fprintf(&b, " = %.1f GB", float64(c.Need())/gb)
@@ -216,7 +236,7 @@ type Decline struct {
 // Decline is the refusal of this load.
 func (c HostCheck) Decline() *Decline {
 	alt := "  " + c.smallerLoad() + ".\n"
-	if c.CUDABuildBytes > c.WeightBytes+c.KVBytes+c.SourceBytes && c.ExpertBytes > 0 && c.needUnpinned() <= c.Budget() {
+	if c.CUDABuildBytes > c.loadTerm() && c.ExpertBytes > 0 && c.needUnpinned() <= c.Budget() {
 		alt = "  Or " + UnpinnedExpertsHint(c.ExpertBytes) + ".\n" + alt
 	}
 	msg := fmt.Sprintf("decoder: %s.\n"+
@@ -245,7 +265,7 @@ func (c HostCheck) SmallerFittingContext() (int, bool) {
 	}
 	// The source is a fixed term like the weights: it comes out of the budget too, and so does the snapshot store beside a host-resident
 	// load's weights and KV (the two do not coexist, so the larger counts).
-	fixed := c.SourceBytes
+	fixed := c.SourceBytes + HeapSlackBytes(c.WeightBytes, c.SourceBytes)
 	if !c.DeviceKV {
 		fixed = max(fixed, c.SnapshotBytes)
 	}

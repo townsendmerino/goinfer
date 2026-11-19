@@ -1,0 +1,20 @@
+== 16:08:41 A start: tack E0 (tack 08c7d30, goinfer 9de08125c): load 0.10; MemAvailable 59.3 GiB; swap used 1438 MB; slice current 33.3 GiB of high 52.0 GiB; slice high 294050
+Traceback (most recent call last):
+  File "/home/francis/goinfer-bench/swaptrip/sampler.py", line 36, in <module>
+    s = kv(rd(f'/proc/{p}/status'))
+  File "/home/francis/goinfer-bench/swaptrip/sampler.py", line 15, in kv
+    if v: d[k.strip()] = v.split()[0]
+                         ~~~~~~~~~^^^
+IndexError: list index out of range
+tack exit 2; VERDICT: INCONCLUSIVE — eval models: 0 of 1 arms measured or fell back as expected; void: qwen3-coder-30b-a3b-q4km-cuda-moecache
+== 16:09:04 B start: 30B, E0's command, three cold ~8k: load 1.61; MemAvailable 59.0 GiB; swap used 1438 MB; slice current 33.3 GiB of high 52.0 GiB; slice high 294050
+16:09:55 cell 0: 8115 prompt tokens, 31.6 s, usage {'prompt_tokens': 8115, 'completion_tokens': 1, 'total_tokens': 8116, 'prefill_reused_tokens': 0}
+16:10:27 cell 1: 8149 prompt tokens, 31.8 s, usage {'prompt_tokens': 8149, 'completion_tokens': 1, 'total_tokens': 8150, 'prefill_reused_tokens': 0}
+16:10:58 cell 2: 8127 prompt tokens, 31.7 s, usage {'prompt_tokens': 8127, 'completion_tokens': 1, 'total_tokens': 8128, 'prefill_reused_tokens': 0}
+== 16:10:58 B end: load 2.59; MemAvailable 41.2 GiB; swap used 1348 MB; slice current 51.1 GiB of high 52.0 GiB; slice high 294050
+== 16:11:03 C start: 35B, the same flags, three cold ~8k: load 2.59; MemAvailable 59.2 GiB; swap used 1348 MB; slice current 33.4 GiB of high 52.0 GiB; slice high 294050
+16:12:45 cell 0: 8108 prompt tokens, 62.2 s, usage {'prompt_tokens': 8108, 'completion_tokens': 1, 'total_tokens': 8109, 'prefill_reused_tokens': 0}
+16:13:48 cell 1: 8141 prompt tokens, 62.4 s, usage {'prompt_tokens': 8141, 'completion_tokens': 1, 'total_tokens': 8142, 'prefill_reused_tokens': 0}
+16:14:49 cell 2: 8147 prompt tokens, 61.0 s, usage {'prompt_tokens': 8147, 'completion_tokens': 1, 'total_tokens': 8148, 'prefill_reused_tokens': 0}
+== 16:14:49 C end: load 1.88; MemAvailable 40.4 GiB; swap used 1355 MB; slice current 44.3 GiB of high 52.0 GiB; slice high 329909
+== 16:14:54 done

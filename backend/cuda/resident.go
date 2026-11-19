@@ -1269,10 +1269,6 @@ const _ = uint(fitdecide.AllocQuantumBytes-gpu.AllocQuantumBytes) + uint(gpu.All
 // the ledger share (docs/code-notes/cuda.md#allocRoundSlack).
 func allocRoundSlack(n int64) int64 { return gpu.ChargedBytes(n) - n }
 
-// allocSlackOffForTest prices no allocation slack into the plan (the planted defect of TestBuildScratchAccounting_plantedDefect).
-// Set it before the model loads: the plan remembers a model's slack from its first ask.
-var allocSlackOffForTest bool
-
 // allocSlackSeenForTest, when set (tests only), is told at each real build the slack the plan priced and packedAllocSlack over the
 // build's own planned buffers: they must be equal (MM2b gate 2).
 var allocSlackSeenForTest func(planned, built int64)

@@ -1,5 +1,7 @@
 # The host memory of a resident CUDA build, against what the fit guard prices (2026-10-18)
 
+> **Note, 2026-11-18 (memory audit, phase 2; the readings below are not rewritten).** Two statements here no longer describe main. (1) Cell (a)'s anonymous peak of 4,121 MiB is gone: the stream-pack change (`docs/measurements/cuda-stream-pack-2026-10-18/README.md`) took it to 113 MiB, and on current main a 7B sidecar load's VmHWM at ready is 4,159 MiB in total, 3,902 MiB of it the mapped file. (2) "Nothing on the host" is the weights term: a `.giw` load goes through `guardGIWFit` (`mem.SolveGIW`), which prices KV and prefill scratch, and, since `9641b42d9` (2026-10-18), the pinned expert copy of a CUDA expert-cache load. A build's anonymous transients remain unpriced.
+
 Scope, not a build (owner, 2026-10-18): the Mac's swap work found that Metal's resident build holds staging copies neither guard prices
 (`docs/tasks/task-never-swap-2026-09.md`, addendum 2026-10-18). Question for CUDA: how high does the process's host memory go while a dense
 model is built resident, how does that compare with what the fit guard priced, and can the packing stream into the device buffer or should it be priced?

@@ -1,0 +1,4 @@
+== 16:15:12 A start: tack E0 (tack 08c7d30, goinfer 9de08125c): load 1.41; MemAvailable 59.3 GiB; swap used 1355 MB; slice current 25.8 GiB of high 52.0 GiB; slice high 329909
+tack exit 0; VERDICT: PASS — eval models: 1 of 1 arms measured or fell back as expected
+== 16:27:44 A end: load 3.25; MemAvailable 59.5 GiB; swap used 1565 MB; slice current 28.9 GiB of high 52.0 GiB; slice high 330513
+== 16:27:45 done

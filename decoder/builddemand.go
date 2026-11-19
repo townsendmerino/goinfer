@@ -42,7 +42,8 @@ type BuildDemand struct {
 	KVOnDevice bool // the KV and the prefill scratch are device memory, which the backend's own plan sizes: the host fit prices none
 	// HostPackBytes is the host the build adds beside the weights while it packs them, where no build peak applies.
 	HostPackBytes int64
-	// HostBuildPeak is the host peak of building an expert cache from a .gguf; it replaces weights + KV + source when larger,
+	// HostBuildPeak is the host peak of building an expert cache from a .gguf: the weights, the experts' pinned copy and the packing
+	// (one packed layer and the staging; the layer only when BuildQuery.Layers is known). It replaces weights + KV + source when larger,
 	// because the phases do not overlap.
 	HostBuildPeak int64
 	// PinnedExpertBytes is the page-locked host copy of the routed experts a .giw load's expert cache holds.
@@ -110,8 +111,8 @@ const cudaPackStageBytes = 80 << 20
 
 // defaultCUDABuildDemand: resident when CUDA is linked, is the load's backend, does not stream, and implements the
 // architecture; its KV is then device memory, and packing adds one packed layer and the staging blocks. A C' expert cache built
-// from a .gguf peaks at the weights twice and the experts once; a .giw load's cache pins every routed expert at int4 with f16
-// group-32 scales (9/16 byte a weight).
+// from a .gguf peaks at the weights, the experts' pinned copy, one packed layer (when the layer count is known) and the staging; a
+// .giw load's cache pins every routed expert at int4 with f16 group-32 scales (9/16 byte a weight).
 func defaultCUDABuildDemand(q BuildQuery) BuildDemand {
 	o := q.Options
 	var d BuildDemand
@@ -121,9 +122,12 @@ func defaultCUDABuildDemand(q BuildQuery) BuildDemand {
 		d.HostPackBytes = q.WeightBytes/int64(max(q.Layers, 1)) + cudaPackStageBytes
 	}
 	if o.Backend == "cuda" && q.GGUF && !o.StreamWeights && q.ExpertBytes > 0 && q.ExpertCache {
-		d.HostBuildPeak = 2*q.WeightBytes + q.ExpertBytes
-		if o.MoEExpertsUnpinned { // the packed experts are file pages, not a host copy
-			d.HostBuildPeak = 2 * q.WeightBytes
+		d.HostBuildPeak = q.WeightBytes + cudaPackStageBytes
+		if q.Layers > 0 {
+			d.HostBuildPeak += q.WeightBytes / int64(q.Layers)
+		}
+		if !o.MoEExpertsUnpinned { // unpinned, the packed experts are file pages, not a host copy
+			d.HostBuildPeak += q.ExpertBytes
 		}
 	}
 	if q.ExpertCache && d.Resident && q.NumExperts > 0 && q.ExpertIntermediate > 0 && !o.MoEExpertsUnpinned {

@@ -1,0 +1,4 @@
+/home/francis/models/gemma4-26b-q4_k_m.gguf
+  gemma4-26b-q4_k_m.gguf needs ~13.2 GB resident at quant int4 (its KV is in VRAM, which the context plan sizes) + 15.6 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 28.9 GB; this machine currently has 58.6 GB of memory available (budget 41.0 GB = 70% of that) <nil>
+/home/francis/models/gpt-oss-20b-MXFP4.gguf
+  gpt-oss-20b-MXFP4.gguf needs ~11.0 GB resident at quant int4 (its KV is in VRAM, which the context plan sizes) + 11.3 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 22.3 GB; this machine currently has 58.5 GB of memory available (budget 41.0 GB = 70% of that) <nil>

@@ -1,5 +1,7 @@
 # Tack's E0 run C3 on goinfer f20f0d93: two findings read from its logs and the code (2026-10-18)
 
+> **Note, 2026-11-18 (memory audit, phase 2; the readings below are not rewritten).** Finding 3 of section 1 and its proposed fix 3 are superseded: the `.giw` fit guard has priced a `--moe-cache-experts` load's pinned expert copy since `9641b42d9` (2026-10-18, the day after this reading), through `mem.SolveGIW` and `GIWLoad.PinnedExperts`. A build's anonymous transients remain unpriced.
+
 Logs only; nothing was run for this note. Sources: tack's C3 output and the servers' load logs on nobara (under `~/tack-runs/e0/`), `internal/kvmgr`, `decoder/cachestate.go`, `backend/cuda/prefill.go`, and the `kv3-tiled-2026-10` branch.
 Nothing here is built. Where a number is not in the logs, the note says so and names the cheapest run that would give it.
 

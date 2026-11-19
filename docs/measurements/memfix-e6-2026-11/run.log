@@ -1,0 +1,2 @@
+[e6] gemma4-26b-q4_k_m.gguf: ready 23.09339189529419s, VmHWM 29.09 GiB, peak VmSwap 0.000 GiB, peak RssAnon 13.59 RssFile 15.49 RssShmem 12.06; answer 'I say hello to you.'
+[e6] gpt-oss-20b-MXFP4.gguf: ready 22.273926258087158s, VmHWM 22.38 GiB, peak VmSwap 0.000 GiB, peak RssAnon 11.22 RssFile 11.22 RssShmem 10.10; answer ''
