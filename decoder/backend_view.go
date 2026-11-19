@@ -153,7 +153,7 @@ func (v backendModelView) AttnLogitSoftcap() float32   { return float32(v.m.w.ar
 func (v backendModelView) HasAttnSinks() bool          { return v.m.w.arch.hasAttnSinks() }
 func (v backendModelView) IsGemma4() bool              { return v.m.w.arch.gemma4 != nil }
 func (v backendModelView) ProjsInt4() bool             { return v.m.residentProjsInt4() }
-func (v backendModelView) LoadAbort() <-chan struct{}  { return v.m.loadAbort }
+func (v backendModelView) LoadAbort() <-chan struct{}  { return v.m.opts.LoadAbort }
 
 func (v backendModelView) MoEParams() (nE, k, inter, sharedInter int, sigmoid, norm, sharedUngated bool, scale float64, nGroup, topkGroup int, ok bool) {
 	mo := v.m.ResidentSpec().MoE

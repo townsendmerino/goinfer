@@ -234,9 +234,9 @@ type orderedBuild struct {
 
 func (o *orderedBuild) BuildResident(m *Model) (ResidentForward, bool, error) {
 	o.mu.Lock()
-	*o.seq = append(*o.seq, m.noSelfTest)
+	*o.seq = append(*o.seq, m.opts.noSelfTest)
 	o.mu.Unlock()
-	if m.noSelfTest {
+	if m.opts.noSelfTest {
 		return nil, false, nil
 	}
 	return o.fakeNamedResidency.BuildResident(m)

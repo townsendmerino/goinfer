@@ -272,7 +272,7 @@ func (m *Model) cudaKVParts(ctx int, kvF16, kvI8 bool) (slot, null int64) {
 			}
 			block := KVBlockRows * cudaKVRowBytes(b, prec)
 			null += block
-			if held := b.Window + WindowedKVSlack; b.Window > 0 && m.windowedKV && ctx > held {
+			if held := b.Window + WindowedKVSlack; b.Window > 0 && m.opts.ResidentWindowedKV && ctx > held {
 				windowed += block * int64((held+KVBlockRows-1)/KVBlockRows+1)
 				continue
 			}

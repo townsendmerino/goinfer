@@ -1,6 +1,6 @@
 # Codecov reads this from .github/. Coverage is reported, never gated: the statuses are
 # informational so a commit is not marked red for a coverage dip, and there are no PR comments
-# (coverage.yml uploads only on pushes to main).
+# (coverage.yml uploads nightly from main).
 coverage:
   status:
     project:
