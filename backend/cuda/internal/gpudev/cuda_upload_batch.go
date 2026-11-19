@@ -89,6 +89,9 @@ func UploadBatch(copies []HostCopy) error {
 		if len(c.Src) == 0 {
 			continue
 		}
+		if TraceForTest != nil {
+			TraceForTest(TraceEvent{Op: TraceUpload, Dst: c.Dst.BindAddr(), Bytes: len(c.Src), Src: c.Src})
+		}
 		if err := c.Dst.b.CopyFromAt(bg, int(c.Dst.off), c.Src); err != nil {
 			return fmt.Errorf("cuda: upload %d of %d: %w", i, len(copies), err)
 		}

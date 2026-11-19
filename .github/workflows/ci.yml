@@ -1058,6 +1058,18 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+      # The rolling build and test cache the other OS lanes keep, keyed by runner.arch so the amd64 and arm64 lanes never
+      # share. Restored on every run but saved only by pushes to main: the repository's cache is at its size cap, and a
+      # pull request's save is readable by that pull request alone.
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~\AppData\Local\go-build
+            ~\go\pkg\mod
+          key: go-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum') }}-
+            go-test-${{ runner.os }}-${{ runner.arch }}-
       - name: cpu (for the hardware census)
         shell: pwsh
         run: |
@@ -1078,6 +1090,14 @@ jobs:
           bash scripts/ci_skip_count.sh test.json
           # -json hides go test's plain output: print what a red lane needs (failure lines, panics, build output)
           grep -E '"Action":"(output|build-output)".*(--- FAIL|FAIL|panic|fatal error|_test.go:[0-9]+|\.go:[0-9]+:[0-9]+:)' test.json | head -300 || true
+      - name: save the build and test cache (pushes to main only)
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~\AppData\Local\go-build
+            ~\go\pkg\mod
+          key: go-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
       # The grep above cuts at 300 lines, before a runtime fatal error on a crashed serveapp binary: keep the whole stream (issue 1078).
       - name: keep test.json of a red run
         if: failure()
@@ -1100,6 +1120,18 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+      # The rolling build and test cache the other OS lanes keep, keyed by runner.arch so the amd64 and arm64 lanes never
+      # share. Restored on every run but saved only by pushes to main: the repository's cache is at its size cap, and a
+      # pull request's save is readable by that pull request alone.
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~\AppData\Local\go-build
+            ~\go\pkg\mod
+          key: go-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum') }}-
+            go-test-${{ runner.os }}-${{ runner.arch }}-
       - name: cpu (for the hardware census)
         shell: pwsh
         run: |
@@ -1122,6 +1154,14 @@ jobs:
           bash scripts/ci_skip_count.sh test.json
           # -json hides go test's plain output: print what a red lane needs (failure lines, panics, build output)
           grep -E '"Action":"(output|build-output)".*(--- FAIL|FAIL|panic|fatal error|_test.go:[0-9]+|\.go:[0-9]+:[0-9]+:)' test.json | head -300 || true
+      - name: save the build and test cache (pushes to main only)
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~\AppData\Local\go-build
+            ~\go\pkg\mod
+          key: go-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
 
   root-linux-arm64:
     needs: changes
