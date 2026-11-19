@@ -325,7 +325,7 @@ func TestKV2_scopes(t *testing.T) {
 func TestKV2_optionOff(t *testing.T) {
 	const maxTok = 8
 	m, rf := loadWithCopyFake(t, 2, "")
-	m.kvShareOff = true // Options.KVShareOff
+	m.opts.KVShareOff = true // Options.KVShareOff
 	pre := kv2Preamble(m.w.arch.VocabSize)
 	a, b := newKV2Conv(pre, 0, m.w.arch.VocabSize), newKV2Conv(pre, 1, m.w.arch.VocabSize)
 	a.turn(t, context.Background(), m, 0, maxTok)
