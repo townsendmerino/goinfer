@@ -43,7 +43,7 @@ DRAM peak, means the lever is smaller than the finding claims; reported beside t
 **Outcome.** WIN: no code change here; the threshold choice (re-key the never class on bytes per key, or leave it) goes to Francis with the
 speed and fidelity numbers. AMBIGUOUS: parked with the numbers. KILL: the never class stands at f16; recorded as a negative result.
 
-## Amendment 1 (2026-11-19 14:01 PST, before any f16 data)
+## Amendment 1 (2026-11-19 13:59 PST, before any f16 data; the heading first read 14:01, a guessed time, corrected after the run: see record.md)
 
 The instrument as registered timed the wrong cache. `backend/cuda`'s test suite pins `kvF16Auto` false in
 `kv16_default_test.go`'s `init`, so under the test binary `auto` delivers **f32** ("auto is f32 on CUDA in this build"), while serve's
