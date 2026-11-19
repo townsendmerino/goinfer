@@ -127,7 +127,7 @@ func archAdmitFacts(a *Architecture, backend string) AdmitFacts {
 
 // admitFacts gathers the facts Admit reads from a loaded model.
 func (m *Model) admitFacts() AdmitFacts {
-	f := AdmitFacts{Arch: m.w.arch, QuantLabel: m.Quant(), BackendAuto: m.backendAuto, ActGroup: m.actGroup,
+	f := AdmitFacts{Arch: m.w.arch, QuantLabel: m.Quant(), BackendAuto: m.opts.BackendAuto, ActGroup: m.opts.ActQuantGroup,
 		ProjsInt4: m.residentProjsInt4(), SSMResident: m.knobs.get(knobSSMResident) != ""}
 	if m.be != nil {
 		f.Backend = m.be.Name()

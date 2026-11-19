@@ -42,10 +42,10 @@ type cpuBatcher struct {
 //   - under CPUBatchAuto: the model's dense weights are under cpuBatchAutoMinBytes.
 func (m *Model) EnableCPUBatch(n int) bool {
 	m.cpuBatch = nil // a repeated call (a changed -max-concurrent) decides afresh
-	if n < 2 || m.resident != nil || m.cpuBatchMode == CPUBatchOff || m.cpuBatchModelEligible() != nil {
+	if n < 2 || m.resident != nil || m.opts.CPUBatchDecode == CPUBatchOff || m.cpuBatchModelEligible() != nil {
 		return false
 	}
-	if m.cpuBatchMode == CPUBatchAuto && m.ResidentDenseWeightBytes() < cpuBatchAutoMinBytes {
+	if m.opts.CPUBatchDecode == CPUBatchAuto && m.ResidentDenseWeightBytes() < cpuBatchAutoMinBytes {
 		return false
 	}
 	b := &cpuBatcher{m: m}
@@ -59,7 +59,7 @@ func (m *Model) EnableCPUBatch(n int) bool {
 func (m *Model) CPUBatchActive() bool { return m.cpuBatch != nil }
 
 // CPUBatchDecodeMode is Options.CPUBatchDecode for this model.
-func (m *Model) CPUBatchDecodeMode() int { return m.cpuBatchMode }
+func (m *Model) CPUBatchDecodeMode() int { return m.opts.CPUBatchDecode }
 
 // CPUBatchStats is a snapshot of the CPU batcher's counters (runs, steps, step sizes, solo tokens); zero when off.
 func (m *Model) CPUBatchStats() ResidentBatchStats {

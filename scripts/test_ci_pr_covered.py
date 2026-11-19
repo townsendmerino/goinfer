@@ -113,6 +113,13 @@ class Decision(unittest.TestCase):
         w.artifacts[100] = f"tree={TREE}\ndocs_only=true\n"
         self.assertCovered(w, False, "did not run the full matrix")
 
+    def test_backend_only_pr_run_skipped_lanes(self):
+        w = World()
+        w.artifacts[100] = f"tree={TREE}\ndocs_only=false\nbackend_only=true\n"
+        self.assertCovered(w, False, "did not run the full matrix")
+        w.artifacts[100] = f"tree={TREE}\ndocs_only=false\nbackend_only=false\n"
+        self.assertCovered(w, True, "passed on tree")
+
     def test_api_error(self):
         w = World()
         w.api_error = RuntimeError("HTTP 502")
