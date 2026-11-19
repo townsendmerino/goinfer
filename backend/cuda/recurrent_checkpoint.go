@@ -173,7 +173,7 @@ func (r *cudaResident) allocCheckpointCopy() (bufs []Buffer, ok bool) {
 			for _, b := range []Buffer{p.win, p.state} {
 				bufs = append(bufs, r.af(b.Len()))
 				if ckptAllocFailAfterForTest > 0 && len(r.ckptCopies) >= ckptAllocFailAfterForTest {
-					panic("cuda: device allocation failed (test seam): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY")
+					panic(allocFailureForTest())
 				}
 			}
 		}
