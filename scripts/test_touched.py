@@ -131,6 +131,7 @@ NOT_SOURCE_READERS = {
     "TestSettleCalls_callWrittenInsideReasoning": "a file name inside a tool call's arguments",
     "TestForcedCall_harmonyBudgetCloseParsesAsACall": "a file name inside a tool call's arguments",
     "TestBuilderFile": "asks BuilderFile about paths given as strings; it reads no file",
+    "TestFuncKey_namesTheReceiverType": "parses a Go source held in the test as a string; it reads no file",
 }
 
 
