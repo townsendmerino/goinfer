@@ -740,8 +740,8 @@ func (m *Model) withResidencyOrAbort() (*Model, error) {
 // backendDeclinedErr is Options.RequireBackend's refusal: an ErrBackendDeclined error naming the backend and the decline when
 // the load asked for a backend other than the CPU and built no resident runner on it, else nil.
 func (m *Model) backendDeclinedErr() error {
-	be := m.kvOpts.Backend
-	if !m.kvOpts.RequireBackend || be == "" || be == "cpu" || m.ResidentActive() {
+	be := m.opts.Backend
+	if !m.opts.RequireBackend || be == "" || be == "cpu" || m.ResidentActive() {
 		return nil
 	}
 	reason := m.ResidentDecline()
@@ -871,7 +871,7 @@ func (m *Model) ResidentKVPrecision() string {
 	if m.resident == nil || m.be == nil || m.w == nil {
 		return ""
 	}
-	got, _ := ResolveKV(m.be.Name(), m.w.arch, m.kvOpts)
+	got, _ := ResolveKV(m.be.Name(), m.w.arch, m.opts)
 	return got
 }
 

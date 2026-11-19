@@ -76,8 +76,9 @@ type Model struct {
 	// resCkptPrompt is the prompt whose end the resident's recurrent checkpoint holds, saved by the running generation and
 	// recorded on its sequence by the commit (residentCheckpointSave, residentCommitIDs); nil otherwise.
 	resCkptPrompt []int
-	// kvOpts is the Options the model was loaded with, which ResolveKV reads for the precision each cache delivers (KVPrecisionReport).
-	kvOpts Options
+	// opts is the Options the model was loaded with: the accessors for each load option read it, and ResolveKV reads it for the
+	// precision each cache delivers (KVPrecisionReport).
+	opts Options
 	// resDrafterSynced identifies which *BlockSpec's own drafter context is in sync with resIDs; nil means no drafter context is
 	// trustworthy for reuse. resIDs alone is not enough: a plain Generate or n-gram-speculative turn can commit resIDs without
 	// touching a block drafter's context, so the token prefix can match while the drafter's state does not reflect it. Cleared
@@ -458,7 +459,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 			}
 		}
 	}
-	return &Model{planSlackOf: &planSlackMemo{}, fitOf: &fitMemo{}, w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline, prog: buildProgram(w.arch, w.hasExperts), kvOpts: opts,
+	return &Model{planSlackOf: &planSlackMemo{}, fitOf: &fitMemo{}, w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline, prog: buildProgram(w.arch, w.hasExperts), opts: opts,
 		kvF16: kvF16, kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", kvH: opts.KVQuant == "f16",
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
 		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, moeStep: opts.ResidentMoEStep, recurStep: opts.ResidentRecurrentStep, recurStepDef: opts.ResidentRecurrentStepDefault, gemma4StepDef: opts.ResidentGemma4StepDefault, gemma4Step: opts.ResidentGemma4Step, prefillChunk: opts.ResidentPrefillChunk, kvShareOff: opts.KVShareOff, kvSnaps: newKVSnapStore(opts.KVHostBytes), kvDemote: opts.KVDemote, disableFit: opts.DisableFit,

@@ -214,11 +214,11 @@ func (m *Model) kvDeliveredOrRefuse() error {
 	if m.w == nil {
 		return nil
 	}
-	if r := kvRefusal(m.kvPath(), m.w.arch, m.kvOpts); r != nil {
+	if r := kvRefusal(m.kvPath(), m.w.arch, m.opts); r != nil {
 		return r
 	}
-	if m.kvPath() != "cpu" && m.kvOpts.LoRA != "" {
-		if r := kvRefusal("cpu", m.w.arch, m.kvOpts); r != nil {
+	if m.kvPath() != "cpu" && m.opts.LoRA != "" {
+		if r := kvRefusal("cpu", m.w.arch, m.opts); r != nil {
 			return r
 		}
 	}
@@ -241,14 +241,14 @@ func (m *Model) KVPrecisionReports() []KVPrecisionReport {
 	}
 	var out []KVPrecisionReport
 	if path := m.kvPath(); path != "cpu" {
-		got, why := ResolveKV(path, m.w.arch, m.kvOpts)
-		out = append(out, KVPrecisionReport{Cache: "resident", Requested: gpuKVRequested(m.kvOpts), Delivered: got, Reason: why})
-		if m.kvOpts.LoRA == "" {
+		got, why := ResolveKV(path, m.w.arch, m.opts)
+		out = append(out, KVPrecisionReport{Cache: "resident", Requested: gpuKVRequested(m.opts), Delivered: got, Reason: why})
+		if m.opts.LoRA == "" {
 			return out
 		}
 	}
-	got, why := ResolveKV("cpu", m.w.arch, m.kvOpts)
-	return append(out, KVPrecisionReport{Cache: "cpu", Requested: cpuKVRequested(m.kvOpts), Delivered: got, Reason: why})
+	got, why := ResolveKV("cpu", m.w.arch, m.opts)
+	return append(out, KVPrecisionReport{Cache: "cpu", Requested: cpuKVRequested(m.opts), Delivered: got, Reason: why})
 }
 
 // resolveKVHook, set only by a test (goinfer_testhooks), answers ResolveKV for the cases it claims (ok), so a test can make the
@@ -260,7 +260,7 @@ func (m *Model) KVDeliveredFor(backend string) string {
 	if m.w == nil {
 		return ""
 	}
-	got, _ := ResolveKV(backend, m.w.arch, m.kvOpts)
+	got, _ := ResolveKV(backend, m.w.arch, m.opts)
 	return got
 }
 
@@ -269,6 +269,6 @@ func (m *Model) KVDelivered() string {
 	if m.w == nil {
 		return ""
 	}
-	got, _ := ResolveKV(m.kvPath(), m.w.arch, m.kvOpts)
+	got, _ := ResolveKV(m.kvPath(), m.w.arch, m.opts)
 	return got
 }
