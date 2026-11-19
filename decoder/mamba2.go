@@ -1,7 +1,6 @@
 package decoder
 
 import (
-	"os"
 	"sync"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -130,10 +129,10 @@ func mamba2Step(h []float32, w *mamba2Weights, p mamba2Params, eps float64, st *
 // reconciliation. nil in production.
 var mambaCapHook func(proj, gated []float32)
 
-// ssmQ8CPU + q8RoundTrip are a confirmation seam (GOINFER_SSM_Q8CPU): round-trip the
+// ssmQ8CPU + q8RoundTrip are a confirmation seam, set by tests through SetSSMQ8CPU: round-trip the
 // Mamba projections through int8 so the CPU reference carries the SAME quantization error
 // as the resident W8A8 path — isolating kernel-correctness from int8 sensitivity.
-var ssmQ8CPU = os.Getenv("GOINFER_SSM_Q8CPU") != ""
+var ssmQ8CPU bool
 
 // ssmQ8WeightsOnly (W8A16 control, set by tests) round-trips the mamba in/out_proj WEIGHTS
 // through int8 but keeps activations f32 — int8-weights / f32-activations, the W8A16 question.
