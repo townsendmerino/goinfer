@@ -19,6 +19,8 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/internal/app/loadflags"
 	"github.com/townsendmerino/goinfer/internal/testpath"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestServe_glmOcrImage_O3 is gate O3's serve half, on the real GLM-OCR checkpoint at f32 on the CPU backend, through the
@@ -35,7 +37,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./internal/app/serveapp/ -run 'TestServe_glmOcrImage_O3/invoice' -v -timeout 20m 2>&1 | tee /tmp/glm-ocr-serve-invoice.log
 func TestServe_glmOcrImage_O3(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ckpt := filepath.Join(os.Getenv("HOME"), "models", "glm-ocr")
 	if _, err := os.Stat(filepath.Join(ckpt, "config.json")); err != nil {
 		t.Skipf("asset missing: %s", ckpt)

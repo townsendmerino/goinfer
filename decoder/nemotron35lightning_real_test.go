@@ -15,10 +15,14 @@
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestNemotron35LightningReal -v -timeout 90m
 package decoder
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
+)
 
 func TestNemotron35LightningReal_oracle(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ckpt := assetPath(t, "GOINFER_NEMOTRON35LIGHTNING_HF")
 	// Same quant finding as Nano is expected to transfer (identical router shape, same 6-of-128
 	// sparsity) but is MEASURED here independently, not assumed: int8 weights + f32 activations,

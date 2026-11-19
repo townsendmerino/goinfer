@@ -10,6 +10,8 @@ import (
 	gc "github.com/eitamring/gocudrv/cuda"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/vision"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestQwen25VLMRoPEPrefillResidentReal_gate is the real-checkpoint gate for the resident m-RoPE prefill fast path
@@ -26,7 +28,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestQwen25VLMRoPEPrefillResidentReal_gate -v -timeout 30m
 func TestQwen25VLMRoPEPrefillResidentReal_gate(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ckpt := decoder.AssetPathForTest(t, "GOINFER_QWEN25VL_3B")
 	const golden = "../../testdata/qwen25vl_real_golden.json.gz"
 	raw, err := readGolden(golden)

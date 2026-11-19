@@ -9,6 +9,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // THE decisive test: does Gemma 3 actually GENERATE on Metal? Merges are encode-only, so a decode-only vocab is enough
@@ -16,7 +18,7 @@ import (
 // "is it actually broken" metric that argmax (trajectory-sensitive: the same known-good path
 // scores differently on different id sets) cannot give.
 func TestGemma3_GeneratesCoherently(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	// A decline leaves rf nil, and the rf==nil check below then t.Fatals, catching a silent CPU fallback.
 	path := os.ExpandEnv("$HOME/models/gemma-3-4b-it-Q4_K_M.gguf")
 	if _, err := os.Stat(path); err != nil {

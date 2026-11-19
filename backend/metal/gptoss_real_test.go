@@ -13,7 +13,7 @@ import (
 // TestGptOssResidentParity is gpt-oss's Metal gate — the same residentParity/assertParity
 // harness TestGPT2ResidentParity uses, on the tiny F32 fixture decoder/testdata/gptoss_tiny.gguf
 // (decoder/gptoss_gguf_test.go's own CPU parity gate: cosine 0.99843 vs the real HF checkpoint,
-// scripts/gptoss_tiny_golden.py). Small enough (645 KB) not to need requireHeavyModel.
+// scripts/gptoss_tiny_golden.py). Small enough (645 KB) not to need testgate.RequireHeavy.
 //
 // residentParity t.Fatals on a decline, which catches a silent CPU fallback rather than an honest skip.
 func TestGptOssResidentParity(t *testing.T) {

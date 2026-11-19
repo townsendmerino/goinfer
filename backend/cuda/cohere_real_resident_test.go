@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestCohereRealResidentParityCUDA is the REAL-CHECKPOINT gate for the pairwise rope on CUDA: Aya-expanse-8B
@@ -39,7 +41,7 @@ import (
 // and re-measures the 48-token prompt (decode and batched prefill), which must read below bar 1.
 // History and figures: docs/code-notes/cuda.md#TestCohereRealResidentParityCUDA.
 func TestCohereRealResidentParityCUDA(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	for _, c := range []struct {
 		name, env, golden string
 	}{

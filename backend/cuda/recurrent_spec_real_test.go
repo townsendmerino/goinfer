@@ -19,6 +19,8 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // SP2's real-pairing gates on Qwen3.5-9B with z-lab's DFlash: G1c identity with the plants P1 and P2 and G5 on the 9B (TestSP2_identity), G2 the fold's cost (TestSP2_foldCost) and
@@ -64,7 +66,7 @@ type sp2Rig struct {
 
 func newSP2Rig(t *testing.T) *sp2Rig {
 	t.Helper()
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if os.Getenv("SP2_OUT") == "" {
 		t.Skip("set SP2_OUT")
 	}

@@ -35,10 +35,12 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestGemma3TowerSensitivity(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	featsFile := os.Getenv("GOINFER_G3_FEATS")
 	if featsFile == "" {
 		t.Skip("set GOINFER_G3_FEATS to phase 1's output (metal/gemma3_tower_dump_test.go)")

@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestGemma4_26B_pagedRuns is the marquee + the SECONDARY gate: the 26B-A4B (11.96 GB experts, does
@@ -23,7 +25,7 @@ import (
 // side by side, and the penalty decomposition (staging traffic measured; coordination = remainder).
 // Heavy + paged: GOINFER_HEAVY_TESTS=1 go test -run TestGemma4_26B_pagedRuns.
 func TestGemma4_26B_pagedRuns(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	giw := modelPath("gemma4-26b-int4.giw") // GOINFER_MODELS_DIR (default $HOME/models); see modelsdir_test.go (G-06)
 	if _, err := os.Stat(giw); err != nil {
 		t.Skipf("no .giw (%s)", giw)

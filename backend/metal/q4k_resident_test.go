@@ -16,6 +16,8 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/app/loadflags"
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestQ4KLaneResidentQwen is the q4k lane's by-day wiring smoke, not G-Q2: a
@@ -42,7 +44,7 @@ func TestQ4KLaneResidentQwen(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if c.heavy {
-				requireHeavyModel(t)
+				testgate.RequireHeavy(t)
 			}
 			path := os.Getenv(c.env)
 			if path == "" {

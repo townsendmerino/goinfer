@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // forwardPagedCaptureIdxForTest runs the paged forward at position pos and returns the top-k expert
@@ -54,7 +56,7 @@ func (r *resident) forwardPagedCaptureIdxForTest(pos int) [][]int {
 // a dense stack, having no discrete decision, cannot do). If the first idx divergence coincides with
 // the L11→L14 collapse, that's the cause.
 func TestGemma4_26B_routingAgreement(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	giw := modelPath("gemma4-26b-int4.giw") // GOINFER_MODELS_DIR (default $HOME/models); see modelsdir_test.go (G-06)
 	if _, err := os.Stat(giw); err != nil {
 		t.Skipf("no .giw")

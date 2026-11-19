@@ -18,6 +18,8 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // GLM-OCR on the CUDA resident, on a REAL page through the REAL tower.
@@ -55,7 +57,7 @@ func b64F32(t *testing.T, s string) []float32 {
 // requested context, whether the resident was built, the cap it reports, and the decline reason if not. It asserts nothing
 // about the numbers (they are a property of this card); it exists so the figure in the O3 record is reproducible.
 func TestGlmOcrCUDAContextFit(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ckpt := decoder.AssetPathForTest(t, "GOINFER_GLM_OCR")
 	for _, ctx := range []int{2048, 4096, 8192, 12288, 16384, 24576, 32768, 65536} {
 		m, err := decoder.Load(ckpt, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: ctx})
@@ -73,7 +75,7 @@ func TestGlmOcrCUDAContextFit(t *testing.T) {
 const glmOcrResidentCtx = 4096
 
 func TestGlmOcrCUDAResidentRealImage(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ckpt := decoder.AssetPathForTest(t, "GOINFER_GLM_OCR")
 	pp, err := multimodal.LoadGlmOcrPreprocessConfig(ckpt)
 	if err != nil {
@@ -229,7 +231,7 @@ func firstDiff(a, b []int) int {
 // resident m-RoPE prefill's chunking, the KV at 6.2k positions, decode past a 128x192 grid whose position delta is large),
 // not what the model reads. The prompt shape is the real template's.
 func TestGlmOcrCUDAResidentFullBudget(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ckpt := decoder.AssetPathForTest(t, "GOINFER_GLM_OCR")
 	pp, err := multimodal.LoadGlmOcrPreprocessConfig(ckpt)
 	if err != nil {

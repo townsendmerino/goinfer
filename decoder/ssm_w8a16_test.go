@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // Control A (docs/ssm-int8-quality.md): does int8-WEIGHTS + f32-ACTIVATIONS (W8A16) beat the
@@ -20,7 +22,7 @@ import (
 // GOINFER_SSM_Q8WEIGHTS additionally round-trips the mamba weights to int8 (weights-only) for a
 // full W8A16. Scored teacher-forced vs the f32 reference (R1).
 func TestSSMW8A16Ceiling(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if os.Getenv("GOINFER_SSM_QUALITY") == "" {
 		t.Skip("W8A16 ceiling control — slow (granite cpu loads); set GOINFER_SSM_QUALITY=1")
 	}

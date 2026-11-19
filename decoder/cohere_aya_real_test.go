@@ -15,10 +15,12 @@ package decoder
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestCohereAyaReal_gate(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	// assetPath, not a hand-rolled env+fallback. os.Stat on the DIRECTORY was the weaker check the
 	// registry exists to replace: a directory that exists but holds no shards satisfied it.
 	ckpt := assetPath(t, "GOINFER_COHERE_AYA")

@@ -14,13 +14,15 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestKSD2_steel128Logits is D2-G1's instrument: Qwen2.5-Coder-1.5B
 // (head dim 128, the Metal .giw), PrefillLast at K=512 and 3,900, the SHA-256 of the last logits' bits. Run from a test binary
 // at the change and one at its base; the hashes must match. A real checkpoint (GOINFER_HEAVY_TESTS=1).
 func TestKSD2_steel128Logits(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v17.giw")
 	m, err := decoder.Load(path, decoder.Options{Backend: "metal", ResidentContext: 4096})
 	if err != nil {

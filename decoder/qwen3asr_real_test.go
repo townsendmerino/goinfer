@@ -14,6 +14,8 @@ import (
 	"github.com/townsendmerino/goinfer/internal/audio"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // G-S14c1 (real, the text path) and G-S14c3 (real, the composition): Qwen3-ASR-0.6B, goinfer float32 on the
@@ -23,7 +25,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_QWEN3ASR_REF=<pin output dir> [GOINFER_QWEN3ASR_DIR=<checkpoint, with tokenizer.json>] go test -tags realckpt ./decoder/ -run TestQwen3ASRReal -v -timeout 30m
 func TestQwen3ASRReal_gate(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ref := os.Getenv("GOINFER_QWEN3ASR_REF")
 	if ref == "" {
 		t.Skip("set GOINFER_QWEN3ASR_REF to scripts/pin_qwen3asr_real.py's output directory")

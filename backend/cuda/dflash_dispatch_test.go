@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestDFlashDispatchAmortization settles the ONE assumption gate 3's draft term rests on: that per-layer cost
@@ -27,7 +29,7 @@ import (
 //	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
 //	  go test -tags 'cuda goinfer_testhooks' -run TestDFlashDispatchAmortization -v
 func TestDFlashDispatchAmortization(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_CUDA_MODEL")
 	if path == "" {
 		path = os.ExpandEnv("$HOME/models/qwen3-4b")
@@ -140,7 +142,7 @@ func TestDFlashDispatchAmortization(t *testing.T) {
 //	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
 //	  go test -tags 'cuda goinfer_testhooks' -run TestDFlashCaptureSeamCost -v
 func TestDFlashCaptureSeamCost(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_CUDA_MODEL")
 	if path == "" {
 		path = os.ExpandEnv("$HOME/models/qwen3-4b")
@@ -230,7 +232,7 @@ func TestDFlashCaptureSeamCost(t *testing.T) {
 //	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
 //	  go test -tags 'cuda goinfer_testhooks' -run TestDFlashRoundComposition -v
 func TestDFlashRoundComposition(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_CUDA_MODEL")
 	if path == "" {
 		path = os.ExpandEnv("$HOME/models/qwen3-4b")
@@ -339,7 +341,7 @@ func TestDFlashRoundComposition(t *testing.T) {
 //	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
 //	  go test -tags 'cuda goinfer_testhooks' -run TestDFlashCompositionResidual -v
 func TestDFlashCompositionResidual(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_CUDA_MODEL")
 	if path == "" {
 		path = os.ExpandEnv("$HOME/models/qwen3-4b")
@@ -455,7 +457,7 @@ func TestDFlashCompositionResidual(t *testing.T) {
 //	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
 //	  go test -tags 'cuda goinfer_testhooks' -run TestDFlashVerifyHeadCost -v
 func TestDFlashVerifyHeadCost(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_CUDA_MODEL")
 	if path == "" {
 		path = os.ExpandEnv("$HOME/models/qwen3-4b")
@@ -525,7 +527,7 @@ func TestDFlashVerifyHeadCost(t *testing.T) {
 //	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
 //	  go test -tags 'cuda goinfer_testhooks' -run TestPrefillLastNArgmax -v
 func TestPrefillLastNArgmax_matchesPerRow(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_CUDA_MODEL")
 	if path == "" {
 		path = os.ExpandEnv("$HOME/models/qwen3-4b")

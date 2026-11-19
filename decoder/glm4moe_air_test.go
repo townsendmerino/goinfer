@@ -26,10 +26,12 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestGlm4MoeAir_gate(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	// assetPath, not a hand-rolled env+fallback: the registry is what makes this gate and the sweep
 	// preflight apply the SAME predicate to the same candidate paths. Both halves are registered
 	// because the .giw is DERIVED from the .gguf — resolving only the derived file would report an

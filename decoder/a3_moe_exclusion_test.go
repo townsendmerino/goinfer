@@ -8,6 +8,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // What was the MoE exclusion in A3/G24 worth? Measures both halves of the trade on a MoE checkpoint:
@@ -21,7 +23,7 @@ import (
 //	go test -tags goinfer_testhooks ./decoder/ -run TestA3MoEExclusionIsMeasured -v
 func TestA3MoEExclusionIsMeasured(t *testing.T) {
 	path := assetPath(t, "GOINFER_MELLUM_CKPT")
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	K := 2048
 	if v := os.Getenv("GOINFER_MELLUM_K"); v != "" {
 		if _, err := fmt.Sscanf(v, "%d", &K); err != nil {

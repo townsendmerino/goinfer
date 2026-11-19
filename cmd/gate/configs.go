@@ -23,7 +23,7 @@ func heavyConfig() *gateConfig {
 			// TWO GATING LAYERS, both handled here. `//go:build realckpt` files do not COMPILE
 			// without the tag, so plain `go test ./...` (and CI) never even builds them — the
 			// strongest form of "run by nothing". The tag makes them compile; the env below makes
-			// the requireHeavyModel ones actually run instead of skipping.
+			// the testgate.RequireHeavy ones actually run instead of skipping.
 			Tags:    []string{"goinfer_testhooks", "realckpt"},
 			Run:     run,
 			Timeout: timeout,

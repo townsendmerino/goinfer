@@ -9,13 +9,15 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/vision"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestTWRG3_qwen3VLHostHeap is TWR-G3: the Qwen3-VL-2B tower
 // attached on Metal, float32; the Go heap in use after runtime.GC with the attach alone (main) and after the release serve
 // now calls (ReleaseBlocks). The heap must fall by at least 80% of the blocks' float32 bytes.
 func TestTWRG3_qwen3VLHostHeap(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	dir := os.ExpandEnv("$HOME/models/qwen3-vl-2b-instruct")
 	if _, err := os.Stat(dir); err != nil {
 		t.Skipf("no checkpoint at %s", dir)

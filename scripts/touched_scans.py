@@ -188,6 +188,8 @@ SCANS = [
     Scan("internal/runtime/mem", "TestSolve_pure", NT("internal/runtime/mem")),
     Scan("internal/runtime/mem", "TestNoGuardThresholdOutsideMem", TREE_NT),
     Scan("internal/runtime/mem/probe", "TestProbeImports", NT("internal/runtime/mem/probe")),
+    # internal/testgate is imported by _test.go files only, in every module (its env reads are test-only).
+    Scan("internal/testgate", "TestNoProductionImporter", TREE_GO),
     Scan("internal/layout", "TestBackendTests_decoderImportsOnlyFall", TREE_GO),
     # SB7: internal/app/serveapp test files importing decoder may only fall.
     Scan("internal/layout", "TestServeappTests_decoderImportsOnlyFall", TREE_GO),

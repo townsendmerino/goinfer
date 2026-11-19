@@ -3,6 +3,8 @@ package decoder
 import (
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestGemma4RunLayersFromEmbed_matchesTokenPath proves runLayersFromEmbedPLE (the embed-by-vector seam, P7) is
@@ -13,7 +15,7 @@ import (
 // Uses the real E2B GGUF (the only local fixture with PLE enabled, hidden_size_per_layer_input=256; every tiny synthetic
 // fixture in this package has PLE off), so it is heavy-gated like the other real-checkpoint gemma4 gates.
 func TestGemma4RunLayersFromEmbed_matchesTokenPath(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("HOME") + "/models/gemma-4-E2B_q4_0-it.gguf"
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no E2B gguf (%v)", err)

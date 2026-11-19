@@ -37,6 +37,8 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 type s10lIDs struct {
@@ -48,7 +50,7 @@ type s10lIDs struct {
 }
 
 func TestLfm2VLFull(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	step, out := os.Getenv("GOINFER_S10L_STEP"), os.Getenv("GOINFER_S10L_OUT")
 	if step == "" || out == "" {
 		t.Skip("set GOINFER_S10L_STEP (ids | compare) and GOINFER_S10L_OUT")

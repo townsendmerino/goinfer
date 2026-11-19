@@ -18,10 +18,12 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestLagunaDFlash_load(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	dir := assetPath(t, "GOINFER_LAGUNA_DFLASH")
 
 	d, err := LoadDFlashDrafter(dir)
@@ -96,7 +98,7 @@ func TestLagunaDFlash_load(t *testing.T) {
 //	  GOINFER_LAGUNA_DFLASH=~/models/laguna-xs2-dflash \
 //	  go test -tags realckpt ./decoder/ -run TestLagunaDFlash_acceptance -v -timeout 180m
 func TestLagunaDFlash_acceptance(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ckpt := assetPath(t, "GOINFER_LAGUNA_XS2")
 	ddir := assetPath(t, "GOINFER_LAGUNA_DFLASH")
 

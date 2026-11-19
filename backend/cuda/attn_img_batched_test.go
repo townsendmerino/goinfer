@@ -10,6 +10,8 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // requireCUDAResident loads a real (small) model just far enough to get a live *cudaResident —
@@ -17,7 +19,7 @@ import (
 // weights themselves are untouched by these tests; every kernel launch below uses synthetic Q/K/V.
 func requireCUDAResident(t *testing.T) *cudaResident {
 	t.Helper()
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_CUDA_MODEL")
 	if path == "" {
 		path = os.ExpandEnv("$HOME/models/qwen3-4b")

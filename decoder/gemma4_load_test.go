@@ -6,13 +6,15 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/embed"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestGemma4Config_realGGUF runs the real E2B GGUF through ggufConfig + resolveArchitecture and asserts the parsed
 // descriptor matches the verified metadata; it stops at the descriptor (no weight load). Skips without the asset
 // (~/models/gemma-4-E2B_q4_0-it.gguf).
 func TestGemma4Config_realGGUF(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("HOME") + "/models/gemma-4-E2B_q4_0-it.gguf"
 	g, err := embed.OpenGGUFMmap(path)
 	if err != nil {
@@ -89,7 +91,7 @@ func TestGemma4Config_realGGUF(t *testing.T) {
 // tail (layers >= 15 carry no k/v) and the PLE tensors. int4 keeps it light on 16 GB. It checks the bundle, not
 // generation.
 func TestGemma4Load(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("HOME") + "/models/gemma-4-E2B_q4_0-it.gguf"
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no E2B gguf (%v)", err)

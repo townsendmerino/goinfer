@@ -23,10 +23,12 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestGptOss120_sliceLoads(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	const ckpt = "testdata/gptoss120-slice"
 	if _, err := os.Stat(filepath.Join(ckpt, "model.safetensors")); errors.Is(err, fs.ErrNotExist) {
 		t.Skipf("no 120b slice at %s — build it from a partial openai/gpt-oss-120b download", ckpt)

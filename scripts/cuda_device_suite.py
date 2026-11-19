@@ -32,6 +32,25 @@ METAL_DEVICE_SKIP = re.compile(r"(?i)\bno (?:(?:cuda|metal|gpu) )?device\b|did n
 # A skip whose reason is a missing asset or an opt-in variable: expected on a box that lacks the file or does not set the flag.
 ASSET_SKIP = re.compile(r"(?i)GOINFER_HEAVY_TESTS|\bset GOINFER_|\bno [\w .-]*(?:checkpoint|fixture|model|asset)|not found|missing|under ~/models")
 BACKENDS = {"cuda": DEVICE_SKIP, "metal": METAL_DEVICE_SKIP}
+# internal/testgate's leading skip tokens, read before the patterns above: SKIP-DEVICE is a device skip whatever its wording, SKIP-HEAVY and SKIP-ASSET
+# are asset or opt-in skips even when the message mentions a device.
+TOKEN_DEVICE, TOKEN_HEAVY, TOKEN_ASSET = "SKIP-DEVICE:", "SKIP-HEAVY:", "SKIP-ASSET:"
+
+
+def is_device_skip(text, backend):
+    if TOKEN_DEVICE in text:
+        return True
+    if TOKEN_HEAVY in text or TOKEN_ASSET in text:
+        return False
+    return bool((DEVICE_SKIP if backend == "cuda" else METAL_DEVICE_SKIP).search(text))
+
+
+def is_asset_skip(text):
+    if TOKEN_HEAVY in text or TOKEN_ASSET in text:
+        return True
+    if TOKEN_DEVICE in text:
+        return False
+    return bool(ASSET_SKIP.search(text))
 PROGRESS_S = 60
 
 
@@ -42,7 +61,7 @@ def classify_new_skips(status, out, prev_passed, device_skips=()):
         name = f"{p}.{n}"
         if s_ == "skip" and name in (prev_passed or ()) and name not in device_skips:
             new.append(name)
-            if not ASSET_SKIP.search("".join(out.get((p, n), []))):
+            if not is_asset_skip("".join(out.get((p, n), []))):
                 bad.append(name)
     return new, bad
 
@@ -63,9 +82,8 @@ def next_state(events, prev_passed):
 
 
 def judge(events, exit_code, tail, backend="cuda", prev_passed=None):
-    """events: decoded `go test -json` records. Returns (red, lines). The device-skip pattern is `DEVICE_SKIP` for cuda, `METAL_DEVICE_SKIP` for metal.
+    """events: decoded `go test -json` records. Returns (red, lines). A device skip is `is_device_skip`: testgate's token, then `DEVICE_SKIP` for cuda, `METAL_DEVICE_SKIP` for metal.
     prev_passed, the names that passed last time (the --state file), turns a skip of one of them into NEW SKIPS, red unless its reason is an asset or opt-in wording."""
-    pattern = DEVICE_SKIP if backend == "cuda" else METAL_DEVICE_SKIP
     out, status, flight = {}, {}, {}
     pkg_failed = []
     for e in events:
@@ -84,7 +102,7 @@ def judge(events, exit_code, tail, backend="cuda", prev_passed=None):
     for (p, n), s in status.items():
         if s != "skip":
             continue
-        (device_skips if pattern.search("".join(out.get((p, n), []))) else other_skips).append(f"{p}.{n}")
+        (device_skips if is_device_skip("".join(out.get((p, n), [])), backend) else other_skips).append(f"{p}.{n}")
     device_skips.sort()
     new_skips, bad_new_skips = classify_new_skips(status, out, prev_passed, device_skips)
     red = bool(failed or pkg_failed or device_skips or bad_new_skips or exit_code != 0 or passed == 0)

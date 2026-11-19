@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestGeometryPortIsLive is the negative gate for the per-layer attention-geometry seam (9c
@@ -26,7 +28,7 @@ import (
 // kernel divides by (`head=gid/rhalf`) — a zeroed width would fault, not disable. A disabled RoPE
 // must change the output at any position > 0 (RoPE at pos 0 is the identity), so we prime past it.
 func TestGeometryPortIsLive(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no checkpoint at %s", path)

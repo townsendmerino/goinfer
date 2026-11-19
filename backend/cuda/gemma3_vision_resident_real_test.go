@@ -9,6 +9,8 @@ import (
 
 	gc "github.com/eitamring/gocudrv/cuda"
 	"github.com/townsendmerino/goinfer/internal/vision"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestGemma3VisionResidentReal_gate is P6's real-checkpoint gate (docs/multimodal.md's "P6's other half"): the
@@ -26,7 +28,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestGemma3VisionResidentReal_gate -v -timeout 10m
 func TestGemma3VisionResidentReal_gate(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	home, _ := os.UserHomeDir()
 	dir := os.Getenv("GEMMA3_4B")
 	if dir == "" {

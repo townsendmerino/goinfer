@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestGemma_Int4DirectContext checks the int4-direct path. The default resident path double-quantizes weights
@@ -17,7 +19,7 @@ import (
 // box's success criterion (≈ 1.0 against the int4 reference at every layer) not being met. The figures:
 // docs/code-notes/metal.md#TestGemma_Int4DirectContext
 func TestGemma_Int4DirectContext(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if testing.Short() {
 		t.Skip("loads real models")
 	}

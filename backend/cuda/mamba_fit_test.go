@@ -13,6 +13,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/decoder/fit"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // OP2b on CUDA, gate F: the resident's own fit plan for the real Nemotron-H checkpoints, read once and
@@ -22,7 +24,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 NEMOTRON_FIT_BUNDLE=<path to a CUDA int4 .giw> go test -count=1 -timeout 20m -tags 'cuda goinfer_testhooks' -run '^TestNemotronResidentCUDA_fitPlan$' -v ./cuda/
 func TestNemotronResidentCUDA_fitPlan(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	requireCUDADevice(t)
 	defer nemotronFeaturesForTest()()
 	path := os.Getenv("NEMOTRON_FIT_BUNDLE")
@@ -242,7 +244,7 @@ func TestNemotronTier1Cells(t *testing.T) {
 //
 //	GOINFER_HEAVY_TESTS=1 NEMOTRON_TIER1=4b go test -count=1 -timeout 40m -tags 'cuda goinfer_testhooks' -run '^TestNemotronResidentCUDA_tier1$' -v ./cuda/
 func TestNemotronResidentCUDA_tier1(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	requireCUDADevice(t)
 	defer nemotronFeaturesForTest()()
 	home := os.ExpandEnv("$HOME/models")

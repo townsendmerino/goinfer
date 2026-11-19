@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestGemma4EndToEndThroughput re-measures the END-TO-END paged-decode gap (
@@ -18,7 +20,7 @@ import (
 // Env vars: GOINFER_EE_GIW (path), GOINFER_EE_BUDGET_GB (float, WeightCacheBytes in GB), GOINFER_EE_LABEL (free-text label
 // for the log line).
 func TestGemma4EndToEndThroughput(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := expandHome(t, envOr("GOINFER_EE_GIW", "~/models/gemma4-26b-int4.giw"))
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no .giw at %s: %v", path, err)

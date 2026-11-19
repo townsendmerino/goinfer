@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestDumpLogitsForBisect writes the resident GPU logits for a fixed 4-token sequence to $GOINFER_DUMP_LOGITS as raw
@@ -16,7 +18,7 @@ import (
 // only BuildResident + ForwardEmb + EmbedResidentForTest, whose API must stay identical across a refactor so the same source
 // compiles on both builds. Skips unless the env var is set.
 func TestDumpLogitsForBisect(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	out := os.Getenv("GOINFER_DUMP_LOGITS")
 	if out == "" {
 		t.Skip("set GOINFER_DUMP_LOGITS=/path to dump resident logits for a bitwise bisect")

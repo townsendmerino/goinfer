@@ -20,6 +20,8 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // loadQwen35GGUFSlice loads embed + the first nLayer layers of the qwen35moe GGUF
@@ -89,7 +91,7 @@ func tensorAgreement(got, ref []float32) (cos float64, maxAbs, relL2 float64) {
 }
 
 func TestQwen35GGUF_weightDiff(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	dir := realQwen35Dir(t) // safetensors (skips if absent)
 	gguf := assetPath(t, "GOINFER_QWEN35_GGUF")
 

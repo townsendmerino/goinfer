@@ -9,6 +9,8 @@ import (
 
 	gc "github.com/eitamring/gocudrv/cuda"
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestResidentCloseSettleTime measures how long free VRAM takes to stop rising after Close returns. It
@@ -24,7 +26,7 @@ import (
 // shape, and what a stabilisation wait should be, if the tier needs one at all, follows from the number.
 // Origin: docs/code-notes/cuda.md#TestResidentCloseSettleTime.
 func TestResidentCloseSettleTime(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	gguf := os.ExpandEnv("$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf")
 	if _, err := os.Stat(gguf); err != nil {
 		t.Skipf("no 7B gguf at %s", gguf)

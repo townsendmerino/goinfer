@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/internal/vision"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestKSD6H4_gridTowerScratch is KS-D6's and KS-H4's first measurement, on the
@@ -21,7 +23,7 @@ import (
 //
 // It changes no product code. Not timed; a real checkpoint (GOINFER_HEAVY_TESTS=1).
 func TestKSD6H4_gridTowerScratch(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	dir := os.ExpandEnv("$HOME/models/qwen3-vl-2b-instruct")
 	if _, err := os.Stat(dir); err != nil {
 		t.Skipf("no checkpoint at %s", dir)

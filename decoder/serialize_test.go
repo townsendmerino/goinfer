@@ -17,6 +17,8 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestConfig_giwRoundTrip_nilRawMessage guards the .giw serialize bug where a nil
@@ -60,7 +62,7 @@ func TestConfig_giwRoundTrip_nilRawMessage(t *testing.T) {
 // .gguf via GOINFER_PREQUANT_GGUF to run locally.
 func prequantGGUF(t *testing.T) string {
 	t.Helper()
-	requireHeavyModel(t) // loads a real GGUF (qwen2.5-coder-0.5b, or GOINFER_PREQUANT_GGUF) — auto-fired on the box
+	testgate.RequireHeavy(t) // loads a real GGUF (qwen2.5-coder-0.5b, or GOINFER_PREQUANT_GGUF) — auto-fired on the box
 	return assetPath(t, "GOINFER_PREQUANT_GGUF")
 }
 
@@ -380,7 +382,7 @@ func TestSerializeGemma4MoE_roundTrip(t *testing.T) {
 // which .giw v4 must carry. Reload must reproduce the greedy decode byte-identically.
 // Skips without the local E2B GGUF.
 func TestSerializeGemma4E2B_roundTrip(t *testing.T) {
-	requireHeavyModel(t) // loads ~/models gemma-4-E2B (real, multi-GB)
+	testgate.RequireHeavy(t) // loads ~/models gemma-4-E2B (real, multi-GB)
 	path := os.Getenv("HOME") + "/models/gemma-4-E2B_q4_0-it.gguf"
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no E2B gguf (%v)", err)

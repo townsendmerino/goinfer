@@ -11,6 +11,8 @@ import (
 	"sort"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestQ4KStep_phi3Tier1 is OP6's Metal tier 1 ( registered before any
@@ -29,7 +31,7 @@ import (
 //     GOINFER_HEAVY_TESTS=1 python3 scripts/timing_lock.py run --label op6-tier1 -- \
 //     go test -count=1 -timeout 10m -run '^TestQ4KStep_phi3Tier1$' -v ./metal/
 func TestQ4KStep_phi3Tier1(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	a := q4kStepLoad(t, "GOINFER_PHI3_GGUF", "phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf", 2, 256) // its prompts fill positions 0..199
 	r := a.r
 	raw, err := os.ReadFile("../../testdata/phi3_mini_golden.json")

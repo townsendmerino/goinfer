@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // Mellum2 long-prefill profiler: the ATTENTION-vs-MoE-FFN split of a batched MoE prefill at a chosen prompt
@@ -39,7 +41,7 @@ func TestMellum2PrefillProfile(t *testing.T) {
 	if out == "" {
 		t.Skip("set GOINFER_MELLUM_PROF=<path> (and GOINFER_MELLUM_K, GOINFER_BENCH_QUANT) to profile a Mellum2 prefill")
 	}
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	K := 2048
 	if v := os.Getenv("GOINFER_MELLUM_K"); v != "" {
 		if _, err := fmt.Sscanf(v, "%d", &K); err != nil {

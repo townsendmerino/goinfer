@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // ---------------------------------------------------------------------------
@@ -271,6 +273,25 @@ func TestClassifySkip_parityWithPythonRules(t *testing.T) {
 		{"waiting on nothing in particular", "other"},
 		// Order matters: this one matches BOTH heavy-model and missing-fixture, and heavy wins.
 		{"no real checkpoint under ~/models", "heavy-model"},
+	}
+	for _, c := range cases {
+		if got := classifySkip(c.reason); got != c.want {
+			t.Errorf("classifySkip(%q) = %q, want %q", c.reason, got, c.want)
+		}
+	}
+}
+
+// A skip from internal/testgate is classified by its leading token before any wording rule, so a SKIP-ASSET whose message
+// says "heavy" or "device" still lands in missing-fixture; the token strings are testgate's own.
+func TestClassifySkip_tokensFirst(t *testing.T) {
+	cases := []struct{ reason, want string }{
+		{"x_test.go:9: " + testgate.SkipHeavy + " heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in", "heavy-model"},
+		{"x_test.go:9: " + testgate.SkipDevice + " no cuda device: cuInit: CUDA_ERROR_NO_DEVICE", "no-gpu-device"},
+		{"x_test.go:9: " + testgate.SkipDevice + " no metal device: real checkpoint absent", "no-gpu-device"},
+		{"x_test.go:9: " + testgate.SkipAsset + " gemma-heavy.gguf not found under the models directory", "missing-fixture"},
+		{"x_test.go:9: " + testgate.SkipAsset + " webgpu-device.bin not found", "missing-fixture"},
+		// no token: today's patterns, unchanged
+		{"x_test.go:9: cuInit: no device", "no-gpu-device"},
 	}
 	for _, c := range cases {
 		if got := classifySkip(c.reason); got != c.want {

@@ -11,6 +11,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestMambaResidentLayerSweep localizes where the resident granite diverges from the f32 CPU
@@ -20,7 +22,7 @@ import (
 // first L where cosine drops names the suspect layer; a gradual drop from every layer points at
 // the MoE (every layer), a jump at 5/15/25/35 at attention.
 func TestMambaResidentLayerSweep(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if os.Getenv("GOINFER_SSM_QUALITY") == "" {
 		t.Skip("resident layer sweep — needs granite model; set GOINFER_SSM_QUALITY=1")
 	}

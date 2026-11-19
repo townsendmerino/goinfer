@@ -5,6 +5,8 @@ package decoder
 import (
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestGemmaSublayerTrace answers the Metal bisect's Fork-1 question: at the first layer a
@@ -22,7 +24,7 @@ import (
 // CUDA resident path tracks this CPU-int4 by the committed parity gate, and the Metal W4A8 path
 // tracks it up to the measured-negligible bf16->int8->int4 double-quant.
 func TestGemmaSublayerTrace(t *testing.T) {
-	requireHeavyModel(t) // loads ~/models gemma-3-4b (real, 8GB bf16)
+	testgate.RequireHeavy(t) // loads ~/models gemma-3-4b (real, 8GB bf16)
 	bf16 := os.ExpandEnv("$HOME/models/gemma-3-4b-it")
 	gguf := os.ExpandEnv("$HOME/models/gemma-3-4b-it-Q4_K_M.gguf")
 	if _, e := os.Stat(bf16); e != nil {

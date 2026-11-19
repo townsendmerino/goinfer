@@ -18,10 +18,14 @@
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestNemotron3NanoReal -v -timeout 90m
 package decoder
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
+)
 
 func TestNemotron3NanoReal_oracle(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ckpt := assetPath(t, "GOINFER_NEMOTRON3NANO_HF")
 	// int8 WEIGHTS, f32 ACTIVATIONS, not the int8int8 every other family uses: this model routes 6 of 128 experts, far
 	// sparser than the comparable MoE families here, and quantizing activations perturbs the router enough to flip which

@@ -19,6 +19,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // GLM-OCR end to end on the REAL checkpoint. Goinfer at f32 (Options{}, no
@@ -315,7 +317,7 @@ func got2(s []int, i int) any {
 }
 
 func TestGlmOcrE2E_f32(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	for _, name := range []string{"invoice", "table", "formula"} {
 		t.Run(name, func(t *testing.T) {
 			g, png := glmOcrReadGolden(t, name)
@@ -347,7 +349,7 @@ func TestGlmOcrE2E_f32(t *testing.T) {
 // tower: a divergence in TestGlmOcrE2E_f32 that vanishes here came from preprocessing (PIL-style bicubic vs torchvision's);
 // one that stays here is the model path.
 func TestGlmOcrE2E_f32_hfPixels(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	dir := assetPath(t, "GOINFER_GLM_OCR_E2E")
 	for _, name := range []string{"invoice", "table", "formula"} {
 		t.Run(name, func(t *testing.T) {

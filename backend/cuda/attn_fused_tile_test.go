@@ -10,6 +10,8 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestAttnFusedTile_32x64BitIdentical: the 32-row query tile (BN unchanged) must equal the shipped 64x64 kernel bit for bit
@@ -26,7 +28,7 @@ func TestAttnFusedTile_32x64BitIdentical(t *testing.T) {
 }
 
 func tileBitIdentical(t *testing.T, armID, bm int) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_CUDA_MODEL")
 	if path == "" {
 		path = modelPath("qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")

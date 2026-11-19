@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestKVCacheF16_fit is the Increment-2 measurement gate (task-gpu-f16-kv.md +
@@ -25,7 +27,7 @@ import (
 // (nvidia-smi) and steady-state decode tok/s per precision. Asset-gated on a 7B GGUF; skips if
 // the model isn't residency-eligible in int4.
 func TestKVCacheF16_fit(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_GPU_7B")
 	if path == "" {
 		home, _ := os.UserHomeDir()

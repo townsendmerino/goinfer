@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestGraniteResidentParity is the whole-model integration gate: resident granite-4.0-h-tiny
@@ -17,7 +19,7 @@ import (
 // multiplier fold, mixer-kind misroute, or pos off-by-one) shows as a cosine that DRIFTS long.
 // GOINFER_SSM_NTOK bounds the run.
 func TestGraniteResidentParity(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	// Opt-in: this CHARACTERIZES the resident int8 vs CPU divergence (it does not pass a
 	// 0.999 f32 bar — granite's MoE+SSM are int8-sensitive; the engine is correct at int8,
 	// see TestGraniteResidentSpeedup). Set GOINFER_SSM_PARITY=1 to run, with optional

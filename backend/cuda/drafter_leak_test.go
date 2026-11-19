@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestResidentDrafter_fuseContextReleasesScratch is M-21's own gate (docs/audit-2026-09-10.md):
@@ -25,7 +27,7 @@ import (
 //	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
 //	  go test -tags 'cuda goinfer_testhooks' -run TestResidentDrafter_fuseContextReleasesScratch -v
 func TestResidentDrafter_fuseContextReleasesScratch(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	tgt := os.Getenv("GOINFER_CUDA_MODEL")
 	if tgt == "" {
 		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")

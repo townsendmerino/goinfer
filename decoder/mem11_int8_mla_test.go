@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // mlaMainF32Hash is main's deepseek-tiny f32 CPU logits over 32 positions, hashed, before MEM11-int8 (the f32 load must not move).
@@ -136,7 +138,7 @@ func TestMEM11_mlaInt8FidelityTiny(t *testing.T) {
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -run '^TestMEM11_mlaInt8FidelitySlice$' -v ./decoder/
 func TestMEM11_mlaInt8FidelitySlice(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	home, _ := os.UserHomeDir()
 	path := filepath.Join(home, "models", "deepseek-v2-lite-gguf", "DeepSeek-V2-Lite-Chat-Q4_K_M.slice-0-1.gguf")
 	if _, err := os.Stat(path); err != nil {

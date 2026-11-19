@@ -11,6 +11,8 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestGemma3ResidentReal_gate is gap 0's real-checkpoint gate for GenerateVL (Gemma 3), the twin of
@@ -24,7 +26,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestGemma3ResidentReal_gate -v -timeout 30m
 func TestGemma3ResidentReal_gate(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	home, _ := os.UserHomeDir()
 	ckpt := os.Getenv("GEMMA3_4B")
 	if ckpt == "" {

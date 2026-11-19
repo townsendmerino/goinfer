@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // captureSublayersForTest runs one resident token with per-sublayer capture on, returning the
@@ -37,7 +39,7 @@ func (r *cudaResident) captureSublayersForTest(emb []float32, pos int) (attn, ml
 // int4 = the byte-identical Q4_K_M gguf run through the CUDA RESIDENT dp4a path (not CPU int4);
 // f32 truth = the real bf16 safetensors via decoder.ForwardSubCapture.
 func TestGemmaSublayerCUDA(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	gguf := os.ExpandEnv("$HOME/models/gemma-3-4b-it-Q4_K_M.gguf")
 	bf16 := os.ExpandEnv("$HOME/models/gemma-3-4b-it")
 	if _, e := os.Stat(gguf); e != nil {
@@ -138,7 +140,7 @@ func TestGemmaSublayerCUDA(t *testing.T) {
 // top-magnitude context elements, so the Metal box overlays its own r.ctx at the same qDim
 // indices. CPU-int4 (same gguf) is printed too as the parity cross-check on the resident path.
 func TestGemmaContextCUDA(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	gguf := os.ExpandEnv("$HOME/models/gemma-3-4b-it-Q4_K_M.gguf")
 	bf16 := os.ExpandEnv("$HOME/models/gemma-3-4b-it")
 	if _, e := os.Stat(gguf); e != nil {
