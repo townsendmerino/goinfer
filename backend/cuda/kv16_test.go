@@ -1677,22 +1677,26 @@ func TestMoEExpertsUnpinned_identityAndPricing(t *testing.T) {
 	}
 }
 
-// TestKV8_everyFusedPrefillLaunchPassesScales reads prefill.go: every launch of a tensor-core prefill tile (attn_fused, attn_fused_bm) passes
+// TestKV8_everyFusedPrefillLaunchPassesScales reads prefill.go and prefill_pass.go: every launch of a tensor-core prefill tile (attn_fused, attn_fused_bm) passes
 // the layer's scale pools through kvScaled, since the identity test launches each tile itself and would not see a dispatch site that forgot
 // them (S6, Gemini's review of #785). Eight sites: two attn_fused head dims and three attn_fused_bm shapes at two head dims.
 func TestKV8_everyFusedPrefillLaunchPassesScales(t *testing.T) {
-	b, err := os.ReadFile("prefill.go")
-	if err != nil {
-		t.Fatal(err)
+	var b []byte
+	for _, f := range []string{"prefill.go", "prefill_pass.go"} {
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b = append(b, src...)
 	}
 	launch := regexp.MustCompile(`r\.launch\(r\.(bAttnFused(?:64|128)|bAttnBM\w+), ([^\n]*)`)
 	sites := launch.FindAllStringSubmatch(string(b), -1)
 	if len(sites) != 8 {
-		t.Fatalf("found %d tensor-core tile launches in prefill.go, expected 8: the scan no longer sees them all", len(sites))
+		t.Fatalf("found %d tensor-core tile launches in prefill.go and prefill_pass.go, expected 8: the scan no longer sees them all", len(sites))
 	}
 	for _, m := range sites {
 		if !strings.Contains(m[2], "r.kvScaled(l, ") {
-			t.Errorf("prefill.go launches %s without r.kvScaled(l, ...): an int8 cache's tile would read no scales (%s)", m[1], m[0])
+			t.Errorf("the batched prefill launches %s without r.kvScaled(l, ...): an int8 cache's tile would read no scales (%s)", m[1], m[0])
 		}
 	}
 }
