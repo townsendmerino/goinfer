@@ -300,6 +300,11 @@ jobs:
       - name: docs-only classifier
         run: python3 -B scripts/test_ci_docs_only.py
 
+      # The pre-push hook's range checks (scripts/pre_push_range.sh): gofmt over the pushed .go files, and product code
+      # pushed straight to main refused unless the tip is a release. Real commits in a scratch worktree. Stdlib, seconds.
+      - name: pre-push range checks
+        run: python3 -B scripts/test_pre_push.py
+
       # C3's zero-match guard: the `changes` gate decides "docs-only" partly by detecting which
       # docs/ files Go tests READ (scripts/ci_docs_only.sh). If that detection ever stops seeing
       # a file a test is known to read, the gate has silently widened what gets skipped -- this
