@@ -472,10 +472,28 @@ func (d *Device) MustBuf(nBytes, n int, what string) Buffer {
 	return d.MustBufOn(UnlinedLine, nBytes, n, what)
 }
 
-// AllocFailedPanic is the value MustBufOn panics with when the device has no memory. Callers that can degrade recover it and tell it
-// from a bug by this text (internal/runtime/mem.DeviceAllocFailed).
-func AllocFailedPanic(what string, nBytes int, err error) string {
-	return fmt.Sprintf("cuda: device allocation failed (%s, %d bytes): %v", what, nBytes, err)
+// AllocFailure is the value MustBufOn panics with when the device has no memory for an allocation. Callers that can degrade recover
+// it and tell it from a bug with internal/runtime/mem.DeviceAllocFailed, which matches it by its DeviceAllocFailure method (this
+// package imports nothing of goinfer's, so it cannot name mem's interface).
+type AllocFailure struct {
+	What  string // the allocation's label
+	Bytes int
+	Err   error // the driver's error
+}
+
+func (f *AllocFailure) Error() string {
+	return fmt.Sprintf("cuda: device allocation failed (%s, %d bytes): %v", f.What, f.Bytes, f.Err)
+}
+
+func (f *AllocFailure) Unwrap() error { return f.Err }
+
+// DeviceAllocFailure marks f as a failed device allocation for internal/runtime/mem.AllocFailure.
+func (*AllocFailure) DeviceAllocFailure() {}
+
+// AllocFailedPanic is the value to panic with for a failed allocation of nBytes labelled what; a test seam that stands in an
+// out-of-memory device panics with it too.
+func AllocFailedPanic(what string, nBytes int, err error) *AllocFailure {
+	return &AllocFailure{What: what, Bytes: nBytes, Err: err}
 }
 
 // MustBufOn is MustBuf leasing the bytes on plan line line.

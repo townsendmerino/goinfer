@@ -1650,6 +1650,7 @@ func (a *metalResident) prefillByStepSrc(ctx context.Context, src rowSource, sta
 	r := a.r
 	defer func() {
 		if p := recover(); p != nil {
+			mem.RepanicBug(p)
 			logits, err = nil, fmt.Errorf("metal: step prefill aborted: %v", p)
 		}
 	}()

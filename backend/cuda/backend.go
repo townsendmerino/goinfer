@@ -162,6 +162,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 	// Never crash the process on a missing/broken driver: recover → decline → fallback.
 	defer func() {
 		if p := recover(); p != nil {
+			mem.RepanicBug(p)
 			rf, ok, err = nil, false, fmt.Errorf("cuda: BuildResident recovered from panic: %v", p)
 		}
 	}()

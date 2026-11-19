@@ -46,6 +46,7 @@ func (r *resident) prefillG4PagedSrc(src rowSource, startPos int, head bool) (lo
 	defer runtime.UnlockOSThread()
 	defer func() { // the paged forward's own discipline (forwardLogitsPaged): a staging panic becomes execErr
 		if p := recover(); p != nil {
+			mem.RepanicBug(p)
 			r.recordExecErr(fmt.Errorf("metal: layer-major paged prefill aborted: %v", p))
 			logits = nil
 		}
@@ -257,6 +258,7 @@ func (r *resident) prefillMoEPagedSrc(src rowSource, startPos int, head bool) (l
 	defer runtime.UnlockOSThread()
 	defer func() {
 		if p := recover(); p != nil {
+			mem.RepanicBug(p)
 			r.recordExecErr(fmt.Errorf("metal: layer-major paged MoE prefill aborted: %v", p))
 			logits = nil
 		}
