@@ -106,16 +106,7 @@ type Model struct {
 	planResidency bool          // Options.planResidency: FitQuery's open, which plans the resident (plannedDecodePath) instead of building it
 	knobs         *knobSet      // per-model operator knobs, snapshotted once at Load (knobs.go)
 	resCtxReq     int           // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
-	resSlotsReq   int           // requested resident KV slot count (Options.ResidentKVSlots); 0/1 ⇒ one slot
-	resSlotsDef   bool          // Options.ResidentKVSlotsDefault: resSlotsReq is the caller's default (ResidentKVSlotsIsDefault)
-	windowedKV    bool          // Options.ResidentWindowedKV
-	moeStep       bool          // Options.ResidentMoEStep
-	recurStep     bool          // Options.ResidentRecurrentStep
-	gemma4Step    bool          // Options.ResidentGemma4Step
-	recurStepDef  bool          // Options.ResidentRecurrentStepDefault
-	gemma4StepDef bool          // Options.ResidentGemma4StepDefault
 	resCtxPinned  bool          // the caller chose resCtxReq (not the fit guard's auto-pin) — ResidentContextPinned
-	prefillChunk  int           // Options.ResidentPrefillChunk: MC3 chunked prefill's chunk size, 0 = off
 	kvShareOff    bool          // Options.KVShareOff
 	kvSnaps       *kvSnapStore  // Options.KVHostBytes: the held prefix snapshots, nil when off
 	kvDemote      bool          // Options.KVDemote
@@ -257,7 +248,7 @@ func (m *Model) ResidentContextPinned() bool { return m.resCtxPinned }
 
 // ResidentKVSlotsIsDefault reports Options.ResidentKVSlotsDefault: the slot request is the caller's default, which a backend
 // may lower to its own (Metal: 2).
-func (m *Model) ResidentKVSlotsIsDefault() bool { return m.resSlotsDef }
+func (m *Model) ResidentKVSlotsIsDefault() bool { return m.opts.ResidentKVSlotsDefault }
 
 // WindowedKVSlack is the headroom, in positions, a windowed-KV layer holds beyond its window: a layer keeps window+WindowedKVSlack
 // positions and compacts (copies its live tail to the start) once per slack positions written. It must cover the widest batch of rows
@@ -270,35 +261,35 @@ const WindowedKVSlack = 512
 func ResidentWindowedKVCap(window, ctx int) int { return min(ctx, window+WindowedKVSlack) }
 
 // ResidentWindowedKV reports Options.ResidentWindowedKV: the caller asked for windowed K/V on a backend that supports it.
-func (m *Model) ResidentWindowedKV() bool { return m.windowedKV }
+func (m *Model) ResidentWindowedKV() bool { return m.opts.ResidentWindowedKV }
 
 // ResidentMoEStep reports Options.ResidentMoEStep: the caller let a generic MoE model run on a backend's multi-sequence step.
-func (m *Model) ResidentMoEStep() bool { return m.moeStep }
+func (m *Model) ResidentMoEStep() bool { return m.opts.ResidentMoEStep }
 
 // ResidentRecurrentStep reports Options.ResidentRecurrentStep: the caller let a Qwen3.5-family model (Gated-DeltaNet and gated
 // attention) or a Nemotron-H model (Mamba-2) run on a backend's multi-sequence step.
-func (m *Model) ResidentRecurrentStep() bool { return m.recurStep }
+func (m *Model) ResidentRecurrentStep() bool { return m.opts.ResidentRecurrentStep }
 
 // ResidentRecurrentStepOn reports whether a backend granting slots KV slots runs the recurrent step: chosen, always; a default, only with
 // two or more.
 func (m *Model) ResidentRecurrentStepOn(slots int) bool {
-	return m.recurStep && (!m.recurStepDef || slots >= 2)
+	return m.opts.ResidentRecurrentStep && (!m.opts.ResidentRecurrentStepDefault || slots >= 2)
 }
 
 // ResidentGemma4StepOn is ResidentRecurrentStepOn for the Gemma 4 step.
 func (m *Model) ResidentGemma4StepOn(slots int) bool {
-	return m.gemma4Step && (!m.gemma4StepDef || slots >= 2)
+	return m.opts.ResidentGemma4Step && (!m.opts.ResidentGemma4StepDefault || slots >= 2)
 }
 
 // ResidentGemma4Step reports Options.ResidentGemma4Step: the caller let a Gemma 4 dense model run on a backend's
 // multi-sequence step.
-func (m *Model) ResidentGemma4Step() bool { return m.gemma4Step }
+func (m *Model) ResidentGemma4Step() bool { return m.opts.ResidentGemma4Step }
 
 // WindowedKVLayer reports whether layer l's resident K/V is windowed under Options.ResidentWindowedKV: the option is on and the layer is
 // a sliding-window attention layer with a real K/V cache (not an MLA latent, not a recurrent mixer, whose kvDimAt is not a K/V width
 // bounded by a window). Every windowed layer shares SlidingWindow's one window.
 func (m *Model) WindowedKVLayer(l int) bool {
-	if !m.windowedKV || m.BackendView().SlidingWindow() <= 0 || !m.BackendView().Layer(l).IsLocal() {
+	if !m.opts.ResidentWindowedKV || m.BackendView().SlidingWindow() <= 0 || !m.BackendView().Layer(l).IsLocal() {
 		return false
 	}
 	a := m.w.arch
@@ -315,10 +306,10 @@ func (m *Model) ResidentKVSlotsRequest() int { return m.ResidentKVSlotsRequestFo
 // asked for the slots, not just its default (ResidentKVSlotsIsDefault); otherwise its state would be one copy shared by every
 // slot, or a default load would take memory it did not ask for.
 func (m *Model) ResidentKVSlotsRequestFor(backend string) int {
-	if m.hasRecurrentState() && (m.resSlotsDef || !m.recurrentSlotsOn(backend)) {
+	if m.hasRecurrentState() && (m.opts.ResidentKVSlotsDefault || !m.recurrentSlotsOn(backend)) {
 		return 1
 	}
-	return max(1, m.resSlotsReq)
+	return max(1, m.opts.ResidentKVSlots)
 }
 
 // recurrentSlotsOn reports whether backend's operation table keeps every recurrent operation of m's program once per KV slot
@@ -462,7 +453,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 	return &Model{planSlackOf: &planSlackMemo{}, fitOf: &fitMemo{}, w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline, prog: buildProgram(w.arch, w.hasExperts), opts: opts,
 		kvF16: kvF16, kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", kvH: opts.KVQuant == "f16",
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
-		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, moeStep: opts.ResidentMoEStep, recurStep: opts.ResidentRecurrentStep, recurStepDef: opts.ResidentRecurrentStepDefault, gemma4StepDef: opts.ResidentGemma4StepDefault, gemma4Step: opts.ResidentGemma4Step, prefillChunk: opts.ResidentPrefillChunk, kvShareOff: opts.KVShareOff, kvSnaps: newKVSnapStore(opts.KVHostBytes), kvDemote: opts.KVDemote, disableFit: opts.DisableFit,
+		kvShareOff: opts.KVShareOff, kvSnaps: newKVSnapStore(opts.KVHostBytes), kvDemote: opts.KVDemote, disableFit: opts.DisableFit,
 		cpuBatchMode: opts.CPUBatchDecode,
 		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, moeUnpinned: opts.MoEExpertsUnpinned, faSoftcap: opts.FlashDecodeSoftcap,
 		loadAbort:  opts.LoadAbort,
@@ -1219,7 +1210,7 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 		from = 0 // never skip the seed token (residentPrefillSeed's own rule)
 	}
 	ok := canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe})
-	C := m.prefillChunk
+	C := m.opts.ResidentPrefillChunk
 	// A chunk below the resident's kernel-class floor would put the first chunk on the other class from the
 	// whole prompt's; raising the chunk to the floor keeps every pass on the class a whole prefill uses.
 	if f := m.prefillKernelFloor(); f > 0 && len(prompt) >= f && C > 0 && C < f {

@@ -21,7 +21,7 @@ type modelOptionFields struct {
 func optionFieldsOf(m *Model) modelOptionFields {
 	v, _ := m.Knob(knobCPUFastAttention)
 	return modelOptionFields{m.kvF16, m.kvPrecI8, m.kvI8, m.disableFit, m.moeCache, m.exactPrefill,
-		m.resCtxReq, m.resSlotsReq, m.moeSlots, m.extraBytes, m.extraKVPerPos, v}
+		m.resCtxReq, m.opts.ResidentKVSlots, m.moeSlots, m.extraBytes, m.extraKVPerPos, v}
 }
 
 // TestConstructors_carryTheSameLoadOptions: every way to build a Model honours the per-model load
