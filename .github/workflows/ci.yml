@@ -59,10 +59,12 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-      actions: read # to read the BASE commit's own ci conclusion (the second condition below)
+      actions: read # to read the BASE commit's own ci conclusion (the second condition below), and a PR run's ci-tree artifact
+      pull-requests: read # to find the pull request a push to main merged (pr_covered)
     outputs:
       docs_only: ${{ steps.gate.outputs.docs_only }}
       class: ${{ steps.gate.outputs.class }}
+      pr_covered: ${{ steps.covered.outputs.pr_covered }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -101,6 +103,34 @@ jobs:
           echo "docs_only=$v" >> "$GITHUB_OUTPUT"
           echo "class=${class:-full}" >> "$GITHUB_OUTPUT"
           echo "docs_only=$v class=${class:-full}  (base=$BASE head=$HEAD; base's last ci run: '${base_run:-none}')"
+
+      # PR_COVERED. A pull-request run records the tree it tested (the merge ref's HEAD^{tree}) as the `ci-tree` artifact. On
+      # a push to main, scripts/ci_pr_covered.py sets pr_covered=true only when the merged PR's newest ci run concluded
+      # success, ran the full matrix, and recorded this push's tree; the lanes marked `pr_covered` then skip, since they
+      # would re-run the identical tree. Kept running on main whatever it says: changes, lint, root-windows,
+      # root-linux-arm64 and gpu-darwin, each of which has gone red on main on a tree its PR run passed (the script's
+      # docstring). Fail-open: any error, missing run or artifact, squash or direct push prints false, and the reason goes
+      # to the job summary.
+      - name: record the tree this PR run tests
+        if: github.event_name == 'pull_request'
+        env:
+          DOCS_ONLY: ${{ steps.gate.outputs.docs_only }}
+        run: printf 'tree=%s\ndocs_only=%s\nsha=%s\n' "$(git rev-parse 'HEAD^{tree}')" "$DOCS_ONLY" "$GITHUB_SHA" | tee ci-tree.txt
+      - name: upload the recorded tree
+        if: github.event_name == 'pull_request'
+        continue-on-error: true # a missing artifact only makes the later main push run in full
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: ci-tree
+          path: ci-tree.txt
+          overwrite: true # a re-run attempt records again
+          retention-days: 14
+      - name: push to main covered by a green PR run of the same tree?
+        id: covered
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B scripts/ci_pr_covered.py --repo "$GITHUB_REPOSITORY" --sha "$GITHUB_SHA" || echo "pr_covered=false" >> "$GITHUB_OUTPUT"
 
   # Root module: the pure-Go runtime (decoder / tokenizer / constrain / demo).
   # Resolves the published aikit from the proxy — no workspace needed.
@@ -299,6 +329,10 @@ jobs:
       # is a real commit in a scratch worktree. Stdlib, seconds.
       - name: docs-only classifier
         run: python3 -B scripts/test_ci_docs_only.py
+      # ci_pr_covered.py's decision (match, mismatch, failed or unfinished PR run, no PR, squash, missing artifact, API
+      # error) on fake git and API answers. Stdlib, milliseconds.
+      - name: pr_covered decision
+        run: python3 -B scripts/test_ci_pr_covered.py
 
       # The pre-push hook's range checks (scripts/pre_push_range.sh): gofmt over the pushed .go files, and product code
       # pushed straight to main refused unless the tip is a release. Real commits in a scratch worktree. Stdlib, seconds.
@@ -383,7 +417,7 @@ jobs:
   # slowest-tests output and redo the LPT pack by hand; this is not automated.
   test-decoder-a:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -451,7 +485,7 @@ jobs:
 
   test-decoder-b:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -515,7 +549,7 @@ jobs:
 
   test-decoder-c:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -573,7 +607,7 @@ jobs:
 
   test-decoder-d:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -642,7 +676,7 @@ jobs:
 
   test-decoder-tail:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -678,7 +712,7 @@ jobs:
 
   test-rest:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -727,7 +761,7 @@ jobs:
   readme-smoke:
     name: readme-smoke (a stranger's install, from an empty dir)
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3 (README.md is never on the quick path, so a README push still runs this)
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED (README.md is never on the quick path, so a README push still runs this)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -743,7 +777,7 @@ jobs:
 
   gpu:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -816,7 +850,7 @@ jobs:
   # committed tiny model. A module of its own so the SDKs never enter the root go.mod; stitched like the others.
   sdktest:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -842,7 +876,7 @@ jobs:
   # unpublished goinfer root locally (submodule go.mods are replace-free since 2026-08-15).
   cuda:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -933,7 +967,7 @@ jobs:
   # manual Apple-silicon sweep. macos-latest is Apple Silicon (arm64).
   root-darwin:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3: no macOS runner starts for a docs-only push
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED: no macOS runner starts for a docs-only push
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -1058,7 +1092,7 @@ jobs:
   # the way a Windows ARM user does. Same build and test as root-windows. The census records which CPU the run landed on.
   root-windows-arm64:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
     runs-on: windows-11-arm
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -1153,7 +1187,7 @@ jobs:
   # (docs/completed/task-hardware-coverage-2026-10.md). aikit's own CI forces the arm64 DotProd fallback, and goinfer's does in root-forced-fallbacks-arm64 below.
   root-forced-fallbacks:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -1185,7 +1219,7 @@ jobs:
   # passed 6 tests, 2026-10-04), so that was run by hand for aikit's linalg suite only.
   root-forced-fallbacks-arm64:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
     runs-on: ubuntu-24.04-arm
     name: forced fallbacks (arm64 nodotprod)
     steps:
@@ -1253,7 +1287,7 @@ jobs:
   # correctness gate remains `go run ./cmd/gate gpu`, hand-run on a Metal box.
   metal-darwin:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
