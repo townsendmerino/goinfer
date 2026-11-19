@@ -59,6 +59,21 @@ func (s *server) recoverFinalize(b *batchRecord) {
 	}
 }
 
+// recoverHeartbeat ends an SSE heartbeat whose write panicked; the response it pinged carries on without keep-alives.
+func recoverHeartbeat() {
+	if r := recover(); r != nil {
+		fmt.Fprintf(os.Stderr, "serve: SSE heartbeat panicked: %v\n%s", r, debug.Stack())
+	}
+}
+
+// recoverDrain keeps a panic while an unloaded model is drained and freed from taking the process down. The model stays marked
+// draining, so /health shows a free that never finished.
+func recoverDrain(name string) {
+	if r := recover(); r != nil {
+		fmt.Fprintf(os.Stderr, "serve: unloading model %q panicked: %v\n%s", name, r, debug.Stack())
+	}
+}
+
 // Request amplifiers: fields a compatible client sends a handful of, whose cost grows with their count at every generated token (stop
 // strings are matched against the tail each step; a tool-name union is a branch per tool at every step of the name). Each cap is far
 // above what a real request carries and rejects with a 400 before any work.

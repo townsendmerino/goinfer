@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -657,6 +658,12 @@ func (s *server) handleWebLoad(w http.ResponseWriter, r *http.Request) {
 	doneCh := make(chan result, 1)
 	ctx := context.WithoutCancel(r.Context())
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Fprintf(os.Stderr, "serve: web load of %q panicked: %v\n%s", name, r, debug.Stack())
+				doneCh <- result{err: fmt.Errorf("loading %q failed: internal error", name)}
+			}
+		}()
 		lm, err := webLoadDecoder(ctx, modelSpec{name: name, path: file}, s.cfg)
 		doneCh <- result{lm, err}
 	}()
