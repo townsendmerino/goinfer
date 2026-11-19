@@ -333,6 +333,9 @@ jobs:
       # error) on fake git and API answers. Stdlib, milliseconds.
       - name: pr_covered decision
         run: python3 -B scripts/test_ci_pr_covered.py
+      # ci_flakes.py's parsing (go test -json, job logs) and per-failure records, on a small fixture. Stdlib, milliseconds.
+      - name: ci-flakes parsing
+        run: python3 -B scripts/test_ci_flakes.py
 
       # The pre-push hook's range checks (scripts/pre_push_range.sh): gofmt over the pushed .go files, and product code
       # pushed straight to main refused unless the tip is a release. Real commits in a scratch worktree. Stdlib, seconds.
