@@ -1039,6 +1039,14 @@ jobs:
           bash scripts/ci_skip_count.sh test.json
           # -json hides go test's plain output: print what a red lane needs (failure lines, panics, build output)
           grep -E '"Action":"(output|build-output)".*(--- FAIL|FAIL|panic|fatal error|_test.go:[0-9]+|\.go:[0-9]+:[0-9]+:)' test.json | head -300 || true
+      # The grep above cuts at 300 lines, before a runtime fatal error on a crashed serveapp binary: keep the whole stream (issue 1078).
+      - name: keep test.json of a red run
+        if: failure()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: root-windows-test-json
+          path: test.json
+          retention-days: 14
 
   # H1.1's missing half (docs/completed/task-hardware-coverage-2026-10.md): the release ships windows-arm64 binaries, and until this job nothing had built or run one. GitHub's windows-11-arm runner is free and unlimited
   # for public repositories (Azure Cobalt 100, 4 CPUs, 16 GB). aikit cannot detect DotProd on a non-Linux, non-Darwin arm64 OS (dotprod_arm64_other.go assumes none), so this job runs the base SMULL/SADALP kernels
