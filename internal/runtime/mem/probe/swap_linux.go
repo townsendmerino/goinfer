@@ -56,6 +56,12 @@ func meminfoFieldOK(meminfo, key string) (int64, bool) {
 	return 0, false
 }
 
+// SelfSwapName and SelfSwapWhat name SelfSwapReader's figure in the swap guard's messages.
+const (
+	SelfSwapName = "server swap"
+	SelfSwapWhat = "VmSwap of this process and its descendants"
+)
+
 // SelfSwapReader returns the per-process swap probe: the swap the server and its descendants hold, from /proc/<pid>/status.
 func SelfSwapReader() (r func() (usedBytes int64, ok bool), unavailable string) { return SelfSwap, "" }
 

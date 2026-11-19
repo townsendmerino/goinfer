@@ -4,6 +4,7 @@ package probe
 
 import (
 	"encoding/binary"
+	"os"
 	"syscall"
 )
 
@@ -36,8 +37,23 @@ func decodeXswUsed(b []byte) (usedBytes int64, ok bool) {
 	return int64(used), true
 }
 
-// SelfSwapReader reports that there is no per-process swap figure here (no public per-process swap counter on macOS), so the swap guard
-// keeps watching the system-wide figure.
+// SelfSwapName and SelfSwapWhat name SelfSwapReader's figure in the swap guard's messages.
+const (
+	SelfSwapName = "server compressed"
+	SelfSwapWhat = "this process's compressed pages, task_vm_info: macOS has no per-process swap figure"
+)
+
+// SelfSwapReader returns the per-process probe the swap guard watches: this process's compressed pages (ReadTask's Compressed), the
+// pages macOS has taken from the server itself, which it swaps from. Other processes' pages do not move it, as they move system
+// swap. It is nil, with the reason, when this process's task_vm_info cannot be read. Unlike Linux's VmSwap it does not count
+// descendants. B41's gate 2 read the server this way (docs/measurements/hostmem-available-2026-10/README.md, Amendment A1).
 func SelfSwapReader() (r func() (usedBytes int64, ok bool), unavailable string) {
-	return nil, "macOS has no per-process swap figure"
+	pid := os.Getpid()
+	if _, ok := readTask(pid); !ok {
+		return nil, "this process's task_vm_info is not readable"
+	}
+	return func() (int64, bool) {
+		t, ok := readTask(pid)
+		return t.Compressed, ok
+	}, ""
 }

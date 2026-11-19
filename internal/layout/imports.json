@@ -771,7 +771,8 @@
       "internal/runtime/mem"
     ],
     "internal/guard/swapguard": [
-      "decoder"
+      "decoder",
+      "internal/runtime/mem/probe"
     ],
     "internal/runtime/modelload": [
       "decoder",

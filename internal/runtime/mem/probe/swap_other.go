@@ -6,6 +6,12 @@ package probe
 // unknown, which StartWatch treats as "do nothing this tick" — never a guess.
 func SwapUsed() (usedBytes int64, ok bool) { return 0, false }
 
+// SelfSwapName and SelfSwapWhat name a per-process figure in the swap guard's messages; this platform has none.
+const (
+	SelfSwapName = "server swap"
+	SelfSwapWhat = "no per-process figure"
+)
+
 // SelfSwapReader reports that there is no per-process swap figure on this platform.
 func SelfSwapReader() (r func() (usedBytes int64, ok bool), unavailable string) {
 	return nil, "this platform has no per-process swap figure"

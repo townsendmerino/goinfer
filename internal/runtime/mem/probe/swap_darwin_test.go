@@ -4,6 +4,7 @@ package probe
 
 import (
 	"encoding/binary"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -70,4 +71,29 @@ func TestSwapUsed_matchesSysctlCommand(t *testing.T) {
 	if d := got - want; d > 64<<20 || d < -(64<<20) {
 		t.Errorf("SwapUsed = %d, `sysctl -n` says %d (%q)", got, want, strings.TrimSpace(string(out)))
 	}
+}
+
+// TestSelfSwapReader_isTheProcesssCompressedPages: on macOS the swap guard's per-process figure is this process's compressed pages,
+// as ReadTask reads them for its own pid.
+func TestSelfSwapReader_isTheProcesssCompressedPages(t *testing.T) {
+	r, why := SelfSwapReader()
+	if r == nil {
+		t.Fatalf("no per-process reader: %s", why)
+	}
+	got, ok := r()
+	task, tok := ReadTask(os.Getpid())
+	if !ok || !tok {
+		t.Fatalf("reader ok %v, ReadTask ok %v", ok, tok)
+	}
+	// Compressed moves only when the kernel compresses this process's pages; two reads a moment apart agree unless it did.
+	if got != task.Compressed && absDiff(got, task.Compressed) > 16<<20 {
+		t.Errorf("reader %d bytes, ReadTask(self).Compressed %d", got, task.Compressed)
+	}
+}
+
+func absDiff(a, b int64) int64 {
+	if a > b {
+		return a - b
+	}
+	return b - a
 }
