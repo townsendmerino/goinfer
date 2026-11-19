@@ -9,6 +9,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
@@ -888,4 +889,39 @@ func (p *prefillPass) tailLastRow() error {
 		p.outs[m] = append([]float32(nil), r.logitsHost...)
 	}
 	return r.launchErr
+}
+
+// mapKV maps the pass's KV rows before anything is allocated: a step's rows in their slots (and its prefill chunk's shared-memory
+// check), or the ordinary pass's positions in the bound slot.
+func (p *prefillPass) mapKV() error {
+	r, startPos, M, rows := p.r, p.startPos, p.M, p.rows
+	if rows != nil {
+		r.kvStepAbort = false
+		for _, rw := range rows {
+			if e := r.kvEnsureSlot(rw.slot, rw.pos, 1); e != nil {
+				return e
+			}
+		}
+		if r.kvStepAbort {
+			// a row took back blocks from a borrower that may be another row of this step: run nothing, so each row can go alone
+			return fmt.Errorf("cuda step: a borrower was stopped while the rows were mapped: %w", decoder.ErrKVPoolFull)
+		}
+		if c := r.stepChunk; c.rows > 0 {
+			// The chunk's attention is an ordinary pass's without the row-batched exact kernels: a chunk that would need them declines.
+			fused := func(hd int) bool {
+				exact := r.forceExactKernels
+				r.forceExactKernels = c.exact
+				_, ok := r.useAttnFused(hd, c.rows)
+				r.forceExactKernels = exact
+				return ok
+			}
+			if e := r.checkPrefillShmem(c.pos, c.rows, fused); e != nil {
+				return fmt.Errorf("cuda ragged step: the prefill chunk at %d: %w", c.pos, e)
+			}
+			r.stepChunk.split = true
+		}
+	} else if e := r.kvEnsure(startPos, M); e != nil {
+		return e
+	}
+	return nil
 }

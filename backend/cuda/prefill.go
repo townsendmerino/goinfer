@@ -939,72 +939,49 @@ func mropePosWindow(mropePos [][3]int, startPos, M int) [][3]int {
 	return mropePos[startPos : startPos+M]
 }
 
-// prefillCore runs the batched (M=len) forward; tail selects what follows the layer stack. blocks (bidirectional image
-// blocks) and mropePos (whole-prompt m-RoPE positions) are nil for every other caller. rows is the multi-sequence mode
-// (batchstep.go): non-nil means row m is one decode token of its own sequence, KV slot rows[m].slot at position
-// rows[m].pos, rather than prompt row startPos+m. The layer stack is unchanged; rope, the KV store and attention run per
-// row through decode's own gap (decodeAttnGap) with that row's slot bound; the tail must be tailAllLogits, whose per-row
-// head is decode's, and a row with a draw ends in ForwardSample's pick. With stepChunk set, the first rows are instead one
-// pass of a prompt's prefill in its slot: its GEMVs and attention are that pass's, in its class (raggedChunk).
-func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, startPos int, tail int, blocks [][2]int, mropePos [][3]int, rows []stepRow) ([][]float32, []int, error) {
-	M := len(embeddings)
-	if M == 0 {
-		return nil, nil, fmt.Errorf("cuda prefill: empty prompt")
-	}
-	if e := r.prefillStaticDecline(); e != nil {
-		return nil, nil, e
-	}
-	// img: this pass's attention is the image-block kernel's (attn_img_batched, or attn_span_batched in a span pass, which takes
-	// it even when no span falls in this pass).
-	img := len(blocks) > 0 || r.spanPass
-	if img && r.attnCap != 0 {
-		return nil, nil, fmt.Errorf("cuda prefill: an image block on a model with an attention softcap; attn_img_batched has no cap")
-	}
+// prefillEModelDecline is a Gemma 4 E-model's decline from a pass, nil for any other model.
+func (r *cudaResident) prefillEModelDecline(embeddings [][]float32, blocks [][2]int, mropePos [][3]int, rows []stepRow) error {
 	if r.eModel {
 		// Gemma 4 E-model: text prompts batch. A step (its rows' PLE tails and KV slots are not staged by the step path), an
 		// image block and m-RoPE (no E-model has it) stay sequential.
 		if rows != nil || len(blocks) > 0 || mropePos != nil {
-			return nil, nil, fmt.Errorf("cuda prefill: Gemma 4 E-model batches text prompts only (no MC3 step, image block or m-RoPE yet): %w", errPrefillDeclined)
+			return fmt.Errorf("cuda prefill: Gemma 4 E-model batches text prompts only (no MC3 step, image block or m-RoPE yet): %w", errPrefillDeclined)
 		}
 		for m, e := range embeddings {
 			if len(e) != r.embLen {
 				// An E-model row is [hidden ‖ nLayers*P] (launchToken refuses the same by length): a hidden-sized row would be read as a full one with a short tail.
-				return nil, nil, fmt.Errorf("cuda prefill: Gemma 4 E-model embedding row %d has %d floats, want %d (hidden %d + %d layers x PLE width %d)", m, len(e), r.embLen, r.hidden, r.nLayers, r.pleP)
+				return fmt.Errorf("cuda prefill: Gemma 4 E-model embedding row %d has %d floats, want %d (hidden %d + %d layers x PLE width %d)", m, len(e), r.embLen, r.hidden, r.nLayers, r.pleP)
 			}
 		}
 	}
+	return nil
+}
+
+// prefillRoomDecline is the pass's position and KV checks: a step's rows (one decode token each, at its own position), or an
+// ordinary pass against the cap and the windowed KV's room.
+func (r *cudaResident) prefillRoomDecline(startPos, M, tail int, blocks [][2]int, mropePos [][3]int, rows []stepRow) error {
 	if rows != nil {
 		// A step: each row is one decode token at its own position, and its attention is decode's (whose own launch
 		// checks the shared-memory limit per row), so the whole-pass checks below do not apply.
 		if len(rows) != M || tail != tailAllLogits || len(blocks) > 0 || mropePos != nil {
-			return nil, nil, fmt.Errorf("cuda step: %d rows for %d embeddings, tail %d — a step is all-logits, text only", len(rows), M, tail)
+			return fmt.Errorf("cuda step: %d rows for %d embeddings, tail %d — a step is all-logits, text only", len(rows), M, tail)
 		}
 		for _, rw := range rows {
 			if e := r.checkCap(rw.pos, 1); e != nil {
-				return nil, nil, e
+				return e
 			}
 		}
 	} else if e := r.checkCap(startPos, M); e != nil {
-		return nil, nil, e
+		return e
 	} else if !r.kvRoomFor(startPos, M) {
-		return nil, nil, fmt.Errorf("cuda prefill: %d rows at position %d do not fit the windowed KV (window %d + %d slack): %w", M, startPos, r.kvWindow, r.kvSlack, errPrefillDeclined)
+		return fmt.Errorf("cuda prefill: %d rows at position %d do not fit the windowed KV (window %d + %d slack): %w", M, startPos, r.kvWindow, r.kvSlack, errPrefillDeclined)
 	}
-	// Image-block prefill (decoder.ResidentPrefillSubsystem); empty blocks is the "no block" case. checkPrefillShmemImgBlocks is
-	// a separate call from checkPrefillShmem above, not a replacement: TestPrefillCoreAndDraftBlockCallTheShmemGuards pins
-	// prefillCore's call to checkPrefillShmem by name (see the header of cuda/attn_img_prefill.cu).
-	if img {
-		if !r.imgPrefillReady || r.spanPass && !r.spanPrefillReady {
-			return nil, nil, fmt.Errorf("cuda prefill: image-block batched kernel unavailable: %w", errPrefillDeclined)
-		}
-		if e := r.checkPrefillShmemImgBlocks(startPos, M, blocks); e != nil {
-			return nil, nil, e
-		}
-	}
-	// m-RoPE prefill (decoder.ResidentPrefillSubsystem); nil mropePos means not m-RoPE, as in decoder/rope.go's ropeAt. No
-	// shared-memory widening check: m-RoPE changes the rotation angle, not attention geometry.
-	if mropePos != nil && !r.mropePrefillReady {
-		return nil, nil, fmt.Errorf("cuda prefill: m-RoPE batched kernel unavailable: %w", errPrefillDeclined)
-	}
+	return nil
+}
+
+// choosePassKernels sets the pass's kernel class before it runs: passPromptLen (the prompt the fast-prefill floor is judged on),
+// forceExactKernels, and a step's prefill chunk's own class.
+func (r *cudaResident) choosePassKernels(startPos, M, tail int, rows []stepRow) {
 	// The fast-prefill floor is judged on the WHOLE prompt, so record it once here rather than
 	// letting each selector see only this chunk's M (prefillChunked passes <=512 rows at a time).
 	r.passPromptLen = max(r.chunkPromptLen,
@@ -1034,14 +1011,66 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		r.passPromptLen = c.promptLen
 		c.exact = c.exact || r.recurrent() || r.eModel || r.deepPlan != nil || r.prefillPastBoundExact(r.passPromptLen)
 	}
-	maxQDim, maxKvDim := r.prefillMaxGeom()
-	hidden, inter := r.hidden, r.inter
+}
+
+// prefillScratchInter is the dense FFN width a pass's M-row scratch is sized for.
+func (r *cudaResident) prefillScratchInter() int {
+	inter := r.inter
 	if r.eModel {
 		// An E-model's dense layers differ in width (double-wide FFNs in the KV-shared tail): the M-row scratch is the widest, each layer's launches take its own (ffnI).
 		for l := range r.layers {
 			inter = max(inter, r.layers[l].ffnI)
 		}
 	}
+	return inter
+}
+
+// prefillCore runs the batched (M=len) forward; tail selects what follows the layer stack. blocks (bidirectional image
+// blocks) and mropePos (whole-prompt m-RoPE positions) are nil for every other caller. rows is the multi-sequence mode
+// (batchstep.go): non-nil means row m is one decode token of its own sequence, KV slot rows[m].slot at position
+// rows[m].pos, rather than prompt row startPos+m. The layer stack is unchanged; rope, the KV store and attention run per
+// row through decode's own gap (decodeAttnGap) with that row's slot bound; the tail must be tailAllLogits, whose per-row
+// head is decode's, and a row with a draw ends in ForwardSample's pick. With stepChunk set, the first rows are instead one
+// pass of a prompt's prefill in its slot: its GEMVs and attention are that pass's, in its class (raggedChunk).
+func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, startPos int, tail int, blocks [][2]int, mropePos [][3]int, rows []stepRow) ([][]float32, []int, error) {
+	M := len(embeddings)
+	if M == 0 {
+		return nil, nil, fmt.Errorf("cuda prefill: empty prompt")
+	}
+	if e := r.prefillStaticDecline(); e != nil {
+		return nil, nil, e
+	}
+	// img: this pass's attention is the image-block kernel's (attn_img_batched, or attn_span_batched in a span pass, which takes
+	// it even when no span falls in this pass).
+	img := len(blocks) > 0 || r.spanPass
+	if img && r.attnCap != 0 {
+		return nil, nil, fmt.Errorf("cuda prefill: an image block on a model with an attention softcap; attn_img_batched has no cap")
+	}
+	if e := r.prefillEModelDecline(embeddings, blocks, mropePos, rows); e != nil {
+		return nil, nil, e
+	}
+	if e := r.prefillRoomDecline(startPos, M, tail, blocks, mropePos, rows); e != nil {
+		return nil, nil, e
+	}
+	// Image-block prefill (decoder.ResidentPrefillSubsystem); empty blocks is the "no block" case. checkPrefillShmemImgBlocks is
+	// a separate call from checkPrefillShmem above, not a replacement: TestPrefillCoreAndDraftBlockCallTheShmemGuards pins
+	// prefillCore's call to checkPrefillShmem by name (see the header of cuda/attn_img_prefill.cu).
+	if img {
+		if !r.imgPrefillReady || r.spanPass && !r.spanPrefillReady {
+			return nil, nil, fmt.Errorf("cuda prefill: image-block batched kernel unavailable: %w", errPrefillDeclined)
+		}
+		if e := r.checkPrefillShmemImgBlocks(startPos, M, blocks); e != nil {
+			return nil, nil, e
+		}
+	}
+	// m-RoPE prefill (decoder.ResidentPrefillSubsystem); nil mropePos means not m-RoPE, as in decoder/rope.go's ropeAt. No
+	// shared-memory widening check: m-RoPE changes the rotation angle, not attention geometry.
+	if mropePos != nil && !r.mropePrefillReady {
+		return nil, nil, fmt.Errorf("cuda prefill: m-RoPE batched kernel unavailable: %w", errPrefillDeclined)
+	}
+	r.choosePassKernels(startPos, M, tail, rows)
+	maxQDim, maxKvDim := r.prefillMaxGeom()
+	hidden, inter := r.hidden, r.prefillScratchInter()
 
 	var outs [][]float32
 	var ids []int
@@ -1071,32 +1100,7 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				psFused = fused
 			}
 		}
-		if rows != nil {
-			r.kvStepAbort = false
-			for _, rw := range rows {
-				if e := r.kvEnsureSlot(rw.slot, rw.pos, 1); e != nil {
-					return e
-				}
-			}
-			if r.kvStepAbort {
-				// a row took back blocks from a borrower that may be another row of this step: run nothing, so each row can go alone
-				return fmt.Errorf("cuda step: a borrower was stopped while the rows were mapped: %w", decoder.ErrKVPoolFull)
-			}
-			if c := r.stepChunk; c.rows > 0 {
-				// The chunk's attention is an ordinary pass's without the row-batched exact kernels: a chunk that would need them declines.
-				fused := func(hd int) bool {
-					exact := r.forceExactKernels
-					r.forceExactKernels = c.exact
-					_, ok := r.useAttnFused(hd, c.rows)
-					r.forceExactKernels = exact
-					return ok
-				}
-				if e := r.checkPrefillShmem(c.pos, c.rows, fused); e != nil {
-					return fmt.Errorf("cuda ragged step: the prefill chunk at %d: %w", c.pos, e)
-				}
-				r.stepChunk.split = true
-			}
-		} else if e := r.kvEnsure(startPos, M); e != nil {
+		if e := p.mapKV(); e != nil {
 			return e
 		}
 		p.psFused = psFused
