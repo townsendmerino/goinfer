@@ -1155,11 +1155,9 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        force: [noavx512, noavx2, nopopcnt]
-    name: forced fallbacks (${{ matrix.force }})
+    name: forced fallbacks (amd64 noavx512, noavx2, nopopcnt)
+    # One job, one step per tag: each leg runs whatever an earlier leg did (`!cancelled()`), and its step name says which
+    # tag went red. Each leg greps its own log for the expectation test's PASS, since a skip is not a pass.
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
@@ -1170,13 +1168,24 @@ jobs:
         run: |
           lscpu | grep -E 'Model name|Vendor ID|^CPU\(s\)' || true
           for f in avx2 avx512_vnni avx512vl popcnt; do if grep -qw "$f" /proc/cpuinfo; then echo "$f: yes"; else echo "$f: no"; fi; done
-      - name: test (aikit_${{ matrix.force }})
+      - name: "noavx512: test (aikit_noavx512), and the expectation test passed"
+        if: ${{ !cancelled() }}
         run: |
           set -o pipefail
-          AIKIT_EXPECT_FORCED=${{ matrix.force }} go test -v -timeout 45m -tags 'goinfer_testhooks aikit_${{ matrix.force }}' -run 'Parity|Forward|ForcedFallbacks' ./decoder/ 2>&1 | tee forced.log | grep -E '^(--- |ok|FAIL|PASS)'
-      - name: the expectation test ran and passed (a skip is not a pass)
+          AIKIT_EXPECT_FORCED=noavx512 go test -v -timeout 45m -tags 'goinfer_testhooks aikit_noavx512' -run 'Parity|Forward|ForcedFallbacks' ./decoder/ 2>&1 | tee forced-noavx512.log | grep -E '^(--- |ok|FAIL|PASS)'
+          grep -q -- '--- PASS: TestForcedFallbacks_expected' forced-noavx512.log || { echo "::error::noavx512: TestForcedFallbacks_expected did not pass (a skip is not a pass)"; exit 1; }
+      - name: "noavx2: test (aikit_noavx2), and the expectation test passed"
+        if: ${{ !cancelled() }}
         run: |
-          grep -q -- '--- PASS: TestForcedFallbacks_expected' forced.log
+          set -o pipefail
+          AIKIT_EXPECT_FORCED=noavx2 go test -v -timeout 45m -tags 'goinfer_testhooks aikit_noavx2' -run 'Parity|Forward|ForcedFallbacks' ./decoder/ 2>&1 | tee forced-noavx2.log | grep -E '^(--- |ok|FAIL|PASS)'
+          grep -q -- '--- PASS: TestForcedFallbacks_expected' forced-noavx2.log || { echo "::error::noavx2: TestForcedFallbacks_expected did not pass (a skip is not a pass)"; exit 1; }
+      - name: "nopopcnt: test (aikit_nopopcnt), and the expectation test passed"
+        if: ${{ !cancelled() }}
+        run: |
+          set -o pipefail
+          AIKIT_EXPECT_FORCED=nopopcnt go test -v -timeout 45m -tags 'goinfer_testhooks aikit_nopopcnt' -run 'Parity|Forward|ForcedFallbacks' ./decoder/ 2>&1 | tee forced-nopopcnt.log | grep -E '^(--- |ok|FAIL|PASS)'
+          grep -q -- '--- PASS: TestForcedFallbacks_expected' forced-nopopcnt.log || { echo "::error::nopopcnt: TestForcedFallbacks_expected did not pass (a skip is not a pass)"; exit 1; }
 
   # H1.4 (docs/completed/task-hardware-coverage-2026-10.md): the arm64 kernels a core WITHOUT DotProd runs (Cortex-A72, a Raspberry Pi 4; the base SMULL/SADALP path). The runner's Neoverse has DotProd, so without the
   # tag that path never executes in CI. aikit's aikit_nodotprod tag makes the dispatchers take it, and AIKIT_EXPECT_FORCED makes a tag that forced nothing FAIL instead of passing silently. Same test selection as
