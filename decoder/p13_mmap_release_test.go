@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // P13: loadWeights closes the safetensors SOURCE mapping at end of load when nothing can alias it; holding it for the
@@ -44,7 +46,7 @@ func TestP13_mmapAliasRisk_classifiesDTypes(t *testing.T) {
 // measured, but it is confounded by page-cache behaviour (and on darwin the OS reclaims lazily),
 // so the structural fact is the testable one.
 func TestP13_realCheckpointReleases(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	dir := assetPath(t, "GOINFER_MELLUM_CKPT")
 	if _, err := os.Stat(filepath.Join(dir, "config.json")); err != nil {
 		t.Skipf("no safetensors checkpoint at %s", dir)
@@ -84,7 +86,7 @@ func TestP13_rssAfterLoad(t *testing.T) {
 	if os.Getenv("GOINFER_DIAG") == "" {
 		t.Skip("DIAGNOSTIC (set GOINFER_DIAG=1)")
 	}
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	dir := assetPath(t, "GOINFER_MELLUM_CKPT")
 	if _, err := os.Stat(filepath.Join(dir, "config.json")); err != nil {
 		t.Skipf("no checkpoint at %s", dir)

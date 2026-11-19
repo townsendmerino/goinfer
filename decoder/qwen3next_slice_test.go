@@ -29,10 +29,12 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestQwen3NextSlice_realWeightOracle(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	const golden = "testdata/qwen3next_q3next_slice_golden.json.gz"
 	const ckpt = "testdata/qwen3next-q3next-slice"
 

@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // BenchmarkKVLongCtx sweeps decode tok/s vs context depth for int8 / f16 / f32 KV on the
@@ -25,7 +27,7 @@ import (
 // say only that the harness ran, not that the effect it maps is there. Go runs a benchmark this
 // slow exactly once (N=1 already exceeds benchtime).
 func BenchmarkKVLongCtx(b *testing.B) {
-	requireHeavyModel(b)
+	testgate.RequireHeavy(b)
 	path := os.Getenv("GOINFER_GPU_7B")
 	if path == "" {
 		home, _ := os.UserHomeDir()

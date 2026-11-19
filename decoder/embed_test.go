@@ -3,6 +3,8 @@ package decoder
 import (
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // The decoder-as-embedder seam. These gates are MECHANICAL —
@@ -29,7 +31,7 @@ func loadQwen3ForEmbed(t *testing.T) *Model {
 // run-to-run is useless for a vector index), and it is genuinely a LAST-token pool — changing the
 // final token, or extending the sequence so the pooled position moves, must change the vector.
 func TestHiddenLast_shapeDeterminismAndPooling(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	m := loadQwen3ForEmbed(t)
 	hidden := m.Config().HiddenDim
 
@@ -95,7 +97,7 @@ func TestHiddenLast_shapeDeterminismAndPooling(t *testing.T) {
 // TestHiddenLast_guards: the seam refuses inputs it cannot pool rather than returning a
 // plausible-looking vector — the silent-wrong class this whole task is fenced against.
 func TestHiddenLast_guards(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	m := loadQwen3ForEmbed(t)
 	vocab := m.Config().VocabSize
 
@@ -124,7 +126,7 @@ func TestHiddenLast_guards(t *testing.T) {
 // several lengths, including one long enough that canBatchN would clearly
 // select the batched path in HiddenLast itself.
 func TestHiddenLast_batchedMatchesSequential(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	m := loadQwen3ForEmbed(t)
 
 	base := []int{9707, 1879, 374, 264, 1273, 40, 1079, 264, 2155, 1273, 30, 8112}

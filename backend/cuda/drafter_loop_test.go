@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // dflashLoop runs the full resident block-drafting round loop and returns the tokens it emitted
@@ -135,7 +137,7 @@ func dflashLoop(t *testing.T, mc *decoder.Model, r *cudaResident, rd *residentDr
 // sequences to be identical. A drafter that proposes badly changes the round count and the
 // speed; if it changes the OUTPUT, the accept logic is wrong.
 func TestDFlashLoop_lossless(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	tgt := os.Getenv("GOINFER_CUDA_MODEL")
 	if tgt == "" {
 		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")
@@ -212,7 +214,7 @@ func TestDFlashLoop_lossless(t *testing.T) {
 //	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
 //	  go test -tags 'cuda goinfer_testhooks' -run TestDFlashLoop_gate3 -v -timeout 2h
 func TestDFlashLoop_gate3(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	tgt := os.Getenv("GOINFER_CUDA_MODEL")
 	if tgt == "" {
 		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")

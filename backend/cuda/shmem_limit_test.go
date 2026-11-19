@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // M-16: the single-block attention kernels size their scratch (nWin+128)*4 with NO ceiling, so past 12,160 attended keys
@@ -39,13 +41,9 @@ func TestAttnShmemLimit_matchesDevice(t *testing.T) {
 
 	// The device half. MEASURED, not assumed: the constant must not exceed what this GPU allows,
 	// or the guard passes launches the driver will refuse.
-	if err := gc.Init(); err != nil {
-		t.Skipf("cuInit: %v", err)
-	}
+	testgate.RequireDevice(t, "cuda", gc.Init())
 	dev, err := gc.GetDevice(0)
-	if err != nil {
-		t.Skipf("no device: %v", err)
-	}
+	testgate.RequireDevice(t, "cuda", err)
 	const attrMaxShmemPerBlock = 8 // CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK
 	lim, err := dev.Attribute(gc.DeviceAttribute(attrMaxShmemPerBlock))
 	if err != nil {

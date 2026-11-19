@@ -8,6 +8,8 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestRow4_coldTouchLatency measures what two earlier probes (mmap-vs-heap; row4-vs-canonical on gemma4 shapes) could
@@ -17,7 +19,7 @@ import (
 // replicates that shape directly: many distinct experts, each touched exactly once, through the real pager, comparing
 // kind-3 (canonical dispatch) against kind-4 (row4 dispatch) per-touch latency.
 func TestRow4_coldTouchLatency(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	kind3 := expandHome(t, envOr("GOINFER_GEMMA4_26B_GIW", "~/models/gemma4-26b-int4.giw"))
 	kind4 := expandHome(t, envOr("GOINFER_GEMMA4_26B_GIW_ROW4", "~/models/gemma4-26b-int4-row4.giw"))
 	if _, err := os.Stat(kind3); err != nil {

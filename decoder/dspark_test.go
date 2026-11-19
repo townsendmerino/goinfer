@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/embed"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // P10 kill-gate 1 for DSpark (docs/spec/08): the Go DSpark forward must match DeepSpec's own implementation on dumped
@@ -172,7 +174,7 @@ func TestDSpark_referenceParity(t *testing.T) {
 // That makes this a clean test of the CAPTURE SEAM — if the 5 taps or the +1 layer-output
 // convention were wrong, nothing else here could absorb it.
 func TestDSpark_targetEndToEnd(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ddir := assetPath(t, "GOINFER_DSPARK_F32")
 	tdir := assetPath(t, "GOINFER_QWEN3_4B")
 	raw, err := os.ReadFile(dsparkGoldenPath)

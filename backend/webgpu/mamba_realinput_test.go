@@ -12,6 +12,8 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestMambaRealInputParity feeds the GPU conv/ssm/gatedNorm kernels REAL granite layer-0 inputs,
@@ -21,7 +23,7 @@ import (
 // regime, and a match means any resident error is wiring (the resident hands the kernels
 // different inputs/state than mamba2Step gets).
 func TestMambaRealInputParity(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if os.Getenv("GOINFER_SSM_QUALITY") == "" {
 		t.Skip("real-input mamba parity — needs granite model; set GOINFER_SSM_QUALITY=1")
 	}

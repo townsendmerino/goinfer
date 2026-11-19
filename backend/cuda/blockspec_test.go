@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestGenerateBlockSpec_production gates the PRODUCTION loop — decoder.GenerateBlockSpec driving
@@ -24,7 +26,7 @@ import (
 //	FASTER — the speedup, so a regression in the wiring shows up as a number rather than as a
 //	still-correct slowdown nobody notices.
 func TestGenerateBlockSpec_production(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	tgt := os.Getenv("GOINFER_CUDA_MODEL")
 	if tgt == "" {
 		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")
@@ -116,7 +118,7 @@ func TestGenerateBlockSpec_production(t *testing.T) {
 // A server consumes this, not Generate — so the streaming wrapper is where a wiring bug would
 // live, and it is worth its own gate rather than trusting that it wraps the loop correctly.
 func TestBlockSpecStream(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	tgt := os.Getenv("GOINFER_CUDA_MODEL")
 	if tgt == "" {
 		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")

@@ -19,10 +19,12 @@ import (
 	"errors"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestSpark25Real_gate(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ckpt := assetPath(t, "GOINFER_SPARK25_1_7B")
 	const golden = "../testdata/spark2_5_real_golden.json.gz"
 	raw, err := readGolden(golden)
@@ -118,7 +120,7 @@ func TestSpark25Real_gate(t *testing.T) {
 // prevents that mistake; this checks it against the REAL checkpoint's geometry (fitkv_test.go's
 // TestFitGuard_slidingWindowFlattensPastTheWindow covers the generic mechanism on olmo3-tiny).
 func TestSpark25Real_fitGuardLongContext(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ckpt := assetPath(t, "GOINFER_SPARK25_1_7B")
 
 	cfg, err := loadConfig(os.DirFS(ckpt), "config.json")

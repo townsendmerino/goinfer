@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // lockstep is one fixture's Metal-resident run against the CPU at the same quant: the worst logit cosine over positions
@@ -245,7 +247,7 @@ func nemotronTier1(t *testing.T, file, label string) {
 // residentTier1 is nemotronTier1 on the bundle or GGUF at path: the dense 1.5B control first, then path, each resident on
 // Metal against the CPU model it was built from, with the same bars and voids.
 func residentTier1(t *testing.T, path, label string) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	const steps = 32
 	home, _ := os.UserHomeDir()
 	ctrlPath := filepath.Join(home, "models", fmt.Sprintf("qwen2.5-coder-1.5b-instruct-q4_k_m.int4.metal.v%d.giw", decoder.GIWFormatVersion))

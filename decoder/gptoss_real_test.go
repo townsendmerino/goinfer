@@ -23,10 +23,12 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestGptOssReal_gate(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	// assetPath, not a hand-rolled env+fallback: the asset registry is what makes the gate and the sweep preflight apply
 	// the SAME predicate to the same candidate paths (testdata/assets.json).
 	gguf := assetPath(t, "GOINFER_GPTOSS_GGUF")
@@ -88,7 +90,7 @@ func TestGptOssReal_gate(t *testing.T) {
 // the bar is argmax-exact + cosine ~0.99 (the deepseek/llama4 real-model bar), not
 // bit-exact.
 func TestGptOssReal_logitParity(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	const golden = "testdata/gptoss_20b_golden.json"
 	raw, err := os.ReadFile(golden)
 	if errors.Is(err, fs.ErrNotExist) {

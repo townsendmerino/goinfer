@@ -10,6 +10,8 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // captureResidualForTest returns the PRE-FINAL-NORM residual stream (r.x, [hidden]) after one
@@ -56,7 +58,7 @@ func (r *cudaResident) captureResidualForTest(emb []float32, pos int) ([]float32
 // by magnitude matches that list ({1698,1730,...}), the two harnesses agree on WHICH channels; if
 // not, one of them is tapping the wrong thing.
 func TestGemmaOutlierTrace(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.ExpandEnv("$HOME/models/gemma-3-4b-it")
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no checkpoint at %s", path)

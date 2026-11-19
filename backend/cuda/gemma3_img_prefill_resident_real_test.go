@@ -11,6 +11,8 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestGemma3ImgPrefillResidentReal_gate is the real-checkpoint gate for the resident image-prefill
@@ -38,7 +40,7 @@ import (
 //
 //     GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestGemma3ImgPrefillResidentReal_gate -v -timeout 30m
 func TestGemma3ImgPrefillResidentReal_gate(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	home, _ := os.UserHomeDir()
 	ckpt := os.Getenv("GEMMA3_4B")
 	if ckpt == "" {

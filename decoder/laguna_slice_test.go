@@ -34,10 +34,12 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestLagunaSlice_realWeightOracle(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	// BOTH locally-available generations get a slice. They differ in two
 	// config-driven ways that only real weights exercise end to end: XS-2.1 DECLARES
 	// per-head gating while XS.2 declares per-element and ships per-head, and their

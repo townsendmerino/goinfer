@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // rssMB reports this process's resident size in MB. Metal buffers are shared/UMA — system
@@ -39,7 +41,7 @@ func rssMB(t *testing.T) int {
 // released explicitly. cmd/serve is multi-model with /admin/models/unload, so a Close that frees nothing leaks a whole
 // model (weights + per-layer KV + MoE experts) per load, invisible in a one-model run.
 func TestMetal_CloseFreesMemory(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if testing.Short() {
 		t.Skip("loads a real model repeatedly")
 	}
@@ -115,7 +117,7 @@ func TestMetal_CloseFreesMemory(t *testing.T) {
 // Signal (same as the sibling gates): run many PrefillLast calls against ONE resident model and
 // watch the trajectory. Per-call release → flat; a leak → a staircase of ~24 buffers/call.
 func TestMetal_PrefillScratchDoesNotLeak(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if testing.Short() {
 		t.Skip("loads a real model and runs many prefills")
 	}
@@ -204,7 +206,7 @@ func TestMetal_PrefillScratchDoesNotLeak(t *testing.T) {
 //     logits must be IDENTICAL before and after A is closed.
 //  2. The free must still actually happen with another model resident.
 func TestMetal_CloseWithSecondModelAlive(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if testing.Short() {
 		t.Skip("loads real models")
 	}

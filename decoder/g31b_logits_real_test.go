@@ -23,10 +23,12 @@ import (
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestG31b_goinferLogits(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	dir, pathsFile, out := os.Getenv("GOINFER_G31B_DIR"), os.Getenv("GOINFER_G31B_PATHS"), os.Getenv("GOINFER_G31B_OUT")
 	if dir == "" || out == "" {
 		t.Skip("set GOINFER_G31B_DIR, GOINFER_G31B_PATHS (not needed for a tiny fixture) and GOINFER_G31B_OUT")

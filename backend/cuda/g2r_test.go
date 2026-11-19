@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // G2-R on CUDA, as registered: a model-level sanity gate for real Gemma 2 2B, and
@@ -29,7 +31,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 40m -tags 'cuda goinfer_testhooks' -run '^TestG2R_cuda$' -v ./cuda/
 func TestG2R_cuda(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	const bar, band = 0.88, 0.03
 	home := os.ExpandEnv("$HOME/models")
 	g2 := home + "/gemma-2-2b-it-Q8_0.gguf"
@@ -240,7 +242,7 @@ func g2rHookChanged(t *testing.T, path string, seed []int) bool {
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 20m -tags 'cuda goinfer_testhooks' -run '^TestG2R_fitCheck$' -v ./cuda/
 func TestG2R_fitCheck(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	home := os.ExpandEnv("$HOME/models")
 	for _, c := range []struct{ path, quant string }{
 		{home + "/gemma-2-2b-it-Q8_0.gguf", "int8int8"}, {home + "/gemma-2-2b-it-Q8_0.gguf", "int4"},

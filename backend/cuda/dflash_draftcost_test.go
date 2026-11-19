@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestDFlashDraftCostProbe measures the one term P10's gate-3 projection could not settle: what a RESIDENT
@@ -29,7 +31,7 @@ import (
 //	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
 //	  go test -tags 'cuda goinfer_testhooks' -run TestDFlashDraftCostProbe -v
 func TestDFlashDraftCostProbe(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_CUDA_MODEL")
 	if path == "" {
 		path = os.ExpandEnv("$HOME/models/qwen3-4b")

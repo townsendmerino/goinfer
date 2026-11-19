@@ -5,6 +5,8 @@ package metal
 import (
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestMellumResidentParity is G11's Metal half: the real-weight validation of Mellum on the Metal
@@ -14,7 +16,7 @@ import (
 // checkpoint directory. Regenerate the slice if absent (4 GB, gitignored; only the golden
 // ships).
 func TestMellumResidentParity(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := "../../decoder/testdata/mellum-mellum2-slice"
 	if _, err := os.Stat(path + "/model.safetensors"); err != nil {
 		t.Skipf("no Mellum2 slice at %s (4 GB, gitignored) — regenerate the slice", path)

@@ -22,10 +22,12 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/vision"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestQwen3VLImageReal(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ckpt := assetPath(t, "GOINFER_QWEN3VL_2B")
 	out := os.Getenv("GOINFER_S10C_OUT")
 	if out == "" {

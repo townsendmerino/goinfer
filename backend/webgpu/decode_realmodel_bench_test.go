@@ -12,6 +12,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestDecodeRealModel_throughput measures STEADY-STATE decode tok/s of a real GGUF
@@ -34,7 +36,7 @@ import (
 // subtracts TTFT. A bench that reported TTFT would have to disable reuse — matrix_bench and
 // granite_resident_speedup do (decoder/resident_reuse.go).
 func TestDecodeRealModel_throughput(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if testing.Short() {
 		t.Skip("real-model decode bench")
 	}

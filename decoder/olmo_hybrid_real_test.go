@@ -16,10 +16,12 @@ package decoder
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestOlmoHybridReal_gate(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ckpt := assetPath(t, "GOINFER_OLMO_HYBRID_7B")
 	const golden = "../testdata/olmo_hybrid_real_golden.json.gz"
 	raw, err := readGolden(golden)

@@ -23,6 +23,8 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // The constrained-JSON suite. Each prompt asks for an object the schema then PINS, so the
@@ -226,7 +228,7 @@ func runPremiseArm(t *testing.T, m *Model, d *DFlashDrafter, tk *tokenizer.Token
 }
 
 func TestGrammarPremise_constrainedJSON(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	target := assetPath(t, "GOINFER_QWEN3_4B")
 	ddir := assetPath(t, "GOINFER_DFLASH_F32")
 	m, err := Load(target, Options{Quant: "int8"})

@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/internal/vision"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // S4's Gemma 4 vision tower on CUDA, the twin of metal/gemma4_vision_test.go: the tower followed by aikit's tail
@@ -277,7 +279,7 @@ func TestG4VCUDA_closeAndErrors(t *testing.T) {
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags cuda -count=1 -run '^TestG4VCUDA_gemma4E2B$' -v ./cuda/
 func TestG4VCUDA_gemma4E2B(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	home, _ := os.UserHomeDir()
 	dir := os.Getenv("GOINFER_GEMMA4_E2B_VISION")
 	if dir == "" {

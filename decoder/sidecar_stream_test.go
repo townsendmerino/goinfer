@@ -426,7 +426,7 @@ func TestSidecar_failedTranscodeLeavesNoFinalFile(t *testing.T) {
 // succeeds and that the file it left behind is loadable.
 //
 // GOINFER_HEAVY_TESTS-gated like every other real-checkpoint test in this repo (decoder's
-// requireHeavyModel), but deliberately NOT through testdata/assets.json's GOINFER_PREQUANT_GGUF:
+// testgate.RequireHeavy), but deliberately NOT through testdata/assets.json's GOINFER_PREQUANT_GGUF:
 // that name is enforced single-resolution-site by TestAssetRegistry_noDirectReads
 // (decoder/asset_registry_test.go), which flags any os.Getenv read of a registered name outside
 // that file. A local path check avoids colliding with that enforcement rather than fighting it.

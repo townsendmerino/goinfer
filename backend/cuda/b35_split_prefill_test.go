@@ -13,6 +13,8 @@ import (
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestB35SplitPrefill is B35's first question on CUDA: does a Gated-DeltaNet prompt
@@ -296,7 +298,7 @@ func realCutMinPass(n int, cuts []int) int {
 
 func TestKV8Real_cutEqualsUninterrupted(t *testing.T) {
 	requireCUDADevice(t)
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ckpt := os.Getenv("KV8_REAL_CKPT")
 	if ckpt == "" {
 		ckpt = os.ExpandEnv("$HOME/models/qwen3.5-0.8b")

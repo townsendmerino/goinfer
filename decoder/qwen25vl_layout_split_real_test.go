@@ -33,6 +33,8 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 type layoutArm struct {
@@ -111,7 +113,7 @@ func layoutPiece(tk *tokenizer.Tokenizer, id int) string {
 func freeNow() { runtime.GC(); debug.FreeOSMemory() }
 
 func TestQwen25VLLayoutSplit(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ckpt := assetPath(t, "GOINFER_QWEN25VL_3B")
 	if strings.HasPrefix(ckpt, "/Volumes/") || strings.HasPrefix(ckpt, "/srv/models") {
 		t.Fatalf("%s is the archive", ckpt)

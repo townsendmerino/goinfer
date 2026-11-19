@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // G2-R amendment 3: the Metal process loads
@@ -129,7 +131,7 @@ func g2rMetalPrecondition(t *testing.T) {
 // load also builds its resident, so Metal's memory guard is checked too. It fails when any load is refused; the night
 // job is queued only after it passes.
 func TestG2R_fitCheck(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if os.Getenv("GOINFER_G2R_FITCHECK") != "1" {
 		t.Skip("set GOINFER_G2R_FITCHECK=1 and GOINFER_G2R_GIW_DIR: G2-R's by-day fit check")
 	}

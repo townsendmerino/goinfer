@@ -13,10 +13,12 @@ package decoder
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestQwen3VLReal_gate(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ckpt := assetPath(t, "GOINFER_QWEN3VL_2B")
 	const golden = "../testdata/qwen3vl_real_golden.json.gz"
 	raw, err := readGolden(golden)

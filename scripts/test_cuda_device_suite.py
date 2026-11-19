@@ -178,6 +178,39 @@ class NewSkips(unittest.TestCase):
         self.assertNotIn("NEW SKIPS", out)
 
 
+class Tokens(unittest.TestCase):
+    """internal/testgate's leading tokens decide before the wording patterns, on both backends: SKIP-DEVICE is a device skip
+    whatever follows it, and SKIP-HEAVY / SKIP-ASSET are asset or opt-in skips even when the message mentions a device."""
+
+    def judge(self, why, backend, prev=None):
+        events = [json.loads(l) for l in passing("TestA") + skipping("TestB", why)]
+        return cds.judge(events, 0, [], backend=backend, prev_passed=prev)
+
+    def test_skipDeviceIsRedWhateverItsWording(self):
+        for backend in ("cuda", "metal"):
+            red, lines = self.judge("SKIP-DEVICE: primary ctx: CUDA_ERROR_INVALID_CONTEXT", backend)
+            self.assertTrue(red, (backend, lines))
+            self.assertIn("1 device skips", "\n".join(lines))
+
+    def test_skipHeavyAndSkipAssetAreNotDeviceSkips(self):
+        for backend in ("cuda", "metal"):
+            for why in ("SKIP-HEAVY: no device needed until GOINFER_HEAVY_TESTS=1", "SKIP-ASSET: no cuda device tower at ~/models/x"):
+                red, lines = self.judge(why, backend)
+                self.assertFalse(red, (backend, why, lines))
+
+    def test_aTokenedNewSkipIsCountedNotRed(self):
+        for why in ("SKIP-ASSET: tower.bin gone", "SKIP-HEAVY: opt in"):
+            red, lines = self.judge(why, "cuda", prev={f"{PKG}.TestB"})
+            self.assertFalse(red, (why, lines))
+            self.assertIn("NEW SKIPS, asset or opt-in wording", "\n".join(lines))
+
+    def test_theTokensAreTestgates(self):
+        with open(os.path.join(os.path.dirname(HERE), "internal", "testgate", "testgate.go")) as f:
+            src = f.read()
+        for tok in (cds.TOKEN_DEVICE, cds.TOKEN_HEAVY, cds.TOKEN_ASSET):
+            self.assertIn(f'"{tok}"', src)
+
+
 class Plant(unittest.TestCase):
     """The check that this suite can go wrong: classify device skips as passes and the device-skip case reads GREEN."""
 

@@ -23,10 +23,12 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/vision"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestQwen25VLReal_gate(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ckpt := assetPath(t, "GOINFER_QWEN25VL_3B")
 	const golden = "../testdata/qwen25vl_real_golden.json.gz"
 	raw, err := readGolden(golden)

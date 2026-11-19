@@ -20,6 +20,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 type hpArm struct {
@@ -39,7 +41,7 @@ type hpResult struct {
 }
 
 func TestHeadPrecision_real(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	root := os.Getenv("GOINFER_HP_ROOT")
 	if root == "" {
 		t.Skip("set GOINFER_HP_ROOT to scripts/head_precision_hf.py's output root")

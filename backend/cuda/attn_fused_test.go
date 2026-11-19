@@ -10,6 +10,8 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TOLERANCE. The bars are scaled by max |V| over the head, not by each row's own |ctx|: with synthetic V of
@@ -49,7 +51,7 @@ const (
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestAttnFused_vsExact -v
 func TestAttnFused_vsExact(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_CUDA_MODEL")
 	if path == "" {
 		path = modelPath("qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
@@ -249,7 +251,7 @@ func TestAttnFused_vsExact(t *testing.T) {
 // The proof does not compare against attn_batched (which could share the same bug). It changes
 // ONLY the cache contents BEFORE startPos and requires the output to move.
 func TestAttnFused_attendsKeysBeforeStartPos(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_CUDA_MODEL")
 	if path == "" {
 		path = modelPath("qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
@@ -396,7 +398,7 @@ func f16rne(x float32) float32 {
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_FAST_PREFILL=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestAttnFused_vsF16Reference -v
 func TestAttnFused_vsF16Reference(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_CUDA_MODEL")
 	if path == "" {
 		path = modelPath("qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")

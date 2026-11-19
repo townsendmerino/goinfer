@@ -9,6 +9,8 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // requireCUDAResidentMRoPE is requireCUDAResident's m-RoPE twin: qwen3-4b (that helper's model)
@@ -16,7 +18,7 @@ import (
 // checkpoint specifically.
 func requireCUDAResidentMRoPE(t *testing.T) *cudaResident {
 	t.Helper()
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := decoder.AssetPathForTest(t, "GOINFER_QWEN25VL_3B")
 	mc, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4"})
 	if err != nil {

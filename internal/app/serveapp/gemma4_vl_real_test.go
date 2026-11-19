@@ -14,6 +14,8 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // distinctTrigramRatioServeapp is decoder/gemma4_26b_real_test.go's distinctTrigramRatio,
@@ -60,7 +62,7 @@ func solidColorPNG(t *testing.T, size int, c color.RGBA) []byte {
 // 26B-A4B (no PLE at all), modelPath and visionDir are the same safetensors directory.
 func loadGemma4VLReal(t *testing.T, modelPath, visionDir string, opts decoder.Options) *loadedModel {
 	t.Helper()
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if _, err := os.Stat(modelPath); err != nil {
 		t.Skipf("no checkpoint at %s: %v", modelPath, err)
 	}

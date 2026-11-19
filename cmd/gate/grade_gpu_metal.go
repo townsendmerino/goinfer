@@ -45,7 +45,7 @@ func metalCellGroups(model string) []metalCellGroup {
 			Detail:       failLineRe,
 		},
 		{
-			// The cell sets GOINFER_HEAVY_TESTS itself: its tests call requireHeavyModel and the gate unsets the ambient value
+			// The cell sets GOINFER_HEAVY_TESTS itself: its tests call testgate.RequireHeavy and the gate unsets the ambient value
 			// (runGPU), so without it every test skips and the group would pass having run nothing.
 			Group: "lifecycle", Header: "4. lifecycle",
 			Cell: cell{Name: "metal-lifecycle", Pkgs: []string{"./backend/metal/"},

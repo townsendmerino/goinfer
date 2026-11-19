@@ -48,6 +48,8 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // specPagerPrompts is realistic traffic, spanning prose / code / math.
@@ -155,7 +157,7 @@ func (a *specPagerArm) alpha() float64 {
 
 func TestSpecPagerInteraction(t *testing.T) {
 	needsFreshProcess(t, "NewBlockSpec hit CUDA_ERROR_OUT_OF_MEMORY in the one-process heavy tier; passes alone")
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 
 	// PARAMETERIZED OVER THE VENUE, because one paged MoE cannot answer the whole question. A Gated-DeltaNet MoE
 	// (qwen3.6-35B-A3B) refuses both speculative arms for two unrelated reasons (the block path on the MoE batched-verify check

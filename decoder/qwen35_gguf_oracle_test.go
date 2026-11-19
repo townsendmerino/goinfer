@@ -23,10 +23,12 @@ import (
 	"runtime"
 	"runtime/debug"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestQwen35GGUF_vsSafetensors(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	gguf := assetPath(t, "GOINFER_QWEN35_GGUF")
 	dir := realQwen35Dir(t) // safetensors dir (skips if absent)
 	goldenDir := assetPath(t, "GOINFER_QWEN35_GOLDEN")

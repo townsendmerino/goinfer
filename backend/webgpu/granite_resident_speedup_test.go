@@ -11,6 +11,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestGraniteResidentSpeedup checks that resident granite-4.0-h-tiny generates coherently on the
@@ -22,7 +24,7 @@ import (
 // correct (it matches an int8 reference) and the int8 output is coherent and factual. A tight f32
 // gate would need f16 weights (a follow-up).
 func TestGraniteResidentSpeedup(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if testing.Short() {
 		t.Skip("granite resident speedup")
 	}

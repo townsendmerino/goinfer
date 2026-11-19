@@ -14,6 +14,8 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestResidentDrafter_fuseParity is the first gate on the resident block drafter: its `fc`
@@ -39,7 +41,7 @@ import (
 //	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
 //	  go test -tags 'cuda goinfer_testhooks' -run TestResidentDrafter_fuseParity -v
 func TestResidentDrafter_fuseParity(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	tgt := os.Getenv("GOINFER_CUDA_MODEL")
 	if tgt == "" {
 		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")
@@ -143,7 +145,7 @@ func TestResidentDrafter_fuseParity(t *testing.T) {
 //	handed the wrong start and every drafted token after the first block would be subtly wrong.
 func TestResidentDrafter_extendContext(t *testing.T) {
 	needsFreshProcess(t, "AttachDrafter's second resident hit CUDA_ERROR_OUT_OF_MEMORY in the one-process heavy tier; passes alone")
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	tgt := os.Getenv("GOINFER_CUDA_MODEL")
 	if tgt == "" {
 		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")
@@ -272,7 +274,7 @@ func TestResidentDrafter_extendContext(t *testing.T) {
 // trunk is f32 throughout — five layers of that, so the bar is looser than the single-projection
 // fusion gate (0.999) and this is the accumulation of the same arithmetic, not a different one.
 func TestResidentDrafter_blockParity(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	tgt := os.Getenv("GOINFER_CUDA_MODEL")
 	if tgt == "" {
 		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")
@@ -360,7 +362,7 @@ func TestResidentDrafter_blockParity(t *testing.T) {
 // batched layer stack is already bit-identical to sequential (TestPrefillLast_e2e). Anything less than ==
 // here would mean the two seams disagree about which tensor they are recording.
 func TestBatchedCapture_matchesPerToken(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	tgt := os.Getenv("GOINFER_CUDA_MODEL")
 	if tgt == "" {
 		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")
@@ -482,7 +484,7 @@ func TestBatchedCapture_matchesPerToken(t *testing.T) {
 // by buffer (fc, both trunk norms, each layer's seven matrices and four norms), so a reader or norm wired to the wrong field
 // shows. Then the opened drafter is released, as serve releases it, and a second attach of it is refused.
 func TestResidentDrafter_streamedAttachMatchesHeld(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	tgt := os.Getenv("GOINFER_CUDA_MODEL")
 	if tgt == "" {
 		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")
@@ -577,7 +579,7 @@ func requireSameDrafterDeviceBytes(t *testing.T, r *cudaResident, a, b *resident
 // (the same values, widened exactly): the device bytes are equal buffer by buffer, so a bf16 drafter's rows are widened, planned
 // and quantized as the f32 file's are.
 func TestResidentDrafter_bf16AttachMatchesF32(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	tgt := os.Getenv("GOINFER_CUDA_MODEL")
 	if tgt == "" {
 		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")

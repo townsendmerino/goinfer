@@ -20,6 +20,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // KV3's gates for the span bound (docs/measurements/kv3-cuda-2026-10-13.md §2.3): the shared-memory guard holds a layer to the
@@ -687,7 +689,7 @@ func kv10Text(t *testing.T, ckpt string, n int) []int {
 //	GOINFER_HEAVY_TESTS=1 KV10_OUT=<file> go test -tags 'cuda goinfer_testhooks' -run '^TestKV10_longContextFidelity$' -v -timeout 90m ./backend/cuda/
 func TestKV10_longContextFidelity(t *testing.T) {
 	requireCUDADevice(t)
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ckpt := os.Getenv("KV10_CKPT")
 	if ckpt == "" {
 		ckpt = os.ExpandEnv("$HOME/models/qwen3.5-0.8b")

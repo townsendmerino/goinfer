@@ -13,7 +13,7 @@ import (
 // TestGPT2ResidentParity is GPT-2's Metal gate — the same residentParity/assertParity harness
 // TestDenseResidentParity/TestGemma3ResidentParity use, on the same real checkpoint
 // decoder/gpt2_test.go's CPU parity gate already validates (testdata/gpt2, downloaded via
-// scripts/pin_gpt2_real.py — 548 MB, small enough not to need requireHeavyModel's opt-in gate).
+// scripts/pin_gpt2_real.py — 548 MB, small enough not to need testgate.RequireHeavy's opt-in gate).
 //
 // residentParity t.Fatals on a decline, which catches a silent CPU fallback rather than an honest skip.
 func TestGPT2ResidentParity(t *testing.T) {

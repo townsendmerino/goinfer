@@ -37,10 +37,12 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestPagerDeterminism(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_SPECPAGER_MODEL")
 	if path == "" {
 		home, _ := os.UserHomeDir()

@@ -29,6 +29,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 var widthSweepSuites = map[string][]string{
@@ -67,7 +69,7 @@ func stddev(xs []float64) float64 {
 }
 
 func TestDefaultVerifyWidth_sweep(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	tgt := os.Getenv("GOINFER_CUDA_MODEL")
 	if tgt == "" {
 		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")

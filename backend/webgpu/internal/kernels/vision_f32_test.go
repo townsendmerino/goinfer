@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/internal/vision"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // siglipTinySharpened loads the tiny SigLIP tower in float32 and randomises its norms, biases and position table
@@ -227,7 +229,7 @@ var siglipRealImages = []string{
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 40m -tags 'gpu goinfer_testhooks' -run '^TestVisionEncoderF32_realGemma3$' -v ./gpu/
 func TestVisionEncoderF32_realGemma3(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	dir := os.Getenv("HOME") + "/models/gemma-3-4b-it"
 	if _, err := os.Stat(dir); err != nil {
 		t.Skip("no gemma-3-4b-it")
@@ -338,7 +340,7 @@ func TestVisionEncoderF32_realGemma3(t *testing.T) {
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 30m -tags 'gpu goinfer_testhooks' -run '^TestVisionEncoderF32_tiledSmoke$' -v ./gpu/
 func TestVisionEncoderF32_tiledSmoke(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	dir := os.Getenv("HOME") + "/models/gemma-3-4b-it"
 	if _, err := os.Stat(dir); err != nil {
 		t.Skip("no gemma-3-4b-it")
@@ -416,7 +418,7 @@ func TestVisionEncoderF32_tiledSmoke(t *testing.T) {
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 30m -tags 'gpu goinfer_testhooks' -run '^TestVisionEncoder_profile$' -v ./gpu/
 func TestVisionEncoder_profile(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	dir := os.Getenv("HOME") + "/models/gemma-3-4b-it"
 	if _, err := os.Stat(dir); err != nil {
 		t.Skip("no gemma-3-4b-it")

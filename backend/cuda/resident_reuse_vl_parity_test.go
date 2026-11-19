@@ -11,6 +11,8 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestGemma3ResidentReal_imageBlockAtomicity is P9(a)'s pre-registered kill condition (docs/multimodal.md's P9(a) plan,
@@ -39,7 +41,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestGemma3ResidentReal_imageBlockAtomicity -v -timeout 30m
 func TestGemma3ResidentReal_imageBlockAtomicity(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	home, _ := os.UserHomeDir()
 	ckpt := os.Getenv("GEMMA3_4B")
 	if ckpt == "" {

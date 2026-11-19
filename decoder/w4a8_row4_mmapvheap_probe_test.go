@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // heapifyRow4 replaces wm's row4 bytes/scales with fresh heap allocations holding the
@@ -41,7 +43,7 @@ func heapifyRow4(wm *linalg.WeightMat) bool {
 // is memory-source mechanics (TLB/page-fault residue
 // on mapped pages), not paging-machinery overhead.
 func TestRow4_mmapVsHeapResident(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	kind4 := expandHome(t, envOr("GOINFER_GEMMA4_26B_GIW_ROW4", "~/models/gemma4-26b-int4-row4.giw"))
 	if _, err := os.Stat(kind4); err != nil {
 		t.Skipf("no kind-4 gemma4 .giw at %s: %v", kind4, err)
