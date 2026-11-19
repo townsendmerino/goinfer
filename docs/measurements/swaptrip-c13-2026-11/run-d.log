@@ -1,0 +1,8 @@
+== 16:29:12 D server ready: MemAvailable 43.7 GiB; swap used 1562 MB; slice current 45.7 GiB of high 52.0 GiB; slice high 330513
+== 16:29:32 D hog holding 16 GiB: MemAvailable 27.7 GiB; swap used 1565 MB; slice current 51.6 GiB of high 52.0 GiB; slice high 331564
+16:30:04 cell 0: 8115 prompt tokens, 31.8 s, usage {'prompt_tokens': 8115, 'completion_tokens': 1, 'total_tokens': 8116, 'prefill_reused_tokens': 0}
+16:30:36 cell 1: 8149 prompt tokens, 31.8 s, usage {'prompt_tokens': 8149, 'completion_tokens': 1, 'total_tokens': 8150, 'prefill_reused_tokens': 0}
+16:31:08 cell 2: 8127 prompt tokens, 31.9 s, usage {'prompt_tokens': 8127, 'completion_tokens': 1, 'total_tokens': 8128, 'prefill_reused_tokens': 0}
+== 16:31:08 D cells done: MemAvailable 25.5 GiB; swap used 1564 MB; slice current 51.3 GiB of high 52.0 GiB; slice high 331564
+== 16:31:14 D hog released: MemAvailable 41.5 GiB; swap used 1564 MB; slice current 35.3 GiB of high 52.0 GiB; slice high 331564
+== 16:31:20 done

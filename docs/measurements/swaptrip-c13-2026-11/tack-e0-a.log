@@ -1,0 +1,45 @@
+16:15:12 e0 nobara: start 16:15:12 PST, 1 arms, fit-only=false, tack 08c7d302d51d8a4e3d1463a76b2924652e97a72a, goinfer 9de08125c
+16:15:12 e0 nobara: arm 1/1 qwen3-coder-30b-a3b-q4km-cuda-moecache (started 16:15, elapsed 0s)
+16:15:12   qwen3-coder-30b-a3b-q4km-cuda-moecache: enter fit
+16:15:41   qwen3-coder-30b-a3b-q4km-cuda-moecache: -ctx 16384 admitted, window 16384, decode path "cuda-resident (int4)"; fit: 16384-token cap needs 1.5 GB KV (weights 16.0 GB, budget 30.3 GB, 28.8 GB left for a request's own prefill)
+16:15:41   qwen3-coder-30b-a3b-q4km-cuda-moecache: leave fit after 28.156s
+16:15:41   qwen3-coder-30b-a3b-q4km-cuda-moecache: enter check
+16:15:42   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=check 0/1, phase 2s, arm 30s
+16:16:02   qwen3-coder-30b-a3b-q4km-cuda-moecache: leave check after 21.48s
+16:16:02   qwen3-coder-30b-a3b-q4km-cuda-moecache: enter smoke
+16:16:12   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=smoke 5/40, phase 10s, arm 1m0s
+16:16:38   qwen3-coder-30b-a3b-q4km-cuda-moecache: smoke run 1: 16/20
+16:16:42   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=smoke 23/40, phase 40s, arm 1m30s
+16:17:11   qwen3-coder-30b-a3b-q4km-cuda-moecache: smoke run 2: 16/20
+16:17:11   qwen3-coder-30b-a3b-q4km-cuda-moecache: leave smoke after 1m8.855s
+16:17:11   qwen3-coder-30b-a3b-q4km-cuda-moecache: enter ttft
+16:17:12   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=ttft 0/36, phase 2s, arm 2m0s
+16:17:42   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=ttft 1/36, phase 32s, arm 2m30s
+16:18:12   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=ttft 3/36, phase 1m2s, arm 3m0s
+16:18:42   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=ttft 7/36, phase 1m32s, arm 3m30s
+16:19:12   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=ttft 12/36, phase 2m2s, arm 4m0s
+16:19:42   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=ttft 13/36, phase 2m32s, arm 4m30s
+16:20:12   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=ttft 14/36, phase 3m2s, arm 5m0s
+16:20:42   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=ttft 15/36, phase 3m32s, arm 5m30s
+16:21:12   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=ttft 15/36, phase 4m2s, arm 6m0s
+16:21:42   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=ttft 19/36, phase 4m32s, arm 6m30s
+16:22:12   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=ttft 24/36, phase 5m2s, arm 7m0s
+16:22:42   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=ttft 24/36, phase 5m32s, arm 7m30s
+16:23:12   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=ttft 25/36, phase 6m2s, arm 8m0s
+16:23:42   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=ttft 25/36, phase 6m32s, arm 8m30s
+16:24:12   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=ttft 26/36, phase 7m2s, arm 9m0s
+16:24:42   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=ttft 26/36, phase 7m32s, arm 9m30s
+16:25:12   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=ttft 26/36, phase 8m2s, arm 10m0s
+16:25:42   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=ttft 27/36, phase 8m32s, arm 10m30s
+16:26:12   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=ttft 27/36, phase 9m2s, arm 11m0s
+16:26:42   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=ttft 28/36, phase 9m32s, arm 11m30s
+16:27:12   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=ttft 33/36, phase 10m2s, arm 12m0s
+16:27:26   qwen3-coder-30b-a3b-q4km-cuda-moecache: leave ttft after 10m14.75s
+16:27:26   qwen3-coder-30b-a3b-q4km-cuda-moecache: enter decode
+16:27:40   qwen3-coder-30b-a3b-q4km-cuda-moecache: decode median 57.0 tok/s
+16:27:40   qwen3-coder-30b-a3b-q4km-cuda-moecache: leave decode after 14.486s
+16:27:42   heartbeat qwen3-coder-30b-a3b-q4km-cuda-moecache phase=decode 3/3, phase 17s, arm 12m30s
+16:27:44   qwen3-coder-30b-a3b-q4km-cuda-moecache: verdict parked (smoke 16/16, check failed rows 0)
+16:27:44 e0 nobara: done in 12m31s
+parked     qwen3-coder-30b-a3b-q4km-cuda-moecache
+VERDICT: PASS — eval models: 1 of 1 arms measured or fell back as expected
