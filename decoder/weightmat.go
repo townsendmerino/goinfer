@@ -614,8 +614,9 @@ func quantizeEmbedWM(w linalg.WeightMat, mode quantMode, needCanonical bool) lin
 // linalg.Int4Row4Usable's rows%4 check, applied per tensor by repackedOnlyOrCanonical, so a violating shape is never
 // built repacked-only.
 //
-// Down-proj, the router and MoE expert weights are not this class: they never reach the batched dispatch, and take the
-// same policy through quantizeLayerWM under their own safety argument. Expert weights read through a read-only mmap span
+// Down-proj, the router and MoE expert weights are not this class and take the same policy through quantizeLayerWM. The
+// one batched dispatch an expert reaches, gpt-oss's gate and up (Model.gptOssExpertBatch), is decode-only at M=1 and
+// per-tensor rows%4 as above, so the same argument covers it. Expert weights read through a read-only mmap span
 // (paged .giw loading) have no load-time repack, so a .giw keeps them canonical.
 func quantizeBatchedProjWM(w linalg.WeightMat, mode quantMode, needCanonical, skipRow4 bool) linalg.WeightMat {
 	if mode != quantInt4 || fakeQuantScheme != "" {
