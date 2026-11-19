@@ -97,8 +97,8 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
         # base: CI as is. noguard: the same without TestPanicGuard_* (if it still dies, the guards are innocent).
-        # checkmark: GODEBUG=gccheckmark=1 makes the GC verify its own marking, so corruption fails closer to its cause.
-        variant: [base, noguard, checkmark]
+        # (GODEBUG=gccheckmark=1 was tried: every run dies with "gcmarknewobject called while doing checkmark", a runtime debug-mode failure that says nothing about this crash.)
+        variant: [base, noguard]
     env:
       GOTRACEBACK: crash
       GODEBUG: ${{ matrix.variant == 'checkmark' && 'gccheckmark=1' || '' }}
