@@ -53,9 +53,6 @@ type prefillPass struct {
 	imgBlk              Buffer
 	mropeWin            [][3]int // this pass's rows' m-RoPE triples (mropePosWindow), set by prefillCore
 	rposT, rposH, rposW Buffer
-
-	outs [][]float32
-	ids  []int
 }
 
 // reset starts a pass, keeping the free list's and the DeepStack list's backing arrays.
