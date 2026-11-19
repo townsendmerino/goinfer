@@ -87,6 +87,9 @@ func (q Queue) LaunchDirect(p Pipeline, cfg LaunchConfig, args ...KernelArg) err
 		}
 		a.vals[i] = k.raw
 	}
+	if TraceForTest != nil {
+		TraceForTest(TraceEvent{Op: TraceLaunch, P: p, Cfg: cfg, Args: args})
+	}
 	q.d.launches.Add(1)
 	var stream cudasys.CUstream
 	if q.s != nil {
