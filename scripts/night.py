@@ -1051,6 +1051,12 @@ class Runner:
         st = read_json(STATE) or {}
         st["pid"] = self.proc.pid
         write_json(STATE, st)
+        import job_mem
+        memp = self.rundir / f"{name}.mem.tsv"
+        mem = job_mem.start(self.proc.pid, str(memp))  # its servers' memory, swap and the slice, once a second (None off Linux)
+        if mem:
+            f.write(f"=== MEMORY   {memp}\n")
+            f.flush()
         limit = t0 + dt.timedelta(minutes=j["timeout_min"])
         outcome = None
         import void_rule
@@ -1074,6 +1080,8 @@ class Runner:
                 self.kill_job(f"timeout {j['timeout_min']} min")
                 outcome = "timeout"
         rc = self.proc.returncode
+        if mem:
+            mem.stop()
         # The four readings at the end of the job are recorded beside those at its start, with the swap growth between them as information.
         # The cell is the unit of the void rule (scripts/void_rule.py): a multi-cell job that voids a cell and re-runs it in place still ends
         # above its start baseline, and a spike that settles is invisible to two readings, so the job-level pair never voids a job. The

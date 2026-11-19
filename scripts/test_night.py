@@ -1619,5 +1619,113 @@ class Isolation(unittest.TestCase):
         self.assertIn("not this run's temporary directory", r.stderr)
 
 
+
+def _fake_server(d, name="goinfer-serve-cuda-test"):
+    """A stand-in server: a shell script named like goinfer's server that prints one line to each stream, holds a little memory and
+    sleeps until killed."""
+    p = Path(d) / name
+    p.write_text("#!/bin/bash\necho \"pid $$ out\"\necho \"pid $$ err\" >&2\nexec -a %s sleep 30\n" % name)
+    p.chmod(0o755)
+    return p
+
+
+@unittest.skipUnless(sys.platform.startswith("linux"), "the sampler reads /proc and the cgroup tree")
+class JobMemorySampler(unittest.TestCase):
+    """A job's memory is sampled once a second into <rundir>/<job>.mem.tsv: the goinfer servers in its process tree (VmSwap, VmRSS,
+    RssAnon, RssShmem, RssFile over each server and its descendants), system swap, MemAvailable, and the user slice's memory.current and
+    memory.events, so a swap-guard trip names its source and what the slice held."""
+
+    def test_a_sample_finds_the_server_in_the_job_tree_and_reads_the_slice(self):
+        import job_mem
+        d = tempfile.mkdtemp(dir=_tmp)
+        srv = _fake_server(d)
+        job = subprocess.Popen(["/bin/bash", "-c", f"{srv} >/dev/null 2>&1 & wait"], start_new_session=True)
+        self.addCleanup(lambda: (os.killpg(job.pid, 9), job.wait()))
+        cg = Path(tempfile.mkdtemp(dir=_tmp))  # a stand-in cgroup tree: the job's slice with its two files
+        sl = cg / "user.slice" / "user-1000.slice"
+        sl.mkdir(parents=True)
+        (sl / "memory.current").write_text("123456\n")
+        (sl / "memory.events").write_text("low 0\nhigh 7\nmax 1\noom 0\noom_kill 0\n")
+        cgpath = "0::/user.slice/user-1000.slice/user@1000.service/app.slice/goinfer-night.service\n"
+        row = None
+        for _ in range(50):
+            row = job_mem.sample(job.pid, cgroup_root=str(cg), cgroup_line=cgpath)
+            if row["servers"]:
+                break
+            time.sleep(0.1)
+        self.assertEqual(len(row["servers"].split(",")), 1, row)
+        self.assertGreater(row["VmRSS"], 0)
+        for k in ("VmSwap", "RssAnon", "RssShmem", "RssFile", "sys_swap_used", "MemAvailable"):
+            self.assertIn(k, row)
+        self.assertEqual((row["slice"], row["slice_current"], row["slice_high"], row["slice_max"]),
+                         ("/user.slice/user-1000.slice", 123456, 7, 1))
+
+    def test_a_job_writes_its_mem_tsv_while_it_runs(self):
+        d = tempfile.mkdtemp(dir=_tmp)
+        srv = _fake_server(d)
+        night.QUEUE.mkdir(parents=True, exist_ok=True)
+        for f in night.QUEUE.glob("*"):
+            f.unlink()
+        _seq[0] += 1
+        seq = 3_000_000 + _seq[0]
+        name = f"mem-{seq}"
+        job = {"name": name, "cmd": ["/bin/bash", "-c", f"{srv} >/dev/null 2>&1 & sleep 2.5; kill %1"], "cwd": _tmp, "est_min": 1.0,
+               "timeout_min": 2.0, "priority": 50, "seq": seq}
+        (night.QUEUE / f"{seq}-mem.json").write_text(json.dumps(job))
+        rundir = Path(tempfile.mkdtemp(dir=_tmp))
+        r = Runner(night.now() + dt.timedelta(hours=1), rundir)
+        with mock.patch.dict(os.environ, {"NIGHT_MEM_SAMPLE_S": "0.2"}), contextlib.redirect_stdout(io.StringIO()):
+            r.run()
+        tsv = rundir / f"{name}.mem.tsv"
+        self.assertTrue(tsv.exists(), "no memory samples were written for the job")
+        lines = tsv.read_text().splitlines()
+        head = lines[0].split("\t")
+        for k in ("t", "servers", "VmSwap", "VmRSS", "RssAnon", "sys_swap_used", "MemAvailable", "slice_current", "slice_high"):
+            self.assertIn(k, head)
+        served = [l for l in lines[1:] if l.split("\t")[head.index("servers")]]
+        self.assertGreater(len(served), 2, "the server was never seen in the job's samples")
+        self.assertIn(f"=== MEMORY   {tsv}", (rundir / f"{name}.log").read_text())
+
+
+class ServeLogged(unittest.TestCase):
+    """scripts/serve_logged.sh, reached as <binary>.logged, runs <binary> as the same process with the same arguments, keeps stdout and
+    stderr apart, and appends both to $NIGHT_RUNDIR/$NIGHT_JOB.serve.log: a night job's server keeps its log whoever starts it."""
+
+    def test_the_server_keeps_its_pid_its_streams_and_a_log(self):
+        d = Path(tempfile.mkdtemp(dir=_tmp))
+        b = d / "goinfer-serve-x"
+        b.write_text("#!/bin/bash\necho \"pid $$ args $*\"\necho \"to stderr\" >&2\n")
+        b.chmod(0o755)
+        (d / "goinfer-serve-x.logged").symlink_to(Path(SCRIPTS) / "serve_logged.sh")
+        env = dict(os.environ, NIGHT_RUNDIR=str(d), NIGHT_JOB="j1")
+        p = subprocess.Popen([str(d / "goinfer-serve-x.logged"), "-a", "1"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                             env=env)
+        out, err = p.communicate(timeout=30)
+        self.assertEqual(p.returncode, 0, err)
+        self.assertEqual(out.strip(), f"pid {p.pid} args -a 1")
+        self.assertEqual(err.strip(), "to stderr")
+        for _ in range(50):  # the tees finish writing after the server exits
+            log = (d / "j1.serve.log").read_text() if (d / "j1.serve.log").exists() else ""
+            if "to stderr" in log and "args -a 1" in log:
+                break
+            time.sleep(0.1)
+        self.assertIn(f"pid {p.pid} args -a 1", log)
+        self.assertIn("to stderr", log)
+
+    def test_outside_a_night_job_the_log_goes_beside_the_binary(self):
+        d = Path(tempfile.mkdtemp(dir=_tmp))
+        b = d / "goinfer-serve-y"
+        b.write_text("#!/bin/bash\necho hi\n")
+        b.chmod(0o755)
+        (d / "goinfer-serve-y.logged").symlink_to(Path(SCRIPTS) / "serve_logged.sh")
+        env = {k: v for k, v in os.environ.items() if k not in ("NIGHT_RUNDIR", "NIGHT_JOB", "SERVE_LOG")}
+        r = subprocess.run([str(d / "goinfer-serve-y.logged")], capture_output=True, text=True, env=env, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        for _ in range(50):
+            if (d / "goinfer-serve-y.serve.log").exists() and "hi" in (d / "goinfer-serve-y.serve.log").read_text():
+                break
+            time.sleep(0.1)
+        self.assertIn("hi", (d / "goinfer-serve-y.serve.log").read_text())
+
 if __name__ == "__main__":
     unittest.main()
