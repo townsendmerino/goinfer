@@ -18,11 +18,13 @@ const (
 	TraceFree                           // ReleaseBuf of a whole allocation: Dst is its base
 )
 
-// TraceEvent is one operation as issued, or an allocation as made. Launch fills P, Cfg and Args; every copy fills Dst (the destination's bind address),
-// Bytes and, for a synchronous upload, Src (the host bytes, valid only during the call); CopyDevice also fills SrcPtr.
+// TraceEvent is one operation as issued, or an allocation as made. Launch fills Pipe (the pipeline's Ptr), Cfg and Args (a copy:
+// a hook site must not let a launch's own parameters escape, or every launch's variadic slice moves to the heap in production);
+// every copy fills Dst (the destination's bind address), Bytes and, for a synchronous upload, Src (the host bytes, valid only
+// during the call); CopyDevice also fills SrcPtr.
 type TraceEvent struct {
 	Op     TraceOp
-	P      Pipeline
+	Pipe   uintptr
 	Cfg    LaunchConfig
 	Args   []KernelArg
 	Dst    uint64

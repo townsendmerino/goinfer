@@ -1100,7 +1100,7 @@ func (q Queue) Launch(p Pipeline, cfg LaunchConfig, args ...KernelArg) error {
 		ga[i] = a.a
 	}
 	if TraceForTest != nil {
-		TraceForTest(TraceEvent{Op: TraceLaunch, P: p, Cfg: cfg, Args: args})
+		TraceForTest(TraceEvent{Op: TraceLaunch, Pipe: p.Ptr(), Cfg: cfg, Args: append([]KernelArg(nil), args...)})
 	}
 	if q.d != nil {
 		q.d.launches.Add(1)

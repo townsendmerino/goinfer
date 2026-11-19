@@ -589,8 +589,7 @@ func (t *launchTrace) addr(a uint64) string {
 	return fmt.Sprintf("p%d", n)
 }
 
-func (t *launchTrace) pipe(p Pipeline) string {
-	k := p.Ptr()
+func (t *launchTrace) pipe(k uintptr) string {
 	if n, ok := t.names[k]; ok {
 		return n
 	}
@@ -610,7 +609,7 @@ func (t *launchTrace) event(ev gpu.TraceEvent) {
 	case gpu.TraceLaunch:
 		var b strings.Builder
 		c := ev.Cfg
-		fmt.Fprintf(&b, "launch %s g=%d,%d,%d b=%d,%d,%d sh=%d", t.pipe(ev.P), c.GridX, c.GridY, c.GridZ, c.BlockX, c.BlockY, c.BlockZ, c.SharedMemBytes)
+		fmt.Fprintf(&b, "launch %s g=%d,%d,%d b=%d,%d,%d sh=%d", t.pipe(ev.Pipe), c.GridX, c.GridY, c.GridZ, c.BlockX, c.BlockY, c.BlockZ, c.SharedMemBytes)
 		for _, a := range ev.Args {
 			bits, n := a.Raw()
 			switch {
