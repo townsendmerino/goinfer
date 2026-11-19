@@ -1221,7 +1221,9 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-          cache-dependency-path: backend/webgpu/go.sum
+          cache-dependency-path: |
+            backend/webgpu/go.sum
+            backend/metal/go.sum
 
       - name: workspace (resolve unpublished goinfer locally)
         run: go work init . ./backend/webgpu
@@ -1240,37 +1242,29 @@ jobs:
         # -timeout 20m, not the 10m default: this runner takes 330 to 530 s for ./backend/webgpu beside ./backend/webgpu/internal/kernels
         # (4x the same suite on a Mesa adapter), so contention alone crossed 600 s. A hang still fails, at 20 minutes.
         run: go test -timeout 20m -short -tags 'gpu goinfer_testhooks' ./backend/webgpu/...
-
-  # cgo-free Metal module (metal/) on darwin/arm64 — the purego-objc resident decode + f16-MMA
-  # prefill kernels. It is its OWN module (metal/go.mod, `replace ../`), so NEITHER the root nor
-  # the gpu jobs compile it: before this job the entire Metal backend had ZERO CI coverage. That
-  # is precisely why a shipped-path prefill NaN and three stale kernel bindings (rope's rhalf,
-  # swiglu's act, attention's window — all buffer-index drift after a kernel gained a param) were
-  # invisible until a hand-run. build + vet are the point: they compile-check every dispatch
-  # against the current kernel signatures, the exact class that was silent. The device parity
-  # gates need a real adapter and skip without one (real-checkpoint gates also need models); the
-  # device-INDEPENDENT falsifiability test (TestParity_NaNCosineFailsTheGate) runs here. The full
-  # correctness gate remains `go run ./cmd/gate gpu`, hand-run on a Metal box.
-  metal-darwin:
-    needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
-        with:
-          go-version-file: go.mod
-          cache-dependency-path: backend/metal/go.sum
-
+      # THE METAL PART, in this job so a run takes two macOS runners, not three. Each step runs under !cancelled(), so a red
+      # webgpu step above does not hide it, and every step name says "metal".
+      # cgo-free Metal module (metal/) on darwin/arm64 — the purego-objc resident decode + f16-MMA
+      # prefill kernels. It is its OWN module (metal/go.mod, `replace ../`), so NEITHER the root nor
+      # the webgpu steps compile it: without these steps the entire Metal backend had ZERO CI coverage. That
+      # is precisely why a shipped-path prefill NaN and three stale kernel bindings (rope's rhalf,
+      # swiglu's act, attention's window — all buffer-index drift after a kernel gained a param) were
+      # invisible until a hand-run. build + vet are the point: they compile-check every dispatch
+      # against the current kernel signatures, the exact class that was silent. The device parity
+      # gates need a real adapter and skip without one (real-checkpoint gates also need models); the
+      # device-INDEPENDENT falsifiability test (TestParity_NaNCosineFailsTheGate) runs here. The full
+      # correctness gate remains `go run ./cmd/gate gpu`, hand-run on a Metal box.
       # metal/go.mod `require`s the unpublished root (N-54, docs/audit-2026-09-10.md: this used to
       # say the reverse) but has no `replace` for it, so a standalone build resolves the root from
       # the module proxy at whatever version is required — not this checkout's own tree. The
-      # workspace supplies the LOCAL root module instead — same ephemeral stitch as gpu-darwin
-      # (go.work is gitignored).
-      - name: workspace (resolve unpublished goinfer locally)
-        run: go work init . ./backend/metal
+      # workspace supplies the LOCAL root module instead — same ephemeral stitch as the
+      # webgpu part above (go.work is gitignored).
+      - name: workspace (add the metal module; the Metal part of this job)
+        if: ${{ !cancelled() }}
+        run: go work use ./backend/metal
 
       - name: build (metal module)
+        if: ${{ !cancelled() }}
         run: go build ./backend/metal/...
 
       # Compile the WIRED serve + chat entrypoints (metal/cmd/{serve,chat}): the
@@ -1278,10 +1272,12 @@ jobs:
       # (darwin-gated; the metal module registers on plain darwin, so no `metal` tag needed).
       # A backend signature drift must fail CI here — it once broke the shipped metal binary
       # while CI stayed green (audit M-18). Covered by ./metal/... above, but kept explicit.
-      - name: build metal (wired serve + chat entrypoints)
+      - name: build (metal module, wired serve + chat entrypoints)
+        if: ${{ !cancelled() }}
         run: go build ./backend/metal/cmd/serve ./backend/metal/cmd/chat
 
       - name: vet (metal module)
+        if: ${{ !cancelled() }}
         run: go vet ./backend/metal/...
 
       # G-02: the untagged vet above compiles NONE of the 59 files behind
@@ -1292,6 +1288,7 @@ jobs:
       # until someone hand-ran with the tag. vet COMPILES without running, so this
       # is device-free and safe on the runner whose Metal layer SIGSEGVs.
       - name: vet (metal module, testhooks-tagged — compiles the 59 device-test files)
+        if: ${{ !cancelled() }}
         run: go vet -tags goinfer_testhooks ./backend/metal/...
 
       # DEVICE TESTS CANNOT RUN HERE. The macos-latest runner's paravirtual Metal/objc layer
@@ -1302,10 +1299,11 @@ jobs:
       # GPU and no checkpoint. Everything device-bound is gated by `go run ./cmd/gate gpu` on a real
       # Metal box; build+vet above are the CI compile-check.
       # ZERO-MATCH GUARD (audit-2026-09-10.md, found 2026-09-11): same risk as the sampler-gates
-      # step above, and worse here — this is the ONLY test this job runs (everything else would
+      # step above, and worse here — this is the ONLY test the Metal part runs (everything else would
       # SIGSEGV the runner), so a renamed/deleted TestParity_NaNCosineFailsTheGate would report
-      # green while running literally nothing, with no other step in this job to catch it.
-      - name: falsifiability gate exists (zero-match guard)
+      # green while running literally nothing, with no other step to catch it.
+      - name: metal falsifiability gate exists (zero-match guard)
+        if: ${{ !cancelled() }}
         run: |
           matched=$(go test -list 'TestParity_NaNCosineFailsTheGate' ./backend/metal/... | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
           if [ -z "$matched" ]; then
@@ -1330,5 +1328,6 @@ jobs:
             echo "::error::TestAttnFABlkIsTheGradedKernel and TestR17GradedArm_isTheGradedText matched $matched of 2 in ./metal/ — renamed or deleted?"
             exit 1
           fi
-      - name: test (device-free tests only — the runner's Metal layer SIGSEGVs)
+      - name: test (metal module, device-free tests only — the runner's Metal layer SIGSEGVs)
+        if: ${{ !cancelled() }}
         run: go test -run 'TestParity_NaNCosineFailsTheGate|TestBuildDemand_matchesDecoderDefault|TestLedger_everyMetalAllocationNamesALine|^TestAttnFABlkIsTheGradedKernel$|^TestR17GradedArm_isTheGradedText$' ./backend/metal/...
