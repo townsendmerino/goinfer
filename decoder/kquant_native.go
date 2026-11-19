@@ -122,7 +122,7 @@ func (m *Model) kquantLane(backend string) []*linalg.WeightMat {
 	if kquantNativeOff.Load() || m == nil || m.w == nil || len(m.w.kquant) == 0 || m.Quant() != "q4k" || (backend != "metal" && backend != "cuda") {
 		return nil
 	}
-	if backend == "cuda" && m.actGroup != 32 {
+	if backend == "cuda" && m.opts.ActQuantGroup != 32 {
 		return nil
 	}
 	var ws []*linalg.WeightMat

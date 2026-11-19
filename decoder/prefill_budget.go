@@ -172,7 +172,7 @@ func (m *Model) hostKVF16() bool { return m.kvH && m.w.arch.kvF16OK() }
 
 // CPUKVPrecision is the precision the CPU (host) KV cache is built at: "i8", "f16" or "f32".
 func (m *Model) CPUKVPrecision() string {
-	if got, _ := ResolveKV("cpu", m.w.arch, m.kvOpts); got != "" {
+	if got, _ := ResolveKV("cpu", m.w.arch, m.opts); got != "" {
 		return got
 	}
 	return "f32"
@@ -180,10 +180,10 @@ func (m *Model) CPUKVPrecision() string {
 
 // CPUKVF16DeclineReason is why an f16 request leaves the CPU cache at f32 ("" when f16 was not asked or is built).
 func (m *Model) CPUKVF16DeclineReason() string {
-	if cpuKVRequested(m.kvOpts) != kvPrecF16 {
+	if cpuKVRequested(m.opts) != kvPrecF16 {
 		return ""
 	}
-	if got, why := ResolveKV("cpu", m.w.arch, m.kvOpts); got != kvPrecF16 {
+	if got, why := ResolveKV("cpu", m.w.arch, m.opts); got != kvPrecF16 {
 		return why
 	}
 	return ""
