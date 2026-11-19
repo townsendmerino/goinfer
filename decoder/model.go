@@ -61,9 +61,8 @@ type Model struct {
 	// this is on AND batcher is non-nil.
 	specAdaptive bool
 	// cpuBatch: MC3c step 2's coordinator (cpu_batch.go) — several CPU generations' decode tokens joined into one
-	// batched forward. nil unless EnableCPUBatch enabled it. cpuBatchMode is Options.CPUBatchDecode.
-	cpuBatch     *cpuBatcher
-	cpuBatchMode int
+	// batched forward. nil unless EnableCPUBatch enabled it; Options.CPUBatchDecode chooses when it may.
+	cpuBatch *cpuBatcher
 	// resIDs is the token sequence currently committed to the resident positional KV, or nil
 	// when its contents are unknown. Guarded by the same resBusy claim that serialises writes
 	// to that cache; see resident_reuse.go for why nil is the safe default.
@@ -90,38 +89,29 @@ type Model struct {
 	// slot's record is mirrored in the resIDs fields above. kvLora is the adapter runtime each slot's sequence was
 	// built under, by slot (the manager keys on the adapter's identity, not the runtime); kvNS is the sharing namespace
 	// of the request that took each slot (KVScope).
-	kv            *kvmgr.Slots
-	kvLora        []*loraRuntime
-	kvNS          []string
-	kvF16         bool          // the resident KV cache is f16: Options.KVPrecision == "f16", or on CUDA "auto" (the default) for a cleared family (kv16_cuda.go)
-	kvF16Decline  string        // CUDA only: why an explicit -kv f16 was held at f32 ("" when it was not asked for or not held back)
-	kvPrecI8      bool          // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
-	kvI8          bool          // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
-	kvH           bool          // CPU KV cache f16 storage request (Options.KVQuant == "f16"), where kvF16OK allows it
-	prog          *layerProgram // the forward as operations (buildProgram), built once by modelFromOptions
-	exactPrefill  bool          // Options.ExactPrefill: THIS model's prompt ingestion stays bit-exact on every backend (ExactPrefill())
-	backendAuto   bool          // Options.BackendAuto: the backend was chosen by "auto", not named (withResidency's Metal precision guard)
-	sidecarFor    string        // Options.SidecarFor: the backend whose sidecar .giw this load stands in for
-	noSelfTest    bool          // Options.noSelfTest: this model IS a self-test fixture, so withResidency must not probe for it (selftest_gpu.go)
-	planResidency bool          // Options.planResidency: FitQuery's open, which plans the resident (plannedDecodePath) instead of building it
-	knobs         *knobSet      // per-model operator knobs, snapshotted once at Load (knobs.go)
-	resCtxReq     int           // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
-	resCtxPinned  bool          // the caller chose resCtxReq (not the fit guard's auto-pin) — ResidentContextPinned
-	kvSnaps       *kvSnapStore  // Options.KVHostBytes: the held prefix snapshots, nil when off
-	disableFit    bool          // tasks/task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
+	kv           *kvmgr.Slots
+	kvLora       []*loraRuntime
+	kvNS         []string
+	kvF16        bool          // the resident KV cache is f16: Options.KVPrecision == "f16", or on CUDA "auto" (the default) for a cleared family (kv16_cuda.go)
+	kvF16Decline string        // CUDA only: why an explicit -kv f16 was held at f32 ("" when it was not asked for or not held back)
+	kvPrecI8     bool          // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
+	kvI8         bool          // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
+	kvH          bool          // CPU KV cache f16 storage request (Options.KVQuant == "f16"), where kvF16OK allows it
+	prog         *layerProgram // the forward as operations (buildProgram), built once by modelFromOptions
+	knobs        *knobSet      // per-model operator knobs, snapshotted once at Load (knobs.go)
+	resCtxReq    int           // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
+	resCtxPinned bool          // the caller chose resCtxReq (not the fit guard's auto-pin) — ResidentContextPinned
+	kvSnaps      *kvSnapStore  // Options.KVHostBytes: the held prefix snapshots, nil when off
 
-	loadAbort    <-chan struct{} // Options.LoadAbort, read by a backend's resident build through LoadAbort(); nil off a guarded load
-	loadAbortErr error           // set by withResidency when the build returned ErrLoadAborted or ErrPinnedContextWontFit; Load turns it into the load's error
+	loadAbortErr error // set by withResidency when the build returned ErrLoadAborted or ErrPinnedContextWontFit; Load turns it into the load's error
 
-	actGroup      int          // activation quantization group (Options.ActQuantGroup); 0 = per-vector
-	extraBytes    int64        // Options.ExtraResidentBytes — see that field's own doc comment
-	extraKVPerPos int64        // Options.ExtraResidentKVPerPosition — see that field's own doc comment
-	mmap          []byte       // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
-	srcPath       string       // the .giw path this model mmap-loaded from ("" off the .giw path) — for pread-staging over the same file
-	loadPath      string       // the file or directory Load opened, after the sidecar route ("" for a model not loaded from a path)
-	pager         *expertPager // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
-	layerPager    *layerPager  // dense per-layer streaming over the mapping (Options.StreamWeights); nil = all-resident
-	quant         string       // the requested Options.Quant for a direct load ("" for a prequant .giw → Quant() derives from kinds)
+	extraBytes int64        // Options.ExtraResidentBytes — see that field's own doc comment
+	mmap       []byte       // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
+	srcPath    string       // the .giw path this model mmap-loaded from ("" off the .giw path) — for pread-staging over the same file
+	loadPath   string       // the file or directory Load opened, after the sidecar route ("" for a model not loaded from a path)
+	pager      *expertPager // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
+	layerPager *layerPager  // dense per-layer streaming over the mapping (Options.StreamWeights); nil = all-resident
+	quant      string       // the requested Options.Quant for a direct load ("" for a prequant .giw → Quant() derives from kinds)
 	// resDecline records WHY resident is nil on a non-CPU backend — the reason withResidency
 	// would otherwise discard. Empty when residency was built, or when it was never attempted
 	// (CPU backend). DecodePath / -require-backend read it; see withResidency.
@@ -333,7 +323,7 @@ func (m *Model) ExtraResidentBytes() int64 { return m.extraBytes }
 // K/V scales with the resident context THIS model ends up choosing, which ExtraResidentBytes (priced in loadDecoder, before
 // this model's residency exists) cannot know. A residency builder that knows its own candidate/final ctx multiplies by it
 // locally (see decoder.DrafterKVBytesPerPosition). 0 means the companion, if any, has no ctx-scaling K/V term.
-func (m *Model) ExtraResidentKVPerPosition() int64 { return m.extraKVPerPos }
+func (m *Model) ExtraResidentKVPerPosition() int64 { return m.opts.ExtraResidentKVPerPosition }
 
 // ExpertCacheStats reports the resident's MoE expert cache (ExpertCacheAvailable); ok is false off the resident path or when
 // the resident keeps no cache.
@@ -352,13 +342,13 @@ func (m *Model) ResizeExpertCache(reserve int64) (int, error) {
 }
 
 // SidecarFor is Options.SidecarFor: the backend whose sidecar .giw this load stands in for, "" for none.
-func (m *Model) SidecarFor() string { return m.sidecarFor }
+func (m *Model) SidecarFor() string { return m.opts.SidecarFor }
 
 // FitDisabled is --fit=off (Options.DisableFit), also set by GOINFER_NO_FIT_DEFAULT (kept working as the original, narrower
 // escape hatch): every "fit by default" behavior reverts to its previous default. Checked by backend packages that implement
 // a fit-by-default policy (cuda.resolveCtxCapFit); decoder itself has none to gate.
 func (m *Model) FitDisabled() bool {
-	return m.disableFit || m.knobs.get(knobNoFitDefault) != ""
+	return m.opts.DisableFit || m.knobs.get(knobNoFitDefault) != ""
 }
 
 // MoECacheExperts reports whether routed MoE experts should stream host→VRAM per token instead of
@@ -447,12 +437,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 	return &Model{planSlackOf: &planSlackMemo{}, fitOf: &fitMemo{}, w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline, prog: buildProgram(w.arch, w.hasExperts), opts: opts,
 		kvF16: kvF16, kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", kvH: opts.KVQuant == "f16",
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
-		kvSnaps: newKVSnapStore(opts.KVHostBytes), disableFit: opts.DisableFit,
-		cpuBatchMode: opts.CPUBatchDecode,
-		loadAbort:    opts.LoadAbort,
-		extraBytes:   opts.ExtraResidentBytes + recurrentSpecReserve(w.arch, opts.Drafter), extraKVPerPos: opts.ExtraResidentKVPerPosition,
-		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup, backendAuto: opts.BackendAuto, sidecarFor: opts.SidecarFor, noSelfTest: opts.noSelfTest,
-		planResidency: opts.planResidency}
+		kvSnaps: newKVSnapStore(opts.KVHostBytes), extraBytes: opts.ExtraResidentBytes + recurrentSpecReserve(w.arch, opts.Drafter)}
 }
 
 // Load loads a model from dir, which is a checkpoint directory (config.json and its safetensors shards), a.
@@ -471,7 +456,7 @@ func Load(dir string, opts Options) (*Model, error) {
 	} else {
 		dir = p
 	}
-	// Options.ExactPrefill is recorded on the Model (exactPrefill, set in each constructor below before withResidency, because
+	// Options.ExactPrefill is recorded on the Model (in its opts, set by modelFromOptions before withResidency, because
 	// CUDA reads it while building its resident) and consulted by each backend's fast-prefill switch alongside its env var. It is
 	// deliberately not applied with os.Setenv, which is process-global and never undone: every model loaded later in the process
 	// would inherit it. Serve's flags travel as this field and Options.Knobs.

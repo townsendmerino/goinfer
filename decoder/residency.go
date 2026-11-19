@@ -664,7 +664,7 @@ func (m *Model) withResidency() *Model {
 		m.w.arch.AttnLogitSoftcap = 0
 		m.prog = buildProgram(m.w.arch, m.w.hasExperts) // the CPU reads the softcap from the program
 	}
-	if m.planResidency {
+	if m.opts.planResidency {
 		return m // FitQuery's open: plannedDecodePath asks the backend instead
 	}
 	if applyNormULPNoiseDiag(m.w); m.knobs.get(knobNoResidency) != "" { // normnoise.go diagnostic first: it must precede any resident upload of the norms
@@ -700,7 +700,7 @@ func (m *Model) withResidency() *Model {
 		m.resDecline = buildDeclineReason(err)
 		return m
 	}
-	if why := autoMetalKeepsPrecision(m.backendAuto, m.be.Name(), m.Quant(), rf); why != "" {
+	if why := autoMetalKeepsPrecision(m.opts.BackendAuto, m.be.Name(), m.Quant(), rf); why != "" {
 		_ = rf.Close()
 		m.resDecline = why
 		return m
@@ -754,7 +754,7 @@ func (m *Model) backendDeclinedErr() error {
 // LoadAbort is Options.LoadAbort as the load that built this model passed it: a backend's resident build polls it between layers and
 // between upload blocks and returns an error wrapping ErrLoadAborted once it is closed. Nil (never fires) when the load was not guarded.
 // It is meaningful during BuildResident only; nothing reads it after Load returns.
-func (m *Model) LoadAbort() <-chan struct{} { return m.loadAbort }
+func (m *Model) LoadAbort() <-chan struct{} { return m.opts.LoadAbort }
 
 // residencyGate is withResidency's checks before it asks the backend to build: the backend's residency, the quant's resident
 // kernels, -backend auto's precision rule and admission, all Admit's (admit.go) over the model's facts. why is the decline they record, "" with the backend to build on.
@@ -920,7 +920,7 @@ func (m *Model) DecodePath() string {
 		// "metal-staged" path, so report it the way BackendSummary reports a backend that failed to build: requested vs.
 		// actually executing (docs/measurements/cold-user-2026-09-06-nobara-pc.md, R9).
 		req := be
-		if m.backendAuto { // the user asked for auto, which chose this backend (R17)
+		if m.opts.BackendAuto { // the user asked for auto, which chose this backend (R17)
 			req = "auto (" + be + ")"
 		}
 		return fmt.Sprintf("cpu (%s) — %s", m.Quant(), BackendSummary(req, "cpu", declinedToCPUReason(be, m.resDecline)))
