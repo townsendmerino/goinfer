@@ -397,7 +397,7 @@ path, gemma4_text merges) and the audit fixes touched hashed-core files. Before 
 paravirtual Metal/objc layer SIGSEGVs inside purego's `objc_msgSend` the moment a test touches the
 device (measured: a near-null crash in `objc.ID.Send`), and the abort takes the whole test binary
 down — so the package's device tests cannot even attempt-and-skip. `.github/workflows/ci.yml`'s
-`metal-darwin` job therefore runs **build + vet + one device-free test**
+`gpu-darwin` job's Metal part therefore runs **build + vet + one device-free test**
 (`TestParity_NaNCosineFailsTheGate`) and nothing else. Everything device-bound rests on a human
 running it on a real Metal box. Writing that down is the point of this section: at 1.0 the run is a
 ritual with a stated meaning, not a habit someone remembers.
