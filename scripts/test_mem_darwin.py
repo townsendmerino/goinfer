@@ -227,6 +227,22 @@ class Cell(unittest.TestCase):
         self.assertIn("1.0 GB of memory available", "\n".join(rec["log_tail"]))
         self.assertNotIn("request1", rec)
 
+    def test_a_sample_taken_as_the_sampler_starts_is_request_1s(self):
+        """The thread may take its first sample before start() returns to the cell. Forcing that pass to happen inside start(),
+        the first sample must already carry request 1's phase."""
+        real = md.Sampler.start
+
+        def eager(sampler):
+            sampler.sample_once()
+            real(sampler)
+
+        md.Sampler.start = eager
+        try:
+            rec = self.run_cell()
+        finally:
+            md.Sampler.start = real
+        self.assertEqual(rec["samples"][0]["phase"], "request 1")
+
     def test_a_tower_cell_sends_two_different_images(self):
         rec = self.run_cell(name="tower:qwen3vl-2b")
         self.assertEqual((rec["request1"]["status"], rec["request2"]["status"]), (200, 503))
