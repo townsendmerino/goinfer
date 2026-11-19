@@ -207,7 +207,7 @@ func (target *Model) GenerateGrammarSpeculative(ctx context.Context, prompt []in
 // token list mirroring the cache for the next call's prefix match).
 func (target *Model) genGrammarInto(ctx context.Context, out chan<- int, g *Generation, stats *SpecStats, mask *constrain.Masker, drafter Drafter, prompt []int, prefillFrom, maxTokens, K int, sp SamplingParams, tr specTracer, cache *KVCache, commit func(int)) {
 	if K < 1 {
-		K = 8
+		K = defaultGrammarSpecDepth
 	}
 	tc := cache
 	if tc == nil {
@@ -220,11 +220,9 @@ func (target *Model) genGrammarInto(ctx context.Context, out chan<- int, g *Gene
 // grammarSpecLoop is grammar-constrained speculation over fw, which already holds prompt[:prefillFrom]: each round the
 // drafter proposes up to K tokens after the committed history, the target verifies them in one Verify with the grammar
 // mask applied to every row, the longest prefix matching the masked argmax is kept, and fw is truncated back to it. It
-// emits the same tokens as constrained greedy decoding (TestGrammarSpecLoop_exactOnTheFake). isStop ends the stream.
+// emits the same tokens as constrained greedy decoding (TestGrammarSpecLoop_exactOnTheFake). isStop ends the stream. K must
+// be at least 1: genGrammarInto applies the default.
 func grammarSpecLoop(ctx context.Context, fw Forward, isStop func(int) bool, out chan<- int, g *Generation, stats *SpecStats, mask *constrain.Masker, drafter Drafter, prompt []int, prefillFrom, maxTokens, K int, tr specTracer, commit func(int)) {
-	if K < 1 {
-		K = 8
-	}
 	// Source label for traces: a pure GrammarDrafter pins forced bytes (forced=true); other drafters ride the same masked
 	// verify but are not grammar-forced. Per-round attribution inside a RouterDrafter is not recorded.
 	traceSource, traceForced := "router", false

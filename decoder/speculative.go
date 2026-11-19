@@ -47,6 +47,14 @@ func (s *SpecStats) TokensPerRound() float64 {
 	return float64(s.Emitted) / float64(s.Rounds)
 }
 
+// defaultSpecDepth is the draft depth K a draft-model or n-gram speculative call takes when it passes none: those drafts
+// are accepted less often the deeper they go, and every rejected token is verify work thrown away.
+const defaultSpecDepth = 4
+
+// defaultGrammarSpecDepth is the grammar-speculative call's K when it passes none: a grammar-forced draft is the masked
+// argmax wherever the grammar leaves one choice, so it is accepted whole far more often and a deeper draft pays.
+const defaultGrammarSpecDepth = 8
+
 // GenerateSpeculative runs greedy speculative decoding: the small draft model proposes K tokens autoregressively, and
 // this (target) model verifies them in one batched forward pass, keeping the matching prefix and replacing the first
 // mismatch with its own token. The streamed output is token-identical to plain target greedy
@@ -77,7 +85,7 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 		return nil, nil, fmt.Errorf("decoder.GenerateSpeculative: empty prompt")
 	}
 	if K < 1 {
-		K = 4
+		K = defaultSpecDepth
 	}
 	// Rollback safety: verify advances the target's KV by K per round and rolls back the rejected tail, which a recurrent
 	// (Mamba-2 / Gated DeltaNet) or staged sliding-window cache cannot losslessly restore. Every speculative entry point
