@@ -222,7 +222,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 		return
 	}
 	if K < 1 {
-		K = 4
+		K = defaultSpecDepth
 	}
 	sampled := sp.Temperature > 0
 	var sampler *Sampler
