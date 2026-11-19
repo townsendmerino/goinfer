@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/internal/vision"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestKSH4_repeatCallTiming is H4-G3: Qwen3-VL-2B's grid tower at 4K,
@@ -19,7 +21,7 @@ import (
 // differ only in arming and cancelling it. Then, read and not graded, the first call after a release against a warm call. A timed
 // run: hold the timing lock (GOINFER_KSH4_TIMING=1, GOINFER_HEAVY_TESTS=1).
 func TestKSH4_repeatCallTiming(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if os.Getenv("GOINFER_KSH4_TIMING") == "" {
 		t.Skip("set GOINFER_KSH4_TIMING=1 (a timed run under the timing lock)")
 	}

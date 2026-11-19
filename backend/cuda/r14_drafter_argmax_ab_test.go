@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestR14DrafterArgmaxAB is R14's build gate (docs/measurements/r14-drafter-argmax-2026-09-22.md):
@@ -20,7 +22,7 @@ import (
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestR14DrafterArgmaxAB -v -timeout 30m
 func TestR14DrafterArgmaxAB(t *testing.T) {
 	needsFreshProcess(t, "prefill scratch out of device memory (M=26) in the one-process heavy tier; passes alone")
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	tgt := os.Getenv("GOINFER_CUDA_MODEL")
 	if tgt == "" {
 		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")

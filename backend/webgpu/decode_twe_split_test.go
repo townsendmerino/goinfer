@@ -13,6 +13,8 @@ import (
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestDecodeTWE_split runs the DecodeRunner's TWrite/TEncode/TSync instrumentation on
@@ -26,7 +28,7 @@ import (
 //
 //	GOINFER_DECODE_GGUF=~/models/qwen3-1.7b-q8_0.gguf go test -tags gpu -run TestDecodeTWE_split -v
 func TestDecodeTWE_split(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if testing.Short() {
 		t.Skip("twe split")
 	}

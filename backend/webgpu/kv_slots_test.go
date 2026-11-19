@@ -29,6 +29,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // kvSlotTurn is one generation of the MC1 identity scenario: its token ids and PrefillReused.
@@ -736,7 +738,7 @@ func captureStderrGPU(t *testing.T, fn func()) string {
 // or on memory that does not return to baseline. A skip here is not a pass; only a missing
 // checkpoint file skips.
 func TestWebGPUKVSlots_realClamp(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if runtime.GOOS == "darwin" {
 		t.Skip("the discrete-GPU allocation clamp is what this test measures; darwin prices slots against RAM before allocating anything (darwinKVSlots) and never reaches it")
 	}

@@ -17,6 +17,8 @@ import (
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestDecode_dispatchProfile answers which of the ~13 dispatches per layer pins the decode
@@ -37,7 +39,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags gpu -run TestDecode_dispatchProfile -v ./gpu/
 func TestDecode_dispatchProfile(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if testing.Short() {
 		t.Skip("dispatch profile")
 	}

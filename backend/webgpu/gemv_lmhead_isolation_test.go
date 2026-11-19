@@ -10,6 +10,8 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestGEMVLMHeadIsolation measures the LM-head GEMV on the model's OWN resident lm-head buffer,
@@ -24,7 +26,7 @@ import (
 //	GOINFER_DECODE_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf \
 //	  go test -tags 'gpu goinfer_testhooks' ./gpu/ -run TestGEMVLMHeadIsolation -v
 func TestGEMVLMHeadIsolation(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_DECODE_GGUF")
 	if path == "" {
 		path = os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")

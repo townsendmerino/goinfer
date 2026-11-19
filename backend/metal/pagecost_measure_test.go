@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // forwardLogitsPerLayerSubmit is the SUBMISSION STRUCTURE a naive Metal expert-paging path would be
@@ -49,7 +51,7 @@ func (r *resident) forwardLogitsPerLayerSubmit(pos int) []float32 {
 // Reports baseline (pipelined pre-encode) and per-layer-submit as tok/s + ms/token, best of 3 warm runs (first discarded),
 // greedy, same model + prompt. Heavy-gated (loads a ~1 GB checkpoint).
 func TestPageCost_submissionStructure(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no checkpoint at %s", path)

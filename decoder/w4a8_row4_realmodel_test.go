@@ -3,6 +3,8 @@ package decoder
 import (
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestRow4GiwKind_gemma4_identicalToCanonical is the kind-4 acceptance gate's real-scale
@@ -13,7 +15,7 @@ import (
 // proof on the real 26B-A4B checkpoint. Both .giw paths default to the sidecar-naming
 // convention used by the acceptance run and can be overridden via env for other boxes.
 func TestRow4GiwKind_gemma4_identicalToCanonical(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	kind3 := envOr("GOINFER_GEMMA4_26B_GIW", "~/models/gemma4-26b-int4.giw")
 	kind4 := envOr("GOINFER_GEMMA4_26B_GIW_ROW4", "~/models/gemma4-26b-int4-row4.giw")
 	kind3, kind4 = expandHome(t, kind3), expandHome(t, kind4)
@@ -51,7 +53,7 @@ func TestRow4GiwKind_gemma4_identicalToCanonical(t *testing.T) {
 // specifically against the kind-4 gemma4 bundle: full-resident vs a small forced-eviction
 // budget must decode identically, and the pager must actually evict (not just cold-fault).
 func TestRow4GiwKind_gemma4_pagedEviction(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	kind4 := expandHome(t, envOr("GOINFER_GEMMA4_26B_GIW_ROW4", "~/models/gemma4-26b-int4-row4.giw"))
 	if _, err := os.Stat(kind4); err != nil {
 		t.Skipf("no kind-4 gemma4 .giw at %s: %v", kind4, err)
@@ -91,7 +93,7 @@ func TestRow4GiwKind_gemma4_pagedEviction(t *testing.T) {
 // TestRow4GiwKind_qwen35_pagedEviction is the same eviction-exercising proof for the
 // real 35B-A3B kind-4 bundle -- the campaign's other acceptance target.
 func TestRow4GiwKind_qwen35_pagedEviction(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	kind4 := expandHome(t, envOr("GOINFER_QWEN35_GIW_ROW4", "~/models/qwen3.5-35b-a3b-int4-row4.giw"))
 	if _, err := os.Stat(kind4); err != nil {
 		t.Skipf("no kind-4 qwen3.5-35b .giw at %s: %v", kind4, err)

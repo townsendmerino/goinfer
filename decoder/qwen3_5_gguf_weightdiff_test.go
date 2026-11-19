@@ -30,10 +30,12 @@ import (
 	"math"
 	"runtime"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestQwen38GGUF_weightDiff(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	dir := assetPath(t, "GOINFER_QWEN38") // safetensors (skips if absent)
 	gguf := assetPath(t, "GOINFER_QWEN38_GGUF")
 

@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestGemma4_26B_posSweep is Step-6 divergence Step 1: the position-signature sweep. It measures the
@@ -21,7 +23,7 @@ import (
 // (The rope table is already proven byte-identical CPU↔Metal by code inspection — same gemma4InvFreq
 // call — so "wrong base/fraction" is a priori unlikely; the sweep separates off-by-one from KV.)
 func TestGemma4_26B_posSweep(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	giw := modelPath("gemma4-26b-int4.giw") // GOINFER_MODELS_DIR (default $HOME/models); see modelsdir_test.go (G-06)
 	if _, err := os.Stat(giw); err != nil {
 		t.Skipf("no .giw")

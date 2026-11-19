@@ -9,6 +9,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // seedPrompt derives the probe from the MODEL'S OWN tokenizer and VERIFIES it by decoding —
@@ -147,7 +149,7 @@ const probeText = "The capital of France is"
 // path, so "is this cosine / this many near-ties good?" has an answer measured on THIS box
 // rather than assumed. Without it a Gemma number cannot be judged.
 func TestDenseResidentParity(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
 	st := residentParity(t, path, seedPrompt(t, path, probeText), 24)
 	assertParity(t, "dense control", st, 0.95)
@@ -156,7 +158,7 @@ func TestDenseResidentParity(t *testing.T) {
 // TestGemma3ResidentParity is the Metal Gemma 3 gate — judged by the SAME bar the control meets.
 // Needs the checkpoint (~4 GB at int8, loaded twice → budget ~10 GB); skips without it.
 func TestGemma3ResidentParity(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	// residentParity t.Fatals on a decline, which is what catches a silent fallback.
 	path := os.ExpandEnv("$HOME/models/gemma-3-4b-it-Q4_K_M.gguf")
 	st := residentParity(t, path, seedPrompt(t, path, probeText), 24)
@@ -168,7 +170,7 @@ func TestGemma3ResidentParity(t *testing.T) {
 // with TestDenseResidentParity and TestGemma3ResidentParity: the control failing voids the session, and a Gemma 2 min
 // cosine more than 0.03 under Gemma 3's from the same session is parked for the owner even when it clears the bar.
 func TestGemma2ResidentParity(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.ExpandEnv("$HOME/models/gemma-2-2b-it-Q8_0.gguf")
 	for _, quant := range []string{"int8int8", "int4"} {
 		st := residentParityAt(t, path, quant, seedPrompt(t, path, probeText), 24)

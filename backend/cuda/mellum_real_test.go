@@ -5,6 +5,8 @@ package cuda
 import (
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestMellumResidentParityCUDA is the CUDA counterpart of metal/mellum_real_test.go. It exists
@@ -23,7 +25,7 @@ import (
 // its full-attention layer and 1.0 on the sliding ones. A backend that ignored the factor would
 // still produce finite, plausible logits — which is why this is a parity gate and not a smoke test.
 func TestMellumResidentParityCUDA(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := "../../decoder/testdata/mellum-mellum2-slice"
 	if _, err := os.Stat(path + "/model.safetensors"); err != nil {
 		t.Skipf("no Mellum2 slice at %s (4 GB, gitignored) — regenerate the slice", path)

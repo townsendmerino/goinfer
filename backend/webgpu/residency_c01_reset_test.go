@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestResident_C01_pos0ResetsRecurrent is the resident-half gate for audit C-01: the compounding
@@ -21,7 +23,7 @@ import (
 // GOINFER_HEAVY_TESTS=1 (override the path with GOINFER_SSM_MODEL). The CPU rewind half is
 // covered by decoder.TestTruncateTo_resetsRecurrent.
 func TestResident_C01_pos0ResetsRecurrent(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if _, err := New(); err != nil {
 		t.Skipf("no webgpu: %v", err)
 	}

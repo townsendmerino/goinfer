@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // spec_twoturn_test.go is item 30: the CUDA check of two
@@ -33,7 +35,7 @@ import (
 // (cheap; no weights) rather than threading one through every call site.
 func twoTurnAssets(t *testing.T) (tgt string) {
 	t.Helper()
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	tgt = os.Getenv("GOINFER_CUDA_MODEL")
 	if tgt == "" {
 		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")

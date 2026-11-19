@@ -22,10 +22,14 @@
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestQwen3NextReal_oracle -v -timeout 120m
 package decoder
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
+)
 
 func TestQwen3NextReal_oracle(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ckpt := assetPath(t, "GOINFER_QWEN3NEXT_HF")
 	// int4 WEIGHTS, f32 ACTIVATIONS. Activations are deliberately NOT quantized: at 10/512
 	// routing, perturbing the router is the one thing measured to break this model class, and

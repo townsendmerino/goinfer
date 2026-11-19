@@ -17,6 +17,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/backend/metal/kernels"
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // r17Kernels is the graded attention_fa_blk, rebuilt from the shipped section of allKernels into the standalone library form the R17
@@ -357,7 +359,7 @@ func TestAttnFABlkSelection(t *testing.T) {
 	})
 	for _, stem := range []string{"qwen2.5-coder-1.5b-instruct-q4_k_m", "qwen2.5-7b-instruct-q4_k_m"} {
 		t.Run(stem, func(t *testing.T) {
-			requireHeavyModel(t)
+			testgate.RequireHeavy(t)
 			paths, _ := filepath.Glob(os.ExpandEnv("$HOME/models/" + stem + ".int4.metal*.giw"))
 			path, ok := newestMetalSidecar(stem, paths)
 			if !ok {

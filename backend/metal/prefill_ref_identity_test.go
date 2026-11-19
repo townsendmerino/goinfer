@@ -16,6 +16,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestPrefillRefIdentity audits a prompt set's CPU reference files against the prompts the gates feed them. The files
@@ -29,7 +31,7 @@ import (
 // S cells use the 1.5B, D7 cells the 7B (its .int4.metal.giw sidecar); the D7 references are int8-weight CPU runs,
 // so their valid level is somewhat higher than S's, still far below a mismatch.
 func TestPrefillRefIdentity(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatal(err)

@@ -11,6 +11,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestFlashDecodeSpeculativeScope is option A of the spec-decode story (docs/measurements/spec-decode-lane-2026-09-21.md): with
@@ -360,7 +362,7 @@ func TestFlashDecodeForwardNBitIdentical(t *testing.T) {
 // with GOINFER_CUDA_FLASH_DECODE_VERIFY=0 it equals plain EXACT greedy and the lane never launched (the exact-attention scope, held in generate()).
 // MIN_KEYS=0 forces the lane on the short prompt; otherwise the lane would sit under its 2048-key floor and the test would prove nothing.
 func TestFlashDecodeBlockSpecLane(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	tgt := os.Getenv("GOINFER_CUDA_MODEL")
 	if tgt == "" {
 		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")

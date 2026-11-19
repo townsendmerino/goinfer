@@ -17,6 +17,8 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestSP0_prize is SP0's instrument (docs/measurements/sp0-2026-10/README.md, which registers the protocol): a drafter's
@@ -34,7 +36,7 @@ func TestSP0_prize(t *testing.T) {
 	if target == "" {
 		t.Skip("set SP0_TARGET, SP0_KIND and SP0_OUT")
 	}
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	kind := os.Getenv("SP0_KIND")
 	if kind != "dflash" && kind != "ngram" && kind != "validate" {
 		t.Fatalf("SP0_KIND %q: want dflash, ngram or validate", kind)

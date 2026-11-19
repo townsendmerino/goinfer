@@ -11,6 +11,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestNemotronResidentQuality measures resident int4 Nemotron-H (int8 doesn't fit 8 GB, see;
@@ -21,7 +23,7 @@ import (
 // whether the gap carries over is the question. The agreement number drives the default-vs-opt-in
 // decision; there is no pre-set bar.
 func TestNemotronResidentQuality(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if os.Getenv("GOINFER_SSM_QUALITY") == "" {
 		t.Skip("nemotron resident quality (slow: 9B f32 + int4 loads); set GOINFER_SSM_QUALITY=1")
 	}

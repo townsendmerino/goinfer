@@ -557,6 +557,7 @@
       "internal/runtime/program",
       "internal/runtime/sampling",
       "internal/runtime/whisper",
+      "internal/testgate",
       "internal/vision",
       "internal/wrappedupload",
       "multimodal",
@@ -594,6 +595,7 @@
       "internal/runtime/modelload",
       "internal/runtime/prequant",
       "internal/runtime/program",
+      "internal/testgate",
       "internal/vision",
       "internal/wrappedupload",
       "multimodal",
@@ -621,6 +623,7 @@
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
       "internal/runtime/program",
+      "internal/testgate",
       "internal/vision",
       "internal/wrappedupload",
       "multimodal",
@@ -630,6 +633,7 @@
       "internal/runtime/hybridattn",
       "internal/runtime/mem",
       "internal/runtime/sampling",
+      "internal/testgate",
       "internal/vision",
       "multimodal"
     ],
@@ -642,7 +646,8 @@
       "tokenizer"
     ],
     "cmd/gate": [
-      "internal/guard/paritykey"
+      "internal/guard/paritykey",
+      "internal/testgate"
     ],
     "cmd/hostmem": [
       "internal/runtime/mem/probe"
@@ -665,6 +670,7 @@
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
       "internal/runtime/program",
+      "internal/testgate",
       "internal/vision",
       "multimodal",
       "tokenizer"
@@ -736,6 +742,7 @@
       "internal/runtime/modelload",
       "internal/runtime/prequant",
       "internal/runtime/whisper",
+      "internal/testgate",
       "internal/testpath",
       "internal/vision",
       "multimodal",

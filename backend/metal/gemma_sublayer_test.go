@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestGemmaSublayer_MetalContribution is the Metal half of the cross-box per-sublayer trace.
@@ -25,7 +27,7 @@ import (
 //
 // Where Metal's attn or mlp contribution goes POSITIVE against a negative truth is the culprit.
 func TestGemmaSublayer_MetalContribution(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if testing.Short() {
 		t.Skip("loads a real model")
 	}

@@ -9,6 +9,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestMambaResidentCapture diffs the resident's wiring against the isolated kernels
@@ -21,7 +23,7 @@ import (
 // or in attn/MoE; a divergence is a PLAN/STATE bug (the kernels run differently in the full
 // command buffer than in isolation: barrier, race, state corruption).
 func TestMambaResidentCapture(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if os.Getenv("GOINFER_SSM_QUALITY") == "" {
 		t.Skip("resident mamba capture — needs granite model; set GOINFER_SSM_QUALITY=1")
 	}

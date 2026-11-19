@@ -18,6 +18,8 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // g3Prompts is G3c's prompt set: the eight prompts Metal's G3 fixed before any run, unchanged.
@@ -189,7 +191,7 @@ const (
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 20m -tags 'cuda goinfer_testhooks' -run '^TestGemma4EModel_realE2BNonInferiority$' -v ./cuda/
 func TestGemma4EModel_realE2BNonInferiority(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	home, _ := os.UserHomeDir()
 	t0 := time.Now()
 	logf := func(format string, a ...any) { // streams under -v (t.Logf is held until the test returns)
@@ -216,7 +218,7 @@ func TestGemma4EModel_realE2BNonInferiority(t *testing.T) {
 //
 //	GOINFER_HEAVY_TESTS=1 go test -c -tags 'cuda goinfer_testhooks' -o cuda.test ./cuda/ && GOINFER_HEAVY_TESTS=1 ./cuda.test -test.run '^TestGemma4EModel_realE2BPLEHostCost$' -test.v
 func TestGemma4EModel_realE2BPLEHostCost(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	home, _ := os.UserHomeDir()
 	gguf := filepath.Join(home, "models", "gemma-4-e2b-gguf", "gemma-4-E2B_q4_0-it.gguf")
 	if _, err := os.Stat(gguf); err != nil {
@@ -258,7 +260,7 @@ func TestGemma4EModel_realE2BPLEHostCost(t *testing.T) {
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 40m -tags 'cuda goinfer_testhooks' -run '^TestGemma4EModel_realE4BNonInferiority$' -v ./cuda/
 func TestGemma4EModel_realE4BNonInferiority(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	home, _ := os.UserHomeDir()
 	t0 := time.Now()
 	logf := func(format string, a ...any) {
@@ -288,7 +290,7 @@ func TestGemma4EModel_realE4BNonInferiority(t *testing.T) {
 // This writes, for the CPU's own greedy sequence on each of G3's prompts, both arms' top-8 (id, logit) at every position, so that an HF float32 forward over the SAME ids
 // (scripts/anchor_e4b_hf.py) can say, at every position where the arms disagree, which one HF sides with. Output: $E4B_ANCHOR_DIR (default ~/goinfer-logs/e4b-anchor/dump.json).
 func TestGemma4EModel_realE4BAnchorDump(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	home, _ := os.UserHomeDir()
 	dir := filepath.Join(home, "models", "gemma-4-E4B-it")
 	if _, err := os.Stat(dir); err != nil {
@@ -397,7 +399,7 @@ func TestGemma4EModel_realE4BAnchorDump(t *testing.T) {
 // The float32 load needs about 30 GB of host memory. When the fit guard refuses it (decoder.ErrWontFitResident), as it does inside a long-lived
 // gate process whose earlier tests have taken memory, the test skips with the guard's arithmetic; run it alone to get the dump.
 func TestGemma4EModel_realE4BF32Dump(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	home, _ := os.UserHomeDir()
 	dir := filepath.Join(home, "models", "gemma-4-E4B-it")
 	if _, err := os.Stat(dir); err != nil {

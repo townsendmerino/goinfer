@@ -8,10 +8,12 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/internal/vision"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestVisionEncoder_timing(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	dir := os.Getenv("HOME") + "/models/gemma-3-4b-it"
 	if _, err := os.Stat(dir); err != nil {
 		t.Skip("no gemma-3-4b-it")

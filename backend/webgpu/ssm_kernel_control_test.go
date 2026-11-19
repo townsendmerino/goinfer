@@ -9,6 +9,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestSSMKernelControlD3 is the last localization control for the resident granite int8 gap
@@ -20,7 +22,7 @@ import (
 // while the int8 GPU-resident does not, the only remaining variable is the GPU mamba kernels
 // (conv/ssm/gatedNorm): the gap would be a kernel discrepancy, not precision.
 func TestSSMKernelControlD3(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if os.Getenv("GOINFER_SSM_QUALITY") == "" {
 		t.Skip("ssm D3 kernel control — slow (cpu + staged granite load); set GOINFER_SSM_QUALITY=1")
 	}

@@ -9,6 +9,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestResidentPrefixReuse_tokenIdentical is the gate for resident prefix reuse, and it is a
@@ -26,7 +28,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags gpu -run TestResidentPrefixReuse -v ./gpu/
 func TestResidentPrefixReuse_tokenIdentical(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_REUSE_GGUF")
 	if path == "" {
 		path = os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")

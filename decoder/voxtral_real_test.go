@@ -14,6 +14,8 @@ import (
 	"github.com/townsendmerino/goinfer/internal/audio"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // G-S14e3: the REAL Voxtral Mini 3B, goinfer float32 on the CPU, against transformers float32
@@ -25,7 +27,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_VOXTRAL_REF=<pin output dir> [GOINFER_VOXTRAL_DIR=<checkpoint, with tekken.json>] go test -tags realckpt ./decoder/ -run TestVoxtralReal -v -timeout 60m
 func TestVoxtralReal_gate(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ref := os.Getenv("GOINFER_VOXTRAL_REF")
 	if ref == "" {
 		t.Skip("set GOINFER_VOXTRAL_REF to scripts/pin_voxtral_real.py's output directory")

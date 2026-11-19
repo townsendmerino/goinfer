@@ -15,6 +15,8 @@ import (
 	"github.com/townsendmerino/goinfer/internal/audio"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // G-S14c4's goinfer arms ( registered before this code): every WAV in $GOINFER_S14C4_DIR (scripts/s14c4_data.py) transcribed by Qwen3-ASR-0.6B through
@@ -23,7 +25,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_S14C4_DIR=<wav dir> GOINFER_S14C4_OUT=<json> [GOINFER_S14C4_LIMIT=<clips>] go test -tags realckpt ./decoder/ -run TestQwen3ASRWER_arms -v -timeout 120m
 func TestQwen3ASRWER_arms(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	data, out := os.Getenv("GOINFER_S14C4_DIR"), os.Getenv("GOINFER_S14C4_OUT")
 	if data == "" || out == "" {
 		t.Skip("set GOINFER_S14C4_DIR (scripts/s14c4_data.py's output) and GOINFER_S14C4_OUT")

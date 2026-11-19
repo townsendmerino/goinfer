@@ -15,6 +15,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/internal/app/loadflags"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestServe_qwen35Image_G4 is P8a's G4 (docs/measurements/p8a-qwen35-vl-2026-09/preregistration.md) on
@@ -36,7 +38,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./internal/app/serveapp/ -run TestServe_qwen35Image_G4 -v -timeout 30m
 func TestServe_qwen35Image_G4(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	home := os.Getenv("HOME")
 	ckpt := filepath.Join(home, "models", "qwen3.5-0.8b")
 	gdir := filepath.Join(home, "models", "qwen35vl_g2")

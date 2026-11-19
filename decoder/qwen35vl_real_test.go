@@ -12,6 +12,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestQwen35VLReal_G2 is P8a's G2 (docs/measurements/p8a-qwen35-vl-2026-09/preregistration.md) on the
@@ -27,7 +29,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestQwen35VLReal_G2 -v -timeout 30m
 func TestQwen35VLReal_G2(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	qwen35VLRealG2(t, assetPath(t, "GOINFER_QWEN35VL_08B"), assetPath(t, "GOINFER_QWEN35VL_G2"))
 }
 
@@ -35,7 +37,7 @@ func TestQwen35VLReal_G2(t *testing.T) {
 // docs/measurements/p8a-qwen35-vl-2026-09/run-g2-9b.sh downloads the checkpoint at a pinned revision,
 // writes the HF f32 references, then runs this. CPU f32 is ~36 GB, so the HF process must have exited.
 func TestQwen35VLReal_G2_9B(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	qwen35VLRealG2(t, assetPath(t, "GOINFER_QWEN35VL_9B"), assetPath(t, "GOINFER_QWEN35VL_G2_9B"))
 }
 

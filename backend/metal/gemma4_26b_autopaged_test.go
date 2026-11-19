@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestGemma4_26B_autoPagedRuns is R11(c): the M26 row re-run against
@@ -37,7 +39,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags goinfer_testhooks ./metal/ -run TestGemma4_26B_autoPagedRuns -v -timeout 10m
 func TestGemma4_26B_autoPagedRuns(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	giw := modelPath("gemma4-26b-int4.giw")
 	if _, err := os.Stat(giw); err != nil {
 		t.Skipf("no .giw (%s)", giw)

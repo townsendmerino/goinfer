@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func hN(b Buffer, n int) []float32 {
@@ -39,7 +41,7 @@ func cosv(a, b []float32) float64 {
 // K is a strong direction; sink V is a no-op), and a cosine between two near-zero vectors is rounding noise, so a low layer-1 V
 // cosine would be a measurement artifact, not a bug. So this measures NORMS, not cosines, and probes a NON-sink token too.
 func TestSink_NormsNotCosines(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.ExpandEnv("$HOME/models/gemma-3-4b-it-Q4_K_M.gguf")
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no checkpoint")

@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestThetaProbe_WebGPU measures Theta, the marginal cost of one extra verify node in units of
@@ -30,7 +32,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_THETA_PROBE=1 go test -tags "gpu goinfer_testhooks" -run TestThetaProbe_WebGPU -v ./gpu/
 func TestThetaProbe_WebGPU(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if os.Getenv("GOINFER_THETA_PROBE") == "" {
 		t.Skip("set GOINFER_THETA_PROBE=1")
 	}

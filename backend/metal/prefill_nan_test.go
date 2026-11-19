@@ -8,13 +8,15 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestPrefillNoNaN asserts the f16-MMA prefill produces finite logits across a range of prompt lengths: the regression gate
 // for the int8-pinned LM head being run through the int4 gemm_w4f16 kernel (weights misread as packed nibbles), which gave NaN
 // logits at EVERY M, including the single-tile M=8. Complements TestPrefillParity (which pins the value).
 func TestPrefillNoNaN(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_METAL_MODEL")
 	if path == "" {
 		path = os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")

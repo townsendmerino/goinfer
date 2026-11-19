@@ -91,6 +91,10 @@ func TestEnvVars_docAndCodeAgree(t *testing.T) {
 		if testhooksOnly(b) {
 			return nil
 		}
+		// internal/testgate is test support: only _test.go files import it (testgate.TestNoProductionImporter).
+		if filepath.ToSlash(filepath.Dir(p)) == "../internal/testgate" {
+			return nil
+		}
 		for _, m := range getenv.FindAllStringSubmatch(string(b), -1) {
 			if _, seen := readInProd[m[1]]; !seen {
 				readInProd[m[1]] = p

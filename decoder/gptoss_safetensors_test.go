@@ -21,10 +21,12 @@ package decoder
 
 import (
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestGptOssSafetensors_vsGGUF(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	stDir := assetPath(t, "GOINFER_GPTOSS_ST")
 	ggufPath := assetPath(t, "GOINFER_GPTOSS_GGUF")
 

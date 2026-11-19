@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // layerDumpPositions are the token positions of the 1441-token window golden whose per-layer residuals are dumped. The sliding
@@ -27,7 +29,7 @@ func TestMellum2_layerDump(t *testing.T) {
 	if prefix == "" {
 		t.Skip("set GOINFER_MELLUM_GOLDEN_PREFIX (it names where the dump is written and which golden's ids are run)")
 	}
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	raw, err := os.ReadFile(mellum2GoldenPath("window"))
 	if err != nil {
 		t.Skipf("no window golden: %v", err)

@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestGPUStep0 — headroom decision-tree Step 0 (cgo-free, no Instruments). Separates the
@@ -16,7 +18,7 @@ import (
 // there a fat token-boundary bubble to close with encode-ahead? (b) what effective GB/s does
 // the GPU-only window imply, vs the ~150-170 GPU-reachable ceiling on M1 Pro.
 func TestGPUStep0(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("model not present: %v", path)

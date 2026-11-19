@@ -14,6 +14,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // G2-R in two processes:
@@ -135,7 +137,7 @@ func g2rCPUArmFrom(t *testing.T, load, quant string, seed []int, steps int, soft
 
 // TestG2R_cpuReference is the CPU process: the hook check, then every arm's CPU side, saved to $GOINFER_G2R_REF.
 func TestG2R_cpuReference(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	out, commit := g2rRefEnv(t)
 	g2, g3, dense := g2rPaths()
 	ref := g2rRef{Commit: commit, SHA256: g2rHashes(t, g2, g3, dense), Arms: map[string]g2rArm{}, PStats: map[string]g2rPStats{}}

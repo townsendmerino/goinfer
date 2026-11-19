@@ -8,6 +8,8 @@ import (
 	"os"
 	"sort"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // Does a router flip explain the A3 MoE divergence? The mechanism experiment for the f32-attention flag on a MoE:
@@ -33,7 +35,7 @@ func TestA3MoERouteFlips(t *testing.T) {
 			"what holds under either story. Not a gate.")
 	}
 	path := assetPath(t, "GOINFER_MELLUM_CKPT")
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	K := 2048
 	if v := os.Getenv("GOINFER_MELLUM_K"); v != "" {
 		if _, err := fmt.Sscanf(v, "%d", &K); err != nil {

@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestQwen35VLReal_residentImagePrefillMatchesCPU is the real-checkpoint gate for the CUDA-resident image prefill of a
@@ -36,7 +38,7 @@ import (
 //
 //     GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestQwen35VLReal_residentImagePrefillMatchesCPU -v -timeout 30m
 func TestQwen35VLReal_residentImagePrefillMatchesCPU(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	requireCUDADevice(t)
 	ckpt := decoder.AssetPathForTest(t, "GOINFER_QWEN35VL_08B")
 	dir := decoder.AssetPathForTest(t, "GOINFER_QWEN35VL_G2")

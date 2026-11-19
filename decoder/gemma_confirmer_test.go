@@ -6,6 +6,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestGemmaConfirmerReference assembles the matched-input confirmer's reference bundle from existing seams (no new capture
@@ -23,7 +25,7 @@ import (
 // decimals, so the Metal box gets the same reference either box would produce and the injection stays entirely on its side
 // (naturally-f32 KV, no faked state).
 func TestGemmaConfirmerReference(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	gguf := os.ExpandEnv("$HOME/models/gemma-3-4b-it-Q4_K_M.gguf")
 	if _, e := os.Stat(gguf); e != nil {
 		t.Skipf("no gguf at %s", gguf)

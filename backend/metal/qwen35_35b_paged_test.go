@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestQwen35_35B_pagedRuns is the at-scale payoff run for the GENERIC Metal expert pager — the
@@ -40,7 +42,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags goinfer_testhooks ./metal/ -run TestQwen35_35B_pagedRuns -v -timeout 60m
 func TestQwen35_35B_pagedRuns(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	giw := modelPath("Qwen3.5-35B-A3B-Q4_K_M.int4.giw")
 	if _, err := os.Stat(giw); err != nil {
 		t.Skipf("no 35B .giw (%s)", giw)
@@ -209,7 +211,7 @@ func TestQwen35_35B_pagedRuns(t *testing.T) {
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -tags goinfer_testhooks ./metal/ -run TestQwen35_35B_cpuPagedBaseline -v -timeout 60m
 func TestQwen35_35B_cpuPagedBaseline(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	giw := modelPath("Qwen3.5-35B-A3B-Q4_K_M.int4.giw")
 	if _, err := os.Stat(giw); err != nil {
 		t.Skipf("no 35B .giw (%s)", giw)

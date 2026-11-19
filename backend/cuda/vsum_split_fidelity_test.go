@@ -29,10 +29,12 @@ import (
 	gc "github.com/eitamring/gocudrv/cuda"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestVsumSplitFidelity(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_CUDA_MODEL")
 	if path == "" {
 		path = modelPath("qwen2.5-7b-instruct-q4_k_m.gguf")
