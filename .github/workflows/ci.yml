@@ -63,6 +63,7 @@ jobs:
       pull-requests: read # to find the pull request a push to main merged (pr_covered)
     outputs:
       docs_only: ${{ steps.gate.outputs.docs_only }}
+      backend_only: ${{ steps.gate.outputs.backend_only }}
       class: ${{ steps.gate.outputs.class }}
       pr_covered: ${{ steps.covered.outputs.pr_covered }}
     steps:
@@ -89,20 +90,29 @@ jobs:
           HEAD: ${{ github.sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
+          # `backend` (every change inside backend/webgpu, backend/cuda or backend/metal, or on the quick path) skips only the
+          # root OS lanes, the forced fallbacks and decoder shards a, c and d, under the same base-run condition.
           class=$(scripts/ci_docs_only.sh --classify "$BASE" "$HEAD") || class=full
           v=false
-          [ "$class" != "full" ] && [ -n "$class" ] && v=true
+          b=false
+          case "$class" in
+            docs|records|version|quick) v=true ;;
+            backend) b=true ;;
+            *) class=full ;;
+          esac
           base_run="(not checked)"
-          if [ "$v" = "true" ]; then
+          if [ "$v" = "true" ] || [ "$b" = "true" ]; then
             base_run=$(gh run list --workflow ci.yml --commit "$BASE" --json conclusion --jq '.[0].conclusion' 2>/dev/null || true)
             if [ "$base_run" != "success" ]; then
               v=false
+              b=false
               class=full
             fi
           fi
           echo "docs_only=$v" >> "$GITHUB_OUTPUT"
+          echo "backend_only=$b" >> "$GITHUB_OUTPUT"
           echo "class=${class:-full}" >> "$GITHUB_OUTPUT"
-          echo "docs_only=$v class=${class:-full}  (base=$BASE head=$HEAD; base's last ci run: '${base_run:-none}')"
+          echo "docs_only=$v backend_only=$b class=${class:-full}  (base=$BASE head=$HEAD; base's last ci run: '${base_run:-none}')"
 
       # PR_COVERED. A pull-request run records the tree it tested (the merge ref's HEAD^{tree}) as the `ci-tree` artifact. On
       # a push to main, scripts/ci_pr_covered.py sets pr_covered=true only when the merged PR's newest ci run concluded
@@ -115,7 +125,8 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           DOCS_ONLY: ${{ steps.gate.outputs.docs_only }}
-        run: printf 'tree=%s\ndocs_only=%s\nsha=%s\n' "$(git rev-parse 'HEAD^{tree}')" "$DOCS_ONLY" "$GITHUB_SHA" | tee ci-tree.txt
+          BACKEND_ONLY: ${{ steps.gate.outputs.backend_only }}
+        run: printf 'tree=%s\ndocs_only=%s\nbackend_only=%s\nsha=%s\n' "$(git rev-parse 'HEAD^{tree}')" "$DOCS_ONLY" "$BACKEND_ONLY" "$GITHUB_SHA" | tee ci-tree.txt
       - name: upload the recorded tree
         if: github.event_name == 'pull_request'
         continue-on-error: true # a missing artifact only makes the later main push run in full
@@ -417,7 +428,7 @@ jobs:
   # slowest-tests output and redo the LPT pack by hand; this is not automated.
   test-decoder-a:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.backend_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED, backend class
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -549,7 +560,7 @@ jobs:
 
   test-decoder-c:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.backend_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED, backend class
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -607,7 +618,7 @@ jobs:
 
   test-decoder-d:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.backend_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED, backend class
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -967,7 +978,7 @@ jobs:
   # manual Apple-silicon sweep. macos-latest is Apple Silicon (arm64).
   root-darwin:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED: no macOS runner starts for a docs-only push
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.backend_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED, backend class: no macOS runner starts for a docs-only push
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -1050,7 +1061,7 @@ jobs:
   # and the x86 jobs' logs never said, which is why no green ci-pool AVX-512 record exists.
   root-windows:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.backend_only != 'true' }} # C3, backend class
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -1092,7 +1103,7 @@ jobs:
   # the way a Windows ARM user does. Same build and test as root-windows. The census records which CPU the run landed on.
   root-windows-arm64:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.backend_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED, backend class
     runs-on: windows-11-arm
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -1125,7 +1136,7 @@ jobs:
 
   root-linux-arm64:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.backend_only != 'true' }} # C3, backend class
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -1187,7 +1198,7 @@ jobs:
   # (docs/completed/task-hardware-coverage-2026-10.md). aikit's own CI forces the arm64 DotProd fallback, and goinfer's does in root-forced-fallbacks-arm64 below.
   root-forced-fallbacks:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.backend_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED, backend class
     runs-on: ubuntu-latest
     name: forced fallbacks (amd64 noavx512, noavx2, nopopcnt)
     # One job, one step per tag: each leg runs whatever an earlier leg did (`!cancelled()`), and its step name says which
@@ -1228,7 +1239,7 @@ jobs:
   # passed 6 tests, 2026-10-04), so that was run by hand for aikit's linalg suite only.
   root-forced-fallbacks-arm64:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.backend_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED, backend class
     runs-on: ubuntu-24.04-arm
     name: forced fallbacks (arm64 nodotprod)
     steps:

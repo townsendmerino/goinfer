@@ -9,7 +9,8 @@ always run, since each has gone red on main on a tree its PR run passed (the 202
   1. the push is a two-parent merge commit on main (a squash, a rebase merge or a direct push is not covered);
   2. a merged pull request names this commit as its merge commit, and its head is the merge's second parent;
   3. the newest `pull_request` ci run on that head concluded "success";
-  4. that run's `ci-tree` artifact (written by `changes` in a PR run) records docs_only=false and the same tree id as this
+  4. that run's `ci-tree` artifact (written by `changes` in a PR run) records docs_only=false, backend_only=false (or no
+     backend_only, a record older than the backend class) and the same tree id as this
      push's HEAD^{tree}.
 
 Usage: ci_pr_covered.py --repo <owner/name> --sha <full sha> [--ref refs/heads/main] [--event push]
@@ -65,8 +66,9 @@ def _evaluate(sha, ref, event, git, api, download):
     if text is None:
         return False, f"PR #{pr['number']}: run {run['id']} has no {ARTIFACT} artifact"
     rec = dict(line.split("=", 1) for line in text.splitlines() if "=" in line)
-    if rec.get("docs_only") != "false":
-        return False, f"PR #{pr['number']}: run {run['id']} did not run the full matrix (docs_only={rec.get('docs_only')})"
+    if rec.get("docs_only") != "false" or rec.get("backend_only", "false") != "false":
+        return False, (f"PR #{pr['number']}: run {run['id']} did not run the full matrix "
+                       f"(docs_only={rec.get('docs_only')}, backend_only={rec.get('backend_only')})")
     if rec.get("tree") != head_tree:
         return False, f"PR #{pr['number']}: run {run['id']} tested tree {rec.get('tree')}, this push is tree {head_tree}"
     return True, f"PR #{pr['number']}: run {run['id']} passed on tree {head_tree}, the tree of this push"
