@@ -109,6 +109,9 @@ func (q Queue) UploadAsyncAt(dst Buffer, src *HostBuffer[uint8], srcOff, n int) 
 	}
 	s := src.h.Slice()
 	dptr := dst.b.DevicePtr() + cudasys.CUdeviceptr(dst.off)
+	if TraceForTest != nil {
+		TraceForTest(TraceEvent{Op: TraceUploadAsync, Dst: uint64(dptr), Bytes: n})
+	}
 	err := q.d.onThread(func(drv *cudasys.Driver) error {
 		return cudaresult.MemcpyHtoDAsync(drv, dptr, &s[srcOff], uint64(n), q.s.Raw())
 	})
@@ -147,6 +150,9 @@ func (q Queue) UploadAsyncAtFrom(dst Buffer, src *MappedHostBuffer, srcOff, n in
 		return fmt.Errorf("cuda: UploadAsyncAtFrom of %d bytes at offset %d overruns a %d-byte buffer", n, dst.off, got)
 	}
 	dptr := dst.b.DevicePtr() + cudasys.CUdeviceptr(dst.off)
+	if TraceForTest != nil {
+		TraceForTest(TraceEvent{Op: TraceUploadAsync, Dst: uint64(dptr), Bytes: n})
+	}
 	err := q.d.onThread(func(drv *cudasys.Driver) error {
 		return cudaresult.MemcpyHtoDAsync(drv, dptr, &s[srcOff], uint64(n), q.s.Raw())
 	})
@@ -171,6 +177,9 @@ func (q Queue) ZeroAsync(dst Buffer, n int) error {
 		return fmt.Errorf("cuda: ZeroAsync of %d bytes at offset %d overruns a %d-byte buffer", n, dst.off, got)
 	}
 	dptr := dst.b.DevicePtr() + cudasys.CUdeviceptr(dst.off)
+	if TraceForTest != nil {
+		TraceForTest(TraceEvent{Op: TraceZeroAsync, Dst: uint64(dptr), Bytes: n})
+	}
 	return q.d.onThread(func(drv *cudasys.Driver) error {
 		return cudaresult.MemsetD8Async(drv, dptr, 0, uint64(n), q.s.Raw())
 	})

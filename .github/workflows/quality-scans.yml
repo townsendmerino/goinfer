@@ -1,0 +1,32 @@
+name: quality-scans
+
+# The code-quality scans: each keeps a fixed pattern from coming back, or holds a ratchet so a pattern can only shrink
+# (internal/guard/qualityscan's package doc). They run nightly and by hand, not per push and not in the day loop, so pushes
+# stay fast; a red here names the site and the allowlist to change. Nothing opens an issue: check with
+# `gh run list --workflow quality-scans.yml`.
+on:
+  schedule:
+    - cron: "41 11 * * *" # daily, 11:41 UTC: clear of govulncheck (08:00), coverage (10:23) and the heartbeat (15:17)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scans:
+    name: quality scans
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      # The scans parse every module's files from disk; they build only the root module's scanner package.
+      # The grep proves the tagged scans ran: with the tag misspelt, only the untagged unit tests would, and pass.
+      - name: go test -tags quality_scan
+        run: |
+          set -o pipefail
+          go test -tags quality_scan -count=1 -v ./internal/guard/qualityscan/ | tee scan.log
+          grep -q -- '--- PASS: TestQualityScan_readsEveryModule' scan.log

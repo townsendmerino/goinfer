@@ -109,7 +109,7 @@ func clipClassRuns(runs []kvmgr.ClassRun, n int) []kvmgr.ClassRun {
 }
 
 // KVShareOff reports Options.KVShareOff: no request takes KV rows another conversation computed.
-func (m *Model) KVShareOff() bool { return m.kvShareOff }
+func (m *Model) KVShareOff() bool { return m.opts.KVShareOff }
 
 // KeepPrefix cuts the session back to its first n positions (a SharedHit of its own), so a request that takes it in
 // place reuses exactly the rows a copy would have given it, and not a longer token match its cold prefill would compute

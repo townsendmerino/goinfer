@@ -15,8 +15,8 @@ name: coverage
 # checkout through a go.work in RUNNER_TEMP, as release-assets.yml does. A separate workflow rather than a step in ci.yml's sharded `test-*`
 # jobs: those run under -race and split ./decoder across five runners, so their profiles would
 # have to be merged, and -race is not what a coverage number needs. This runs the same suite
-# once, without -race, on each push to main -- not on pull requests, so it adds nothing to a
-# PR's critical path.
+# once, without -race, nightly against main's tip -- not per push or on pull requests, so it takes no runner from a
+# busy day's pool. A failure that only this suite sees therefore surfaces up to a day after the commit that caused it.
 #
 # Per-package coverage (no -coverpkg): each package is credited only with what its own tests
 # execute. GPU backends whose tests skip without a device count as uncovered here, honestly.
@@ -24,62 +24,49 @@ name: coverage
 # Upload: CODECOV_TOKEN if the secret is set, else codecov-action's tokenless path for public
 # repos. fail_ci_if_error is false, so a Codecov outage or a missing token never turns the run
 # red; the total is also written to the job summary, so the number is readable without Codecov.
+# 10:23 UTC (02:23 PST, 03:23 PDT): clear of the 07:00 and 08:00 UTC weekly and nightly jobs and of the 15:17 UTC
+# heartbeat, and in the quietest hours of the ci pool. Off the top of the hour, when GitHub's scheduler is busiest.
 on:
-  push:
-    branches: [main]
+  schedule:
+    - cron: "23 10 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Pushes to main share one group and are never cancelled in progress: a run that has started always finishes, so a docs
-# push landing on a running code push does not cancel it (owner, 2026-10-18). Pushes that land while it runs collapse:
-# GitHub keeps only the newest pending run in a group and cancels the older pending ones, so a burst of merges costs two
-# runs (the one running, then one on the tip) instead of one per merge (owner, 2026-10-21; four back-to-back merges had
-# queued four full runs). Coverage holds: the tip's run covers every collapsed commit, and the docs-only gate below
-# skips the matrix only when the commit it builds on has a successful run of its own, which a cancelled pending run is
-# not. Branches and pull requests keep one group per ref and cancel the superseded run.
 concurrency:
-  group: coverage-${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && 'main-push' || github.ref }}
-  cancel-in-progress: ${{ !(github.ref == 'refs/heads/main' && github.event_name == 'push') }}
+  group: coverage
+  cancel-in-progress: false
 
 jobs:
-  # A docs-only push (scripts/ci_docs_only.sh: docs/**, RELEASING.md and .claude/**, none read by Go code or tests) skips
-  # the coverage run, as ci.yml's heavy jobs do; ci.yml's lint job still runs the citation and book lints on it. The same
-  # second condition as ci.yml's gate: the commit it builds on already has a successful coverage run. Fail-open: any doubt
-  # runs coverage.
+  # A scheduled run skips when main's tip already has a successful coverage run (no commit since the last one). A
+  # manual run always runs. Fail-open: any doubt runs coverage.
   changes:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: read
     outputs:
-      docs_only: ${{ steps.gate.outputs.docs_only }}
+      skip: ${{ steps.gate.outputs.skip }}
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          fetch-depth: 0
-      - name: docs-only push?
+      - name: already covered?
         id: gate
         env:
-          BASE: ${{ github.event.before }}
-          HEAD: ${{ github.sha }}
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          v=$(scripts/ci_docs_only.sh "$BASE" "$HEAD")
-          base_run="(not checked)"
-          if [ "$v" = "true" ]; then
-            base_run=$(gh run list --workflow coverage.yml --commit "$BASE" --json conclusion --jq '.[0].conclusion' 2>/dev/null || true)
-            if [ "$base_run" != "success" ]; then
-              v=false
-            fi
+          v=false
+          prev="(not checked)"
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+            prev=$(gh run list --workflow coverage.yml --commit "$GITHUB_SHA" --status success --json databaseId --jq '.[0].databaseId' 2>/dev/null || true)
+            [ -n "$prev" ] && v=true
           fi
-          echo "docs_only=$v" >> "$GITHUB_OUTPUT"
-          echo "docs_only=$v  (base=$BASE head=$HEAD; base's last coverage run: '${base_run:-none}')"
+          echo "skip=$v" >> "$GITHUB_OUTPUT"
+          echo "skip=$v  (sha=$GITHUB_SHA; an earlier successful coverage run on it: '${prev:-none}')"
 
   coverage:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
+    if: ${{ !cancelled() && needs.changes.outputs.skip != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:

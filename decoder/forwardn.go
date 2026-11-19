@@ -28,11 +28,11 @@ func cpuFastAttention() bool { return (*knobSet)(nil).cpuFastAttention() }
 
 // cpuFastAttention is the per-model form: off when this model was loaded with
 // Options.ExactPrefill, else the env var's answer.
-func (m *Model) cpuFastAttention() bool { return !m.exactPrefill && m.knobs.cpuFastAttention() }
+func (m *Model) cpuFastAttention() bool { return !m.opts.ExactPrefill && m.knobs.cpuFastAttention() }
 
 // ExactPrefill reports whether this model was loaded with Options.ExactPrefill — prompt ingestion
 // must take each backend's bit-exact path. Backends consult it next to their own env var.
-func (m *Model) ExactPrefill() bool { return m.exactPrefill }
+func (m *Model) ExactPrefill() bool { return m.opts.ExactPrefill }
 
 // fastAttnMinPrompt is the prompt length (K, the suffix being prefilled) below which f32 prefill attention is not used, even
 // when enabled: attention is O(K*nKeys), so the win grows with K while the divergence does not, and a short prompt gets a
