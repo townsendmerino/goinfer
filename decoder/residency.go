@@ -706,7 +706,7 @@ func (m *Model) withResidency() *Model {
 		return m
 	}
 	m.resident = rf
-	if kv := m.resKV(); kv.KVDemoterAvailable() && m.kvSnaps != nil && m.kvDemote && !m.kvShareOff {
+	if kv := m.resKV(); kv.KVDemoterAvailable() && m.kvSnaps != nil && m.opts.KVDemote && !m.opts.KVShareOff {
 		kv.SetKVHostBudget(m.kvSnaps)
 	}
 	// BuildResident's host-side work (the CUDA backend packs every layer's weights on the Go heap before uploading,

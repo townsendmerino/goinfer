@@ -107,18 +107,12 @@ type Model struct {
 	knobs         *knobSet      // per-model operator knobs, snapshotted once at Load (knobs.go)
 	resCtxReq     int           // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
 	resCtxPinned  bool          // the caller chose resCtxReq (not the fit guard's auto-pin) — ResidentContextPinned
-	kvShareOff    bool          // Options.KVShareOff
 	kvSnaps       *kvSnapStore  // Options.KVHostBytes: the held prefix snapshots, nil when off
-	kvDemote      bool          // Options.KVDemote
 	disableFit    bool          // tasks/task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
-	moeCache      bool          // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
-	moeUnpinned   bool          // the expert cache uploads from pageable file pages, not a pinned copy (Options.MoEExpertsUnpinned)
-	faSoftcap     bool          // a capped model may take CUDA's flash-decode lane (Options.FlashDecodeSoftcap)
 
 	loadAbort    <-chan struct{} // Options.LoadAbort, read by a backend's resident build through LoadAbort(); nil off a guarded load
 	loadAbortErr error           // set by withResidency when the build returned ErrLoadAborted or ErrPinnedContextWontFit; Load turns it into the load's error
 
-	moeSlots      int          // per-layer expert slot request (Options.MoECacheSlots); 0 ⇒ ask for all, auto-cap to VRAM
 	actGroup      int          // activation quantization group (Options.ActQuantGroup); 0 = per-vector
 	extraBytes    int64        // Options.ExtraResidentBytes — see that field's own doc comment
 	extraKVPerPos int64        // Options.ExtraResidentKVPerPosition — see that field's own doc comment
@@ -375,17 +369,17 @@ func (m *Model) FitDisabled() bool {
 //
 // Falls back to GOINFER_MOE_CACHE_EXPERTS so existing scripts keep working.
 func (m *Model) MoECacheExperts() bool {
-	return m.moeCache || m.knobs.get(knobMoECacheExperts) != ""
+	return m.opts.MoECacheExperts || m.knobs.get(knobMoECacheExperts) != ""
 }
 
 // MoEExpertsUnpinned reports whether a CUDA expert cache (MoECacheExperts) uploads its slots from pageable pages of a file holding the packed
 // experts, instead of a pinned host copy (Options.MoEExpertsUnpinned, `--moe-experts-unpinned`): about 12 GiB less host memory on Gemma 4 26B, at
 // 0.82x decode at short context and 0.75x at long (docs/measurements/mem10-2026-11/ab-registration.md). Off by default.
-func (m *Model) MoEExpertsUnpinned() bool { return m.moeUnpinned }
+func (m *Model) MoEExpertsUnpinned() bool { return m.opts.MoEExpertsUnpinned }
 
 // FlashDecodeSoftcap reports Options.FlashDecodeSoftcap: a model with an attention softcap may take CUDA's flash-decode lane, in its capped
 // variant. Off by default.
-func (m *Model) FlashDecodeSoftcap() bool { return m.faSoftcap }
+func (m *Model) FlashDecodeSoftcap() bool { return m.opts.FlashDecodeSoftcap }
 
 // MoECacheSlotsRequest returns the requested per-layer expert-slot count, or 0 for "as many as fit"; only meaningful with
 // MoECacheExperts. 0 asks for ALL experts and lets the builder cap to measured free VRAM, deliberately: topK slots is the
@@ -393,8 +387,8 @@ func (m *Model) FlashDecodeSoftcap() bool { return m.faSoftcap }
 // allocSlots measures free VRAM and caps-and-logs rather than OOMing, so asking for all is safe. Falls back to
 // GOINFER_MOE_CACHE_SLOTS.
 func (m *Model) MoECacheSlotsRequest() int {
-	if m.moeSlots > 0 {
-		return m.moeSlots
+	if m.opts.MoECacheSlots > 0 {
+		return m.opts.MoECacheSlots
 	}
 	if v, err := strconv.Atoi(m.knobs.get(knobMoECacheSlots)); err == nil && v > 0 {
 		return v
@@ -453,11 +447,10 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 	return &Model{planSlackOf: &planSlackMemo{}, fitOf: &fitMemo{}, w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline, prog: buildProgram(w.arch, w.hasExperts), opts: opts,
 		kvF16: kvF16, kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", kvH: opts.KVQuant == "f16",
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
-		kvShareOff: opts.KVShareOff, kvSnaps: newKVSnapStore(opts.KVHostBytes), kvDemote: opts.KVDemote, disableFit: opts.DisableFit,
+		kvSnaps: newKVSnapStore(opts.KVHostBytes), disableFit: opts.DisableFit,
 		cpuBatchMode: opts.CPUBatchDecode,
-		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, moeUnpinned: opts.MoEExpertsUnpinned, faSoftcap: opts.FlashDecodeSoftcap,
-		loadAbort:  opts.LoadAbort,
-		extraBytes: opts.ExtraResidentBytes + recurrentSpecReserve(w.arch, opts.Drafter), extraKVPerPos: opts.ExtraResidentKVPerPosition,
+		loadAbort:    opts.LoadAbort,
+		extraBytes:   opts.ExtraResidentBytes + recurrentSpecReserve(w.arch, opts.Drafter), extraKVPerPos: opts.ExtraResidentKVPerPosition,
 		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup, backendAuto: opts.BackendAuto, sidecarFor: opts.SidecarFor, noSelfTest: opts.noSelfTest,
 		planResidency: opts.planResidency}
 }
