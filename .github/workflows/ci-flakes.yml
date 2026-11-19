@@ -1,0 +1,42 @@
+name: ci-flakes
+
+# A daily, read-only record of the last day's failed ci jobs (scripts/ci_flakes.py): lane, sha, failing tests, whether a
+# re-run of the job passed, and whether any other lane failed on the same sha. It is the evidence for telling a flaky lane
+# from a defect, and for deciding which lanes main could skip. It writes the job summary and a 30-day artifact, and never
+# commits, opens issues or comments: the token is read-only.
+#
+# 11:47 UTC (03:47 PST): after coverage's 10:23, clear of the 07:00 and 08:00 UTC jobs and the 15:17 heartbeat, and off
+# the top of the hour.
+on:
+  schedule:
+    - cron: "47 11 * * *"
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: "window, in hours back from now"
+        default: "24"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ci-flakes
+  cancel-in-progress: false
+
+jobs:
+  record:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: record the window's ci failures
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HOURS: ${{ inputs.hours || '24' }}
+        run: python3 -B scripts/ci_flakes.py --repo "$GITHUB_REPOSITORY" --hours "$HOURS" --out ci-flakes
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: ci-flakes
+          path: ci-flakes/
+          retention-days: 30

@@ -61,9 +61,8 @@ type Model struct {
 	// this is on AND batcher is non-nil.
 	specAdaptive bool
 	// cpuBatch: MC3c step 2's coordinator (cpu_batch.go) — several CPU generations' decode tokens joined into one
-	// batched forward. nil unless EnableCPUBatch enabled it. cpuBatchMode is Options.CPUBatchDecode.
-	cpuBatch     *cpuBatcher
-	cpuBatchMode int
+	// batched forward. nil unless EnableCPUBatch enabled it; Options.CPUBatchDecode chooses when it may.
+	cpuBatch *cpuBatcher
 	// resIDs is the token sequence currently committed to the resident positional KV, or nil
 	// when its contents are unknown. Guarded by the same resBusy claim that serialises writes
 	// to that cache; see resident_reuse.go for why nil is the safe default.
@@ -76,8 +75,9 @@ type Model struct {
 	// resCkptPrompt is the prompt whose end the resident's recurrent checkpoint holds, saved by the running generation and
 	// recorded on its sequence by the commit (residentCheckpointSave, residentCommitIDs); nil otherwise.
 	resCkptPrompt []int
-	// kvOpts is the Options the model was loaded with, which ResolveKV reads for the precision each cache delivers (KVPrecisionReport).
-	kvOpts Options
+	// opts is the Options the model was loaded with: the accessors for each load option read it, and ResolveKV reads it for the
+	// precision each cache delivers (KVPrecisionReport).
+	opts Options
 	// resDrafterSynced identifies which *BlockSpec's own drafter context is in sync with resIDs; nil means no drafter context is
 	// trustworthy for reuse. resIDs alone is not enough: a plain Generate or n-gram-speculative turn can commit resIDs without
 	// touching a block drafter's context, so the token prefix can match while the drafter's state does not reflect it. Cleared
@@ -89,53 +89,29 @@ type Model struct {
 	// slot's record is mirrored in the resIDs fields above. kvLora is the adapter runtime each slot's sequence was
 	// built under, by slot (the manager keys on the adapter's identity, not the runtime); kvNS is the sharing namespace
 	// of the request that took each slot (KVScope).
-	kv            *kvmgr.Slots
-	kvLora        []*loraRuntime
-	kvNS          []string
-	kvF16         bool          // the resident KV cache is f16: Options.KVPrecision == "f16", or on CUDA "auto" (the default) for a cleared family (kv16_cuda.go)
-	kvF16Decline  string        // CUDA only: why an explicit -kv f16 was held at f32 ("" when it was not asked for or not held back)
-	kvPrecI8      bool          // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
-	kvI8          bool          // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
-	kvH           bool          // CPU KV cache f16 storage request (Options.KVQuant == "f16"), where kvF16OK allows it
-	prog          *layerProgram // the forward as operations (buildProgram), built once by modelFromOptions
-	exactPrefill  bool          // Options.ExactPrefill: THIS model's prompt ingestion stays bit-exact on every backend (ExactPrefill())
-	backendAuto   bool          // Options.BackendAuto: the backend was chosen by "auto", not named (withResidency's Metal precision guard)
-	sidecarFor    string        // Options.SidecarFor: the backend whose sidecar .giw this load stands in for
-	noSelfTest    bool          // Options.noSelfTest: this model IS a self-test fixture, so withResidency must not probe for it (selftest_gpu.go)
-	planResidency bool          // Options.planResidency: FitQuery's open, which plans the resident (plannedDecodePath) instead of building it
-	knobs         *knobSet      // per-model operator knobs, snapshotted once at Load (knobs.go)
-	resCtxReq     int           // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
-	resSlotsReq   int           // requested resident KV slot count (Options.ResidentKVSlots); 0/1 ⇒ one slot
-	resSlotsDef   bool          // Options.ResidentKVSlotsDefault: resSlotsReq is the caller's default (ResidentKVSlotsIsDefault)
-	windowedKV    bool          // Options.ResidentWindowedKV
-	moeStep       bool          // Options.ResidentMoEStep
-	recurStep     bool          // Options.ResidentRecurrentStep
-	gemma4Step    bool          // Options.ResidentGemma4Step
-	recurStepDef  bool          // Options.ResidentRecurrentStepDefault
-	gemma4StepDef bool          // Options.ResidentGemma4StepDefault
-	resCtxPinned  bool          // the caller chose resCtxReq (not the fit guard's auto-pin) — ResidentContextPinned
-	prefillChunk  int           // Options.ResidentPrefillChunk: MC3 chunked prefill's chunk size, 0 = off
-	kvShareOff    bool          // Options.KVShareOff
-	kvSnaps       *kvSnapStore  // Options.KVHostBytes: the held prefix snapshots, nil when off
-	kvDemote      bool          // Options.KVDemote
-	disableFit    bool          // tasks/task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
-	moeCache      bool          // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
-	moeUnpinned   bool          // the expert cache uploads from pageable file pages, not a pinned copy (Options.MoEExpertsUnpinned)
-	faSoftcap     bool          // a capped model may take CUDA's flash-decode lane (Options.FlashDecodeSoftcap)
+	kv           *kvmgr.Slots
+	kvLora       []*loraRuntime
+	kvNS         []string
+	kvF16        bool          // the resident KV cache is f16: Options.KVPrecision == "f16", or on CUDA "auto" (the default) for a cleared family (kv16_cuda.go)
+	kvF16Decline string        // CUDA only: why an explicit -kv f16 was held at f32 ("" when it was not asked for or not held back)
+	kvPrecI8     bool          // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
+	kvI8         bool          // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
+	kvH          bool          // CPU KV cache f16 storage request (Options.KVQuant == "f16"), where kvF16OK allows it
+	prog         *layerProgram // the forward as operations (buildProgram), built once by modelFromOptions
+	knobs        *knobSet      // per-model operator knobs, snapshotted once at Load (knobs.go)
+	resCtxReq    int           // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
+	resCtxPinned bool          // the caller chose resCtxReq (not the fit guard's auto-pin) — ResidentContextPinned
+	kvSnaps      *kvSnapStore  // Options.KVHostBytes: the held prefix snapshots, nil when off
 
-	loadAbort    <-chan struct{} // Options.LoadAbort, read by a backend's resident build through LoadAbort(); nil off a guarded load
-	loadAbortErr error           // set by withResidency when the build returned ErrLoadAborted or ErrPinnedContextWontFit; Load turns it into the load's error
+	loadAbortErr error // set by withResidency when the build returned ErrLoadAborted or ErrPinnedContextWontFit; Load turns it into the load's error
 
-	moeSlots      int          // per-layer expert slot request (Options.MoECacheSlots); 0 ⇒ ask for all, auto-cap to VRAM
-	actGroup      int          // activation quantization group (Options.ActQuantGroup); 0 = per-vector
-	extraBytes    int64        // Options.ExtraResidentBytes — see that field's own doc comment
-	extraKVPerPos int64        // Options.ExtraResidentKVPerPosition — see that field's own doc comment
-	mmap          []byte       // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
-	srcPath       string       // the .giw path this model mmap-loaded from ("" off the .giw path) — for pread-staging over the same file
-	loadPath      string       // the file or directory Load opened, after the sidecar route ("" for a model not loaded from a path)
-	pager         *expertPager // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
-	layerPager    *layerPager  // dense per-layer streaming over the mapping (Options.StreamWeights); nil = all-resident
-	quant         string       // the requested Options.Quant for a direct load ("" for a prequant .giw → Quant() derives from kinds)
+	extraBytes int64        // Options.ExtraResidentBytes — see that field's own doc comment
+	mmap       []byte       // .giw mmap region the int8/int4 weights alias; munmap'd by Close (nil off the .giw mmap path)
+	srcPath    string       // the .giw path this model mmap-loaded from ("" off the .giw path) — for pread-staging over the same file
+	loadPath   string       // the file or directory Load opened, after the sidecar route ("" for a model not loaded from a path)
+	pager      *expertPager // MoE expert demand-paging over the mapping (Options.StreamWeights); nil = all-resident
+	layerPager *layerPager  // dense per-layer streaming over the mapping (Options.StreamWeights); nil = all-resident
+	quant      string       // the requested Options.Quant for a direct load ("" for a prequant .giw → Quant() derives from kinds)
 	// resDecline records WHY resident is nil on a non-CPU backend — the reason withResidency
 	// would otherwise discard. Empty when residency was built, or when it was never attempted
 	// (CPU backend). DecodePath / -require-backend read it; see withResidency.
@@ -256,7 +232,7 @@ func (m *Model) ResidentContextPinned() bool { return m.resCtxPinned }
 
 // ResidentKVSlotsIsDefault reports Options.ResidentKVSlotsDefault: the slot request is the caller's default, which a backend
 // may lower to its own (Metal: 2).
-func (m *Model) ResidentKVSlotsIsDefault() bool { return m.resSlotsDef }
+func (m *Model) ResidentKVSlotsIsDefault() bool { return m.opts.ResidentKVSlotsDefault }
 
 // WindowedKVSlack is the headroom, in positions, a windowed-KV layer holds beyond its window: a layer keeps window+WindowedKVSlack
 // positions and compacts (copies its live tail to the start) once per slack positions written. It must cover the widest batch of rows
@@ -269,35 +245,35 @@ const WindowedKVSlack = 512
 func ResidentWindowedKVCap(window, ctx int) int { return min(ctx, window+WindowedKVSlack) }
 
 // ResidentWindowedKV reports Options.ResidentWindowedKV: the caller asked for windowed K/V on a backend that supports it.
-func (m *Model) ResidentWindowedKV() bool { return m.windowedKV }
+func (m *Model) ResidentWindowedKV() bool { return m.opts.ResidentWindowedKV }
 
 // ResidentMoEStep reports Options.ResidentMoEStep: the caller let a generic MoE model run on a backend's multi-sequence step.
-func (m *Model) ResidentMoEStep() bool { return m.moeStep }
+func (m *Model) ResidentMoEStep() bool { return m.opts.ResidentMoEStep }
 
 // ResidentRecurrentStep reports Options.ResidentRecurrentStep: the caller let a Qwen3.5-family model (Gated-DeltaNet and gated
 // attention) or a Nemotron-H model (Mamba-2) run on a backend's multi-sequence step.
-func (m *Model) ResidentRecurrentStep() bool { return m.recurStep }
+func (m *Model) ResidentRecurrentStep() bool { return m.opts.ResidentRecurrentStep }
 
 // ResidentRecurrentStepOn reports whether a backend granting slots KV slots runs the recurrent step: chosen, always; a default, only with
 // two or more.
 func (m *Model) ResidentRecurrentStepOn(slots int) bool {
-	return m.recurStep && (!m.recurStepDef || slots >= 2)
+	return m.opts.ResidentRecurrentStep && (!m.opts.ResidentRecurrentStepDefault || slots >= 2)
 }
 
 // ResidentGemma4StepOn is ResidentRecurrentStepOn for the Gemma 4 step.
 func (m *Model) ResidentGemma4StepOn(slots int) bool {
-	return m.gemma4Step && (!m.gemma4StepDef || slots >= 2)
+	return m.opts.ResidentGemma4Step && (!m.opts.ResidentGemma4StepDefault || slots >= 2)
 }
 
 // ResidentGemma4Step reports Options.ResidentGemma4Step: the caller let a Gemma 4 dense model run on a backend's
 // multi-sequence step.
-func (m *Model) ResidentGemma4Step() bool { return m.gemma4Step }
+func (m *Model) ResidentGemma4Step() bool { return m.opts.ResidentGemma4Step }
 
 // WindowedKVLayer reports whether layer l's resident K/V is windowed under Options.ResidentWindowedKV: the option is on and the layer is
 // a sliding-window attention layer with a real K/V cache (not an MLA latent, not a recurrent mixer, whose kvDimAt is not a K/V width
 // bounded by a window). Every windowed layer shares SlidingWindow's one window.
 func (m *Model) WindowedKVLayer(l int) bool {
-	if !m.windowedKV || m.BackendView().SlidingWindow() <= 0 || !m.BackendView().Layer(l).IsLocal() {
+	if !m.opts.ResidentWindowedKV || m.BackendView().SlidingWindow() <= 0 || !m.BackendView().Layer(l).IsLocal() {
 		return false
 	}
 	a := m.w.arch
@@ -314,10 +290,10 @@ func (m *Model) ResidentKVSlotsRequest() int { return m.ResidentKVSlotsRequestFo
 // asked for the slots, not just its default (ResidentKVSlotsIsDefault); otherwise its state would be one copy shared by every
 // slot, or a default load would take memory it did not ask for.
 func (m *Model) ResidentKVSlotsRequestFor(backend string) int {
-	if m.hasRecurrentState() && (m.resSlotsDef || !m.recurrentSlotsOn(backend)) {
+	if m.hasRecurrentState() && (m.opts.ResidentKVSlotsDefault || !m.recurrentSlotsOn(backend)) {
 		return 1
 	}
-	return max(1, m.resSlotsReq)
+	return max(1, m.opts.ResidentKVSlots)
 }
 
 // recurrentSlotsOn reports whether backend's operation table keeps every recurrent operation of m's program once per KV slot
@@ -347,7 +323,7 @@ func (m *Model) ExtraResidentBytes() int64 { return m.extraBytes }
 // K/V scales with the resident context THIS model ends up choosing, which ExtraResidentBytes (priced in loadDecoder, before
 // this model's residency exists) cannot know. A residency builder that knows its own candidate/final ctx multiplies by it
 // locally (see decoder.DrafterKVBytesPerPosition). 0 means the companion, if any, has no ctx-scaling K/V term.
-func (m *Model) ExtraResidentKVPerPosition() int64 { return m.extraKVPerPos }
+func (m *Model) ExtraResidentKVPerPosition() int64 { return m.opts.ExtraResidentKVPerPosition }
 
 // ExpertCacheStats reports the resident's MoE expert cache (ExpertCacheAvailable); ok is false off the resident path or when
 // the resident keeps no cache.
@@ -366,13 +342,13 @@ func (m *Model) ResizeExpertCache(reserve int64) (int, error) {
 }
 
 // SidecarFor is Options.SidecarFor: the backend whose sidecar .giw this load stands in for, "" for none.
-func (m *Model) SidecarFor() string { return m.sidecarFor }
+func (m *Model) SidecarFor() string { return m.opts.SidecarFor }
 
 // FitDisabled is --fit=off (Options.DisableFit), also set by GOINFER_NO_FIT_DEFAULT (kept working as the original, narrower
 // escape hatch): every "fit by default" behavior reverts to its previous default. Checked by backend packages that implement
 // a fit-by-default policy (cuda.resolveCtxCapFit); decoder itself has none to gate.
 func (m *Model) FitDisabled() bool {
-	return m.disableFit || m.knobs.get(knobNoFitDefault) != ""
+	return m.opts.DisableFit || m.knobs.get(knobNoFitDefault) != ""
 }
 
 // MoECacheExperts reports whether routed MoE experts should stream host→VRAM per token instead of
@@ -383,17 +359,17 @@ func (m *Model) FitDisabled() bool {
 //
 // Falls back to GOINFER_MOE_CACHE_EXPERTS so existing scripts keep working.
 func (m *Model) MoECacheExperts() bool {
-	return m.moeCache || m.knobs.get(knobMoECacheExperts) != ""
+	return m.opts.MoECacheExperts || m.knobs.get(knobMoECacheExperts) != ""
 }
 
 // MoEExpertsUnpinned reports whether a CUDA expert cache (MoECacheExperts) uploads its slots from pageable pages of a file holding the packed
 // experts, instead of a pinned host copy (Options.MoEExpertsUnpinned, `--moe-experts-unpinned`): about 12 GiB less host memory on Gemma 4 26B, at
 // 0.82x decode at short context and 0.75x at long (docs/measurements/mem10-2026-11/ab-registration.md). Off by default.
-func (m *Model) MoEExpertsUnpinned() bool { return m.moeUnpinned }
+func (m *Model) MoEExpertsUnpinned() bool { return m.opts.MoEExpertsUnpinned }
 
 // FlashDecodeSoftcap reports Options.FlashDecodeSoftcap: a model with an attention softcap may take CUDA's flash-decode lane, in its capped
 // variant. Off by default.
-func (m *Model) FlashDecodeSoftcap() bool { return m.faSoftcap }
+func (m *Model) FlashDecodeSoftcap() bool { return m.opts.FlashDecodeSoftcap }
 
 // MoECacheSlotsRequest returns the requested per-layer expert-slot count, or 0 for "as many as fit"; only meaningful with
 // MoECacheExperts. 0 asks for ALL experts and lets the builder cap to measured free VRAM, deliberately: topK slots is the
@@ -401,8 +377,8 @@ func (m *Model) FlashDecodeSoftcap() bool { return m.faSoftcap }
 // allocSlots measures free VRAM and caps-and-logs rather than OOMing, so asking for all is safe. Falls back to
 // GOINFER_MOE_CACHE_SLOTS.
 func (m *Model) MoECacheSlotsRequest() int {
-	if m.moeSlots > 0 {
-		return m.moeSlots
+	if m.opts.MoECacheSlots > 0 {
+		return m.opts.MoECacheSlots
 	}
 	if v, err := strconv.Atoi(m.knobs.get(knobMoECacheSlots)); err == nil && v > 0 {
 		return v
@@ -458,16 +434,10 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 			}
 		}
 	}
-	return &Model{planSlackOf: &planSlackMemo{}, fitOf: &fitMemo{}, w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline, prog: buildProgram(w.arch, w.hasExperts), kvOpts: opts,
+	return &Model{planSlackOf: &planSlackMemo{}, fitOf: &fitMemo{}, w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline, prog: buildProgram(w.arch, w.hasExperts), opts: opts,
 		kvF16: kvF16, kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", kvH: opts.KVQuant == "f16",
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
-		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, moeStep: opts.ResidentMoEStep, recurStep: opts.ResidentRecurrentStep, recurStepDef: opts.ResidentRecurrentStepDefault, gemma4StepDef: opts.ResidentGemma4StepDefault, gemma4Step: opts.ResidentGemma4Step, prefillChunk: opts.ResidentPrefillChunk, kvShareOff: opts.KVShareOff, kvSnaps: newKVSnapStore(opts.KVHostBytes), kvDemote: opts.KVDemote, disableFit: opts.DisableFit,
-		cpuBatchMode: opts.CPUBatchDecode,
-		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots, moeUnpinned: opts.MoEExpertsUnpinned, faSoftcap: opts.FlashDecodeSoftcap,
-		loadAbort:  opts.LoadAbort,
-		extraBytes: opts.ExtraResidentBytes + recurrentSpecReserve(w.arch, opts.Drafter), extraKVPerPos: opts.ExtraResidentKVPerPosition,
-		exactPrefill: opts.ExactPrefill, actGroup: opts.ActQuantGroup, backendAuto: opts.BackendAuto, sidecarFor: opts.SidecarFor, noSelfTest: opts.noSelfTest,
-		planResidency: opts.planResidency}
+		kvSnaps: newKVSnapStore(opts.KVHostBytes), extraBytes: opts.ExtraResidentBytes + recurrentSpecReserve(w.arch, opts.Drafter)}
 }
 
 // Load loads a model from dir, which is a checkpoint directory (config.json and its safetensors shards), a.
@@ -486,7 +456,7 @@ func Load(dir string, opts Options) (*Model, error) {
 	} else {
 		dir = p
 	}
-	// Options.ExactPrefill is recorded on the Model (exactPrefill, set in each constructor below before withResidency, because
+	// Options.ExactPrefill is recorded on the Model (in its opts, set by modelFromOptions before withResidency, because
 	// CUDA reads it while building its resident) and consulted by each backend's fast-prefill switch alongside its env var. It is
 	// deliberately not applied with os.Setenv, which is process-global and never undone: every model loaded later in the process
 	// would inherit it. Serve's flags travel as this field and Options.Knobs.
@@ -1218,7 +1188,7 @@ func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, 
 		from = 0 // never skip the seed token (residentPrefillSeed's own rule)
 	}
 	ok := canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe})
-	C := m.prefillChunk
+	C := m.opts.ResidentPrefillChunk
 	// A chunk below the resident's kernel-class floor would put the first chunk on the other class from the
 	// whole prompt's; raising the chunk to the floor keeps every pass on the class a whole prefill uses.
 	if f := m.prefillKernelFloor(); f > 0 && len(prompt) >= f && C > 0 && C < f {

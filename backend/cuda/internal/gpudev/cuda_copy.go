@@ -60,6 +60,9 @@ func CopyDevice(dst, src Buffer, nBytes int) error {
 	if nBytes == 0 {
 		return nil
 	}
+	if TraceForTest != nil {
+		TraceForTest(TraceEvent{Op: TraceCopyDevice, Dst: dst.BindAddr(), SrcPtr: src.BindAddr(), Bytes: nBytes})
+	}
 	// Pre-sync for the same write-after-read hazard Buffer.upload documents
 	// (audit C-01): a queued launch may still be reading dst.
 	if err := syncCopyContext(dst, src); err != nil {
@@ -95,6 +98,11 @@ func CopyDeviceBatch(copies []DeviceCopy) error {
 	for i, c := range copies {
 		if err := checkDeviceCopy(c.Dst, c.Src, c.Bytes); err != nil {
 			return fmt.Errorf("cuda: device copy %d of %d: %w", i, len(copies), err)
+		}
+	}
+	if TraceForTest != nil {
+		for _, c := range copies {
+			TraceForTest(TraceEvent{Op: TraceCopyDevice, Dst: c.Dst.BindAddr(), SrcPtr: c.Src.BindAddr(), Bytes: c.Bytes})
 		}
 	}
 	var issued bool

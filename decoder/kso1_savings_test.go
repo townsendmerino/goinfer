@@ -53,7 +53,7 @@ func TestKSO1_savingsCountOnlyTheLane(t *testing.T) {
 		{"webgpu", "q4k", "webgpu", 32, false, 0},
 		{"not q4k", "int8int8", "metal", 32, false, 0},
 	} {
-		m := &Model{w: build(c.kEqV), quant: c.quant, actGroup: c.group}
+		m := &Model{w: build(c.kEqV), quant: c.quant, opts: Options{ActQuantGroup: c.group}}
 		if got := m.kquantSavings(c.backend); got != c.want {
 			t.Errorf("%s: saves %d, want %d", c.name, got, c.want)
 		}

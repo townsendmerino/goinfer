@@ -32,8 +32,8 @@ func TestOptionPath_cpuBatchedDecode(t *testing.T) {
 			}
 		}},
 		{name: "ActQuantGroup 32 (int8int8)", opts: Options{Quant: "int8int8", ActQuantGroup: 32}, effect: func(t *testing.T, m *Model) {
-			if m.actGroup != 32 {
-				t.Fatalf("actGroup %d, want 32", m.actGroup)
+			if m.opts.ActQuantGroup != 32 {
+				t.Fatalf("actGroup %d, want 32", m.opts.ActQuantGroup)
 			}
 		}},
 		{name: "EmbedInt4 (int4)", opts: Options{Quant: "int4", EmbedInt4: true}, effect: ogDiffersFromPlain},

@@ -119,8 +119,8 @@ func TestOptionPath_cpuBatchedPrefill(t *testing.T) {
 			}
 		}},
 		{name: "ActQuantGroup 32 (int8int8)", opts: Options{Quant: "int8int8", ActQuantGroup: 32}, effect: func(t *testing.T, m *Model) {
-			if m.actGroup != 32 {
-				t.Fatalf("actGroup %d, want 32", m.actGroup)
+			if m.opts.ActQuantGroup != 32 {
+				t.Fatalf("actGroup %d, want 32", m.opts.ActQuantGroup)
 			}
 		}},
 		{name: "ExactPrefill", opts: Options{ExactPrefill: true}, effect: func(t *testing.T, m *Model) {
@@ -222,8 +222,8 @@ func (r *ogRejectingDrafter) Draft(ctx []int, k int) []int {
 func TestOptionPath_specVerify(t *testing.T) {
 	cases := []ogCase{
 		{name: "ActQuantGroup 32 (int8int8)", opts: Options{Quant: "int8int8", ActQuantGroup: 32}, effect: func(t *testing.T, m *Model) {
-			if m.actGroup != 32 {
-				t.Fatalf("actGroup %d, want 32", m.actGroup)
+			if m.opts.ActQuantGroup != 32 {
+				t.Fatalf("actGroup %d, want 32", m.opts.ActQuantGroup)
 			}
 		}},
 		{name: "CPUBatchDecode on", opts: Options{CPUBatchDecode: CPUBatchOn}, effect: func(t *testing.T, m *Model) {

@@ -139,7 +139,7 @@ func rideCell(t *testing.T, rideErr error) (*Model, *rideFake) {
 	m, rf := loadWithRideFake(t, 4)
 	rf.delay = 3 * time.Millisecond
 	rf.rideErr = rideErr
-	m.prefillChunk = 256 // Options.ResidentPrefillChunk
+	m.opts.ResidentPrefillChunk = 256 // Options.ResidentPrefillChunk
 	m.EnableResidentConcurrency(4)
 	var got0, got1, gotNew []int
 	var wg sync.WaitGroup

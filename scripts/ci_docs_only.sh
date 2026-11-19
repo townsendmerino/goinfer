@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ci_docs_only.sh BASE HEAD   -> prints "true" (the quick path) or "false" (the full suite)
-# ci_docs_only.sh --classify BASE HEAD -> the CI quick path's wider rule 1 (below): prints docs, records, version, quick (a mix) or full
+# ci_docs_only.sh --classify BASE HEAD -> the CI quick path's wider rule 1 (below): prints docs, records, version, quick (a mix),
+#                                         backend or full
 # ci_docs_only.sh --read PATH -> prints "read" or "not-read", rule 2's decision for one repo-relative path
 # ci_docs_only.sh --selfcheck -> exits 1 if the read-detection below has stopped catching the
 #                                docs files tests are KNOWN to read (a zero-match guard)
@@ -8,14 +9,20 @@
 # C3 (docs/completed/task-ci-speed-2026-09.md). "true" iff EVERY file changed between BASE and HEAD is
 # on a non-code path AND NONE of them is read by Go code or tests. Two rules, both load-bearing:
 #
-#  1. The default mode counts only docs/**, RELEASING.md and .claude/** (the direct-push rule in CLAUDE.md and coverage.yml
-#     use it, and it does not widen). --classify, which ci.yml's `changes` job uses, counts these paths as quick (the class
+#  1. The default mode counts only docs/**, RELEASING.md and .claude/** (the direct-push rule in CLAUDE.md uses it, and it
+#     does not widen). --classify, which ci.yml's `changes` job uses, counts these paths as quick (the class
 #     names are for the log; the quick path is one path):
 #       records  docs/measurements/**
 #       docs     the rest of docs/**, RELEASING.md, .claude/**, changelog.d/**, a top-level *.md other than README.md,
 #                and apps/site content (anything under apps/site/ that is not Go, go.mod/go.sum, wrangler.jsonc or cmd/)
 #       version  a go.mod or go.sum (any module except apps/site) whose diff changes only lines for
 #                github.com/townsendmerino/goinfer or goinfer/backend/* module versions
+#     backend  (not quick: a narrower suite) every file is in a backend module (backend/webgpu, backend/cuda,
+#              backend/metal) or on the quick path, and at least one is in a backend module. The root module cannot
+#              import a backend module, so only root tests that READ backend files can change; those run in
+#              test-decoder-b (TestEnvVars_docAndCodeAgree walks the whole tree), test-decoder-tail and test-rest,
+#              which still run. ci.yml skips the root OS lanes, the forced fallbacks and decoder shards a, c and d.
+#              Rule 2 still applies to the quick-path files in the range.
 #     Everything else is the full suite: any Go, script, workflow or testdata file, README.md (readme-smoke reads it,
 #     and so do Go tests), any other dependency's version, a go.mod/go.sum line that is not a goinfer version.
 #  2. A docs file that Go code READS is not "docs-only", whatever its path. Measured 2026-09-22
@@ -115,7 +122,13 @@ version_only() {
   ! printf '%s\n' "$lines" | grep -vE -e "$re" | grep -q .
 }
 
-# classify BASE HEAD -> docs | records | version | quick | full  (fail-open: any doubt is "full")
+# in_backend PATH -> exit 0 if PATH is inside one of the three backend modules
+in_backend() {
+  case "$1" in backend/webgpu/*|backend/cuda/*|backend/metal/*) return 0 ;; esac
+  return 1
+}
+
+# classify BASE HEAD -> docs | records | version | quick | backend | full  (fail-open: any doubt is "full")
 classify() {
   local base="$1" head="$2" files f c
   [ -n "$base" ] && [ -n "$head" ] || { echo full; return; }
@@ -127,16 +140,19 @@ classify() {
   files=$(git diff --name-only "$base" "$head" 2>/dev/null) || { echo full; return; }
   [ -n "$files" ] || { echo full; return; }
 
-  local n_docs=0 n_records=0 n_version=0
+  local n_docs=0 n_records=0 n_version=0 n_backend=0
   while IFS= read -r f; do
     c=$(class_of "$f")
     case "$c" in
       records) n_records=$((n_records+1)) ;;
       docs) n_docs=$((n_docs+1)) ;;
       gomod)
-        version_only "$base" "$head" "$f" || { echo full; return; }
-        n_version=$((n_version+1)) ;;
-      *) echo full; return ;;
+        if version_only "$base" "$head" "$f"; then n_version=$((n_version+1))
+        elif [ "$WIDE" = 1 ] && in_backend "$f"; then n_backend=$((n_backend+1))
+        else echo full; return
+        fi ;;
+      *)
+        if [ "$WIDE" = 1 ] && in_backend "$f"; then n_backend=$((n_backend+1)); else echo full; return; fi ;;
     esac
   done <<<"$files"
 
@@ -144,10 +160,12 @@ classify() {
   # what they read them for. It applies to every other file.
   while IFS= read -r f; do
     [ "$(class_of "$f")" = gomod ] && continue
+    in_backend "$f" && continue
     read_by_go "$f" && { echo full; return; }
   done <<<"$files"
 
-  if [ "$n_docs" -gt 0 ] && [ "$n_records" -eq 0 ] && [ "$n_version" -eq 0 ]; then echo docs
+  if [ "$n_backend" -gt 0 ]; then echo backend
+  elif [ "$n_docs" -gt 0 ] && [ "$n_records" -eq 0 ] && [ "$n_version" -eq 0 ]; then echo docs
   elif [ "$n_records" -gt 0 ] && [ "$n_docs" -eq 0 ] && [ "$n_version" -eq 0 ]; then echo records
   elif [ "$n_version" -gt 0 ] && [ "$n_docs" -eq 0 ] && [ "$n_records" -eq 0 ]; then echo version
   else echo quick

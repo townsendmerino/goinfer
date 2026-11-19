@@ -393,7 +393,7 @@ func (m *Model) snapshotter() ResidentKVSubsystem {
 // refusal before anything is written leaves acq as it was; a failure after leaves the slot unknown.
 func (m *Model) residentRestoreSnapshot(prompt []int, lora *loraRuntime, sc KVScope, acq *kvAcquired) {
 	sn := m.snapshotter()
-	if sn == nil || sc.Off || m.kvShareOff || lora != nil || m.residentReuseDisabled() || m.snapshotsBlocked() || acq.slot < 0 {
+	if sn == nil || sc.Off || m.opts.KVShareOff || lora != nil || m.residentReuseDisabled() || m.snapshotsBlocked() || acq.slot < 0 {
 		return
 	}
 	st := m.kvSnaps
@@ -567,7 +567,7 @@ func (m *Model) cutSegmentOK(rows, align int) bool {
 // kvMarkGuard is the width of the resident's marked passes, and ok when a snapshot mark may be planned for this request at all.
 func (m *Model) kvMarkGuard(sc KVScope, lora *loraRuntime) (align int, ok bool) {
 	align, hasMark := stepMarkAlign(m.resident)
-	if m.snapshotter() == nil || !hasMark || lora != nil || sc.Off || m.kvShareOff || m.residentReuseDisabled() || m.snapshotsBlocked() {
+	if m.snapshotter() == nil || !hasMark || lora != nil || sc.Off || m.opts.KVShareOff || m.residentReuseDisabled() || m.snapshotsBlocked() {
 		return 0, false
 	}
 	return align, true
@@ -720,7 +720,7 @@ func (m *Model) kvSnapCoverSlack(slack int) int {
 // prompt, residentSnapshotPrompt) or between two passes of it (b the boundary, kvPrefillMark). It is the same admission either way.
 func (m *Model) residentSnapshotRows(slot int, prompt []int, b int, lora *loraRuntime, sc KVScope, acq kvAcquired) {
 	sn := m.snapshotter()
-	if sn == nil || sc.Off || m.kvShareOff || m.residentReuseDisabled() || m.snapshotsBlocked() {
+	if sn == nil || sc.Off || m.opts.KVShareOff || m.residentReuseDisabled() || m.snapshotsBlocked() {
 		return
 	}
 	st := m.kvSnaps
@@ -818,7 +818,7 @@ func (m *Model) residentSnapshotRows(slot int, prompt []int, b int, lora *loraRu
 // kvSnapReserve charges need bytes for a snapshot about to be taken. A demoted copy goes before a held snapshot: it serves one conversation
 // that may never return, a snapshot any prompt with its prefix.
 func (m *Model) kvSnapReserve(st *kvSnapStore, need int64) bool {
-	if kv := m.resKV(); kv.KVDemoterAvailable() && m.kvDemote {
+	if kv := m.resKV(); kv.KVDemoterAvailable() && m.opts.KVDemote {
 		return kv.ReserveKVHost(need)
 	}
 	return st.Reserve(need, true)

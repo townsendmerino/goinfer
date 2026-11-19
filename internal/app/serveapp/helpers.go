@@ -322,6 +322,7 @@ func sseHeartbeat(ss *sseWriter) (stop func()) {
 	done, finished := make(chan struct{}), make(chan struct{})
 	go func() {
 		defer close(finished)
+		defer recoverHeartbeat()
 		t := time.NewTicker(sseHeartbeatInterval)
 		defer t.Stop()
 		for {
