@@ -8,20 +8,18 @@ import (
 )
 
 // AllocFailure is implemented by the error a backend raises, by panic or return, when the device has no memory for an allocation
-// (backend/cuda's gpudev.AllocFailure, ErrDeviceAlloc). The marker method lets a backend package that imports nothing of goinfer's
+// (backend/cuda's gpudev.AllocFailure, DeviceAllocError). The marker method lets a backend package that imports nothing of goinfer's
 // produce one: it declares the method and never names this interface.
 type AllocFailure interface {
 	error
 	DeviceAllocFailure()
 }
 
-// ErrDeviceAlloc is a failed device allocation for a backend with no failure type of its own: wrap it with %w.
-var ErrDeviceAlloc error = allocFailedErr{}
+// DeviceAllocError is a failed device allocation for a backend with no failure type of its own: wrap DeviceAllocError{} with %w.
+type DeviceAllocError struct{}
 
-type allocFailedErr struct{}
-
-func (allocFailedErr) Error() string       { return deviceAllocFailedText }
-func (allocFailedErr) DeviceAllocFailure() {}
+func (DeviceAllocError) Error() string       { return deviceAllocFailedText }
+func (DeviceAllocError) DeviceAllocFailure() {}
 
 const (
 	deviceAllocFailedText = "device allocation failed"

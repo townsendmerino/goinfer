@@ -166,7 +166,7 @@ func TestRecover_everyBroadRecoverLetsABugThrough(t *testing.T) {
 		if rel != gpudevFile {
 			ast.Inspect(f, func(n ast.Node) bool {
 				if lit, ok := n.(*ast.BasicLit); ok && lit.Kind == token.STRING && strings.Contains(lit.Value, deviceAllocFailedText+" (") {
-					bad = append(bad, rel+": a string literal spells the allocation failure's text; panic with gpudev.AllocFailedPanic or wrap ErrDeviceAlloc")
+					bad = append(bad, rel+": a string literal spells the allocation failure's text; panic with gpudev.AllocFailedPanic or wrap DeviceAllocError{}")
 				}
 				return true
 			})

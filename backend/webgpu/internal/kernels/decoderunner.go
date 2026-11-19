@@ -1630,7 +1630,7 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 	// falls back to the staged/CPU path, never a panic.
 	if buildErr != nil {
 		r.release()
-		return nil, fmt.Errorf("gpu: newDecodeRunner: %w (VRAM exhausted?): %w", mem.ErrDeviceAlloc, buildErr)
+		return nil, fmt.Errorf("gpu: newDecodeRunner: %w (VRAM exhausted?): %w", mem.DeviceAllocError{}, buildErr)
 	}
 	// Snapshot the pristine (no-adapter) plan: SetAdapter rebuilds r.steps from it plus r.loraHooks rather than mutating it.
 	r.baseSteps = r.steps

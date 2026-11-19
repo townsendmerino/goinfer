@@ -33,7 +33,7 @@ func TestDeviceAllocFailed_readsErrorsAndRecoveredPanics(t *testing.T) {
 		{"wrapped", fmt.Errorf("cuda: executor job panicked: %w", errors.New(panicText)), true},
 		{"a typed failure", typedFailure{}, true},
 		{"a typed failure, wrapped", fmt.Errorf("cuda: executor job panicked: %w", typedFailure{}), true},
-		{"ErrDeviceAlloc, wrapped", fmt.Errorf("gpu: newDecodeRunner: %w (VRAM exhausted?): x", ErrDeviceAlloc), true},
+		{"DeviceAllocError, wrapped", fmt.Errorf("gpu: newDecodeRunner: %w (VRAM exhausted?): x", DeviceAllocError{}), true},
 		{"a programming bug's text", "runtime error: index out of range [3] with length 2", false},
 		{"a runtime.Error", aBug(), false},
 		{"a launch out of memory", errors.New("cuLaunchKernel: CUDA_ERROR_OUT_OF_MEMORY"), false},
