@@ -244,13 +244,18 @@ class Sampler(threading.Thread):
             self.guard.append({"t": stamp(), "line": l})
         self.seen = len(lines)
 
+    def sample_once(self):
+        """One pass: any new guard line, then one sample labelled with the phase the caller has set."""
+        self.read_guard()
+        s = {"t": stamp(), "phase": self.phase[0], **parse_task(self.box.hostmem("-pid", str(self.pid))),
+             "swap_used_MiB": self.box.swap_used_mib(), **self.box.pages()}
+        self.samples.append(s)
+        return s
+
     def run(self):
         last = time.time()
         while not self.stop.is_set():
-            self.read_guard()
-            s = {"t": stamp(), "phase": self.phase[0], **parse_task(self.box.hostmem("-pid", str(self.pid))),
-                 "swap_used_MiB": self.box.swap_used_mib(), **self.box.pages()}
-            self.samples.append(s)
+            s = self.sample_once()
             if time.time() - last >= HEARTBEAT_S:
                 last = time.time()
                 fp = s.get("phys_footprint")
@@ -288,7 +293,6 @@ def cell(name, serve, box, text, port, out, gap=60.0, interval=1.0, req_timeout=
     log(f"cell {name}: loading {path}")
     proc = subprocess.Popen([serve, "-backend", backend, "-model", f"m={path}", "-addr", f"127.0.0.1:{port}", *extra],
                             stdout=logf, stderr=subprocess.STDOUT, start_new_session=True)
-    phase = ["load"]
     sampler = None
     try:
         if not wait_ready(port, proc):
@@ -298,9 +302,9 @@ def cell(name, serve, box, text, port, out, gap=60.0, interval=1.0, req_timeout=
         time.sleep(settle)
         rec["points"].append(point(box, "loaded", before))
         rec["task_loaded"] = parse_task(box.hostmem("-pid", str(proc.pid)))
+        phase = ["request 1"]  # set before the thread starts, which may take its first sample at once
         sampler = Sampler(box, proc.pid, logpath, interval, phase)
         sampler.start()
-        phase[0] = "request 1"
         log(f"cell {name}: request 1")
         rec["request1"] = request(port, messages(name, text, False), req_timeout, proc)
         rec["points"].append(point(box, "after request 1", before))
