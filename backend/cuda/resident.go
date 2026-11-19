@@ -507,6 +507,8 @@ func (r *cudaResident) knobValue(name string) string { v, _ := r.lookupKnob(name
 type cudaResident struct {
 	// xhostBuf is the contiguous host block a batched pass stages its embeddings in before the upload (prefillCore), grown to the widest pass and reused.
 	xhostBuf []float32
+	// pass is the batched prefill pass in progress (prefillPass), reset by each pass and cleared at its end. Executor goroutine only.
+	pass prefillPass
 	// prog is the model's program (decoder.Model.Program), shared and read-only, decoded into each layer's walk.
 	prog *program.Program
 	// cost, when set, counts the token in progress into costPhase (SB11, cost.go); nil is off. Executor goroutine only.
