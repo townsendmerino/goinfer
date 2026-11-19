@@ -1,0 +1,21 @@
+Thu Nov 19 13:49:43 PST 2026 build identity binary
+Thu Nov 19 13:55:24 PST 2026 identity (exclusive)
+load1 3.16 at 2026-11-19T13:55:25-08:00
+1877, /usr/bin/kwin_wayland, 17 MiB
+identity-3900 rc=0
+identity-128 rc=0
+kv=[{Cache:resident Requested:auto Delivered:f32 Reason:auto is f32 on CUDA in this build}] actGroup=32
+kv=[{Cache:resident Requested:auto Delivered:f32 Reason:auto is f32 on CUDA in this build}] actGroup=32
+launches: A split-KV 0 flash 0; B split-KV 6144 flash 0
+positions teacher-forced [64,128) + free 64: bit-identical steps 128/128 (first diff step -1); teacher-forced argmax agree 64/64, max|dlogit| 0, min cosine 1.000000000; free greedy common prefix 64/64
+kv=[{Cache:resident Requested:auto Delivered:f32 Reason:auto is f32 on CUDA in this build}] actGroup=32
+kv=[{Cache:resident Requested:auto Delivered:f32 Reason:auto is f32 on CUDA in this build}] actGroup=32
+launches: A split-KV 0 flash 0; B split-KV 126848 flash 0
+positions teacher-forced [3700,3900) + free 64: bit-identical steps 264/264 (first diff step -1); teacher-forced argmax agree 200/200, max|dlogit| 0, min cosine 1.000000000; free greedy common prefix 64/64
+Thu Nov 19 13:57:20 PST 2026 sweep
+2026-11-19T13:57:20-08:00 d128 b1 c1 A load 2.2 avail 60879 foreign - -> 107.9 (7s)
+2026-11-19T13:57:27-08:00 d128 b1 c2 B load 3.54 avail 59793 foreign ['go:25606', 'compile:25657'] -> 120.9 (7s)
+2026-11-19T13:57:34-08:00 d128 b1 c3 B load 3.6 avail 60825 foreign - -> 120.9 (7s)
+2026-11-19T13:57:40-08:00 d128 b1 c4 A load 3.63 avail 60923 foreign - -> 124.8 (7s)
+2026-11-19T13:57:47-08:00 d128 b2 c1 A load 3.58 avail 60920 foreign - -> 124.7 (7s)
+2026-11-19T13:57:54-08:00 d128 b2 c2 B load 3.41 avail 60869 foreign - -> 120.8 (7s)

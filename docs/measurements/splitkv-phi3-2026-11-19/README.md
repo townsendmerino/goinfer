@@ -13,7 +13,7 @@ binary for both, built once from `origin/main` 31f97ca5a: `go test -c -tags 'cud
 
 **Instrument.** `backend/cuda/resident_decode_bench_test.go:BenchmarkResidentDecode`, `-test.benchtime 128x` (positions depth..depth+127,
 inside Phi-3's 4096), `GOINFER_BENCH_QUANT=q4k` (the served default; per-32 activations follow from it), KV `auto` (f16; the identity run
-prints the delivered precision). Checkpoint `~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf` (local NVMe; its `q4k cuda` .giw
+prints the delivered precision; see Amendment 1). Checkpoint `~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf` (local NVMe; its `q4k cuda` .giw
 beside it). `run-sweep.sh` / `run_ab.py` beside this file; one process per cell.
 
 **Cells and order.** `GOINFER_BENCH_DEPTH` 128, then 3900. Per depth five blocks of A B B A = 10 pairs (A1,B1) and (B2,A2). Each block holds
@@ -42,3 +42,17 @@ DRAM peak, means the lever is smaller than the finding claims; reported beside t
 
 **Outcome.** WIN: no code change here; the threshold choice (re-key the never class on bytes per key, or leave it) goes to Francis with the
 speed and fidelity numbers. AMBIGUOUS: parked with the numbers. KILL: the never class stands at f16; recorded as a negative result.
+
+## Amendment 1 (2026-11-19 14:01 PST, before any f16 data)
+
+The instrument as registered timed the wrong cache. `backend/cuda`'s test suite pins `kvF16Auto` false in
+`kv16_default_test.go`'s `init`, so under the test binary `auto` delivers **f32** ("auto is f32 on CUDA in this build"), while serve's
+`auto` gives Phi-3 f16 (`decoder/kvresolve.go:cudaKVF16AutoCleared`). The first identity run and six completed depth-128 cells (a seventh was stopped mid-run) ran on f32. They are
+kept, ungraded, under `raw/void-f32/` and are void by instrument, not by load. (One of the six, d128 b1 c2, would also have been void: a
+foreign `go`/`compile` was running at its start under the exclusive lock.)
+
+Change: the binary adds one scratch test file, `scratch_test.go.txt` beside this README (built in as
+`backend/cuda/zz_splitkv_phi3_scratch_test.go`, not committed as a test). Its `init` runs after the suite's and, with
+`SPLITKV_SERVE_AUTO=1`, sets `kvF16Auto` back to true, which is serve's `auto`. `run_ab.py` sets that for both arms and marks a cell VOID if its
+log lacks the init's marker line. The identity test fails unless the delivered KV is f16. The bench, the arms, the order, the bar and the
+stopping rule are unchanged. The binary is built from this commit with that one file added. Each depth restarts at block 1.
