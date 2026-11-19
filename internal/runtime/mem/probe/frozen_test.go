@@ -61,7 +61,9 @@ func TestHost_matchesFrozenReaders(t *testing.T) {
 			t.Fatalf("SelfSwapReader = nil (%s) where the frozen reader read", why)
 		}
 		live("SelfSwap", f.selfSwap, r, Host.SelfSwap)
-	} else if r, _ := SelfSwapReader(); r != nil {
+	} else if r, _ := SelfSwapReader(); r != nil && runtime.GOOS != "darwin" {
+		// macOS's reader (the server's compressed pages) was added after the move, so it has no frozen copy;
+		// TestSelfSwapReader_isTheProcesssCompressedPages holds it.
 		t.Error("SelfSwapReader reads on a platform whose frozen readers had none")
 	}
 }
