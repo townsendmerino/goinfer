@@ -334,6 +334,9 @@ func (d *Device) ReleaseBuf(b Buffer) {
 		}
 	}
 	d.mu.Unlock()
+	if TraceForTest != nil {
+		TraceForTest(TraceEvent{Op: TraceFree, Dst: uint64(b.b.DevicePtr())})
+	}
 	_ = b.b.Close()
 }
 
@@ -491,6 +494,9 @@ func (d *Device) MustBufOn(line string, nBytes, n int, what string) Buffer {
 	d.mu.Lock()
 	d.allocs = append(d.allocs, devAlloc{b: buf, release: release})
 	d.mu.Unlock()
+	if TraceForTest != nil {
+		TraceForTest(TraceEvent{Op: TraceAlloc, Dst: uint64(buf.DevicePtr()), Bytes: nBytes, Line: line})
+	}
 	return Buffer{b: buf, cx: d.cx, d: d, n: n}
 }
 
@@ -512,6 +518,9 @@ func (d *Device) MustBufSplitOn(line string, nBytes int, lineBytes int64, restLi
 	d.mu.Lock()
 	d.allocs = append(d.allocs, devAlloc{b: buf, release: func() { relLine(); relRest() }})
 	d.mu.Unlock()
+	if TraceForTest != nil {
+		TraceForTest(TraceEvent{Op: TraceAlloc, Dst: uint64(buf.DevicePtr()), Bytes: nBytes, Line: line})
+	}
 	return Buffer{b: buf, cx: d.cx, d: d, n: nBytes}
 }
 
@@ -557,6 +566,9 @@ func (b Buffer) upload(src []byte) error {
 	if got, want := b.bytes(), uint64(b.off)+uint64(len(src)); got < want {
 		return fmt.Errorf("cuda: upload of %d bytes at offset %d overruns a %d-byte buffer", len(src), b.off, got)
 	}
+	if TraceForTest != nil {
+		TraceForTest(TraceEvent{Op: TraceUpload, Dst: b.BindAddr(), Bytes: len(src), Src: src})
+	}
 	// SYNCHRONIZE BEFORE THE COPY TOO, not just after (audit C-01).
 	//
 	// The trailing Synchronize below orders this copy before LATER launches —
@@ -596,6 +608,9 @@ func (b Buffer) download(dst []byte) error {
 	}
 	if got, want := b.bytes(), uint64(b.off)+uint64(len(dst)); got < want {
 		return fmt.Errorf("cuda: download of %d bytes at offset %d overruns a %d-byte buffer", len(dst), b.off, got)
+	}
+	if TraceForTest != nil {
+		TraceForTest(TraceEvent{Op: TraceDownload, Dst: b.BindAddr(), Bytes: len(dst)})
 	}
 	b.d.noteWait() // a blocking copy to the host
 	return b.b.CopyToAt(bg, dst, int(b.off))
@@ -1083,6 +1098,9 @@ func (q Queue) Launch(p Pipeline, cfg LaunchConfig, args ...KernelArg) error {
 			return fmt.Errorf("cuda: kernel arg %d is uninitialized", i)
 		}
 		ga[i] = a.a
+	}
+	if TraceForTest != nil {
+		TraceForTest(TraceEvent{Op: TraceLaunch, Pipe: p.Ptr(), Cfg: cfg, Args: append([]KernelArg(nil), args...)})
 	}
 	if q.d != nil {
 		q.d.launches.Add(1)

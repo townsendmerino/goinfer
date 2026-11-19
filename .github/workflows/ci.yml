@@ -63,6 +63,7 @@ jobs:
       pull-requests: read # to find the pull request a push to main merged (pr_covered)
     outputs:
       docs_only: ${{ steps.gate.outputs.docs_only }}
+      backend_only: ${{ steps.gate.outputs.backend_only }}
       class: ${{ steps.gate.outputs.class }}
       pr_covered: ${{ steps.covered.outputs.pr_covered }}
     steps:
@@ -89,20 +90,29 @@ jobs:
           HEAD: ${{ github.sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
+          # `backend` (every change inside backend/webgpu, backend/cuda or backend/metal, or on the quick path) skips only the
+          # root OS lanes, the forced fallbacks and decoder shards a, c and d, under the same base-run condition.
           class=$(scripts/ci_docs_only.sh --classify "$BASE" "$HEAD") || class=full
           v=false
-          [ "$class" != "full" ] && [ -n "$class" ] && v=true
+          b=false
+          case "$class" in
+            docs|records|version|quick) v=true ;;
+            backend) b=true ;;
+            *) class=full ;;
+          esac
           base_run="(not checked)"
-          if [ "$v" = "true" ]; then
+          if [ "$v" = "true" ] || [ "$b" = "true" ]; then
             base_run=$(gh run list --workflow ci.yml --commit "$BASE" --json conclusion --jq '.[0].conclusion' 2>/dev/null || true)
             if [ "$base_run" != "success" ]; then
               v=false
+              b=false
               class=full
             fi
           fi
           echo "docs_only=$v" >> "$GITHUB_OUTPUT"
+          echo "backend_only=$b" >> "$GITHUB_OUTPUT"
           echo "class=${class:-full}" >> "$GITHUB_OUTPUT"
-          echo "docs_only=$v class=${class:-full}  (base=$BASE head=$HEAD; base's last ci run: '${base_run:-none}')"
+          echo "docs_only=$v backend_only=$b class=${class:-full}  (base=$BASE head=$HEAD; base's last ci run: '${base_run:-none}')"
 
       # PR_COVERED. A pull-request run records the tree it tested (the merge ref's HEAD^{tree}) as the `ci-tree` artifact. On
       # a push to main, scripts/ci_pr_covered.py sets pr_covered=true only when the merged PR's newest ci run concluded
@@ -115,7 +125,8 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           DOCS_ONLY: ${{ steps.gate.outputs.docs_only }}
-        run: printf 'tree=%s\ndocs_only=%s\nsha=%s\n' "$(git rev-parse 'HEAD^{tree}')" "$DOCS_ONLY" "$GITHUB_SHA" | tee ci-tree.txt
+          BACKEND_ONLY: ${{ steps.gate.outputs.backend_only }}
+        run: printf 'tree=%s\ndocs_only=%s\nbackend_only=%s\nsha=%s\n' "$(git rev-parse 'HEAD^{tree}')" "$DOCS_ONLY" "$BACKEND_ONLY" "$GITHUB_SHA" | tee ci-tree.txt
       - name: upload the recorded tree
         if: github.event_name == 'pull_request'
         continue-on-error: true # a missing artifact only makes the later main push run in full
@@ -333,6 +344,9 @@ jobs:
       # error) on fake git and API answers. Stdlib, milliseconds.
       - name: pr_covered decision
         run: python3 -B scripts/test_ci_pr_covered.py
+      # ci_flakes.py's parsing (go test -json, job logs) and per-failure records, on a small fixture. Stdlib, milliseconds.
+      - name: ci-flakes parsing
+        run: python3 -B scripts/test_ci_flakes.py
 
       # The pre-push hook's range checks (scripts/pre_push_range.sh): gofmt over the pushed .go files, and product code
       # pushed straight to main refused unless the tip is a release. Real commits in a scratch worktree. Stdlib, seconds.
@@ -417,7 +431,7 @@ jobs:
   # slowest-tests output and redo the LPT pack by hand; this is not automated.
   test-decoder-a:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.backend_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED, backend class
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -549,7 +563,7 @@ jobs:
 
   test-decoder-c:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.backend_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED, backend class
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -607,7 +621,7 @@ jobs:
 
   test-decoder-d:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.backend_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED, backend class
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -967,7 +981,7 @@ jobs:
   # manual Apple-silicon sweep. macos-latest is Apple Silicon (arm64).
   root-darwin:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED: no macOS runner starts for a docs-only push
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.backend_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED, backend class: no macOS runner starts for a docs-only push
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -1050,7 +1064,7 @@ jobs:
   # and the x86 jobs' logs never said, which is why no green ci-pool AVX-512 record exists.
   root-windows:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.backend_only != 'true' }} # C3, backend class
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -1058,6 +1072,18 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+      # The rolling build and test cache the other OS lanes keep, keyed by runner.arch so the amd64 and arm64 lanes never
+      # share. Restored on every run but saved only by pushes to main: the repository's cache is at its size cap, and a
+      # pull request's save is readable by that pull request alone.
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~\AppData\Local\go-build
+            ~\go\pkg\mod
+          key: go-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum') }}-
+            go-test-${{ runner.os }}-${{ runner.arch }}-
       - name: cpu (for the hardware census)
         shell: pwsh
         run: |
@@ -1078,6 +1104,14 @@ jobs:
           bash scripts/ci_skip_count.sh test.json
           # -json hides go test's plain output: print what a red lane needs (failure lines, panics, build output)
           grep -E '"Action":"(output|build-output)".*(--- FAIL|FAIL|panic|fatal error|_test.go:[0-9]+|\.go:[0-9]+:[0-9]+:)' test.json | head -300 || true
+      - name: save the build and test cache (pushes to main only)
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~\AppData\Local\go-build
+            ~\go\pkg\mod
+          key: go-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
       # The grep above cuts at 300 lines, before a runtime fatal error on a crashed serveapp binary: keep the whole stream (issue 1078).
       - name: keep test.json of a red run
         if: failure()
@@ -1092,7 +1126,7 @@ jobs:
   # the way a Windows ARM user does. Same build and test as root-windows. The census records which CPU the run landed on.
   root-windows-arm64:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.backend_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED, backend class
     runs-on: windows-11-arm
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -1100,6 +1134,18 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+      # The rolling build and test cache the other OS lanes keep, keyed by runner.arch so the amd64 and arm64 lanes never
+      # share. Restored on every run but saved only by pushes to main: the repository's cache is at its size cap, and a
+      # pull request's save is readable by that pull request alone.
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~\AppData\Local\go-build
+            ~\go\pkg\mod
+          key: go-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum') }}-
+            go-test-${{ runner.os }}-${{ runner.arch }}-
       - name: cpu (for the hardware census)
         shell: pwsh
         run: |
@@ -1122,10 +1168,18 @@ jobs:
           bash scripts/ci_skip_count.sh test.json
           # -json hides go test's plain output: print what a red lane needs (failure lines, panics, build output)
           grep -E '"Action":"(output|build-output)".*(--- FAIL|FAIL|panic|fatal error|_test.go:[0-9]+|\.go:[0-9]+:[0-9]+:)' test.json | head -300 || true
+      - name: save the build and test cache (pushes to main only)
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~\AppData\Local\go-build
+            ~\go\pkg\mod
+          key: go-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
 
   root-linux-arm64:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }} # C3
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.backend_only != 'true' }} # C3, backend class
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -1187,7 +1241,7 @@ jobs:
   # (docs/completed/task-hardware-coverage-2026-10.md). aikit's own CI forces the arm64 DotProd fallback, and goinfer's does in root-forced-fallbacks-arm64 below.
   root-forced-fallbacks:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.backend_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED, backend class
     runs-on: ubuntu-latest
     name: forced fallbacks (amd64 noavx512, noavx2, nopopcnt)
     # One job, one step per tag: each leg runs whatever an earlier leg did (`!cancelled()`), and its step name says which
@@ -1228,7 +1282,7 @@ jobs:
   # passed 6 tests, 2026-10-04), so that was run by hand for aikit's linalg suite only.
   root-forced-fallbacks-arm64:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.backend_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED, backend class
     runs-on: ubuntu-24.04-arm
     name: forced fallbacks (arm64 nodotprod)
     steps:
@@ -1264,7 +1318,9 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-          cache-dependency-path: backend/webgpu/go.sum
+          cache-dependency-path: |
+            backend/webgpu/go.sum
+            backend/metal/go.sum
 
       - name: workspace (resolve unpublished goinfer locally)
         run: go work init . ./backend/webgpu
@@ -1283,37 +1339,29 @@ jobs:
         # -timeout 20m, not the 10m default: this runner takes 330 to 530 s for ./backend/webgpu beside ./backend/webgpu/internal/kernels
         # (4x the same suite on a Mesa adapter), so contention alone crossed 600 s. A hang still fails, at 20 minutes.
         run: go test -timeout 20m -short -tags 'gpu goinfer_testhooks' ./backend/webgpu/...
-
-  # cgo-free Metal module (metal/) on darwin/arm64 — the purego-objc resident decode + f16-MMA
-  # prefill kernels. It is its OWN module (metal/go.mod, `replace ../`), so NEITHER the root nor
-  # the gpu jobs compile it: before this job the entire Metal backend had ZERO CI coverage. That
-  # is precisely why a shipped-path prefill NaN and three stale kernel bindings (rope's rhalf,
-  # swiglu's act, attention's window — all buffer-index drift after a kernel gained a param) were
-  # invisible until a hand-run. build + vet are the point: they compile-check every dispatch
-  # against the current kernel signatures, the exact class that was silent. The device parity
-  # gates need a real adapter and skip without one (real-checkpoint gates also need models); the
-  # device-INDEPENDENT falsifiability test (TestParity_NaNCosineFailsTheGate) runs here. The full
-  # correctness gate remains `go run ./cmd/gate gpu`, hand-run on a Metal box.
-  metal-darwin:
-    needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
-        with:
-          go-version-file: go.mod
-          cache-dependency-path: backend/metal/go.sum
-
+      # THE METAL PART, in this job so a run takes two macOS runners, not three. Each step runs under !cancelled(), so a red
+      # webgpu step above does not hide it, and every step name says "metal".
+      # cgo-free Metal module (metal/) on darwin/arm64 — the purego-objc resident decode + f16-MMA
+      # prefill kernels. It is its OWN module (metal/go.mod, `replace ../`), so NEITHER the root nor
+      # the webgpu steps compile it: without these steps the entire Metal backend had ZERO CI coverage. That
+      # is precisely why a shipped-path prefill NaN and three stale kernel bindings (rope's rhalf,
+      # swiglu's act, attention's window — all buffer-index drift after a kernel gained a param) were
+      # invisible until a hand-run. build + vet are the point: they compile-check every dispatch
+      # against the current kernel signatures, the exact class that was silent. The device parity
+      # gates need a real adapter and skip without one (real-checkpoint gates also need models); the
+      # device-INDEPENDENT falsifiability test (TestParity_NaNCosineFailsTheGate) runs here. The full
+      # correctness gate remains `go run ./cmd/gate gpu`, hand-run on a Metal box.
       # metal/go.mod `require`s the unpublished root (N-54, docs/audit-2026-09-10.md: this used to
       # say the reverse) but has no `replace` for it, so a standalone build resolves the root from
       # the module proxy at whatever version is required — not this checkout's own tree. The
-      # workspace supplies the LOCAL root module instead — same ephemeral stitch as gpu-darwin
-      # (go.work is gitignored).
-      - name: workspace (resolve unpublished goinfer locally)
-        run: go work init . ./backend/metal
+      # workspace supplies the LOCAL root module instead — same ephemeral stitch as the
+      # webgpu part above (go.work is gitignored).
+      - name: workspace (add the metal module; the Metal part of this job)
+        if: ${{ !cancelled() }}
+        run: go work use ./backend/metal
 
       - name: build (metal module)
+        if: ${{ !cancelled() }}
         run: go build ./backend/metal/...
 
       # Compile the WIRED serve + chat entrypoints (metal/cmd/{serve,chat}): the
@@ -1321,10 +1369,12 @@ jobs:
       # (darwin-gated; the metal module registers on plain darwin, so no `metal` tag needed).
       # A backend signature drift must fail CI here — it once broke the shipped metal binary
       # while CI stayed green (audit M-18). Covered by ./metal/... above, but kept explicit.
-      - name: build metal (wired serve + chat entrypoints)
+      - name: build (metal module, wired serve + chat entrypoints)
+        if: ${{ !cancelled() }}
         run: go build ./backend/metal/cmd/serve ./backend/metal/cmd/chat
 
       - name: vet (metal module)
+        if: ${{ !cancelled() }}
         run: go vet ./backend/metal/...
 
       # G-02: the untagged vet above compiles NONE of the 59 files behind
@@ -1335,6 +1385,7 @@ jobs:
       # until someone hand-ran with the tag. vet COMPILES without running, so this
       # is device-free and safe on the runner whose Metal layer SIGSEGVs.
       - name: vet (metal module, testhooks-tagged — compiles the 59 device-test files)
+        if: ${{ !cancelled() }}
         run: go vet -tags goinfer_testhooks ./backend/metal/...
 
       # DEVICE TESTS CANNOT RUN HERE. The macos-latest runner's paravirtual Metal/objc layer
@@ -1345,10 +1396,11 @@ jobs:
       # GPU and no checkpoint. Everything device-bound is gated by `go run ./cmd/gate gpu` on a real
       # Metal box; build+vet above are the CI compile-check.
       # ZERO-MATCH GUARD (audit-2026-09-10.md, found 2026-09-11): same risk as the sampler-gates
-      # step above, and worse here — this is the ONLY test this job runs (everything else would
+      # step above, and worse here — this is the ONLY test the Metal part runs (everything else would
       # SIGSEGV the runner), so a renamed/deleted TestParity_NaNCosineFailsTheGate would report
-      # green while running literally nothing, with no other step in this job to catch it.
-      - name: falsifiability gate exists (zero-match guard)
+      # green while running literally nothing, with no other step to catch it.
+      - name: metal falsifiability gate exists (zero-match guard)
+        if: ${{ !cancelled() }}
         run: |
           matched=$(go test -list 'TestParity_NaNCosineFailsTheGate' ./backend/metal/... | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
           if [ -z "$matched" ]; then
@@ -1373,5 +1425,6 @@ jobs:
             echo "::error::TestAttnFABlkIsTheGradedKernel and TestR17GradedArm_isTheGradedText matched $matched of 2 in ./metal/ — renamed or deleted?"
             exit 1
           fi
-      - name: test (device-free tests only — the runner's Metal layer SIGSEGVs)
+      - name: test (metal module, device-free tests only — the runner's Metal layer SIGSEGVs)
+        if: ${{ !cancelled() }}
         run: go test -run 'TestParity_NaNCosineFailsTheGate|TestBuildDemand_matchesDecoderDefault|TestLedger_everyMetalAllocationNamesALine|^TestAttnFABlkIsTheGradedKernel$|^TestR17GradedArm_isTheGradedText$' ./backend/metal/...

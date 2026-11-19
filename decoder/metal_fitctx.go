@@ -61,7 +61,7 @@ func MetalFitWhy(slots int, kvBytes int64) string { return mem.MetalFitWhy(slots
 // of them as fit (MetalLoadPlan's KVSlots).
 func (m *Model) MetalKVSlotsWanted() int {
 	n := m.ResidentKVSlotsRequestFor("metal")
-	if m.resSlotsDef && n > MetalDefaultKVSlots {
+	if m.opts.ResidentKVSlotsDefault && n > MetalDefaultKVSlots {
 		n = MetalDefaultKVSlots
 	}
 	return max(n, 1)

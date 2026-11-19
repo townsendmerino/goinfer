@@ -230,6 +230,7 @@ func (s *server) startDrain(lm *loadedModel, ml *modelLiveness, last bool) <-cha
 
 	go func() {
 		defer close(done)
+		defer recoverDrain(lm.name)
 		if ml != nil {
 			ml.rw.Lock() // DRAIN: waits out every in-flight request holding this model (all siblings)
 		}

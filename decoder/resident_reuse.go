@@ -269,7 +269,7 @@ func (m *Model) KVShareState() (state, why string) {
 		return "none", "this backend copies no KV rows"
 	}
 	switch {
-	case m.kvShareOff:
+	case m.opts.KVShareOff:
 		return "off", "--kv-share off"
 	case m.residentReuseDisabled():
 		return "off", "GOINFER_NO_RESIDENT_REUSE"
@@ -526,7 +526,7 @@ func kvOtherDonors(rk ResidentKVSubsystem, hits []int, cm kvmgr.ClassMap, n, src
 // window no longer holds the rows. A decline or an error leaves acq.reuse at what the slot can still trust.
 func (m *Model) residentShare(prompt []int, imgs []residentImageClaim, lora *loraRuntime, sc KVScope, acq *kvAcquired) {
 	kv := m.resKV()
-	if !kv.KVCopierAvailable() || sc.Off || m.kvShareOff || m.residentReuseDisabled() || m.hasRecurrentState() {
+	if !kv.KVCopierAvailable() || sc.Off || m.opts.KVShareOff || m.residentReuseDisabled() || m.hasRecurrentState() {
 		return
 	}
 	a, dst, cm := m.kvSlots(), acq.slot, m.kvClassMap()

@@ -154,6 +154,7 @@ SCANS = [
     Scan("internal/app/serveapp", "TestSessions_persistedStateIsOwnerOnly", F("internal/app/serveapp/sessions.go")),
     Scan("internal/app/serveapp", "TestAdminLoad_racedDuplicateIsClosed", F("internal/app/serveapp/admin.go", "internal/app/serveapp/webui.go")),
     Scan("internal/app/serveapp", "TestStartDrain_savesSessionsUnderTheLRULock", F("internal/app/serveapp/liveness.go")),
+    Scan("internal/app/serveapp", "TestPanicGuard_everyGoFuncLiteralDefersARecover", NT("internal/app/serveapp")),
     Scan("internal/app/serveapp", "TestAdminLoad_requestQuantIsTheExplicitOne", F("internal/app/serveapp/admin.go")),
     Scan("internal/app/serveapp", "TestLookupLockedOnlyViaResolve", NT("internal/app/serveapp")),
     Scan("internal/app/serveapp", "TestStreamSurfaces_allSendUsageBeforeDone",
@@ -323,6 +324,8 @@ EXCLUDED = {
     "TestIdentity_determinismCatchesANondeterministicDumper": "git clone of the tree",
     "TestIdentityGiw_bytesCommentOnlyChangeIsIdentical": "git clone of the tree",
     "TestIdentityGiw_headerChangeIsDifferentBytesAndIdenticalLogits": "git clone of the tree",
+    # The quality_scan-tagged scans (internal/guard/qualityscan) run nightly by design, never in the day loop.
+    "TestQualityScan_readsEveryModule": "nightly quality scan",
 }
 
 

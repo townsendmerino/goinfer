@@ -56,7 +56,7 @@ func TestKV2_cpuSessionShare(t *testing.T) {
 		return true
 	}
 	for _, exact := range []bool{false, true} {
-		m.exactPrefill = exact
+		m.opts.ExactPrefill = exact
 		for _, tc := range []struct{ ownLen, wantHit int }{{600, 1088}, {300, 832}} {
 			a := m.NewSession(0)
 			gen(a, own(0, 600))

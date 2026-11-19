@@ -66,7 +66,7 @@ func TestKV2_G0cpuSplitInvariance(t *testing.T) {
 		return out
 	}
 	for _, exact := range []bool{false, true} {
-		m.exactPrefill = exact
+		m.opts.ExactPrefill = exact
 		whole := fill(nil, prompt)
 		pert := slices.Clone(prompt)
 		pert[300] = (pert[300] + 1) % m.w.arch.VocabSize

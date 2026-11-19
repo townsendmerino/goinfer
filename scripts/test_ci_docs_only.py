@@ -80,7 +80,7 @@ class FullPathReads(unittest.TestCase):
         self.assertEqual(self.classify({"docs/env-vars.md": "\n"}), "false")
 
     # -- the CI quick path's classes (--classify): what runs `lint` alone, and what still runs the full suite.
-    # The default mode (the direct-push rule, coverage.yml) does not widen: the last test pins that.
+    # The default mode (the direct-push rule) does not widen: the last test pins that.
     def cls(self, edits, subs=None):
         return self.classify(edits, subs, both=True)[1]
 
@@ -117,22 +117,50 @@ class FullPathReads(unittest.TestCase):
         self.assertEqual(self.cls({}, bump), "version")
 
     def test_other_changes_to_a_go_mod_are_full(self):
-        aikit = {"backend/metal/go.mod": ("github.com/townsendmerino/aikit v", "github.com/townsendmerino/aikit v9.")}
+        aikit = {"go.mod": ("github.com/townsendmerino/aikit v", "github.com/townsendmerino/aikit v9.")}
         self.assertEqual(self.cls({}, aikit), "full")
-        self.assertEqual(self.cls({"backend/metal/go.mod": "require example.com/other v1.0.0\n"}), "full")
+        self.assertEqual(self.cls({"go.mod": "require example.com/other v1.0.0\n"}), "full")
         # a goinfer bump riding with a different dependency's bump is not version-only either
         mixed = {"backend/metal/go.mod": ("github.com/townsendmerino/goinfer v0.24.1", "github.com/townsendmerino/goinfer v0.24.2"),
                  "go.mod": ("golang.org/x/sys v", "golang.org/x/sys v9.")}
         self.assertEqual(self.cls({}, mixed), "full")
 
     def test_a_goinfer_lookalike_is_not_a_goinfer_version(self):
-        self.assertEqual(self.cls({"backend/metal/go.mod": "require github.com/townsendmerino/goinfer-evil v1.0.0\n"}), "full")
+        self.assertEqual(self.cls({"go.mod": "require github.com/townsendmerino/goinfer-evil v1.0.0\n"}), "full")
 
     def test_a_go_sum_line_for_a_goinfer_module_is_version_only(self):
         line = "github.com/townsendmerino/goinfer v0.99.0 h1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n"
         self.assertEqual(self.cls({"backend/metal/go.sum": line}), "version")
         other = "example.com/other v0.99.0 h1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n"
-        self.assertEqual(self.cls({"backend/metal/go.sum": other}), "full")
+        self.assertEqual(self.cls({"go.sum": other}), "full")
+
+    # -- the backend class: a range inside the backend modules (plus quick-path files) skips the root OS lanes.
+    def test_backend_module_code_is_backend(self):
+        for path in ("backend/cuda/doc.go", "backend/metal/zz_ci_test.go", "backend/webgpu/testdata/zz-ci-test.txt"):
+            self.assertEqual(self.cls({path: "//x\n"}), "backend", path)
+
+    def test_backend_with_quick_path_files_is_backend(self):
+        self.assertEqual(self.cls({"backend/cuda/doc.go": "//x\n", "docs/zz-ci-test.md": "x\n"}), "backend")
+        bump = {"backend/metal/go.mod": ("github.com/townsendmerino/goinfer v0.24.1", "github.com/townsendmerino/goinfer v0.24.2")}
+        self.assertEqual(self.cls({"backend/cuda/doc.go": "//x\n"}, bump), "backend")
+
+    def test_a_backend_go_mod_dependency_change_is_backend(self):
+        aikit = {"backend/metal/go.mod": ("github.com/townsendmerino/aikit v", "github.com/townsendmerino/aikit v9.")}
+        self.assertEqual(self.cls({}, aikit), "backend")
+        other = "example.com/other v0.99.0 h1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n"
+        self.assertEqual(self.cls({"backend/metal/go.sum": other}), "backend")
+
+    def test_backend_with_root_code_is_full(self):
+        self.assertEqual(self.cls({"backend/cuda/doc.go": "//x\n", "decoder/doc.go": "//x\n"}), "full")
+        self.assertEqual(self.cls({"backend/cuda/doc.go": "//x\n", "go.mod": "require example.com/other v1.0.0\n"}), "full")
+
+    def test_backend_with_a_docs_file_a_test_reads_is_full(self):
+        self.assertEqual(self.cls({"backend/cuda/doc.go": "//x\n", "docs/env-vars.md": "\n"}), "full")
+
+    def test_a_file_under_backend_but_outside_its_modules_is_full(self):
+        """backend/ itself is the root module's directory: only backend/{webgpu,cuda,metal}/ are other modules."""
+        self.assertEqual(self.cls({"backend/zz-ci-test.md": "x\n"}), "full")
+        self.assertEqual(self.cls({"backend/cudax/zz.go": "//x\n"}), "full")
 
     def test_the_default_mode_does_not_widen(self):
         for edits in ({"changelog.d/zz-ci-test.md": "x\n"}, {"SECURITY.md": "x\n"}, {"apps/site/different/zz-ci-test.md": "x\n"}):
@@ -140,6 +168,7 @@ class FullPathReads(unittest.TestCase):
         bump = {"backend/metal/go.mod": ("github.com/townsendmerino/goinfer v0.24.1", "github.com/townsendmerino/goinfer v0.24.2")}
         self.assertEqual(self.classify({}, bump), "false")
         self.assertEqual(self.classify({"docs/zz-ci-test.md": "x\n"}), "true")
+        self.assertEqual(self.classify({"backend/cuda/doc.go": "//x\n"}), "false")
 
 
 if __name__ == "__main__":
