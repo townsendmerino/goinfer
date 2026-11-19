@@ -89,15 +89,19 @@ jobs:
   # What CI actually does: every package's test binary at once, so serveapp shares the 4 cores with the rest of ./...
   # The isolated cells above never saw that load. 20 shards x `go test ./...` three times each.
   ci-exact:
-    name: ci-exact-${{ matrix.shard }}
+    name: ci-exact-${{ matrix.variant }}-${{ matrix.shard }}
     runs-on: windows-latest
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+        # base: CI as is. noguard: the same without TestPanicGuard_* (if it still dies, the guards are innocent).
+        # checkmark: GODEBUG=gccheckmark=1 makes the GC verify its own marking, so corruption fails closer to its cause.
+        variant: [base, noguard, checkmark]
     env:
       GOTRACEBACK: crash
+      GODEBUG: ${{ matrix.variant == 'checkmark' && 'gccheckmark=1' || '' }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
@@ -109,17 +113,18 @@ jobs:
         run: |
           fail=0
           for i in 1 2 3; do
-            if ! go test -count=1 -timeout 30m -tags goinfer_testhooks ./... > "ci$i.log" 2>&1; then
+            skip=""; if [ "${{ matrix.variant }}" = noguard ]; then skip="-skip TestPanicGuard"; fi
+            if ! go test -count=1 -timeout 30m -tags goinfer_testhooks $skip ./... > "ci$i.log" 2>&1; then
               fail=$((fail+1)); echo "::warning::run $i FAILED"; grep -nE "fatal error|panic:|signal 0x|^--- FAIL|^FAIL" "ci$i.log" | head -8
             else
               rm -f "ci$i.log"
             fi
           done
-          echo "RESULT cell=ci-exact-${{ matrix.shard }} failed_runs=$fail of 3" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "RESULT cell=ci-exact-${{ matrix.variant }}-${{ matrix.shard }} failed_runs=$fail of 3" | tee -a "$GITHUB_STEP_SUMMARY"
           [ "$fail" = 0 ]
       - name: keep failing logs
         if: failure()
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
-          name: winstress-ci-exact-${{ matrix.shard }}
+          name: winstress-ci-exact-${{ matrix.variant }}-${{ matrix.shard }}
           path: ci*.log
