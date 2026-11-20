@@ -764,8 +764,6 @@ var webgpuMemGaps = func() []memgate.Gap {
 		stacked("testdata/gemma4-moe-kv-tiny int4*", 8192)
 		stacked("testdata/qwen3vlmoe-tiny int4*", 8192)
 	}
-	out = append(out, memgate.Gap{Row: "testdata/llama-tiny int4", Line: mem.LineState, What: "B45 PLANT: a gap that never fires",
-		Item: "B45 plant", Bytes: func(map[string]int64) int64 { return 8192 }})
 	return out
 }()
 
@@ -775,7 +773,7 @@ const webgpuGateRowsPath = "testdata/memgate_rows.txt"
 var webgpuGateRowsUpdate = flag.Bool("memgate.rows.update", false, "have TestMemGate_webgpu rewrite testdata/memgate_rows.txt")
 
 // webgpuMemGapsPin is len(webgpuMemGaps) on this platform: 1 row everywhere and two more off arm64.
-var webgpuMemGapsPin = 2 + map[bool]int{true: 2}[runtime.GOARCH != "arm64"]
+var webgpuMemGapsPin = 1 + map[bool]int{true: 2}[runtime.GOARCH != "arm64"]
 
 // webgpuGatePlantForTest, when set, runs on a row's resident after its generation and before the ledger is read; the function it returns
 // runs after that read, so the plant is released before Close and the package's own ledger check stays clean.
