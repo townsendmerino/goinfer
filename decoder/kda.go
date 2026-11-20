@@ -4,6 +4,8 @@ import (
 	"math"
 
 	"github.com/townsendmerino/aikit/linalg"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 )
 
 // kdaWeights holds one Bailing Hybrid (Ling 3.0) Kimi Delta Attention layer's parameters,
@@ -93,7 +95,7 @@ func kdaMixerStep(be Backend, h []float32, w *kdaWeights, p kdaParams, hidden in
 
 	// 2. Gates: per-channel decay-gate input, per-head beta.
 	gDecayRaw := matvecWMPre(be, &w.fProj, &st.hq, h) // [projSize]
-	betaLogits := matvec(w.bProj, H, hidden, h)
+	betaLogits := hybridattn.Matvec(w.bProj, H, hidden, h)
 
 	// 3. Per-head KDA recurrence — the one genuinely new primitive (per-channel decay), reusing
 	// kda_rehearsal.go's already-reference-verified functions unchanged.
@@ -112,7 +114,7 @@ func kdaMixerStep(be Backend, h []float32, w *kdaWeights, p kdaParams, hidden in
 		}
 		inv := float32(1 / math.Sqrt(ss/float64(D)+eps))
 		for d := range D {
-			seg[d] = seg[d] * inv * w.oNormW[d] * sigmoidf(zt[d])
+			seg[d] = seg[d] * inv * w.oNormW[d] * hybridattn.Sigmoidf(zt[d])
 		}
 	}
 	return matvecWM(be, &w.oProj, core)
@@ -137,8 +139,8 @@ func kdaRecurrence(core, q, k, v, gDecayRaw, betaLogits []float32, w *kdaWeights
 	}
 
 	for hh := range H {
-		l2normScaledInto(qh, q[hh*D:(hh+1)*D], qScale)
-		l2normScaledInto(kh, k[hh*D:(hh+1)*D], 1)
+		hybridattn.L2NormScaledInto(qh, q[hh*D:(hh+1)*D], qScale)
+		hybridattn.L2NormScaledInto(kh, k[hh*D:(hh+1)*D], 1)
 		vh := v[hh*D : (hh+1)*D]
 		rawGate := gDecayRaw[hh*D : (hh+1)*D]
 		dtb := w.dtBias[hh*D : (hh+1)*D]
@@ -156,7 +158,7 @@ func kdaRecurrence(core, q, k, v, gDecayRaw, betaLogits []float32, w *kdaWeights
 			decay[di] = float32(math.Exp(float64(gateLog[di])))
 		}
 
-		beta := sigmoidf(betaLogits[hh])
+		beta := hybridattn.Sigmoidf(betaLogits[hh])
 		S := st.s[hh*D*D : (hh+1)*D*D]
 		out := core[hh*D : (hh+1)*D]
 		kdaRecurrentStepInto(out, qh, kh, vh, decay, beta, S)

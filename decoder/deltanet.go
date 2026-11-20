@@ -106,15 +106,6 @@ func (p qwen35Params) deltaNetParams() hybridattn.DeltaNetParams {
 	}
 }
 
-// negExpAFromLog precomputes the DeltaNet decay coefficient −exp(A_log) that the
-// recurrence multiplies by softplus(a+dt_bias).
-func negExpAFromLog(aLog []float32) []float32 { return hybridattn.NegExpAFromLog(aLog) }
-
-// matvec computes y[r] = Σ_c W[r*cols+c]·x[c] for a row-major [rows,cols] weight.
-func matvec(w []float32, rows, cols int, x []float32) []float32 {
-	return hybridattn.Matvec(w, rows, cols, x)
-}
-
 // matvecWM is matvec for a WeightMat: the same M=1 projection, but routed through the shared
 // quantization-aware matmul so an int4/int8 weight uses the W4A8/W8A8 integer kernel instead of
 // being dequantized. f32 WeightMats land on the same MatmulBT path matvec uses, so the no-quant
@@ -131,9 +122,6 @@ func matvecWMPre(be Backend, w *linalg.WeightMat, p *w4a8Act, x []float32) []flo
 	matmulPre(be, w, p, x, y, 1)
 	return y
 }
-
-func sigmoidf(x float32) float32  { return hybridattn.Sigmoidf(x) }
-func softplusf(x float32) float32 { return hybridattn.Softplusf(x) }
 
 // deltaState is one Gated DeltaNet layer's streaming state in the KV cache: the
 // last K-1 conv inputs (so the causal conv has its left context at decode) and
@@ -207,9 +195,3 @@ func gatedDeltaNet(be Backend, h [][]float32, w *deltaNetWeights, p qwen35Params
 	}
 	return out
 }
-
-// l2normScaledInto writes x/‖x‖ (eps 1e-6, matching FLA's l2norm) times s into dst.
-func l2normScaledInto(dst, x []float32, s float32) { hybridattn.L2NormScaledInto(dst, x, s) }
-
-// l2normScaled returns x/‖x‖ (eps 1e-6, matching FLA's l2norm) times s.
-func l2normScaled(x []float32, s float32) []float32 { return hybridattn.L2NormScaled(x, s) }

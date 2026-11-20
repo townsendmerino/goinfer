@@ -41,7 +41,7 @@ func (p *mambaParams) ssmFloats() int { return p.nHeads * p.headDim * p.dState }
 // Granite's embedding and residual multipliers are not folded here, and int8 projections would be re-quantized to int4 without notice.
 func buildMambaParams(m *decoder.Model) (*mambaParams, error) {
 	bv := m.BackendView()
-	if _, _, _, _, _, _, _, _, _, ok := bv.GraniteParams(); ok {
+	if _, ok := bv.Granite(); ok {
 		return nil, fmt.Errorf("Granite-4.0-H's embedding and residual multipliers are not folded on CUDA; it runs on the CPU")
 	}
 	np, ok := bv.Nemotron()

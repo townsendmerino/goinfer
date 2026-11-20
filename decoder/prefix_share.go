@@ -3,6 +3,8 @@ package decoder
 import (
 	"context"
 	"fmt"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
 // Shared state, many questions. A decision request asks several
@@ -149,7 +151,7 @@ func shareGroups(prompts [][]int, minShared int) (members [][]int, prefix []int)
 			if assigned[j] {
 				continue
 			}
-			l := min(commonPrefixLen(prompts[i], prompts[j]), len(prompts[j])-1)
+			l := min(kvmgr.CommonPrefixLen(prompts[i], prompts[j]), len(prompts[j])-1)
 			if l >= minShared && min(p, l) >= minShared {
 				p = min(p, l)
 				g = append(g, j)
