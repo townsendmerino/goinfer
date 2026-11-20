@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"github.com/townsendmerino/goinfer/decoder/quant"
 	"math"
 	"testing"
 )
@@ -17,7 +18,7 @@ import (
 // intuition.
 func TestFP8E4M3_matchesReference(t *testing.T) {
 	for i := range 256 {
-		got := fp8E4M3ToF32(byte(i))
+		got := quant.FP8E4M3ToF32(byte(i))
 		want := fp8E4M3RefTable[i]
 
 		if math.IsNaN(want) {
@@ -37,20 +38,20 @@ func TestFP8E4M3_matchesReference(t *testing.T) {
 	}
 
 	// Anchors worth naming, because each is a place a plausible implementation goes wrong.
-	if v := fp8E4M3ToF32(0x7E); v != 448 {
+	if v := quant.FP8E4M3ToF32(0x7E); v != 448 {
 		t.Errorf("max finite: got %v, want 448 — e4m3fn has NO infinities, so the all-ones exponent is a normal number", v)
 	}
-	if !math.IsNaN(float64(fp8E4M3ToF32(0x7F))) || !math.IsNaN(float64(fp8E4M3ToF32(0xFF))) {
+	if !math.IsNaN(float64(quant.FP8E4M3ToF32(0x7F))) || !math.IsNaN(float64(quant.FP8E4M3ToF32(0xFF))) {
 		t.Error("0x7F/0xFF must be the only NaNs (S.1111.111)")
 	}
-	if v := fp8E4M3ToF32(0x01); v != 0.001953125 {
+	if v := quant.FP8E4M3ToF32(0x01); v != 0.001953125 {
 		t.Errorf("smallest subnormal: got %v, want 2^-9 = 0.001953125", v)
 	}
 
 	// The table must agree with the function it is built from — otherwise the fast path and
 	// the derivation could drift, and only the slow one is tested above.
 	for i := range 256 {
-		f, tv := fp8E4M3ToF32(byte(i)), fp8E4M3Table[i]
+		f, tv := quant.FP8E4M3ToF32(byte(i)), quant.FP8E4M3Table[i]
 		if math.IsNaN(float64(f)) != math.IsNaN(float64(tv)) || (!math.IsNaN(float64(f)) && f != tv) {
 			t.Fatalf("0x%02X: table %v != function %v", i, tv, f)
 		}
@@ -72,7 +73,7 @@ func TestFP8DequantBlocked(t *testing.T) {
 	}
 	scales := []float32{10, 20, 30, 40} // [2,2] grid, row-major
 
-	got, err := fp8DequantBlocked(w, scales, rows, cols, bR, bC)
+	got, err := quant.FP8DequantBlocked(w, scales, rows, cols, bR, bC)
 	if err != nil {
 		t.Fatalf("dequant: %v", err)
 	}
@@ -88,10 +89,10 @@ func TestFP8DequantBlocked(t *testing.T) {
 		}
 	}
 
-	if _, err := fp8DequantBlocked(w, scales[:3], rows, cols, bR, bC); err == nil {
+	if _, err := quant.FP8DequantBlocked(w, scales[:3], rows, cols, bR, bC); err == nil {
 		t.Error("a short scale grid must be refused, not silently indexed past")
 	}
-	if _, err := fp8DequantBlocked(w[:5], scales, rows, cols, bR, bC); err == nil {
+	if _, err := quant.FP8DequantBlocked(w[:5], scales, rows, cols, bR, bC); err == nil {
 		t.Error("a short payload must be refused")
 	}
 }
