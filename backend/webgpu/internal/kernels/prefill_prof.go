@@ -4,7 +4,7 @@ package kernels
 
 import "time"
 
-// Per-category wall time for the batched prefill path (docs/measurements/webgpu-prefill-decomp-2026-09-22.md), mirroring
+// PrefillProf is the per-category wall time of the batched prefill path (docs/measurements/webgpu-prefill-decomp-2026-09-22.md), mirroring
 // cuda/prefill.go's profTic/profToc: same shape, same accepted trade-off (category boundaries are syncs, so the category sum
 // runs a bit over the pipelined wall time, the price of per-kernel attribution). Four categories (the GEMM, the attention,
 // the batched norms/rope and the KV write), one more than CUDA's three (gemv/attn/glue).

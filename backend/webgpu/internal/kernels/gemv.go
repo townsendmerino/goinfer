@@ -484,7 +484,7 @@ func (r *GEMVRunner) Run(aq []int8, aScale float32) ([]float32, error) {
 	return out, nil
 }
 
-// Release frees the runner's buffers (not the resident weight).
+// Close frees the runner's buffers (not the resident weight).
 func (r *GEMVRunner) Close() error {
 	r.c.releaseOwned(func() {
 		releaseBuf(r.aBuf)
@@ -497,7 +497,7 @@ func (r *GEMVRunner) Close() error {
 	return nil
 }
 
-// gemvGrid maps N output columns to a 2D workgroup grid (X capped at 32768 so
+// GemvGrid maps N output columns to a 2D workgroup grid (X capped at 32768 so
 // vocab-sized N stays under the 65535/dimension limit). The kernel reconstructs
 // n = x + y*32768.
 func GemvGrid(n int) (uint32, uint32) {

@@ -51,7 +51,8 @@ type NormSlot uint8
 // NormForm is the normalisation an opNorm computes. normCopy is post-only placement's input: the raw residual, unnormed.
 type NormForm uint8
 
-// The parameter structs' fields are exported so gate L can set each one by reflection.
+// NormParams are a norm operation's parameters. The parameter structs' fields are exported so gate L can set each one by
+// reflection.
 type NormParams struct {
 	Slot   NormSlot
 	Form   NormForm
@@ -135,7 +136,7 @@ type FFNParams struct {
 	Alpha, Limit float64   // ffnGptOss: the gate's sigmoid gain and the clamp bound
 }
 
-// ResidualParams: Two adds regA and regB, the parallel block's single residual; Scale, when not 0, multiplies what is added
+// ResidualParams are a residual operation's parameters: Two adds regA and regB, the parallel block's single residual; Scale, when not 0, multiplies what is added
 // (Granite's residual_multiplier).
 type ResidualParams struct {
 	Two   bool

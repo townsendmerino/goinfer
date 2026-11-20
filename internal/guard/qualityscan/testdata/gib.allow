@@ -7,16 +7,7 @@ decoder/sidecar.go 2 -- a sidecar's size against free disk
 backend/cuda/pack_stream.go 1 -- a packed-experts file against free disk
 internal/app/pullcmd/pull.go 2 -- download sizes
 pull/registry.go 1 -- download sizes
-# Memory sizes still formatted by hand, each moving to mem.GiB in its own package's PR (code-quality ledger, Q4).
-backend/cuda/resident.go 1 -- an expert-cache decline not yet on mem.GiB
-backend/metal/backend.go 8 -- fit text not yet on mem.GiB
-backend/metal/recurrent_checkpoint.go 2 -- a decline not yet on mem.GiB
-decoder/moepaging.go 2 -- the expert-paging banner not yet on mem.GiB
-internal/app/fitcmd/fit.go 7 -- fit text not yet on mem.GiB
-internal/app/fitcmd/profile.go 5 -- fit text not yet on mem.GiB
-internal/app/serveapp/banner.go 7 -- banner text not yet on mem.GiB
-internal/app/serveapp/gemma3_tower.go 4 -- tower fit text not yet on mem.GiB
-internal/app/serveapp/swapguard.go 2 -- swap-guard trip text not yet on mem.GiB
-internal/app/serveapp/webui.go 1 -- an unload hint not yet on mem.GiB
-internal/guard/swapguard/sources.go 1 -- swap-guard baseline text not yet on mem.GiB
-internal/guard/swapguard/swapguard.go 4 -- swap-guard trip text not yet on mem.GiB
+# Memory sizes still formatted by hand: the swap guard's lines.
+internal/app/serveapp/swapguard.go 2 -- swap-guard lines scripts/mem_darwin.py and its test parse; their unit moves with the guard's own work
+internal/guard/swapguard/sources.go 1 -- swap-guard lines scripts/mem_darwin.py and its test parse; their unit moves with the guard's own work
+internal/guard/swapguard/swapguard.go 4 -- swap-guard lines scripts/mem_darwin.py and its test parse; their unit moves with the guard's own work

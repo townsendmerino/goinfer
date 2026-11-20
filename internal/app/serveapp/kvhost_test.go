@@ -61,7 +61,7 @@ func TestKVHostBytes_bannerAndLog(t *testing.T) {
 		return ""
 	}
 	on := config{kvHostBytes: 6 << 30, kvHostBytesHow: "auto: 1/10 of 64.0 GiB of RAM, at most 8.0 GiB"}
-	if l := line(bannerFacts{resident: true, snapshots: true}, on); !strings.Contains(l, "budget 6.0 GiB") || !strings.Contains(l, "0 B held") || !strings.Contains(l, "held only while a snapshot is") {
+	if l := line(bannerFacts{resident: true, snapshots: true}, on); !strings.Contains(l, "budget 6.00 GiB") || !strings.Contains(l, "0 B held") || !strings.Contains(l, "held only while a snapshot is") {
 		t.Errorf("on: %q", l)
 	}
 	if l := line(bannerFacts{resident: true, snapshots: false}, on); !strings.Contains(l, "not on this backend") {

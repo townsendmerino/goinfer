@@ -25,7 +25,7 @@ const (
 	Interrupted State = "interrupted"
 )
 
-// job is the record of one generation: {id, model, request, class, state, created, started, finished, usage, error}, with
+// Job is the record of one generation: {id, model, request, class, state, created, started, finished, usage, error}, with
 // `request` scoped to what drive/driveVL actually have at their chokepoint: the decoded prompt token ids, not the original
 // HTTP body (retaining the raw body would need new plumbing from every handler call site; the ids alone are enough to replay
 // the prompt, which is why the journal is owner-only 0600).

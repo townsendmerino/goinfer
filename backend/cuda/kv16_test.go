@@ -1082,7 +1082,7 @@ func TestKV8_G2exact_readersMatchTheCPUOnOneCache(t *testing.T) {
 	const K, bar, M, start = 300, 1e-4, 8, 200
 	t.Setenv("GOINFER_CUDA_FLASH_DECODE", "16") // the lane on at this short context, as the every-path test turns it on
 	t.Setenv("GOINFER_CUDA_FLASH_DECODE_MIN_KEYS", "0")
-	t.Setenv("GOINFER_SPLITKV_VSUM_SPLIT", "4") // loads the split V-sum; kv8Readers runs split-KV with it and without
+	setVsumSplit(t, 4) // loads the split V-sum; kv8Readers runs split-KV with it and without
 	for _, fx := range []string{"llama-attnfa-tiny", "~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", "~qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"} {
 		t.Run(strings.TrimPrefix(fx, "~"), func(t *testing.T) {
 			path := kv8Path(fx)
@@ -1301,7 +1301,7 @@ func kv8Readers(r *cudaResident, l, pos int) []kv8Reader {
 		out = append(out, kv8Reader{name: "flash-decode lane", launch: func() error { return r.flashDecodeAttn(l, pos) }})
 	}
 	if r.skScores != (Pipeline{}) {
-		// split-KV's V-sum both ways: the single fold, and the split one GOINFER_SPLITKV_VSUM_SPLIT loads (skVsumSplit chunks).
+		// split-KV's V-sum both ways: the single fold, and the split one vsumSplitForTest loads (skVsumSplit chunks).
 		split := r.skVsumSplit
 		out = append(out, kv8Reader{name: "split-KV", launch: func() error {
 			defer func() { r.skVsumSplit = split }()

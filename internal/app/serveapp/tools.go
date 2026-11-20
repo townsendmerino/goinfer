@@ -58,15 +58,11 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		writeServerErr(w, "encode: "+err.Error())
 		return
 	}
-	req.sampling.fixedTokens = func() int { return lm.fixedPromptTokens(tm, system, tools) }
-	gr, err := lm.prepare(req.sampling, ids, lm.residentPath())
+	gr, err := lm.prepareTurn(req.sampling, tm, system, turns, tools, ids)
 	if err != nil {
 		writePrepareErr(w, err)
 		return
 	}
-	gr.boundary = lm.prefixBoundary(tm, system, turns, tools, ids)
-	gr.keep = lm.recurrentKeep(tm, system, turns, tools, ids)
-	gr.msgBoundary = lm.recurrentMsgBoundary(tm, system, turns, tools, ids)
 
 	// Tight when unambiguous: a forced function or a lone tool constrains the call to that tool's schema (when the family has
 	// a JSON call form). A NAMED tool_choice that cannot be constrained is a 400, not a silent unconstrained decode.
@@ -160,7 +156,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		msg["reasoning_content"] = rb.String()
 	}
 	choice := map[string]any{"index": 0, "message": msg, "finish_reason": finish}
-	empty := emptyAnswerOf(gr, finish, t.stopSeq, len(t.calls), nComp)
+	empty := emptyAnswerOf(gr, finish, t.stopHit, len(t.calls), nComp)
 	if empty != nil {
 		choice["goinfer_empty_answer"] = empty
 	}

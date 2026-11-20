@@ -74,10 +74,10 @@ func Encode(request []byte, tok Tokenize, maxLength int) (*Encoded, error) {
 		return nil, errors.New("clef: the request must be a JSON object")
 	}
 	if imgs := root.get("images"); !imgs.falsy() {
-		return nil, errors.New("clef: images are not supported on this route yet (multimodal.md P8a)")
+		return nil, errors.New("clef: images are not supported on this route yet")
 	}
 	if vids := root.get("videos"); !vids.falsy() {
-		return nil, errors.New("clef: videos are not supported on this route yet (multimodal.md P8a)")
+		return nil, errors.New("clef: videos are not supported on this route yet")
 	}
 	stateV := root.get("state")
 	if stateV == nil {

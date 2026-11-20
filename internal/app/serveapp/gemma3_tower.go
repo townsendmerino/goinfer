@@ -3,6 +3,7 @@ package serveapp
 import (
 	"bytes"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"io"
 	"os"
 	"path/filepath"
@@ -99,8 +100,8 @@ func resolveGemma3VisionQuant(cfg config, note io.Writer) config {
 		return cfg
 	}
 	cfg.visionQuant = "int8"
-	fmt.Fprintf(note, "note: the float32 Gemma 3 vision tower is the CUDA default, but this card has %.1f GB free and the decoder, one KV slot and that tower need about %.1f GB: using the int8 device tower "+
-		"(-vision-quant f32 forces float32)\n", float64(free)/1e9, float64(need)/1e9)
+	fmt.Fprintf(note, "note: the float32 Gemma 3 vision tower is the CUDA default, but this card has %s free and the decoder, one KV slot and that tower need about %s: using the int8 device tower "+
+		"(-vision-quant f32 forces float32)\n", mem.GiB(free), mem.GiB(need))
 	return cfg
 }
 
@@ -154,8 +155,8 @@ func resolveGemma3VisionQuantMetal(cfg config, note io.Writer) config {
 		return cfg
 	}
 	cfg.visionQuant = "int8"
-	fmt.Fprintf(note, "note: this Mac's resident budget is %.1f GB and the decoder, one KV slot and the f16 Gemma 3 vision tower need about %.1f GB: using the int8 Metal tower "+
-		"(weights in groups of 32, activations f32; -vision-quant f32 forces f16)\n", float64(free)/1e9, float64(need)/1e9)
+	fmt.Fprintf(note, "note: this Mac's resident budget is %s and the decoder, one KV slot and the f16 Gemma 3 vision tower need about %s: using the int8 Metal tower "+
+		"(weights in groups of 32, activations f32; -vision-quant f32 forces f16)\n", mem.GiB(free), mem.GiB(need))
 	return cfg
 }
 

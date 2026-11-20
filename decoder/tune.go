@@ -10,7 +10,7 @@ import "github.com/townsendmerino/aikit/linalg"
 // It is applied per workspace, automatically: newDecodeScratch sets it on the decode Workspace (matmulInto path) and
 // matmul()'s free W8A8 branch sets it per call. So every decode stream (library Load, serve, tests, future entry
 // points) gets it without any startup call, and it is race-free across concurrent streams (unlike a process global).
-// The int4 (W4A8) path has its own crossover, int4ParThreshold = 1<<20 (weightmat.go): the two values differ because
+// The int4 (W4A8) path has its own crossover, int4ParThreshold = 1<<19 (weightmat.go): the two values differ because
 // they were measured separately, on different kernels and models. Unify only after a proper joint sweep.
 const DefaultDecodeParallelThreshold = 300_000
 
