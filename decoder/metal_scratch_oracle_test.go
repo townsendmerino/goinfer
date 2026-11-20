@@ -119,7 +119,8 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 		bytes += int64(dInner)
 		u32s += 13
 	}
-	if qLoRA, rank, nope, rope, vHead, _, _, _, ok := m.BackendView().MLAParams(); ok { // Multi-head Latent Attention
+	if mla, ok := m.BackendView().MLA(); ok {
+		qLoRA, rank, nope, rope, vHead := mla.QLoRARank, mla.KVLoRARank, mla.QKNopeHeadDim, mla.QKRopeHeadDim, mla.VHeadDim // Multi-head Latent Attention
 		qkHead, latDim := nope+rope, rank+rope
 		f32 += int64(max(qLoRA, 1) + 1 + nH*qkHead + latDim + nH*latDim + nH*rank + nH*vHead + 1)
 		bytes += int64(max(qLoRA, 4) + nH*vHead + 4*(3+5+5+7+3)) // qaQ, ctxQ, and the five packed shapes

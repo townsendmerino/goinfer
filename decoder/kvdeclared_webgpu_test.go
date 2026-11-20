@@ -132,7 +132,8 @@ func TestWebGPUKV_handTable(t *testing.T) {
 		}},
 		{"../testdata/deepseek-tiny", func(m *Model, f16, i8 bool) int64 {
 			// the latent row (kv_lora_rank + the rope key) is f32 at every precision, one row a layer
-			_, kvLoRA, _, qkRope, _, _, _, _, ok := m.BackendView().MLAParams()
+			mla, ok := m.BackendView().MLA()
+			kvLoRA, qkRope := mla.KVLoRARank, mla.QKRopeHeadDim
 			if !ok {
 				t.Fatal("deepseek-tiny has no MLA parameters")
 			}

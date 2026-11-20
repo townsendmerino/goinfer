@@ -22,7 +22,7 @@ type BackendModelView interface {
 
 	// The per-family resident geometry, each ok=false (zeros) when the model carries no such subsystem.
 	MoE() (ResidentMoESpec, bool)
-	MLAParams() (qLoRA, kvLoRA, qkNope, qkRope, vHead int, interleave bool, attnScale, ropeScale float64, ok bool)
+	MLA() (ResidentMLASpec, bool)
 	Qwen35Params() (convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numValueHeads int, attnGate, ok bool)
 	NemotronParams() (nHeads, headDim, dState, nGroups, dConv, normGroups int, attnScale float32, ok bool)
 	GraniteParams() (nHeads, headDim, dState, nGroups, dConv int, embMul, residMul, logitScale, attnScale float32, ok bool)
@@ -162,13 +162,11 @@ func (v backendModelView) MoE() (ResidentMoESpec, bool) {
 	return ResidentMoESpec{}, false
 }
 
-func (v backendModelView) MLAParams() (qLoRA, kvLoRA, qkNope, qkRope, vHead int, interleave bool, attnScale, ropeScale float64, ok bool) {
-	p := v.m.ResidentSpec().MLA
-	if p == nil {
-		return 0, 0, 0, 0, 0, false, 0, 0, false
+func (v backendModelView) MLA() (ResidentMLASpec, bool) {
+	if p := v.m.ResidentSpec().MLA; p != nil {
+		return *p, true
 	}
-	return p.QLoRARank, p.KVLoRARank, p.QKNopeHeadDim, p.QKRopeHeadDim, p.VHeadDim,
-		p.RopeInterleave, p.AttnScale, p.RopeScale, true
+	return ResidentMLASpec{}, false
 }
 
 func (v backendModelView) Qwen35Params() (convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numValueHeads int, attnGate, ok bool) {

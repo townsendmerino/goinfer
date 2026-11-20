@@ -29,7 +29,7 @@ var windowConditions = []windowCondition{
 		return !moe && !bv.HasGemma4MoE()
 	}},
 	{"no-mla", func(m *decoder.Model) bool {
-		_, _, _, _, _, _, _, _, ok := m.BackendView().MLAParams()
+		_, ok := m.BackendView().MLA()
 		return !ok
 	}},
 	{"no-recurrent", func(m *decoder.Model) bool {
