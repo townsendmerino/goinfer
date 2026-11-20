@@ -4,7 +4,7 @@
 #
 # release-assets.yml calls this with publish: true after its own `publish` job, so a failure here never holds the static
 # release. On a pull request that changes this file or its script, and on workflow_dispatch, it builds and smokes only: the
-# dry run, no tag needed. The smoke on a CI runner opens a software adapter at best (scripts/build_webgpu_serve.sh).
+# dry run, no tag needed. The smoke on a CI runner opens a software adapter: llvmpipe on linux, WARP (D3D12) on windows.
 name: webgpu assets
 
 on:
@@ -34,7 +34,7 @@ jobs:
         include:
           - { os: linux, arch: amd64, runner: ubuntu-24.04, ext: '', want: adapter }
           - { os: linux, arch: arm64, runner: ubuntu-24.04-arm, ext: '', want: adapter }
-          - { os: windows, arch: amd64, runner: windows-latest, ext: '.exe', want: any }
+          - { os: windows, arch: amd64, runner: windows-latest, ext: '.exe', want: adapter }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     defaults:

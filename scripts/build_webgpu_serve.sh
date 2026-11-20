@@ -6,8 +6,8 @@
 # stamp reads unmodified), with the tag injected as serve's --version. wgpu-native links statically from the binding's libs-*
 # modules, so nothing ships beside the binary; it links the C library dynamically and loads the Vulkan or DX12 driver at run time.
 #
-# smoke <want>: `adapter` requires `check --hardware` to report an opened WebGPU adapter (a linux runner with Mesa installed);
-# `any` accepts a "no usable adapter" line (a windows runner may expose none). Either way `--version` must list webgpu among the
+# smoke <want>: `adapter` requires `check --hardware` to report an opened WebGPU adapter (Mesa's llvmpipe on a linux runner, WARP on windows);
+# `any` accepts a "no usable adapter" line. Either way `--version` must list webgpu among the
 # compiled-in backends. A CI runner's adapter is a software one: this proves the binary starts and opens a device, not that it
 # picks a hardware adapter.
 set -euo pipefail
