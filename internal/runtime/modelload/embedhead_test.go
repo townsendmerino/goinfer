@@ -45,7 +45,9 @@ func headerOnlyGGUF(t *testing.T, arch string, shapes ...[2]uint64) string {
 
 // TestPlan_embedInt4DefaultBySize: the sidecar Load would build carries the head the size rule picks, from the
 // default only; an explicit --embed-int4 keeps the int4 head on a large model. The shapes total 0.49B and 1.54B
-// parameters, and the architecture is not Qwen's: the rule reads size, not family.
+// parameters, and the architecture is not Qwen's: the rule reads size, not family. StreamWeights routes a .gguf through
+// its sidecar on every OS (a plain load does so only where prequant.DefaultToSidecar holds), so the cache key is checked
+// everywhere.
 func TestPlan_embedInt4DefaultBySize(t *testing.T) {
 	small := headerOnlyGGUF(t, "llama", [2]uint64{896, 151936}, [2]uint64{896, 400000})
 	large := headerOnlyGGUF(t, "llama", [2]uint64{1536, 151936}, [2]uint64{1536, 853000})
@@ -59,12 +61,15 @@ func TestPlan_embedInt4DefaultBySize(t *testing.T) {
 		{"1.5B default", large, true, false},
 		{"1.5B explicit", large, false, true},
 	} {
-		p, err := Plan(Request{Spec: c.src, Opts: decoder.Options{Quant: "int4", Backend: "cpu", EmbedInt4: true, EmbedInt4Default: c.isDefault}})
+		p, err := Plan(Request{Spec: c.src, Opts: decoder.Options{Quant: "int4", Backend: "cpu", StreamWeights: true, EmbedInt4: true, EmbedInt4Default: c.isDefault}})
 		if err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}
 		if p.Opts.EmbedInt4 != c.wantE4H || p.Opts.EmbedInt4Default {
 			t.Errorf("%s: Plan Opts EmbedInt4 %v (default %v), want %v (resolved)", c.name, p.Opts.EmbedInt4, p.Opts.EmbedInt4Default, c.wantE4H)
+		}
+		if p.Build == "" {
+			t.Fatalf("%s: Plan names no sidecar to build (LoadPath %q, Unknown %q)", c.name, p.LoadPath, p.Unknown)
 		}
 		if got := strings.Contains(p.Build, ".e4h."); got != c.wantE4H {
 			t.Errorf("%s: sidecar to build %q: e4h %v, want %v", c.name, p.Build, got, c.wantE4H)
