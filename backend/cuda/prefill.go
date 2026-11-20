@@ -1049,6 +1049,9 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 	var ids []int
 	err := r.doOn(mem.LineScratch, func() error {
 		defer func() { r.forceExactKernels = false }()
+		p := &r.pass
+		p.reset(r, ctx, embeddings, startPos, tail, blocks, mropePos, rows, img, maxQDim, maxKvDim, hidden, inter)
+		defer p.release()
 		r.launchErr = nil // clear the sticky accumulator first (like launchToken), so a prior
 		// decode's discarded launch error isn't re-reported by this prefill.
 		var psFused func(hd int) bool // the fused question of an ordinary pass, for the row-batched attention's plan below
@@ -1098,177 +1101,22 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		} else if e := r.kvEnsure(startPos, M); e != nil {
 			return e
 		}
-		// M-sized scratch (device), freed at the end. The free list and its defer are registered BEFORE the first allocation,
-		// and each buffer joins the list as it is created: allocation panics on OOM (gpu.NewBufferLenOf's contract), runJob
-		// recovers the panic into a decline, and at M=3000 this is hundreds of MB, so a partial allocation is an expected
-		// failure on a nearly full card and must not leak.
-		var scratch []Buffer
-		defer func() {
-			for _, b := range scratch {
-				r.dev.ReleaseBuf(b)
-			}
-		}()
-		// At least one element: a pure-MoE family (qwen3_5_moe's intermediate_size=0) has no dense FFN, so its
-		// gate/up/down scratch is zero-sized and unused — and a zero-length device allocation is refused.
-		af := func(n int) Buffer {
-			if prefillScratchSeenForTest != nil {
-				prefillScratchSeenForTest(int64(max(n, 1)) * 4)
-			}
-			b := r.af(max(n, 1))
-			scratch = append(scratch, b)
-			return b
+		p.psFused = psFused
+		if mropePos != nil {
+			p.mropeWin = mropePosWindow(mropePos, startPos, M)
 		}
-		ai := func(n int) Buffer {
-			if prefillScratchSeenForTest != nil {
-				prefillScratchSeenForTest(int64(max(n, 1)) * 4)
-			}
-			b := r.ai(max(n, 1))
-			scratch = append(scratch, b)
-			return b
-		}
-
-		xB := af(M * hidden)
-		aqB, aScB := ai(M*hidden/4), af(M)
-		qBb, kBb, vBb := af(M*maxQDim), af(M*maxKvDim), af(M*maxKvDim)
-		cctxB := af(M * maxQDim)
-		var rag *raggedRows // a step's decode and verify rows for the ragged launches
-		if rows != nil {
-			var e error
-			if rag, e = r.raggedRowsFor(rows[r.stepChunk.rows:], M, ai, af); e != nil {
-				return e
-			}
-		}
-		// The row-batched exact attention's scores and inverses, for a pass with a layer past attn_batched's bound (none: no buffer).
-		var psScB, psInvB Buffer
-		psStride, psRows := 0, 0
-		if rows == nil {
-			if psStride, psRows = r.prefillSplitKVPlan(M, startPos+M, psFused, blocks); psStride > 0 {
-				psScB, psInvB = af(psRows*r.nH*psStride), af(psRows*r.nH)
-			}
-		}
-		cqB, cScB := ai(M*maxQDim/4), af(M)
-		mqB, mScB := ai(M*hidden/4), af(M)
-		gOb, uOb := af(M*inter), af(M*inter)
-		dqB, dScB := ai(M*inter/4), af(M)
-		// Gated-DeltaNet families (qwen3_5 / qwen3_5_moe / qwen3_next): the M-row buffers the recurrence reads row
-		// by row, and the softmax layers' double-width q projection and output gate.
-		var dnB dnPrefillBufs
-		if r.dnet != nil {
-			dp := r.dnet
-			dnB = dnPrefillBufs{
-				mix: af(M * dp.convDim), bt: af(M * dp.nv), at: af(M * dp.nv), z: af(M * dp.valueDim),
-				conv: af(M * dp.convDim), qn: af(M * dp.keyDim), kn: af(M * dp.keyDim), headP: af(M * dp.nv * 2),
-				core: af(M * dp.valueDim), g: af(M * dp.valueDim), gq: ai(M * dp.valueDim / 4), gsc: af(M),
-				qg: af(M * 2 * maxQDim), gate: af(M * maxQDim),
-			}
-			if startPos == 0 {
-				// A prompt from position 0 starts a fresh recurrence (not positional: no rewind restores it),
-				// as ForwardN's sequential path and decode's Reset do.
-				if e := r.resetState(); e != nil {
-					return e
-				}
-			}
-		}
-		// Sandwich families (Gemma) norm the attention / MLP sublayer output BEFORE adding it to the
-		// residual, so the o-proj and down GEMVs write a temp instead of accumulating in place. One
-		// [M, hidden] buffer, reused for both (the two uses are sequential).
-		var sbB Buffer
-		if r.sandwich || r.postOnly || r.parallelBlock {
-			sbB = af(M * hidden)
-		}
-		residMN := uint32((M*hidden + 255) / 256)
-		// Qwen3-VL's DeepStack sets for the rows of THIS pass that fall in the image run: uploaded once, added to the residual
-		// after each layer (the loop below). A pass holding none of the image run uploads nothing.
-		var dsBufs []Buffer
-		dsOff, dsN := 0, 0
-		if ds := r.deepPlan; ds != nil {
-			if a, b := max(ds.start, startPos), min(ds.start+ds.n, startPos+M); a < b {
-				imgOff, imgN := (a-startPos)*hidden, (b-a)*hidden
-				dsOff, dsN = imgOff, imgN
-				if deepDefectForTest == deepDefectTextRows {
-					dsOff, dsN = 0, M*hidden
-				}
-				for _, set := range ds.sets {
-					rows := set[(a-ds.start)*hidden : (b-ds.start)*hidden]
-					if deepDefectForTest == deepDefectTextRows { // planted defect: the set added to the text rows too (the image rows' values cycled over the whole pass)
-						rows = make([]float32, M*hidden)
-						for i := range rows {
-							rows[i] = set[(a-ds.start)*hidden+i%imgN]
-						}
-					}
-					buf := af(dsN)
-					if e := gpu.Upload(buf, rows); e != nil {
-						return e
-					}
-					dsBufs = append(dsBufs, buf)
-				}
-			}
-		}
-		// Gemma 4 E-model per-layer embedding inputs: pleB holds every row's tail REORDERED to [layer][row][P], so layer l's slice is one contiguous
-		// [M, P] operand (glu_quant_batched's `up`, row stride P), and pleGB is the gate GEMV's [M, P] output.
-		var pleB, pleGB Buffer
-		if r.pleP > 0 {
-			P := r.pleP
-			pleHost := make([]float32, r.nLayers*M*P)
-			for m, e := range embeddings {
-				for l := 0; l < r.nLayers; l++ {
-					copy(pleHost[(l*M+m)*P:(l*M+m+1)*P], e[hidden+l*P:hidden+(l+1)*P])
-				}
-			}
-			pleB, pleGB = af(len(pleHost)), af(M*P)
-			if e := gpu.Upload(pleB, pleHost); e != nil {
-				return e
-			}
-		}
-
-		// Upload the M embeddings contiguously as xB[M, hidden] (already FeatEmbedScale-scaled by the
-		// caller, exactly as Forward/ForwardNoLogits receive them).
-		if cap(r.xhostBuf) < M*hidden {
-			r.xhostBuf = make([]float32, M*hidden) // grown to the widest pass and kept: a fresh block per pass left the prompt's size in garbage
-		}
-		xhost := r.xhostBuf[:M*hidden]
-		for m, e := range embeddings {
-			n := copy(xhost[m*hidden:(m+1)*hidden], e)
-			clear(xhost[m*hidden+n : (m+1)*hidden])
-		}
-		if e := gpu.Upload(xB, xhost); e != nil {
+		if e := p.allocScratch(); e != nil {
 			return e
 		}
-
-		// Every image block's [start, end), uploaded once for every layer's attn_img_batched launch.
-		var imgBlk Buffer
-		if img {
-			flat := make([]int32, 0, 2*len(blocks))
-			for _, b := range blocks {
-				flat = append(flat, int32(b[0]), int32(b[1]))
-			}
-			imgBlk = ai(len(flat))
-			if len(flat) > 0 {
-				if e := gpu.Upload(imgBlk, flat); e != nil {
-					return e
-				}
-			}
+		if e := p.uploadInputs(); e != nil {
+			return e
 		}
-		// m-RoPE: this pass's per-row (t,h,w) rotation triples, uploaded once and reused by every layer's
-		// rope_kv_mrope_batched launch (slicing: mropePosWindow).
-		var rposT, rposH, rposW Buffer
-		if mropePos != nil {
-			window := mropePosWindow(mropePos, startPos, M)
-			pt, ph, pw := make([]int32, M), make([]int32, M), make([]int32, M)
-			for i, p := range window {
-				pt[i], ph[i], pw[i] = int32(p[0]), int32(p[1]), int32(p[2])
-			}
-			rposT, rposH, rposW = ai(M), ai(M), ai(M)
-			if e := gpu.Upload(rposT, pt); e != nil {
-				return e
-			}
-			if e := gpu.Upload(rposH, ph); e != nil {
-				return e
-			}
-			if e := gpu.Upload(rposW, pw); e != nil {
-				return e
-			}
-		}
+		xB, aqB, aScB, qBb, kBb, vBb, cctxB, rag := p.xB, p.aqB, p.aScB, p.qBb, p.kBb, p.vBb, p.cctxB, p.rag
+		psScB, psInvB, psStride, psRows := p.psScB, p.psInvB, p.psStride, p.psRows
+		cqB, cScB, mqB, mScB, gOb, uOb, dqB, dScB := p.cqB, p.cScB, p.mqB, p.mScB, p.gOb, p.uOb, p.dqB, p.dScB
+		dnB, sbB, residMN := p.dnB, p.sbB, p.residMN
+		dsBufs, dsOff, dsN, pleB, pleGB, xhost := p.dsBufs, p.dsOff, p.dsN, p.pleB, p.pleGB, p.xhost
+		imgBlk, rposT, rposH, rposW := p.imgBlk, p.rposT, p.rposH, p.rposW
 
 		for l := 0; l < r.nLayers; l++ {
 			Ly := &r.layers[l]
