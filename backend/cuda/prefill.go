@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -1110,7 +1109,6 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		if e := p.uploadInputs(); e != nil {
 			return e
 		}
-		xB, aqB, aScB, xhost := p.xB, p.aqB, p.aScB, p.xhost
 
 		for l := 0; l < r.nLayers; l++ {
 			if e := p.layer(l); e != nil {
@@ -1130,87 +1128,19 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 		if tail == tailKVOnly {
 			return r.launchErr
 		}
-		if tail == tailResidualAll {
-			// The only tail that reads the whole residual on the host: the argmax and all-logits heads read xB on the device, and
-			// the last-row tails copy one row device-to-device. Downloading all M rows for them was pageable D2H after every pass
-			// for nothing.
-			if e := gpu.Download(xB, xhost); e != nil {
-				return e
-			}
-			outs = make([][]float32, M)
-			for m := range outs {
-				outs[m] = append([]float32(nil), xhost[m*hidden:(m+1)*hidden]...)
-			}
-			return r.launchErr
+		var e error
+		switch tail {
+		case tailResidualAll:
+			e = p.tailResidualAll()
+		case tailAllArgmax:
+			e = p.tailAllArgmax()
+		case tailAllLogits:
+			e = p.tailAllLogits()
+		default:
+			e = p.tailLastRow()
 		}
-		if tail == tailAllArgmax {
-			return r.batchedHeadArgmax(xB, aqB, aScB, M, &ids)
-		}
-		outs = make([][]float32, M)
-		if tail == tailAllLogits {
-			// Every row whose logits are read needs the head (PrefillLastN, speculative verify, a step's rows; not a ragged step's
-			// prefill chunk but its final pass's last row, raggedChunk.headFrom): batch it, ONE norm+quant+GEMV over those rows,
-			// bit-identical to the per-row GEMV by construction (bGemvB). batchedHeadFull says what stays per row.
-			var e error
-			if outs, ids, e = r.batchedHeadFull(xB, aqB, aScB, M, rows, r.stepChunk.headFrom()); e != nil {
-				return e
-			}
-			return r.launchErr
-		}
-		// tailLastLogits / tailHiddenLast: only the last row's output is used, so batching the head would compute M-1 rows
-		// nobody reads.
-		for m := M - 1; m < M; m++ {
-			// The last row goes xB -> r.x on the device, the same bytes the host round trip (Download all, Upload one row) produced. A launch on r.stream
-			// like every other op here, so it is ordered after the layer stack with no extra sync.
-			if e := r.copyF32(xB.At(m*hidden*4), r.x, hidden); e != nil {
-				return e
-			}
-			if e := r.norm(r.x, r.finalNorm, r.aq, r.aSc); e != nil {
-				return e
-			}
-			if tail == tailHiddenLast {
-				// No head dispatch: r.aq/r.aSc (just written by the norm above) already hold what the head would read, the quantized
-				// post-final-norm hidden state. Download and dequantize it instead.
-				if e := r.stream.Sync(); e != nil {
-					return e
-				}
-				q := make([]int8, hidden)
-				if e := gpu.Download(r.aq, q); e != nil {
-					return e
-				}
-				sc := make([]float32, 1)
-				if e := gpu.Download(r.aSc, sc); e != nil {
-					return e
-				}
-				row := make([]float32, hidden)
-				linalg.DequantizeRowInt8(q, sc[0], row)
-				outs[m] = row
-				continue
-			}
-			if e := r.doG(r.lmW, r.aq, r.aSc, ArgNull(), r.logits, 0); e != nil {
-				return e
-			}
-			if rows != nil && rows[m].draw != nil {
-				// A step row whose token is drawn on-device: ForwardSample's own pick over this row's logits.
-				if ids == nil {
-					ids = make([]int, M)
-				}
-				id, e := r.stepDraw(rows[m].draw)
-				if e != nil {
-					return e
-				}
-				ids[m] = id
-				continue
-			}
-			if e := r.stream.Sync(); e != nil {
-				return e
-			}
-			if e := gpu.ReadToHost(r.logits, r.logitsPinned); e != nil {
-				return e
-			}
-			outs[m] = append([]float32(nil), r.logitsHost...)
-		}
-		return r.launchErr
+		outs, ids = p.outs, p.ids
+		return e
 	})
 	if err != nil {
 		// An OOM inside the job arrives as a recovered panic (runJob) carrying aikit MustBuf's "device allocation failed"
