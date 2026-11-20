@@ -74,6 +74,8 @@ var unreachableSide = map[string]string{
 	"linalg/attn_acc64_amd64.go|avAcc64Blocks|!hasAVX2 || nKeys == 0|undecided here":                                                 "an attention row always has at least one key (a query attends to itself), so nKeys is never 0",
 	"linalg/exp_contract_amd64.go|softmaxContractWithMaxImpl|!hasAVX2 || len(src) == 0|undecided here":                               "internal/runtime/whisper's softmax rows are attention rows over at least one key, never empty",
 	"linalg/q4k_dot_amd64.go|dotQ4K|hasQ4KAVX2 && K >= qkK|undecided here":                                                           "a Q4_K row is whole 256-element super-blocks (WrapQ4K refuses other cols), so K >= qkK always",
+	"linalg/q56k_dot_amd64.go|dotQ5K|hasQ4KAVX2 && K >= qkK|undecided here":                                                          "a Q5_K row is whole 256-element super-blocks (WrapQ5K refuses other cols), so K >= qkK always",
+	"linalg/q56k_dot_amd64.go|dotQ6K|hasQ4KAVX2 && K >= qkK|undecided here":                                                          "a Q6_K row is whole 256-element super-blocks (WrapQ6K refuses other cols), so K >= qkK always",
 	"linalg/dot_i8_scaled_amd64.go|w8a8GroupedSpan|hasAVX2 && nG > 0|undecided here":                                                 "its callers (matmulW8A8Grouped and the grouped batch) take it only for K a positive multiple of 32, so nG >= 1",
 	"linalg/quant.go|w4a8BatchOp|op.SplitHalf != nil && splitHalfUsable() && M == 1 && group == 32 && K%group == 0|undecided here":   "goinfer's batch ops (decoder's wmW4A8Op) never set SplitHalf",
 	"linalg/weightmat_splithalf_amd64.go|w4a8GroupedFastRowsQ|l.sh == nil || !splitHalfUsable()|true here":                           noSplitHalf,

@@ -13,17 +13,17 @@ import (
 	"testing"
 )
 
-// kso1CPUFingerprint is O1-G4's digest by arch, taken before KS-O1 on Metal (arm64) and before
-// KS-O1 on CUDA (amd64). The CPU reference is
-// bit-identical within an arch, not across.
+// kso1CPUFingerprint is O1-G4's digest by arch: arm64's taken before KS-O1 on Metal; amd64's with the file's Q6_K layers kept
+// native (q4kNative56, which needs AVX2 and F16C; an amd64 CPU without them widens to int8 and gives another digest). The CPU
+// reference is bit-identical within an arch, not across.
 var kso1CPUFingerprint = map[string]string{
 	"arm64": "e662bdd6c6cb108e89cda98e7aa3b9554ff17df556668dc05138d1477da0bfbe",
-	"amd64": "8bd2324c3e921ce233bf1d440d44e09244d60ba9ddfb3948dbbfe64d6c7a5a89",
+	"amd64": "85766ebdc1a5878baa865949714477c48d303cef7a66e228f730158950d5fe5c",
 }
 
 // TestKSO1_cpuQ4KFingerprint is O1-G4: the CPU at --quant q4k on
-// Qwen2.5-Coder-0.5B q4_k_m (its Q6_K layers are int8 copies there) forwards a fixed prompt and 16 greedy tokens one position at a
-// time, and every position's logits bytes are hashed. The digest must equal kso1CPUFingerprint, taken before KS-O1.
+// Qwen2.5-Coder-0.5B q4_k_m (its Q6_K layers native on amd64, int8 copies on arm64) forwards a fixed prompt and 16 greedy tokens
+// one position at a time, and every position's logits bytes are hashed. The digest must equal kso1CPUFingerprint.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -tags goinfer_testhooks -run '^TestKSO1_cpuQ4KFingerprint$' -v ./decoder/
 func TestKSO1_cpuQ4KFingerprint(t *testing.T) {
