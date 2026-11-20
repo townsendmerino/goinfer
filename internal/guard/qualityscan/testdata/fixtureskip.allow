@@ -1,0 +1,4 @@
+# Skips on a load error in a test that names a committed testdata path (TestQualityScan_committedFixtureLoadsFailNotSkip):
+# `<file>:<func> -- <reason>`.
+decoder/sidecar_dir_sidecar_test.go:TestDirSidecar_matchesDirectLoad -- walks every testdata entry, and the skip is for one that is not a model Load reads directly
+multimodal/qwen3vl_preprocess_real_test.go:TestQwen3VLPreprocess_againstHF -- heavy-gated: the skip is for HF artifacts under ~/models, not the committed golden

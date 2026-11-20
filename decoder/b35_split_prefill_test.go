@@ -14,7 +14,7 @@ import (
 func TestQwen35SplitPrefill_bitIdentical(t *testing.T) {
 	m, err := Load("../testdata/qwen35-tiny", Options{})
 	if err != nil {
-		t.Skipf("no qwen35-tiny fixture: %v", err)
+		t.Fatalf("load ../testdata/qwen35-tiny: %v", err)
 	}
 	defer m.Close()
 	defer func(a int) { deltaNetMinWork = a }(deltaNetMinWork)
