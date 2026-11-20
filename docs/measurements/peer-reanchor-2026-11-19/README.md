@@ -237,3 +237,19 @@ The void rule voids any swap growth in a cell, and on nobara a big load can grow
   - Nothing else about the box was changed.
 - **Run:** by day, `timing_lock.py run` (exclusive) around `timeout 60m bash run-nobara.sh cpu v2-g20`, about 20 min
   expected (fit checks 1, settle 2, goinfer's gpt-oss cell about 8 and Ollama's about 5, plus gate waits).
+
+### By-day v2 re-run, 2026-11-20 04:25–04:38 PST, graded 04:40 PST
+
+- **The run:** `v2-g20` rc=0 in 791 s, holding the timing lock exclusive. Records:
+  [`results/cpu/v2-g20.json`](results/cpu/v2-g20.json), with its log and `v2-run.log`; the grade is in
+  `results/grade-2026-11-20.jsonl`.
+- **Each arm's start:** goinfer at load 0.70 with 61,418 MB available; Ollama at 0.80 with 61,443 MB.
+- **Swap:** 0.0 MB growth and 0.0 MB swap-ins on both arms, and no void.
+- **v2, x86 CPU gpt-oss 20B @ 128 against Ollama:** **BEHIND 0.923** (9.9 vs 10.7 tok/s; pairs 0.923 / 0.923 / 0.923;
+  spreads 0.1% / 0.0%), against 0.696 on 10-07. goinfer decoded `cpu (int4)`; Ollama's tag is MXFP4. Both are 4-bit, so
+  the cell is matched by class.
+
+**What this sweep leaves graded on nobara at 595.112.07:**
+- every Ollama cell in the table above, with v2 replacing its night VOID;
+- 0.5B @ 8000 VOID on goinfer's token gate;
+- c's llama.cpp row not measured.
