@@ -89,7 +89,7 @@ func (s *server) runToolTurn(ctx context.Context, lm *loadedModel, gr genRequest
 	var parsedLead string
 	turn.calls, parsedLead, turn.fromReasoning = settleCalls(lm.tmpl, turn.raw, tools, gr.think)
 	var err error
-	turn.lead, turn.rest, err = reconcileProse(turn.raw, len(turn.calls) > 0, parsedLead, streamed.String())
+	turn.lead, turn.rest, err = codec.ReconcileProse(turn.raw, len(turn.calls) > 0, parsedLead, streamed.String())
 	if err == nil && gr.callPostCheck && len(turn.calls) == 0 {
 		err = errNoForcedCall
 		if turn.finish == "length" {
@@ -97,11 +97,6 @@ func (s *server) runToolTurn(ctx context.Context, lm *loadedModel, gr genRequest
 		}
 	}
 	return turn, err
-}
-
-// reconcileProse is codec.ReconcileProse: a finished turn's prose, and what is still to send after what streamed.
-func reconcileProse(raw string, hasCalls bool, parsedLead, streamed string) (lead, rest string, err error) {
-	return codec.ReconcileProse(raw, hasCalls, parsedLead, streamed)
 }
 
 // settleCalls is codec.SettleCalls with th's routed calls and reasoning (none for a nil router).

@@ -32,7 +32,7 @@ func TestVision_userTextIsNotSpecialButTheImageBlockIs(t *testing.T) {
 
 	// The REAL function, not a copy of it beside the test: a test that re-implemented the splice would agree with
 	// itself about where the block goes.
-	out, err := spliceImageBlock(segs, block)
+	out, err := multimodal.SpliceImageBlock(segs, block)
 	if err != nil {
 		t.Fatalf("spliceImageBlock: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestVision_spliceUsesTheLastOccurrenceNotTheFirst(t *testing.T) {
 	tmpl := chat.Gemma4()
 	segs := tmpl.RenderSegments("", turns)
 
-	out, err := spliceImageBlock(segs, block)
+	out, err := multimodal.SpliceImageBlock(segs, block)
 	if err != nil {
 		t.Fatalf("spliceImageBlock: %v", err)
 	}

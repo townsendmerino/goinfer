@@ -16,7 +16,7 @@
 | 2 | Qwen3-Next (`G5`) | **landed**, resident on WebGPU, CUDA and Metal | matrix |
 | 3 | Laguna (`G6`) | **landed**, CPU path (softplus attention gating and per-layer RoPE scales were the new primitives, as scoped) | matrix |
 | 4 | gpt-oss residency (`G7`) | **landed**, resident on all three backends. The one real forward its gate demanded found three silent wiring defects that a 100%-green kernel suite could not see — the lesson `G8` now rests on | [`completed/queue-correctness.md`](completed/queue-correctness.md) |
-| 5 | DeepSeek V4-Flash (`G8`) | **PARKED — unvalidatable here.** 0.16 TB against 62 GB of host RAM; no configuration runs one whole forward on hardware this project has. The fp8 prerequisite is half lifted: e4m3 with blockwise f32 scales reads (`decoder/fp8.go`), V4's `ue8m0` scale format does not | a private queue |
+| 5 | DeepSeek V4-Flash (`G8`) | **PARKED — unvalidatable here.** 0.16 TB against 62 GB of host RAM; no configuration runs one whole forward on hardware this project has. The fp8 prerequisite is half lifted: e4m3 with blockwise f32 scales reads (`decoder/quant/fp8.go`), V4's `ue8m0` scale format does not | a private queue |
 
 From the watch list: **Ling 3.0 landed** as `bailing_hybrid` (v0.17.0) — KDA became the fifth
 sequence-mixing family, the exact thing the old text said would be "natural" and told us to
