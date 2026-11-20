@@ -1,0 +1,17 @@
+=== RUN   TestWG4iScratch_firstTokenMargins
+    zz_wg4i_scratch_test.go:67: int8int8 e2e-1..8: cos=0.995815 relL2=0.0953
+    zz_wg4i_scratch_test.go:68:   cpu top5 [31 1294 3442 4472 21122] logits 13.482 13.446 12.423 12.405 12.379 (margin 0.037)
+    zz_wg4i_scratch_test.go:69:   gpu top5 [1294 31 3442 21122 4472] logits 13.572 13.480 12.464 12.325 12.265 (margin 0.092)
+    zz_wg4i_scratch_test.go:67: int8int8 e2e-1..4: cos=0.996767 relL2=0.0816
+    zz_wg4i_scratch_test.go:68:   cpu top5 [3 5 2 9 48077] logits 16.031 15.343 14.874 13.639 13.260 (margin 0.688)
+    zz_wg4i_scratch_test.go:69:   gpu top5 [3 5 2 9 48077] logits 16.006 15.374 15.142 13.857 13.448 (margin 0.632)
+    zz_wg4i_scratch_test.go:67: int4 e2e-1..8: cos=0.997585 relL2=0.0727
+    zz_wg4i_scratch_test.go:68:   cpu top5 [31 21122 220 608 93] logits 12.532 11.898 10.949 10.925 10.906 (margin 0.634)
+    zz_wg4i_scratch_test.go:69:   gpu top5 [31 21122 220 608 93] logits 12.345 11.891 11.165 11.052 10.930 (margin 0.453)
+    zz_wg4i_scratch_test.go:67: int4 e2e-1..4: cos=0.996430 relL2=0.0857
+    zz_wg4i_scratch_test.go:68:   cpu top5 [3 2 5 62 9] logits 16.017 14.391 14.295 12.388 12.120 (margin 1.626)
+    zz_wg4i_scratch_test.go:69:   gpu top5 [3 5 2 62 9] logits 15.949 14.272 14.154 12.422 12.104 (margin 1.677)
+--- PASS: TestWG4iScratch_firstTokenMargins (11.17s)
+PASS
+ledger: 10 Context(s) closed in this run
+ok  	github.com/townsendmerino/goinfer/backend/webgpu	11.259s

@@ -1,0 +1,43 @@
+start 2026-11-20 10:54:52 PST
+
+[1m== provenance ==[0m
+  repo        018cbe74c
+  date (UTC)  2026-11-20T18:54:53Z
+  host        Linux x86_64
+  backend     none
+  models      /home/francist/models
+  webgpu      adapter present (backend=vulkan)
+
+[1m== 0. clean GPU ==[0m
+  [33mSKIP[0m  clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)
+
+[1m== 1. seam (runs anywhere — no GPU, no model download) ==[0m
+  [32mPASS[0m  serve↔decoder↔backend seam: residency is actually reached, backend names validate
+
+[1m== 2-4. backend suites ==[0m
+  [33mSKIP[0m  no GPU backend detected on this host — only the seam gate ran
+
+[1m== W. WebGPU suite + resident parity (adapter-detected, -tags 'gpu goinfer_testhooks') ==[0m
+   ... webgpu-suite: 1m0s elapsed, 95 tests finished, last: TestGEMV_microbench | in flight: TestW4A8_parity_and_bandwidth (6s)
+  [31mFAIL[0m  webgpu suite (backend=vulkan)
+      --- FAIL: TestTowerGolden_webgpu (1.21s)
+
+[1m== 5. repo hygiene (derived from .github/workflows/ci.yml) ==[0m
+  [32mPASS[0m  VERDICT: PASS — citation lint: every citation resolves
+  [33mSKIP[0m  23 darwin-only CI hygiene step(s) — wrong platform for this host
+  [32mPASS[0m  14 CI hygiene check(s) reproduced locally, derived from ci.yml
+
+[1m== verdict ==[0m
+  check groups: 5 declared -> 5 reported   |   verdicts within them: 3 pass, 3 skip, 1 fail
+
+  [33mSkipped — a skip is not a pass; this gate does NOT cover:[0m
+    - SKIPPED: clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)
+    - SKIPPED: no GPU backend detected on this host — only the seam gate ran
+    - SKIPPED: 23 darwin-only CI hygiene step(s) — wrong platform for this host
+
+  [31mFAIL[0m — none on Linux @ 018cbe74c. Do not tag.
+
+  record: /home/francist/goinfer-work/wg4intel-logs/gate-gpu/none-20261120T185755Z-018cbe74.json (commit it with the release; `gate gpu-records` reads it)
+exit status 1
+exit 1
+end 2026-11-20 10:57:55 PST

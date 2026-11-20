@@ -1,0 +1,17 @@
+goinfer hardware report. Nothing here is sent anywhere: paste it into a bug report if you want to.
+
+goinfer: v0.24.2-0.20261120185135-018cbe74c0f2 (018cbe74), go1.27.2, linux/amd64
+os: Ubuntu 26.04.1 LTS, kernel 7.3.3-2-t2-resolute
+cpu: Intel(R) Core(TM) i5-8257U CPU @ 1.40GHz; 8 logical CPUs
+cpu kernels (amd64): detected [avx2 f16c popcnt]; in use [avx2 f16c popcnt]; forced by build tags none
+memory: 15.5 GiB host RAM, 11.4 GiB available
+backends linked into this binary: cpu, webgpu
+  webgpu: adapter: Intel(R) Iris(R) Plus Graphics 645 (CFL GT3)
+  webgpu: vendor: Intel open-source Mesa driver, architecture: unknown
+  webgpu: graphics API: vulkan; adapter type: integrated-gpu
+  webgpu: limits: max buffer 2.0 GiB, max storage binding 2.0 GiB, workgroup memory 48 KiB, 1024 invocations per workgroup
+  webgpu: integer dot-product (dot4I8Packed): yes
+  webgpu: memory and driver version: not reported by WebGPU
+self-tests (each runs the kernels this process would use against a reference on a small fixed input):
+  cpu pass (2.0 ms)
+  webgpu pass (2332.1 ms), worst cosine 0.99988 (floor 0.995), worst relative L2 0.0155 (ceiling 0.10) over 4 fixtures

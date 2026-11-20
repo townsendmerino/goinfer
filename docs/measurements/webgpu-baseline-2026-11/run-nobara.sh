@@ -68,6 +68,42 @@ for m in 0.5B:$P05 1.5B:$P15 7B:$P7; do k=${m%%:*}; p=${m#*:}
 done
 [ $fok = 0 ] || { echo "== a fit check refused or resolved the wrong path: nothing timed; exit 75 $(ts)"; exit 75; }
 echo "== fit checks done $(ts)"
+
+# Longest context that fits (amendment 2026-11-20, Francis via goinfer-notes #14): descriptive, no gate, untimed. Per model and
+# backend, each server's own banner: (1) its default plan (no -ctx, default KV slots); (2) one conversation (-kv-sessions 1) at
+# the first rung of a ladder from the model's window (32768) down that loads resident. WebGPU ignores a -ctx above its backend
+# cap, so its banner names the cap it used.
+ctxfit() { # ctxfit <name> <want> <serve> <args...>: writes the banner lines to $L/ctxfit-<name>.log and one row to ctxfit.tsv
+  local name=$1 want=$2 bin=$3; shift 3
+  local log=$L/ctxfit-$name.log
+  "$bin" "$@" -addr 127.0.0.1:18197 > "$log" 2>&1 &
+  local pid=$!
+  for _ in $(seq 1 600); do grep -q 'goinfer serving on' "$log" && break; kill -0 $pid 2>/dev/null || break; sleep 1; done
+  kill $pid 2>/dev/null; wait $pid 2>/dev/null
+  local dp kv fitl slots
+  dp=$(grep -m1 'decode path:' "$log" | sed 's/^ *decode path: //')
+  kv=$(grep -m1 'KV plan:' "$log" | sed 's/^ *//')
+  fitl=$(grep -m1 -E ' fit:|resident KV slots' "$log" | sed 's/^ *//')
+  if grep -q 'goinfer serving on' "$log" && [[ "$dp" == "$want"* ]]; then
+    printf '%s\tok\t%s\t%s\t%s\t%s\n' "$name" "$*" "$dp" "$kv" "$fitl" >> "$OUT/ctxfit.tsv"; echo "ctxfit $name: ok | $dp | $kv | $fitl"; return 0
+  fi
+  printf '%s\tno\t%s\t%s\t%s\t%s\n' "$name" "$*" "$dp" "$(grep -iE -m2 'refus|declin|not fit|error|failed' "$log" | tr '\n' ' ')" "$fitl" >> "$OUT/ctxfit.tsv"
+  echo "ctxfit $name: no | $dp | $(grep -iE -m1 'refus|declin|not fit|error|failed' "$log")"; return 1
+}
+if [ ! -s "$OUT/ctxfit.tsv" ]; then
+  echo "== longest-context probes $(ts) $(state)"
+  for m in 0.5B:$P05 1.5B:$P15 7B:$P7; do k=${m%%:*}; p=${m#*:}
+    ctxfit cuda-$k-default cuda-resident "$SC" -model bench=$p -backend cuda -quant int4
+    ctxfit webgpu-$k-default webgpu:vulkan-resident "$SW" -model bench=$p -backend webgpu -quant int4
+    for c in 32768 28672 24576 20480 16384 12288 8192 4096; do
+      ctxfit cuda-$k-one-$c cuda-resident "$SC" -model bench=$p -backend cuda -quant int4 -kv-sessions 1 -ctx $c -require-backend && break
+    done
+    for c in 32768 16384 12288 8192 4096; do
+      ctxfit webgpu-$k-one-$c webgpu:vulkan-resident "$SW" -model bench=$p -backend webgpu -quant int4 -kv-sessions 1 -ctx $c -require-backend && break
+    done
+  done
+  echo "== longest-context probes done $(ts)"
+fi
 [ "${FIT_ONLY:-}" = 1 ] && exit 0
 
 rc_all=0
