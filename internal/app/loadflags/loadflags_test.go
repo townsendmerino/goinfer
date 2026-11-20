@@ -310,3 +310,27 @@ func TestDefaultOn_flagOptsOut(t *testing.T) {
 		})
 	}
 }
+
+// TestEmbedInt4_defaultIsMarked: an --embed-int4 left at its default reaches the load as EmbedInt4Default, so the model's
+// size can keep the int8 head (decoder.EmbedInt4For); the flag given either way, or a serve per-model key, is a choice.
+func TestEmbedInt4_defaultIsMarked(t *testing.T) {
+	on, off := true, false
+	for _, c := range []struct {
+		args []string
+		ov   *bool
+		want bool
+	}{
+		{nil, nil, true},
+		{[]string{"--embed-int4"}, nil, false},
+		{[]string{"--embed-int4=false"}, nil, false},
+		{nil, &on, false},
+		{nil, &off, false},
+	} {
+		for _, app := range []App{Chat, Serve} {
+			_, f := parse(t, app, c.args...)
+			if got := f.OptionsWith(Overrides{EmbedInt4: c.ov}).EmbedInt4Default; got != c.want {
+				t.Errorf("%v ov %v (app %d): EmbedInt4Default %v, want %v", c.args, c.ov, app, got, c.want)
+			}
+		}
+	}
+}

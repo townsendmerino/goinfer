@@ -469,8 +469,9 @@ This page used to promise an automatic fallback to the GGUF path; that fallback 
 ### Quantization and the CPU kernels
 
 **The default is `int4`.** `--quant` defaults to `int4` in chat, serve and `fit`. That is W4A8: int4
-weights, int8 activations. The embedding and LM head are relaxed to int4 too by default
-(`--embed-int4`, default ON since 2026-09-28 — pass `--embed-int4=false` for the W8A8 pin). The
+weights, int8 activations. The embedding and LM head are relaxed to int4 too by default on a model under 1B parameters
+(`--embed-int4`; from 1B up the default keeps them at int8, `decoder.EmbedInt4For` — pass `--embed-int4=false` for the W8A8
+pin at any size). The
 alternatives:
 - `int8int8` (W8A8), where accuracy matters more than RAM;
 - `int8` (weight-only);
