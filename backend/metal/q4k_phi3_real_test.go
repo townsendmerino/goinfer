@@ -3,15 +3,18 @@
 package metal
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/fidelity"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -123,4 +126,234 @@ func g3ModelQ4K(t *testing.T, gguf, label string, twoLoads bool, logf func(strin
 	pass, agree, n = g3Run(t, tk, tmpl, r, mg, mc, logf)
 	logf("%s: %d/%d prompts pass the free-run rule; teacher-forced agreement %d/%d = %.2f%%", label, pass, len(g3Prompts), agree, n, 100*float64(agree)/float64(n))
 	return pass, agree, n
+}
+
+// op6mpPhi3 loads the registered Phi-3 asset (GOINFER_PHI3_GGUF) at --quant q4k for the CPU and builds Metal's resident from it
+// with ctx positions, as g3ModelQ4K does: one load is both the CPU reference and the q4k lane, which is how Phi-3 fits a 16 GB
+// Mac. A load a guard declines is a SKIP naming the guard, never bypassed.
+func op6mpPhi3(t *testing.T, ctx int) (*decoder.Model, *metalResident, string) {
+	t.Helper()
+	path := decoder.AssetPathForTest(t, "GOINFER_PHI3_GGUF")
+	if strings.HasPrefix(path, "/Volumes/") || strings.HasPrefix(path, "/srv/models") {
+		t.Fatalf("%s is on the archive, not the bench set (CLAUDE.md)", path)
+	}
+	m, err := decoder.Load(path, decoder.Options{Quant: "q4k", ResidentContext: ctx, ResidentKVSlots: 1})
+	if err != nil && strings.Contains(err.Error(), "NOT loaded") {
+		t.Skipf("the fit guard declines this load now (never bypassed here): %v", err)
+	}
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	t.Cleanup(func() { m.Close() })
+	if why := residentMemoryDecline(m); why != "" {
+		t.Skipf("Metal's memory guard declines this load now: %s", why)
+	}
+	r, err := buildResident(m)
+	if err != nil {
+		t.Fatalf("build resident: %v", err)
+	}
+	t.Cleanup(func() { r.Close() })
+	a := &metalResident{r: r, hidden: r.H}
+	if !r.q4kLane || !r.prefillOK || !a.stepPrefill() {
+		t.Fatalf("not the q4k lane with the pass and the step (lane %v, pass %v, step %v)", r.q4kLane, r.prefillOK, a.stepPrefill())
+	}
+	return m, a, path
+}
+
+// TestOP6MP_q4kPassSpeed times the q4k lane's MMA pass against the route a Phi-3 prompt took before the lane was admitted to it:
+// one load of Phi-3 mini 4k q4, the step (prefillByStep, decode rows batchMaxSeqs at a time) against PrefillLast (which must run
+// the pass: its attention launches are counted once, untimed), at P = 512 and 3900 tokens from position 0. Per P, one untimed
+// call of each, then 5 pairs in alternating order (A B, B A, ...). Each arm is bracketed by voidWindow; a void pair is re-run, at
+// most 4 a P, and listed. It prints every pair and the median step ÷ pass per P; the registration grades them. Under the
+// exclusive lock, about 25 minutes (the step's 3900-token call is about 80 s):
+//
+//	GOINFER_OP6MP_SPEED=1 go test -count=1 -tags goinfer_testhooks -timeout 60m -run '^TestOP6MP_q4kPassSpeed$' -v ./backend/metal/
+func TestOP6MP_q4kPassSpeed(t *testing.T) {
+	if os.Getenv("GOINFER_OP6MP_SPEED") == "" {
+		t.Skip("set GOINFER_OP6MP_SPEED=1 (Phi-3 mini, about 25 minutes, under the exclusive timing lock)")
+	}
+	m, a, path := op6mpPhi3(t, 4096)
+	ctx := context.Background()
+	_, _, _, _, _, _, vocab := m.Dims()
+	t0 := time.Now()
+	for _, P := range []int{512, 3900} {
+		embs := make([][]float32, P)
+		for i := range embs {
+			embs[i] = m.EmbedResidentForTest((i*2654435761 + 1) % (vocab - 1))
+		}
+		step := func() time.Duration {
+			s := time.Now()
+			if _, err := a.prefillByStep(ctx, embs, 0); err != nil {
+				t.Fatalf("P %d step: %v", P, err)
+			}
+			return time.Since(s)
+		}
+		pass := func() time.Duration {
+			s := time.Now()
+			if _, err := a.PrefillLast(ctx, embs, 0); err != nil {
+				t.Fatalf("P %d pass: %v", P, err)
+			}
+			return time.Since(s)
+		}
+		prefillAttnRanForTest = map[string]int{}
+		pass()
+		ran := prefillAttnRanForTest
+		prefillAttnRanForTest = nil
+		if len(ran) == 0 {
+			t.Fatalf("P %d: PrefillLast did not run the pass", P)
+		}
+		step()
+		var ratios []float64
+		voids := 0
+		for p := 0; len(ratios) < 5; p++ {
+			var ds, dp time.Duration
+			var oks, okp bool
+			var ns, np string
+			arm := func(f func() time.Duration) (time.Duration, bool, string) {
+				end := voidWindow(t)
+				d := f()
+				ok, note := end()
+				return d, ok, note
+			}
+			if len(ratios)%2 == 0 {
+				ds, oks, ns = arm(step)
+				dp, okp, np = arm(pass)
+			} else {
+				dp, okp, np = arm(pass)
+				ds, oks, ns = arm(step)
+			}
+			if !oks || !okp {
+				voids++
+				fmt.Fprintf(os.Stderr, "[op6mp-speed %5.0fs] P %d pair %d VOID (step: %s; pass: %s)\n", time.Since(t0).Seconds(), P, p+1, ns, np)
+				if voids > 4 {
+					t.Fatalf("P %d: %d void pairs; the box is too busy for this cell", P, voids)
+				}
+				continue
+			}
+			r := ds.Seconds() / dp.Seconds()
+			ratios = append(ratios, r)
+			fmt.Fprintf(os.Stderr, "[op6mp-speed %5.0fs] P %d pair %d (%s first): step %.2f s, pass %.2f s, step/pass %.3f (step: %s; pass: %s)\n",
+				time.Since(t0).Seconds(), P, len(ratios), map[bool]string{true: "step", false: "pass"}[len(ratios)%2 == 1], ds.Seconds(), dp.Seconds(), r, ns, np)
+		}
+		sorted := slices.Clone(ratios)
+		slices.Sort(sorted)
+		above := 0
+		for _, r := range ratios {
+			if r > 1 {
+				above++
+			}
+		}
+		fmt.Fprintf(os.Stderr, "[op6mp-speed] %s P %d: median step/pass %.3f over %d pairs, %d above 1, %d void; pairs %v\n",
+			filepath.Base(path), P, sorted[len(sorted)/2], len(ratios), above, voids, ratios)
+	}
+}
+
+// TestOP6MP_q4kPassFidelity is the q4k pass's fidelity gate on Phi-3 mini 4k q4: the pass (candidate, PrefillLast) and the step
+// (exact, prefillByStep, bit-identical to the sequential path) are each scored against the CPU at q4k on the same load (the
+// lane's own quant, so the arms differ from it by arithmetic only), over the prefill gate's prose prompts at K = 512 and 2048: the
+// seed position from the prefill and 32 positions teacher-forced on the CPU's greedy tokens. fidelity.NonInferior with
+// AgreeMarginPts 1, KLMargin 0.10, alpha 0.05. Any prompt the pass declines (its f16 overflow check) fails the gate. Not timed
+// (the shared lock); the positions log goes to $OP6MP_POSITIONS_LOG.
+//
+//	GOINFER_OP6MP_FIDELITY=1 go test -count=1 -tags goinfer_testhooks -timeout 60m -run '^TestOP6MP_q4kPassFidelity$' -v ./backend/metal/
+func TestOP6MP_q4kPassFidelity(t *testing.T) {
+	if os.Getenv("GOINFER_OP6MP_FIDELITY") == "" {
+		t.Skip("set GOINFER_OP6MP_FIDELITY=1 (Phi-3 mini on Metal and the CPU, about 20 minutes)")
+	}
+	const cont = 32
+	m, a, path := op6mpPhi3(t, 2048+cont+8)
+	tk, err := tokenizer.LoadGGUF(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 55*time.Minute)
+	defer cancel()
+	t.Setenv("GOINFER_CPU_FAST_ATTENTION", "0") // the CPU reference's exact attention (PrefillLogitsForTest)
+	ref := func(ids []int) (logits [][]float32, toks []int) {
+		c := m.NewCache(len(ids) + cont)
+		lg, err := m.PrefillLogitsForTest(ctx, ids, c)
+		if err != nil {
+			t.Fatalf("CPU prefill: %v", err)
+		}
+		logits = append(logits, slices.Clone(lg))
+		for range cont {
+			toks = append(toks, argmaxF(logits[len(logits)-1]))
+			if lg, err = m.ForwardForTest(toks[len(toks)-1], c); err != nil {
+				t.Fatal(err)
+			}
+			logits = append(logits, slices.Clone(lg))
+		}
+		return logits, toks
+	}
+	arm := func(ids, toks []int, step bool) [][]float32 {
+		embs := make([][]float32, len(ids))
+		for i, id := range ids {
+			embs[i] = m.EmbedResidentForTest(id)
+		}
+		a.Reset()
+		var seed []float32
+		var err error
+		if step {
+			seed, err = a.prefillByStep(ctx, embs, 0)
+		} else {
+			seed, err = a.PrefillLast(ctx, embs, 0)
+		}
+		if err != nil {
+			t.Fatalf("prefill (step %v): %v", step, err)
+		}
+		logits := [][]float32{slices.Clone(seed)}
+		for j, tok := range toks[:cont-1] {
+			lg, err := a.Forward(m.EmbedResidentForTest(tok), len(ids)+j)
+			if err != nil {
+				t.Fatal(err)
+			}
+			logits = append(logits, slices.Clone(lg))
+		}
+		return logits
+	}
+	score := func(ref, got [][]float32) []fidelity.Position {
+		var ps []fidelity.Position
+		for i := range got {
+			agree, _, hard := decoder.NearTieArgmaxForTest(ref[i], got[i])
+			ps = append(ps, fidelity.Position{Agree: argmaxF(ref[i]) == argmaxF(got[i]), HardFlip: !agree && hard, KL: decoder.KLDivergenceForTest(ref[i], got[i])})
+		}
+		return ps
+	}
+	_, files := decoder.PrefillGatePromptSet()
+	var cells []fidelity.Cell
+	var allIDs [][]int
+	start := time.Now()
+	for _, K := range []int{512, 2048} {
+		cell := fidelity.Cell{Name: fmt.Sprintf("phi3-q4k/K=%d", K)}
+		for fi, f := range files {
+			ids := decoder.PrefillGateProseIDsForTest(t, tk, f, K)[:K]
+			allIDs = append(allIDs, ids)
+			rl, toks := ref(ids)
+			p := fidelity.Prompt{ID: fmt.Sprintf("%s/%d", cell.Name, fi), Candidate: score(rl, arm(ids, toks, false)), Exact: score(rl, arm(ids, toks, true))}
+			cell.Prompts = append(cell.Prompts, p)
+			fmt.Fprintf(os.Stderr, "[op6mp-fidelity %5.0fs] K=%d prompt %d/%d done\n", time.Since(start).Seconds(), K, fi+1, len(files))
+		}
+		cells = append(cells, cell)
+	}
+	v, err := fidelity.NonInferior(cells, fidelity.Criteria{AgreeMarginPts: 1, KLMargin: 0.10, Alpha: 0.05})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lp := os.Getenv("OP6MP_POSITIONS_LOG"); lp != "" {
+		if f, err := os.Create(lp); err == nil {
+			_ = fidelity.WritePositions(f, cells)
+			f.Close()
+		}
+	}
+	for _, c := range cells {
+		s := v.PerCell[c.Name]
+		fmt.Fprintf(os.Stderr, "[op6mp-fidelity] %s: agree pass %.2f%% / step %.2f%%, mean KL pass %.4g / step %.4g, hard flips %d / %d\n",
+			c.Name, s.AgreeCandPct, s.AgreeExactPct, s.MeanKLCand, s.MeanKLExact, s.FlipsCand, s.FlipsExact)
+	}
+	p := v.Pooled
+	fmt.Fprintf(os.Stderr, "[op6mp-fidelity] pooled over %d prompts, %d positions (prompt set %s): agreement diff %+.2f pts (LCB %+.2f), KL ratio %.3f (UCB %.3f), hard flips %d vs %d -> pass %v %v\n",
+		p.Prompts, p.Positions, fidelity.PromptSetHash(allIDs), p.AgreeDiffPts, p.AgreeDiffLCB, p.KLRatio, p.KLRatioUCB, p.FlipsCand, p.FlipsExact, v.Pass, v.Reasons)
+	if !v.Pass {
+		t.Errorf("OP6-MP fidelity FAIL: %v", v.Reasons)
+	}
 }
