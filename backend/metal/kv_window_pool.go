@@ -33,7 +33,7 @@ var windowConditions = []windowCondition{
 		return !ok
 	}},
 	{"no-recurrent", func(m *decoder.Model) bool {
-		_, nL, _, _, _, _, _ := m.Dims()
+		nL := m.Shape().Layers
 		for l := range nL {
 			if len(m.StateSpecs(l)) > 0 {
 				return false
@@ -58,10 +58,11 @@ var windowConditions = []windowCondition{
 		return !m.ExactPrefill() && metalFastPrefillEnabled(fast, batched)
 	}},
 	{"aligned", func(m *decoder.Model) bool {
-		h, _, nH, _, hd, inter, _ := m.Dims()
+		shape := m.Shape()
+		h, nH, hd, inter := shape.Hidden, shape.Heads, shape.HeadDim, shape.Inter
 		return h%32 == 0 && (nH*hd)%32 == 0 && inter%32 == 0
 	}},
-	{"head-dim", func(m *decoder.Model) bool { _, _, _, _, hd, _, _ := m.Dims(); return hd <= 256 }},
+	{"head-dim", func(m *decoder.Model) bool { return m.Shape().HeadDim <= 256 }},
 }
 
 // kvWindowPoolOffForTest keeps every window group the context's size (the unbounded window pool).

@@ -132,7 +132,7 @@ var stateSpecsOf = (*decoder.Model).StateSpecs
 
 // metalRecurrentSlotBytes is one KV slot's recurrent state on m, from the list its layers allocate from.
 func metalRecurrentSlotBytes(m *decoder.Model) int64 {
-	_, nL, _, _, _, _, _ := m.Dims()
+	nL := m.Shape().Layers
 	var n int64
 	for l := range nL {
 		for _, s := range stateSpecsOf(m, l) {

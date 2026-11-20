@@ -20,7 +20,7 @@ func (m *Model) metalDerivedDenseBytes() int64 {
 		return 0
 	}
 	w := m.w
-	_, _, nH, _, _, _, _ := m.Dims()
+	nH := m.Shape().Heads
 	_, _, _, _, _, attnGate, dnetOK := m.BackendView().Qwen35Params()
 	nE, _, isMoE := m.moeGeometry()
 	nonGated := false
