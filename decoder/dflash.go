@@ -441,9 +441,9 @@ func loadDFlashDrafter(dir string, streamed bool) (*DFlashDrafter, error) {
 	if c.DFlash.ConvKernelSize > 0 || c.DFlash.SelectorRank > 0 {
 		return nil, fmt.Errorf("dflash: %s is a DFlash 2 checkpoint (conv_kernel_size=%d, "+
 			"selector_rank=%d) and this loader implements v1 — it would load and silently ignore "+
-			"the dynamic-conv and candidate-selector weights (23.8%% of the file on the released "+
-			"Qwen3.8-27B pair), giving a drafter that verifies losslessly but drafts worse than v1. "+
-			"DFlash 2 support is queued as P15", dir, c.DFlash.ConvKernelSize, c.DFlash.SelectorRank)
+			"the dynamic-conv and candidate-selector weights, giving a drafter that verifies losslessly "+
+			"but drafts worse than v1. DFlash 2 is not supported yet (docs/spec/08-dspark-dflash.md, "+
+			"section \"DFlash 2\")", dir, c.DFlash.ConvKernelSize, c.DFlash.SelectorRank)
 	}
 	// speculators dialect: the layer geometry lives one level down. Decode it into
 	// the SAME struct so every field below is read once, from one place, whichever
