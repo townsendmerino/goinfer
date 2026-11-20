@@ -17,6 +17,10 @@ What the bar does not separate: arm B forces split-KV at every depth (`GOINFER_S
 the never class on bytes per key, would put Phi-3 under a depth threshold (the conservative default is 3072 keys), so the 128 cost
 would not reach a re-keyed build at 128. No depth between 128 and 3900 was measured, so this run does not place that threshold.
 
+**Decision (Francis, 2026-11-19): leave it.** Split-KV stays off for Phi-3 at every depth, and no crossover run is booked. The
+3900 gain stands alone, its threshold is unmeasured, and the head-dim-96 flash-decode lane (review finding 1(b)) goes after the same
+depth cost with more headroom.
+
 ## Fidelity: bit-identical
 
 The scratch test ran arm A, then arm B, in one process with the delivered KV checked as f16. Arm counters: A made 0 split-KV launches, B made
