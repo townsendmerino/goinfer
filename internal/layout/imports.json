@@ -400,6 +400,7 @@
       "decoder",
       "decoder/fit",
       "internal/config",
+      "internal/runtime/mem",
       "internal/runtime/modelload",
       "internal/runtime/prequant"
     ],
