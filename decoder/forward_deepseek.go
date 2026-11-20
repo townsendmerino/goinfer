@@ -2,6 +2,8 @@ package decoder
 
 import (
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 )
 
 // DeepSeek-V2/V3 (deepseek_v2 / deepseek_v3): Multi-head Latent Attention over a DeepSeekMoE FFN. K/V are compressed to a shared
@@ -76,7 +78,7 @@ func (m *Model) mlaAttentionNaive(op *mlaOpParams, n []float32, lw *LayerWeights
 		lat := cache.Latent(layer)[j*latDim : (j+1)*latDim]
 		cn := append([]float32(nil), lat[:rank]...)
 		rmsNorm(cn, w.kvALayernorm, 1, rank, eps, false)
-		kvUp := matvec(w.kvBProj, kvUpDim, rank, cn) // per head: [k_nope | v]
+		kvUp := hybridattn.Matvec(w.kvBProj, kvUpDim, rank, cn) // per head: [k_nope | v]
 		copy(krj, lat[rank:latDim])
 		mlaRope(krj, 1, qkRope, j, invFreq, ms, op.Interleave) // key rope at its own position
 		for hh := range H {
@@ -123,7 +125,7 @@ func (m *Model) mlaAttentionNaive(op *mlaOpParams, n []float32, lw *LayerWeights
 	// 5.5. Bailing Hybrid's optional MLA output gate (Laguna-shaped, sigmoid-activated — see
 	// applySigmoidGateRow's own comment). nil for every DeepSeek family.
 	if w.gProj != nil {
-		gate := matvec(w.gProj, len(w.gProj)/hidden, hidden, n)
+		gate := hybridattn.Matvec(w.gProj, len(w.gProj)/hidden, hidden, n)
 		applySigmoidGateRow(gate, ctx, op.HeadWise, H, vHead)
 	}
 
@@ -265,7 +267,7 @@ func (m *Model) mlaAttentionAbsorb(op *mlaOpParams, n []float32, lw *LayerWeight
 
 	// 6.5. Bailing Hybrid's optional MLA output gate (see mlaAttentionNaive's own comment).
 	if w.gProj != nil {
-		gate := matvec(w.gProj, len(w.gProj)/hidden, hidden, n)
+		gate := hybridattn.Matvec(w.gProj, len(w.gProj)/hidden, hidden, n)
 		applySigmoidGateRow(gate, ctx, op.HeadWise, H, vHead)
 	}
 

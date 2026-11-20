@@ -123,8 +123,8 @@ func deltaNetCoreN(core, mixed, bt, at, z []float32, K int, w *deltaNetWeights, 
 				out[c] = silu(s)
 			}
 			for headK := range nk {
-				l2normScaledInto(qAll[i*keyDim+headK*hk:i*keyDim+(headK+1)*hk], out[headK*hk:(headK+1)*hk], qScale)
-				l2normScaledInto(kAll[i*keyDim+headK*hk:i*keyDim+(headK+1)*hk], out[keyDim+headK*hk:keyDim+(headK+1)*hk], 1)
+				hybridattn.L2NormScaledInto(qAll[i*keyDim+headK*hk:i*keyDim+(headK+1)*hk], out[headK*hk:(headK+1)*hk], qScale)
+				hybridattn.L2NormScaledInto(kAll[i*keyDim+headK*hk:i*keyDim+(headK+1)*hk], out[keyDim+headK*hk:keyDim+(headK+1)*hk], 1)
 			}
 		}
 	})
@@ -141,9 +141,9 @@ func deltaNetCoreN(core, mixed, bt, at, z []float32, K int, w *deltaNetWeights, 
 				q := qAll[i*keyDim+headK*hk : i*keyDim+(headK+1)*hk]
 				k := kAll[i*keyDim+headK*hk : i*keyDim+(headK+1)*hk]
 				v := conv[i*convDim+2*keyDim+headV*hv : i*convDim+2*keyDim+headV*hv+hv]
-				g := w.negExpA[headV] * softplusf(at[i*nv+headV]+w.dtBias[headV]) // log-decay (negExpA = −exp(A_log))
+				g := w.negExpA[headV] * hybridattn.Softplusf(at[i*nv+headV]+w.dtBias[headV]) // log-decay (negExpA = −exp(A_log))
 				gt := float32(math.Exp(float64(g)))
-				beta := sigmoidf(bt[i*nv+headV])
+				beta := hybridattn.Sigmoidf(bt[i*nv+headV])
 				if p.NegEigval {
 					beta *= 2
 				}

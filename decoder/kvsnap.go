@@ -127,7 +127,7 @@ func (s *kvSnapStore) best(root kvmgr.Root, prompt []int) (*kvSnap, int) {
 		if x.root != root {
 			continue
 		}
-		if n := commonPrefixLen(x.ids, prompt); n > lcp {
+		if n := kvmgr.CommonPrefixLen(x.ids, prompt); n > lcp {
 			out, lcp = x, n
 		}
 	}
@@ -151,7 +151,7 @@ func (s *kvSnapStore) candidates(root kvmgr.Root, prompt []int) []snapMatch {
 		if x.root != root {
 			continue
 		}
-		if n := commonPrefixLen(x.ids, prompt); n >= kvmgr.BlockRows {
+		if n := kvmgr.CommonPrefixLen(x.ids, prompt); n >= kvmgr.BlockRows {
 			out = append(out, snapMatch{x, n})
 		}
 	}
@@ -171,7 +171,7 @@ func (s *kvSnapStore) covering(root kvmgr.Root, prompt []int, b, slack int) *kvS
 		if x.root != root {
 			continue
 		}
-		lcp := commonPrefixLen(x.ids, prompt)
+		lcp := kvmgr.CommonPrefixLen(x.ids, prompt)
 		if lcp < min(x.h.Rows(), b)-slack {
 			continue
 		}

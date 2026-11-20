@@ -8,6 +8,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 )
 
 // TestGatedDeltaNet_parity checks goinfer's Gated DeltaNet primitive op-for-op
@@ -50,7 +52,7 @@ func TestGatedDeltaNet_parity(t *testing.T) {
 		inProjA:   g.W["in_proj_a"],
 		convW:     g.W["conv1d_weight"],
 		dtBias:    g.W["dt_bias"],
-		negExpA:   negExpAFromLog(g.W["A_log"]),
+		negExpA:   hybridattn.NegExpAFromLog(g.W["A_log"]),
 		normW:     g.W["norm_weight"],
 		outProj:   linalg.WrapF32(g.W["out_proj"], hidden, valueDim),
 	}
@@ -139,7 +141,7 @@ func TestGatedDeltaNetStep_nilBackendNonF32(t *testing.T) {
 	inProjA := fill(nv*hidden, 0.9)
 	convW := fill(convDim*convK, 0.5)
 	dtBias := fill(nv, 0.2)
-	negExpA := negExpAFromLog(fill(nv, 0.3))
+	negExpA := hybridattn.NegExpAFromLog(fill(nv, 0.3))
 	normW := fill(hv, 1.5)
 
 	cases := []struct {
@@ -187,8 +189,8 @@ func TestGatedDeltaNetStep_nilBackendNonF32(t *testing.T) {
 
 				wantSt.hq.prepare(nil, &w.inProjQKV, h, 1)
 				mixed := matvecWMPre(nil, &w.inProjQKV, &wantSt.hq, h)
-				bt := matvec(w.inProjB, nv, hidden, h)
-				at := matvec(w.inProjA, nv, hidden, h)
+				bt := hybridattn.Matvec(w.inProjB, nv, hidden, h)
+				at := hybridattn.Matvec(w.inProjA, nv, hidden, h)
 				z := matvecWMPre(nil, &w.inProjZ, &wantSt.hq, h)
 				core := make([]float32, valueDim)
 				deltaNetCore(core, mixed, bt, at, z, w, p, eps, wantSt)
