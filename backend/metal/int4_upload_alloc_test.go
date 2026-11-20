@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/backend/metal/kernels"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
@@ -29,7 +30,7 @@ func stagedW4A8(wms ...*linalg.WeightMat) (words []uint32, scales []uint16) {
 			for k := range K {
 				row[k] = float32(q8[n*K+k]) * sc[n]
 			}
-			wd, sd := packW4A8Row(row)
+			wd, sd := kernels.PackW4A8Row(row)
 			words = append(words, wd...)
 			for _, s := range sd {
 				scales = append(scales, f32ToF16(s))
