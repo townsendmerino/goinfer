@@ -692,7 +692,6 @@ func TestBanner_kvI8CostIsCUDAs(t *testing.T) {
 // account, decoder.Model.ResidentKVPool), not one conversation's cap, and the room left for a prefill is the budget less all of it.
 // A one-slot resident and the CPU path keep the one-cap figure.
 func TestBanner_fitLinePricesEveryResidentSlot(t *testing.T) {
-	const gib = float64(1 << 30)
 	f := bannerFacts{hasTemplate: true, resident: true, kvSlots: 2, ctxWindow: 2048, maxPositions: 4096, fitKnown: true, fitCtx: 2048,
 		fitKVBytes: 792 << 20, fitWeightBytes: 2680 << 20, fitBudgetBytes: 7884 << 20,
 		kvPoolDetail: decoder.KVPoolDetail{Positions: 4096, Guaranteed: 2048, BlockRows: 64, Precision: "f16", Bytes: 1560 << 20}}
