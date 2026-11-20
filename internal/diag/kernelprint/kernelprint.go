@@ -629,6 +629,46 @@ var suite = []kernel{
 		}
 	}},
 
+	{"linalg.WeightMat(q5k).MatmulBTInto", func(s *sink, g *gen) {
+		q5k := ggmlTypeByName("Q5_K")
+		for _, thr := range thresholds {
+			for _, K := range []int{256, 512, 768, 2304} {
+				for _, M := range mLarge {
+					for _, N := range []int{1, 2, 3, 4, 5, 8, 9, 17} {
+						wm, err := linalg.WrapQ5K(g.blocks(q5k, N*K/256), N, K)
+						if err != nil {
+							panic(err)
+						}
+						a, dst := g.vec(M*K, 1), make([]float32, M*N)
+						wm.MatmulBTInto(workspace(thr, 0), a, dst, M)
+						s.tag("mm", thr, M, K, N)
+						s.f32(dst)
+					}
+				}
+			}
+		}
+	}},
+
+	{"linalg.WeightMat(q6k).MatmulBTInto", func(s *sink, g *gen) {
+		q6k := ggmlTypeByName("Q6_K")
+		for _, thr := range thresholds {
+			for _, K := range []int{256, 512, 768, 2304} {
+				for _, M := range mLarge {
+					for _, N := range []int{1, 2, 3, 4, 5, 8, 9, 17} {
+						wm, err := linalg.WrapQ6K(g.blocks(q6k, N*K/256), N, K)
+						if err != nil {
+							panic(err)
+						}
+						a, dst := g.vec(M*K, 1), make([]float32, M*N)
+						wm.MatmulBTInto(workspace(thr, 0), a, dst, M)
+						s.tag("mm", thr, M, K, N)
+						s.f32(dst)
+					}
+				}
+			}
+		}
+	}},
+
 	// attention
 	{"linalg.MatmulQKAcc64", func(s *sink, g *gen) {
 		for _, hd := range headDims() {

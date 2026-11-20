@@ -68,7 +68,9 @@
     "linalg.WeightMat(f16).MatmulBTInto": "sha256:07ad1f638b65ab5d119098d174528d87b969b226895cfba0833f23c2dd4fdf76",
     "linalg.WeightMat(int4).MatmulBTW4A8Into": "sha256:8e3bfe805e3dcd277e4bfcff09495d4f170b7e96fcd997bd19f8af58098e5fa6",
     "linalg.WeightMat(int4).MatmulBTW4A8PreInto": "sha256:1a60c8e76761c1a47b7e6cd81860b5717bb50b9527c0afeef4e332b7090da63b",
-    "linalg.WeightMat(q4k).MatmulBTInto": "sha256:c94f169a13e335b573e836b8a45b3dcdf252b46b756c348f554e9eda3680e5cc"
+    "linalg.WeightMat(q4k).MatmulBTInto": "sha256:c94f169a13e335b573e836b8a45b3dcdf252b46b756c348f554e9eda3680e5cc",
+    "linalg.WeightMat(q5k).MatmulBTInto": "sha256:c95c464e72a2ef0a07206f01c267cfb96b1da9abfbc5dce1665fd3ce2ff5a3d6",
+    "linalg.WeightMat(q6k).MatmulBTInto": "sha256:1ddb8c935f3c403b9fbd5c83a2e83ec62aa6919d93c89b333e10e515cec5548f"
   },
   "amd64[avx2,f16c,popcnt]": {
     "embed.DequantMXFP4Blocks": "sha256:fae542ca461a13584faa39f71e034047543841087146190680f282fee572832a",
@@ -139,7 +141,9 @@
     "linalg.WeightMat(f16).MatmulBTInto": "sha256:07ad1f638b65ab5d119098d174528d87b969b226895cfba0833f23c2dd4fdf76",
     "linalg.WeightMat(int4).MatmulBTW4A8Into": "sha256:ce8824ae9b4b2a995e00ddf4bdd895188766a77a782b8c289483f9ba0f6bebcb",
     "linalg.WeightMat(int4).MatmulBTW4A8PreInto": "sha256:8934d661a9a434db3f4823f35171b0b9a5cb9f5a7776056adec9e3264e2a09db",
-    "linalg.WeightMat(q4k).MatmulBTInto": "sha256:c94f169a13e335b573e836b8a45b3dcdf252b46b756c348f554e9eda3680e5cc"
+    "linalg.WeightMat(q4k).MatmulBTInto": "sha256:c94f169a13e335b573e836b8a45b3dcdf252b46b756c348f554e9eda3680e5cc",
+    "linalg.WeightMat(q5k).MatmulBTInto": "sha256:c95c464e72a2ef0a07206f01c267cfb96b1da9abfbc5dce1665fd3ce2ff5a3d6",
+    "linalg.WeightMat(q6k).MatmulBTInto": "sha256:1ddb8c935f3c403b9fbd5c83a2e83ec62aa6919d93c89b333e10e515cec5548f"
   },
   "arm64[dotprod]": {
     "embed.DequantMXFP4Blocks": "sha256:fae542ca461a13584faa39f71e034047543841087146190680f282fee572832a",

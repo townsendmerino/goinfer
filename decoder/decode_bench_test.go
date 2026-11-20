@@ -43,7 +43,11 @@ func loadBenchModel() (*Model, error) {
 		if q, ok := os.LookupEnv("GOINFER_BENCH_QUANT"); ok {
 			quant = q
 		}
+		// GOINFER_BENCH_WIDEN56=1 makes a q4k load widen Q5_K/Q6_K to int8 as it did before the native kinds, so one binary
+		// times both arms of that A/B.
+		q4kWiden56ForTest = os.Getenv("GOINFER_BENCH_WIDEN56") == "1"
 		benchModel, benchErr = Load(path, Options{Quant: quant})
+		q4kWiden56ForTest = false
 	})
 	return benchModel, benchErr
 }
@@ -84,6 +88,13 @@ func BenchmarkDecode(b *testing.B) {
 	// straggler sweep.
 	if w, err := strconv.Atoi(os.Getenv("GOINFER_PAR_WIDTH")); err == nil {
 		linalg.SetParallelWidth(w)
+	}
+	// GOINFER_BENCH_ACT_FANOUT=1 or 0 turns the SwiGLU/GeGLU fan-out (activationFanoutEnabled) on or off for this run, for
+	// the A/B that decides its default on this architecture.
+	if v := os.Getenv("GOINFER_BENCH_ACT_FANOUT"); v == "1" || v == "0" {
+		orig := activationFanoutEnabled
+		activationFanoutEnabled = v == "1"
+		defer func() { activationFanoutEnabled = orig }()
 	}
 	// GOINFER_BENCH_ACT_GROUP sets aikit's process-wide activation group (0 = per-row, 32 =
 	// per-32): the A/B arm of the end-to-end speed gate.

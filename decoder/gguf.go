@@ -1497,20 +1497,30 @@ func ggufRowFiltered(name string, into func(start int, dst []float32) error, sta
 	return nil
 }
 
-// q4kMat builds the native Q4_K WeightMat for quantQ4K: output rows [0, out) of tensor name, where
+// q4kMat builds the native K-quant WeightMat for quantQ4K: output rows [0, out) of tensor name, where
 // rowSrc(r) is destination row r's element offset in the tensor (a permutation for RoPE-permuted
-// q/k, an offset for a fused split). ok is false, with a nil error, when the tensor is not stored as
-// Q4_K; the caller then loads it at int8 W8A8. The super-blocks are COPIED: loadGGUFWeights closes
-// the mapping once the load returns.
-func q4kMat(g *embed.GGUFFile, name string, out, in int, rowSrc func(r int) int) (linalg.WeightMat, bool, error) {
+// q/k, an offset for a fused split). A Q4_K tensor is always kept as Q4_K; a Q5_K or Q6_K one only
+// when native56 is set (q4kNative56). ok is false, with a nil error, for any other tensor; the
+// caller then loads it at int8 W8A8. The super-blocks are COPIED: loadGGUFWeights closes the
+// mapping once the load returns.
+func q4kMat(g *embed.GGUFFile, name string, out, in int, rowSrc func(r int) int, native56 bool) (linalg.WeightMat, bool, error) {
+	wrap, rowBytes := linalg.WrapQ4K, linalg.Q4KRowBytes
 	dims, raw, ok, err := g.Q4KRaw(name)
+	if err == nil && !ok && native56 {
+		if dims, raw, ok, err = g.Q5KRaw(name); err == nil && ok {
+			wrap, rowBytes = linalg.WrapQ5K, linalg.Q5KRowBytes
+		} else if err == nil {
+			dims, raw, ok, err = g.Q6KRaw(name)
+			wrap, rowBytes = linalg.WrapQ6K, linalg.Q6KRowBytes
+		}
+	}
 	if err != nil || !ok {
 		return linalg.WeightMat{}, false, err
 	}
 	if len(dims) != 2 || dims[0] != in || in%256 != 0 {
 		return linalg.WeightMat{}, false, fmt.Errorf("decoder(gguf): %q dims %v for a q4k load of [%d, %d]", name, dims, out, in)
 	}
-	rb := linalg.Q4KRowBytes(in)
+	rb := rowBytes(in)
 	buf := make([]byte, out*rb)
 	for r := range out {
 		off := rowSrc(r)
@@ -1520,9 +1530,20 @@ func q4kMat(g *embed.GGUFFile, name string, out, in int, rowSrc func(r int) int)
 		src := off / in
 		copy(buf[r*rb:(r+1)*rb], raw[src*rb:(src+1)*rb])
 	}
-	wm, err := linalg.WrapQ4K(buf, out, in)
+	wm, err := wrap(buf, out, in)
 	return wm, err == nil, err
 }
+
+// q4kNative56 reports whether a q4k load keeps the file's Q5_K and Q6_K projections natively instead of widening them to
+// int8: only on a CPU-only load (needCanonical false: no GPU lane, which takes those blocks from the int8 copy through
+// KQuantReader) that writes no .giw (the format has no kind for them), and only where linalg has an arch kernel for them
+// (linalg.KQuantNative; the portable dot is far slower than int8).
+func q4kNative56(needCanonical bool, sink *giwWriter) bool {
+	return !needCanonical && sink == nil && linalg.KQuantNative() && !q4kWiden56ForTest
+}
+
+// q4kWiden56ForTest restores the int8 widening of Q5_K and Q6_K on every q4k load, for the test that compares the two.
+var q4kWiden56ForTest = false
 
 // buildWeightsFromGGUF dequantizes the GGUF tensors into the weight bundle. When quant is set, each matmul tensor is
 // re-quantized (per-row int8 or group-wise int4) right after it is dequantized (and un-permuted) and its f32 is freed, so
@@ -1540,6 +1561,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	hidden, hd := arch.HiddenDim, arch.HeadDim
 	w := &Weights{Cfg: *cfg, arch: arch, Layers: make([]LayerWeights, arch.NumLayers)}
 	skipRow4 = skipRow4 || !repackForDecode(sink) // every closure and family branch below takes it from here
+	native56 := q4kNative56(needCanonical, sink)
 
 	// rowDequantizer wraps g.RowDequantizer(name) and, when a companion `<name>.scale`
 	// tensor is present (llama.cpp PR #21445's GGUF NVFP4 per-tensor F32 [1] multiplier),
@@ -1586,7 +1608,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		}
 		q4k := mode == quantQ4K && !g.Has(name+".scale")
 		if q4k {
-			if wm, ok, err := q4kMat(g, name, out, in, rowSrc); ok || err != nil {
+			if wm, ok, err := q4kMat(g, name, out, in, rowSrc, native56); ok || err != nil {
 				return wm, err
 			}
 			mode = quantInt8I8
@@ -1613,7 +1635,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		}
 		q4k := mode == quantQ4K && !g.Has(name+".scale")
 		if q4k {
-			if wm, ok, err := q4kMat(g, name, out, in, rowSrc); ok || err != nil {
+			if wm, ok, err := q4kMat(g, name, out, in, rowSrc, native56); ok || err != nil {
 				return wm, err
 			}
 			mode = quantInt8I8
@@ -1778,7 +1800,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 		rowSrc := func(r int) int { return (rowStart + r) * in }
 		q4k := mode == quantQ4K
 		if q4k {
-			if wm, ok, err := q4kMat(g, name, rows, in, rowSrc); ok || err != nil {
+			if wm, ok, err := q4kMat(g, name, rows, in, rowSrc, native56); ok || err != nil {
 				return wm, err
 			}
 			mode = quantInt8I8

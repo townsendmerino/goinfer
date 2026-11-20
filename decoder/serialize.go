@@ -1092,6 +1092,13 @@ func (w *giwWriter) weightMatKind(m *linalg.WeightMat, eligible bool) {
 		w.bytesField(raw)
 		return
 	}
+	if k := m.Kind(); k == "q5k" || k == "q6k" {
+		// A CPU-only q4k load keeps the file's Q5_K and Q6_K blocks (q4kNative56); .giw has no kind for them.
+		if w.err == nil {
+			w.err = fmt.Errorf("decoder: a %dx%d tensor is held as native %s (a Backend \"cpu\" q4k load keeps the file's blocks); load with another Backend to serialize it", m.Rows(), m.Cols(), k)
+		}
+		return
+	}
 	if m.Rows() == 0 {
 		w.raw([]byte{0}) // empty
 		return
