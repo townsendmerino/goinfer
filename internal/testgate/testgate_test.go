@@ -129,3 +129,16 @@ func TestNoProductionImporter(t *testing.T) {
 		t.Fatalf("scanned %d .go files, %d _test.go importers: the walk did not see the tree", scanned, test)
 	}
 }
+
+func TestSetForTest_restoresTheValueWhenTheTestEnds(t *testing.T) {
+	v := 1
+	t.Run("sets", func(t *testing.T) {
+		SetForTest(t, &v, 2)
+		if v != 2 {
+			t.Fatalf("v = %d inside the test, want 2", v)
+		}
+	})
+	if v != 1 {
+		t.Fatalf("v = %d after the test, want 1 restored", v)
+	}
+}
