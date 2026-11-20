@@ -327,6 +327,7 @@ EXCLUDED = {
     "TestIdentityGiw_headerChangeIsDifferentBytesAndIdenticalLogits": "git clone of the tree",
     # The quality_scan-tagged scans (internal/guard/qualityscan) run nightly by design, never in the day loop.
     "TestQualityScan_readsEveryModule": "nightly quality scan",
+    "TestQualityScan_noRunsOfBoolLiteralArguments": "nightly quality scan",
 }
 
 
