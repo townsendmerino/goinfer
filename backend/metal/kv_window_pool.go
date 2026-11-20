@@ -64,7 +64,7 @@ var windowConditions = []windowCondition{
 	{"head-dim", func(m *decoder.Model) bool { _, _, _, _, hd, _, _ := m.Dims(); return hd <= 256 }},
 }
 
-// kvWindowPoolOffForTest keeps every window group the context's size, as KV5-7c-i did.
+// kvWindowPoolOffForTest keeps every window group the context's size (the unbounded window pool).
 var kvWindowPoolOffForTest bool
 
 // kvWindowPoolForceForTest bounds every window group whatever the conditions say, for a test of the bounded pool on a fixture whose
