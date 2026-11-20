@@ -132,37 +132,37 @@ func (c HostCheck) Ratio() float64 {
 func (c HostCheck) Arithmetic() string {
 	var b strings.Builder
 	if c.snapshotBinds() {
-		fmt.Fprintf(&b, "%s needs ~%.1f GB of host memory once it is serving with its prefix-snapshot store full (%s + %.1f GB of snapshots, -kv-host-bytes)",
-			c.Name, float64(c.Need())/gb, c.stays(), float64(c.SnapshotBytes)/gb)
-		fmt.Fprintf(&b, "; this machine currently has %.1f GB of memory available (budget %.1f GB = %.0f%% of that)",
-			float64(c.Available)/gb, float64(c.Budget())/gb, c.Policy.WeightsFraction*100)
+		fmt.Fprintf(&b, "%s needs ~%s of host memory once it is serving with its prefix-snapshot store full (%s + %s of snapshots, -kv-host-bytes)",
+			c.Name, GiB(c.Need()), c.stays(), GiB(c.SnapshotBytes))
+		fmt.Fprintf(&b, "; this machine currently has %s of memory available (budget %s = %.0f%% of that)",
+			GiB(c.Available), GiB(c.Budget()), c.Policy.WeightsFraction*100)
 		return b.String()
 	}
 	if c.CUDABuildBytes > c.loadTerm() {
-		fmt.Fprintf(&b, "%s needs ~%.1f GB of host memory while building the CUDA expert cache (%.1f GB weights + %.1f GB pinned copy of the experts and packing)",
-			c.Name, float64(c.CUDABuildBytes)/gb, float64(c.WeightBytes)/gb, float64(c.CUDABuildBytes-c.WeightBytes)/gb)
-		fmt.Fprintf(&b, "; this machine currently has %.1f GB of memory available (budget %.1f GB = %.0f%% of that)",
-			float64(c.Available)/gb, float64(c.Budget())/gb, c.Policy.WeightsFraction*100)
+		fmt.Fprintf(&b, "%s needs ~%s of host memory while building the CUDA expert cache (%s weights + %s pinned copy of the experts and packing)",
+			c.Name, GiB(c.CUDABuildBytes), GiB(c.WeightBytes), GiB(c.CUDABuildBytes-c.WeightBytes))
+		fmt.Fprintf(&b, "; this machine currently has %s of memory available (budget %s = %.0f%% of that)",
+			GiB(c.Available), GiB(c.Budget()), c.Policy.WeightsFraction*100)
 		return b.String()
 	}
-	fmt.Fprintf(&b, "%s needs ~%.1f GB resident at quant %s", c.Name, float64(c.WeightBytes)/gb, c.Quant)
+	fmt.Fprintf(&b, "%s needs ~%s resident at quant %s", c.Name, GiB(c.WeightBytes), c.Quant)
 	if c.DeviceKV {
 		b.WriteString(" (its KV is in VRAM, which the context plan sizes)")
 	}
 	if c.KVBytes > 0 {
-		fmt.Fprintf(&b, " + %.1f GB KV", float64(c.KVBytes)/gb)
+		fmt.Fprintf(&b, " + %s KV", GiB(c.KVBytes))
 	}
 	if c.SourceBytes > 0 {
 		// The source stays mapped resident for the whole load beside the weights built from it, named so this does not read as
 		// a doubled weight estimate.
-		fmt.Fprintf(&b, " + %.1f GB reading the checkpoint (the .gguf stays mapped resident for the whole load) + %.1f GB heap beside it",
-			float64(c.SourceBytes)/gb, float64(HeapSlackBytes(c.WeightBytes, c.SourceBytes))/gb)
+		fmt.Fprintf(&b, " + %s reading the checkpoint (the .gguf stays mapped resident for the whole load) + %s heap beside it",
+			GiB(c.SourceBytes), GiB(HeapSlackBytes(c.WeightBytes, c.SourceBytes)))
 	}
 	if c.KVBytes > 0 || c.SourceBytes > 0 {
-		fmt.Fprintf(&b, " = %.1f GB", float64(c.Need())/gb)
+		fmt.Fprintf(&b, " = %s", GiB(c.Need()))
 	}
-	fmt.Fprintf(&b, "; this machine currently has %.1f GB of memory available (budget %.1f GB = %.0f%% of that)",
-		float64(c.Available)/gb, float64(c.Budget())/gb, c.Policy.WeightsFraction*100)
+	fmt.Fprintf(&b, "; this machine currently has %s of memory available (budget %s = %.0f%% of that)",
+		GiB(c.Available), GiB(c.Budget()), c.Policy.WeightsFraction*100)
 	return b.String()
 }
 
@@ -170,13 +170,13 @@ func (c HostCheck) Arithmetic() string {
 func (c HostCheck) stays() string {
 	switch {
 	case c.DeviceKV && c.ExpertBytes > 0:
-		return fmt.Sprintf("%.1f GB pinned expert copy", float64(c.ExpertBytes)/gb)
+		return fmt.Sprintf("%s pinned expert copy", GiB(c.ExpertBytes))
 	case c.DeviceKV:
 		return "nothing else, its weights and KV are on the device"
 	case c.KVBytes > 0:
-		return fmt.Sprintf("%.1f GB weights + %.1f GB KV", float64(c.WeightBytes)/gb, float64(c.KVBytes)/gb)
+		return fmt.Sprintf("%s weights + %s KV", GiB(c.WeightBytes), GiB(c.KVBytes))
 	}
-	return fmt.Sprintf("%.1f GB weights", float64(c.WeightBytes)/gb)
+	return fmt.Sprintf("%s weights", GiB(c.WeightBytes))
 }
 
 // Warning is what the banner prints when the load fits but only just.
@@ -315,8 +315,8 @@ func (c HostCheck) CapNote(ctx int) string {
 		lift = ""
 	}
 	return fmt.Sprintf(
-		"decoder: context capped at %d (model allows %d) so that KV fits: weights %.1f GB + KV %.1f GB of budget %.1f GB — pass -ctx to choose%s",
-		ctx, c.MaxCtx, float64(c.WeightBytes)/gb, float64(kv)/gb, float64(c.Budget())/gb, lift)
+		"decoder: context capped at %d (model allows %d) so that KV fits: weights %s + KV %s of budget %s — pass -ctx to choose%s",
+		ctx, c.MaxCtx, GiB(c.WeightBytes), GiB(kv), GiB(c.Budget()), lift)
 }
 
 // HostFit is SolveHost's answer: the decision, and the line the guard prints (a cap note or a warning; "" for none).

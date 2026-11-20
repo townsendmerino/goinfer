@@ -4,8 +4,13 @@ package cuda
 
 import (
 	"context"
+	"fmt"
+	"time"
 
+	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
 // prefillPass is one prefillCore pass's state, shared by its phases: the call's inputs, the scratch it allocates and the
@@ -53,6 +58,9 @@ type prefillPass struct {
 	imgBlk              Buffer
 	mropeWin            [][3]int // this pass's rows' m-RoPE triples (mropePosWindow), set by prefillCore
 	rposT, rposH, rposW Buffer
+
+	outs [][]float32
+	ids  []int
 }
 
 // reset starts a pass, keeping the free list's and the DeepStack list's backing arrays.
@@ -239,6 +247,681 @@ func (p *prefillPass) uploadInputs() error {
 		if e := gpu.Upload(p.rposW, pw); e != nil {
 			return e
 		}
+	}
+	return nil
+}
+
+// layer runs layer l of the pass: the layer's batched steps (cudaPrefillStepsOf, OP4cu-d1), the DeltaNet rows or the attention
+// half, then the MoE or the dense FFN, each the method its kind chose; then the DeepStack add and the batched hidden-state capture.
+func (p *prefillPass) layer(l int) error {
+	r, inter := p.r, p.inter
+	Ly := &r.layers[l]
+	// PER-LAYER, read here and bound below — never L0's hoisted and assumed uniform.
+	hd, nKV, qDim, rhalf := Ly.hd, Ly.nKV, Ly.qDim, Ly.rhalf
+	// A KV-shared layer rotates Q only (nKV=0 leaves rope_kv's K and V work empty, so nothing is stored through the alias into its source's cache), as
+	// decodeAttnGap does. The attention launch keeps the real nKV, which is how it reads the source's cache.
+	ropeNKV := nKV
+	if Ly.kvShared && !g4KeepSharedKVStoreForTest {
+		ropeNKV = 0
+	}
+	ropeN := r.nH*rhalf + ropeNKV*rhalf + ropeNKV*(hd-2*rhalf)
+	ffn := inter
+	if r.eModel {
+		ffn = Ly.ffnI
+	}
+	qb, kb, vb := ArgNull(), ArgNull(), ArgNull()
+	if Ly.hasBias {
+		qb, kb, vb = Arg(Ly.qb), Arg(Ly.kb), Arg(Ly.vb)
+	}
+	g := &prefillLayerGeom{hd: hd, nKV: nKV, qDim: qDim, rhalf: rhalf, ropeNKV: ropeNKV, ropeN: ropeN, ffn: ffn, qb: qb, kb: kb, vb: vb}
+	for _, pst := range r.prefillLayerSteps(Ly) {
+		var e error
+		switch pst {
+		case pstepDeltaNet:
+			e = p.stepDeltaNet(l, Ly)
+		case pstepAttn:
+			e = p.stepAttn(l, Ly, g)
+		case pstepMoE:
+			e = p.stepMoE(l, Ly)
+		case pstepDenseFFN:
+			e = p.stepDenseFFN(l, Ly, g)
+		}
+		if e != nil {
+			return e
+		}
+	}
+	if e := p.deepstackAdd(l); e != nil {
+		return e
+	}
+	return p.captureTaps(l)
+}
+
+// prefillLayerGeom is one layer's geometry as the pass's steps read it: per layer, never layer 0's hoisted and assumed uniform.
+type prefillLayerGeom struct {
+	hd, nKV, qDim, rhalf int
+	ropeNKV, ropeN       int // the rotated K/V heads (0 on a KV-shared layer) and rope_kv's element count
+	ffn                  int // the dense FFN width
+	qb, kb, vb           KernelArg
+}
+
+// stepDeltaNet is the Gated-DeltaNet mixer's rows.
+func (p *prefillPass) stepDeltaNet(l int, Ly *cudaLayer) error {
+	r, M, xB, aqB, aScB, dnB := p.r, p.M, p.xB, p.aqB, p.aScB, p.dnB
+	// Gated-DeltaNet mixer: replaces segA + rope +
+	// attention + o-proj, as deltaNetMixer does in decode — the projections batched over the M rows,
+	// the recurrence row by row in order. The FFN below is the shared one.
+	pend, pM := r.specPending(l)
+	if e := r.prefillDeltaNetRows(Ly, xB, aqB, aScB, M, r.specBufs(l, dnB), pend, pM); e != nil { // profiles its own categories
+		return e
+	}
+	return nil
+}
+
+// stepAttn is the attention half: segA (input norm and quant, the Q/K/V GEMVs, the per-head norms), the rope, KV store and
+// attention (ordAttn, or a step's rows through decode's gap), then segB (ctx quant and the o-projection into the residual).
+func (p *prefillPass) stepAttn(l int, Ly *cudaLayer, g *prefillLayerGeom) error {
+	r, M, startPos, tail, rows, hidden, xB, aqB, aScB, qBb, kBb, vBb, cctxB, rag, cqB, cScB, dnB, sbB, residMN := p.r, p.M, p.startPos, p.tail, p.rows, p.hidden, p.xB, p.aqB, p.aScB, p.qBb, p.kBb, p.vBb, p.cctxB, p.rag, p.cqB, p.cScB, p.dnB, p.sbB, p.residMN
+	hd, nKV, qDim, qb, kb, vb := g.hd, g.nKV, g.qDim, g.qb, g.kb, g.vb
+	var t time.Time // the category timer (profTic): each step sets it before it reads it
+	// segA: input norm+quant (glue), then Q/K/V GEMVs. Category timers (r.prof) sync r.stream at
+	// each group boundary; nil in production, so the launch sequence is otherwise unchanged.
+	aw := &Ly.walk.Attn
+	t = r.profTic()
+	if e := r.emitInputNormB(aw.InputForm, xB, Ly.preNorm, hidden, aqB, aScB, M); e != nil {
+		return e
+	}
+	r.profToc(glueCat, t)
+	t = r.profTic()
+	if aw.Gated {
+		// attn_output_gate (qwen3_5 softmax layers): q_proj emits [query ‖ gate] per head at double
+		// width. Decode's split, one launch over all M rows: M rows are M·nH contiguous heads.
+		if e := r.bGemvB(Ly.q, aqB, aScB, qb, dnB.qg, M, 0); e != nil {
+			return e
+		}
+		if e := r.launch(r.dnQSplit, g1cfg(M*qDim, 256),
+			Arg(dnB.qg), Arg(qBb), Arg(dnB.gate),
+			gpu.ArgValue(int32(M*qDim)), gpu.ArgValue(int32(hd))); e != nil {
+			return e
+		}
+	} else if e := r.bGemvB(Ly.q, aqB, aScB, qb, qBb, M, 0); e != nil {
+		return e
+	}
+	if Ly.kvShared {
+		// No k_proj and no v_proj: K/V are the source layer's, already in the aliased cache.
+	} else if e := r.bGemvB(Ly.k, aqB, aScB, kb, kBb, M, 0); e != nil {
+		return e
+	} else if Ly.kEqV {
+		// K=V (Gemma 4 global layers): no v_proj. V is v_norm(the RAW pre-RoPE k_proj output), so copy the k projection into the
+		// V buffer and normalize it below, before rope_kv_batched rotates k, as segA's decode path does. kBb and vBb are [M,
+		// kvDim] row-major, so one contiguous copy of M*kvDim floats moves every row.
+		if e := r.copyF32(kBb, vBb, M*Ly.kvDim); e != nil {
+			return e
+		}
+	} else if e := r.bGemvB(Ly.v, aqB, aScB, vb, vBb, M, 0); e != nil {
+		return e
+	}
+	r.profToc(gemvCat, t)
+	// per-head Q/K RMSNorm BEFORE rope (Qwen3): in place on qBb/kBb, one block per (head,token).
+	// Bit-identical to the decode qk_norm applied per token (same f64 reduction, same addOne).
+	if aw.QKNorm {
+		t = r.profTic()
+		addOne := int32(0)
+		if aw.QKNormParams.AddOne {
+			addOne = 1
+		}
+		qkNH, qkNKV, qkHD := r.nH, nKV, hd
+		if aw.QKNormParams.Whole {
+			qkNH, qkNKV, qkHD = 1, 1, r.nH*hd
+		}
+		kNormW := Ly.kNorm
+		if Ly.kvShared {
+			// Q only: nKV=0 launches no K blocks, and a shared layer has no k_norm weight to bind (an empty Buffer is a nil deref).
+			qkNKV, kNormW = 0, Ly.qNorm
+		}
+		if e := r.launch(r.bQKN, LaunchConfig{GridX: uint32(qkNH + qkNKV), GridY: uint32(M), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8},
+			Arg(qBb), Arg(kBb), Arg(Ly.qNorm), Arg(kNormW),
+			gpu.ArgValue(int32(qkNH)), gpu.ArgValue(int32(qkNKV)), gpu.ArgValue(int32(qkHD)),
+			gpu.ArgValue(r.eps), gpu.ArgValue(addOne), gpu.ArgValue(int32(M))); e != nil {
+			return e
+		}
+		r.profToc(glueCat, t)
+	}
+	if aw.G4VNorm && (Ly.kEqV || !g4DropVNormForTest) {
+		// Scale-less v_norm over vBb (the raw k on a K=V layer, the v_proj output otherwise), BEFORE rope rotates k — segA's
+		// decode launch with an M dimension added. nH=0 makes qk_norm_batched treat every
+		// block as a K-head (base = v + m*kvDim + h*hd), and vNormUnit is a unit weight so
+		// addOne=0 gives a pure RMS scale with no learned gain.
+		t = r.profTic()
+		if e := r.launch(r.bQKN, LaunchConfig{GridX: uint32(nKV), GridY: uint32(M), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8},
+			Arg(vBb), Arg(vBb), Arg(r.vNormUnit), Arg(r.vNormUnit),
+			gpu.ArgValue(int32(0)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
+			gpu.ArgValue(r.eps), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(M))); e != nil {
+			return e
+		}
+		r.profToc(glueCat, t)
+	}
+	if rows != nil {
+		// Multi-sequence step: rope, the KV store and attention per sequence through decode's own gap, each row on its own slot
+		// at its own position; a prefill chunk's rows (the first) through its own pass's attention, in its slot and class.
+		// The batched stack resumes at the ctx-quant below. The chunk's attention times itself (glue, then attnCat).
+		if c := r.stepChunk; c.rows > 0 {
+			exact, tab := r.forceExactKernels, r.kvTabSlot
+			r.forceExactKernels, r.kvTabSlot = c.exact, c.slot
+			e := p.ordAttn(l, Ly, g, c.pos, c.rows, tailKVOnly)
+			r.forceExactKernels, r.kvTabSlot = exact, tab
+			if e != nil {
+				return e
+			}
+		}
+		t = r.profTic()
+		if e := r.stepAttnRows(Ly, l, rows, r.stepChunk.rows, qBb, kBb, vBb, cctxB, rag); e != nil {
+			return e
+		}
+		r.profToc(attnCat, t)
+	} else if e := p.ordAttn(l, Ly, g, startPos, M, tail); e != nil {
+		return e
+	}
+	// segB: ctx-quant (glue), o-proj (gemv, accum into residual), MLP.
+	t = r.profTic()
+	if aw.Gated { // ctx *= sigmoid(gate), before o_proj — segB's launch over all M rows
+		if e := r.launch(r.dnAttnGate, g1cfg(M*qDim, 256),
+			Arg(cctxB), Arg(dnB.gate), gpu.ArgValue(int32(M*qDim))); e != nil {
+			return e
+		}
+	}
+	if e := r.launch(r.bQuant, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+		Arg(cctxB), gpu.ArgValue(int32(qDim)), Arg(cqB), Arg(cScB), gpu.ArgValue(int32(M))); e != nil {
+		return e
+	}
+	r.profToc(glueCat, t)
+	t = r.profTic()
+	if Ly.attnOutUnfused() {
+		// o-proj → temp (accum=0), optional post-attn RMSNorm per row, then add to residual.
+		if e := r.bGemvB(Ly.o, cqB, cScB, r.oBiasArg(Ly), sbB, M, 0); e != nil {
+			return e
+		}
+		if aw.OutMode == program.OutPostNormResidual {
+			if e := r.bNormF32B(sbB, Ly.postAttnNorm, hidden, M); e != nil {
+				return e
+			}
+		}
+		if e := r.launch(r.bRes, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+			Arg(xB), Arg(sbB), gpu.ArgValue(int32(M*hidden))); e != nil {
+			return e
+		}
+	} else if e := r.bGemvB(Ly.o, cqB, cScB, r.oBiasArg(Ly), xB, M, 1); e != nil {
+		return e
+	}
+	r.profToc(gemvCat, t)
+	return nil
+}
+
+// ordAttn is an ordinary pass's rope, KV store and attention over rows [0, M) at startPos in the bound slot's tables.
+func (p *prefillPass) ordAttn(l int, Ly *cudaLayer, g *prefillLayerGeom, startPos, M, tail int) error {
+	r, blocks, mropePos, img, qBb, kBb, vBb, cctxB, psScB, psInvB, psStride, psRows, imgBlk, rposT, rposH, rposW := p.r, p.blocks, p.mropePos, p.img, p.qBb, p.kBb, p.vBb, p.cctxB, p.psScB, p.psInvB, p.psStride, p.psRows, p.imgBlk, p.rposT, p.rposH, p.rposW
+	hd, nKV, rhalf, ropeNKV, ropeN := g.hd, g.nKV, g.rhalf, g.ropeNKV, g.ropeN
+	// rope + kv-store (glue): token m at absolute position startPos+m; rotates q/k, writes K/V. Its own timer: a
+	// step times the chunk's attention inside its own attnCat span.
+	t := r.profTic()
+	ropeCfg := LaunchConfig{GridX: uint32((ropeN + 255) / 256), GridY: uint32(M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
+	ropeArgs := []gpu.KernelArg{
+		Arg(qBb), Arg(kBb), Arg(vBb), Arg(Ly.invF), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)),
+		gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(ropeNKV)), gpu.ArgValue(int32(hd)),
+		gpu.ArgValue(int32(startPos)), gpu.ArgValue(int32(rhalf)), gpu.ArgValue(int32(M)),
+		gpu.ArgValue(Ly.mscale),
+	}
+	var ropeErr error
+	if mropePos != nil {
+		mropeArgs := append(append([]gpu.KernelArg{}, ropeArgs...),
+			Arg(rposT), Arg(rposH), Arg(rposW), gpu.ArgValue(r.mropeSec0), gpu.ArgValue(r.mropeSec1))
+		if r.mropeTakesMode { // rope_kv_mrope_batched takes the layout mode; the pairwise twin has no such argument
+			mropeArgs = append(mropeArgs, gpu.ArgValue(r.mropeMode))
+		}
+		ropeErr = r.launch(r.bRopeKVMRoPE, ropeCfg, mropeArgs...)
+	} else {
+		// qTempRows (Ministral 3, FeatAttnTemp): this launch covers M rows at different positions, so each row's post-RoPE query
+		// scale comes from a host-built table using launchToken's own float64 expression, which keeps a batched row
+		// bit-identical to decode. Not carried into the m-RoPE branch above: rope_kv_mrope_batched has no attention temperature,
+		// and no family needs both.
+		qTemp, qe := r.attnTempRows(startPos, M)
+		if qe != nil {
+			return qe
+		}
+		ropeErr = r.launch(r.bRopeKV, ropeCfg, append(append([]gpu.KernelArg{}, ropeArgs...), qTemp)...)
+	}
+	if ropeErr == nil {
+		ropeErr = r.kvStore8(l, kBb, vBb, ropeNKV, hd, startPos, M)
+	}
+	if ropeErr != nil {
+		return ropeErr
+	}
+	r.profToc(glueCat, t)
+	// causal + per-row sliding-window attention; block 128 matches the M=1 attention reduce.
+	maxNWin := startPos + M
+	if Ly.window > 0 && int(Ly.window) < maxNWin {
+		maxNWin = int(Ly.window)
+	}
+	if len(blocks) > 0 {
+		// Widened by imgBlocksMaxNWin, the formula checkPrefillShmemImgBlocks uses; the two must not drift, or this allocation
+		// under-sizes the launch it covers.
+		maxNWin = imgBlocksMaxNWin(maxNWin, int(Ly.window), blocks)
+	}
+	t = r.profTic()
+	// L2: the fused kernel when it serves this (hd, M), else attn_batched (see useAttnFused for the selection rule). The
+	// argument list is identical for all of them, so it is built once; the launches differ only in pipeline, grid and shared
+	// memory. Each names its pipeline field directly (see useAttnFused for why a local variable will not do).
+	attnArgs := []gpu.KernelArg{
+		Arg(qBb), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)),
+		gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(startPos)), gpu.ArgValue(r.attnScale),
+		// r.sinkArg(l), not ArgNull(): decode threads the gpt-oss learned sink through, and this launch must not depend on a
+		// different check declining gpt-oss.
+		gpu.ArgValue(Ly.window), gpu.ArgValue(int32(M)), Arg(cctxB), r.sinkArg(l),
+	}
+	var attnErr error
+	// Flash-decode lane for speculative verify (attn-decode-fa-verify-PREREGISTERED.md): rows [laneFrom, M) of an all-rows
+	// verify batch are served by the multi-row lane, bit-identical to the M=1 lane at each row's position
+	// (TestFlashDecodeRowsBitIdentical), so a verified position scores as plain lane decode scores it. Rows below laneFrom
+	// are under the attended-span floor and take the exact path, as their M=1 decode would. laneFrom == M means no lane rows
+	// (the common case); laneFrom == 0 skips the exact launch.
+	laneFrom := r.verifyLaneFrom(l, startPos, M, tail, img)
+	// Image block first, unconditionally, before useAttnFused is consulted: attn_fused's tile-level aggregates assume
+	// monotonic per-row nKeys across a 64-row tile, which an image block breaks, so the exact attn_img_batched is used
+	// instead. Checking the block after useAttnFused would silently route a long image prompt through the incompatible fused
+	// kernel.
+	if laneFrom == 0 {
+		// every row is a lane row: the exact attention launch is skipped and the lane below writes the whole context buffer
+	} else if img {
+		if psStride > 0 && r.prefillSplitKVServes(maxNWin) {
+			if r.spanPass && Ly.window > 0 {
+				// the row-batched kernels keep Gemma 3's window rule, which drops a span row's reach-back to its span start
+				return fmt.Errorf("cuda prefill: layer %d (sliding) span attention at %d keys needs the row-batched kernels: %w", l, maxNWin, errPrefillDeclined)
+			}
+			// past attn_img_batched's shared-memory bound: the row-batched kernels, with the same block table
+			attnErr = r.prefillSplitKVAttn(l, startPos, M, qBb, cctxB, psScB, psInvB, psStride, psRows, imgBlk, len(blocks))
+		} else {
+			imgArgs := append(append([]gpu.KernelArg{}, attnArgs...),
+				Arg(imgBlk), gpu.ArgValue(int32(len(blocks))))
+			imgCfg := LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
+				BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}
+			if r.spanPass && spanDefectForTest != spanDefectNoReachBack {
+				attnErr = r.launch(r.bAttnSpan, imgCfg, imgArgs...)
+			} else {
+				attnErr = r.launch(r.bAttnImg, imgCfg, imgArgs...)
+			}
+		}
+	} else if fsh, use := r.useAttnFused(hd, M); use {
+		fcfg := LaunchConfig{GridX: uint32(r.nH),
+			GridY: uint32((M + attnFusedBM - 1) / attnFusedBM), GridZ: 1,
+			BlockX: attnFusedThreads, BlockY: 1, BlockZ: 1, SharedMemBytes: fsh}
+		// Default tile (attn-fused-tile128-default-PREREGISTERED.md): hd128 layers with no sliding window run the 128-row-tile
+		// kernel, bit-identical to the 64x64 one for window == 0. hd64 stays 64x64, and so do windowed layers: their key-tile
+		// grouping starts at the block's first row, so a taller block is not bit-identical there.
+		// GOINFER_CUDA_ATTN_FUSED_TILE=64x64 forces 64x64.
+		tile := r.attnTile
+		if tile == 0 && hd == 128 && Ly.window <= 0 && r.bAttnBM128hd128 != (Pipeline{}) {
+			tile = 3
+		}
+		if tile > 0 {
+			// Diagnostic query-tile arms (attn-fused-tile-PREREGISTERED.md): 32 / 32 / 128 rows. Name each pipeline at its launch:
+			// TestPipelineLint_boundKernelsAreLaunched keys on that.
+			bm, bn := 32, 64
+			if tile == 2 {
+				bn = 32
+			} else if tile == 3 {
+				bm = 128
+			}
+			fcfg.GridY = uint32((M + bm - 1) / bm)
+			fcfg.BlockX = uint32(bm / 16 * 32)
+			fcfg.SharedMemBytes = uint32(2 * (bn*(hd+attnFusedKPAD) + hd*(bn+attnFusedKPAD)))
+			switch {
+			case tile == 1 && hd == 64:
+				attnErr = r.launch(r.bAttnBM32x64hd64, fcfg, r.kvScaled(l, attnArgs...)...)
+			case tile == 1:
+				attnErr = r.launch(r.bAttnBM32x64hd128, fcfg, r.kvScaled(l, attnArgs...)...)
+			case tile == 2 && hd == 64:
+				attnErr = r.launch(r.bAttnBM32x32hd64, fcfg, r.kvScaled(l, attnArgs...)...)
+			case tile == 2:
+				attnErr = r.launch(r.bAttnBM32x32hd128, fcfg, r.kvScaled(l, attnArgs...)...)
+			case hd == 64:
+				attnErr = r.launch(r.bAttnBM128hd64, fcfg, r.kvScaled(l, attnArgs...)...)
+			default:
+				attnErr = r.launch(r.bAttnBM128hd128, fcfg, r.kvScaled(l, attnArgs...)...)
+			}
+			r.fastAttnLaunches++
+			if tile == 3 {
+				r.tile128Launches++
+			}
+		} else if hd == 64 {
+			attnErr = r.launch(r.bAttnFused64, fcfg, r.kvScaled(l, attnArgs...)...)
+			r.fastAttnLaunches++
+		} else {
+			attnErr = r.launch(r.bAttnFused128, fcfg, r.kvScaled(l, attnArgs...)...)
+			r.fastAttnLaunches++
+		}
+	} else if psStride > 0 && r.prefillSplitKVServes(maxNWin) {
+		attnErr = r.prefillSplitKVAttn(l, startPos, M, qBb, cctxB, psScB, psInvB, psStride, psRows, Buffer{}, 0)
+	} else {
+		attnErr = r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
+			BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}, r.kvScaled(l, r.withCap(attnArgs...)...)...)
+		r.exactAttnLaunches++
+	}
+	if attnErr == nil && laneFrom < M {
+		attnErr = r.flashVerifyAttn(l, startPos, laneFrom, M, qBb, cctxB)
+	}
+	if attnErr != nil {
+		return attnErr
+	}
+	r.profToc(attnCat, t)
+	return nil
+}
+
+// stepMoE is the routed FFN. FFN: dense batches; MoE runs row by row off the batched residual. The routed-expert GEMVs are indexed by a device-side
+// routing decision that differs per token, so there is no M-wide form without an expert-major gather (the expert-major
+// path below); the batched attention half still reads its weights once per pass. gpu.Buffer.At gives a zero-copy
+// sub-view, so row m of the batched residual is a valid single-row residual for the per-token FFN chain (segBFFN,
+// layerTail, segC: decode's calls in decode's order, including the g4x2 accumulator clear and the C' routed-expert DMA).
+//
+// gC=false: prefill never replays captured graphs (a graph bakes r.x, and these rows are not r.x). layerTail also
+// carries per-token debug seams (hidCapTaps, layerCap) that would fire M times per layer here; prefillStaticDecline
+// refuses a model with either armed.
+func (p *prefillPass) stepMoE(l int, Ly *cudaLayer) error {
+	r, ctx, M, hidden, xB := p.r, p.ctx, p.M, p.hidden, p.xB
+	t := r.profTic()
+	g4moe := Ly.walk.FFN.Kind == program.SublayerGemma4MoE
+	// Expert-major MoE (moe_expert_major.go, moe_expert_major_gemma4.go;
+	// docs/measurements/p20-expert-locality-2026-09-21.md): route, bucket and admit once per distinct expert instead of once
+	// per (row, rank), when eligible. Checked once per layer, so ineligible layers pay one field-and-map read.
+	if !g4moe && r.prefillMoEExpertMajorEligible(Ly) {
+		if e := r.prefillMoEExpertMajorRun(ctx, Ly, xB, M, hidden); e != nil {
+			return e
+		}
+	} else if g4moe && r.prefillGemma4ExpertMajorEligible(Ly) {
+		if e := r.prefillGemma4ExpertMajorRun(ctx, Ly, xB, M, hidden); e != nil {
+			return e
+		}
+	} else {
+		for m := range M {
+			// Between rows: a MoE chunk is M sequential per-token FFNs, so without this check a cancelled chunk still runs all of
+			// them. Checking per row keeps cancellation at roughly one token's granularity.
+			if e := ctx.Err(); e != nil {
+				return e
+			}
+			xm := xB.At(m * hidden * 4)
+			if e := r.segBFFN(Ly, l, xm); e != nil {
+				return e
+			}
+			if e := r.layerTail(Ly, l, false, xm); e != nil {
+				return e
+			}
+		}
+	}
+	r.profToc(moeCat, t)
+	return nil
+}
+
+// stepDenseFFN is the dense FFN, with the E-model's per-layer embedding branch and the per-layer output scalar.
+func (p *prefillPass) stepDenseFFN(l int, Ly *cudaLayer, g *prefillLayerGeom) error {
+	r, M, hidden, xB, aqB, aScB, mqB, mScB, gOb, uOb, dqB, dScB, sbB, residMN, pleB, pleGB := p.r, p.M, p.hidden, p.xB, p.aqB, p.aScB, p.mqB, p.mScB, p.gOb, p.uOb, p.dqB, p.dScB, p.sbB, p.residMN, p.pleB, p.pleGB
+	ffn := g.ffn
+	var t time.Time // the category timer (profTic): each step sets it before it reads it
+	fw := &Ly.walk.FFN
+	t = r.profTic()
+	gqB, gScB := mqB, mScB
+	switch fw.InputMode {
+	case program.FFNInShared:
+		// Parallel block (Cohere/Command-R): reuse segA's shared input norm (aqB/aScB) — the MLP consumes
+		// the same normed activation already computed, with zero norm dispatch.
+		gqB, gScB = aqB, aScB
+	default:
+		if e := r.emitInputNormB(fw.InputNorm.Form, xB, Ly.postNorm, hidden, mqB, mScB, M); e != nil {
+			return e
+		}
+	}
+	r.profToc(glueCat, t)
+	t = r.profTic()
+	if e := r.bGemvB(Ly.g, gqB, gScB, ArgNull(), gOb, M, 0); e != nil {
+		return e
+	}
+	if e := r.bGemvB(Ly.u, gqB, gScB, ArgNull(), uOb, M, 0); e != nil {
+		return e
+	}
+	r.profToc(gemvCat, t)
+	t = r.profTic()
+	if e := r.launch(r.bSw, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+		Arg(gOb), Arg(uOb), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(ffn)),
+		gpu.ArgValue(int32(fw.FFN.Act)), Arg(dqB), Arg(dScB), gpu.ArgValue(int32(M))); e != nil {
+		return e
+	}
+	r.profToc(glueCat, t)
+	t = r.profTic()
+	if fw.OutMode != program.OutFusedResidual {
+		// down → temp (accum=0), optional post-MLP RMSNorm per row, then add to residual.
+		if e := r.bGemvB(Ly.d, dqB, dScB, ArgNull(), sbB, M, 0); e != nil {
+			return e
+		}
+		if fw.OutMode == program.OutPostNormResidual {
+			if e := r.bNormF32B(sbB, Ly.postMLPNorm, hidden, M); e != nil {
+				return e
+			}
+		}
+		if e := r.launch(r.bRes, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+			Arg(xB), Arg(sbB), gpu.ArgValue(int32(M*hidden))); e != nil {
+			return e
+		}
+	} else if e := r.bGemvB(Ly.d, dqB, dScB, ArgNull(), xB, M, 1); e != nil {
+		return e
+	}
+	if Ly.walk.HasPLE && !g4SkipPLEForTest {
+		// Gemma 4 E-model per-layer embedding branch, segBFFN's own order over M rows (cuda/resident.go): quantize the RAW residual, the gate GEMV,
+		// geluTanh(gate) * this layer's slice of the row tails (glu_quant_batched act 0 with pleB's contiguous [M, P] slice as `up`), the projection
+		// GEMV, the post-norm, the residual add. All existing batched kernels. A pleLayerShiftForTest defect reads another layer's slice (modulo
+		// the layer count here: decode reads past the row, which has no batched twin).
+		P, pl := r.pleP, ((l+pleLayerShiftForTest)%r.nLayers+r.nLayers)%r.nLayers
+		if e := r.launch(r.bQuant, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+			Arg(xB), gpu.ArgValue(int32(hidden)), Arg(mqB), Arg(mScB), gpu.ArgValue(int32(M))); e != nil {
+			return e
+		}
+		if e := r.bGemvB(Ly.pleGate, mqB, mScB, ArgNull(), pleGB, M, 0); e != nil {
+			return e
+		}
+		if e := r.launch(r.bSw, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+			Arg(pleGB), Arg(pleB.At(pl*M*P*4)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(P)),
+			gpu.ArgValue(int32(0)), Arg(dqB), Arg(dScB), gpu.ArgValue(int32(M))); e != nil {
+			return e
+		}
+		if e := r.bGemvB(Ly.pleProj, dqB, dScB, ArgNull(), sbB, M, 0); e != nil {
+			return e
+		}
+		if e := r.bNormF32B(sbB, Ly.postPLENorm, hidden, M); e != nil {
+			return e
+		}
+		if e := r.launch(r.bRes, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+			Arg(xB), Arg(sbB), gpu.ArgValue(int32(M*hidden))); e != nil {
+			return e
+		}
+	}
+	// Per-layer output scalar (Gemma 4 dense), segB's decode twin. fScaleVec is a pure elementwise dst[i]*=s, so it batches
+	// over the flattened M*hidden buffer in one launch, like bRes above. TestPrefillNonUniform_bitIdentical exists to catch
+	// batched prefill omitting it while decode has it.
+	if Ly.walk.HasLayerScale && Ly.layerScalar != 0 && !g4DropLayerScalarForTest {
+		if e := r.launch(r.fScaleVec, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+			Arg(xB), gpu.ArgValue(Ly.layerScalar), gpu.ArgValue(int32(M*hidden))); e != nil {
+			return e
+		}
+	}
+	r.profToc(gemvCat, t)
+	return nil
+}
+
+// deepstackAdd adds DeepStack set l to the image rows after decoder layer l.
+func (p *prefillPass) deepstackAdd(l int) error {
+	r, xB, dsBufs, dsOff, dsN := p.r, p.xB, p.dsBufs, p.dsOff, p.dsN
+	// DeepStack: after decoder layer l, set l is added to the image rows, as the CPU prefill does (addDeepstack; HF's
+	// hidden_states[visual_pos_masks] += deepstack_visual_embeds[l]).
+	if dsN > 0 && deepDefectForTest != deepDefectNotAdded {
+		k := l
+		if deepDefectForTest == deepDefectOneLayerLate {
+			k = l - 1 // set l-1 added after layer l: every set one layer late, set 0 never early
+		}
+		if k >= 0 && k < len(dsBufs) {
+			if e := r.launch(r.bRes, LaunchConfig{GridX: uint32((dsN + 255) / 256), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+				Arg(xB.At(dsOff*4)), Arg(dsBufs[k]), gpu.ArgValue(int32(dsN))); e != nil {
+				return e
+			}
+		}
+	}
+	return nil
+}
+
+// captureTaps downloads the residual of all M rows for each block-drafter tap at layer l.
+func (p *prefillPass) captureTaps(l int) error {
+	r, M, hidden, xB := p.r, p.M, p.hidden, p.xB
+	// Batched hidden-state capture (block drafter): the per-token seam (capVec) syncs and downloads once per tap per token.
+	// Here the residual for all M rows is already in xB, so one download per tap covers the whole block.
+	if len(r.capBTaps) > 0 {
+		for slot, tap := range r.capBTaps {
+			if tap != l {
+				continue
+			}
+			if e := r.stream.Sync(); e != nil {
+				return e
+			}
+			buf := make([]float32, M*hidden)
+			if e := gpu.Download(xB, buf); e != nil {
+				return e
+			}
+			r.capBOut[slot] = buf
+			break
+		}
+	}
+	return nil
+}
+
+// tailResidualAll ends a tailResidualAll pass: every row's residual, downloaded.
+func (p *prefillPass) tailResidualAll() error {
+	r, M, hidden, xB, xhost := p.r, p.M, p.hidden, p.xB, p.xhost
+	// The only tail that reads the whole residual on the host: the argmax and all-logits heads read xB on the device, and
+	// the last-row tails copy one row device-to-device. Downloading all M rows for them was pageable D2H after every pass
+	// for nothing.
+	if e := gpu.Download(xB, xhost); e != nil {
+		return e
+	}
+	p.outs = make([][]float32, M)
+	for m := range p.outs {
+		p.outs[m] = append([]float32(nil), xhost[m*hidden:(m+1)*hidden]...)
+	}
+	return r.launchErr
+}
+
+// tailAllArgmax ends a tailAllArgmax pass: the batched head's argmax of every row (batchedHeadArgmax).
+func (p *prefillPass) tailAllArgmax() error {
+	return p.r.batchedHeadArgmax(p.xB, p.aqB, p.aScB, p.M, &p.ids)
+}
+
+// tailAllLogits ends a tailAllLogits pass: the logits of every row whose logits are read.
+func (p *prefillPass) tailAllLogits() error {
+	r, M, rows, xB, aqB, aScB := p.r, p.M, p.rows, p.xB, p.aqB, p.aScB
+	// Every row whose logits are read needs the head (PrefillLastN, speculative verify, a step's rows; not a ragged step's
+	// prefill chunk but its final pass's last row, raggedChunk.headFrom): batch it, ONE norm+quant+GEMV over those rows,
+	// bit-identical to the per-row GEMV by construction (bGemvB). batchedHeadFull says what stays per row.
+	var e error
+	if p.outs, p.ids, e = r.batchedHeadFull(xB, aqB, aScB, M, rows, r.stepChunk.headFrom()); e != nil {
+		return e
+	}
+	return r.launchErr
+}
+
+// tailLastRow ends a tailLastLogits or tailHiddenLast pass: the last row's logits, or its post-final-norm hidden state.
+func (p *prefillPass) tailLastRow() error {
+	r, M, hidden, tail, rows, xB := p.r, p.M, p.hidden, p.tail, p.rows, p.xB
+	p.outs = make([][]float32, M)
+	// tailLastLogits / tailHiddenLast: only the last row's output is used, so batching the head would compute M-1 rows
+	// nobody reads.
+	for m := M - 1; m < M; m++ {
+		// The last row goes xB -> r.x on the device, the same bytes the host round trip (Download all, Upload one row) produced. A launch on r.stream
+		// like every other op here, so it is ordered after the layer stack with no extra sync.
+		if e := r.copyF32(xB.At(m*hidden*4), r.x, hidden); e != nil {
+			return e
+		}
+		if e := r.norm(r.x, r.finalNorm, r.aq, r.aSc); e != nil {
+			return e
+		}
+		if tail == tailHiddenLast {
+			// No head dispatch: r.aq/r.aSc (just written by the norm above) already hold what the head would read, the quantized
+			// post-final-norm hidden state. Download and dequantize it instead.
+			if e := r.stream.Sync(); e != nil {
+				return e
+			}
+			q := make([]int8, hidden)
+			if e := gpu.Download(r.aq, q); e != nil {
+				return e
+			}
+			sc := make([]float32, 1)
+			if e := gpu.Download(r.aSc, sc); e != nil {
+				return e
+			}
+			row := make([]float32, hidden)
+			linalg.DequantizeRowInt8(q, sc[0], row)
+			p.outs[m] = row
+			continue
+		}
+		if e := r.doG(r.lmW, r.aq, r.aSc, ArgNull(), r.logits, 0); e != nil {
+			return e
+		}
+		if rows != nil && rows[m].draw != nil {
+			// A step row whose token is drawn on-device: ForwardSample's own pick over this row's logits.
+			if p.ids == nil {
+				p.ids = make([]int, M)
+			}
+			id, e := r.stepDraw(rows[m].draw)
+			if e != nil {
+				return e
+			}
+			p.ids[m] = id
+			continue
+		}
+		if e := r.stream.Sync(); e != nil {
+			return e
+		}
+		if e := gpu.ReadToHost(r.logits, r.logitsPinned); e != nil {
+			return e
+		}
+		p.outs[m] = append([]float32(nil), r.logitsHost...)
+	}
+	return r.launchErr
+}
+
+// mapKV maps the pass's KV rows before anything is allocated: a step's rows in their slots (and its prefill chunk's shared-memory
+// check), or the ordinary pass's positions in the bound slot.
+func (p *prefillPass) mapKV() error {
+	r, startPos, M, rows := p.r, p.startPos, p.M, p.rows
+	if rows != nil {
+		r.kvStepAbort = false
+		for _, rw := range rows {
+			if e := r.kvEnsureSlot(rw.slot, rw.pos, 1); e != nil {
+				return e
+			}
+		}
+		if r.kvStepAbort {
+			// a row took back blocks from a borrower that may be another row of this step: run nothing, so each row can go alone
+			return fmt.Errorf("cuda step: a borrower was stopped while the rows were mapped: %w", decoder.ErrKVPoolFull)
+		}
+		if c := r.stepChunk; c.rows > 0 {
+			// The chunk's attention is an ordinary pass's without the row-batched exact kernels: a chunk that would need them declines.
+			fused := func(hd int) bool {
+				exact := r.forceExactKernels
+				r.forceExactKernels = c.exact
+				_, ok := r.useAttnFused(hd, c.rows)
+				r.forceExactKernels = exact
+				return ok
+			}
+			if e := r.checkPrefillShmem(c.pos, c.rows, fused); e != nil {
+				return fmt.Errorf("cuda ragged step: the prefill chunk at %d: %w", c.pos, e)
+			}
+			r.stepChunk.split = true
+		}
+	} else if e := r.kvEnsure(startPos, M); e != nil {
+		return e
 	}
 	return nil
 }

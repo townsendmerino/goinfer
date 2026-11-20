@@ -1,29 +1,20 @@
 package decoder
 
 import (
-	"context"
+	"strings"
 	"testing"
 )
 
-// LFM2 with int8 KV (Options.KVQuant == "i8"): the int8 store must not be enabled for a family whose
-// attention sizes its scores buffer from the f32 key store (forward_lfm2.go reads len(cache.Keys)),
-// or the first decode step's attendQueryI8 writes past a zero-length scores buffer.
-func TestLFM2_kvQuantI8_generates(t *testing.T) {
-	const ckpt = "../testdata/lfm2-tiny"
-	m, err := Load(ckpt, Options{Backend: "cpu", KVQuant: "i8"})
-	if err != nil {
-		t.Skipf("no lfm2 fixture: %v", err)
+// LFM2 with int8 KV (Options.KVQuant == "i8") on the CPU: its own forward loop keeps an f32 cache, so the precision cannot
+// be delivered and Load refuses it, rather than enabling an int8 store the family's attention would size its scores
+// buffer past.
+func TestLFM2_kvQuantI8_isRefusedOnTheCPU(t *testing.T) {
+	m, err := Load("../testdata/lfm2-tiny", Options{Backend: "cpu", KVQuant: "i8"})
+	if err == nil {
+		m.Close()
+		t.Fatal("Load accepted --kv i8 for LFM2 on the CPU, which keeps an f32 cache")
 	}
-	defer m.Close()
-	stream, gen := m.Generate(context.Background(), []int{1, 2, 3, 4}, 6, SamplingParams{})
-	n := 0
-	for range stream {
-		n++
-	}
-	if gen.Err() != nil {
-		t.Fatalf("generate: %v", gen.Err())
-	}
-	if n == 0 {
-		t.Fatal("no tokens generated")
+	if !strings.Contains(err.Error(), "--kv i8 cannot be delivered") {
+		t.Fatalf("refusal %q does not say the precision cannot be delivered", err)
 	}
 }

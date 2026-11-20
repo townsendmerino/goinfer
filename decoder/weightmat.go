@@ -104,16 +104,16 @@ func (q quantMode) gatherTable() quantMode { return q.embeddingWith(true) }
 // stays ~0.125 byte/element.
 const int4GroupSize = 32
 
-// int4ParThreshold sets the fan-out threshold for the int4 (W4A8) matmul below aikit's default (parThreshold = 1<<24 MACs)
-// so the small int4 decode matmuls parallelize. At M=1 every Gemma-4 int4 matmul (expert gate||up 3.96M, down 1.98M,
-// dense ~5.9M, attention ~11.5M MACs) falls under the aikit default and would run serial. 1<<20 sits below the smallest
-// decode matmul (1.98M), so all of them fan out, while tiny ops (<1M) stay serial; threshold 0, which fans out everything,
-// over-parallelizes on the 8-core Ryzen.
+// int4ParThreshold sets the fan-out threshold for the int4 (W4A8 and Q4_K) matmul below aikit's default (parThreshold =
+// 1<<24 MACs) so the small decode matmuls parallelize. aikit runs a call serial when M*N*K (M*totalN*K for a batch) is
+// under it. 1<<19 lets the smallest projections of the sub-1B models fan out (qwen2.5 0.5B's q/k/v batch, 1,032,192 MACs,
+// and its o projection, 802,816), while ops under 512K MACs stay serial; threshold 0, which fans out everything,
+// over-parallelizes on the 8-core Ryzen. TestInt4ParThreshold_qwen05bShapesFanOut pins the 0.5B shapes.
 //
 // Output is byte-identical (aikit partitions output columns in 8-wide groups, the width-invariant contract), and it only
 // widens fan-out, so prefill's already-parallel large-M matmuls are unaffected. Re-run BenchmarkInt4ParThresholdSweep if
 // the core topology or aikit's kernel changes. Measurements on both rigs: docs/code-notes/decoder.md#int4ParThreshold.
-const int4ParThreshold = 1 << 20
+const int4ParThreshold = 1 << 19
 
 // streamQuantized builds a [rows, cols] linalg.WeightMat in the target precision
 // by dequantizing each row through rowInto (into a reused cols-wide scratch) and
@@ -614,8 +614,9 @@ func quantizeEmbedWM(w linalg.WeightMat, mode quantMode, needCanonical bool) lin
 // linalg.Int4Row4Usable's rows%4 check, applied per tensor by repackedOnlyOrCanonical, so a violating shape is never
 // built repacked-only.
 //
-// Down-proj, the router and MoE expert weights are not this class: they never reach the batched dispatch, and take the
-// same policy through quantizeLayerWM under their own safety argument. Expert weights read through a read-only mmap span
+// Down-proj, the router and MoE expert weights are not this class and take the same policy through quantizeLayerWM. The
+// one batched dispatch an expert reaches, gpt-oss's gate and up (Model.gptOssExpertBatch), is decode-only at M=1 and
+// per-tensor rows%4 as above, so the same argument covers it. Expert weights read through a read-only mmap span
 // (paged .giw loading) have no load-time repack, so a .giw keeps them canonical.
 func quantizeBatchedProjWM(w linalg.WeightMat, mode quantMode, needCanonical, skipRow4 bool) linalg.WeightMat {
 	if mode != quantInt4 || fakeQuantScheme != "" {

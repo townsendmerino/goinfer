@@ -112,7 +112,8 @@ func askAboutImage(t *testing.T, lm *loadedModel, question string, imgData []byt
 	}
 	gr.maxTokens = maxTokens
 	var sb strings.Builder
-	_, n, _, _, _, _, err := lm.driveVL(context.Background(), gr, vi, nil, nil, func(s string) { sb.WriteString(s) })
+	res, err := lm.driveVL(context.Background(), gr, vi, nil, nil, func(s string) { sb.WriteString(s) })
+	n := res.nComp
 	if err != nil {
 		t.Fatalf("driveVL: %v", err)
 	}
@@ -177,7 +178,8 @@ func TestGemma4VLReal_E2B_logprobs(t *testing.T) {
 		t.Fatalf("prepare: %v", err)
 	}
 	gr.maxTokens = 8
-	_, n, lps, _, _, _, err := lm.driveVL(context.Background(), gr, vi, nil, nil, func(string) {})
+	res, err := lm.driveVL(context.Background(), gr, vi, nil, nil, func(string) {})
+	n, lps := res.nComp, res.logprobs
 	if err != nil {
 		t.Fatalf("driveVL: %v", err)
 	}

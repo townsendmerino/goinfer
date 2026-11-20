@@ -309,7 +309,7 @@ func (t *Template) renderThinking(system string, turns []Turn) []Segment {
 	r := t.reason
 	if r.gemma4 {
 		on, _ := r.effectiveOn(t.think)
-		return gemma4Segments(system, turns, on, r.hist == histGemma4 || r.oldGemma4, r.oldGemma4, r.offScaffold())
+		return gemma4Segments(system, turns, gemma4Opts{think: on, hist: r.hist == histGemma4 || r.oldGemma4, old: r.oldGemma4, scaffold: r.offScaffold()})
 	}
 	if t.name == "flint" {
 		return t.render(system, turns)

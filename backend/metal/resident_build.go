@@ -902,7 +902,7 @@ func (b *residentBuild) checkWidths() error {
 	// reaches.
 	bad8 := func(name string, n int) error {
 		if n%8 != 0 {
-			return fmt.Errorf("metal: %s width %d is not a multiple of 8 — SA-GEMV tail-write hazard (audit C-10); use the CPU path", name, n)
+			return fmt.Errorf("metal: %s width %d is not a multiple of 8 — the SA-GEMV kernel would write past its tail; use the CPU path", name, n)
 		}
 		return nil
 	}
@@ -953,7 +953,7 @@ func (b *residentBuild) checkWidths() error {
 		dnValueDim = r.dnet.valueDim
 	}
 	if tg, lim := maxThreadgroupStageBytes(H, maxNHhd, moeInter, g4Inter, dnValueDim), d.MaxThreadgroupMemoryLength(); tg > lim {
-		return fmt.Errorf("metal: threadgroup staging needs %d B (2×K) > device tile-memory max %d B — declining to CPU (audit M-11)", tg, lim)
+		return fmt.Errorf("metal: threadgroup staging needs %d B (2×K) > device tile-memory max %d B — declining to CPU", tg, lim)
 	}
 	b.guDim, b.maxFFNI = guDim, maxFFNI
 	return nil

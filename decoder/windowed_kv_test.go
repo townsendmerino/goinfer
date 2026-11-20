@@ -13,7 +13,7 @@ func loadWindowFixture(t *testing.T, on bool) *Model {
 	t.Helper()
 	m, err := Load("../testdata/mistral-tiny-window", Options{Quant: "f32", ResidentWindowedKV: on})
 	if err != nil {
-		t.Skipf("no fixture: %v", err)
+		t.Fatalf("load ../testdata/mistral-tiny-window: %v", err)
 	}
 	t.Cleanup(func() { m.Close() })
 	return m
@@ -88,7 +88,7 @@ func TestWindowedKV_planChoosesLongerContext(t *testing.T) {
 func TestWindowedKV_gatesOnLayer(t *testing.T) {
 	m, err := Load("../testdata/llama-tiny", Options{Quant: "f32", ResidentWindowedKV: true})
 	if err != nil {
-		t.Skipf("no fixture: %v", err)
+		t.Fatalf("load ../testdata/llama-tiny: %v", err)
 	}
 	defer m.Close()
 	_, nLayers, _, _, _, _, _ := m.Dims()

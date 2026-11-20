@@ -16,10 +16,11 @@ type Side struct {
 	Shadow        map[string]string
 	Files         map[string][]string
 	Programs      map[string][]string
-	Fixture       map[string]string   // fixture directory -> its entries in the program table, every GOARCH
-	Loaders       map[string][]string // family -> its loader fixtures (LoaderRule); empty when it keeps the loader files
-	Dropped       map[string][]string // family -> the loader files its loader fixtures stand for
-	LoaderFixture map[string]string   // loader fixture -> its entries in the loader table, every GOARCH and mode
+	Fixture       map[string]string            // fixture directory -> its entries in the program table, every GOARCH
+	Loaders       map[string][]string          // family -> its loader fixtures (LoaderRule); empty when it keeps the loader files
+	Dropped       map[string][]string          // family -> the loader files its loader fixtures stand for
+	LoaderFixture map[string]string            // loader fixture -> its entries in the loader table, every GOARCH and mode
+	LoaderEntries map[string]map[string]string // loader fixture -> "GOARCH mode" -> its digest in the loader table
 	Content       map[string]string
 }
 
@@ -47,7 +48,8 @@ func LoadSide(src Source) (Side, error) {
 	}
 	s := Side{Definition: def, Tail: tail, Today: map[string]string{}, Shadow: map[string]string{}, Files: map[string][]string{},
 		Programs: map[string][]string{}, Fixture: map[string]string{}, Content: map[string]string{},
-		Loaders: map[string][]string{}, Dropped: map[string][]string{}, LoaderFixture: map[string]string{}}
+		Loaders: map[string][]string{}, Dropped: map[string][]string{}, LoaderFixture: map[string]string{},
+		LoaderEntries: map[string]map[string]string{}}
 	for name, fam := range m.Families {
 		if s.Today[name], err = TodayKey(src, m, fam, def, tail, progs); err != nil {
 			return Side{}, fmt.Errorf("%s: %w", name, err)
@@ -60,6 +62,12 @@ func LoadSide(src Source) (Side, error) {
 		for _, f := range s.Loaders[name] {
 			if s.LoaderFixture[f], err = LoaderDigest([]string{f}, loaders); err != nil {
 				return Side{}, fmt.Errorf("%s: %w", name, err)
+			}
+			s.LoaderEntries[f] = map[string]string{}
+			for arch, fxs := range loaders {
+				for mode, d := range fxs[f] {
+					s.LoaderEntries[f][arch+" "+mode] = d
+				}
 			}
 		}
 		s.Programs[name] = append([]string(nil), fam.Programs...)
@@ -104,8 +112,8 @@ type Verdict struct {
 // Compare classes every family across a push from before to after. An old-only verdict is explained when every moved
 // input is the key's definition (today's key took the builders out), a builder file of a family with programs on a push
 // with a side keyed by DefinitionFiles (BuilderFile; under the builder rule neither key reads one), or a loader file this family's loader digest stands for (Dropped); a
-// change on a path no fixture exercises reads the same, so a grade reads those pushes' diffs. A new-only verdict is explained when the only moved inputs are the family's program and loader lists, and no loader fixture left
-// its list while its program stayed (loaderListShrank). Every other disagreement is unexplained.
+// change on a path no fixture exercises reads the same, so a grade reads those pushes' diffs. A new-only verdict is explained when the only moved inputs are the family's program and loader lists, or loader identities whose
+// fixtures only gained table entries (loaderEntriesOnlyGrew), and no loader fixture left its list while its program stayed (loaderListShrank). Every other disagreement is unexplained.
 func Compare(before, after Side) []Verdict {
 	var out []Verdict
 	for name, ak := range after.Today {
@@ -160,12 +168,19 @@ func Compare(before, after Side) []Verdict {
 		default:
 			v.Class = NewOnly
 			v.Explained = len(v.Moved) > 0
+			grew := false
 			for _, m := range v.Moved {
-				if m != "program list" && m != "loader list" {
+				switch {
+				case m == "program list" || m == "loader list":
+				case m == "loaders" && loaderEntriesOnlyGrew(before, after, name):
+					grew = true
+				default:
 					v.Explained = false
 				}
 			}
 			switch {
+			case v.Explained && grew && !loaderListShrank(before, after, name):
+				v.Reason = "a loader fixture's table entries grew and none it held moved: the loader table now covers more, no identity changed"
 			case v.Explained && loaderListShrank(before, after, name):
 				v.Explained = false
 				v.Reason = "a loader fixture left the family's list while its program list kept it: an edit to the loader table, not to a dependency"
@@ -184,6 +199,27 @@ func Compare(before, after Side) []Verdict {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Family < out[j].Family })
 	return out
+}
+
+// loaderEntriesOnlyGrew reports whether every loader fixture listed on both sides whose entries differ only gained entries:
+// each entry it held before is present after with the same digest. A new entry (a GGUF fixture's parsed config, say) moves
+// the loader digest without any identity it already stood for moving.
+func loaderEntriesOnlyGrew(before, after Side, name string) bool {
+	for _, f := range after.Loaders[name] {
+		if !slices.Contains(before.Loaders[name], f) || before.LoaderFixture[f] == after.LoaderFixture[f] {
+			continue
+		}
+		b, a := before.LoaderEntries[f], after.LoaderEntries[f]
+		if len(b) == 0 || len(a) <= len(b) {
+			return false
+		}
+		for k, d := range b {
+			if a[k] != d {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // loaderListShrank reports whether a fixture left the family's loader list though its program fixture is still in the program list. The list

@@ -2,7 +2,10 @@ package decoder
 
 import (
 	"math"
+	"sync/atomic"
 	"unsafe"
+
+	"github.com/townsendmerino/aikit/linalg"
 )
 
 // gpt-oss's two operations that differ from the generic ones: attention adds a learned per-head SINK to the softmax denominator
@@ -110,20 +113,35 @@ func attendSinksToken(p attentionParams, q, k, v, ctx []float32, cache *KVCache,
 
 // gptOssMoE runs the sparse FFN with arch's routing and expert constants; gptOssMoEWith is the program walker's form.
 func (m *Model) gptOssMoE(h []float32, lw *LayerWeights, arch *Architecture) ([]float32, error) {
-	return m.gptOssMoEWith(h, lw, &ffnParams{Form: ffnGptOss, MoE: *arch.MoE, Alpha: arch.gptoss.SwigluAlpha, Limit: arch.gptoss.SwigluLimit}, arch.HiddenDim)
+	return m.gptOssMoEWith(h, lw, &ffnParams{Form: ffnGptOss, MoE: *arch.MoE, Alpha: arch.gptoss.SwigluAlpha, Limit: arch.gptoss.SwigluLimit}, arch.HiddenDim, nil)
 }
 
 // gptOssMoEWith runs the sparse FFN: a router (with a per-expert logit bias) selects the top-k experts, softmax over the selected
 // logits gives the mixing weights, and the chosen gpt-oss experts are combined. Taking the softmax over ONLY the top-k logits is
 // identical to softmax-over-all + renormalize (the normalizer cancels), so the weights match HF's GptOssTopKRouter exactly.
-func (m *Model) gptOssMoEWith(h []float32, lw *LayerWeights, p *ffnParams, hidden int) ([]float32, error) {
+//
+// When every chosen expert's gate and up run the CPU W4A8 kernel (gptOssExpertBatch), the 2k gate and up projections share
+// one quantized h and one fork/join; the downs stay per expert, since their inputs differ. Each output column is the same dot
+// product either way, so the result is bit-identical to the per-expert loop. The returned slice is scr's when scr is set,
+// valid until the next call on scr; a nil scr allocates.
+func (m *Model) gptOssMoEWith(h []float32, lw *LayerWeights, p *ffnParams, hidden int, scr *decodeScratch) ([]float32, error) {
 	moe := &p.MoE
-	logits := make([]float32, moe.NumExperts)
-	matmul(m.be, &lw.Router, h, logits, 1)
-	if lw.RouterBias != nil {
-		addBias(logits, lw.RouterBias) // a plain router-logit bias, added before top-k
+	var s *gptOssScratch
+	if scr != nil {
+		if scr.gptOss == nil {
+			scr.gptOss = new(gptOssScratch)
+		}
+		s = scr.gptOss
+	} else {
+		s = new(gptOssScratch)
 	}
-	idx, topv := topK(logits, moe.TopK)
+	inter := moe.IntermediateDim
+	s.size(moe.NumExperts, moe.TopK, inter, hidden)
+	matmul(m.be, &lw.Router, h, s.logits, 1)
+	if lw.RouterBias != nil {
+		addBias(s.logits, lw.RouterBias) // a plain router-logit bias, added before top-k
+	}
+	idx, topv := topK(s.logits, moe.TopK)
 	wts := softmaxF32(topv)
 
 	// Touch every routed expert before evaluating it, as moeMLP does, so the pager's budget and LRU see gpt-oss's demand.
@@ -133,30 +151,106 @@ func (m *Model) gptOssMoEWith(h []float32, lw *LayerWeights, p *ffnParams, hidde
 		}
 	}
 
-	out := make([]float32, hidden)
-	expOut := make([]float32, hidden)
+	alpha, limit := float32(p.Alpha), float32(p.Limit)
+	out := s.out
+	clear(out)
+	batched := m.gptOssExpertBatch(lw, idx, h, s, scr)
 	for j, e := range idx {
-		gptOssExpertWith(m.be, &lw.Experts[e], h, expOut, moe.IntermediateDim, float32(p.Alpha), float32(p.Limit))
+		ex := &lw.Experts[e]
+		gate, up := s.gateUp[2*j*inter:(2*j+1)*inter], s.gateUp[(2*j+1)*inter:(2*j+2)*inter]
+		if !batched {
+			matmul(m.be, &ex.Gate, h, gate, 1)
+			matmul(m.be, &ex.Up, h, up, 1)
+		}
+		gptOssExpertDown(m.be, ex, gate, up, s.expOut, alpha, limit)
 		w := wts[j]
 		for i := range out {
-			out[i] += w * expOut[i]
+			out[i] += w * s.expOut[i]
 		}
 	}
 	return out, nil
 }
 
-// gptOssExpertWith evaluates one gpt-oss expert. Unlike the plain SwiGLU expert it clamps both branches, gates with an α-scaled
-// sigmoid, adds 1 to the linear branch, and carries per-projection biases (matching HF GptOssExperts):
+// gptOssScratch is gptOssMoEWith's per-stream scratch: router logits, the chosen experts' gate and up outputs (expert j's
+// gate at gateUp[2j*inter:], its up right after), one expert's output, the combined output, and the batch's ops.
+type gptOssScratch struct {
+	logits, gateUp, expOut, out []float32
+	ops                         []linalg.W4A8Op
+}
+
+// size makes s's buffers fit nExp experts, k chosen, inter and hidden; a call with the same shape allocates nothing.
+func (s *gptOssScratch) size(nExp, k, inter, hidden int) {
+	grow := func(b []float32, n int) []float32 {
+		if cap(b) < n {
+			return make([]float32, n)
+		}
+		return b[:n]
+	}
+	s.logits = grow(s.logits, nExp)
+	s.gateUp = grow(s.gateUp, 2*k*inter)
+	s.expOut = grow(s.expOut, hidden)
+	s.out = grow(s.out, hidden)
+	if cap(s.ops) < 2*k {
+		s.ops = make([]linalg.W4A8Op, 2*k)
+	}
+	s.ops = s.ops[:2*k]
+}
+
+// gptOssExpertBatchCalls counts the layers whose expert gate and up ran as one batch, so a test can see the path was taken.
+var gptOssExpertBatchCalls atomic.Int64
+
+// gptOssExpertBatch runs the chosen experts' gate and up projections as one linalg.MatmulBTW4A8Batch into s.gateUp and
+// reports true, or does nothing and reports false. It runs only under w4a8BatchEnabled and only when every one of the 2k
+// weights takes the CPU W4A8 kernel (cpuW4A8) with the same K, weight group and activation group, so a staged backend's
+// per-matmul consult and every other weight kind keep the per-expert path. M is 1, which is what makes a repacked-only
+// (row4) expert safe in the batch (see quantizeBatchedProjWM).
+func (m *Model) gptOssExpertBatch(lw *LayerWeights, idx []int, h []float32, s *gptOssScratch, scr *decodeScratch) bool {
+	if !w4a8BatchEnabled || len(idx) == 0 {
+		return false
+	}
+	inter := len(s.gateUp) / (2 * len(idx))
+	first := &lw.Experts[idx[0]].Gate
+	K, actGroup := first.Cols(), first.ActQuantGroup()
+	group := -1
+	for j, e := range idx {
+		ex := &lw.Experts[e]
+		for b, w := range [2]*linalg.WeightMat{&ex.Gate, &ex.Up} {
+			if !cpuW4A8(m.be, w) || w.Cols() != K || w.ActQuantGroup() != actGroup || w.Rows() != inter {
+				return false
+			}
+			o := 2*j + b
+			op, g := wmW4A8Op(w, s.gateUp[o*inter:(o+1)*inter])
+			if group >= 0 && g != group {
+				return false
+			}
+			group = g
+			s.ops[o] = op
+		}
+	}
+	var ws *linalg.Workspace
+	if scr != nil {
+		ws = scr.ws
+	} else {
+		pooled, _ := matmulWorkspace(nil)
+		defer matmulWSPool.Put(pooled)
+		ws = pooled
+	}
+	ws.SetThreshold(int4ParThreshold)
+	ws.SetActQuantGroup(actGroup)
+	linalg.MatmulBTW4A8Batch(ws, h, 1, K, group, s.ops)
+	gptOssExpertBatchCalls.Add(1)
+	return true
+}
+
+// gptOssExpertDown finishes one gpt-oss expert from its gate and up projections (gate is overwritten with the activation).
+// Unlike the plain SwiGLU expert it clamps both branches, gates with an α-scaled sigmoid, adds 1 to the linear branch, and
+// carries per-projection biases (matching HF GptOssExperts):
 //
 //	gate = clamp(Gate·h + gateBias, max=limit)
 //	up   = clamp(Up·h + upBias, [-limit, limit])
 //	glu  = gate · sigmoid(α·gate)
 //	dst  = Down·((up + 1)·glu) + downBias
-func gptOssExpertWith(be Backend, ex *expertWeights, h, dst []float32, inter int, alpha, limit float32) {
-	gate := make([]float32, inter)
-	up := make([]float32, inter)
-	matmul(be, &ex.Gate, h, gate, 1)
-	matmul(be, &ex.Up, h, up, 1)
+func gptOssExpertDown(be Backend, ex *expertWeights, gate, up, dst []float32, alpha, limit float32) {
 	if ex.GateBias != nil {
 		addBias(gate, ex.GateBias)
 	}

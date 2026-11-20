@@ -22,7 +22,7 @@ var _ decoder.DecodeVerifyDiverger = (*cudaResident)(nil)
 // speculative loop that verifies on this resident, because every such loop is sold as lossless and that rests on one
 // invariant: a verified position scores exactly as a decoded one would.
 //
-// The only thing that breaks it is the flash-decode V-sum spike. With GOINFER_SPLITKV_VSUM_SPLIT set, M=1 decode
+// The only thing that breaks it is the flash-decode V-sum spike. With vsumSplitForTest set at build, M=1 decode
 // (launchToken, splitKVAttnDecode) sums V over key chunks in a fixed order, while batched verify (ForwardN /
 // PrefillLastN, prefillCore) still runs attn_batched's single sequential fold, and the two trees round differently:
 // "--drafter on" and "--drafter off" would return different text with nothing erroring. It returns an error whenever the
@@ -33,10 +33,10 @@ var _ decoder.DecodeVerifyDiverger = (*cudaResident)(nil)
 // go through M=1 Forward, the same tree as decode.
 func (r *cudaResident) DecodeVerifyDivergence() error {
 	if r.skVsumSplit > 1 {
-		return fmt.Errorf("GOINFER_SPLITKV_VSUM_SPLIT=%d is set, so decode sums attention values in "+
+		return fmt.Errorf("the flash-decode V-sum split (%d chunks) is on, so decode sums attention values in "+
 			"a different order from the batched verify speculative decoding uses — the two can pick "+
 			"different tokens at near-ties, and the output would no longer match plain greedy. "+
-			"Unset GOINFER_SPLITKV_VSUM_SPLIT to use speculative decoding (see "+
+			"Build without the split to use speculative decoding (see "+
 			"docs/measurements/vsum-split-spike-2026-09-13.md)", r.skVsumSplit)
 	}
 	return nil
