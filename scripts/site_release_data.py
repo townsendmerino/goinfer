@@ -4,7 +4,8 @@
     python3 scripts/site_release_data.py [TAG|latest] OUT.json
 
 Reads the GitHub release with `gh` (public data; GH_TOKEN only raises the rate limit): its tag, date, every asset's name,
-size and URL, and the per-asset sha256 from the release's own checksums.txt. It refuses a release that looks incomplete,
+size and URL, and the per-asset sha256 from the release's own checksums.txt, and from checksums-webgpu.txt when the
+release carries one (webgpu-assets.yml attaches the WebGPU binaries after the static ones, with their own checksum file). It refuses a release that looks incomplete,
 so a Download page can never be built from a half-attached release (release-assets.yml attaches 27 assets from v0.17.0).
 """
 import json, subprocess, sys
@@ -25,11 +26,13 @@ def main():
     if len(assets) < MIN_ASSETS:
         sys.exit(f"{tag}: only {len(assets)} assets attached (expected at least {MIN_ASSETS}); the upload is not finished")
     sums = {}
-    for ln in gh("release", "download", tag, "--repo", repo, "-p", "checksums.txt", "-O", "-").splitlines():
-        parts = ln.split()
-        if len(parts) == 2 and len(parts[0]) == 64:
-            sums[parts[1].lstrip("*")] = parts[0]
-    missing = [a["name"] for a in assets if a["name"] != "checksums.txt" and a["name"] not in sums]
+    sumfiles = ["checksums.txt"] + [n for n in ("checksums-webgpu.txt",) if any(a["name"] == n for a in assets)]
+    for sf in sumfiles:
+        for ln in gh("release", "download", tag, "--repo", repo, "-p", sf, "-O", "-").splitlines():
+            parts = ln.split()
+            if len(parts) == 2 and len(parts[0]) == 64:
+                sums[parts[1].lstrip("*")] = parts[0]
+    missing = [a["name"] for a in assets if a["name"] not in sumfiles and a["name"] not in sums]
     if missing:
         sys.exit(f"{tag}: no checksum listed for {missing[:5]}")
     json.dump({"tag": rel["tagName"], "published": rel["publishedAt"][:10], "url": rel["url"],
