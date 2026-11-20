@@ -308,7 +308,7 @@ func TestDFlash_refusesV2(t *testing.T) {
 		t.Fatal("v1 loader ACCEPTED a DFlash 2 config — it would silently drop the conv and " +
 			"selector weights and draft worse than v1, with no error anywhere")
 	}
-	for _, want := range []string{"DFlash 2", "conv_kernel_size=2", "selector_rank=256", "P15"} {
+	for _, want := range []string{"DFlash 2", "conv_kernel_size=2", "selector_rank=256", "docs/spec/08-dspark-dflash.md"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("refusal should name %q so the reader knows WHICH checkpoint and where the\n"+
 				"work is tracked; got: %v", want, err)

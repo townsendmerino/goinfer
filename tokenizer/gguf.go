@@ -250,8 +250,8 @@ func setupGGUFByteLevel(t *Tokenizer, g *ggufMeta) {
 	t.mode = modeByteLevel
 	t.byteEncoder, t.byteDecoder = buildByteLevelTables()
 	pre, _ := g.Str(ggufTokPre)
-	var known bool
-	t.maxDigits, t.normForm, t.normOn, t.ignoreMerges, t.splitDigits, t.preShape, known = byteLevelKnobs(pre)
+	k, known := byteLevelKnobs(pre)
+	t.maxDigits, t.normForm, t.normOn, t.ignoreMerges, t.splitDigits, t.preShape = k.maxDigits, k.form, k.normOn, k.ignoreMerges, k.splitDigits, k.shape
 	if !known {
 		// A GGUF carries no Split regex, so there is nothing to classify: the pre name is all the evidence
 		// there is, and an unknown name means unknown knobs. Say so (PreTokenizerDecline) rather than fall
@@ -262,6 +262,16 @@ func setupGGUFByteLevel(t *Tokenizer, g *ggufMeta) {
 	}
 }
 
+// byteLevel is one family's byte-level pipeline knobs, as byteLevelKnobs returns them.
+type byteLevel struct {
+	maxDigits    int       // the longest digit run one pre-token takes
+	form         norm.Form // the normalization form, applied when normOn
+	normOn       bool
+	ignoreMerges bool // a whole-word vocab hit wins over the merges
+	splitDigits  bool // every digit is its own pre-token
+	shape        splitShape
+}
+
 // byteLevelKnobs maps a tokenizer.ggml.pre identifier to the byte-level pipeline
 // knobs (digit-run cap, normalization form + on, ignore_merges, individual-digit
 // pre-split). The values reproduce what Load derives from each family's
@@ -270,34 +280,34 @@ func setupGGUFByteLevel(t *Tokenizer, g *ggufMeta) {
 // has no normalizer and a Digits{individual_digits} pretokenizer (each digit
 // isolated, so a leading space never attaches to one); GPT-2 takes one digit, no
 // NFC, and honors merges. Unknown pre falls back to the GPT-2-like defaults.
-func byteLevelKnobs(pre string) (maxDigits int, form norm.Form, normOn, ignoreMerges, splitDigits bool, shape splitShape, known bool) {
+func byteLevelKnobs(pre string) (k byteLevel, known bool) {
 	switch pre {
 	case "llama-bpe", "llama3", "llama-v3":
-		return 3, norm.NFC, false, true, false, shapeCl100k, true
+		return byteLevel{maxDigits: 3, form: norm.NFC, ignoreMerges: true, shape: shapeCl100k}, true
 	case "qwen2", "qwen2.5", "qwen":
-		return 1, norm.NFC, true, false, false, shapeCl100k, true
+		return byteLevel{maxDigits: 1, form: norm.NFC, normOn: true, shape: shapeCl100k}, true
 	case "gpt-4o":
 		// o200k. A GGUF carries no Split regex, so a name→shape mapping is a guess unless checked against
 		// the family's own tokenizer.json. gpt-oss's HF tokenizer.json declares a Split regex byte-identical
 		// to the o200k pattern splitO200k implements. Digits cap at 3, no normalizer.
-		return 3, norm.NFC, false, false, false, shapeO200k, true
+		return byteLevel{maxDigits: 3, form: norm.NFC, shape: shapeO200k}, true
 	case "flint":
 		// RecursiveSI/flint (llama.cpp LLAMA_VOCAB_PRE_TYPE_FLINT): three-stage Split sequence
 		// (\p{N}{1,3}, Han/Hiragana/Katakana, then o200k-style case split + attached contractions with
 		// [\p{P}\p{S}]+ punctuation), null normalizer, ignore_merges false.
-		return 3, norm.NFC, false, false, false, shapeFlint, true
+		return byteLevel{maxDigits: 3, form: norm.NFC, shape: shapeFlint}, true
 	case "qwen35":
 		// Qwen3.5's GGUFs: the same pipeline as qwen2 (NFC on, one digit). The unknown-pre default differs
 		// only in NFC being off, so omitting this case diverges only on inputs that need normalisation.
-		return 1, norm.NFC, true, false, false, shapeCl100k, true
+		return byteLevel{maxDigits: 1, form: norm.NFC, normOn: true, shape: shapeCl100k}, true
 	case "mellum2":
-		return 1, norm.NFC, false, false, true, shapeCl100k, true
+		return byteLevel{maxDigits: 1, form: norm.NFC, splitDigits: true, shape: shapeCl100k}, true
 	case "dbrx":
 		// dbrx is granite-4.0-h-tiny's pre name. Its HF tokenizer.json declares the cl100k Split regex with
 		// \p{N}{1,3} digit runs (Llama-3's cap, not Qwen's single digit), a null normalizer, and
 		// ignore_merges false. That last knob is what differs from llama-bpe (ignoreMerges=true), which is
 		// otherwise the same shape and digit cap, so this is its own case rather than an alias for it.
-		return 3, norm.NFC, false, false, false, shapeCl100k, true
+		return byteLevel{maxDigits: 3, form: norm.NFC, shape: shapeCl100k}, true
 	case "gpt-2", "default", "":
 		// GPT-2's OWN alternation is not the cl100k one (no contraction clause, ` ?\p{N}+` rather than a
 		// capped run): shapeGPT2Original implements it directly (split_gpt2orig.go).
@@ -307,9 +317,9 @@ func byteLevelKnobs(pre string) (maxDigits int, form norm.Form, normOn, ignoreMe
 		// then unbounded digit runs, then a fixed 3-digit grouping), so a pre="default" (or absent) GGUF is
 		// walked with a shape the file never declared. Implementing the real one needs a new splitShape and
 		// goldens; deferred. Text: docs/code-notes/tokenizer.md#byteLevelKnobs: gpt-2 and default.
-		return 1, norm.NFC, false, false, false, shapeGPT2Original, true
+		return byteLevel{maxDigits: 1, form: norm.NFC, shape: shapeGPT2Original}, true
 	default:
-		return 1, norm.NFC, false, false, false, shapeUnknown, false
+		return byteLevel{maxDigits: 1, form: norm.NFC, shape: shapeUnknown}, false
 	}
 }
 

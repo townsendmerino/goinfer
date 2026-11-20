@@ -436,7 +436,7 @@ func (m *Model) ffnToken(p *ffnParams, x, out []float32, lw *LayerWeights, scr *
 		m.llama4MoEWith(x, out, lw, &p.MoE, arch.HiddenDim)
 		return nil
 	case ffnGptOss:
-		g, err := m.gptOssMoEWith(x, lw, p, arch.HiddenDim)
+		g, err := m.gptOssMoEWith(x, lw, p, arch.HiddenDim, scr)
 		if err != nil {
 			return err
 		}

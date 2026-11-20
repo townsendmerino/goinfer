@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -135,8 +136,8 @@ func TestUnloadSuggestion(t *testing.T) {
 	wrapped := fmt.Errorf("decoder: won't fit: %w", fit.ErrWontFitResident)
 	got := s.unloadSuggestion(wrapped)
 	want := lm.model.ResidentWeightBytes() + lm.model.ExtraResidentBytes()
-	if !strings.Contains(got, `Unload "tiny"`) || !strings.Contains(got, fmt.Sprintf("%.1f GB", float64(want)/(1<<30))) {
-		t.Errorf("suggestion = %q, want it to name %q and its size (%.1f GB)", got, "tiny", float64(want)/(1<<30))
+	if !strings.Contains(got, `Unload "tiny"`) || !strings.Contains(got, mem.GiB(want)) {
+		t.Errorf("suggestion = %q, want it to name %q and its size (%s)", got, "tiny", mem.GiB(want))
 	}
 	if got := s.unloadSuggestion(other); got != "" {
 		t.Errorf("non-fit error with a model resident: suggestion = %q, want \"\" — must not fire on the wrong error", got)

@@ -15,6 +15,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -294,8 +295,8 @@ func planFor(m *decoder.Model, backend string, free int64, req fit.PlanRequest) 
 	p := l.Plan
 	want := m.MetalKVSlotsWanted()
 	if want > 1 && p.Placement != fit.PlacementDecline {
-		p.Reason += fmt.Sprintf(" — a default load keeps %d of the %d KV slots it asks for (KV %.2f GB in all)", l.KVSlots, want,
-			float64(p.KVBytes+l.Further)/(1<<30))
+		p.Reason += fmt.Sprintf(" — a default load keeps %d of the %d KV slots it asks for (KV %s in all)", l.KVSlots, want,
+			mem.GiB(p.KVBytes+l.Further))
 	}
 	switch {
 	case req.CtxPinned:
@@ -506,33 +507,32 @@ func planCUDA(src fitSource, a Args) (CUDALine, error) {
 		return CUDALine{}, err
 	}
 	p := fit.Plan{Backend: "cuda"}
-	mem := price.Memory
+	rm := price.Memory
 	switch {
 	case why != "":
 		p.Placement, p.Reason = fit.PlacementDecline, why
 		return CUDALine{Plan: p}, nil
-	case mem == nil:
+	case rm == nil:
 		p.Placement, p.Ctx, p.Reason = fit.PlacementResident, price.Ctx, "goes resident; "+price.Unknown
 		return CUDALine{Plan: p}, nil
 	}
 	p.Placement, p.Ctx, p.DenseBytes, p.AllocSlackBytes, p.KVBytes, p.ExtraBytes, p.FreeBytes =
-		fit.PlacementResident, price.Ctx, mem.DenseBytes, mem.SlackBytes, mem.KVBytes, mem.ExtraBytes, mem.FreeBytes
-	gb := func(n int64) float64 { return float64(n) / (1 << 30) }
+		fit.PlacementResident, price.Ctx, rm.DenseBytes, rm.SlackBytes, rm.KVBytes, rm.ExtraBytes, rm.FreeBytes
 	extra := ""
-	if mem.ExtraBytes > 0 {
-		extra = fmt.Sprintf(" + companion %.2f GB", gb(mem.ExtraBytes))
+	if rm.ExtraBytes > 0 {
+		extra = fmt.Sprintf(" + companion %s", mem.GiB(rm.ExtraBytes))
 	}
-	p.Reason = fmt.Sprintf("dense %.2f GB + allocation rounding %.2f GB + KV %.2f GB (%d slot(s) x %d positions, %s, as the device "+
-		"charges it)%s + margin %.2f GB fits %.2f GB free — the CUDA build's own plan", gb(mem.DenseBytes), gb(mem.SlackBytes),
-		gb(mem.KVBytes), mem.KVSlots, price.Ctx, mem.KVPrecision, extra, gb(mem.MarginBytes), gb(mem.FreeBytes))
-	if mem.KVSlots < mem.KVSlotsAsked {
-		p.Reason += fmt.Sprintf("; keeps %d of the %d KV slots a serve load asks for (--kv-sessions)", mem.KVSlots, mem.KVSlotsAsked)
+	p.Reason = fmt.Sprintf("dense %s + allocation rounding %s + KV %s (%d slot(s) x %d positions, %s, as the device "+
+		"charges it)%s + margin %s fits %s free — the CUDA build's own plan", mem.GiB(rm.DenseBytes), mem.GiB(rm.SlackBytes),
+		mem.GiB(rm.KVBytes), rm.KVSlots, price.Ctx, rm.KVPrecision, extra, mem.GiB(rm.MarginBytes), mem.GiB(rm.FreeBytes))
+	if rm.KVSlots < rm.KVSlotsAsked {
+		p.Reason += fmt.Sprintf("; keeps %d of the %d KV slots a serve load asks for (--kv-sessions)", rm.KVSlots, rm.KVSlotsAsked)
 	}
-	if mem.ConversationCtx > price.Ctx {
-		p.Reason += fmt.Sprintf("; one conversation can use up to %d positions of the shared pool", mem.ConversationCtx)
+	if rm.ConversationCtx > price.Ctx {
+		p.Reason += fmt.Sprintf("; one conversation can use up to %d positions of the shared pool", rm.ConversationCtx)
 	}
-	if mem.Note != "" {
-		p.Reason += "; " + mem.Note
+	if rm.Note != "" {
+		p.Reason += "; " + rm.Note
 	}
-	return CUDALine{Plan: p, KVSlots: mem.KVSlots}, nil
+	return CUDALine{Plan: p, KVSlots: rm.KVSlots}, nil
 }

@@ -246,7 +246,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 }
 `
 
-// w4MultiKind names one of the two multi-row int4 kernels.
+// W4MultiKind names one of the two multi-row int4 kernels.
 type W4MultiKind int
 
 const (
@@ -261,7 +261,7 @@ func (k W4MultiKind) String() string {
 	return "rows"
 }
 
-// w4MultiVerified lists the WebGPU backends on which the multi-row int4 kernels have been checked bit for bit against
+// W4MultiVerified lists the WebGPU backends on which the multi-row int4 kernels have been checked bit for bit against
 // the single-row kernel and the batched pass against the row-by-row walk (TestW4Multi_matchesSingleRow,
 // TestPrefillInt4_matchesWalk). Each kernel's output is a float sum in a fixed order, and a backend's shader compiler
 // may evaluate the same expression differently in two kernels, so the identity is a property of a backend, not of the

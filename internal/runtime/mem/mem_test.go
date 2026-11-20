@@ -301,7 +301,7 @@ func TestHostCheck_heapSlackBesideTheSource(t *testing.T) {
 	if got, want := with.Need(), int64(w+src+w/100); got != want {
 		t.Errorf("with a source: need %d, want weights + source + 1%% of the weights = %d", got, want)
 	}
-	if !strings.Contains(with.Arithmetic(), "1.0 GB heap beside it") {
+	if !strings.Contains(with.Arithmetic(), "1.00 GiB heap beside it") {
 		t.Errorf("the arithmetic does not name the heap slack: %q", with.Arithmetic())
 	}
 	without := NewHostCheck(HostLoad{Name: "m", Quant: "int4", WeightBytes: w}, m, p)

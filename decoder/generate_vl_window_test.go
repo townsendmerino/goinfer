@@ -29,7 +29,7 @@ func TestGenerateVL_refusesImageBlockLongerThanWindow(t *testing.T) {
 	}
 	m, err := Load("../testdata/gemma3-vl-tiny", Options{})
 	if err != nil {
-		t.Skipf("no checkpoint: %v", err)
+		t.Fatalf("load ../testdata/gemma3-vl-tiny: %v", err)
 	}
 	defer m.Close()
 	saved := m.w.arch.SlidingWindow

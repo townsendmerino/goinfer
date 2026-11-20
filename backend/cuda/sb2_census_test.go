@@ -869,7 +869,7 @@ func TestBackendMemoryCensus_cuda_plant(t *testing.T) {
 		red++
 		if m := regexp.MustCompile(`weights=(\d+)\(profile-pool\)`).FindStringSubmatch(l); m != nil {
 			f, _ := strconv.ParseInt(m[1], 10, 64)
-			if want := fmt.Sprintf("only %.2f GB is free", float64(f)/1e9); !strings.Contains(l, want) {
+			if want := "only " + mem.GiB(f) + " is free"; !strings.Contains(l, want) {
 				t.Errorf("planted margin: a MoE line's refusal does not name the post-pool figure (%q): %s", want, l)
 			}
 			post++
