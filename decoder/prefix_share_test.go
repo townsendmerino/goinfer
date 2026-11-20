@@ -122,7 +122,7 @@ func TestPromptHiddenMany_fallsBackWhereItCannotShare(t *testing.T) {
 	defer func() { prefixShareHook = nil }()
 	m, err := Load("../testdata/llama-tiny", Options{})
 	if err != nil {
-		t.Skipf("no llama-tiny: %v", err)
+		t.Fatalf("load ../testdata/llama-tiny: %v", err)
 	}
 	defer m.Close()
 	if m.CanSharePrefix() {

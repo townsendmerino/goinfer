@@ -99,7 +99,7 @@ func loadForIdentity(p, mode string) (*Weights, error) {
 // TestLoaderIdentity_table is SB4's LI1 and the table check: every fixture and mode that loads, loaded twice, gives
 // equal identities, and their digests equal this GOARCH's entry in testdata/loader_identity.json (-update rewrites it).
 // A pair that loads with no entry, or an entry that no longer loads, fails. The table is per GOARCH because the int4
-// repacks are.
+// repacks are. A GGUF fixture also has its loaderConfigMode entry, the same under every quant mode.
 func TestLoaderIdentity_table(t *testing.T) {
 	got := map[string]map[string]string{}
 	pairs := 0
@@ -121,6 +121,12 @@ func TestLoaderIdentity_table(t *testing.T) {
 				got[fx] = map[string]string{}
 			}
 			got[fx][mode] = loaderIdentityDigest(ids)
+			for m, d := range fixtureConfigEntries(fx, &w.Cfg) {
+				if prev, ok := got[fx][m]; ok && prev != d {
+					t.Errorf("%s: its %s entry differs under %s", fx, m, mode)
+				}
+				got[fx][m] = d
+			}
 			pairs++
 		}
 	}
