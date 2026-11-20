@@ -1,3 +1,1 @@
 # Tracker ids left in user-visible strings (TestQualityScan_userStringsCarryNoTrackerIDs): `<file>#<id> -- <reason>`.
-# backend/cuda/prefill.go is in the CUDA prefill cut's open work today; its string moves to words after (code-quality ledger, Q8).
-backend/cuda/prefill.go#MC3 -- in the CUDA prefill cut's open work; rewritten after it merges

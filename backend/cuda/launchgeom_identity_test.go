@@ -138,7 +138,7 @@ func launchGeomHashes() map[string]string {
 		for _, causal := range []int{0, 1, 64, 1000} {
 			for _, window := range []int{0, 1, 128, 1024} {
 				for _, se := range [][2]int{{0, 0}, {5, 3}, {0, 256}, {10, 266}, {900, 1500}, {2000, 2001}} {
-					w("%d,%d,%v=%d;", causal, window, se, imgBlockMaxNWin(causal, window, se[0], se[1]))
+					w("%d,%d,%v=%d;", causal, window, se, launchgeom.ImgBlockMaxNWin(causal, window, se[0], se[1]))
 				}
 			}
 		}
@@ -148,7 +148,7 @@ func launchGeomHashes() map[string]string {
 		for _, causal := range []int{0, 64, 1000} {
 			for _, window := range []int{0, 128, 1024} {
 				for _, b := range blocks {
-					w("%d,%d,%v=%d;", causal, window, b, imgBlocksMaxNWin(causal, window, b))
+					w("%d,%d,%v=%d;", causal, window, b, launchgeom.ImgBlocksMaxNWin(causal, window, b))
 				}
 			}
 		}

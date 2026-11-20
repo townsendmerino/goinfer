@@ -9,9 +9,11 @@ import (
 	"go/token"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
 )
 
-// TestImgBlockMaxNWin_formula pins imgBlockMaxNWin against every case its own derivation
+// TestImgBlockMaxNWin_formula pins launchgeom.ImgBlockMaxNWin against every case its own derivation
 // distinguishes (cuda/attn_img_prefill.cu's header) — the pure-function half of the plan's top
 // risk, needing no device.
 func TestImgBlockMaxNWin_formula(t *testing.T) {
@@ -45,9 +47,9 @@ func TestImgBlockMaxNWin_formula(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := imgBlockMaxNWin(tc.causalMaxNWin, tc.window, tc.imgStart, tc.imgEnd)
+			got := launchgeom.ImgBlockMaxNWin(tc.causalMaxNWin, tc.window, tc.imgStart, tc.imgEnd)
 			if got != tc.want {
-				t.Errorf("imgBlockMaxNWin(%d, %d, %d, %d) = %d, want %d",
+				t.Errorf("launchgeom.ImgBlockMaxNWin(%d, %d, %d, %d) = %d, want %d",
 					tc.causalMaxNWin, tc.window, tc.imgStart, tc.imgEnd, got, tc.want)
 			}
 		})
@@ -62,7 +64,7 @@ func TestImgBlockMaxNWin_formula(t *testing.T) {
 func TestImgBlockMaxNWin_differsFromNaiveCoupledFormula(t *testing.T) {
 	const window, imgStart, imgEnd = 8, 20, 32 // imgLen=12
 	causalMaxNWin := imgEnd                    // stand-in startPos+M large enough to not itself dominate
-	correct := imgBlockMaxNWin(causalMaxNWin, window, imgStart, imgEnd)
+	correct := launchgeom.ImgBlockMaxNWin(causalMaxNWin, window, imgStart, imgEnd)
 	// The naive coupled formula: winStart = nKeys-window using the WIDENED nKeys=imgEnd, so its
 	// implied window width is nKeys-winStart = imgEnd-(imgEnd-window) = window — clamped to the
 	// plain window size, oblivious to the block at all.

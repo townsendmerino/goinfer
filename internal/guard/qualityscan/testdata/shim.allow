@@ -23,8 +23,6 @@ internal/runtime/prequant/prequant.go:SidecarPathIfFresh -- exported: the packag
 server/server.go:NewHandler -- exported: the package's API to other packages and modules, kept as the entry point
 server/server.go:Transport -- exported: the package's API to other packages and modules, kept as the entry point
 # Package-move shims still to inline at their callers (code-quality ledger, Q11).
-backend/cuda/prefill.go:imgBlockMaxNWin -- a package-move shim; inline at its callers in a later Q11 change
-backend/cuda/prefill.go:imgBlocksMaxNWin -- a package-move shim; inline at its callers in a later Q11 change
 backend/metal/grid_vision.go:quantG32 -- a package-move shim; inline at its callers in a later Q11 change
 backend/metal/pack.go:packW4A8Row -- a package-move shim; inline at its callers in a later Q11 change
 backend/metal/pack.go:packW4A8RowInto -- a package-move shim; inline at its callers in a later Q11 change
