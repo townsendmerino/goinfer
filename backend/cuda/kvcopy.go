@@ -19,7 +19,7 @@ var kvCopyF16 = true
 
 // CopyKV implements decoder.ResidentKVSubsystem: rows [start, end) of every layer's KV, from slot src to slot dst, so dst
 // continues at position end. It is one executor job, so it is ordered on the one stream after everything posted before
-// it (a busy source's prefill included) and runs between MC3 steps, never inside one. A busy source's decode writes only
+// it (a busy source's prefill included) and runs between batched decode steps, never inside one. A busy source's decode writes only
 // rows past its prompt, which the decoder never asks for. The job synchronises the stream before it returns, so the
 // caller's timing covers the copy.
 //

@@ -204,7 +204,7 @@ type Prefill func(ctx context.Context, ids []int) ([]float32, error)
 type Options struct {
 	Template    string       // TemplateBare (default) or TemplateChat
 	Calibration *Calibration // per-kind temperatures; nil ⇒ T = 1, uncalibrated (with a Head: the head's own)
-	// Head, when set, makes this a Route B decider (D4): the trained head over Hidden's final-norm hidden state
+	// Head, when set, makes this a Route B decider: the trained head over Hidden's final-norm hidden state
 	// replaces the label logits, and the prefill is not used. It requires bare-v1 and a Hidden.
 	Head   *Head
 	Hidden Hidden

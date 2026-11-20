@@ -36,6 +36,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -174,7 +175,7 @@ func TestGemma4E2BAudioFull(t *testing.T) {
 				t.Fatal(err)
 			}
 			l := m.logitsFromHidden(h, cache)
-			argmaxes = append(argmaxes, argmax(l))
+			argmaxes = append(argmaxes, sampling.Argmax(l))
 			last = l
 		}
 		return last, argmaxes
@@ -201,9 +202,9 @@ func TestGemma4E2BAudioFull(t *testing.T) {
 	cos := logitCosine(last, hfLast)
 	pct := 100 * float64(agree) / float64(max(total, 1))
 	fmt.Fprintf(os.Stderr, "[G-S5b] %d ids, audio [%d, %d): last-position cosine %.6f, argmax %d (HF %d); text-position argmax agreement after the block %d/%d (%.1f%%)\n",
-		len(in.IDs), in.AudioPos, after, cos, argmax(last), argmax(hfLast), agree, total, pct)
-	if cos < 0.999 || argmax(last) != argmax(hfLast) || pct < 95 {
-		t.Errorf("G-S5b FAIL: cosine %.6f (bar 0.999), argmax %d vs HF %d, agreement %.1f%% (bar 95%%)", cos, argmax(last), argmax(hfLast), pct)
+		len(in.IDs), in.AudioPos, after, cos, sampling.Argmax(last), sampling.Argmax(hfLast), agree, total, pct)
+	if cos < 0.999 || sampling.Argmax(last) != sampling.Argmax(hfLast) || pct < 95 {
+		t.Errorf("G-S5b FAIL: cosine %.6f (bar 0.999), argmax %d vs HF %d, agreement %.1f%% (bar 95%%)", cos, sampling.Argmax(last), sampling.Argmax(hfLast), pct)
 	}
 
 	// The planted defects, each alone, must fail the last-position bar.
@@ -228,8 +229,8 @@ func TestGemma4E2BAudioFull(t *testing.T) {
 		l    []float32
 	}{{"(1) audio rows times the embed scale", l1}, {"(2) PLE from the audio token's id", l2}, {"(3) delimiters dropped", l3}} {
 		c := logitCosine(d.l, hfLast)
-		red := c < 0.999 || argmax(d.l) != argmax(hfLast)
-		fmt.Fprintf(os.Stderr, "[G-S5b] planted %s: last-position cosine %.6f, argmax %d (HF %d), red %v\n", d.name, c, argmax(d.l), argmax(hfLast), red)
+		red := c < 0.999 || sampling.Argmax(d.l) != sampling.Argmax(hfLast)
+		fmt.Fprintf(os.Stderr, "[G-S5b] planted %s: last-position cosine %.6f, argmax %d (HF %d), red %v\n", d.name, c, sampling.Argmax(d.l), sampling.Argmax(hfLast), red)
 		if !red {
 			t.Errorf("planted defect %s left the bar green: the check cannot see it", d.name)
 		}

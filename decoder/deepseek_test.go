@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // TestDeepseek_descriptor checks the deepseek_v3 adapter resolves the MLA + DeepSeekMoE
@@ -117,7 +119,7 @@ func TestDeepseek_textParity(t *testing.T) {
 			t.Fatalf("forward: %v", err)
 		}
 	}
-	gotArg := argmax(logits)
+	gotArg := sampling.Argmax(logits)
 	cos := logitCosine(logits, g.LastLogits)
 	t.Logf("deepseek text parity: argmax got=%d want=%d | logit cosine=%.6f", gotArg, g.Argmax, cos)
 	if gotArg != g.Argmax {
@@ -129,7 +131,7 @@ func TestDeepseek_textParity(t *testing.T) {
 
 	got := make([]int, 0, g.NNew)
 	for range g.NNew {
-		id := argmax(logits)
+		id := sampling.Argmax(logits)
 		got = append(got, id)
 		if logits, err = m.forward(id, cache); err != nil {
 			t.Fatalf("continuation forward: %v", err)
@@ -207,7 +209,7 @@ func TestMLAAbsorb_parity(t *testing.T) {
 		}
 		seq := make([]int, 0, g.NNew)
 		for range g.NNew {
-			id := argmax(logits)
+			id := sampling.Argmax(logits)
 			seq = append(seq, id)
 			if logits, err = m.forward(id, cache); err != nil {
 				t.Fatalf("continuation forward: %v", err)

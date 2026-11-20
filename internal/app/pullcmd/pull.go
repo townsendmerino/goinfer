@@ -73,15 +73,15 @@ multi-gigabyte transfer — a community GGUF re-upload of the same model is usua
 func resolveRunRef(refArg string) (ref pull.Ref, resolvedArg string, note string, err error) {
 	if c, ok := pull.Recommended(refArg); ok {
 		if c.IsDirectory() {
-			// A safetensors checkpoint directory (P9(d)): the same plan-and-verify path as owner/repo:safetensors, with the tree
+			// A safetensors checkpoint directory: the same plan-and-verify path as owner/repo:safetensors, with the tree
 			// digest this build pins riding in Pin; pullCheckpoint refuses before any weight byte moves if the repo no longer matches.
 			note = fmt.Sprintf("%s → %s (%s, %.2f GB download) — %s\n", refArg, c.Ref(), c.Quant, float64(c.Bytes)/1e9, c.GoodFor)
 			return pull.Ref{Repo: c.Repo, Checkpoint: true, Pin: c.SHA256, Bytes: c.Bytes}, c.Ref(), note, nil
 		}
-		// M-32 (audit-2026-09-10.md): build the Ref directly from the checkpoint rather than
-		// round-tripping through ParseRef(c.Ref()) — that string is just "repo:file", and
-		// ParseRef only ever sets Pin for a "demo:" ref (pull.go's Curated() branch), so the
-		// registry's own SHA256/Bytes were silently dropped for every recommended checkpoint.
+		// Build the Ref directly from the checkpoint rather than round-tripping through
+		// ParseRef(c.Ref()) — that string is just "repo:file", and ParseRef only ever sets Pin for
+		// a "demo:" ref (pull.go's Curated() branch), so the registry's own SHA256/Bytes would be
+		// dropped for every recommended checkpoint.
 		// Without Pin, an upstream re-upload verifies against whatever HF's API reports THAT
 		// DAY instead of the digest this build vouches for (the exact hazard Pin exists to
 		// close, per Ref's own doc comment).
@@ -143,7 +143,7 @@ func Run(args []string) int {
 	}
 
 	// Ctrl-C cancels the transfer via ctx. Download deliberately KEEPS the partial .part file
-	// on this path (N-65, docs/audit-2026-09-10.md: this used to say the opposite) — pull/pull.go
+	// on this path — pull/pull.go
 	// only removes it on a digest mismatch (known-bad bytes); an interrupted-but-otherwise-good
 	// partial is exactly what a re-run resumes from.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)

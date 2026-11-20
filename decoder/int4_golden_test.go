@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // Q1(c): the int4 forward goldens. int4 is the runtime's documented default quantization, so it needs a golden of its own: an
@@ -163,7 +165,7 @@ func int4RunOne(t *testing.T, dir string) (*int4Golden, bool) {
 		ModelType: m.w.arch.Name,
 		IDs:       ids,
 		Vocab:     len(logits),
-		Argmax:    argmax(logits),
+		Argmax:    sampling.Argmax(logits),
 		Sum:       sum, SumSq: sumSq, Min: mn, Max: mx,
 		Samples: int4Sample(logits),
 	}, true

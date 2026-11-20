@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // TestInternLM3_textParity gates the ONE thing that makes internlm3 its own model_type.
@@ -74,7 +76,7 @@ func TestInternLM3_textParity(t *testing.T) {
 			t.Fatalf("forward: %v", err)
 		}
 	}
-	gotArg := argmax(logits)
+	gotArg := sampling.Argmax(logits)
 	cos := logitCosine(logits, g.LastLogits)
 	t.Logf("internlm3 text parity: argmax got=%d want=%d | logit cosine=%.6f", gotArg, g.Argmax, cos)
 	if gotArg != g.Argmax {
@@ -94,7 +96,7 @@ func TestInternLM3_textParity(t *testing.T) {
 				t.Fatalf("forward: %v", err)
 			}
 		}
-		nxt := argmax(lg)
+		nxt := sampling.Argmax(lg)
 		if i < len(g.ContinuationIDs) && nxt != g.ContinuationIDs[i] {
 			t.Errorf("continuation[%d] = %d, want %d — positional drift is what a wrong rope "+
 				"reading looks like", i, nxt, g.ContinuationIDs[i])

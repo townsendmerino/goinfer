@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -69,7 +70,7 @@ func TestDecode_greedyContinuationParity(t *testing.T) {
 	// Greedy decode N tokens (EOS suppressed to match the forced-length golden).
 	got := make([]int, 0, g.NNew)
 	for i := 0; i < g.NNew; i++ {
-		next := argmax(logits)
+		next := sampling.Argmax(logits)
 		got = append(got, next)
 		if i < g.NNew-1 {
 			if logits, err = m.forward(next, cache); err != nil {

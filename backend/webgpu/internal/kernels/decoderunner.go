@@ -28,7 +28,7 @@ type DecodeRunner struct {
 	c *Context
 	// scratch is this build's scratch leases by the op builder that asked for them (ScratchList).
 	scratch scratchBook
-	// Cost, when set, counts each submitted token's dispatches into CostPhase (SB11, cost.go); nil is off. costNames caches each
+	// Cost, when set, counts each submitted token's dispatches into CostPhase (cost.go); nil is off. costNames caches each
 	// pipeline's name.
 	Cost      *cost.Counter
 	CostPhase cost.Phase
@@ -1792,7 +1792,7 @@ func (r *DecodeRunner) record(pass *wgpu.ComputePassEncoder) int {
 		pass.DispatchWorkgroups(s.Gx, s.Gy, 1)
 	}
 	n := len(r.steps)
-	if CostPlantForTest == 1 && n > 0 { // SB11's plant: the first step recorded twice
+	if CostPlantForTest == 1 && n > 0 { // the cost plant: the first step recorded twice
 		s := r.steps[0]
 		pass.SetPipeline(s.Pl)
 		pass.SetBindGroup(0, s.Bg, nil)

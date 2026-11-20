@@ -1,5 +1,5 @@
 // Package batchio is the file format of goinfer's batch runs: the OpenAI-style JSONL that serve's
-// POST /v1/batches reads and writes (J4) and that `goinfer-chat --batch` reads and writes (J5), kept in ONE place so a file
+// POST /v1/batches reads and writes and that `goinfer-chat --batch` reads and writes, kept in ONE place so a file
 // really is interchangeable between the two — the input parser, the byte layout of an output and an error line, and the
 // resume scan are the same code on both sides, not two copies that agree today.
 //

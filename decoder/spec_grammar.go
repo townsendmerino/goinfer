@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/townsendmerino/goinfer/constrain"
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // ConfidentDrafter reports a confidence for its most recent Draft, so RouterDrafter can order sources by predicted
@@ -239,7 +240,7 @@ func grammarSpecLoop(ctx context.Context, fw Forward, isStop func(int) bool, out
 	// The grammar masks only GENERATED tokens (not the prompt), starting fresh —
 	// matching constrained Generate. cur is the next confirmed token, pending.
 	mask.MaskAt(mask.GrammarClone(), seedLogits) // grammar at its initial state
-	cur := argmax(seedLogits)
+	cur := sampling.Argmax(seedLogits)
 
 	emit := func(tok int) bool {
 		if isStop(tok) {
@@ -310,7 +311,7 @@ func grammarSpecLoop(ctx context.Context, fw Forward, isStop func(int) bool, out
 		var nextTok int
 		for i := range kEff {
 			mask.MaskAt(gc, logitsN[i]) // illegal logits → -inf, so the dist is the masked one
-			ti := argmax(logitsN[i])
+			ti := sampling.Argmax(logitsN[i])
 			acc := draftTok[i] == ti
 			if tr != nil {
 				// accept_prob = masked p(drafted token): for a grammar-forced token it's <1
@@ -331,7 +332,7 @@ func grammarSpecLoop(ctx context.Context, fw Forward, isStop func(int) bool, out
 		}
 		if allAccept {
 			mask.MaskAt(gc, logitsN[kEff])
-			nextTok = argmax(logitsN[kEff])
+			nextTok = sampling.Argmax(logitsN[kEff])
 		}
 		stats.Accepted += accepted
 		evaluated := accepted

@@ -90,7 +90,7 @@ func loadForIdentity(p, mode string) (*Weights, error) {
 	}
 	for _, f := range loaderFlags {
 		if f.suffix == suffix {
-			return loadWeights(p, q, false, f.needCanonical, f.skipRow4, nil, nil)
+			return loadWeights(p, weightLoadOpts{quant: q, needCanonical: f.needCanonical, skipRow4: f.skipRow4})
 		}
 	}
 	return nil, fmt.Errorf("no flag set %q", suffix)

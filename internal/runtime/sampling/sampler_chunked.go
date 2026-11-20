@@ -6,7 +6,7 @@ import (
 	"sync"
 )
 
-// P2b: deterministic parallel host normalization. The full-vocabulary exp+sum is the dominant host cost of a draw's
+// Deterministic parallel host normalization. The full-vocabulary exp+sum is the dominant host cost of a draw's
 // normalizer; it is done in parallel over a fixed chunk shape. Production users are chunkedZ (the top-p denominator)
 // and the Gumbel-max host draw (forEachChunk, sampler_gumbel.go). The inverse-CDF draw it was built for, sampleChunked,
 // now lives only as the reference in sampler_chunked_ref_test.go.

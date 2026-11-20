@@ -36,6 +36,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -137,7 +138,7 @@ func TestGemma3TowerSensitivity(t *testing.T) {
 		}
 		for k := range steps {
 			logits = append(logits, slices.Clone(l)) // forward returns the cache's reused logits buffer (night 2026-10-07: steps 1-31 all read the last)
-			next := argmax(l)
+			next := sampling.Argmax(l)
 			if forced != nil {
 				next = forced[k]
 			}
@@ -190,7 +191,7 @@ func TestGemma3TowerSensitivity(t *testing.T) {
 			kl := klTo(refLogits[k], l)
 			sumKL += kl
 			r.KLMax = math.Max(r.KLMax, kl)
-			if argmax(l) == refPath[k] {
+			if sampling.Argmax(l) == refPath[k] {
 				r.Agree++
 			} else if r.FirstOff < 0 {
 				r.FirstOff = k
@@ -202,7 +203,7 @@ func TestGemma3TowerSensitivity(t *testing.T) {
 			line += "no change"
 		} else {
 			lp := logSoftmax64(refLogits[r.FirstOff])
-			other := argmax(ls[r.FirstOff])
+			other := sampling.Argmax(ls[r.FirstOff])
 			line += fmt.Sprintf("first change at step %d: reference %q p %.3f, this %q (reference p %.3f)",
 				r.FirstOff, layoutPiece(tk, refPath[r.FirstOff]), math.Exp(lp[refPath[r.FirstOff]]), layoutPiece(tk, other), math.Exp(lp[other]))
 		}

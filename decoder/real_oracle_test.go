@@ -20,6 +20,8 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // realLogitOracle loads ckpt at int8, replays the golden's prompt ids, and gates
@@ -78,7 +80,7 @@ func realLogitOracleQuant(t *testing.T, ckpt, golden, wantArch, family, referenc
 		}
 		prog.Step(1)
 	}
-	gotArg := argmax(logits)
+	gotArg := sampling.Argmax(logits)
 	cos := logitCosine(logits, g.LastLogits)
 	t.Logf("%s parity: argmax got=%d want=%d | logit cosine=%.6f", family, gotArg, g.Argmax, cos)
 	if gotArg != g.Argmax {
@@ -92,7 +94,7 @@ func realLogitOracleQuant(t *testing.T, ckpt, golden, wantArch, family, referenc
 	got := make([]int, 0, g.NNew)
 	prog.Phase("greedy continuation")
 	for range g.NNew {
-		id := argmax(logits)
+		id := sampling.Argmax(logits)
 		got = append(got, id)
 		if logits, err = m.forward(id, cache); err != nil {
 			t.Fatalf("continuation forward: %v", err)

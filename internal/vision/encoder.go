@@ -14,7 +14,7 @@ import (
 )
 
 // SigLIP / ViT vision encoder (the Gemma 3 vision tower) as a pure-Go forward —
-// the P2 piece of goinfer's multimodal.md. It maps preprocessed pixel_values to a
+// see goinfer's docs/multimodal.md. It maps preprocessed pixel_values to a
 // last_hidden_state, the sequence of patch embeddings the projector turns into
 // image tokens. The attention/FFN projections run f32 or int8 W8A8 (LoadEncoder's
 // quant flag; the patch-embed conv stays f32); parity is cosine vs the HF
@@ -39,7 +39,7 @@ type EncoderConfig struct {
 }
 
 // validate rejects a config whose dimensions would divide-by-zero or
-// mis-partition at load/Forward (H8): there is no vision equivalent of the text
+// mis-partition at load/Forward: there is no vision equivalent of the text
 // encoder's ValidateAssumptions, so without this an absent patch_size ÷0s at
 // e.grid, an absent num_attention_heads ÷0s at headDim, and an odd
 // hidden/heads split silently leaves output columns zero. Called after config
@@ -176,7 +176,7 @@ func newSiglipReader(st *embed.SafetensorsFile) *siglipReader {
 	return &siglipReader{st: st, pfx: tensorPrefix(st, "embeddings.patch_embedding.weight", "vision_tower.vision_model.")}
 }
 
-// get reads a tensor and, when want dims are given, shape-checks it (H7): without this a mismatched/hostile checkpoint
+// get reads a tensor and, when want dims are given, shape-checks it: without this a mismatched/hostile checkpoint
 // panics deep in QuantizeRowsInt8 or MatmulBT at load/Forward instead of returning a clean error. Shapes follow HF
 // SiglipVisionModel (Linear weights [out,in], the Conv2d patch-embed [hidden,C,P,P], position_embedding
 // [numPatches,hidden], 1-D biases/LayerNorms) — the parity test (testdata/siglip-tiny) is the gate.
@@ -373,7 +373,7 @@ func (e *Encoder) runBlocks(h []float32, np int, stage func([]float32)) error {
 	// reuse across the layer loop. The old code re-make'd n1/att/o/n2/mid/mlp plus
 	// attention's q/k/v/qh/kh/vt/scores/oh every layer — at SigLIP-so400m
 	// (np=4096, 27 layers) ≈290 MB allocated and discarded PER LAYER, ~7.9 GB per
-	// image, all trivially reusable (audit #5). Bit-identical: same ops, distinct
+	// image, all trivially reusable. Bit-identical: same ops, distinct
 	// buffers. One scratch per Forward preserves the documented concurrent-Forward
 	// safety (each call has its own).
 	inter := c.IntermediateSize
@@ -437,12 +437,12 @@ func (e *Encoder) embedPatches(patches []float32) []float32 {
 }
 
 // encScratch holds the SigLIP encoder's per-layer working buffers, allocated once
-// per Forward and reused across layers (audit #5). All layers share one shape.
+// per Forward and reused across layers. All layers share one shape.
 type encScratch struct {
 	n1, att, o, mid []float32        // block buffers: the walker's xn, ctx, linear-add product and mid registers
 	q, k, v         []float32        // attention projections [np,hidden]
-	ws              linalg.Workspace // reused across the WeightMat projections (audit #12)
-	headPool        []encHeadScratch // P6: fused-attention worker slots, len = fan-out width
+	ws              linalg.Workspace // reused across the WeightMat projections
+	headPool        []encHeadScratch // fused-attention worker slots, len = fan-out width
 	loFull, hiFull  []int            // shared across every head/worker: bidirectional, so
 	// every row's key range is the whole tile — [0,np-1] — computed once per Forward, not per head.
 }
@@ -497,7 +497,7 @@ func newEncScratch(np, hidden, inter, hd, nH int) *encScratch {
 }
 
 // attentionInto runs bidirectional multi-head self-attention (no causal mask) at scale over the np
-// patches' projections q, k and v, via linalg's fused (FlashAttention-style) schedule (P6 — aikit/linalg/fusedattn.go),
+// patches' projections q, k and v, via linalg's fused (FlashAttention-style) schedule (aikit/linalg/fusedattn.go),
 // the SAME primitive goinfer's own text-decoder prefill already uses, fanned out across heads
 // with a private Workspace per worker (mirroring goinfer's decoder/forwardn.go
 // attendBatchedHeads exactly, down to the contiguous-head-run split and the serial-Workspace
@@ -572,15 +572,15 @@ func (e *Encoder) attentionInto(att, q, k, v []float32, np int, scale float64, s
 
 // --- small f32 helpers (LayerNorm is standard — mean/var — not RMS) ---
 
-// layerNormInto writes the normalized rows into dst (reused across layers, audit
-// #5). layerNorm is the allocating wrapper for one-off callers (the final post-LN).
+// layerNormInto writes the normalized rows into dst (reused across layers).
+// layerNorm is the allocating wrapper for one-off callers (the final post-LN).
 func layerNorm(x, w, b []float32, rows, dim int, eps float64) []float32 {
 	out := make([]float32, rows*dim)
 	layerNormInto(out, x, w, b, rows, dim, eps)
 	return out
 }
 
-// Row-split across cores (audit M-10). Bit-identical: each row's f64 mean and
+// Row-split across cores. Bit-identical: each row's f64 mean and
 // variance folds run in the same order they did serially, and rows never
 // interact — the split re-associates nothing.
 func layerNormInto(out, x, w, b []float32, rows, dim int, eps float64) {
@@ -652,7 +652,7 @@ func layerNormRows(out, x, w, b []float32, start, end, dim int, eps float64) {
 // f64 routine. Not bit-identical; contract is absolute error ≤1e-06, gated by
 // linalg's TestGELUTanhF32_accuracy and end-to-end by TestSiglipEncoder_parity.
 func geluTanh(x []float32) {
-	// Chunk-split across cores (audit M-10): elementwise and in place, so the
+	// Chunk-split across cores: elementwise and in place, so the
 	// split is numerically inert. This is the heaviest transcendental pass in
 	// the kit — 476M elements per so400m image — and it ran on one goroutine.
 	parallelChunks(len(x), func(lo, hi int) {

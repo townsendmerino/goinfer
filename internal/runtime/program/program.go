@@ -91,7 +91,7 @@ type AttnTempParams struct {
 	PosOffset        int
 }
 
-// AttnOrder is the CPU's reduction order for attention. Families compute attention in different orders today and OP3 moves no
+// AttnOrder is the CPU's reduction order for attention. Families compute attention in different orders today and the layer program moves no
 // number, so each keeps its own; a GPU backend ignores it.
 type AttnOrder uint8
 

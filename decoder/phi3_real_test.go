@@ -15,6 +15,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -56,7 +57,7 @@ func TestPhi3MiniReal_gate(t *testing.T) {
 			t.Fatalf("forward: %v", err)
 		}
 	}
-	gotArg := argmax(logits)
+	gotArg := sampling.Argmax(logits)
 	cos := logitCosine(logits, g.LastLogits)
 	t.Logf("phi3-mini parity: argmax got=%d want=%d | logit cosine=%.6f", gotArg, g.Argmax, cos)
 	if gotArg != g.Argmax {
@@ -68,7 +69,7 @@ func TestPhi3MiniReal_gate(t *testing.T) {
 
 	got := make([]int, 0, g.NNew)
 	for range g.NNew {
-		id := argmax(logits)
+		id := sampling.Argmax(logits)
 		got = append(got, id)
 		if logits, err = m.forward(id, cache); err != nil {
 			t.Fatalf("continuation forward: %v", err)
@@ -129,13 +130,13 @@ func TestPhi3GGUFReal_gate(t *testing.T) {
 		}
 	}
 	cos := logitCosine(logits, g.LastLogits)
-	t.Logf("phi3 GGUF parity: argmax got=%d want=%d | cosine=%.4f (logged; Q4 + earlier snapshot)", argmax(logits), g.Argmax, cos)
-	if argmax(logits) != g.Argmax {
-		t.Errorf("GGUF argmax = %d, want %d", argmax(logits), g.Argmax)
+	t.Logf("phi3 GGUF parity: argmax got=%d want=%d | cosine=%.4f (logged; Q4 + earlier snapshot)", sampling.Argmax(logits), g.Argmax, cos)
+	if sampling.Argmax(logits) != g.Argmax {
+		t.Errorf("GGUF argmax = %d, want %d", sampling.Argmax(logits), g.Argmax)
 	}
 	got := make([]int, 0, g.NNew)
 	for range g.NNew {
-		id := argmax(logits)
+		id := sampling.Argmax(logits)
 		got = append(got, id)
 		if logits, err = m.forward(id, cache); err != nil {
 			t.Fatalf("continuation forward: %v", err)

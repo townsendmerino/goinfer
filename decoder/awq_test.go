@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // TestAWQ_parity loads a real AWQ checkpoint (TheBloke/TinyLlama-1.1B-Chat-v1.0
@@ -52,12 +54,12 @@ func TestAWQ_parity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("forward: %v", err)
 	}
-	if got := argmax(logits); got != g.Argmax {
+	if got := sampling.Argmax(logits); got != g.Argmax {
 		t.Errorf("AWQ argmax = %d, want %d (f32)", got, g.Argmax)
 	}
 	cos := cosineToFull(t, logits, llamaForwardFullPath)
 	if !math.IsNaN(cos) && cos < 0.98 {
 		t.Errorf("AWQ cosine vs f32 oracle = %v, want ≥ 0.98", cos)
 	}
-	t.Logf("AWQ TinyLlama (4-bit g128 GEMM): argmax=%d (want %d) | cosine vs f32 = %v", argmax(logits), g.Argmax, cos)
+	t.Logf("AWQ TinyLlama (4-bit g128 GEMM): argmax=%d (want %d) | cosine vs f32 = %v", sampling.Argmax(logits), g.Argmax, cos)
 }

@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // M5 sliding-window parity. Runs the forward over a >512-token prompt so the
@@ -64,7 +66,7 @@ func TestForward_slidingWindowParity(t *testing.T) {
 		t.Fatalf("forward: %v", err)
 	}
 
-	if got := argmax(logits); got != g.Argmax {
+	if got := sampling.Argmax(logits); got != g.Argmax {
 		t.Errorf("argmax = %d, want %d (logit[got]=%.4f logit[want]=%.4f)",
 			got, g.Argmax, logits[got], logits[g.Argmax])
 	}
@@ -98,5 +100,5 @@ func TestForward_slidingWindowParity(t *testing.T) {
 
 	cos := fullCosine(t, logits, gemmaWindowFullPath)
 	t.Logf("%d tokens (window %d) | argmax=%d (want %d) | maxSampleΔ=%.5f | cosine=%v",
-		len(g.IDs), m.w.Cfg.SlidingWindow, argmax(logits), g.Argmax, maxSampleΔ, cos)
+		len(g.IDs), m.w.Cfg.SlidingWindow, sampling.Argmax(logits), g.Argmax, maxSampleΔ, cos)
 }

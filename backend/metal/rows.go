@@ -4,7 +4,7 @@ package metal
 
 import "context"
 
-// rowSource is a suffix's embeddings read a range of rows at a time (decoder.ResidentPrefillSubsystem, MEM6): n rows, rows(lo, hi)
+// rowSource is a suffix's embeddings read a range of rows at a time (decoder.ResidentPrefillSubsystem): n rows, rows(lo, hi)
 // returning rows [lo, hi), valid until the next call, and width the length every row has (-1 when the rows disagree).
 type rowSource struct {
 	n, width int

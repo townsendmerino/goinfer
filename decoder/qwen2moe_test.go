@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // Qwen2-MoE (shared-expert MoE) parity. qwen2_moe is qwen2's attention (q/k/v
@@ -81,7 +83,7 @@ func TestQwen2Moe_forwardParity(t *testing.T) {
 	if len(logits) != g.Vocab {
 		t.Fatalf("got %d logits, want vocab %d", len(logits), g.Vocab)
 	}
-	if got := argmax(logits); got != g.Argmax {
+	if got := sampling.Argmax(logits); got != g.Argmax {
 		t.Errorf("argmax = %d, want %d (logit[got]=%.4f logit[want]=%.4f)",
 			got, g.Argmax, logits[got], logits[g.Argmax])
 	}
@@ -97,7 +99,7 @@ func TestQwen2Moe_forwardParity(t *testing.T) {
 		}
 	}
 	cos := fullCosine(t, logits, qwen2moeForwardFullPath)
-	t.Logf("qwen2_moe: argmax=%d (want %d) | maxSampleΔ=%.5f | cosine=%v", argmax(logits), g.Argmax, maxΔ, cos)
+	t.Logf("qwen2_moe: argmax=%d (want %d) | maxSampleΔ=%.5f | cosine=%v", sampling.Argmax(logits), g.Argmax, maxΔ, cos)
 	// tiny-golden: goinfer vs the HF f32 forward of the seeded qwen2_moe-tiny: exact numeric oracle for the loader +
 	// gated-shared-expert routing.
 	emitParityRow(t, "qwen2_moe", "tiny-golden", "HF f32 (qwen2_moe seeded fixture)", 100.0, cos, cos)

@@ -2,15 +2,7 @@
 
 package metal
 
-import (
-	"github.com/townsendmerino/goinfer/backend/metal/kernels"
-	"github.com/townsendmerino/goinfer/internal/runtime/f16"
-)
-
-func packW4A8Row(row []float32) (words []uint32, scales []float32) { return kernels.PackW4A8Row(row) }
-func packW4A8RowInto(row []float32, words []uint32, scales []float32) {
-	kernels.PackW4A8RowInto(row, words, scales)
-}
+import "github.com/townsendmerino/goinfer/internal/runtime/f16"
 
 // f32ToF16 converts to IEEE-754 half. W4A8 group scales are small positive finite values, so the
 // subnormal/overflow edges are for completeness. f16's ~2^-11 relative precision is far below the 4-bit

@@ -20,7 +20,7 @@ func ResizeBicubicAA(src []uint8, h, w, th, tw int) []uint8 {
 }
 
 // ResizeBilinearAA is ResizeBicubicAA with torchvision's antialiased bilinear (the triangle filter, support 1): the resize
-// of the processors that ask for BILINEAR with antialias=True on the torchvision backend (LFM2-VL's; goinfer S10).
+// of the processors that ask for BILINEAR with antialias=True on the torchvision backend (LFM2-VL's).
 func ResizeBilinearAA(src []uint8, h, w, th, tw int) []uint8 {
 	return resizeRGB(src, h, w, th, tw, aaBilinear)
 }
@@ -174,8 +174,8 @@ func resizePass(src []uint8, h, w, n int, horizontal bool, f aaFilter) []uint8 {
 
 // ResizeBilinearAAFloat resizes a channels-last float32 grid (h x w x c) to th x tw the way torch's
 // F.interpolate(mode="bilinear", align_corners=False, antialias=True) does: the same separable antialiased taps as
-// ResizeBilinearAA, each output accumulated in float64 and rounded to float32 once per pass (SigLIP2 NaFlex's position-table resize;
-// goinfer S10). Upscaling, antialias changes nothing and this is plain bilinear with edge clamping.
+// ResizeBilinearAA, each output accumulated in float64 and rounded to float32 once per pass (SigLIP2 NaFlex's position-table
+// resize). Upscaling, antialias changes nothing and this is plain bilinear with edge clamping.
 func ResizeBilinearAAFloat(src []float32, h, w, c, th, tw int) []float32 {
 	cur, cw := src, w
 	if tw != w {

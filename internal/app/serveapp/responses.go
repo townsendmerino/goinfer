@@ -137,7 +137,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		return
 	}
 
-	// S11: input_image parts route to the vision path, under the chat route's history rule (image_history.go) and its
+	// input_image parts route to the vision path, under the chat route's history rule (image_history.go) and its
 	// refusal of images together with tools.
 	noteOmittedImages(w.Header(), omitChatHistoryImages(messages))
 	imgs, ierr := chatImages(messages)

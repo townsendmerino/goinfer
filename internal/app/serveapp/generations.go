@@ -18,7 +18,7 @@ import (
 // KV-reuse cache selected by longest-common-prefix match (bestExtend) and has no client-visible, stable identifier an
 // operator could type into a cancel request, and none of the four request surfaces carries a session, user or thread
 // id (embeddings' `User` field is accepted and ignored). The task doc's `POST /admin/sessions/{id}/cancel` is
-// therefore not implemented (the task doc defers it to its K4 item); inventing an id would be a design decision to
+// therefore not implemented (the task doc defers it); inventing an id would be a design decision to
 // take, not to work around.
 type generation struct {
 	id      string

@@ -198,7 +198,7 @@ func probeFixture(backend, quant, name string, positions int, worst *probeWorst)
 		return nil, "", fmt.Errorf("load on cpu: %w", err)
 	}
 	defer cm.Close()
-	_, _, _, _, _, _, vocab := cm.Dims()
+	vocab := cm.Shape().Vocab
 	prompt := make([]int, positions)
 	for i := range prompt {
 		prompt[i] = (i*37 + 3) % vocab

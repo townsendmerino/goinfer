@@ -632,9 +632,9 @@
    "files": [
     "goinfer/backend/webgpu/*.go"
    ],
-   "our_machines": "NVIDIA over Vulkan (nobara) and Metal (the Mac) only",
+   "our_machines": "NVIDIA over Vulkan (nobara), Metal (the Mac) and Intel integrated over Vulkan (mbp2)",
    "last_executed": [],
-   "notes": "The NVIDIA/Vulkan path is webgpu-nvidia-vulkan; AMD, Intel and DX12 have never run."
+   "notes": "Intel integrated over Vulkan has run (webgpu-intel-vulkan, an Iris Plus 645 on Mesa); the NVIDIA/Vulkan path is webgpu-nvidia-vulkan. AMD and DX12 have never run."
   },
   {
    "id": "webgpu-nvidia-vulkan",
@@ -657,6 +657,28 @@
     }
    ],
    "notes": "WebGPU on the Mac over Metal is webgpu-apple-metal."
+  },
+  {
+   "id": "webgpu-intel-vulkan",
+   "gate": "WebGPU over Vulkan on an Intel integrated GPU",
+   "kind": "driver-os",
+   "predicates": [],
+   "selected_when": "Linux with an Intel GPU: wgpu-native over Mesa's Intel Vulkan driver",
+   "files": [
+    "goinfer/backend/webgpu/*.go"
+   ],
+   "our_machines": "mbp2 only",
+   "last_executed": [
+    {
+     "machine": "mbp2: MacBook Pro 13-inch 2020 on Kubuntu (kernel 7.3.3-2-t2-resolute), Core i5-8257U, 16 GB shared; Intel Iris Plus Graphics 645 (CFL GT3) over Vulkan, Mesa 26.0.8 (wgpu-native, ADAPTER_PROBE backend=vulkan software=false, integrated-gpu, dot4I8Packed yes)",
+     "date": "2026-11-20",
+     "how": "native",
+     "goinfer": "018cbe74",
+     "aikit": "v1.76.0",
+     "gate": "gpu: go run ./cmd/gate gpu (group W suite 109 pass / 38 skip / 1 fail, the fail TestTowerGolden_webgpu refusing a golden anchored to another adapter) and the webgpu-parity cell by hand (74 pass / 12 skip / 0 fail); the self-test pair, TestWebGPU_forwardParity, qwen2.5-coder 0.5B and 1.5B at int4 and int8int8, TestMemGate_webgpu and its plants: docs/measurements/webgpu-intel-2026-11/README.md"
+    }
+   ],
+   "notes": "Correctness only; nothing timed on this machine is published. TestE2E_webgpu's 0.5B int8int8 cell flips a near-tied first token (README, Findings)."
   },
   {
    "id": "webgpu-apple-metal",

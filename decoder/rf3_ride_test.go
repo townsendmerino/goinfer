@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // rideFake is mc3Fake plus a ragged step (RaggedStepperAvailable): a prefill chunk's rows write their positions as PrefillLast
@@ -60,7 +62,7 @@ func (f *rideFake) StepRagged(seqs []ResidentRaggedSeq) ([]ResidentRaggedOut, er
 		f.writes++
 		switch {
 		case q.Draw != nil && q.Draw.Greedy:
-			out[i] = ResidentRaggedOut{ID: argmax(lg)}
+			out[i] = ResidentRaggedOut{ID: sampling.Argmax(lg)}
 		case q.Draw != nil:
 			out[i] = ResidentRaggedOut{ID: fakeDraw(lg, q.Draw.Seed, q.Draw.Draw)}
 		default:

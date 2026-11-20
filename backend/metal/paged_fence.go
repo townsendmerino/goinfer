@@ -8,10 +8,10 @@ import (
 )
 
 // pagedFenceOn: a paged MoE layer's phase 1 ends with paged_fence and the host spins on its word instead of sleeping in
-// waitUntilCompleted (docs/audit-metal-2026-09-30.md, C-B03). OFF: aikit's probe saw the spin wake sooner on a one-word
-// payload, but on M26 the fenced token measured slower than the sleep on both a busy spin and a 10 us nap. The likely cost
+// waitUntilCompleted (docs/audit-metal-2026-09-30.md). OFF: aikit's probe saw the spin wake sooner on a one-word
+// payload, but on Gemma 4 26B the fenced token measured slower than the sleep on both a busy spin and a 10 us nap. The likely cost
 // is the system-scope fence publishing a whole decode layer's writes, which the probe's one word never priced; re-measure on
-// M26 before turning it on (docs/code-notes/metal.md#pagedFenceOn). Kept, gated
+// Gemma 4 26B before turning it on (docs/code-notes/metal.md#pagedFenceOn). Kept, gated
 // bit-exact and not stale (TestPagedFence_bitExactAndNotStale).
 var pagedFenceOn = false
 

@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -139,7 +140,7 @@ func TestHeadPrecision_real(t *testing.T) {
 						if len(l) != V {
 							return a, fmt.Errorf("goinfer logits have %d entries, HF %d", len(l), V)
 						}
-						kl[k], ag[k] = klTo(ref, l), argmax(l) == argmax(ref)
+						kl[k], ag[k] = klTo(ref, l), sampling.Argmax(l) == sampling.Argmax(ref)
 						if k < steps-1 {
 							if l, err = m.forward(meta.Conts[p][k], cache); err != nil {
 								return a, err

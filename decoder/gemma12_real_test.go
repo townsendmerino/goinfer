@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -86,7 +87,7 @@ func TestGemma12Real_gate(t *testing.T) {
 				bcos := logitCosine(shared(bl), ref)
 				got := make([]int, 0, gm.NNew)
 				for range gm.NNew {
-					id := argmax(logits)
+					id := sampling.Argmax(logits)
 					got = append(got, id)
 					if logits, err = m.forward(id, cache); err != nil {
 						t.Fatal(err)
@@ -94,8 +95,8 @@ func TestGemma12Real_gate(t *testing.T) {
 				}
 				t.Logf("%s %s: argmax %d (want %d), cosine per-token %.6f batched %.6f, continuation %v (want %v)",
 					gm.Name, label, got[0], gm.Argmax, cos, bcos, got, gm.ContinuationIDs)
-				if argmax(bl) != gm.Argmax {
-					t.Errorf("%s: batched argmax %d, want %d", label, argmax(bl), gm.Argmax)
+				if sampling.Argmax(bl) != gm.Argmax {
+					t.Errorf("%s: batched argmax %d, want %d", label, sampling.Argmax(bl), gm.Argmax)
 				}
 				if cos < cosBar || bcos < cosBar {
 					t.Errorf("%s: cosine %.6f / %.6f < %.3f", label, cos, bcos, cosBar)

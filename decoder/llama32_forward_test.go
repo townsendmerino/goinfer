@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -85,7 +86,7 @@ func TestLlama32_forwardParity(t *testing.T) {
 		t.Fatalf("got %d logits, want vocab %d", len(logits), g.Vocab)
 	}
 
-	if got := argmax(logits); got != g.Argmax {
+	if got := sampling.Argmax(logits); got != g.Argmax {
 		t.Errorf("argmax = %d, want %d (logit[got]=%.4f logit[want]=%.4f)",
 			got, g.Argmax, logits[got], logits[g.Argmax])
 	}
@@ -110,7 +111,7 @@ func TestLlama32_forwardParity(t *testing.T) {
 	}
 
 	cos := fullCosine(t, logits, llama32ForwardFullPath)
-	t.Logf("llama3.2: argmax=%d (want %d) | maxSampleΔ=%.5f | cosine=%v", argmax(logits), g.Argmax, maxSampleΔ, cos)
+	t.Logf("llama3.2: argmax=%d (want %d) | maxSampleΔ=%.5f | cosine=%v", sampling.Argmax(logits), g.Argmax, maxSampleΔ, cos)
 }
 
 func intsEqual(a []int, b []int) bool {

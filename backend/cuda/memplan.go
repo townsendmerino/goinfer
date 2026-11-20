@@ -265,9 +265,10 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 }
 
 // memPlanPlantForTest, when set (tests only), plants defects in the memory plan's post-allocation decisions only, a comma-separated
-// list of exact site names: "ckpt" (the checkpoint's reserve dropped), "grant" (no windowed grant on a load without an expert cache),
-// "grantPre" (none before an expert cache), "slots" (the slot cap ignored), "prefill" (the width not chosen). G-PA3 shows each turns
-// the plan against the build. Like the package's other test seams it is a plain variable: tests that set it do not run in parallel.
+// list of exact site names: "ckpt" (the checkpoint's reserve dropped), "grant" (no windowed grant on a load without an expert
+// cache), "grantPre" (none before an expert cache), "slots" (the slot cap ignored), "prefill" (the width not chosen). The
+// plan-against-build gate (docs/measurements/sb2-postalloc-2026-10-29/README.md) shows each turns the plan against the build. Like
+// the package's other test seams it is a plain variable: tests that set it do not run in parallel.
 var memPlanPlantForTest string
 
 // planSlotGeomFor is the expert cache's geometry from the planned stacks: every layer whose experts the build caches (a routed MoE

@@ -50,8 +50,8 @@ func (k gvKind) gated() bool { return k == gvkGlmOcr || k == gvkQwen25 }
 
 type gvProj struct {
 	w, b    Buffer // [out, in]; bias [out] (zero Buffer when none). w is empty when only wh was kept (lever B)
-	wh      Buffer // S17 lever B: the same weights in f16 for tower_gemm_w16; empty when the GEMM runs f32
-	w8, ws  Buffer // S18: int8 weights in groups of 32 along in, and their f32 scales [out, ceil(in/32)], for tower_gemm_w8
+	wh      Buffer // the same weights in f16 for tower_gemm_w16; empty when the GEMM runs f32
+	w8, ws  Buffer // int8 weights in groups of 32 along in, and their f32 scales [out, ceil(in/32)], for tower_gemm_w8
 	out, in int
 }
 
@@ -74,10 +74,10 @@ type gridVAccel struct {
 	mu sync.Mutex
 	eg2Ops
 	scale          Pipeline
-	fusedAttn      Pipeline // S17 lever A: tower_attn_hd<head_dim>; zero when the head dim has no fused kernel
-	gemmF16        Pipeline // S17 lever B: tower_gemm_w16, the GEMM over the f16 weight copy
-	gemmW8         Pipeline // S18: tower_gemm_w8, the GEMM over int8 weights in groups of 32
-	int8W          bool     // S18: projections upload as int8 groups of 32 (tower_gemm_w8) instead of f16
+	fusedAttn      Pipeline // tower_attn_hd<head_dim>; zero when the head dim has no fused kernel
+	gemmF16        Pipeline // tower_gemm_w16, the GEMM over the f16 weight copy
+	gemmW8         Pipeline // tower_gemm_w8, the GEMM over int8 weights in groups of 32
+	int8W          bool     // projections upload as int8 groups of 32 (tower_gemm_w8) instead of f16
 	oldGemm        bool     // test seam: run the f32 GEMM even where an f16 copy exists (lever B's A/B; needs gvKeepF32ForAB)
 	gemmDbg        uint32   // test seam: tower_gemm_w16's planted defect (0 in production)
 	oldAttn        bool     // test seam: run eg2Ops.attention even when fusedAttn exists (the lever's in-process A/B)
@@ -92,8 +92,8 @@ type gridVAccel struct {
 	program        func() vision.TowerBlock            // the block's program, for Hidden (Qwen3, GLM-OCR)
 	posEmbeds      func([][3]int) []float32            // Qwen3's interpolated position rows, SigLIP's table; nil otherwise
 	ropeTables     func([][3]int) (cos, sin []float32) // Qwen3, GLM-OCR (Qwen2.5-VL's come from its window plan)
-	planted        gvDefect                            // test seam: G-S2c's planted defects
-	prof           *gvProfile                          // test seam: S17 step 0's per-class GPU split; nil in production
+	planted        gvDefect                            // test seam: planted defects
+	prof           *gvProfile                          // test seam: the per-class GPU split; nil in production
 	tap            func(bi, n int)                     // HiddenTaps: called after block bi\'s command buffer, with the residual\'s live length
 	cap, segCap    int
 	ptInF1         bool        // pt is a view of f1 (grow)
@@ -108,7 +108,7 @@ type gridVAccel struct {
 	ropeSin        Buffer
 }
 
-// gvProfile is S17 step 0's instrument: with it set, run ends its command
+// gvProfile is the per-class GPU profile: with it set, run ends its command
 // buffer at every change of kernel class and adds each buffer's GPU-busy window to its class, and linear and the
 // attention loop add their FLOPs. A test sets it; production never does, and run is then unchanged.
 type gvProfile struct {
@@ -122,11 +122,11 @@ func (p *gvProfile) reset() {
 	p.cur, p.gpu, p.flops, p.bufs = "", map[string]float64{}, map[string]float64{}, 0
 }
 
-// gvDefect is a planted defect (G-S2c); zero in production.
+// gvDefect is a planted defect; zero in production.
 type gvDefect struct {
 	noScale, swapRope, transposePos, noQKNorm, noPatchBias bool
-	noWindows, noWindowOrder, noPosEmbed                   bool // G-S3a's (3), (4) and (5)
-	tapShift                                               int  // G-S10e: DeepStack taps read this many blocks late
+	noWindows, noWindowOrder, noPosEmbed                   bool // Qwen2.5-VL's window and position-embedding defects
+	tapShift                                               int  // DeepStack taps read this many blocks late
 }
 
 func (a *gridVAccel) Name() string { return "metal" }
@@ -149,7 +149,7 @@ func newGridVAccel(kind gvKind, hidden, inter, heads, patchDim int, eps float64)
 	var err error
 	more := map[string]*Pipeline{"gv_scale": &a.scale, "tower_gemm_w16": &a.gemmF16, "tower_gemm_w8": &a.gemmW8}
 	switch a.hd {
-	case 64, 72, 80: // S17 lever A's fused attention; any other head dim keeps eg2Ops.attention
+	case 64, 72, 80: // the fused attention; any other head dim keeps eg2Ops.attention
 		more[fmt.Sprintf("tower_attn_hd%d", a.hd)] = &a.fusedAttn
 	}
 	a.eg2Ops, err = newEG2Ops(gvMSL, more)
@@ -171,11 +171,11 @@ func (a *gridVAccel) proj(p vision.VisionProj) gvProj {
 	return a.weights(gvProj{b: a.up(p.B), out: p.Out, in: p.In}, p.W)
 }
 
-// weights sets a projection's weights: the f16 copy for tower_gemm_w16 (S17 lever B), and the f32 one only when the
+// weights sets a projection's weights: the f16 copy for tower_gemm_w16, and the f32 one only when the
 // A/B keeps both.
 func (a *gridVAccel) weights(p gvProj, w []float32) gvProj {
 	if a.int8W {
-		q, sc := quantG32(w, p.out, p.in)
+		q, sc := kernels.QuantG32(w, p.out, p.in)
 		p.w8, p.ws = NewBufferInt8On(mem.LineCompanion, a.d, q), NewBufferFloatsOn(mem.LineCompanion, a.d, sc)
 		return p
 	}
@@ -188,10 +188,6 @@ func (a *gridVAccel) weights(p gvProj, w []float32) gvProj {
 		p.w = a.up(w)
 	}
 	return p
-}
-
-func quantG32(w []float32, rows, cols int) ([]int8, []float32) {
-	return kernels.QuantG32(w, rows, cols)
 }
 
 // splitQKV uploads a fused [3·hidden, hidden] qkv projection (rows q, then k, then v) as three projections.
@@ -304,7 +300,7 @@ func (a *gridVAccel) grow(np, maxSeg int) error {
 	return nil
 }
 
-// gridScratchAllForTest allocates every grid-tower scratch buffer as before KS-D6 (the unfused attention's, f2 on every kind, pt
+// gridScratchAllForTest allocates every grid-tower scratch buffer as the unfused form did (the unfused attention's, f2 on every kind, pt
 // on its own): the old arm of its A/B.
 var gridScratchAllForTest bool
 
@@ -355,7 +351,7 @@ func (a *gridVAccel) Hidden(pixels []float32, gridTHW [][3]int) ([]float32, erro
 }
 
 // HiddenTaps is Hidden plus the outputs of the given blocks, in that order (multimodal.GridTowerTapper): Qwen3-VL's
-// DeepStack taps (S10, G-S10e). Each tap is the residual right after its block, read where run ends that block's
+// DeepStack taps. Each tap is the residual right after its block, read where run ends that block's
 // command buffer.
 func (a *gridVAccel) HiddenTaps(pixels []float32, gridTHW [][3]int, blocks []int) ([]float32, [][]float32, error) {
 	a.mu.Lock()
@@ -363,7 +359,7 @@ func (a *gridVAccel) HiddenTaps(pixels []float32, gridTHW [][3]int, blocks []int
 	taps := make([][]float32, len(blocks))
 	a.tap = func(bi, n int) {
 		for k, b := range blocks {
-			if b+a.planted.tapShift == bi { // G-S10e's planted defect shifts the tap a block late
+			if b+a.planted.tapShift == bi { // the planted defect shifts the tap a block late
 				taps[k] = append([]float32(nil), a.x.Floats()[:n]...)
 			}
 		}
@@ -397,7 +393,7 @@ func (a *gridVAccel) hiddenLocked(pixels []float32, gridTHW [][3]int) ([]float32
 	}
 	if a.posEmbeds != nil {
 		g := gridTHW
-		if a.planted.transposePos { // G-S2c (3): the position rows for the transposed grid
+		if a.planted.transposePos { // planted defect: the position rows for the transposed grid
 			g = make([][3]int, len(gridTHW))
 			for i, t := range gridTHW {
 				g[i] = [3]int{t[0], t[2], t[1]}
@@ -432,7 +428,7 @@ func (a *gridVAccel) stageRope(cos, sin []float32, np int) error {
 	}
 	hc, hs, half := a.ropeCos.Floats(), a.ropeSin.Floats(), hd/2
 	for i := range np {
-		if a.planted.swapRope { // G-S2c (2), G-S3a (2): the row and column halves swapped
+		if a.planted.swapRope { // planted defect: the row and column halves swapped
 			q := half / 2
 			copy(hc[i*half:], cos[i*hd+q:i*hd+half])
 			copy(hc[i*half+q:], cos[i*hd:i*hd+q])
@@ -473,7 +469,7 @@ func (a *gridVAccel) run(np int, segs func(bi int) []int, prog vision.TowerBlock
 	H := a.hidden
 	a.slot = 0
 	e := a.eg2Ops.q.Begin()
-	account := func() { // S17 step 0: this buffer's GPU window to the class it ran
+	account := func() { // this buffer's GPU window to the class it ran
 		if a.prof != nil {
 			a.prof.gpu[a.prof.cur] += e.GPUEnd() - e.GPUStart()
 			a.prof.bufs++
@@ -503,11 +499,11 @@ func (a *gridVAccel) run(np int, segs func(bi int) []int, prog vision.TowerBlock
 	}
 	mark("gemm")
 	pb := a.patchB
-	if a.planted.noPatchBias { // G-S2c (5), G-S3a (6)
+	if a.planted.noPatchBias { // planted defect: no patch bias
 		pb = Buffer{}
 	}
 	a.linear(e, a.pt, &gvProj{w: a.patchW, b: pb, out: H, in: a.patchDim}, a.x, np)
-	if a.posEmbeds != nil && !a.planted.noPosEmbed { // G-S3a (5) drops it
+	if a.posEmbeds != nil && !a.planted.noPosEmbed { // the noPosEmbed defect drops it
 		mark("elementwise")
 		e.Dispatch(a.p.add, np*H, 256, a.x, a.pos, a.u32(uint32(np*H)))
 	}
@@ -569,8 +565,8 @@ func (a *gridVAccel) attendSegments(cur func() *Encoder, sg []int, flush func() 
 }
 
 // gridIdleRelease is how long a grid tower stays idle after a forward before it releases scratch over gridReleaseCeiling; a
-// forward in the meantime cancels the release and reuses the buffers. gridReleaseOffForTest keeps the scratch until Close, as
-// before KS-H4. Variables so a test can shorten them.
+// forward in the meantime cancels the release and reuses the buffers. gridReleaseOffForTest keeps the scratch until Close.
+// Variables so a test can shorten them.
 var (
 	gridIdleRelease       = 5 * time.Second
 	gridReleaseCeiling    = int64(256 << 20)

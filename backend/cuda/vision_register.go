@@ -26,5 +26,5 @@ func init() {
 		}
 		return NewVisionEncoder(w)
 	})
-	multimodal.MarkResidentTower(multimodal.TowerSigLIP, "cuda") // S8: aikit's slot cannot be asked what is registered
+	multimodal.MarkResidentTower(multimodal.TowerSigLIP, "cuda") // aikit's slot cannot be asked what is registered
 }

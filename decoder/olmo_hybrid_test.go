@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // G2 Olmo Hybrid parity (allenai/Olmo-Hybrid-7B,
@@ -112,7 +114,7 @@ func TestOlmoHybrid_forwardParity(t *testing.T) {
 		t.Fatalf("got %d logits, want vocab %d", len(logits), g.Vocab)
 	}
 
-	if got := argmax(logits); got != g.Argmax {
+	if got := sampling.Argmax(logits); got != g.Argmax {
 		t.Errorf("argmax = %d, want %d (logit[got]=%.4f logit[want]=%.4f)",
 			got, g.Argmax, logits[got], logits[g.Argmax])
 	}
@@ -138,6 +140,6 @@ func TestOlmoHybrid_forwardParity(t *testing.T) {
 
 	cos := fullCosine(t, logits, olmoHybridForwardFullPath)
 	t.Logf("olmo_hybrid: argmax=%d (want %d) | maxSampleΔ=%.5f | cosine=%v",
-		argmax(logits), g.Argmax, maxSampleΔ, cos)
+		sampling.Argmax(logits), g.Argmax, maxSampleΔ, cos)
 	emitParityRow(t, "olmo_hybrid", "tiny-golden", "HF f32 (olmo_hybrid-tiny seeded fixture, mixed NormPlacement + NegEigval + separate DeltaNet tensors + NoPE)", 100.0, cos, cos)
 }

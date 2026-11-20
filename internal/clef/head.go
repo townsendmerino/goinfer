@@ -4,7 +4,7 @@ package clef
 // docs/measurements/decisions-d10-clef-2026-10-02.md): 121.8M parameters that read the backbone's post-final-norm hidden state at every
 // position and return one logit per option of every question, jointly.
 //
-// This file is the head only. Its input is the backbone's last_hidden_state (decoder.Model.PromptHiddenAll, D11), the encoder's spans
+// This file is the head only. Its input is the backbone's last_hidden_state (decoder.Model.PromptHiddenAll), the encoder's spans
 // (Encode), and the lm_head rows of the option tokens. It runs in f32; the checkpoint stores bf16 and each weight is widened on load.
 //
 // What is ported and where the reference's structure shows through:

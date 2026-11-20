@@ -8,6 +8,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // TestCohere_forwardParity is the Phase-1 end-to-end gate for the Cohere /
@@ -68,7 +70,7 @@ func TestCohere_forwardParity(t *testing.T) {
 		t.Fatalf("got %d logits, want %d", len(logits), len(g.LastLogits))
 	}
 
-	got := argmax(logits)
+	got := sampling.Argmax(logits)
 	t.Logf("argmax: got %d (logit %.4f) | want %d (golden logit %.4f)",
 		got, logits[got], g.Argmax, logits[g.Argmax])
 	if got != g.Argmax {
@@ -109,7 +111,7 @@ func TestCohere_forwardParity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("continuation forward: %v", err)
 		}
-		nxt := argmax(lg)
+		nxt := sampling.Argmax(lg)
 		cont = append(cont, nxt)
 		cur = append(cur, nxt)
 	}

@@ -23,6 +23,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/vision"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -114,7 +115,7 @@ func TestQwen3VLImageReal(t *testing.T) {
 		all := m.lmHeadN(hN, len(in.IDs))
 		V := len(all) / len(in.IDs)
 		for i := range in.IDs {
-			am = append(am, argmax(all[i*V:(i+1)*V]))
+			am = append(am, sampling.Argmax(all[i*V:(i+1)*V]))
 		}
 		return all[(len(in.IDs)-1)*V:], am
 	}
@@ -142,9 +143,9 @@ func TestQwen3VLImageReal(t *testing.T) {
 	cos := logitCosine(last, hfLast)
 	pct := 100 * float64(agree) / float64(max(total, 1))
 	fmt.Fprintf(os.Stderr, "[G-S10c] %d ids, image [%d, %d), %d DeepStack sets, fast attention %v: last-position cosine %.6f, argmax %d (HF %d); text-position agreement after the image %d/%d (%.1f%%)\n",
-		len(in.IDs), imgPos, imgPos+imgLen, len(deep), fast, cos, argmax(last), argmax(hfLast), agree, total, pct)
-	if cos < 0.999 || argmax(last) != argmax(hfLast) || pct < 95 {
-		t.Errorf("G-S10c FAIL: cosine %.6f (bar 0.999), argmax %d vs HF %d, agreement %.1f%% (bar 95%%)", cos, argmax(last), argmax(hfLast), pct)
+		len(in.IDs), imgPos, imgPos+imgLen, len(deep), fast, cos, sampling.Argmax(last), sampling.Argmax(hfLast), agree, total, pct)
+	if cos < 0.999 || sampling.Argmax(last) != sampling.Argmax(hfLast) || pct < 95 {
+		t.Errorf("G-S10c FAIL: cosine %.6f (bar 0.999), argmax %d vs HF %d, agreement %.1f%% (bar 95%%)", cos, sampling.Argmax(last), sampling.Argmax(hfLast), pct)
 	}
 
 	zero := make([]float32, imgLen*hidden)
@@ -176,8 +177,8 @@ func TestQwen3VLImageReal(t *testing.T) {
 	} {
 		l, _ := prefill(d.ds)
 		c := logitCosine(l, hfLast)
-		red := c < 0.999 || argmax(l) != argmax(hfLast)
-		fmt.Fprintf(os.Stderr, "[G-S10c] planted %s: last-position cosine %.6f, argmax %d (HF %d), red %v\n", d.name, c, argmax(l), argmax(hfLast), red)
+		red := c < 0.999 || sampling.Argmax(l) != sampling.Argmax(hfLast)
+		fmt.Fprintf(os.Stderr, "[G-S10c] planted %s: last-position cosine %.6f, argmax %d (HF %d), red %v\n", d.name, c, sampling.Argmax(l), sampling.Argmax(hfLast), red)
 		if !red {
 			t.Errorf("planted defect %s left the bar green: the check cannot see it", d.name)
 		}

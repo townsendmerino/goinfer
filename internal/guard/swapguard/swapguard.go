@@ -1,7 +1,7 @@
-// Package swapguard is S3's load-time swap tripwire, shared by every
+// Package swapguard is the load-time swap tripwire, shared by every
 // entry point that loads a model: goinfer-serve (internal/serveapp, which also runs the SERVING half — the
 // admission gate — on top of ThresholdBytes) and goinfer-chat (internal/chatapp, which has no admission gate,
-// so it takes only this half: "chat gets the load-time half only", S3 Build item 4).
+// so it takes only this half; docs/completed/task-never-swap-2026-09.md, "Swap tripwire in the binary").
 //
 // The load-time half arms a watch around exactly one decoder.Load of a .gguf direct build; a trip closes the
 // channel the build observes through Options.LoadAbort (checked between layers by parallelLayers) and
@@ -63,7 +63,7 @@ func StartLoad(loadPath string, opts decoder.Options, advice string) (abort <-ch
 	return armLoad(loadPath, opts, advice, srcs, banner)
 }
 
-// ArmLoad arms a watch scoped to exactly one decoder.Load call — S3's load-time half.
+// ArmLoad arms a watch scoped to exactly one decoder.Load call — the load-time half.
 // Unlike serveapp's armSwapGuard (armed once for the process's life, after startup, so its baseline is
 // "steady state"), a fresh baseline every load is correct here: the question is "did loading THIS
 // model grow swap," not "is the machine's swap elevated in general." ResumeAfter is 0 (no

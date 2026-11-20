@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 func TestParseQuantConfig(t *testing.T) {
@@ -78,12 +80,12 @@ func TestGPTQ_parity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("forward: %v", err)
 	}
-	if got := argmax(logits); got != g.Argmax {
+	if got := sampling.Argmax(logits); got != g.Argmax {
 		t.Errorf("GPTQ argmax = %d, want %d (f32)", got, g.Argmax)
 	}
 	cos := cosineToFull(t, logits, llamaForwardFullPath)
 	if !math.IsNaN(cos) && cos < 0.98 {
 		t.Errorf("GPTQ cosine vs f32 oracle = %v, want ≥ 0.98", cos)
 	}
-	t.Logf("GPTQ TinyLlama (4-bit g128 act-order): argmax=%d (want %d) | cosine vs f32 = %v", argmax(logits), g.Argmax, cos)
+	t.Logf("GPTQ TinyLlama (4-bit g128 act-order): argmax=%d (want %d) | cosine vs f32 = %v", sampling.Argmax(logits), g.Argmax, cos)
 }

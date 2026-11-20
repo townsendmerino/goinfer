@@ -7,8 +7,8 @@
 // Architecture and re-exports the types a backend needs.
 //
 // Its size comes from the load's memory plan (internal/mem): decoder creates it with NewSlots(the resident's KV slot count),
-// and its Manager has no block limit (New(0)), because the backend's pools, sized by the plan, bound the bytes. Planned (MM4,
-// KV11): the Manager asks internal/mem's arbiter for blocks instead, and keeps choosing which block an eviction takes.
+// and its Manager has no block limit (New(0)), because the backend's pools, sized by the plan, bound the bytes. Planned: the
+// Manager asks internal/mem's arbiter for blocks instead, and keeps choosing which block an eviction takes.
 package kvmgr
 
 import (
@@ -68,7 +68,7 @@ type ClassMap struct {
 	MinRows int // the fewest rows a pass needs to run them
 	// Windowed: the model has sliding-window layers. A fast pass over such a layer tiles its keys from where the pass
 	// starts, so one that does not start on a block boundary writes rows no other fast pass writes
-	// (docs/measurements/kv1-2026-10-13.md, G2b). PassAt records those as ClassUnknown.
+	// (docs/measurements/kv1-2026-10-13.md, "A windowed layer on the fast class"). PassAt records those as ClassUnknown.
 	Windowed bool
 }
 

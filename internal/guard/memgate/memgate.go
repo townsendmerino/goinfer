@@ -1,4 +1,4 @@
-// Package memgate is MM7's gate: what a resident build leased on each plan line, against
+// Package memgate is the memory gate: what a resident build leased on each plan line, against
 // the plan's figure for that line. A lease over plan, a lease on an unknown line, or a lease open after Close is red. Each backend
 // brings its rows and its allocator's named rounding; a known red lives in the backend's table of Gaps, which names the fix that
 // removes it and may only shrink. It imports testing because tests are its only callers.
@@ -202,7 +202,8 @@ type Geometry struct {
 // GeometryOf reads g for m at ctx positions and the KV precision kv, one slot's worth times slots. rings is whether the backend keeps a sliding
 // layer's K/V in a ring.
 func GeometryOf(m *decoder.Model, ctx, slots int, kv string, rings bool) Geometry {
-	_, layers, _, _, headDim, _, _ := m.Dims()
+	shape := m.Shape()
+	layers, headDim := shape.Layers, shape.HeadDim
 	g := Geometry{DenseTables: int64(layers) * int64(headDim*2+64)}
 	elem := map[string]float64{mem.KVF16: 2, mem.KVI8: 1}[kv]
 	if elem == 0 {
@@ -288,7 +289,7 @@ type Gap struct {
 	// over what it holds; otherwise it is a line over its figure. None accounts for another.
 	Built, OverPriced bool
 	What              string // the gap, in a sentence
-	Item              string // the MM8 item, or the row, that removes it
+	Item              string // the tracker item, or the row, that removes it
 	// Bytes is the most this gap accounts for at a snapshot, from that snapshot's facts. It must come from the build's shape, not from
 	// the ledger it is checked against. A gap without one forgives nothing and fails Finish.
 	Bytes func(facts map[string]int64) int64

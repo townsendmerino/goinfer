@@ -5,6 +5,8 @@ import (
 	"math"
 	"slices"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // The option grid's cells (optiongrid.go) are moved from "admitted, untested" to "tested" by the
@@ -165,8 +167,8 @@ func TestOptionPath_cpuBatchedPrefill(t *testing.T) {
 
 			s := m.NewSession(len(prompt) + 1)
 			got := gen(t, func() (<-chan int, *Generation) { return s.Generate(ctx, prompt, 1, SamplingParams{}) })
-			if len(got) != 1 || got[0] != argmax(seqLogits) {
-				t.Errorf("batched prefill picked %v, sequential picks %d", got, argmax(seqLogits))
+			if len(got) != 1 || got[0] != sampling.Argmax(seqLogits) {
+				t.Errorf("batched prefill picked %v, sequential picks %d", got, sampling.Argmax(seqLogits))
 			}
 			if d := ogMaxDiff(ogKV(s.cache, len(prompt)), ogKV(seq, len(prompt))); d != 0 {
 				t.Errorf("batched prefill K/V differs from sequential by %g; documented bit-identical", d)

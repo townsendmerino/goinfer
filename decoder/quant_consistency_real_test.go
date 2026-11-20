@@ -26,6 +26,7 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/tokenizer"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -154,7 +155,7 @@ func TestQuantConsistency_real(t *testing.T) {
 				nonFinite++
 			}
 			lp := logSoftmax64(l)
-			a := argmax(l)
+			a := sampling.Argmax(l)
 			p1, p2 := 0.0, 0.0
 			for _, v := range lp {
 				p := math.Exp(v)

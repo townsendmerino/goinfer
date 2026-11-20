@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -127,5 +128,5 @@ func TestGptOss120_sliceLoads(t *testing.T) {
 		t.Fatalf("logits: %d/%d finite, %d non-zero", finite, len(logits), nz)
 	}
 	t.Logf("gpt-oss-120b slice: %d layers x %d experts loaded; argmax %d over %d finite logits",
-		a.NumLayers, a.MoE.NumExperts, argmax(logits), finite)
+		a.NumLayers, a.MoE.NumExperts, sampling.Argmax(logits), finite)
 }
