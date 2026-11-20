@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/embed"
+
+	"github.com/townsendmerino/goinfer/decoder/config"
 )
 
 // S2: gemma4 transcodes by streaming (build -> write -> release per layer), not by
@@ -160,7 +162,7 @@ func residentGemma4GIW(t *testing.T, path, quant string, target GIWTarget) []byt
 	if err != nil {
 		t.Fatalf("ggufConfig: %v", err)
 	}
-	if raw, jerr := json.Marshal(resolveEOSIDs(filepath.Dir(path), cfg)); jerr == nil {
+	if raw, jerr := json.Marshal(config.ResolveEOSIDs(filepath.Dir(path), cfg)); jerr == nil {
 		cfg.EOSTokenID = raw
 	}
 	arch, _, err := resolveArchitecture(cfg)

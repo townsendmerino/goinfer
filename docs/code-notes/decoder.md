@@ -3352,7 +3352,7 @@ existing pre-attn norm+quant (r.aq/r.aSc) as the MLP's input too, instead of seg
 re-normalizing the post-attention residual — no new kernel, a sequencing change (see
 Model.ParallelBlockResident's comment). FeatLogitScale is a host-side multiply after
 readback, the same shape as FeatFinalLogitSoftcap, via Model.LogitScaleResident (NOT
-GraniteParams' own copy of the same arch field — Granite's SSM path isn't CUDA-
+Granite()'s own copy of the same arch field — Granite's SSM path isn't CUDA-
 resident, so this is the first consumer here).
 ```
 
@@ -3501,7 +3501,7 @@ hd=nH_orig*hd_orig): no new kernel. Valid only for MHA (nH==nKV); BuildResident 
 FeatQKNormWhole: true,
 Cohere/Command-R and Cohere2. FeatLayerNorm is a new kernel (layernorm_quant, backend/cuda/glue.cu), bias-free only: a LayerNorm family with a
 learned bias needs its own kernel. FeatParallelBlock reuses segA's pre-attn norm+quant as the MLP input (Model.ParallelBlockResident),
-a sequencing change. FeatLogitScale is a host-side multiply after readback via Model.LogitScaleResident, not GraniteParams'
+a sequencing change. FeatLogitScale is a host-side multiply after readback via Model.LogitScaleResident, not Granite()'s
 copy of the same arch field.
 FeatLayerNorm:     true,
 FeatParallelBlock: true,

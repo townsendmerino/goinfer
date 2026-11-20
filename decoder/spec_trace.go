@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"io"
 	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // SpecTrace is one speculated position's record — the labeled row the acceptance
@@ -37,7 +39,7 @@ type specTracer func(SpecTrace)
 // and the probability mass on `token`, from one position's logits. Used only when
 // tracing — it pays for a full softmax over the vocab.
 func targetDist(logits []float32, token int) (pTop1, pEntropy, pToken float64) {
-	p := softmaxStable(logits, 1) // temperature 1 → the model's true next-token distribution
+	p := sampling.SoftmaxStable(logits, 1) // temperature 1 → the model's true next-token distribution
 	for i, v := range p {
 		if v > pTop1 {
 			pTop1 = v

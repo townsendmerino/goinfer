@@ -1,5 +1,7 @@
 package decoder
 
+import "github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
+
 // walkBatchPlantForTest plants one defect in the batched walker's qwen3.5 or Gemma 4 operations, so the bounds that cover them
 // can show they go red (walkbatch_plants_test.go). Zero in production.
 var walkBatchPlantForTest walkBatchPlant
@@ -57,16 +59,16 @@ func (m *Model) deltaNetBatch(p deltaNetOpParams, x, out []float32, lw *LayerWei
 		fanOut(K, deltaNetWorkers(K), func(lo, hi int) {
 			for i := lo; i < hi; i++ {
 				n := row(x, i, hidden)
-				copy(bts[i*nv:(i+1)*nv], matvec(d.inProjB, nv, hidden, n))
-				copy(ats[i*nv:(i+1)*nv], matvec(d.inProjA, nv, hidden, n))
+				copy(bts[i*nv:(i+1)*nv], hybridattn.Matvec(d.inProjB, nv, hidden, n))
+				copy(ats[i*nv:(i+1)*nv], hybridattn.Matvec(d.inProjA, nv, hidden, n))
 			}
 		})
 		deltaNetCoreN(s.dnCore, mixed, bts, ats, s.dnZ, K, d, g, p.Eps, st)
 	} else {
 		for i := range K {
 			n := row(x, i, hidden)
-			bt := matvec(d.inProjB, nv, hidden, n)
-			at := matvec(d.inProjA, nv, hidden, n)
+			bt := hybridattn.Matvec(d.inProjB, nv, hidden, n)
+			at := hybridattn.Matvec(d.inProjA, nv, hidden, n)
 			deltaNetCore(row(s.dnCore, i, valueDim), row(mixed, i, convDim), bt, at, row(s.dnZ, i, valueDim), d, g, p.Eps, st)
 		}
 	}
@@ -93,7 +95,7 @@ func (m *Model) gatedAttnBatch(p *gatedAttnParams, x, out []float32, lw *LayerWe
 	matmulPre(be, &a.vProj, hq, x, v, K)
 	for i := range K {
 		qi, gi := row(q, i, qDim), row(s.gate, i, qDim)
-		splitQGate(row(s.qg, i, 2*qDim), qi, gi, nH, hd) // q_proj emits [query ‖ gate] per head
+		hybridattn.SplitQGate(row(s.qg, i, 2*qDim), qi, gi, nH, hd) // q_proj emits [query ‖ gate] per head
 		ki, vi := row(k, i, kvDim), row(v, i, kvDim)
 		applyQKNorm(p.QKNorm, qi, ki, a.qNorm, a.kNorm, nH, nKV, hd)
 		applyRope(&p.Rope, qi, ki, nH, nKV, hd, startPos+i, cache.mropePos, cache.mropeDelta)
@@ -106,7 +108,7 @@ func (m *Model) gatedAttnBatch(p *gatedAttnParams, x, out []float32, lw *LayerWe
 		attendBatchedHeads(q, ctx, cache.Keys(l), cache.Vals(l), 0, cache, l, startPos, K, true, arch, true, pool)
 	}
 	if walkBatchPlantForTest != plantBatchNoAttnGate || l != firstNonLinearLayer(arch) {
-		qGateContext(ctx, s.gate)
+		hybridattn.QGateContext(ctx, s.gate)
 	}
 	matmul(be, &a.oProj, ctx, out, K)
 }

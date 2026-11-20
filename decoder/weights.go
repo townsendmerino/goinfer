@@ -15,6 +15,8 @@ import (
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder/quant"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 )
 
 // LayerWeights bundles one decoder block's tensors. Matrices follow
@@ -1031,7 +1033,7 @@ func loadQwen35Attn(i int, l *LayerWeights, arch *Architecture, hidden int,
 		if aerr != nil {
 			return aerr
 		}
-		d.negExpA = negExpAFromLog(aLog) // store −exp(A_log) (GGUF bakes this; here we compute it)
+		d.negExpA = hybridattn.NegExpAFromLog(aLog) // store −exp(A_log) (GGUF bakes this; here we compute it)
 		// DeltaNetNormSuffix/DeltaNetOutProjSuffix (Olmo Hybrid: o_norm/o_proj instead of
 		// qwen3.5's norm/out_proj) — see their own comment on qwen35Params.
 		normSuffix := "linear_attn.norm.weight"
