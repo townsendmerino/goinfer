@@ -91,7 +91,8 @@ func (m *Model) KQuantSavingsForTest(backend string) int64 { return m.kquantSavi
 // DecodeRowsForTest is each layer's per-row decode activations as m's program declares them (program.Buffers' per-row entries), by
 // name at the widest operation of the layer that declares it: the input the WebGPU decode-scratch figure is priced from.
 func (m *Model) DecodeRowsForTest() []map[string]int {
-	H, _, _, _, _, _, V := m.Dims()
+	shape := m.Shape()
+	H, V := shape.Hidden, shape.Vocab
 	return m.metalDecodeRows(H, V).layers
 }
 
@@ -744,7 +745,7 @@ func readbackCPUKV(c *KVCache) (r kvReadback) {
 // backend whose resident declines and leaves the model on the CPU cache).
 func (m *Model) KVReadbackForTest(n int) (n32, n16, n8, nScale int64, err error) {
 	cache := m.NewCache(n)
-	_, _, _, _, _, _, vocab := m.Dims()
+	vocab := m.Shape().Vocab
 	for i := range n {
 		if _, err := m.forward((i*37+11)%vocab, cache); err != nil {
 			return 0, 0, 0, 0, err
