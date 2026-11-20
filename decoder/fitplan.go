@@ -113,7 +113,7 @@ func (m *Model) plan(backend string, freeBytes int64, req PlanRequest, slack boo
 		p.Reason = reason
 		return p
 	}
-	l := m.deviceLoad(backend, req.KVF16, req.KVI8, req.CtxPinned)
+	l := m.deviceLoad(backend, req)
 	if !slack {
 		l.FixedSlack = 0
 	}
@@ -211,8 +211,10 @@ func (m *Model) planIneligible(backend string, req PlanRequest) string {
 // deviceLoad is this model on backend as internal/mem's planner prices it: the dense weights less what the backend keeps on the
 // host, one slot's recurrent state (BuildDemand.StateBytes), the routed experts, Metal's host copies, the backend's KV at a context (CUDA at the load's own KV precision, not a flag
 // the planner is handed), and the backend's context grid and ceiling: Metal's is MetalCtxCeiling for a pinned request and
-// MetalFitDefaultCtx for an unpinned one (MetalFitCtx), WebGPU's its fixed per-precision cap.
-func (m *Model) deviceLoad(backend string, kvF16, kvI8, pinned bool) mem.DeviceLoad {
+// MetalFitDefaultCtx for an unpinned one (MetalFitCtx), WebGPU's its fixed per-precision cap. It reads req's KV precision
+// (KVF16, KVI8) and CtxPinned.
+func (m *Model) deviceLoad(backend string, req PlanRequest) mem.DeviceLoad {
+	kvF16, kvI8, pinned := req.KVF16, req.KVI8, req.CtxPinned
 	l := mem.DeviceLoad{Backend: backend, Tier: planTier(backend), DenseBytes: m.ResidentDenseWeightBytesFor(backend), CtxStep: 1,
 		FixedSlack: m.planSlack(backend), StateBytes: m.stateBytes(backend)}
 	if nExperts, topK, isMoE := m.moeGeometry(); isMoE {

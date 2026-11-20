@@ -42,7 +42,7 @@ func (m *Model) MetalFitCtx(in MetalFitInput) MetalFit {
 	if w := m.Config().MaxPositions; w > 0 && candidate > w {
 		candidate = w
 	}
-	load := m.deviceLoad("metal", false, false, true)
+	load := m.deviceLoad("metal", PlanRequest{CtxPinned: true})
 	kv := load.KV
 	load.KV = func(ctx int) int64 { return kv(ctx) + m.MetalKVTableRaiseBytes(in.KVSlots, ctx) } // the tables at the raised cap, once
 	a := mem.SolveMetalCtx(mem.MetalCtxLoad{

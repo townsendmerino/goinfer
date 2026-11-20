@@ -11,7 +11,7 @@ import (
 // The decode-matmul parallelism threshold sweep. int4ParThreshold (weightmat.go) and DefaultDecodeParallelThreshold
 // (tune.go) are the fan-out crossovers, in MACs, below which a decode matmul runs SERIAL. This isolates the crossover
 // from the model: it drives the SAME kernels (MatmulBTW4A8Into / MatmulBTW8A8Into) matmul() dispatches, at
-// Gemma-4-26B-A4B's real decode shapes (M=1), across a bracket of thresholds, with a per-call Workspace exactly as the
+// Gemma-4-26B-A4B's and qwen2.5 0.5B's real decode shapes (M=1), across a bracket of thresholds, with a per-call Workspace exactly as the
 // forward does. Both constants were tuned on one 8-core desktop CPU (history: docs/code-notes/decoder.md#parthreshold_sweep_bench_test.header).
 //
 // Run + read (per-shape ns/op; lower is better; the winning threshold is the largest one whose ns/op is still
@@ -24,22 +24,26 @@ import (
 // tiny ops (which over-parallelize: thread spawn > work) serial. On a different CPU, if the optimum differs materially
 // from the constants, the constant wants to be per-platform, not a universal default.
 
-// gemma4-26b-a4b decode matmul shapes at M=1 (K=cols/in, N=rows/out), MACs = K*N. The smallest (down) is the one
-// int4ParThreshold must let through; attn is the largest. hidden=2816, moe_inter=704, dense_inter=2112, nH*hd(global)=4096.
+// Decode matmul shapes at M=1 (K=cols/in, N=rows/out), MACs = K*N. The qwen2.5 0.5B rows are the smallest
+// int4ParThreshold must let through (hidden=896, q/k/v batch N=896+128+128, run as one matmul of the summed N: the batch
+// kernel's per-column work and fan-out rule are the same). The gemma4-26b-a4b rows: hidden=2816, moe_inter=704,
+// dense_inter=2112, nH*hd(global)=4096.
 var decodeShapes = []struct {
 	name string
 	K, N int // K = input dim (dot length), N = output rows (partitioned in 8-wide groups)
 }{
+	{"qwen05b_o_0.80M", 896, 896},
+	{"qwen05b_qkv_1.03M", 896, 1152},
 	{"down_1.98M", 704, 2816},
 	{"gate_up_3.96M", 2816, 1408},
 	{"dense_5.9M", 2816, 2112},
 	{"attn_11.5M", 2816, 4096},
 }
 
-// The bracket straddles both constants (300K, 1<<20) and the down/gate_up/dense/attn MAC
-// counts, plus the endpoints: 0 fans out everything (measures the over-parallelize cost)
+// The bracket straddles both constants (300K, 1<<19), the old int4 value (1<<20) and every shape's MAC
+// count, plus the endpoints: 0 fans out everything (measures the over-parallelize cost)
 // and 1<<24 is aikit's serial default (measures the all-serial cost the constants fixed).
-var sweepThresholds = []int{0, 300_000, 700_000, 1 << 20, 1_500_000, 2_000_000, 4_000_000, 6_000_000, 12_000_000, 1 << 24}
+var sweepThresholds = []int{0, 300_000, 1 << 19, 700_000, 1 << 20, 1_500_000, 2_000_000, 4_000_000, 6_000_000, 12_000_000, 1 << 24}
 
 func BenchmarkInt4ParThresholdSweep(b *testing.B) {
 	rng := rand.New(rand.NewSource(1))

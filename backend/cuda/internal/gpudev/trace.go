@@ -34,7 +34,7 @@ type TraceEvent struct {
 	Line   string
 }
 
-// TraceForTest, when set (tests only), is called with every operation above, on the issuing thread, before it is issued: a
+// TraceForTest (when set; tests only) is called with every operation above, on the issuing thread, before it is issued: a
 // test records a launch-and-copy sequence to hold a refactor to. It is nil in production, where each site pays one nil check.
 var TraceForTest func(TraceEvent)
 

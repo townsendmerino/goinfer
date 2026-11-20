@@ -64,7 +64,7 @@ func accountFree(n int64) {
 	}
 }
 
-// newDeviceBuffer wraps a wgpu buffer and accounts for its size. n is the ELEMENT count; the
+// NewDeviceBuffer wraps a wgpu buffer and accounts for its size. n is the ELEMENT count; the
 // buffer's real byte size is read from the handle so the figure is right for u32-packed int8
 // as well as f32.
 func NewDeviceBuffer(buf *wgpu.Buffer, n int) *DeviceBuffer {

@@ -283,7 +283,7 @@ func actGroupResidentDecline(backend string, actGroup int, quant string) string 
 		"scales are implemented by CUDA residency only), so the load runs on the CPU, which honours the group", actGroup, backend)
 }
 
-// residentProjsInt4 reports whether the loaded projection weights are int4 (W4A8) — the gate for
+// ResidentProjsInt4 reports whether the loaded projection weights are int4 (W4A8) — the gate for
 // Nemotron-H default-on residency. Scans for the first attention/MLP projection (the mamba
 // in/out_proj are always f32 in the model and quantized at build, so they don't indicate the
 // load precision).

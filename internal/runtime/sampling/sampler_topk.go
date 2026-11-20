@@ -62,7 +62,7 @@ func (s *Sampler) TopKEligible() bool {
 	return p.TopK > 0 || p.MinP > 0 || (p.TopP > 0 && p.TopP < 1)
 }
 
-// topPActive mirrors topFilterLogits' own predicate.
+// TopPActive mirrors topFilterLogits' own predicate.
 func (s *Sampler) TopPActive() bool { return s.p.TopP > 0 && s.p.TopP < 1 }
 
 // TopKWidth returns how many candidates to request for a vocab of the given size, and false when the

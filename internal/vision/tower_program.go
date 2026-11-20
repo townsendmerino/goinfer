@@ -112,7 +112,7 @@ type TowerOp struct {
 // TowerBlock is one block's operations, in order.
 type TowerBlock []TowerOp
 
-// TowerProgramPlantForTest, when set, rewrites every program a constructor returns, given the program's name
+// TowerProgramPlantForTest (when set) rewrites every program a constructor returns, given the program's name
 // (siglip, qwen3, glm-ocr, gemma4, qwen2.5, pixtral here; whisper, gemma4-audio and qwen3-asr in internal/audio,
 // through PlantedProgram): the seam the programs' plants (G-SB9M-2) use on every backend. Nil in production and in
 // every other test.

@@ -72,7 +72,7 @@ type runner struct {
 	outputs       map[string][]float32 // each case's output values, keyed by caseKey; nil unless RunOutputs asked
 }
 
-// PlantForTest, when it names a family, changes that family's first output value by one ulp before it is fingerprinted: the
+// PlantForTest (when it names a family) changes that family's first output value by one ulp before it is fingerprinted: the
 // plant SB9's goldens are shown to go red with (G-SB9-2). Empty in production and in every other test.
 var PlantForTest string
 

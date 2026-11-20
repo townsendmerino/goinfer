@@ -45,7 +45,7 @@ func (c *Context) Collected() (buffers, bytes int64) {
 // Ledger is this Context's account of the buffers created on it.
 func (c *Context) Ledger() *mem.Ledger { return &c.ledger }
 
-// ClosedForTest, when set, is called at the end of Close's release with the Context, so a test can read its ledger then (I1, I2).
+// ClosedForTest (when set) is called at the end of Close's release with the Context, so a test can read its ledger then (I1, I2).
 // A test seam, nil in production.
 var ClosedForTest func(*Context)
 
@@ -101,7 +101,7 @@ func collected(wp weak.Pointer[wgpu.Buffer]) {
 	}
 }
 
-// DebugCollectedForTest, when set, is told of each lease made (made=true) and each one the GC closed (made=false). A test seam.
+// DebugCollectedForTest (when set) is told of each lease made (made=true) and each one the GC closed (made=false). A test seam.
 var DebugCollectedForTest func(wp weak.Pointer[wgpu.Buffer], made bool)
 
 // releaseBuf closes b's lease and releases it.

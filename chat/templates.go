@@ -66,7 +66,7 @@ func Gemma3() *Template {
 // scaffold: "<|turn>model\n<|channel>thought\n<channel|>".
 func Gemma4() *Template {
 	return &Template{name: "gemma4", stops: []string{"<turn|>"}, render: func(system string, turns []Turn) []Segment {
-		return gemma4Segments(system, turns, false, false, false, true)
+		return gemma4Segments(system, turns, gemma4Opts{scaffold: true})
 	}}
 }
 
@@ -76,12 +76,20 @@ func Gemma4() *Template {
 // leaves the thinking channel for the model to open. old=true is the earlier template: it keeps a turn's reasoning only when the turn
 // makes a tool call (a call in this text-only path never happens, so none). scaffold is whether the thinking-off generation prompt
 // carries the closed channel (Reasoning.offScaffold).
-func gemma4Segments(system string, turns []Turn, think, hist, old, scaffold bool) []Segment {
+// gemma4Opts are gemma4Segments' rendering choices.
+type gemma4Opts struct {
+	think    bool // the template's enable_thinking=true form
+	hist     bool // an assistant turn's reasoning is rendered by the family's history rule
+	old      bool // the earlier template: a turn keeps its reasoning only when it makes a tool call
+	scaffold bool // the thinking-off generation prompt carries the closed channel (Reasoning.offScaffold)
+}
+
+func gemma4Segments(system string, turns []Turn, o gemma4Opts) []Segment {
 	var b segBuf
 	b.sp("<bos>")
-	if system != "" || think {
+	if system != "" || o.think {
 		b.sp("<|turn>")
-		if think {
+		if o.think {
 			b.ct("system\n")
 			b.sp("<|think|>")
 			b.ct("\n" + system)
@@ -100,16 +108,16 @@ func gemma4Segments(system string, turns []Turn, think, hist, old, scaffold bool
 		// The managed rendering follows the template: consecutive assistant messages are ONE model turn — no turn header for a message
 		// that follows an assistant message, and no turn end for one that is followed by another (`continue_same_model_turn`,
 		// `continues_into_next`). The generic rendering keeps a turn per message, byte for byte as before the history rule existed.
-		joinsPrev := role == "model" && hist && i > 0 && turns[i-1].Role == "assistant"
-		joinsNext := role == "model" && hist && i+1 < len(turns) && turns[i+1].Role == "assistant"
+		joinsPrev := role == "model" && o.hist && i > 0 && turns[i-1].Role == "assistant"
+		joinsNext := role == "model" && o.hist && i+1 < len(turns) && turns[i+1].Role == "assistant"
 		if !joinsPrev {
 			b.sp("<|turn>")
 		}
-		if role == "model" && hist {
+		if role == "model" && o.hist {
 			if !joinsPrev {
 				b.ct("model\n")
 			}
-			if t.Reasoning != "" && i > lu && !old { // the tool loop in progress keeps its reasoning; earlier turns do not
+			if t.Reasoning != "" && i > lu && !o.old { // the tool loop in progress keeps its reasoning; earlier turns do not
 				b.sp("<|channel>")
 				b.ct("thought\n" + t.Reasoning + "\n")
 				b.sp("<channel|>")
@@ -125,7 +133,7 @@ func gemma4Segments(system string, turns []Turn, think, hist, old, scaffold bool
 	}
 	b.sp("<|turn>")
 	b.ct("model\n")
-	if !think && scaffold {
+	if !o.think && o.scaffold {
 		b.sp("<|channel>")
 		b.ct("thought\n")
 		b.sp("<channel|>")

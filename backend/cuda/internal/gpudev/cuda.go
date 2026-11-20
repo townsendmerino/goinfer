@@ -115,7 +115,7 @@ type Leaser interface {
 	Lease(onDevice bool, line string, requested, charged int64) (release func())
 }
 
-// NewLeaser, when set, gives every device CreateSystemDefaultDevice creates its leaser: the backend sets it at init, so a device
+// NewLeaser (when set) gives every device CreateSystemDefaultDevice creates its leaser: the backend sets it at init, so a device
 // any package creates is leased.
 var NewLeaser func() Leaser
 
@@ -162,7 +162,7 @@ func ChargedBytes(n int64) int64 {
 // package may set it to its test line for its own buffers.
 var UnlinedLine string
 
-// ReleasedForTest, when set, is called by ReleaseObjects after everything the device tracked is freed, so a test can read the
+// ReleasedForTest (when set) is called by ReleaseObjects after everything the device tracked is freed, so a test can read the
 // leaser's account then (I1, I2). A test seam, nil in production.
 var ReleasedForTest func(*Device)
 

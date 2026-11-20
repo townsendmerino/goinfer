@@ -156,7 +156,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		msg["reasoning_content"] = rb.String()
 	}
 	choice := map[string]any{"index": 0, "message": msg, "finish_reason": finish}
-	empty := emptyAnswerOf(gr, finish, t.stopSeq, len(t.calls), nComp)
+	empty := emptyAnswerOf(gr, finish, t.stopHit, len(t.calls), nComp)
 	if empty != nil {
 		choice["goinfer_empty_answer"] = empty
 	}

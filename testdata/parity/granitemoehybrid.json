@@ -11,7 +11,7 @@
     "decoder/arch_granitemoehybrid.go",
     "decoder/gguf_build_granite.go"
   ],
-  "deps_hash": "sha256:d2fa30791b24c15a73e808c48466adc9a213ee0eafbf20951fa13720d04ecdb1",
+  "deps_hash": "sha256:a86341d312d8efec570ed45423d17b9df5186d3efef728f8fc2bcc0ce44bf97f",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
