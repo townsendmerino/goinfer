@@ -12,7 +12,7 @@
     "testdata/glm-tiny",
     "testdata/glm-tiny-bias"
   ],
-  "deps_hash": "sha256:a26d758f918cdb65b9d5a1a651c00af8ad0f9b224435abc1985047fdffd2480e",
+  "deps_hash": "sha256:5f80a13126b877ca9f7ae234af346914156ea9c069c845c6c52a432c4536a47e",
   "status": "experimental",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
