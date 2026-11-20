@@ -1,0 +1,17 @@
+=== RUN   TestResidentSelfTest_passesOnHealthyWebGPU
+    selftest_probe_test.go:34: int4: webgpu pass (2751.9 ms), worst cosine 0.99988 (floor 0.995), worst relative L2 0.0155 (ceiling 0.10) over 4 fixtures (wall 2.751909553s)
+    selftest_probe_test.go:34: int8int8: webgpu pass (2685.8 ms), worst cosine 0.99929 (floor 0.995), worst relative L2 0.0378 (ceiling 0.10) over 4 fixtures (wall 2.68585987s)
+--- PASS: TestResidentSelfTest_passesOnHealthyWebGPU (5.49s)
+=== RUN   TestResidentSelfTest_goesRedOnWrongResidentInputsWebGPU
+=== RUN   TestResidentSelfTest_goesRedOnWrongResidentInputsWebGPU/rms_epsilon
+    selftest_probe_test.go:64: webgpu declined (2920.6 ms), worst cosine 0.67057 (floor 0.995), worst relative L2 0.9830 (ceiling 0.10) over 4 fixtures; qwen35vl-tiny decode, 264 positions: worst cosine 0.6706 (floor 0.995, at position 1), worst relative L2 0.983 (ceiling 0.10)
+=== RUN   TestResidentSelfTest_goesRedOnWrongResidentInputsWebGPU/rope_base
+    selftest_probe_test.go:64: webgpu declined (2900.9 ms), worst cosine 0.92499 (floor 0.995), worst relative L2 0.3875 (ceiling 0.10) over 4 fixtures; qwen35vl-tiny decode, 264 positions: worst cosine 0.9250 (floor 0.995, at position 21), worst relative L2 0.388 (ceiling 0.10)
+--- PASS: TestResidentSelfTest_goesRedOnWrongResidentInputsWebGPU (5.86s)
+    --- PASS: TestResidentSelfTest_goesRedOnWrongResidentInputsWebGPU/rms_epsilon (2.92s)
+    --- PASS: TestResidentSelfTest_goesRedOnWrongResidentInputsWebGPU/rope_base (2.90s)
+=== RUN   TestWebGPU_forwardParity
+--- PASS: TestWebGPU_forwardParity (2.02s)
+PASS
+ledger: 23 Context(s) closed in this run
+ok  	github.com/townsendmerino/goinfer/backend/webgpu	13.518s

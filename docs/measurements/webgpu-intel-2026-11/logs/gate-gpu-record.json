@@ -1,0 +1,43 @@
+{
+ "schema": 1,
+ "backend": "none",
+ "commit": "018cbe74c0f29c29bb9e7e9b7cb90bdd43d140bc",
+ "date": "2026-11-20T18:57:55Z",
+ "host": "Linux x86_64",
+ "verdict": "FAIL",
+ "dirty": false,
+ "heavy_skipped": false,
+ "groups": {
+  "declared": 5,
+  "reported": 5,
+  "pass": 3,
+  "skip": 3,
+  "fail": 1,
+  "ran": 1
+ },
+ "trees": {
+  "backend/cuda": "5b064a3333847449a974b1e72e05d37246750b35",
+  "backend/metal": "dc9a59c07ca02c78d3aebb8a7722ed4ea0ca0a3f",
+  "backend/webgpu": "8ef54c87e43228f714857cbf1f53d69fc2ea9191",
+  "decoder": "abaac1f73a1116109372c86968efa613bf21fb7d"
+ },
+ "expect": [
+  "cleangpu",
+  "seam",
+  "suite",
+  "webgpu",
+  "repo"
+ ],
+ "emitted": [
+  "cleangpu",
+  "repo",
+  "seam",
+  "suite",
+  "webgpu"
+ ],
+ "notes": [
+  "SKIPPED: clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)",
+  "SKIPPED: no GPU backend detected on this host — only the seam gate ran",
+  "SKIPPED: 23 darwin-only CI hygiene step(s) — wrong platform for this host"
+ ]
+}
