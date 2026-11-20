@@ -60,7 +60,7 @@ func (r *resident) allocRecurrentCheckpoint(m *decoder.Model) {
 	}
 	r.bindCheckpoint()
 	r.ckptBytes = bytes
-	logs.Infof("metal: recurrent checkpoint: %.1f MiB (%d buffers, KV8a)", mib(bytes), len(r.ckptBufs))
+	logs.Infof("metal: recurrent checkpoint: %.1f MiB (%d buffers)", mib(bytes), len(r.ckptBufs))
 }
 
 func mib(b int64) float64 { return float64(b) / (1 << 20) }

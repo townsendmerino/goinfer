@@ -1259,7 +1259,7 @@ func (a *metalResident) prefillMRoPE(ctx context.Context, embeddings [][]float32
 		return nil, e
 	}
 	if on := metalMRoPEPrefillOn; deep != nil && !metalDeepstackPrefillOn || deep == nil && !on {
-		return nil, fmt.Errorf("metal: the resident m-RoPE prefill is off for this model until its S16 gates are graded; the image prefill runs on the CPU")
+		return nil, fmt.Errorf("metal: the resident m-RoPE prefill is off for this model until its fidelity gates are graded; the image prefill runs on the CPU")
 	}
 	if a.r.mropeAxis == (Buffer{}) {
 		return nil, fmt.Errorf("metal: no m-RoPE axis table for this model; the image prefill runs on the CPU")

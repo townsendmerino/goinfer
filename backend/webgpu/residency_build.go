@@ -427,7 +427,7 @@ func (bs *webgpuBuild) uploadModelLevel() error {
 		// add), so admitting the combination would give silently wrong logits. Gemma 4's own MoE block is a different branch with
 		// its norms inside (runLayer.g4moe); refuse any other family loudly so the gap cannot ship silently.
 		return fmt.Errorf("gpu: sandwich norms (FeatSandwichNorm) + MoE is not supported — " +
-			"the MoE FFN dispatch has no postMLPNorm step (N-89, docs/audit-2026-09-10.md)")
+			"the MoE FFN dispatch has no postMLPNorm step")
 	}
 	bs.granOK, bs.rmul = granOK, rmul
 	bs.nemoOK, bs.nemoZeroInvFreq = nemoOK, nemoZeroInvFreq
