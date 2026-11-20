@@ -23,18 +23,14 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/embeddinggemma2"
 	"github.com/townsendmerino/goinfer/engine"
 	"github.com/townsendmerino/goinfer/internal/app/connect"
-	"github.com/townsendmerino/goinfer/internal/audio"
 	"github.com/townsendmerino/goinfer/internal/clef"
 	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/decide"
 	"github.com/townsendmerino/goinfer/internal/guard/swapguard"
 	samplingp "github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/runtime/scheduler"
-	"github.com/townsendmerino/goinfer/internal/vision"
-	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -114,77 +110,18 @@ type loadedModel struct {
 	// concurrent is how many generations of this model may run at once (see setConcurrency); 1 = serialized.
 	concurrent int
 
-	// Vision tower (--vision): nil unless a multimodal model is loaded. A model with one is vision-capable: serve
-	// accepts image content parts, runs them through preprocess, encoder and projector, and routes the turn to
-	// GenerateVL.
-	venc    *vision.Encoder
-	vproj   *multimodal.Projector
-	vcfg    vision.Config
-	vimgTok int // image-soft-token id (the placeholder embed-by-vector overrides); -1 if unresolved
-
-	// Qwen2.5-VL vision tower (nil for Gemma 3 or text). The merger is in the encoder (no separate projector);
-	// preprocessing and m-RoPE are Qwen-specific, so the image path branches on qwenEnc != nil.
-	qwenEnc     *vision.QwenVisionEncoder
-	qwenDevMu   sync.Mutex // serializes the Qwen2.5-VL tower and its CPU fallback (device_fallback.go)
-	qwenRequire bool       // -require-backend: a device-memory failure of the Qwen2.5-VL tower fails the request instead of falling back to the CPU
-	qwenPP      multimodal.QwenPreprocessConfig
-	qwenMerge   int // spatial_merge_size
-	qwenImgTok  int // <|image_pad|> id
-
-	// Qwen3.5+ vision tower (nil: not Qwen3.5, or no tower). It shares qwenPP/qwenMerge/qwenImgTok and the
-	// GenerateQwenVL route with the Qwen2.5-VL path above, but loads lazily on the first image request (qwen3Tower):
-	// every Qwen3.5 checkpoint carries one, so eager loading would tax every text-only user's startup and memory.
-	qwen3 *qwen3Tower
+	// vision is the entry's image input (--vision; nil: the model takes no image). A model with one is vision-capable:
+	// serve accepts image content parts, runs them through the family's preprocessing and tower, and routes the turn to
+	// the family's generator.
+	vision visionTower
 
 	// visionShare counts the entries holding this entry's startup vision tower (nil: none shares it); the last to unload
 	// closes it.
 	visionShare *visionShare
 
-	// GLM-OCR vision tower (nil: not GLM-OCR, or no tower). It shares qwenPP/qwenMerge/qwenImgTok and the
-	// GenerateQwenVL route with the two Qwen paths above, but its tower, prompt block and template are GLM's
-	// (glm_ocr_vision.go). Loaded lazily.
-	glm *glmOcrTower
-
-	// Ministral 3's Pixtral image path (nil: not Ministral 3, or no tower); see pixtral_vision.go.
-	pixtral *pixtralTower
-
-	// LFM2-VL's image path (nil: not LFM2-VL, or no tower), lfm2vl_vision.go.
-	lfm2vl *lfm2vlTower
-
-	// Gemma 4 vision tower (nil: not gemma4, or no tower). There is no separate projector: Gemma4Encoder.Forward
-	// includes the embed_vision projection. gemma4MaxSoft is the checkpoint's vision_soft_tokens_per_image budget
-	// (vision.Gemma4Preprocess's maxSoftTokens); the actual per-image token count is data-dependent and computed per
-	// request via multimodal.Gemma4PooledTokens.
-	gemma4Enc     *vision.Gemma4Encoder
-	gemma4Tower   multimodal.Gemma4TowerAccelerator // nil: the CPU tower (docs/multimodal.md)
-	gemma4Swap    *towerSwap                        // non-nil: the device tower loads for each encode (towerSwap)
-	gemma4MaxSoft int
-	gemma4ImgTok  int // <|image|> id
-	// Gemma 4 audio: set when the checkpoint has an audio_config. The tower loads on the first audio request
-	// (gemma4AudioEncoder), so a server that never hears audio never pays its memory. gemma4AudioTok is <|audio|>.
-	gemma4AudioDir string
-	// Qwen3-ASR: the checkpoint directory (its audio encoder is in the same safetensors as the decoder), the
-	// <|audio_pad|> id, and the encoder, loaded on the first clip.
-	qwenASRDir  string
-	qwenASRTok  int
-	qwenASR     *audio.QwenASREncoder
-	qwenASRErr  error
-	qwenASROnce sync.Once
-	// Voxtral Mini: the checkpoint directory (the audio tower and projector are in its own safetensors) and the encoder, loaded on the first clip.
-	voxtralDir      string
-	voxtralBackend  string // the backend the tower is placed on at its load (-vision-device cpu makes it "cpu")
-	voxtralDevice   audio.WhisperDevice
-	voxtral         *audio.VoxtralAudio
-	voxtralErr      error
-	voxtralOnce     sync.Once
-	gemma4AudioTok  int
-	gemma4AudioOnce sync.Once
-	gemma4Audio     *audio.Gemma4AudioEncoder
-	gemma4AudioErr  error
-	// gemma4AudioDevice is "metal" when the tower's conformer blocks run on Metal (EmbeddingGemma 2's accelerator),
-	// "" for the CPU; gemma4AudioAcc is that accelerator once built, nil if it declined (the CPU then, said once).
-	gemma4AudioDevice string
-	gemma4AudioAcc    embeddinggemma2.AudioAccelerator
+	// audio is the entry's audio input (nil: the model takes no audio clip): a Gemma 4 checkpoint with an audio_config,
+	// Qwen3-ASR or Voxtral Mini. Its encoder loads on the first clip.
+	audio audioTower
 
 	// scripted is a test seam (a test sets fakeEngine to scriptedEngine): when non-nil, drive streams these token ids (at most the request's max tokens; the end of the
 	// slice is the model's end of turn) instead of running model. Production never sets it.
@@ -325,12 +262,12 @@ func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 
 // audioCapable reports whether this model can take an audio clip (a Gemma 4 checkpoint with an audio tower, a Qwen3-ASR checkpoint, or Voxtral Mini).
 func (lm *loadedModel) audioCapable() bool {
-	return lm.gemma4AudioDir != "" || lm.qwenASRDir != "" || lm.voxtralDir != ""
+	return lm.audio != nil
 }
 
 // visionCapable reports whether this model has a loaded vision tower.
 func (lm *loadedModel) visionCapable() bool {
-	return (lm.venc != nil && lm.vproj != nil) || lm.qwenEnc != nil || lm.qwen3 != nil || lm.glm != nil || lm.gemma4Enc != nil || lm.pixtral != nil || lm.lfm2vl != nil
+	return lm.vision != nil
 }
 
 // tryEnter claims a queue slot, then waits for this model's turn. It returns (false, "") when the queue is full, so
@@ -1760,7 +1697,8 @@ func (vi visionInput) media(spans []decoder.ImageSpan, grids [][3]int, lm *loade
 	case vi.asr: // Qwen3-ASR, Voxtral: the encoder's embeddings replace the audio run, causal prefill, CPU decode
 		md.Kind = engine.MediaAudio
 	case vi.qwen: // Qwen2.5-VL, Qwen3-VL (with DeepStack sets), GLM-OCR
-		md.Kind, md.Grids, md.Merge, md.ImageToken, md.DeepSets = engine.MediaQwen, grids, lm.qwenMerge, lm.qwenImgTok, vi.deepSets
+		g := lm.qwenGrid()
+		md.Kind, md.Grids, md.Merge, md.ImageToken, md.DeepSets = engine.MediaQwen, grids, g.merge, g.imgTok, vi.deepSets
 	case vi.gemma4:
 		md.Kind = engine.MediaGemma4
 	case vi.causal: // causal image tokens (Ministral 3, LFM2-VL), one span per run

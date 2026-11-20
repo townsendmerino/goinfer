@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/backend/cuda/internal/wpack"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
@@ -49,7 +50,7 @@ func kv16Representable(n int, seed uint32) []float32 {
 		if i%97 == 0 {
 			v *= 40 // an outlier channel
 		}
-		out[i] = f16BitsToF32(f32ToF16RNE(v))
+		out[i] = f16BitsToF32(wpack.F32ToF16RNE(v))
 	}
 	return out
 }

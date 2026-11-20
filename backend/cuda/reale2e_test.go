@@ -14,6 +14,7 @@ import (
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
 
+	"github.com/townsendmerino/goinfer/backend/cuda/internal/wpack"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -96,7 +97,7 @@ func BenchmarkRealE2EDecode(b *testing.B) {
 			}
 			gs := make([]uint16, len(sc))
 			for i, v := range sc {
-				gs[i] = f32tof16(v)
+				gs[i] = wpack.F32ToF16(v)
 			}
 			return hw{kind: "int4", wpk: p, ws16: gs, N: N, K: K}
 		case "int8":

@@ -23,22 +23,32 @@ func (f closeCountGrid) Hidden([]float32, [][3]int) ([]float32, error) { return 
 // TestUnload_closesTheDeviceTowers is MEM2-G3: through the admin
 // unload and the real drain, each device tower an entry built (the Gemma 4 vision tower, the Qwen3.5+ and GLM-OCR
 // towers' accelerators, the Gemma 4 audio accelerator) is closed exactly once and the entry holds none afterwards; an entry
-// that built none closes nothing.
+// that built none closes nothing. An entry holds one vision family, so each family is its own entry.
 func TestUnload_closesTheDeviceTowers(t *testing.T) {
 	for _, built := range []bool{true, false} {
 		g4v, q3, glm, g4a := &fakeTower{}, &fakeTower{}, &fakeTower{}, &fakeTower{}
-		m := &fakeModel{}
-		lm := &loadedModel{name: "t", model: m, qwen3: &qwen3Tower{}, glm: &glmOcrTower{}}
+		g4 := &loadedModel{name: "gemma4", vision: &gemma4Vision{}, audio: &gemma4Audio{}}
+		qv := &qwen3Vision{qwen3Tower: &qwen3Tower{}}
+		gv := &glmVision{glmOcrTower: &glmOcrTower{}}
+		entries := []*loadedModel{g4, {name: "qwen3.5", vision: qv}, {name: "glm-ocr", vision: gv}}
 		if built {
-			lm.gemma4Tower, lm.gemma4AudioAcc = g4v, g4a
-			lm.qwen3.acc, lm.glm.acc = closeCountGrid{q3}, closeCountGrid{glm}
+			g4.vision.(*gemma4Vision).tower = g4v
+			g4.audio.(*gemma4Audio).acc = g4a
+			qv.acc, gv.acc = closeCountGrid{q3}, closeCountGrid{glm}
 		}
-		s := &server{models: map[string]*loadedModel{"t": lm}, liveness: map[modelHandle]*modelLiveness{m: {refs: 1}},
+		s := &server{models: map[string]*loadedModel{}, liveness: map[modelHandle]*modelLiveness{},
 			draining: map[string]struct{}{}, cfg: config{allowAdmin: true, unloadDrainWait: 5 * time.Second}}
-		w := httptest.NewRecorder()
-		s.handleAdminUnload(w, httptest.NewRequest("POST", "/admin/models/unload", strings.NewReader(`{"name":"t"}`)))
-		if w.Code != http.StatusOK {
-			t.Fatalf("unload: %d %s", w.Code, w.Body.String())
+		for _, lm := range entries {
+			m := &fakeModel{}
+			lm.model = m
+			s.models[lm.name], s.liveness[m] = lm, &modelLiveness{refs: 1}
+		}
+		for _, lm := range entries {
+			w := httptest.NewRecorder()
+			s.handleAdminUnload(w, httptest.NewRequest("POST", "/admin/models/unload", strings.NewReader(`{"name":"`+lm.name+`"}`)))
+			if w.Code != http.StatusOK {
+				t.Fatalf("unload %s: %d %s", lm.name, w.Code, w.Body.String())
+			}
 		}
 		want := 0
 		if built {
@@ -49,8 +59,10 @@ func TestUnload_closesTheDeviceTowers(t *testing.T) {
 				t.Errorf("built %v: the %s tower closed %d times; want %d", built, name, f.closes, want)
 			}
 		}
-		if lm.gemma4Tower != nil || lm.gemma4AudioAcc != nil || lm.qwen3 != nil || lm.glm != nil {
-			t.Errorf("built %v: the entry still holds a tower after its unload", built)
+		for _, lm := range entries {
+			if g, ok := lm.audio.(*gemma4Audio); lm.vision != nil || (ok && g.acc != nil) {
+				t.Errorf("built %v: %s still holds a tower after its unload", built, lm.name)
+			}
 		}
 	}
 }

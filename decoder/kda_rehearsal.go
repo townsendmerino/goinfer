@@ -1,6 +1,10 @@
 package decoder
 
-import "math"
+import (
+	"math"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
+)
 
 // KDA (Kimi Delta Attention) recurrence for the linear-attention mixer of Ling-3.0-tiny / Kimi K3.
 // It began as a rehearsal that proved the one new piece of KDA's math
@@ -34,13 +38,13 @@ func kdaLowerBoundGateInto(out, rawGate, dtBias []float32, aLog, lowerBound floa
 	scale := float32(math.Exp(float64(aLog)))
 	i := 0
 	for ; i+3 < n; i += 4 {
-		out[i] = lowerBound * sigmoidf(scale*(rawGate[i]+dtBias[i]))
-		out[i+1] = lowerBound * sigmoidf(scale*(rawGate[i+1]+dtBias[i+1]))
-		out[i+2] = lowerBound * sigmoidf(scale*(rawGate[i+2]+dtBias[i+2]))
-		out[i+3] = lowerBound * sigmoidf(scale*(rawGate[i+3]+dtBias[i+3]))
+		out[i] = lowerBound * hybridattn.Sigmoidf(scale*(rawGate[i]+dtBias[i]))
+		out[i+1] = lowerBound * hybridattn.Sigmoidf(scale*(rawGate[i+1]+dtBias[i+1]))
+		out[i+2] = lowerBound * hybridattn.Sigmoidf(scale*(rawGate[i+2]+dtBias[i+2]))
+		out[i+3] = lowerBound * hybridattn.Sigmoidf(scale*(rawGate[i+3]+dtBias[i+3]))
 	}
 	for ; i < n; i++ {
-		out[i] = lowerBound * sigmoidf(scale*(rawGate[i]+dtBias[i]))
+		out[i] = lowerBound * hybridattn.Sigmoidf(scale*(rawGate[i]+dtBias[i]))
 	}
 }
 

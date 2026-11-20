@@ -5,6 +5,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 )
 
 // TestKDARehearsal_matchesReference is F4's synthetic-tiny bring-up:
@@ -63,15 +65,15 @@ func TestKDARehearsal_matchesReference(t *testing.T) {
 	var sumDot, sumGot, sumWant float64
 	for ti := range T {
 		for h := range H {
-			q := l2normScaled(g.Q[0][ti][h], qScale)
-			k := l2normScaled(g.K[0][ti][h], 1)
+			q := hybridattn.L2NormScaled(g.Q[0][ti][h], qScale)
+			k := hybridattn.L2NormScaled(g.K[0][ti][h], 1)
 			v := g.V[0][ti][h]
 			gateLog := kdaLowerBoundGate(g.RawGateIn[0][ti][h], g.DtBias[h], g.ALog[h], g.LowerBound)
 			decay := make([]float32, K)
 			for i, x := range gateLog {
 				decay[i] = float32(math.Exp(float64(x)))
 			}
-			beta := sigmoidf(g.BetaLogits[0][ti][h])
+			beta := hybridattn.Sigmoidf(g.BetaLogits[0][ti][h])
 
 			out := kdaRecurrentStep(q, k, v, decay, beta, S[h])
 			want := g.Output[0][ti][h]

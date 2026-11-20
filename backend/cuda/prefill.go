@@ -750,18 +750,8 @@ func (r *cudaResident) checkPrefillShmem(startPos, M int, fused func(hd int) boo
 	return nil
 }
 
-// imgBlockMaxNWin is launchgeom.ImgBlockMaxNWin.
-func imgBlockMaxNWin(causalMaxNWin, window, imgStart, imgEnd int) int {
-	return launchgeom.ImgBlockMaxNWin(causalMaxNWin, window, imgStart, imgEnd)
-}
-
-// imgBlocksMaxNWin is launchgeom.ImgBlocksMaxNWin.
-func imgBlocksMaxNWin(causalMaxNWin, window int, blocks [][2]int) int {
-	return launchgeom.ImgBlocksMaxNWin(causalMaxNWin, window, blocks)
-}
-
 // checkPrefillShmemImg is checkPrefillShmem's image-aware twin (decoder.ResidentPrefillSubsystem): it sizes the check with
-// imgBlockMaxNWin, the formula prefillCore's attn_img_batched launch uses, so it neither declines a shape the launch
+// launchgeom.ImgBlockMaxNWin, the formula prefillCore's attn_img_batched launch uses, so it neither declines a shape the launch
 // would run nor misses one it would fail. It is a separate call from checkPrefillShmem, not a replacement (see
 // prefillCore).
 func (r *cudaResident) checkPrefillShmemImg(startPos, M, imgStart, imgEnd int) error {
@@ -769,7 +759,7 @@ func (r *cudaResident) checkPrefillShmemImg(startPos, M, imgStart, imgEnd int) e
 }
 
 // checkPrefillShmemImgBlocks is checkPrefillShmemImg for several image blocks, sized as prefillCore's launch is
-// (imgBlocksMaxNWin).
+// (launchgeom.ImgBlocksMaxNWin).
 func (r *cudaResident) checkPrefillShmemImgBlocks(startPos, M int, blocks [][2]int) error {
 	for l := range r.layers {
 		Ly := &r.layers[l]
@@ -778,7 +768,7 @@ func (r *cudaResident) checkPrefillShmemImgBlocks(startPos, M int, blocks [][2]i
 		if window > 0 && window < causalMaxNWin {
 			causalMaxNWin = window
 		}
-		maxNWin := imgBlocksMaxNWin(causalMaxNWin, window, blocks)
+		maxNWin := launchgeom.ImgBlocksMaxNWin(causalMaxNWin, window, blocks)
 		if splitKVRequired(maxNWin) && !r.prefillSplitKVServes(maxNWin) {
 			return fmt.Errorf("cuda prefill: layer %d image-block attention at %d attended keys "+
 				"needs %d B of shared memory, past this device's %d B limit: %w",
@@ -945,7 +935,7 @@ func (r *cudaResident) prefillEModelDecline(embeddings [][]float32, blocks [][2]
 		// Gemma 4 E-model: text prompts batch. A step (its rows' PLE tails and KV slots are not staged by the step path), an
 		// image block and m-RoPE (no E-model has it) stay sequential.
 		if rows != nil || len(blocks) > 0 || mropePos != nil {
-			return fmt.Errorf("cuda prefill: Gemma 4 E-model batches text prompts only (no MC3 step, image block or m-RoPE yet): %w", errPrefillDeclined)
+			return fmt.Errorf("cuda prefill: Gemma 4 E-model batches text prompts only (no batched multi-conversation step, image block or m-RoPE yet): %w", errPrefillDeclined)
 		}
 		for m, e := range embeddings {
 			if len(e) != r.embLen {

@@ -1307,12 +1307,12 @@ func (s *server) loadVisionTower(cfg config) error {
 		return fmt.Errorf("load vision projector (%s): %w", dir, err)
 	}
 	for _, lm := range s.models {
-		lm.venc, lm.vproj, lm.vcfg = enc, proj, vision.Gemma3()
-		lm.vimgTok = -1
+		g := &gemma3Vision{enc: enc, proj: proj, cfg: vision.Gemma3(), imgTok: -1}
+		lm.vision = g
 		if id, ok := lm.tk.TokenID(imageSoftToken); ok {
-			lm.vimgTok = id
+			g.imgTok = id
 		}
-		if lm.vimgTok < 0 {
+		if g.imgTok < 0 {
 			return fmt.Errorf("vision: tokenizer has no %q token (needed to place image embeddings)", imageSoftToken)
 		}
 		vq := "f32"
@@ -1322,7 +1322,7 @@ func (s *server) loadVisionTower(cfg config) error {
 		if residentOK {
 			vq += "/" + towerBE + "-resident"
 		}
-		fmt.Fprintf(os.Stderr, "loaded vision tower for %q (%d image tokens/image, soft-token id %d, encoder %s) from %s\n", lm.name, proj.MMTokens(), lm.vimgTok, vq, dir)
+		fmt.Fprintf(os.Stderr, "loaded vision tower for %q (%d image tokens/image, soft-token id %d, encoder %s) from %s\n", lm.name, proj.MMTokens(), g.imgTok, vq, dir)
 	}
 	return nil
 }
@@ -1450,18 +1450,15 @@ func (s *server) loadQwenVisionTower(dir string, int8Tower bool, backend string,
 		return fmt.Errorf("qwen2.5-vl preprocessor config (%s): %w", dir, err)
 	}
 	for _, lm := range s.models {
-		lm.qwenEnc = enc
-		lm.qwenRequire = require
-		lm.qwenPP = pp
-		lm.qwenMerge = enc.Cfg.SpatialMergeSize
-		lm.qwenImgTok = -1
+		q := &qwen25Vision{qwenGrid: qwenGrid{pp: pp, merge: enc.Cfg.SpatialMergeSize, imgTok: -1}, enc: enc, require: require}
+		lm.vision = q
 		if id, ok := lm.tk.TokenID(multimodal.QwenImagePad); ok {
-			lm.qwenImgTok = id
+			q.imgTok = id
 		}
-		if lm.qwenImgTok < 0 {
+		if q.imgTok < 0 {
 			return fmt.Errorf("vision: tokenizer has no %q token (needed to place image embeddings)", multimodal.QwenImagePad)
 		}
-		fmt.Fprintf(os.Stderr, "loaded Qwen2.5-VL vision tower for %q (merge %d, image-pad id %d, tower on %s) from %s\n", lm.name, lm.qwenMerge, lm.qwenImgTok, where, dir)
+		fmt.Fprintf(os.Stderr, "loaded Qwen2.5-VL vision tower for %q (merge %d, image-pad id %d, tower on %s) from %s\n", lm.name, q.merge, q.imgTok, where, dir)
 	}
 	return nil
 }
@@ -1498,26 +1495,26 @@ func (s *server) loadGemma4VisionTower(dir string, int8Tower bool, backend strin
 		releaseTowerBlocks("Gemma 4", enc)
 	}
 	for _, lm := range s.models {
-		lm.gemma4Enc, lm.gemma4Tower, lm.gemma4Swap = enc, tower, swap
-		lm.gemma4MaxSoft = pp.MaxSoftTokens
-		lm.gemma4ImgTok = -1
+		g := &gemma4Vision{enc: enc, tower: tower, swap: swap, maxSoft: pp.MaxSoftTokens, imgTok: -1}
+		lm.vision = g
 		if id, ok := lm.tk.TokenID(multimodal.Gemma4ImageSoftToken); ok {
-			lm.gemma4ImgTok = id
+			g.imgTok = id
 		}
-		if lm.gemma4ImgTok < 0 {
+		if g.imgTok < 0 {
 			return fmt.Errorf("vision: tokenizer has no %q token (needed to place image embeddings)", multimodal.Gemma4ImageSoftToken)
 		}
-		fmt.Fprintf(os.Stderr, "loaded Gemma 4 vision tower for %q (max %d soft tokens/image, soft-token id %d, tower on %s) from %s\n", lm.name, lm.gemma4MaxSoft, lm.gemma4ImgTok, where, dir)
+		fmt.Fprintf(os.Stderr, "loaded Gemma 4 vision tower for %q (max %d soft tokens/image, soft-token id %d, tower on %s) from %s\n", lm.name, g.maxSoft, g.imgTok, where, dir)
 		// A checkpoint with an audio_config also takes audio clips; its tower loads on the first one.
 		if hasAudioConfig(dir) {
 			id, ok := lm.tk.TokenID(multimodal.Gemma4AudioSoftToken)
 			if !ok {
 				return fmt.Errorf("audio: %s has an audio tower but its tokenizer has no %q token", dir, multimodal.Gemma4AudioSoftToken)
 			}
-			lm.gemma4AudioDir, lm.gemma4AudioTok = dir, id
+			at := &gemma4Audio{dir: dir, tok: id}
+			lm.audio = at
 			where := "CPU"
 			if backend == "metal" && slices.Contains(embeddinggemma2.AudioAccelerators(), "metal") { // the conformer blocks run on Metal
-				lm.gemma4AudioDevice, where = "metal", "Metal (the conformer blocks; subsample and tail on the CPU)"
+				at.device, where = "metal", "Metal (the conformer blocks; subsample and tail on the CPU)"
 			}
 			fmt.Fprintf(os.Stderr, "Gemma 4 audio input on for %q (audio-token id %d; the tower loads on the first clip, %s) from %s\n", lm.name, id, where, dir)
 		}
@@ -1534,7 +1531,7 @@ func (s *server) loadQwenASR(dir string) error {
 		if !ok {
 			return fmt.Errorf("audio: %s is a Qwen3-ASR checkpoint but its tokenizer has no <|audio_pad|> token", dir)
 		}
-		lm.qwenASRDir, lm.qwenASRTok = dir, id
+		lm.audio = &qwenASRAudio{dir: dir}
 		fmt.Fprintf(os.Stderr, "Qwen3-ASR audio input on for %q (audio-pad id %d; the encoder loads on the first clip, CPU float32) from %s\n", lm.name, id, dir)
 	}
 	return nil
@@ -1547,7 +1544,7 @@ func (s *server) loadVoxtral(dir, backend string) error {
 		if _, ok := lm.tk.TokenID("[AUDIO]"); !ok {
 			return fmt.Errorf("audio: %s is a Voxtral checkpoint but its tokenizer has no [AUDIO] token (a Tekken tokenizer is needed: tekken.json beside the weights)", dir)
 		}
-		lm.voxtralDir, lm.voxtralBackend = dir, backend
+		lm.audio = &voxtralAudio{dir: dir, backend: backend}
 		fmt.Fprintf(os.Stderr, "Voxtral audio input on for %q (the encoder loads on the first clip, float32, on %s when this binary has a device encoder for it, else the CPU; a clip over %d s is refused) from %s\n", lm.name, backend, voxtralMaxSeconds, dir)
 	}
 	return nil

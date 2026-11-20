@@ -6,6 +6,8 @@ import (
 	"math/rand"
 	"slices"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
 // twoClassFake is copyFake with a second kernel class, as Metal's and CUDA's residents have: a batched pass
@@ -198,7 +200,7 @@ func TestKV2FU1_ownRollbackScheduleIndependence(t *testing.T) {
 						}
 						prev := got[c][tn-1]
 						full := append(slices.Clone(prev.prompt), prev.ids...)
-						keep := min(len(x.prompt)-1, commonPrefixLen(full, x.prompt))
+						keep := min(len(x.prompt)-1, kvmgr.CommonPrefixLen(full, x.prompt))
 						if keep < lineFirst-1 {
 							continue // it diverges inside the lineage's first prompt: main's rule, not this item's
 						}
