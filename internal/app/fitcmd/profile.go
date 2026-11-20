@@ -3,6 +3,7 @@ package fitcmd
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"io"
 	"os"
 	"strings"
@@ -74,16 +75,15 @@ func runProfile(w io.Writer, path, profilePath string, opts decoder.Options, asJ
 		out, _ := json.Marshal(v)
 		fmt.Fprintln(w, string(out))
 	} else {
-		gib := func(n int64) float64 { return float64(n) / (1 << 30) }
 		switch v.Verdict {
 		case "refused":
-			fmt.Fprintf(w, "fit: REFUSED on %s (%.1f GB available):\n%s\n", p.Name, gib(p.AvailableBytes), a.Decline)
+			fmt.Fprintf(w, "fit: REFUSED on %s (%s available):\n%s\n", p.Name, mem.GiB(p.AvailableBytes), a.Decline)
 		case "unpriced":
 			fmt.Fprintf(w, "fit: UNPRICED on %s: %s\n", p.Name, a.Unpriced)
 		case "capped":
-			fmt.Fprintf(w, "fit: CAPPED on %s: context %d (model allows %d), needs %.1f GB of a %.1f GB budget\n", p.Name, a.Ctx, a.MaxCtx, gib(a.NeedBytes), gib(a.BudgetBytes))
+			fmt.Fprintf(w, "fit: CAPPED on %s: context %d (model allows %d), needs %s of a %s budget\n", p.Name, a.Ctx, a.MaxCtx, mem.GiB(a.NeedBytes), mem.GiB(a.BudgetBytes))
 		default:
-			fmt.Fprintf(w, "fit: FITS on %s: needs %.1f GB of a %.1f GB budget\n", p.Name, gib(a.NeedBytes), gib(a.BudgetBytes))
+			fmt.Fprintf(w, "fit: FITS on %s: needs %s of a %s budget\n", p.Name, mem.GiB(a.NeedBytes), mem.GiB(a.BudgetBytes))
 		}
 	}
 	if v.Verdict == "refused" {

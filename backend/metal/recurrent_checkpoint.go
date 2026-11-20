@@ -2,6 +2,7 @@ package metal
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 
 	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -22,7 +23,7 @@ var ckptFits = func(m *decoder.Model, bytes int64) (bool, string) {
 		return true, "" // nothing to compare against, as residentMemoryDecline
 	}
 	if need+bytes > budget {
-		return false, fmt.Sprintf("%.1f MiB needed beside the load's %.2f GB, over the %.2f GB budget", mib(bytes), float64(need)/(1<<30), float64(budget)/(1<<30))
+		return false, fmt.Sprintf("%.1f MiB needed beside the load's %s, over the %s budget", mib(bytes), mem.GiB(need), mem.GiB(budget))
 	}
 	return true, ""
 }

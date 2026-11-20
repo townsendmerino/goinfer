@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/app/loadflags"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"os"
 	"path/filepath"
 	"strings"
@@ -432,9 +433,9 @@ func TestKVPlanLine(t *testing.T) {
 	}{
 		{"a tower held 2.4 GB back and the card allowed 2 of 4 (Gemma 3 4B on the 8 GB card, float32 tower)",
 			bannerFacts{resident: true, kvSlots: 2, ctxWindow: 4096, decodePath: "cuda-resident (int4)", towerReserve: 2_400_000_000}, config{kvSessions: 4},
-			"KV plan: 2 conversations x 4096 positions (4 asked for; 2.4 GB held back for the vision tower)", false},
+			"KV plan: 2 conversations x 4096 positions (4 asked for; 2.24 GiB held back for the vision tower)", false},
 		{"one slot", bannerFacts{resident: true, kvSlots: 1, ctxWindow: 4096, decodePath: "cuda-resident (int4)", towerReserve: 959_000_000}, config{kvSessions: 4},
-			"KV plan: 1 conversation x 4096 positions (4 asked for; 1.0 GB held back for the vision tower)", false},
+			"KV plan: 1 conversation x 4096 positions (4 asked for; 0.89 GiB held back for the vision tower)", false},
 		{"nothing reduced, no tower: no parenthesis", bannerFacts{resident: true, kvSlots: 4, ctxWindow: 5057, decodePath: "cuda-resident (int4)"}, config{kvSessions: 4},
 			"KV plan: 4 conversations x 5057 positions", false},
 		{"an explicit -ctx is named", bannerFacts{resident: true, kvSlots: 2, ctxWindow: 8192, decodePath: "cuda-resident (int4)"}, config{kvSessions: 4, load: loadflags.Flags{Ctx: 8192}},
@@ -563,15 +564,15 @@ func TestBanner_contextSaysWhyAndWarnsAHarness(t *testing.T) {
 		{"paged MoE keeps the default: the first request is refused",
 			bannerFacts{resident: true, ctxWindow: 4096, maxPositions: 131072, ctxNote: "paged MoE keeps the default", kvSlots: 2, harnessKVBytes: gib}, 0,
 			"context: 4096 tokens (paged MoE keeps the default; model maximum 131072 — raise with --ctx)",
-			[]string{"harness: 4096 tokens is short for a coding agent", "about 11k tokens (opencode: 11137)", "will be refused (context_length_exceeded)", "--ctx 16384 holds it for 2.0 GB of KV (2 slots)"}},
+			[]string{"harness: 4096 tokens is short for a coding agent", "about 11k tokens (opencode: 11137)", "will be refused (context_length_exceeded)", "--ctx 16384 holds it for 2.00 GiB of KV (2 slots)"}},
 		{"shrunk to 12000: fits, with little room",
 			bannerFacts{resident: true, ctxWindow: 12000, maxPositions: 32768, ctxNote: "fit: 2 slots, 1.4 GB KV", kvSlots: 1, harnessKVBytes: gib / 2}, 0,
 			"context: 12000 tokens (fit: 2 slots, 1.4 GB KV; model maximum 32768 — raise with --ctx)",
-			[]string{"which leaves 863 for the session", "--ctx 16384 holds it for 0.5 GB of KV (1 slot)"}},
+			[]string{"which leaves 863 for the session", "--ctx 16384 holds it for 0.50 GiB of KV (1 slot)"}},
 		{"no note from the backend: the old words",
 			bannerFacts{resident: true, ctxWindow: 8192, maxPositions: 40960, kvSlots: 4, harnessKVBytes: gib}, 0,
 			"context: 8192 tokens (backend default; model maximum 40960 — raise with --ctx)",
-			[]string{"will be refused", "4.0 GB of KV (4 slots)"}},
+			[]string{"will be refused", "4.00 GiB of KV (4 slots)"}},
 		{"an explicit --ctx 4096 is warned too",
 			bannerFacts{resident: true, ctxWindow: 4096, maxPositions: 32768, kvSlots: 2, harnessKVBytes: gib}, 4096,
 			"context: 4096 tokens (--ctx; model maximum 32768)", []string{"will be refused", "--ctx 16384 holds it"}},
@@ -624,17 +625,17 @@ func TestBanner_kvPoolLine(t *testing.T) {
 		f                bannerFacts
 	}{
 		{name: "one conversation can use all of it", f: bannerFacts{kvSlots: 4, ctxWindow: 58000, kvPoolDetail: pool, kvShareState: "on"},
-			want: "KV pool: 58,000 tokens in blocks of 64 (f16, 3.3 GB; group: full); a prompt can take another conversation's KV rows; one conversation can use all of it.",
+			want: "KV pool: 58,000 tokens in blocks of 64 (f16, 3.30 GiB; group: full); a prompt can take another conversation's KV rows; one conversation can use all of it.",
 			plan: "KV plan: a 58000-position pool for 4 conversations; each is guaranteed 14500, and one can use up to 58000"},
 		{name: "one slot: nothing to share with", f: bannerFacts{kvSlots: 1, ctxWindow: 58000, kvPoolDetail: pool, kvShareState: "none", kvShareWhy: "one KV slot"},
-			want: "KV pool: 58,000 tokens in blocks of 64 (f16, 3.3 GB; group: full); no conversation takes another's KV rows (one KV slot); one conversation can use all of it."},
+			want: "KV pool: 58,000 tokens in blocks of 64 (f16, 3.30 GiB; group: full); no conversation takes another's KV rows (one KV slot); one conversation can use all of it."},
 		{name: "resident reuse off", f: bannerFacts{kvSlots: 4, ctxWindow: 58000, kvPoolDetail: pool, kvShareState: "off", kvShareWhy: "GOINFER_NO_RESIDENT_REUSE"},
-			want: "KV pool: 58,000 tokens in blocks of 64 (f16, 3.3 GB; group: full); no conversation takes another's KV rows (GOINFER_NO_RESIDENT_REUSE); one conversation can use all of it."},
+			want: "KV pool: 58,000 tokens in blocks of 64 (f16, 3.30 GiB; group: full); no conversation takes another's KV rows (GOINFER_NO_RESIDENT_REUSE); one conversation can use all of it."},
 		{name: "a cap below the pool, sharing off, both groups", f: bannerFacts{kvSlots: 4, ctxWindow: 32768, kvShareState: "off", kvShareWhy: "--kv-share off",
 			kvPoolDetail: decoder.KVPoolDetail{Positions: 48128, Guaranteed: 12032, BlockRows: 64, WindowRows: 1216, Groups: []string{"full", "sliding window"}, Precision: "f32", Bytes: 1 << 30}},
-			want: "KV pool: 48,128 tokens in blocks of 64 (f32, 1.0 GB; groups: full, sliding window, whose sliding-window layers keep a conversation's newest 1,216 rows); no conversation takes another's KV rows (--kv-share off); one conversation can use up to 32,768 of them."},
+			want: "KV pool: 48,128 tokens in blocks of 64 (f32, 1.00 GiB; groups: full, sliding window, whose sliding-window layers keep a conversation's newest 1,216 rows); no conversation takes another's KV rows (--kv-share off); one conversation can use up to 32,768 of them."},
 		{name: "a pure sliding-window pool: named, in MB, never all one conversation's, and the pool no smaller than a share", f: bannerFacts{kvSlots: 2, ctxWindow: 8192, kvShareState: "on", kvPoolDetail: window},
-			want: "KV pool: 8,192 tokens in blocks of 64 (f32, 3.7 MB; group: sliding window, whose sliding-window layers keep a conversation's newest 1,216 rows); a prompt can take another conversation's KV rows; one conversation can use up to 8,192 of them.",
+			want: "KV pool: 8,192 tokens in blocks of 64 (f32, 3.7 MiB; group: sliding window, whose sliding-window layers keep a conversation's newest 1,216 rows); a prompt can take another conversation's KV rows; one conversation can use up to 8,192 of them.",
 			plan: "KV plan: a 8192-position pool for 2 conversations; each is guaranteed 4096, and one can use up to 8192"},
 		{name: "no pool: no line", f: bannerFacts{kvSlots: 1, ctxWindow: 4096}},
 	} {
@@ -697,14 +698,14 @@ func TestBanner_fitLinePricesEveryResidentSlot(t *testing.T) {
 		kvPoolDetail: decoder.KVPoolDetail{Positions: 4096, Guaranteed: 2048, BlockRows: 64, Precision: "f16", Bytes: 1560 << 20}}
 	line := func(f bannerFacts) string { return bannerLine(modelBannerFrom(f, config{}), "fit:") }
 
-	want := fmt.Sprintf("fit: 2 KV slots at a 2048-token cap hold %.1f GB KV (weights %.1f GB, budget %.1f GB, %.1f GB left for a request's own prefill)",
-		float64(1560<<20)/gib, float64(2680<<20)/gib, float64(7884<<20)/gib, float64((7884-1560)<<20)/gib)
+	want := fmt.Sprintf("fit: 2 KV slots at a 2048-token cap hold %s KV (weights %s, budget %s, %s left for a request's own prefill)",
+		mem.GiB(1560<<20), mem.GiB(2680<<20), mem.GiB(7884<<20), mem.GiB((7884-1560)<<20))
 	if got := line(f); got != want {
 		t.Errorf("two resident slots:\n got %q\nwant %q", got, want)
 	}
 	one := f
 	one.kvSlots, one.kvPoolDetail.Positions, one.kvPoolDetail.Bytes = 1, 2048, 792<<20
-	if got := line(one); !strings.HasPrefix(got, "fit: 2048-token cap needs 0.8 GB KV (") {
+	if got := line(one); !strings.HasPrefix(got, "fit: 2048-token cap needs 0.77 GiB KV (") {
 		t.Errorf("one resident slot: %q, want the cap's own figure", got)
 	}
 }

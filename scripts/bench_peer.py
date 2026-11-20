@@ -833,7 +833,7 @@ def fit_need(model_key):
 def learn_fit_need(model_key, log_text):
     """Records weights + KV from the last `fit: … needs X GB KV (weights Y GB …` line in a goinfer serve log."""
     found = None
-    for m in re.finditer(r"needs ([\d.]+) GB KV \(weights ([\d.]+) GB", log_text or ""):
+    for m in re.finditer(r"needs ([\d.]+) Gi?B KV \(weights ([\d.]+) Gi?B", log_text or ""):
         found = (float(m.group(1)) + float(m.group(2))) * 1024
     if found:
         _FIT_NEED[model_key] = int(found)
