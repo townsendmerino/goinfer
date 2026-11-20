@@ -8,6 +8,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // DSparkDrafter is an imported DeepSeek DSpark block drafter (docs/spec/08): the same non-causal block trunk DFlash
@@ -291,7 +292,7 @@ func (d *DSparkDrafter) SampleBlock(be Backend, trunk [][]float32, firstPrev int
 				lg[i] += bias[i]
 			}
 		}
-		next := argmax(lg)
+		next := sampling.Argmax(lg)
 		ids = append(ids, next)
 		corrected = append(corrected, lg)
 		prev = next
