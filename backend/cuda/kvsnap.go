@@ -224,7 +224,7 @@ func (r *cudaResident) SnapshotKV(slot, end int) (decoder.ResidentKVSnapshot, er
 func (r *cudaResident) snapshotKV(slot, end int) (*cudaKVSnapshot, error) {
 	lo := 0
 	if r.kvWin {
-		if !kvWindowReusable(r.kvBases[slot], end, r.kvWindow) {
+		if !decoder.KVWindowReusable(r.kvBases[slot], end, r.kvWindow) {
 			return nil, &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d's windowed layers hold rows from %d; position %d needs them from %d; %s",
 				slot, r.kvBases[slot], end, end-(r.kvWindow-1), r.kvBudgetText())}
 		}

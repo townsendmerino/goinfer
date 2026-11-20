@@ -20,6 +20,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/backend/cuda/internal/wpack"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
@@ -195,7 +196,7 @@ func (r *VisionEncoder) up32(v []float32) Buffer {
 }
 
 func (r *VisionEncoder) upW8(q8 []int8, scales []float32, N, K int) cudaWQ {
-	wpk := packI8(q8, N, K)
+	wpk := wpack.PackI8(q8, N, K)
 	b := gpu.NewBufferLenOfOn[uint32](r.dev, mem.LineCompanion, len(wpk))
 	if err := gpu.Upload(b, wpk); err != nil {
 		panic(err)

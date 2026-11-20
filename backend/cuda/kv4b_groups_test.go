@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/backend/cuda/internal/wpack"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -220,7 +221,7 @@ func TestKV4b_layer0StoreIsTheRoundedF32Store(t *testing.T) {
 				for _, c := range cases {
 					bad, nonzero := 0, 0
 					for i := range n {
-						if want := f32ToF16RNE(c.f[i]); c.h[i] != want {
+						if want := wpack.F32ToF16RNE(c.f[i]); c.h[i] != want {
 							if bad < 3 {
 								t.Errorf("layer %d %s[%d]: f16 cache %#04x, f32 %g rounds to %#04x", kl, c.name, i, c.h[i], c.f[i], want)
 							}
@@ -362,7 +363,7 @@ func TestKV4b_mropePrefillStoreIsTheRoundedF32Store(t *testing.T) {
 			}{{"K", k32, kvWordsToHalves(k16)}, {"V", v32, kvWordsToHalves(v16)}} {
 				bad := 0
 				for i := range n {
-					if want := f32ToF16RNE(c.f[i]); c.h[i] != want {
+					if want := wpack.F32ToF16RNE(c.f[i]); c.h[i] != want {
 						if bad < 3 {
 							t.Errorf("layer 0 %s[%d]: f16 cache %#04x, f32 %g rounds to %#04x", c.name, i, c.h[i], c.f[i], want)
 						}

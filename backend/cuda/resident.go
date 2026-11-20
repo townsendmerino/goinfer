@@ -1322,19 +1322,9 @@ func packedAllocSlack(v any) int64 {
 	return slack + pk.waste()
 }
 
-// slotRequirement is the device VRAM n slots/layer costs (fitdecide.SlotRequirement).
-func slotRequirement(n int, nLayers int64, strides []int64) int64 {
-	return fitdecide.SlotRequirement(n, nLayers, strides)
-}
-
 // slotMarginBytes is the launch-time headroom the expert-cache cap leaves free; TestAllocFloor checks it against the measured
 // driver allocation floor (docs/code-notes/cuda.md#slotMarginBytes).
 const slotMarginBytes = fitdecide.SlotMarginBytes
-
-// capSlots is the expert-cache sizing search (fitdecide.CapSlots).
-func capSlots(free, nLayers int64, strides []int64, topK, request int) (slots int, decline bool) {
-	return fitdecide.CapSlots(free, nLayers, strides, topK, request)
-}
 
 // expertCacheFloorBytes is the smallest expert cache allocSlots accepts, top-k slots on every routed layer (slotRequirement), or 0 for a
 // load with no routed layer or no per-expert stride.
@@ -1343,7 +1333,7 @@ func (r *cudaResident) expertCacheFloorBytes() int64 {
 	if n == 0 {
 		return 0
 	}
-	return slotRequirement(r.topK, int64(n), strides)
+	return fitdecide.SlotRequirement(r.topK, int64(n), strides)
 }
 
 // expertSlotGeom is the expert cache's routed-layer count and per-slot strides (slotStrides, from the first routed layer); 0 and nil
@@ -1424,7 +1414,7 @@ func (r *cudaResident) allocSlots() error {
 	}
 	// The inline and capSlots figures are one value: there is one implementation.
 	r.dbgSlotsInline = r.cacheSlots
-	r.dbgPredInline = slotRequirement(r.cacheSlots, int64(len(moeLayers)), strides)
+	r.dbgPredInline = fitdecide.SlotRequirement(r.cacheSlots, int64(len(moeLayers)), strides)
 	r.dbgSlotsCapSlots = r.cacheSlots
 	r.dbgPredCapSlots = r.dbgPredInline
 	return nil
@@ -1780,8 +1770,8 @@ func (r *cudaResident) ResizeExpertCache(reserve int64) (slots int, err error) {
 			return e
 		}
 		// What the stacks hold now is free once they are released: the same rounded figure capSlots priced them at.
-		budget := reservedBudget(int64(free)+slotRequirement(r.cacheSlots, nL, strides), reserve)
-		fit, decline := capSlots(budget, nL, strides, r.topK, r.cacheSlotsAsked)
+		budget := fitdecide.ReservedBudget(int64(free)+fitdecide.SlotRequirement(r.cacheSlots, nL, strides), reserve)
+		fit, decline := fitdecide.CapSlots(budget, nL, strides, r.topK, r.cacheSlotsAsked)
 		if decline {
 			return fmt.Errorf("cuda: the expert cache cannot keep %d slots/layer beside %.2f GB reserved (%d fit)", r.topK, float64(reserve)/1e9, fit)
 		}
@@ -2216,9 +2206,6 @@ var errKVWontFit = fitdecide.ErrKVWontFit
 
 type kvWontFitError = fitdecide.KVWontFitError
 
-// reservedBudget is free less a companion's reserve, clamped at zero (fitdecide.ReservedBudget).
-func reservedBudget(free, extraBytes int64) int64 { return fitdecide.ReservedBudget(free, extraBytes) }
-
 // checkWeightsFit fails the load EARLY, right after the device exists and before any kernel compile or weight
 // upload, when the model's FIXED weight bytes alone exceed free VRAM. Without it a dense model whose weights do
 // not fit ran the whole compile+upload sequence and failed on whichever allocation first did not fit: a raw
@@ -2237,12 +2224,7 @@ func (r *cudaResident) checkWeightsFit(m *decoder.Model) error {
 	if memReadSeenForTest != nil {
 		memReadSeenForTest(site, int64(free), err == nil)
 	}
-	return weightsFitDecision(m.ResidentDenseWeightBytesFor("cuda"), m.ExtraResidentBytes(), int64(free), err == nil, plantedMargin(site, r.ctxMargin()))
-}
-
-// weightsFitDecision is checkWeightsFit's decision (fitdecide.WeightsFitDecision).
-func weightsFitDecision(need, extra, free int64, ok bool, margin int64) error {
-	return fitdecide.WeightsFitDecision(need, extra, free, ok, margin)
+	return fitdecide.WeightsFitDecision(m.ResidentDenseWeightBytesFor("cuda"), m.ExtraResidentBytes(), int64(free), err == nil, plantedMargin(site, r.ctxMargin()))
 }
 
 // checkKVFits fails the LOAD if the KV the configured cap implies does not fit beside what is already on the device.
@@ -2507,7 +2489,7 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 			if base > 0 && window <= 0 {
 				return fmt.Errorf("cuda: upload pass: full-attention layer %d starts at %d, not position 0", layer, base)
 			}
-			if base > 0 && !kvWindowReusable(base, end, window) {
+			if base > 0 && !decoder.KVWindowReusable(base, end, window) {
 				return fmt.Errorf("cuda: upload pass: layer %d's rows [%d, %d) do not cover its %d-row window", layer, base, end, window)
 			}
 		} else {
@@ -2542,8 +2524,8 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 		if r.layers[layer].kvHalf {
 			// The cache holds the nearest f16 of each value, ties to even: the rounding the _kv16 store kernels apply to what they write.
 			kh, vh = make([]uint16, len(k)), make([]uint16, len(v))
-			f32SliceToF16RNE(kh, k)
-			f32SliceToF16RNE(vh, v)
+			wpack.F32SliceToF16RNE(kh, k)
+			wpack.F32SliceToF16RNE(vh, v)
 		}
 		if kvUploadFailForTest != nil {
 			if e := kvUploadFailForTest(layer); e != nil {
@@ -4278,8 +4260,6 @@ type hostW struct {
 	// A planned expert stack (planWeightStack) names its member weights here, in row order, with src nil: only cacheWQ consumes it.
 	srcs []*linalg.WeightMat
 }
-
-func packI8(q8 []int8, N, K int) []uint32 { return wpack.PackI8(q8, N, K) }
 
 // packWeight quantizes/repacks a projection into the resident device layout, or errors
 // (so BuildResident can decline gracefully → staged fallback) for shapes it can't handle.

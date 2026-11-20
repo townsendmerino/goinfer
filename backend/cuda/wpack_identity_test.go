@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/backend/cuda/internal/wpack"
 )
 
 var updateWpackHashes = flag.Bool("wpack.update", false, "rewrite testdata/wpack_hashes.txt from this tree's packers")
@@ -174,10 +175,10 @@ func wpackHashes(t *testing.T) map[string]string {
 		q8[i] = int8(rng.Uint32())
 	}
 	d := sha256.New()
-	writeLE(d, packI8(q8, 64, 128))
+	writeLE(d, wpack.PackI8(q8, 64, 128))
 	out["packI8"] = hex.EncodeToString(d.Sum(nil))
 	dst := make([]uint32, len(q8)/4)
-	packI8Into(dst, q8)
+	wpack.PackI8Into(dst, q8)
 	d = sha256.New()
 	writeLE(d, dst)
 	out["packI8Into"] = hex.EncodeToString(d.Sum(nil))
@@ -191,7 +192,7 @@ func wpackHashes(t *testing.T) map[string]string {
 		s16[i] = uint16(i) // every f16 bit pattern, Inf and NaN included
 	}
 	dW, dS := make([]uint32, len(q4)/4), make([]uint16, len(s16))
-	packInt4Into(dW, dS, q4, s16)
+	wpack.PackInt4Into(dW, dS, q4, s16)
 	d = sha256.New()
 	writeLE(d, dW)
 	writeLE(d, dS)
@@ -225,7 +226,7 @@ func wpackHashes(t *testing.T) map[string]string {
 	for hi := range uint64(1 << 12) {
 		base := uint32(hi << 20)
 		for i := range buf {
-			buf[i] = f32tof16(math.Float32frombits(base | uint32(i)))
+			buf[i] = wpack.F32ToF16(math.Float32frombits(base | uint32(i)))
 		}
 		writeLE(d, buf)
 	}

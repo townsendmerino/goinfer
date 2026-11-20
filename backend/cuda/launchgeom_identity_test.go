@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
+	"github.com/townsendmerino/goinfer/backend/cuda/internal/wpack"
 )
 
 var updateLaunchGeomHashes = flag.Bool("launchgeom.update", false, "rewrite testdata/launchgeom_hashes.txt from this tree")
@@ -118,7 +119,7 @@ func launchGeomHashes() map[string]string {
 	sum("faRowsPerCTA", func(w func(string, ...any)) {
 		for _, hd := range []int{32, 64, 72, 80, 96, 128, 192, 256, 512} {
 			for g := 1; g <= 16; g++ {
-				w("%d,%d=%d;", hd, g, faRowsPerCTA(hd, g))
+				w("%d,%d=%d;", hd, g, launchgeom.FaRowsPerCTA(hd, g))
 			}
 		}
 	})
@@ -127,7 +128,7 @@ func launchGeomHashes() map[string]string {
 			for _, m := range []int{1, 2, 5, 16} {
 				for _, window := range []int{0, 1, 32, 512, 4096} {
 					for _, s := range []int{1, 4, 16, 32} {
-						w("%d,%d,%d,%d=%v;", n0, m, window, s, faRowRuns(n0, m, window, s)) // %v, not %+v: field names are not geometry
+						w("%d,%d,%d,%d=%v;", n0, m, window, s, launchgeom.FaRowRuns(n0, m, window, s)) // %v, not %+v: field names are not geometry
 					}
 				}
 			}
@@ -158,7 +159,7 @@ func launchGeomHashes() map[string]string {
 	for hi := range uint64(1 << 12) {
 		base := uint32(hi << 20)
 		for i := range 1 << 20 {
-			h := f32ToF16RNE(math.Float32frombits(base | uint32(i)))
+			h := wpack.F32ToF16RNE(math.Float32frombits(base | uint32(i)))
 			buf[2*i], buf[2*i+1] = byte(h), byte(h>>8)
 		}
 		d.Write(buf)
@@ -171,7 +172,7 @@ func launchGeomHashes() map[string]string {
 		src[i] = math.Float32frombits(rng.Uint32())
 	}
 	dst := make([]uint16, len(src))
-	f32SliceToF16RNE(dst, src)
+	wpack.F32SliceToF16RNE(dst, src)
 	sum("f32SliceToF16RNE", func(w func(string, ...any)) { w("%v", dst) })
 	return out
 }

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/townsendmerino/goinfer/backend/cuda/internal/fitdecide"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
@@ -132,7 +133,7 @@ func (mp *memPlanRun) weightsCheck(m *decoder.Model, site string, margin int64) 
 	if site == "weightsOpen" {
 		free, ok = mp.in.WeightsOpen, mp.in.WeightsOpenOK
 	}
-	if e := weightsFitDecision(m.ResidentDenseWeightBytesFor("cuda"), m.ExtraResidentBytes(), free, ok, plantedMargin(site, margin)); e != nil {
+	if e := fitdecide.WeightsFitDecision(m.ResidentDenseWeightBytesFor("cuda"), m.ExtraResidentBytes(), free, ok, plantedMargin(site, margin)); e != nil {
 		mp.out.Decline, mp.out.DeclineAt, mp.out.declineErr, mp.done = e.Error(), site, e, true
 		return errMemPlanned
 	}
@@ -245,7 +246,7 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 			return
 		}
 		r.cacheSlots = sd.slots
-		left -= slotRequirement(r.cacheSlots, int64(n), strides)
+		left -= fitdecide.SlotRequirement(r.cacheSlots, int64(n), strides)
 	}
 	out.CacheSlots = r.cacheSlots
 	if !r.cacheExperts {
