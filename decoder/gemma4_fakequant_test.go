@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestGemma4FakeQuant drives the fakequant.go diagnostic against the real gemma-4-26b-a4b-it: it loads under a base quant
@@ -22,7 +24,7 @@ import (
 //	GOINFER_FAKEQUANT_EXPERTS=1           fake-4-bit only the MoE experts (load ZZBASE=int8int8)
 //	ZZBASE=int4|int8int8                  base quant (default int4)
 func TestGemma4FakeQuant(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	dir := modelPath("gemma-4-26b-a4b-it")
 	if _, err := os.Stat(dir); err != nil {
 		t.Skip("real gemma-4-26b-a4b-it not present")

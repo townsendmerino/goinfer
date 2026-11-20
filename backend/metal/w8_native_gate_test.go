@@ -10,6 +10,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/decoder/fit"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // Gates F2 and F3, pre-registered: does a dense int8 model on
@@ -18,7 +20,7 @@ import (
 
 func w8GateModel(t *testing.T) string {
 	t.Helper()
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	useNativeInt8(t, true)
 	path := os.ExpandEnv("$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
 	if p := os.Getenv("GOINFER_W8_GATE_MODEL"); p != "" {

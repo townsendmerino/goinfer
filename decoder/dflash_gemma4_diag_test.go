@@ -9,6 +9,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestDFlashGemma4_diag localizes why the Gemma-4 pairing's mean acceptance was exactly 0.00 (477 rounds): a merely
@@ -27,7 +29,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run DFlashGemma4_diag -v
 func TestDFlashGemma4_diag(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ddir := os.Getenv("GOINFER_DFLASH_DRAFTER")
 	tdir := os.Getenv("GOINFER_DFLASH_TARGET")
 	tokDir := os.Getenv("GOINFER_DFLASH_TOKENIZER")

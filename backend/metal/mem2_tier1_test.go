@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/internal/vision"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestMEM2_tier1Qwen3VL is MEM2-G4: the Qwen3-VL-2B tower on
@@ -17,7 +19,7 @@ import (
 // forward (Metal's allocated size net of its reading after the build) is within 1% of B's, and after Close each is back
 // within 16 MiB of its reading before the build.
 func TestMEM2_tier1Qwen3VL(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	dir := os.ExpandEnv("$HOME/models/qwen3-vl-2b-instruct")
 	if _, err := os.Stat(dir); err != nil {
 		t.Skipf("no checkpoint at %s", dir)

@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestRequantBar_DoubleQuantCost measures what Metal's DOUBLE quantization costs, per model.
@@ -28,7 +30,7 @@ import (
 // If the double step is benign, they match. If metal >> direct on a high-range model and not on a flat control, the parity
 // gap has a mechanism and a fix, and it is not a kernel bug.
 func TestRequantBar_DoubleQuantCost(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if testing.Short() {
 		t.Skip("loads real models twice each")
 	}

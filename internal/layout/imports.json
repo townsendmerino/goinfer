@@ -229,6 +229,9 @@
       "backend/cuda",
       "internal/app/serveapp"
     ],
+    "backend/cuda/internal/fitdecide": [
+      "internal/runtime/mem"
+    ],
     "backend/metal": [
       "backend/metal/internal/gpudev",
       "backend/metal/kernels",
@@ -397,6 +400,7 @@
       "decoder",
       "decoder/fit",
       "internal/config",
+      "internal/runtime/mem",
       "internal/runtime/modelload",
       "internal/runtime/prequant"
     ],
@@ -557,6 +561,7 @@
       "internal/runtime/program",
       "internal/runtime/sampling",
       "internal/runtime/whisper",
+      "internal/testgate",
       "internal/vision",
       "internal/wrappedupload",
       "multimodal",
@@ -594,6 +599,7 @@
       "internal/runtime/modelload",
       "internal/runtime/prequant",
       "internal/runtime/program",
+      "internal/testgate",
       "internal/vision",
       "internal/wrappedupload",
       "multimodal",
@@ -621,6 +627,7 @@
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
       "internal/runtime/program",
+      "internal/testgate",
       "internal/vision",
       "internal/wrappedupload",
       "multimodal",
@@ -630,6 +637,7 @@
       "internal/runtime/hybridattn",
       "internal/runtime/mem",
       "internal/runtime/sampling",
+      "internal/testgate",
       "internal/vision",
       "multimodal"
     ],
@@ -642,7 +650,8 @@
       "tokenizer"
     ],
     "cmd/gate": [
-      "internal/guard/paritykey"
+      "internal/guard/paritykey",
+      "internal/testgate"
     ],
     "cmd/hostmem": [
       "internal/runtime/mem/probe"
@@ -654,6 +663,7 @@
       "chat",
       "constrain",
       "decoder/fit",
+      "decoder/quant",
       "decoder/resident",
       "internal/audio",
       "internal/cost",
@@ -665,6 +675,7 @@
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
       "internal/runtime/program",
+      "internal/testgate",
       "internal/vision",
       "multimodal",
       "tokenizer"
@@ -726,6 +737,7 @@
       "internal/app/serveapp/jobs",
       "internal/audio",
       "internal/clef",
+      "internal/codec",
       "internal/config",
       "internal/cost",
       "internal/decide",
@@ -735,7 +747,9 @@
       "internal/runtime/mem",
       "internal/runtime/modelload",
       "internal/runtime/prequant",
+      "internal/runtime/scheduler",
       "internal/runtime/whisper",
+      "internal/testgate",
       "internal/testpath",
       "internal/vision",
       "multimodal",

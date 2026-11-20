@@ -4,7 +4,7 @@ package kernels
 
 import "github.com/oliverbestmann/webgpu/wgpu"
 
-// Nemotron-H squared-ReLU FFN (port from the granite SSM work). Nemotron-H's MLP block is
+// Relu2QuantWGSL serves the Nemotron-H squared-ReLU FFN (port from the granite SSM work). Nemotron-H's MLP block is
 // NON-gated: down(relu²(up(x))) — no gate projection, unlike every SwiGLU family. relu2Quant
 // is the fused activation+quant for it: relu²(up) → max-abs → int8, one dispatch (mirrors
 // swigluQuant but unary). relu²(x)=max(0,x)² ≥ 0, so the int8 is non-negative ([0,127]); the

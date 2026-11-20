@@ -30,10 +30,12 @@ import (
 	"slices"
 	"sort"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestQwen35GGUF_routeFlipAtOutlier(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	// DIAGNOSTIC, NOT A GATE, and it must not sit in the release sweep's path: the parity sweep's realckpt cell runs `-run
 	// 'Qwen35|Real_gate'` under a 120m timeout and this test's name matches. A timeout inside this one pushes
 	// TestQwen35GGUF_weightDiff, a required 40-second gate, off the end of the run, and a gate that DID NOT RUN is a blocker by

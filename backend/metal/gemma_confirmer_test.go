@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestGemmaConfirmer_MatchedInput is the Metal half of the matched-input confirmer (the CUDA box's
@@ -25,7 +27,7 @@ import (
 // ForwardCapture(...,[0]); post-RoPE K / raw V = cache.LayerKVForTest(1); target = ForwardSubCapture
 // -> ctx[1]. attnConfirmForTest sets Metal's r.x + r.kc[1]/r.vc[1] and runs L1's attention.
 func TestGemmaConfirmer_MatchedInput(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if testing.Short() {
 		t.Skip("loads a real model")
 	}

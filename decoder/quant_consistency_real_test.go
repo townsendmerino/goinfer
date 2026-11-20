@@ -25,6 +25,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 var qcPrompts = []string{
@@ -66,7 +68,7 @@ type qcResult struct {
 }
 
 func TestQuantConsistency_real(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	dir := os.Getenv("GOINFER_QC_DIR")
 	if dir == "" {
 		t.Skip("set GOINFER_QC_DIR to a checkpoint directory (or a tiny fixture for the plumbing control)")

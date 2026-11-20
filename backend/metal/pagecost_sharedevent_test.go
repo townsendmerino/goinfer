@@ -10,6 +10,8 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // forwardLogitsSharedEvent is Step-6 Step-0 regime (3): the whole trunk in ONE command buffer, but
@@ -52,7 +54,7 @@ func (r *resident) forwardLogitsSharedEvent(pos int, ev gpu.SharedEvent, base ui
 // Run: GOINFER_HEAVY_TESTS=1 GOINFER_HANDSHAKE_PROBE=1 go test ./metal/ -run TestPageCost_sharedEventReal -v (loads a ~1 GB
 // checkpoint; needs aikit/gpu >= v0.23.0).
 func TestPageCost_sharedEventReal(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if os.Getenv("GOINFER_HANDSHAKE_PROBE") == "" {
 		t.Skip("set GOINFER_HANDSHAKE_PROBE=1 to run the shared-event regime-3 perf probe")
 	}

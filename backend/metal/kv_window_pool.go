@@ -25,7 +25,7 @@ var windowConditions = []windowCondition{
 	{"kv-not-f32", func(m *decoder.Model) bool { return m.KVDeliveredFor("metal") != "f32" }},
 	{"no-moe", func(m *decoder.Model) bool {
 		bv := m.BackendView()
-		_, _, _, _, _, _, _, _, _, _, moe := bv.MoEParams()
+		_, moe := bv.MoE()
 		return !moe && !bv.HasGemma4MoE()
 	}},
 	{"no-mla", func(m *decoder.Model) bool {

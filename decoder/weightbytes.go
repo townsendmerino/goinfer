@@ -20,7 +20,7 @@ func mmapAliasedBytes(m *Model, w *linalg.WeightMat) int64 {
 	}
 	in := func(b []byte) bool { _, ok := m.MmapByteOffset(b); return ok }
 	if len(m.mmap) == 0 {
-		if m.sidecarFor == "" {
+		if m.opts.SidecarFor == "" {
 			return 0
 		}
 		in = func([]byte) bool { return true }
@@ -143,7 +143,8 @@ func (m *Model) cudaDerivedTableBytes() int64 {
 			hybrid = true
 		}
 	}
-	nE, _, _, _, _, _, _, _, _, _, isMoE := m.BackendView().MoEParams()
+	mo, isMoE := m.BackendView().MoE()
+	nE := mo.NumExperts
 	var n int64
 	for l, ops := range layers {
 		if x, _ := program.MixerOf(ops); x == program.MixerAttention || x == program.MixerMLA {

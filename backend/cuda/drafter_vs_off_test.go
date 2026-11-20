@@ -19,6 +19,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // adaptiveSuites: the three traffic classes plus MIXED. code/math/chat each sit in ONE regime for a whole
@@ -107,7 +109,7 @@ func mean(xs []float64) float64 {
 }
 
 func TestDrafterVsOff_perSuite(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	tgt := os.Getenv("GOINFER_CUDA_MODEL")
 	if tgt == "" {
 		tgt = os.ExpandEnv("$HOME/models/qwen3-4b")

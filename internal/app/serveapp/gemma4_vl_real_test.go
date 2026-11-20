@@ -14,6 +14,8 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // distinctTrigramRatioServeapp is decoder/gemma4_26b_real_test.go's distinctTrigramRatio,
@@ -60,7 +62,7 @@ func solidColorPNG(t *testing.T, size int, c color.RGBA) []byte {
 // 26B-A4B (no PLE at all), modelPath and visionDir are the same safetensors directory.
 func loadGemma4VLReal(t *testing.T, modelPath, visionDir string, opts decoder.Options) *loadedModel {
 	t.Helper()
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if _, err := os.Stat(modelPath); err != nil {
 		t.Skipf("no checkpoint at %s: %v", modelPath, err)
 	}
@@ -110,7 +112,8 @@ func askAboutImage(t *testing.T, lm *loadedModel, question string, imgData []byt
 	}
 	gr.maxTokens = maxTokens
 	var sb strings.Builder
-	_, n, _, _, _, _, err := lm.driveVL(context.Background(), gr, vi, nil, nil, func(s string) { sb.WriteString(s) })
+	res, err := lm.driveVL(context.Background(), gr, vi, nil, nil, func(s string) { sb.WriteString(s) })
+	n := res.nComp
 	if err != nil {
 		t.Fatalf("driveVL: %v", err)
 	}
@@ -175,7 +178,8 @@ func TestGemma4VLReal_E2B_logprobs(t *testing.T) {
 		t.Fatalf("prepare: %v", err)
 	}
 	gr.maxTokens = 8
-	_, n, lps, _, _, _, err := lm.driveVL(context.Background(), gr, vi, nil, nil, func(string) {})
+	res, err := lm.driveVL(context.Background(), gr, vi, nil, nil, func(string) {})
+	n, lps := res.nComp, res.logprobs
 	if err != nil {
 		t.Fatalf("driveVL: %v", err)
 	}

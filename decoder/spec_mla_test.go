@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestNgramSpecMLA_parity flips the MLA foundation gate (00-core §6 / experiments §0):
@@ -17,7 +19,7 @@ import (
 //
 // Gated on the local DeepSeek-V2-Lite GGUF (GOINFER_DEEPSEEK_GGUF); skips without it.
 func TestNgramSpecMLA_parity(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	gguf := assetPath(t, "GOINFER_DEEPSEEK_GGUF")
 	m, err := Load(gguf, Options{Quant: "int8int8"})
 	if err != nil {

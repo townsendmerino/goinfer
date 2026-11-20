@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestRow4_vsCanonical_gemma4Shapes is the follow-up the mmap-vs-heap result suggests: memory source is ruled out
@@ -21,7 +23,7 @@ import (
 // It runs on no machine we have, so it is not coverage: it builds only on arm64, and it needs the 26B kind-4 .giw on a Mac
 // that can hold it, which the 16 GB Mac cannot; nobara is amd64. A skip here vouches for nothing.
 func TestRow4_vsCanonical_gemma4Shapes(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	kind4 := expandHome(t, envOr("GOINFER_GEMMA4_26B_GIW_ROW4", "~/models/gemma4-26b-int4-row4.giw"))
 	if _, err := os.Stat(kind4); err != nil {
 		t.Skipf("no kind-4 gemma4 .giw at %s: %v", kind4, err)

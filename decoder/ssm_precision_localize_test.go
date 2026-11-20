@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // ssmLocHeldOut is the held-out text the SSM quality tests (this file and ssm_w8a16_test.go) score teacher-forced.
@@ -33,7 +35,7 @@ const ssmLocHeldOut = `The Eiffel Tower is a wrought-iron lattice tower on the C
 //	D1: cpu int8 mamba (W8A8)      — the int8 Mamba projections the resident quantizes, on the otherwise-perfect path.
 //	D2: D1 + f64 routing           — the router-island test on the path that reproduces the gap.
 func TestSSMPrecisionLocalize(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if os.Getenv("GOINFER_SSM_QUALITY") == "" {
 		t.Skip("ssm precision-localization — slow (granite cpu load + 3 forwards); set GOINFER_SSM_QUALITY=1")
 	}

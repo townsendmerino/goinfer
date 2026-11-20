@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -657,6 +659,12 @@ func (s *server) handleWebLoad(w http.ResponseWriter, r *http.Request) {
 	doneCh := make(chan result, 1)
 	ctx := context.WithoutCancel(r.Context())
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Fprintf(os.Stderr, "serve: web load of %q panicked: %v\n%s", name, r, debug.Stack())
+				doneCh <- result{err: fmt.Errorf("loading %q failed: internal error", name)}
+			}
+		}()
 		lm, err := webLoadDecoder(ctx, modelSpec{name: name, path: file}, s.cfg)
 		doneCh <- result{lm, err}
 	}()
@@ -762,7 +770,7 @@ func (s *server) unloadSuggestion(err error) string {
 	// Prose, not a line break: the caller appends this straight onto res.err.Error(), which the page
 	// renders as plain textContent with no white-space:pre-line — a literal "\n" would just collapse
 	// to a space, so the sentence has to read correctly either way.
-	return fmt.Sprintf(" Unload %q (%.1f GB) to make room.", biggest, float64(biggestBytes)/(1<<30))
+	return fmt.Sprintf(" Unload %q (%s) to make room.", biggest, mem.GiB(biggestBytes))
 }
 
 // handleWebUnload unloads a model the page itself can already see. UNLIKE LOAD, THIS NEEDS NO PATH POLICY: webLoadPath exists

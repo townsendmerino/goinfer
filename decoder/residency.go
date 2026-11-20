@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -284,7 +283,7 @@ func actGroupResidentDecline(backend string, actGroup int, quant string) string 
 		"scales are implemented by CUDA residency only), so the load runs on the CPU, which honours the group", actGroup, backend)
 }
 
-// residentProjsInt4 reports whether the loaded projection weights are int4 (W4A8) — the gate for
+// ResidentProjsInt4 reports whether the loaded projection weights are int4 (W4A8) — the gate for
 // Nemotron-H default-on residency. Scans for the first attention/MLP projection (the mamba
 // in/out_proj are always f32 in the model and quantized at build, so they don't indicate the
 // load precision).
@@ -560,9 +559,6 @@ func (m *Model) ResidentSpec() ResidentSpec {
 			ls = float32(a.LogitScale)
 		}
 		em, rm := g.EmbMul, g.ResidMul
-		if os.Getenv("GOINFER_SSM_NOMUL") != "" {
-			em, rm, ls = 1, 1, 1
-		}
 		spec.Granite = &ResidentGraniteSpec{
 			NHeads:     g.NHeads,
 			HeadDim:    g.HeadDim,
@@ -664,7 +660,7 @@ func (m *Model) withResidency() *Model {
 		m.w.arch.AttnLogitSoftcap = 0
 		m.prog = buildProgram(m.w.arch, m.w.hasExperts) // the CPU reads the softcap from the program
 	}
-	if m.planResidency {
+	if m.opts.planResidency {
 		return m // FitQuery's open: plannedDecodePath asks the backend instead
 	}
 	if applyNormULPNoiseDiag(m.w); m.knobs.get(knobNoResidency) != "" { // normnoise.go diagnostic first: it must precede any resident upload of the norms
@@ -700,13 +696,13 @@ func (m *Model) withResidency() *Model {
 		m.resDecline = buildDeclineReason(err)
 		return m
 	}
-	if why := autoMetalKeepsPrecision(m.backendAuto, m.be.Name(), m.Quant(), rf); why != "" {
+	if why := autoMetalKeepsPrecision(m.opts.BackendAuto, m.be.Name(), m.Quant(), rf); why != "" {
 		_ = rf.Close()
 		m.resDecline = why
 		return m
 	}
 	m.resident = rf
-	if kv := m.resKV(); kv.KVDemoterAvailable() && m.kvSnaps != nil && m.kvDemote && !m.kvShareOff {
+	if kv := m.resKV(); kv.KVDemoterAvailable() && m.kvSnaps != nil && m.opts.KVDemote && !m.opts.KVShareOff {
 		kv.SetKVHostBudget(m.kvSnaps)
 	}
 	// BuildResident's host-side work (the CUDA backend packs every layer's weights on the Go heap before uploading,
@@ -740,8 +736,8 @@ func (m *Model) withResidencyOrAbort() (*Model, error) {
 // backendDeclinedErr is Options.RequireBackend's refusal: an ErrBackendDeclined error naming the backend and the decline when
 // the load asked for a backend other than the CPU and built no resident runner on it, else nil.
 func (m *Model) backendDeclinedErr() error {
-	be := m.kvOpts.Backend
-	if !m.kvOpts.RequireBackend || be == "" || be == "cpu" || m.ResidentActive() {
+	be := m.opts.Backend
+	if !m.opts.RequireBackend || be == "" || be == "cpu" || m.ResidentActive() {
 		return nil
 	}
 	reason := m.ResidentDecline()
@@ -754,7 +750,7 @@ func (m *Model) backendDeclinedErr() error {
 // LoadAbort is Options.LoadAbort as the load that built this model passed it: a backend's resident build polls it between layers and
 // between upload blocks and returns an error wrapping ErrLoadAborted once it is closed. Nil (never fires) when the load was not guarded.
 // It is meaningful during BuildResident only; nothing reads it after Load returns.
-func (m *Model) LoadAbort() <-chan struct{} { return m.loadAbort }
+func (m *Model) LoadAbort() <-chan struct{} { return m.opts.LoadAbort }
 
 // residencyGate is withResidency's checks before it asks the backend to build: the backend's residency, the quant's resident
 // kernels, -backend auto's precision rule and admission, all Admit's (admit.go) over the model's facts. why is the decline they record, "" with the backend to build on.
@@ -871,7 +867,7 @@ func (m *Model) ResidentKVPrecision() string {
 	if m.resident == nil || m.be == nil || m.w == nil {
 		return ""
 	}
-	got, _ := ResolveKV(m.be.Name(), m.w.arch, m.kvOpts)
+	got, _ := ResolveKV(m.be.Name(), m.w.arch, m.opts)
 	return got
 }
 
@@ -920,7 +916,7 @@ func (m *Model) DecodePath() string {
 		// "metal-staged" path, so report it the way BackendSummary reports a backend that failed to build: requested vs.
 		// actually executing (docs/measurements/cold-user-2026-09-06-nobara-pc.md, R9).
 		req := be
-		if m.backendAuto { // the user asked for auto, which chose this backend (R17)
+		if m.opts.BackendAuto { // the user asked for auto, which chose this backend (R17)
 			req = "auto (" + be + ")"
 		}
 		return fmt.Sprintf("cpu (%s) — %s", m.Quant(), BackendSummary(req, "cpu", declinedToCPUReason(be, m.resDecline)))

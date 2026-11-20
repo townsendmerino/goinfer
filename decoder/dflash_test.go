@@ -12,6 +12,8 @@ import (
 	"github.com/townsendmerino/aikit/embed"
 	"path/filepath"
 	"strings"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // P10 kill-gate 1 (docs/spec/08): the Go DFlash trunk must match the upstream reference on dumped fixtures BEFORE any
@@ -181,7 +183,7 @@ func compareRows(got, want [][]float32) (cos, maxAbs float64) {
 // it also exercises the capture seam's layer convention: target_layer_ids name layer
 // OUTPUTS, and ForwardCapture's `layers` uses the same after-layer-l indexing.
 func TestDFlash_targetEndToEnd(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ddir := assetPath(t, "GOINFER_DFLASH_F32")
 	tdir := assetPath(t, "GOINFER_QWEN3_4B")
 	raw, err := os.ReadFile(dflashGoldenPath)
@@ -306,7 +308,7 @@ func TestDFlash_refusesV2(t *testing.T) {
 		t.Fatal("v1 loader ACCEPTED a DFlash 2 config — it would silently drop the conv and " +
 			"selector weights and draft worse than v1, with no error anywhere")
 	}
-	for _, want := range []string{"DFlash 2", "conv_kernel_size=2", "selector_rank=256", "P15"} {
+	for _, want := range []string{"DFlash 2", "conv_kernel_size=2", "selector_rank=256", "docs/spec/08-dspark-dflash.md"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("refusal should name %q so the reader knows WHICH checkpoint and where the\n"+
 				"work is tracked; got: %v", want, err)

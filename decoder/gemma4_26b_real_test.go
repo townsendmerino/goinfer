@@ -22,6 +22,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // distinctTrigramRatio returns |distinct 3-rune windows| / |total| over s: a language-agnostic degeneracy metric.
@@ -61,7 +63,7 @@ const gemma4GateUserTurn = "What is the capital of France, and what is it famous
 const degeneracyFloor = 0.70
 
 func TestGemma4_26B_gate(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	dir := os.Getenv("GOINFER_GEMMA4_26B")
 	if dir == "" {
 		home, _ := os.UserHomeDir()

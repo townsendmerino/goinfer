@@ -844,6 +844,19 @@ func (r prefillReuse) sources() *prefillReuseSources {
 	return &prefillReuseSources{OwnTokens: max(r.Tokens-r.Shared-r.Host, 0), SharedTokens: r.Shared, HostTokens: r.Host, PromotedBlocks: r.Promoted}
 }
 
+// turnResult is what drive and driveVL report about one generation, which each route's wire encoder reads: the finish
+// reason ("stop", "length" or "cancelled"), the completion token count, the per-token logprobs (nil with no engine
+// report), the stop string that ended the turn ("" for none), the prefill reuse (zero when the path does not track it),
+// and the admin-cancel reason ("" unless an admin cancel, not a client disconnect or shutdown, ended the turn).
+type turnResult struct {
+	finish       string
+	nComp        int
+	logprobs     []decoder.SampleInfo
+	stopHit      string
+	reused       prefillReuse
+	cancelReason string
+}
+
 // newUsage is the OpenAI usage block for a generation of nComp tokens over prompt tokens, with r's reuse.
 func newUsage(prompt, nComp int, r prefillReuse) usage {
 	return usage{PromptTokens: prompt, CompletionTokens: nComp, TotalTokens: prompt + nComp, PrefillReusedTokens: r.Tokens, PrefillReuse: r.sources()}
@@ -977,15 +990,11 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		return
 	}
 	req.sampling.confidenceOK = true // written back below
-	req.sampling.fixedTokens = func() int { return lm.fixedPromptTokens(tm, system, nil) }
-	gr, err := lm.prepare(req.sampling, ids, lm.residentPath())
+	gr, err := lm.prepareTurn(req.sampling, tm, system, turns, nil, ids)
 	if err != nil {
 		writePrepareErr(w, err)
 		return
 	}
-	gr.boundary = lm.prefixBoundary(tm, system, turns, nil, ids)
-	gr.keep = lm.recurrentKeep(tm, system, turns, nil, ids)
-	gr.msgBoundary = lm.recurrentMsgBoundary(tm, system, turns, nil, ids)
 	if req.Stream && req.Logprobs { // the stream path has no logprobs field — reject rather than silently drop
 		writeErr(w, http.StatusBadRequest, "logprobs is not supported together with stream:true")
 		return
@@ -1011,7 +1020,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		s.routeThink(lm, &gr, tm, turns, ts, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{ReasoningContent: t}, nil))
 		})
-		finish, nComp, _, stopHit, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
+		res, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{Content: t}, nil))
 		})
 		stopBeat()
@@ -1020,30 +1029,30 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 			sseDone(ss)
 			return
 		}
-		sseSend(ss, finishChunk(id, created, lm.name, finish, emptyAnswerOf(gr, finish, stopHit, 0, nComp), false))
+		sseSend(ss, finishChunk(id, created, lm.name, res.finish, emptyAnswerOf(gr, res.finish, res.stopHit, 0, res.nComp), false))
 		if gr.conf != nil {
 			sseSend(ss, map[string]any{"id": id, "goinfer_confidence": gr.conf.payload()})
 		}
-		if cancelReason != "" {
+		if res.cancelReason != "" {
 			// One final SSE event naming the reason, so a client cannot mistake this for a natural stop even though
 			// finish_reason is already "cancelled" above.
-			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": cancelReason}})
+			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": res.cancelReason}})
 		}
 		sendUsage(ss, gr.clock, req.StreamOptions, id, created, lm.name,
-			newUsage(len(gr.promptIDs), nComp, reused))
+			newUsage(len(gr.promptIDs), res.nComp, res.reused))
 		sseDone(ss)
 		return
 	}
 
 	var sb, rb strings.Builder
 	s.routeThink(lm, &gr, tm, turns, ts, func(t string) { rb.WriteString(t) })
-	finish, nComp, lps, stopHit, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
+	res, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
 	}
-	if cancelReason != "" {
-		writeErr(w, statusCancelled, "generation cancelled: "+cancelReason)
+	if res.cancelReason != "" {
+		writeErr(w, statusCancelled, "generation cancelled: "+res.cancelReason)
 		return
 	}
 	msg := map[string]any{"role": "assistant", "content": sb.String()}
@@ -1053,18 +1062,18 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 	choice := map[string]any{
 		"index":         0,
 		"message":       msg,
-		"finish_reason": finish,
+		"finish_reason": res.finish,
 	}
-	if e := emptyAnswerOf(gr, finish, stopHit, 0, nComp); e != nil {
+	if e := emptyAnswerOf(gr, res.finish, res.stopHit, 0, res.nComp); e != nil {
 		choice["goinfer_empty_answer"] = e
 	}
 	if req.Logprobs {
-		choice["logprobs"] = lm.logprobs(lps)
+		choice["logprobs"] = lm.logprobs(res.logprobs)
 	}
 	resp := map[string]any{
 		"id": id, "object": "chat.completion", "created": created, "model": lm.name,
 		"choices": []any{choice},
-		"usage":   newUsage(len(gr.promptIDs), nComp, reused),
+		"usage":   newUsage(len(gr.promptIDs), res.nComp, res.reused),
 	}
 	if gr.conf != nil {
 		resp["goinfer_confidence"] = gr.conf.payload()
@@ -1136,7 +1145,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		}
 		// Same prefill silence as the chat stream: heartbeat until the first token.
 		stopBeat := sseHeartbeat(ss)
-		finish, nComp, _, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
+		res, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 			sseSend(ss, completionChunk(id, created, lm.name, t, nil))
 		})
 		stopBeat()
@@ -1145,32 +1154,32 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 			sseDone(ss)
 			return
 		}
-		sseSend(ss, completionChunk(id, created, lm.name, "", &finish))
+		sseSend(ss, completionChunk(id, created, lm.name, "", &res.finish))
 		if gr.conf != nil {
 			sseSend(ss, map[string]any{"id": id, "goinfer_confidence": gr.conf.payload()})
 		}
-		if cancelReason != "" {
-			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": cancelReason}})
+		if res.cancelReason != "" {
+			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": res.cancelReason}})
 		}
 		sendUsage(ss, gr.clock, req.StreamOptions, id, created, lm.name,
-			newUsage(len(gr.promptIDs), nComp, reused))
+			newUsage(len(gr.promptIDs), res.nComp, res.reused))
 		sseDone(ss)
 		return
 	}
 	var sb strings.Builder
-	finish, nComp, _, _, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
+	res, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		writeServerErr(w, "generation failed: "+gerr.Error())
 		return
 	}
-	if cancelReason != "" {
-		writeErr(w, statusCancelled, "generation cancelled: "+cancelReason)
+	if res.cancelReason != "" {
+		writeErr(w, statusCancelled, "generation cancelled: "+res.cancelReason)
 		return
 	}
 	resp := map[string]any{
 		"id": id, "object": "text_completion", "created": created, "model": lm.name,
-		"choices": []any{map[string]any{"index": 0, "text": sb.String(), "finish_reason": finish}},
-		"usage":   newUsage(len(gr.promptIDs), nComp, reused),
+		"choices": []any{map[string]any{"index": 0, "text": sb.String(), "finish_reason": res.finish}},
+		"usage":   newUsage(len(gr.promptIDs), res.nComp, res.reused),
 	}
 	if gr.conf != nil {
 		resp["goinfer_confidence"] = gr.conf.payload()
@@ -1580,18 +1589,14 @@ func genErr(err error) error {
 }
 
 // drive runs the generation, applying stop strings and UTF-8 holdback, and calls onText with each newly completed
-// text fragment. It returns the finish reason ("stop", "length" or "cancelled"), the completion token count, the
-// per-token logprobs (non-stream), the stop string that was hit (empty unless a stop sequence ended the turn), how
-// many leading prompt tokens the prefill skipped through resident or session reuse (decoder.Generation.PrefillReused;
-// 0 when nothing was reused or the path does not track it), the admin-cancel reason (empty unless an admin cancel,
-// not a client disconnect or shutdown, ended the turn), and the terminal generation error (nil on a clean end; see
-// genErr). It cancels its derived context on a stop-string hit to end generation.
+// text fragment. It returns the turn's turnResult and the terminal generation error (nil on a clean end; see genErr).
+// It cancels its derived context on a stop-string hit to end generation.
 //
 // gens is the server's cancel-by-id registry; nil, or gr.id == "", skips registration. Every generation funnels
 // through here or driveVL, so that bookkeeping lives here and not at each call site (see generations.go). jobs is the
 // job store, nil only in a unit test calling drive directly; it is gated on the same gr.id != "" and shares the id,
 // so the job and registry records join by id.
-func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *generationRegistry, js *jobs.Store, onText func(string)) (finish string, nComp int, logprobs []decoder.SampleInfo, stopHitOut string, prefillReused prefillReuse, cancelReason string, err error) {
+func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *generationRegistry, js *jobs.Store, onText func(string)) (res turnResult, err error) {
 	defer lm.logExpertCache(lm.expertCacheNow())
 	var g *generation
 	if gens != nil && gr.id != "" {
@@ -1618,19 +1623,18 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 		var resultText strings.Builder
 		wrapped := onText
 		onText = func(t string) { resultText.WriteString(t); wrapped(t) }
-		// Reads the named return values, so it sees the final finish, nComp, prefillReused, cancelReason and err
-		// whichever return statement ran.
+		// Reads the named return values, so it sees the final res and err whichever return statement ran.
 		defer func() {
 			state := jobs.Done
 			var errMsg string
 			switch {
-			case cancelReason != "":
+			case res.cancelReason != "":
 				state = jobs.Cancelled
 			case err != nil:
 				state, errMsg = jobs.Failed, err.Error()
 			}
-			u := newUsage(len(gr.promptIDs), nComp, prefillReused)
-			js.FinishTurn(j, state, &u, gr.clock, errMsg, &jobs.Result{Content: resultText.String(), FinishReason: finish, StopSeq: stopHitOut})
+			u := newUsage(len(gr.promptIDs), res.nComp, res.reused)
+			js.FinishTurn(j, state, &u, gr.clock, errMsg, &jobs.Result{Content: resultText.String(), FinishReason: res.finish, StopSeq: res.stopHit})
 		}()
 	}
 	ctx, cancel := context.WithCancel(parent)
@@ -1645,14 +1649,14 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	gr.clock.End()
 	rep := st.Report()
 	if rep == nil { // an engine that keeps no report (the scripted seam): no cancelled finish, logprobs, reuse or error
-		return finish, n, nil, stopHit, prefillReuse{}, cancelledReason(g, parent, stopHit), nil
+		return turnResult{finish: finish, nComp: n, stopHit: stopHit, cancelReason: cancelledReason(g, parent, stopHit)}, nil
 	}
 	cr := cancelledReason(g, parent, stopHit)
 	if cr != "" {
 		finish = "cancelled"
 	}
 	logKVCopy(rep)
-	return finish, n, rep.Logprobs, stopHit, reuseOf(rep), cr, genErr(rep.Err)
+	return turnResult{finish: finish, nComp: n, logprobs: rep.Logprobs, stopHit: stopHit, reused: reuseOf(rep), cancelReason: cr}, genErr(rep.Err)
 }
 
 // cancelledReason reports the admin-cancel reason for this generation's finish, or "" if it was not an admin cancel.
@@ -1673,7 +1677,7 @@ func cancelledReason(g *generation, parent context.Context, stopHit string) stri
 // prefix reuse), but on a resident backend GenerateVL and GenerateQwenVL reuse the resident GPU KV when the same
 // image is resent, and vi.features is then never invoked. Its results and its gens and jobs parameters are drive's;
 // see drive.
-func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, gens *generationRegistry, js *jobs.Store, onText func(string)) (finish string, nComp int, logprobs []decoder.SampleInfo, stopHitOut string, prefillReused prefillReuse, cancelReason string, err error) {
+func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, gens *generationRegistry, js *jobs.Store, onText func(string)) (res turnResult, err error) {
 	defer lm.logExpertCache(lm.expertCacheNow())
 	var g *generation
 	if gens != nil && gr.id != "" {
@@ -1695,13 +1699,13 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 			state := jobs.Done
 			var errMsg string
 			switch {
-			case cancelReason != "":
+			case res.cancelReason != "":
 				state = jobs.Cancelled
 			case err != nil:
 				state, errMsg = jobs.Failed, err.Error()
 			}
-			u := newUsage(len(gr.promptIDs), nComp, prefillReused)
-			js.FinishTurn(j, state, &u, gr.clock, errMsg, &jobs.Result{Content: resultText.String(), FinishReason: finish, StopSeq: stopHitOut})
+			u := newUsage(len(gr.promptIDs), res.nComp, res.reused)
+			js.FinishTurn(j, state, &u, gr.clock, errMsg, &jobs.Result{Content: resultText.String(), FinishReason: res.finish, StopSeq: res.stopHit})
 		}()
 	}
 	ctx, cancel := context.WithCancel(parent)
@@ -1724,7 +1728,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	gr.clock.End()
 	rep := st.Report()
 	if rep == nil { // an engine that keeps no report (the scripted seam): no cancelled finish, logprobs, reuse or error
-		return finish, n, nil, stopHit, prefillReuse{}, cancelledReason(g, parent, stopHit), nil
+		return turnResult{finish: finish, nComp: n, stopHit: stopHit, cancelReason: cancelledReason(g, parent, stopHit)}, nil
 	}
 	if len(spans) > 1 && rep.ImgPrefillDecline != "" { // say why a multi-span turn prefilled on the CPU
 		fmt.Fprintf(os.Stderr, "vision: %d image(s), %d spans; the resident image prefill declined (%s), so the CPU prefill ran and was uploaded\n", max(vi.images, 1), len(spans), rep.ImgPrefillDecline)
@@ -1745,7 +1749,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 		finish = "cancelled"
 	}
 	logKVCopy(rep)
-	return finish, n, rep.Logprobs, stopHit, reuseOf(rep), cr, genErr(rep.Err)
+	return turnResult{finish: finish, nComp: n, logprobs: rep.Logprobs, stopHit: stopHit, reused: reuseOf(rep), cancelReason: cr}, genErr(rep.Err)
 }
 
 // media is vi as the engine's Media over spans and grids (driveVL's, with the one-media fallback), the kind chosen by

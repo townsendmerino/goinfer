@@ -18,10 +18,8 @@ type toolTurn struct {
 	lead  string          // the parser's prose before the first call (raw when there are no calls)
 	// rest is the part of lead NOT yet handed to onProse: the front end sends it before closing its
 	// prose and emitting the calls. On a family that cannot stream prose safely it is all of lead.
-	rest                          string
-	finish, stopSeq, cancelReason string
-	nComp                         int
-	reused                        prefillReuse
+	rest string
+	turnResult
 	// fromReasoning: calls were read from the reasoning block, not the answer (settleCalls). Every route marks such a turn
 	// with goinfer_tool_calls_from_reasoning.
 	fromReasoning bool
@@ -67,7 +65,7 @@ func (s *server) runToolTurn(ctx context.Context, lm *loadedModel, gr genRequest
 	}
 	var turn toolTurn
 	var gerr error
-	turn.finish, turn.nComp, _, turn.stopSeq, turn.reused, turn.cancelReason, gerr = lm.drive(ctx, gr, s.gens, s.jobs, func(t string) {
+	turn.turnResult, gerr = lm.drive(ctx, gr, s.gens, s.jobs, func(t string) {
 		sb.WriteString(t)
 		if prose == nil {
 			return
@@ -91,7 +89,7 @@ func (s *server) runToolTurn(ctx context.Context, lm *loadedModel, gr genRequest
 	var parsedLead string
 	turn.calls, parsedLead, turn.fromReasoning = settleCalls(lm.tmpl, turn.raw, tools, gr.think)
 	var err error
-	turn.lead, turn.rest, err = reconcileProse(turn.raw, len(turn.calls) > 0, parsedLead, streamed.String())
+	turn.lead, turn.rest, err = codec.ReconcileProse(turn.raw, len(turn.calls) > 0, parsedLead, streamed.String())
 	if err == nil && gr.callPostCheck && len(turn.calls) == 0 {
 		err = errNoForcedCall
 		if turn.finish == "length" {
@@ -99,11 +97,6 @@ func (s *server) runToolTurn(ctx context.Context, lm *loadedModel, gr genRequest
 		}
 	}
 	return turn, err
-}
-
-// reconcileProse is codec.ReconcileProse: a finished turn's prose, and what is still to send after what streamed.
-func reconcileProse(raw string, hasCalls bool, parsedLead, streamed string) (lead, rest string, err error) {
-	return codec.ReconcileProse(raw, hasCalls, parsedLead, streamed)
 }
 
 // settleCalls is codec.SettleCalls with th's routed calls and reasoning (none for a nil router).

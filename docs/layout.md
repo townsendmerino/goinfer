@@ -51,7 +51,7 @@ Untagged, `backend/cuda/` does not build on its own (`backend/cuda/internal/gpud
 | `multimodal/` | vision and audio towers and preprocessing |
 | `embeddinggemma2/` | the EmbeddingGemma 2 text encoder |
 | `pull/` | resumable checkpoint download from HuggingFace |
-| `internal/` | packages private to the root module, grouped under `internal/app/` (CLI/server apps and wiring), `internal/guard/` (lint/CI/memory/parity guards), `internal/diag/` (hardware census and reports), and `internal/runtime/` (execution, memory, KV, scheduler, model loading, sampling, and runtime kernels), plus top-level domain packages (`audio`, `batchio`, `clef`, `codec`, `confidence`, `config`, `cost`, `decide`, `fidelity`, `layout`, `vision`, `wrappedupload`); `internal/layout` holds repository-shape checks as tests |
+| `internal/` | packages private to the root module, grouped under `internal/app/` (CLI/server apps and wiring), `internal/guard/` (lint/CI/memory/parity guards), `internal/diag/` (hardware census and reports), and `internal/runtime/` (execution, memory, KV, scheduler, model loading, sampling, and runtime kernels), plus top-level domain packages (`audio`, `batchio`, `clef`, `codec`, `confidence`, `config`, `cost`, `decide`, `fidelity`, `layout`, `vision`, `wrappedupload`), and `testgate`, the skip gates tests share (imported by `_test.go` files only); `internal/layout` holds repository-shape checks as tests |
 
 ## Tier 3: subpackages of `decoder/`
 
@@ -67,7 +67,7 @@ packages it may import; `TestLayout_arrows` enforces it. Aliases are deleted whe
 
 **The subpackages so far.** `decoder/fit` (the Order below), `decoder/config` (DC1) and `decoder/quant`. `quant` has no Order
 of its own: it holds the FP8, GPTQ, AWQ, NVFP4 and MLX config parsing and reconstruction behind `Reconstructor` and
-`RowStreamReconstructor`, and `decoder` calls it through thin forwarders (`decoder/awq.go`, `decoder/gptq.go`). The rules are
+`RowStreamReconstructor`, and `decoder` calls it directly, through `decoder/gptq.go`'s config parsing. The rules are
 `fit-leaf` (may import `internal/runtime/mem`), `config-leaf` and `quant-leaf` (no goinfer package). `quant-leaf` forbids goinfer
 packages only, so `quant` importing `aikit/embed` for `SafetensorsFile` is inside it; the rule is right and the layout row
 now says so.

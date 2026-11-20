@@ -12,6 +12,7 @@ import (
 	"sync"
 	"unsafe"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -951,7 +952,7 @@ func int4BufAOn(line string, d *Device, a *weightAlias, w *linalg.WeightMat) (Bu
 	// stride the kernel disagrees with, silently wrong or a panic at K<32. Decline, so BuildResident falls back to
 	// CPU.
 	if k := w.Cols(); k%32 != 0 {
-		return Buffer{}, Buffer{}, fmt.Errorf("metal: W4A8 pack needs K%%32==0 (group=32), got K=%d — declining to CPU (audit M-10)", k)
+		return Buffer{}, Buffer{}, fmt.Errorf("metal: W4A8 pack needs K%%32==0 (group=32), got K=%d — declining to CPU", k)
 	}
 	if nib, ok := a.nibblesOn(line, d, w); ok {
 		if sc, ok := a.scales16On(line, d, []*linalg.WeightMat{w}); ok { // the scales are in the mapping: bound in place too
@@ -1034,7 +1035,7 @@ func int4ConcatOn(line string, d *Device, wms ...*linalg.WeightMat) (Buffer, Buf
 		// build path, so it panics; buildResident's recover turns that into a clean CPU decline, as with its wrong-kind
 		// panic below.
 		if k := w.Cols(); k%32 != 0 {
-			panic(fmt.Sprintf("metal: W4A8 concat needs K%%32==0 (group=32), got K=%d (audit M-10)", k))
+			panic(fmt.Sprintf("metal: W4A8 concat needs K%%32==0 (group=32), got K=%d", k))
 		}
 		nw, ns, ok := w4a8Size(w)
 		if !ok {
@@ -1201,7 +1202,7 @@ func w8PreciseMath(m *decoder.Model) bool {
 	if !nativeInt8 || w8FastMath || m.BackendView().HasGemma4MoE() {
 		return false
 	}
-	if _, _, _, _, _, _, _, _, _, _, moe := m.BackendView().MoEParams(); moe {
+	if _, moe := m.BackendView().MoE(); moe {
 		// slice 4's MoE, as w8Eligible will admit it: not gpt-oss, not paged
 		if _, _, gptoss := m.BackendView().GptOssAct(); !nativeInt8MoE || gptoss || metalMoESlotsRequest(m) != "" {
 			return false
@@ -1246,6 +1247,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// partial device state. The backend wrapper keeps its own recover() as defence in depth.
 	defer func() {
 		if p := recover(); p != nil {
+			mem.RepanicBug(p)
 			res, err = nil, fmt.Errorf("metal: BuildResident panicked: %v", p)
 		}
 	}()

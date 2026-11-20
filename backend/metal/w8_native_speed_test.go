@@ -15,6 +15,8 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestW8Native_S_decodeSpeed is gate S, a night-queue measurement: an
@@ -26,7 +28,7 @@ import (
 // The 7B joins with GOINFER_W8_GATE_7B=1 when the fit guard admits it; nothing bypasses the guard.
 // GOINFER_W8_GATE_S_SMOKE=1 shrinks it to one sample per arm on the 0.5B at depth 128, to check the harness by day.
 func TestW8Native_S_decodeSpeed(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if os.Getenv("GOINFER_W8_GATE_S") == "" {
 		t.Skip("gate S is a night-queue measurement: set GOINFER_W8_GATE_S=1")
 	}
@@ -212,7 +214,7 @@ func sampleW8Decode(t *testing.T, path string, a w8Arm, prompt []int, n int) w8S
 // 1,000-token prompt (w8SpeedPrompt). Arms: Metal native int8 (precise math), CPU int8int8, and Metal int4 re-quant
 // (reported), rotated every repetition, 7 repetitions, on the 0.5B and the 1.5B. Night-queue: GOINFER_W8_GATE_TTFT=1.
 func TestW8Native_S_ttft(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if os.Getenv("GOINFER_W8_GATE_TTFT") == "" {
 		t.Skip("a night-queue measurement: set GOINFER_W8_GATE_TTFT=1")
 	}

@@ -266,7 +266,7 @@ func (p onePool) Checkin(*decoder.Session)       {}
 func TestLazyTurn_realSpeculativeProseKeepsTheDrafter(t *testing.T) {
 	m, err := decoder.Load("../testdata/llama-tiny", decoder.Options{})
 	if err != nil {
-		t.Skipf("no llama-tiny fixture: %v", err)
+		t.Fatalf("load ../testdata/llama-tiny: %v", err)
 	}
 	defer m.Close()
 	_, _, _, _, _, _, vocab := m.Dims()

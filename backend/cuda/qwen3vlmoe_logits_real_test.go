@@ -29,6 +29,8 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 type q3mCudaSeq struct {
@@ -44,7 +46,7 @@ type q3mCudaImage struct {
 }
 
 func TestQwen3VLMoe_cudaLogits(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	requireCUDADevice(t)
 	dir, out := os.Getenv("GOINFER_Q3M_DIR"), os.Getenv("GOINFER_Q3M_OUT")
 	if dir == "" || out == "" {

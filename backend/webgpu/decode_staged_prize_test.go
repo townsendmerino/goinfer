@@ -10,6 +10,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // BenchmarkDecodeStaged_prize sizes the lever of widening resident-runner eligibility: the
@@ -20,7 +22,7 @@ import (
 // rate via decoder.Generate; it asserts nothing, which is why it is a Benchmark and not a Test (a
 // Test's green would say only that the harness ran). Go runs a benchmark this slow exactly once.
 func BenchmarkDecodeStaged_prize(b *testing.B) {
-	requireHeavyModel(b)
+	testgate.RequireHeavy(b)
 	if testing.Short() {
 		b.Skip("staged prize")
 	}

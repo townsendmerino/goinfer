@@ -16,6 +16,8 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 
 	"github.com/townsendmerino/goinfer/multimodal"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // g4vTinyTower loads the committed tiny Gemma 4 tower (finite ClippableLinear bounds) with random position tables and
@@ -202,7 +204,7 @@ func g4vBudgetOverride(t *testing.T) int {
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 30m -tags 'gpu goinfer_testhooks' -run '^TestG4VWebGPU_realE2B$' -v ./gpu/
 func TestG4VWebGPU_realE2B(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	enc, budget := g4vRealTower(t, t.Skipf)
 	t0 := time.Now()
 	logf := func(format string, a ...any) {

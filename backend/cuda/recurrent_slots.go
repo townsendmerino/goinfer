@@ -121,7 +121,7 @@ func (r *cudaResident) allocRecurrentSlots(slots int) {
 		for range slots - 1 {
 			L.recSlots = append(L.recSlots, recurrentPair{win: r.up32(make([]float32, win))})
 			if recurrentSlotAllocFailForTest {
-				panic("cuda: device allocation failed (test seam): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY")
+				panic(allocFailureForTest())
 			}
 			L.recSlots[len(L.recSlots)-1].state = r.up32(make([]float32, state))
 		}

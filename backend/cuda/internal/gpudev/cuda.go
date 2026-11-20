@@ -115,7 +115,7 @@ type Leaser interface {
 	Lease(onDevice bool, line string, requested, charged int64) (release func())
 }
 
-// NewLeaser, when set, gives every device CreateSystemDefaultDevice creates its leaser: the backend sets it at init, so a device
+// NewLeaser (when set) gives every device CreateSystemDefaultDevice creates its leaser: the backend sets it at init, so a device
 // any package creates is leased.
 var NewLeaser func() Leaser
 
@@ -162,7 +162,7 @@ func ChargedBytes(n int64) int64 {
 // package may set it to its test line for its own buffers.
 var UnlinedLine string
 
-// ReleasedForTest, when set, is called by ReleaseObjects after everything the device tracked is freed, so a test can read the
+// ReleasedForTest (when set) is called by ReleaseObjects after everything the device tracked is freed, so a test can read the
 // leaser's account then (I1, I2). A test seam, nil in production.
 var ReleasedForTest func(*Device)
 
@@ -334,6 +334,9 @@ func (d *Device) ReleaseBuf(b Buffer) {
 		}
 	}
 	d.mu.Unlock()
+	if TraceForTest != nil {
+		TraceForTest(TraceEvent{Op: TraceFree, Dst: uint64(b.b.DevicePtr())})
+	}
 	_ = b.b.Close()
 }
 
@@ -472,10 +475,28 @@ func (d *Device) MustBuf(nBytes, n int, what string) Buffer {
 	return d.MustBufOn(UnlinedLine, nBytes, n, what)
 }
 
-// AllocFailedPanic is the value MustBufOn panics with when the device has no memory. Callers that can degrade recover it and tell it
-// from a bug by this text (internal/runtime/mem.DeviceAllocFailed).
-func AllocFailedPanic(what string, nBytes int, err error) string {
-	return fmt.Sprintf("cuda: device allocation failed (%s, %d bytes): %v", what, nBytes, err)
+// AllocFailure is the value MustBufOn panics with when the device has no memory for an allocation. Callers that can degrade recover
+// it and tell it from a bug with internal/runtime/mem.DeviceAllocFailed, which matches it by its DeviceAllocFailure method (this
+// package imports nothing of goinfer's, so it cannot name mem's interface).
+type AllocFailure struct {
+	What  string // the allocation's label
+	Bytes int
+	Err   error // the driver's error
+}
+
+func (f *AllocFailure) Error() string {
+	return fmt.Sprintf("cuda: device allocation failed (%s, %d bytes): %v", f.What, f.Bytes, f.Err)
+}
+
+func (f *AllocFailure) Unwrap() error { return f.Err }
+
+// DeviceAllocFailure marks f as a failed device allocation for internal/runtime/mem.AllocFailure.
+func (*AllocFailure) DeviceAllocFailure() {}
+
+// AllocFailedPanic is the value to panic with for a failed allocation of nBytes labelled what; a test seam that stands in an
+// out-of-memory device panics with it too.
+func AllocFailedPanic(what string, nBytes int, err error) *AllocFailure {
+	return &AllocFailure{What: what, Bytes: nBytes, Err: err}
 }
 
 // MustBufOn is MustBuf leasing the bytes on plan line line.
@@ -491,6 +512,9 @@ func (d *Device) MustBufOn(line string, nBytes, n int, what string) Buffer {
 	d.mu.Lock()
 	d.allocs = append(d.allocs, devAlloc{b: buf, release: release})
 	d.mu.Unlock()
+	if TraceForTest != nil {
+		TraceForTest(TraceEvent{Op: TraceAlloc, Dst: uint64(buf.DevicePtr()), Bytes: nBytes, Line: line})
+	}
 	return Buffer{b: buf, cx: d.cx, d: d, n: n}
 }
 
@@ -512,6 +536,9 @@ func (d *Device) MustBufSplitOn(line string, nBytes int, lineBytes int64, restLi
 	d.mu.Lock()
 	d.allocs = append(d.allocs, devAlloc{b: buf, release: func() { relLine(); relRest() }})
 	d.mu.Unlock()
+	if TraceForTest != nil {
+		TraceForTest(TraceEvent{Op: TraceAlloc, Dst: uint64(buf.DevicePtr()), Bytes: nBytes, Line: line})
+	}
 	return Buffer{b: buf, cx: d.cx, d: d, n: nBytes}
 }
 
@@ -557,6 +584,9 @@ func (b Buffer) upload(src []byte) error {
 	if got, want := b.bytes(), uint64(b.off)+uint64(len(src)); got < want {
 		return fmt.Errorf("cuda: upload of %d bytes at offset %d overruns a %d-byte buffer", len(src), b.off, got)
 	}
+	if TraceForTest != nil {
+		TraceForTest(TraceEvent{Op: TraceUpload, Dst: b.BindAddr(), Bytes: len(src), Src: src})
+	}
 	// SYNCHRONIZE BEFORE THE COPY TOO, not just after (audit C-01).
 	//
 	// The trailing Synchronize below orders this copy before LATER launches —
@@ -596,6 +626,9 @@ func (b Buffer) download(dst []byte) error {
 	}
 	if got, want := b.bytes(), uint64(b.off)+uint64(len(dst)); got < want {
 		return fmt.Errorf("cuda: download of %d bytes at offset %d overruns a %d-byte buffer", len(dst), b.off, got)
+	}
+	if TraceForTest != nil {
+		TraceForTest(TraceEvent{Op: TraceDownload, Dst: b.BindAddr(), Bytes: len(dst)})
 	}
 	b.d.noteWait() // a blocking copy to the host
 	return b.b.CopyToAt(bg, dst, int(b.off))
@@ -1083,6 +1116,9 @@ func (q Queue) Launch(p Pipeline, cfg LaunchConfig, args ...KernelArg) error {
 			return fmt.Errorf("cuda: kernel arg %d is uninitialized", i)
 		}
 		ga[i] = a.a
+	}
+	if TraceForTest != nil {
+		TraceForTest(TraceEvent{Op: TraceLaunch, Pipe: p.Ptr(), Cfg: cfg, Args: append([]KernelArg(nil), args...)})
 	}
 	if q.d != nil {
 		q.d.launches.Add(1)

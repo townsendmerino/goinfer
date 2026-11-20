@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestG2R_registered is OP1's real Gemma 2 gate, G2-R, run as registered: the Metal process, reading the CPU side from the file
@@ -23,7 +25,7 @@ import (
 //
 // It prints a verdict block and fails on anything but a pass. Run by run-g2r-split-night.sh, after the CPU process.
 func TestG2R_registered(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	const bar, stopMargin, band = 0.88, 0.001, 0.03
 	ref := g2rLoadRef(t)
 	g2, g3, dense := g2rPaths()

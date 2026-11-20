@@ -3,6 +3,8 @@ package decoder
 import (
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestDeltaNetTiming_gate0Split is Gate D0's sixth-outing split:
@@ -15,7 +17,7 @@ import (
 //	GOINFER_HEAVY_TESTS=1 GOINFER_DELTANET_TIMING=1 \
 //	  go test ./decoder -run TestDeltaNetTiming_gate0Split -v -timeout 30m
 func TestDeltaNetTiming_gate0Split(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if os.Getenv("GOINFER_DELTANET_TIMING") == "" {
 		t.Skip("set GOINFER_DELTANET_TIMING=1 too (this test reports the split, doesn't force it)")
 	}

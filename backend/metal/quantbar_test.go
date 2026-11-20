@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestQuantBar_CPUInt4VsInt8 separates how much of a Metal Gemma parity gap is QUANTIZATION and how much is METAL.
@@ -26,7 +28,7 @@ import (
 // If the fork comes back near 0.99 while Metal stays low, the quantization is exonerated and Metal has a model-specific bug.
 // Both models run so the control calibrates the subject: a bar must be measured on this box rather than assumed.
 func TestQuantBar_CPUInt4VsInt8(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if testing.Short() {
 		t.Skip("loads real models twice each")
 	}

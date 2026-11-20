@@ -6,15 +6,15 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestP0a_webgpuBuildFollowsResolveKV is WebGPU's half of the resolver gate:
 // with the resolver made to deliver f16, then int8, for an auto request, the resident runner takes that precision.
 func TestP0a_webgpuBuildFollowsResolveKV(t *testing.T) {
 	probe, err := New()
-	if err != nil {
-		t.Skipf("no GPU adapter: %v", err)
-	}
+	testgate.RequireDevice(t, "webgpu", err)
 	probe.Close()
 	build := func() (f16, i8 bool) {
 		m, err := decoder.Load("../../testdata/llama-tiny", decoder.Options{Backend: "webgpu", Quant: "int8int8"})

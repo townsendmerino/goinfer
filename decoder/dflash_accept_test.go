@@ -23,6 +23,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // dflashSuite is a fixed, recorded prompt set per traffic class. Small and deterministic
@@ -58,7 +60,7 @@ func overrideOr(v string, fallback func() string) string {
 // TestDFlashAcceptance runs the DFlash block-verify loop over each suite and reports
 // tok/verify. The bar (docs/spec/08 kill-gate 2) is >= 3.0 on at least one suite.
 func TestDFlashAcceptance(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	// PAIRING-PARAMETERIZED. The default is the Qwen3-4B pairing all the recorded numbers
 	// were measured on; the overrides let the SAME harness measure a second pairing without
 	// forking it, which is what keeps two acceptance numbers comparable.

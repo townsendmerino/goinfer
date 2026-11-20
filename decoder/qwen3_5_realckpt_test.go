@@ -36,10 +36,12 @@ import (
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestQwen38Real_gate(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ckpt := assetPath(t, "GOINFER_QWEN38")
 
 	// int4 weights: 27.8B bf16 is 55.6 GB on disk and would not fit alongside f32
@@ -235,7 +237,7 @@ func TestQwen38Real_gate(t *testing.T) {
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestQwen38Real_oracle -v -timeout 60m
 func TestQwen38Real_oracle(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ckpt := assetPath(t, "GOINFER_QWEN38")
 	realLogitOracleQuant(t, ckpt, "../testdata/qwen3_5_real_golden.json.gz", "qwen3_5", "qwen3_5",
 		"HF bf16 (Qwen/Qwen3.8-27B, Qwen3_5ForConditionalGeneration text path; full model via accelerate disk offload; int8 weights, f32 activations)", "int8")

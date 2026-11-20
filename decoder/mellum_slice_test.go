@@ -25,10 +25,12 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestMellumSlice_realWeightOracle(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	const golden = "testdata/mellum_mellum2_slice_golden.json"
 	const ckpt = "testdata/mellum-mellum2-slice"
 

@@ -35,6 +35,8 @@ import (
 	"github.com/townsendmerino/goinfer/internal/audio"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 type s5bIDs struct {
@@ -46,7 +48,7 @@ type s5bIDs struct {
 }
 
 func TestGemma4E2BAudioFull(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	step, out := os.Getenv("GOINFER_S5B_STEP"), os.Getenv("GOINFER_S5B_OUT")
 	if step == "" || out == "" {
 		t.Skip("set GOINFER_S5B_STEP (ids | compare) and GOINFER_S5B_OUT")

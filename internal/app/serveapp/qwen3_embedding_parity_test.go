@@ -8,6 +8,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // Qwen3-Embedding parity gates.
@@ -100,7 +102,7 @@ func findEmbedCheckpointPatterns() []string {
 
 func newQwen3Embedder(t *testing.T, g *embedGolden) *decoderEmbedder {
 	t.Helper()
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := qwen3EmbeddingCheckpoint(t)
 	tk, err := modelload.Tokenizer(path)
 	if err != nil {

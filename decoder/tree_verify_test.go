@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestTreeMaskLinearParity gates the tree-attention primitive: a DEGENERATE tree that
@@ -15,7 +17,7 @@ import (
 // position + ancestor-mask plumbing (cache.treeRowPos/treeMask) is correct before it's
 // used for real EAGLE tree drafting; the nil path stays byte-identical by construction.
 func TestTreeMaskLinearParity(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	home, _ := os.UserHomeDir()
 	basePath := filepath.Join(home, "models", "qwen3-1.7b-q8_0.gguf")
 	if _, err := os.Stat(basePath); err != nil {

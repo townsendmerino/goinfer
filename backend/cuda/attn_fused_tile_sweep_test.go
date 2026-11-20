@@ -13,13 +13,15 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestAttnFusedTile_smallMSweep is the pre-registered threshold sweep of attn-fused-tile128-default-PREREGISTERED.md:
 // attention-only kernel launches, 64x64 vs 128x64 interleaved, per (hd, M, startPos) paired ratio t128/t64. It prints the
 // table and the T the registered rule picks (smallest sweep M such that every M >= T at every startPos has ratio <= 1.03).
 func TestAttnFusedTile_smallMSweep(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := modelPath("qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no model at %s", path)

@@ -11,6 +11,8 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestAttnBlockFull_nonCausal gates the drafter's attention kernel against the one it was copied
@@ -32,7 +34,7 @@ import (
 //	EARLIER ROWS DIFFER — at m < M-1 the causal kernel sees fewer keys, so the outputs must NOT
 //	match. Without this, a kernel that silently kept the causal bound would pass the first check.
 func TestAttnBlockFull_nonCausal(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_CUDA_MODEL")
 	if path == "" {
 		path = os.ExpandEnv("$HOME/models/qwen3-4b")
@@ -168,7 +170,7 @@ func TestAttnBlockFull_nonCausal(t *testing.T) {
 //	GOINFER_HEAVY_TESTS=1 GOINFER_CUDA_MODEL=$HOME/models/qwen3-4b \
 //	  go test -tags 'cuda goinfer_testhooks' -run TestAttnBlockFull_cost -v
 func TestAttnBlockFull_cost(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_CUDA_MODEL")
 	if path == "" {
 		path = os.ExpandEnv("$HOME/models/qwen3-4b")

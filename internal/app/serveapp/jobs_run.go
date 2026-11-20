@@ -112,7 +112,7 @@ func runJob(s *server, lm *loadedModel, release func(), gr genRequest, rec admis
 			log.Append(mustJSON(chatChunk(gr.id, created, lm.name, delta{ReasoningContent: t}, nil)))
 		}
 	}
-	_, _, _, _, _, _, _ = lm.drive(bgCtx, gr, s.gens, s.jobs, func(t string) {
+	_, _ = lm.drive(bgCtx, gr, s.gens, s.jobs, func(t string) {
 		log.Append(mustJSON(chatChunk(gr.id, created, lm.name, delta{Content: t}, nil)))
 	})
 	// drive's own J2/J3 integration (openai.go's job block) already recorded the terminal transition and

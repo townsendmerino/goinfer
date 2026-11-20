@@ -11,6 +11,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // held-out factual prose for teacher-forced scoring (≈200 tokens).
@@ -77,7 +79,7 @@ func top5(p []float64) map[int]bool {
 // Measurement only; loads sequentially (granite f32 ≈ 28 GB RAM each). Deliverable:
 // docs/ssm-int8-quality.md.
 func TestSSMInt8Quality(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	if testing.Short() || os.Getenv("GOINFER_SSM_QUALITY") == "" {
 		t.Skip("ssm int8 quality eval — slow (5 granite loads); set GOINFER_SSM_QUALITY=1")
 	}

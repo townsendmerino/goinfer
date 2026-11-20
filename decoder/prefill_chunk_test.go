@@ -109,7 +109,7 @@ func prefillChunkCell(t *testing.T, m *Model, C int) {
 	}
 	t0, done, total := time.Now(), 0, 4*len(lengths)
 	for _, exact := range []bool{false, true} {
-		m.exactPrefill = exact
+		m.opts.ExactPrefill = exact
 		for _, warm := range []bool{false, true} {
 			var prefix []int
 			if warm {
@@ -140,7 +140,7 @@ func prefillChunkCell(t *testing.T, m *Model, C int) {
 			}
 		}
 	}
-	m.exactPrefill = false
+	m.opts.ExactPrefill = false
 }
 
 func TestPrefillChunked_bitIdentical(t *testing.T) {

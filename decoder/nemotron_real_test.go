@@ -17,10 +17,12 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestNemotronReal_gate(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	gguf := assetPath(t, "GOINFER_NEMOTRON_GGUF")
 
 	m, err := Load(gguf, Options{Quant: "int8int8"})
@@ -98,7 +100,7 @@ func TestNemotronReal_gate(t *testing.T) {
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestNemotronReal_oracle -v -timeout 60m
 func TestNemotronReal_oracle(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ckpt := assetPath(t, "GOINFER_NEMOTRON_HF")
 	realLogitOracle(t, ckpt, "../testdata/nemotron_real_golden.json.gz", "nemotron_h", "nemotron_h",
 		"HF bf16 (NVIDIA-Nemotron-Nano-9B-v2; int8 resident)")

@@ -61,7 +61,7 @@ var probeMeasured = map[string]bool{"cuda": true, "webgpu": true, "metal": true}
 // and whether a probe applies at all.
 func gpuProbeBeforeResident(m *Model) (SelfTestResult, bool) {
 	backend := probeBackendName(m.be)
-	if !probeMeasured[backend] || m.noSelfTest || SelfTestsSkipped() {
+	if !probeMeasured[backend] || m.opts.noSelfTest || SelfTestsSkipped() {
 		return SelfTestResult{}, false
 	}
 	if why, skip := probeIneligible(m.be); skip {

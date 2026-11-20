@@ -35,10 +35,12 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestLagunaGGUF_gate(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := assetPath(t, "GOINFER_LAGUNA_GGUF")
 
 	// int4, NOT the default. goinfer's GGUF loader DEQUANTIZES to f32 unless asked
@@ -48,7 +50,7 @@ func TestLagunaGGUF_gate(t *testing.T) {
 	//
 	// The fit guard is bypassed for this model only, as in TestQwen35GGUF_gate: this gate checks the LOADER's parity,
 	// not memory planning, and the guard prices the mapped checkpoint as resident for the whole load and the KV cache
-	// at the model's full context, which refuses a load this box completes. requireHeavyModel keeps it to the box that
+	// at the model's full context, which refuses a load this box completes. testgate.RequireHeavy keeps it to the box that
 	// holds it.
 	m, err := Load(path, Options{Quant: "int4", Knobs: &Knobs{"GOINFER_NO_FIT_GUARD": "1"}})
 	if err != nil {

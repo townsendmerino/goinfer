@@ -10,6 +10,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/backend/webgpu"
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestMLAResidency_realDeepSeek_R05 is the regression gate for a REAL DeepSeek MLA base (qk head
@@ -26,13 +28,7 @@ import (
 // newDecodeRunner). Point GOINFER_MLA_MODEL at a DeepSeek/Kimi checkpoint (default: the box's
 // V2-Lite GGUF).
 func TestMLAResidency_realDeepSeek_R05(t *testing.T) {
-	// A model happening to be on disk is not a request to run a multi-GB test: the same opt-in as
-	// requireHeavyModel (gpu/heavytest_test.go), which this file, package gpu_test, cannot call
-	// directly. Without it a checkpoint left in ~/models made an ordinary `-short` run try to load a
-	// real DeepSeek-V2-Lite.
-	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
-		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)")
-	}
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_MLA_MODEL")
 	if path == "" {
 		path = os.Getenv("HOME") + "/models/deepseek-v2-lite-gguf/DeepSeek-V2-Lite-Chat-Q4_K_M.gguf"

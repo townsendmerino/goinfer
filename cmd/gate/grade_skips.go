@@ -29,11 +29,24 @@ var skipRules = []struct {
 	{"no-gpu-device", regexp.MustCompile(`(?i)\bgpu\b|\bdevice\b|webgpu|no adapter|headless|no metal|no cuda`)},
 }
 
+// skipTokens are internal/testgate's leading skip tokens (TestClassifySkip_tokensFirst pins the strings): a reason that
+// carries one is bucketed by it before skipRules' wording is read.
+var skipTokens = []struct{ token, bucket string }{
+	{"SKIP-HEAVY:", "heavy-model"},
+	{"SKIP-DEVICE:", "no-gpu-device"},
+	{"SKIP-ASSET:", "missing-fixture"},
+}
+
 // bucketOrder is the REPORT order, deliberately different from the MATCH order above: the report
 // leads with the buckets a release is allowed to be blocked by.
 var bucketOrder = []string{"missing-fixture", "missing-golden", "no-gpu-device", "heavy-model", "integration-env", "other"}
 
 func classifySkip(reason string) string {
+	for _, k := range skipTokens {
+		if strings.Contains(reason, k.token) {
+			return k.bucket
+		}
+	}
 	for _, r := range skipRules {
 		if r.rx.MatchString(reason) {
 			return r.bucket

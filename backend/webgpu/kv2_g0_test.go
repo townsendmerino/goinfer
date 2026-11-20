@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestKV2_G0splitInvariance is G0 on the Mac's WebGPU (docs/measurements/kv2-2026-10-14.md), inside the tiny fixture's
@@ -86,7 +88,7 @@ func TestKV2_G0splitInvariance(t *testing.T) {
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'gpu goinfer_testhooks' -run TestKV2_G0splitInvarianceReal -v ./gpu/
 func TestKV2_G0splitInvarianceReal(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	home, _ := os.UserHomeDir()
 	path := filepath.Join(home, "models", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
 	if _, err := os.Stat(path); err != nil {

@@ -34,6 +34,8 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 type s10mIDs struct {
@@ -43,7 +45,7 @@ type s10mIDs struct {
 }
 
 func TestPixtralFull(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	step, out := os.Getenv("GOINFER_S10M_STEP"), os.Getenv("GOINFER_S10M_OUT")
 	if step == "" || out == "" {
 		t.Skip("set GOINFER_S10M_STEP (ids | compare) and GOINFER_S10M_OUT")

@@ -13,6 +13,8 @@ import (
 
 	gc "github.com/eitamring/gocudrv/cuda"
 	"github.com/townsendmerino/goinfer/internal/vision"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestVisionTowerTiming is R8's committed timing driver ( R8; the P6 driver was a throwaway).
@@ -28,7 +30,7 @@ import (
 //
 //     GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestVisionTowerTiming -v -timeout 30m
 func TestVisionTowerTiming(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	home, _ := os.UserHomeDir()
 	dir := os.Getenv("GEMMA3_4B")
 	if dir == "" {

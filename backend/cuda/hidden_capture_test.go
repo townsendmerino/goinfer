@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestResidentHiddenCapture is the gate on the resident hidden-state seam (P10 increment 4,
@@ -25,7 +27,7 @@ import (
 // gate uses for logits. A wrong tap layer reads as cosine ~0.0-0.5, not 0.99, so the floor
 // separates the failure that matters by a wide margin.
 func TestResidentHiddenCapture(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	gguf := os.Getenv("GOINFER_CUDA_MODEL")
 	if gguf == "" {
 		gguf = os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")

@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestRealModel_parityAndThroughput — the spike's GO/NO-GO: the full real qwen2.5-coder-
@@ -15,7 +17,7 @@ import (
 // forward token-by-token (same int8 weights), and (b) device-timed decode tok/s vs the
 // ~71 GO bar. Skips without the checkpoint.
 func TestRealModel_parityAndThroughput(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	// Default qwen2.5-coder; override to validate other families (Qwen3/Mistral/Phi-3):
 	//   GOINFER_METAL_MODEL=/path/to/qwen3-1.7b-q4_k_m.gguf go test -run TestRealModel...
 	path := os.Getenv("GOINFER_METAL_MODEL")

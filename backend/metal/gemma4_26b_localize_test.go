@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // forwardPagedCaptureForTest replicates forwardLogitsPaged's per-layer walk but captures the residual
@@ -50,7 +52,7 @@ func (r *resident) forwardPagedCaptureForTest(pos int) [][]float32 {
 // the layer's own compute). Quant noise degrades smoothly; a composition bug STEPS. Names the first
 // discontinuity and correlates it with local/global + K=V + geometry. Heavy + paged.
 func TestGemma4_26B_localize(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	giw := modelPath("gemma4-26b-int4.giw") // GOINFER_MODELS_DIR (default $HOME/models); see modelsdir_test.go (G-06)
 	if _, err := os.Stat(giw); err != nil {
 		t.Skipf("no .giw")

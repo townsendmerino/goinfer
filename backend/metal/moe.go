@@ -134,11 +134,14 @@ var moePagedAllSlotsForTest bool
 // declares an MoE FFN. It returns nil when the model is not MoE, and an error for an MoE variant this path does not
 // implement, so BuildResident declines to the CPU rather than running wrong.
 func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*moeResident, error) {
-	nE, k, inter, sharedInter, sigmoid, norm, sharedUngated, scale, nGroup, topkGroup, ok := m.BackendView().MoEParams()
+	spec, ok := m.BackendView().MoE()
 	if !ok {
 		return nil, nil // dense model — no MoE
 	}
-	// Gemma 4's enable_moe_block (gemma4_text, 26B-A4B) sets arch.MoE, so MoEParams reports ok, but it is
+	nE, k, inter, sharedInter := spec.NumExperts, spec.TopK, spec.IntermediateDim, spec.SharedIntermediateDim
+	sigmoid, norm, sharedUngated, scale := spec.RouterSigmoid, spec.NormTopKProb, spec.SharedUngated, spec.RoutedScale
+	nGroup, topkGroup := spec.NGroup, spec.TopkGroup
+	// Gemma 4's enable_moe_block (gemma4_text, 26B-A4B) sets arch.MoE, so MoE reports ok, but it is
 	// not the generic Mixtral/Qwen shape this path implements: it is a parallel dense||MoE FFN with gelu-tanh
 	// experts (gemv_w4a8_moe's epilogue is SiLU), a weightless router pre-norm with a learned [hidden] scale and
 	// per_expert_scale, and seven norms. Building it here would run a wrong MoE. It runs encodeGemma4MoEFFN
@@ -631,6 +634,7 @@ func (r *resident) forwardLogitsMoEPaged(pos int, ropePos ...int) (logits []floa
 	// OOM deep inside expertPool.ensureResident at decode time must not crash the process.
 	defer func() {
 		if p := recover(); p != nil {
+			mem.RepanicBug(p)
 			r.recordExecErr(fmt.Errorf("metal: paged MoE forward aborted: %v", p))
 			logits = nil
 		}

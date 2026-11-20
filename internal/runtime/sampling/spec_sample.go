@@ -10,7 +10,7 @@ import "slices"
 // sampler's distribution exactly (in-distribution lossless), where p is the
 // sampler's *actual* draw distribution — temperature + top-k/top-p/min-p.
 
-// distVector returns the sampler's normalized next-token distribution for one logit row as a full-vocab vector (0
+// DistVector returns the sampler's normalized next-token distribution for one logit row as a full-vocab vector (0
 // outside the kept set, summing to 1): the exact distribution Sample draws from. It is history-independent: it does not
 // apply the repetition, presence or frequency penalties, LogitBias or LogitProcessor (distVectorHist threads the
 // history-dependent ones per position; a LogitProcessor is refused on the speculative path). Greedy (temp <= 0) returns
@@ -46,7 +46,7 @@ func (s *Sampler) distVectorFrom(logits []float32) []float64 {
 	return v
 }
 
-// distVectorHist is distVector with the history-dependent transforms (LogitBias +
+// DistVectorHist is distVector with the history-dependent transforms (LogitBias +
 // repetition/presence/frequency penalties) applied first, over the explicit token
 // history up to — but NOT including — this position. This is the per-position
 // context the speculative verify threads so sampled decoding stays lossless even
@@ -78,7 +78,7 @@ func (s *Sampler) gumbelServes() bool {
 	return s.p.Temperature > 0 && s.p.TopK <= 0 && s.p.TopP <= 0 && s.p.MinP <= 0
 }
 
-// drawTarget draws the TARGET's own next token — the seed token and each round's bonus token — exactly as plain
+// DrawTarget draws the TARGET's own next token — the seed token and each round's bonus token — exactly as plain
 // decoding would: by Gumbel-max for the temperature-only configuration (so the first token of a sampled
 // speculative run equals plain decode's under the same seed, TestNgramSampledFirstTokenMatchesPlain), and by the
 // explicit distribution otherwise. The accept/reject and residual draws stay on the sampler's math/rand stream:
@@ -91,14 +91,14 @@ func (s *Sampler) DrawTarget(logits []float32, history []int) int {
 	return s.drawDist(s.DistVectorHist(logits, history))
 }
 
-// needsHistory reports whether the sampling distribution depends on the token
+// NeedsHistory reports whether the sampling distribution depends on the token
 // history (penalties or logit bias) — i.e. whether the speculative path must
 // thread a per-position history rather than use the plain distVector.
 func (s *Sampler) NeedsHistory() bool {
 	return len(s.p.LogitBias) > 0 || s.penaltiesConfigured()
 }
 
-// specStep performs one lossless rejection-sampling step for a point-mass draft
+// SpecStep performs one lossless rejection-sampling step for a point-mass draft
 // token x against target distribution p (a full normalized vector): accept x with
 // probability p[x]; otherwise return a token drawn from the residual (p with x
 // removed, renormalized). Returns (token, accepted). Consumes one rng draw to

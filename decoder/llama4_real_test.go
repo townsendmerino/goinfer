@@ -19,10 +19,12 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestLlama4Real_gate(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	gguf := assetPath(t, "GOINFER_LLAMA4_GGUF")
 	// THIS MODEL DOES NOT FIT, AND THE GATE OPTS OUT OF THE FIT GUARD ON PURPOSE: at int4 Scout is ~100% of this box's
 	// RAM with nothing left for the KV cache, activations or the OS, so the load-time guard (decoder/fitguard.go) refuses

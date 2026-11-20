@@ -152,9 +152,9 @@ func metalStepInputs(m *decoder.Model) *stepInputs {
 		gemma4Step: m.ResidentGemma4StepOn(wanted), q4k: m.Quant() == "q4k"}
 	in.w4f16Lane = modelKnob(m, "GOINFER_METAL_DECODE_LANE") == "w4f16" && m.Quant() == "int4"
 	in.attnSink = m.BackendView().HasAttnSinks()
-	if nE, _, _, _, _, _, _, _, _, _, ok := m.BackendView().MoEParams(); ok {
+	if mo, ok := m.BackendView().MoE(); ok {
 		n := metalMoESlotsFromEnv(m)
-		in.pagedMoE = n > 0 && (n < nE || moePagedAllSlotsForTest)
+		in.pagedMoE = n > 0 && (n < mo.NumExperts || moePagedAllSlotsForTest)
 	}
 	if P := m.BackendView().Gemma4PLEDim(); P > 0 {
 		in.pleIn = nL * P
@@ -1650,6 +1650,7 @@ func (a *metalResident) prefillByStepSrc(ctx context.Context, src rowSource, sta
 	r := a.r
 	defer func() {
 		if p := recover(); p != nil {
+			mem.RepanicBug(p)
 			logits, err = nil, fmt.Errorf("metal: step prefill aborted: %v", p)
 		}
 	}()

@@ -12,6 +12,8 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestQwen35VLReal_mmproj is P8b's F5a and F5b (docs/multimodal.md, "Finishing this doc"; the Phase 0 amendments are
@@ -27,7 +29,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestQwen35VLReal_mmproj -v -timeout 30m
 func TestQwen35VLReal_mmproj(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	home, _ := os.UserHomeDir()
 	mdir := os.Getenv("GOINFER_MMPROJ_DIR")
 	if mdir == "" {

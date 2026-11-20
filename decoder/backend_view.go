@@ -21,7 +21,7 @@ type BackendModelView interface {
 	Weights() *Weights
 
 	// The per-family resident geometry, each ok=false (zeros) when the model carries no such subsystem.
-	MoEParams() (nE, k, inter, sharedInter int, sigmoid, norm, sharedUngated bool, scale float64, nGroup, topkGroup int, ok bool)
+	MoE() (ResidentMoESpec, bool)
 	MLAParams() (qLoRA, kvLoRA, qkNope, qkRope, vHead int, interleave bool, attnScale, ropeScale float64, ok bool)
 	Qwen35Params() (convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numValueHeads int, attnGate, ok bool)
 	NemotronParams() (nHeads, headDim, dState, nGroups, dConv, normGroups int, attnScale float32, ok bool)
@@ -153,15 +153,13 @@ func (v backendModelView) AttnLogitSoftcap() float32   { return float32(v.m.w.ar
 func (v backendModelView) HasAttnSinks() bool          { return v.m.w.arch.hasAttnSinks() }
 func (v backendModelView) IsGemma4() bool              { return v.m.w.arch.gemma4 != nil }
 func (v backendModelView) ProjsInt4() bool             { return v.m.residentProjsInt4() }
-func (v backendModelView) LoadAbort() <-chan struct{}  { return v.m.loadAbort }
+func (v backendModelView) LoadAbort() <-chan struct{}  { return v.m.opts.LoadAbort }
 
-func (v backendModelView) MoEParams() (nE, k, inter, sharedInter int, sigmoid, norm, sharedUngated bool, scale float64, nGroup, topkGroup int, ok bool) {
-	mo := v.m.ResidentSpec().MoE
-	if mo == nil {
-		return 0, 0, 0, 0, false, false, false, 0, 0, 0, false
+func (v backendModelView) MoE() (ResidentMoESpec, bool) {
+	if mo := v.m.ResidentSpec().MoE; mo != nil {
+		return *mo, true
 	}
-	return mo.NumExperts, mo.TopK, mo.IntermediateDim, mo.SharedIntermediateDim,
-		mo.RouterSigmoid, mo.NormTopKProb, mo.SharedUngated, mo.RoutedScale, mo.NGroup, mo.TopkGroup, true
+	return ResidentMoESpec{}, false
 }
 
 func (v backendModelView) MLAParams() (qLoRA, kvLoRA, qkNope, qkRope, vHead int, interleave bool, attnScale, ropeScale float64, ok bool) {

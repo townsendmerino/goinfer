@@ -534,7 +534,7 @@ func TestMC3_longPrefillChunksWhileOthersDecode(t *testing.T) {
 
 	m, rf := loadWithMC3Fake(t, 4)
 	rf.delay = 3 * time.Millisecond
-	m.prefillChunk = 256 // Options.ResidentPrefillChunk
+	m.opts.ResidentPrefillChunk = 256 // Options.ResidentPrefillChunk
 	m.EnableResidentConcurrency(4)
 	var got0, got1, gotNew []int
 	var wg sync.WaitGroup

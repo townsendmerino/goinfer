@@ -18,10 +18,12 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestGraniteReal_gate(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	// assetPath, not a hand-rolled env+fallback: the registry is what makes this gate and the sweep preflight apply the
 	// SAME predicate to the same candidate paths, and a required gate whose presence check disagrees with the preflight's
 	// is a SKIP nobody can attribute.
@@ -160,7 +162,7 @@ func graniteGGUFvsOracle(t *testing.T, m *Model) {
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestGraniteReal_oracle -v -timeout 60m
 func TestGraniteReal_oracle(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ckpt := assetPath(t, "GOINFER_GRANITE_HF")
 	realLogitOracle(t, ckpt, "../testdata/granite_real_golden.json.gz", "granitemoehybrid", "granitemoehybrid",
 		"HF bf16 (Granite-4.0-H-Tiny 7B-A1B; int8 resident)")

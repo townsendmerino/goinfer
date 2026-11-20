@@ -10,6 +10,8 @@ import (
 	"github.com/townsendmerino/aikit/encoder"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // Decoder-as-embedder gates.
@@ -27,7 +29,7 @@ var _ encoder.Encoder = (*decoderEmbedder)(nil)
 
 func newTestDecoderEmbedder(t *testing.T) *decoderEmbedder {
 	t.Helper()
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	p := os.ExpandEnv("$HOME/models/Qwen3-0.6B-Q8_0.gguf")
 	if _, err := os.Stat(p); err != nil {
 		t.Skipf("no checkpoint at %s", p)
@@ -268,7 +270,7 @@ func TestDecoderEmbedder_emptyInput(t *testing.T) {
 // decoder.NewBackend falls back to CPU for every non-cpu name, but RequestedBackend() records what
 // Options.Backend was at load time regardless.
 func TestLoadDecoderEmbedder_requestedBackendReachesTheLoad(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	p := os.ExpandEnv("$HOME/models/Qwen3-0.6B-Q8_0.gguf")
 	if _, err := os.Stat(p); err != nil {
 		t.Skipf("no checkpoint at %s", p)
@@ -291,7 +293,7 @@ func TestLoadDecoderEmbedder_requestedBackendReachesTheLoad(t *testing.T) {
 // TestLoadDecoderEmbedder_noBackendConfiguredStaysCPU: an unset -backend must still normalize to "cpu"
 // (decoder.NewBackend's "" → cpu rule), not request some other backend by accident.
 func TestLoadDecoderEmbedder_noBackendConfiguredStaysCPU(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	p := os.ExpandEnv("$HOME/models/Qwen3-0.6B-Q8_0.gguf")
 	if _, err := os.Stat(p); err != nil {
 		t.Skipf("no checkpoint at %s", p)
@@ -312,7 +314,7 @@ func TestLoadDecoderEmbedder_noBackendConfiguredStaysCPU(t *testing.T) {
 // decoder.Load's parseQuant as unknown, a hard load failure, so loadDecoderEmbedder must translate "q8" to
 // "int8". Audit M-17.
 func TestLoadDecoderEmbedder_embedQuantQ8MapsToInt8(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	p := os.ExpandEnv("$HOME/models/Qwen3-0.6B-Q8_0.gguf")
 	if _, err := os.Stat(p); err != nil {
 		t.Skipf("no checkpoint at %s", p)

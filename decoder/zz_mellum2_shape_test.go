@@ -2,6 +2,8 @@ package decoder
 
 import (
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestMellum2SliceShape reports which FFN path the sliced checkpoint actually
@@ -13,7 +15,7 @@ import (
 // paths have IDENTICAL MAC counts and differ only in batching efficiency.
 func TestMellum2SliceShape(t *testing.T) {
 	path := assetPath(t, "GOINFER_MELLUM_CKPT")
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	m, err := Load(path, Options{Quant: "int8int8"})
 	if err != nil {
 		t.Fatalf("Load: %v", err)

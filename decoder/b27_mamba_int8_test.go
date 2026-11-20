@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // B27's tier 0: a quantized Nemotron-H load holds its Mamba
@@ -262,7 +264,7 @@ func TestB27_cpuFidelityTiny(t *testing.T) {
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -run '^TestB27_cpuFidelitySlice$' -v ./decoder/
 func TestB27_cpuFidelitySlice(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_NEMOTRON_SLICE_GGUF")
 	if path == "" {
 		home, _ := os.UserHomeDir()

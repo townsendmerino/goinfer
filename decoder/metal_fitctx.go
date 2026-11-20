@@ -42,7 +42,7 @@ func (m *Model) MetalFitCtx(in MetalFitInput) MetalFit {
 	if w := m.Config().MaxPositions; w > 0 && candidate > w {
 		candidate = w
 	}
-	load := m.deviceLoad("metal", false, false, true)
+	load := m.deviceLoad("metal", PlanRequest{CtxPinned: true})
 	kv := load.KV
 	load.KV = func(ctx int) int64 { return kv(ctx) + m.MetalKVTableRaiseBytes(in.KVSlots, ctx) } // the tables at the raised cap, once
 	a := mem.SolveMetalCtx(mem.MetalCtxLoad{
@@ -61,7 +61,7 @@ func MetalFitWhy(slots int, kvBytes int64) string { return mem.MetalFitWhy(slots
 // of them as fit (MetalLoadPlan's KVSlots).
 func (m *Model) MetalKVSlotsWanted() int {
 	n := m.ResidentKVSlotsRequestFor("metal")
-	if m.resSlotsDef && n > MetalDefaultKVSlots {
+	if m.opts.ResidentKVSlotsDefault && n > MetalDefaultKVSlots {
 		n = MetalDefaultKVSlots
 	}
 	return max(n, 1)

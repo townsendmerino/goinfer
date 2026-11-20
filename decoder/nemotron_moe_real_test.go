@@ -24,10 +24,12 @@ import (
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestNemotron3NanoMoEReal_gate(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	gguf := assetPath(t, "GOINFER_NEMOTRON3NANO_GGUF")
 
 	m, err := Load(gguf, Options{Quant: "int8"}) // int8 WEIGHTS, f32 activations — see T3

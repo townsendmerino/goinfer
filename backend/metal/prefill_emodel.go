@@ -75,6 +75,7 @@ func (r *resident) prefillEModelSrc(src rowSource, startPos int, head bool) (log
 	defer runtime.UnlockOSThread()
 	defer func() {
 		if p := recover(); p != nil {
+			mem.RepanicBug(p)
 			r.recordExecErr(fmt.Errorf("metal: E-model layer-major prefill aborted: %v", p))
 			logits = nil
 		}

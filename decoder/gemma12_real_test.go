@@ -20,10 +20,12 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 func TestGemma12Real_gate(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	raw, err := readGolden("../testdata/gemma12_real_golden.json.gz")
 	if err != nil {
 		t.Skipf("no golden (%v): run scripts/pin_gemma12_real.py", err)

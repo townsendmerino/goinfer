@@ -14,6 +14,8 @@ import (
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestDecodeArgmaxHeadroom bounds what an on-device argmax for the greedy path could recover.
@@ -33,7 +35,7 @@ import (
 //	GOINFER_DECODE_GGUF=~/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf \
 //	  go test -tags 'gpu goinfer_testhooks' ./gpu/ -run TestDecodeArgmaxHeadroom -v
 func TestDecodeArgmaxHeadroom(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_DECODE_GGUF")
 	if path == "" {
 		path = os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")

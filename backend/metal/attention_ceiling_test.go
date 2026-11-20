@@ -7,6 +7,8 @@ import (
 	"math"
 	"math/rand"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestAttentionKernelsPastTileBound is what keeps metalCtxCapMax (32768) a fact for decode: the three decode attention
@@ -21,9 +23,7 @@ import (
 // (TestPrefill_exactAttentionDeclinesPast4096Keys).
 func TestAttentionKernelsPastTileBound(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
-	if err != nil {
-		t.Skipf("no metal device: %v", err)
-	}
+	testgate.RequireDevice(t, "metal", err)
 	defer d.ReleaseObjects()
 	lib, err := d.CompileLibrary(allKernels+kvF32Kernels, MSL3_1)
 	if err != nil {

@@ -8,10 +8,14 @@
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./decoder/ -run TestQwen3MoeReal_oracle -v -timeout 90m
 package decoder
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
+)
 
 func TestQwen3MoeReal_oracle(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ckpt := assetPath(t, "GOINFER_QWEN3MOE_HF")
 	// int8 WEIGHTS, f32 ACTIVATIONS as the starting quant, not int8int8: this family routes 8 of 128 experts (6.25%), the same
 	// order of sparsity as nemotron_h's MoE variant, which hit a real router-flip cliff at int8 activations.

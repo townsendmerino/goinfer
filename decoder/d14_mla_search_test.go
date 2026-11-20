@@ -11,13 +11,15 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestD14_mlaProjSearch runs the DeepSeek family gate with one MLA projection held f32 and the rest int8, per arm named in
 // GOINFER_D14_ARMS ("q,kva,o", "all8" for every projection int8), and logs at each continuation step the logit gap between the
 // golden's token and the token taken. D14's search (docs/measurements/mem11-int8-2026-10/mla.md); the verdict is the gate's.
 func TestD14_mlaProjSearch(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	arms := os.Getenv("GOINFER_D14_ARMS")
 	if arms == "" {
 		t.Skip("GOINFER_D14_ARMS unset")
@@ -96,7 +98,7 @@ func d14Gaps(t *testing.T, ckpt, golden string) {
 // two loads interleaved A B B A in one process, GOINFER_D14_SPEED_PAIRS pairs of 32 tokens each. A cell started with the 1-minute
 // load average above 8.0 is VOID and re-run in place (CLAUDE.md, "Run budget"). D14's speed reading, not a gate.
 func TestD14_mlaSpeedAB(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	pairs, _ := strconv.Atoi(os.Getenv("GOINFER_D14_SPEED_PAIRS"))
 	if pairs == 0 {
 		t.Skip("GOINFER_D14_SPEED_PAIRS unset")

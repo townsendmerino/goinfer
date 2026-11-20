@@ -9,6 +9,8 @@ import (
 
 	gc "github.com/eitamring/gocudrv/cuda"
 	"github.com/townsendmerino/goinfer/internal/vision"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestVisionEncoder_forwardPatchesReleasesDeviceScratch is M-18's gate (docs/audit-2026-09-10.md): ForwardPatches must
@@ -20,7 +22,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' ./cuda/ -run TestVisionEncoder_forwardPatchesReleasesDeviceScratch -v -timeout 10m
 func TestVisionEncoder_forwardPatchesReleasesDeviceScratch(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	home, _ := os.UserHomeDir()
 	dir := os.Getenv("GEMMA3_4B")
 	if dir == "" {

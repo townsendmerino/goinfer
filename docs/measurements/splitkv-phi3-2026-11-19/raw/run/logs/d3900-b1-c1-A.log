@@ -1,0 +1,11 @@
+splitkv-scratch: kvF16Auto restored to true (serve's --kv auto)
+goos: linux
+goarch: amd64
+pkg: github.com/townsendmerino/goinfer/backend/cuda
+cpu: AMD Ryzen 7 3700X 8-Core Processor             
+BenchmarkResidentDecode
+cuda: prefill width 2048 rows (282 MiB of scratch; 3064 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (282 MiB of scratch; 3064 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+BenchmarkResidentDecode-16    	     128	  17187258 ns/op	        62.23 tok/s
+PASS
+ledger: 2 device(s) released in this run

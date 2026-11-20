@@ -73,7 +73,7 @@ func TestVsumSplitGateVsReference(t *testing.T) {
 	if testing.Short() {
 		t.Skip("long-running gate: skipped in -short")
 	}
-	if strings.TrimSpace(os.Getenv("GOINFER_SPLITKV_VSUM_SPLIT")) == "" {
+	if vsumSplitFromEnv(t) == 0 {
 		t.Skip("set GOINFER_SPLITKV_VSUM_SPLIT=4 — the spike pipelines are loaded at backend setup, " +
 			"so without it there is no spike arm to score and the gate would compare the exact path to itself")
 	}

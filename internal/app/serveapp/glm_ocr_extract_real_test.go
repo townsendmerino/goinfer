@@ -17,6 +17,8 @@ import (
 	"github.com/townsendmerino/goinfer/internal/app/loadflags"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestServe_glmOcrExtraction_O5 is O5's serve gate, on the real GLM-OCR checkpoint (CPU, int4: about two minutes, most of it
@@ -41,7 +43,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags realckpt ./internal/app/serveapp/ -run TestServe_glmOcrExtraction_O5 -v -timeout 20m 2>&1 | tee /tmp/glm-ocr-extract.log
 func TestServe_glmOcrExtraction_O5(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	ckpt := filepath.Join(os.Getenv("HOME"), "models", "glm-ocr")
 	if _, err := os.Stat(filepath.Join(ckpt, "config.json")); err != nil {
 		t.Skipf("asset missing: %s", ckpt)

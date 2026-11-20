@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // The CUDA half of optimistic-forward, which was designed and verified entirely on Metal.
@@ -29,7 +31,7 @@ import (
 // Metal run, which used the 0.5B.
 func loadOptFwdModel(t *testing.T) *decoder.Model {
 	t.Helper()
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_CUDA_MODEL")
 	if path == "" {
 		path = os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")

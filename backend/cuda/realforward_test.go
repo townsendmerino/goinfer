@@ -12,6 +12,8 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // gemvFwdPTX and gluePTX are defined in kernels.go (shared with the production backend).
@@ -21,7 +23,7 @@ import (
 // at every prompt position (token-identical). Weights extracted via the BuildResident seam,
 // driver-JIT'd kernels, CGO_ENABLED=0. This is the line between "benchmarked" and "shipped".
 func TestRealForwardParity(t *testing.T) {
-	requireHeavyModel(t)
+	testgate.RequireHeavy(t)
 	gguf := os.Getenv("GOINFER_CUDA_MODEL")
 	if gguf == "" {
 		gguf = os.ExpandEnv("$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf")
