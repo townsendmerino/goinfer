@@ -1,0 +1,263 @@
+[
+ {
+  "cell": "decode 0.5B @128",
+  "valid": true,
+  "problems": [],
+  "voids_rerun": [],
+  "native_tok_s_median": 521.2,
+  "webgpu_tok_s_median": 236.6,
+  "fraction": {
+   "median": 0.4538,
+   "min": 0.4515,
+   "max": 0.4564,
+   "n": 4
+  },
+  "decode_paths": [
+   "cuda-resident (int4)",
+   "webgpu:vulkan-resident (int4)"
+  ]
+ },
+ {
+  "cell": "decode 0.5B @2048",
+  "valid": true,
+  "problems": [],
+  "voids_rerun": [],
+  "native_tok_s_median": 447.2,
+  "webgpu_tok_s_median": 58.0,
+  "fraction": {
+   "median": 0.1296,
+   "min": 0.1293,
+   "max": 0.13,
+   "n": 4
+  },
+  "decode_paths": [
+   "cuda-resident (int4)",
+   "webgpu:vulkan-resident (int4)"
+  ]
+ },
+ {
+  "cell": "decode 1.5B @128",
+  "valid": true,
+  "problems": [],
+  "voids_rerun": [],
+  "native_tok_s_median": 277.1,
+  "webgpu_tok_s_median": 141.9,
+  "fraction": {
+   "median": 0.512,
+   "min": 0.5112,
+   "max": 0.5132,
+   "n": 4
+  },
+  "decode_paths": [
+   "cuda-resident (int4)",
+   "webgpu:vulkan-resident (int4)"
+  ]
+ },
+ {
+  "cell": "decode 1.5B @2048",
+  "valid": true,
+  "problems": [],
+  "voids_rerun": [],
+  "native_tok_s_median": 250.1,
+  "webgpu_tok_s_median": 42.3,
+  "fraction": {
+   "median": 0.1691,
+   "min": 0.1691,
+   "max": 0.1692,
+   "n": 4
+  },
+  "decode_paths": [
+   "cuda-resident (int4)",
+   "webgpu:vulkan-resident (int4)"
+  ]
+ },
+ {
+  "cell": "decode 7B @128",
+  "valid": true,
+  "problems": [],
+  "voids_rerun": [],
+  "native_tok_s_median": 86.1,
+  "webgpu_tok_s_median": 64.2,
+  "fraction": {
+   "median": 0.7451,
+   "min": 0.7445,
+   "max": 0.7456,
+   "n": 4
+  },
+  "decode_paths": [
+   "cuda-resident (int4)",
+   "webgpu:vulkan-resident (int4)"
+  ]
+ },
+ {
+  "cell": "decode 7B @2048",
+  "valid": true,
+  "problems": [],
+  "voids_rerun": [],
+  "native_tok_s_median": 79.2,
+  "webgpu_tok_s_median": 30.9,
+  "fraction": {
+   "median": 0.3893,
+   "min": 0.3884,
+   "max": 0.3902,
+   "n": 4
+  },
+  "decode_paths": [
+   "cuda-resident (int4)",
+   "webgpu:vulkan-resident (int4)"
+  ]
+ },
+ {
+  "cell": "TTFT 0.5B @1024",
+  "valid": true,
+  "problems": [],
+  "voids_rerun": [],
+  "native_ttft_ms_median": 62.3,
+  "webgpu_ttft_ms_median": 628.1,
+  "fraction": {
+   "median": 0.0993,
+   "min": 0.0977,
+   "max": 0.1014,
+   "n": 4
+  },
+  "prompt_tokens": [
+   1052
+  ],
+  "repeat_over_fresh": [
+   [
+    "native",
+    0.333
+   ],
+   [
+    "webgpu",
+    0.02
+   ],
+   [
+    "webgpu",
+    0.018
+   ],
+   [
+    "native",
+    0.331
+   ],
+   [
+    "native",
+    0.327
+   ],
+   [
+    "webgpu",
+    0.02
+   ],
+   [
+    "webgpu",
+    0.021
+   ],
+   [
+    "native",
+    0.322
+   ]
+  ]
+ },
+ {
+  "cell": "TTFT 1.5B @1024",
+  "valid": true,
+  "problems": [],
+  "voids_rerun": [],
+  "native_ttft_ms_median": 168.9,
+  "webgpu_ttft_ms_median": 1433.5,
+  "fraction": {
+   "median": 0.1178,
+   "min": 0.1162,
+   "max": 0.1199,
+   "n": 4
+  },
+  "prompt_tokens": [
+   1052
+  ],
+  "repeat_over_fresh": [
+   [
+    "native",
+    0.192
+   ],
+   [
+    "webgpu",
+    0.012
+   ],
+   [
+    "webgpu",
+    0.012
+   ],
+   [
+    "native",
+    0.191
+   ],
+   [
+    "native",
+    0.193
+   ],
+   [
+    "webgpu",
+    0.012
+   ],
+   [
+    "webgpu",
+    0.011
+   ],
+   [
+    "native",
+    0.195
+   ]
+  ]
+ },
+ {
+  "cell": "TTFT 7B @1024",
+  "valid": true,
+  "problems": [],
+  "voids_rerun": [],
+  "native_ttft_ms_median": 760.5,
+  "webgpu_ttft_ms_median": 4234.4,
+  "fraction": {
+   "median": 0.1796,
+   "min": 0.1786,
+   "max": 0.1798,
+   "n": 4
+  },
+  "prompt_tokens": [
+   1052
+  ],
+  "repeat_over_fresh": [
+   [
+    "native",
+    0.1
+   ],
+   [
+    "webgpu",
+    0.006
+   ],
+   [
+    "webgpu",
+    0.006
+   ],
+   [
+    "native",
+    0.1
+   ],
+   [
+    "native",
+    0.1
+   ],
+   [
+    "webgpu",
+    0.006
+   ],
+   [
+    "webgpu",
+    0.006
+   ],
+   [
+    "native",
+    0.099
+   ]
+  ]
+ }
+]
