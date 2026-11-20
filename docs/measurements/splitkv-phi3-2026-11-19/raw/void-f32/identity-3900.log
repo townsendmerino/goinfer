@@ -1,0 +1,12 @@
+=== RUN   TestSplitKVPhi3Identity
+cuda: prefill width 2048 rows (282 MiB of scratch; 1528 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+kv=[{Cache:resident Requested:auto Delivered:f32 Reason:auto is f32 on CUDA in this build}] actGroup=32
+cuda: prefill width 2048 rows (282 MiB of scratch; 1528 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+kv=[{Cache:resident Requested:auto Delivered:f32 Reason:auto is f32 on CUDA in this build}] actGroup=32
+launches: A split-KV 0 flash 0; B split-KV 126848 flash 0
+positions teacher-forced [3700,3900) + free 64: bit-identical steps 264/264 (first diff step -1); teacher-forced argmax agree 200/200, max|dlogit| 0, min cosine 1.000000000; free greedy common prefix 64/64
+free A: [29879 29871 13 13 29877 874 291 29892 29900 29892 29900 29877 874 13 13 13 13 13 29879 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13]
+free B: [29879 29871 13 13 29877 874 291 29892 29900 29892 29900 29877 874 13 13 13 13 13 29879 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13 13]
+--- PASS: TestSplitKVPhi3Identity (108.67s)
+PASS
+ledger: 2 device(s) released in this run

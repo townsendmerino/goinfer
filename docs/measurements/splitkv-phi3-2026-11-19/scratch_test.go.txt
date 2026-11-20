@@ -1,0 +1,130 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+import (
+	"fmt"
+	"math"
+	"os"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/tokenizer"
+)
+
+// init restores serve's --kv auto (f16 for a cleared family such as phi3) when SPLITKV_SERVE_AUTO=1. The suite pins it false in
+// kv16_default_test.go's init, which runs before this file's (files initialise in name order), so BenchmarkResidentDecode would
+// otherwise time an f32 cache that serve never loads for Phi-3.
+func init() {
+	if os.Getenv("SPLITKV_SERVE_AUTO") == "1" {
+		kvF16Auto.Store(true)
+		fmt.Fprintln(os.Stderr, "splitkv-scratch: kvF16Auto restored to true (serve's --kv auto)")
+	}
+}
+
+// TestSplitKVPhi3Identity loads the Phi-3 GGUF twice, arm A (stock) then arm B (GOINFER_SPLITKV_MIN_KEYS=0), and compares
+// full last-position logits: teacher-forced over prose positions [tfFrom, tfTo), then a free greedy run of freeSteps
+// tokens from tfTo. Scratch instrument for docs/measurements/splitkv-phi3-2026-11-19 (not committed as a test).
+func TestSplitKVPhi3Identity(t *testing.T) {
+	requireCUDADevice(t)
+	path := os.Getenv("GOINFER_BENCH_MODEL")
+	if path == "" {
+		t.Skip("set GOINFER_BENCH_MODEL")
+	}
+	tfFrom, tfTo, freeSteps := 3700, 3900, 64
+	if os.Getenv("SPLITKV_ID_SHALLOW") != "" {
+		tfFrom, tfTo = 64, 128
+	}
+	tk, err := tokenizer.LoadGGUF(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, files := decoder.PrefillGatePromptSet()
+	ids := decoder.PrefillGateProseIDsForTest(t, tk, files[0], tfTo)
+	type run struct {
+		logits [][]float32
+		free   []int
+		sk, fa int
+	}
+	arm := func(knobs *decoder.Knobs) run {
+		m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "q4k", ResidentContext: tfTo + 1024, Knobs: knobs})
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		defer m.Close()
+		r, ok := m.ResidentForwardForTest().(*cudaResident)
+		if !ok {
+			t.Fatalf("no CUDA resident: %s", m.ResidentDecline())
+		}
+		fmt.Fprintf(os.Stderr, "kv=%+v actGroup=%d\n", m.KVPrecisionReports(), m.ActQuantGroup())
+		if reps := m.KVPrecisionReports(); os.Getenv("SPLITKV_SERVE_AUTO") == "1" && (len(reps) == 0 || reps[0].Delivered != "f16") {
+			t.Fatalf("SPLITKV_SERVE_AUTO=1 but the resident KV is %+v, not f16", reps)
+		}
+		var out run
+		for pos := 0; pos < tfTo; pos++ {
+			lg, err := r.Forward(m.EmbedResidentForTest(ids[pos]), pos)
+			if err != nil {
+				t.Fatalf("pos %d: %v", pos, err)
+			}
+			if pos >= tfFrom {
+				out.logits = append(out.logits, append([]float32(nil), lg...))
+			}
+		}
+		next := argmaxF32(out.logits[len(out.logits)-1])
+		for i := 0; i < freeSteps; i++ {
+			out.free = append(out.free, next)
+			lg, err := r.Forward(m.EmbedResidentForTest(next), tfTo+i)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out.logits = append(out.logits, append([]float32(nil), lg...))
+			next = argmaxF32(lg)
+		}
+		out.sk, out.fa = r.skLaunches, r.faLaunches
+		return out
+	}
+	a := arm(nil)
+	b := arm(&decoder.Knobs{"GOINFER_SPLITKV_MIN_KEYS": "0"})
+	fmt.Fprintf(os.Stderr, "launches: A split-KV %d flash %d; B split-KV %d flash %d\n", a.sk, a.fa, b.sk, b.fa)
+	if a.sk != 0 || b.sk == 0 {
+		t.Errorf("arm check failed: A split-KV launches %d (want 0), B %d (want > 0)", a.sk, b.sk)
+	}
+	nTF := tfTo - tfFrom
+	identical, agree, maxD, minCos, firstDiff := 0, 0, 0.0, 1.0, -1
+	for i := range a.logits {
+		same := true
+		for j := range a.logits[i] {
+			if d := math.Abs(float64(a.logits[i][j] - b.logits[i][j])); d > 0 {
+				same = false
+				if i < nTF && d > maxD {
+					maxD = d
+				}
+			}
+		}
+		if same {
+			identical++
+		} else if firstDiff < 0 {
+			firstDiff = i
+		}
+		if i < nTF {
+			if argmaxF32(a.logits[i]) == argmaxF32(b.logits[i]) {
+				agree++
+			}
+			if c := cosine64(a.logits[i], b.logits[i]); c < minCos {
+				minCos = c
+			}
+		}
+	}
+	freeSame := 0
+	for i := range a.free {
+		if a.free[i] == b.free[i] {
+			freeSame++
+		} else {
+			break
+		}
+	}
+	fmt.Fprintf(os.Stderr, "positions teacher-forced [%d,%d) + free %d: bit-identical steps %d/%d (first diff step %d); "+
+		"teacher-forced argmax agree %d/%d, max|dlogit| %.6g, min cosine %.9f; free greedy common prefix %d/%d\n",
+		tfFrom, tfTo, freeSteps, identical, len(a.logits), firstDiff, agree, nTF, maxD, minCos, freeSame, freeSteps)
+	fmt.Fprintf(os.Stderr, "free A: %v\nfree B: %v\n", a.free, b.free)
+}

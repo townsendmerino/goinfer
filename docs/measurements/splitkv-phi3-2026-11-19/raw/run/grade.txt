@@ -1,0 +1,31 @@
+void cells:
+  d128 b1 c2 B 2026-11-19T14:07:58-08:00: foreign go:35951 (tok/s 117.3)
+  d128 b1 c3 B 2026-11-19T14:08:05-08:00: foreign go:35951 (tok/s 121.7)
+
+depth 128: 10 valid pairs
+  block 1 (re-run 101) pair A1B1: A 126.0 B 122.0 B/A 0.9683
+  block 1 (re-run 101) pair B2A2: A 126.4 B 122.1 B/A 0.9660
+  block 2 pair A1B1: A 125.9 B 121.8 B/A 0.9674
+  block 2 pair B2A2: A 126.2 B 121.8 B/A 0.9651
+  block 3 pair A1B1: A 126.2 B 121.8 B/A 0.9651
+  block 3 pair B2A2: A 125.9 B 122.0 B/A 0.9690
+  block 4 pair A1B1: A 126.2 B 121.9 B/A 0.9659
+  block 4 pair B2A2: A 126.3 B 122.0 B/A 0.9660
+  block 5 pair A1B1: A 126.3 B 122.0 B/A 0.9660
+  block 5 pair B2A2: A 126.4 B 122.0 B/A 0.9652
+  median B/A 0.9660; B faster on 0/10; min 0.9651 max 0.9690
+
+depth 3900: 10 valid pairs
+  block 1 pair A1B1: A 62.2 B 65.4 B/A 1.0511
+  block 1 pair B2A2: A 62.2 B 65.2 B/A 1.0485
+  block 2 pair A1B1: A 62.0 B 65.3 B/A 1.0522
+  block 2 pair B2A2: A 62.1 B 65.2 B/A 1.0514
+  block 3 pair A1B1: A 62.2 B 65.3 B/A 1.0501
+  block 3 pair B2A2: A 62.1 B 65.2 B/A 1.0509
+  block 4 (re-run 104) pair A1B1: A 62.5 B 65.8 B/A 1.0520
+  block 4 (re-run 104) pair B2A2: A 62.5 B 65.8 B/A 1.0517
+  block 5 pair A1B1: A 62.5 B 65.7 B/A 1.0518
+  block 5 pair B2A2: A 62.5 B 65.8 B/A 1.0525
+  median B/A 1.0515; B faster on 10/10; min 1.0485 max 1.0525
+
+verdict: KILL (128 median under 0.98)
