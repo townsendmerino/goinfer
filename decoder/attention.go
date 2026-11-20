@@ -295,8 +295,8 @@ func softcapScore(s, c float64) float64 {
 }
 
 // attnScoreStatsForTest, when set, counts the scores softcapScore caps: how many, how many past |15|, and the largest
-// |score|, before the cap. OP1's real Gemma 2 gate reads it ( G2-R's
-// planted arm). Set only through StartAttnScoreStatsForTest (goinfer_testhooks); nil costs one atomic load per capped
+// |score|, before the cap. The real Gemma 2 gate (TestG2R_registered) reads it
+// for its planted arm. Set only through StartAttnScoreStatsForTest (goinfer_testhooks); nil costs one atomic load per capped
 // score and nothing for a model without a cap.
 var attnScoreStatsForTest atomic.Pointer[attnScoreStats]
 

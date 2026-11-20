@@ -228,7 +228,7 @@ type tokenizerJSON struct {
 	// Decoder.Type selects the pipeline family: "ByteLevel" → modeByteLevel
 	// (GPT-2/Qwen/Llama-3), anything else → modeGemma (SentencePiece-style). A
 	// "Sequence" whose every member is ByteLevel counts as ByteLevel (LFM2-VL's
-	// tokenizer.json wraps its one ByteLevel decoder so; S10).
+	// tokenizer.json wraps its one ByteLevel decoder so).
 	Decoder struct {
 		Type     string `json:"type"`
 		Decoders []struct {
@@ -1008,7 +1008,7 @@ func (t *Tokenizer) DecodePiece(id int) (string, error) {
 // Special tokens render as their literal surface form. A grammar masks that surface out only where it
 // is illegal in context (a literal '<' outside a JSON string): INSIDE a JSON string value it is
 // ordinary printable text and is NOT masked. Known limitation, deferred: see constrain.Masker's
-// maskID and docs/audit-2026-09-10.md (N-79).
+// maskID and docs/code-notes/constrain.md#Masker.maskID.
 func (t *Tokenizer) TokenText(id int) []byte {
 	if id < 0 || id >= len(t.idToPiece) {
 		return nil

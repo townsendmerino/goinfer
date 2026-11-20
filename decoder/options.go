@@ -117,7 +117,7 @@ type Options struct {
 	ExactPrefill bool
 	// ResidentKVSlots asks a GPU-resident backend for this many independent KV caches ("slots"), so several interleaved
 	// conversations each keep their own prefix resident instead of evicting one another's.
-	// Still one generation at a time unless MC3 is enabled: a slot is bound per generation. 0 or 1 = one slot. A backend clamps it
+	// Still one generation at a time unless the batched decode is enabled (EnableResidentConcurrency): a slot is bound per generation. 0 or 1 = one slot. A backend clamps it
 	// to what its fit guard allows and says so; a backend that does not implement KVSlotterAvailable, and every family with
 	// recurrent state, keep one slot. serve sets it from -kv-sessions.
 	ResidentKVSlots int
@@ -150,7 +150,7 @@ type Options struct {
 	// encoder with the front of its dense FFN batched, bit-identical to the single-token forward.
 	// It costs the step's scratch. Only Metal reads it.
 	ResidentGemma4Step bool
-	// ResidentPrefillChunk, under MC3 (EnableResidentConcurrency), prefills a long prompt suffix in chunks of this many tokens
+	// ResidentPrefillChunk, under the batched decode (EnableResidentConcurrency), prefills a long prompt suffix in chunks of this many tokens
 	// while other generations are decoding, one decode step between chunks, instead of in one pass that stalls them all for the
 	// whole prompt. 0 = off: whole prefill. Sound only where the resident's batched
 	// prefill is chunk-invariant (Metal's is: TestMC5_prefillChunkInvariance). serve defaults it to 512, the graded value

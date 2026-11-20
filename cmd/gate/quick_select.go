@@ -1031,7 +1031,7 @@ func needle(rel string) string {
 //
 // A read by a path assembled at run time outside the module root, including a walk of the whole parent from
 // a computed root, stays the cache's blind spot, exactly as it is for a hand-typed `go test`; that is the
-// risk TE7(b) accepted for day loops.
+// risk accepted for day loops.
 func (r *testRoot) crossModuleReader(root, rel string) string {
 	modRel := r.Mod.Dir
 	if modRel == "." || rel == modRel || strings.HasPrefix(rel, modRel+"/") {

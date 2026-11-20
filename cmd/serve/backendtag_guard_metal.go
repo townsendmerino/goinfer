@@ -1,6 +1,6 @@
 //go:build metal
 
-// See backendtag_guard_cuda.go for the rationale (M-19: the root cmd/serve builds no backend,
+// See backendtag_guard_cuda.go for the rationale (the root cmd/serve builds no backend,
 // so `-tags metal` on it silently yields a CPU binary). This makes it a build failure naming
 // the Metal submodule entrypoint. Metal is GOOS=darwin-gated (no `-tags metal` required on the
 // entrypoint itself), so the replacement command omits the tag.

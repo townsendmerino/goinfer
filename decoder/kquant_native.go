@@ -107,8 +107,8 @@ func kquantServes(dims []int, ok bool, in int, src kquantSrc, rows int) bool {
 // Package-level because Weights is copied by value in places, and loads are few.
 var kquantMu sync.Mutex
 
-// kquantNativeOff empties every backend's kquantLane, so a load keeps the int8 copies on the device and in its pricing: KS-O1's
-// old arm. Set only by a test (SetKQuantNativeOffForTest).
+// kquantNativeOff empties every backend's kquantLane, so a load keeps the int8 copies on the device and in its pricing: the arm
+// without the native K-quant lane. Set only by a test (SetKQuantNativeOffForTest).
 var kquantNativeOff atomic.Bool
 
 // kquantLane is the weights backend's q4k lane uploads as the file's Q5_K and Q6_K blocks (KQuantReader) in place of their

@@ -39,7 +39,7 @@ func classifyChecks(res *results, checks []gateCheck, ledger func(string) string
 			mark = "FAIL - but in neverConfirmed (NOT a blocker): " + lists.NeverConfirmed[g.Test]
 			gaps++
 		case act == "fail":
-			// THE FOURTH OUTCOME (B14). A gate failing with no confirmed prior result is asserting a
+			// THE FOURTH OUTCOME. A gate failing with no confirmed prior result is asserting a
 			// DELTA IT HAS NO SECOND POINT TO COMPUTE, so it is an ITEM, not a blocker — the change
 			// that made a failure visible is the one change that provably did not cause it. This is
 			// about ATTRIBUTION, not harmlessness: the first observed value must not be banked as a
@@ -151,7 +151,7 @@ func whyNoResult(test string, cells []cell) string {
 // family test outside the checkset leaves the verdict reading ALL REQUIRED GATES GREEN.
 //
 // EXACT match, unlike catchAllSkips' containment: a test whose name merely CONTAINS a gate name is a
-// different test, and hiding its failure is the defect. Exactness also keeps B14 intact: a named gate's
+// different test, and hiding its failure is the defect. Exactness also keeps the fourth outcome intact: a named gate's
 // FIRST-RUN failure matches exactly, so it is excluded here and stays an ITEM.
 func unlistedFailures(res *results, checks []gateCheck) []string {
 	named := map[string]bool{}

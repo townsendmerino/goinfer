@@ -34,7 +34,7 @@ type kdaWeights struct {
 type kdaState struct {
 	convWinQ, convWinK, convWinV [][]float32
 	s                            []float32
-	hq                           w4a8Act // h quantized once for q, k, v, f and g (R-13); rewritten every step
+	hq                           w4a8Act // h quantized once for q, k, v, f and g; rewritten every step
 }
 
 func newKDAState(p kdaParams) *kdaState {

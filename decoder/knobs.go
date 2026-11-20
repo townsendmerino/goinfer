@@ -39,7 +39,7 @@ const (
 	// A rollback switch.
 	knobMoEPreadCPU = "GOINFER_MOE_PREAD_CPU"
 
-	// Forces genNgramInto's adaptive round loop to never yield to a batch: a diagnostic for the MC4 "spec inside a batch"
+	// Forces genNgramInto's adaptive round loop to never yield to a batch: a diagnostic for the "spec inside a batch"
 	// measurement, not a shipped policy.
 	knobSpecAdaptiveNeverYield = "GOINFER_SPEC_ADAPTIVE_NEVER_YIELD"
 )

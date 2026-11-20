@@ -42,7 +42,7 @@ func Verify(out string, m *Model, ws []*Writeup, drafts bool) error {
 			}
 		}
 	}
-	// Home links chapter 11 of the book prominently (task-site-2026-09.md, S1 amendment 2026-09-30).
+	// Home links chapter 11 of the book prominently.
 	home, err := read("index.html")
 	if err != nil {
 		return fmt.Errorf("verify: the Home page is missing: %w", err)
@@ -90,7 +90,7 @@ func Verify(out string, m *Model, ws []*Writeup, drafts bool) error {
 	} else if !strings.Contains(dl, "built without release data") {
 		bad = append(bad, "download: a build without release data must say so on the page")
 	}
-	// H6: the page says what goinfer has been run on, from the same list every speed is gated on, and where to report.
+	// The page says what goinfer has been run on, from the same list every speed is gated on, and where to report.
 	for _, mc := range m.Machines {
 		if !strings.Contains(dl, html.EscapeString(mc.Label)) {
 			bad = append(bad, fmt.Sprintf("download: the page never names machine %q, which speeds are measured on", mc.Label))

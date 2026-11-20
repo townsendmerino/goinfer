@@ -6,9 +6,8 @@ import (
 	"github.com/townsendmerino/goinfer/internal/cost"
 )
 
-// The CPU's cost counters (SB11, internal/cost). They are keyed by the program's operation kinds, the unit OP4's walker will emit
-// for every backend: when it lands, the walker records the operation and a backend adds only the device counts beneath it
-// (launches, syncs, leases). Bytes are what an operation reads from weights, the KV cache and its input registers, and writes to
+// The CPU's cost counters (internal/cost). They are keyed by the program's operation kinds, so a program walker can record
+// the operation and a backend add only the device counts beneath it (launches, syncs, leases). Bytes are what an operation reads from weights, the KV cache and its input registers, and writes to
 // its output registers and the cache; its internal scratch is not counted. The CPU launches nothing and never syncs, so those
 // are a true 0; allocations are not counted on the CPU (listed unmeasured).
 

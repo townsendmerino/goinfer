@@ -66,7 +66,7 @@ type Template struct {
 	render func(system string, turns []Turn) []Segment
 	stops  []string
 
-	// bos is a BOS token the checkpoint's template emits first and the family's renderer does not (S10, LFM2: ChatML after
+	// bos is a BOS token the checkpoint's template emits first and the family's renderer does not (LFM2: ChatML after
 	// {{- bos_token -}}), prepended as a Special segment; "" for none. Detect sets it (chatMLBOS).
 	bos string
 

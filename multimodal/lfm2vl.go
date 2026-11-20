@@ -134,7 +134,7 @@ func lfm2VLTargetRatios(minT, maxT int) [][2]int {
 	return r
 }
 
-// lfm2VLNoAreaRule, when set, keeps the first of equally close grids (HF's area test dropped): S10's planted defect for
+// lfm2VLNoAreaRule, when set, keeps the first of equally close grids (HF's area test dropped): a planted defect for
 // the tie-break.
 var lfm2VLNoAreaRule bool
 
@@ -298,7 +298,7 @@ type Lfm2VLProjector struct {
 func (p *Lfm2VLProjector) TextHidden() int { return p.textHidden }
 
 // lfm2VLUnshuffleChannelMajor, when set, lays each unit out channel-major (Pixtral's merger order) instead of HF's
-// position-major pixel unshuffle: S10's planted defect for this projector.
+// position-major pixel unshuffle: a planted defect for this projector.
 var lfm2VLUnshuffleChannelMajor bool
 
 // LoadLfm2VLProjector reads the projector from a checkpoint directory (config.json and the safetensors).

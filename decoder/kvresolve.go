@@ -82,7 +82,7 @@ func ResolveKV(backend string, arch *Architecture, opts Options) (delivered, rea
 	return mem.ResolveKV(q)
 }
 
-// KVRefusal is Load's refusal of an explicit KV precision the path the load resolved to cannot deliver (D1 of the task doc).
+// KVRefusal is Load's refusal of an explicit KV precision the path the load resolved to cannot deliver.
 type KVRefusal struct {
 	Path      string // "cuda", "metal", "webgpu" (the resident cache) or "cpu"
 	Requested string
@@ -112,7 +112,7 @@ func kvRefusal(path string, arch *Architecture, opts Options) *KVRefusal {
 
 // cudaKVF16Delivered lists the families whose every KV-touching CUDA path has an f16 kernel: `--kv f16` is delivered for them whatever
 // the quality reads (the precision doc's contract, item 4). A family group joins with its exact-input identity and delivered-bytes gates
-// (docs/measurements/kv4-cuda-2026-10-21.md §2, G5), never by compiling.
+// (docs/measurements/kv4-cuda-2026-10-21.md § "f16 pools, per family group"), never by compiling.
 func cudaKVF16Delivered(f KVFacts) bool {
 	switch f.Family {
 	case "llama", "mistral", "qwen2", "qwen3", "phi3", "qwen2_moe", "qwen3_moe", "mixtral", "gemma2", "gemma3", "gpt-oss", "cohere",
@@ -123,8 +123,9 @@ func cudaKVF16Delivered(f KVFacts) bool {
 	return false
 }
 
-// cudaKVF16AutoCleared reports whether `--kv auto` puts a delivered model on f16 KV on CUDA: the families whose quality gate passed (the
-// owner's D7: f16 becomes the default for each family group as it clears its G4, docs/measurements/kv4-cuda-2026-10-21.md §2, G5). A
+// cudaKVF16AutoCleared reports whether `--kv auto` puts a delivered model on f16 KV on CUDA: the families whose quality gate passed (f16
+// becomes the default for each family group as it clears its quality gate against f32, docs/measurements/kv4-cuda-2026-10-21.md
+// § "f16 pools, per family group"). A
 // model carrying any trait whose group has not cleared stays f32 under auto, whatever else it carries; f16 is delivered on request.
 func cudaKVF16AutoCleared(f KVFacts) bool {
 	if f.SlidingWindow || f.PairwiseRoPE || f.Hybrid || f.MLA {
@@ -151,7 +152,7 @@ func CUDAKVF16Decline(f KVFacts, _ Options) string {
 }
 
 // CUDAKVF16AutoDecline returns why `--kv auto` keeps a model CUDAKVF16Decline lets through at f32 on CUDA, or "" when auto picks f16.
-// A group whose G4 read DOES NOT PASS says so, with the reading (docs/measurements/kv4-cuda-2026-10-21.md §3, "KV4b (G5), G4").
+// A group whose quality read DOES NOT PASS says so, with the reading (docs/measurements/kv4-cuda-2026-10-21.md §3, Readings).
 func CUDAKVF16AutoDecline(f KVFacts, o Options) string {
 	switch {
 	case cudaKVF16AutoCleared(f):
@@ -171,7 +172,8 @@ func CUDAKVF16AutoDecline(f KVFacts, o Options) string {
 }
 
 // cudaKVI8Families are the families CUDA's int8 cache is delivered for: the dense ones, whose every path the _kv8 kernels and the
-// quantizing store cover (docs/measurements/cuda-kv-i8-2026-11/scope.md, S2). A family joins with its own identity and delivered-bytes gates.
+// quantizing store cover (docs/measurements/cuda-kv-i8-2026-11/scope.md, § "the int8 cache delivered on the dense families"). A
+// family joins with its own identity and delivered-bytes gates.
 var cudaKVI8Families = []string{"llama", "mistral", "qwen2", "qwen3", "phi3"}
 
 // CUDAKVI8Decline returns why a CUDA resident cannot hold this model's KV cache as int8 under o, or "" when it can. Every refusal names what
@@ -209,7 +211,7 @@ func (m *Model) kvPath() string {
 }
 
 // kvDeliveredOrRefuse is Load's check, once residency is decided, that every explicit precision the load asked for is the one its
-// caches hold (D1). The CPU cache is checked as well under an adapter, whose session path takes it beside a resident.
+// caches hold. The CPU cache is checked as well under an adapter, whose session path takes it beside a resident.
 func (m *Model) kvDeliveredOrRefuse() error {
 	if m.w == nil {
 		return nil

@@ -6,10 +6,10 @@ import (
 	"sync"
 )
 
-// S8: which GPU towers each backend's build
-// registers, declared once, here. The README and docs/multimodal.md support table's tower cells are computed from this
-// declaration (decoder's support-table drift test), and each backend module's test proves its live registrations equal
-// its row, so a tower added or dropped without the table following fails a test rather than a reader.
+// Which GPU towers each backend's build registers, declared once, here. The README and docs/multimodal.md support
+// table's tower cells are computed from this declaration (decoder's support-table drift test), and each backend
+// module's test proves its live registrations equal its row, so a tower added or dropped without the table following
+// fails a test rather than a reader.
 
 // Tower families, as the support table and the declaration name them.
 const (
@@ -18,8 +18,8 @@ const (
 	TowerQwen3           = "qwen3"           // the Qwen3.5+ and Qwen3-VL grid tower (RegisterQwen3Tower)
 	TowerGlmOcr          = "glm-ocr"         // GLM-OCR's grid tower (RegisterGlmOcrTower)
 	TowerGemma4          = "gemma4-vision"   // Gemma 4's vision tower (RegisterGemma4Tower)
-	TowerPixtral         = "pixtral"         // Ministral 3's Pixtral tower (S10; CPU only, no backend declares it)
-	TowerSiglip2NaFlex   = "siglip2-naflex"  // LFM2-VL's SigLIP2 NaFlex tower (S10; CPU only, no backend declares it)
+	TowerPixtral         = "pixtral"         // Ministral 3's Pixtral tower (CPU only, no backend declares it)
+	TowerSiglip2NaFlex   = "siglip2-naflex"  // LFM2-VL's SigLIP2 NaFlex tower (CPU only, no backend declares it)
 	TowerGemma4Audio     = "gemma4-audio"    // Gemma 4's audio tower (embeddinggemma2.RegisterAudioAccelerator)
 	TowerEmbeddingGemma2 = "embeddinggemma2" // EmbeddingGemma 2's text accelerator (embeddinggemma2.RegisterAccelerator)
 )
@@ -44,8 +44,7 @@ func DeclaredTower(backend, family string) bool {
 }
 
 // DefaultTowerOnDevice reports whether backend runs family's tower on the device when the user asks for nothing: every tower
-// the build declares (DeclaredTower). WebGPU's towers were opt-in until their speed gates read and the default was applied (S12-defaults);
-// serve's -vision-device cpu keeps a tower on the CPU.
+// the build declares (DeclaredTower), WebGPU's included; serve's -vision-device cpu keeps a tower on the CPU.
 func DefaultTowerOnDevice(backend, family string) bool {
 	return DeclaredTower(backend, family)
 }
@@ -77,7 +76,7 @@ func ResidentTowers(family string) []string {
 
 // LiveTowers is the tower families a build has registered for device, from the live registries: the named ones
 // (Gemma4Towers, Qwen3Towers, GlmOcrTowers) and the resident marks (MarkResidentTower), plus extra (the embeddinggemma2
-// accelerators, which this package cannot import, passed by the caller), sorted. Each backend module's S8 test compares it
+// accelerators, which this package cannot import, passed by the caller), sorted. Each backend module's tower-declaration test compares it
 // with DeclaredTowers.
 func LiveTowers(device string, extra ...string) []string {
 	var t []string

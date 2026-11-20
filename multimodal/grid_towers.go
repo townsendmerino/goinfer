@@ -22,8 +22,8 @@ type GridTowerAccelerator interface {
 	Close() error
 }
 
-// GridTowerTapper is a GridTowerAccelerator that can also return chosen blocks' outputs: Qwen3-VL's DeepStack taps
-// (S10). A device tower without it cannot run a DeepStack tower (the sets would be lost).
+// GridTowerTapper is a GridTowerAccelerator that can also return chosen blocks' outputs: Qwen3-VL's DeepStack taps.
+// A device tower without it cannot run a DeepStack tower (the sets would be lost).
 type GridTowerTapper interface {
 	HiddenTaps(pixels []float32, gridTHW [][3]int, blocks []int) (last []float32, taps [][]float32, err error)
 }

@@ -2,7 +2,7 @@
 //
 // This root binary is CPU-only by design: it imports NONE of the opt-in GPU/CUDA/Metal
 // backend modules, so the pure-Go module graph stays free of cgo/webgpu/purego/gocudrv
-// (audit M-19 — a pure-Go consumer must not resolve the GPU dependency set). The server
+// (a pure-Go consumer must not resolve the GPU dependency set). The server
 // logic lives in the importable internal/serveapp package; the opt-in accelerated builds
 // are separate binaries that blank-import a backend before calling the same entrypoint:
 //

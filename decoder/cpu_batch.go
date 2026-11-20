@@ -6,20 +6,20 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// MC3c step 2: several CPU generations of one model decoding at once join their
+// The batched CPU decode: several CPU generations of one model decoding at once join their
 // decode tokens into one batched forward (decodeMultiStep) instead of running N independent forwards. Measurements:
 // docs/measurements/concurrency-mc2-2026-09-26.md.
 //
-// The coalescing is MC3's (tokenCoalescer, mc3_batch.go): a run starts once every decoding generation has submitted
+// The coalescing is the resident batcher's (tokenCoalescer, mc3_batch.go): a run starts once every decoding generation has submitted
 // its token, or when the straggler window expires. A run of at least two tokens is one decodeMultiStep; a lone token is
 // production's own m.forward, so a request served alone takes exactly today's path. Unlike the resident batcher there
-// is nothing to hold exclusively: prefill and every non-batched path run outside it, as under step 1.
+// is nothing to hold exclusively: prefill and every non-batched path run outside it, as under the independent CPU workers.
 
 // CPUBatchDecode values (Options.CPUBatchDecode).
 const (
 	CPUBatchAuto = 0  // batch an eligible model with at least cpuBatchAutoMinBytes of dense weights
 	CPUBatchOn   = 1  // batch every eligible model
-	CPUBatchOff  = -1 // never batch: step 1's independent workers
+	CPUBatchOff  = -1 // never batch: the independent CPU workers
 )
 
 // cpuBatchAutoMinBytes is CPUBatchAuto's threshold, pre-registered. Batching beats the independent workers on 7B-class
@@ -28,15 +28,15 @@ const (
 // docs/measurements/concurrency-mc2-2026-09-26.md.
 const cpuBatchAutoMinBytes = 2 << 30
 
-// cpuBatcher is a Model's MC3c step-2 coordinator (Model.EnableCPUBatch).
+// cpuBatcher is a Model's batched-CPU-decode coordinator (Model.EnableCPUBatch).
 type cpuBatcher struct {
 	tokenCoalescer
 	m *Model
 }
 
-// EnableCPUBatch turns on MC3c step 2 for up to n concurrent CPU generations of this model and reports whether it did.
-// Call it before any generation starts; each call decides afresh. It stays off, and generations run as step 1's independent workers, when:
-//   - n < 2, or the model decodes on a GPU resident (MC3 is that path's batching);
+// EnableCPUBatch turns on the batched CPU decode for up to n concurrent CPU generations of this model and reports whether it did.
+// Call it before any generation starts; each call decides afresh. It stays off, and generations run as independent CPU workers, when:
+//   - n < 2, or the model decodes on a GPU resident (the resident batcher is that path's batching);
 //   - Options.CPUBatchDecode is CPUBatchOff;
 //   - the family is outside decodeMultiStep's scope (cpuBatchModelEligible);
 //   - under CPUBatchAuto: the model's dense weights are under cpuBatchAutoMinBytes.
@@ -157,7 +157,7 @@ func w4a8FusedOps(ops []linalg.W4A8Op, ws []*linalg.WeightMat, dsts [][]float32)
 	return group, ws[0].ActQuantGroup(), true
 }
 
-// decodeMultiStep is MC3c step 2's batched step: one forward carrying B independent sequences, each with its own KV
+// decodeMultiStep is the batched CPU decode's step: one forward carrying B independent sequences, each with its own KV
 // cache at its own position, one token each. The projections, o-proj, MLP and LM head run as M = B matmuls through the
 // kernels forwardN uses (bit-identical to M = 1 row for row, by forwardN's own contract). Attention runs per sequence
 // over its own cache, exactly as attendToken's default (f32 KV, append-forever) case does at decode. Every row's

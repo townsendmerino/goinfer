@@ -91,7 +91,7 @@ func medianOf(runs string) (float64, error) {
 
 func fnum(p *float64) string { return strconv.FormatFloat(*p, 'f', -1, 64) }
 
-// CheckClaims is the claims check (S8b): every figure the site shows must be in the repo file it cites, under the
+// CheckClaims is the claims check: every figure the site shows must be in the repo file it cites, under the
 // heading it cites, and the claim's date must be there too. It is what stops a number from drifting away from its
 // source, or from being typed in from memory: the site's own speeds failed it the first time it ran.
 func CheckClaims(root string, in *Inputs) error {

@@ -1475,7 +1475,7 @@ func LoadGGUFBytes(raw []byte, opts Options) (*Model, error) {
 		return nil, err
 	}
 	if beErr != nil {
-		logs.Warnf("%v", beErr) // webgpu requested but fell back — not fatal (N-03: stderr, not stdout — never contaminate a piped token stream)
+		logs.Warnf("%v", beErr) // webgpu requested but fell back — not fatal (stderr, not stdout — never contaminate a piped token stream)
 	}
 	m := modelFromOptions(w, be, opts)
 	m.quant = opts.Quant

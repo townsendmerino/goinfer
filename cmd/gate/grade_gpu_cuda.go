@@ -74,7 +74,7 @@ func gradeCUDASuite(cr cellResult, skipped []string, out string) groupVerdict {
 // gradeCUDAParity grades the resident parity cell. A failure whose text holds a cosine of exactly zero also prints the
 // all-zero-buffer note with freeVRAM, the card's free memory the runner read after the cell ("" reads "unknown"): an all-zero
 // buffer is what a failed allocation leaves, so it is not by itself a parity result. The note states the reading and points
-// at the A12 entry; it names no mechanism (docs/code-notes/cmd-gate.md, "vramNote").
+// at its docs/QUEUE.md entry; it names no mechanism (docs/code-notes/cmd-gate.md, "vramNote").
 func gradeCUDAParity(cr cellResult, out, freeVRAM string) groupVerdict {
 	if cr.RC == 0 {
 		return groupVerdict{State: groupPass,

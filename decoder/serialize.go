@@ -1274,7 +1274,7 @@ func (w *giwWriter) v6Layer(l *LayerWeights) {
 	} else {
 		w.raw([]byte{1})
 		m := l.mla
-		w.mambaProj(m.qAProj, &m.qAQ) // a quantized load's int8 projections as weight records, else f32 arrays (MEM11-int8)
+		w.mambaProj(m.qAProj, &m.qAQ) // a quantized load's int8 projections as weight records, else f32 arrays
 		w.f32(m.qALayernorm)
 		w.mambaProj(m.qBProj, &m.qBQ)
 		w.mambaProj(m.qProj, &m.qQ)

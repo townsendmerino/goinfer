@@ -19,11 +19,11 @@ type gpuRunInputs struct {
 	Backend           string `json:"backend"`
 	MetalModel        string `json:"metal_model,omitempty"`
 	MetalModelPresent bool   `json:"metal_model_present,omitempty"`
-	// CgoFree and WebGPU are the cgofree group's build and linkage and the WebGPU adapter probe; a record before SB12 step 9
+	// CgoFree and WebGPU are the cgofree group's build and linkage and the WebGPU adapter probe; an older record
 	// holds neither, and the replay then does not regrade those groups.
 	CgoFree *cgoFreeInput      `json:"cgo_free,omitempty"`
 	WebGPU  *webgpuProbeRecord `json:"webgpu,omitempty"`
-	// CleanGPU, Repo, RunnerNotes and Verdict are the remaining groups' inputs and the verdict's (SB12 step 10): the notes the
+	// CleanGPU, Repo, RunnerNotes and Verdict are the remaining groups' inputs and the verdict's: the notes the
 	// runner made before any group, and what the verdict block prints beyond the tally. A record that holds them regrades in
 	// full.
 	CleanGPU    *cleanGPUInput    `json:"clean_gpu,omitempty"`
@@ -33,7 +33,7 @@ type gpuRunInputs struct {
 	// ParityFreeVRAM is the card's free memory the CUDA runner read after a failed parity cell whose text held a cosine of
 	// exactly zero (gradeCUDAParity), as nvidia-smi printed it; "" when it did not read it.
 	ParityFreeVRAM string `json:"parity_free_vram,omitempty"`
-	// PTX is the ptx group's input (readPTX); a record before SB12 step 11 holds none, and the replay then does not regrade
+	// PTX is the ptx group's input (readPTX); an older record holds none, and the replay then does not regrade
 	// the group.
 	PTX *ptxInput `json:"ptx,omitempty"`
 	// Heavy is the heavy tier's input (readHeavy) with each main-group process's memory and the tier's wall time; a record
@@ -59,8 +59,8 @@ func (g *gpuGate) writeGPURunRecord() {
 // replayGPU regrades the gpu gate's moved groups from a run record through the sequence the run used, and prints their
 // sections as the run did.
 //   - A record holding every group's inputs and the verdict's replays in full: the groups from the clean-GPU check, then the
-//     verdict block, with the verdict's exit code. On CUDA that includes the ptx and heavy groups' inputs (SB12 steps 11 and
-//     12); a CUDA record without them regrades as an earlier record does.
+//     verdict block, with the verdict's exit code. On CUDA that includes the ptx and heavy groups' inputs; a CUDA
+//     record without them regrades as an earlier record does.
 //   - An earlier record regrades the groups it holds, then names the rest. It gives no gate verdict, which needs every group:
 //     it exits 1 when a regraded group failed or a regraded cell was empty or all-skip (the live gate's tally fails those
 //     even where the group passed), 0 otherwise.
@@ -145,7 +145,7 @@ func replayGPU(w io.Writer, path string) int {
 	return 0
 }
 
-// partialFullInputs names the full replay's inputs (SB12 step 10) a record lacks: none for a full record, all three for an
+// partialFullInputs names the full replay's inputs a record lacks: none for a full record, all three for an
 // earlier one, and any other count for a record that is neither.
 func partialFullInputs(in *gpuRunInputs) []string {
 	var missing []string
