@@ -780,33 +780,30 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 	var rb strings.Builder
 	s.routeThink(lm, &gr, tm, turns, ts, func(t string) { rb.WriteString(t) })
 	var (
-		text                          string
-		calls                         []chat.ToolCall
-		lead                          string
-		finish, stopSeq, cancelReason string
-		nComp, reused                 int
-		gerr                          error
-		fromReasoning                 bool
+		text          string
+		calls         []chat.ToolCall
+		lead          string
+		res           turnResult
+		gerr          error
+		fromReasoning bool
 	)
 	if toolsActive {
 		// The shared tool turn (tool_turn.go) — buffered here: nothing to stream on this path.
 		var t toolTurn
 		t, gerr = s.runToolTurn(r.Context(), lm, gr, tools, nil, nil)
-		text, calls, lead, finish, stopSeq, cancelReason, nComp, reused = t.raw, t.calls, t.lead, t.finish, t.stopSeq, t.cancelReason, t.nComp, t.reused.Tokens
+		text, calls, lead, res = t.raw, t.calls, t.lead, t.turnResult
 		fromReasoning = t.fromReasoning && len(t.calls) > 0
 	} else {
 		var sb strings.Builder
-		var ru prefillReuse
-		finish, nComp, _, stopSeq, ru, cancelReason, gerr = lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
-		reused = ru.Tokens
+		res, gerr = lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 		text = sb.String()
 	}
 	if gerr != nil {
 		writeAnthropicErr(w, http.StatusInternalServerError, "api_error", "generation failed: "+gerr.Error())
 		return
 	}
-	if cancelReason != "" {
-		writeAnthropicErr(w, statusCancelled, "cancelled", "generation cancelled: "+cancelReason)
+	if res.cancelReason != "" {
+		writeAnthropicErr(w, statusCancelled, "cancelled", "generation cancelled: "+res.cancelReason)
 		return
 	}
 
@@ -836,7 +833,7 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		if !(thinking && text == "") {
 			content = append(content, textBlock(text))
 		}
-		reason, seq = anthropicStopReason(finish, stopSeq)
+		reason, seq = anthropicStopReason(res.finish, res.stopHit)
 	}
 
 	msg := map[string]any{
@@ -847,9 +844,9 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		"content":       content,
 		"stop_reason":   reason,
 		"stop_sequence": seq,
-		"usage":         anthropicUsage(len(gr.promptIDs), reused, nComp),
+		"usage":         anthropicUsage(len(gr.promptIDs), res.reused.Tokens, res.nComp),
 	}
-	if e := emptyAnswerOf(gr, finish, stopSeq, len(calls), nComp); e != nil {
+	if e := emptyAnswerOf(gr, res.finish, res.stopHit, len(calls), res.nComp); e != nil {
 		msg["goinfer_empty_answer"] = e
 	}
 	if fromReasoning {
