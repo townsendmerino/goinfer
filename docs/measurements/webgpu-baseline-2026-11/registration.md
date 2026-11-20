@@ -77,6 +77,22 @@ fixed. Stopping rule: fixed N, no early stop. Ambiguous band: none (no decision 
 with Francis). **Cost:** decode 6 steps × 8 cells × ~30–40 s, TTFT 3 × 8 cells × ~45 s, plus settles: **about 60–75 minutes**,
 started when the lock frees (expected ~12:15 PST), finish ~13:30 PST. Over 2 h of machine time stops for Francis's call.
 
+## Amendment 2026-11-20 11:22 PST, before any timed run: the longest context that fits (descriptive, no gate)
+
+Francis, 2026-11-20 (goinfer-notes #14, relayed by the coordinator at 11:21 PST): also record, per model, the longest context
+that fits on WebGPU beside CUDA, from each server's own fit banner, with no extra timed runs: the user-visible cost of WebGPU's
+f32 KV cache on an 8 GB card. [`run-nobara.sh`](run-nobara.sh) now runs these probes after the fit checks and before the timed
+cells, untimed, into `ctxfit.tsv` and `fit/ctxfit-*.log`:
+
+- **Default plan:** each backend's banner with no `-ctx` and the default KV slots (`fit:` and `KV plan:` lines), `-quant int4`.
+- **One conversation:** `-kv-sessions 1 -require-backend`, `-ctx` from the model's window (32768) down a ladder (CUDA 32768,
+  28672, 24576, 20480, 16384, 12288, 8192, 4096; WebGPU 32768, 16384, 12288, 8192, 4096), the first rung that loads resident.
+  WebGPU ignores a `-ctx` above its backend cap (serve's `-ctx` help), so its row reads the positions from the banner, not from
+  the rung. Each row names the KV precision the banner states (CUDA's `auto` is f16 for Qwen2.5; WebGPU's is f32), and whether
+  the limit is memory or the backend's cap.
+
+A column in the record, beside the timed cells; nothing is graded on it.
+
 ## The Mac half (not run by this session): WebGPU against Metal, the 0.5B and 1.5B
 
 By day under the exclusive lock with Francis's apps closed, or queued for night per the overlay. From a clean detached
@@ -100,6 +116,8 @@ python3 scripts/timing_lock.py run --wait 3600 --label wg0-mac-ttft -- env WG0_R
   --models 0.5B,1.5B --quads 2 --n 6 --ctx 4096
 python3 <this directory>/grade.py $R
 ```
+
+The Mac half also takes the longest-context rows (the amendment above), Metal beside WebGPU: the same two probes with `serve-metal` (`-backend metal`) and `serve-webgpu`, the 0.5B and 1.5B, untimed, before its timed cells.
 
 The Mac's own idle gate (`BENCH_IDLE_GATE=instant`, the darwin default) and the void rule apply. The Mac rows are a separate
 registration's to grade only if this text turns out not to fit the Mac (an amendment here, dated, before its run).
