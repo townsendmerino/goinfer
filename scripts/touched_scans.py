@@ -188,6 +188,7 @@ SCANS = [
     Scan("internal/layout", "TestCUDASoloShapes_takeTodaysCalls", F("backend/cuda/resident.go", "backend/cuda/gumbel.go")),
     Scan("internal/runtime/mem", "TestSolve_pure", NT("internal/runtime/mem")),
     Scan("internal/runtime/mem", "TestNoGuardThresholdOutsideMem", TREE_NT),
+    Scan("internal/runtime/mem", "TestRecover_everyBroadRecoverLetsABugThrough", TREE_NT),
     Scan("internal/runtime/mem/probe", "TestProbeImports", NT("internal/runtime/mem/probe")),
     # internal/testgate is imported by _test.go files only, in every module (its env reads are test-only).
     Scan("internal/testgate", "TestNoProductionImporter", TREE_GO),

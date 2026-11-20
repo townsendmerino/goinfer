@@ -159,8 +159,6 @@ that are not operator-facing. These may change or disappear without notice:
 `GOINFER_DELTANET_TIMING`,
 `GOINFER_MOE_CACHE_PROF`,
 `GOINFER_FAKEQUANT_ACT`, `GOINFER_FAKEQUANT_EXPERTS`,
-`GOINFER_SSM_NOMUL`, `GOINFER_SSM_Q8CPU`,
-`GOINFER_SSM_SKIPFFN`,
 `GOINFER_GEMMA4_RESIDENT` (M-56, audit-2026-09-10.md: a Gemma-4 bring-up gate that is now a
 no-op — `decoder/gemma4_admission_test.go` pins that admission is unconditional regardless of
 its value; kept only so tests can still force both branches while the code path exists),
@@ -264,7 +262,9 @@ isolate the fast path; result in docs/completed/mellum2-resident.md), and turned
 `FAKEQUANT_PERROW` into test seams (package variables their tests set; no env read). The later clean-up of code whose
 record says it didn't pay removed `SSM_W8A16` and `SSM_F16MAMBA` with the WebGPU paths they selected
 (docs/ssm-int8-quality.md), and `CUDA_L01_CPU_OFFLOAD` with the L-01 prototype
-(docs/measurements/l01-funding-cell-2026-09-21.md). Setting any of them now does nothing.
+(docs/measurements/l01-funding-cell-2026-09-21.md). The code-quality pass of 2026-11-19 deleted the one-off SSM isolation
+seams `SSM_NOMUL` and `SSM_SKIPFFN`, and made `SSM_Q8CPU` a test seam only (`decoder.SetSSMQ8CPU`). Setting any of them
+now does nothing.
 
 ## CI & test gates
 

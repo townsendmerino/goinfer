@@ -4,7 +4,6 @@ package cuda
 
 import (
 	"fmt"
-	"strings"
 	"unsafe"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
@@ -77,7 +76,7 @@ var loraPanicAfterForTest int
 func (r *cudaResident) upLora(v []float32) Buffer {
 	if loraAllocFailAfterForTest > 0 {
 		if loraAllocFailAfterForTest--; loraAllocFailAfterForTest == 0 {
-			panic("cuda: device allocation failed (test seam): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY")
+			panic(allocFailureForTest())
 		}
 	}
 	if loraPanicAfterForTest > 0 {
@@ -192,7 +191,7 @@ func (r *cudaResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 func (r *cudaResident) uploadLoraLayers(built []cudaLoraLayer, layers []decoder.ResidentAdapterLayer) (err error) {
 	defer func() {
 		if v := recover(); v != nil {
-			if !strings.Contains(fmt.Sprint(v), "device allocation failed") {
+			if !mem.DeviceAllocFailed(v) {
 				panic(v)
 			}
 			err = fmt.Errorf("cuda: SetAdapter: %v", v)

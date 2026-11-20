@@ -12,6 +12,7 @@ import (
 	"sync"
 	"unsafe"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -1246,6 +1247,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// partial device state. The backend wrapper keeps its own recover() as defence in depth.
 	defer func() {
 		if p := recover(); p != nil {
+			mem.RepanicBug(p)
 			res, err = nil, fmt.Errorf("metal: BuildResident panicked: %v", p)
 		}
 	}()

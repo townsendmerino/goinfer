@@ -70,7 +70,7 @@ type VisionEncoder struct {
 // matching cudaResident's own reqCh/ackCh discipline (CUDA contexts are thread-affine).
 func (ve *VisionEncoder) do(j func() error) error {
 	ve.reqCh <- j
-	return <-ve.ackCh
+	return ackJob(<-ve.ackCh)
 }
 
 // NewVisionEncoder uploads a loaded SigLIP tower (vision.LoadEncoder(dir, quant=true) +
@@ -81,6 +81,7 @@ func (ve *VisionEncoder) do(j func() error) error {
 func NewVisionEncoder(w vision.GPUWeights) (ve *VisionEncoder, err error) {
 	defer func() {
 		if p := recover(); p != nil {
+			mem.RepanicBug(p)
 			ve, err = nil, fmt.Errorf("cuda vision: NewVisionEncoder recovered from panic: %v", p)
 		}
 	}()

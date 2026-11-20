@@ -631,6 +631,7 @@ func (r *resident) forwardLogitsMoEPaged(pos int, ropePos ...int) (logits []floa
 	// OOM deep inside expertPool.ensureResident at decode time must not crash the process.
 	defer func() {
 		if p := recover(); p != nil {
+			mem.RepanicBug(p)
 			r.recordExecErr(fmt.Errorf("metal: paged MoE forward aborted: %v", p))
 			logits = nil
 		}

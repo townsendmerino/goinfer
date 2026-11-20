@@ -1,0 +1,15 @@
+Thu Nov 19 15:23:29 PST 2026 waiting for boot load to settle (1-min load < 2.0)
+Thu Nov 19 15:24:39 PST 2026 load 1.85
+2026-11-19T15:24:39-08:00 d3900 b104 c1 A load 1.85 avail 61355 foreign - -> 62.52 (97s)
+2026-11-19T15:26:17-08:00 d3900 b104 c2 B load 1.95 avail 61306 foreign - -> 65.77 (95s)
+2026-11-19T15:27:51-08:00 d3900 b104 c3 B load 1.56 avail 61306 foreign - -> 65.75 (95s)
+2026-11-19T15:29:26-08:00 d3900 b104 c4 A load 1.22 avail 61302 foreign - -> 62.52 (96s)
+2026-11-19T15:31:03-08:00 d3900 b5 c1 A load 1.19 avail 61311 foreign - -> 62.49 (96s)
+2026-11-19T15:32:39-08:00 d3900 b5 c2 B load 1.17 avail 61316 foreign - -> 65.73 (95s)
+2026-11-19T15:34:14-08:00 d3900 b5 c3 B load 1.25 avail 61327 foreign - -> 65.77 (95s)
+2026-11-19T15:35:49-08:00 d3900 b5 c4 A load 1.26 avail 61334 foreign - -> 62.49 (96s)
+2026-11-19T15:37:26-08:00 d128 b101 c1 A load 1.29 avail 61343 foreign - -> 126.0 (6s)
+2026-11-19T15:37:32-08:00 d128 b101 c2 B load 1.43 avail 61304 foreign - -> 122.0 (7s)
+2026-11-19T15:37:39-08:00 d128 b101 c3 B load 2.54 avail 61310 foreign - -> 122.1 (7s)
+2026-11-19T15:37:45-08:00 d128 b101 c4 A load 2.42 avail 61281 foreign - -> 126.4 (6s)
+Thu Nov 19 15:37:52 PST 2026 RECOVER-DONE
