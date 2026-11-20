@@ -145,8 +145,8 @@ func TestBackendModelView_familyParams(t *testing.T) {
 	if _, ok := bv.Nemotron(); ok {
 		t.Error("Nemotron ok for a model with no Nemotron subsystem")
 	}
-	if _, _, _, _, _, _, _, _, _, ok := bv.GraniteParams(); ok {
-		t.Error("GraniteParams ok for a model with no Granite subsystem")
+	if _, ok := bv.Granite(); ok {
+		t.Error("Granite ok for a model with no Granite subsystem")
 	}
 	if _, _, _, _, _, _, ok := bv.Qwen35Params(); ok {
 		t.Error("Qwen35Params ok for a model with no DeltaNet subsystem")
