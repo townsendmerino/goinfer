@@ -1,0 +1,18 @@
+=== RUN   TestWG4iScratch_firstTokenMargins
+    zz_wg4i_scratch_test.go:67: int8int8 e2e-1..8: cos=0.994538 relL2=0.1160
+    zz_wg4i_scratch_test.go:68:   cpu top5 [353 3764 25010 1812 15] logits 14.271 13.559 12.507 12.092 11.402 (margin 0.711)
+    zz_wg4i_scratch_test.go:69:   gpu top5 [353 3764 25010 1812 5031] logits 14.520 14.111 12.501 12.489 11.980 (margin 0.410)
+    zz_wg4i_scratch_test.go:67: int8int8 e2e-1..4: cos=0.996387 relL2=0.0860
+    zz_wg4i_scratch_test.go:68:   cpu top5 [5 3 2 9 31] logits 14.820 12.479 12.264 11.298 11.238 (margin 2.341)
+    zz_wg4i_scratch_test.go:69:   gpu top5 [5 2 3 9 31] logits 14.847 12.232 12.161 11.283 11.017 (margin 2.615)
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~0.93 GiB resident at quant int4 + 1.75 GiB KV + 1.04 GiB reading the checkpoint (the .gguf stays mapped resident for the whole load) + 0.01 GiB heap beside it = 3.73 GiB; this machine currently has 5.99 GiB of memory available (budget 4.19 GiB = 70% of that) (89% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+    zz_wg4i_scratch_test.go:67: int4 e2e-1..8: cos=0.994107 relL2=0.1106
+    zz_wg4i_scratch_test.go:68:   cpu top5 [353 3764 15 25010 31] logits 13.628 12.074 12.032 11.569 11.458 (margin 1.554)
+    zz_wg4i_scratch_test.go:69:   gpu top5 [353 3764 31 93 15] logits 13.072 12.127 11.519 11.286 11.233 (margin 0.944)
+    zz_wg4i_scratch_test.go:67: int4 e2e-1..4: cos=0.994133 relL2=0.1234
+    zz_wg4i_scratch_test.go:68:   cpu top5 [5 2 3 31 9] logits 15.146 12.880 12.631 11.459 11.228 (margin 2.267)
+    zz_wg4i_scratch_test.go:69:   gpu top5 [5 3 2 31 9] logits 14.517 12.650 12.453 11.428 10.947 (margin 1.868)
+--- PASS: TestWG4iScratch_firstTokenMargins (17.66s)
+PASS
+ledger: 10 Context(s) closed in this run
+ok  	github.com/townsendmerino/goinfer/backend/webgpu	17.856s

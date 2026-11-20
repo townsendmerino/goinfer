@@ -1,0 +1,33 @@
+=== RUN   TestE2E_webgpu
+    e2e_test.go:53: greedy agreement: 0/16 tokens match
+          cpu=[31 48077 45899 5 9 368 62 21473 28 91 6257 1294 25 26 21122 30]
+          gpu=[1294 6257 91 27 2179 30 31 48077 45899 5 9 368 62 10 6257 91]
+    e2e_test.go:55: GPU diverges from CPU on the first token — wiring bug
+    e2e_test.go:69: decode 48 tok:  CPU   36.7 tok/s  |  GPU   19.5 tok/s  (0.53×)
+    e2e_test.go:71: prefill 256 tok (TTFT):  CPU 1815.1 ms  |  GPU 1821.1 ms  (1.00×)
+--- FAIL: TestE2E_webgpu (13.99s)
+=== RUN   TestResidency_matchesCPU
+    split_copies_0_test.go:112: [live-contexts] 1 already open before this test
+    split_copies_0_test.go:115: [live-vram] 857.1 MiB of device buffers already held before this test
+    residency_test.go:83: GPU residency: 16 tok | TTFT 1093 ms (CPU prefill + K/V upload) | decode 17.6 tok/s
+    residency_test.go:85: matched 16/16 greedy tokens vs CPU int4 oracle
+    residency_test.go:86: GPU output: "A recursive function is a function that calls itself to solve a problem. It is"
+--- PASS: TestResidency_matchesCPU (6.19s)
+=== RUN   TestResidentForwardN_parity
+    forwardn_parity_test.go:104: row 0: cosine=1.000000 maxAbsDiff=0
+    forwardn_parity_test.go:104: row 1: cosine=1.000000 maxAbsDiff=0
+    forwardn_parity_test.go:104: row 2: cosine=1.000000 maxAbsDiff=0
+    forwardn_parity_test.go:104: row 3: cosine=1.000000 maxAbsDiff=0
+    forwardn_parity_test.go:104: row 4: cosine=1.000000 maxAbsDiff=0
+--- PASS: TestResidentForwardN_parity (2.50s)
+=== RUN   TestGenerate_batchedPrefillMatchesSequential
+    prefilllast_generate_integration_test.go:71: sequential (24 tok): [4710 73594 12669 198 750 1438 4136 3932 262 671 1096 729 686 1438 279 2038 198 262 1494 271 2 7143 279 729]
+    prefilllast_generate_integration_test.go:72: batched    (24 tok): [4710 73594 12669 198 750 1438 4136 3932 262 671 1096 729 686 1438 279 2038 198 262 1494 271 2 7143 279 729]
+--- PASS: TestGenerate_batchedPrefillMatchesSequential (6.59s)
+=== RUN   TestResidentPrefillLast_parity
+    prefilllast_resident_parity_test.go:110: last row (pos 19): cosine=1.000000 maxAbsDiff=0
+--- PASS: TestResidentPrefillLast_parity (3.24s)
+FAIL
+ledger: 14 Context(s) closed in this run
+FAIL	github.com/townsendmerino/goinfer/backend/webgpu	32.579s
+FAIL
