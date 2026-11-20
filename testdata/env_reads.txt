@@ -36,9 +36,6 @@ GOINFER_NVRTC_DIRS	startup: cmd/gate — extra NVRTC search directories
 GOINFER_P13_OFF	diagnostic: docs/env-vars.md — keep the source mapping; the control arm
 GOINFER_REQUIRE_FIXTURES	startup: cmd/gate — fail instead of skip on a missing fixture
 GOINFER_SPLITKV_VSUM_SPLIT	diagnostic: docs/env-vars.md — opt-in V-sum spike, parked
-GOINFER_SSM_NOMUL	diagnostic: docs/env-vars.md — SSM isolation seam
-GOINFER_SSM_Q8CPU	diagnostic: docs/env-vars.md — SSM int8 confirmation seam
-GOINFER_SSM_SKIPFFN	diagnostic: docs/env-vars.md — SSM mixer-only isolation
 GOINFER_SWAP_GUARD	startup: serve, chat — swap-guard threshold
 GOINFER_TOOL_UNION	startup: serve — tool-call union policy, read once at init
 GOINFER_W4A8_BATCH	diagnostic: docs/env-vars.md — R-06 fused q/k/v A/B; on for non-arm64, arm64 default awaits a Mac measurement

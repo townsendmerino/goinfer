@@ -422,6 +422,7 @@ func (r *resident) forwardLogitsPaged(pos int, ropePos ...int) (logits []float32
 	// server.
 	defer func() {
 		if p := recover(); p != nil {
+			mem.RepanicBug(p)
 			r.recordExecErr(fmt.Errorf("metal: paged forward aborted: %v", p))
 			logits = nil
 			// Accepted bounded side-effects on this rare abort path: the in-flight encoder is left un-ended (a small native cb/pool leak) and
