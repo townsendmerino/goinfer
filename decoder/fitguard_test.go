@@ -297,7 +297,7 @@ func TestFitCheck_arithmeticMatchesTheMeasuredFailure(t *testing.T) {
 		t.Errorf("budget = %d, want %d (70%% of physical)", got, want)
 	}
 	msg := f.declineErr().Error()
-	for _, want := range []string{"21.0 GB", "16.0 GB", "11.2 GB"} {
+	for _, want := range []string{"21.00 GiB", "16.00 GiB", "11.20 GiB"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("refusal omits %q — a refusal without the numbers is the message the cold run already had:\n%s", want, msg)
 		}

@@ -253,11 +253,11 @@ func metalKVPlanLine(slots, ctx, from int, extra int64) string {
 	s := fmt.Sprintf("metal: KV plan: %d conversation(s) x %d positions", slots, ctx)
 	switch {
 	case ctx < from && extra > 0:
-		s += fmt.Sprintf(" (context reduced from %d to leave %.1f GB for the vision tower or drafter)", from, float64(extra)/(1<<30))
+		s += fmt.Sprintf(" (context reduced from %d to leave %s for the vision tower or drafter)", from, mem.GiB(extra))
 	case ctx < from:
 		s += fmt.Sprintf(" (context reduced from %d to fit this machine's memory)", from)
 	case extra > 0:
-		s += fmt.Sprintf(" (%.1f GB left for the vision tower or drafter)", float64(extra)/(1<<30))
+		s += fmt.Sprintf(" (%s left for the vision tower or drafter)", mem.GiB(extra))
 	}
 	return s + "\n"
 }
@@ -566,9 +566,9 @@ func residentMemoryDecline(m *decoder.Model) string {
 	// recommendedMaxWorkingSetSize (B41 gate 4, docs/measurements/hostmem-available-2026-10/README.md).
 	if wsCap := metalWorkingSetCap(); wsCap > 0 {
 		if alloc := need - m.ResidentHostCopyBytes(metalMoESlotsFromEnv(m)); alloc > wsCap {
-			return fmt.Sprintf(residentMemoryDeclinePrefix+"%.2f GB of Metal allocations (weights, KV and what a companion claims), over this GPU's "+
-				"recommendedMaxWorkingSetSize of %.2f GB. Override with GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.",
-				float64(alloc)/(1<<30), float64(wsCap)/(1<<30))
+			return fmt.Sprintf(residentMemoryDeclinePrefix+"%s of Metal allocations (weights, KV and what a companion claims), over this GPU's "+
+				"recommendedMaxWorkingSetSize of %s. Override with GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.",
+				mem.GiB(alloc), mem.GiB(wsCap))
 		}
 	}
 	ram, err := physicalRAM()
@@ -580,7 +580,6 @@ func residentMemoryDecline(m *decoder.Model) string {
 	if need <= budget {
 		return ""
 	}
-	const gb = 1 << 30
 	// A model with routed experts that does not fit resident may still fit paged: the decline names how to reach it.
 	moeHint := ""
 	if m.BackendView().HasGemma4MoE() {
@@ -590,13 +589,13 @@ func residentMemoryDecline(m *decoder.Model) string {
 	}
 	tightened := ""
 	if staticCeiling := metalStaticCeiling(ram); budget < staticCeiling {
-		tightened = fmt.Sprintf(" (this machine's live-available memory tightened the static %.0f%%/%.2f GB ceiling further)",
-			residentMemFraction*100, float64(staticCeiling)/gb)
+		tightened = fmt.Sprintf(" (this machine's live-available memory tightened the static %.0f%%/%s ceiling further)",
+			residentMemFraction*100, mem.GiB(staticCeiling))
 	}
-	return fmt.Sprintf(residentMemoryDeclinePrefix+"%.2f GB (weights, host copy and KV), over %.0f%% of %.1f GB RAM "+
-		"(budget %.2f GB%s). Metal wires the pages it touches, so loading this would page to swap "+
+	return fmt.Sprintf(residentMemoryDeclinePrefix+"%s (weights, host copy and KV), over %.0f%% of %s RAM "+
+		"(budget %s%s). Metal wires the pages it touches, so loading this would page to swap "+
 		"exhaustion rather than run. Override with GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.%s",
-		float64(need)/gb, residentMemFraction*100, float64(ram)/gb, float64(budget)/gb, tightened, moeHint)
+		mem.GiB(need), residentMemFraction*100, mem.GiB(ram), mem.GiB(budget), tightened, moeHint)
 }
 
 // exactAttnNote is PrefillPath's account of the exact attention kernel's key bound, "" when every attention layer has a
@@ -1260,7 +1259,7 @@ func (a *metalResident) prefillMRoPE(ctx context.Context, embeddings [][]float32
 		return nil, e
 	}
 	if on := metalMRoPEPrefillOn; deep != nil && !metalDeepstackPrefillOn || deep == nil && !on {
-		return nil, fmt.Errorf("metal: the resident m-RoPE prefill is off for this model until its S16 gates are graded; the image prefill runs on the CPU")
+		return nil, fmt.Errorf("metal: the resident m-RoPE prefill is off for this model until its fidelity gates are graded; the image prefill runs on the CPU")
 	}
 	if a.r.mropeAxis == (Buffer{}) {
 		return nil, fmt.Errorf("metal: no m-RoPE axis table for this model; the image prefill runs on the CPU")

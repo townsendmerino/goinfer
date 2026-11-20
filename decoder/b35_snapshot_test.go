@@ -79,7 +79,7 @@ func loadRecurrentSnapFakeAlign(t *testing.T, carries bool, budget int64, align 
 	})
 	m, err := Load("../testdata/qwen35-tiny", Options{Backend: name, KVHostBytes: budget})
 	if err != nil {
-		t.Skipf("no qwen35-tiny: %v", err)
+		t.Fatalf("load ../testdata/qwen35-tiny: %v", err)
 	}
 	t.Cleanup(func() { _ = m.Close() })
 	if !m.ResidentActive() || !m.hasRecurrentState() {

@@ -58,9 +58,6 @@ func DefaultPolicy() Policy {
 		PlanCtxFloor: PlanCtxFloor, MetalFitMargin: MetalFitMargin}
 }
 
-// gb is the guard's GB: 2^30 bytes.
-const gb = 1 << 30
-
 // KVCurve is the KV a load allocates at a context, in bytes. It is non-decreasing in the context; it need not be linear (a
 // sliding-window layer's cost flattens past its window).
 type KVCurve func(ctx int) int64

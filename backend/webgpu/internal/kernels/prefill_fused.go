@@ -31,7 +31,7 @@ func editSource(label, src string, edits []srcEdit) (string, error) {
 
 const fusedRowsMain = "fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {\n    let t = lid.x;\n    let rb = wid.x * "
 
-// fusedRowsKind names a fused quantizing kernel in its one-row-a-workgroup form.
+// FusedRowsKind names a fused quantizing kernel in its one-row-a-workgroup form.
 type FusedRowsKind int
 
 const (

@@ -7,7 +7,7 @@
   "own": [
     "decoder/arch_gpt2.go"
   ],
-  "deps_hash": "sha256:54f669d107e5d00d1d3fc8fa33fd59bda865cf8811bff9959fba2ca3ad0877b6",
+  "deps_hash": "sha256:59cf6279199491c2ac3def3dfac68e99db7b5b866919c8daeee78e500c34d2e2",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

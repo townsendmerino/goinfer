@@ -803,7 +803,7 @@ func (s *buildState) newResident(planOnly bool, mp *memPlanRun) (*cudaResident, 
 			// this backend does not implement but not an operator flag that cannot mean what it says.
 			return nil, fmt.Errorf("cuda: --moe-cache-slots %d is below top-k %d — one "+
 				"token's own routed experts must all be resident at once, so this cannot be "+
-				"honoured (G-07)", req, topK)
+				"honoured", req, topK)
 		} else if req >= topK {
 			r.cacheSlots = req
 			r.cacheSlotsReq = req
@@ -1312,10 +1312,10 @@ func (s *buildState) bindKernels(r *cudaResident) error {
 				}
 				r.skScoreBuf = r.af(r.nH * r.ctxCap)
 				r.skInvBuf = r.af(r.nH)
-				// Flash-decode V-sum SPIKE, opt-in and NOT bit-identical. Loaded and allocated
-				// only when asked for, so a stock binary carries neither the pipelines nor the
+				// Flash-decode V-sum SPIKE, NOT bit-identical. Loaded and allocated only when a test
+				// sets vsumSplitForTest, so a stock binary carries neither the pipelines nor the
 				// scratch.
-				if v, err := strconv.Atoi(os.Getenv("GOINFER_SPLITKV_VSUM_SPLIT")); err == nil && v > 1 {
+				if v := vsumSplitForTest; v > 1 {
 					// maxHd comes from the MODEL, not r.layers: r.layers is not populated until
 					// later in BuildResident, so reading it here silently yielded 0 and the
 					// resulting 0-byte allocation panicked the executor and declined the whole
@@ -1330,7 +1330,7 @@ func (s *buildState) bindKernels(r *cudaResident) error {
 					if maxHd <= 0 {
 						// Never attempt the allocation on a degenerate size: that is the exact
 						// failure above, and it takes the entire resident path down with it.
-						logs.Warnf("[cuda] GOINFER_SPLITKV_VSUM_SPLIT ignored: no positive head dim")
+						logs.Warnf("[cuda] the V-sum split is ignored: no positive head dim")
 					} else {
 						loadSK(&r.skVsumPartial, "splitkv_vsum_partial")
 						loadSK(&r.skVsumCombine, "splitkv_vsum_combine")
@@ -1426,7 +1426,7 @@ func (s *buildState) bindFamilyState(r *cudaResident) error {
 		if !r.prefillReady {
 			return fmt.Errorf("cuda: attention sinks need the batched attention kernel, " +
 				"and prefill_batched.ptx did not load — the glue attention fallback has no " +
-				"sink parameter, so decoding here would silently drop it (N-10)")
+				"sink parameter, so decoding here would silently drop it")
 		}
 		r.gptOssSinks = make([]Buffer, nLayers)
 		for l := range nLayers {
@@ -2139,3 +2139,8 @@ func (s *buildState) selectFusion(r *cudaResident) error {
 	}
 	return nil
 }
+
+// vsumSplitForTest, when above 1, loads the flash-decode V-sum spike at build, splitting the decode V-sum into that many key
+// chunks. It is not bit-identical to the shipped single fold and refuses speculative decoding (DecodeVerifyDivergence), so
+// only tests set it.
+var vsumSplitForTest int

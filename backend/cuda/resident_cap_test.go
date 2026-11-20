@@ -308,7 +308,7 @@ func TestCheckKVFits_realDevice_explicitRefusesWithNumbers(t *testing.T) {
 	if !errors.Is(err, errKVWontFit) {
 		t.Errorf("error %v does not match errKVWontFit — BuildResident's hard-error path would not fire", err)
 	}
-	for _, want := range []string{fmt.Sprintf("%d positions", absurdCtx), "GB", "free"} {
+	for _, want := range []string{fmt.Sprintf("%d positions", absurdCtx), "GiB", "free"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %q — a refusal must name the numbers", err, want)
 		}
@@ -347,7 +347,7 @@ func TestCheckKVFits_realDevice_extraResidentBytesRefusesWithNumbers(t *testing.
 	if errors.Is(err, errKVWontFit) {
 		t.Errorf("error %v matches errKVWontFit for an UNPINNED ctx — should be the ordinary decline, not the hard-error sentinel", err)
 	}
-	for _, want := range []string{"companion attach", "--drafter", "GB"} {
+	for _, want := range []string{"companion attach", "--drafter", "GiB"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %q — a reservation-caused refusal must name what reserved the room", err, want)
 		}

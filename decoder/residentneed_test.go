@@ -228,7 +228,7 @@ func TestResidentKVBytes_cudaLayout(t *testing.T) {
 	}{{"../testdata/llama-tiny", false}, {"../testdata/deepseek-tiny", true}} {
 		m, err := Load(c.dir, Options{Quant: "f32"})
 		if err != nil {
-			t.Skipf("no fixture at %s: %v", c.dir, err)
+			t.Fatalf("load %s: %v", c.dir, err)
 		}
 		a := m.w.arch
 		_, nLayers, _, _, _, _, _ := m.Dims()
