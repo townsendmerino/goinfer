@@ -77,9 +77,8 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 	}
 
 	if wantThinking {
-		streamMessagesThinking(ss, th, gr, func(onText func(string)) (string, int, string, int, string, error) {
-			finish, nComp, _, stopSeq, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, onText)
-			return finish, nComp, stopSeq, reused.Tokens, cancelReason, gerr
+		streamMessagesThinking(ss, th, gr, func(onText func(string)) (turnResult, error) {
+			return lm.drive(r.Context(), gr, s.gens, s.jobs, onText)
 		})
 		return
 	}
@@ -92,7 +91,7 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 	// The ping above is a one-shot liveness check, not a keep-alive: nothing else is sent until the first token, and
 	// on CPU that is after the whole prefill, so a heartbeat keeps a client's idle timeout from firing.
 	stopBeat := sseHeartbeat(ss)
-	finish, nComp, _, stopSeq, reused, cancelReason, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
+	res, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 		anthropicEvent(ss, "content_block_delta", map[string]any{
 			"type": "content_block_delta", "index": 0,
 			"delta": map[string]any{"type": "text_delta", "text": t},
@@ -105,8 +104,8 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 		return
 	}
 	anthropicEvent(ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
-	reason, seq := anthropicStopReason(finish, stopSeq)
-	anthropicMessageEnd(ss, gr.clock, reason, seq, anthropicUsage(len(gr.promptIDs), reused.Tokens, nComp), cancelReason, emptyAnswerOf(gr, finish, stopSeq, 0, nComp), false)
+	reason, seq := anthropicStopReason(res.finish, res.stopHit)
+	anthropicMessageEnd(ss, gr.clock, reason, seq, anthropicUsage(len(gr.promptIDs), res.reused.Tokens, res.nComp), res.cancelReason, emptyAnswerOf(gr, res.finish, res.stopHit, 0, res.nComp), false)
 }
 
 // streamMessagesTools runs a tool-bearing turn on /v1/messages: prose streams as a text content block while the model
@@ -131,15 +130,15 @@ func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss 
 		// Cancelled mid-generation: a partial buffer, so no tool call is parsed out of it. Close any open prose block
 		// so the stream stays well-formed.
 		ts.close()
-		reason, seq := anthropicStopReason(t.finish, t.stopSeq)
+		reason, seq := anthropicStopReason(t.finish, t.stopHit)
 		anthropicMessageEnd(ss, gr.clock, reason, seq, anthropicUsage(len(gr.promptIDs), t.reused.Tokens, t.nComp), t.cancelReason, nil, false)
 		return
 	}
 
 	if len(t.calls) == 0 { // model declined to call: one text block with the output
 		ts.finish(t.rest, true)
-		reason, seq := anthropicStopReason(t.finish, t.stopSeq)
-		anthropicMessageEnd(ss, gr.clock, reason, seq, anthropicUsage(len(gr.promptIDs), t.reused.Tokens, t.nComp), "", emptyAnswerOf(gr, t.finish, t.stopSeq, 0, t.nComp), false)
+		reason, seq := anthropicStopReason(t.finish, t.stopHit)
+		anthropicMessageEnd(ss, gr.clock, reason, seq, anthropicUsage(len(gr.promptIDs), t.reused.Tokens, t.nComp), "", emptyAnswerOf(gr, t.finish, t.stopHit, 0, t.nComp), false)
 		return
 	}
 
@@ -299,10 +298,10 @@ func (t *anthropicThink) offset() int {
 // thinking block — there is no answer to put in a text block.
 //
 // run is the generation (lm.drive or lm.driveVL), so the text and image routes share this one state machine.
-func streamMessagesThinking(ss *sseWriter, th *anthropicThink, gr genRequest, run func(onText func(string)) (finish string, nComp int, stopSeq string, reused int, cancelReason string, err error)) {
+func streamMessagesThinking(ss *sseWriter, th *anthropicThink, gr genRequest, run func(onText func(string)) (turnResult, error)) {
 	text := &anthropicTextStream{ss: ss, think: th}
 	stopBeat := sseHeartbeat(ss)
-	finish, nComp, stopSeq, reused, cancelReason, gerr := run(text.pushPlain)
+	res, gerr := run(text.pushPlain)
 	stopBeat()
 	th.close()
 	if gerr != nil {
@@ -314,8 +313,8 @@ func streamMessagesThinking(ss *sseWriter, th *anthropicThink, gr genRequest, ru
 	if !th.used && !text.everOpen {
 		streamTextBlock(ss, 0, "") // a turn that produced nothing is still one (empty) text block, as it always was
 	}
-	reason, seq := anthropicStopReason(finish, stopSeq)
-	anthropicMessageEnd(ss, gr.clock, reason, seq, anthropicUsage(len(gr.promptIDs), reused, nComp), cancelReason, emptyAnswerOf(gr, finish, stopSeq, 0, nComp), false)
+	reason, seq := anthropicStopReason(res.finish, res.stopHit)
+	anthropicMessageEnd(ss, gr.clock, reason, seq, anthropicUsage(len(gr.promptIDs), res.reused.Tokens, res.nComp), res.cancelReason, emptyAnswerOf(gr, res.finish, res.stopHit, 0, res.nComp), false)
 }
 
 // pushPlain is push without the tool path's whitespace holding: the no-tools route streams every byte.

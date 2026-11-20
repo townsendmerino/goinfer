@@ -115,14 +115,14 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 
 	var sb, rb strings.Builder
 	s.routeThink(lm, &gr, tm, bturns, ts, func(t string) { rb.WriteString(t) })
-	finish, nComp, _, _, prefillReused, cancelReason, gerr := lm.drive(
+	res, gerr := lm.drive(
 		bgCtx, gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		setResult(batch, i, lineError(customID, 500, "api_error", "generation failed: "+gerr.Error()))
 		return
 	}
-	if cancelReason != "" {
-		setResult(batch, i, lineError(customID, statusCancelled, "cancelled", "generation cancelled: "+cancelReason))
+	if res.cancelReason != "" {
+		setResult(batch, i, lineError(customID, statusCancelled, "cancelled", "generation cancelled: "+res.cancelReason))
 		return
 	}
 
@@ -135,9 +135,9 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 		"choices": []any{map[string]any{
 			"index":         0,
 			"message":       bmsg,
-			"finish_reason": finish,
+			"finish_reason": res.finish,
 		}},
-		"usage": newUsage(len(gr.promptIDs), nComp, prefillReused),
+		"usage": newUsage(len(gr.promptIDs), res.nComp, res.reused),
 	}
 	setResult(batch, i, batchLineResult{CustomID: customID, StatusCode: 200, Body: gr.clock.AddTurn(body)})
 }
@@ -236,18 +236,18 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 
 	var sb, rb strings.Builder
 	s.routeThink(lm, &gr, tm, turns, ts, func(t string) { rb.WriteString(t) })
-	finish, nComp, _, stopHitOut, reused, cancelReason, gerr := lm.drive(
+	res, gerr := lm.drive(
 		bgCtx, gr, s.gens, s.jobs, func(t string) { sb.WriteString(t) })
 	if gerr != nil {
 		setResult(batch, i, lineError(customID, 500, "api_error", "generation failed: "+gerr.Error()))
 		return
 	}
-	if cancelReason != "" {
-		setResult(batch, i, lineError(customID, statusCancelled, "cancelled", "generation cancelled: "+cancelReason))
+	if res.cancelReason != "" {
+		setResult(batch, i, lineError(customID, statusCancelled, "cancelled", "generation cancelled: "+res.cancelReason))
 		return
 	}
 
-	reason, seq := anthropicStopReason(finish, stopHitOut)
+	reason, seq := anthropicStopReason(res.finish, res.stopHit)
 	content := []map[string]any{textBlock(sb.String())}
 	if req.wantsThinking() && rb.Len() > 0 {
 		content = append([]map[string]any{thinkingBlock(rb.String(), "")}, content...)
@@ -260,7 +260,7 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 		"content":       content,
 		"stop_reason":   reason,
 		"stop_sequence": seq,
-		"usage":         anthropicUsage(len(gr.promptIDs), reused.Tokens, nComp),
+		"usage":         anthropicUsage(len(gr.promptIDs), res.reused.Tokens, res.nComp),
 	}
 	setResult(batch, i, batchLineResult{CustomID: customID, StatusCode: 200, Body: gr.clock.AddTurn(body)})
 }
