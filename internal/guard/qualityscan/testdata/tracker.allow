@@ -1,15 +1,3 @@
 # Tracker ids left in user-visible strings (TestQualityScan_userStringsCarryNoTrackerIDs): `<file>#<id> -- <reason>`.
-# Backend strings move to words in the backends' own PR (code-quality ledger, Q8); their files are in other open work today.
-backend/cuda/prefill.go#MC3 -- backend string, rewritten with the backends' Q8 PR
-backend/cuda/recurrent_spec.go#SP2 -- backend string, rewritten with the backends' Q8 PR
-backend/cuda/resident.go#M-16 -- backend string, rewritten with the backends' Q8 PR
-backend/cuda/resident_build.go#G-07 -- backend string, rewritten with the backends' Q8 PR
-backend/cuda/resident_build.go#N-10 -- backend string, rewritten with the backends' Q8 PR
-backend/metal/backend.go#S16 -- backend string, rewritten with the backends' Q8 PR
-backend/metal/ffn_walk.go#C-02 -- backend string, rewritten with the backends' Q8 PR
-backend/metal/gemma4_moe.go#C-02 -- backend string, rewritten with the backends' Q8 PR
-backend/metal/model.go#M-10 2 -- backend string, rewritten with the backends' Q8 PR
-backend/metal/recurrent_checkpoint.go#KV8a -- backend string, rewritten with the backends' Q8 PR
-backend/metal/resident_build.go#C-10 -- backend string, rewritten with the backends' Q8 PR
-backend/metal/resident_build.go#M-11 -- backend string, rewritten with the backends' Q8 PR
-backend/webgpu/residency_build.go#N-89 -- backend string, rewritten with the backends' Q8 PR
+# backend/cuda/prefill.go is in the CUDA prefill cut's open work today; its string moves to words after (code-quality ledger, Q8).
+backend/cuda/prefill.go#MC3 -- in the CUDA prefill cut's open work; rewritten after it merges
