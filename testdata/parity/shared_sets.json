@@ -63,7 +63,6 @@
   "quant": [
     "decoder/weightmat.go",
     "decoder/gptq.go",
-    "decoder/awq.go",
     "decoder/fakequant.go",
     "decoder/kquant_native.go",
     "decoder/mlx_safetensors.go",

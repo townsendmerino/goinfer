@@ -11,18 +11,6 @@ import (
 // these package-private wrappers forward to it, while loadSwitchMLPExperts
 // integrates the reconstructed 3-D expert slices with decoder's LayerWeights.
 
-func mlxDequantAffineRow(words []uint32, scales, biases []float32, in, bits, groupSize int, dst []float32) error {
-	return quant.MLXDequantAffineRow(words, scales, biases, in, bits, groupSize, dst)
-}
-
-func mlxDequantNVFP4Row(words []uint32, scaleBytes []byte, in int, dst []float32) error {
-	return quant.MLXDequantNVFP4Row(words, scaleBytes, in, dst)
-}
-
-func mlxDequantMXFP4Row(words []uint32, scaleBytes []byte, in int, dst []float32) error {
-	return quant.MLXDequantMXFP4Row(words, scaleBytes, in, dst)
-}
-
 func reconstructSafetensorsMat2D(st *embed.SafetensorsFile, qc *quantConfig, name string, out, in int) (data []float32, fresh bool, err error) {
 	return quant.ReconstructMat2D(st, qc, name, out, in)
 }
