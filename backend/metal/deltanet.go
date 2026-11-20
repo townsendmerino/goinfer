@@ -161,7 +161,7 @@ func buildDeltaNet(d *Device, m *decoder.Model, pipe func(string) Pipeline) (*dn
 	}
 	if recurrentInt8Load(m) && !dnetInt8DeclineOffForTest {
 		// Metal's native int8 path covers no recurrent family (w8Eligible), so int8 projections would be re-quantized to
-		// int4 without notice: decline, and the CPU runs the model at the int8 it was loaded with (G44, as buildMamba).
+		// int4 without notice: decline, and the CPU runs the model at the int8 it was loaded with (as buildMamba).
 		return nil, fmt.Errorf("metal: a Gated-DeltaNet model runs resident at int4 only; its int8 projections would be re-quantized to int4 here, so it runs on the CPU")
 	}
 	keyDim, valueDim := numKeyHeads*keyHeadDim, numValueHeads*valueHeadDim
@@ -195,10 +195,10 @@ func recurrentInt8Load(m *decoder.Model) bool {
 	return false
 }
 
-// dnetInt8DeclineOffForTest removes buildDeltaNet's int8 decline: G44's planted defect.
+// dnetInt8DeclineOffForTest removes buildDeltaNet's int8 decline: a planted defect.
 var dnetInt8DeclineOffForTest = false
 
-// dnetNegEigvalOffForTest and dnetONormEpsOffForTest drop the DeltaNet's NegEigval and ONormEps at the build: OM-1's planted
+// dnetNegEigvalOffForTest and dnetONormEpsOffForTest drop the DeltaNet's NegEigval and ONormEps at the build: planted
 // defects.
 var dnetNegEigvalOffForTest, dnetONormEpsOffForTest = false, false
 

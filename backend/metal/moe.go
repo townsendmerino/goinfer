@@ -52,7 +52,7 @@ type moeLayer struct {
 type moeResident struct {
 	scratch                                      scratchList // its decode scratch, allocated with the decode list
 	pRouter, pRoute, pGU, pDownWacc, pSharedGate Pipeline
-	guR, downR                                   int // D-B04: R18 rows per simdgroup of pGU / pDownWacc, 0 = one row (moeExpertRows)
+	guR, downR                                   int // rows per simdgroup of pGU / pDownWacc, 0 = one row (moeExpertRows)
 
 	// gpt-oss: its own router/activation/down-combine kernels (route_gptoss,
 	// swiglu_quant_gptoss, gemv_w4a8_moe_wacc_bias) replace pRoute/pGU+pSw/pDownWacc in
@@ -77,7 +77,7 @@ type moeResident struct {
 	// has admitted the model, before the layers are built.
 	w8 bool
 
-	// D-P03: the k selected experts in four dispatches (gate|up, SwiGLU, down, combine) instead of 3k. kSlots is
+	// The k selected experts in four dispatches (gate|up, SwiGLU, down, combine) instead of 3k. kSlots is
 	// false for gpt-oss (its own activation and biased down kernels) and for a shape the k-slot grids do not divide;
 	// then encodeMoEExperts runs the per-slot loop. guK [k][2I] f32, dqK [k][I] int8, dScK [k], accK [k][H].
 	kSlots                          bool
@@ -113,7 +113,7 @@ type moeResident struct {
 	// default as gemma4_moe.go's.
 	giwFile *os.File
 
-	// alias is the S6 weight aliaser (nil when GOINFER_METAL_ALIAS=0 or the model is not .giw-mapped); buildResident sets it before the layer loop.
+	// alias is the weight aliaser (nil when GOINFER_METAL_ALIAS=0 or the model is not .giw-mapped); buildResident sets it before the layer loop.
 	alias *weightAlias
 }
 
@@ -123,7 +123,7 @@ type moeResident struct {
 // buildMoELayer and buildGemma4MoELayer would raise.
 var errPagedExpertsNotInt4 = errors.New("the expert cache (--moe-cache-experts / --moe-cache-slots) pages int4 experts only, and this model's experts are not int4 (group-32): load it with --quant int4, or drop --moe-cache-experts and --moe-cache-slots to hold every expert resident")
 
-// skipPagedInt4CheckForTest drops the errPagedExpertsNotInt4 check, so G-2 can show the gate goes red without it.
+// skipPagedInt4CheckForTest drops the errPagedExpertsNotInt4 check, so a test can show the gate goes red without it.
 var skipPagedInt4CheckForTest bool
 
 // moePagedAllSlotsForTest pages a model even when its slot request holds every expert, so a test can run the paged
@@ -319,7 +319,7 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 			type expertSpan struct {
 				gOff, uOff, dOff    int64
 				gLen, uLen, dLen    int
-				gsOff, usOff, dsOff int64 // the f16 scales' file offsets (C-P01), when scalesInFile
+				gsOff, usOff, dsOff int64 // the f16 scales' file offsets, when scalesInFile
 			}
 			spans := make([]expertSpan, len(experts))
 			resolved, scalesInFile := true, true
@@ -375,7 +375,7 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 						defer wg.Done()
 						errD = preadRangeIntoPoolSlot(fd, pool.dW, sl.slot, pool.nDW, 0, sp.dOff, sp.dLen)
 					}()
-					// C-P01: with the scales in the file, they are three more disjoint ranges: gate's and
+					// With the scales in the file, they are three more disjoint ranges: gate's and
 					// up's fill the two halves of the slot's gate|up scale range, down's its own buffer.
 					var errGS, errUS, errDS error
 					gsLen := 2 * len(experts[ei].Gate.Int4ScalesF16())
@@ -536,7 +536,7 @@ func (r *resident) encodeMoEExperts(e *Encoder, L *residLayer, dst Buffer) {
 	// swiglu_quant_gptoss / gemv_w4a8_moe_wacc_bias's docs), so it swaps both dispatches, not just
 	// the router.
 	if mo.kSlots && moeKSlotsOn {
-		// D-P03: the same kernels' bodies over all k slots at once (batch_rows.go), then the per-slot weighted
+		// The same kernels' bodies over all k slots at once (batch_rows.go), then the per-slot weighted
 		// accumulate as one combine in slot order: the same bytes in dst as the loop below.
 		e.DispatchTG(mo.pGUk, mo.k*(2*mo.inter)*32, 256, r.H*2, ml.expGuW, ml.expGuS, r.mq, r.mSc, mo.guK, r.uH, mo.rIdx, mo.uK, mo.uInter2)
 		e.Dispatch(mo.pSwRows, mo.k*256, 256, mo.guK, mo.guK, mo.dqK, mo.dScK, mo.uInter, r.uAct)
@@ -586,7 +586,7 @@ func (r *resident) encodeMoEExpertsPaged(e *Encoder, L *residLayer, pool *expert
 		e.DispatchTG(mo.pGU, rowsGrid(2*mo.inter, mo.guR), 256, r.H*2, pool.guW, pool.guS, r.mq, r.mSc, r.gu, r.uH, mo.slotIdx, mo.uSlot[j], mo.uInter2)
 		if mo.isGptOss {
 			// mo.rIdx, not slotIdx: this kernel's idx feeds ONLY biasOff, and the gate/up bias
-			// table is the stacked all-expert one even on the paged path (C-09).
+			// table is the stacked all-expert one even on the paged path.
 			e.Dispatch(mo.pActGptOss, 256, 256, r.gu, r.gu.At(mo.inter*4), r.dq, r.dSc, mo.uInter,
 				ml.expGuBias, mo.biasIdx(), mo.uSlot[j], mo.uHasBias, mo.uAlpha, mo.uLimit)
 			e.DispatchTG(mo.pDownWaccBias, r.H*32, 256, mo.inter*2, pool.dW, pool.dS, r.dq, r.dSc, r.x, mo.uInter, mo.slotIdx, mo.rWgt, mo.uSlot[j], r.uH, ml.expDBias, mo.biasIdx())
@@ -595,7 +595,7 @@ func (r *resident) encodeMoEExpertsPaged(e *Encoder, L *residLayer, pool *expert
 			e.DispatchTG(mo.pDownWacc, rowsGrid(r.H, mo.downR), 256, mo.inter*2, pool.dW, pool.dS, r.dq, r.dSc, r.x, mo.uInter, mo.slotIdx, mo.rWgt, mo.uSlot[j], r.uH)
 		}
 	}
-	// Paging is never used by prefill (its own tiny/simple scope, G8), so this stays hardcoded to
+	// Paging is never used by prefill (its own tiny/simple scope), so this stays hardcoded to
 	// r.x — unlike encodeMoEExperts' non-paged twin, there is no second caller to parameterize for.
 	r.encodeMoESharedExpert(e, L, r.x)
 }
@@ -630,7 +630,7 @@ func (r *resident) encodeMoESharedExpert(e *Encoder, L *residLayer, dst Buffer) 
 // layer's LRU slot pool -> [experts-from-slots] -> submit+wait. Assumes the caller filled r.x with
 // the embedding and holds the OS thread (ForwardEmb does both).
 func (r *resident) forwardLogitsMoEPaged(pos int, ropePos ...int) (logits []float32) {
-	// Same abort discipline as forwardLogitsPaged (audit R-02/C-09): a transient staging error or
+	// Same abort discipline as forwardLogitsPaged: a transient staging error or
 	// OOM deep inside expertPool.ensureResident at decode time must not crash the process.
 	defer func() {
 		if p := recover(); p != nil {
@@ -652,7 +652,7 @@ func (r *resident) forwardLogitsMoEPaged(pos int, ropePos ...int) (logits []floa
 	// layer's router readback is a value-dependent seam (idx/rWgt must land host-side before staging). dense is
 	// opened on first use and closed at the next MoE layer or the loop's end, as encodeTrunkInto does for the
 	// pure-dense path.
-	async := pagedAsyncPhase2On // M-11: phase 2 committed, not waited (gemma4_moe.go, pagedAsyncPhase2On)
+	async := pagedAsyncPhase2On // phase 2 committed, not waited (gemma4_moe.go, pagedAsyncPhase2On)
 	var arp ARPool
 	if async {
 		arp = NewARPool()
@@ -703,7 +703,7 @@ func (r *resident) forwardLogitsMoEPaged(pos int, ropePos ...int) (logits []floa
 			} else {
 				e2 = r.q.Begin()
 			}
-			if r.residency != (ResidencySet{}) { // M-14: per-encoder attach, phase 2 only
+			if r.residency != (ResidencySet{}) { // per-encoder attach, phase 2 only
 				e2.UseResidencySet(r.residency)
 			}
 			r.encodeMoEExpertsPaged(e2, L, L.moe.pool)
@@ -750,8 +750,8 @@ func (r *resident) encodeMoECapture(e *Encoder, slot int) {
 	e.Dispatch(r.pCopyVec, mo.k, 32, mo.rWgt, r.moeCap.wgt.At(off), mo.uK)
 }
 
-// moeExpertRowsOn takes the routed-expert GEMVs through R18's rows form (D-B04's routed-expert half,
-// gemv_w4a8_moe_rows / gemv_w4a8_moe_wacc_rows), bit-identical to the one-row kernels.
+// moeExpertRowsOn takes the routed-expert GEMVs through the rows-per-simdgroup form
+// (gemv_w4a8_moe_rows / gemv_w4a8_moe_wacc_rows), bit-identical to the one-row kernels.
 var moeExpertRowsOn = true
 
 // moeExpertRows picks the routed-expert gate|up and down pipelines and their rows per simdgroup: the rows form when

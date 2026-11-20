@@ -29,7 +29,7 @@ import (
 // pages with write intent, so over a MAP_PRIVATE mapping every GPU-read page becomes a wired anonymous copy-on-write copy:
 // aliasing then saves nothing, and fork() copies the whole mapping (docs/measurements/s6-alias-2026-09-24.md, "MAP_SHARED").
 //
-// On by default, by owner decision after the S6 gates; not every gate read as passed (docs/code-notes/metal.md#weightAlias).
+// On by default, by owner decision; not every one of its gates read as passed (docs/code-notes/metal.md#weightAlias).
 // GOINFER_METAL_ALIAS=0 turns it off: this type is then nil and int4Buf is byte-for-byte the copy path.
 type weightAlias struct {
 	m    *decoder.Model

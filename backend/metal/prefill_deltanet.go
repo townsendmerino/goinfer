@@ -4,8 +4,8 @@ package metal
 
 import "github.com/townsendmerino/goinfer/internal/runtime/mem"
 
-// D-B01 (docs/audit-metal-2026-09-30.md): a Gated-DeltaNet layer in the batched
-// prefill pass. The projections (qkv, z, out) run as prefill GEMMs over all M rows, and in_proj_b / in_proj_a as a small
+// A Gated-DeltaNet layer in the batched prefill pass (docs/audit-metal-2026-09-30.md).
+// The projections (qkv, z, out) run as prefill GEMMs over all M rows, and in_proj_b / in_proj_a as a small
 // rows kernel, on f16 activations like every other batched layer. The mixer between them runs as one dispatch per
 // stage over the M rows, the recurrent stages (the conv window, the delta rule's state) as a token loop inside the
 // kernel. Those row kernels are the decode kernels with their bodies copied verbatim, so given the same inputs they
@@ -17,7 +17,7 @@ import "github.com/townsendmerino/goinfer/internal/runtime/mem"
 // a fresh sequence (resetDeltaNet) and leaves them for a continuation.
 
 // dnetPrefillOn admits Gated-DeltaNet models to the batched prefill pass. On by default; tests turn it off for the
-// sequential arm ( D-B01; docs/code-notes/metal.md#dnetPrefillOn).
+// sequential arm (docs/code-notes/metal.md#dnetPrefillOn).
 var dnetPrefillOn = true
 
 // prefillDelta is one PrefillLast call's DeltaNet scratch, shared by every DeltaNet layer (each layer's own window and
@@ -50,7 +50,7 @@ func (r *resident) newPrefillDelta(M, Mpad int) *prefillDelta {
 }
 
 // dnSeqOldForTest makes the prefill take the device-memory scan kernels (delta_rule_seq, delta_conv_seq): the old arm of
-// KS-D3's A/B.
+// the on-chip kernels' A/B.
 var dnSeqOldForTest bool
 
 // dnSeqPipelines returns the prefill mixer's scan kernels and the rule's threadgroup size: the on-chip forms
