@@ -31,6 +31,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/tokenizer"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -81,7 +82,7 @@ func deepseekRealGate(t *testing.T, ckpt, golden, wantArch, reference string, wa
 			t.Fatalf("forward: %v", err)
 		}
 	}
-	gotArg := argmax(logits)
+	gotArg := sampling.Argmax(logits)
 	cos := logitCosine(logits, g.LastLogits)
 	t.Logf("%s parity: argmax got=%d want=%d | logit cosine=%.6f", wantArch, gotArg, g.Argmax, cos)
 	if gotArg != g.Argmax {
@@ -93,7 +94,7 @@ func deepseekRealGate(t *testing.T, ckpt, golden, wantArch, reference string, wa
 
 	got := make([]int, 0, g.NNew)
 	for range g.NNew {
-		id := argmax(logits)
+		id := sampling.Argmax(logits)
 		got = append(got, id)
 		if logits, err = m.forward(id, cache); err != nil {
 			t.Fatalf("continuation forward: %v", err)

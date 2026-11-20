@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // TestInternLM2_textParity gates the grouped wqkv de-interleave — the only new code this
@@ -78,7 +80,7 @@ func TestInternLM2_textParity(t *testing.T) {
 			t.Fatalf("forward: %v", err)
 		}
 	}
-	gotArg := argmax(logits)
+	gotArg := sampling.Argmax(logits)
 	cos := logitCosine(logits, g.LastLogits)
 	t.Logf("internlm2 text parity (groups=%d): argmax got=%d want=%d | logit cosine=%.6f",
 		g.Groups, gotArg, g.Argmax, cos)
@@ -99,7 +101,7 @@ func TestInternLM2_textParity(t *testing.T) {
 				t.Fatalf("forward: %v", err)
 			}
 		}
-		nxt := argmax(lg)
+		nxt := sampling.Argmax(lg)
 		if i < len(g.ContinuationIDs) && nxt != g.ContinuationIDs[i] {
 			t.Errorf("continuation[%d] = %d, want %d", i, nxt, g.ContinuationIDs[i])
 			break

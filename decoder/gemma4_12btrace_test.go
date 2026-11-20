@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -76,7 +77,7 @@ func TestGemma4_12B_trace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("forward: %v", err)
 	}
-	got := argmax(logits)
+	got := sampling.Argmax(logits)
 	t.Logf("goinfer 12B argmax = %d (logit %.4f) | HF argmax = %d", got, logits[got], hf.Argmax)
 	if got == hf.Argmax {
 		t.Logf("ARGMAX MATCHES HF — 12B forward looks correct!")

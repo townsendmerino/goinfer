@@ -20,6 +20,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -249,7 +250,7 @@ func glmOcrRun(t *testing.T, g *glmOcrGolden, pv []float32, grid [3]int, tag str
 	want := g.lastLogits(t)
 	cs := logitCosine(logits, want)
 	worst, at := maxAbsDiff32(logits, want)
-	gotArg, wantArg := argmax(logits), argmax(want)
+	gotArg, wantArg := sampling.Argmax(logits), sampling.Argmax(want)
 	t.Logf("[%s] last-prompt-token logits vs HF: cosine %.9f, max|diff| %.3g at id %d (HF logit %.4f, range %.2f), argmax goinfer %d HF %d",
 		tag, cs, worst, at, want[at], logitRange(want), gotArg, wantArg)
 	if cs < glmOcrE2EBarCS {

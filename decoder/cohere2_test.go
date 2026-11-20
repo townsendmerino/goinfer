@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // TestCohere2_forwardParity is the Phase-2 end-to-end gate for Cohere2 / Command-R7B
@@ -77,7 +79,7 @@ func TestCohere2_forwardParity(t *testing.T) {
 		t.Fatalf("got %d logits, want %d", len(logits), len(g.LastLogits))
 	}
 
-	got := argmax(logits)
+	got := sampling.Argmax(logits)
 	t.Logf("argmax: got %d | want %d", got, g.Argmax)
 	if got != g.Argmax {
 		t.Errorf("argmax = %d, want %d", got, g.Argmax)
@@ -115,7 +117,7 @@ func TestCohere2_forwardParity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("continuation forward: %v", err)
 		}
-		nxt := argmax(lg)
+		nxt := sampling.Argmax(lg)
 		cont = append(cont, nxt)
 		cur = append(cur, nxt)
 	}
