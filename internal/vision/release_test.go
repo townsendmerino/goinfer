@@ -204,7 +204,7 @@ func TestReleaseBlocks_reloadsTheSameTower(t *testing.T) {
 func TestReleaseBlocks_refusesACallersSource(t *testing.T) {
 	ref, err := LoadQwen3VisionEncoder("testdata/qwen35vl-vision-tiny", false)
 	if err != nil {
-		t.Skipf("no Qwen3.5 tiny tower: %v", err)
+		t.Fatalf("load testdata/qwen35vl-vision-tiny: %v", err)
 	}
 	st, err := openWeights("testdata/qwen35vl-vision-tiny")
 	if err != nil {

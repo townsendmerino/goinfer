@@ -402,8 +402,7 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 	if m.Mamba != nil && (m.Mamba.DConv > 8 || m.Mamba.DConv < 1) {
 		return nil, fmt.Errorf("gpu: newDecodeRunner: mamba conv_kernel %d out of range [1,8] for the resident conv kernel; declining to CPU", m.Mamba.DConv)
 	}
-	ssmStopLayer := SsmStopLayerForTest                  // layer-sweep seam (tests only): truncate the plan
-	ssmSkipFFN := os.Getenv("GOINFER_SSM_SKIPFFN") != "" // debug: mixer-only isolation
+	ssmStopLayer := SsmStopLayerForTest // layer-sweep seam (tests only): truncate the plan
 	ensures := []func() error{c.ensureGEMV, c.ensureGEMVBias, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureFuse, c.ensureGEMVW4, c.ensureQKNorm, c.ensureLora}
 	if m.Moe != nil {
 		ensures = append(ensures, c.ensureMoERoute, c.ensureMoEExpert, c.ensureMoEExpertW4)
@@ -1452,9 +1451,6 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 		if lw.NemoKind == NemoKMamba || lw.NemoKind == NemoKAttn {
 			continue // Nemotron single-op-per-block: the mixer IS the layer — no FFN sub-block
 		}
-		if ssmSkipFFN { // GOINFER_SSM_SKIPFFN debug: isolate the mixer from the FFN
-			continue
-		}
 		if g := lw.G4moe; g != nil {
 			// Gemma 4's parallel dense and MoE block, on the post-attention residual in r.xd (decoder's gemma4MoEFFN).
 			d := G4MoEDefectForTest
@@ -1630,7 +1626,7 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 	// falls back to the staged/CPU path, never a panic.
 	if buildErr != nil {
 		r.release()
-		return nil, fmt.Errorf("gpu: newDecodeRunner: device allocation failed (VRAM exhausted?): %w", buildErr)
+		return nil, fmt.Errorf("gpu: newDecodeRunner: %w (VRAM exhausted?): %w", mem.DeviceAllocError{}, buildErr)
 	}
 	// Snapshot the pristine (no-adapter) plan: SetAdapter rebuilds r.steps from it plus r.loraHooks rather than mutating it.
 	r.baseSteps = r.steps

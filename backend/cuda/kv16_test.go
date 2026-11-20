@@ -1081,7 +1081,7 @@ func TestKV8_G2exact_readersMatchTheCPUOnOneCache(t *testing.T) {
 	const K, bar, M, start = 300, 1e-4, 8, 200
 	t.Setenv("GOINFER_CUDA_FLASH_DECODE", "16") // the lane on at this short context, as the every-path test turns it on
 	t.Setenv("GOINFER_CUDA_FLASH_DECODE_MIN_KEYS", "0")
-	t.Setenv("GOINFER_SPLITKV_VSUM_SPLIT", "4") // loads the split V-sum; kv8Readers runs split-KV with it and without
+	setVsumSplit(t, 4) // loads the split V-sum; kv8Readers runs split-KV with it and without
 	for _, fx := range []string{"llama-attnfa-tiny", "~qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", "~qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"} {
 		t.Run(strings.TrimPrefix(fx, "~"), func(t *testing.T) {
 			path := kv8Path(fx)
@@ -1300,7 +1300,7 @@ func kv8Readers(r *cudaResident, l, pos int) []kv8Reader {
 		out = append(out, kv8Reader{name: "flash-decode lane", launch: func() error { return r.flashDecodeAttn(l, pos) }})
 	}
 	if r.skScores != (Pipeline{}) {
-		// split-KV's V-sum both ways: the single fold, and the split one GOINFER_SPLITKV_VSUM_SPLIT loads (skVsumSplit chunks).
+		// split-KV's V-sum both ways: the single fold, and the split one vsumSplitForTest loads (skVsumSplit chunks).
 		split := r.skVsumSplit
 		out = append(out, kv8Reader{name: "split-KV", launch: func() error {
 			defer func() { r.skVsumSplit = split }()
@@ -1677,22 +1677,26 @@ func TestMoEExpertsUnpinned_identityAndPricing(t *testing.T) {
 	}
 }
 
-// TestKV8_everyFusedPrefillLaunchPassesScales reads prefill.go: every launch of a tensor-core prefill tile (attn_fused, attn_fused_bm) passes
+// TestKV8_everyFusedPrefillLaunchPassesScales reads prefill.go and prefill_pass.go: every launch of a tensor-core prefill tile (attn_fused, attn_fused_bm) passes
 // the layer's scale pools through kvScaled, since the identity test launches each tile itself and would not see a dispatch site that forgot
 // them (S6, Gemini's review of #785). Eight sites: two attn_fused head dims and three attn_fused_bm shapes at two head dims.
 func TestKV8_everyFusedPrefillLaunchPassesScales(t *testing.T) {
-	b, err := os.ReadFile("prefill.go")
-	if err != nil {
-		t.Fatal(err)
+	var b []byte
+	for _, f := range []string{"prefill.go", "prefill_pass.go"} {
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b = append(b, src...)
 	}
 	launch := regexp.MustCompile(`r\.launch\(r\.(bAttnFused(?:64|128)|bAttnBM\w+), ([^\n]*)`)
 	sites := launch.FindAllStringSubmatch(string(b), -1)
 	if len(sites) != 8 {
-		t.Fatalf("found %d tensor-core tile launches in prefill.go, expected 8: the scan no longer sees them all", len(sites))
+		t.Fatalf("found %d tensor-core tile launches in prefill.go and prefill_pass.go, expected 8: the scan no longer sees them all", len(sites))
 	}
 	for _, m := range sites {
 		if !strings.Contains(m[2], "r.kvScaled(l, ") {
-			t.Errorf("prefill.go launches %s without r.kvScaled(l, ...): an int8 cache's tile would read no scales (%s)", m[1], m[0])
+			t.Errorf("the batched prefill launches %s without r.kvScaled(l, ...): an int8 cache's tile would read no scales (%s)", m[1], m[0])
 		}
 	}
 }

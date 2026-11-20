@@ -192,6 +192,7 @@ func (r *resident) ensurePrefill() {
 	defer pool.Drain()
 	defer func() {
 		if p := recover(); p != nil {
+			mem.RepanicBug(p)
 			err := fmt.Errorf("%v", p)
 			r.pfErr = err
 			panic(err)

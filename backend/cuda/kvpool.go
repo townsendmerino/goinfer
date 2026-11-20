@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"errors"
 	"fmt"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
@@ -654,6 +655,11 @@ func (r *cudaResident) kvAllocPoolsFit() error {
 	return fmt.Errorf("cuda: the device ran out of memory allocating one KV slot's pools")
 }
 
+// allocFailureForTest is what a test seam that stands in an out-of-memory device panics with: the allocator's own failure value.
+func allocFailureForTest() *gpu.AllocFailure {
+	return gpu.AllocFailedPanic("test seam", 0, errors.New("cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY"))
+}
+
 // kvTryAllocPools is one kvAllocPools attempt; ok=false, with everything it allocated released, on a device allocation failure.
 func (r *cudaResident) kvTryAllocPools(slots int) (ok bool, err error) {
 	defer func() {
@@ -666,7 +672,7 @@ func (r *cudaResident) kvTryAllocPools(slots int) (ok bool, err error) {
 		}
 	}()
 	if kvSlotAllocFailAtForTest > 0 && slots > kvSlotAllocFailAtForTest {
-		panic("cuda: device allocation failed (test seam): cuMemAlloc_v2: CUDA_ERROR_OUT_OF_MEMORY")
+		panic(allocFailureForTest())
 	}
 	if r.kvWin {
 		r.kvBases = make([]int, slots)

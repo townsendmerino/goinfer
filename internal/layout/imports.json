@@ -229,6 +229,9 @@
       "backend/cuda",
       "internal/app/serveapp"
     ],
+    "backend/cuda/internal/fitdecide": [
+      "internal/runtime/mem"
+    ],
     "backend/metal": [
       "backend/metal/internal/gpudev",
       "backend/metal/kernels",
@@ -397,6 +400,7 @@
       "decoder",
       "decoder/fit",
       "internal/config",
+      "internal/runtime/mem",
       "internal/runtime/modelload",
       "internal/runtime/prequant"
     ],

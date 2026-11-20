@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"runtime"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -507,6 +508,8 @@ func (r *cudaResident) knobValue(name string) string { v, _ := r.lookupKnob(name
 type cudaResident struct {
 	// xhostBuf is the contiguous host block a batched pass stages its embeddings in before the upload (prefillCore), grown to the widest pass and reused.
 	xhostBuf []float32
+	// pass is the batched prefill pass in progress (prefillPass), reset by each pass and cleared at its end. Executor goroutine only.
+	pass prefillPass
 	// prog is the model's program (decoder.Model.Program), shared and read-only, decoded into each layer's walk.
 	prog *program.Program
 	// cost, when set, counts the token in progress into costPhase (SB11, cost.go); nil is off. Executor goroutine only.
@@ -743,7 +746,7 @@ type cudaResident struct {
 	psLaunches                                   int      // launch groups of it, for tests
 	skVsumPartial, skVsumCombine                 Pipeline // flash-decode V-sum SPIKE (opt-in, NOT bit-identical) — scoping-decode-tree-recanon.md §6
 	skPartialBuf                                 Buffer   // [nH·maxHd·nSplit] partial folds for the spike
-	skVsumSplit                                  int      // GOINFER_SPLITKV_VSUM_SPLIT; 0 = off (the shipped path)
+	skVsumSplit                                  int      // vsumSplitForTest at build; 0 = off (the shipped path)
 	// Flash-decode lane (decode_fa.cu): default on (GOINFER_CUDA_FLASH_DECODE=0 turns it off), NOT bit-identical.
 	faPartial     [3]Pipeline // fa_partial_{64,128,256}
 	kv8Store      Pipeline    // kv8_store: the int8 cache's quantizing store (kv8.go); bound only on an int8 cache
@@ -1780,7 +1783,7 @@ func (r *cudaResident) ResizeExpertCache(reserve int64) (slots int, err error) {
 		budget := reservedBudget(int64(free)+slotRequirement(r.cacheSlots, nL, strides), reserve)
 		fit, decline := capSlots(budget, nL, strides, r.topK, r.cacheSlotsAsked)
 		if decline {
-			return fmt.Errorf("cuda: the expert cache cannot keep %d slots/layer beside %.2f GB reserved (%d fit)", r.topK, float64(reserve)/1e9, fit)
+			return fmt.Errorf("cuda: the expert cache cannot keep %d slots/layer beside %s reserved (%d fit)", r.topK, mem.GiB(reserve), fit)
 		}
 		if fit == r.cacheSlots {
 			return nil
@@ -2139,7 +2142,7 @@ func (r *cudaResident) mapBytes(src []byte) *gpu.MappedHostBuffer {
 	return mb
 }
 
-func (r *cudaResident) do(j func() error) error { r.reqCh <- j; return <-r.ackCh }
+func (r *cudaResident) do(j func() error) error { r.reqCh <- j; return ackJob(<-r.ackCh) }
 
 // doOn is do with the allocation helpers on plan line line for the job: the line is set on the executor, where they read it.
 func (r *cudaResident) doOn(line string, j func() error) error {
@@ -2152,10 +2155,14 @@ func (r *cudaResident) doOn(line string, j func() error) error {
 // runJob is the executor goroutine's PANIC BOUNDARY: it runs one job and converts a panic into an ordinary error,
 // so the pinned thread survives and `do` returns to its caller. It has to live here and not at a call site: every
 // job runs on the executor goroutine but `do` blocks on a different one, so a `defer recover()` in BuildResident
-// or any caller cannot catch a panic raised inside j(). The case is reachable by design: gpu.NewBufferLenOf
-// PANICS on allocation failure per its contract, and prefillCore allocates M*(2*inter+2*hidden+...) floats,
-// hundreds of MB on a long prompt; without this a long prompt against a nearly-full card killed the serve process
-// at the one seam whose job is to decline to the sequential path.
+// or any caller cannot catch a panic raised inside j(). The case is reachable by design: the allocator PANICS on
+// allocation failure per its contract, and prefillCore allocates M*(2*inter+2*hidden+...) floats, hundreds of MB on
+// a long prompt; without this a long prompt against a nearly-full card killed the serve process at the one seam
+// whose job is to decline to the sequential path.
+//
+// A runtime.Error (a bug, not a device failure) comes back as an *executorBug, which ackJob raises again on the
+// calling goroutine: a bug must fail loudly there, not become a decline to a slower path. Any other panic value is
+// wrapped with %w when it is an error, so mem.DeviceAllocFailed still sees the allocator's failure type.
 //
 // The recovered error is deliberately NOT wrapped in errPrefillDeclined here: `do` is shared by every job (setup,
 // decode, prefill), and only the prefill caller knows a decline is the right response. prefillCore wraps it at its
@@ -2164,12 +2171,43 @@ func runJob(j func() error) (err error) {
 	defer func() {
 		if p := recover(); p != nil {
 			// The STACK, not just the value: a recovered executor panic becomes a resident DECLINE printed once to stderr, and
-			// "device allocation failed (0 bytes)" with no frame is unactionable. The stack is a few KB on a path that runs at
-			// most once per model load.
-			err = fmt.Errorf("cuda: executor job panicked: %v\n%s", p, debug.Stack())
+			// an allocation failure with no frame is unactionable. The stack is a few KB on a path that runs at most once per
+			// model load.
+			stack := debug.Stack()
+			switch v := p.(type) {
+			case runtime.Error:
+				err = &executorBug{bug: v, stack: stack}
+			case error:
+				err = fmt.Errorf("cuda: executor job panicked: %w\n%s", v, stack)
+			default:
+				err = fmt.Errorf("cuda: executor job panicked: %v\n%s", p, stack)
+			}
 		}
 	}()
 	return j()
+}
+
+// executorBug is a runtime.Error recovered on an executor goroutine, with that goroutine's stack. It is itself a runtime.Error,
+// so every recover the re-raised panic meets on the calling side (mem.RepanicBug) lets it through too.
+type executorBug struct {
+	bug   runtime.Error
+	stack []byte
+}
+
+func (b *executorBug) Error() string {
+	return fmt.Sprintf("cuda: executor job panicked: %s\nexecutor goroutine stack:\n%s", b.bug.Error(), b.stack)
+}
+
+func (b *executorBug) RuntimeError() {}
+
+func (b *executorBug) Unwrap() error { return b.bug }
+
+// ackJob is a job's result as `do` returns it: an executorBug panics on the calling goroutine, anything else is returned.
+func ackJob(err error) error {
+	if b, ok := err.(*executorBug); ok {
+		panic(b)
+	}
+	return err
 }
 
 // errKVWontFit marks the one setup failure that must NOT degrade quietly to the staged path: an explicitly configured resident
@@ -2927,7 +2965,7 @@ func (r *cudaResident) splitKVAttnDecode(l, pos int) error {
 	}
 	// 3. V-sum → r.cctx (each thread the whole ascending-s fold for one output dim). The branch below is the opt-in
 	// SPIKE path: it splits the V fold over S key chunks and combines in fixed order, so it is NOT bit-identical to
-	// attn_batched and is unreachable unless GOINFER_SPLITKV_VSUM_SPLIT is set.
+	// attn_batched and is unreachable unless a test sets vsumSplitForTest.
 	if r.skVsumSplit >= 1 && r.skVsumPartial != (Pipeline{}) && r.skVsumCombine != (Pipeline{}) {
 		nSplit := r.skVsumSplit
 		dy := uint32((Ly.hd + dTile - 1) / dTile)
@@ -4084,7 +4122,7 @@ func (r *cudaResident) decodeAttn(Ly *cudaLayer, l, pos int) error {
 	if arm == armRefused {
 		return fmt.Errorf("cuda: attention at %d attended keys needs %d B of shared memory, "+
 			"past this device's %d B limit, and split-KV is unavailable (%s) — lower -ctx or "+
-			"re-enable GOINFER_SPLITKV_ATTN (M-16)", nWin, attnShmemBytes(nWin),
+			"re-enable GOINFER_SPLITKV_ATTN", nWin, attnShmemBytes(nWin),
 			singleBlockAttnShmemLimit,
 			map[bool]string{true: "kernel not loaded", false: "disabled by GOINFER_SPLITKV_ATTN"}[r.skScores == (Pipeline{})])
 	}
