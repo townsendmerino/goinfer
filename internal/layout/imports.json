@@ -676,6 +676,7 @@
       "internal/runtime/mem",
       "internal/runtime/mem/probe",
       "internal/runtime/program",
+      "internal/runtime/sampling",
       "internal/testgate",
       "internal/vision",
       "multimodal",
