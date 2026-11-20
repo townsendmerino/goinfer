@@ -542,6 +542,7 @@
     "backend/cuda": [
       "backend/cuda/internal/gpudev",
       "backend/cuda/internal/launchgeom",
+      "backend/cuda/internal/wpack",
       "chat",
       "decoder",
       "decoder/fit",

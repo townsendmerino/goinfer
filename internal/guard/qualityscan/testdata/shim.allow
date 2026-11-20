@@ -23,21 +23,6 @@ internal/runtime/prequant/prequant.go:SidecarPathIfFresh -- exported: the packag
 server/server.go:NewHandler -- exported: the package's API to other packages and modules, kept as the entry point
 server/server.go:Transport -- exported: the package's API to other packages and modules, kept as the entry point
 # Package-move shims still to inline at their callers (code-quality ledger, Q11).
-backend/cuda/flash_decode.go:faRowRuns -- a package-move shim; inline at its callers in a later Q11 change
-backend/cuda/flash_decode.go:faRowsPerCTA -- a package-move shim; inline at its callers in a later Q11 change
-backend/cuda/kernels.go:f32tof16 -- a package-move shim; inline at its callers in a later Q11 change
-backend/cuda/kvhalf.go:f32SliceToF16RNE -- a package-move shim; inline at its callers in a later Q11 change
-backend/cuda/kvhalf.go:f32ToF16RNE -- a package-move shim; inline at its callers in a later Q11 change
-backend/cuda/kvwindow.go:kvWindowReusable -- a package-move shim; inline at its callers in a later Q11 change
-backend/cuda/pack_stream.go:packI8Into -- a package-move shim; inline at its callers in a later Q11 change
-backend/cuda/pack_stream.go:packInt4Into -- a package-move shim; inline at its callers in a later Q11 change
-backend/cuda/prefill.go:imgBlockMaxNWin -- a package-move shim; inline at its callers in a later Q11 change
-backend/cuda/prefill.go:imgBlocksMaxNWin -- a package-move shim; inline at its callers in a later Q11 change
-backend/cuda/resident.go:capSlots -- a package-move shim; inline at its callers in a later Q11 change
-backend/cuda/resident.go:packI8 -- a package-move shim; inline at its callers in a later Q11 change
-backend/cuda/resident.go:reservedBudget -- a package-move shim; inline at its callers in a later Q11 change
-backend/cuda/resident.go:slotRequirement -- a package-move shim; inline at its callers in a later Q11 change
-backend/cuda/resident.go:weightsFitDecision -- a package-move shim; inline at its callers in a later Q11 change
 backend/metal/grid_vision.go:quantG32 -- a package-move shim; inline at its callers in a later Q11 change
 backend/metal/pack.go:packW4A8Row -- a package-move shim; inline at its callers in a later Q11 change
 backend/metal/pack.go:packW4A8RowInto -- a package-move shim; inline at its callers in a later Q11 change

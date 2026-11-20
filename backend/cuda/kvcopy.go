@@ -67,7 +67,7 @@ func (r *cudaResident) copyKVSlots(src, dst, start, end int) (err error) {
 	}
 	lo := 0 // the first row a windowed layer of dst holds afterwards
 	if r.kvWin {
-		if !kvWindowReusable(r.kvBases[src], end, r.kvWindow) {
+		if !decoder.KVWindowReusable(r.kvBases[src], end, r.kvWindow) {
 			return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d's windowed layers hold rows from %d; continuing at %d needs them from %d; %s",
 				src, r.kvBases[src], end, end-(r.kvWindow-1), r.kvBudgetText())}
 		}
@@ -167,7 +167,7 @@ func (r *cudaResident) ReusableKVSlot(slot, prefix int) int {
 			out = 0
 			return nil
 		}
-		if r.kvWin && !kvWindowReusable(r.kvBases[slot], prefix, r.kvWindow) {
+		if r.kvWin && !decoder.KVWindowReusable(r.kvBases[slot], prefix, r.kvWindow) {
 			out = 0
 			logs.Debugf("cuda: kv copy: slot %d's windowed layers hold rows from %d; continuing at %d needs them from %d; %s",
 				slot, r.kvBases[slot], prefix, prefix-(r.kvWindow-1), r.kvBudgetText())

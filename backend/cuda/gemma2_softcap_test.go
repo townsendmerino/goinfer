@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
@@ -377,7 +378,7 @@ func TestGemma2Softcap_flashDecodeVsF64(t *testing.T) {
 			for _, M := range []int{1, 3, 9} {
 				full := make([]float32, faMaxRows*qDim)
 				if e := rf.do(func() error {
-					for _, run := range faRowRuns(n0, M, 0, S) {
+					for _, run := range launchgeom.FaRowRuns(n0, M, 0, S) {
 						if e := rf.flashDecodeRowsLaunch(qb, kb, vb, kt, cb, hd, nKV, run); e != nil {
 							return e
 						}

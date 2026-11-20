@@ -11,6 +11,8 @@ import (
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
+
+	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
 )
 
 // prefillPass is one prefillCore pass's state, shared by its phases: the call's inputs, the scratch it allocates and the
@@ -502,9 +504,9 @@ func (p *prefillPass) ordAttn(l int, Ly *cudaLayer, g *prefillLayerGeom, startPo
 		maxNWin = int(Ly.window)
 	}
 	if len(blocks) > 0 {
-		// Widened by imgBlocksMaxNWin, the formula checkPrefillShmemImgBlocks uses; the two must not drift, or this allocation
+		// Widened by launchgeom.ImgBlocksMaxNWin, the formula checkPrefillShmemImgBlocks uses; the two must not drift, or this allocation
 		// under-sizes the launch it covers.
-		maxNWin = imgBlocksMaxNWin(maxNWin, int(Ly.window), blocks)
+		maxNWin = launchgeom.ImgBlocksMaxNWin(maxNWin, int(Ly.window), blocks)
 	}
 	t = r.profTic()
 	// L2: the fused kernel when it serves this (hd, M), else attn_batched (see useAttnFused for the selection rule). The
