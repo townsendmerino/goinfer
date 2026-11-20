@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"runtime"
 	"sync"
 	"unsafe"
@@ -329,6 +330,6 @@ func pagerSummary(p *expertPager) string {
 	if p.pool != nil {
 		mode = "pread"
 	}
-	return fmt.Sprintf("expert paging (%s): %d experts, %.1f GB total, %.1f GB budget",
-		mode, p.nExperts, float64(p.total)/1e9, float64(p.budget())/1e9)
+	return fmt.Sprintf("expert paging (%s): %d experts, %s total, %s budget",
+		mode, p.nExperts, mem.GiB(p.total), mem.GiB(p.budget()))
 }

@@ -236,7 +236,7 @@ func TestQwen3Deepstack_exportRecomposes(t *testing.T) {
 	const dir = "testdata/qwen3vl-vision-tiny"
 	e, err := LoadQwen3VisionEncoder(dir, false)
 	if err != nil {
-		t.Skipf("no fixture: %v", err)
+		t.Fatalf("load testdata/qwen3vl-vision-tiny: %v", err)
 	}
 	if _, err := e.Weights(); err != nil {
 		t.Fatalf("a DeepStack tower's export: %v", err)

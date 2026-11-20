@@ -191,7 +191,7 @@ func TestPlan_expertBiasesOnTheLineThatHoldsThem(t *testing.T) {
 	}
 	full := m.ResidentWeightBytesPaged(0) - m.ResidentDenseWeightBytes() - bias
 	for _, b := range []string{"cuda", "webgpu", "metal", "cpu"} {
-		l := m.deviceLoad(b, false, false, true)
+		l := m.deviceLoad(b, PlanRequest{CtxPinned: true})
 		if l.ExpertBytesFull != full {
 			t.Errorf("%s: the scaled expert figure is %d, the experts alone %d", b, l.ExpertBytesFull, full)
 		}
@@ -250,7 +250,7 @@ func TestDeviceLoad_stateOnEachBackend(t *testing.T) {
 			}
 		}
 		for _, be := range []string{"cpu", "webgpu", "metal", "cuda"} {
-			if got, held := m.deviceLoad(be, false, false, false).StateBytes, cacheStateBytes(c); got != held {
+			if got, held := m.deviceLoad(be, PlanRequest{}).StateBytes, cacheStateBytes(c); got != held {
 				t.Errorf("%s on %s: state line %d, the forward holds %d", dir, be, got, held)
 			}
 		}
@@ -262,7 +262,7 @@ func TestDeviceLoad_stateOnEachBackend(t *testing.T) {
 	}
 	defer dense.Close()
 	for _, be := range []string{"cpu", "webgpu", "metal", "cuda"} {
-		if got := dense.deviceLoad(be, false, false, false).StateBytes; got != 0 {
+		if got := dense.deviceLoad(be, PlanRequest{}).StateBytes; got != 0 {
 			t.Errorf("llama-tiny on %s has a state line of %d bytes", be, got)
 		}
 	}

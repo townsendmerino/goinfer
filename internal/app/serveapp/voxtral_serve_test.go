@@ -72,7 +72,7 @@ func tinyVoxtralLM(t *testing.T) (*loadedModel, string) {
 	}
 	m, err := decoder.Load(dir, decoder.Options{Backend: "cpu"})
 	if err != nil {
-		t.Skipf("no tiny Voxtral fixture: %v", err)
+		t.Fatalf("load %s: %v", dir, err)
 	}
 	t.Cleanup(func() { m.Close() })
 	tk, err := tokenizer.LoadTekken(tinyTekkenJSON(t))
