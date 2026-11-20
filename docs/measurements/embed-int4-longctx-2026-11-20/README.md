@@ -1,6 +1,6 @@
 # The int4 output head at long context, against HF f32 (#1160; registered 2026-11-20)
 
-**Status: REGISTERED 2026-11-20, before any data.** Owner's go: Francis, 2026-11-20 08:55 PST, relayed by the coordinator.
+**Status: REGISTERED 2026-11-20 before any data; RUN and graded the same day (*Results*): 0.5B PASS, 1.5B does not pass.** Owner's go: Francis, 2026-11-20 08:55 PST, relayed by the coordinator.
 A bar that turns out wrong gets a dated amendment with its mechanism, not an edit.
 
 **Why.** On CUDA, `--embed-int4` (the default since 2026-09-28) makes the 0.5B's first-token distribution near-flat on a
@@ -69,6 +69,76 @@ re-run (`docs/quantization.md`). This asks whether that cost holds on real long 
 - Outputs go in `results/`: per-arm JSONL, the verdict JSON, and the logs. The reference's log-probs (about 1.2 GB) stay
   under `~/goinfer-work/fid1160` on nobara.
 
-## Results
+## Results (run 2026-11-20 09:35–11:11 PST, graded 11:11)
 
-Not run yet.
+**The run:** [`run.sh`](run.sh) at registration `dc2322ef0`.
+- **Machine time:** 1 h 36 min, against the 90 min estimated and inside the 2-hour stop.
+  - HF reference: 11 min.
+  - CUDA arms: 24 min.
+  - CPU arm: 61 min. That is the overrun: 6.5 min a document on the 0.5B and 11 on the 1.5B, against about 4 and 8
+    assumed.
+- **The lock:** every phase held the timing lock (CPU shared, GPU exclusive). It started after nobara-arch9m released it.
+- **Validity:** all four CUDA arms were `cuda-resident (int4)` with the head table asked for, and no arm was void.
+- **Records:** `results/`: per-arm JSONL (one row a scored position), `<model>-verdict.json`, `grade.log`, the logs, and
+  the sha256 of each reference log-prob file (the files stay on nobara under `~/goinfer-work/fid1160`).
+
+### The registered criterion: the int4 head (A) against the int8 head (B), pooled over K = 256 to 8192
+
+| model | top-1 agreement A / B | diff (one-sided LCB; margin −2.5) | mean KL ratio A ÷ B (UCB; margin 1.25) | hard flips A / B (bound) | outcome |
+|---|---|---|---|---|---|
+| 0.5B | 81.09% / 82.08% | −0.99 pts (−2.12) | 1.199 (1.225) | 129 / 115 (≤ 136.4) | **PASS** |
+| 1.5B | 83.07% / 85.16% | −2.08 pts (**−3.21**) | 1.223 (**1.265**) | **81** / 60 (≤ 75.5) | **does not pass** |
+
+- **How the 1.5B reads against the registered labels:**
+  - **Agreement and KL** have point estimates inside their margins and bounds outside them. That is the registration's
+    **AMBIGUOUS**: not resolved at 30 prompts.
+  - **Hard flips fail outright:** 81 against a bound of 75.5. The registration's FAIL and AMBIGUOUS definitions do not
+    name a flip failure. That gap is recorded here, not resolved by choosing a label.
+  - The package's verdict is `Pass: false`, and the registration's PASS needs both models. So **the registered outcome is
+    not PASS**. How to weigh it is Francis's call.
+
+### Per K: does the cost grow with context?
+
+The per-cell values, each from 6 prompts, so each is noisy alone.
+
+| K | 0.5B agreement A / B (diff) | 0.5B KL ratio | 1.5B agreement A / B (diff) | 1.5B KL ratio |
+|---|---|---|---|---|
+| 256 | 84.38 / 85.16 (−0.78) | 1.215 | 86.98 / 87.76 (−0.78) | 1.177 |
+| 1024 | 78.65 / 78.39 (+0.26) | 1.162 | 83.85 / 85.68 (−1.82) | 1.348 |
+| 2048 | 81.51 / 81.77 (−0.26) | 1.270 | 83.33 / 87.76 (−4.43) | 1.239 |
+| 4096 | 82.55 / 83.85 (−1.30) | 1.231 | 81.77 / 83.07 (−1.30) | 1.175 |
+| 8192 | 78.39 / 81.25 (−2.86) | 1.141 | 79.43 / 81.51 (−2.08) | 1.193 |
+
+- **KL:** the int4 head adds about 15–35% to the KL against the reference at every length. The penalty does not grow with
+  context.
+- **Agreement:** the cost is 0.8 pts at 256 tokens on both models, below the disclosed ~2.3.
+  - The 0.5B's largest gap is at 8192 (−2.86).
+  - The 1.5B's runs from 1.3 to 4.4 pts from 1024 on.
+- **Overall:** it is not a clean trend. The pooled figures above are the registered reading.
+
+### Arm C: the CPU, int4 head, against the reference (descriptive)
+
+| K | 0.5B CPU agreement / KL (CUDA A) | 1.5B CPU agreement / KL, 2 documents |
+|---|---|---|
+| 256 | 84.11% / 0.115 (84.38% / 0.120) | 89.84% / 0.063 |
+| 1024 | 78.39% / 0.162 (78.65% / 0.162) | 82.81% / 0.089 |
+| 2048 | 80.21% / 0.158 (81.51% / 0.158) | 82.81% / 0.099 |
+| 4096 | 81.51% / 0.153 (82.55% / 0.156) | 79.69% / 0.122 |
+| 8192 | 78.65% / 0.183 (78.39% / 0.185) | 75.78% / 0.109 |
+
+On the 0.5B the CPU's int4 head tracks the CUDA int4 head to within about 1 pt and 0.005 nats at every K. **The cost
+belongs to the int4 head, not to the CUDA backend.**
+
+### Reading
+
+- **The int4 head's cost on real long prompts is close to its disclosure in size.** The pooled cost against the int8
+  head is 1.0 pt on the 0.5B and 2.1 pts on the 1.5B. The disclosure says about 2.3; both are now measured on two models
+  against an independent reference.
+- **It is not uniform.** The cost is smaller at short context (0.8 pts at 256 on both models) and larger at long context
+  (2–4 pts at some K), with a KL penalty of about 1.2× throughout.
+- **The 1.5B misses the registered non-inferiority bar.** Its agreement and KL bounds cross the margins, and its hard
+  flips exceed the bound.
+- **#1160's 8-token reply** is this cost meeting a near-flat distribution on a filler prompt. Nothing here points to a
+  different defect.
+- **Decision:** whether the default stays `--embed-int4` (its speed is the reason for it) or moves to the int8 head is
+  Francis's call. Nothing was changed.

@@ -1,0 +1,108 @@
+{
+ "Criteria": {
+  "AgreeMarginPts": 2.5,
+  "KLMargin": 0.25,
+  "Alpha": 0.05
+ },
+ "Pooled": {
+  "Prompts": 30,
+  "Positions": 1920,
+  "FlipsCand": 81,
+  "FlipsExact": 60,
+  "AgreeCandPct": 83.07291666666667,
+  "AgreeExactPct": 85.15625,
+  "MeanKLCand": 0.09053200628150114,
+  "MeanKLExact": 0.07403213587231153,
+  "AgreeDiffPts": -2.0833333333333335,
+  "AgreeDiffLCB": -3.214957692813431,
+  "KLRatio": 1.2228744343895213,
+  "KLRatioUCB": 1.2652746803614479,
+  "DiscordantPositions": 164
+ },
+ "PerCell": {
+  "K1024": {
+   "Prompts": 6,
+   "Positions": 384,
+   "FlipsCand": 14,
+   "FlipsExact": 9,
+   "AgreeCandPct": 83.85416666666667,
+   "AgreeExactPct": 85.67708333333333,
+   "MeanKLCand": 0.09066692200653216,
+   "MeanKLExact": 0.06727711774557561,
+   "AgreeDiffPts": -1.8229166666666667,
+   "AgreeDiffLCB": -3.503872849224983,
+   "KLRatio": 1.3476635897127853,
+   "KLRatioUCB": 1.445200441969927,
+   "DiscordantPositions": 35
+  },
+  "K2048": {
+   "Prompts": 6,
+   "Positions": 384,
+   "FlipsCand": 11,
+   "FlipsExact": 9,
+   "AgreeCandPct": 83.33333333333333,
+   "AgreeExactPct": 87.76041666666667,
+   "MeanKLCand": 0.08531716058796578,
+   "MeanKLExact": 0.0688757556853637,
+   "AgreeDiffPts": -4.427083333333333,
+   "AgreeDiffLCB": -8.593297589024742,
+   "KLRatio": 1.2387110636972065,
+   "KLRatioUCB": 1.323535092423603,
+   "DiscordantPositions": 33
+  },
+  "K256": {
+   "Prompts": 6,
+   "Positions": 384,
+   "FlipsCand": 20,
+   "FlipsExact": 10,
+   "AgreeCandPct": 86.97916666666667,
+   "AgreeExactPct": 87.76041666666667,
+   "MeanKLCand": 0.07698235259783152,
+   "MeanKLExact": 0.06541134176378877,
+   "AgreeDiffPts": -0.78125,
+   "AgreeDiffLCB": -2.9569844355199186,
+   "KLRatio": 1.1768960935830914,
+   "KLRatioUCB": 1.3099226766048204,
+   "DiscordantPositions": 33
+  },
+  "K4096": {
+   "Prompts": 6,
+   "Positions": 384,
+   "FlipsCand": 17,
+   "FlipsExact": 15,
+   "AgreeCandPct": 81.77083333333333,
+   "AgreeExactPct": 83.07291666666667,
+   "MeanKLCand": 0.09456140594683089,
+   "MeanKLExact": 0.08045410232492262,
+   "AgreeDiffPts": -1.3020833333333333,
+   "AgreeDiffLCB": -3.338423144704721,
+   "KLRatio": 1.1753459825446115,
+   "KLRatioUCB": 1.257609795292754,
+   "DiscordantPositions": 25
+  },
+  "K8192": {
+   "Prompts": 6,
+   "Positions": 384,
+   "FlipsCand": 19,
+   "FlipsExact": 17,
+   "AgreeCandPct": 79.42708333333333,
+   "AgreeExactPct": 81.51041666666667,
+   "MeanKLCand": 0.10513219026834542,
+   "MeanKLExact": 0.08814236184190698,
+   "AgreeDiffPts": -2.0833333333333335,
+   "AgreeDiffLCB": -4.036897586807557,
+   "KLRatio": 1.1927544040277882,
+   "KLRatioUCB": 1.2620882660422488,
+   "DiscordantPositions": 38
+  }
+ },
+ "FlipsPass": false,
+ "AgreePass": false,
+ "KLPass": false,
+ "Pass": false,
+ "Reasons": [
+  "hard flips 81 \u003e exact 60 + 2√exact",
+  "agreement lower bound -3.21 pts \u003c −2.50",
+  "KL ratio upper bound 1.265 \u003e 1.250"
+ ]
+}
