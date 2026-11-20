@@ -559,6 +559,19 @@ kernel void rmsnorm_f16(device const half* x[[buffer(0)]], device const float* w
     for(uint i=tid;i<H;i+=tgs){ float g=addOne!=0u?(1.0f+w[i]):w[i]; orow[i]=half(float(xr[i])*rms*g); }
 }
 
+// rmsnorm_f16_f32out is rmsnorm_f16 on one row with an f32 output, the q4k lane head's input (decode's rmsnorm_f32_out, whose
+// precise rsqrt it takes).
+kernel void rmsnorm_f16_f32out(device const half* x[[buffer(0)]], device const float* w[[buffer(1)]],
+    device float* out[[buffer(2)]], constant uint& H[[buffer(3)]], constant float& eps[[buffer(4)]],
+    constant uint& addOne[[buffer(5)]], uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
+    threadgroup float red[256];
+    float ss=0; for(uint i=tid;i<H;i+=tgs){ float v=float(x[i]); ss+=v*v; }
+    red[tid]=ss; threadgroup_barrier(mem_flags::mem_threadgroup);
+    for(uint s=tgs/2u;s>0u;s>>=1u){ if(tid<s) red[tid]+=red[tid+s]; threadgroup_barrier(mem_flags::mem_threadgroup); }
+    float rms=precise::rsqrt(red[0]/float(H)+eps);
+    for(uint i=tid;i<H;i+=tgs){ float g=addOne!=0u?(1.0f+w[i]):w[i]; out[i]=float(x[i])*rms*g; }
+}
+
 // layernorm_f16 / layernorm_quant_f16: rmsnorm_f16 and
 // rmsnorm_quant_f16 for a bias-free LayerNorm (Cohere / Command-R7B): out = (x - mean) * rsqrt(var + eps) * w, the math of
 // the decode path's layernorm_quant with hasBias 0. Same signatures as the RMSNorm twins (addOne is accepted and unused:

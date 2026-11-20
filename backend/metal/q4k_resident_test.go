@@ -291,3 +291,105 @@ func TestPhi3Default_tracksTheCPUReferenceAtLeastAsCloselyAsTheOldDefault(t *tes
 			dw, da, ow, oa, cw)
 	}
 }
+
+// tinyPhi3Q4K loads decoder.WritePhi3Q4KTinyGGUFForTest's Phi-3 at --quant q4k, resident on Metal's q4k lane, with every layer's
+// norm weights divided by 128 on the device. The fixture's random blocks carry its residual past half's range in one layer (the
+// batched pass then declines on its overflow check); scaled, it peaks in the thousands, and the sequential path and the pass read
+// the same buffers, so they still run one model.
+func tinyPhi3Q4K(t *testing.T) (*decoder.Model, *metalResident) {
+	t.Helper()
+	src := filepath.Join(t.TempDir(), "phi3.gguf")
+	if err := decoder.WritePhi3Q4KTinyGGUFForTest(src); err != nil {
+		t.Fatal(err)
+	}
+	m, err := decoder.Load(src, decoder.Options{Backend: "metal", Quant: "q4k", ResidentContext: 256})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, ok := m.ResidentForwardForTest().(*metalResident)
+	if !ok || !a.r.q4kLane {
+		m.Close()
+		t.Fatalf("resident %T (%s), want metal on the q4k lane", m.ResidentForwardForTest(), m.DecodePath())
+	}
+	for l := range a.r.layers {
+		for _, b := range []Buffer{a.r.layers[l].preNorm, a.r.layers[l].postNorm} {
+			f := b.Floats()
+			for i := range f {
+				f[i] /= 128
+			}
+		}
+	}
+	return m, a
+}
+
+// TestQ4KLane_prefillTakesTheMMAPass: the q4k lane is admitted to the batched f16 MMA pass (prefillOK), PrefillPath names that
+// route, and a prompt above the step's bound runs it: the pass's attention launches, which the step never makes, are counted.
+func TestQ4KLane_prefillTakesTheMMAPass(t *testing.T) {
+	m, a := tinyPhi3Q4K(t)
+	defer m.Close()
+	ok, path := a.PrefillPath()
+	if !a.r.prefillOK || !ok || !strings.HasPrefix(path, "batched f16-MMA") {
+		t.Errorf("q4k lane: pass %v, PrefillPath (%v, %q); want the pass and a batched f16-MMA route", a.r.prefillOK, ok, path)
+	}
+	_, _, _, _, _, _, vocab := m.Dims()
+	embs := make([][]float32, 40)
+	for i := range embs {
+		embs[i] = m.EmbedResidentForTest((i*7 + 3) % vocab)
+	}
+	prefillAttnRanForTest = map[string]int{}
+	defer func() { prefillAttnRanForTest = nil }()
+	if _, err := a.PrefillLast(context.Background(), embs, 0); err != nil {
+		t.Fatalf("PrefillLast: %v", err)
+	}
+	launches := 0
+	for _, n := range prefillAttnRanForTest {
+		launches += n
+	}
+	if launches != a.r.nL {
+		t.Errorf("a 40-token prompt made %d batched-pass attention launches (%v), want one a layer (%d)", launches, prefillAttnRanForTest, a.r.nL)
+	}
+}
+
+// TestQ4KLane_mmaPrefillTracksTheSequentialPath is the pass's tier-0 fidelity check on the tiny Phi-3: its prompt-final logits
+// against the lane's own sequential Forward loop, at 40 and 100 tokens. The pass rounds weights and activations to half where the
+// lane's decode keeps f32, so it is not bit-identical. Bar, set before the first run: worst 1 - cosine at most 1e-3 and no NaN; a
+// wrong segment, offset or kind is far outside it. (Phi-3 at int4 is not resident on Metal, so no int4 arm compares here.)
+func TestQ4KLane_mmaPrefillTracksTheSequentialPath(t *testing.T) {
+	m, a := tinyPhi3Q4K(t)
+	defer m.Close()
+	worst := 0.0
+	_, _, _, _, _, _, vocab := m.Dims()
+	for _, n := range []int{40, 100} {
+		embs := make([][]float32, n)
+		for i := range embs {
+			embs[i] = m.EmbedResidentForTest((i*7 + 3) % vocab)
+		}
+		var seq []float32
+		for i := range n {
+			lg, err := a.Forward(embs[i], i)
+			if err != nil {
+				t.Fatalf("Forward %d: %v", i, err)
+			}
+			seq = append(seq[:0], lg...)
+		}
+		got, err := a.PrefillLast(context.Background(), embs, 0)
+		if err != nil {
+			t.Fatalf("PrefillLast: %v", err)
+		}
+		var dot, na, nb float64
+		for i := range seq {
+			if math.IsNaN(float64(got[i])) {
+				t.Fatalf("%d tokens: NaN logit at %d", n, i)
+			}
+			dot += float64(got[i]) * float64(seq[i])
+			na += float64(got[i]) * float64(got[i])
+			nb += float64(seq[i]) * float64(seq[i])
+		}
+		d := 1 - dot/math.Sqrt(na*nb)
+		fmt.Fprintf(os.Stderr, "[q4k MMA prefill] %d tokens: pass vs sequential 1-cosine %.3g\n", n, d)
+		worst = math.Max(worst, d)
+	}
+	if worst > 1e-3 {
+		t.Errorf("q4k pass vs sequential: worst 1-cosine %.3g; bar at most 1e-3", worst)
+	}
+}

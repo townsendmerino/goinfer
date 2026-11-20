@@ -101,7 +101,7 @@ var swigluFusedOffForTest bool
 // width, a width that is a multiple of 32, and no MoE layer (its expert GEMMs write guF). The pass and prefillScratchBytes
 // both ask it.
 func (r *resident) swigluFused(Mpad int) bool {
-	if swigluFusedOffForTest || r.moe != nil {
+	if swigluFusedOffForTest || r.moe != nil || r.q4kLane { // the lane's gate|up is segments of its own kinds (gemmSegs)
 		return false
 	}
 	for l := -1; l < len(r.layers); l++ {
@@ -159,6 +159,23 @@ type prefillState struct {
 	// D-B01: a gated-attention layer (Qwen3.5) on the batched lane; the DeltaNet mixer's own row kernels live in the
 	// resident library (r.pDn*Rows), beside the decode kernels they copy.
 	pQGateSplit, pCopyCols, pAttnGate Pipeline
+
+	// The q4k lane: gemm_kq_tile by segment kind and tile (gemmKQ), and its head's f32 final norm (rmsnorm_f16_f32out).
+	pKQ        map[kqTile]Pipeline
+	pRmsF32Out Pipeline
+}
+
+// kqTile names one gemm_kq_tile instance: a q4kSeg kind and a tile of TM tokens by TN features.
+type kqTile struct {
+	kind   string
+	tm, tn int
+}
+
+// gemmKQ is gemmTile for one segment of a q4k-lane projection: the same tile rule over the segment's rows (every tile is the
+// same bits), on the segment kind's gemm_kq_tile.
+func (pf *prefillState) gemmKQ(rows int, s q4kSeg) (Pipeline, int, int) {
+	tm, tn := gemmTileSize(rows, s.rows)
+	return pf.pKQ[kqTile{s.kind, tm, tn}], tm, tn
 }
 
 // ropeF16Name is the batched prefill's rope kernel: rope_f16, or rope_mrope_f16 for the m-RoPE pass, and their pairwise
@@ -248,6 +265,14 @@ func (r *resident) ensurePrefill() {
 		}
 		if r.w8 { // an int4mix resident's FFN is int4 and keeps gemm_w4f16_swiglu
 			r.pf.pGemmSwiglu = p("gemm_w8f16_swiglu")
+		}
+	}
+	if r.q4kLane {
+		r.pf.pKQ, r.pf.pRmsF32Out = map[kqTile]Pipeline{}, p("rmsnorm_f16_f32out")
+		for _, kind := range []string{"q4k", "q5k", "q6k", "int8"} {
+			for _, t := range [][2]int{{64, 64}, {32, 64}, {64, 32}, {32, 32}, {16, 32}} {
+				r.pf.pKQ[kqTile{kind, t[0], t[1]}] = p(fmt.Sprintf("gemm_kq_%s_m%dn%d", kind, t[0], t[1]))
+			}
 		}
 	}
 }
@@ -802,6 +827,18 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		p, tm, tn := pf.gemmTileFor(rows, N, r.w8 || r.w8Attn)
 		e.Dispatch2D(p, (N+tn-1)/tn, (rows+tm-1)/tm, 128, 1, bufs...)
 	}
+	// gemmSegs is gemm over a q4k-lane projection: one gemm_kq_tile dispatch per segment, each writing its own columns of the
+	// uLdc-wide output; mode 1 reads the bias at the output column.
+	gemmSegs := func(e *Encoder, rows int, segs []q4kSeg, a, c Buffer, uM, uK, uLdc, bias, mode Buffer) {
+		for _, s := range segs {
+			p, tm, tn := pf.gemmKQ(rows, s)
+			ws := s.s // int8's per-row scales; the block kinds carry theirs in w
+			if ws == (Buffer{}) {
+				ws = s.w
+			}
+			e.Dispatch2D(p, (s.rows+tn-1)/tn, (rows+tm-1)/tm, 128, 1, a, s.w, ws, c, uM, getU32(s.rows), uK, bias, mode, uLdc, getU32(s.off))
+		}
+	}
 	// gemmW8 is gemm on the int8 tiles: a Mamba layer's in_proj and out_proj (KS-D8).
 	gemmW8 := func(e *Encoder, rows, N int, bufs ...Buffer) {
 		p, tm, tn := pf.gemmTileFor(rows, N, true)
@@ -906,6 +943,8 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 			e.Dispatch(pf.pQGateSplit, M*nHhd, 256, qgF, qkvF, gateF, uTotalQ, uHd, uQkv, uMReal)
 			gemm(e, Mpad, 2*kvDim, inAttn, L.qkvW, L.qkvS, kvF, uM, u2KvDim, uH, dummyBias, m0)
 			e.Dispatch(pf.pCopyCols, M*2*kvDim, 256, kvF, qkvF, u2KvDim, uQkv, uKOff, uMReal)
+		} else if r.q4kLane {
+			gemmSegs(e, Mpad, L.qkvSegs, inAttn, qkvF, uM, uH, lu.uQkv, L.qkvBias, m1)
 		} else {
 			gemmAttn(e, Mpad, lu.qkvDim, inAttn, L.qkvW, L.qkvS, qkvF, uM, lu.uQkv, uH, L.qkvBias, m1)
 		}
@@ -1007,6 +1046,8 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 			} else {
 				e.Dispatch(pf.pRes, M*H, 256, xF, normF)
 			}
+		} else if r.q4kLane {
+			gemmSegs(e, Mpad, L.oSegs, ctxF, xF, uM, lu.uQDim, uH, dummyBias, m2)
 		} else {
 			gemmAttn(e, Mpad, H, ctxF, L.oW, L.oS, xF, uM, uH, lu.uQDim, dummyBias, m2)
 		}
@@ -1213,7 +1254,10 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		}
 		// gate/up, then swiglu/geglu (G8: r.uAct selects, 0 for every family without FeatGatedGELU): one fused GEMM when the pass
 		// takes it (swigluFused), else the GEMM into guF and swiglu_f16.
-		if fusedSw {
+		if r.q4kLane {
+			gemmSegs(e, Mpad, L.guSegs, inFFN, guF, uM, uH, u2FI, dummyBias, m0)
+			e.Dispatch(pf.pSw, M*fI, 256, guF, dqF, uFI, r.uAct)
+		} else if fusedSw {
 			e.Dispatch2D(pf.pGemmSwiglu, (fI+31)/32, (Mpad+63)/64, 128, 1, inFFN, L.guW, L.guS, dqF, uM, uFI, uH, r.uAct)
 		} else {
 			gemm(e, Mpad, 2*fI, inFFN, L.guW, L.guS, guF, uM, u2FI, uH, dummyBias, m0)
@@ -1228,6 +1272,8 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 			} else {
 				e.Dispatch(pf.pRes, M*H, 256, xF, normF)
 			}
+		} else if r.q4kLane {
+			gemmSegs(e, Mpad, L.dSegs, dqF, xF, uM, uFI, uH, dummyBias, m2)
 		} else {
 			gemm(e, Mpad, H, dqF, L.dW, L.dS, xF, uM, uH, uFI, dummyBias, m2)
 		}
@@ -1287,7 +1333,11 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 	if r.layerNorm {
 		finalNormQ = pf.pLNQ
 	}
-	e.Dispatch(finalNormQ, tgReduceNorm, tgReduceNorm, xF.At((M-1)*H*2), r.finalNorm, r.aq, r.aSc, uH, uEpsX, r.uAddOne)
+	if r.q4kLane { // the lane's head reads an f32 input (r.pGemvW8 is gemv_w8f32_head there)
+		e.Dispatch(pf.pRmsF32Out, tgReduceNorm, tgReduceNorm, xF.At((M-1)*H*2), r.finalNorm, r.aq, uH, uEpsX, r.uAddOne)
+	} else {
+		e.Dispatch(finalNormQ, tgReduceNorm, tgReduceNorm, xF.At((M-1)*H*2), r.finalNorm, r.aq, r.aSc, uH, uEpsX, r.uAddOne)
+	}
 	e.Dispatch(r.pGemvW8, V*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
 	e.End()
 	// The int8 head turns a NaN row into finite zeros, which the caller's non-finite-logit check (A-C02) passes, so the
