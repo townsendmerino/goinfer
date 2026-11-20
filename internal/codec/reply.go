@@ -36,7 +36,7 @@ func SettleCalls(tm *chat.Template, raw string, tools []chat.Tool, routed []chat
 	return calls, lead, false
 }
 
-// ErrProseDiverged: bytes already streamed as prose are not a prefix of the prose the parser settled on. Unreachable by
+// ErrProseDiverged reports that bytes already streamed as prose are not a prefix of the prose the parser settled on. Unreachable by
 // construction (chat.ProseStreamer releases only bytes that precede the family's call opener, and the lead is the raw
 // prefix before it), but streamed bytes cannot be recalled, so a front end that ever sees it must say so rather than emit
 // a stream that disagrees with itself.

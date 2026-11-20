@@ -483,7 +483,7 @@ func runModelToModelW(rm *RunModel, hd int) (ModelW, bool) {
 	return mw, true
 }
 
-// runModelToPrefill narrows a resident runModel to the dense shapes the batched pass accepts, returning ok=false if
+// RunModelToPrefill narrows a resident runModel to the dense shapes the batched pass accepts, returning ok=false if
 // the model uses anything outside them: MoE (Gemma 4's parallel block included), MLA, SSM, DeltaNet, int8 KV,
 // whole-vector QK-norm, post-only norms, partial RoPE, a rope scale, an attention sink, an
 // o-proj bias. Each projection may be int8 or int4; the ModelW's own
@@ -1404,7 +1404,7 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mro
 	return out, nil
 }
 
-// prefillDefectForTest plants one defect in the batched pass, for its gate's planted-defect arm (tests only): 1 rotates
+// PrefillDefectForTest plants one defect in the batched pass, for its gate's planted-defect arm (tests only): 1 rotates
 // every row one position late, 2 writes every row's K/V one slot late, 3 gives an int4 q projection the k projection's
 // scales, 4 binds each row's per-layer inputs to the next row's, 5 drops the per-layer-input branch, 6 lets a
 // sliding-window layer attend its whole prefix, 7 skips the post-attention norm, 8 skips the layer scalar, 9 uses the
@@ -1413,20 +1413,20 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mro
 // 14 swaps height and width.
 var PrefillDefectForTest int
 
-// prefillAttnRowsOff makes the batched pass run decode's kernel once a row where it would run a key-split kernel's rows
+// PrefillAttnRowsOff makes the batched pass run decode's kernel once a row where it would run a key-split kernel's rows
 // form, for the test that compares the two and the profile that times them. Tests only.
 var PrefillAttnRowsOff = false
 
-// prefillAttnPerRow makes the batched pass run decode's single-row attention kernel once a row in place of the batched
+// PrefillAttnPerRow makes the batched pass run decode's single-row attention kernel once a row in place of the batched
 // attention kernel. Tests only. It needs a row of q (nH*hd floats) to be a multiple of 64 floats, so each row's
 // binding offset is a multiple of 256 bytes.
 var PrefillAttnPerRow = false
 
-// prefillQuantPerProj restores the batched prefill's quantization per projection (R-25, sharedQ), for the test that
+// PrefillQuantPerProj restores the batched prefill's quantization per projection (R-25, sharedQ), for the test that
 // compares the two and the A/B that times them. Tests only.
 var PrefillQuantPerProj = false
 
-// prefillSharedQuants counts the quantizations sharedQ shared across projections (a test reads it to see R-25 ran).
+// PrefillSharedQuants counts the quantizations sharedQ shared across projections (a test reads it to see R-25 ran).
 var PrefillSharedQuants atomic.Int64
 
 // prefillBufFresh and prefillBufPoison are tests-only switches on the pass's buffer recycling (R-25, storF): fresh
@@ -1437,6 +1437,6 @@ var (
 	prefillBufReused atomic.Int64
 )
 
-// prefillBufSeenForTest, when set (tests only), is told the size of every device buffer a batched pass creates (recycled ones are not
+// PrefillBufSeenForTest (when set; tests only) is told the size of every device buffer a batched pass creates (recycled ones are not
 // created again), so a test can hold PrefillScratchBytes to the pass.
 var PrefillBufSeenForTest func(bytes int64)

@@ -239,7 +239,7 @@ func sharedTail(topic string) string {
 		"In one word, what is the note about?"
 }
 
-// SharedPreamble: a second conversation that opens with the first's
+// SharedPreamble checks that a second conversation opening with the first's
 // preamble takes it from the first's KV. Each conversation sends the shared system message and a long message of its own, so the second
 // must run on another slot, and it must report shared_tokens above zero, covering at least a third of its prompt. A server that cannot
 // share at all (kv_share "none": off the resident path, one KV slot, recurrent state) is a skip; one turned off by its operator is

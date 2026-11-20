@@ -42,7 +42,7 @@ func Infof(format string, args ...any) { logf(slog.LevelInfo, format, args...) }
 // Warnf is something working worse than asked: a decline, a fallback, a setting ignored.
 func Warnf(format string, args ...any) { logf(slog.LevelWarn, format, args...) }
 
-// DebugText, InfoText and WarnText are the levels for a string that already holds its own newlines.
+// DebugText logs at the debug level a string that already holds its own newlines; InfoText and WarnText do so at theirs.
 func DebugText(text string) { writeText(slog.LevelDebug, text) }
 
 // InfoText is Infof for a string that already holds its own newlines.
