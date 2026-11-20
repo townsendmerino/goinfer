@@ -1,0 +1,48 @@
+# 12:33:30 0.5B block 0 cuda: load 0.6337890625 avail 60636 MB (settled 0s) fadvise DONTNEED over 0.5 GB of files
+{"model": "0.5B", "block": 0, "arm": "cuda", "ttft_ms_median": 61.86, "repeat_over_fresh": 0.333, "decode_path": "cuda-resident (int4)", "error": null}
+# 12:33:36 0.5B block 0 webgpu: load 0.6103515625 avail 60673 MB (settled 0s) fadvise DONTNEED over 0.5 GB of files
+{"model": "0.5B", "block": 0, "arm": "webgpu", "ttft_ms_median": 633.41, "repeat_over_fresh": 0.02, "decode_path": "webgpu:vulkan-resident (int4)", "error": null}
+# 12:33:48 0.5B block 1 webgpu: load 0.59619140625 avail 60628 MB (settled 0s) fadvise DONTNEED over 0.5 GB of files
+{"model": "0.5B", "block": 1, "arm": "webgpu", "ttft_ms_median": 634.46, "repeat_over_fresh": 0.018, "decode_path": "webgpu:vulkan-resident (int4)", "error": null}
+# 12:34:00 0.5B block 1 cuda: load 0.7724609375 avail 60588 MB (settled 0s) fadvise DONTNEED over 0.5 GB of files
+{"model": "0.5B", "block": 1, "arm": "cuda", "ttft_ms_median": 62.78, "repeat_over_fresh": 0.331, "decode_path": "cuda-resident (int4)", "error": null}
+# 12:34:07 0.5B block 2 cuda: load 0.71044921875 avail 60612 MB (settled 0s) fadvise DONTNEED over 0.5 GB of files
+{"model": "0.5B", "block": 2, "arm": "cuda", "ttft_ms_median": 62.45, "repeat_over_fresh": 0.327, "decode_path": "cuda-resident (int4)", "error": null}
+# 12:34:13 0.5B block 2 webgpu: load 0.81396484375 avail 60628 MB (settled 0s) fadvise DONTNEED over 0.5 GB of files
+{"model": "0.5B", "block": 2, "arm": "webgpu", "ttft_ms_median": 616.01, "repeat_over_fresh": 0.02, "decode_path": "webgpu:vulkan-resident (int4)", "error": null}
+# 12:34:25 0.5B block 3 webgpu: load 0.775390625 avail 60690 MB (settled 0s) fadvise DONTNEED over 0.5 GB of files
+{"model": "0.5B", "block": 3, "arm": "webgpu", "ttft_ms_median": 622.74, "repeat_over_fresh": 0.021, "decode_path": "webgpu:vulkan-resident (int4)", "error": null}
+# 12:34:37 0.5B block 3 cuda: load 0.7294921875 avail 60689 MB (settled 0s) fadvise DONTNEED over 0.5 GB of files
+{"model": "0.5B", "block": 3, "arm": "cuda", "ttft_ms_median": 62.11, "repeat_over_fresh": 0.322, "decode_path": "cuda-resident (int4)", "error": null}
+# 12:34:44 1.5B block 0 cuda: load 0.75146484375 avail 60686 MB (settled 0s) fadvise DONTNEED over 1.1 GB of files
+{"model": "1.5B", "block": 0, "arm": "cuda", "ttft_ms_median": 168.82, "repeat_over_fresh": 0.192, "decode_path": "cuda-resident (int4)", "error": null}
+# 12:34:55 1.5B block 0 webgpu: load 0.7900390625 avail 60691 MB (settled 0s) fadvise DONTNEED over 1.1 GB of files
+{"model": "1.5B", "block": 0, "arm": "webgpu", "ttft_ms_median": 1452.52, "repeat_over_fresh": 0.012, "decode_path": "webgpu:vulkan-resident (int4)", "error": null}
+# 12:35:32 1.5B block 1 webgpu: load 0.79345703125 avail 60692 MB (settled 15s) fadvise DONTNEED over 1.1 GB of files
+{"model": "1.5B", "block": 1, "arm": "webgpu", "ttft_ms_median": 1414.51, "repeat_over_fresh": 0.012, "decode_path": "webgpu:vulkan-resident (int4)", "error": null}
+# 12:35:53 1.5B block 1 cuda: load 0.6298828125 avail 60733 MB (settled 0s) fadvise DONTNEED over 1.1 GB of files
+{"model": "1.5B", "block": 1, "arm": "cuda", "ttft_ms_median": 169.6, "repeat_over_fresh": 0.191, "decode_path": "cuda-resident (int4)", "error": null}
+# 12:36:04 1.5B block 2 cuda: load 0.68701171875 avail 60702 MB (settled 0s) fadvise DONTNEED over 1.1 GB of files
+{"model": "1.5B", "block": 2, "arm": "cuda", "ttft_ms_median": 168.86, "repeat_over_fresh": 0.193, "decode_path": "cuda-resident (int4)", "error": null}
+# 12:36:15 1.5B block 2 webgpu: load 0.6767578125 avail 60751 MB (settled 0s) fadvise DONTNEED over 1.1 GB of files
+{"model": "1.5B", "block": 2, "arm": "webgpu", "ttft_ms_median": 1452.86, "repeat_over_fresh": 0.012, "decode_path": "webgpu:vulkan-resident (int4)", "error": null}
+# 12:36:37 1.5B block 3 webgpu: load 0.76953125 avail 60706 MB (settled 0s) fadvise DONTNEED over 1.1 GB of files
+{"model": "1.5B", "block": 3, "arm": "webgpu", "ttft_ms_median": 1414.51, "repeat_over_fresh": 0.011, "decode_path": "webgpu:vulkan-resident (int4)", "error": null}
+# 12:36:59 1.5B block 3 cuda: load 0.63037109375 avail 60707 MB (settled 0s) fadvise DONTNEED over 1.1 GB of files
+{"model": "1.5B", "block": 3, "arm": "cuda", "ttft_ms_median": 168.89, "repeat_over_fresh": 0.195, "decode_path": "cuda-resident (int4)", "error": null}
+# 12:37:24 7B block 0 cuda: load 0.970703125 avail 60733 MB (settled 15s) fadvise DONTNEED over 4.7 GB of files
+{"model": "7B", "block": 0, "arm": "cuda", "ttft_ms_median": 756.34, "repeat_over_fresh": 0.1, "decode_path": "cuda-resident (int4)", "error": null}
+# 12:38:15 7B block 0 webgpu: load 0.96875 avail 60704 MB (settled 30s) fadvise DONTNEED over 4.7 GB of files
+{"model": "7B", "block": 0, "arm": "webgpu", "ttft_ms_median": 4234.4, "repeat_over_fresh": 0.006, "decode_path": "webgpu:vulkan-resident (int4)", "error": null}
+# 12:39:10 7B block 1 webgpu: load 0.54296875 avail 60687 MB (settled 0s) fadvise DONTNEED over 4.7 GB of files
+{"model": "7B", "block": 1, "arm": "webgpu", "ttft_ms_median": 4234.41, "repeat_over_fresh": 0.006, "decode_path": "webgpu:vulkan-resident (int4)", "error": null}
+# 12:40:06 7B block 1 cuda: load 0.33935546875 avail 60644 MB (settled 0s) fadvise DONTNEED over 4.7 GB of files
+{"model": "7B", "block": 1, "arm": "cuda", "ttft_ms_median": 761.28, "repeat_over_fresh": 0.1, "decode_path": "cuda-resident (int4)", "error": null}
+# 12:40:26 7B block 2 cuda: load 0.56640625 avail 60666 MB (settled 0s) fadvise DONTNEED over 4.7 GB of files
+{"model": "7B", "block": 2, "arm": "cuda", "ttft_ms_median": 759.74, "repeat_over_fresh": 0.1, "decode_path": "cuda-resident (int4)", "error": null}
+# 12:40:47 7B block 2 webgpu: load 0.880859375 avail 60684 MB (settled 0s) fadvise DONTNEED over 4.7 GB of files
+{"model": "7B", "block": 2, "arm": "webgpu", "ttft_ms_median": 4227.97, "repeat_over_fresh": 0.006, "decode_path": "webgpu:vulkan-resident (int4)", "error": null}
+# 12:41:42 7B block 3 webgpu: load 0.52783203125 avail 60703 MB (settled 0s) fadvise DONTNEED over 4.7 GB of files
+{"model": "7B", "block": 3, "arm": "webgpu", "ttft_ms_median": 4240.25, "repeat_over_fresh": 0.006, "decode_path": "webgpu:vulkan-resident (int4)", "error": null}
+# 12:42:39 7B block 3 cuda: load 0.3779296875 avail 60747 MB (settled 0s) fadvise DONTNEED over 4.7 GB of files
+{"model": "7B", "block": 3, "arm": "cuda", "ttft_ms_median": 761.47, "repeat_over_fresh": 0.099, "decode_path": "cuda-resident (int4)", "error": null}
