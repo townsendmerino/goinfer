@@ -11,7 +11,7 @@
   "programs": [
     "testdata/granite-dense-tiny"
   ],
-  "deps_hash": "sha256:6d106f108261fb87bf16bf9bf3234dcb7f8d6499250574d521cf025a14a40ff0",
+  "deps_hash": "sha256:8902323eb6aee520d18bba31d70eb3517976b345db8742cf872e582554dd3131",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
