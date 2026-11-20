@@ -361,8 +361,8 @@ func moeTopK(m *decoder.Model) int {
 		}
 		return 1
 	}
-	if _, k, _, _, _, _, _, _, _, _, ok := m.BackendView().MoEParams(); ok && k > 0 {
-		return k
+	if mo, ok := m.BackendView().MoE(); ok && mo.TopK > 0 {
+		return mo.TopK
 	}
 	return 1
 }
@@ -584,7 +584,7 @@ func residentMemoryDecline(m *decoder.Model) string {
 	moeHint := ""
 	if m.BackendView().HasGemma4MoE() {
 		moeHint = " This model routes MoE experts — try --moe-cache-experts (Metal pages them; auto-sizes the slot count from free RAM) or --moe-cache-slots N to pick one yourself."
-	} else if _, _, _, _, _, _, _, _, _, _, ok := m.BackendView().MoEParams(); ok {
+	} else if _, ok := m.BackendView().MoE(); ok {
 		moeHint = " This model routes MoE experts — try --moe-cache-experts (Metal pages them; auto-sizes the slot count from free RAM) or --moe-cache-slots N to pick one yourself."
 	}
 	tightened := ""

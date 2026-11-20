@@ -187,7 +187,7 @@ func TestCUDAKVF16AutoDecline_table(t *testing.T) {
 }
 
 // TestResidentSpec_matchesLegacyAccessors verifies that Model.ResidentSpec() populates all sub-specs
-// and agrees with the legacy positional accessors (MoEParams, MLAParams, Qwen35Params).
+// and agrees with the accessors (MoE, MLAParams, Qwen35Params).
 func TestResidentSpec_matchesLegacyAccessors(t *testing.T) {
 	m := &Model{
 		w: &Weights{
@@ -229,12 +229,8 @@ func TestResidentSpec_matchesLegacyAccessors(t *testing.T) {
 	if spec.MoE == nil || spec.MLA == nil || spec.Qwen35 == nil {
 		t.Fatalf("ResidentSpec() missing sub-spec: %+v", spec)
 	}
-	nE, k, inter, sharedInter, sigmoid, norm, sharedUngated, scale, nGroup, topkGroup, ok := m.BackendView().MoEParams()
-	if !ok || spec.MoE.NumExperts != nE || spec.MoE.TopK != k || spec.MoE.IntermediateDim != inter ||
-		spec.MoE.SharedIntermediateDim != sharedInter || spec.MoE.RouterSigmoid != sigmoid ||
-		spec.MoE.NormTopKProb != norm || spec.MoE.SharedUngated != sharedUngated ||
-		spec.MoE.RoutedScale != scale || spec.MoE.NGroup != nGroup || spec.MoE.TopkGroup != topkGroup {
-		t.Errorf("ResidentSpec().MoE = %+v, disagrees with MoEParams()", *spec.MoE)
+	if mo, ok := m.BackendView().MoE(); !ok || mo != *spec.MoE {
+		t.Errorf("ResidentSpec().MoE = %+v, disagrees with MoE() = %+v", *spec.MoE, mo)
 	}
 	qL, kvL, nope, rope, vDim, interleave, aScale, rScale, mlaOK := m.BackendView().MLAParams()
 	if !mlaOK || spec.MLA.QLoRARank != qL || spec.MLA.KVLoRARank != kvL || spec.MLA.QKNopeHeadDim != nope ||

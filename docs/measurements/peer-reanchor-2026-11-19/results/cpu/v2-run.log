@@ -1,0 +1,31 @@
+part      cpu
+started   2026-11-20 04:23:42 PST
+rev       e29da447 (/home/francis/goinfer-bench/peer-reanchor-2026-11-19/wt, clean)
+serve     /home/francis/goinfer-bench/peer-reanchor-2026-11-19/bin/serve-cuda-e29da447 sha256 703b01ed968be7d860bf68f76bdcc5ba8169ff3bb5cf8166f3d9234eaf2e77b8
+serve     /home/francis/goinfer-bench/peer-reanchor-2026-11-19/bin/serve-cpu-e29da447 sha256 27b18a32402f07edb07e8c588efb374dc8be64747d3a0d318e90a09283197791
+host      nobara-pc Linux 7.3.0-202.nobara.fc44.x86_64
+gpu       595.112.07, NVIDIA GeForce RTX 2070 SUPER
+aikit     v1.76.0
+ollama    Warning: client version is 0.32.5
+llama     version: 0.7.0-dev (build 988, commit a37cc46)
+desktop   /usr/bin/kwin_wayland, 18 MiB;
+steps     v2-g20
+state     load 4.26 2.08 0.84 MemAvailable 61347 MiB swap 543 MiB
+== fit checks 2026-11-20 04:23:43 PST load 4.26 2.08 0.84 MemAvailable 61347 MiB swap 543 MiB
+fit cpu-0.5B: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)] | fit: 4096-token cap needs 0.1 GB KV (weights 0.3 GB, budget 41.9 GB, 41.8 GB left for a request's own prefill) | 
+fit cpu-1.5B: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)] | fit: 4096-token cap needs 0.2 GB KV (weights 0.9 GB, budget 41.9 GB, 41.7 GB left for a request's own prefill) | 
+fit cpu-7B: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)] | fit: 4096-token cap needs 0.4 GB KV (weights 4.0 GB, budget 41.9 GB, 41.4 GB left for a request's own prefill) | 
+fit cpu-phi3-mini: cpu (q4k) | fit: 4096-token cap needs 3.0 GB KV (weights 2.6 GB, budget 41.9 GB, 38.9 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window | 
+fit cpu-G20: cpu (int4) [int4 layout: canonical (embed, lm_head, qkv)] | fit: 4096-token cap needs 0.2 GB KV (weights 11.0 GB, budget 41.8 GB, 41.6 GB left for a request's own prefill) | 
+== fit checks done 2026-11-20 04:23:50 PST
+=== skip e-cpu (not in v2-g20)
+=== skip v-cpu (not in v2-g20)
+=== settle: load 3.61 >= 0.8, waiting (0/600s)
+=== settle: load 2.66 >= 0.8, waiting (20/600s)
+=== settle: load 1.90 >= 0.8, waiting (40/600s)
+=== settle: load 1.36 >= 0.8, waiting (60/600s)
+=== settle: load 0.97 >= 0.8, waiting (80/600s)
+=== settle: load 0.70 < 0.8 after 100s
+=== 2026-11-20 04:25:30 PST START v2-g20 load 0.70 1.45 0.75 MemAvailable 61452 MiB swap 542 MiB
+=== 2026-11-20 04:38:41 PST END v2-g20 rc=0 (791s)
+finished  2026-11-20 04:38:41 PST rc=0 load 6.77 5.25 3.54 MemAvailable 61528 MiB swap 542 MiB

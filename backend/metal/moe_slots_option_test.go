@@ -87,7 +87,8 @@ func TestMoESlotsViaOptions_engagesPaging_genericMoE(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load probe: %v", err)
 	}
-	nE, topK, _, _, _, _, _, _, _, _, ok := mProbe.BackendView().MoEParams()
+	mo, ok := mProbe.BackendView().MoE()
+	nE, topK := mo.NumExperts, mo.TopK
 	mProbe.Close()
 	if !ok || nE <= topK {
 		t.Fatalf("fixture nE=%d topK=%d (ok=%v) — expected a real paging-eligible MoE shape", nE, topK, ok)
@@ -135,7 +136,8 @@ func TestMoESlotsViaOptions_belowTopKRefusesWithNumbers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load probe: %v", err)
 	}
-	_, topK, _, _, _, _, _, _, _, _, ok := mProbe.BackendView().MoEParams()
+	mo, ok := mProbe.BackendView().MoE()
+	topK := mo.TopK
 	mProbe.Close()
 	if !ok || topK < 1 {
 		t.Fatalf("fixture has no usable topK (topK=%d, ok=%v)", topK, ok)

@@ -1,0 +1,41 @@
+=== night job reanchor-cpu
+=== cmd      bash /home/francis/mycode/reanchor-wt/docs/measurements/peer-reanchor-2026-11-19/run-nobara.sh cpu
+=== cwd      /home/francis/mycode/reanchor-wt
+=== rev      queued at 514c1b8f5, now 514c1b8f5
+=== host     nobara-pc
+=== est      75.0 min, timeout 150.0 min
+=== by       nobara-reanchor (Claude), peer re-anchor 2026-11-19
+=== doc      docs/measurements/peer-reanchor-2026-11-19/README.md
+=== note     x86 CPU cells e v1 v2; graded next day with grade.py; results ~/goinfer-bench/peer-reanchor-2026-11-19/results/cpu
+=== START    2026-11-19 22:04:59 PST  loadavg 0.50  available 62011 MB
+=== READINGS start {"t": "2026-11-19 22:04:59", "t_epoch": 1795154699.865108, "load1": 0.5048828125, "ncores": 16, "available_mb": 62001, "reclaimable_mb": 62017, "swap_mb": 0.0, "swapin_mb": 0.0, "swapout_mb": 0.0}
+=== MEMORY   /home/francis/goinfer-logs/night/runs/2026-11-19/reanchor-cpu.mem.tsv
+part      cpu
+started   2026-11-19 22:05:00 PST
+rev       e29da447 (/home/francis/goinfer-bench/peer-reanchor-2026-11-19/wt, clean)
+serve     /home/francis/goinfer-bench/peer-reanchor-2026-11-19/bin/serve-cuda-e29da447 sha256 703b01ed968be7d860bf68f76bdcc5ba8169ff3bb5cf8166f3d9234eaf2e77b8
+serve     /home/francis/goinfer-bench/peer-reanchor-2026-11-19/bin/serve-cpu-e29da447 sha256 27b18a32402f07edb07e8c588efb374dc8be64747d3a0d318e90a09283197791
+host      nobara-pc Linux 7.3.0-202.nobara.fc44.x86_64
+gpu       595.112.07, NVIDIA GeForce RTX 2070 SUPER
+aikit     v1.76.0
+ollama    Warning: client version is 0.32.5
+llama     version: 0.7.0-dev (build 988, commit a37cc46)
+desktop   /usr/bin/kwin_wayland, 16 MiB;
+state     load 0.62 0.60 0.26 MemAvailable 62025 MiB swap 0 MiB
+== fit checks 2026-11-19 22:05:00 PST load 0.62 0.60 0.26 MemAvailable 62025 MiB swap 0 MiB
+fit cpu-0.5B: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)] | fit: 4096-token cap needs 0.1 GB KV (weights 0.3 GB, budget 42.4 GB, 42.3 GB left for a request's own prefill) | 
+fit cpu-1.5B: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)] | fit: 4096-token cap needs 0.2 GB KV (weights 0.9 GB, budget 42.4 GB, 42.1 GB left for a request's own prefill) | 
+fit cpu-7B: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)] | fit: 4096-token cap needs 0.4 GB KV (weights 4.0 GB, budget 42.4 GB, 41.9 GB left for a request's own prefill) | 
+fit cpu-phi3-mini: cpu (q4k) | fit: 4096-token cap needs 3.0 GB KV (weights 2.6 GB, budget 42.4 GB, 39.4 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window | 
+fit cpu-G20: cpu (int4) [int4 layout: canonical (embed, lm_head, qkv)] | fit: 4096-token cap needs 0.2 GB KV (weights 11.0 GB, budget 42.3 GB, 42.1 GB left for a request's own prefill) | 
+== fit checks done 2026-11-19 22:05:22 PST
+=== 2026-11-19 22:05:22 PST START e-cpu load 0.81 0.64 0.29 MemAvailable 61983 MiB swap 0 MiB
+=== 2026-11-19 22:40:21 PST END e-cpu rc=0 (2099s)
+=== 2026-11-19 22:40:21 PST START v-cpu load 7.34 6.38 5.20 MemAvailable 62007 MiB swap 0 MiB
+=== 2026-11-19 22:40:21 PST END v-cpu rc=1 (0s)
+FAILED step v-cpu rc=1
+REFUSED: 1-min load average 7.34 exceeds 1.00. The box is not idle, and a number measured on a busy box is not distinguishable afterwards from a number measured on a quiet one. Wait, or raise BENCH_MAX_LOADAVG deliberately.
+finished  2026-11-19 22:40:21 PST rc=1 load 7.34 6.38 5.20 MemAvailable 61991 MiB swap 0 MiB
+
+=== READINGS end {"t": "2026-11-19 22:40:21", "t_epoch": 1795156821.6939478, "load1": 7.33544921875, "ncores": 16, "available_mb": 61968, "reclaimable_mb": 61981, "swap_mb": 0.0, "swapin_mb": 0.0, "swapout_mb": 0.0}
+=== END      2026-11-19 22:40:21 PST  rc=1
