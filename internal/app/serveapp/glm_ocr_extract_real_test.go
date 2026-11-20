@@ -62,7 +62,7 @@ func TestServe_glmOcrExtraction_O5(t *testing.T) {
 		t.Fatalf("newServer: %v", err)
 	}
 	lm := srv.models["glm"]
-	if lm == nil || lm.glm == nil {
+	if lm == nil || lm.glmOcr() == nil {
 		t.Fatal("auto-discovery did not attach the GLM-OCR tower")
 	}
 	mux := http.NewServeMux()

@@ -131,35 +131,22 @@ func (lm *loadedModel) visionPromptUncached(tm *chat.Template, system string, tu
 	if idx < 0 {
 		return visionInput{}, fmt.Errorf("no user turn to attach the image to")
 	}
-	if lm.glm != nil {
-		return lm.glmOcrVisionPrompt(tm, system, turns, idx, img)
+	if g := lm.glmOcr(); g != nil {
+		return lm.glmOcrVisionPrompt(g, tm, system, turns, idx, img)
 	}
-	if lm.qwenEnc != nil || lm.qwen3 != nil {
-		return lm.imagesPrompt(tm, system, turns, idx, "qwen", []imageRef{img}, false, "", false)
+	if _, ok := lm.vision.(qwenGridTower); ok {
+		return lm.imagesPrompt(tm, system, turns, idx, []imageRef{img}, false, "", false)
 	}
 	if img.audio {
 		return visionInput{}, fmt.Errorf("this model has no audio tower")
 	}
-	return lm.imagesPrompt(tm, system, turns, idx, lm.imageKind(), []imageRef{img}, false, "", false)
+	return lm.imagesPrompt(tm, system, turns, idx, []imageRef{img}, false, "", false)
 }
 
-// qwenForward runs whichever tower this model carries on the shared Qwen-shaped route: the Qwen2.5-VL ViT (eager), the
-// Qwen3.5+ tower or the GLM-OCR tower (both loaded on first use). glmOcrVisionPrompt (glm_ocr_vision.go) calls it too.
-func (lm *loadedModel) qwenForward(pv []float32, grid [3]int) ([]float32, error) {
-	if lm.glm != nil {
-		return lm.glm.features(pv, grid)
-	}
-	if lm.qwen3 != nil {
-		return lm.qwen3.features(pv, grid)
-	}
-	return lm.qwenForwardWithFallback(pv, grid)
-}
-
-// qwenForwardWithFallback is the Qwen2.5-VL ViT with the device-memory fallback (qwenDeviceForward).
-func (lm *loadedModel) qwenForwardWithFallback(pv []float32, grid [3]int) ([]float32, error) {
-	lm.qwenDevMu.Lock()
-	defer lm.qwenDevMu.Unlock()
-	return qwenDeviceForward(lm.qwenEnc, lm.qwenRequire, func() ([]float32, error) { return lm.qwenEnc.Forward(pv, [][3]int{grid}) })
+// glmOcr is this entry's GLM-OCR tower, nil for any other.
+func (lm *loadedModel) glmOcr() *glmVision {
+	g, _ := lm.vision.(*glmVision)
+	return g
 }
 
 // residentTower is the part of aikit's Qwen2.5-VL encoder the fallback uses: whether its device tower is attached, and detaching it.
@@ -202,36 +189,18 @@ func recoverDeviceTower(family string, fn func() ([]float32, error)) (out []floa
 	return fn()
 }
 
-// towerFamily names this model's tower for an error message.
+// towerFamily names this model's tower for an error message and the feature cache's key: the audio tower's family for
+// a clip, else the vision tower's.
 func (lm *loadedModel) towerFamily(audio bool) string {
 	switch {
 	case audio && lm.audio != nil:
 		return lm.audio.family()
 	case audio:
 		return "Gemma 4 audio"
-	case lm.glm != nil:
-		return "GLM-OCR"
-	case lm.pixtral != nil:
-		return "Pixtral"
-	case lm.lfm2vl != nil:
-		return "LFM2-VL"
-	case lm.qwen3 != nil:
-		return "Qwen3.5+ vision"
-	case lm.qwenEnc != nil:
-		return "Qwen2.5-VL"
-	case lm.gemma4Enc != nil:
-		return "Gemma 4 vision"
+	case lm.vision != nil:
+		return lm.vision.family()
 	}
 	return "Gemma 3 SigLIP"
-}
-
-// qwenDeepstackSets is how many DeepStack sets this model's Qwen tower returns after its merged rows: the Qwen3-VL
-// tower's deepstack_visual_indexes, 0 for every other tower.
-func (lm *loadedModel) qwenDeepstackSets() int {
-	if lm.qwen3 != nil {
-		return lm.qwen3.deep
-	}
-	return 0
 }
 
 // glmOcrVisionPrompt is the GLM-OCR image path: smart-resize preprocess (halved pixel bounds) -> the tower (the merged rows
@@ -242,19 +211,19 @@ func (lm *loadedModel) qwenDeepstackSets() int {
 // `<|begin_of_image|><|image|>x N<|end_of_image|>Text Recognition:`); a request with no text part gets plain text
 // recognition rather than an image with nothing to do. The task is chosen by the user's own text ("Text Recognition:",
 // "Formula Recognition:", "Table Recognition:", multimodal.GlmOcrPrompt*).
-func (lm *loadedModel) glmOcrVisionPrompt(tm *chat.Template, system string, turns []chat.Turn, idx int, img imageRef) (visionInput, error) {
-	pv, grid, err := multimodal.QwenPreprocess(img.data, lm.qwenPP)
+func (lm *loadedModel) glmOcrVisionPrompt(g *glmVision, tm *chat.Template, system string, turns []chat.Turn, idx int, img imageRef) (visionInput, error) {
+	pv, grid, err := multimodal.QwenPreprocess(img.data, g.pp)
 	if err != nil {
 		return visionInput{}, err
 	}
 	imgHash := multimodal.HashImageBytes(img.data)
-	n := multimodal.QwenMergedTokens(grid, lm.qwenMerge)
+	n := multimodal.QwenMergedTokens(grid, g.merge)
 	if err := lm.imageFitsContext(n, grid); err != nil { // before the tower: minutes of CPU for an answer that is known now
 		return visionInput{}, err
 	}
 	hiddenDim := lm.mdl().Config().HiddenDim
 	features := func() ([]float32, error) {
-		feats, err := lm.qwenForward(pv, grid)
+		feats, err := g.features(pv, grid)
 		if err != nil {
 			return nil, fmt.Errorf("glm-ocr vision encoder: %w", err)
 		}
@@ -272,7 +241,7 @@ func (lm *loadedModel) glmOcrVisionPrompt(tm *chat.Template, system string, turn
 	if err != nil {
 		return visionInput{}, fmt.Errorf("encode: %w", err)
 	}
-	imgPos, imgLen := multimodal.FindImageRun(ids, lm.qwenImgTok)
+	imgPos, imgLen := multimodal.FindImageRun(ids, g.imgTok)
 	if imgLen != n {
 		return visionInput{}, fmt.Errorf("image placeholder run = %d image tokens, want %d (template mismatch)", imgLen, n)
 	}

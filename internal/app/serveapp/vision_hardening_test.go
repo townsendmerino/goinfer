@@ -181,7 +181,7 @@ func TestServe_noRouteEncodesARenderedPrompt(t *testing.T) {
 // for Gemma 4 and Qwen2.5-VL (processing_gemma3.py, processing_gemma4.py, Qwen2.5-VL-7B-Instruct's
 // chat_template.json). The real prompt builders cannot be driven without a vision tower, so it is asserted
 // structurally on the source: each family's block assignment must be exactly the multimodal block call, with
-// nothing concatenated onto it, in prepImage (vision_multi.go) case by case and in glmOcrVisionPrompt. Each is
+// nothing concatenated onto it, in each family's prep (vision_tower.go) and in glmOcrVisionPrompt. Each is
 // read in its own function's AST, not a repo-wide grep, which could not tell one family's assignment from
 // another's.
 func TestVision_imageBlockNewlinesMatchTheRealProcessors(t *testing.T) {
@@ -191,14 +191,19 @@ func TestVision_imageBlockNewlinesMatchTheRealProcessors(t *testing.T) {
 		_ = printer.Fprint(&b, fset, e)
 		return b.String()
 	}
+	// findFn finds fnName in file: "Recv.name" is a method of Recv, a bare name any function or method so named.
 	findFn := func(file, fnName string) *ast.FuncDecl {
+		recv, name, isMethod := strings.Cut(fnName, ".")
+		if !isMethod {
+			recv, name = "", fnName
+		}
 		af, err := parser.ParseFile(fset, file, nil, 0)
 		if err != nil {
 			t.Fatalf("parse %s: %v", file, err)
 		}
 		var fn *ast.FuncDecl
 		ast.Inspect(af, func(n ast.Node) bool {
-			if d, ok := n.(*ast.FuncDecl); ok && d.Name.Name == fnName {
+			if d, ok := n.(*ast.FuncDecl); ok && d.Name.Name == name && (recv == "" || receiverName(d) == recv) {
 				fn = d
 			}
 			return true
@@ -230,37 +235,30 @@ func TestVision_imageBlockNewlinesMatchTheRealProcessors(t *testing.T) {
 		})
 		return got
 	}
-	// prepImage: one switch case per family.
-	want := map[string]string{`"qwen"`: "multimodal.QwenImageBlock(n)", `"gemma4"`: "multimodal.Gemma4ImageBlock(n)", "default": "multimodal.Gemma3PromptBlock(n)"}
-	seen := map[string]bool{}
-	ast.Inspect(findFn("vision_multi.go", "prepImage"), func(n ast.Node) bool {
-		cc, ok := n.(*ast.CaseClause)
-		if !ok {
-			return true
-		}
-		key := "default"
-		if len(cc.List) == 1 {
-			key = render(cc.List[0])
-		}
-		w, ok := want[key]
-		if !ok {
-			return true
-		}
-		seen[key] = true
-		got := blockRHS(&ast.BlockStmt{List: cc.Body})
-		if len(got) != 1 || got[0] != w {
-			t.Errorf("prepImage case %s: block = %v, want exactly %s — a newline was concatenated onto (or "+
-				"dropped from) the real processor's shape (M-38)", key, got, w)
-		}
-		return true
-	})
-	for k := range want {
-		if !seen[k] {
-			t.Errorf("prepImage has no case %s — this guard is watching the wrong thing", k)
+	// One prep per family.
+	for fn, w := range map[string]string{"qwenPrep": "multimodal.QwenImageBlock(n)", "gemma4Vision.prep": "multimodal.Gemma4ImageBlock(n)", "gemma3Vision.prep": "multimodal.Gemma3PromptBlock(n)"} {
+		if got := blockRHS(findFn("vision_tower.go", fn)); len(got) != 1 || got[0] != w {
+			t.Errorf("%s: block = %v, want exactly %s — a newline was concatenated onto (or "+
+				"dropped from) the real processor's shape (M-38)", fn, got, w)
 		}
 	}
 	// GLM-OCR: image first, the task prompt directly after.
 	if got := blockRHS(findFn("vision_serve.go", "glmOcrVisionPrompt")); len(got) != 1 || got[0] != "multimodal.GlmOcrImageBlock(n)" {
 		t.Errorf("glmOcrVisionPrompt: block := %v, want exactly multimodal.GlmOcrImageBlock(n) (M-38)", got)
 	}
+}
+
+// receiverName is d's receiver type name without its pointer, "" for a function.
+func receiverName(d *ast.FuncDecl) string {
+	if d.Recv == nil || len(d.Recv.List) == 0 {
+		return ""
+	}
+	t := d.Recv.List[0].Type
+	if s, ok := t.(*ast.StarExpr); ok {
+		t = s.X
+	}
+	if id, ok := t.(*ast.Ident); ok {
+		return id.Name
+	}
+	return ""
 }

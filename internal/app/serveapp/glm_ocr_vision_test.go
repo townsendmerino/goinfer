@@ -131,8 +131,9 @@ func TestImageFitsContext(t *testing.T) {
 	if ctx != 512 {
 		t.Fatalf("fixture context %d, this test assumes 512", ctx)
 	}
-	lm := &loadedModel{model: m, qwenMerge: 2}
-	lm.qwenPP, _ = multimodal.LoadGlmOcrPreprocessConfig(writeQwen35Dir(t, glmConf, glmPre))
+	glmv := &glmVision{qwenGrid: qwenGrid{merge: 2}}
+	lm := &loadedModel{model: m, vision: glmv}
+	glmv.pp, _ = multimodal.LoadGlmOcrPreprocessConfig(writeQwen35Dir(t, glmConf, glmPre))
 	if err := lm.imageFitsContext(100, [3]int{1, 20, 20}); err != nil {
 		t.Errorf("a 100-token image in a 512 context was refused: %v", err)
 	}
@@ -190,8 +191,9 @@ func TestGlmOcr_visionPromptIDs(t *testing.T) {
 		t.Fatalf("load ../../../testdata/glm-ocr-tiny: %v", err)
 	}
 	defer m.Close()
-	lm := &loadedModel{tk: tk, model: m, tmpl: tmpl, glm: &glmOcrTower{dir: "unused"}, qwenMerge: 2, qwenImgTok: 59280}
-	lm.qwenPP, err = multimodal.LoadGlmOcrPreprocessConfig(dir)
+	glmv := &glmVision{qwenGrid: qwenGrid{merge: 2, imgTok: 59280}, glmOcrTower: &glmOcrTower{dir: "unused"}}
+	lm := &loadedModel{tk: tk, model: m, tmpl: tmpl, vision: glmv}
+	glmv.pp, err = multimodal.LoadGlmOcrPreprocessConfig(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,8 +307,9 @@ func TestGlmOcr_visionPromptServesFeaturesFromTheCache(t *testing.T) {
 		t.Fatalf("load ../../../testdata/glm-ocr-tiny: %v", err)
 	}
 	defer m.Close()
-	lm := &loadedModel{tk: tk, model: m, tmpl: tmpl, glm: &glmOcrTower{dir: "unused"}, qwenMerge: 2, qwenImgTok: 59280}
-	if lm.qwenPP, err = multimodal.LoadGlmOcrPreprocessConfig(dir); err != nil {
+	glmv := &glmVision{qwenGrid: qwenGrid{merge: 2, imgTok: 59280}, glmOcrTower: &glmOcrTower{dir: "unused"}}
+	lm := &loadedModel{tk: tk, model: m, tmpl: tmpl, vision: glmv}
+	if glmv.pp, err = multimodal.LoadGlmOcrPreprocessConfig(dir); err != nil {
 		t.Fatal(err)
 	}
 	img := imageRef{mediaType: "image/png", data: glmOcrTestPNG(t)}
