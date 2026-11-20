@@ -1,0 +1,26 @@
+part      cpu
+started   2026-11-19 22:05:00 PST
+rev       e29da447 (/home/francis/goinfer-bench/peer-reanchor-2026-11-19/wt, clean)
+serve     /home/francis/goinfer-bench/peer-reanchor-2026-11-19/bin/serve-cuda-e29da447 sha256 703b01ed968be7d860bf68f76bdcc5ba8169ff3bb5cf8166f3d9234eaf2e77b8
+serve     /home/francis/goinfer-bench/peer-reanchor-2026-11-19/bin/serve-cpu-e29da447 sha256 27b18a32402f07edb07e8c588efb374dc8be64747d3a0d318e90a09283197791
+host      nobara-pc Linux 7.3.0-202.nobara.fc44.x86_64
+gpu       595.112.07, NVIDIA GeForce RTX 2070 SUPER
+aikit     v1.76.0
+ollama    Warning: client version is 0.32.5
+llama     version: 0.7.0-dev (build 988, commit a37cc46)
+desktop   /usr/bin/kwin_wayland, 16 MiB;
+state     load 0.62 0.60 0.26 MemAvailable 62025 MiB swap 0 MiB
+finished  2026-11-19 22:40:21 PST rc=1 load 7.34 6.38 5.20 MemAvailable 61991 MiB swap 0 MiB
+part      cpu
+started   2026-11-20 01:32:02 PST
+rev       e29da447 (/home/francis/goinfer-bench/peer-reanchor-2026-11-19/wt, clean)
+serve     /home/francis/goinfer-bench/peer-reanchor-2026-11-19/bin/serve-cuda-e29da447 sha256 703b01ed968be7d860bf68f76bdcc5ba8169ff3bb5cf8166f3d9234eaf2e77b8
+serve     /home/francis/goinfer-bench/peer-reanchor-2026-11-19/bin/serve-cpu-e29da447 sha256 27b18a32402f07edb07e8c588efb374dc8be64747d3a0d318e90a09283197791
+host      nobara-pc Linux 7.3.0-202.nobara.fc44.x86_64
+gpu       595.112.07, NVIDIA GeForce RTX 2070 SUPER
+aikit     v1.76.0
+ollama    Warning: client version is 0.32.5
+llama     version: 0.7.0-dev (build 988, commit a37cc46)
+desktop   /usr/bin/kwin_wayland, 18 MiB;
+steps     v-cpu
+state     load 2.82 4.04 2.69 MemAvailable 61663 MiB swap 208 MiB

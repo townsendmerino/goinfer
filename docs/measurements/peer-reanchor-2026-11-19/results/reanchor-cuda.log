@@ -1,0 +1,62 @@
+=== night job reanchor-cuda
+=== cmd      bash /home/francis/mycode/reanchor-wt/docs/measurements/peer-reanchor-2026-11-19/run-nobara.sh cuda
+=== cwd      /home/francis/mycode/reanchor-wt
+=== rev      queued at 514c1b8f5, now 514c1b8f5
+=== host     nobara-pc
+=== est      90.0 min, timeout 180.0 min
+=== by       nobara-reanchor (Claude), peer re-anchor 2026-11-19
+=== doc      docs/measurements/peer-reanchor-2026-11-19/README.md
+=== note     CUDA cells a b f d c; graded next day with grade.py; results ~/goinfer-bench/peer-reanchor-2026-11-19/results/cuda
+=== START    2026-11-19 22:01:23 PST  loadavg 0.03  available 62164 MB
+=== READINGS start {"t": "2026-11-19 22:01:23", "t_epoch": 1795154483.5295608, "load1": 0.03173828125, "ncores": 16, "available_mb": 62177, "reclaimable_mb": 62171, "swap_mb": 0.0, "swapin_mb": 0.0, "swapout_mb": 0.0}
+=== MEMORY   /home/francis/goinfer-logs/night/runs/2026-11-19/reanchor-cuda.mem.tsv
+part      cuda
+started   2026-11-19 22:01:23 PST
+rev       e29da447 (/home/francis/goinfer-bench/peer-reanchor-2026-11-19/wt, clean)
+serve     /home/francis/goinfer-bench/peer-reanchor-2026-11-19/bin/serve-cuda-e29da447 sha256 703b01ed968be7d860bf68f76bdcc5ba8169ff3bb5cf8166f3d9234eaf2e77b8
+serve     /home/francis/goinfer-bench/peer-reanchor-2026-11-19/bin/serve-cpu-e29da447 sha256 27b18a32402f07edb07e8c588efb374dc8be64747d3a0d318e90a09283197791
+host      nobara-pc Linux 7.3.0-202.nobara.fc44.x86_64
+gpu       595.112.07, NVIDIA GeForce RTX 2070 SUPER
+aikit     v1.76.0
+ollama    Warning: client version is 0.32.5
+llama     version: 0.7.0-dev (build 988, commit a37cc46)
+desktop   /usr/bin/kwin_wayland, 16 MiB;
+state     load 0.11 0.04 0.01 MemAvailable 62102 MiB swap 0 MiB
+== fit checks 2026-11-19 22:01:25 PST load 0.11 0.04 0.01 MemAvailable 62102 MiB swap 0 MiB
+fit 0.5B-ctx4096: cuda-resident (int4) | fit: 4 KV slots at a 4096-token cap hold 0.3 GB KV (weights 0.3 GB, budget 42.2 GB, 41.9 GB left for a request's own prefill) | KV plan: 4 conversations x 4096 positions (--ctx 4096)
+fit 1.5B-ctx4096: cuda-resident (int4) | fit: 4 KV slots at a 4096-token cap hold 0.5 GB KV (weights 0.9 GB, budget 42.2 GB, 41.6 GB left for a request's own prefill) | KV plan: 4 conversations x 4096 positions (--ctx 4096)
+fit 7B-ctx4096: cuda-resident (int4) | fit: 4 KV slots at a 4096-token cap hold 1.0 GB KV (weights 4.0 GB, budget 42.1 GB, 41.1 GB left for a request's own prefill) | KV plan: 4 conversations x 4096 positions (--ctx 4096)
+fit 0.5B-ctx8192: cuda-resident (int4) | fit: 4 KV slots at a 8192-token cap hold 0.5 GB KV (weights 0.3 GB, budget 42.1 GB, 41.6 GB left for a request's own prefill) | KV plan: 4 conversations x 8192 positions (--ctx 8192)
+fit 1.5B-ctx8192: cuda-resident (int4) | fit: 4 KV slots at a 8192-token cap hold 1.0 GB KV (weights 0.9 GB, budget 42.1 GB, 41.1 GB left for a request's own prefill) | KV plan: 4 conversations x 8192 positions (--ctx 8192)
+fit 7B-ctx8192: cuda-resident (int4) | fit: 4 KV slots at a 8192-token cap hold 1.9 GB KV (weights 4.0 GB, budget 42.2 GB, 40.3 GB left for a request's own prefill) | KV plan: 4 conversations x 8192 positions (--ctx 8192)
+fit gemma3-1b: cuda-resident (int4) | fit: 4 KV slots at a 4096-token cap hold 0.5 GB KV (weights 0.5 GB, budget 42.2 GB, 41.7 GB left for a request's own prefill) | KV plan: 4 conversations x 4096 positions (--ctx 4096)
+fit phi3-mini: cuda-resident (q4k) | fit: 2 KV slots at a 4096-token cap hold 3.1 GB KV (weights 2.6 GB, budget 42.2 GB, 39.1 GB left for a request's own prefill) | KV plan: 2 conversations x 4096 positions (4 asked for; --ctx 4096)
+fit ttft-1.5B: cuda-resident (int4) | fit: 4 KV slots at a 32768-token cap hold 1.9 GB KV (weights 0.9 GB, budget 42.1 GB, 40.3 GB left for a request's own prefill) | KV plan: a 65536-position pool for 4 conversations; each is guaranteed 16384, and one can use up to 32768
+fit M26-ctx2048: cuda-resident (int4) | fit: 2048-token cap needs 0.7 GB KV (weights 13.6 GB, budget 33.5 GB, 32.8 GB left for a request's own prefill) | KV plan: 1 conversation x 2048 positions (4 asked for; --ctx 2048)
+== fit checks done 2026-11-19 22:02:58 PST
+=== 2026-11-19 22:02:58 PST START a-dense load 1.95 0.62 0.21 MemAvailable 61902 MiB swap 0 MiB
+=== 2026-11-19 22:02:58 PST END a-dense rc=1 (0s)
+FAILED step a-dense rc=1
+REFUSED: 1-min load average 1.95 exceeds 1.00. The box is not idle, and a number measured on a busy box is not distinguishable afterwards from a number measured on a quiet one. Wait, or raise BENCH_MAX_LOADAVG deliberately.
+=== 2026-11-19 22:02:58 PST START a-depth8000 load 1.95 0.62 0.21 MemAvailable 61890 MiB swap 0 MiB
+=== 2026-11-19 22:02:58 PST END a-depth8000 rc=1 (0s)
+FAILED step a-depth8000 rc=1
+REFUSED: 1-min load average 1.95 exceeds 1.00. The box is not idle, and a number measured on a busy box is not distinguishable afterwards from a number measured on a quiet one. Wait, or raise BENCH_MAX_LOADAVG deliberately.
+=== 2026-11-19 22:02:58 PST START b-controls load 1.95 0.62 0.21 MemAvailable 61874 MiB swap 0 MiB
+=== 2026-11-19 22:02:58 PST END b-controls rc=1 (0s)
+FAILED step b-controls rc=1
+REFUSED: 1-min load average 1.95 exceeds 1.00. The box is not idle, and a number measured on a busy box is not distinguishable afterwards from a number measured on a quiet one. Wait, or raise BENCH_MAX_LOADAVG deliberately.
+=== 2026-11-19 22:02:58 PST START f-sampled load 1.95 0.62 0.21 MemAvailable 61873 MiB swap 0 MiB
+=== 2026-11-19 22:02:58 PST END f-sampled rc=1 (0s)
+FAILED step f-sampled rc=1
+REFUSED: 1-min load average 1.95 exceeds 1.00. The box is not idle, and a number measured on a busy box is not distinguishable afterwards from a number measured on a quiet one. Wait, or raise BENCH_MAX_LOADAVG deliberately.
+=== 2026-11-19 22:02:58 PST START d-prefill load 1.95 0.62 0.21 MemAvailable 61855 MiB swap 0 MiB
+=== 2026-11-19 22:03:59 PST END d-prefill rc=0 (61s)
+=== 2026-11-19 22:03:59 PST START c-26b load 1.38 0.71 0.27 MemAvailable 61970 MiB swap 0 MiB
+=== 2026-11-19 22:03:59 PST END c-26b rc=1 (0s)
+FAILED step c-26b rc=1
+REFUSED: 1-min load average 1.38 exceeds 1.00. The box is not idle, and a number measured on a busy box is not distinguishable afterwards from a number measured on a quiet one. Wait, or raise BENCH_MAX_LOADAVG deliberately.
+finished  2026-11-19 22:03:59 PST rc=1 load 1.38 0.71 0.27 MemAvailable 61956 MiB swap 0 MiB
+
+=== READINGS end {"t": "2026-11-19 22:03:59", "t_epoch": 1795154639.1927218, "load1": 1.37939453125, "ncores": 16, "available_mb": 61943, "reclaimable_mb": 61950, "swap_mb": 0.0, "swapin_mb": 0.0, "swapout_mb": 0.0}
+=== END      2026-11-19 22:03:59 PST  rc=1
