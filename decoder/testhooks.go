@@ -283,7 +283,7 @@ func SetRouterCaptureForTest(on bool) {
 func (c *KVCache) LayerKVForTest(layer int) (k, v []float32, base int) { return c.LayerKV(layer) }
 
 // SetSSMQ8CPU makes the CPU Mamba reference round-trip its projections through int8, so it carries the same quantization error as
-// the resident W8A8 path (the confirmation seam GOINFER_SSM_Q8CPU also turns on).
+// the resident W8A8 path.
 func SetSSMQ8CPU(v bool) { ssmQ8CPU = v }
 
 // SetSSMForceF32 toggles the CPU reference's f32 SSM accumulation (the gated-norm precision-localization seam). It and
