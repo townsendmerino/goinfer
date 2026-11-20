@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -90,7 +91,7 @@ func TestA3MoETokenLevel(t *testing.T) {
 		fmt.Fprintf(os.Stderr, "A3-token: probe=%v prefill %.1fs; decoding %d\n", probe, time.Since(start).Seconds(), N)
 		toks, margins := make([]int, 0, N), make([]float64, 0, N)
 		for step := 0; step < N; step++ {
-			tok := argmax(lg)
+			tok := sampling.Argmax(lg)
 			toks = append(toks, tok)
 			margins = append(margins, margin(lg))
 			if lg, err = m.forward(tok, cache); err != nil {

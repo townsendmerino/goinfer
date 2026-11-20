@@ -6,6 +6,8 @@ import (
 	"math"
 	"math/rand"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // TestAttendBatchedHeads_vsNaive isolates the batched SIMD attention from the
@@ -216,8 +218,8 @@ func TestTruncateTo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if argmax(la) != argmax(lb) {
-		t.Fatalf("post-truncate argmax %d != fresh-prefix argmax %d", argmax(la), argmax(lb))
+	if sampling.Argmax(la) != sampling.Argmax(lb) {
+		t.Fatalf("post-truncate argmax %d != fresh-prefix argmax %d", sampling.Argmax(la), sampling.Argmax(lb))
 	}
 	for j := range la {
 		if math.Abs(float64(la[j]-lb[j])) > 1e-4 {

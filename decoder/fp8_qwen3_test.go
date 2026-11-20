@@ -17,6 +17,8 @@ package decoder
 
 import (
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 func TestFP8Qwen3_vsBF16(t *testing.T) {
@@ -54,7 +56,7 @@ func TestFP8Qwen3_vsBF16(t *testing.T) {
 
 	l8, lb := fwd(m8), fwd(mb)
 	cos := logitCosine(l8, lb)
-	a8, ab := argmax(l8), argmax(lb)
+	a8, ab := sampling.Argmax(l8), sampling.Argmax(lb)
 	t.Logf("qwen3-0.6b fp8 vs bf16: argmax %d vs %d | logit cosine %.6f", a8, ab, cos)
 
 	// NOT bit-identical, and it should not be: these are different weights. The fp8 file is a

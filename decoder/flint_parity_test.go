@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/embed"
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 type flintGolden struct {
@@ -123,7 +124,7 @@ func TestFlint_tinyForwardParity(t *testing.T) {
 			t.Fatalf("forward: %v", err)
 		}
 	}
-	gotArg := argmax(logits)
+	gotArg := sampling.Argmax(logits)
 	cos := logitCosine(logits, g.LastLogits)
 	maxAbs := maxAbsLogitDiff(logits, g.LastLogits)
 	t.Logf("flint-tiny sequential parity: argmax=%d (want %d) cosine=%.8f maxAbs=%.3e",
@@ -150,9 +151,9 @@ func TestFlint_tinyForwardParity(t *testing.T) {
 	bMaxAbs := maxAbsLogitDiff(bl, g.LastLogits)
 	bCos := logitCosine(bl, g.LastLogits)
 	t.Logf("flint-tiny batched prefill parity: argmax=%d cosine=%.8f maxAbs=%.3e",
-		argmax(bl), bCos, bMaxAbs)
-	if argmax(bl) != g.Argmax {
-		t.Errorf("batched argmax = %d, want %d", argmax(bl), g.Argmax)
+		sampling.Argmax(bl), bCos, bMaxAbs)
+	if sampling.Argmax(bl) != g.Argmax {
+		t.Errorf("batched argmax = %d, want %d", sampling.Argmax(bl), g.Argmax)
 	}
 	if bMaxAbs > 1e-5 {
 		t.Errorf("batched maxAbs = %.3e > 1e-5", bMaxAbs)
@@ -162,7 +163,7 @@ func TestFlint_tinyForwardParity(t *testing.T) {
 	cont := make([]int, 0, g.NNew)
 	nextLogits := append([]float32(nil), logits...)
 	for range g.NNew {
-		id := argmax(nextLogits)
+		id := sampling.Argmax(nextLogits)
 		cont = append(cont, id)
 		if nextLogits, err = m.forward(id, cache); err != nil {
 			t.Fatalf("continuation forward: %v", err)
@@ -277,7 +278,7 @@ func TestFlint_windowBoundaryParity(t *testing.T) {
 		if !ok {
 			continue
 		}
-		gotArg := argmax(lg)
+		gotArg := sampling.Argmax(lg)
 		cos := logitCosine(lg, want.Logits)
 		maxAbs := maxAbsLogitDiff(lg, want.Logits)
 		if want.Len == 512 || want.Len == 513 || want.Len == 514 || want.Len == 1100 {
@@ -304,7 +305,7 @@ func TestFlint_windowBoundaryParity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("prefillLogits(len=%d): %v", length, err)
 		}
-		gotArg := argmax(bl)
+		gotArg := sampling.Argmax(bl)
 		cos := logitCosine(bl, want.Logits)
 		maxAbs := maxAbsLogitDiff(bl, want.Logits)
 		t.Logf("window_513 batched len=%d (pos=%d): argmax=%d (want %d) cosine=%.8f maxAbs=%.3e",
@@ -484,7 +485,7 @@ func TestFlint_realCheckpointParity(t *testing.T) {
 			t.Fatalf("logit[%d] = %v (NaN/Inf)", i, v)
 		}
 	}
-	t.Logf("GOINFER_FLINT_DIR(%s): argmax=%d vocab=%d", dir, argmax(logits), len(logits))
+	t.Logf("GOINFER_FLINT_DIR(%s): argmax=%d vocab=%d", dir, sampling.Argmax(logits), len(logits))
 }
 
 // TestFlint_ggufConfig verifies ggufFlintConfig metadata extraction for GGUF files

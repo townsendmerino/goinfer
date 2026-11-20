@@ -11,6 +11,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -234,13 +235,13 @@ func b27Lockstep(t *testing.T, ref, got *Model, seed []int, steps int) (minCos f
 		if i >= 2 {
 			minCos = min(minCos, float64(logitCosine(lg, lr)))
 		}
-		if argmax(lr) == argmax(lg) {
+		if sampling.Argmax(lr) == sampling.Argmax(lg) {
 			agree++
 		}
 		if i+1 < len(seed) {
 			tok = seed[i+1]
 		} else {
-			tok = argmax(lr)
+			tok = sampling.Argmax(lr)
 		}
 	}
 	return minCos, agree

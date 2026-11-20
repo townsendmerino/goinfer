@@ -38,6 +38,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -215,15 +216,15 @@ func TestLfm2VLFull(t *testing.T) {
 		vocab := len(logits) / n
 		agree := 0
 		for i := range n {
-			if argmax(logits[i*vocab:(i+1)*vocab]) == g.C.Argmax[after+i] {
+			if sampling.Argmax(logits[i*vocab:(i+1)*vocab]) == g.C.Argmax[after+i] {
 				agree++
 			}
 		}
 		lastL := logits[(n-1)*vocab:]
 		cos = logitCosine(lastL, hfLast)
-		lastOK = argmax(lastL) == argmax(hfLast)
+		lastOK = sampling.Argmax(lastL) == sampling.Argmax(hfLast)
 		pct = 100 * float64(agree) / float64(n)
-		logf("%-50s last cosine %.6f, argmax %d (HF %d), agreement %d/%d = %.1f%% over the text after the image", label, cos, argmax(lastL), argmax(hfLast), agree, n, pct)
+		logf("%-50s last cosine %.6f, argmax %d (HF %d), agreement %d/%d = %.1f%% over the text after the image", label, cos, sampling.Argmax(lastL), sampling.Argmax(hfLast), agree, n, pct)
 		return cos, lastOK, pct
 	}
 	pass := func(cos float64, lastOK bool, pct float64) bool { return cos >= 0.999 && lastOK && pct >= 95 }

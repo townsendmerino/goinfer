@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // Bailing Hybrid parity (G5; inclusionAI Ling 3.0, model_type
@@ -90,7 +92,7 @@ func TestBailingHybrid_forwardParity(t *testing.T) {
 		t.Fatalf("got %d logits, want vocab %d", len(logits), g.Vocab)
 	}
 
-	if got := argmax(logits); got != g.Argmax {
+	if got := sampling.Argmax(logits); got != g.Argmax {
 		t.Errorf("argmax = %d, want %d (logit[got]=%.4f logit[want]=%.4f)",
 			got, g.Argmax, logits[got], logits[g.Argmax])
 	}
@@ -116,6 +118,6 @@ func TestBailingHybrid_forwardParity(t *testing.T) {
 
 	cos := fullCosine(t, logits, bailingHybridForwardFullPath)
 	t.Logf("bailing_hybrid: argmax=%d (want %d) | maxSampleΔ=%.5f | cosine=%v",
-		argmax(logits), g.Argmax, maxSampleΔ, cos)
+		sampling.Argmax(logits), g.Argmax, maxSampleΔ, cos)
 	emitParityRow(t, "bailing_hybrid", "tiny-golden", "hand-assembled f32 reference (bailing_hybrid-tiny fixture, MLA+KDA composition, KDA's per-channel-decay recurrence via fla-org's own naive reference)", 100.0, cos, cos)
 }

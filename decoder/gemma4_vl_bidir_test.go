@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // TestGemma4VLBidir_textParity is the P0 invariant for the batched path, mirroring TestGemma4VL_textParity's shape: on
@@ -60,7 +62,7 @@ func TestGemma4VLBidir_textParity(t *testing.T) {
 			t.Fatalf("sequential forward: %v", err)
 		}
 	}
-	seqArg := argmax(seqLogits)
+	seqArg := sampling.Argmax(seqLogits)
 	seqCos := logitCosine(seqLogits, g.LastLogits)
 	t.Logf("sequential: argmax got=%d want=%d | logit cosine=%.6f", seqArg, g.Argmax, seqCos)
 	if seqArg != g.Argmax {
@@ -78,7 +80,7 @@ func TestGemma4VLBidir_textParity(t *testing.T) {
 		t.Fatalf("batched forward: %v", err)
 	}
 	batLogits := m.logitsFromNormed(hLast, batCache)
-	batArg := argmax(batLogits)
+	batArg := sampling.Argmax(batLogits)
 	batCos := logitCosine(batLogits, g.LastLogits)
 	t.Logf("batched:    argmax got=%d want=%d | logit cosine=%.6f", batArg, g.Argmax, batCos)
 	if batArg != g.Argmax {
@@ -107,7 +109,7 @@ func TestGemma4VLBidir_textParity(t *testing.T) {
 		if seqLogits, err = m.forward(cur, seqCache); err != nil {
 			t.Fatalf("decode forward: %v", err)
 		}
-		cur = argmax(seqLogits)
+		cur = sampling.Argmax(seqLogits)
 	}
 }
 
@@ -157,7 +159,7 @@ func TestGemma4VLBidir_imageParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prefillLogitsGemma4VLBidirectional: %v", err)
 	}
-	biArg := argmax(biLogits)
+	biArg := sampling.Argmax(biLogits)
 	biCos := logitCosine(biLogits, g.LastLogits)
 	t.Logf("bidirectional: argmax got=%d want=%d | logit cosine=%.6f", biArg, g.Argmax, biCos)
 	if biArg != g.Argmax {
@@ -176,7 +178,7 @@ func TestGemma4VLBidir_imageParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prefillLogitsGemma4VL (causal-only reference): %v", err)
 	}
-	causalArg := argmax(causalLogits)
+	causalArg := sampling.Argmax(causalLogits)
 	causalCos := logitCosine(causalLogits, g.CausalOnlyLastLogits)
 	t.Logf("causal-only:   argmax got=%d want=%d | logit cosine=%.6f", causalArg, g.CausalOnlyArgmax, causalCos)
 	if causalArg != g.CausalOnlyArgmax {

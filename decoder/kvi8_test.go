@@ -11,6 +11,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/tokenizer"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -249,7 +250,7 @@ func TestKVI8_genParity(t *testing.T) {
 		lg := make([][]float32, len(ids))
 		for i, id := range ids {
 			logits, _ := mm.forward(id, cache)
-			am[i] = argmax(logits)
+			am[i] = sampling.Argmax(logits)
 			lg[i] = append([]float32(nil), logits...)
 		}
 		return am, lg
@@ -318,7 +319,7 @@ func TestKVI8_batchedPrefill(t *testing.T) {
 	match := 0
 	var cosSum float64
 	for i := range ids {
-		if argmax(gotL[i]) == argmax(refL[i]) {
+		if sampling.Argmax(gotL[i]) == sampling.Argmax(refL[i]) {
 			match++
 		}
 		cosSum += logitCosine(refL[i], gotL[i])

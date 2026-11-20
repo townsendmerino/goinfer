@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // TestGptOssGGUF_parity gates the gpt-oss forward against an HF reference on a TINY
@@ -77,7 +79,7 @@ func TestGptOssGGUF_parity(t *testing.T) {
 			t.Fatalf("forward: %v", err)
 		}
 	}
-	gotArg := argmax(logits)
+	gotArg := sampling.Argmax(logits)
 	cos := logitCosine(logits, g.Logits)
 	t.Logf("gpt-oss GGUF parity: argmax got=%d want=%d | logit cosine=%.6f", gotArg, g.Argmax, cos)
 	if gotArg != g.Argmax {
