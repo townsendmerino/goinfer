@@ -812,7 +812,7 @@ func webgpuGateRow(t *testing.T, row, path string, o decoder.Options, census boo
 	} else if covered {
 		webgpuScratchPlanCovered++
 	} else {
-		why := m.WebGPUDecodeScratchWhy()
+		why := webgpuDecodeScratchWhy(m)
 		if i := strings.Index(why, ": "); strings.HasPrefix(why, "layer ") && i > 0 {
 			why = why[i+2:] // the layer's number varies, the reason is the row's
 		}
@@ -886,7 +886,7 @@ func TestMemGate_webgpu(t *testing.T) {
 		t.Logf("no plan figure for %d rows: %s", n, why)
 	}
 	if webgpuScratchPlanCovered == 0 {
-		t.Error("VOID: Model.WebGPUDecodeScratch gave a figure for no row, so the plan-side gate compared nothing")
+		t.Error("VOID: webgpuDecodeScratchTerms gave a figure for no row, so the plan-side gate compared nothing")
 	}
 	memgate.HoldRows(t, webgpuGateRowsPath, built, *webgpuGateRowsUpdate)
 	g.Finish(t)
@@ -1041,10 +1041,10 @@ var webgpuScratchPlanCovered int
 // webgpuScratchPlanWhy counts the rows the plan gave no figure for, by the reason it gave (logged, so the next layer shape to derive is read, not guessed).
 var webgpuScratchPlanWhy = map[string]int{}
 
-// webgpuScratchPlanHolds is G-MS2w's second half (MM5b): where the plan gives a figure for m (Model.WebGPUDecodeScratch), the build's
+// webgpuScratchPlanHolds is G-MS2w's second half (MM5b): where the plan gives a figure for m (webgpuDecodeScratchTerms), the build's
 // scratch list equals it role by role, once for each runner the build made. covered is false where the plan gives none.
 func webgpuScratchPlanHolds(m *decoder.Model, rd *residentDecoder) (covered bool, err error) {
-	terms, ok := m.WebGPUDecodeScratch()
+	terms, ok := webgpuDecodeScratchTerms(m)
 	if !ok {
 		return false, nil
 	}
@@ -1052,7 +1052,7 @@ func webgpuScratchPlanHolds(m *decoder.Model, rd *residentDecoder) (covered bool
 }
 
 // webgpuScratchTermsHold compares terms with the build's scratch list, role by role, for each runner the build made.
-func webgpuScratchTermsHold(terms []decoder.WebGPUScratchTerm, rd *residentDecoder) error {
+func webgpuScratchTermsHold(terms []webgpuScratchTerm, rd *residentDecoder) error {
 	n := int64(max(1, len(rd.slots)))
 	want := map[string]int64{}
 	for _, tm := range terms {
@@ -1139,14 +1139,14 @@ func TestScratchPlan_plantsGoRed(t *testing.T) {
 	if !ok {
 		t.Skip("llama-tiny did not build resident on this adapter")
 	}
-	terms, ok := m.WebGPUDecodeScratch()
+	terms, ok := webgpuDecodeScratchTerms(m)
 	if !ok {
 		t.Fatal("VOID: no plan figure for llama-tiny")
 	}
 	if err := webgpuScratchTermsHold(terms, rd); err != nil {
 		t.Fatalf("unplanted: %v", err)
 	}
-	short := append([]decoder.WebGPUScratchTerm(nil), terms...)
+	short := append([]webgpuScratchTerm(nil), terms...)
 	for i := range short {
 		if short[i].Role == "gemvAdd" {
 			short[i].Bytes -= 16

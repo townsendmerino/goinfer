@@ -1,45 +1,50 @@
-package decoder
+//go:build gpu && goinfer_testhooks
+
+package webgpu
 
 import (
 	"fmt"
+	"strings"
 
+	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
 // webgpuLoRAScratchRows is the f32 rows a WebGPU build always leases for compute-time LoRA (kernels' loraRMax). The memory gate holds
-// WebGPUDecodeScratch to the build's own scratch list, so a drift here is red there.
+// webgpuDecodeScratchTerms to the build's own scratch list, so a drift here is red there.
 const webgpuLoRAScratchRows = 256
 
-// WebGPUScratchTerm is one named part of WebGPU's decode scratch: the bytes the runner's op builders of that role lease at build.
-type WebGPUScratchTerm struct {
+// webgpuScratchTerm is one named part of WebGPU's decode scratch: the bytes the runner's op builders of that role lease at build.
+type webgpuScratchTerm struct {
 	Role  string
 	Bytes int64
 }
 
-// WebGPUDecodeScratch is what a WebGPU resident build of m leases on the scratch line for decode (the sum of the build's scratch list,
+// webgpuDecodeScratchTerms is what a WebGPU resident build of m leases on the scratch line for decode (the sum of the build's scratch list,
 // kernels.DecodeRunner.ScratchList), as terms named by the op builder that leases them: each from the program's declared per-row
 // activations, plus the per-dispatch parameter buffers the builders create. ok is false for a model whose layers are not all a
 // plain attention sublayer and a gated dense FFN with one geometry (the runner's other mixers are not yet derived): no figure is
 // given for it, rather than a guess. Reported, not charged: no admission decision reads it.
-func (m *Model) WebGPUDecodeScratch() (terms []WebGPUScratchTerm, ok bool) {
-	terms, why := m.webgpuDecodeScratch()
+func webgpuDecodeScratchTerms(m *decoder.Model) (terms []webgpuScratchTerm, ok bool) {
+	terms, why := webgpuDecodeScratch(m)
 	return terms, why == ""
 }
 
-// WebGPUDecodeScratchWhy is the first reason WebGPUDecodeScratch gives no figure for m, or "" where it gives one.
-func (m *Model) WebGPUDecodeScratchWhy() string {
-	_, why := m.webgpuDecodeScratch()
+// webgpuDecodeScratchWhy is the first reason webgpuDecodeScratchTerms gives no figure for m, or "" where it gives one.
+func webgpuDecodeScratchWhy(m *decoder.Model) string {
+	_, why := webgpuDecodeScratch(m)
 	return why
 }
 
-func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
+func webgpuDecodeScratch(m *decoder.Model) (terms []webgpuScratchTerm, why string) {
 	H, _, _, _, _, _, V := m.Dims()
-	if m.w == nil || H <= 0 || V <= 0 {
+	view := m.BackendView()
+	wts := view.Weights()
+	if wts == nil || H <= 0 || V <= 0 {
 		return nil, "the model has no hidden or vocabulary width"
 	}
-	d := m.metalDecodeRows(H, V)
-	view := m.BackendView()
+	declared := m.DecodeRowsForTest()
 	kv := m.KVDeliveredFor("webgpu")
 	win := view.SlidingWindow() > 0
 	type geom struct {
@@ -89,7 +94,7 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 			if hasShared { // the shared expert: a gated SwiGLU MLP, sigmoid-gated by a one-row projection or added ungated
 				gemv += 4*2*int64(shared) + 2*16
 				swiglu += pk(shared) + 20
-				if m.w.Layers[l].SharedGate.Rows() > 0 {
+				if wts.Layers[l].SharedGate.Rows() > 0 {
 					gemv += 4*int64(H) + 16 + 4 + 16
 					sharedCombine += 16
 				} else {
@@ -102,11 +107,11 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 	// g4Terms is a parallel dense and routed block on the post-attention residual: the router's norm and projection, a dense branch and an
 	// expert branch each behind its own pre-norm, the post-norms, the join and the layer's output scalar.
 	g4Terms := func(l int) string {
-		g, ok := m.parallelBlockOf(l)
+		g, ok := parallelBlockOf(view.Layer(l))
 		if !ok {
 			return fmt.Sprintf("layer %d: no parallel routed block", l)
 		}
-		rows := d.layers[l]
+		rows := declared[l]
 		if rows["g4moe-router"] != g.nE || rows["g4moe-experts"] != g.topK || rows["gate"] != g.denseInter {
 			return fmt.Sprintf("layer %d: the block's declared rows disagree with its weights", l)
 		}
@@ -129,10 +134,10 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 		if !isDense {
 			return nil, fmt.Sprintf("layer %d: operations %v (FFN form %d) are not a plain attention and dense FFN sublayer", l, opKinds(ops), shape.otherForm)
 		}
-		if d.routed[l] != (shape.moe || shape.block == blockRouted || shape.g4) {
+		if routesExperts(declared[l]) != (shape.moe || shape.block == blockRouted || shape.g4) {
 			return nil, fmt.Sprintf("layer %d: a routed-experts FFN of a form not derived", l)
 		}
-		rows := d.layers[l]
+		rows := declared[l]
 		mixer := []string{"q", "k", "v", "ctx"}
 		switch {
 		case shape.gated:
@@ -159,7 +164,7 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 			want = len(mixer) // a layer of one operation has no FFN rows beside it
 		}
 		var nE, topK, shared int
-		hasShared := shape.moe && m.w.Layers[l].SharedExpert.Gate.Rows() > 0
+		hasShared := shape.moe && wts.Layers[l].SharedExpert.Gate.Rows() > 0
 		if shape.moe {
 			pre := "moe" // the router's declared rows are named by the form
 			if shape.clamped {
@@ -189,7 +194,7 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 		if shape.block == blockRouted {
 			p := shape.routedPrefix
 			nE, topK, inter, sh := rows[p+"-router"], rows[p+"-experts"], rows["up"], rows["shared-up"]
-			if nE == 0 || topK == 0 || rows[p+"-weights"] != topK || len(m.w.Layers[l].PreAttnNorm) == 0 {
+			if nE == 0 || topK == 0 || rows[p+"-weights"] != topK || len(wts.Layers[l].PreAttnNorm) == 0 {
 				return nil, fmt.Sprintf("layer %d: the routed block's declared rows or its norm are not the derived ones", l)
 			}
 			nRms++
@@ -204,7 +209,7 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 			continue
 		}
 		if shape.block == blockSSM || shape.block == blockMLP {
-			if len(m.w.Layers[l].PreAttnNorm) == 0 {
+			if len(wts.Layers[l].PreAttnNorm) == 0 {
 				nQuant++
 			} else {
 				nRms++
@@ -223,7 +228,7 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 		}
 		if shape.latent {
 			anyLatent = true
-			for _, pre := range [][]float32{m.w.Layers[l].PreAttnNorm, m.w.Layers[l].PreMLPNorm} {
+			for _, pre := range [][]float32{wts.Layers[l].PreAttnNorm, wts.Layers[l].PreMLPNorm} {
 				if len(pre) == 0 {
 					nQuant++
 				} else {
@@ -249,7 +254,7 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 		}
 		if shape.delta {
 			anyDelta = true
-			for _, pre := range [][]float32{m.w.Layers[l].PreAttnNorm, m.w.Layers[l].PreMLPNorm} {
+			for _, pre := range [][]float32{wts.Layers[l].PreAttnNorm, wts.Layers[l].PreMLPNorm} {
 				if len(pre) == 0 {
 					nQuant++
 				} else {
@@ -267,7 +272,7 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 			continue
 		}
 		lv := view.Layer(l)
-		w := &m.w.Layers[l]
+		w := &wts.Layers[l]
 		rs := float32(lv.RopeMscale())
 		switch {
 		case rs == 0:
@@ -390,7 +395,7 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 	if anyDelta {
 		deltaSetupB = 16 + 16 + 32 + 32 + 32 // the five dispatch parameter buffers the delta mixer shares across layers
 	}
-	terms = []WebGPUScratchTerm{
+	terms = []webgpuScratchTerm{
 		{"build", 4 + 4*webgpuLoRAScratchRows},
 		{"residual", 4 * int64(H)},
 		{"logitsStaging", 4 * int64(V)},
@@ -431,9 +436,9 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 		{"geomFor", geomB},
 	}
 	if kv == mem.KVF16 || kv == mem.KVI8 {
-		terms = append(terms, WebGPUScratchTerm{"ropeQUniFor", 32 * nScale}, WebGPUScratchTerm{"ropeKUniFor", 32 * nScale})
+		terms = append(terms, webgpuScratchTerm{"ropeQUniFor", 32 * nScale}, webgpuScratchTerm{"ropeKUniFor", 32 * nScale})
 	} else {
-		terms = append(terms, WebGPUScratchTerm{"qkvFinUniFor", 32 * nScale})
+		terms = append(terms, webgpuScratchTerm{"qkvFinUniFor", 32 * nScale})
 	}
 	kept := terms[:0]
 	for _, t := range terms {
@@ -444,14 +449,14 @@ func (m *Model) webgpuDecodeScratch() (terms []WebGPUScratchTerm, why string) {
 	return kept, ""
 }
 
-// WebGPUDecodeScratchBytes is the sum of WebGPUDecodeScratch's terms; ok is false where it gives none.
-func (m *Model) WebGPUDecodeScratchBytes() (int64, bool) {
-	terms, ok := m.WebGPUDecodeScratch()
-	var n int64
-	for _, t := range terms {
-		n += t.Bytes
+// routesExperts reports whether a layer's declared rows include a router's.
+func routesExperts(rows map[string]int) bool {
+	for name := range rows {
+		if strings.HasSuffix(name, "-router") {
+			return true
+		}
 	}
-	return n, ok
+	return false
 }
 
 // denseShape is the optional operations a plain attention layer carries: a QK-norm after the projections, and a norm on each
@@ -476,7 +481,7 @@ var routedPrefixOf = map[program.FFNForm]string{program.FfnNemotronMoE: "nemotro
 
 // denseAttnLayer reports whether a layer's operations are a plain attention sublayer and a dense FFN, each behind its own pre-norm,
 // with only the optional operations of denseShape and nothing else (no output gate, temperature or layer scale).
-func denseAttnLayer(ops []op) (s denseShape, ok bool) {
+func denseAttnLayer(ops []program.Op) (s denseShape, ok bool) {
 	i := 0
 	next := func(k program.OpKind) bool {
 		if i < len(ops) && ops[i].Kind == k {
@@ -554,7 +559,7 @@ func denseAttnLayer(ops []op) (s denseShape, ok bool) {
 }
 
 // opKinds is a layer's operation kinds in order, for the reason a layer has no figure.
-func opKinds(ops []op) []program.OpKind {
+func opKinds(ops []program.Op) []program.OpKind {
 	ks := make([]program.OpKind, len(ops))
 	for i, o := range ops {
 		ks[i] = o.Kind
@@ -564,7 +569,7 @@ func opKinds(ops []op) []program.OpKind {
 
 // gatedAttnQKNorm reports whether a gated attention layer carries a QK-norm weight, which it keeps with its projections, not in the
 // layer's own norm fields. Like denseAttnLayer it reads the layer shape's own accessor, so the pricing body names no family.
-func gatedAttnQKNorm(lv ResidentLayerView) bool {
+func gatedAttnQKNorm(lv decoder.ResidentLayerView) bool {
 	_, _, _, _, qn, _ := lv.Qwen35AttnWeights()
 	return len(qn) > 0
 }
@@ -579,12 +584,12 @@ type parallelBlock struct {
 	layerScalar                    float32
 }
 
-// parallelBlockOf reads layer l's parallel block from its weights, as gatedAttnQKNorm reads the gated attention's: the pricing body
-// names no family.
-func (m *Model) parallelBlockOf(l int) (parallelBlock, bool) {
-	g := m.w.Layers[l].gemma4moe
-	if g == nil {
+// parallelBlockOf reads a layer's parallel block from the bundle the runner builds it from, as gatedAttnQKNorm reads the gated
+// attention's: the pricing body names no family.
+func parallelBlockOf(lv decoder.ResidentLayerView) (parallelBlock, bool) {
+	g, ok := lv.Gemma4MoEBundle()
+	if !ok {
 		return parallelBlock{}, false
 	}
-	return parallelBlock{g.nE, g.topK, g.denseInter, g.moeInter, g.layerScalar}, true
+	return parallelBlock{g.NE, g.TopK, g.DenseInter, g.MoeInter, g.LayerScalar}, true
 }

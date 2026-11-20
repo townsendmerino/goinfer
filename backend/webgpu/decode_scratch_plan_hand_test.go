@@ -1,6 +1,17 @@
-package decoder
+//go:build gpu && goinfer_testhooks
 
-import "testing"
+package webgpu
+
+import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+)
 
 // TestMM5b_webgpuDecodeScratchNamesNoFamily is G-MS4w: the figure is priced from the operations' per-row declarations, so its pricing names no family, mixer or
 // FFN form. denseAttnLayer, which names the operation kinds of the one layer shape the figure is derived for, is the coverage
@@ -9,7 +20,7 @@ func TestMM5b_webgpuDecodeScratchNamesNoFamily(t *testing.T) {
 	banned := []string{"ResidentLayerOps", "Mixer", "KVSrcAtResident", "HeadDimAtResident", "KVHeadsAtResident",
 		"Qwen35", "Nemotron", "MLA", "Gemma4", "GptOss", "DeltaNet", "Mamba", "KDA", "ShortConv", "PLE", "MoEResident", "QKNormWhole",
 		"NonGatedMLP", "OpAttention", "OpGatedAttn", "Ffn", ".qwen35", ".lfm2", ".kda", ".granite", ".nemotron", ".gemma4", ".mla"}
-	scanPricingBodies(t, map[string][]string{"webgpu_scratch.go": {"WebGPUDecodeScratch", "WebGPUDecodeScratchBytes", "webgpuDecodeScratch", "WebGPUDecodeScratchWhy"}}, banned,
+	scanPricingBodies(t, map[string][]string{"decode_scratch_plan_test.go": {"webgpuDecodeScratchTerms", "webgpuDecodeScratch", "webgpuDecodeScratchWhy"}}, banned,
 		"WebGPU's decode scratch is priced from the operations' per-row declarations, not the family")
 }
 
@@ -306,39 +317,39 @@ func withTerm(m map[string]int64, role string, b int64) map[string]int64 {
 func TestWebGPUDecodeScratch_handTable(t *testing.T) {
 	for _, c := range []struct {
 		name, fx string
-		o        Options
+		o        decoder.Options
 		want     map[string]int64
 	}{
-		{"llama f32", "llama-tiny", Options{}, webgpuScratchHand(64, 4, 256, 64, 32, 128, false, false, "f32", "", false, false)},
-		{"llama f16", "llama-tiny", Options{KVPrecision: "f16"}, webgpuScratchHand(64, 4, 256, 64, 32, 128, false, false, "f16", "", false, false)},
-		{"llama i8", "llama-tiny", Options{KVPrecision: "i8"}, webgpuScratchHand(64, 4, 256, 64, 32, 128, false, false, "i8", "", false, false)},
-		{"qwen3asr (qk-norm)", "qwen3asr-tiny", Options{}, webgpuScratchHand(24, 2, 160, 24, 12, 48, true, false, "f32", "", false, false)},
-		{"qwen25vl int4 (bias)", "qwen25vl-tiny", Options{Quant: "int4"}, webgpuScratchHand(64, 2, 300, 64, 32, 128, false, false, "f32", "int4", false, false)},
-		{"qwen25vl int8 (bias)", "qwen25vl-tiny", Options{Quant: "int8int8"}, webgpuScratchHand(64, 2, 300, 64, 32, 128, false, false, "f32", "int8", false, false)},
-		{"olmo3 (window, qk-norm, post-only norms)", "olmo3-tiny", Options{}, withTerm(webgpuScratchHand(64, 4, 512, 64, 64, 128, true, true, "f32", "", true, true), "qkvFinUniFor", 2*32)}, // two rope scales: the sliding layers' and the full ones'
-		{"mistral window", "mistral-tiny-window", Options{}, webgpuScratchHand(128, 3, 128, 128, 64, 256, false, false, "f32", "", true, false)},
-		{"mixtral (routed FFN)", "mixtral-tiny", Options{}, webgpuScratchHandMoE(64, 512, 64, 64, []int{0, 0, 0, 0}, 8, 2, 128, 0, false, false)},
-		{"qwen3moe (routed FFN, qk-norm)", "qwen3moe-tiny", Options{}, webgpuScratchHandMoE(64, 512, 64, 16, []int{0, 0, 0, 0}, 8, 2, 32, 0, false, true)},
-		{"glm (dense prefix, ungated shared expert, qk-norm)", "glm-tiny", Options{}, webgpuScratchHandMoE(64, 256, 64, 32, []int{128, 0, 0}, 8, 2, 32, 32, false, true)},
-		{"qwen35 (delta-net, gated attention, routed FFN)", "qwen35-tiny", Options{}, webgpuScratchHandQwen35Tiny()},
-		{"smollm3 (a layer with no rope operation)", "smollm3-tiny", Options{}, webgpuScratchHand(64, 4, 512, 64, 16, 128, false, false, "f32", "", false, false)},
-		{"deepseek (latent attention, dense then routed FFN)", "deepseek-tiny", Options{}, webgpuScratchHandDeepseekTiny()},
-		{"nemotron (a layer of one operation: state-space, attention, non-gated FFN)", "nemotron-tiny", Options{}, webgpuScratchHandNemotronTiny()},
-		{"gpt-oss int4 (bias, output bias, window, clamped router)", "gptoss_tiny.gguf", Options{Quant: "int4"}, webgpuScratchHandGptoss("int4")},
-		{"gpt-oss int8 (bias folded into the projection)", "gptoss_tiny.gguf", Options{Quant: "int8int8"}, webgpuScratchHandGptoss("int8")},
-		{"nemotron3nano (routed blocks)", "nemotron3nano-tiny", Options{}, webgpuScratchHandNemotron([]string{"ssm", "moe", "ssm", "attn", "ssm", "moe"})},
-		{"gemma4 (parallel dense and routed block, two geometries, V from K)", "gemma4-moe-kv-tiny", Options{}, webgpuScratchHandGemma4Tiny()},
-		{"glm-ocr (post norms)", "glm-ocr-tiny", Options{}, webgpuScratchHand(48, 3, 160, 128, 64, 144, false, true, "f32", "", false, false)},
+		{"llama f32", "llama-tiny", decoder.Options{}, webgpuScratchHand(64, 4, 256, 64, 32, 128, false, false, "f32", "", false, false)},
+		{"llama f16", "llama-tiny", decoder.Options{KVPrecision: "f16"}, webgpuScratchHand(64, 4, 256, 64, 32, 128, false, false, "f16", "", false, false)},
+		{"llama i8", "llama-tiny", decoder.Options{KVPrecision: "i8"}, webgpuScratchHand(64, 4, 256, 64, 32, 128, false, false, "i8", "", false, false)},
+		{"qwen3asr (qk-norm)", "qwen3asr-tiny", decoder.Options{}, webgpuScratchHand(24, 2, 160, 24, 12, 48, true, false, "f32", "", false, false)},
+		{"qwen25vl int4 (bias)", "qwen25vl-tiny", decoder.Options{Quant: "int4"}, webgpuScratchHand(64, 2, 300, 64, 32, 128, false, false, "f32", "int4", false, false)},
+		{"qwen25vl int8 (bias)", "qwen25vl-tiny", decoder.Options{Quant: "int8int8"}, webgpuScratchHand(64, 2, 300, 64, 32, 128, false, false, "f32", "int8", false, false)},
+		{"olmo3 (window, qk-norm, post-only norms)", "olmo3-tiny", decoder.Options{}, withTerm(webgpuScratchHand(64, 4, 512, 64, 64, 128, true, true, "f32", "", true, true), "qkvFinUniFor", 2*32)}, // two rope scales: the sliding layers' and the full ones'
+		{"mistral window", "mistral-tiny-window", decoder.Options{}, webgpuScratchHand(128, 3, 128, 128, 64, 256, false, false, "f32", "", true, false)},
+		{"mixtral (routed FFN)", "mixtral-tiny", decoder.Options{}, webgpuScratchHandMoE(64, 512, 64, 64, []int{0, 0, 0, 0}, 8, 2, 128, 0, false, false)},
+		{"qwen3moe (routed FFN, qk-norm)", "qwen3moe-tiny", decoder.Options{}, webgpuScratchHandMoE(64, 512, 64, 16, []int{0, 0, 0, 0}, 8, 2, 32, 0, false, true)},
+		{"glm (dense prefix, ungated shared expert, qk-norm)", "glm-tiny", decoder.Options{}, webgpuScratchHandMoE(64, 256, 64, 32, []int{128, 0, 0}, 8, 2, 32, 32, false, true)},
+		{"qwen35 (delta-net, gated attention, routed FFN)", "qwen35-tiny", decoder.Options{}, webgpuScratchHandQwen35Tiny()},
+		{"smollm3 (a layer with no rope operation)", "smollm3-tiny", decoder.Options{}, webgpuScratchHand(64, 4, 512, 64, 16, 128, false, false, "f32", "", false, false)},
+		{"deepseek (latent attention, dense then routed FFN)", "deepseek-tiny", decoder.Options{}, webgpuScratchHandDeepseekTiny()},
+		{"nemotron (a layer of one operation: state-space, attention, non-gated FFN)", "nemotron-tiny", decoder.Options{}, webgpuScratchHandNemotronTiny()},
+		{"gpt-oss int4 (bias, output bias, window, clamped router)", "gptoss_tiny.gguf", decoder.Options{Quant: "int4"}, webgpuScratchHandGptoss("int4")},
+		{"gpt-oss int8 (bias folded into the projection)", "gptoss_tiny.gguf", decoder.Options{Quant: "int8int8"}, webgpuScratchHandGptoss("int8")},
+		{"nemotron3nano (routed blocks)", "nemotron3nano-tiny", decoder.Options{}, webgpuScratchHandNemotron([]string{"ssm", "moe", "ssm", "attn", "ssm", "moe"})},
+		{"gemma4 (parallel dense and routed block, two geometries, V from K)", "gemma4-moe-kv-tiny", decoder.Options{}, webgpuScratchHandGemma4Tiny()},
+		{"glm-ocr (post norms)", "glm-ocr-tiny", decoder.Options{}, webgpuScratchHand(48, 3, 160, 128, 64, 144, false, true, "f32", "", false, false)},
 	} {
-		path := "../testdata/" + c.fx
+		path := "../../testdata/" + c.fx
 		if c.fx == "gptoss_tiny.gguf" {
-			path = "testdata/" + c.fx
+			path = "../../decoder/testdata/" + c.fx
 		}
-		m, err := Load(path, c.o)
+		m, err := decoder.Load(path, c.o)
 		if err != nil {
 			t.Fatal(err)
 		}
-		terms, ok := m.WebGPUDecodeScratch()
+		terms, ok := webgpuDecodeScratchTerms(m)
 		if !ok {
 			t.Fatalf("%s: no figure", c.name)
 		}
@@ -356,12 +367,67 @@ func TestWebGPUDecodeScratch_handTable(t *testing.T) {
 		}
 		m.Close()
 	}
-	m, err := Load("../testdata/cohere-tiny", Options{})
+	m, err := decoder.Load("../../testdata/cohere-tiny", decoder.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	if _, ok := m.WebGPUDecodeScratch(); ok {
+	if _, ok := webgpuDecodeScratchTerms(m); ok {
 		t.Error("cohere-tiny runs its attention and FFN in parallel, a layer shape whose scratch is not derived: the plan must give no figure")
+	}
+}
+
+// scanPricingBodies reports every function or variable in funcs (file to names) whose body or value names one of banned, and every
+// name it finds no declaration for.
+func scanPricingBodies(t *testing.T, funcs map[string][]string, banned []string, why string) {
+	t.Helper()
+	for file, names := range funcs {
+		src, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fs := token.NewFileSet()
+		f, err := parser.ParseFile(fs, file, src, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := map[string]bool{}
+		bodies := map[string]ast.Node{} // each declaration's body (a function's) or value (a variable's)
+		for _, d := range f.Decls {
+			switch d := d.(type) {
+			case *ast.FuncDecl:
+				if d.Body != nil {
+					bodies[d.Name.Name] = d.Body
+				}
+			case *ast.GenDecl:
+				for _, sp := range d.Specs {
+					if vs, ok := sp.(*ast.ValueSpec); ok {
+						for i, n := range vs.Names {
+							if i < len(vs.Values) {
+								bodies[n.Name] = vs.Values[i]
+							}
+						}
+					}
+				}
+			}
+		}
+		for _, name := range names {
+			node, ok := bodies[name]
+			if !ok {
+				continue
+			}
+			found[name] = true
+			body := string(src[fs.Position(node.Pos()).Offset:fs.Position(node.End()).Offset])
+			for _, b := range banned {
+				if strings.Contains(body, b) {
+					t.Errorf("%s: %s names %q: %s", file, name, b, why)
+				}
+			}
+		}
+		for _, name := range names {
+			if !found[name] {
+				t.Errorf("%s: no func %s to scan; the scan reads nothing for it", file, name)
+			}
+		}
 	}
 }

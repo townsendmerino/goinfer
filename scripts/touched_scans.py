@@ -85,8 +85,6 @@ SCANS = [
     Scan("decoder", "TestMM5_noFamilySwitchInPricing", F("decoder/residentneed.go", "decoder/statebytes.go", "decoder/arch.go", "decoder/fitplan.go", "decoder/webgpu_vulkan.go")),
     # MM5b's G-MS4: Metal's decode scratch pricing names no family, mixer or FFN form.
     Scan("decoder", "TestMM5b_decodeScratchNamesNoFamily", F("decoder/metal_scratch.go")),
-    # MM5b's G-MS4w: WebGPU's decode scratch pricing names no family or mixer.
-    Scan("decoder", "TestMM5b_webgpuDecodeScratchNamesNoFamily", F("decoder/webgpu_scratch.go")),
     # The census reads a declared fixture list, which must match the committed fixtures: a fixture added or removed runs it.
     Scan("decoder", "TestCensusFixtures_areTheCommittedOnes", F("decoder/mm1_census_fixtures_test.go", "testdata/*", "decoder/testdata/*",
                                                                 "decoder/selftestdata/*", "internal/vision/testdata/*")),
@@ -233,6 +231,8 @@ SCANS = [
     # site module
     Scan("apps/site/internal/site", "TestHome_heroCodeIsFromTheExample", F("apps/examples/structured/main.go")),
     # gpu module
+    # MM5b's G-MS4w: WebGPU's decode scratch pricing names no family or mixer.
+    Scan("backend/webgpu", "TestMM5b_webgpuDecodeScratchNamesNoFamily", F("backend/webgpu/decode_scratch_plan_test.go")),
     Scan("backend/webgpu", "TestNemotronBlockKind_hasADefault", F("backend/webgpu/residency.go", "backend/webgpu/residency_layer.go")),
     Scan("backend/webgpu/internal/kernels", "TestKernels_noDroppedTryError", NT("backend/webgpu/internal/kernels")),
     Scan("backend/webgpu/internal/kernels", "TestLedger_everyBufferIsLeased", NT("backend/webgpu", "backend/webgpu/internal/kernels")),
