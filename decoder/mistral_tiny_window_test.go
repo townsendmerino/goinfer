@@ -5,6 +5,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // The CPU forward of testdata/mistral-tiny-window against HF (f32), with the sliding window ENGAGED: a 48-token prompt through a window of 16, so for
@@ -50,7 +52,7 @@ func forwardMistralWindow(t *testing.T, m *Model, prompt []int, n int) ([]float3
 	last = append([]float32(nil), logits...)
 	var cont []int
 	for range n {
-		next := argmax(logits)
+		next := sampling.Argmax(logits)
 		cont = append(cont, next)
 		if logits, err = m.forward(next, cache); err != nil {
 			t.Fatal(err)
@@ -76,9 +78,9 @@ func TestMistralTinyWindow_matchesHF(t *testing.T) {
 		dot, ng, nw, ne = dot+a*b, ng+a*a, nw+b*b, ne+(a-b)*(a-b)
 	}
 	cos, rel := dot/(math.Sqrt(ng)*math.Sqrt(nw)), math.Sqrt(ne/nw)
-	t.Logf("mistral tiny window=%d, %d-token prompt: argmax got %d want %d, logit cosine %.8f, relative L2 %.3g, continuation %v want %v", g.Window, len(g.PromptIDs), argmax(last), g.Argmax, cos, rel, cont, g.ContinuationIDs)
-	if argmax(last) != g.Argmax {
-		t.Errorf("argmax %d, want %d", argmax(last), g.Argmax)
+	t.Logf("mistral tiny window=%d, %d-token prompt: argmax got %d want %d, logit cosine %.8f, relative L2 %.3g, continuation %v want %v", g.Window, len(g.PromptIDs), sampling.Argmax(last), g.Argmax, cos, rel, cont, g.ContinuationIDs)
+	if sampling.Argmax(last) != g.Argmax {
+		t.Errorf("argmax %d, want %d", sampling.Argmax(last), g.Argmax)
 	}
 	if cos < 0.9999 || rel > 1e-5 {
 		t.Errorf("last-position logits against HF: cosine %.8f (bar 0.9999), relative L2 %.3g (bar 1e-5)", cos, rel)

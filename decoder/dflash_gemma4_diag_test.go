@@ -10,6 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/tokenizer"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -93,7 +94,7 @@ func TestDFlashGemma4_diag(t *testing.T) {
 		t.Logf("  tap layer %2d  rms %.4f", l, rms(last[i*d.hidden:(i+1)*d.hidden]))
 	}
 
-	anchor := argmax(logits)
+	anchor := sampling.Argmax(logits)
 	txt, _ := tk.DecodePiece(anchor)
 	t.Logf("target anchor = %d (%q)", anchor, txt)
 
@@ -118,7 +119,7 @@ func TestDFlashGemma4_diag(t *testing.T) {
 	// saturated inputs; varied-but-wrong points at a convention mismatch instead.
 	var drafted []int
 	for _, h := range trunk[1:] {
-		drafted = append(drafted, argmax(m.DrafterHeadLogits(h)))
+		drafted = append(drafted, sampling.Argmax(m.DrafterHeadLogits(h)))
 	}
 	t.Logf("drafted ids = %v", drafted)
 	uniq := map[int]bool{}

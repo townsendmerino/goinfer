@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -146,7 +147,7 @@ func TestD14_mlaSpeedAB(t *testing.T) {
 			}
 			start := time.Now()
 			for range nTok {
-				if logits, err = m.forward(argmax(logits), cache); err != nil {
+				if logits, err = m.forward(sampling.Argmax(logits), cache); err != nil {
 					t.Fatal(err)
 				}
 			}

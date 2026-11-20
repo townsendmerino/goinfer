@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // TestQwen3_5_textParity is the tiny-oracle gate for Qwen3.8 (model_type qwen3_5) — the DENSE
@@ -103,7 +105,7 @@ func qwen35TextParity(t *testing.T, ckpt, golden, wantArch string, wantMoE bool)
 			t.Fatalf("forward: %v", err)
 		}
 	}
-	gotArg := argmax(logits)
+	gotArg := sampling.Argmax(logits)
 	cos := logitCosine(logits, g.LastLogits)
 	t.Logf("%s text parity (%d linear / %d full): argmax got=%d want=%d | logit cosine=%.6f",
 		wantArch, lin, full, gotArg, g.Argmax, cos)
@@ -125,7 +127,7 @@ func qwen35TextParity(t *testing.T, ckpt, golden, wantArch string, wantMoE bool)
 				t.Fatalf("forward: %v", err)
 			}
 		}
-		nxt := argmax(lg)
+		nxt := sampling.Argmax(lg)
 		if i < len(g.ContinuationIDs) && nxt != g.ContinuationIDs[i] {
 			t.Errorf("continuation[%d] = %d, want %d — recurrent state drift", i, nxt, g.ContinuationIDs[i])
 			break

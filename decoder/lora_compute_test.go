@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // TestLoRACompute_matchesMerge is the core correctness gate for compute-time LoRA
@@ -180,8 +181,8 @@ func TestLoRACompute_forwardParity(t *testing.T) {
 		t.Fatalf("base prefill: %v", err)
 	}
 
-	if argmax(lCT) != argmax(lMerged) {
-		t.Errorf("argmax compute-time %d != merged %d", argmax(lCT), argmax(lMerged))
+	if sampling.Argmax(lCT) != sampling.Argmax(lMerged) {
+		t.Errorf("argmax compute-time %d != merged %d", sampling.Argmax(lCT), sampling.Argmax(lMerged))
 	}
 	if c := cosine(lCT, lMerged); c < 0.99999 {
 		t.Errorf("compute-time vs merged cosine %v, want ~1", c)

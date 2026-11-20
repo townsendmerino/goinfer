@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // G7 GGUF parity. Loads quantized TinyLlama GGUFs (Q8_0, Q4_0, and the K-quants
@@ -58,7 +60,7 @@ func testGGUFParity(t *testing.T, ggufPath string, minCosine float64) {
 	}
 
 	// Quantized argmax must still match the f32 oracle (a confident token).
-	if got := argmax(logits); got != g.Argmax {
+	if got := sampling.Argmax(logits); got != g.Argmax {
 		t.Errorf("argmax = %d, want %d (logit[got]=%.4f logit[want]=%.4f)",
 			got, g.Argmax, logits[got], logits[g.Argmax])
 	}
@@ -66,7 +68,7 @@ func testGGUFParity(t *testing.T, ggufPath string, minCosine float64) {
 	if !math.IsNaN(cos) && cos < minCosine {
 		t.Errorf("cosine vs f32 oracle = %v, want ≥ %v", cos, minCosine)
 	}
-	t.Logf("gguf %s: argmax=%d (want %d) | cosine vs f32 = %v", ggufPath, argmax(logits), g.Argmax, cos)
+	t.Logf("gguf %s: argmax=%d (want %d) | cosine vs f32 = %v", ggufPath, sampling.Argmax(logits), g.Argmax, cos)
 }
 
 func TestGGUF_Q8_0_parity(t *testing.T) {
@@ -125,7 +127,7 @@ func TestGGUF_gemma3_parity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("forward: %v", err)
 	}
-	if got := argmax(logits); got != g.Argmax {
+	if got := sampling.Argmax(logits); got != g.Argmax {
 		t.Errorf("argmax = %d, want %d (logit[got]=%.4f logit[want]=%.4f)",
 			got, g.Argmax, logits[got], logits[g.Argmax])
 	}
@@ -133,7 +135,7 @@ func TestGGUF_gemma3_parity(t *testing.T) {
 	if !math.IsNaN(cos) && cos < 0.995 {
 		t.Errorf("gemma3 GGUF cosine vs f32 oracle = %v, want ≥ 0.995", cos)
 	}
-	t.Logf("gguf gemma3 Q8_0: argmax=%d (want %d) | cosine vs f32 = %v", argmax(logits), g.Argmax, cos)
+	t.Logf("gguf gemma3 Q8_0: argmax=%d (want %d) | cosine vs f32 = %v", sampling.Argmax(logits), g.Argmax, cos)
 }
 
 // TestGGUF_qwen3_parity loads a real Qwen3-1.7B Q8_0 GGUF against the same model's
@@ -187,7 +189,7 @@ func TestGGUF_qwen3_parity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("forward: %v", err)
 	}
-	if got := argmax(logits); got != g.Argmax {
+	if got := sampling.Argmax(logits); got != g.Argmax {
 		t.Errorf("argmax = %d, want %d (logit[got]=%.4f logit[want]=%.4f)",
 			got, g.Argmax, logits[got], logits[g.Argmax])
 	}
@@ -195,7 +197,7 @@ func TestGGUF_qwen3_parity(t *testing.T) {
 	if !math.IsNaN(cos) && cos < 0.995 {
 		t.Errorf("qwen3 GGUF cosine vs f32 oracle = %v, want ≥ 0.995", cos)
 	}
-	t.Logf("gguf qwen3 Q8_0: argmax=%d (want %d) | cosine vs f32 = %v", argmax(logits), g.Argmax, cos)
+	t.Logf("gguf qwen3 Q8_0: argmax=%d (want %d) | cosine vs f32 = %v", sampling.Argmax(logits), g.Argmax, cos)
 }
 
 // TestGGUF_qwen2_parity loads a real Qwen2.5-0.5B-Instruct Q8_0 GGUF and checks
@@ -254,7 +256,7 @@ func TestGGUF_qwen2_parity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("forward: %v", err)
 	}
-	if got := argmax(logits); got != g.Argmax {
+	if got := sampling.Argmax(logits); got != g.Argmax {
 		t.Errorf("argmax = %d, want %d (logit[got]=%.4f logit[want]=%.4f)",
 			got, g.Argmax, logits[got], logits[g.Argmax])
 	}
@@ -262,7 +264,7 @@ func TestGGUF_qwen2_parity(t *testing.T) {
 	if !math.IsNaN(cos) && cos < 0.995 {
 		t.Errorf("qwen2 GGUF cosine vs f32 oracle = %v, want ≥ 0.995", cos)
 	}
-	t.Logf("gguf qwen2 Q8_0: argmax=%d (want %d) | cosine vs f32 = %v", argmax(logits), g.Argmax, cos)
+	t.Logf("gguf qwen2 Q8_0: argmax=%d (want %d) | cosine vs f32 = %v", sampling.Argmax(logits), g.Argmax, cos)
 }
 
 func TestGGUF_Q4_0_parity(t *testing.T) {
@@ -357,7 +359,7 @@ func TestGGUF_int8_resident(t *testing.T) {
 	if err != nil {
 		t.Fatalf("forward: %v", err)
 	}
-	if got := argmax(logits); got != g.Argmax {
+	if got := sampling.Argmax(logits); got != g.Argmax {
 		t.Errorf("argmax = %d, want %d (logit[got]=%.4f logit[want]=%.4f)",
 			got, g.Argmax, logits[got], logits[g.Argmax])
 	}
@@ -365,7 +367,7 @@ func TestGGUF_int8_resident(t *testing.T) {
 	if !math.IsNaN(cos) && cos < 0.99 {
 		t.Errorf("cosine vs f32 oracle = %v, want ≥ 0.99", cos)
 	}
-	t.Logf("gguf Q8_0 + int8 resident: argmax=%d (want %d) | cosine vs f32 = %v", argmax(logits), g.Argmax, cos)
+	t.Logf("gguf Q8_0 + int8 resident: argmax=%d (want %d) | cosine vs f32 = %v", sampling.Argmax(logits), g.Argmax, cos)
 }
 
 // GGUF + resident int4 (group-wise 4-bit projections, int8 embedding/head). The
@@ -415,7 +417,7 @@ func TestGGUF_int4_resident(t *testing.T) {
 	if err != nil {
 		t.Fatalf("forward: %v", err)
 	}
-	if got := argmax(logits); got != g.Argmax {
+	if got := sampling.Argmax(logits); got != g.Argmax {
 		t.Errorf("int4 argmax = %d, want %d (logit[got]=%.4f logit[want]=%.4f)",
 			got, g.Argmax, logits[got], logits[g.Argmax])
 	}
@@ -423,5 +425,5 @@ func TestGGUF_int4_resident(t *testing.T) {
 	if !math.IsNaN(cos) && cos < 0.98 {
 		t.Errorf("int4 cosine vs f32 oracle = %v, want ≥ 0.98", cos)
 	}
-	t.Logf("gguf + int4 resident: argmax=%d (want %d) | cosine vs f32 = %v", argmax(logits), g.Argmax, cos)
+	t.Logf("gguf + int4 resident: argmax=%d (want %d) | cosine vs f32 = %v", sampling.Argmax(logits), g.Argmax, cos)
 }

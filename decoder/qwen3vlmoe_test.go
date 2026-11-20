@@ -9,6 +9,8 @@ import (
 	"os"
 	"slices"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // G-S10q-a: the qwen3_vl_moe decoder against HF's
@@ -68,7 +70,7 @@ func loadQwen3VLMoeTiny(t *testing.T) (*Model, qwen3vlmoeGolden) {
 func argmaxAgreement(a, b []float32, n int) float64 {
 	v, agree := len(a)/n, 0
 	for i := range n {
-		if argmax(a[i*v:(i+1)*v]) == argmax(b[i*v:(i+1)*v]) {
+		if sampling.Argmax(a[i*v:(i+1)*v]) == sampling.Argmax(b[i*v:(i+1)*v]) {
 			agree++
 		}
 	}

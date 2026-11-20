@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // M8 int8 accuracy. Loads the checkpoint with per-row int8 weight quant and
@@ -65,7 +67,7 @@ func TestQuantInt8_accuracy(t *testing.T) {
 	}
 
 	// Argmax (the predicted next token) must survive quantization.
-	if got := argmax(logits); got != g.Argmax {
+	if got := sampling.Argmax(logits); got != g.Argmax {
 		t.Errorf("int8 argmax = %d, want %d (f32) — quantization flipped the top token", got, g.Argmax)
 	}
 
@@ -74,7 +76,7 @@ func TestQuantInt8_accuracy(t *testing.T) {
 		if cos < 0.999 {
 			t.Errorf("int8 vs f32 cosine = %.6f, want ≥ 0.999", cos)
 		}
-		t.Logf("int8: argmax=%d (want %d) | cosine vs f32 = %.6f", argmax(logits), g.Argmax, cos)
+		t.Logf("int8: argmax=%d (want %d) | cosine vs f32 = %.6f", sampling.Argmax(logits), g.Argmax, cos)
 	}
 }
 
@@ -154,7 +156,7 @@ func TestQuantInt4_accuracy(t *testing.T) {
 		if cos < 0.95 {
 			t.Errorf("int4 vs f32 cosine = %.6f, want ≥ 0.95", cos)
 		}
-		t.Logf("int4 (270M): argmax=%d (f32 %d) | cosine vs f32 = %.6f", argmax(logits), g.Argmax, cos)
+		t.Logf("int4 (270M): argmax=%d (f32 %d) | cosine vs f32 = %.6f", sampling.Argmax(logits), g.Argmax, cos)
 	}
 }
 
@@ -198,14 +200,14 @@ func TestQuantInt8I8_accuracy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("forward: %v", err)
 	}
-	if got := argmax(logits); got != g.Argmax {
+	if got := sampling.Argmax(logits); got != g.Argmax {
 		t.Errorf("W8A8 argmax = %d, want %d (f32) — activation quant flipped the top token", got, g.Argmax)
 	}
 	if cos := quantCosine(t, logits); !math.IsNaN(cos) {
 		if cos < 0.99 {
 			t.Errorf("W8A8 vs f32 cosine = %.6f, want ≥ 0.99", cos)
 		}
-		t.Logf("int8int8 (W8A8): argmax=%d (want %d) | cosine vs f32 = %.6f", argmax(logits), g.Argmax, cos)
+		t.Logf("int8int8 (W8A8): argmax=%d (want %d) | cosine vs f32 = %.6f", sampling.Argmax(logits), g.Argmax, cos)
 	}
 }
 

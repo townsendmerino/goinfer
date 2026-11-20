@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // Llama-adapter forward parity. Loads a real Llama checkpoint (TinyLlama-1.1B,
@@ -73,7 +75,7 @@ func TestLlama_forwardParity(t *testing.T) {
 		t.Fatalf("got %d logits, want vocab %d", len(logits), g.Vocab)
 	}
 
-	if got := argmax(logits); got != g.Argmax {
+	if got := sampling.Argmax(logits); got != g.Argmax {
 		t.Errorf("argmax = %d, want %d (logit[got]=%.4f logit[want]=%.4f)",
 			got, g.Argmax, logits[got], logits[g.Argmax])
 	}
@@ -98,5 +100,5 @@ func TestLlama_forwardParity(t *testing.T) {
 	}
 
 	cos := fullCosine(t, logits, llamaForwardFullPath)
-	t.Logf("llama: argmax=%d (want %d) | maxSampleΔ=%.5f | cosine=%v", argmax(logits), g.Argmax, maxSampleΔ, cos)
+	t.Logf("llama: argmax=%d (want %d) | maxSampleΔ=%.5f | cosine=%v", sampling.Argmax(logits), g.Argmax, maxSampleΔ, cos)
 }

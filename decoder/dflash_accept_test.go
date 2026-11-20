@@ -24,6 +24,7 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/tokenizer"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -316,7 +317,7 @@ func dflashRun(t *testing.T, m *Model, d *DFlashDrafter, tk *tokenizer.Tokenizer
 		eos[e] = true
 	}
 	var out dflashRunResult
-	anchor := argmax(logits)
+	anchor := sampling.Argmax(logits)
 	generated := 1 // the anchor is a real emitted token
 	for generated < maxNew {
 		fused, err := d.FuseContext(m.be, ctxCat)
@@ -334,7 +335,7 @@ func dflashRun(t *testing.T, m *Model, d *DFlashDrafter, tk *tokenizer.Tokenizer
 		}
 		drafted := make([]int, 0, B-1)
 		for _, h := range trunk[1:] {
-			drafted = append(drafted, argmax(m.DrafterHeadLogits(h)))
+			drafted = append(drafted, sampling.Argmax(m.DrafterHeadLogits(h)))
 		}
 		// VERIFY-WIDTH CAP. The drafter still drafts its full trained block; this bounds how
 		// many of those positions the target verifies. Accepted length is CONCAVE in block
@@ -357,14 +358,14 @@ func dflashRun(t *testing.T, m *Model, d *DFlashDrafter, tk *tokenizer.Tokenizer
 		markCtx := len(ctxCat)
 		feed(anchor) // the anchor is already committed; this is its real cache entry
 		accepted := 0
-		next := argmax(logits)
+		next := sampling.Argmax(logits)
 		for i, tok := range drafted {
 			if tok != next {
 				break
 			}
 			feed(tok)
 			accepted = i + 1
-			next = argmax(logits)
+			next = sampling.Argmax(logits)
 		}
 		// Roll the cache back to exactly what was accepted: anchor + accepted drafts.
 		keep := mark + 1 + accepted

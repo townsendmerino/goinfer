@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // TestLaguna_textParity is the T1 tiny-golden gate for Laguna, run against THREE
@@ -97,7 +99,7 @@ func TestLaguna_textParity(t *testing.T) {
 					t.Fatalf("forward: %v", err)
 				}
 			}
-			gotArg := argmax(logits)
+			gotArg := sampling.Argmax(logits)
 			cos := logitCosine(logits, g.LastLogits)
 			t.Logf("laguna/%s text parity: argmax got=%d want=%d | logit cosine=%.6f | gate=%s",
 				tc.tag, gotArg, g.Argmax, cos, g.Granularity)
@@ -120,7 +122,7 @@ func TestLaguna_textParity(t *testing.T) {
 				if err != nil {
 					t.Fatalf("prefillLogits: %v", err)
 				}
-				if bArg := argmax(bl); bArg != g.Argmax {
+				if bArg := sampling.Argmax(bl); bArg != g.Argmax {
 					t.Errorf("batched-prefill argmax = %d, want %d", bArg, g.Argmax)
 				}
 				if bcos := logitCosine(bl, g.LastLogits); bcos < 0.9999 {
@@ -140,7 +142,7 @@ func TestLaguna_textParity(t *testing.T) {
 						t.Fatalf("forward: %v", err)
 					}
 				}
-				nxt := argmax(lg)
+				nxt := sampling.Argmax(lg)
 				cont = append(cont, nxt)
 				cur = append(cur, nxt)
 			}

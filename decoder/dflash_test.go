@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -231,7 +232,7 @@ func TestDFlash_targetEndToEnd(t *testing.T) {
 
 			// 2. The anchor is the target's own greedy next token — the same thing the
 			//    reference seeds slot 0 with.
-			anchor := argmax(logits)
+			anchor := sampling.Argmax(logits)
 			if anchor != tr.AnchorToken {
 				t.Fatalf("anchor token = %d, want %d (target disagrees with the reference before the drafter runs)",
 					anchor, tr.AnchorToken)
@@ -256,7 +257,7 @@ func TestDFlash_targetEndToEnd(t *testing.T) {
 			}
 			got := make([]int, 0, len(trunk)-1)
 			for _, h := range trunk[1:] { // slot 0 is the anchor, never predicted
-				got = append(got, argmax(m.DrafterHeadLogits(h)))
+				got = append(got, sampling.Argmax(m.DrafterHeadLogits(h)))
 			}
 
 			t.Logf("drafted got  = %v", got)

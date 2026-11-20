@@ -19,6 +19,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/tokenizer"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -162,7 +163,7 @@ func TestLagunaDFlash_acceptance(t *testing.T) {
 		eos[e] = true
 	}
 	rounds, acceptedTotal, generated := 0, 0, 1
-	anchor := argmax(logits)
+	anchor := sampling.Argmax(logits)
 	emitted := []int{anchor}
 	for generated < maxNew {
 		fused, ferr := d.FuseContext(m.be, ctxCat)
@@ -183,14 +184,14 @@ func TestLagunaDFlash_acceptance(t *testing.T) {
 		mark, markCtx := cache.Pos(), len(ctxCat)
 		feed(anchor)
 		accepted := 0
-		next := argmax(logits)
+		next := sampling.Argmax(logits)
 		for i, tok := range drafted {
 			if tok != next {
 				break
 			}
 			feed(tok)
 			accepted = i + 1
-			next = argmax(logits)
+			next = sampling.Argmax(logits)
 		}
 		cache.TruncateTo(mark + 1 + accepted)
 		ctxCat = ctxCat[:markCtx+1+accepted]

@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // TestGemma4_26B_s10Grade is the grading half of S1.0's 26B re-check,
@@ -93,13 +95,13 @@ func TestGemma4_26B_s10Grade(t *testing.T) {
 				}
 				sumCos[a] += dot / math.Sqrt(na*nb)
 				t.Logf("POSCOS %-9s prompt %d pos %2d: cosine %.6f", a, pi+1, i, dot/math.Sqrt(na*nb))
-				if argmax(cpu) == argmax(mt) {
+				if sampling.Argmax(cpu) == sampling.Argmax(mt) {
 					agree[a]++
 				} else {
 					// Per-position margins for the disagreement (is the 26B's low argmax agreement near-ties?). G1c's rule: benign iff
 					// the CPU's top-1 and the index Metal chose are within 3% in the CPU's logits (relative to the CPU's top-1). The
 					// G3 rule is on probability: p(Metal's choice) >= half p(CPU's top-1), the softmax taken over the CPU's logits.
-					ct, mtop := argmax(cpu), argmax(mt)
+					ct, mtop := sampling.Argmax(cpu), sampling.Argmax(mt)
 					gap := (float64(cpu[ct]) - float64(cpu[mtop])) / (math.Abs(float64(cpu[ct])) + 1e-30)
 					pr := math.Exp(float64(cpu[mtop]) - float64(cpu[ct]))
 					sec := math.Inf(-1)
