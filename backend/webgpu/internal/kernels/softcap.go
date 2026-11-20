@@ -13,7 +13,7 @@ import (
 // GPU backend produced the logits, so the same threshold applies unchanged).
 const softcapParallelMin = 32768
 
-// applySoftcap applies softcap·tanh(x/softcap) elementwise and in place to a logit vector —
+// ApplySoftcap applies softcap·tanh(x/softcap) elementwise and in place to a logit vector —
 // Gemma 2/3/4's final-logit softcap (FeatFinalLogitSoftcap), via decoder.Model.
 // FinalLogitSoftcap. This is the WebGPU twin of cuda/softcap.go's applySoftcap /
 // metal/model.go's softcapParallel — SIX sites now carry this identical loop
