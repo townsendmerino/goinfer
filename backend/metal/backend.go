@@ -22,6 +22,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem/probe"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
@@ -75,6 +76,7 @@ func (b *metalBackend) MatmulBT(a, bmat, dst []float32, M, K, N int) {
 func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForward, ok bool, err error) {
 	defer func() {
 		if p := recover(); p != nil {
+			mem.RepanicBug(p)
 			rf, ok, err = nil, false, decoder.DeclineResident("metal build panicked: %v", p)
 		}
 	}()
@@ -1196,6 +1198,7 @@ func (a *metalResident) batchedPrefillSrc(src rowSource, startPos, floor int, mr
 	if err := func() (err error) {
 		defer func() {
 			if p := recover(); p != nil {
+				mem.RepanicBug(p)
 				err = fmt.Errorf("metal: batched prefill aborted: %v", p)
 			}
 		}()
