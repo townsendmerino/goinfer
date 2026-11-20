@@ -33,7 +33,7 @@ func MetalFitWhy(slots int, kvBytes int64) string {
 	if slots == 1 {
 		plural = ""
 	}
-	return fmt.Sprintf("fit: %d slot%s, %.1f GB KV", slots, plural, float64(kvBytes)/(1<<30))
+	return fmt.Sprintf("fit: %d slot%s, %s KV", slots, plural, GiB(kvBytes))
 }
 
 // SolveMetalCtx is the context an unpinned Metal load takes: it asks the planner for the candidate and gives up context until
