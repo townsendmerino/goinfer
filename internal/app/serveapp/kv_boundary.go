@@ -119,3 +119,18 @@ func (lm *loadedModel) prefixBoundaryOf(tm *chat.Template, system string, turns 
 	}
 	return len(pre)
 }
+
+// prepareTurn is a text route's turn setup after its prompt is encoded: prepare on the resident path, with the request's
+// fixed part priced from (system, tools), then the three KV boundaries of ids. Its error is prepare's, unchanged, for the
+// route to render in its own dialect (writePrepareErr, writeAnthropicPrepareErr, writeResponsesPrepareErr).
+func (lm *loadedModel) prepareTurn(sm sampling, tm *chat.Template, system string, turns []chat.Turn, tools []chat.Tool, ids []int) (genRequest, error) {
+	sm.fixedTokens = func() int { return lm.fixedPromptTokens(tm, system, tools) }
+	gr, err := lm.prepare(sm, ids, lm.residentPath())
+	if err != nil {
+		return gr, err
+	}
+	gr.boundary = lm.prefixBoundary(tm, system, turns, tools, ids)
+	gr.keep = lm.recurrentKeep(tm, system, turns, tools, ids)
+	gr.msgBoundary = lm.recurrentMsgBoundary(tm, system, turns, tools, ids)
+	return gr, nil
+}

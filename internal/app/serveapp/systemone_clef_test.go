@@ -295,7 +295,7 @@ func TestLoadDecoder_clefRefusesInt4(t *testing.T) {
 		return e.Error()
 	}
 	got := err(&int4)
-	for _, want := range []string{"not served at int4", "0.051", "0.840", "int8int8"} {
+	for _, want := range []string{"not served at int4", "decisions-d13-clef-fidelity", "int8int8"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the int4 refusal %q lacks %q", got, want)
 		}

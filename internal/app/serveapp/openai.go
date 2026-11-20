@@ -977,15 +977,11 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		return
 	}
 	req.sampling.confidenceOK = true // written back below
-	req.sampling.fixedTokens = func() int { return lm.fixedPromptTokens(tm, system, nil) }
-	gr, err := lm.prepare(req.sampling, ids, lm.residentPath())
+	gr, err := lm.prepareTurn(req.sampling, tm, system, turns, nil, ids)
 	if err != nil {
 		writePrepareErr(w, err)
 		return
 	}
-	gr.boundary = lm.prefixBoundary(tm, system, turns, nil, ids)
-	gr.keep = lm.recurrentKeep(tm, system, turns, nil, ids)
-	gr.msgBoundary = lm.recurrentMsgBoundary(tm, system, turns, nil, ids)
 	if req.Stream && req.Logprobs { // the stream path has no logprobs field — reject rather than silently drop
 		writeErr(w, http.StatusBadRequest, "logprobs is not supported together with stream:true")
 		return

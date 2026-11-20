@@ -2,6 +2,7 @@ package serveapp
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"strconv"
 	"strings"
 
@@ -215,9 +216,9 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 			kv, what = f.kvPoolDetail.Bytes, fmt.Sprintf("%d KV slots at a %d-token cap hold", f.kvSlots, f.fitCtx)
 		}
 		fitLine := fmt.Sprintf(
-			"fit: %s %.1f GB KV (weights %.1f GB, budget %.1f GB, %.1f GB left for a request's own prefill)",
-			what, float64(kv)/(1<<30), float64(f.fitWeightBytes)/(1<<30),
-			float64(f.fitBudgetBytes)/(1<<30), float64(f.fitBudgetBytes-kv)/(1<<30))
+			"fit: %s %s KV (weights %s, budget %s, %s left for a request's own prefill)",
+			what, mem.GiB(kv), mem.GiB(f.fitWeightBytes),
+			mem.GiB(f.fitBudgetBytes), mem.GiB(f.fitBudgetBytes-kv))
 		if !f.resident && f.ctxWindow > 0 && f.fitCtx == f.maxPositions { // the CPU path's ceiling, as the context line says
 			fitLine += " — a ceiling, reached only by a request that fills the window"
 		}
@@ -278,7 +279,7 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 			out = append(out, "prefix snapshots: not on this backend or model family")
 		default:
 			out = append(out, fmt.Sprintf("prefix snapshots: budget %s (%s), 0 B held; host memory is held only while a snapshot is "+
-				"(taken after a cold first prefill of 2048 ids or more; /admin/status reports the use)", gib(cfg.kvHostBytes), cfg.kvHostBytesHow))
+				"(taken after a cold first prefill of 2048 ids or more; /admin/status reports the use)", mem.GiB(cfg.kvHostBytes), cfg.kvHostBytesHow))
 			if cfg.kvDemote {
 				out = append(out, "released conversations: kept in that budget where the backend can, and brought back when they return")
 			}
@@ -409,8 +410,8 @@ func harnessLine(f bannerFacts) string {
 		if slots == 1 {
 			noun = "slot"
 		}
-		return line + fmt.Sprintf("; --ctx %d holds it for %.1f GB of KV (%d %s)", harnessCtx,
-			float64(int64(slots)*f.harnessKVBytes)/(1<<30), slots, noun)
+		return line + fmt.Sprintf("; --ctx %d holds it for %s of KV (%d %s)", harnessCtx,
+			mem.GiB(int64(slots)*f.harnessKVBytes), slots, noun)
 	}
 	return line + fmt.Sprintf("; --ctx %d holds it", harnessCtx)
 }
@@ -438,7 +439,7 @@ func kvPlanLine(f bannerFacts, cfg config) string {
 		why = append(why, fmt.Sprintf("--ctx %d", cfg.load.Ctx))
 	}
 	if f.towerReserve > 0 {
-		why = append(why, fmt.Sprintf("%.1f GB held back for the vision tower", float64(f.towerReserve)/1e9))
+		why = append(why, fmt.Sprintf("%s held back for the vision tower", mem.GiB(f.towerReserve)))
 	}
 	if len(why) > 0 {
 		line += " (" + strings.Join(why, "; ") + ")"
@@ -475,12 +476,12 @@ func kvPoolBannerLine(f bannerFacts) string {
 		kvPoolBytes(d.Bytes), groups, scope, use)
 }
 
-// kvPoolBytes is n as the banner prints a pool: GB from 1 GiB up, MB below it.
+// kvPoolBytes is n as the banner prints a pool: GiB from 1 GiB up, MiB below it.
 func kvPoolBytes(n int64) string {
 	if n >= 1<<30 {
-		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
+		return mem.GiB(n)
 	}
-	return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+	return fmt.Sprintf("%.1f MiB", float64(n)/(1<<20))
 }
 
 // commaInt is n with thousands separators.
