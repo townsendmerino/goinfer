@@ -24,6 +24,8 @@ import (
 	"context"
 	"math"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -35,6 +37,7 @@ import (
 
 func TestVsumSplitFidelity(t *testing.T) {
 	testgate.RequireHeavy(t)
+	vsumSplitFromEnv(t)
 	path := os.Getenv("GOINFER_CUDA_MODEL")
 	if path == "" {
 		path = modelPath("qwen2.5-7b-instruct-q4_k_m.gguf")
@@ -61,7 +64,7 @@ func TestVsumSplitFidelity(t *testing.T) {
 	}
 	rf := rfAny.(*cudaResident)
 	if rf.skVsumSplit == 0 {
-		t.Skip("set GOINFER_SPLITKV_VSUM_SPLIT=<n> so the spike pipelines are loaded")
+		t.Skip("set GOINFER_SPLITKV_VSUM_SPLIT=<n> so the test loads the spike pipelines")
 	}
 	S := rf.skVsumSplit
 	if rf.skScores == (Pipeline{}) || rf.skVsum == (Pipeline{}) {
@@ -143,4 +146,24 @@ func TestVsumSplitFidelity(t *testing.T) {
 	if math.IsNaN(klSum) {
 		t.Fatal("KL is NaN — the spike produced non-finite logits")
 	}
+}
+
+// setVsumSplit loads the V-sum spike with n key chunks into the residents t builds, and restores the shipped path after.
+func setVsumSplit(t *testing.T, n int) {
+	t.Helper()
+	old := vsumSplitForTest
+	vsumSplitForTest = n
+	t.Cleanup(func() { vsumSplitForTest = old })
+}
+
+// vsumSplitFromEnv sets the spike from GOINFER_SPLITKV_VSUM_SPLIT, the heavy V-sum tests' operator choice, and returns it
+// (0 when unset or not a number).
+func vsumSplitFromEnv(t *testing.T) int {
+	t.Helper()
+	n, err := strconv.Atoi(strings.TrimSpace(os.Getenv("GOINFER_SPLITKV_VSUM_SPLIT")))
+	if err != nil || n < 1 {
+		return 0
+	}
+	setVsumSplit(t, n)
+	return n
 }
