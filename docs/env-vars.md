@@ -202,15 +202,7 @@ p20-expert-major-m26-2026-09-21.md`); the generic path's own measured win (Mellu
 model) is smaller, 3.5-4.3% (`p20-expert-major-2026-09-21.md`). Declines to the per-row path on a
 shared expert or a gpt-oss per-expert bias table (the generic path only — gemma4 has neither).
 `GOINFER_CUDA_MOE_EXPERT_MAJOR=0` restores the per-row path, mirroring the CPU precedent this
-mirrors throughout (`decoder/mlp.go`'s P18, `GOINFER_MOE_EXPERT_MAJOR`, same `!= "0"` convention)),
-`GOINFER_SPLITKV_VSUM_SPLIT` (an unpromoted spike: splits the decode split-KV V-sum across the
-key axis, measured +40-43% on the attention block and +15.6% served on one geometry, and it is
-**NOT bit-identical** to the default path. Unset, the pipelines are not loaded and no scratch is
-allocated. Its fidelity is NOT established — docs/measurements/vsum-split-spike-2026-09-13.md
-says so in as many words — so do not set it on anything whose output matters). **Setting it refuses
-speculative decoding**: `serve --spec ngram` and `--drafter` fail at startup, and the decoder's resident
-spec entry points return an error, because decode would sum values in a different order from the batched
-verify and the lossless guarantee would silently break (`decoder.SpecDecodeConflict`).
+mirrors throughout (`decoder/mlp.go`'s P18, `GOINFER_MOE_EXPERT_MAJOR`, same `!= "0"` convention)).
 
 Gate/CI knobs read by `cmd/gate` and the harnesses: `GOINFER_GATE_BACKEND`,
 `GOINFER_GATE_HEARTBEAT`, `GOINFER_GATE_SKIP_HEAVY`, `GOINFER_GATE_SKIP_WEBGPU`,
@@ -263,8 +255,9 @@ isolate the fast path; result in docs/completed/mellum2-resident.md), and turned
 record says it didn't pay removed `SSM_W8A16` and `SSM_F16MAMBA` with the WebGPU paths they selected
 (docs/ssm-int8-quality.md), and `CUDA_L01_CPU_OFFLOAD` with the L-01 prototype
 (docs/measurements/l01-funding-cell-2026-09-21.md). The code-quality pass of 2026-11-19 deleted the one-off SSM isolation
-seams `SSM_NOMUL` and `SSM_SKIPFFN`, and made `SSM_Q8CPU` a test seam only (`decoder.SetSSMQ8CPU`). Setting any of them
-now does nothing.
+seams `SSM_NOMUL` and `SSM_SKIPFFN`, and made `SSM_Q8CPU` a test seam only (`decoder.SetSSMQ8CPU`) and
+`SPLITKV_VSUM_SPLIT`, CUDA's parked V-sum spike, one too (`vsumSplitForTest`; its heavy tests still read the variable).
+Setting any of them now does nothing.
 
 ## CI & test gates
 
