@@ -52,7 +52,8 @@ func b27MambaLayers(t *testing.T, m *Model) []int {
 // b27Dims is the two projections' [rows, cols].
 func b27Dims(t *testing.T, m *Model) (d struct{ in, out [2]int }) {
 	t.Helper()
-	nh, hd, ds, ng, _, _, _, ok := m.BackendView().NemotronParams()
+	np, ok := m.BackendView().Nemotron()
+	nh, hd, ds, ng := np.NHeads, np.HeadDim, np.DState, np.NGroups
 	if !ok {
 		t.Fatal("not a Nemotron-H model")
 	}
