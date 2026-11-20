@@ -90,12 +90,11 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 type ResidentW4A8 struct {
 	ctx     *Context     // the Context that owns the buffers: Close after it is closed releases on the finalizer goroutine (releaseOwned)
 	bq      *wgpu.Buffer // [N, kp/32] vec4<u32> packed nibbles
-	bScales *wgpu.Buffer // [N, kp/32] f16 per-group scales, packed 2/u32 (N-83, docs/audit-2026-09-10.md:
-	// both writers below pack via packF16Pairs, not raw f32 — this field's comment was stale)
-	rows    int // N
-	cols    int // K (unpadded)
-	kp      int // K padded to mult of 32
-	nGroups int // kp/32
+	bScales *wgpu.Buffer // [N, kp/32] f16 per-group scales, packed 2/u32 (both writers below pack via packF16Pairs, not raw f32)
+	rows    int          // N
+	cols    int          // K (unpadded)
+	kp      int          // K padded to mult of 32
+	nGroups int          // kp/32
 }
 
 // Close frees the resident GPU buffers.
@@ -275,7 +274,7 @@ func (c *Context) ensureGEMVW4() error {
 		sh.Release()
 		return fmt.Errorf("gpu: create W4A8 pipeline: %w", err)
 	}
-	c.track(sh.Release, pl.Release) // audit C-26: register at creation
+	c.track(sh.Release, pl.Release) // registered at creation, so Close releases them
 	c.gemvW4Shader = sh
 	c.gemvW4Pipeline = pl
 	c.gemvW4Layout = c.bgl(pl)

@@ -29,7 +29,7 @@ func (r *resident) attnEncOf(l int, x, uPos, uNKeys, uQTemp, rp Buffer) attnEnc 
 	nHhd := r.nH * g.hd
 	qkvRows := nHhd + 2*g.kvDim
 	if L.kvShared {
-		qkvRows = nHhd // S1.4: Q only; K/V come from layer L.kvSrc's cache, which r.kc[l]/r.vc[l] alias
+		qkvRows = nHhd // Q only; K/V come from layer L.kvSrc's cache, which r.kc[l]/r.vc[l] alias
 	}
 	return attnEnc{l: l, L: L, g: g, x: x, uPos: uPos, uNKeys: uNKeys, uQTemp: uQTemp, rp: rp, nHhd: nHhd, qkvRows: qkvRows,
 		kOff: nHhd * 4, vOff: (nHhd + g.kvDim) * 4, f16Lane: r.canUseF16Lane(l)}
@@ -44,7 +44,7 @@ func (r *resident) attnInputNorm(e *Encoder, a *attnEnc, form program.NormForm) 
 	} else if form == program.NormCopy {
 		e.Dispatch(r.pQv, 256, 256, x, r.aq, r.aSc, r.uH)
 	} else if a.f16Lane {
-		// R1: f16 activation, no quantization — bypasses encodeNorm (which always produces the
+		// f16 activation, no quantization — bypasses encodeNorm (which always produces the
 		// int8 aq/aSc pair) since preNorm here has no bias on the plain dense path canUseF16Lane
 		// admits (a biased pre-norm would need layernorm_quant's shape, not rmsnorm's).
 		e.Dispatch(r.pRmsF16, tgReduceNorm, tgReduceNorm, x, L.preNorm, r.axF16, r.uH, r.uEps, r.uAddOne)
@@ -78,7 +78,7 @@ func (r *resident) attnProjQKV(e *Encoder, a *attnEnc) {
 		p, n := saRowsPick(r.pSABias, r.pSABiasRows, a.qkvRows, r.gemvRows.qkv)
 		e.DispatchTG(p, n, 256, r.H*2, L.qkvW, L.qkvS, r.aq, r.aSc, r.qkv, L.qkvBias, r.uH)
 		if r.loraLayers != nil {
-			// G3: compute-time LoRA — added on top of the base q/k/v projection, into the SAME
+			// Compute-time LoRA — added on top of the base q/k/v projection, into the SAME
 			// r.qkv slots it just wrote, before anything downstream (qk_norm/RoPE) reads them.
 			// Not reached for the qGate projection (see lora.go's file comment).
 			LA := &r.loraLayers[a.l]
@@ -117,7 +117,7 @@ func (r *resident) attnVNormNeeded(a *attnEnc) bool {
 	return !a.L.kvShared && (a.g.kEqV || (r.g4VNorm && !g4DropVNormForTest))
 }
 
-// attnVNorm is Gemma 4's scale-less v_norm on the V slot, every K/V-owning layer (S1.0). For K=V (Gemma 4 globals) the V slot holds
+// attnVNorm is Gemma 4's scale-less v_norm on the V slot, every K/V-owning layer. For K=V (Gemma 4 globals) the V slot holds
 // the RAW k_proj output ([Q|K|K] fusion); otherwise the v_proj output. It is qk_norm over the V slot (qkv.At(vOff)) with nH=0 so
 // every head takes the K branch at base 0+head*hd, a UNIT weight, and addOne=0 → x·rms·1. It runs AFTER qk_norm (which touched the
 // K slot, not V) and BEFORE RoPE (which never touches V), so V = v_norm(raw k), un-rotated — exactly the CPU path (copy(v,k)
@@ -143,7 +143,8 @@ func (r *resident) attnRope(e *Encoder, a *attnEnc) {
 // exact kernel.
 func (r *resident) attnCore(e *Encoder, a *attnEnc) {
 	l, L, g := a.l, a.L, a.g
-	// S1.4: a shared layer must never write its source's cache. The seam is G2's defect (5): the store not skipped,
+	// A shared layer must never write its source's cache. The seam is planted defect (5), g4KeepSharedKVStoreForTest: the
+	// store not skipped,
 	// so the shared layer writes its (unprojected) K/V slots over its source's row.
 	storeKV := !L.kvShared || g4KeepSharedKVStoreForTest
 	if r.kvI8 {
@@ -215,7 +216,7 @@ func (r *resident) attnOut(e *Encoder, a *attnEnc, form attnOutForm) {
 		// it — see the build loop), so it skips the norm dispatch entirely.
 		e.DispatchTG(r.pSA, r.H*32, 256, r.nH*g.hd*2, L.oW, L.oS, r.cq, r.cSc, r.oO, g.uNHhd)
 		if r.loraLayers != nil {
-			// G3: added into the RAW o-proj output, BEFORE the sandwich/postOnly norm below —
+			// Added into the RAW o-proj output, BEFORE the sandwich/postOnly norm below —
 			// matching applyLoRA's CPU order (delta added to `out`, caller norms afterward).
 			r.applyResidentLoRA(e, r.loraLayers[l].o, r.cq, r.cSc, r.oO)
 		}

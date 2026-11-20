@@ -757,7 +757,7 @@ func (s *session) batchTemplate(mode chat.ThinkMode, explicitMode bool, lineEffo
 }
 
 // batchContextMessage is the 400's text for a prompt that fills the window. When the window is the GPU context (-ctx, smaller than the
-// model's own) it says so and names the way out (R19): a coding agent's first request is ~11k tokens, against a default of 8192.
+// model's own) it says so and names the way out: a coding agent's first request is ~11k tokens, against a default of 8192.
 func batchContextMessage(promptLen, window, modelWindow int) string {
 	msg := fmt.Sprintf("prompt is %d tokens; context window is %d (context_length_exceeded)", promptLen, window)
 	if modelWindow > window {

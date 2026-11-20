@@ -23,7 +23,7 @@ func decodeVMStats64(b []byte) (vmStats64, bool) {
 
 // fromVMStats64 adds up, as Reclaimable, what the kernel can reclaim without compressing or swapping: free, file-backed (external) and
 // purgeable pages
-// (B41, docs/measurements/hostmem-available-2026-10/README.md, amendment A5). host_statistics64's free count includes the speculative
+// (docs/measurements/hostmem-available-2026-10/README.md, "Amendment A5"). host_statistics64's free count includes the speculative
 // (read-ahead) pages, and so does its external count, so Free is the free count less speculative (vm_stat's "Pages free") and each
 // speculative page is counted once, as file-backed. Adding these, rather than subtracting what is used from physical, leaves out the
 // memory no page counter covers. App memory (internal less purgeable), wired and compressed pages are Activity Monitor's Memory Used

@@ -73,7 +73,7 @@ func legacyLayer(r *cudaResident, Ly *cudaLayer, l, pos, ropePos int, qTempScale
 		} else if e := r.segA(Ly, l); e != nil {
 			return e
 		}
-		// --- dynamic gap: rope_kv + attention (decodeAttnGap; MC3 on CUDA runs it per sequence inside a step).
+		// --- dynamic gap: rope_kv + attention (decodeAttnGap; the batched decode step runs it per sequence).
 		if e := r.decodeAttnGap(Ly, l, pos, ropePos, qTempScale); e != nil {
 			return e
 		}

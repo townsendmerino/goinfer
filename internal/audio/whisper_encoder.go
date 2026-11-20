@@ -79,7 +79,7 @@ func (e *WhisperEncoder) Close() error {
 	return st.Close()
 }
 
-// Planted defects for G-S14d's red runs. Zero is the shipped computation.
+// Planted defects for the encoder parity gate's red runs. Zero is the shipped computation.
 const (
 	whisperEncDefectNone = iota
 	whisperEncDefectNoPos

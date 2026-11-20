@@ -174,7 +174,7 @@ var Metal = &Support{
 	RecurrentSlots: []OpKind{OpDeltaNet, OpMamba2}, // metal's useKVSlot binds each slot's own Gated-DeltaNet and Mamba-2 windows and states
 }
 
-// MetalStep is the table of Metal's multi-sequence step (metal/batch.go, MC3's batched decode): one layer shape, pre-norm
+// MetalStep is the table of Metal's multi-sequence step (metal/batch.go, the batched multi-sequence decode): one layer shape, pre-norm
 // attention and a gated dense FFN, with the per-head QK-norm, the query temperature and the NeoX rotation (ropeAt; neither
 // pairwise nor mlaRope). Its other limits (one KV allocation per layer, uniform attention geometry, tiled widths) are checked by the step, not here.
 var MetalStep = &Support{
@@ -260,7 +260,7 @@ var CUDA = &Support{
 	RecurrentSlots: []OpKind{OpDeltaNet, OpMamba2}, // UseKVSlot binds each slot's own Gated-DeltaNet and Mamba-2 window and state
 }
 
-// CUDAStep is the table of CUDA's multi-sequence step (cuda/batchstep.go, MC3's batched decode): what its rows run through
+// CUDAStep is the table of CUDA's multi-sequence step (cuda/batchstep.go, the batched multi-sequence decode): what its rows run through
 // prefillCore's batched layers and decode's attention gap. Its
 // runtime limits (a batched prefill, C′ expert streaming, two or more KV slots, the batched pass's static declines) are checked by
 // the step, not here.

@@ -23,7 +23,7 @@ import (
 // Qwen2_5_VisionTransformerPretrainedModel golden (scripts/oracle/pin_qwen25vl_vision.py),
 // gated in two stages: the ViT pre-merge hidden and the merged image features.
 //
-// Forward takes pre-patchified input (the goinfer P5.3 preprocessor does
+// Forward takes pre-patchified input (goinfer's Qwen-VL preprocessor does
 // image→pixel_values+grid_thw via smart-resize upstream), not a CHW image — so the
 // encoder is fed pixel_values [n_patches, patch_dim] + per-image (t,h,w) grids.
 //
@@ -48,7 +48,7 @@ type QwenEncoderConfig struct {
 }
 
 // validate rejects a config whose dimensions would divide-by-zero or
-// mis-partition at load/Forward (H8): head_dim = hidden/num_heads, the
+// mis-partition at load/Forward: head_dim = hidden/num_heads, the
 // merge-unit groups = n_patches/spatial_merge_size², and the window grid
 // vmws = window_size/spatial_merge_size/patch_size all ÷0 on an absent field.
 // Called after config parse + defaults, before any dimension is used.
@@ -87,7 +87,7 @@ func (c QwenEncoderConfig) validate() error {
 			c.WindowSize, c.SpatialMergeSize*c.PatchSize)
 	case c.HiddenAct != "" && c.HiddenAct != "silu":
 		// mlp() hardcodes SiLU; a checkpoint declaring gelu/quick_gelu would
-		// silently run the wrong activation (the H8 "known activation" check).
+		// silently run the wrong activation.
 		return fmt.Errorf("hidden_act %q unsupported (silu only)", c.HiddenAct)
 	}
 	return nil
@@ -169,7 +169,7 @@ func LoadQwenVisionEncoder(dir string, quant bool) (*QwenVisionEncoder, error) {
 	// "visual." in the tiny checkpoint, "model.visual." inside a full HF VL
 	// checkpoint (where the tower lives alongside the language model shards).
 	pfx := qwenTensorPrefix(st)
-	// get reads a tensor and, when want dims are given, shape-checks it (H7):
+	// get reads a tensor and, when want dims are given, shape-checks it:
 	// otherwise a mismatched/hostile checkpoint panics deep in QuantizeRowsInt8 or
 	// MatmulBT at load/Forward instead of returning an error. Shapes follow HF
 	// Qwen2.5-VL (fused-QKV/Linear weights [out,in], RMSNorms [hidden], 1-D
@@ -202,7 +202,7 @@ func LoadQwenVisionEncoder(dir string, quant bool) (*QwenVisionEncoder, error) {
 		return newQMat(w, rows, cols, quant)
 	}
 	// Conv3d weight [hidden, in_chans, temporal, patch, patch] — shape-checked
-	// like every other tensor (H7), so a mismatch is a clean load-time error, not
+	// like every other tensor, so a mismatch is a clean load-time error, not
 	// a later matmul panic / silent prefix.
 	e.patchW = get("patch_embed.proj.weight", hidden, cfg.InChans, cfg.TemporalPatchSize, cfg.PatchSize, cfg.PatchSize)
 	e.blocks = make([]qwenBlock, cfg.Depth)
@@ -431,7 +431,7 @@ func (e *QwenVisionEncoder) merge(hidden []float32, gridTHW [][3]int) []float32 
 }
 
 // attention runs bidirectional MHA within each cu_seqlens segment (window or full image), via
-// linalg's fused schedule (P6, same treatment and same reasoning as encoder.go's attentionInto —
+// linalg's fused schedule (same treatment and same reasoning as encoder.go's attentionInto —
 // see that function's and encHeadScratch's doc comments for the shared design). qkv is fused
 // (reshape seq,3,heads,head_dim); 2D rotary is applied to q,k before attending. Segments run
 // sequentially (there are only a handful per layer — image windows — so nesting parallelism
@@ -566,7 +566,7 @@ type qwenScratch struct {
 	mlpOut         []float32        // [np*hidden]
 	qkv            []float32        // [np*3*hidden]
 	q, k, v        []float32        // [np*hidden]
-	headPool       []encHeadScratch // P6: fused-attention worker slots, sized to maxSeg (§attentionInto)
+	headPool       []encHeadScratch // fused-attention worker slots, sized to maxSeg (§attentionInto)
 	loFull         []int            // shared, read-only, all-zero: every row's key range starts at 0
 	gate, up       []float32        // [np*inter]
 }
@@ -774,7 +774,7 @@ func rmsNorm(x, w []float32, rows, dim int) []float32 {
 
 // rmsNormInto is rmsNorm writing into a caller-owned dst[:rows*dim] — the form
 // the per-layer loop uses so it does not allocate. dst may not alias x.
-// Row-split across cores (audit M-10) — bit-identical for the same reason as
+// Row-split across cores — bit-identical for the same reason as
 // layerNormInto: the f64 sum-of-squares fold is row-local.
 func rmsNormInto(out, x, w []float32, rows, dim int) {
 	parallelRows(rows, rows*dim, func(start, end int) {

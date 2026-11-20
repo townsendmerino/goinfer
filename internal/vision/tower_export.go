@@ -80,7 +80,7 @@ func (e *Qwen3VisionEncoder) Weights() (Qwen3Weights, error) {
 	return w, nil
 }
 
-// DeepstackFromHidden is DeepStack merger k's tail (Qwen3-VL; goinfer S10): block Cfg.DeepstackVisualIndexes[k]'s output
+// DeepstackFromHidden is DeepStack merger k's tail (Qwen3-VL): block Cfg.DeepstackVisualIndexes[k]'s output
 // h [n_patches, hidden], tapped by a device tower, into that set's rows [n_patches/merge², out_hidden] (the post-shuffle
 // LayerNorm, fc1, GELU erf, fc2), on the host, as FinishHidden is the main merger's. A device tower built from Weights
 // runs the blocks; a DeepStack tower's caller must tap these blocks and call this for each, or the sets are lost

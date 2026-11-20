@@ -318,7 +318,7 @@ type config struct {
 	web               bool          // -web: serve the local browser UI + its model-pull routes
 	requireBE         bool          // -require-backend: refuse to start when a model silently fell back off the requested backend's fast paths (resident decode / batched prefill)
 	visionPath        string        // -vision: dir holding the vision tower (SigLIP + projector) for a multimodal --model
-	noSelfTest        bool          // -no-selftest: skip the startup self-tests (H2)
+	noSelfTest        bool          // -no-selftest: skip the startup self-tests
 	visionMaxPixels   int           // -vision-max-pixels: lowers GLM-OCR's image pixel budget (0 = the model's own 4.82 MP ceiling)
 	visionQuant       string        // -vision-quant: "" (unset: f32; Gemma 3 on cuda may fall back to int8) | "f32" (explicit) | "int8" (W8A8; only faster on AVX512-VNNI — a WASH on AVX2)
 	visionDevice      string        // -vision-device: "auto" (default: the backend's device tower when it has one) | "cpu" | "gpu" (as auto, and it also puts on the device the towers auto keeps on the CPU under webgpu: on a discrete GPU, and a Qwen3.5+ .gguf mmproj tower)
@@ -1225,7 +1225,7 @@ func (s *server) loadVisionTower(cfg config) error {
 					dir = cand
 				} else if visionModelType(cand) == "mistral3" { // Ministral 3's Pixtral tower
 					dir = cand
-				} else if visionModelType(cand) == "lfm2_vl" { // LFM2-VL's SigLIP2 NaFlex tower (S10)
+				} else if visionModelType(cand) == "lfm2_vl" { // LFM2-VL's SigLIP2 NaFlex tower
 					dir = cand
 				} else if _, err := multimodal.LoadProjector(cand); err == nil {
 					dir = cand
@@ -1329,8 +1329,8 @@ func (s *server) loadVisionTower(cfg config) error {
 
 // towerInt8 says whether a vision tower loads with int8 matmul weights. Gemma 3's SigLIP defaults to float32 on every
 // backend, because the int8 tower is lossy at real size (docs/measurements/siglip-int8-fidelity-2026-10-07.md). Under
-// WebGPU the default is the float32 device tower (G-S12.3a-4: 0.43 of the CPU tower's encode time,
-// ); -vision-quant int8 asks for the int8 one.
+// WebGPU the default is the float32 device tower (its speed gate: docs/completed/task-multimodal-support-2026-10.md,
+// the float32 SigLIP tower on WebGPU); -vision-quant int8 asks for the int8 one.
 // Every other tower gets int8 only when asked for, whatever the backend: its device towers are float32 and its gates ran
 // float32, and forcing int8 under cuda/webgpu bought no speed (the CPU int8 tower is not faster) and cost fidelity
 // (docs/measurements/vision-tower-int8-fidelity-2026-10-02.md). A new vision model type must be added to the list below,
@@ -1597,9 +1597,9 @@ func gemma4TowerSwap(models map[string]*loadedModel, enc *vision.Gemma4Encoder, 
 // chooseGemma4Tower puts Gemma 4's vision tower on the GPU when the backend is Metal, CUDA or WebGPU and this binary
 // registers a tower for it, and says where it runs. The device tower is float32, so an int8 tower (-vision-quant int8)
 // stays on the CPU; a tower that fails to start falls back to the CPU with the reason, unless -require-backend asks for a
-// refusal. WebGPU's device tower is the default like the others' (its speed gate, G-S12.3d-4,
-// ); -vision-device cpu arrives here as backend "cpu". Other backends run
-// it on the CPU.
+// refusal. WebGPU's device tower is the default like the others' (its speed gate:
+// docs/completed/task-multimodal-support-2026-10.md, Gemma 4's vision tower on WebGPU); -vision-device cpu arrives here
+// as backend "cpu". Other backends run it on the CPU.
 func chooseGemma4Tower(enc *vision.Gemma4Encoder, int8Tower bool, backend string, require bool) (multimodal.Gemma4TowerAccelerator, string, error) {
 	name, ok := deviceTowerName(backend)
 	if backend == "webgpu" {

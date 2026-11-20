@@ -50,7 +50,7 @@ type Question struct {
 	OptionIDs    []string
 }
 
-// Encoded is encode_record's EncodedRecord, without the media half (images and videos are refused until multimodal.md P8a).
+// Encoded is encode_record's EncodedRecord, without the media half (images and videos are refused).
 type Encoded struct {
 	InputIDs  []int
 	Questions []Question

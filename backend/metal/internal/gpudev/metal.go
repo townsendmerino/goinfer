@@ -63,7 +63,7 @@ var (
 	selName               = objc.RegisterName("name")
 	selMaxTgMem           = objc.RegisterName("maxThreadgroupMemoryLength") // device tile-memory limit (bytes)
 	selThreadExecWidth    = objc.RegisterName("threadExecutionWidth")       // pipeline SIMD-group width
-	selCurrentAllocSize   = objc.RegisterName("currentAllocatedSize")       // actual GPU-side bytes (goinfer audit-metal-2026-09-12 G-06)
+	selCurrentAllocSize   = objc.RegisterName("currentAllocatedSize")       // actual GPU-side bytes
 )
 
 // nsString wraps a Go string as an autoreleased NSString.
@@ -104,13 +104,13 @@ type Device struct {
 	id     objc.ID
 	mu     sync.Mutex
 	allocs []devAlloc // every MTLBuffer handed out by this Device, for ReleaseAll
-	objs   []objc.ID  // non-buffer +1-owned objc objects (command queue, pipelines, libraries) — M24
-	leaser Leaser     // every allocation's lease (MM3); nil leases nothing
+	objs   []objc.ID  // non-buffer +1-owned objc objects (command queue, pipelines, libraries)
+	leaser Leaser     // every allocation's lease; nil leases nothing
 	// traceMoved is how far CurrentAllocatedSize moved across the last traced allocation, which traceSet says is pending for
 	// mustBuf (AllocTraceForTest only).
 	traceMoved int64
 	traceSet   bool
-	act        activity // what its queues ran (SB11)
+	act        activity // what its queues ran (the cost counters)
 }
 
 // devAlloc is one MTLBuffer and its lease's release.
@@ -139,7 +139,8 @@ type AllocTrace struct {
 }
 
 // AllocTraceForTest, when set, sees every buffer mustBuf hands out, leased or not, and FreeTraceForTest every one ReleaseBuf
-// releases, with how far CurrentAllocatedSize moved across the release. G-MM3c-4 reconciles the ledger per buffer with them.
+// releases, with how far CurrentAllocatedSize moved across the release. TestLedger_metalAgreesWithTheDevice reconciles the ledger per
+// buffer with them.
 // They assume the device allocates and frees one buffer at a time while set. Nil in production, where nothing extra is read.
 var (
 	AllocTraceForTest func(d *Device, a AllocTrace)
@@ -147,7 +148,7 @@ var (
 )
 
 // AllocUntracedForTest allocates an n-byte MTLBuffer around the constructors (neither leased nor traced), and returns its
-// release: G-MM3c-4's plant for an allocation the ledger never sees.
+// release: the ledger test's plant for an allocation the ledger never sees.
 func (d *Device) AllocUntracedForTest(n int) (release func()) {
 	id := d.id.Send(selNewBufferLen, uintptr(n), uintptr(0))
 	return func() { id.Send(selRelease) }
@@ -189,7 +190,7 @@ func (d *Device) Leaser() Leaser {
 
 // TrackObj records a +1-owned objc object (command queue / pipeline / library) so ReleaseObjects
 // frees it at Close. MTLFunctions are NOT tracked — they are released immediately once their
-// pipeline state exists (a pipeline does not retain its function). See M24(b).
+// pipeline state exists (a pipeline does not retain its function).
 func (d *Device) TrackObj(id objc.ID) {
 	if id == 0 {
 		return
@@ -201,7 +202,7 @@ func (d *Device) TrackObj(id objc.ID) {
 
 // ReleaseObjects releases the non-buffer objc objects (command queue, pipelines, libraries) this
 // Device tracked, then the MTLDevice itself, and empties the ledgers. purego has no ARC, so these
-// leak per load/unload otherwise (M24(b): ReleaseAll freed buffers only). Idempotent: it nils the
+// leak per load/unload otherwise. Idempotent: it nils the
 // device id, so a second call (or a double Close) is a no-op. Caller MUST ensure no GPU work is in
 // flight (Resident.Close stops+waits the executor first). MTLCreateSystemDefaultDevice hands back a
 // +1 retain PER CALL on the (shared) system device, so releasing here balances THIS Device's retain
@@ -245,13 +246,13 @@ func (d *Device) Name() string { return goString(d.id.Send(selName)) }
 // MaxThreadgroupMemoryLength is the device's maximum threadgroup (tile) memory per dispatch, in
 // bytes (~32 KiB on Apple GPUs). A dispatch whose setThreadgroupMemoryLength exceeds it aborts the
 // command buffer, so callers that size threadgroup scratch from model dims must check against this
-// and decline (goinfer audit M-11). Integer return → objc.Send[uintptr] (arm64 x0 path).
+// and decline. Integer return → objc.Send[uintptr] (arm64 x0 path).
 func (d *Device) MaxThreadgroupMemoryLength() int {
 	return int(objc.Send[uintptr](d.id, selMaxTgMem))
 }
 
 // CurrentAllocatedSize is the device's actual current GPU-side allocation, in bytes — the real
-// Metal-reported number, not this package's own bookkeeping (goinfer audit-metal-2026-09-12 G-06).
+// Metal-reported number, not this package's own bookkeeping.
 // LedgerLen counts entries in allocs/objs, which ReleaseAll/ReleaseObjects clear unconditionally
 // BEFORE sending release to each id: a leak test asserting LedgerLen()==0 after Close cannot
 // distinguish "every buffer was actually released" from "the release loop silently did nothing" —
@@ -279,7 +280,7 @@ func (d *Device) CompileLibrary(src string, ver uint) (objc.ID, error) {
 	if lib == 0 {
 		return 0, fmt.Errorf("metal: newLibraryWithSource failed: %s", goString(nsErr.Send(selLocalizedDesc)))
 	}
-	d.TrackObj(lib) // +1-owned; released at Close (M24)
+	d.TrackObj(lib) // +1-owned; released at Close
 	return lib, nil
 }
 
@@ -446,7 +447,7 @@ func (b Buffer) Len() int { return b.n }
 // NewCommandQueue creates the command queue (built once, reused per token in the real backend).
 func (d *Device) NewCommandQueue() Queue {
 	q := d.id.Send(selNewCommandQueue)
-	d.TrackObj(q) // +1-owned; released at Close (M24)
+	d.TrackObj(q) // +1-owned; released at Close
 	return Queue{id: q, act: &d.act}
 }
 
@@ -458,11 +459,11 @@ func (d *Device) NewComputePipeline(lib objc.ID, fn string) (Pipeline, error) {
 	}
 	var nsErr objc.ID
 	p := d.id.Send(selNewPipelineFn, f, unsafe.Pointer(&nsErr))
-	f.Send(selRelease) // the pipeline state does not retain its MTLFunction — release it now (M24b)
+	f.Send(selRelease) // the pipeline state does not retain its MTLFunction — release it now
 	if p == 0 {
 		return Pipeline{}, fmt.Errorf("metal: pipeline %q: %s", fn, goString(nsErr.Send(selLocalizedDesc)))
 	}
-	d.TrackObj(p) // +1-owned; released at Close (M24)
+	d.TrackObj(p) // +1-owned; released at Close
 	return Pipeline{id: p}, nil
 }
 
@@ -545,7 +546,7 @@ func (d *Device) LedgerLen() (allocs, objs int) {
 }
 
 // ReleaseBuf releases ONE MTLBuffer and removes it from the ledger, so a later ReleaseAll won't
-// double-free it (C5). For per-call scratch that must not accumulate on the ledger until Close —
+// double-free it. For per-call scratch that must not accumulate on the ledger until Close —
 // the caller MUST ensure no in-flight GPU work references it (PrefillLast commits+waits before its
 // deferred releases run). O(n) swap-remove scan of the ledger: fine for coarse per-request scratch,
 // never a per-token path. A zero id (empty Buffer) is a no-op.
@@ -587,8 +588,8 @@ func (d *Device) NewBufferLenOn(line string, nFloats int) Buffer {
 // Metal's own bit, not derived from anything in this binding.
 const mtlResourceHazardTrackingModeUntracked = 1 << 8
 
-// newBufferLenUntracked is NewBufferLen with hazard tracking disabled — the M-16 probe's own
-// allocator (goinfer audit-metal-2026-09-12.md: every buffer this binding allocates is hazard-
+// newBufferLenUntracked is NewBufferLen with hazard tracking disabled — the hazard-tracking probe's
+// own allocator (goinfer audit-metal-2026-09-12.md: every buffer this binding allocates is hazard-
 // tracked by default, options=0, which the tree's own record prices as PART of a ~3.8 µs/dispatch
 // GPU-side floor across a decode token's ~310 dispatches). MEASURED NEGATIVE
 // (hazard_tracking_probe_test.go, interleaved runs): untracked vs tracked GPU-busy time is
@@ -774,7 +775,7 @@ func (b Buffer) U32() uint32 { return *objc.Send[*uint32](b.id, selContents) }
 // discipline (no ARC): the per-token commandBuffer/encoder are autoreleased into the
 // pool and drained here, so the decode loop won't leak (doc risk #2).
 func (q Queue) Run1D(p Pipeline, n, tg int, bufs ...Buffer) {
-	// G22: pin the OS thread for the pool's whole lifetime. An NSAutoreleasePool is
+	// Pin the OS thread for the pool's whole lifetime. An NSAutoreleasePool is
 	// PER-OS-THREAD, and Go may migrate a goroutine between any two calls — draining
 	// a pool on a thread other than the one that pushed it is undefined behaviour,
 	// and shows up as an intermittent SIGSEGV (fault 0x10) inside objc_msgSend.
@@ -811,7 +812,7 @@ func (q Queue) Run1D(p Pipeline, n, tg int, bufs ...Buffer) {
 // bounds-checks its own global (m,n,k) index, exactly like the CUDA tiled kernels.
 // Blocks until the GPU finishes. Manual autoreleasepool discipline, like Run1D.
 func (q Queue) Run2D(p Pipeline, gx, gy, tgx, tgy int, bufs ...Buffer) {
-	// G22: pin the OS thread for the pool's whole lifetime. An NSAutoreleasePool is
+	// Pin the OS thread for the pool's whole lifetime. An NSAutoreleasePool is
 	// PER-OS-THREAD, and Go may migrate a goroutine between any two calls — draining
 	// a pool on a thread other than the one that pushed it is undefined behaviour,
 	// and shows up as an intermittent SIGSEGV (fault 0x10) inside objc_msgSend.
@@ -854,7 +855,7 @@ const maxBindBuffers = 31
 type Encoder struct {
 	pool objc.ID
 	// pinned records that Begin() locked this goroutine to its OS thread for the
-	// pool's lifetime (G22); End() releases it after the drain. False for BeginNP,
+	// pool's lifetime; End() releases it after the drain. False for BeginNP,
 	// which has no pool of its own.
 	pinned bool
 	cb     objc.ID
@@ -871,7 +872,7 @@ type Encoder struct {
 	// err is the command-buffer abort latched at WaitDone/End — read from the cb's status/error
 	// BEFORE the autorelease pool drains (and possibly frees) the cb, so Err() is a safe getter.
 	err error
-	// act is the device's activity count (SB11). n is the dispatches encoded, which the device counts when the buffer is
+	// act is the device's activity count. n is the dispatches encoded, which the device counts when the buffer is
 	// committed; tracked says a dispatch hook was set when this encoder began, and pipes then holds each dispatch's pipeline,
 	// reported to the hook set at the commit.
 	act     *activity
@@ -881,7 +882,7 @@ type Encoder struct {
 }
 
 func (q Queue) Begin() *Encoder {
-	// G22: this pool is drained in End(), a DIFFERENT call, so the pin must span the
+	// This pool is drained in End(), a DIFFERENT call, so the pin must span the
 	// encoder's lifetime rather than one function. Unpinned, Go can migrate the
 	// goroutine in between and End() drains on the wrong thread — undefined
 	// behaviour, observed as an intermittent SIGSEGV (fault 0x10) in objc_msgSend
@@ -933,7 +934,7 @@ func (e *Encoder) WaitDone() {
 // captureErr latches the command buffer's terminal status/error into e.err. MUST be called after
 // waitUntilCompleted and BEFORE the autorelease pool drains the cb (reading a drained cb is a
 // use-after-free). waitUntilCompleted returns cleanly even on a GPU fault, so this is the only
-// signal that a kernel aborted (goinfer audit C-09).
+// signal that a kernel aborted.
 func (e *Encoder) captureErr() {
 	// Integer returns come back in x0 on arm64; objc.Send[uintptr] is the integer-return path this
 	// file already uses for enum getters (selLanguageVersion, selMathMode, selRespondsToSel).
@@ -951,7 +952,7 @@ const mtlCmdBufStatusError = 5
 // Err reports whether the last committed command buffer aborted. Valid AFTER WaitDone / End, which
 // latch the status while the cb is still alive. waitUntilCompleted returns cleanly even when a
 // kernel faults, so without this the host reads stale / previous-token results with no signal
-// (goinfer audit C-09): callers MUST consult Err before trusting the outputs of a committed buffer.
+// callers MUST consult Err before trusting the outputs of a committed buffer.
 func (e *Encoder) Err() error { return e.err }
 
 // cmdBufError formats an aborted command buffer's NSError (or a nil NSError) into a Go error. Split
@@ -971,15 +972,14 @@ func cmdBufError(nsErr objc.ID) error {
 // helpers commit and waitUntilCompleted and return nothing, and waitUntilCompleted
 // returns CLEANLY on a GPU fault — so without this a dispatch that aborted (a GPU
 // fault, or threadgroup scratch over MaxThreadgroupMemoryLength) left the output
-// buffer holding whatever it held before and the caller read it as a result. That
-// is the silent-garbage path audit C-02 found in the ViT attention kernel above
-// 8192 patches; CUDA's analogue fails the launch with an error.
+// buffer holding whatever it held before and the caller read it as a result. The ViT
+// attention kernel above 8192 patches is one such path; CUDA's analogue fails the launch with an error.
 //
 // It panics rather than returning an error because the Run* helpers return nothing
 // and giving them errors would break every caller. A loud panic matches MustBuf,
 // which is this package's existing answer to an unrecoverable device failure, and
 // composes with the callers that already recover it into an error (annmetal's three
-// sites, audit C-04). MUST be called after waitUntilCompleted and before the
+// sites). MUST be called after waitUntilCompleted and before the
 // autorelease pool drains the cb — reading a drained cb is a use-after-free.
 func mustCmdBufOK(cb objc.ID, what string) {
 	if int(objc.Send[uintptr](cb, selStatus)) != mtlCmdBufStatusError {
@@ -1037,8 +1037,8 @@ func (e *Encoder) Dispatch(p Pipeline, n, tg int, bufs ...Buffer) {
 }
 
 // Dispatch2D encodes a 2-D dispatchThreadgroups into this command buffer — the
-// tiled-GEMM shape, which Dispatch's 1-D dispatchThreads cannot express (audit
-// M-13). Without it a ViT layer could not be batched: every GEMM had to be its
+// tiled-GEMM shape, which Dispatch's 1-D dispatchThreads cannot express.
+// Without it a ViT layer could not be batched: every GEMM had to be its
 // own Queue.Run2D, i.e. its own commit and wait.
 //
 // Note the grid unit differs from Dispatch's. dispatchThreads takes a THREAD
@@ -1086,10 +1086,10 @@ func (e *Encoder) End() {
 	e.act.committed(e)
 	e.cb.Send(selWaitCompleted)
 	e.act.waited()
-	e.captureErr() // BEFORE the drain frees the cb (C-09)
+	e.captureErr() // BEFORE the drain frees the cb
 	e.ReadTimes()
 	e.pool.Send(selDrain)
-	if e.pinned { // G22: released only AFTER the drain, never before
+	if e.pinned { // released only AFTER the drain, never before
 		e.pinned = false
 		runtime.UnlockOSThread()
 	}
@@ -1134,7 +1134,7 @@ func (e *Encoder) DrainPool() { e.pool.Send(selDrain) }
 // command buffer, one commit/wait). Isolates the per-commit round-trip tax (reps=1)
 // from the marginal per-encoded-Dispatch msgSend cost (the slope over reps).
 func (q Queue) Run1DBatch(p Pipeline, n, tg, reps int, bufs ...Buffer) {
-	// G22: pin the OS thread for the pool's whole lifetime. An NSAutoreleasePool is
+	// Pin the OS thread for the pool's whole lifetime. An NSAutoreleasePool is
 	// PER-OS-THREAD, and Go may migrate a goroutine between any two calls — draining
 	// a pool on a thread other than the one that pushed it is undefined behaviour,
 	// and shows up as an intermittent SIGSEGV (fault 0x10) inside objc_msgSend.
@@ -1169,14 +1169,12 @@ func (q Queue) Run1DBatch(p Pipeline, n, tg, reps int, bufs ...Buffer) {
 // with a `threadgroup T* x [[threadgroup(0)]]` param sized per-Dispatch — batch-k stages only
 // what k needs, preserving occupancy).
 func (q Queue) Run1DBatchTG(p Pipeline, n, tg, reps, tgBytes int, bufs ...Buffer) {
-	// G22: pin the OS thread for the pool's whole lifetime. An NSAutoreleasePool is
+	// Pin the OS thread for the pool's whole lifetime. An NSAutoreleasePool is
 	// PER-OS-THREAD, and Go may migrate a goroutine between any two calls — draining
 	// a pool on a thread other than the one that pushed it is undefined behaviour,
 	// and shows up as an intermittent SIGSEGV (fault 0x10) inside objc_msgSend.
-	// Consumers that already pin are unaffected: LockOSThread nests. Missed here
-	// originally — every sibling helper (Run1D, Run2D, Run1DBatch) pins; this one
-	// didn't, and Run1DTG delegates straight to it (goinfer audit-metal-2026-09-12.md
-	// C-05).
+	// Consumers that already pin are unaffected: LockOSThread nests. Every sibling
+	// helper (Run1D, Run2D, Run1DBatch) pins too, and Run1DTG delegates straight to this one.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 

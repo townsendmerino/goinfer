@@ -9,7 +9,7 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// MLA residency (Lever C4) — DeepSeek / Kimi Multi-head Latent Attention on the GPU
+// MLA residency — DeepSeek / Kimi Multi-head Latent Attention on the GPU
 // resident decode path. The compressed-KV latent ([kv_lora_rank | qk_rope_head_dim]
 // per position) is the only cached payload; per-head K/V are never materialized.
 // This file is the absorb-path core primitive (mirrors decoder.mlaAttentionAbsorb):
@@ -88,7 +88,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 }
 `
 
-// mlaLatentStore appends one token's compressed KV to the latent cache (Lever C4b),
+// mlaLatentStore appends one token's compressed KV to the latent cache,
 // mirroring decoder's cache.AppendLatent feed: the kv_a_proj output kvDown =
 // [latent(rank) | rope-key(qkRope)] is split, the rank latent is RMSNorm'd by
 // kvALayernorm (cn, the value + score key body) and the rope-key is decoupled-RoPE'd at
@@ -163,7 +163,7 @@ func (c *Context) ensureMLAStore() error {
 		sh.Release()
 		return fmt.Errorf("gpu: pipeline mlaLatentStore: %w", err)
 	}
-	c.track(sh.Release, pl.Release) // audit C-26: register at creation
+	c.track(sh.Release, pl.Release) // registered at creation, so Close releases them
 	c.mlaStoreShader, c.mlaStorePipeline, c.mlaStoreLayout = sh, pl, c.bgl(pl)
 	return nil
 }
@@ -219,7 +219,7 @@ func (c *Context) MLALatentStore(kvDown, normW, invFreq []float32, rank, qkRope,
 }
 
 // mlaHeadMatvec is the per-head block-diagonal matvec behind the absorb (W_UK) and lift
-// (W_UV) steps (Lever C4b). dst[h*N+n] = Σ_k a[h*aStride+k]·w[(h*N+n)*K+k] — each head
+// (W_UV) steps. dst[h*N+n] = Σ_k a[h*aStride+k]·w[(h*N+n)*K+k] — each head
 // has its OWN weight block and reads its OWN activation slice, so it's not a single dense
 // GEMV. Kept f32 (parity-first, and W_UK/W_UV are small for the 16B targets; the big-V3
 // case doesn't fit the 8 GB resident budget regardless). Used twice:
@@ -317,7 +317,7 @@ func (c *Context) ensureMLAHeadMV() error {
 		sh.Release()
 		return fmt.Errorf("gpu: pipeline mlaHeadMatvec: %w", err)
 	}
-	c.track(sh.Release, pl.Release) // audit C-26: register at creation
+	c.track(sh.Release, pl.Release) // registered at creation, so Close releases them
 	c.mlaHeadMVShader, c.mlaHeadMVPipeline, c.mlaHeadMVLayout = sh, pl, c.bgl(pl)
 	return nil
 }
@@ -399,7 +399,7 @@ func (c *Context) ensureMLAQRope() error {
 		sh.Release()
 		return fmt.Errorf("gpu: pipeline mlaQRope: %w", err)
 	}
-	c.track(sh.Release, pl.Release) // audit C-26: register at creation
+	c.track(sh.Release, pl.Release) // registered at creation, so Close releases them
 	c.mlaQRopeShader, c.mlaQRopePipeline, c.mlaQRopeLayout = sh, pl, c.bgl(pl)
 	return nil
 }
@@ -421,7 +421,7 @@ func (c *Context) ensureMLAAttn() error {
 		sh.Release()
 		return fmt.Errorf("gpu: pipeline mlaAttn: %w", err)
 	}
-	c.track(sh.Release, pl.Release) // audit C-26: register at creation
+	c.track(sh.Release, pl.Release) // registered at creation, so Close releases them
 	c.mlaAttnShader, c.mlaAttnPipeline, c.mlaAttnLayout = sh, pl, c.bgl(pl)
 	return nil
 }

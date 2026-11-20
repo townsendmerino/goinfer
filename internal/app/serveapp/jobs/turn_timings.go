@@ -7,7 +7,7 @@ import (
 )
 
 // VendorOptions is a request body's "goinfer" object: goinfer's own request options, ignored by every other server
-// (SB11b, docs/server.md "Per-turn timings and cost"; experimental until v1.0).
+// (docs/server.md "Per-turn timings and cost"; experimental until v1.0).
 type VendorOptions struct {
 	// Cost asks for the turn's cost report (internal/cost) as the response's "cost".
 	Cost bool `json:"cost"`
@@ -15,7 +15,7 @@ type VendorOptions struct {
 
 func (v *VendorOptions) WantsCost() bool { return v != nil && v.Cost }
 
-// TurnClock is one turn's stage boundaries, the only places X1's timings are read: the queue entered, the turn admitted, and, for each generation the turn drives, its start, its first token
+// TurnClock is one turn's stage boundaries, the only places the per-turn timings are read: the queue entered, the turn admitted, and, for each generation the turn drives, its start, its first token
 // received and its end. It also holds the turn's cost counter when the request asked for one, nil otherwise. It is touched
 // only from the handler goroutine that drives the turn. A nil *TurnClock (a genRequest not built by prepare) reports nothing.
 //
@@ -94,7 +94,7 @@ func (c *TurnClock) CostCounter() *cost.Counter {
 	return c.counter
 }
 
-// TimingsBlock is the response's "timings", X1's fields in milliseconds. A field whose boundaries were not crossed is absent,
+// TimingsBlock is the response's "timings", the per-turn timing fields in milliseconds. A field whose boundaries were not crossed is absent,
 // never 0: no token received means no prefill_ms, ttft_ms or decode_ms.
 type TimingsBlock struct {
 	QueueWaitMs *float64 `json:"queue_wait_ms,omitempty"`

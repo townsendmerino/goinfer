@@ -10,7 +10,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-// Every device created in a process that links this package leases its MTLBuffers to a mem.Ledger (MM3), whichever package
+// Every device created in a process that links this package leases its MTLBuffers to a mem.Ledger, whichever package
 // creates it.
 func init() { gpu.NewLeaser = func() gpu.Leaser { return &deviceLedger{} } }
 
@@ -21,7 +21,7 @@ type deviceLedger struct {
 }
 
 // ledgerChargeDeltaForTest, when not zero, is added to the charge this package's ledger records for each device's first
-// Unified lease of 16 KB or more on plan line ledgerChargeLineForTest: G-MM3c-4's plants for a ledger that records more, or
+// Unified lease of 16 KB or more on plan line ledgerChargeLineForTest: the ledger test's plants for a ledger that records more, or
 // less, than it was asked to. Zero in production.
 var (
 	ledgerChargeDeltaForTest int64

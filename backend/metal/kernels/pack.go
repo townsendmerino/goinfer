@@ -41,7 +41,7 @@ func PackW4A8RowInto(row []float32, words []uint32, scales []float32) {
 	}
 }
 
-// QuantG32 is tower_gemm_w8's weight form (S18): each row of w [rows, cols] in groups of 32 along cols, each group
+// QuantG32 is tower_gemm_w8's weight form: each row of w [rows, cols] in groups of 32 along cols, each group
 // scaled by its largest magnitude over 127 and rounded to int8. The scales are [rows, ceil(cols/32)]. The kernel's
 // weight is float(q)·scale, which dequantG32 reproduces for the CPU reference.
 func QuantG32(w []float32, rows, cols int) ([]int8, []float32) {

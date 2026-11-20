@@ -6,7 +6,7 @@ import "sort"
 
 // ScratchEntry is one named group of a decode runner's build-time scratch leases: the role that created them (the op builder or build step that
 // asked for them), how many buffers and their bytes. The runner builds its scratch from op builders that each name themselves, so the list is
-// the whole of what the build leases on the ledger's scratch line (MM5b: the plan's figure for it is held to this list's sum).
+// the whole of what the build leases on the ledger's scratch line (the plan's figure for it is held to this list's sum).
 type ScratchEntry struct {
 	Role  string
 	Count int

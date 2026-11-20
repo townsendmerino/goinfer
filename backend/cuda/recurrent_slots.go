@@ -83,7 +83,8 @@ func (L *cudaLayer) recurrentOf(s int) recurrentPair {
 	return L.recurrentLive()
 }
 
-// recurrentResetEverySlotForTest, when set, makes a reset zero every slot's pair, not the bound one's: the plant of KV8's S-2. Only a test sets it.
+// recurrentResetEverySlotForTest, when set, makes a reset zero every slot's pair, not the bound one's: the plant of
+// TestRecurrentSlots_resetIsTheSlotsOwn. Only a test sets it.
 var recurrentResetEverySlotForTest bool
 
 // resetEverySlotForTest is that plant's body.

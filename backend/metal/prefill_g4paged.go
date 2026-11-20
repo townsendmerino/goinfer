@@ -15,7 +15,7 @@ import (
 var g4LayerMajorOn = true
 
 // g4LayerMajorChunk is the most prompt rows one pass holds: each row keeps its own residual, seam state and uniforms
-// (about 25 KB on M26), and every row's dispatches for a layer go in one command buffer.
+// (about 25 KB on Gemma 4 26B), and every row's dispatches for a layer go in one command buffer.
 const g4LayerMajorChunk = 256
 
 // g4Row is one prompt row's own state in the layer-major pass: what crosses the router seam of a paged Gemma 4 MoE
@@ -33,7 +33,7 @@ type g4Row struct {
 // routed experts into the pool once, and runs every row's phase 2 and join from the pool, as many rows to a command
 // buffer as the pool holds their experts at once, in row order. Each row's dispatches are exactly decode's
 // (forwardLogitsPaged's) at its position on its own buffers, so the K/V and the last row's logits are the sequential
-// loop's bit for bit. M26's attention (head dim 256 and 512 by layer, K = V, a window) takes no batched pass; this
+// loop's bit for bit. Gemma 4 26B's attention (head dim 256 and 512 by layer, K = V, a window) takes no batched pass; this
 // keeps decode's kernels and removes the per-token submit-and-wait trips and the per-token staging. Returns the last
 // row's logits, or nil without the head when head is false.
 func (r *resident) prefillG4Paged(embs [][]float32, startPos int, head bool) (logits []float32) {
@@ -103,7 +103,7 @@ func (r *resident) g4LayerMajorRows(embs [][]float32, start int, head bool) []fl
 		r.recordExecErr(e.Err())
 		lmProf(e, w0, gpu, wall)
 	}
-	// D-P01: a slot group's phase 2 through the batched expert kernels (prefill_g4batch.go), when the shapes admit it
+	// a slot group's phase 2 through the batched expert kernels (prefill_g4batch.go), when the shapes admit it
 	var batch g4Batch
 	group := func(L *residLayer, pool *expertPool) func(e *Encoder, i, j int) {
 		if !r.g4ExpertBatchOK() {
@@ -239,7 +239,7 @@ func (r *resident) layerMajorExpertGroups(n int, pool *expertPool, topK int, ids
 	return true
 }
 
-// moeLayerMajorOn routes a paged generic MoE's prompt (Qwen MoE, Mixtral, the Qwen3.5/3.6 DeltaNet hybrids, M35) through
+// moeLayerMajorOn routes a paged generic MoE's prompt (Qwen MoE, Mixtral, the Qwen3.5/3.6 DeltaNet hybrids) through
 // prefillMoEPaged, the generic twin of prefillG4Paged: bit-identical to the sequential loop by construction. A DeltaNet
 // layer's recurrent state is per layer, and its rows run in order, as the loop runs them.
 var moeLayerMajorOn = true
@@ -355,7 +355,7 @@ func (r *resident) moeLayerMajorRows(embs [][]float32, start int, head bool) []f
 		}
 		pool := L.moe.pool
 		var group func(e *Encoder, i, j int)
-		if batchOK { // KS-D9: the group's routed experts expert by expert (prefill_moebatch.go)
+		if batchOK { // the group's routed experts expert by expert (prefill_moebatch.go)
 			group = func(e2 *Encoder, i, j int) {
 				g := rows[i:j]
 				r.encodeMoEPhase2Batch(e2, L, pool, batch, moeBatchRows{n: len(g),

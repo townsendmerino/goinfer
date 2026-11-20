@@ -31,7 +31,7 @@ func WhisperValidFrames(n int) int {
 	return min((n+whisperHop-1)/whisperHop, WhisperFrames)
 }
 
-// Planted defects for the gate's red runs (G-S14a). Zero is the shipped computation.
+// Planted defects for the parity gate's red runs. Zero is the shipped computation.
 const (
 	whisperDefectNone = iota
 	whisperDefectHTK

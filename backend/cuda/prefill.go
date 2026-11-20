@@ -41,7 +41,7 @@ const prefillDefaultChunk = 512
 const prefillMinChunk = 32
 
 // prefillAlignRows is the grid a pass's start stays on: the fused attention's key tile (attnFusedBM). Under a sliding window a
-// fused pass that starts off it does not write the bits the whole prompt writes (docs/measurements/kv1-2026-10-13.md, G2b).
+// fused pass that starts off it does not write the bits the whole prompt writes (docs/measurements/kv1-2026-10-13.md).
 const prefillAlignRows = 64
 
 // prefillTailCut is how many rows a pass of n rows gives to a last pass that would have rem rows, fewer than attnFusedMinRows.
@@ -137,7 +137,7 @@ func (r *cudaResident) PrefillLast(ctx context.Context, embeddings [][]float32, 
 	return r.prefillChunked(ctx, embeddings, startPos, tailLastLogits, nil)
 }
 
-// markLatePlantForTest calls the mark's callback one pass late, when the slot's ring has moved on: KV7 step 2's planted defect, set by tests only.
+// markLatePlantForTest calls the mark's callback one pass late, when the slot's ring has moved on: the host snapshot store's planted defect, set by tests only.
 var markLatePlantForTest bool
 
 // PrefillMarkAlign (decoder.ResidentPrefillSubsystem) is the width of this prefill's passes: a mark fires only at startPos plus a multiple of it.
@@ -531,9 +531,9 @@ func (r *cudaResident) prefillChunkedRows(ctx context.Context, M int, rows func(
 			n = M - i
 		}
 		// A prefill never ends in a pass of fewer than attnFusedMinRows rows: such a pass runs the exact kernels while every row
-		// before it ran the fast ones, so the prompt would depend on where its last chunk fell (the 16-row rule, KV0's invariance
-		// record), and past singleBlockAttnShmemLimit keys the exact attention is not launchable at all. The rows come from this
-		// pass (prefillTailCut), not the last one's; a chunk under 32 rows keeps its short last pass.
+		// before it ran the fast ones, so the prompt would depend on where its last chunk fell (the 16-row rule), and past
+		// singleBlockAttnShmemLimit keys the exact attention is not launchable at all. The rows come from this pass
+		// (prefillTailCut), not the last one's; a chunk under 32 rows keeps its short last pass.
 		if rem := M - (i + n); rem > 0 && rem < attnFusedMinRows {
 			n -= prefillTailCut(n, rem)
 		}

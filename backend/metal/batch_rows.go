@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// MC3 S3: multi-row forms of the per-row kernels a batched step runs once per
+// Multi-row forms of the per-row kernels a batched step runs once per
 // sequence (rmsnorm_quant, quant_vec, swiglu_quant, rope2). Each of those small dispatches ran a single threadgroup, one
 // sequence after another; one dispatch over all rows runs them side by side (cost figures:
 // docs/code-notes/metal.md#mc3RowsKernels).
@@ -148,7 +148,7 @@ func deriveRowsKernels() string {
 			"    device const float* q = q_rows + mc3_row*(nH*hd + 2u*nKV*hd); device float* out = out_rows + mc3_row*(nH*hd);\n"+
 			"    uint nKeys = nKeys_rows[mc3_row]; device const uint* kt = kt_all + tabOff[mc3_row];"))
 	b.WriteString("\n")
-	// qk_norm (E-P07, Qwen3's per-head Q/K RMSNorm): one threadgroup per (row, head); a row's fused qkv advances
+	// qk_norm (Qwen3's per-head Q/K RMSNorm): one threadgroup per (row, head); a row's fused qkv advances
 	// qkvStride floats, and the head is the threadgroup's index within its row.
 	b.WriteString(edit(extractKernel(allKernels, "qk_norm"),
 		"kernel void qk_norm(device float* qkv[[buffer(0)]]",
@@ -159,7 +159,7 @@ func deriveRowsKernels() string {
 		"    uint head = mc3_gid % (nH + nKV); device float* qkv = qkv_rows + (mc3_gid / (nH + nKV))*qkvStride;\n    threadgroup float red[128];"))
 	b.WriteString("\n")
 
-	// E-P05: the first pass of decode's flash attention (attention_fa, attention_fa_blk<G>, attention_fa_blk64<G>) for
+	// The first pass of decode's flash attention (attention_fa, attention_fa_blk<G>, attention_fa_blk64<G>) for
 	// M rows at attention_fa depth in one dispatch. Row j serves batch row rowmap[j]: its own q (a row of the fused qkv
 	// buffer, qStride floats), its own table (tabOff), its key count and split count, and its own region of the
 	// partial buffer (partStride floats). The grid is M rows of nKV*maxS threadgroups; a threadgroup past its row's own
@@ -244,7 +244,7 @@ kernel void mc3_gemv_w8a8_rows(device const char* bq[[buffer(0)]], device const 
 		fmt.Fprintf(&b, "template [[host_name(\"mc3_gemv_w8a8_rows%d\")]] kernel decltype(mc3_gemv_w8a8_rows<%d>) mc3_gemv_w8a8_rows<%d>;\n", B, B, B)
 	}
 
-	// D-P03: decode's k selected experts in one dispatch per stage instead of one per slot. The grid is k slots of
+	// Decode's k selected experts in one dispatch per stage instead of one per slot. The grid is k slots of
 	// rowsPerExpert/(tgs/32) threadgroups; a threadgroup's slot is its index divided by that, and within the slot it
 	// is the threadgroup production's per-slot dispatch had. Needs rowsPerExpert % (tgs/32) == 0 (encodeMoEExperts
 	// checks it). Gate|up: each slot writes its own [gate | up] row of out_k (2I apart), which mc3_swiglu_quant_rows

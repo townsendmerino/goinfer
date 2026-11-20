@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
-// Qwen3.5+ image serving (docs/multimodal.md, P8 record). The route is the Qwen2.5-VL one (preprocess, tower,
+// Qwen3.5+ image serving (docs/multimodal.md, "Qwen3.x-VL image path + GGUF mmproj"). The route is the Qwen2.5-VL one (preprocess, tower,
 // GenerateQwenVL with m-RoPE) with two differences that live here: the tower is loaded on first use, and an image is
 // capped at qwen3MaxImageTokens.
 

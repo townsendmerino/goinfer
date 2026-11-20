@@ -63,7 +63,7 @@ type reqTrace struct {
 	idsSeen                   bool
 	fast                      bool // the request named the fast alias (fast_alias.go)
 	snapRows                  int  // rows a host snapshot restored for the first generation (decoder.Generation.KVSnapRestored)
-	// the first generation's recurrent checkpoint (KV8a): whether its prompt's end was saved and the copy's time, the position it
+	// the first generation's recurrent checkpoint: whether its prompt's end was saved and the copy's time, the position it
 	// restored from and that copy's time, or why a checkpoint hit prefilled cold (decoder.Generation's Checkpoint fields)
 	ckptSaved    bool
 	ckptSave     time.Duration
@@ -321,7 +321,7 @@ func (t *reqTrace) line(route string, status int, end time.Time) string {
 		line += fmt.Sprintf(" ckpt_restore=%d ckpt_restore_ms=%.3f", t.ckptRestored, float64(t.ckptRestore.Microseconds())/1000)
 	}
 	if t.ckptSaved {
-		line += fmt.Sprintf(" ckpt_save_ms=%.3f", float64(t.ckptSave.Microseconds())/1000) // the save's own time, every request that saved (KV8a gate 4)
+		line += fmt.Sprintf(" ckpt_save_ms=%.3f", float64(t.ckptSave.Microseconds())/1000) // the save's own time, every request that saved
 	}
 	if t.ckptDeclined != "" {
 		line += fmt.Sprintf(" ckpt_declined=%q", t.ckptDeclined)

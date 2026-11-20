@@ -225,7 +225,7 @@ var metalCtxCeiling sync.Map // *decoder.Model -> int
 // 256 soft tokens, a few hundred of text) and some conversation fit.
 const metalCtxFloor = 2048
 
-// shrinkCtxToFit halves an unpinned resident context, down to metalCtxFloor, until the memory guard passes (S18: the
+// shrinkCtxToFit halves an unpinned resident context, down to metalCtxFloor, until the memory guard passes (the
 // context gives way before the resident declines; an explicit -ctx never does). It reports whether one passed; when none
 // does the context is left as it was.
 func shrinkCtxToFit(m *decoder.Model) bool {
@@ -247,7 +247,7 @@ func shrinkCtxToFit(m *decoder.Model) bool {
 	return false
 }
 
-// metalKVPlanLine is serve's KV plan line (S18's banner): the slots and context the build chose, and what for when it
+// metalKVPlanLine is serve's KV plan line: the slots and context the build chose, and what for when it
 // is less than asked or a companion (a vision tower, a drafter) is priced beside it.
 func metalKVPlanLine(slots, ctx, from int, extra int64) string {
 	s := fmt.Sprintf("metal: KV plan: %d conversation(s) x %d positions", slots, ctx)
@@ -516,7 +516,7 @@ func metalSlotBytes(m *decoder.Model) int64 {
 	return m.MetalKVSlotBytes(ctxCap) + metalRecurrentSlotBytes(m)
 }
 
-// metalKVSlotsWanted is the slot count the build asks memory for (decoder.Model.MetalKVSlotsWanted, E-P09). metalKVSlots grants as
+// metalKVSlotsWanted is the slot count the build asks memory for (decoder.Model.MetalKVSlotsWanted). metalKVSlots grants as
 // many of them as fit.
 func metalKVSlotsWanted(m *decoder.Model) int { return m.MetalKVSlotsWanted() }
 
@@ -524,7 +524,7 @@ func metalKVSlotsWanted(m *decoder.Model) int { return m.MetalKVSlotsWanted() }
 // (decoder.Options.ResidentKVSlotsDefault: serve without -kv-sessions). Every slot's KV is resident from the first token, so
 // the default 4 costs memory on every load. Two keep the batched step (it needs 2 slots) and a second conversation's prefix; a
 // third and fourth concurrent client lose their own slot and their batching. -kv-sessions N still asks for N
-// (docs/audit-metal-2026-09-30.md, E-P09).
+// (docs/audit-metal-2026-09-30.md).
 const metalDefaultKVSlots = decoder.MetalDefaultKVSlots
 
 // kvSlotsWithin is metalKVSlots' arithmetic: the largest slot count up to want whose resident build — base bytes for
@@ -563,7 +563,7 @@ func residentMemoryDecline(m *decoder.Model) string {
 		return "" // nothing to compare against; not a reason to refuse
 	}
 	// The GPU's own limit: the Metal allocation (the need less the host copy, which is ordinary RAM) against the device's
-	// recommendedMaxWorkingSetSize (B41 gate 4, docs/measurements/hostmem-available-2026-10/README.md).
+	// recommendedMaxWorkingSetSize (docs/measurements/hostmem-available-2026-10/README.md).
 	if wsCap := metalWorkingSetCap(); wsCap > 0 {
 		if alloc := need - m.ResidentHostCopyBytes(metalMoESlotsFromEnv(m)); alloc > wsCap {
 			return fmt.Sprintf(residentMemoryDeclinePrefix+"%s of Metal allocations (weights, KV and what a companion claims), over this GPU's "+
@@ -781,7 +781,7 @@ func (a *metalResident) ForwardSample(embedding []float32, pos int, temperature 
 	return a.r.ForwardSample(embedding, pos, temperature, seed, draw)
 }
 
-// embLen is every embedding row's length: hidden, or for a Gemma 4 E-model hidden + L·P PLE inputs (S1.5), the
+// embLen is every embedding row's length: hidden, or for a Gemma 4 E-model hidden + L·P PLE inputs, the
 // decoder's EmbedLen. Derived from the resident, so a test-built metalResident gets it right too.
 func (a *metalResident) embLen() int {
 	if a.r == nil {
@@ -821,9 +821,9 @@ func (a *metalResident) ForwardNoLogits(embedding []float32, pos int) error {
 const metalFastPrefillFloor = 16
 
 // metalStepPrefillCeiling bounds the batched step's range: a resident with the step runs a prompt that ends below this many
-// tokens as exact decode rows on it (E-P01) rather than the pass. The step is bit-identical to the sequential loop and the pass
+// tokens as exact decode rows on it rather than the pass. The step is bit-identical to the sequential loop and the pass
 // is not, so it keeps every length where it is not slower (the step is faster at K = 16, the pass at K = 32, on both measured
-// models A-P02).
+// models).
 const metalStepPrefillCeiling = 32
 
 // metalFastPrefillEnabled reports whether the batched f16-MMA prefill is selected. Default on above metalFastPrefillFloor
@@ -1029,7 +1029,7 @@ func (a *metalResident) prefillLastSrc(ctx context.Context, src rowSource, start
 			a.Reset() // a fresh sequence, as Forward at position 0 does (it zeroes a DeltaNet's state)
 		}
 		var lg []float32
-		if a.emodelLayerMajor() { // S9: a Gemma 4 E-model, layer by layer on decode's kernels (prefill_emodel.go)
+		if a.emodelLayerMajor() { // a Gemma 4 E-model, layer by layer on decode's kernels (prefill_emodel.go)
 			if src.width != a.embLen() {
 				return nil, fmt.Errorf("metal: an E-model prefill row of %d values, want %d ([h | L*P])", src.width, a.embLen())
 			}
@@ -1092,7 +1092,7 @@ func (r *resident) prefillUnaligned() string {
 	return ""
 }
 
-// batchedPrefill is the f16 batched pass behind PrefillLast and PrefillMRoPELast (S16): the same declines (the floor, an
+// batchedPrefill is the f16 batched pass behind PrefillLast and PrefillMRoPELast: the same declines (the floor, an
 // int8 KV cache, a family the pass does not implement, the resident's cap, the exact attention kernel's key limit), the
 // same recovery of a request-time panic, and the same non-finite-logit check. mrope is nil for a text prompt.
 func (a *metalResident) batchedPrefill(embeddings [][]float32, startPos, floor int, mrope [][3]int, deep *prefillDeep) ([]float32, error) {
@@ -1108,7 +1108,7 @@ func (a *metalResident) PrefillImageLast(ctx context.Context, embeddings [][]flo
 	return a.PrefillImageBlocksLast(ctx, embeddings, startPos, [][2]int{{imgStart, imgEnd}})
 }
 
-// PrefillImageBlocksLast (decoder.ResidentPrefillSubsystem; S11) is PrefillImageLast for several images: each block
+// PrefillImageBlocksLast (decoder.ResidentPrefillSubsystem) is PrefillImageLast for several images: each block
 // [start, end), in order and disjoint, attends bidirectionally within itself.
 func (a *metalResident) PrefillImageBlocksLast(ctx context.Context, embeddings [][]float32, startPos int, blocks [][2]int) ([]float32, error) {
 	if e := ctx.Err(); e != nil {
@@ -1225,7 +1225,7 @@ func (a *metalResident) batchedPrefillSrc(src rowSource, startPos, floor int, mr
 	return logits, nil
 }
 
-// PrefillMRoPELast (decoder.ResidentPrefillSubsystem, S16 of ) is PrefillLast for a
+// PrefillMRoPELast (decoder.ResidentPrefillSubsystem) is PrefillLast for a
 // Qwen image turn: the batched f16 pass with every row rotated by its own (temporal, height, width) m-RoPE triple, so the
 // image turn prefills here instead of on the CPU with its K/V uploaded after. mropePos covers the whole prompt from 0. It
 // declines (the decoder then takes the CPU-prefill+UploadKV bridge) when the model has no m-RoPE axis table, when a
@@ -1235,7 +1235,7 @@ func (a *metalResident) PrefillMRoPELast(ctx context.Context, embeddings [][]flo
 	return a.prefillMRoPE(ctx, embeddings, startPos, mropePos, nil)
 }
 
-// PrefillMRoPEDeepstackLast (decoder.ResidentPrefillSubsystem, S16) is PrefillMRoPELast for Qwen3-VL: the same pass,
+// PrefillMRoPEDeepstackLast (decoder.ResidentPrefillSubsystem) is PrefillMRoPELast for Qwen3-VL: the same pass,
 // which also adds DeepStack set l to the image rows after decoder layer l. Each set must be imgLen rows of the hidden size.
 func (a *metalResident) PrefillMRoPEDeepstackLast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int, deep [][]float32, imgStart, imgLen int) ([]float32, error) {
 	if imgStart < 0 || imgLen <= 0 || len(deep) > a.r.nL {
@@ -1391,7 +1391,7 @@ func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]floa
 		return nil, nil
 	}
 	// Fall back to sequential loop for paged MoE where per-layer host interaction is required, and for a Gemma 4
-	// E-model, whose PLE inputs ForwardBatch's layer-major encode has no per-row buffer for (S1.5).
+	// E-model, whose PLE inputs ForwardBatch's layer-major encode has no per-row buffer for.
 	if (a.r.g4moe != nil && a.r.g4moe.paged) || (a.r.moe != nil && a.r.moe.paged) || a.r.pleP > 0 {
 		out := make([][]float32, len(embeddings))
 		for i, emb := range embeddings {
@@ -1451,7 +1451,7 @@ func (a *metalResident) UploadKV(layer, base int, keys, vals []float32) error {
 		return nil // recurrent DeltaNet layer with no attention KV cache
 	}
 	if a.r.layers[layer].kvShared {
-		// S1.4: its kc/vc alias the source layer's cache; writing here would overwrite the source's rows.
+		// its kc/vc alias the source layer's cache; writing here would overwrite the source's rows.
 		return fmt.Errorf("metal: UploadKV layer %d owns no KV (it reads layer %d's)", layer, a.r.layers[layer].kvSrc)
 	}
 	g := a.r.layers[layer].geom
@@ -1555,7 +1555,7 @@ func (a *metalResident) Reset() {
 	a.r.resetRecurrent()
 }
 
-// GreedyChainAvailable (decoder.ResidentDecodeSubsystem, C-B01): the greedy chain is exact on this resident
+// GreedyChainAvailable (decoder.ResidentDecodeSubsystem): the greedy chain is exact on this resident
 // (greedyChainWhyNot, greedy_chain.go) and its gather table is on the device, or fits there now (chainEmbedTable).
 func (a *metalResident) GreedyChainAvailable() bool {
 	if a.r.greedyChainWhyNot() != "" {
@@ -1579,7 +1579,7 @@ func (a *metalResident) GreedyChainNext() (int, error) { return a.r.chainNext() 
 // GreedyChainStop closes the chain.
 func (a *metalResident) GreedyChainStop() { a.r.stopChain() }
 
-// SampleChainAvailable (decoder.ResidentDecodeSubsystem, C-P02): the chain is available and so is the device draw.
+// SampleChainAvailable (decoder.ResidentDecodeSubsystem): the chain is available and so is the device draw.
 func (a *metalResident) SampleChainAvailable() bool {
 	return a.r.SampleAvailable() && a.GreedyChainAvailable()
 }

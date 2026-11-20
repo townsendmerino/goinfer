@@ -17,8 +17,8 @@ import (
 
 // Route names, as a Result and the CLI's output lines report them.
 const (
-	RouteLabel = "label" // Route A: the model's logits at the verbalizer tokens (D1)
-	RouteHead  = "head"  // Route B: a trained decision head over the final-norm hidden state (D4)
+	RouteLabel = "label" // Route A: the model's logits at the verbalizer tokens
+	RouteHead  = "head"  // Route B: a trained decision head over the final-norm hidden state
 )
 
 // Head is a trained decision head (Route B), in the shape autotrust's
@@ -31,7 +31,7 @@ const (
 //
 // The backbone is the caller's to load: the base weights with the adapter merged in (decoder.Options.LoRA =
 // AdapterDir()) when WeightsMode is "unmerged", as-is when it is "merged". goinfer merges an "unmerged" adapter at load
-// rather than applying it at compute time; the D3 gate measures that against PEFT's unmerged forward.
+// rather than applying it at compute time; a parity gate measures that against PEFT's unmerged forward.
 type Head struct {
 	Dir         string
 	Name        string // model_name, for the record
@@ -234,7 +234,7 @@ func (h *Head) logits(hidden []float32, kind string, n int) ([]float32, error) {
 // Hidden runs one prompt and returns the final-norm hidden state at its last position (Route B's input).
 type Hidden func(ctx context.Context, ids []int) ([]float32, error)
 
-// ModelHidden returns a Hidden over a loaded model: decoder.Model.PromptHidden (D2).
+// ModelHidden returns a Hidden over a loaded model: decoder.Model.PromptHidden.
 func ModelHidden(m *decoder.Model) Hidden { return m.PromptHidden }
 
 // ModelHiddenMany is the many-prompt form of ModelHidden: prompts that share a prefix are prefilled once where the model can (decoder.Model.PromptHiddenMany), and
