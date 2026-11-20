@@ -58,7 +58,8 @@ func TestMambaResidentCapture(t *testing.T) {
 		t.Fatalf("resident forward is %T, not *residentDecoder", m.ResidentForwardForTest())
 	}
 
-	nHeads, headDim, dState, nGroups, dConv, _, _, _, _, gok := m.BackendView().GraniteParams()
+	g, gok := m.BackendView().Granite()
+	nHeads, headDim, dState, nGroups, dConv := g.NHeads, g.HeadDim, g.DState, g.NGroups, g.DConv
 	if !gok {
 		t.Fatal("not granite")
 	}
