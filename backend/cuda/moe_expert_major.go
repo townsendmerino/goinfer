@@ -110,7 +110,7 @@ func (r *cudaResident) prefillMoEExpertMajorRun(ctx interface{ Err() error }, Ly
 	st.mqAll = ai(M * hidden / 4)
 	st.mScAll = af(M)
 	st.wgtAll = af(M * r.topK)
-	idxAll := au(M * r.topK) // the route kernel writes each row's expert ids here; read back ONCE after the loop (audit R-22)
+	idxAll := au(M * r.topK) // the route kernel writes each row's expert ids here; read back ONCE after the loop
 	st.emSlot = au(1)
 	st.scratch = make([]Buffer, r.topK)
 	grouped := r.prefillMoERowsEligible()

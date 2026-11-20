@@ -264,7 +264,7 @@ func (c *Context) BatchTiled(aq []int8, aScales []float32, M int, rms []*Residen
 			return nil, fmt.Errorf("gpu: BatchTiled dst: %w", err)
 		}
 		dims, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "btiled-dims", Contents: wgpu.ToBytes([]uint32{uint32(M), uint32(rm.kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
-		if err != nil { // nil dims → nil-panic in CreateBindGroup / the cleanup Release below (audit R-06)
+		if err != nil { // nil dims → nil-panic in CreateBindGroup / the cleanup Release below
 			releaseBuf(dst)
 			pass.Release()
 			release()

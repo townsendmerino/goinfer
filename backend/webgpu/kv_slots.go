@@ -250,7 +250,7 @@ func kvBytesPerPosition(m slotModel, kvF16, kvI8 bool) int64 {
 	return 2 * int64(nLayers) * per
 }
 
-// slotsBeforeContext is MC1's "slots before context" on WebGPU (the rule CUDA's ctxForSlots applies): when more than one KV
+// slotsBeforeContext is the "slots before context" rule on WebGPU (the one CUDA's ctxForSlots applies): when more than one KV
 // slot is requested and the caller did not choose the context (decoder.Model.ResidentContextPinned: a fit-guard auto-pin is a
 // one-slot ceiling, not a choice), give up context, down to webgpuSlotCtxFloor, until every requested slot fits; below the
 // floor the slot count is clamped instead, by buildKVSlots as always. A single slot keeps its context, unless a companion is priced
@@ -387,7 +387,7 @@ func (rd *residentDecoder) buildKVSlots(m *decoder.Model, want int, avail0 int64
 	}
 }
 
-// KVSlots / UseKVSlot implement decoder.ResidentKVSubsystem (MC1): the slots buildKVSlots allocated, and binding one.
+// KVSlots / UseKVSlot implement decoder.ResidentKVSubsystem: the slots buildKVSlots allocated, and binding one.
 func (rd *residentDecoder) KVSlots() int { return max(1, len(rd.slots)) }
 
 // UseKVSlot binds slot i: every later Forward / ForwardN / UploadKV / PrefillLast reads and writes its KV. Nothing is

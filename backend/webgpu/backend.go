@@ -54,7 +54,7 @@ type webgpuBackend struct {
 	mu         sync.Mutex // Context is not goroutine-safe
 	resident   map[*float32]*ResidentMatrix
 	qresident  map[*int8]*qResident  // W8A8 weights kept resident (+ a decode runner)
-	q4resident map[*byte]*q4Resident // G6: W4A8 twin — the "staged int4" item
+	q4resident map[*byte]*q4Resident // W4A8 twin
 	fallbacks  int
 }
 
@@ -264,7 +264,7 @@ func (b *webgpuBackend) MatmulBT(a, bMat, dst []float32, M, K, N int) {
 	b.mu.Lock()
 	out, err := b.matmulLocked(a, bMat, M, K, N)
 	if err != nil {
-		b.fallbacks++ // N-06: under the lock, like the other fallbacks counters (was racy post-Unlock, tripping -race)
+		b.fallbacks++ // under the lock, like the other fallbacks counters
 	}
 	b.mu.Unlock()
 	if err != nil {
@@ -322,7 +322,7 @@ func (b *webgpuBackend) MatmulW8A8Batch(a []float32, M, K int, ops []linalg.W8A8
 	var outs [][]float32
 	var err error
 	if M == 1 { // coalesced GEMV (decode); else tiled GEMM (prefill) — both one sync
-		dw := make([]kernels.DecodeWeight, len(rms)) // BatchGEMV is precision-agnostic (P-16); wrap the concrete type
+		dw := make([]kernels.DecodeWeight, len(rms)) // BatchGEMV is precision-agnostic; wrap the concrete type
 		for i, rm := range rms {
 			dw[i] = rm
 		}

@@ -2,7 +2,7 @@
 
 // Command chat is the CUDA-accelerated (cgo-free) build of goinfer's demo REPL (internal/chatapp).
 // Blank-importing ./cuda registers the "cuda" decoder backend; living in the ./cuda submodule keeps
-// gocudrv/libcuda out of the pure-Go root module graph (audit M-19). Run with `--backend cuda`.
+// gocudrv/libcuda out of the pure-Go root module graph. Run with `--backend cuda`.
 package main
 
 import (

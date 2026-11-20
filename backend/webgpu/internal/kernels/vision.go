@@ -260,7 +260,7 @@ func (c *Context) softmaxRowsHost(x []float32, rows, n int, scale float32) ([]fl
 	if err != nil {
 		return nil, err
 	}
-	defer xd.Close() // V-22 (docs/review-2026-09-04.md): was xd.buf.Release(), bypassing accounting
+	defer xd.Close() // Close, not buf.Release: Close keeps the accounting
 	if err := c.inplaceKernel(c.softmaxPipeline, c.softmaxLayout, xd.buf, []uint32{uint32(rows), uint32(n), math.Float32bits(scale), 0}, rows); err != nil {
 		return nil, err
 	}
@@ -275,7 +275,7 @@ func (c *Context) geluHost(x []float32) ([]float32, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer xd.Close() // V-22 (docs/review-2026-09-04.md): was xd.buf.Release(), bypassing accounting
+	defer xd.Close() // Close, not buf.Release: Close keeps the accounting
 	if err := c.inplaceKernel(c.geluPipeline, c.geluLayout, xd.buf, []uint32{uint32(len(x)), 0, 0, 0}, (len(x)+63)/64); err != nil {
 		return nil, err
 	}
@@ -560,7 +560,7 @@ func (c *Context) LayerNormRowsHost(src, weight, bias []float32, rows, h int, ep
 	if err != nil {
 		return nil, err
 	}
-	defer sd.Close() // V-22 (docs/review-2026-09-04.md): was sd.buf.Release(), bypassing accounting
+	defer sd.Close() // Close, not buf.Release: Close keeps the accounting
 	wd, err := c.UploadF32On(mem.LineCompanion, weight)
 	if err != nil {
 		return nil, err
