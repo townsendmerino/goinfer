@@ -15,7 +15,7 @@
   "programs": [
     "testdata/bailing_hybrid-tiny"
   ],
-  "deps_hash": "sha256:676b14ab42e60108992afa2449f0b6b7553b03cf417cc8f93becf2d71339a03e",
+  "deps_hash": "sha256:dcca37779b648134f32d85fde51355e246c0e27d702570be58041a6b48cb9ce3",
   "status": "experimental",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
