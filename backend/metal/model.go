@@ -17,6 +17,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
+	"github.com/townsendmerino/goinfer/backend/metal/kernels"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
@@ -1011,7 +1012,7 @@ func w4a8Into(w *linalg.WeightMat, words []uint32, scales []uint16) (direct bool
 		for k, q := range q8[n*K : (n+1)*K] {
 			row[k] = float32(q) * sc[n] // the int8 weight, dequantized to f32 for the W4A8 re-pack
 		}
-		packW4A8RowInto(row, words[n*(K/8):(n+1)*(K/8)], sd)
+		kernels.PackW4A8RowInto(row, words[n*(K/8):(n+1)*(K/8)], sd)
 		f16Into(scales[n*(K/32):(n+1)*(K/32)], sd)
 	}
 	return false
