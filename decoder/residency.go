@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -560,9 +559,6 @@ func (m *Model) ResidentSpec() ResidentSpec {
 			ls = float32(a.LogitScale)
 		}
 		em, rm := g.EmbMul, g.ResidMul
-		if os.Getenv("GOINFER_SSM_NOMUL") != "" {
-			em, rm, ls = 1, 1, 1
-		}
 		spec.Granite = &ResidentGraniteSpec{
 			NHeads:     g.NHeads,
 			HeadDim:    g.HeadDim,
