@@ -94,7 +94,8 @@ func load(t *testing.T, backend, fixture string) *decoder.Model {
 func uploaded(t *testing.T, backend, fixture string) (m *decoder.Model, ids []int, floor int) {
 	t.Helper()
 	m = load(t, backend, fixture)
-	_, layers, _, _, _, _, vocab := m.Dims()
+	shape := m.Shape()
+	layers, vocab := shape.Layers, shape.Vocab
 	ids = make([]int, promptRows)
 	for i := range ids {
 		ids[i] = (i*31 + 7) % vocab
@@ -190,7 +191,7 @@ func Reuse(t *testing.T, backend string) {
 				t.Helper()
 				m, ids, floor := uploaded(t, backend, fixture)
 				m.ResidentCommitIDsForTest(ids)
-				_, _, _, _, _, _, vocab := m.Dims()
+				vocab := m.Shape().Vocab
 				prompt := slices.Clone(ids[:prefix(floor)])
 				for i := range 8 {
 					prompt = append(prompt, (i*17+3)%vocab)
@@ -225,7 +226,7 @@ func Turns(t *testing.T, backend string) {
 			cold := load(t, backend, fixture)
 			m, ids, floor := uploaded(t, backend, fixture)
 			m.ResidentCommitIDsForTest(ids)
-			_, _, _, _, _, _, vocab := m.Dims()
+			vocab := m.Shape().Vocab
 			tail := func(seed int) []int {
 				out := make([]int, 8)
 				for i := range out {
