@@ -454,7 +454,15 @@ confirms 33 by run before anything is published as safe rather than as computed.
 ## Queued
 
 **B45 · CI runs no adapter-gated WebGPU test, so a WebGPU ratchet is checked only on the boxes** — filed 2026-11-09 (mbp2-fit,
-from the `TestMemGate_webgpu` finding). **Not started; a CI change, so it waits on the owner's word.**
+from the `TestMemGate_webgpu` finding). **DONE 2026-11-20 (mbp2-wgci, Francis's yes of 2026-11-20).** `ci.yml`'s `gpu-vulkan` job
+installs Mesa's software Vulkan adapter (`libegl1-mesa-dev mesa-vulkan-drivers`; the runner's adapter reads `llvmpipe (LLVM 20.1.2,
+256 bits)`) and runs `TestMemGate_webgpu`, `TestMemGate_webgpuPlantsThroughTheTable`, `TestBackendSlotCensus_webgpu` and the kernels
+package, each step checking its gate PASSed (a lost adapter would otherwise skip to green); job timeout 40 minutes, the existing
+`gpu` job unchanged. **Wall time on the PR run** (run 44801759771, job 136515554772, `ubuntu-24.04`): the job 3 min 11 s from start to
+finish; the root package 47 s (`TestMemGate_webgpu` 45 s, 244 rows built, 39 declined), the kernels package 93 s (64 top-level tests
+passed, 83 skipped as hardware-dependent). **Red-first:** a planted gap that never fires (run 44802595354, job 136518762490) failed
+`TestMemGate_webgpu` with "known gap on line "state" (B45 plant …) no longer fires on any row"; the plant was removed in the next commit.
+As filed:
 - **The hole.** The webgpu job runs `go test -short -tags 'gpu goinfer_testhooks' ./backend/webgpu/...` on a headless runner with
   no Vulkan adapter, so every test that opens a device skips there: `TestMemGate_webgpu` (the memory gate and its known-gap table),
   the slot census, and the kernel parity tests. A known-gap entry that stops firing, or a lease that grows past its plan, goes red
