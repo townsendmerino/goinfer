@@ -1,3 +1,1 @@
 # Calls passing three or more adjacent bool literals (TestQualityScan_noRunsOfBoolLiteralArguments): `<file>:<func> -- <reason>`.
-decoder/weights.go:LoadWeights -- loadWeights' bools become an options struct when decoder/model.go, its other caller, is free (code-quality ledger, Q7)
-decoder/weights.go:loadWeightsFromFS -- buildWeightsFromSafetensors' bools, the same change as loadWeights'

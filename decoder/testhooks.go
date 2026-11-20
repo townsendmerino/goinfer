@@ -105,12 +105,12 @@ func (m *Model) ResidentPrefillSeedForTest(ctx context.Context, prompt []int) ([
 // (decoder/forward_qwen35.go), so the resident kernels that mirror them can be checked against the code the CPU runs.
 func SplitQGateForTest(qg []float32, nH, hd int) (q, gate []float32) {
 	q, gate = make([]float32, nH*hd), make([]float32, nH*hd)
-	splitQGate(qg, q, gate, nH, hd)
+	hybridattn.SplitQGate(qg, q, gate, nH, hd)
 	return q, gate
 }
 
 // QGateContextForTest applies the output gate to ctx in place (see SplitQGateForTest).
-func QGateContextForTest(ctx, gate []float32) { qGateContext(ctx, gate) }
+func QGateContextForTest(ctx, gate []float32) { hybridattn.QGateContext(ctx, gate) }
 
 // AutoPinResidentContextForTest makes the model's resident context request ctx without the caller having chosen it: the
 // state the load-time fit guard's auto-pin leaves, which only a load under memory pressure produces.
@@ -419,7 +419,7 @@ func SetDeltaCapHook(f func(mixed, conv, gateIn, betaGate, corePre, gated, z []f
 // L2NormScaledForTest exposes the DeltaNet q/k normalizer (FLA's l2norm, eps 1e-6) so a backend's
 // norm kernel is gated against the reference rather than against a five-line reimplementation of
 // it. The epsilon is load-bearing for a zero-magnitude head, which is the case worth gating.
-func L2NormScaledForTest(x []float32, s float32) []float32 { return l2normScaled(x, s) }
+func L2NormScaledForTest(x []float32, s float32) []float32 { return hybridattn.L2NormScaled(x, s) }
 
 // GumbelDrawForTest is internal/sampling.GumbelDraw: the host's temperature-only draw for an explicit (seed, draw), which
 // every backend's Gumbel kernel is held to.

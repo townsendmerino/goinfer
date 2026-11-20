@@ -1,5 +1,7 @@
 package decoder
 
+import "github.com/townsendmerino/goinfer/internal/runtime/sampling"
+
 import ()
 
 // optFwdMaxTemp is the temperature at or below which the optimistic-forward overlap may run; above it the overlap is a
@@ -146,7 +148,7 @@ type optFwdResult struct {
 // metal/backend.go). The emitted tokens and logprobs are bit-identical to the non-speculative path either way; only
 // which goroutine computed which logits differs.
 func (m *Model) optFwdStep(sampler *Sampler, logits []float32, gpuPos int, gate *optFwdGate, stats *OptFwdStats) (optFwdResult, error) {
-	guess := argmax(logits)
+	guess := sampling.Argmax(logits)
 
 	// Copy the logits before starting the overlap. Without it the feature is silently wrong on CUDA: a resident backend
 	// may return a slice that aliases its own reusable host buffer, valid only until the next Forward (cuda/resident.go

@@ -3,7 +3,6 @@ package decoder
 import (
 	"encoding/json"
 
-	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/goinfer/decoder/quant"
 )
 
@@ -25,10 +24,4 @@ func parseCheckpointQuantConfig(cfg *Config) (*quantConfig, error) {
 // Returns nil for a full-precision checkpoint (absent/null).
 func parseQuantConfig(raw json.RawMessage) (*quantConfig, error) {
 	return quant.ParseConfig(raw)
-}
-
-// gptqReconstruct dequantizes one GPTQ linear (named base, e.g.
-// "model.layers.0.self_attn.q_proj") to a [out, in] row-major f32 matrix.
-func gptqReconstruct(st *embed.SafetensorsFile, base string, in, out int) ([]float32, error) {
-	return quant.GPTQReconstruct(st, base, in, out)
 }

@@ -13,6 +13,7 @@ import (
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
 
+	"github.com/townsendmerino/goinfer/backend/cuda/internal/wpack"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -140,7 +141,7 @@ func TestRealForwardParity(t *testing.T) {
 			}
 			gs := make([]uint16, len(sc))
 			for i, v := range sc {
-				gs[i] = f32tof16(v)
+				gs[i] = wpack.F32ToF16(v)
 			}
 			return wq{kind: "int4", W: upu32(wpk), ws16: upu16(gs), N: N, K: K}
 		case "int8":

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // callLogResident is fakeResident with the decode and verify shapes RF1-5 moves behind step (GreedyAvailable, TopKAvailable,
@@ -41,7 +43,7 @@ func (f *callLogResident) ForwardN(embs [][]float32, start int) ([][]float32, er
 
 func (f *callLogResident) ForwardArgmax(emb []float32, pos int) (int, error) {
 	f.log = append(f.log, fmt.Sprintf("ForwardArgmax %d", pos))
-	return argmax(f.row(emb, pos)), nil
+	return sampling.Argmax(f.row(emb, pos)), nil
 }
 
 func (f *callLogResident) TopKAvailable() bool { return true }
@@ -61,7 +63,7 @@ func (f *callLogResident) PrefillLastNArgmax(embs [][]float32, start int) ([]int
 	f.log = append(f.log, fmt.Sprintf("PrefillLastNArgmax %d+%d", start, len(embs)))
 	ids := make([]int, len(embs))
 	for i, e := range embs {
-		ids[i] = argmax(f.row(e, start+i))
+		ids[i] = sampling.Argmax(f.row(e, start+i))
 	}
 	return ids, nil
 }

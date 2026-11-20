@@ -35,7 +35,7 @@ const extractTemplate = "{\n    \"invoice_number\": \"\",\n    \"total\": \"\"\n
 // schema's JSON template); text the user wrote is kept verbatim. And nothing else changes: json_object, no response_format,
 // a model that is not GLM-OCR, and a text-less schema-less request all leave the turn as it was.
 func TestGlmOcr_extractionTurn(t *testing.T) {
-	glm := &loadedModel{glm: &glmOcrTower{dir: "unused"}}
+	glm := &loadedModel{vision: &glmVision{glmOcrTower: &glmOcrTower{dir: "unused"}}}
 	want := multimodal.GlmOcrExtractionInstruction + "\n" + extractTemplate
 	run := func(lm *loadedModel, rf *respFormat, text string) (string, error) {
 		turns := []chat.Turn{{Role: "assistant", Content: "earlier"}, {Role: "user", Content: text}}
@@ -91,8 +91,9 @@ func TestGlmOcr_extractionPromptIDs(t *testing.T) {
 		t.Fatalf("load ../../../testdata/glm-ocr-tiny: %v", err)
 	}
 	defer m.Close()
-	lm := &loadedModel{tk: tk, model: m, tmpl: chat.GlmOCR(), glm: &glmOcrTower{dir: "unused"}, qwenMerge: 2, qwenImgTok: 59280}
-	if lm.qwenPP, err = multimodal.LoadGlmOcrPreprocessConfig(dir); err != nil {
+	glmv := &glmVision{qwenGrid: qwenGrid{merge: 2, imgTok: 59280}, glmOcrTower: &glmOcrTower{dir: "unused"}}
+	lm := &loadedModel{tk: tk, model: m, tmpl: chat.GlmOCR(), vision: glmv}
+	if glmv.pp, err = multimodal.LoadGlmOcrPreprocessConfig(dir); err != nil {
 		t.Fatal(err)
 	}
 	img := imageRef{mediaType: "image/png", data: glmOcrTestPNG(t)}

@@ -47,13 +47,13 @@ func TestServe_glmOcrImage_O3(t *testing.T) {
 		t.Fatalf("newServer: %v", err)
 	}
 	lm := srv.models["glm"]
-	if lm == nil || lm.glm == nil || !lm.visionCapable() {
+	if lm == nil || lm.glmOcr() == nil || !lm.visionCapable() {
 		t.Fatal("auto-discovery did not attach the GLM-OCR tower to the served model")
 	}
 	if lm.tmpl == nil || lm.tmpl.Name() != "glm_ocr" {
 		t.Fatalf("chat template %v, want glm_ocr", lm.tmpl)
 	}
-	if lm.glm.enc != nil {
+	if lm.glmOcr().enc != nil {
 		t.Error("the tower loaded at startup; it must load on the first image")
 	}
 	mux := http.NewServeMux()
@@ -95,7 +95,7 @@ func TestServe_glmOcrImage_O3(t *testing.T) {
 			}
 
 			// (a) the prompt ids, built by serve's own code path.
-			towerBefore := lm.glm.enc // nil on the first image; a later subtest starts with the tower already loaded
+			towerBefore := lm.glmOcr().enc // nil on the first image; a later subtest starts with the tower already loaded
 			vi, err := lm.visionPrompt(lm.tmpl, "", []chat.Turn{{Role: "user", Content: g.Prompt}}, imageRef{mediaType: "image/png", data: png})
 			if err != nil {
 				t.Fatalf("visionPrompt: %v", err)
@@ -116,7 +116,7 @@ func TestServe_glmOcrImage_O3(t *testing.T) {
 				t.Fatalf("serve's grid %v, HF's processor %v", vi.grid, g.Grid[0])
 			}
 			t.Logf("prompt ids identical to HF's: %d ids (%d image tokens), grid %v, prompt %q", len(vi.ids), vi.imgLen, vi.grid, g.Prompt)
-			if lm.glm.enc != towerBefore {
+			if lm.glmOcr().enc != towerBefore {
 				t.Error("visionPrompt ran the tower: features must stay lazy")
 			}
 
@@ -149,7 +149,7 @@ func TestServe_glmOcrImage_O3(t *testing.T) {
 			if out.Usage.PromptTokens != len(g.InputIDs) || out.Usage.CompletionTokens != len(g.HFTokens) {
 				t.Errorf("usage prompt/completion = %d/%d, want %d/%d", out.Usage.PromptTokens, out.Usage.CompletionTokens, len(g.InputIDs), len(g.HFTokens))
 			}
-			if lm.glm.enc == nil {
+			if lm.glmOcr().enc == nil {
 				t.Error("the tower never loaded: the image path did not run through it")
 			}
 		})

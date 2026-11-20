@@ -49,11 +49,12 @@ func loadMambaFixture(t *testing.T, dir string) mambaFixture {
 	f := mambaFixture{name: dir, eps: m.NormEps()}
 	_, nLayers, _, _, _, _, vocab := m.Dims()
 	isMamba := func(i int) bool { return m.BackendView().Layer(i).GraniteMamba() }
-	if nh, hd, ds, ng, k, normG, _, ok := m.BackendView().NemotronParams(); ok {
+	if np, ok := m.BackendView().Nemotron(); ok {
+		nh, hd, ds, ng, k, normG := np.NHeads, np.HeadDim, np.DState, np.NGroups, np.DConv, np.NormGroups
 		f.nHeads, f.headDim, f.dState, f.nGroups, f.K, f.normGroups = nh, hd, ds, ng, k, normG
 		isMamba = func(i int) bool { return m.BackendView().Layer(i).NemotronBlockKind() == 0 }
-	} else if nh, hd, ds, ng, k, _, _, _, _, ok := m.BackendView().GraniteParams(); ok {
-		f.nHeads, f.headDim, f.dState, f.nGroups, f.K, f.normGroups = nh, hd, ds, ng, k, 1
+	} else if g, ok := m.BackendView().Granite(); ok {
+		f.nHeads, f.headDim, f.dState, f.nGroups, f.K, f.normGroups = g.NHeads, g.HeadDim, g.DState, g.NGroups, g.DConv, 1
 	} else {
 		t.Fatalf("%s is neither Nemotron-H nor Granite-4.0-H", dir)
 	}

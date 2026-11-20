@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // F1 Qwen3-MoE parity (Qwen3-30B-A3B / Qwen3-Coder-30B-A3B-Instruct, model_type
@@ -85,7 +87,7 @@ func TestQwen3Moe_forwardParity(t *testing.T) {
 		t.Fatalf("got %d logits, want vocab %d", len(logits), g.Vocab)
 	}
 
-	if got := argmax(logits); got != g.Argmax {
+	if got := sampling.Argmax(logits); got != g.Argmax {
 		t.Errorf("argmax = %d, want %d (logit[got]=%.4f logit[want]=%.4f)",
 			got, g.Argmax, logits[got], logits[g.Argmax])
 	}
@@ -111,7 +113,7 @@ func TestQwen3Moe_forwardParity(t *testing.T) {
 
 	cos := fullCosine(t, logits, qwen3MoeForwardFullPath)
 	t.Logf("qwen3_moe: %dx top-%d | argmax=%d (want %d) | maxSampleΔ=%.5f | cosine=%v",
-		m.w.arch.MoE.NumExperts, m.w.arch.MoE.TopK, argmax(logits), g.Argmax, maxSampleΔ, cos)
+		m.w.arch.MoE.NumExperts, m.w.arch.MoE.TopK, sampling.Argmax(logits), g.Argmax, maxSampleΔ, cos)
 	// tiny-golden: goinfer's forward vs the HF f32 forward of the SEEDED qwen3moe-tiny, an exact numeric oracle for the loader +
 	// QK-norm + no-shared-expert MoE routing. The real-checkpoint T3 is TestQwen3MoeReal_oracle.
 	emitParityRow(t, "qwen3_moe", "tiny-golden", "HF f32 (qwen3moe-tiny seeded fixture, 8x top-2, no shared expert)", 100.0, cos, cos)

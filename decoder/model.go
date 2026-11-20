@@ -20,6 +20,8 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
+
+	"github.com/townsendmerino/goinfer/decoder/config"
 )
 
 // decodeTiming env-gates per-component decode timing (GOINFER_DECODE_TIMING=1) so
@@ -653,7 +655,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		opts.ResidentContext = pinnedCtx
 	}
 
-	w, err := loadWeights(dir, quant, opts.EmbedInt4, wantsCanonicalInt4(opts.Backend, be), !wantsRow4Fallback(opts.layoutBackend()), lora, opts.LoadAbort)
+	w, err := loadWeights(dir, weightLoadOpts{quant: quant, embedInt4: opts.EmbedInt4, needCanonical: wantsCanonicalInt4(opts.Backend, be), skipRow4: !wantsRow4Fallback(opts.layoutBackend()), lora: lora, abort: opts.LoadAbort})
 	if err != nil {
 		closeBackend(be)
 		return nil, err
@@ -684,7 +686,7 @@ func Load(dir string, opts Options) (*Model, error) {
 	if strings.HasSuffix(dir, ".gguf") {
 		eosDir = filepath.Dir(dir)
 	}
-	resolvedEOS := resolveEOSIDs(eosDir, &w.Cfg)
+	resolvedEOS := config.ResolveEOSIDs(eosDir, &w.Cfg)
 	if raw, err := json.Marshal(resolvedEOS); err == nil {
 		w.Cfg.EOSTokenID = raw
 	}

@@ -15,6 +15,8 @@ import (
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder/quant"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 )
 
 // LayerWeights bundles one decoder block's tensors. Matrices follow
@@ -293,7 +295,7 @@ func (w *Weights) bodyMatmulWeights() []*linalg.WeightMat {
 // Use LoadWeightsFromFS for fs.FS-backed paths (MapFS, embed.FS); those stay heap-backed because fs.FS exposes no file
 // descriptor.
 func LoadWeights(dir string) (*Weights, error) {
-	return loadWeights(dir, quantNone, false, true, false, nil, nil)
+	return loadWeights(dir, weightLoadOpts{needCanonical: true})
 }
 
 // errLoadAborted is parallelLayers' sentinel when abort closes mid-build, the swap tripwire's load-time consumer.
@@ -382,7 +384,8 @@ func parallelLayers(n int, abort <-chan struct{}, fn func(i int) error) error {
 // big quantized checkpoint load in a quarter (int8) or eighth (int4) of the RAM
 // the load-everything-then-quantize path needed. The forward output is identical
 // to quantizing after load; only the peak memory differs.
-func loadWeights(dir string, quant quantMode, embedInt4, needCanonical, skipRow4 bool, lora *loraAdapter, abort <-chan struct{}) (*Weights, error) {
+func loadWeights(dir string, o weightLoadOpts) (*Weights, error) {
+	quant, embedInt4, needCanonical, skipRow4, lora, abort := o.quant, o.embedInt4, o.needCanonical, o.skipRow4, o.lora, o.abort
 	// One atomic add per model load, so the fit guard's test can observe that a refused load allocated nothing rather than
 	// infer it from an error string (a guard that fires after the allocation still looks correct that way).
 	weightAllocs.Add(1)
@@ -410,7 +413,7 @@ func loadWeights(dir string, quant quantMode, embedInt4, needCanonical, skipRow4
 	// buildWeightsFromSafetensors retains st (the WeightMats may alias its mmap) only on success; on any error return st
 	// would leak the mapping and fd. A serve process probing candidate dirs, or retrying a load of a checkpoint with one
 	// missing tensor, would accumulate address space, the leak Model.Close exists to avoid.
-	w, err := buildWeightsFromSafetensors(cfg, arch, schema, st, quant, embedInt4, needCanonical, skipRow4, lora, abort)
+	w, err := buildWeightsFromSafetensors(cfg, arch, schema, st, o)
 	if err == nil {
 		// Every family's loader, not only the generic one, answers for the adapter here: a delta the load never merged is
 		// refused, which covers the loaders that take no lora at all.
@@ -526,7 +529,7 @@ func loadWeightsFromFS(fsys fs.FS, dir string, quant quantMode) (*Weights, error
 	if err != nil {
 		return nil, err
 	}
-	w, err := buildWeightsFromSafetensors(cfg, arch, schema, st, quant, false, true, false, nil, nil)
+	w, err := buildWeightsFromSafetensors(cfg, arch, schema, st, weightLoadOpts{quant: quant, needCanonical: true})
 	if err != nil {
 		_ = st.Close() // st is retained only on success; close it on error so the mapping/fd doesn't leak
 		return nil, err
@@ -555,8 +558,18 @@ func openCheckpointFromFS(fsys fs.FS, dir string) (*embed.SafetensorsFile, error
 // buildWeightsFromSafetensors fills a *Weights from an already-opened SafetensorsFile, shape-validating every tensor
 // against Cfg through the family's tensor schema. The heap (fs.FS) and mmap paths share it so the tensor-name and shape
 // contract is one edit, not two.
-func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchema, st *embed.SafetensorsFile, quant quantMode, embedInt4, needCanonical, skipRow4 bool, lora *loraAdapter, abort <-chan struct{}) (*Weights, error) {
-	return buildWeightsFromSafetensorsTo(cfg, arch, s, st, quant, embedInt4, needCanonical, skipRow4, lora, nil, "", abort)
+func buildWeightsFromSafetensors(cfg *Config, arch *Architecture, s *tensorSchema, st *embed.SafetensorsFile, o weightLoadOpts) (*Weights, error) {
+	return buildWeightsFromSafetensorsTo(cfg, arch, s, st, o.quant, o.embedInt4, o.needCanonical, o.skipRow4, o.lora, nil, "", o.abort)
+}
+
+// weightLoadOpts is how loadWeights and buildWeightsFromSafetensors build a checkpoint's weights: the quantization,
+// whether the embedding goes int4, whether the canonical int4 layout is kept beside a repacked one (needCanonical) or
+// the row4 fallback skipped (skipRow4), the LoRA adapter to merge, and the load's abort channel.
+type weightLoadOpts struct {
+	quant                              quantMode
+	embedInt4, needCanonical, skipRow4 bool
+	lora                               *loraAdapter
+	abort                              <-chan struct{}
 }
 
 // errDirNoStream is buildWeightsFromSafetensorsTo's answer, given a sink, for a family whose dedicated builder does not
@@ -1031,7 +1044,7 @@ func loadQwen35Attn(i int, l *LayerWeights, arch *Architecture, hidden int,
 		if aerr != nil {
 			return aerr
 		}
-		d.negExpA = negExpAFromLog(aLog) // store −exp(A_log) (GGUF bakes this; here we compute it)
+		d.negExpA = hybridattn.NegExpAFromLog(aLog) // store −exp(A_log) (GGUF bakes this; here we compute it)
 		// DeltaNetNormSuffix/DeltaNetOutProjSuffix (Olmo Hybrid: o_norm/o_proj instead of
 		// qwen3.5's norm/out_proj) — see their own comment on qwen35Params.
 		normSuffix := "linear_attn.norm.weight"

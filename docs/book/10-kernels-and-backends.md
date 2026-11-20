@@ -228,10 +228,12 @@ So the collector's cost here is the memory pressure you put on it, not the work 
 Against Ollama, the picture in [`docs/benchmarks.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/benchmarks.md) changed a good deal during September, and
 it depends on the backend and on which phase you measure.
 
-**Decode on CUDA is ahead.** A pre-registered sweep of 2026-09-29 (an RTX 2070 SUPER, Ollama v0.32.5 at its
-defaults) put goinfer ahead on dense 4-bit greedy decode in all 12 cells across the 0.5B, 1.5B and 7B from 128 to
-8,000 tokens, 1.05–1.47×; on the 7B the margin narrows with depth
-([`docs/measurements/peer-sweep-2026-09-29.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/peer-sweep-2026-09-29.md)). Flash-decode,
+**Decode on CUDA is ahead.** The pre-registered re-anchor of 2026-11-19/20 (an RTX 2070 SUPER at driver 595.112.07,
+Ollama v0.32.5, every arm sent the same sampling fields) put goinfer ahead on dense 4-bit greedy decode in 10 of the 11
+graded cells across the 0.5B, 1.5B and 7B from 128 to 8,000 tokens, 1.08–1.94×, and level on the 7B at 8,000; on the 7B
+the margin narrows with depth
+([`docs/measurements/peer-reanchor-2026-11-19/README.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/peer-reanchor-2026-11-19/README.md);
+the 2026-09-29 sweep before it read 1.05–1.47× in all 12). Flash-decode,
 on by default since 2026-09-23, is what turned the deeper cells: before it, the edge held only at short context,
 where launch overhead dominates and Go's cheaper dispatch shows, and Ollama won with depth. *(An earlier draft of
 this paragraph said "about 1.7× at 0.5B... parity at 1.5B," from a pairing whose goinfer half was later retired as

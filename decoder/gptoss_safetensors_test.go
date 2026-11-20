@@ -22,6 +22,7 @@ package decoder
 import (
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -84,7 +85,7 @@ func TestGptOssSafetensors_vsGGUF(t *testing.T) {
 	}
 	ls, lg := fwd(ms), fwd(mg)
 	cos := logitCosine(ls, lg)
-	as, ag := argmax(ls), argmax(lg)
+	as, ag := sampling.Argmax(ls), sampling.Argmax(lg)
 	t.Logf("gpt-oss safetensors vs GGUF: argmax %d vs %d | logit cosine %.6f", as, ag, cos)
 	if as != ag {
 		t.Errorf("argmax differs: safetensors=%d gguf=%d — the loaders disagree about the weights", as, ag)

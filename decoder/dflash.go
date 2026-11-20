@@ -13,6 +13,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // DFlashDrafter is an imported z-lab DFlash block drafter (docs/spec/08): a small non-causal transformer trunk that
@@ -65,7 +66,7 @@ func (d *DFlashDrafter) DraftTokenID(be Backend, h []float32) int {
 	d.mustHoldWeights()
 	logits := make([]float32, d.draftVocab)
 	matmul(be, &d.lmHead, h, logits, 1)
-	i := argmax(logits)
+	i := sampling.Argmax(logits)
 	return i + int(d.d2t[i])
 }
 
@@ -104,7 +105,7 @@ func (d *DFlashDrafter) DraftIDs(m *Model, rows [][]float32) []int {
 		if d.HasOwnHead() {
 			out[i] = d.DraftTokenID(m.be, h)
 		} else {
-			out[i] = argmax(m.DrafterHeadLogits(h))
+			out[i] = sampling.Argmax(m.DrafterHeadLogits(h))
 		}
 	}
 	return out

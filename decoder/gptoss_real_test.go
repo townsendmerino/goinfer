@@ -24,6 +24,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/tokenizer"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -125,7 +126,7 @@ func TestGptOssReal_logitParity(t *testing.T) {
 			t.Fatalf("forward: %v", err)
 		}
 	}
-	gotArg := argmax(logits)
+	gotArg := sampling.Argmax(logits)
 	cos := logitCosine(logits, g.LastLogits)
 	t.Logf("gpt-oss:20b logit parity (%q): argmax got=%d want=%d | cosine=%.5f", g.Prompt, gotArg, g.Argmax, cos)
 	if gotArg != g.Argmax {

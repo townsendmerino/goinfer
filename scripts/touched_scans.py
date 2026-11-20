@@ -327,6 +327,11 @@ EXCLUDED = {
     "TestIdentityGiw_headerChangeIsDifferentBytesAndIdenticalLogits": "git clone of the tree",
     # The quality_scan-tagged scans (internal/guard/qualityscan) run nightly by design, never in the day loop.
     "TestQualityScan_readsEveryModule": "nightly quality scan",
+    "TestQualityScan_testSwitchAssignmentsRatchet": "nightly quality scan",
+    "TestQualityScan_heavyGateReadsRatchet": "nightly quality scan",
+    "TestQualityScan_receiverUnpackingRatchet": "nightly quality scan",
+    "TestQualityScan_functionLengthRatchet": "nightly quality scan",
+    "TestQualityScan_noSameNameForwardingShims": "nightly quality scan",
     "TestQualityScan_noRunsOfBoolLiteralArguments": "nightly quality scan",
     "TestQualityScan_committedFixtureLoadsFailNotSkip": "nightly quality scan",
     "TestQualityScan_userStringsCarryNoTrackerIDs": "nightly quality scan",

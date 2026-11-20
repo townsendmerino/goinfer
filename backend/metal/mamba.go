@@ -46,13 +46,14 @@ type mambaLayer struct {
 // buildMamba returns the model's Mamba-2 geometry, or nil for a model with no Mamba layer. Granite-4.0-H declines: its
 // embedding and residual multipliers are not folded on Metal.
 func buildMamba(m *decoder.Model) (*mambaParams, error) {
-	if _, _, _, _, _, _, _, _, _, ok := m.BackendView().GraniteParams(); ok {
+	if _, ok := m.BackendView().Granite(); ok {
 		return nil, fmt.Errorf("metal: Granite-4.0-H's embedding and residual multipliers are not folded on Metal; it runs on the CPU")
 	}
-	nh, hd, ds, ng, k, normG, _, ok := m.BackendView().NemotronParams()
+	np, ok := m.BackendView().Nemotron()
 	if !ok {
 		return nil, nil
 	}
+	nh, hd, ds, ng, k, normG := np.NHeads, np.HeadDim, np.DState, np.NGroups, np.DConv, np.NormGroups
 	if !m.ResidentProjsInt4() || recurrentInt8Load(m) {
 		// Metal's native int8 path covers no recurrent family (w8Eligible), so int8 projections would be re-quantized to
 		// int4 without notice: decline, and the CPU runs the model at the int8 it was loaded with.

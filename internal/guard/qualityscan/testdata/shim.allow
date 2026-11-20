@@ -1,0 +1,29 @@
+# Same-name one-line forwarders (TestQualityScan_noSameNameForwardingShims): `<file>:<func> -- <reason>`.
+# Deliberate: a command's main, and the public API that re-exports an internal package.
+backend/cuda/cmd/chat/main.go:main -- a command's main calls its app package
+backend/cuda/cmd/serve/main.go:main -- a command's main calls its app package
+backend/metal/cmd/chat/main.go:main -- a command's main calls its app package
+backend/metal/cmd/serve/main.go:main -- a command's main calls its app package
+backend/webgpu/api.go:GPUEverAvailable -- exported: the package's API to other packages and modules, kept as the entry point
+backend/webgpu/api.go:LiveBufferBytes -- exported: the package's API to other packages and modules, kept as the entry point
+backend/webgpu/api.go:New -- exported: the package's API to other packages and modules, kept as the entry point
+backend/webgpu/cmd/chat/main.go:main -- a command's main calls its app package
+backend/webgpu/cmd/serve/main.go:main -- a command's main calls its app package
+cmd/serve/main.go:main -- a command's main calls its app package
+decoder/memprobe.go:SelfSwapReader -- exported: the package's API to other packages and modules, kept as the entry point
+decoder/metal_fitctx.go:MetalFitWhy -- exported: the package's API to other packages and modules, kept as the entry point
+decoder/testhooks.go:SetDeltaCapHook -- exported: the package's API to other packages and modules, kept as the entry point
+demo/chat/main.go:main -- a command's main calls its app package
+embeddinggemma2/audio.go:DecodeWAV -- exported: the package's API to other packages and modules, kept as the entry point
+internal/runtime/prequant/prequant.go:DefaultToSidecar -- exported: the package's API to other packages and modules, kept as the entry point
+internal/runtime/prequant/prequant.go:EnsureCachedGIW -- exported: the package's API to other packages and modules, kept as the entry point
+internal/runtime/prequant/prequant.go:SidecarPath -- exported: the package's API to other packages and modules, kept as the entry point
+internal/runtime/prequant/prequant.go:SidecarPathIfCurrent -- exported: the package's API to other packages and modules, kept as the entry point
+internal/runtime/prequant/prequant.go:SidecarPathIfFresh -- exported: the package's API to other packages and modules, kept as the entry point
+server/server.go:NewHandler -- exported: the package's API to other packages and modules, kept as the entry point
+server/server.go:Transport -- exported: the package's API to other packages and modules, kept as the entry point
+# Package-move shims still to inline at their callers (code-quality ledger, Q11).
+backend/metal/grid_vision.go:quantG32 -- a package-move shim; inline at its callers in a later Q11 change
+backend/metal/pack.go:packW4A8Row -- a package-move shim; inline at its callers in a later Q11 change
+backend/metal/pack.go:packW4A8RowInto -- a package-move shim; inline at its callers in a later Q11 change
+backend/metal/testhooks.go:dequantG32 -- a package-move shim; inline at its callers in a later Q11 change

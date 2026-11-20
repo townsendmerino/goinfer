@@ -12,6 +12,8 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 
 	"github.com/townsendmerino/goinfer/internal/testgate"
+
+	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
 )
 
 // requireCUDAResident loads a real (small) model just far enough to get a live *cudaResident —
@@ -216,7 +218,7 @@ func TestAttnImgBatched_windowDecoupled(t *testing.T) {
 		M        = 40
 	)
 	// Row under test: pos = imgStart (the row minimizing the decoupled window's own winStart,
-	// per imgBlockMaxNWin's derivation — imgStart > window-1 here, 20 > 7).
+	// per launchgeom.ImgBlockMaxNWin's derivation — imgStart > window-1 here, 20 > 7).
 	const testRow = imgStart
 	// Decoupled (correct): winStart = pos-window+1 = 20-8+1 = 13, nKeys = imgEnd = 32 → attends [13,32).
 	// Coupled (wrong, naive port of attn_batched): winStart = nKeys-window = 32-8 = 24 → attends [24,32).
@@ -257,13 +259,13 @@ func TestAttnImgBatched_windowDecoupled(t *testing.T) {
 		if e := gpu.Upload(vb, vc); e != nil {
 			return e
 		}
-		// Shared memory sized via imgBlockMaxNWin, exactly as prefillCore's launch site computes it —
+		// Shared memory sized via launchgeom.ImgBlockMaxNWin, exactly as prefillCore's launch site computes it —
 		// this test would itself fail to launch (or read out of bounds) if that formula under-sizes.
 		causalMaxNWin := startPos + M
 		if window > 0 && window < causalMaxNWin {
 			causalMaxNWin = window
 		}
-		maxNWin := imgBlockMaxNWin(causalMaxNWin, window, imgStart, imgEnd)
+		maxNWin := launchgeom.ImgBlockMaxNWin(causalMaxNWin, window, imgStart, imgEnd)
 		cfg := LaunchConfig{GridX: nH, GridY: M, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1,
 			SharedMemBytes: uint32((maxNWin + 128) * 4)}
 		args, e := attnImgBatchedArgs(r, qb, kb, vb, r.kvIdentityTab(t, nKeys), nH, nKV, hd, startPos, scale, window, M, outB, imgStart, imgEnd)

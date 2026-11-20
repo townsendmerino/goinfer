@@ -9,6 +9,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
@@ -130,7 +131,7 @@ func qwen35VLDecode(t *testing.T, m *Model, g qwen35VLGold, feats []float32) ([]
 	last := slices.Clone(logits)
 	var got []int
 	for range g.Continuation {
-		id := argmax(logits)
+		id := sampling.Argmax(logits)
 		got = append(got, id)
 		if logits, err = m.forward(id, cache); err != nil {
 			t.Fatalf("decode forward: %v", err)
@@ -142,9 +143,9 @@ func qwen35VLDecode(t *testing.T, m *Model, g qwen35VLGold, feats []float32) ([]
 func checkQwen35VLLogits(t *testing.T, last []float32, got []int, g qwen35VLGold) {
 	t.Helper()
 	cos := logitCosine(last, g.LastLogits)
-	t.Logf("last-logit cosine %.9f, argmax %d (HF %d), continuation %v (HF %v)", cos, argmax(last), g.Argmax, got, g.Continuation)
-	if argmax(last) != g.Argmax {
-		t.Errorf("argmax %d, want %d", argmax(last), g.Argmax)
+	t.Logf("last-logit cosine %.9f, argmax %d (HF %d), continuation %v (HF %v)", cos, sampling.Argmax(last), g.Argmax, got, g.Continuation)
+	if sampling.Argmax(last) != g.Argmax {
+		t.Errorf("argmax %d, want %d", sampling.Argmax(last), g.Argmax)
 	}
 	if cos < 0.9999 {
 		t.Errorf("last-logit cosine %.9f < 0.9999", cos)

@@ -2,7 +2,10 @@
 
 package cuda
 
-import gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
+import (
+	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
+)
 
 // prefillSplitKVBudget bounds the score scratch of the row-batched exact attention: a launch group takes as many rows as fit
 // it (at least one), so the scratch does not grow with the pass's rows.
@@ -90,7 +93,7 @@ func (r *cudaResident) prefillSplitKVPlan(M, keys int, fused func(hd int) bool, 
 			maxNWin = int(Ly.window)
 		}
 		if len(blocks) > 0 {
-			maxNWin = imgBlocksMaxNWin(maxNWin, int(Ly.window), blocks) // the widest row an image block gives this layer, as attn_img_batched sizes it
+			maxNWin = launchgeom.ImgBlocksMaxNWin(maxNWin, int(Ly.window), blocks) // the widest row an image block gives this layer, as attn_img_batched sizes it
 		}
 		if !r.prefillSplitKVServes(maxNWin) || (fused != nil && fused(Ly.hd)) {
 			continue

@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // GLM-OCR text decoder. The gates, in the order a defect
@@ -673,11 +675,11 @@ func TestGlmOcr_forwardParity(t *testing.T) {
 	if len(logits) != len(g.LastLogits) {
 		t.Fatalf("got %d logits, want %d", len(logits), len(g.LastLogits))
 	}
-	if got := argmax(logits); got != g.Argmax {
+	if got := sampling.Argmax(logits); got != g.Argmax {
 		t.Errorf("argmax = %d (logit %.4f), want %d (golden logit %.4f)", got, logits[got], g.Argmax, logits[g.Argmax])
 	}
 	cos, maxAbs := cosMaxAbs(logits, g.LastLogits)
-	t.Logf("sequential last-logit parity vs HF: cosine=%.9f max|diff|=%.3e over %d vocab, argmax %d", cos, maxAbs, len(g.LastLogits), argmax(logits))
+	t.Logf("sequential last-logit parity vs HF: cosine=%.9f max|diff|=%.3e over %d vocab, argmax %d", cos, maxAbs, len(g.LastLogits), sampling.Argmax(logits))
 	if cos < 0.99999 {
 		t.Errorf("cosine %.9f < 0.99999", cos)
 	}
@@ -710,7 +712,7 @@ func TestGlmOcr_forwardParity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("continuation forward: %v", err)
 		}
-		nxt := argmax(lg)
+		nxt := sampling.Argmax(lg)
 		cont = append(cont, nxt)
 		cur = append(cur, nxt)
 	}
@@ -778,9 +780,9 @@ func TestGlmOcr_mropeParity(t *testing.T) {
 	}
 	cos, maxAbs := cosMaxAbs(logits, g.LastLogits)
 	t.Logf("m-RoPE prefill last-logit parity vs HF: cosine=%.9f max|diff|=%.3e, argmax %d (want %d); scalar-position cosine would be %.3f",
-		cos, maxAbs, argmax(logits), g.Argmax, g.ScalarCos)
-	if argmax(logits) != g.Argmax {
-		t.Errorf("argmax = %d, want %d", argmax(logits), g.Argmax)
+		cos, maxAbs, sampling.Argmax(logits), g.Argmax, g.ScalarCos)
+	if sampling.Argmax(logits) != g.Argmax {
+		t.Errorf("argmax = %d, want %d", sampling.Argmax(logits), g.Argmax)
 	}
 	if cos < 0.99999 || maxAbs > 1e-3 {
 		t.Errorf("cosine %.9f max|diff| %.3e", cos, maxAbs)
@@ -791,7 +793,7 @@ func TestGlmOcr_mropeParity(t *testing.T) {
 
 	// Decode past the image: the scalar position resumes at seqPos + mropeDelta.
 	var cont []int
-	next := argmax(logits)
+	next := sampling.Argmax(logits)
 	for i := range g.NNew {
 		cont = append(cont, next)
 		if i == g.NNew-1 {
@@ -801,7 +803,7 @@ func TestGlmOcr_mropeParity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("decode forward: %v", err)
 		}
-		next = argmax(lg)
+		next = sampling.Argmax(lg)
 	}
 	t.Logf("continuation past the image: got %v | want %v", cont, g.ContinuationIDs)
 	if !slices.Equal(cont, g.ContinuationIDs) {

@@ -8,6 +8,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // Gemma 1 and Gemma 2 against HF f32 (eager) on seeded tiny checkpoints (scripts/pin_gemma_tiny.py), built so every
@@ -67,7 +69,7 @@ func TestGemma12_forwardParity(t *testing.T) {
 			}
 			check := func(path string, logits []float32) {
 				t.Helper()
-				if got := argmax(logits); got != g.Argmax {
+				if got := sampling.Argmax(logits); got != g.Argmax {
 					t.Errorf("%s: argmax %d, want %d", path, got, g.Argmax)
 				}
 				var maxd float64

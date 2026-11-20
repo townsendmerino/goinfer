@@ -79,12 +79,12 @@ func tinyVoxtralLM(t *testing.T) (*loadedModel, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lm := &loadedModel{model: m, tk: tk, name: "voxtral-tiny", voxtralDir: dir}
+	lm := &loadedModel{model: m, tk: tk, name: "voxtral-tiny", audio: &voxtralAudio{dir: dir}}
 	t.Cleanup(lm.closeEntryNatives) // the lazily loaded tower keeps its checkpoint mapped until Close
 	return lm, dir
 }
 
-// TestVoxtralPrompt_wiring: voxtralPrompt builds the processor's no-language request (ids equal multimodal.VoxtralPrompt's, which G-S14e4a (ii) pins to the processor's own on the real file), counts
+// TestVoxtralPrompt_wiring: voxtralAudio.clipPrompt builds the processor's no-language request (ids equal multimodal.VoxtralPrompt's, which G-S14e4a (ii) pins to the processor's own on the real file), counts
 // the placeholders from the clip's length (375 per 30 s window), and its features are the Whisper-style windows through the tower and projector, bit for bit; a generation through it runs.
 func TestVoxtralPrompt_wiring(t *testing.T) {
 	lm, dir := tinyVoxtralLM(t)
@@ -94,7 +94,7 @@ func TestVoxtralPrompt_wiring(t *testing.T) {
 		windows int
 	}{{"6 s", 96000, 1}, {"35 s", 560000, 2}} {
 		wav := sineWAV(c.samples, 16000)
-		vi, err := lm.voxtralPrompt(imageRef{mediaType: "audio/wav", data: wav, audio: true})
+		vi, err := lm.audio.(*voxtralAudio).clipPrompt(lm, imageRef{mediaType: "audio/wav", data: wav, audio: true})
 		if err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}
@@ -144,10 +144,10 @@ func TestVoxtralPrompt_wiring(t *testing.T) {
 // TestVoxtralPrompt_refusals: a clip over the cost bound, a non-WAV, and a model the tokenizer of which has no [AUDIO] (loadVoxtral) are refused by name.
 func TestVoxtralPrompt_refusals(t *testing.T) {
 	lm, _ := tinyVoxtralLM(t)
-	if _, err := lm.voxtralPrompt(imageRef{data: wavBytes((voxtralMaxSeconds+10)*16000, 16000), audio: true}); err == nil || !strings.Contains(err.Error(), "over the") {
+	if _, err := lm.audio.(*voxtralAudio).clipPrompt(lm, imageRef{data: wavBytes((voxtralMaxSeconds+10)*16000, 16000), audio: true}); err == nil || !strings.Contains(err.Error(), "over the") {
 		t.Errorf("a %d s clip: want the cost-bound refusal, got %v", voxtralMaxSeconds+10, err)
 	}
-	if _, err := lm.voxtralPrompt(imageRef{data: []byte("not a wav"), audio: true}); err == nil {
+	if _, err := lm.audio.(*voxtralAudio).clipPrompt(lm, imageRef{data: []byte("not a wav"), audio: true}); err == nil {
 		t.Error("a non-WAV was accepted")
 	}
 	s := &server{models: map[string]*loadedModel{"m": {name: "m", tk: lm.tk}}}

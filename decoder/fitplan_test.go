@@ -226,7 +226,7 @@ func TestPlan_tableDriven(t *testing.T) {
 		m := loadHybridTiny(t)
 		_, mlaOK := m.BackendView().MLA()
 		_, _, _, _, _, _, dnetOK := m.BackendView().Qwen35Params()
-		_, _, _, _, _, _, _, nemoOK := m.BackendView().NemotronParams()
+		_, nemoOK := m.BackendView().Nemotron()
 		dense := m.ResidentDenseWeightBytes()
 		kv := m.kvBytesPerPositionAllLayers(true, false) * ctxWant
 		p := m.Plan("webgpu", 100*(dense+kv), PlanRequest{Ctx: ctxWant, KVF16: true})

@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"slices"
 	"sync/atomic"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // Drafter is the cheap half of speculative decoding: it proposes continuation tokens for a context, which the target
@@ -520,7 +522,7 @@ func ngramSpecLoop(ctx context.Context, tg ngramTarget, seedLogits []float32, ou
 	hist := slices.Clone(prompt)
 	// The seed token is the target's own first draw: argmax (greedy) or a sample
 	// from the seed distribution (sampled) — exactly what plain decode emits first.
-	cur := argmax(seedLogits)
+	cur := sampling.Argmax(seedLogits)
 	if sampled {
 		cur = sampler.drawTarget(seedLogits, hist) // seed history = prompt
 	}
@@ -753,7 +755,7 @@ func ngramSpecLoop(ctx context.Context, tg ngramTarget, seedLogits []float32, ou
 				if ids != nil {
 					ti = ids[i]
 				} else {
-					ti = argmax(logitsN[i])
+					ti = sampling.Argmax(logitsN[i])
 				}
 				acc = draftTok[i] == ti
 				if tr != nil {
@@ -786,7 +788,7 @@ func ngramSpecLoop(ctx context.Context, tg ngramTarget, seedLogits []float32, ou
 				if ids != nil {
 					nextTok = ids[kEff]
 				} else {
-					nextTok = argmax(logitsN[kEff])
+					nextTok = sampling.Argmax(logitsN[kEff])
 				}
 			}
 		}

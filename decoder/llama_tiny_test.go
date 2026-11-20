@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // TestLlamaTiny_textParity pins the plain `llama` forward against a tiny-random HF oracle.
@@ -65,7 +67,7 @@ func TestLlamaTiny_textParity(t *testing.T) {
 	if len(logits) != len(g.LastLogits) {
 		t.Fatalf("got %d logits, want %d", len(logits), len(g.LastLogits))
 	}
-	got := argmax(logits)
+	got := sampling.Argmax(logits)
 	if got != g.Argmax {
 		t.Errorf("argmax = %d, want %d", got, g.Argmax)
 	}
@@ -101,7 +103,7 @@ func TestLlamaTiny_textParity(t *testing.T) {
 		}
 	}
 	for range g.NNew {
-		id := argmax(lg)
+		id := sampling.Argmax(lg)
 		cont = append(cont, id)
 		if lg, err = m.forward(id, c2); err != nil {
 			t.Fatalf("continuation forward: %v", err)

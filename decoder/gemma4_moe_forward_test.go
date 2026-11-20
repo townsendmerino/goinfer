@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // gemma4MoEForwardParity is the whole-model gemma4 forward gate shared by the
@@ -61,7 +63,7 @@ func gemma4MoEForwardParity(t *testing.T, goldenPath, ckpt, pinner string) {
 		t.Fatalf("got %d logits, want %d", len(logits), len(g.LastLogits))
 	}
 
-	got := argmax(logits)
+	got := sampling.Argmax(logits)
 	t.Logf("argmax: got %d (logit %.4f) | want %d (golden logit %.4f)",
 		got, logits[got], g.Argmax, logits[g.Argmax])
 	if got != g.Argmax {
@@ -102,7 +104,7 @@ func gemma4MoEForwardParity(t *testing.T, goldenPath, ckpt, pinner string) {
 		if err != nil {
 			t.Fatalf("continuation forward: %v", err)
 		}
-		nxt := argmax(lg)
+		nxt := sampling.Argmax(lg)
 		cont = append(cont, nxt)
 		cur = append(cur, nxt)
 	}

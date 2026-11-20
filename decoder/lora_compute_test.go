@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // TestLoRACompute_matchesMerge is the core correctness gate for compute-time LoRA
@@ -138,7 +139,7 @@ func TestLoRACompute_forwardParity(t *testing.T) {
 
 	be, _ := NewBackend("")
 	newModel := func(lo *loraAdapter) *Model {
-		w, err := loadWeights(base, quantNone, false, true, false, lo, nil)
+		w, err := loadWeights(base, weightLoadOpts{needCanonical: true, lora: lo})
 		if err != nil {
 			t.Fatalf("loadWeights: %v", err)
 		}
@@ -180,8 +181,8 @@ func TestLoRACompute_forwardParity(t *testing.T) {
 		t.Fatalf("base prefill: %v", err)
 	}
 
-	if argmax(lCT) != argmax(lMerged) {
-		t.Errorf("argmax compute-time %d != merged %d", argmax(lCT), argmax(lMerged))
+	if sampling.Argmax(lCT) != sampling.Argmax(lMerged) {
+		t.Errorf("argmax compute-time %d != merged %d", sampling.Argmax(lCT), sampling.Argmax(lMerged))
 	}
 	if c := cosine(lCT, lMerged); c < 0.99999 {
 		t.Errorf("compute-time vs merged cosine %v, want ~1", c)
@@ -230,7 +231,7 @@ func TestLoadAdapter_dimMismatchRejects(t *testing.T) {
 	}
 	writeSafetensors(t, filepath.Join(base, "model.safetensors"), ts)
 
-	w, err := loadWeights(base, quantNone, false, true, false, nil, nil)
+	w, err := loadWeights(base, weightLoadOpts{needCanonical: true})
 	if err != nil {
 		t.Fatalf("loadWeights: %v", err)
 	}

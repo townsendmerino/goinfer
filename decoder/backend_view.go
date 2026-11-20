@@ -24,8 +24,8 @@ type BackendModelView interface {
 	MoE() (ResidentMoESpec, bool)
 	MLA() (ResidentMLASpec, bool)
 	Qwen35Params() (convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numValueHeads int, attnGate, ok bool)
-	NemotronParams() (nHeads, headDim, dState, nGroups, dConv, normGroups int, attnScale float32, ok bool)
-	GraniteParams() (nHeads, headDim, dState, nGroups, dConv int, embMul, residMul, logitScale, attnScale float32, ok bool)
+	Nemotron() (ResidentNemotronSpec, bool)
+	Granite() (ResidentGraniteSpec, bool)
 
 	NormEps() float32
 	AttnScale() float32
@@ -177,20 +177,18 @@ func (v backendModelView) Qwen35Params() (convKernel, keyHeadDim, valueHeadDim, 
 	return g.ConvKernel, g.KeyHeadDim, g.ValueHeadDim, g.NumKeyHeads, g.NumValueHeads, g.AttnGate, true
 }
 
-func (v backendModelView) NemotronParams() (nHeads, headDim, dState, nGroups, dConv, normGroups int, attnScale float32, ok bool) {
-	np := v.m.ResidentSpec().Nemotron
-	if np == nil {
-		return 0, 0, 0, 0, 0, 0, 0, false
+func (v backendModelView) Nemotron() (ResidentNemotronSpec, bool) {
+	if np := v.m.ResidentSpec().Nemotron; np != nil {
+		return *np, true
 	}
-	return np.NHeads, np.HeadDim, np.DState, np.NGroups, np.DConv, np.NormGroups, np.AttnScale, true
+	return ResidentNemotronSpec{}, false
 }
 
-func (v backendModelView) GraniteParams() (nHeads, headDim, dState, nGroups, dConv int, embMul, residMul, logitScale, attnScale float32, ok bool) {
-	g := v.m.ResidentSpec().Granite
-	if g == nil {
-		return 0, 0, 0, 0, 0, 0, 0, 0, 0, false
+func (v backendModelView) Granite() (ResidentGraniteSpec, bool) {
+	if g := v.m.ResidentSpec().Granite; g != nil {
+		return *g, true
 	}
-	return g.NHeads, g.HeadDim, g.DState, g.NGroups, g.DConv, g.EmbMul, g.ResidMul, g.LogitScale, g.AttnScale, true
+	return ResidentGraniteSpec{}, false
 }
 
 func (v backendModelView) AttnTempScale(pos int) float32 {

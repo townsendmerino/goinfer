@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // mc3Fake is a fake MC3 resident: several KV slots, each holding a positional history, and a batched step. A forward
@@ -162,7 +164,7 @@ func (f *mc3Fake) StepBatch(seqs []ResidentBatchSeq) ([]ResidentBatchOut, error)
 				return nil, fmt.Errorf("mc3Fake: a Greedy draw sent to a resident that does not report BatchGreedyDraw")
 			}
 			f.greedyDraws++
-			out[i] = ResidentBatchOut{ID: argmax(lg)}
+			out[i] = ResidentBatchOut{ID: sampling.Argmax(lg)}
 		} else if q.Draw != nil {
 			f.stepDraws++
 			out[i] = ResidentBatchOut{ID: fakeDraw(lg, q.Draw.Seed, q.Draw.Draw)}

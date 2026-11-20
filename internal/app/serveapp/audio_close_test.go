@@ -28,7 +28,7 @@ func TestUnload_closesTheAudioEncoders(t *testing.T) {
 	clip, _ := multimodal.DecodeWAVAnyRate(sineWAV(32000, 16000))
 	firstClip := map[string]func(lm *loadedModel) error{
 		"voxtral": func(lm *loadedModel) error {
-			enc, err := lm.voxtralEncoder()
+			enc, err := lm.audio.(*voxtralAudio).encoder(lm.name)
 			if err != nil {
 				return err
 			}
@@ -40,7 +40,7 @@ func TestUnload_closesTheAudioEncoders(t *testing.T) {
 			return err
 		},
 		"qwenASR": func(lm *loadedModel) error {
-			enc, err := lm.qwenASREncoder()
+			enc, err := lm.audio.(*qwenASRAudio).encoder()
 			if err != nil {
 				return err
 			}
@@ -54,13 +54,15 @@ func TestUnload_closesTheAudioEncoders(t *testing.T) {
 	}
 	for _, c := range []struct {
 		name  string
+		tower func() audioTower
 		clip  string // the encoder a first clip loads, "" for none
 		wantV int
 		wantQ int
 	}{
-		{"a Voxtral clip", "voxtral", 1, 0},
-		{"a Qwen3-ASR clip", "qwenASR", 0, 1},
-		{"no clip", "", 0, 0},
+		{"a Voxtral clip", func() audioTower { return &voxtralAudio{dir: vox} }, "voxtral", 1, 0},
+		{"a Qwen3-ASR clip", func() audioTower { return &qwenASRAudio{dir: qasr} }, "qwenASR", 0, 1},
+		{"no Voxtral clip", func() audioTower { return &voxtralAudio{dir: vox} }, "", 0, 0},
+		{"no Qwen3-ASR clip", func() audioTower { return &qwenASRAudio{dir: qasr} }, "", 0, 0},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			closed := map[string]int{}
@@ -69,7 +71,7 @@ func TestUnload_closesTheAudioEncoders(t *testing.T) {
 			t.Cleanup(func() { closeAudioEncoder = prev })
 
 			m := &fakeModel{}
-			lm := &loadedModel{name: "t", model: m, voxtralDir: vox, qwenASRDir: qasr}
+			lm := &loadedModel{name: "t", model: m, audio: c.tower()}
 			s := &server{models: map[string]*loadedModel{"t": lm}, liveness: map[modelHandle]*modelLiveness{m: {refs: 1}},
 				draining: map[string]struct{}{}, cfg: config{allowAdmin: true, unloadDrainWait: 5 * time.Second}}
 			if c.clip != "" {
@@ -85,7 +87,10 @@ func TestUnload_closesTheAudioEncoders(t *testing.T) {
 			if closed["voxtral"] != c.wantV || closed["qwenASR"] != c.wantQ {
 				t.Errorf("Close calls %v; want voxtral %d, qwenASR %d", closed, c.wantV, c.wantQ)
 			}
-			if lm.voxtral != nil || lm.qwenASR != nil {
+			if v, ok := lm.audio.(*voxtralAudio); ok && (v.enc != nil || v.device != nil) {
+				t.Error("the entry still holds an encoder after its unload")
+			}
+			if q, ok := lm.audio.(*qwenASRAudio); ok && q.enc != nil {
 				t.Error("the entry still holds an encoder after its unload")
 			}
 		})
@@ -128,13 +133,13 @@ func TestUnload_closesOnlyItsOwnAudioDevice(t *testing.T) {
 		cfg: config{allowAdmin: true, unloadDrainWait: 5 * time.Second}}
 	entry := func(name string) *loadedModel {
 		m := &fakeModel{}
-		lm := &loadedModel{name: name, model: m, voxtralDir: vox, voxtralBackend: backend}
+		lm := &loadedModel{name: name, model: m, audio: &voxtralAudio{dir: vox, backend: backend}}
 		s.models[name], s.liveness[m] = lm, &modelLiveness{refs: 1}
-		enc, err := lm.voxtralEncoder()
+		enc, err := lm.audio.(*voxtralAudio).encoder(name)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if lm.voxtralDevice == nil {
+		if lm.audio.(*voxtralAudio).device == nil {
 			t.Fatalf("%s: the tower did not go on the test device", name)
 		}
 		if _, err := enc.Embed(wins); err != nil {
@@ -144,7 +149,7 @@ func TestUnload_closesOnlyItsOwnAudioDevice(t *testing.T) {
 	}
 	a, b := entry("a"), entry("b")
 	t.Cleanup(b.closeEntryNatives)
-	dev := a.voxtralDevice.(*fakeWhisperDevice)
+	dev := a.audio.(*voxtralAudio).device.(*fakeWhisperDevice)
 	w := httptest.NewRecorder()
 	s.handleAdminUnload(w, httptest.NewRequest("POST", "/admin/models/unload", strings.NewReader(`{"name":"a"}`)))
 	if w.Code != http.StatusOK {
@@ -153,7 +158,7 @@ func TestUnload_closesOnlyItsOwnAudioDevice(t *testing.T) {
 	if !dev.closed {
 		t.Error("the unloaded entry's device was not closed")
 	}
-	enc, err := b.voxtralEncoder()
+	enc, err := b.audio.(*voxtralAudio).encoder("b")
 	if err != nil {
 		t.Fatal(err)
 	}

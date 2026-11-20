@@ -8,7 +8,6 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/codec"
-	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
@@ -28,121 +27,6 @@ type imagePrep struct {
 	hash     uint64
 	grid     [3]int
 	deepSets int
-}
-
-// imageKind is the image path a model's family takes: "gemma3", "qwen", "gemma4" or "pixtral". The others (GLM-OCR,
-// audio, Qwen3-ASR) keep their own one-media builders.
-func (lm *loadedModel) imageKind() string {
-	switch {
-	case lm.pixtral != nil:
-		return "pixtral"
-	case lm.lfm2vl != nil:
-		return "lfm2vl"
-	case lm.qwenEnc != nil || lm.qwen3 != nil:
-		return "qwen"
-	case lm.gemma4Enc != nil:
-		return "gemma4"
-	}
-	return "gemma3"
-}
-
-// imageTok is the placeholder token id of kind's image block.
-func (lm *loadedModel) imageTok(kind string) int {
-	switch kind {
-	case "pixtral":
-		return lm.pixtral.imgTok
-	case "lfm2vl":
-		return lm.lfm2vl.imgTok
-	case "qwen":
-		return lm.qwenImgTok
-	case "gemma4":
-		return lm.gemma4ImgTok
-	}
-	return lm.vimgTok
-}
-
-// prepImage preprocesses one image for kind's family: nothing runs the tower until features is called.
-func (lm *loadedModel) prepImage(kind string, img imageRef) (imagePrep, error) {
-	if kind == "pixtral" {
-		return lm.pixtralPrep(img)
-	}
-	if kind == "lfm2vl" {
-		return lm.lfm2vlPrep(img)
-	}
-	hiddenDim := lm.mdl().Config().HiddenDim
-	p := imagePrep{hash: multimodal.HashImageBytes(img.data)}
-	switch kind {
-	case "qwen":
-		pv, grid, err := multimodal.QwenPreprocess(img.data, lm.qwenPP)
-		if err != nil {
-			return p, err
-		}
-		n := multimodal.QwenMergedTokens(grid, lm.qwenMerge)
-		deepSets := lm.qwenDeepstackSets() // Qwen3-VL: the features carry this many DeepStack sets after the merged rows
-		p.n, p.grid, p.deepSets = n, grid, deepSets
-		p.features = func() ([]float32, error) {
-			feats, err := lm.qwenForward(pv, grid)
-			if err != nil {
-				return nil, fmt.Errorf("qwen vision encoder: %w", err)
-			}
-			if len(feats) != n*hiddenDim*(1+deepSets) {
-				return nil, fmt.Errorf("qwen encoder emitted %d features, want %d (%d rows x %d, %d DeepStack sets)", len(feats), n*hiddenDim*(1+deepSets), n, hiddenDim, deepSets)
-			}
-			return feats, nil
-		}
-		// Qwen2.5-VL's real chat_template.json splices <|vision_start|><|image_pad|><|vision_end|> inline with no
-		// adjacent newline on either side, so the block carries none.
-		p.block = multimodal.QwenImageBlock(n)
-	case "gemma4":
-		patches, positionIDs, err := vision.Gemma4Preprocess(img.data, lm.gemma4MaxSoft)
-		if err != nil {
-			return p, err
-		}
-		n := multimodal.Gemma4PooledTokens(positionIDs, lm.gemma4Enc.Cfg.PoolingKernelSize)
-		p.n = n
-		p.features = func() ([]float32, error) {
-			var feats []float32
-			var err error
-			if lm.gemma4Swap != nil {
-				feats, err = lm.gemma4Swap.features(patches, positionIDs)
-			} else {
-				feats, err = multimodal.Gemma4TowerFeatures(lm.gemma4Enc, lm.gemma4Tower, patches, positionIDs)
-			}
-			if err != nil {
-				return nil, fmt.Errorf("gemma4 vision encoder: %w", err)
-			}
-			if len(feats) != n*hiddenDim {
-				return nil, fmt.Errorf("gemma4 encoder emitted %d features, want %d", len(feats), n*hiddenDim)
-			}
-			return feats, nil
-		}
-		// Gemma 4's own processor (processing_gemma4.py) builds f"{boi_token}{image_tokens}{eoi_token}": no adjacent
-		// newline at all, so the block carries none.
-		p.block = multimodal.Gemma4ImageBlock(n)
-	default:
-		pv, err := vision.Preprocess(img.data, lm.vcfg)
-		if err != nil {
-			return p, err
-		}
-		n := lm.vproj.MMTokens()
-		p.n = n
-		p.features = func() ([]float32, error) {
-			hidden, err := lm.venc.Forward(pv.Data)
-			if err != nil {
-				return nil, fmt.Errorf("vision encoder: %w", err)
-			}
-			feats, err := lm.vproj.Forward(hidden)
-			if err != nil {
-				return nil, fmt.Errorf("vision projector: %w", err)
-			}
-			if len(feats) != n*hiddenDim {
-				return nil, fmt.Errorf("projector emitted %d features, want %d", len(feats), n*hiddenDim)
-			}
-			return feats, nil
-		}
-		p.block = multimodal.Gemma3PromptBlock(n)
-	}
-	return p, nil
 }
 
 // placeImageBlocks puts blocks[k] where image k sat in its message. ordered says the images' offsets (imageRef.at,
@@ -170,14 +54,15 @@ func placeImageBlocks(content, msgText string, ordered bool, imgs []imageRef, bl
 	return b.String()
 }
 
-// imagesPrompt assembles an image prompt for kind's family from one prep per image: the blocks placed in the last user
+// imagesPrompt assembles an image prompt for this model's tower from one prep per image: the blocks placed in the last user
 // turn (placeImageBlocks), each spliced back as its own Special segment, one placeholder run per image found, and the
 // features concatenated in span order. With cache, each image's tower output comes from this model's feature cache.
-func (lm *loadedModel) imagesPrompt(tm *chat.Template, system string, turns []chat.Turn, idx int, kind string, imgs []imageRef, ordered bool, msgText string, cache bool) (visionInput, error) {
+func (lm *loadedModel) imagesPrompt(tm *chat.Template, system string, turns []chat.Turn, idx int, imgs []imageRef, ordered bool, msgText string, cache bool) (visionInput, error) {
+	kind := lm.vision.kind()
 	preps := make([]imagePrep, len(imgs))
 	blocks := make([]string, len(imgs))
 	for k, img := range imgs {
-		p, err := lm.prepImage(kind, img)
+		p, err := lm.vision.prep(lm, img)
 		if err != nil {
 			if len(imgs) > 1 {
 				return visionInput{}, fmt.Errorf("image %d of %d: %w", k+1, len(imgs), err)
@@ -201,7 +86,7 @@ func (lm *loadedModel) imagesPrompt(tm *chat.Template, system string, turns []ch
 	if err != nil {
 		return visionInput{}, fmt.Errorf("encode: %w", err)
 	}
-	runs := multimodal.FindImageRuns(ids, lm.imageTok(kind))
+	runs := multimodal.FindImageRuns(ids, lm.vision.imageTok())
 	spans, grids, err := imageSpans(runs, preps, kind)
 	if err != nil {
 		return visionInput{}, err
@@ -314,10 +199,10 @@ func (lm *loadedModel) visionPromptN(tm *chat.Template, system string, turns []c
 			return visionInput{}, fmt.Errorf("an audio clip must be the only media in a request (got %d media parts); send several images, or one clip", len(imgs))
 		}
 	}
-	if len(imgs) == 1 && (imgs[0].audio || lm.glm != nil || lm.tmpl == nil) {
+	if len(imgs) == 1 && (imgs[0].audio || lm.glmOcr() != nil || lm.tmpl == nil) {
 		return lm.visionPrompt(tm, system, turns, imgs[0])
 	}
-	if lm.glm != nil {
+	if lm.glmOcr() != nil {
 		return visionInput{}, fmt.Errorf("GLM-OCR takes one image per request (its task prompts are written for one page); got %d", len(imgs))
 	}
 	if lm.tmpl == nil {
@@ -327,7 +212,7 @@ func (lm *loadedModel) visionPromptN(tm *chat.Template, system string, turns []c
 	if idx < 0 {
 		return visionInput{}, fmt.Errorf("no user turn to attach the image to")
 	}
-	return lm.imagesPrompt(tm, system, turns, idx, lm.imageKind(), imgs, ordered, msgText, true)
+	return lm.imagesPrompt(tm, system, turns, idx, imgs, ordered, msgText, true)
 }
 
 // tooManyImages is the 400 for more images than maxImagesPerTurn.

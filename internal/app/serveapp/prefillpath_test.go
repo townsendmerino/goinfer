@@ -263,8 +263,8 @@ func TestServe_modelsReportsVision(t *testing.T) {
 	if v := visionOf(); v != false {
 		t.Errorf("text-only model: vision = %v, want false (present, not omitted)", v)
 	}
-	lm.qwenEnc = &vision.QwenVisionEncoder{} // any loaded tower makes visionCapable true
-	t.Cleanup(func() { lm.qwenEnc = nil })
+	lm.vision = &qwen25Vision{enc: &vision.QwenVisionEncoder{}} // any loaded tower makes visionCapable true
+	t.Cleanup(func() { lm.vision = nil })
 	if !lm.visionCapable() {
 		t.Fatal("precondition: visionCapable should be true with a tower set")
 	}

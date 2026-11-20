@@ -142,11 +142,11 @@ func TestBackendModelView_familyParams(t *testing.T) {
 	if mo, ok := bv.MoE(); !ok || mo != want {
 		t.Errorf("MoE = %+v, %v; want %+v with ok", mo, ok, want)
 	}
-	if _, _, _, _, _, _, _, ok := bv.NemotronParams(); ok {
-		t.Error("NemotronParams ok for a model with no Nemotron subsystem")
+	if _, ok := bv.Nemotron(); ok {
+		t.Error("Nemotron ok for a model with no Nemotron subsystem")
 	}
-	if _, _, _, _, _, _, _, _, _, ok := bv.GraniteParams(); ok {
-		t.Error("GraniteParams ok for a model with no Granite subsystem")
+	if _, ok := bv.Granite(); ok {
+		t.Error("Granite ok for a model with no Granite subsystem")
 	}
 	if _, _, _, _, _, _, ok := bv.Qwen35Params(); ok {
 		t.Error("Qwen35Params ok for a model with no DeltaNet subsystem")

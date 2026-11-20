@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // Mistral family parity. Mistral is the llama descriptor with sliding-window
@@ -76,7 +78,7 @@ func TestMistral_forwardParity(t *testing.T) {
 		t.Fatalf("got %d logits, want vocab %d", len(logits), g.Vocab)
 	}
 
-	if got := argmax(logits); got != g.Argmax {
+	if got := sampling.Argmax(logits); got != g.Argmax {
 		t.Errorf("argmax = %d, want %d (logit[got]=%.4f logit[want]=%.4f)",
 			got, g.Argmax, logits[got], logits[g.Argmax])
 	}
@@ -102,5 +104,5 @@ func TestMistral_forwardParity(t *testing.T) {
 
 	cos := fullCosine(t, logits, mistralForwardFullPath)
 	t.Logf("mistral: %d-token prompt (window %d) | argmax=%d (want %d) | maxSampleΔ=%.5f | cosine=%v",
-		len(g.IDs), m.w.arch.SlidingWindow, argmax(logits), g.Argmax, maxSampleΔ, cos)
+		len(g.IDs), m.w.arch.SlidingWindow, sampling.Argmax(logits), g.Argmax, maxSampleΔ, cos)
 }
