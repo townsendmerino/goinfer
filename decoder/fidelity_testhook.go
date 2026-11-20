@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -133,7 +134,7 @@ const NearTieHardFailPct = 0.03
 // separation between probabilities 0.85 and 0.11. The same threshold is used inline by cuda/realforward_test.go and
 // gpu/kv_i8_parity_test.go; changing it means changing all three together.
 func NearTieArgmaxForTest(refLogits, candLogits []float32) (agree bool, gapPct float64, hardFail bool) {
-	refArg, candArg := argmax(refLogits), argmax(candLogits)
+	refArg, candArg := sampling.Argmax(refLogits), sampling.Argmax(candLogits)
 	if refArg == candArg {
 		return true, 0, false
 	}
@@ -166,7 +167,7 @@ func TeacherForcedTop1AgreementForTest(candLogits [][]float32, refTokens []int) 
 	firstDivergence = -1
 	agree := 0
 	for i, lg := range candLogits {
-		if argmax(lg) == refTokens[i] {
+		if sampling.Argmax(lg) == refTokens[i] {
 			agree++
 		} else if firstDivergence == -1 {
 			firstDivergence = i

@@ -36,7 +36,6 @@ decoder/deltanet.go:sigmoidf -- a package-move shim; inline at its callers in a 
 decoder/deltanet.go:softplusf -- a package-move shim; inline at its callers in a later Q11 change
 decoder/forward_qwen35.go:qGateContext -- a package-move shim; inline at its callers in a later Q11 change
 decoder/forward_qwen35.go:splitQGate -- a package-move shim; inline at its callers in a later Q11 change
-decoder/sampling.go:argmax -- the decode loop's argmax: inlining it touches about 180 files, so it goes in its own change
 decoder/sampling.go:softmaxStable -- a package-move shim; inline at its callers in a later Q11 change
 decoder/session.go:commonPrefixLen -- a package-move shim; inline at its callers in a later Q11 change
 decoder/session_share.go:clipClassRuns -- a package-move shim; inline at its callers in a later Q11 change
