@@ -23,8 +23,6 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/tokenizer"
-
-	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // ReadGoldenJSONForTest decodes a real-checkpoint golden fixture into v, gunzipping transparently when path ends in
