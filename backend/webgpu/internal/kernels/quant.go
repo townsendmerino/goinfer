@@ -79,7 +79,7 @@ func (c *Context) ensureQuant() error {
 		sh.Release()
 		return fmt.Errorf("gpu: create W8A8 pipeline: %w", err)
 	}
-	c.track(sh.Release, pl.Release) // audit C-26: register at creation
+	c.track(sh.Release, pl.Release) // registered at creation, so Close releases them
 	c.quantShader = sh
 	c.quantPipeline = pl
 	c.quantLayout = c.bgl(pl)

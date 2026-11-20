@@ -110,7 +110,7 @@ func (r *cudaResident) StepRagged(seqs []decoder.ResidentRaggedSeq) ([]decoder.R
 	if len(seqs) == 0 {
 		return nil, fmt.Errorf("cuda ragged step: no sequences")
 	}
-	// The range's upper bound is the KV slots; its lower bound is MC3's StepBatch, and a ragged step of one sequence is a step.
+	// The range's upper bound is the KV slots; its lower bound is the batched decode's StepBatch, and a ragged step of one sequence is a step.
 	if _, hi := r.BatchStepRange(); hi == 0 || len(seqs) > hi {
 		return nil, fmt.Errorf("cuda ragged step: %d sequences outside the step range", len(seqs))
 	}

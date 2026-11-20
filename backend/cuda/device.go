@@ -38,7 +38,7 @@ var (
 	GridOne                   = gpu.GridOne
 )
 
-// Every device created in a process that links this package leases its allocations to a mem.Ledger (MM3), whichever package
+// Every device created in a process that links this package leases its allocations to a mem.Ledger, whichever package
 // creates it.
 func init() { gpu.NewLeaser = func() gpu.Leaser { return &deviceLedger{} } }
 

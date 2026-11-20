@@ -263,7 +263,7 @@ var routerF32PTX []byte
 //go:embed testdata/gemv_w4f32.ptx
 var gemvW4F32PTX []byte
 
-// fusedQKVPTX: the K1 super-kernel: rmsnorm+quant folded into the Q/K/V GEMV by redundant per-block recompute, removing
+// fusedQKVPTX: the fused QKV super-kernel: rmsnorm+quant folded into the Q/K/V GEMV by redundant per-block recompute, removing
 // a GridX:1 glue kernel and 3 launches.
 //
 //go:embed testdata/fused_qkv.ptx
@@ -344,13 +344,13 @@ var decodeSplitKVCapPTX []byte
 var decodeSplitKVKV16CapPTX []byte
 
 // glueKV8PTX: gluePTX built with the KV cache as int8 and per-(position, head) f32 scales (-DKV_I8, kvtype.cuh). Only `attention` reads the cache;
-// S1 of docs/measurements/cuda-kv-i8-2026-11/scope.md. Built at the pinned NVRTC 12.6.85 beside the audited glue modules, which stay byte-identical.
+// scoped in docs/measurements/cuda-kv-i8-2026-11/scope.md. Built at the pinned NVRTC 12.6.85 beside the audited glue modules, which stay byte-identical.
 //
 //go:embed testdata/glue_kv8.ptx
 var glueKV8PTX []byte
 
 // prefillBatchedKV8PTX and kv8StorePTX: the int8 cache's batched-prefill attention (prefill_batched.cu built with -DKV_I8) and its quantizing store
-// (kv8_store.cu). S1 of docs/measurements/cuda-kv-i8-2026-11/scope.md: built and tested, bound to nothing yet.
+// (kv8_store.cu), scoped in docs/measurements/cuda-kv-i8-2026-11/scope.md: built and tested, bound to nothing yet.
 //
 //go:embed testdata/prefill_batched_kv8.ptx
 var prefillBatchedKV8PTX []byte
@@ -417,7 +417,7 @@ func (r *cudaResident) withCap(args ...gpu.KernelArg) []gpu.KernelArg {
 }
 
 // mambaPTX: the Mamba-2 decode mixer (mamba_conv, mamba_ssm, mamba_gnorm) for Nemotron-H and Granite-4.0-H, ported from metal/kernels/mamba_kernels_msl.go.
-// A module of its own: no existing PTX holds a Mamba kernel. Not bound by any pipeline until OP2b's resident builder (cuda/mamba.cu).
+// A module of its own: no existing PTX holds a Mamba kernel. Bound by the Mamba-2 resident builder (cuda/mamba.cu).
 //
 //go:embed testdata/mamba.ptx
 var mambaPTX []byte

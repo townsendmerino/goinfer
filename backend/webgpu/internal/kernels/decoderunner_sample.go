@@ -14,7 +14,7 @@ import (
 // gumbelDispatches is the dispatches a draw adds after the forward: the per-block maxima, then their reduction.
 const gumbelDispatches = 2
 
-// gumbelState is a DecodeRunner's device-sampling resources (R7b), built lazily on the first RunSample so a
+// gumbelState is a DecodeRunner's device-sampling resources, built lazily on the first RunSample so a
 // runner that only ever returns logits pays nothing.
 type gumbelState struct {
 	pl1, pl2   *wgpu.ComputePipeline

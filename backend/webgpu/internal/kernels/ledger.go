@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-// Every buffer this package or the gpu package creates is a lease on its Context's mem.Ledger (MM3), made by the lined
+// Every buffer this package or the gpu package creates is a lease on its Context's mem.Ledger, made by the lined
 // wrappers below; releaseBuf closes it. A typed source scan holds that no buffer is created or freed any other way
 // (TestLedger_everyBufferIsLeased).
 
