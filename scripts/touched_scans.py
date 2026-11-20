@@ -232,7 +232,7 @@ SCANS = [
     Scan("apps/site/internal/site", "TestHome_heroCodeIsFromTheExample", F("apps/examples/structured/main.go")),
     # gpu module
     # MM5b's G-MS4w: WebGPU's decode scratch pricing names no family or mixer.
-    Scan("backend/webgpu", "TestMM5b_webgpuDecodeScratchNamesNoFamily", F("backend/webgpu/decode_scratch_plan_test.go")),
+    Scan("backend/webgpu", "TestMM5b_webgpuDecodeScratchNamesNoFamily", F("backend/webgpu/sb2_census_test.go")),
     Scan("backend/webgpu", "TestNemotronBlockKind_hasADefault", F("backend/webgpu/residency.go", "backend/webgpu/residency_layer.go")),
     Scan("backend/webgpu/internal/kernels", "TestKernels_noDroppedTryError", NT("backend/webgpu/internal/kernels")),
     Scan("backend/webgpu/internal/kernels", "TestLedger_everyBufferIsLeased", NT("backend/webgpu", "backend/webgpu/internal/kernels")),
