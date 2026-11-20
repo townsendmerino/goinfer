@@ -176,6 +176,7 @@ func Resolve(f Flags, m Machine, ov Overrides) decoder.Options {
 		MoEPager:              f.MoEPager,
 		AcceptSlowMoE:         f.AcceptSlow,
 		EmbedInt4:             or(ov.EmbedInt4, f.embedInt4()),
+		EmbedInt4Default:      ov.EmbedInt4 == nil && !f.EmbedInt4Set,
 		DisableFit:            !f.Fit,
 		ExactPrefill:          f.ExactPrefill,
 		ResidentWindowedKV:    f.WindowedKV,

@@ -232,6 +232,10 @@ func (m *Model) ResidentContextRequest() int { return m.resCtxReq }
 // context for KV slots shrinks only an unpinned context, never an explicit -ctx.
 func (m *Model) ResidentContextPinned() bool { return m.resCtxPinned }
 
+// EmbedInt4 reports whether this model was loaded with the int4 output head (Options.EmbedInt4 after EmbedInt4For). A
+// .giw's head is the one its transcode baked, whatever this says.
+func (m *Model) EmbedInt4() bool { return m.opts.EmbedInt4 }
+
 // ResidentKVSlotsIsDefault reports Options.ResidentKVSlotsDefault: the slot request is the caller's default, which a backend
 // may lower to its own (Metal: 2).
 func (m *Model) ResidentKVSlotsIsDefault() bool { return m.opts.ResidentKVSlotsDefault }
@@ -452,7 +456,8 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 func Load(dir string, opts Options) (*Model, error) {
 	loadCalls.Add(1)
 	ensureCPUSelfTest() // once per process, before any kernel runs concurrently: a CPU kernel tier that disagrees with its reference is stepped down, not trusted
-	opts = opts.withAutoBackend()
+	// The head resolves before the sidecar is chosen: its cache key carries the head.
+	opts = resolveEmbedInt4(dir, opts.withAutoBackend())
 	if p, err := sidecarRoute(dir, opts); err != nil {
 		return nil, err
 	} else {
