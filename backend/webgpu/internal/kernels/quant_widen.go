@@ -7,11 +7,11 @@ import (
 	"sync/atomic"
 )
 
-// quantNarrowForTest makes New's Context compile the single-workgroup quantizers at 64 lanes, as their source is written (the
+// QuantNarrowForTest makes New's Context compile the single-workgroup quantizers at 64 lanes, as their source is written (the
 // old arm of KS-E2's A/B); read at New.
 var QuantNarrowForTest atomic.Bool
 
-// quantSrcHookForTest, when set, is called with every label quantSrc serves and whether it widened it; nil outside tests.
+// QuantSrcHookForTest (when set) is called with every label quantSrc serves and whether it widened it; nil outside tests.
 var QuantSrcHookForTest func(label string, wide bool)
 
 // quantSrc is a single-workgroup quantizer's source as this Context compiles it: widened to 256 lanes (widenQuant), or the
@@ -26,7 +26,7 @@ func (c *Context) quantSrc(label, src string) (string, error) {
 	return WidenQuant(label, src)
 }
 
-// widenQuant runs a 64-lane single-workgroup quantizer (rmsnormQuantWGSL, swigluQuantWGSL, gegluQuantWGSL, quantizeShaderWGSL,
+// WidenQuant runs a 64-lane single-workgroup quantizer (rmsnormQuantWGSL, swigluQuantWGSL, gegluQuantWGSL, quantizeShaderWGSL,
 // relu2QuantWGSL, gptossGluQuantWGSL) on 256 lanes: the shared array, the workgroup size, the max loop and the pack loop at
 // 256, the max tree from stride 128. f32 max is exact in any order and each packed value depends on its own element, so the
 // output is the 64-lane kernel's bits. rmsnormQuant's sum of squares is order-dependent: it stays on lanes 0-63 with its

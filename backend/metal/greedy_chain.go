@@ -132,6 +132,7 @@ func (r *resident) buildChainEmbed() (w, s Buffer, why string) {
 	defer pool.Drain()
 	defer func() {
 		if p := recover(); p != nil { // mustBuf panics on a failed allocation, as buildResident's callers recover
+			mem.RepanicBug(p)
 			w, s, why = Buffer{}, Buffer{}, fmt.Sprintf("allocating the untied head's device embedding table failed: %v", p)
 		}
 	}()

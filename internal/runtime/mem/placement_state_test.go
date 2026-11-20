@@ -39,11 +39,11 @@ func TestSolvePlacement_stateNamedInTheReason(t *testing.T) {
 	l := DeviceLoad{Backend: "webgpu", Tier: VRAM, DenseBytes: 1 << 30, CtxStep: 1, KV: func(ctx int) int64 { return int64(ctx) << 10 }}
 	m := Machine{Free: map[Tier]int64{VRAM: 8 << 30}}
 	none := SolvePlacement(l, PlanRequest{Ctx: 4096}, m, DefaultPolicy())
-	if want := "dense 1.00 GB + KV@4096 0.00 GB fits 8.00 GB free"; none.Reason != want {
+	if want := "dense 1.00 GiB + KV@4096 0.00 GiB fits 8.00 GiB free"; none.Reason != want {
 		t.Errorf("no state: %q, want %q", none.Reason, want)
 	}
 	l.StateBytes = 1 << 30
-	if got, want := SolvePlacement(l, PlanRequest{Ctx: 4096}, m, DefaultPolicy()).Reason, "dense 1.00 GB + recurrent state 1.00 GB + KV@4096 0.00 GB fits 8.00 GB free"; got != want {
+	if got, want := SolvePlacement(l, PlanRequest{Ctx: 4096}, m, DefaultPolicy()).Reason, "dense 1.00 GiB + recurrent state 1.00 GiB + KV@4096 0.00 GiB fits 8.00 GiB free"; got != want {
 		t.Errorf("state: %q, want %q", got, want)
 	}
 }

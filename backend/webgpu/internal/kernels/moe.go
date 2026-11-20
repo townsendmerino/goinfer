@@ -152,7 +152,7 @@ fn main() {
 }
 `
 
-// gptossGluQuantWGSL (FeatAttnSink's clamped interleaved-SwiGLU expert): gpt-oss's expert
+// GptossGluQuantWGSL (FeatAttnSink's clamped interleaved-SwiGLU expert): gpt-oss's expert
 // activation is a DIFFERENT function from swigluQuantWGSL's plain silu(gate)·up, not a
 // parameterization of it — mirrors cuda/gptoss_act.cu's glu_quant_gptoss / metal/moe.go's
 // swiglu_quant_gptoss exactly:
@@ -393,7 +393,7 @@ type ResidentStackedW8A8 struct {
 	w4 bool
 }
 
-// Release frees the stacked buffers.
+// Close frees the stacked buffers.
 func (s *ResidentStackedW8A8) Close() error {
 	s.ctx.releaseOwned(func() {
 		traceFree(s)

@@ -109,7 +109,7 @@ func TestGiw_layerCountCheckedBeforeAllocation(t *testing.T) {
 	const fixture = "../testdata/llama-tiny"
 	m, err := Load(fixture, Options{})
 	if err != nil {
-		t.Skipf("no fixture at %s: %v", fixture, err)
+		t.Fatalf("load ../testdata/llama-tiny: %v", err)
 	}
 	blob, err := SerializeWeights(m.Weights(), "probe")
 	m.Close()

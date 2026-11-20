@@ -88,6 +88,13 @@ func SetKQuantNativeOffForTest(off bool) { kquantNativeOff.Store(off) }
 // KQuantSavingsForTest is kquantSavings(backend): what backend's fit pricing takes off for its q4k lane's native uploads.
 func (m *Model) KQuantSavingsForTest(backend string) int64 { return m.kquantSavings(backend) }
 
+// DecodeRowsForTest is each layer's per-row decode activations as m's program declares them (program.Buffers' per-row entries), by
+// name at the widest operation of the layer that declares it: the input the WebGPU decode-scratch figure is priced from.
+func (m *Model) DecodeRowsForTest() []map[string]int {
+	H, _, _, _, _, _, V := m.Dims()
+	return m.metalDecodeRows(H, V).layers
+}
+
 // ResidentPrefillSeedForTest is residentPrefillSeed from position 0 with no adapter: the prompt into the resident KV
 // by the route a generation takes (blocks included), returning the last token's logits.
 func (m *Model) ResidentPrefillSeedForTest(ctx context.Context, prompt []int) ([]float32, error) {
@@ -276,7 +283,7 @@ func SetRouterCaptureForTest(on bool) {
 func (c *KVCache) LayerKVForTest(layer int) (k, v []float32, base int) { return c.LayerKV(layer) }
 
 // SetSSMQ8CPU makes the CPU Mamba reference round-trip its projections through int8, so it carries the same quantization error as
-// the resident W8A8 path (the confirmation seam GOINFER_SSM_Q8CPU also turns on).
+// the resident W8A8 path.
 func SetSSMQ8CPU(v bool) { ssmQ8CPU = v }
 
 // SetSSMForceF32 toggles the CPU reference's f32 SSM accumulation (the gated-norm precision-localization seam). It and

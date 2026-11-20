@@ -97,7 +97,7 @@ type ResidentW8A8 struct {
 	kp      int          // K padded to mult of 4
 }
 
-// Release frees the resident GPU buffers.
+// Close frees the resident GPU buffers.
 func (rm *ResidentW8A8) Close() error {
 	rm.ctx.releaseOwned(func() {
 		traceFree(rm)

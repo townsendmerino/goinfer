@@ -28,7 +28,7 @@ func TestFitEstimate_f32PinnedMixersAgreeWithResident(t *testing.T) {
 					}
 					m, err := Load(tc.dir, Options{Quant: q.name})
 					if err != nil {
-						t.Skipf("cannot load fixture at %s: %v", tc.dir, err)
+						t.Fatalf("load %s: %v", tc.dir, err) // the estimator read it, so it is on disk
 					}
 					defer m.Close()
 					actual := m.ResidentWeightBytes()

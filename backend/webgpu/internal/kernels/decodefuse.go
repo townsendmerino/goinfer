@@ -10,7 +10,7 @@ import "github.com/oliverbestmann/webgpu/wgpu"
 // is bit-exact with the unfused pair it replaces (same f32 math, same int8 pack).
 // History: docs/code-notes/gpu.md#§2 fused decode kernels.
 
-// rmsnormQuant fuses RMSNorm → activation-quantize: it reads the hidden vector
+// RmsnormQuantWGSL fuses RMSNorm → activation-quantize: it reads the hidden vector
 // once, computes xn = src·inv·weight(+1) in registers, finds its max-abs by tree
 // reduce, and emits the packed int8 activation + scale directly — replacing the
 // rms(→xn global)→quant(xn→q,s) pair with ONE dispatch and no xn round-trip.
@@ -81,7 +81,7 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
 }
 `
 
-// swigluQuant fuses SwiGLU → activation-quantize: silu(gate)·up is computed, max-abs'd, and packed to int8 in ONE dispatch,
+// SwigluQuantWGSL fuses SwiGLU → activation-quantize: silu(gate)·up is computed, max-abs'd, and packed to int8 in ONE dispatch,
 // so the inter-wide SwiGLU output never materializes in global memory or crosses a barrier. The product is recomputed in
 // the pack pass (cheap arithmetic) rather than staged, so no inter-wide workgroup array is needed.
 const SwigluQuantWGSL = `
@@ -130,7 +130,7 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
 }
 `
 
-// gegluQuant is swigluQuant's GELU-tanh-gated twin, Gemma's FeatGatedGELU. Same
+// GegluQuantWGSL is swigluQuant's GELU-tanh-gated twin, Gemma's FeatGatedGELU. Same
 // fused shape (product recomputed in the pack pass, no inter-wide global-memory round-trip); only the activation differs.
 // gelu_tanh's argument is CLAMPED to ±15 before tanh: unclamped, it overflows f32 before saturating. See
 // gegluShaderWGSL's own comment (layer.go). History: docs/code-notes/gpu.md#gegluQuant.

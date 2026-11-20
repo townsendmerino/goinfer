@@ -14,7 +14,7 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// ssmStopLayerForTest truncates a newly built decode plan after this layer (-1 = every layer): the
+// SsmStopLayerForTest truncates a newly built decode plan after this layer (-1 = every layer): the
 // resident-SSM layer-sweep seam, set only by tests in this package (mamba_layersweep_test.go).
 var SsmStopLayerForTest = -1
 
@@ -165,7 +165,7 @@ type attnGeom struct {
 	attnUni, attnUniLocal            *wgpu.Buffer
 }
 
-// runLayer / runModel are the DecodeRunner's precision-agnostic view of a resident
+// RunLayer / runModel are the DecodeRunner's precision-agnostic view of a resident
 // model: the f32 buffers (norms, RoPE freqs, KV caches) plus the projection
 // weights as decodeWeight (W8A8 or W4A8). The public constructors adapt a concrete
 // ModelW / ModelW4 into this; the builder below works the same for either.
@@ -292,7 +292,7 @@ type RunModel struct {
 	PostOnlyNorm bool
 }
 
-// mlaRunParams carries the model-level MLA geometry (uniform across layers). Per-layer
+// MlaRunParams carries the model-level MLA geometry (uniform across layers). Per-layer
 // weights + the latent cache live on runLayer. latDim = kvLoRARank + qkRope is the
 // cached payload width; qkHead = qkNope + qkRope is the per-head q·k width.
 type MlaRunParams struct {
@@ -304,7 +304,7 @@ type MlaRunParams struct {
 	RopeScale      float32 // YaRN attention factor folded into cos/sin (1.0 when none)
 }
 
-// mambaRunParams carries the model-level Mamba-2 geometry (uniform across mamba layers).
+// MambaRunParams carries the model-level Mamba-2 geometry (uniform across mamba layers).
 // dInner=nHeads·P, convDim=dInner+2·nGroups·N, projDim=2·dInner+2·nGroups·N+nHeads,
 // gSize=nGroups·N, repeat=nHeads/nGroups. normGroups is the gated-RMSNorm group count
 // (1 for Granite). The dispatches are pos-independent — the {win, ssm} state carries the
@@ -315,7 +315,7 @@ type MambaRunParams struct {
 	NormGroups                              int
 }
 
-// moeRunParams carries the model-level MoE selection knobs (uniform across layers):
+// MoeRunParams carries the model-level MoE selection knobs (uniform across layers):
 // the router top-k shape + scoring flavor. Per-layer data (router/expert weights,
 // selection bias) lives on runLayer. inter is the per-expert FFN width.
 type MoeRunParams struct {
@@ -402,8 +402,7 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 	if m.Mamba != nil && (m.Mamba.DConv > 8 || m.Mamba.DConv < 1) {
 		return nil, fmt.Errorf("gpu: newDecodeRunner: mamba conv_kernel %d out of range [1,8] for the resident conv kernel; declining to CPU", m.Mamba.DConv)
 	}
-	ssmStopLayer := SsmStopLayerForTest                  // layer-sweep seam (tests only): truncate the plan
-	ssmSkipFFN := os.Getenv("GOINFER_SSM_SKIPFFN") != "" // debug: mixer-only isolation
+	ssmStopLayer := SsmStopLayerForTest // layer-sweep seam (tests only): truncate the plan
 	ensures := []func() error{c.ensureGEMV, c.ensureGEMVBias, c.ensureQuantize, c.ensureLayer, c.ensureAttn, c.ensureFuse, c.ensureGEMVW4, c.ensureQKNorm, c.ensureLora}
 	if m.Moe != nil {
 		ensures = append(ensures, c.ensureMoERoute, c.ensureMoEExpert, c.ensureMoEExpertW4)
@@ -1452,9 +1451,6 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 		if lw.NemoKind == NemoKMamba || lw.NemoKind == NemoKAttn {
 			continue // Nemotron single-op-per-block: the mixer IS the layer — no FFN sub-block
 		}
-		if ssmSkipFFN { // GOINFER_SSM_SKIPFFN debug: isolate the mixer from the FFN
-			continue
-		}
 		if g := lw.G4moe; g != nil {
 			// Gemma 4's parallel dense and MoE block, on the post-attention residual in r.xd (decoder's gemma4MoEFFN).
 			d := G4MoEDefectForTest
@@ -1630,7 +1626,7 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 	// falls back to the staged/CPU path, never a panic.
 	if buildErr != nil {
 		r.release()
-		return nil, fmt.Errorf("gpu: newDecodeRunner: device allocation failed (VRAM exhausted?): %w", buildErr)
+		return nil, fmt.Errorf("gpu: newDecodeRunner: %w (VRAM exhausted?): %w", mem.DeviceAllocError{}, buildErr)
 	}
 	// Snapshot the pristine (no-adapter) plan: SetAdapter rebuilds r.steps from it plus r.loraHooks rather than mutating it.
 	r.baseSteps = r.steps
@@ -1910,7 +1906,7 @@ func (r *DecodeRunner) Run(x []float32, pos, ropePos int) ([]float32, error) {
 	return r.logitsHost, nil
 }
 
-// runBatch executes K runners (sharing the resident weights + KV caches, distinct scratch) over inputs xs[i] at positions
+// RunBatch executes K runners (sharing the resident weights + KV caches, distinct scratch) over inputs xs[i] at positions
 // startPos+i in ONE command buffer: one Submit, one Poll, K logit rows. The runners' steps are recorded in row order into a
 // single compute pass, so each row's kv-store is visible to the next row's attention (causal: row i sees positions
 // [0, startPos+i]). This amortizes the encode glue and the sync over K but does not make the per-row GPU work cheaper (see
@@ -2011,7 +2007,7 @@ func (r *DecodeRunner) Close() error {
 	return nil
 }
 
-// encodeAheadOffForTest makes Run record each token's command buffer in line, as before KS-E3 (the old arm of its A/B); read at
+// EncodeAheadOffForTest makes Run record each token's command buffer in line, as before KS-E3 (the old arm of its A/B); read at
 // each Run.
 var EncodeAheadOffForTest bool
 
@@ -2049,7 +2045,7 @@ func (r *DecodeRunner) dropPending() {
 	}
 }
 
-// dnetRunParams carries the model-level Gated-DeltaNet geometry (uniform across the linear
+// DnetRunParams carries the model-level Gated-DeltaNet geometry (uniform across the linear
 // layers). keyDim/valueDim/convDim are derived once here rather than at every dispatch, because
 // the three of them are easy to conflate: convDim is 2*keyDim+valueDim (the conv runs over
 // [q|k|v] together), and rep = nv/nk is the GVA factor mapping value heads to key heads.
@@ -2066,12 +2062,12 @@ type DnetRunParams struct {
 	BetaScale  float32 // write-gate scale in {1, 2} (2 for Olmo Hybrid's allow_neg_eigval); 0 defaults to 1
 }
 
-// g4DropVNormForTest turns off the v_norm that Gemma 4 layers with their own v_proj apply (runLayer.vNorm), so a test can
+// G4DropVNormForTest turns off the v_norm that Gemma 4 layers with their own v_proj apply (runLayer.vNorm), so a test can
 // show that v_norm is what moves the parity numbers. Set only by a test
 // seam; never in production.
 var G4DropVNormForTest bool
 
-// uploadKVModelGeomForTest makes UploadKV size and group every layer's rows by the model's geometry, ignoring a layer's
+// UploadKVModelGeomForTest makes UploadKV size and group every layer's rows by the model's geometry, ignoring a layer's
 // own, so a test can show that reads wrong on a model with two.
 var UploadKVModelGeomForTest bool
 

@@ -39,7 +39,7 @@ func TestPlan_webgpuPricesVulkansBlocks(t *testing.T) {
 			t.Fatalf("%s: %v", dir, err)
 		}
 		for _, ctx := range []int{256, 4096} {
-			l := m.deviceLoad("webgpu", false, false, true)
+			l := m.deviceLoad("webgpu", PlanRequest{CtxPinned: true})
 			got := l.DenseBytes + l.ExpertBytesFull + l.FixedSlack + l.KV(ctx) + l.StateBytes
 			slot0, _, _ := m.webgpuDeviceBuffers(ctx, false, false)
 			// The dense line also holds the norm vectors, the expert biases and the derived tables, which the list does not hold: they sit beside the blocks.
