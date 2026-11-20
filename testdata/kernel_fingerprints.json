@@ -215,6 +215,8 @@
     "linalg.WeightMat(f16).MatmulBTInto": "sha256:216aa22a0cd431ef67291321fed04eaeecbd5237a869825a11e98341218124e7",
     "linalg.WeightMat(int4).MatmulBTW4A8Into": "sha256:e4b192840aeb624be12b587bbdee1c02902f6930709f33e04d464df4cfa0bf14",
     "linalg.WeightMat(int4).MatmulBTW4A8PreInto": "sha256:f04c66315b0ef38a722d9a34fa380b04b342c96f331e76e5a0a4386668b0dc96",
-    "linalg.WeightMat(q4k).MatmulBTInto": "sha256:83b2231ecc1e3a29175a9f108412f5631bb9b112044d09d30733e4bf3760710c"
+    "linalg.WeightMat(q4k).MatmulBTInto": "sha256:83b2231ecc1e3a29175a9f108412f5631bb9b112044d09d30733e4bf3760710c",
+    "linalg.WeightMat(q5k).MatmulBTInto": "sha256:2de0b48599d8ef325863a5edf5011c82f40145f1b1c5f77b7251ec739333eb44",
+    "linalg.WeightMat(q6k).MatmulBTInto": "sha256:0d987ff5b1a0cc269916311ccc2f6cbeabb01979ed8700c65a0e920430031b18"
   }
 }
