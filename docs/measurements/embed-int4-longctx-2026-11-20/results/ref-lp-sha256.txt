@@ -1,0 +1,12 @@
+fb9981d93567caad2200b21799d95a1f9285316661e01fb4c50b74e90590d937  ref-0.5B/RELEASING.md.lp.f16
+243434ed53b7c1caa902bf3b01273db610f41633b27148000d7c2180c8da4d78  ref-0.5B/backend_cuda_resident.go.lp.f16
+521912812db88d3d3be028c17b8fe3a8433e8a4518a3299b5cfad40b8e6ba068  ref-0.5B/decoder_weights.go.lp.f16
+fe8ec7a7d2d09e1a38a830488676f42d0506f8d2566165c71766f842caa9a176  ref-0.5B/docs_env-vars.md.lp.f16
+b00b851e70f52934ac0ed2da3aa5196290afde39a9c5e55e087c7e9dc77c58c4  ref-0.5B/docs_server.md.lp.f16
+1d73229ec016cb6014f141a3f29adaaf426c6b42bf694812961198d9e345cc1b  ref-0.5B/internal_app_serveapp_openai.go.lp.f16
+a168de09b9ea2727a41e1992fd2ef853fd05a80f225cf6bdfd49e6dbbf3b1496  ref-1.5B/RELEASING.md.lp.f16
+c74f183875edf91aedb16860735182ba1d51ad5583e3cb24267562144518fb54  ref-1.5B/backend_cuda_resident.go.lp.f16
+74863aec1e82edd6d5af12db632dc68c755f1f18ae3edb45285749d469732578  ref-1.5B/decoder_weights.go.lp.f16
+70df4e7835adcf1cf4841205312c922bb2dc3414ff93f0fda6787a69a1611bba  ref-1.5B/docs_env-vars.md.lp.f16
+30c585eeb214bb6f63ff1e7fa9db6a348ffbc663d579b10d3f978b558ca79d2f  ref-1.5B/docs_server.md.lp.f16
+90dafd8e6488e217650c6b9b61407702e0d7fb91521db41a73677b7b77c884e1  ref-1.5B/internal_app_serveapp_openai.go.lp.f16
