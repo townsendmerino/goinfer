@@ -146,6 +146,14 @@ WebGPU), which the gate forgives by name. All four plants (dense, experts, kv, s
    on any adapter whose rounding differs from the CPU's. It has never run on nobara: its one record there is a skip with
    no `GOINFER_E2E_MODEL`. Whether the RTX 2070 SUPER flips the same tie is unmeasured. The check to book on nobara is in
    the PR that carries this record. A changed prompt or a margin-aware bar is a test fix for the backend's owner.
+   - **Update, 2026-11-20, measured on nobara:** the RTX 2070 SUPER over Vulkan does not flip the tie.
+     - **The run:** `TestE2E_webgpu` at main `71c55dd3f`, 0.5B int8int8 from `~/models`, under the timing lock held
+       exclusive, using #1175's command.
+     - **Result:** PASS, 16/16 tokens match, the CPU's and the GPU's first token both 31. The GPU decoded at 266.7 tok/s,
+       so it ran on the card and not on a software adapter.
+     - **Log:** [`nobara-e2e-2026-11-20.log`](nobara-e2e-2026-11-20.log).
+     - **Reading:** the swap is the Intel adapter's rounding meeting the 0.037-logit tie; NVIDIA lands on the CPU's
+       side. The finding stands as written: a near-tie on a degenerate prompt, with the test bar to fix.
 2. **The relative L2 of a whole-model prefill against the CPU is 0.07 to 0.12 here,** above the self-test's 0.10
    ceiling on the 1.5B. It is not a gate: the self-test's ceiling is for its tiny fixtures, and no recorded NVIDIA or
    Metal figure exists for this measurement to compare against. It is written down as the first such reading.

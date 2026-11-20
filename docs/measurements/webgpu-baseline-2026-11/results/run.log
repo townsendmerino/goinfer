@@ -1,0 +1,79 @@
+2026-11-20 11:17:46 PST waiting for pid 858422 (aikit-timing driver)
+2026-11-20 12:01:46 PST aikit-timing driver gone; taking the exclusive lock (wait up to 2 h)
+started   2026-11-20 12:09:31 PST
+rev       018cbe74 (/home/francis/goinfer-bench/wg0-run/wt, clean); scripts from /home/francis/goinfer-bench/wg0-wt/docs/measurements/webgpu-baseline-2026-11 (5df28899f)
+serve     /home/francis/goinfer-bench/wg0-run/bin/serve-cuda-018cbe74 sha256 778850e2bf22cea6b92673c63a155767381acd19d6c9b30d0122ad98ebcb9fb2
+serve     /home/francis/goinfer-bench/wg0-run/bin/serve-webgpu-018cbe74 sha256 7e1c0a137413519ccc80dfc2d70e9217b62a1508dfc34f13bd8169e4a699a41d
+host      nobara-pc Linux 7.3.0-202.nobara.fc44.x86_64
+gpu       595.112.07, NVIDIA GeForce RTX 2070 SUPER
+vulkan    	deviceName = NVIDIA GeForce RTX 2070 SUPER;	driverInfo = 595.112.07;
+aikit     v1.76.0
+desktop   /usr/bin/kwin_wayland, 19 MiB;
+lock      free to this run (inherited from pid 909434 on nobara-pc, `bash /home/francis/goinfer-bench/wg0-wt/docs/measurements/webgpu-baseline-2026-11/run-nobara.sh`, started 2026-11-20T12:09:31-08:00, 0 min ago, label 'wg0') 
+steps     all
+state     load 4.76 3.92 3.73 MemAvailable 60692 MiB swap 416 MiB
+== fit checks 2026-11-20 12:09:33 PST load 4.76 3.92 3.73 MemAvailable 60692 MiB swap 416 MiB
+fit cuda-0.5B: cuda-resident (int4) | fit: 4 KV slots at a 4096-token cap hold 0.28 GiB KV (weights 0.33 GiB, budget 41.31 GiB, 41.02 GiB left for a request's own prefill) | KV plan: 4 conversations x 4096 positions (--ctx 4096)
+fit webgpu-0.5B: webgpu:vulkan-resident (int4) | fit: 4096-token cap needs 0.09 GiB KV (weights 0.33 GiB, budget 41.14 GiB, 41.04 GiB left for a request's own prefill) | KV plan: 4 conversations x 4096 positions (--ctx 4096)
+fit webgpu-ttft-0.5B: webgpu:vulkan-resident (int4) | fit: 4096-token cap needs 0.09 GiB KV (weights 0.33 GiB, budget 41.16 GiB, 41.07 GiB left for a request's own prefill) | KV plan: 4 conversations x 4096 positions (--ctx 4096)
+fit cuda-1.5B: cuda-resident (int4) | fit: 4 KV slots at a 4096-token cap hold 0.55 GiB KV (weights 0.93 GiB, budget 41.28 GiB, 40.74 GiB left for a request's own prefill) | KV plan: 4 conversations x 4096 positions (--ctx 4096)
+fit webgpu-1.5B: webgpu:vulkan-resident (int4) | fit: 4096-token cap needs 0.22 GiB KV (weights 0.93 GiB, budget 40.81 GiB, 40.59 GiB left for a request's own prefill) | KV plan: 4 conversations x 4096 positions (--ctx 4096)
+fit webgpu-ttft-1.5B: webgpu:vulkan-resident (int4) | fit: 4096-token cap needs 0.22 GiB KV (weights 0.93 GiB, budget 40.80 GiB, 40.58 GiB left for a request's own prefill) | KV plan: 4 conversations x 4096 positions (--ctx 4096)
+fit cuda-7B: cuda-resident (int4) | fit: 4 KV slots at a 4096-token cap hold 0.98 GiB KV (weights 3.99 GiB, budget 41.21 GiB, 40.22 GiB left for a request's own prefill) | KV plan: 4 conversations x 4096 positions (--ctx 4096)
+fit webgpu-7B: webgpu:vulkan-resident (int4) | fit: 4096-token cap needs 0.44 GiB KV (weights 3.99 GiB, budget 38.59 GiB, 38.15 GiB left for a request's own prefill) | KV plan: 4 conversations x 4096 positions (--ctx 4096)
+fit webgpu-ttft-7B: webgpu:vulkan-resident (int4) | fit: 4096-token cap needs 0.44 GiB KV (weights 3.99 GiB, budget 38.58 GiB, 38.14 GiB left for a request's own prefill) | KV plan: 4 conversations x 4096 positions (--ctx 4096)
+== fit checks done 2026-11-20 12:10:26 PST
+== longest-context probes 2026-11-20 12:10:26 PST load 3.93 3.79 3.69 MemAvailable 60566 MiB swap 416 MiB
+ctxfit cuda-0.5B-default: ok | cuda-resident (int4) | KV plan: a 65536-position pool for 4 conversations; each is guaranteed 16384, and one can use up to 32768 | fit: 4 KV slots at a 32768-token cap hold 0.84 GiB KV (weights 0.33 GiB, budget 41.25 GiB, 40.40 GiB left for a request's own prefill)
+ctxfit webgpu-0.5B-default: ok | webgpu:vulkan-resident (int4) | KV plan: 4 conversations x 16384 positions | fit: 16384-token cap needs 0.38 GiB KV (weights 0.33 GiB, budget 41.12 GiB, 40.74 GiB left for a request's own prefill)
+ctxfit cuda-0.5B-one-32768: ok | cuda-resident (int4) | KV plan: 1 conversation x 32768 positions (--ctx 32768) | fit: 32768-token cap needs 0.38 GiB KV (weights 0.33 GiB, budget 41.21 GiB, 40.84 GiB left for a request's own prefill)
+ctxfit webgpu-0.5B-one-32768: ok | webgpu:vulkan-resident (int4) | KV plan: 1 conversation x 16384 positions (--ctx 32768) | fit: 16384-token cap needs 0.38 GiB KV (weights 0.33 GiB, budget 41.10 GiB, 40.73 GiB left for a request's own prefill)
+ctxfit cuda-1.5B-default: ok | cuda-resident (int4) | KV plan: a 65536-position pool for 4 conversations; each is guaranteed 16384, and one can use up to 32768 | fit: 4 KV slots at a 32768-token cap hold 1.86 GiB KV (weights 0.93 GiB, budget 41.23 GiB, 39.37 GiB left for a request's own prefill)
+ctxfit webgpu-1.5B-default: ok | webgpu:vulkan-resident (int4) | KV plan: 4 conversations x 16384 positions | fit: 16384-token cap needs 0.88 GiB KV (weights 0.93 GiB, budget 40.77 GiB, 39.89 GiB left for a request's own prefill)
+ctxfit cuda-1.5B-one-32768: ok | cuda-resident (int4) | KV plan: 1 conversation x 32768 positions (--ctx 32768) | fit: 32768-token cap needs 0.88 GiB KV (weights 0.93 GiB, budget 41.29 GiB, 40.41 GiB left for a request's own prefill)
+ctxfit webgpu-1.5B-one-32768: ok | webgpu:vulkan-resident (int4) | KV plan: 1 conversation x 16384 positions (--ctx 32768) | fit: 16384-token cap needs 0.88 GiB KV (weights 0.93 GiB, budget 40.80 GiB, 39.92 GiB left for a request's own prefill)
+ctxfit cuda-7B-default: ok | cuda-resident (int4) | KV plan: a 55040-position pool for 4 conversations; each is guaranteed 13760, and one can use up to 32768 | fit: 4 KV slots at a 32768-token cap hold 2.95 GiB KV (weights 3.99 GiB, budget 41.29 GiB, 38.34 GiB left for a request's own prefill)
+ctxfit webgpu-7B-default: ok | webgpu:vulkan-resident (int4) | KV plan: 1 conversation x 16384 positions (4 asked for) | webgpu: 1 resident KV slots of 4 requested — slot 1 (1792 MB of KV at 16384 positions) did not fit: layer 15 KV: wgpu.(*Device).TryCreateBuffer: Validation Error
+ctxfit cuda-7B-one-32768: ok | cuda-resident (int4) | KV plan: 1 conversation x 32768 positions (--ctx 32768) | fit: 32768-token cap needs 1.75 GiB KV (weights 3.99 GiB, budget 41.31 GiB, 39.56 GiB left for a request's own prefill)
+ctxfit webgpu-7B-one-32768: ok | webgpu:vulkan-resident (int4) | KV plan: 1 conversation x 16384 positions (--ctx 32768) | fit: 16384-token cap needs 1.75 GiB KV (weights 3.99 GiB, budget 38.65 GiB, 36.90 GiB left for a request's own prefill)
+== longest-context probes done 2026-11-20 12:11:31 PST
+=== evict: fadvise DONTNEED over 6.3 GB of files load 2.54 3.38 3.55 MemAvailable 60661 MiB swap 416 MiB
+=== settle: load 0.73 < 0.8 after 80s
+=== 2026-11-20 12:12:52 PST START decode-0.5B-128 load 0.73 2.61 3.27 MemAvailable 60684 MiB swap 416 MiB
+=== 2026-11-20 12:14:11 PST END decode-0.5B-128 rc=0 (79s)
+=== evict: fadvise DONTNEED over 6.3 GB of files load 0.64 2.14 3.04 MemAvailable 60733 MiB swap 416 MiB
+=== settle: load 0.64 < 0.8 after 0s
+=== 2026-11-20 12:14:11 PST START decode-0.5B-2048 load 0.64 2.14 3.04 MemAvailable 60732 MiB swap 416 MiB
+=== 2026-11-20 12:16:37 PST END decode-0.5B-2048 rc=0 (146s)
+=== evict: fadvise DONTNEED over 6.3 GB of files load 0.47 1.52 2.68 MemAvailable 60726 MiB swap 416 MiB
+=== settle: load 0.47 < 0.8 after 0s
+=== 2026-11-20 12:16:37 PST START decode-1.5B-128 load 0.47 1.52 2.68 MemAvailable 60725 MiB swap 416 MiB
+=== 2026-11-20 12:18:52 PST END decode-1.5B-128 rc=0 (135s)
+=== evict: fadvise DONTNEED over 6.3 GB of files load 0.88 1.28 2.43 MemAvailable 60707 MiB swap 416 MiB
+=== settle: load 0.70 < 0.8 after 20s
+=== 2026-11-20 12:19:12 PST START decode-1.5B-2048 load 0.70 1.21 2.38 MemAvailable 60729 MiB swap 416 MiB
+=== 2026-11-20 12:22:38 PST END decode-1.5B-2048 rc=0 (206s)
+=== evict: fadvise DONTNEED over 6.3 GB of files load 0.56 0.89 2.01 MemAvailable 60726 MiB swap 416 MiB
+=== settle: load 0.56 < 0.8 after 0s
+=== 2026-11-20 12:22:38 PST START decode-7B-128 load 0.56 0.89 2.01 MemAvailable 60726 MiB swap 416 MiB
+=== 2026-11-20 12:26:51 PST END decode-7B-128 rc=0 (253s)
+=== evict: fadvise DONTNEED over 6.3 GB of files load 0.73 0.85 1.73 MemAvailable 60760 MiB swap 416 MiB
+=== settle: load 0.73 < 0.8 after 0s
+=== 2026-11-20 12:26:52 PST START decode-7B-2048 load 0.73 0.85 1.73 MemAvailable 60759 MiB swap 416 MiB
+=== 2026-11-20 12:33:09 PST END decode-7B-2048 rc=0 (377s)
+=== evict: fadvise DONTNEED over 6.3 GB of files load 0.89 0.74 1.37 MemAvailable 60754 MiB swap 416 MiB
+=== settle: load 0.63 < 0.8 after 20s
+=== 2026-11-20 12:33:29 PST START ttft load 0.63 0.69 1.34 MemAvailable 60664 MiB swap 416 MiB
+=== 2026-11-20 12:42:59 PST END ttft rc=0 (570s)
+decode 0.5B @128     VALID  native 521.2  webgpu 236.6  fraction 0.454 (0.452-0.456, 4 pairs)
+decode 0.5B @2048    VALID  native 447.2  webgpu 58.0  fraction 0.130 (0.129-0.130, 4 pairs)
+decode 1.5B @128     VALID  native 277.1  webgpu 141.9  fraction 0.512 (0.511-0.513, 4 pairs)
+decode 1.5B @2048    VALID  native 250.1  webgpu 42.3  fraction 0.169 (0.169-0.169, 4 pairs)
+decode 7B @128       VALID  native 86.1  webgpu 64.2  fraction 0.745 (0.745-0.746, 4 pairs)
+decode 7B @2048      VALID  native 79.2  webgpu 30.9  fraction 0.389 (0.388-0.390, 4 pairs)
+TTFT 0.5B @1024      VALID  native 62.3  webgpu 628.1  fraction 0.099 (0.098-0.101, 4 pairs)
+TTFT 1.5B @1024      VALID  native 168.9  webgpu 1433.5  fraction 0.118 (0.116-0.120, 4 pairs)
+TTFT 7B @1024        VALID  native 760.5  webgpu 4234.4  fraction 0.180 (0.179-0.180, 4 pairs)
+G-WG0: every cell valid
+finished  2026-11-20 12:42:59 PST rc=0 load 0.96 0.75 1.06 MemAvailable 60761 MiB swap 416 MiB
+2026-11-20 12:42:59 PST run-nobara.sh rc=0

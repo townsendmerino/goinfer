@@ -1,0 +1,7 @@
+=== RUN   TestEmbedInt4LongContext_run
+ei4lc cpu-int4head: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)], head int4, 2 documents
+ei4lc cpu-int4head: doc 1/2 backend_cuda_resident.go done, elapsed 10m55s
+ei4lc cpu-int4head: doc 2/2 docs_server.md done, elapsed 21m37s
+--- PASS: TestEmbedInt4LongContext_run (1297.78s)
+PASS
+ledger: 0 device(s) released in this run
