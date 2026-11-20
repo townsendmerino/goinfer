@@ -88,7 +88,7 @@ func TestGlmOcr_extractionPromptIDs(t *testing.T) {
 	}
 	m, err := decoder.Load("../../../testdata/glm-ocr-tiny", decoder.Options{Quant: "f32"})
 	if err != nil {
-		t.Skipf("no tiny fixture: %v", err)
+		t.Fatalf("load ../../../testdata/glm-ocr-tiny: %v", err)
 	}
 	defer m.Close()
 	lm := &loadedModel{tk: tk, model: m, tmpl: chat.GlmOCR(), glm: &glmOcrTower{dir: "unused"}, qwenMerge: 2, qwenImgTok: 59280}

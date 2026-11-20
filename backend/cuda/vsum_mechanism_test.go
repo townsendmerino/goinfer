@@ -34,10 +34,7 @@ func TestVsumMechanism(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (real checkpoint; needs Phase A's reference files)")
 	}
-	maxS := 0
-	if v, err := strconv.Atoi(strings.TrimSpace(os.Getenv("GOINFER_SPLITKV_VSUM_SPLIT"))); err == nil {
-		maxS = v
-	}
+	maxS := vsumSplitFromEnv(t)
 	var ss []int
 	sSpec := os.Getenv("GOINFER_VSUM_MECH_S")
 	if sSpec == "" {

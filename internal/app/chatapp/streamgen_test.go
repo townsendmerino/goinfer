@@ -82,7 +82,7 @@ func loadTinyTokenizerForTest(t *testing.T) *tokenizer.Tokenizer {
 	p := filepath.Join("../../../tokenizer/testdata/chatml-tiny.gguf")
 	tk, err := tokenizer.LoadGGUF(p)
 	if err != nil {
-		t.Skipf("no committed tiny tokenizer fixture at %s: %v", p, err)
+		t.Fatalf("load %s: %v", p, err)
 	}
 	return tk
 }

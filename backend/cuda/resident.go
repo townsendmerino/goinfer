@@ -746,7 +746,7 @@ type cudaResident struct {
 	psLaunches                                   int      // launch groups of it, for tests
 	skVsumPartial, skVsumCombine                 Pipeline // flash-decode V-sum SPIKE (opt-in, NOT bit-identical) — scoping-decode-tree-recanon.md §6
 	skPartialBuf                                 Buffer   // [nH·maxHd·nSplit] partial folds for the spike
-	skVsumSplit                                  int      // GOINFER_SPLITKV_VSUM_SPLIT; 0 = off (the shipped path)
+	skVsumSplit                                  int      // vsumSplitForTest at build; 0 = off (the shipped path)
 	// Flash-decode lane (decode_fa.cu): default on (GOINFER_CUDA_FLASH_DECODE=0 turns it off), NOT bit-identical.
 	faPartial     [3]Pipeline // fa_partial_{64,128,256}
 	kv8Store      Pipeline    // kv8_store: the int8 cache's quantizing store (kv8.go); bound only on an int8 cache
@@ -2965,7 +2965,7 @@ func (r *cudaResident) splitKVAttnDecode(l, pos int) error {
 	}
 	// 3. V-sum → r.cctx (each thread the whole ascending-s fold for one output dim). The branch below is the opt-in
 	// SPIKE path: it splits the V fold over S key chunks and combines in fixed order, so it is NOT bit-identical to
-	// attn_batched and is unreachable unless GOINFER_SPLITKV_VSUM_SPLIT is set.
+	// attn_batched and is unreachable unless a test sets vsumSplitForTest.
 	if r.skVsumSplit >= 1 && r.skVsumPartial != (Pipeline{}) && r.skVsumCombine != (Pipeline{}) {
 		nSplit := r.skVsumSplit
 		dy := uint32((Ly.hd + dTile - 1) / dTile)

@@ -8,7 +8,7 @@ import (
 )
 
 // TestDecodeVerifyDivergence_keyedOnTheSpike needs no GPU: it checks the predicate on a zero-value
-// resident, which is exactly the state of every resident loaded without GOINFER_SPLITKV_VSUM_SPLIT.
+// resident, which is exactly the state of every resident built without vsumSplitForTest.
 func TestDecodeVerifyDivergence_keyedOnTheSpike(t *testing.T) {
 	var r cudaResident
 	if err := r.DecodeVerifyDivergence(); err != nil {
@@ -29,8 +29,8 @@ func TestDecodeVerifyDivergence_keyedOnTheSpike(t *testing.T) {
 		t.Fatal("spike enabled (S=4) but no divergence reported — spec decode would silently stop " +
 			"being lossless")
 	}
-	// The operator reads this at startup; it has to name the knob that caused it.
-	if !strings.Contains(err.Error(), "GOINFER_SPLITKV_VSUM_SPLIT") {
-		t.Errorf("error does not name the env var an operator must unset: %v", err)
+	// The reader of this refusal has to learn what caused it.
+	if !strings.Contains(err.Error(), "V-sum split") {
+		t.Errorf("error does not name the V-sum split that caused it: %v", err)
 	}
 }
