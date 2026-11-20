@@ -200,7 +200,7 @@ func TestLoad_embedInt4RepackedOnlyEndToEnd(t *testing.T) {
 	}
 	m, err := Load(fixture, Options{Quant: "int4", EmbedInt4: true, Backend: "cpu"})
 	if err != nil {
-		t.Skipf("could not load %s at int4/embed-int4: %v", fixture, err)
+		t.Fatalf("load testdata/gptoss_tiny.gguf: %v", err)
 	}
 	defer m.Close()
 	layout := m.w.Embed.Int4Layout()
@@ -349,7 +349,7 @@ func TestLoad_qkvGateUpRepackedOnlyEndToEnd(t *testing.T) {
 	}
 	m, err := Load(fixture, Options{Quant: "int4", Backend: "cpu"})
 	if err != nil {
-		t.Skipf("could not load %s at int4: %v", fixture, err)
+		t.Fatalf("load testdata/gptoss_tiny.gguf: %v", err)
 	}
 	defer m.Close()
 	if len(m.w.Layers) == 0 {
@@ -392,7 +392,7 @@ func TestBackendReport_int4LayoutVisible(t *testing.T) {
 	}
 	promised, err := Load(fixture, Options{Quant: "int4", EmbedInt4: true, Backend: "cpu"})
 	if err != nil {
-		t.Skipf("could not load %s: %v", fixture, err)
+		t.Fatalf("load testdata/gptoss_tiny.gguf: %v", err)
 	}
 	defer promised.Close()
 	if report := promised.BackendReport(); !strings.Contains(report, "row4-only") {
@@ -401,7 +401,7 @@ func TestBackendReport_int4LayoutVisible(t *testing.T) {
 
 	unpromised, err := Load(fixture, Options{Quant: "int4", EmbedInt4: true})
 	if err != nil {
-		t.Skipf("could not load %s: %v", fixture, err)
+		t.Fatalf("load testdata/gptoss_tiny.gguf: %v", err)
 	}
 	defer unpromised.Close()
 	if report := unpromised.BackendReport(); strings.Contains(report, "row4-only") {

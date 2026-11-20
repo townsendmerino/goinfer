@@ -12,7 +12,7 @@ import (
 func TestWalkBatch_gatedAttentionIgnoresFastAttention(t *testing.T) {
 	m, err := Load("../testdata/qwen35-tiny", Options{})
 	if err != nil {
-		t.Skipf("no qwen35-tiny fixture: %v", err)
+		t.Fatalf("load ../testdata/qwen35-tiny: %v", err)
 	}
 	defer m.Close()
 	if !m.program().AnyOp(func(o *op) bool { return o.Kind == opGatedAttn }) {
@@ -51,7 +51,7 @@ func TestWalkBatch_gatedAttentionIgnoresFastAttention(t *testing.T) {
 func TestWalkBatch_gemma4PassTakesNoGenericAttentionScratch(t *testing.T) {
 	m, err := Load("../testdata/gemma4-moe-kv-tiny", Options{})
 	if err != nil {
-		t.Skipf("no gemma4-moe-kv-tiny fixture: %v", err)
+		t.Fatalf("load ../testdata/gemma4-moe-kv-tiny: %v", err)
 	}
 	defer m.Close()
 	const n = 12
