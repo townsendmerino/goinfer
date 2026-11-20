@@ -2,11 +2,11 @@ package serveapp
 
 import (
 	"errors"
-	"github.com/townsendmerino/goinfer/internal/codec"
 	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/internal/codec"
 )
 
 // The shared tool turn's reconciliation, driven by the real prose streamer and the real ChatML

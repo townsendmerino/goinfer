@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
-	"github.com/townsendmerino/goinfer/internal/runtime/scheduler"
 	"os"
 	"path/filepath"
 	"slices"
@@ -18,6 +16,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
+	"github.com/townsendmerino/goinfer/internal/runtime/scheduler"
 )
 
 // The scheduling census: today's scheduling

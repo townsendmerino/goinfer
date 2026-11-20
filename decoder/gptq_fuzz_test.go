@@ -3,12 +3,12 @@ package decoder
 import (
 	"encoding/binary"
 	"encoding/json"
-	"github.com/townsendmerino/goinfer/decoder/quant"
 	"math"
 	"testing"
 	"testing/fstest"
 
 	"github.com/townsendmerino/aikit/embed"
+	"github.com/townsendmerino/goinfer/decoder/quant"
 )
 
 // Track 2.4 (testing campaign): goinfer's interpretation of a pre-quantized

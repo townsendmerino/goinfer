@@ -1,11 +1,12 @@
 package serveapp
 
 import (
-	"github.com/townsendmerino/goinfer/internal/runtime/scheduler"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/scheduler"
 )
 
 func TestCommonPrefix(t *testing.T) {
