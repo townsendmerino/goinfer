@@ -149,14 +149,14 @@ func TestServe_maxConcurrentMatchesAlone(t *testing.T) {
 				return out
 			}
 			var sb strings.Builder
-			_, _, _, _, reused, _, derr := lm.drive(context.Background(),
+			res, derr := lm.drive(context.Background(),
 				genRequest{promptIDs: prompt, maxTokens: maxTok}, nil, nil, func(s string) { sb.WriteString(s) })
 			lm.exit()
 			if derr != nil {
 				t.Errorf("conversation %d turn %d: %v", c, tn, derr)
 				return out
 			}
-			out = append(out, turn{sb.String(), reused.Tokens})
+			out = append(out, turn{sb.String(), res.reused.Tokens})
 			next, _ := tk.Encode(sb.String()+" And then?", false)
 			prompt = append(slices.Clone(prompt), next...)
 		}
