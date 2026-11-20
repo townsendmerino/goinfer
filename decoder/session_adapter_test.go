@@ -19,7 +19,7 @@ import (
 func TestSession_snapshotAdapterContinuation(t *testing.T) {
 	base, writeAdapter := loraFixture(t)
 	be, _ := NewBackend("")
-	w, err := loadWeights(base, quantNone, false, true, false, nil, nil)
+	w, err := loadWeights(base, weightLoadOpts{needCanonical: true})
 	if err != nil {
 		t.Fatalf("loadWeights: %v", err)
 	}
