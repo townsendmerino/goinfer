@@ -1,16 +1,76 @@
 package decoder
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"math"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
 )
 
-// fixtureConfigEntries is the entries the loader table holds for fx's parsed config, beside its per-mode tensor digests.
+// loaderConfigMode is a GGUF fixture's loader table entry for its parsed config: configIdentity of the Cfg its loader
+// hands the model. A tensor identity leaves Cfg out and the program fingerprint reads the fixture directory's config.json,
+// not the .gguf, so this entry is what stands for the GGUF config parsers once the shadow key drops decoder/gguf.go. Parsing
+// is the same on every GOARCH, so the entry is too.
+const loaderConfigMode = "config"
+
+// fixtureConfigEntries is the entries the loader table holds for fx's parsed config, beside its per-mode tensor digests:
+// loaderConfigMode for a GGUF fixture, none for a directory fixture (its config.json reaches the key through the program
+// fingerprint).
 func fixtureConfigEntries(fx string, cfg *Config) map[string]string {
-	return nil
+	if !strings.HasSuffix(fx, ".gguf") {
+		return nil
+	}
+	return map[string]string{loaderConfigMode: configIdentity(cfg)}
+}
+
+// configIdentity is a SHA-256 over every field of cfg, exported or not and json-tagged or not, by reflection: pointers
+// followed (nil marked), slices with their length, maps in sorted key order, floats by their bits. A kind it cannot hash
+// (func, chan, interface) panics, so a new field of one fails here rather than dropping out of the digest.
+func configIdentity(cfg *Config) string {
+	h := sha256.New()
+	var walk func(path string, v reflect.Value)
+	walk = func(path string, v reflect.Value) {
+		switch v.Kind() {
+		case reflect.Pointer:
+			if v.IsNil() {
+				fmt.Fprintf(h, "%s=nil\n", path)
+				return
+			}
+			walk(path+"*", v.Elem())
+		case reflect.Struct:
+			for i := range v.NumField() {
+				walk(path+"."+v.Type().Field(i).Name, v.Field(i))
+			}
+		case reflect.Slice, reflect.Array:
+			fmt.Fprintf(h, "%s#%d\n", path, v.Len())
+			for i := range v.Len() {
+				walk(fmt.Sprintf("%s[%d]", path, i), v.Index(i))
+			}
+		case reflect.Map:
+			keys := v.MapKeys()
+			sort.Slice(keys, func(i, j int) bool { return fmt.Sprint(keys[i]) < fmt.Sprint(keys[j]) })
+			fmt.Fprintf(h, "%s#%d\n", path, len(keys))
+			for _, k := range keys {
+				walk(fmt.Sprintf("%s[%v]", path, k), v.MapIndex(k))
+			}
+		case reflect.Float32, reflect.Float64:
+			fmt.Fprintf(h, "%s=%x\n", path, math.Float64bits(v.Float()))
+		case reflect.Bool, reflect.String, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			fmt.Fprintf(h, "%s=%v\n", path, v)
+		default:
+			panic(fmt.Sprintf("configIdentity: %s: unsupported kind %s", path, v.Kind()))
+		}
+	}
+	walk("Cfg", reflect.ValueOf(cfg).Elem())
+	return "sha256:" + hex.EncodeToString(h.Sum(nil))
 }
 
 // TestLoaderIdentity_ggufConfigPlant: for every family under the loader rule with a GGUF loader fixture, a numeric change
