@@ -19,11 +19,12 @@
   KDA (Ling 3.0) — plus dense and sparse MoE; vision-in for Gemma 3 and the Qwen VL pair, no
   audio. Resident on 26 / 28 / 23 families (Metal / CUDA / WebGPU; `hardware-matrix.md`, 2026-09-25 — Phi-3 / Phi-4 now decline every GPU backend, queue-engineering.md H2). Loaders: safetensors, GGUF,
   GPTQ, AWQ, `.giw`; fp8 e4m3 reads (blockwise f32 scales).
-- **Standings vs Ollama** (the pre-registered sweep, nobara half re-run 2026-09-29 at `754f12d3`,
-  `measurements/peer-sweep-2026-09-29.md`; dated rows in `benchmarks.md`'s TL;DR): CUDA greedy decode **AHEAD in all 12 cells**
-  (0.5B / 1.5B / 7B, 128 to 8000 tokens; 1.05–1.47×), none void; CUDA TTFT on the 1.5B far ahead at K=512 and level at 3900;
-  CPU amd64 decode behind on the 0.5B only (0.91×; 1.5B level, 7B ahead); **Phi-3 on CUDA behind** at its real `q4k` default
-  (0.90× / 0.72× at 128 / 3900); a top-p sampling regression on CUDA, found by the sweep and fixed 2026-09-30. Mac Metal decode: the 2026-09-25
+- **Standings vs Ollama** (nobara re-anchored 2026-11-19/20 at `e29da447`, driver 595.112.07,
+  `measurements/peer-reanchor-2026-11-19/README.md`; dated rows in `benchmarks.md`'s TL;DR): CUDA greedy decode **AHEAD in 10 of 11
+  graded cells** (0.5B / 1.5B / 7B, 128 to 8000 tokens; 1.08–1.94×), LEVEL on the 7B at 8000, the 0.5B at 8000 void (issue #1160);
+  CUDA TTFT on the 1.5B ahead at K=512 and 3900 (4.59× / 1.43×, both capped by Ollama's spread); CPU amd64 decode behind on the 0.5B
+  (0.87×; 1.5B level, 7B ahead) and on phi3-mini and gpt-oss 20B (0.76× / 0.92×); **Phi-3 on CUDA behind** at its real `q4k` default
+  (0.91× / 0.79× at 128 / 3900); a top-p sampling regression on CUDA, found by the sweep and fixed 2026-09-30. Mac Metal decode: the 2026-09-25
   sweep had it behind at every depth ≥ 2048 (0.58–0.75×); after R18b a same-session run, not pre-registered, put it **ahead at
   every depth** (1.03–1.19×); the Mac half of the re-run (2026-09-30) is partial, with cell g one cell (0.5B at 128, AHEAD 1.296×) and
   cell i not run. Mac Metal TTFT, 1.05× / 1.96× behind at K=512 / 3900 after R16 (2026-09-25), is **level at K=3900 (0.983) and
