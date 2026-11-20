@@ -742,14 +742,10 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 		return
 	}
 	s.noteIDs(r, idsOut)
-	sm.fixedTokens = func() int { return lm.fixedPromptTokens(tm, system, tools) }
-	if gr, err = lm.prepare(sm, ids, lm.residentPath()); err != nil {
+	if gr, err = lm.prepareTurn(sm, tm, system, turns, tools, ids); err != nil {
 		writeAnthropicPrepareErr(w, err)
 		return
 	}
-	gr.boundary = lm.prefixBoundary(tm, system, turns, tools, ids)
-	gr.keep = lm.recurrentKeep(tm, system, turns, tools, ids)
-	gr.msgBoundary = lm.recurrentMsgBoundary(tm, system, turns, tools, ids)
 	if toolsActive {
 		if cerr := applyToolConstraint(lm, &gr, mode, name, tools); cerr != nil {
 			writeAnthropicErr(w, http.StatusBadRequest, "invalid_request_error", cerr.Error())
