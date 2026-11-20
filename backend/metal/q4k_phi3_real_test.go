@@ -261,6 +261,7 @@ func TestOP6MP_q4kPassFidelity(t *testing.T) {
 		t.Skip("set GOINFER_OP6MP_FIDELITY=1 (Phi-3 mini on Metal and the CPU, about 20 minutes)")
 	}
 	const cont = 32
+	t.Setenv("GOINFER_CPU_FAST_ATTENTION", "0") // the CPU reference's exact attention (PrefillLogitsForTest); knobs are read at Load
 	m, a, path := op6mpPhi3(t, 2048+cont+8)
 	tk, err := tokenizer.LoadGGUF(path)
 	if err != nil {
@@ -268,7 +269,6 @@ func TestOP6MP_q4kPassFidelity(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 55*time.Minute)
 	defer cancel()
-	t.Setenv("GOINFER_CPU_FAST_ATTENTION", "0") // the CPU reference's exact attention (PrefillLogitsForTest)
 	ref := func(ids []int) (logits [][]float32, toks []int) {
 		c := m.NewCache(len(ids) + cont)
 		lg, err := m.PrefillLogitsForTest(ctx, ids, c)
