@@ -219,3 +219,21 @@ The void rule voids any swap growth in a cell, and on nobara a big load can grow
   slice past ~60 GB of the box's 67 GB. After that, even phi3-mini's 2.4 GB load voided.
 - **Consequence:** under the zero bar, a cell on this box is likely to void whenever its load starts with the page cache
   near full.
+
+### Amendment, 2026-11-20 04:24 PST, before the by-day re-run's data
+
+- **What re-runs:** v2 only, as the new step `v2-g20`. Both arms (goinfer, then Ollama) are written to a fresh
+  `v2-g20.json`, in one session. The night's goinfer arm in `v-cpu.json` is not paired with a day Ollama arm, because
+  that would be a cross-session ratio. It stays in the record as goinfer alone.
+- **The cells, bands, void rule, binaries and harness are unchanged.** `BENCH_SWAP_*` is unchanged and the zero bar
+  applies.
+- **c-26b is not re-run.** Its goinfer and Ollama arms are a valid same-session pair, and this registration does not
+  re-run a valid cell.
+- **The box's state at the start:** the 04:22 swap diagnostic evicted the page cache of `~/models` and Ollama's model
+  store with `posix_fadvise(DONTNEED)` ([`evict_cache.py`](evict_cache.py); no root, no setting changed). That left the
+  user slice at 6.6 GB and 55 GiB free.
+  - The diagnostic's two untimed gpt-oss CPU loads grew swap by 0 MB: one with its file already cached, one after the
+    eviction.
+  - Nothing else about the box was changed.
+- **Run:** by day, `timing_lock.py run` (exclusive) around `timeout 60m bash run-nobara.sh cpu v2-g20`, about 20 min
+  expected (fit checks 1, settle 2, goinfer's gpt-oss cell about 8 and Ollama's about 5, plus gate waits).

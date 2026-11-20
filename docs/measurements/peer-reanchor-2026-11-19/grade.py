@@ -120,7 +120,7 @@ def prefill(path):
 
 if __name__ == "__main__":
     for B in DIRS:
-        for name in ("a-dense.json", "a-depth8000.json", "b-controls.json", "c-26b.json", "f-sampled.json", "e-cpu.json", "v-cpu.json"):
+        for name in ("a-dense.json", "a-depth8000.json", "b-controls.json", "c-26b.json", "f-sampled.json", "e-cpu.json", "v-cpu.json", "v2-g20.json"):
             if not os.path.exists(os.path.join(B, name)):
                 continue
             print(f"## {os.path.join(os.path.basename(B), name)}")

@@ -143,6 +143,12 @@ else
     python3 -u $B "$OUT/e-cpu.json"
   step v-cpu "$OUT/v-cpu.json" env BENCH_ENGINES=goinfer,ollama BENCH_MODELS=phi3-mini,G20 BENCH_BACKENDS=cpu BENCH_DEPTHS=none \
     python3 -u $B "$OUT/v-cpu.json"
+  # v2 alone, both arms in a fresh file, run only when named: v-cpu.json already holds goinfer's night arm, which the
+  # harness's resume would keep, pairing it with a later Ollama arm across sessions.
+  if [ -n "$STEPS" ]; then
+    step v2-g20 "$OUT/v2-g20.json" env BENCH_ENGINES=goinfer,ollama BENCH_MODELS=G20 BENCH_BACKENDS=cpu BENCH_DEPTHS=none \
+      python3 -u $B "$OUT/v2-g20.json"
+  fi
 fi
 echo "finished  $(ts) rc=$rc_all $(state)" | tee -a "$OUT/provenance.txt"
 exit $rc_all
