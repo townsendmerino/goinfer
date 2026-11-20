@@ -1,6 +1,7 @@
 package serveapp
 
 import (
+	"github.com/townsendmerino/goinfer/internal/runtime/scheduler"
 	"os"
 	"path/filepath"
 	"slices"
@@ -19,8 +20,8 @@ func TestCommonPrefix(t *testing.T) {
 		{[]int{5}, []int{6}, 0},
 	}
 	for _, c := range cases {
-		if got := commonPrefix(c.a, c.b); got != c.want {
-			t.Errorf("commonPrefix(%v,%v) = %d, want %d", c.a, c.b, got, c.want)
+		if got := scheduler.CommonPrefix(c.a, c.b); got != c.want {
+			t.Errorf("scheduler.CommonPrefix(%v,%v) = %d, want %d", c.a, c.b, got, c.want)
 		}
 	}
 }
@@ -42,24 +43,24 @@ func TestBestExtend(t *testing.T) {
 
 	// Continuing conversation A: A's tokens are a prefix of the new prompt → pick A.
 	promptA := append(append([]int(nil), convA...), 13, 14)
-	if got := bestExtend(sessions, promptA); got != 0 {
+	if got := scheduler.BestExtend(sessions, promptA); got != 0 {
 		t.Errorf("continuing A: bestExtend = %d, want 0", got)
 	}
 
 	// A brand-new conversation that only shares the system preamble: neither
 	// session's full tokens are contained → no reuse (don't hijack A or B).
 	fresh := append(append([]int(nil), sys...), 99, 98, 97)
-	if got := bestExtend(sessions, fresh); got != -1 {
+	if got := scheduler.BestExtend(sessions, fresh); got != -1 {
 		t.Errorf("fresh conversation: bestExtend = %d, want -1", got)
 	}
 
 	// Exact-prompt repeat of B (regeneration): B fully contained → pick B.
-	if got := bestExtend(sessions, append([]int(nil), convB...)); got != 1 {
+	if got := scheduler.BestExtend(sessions, append([]int(nil), convB...)); got != 1 {
 		t.Errorf("repeat B: bestExtend = %d, want 1", got)
 	}
 
 	// Empty session list.
-	if got := bestExtend(nil, promptA); got != -1 {
+	if got := scheduler.BestExtend(nil, promptA); got != -1 {
 		t.Errorf("empty: bestExtend = %d, want -1", got)
 	}
 }
@@ -143,7 +144,7 @@ func TestBestExtend_stopStringTokensReuse(t *testing.T) {
 
 	// Turn 3 continues from what the client saw, not from what the session stored.
 	turn3 := append(append([]int(nil), visible...), 20, 21)
-	if got := bestExtend(sessions, turn3); got != 0 {
+	if got := scheduler.BestExtend(sessions, turn3); got != 0 {
 		t.Errorf("bestExtend = %d, want 0 — the shared prefix (through the invisible post-stop tokens) should still be reused", got)
 	}
 }
@@ -159,7 +160,7 @@ func TestBestExtend_editedLastMessageReuse(t *testing.T) {
 	sessions := [][]int{original}
 
 	edited := append(append([]int(nil), shared...), 30, 31) // turn 2, edited
-	if got := bestExtend(sessions, edited); got != 0 {
+	if got := scheduler.BestExtend(sessions, edited); got != 0 {
 		t.Errorf("bestExtend = %d, want 0 — everything before the edit should still be reused", got)
 	}
 }

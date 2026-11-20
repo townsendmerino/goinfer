@@ -153,7 +153,7 @@ func (l *sessionLRU) acquire(prompt []int) *decoder.Session {
 	var s *decoder.Session
 	own := false
 	if i := pickSessionFor(lists, firsts, prompt, len(l.order) < l.size); i >= 0 {
-		own = keepsFirst(firsts[i], commonPrefix(lists[i], prompt))
+		own = scheduler.KeepsFirst(firsts[i], scheduler.CommonPrefix(lists[i], prompt))
 		moveToFront(l.order, i)
 		l.mark(l.order[0])
 		s = l.order[0]
@@ -243,9 +243,6 @@ func (l *sessionLRU) checkin(s *decoder.Session) {
 
 // coldestIdle is the index of the least recently used session no generation holds, or -1 when every one is busy.
 func (l *sessionLRU) coldestIdle() int { return scheduler.ColdestIdle(l.busyFlags()) }
-
-// bestExtend is scheduler.BestExtend: the session prompt extends past what it shares with every other, or -1.
-func bestExtend(sessions [][]int, prompt []int) int { return scheduler.BestExtend(sessions, prompt) }
 
 // fresh returns an empty session at the front: a new one if there's room, else
 // the evicted-and-reset coldest session (reusing its backing arrays). With tiered
@@ -353,7 +350,7 @@ func (l *sessionLRU) faultBack(prompt []int) *decoder.Session {
 	for i, c := range l.cold {
 		lists[i] = c.tokens
 	}
-	i := bestExtend(lists, prompt)
+	i := scheduler.BestExtend(lists, prompt)
 	if i < 0 {
 		return nil
 	}
@@ -433,9 +430,6 @@ func moveToFront[T any](s []T, i int) {
 	copy(s[1:i+1], s[:i])
 	s[0] = v
 }
-
-// commonPrefix is scheduler.CommonPrefix: the length of the longest common leading run of a and b.
-func commonPrefix(a, b []int) int { return scheduler.CommonPrefix(a, b) }
 
 // --- disk persistence (-session-dir) ---
 
@@ -529,6 +523,3 @@ func pickSession(sessions [][]int, prompt []int, spare bool) int {
 func pickSessionFor(sessions [][]int, firsts []int, prompt []int, spare bool) int {
 	return scheduler.PickSession(sessions, firsts, prompt, spare)
 }
-
-// keepsFirst is scheduler.KeepsFirst: kvmgr.Slots.KeepsFirst's test for the same conversation.
-func keepsFirst(first, keep int) bool { return scheduler.KeepsFirst(first, keep) }

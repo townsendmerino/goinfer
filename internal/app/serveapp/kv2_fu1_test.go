@@ -2,6 +2,7 @@ package serveapp
 
 import (
 	"context"
+	"github.com/townsendmerino/goinfer/internal/runtime/scheduler"
 	"math"
 	"os"
 	"path/filepath"
@@ -148,7 +149,7 @@ func TestKV2FU1_cpuOwnRollback(t *testing.T) {
 					}
 					prev := ts[tn-1]
 					full := append(slices.Clone(prev.prompt), prev.ids...)
-					keep := min(len(x.prompt)-1, commonPrefix(full, x.prompt))
+					keep := min(len(x.prompt)-1, scheduler.CommonPrefix(full, x.prompt))
 					if x.s != prev.s || x.reused != keep || x.shared != 0 {
 						t.Errorf("conversation %d turn %d: same session %v, reused %d, copied %d; want its own session, %d reused, nothing copied",
 							c, tn, x.s == prev.s, x.reused, x.shared, keep)

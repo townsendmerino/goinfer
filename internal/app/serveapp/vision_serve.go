@@ -14,7 +14,6 @@ import (
 	"github.com/townsendmerino/goinfer/internal/codec"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/multimodal"
-	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
 // imageSoftToken is the Gemma 3 image placeholder token; the per-image block and
@@ -75,12 +74,6 @@ func encodeVisionSegments(lm *loadedModel, tm *chat.Template, system string, tur
 		return nil, err
 	}
 	return codec.Encode(lm.tk, segs)
-}
-
-// spliceImageBlock is multimodal.SpliceImageBlock, shared with goinfer-chat and the examples; the reasoning, including the
-// last-occurrence rule, lives with it.
-func spliceImageBlock(segs []tokenizer.Segment, block string) ([]tokenizer.Segment, error) {
-	return multimodal.SpliceImageBlock(segs, block)
 }
 
 // visionPrompt runs img through the tower and assembles the multimodal prompt: the text turns with the family's image block
