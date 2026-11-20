@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sync/atomic"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // SpecStats accumulates CPU speculative-decoding telemetry for one Generate run. The GPU backend's batched-verify
@@ -180,7 +182,7 @@ func draftSpecLoop(ctx context.Context, tf, df Forward, isStop func(int) bool, c
 	}
 	// cur is the next confirmed token to feed; it is NOT yet in either cache
 	// (matching plain decode's "pending next token" invariant).
-	cur := argmax(seedLogits)
+	cur := sampling.Argmax(seedLogits)
 
 	// emit streams a confirmed token; returns false when generation should end
 	// (EOS/stop, maxTokens, or ctx cancel — the latter sets g.err).
@@ -220,7 +222,7 @@ func draftSpecLoop(ctx context.Context, tf, df Forward, isStop func(int) bool, c
 				g.err = err
 				return
 			}
-			draftTok[i] = argmax(dl)
+			draftTok[i] = sampling.Argmax(dl)
 			d = draftTok[i]
 		}
 
@@ -244,7 +246,7 @@ func draftSpecLoop(ctx context.Context, tf, df Forward, isStop func(int) bool, c
 		allAccept := true
 		var nextTok int
 		for i := range kRound {
-			ti := argmax(logitsN[i])
+			ti := sampling.Argmax(logitsN[i])
 			if draftTok[i] == ti {
 				accepted++
 				continue
@@ -258,7 +260,7 @@ func draftSpecLoop(ctx context.Context, tf, df Forward, isStop func(int) bool, c
 			stats.Evaluated++ // ...plus the one rejection this round (EvalAcceptanceRate)
 		}
 		if allAccept {
-			nextTok = argmax(logitsN[kRound]) // bonus token (kRound==0: cur's own verified next)
+			nextTok = sampling.Argmax(logitsN[kRound]) // bonus token (kRound==0: cur's own verified next)
 		}
 		stats.Accepted += accepted
 
