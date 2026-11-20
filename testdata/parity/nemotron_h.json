@@ -14,7 +14,7 @@
     "testdata/nemotron-tiny",
     "testdata/nemotron3nano-tiny"
   ],
-  "deps_hash": "sha256:953ecaf72d4d8731b2d8999f9dd878f506d436b7d4c28dd8fca97d73c45c9781",
+  "deps_hash": "sha256:173d3246a7db96c36a2cbaa5be2fb5dae6da1e2658bfdc6a6be558bc745f3daf",
   "status": "validated",
   "validated_at": "0b74e671",
   "date": "2026-09-18",
