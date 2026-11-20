@@ -209,8 +209,8 @@ func (m *Model) webgpuLayerCaches(i, ctx int, kvF16, kvI8 bool) (bufs []int64, k
 	case MixerMamba:
 		nH, hd, dS, nG, dConv, _, _, _, _, ok := m.BackendView().GraniteParams()
 		if !ok {
-			var nok bool
-			nH, hd, dS, nG, dConv, _, _, nok = m.BackendView().NemotronParams()
+			np, nok := m.BackendView().Nemotron()
+			nH, hd, dS, nG, dConv = np.NHeads, np.HeadDim, np.DState, np.NGroups, np.DConv
 			if !nok {
 				return nil, false
 			}

@@ -113,7 +113,8 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 			u32s++
 		}
 	}
-	if nh, hd, ds, ng, _, normG, _, ok := m.BackendView().NemotronParams(); ok && normG > 0 { // the Mamba-2 mixer
+	if np, ok := m.BackendView().Nemotron(); ok && np.NormGroups > 0 {
+		nh, hd, ds, ng := np.NHeads, np.HeadDim, np.DState, np.NGroups // the Mamba-2 mixer
 		dInner, gSize := nh*hd, ng*ds
 		f32 += int64(2*dInner + 2*gSize + nh + dInner + 2*gSize + 2*dInner + 1)
 		bytes += int64(dInner)
