@@ -219,21 +219,19 @@ func (s *server) loadQwen35MMProj(path string, int8Tower bool, backend string, r
 // attachQwen35Tower wires a (not yet loaded) Qwen3.5+ tower and its preprocessing into every loaded model.
 func (s *server) attachQwen35Tower(tower *qwen3Tower, pp multimodal.QwenPreprocessConfig, dir string) error {
 	for _, lm := range s.models {
-		lm.qwen3 = tower
-		lm.qwenPP = pp
-		lm.qwenMerge = pp.MergeSize
-		lm.qwenImgTok = -1
+		q := &qwen3Vision{qwenGrid: qwenGrid{pp: pp, merge: pp.MergeSize, imgTok: -1}, qwen3Tower: tower}
+		lm.vision = q
 		if id, ok := lm.tk.TokenID(multimodal.QwenImagePad); ok {
-			lm.qwenImgTok = id
+			q.imgTok = id
 		}
-		if lm.qwenImgTok < 0 {
+		if q.imgTok < 0 {
 			return fmt.Errorf("vision: tokenizer has no %q token (needed to place image embeddings)", multimodal.QwenImagePad)
 		}
 		family := "Qwen3.5"
 		if tower.deep > 0 {
 			family = "Qwen3-VL"
 		}
-		fmt.Fprintf(os.Stderr, "%s vision for %q: tower (%s) loads on first image (merge %d, image-pad id %d, <= %d tokens/image) from %s\n", family, lm.name, tower.plan.where, lm.qwenMerge, lm.qwenImgTok, qwen3MaxImageTokens, dir)
+		fmt.Fprintf(os.Stderr, "%s vision for %q: tower (%s) loads on first image (merge %d, image-pad id %d, <= %d tokens/image) from %s\n", family, lm.name, tower.plan.where, q.merge, q.imgTok, qwen3MaxImageTokens, dir)
 	}
 	return nil
 }

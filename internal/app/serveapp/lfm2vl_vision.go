@@ -19,6 +19,16 @@ type lfm2vlTower struct {
 	imgTok int
 }
 
+func (t *lfm2vlTower) family() string { return "LFM2-VL" }
+func (t *lfm2vlTower) kind() string   { return "lfm2vl" }
+func (t *lfm2vlTower) imageTok() int  { return t.imgTok }
+
+func (t *lfm2vlTower) close() {
+	if t.enc != nil {
+		t.enc.Close()
+	}
+}
+
 // loadLfm2VLVisionTower attaches LFM2-VL's tower to the single loaded model.
 func (s *server) loadLfm2VLVisionTower(dir string) error {
 	enc, err := vision.LoadSiglip2NaFlexEncoder(dir, false)
@@ -49,16 +59,15 @@ func (s *server) loadLfm2VLVisionTower(dir string) error {
 				return fmt.Errorf("vision: tokenizer has no %q token", t)
 			}
 		}
-		lm.lfm2vl = &lfm2vlTower{enc: enc, proj: proj, pp: pp, imgTok: id}
+		lm.vision = &lfm2vlTower{enc: enc, proj: proj, pp: pp, imgTok: id}
 		fmt.Fprintf(os.Stderr, "loaded LFM2-VL vision tower for %q (SigLIP2 NaFlex, %d layers, image token id %d, tower on CPU, float32) from %s\n", lm.name, enc.Cfg.NumHiddenLayers, id, dir)
 	}
 	return nil
 }
 
-// lfm2vlPrep prepares one image: its tiles (row-major, then the thumbnail), one <image> run per tile, and the lazy tower
+// prep prepares one image: its tiles (row-major, then the thumbnail), one <image> run per tile, and the lazy tower
 // and projector over each tile in turn.
-func (lm *loadedModel) lfm2vlPrep(img imageRef) (imagePrep, error) {
-	t := lm.lfm2vl
+func (t *lfm2vlTower) prep(lm *loadedModel, img imageRef) (imagePrep, error) {
 	layout, err := multimodal.Lfm2VLPreprocess(img.data, t.pp)
 	if err != nil {
 		return imagePrep{}, err

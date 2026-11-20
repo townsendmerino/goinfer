@@ -52,10 +52,14 @@ func TestServe_qwen35Image_G4(t *testing.T) {
 		t.Fatalf("newServer: %v", err)
 	}
 	lm := srv.models["q35"]
-	if lm == nil || lm.qwen3 == nil || !lm.visionCapable() {
+	var q3 *qwen3Vision
+	if lm != nil {
+		q3, _ = lm.vision.(*qwen3Vision)
+	}
+	if q3 == nil || !lm.visionCapable() {
 		t.Fatal("auto-discovery did not attach the Qwen3.5 tower to the served model")
 	}
-	if lm.qwen3.enc != nil {
+	if q3.enc != nil {
 		t.Error("the tower loaded at startup; it must load on the first image")
 	}
 	mux := http.NewServeMux()
@@ -158,7 +162,7 @@ func TestServe_qwen35Image_G4(t *testing.T) {
 			}
 		})
 	}
-	if lm.qwen3.enc == nil {
+	if q3.enc == nil {
 		t.Error("the tower never loaded: the image path did not run through it")
 	}
 }
