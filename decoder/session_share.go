@@ -97,15 +97,10 @@ func (s *Session) CopyPrefixFrom(donor *Session, n int) error {
 		return err
 	}
 	s.tokens = append(s.tokens[:0], donor.tokens[:n]...)
-	s.classes = clipClassRuns(donor.classes, n)
+	s.classes = kvmgr.ClipClassRuns(donor.classes, n)
 	s.kvAdapter, s.cleanCache = donor.kvAdapter, false
 	s.shared, s.copyDur = n, time.Since(t0)
 	return nil
-}
-
-// clipClassRuns is runs restricted to rows [0, n), as a new slice.
-func clipClassRuns(runs []kvmgr.ClassRun, n int) []kvmgr.ClassRun {
-	return kvmgr.ClipClassRuns(runs, n)
 }
 
 // KVShareOff reports Options.KVShareOff: no request takes KV rows another conversation computed.
@@ -120,5 +115,5 @@ func (s *Session) KeepPrefix(n int) {
 		return
 	}
 	s.tokens = s.tokens[:n]
-	s.classes = clipClassRuns(s.classes, n)
+	s.classes = kvmgr.ClipClassRuns(s.classes, n)
 }

@@ -12,6 +12,8 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
+
+	"github.com/townsendmerino/goinfer/decoder/config"
 )
 
 // GGUF loading: read a quantized llama.cpp checkpoint and run it through the generic forward. The GGUF file carries both
@@ -1340,7 +1342,7 @@ func StreamTranscodeGGUF(ctx context.Context, path string, out io.Writer, quant 
 	// into cfg.EOSTokenID so it round-trips through the bundle. Without it a .giw would carry only the raw GGUF-metadata EOS,
 	// dropping any extra stop id from a sibling generation_config.json, and the stream would diverge from the resident bundle
 	// (TestStreamTranscodeMatchesResident byte-diffs the two).
-	if raw, jerr := json.Marshal(resolveEOSIDs(filepath.Dir(path), cfg)); jerr == nil {
+	if raw, jerr := json.Marshal(config.ResolveEOSIDs(filepath.Dir(path), cfg)); jerr == nil {
 		cfg.EOSTokenID = raw
 	}
 	if err := validateGGUFDims(cfg); err != nil {

@@ -395,7 +395,7 @@ func (m *Model) residentAcquireIn(prompt []int, imgs []residentImageClaim, lora 
 	if acq.slot >= 0 {
 		a := m.kvSlots()
 		if sq := a.Seq(a.Bound()); sq != nil {
-			acq.slotLen, acq.match = sq.Len(), commonPrefixLen(sq.Tokens(), prompt)
+			acq.slotLen, acq.match = sq.Len(), kvmgr.CommonPrefixLen(sq.Tokens(), prompt)
 		}
 		if sc.checkpoint {
 			m.residentCheckpointRestore(prompt, &acq) // before the manager records what the request skips

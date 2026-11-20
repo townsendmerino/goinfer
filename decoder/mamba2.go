@@ -5,6 +5,8 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/internal/runtime/mamba2"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 )
 
 // Mamba-2 selective state-space sequence mixer (Granite-4.0 hybrid). Like Gated DeltaNet (deltanet.go) it is an
@@ -106,7 +108,7 @@ func mamba2Step(h []float32, w *mamba2Weights, p mamba2Params, eps float64, st *
 	if w.inQ.Rows() > 0 {
 		proj = matvecWM(nil, &w.inQ, h)
 	} else {
-		proj = matvec(inProj, p.projDim(), p.Hidden, h)
+		proj = hybridattn.Matvec(inProj, p.projDim(), p.Hidden, h)
 	}
 
 	// 2–5. The conv, the selective scan and the gated norm (internal/mamba2).
@@ -120,7 +122,7 @@ func mamba2Step(h []float32, w *mamba2Weights, p mamba2Params, eps float64, st *
 	if w.outQ.Rows() > 0 {
 		return matvecWM(nil, &w.outQ, gated)
 	}
-	return matvec(outProj, p.Hidden, dInner, gated)
+	return hybridattn.Matvec(outProj, p.Hidden, dInner, gated)
 }
 
 // mambaCapHook (test seam, gpu/mamba_realinput_test.go) captures each mamba2Step's in_proj

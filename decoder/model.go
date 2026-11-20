@@ -20,6 +20,8 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
+
+	"github.com/townsendmerino/goinfer/decoder/config"
 )
 
 // decodeTiming env-gates per-component decode timing (GOINFER_DECODE_TIMING=1) so
@@ -684,7 +686,7 @@ func Load(dir string, opts Options) (*Model, error) {
 	if strings.HasSuffix(dir, ".gguf") {
 		eosDir = filepath.Dir(dir)
 	}
-	resolvedEOS := resolveEOSIDs(eosDir, &w.Cfg)
+	resolvedEOS := config.ResolveEOSIDs(eosDir, &w.Cfg)
 	if raw, err := json.Marshal(resolvedEOS); err == nil {
 		w.Cfg.EOSTokenID = raw
 	}

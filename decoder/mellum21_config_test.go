@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder/config"
 )
 
 // The real Mellum2.1 config.json and generation_config.json (JetBrains/Mellum2.1-12B-A2.5B-Thinking @ 92ddae9f, 2026-10-09), no weights.
@@ -32,7 +34,7 @@ func TestMellum21_configResolves(t *testing.T) {
 	if got != want {
 		t.Errorf("resolved shape %+v, want %+v", got, want)
 	}
-	if ids := resolveEOSIDs(dir, cfg); !reflect.DeepEqual(ids, []int{28}) {
+	if ids := config.ResolveEOSIDs(dir, cfg); !reflect.DeepEqual(ids, []int{28}) {
 		t.Errorf("resolved stop ids %v, want [28] (<|im_end|>)", ids)
 	}
 }

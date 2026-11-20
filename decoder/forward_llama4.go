@@ -3,6 +3,8 @@ package decoder
 import (
 	"math"
 	"unsafe"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 )
 
 // Llama 4 (llama4_text): the iRoPE text decoder. Its program is Architecture.llama4LayerOps: a pre-norm layer whose attention
@@ -47,7 +49,7 @@ func (m *Model) llama4MoEWith(h, out []float32, lw *LayerWeights, moe *MoEConfig
 	scaled := make([]float32, hidden)
 	expOut := make([]float32, hidden)
 	for _, e := range idx {
-		w := sigmoidf(logits[e]) // router weight = sigmoid of the (unbiased) logit
+		w := hybridattn.Sigmoidf(logits[e]) // router weight = sigmoid of the (unbiased) logit
 		for i := range h {
 			scaled[i] = w * h[i]
 		}
