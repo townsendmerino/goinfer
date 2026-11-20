@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/chat"
-	"github.com/townsendmerino/goinfer/embeddinggemma2"
-	"github.com/townsendmerino/goinfer/internal/audio"
 	"github.com/townsendmerino/goinfer/internal/codec"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/multimodal"
@@ -123,11 +121,8 @@ func (lm *loadedModel) featureCacheSize() int {
 }
 
 func (lm *loadedModel) visionPromptUncached(tm *chat.Template, system string, turns []chat.Turn, img imageRef) (visionInput, error) {
-	if img.audio && lm.qwenASRDir != "" { // Qwen3-ASR has a fixed prompt layout: no user-turn text, no template rendering
-		return lm.qwenASRPrompt(system, img)
-	}
-	if img.audio && lm.voxtralDir != "" { // Voxtral builds its transcription request itself (no chat template ships with it)
-		return lm.voxtralPrompt(img)
+	if img.audio && lm.audio != nil {
+		return lm.audio.prompt(lm, tm, system, turns, img)
 	}
 	if lm.tmpl == nil {
 		return visionInput{}, fmt.Errorf("this model has no chat template for vision")
@@ -143,10 +138,7 @@ func (lm *loadedModel) visionPromptUncached(tm *chat.Template, system string, tu
 		return lm.imagesPrompt(tm, system, turns, idx, "qwen", []imageRef{img}, false, "", false)
 	}
 	if img.audio {
-		if !lm.audioCapable() {
-			return visionInput{}, fmt.Errorf("this model has no audio tower")
-		}
-		return lm.gemma4AudioPrompt(tm, system, turns, idx, img)
+		return visionInput{}, fmt.Errorf("this model has no audio tower")
 	}
 	return lm.imagesPrompt(tm, system, turns, idx, lm.imageKind(), []imageRef{img}, false, "", false)
 }
@@ -213,10 +205,8 @@ func recoverDeviceTower(family string, fn func() ([]float32, error)) (out []floa
 // towerFamily names this model's tower for an error message.
 func (lm *loadedModel) towerFamily(audio bool) string {
 	switch {
-	case audio && lm.qwenASRDir != "":
-		return "Qwen3-ASR audio"
-	case audio && lm.voxtralDir != "":
-		return "Voxtral audio"
+	case audio && lm.audio != nil:
+		return lm.audio.family()
 	case audio:
 		return "Gemma 4 audio"
 	case lm.glm != nil:
@@ -287,105 +277,6 @@ func (lm *loadedModel) glmOcrVisionPrompt(tm *chat.Template, system string, turn
 		return visionInput{}, fmt.Errorf("image placeholder run = %d image tokens, want %d (template mismatch)", imgLen, n)
 	}
 	return visionInput{ids: ids, features: features, imgHash: imgHash, imgPos: imgPos, imgLen: imgLen, grid: grid, qwen: true}, nil
-}
-
-// gemma4AudioEncoder is the audio tower, loaded on the first clip (aikit's gemma4_audio, CPU, float32).
-func (lm *loadedModel) gemma4AudioEncoder() (*audio.Gemma4AudioEncoder, error) {
-	lm.gemma4AudioOnce.Do(func() {
-		t0 := time.Now()
-		lm.gemma4Audio, lm.gemma4AudioErr = audio.LoadGemma4AudioEncoder(lm.gemma4AudioDir)
-		if lm.gemma4AudioErr == nil {
-			fmt.Fprintf(os.Stderr, "audio: loaded the Gemma 4 audio tower for %q in %s\n", lm.name, time.Since(t0).Round(time.Millisecond))
-			if lm.gemma4AudioDevice != "" {
-				acc, err := embeddinggemma2.NewAudioAccelerator(lm.gemma4AudioDevice, lm.gemma4Audio)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "audio: the %s audio tower declined (%v); the tower runs on the CPU\n", lm.gemma4AudioDevice, err)
-				} else {
-					lm.gemma4AudioAcc = acc
-				}
-			}
-		}
-	})
-	return lm.gemma4Audio, lm.gemma4AudioErr
-}
-
-// gemma4AudioForward is the audio tower: the conformer blocks on the accelerator when there is one between
-// aikit's Subsample and FinishBlocks on the host; otherwise aikit's CPU Forward.
-func (lm *loadedModel) gemma4AudioForward(enc *audio.Gemma4AudioEncoder, mel []float32, T int) ([]float32, error) {
-	if lm.gemma4AudioAcc == nil {
-		return enc.Forward(mel, T)
-	}
-	h, n, err := enc.Subsample(mel, T)
-	if err != nil {
-		return nil, err
-	}
-	hb, err := lm.gemma4AudioAcc.Blocks(h, n)
-	if err != nil {
-		return nil, err
-	}
-	return enc.FinishBlocks(hb, n)
-}
-
-// gemma4AudioMaxSoftTokens is the processor's cap on one clip's soft tokens (E2B's processor_config.json,
-// audio_seq_length: 750, 30 s at 40 ms per token). A longer clip is refused rather than cut.
-const gemma4AudioMaxSoftTokens = 750
-
-// gemma4AudioMaxSeconds is the same cap in seconds of 16 kHz audio.
-const gemma4AudioMaxSeconds = 30
-
-// gemma4AudioPrompt is the Gemma 4 audio path: the WAV (16-bit PCM at any rate, 1-8 channels, downmixed and resampled to 16
-// kHz mono by resample_poly's filter) through aikit's log-mel and the audio tower (embed_audio baked in) -> the prompt with
-// the audio block, <|audio> + n x <|audio|> + <audio|>, before the user's text, as HF's processor writes it (no newline on
-// either side). The run is generated through GenerateGemma4VL, which splices any media run the same way: rows unscaled, PAD
-// for PLE's token-identity term.
-func (lm *loadedModel) gemma4AudioPrompt(tm *chat.Template, system string, turns []chat.Turn, idx int, clip imageRef) (visionInput, error) {
-	wav, err := multimodal.ParseWAV(clip.data)
-	if err != nil {
-		return visionInput{}, err
-	}
-	// Checked on the samples, not the soft-token count: the extractor itself stops at 30 s, so a longer clip would
-	// otherwise be cut without a word.
-	if n := wav.Samples(); n > gemma4AudioMaxSeconds*audio.Gemma4SampleRate {
-		return visionInput{}, fmt.Errorf("the audio clip is %.1f s, over the %d s the model reads", float64(n)/audio.Gemma4SampleRate, gemma4AudioMaxSeconds)
-	}
-	samples := wav.Decode()
-	mel, T, err := audio.Gemma4Features(samples)
-	if err != nil {
-		return visionInput{}, fmt.Errorf("audio features: %w", err)
-	}
-	n := audio.Gemma4SoftTokens(T)
-	if n > gemma4AudioMaxSoftTokens {
-		return visionInput{}, fmt.Errorf("the audio clip is %.1f s, over the 30 s (%d soft tokens) the model reads", float64(len(samples))/16000, gemma4AudioMaxSoftTokens)
-	}
-	if n <= 0 {
-		return visionInput{}, fmt.Errorf("the audio clip is too short (%d samples)", len(samples))
-	}
-	hiddenDim := lm.mdl().Config().HiddenDim
-	features := func() ([]float32, error) {
-		enc, err := lm.gemma4AudioEncoder()
-		if err != nil {
-			return nil, fmt.Errorf("gemma4 audio tower: %w", err)
-		}
-		feats, err := lm.gemma4AudioForward(enc, mel, T)
-		if err != nil {
-			return nil, fmt.Errorf("gemma4 audio tower: %w", err)
-		}
-		if len(feats) != n*hiddenDim {
-			return nil, fmt.Errorf("gemma4 audio tower emitted %d values, want %d x %d", len(feats), n, hiddenDim)
-		}
-		return feats, nil
-	}
-	block := multimodal.Gemma4AudioBlock(n)
-	turns[idx].Content = block + turns[idx].Content
-	ids, err := encodeVisionSegments(lm, tm, system, turns, block)
-	if err != nil {
-		return visionInput{}, fmt.Errorf("encode: %w", err)
-	}
-	pos, ln := multimodal.FindImageRun(ids, lm.gemma4AudioTok)
-	if ln != n {
-		return visionInput{}, fmt.Errorf("audio placeholder run = %d soft tokens, want %d (tokenizer/template mismatch)", ln, n)
-	}
-	return visionInput{ids: ids, features: features, imgHash: multimodal.HashImageBytes(clip.data), imgPos: pos, imgLen: ln, gemma4: true}, nil
 }
 
 // serveVisionChat handles an OpenAI /v1/chat/completions request that carries an
@@ -664,110 +555,4 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		vmsg["goinfer_empty_answer"] = e
 	}
 	writeJSON(w, http.StatusOK, gr.clock.AddTurn(vmsg))
-}
-
-// qwenASRMaxSeconds is the longest clip a request may carry. The model has no 30 s window (its encoder attends within 8 s blocks), so this is a cost bound, not the model's limit: a
-// clip over it is refused rather than cut.
-const qwenASRMaxSeconds = 600
-
-// qwenASREncoder is the Qwen3-ASR audio encoder and projector, loaded on the first clip (aikit's, CPU, float32), so a server that never hears audio never pays for it.
-func (lm *loadedModel) qwenASREncoder() (*audio.QwenASREncoder, error) {
-	lm.qwenASROnce.Do(func() { lm.qwenASR, lm.qwenASRErr = audio.LoadQwenASREncoder(lm.qwenASRDir) })
-	return lm.qwenASR, lm.qwenASRErr
-}
-
-// qwenASRPrompt is the Qwen3-ASR path: the WAV (16-bit PCM at any rate, downmixed and resampled to 16 kHz mono as for Gemma 4's audio) through the Qwen3-ASR front end, whose
-// frame count fixes the number of audio tokens, into the fixed prompt layout with the assistant turn already opened by "language" (multimodal.QwenASRPromptOpenLanguage; the
-// model still writes the name and <asr_text>). The encoder runs lazily inside features(). The reply is the model's raw "language <Name><asr_text><transcription>", the word
-// supplied from the prompt via replyPrefix, so completion_tokens does not count it. Text in the user turn is not part of the template and is ignored, the system message is passed through.
-func (lm *loadedModel) qwenASRPrompt(system string, clip imageRef) (visionInput, error) {
-	wav, err := multimodal.ParseWAV(clip.data)
-	if err != nil {
-		return visionInput{}, err
-	}
-	if n := wav.Samples(); n > qwenASRMaxSeconds*audio.WhisperSampleRate {
-		return visionInput{}, fmt.Errorf("the audio clip is %.1f s, over the %d s one request may carry", float64(n)/audio.WhisperSampleRate, qwenASRMaxSeconds)
-	}
-	samples := wav.Decode()
-	f, err := audio.QwenASRFeatures(samples)
-	if err != nil {
-		return visionInput{}, fmt.Errorf("audio features: %w", err)
-	}
-	n := audio.QwenASRTokenCount(f.Valid)
-	hiddenDim := lm.mdl().Config().HiddenDim
-	features := func() ([]float32, error) {
-		enc, err := lm.qwenASREncoder()
-		if err != nil {
-			return nil, fmt.Errorf("qwen3-asr audio encoder: %w", err)
-		}
-		emb, got, err := enc.Forward(f.Data, f.T, f.Valid)
-		if err != nil {
-			return nil, fmt.Errorf("qwen3-asr audio encoder: %w", err)
-		}
-		if got != n || len(emb) != n*hiddenDim {
-			return nil, fmt.Errorf("qwen3-asr audio encoder emitted %d tokens (%d values), want %d x %d", got, len(emb), n, hiddenDim)
-		}
-		return emb, nil
-	}
-	ids, pos, err := multimodal.QwenASRPromptOpenLanguage(lm.tk, system, n)
-	if err != nil {
-		return visionInput{}, fmt.Errorf("encode: %w", err)
-	}
-	return visionInput{ids: ids, features: features, imgHash: multimodal.HashImageBytes(clip.data), imgPos: pos, imgLen: n, asr: true, replyPrefix: multimodal.QwenASRLanguageWord}, nil
-}
-
-// voxtralMaxSeconds is the longest clip a request may carry. Each 30 s window is a full encoder pass (about a minute on a CPU), so this is a cost bound, not the model's limit; a clip over it is
-// refused rather than cut.
-const voxtralMaxSeconds = 600
-
-// voxtralEncoder is Voxtral's audio tower and projector (aikit's, CPU, float32), loaded on the first clip.
-func (lm *loadedModel) voxtralEncoder() (*audio.VoxtralAudio, error) {
-	lm.voxtralOnce.Do(func() {
-		lm.voxtral, lm.voxtralErr = audio.LoadVoxtralAudio(lm.voxtralDir)
-		if lm.voxtralErr == nil {
-			var where string
-			lm.voxtralDevice, where = attachWhisperDevice(lm.voxtral.Enc, lm.voxtralBackend, os.Stderr)
-			fmt.Fprintf(os.Stderr, "audio: loaded the Voxtral audio tower for %q (encoder on %s)\n", lm.name, where)
-		}
-	})
-	return lm.voxtral, lm.voxtralErr
-}
-
-// voxtralPrompt is the Voxtral path: the WAV (16-bit PCM at any rate, downmixed and resampled to 16 kHz mono as for the other audio models) through the Whisper-style 128-mel front end, one
-// 30 s window at a time (the clip is padded up to whole windows), into the transcription request mistral_common lays out (multimodal.VoxtralPrompt, with no language: the model detects
-// it). The tower and projector run lazily inside features(). The reply is the model's raw text; text in the user turn is ignored, the system message is not used.
-func (lm *loadedModel) voxtralPrompt(clip imageRef) (visionInput, error) {
-	wav, err := multimodal.ParseWAV(clip.data)
-	if err != nil {
-		return visionInput{}, err
-	}
-	if n := wav.Samples(); n > voxtralMaxSeconds*audio.WhisperSampleRate {
-		return visionInput{}, fmt.Errorf("the audio clip is %.1f s, over the %d s one request may carry", float64(n)/audio.WhisperSampleRate, voxtralMaxSeconds)
-	}
-	samples := wav.Decode()
-	n := multimodal.VoxtralAudioTokens(len(samples))
-	hiddenDim := lm.mdl().Config().HiddenDim
-	features := func() ([]float32, error) {
-		wins, err := audio.WhisperFeaturesWindows(samples, 128)
-		if err != nil {
-			return nil, fmt.Errorf("audio features: %w", err)
-		}
-		enc, err := lm.voxtralEncoder()
-		if err != nil {
-			return nil, fmt.Errorf("voxtral audio encoder: %w", err)
-		}
-		emb, err := enc.Embed(wins)
-		if err != nil {
-			return nil, fmt.Errorf("voxtral audio encoder: %w", err)
-		}
-		if len(emb) != n*hiddenDim {
-			return nil, fmt.Errorf("voxtral audio encoder emitted %d values, want %d x %d", len(emb), n, hiddenDim)
-		}
-		return emb, nil
-	}
-	ids, pos, err := multimodal.VoxtralPrompt(lm.tk, n, "")
-	if err != nil {
-		return visionInput{}, fmt.Errorf("encode: %w", err)
-	}
-	return visionInput{ids: ids, features: features, imgHash: multimodal.HashImageBytes(clip.data), imgPos: pos, imgLen: n, asr: true}, nil
 }

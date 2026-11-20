@@ -126,30 +126,10 @@ func (lm *loadedModel) closeEntryNatives() {
 	}
 	lm.venc, lm.vproj, lm.qwenEnc, lm.glm, lm.qwen3 = nil, nil, nil, nil, nil
 	lm.gemma4Enc, lm.gemma4Tower, lm.gemma4Swap, lm.pixtral, lm.lfm2vl = nil, nil, nil, nil, nil
-	if lm.gemma4AudioAcc != nil {
-		_ = lm.gemma4AudioAcc.Close()
-		lm.gemma4AudioAcc = nil
-	}
-	lm.gemma4Audio = nil
-	// The Voxtral and Qwen3-ASR encoders keep their checkpoint mapped until Close, the mapping's only release (aikit
-	// embed.SafetensorsFile.Close), and a device attached to Voxtral's tower is the caller's to close.
-	if lm.voxtralDevice != nil {
-		_ = lm.voxtralDevice.Close()
-		lm.voxtralDevice = nil
-	}
-	if lm.voxtral != nil {
-		_ = closeAudioEncoder("voxtral", lm.voxtral)
-		lm.voxtral = nil
-	}
-	if lm.qwenASR != nil {
-		_ = closeAudioEncoder("qwenASR", lm.qwenASR)
-		lm.qwenASR = nil
+	if lm.audio != nil {
+		lm.audio.close()
 	}
 }
-
-// closeAudioEncoder closes one of an entry's lazily loaded audio encoders at unload. A variable so a test can count the
-// calls.
-var closeAudioEncoder = func(field string, enc interface{ Close() error }) error { return enc.Close() }
 
 // closeVisionTowers closes the entry's vision tower; the caller nils the fields. A device tower holds its weights and
 // scratch on its own device ledger, which only its Close frees. The CPU encoders' weights alias their checkpoint's

@@ -1514,10 +1514,11 @@ func (s *server) loadGemma4VisionTower(dir string, int8Tower bool, backend strin
 			if !ok {
 				return fmt.Errorf("audio: %s has an audio tower but its tokenizer has no %q token", dir, multimodal.Gemma4AudioSoftToken)
 			}
-			lm.gemma4AudioDir, lm.gemma4AudioTok = dir, id
+			at := &gemma4Audio{dir: dir, tok: id}
+			lm.audio = at
 			where := "CPU"
 			if backend == "metal" && slices.Contains(embeddinggemma2.AudioAccelerators(), "metal") { // the conformer blocks run on Metal
-				lm.gemma4AudioDevice, where = "metal", "Metal (the conformer blocks; subsample and tail on the CPU)"
+				at.device, where = "metal", "Metal (the conformer blocks; subsample and tail on the CPU)"
 			}
 			fmt.Fprintf(os.Stderr, "Gemma 4 audio input on for %q (audio-token id %d; the tower loads on the first clip, %s) from %s\n", lm.name, id, where, dir)
 		}
@@ -1534,7 +1535,7 @@ func (s *server) loadQwenASR(dir string) error {
 		if !ok {
 			return fmt.Errorf("audio: %s is a Qwen3-ASR checkpoint but its tokenizer has no <|audio_pad|> token", dir)
 		}
-		lm.qwenASRDir, lm.qwenASRTok = dir, id
+		lm.audio = &qwenASRAudio{dir: dir}
 		fmt.Fprintf(os.Stderr, "Qwen3-ASR audio input on for %q (audio-pad id %d; the encoder loads on the first clip, CPU float32) from %s\n", lm.name, id, dir)
 	}
 	return nil
@@ -1547,7 +1548,7 @@ func (s *server) loadVoxtral(dir, backend string) error {
 		if _, ok := lm.tk.TokenID("[AUDIO]"); !ok {
 			return fmt.Errorf("audio: %s is a Voxtral checkpoint but its tokenizer has no [AUDIO] token (a Tekken tokenizer is needed: tekken.json beside the weights)", dir)
 		}
-		lm.voxtralDir, lm.voxtralBackend = dir, backend
+		lm.audio = &voxtralAudio{dir: dir, backend: backend}
 		fmt.Fprintf(os.Stderr, "Voxtral audio input on for %q (the encoder loads on the first clip, float32, on %s when this binary has a device encoder for it, else the CPU; a clip over %d s is refused) from %s\n", lm.name, backend, voxtralMaxSeconds, dir)
 	}
 	return nil

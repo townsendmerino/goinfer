@@ -30,7 +30,8 @@ func TestUnload_closesTheDeviceTowers(t *testing.T) {
 		m := &fakeModel{}
 		lm := &loadedModel{name: "t", model: m, qwen3: &qwen3Tower{}, glm: &glmOcrTower{}}
 		if built {
-			lm.gemma4Tower, lm.gemma4AudioAcc = g4v, g4a
+			lm.gemma4Tower = g4v
+			lm.audio = &gemma4Audio{acc: g4a}
 			lm.qwen3.acc, lm.glm.acc = closeCountGrid{q3}, closeCountGrid{glm}
 		}
 		s := &server{models: map[string]*loadedModel{"t": lm}, liveness: map[modelHandle]*modelLiveness{m: {refs: 1}},
@@ -49,7 +50,7 @@ func TestUnload_closesTheDeviceTowers(t *testing.T) {
 				t.Errorf("built %v: the %s tower closed %d times; want %d", built, name, f.closes, want)
 			}
 		}
-		if lm.gemma4Tower != nil || lm.gemma4AudioAcc != nil || lm.qwen3 != nil || lm.glm != nil {
+		if g, ok := lm.audio.(*gemma4Audio); lm.gemma4Tower != nil || (ok && g.acc != nil) || lm.qwen3 != nil || lm.glm != nil {
 			t.Errorf("built %v: the entry still holds a tower after its unload", built)
 		}
 	}

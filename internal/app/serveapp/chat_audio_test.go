@@ -94,14 +94,15 @@ func TestGemma4AudioPrompt_refusals(t *testing.T) {
 	if _, err := lm.visionPromptUncached(tmpl, "", turns(), clip); err == nil || !strings.Contains(err.Error(), "no audio tower") {
 		t.Errorf("no tower: %v", err)
 	}
-	lm.gemma4AudioDir = "unused"
+	at := &gemma4Audio{dir: "unused"}
+	lm.audio = at
 	long := imageRef{data: wavBytes(31*16000, 16000), audio: true}
-	if _, err := lm.gemma4AudioPrompt(tmpl, "", turns(), 0, long); err == nil || !strings.Contains(err.Error(), "30 s") {
+	if _, err := at.clipPrompt(lm, tmpl, "", turns(), 0, long); err == nil || !strings.Contains(err.Error(), "30 s") {
 		t.Errorf("31 s clip: %v", err)
 	}
 	b24 := wavBytes(16000, 44100)
 	binary.LittleEndian.PutUint16(b24[34:], 24)
-	if _, err := lm.gemma4AudioPrompt(tmpl, "", turns(), 0, imageRef{data: b24, audio: true}); err == nil || !strings.Contains(err.Error(), "24-bit") {
+	if _, err := at.clipPrompt(lm, tmpl, "", turns(), 0, imageRef{data: b24, audio: true}); err == nil || !strings.Contains(err.Error(), "24-bit") {
 		t.Errorf("24-bit clip: %v", err)
 	}
 }
