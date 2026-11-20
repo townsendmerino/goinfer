@@ -1563,6 +1563,16 @@ class NightProfile(unittest.TestCase):
         r = night.memory_readings(mem)
         self.assertEqual([(x["job"], x["available_mb"], x["night"], x["source"]) for x in r], [("nightjob", int(6.6 * 1024), True, "backfill")])
 
+    def test_backfill_reads_the_gib_line(self):
+        """The fit guard prints GiB; a log in that unit backfills the same reading the older GB line did."""
+        runs = self.dir / "runs3" / "2026-10-20"
+        runs.mkdir(parents=True)
+        (runs / "gib.log").write_text("=== night job gib\n=== START    2026-10-20 23:05:00 PDT  loadavg 0.50  available ? MB\n"
+                                      "decoder: m needs ~5.10 GiB; this machine currently has 6.60 GiB of memory available\n")
+        mem = self.dir / "bf3.jsonl"
+        self.assertEqual(night.backfill_readings(runs=self.dir / "runs3", path=mem), 1)
+        self.assertEqual([x["available_mb"] for x in night.memory_readings(mem)], [int(6.6 * 1024)])
+
     def test_the_real_reading_never_raises(self):
         """night.Runner.avail_mb (not the test Runner's stand-in) returns MiB or None, and None when hostmem fails."""
         r = night.Runner.__new__(night.Runner)

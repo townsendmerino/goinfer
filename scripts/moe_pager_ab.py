@@ -206,10 +206,11 @@ def main():
         result["decode_path"] = m.group(1).strip()
     fp_loaded = {"swap_mb": swap_used_mb(), "ps": ps_fields(proc.pid), "footprint": footprint(proc.pid)}
     result["footprint_after_load"] = fp_loaded
-    m = re.search(r"expert paging \((\w+)\): (\d+) experts, ([0-9.]+) GB total, ([0-9.]+) GB budget", banner)
+    m = re.search(r"expert paging \((\w+)\): (\d+) experts, ([0-9.]+) (Gi?B) total, ([0-9.]+) Gi?B budget", banner)
     if m:
-        result["banner"] = {"pager": m.group(1), "experts": int(m.group(2)),
-                            "total_gb": float(m.group(3)), "budget_gb": float(m.group(4))}
+        # "unit" is GiB on a binary with mem.GiB's banner, GB (10^9) before it.
+        result["banner"] = {"pager": m.group(1), "experts": int(m.group(2)), "unit": m.group(4),
+                            "total_gb": float(m.group(3)), "budget_gb": float(m.group(5))}
     m = re.search(r"predicted paged-MoE decode rate ~([0-9.]+) tok/s", banner)
     if m:
         result["predicted_tok_s"] = float(m.group(1))

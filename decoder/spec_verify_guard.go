@@ -66,7 +66,7 @@ func (m *Model) SpecDecodeConflict() error {
 	if m.be != nil && isWebGPUBackend(m.be.Name()) {
 		switch m.Quant() {
 		case "int4", "int4mix":
-			return fmt.Errorf("speculative decoding would not be lossless: staged webgpu int4 decodes M=1 on the device and verifies M>1 on the CPU kernel, two different kernels with no measured tolerance between them (M-09, docs/audit-2026-09-10.md); use Generate")
+			return fmt.Errorf("speculative decoding would not be lossless: staged webgpu int4 decodes M=1 on the device and verifies M>1 on the CPU kernel, two different kernels with no measured tolerance between them; use Generate")
 		}
 	}
 	if m.resident == nil {
