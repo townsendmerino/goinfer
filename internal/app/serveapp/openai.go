@@ -23,10 +23,8 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/embeddinggemma2"
 	"github.com/townsendmerino/goinfer/engine"
 	"github.com/townsendmerino/goinfer/internal/app/connect"
-	"github.com/townsendmerino/goinfer/internal/audio"
 	"github.com/townsendmerino/goinfer/internal/clef"
 	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/decide"
@@ -160,31 +158,9 @@ type loadedModel struct {
 	gemma4Swap    *towerSwap                        // non-nil: the device tower loads for each encode (towerSwap)
 	gemma4MaxSoft int
 	gemma4ImgTok  int // <|image|> id
-	// Gemma 4 audio: set when the checkpoint has an audio_config. The tower loads on the first audio request
-	// (gemma4AudioEncoder), so a server that never hears audio never pays its memory. gemma4AudioTok is <|audio|>.
-	gemma4AudioDir string
-	// Qwen3-ASR: the checkpoint directory (its audio encoder is in the same safetensors as the decoder), the
-	// <|audio_pad|> id, and the encoder, loaded on the first clip.
-	qwenASRDir  string
-	qwenASRTok  int
-	qwenASR     *audio.QwenASREncoder
-	qwenASRErr  error
-	qwenASROnce sync.Once
-	// Voxtral Mini: the checkpoint directory (the audio tower and projector are in its own safetensors) and the encoder, loaded on the first clip.
-	voxtralDir      string
-	voxtralBackend  string // the backend the tower is placed on at its load (-vision-device cpu makes it "cpu")
-	voxtralDevice   audio.WhisperDevice
-	voxtral         *audio.VoxtralAudio
-	voxtralErr      error
-	voxtralOnce     sync.Once
-	gemma4AudioTok  int
-	gemma4AudioOnce sync.Once
-	gemma4Audio     *audio.Gemma4AudioEncoder
-	gemma4AudioErr  error
-	// gemma4AudioDevice is "metal" when the tower's conformer blocks run on Metal (EmbeddingGemma 2's accelerator),
-	// "" for the CPU; gemma4AudioAcc is that accelerator once built, nil if it declined (the CPU then, said once).
-	gemma4AudioDevice string
-	gemma4AudioAcc    embeddinggemma2.AudioAccelerator
+	// audio is the entry's audio input (nil: the model takes no audio clip): a Gemma 4 checkpoint with an audio_config,
+	// Qwen3-ASR or Voxtral Mini. Its encoder loads on the first clip.
+	audio audioTower
 
 	// scripted is a test seam (a test sets fakeEngine to scriptedEngine): when non-nil, drive streams these token ids (at most the request's max tokens; the end of the
 	// slice is the model's end of turn) instead of running model. Production never sets it.
@@ -325,7 +301,7 @@ func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 
 // audioCapable reports whether this model can take an audio clip (a Gemma 4 checkpoint with an audio tower, a Qwen3-ASR checkpoint, or Voxtral Mini).
 func (lm *loadedModel) audioCapable() bool {
-	return lm.gemma4AudioDir != "" || lm.qwenASRDir != "" || lm.voxtralDir != ""
+	return lm.audio != nil
 }
 
 // visionCapable reports whether this model has a loaded vision tower.
