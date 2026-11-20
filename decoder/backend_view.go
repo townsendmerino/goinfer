@@ -25,7 +25,7 @@ type BackendModelView interface {
 	MLAParams() (qLoRA, kvLoRA, qkNope, qkRope, vHead int, interleave bool, attnScale, ropeScale float64, ok bool)
 	Qwen35Params() (convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numValueHeads int, attnGate, ok bool)
 	Nemotron() (ResidentNemotronSpec, bool)
-	GraniteParams() (nHeads, headDim, dState, nGroups, dConv int, embMul, residMul, logitScale, attnScale float32, ok bool)
+	Granite() (ResidentGraniteSpec, bool)
 
 	NormEps() float32
 	AttnScale() float32
@@ -186,12 +186,11 @@ func (v backendModelView) Nemotron() (ResidentNemotronSpec, bool) {
 	return ResidentNemotronSpec{}, false
 }
 
-func (v backendModelView) GraniteParams() (nHeads, headDim, dState, nGroups, dConv int, embMul, residMul, logitScale, attnScale float32, ok bool) {
-	g := v.m.ResidentSpec().Granite
-	if g == nil {
-		return 0, 0, 0, 0, 0, 0, 0, 0, 0, false
+func (v backendModelView) Granite() (ResidentGraniteSpec, bool) {
+	if g := v.m.ResidentSpec().Granite; g != nil {
+		return *g, true
 	}
-	return g.NHeads, g.HeadDim, g.DState, g.NGroups, g.DConv, g.EmbMul, g.ResidMul, g.LogitScale, g.AttnScale, true
+	return ResidentGraniteSpec{}, false
 }
 
 func (v backendModelView) AttnTempScale(pos int) float32 {

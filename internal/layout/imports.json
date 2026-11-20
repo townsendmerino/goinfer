@@ -663,6 +663,7 @@
     "decoder": [
       "chat",
       "constrain",
+      "decoder/config",
       "decoder/fit",
       "decoder/quant",
       "decoder/resident",
@@ -672,6 +673,7 @@
       "internal/fidelity",
       "internal/guard/paritykey",
       "internal/runtime/giw",
+      "internal/runtime/hybridattn",
       "internal/runtime/kvmgr",
       "internal/runtime/mem",
       "internal/runtime/mem/probe",

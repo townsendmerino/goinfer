@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/townsendmerino/goinfer/decoder/config"
 )
 
 // streamDirSwapForTest writes layers 0 and 1 of a streamed directory transcode in each other's place: G-DS1's planted
@@ -41,7 +43,7 @@ func StreamTranscodeDir(ctx context.Context, dir string, out io.Writer, quant st
 	}
 	// Load writes the EOS ids generation_config.json adds back into the config a bundle serializes (decoder/model.go); the
 	// stream writes the config in its head, before any layer, so it resolves them first, as StreamTranscodeGGUF does.
-	if raw, jerr := json.Marshal(resolveEOSIDs(dir, cfg)); jerr == nil {
+	if raw, jerr := json.Marshal(config.ResolveEOSIDs(dir, cfg)); jerr == nil {
 		cfg.EOSTokenID = raw
 	}
 	arch, schema, err := resolveArchitecture(cfg)

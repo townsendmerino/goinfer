@@ -27,16 +27,4 @@ backend/metal/grid_vision.go:quantG32 -- a package-move shim; inline at its call
 backend/metal/pack.go:packW4A8Row -- a package-move shim; inline at its callers in a later Q11 change
 backend/metal/pack.go:packW4A8RowInto -- a package-move shim; inline at its callers in a later Q11 change
 backend/metal/testhooks.go:dequantG32 -- a package-move shim; inline at its callers in a later Q11 change
-decoder/config.go:resolveEOSIDs -- a package-move shim; inline at its callers in a later Q11 change
-decoder/deltanet.go:l2normScaled -- a package-move shim; inline at its callers in a later Q11 change
-decoder/deltanet.go:l2normScaledInto -- a package-move shim; inline at its callers in a later Q11 change
-decoder/deltanet.go:matvec -- a package-move shim; inline at its callers in a later Q11 change
-decoder/deltanet.go:negExpAFromLog -- a package-move shim; inline at its callers in a later Q11 change
-decoder/deltanet.go:sigmoidf -- a package-move shim; inline at its callers in a later Q11 change
-decoder/deltanet.go:softplusf -- a package-move shim; inline at its callers in a later Q11 change
-decoder/forward_qwen35.go:qGateContext -- a package-move shim; inline at its callers in a later Q11 change
-decoder/forward_qwen35.go:splitQGate -- a package-move shim; inline at its callers in a later Q11 change
 decoder/sampling.go:argmax -- the decode loop's argmax: inlining it touches about 180 files, so it goes in its own change
-decoder/sampling.go:softmaxStable -- a package-move shim; inline at its callers in a later Q11 change
-decoder/session.go:commonPrefixLen -- a package-move shim; inline at its callers in a later Q11 change
-decoder/session_share.go:clipClassRuns -- a package-move shim; inline at its callers in a later Q11 change
