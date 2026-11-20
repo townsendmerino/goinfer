@@ -735,7 +735,7 @@ func (c *Context) NewKVCacheI8(initial []float32, capElems, nKV, hd int) (*Devic
 	return NewDeviceBuffer(dataBuf, capElems), NewDeviceBuffer(scaleBuf, scaleElems), nil
 }
 
-// packKVInt8 per-head quantizes a [nPos*nKV*hd] f32 KV slab to int8 (4/word) plus a
+// PackKVInt8 per-head quantizes a [nPos*nKV*hd] f32 KV slab to int8 (4/word) plus a
 // [nPos*nKV] f32 scale (maxabs/127 per (position,KV-head)) — the CPU mirror of the
 // ropeStoreI8/kvStoreI8 WRITE kernels, used to prefill a resident int8 cache.
 func PackKVInt8(vals []float32, nKV, hd int) ([]uint32, []float32) {

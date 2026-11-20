@@ -418,14 +418,10 @@ type Context struct {
 	mlaQRopeLayout   *wgpu.BindGroupLayout
 }
 
-// New initializes a GPU context: instance → adapter (high-performance
-// preference) → device → compiled matmul pipeline. Returns an error if
-// no adapter/device is available (e.g. a headless box with no GPU), so
-// callers can fall back to the CPU path or skip GPU tests cleanly.
-// liveContexts counts Contexts that have been created and not yet Closed. A WebGPU device is a scarce driver resource with
+// LiveContexts counts Contexts that have been created and not yet Closed. A WebGPU device is a scarce driver resource with
 // a hard cap on live devices: past it every later New() fails with "failed to request device", and in a test binary that
 // silently converts gates into skips. So a leaked Context is a cliff, not a slow drain. Exposed to tests through
-// liveContexts.Load(); see TestDeviceExhaustion_repro and docs/code-notes/gpu.md#liveContexts.
+// LiveContexts.Load(); see TestDeviceExhaustion_repro and docs/code-notes/gpu.md#liveContexts.
 var LiveContexts atomic.Int64
 
 // gpuEverAvailable records that a Context was successfully created at least once in this
@@ -433,6 +429,10 @@ var LiveContexts atomic.Int64
 // of one" (a defect that must fail loudly) — see GPUEverAvailable.
 var gpuEverAvailable atomic.Bool
 
+// New initializes a GPU context: instance → adapter (high-performance
+// preference) → device → compiled matmul pipeline. Returns an error if
+// no adapter/device is available (e.g. a headless box with no GPU), so
+// callers can fall back to the CPU path or skip GPU tests cleanly.
 func New() (*Context, error) {
 	// Quiet wgpu-native's benign warnings ("No windowing system present. Using surfaceless
 	// platform", "No config found!") — pure noise on a headless/server box. Errors still log.

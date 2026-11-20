@@ -268,7 +268,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
 // sc[] writes out of bounds.
 const attnKeysTile = 2048
 
-// attnKeysDisabled force-disables the key-split kernel (GOINFER_ATTN_KEYS=0), so the old dim-split kernel can be A/B'd in
+// AttnKeysDisabled force-disables the key-split kernel (GOINFER_ATTN_KEYS=0), so the old dim-split kernel can be A/B'd in
 // the same binary. Read once: the plan is recorded per runner, and a mid-run flip would leave a half-converted plan.
 var AttnKeysDisabled = os.Getenv("GOINFER_ATTN_KEYS") == "0"
 

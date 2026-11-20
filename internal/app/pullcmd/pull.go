@@ -93,7 +93,6 @@ func resolveRunRef(refArg string) (ref pull.Ref, resolvedArg string, note string
 	return ref, refArg, note, err
 }
 
-// runPull implements `goinfer-chat pull`. Returns a process exit code.
 // Run executes `pull`. args excludes the program name and the "pull" word. Returns an exit code.
 func Run(args []string) int {
 	fs := flag.NewFlagSet("pull", flag.ContinueOnError)

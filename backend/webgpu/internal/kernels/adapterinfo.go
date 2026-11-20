@@ -8,7 +8,7 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// softwareAdapterInfo is the pure detection (unit-tested without a GPU).
+// SoftwareAdapterInfo is the pure detection (unit-tested without a GPU).
 func SoftwareAdapterInfo(info wgpu.AdapterInfo) bool {
 	if info.AdapterType == wgpu.AdapterTypeCPU {
 		return true
