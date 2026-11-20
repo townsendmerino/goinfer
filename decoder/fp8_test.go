@@ -1,9 +1,10 @@
 package decoder
 
 import (
-	"github.com/townsendmerino/goinfer/decoder/quant"
 	"math"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder/quant"
 )
 
 // TestFP8E4M3_matchesReference checks the derivation in fp8.go against every one of the 256
