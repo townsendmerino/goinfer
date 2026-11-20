@@ -445,6 +445,12 @@ type ResidentMoESpec struct {
 	TopkGroup             int
 }
 
+// ResidentDims is the model-level shape from the resolved Architecture (BackendModelView.Dims). Per-layer geometry (a
+// layer's own head dim and KV heads) is BackendLayerView's.
+type ResidentDims struct {
+	Hidden, Layers, Heads, KVHeads, HeadDim, Inter, Vocab int
+}
+
 // ResidentMLASpec holds the DeepSeek/Kimi MLA geometry and scales for a resident backend or planner.
 type ResidentMLASpec struct {
 	QLoRARank      int
@@ -634,7 +640,8 @@ func (m *Model) AttnScale() float32 {
 // unlike Config() (Cfg), which a GGUF-loaded or .giw model may leave partly
 // zero. The forward pass reads these.
 func (m *Model) Dims() (hidden, nLayers, nH, nKV, hd, inter, vocab int) {
-	return m.BackendView().Dims()
+	d := m.BackendView().Dims()
+	return d.Hidden, d.Layers, d.Heads, d.KVHeads, d.HeadDim, d.Inter, d.Vocab
 }
 
 // NormEps is the RMSNorm epsilon (arch-backed).

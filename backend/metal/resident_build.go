@@ -86,7 +86,8 @@ func (b *residentBuild) compileKernels() error {
 		}
 		return p
 	}
-	H, nL, nH, _, _, I, V := bv.Dims() // model-level hd/nKV dropped — geometry is per-layer (geom.go)
+	dims := bv.Dims() // model-level hd/nKV dropped — geometry is per-layer (geom.go)
+	H, nL, nH, I, V := dims.Hidden, dims.Layers, dims.Heads, dims.Inter, dims.Vocab
 	r := &resident{knob: m.Knob, prog: m.Program(), d: d, H: H, nL: nL, nH: nH, I: I, V: V, preciseMath: preciseMath, stepHeadroom: stepHeadroom,
 		moeStep: m.ResidentMoEStep(), recurrentStep: m.ResidentRecurrentStepOn(kvSlots), gemma4Step: m.ResidentGemma4StepOn(kvSlots), ckptSlot: -1}
 	r.chainEmbBase = residentNeedBytes(m) + int64(kvSlots-1)*metalSlotBytes(m) // every slot's KV and recurrent state

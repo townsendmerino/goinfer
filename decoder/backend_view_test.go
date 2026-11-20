@@ -23,11 +23,9 @@ func TestBackendModelView_FlintTinyParity(t *testing.T) {
 
 	bv := m.BackendView()
 
-	h1, l1, nh1, nkv1, hd1, i1, v1 := bv.Dims()
 	h2, l2, nh2, nkv2, hd2, i2, v2 := m.Dims()
-	if h1 != h2 || l1 != l2 || nh1 != nh2 || nkv1 != nkv2 || hd1 != hd2 || i1 != i2 || v1 != v2 {
-		t.Fatalf("Dims mismatch: view=(%d,%d,%d,%d,%d,%d,%d) model=(%d,%d,%d,%d,%d,%d,%d)",
-			h1, l1, nh1, nkv1, hd1, i1, v1, h2, l2, nh2, nkv2, hd2, i2, v2)
+	if d, want := bv.Dims(), (ResidentDims{Hidden: h2, Layers: l2, Heads: nh2, KVHeads: nkv2, HeadDim: hd2, Inter: i2, Vocab: v2}); d != want {
+		t.Fatalf("Dims mismatch: view=%+v model=%+v", d, want)
 	}
 	if bv.NumLayers() != l2 {
 		t.Fatalf("NumLayers = %d, want %d", bv.NumLayers(), l2)
