@@ -176,7 +176,7 @@ func TestFlashDecodeEndToEnd(t *testing.T) {
 	}
 	t.Setenv("GOINFER_CUDA_FLASH_DECODE", "16")
 	t.Setenv("GOINFER_CUDA_FLASH_DECODE_MIN_KEYS", "0")
-	t.Setenv("GOINFER_SPLITKV_VSUM_SPLIT", "16") // the CONTROL arms: a known, accepted reduction-order change on the same input
+	setVsumSplit(t, 16) // the CONTROL arms: a known, accepted reduction-order change on the same input
 	for _, file := range []string{
 		"qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", // hd128, GQA 6
 		"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", // hd64, GQA 7

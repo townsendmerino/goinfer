@@ -42,10 +42,9 @@ func (e nilReportEngine) Start(context.Context, engine.Request) *engine.Stream {
 // report function streams and finishes like the scripted seam (no logprobs, no reuse, no error) instead of panicking.
 func TestDrive_engineWithNoReportFunc(t *testing.T) {
 	lm := &loadedModel{tk: &tokenizer.Tokenizer{}, fakeEngine: nilReportEngine{}}
-	finish, n, lps, stopHit, reused, cancelReason, err := lm.drive(context.Background(), genRequest{maxTokens: 4}, nil, nil, func(string) {})
-	if finish != "stop" || n != 0 || lps != nil || stopHit != "" || reused != (prefillReuse{}) || cancelReason != "" || err != nil {
-		t.Fatalf("drive on a nil-report engine = (%q, %d, %v, %q, %d, %q, %v), want a clean stop and nothing else",
-			finish, n, lps, stopHit, reused, cancelReason, err)
+	res, err := lm.drive(context.Background(), genRequest{maxTokens: 4}, nil, nil, func(string) {})
+	if res.finish != "stop" || res.nComp != 0 || res.logprobs != nil || res.stopHit != "" || res.reused != (prefillReuse{}) || res.cancelReason != "" || err != nil {
+		t.Fatalf("drive on a nil-report engine = (%+v, %v), want a clean stop and nothing else", res, err)
 	}
 }
 
@@ -89,9 +88,9 @@ func TestDriveVL_mediaRequest(t *testing.T) {
 		c.vi.features = func() ([]float32, error) { ran = true; return nil, nil }
 		gr := genRequest{promptIDs: []int{1, 2, 3}, maxTokens: 4}
 		gr.sp.Temperature, gr.sp.TopK = 0.7, 5
-		finish, n, lps, stopHit, reused, cancelReason, err := lm.driveVL(context.Background(), gr, c.vi, nil, nil, func(string) {})
-		if finish != "stop" || n != 0 || lps != nil || stopHit != "" || reused != (prefillReuse{}) || cancelReason != "" || err != nil {
-			t.Errorf("%s: driveVL on a no-report engine = (%q, %d, %v, %q, %d, %q, %v), want a clean stop", c.name, finish, n, lps, stopHit, reused, cancelReason, err)
+		res, err := lm.driveVL(context.Background(), gr, c.vi, nil, nil, func(string) {})
+		if res.finish != "stop" || res.nComp != 0 || res.logprobs != nil || res.stopHit != "" || res.reused != (prefillReuse{}) || res.cancelReason != "" || err != nil {
+			t.Errorf("%s: driveVL on a no-report engine = (%+v, %v), want a clean stop", c.name, res, err)
 		}
 		md := got.Media
 		if md == nil {

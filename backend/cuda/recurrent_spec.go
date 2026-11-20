@@ -124,7 +124,7 @@ func (r *cudaResident) allocRecurrentSpec(rows int) error {
 	}
 	a.core = take(rows * dp.valueDim)
 	r.dnSpec = a
-	logs.Infof("cuda: speculative recurrent rows: %.1f MiB on the device (%d rows x %d DeltaNet layers, SP2)",
+	logs.Infof("cuda: speculative recurrent rows: %.1f MiB on the device (%d rows x %d DeltaNet layers)",
 		mib(a.bytes), rows, len(dnLayers))
 	return nil
 }

@@ -152,7 +152,7 @@ fn main() {
 }
 `
 
-// gptossGluQuantWGSL (FeatAttnSink's clamped interleaved-SwiGLU expert): gpt-oss's expert
+// GptossGluQuantWGSL (FeatAttnSink's clamped interleaved-SwiGLU expert): gpt-oss's expert
 // activation is a DIFFERENT function from swigluQuantWGSL's plain silu(gate)·up, not a
 // parameterization of it — mirrors cuda/gptoss_act.cu's glu_quant_gptoss / metal/moe.go's
 // swiglu_quant_gptoss exactly:
@@ -227,7 +227,7 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
 `
 
 // moeExpertGptOssDownGEMVWGSL (FeatAttnSink's down-projection combine): moeExpertGEMVWGSL's
-// mode-1 epilogue plus a per-(expert,row) bias — decoder/forward_gptoss.go's gptOssExpertWith
+// mode-1 epilogue plus a per-(expert,row) bias — decoder/forward_gptoss.go's gptOssExpertDown
 // computes `dst = Down·h + downBias` BEFORE the router weight scales the result
 // (gptOssMoE: `out += wgt·dst`), so the combine is `wgt[slot]*(r + bias[idx[slot]*N+row])`, NOT
 // a plain `+= bias[row]` — mirrors metal/moe.go's gemv_w4a8_moe_wacc_bias exactly, including its
@@ -393,7 +393,7 @@ type ResidentStackedW8A8 struct {
 	w4 bool
 }
 
-// Release frees the stacked buffers.
+// Close frees the stacked buffers.
 func (s *ResidentStackedW8A8) Close() error {
 	s.ctx.releaseOwned(func() {
 		traceFree(s)

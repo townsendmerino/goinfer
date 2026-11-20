@@ -517,7 +517,7 @@ func Argmax(logits []float32) int {
 	return bi
 }
 
-// softmaxStable converts logits to probabilities (numerically stable). It always allocates; softmaxStableInto is the
+// SoftmaxStable converts logits to probabilities (numerically stable). It always allocates; softmaxStableInto is the
 // scratch-reusing sibling for per-token hot paths.
 func SoftmaxStable(logits []float32, temperature float64) []float64 {
 	return softmaxStableInto(logits, temperature, nil)

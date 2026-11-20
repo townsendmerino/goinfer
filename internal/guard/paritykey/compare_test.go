@@ -33,6 +33,14 @@ func loaderSide(today, shadow, weights, id string) Side {
 	s.Loaders = map[string][]string{"f": {"fx"}}
 	s.Dropped = map[string][]string{"f": {"decoder/weights.go"}}
 	s.LoaderFixture = map[string]string{"fx": id}
+	s.LoaderEntries = map[string]map[string]string{"fx": {"amd64 f32": id}}
+	return s
+}
+
+// gained is loaderSide with fx's table also holding a config entry.
+func gained(today, shadow, weights, id string) Side {
+	s := loaderSide(today, shadow, weights, id+"+c")
+	s.LoaderEntries["fx"] = map[string]string{"amd64 f32": id, "amd64 config": "c1"}
 	return s
 }
 
@@ -69,6 +77,8 @@ func TestCompare_classes(t *testing.T) {
 		}(), OldOnly, false},
 		{"a loader file and its identity moved", loaderSide("t1", "s1", "w1", "l1"), loaderSide("t2", "s2", "w2", "l2"), AgreeStale, true},
 		{"an identity moved, no dependency did", loaderSide("t1", "s1", "w1", "l1"), loaderSide("t1", "s2", "w1", "l2"), NewOnly, false},
+		{"a loader fixture gained a table entry, none it held moved", loaderSide("t1", "s1", "w1", "l1"), gained("t1", "s2", "w1", "l1"), NewOnly, true},
+		{"a loader fixture gained a table entry while one it held moved", loaderSide("t1", "s1", "w1", "l1"), gained("t1", "s2", "w1", "l2"), NewOnly, false},
 		{"the loader list changed", loaderSide("t1", "s1", "w1", "l1"), func() Side {
 			s := loaderSide("t1", "s2", "w1", "l1")
 			s.Loaders = map[string][]string{"f": {"fx", "fx.gguf"}}
@@ -189,6 +199,8 @@ func TestCompare_classes(t *testing.T) {
 		"the family left the rule, the program list did not change":                                            "a loader fixture left the family's list",
 		"a fixture left the program list and the loader list together":                                         "the family's program or loader list changed",
 		"the loader list changed while a listed identity moved":                                                "the shadow key moved while today's did not",
+		"a loader fixture gained a table entry, none it held moved":                                            "a loader fixture's table entries grew",
+		"a loader fixture gained a table entry while one it held moved":                                        "the shadow key moved while today's did not",
 		"the key's definition changed, no input did":                                                           "the key's definition changed (files -> programs); no input it reads moved",
 		"the key's definition changed and an executor moved, the shadow key did not":                           "today's key moved on an input the shadow key also reads",
 		"under the builder rule, a builder moved and today's key moved, the shadow key did not":                "today's key moved on an input the shadow key also reads",

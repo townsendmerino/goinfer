@@ -45,7 +45,7 @@ func TestNewKVCache_nilSkipLayerReservesEveryLayer(t *testing.T) {
 func TestNewCache_hybridRealFixtureSkipsRecurrentLayerAllocation(t *testing.T) {
 	m, err := Load("../testdata/nemotron-tiny", Options{Quant: "f32"})
 	if err != nil {
-		t.Skipf("no nemotron-tiny fixture: %v", err)
+		t.Fatalf("load ../testdata/nemotron-tiny: %v", err)
 	}
 	defer m.Close()
 	arch := m.w.arch

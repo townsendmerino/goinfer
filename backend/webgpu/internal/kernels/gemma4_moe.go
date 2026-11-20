@@ -34,7 +34,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 `
 
-// g4MoELayer is one enable_moe_block layer's feed-forward on the device.
+// G4MoELayer is one enable_moe_block layer's feed-forward on the device.
 type G4MoELayer struct {
 	PreFFNNorm, PostFFNNorm1, PreFFNNorm2, PostFFNNorm2, PostFFNNorm *wgpu.Buffer // [hidden] each
 	RouterNorm                                                       *wgpu.Buffer // the weight that makes the runner's RMSNorm weightless
@@ -45,7 +45,7 @@ type G4MoELayer struct {
 	NE, TopK, DenseInter, MoeInter                                   int
 }
 
-// g4MoEDefectForTest plants one defect in the block, for its gate's planted-defect arm (gpu/gemma4_moe_test.go): 1 the
+// G4MoEDefectForTest plants one defect in the block, for its gate's planted-defect arm (gpu/gemma4_moe_test.go): 1 the
 // per-expert scale skipped, 2 post_ffn_norm_1 skipped, 3 the expert branch fed pre_ffn_norm, 4 the joint post_ffn_norm
 // skipped, 5 the expert sum not cleared between tokens, 6 the gate and up halves exchanged, 7 the router fed the dense
 // branch's weighted norm. 0, the only value outside that test, plants nothing. It is read when a runner is built.

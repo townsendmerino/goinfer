@@ -121,6 +121,7 @@
       "int8int8/canonical/norow4": "sha256:bba73d7c5f2990684a071aab2d64e063fa193e6ebaf5a7bd7dd3c72a543f1c1e"
     },
     "testdata/gemma1-tiny.gguf": {
+      "config": "sha256:d7dd9c35d311f67db806ba71414353372651ed0016d97799a47211de3bcef8f7",
       "f32": "sha256:f23d33c9839381f02a0c3b66cddc5f72ac0ac11e306b689eb2c509f3a5d2d3c5",
       "f32/canonical": "sha256:f23d33c9839381f02a0c3b66cddc5f72ac0ac11e306b689eb2c509f3a5d2d3c5",
       "f32/canonical/norow4": "sha256:f23d33c9839381f02a0c3b66cddc5f72ac0ac11e306b689eb2c509f3a5d2d3c5",
@@ -161,6 +162,7 @@
       "int8int8/canonical/norow4": "sha256:b8a40edae1018de7aa89b1491540536c12dd293dfaeb79d161fb43fddb3b5944"
     },
     "testdata/gemma2-hd-tiny.gguf": {
+      "config": "sha256:ced3c95eb2695a57e95381501b81c6e5108fc5b9a85a5e6e37294e9dfe9e3e0f",
       "f32": "sha256:27ee1bb02a6bb22db10406e95a8b4d6bf64948f3f582d3d7364cd9679cef73c6",
       "f32/canonical": "sha256:27ee1bb02a6bb22db10406e95a8b4d6bf64948f3f582d3d7364cd9679cef73c6",
       "f32/canonical/norow4": "sha256:27ee1bb02a6bb22db10406e95a8b4d6bf64948f3f582d3d7364cd9679cef73c6",
@@ -321,6 +323,7 @@
       "int8int8/canonical/norow4": "sha256:06a65e6699b0d3ee19967bcb79127718ecab13edd54cb809d641f5cdb65253d7"
     },
     "testdata/glm-tiny.gguf": {
+      "config": "sha256:6d4db4e5e5536a00aaa1bea818bbc873d88f1b10db7147bac02aba0fc6db3f26",
       "f32": "sha256:bcb6ea353f2e0b358fbb08362765cef63a636b08f3046d2cb45118c8c3918d64",
       "f32/canonical": "sha256:bcb6ea353f2e0b358fbb08362765cef63a636b08f3046d2cb45118c8c3918d64",
       "f32/canonical/norow4": "sha256:bcb6ea353f2e0b358fbb08362765cef63a636b08f3046d2cb45118c8c3918d64",
@@ -923,6 +926,7 @@
       "int8int8/canonical/norow4": "sha256:bba73d7c5f2990684a071aab2d64e063fa193e6ebaf5a7bd7dd3c72a543f1c1e"
     },
     "testdata/gemma1-tiny.gguf": {
+      "config": "sha256:d7dd9c35d311f67db806ba71414353372651ed0016d97799a47211de3bcef8f7",
       "f32": "sha256:f23d33c9839381f02a0c3b66cddc5f72ac0ac11e306b689eb2c509f3a5d2d3c5",
       "f32/canonical": "sha256:f23d33c9839381f02a0c3b66cddc5f72ac0ac11e306b689eb2c509f3a5d2d3c5",
       "f32/canonical/norow4": "sha256:f23d33c9839381f02a0c3b66cddc5f72ac0ac11e306b689eb2c509f3a5d2d3c5",
@@ -963,6 +967,7 @@
       "int8int8/canonical/norow4": "sha256:b8a40edae1018de7aa89b1491540536c12dd293dfaeb79d161fb43fddb3b5944"
     },
     "testdata/gemma2-hd-tiny.gguf": {
+      "config": "sha256:ced3c95eb2695a57e95381501b81c6e5108fc5b9a85a5e6e37294e9dfe9e3e0f",
       "f32": "sha256:27ee1bb02a6bb22db10406e95a8b4d6bf64948f3f582d3d7364cd9679cef73c6",
       "f32/canonical": "sha256:27ee1bb02a6bb22db10406e95a8b4d6bf64948f3f582d3d7364cd9679cef73c6",
       "f32/canonical/norow4": "sha256:27ee1bb02a6bb22db10406e95a8b4d6bf64948f3f582d3d7364cd9679cef73c6",
@@ -1123,6 +1128,7 @@
       "int8int8/canonical/norow4": "sha256:06a65e6699b0d3ee19967bcb79127718ecab13edd54cb809d641f5cdb65253d7"
     },
     "testdata/glm-tiny.gguf": {
+      "config": "sha256:6d4db4e5e5536a00aaa1bea818bbc873d88f1b10db7147bac02aba0fc6db3f26",
       "f32": "sha256:bcb6ea353f2e0b358fbb08362765cef63a636b08f3046d2cb45118c8c3918d64",
       "f32/canonical": "sha256:bcb6ea353f2e0b358fbb08362765cef63a636b08f3046d2cb45118c8c3918d64",
       "f32/canonical/norow4": "sha256:bcb6ea353f2e0b358fbb08362765cef63a636b08f3046d2cb45118c8c3918d64",
