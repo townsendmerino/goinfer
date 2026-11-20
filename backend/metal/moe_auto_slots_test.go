@@ -65,12 +65,13 @@ func TestMoeTopK_realFixtures(t *testing.T) {
 		t.Fatalf("load mixtral-tiny: %v", err)
 	}
 	defer m.Close()
-	_, wantK, _, _, _, _, _, _, _, _, ok := m.BackendView().MoEParams()
+	mo, ok := m.BackendView().MoE()
+	wantK := mo.TopK
 	if !ok {
 		t.Fatal("mixtral-tiny did not report MoE resident params")
 	}
 	if got := moeTopK(m); got != wantK {
-		t.Errorf("moeTopK(mixtral-tiny) = %d, want %d (from MoEParams)", got, wantK)
+		t.Errorf("moeTopK(mixtral-tiny) = %d, want %d (from MoE)", got, wantK)
 	}
 
 	const g4 = "../../testdata/gemma4-moe-tiny"

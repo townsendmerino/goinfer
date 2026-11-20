@@ -136,11 +136,14 @@ func (s *buildState) admit() error {
 	// straight into the residual, Qwen-MoE scales it by sigmoid(SharedGate·h) first. Both are
 	// the same kernel (shared_gate_combine, `ungated` flag); only the gated one needs the extra
 	// [1,hidden] weight.
-	nE, topK, moeInter, sharedInter, moeSig, moeNorm, sharedUngated, moeScale, nGroup, topkGroup, isMoE := bv.MoEParams()
+	mo, isMoE := bv.MoE()
+	nE, topK, moeInter, sharedInter := mo.NumExperts, mo.TopK, mo.IntermediateDim, mo.SharedIntermediateDim
+	moeSig, moeNorm, sharedUngated, moeScale := mo.RouterSigmoid, mo.NormTopKProb, mo.SharedUngated, mo.RoutedScale
+	nGroup, topkGroup := mo.NGroup, mo.TopkGroup
 	// Gemma-4 enable_moe_block sets arch.MoE (so isMoE is true) but is NOT the generic MoE: it runs
 	// gemma4MoeMLP (parallel dense‖MoE + join), so it bypasses the generic-MoE admission checks below
 	// (gelu-tanh act, the attention sandwich norm) and gets its own int4-shape checks. Its nE/topK/
-	// moeInter still come from arch.MoE (MoEParams), matching the bundle.
+	// moeInter still come from arch.MoE (MoE), matching the bundle.
 	isG4MoE := bv.HasGemma4MoE()
 	isGemma4 := bv.IsGemma4()
 	if isMoE && !isG4MoE {
