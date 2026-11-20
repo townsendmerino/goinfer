@@ -133,6 +133,7 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 	if opts.Quant, opts.ActQuantGroup, msg = activationSafeQuant(src, opts.Quant, opts.ActQuantGroup, req.ExplicitQuant, opts.Backend); msg != "" {
 		logs.Warnf("%s", msg)
 	}
+	opts.EmbedInt4, opts.EmbedInt4Default = decoder.EmbedInt4For(src, opts), false // the sidecar's cache key carries the head
 	ensureGIW := func() (string, error) {
 		return prequant.EnsureCachedGIW(ctx, src, opts.Quant, opts.Backend, opts.EmbedInt4)
 	}
@@ -287,6 +288,7 @@ func Plan(req Request) (Planned, error) {
 	if opts.Quant, opts.ActQuantGroup, msg = activationSafeQuant(src, opts.Quant, opts.ActQuantGroup, req.ExplicitQuant, opts.Backend); msg != "" {
 		p.Notes = append(p.Notes, msg)
 	}
+	opts.EmbedInt4, opts.EmbedInt4Default = decoder.EmbedInt4For(src, opts), false
 	p.Opts = opts
 	route, err := routeFor(src, opts, req.DirectLoad)
 	if err != nil {
