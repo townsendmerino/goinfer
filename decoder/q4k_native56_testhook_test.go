@@ -3,9 +3,12 @@
 package decoder
 
 import (
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
@@ -63,5 +66,58 @@ func TestQ4K_native56(t *testing.T) {
 	}
 	if _, err := SerializeWeights(native.w, "kmix"); err == nil || !strings.Contains(err.Error(), "native") {
 		t.Errorf("serializing a load holding native Q5_K/Q6_K: err %v, want a refusal naming the native kind", err)
+	}
+}
+
+// TestQ4K_native56Sidecar is the default load (sidecar on, no Backend named: serve's CPU path): the q4k sidecar is written for
+// cpu-amd64 under the ".k56" name, carries the Q5_K and Q6_K projections as kinds 11 and 12, loads them as native kinds from
+// the mapping, and forwards bit-identically to a direct native load. Where linalg has no kernel for them the sidecar widens,
+// under the plain name.
+func TestQ4K_native56Sidecar(t *testing.T) {
+	mem1NeedsSidecarPlatform(t)
+	src := filepath.Join(t.TempDir(), "phi3-kmix.gguf")
+	if err := WritePhi3KMixTinyGGUFForTest(src); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(src, old, old); err != nil {
+		t.Fatal(err)
+	}
+	direct, err := Load(src, Options{Backend: "cpu", Quant: "q4k", DirectLoad: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer direct.Close()
+	want := d8bLogits(t, direct)
+
+	sidecarDefaultOn(t)
+	wantQKV, wantDown, tag := "q5k", "q6k", ".k56."
+	if !linalg.KQuantNative() {
+		wantQKV, wantDown, tag = "int8", "int8", ""
+	}
+	for round := range 2 { // the first load writes the sidecar, the second maps the one already there
+		m, err := Load(src, Options{Quant: "q4k"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := range m.w.Layers {
+			l := &m.w.Layers[i]
+			if l.QProj.Kind() != wantQKV || l.DownProj.Kind() != wantDown {
+				t.Errorf("round %d layer %d: sidecar load holds q %q, down %q; want %q, %q", round, i, l.QProj.Kind(), l.DownProj.Kind(), wantQKV, wantDown)
+			}
+		}
+		if got := d8bLogits(t, m); !slices.Equal(got, want) {
+			t.Errorf("round %d: the sidecar load's logits differ from the direct load's", round)
+		}
+		m.Close()
+	}
+	var sidecars []string
+	for _, n := range dirNames(t, filepath.Dir(src)) {
+		if strings.HasSuffix(n, ".giw") {
+			sidecars = append(sidecars, n)
+		}
+	}
+	if len(sidecars) != 1 || (tag != "" && !strings.Contains(sidecars[0], tag)) || (tag == "" && strings.Contains(sidecars[0], ".k56.")) {
+		t.Errorf("sidecars %v; want one, named with %q", sidecars, tag)
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/internal/runtime/diskfree"
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
@@ -441,8 +442,18 @@ func legacyCachePath(ggufPath, quant string, embedInt4 bool, target GIWTarget) s
 	if embedInt4 {
 		label += ".e4h"
 	}
-	label += gatherTableTag(ggufPath, quant, embedInt4)
+	label += gatherTableTag(ggufPath, quant, embedInt4) + kquantTag(quant, target)
 	return base + "." + label + "." + tgt + ".giw"
+}
+
+// kquantTag is the name segment of a q4k sidecar that keeps the GGUF's Q5_K and Q6_K tensors natively (kinds 11 and 12,
+// q4kNative56), ".k56"; "" otherwise. A q4k sidecar written before those kinds widened them under the name without the
+// segment, so the two are never mistaken for each other, and no legacy (unversioned) name carries it.
+func kquantTag(quant string, target GIWTarget) string {
+	if quant != "q4k" || target != GIWTargetCPUAmd64 || !linalg.KQuantNative() {
+		return ""
+	}
+	return ".k56"
 }
 
 // gatherTableTag is the name segment of a sidecar whose per-layer token table (Gemma 4's E-models) is int4 while the head

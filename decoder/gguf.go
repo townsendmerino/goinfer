@@ -1537,11 +1537,17 @@ func q4kMat(g *embed.GGUFFile, name string, out, in int, rowSrc func(r int) int,
 }
 
 // q4kNative56 reports whether a q4k load keeps the file's Q5_K and Q6_K projections natively instead of widening them to
-// int8: only on a CPU-only load (needCanonical false: no GPU lane, which takes those blocks from the int8 copy through
-// KQuantReader) that writes no .giw (the format has no kind for them), and only where linalg has an arch kernel for them
-// (linalg.KQuantNative; the portable dot is far slower than int8).
+// int8: only where linalg has an arch kernel for them (linalg.KQuantNative; the portable dot is far slower than int8), and
+// only for a CPU reader: a heap load with needCanonical false (no GPU lane, which takes those blocks from the int8 copy
+// through KQuantReader), or a .giw written for the cpu-amd64 target (kinds 11 and 12; every other target widens).
 func q4kNative56(needCanonical bool, sink *giwWriter) bool {
-	return !needCanonical && sink == nil && linalg.KQuantNative() && !q4kWiden56ForTest
+	if !linalg.KQuantNative() || q4kWiden56ForTest {
+		return false
+	}
+	if sink != nil {
+		return sink.target == GIWTargetCPUAmd64
+	}
+	return !needCanonical
 }
 
 // q4kWiden56ForTest restores the int8 widening of Q5_K and Q6_K on every q4k load, for the test that compares the two.
