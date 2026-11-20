@@ -202,7 +202,8 @@ type Geometry struct {
 // GeometryOf reads g for m at ctx positions and the KV precision kv, one slot's worth times slots. rings is whether the backend keeps a sliding
 // layer's K/V in a ring.
 func GeometryOf(m *decoder.Model, ctx, slots int, kv string, rings bool) Geometry {
-	_, layers, _, _, headDim, _, _ := m.Dims()
+	shape := m.Shape()
+	layers, headDim := shape.Layers, shape.HeadDim
 	g := Geometry{DenseTables: int64(layers) * int64(headDim*2+64)}
 	elem := map[string]float64{mem.KVF16: 2, mem.KVI8: 1}[kv]
 	if elem == 0 {

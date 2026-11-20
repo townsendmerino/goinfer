@@ -359,7 +359,7 @@ func selfMeasure(admitted []string, srcOf map[string]fitSource, planOf map[strin
 	defer pm.Close()
 
 	const probePrompt, probeDecode = 64, 32
-	_, _, _, _, _, _, vocab := pm.Dims()
+	vocab := pm.Shape().Vocab
 	prompt := make([]int, probePrompt)
 	for i := range prompt {
 		prompt[i] = (i*2654435761 + 1) % vocab // deterministic, in-range — a throughput probe, not a real prompt
