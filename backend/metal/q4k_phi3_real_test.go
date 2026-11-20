@@ -3,11 +3,15 @@
 package metal
 
 import (
+	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/gob"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -251,14 +255,19 @@ func TestOP6MP_q4kPassSpeed(t *testing.T) {
 // TestOP6MP_q4kPassFidelity is the q4k pass's fidelity gate on Phi-3 mini 4k q4: the pass (candidate, PrefillLast) and the step
 // (exact, prefillByStep, bit-identical to the sequential path) are each scored against the CPU at q4k on the same load (the
 // lane's own quant, so the arms differ from it by arithmetic only), over the prefill gate's prose prompts at K = 512 and 2048: the
-// seed position from the prefill and 32 positions teacher-forced on the CPU's greedy tokens. fidelity.NonInferior with
+// seed position from the prefill and 31 positions teacher-forced on the CPU's greedy tokens. fidelity.NonInferior with
 // AgreeMarginPts 1, KLMargin 0.10, alpha 0.05. Any prompt the pass declines (its f16 overflow check) fails the gate. Not timed
-// (the shared lock); the positions log goes to $OP6MP_POSITIONS_LOG.
+// (the shared lock).
 //
-//	GOINFER_OP6MP_FIDELITY=1 go test -count=1 -tags goinfer_testhooks -timeout 60m -run '^TestOP6MP_q4kPassFidelity$' -v ./backend/metal/
+// The CPU reference is nearly all of the wall time (about 3.5 minutes a prompt at K = 512 and 16 at 2048 on an M1 Pro), so
+// $OP6MP_REF_CACHE names a directory that keeps each prompt's reference, keyed by the checkpoint and the prompt's tokens, and a
+// re-run reuses it. $OP6MP_FIDELITY_K (comma-separated) runs a subset of the cells and labels the verdict PARTIAL; each cell's
+// own summary prints as it finishes, and $OP6MP_POSITIONS_LOG is rewritten after each cell. The deadline is the test's -timeout.
+//
+//	GOINFER_OP6MP_FIDELITY=1 go test -count=1 -tags goinfer_testhooks -timeout 240m -run '^TestOP6MP_q4kPassFidelity$' -v ./backend/metal/
 func TestOP6MP_q4kPassFidelity(t *testing.T) {
 	if os.Getenv("GOINFER_OP6MP_FIDELITY") == "" {
-		t.Skip("set GOINFER_OP6MP_FIDELITY=1 (Phi-3 mini on Metal and the CPU, about 20 minutes)")
+		t.Skip("set GOINFER_OP6MP_FIDELITY=1 (Phi-3 mini on Metal and the CPU, about 3 hours cold on an M1 Pro)")
 	}
 	const cont = 32
 	t.Setenv("GOINFER_CPU_FAST_ATTENTION", "0") // the CPU reference's exact attention (PrefillLogitsForTest); knobs are read at Load
@@ -267,23 +276,77 @@ func TestOP6MP_q4kPassFidelity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 55*time.Minute)
-	defer cancel()
-	ref := func(ids []int) (logits [][]float32, toks []int) {
+	ctx := context.Background()
+	if d, ok := t.Deadline(); ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, d.Add(-2*time.Minute))
+		defer cancel()
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cacheDir := os.Getenv("OP6MP_REF_CACHE")
+	type refEntry struct {
+		Logits [][]float32
+		Toks   []int
+	}
+	// ref is the CPU's seed logits and cont-1 greedy steps after it: logits for every scored position, and the tokens the arms
+	// are teacher-forced on.
+	ref := func(ids []int) ([][]float32, []int) {
+		h := sha256.New()
+		fmt.Fprintf(h, "%s %d %d %v", filepath.Base(path), st.Size(), cont, ids)
+		file := filepath.Join(cacheDir, fmt.Sprintf("%x.gob.gz", h.Sum(nil)[:12]))
+		if cacheDir != "" {
+			if f, err := os.Open(file); err == nil {
+				defer f.Close()
+				zr, err := gzip.NewReader(f)
+				if err != nil {
+					t.Fatalf("reference cache %s: %v", file, err)
+				}
+				var e refEntry
+				if err := gob.NewDecoder(zr).Decode(&e); err != nil {
+					t.Fatalf("reference cache %s: %v", file, err)
+				}
+				return e.Logits, e.Toks
+			}
+		}
 		c := m.NewCache(len(ids) + cont)
 		lg, err := m.PrefillLogitsForTest(ctx, ids, c)
 		if err != nil {
 			t.Fatalf("CPU prefill: %v", err)
 		}
-		logits = append(logits, slices.Clone(lg))
-		for range cont {
-			toks = append(toks, argmaxF(logits[len(logits)-1]))
-			if lg, err = m.ForwardForTest(toks[len(toks)-1], c); err != nil {
+		e := refEntry{Logits: [][]float32{slices.Clone(lg)}}
+		for range cont - 1 {
+			e.Toks = append(e.Toks, argmaxF(e.Logits[len(e.Logits)-1]))
+			if lg, err = m.ForwardForTest(e.Toks[len(e.Toks)-1], c); err != nil {
 				t.Fatal(err)
 			}
-			logits = append(logits, slices.Clone(lg))
+			e.Logits = append(e.Logits, slices.Clone(lg))
 		}
-		return logits, toks
+		if cacheDir != "" {
+			if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			f, err := os.Create(file + ".part")
+			if err != nil {
+				t.Fatal(err)
+			}
+			zw := gzip.NewWriter(f)
+			if err := gob.NewEncoder(zw).Encode(e); err != nil {
+				t.Fatal(err)
+			}
+			if err := zw.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Rename(file+".part", file); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return e.Logits, e.Toks
 	}
 	arm := func(ids, toks []int, step bool) [][]float32 {
 		embs := make([][]float32, len(ids))
@@ -302,7 +365,7 @@ func TestOP6MP_q4kPassFidelity(t *testing.T) {
 			t.Fatalf("prefill (step %v): %v", step, err)
 		}
 		logits := [][]float32{slices.Clone(seed)}
-		for j, tok := range toks[:cont-1] {
+		for j, tok := range toks {
 			lg, err := a.Forward(m.EmbedResidentForTest(tok), len(ids)+j)
 			if err != nil {
 				t.Fatal(err)
@@ -320,10 +383,30 @@ func TestOP6MP_q4kPassFidelity(t *testing.T) {
 		return ps
 	}
 	_, files := decoder.PrefillGatePromptSet()
+	Ks, partial := []int{512, 2048}, false
+	if v := os.Getenv("OP6MP_FIDELITY_K"); v != "" {
+		Ks, partial = nil, true
+		for _, f := range strings.Split(v, ",") {
+			k, err := strconv.Atoi(strings.TrimSpace(f))
+			if err != nil || k <= 0 || k > 2048 {
+				t.Fatalf("OP6MP_FIDELITY_K %q: each K is an integer in 1..2048", v)
+			}
+			Ks = append(Ks, k)
+		}
+	}
+	crit := fidelity.Criteria{AgreeMarginPts: 1, KLMargin: 0.10, Alpha: 0.05}
+	writePositions := func(cells []fidelity.Cell) {
+		if lp := os.Getenv("OP6MP_POSITIONS_LOG"); lp != "" {
+			if f, err := os.Create(lp); err == nil {
+				_ = fidelity.WritePositions(f, cells)
+				f.Close()
+			}
+		}
+	}
 	var cells []fidelity.Cell
 	var allIDs [][]int
 	start := time.Now()
-	for _, K := range []int{512, 2048} {
+	for _, K := range Ks {
 		cell := fidelity.Cell{Name: fmt.Sprintf("phi3-q4k/K=%d", K)}
 		for fi, f := range files {
 			ids := decoder.PrefillGateProseIDsForTest(t, tk, f, K)[:K]
@@ -334,16 +417,16 @@ func TestOP6MP_q4kPassFidelity(t *testing.T) {
 			fmt.Fprintf(os.Stderr, "[op6mp-fidelity %5.0fs] K=%d prompt %d/%d done\n", time.Since(start).Seconds(), K, fi+1, len(files))
 		}
 		cells = append(cells, cell)
+		writePositions(cells)
+		if cv, err := fidelity.NonInferior([]fidelity.Cell{cell}, crit); err == nil {
+			p := cv.Pooled
+			fmt.Fprintf(os.Stderr, "[op6mp-fidelity %5.0fs] cell %s alone (reported, not the verdict): agree pass %.2f%% / step %.2f%%, diff %+.2f pts (LCB %+.2f), KL ratio %.3f (UCB %.3f), hard flips %d / %d\n",
+				time.Since(start).Seconds(), cell.Name, p.AgreeCandPct, p.AgreeExactPct, p.AgreeDiffPts, p.AgreeDiffLCB, p.KLRatio, p.KLRatioUCB, p.FlipsCand, p.FlipsExact)
+		}
 	}
-	v, err := fidelity.NonInferior(cells, fidelity.Criteria{AgreeMarginPts: 1, KLMargin: 0.10, Alpha: 0.05})
+	v, err := fidelity.NonInferior(cells, crit)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if lp := os.Getenv("OP6MP_POSITIONS_LOG"); lp != "" {
-		if f, err := os.Create(lp); err == nil {
-			_ = fidelity.WritePositions(f, cells)
-			f.Close()
-		}
 	}
 	for _, c := range cells {
 		s := v.PerCell[c.Name]
@@ -351,9 +434,13 @@ func TestOP6MP_q4kPassFidelity(t *testing.T) {
 			c.Name, s.AgreeCandPct, s.AgreeExactPct, s.MeanKLCand, s.MeanKLExact, s.FlipsCand, s.FlipsExact)
 	}
 	p := v.Pooled
-	fmt.Fprintf(os.Stderr, "[op6mp-fidelity] pooled over %d prompts, %d positions (prompt set %s): agreement diff %+.2f pts (LCB %+.2f), KL ratio %.3f (UCB %.3f), hard flips %d vs %d -> pass %v %v\n",
-		p.Prompts, p.Positions, fidelity.PromptSetHash(allIDs), p.AgreeDiffPts, p.AgreeDiffLCB, p.KLRatio, p.KLRatioUCB, p.FlipsCand, p.FlipsExact, v.Pass, v.Reasons)
+	label := "the registered cells"
+	if partial {
+		label = fmt.Sprintf("PARTIAL, cells K=%v only (OP6MP_FIDELITY_K)", Ks)
+	}
+	fmt.Fprintf(os.Stderr, "[op6mp-fidelity] %s: pooled over %d prompts, %d positions (prompt set %s): agreement diff %+.2f pts (LCB %+.2f), KL ratio %.3f (UCB %.3f), hard flips %d vs %d -> pass %v %v\n",
+		label, p.Prompts, p.Positions, fidelity.PromptSetHash(allIDs), p.AgreeDiffPts, p.AgreeDiffLCB, p.KLRatio, p.KLRatioUCB, p.FlipsCand, p.FlipsExact, v.Pass, v.Reasons)
 	if !v.Pass {
-		t.Errorf("OP6-MP fidelity FAIL: %v", v.Reasons)
+		t.Errorf("OP6-MP fidelity FAIL (%s): %v", label, v.Reasons)
 	}
 }
