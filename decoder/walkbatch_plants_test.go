@@ -8,6 +8,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // withBatchPlant runs f with plant p set, and clears it after.
@@ -136,7 +138,7 @@ func TestWalkBatchPlant_gemma4BidirectionalDropped(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return argmax(lg), logitCosine(lg, g.LastLogits)
+		return sampling.Argmax(lg), logitCosine(lg, g.LastLogits)
 	}
 	ca, cc := run()
 	var pa int

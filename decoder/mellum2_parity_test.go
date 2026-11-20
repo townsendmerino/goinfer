@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -59,7 +60,7 @@ func runMellum2Golden(t *testing.T, goldenPath string, cosFloor float64, emit bo
 		t.Fatalf("got %d logits, want vocab %d", len(logits), g.Vocab)
 	}
 
-	got := argmax(logits)
+	got := sampling.Argmax(logits)
 	t.Logf("argmax: got %d (logit %.4f) | want %d (golden logit %.4f)", got, logits[got], g.Argmax, logits[g.Argmax])
 	if got != g.Argmax {
 		t.Errorf("argmax = %d, want %d", got, g.Argmax)

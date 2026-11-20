@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/audio"
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // G-S14e2: Voxtral's text decoder loads from the checkpoint's own layout (nested text_config, tensors
@@ -86,8 +87,8 @@ func TestVoxtral_tinyTextParity(t *testing.T) {
 	ref := q3aF32(files["text.logits.f32"])
 	cos := q3aCos(logits, ref)
 	got := q3aGreedy(t, m, cache, logits, len(want))
-	t.Logf("text path: last-row cosine %.9f, argmax %d (want %d), continuation %v (want %v)", cos, argmax(logits), argmax(ref), got, want)
-	if cos < 0.99999 || argmax(logits) != argmax(ref) || !slices.Equal(got, want) {
+	t.Logf("text path: last-row cosine %.9f, argmax %d (want %d), continuation %v (want %v)", cos, sampling.Argmax(logits), sampling.Argmax(ref), got, want)
+	if cos < 0.99999 || sampling.Argmax(logits) != sampling.Argmax(ref) || !slices.Equal(got, want) {
 		t.Errorf("text path differs from transformers: cosine %.9f, continuation %v against %v", cos, got, want)
 	}
 }
@@ -185,8 +186,8 @@ func TestVoxtral_tinyCompositionParity(t *testing.T) {
 		want := q3aInts(t, files[clip+".cont.json"])
 		cos := q3aCos(r.logits, ref)
 		t.Logf("%-8s %d audio rows: worst per-row cosine %.9f, max |diff| %.3e; last-position logit cosine %.9f, argmax %d (want %d), continuation %v (want %v)",
-			clip, len(r.embeds)/hidden, worst, maxAbs, cos, argmax(r.logits), argmax(ref), r.cont, want)
-		if worst < 0.99999 || maxAbs > 4e-3 || cos < 0.99999 || argmax(r.logits) != argmax(ref) || !slices.Equal(r.cont, want) {
+			clip, len(r.embeds)/hidden, worst, maxAbs, cos, sampling.Argmax(r.logits), sampling.Argmax(ref), r.cont, want)
+		if worst < 0.99999 || maxAbs > 4e-3 || cos < 0.99999 || sampling.Argmax(r.logits) != sampling.Argmax(ref) || !slices.Equal(r.cont, want) {
 			t.Errorf("%s: composition differs from transformers (worst row cosine %.9f, max |diff| %.3e, logit cosine %.9f, continuation %v against %v)", clip, worst, maxAbs, cos, r.cont, want)
 		}
 	}
@@ -289,7 +290,7 @@ func TestVoxtral_tinyPlantedDefectsAreRed(t *testing.T) {
 		t.Fatal(err)
 	}
 	ref := q3aF32(files["text.logits.f32"])
-	red("rope_theta at the Llama default (1e4)", q3aCos(logits, ref), 0, argmax(logits) != argmax(ref))
+	red("rope_theta at the Llama default (1e4)", q3aCos(logits, ref), 0, sampling.Argmax(logits) != sampling.Argmax(ref))
 	dir = variantDir(t, func(c map[string]any) { delete(c["text_config"].(map[string]any), "head_dim") })
 	if mm, err := Load(dir, Options{Backend: "cpu"}); err == nil {
 		mm.Close()

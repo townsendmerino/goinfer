@@ -15,6 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -79,8 +80,8 @@ func TestQwen3ASRReal_gate(t *testing.T) {
 	want := rd("text.logits.f32")
 	cos := q3aCos(tl, want)
 	cont := q3aGreedy(t, m, cache, tl, len(meta.Text.Continuation))
-	t.Logf("c1 text path: last-row cosine %.9f, argmax %d (HF %d), continuation %v (HF %v)", cos, argmax(tl), argmax(want), cont, meta.Text.Continuation)
-	if cos < 0.9999 || argmax(tl) != argmax(want) || !slices.Equal(cont, meta.Text.Continuation) {
+	t.Logf("c1 text path: last-row cosine %.9f, argmax %d (HF %d), continuation %v (HF %v)", cos, sampling.Argmax(tl), sampling.Argmax(want), cont, meta.Text.Continuation)
+	if cos < 0.9999 || sampling.Argmax(tl) != sampling.Argmax(want) || !slices.Equal(cont, meta.Text.Continuation) {
 		t.Errorf("c1: text path differs from transformers (cosine %.9f, continuation %v against %v)", cos, cont, meta.Text.Continuation)
 	}
 
@@ -127,7 +128,7 @@ func TestQwen3ASRReal_gate(t *testing.T) {
 	for k, id := range hf {
 		c := q3aCos(lg, tf[k*V:(k+1)*V])
 		worst = min(worst, c)
-		if argmax(lg) != id {
+		if sampling.Argmax(lg) != id {
 			argmaxMiss++
 		}
 		if k < len(hf)-1 {

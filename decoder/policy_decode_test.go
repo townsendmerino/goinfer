@@ -7,6 +7,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // fakeDecode is plainDecodeLoop's target over a scriptedForward: the row is the fake's logits after the history, pick
@@ -25,7 +27,7 @@ func (d *fakeDecode) target() decodeTarget {
 	return decodeTarget{
 		pick: func(*decodeClock) (SampleInfo, int, bool, error) {
 			if d.device {
-				return SampleInfo{}, argmax(d.cur), true, nil
+				return SampleInfo{}, sampling.Argmax(d.cur), true, nil
 			}
 			return SampleInfo{}, 0, false, nil
 		},

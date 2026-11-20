@@ -10,6 +10,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // scriptedForward is a fake Forward (SB5): the logits after a history are a pure function of that history, so a policy
@@ -80,7 +81,7 @@ func plainConstrained(fw Forward, prompt []int, n int, isStop func(int) bool, pr
 	var gen []int
 	for len(gen) < n {
 		proc(gen, logits)
-		tok := argmax(logits)
+		tok := sampling.Argmax(logits)
 		if isStop(tok) {
 			break
 		}
@@ -198,7 +199,7 @@ func plainGreedy(fw Forward, prompt []int, n int, isStop func(int) bool) []int {
 	logits, _ := fw.Prefill(ctx, prompt)
 	var gen []int
 	for len(gen) < n {
-		tok := argmax(logits)
+		tok := sampling.Argmax(logits)
 		if isStop(tok) {
 			break
 		}
@@ -214,7 +215,7 @@ func perturbScript(script func([]int) []float32, at func(n int) bool) func([]int
 	return func(h []int) []float32 {
 		l := script(h)
 		if at(len(h)) {
-			l[(argmax(l)+1)%len(l)] += 10
+			l[(sampling.Argmax(l)+1)%len(l)] += 10
 		}
 		return l
 	}
@@ -347,7 +348,7 @@ func fakeNgramTarget(t *testing.T, fw *scriptedForward, isStop func(int) bool, a
 			rows, err := tg.verify(seq, base)
 			ids := make([]int, len(rows))
 			for i, r := range rows {
-				ids[i] = argmax(r)
+				ids[i] = sampling.Argmax(r)
 			}
 			return ids, err
 		}
@@ -476,7 +477,7 @@ func fakeSessionTurn(kv *fakeKV, tokens, prompt []int, clean bool, n, cutAt int,
 	logits, _ := kv.Prefill(ctx, prompt[matched:])
 	seq := slices.Clone(prompt)
 	for {
-		tok := argmax(logits)
+		tok := sampling.Argmax(logits)
 		if isStop(tok) {
 			break
 		}
@@ -487,8 +488,8 @@ func fakeSessionTurn(kv *fakeKV, tokens, prompt []int, clean bool, n, cutAt int,
 		logits, _ = kv.Step(ctx, tok)
 		seq = append(seq, tok)
 		if cutAt > 0 && len(seq)-len(prompt) == cutAt {
-			seq = append(seq, argmax(logits)) // emitted, but its forward failed: the KV is one behind
-			gen = append(gen, argmax(logits))
+			seq = append(seq, sampling.Argmax(logits)) // emitted, but its forward failed: the KV is one behind
+			gen = append(gen, sampling.Argmax(logits))
 			break
 		}
 	}
@@ -625,7 +626,7 @@ func TestNgramSpecLoop_sampledIsLosslessOnTheFake(t *testing.T) {
 		}
 	}
 	walk(prompt, nil, 1)
-	likeliest := argmax(script(prompt))
+	likeliest := sampling.Argmax(script(prompt))
 	unlikely := (likeliest + 1) % vocab
 	for _, dr := range []struct {
 		name string
