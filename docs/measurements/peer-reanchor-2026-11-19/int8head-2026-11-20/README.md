@@ -27,6 +27,27 @@ new head, and for the moved cells to be re-measured once it is on main.
   (about 4,170) to within its rounding.
 - **The 1.5B's context is capped by the model (32,768),** not by VRAM, with either head.
 
-## 2. The moved cells
+## 2. The moved cells: registered 2026-11-20 13:00 PST, before any data
 
-Pending #1179's merge to main (its CI was red at 12:40 PST on five root jobs).
+- **The cells:** #1179's list, against the re-anchor's own registration ([`../README.md`](../README.md)).
+  - a: CUDA greedy, the 1.5B and 7B at 128 / 2048 / 3900, and at 8000 with `BENCH_CTX=8192`.
+  - d: CUDA TTFT, the 1.5B, K = 512 / 3900.
+  - e: x86 CPU greedy, the 1.5B and 7B at 128.
+- **Unchanged from the re-anchor:** the bands, pairs, token and decode-path gates, the void rule with its zero swap bar,
+  the harness and the grader (`../grade.py`, which now also reads this run's per-model file names).
+- **The engines:** goinfer, Ollama 0.32.5 and llama.cpp `a37cc46`, all run again in the same session. A peer reading from
+  the 19th/20th paired with a goinfer reading from today would be a cross-session ratio.
+- **The build:** main at #1179's merge, pinned in a detached worktree. Build it with
+  [`run-int8head.sh`](run-int8head.sh) `build <rev>`, which writes the rev and both sha256s.
+  - goinfer runs at its new default: no `-embed-int4` flag, so the int8 head at these sizes.
+  - Every goinfer fit check must report `head table: int8`, or the job stops.
+- **One model per step,** so the page cache is evicted and the load settled before each model's cells (Francis's
+  option 1). The harness has no per-cell hook.
+- **Run:** by day, under the timing lock (the harness holds it). Expected about 65 min:
+  - a: about 20 min;
+  - d: about 2 min;
+  - e: about 31 min, the 7B CPU cells taking 15 of it;
+  - fit checks, settles and evictions: about 12 min.
+- **Use:** the graded cells replace the 1.5B and 7B rows of these cells in `docs/benchmarks.md`. The int4-head rows stay,
+  marked as before the default changed.
+- **Not run until #1179 is on main.** Its CI was red at 12:40 PST on five root jobs.
