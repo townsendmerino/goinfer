@@ -7,6 +7,9 @@
 # Before each step it waits for the 1-minute load average to settle under SETTLE_LOAD (0.8) for up to 10 minutes, so the
 # harness's one-sample preflight (BENCH_MAX_LOADAVG=1.0, unchanged) does not refuse on the load the fit checks or the
 # previous step's servers left behind; a load that never settles fails the step as before.
+# Before that wait it drops the page cache of every checkpoint file (evict_cache.py: posix_fadvise DONTNEED over ~/models
+# and Ollama's store, no root, no setting changed), so a step's loads start with free memory instead of a full page cache,
+# where the kernel pushes idle processes to zram and the void rule's zero swap bar voids the cell (README, "Why swap grows").
 # Serve binaries are pre-built from a clean detached worktree at $REV and checked by sha256; bench_peer.py runs from that
 # same worktree. Every goinfer load the part makes is fit-checked first with the binary and flags the harness passes; a
 # refusal exits 75 (night.py re-queues it until --retry-until). Exits non-zero when any step fails or writes no results.
@@ -15,6 +18,7 @@ PART=${1:?usage: run-nobara.sh cuda|cpu [step,step...]}
 STEPS=${2:-}
 case $PART in cuda|cpu) ;; *) echo "unknown part $PART"; exit 2;; esac
 export PATH=/usr/local/go/bin:$HOME/go/bin:$PATH
+HERE=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
 REV=e29da447
 DRIVER=595.112.07
 W=$HOME/goinfer-bench/peer-reanchor-2026-11-19
@@ -113,6 +117,7 @@ step() { # step <name> <results.json> <command...>: one harness invocation; a re
   local name=$1 res=$2; shift 2
   if [ -n "$STEPS" ] && [[ ",$STEPS," != *",$name,"* ]]; then echo "=== skip $name (not in $STEPS)"; return 0; fi
   [ -e "$OUT/$name.log" ] && mv "$OUT/$name.log" "$OUT/$name.attempt-$(date -r "$OUT/$name.log" +%Y%m%dT%H%M%S).log"
+  echo "=== evict: $(python3 "$HERE/evict_cache.py" "$HOME/models" "$OLLAMA_MODELS" 2>&1) $(state)"
   if ! settle; then echo "FAILED step $name: the load never settled"; rc_all=1; return 0; fi
   echo "=== $(ts) START $name $(state)"
   local t0; t0=$(date +%s)
