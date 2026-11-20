@@ -109,11 +109,9 @@ func Run(args []string, self string) int {
 		fmt.Printf("%d of %d checks FAILED\n", failed, len(rows))
 		return 1
 	}
-	// V-17 (docs/review-2026-09-04.md): "all N checks passed" against a server with zero models
-	// loaded used to print unconditionally — but with no model, Chat/Structured/Stop/CountTokens
-	// never even run (see the else-if above), so N was a shrunk-without-explanation total and the
-	// one row that DID run (models list) plus one skip read as full coverage. Same "a SKIP IS NOT
-	// A PASS" doctrine this repo already applies to Go test output.
+	// With no model loaded, Chat/Structured/Stop/CountTokens never run (see the else-if above), so
+	// an unconditional "all N checks passed" would read one row plus a skip as full coverage. Same
+	// "a SKIP IS NOT A PASS" doctrine this repo applies to Go test output.
 	if skipped > 0 {
 		fmt.Printf("%d of %d checks passed (%d skipped, see above)\n",
 			len(rows)-skipped-failed, len(rows), skipped)

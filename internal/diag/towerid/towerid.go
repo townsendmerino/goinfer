@@ -73,7 +73,7 @@ type runner struct {
 }
 
 // PlantForTest (when it names a family) changes that family's first output value by one ulp before it is fingerprinted: the
-// plant SB9's goldens are shown to go red with (G-SB9-2). Empty in production and in every other test.
+// plant the tower goldens are shown to go red with (CheckPlants). Empty in production and in every other test.
 var PlantForTest string
 
 func caseKey(family, input string) string { return family + "\x00" + input }

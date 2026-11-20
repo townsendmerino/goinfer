@@ -138,7 +138,7 @@ func ReadTokFile(path string) ([]byte, error) {
 	if _, err := f.ReadAt(tl[:], tokOff); err != nil {
 		return nil, fmt.Errorf("giw: read tok length: %w", err)
 	}
-	// Bound the allocation by the file (C-31): the tokenizer body starts at tokOff+4, so it can hold at
+	// Bound the allocation by the file: the tokenizer body starts at tokOff+4, so it can hold at
 	// most (fileSize - tokOff - 4) bytes. Without this a crafted u32 tokLen (e.g. 0xFFFFFFFF in a 21-byte
 	// file) makes a 4 GiB allocation before the ReadAt below fails. The ReadAt above succeeded, so
 	// tokOff+4 ≤ fileSize and avail ≥ 0.

@@ -8,7 +8,7 @@ import (
 	"github.com/townsendmerino/goinfer/pull"
 )
 
-// RunCache is `goinfer-chat cache`: what the pull cache holds on disk (task-checkpoint-fetch-2026-09.md P8), one line per
+// RunCache is `goinfer-chat cache`: what the pull cache holds on disk (task-checkpoint-fetch-2026-09.md), one line per
 // model with its size, its sidecars and whether its pull finished, then the path to pass to --model. On-disk and loaded
 // are different questions; this answers the first. It reads sizes only, so it is fast on a large cache.
 // giwVersion is the .giw format the caller's build reads (decoder.GIWFormatVersion); prune-sidecars keeps it and anything newer.

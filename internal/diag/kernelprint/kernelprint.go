@@ -44,7 +44,7 @@ type Report struct {
 }
 
 // Digest is one SHA-256 over the configuration and every kernel's fingerprint, in name order: what a key mixes in
-// until it can name the kernels a family's operations use (VK4).
+// until it can name the kernels a family's operations use.
 func (r Report) Digest() string {
 	names := make([]string, 0, len(r.Kernels))
 	for n := range r.Kernels {

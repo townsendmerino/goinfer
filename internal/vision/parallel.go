@@ -18,8 +18,8 @@ var numCPU = runtime.NumCPU()
 // reduction crosses a row boundary, so each row's f64 mean/variance fold runs
 // in exactly the order it did serially.
 //
-// Why this exists (audit M-10): the only parallelism in this package was the
-// P6a head fan-out and the Workspace column split inside projections. Every
+// Why this exists: the only parallelism in this package was the
+// attention head fan-out and the Workspace column split inside projections. Every
 // activation, norm, bias and residual pass ran on one goroutine while the
 // matmuls around them used every core. On SigLIP-so400m (np=4096, I=4304, 27
 // layers) that is 476M GELU-tanh per image — on the order of the tower's entire
