@@ -3,11 +3,16 @@
 #   bash run-nobara.sh cuda   # cells a, b, f, d, c (CUDA); its own night job, queued first
 #   bash run-nobara.sh cpu    # cells e and v (x86 CPU); its own night job, queued second
 #   FIT_ONLY=1 bash run-nobara.sh <part>   # the fit checks alone, no timing
+#   bash run-nobara.sh <part> <step,step>  # only the named steps (a re-run of the steps that produced no results)
+# Before each step it waits for the 1-minute load average to settle under SETTLE_LOAD (0.8) for up to 10 minutes, so the
+# harness's one-sample preflight (BENCH_MAX_LOADAVG=1.0, unchanged) does not refuse on the load the fit checks or the
+# previous step's servers left behind; a load that never settles fails the step as before.
 # Serve binaries are pre-built from a clean detached worktree at $REV and checked by sha256; bench_peer.py runs from that
 # same worktree. Every goinfer load the part makes is fit-checked first with the binary and flags the harness passes; a
 # refusal exits 75 (night.py re-queues it until --retry-until). Exits non-zero when any step fails or writes no results.
 set -uo pipefail
-PART=${1:?usage: run-nobara.sh cuda|cpu}
+PART=${1:?usage: run-nobara.sh cuda|cpu [step,step...]}
+STEPS=${2:-}
 case $PART in cuda|cpu) ;; *) echo "unknown part $PART"; exit 2;; esac
 export PATH=/usr/local/go/bin:$HOME/go/bin:$PATH
 REV=e29da447
@@ -46,7 +51,8 @@ done
   echo "ollama    $("$HOME/ollama-0325/bin/ollama" --version 2>&1 | tail -1)"
   echo "llama     $(LD_LIBRARY_PATH= "$HOME/mycode/peers/llama.cpp/build/bin/llama-server" --version 2>&1 | head -1)"
   echo "desktop   $(nvidia-smi --query-compute-apps=process_name,used_memory --format=csv,noheader | tr '\n' ';')"
-  echo "state     $(state)"; } | tee "$OUT/provenance.txt"
+  echo "steps     ${STEPS:-all}"
+  echo "state     $(state)"; } | tee -a "$OUT/provenance.txt"
 
 # --- fit checks ---------------------------------------------------------------------------------------------------------
 fit() { # fit <name> <want-decode-path-prefix> <serve> <args...>: the server's own banner, or a refusal
@@ -92,8 +98,22 @@ export LLAMACPP_BIN=$HOME/mycode/peers/llama.cpp/build/bin/llama-server
 export BENCH_RUNS=3 BENCH_QUANT_OVERRIDE="M35=int4mix,phi3-mini=default,G20=default"
 export BENCH_SWAP_VOID_STOP=3 BENCH_SWAP_KILL_MB=1024
 rc_all=0
+SETTLE_LOAD=0.8 SETTLE_MAX_S=600
+settle() { # wait for the 1-minute load average to fall under SETTLE_LOAD, logging each reading; 1 if it never does
+  local t0 la; t0=$(date +%s)
+  while :; do
+    la=$(cut -d' ' -f1 /proc/loadavg)
+    awk -v l="$la" -v c="$SETTLE_LOAD" 'BEGIN{exit !(l<c)}' && { echo "=== settle: load $la < $SETTLE_LOAD after $(( $(date +%s) - t0 ))s"; return 0; }
+    [ $(( $(date +%s) - t0 )) -ge $SETTLE_MAX_S ] && { echo "=== settle: load $la still >= $SETTLE_LOAD after ${SETTLE_MAX_S}s"; return 1; }
+    echo "=== settle: load $la >= $SETTLE_LOAD, waiting ($(( $(date +%s) - t0 ))/${SETTLE_MAX_S}s)"
+    sleep 20
+  done
+}
 step() { # step <name> <results.json> <command...>: one harness invocation; a refusal or an empty results file is a failure
   local name=$1 res=$2; shift 2
+  if [ -n "$STEPS" ] && [[ ",$STEPS," != *",$name,"* ]]; then echo "=== skip $name (not in $STEPS)"; return 0; fi
+  [ -e "$OUT/$name.log" ] && mv "$OUT/$name.log" "$OUT/$name.attempt-$(date -r "$OUT/$name.log" +%Y%m%dT%H%M%S).log"
+  if ! settle; then echo "FAILED step $name: the load never settled"; rc_all=1; return 0; fi
   echo "=== $(ts) START $name $(state)"
   local t0; t0=$(date +%s)
   (cd "$H" && BENCH_SERVE_LOG_DIR="$OUT/serve-logs" "$@") > "$OUT/$name.log" 2>&1

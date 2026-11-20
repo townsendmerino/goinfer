@@ -112,4 +112,25 @@ copies them here and grades them: `python3 grade.py results/cuda results/cpu`.
 
 ## Results
 
-Not run yet.
+### Night 1, 2026-11-19 22:00 PST: most steps refused, nothing graded
+
+The harness's preflight refused most steps, so nothing was measured for them. The preflight takes one 1-minute load
+sample on Linux and refuses above `BENCH_MAX_LOADAVG=1.0`, without waiting. The 09-29 script had waited for idle before
+each step; this one did not.
+- **CUDA:** a-dense, a-depth8000, b-controls, f-sampled and c-26b were REFUSED at load 1.95, left by the fit checks'
+  server starts.
+- **d-prefill ran** and wrote its results. It started at load 1.95, which is inside the void rule's cap of 8.0, and
+  `bench_peer_prefill.py` has no load cap of its own. It is kept, with that start load in the record.
+- **CPU:** e-cpu ran all 9 cells, each started under 1.0 by the harness's own per-cell gate. v-cpu was REFUSED at 7.34,
+  the load e-cpu's own servers left.
+- A refused step has no runs, so nothing was averaged or graded.
+
+### Amendment, 2026-11-20 00:32 PST, before the re-run's data
+
+- **The fix:** `run-nobara.sh` now waits before each step until the 1-minute load average is under 0.8. It waits up to
+  10 minutes, logging each reading, and fails the step if the load never settles.
+  - 0.8 leaves room for the harness's own sample a moment later.
+  - `BENCH_MAX_LOADAVG` is unchanged at 1.0.
+- **What re-runs:** only the steps that produced no results: CUDA a-dense, a-depth8000, b-controls, f-sampled, c-26b; CPU
+  v-cpu. They run with the script's new step argument, with the same binaries, harness, cells and bands.
+- **What stands:** d-prefill and e-cpu, as run.
