@@ -15,22 +15,23 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/goinfer/decoder/fit"
+	"github.com/townsendmerino/goinfer/decoder/quant"
 )
 
 const flintTinyCkptDir = "../testdata/flint-tiny"
 
 // TestNVFP4_e2m1TableAndExhaustiveE4M3 verifies the 16-entry FP4 E2M1 table
 // (including signed zero at 0x8) and exhaustively checks all 16 * 256 = 4,096
-// (e2m1, fp8_e4m3fn) combinations through nvfp4DequantRow.
+// (e2m1, fp8_e4m3fn) combinations through quant.NVFP4DequantRow.
 func TestNVFP4_e2m1TableAndExhaustiveE4M3(t *testing.T) {
 	wantE2M1 := [16]float32{
 		0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0,
 		float32(math.Copysign(0, -1)), -0.5, -1.0, -1.5, -2.0, -3.0, -4.0, -6.0,
 	}
 	for i, want := range wantE2M1 {
-		got := nvfp4E2M1ToF32(byte(i))
-		if got != want || nvfp4E2M1Table[i] != want {
-			t.Fatalf("nibble 0x%X: got fn=%v table=%v, want %v", i, got, nvfp4E2M1Table[i], want)
+		got := quant.NVFP4E2M1ToF32(byte(i))
+		if got != want || quant.NVFP4E2M1Table[i] != want {
+			t.Fatalf("nibble 0x%X: got fn=%v table=%v, want %v", i, got, quant.NVFP4E2M1Table[i], want)
 		}
 		if want == 0 && math.Signbit(float64(got)) != math.Signbit(float64(want)) {
 			t.Fatalf("nibble 0x%X: zero signbit mismatch: got %v, want %v", i, math.Signbit(float64(got)), math.Signbit(float64(want)))
@@ -42,27 +43,27 @@ func TestNVFP4_e2m1TableAndExhaustiveE4M3(t *testing.T) {
 	// and 2*j+1 in high nibble).
 	const (
 		nBlocks     = 256
-		in          = nBlocks * nvfp4BlockElems
+		in          = nBlocks * quant.NVFP4BlockElems
 		globalScale = float32(0.25)
 	)
-	packed := make([]byte, nBlocks*nvfp4PackedBytes)
+	packed := make([]byte, nBlocks*quant.NVFP4PackedBytes)
 	scales := make([]float32, nBlocks)
 	for s := range nBlocks {
-		scales[s] = fp8E4M3ToF32(byte(s))
-		for j := range nvfp4PackedBytes {
+		scales[s] = quant.FP8E4M3ToF32(byte(s))
+		for j := range quant.NVFP4PackedBytes {
 			lo := byte(2 * j)
 			hi := byte(2*j + 1)
-			packed[s*nvfp4PackedBytes+j] = lo | (hi << 4)
+			packed[s*quant.NVFP4PackedBytes+j] = lo | (hi << 4)
 		}
 	}
 	dst := make([]float32, in)
-	if err := nvfp4DequantRow(packed, scales, globalScale, in, dst); err != nil {
-		t.Fatalf("nvfp4DequantRow: %v", err)
+	if err := quant.NVFP4DequantRow(packed, scales, globalScale, in, dst); err != nil {
+		t.Fatalf("quant.NVFP4DequantRow: %v", err)
 	}
 	for s := range nBlocks {
 		refScale := float32(fp8E4M3RefTable[s]) * globalScale
-		for nib := range nvfp4BlockElems {
-			got := dst[s*nvfp4BlockElems+nib]
+		for nib := range quant.NVFP4BlockElems {
+			got := dst[s*quant.NVFP4BlockElems+nib]
 			if math.IsNaN(float64(refScale)) {
 				if !math.IsNaN(float64(got)) {
 					t.Fatalf("scale 0x%02X nib 0x%X: got %v, want NaN", s, nib, got)
@@ -157,7 +158,7 @@ func nearestE4M3Byte(v float32) byte {
 	best := byte(1)
 	bestDiff := float32(math.MaxFloat32)
 	for b := 1; b < 0x7F; b++ {
-		cand := fp8E4M3Table[b]
+		cand := quant.FP8E4M3Table[b]
 		diff := float32(math.Abs(float64(cand - v)))
 		if diff < bestDiff {
 			bestDiff = diff
@@ -172,7 +173,7 @@ func nearestE2M1Nibble(v float32) byte {
 	best := byte(0)
 	bestDiff := float32(math.MaxFloat32)
 	for nib := range 16 {
-		cand := nvfp4E2M1Table[nib]
+		cand := quant.NVFP4E2M1Table[nib]
 		diff := float32(math.Abs(float64(cand - v)))
 		if diff < bestDiff {
 			bestDiff = diff
@@ -210,7 +211,7 @@ func quantizeMatrixNVFP4(src []float32, out, in int) (wBytes, sBytes, s2Bytes []
 			}
 			sb := nearestE4M3Byte(bMax / (6.0 * globalScale))
 			sBytes[r*nBlocks+g] = sb
-			effScale := fp8E4M3Table[sb] * globalScale
+			effScale := quant.FP8E4M3Table[sb] * globalScale
 			for j := range 8 {
 				lo := nearestE2M1Nibble(block[2*j] / effScale)
 				hi := nearestE2M1Nibble(block[2*j+1] / effScale)
@@ -375,8 +376,8 @@ func TestNVFP4_reconstructAndEndToEndFlint(t *testing.T) {
 					eff := float32(fp8E4M3RefTable[sb[r*nBlocks+blk]]) * s2
 					for j := range 8 {
 						b := tr.data[r*(in/2)+blk*8+j]
-						deq[r*in+blk*16+2*j] = nvfp4E2M1ToF32(b&0x0F) * eff
-						deq[r*in+blk*16+2*j+1] = nvfp4E2M1ToF32(b>>4) * eff
+						deq[r*in+blk*16+2*j] = quant.NVFP4E2M1ToF32(b&0x0F) * eff
+						deq[r*in+blk*16+2*j+1] = quant.NVFP4E2M1ToF32(b>>4) * eff
 					}
 				}
 			}
@@ -411,9 +412,9 @@ func TestNVFP4_reconstructAndEndToEndFlint(t *testing.T) {
 	}
 	defer st.Close()
 	qName := "model.layers.0.self_attn.q_proj.weight"
-	goodW, err := nvfp4Reconstruct(st, qName, 64, 64)
+	goodW, err := quant.NVFP4Reconstruct(st, qName, 64, 64)
 	if err != nil {
-		t.Fatalf("nvfp4Reconstruct: %v", err)
+		t.Fatalf("quant.NVFP4Reconstruct: %v", err)
 	}
 	wT, _ := st.Tensor(qName)
 	rawW, _ := wT.Uint8s()
@@ -421,10 +422,10 @@ func TestNVFP4_reconstructAndEndToEndFlint(t *testing.T) {
 	for i, b := range rawW {
 		swapped[i] = (b << 4) | (b >> 4)
 	}
-	scales, _ := nvfp4ScaleTensorF32(st, "model.layers.0.self_attn.q_proj.weight_scale", 64, 4)
-	gs, _ := nvfp4GlobalScale(st, "model.layers.0.self_attn.q_proj")
+	scales, _ := quant.NVFP4ScaleTensorF32(st, "model.layers.0.self_attn.q_proj.weight_scale", 64, 4)
+	gs, _ := quant.NVFP4GlobalScale(st, "model.layers.0.self_attn.q_proj")
 	badRow := make([]float32, 64)
-	_ = nvfp4DequantRow(swapped[:32], scales[:4], gs, 64, badRow)
+	_ = quant.NVFP4DequantRow(swapped[:32], scales[:4], gs, 64, badRow)
 	maxDiff := maxAbsLogitDiff(goodW[:64], badRow)
 	if maxDiff < 1e-2 {
 		t.Fatalf("nibble-swap perturbation was not caught: maxAbs=%e", maxDiff)
@@ -444,8 +445,8 @@ func TestMLX_affineAndFP4ModesAndEndToEndFlint(t *testing.T) {
 	for _, bits := range []int{4, 8} {
 		words, scales, biases := quantizeMatrixMLXAffine(srcRow, 1, 64, bits, 32)
 		got := make([]float32, 64)
-		if err := mlxDequantAffineRow(words, scales, biases, 64, bits, 32, got); err != nil {
-			t.Fatalf("mlxDequantAffineRow(%d-bit): %v", bits, err)
+		if err := quant.MLXDequantAffineRow(words, scales, biases, 64, bits, 32, got); err != nil {
+			t.Fatalf("quant.MLXDequantAffineRow(%d-bit): %v", bits, err)
 		}
 		cos := logitCosine(got, srcRow)
 		minCos := 0.99
@@ -453,11 +454,11 @@ func TestMLX_affineAndFP4ModesAndEndToEndFlint(t *testing.T) {
 			minCos = 0.9999
 		}
 		if cos < minCos {
-			t.Fatalf("mlxDequantAffineRow(%d-bit) cosine=%.6f, want >= %v", bits, cos, minCos)
+			t.Fatalf("quant.MLXDequantAffineRow(%d-bit) cosine=%.6f, want >= %v", bits, cos, minCos)
 		}
 		// Break-it-first: zeroing biases must degrade reconstruction.
 		noBias := make([]float32, 64)
-		_ = mlxDequantAffineRow(words, scales, make([]float32, len(biases)), 64, bits, 32, noBias)
+		_ = quant.MLXDequantAffineRow(words, scales, make([]float32, len(biases)), 64, bits, 32, noBias)
 		diff := maxAbsLogitDiff(got, noBias)
 		if diff < 0.5 {
 			t.Fatalf("dropping MLX biases was not caught (%d-bit): maxAbs=%e", bits, diff)
@@ -473,19 +474,19 @@ func TestMLX_affineAndFP4ModesAndEndToEndFlint(t *testing.T) {
 	}
 	nvOut := make([]float32, 32)
 	// 0x38 is 1.0 in FP8 E4M3, 0x40 is 2.0 in FP8 E4M3.
-	if err := mlxDequantNVFP4Row(wordsFP4, []byte{0x38, 0x40}, 32, nvOut); err != nil {
-		t.Fatalf("mlxDequantNVFP4Row: %v", err)
+	if err := quant.MLXDequantNVFP4Row(wordsFP4, []byte{0x38, 0x40}, 32, nvOut); err != nil {
+		t.Fatalf("quant.MLXDequantNVFP4Row: %v", err)
 	}
 	if nvOut[7] != 6.0 || nvOut[15] != -6.0 || nvOut[16+7] != 12.0 || nvOut[16+15] != -12.0 {
-		t.Fatalf("mlxDequantNVFP4Row unexpected values: %v", nvOut)
+		t.Fatalf("quant.MLXDequantNVFP4Row unexpected values: %v", nvOut)
 	}
 	mxOut := make([]float32, 32)
 	// E8M0 127 -> scale 1.0 (MXFP4Scale(127) = 0.5, * 2 = 1.0).
-	if err := mlxDequantMXFP4Row(wordsFP4, []byte{127}, 32, mxOut); err != nil {
-		t.Fatalf("mlxDequantMXFP4Row: %v", err)
+	if err := quant.MLXDequantMXFP4Row(wordsFP4, []byte{127}, 32, mxOut); err != nil {
+		t.Fatalf("quant.MLXDequantMXFP4Row: %v", err)
 	}
 	if mxOut[7] != 6.0 || mxOut[15] != -6.0 || mxOut[31] != -6.0 {
-		t.Fatalf("mlxDequantMXFP4Row unexpected values: %v", mxOut)
+		t.Fatalf("quant.MLXDequantMXFP4Row unexpected values: %v", mxOut)
 	}
 
 	// 3. End-to-end MLX-quantized Flint checkpoint with 3-D switch_mlp experts.

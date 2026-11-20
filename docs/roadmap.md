@@ -119,7 +119,7 @@ Retractions kept visible so the archive is read correctly:
 | MoE and Gemma 4 "excluded from residency" | MoE resident on all three backends; Gemma 4 resident on CUDA and Metal (WebGPU declines on per-layer geometry) |
 | the resident path is "stateless (no prefix-reuse)" | resident prefix reuse shipped 2026-09-02 (`3358e6b`); agent turn 3 on the 1.5B 9.13 s → 0.42 s |
 | a fused W4A8 batch "needs an aikit `MatmulBTW4A8Batch` (doesn't exist yet)" | exists (aikit v1.34.0) and is on goinfer's decode path |
-| FP8 "is GPU-hardware-driven — not our fight" | fp8 e4m3 blockwise reader shipped (`decoder/fp8.go`); the `ue8m0` scale format is the remaining half |
+| FP8 "is GPU-hardware-driven — not our fight" | fp8 e4m3 blockwise reader shipped (`decoder/quant/fp8.go`); the `ue8m0` scale format is the remaining half |
 | "Llama 4 remains as the last popularity-momentum pick" | `llama4_text` landed (CPU on every backend); its residency lift is scoped in `completed/residency-port-triage.md` |
 | "three efficient-attention axes" | five mixers — KDA landed as `bailing_hybrid` (v0.17.0) |
 | "one no other pure-Go runtime can make" | `goccy/go-llama` is a real cgo-free lane (single-threaded, GGUF-only, CPU-only); the README stopped claiming the lane is empty 2026-08-27 |
