@@ -9,7 +9,7 @@ import "math"
 var negZero = math.Copysign(0, -1)
 
 // fp8E4M3RefTable is every e4m3fn byte pattern decoded by PyTorch's own float8_e4m3fn, the
-// ORACLE for fp8.go's derivation. Generated once, committed, and never hand-edited:
+// ORACLE for decoder/quant's fp8 derivation. Generated once, committed, and never hand-edited:
 //
 //	b = torch.arange(256, dtype=torch.uint8)
 //	f = b.view(torch.float8_e4m3fn).to(torch.float32)
