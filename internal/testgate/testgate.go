@@ -1,5 +1,5 @@
 // Package testgate holds the skip gates tests share across goinfer's modules: the heavy opt-in, the device probe's
-// verdict and the model directory. Each skip message begins with a fixed token (SkipHeavy, SkipDevice, SkipAsset), which
+// verdict and the model directory; and SetForTest, the one way a test sets a package-level switch. Each skip message begins with a fixed token (SkipHeavy, SkipDevice, SkipAsset), which
 // cmd/gate's skip buckets and scripts/cuda_device_suite.py classify before their wording patterns.
 //
 // It is imported only by _test.go files (TestNoProductionImporter), so its environment reads are not production reads.
@@ -59,4 +59,13 @@ func RequireModel(t testing.TB, name string) string {
 		t.Skipf("%s %s not found under the models directory: %v", SkipAsset, name, err)
 	}
 	return p
+}
+
+// SetForTest sets *p to v for the rest of t and restores the value it had when t ends, so a test that sets a package-level
+// switch or seam cannot leave it set for the next. A test running in parallel with another that reads *p must not use it.
+func SetForTest[T any](t testing.TB, p *T, v T) {
+	t.Helper()
+	old := *p
+	*p = v
+	t.Cleanup(func() { *p = old })
 }
