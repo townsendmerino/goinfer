@@ -1202,7 +1202,7 @@ func w8PreciseMath(m *decoder.Model) bool {
 	if !nativeInt8 || w8FastMath || m.BackendView().HasGemma4MoE() {
 		return false
 	}
-	if _, _, _, _, _, _, _, _, _, _, moe := m.BackendView().MoEParams(); moe {
+	if _, moe := m.BackendView().MoE(); moe {
 		// slice 4's MoE, as w8Eligible will admit it: not gpt-oss, not paged
 		if _, _, gptoss := m.BackendView().GptOssAct(); !nativeInt8MoE || gptoss || metalMoESlotsRequest(m) != "" {
 			return false

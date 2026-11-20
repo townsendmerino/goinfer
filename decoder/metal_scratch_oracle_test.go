@@ -25,7 +25,8 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 	geoms := map[geomKey]bool{}
 	nHhd, kvDim, fa, attn, layerFFN := 0, 0, 0, 0, 0
 	maxFFNI := I
-	nE, k, inter, sharedInter, _, _, _, _, _, _, moeOK := m.BackendView().MoEParams()
+	mo, moeOK := m.BackendView().MoE()
+	nE, k, inter, sharedInter := mo.NumExperts, mo.TopK, mo.IntermediateDim, mo.SharedIntermediateDim
 	g4 := m.BackendView().HasGemma4MoE()
 	moeOK = moeOK && !g4
 	q4k := m.Quant() == "q4k"

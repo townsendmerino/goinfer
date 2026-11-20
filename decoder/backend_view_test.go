@@ -137,9 +137,10 @@ func TestBackendModelView_familyParams(t *testing.T) {
 	m := &Model{w: &Weights{arch: &Architecture{HiddenDim: 64, NumLayers: 1, NumHeads: 4, NumKVHeads: 2, HeadDim: 16, MoE: moe}, Layers: make([]LayerWeights, 1)}}
 	bv := m.BackendView()
 
-	nE, k, inter, shared, sigmoid, norm, ungated, scale, nGroup, topkGroup, ok := bv.MoEParams()
-	if !ok || nE != 8 || k != 2 || inter != 24 || shared != 16 || !sigmoid || !norm || ungated || scale != 2.5 || nGroup != 4 || topkGroup != 2 {
-		t.Errorf("MoEParams = (%d,%d,%d,%d,%v,%v,%v,%v,%d,%d,%v), want the config's values with ok", nE, k, inter, shared, sigmoid, norm, ungated, scale, nGroup, topkGroup, ok)
+	want := ResidentMoESpec{NumExperts: 8, TopK: 2, IntermediateDim: 24, SharedIntermediateDim: 16, RouterSigmoid: true,
+		NormTopKProb: true, RoutedScale: 2.5, NGroup: 4, TopkGroup: 2}
+	if mo, ok := bv.MoE(); !ok || mo != want {
+		t.Errorf("MoE = %+v, %v; want %+v with ok", mo, ok, want)
 	}
 	if _, _, _, _, _, _, _, ok := bv.NemotronParams(); ok {
 		t.Error("NemotronParams ok for a model with no Nemotron subsystem")
