@@ -211,5 +211,3 @@ func (s *Sampler) needsHistory() bool { return s.impl.NeedsHistory() }
 func (s *Sampler) specStep(p []float64, x int) (int, bool) { return s.impl.SpecStep(p, x) }
 
 func (s *Sampler) topPActive() bool { return s.impl.TopPActive() }
-
-func argmax(logits []float32) int { return sampling.Argmax(logits) }

@@ -12,10 +12,10 @@ func TestLoadWeights_safetensorsHonorsAbort(t *testing.T) {
 	dir := tinyLlamaDir(t)
 	abort := make(chan struct{})
 	close(abort)
-	if _, err := loadWeights(dir, quantNone, false, true, false, nil, abort); !errors.Is(err, ErrLoadAborted) {
+	if _, err := loadWeights(dir, weightLoadOpts{needCanonical: true, abort: abort}); !errors.Is(err, ErrLoadAborted) {
 		t.Fatalf("got error %v, want errors.Is(err, ErrLoadAborted)", err)
 	}
-	if _, err := loadWeights(dir, quantNone, false, true, false, nil, nil); err != nil {
+	if _, err := loadWeights(dir, weightLoadOpts{needCanonical: true}); err != nil {
 		t.Fatalf("a nil abort must still load: %v", err)
 	}
 }

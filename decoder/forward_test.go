@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // M3 forward-pass parity. Runs the real checkpoint's forward over a fixed
@@ -77,7 +79,7 @@ func TestForward_logitParity(t *testing.T) {
 	}
 
 	// 1. Argmax — the decisive correctness gate (the predicted next token).
-	if got := argmax(logits); got != g.Argmax {
+	if got := sampling.Argmax(logits); got != g.Argmax {
 		t.Errorf("argmax = %d, want %d (logit[got]=%.4f logit[want]=%.4f)",
 			got, g.Argmax, logits[got], logits[g.Argmax])
 	}
@@ -120,7 +122,7 @@ func TestForward_logitParity(t *testing.T) {
 	// 5. Full-vector cosine when the per-machine dump is present.
 	cos := fullCosine(t, logits, gemmaForwardFullPath)
 	t.Logf("argmax=%d (want %d) | maxSampleΔ=%.5f | sum rel=%.2e | cosine=%v",
-		argmax(logits), g.Argmax, maxSampleΔ, relDiff(sum, g.Stats.Sum), cos)
+		sampling.Argmax(logits), g.Argmax, maxSampleΔ, relDiff(sum, g.Stats.Sum), cos)
 }
 
 // fullCosine returns cosine(go, hf) over the full logit vector if the

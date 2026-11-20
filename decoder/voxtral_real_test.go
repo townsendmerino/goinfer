@@ -15,6 +15,7 @@ import (
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -181,14 +182,14 @@ func TestVoxtralReal_gate(t *testing.T) {
 		}
 		refLogits := rd(name + ".logits.f32")
 		cos := q3aCos(lg, refLogits)
-		t.Logf("%s: prompt prefill %.1fs; last-position logit cosine %.9f, argmax %d (reference %d)", name, time.Since(t2).Seconds(), cos, argmax(lg), argmax(refLogits))
-		if cos < 0.9999 || argmax(lg) != argmax(refLogits) {
-			bad("%s: prompt logits differ from transformers (cosine %.9f, argmax %d against %d)", name, cos, argmax(lg), argmax(refLogits))
+		t.Logf("%s: prompt prefill %.1fs; last-position logit cosine %.9f, argmax %d (reference %d)", name, time.Since(t2).Seconds(), cos, sampling.Argmax(lg), sampling.Argmax(refLogits))
+		if cos < 0.9999 || sampling.Argmax(lg) != sampling.Argmax(refLogits) {
+			bad("%s: prompt logits differ from transformers (cosine %.9f, argmax %d against %d)", name, cos, sampling.Argmax(lg), sampling.Argmax(refLogits))
 		}
 		var gen []int
 		l := lg
 		for len(gen) < len(refGen)+8 { // allow a few more tokens than the reference made, so a missed stop is seen
-			id := argmax(l)
+			id := sampling.Argmax(l)
 			gen = append(gen, id)
 			if id == eos {
 				break
@@ -222,7 +223,7 @@ func TestVoxtralReal_gate(t *testing.T) {
 		for k, id := range refGen {
 			cc := q3aCos(l2, tfRef[k*c.Vocab:(k+1)*c.Vocab])
 			worst = min(worst, cc)
-			if argmax(l2) != id {
+			if sampling.Argmax(l2) != id {
 				miss++
 			}
 			if k < len(refGen)-1 {

@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // G2 Qwen3 forward parity. Loads the real Qwen3-1.7B (a different family —
@@ -66,7 +68,7 @@ func TestQwen3_forwardParity(t *testing.T) {
 		t.Fatalf("got %d logits, want vocab %d", len(logits), g.Vocab)
 	}
 
-	if got := argmax(logits); got != g.Argmax {
+	if got := sampling.Argmax(logits); got != g.Argmax {
 		t.Errorf("argmax = %d, want %d (logit[got]=%.4f logit[want]=%.4f)",
 			got, g.Argmax, logits[got], logits[g.Argmax])
 	}
@@ -91,5 +93,5 @@ func TestQwen3_forwardParity(t *testing.T) {
 	}
 
 	cos := fullCosine(t, logits, qwen3ForwardFullPath)
-	t.Logf("qwen3: argmax=%d (want %d) | maxSampleΔ=%.5f | cosine=%v", argmax(logits), g.Argmax, maxSampleΔ, cos)
+	t.Logf("qwen3: argmax=%d (want %d) | maxSampleΔ=%.5f | cosine=%v", sampling.Argmax(logits), g.Argmax, maxSampleΔ, cos)
 }

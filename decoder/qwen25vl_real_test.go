@@ -24,6 +24,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/vision"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -77,7 +78,7 @@ func TestQwen25VLReal_gate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prefillLogitsQwenVL: %v", err)
 	}
-	gotArg := argmax(logits)
+	gotArg := sampling.Argmax(logits)
 	cos := logitCosine(logits, g.LastLogits)
 	t.Logf("qwen2.5-VL-3B real image: argmax got=%d want=%d | logit cosine=%.6f", gotArg, g.Argmax, cos)
 	if gotArg != g.Argmax {

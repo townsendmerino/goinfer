@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // TestQwen35_forwardParity loads the real tiny qwen3_5_moe checkpoint (saved by
@@ -57,8 +59,8 @@ func TestQwen35_forwardParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("forward: %v", err)
 	}
-	if argmax(logits) != g.Argmax {
-		t.Errorf("prefill argmax = %d, want %d", argmax(logits), g.Argmax)
+	if sampling.Argmax(logits) != g.Argmax {
+		t.Errorf("prefill argmax = %d, want %d", sampling.Argmax(logits), g.Argmax)
 	}
 	var dot, na, nb float64
 	for i := range logits {
@@ -68,7 +70,7 @@ func TestQwen35_forwardParity(t *testing.T) {
 		nb += want * want
 	}
 	cos := dot / (math.Sqrt(na)*math.Sqrt(nb) + 1e-12)
-	t.Logf("qwen3_5_moe prefill: argmax=%d cosine=%.8f", argmax(logits), cos)
+	t.Logf("qwen3_5_moe prefill: argmax=%d cosine=%.8f", sampling.Argmax(logits), cos)
 	if cos < 0.9999 {
 		t.Errorf("last-logit cosine %.8f < 0.9999", cos)
 	}
@@ -76,7 +78,7 @@ func TestQwen35_forwardParity(t *testing.T) {
 	// 2. Greedy decode off the same cache; must match HF id-for-id.
 	got := make([]int, 0, g.NNew)
 	for i := 0; i < g.NNew; i++ {
-		next := argmax(logits)
+		next := sampling.Argmax(logits)
 		got = append(got, next)
 		if i < g.NNew-1 {
 			if logits, err = m.forward(next, cache); err != nil {

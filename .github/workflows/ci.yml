@@ -860,6 +860,42 @@ jobs:
       - name: test -tags gpu
         run: go test -short -tags 'gpu goinfer_testhooks' ./backend/webgpu/...
 
+  # gpu-vulkan: the WebGPU tests that need a device, on Mesa's software Vulkan adapter (llvmpipe), so a known-gap entry that stops
+  # firing or a lease past its plan goes red on the PR (queue B45). The gpu job above installs no adapter and stays a compile and
+  # skip run; tests that need real hardware skip here by name (newOrSkipHW). Each test step asserts its gate PASSed, since a lost
+  # adapter would otherwise skip every test to a green job.
+  gpu-vulkan:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.pr_covered != 'true' }} # C3, PR_COVERED
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: backend/webgpu/go.sum
+      # The packages oliverbestmann/webgpu's README names for a headless Vulkan adapter.
+      - name: software Vulkan adapter (Mesa)
+        run: sudo apt-get update -q && sudo apt-get install -y -q libegl1-mesa-dev mesa-vulkan-drivers
+      - name: workspace (resolve unpublished goinfer locally)
+        run: go work init . ./backend/webgpu
+      - name: build tests -tags gpu
+        run: go test -count=1 -run '^$' -tags 'gpu goinfer_testhooks' ./backend/webgpu/ ./backend/webgpu/internal/kernels/
+      - name: memory gate and slot census (software adapter)
+        run: |
+          go test -count=1 -v -timeout 25m -tags 'gpu goinfer_testhooks' ./backend/webgpu/ \
+            -run '^(TestMemGate_webgpu|TestMemGate_webgpuPlantsThroughTheTable|TestBackendSlotCensus_webgpu)$' 2>&1 | tee memgate.log
+          for t in TestMemGate_webgpu TestMemGate_webgpuPlantsThroughTheTable TestBackendSlotCensus_webgpu; do
+            grep -q -- "--- PASS: $t " memgate.log || { echo "::error::$t did not PASS (a skip is not a pass: was the adapter lost?)"; exit 1; }
+          done
+      - name: kernels package (software adapter)
+        run: |
+          go test -count=1 -v -timeout 25m -tags 'gpu goinfer_testhooks' ./backend/webgpu/internal/kernels/ 2>&1 | tee kernels.log
+          pass=$(grep -c -- '^--- PASS' kernels.log || true); skip=$(grep -c -- '^--- SKIP' kernels.log || true)
+          echo "kernels: $pass top-level tests passed, $skip skipped"
+          [ "$pass" -gt 0 ] || { echo "::error::no kernels test PASSed: was the adapter lost?"; exit 1; }
+
   # sdktest: the official OpenAI and Anthropic Go SDKs against the server served in process (package server), on the
   # committed tiny model. A module of its own so the SDKs never enter the root go.mod; stitched like the others.
   sdktest:

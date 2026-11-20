@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/audio"
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // G-S14c1 and G-S14c2: Qwen3-ASR's decoder loads from the checkpoint's own layout (nested thinker_config,
@@ -72,7 +73,7 @@ func q3aGreedy(t *testing.T, m *Model, cache *KVCache, first []float32, n int) [
 	var out []int
 	l := slices.Clone(first)
 	for range n {
-		id := argmax(l)
+		id := sampling.Argmax(l)
 		out = append(out, id)
 		var err error
 		if l, err = m.forward(id, cache); err != nil {
@@ -108,8 +109,8 @@ func TestQwen3ASR_tinyTextParity(t *testing.T) {
 	ref := q3aF32(files["text.logits.f32"])
 	cos := q3aCos(logits, ref)
 	got := q3aGreedy(t, m, cache, logits, len(want))
-	t.Logf("text path: last-row cosine %.9f, argmax %d (want %d), continuation %v (want %v)", cos, argmax(logits), argmax(ref), got, want)
-	if cos < 0.99999 || argmax(logits) != argmax(ref) || !slices.Equal(got, want) {
+	t.Logf("text path: last-row cosine %.9f, argmax %d (want %d), continuation %v (want %v)", cos, sampling.Argmax(logits), sampling.Argmax(ref), got, want)
+	if cos < 0.99999 || sampling.Argmax(logits) != sampling.Argmax(ref) || !slices.Equal(got, want) {
 		t.Errorf("text path differs from transformers: cosine %.9f, continuation %v against %v", cos, got, want)
 	}
 }
@@ -172,8 +173,8 @@ func TestQwen3ASR_tinyCompositionParity(t *testing.T) {
 		ref := q3aF32(files[clip+".logits.f32"])
 		want := q3aInts(t, files[clip+".cont.json"])
 		cos := q3aCos(logits, ref)
-		t.Logf("%-8s composition: last-position cosine %.9f, argmax %d (want %d), continuation %v (want %v)", clip, cos, argmax(logits), argmax(ref), cont, want)
-		if cos < 0.99999 || argmax(logits) != argmax(ref) || !slices.Equal(cont, want) {
+		t.Logf("%-8s composition: last-position cosine %.9f, argmax %d (want %d), continuation %v (want %v)", clip, cos, sampling.Argmax(logits), sampling.Argmax(ref), cont, want)
+		if cos < 0.99999 || sampling.Argmax(logits) != sampling.Argmax(ref) || !slices.Equal(cont, want) {
 			t.Errorf("%s: composition differs from transformers (cosine %.9f, continuation %v against %v)", clip, cos, cont, want)
 		}
 	}

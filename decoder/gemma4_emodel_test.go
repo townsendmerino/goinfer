@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 const (
@@ -87,7 +89,7 @@ func TestGemma4EModel_safetensorsParity(t *testing.T) {
 		}
 		cos := dot / math.Sqrt(na*nb)
 		worst = math.Min(worst, cos)
-		if got := argmax(logits); got != g.Argmax[p] {
+		if got := sampling.Argmax(logits); got != g.Argmax[p] {
 			t.Errorf("pos %d: argmax %d, want %d (cosine %.8f)", p, got, g.Argmax[p], cos)
 		}
 		if cos < 0.99999 {
@@ -105,7 +107,7 @@ func TestGemma4EModel_safetensorsParity(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		next = argmax(logits)
+		next = sampling.Argmax(logits)
 	}
 	for i := range cont {
 		if cont[i] != g.ContinuationIDs[i] {

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -107,7 +108,7 @@ func TestMellum2_layerDump(t *testing.T) {
 	if len(logits) != g.Vocab {
 		t.Fatalf("got %d logits, want vocab %d", len(logits), g.Vocab)
 	}
-	got := argmax(logits)
+	got := sampling.Argmax(logits)
 	var dot, na, nb float64
 	for _, kv := range g.Sample {
 		a, b := float64(logits[int(kv[0])]), kv[1]

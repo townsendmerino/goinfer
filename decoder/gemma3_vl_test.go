@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // TestGemma3VL_textParity loads the tiny Gemma 3 VL checkpoint (scripts/
@@ -51,7 +53,7 @@ func TestGemma3VL_textParity(t *testing.T) {
 			t.Fatalf("forward: %v", err)
 		}
 	}
-	gotArg := argmax(logits)
+	gotArg := sampling.Argmax(logits)
 	cos := logitCosine(logits, g.LastLogits)
 	t.Logf("gemma3-VL text parity: argmax got=%d want=%d | logit cosine=%.6f", gotArg, g.Argmax, cos)
 	if gotArg != g.Argmax {
@@ -70,7 +72,7 @@ func TestGemma3VL_textParity(t *testing.T) {
 		if logits, err = m.forward(cur, cache); err != nil {
 			t.Fatalf("decode forward: %v", err)
 		}
-		cur = argmax(logits)
+		cur = sampling.Argmax(logits)
 	}
 }
 
@@ -116,7 +118,7 @@ func TestGemma3VL_imageParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prefillLogitsVL: %v", err)
 	}
-	gotArg := argmax(logits)
+	gotArg := sampling.Argmax(logits)
 	cos := logitCosine(logits, g.LastLogits)
 	t.Logf("gemma3-VL image parity: argmax got=%d want=%d | logit cosine=%.6f", gotArg, g.Argmax, cos)
 	if gotArg != g.Argmax {

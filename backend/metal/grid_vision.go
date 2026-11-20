@@ -175,7 +175,7 @@ func (a *gridVAccel) proj(p vision.VisionProj) gvProj {
 // A/B keeps both.
 func (a *gridVAccel) weights(p gvProj, w []float32) gvProj {
 	if a.int8W {
-		q, sc := quantG32(w, p.out, p.in)
+		q, sc := kernels.QuantG32(w, p.out, p.in)
 		p.w8, p.ws = NewBufferInt8On(mem.LineCompanion, a.d, q), NewBufferFloatsOn(mem.LineCompanion, a.d, sc)
 		return p
 	}
@@ -188,10 +188,6 @@ func (a *gridVAccel) weights(p gvProj, w []float32) gvProj {
 		p.w = a.up(w)
 	}
 	return p
-}
-
-func quantG32(w []float32, rows, cols int) ([]int8, []float32) {
-	return kernels.QuantG32(w, rows, cols)
 }
 
 // splitQKV uploads a fused [3·hidden, hidden] qkv projection (rows q, then k, then v) as three projections.

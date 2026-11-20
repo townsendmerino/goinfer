@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // G3 seam gate.
@@ -332,8 +334,8 @@ func TestSeam_AdapterSessionDeclinesToCPUWithoutResidentAdapter(t *testing.T) {
 			"AdapterAvailable — the G3 defect in reverse: base weights ran resident while the adapter's "+
 			"delta was silently dropped", be.rf.forwards)
 	}
-	if got != argmax(want) {
-		t.Errorf("declined-to-CPU first token %d != adapter CPU reference argmax %d", got, argmax(want))
+	if got != sampling.Argmax(want) {
+		t.Errorf("declined-to-CPU first token %d != adapter CPU reference argmax %d", got, sampling.Argmax(want))
 	}
 }
 

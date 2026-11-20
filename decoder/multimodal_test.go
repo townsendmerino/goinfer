@@ -19,7 +19,7 @@ import (
 func tinyLlamaModel(t *testing.T) (*Model, int) {
 	t.Helper()
 	const hidden = 8
-	w, err := loadWeights(tinyLlamaDir(t), quantNone, false, true, false, nil, nil)
+	w, err := loadWeights(tinyLlamaDir(t), weightLoadOpts{needCanonical: true})
 	if err != nil {
 		t.Fatalf("loadWeights: %v", err)
 	}

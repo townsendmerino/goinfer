@@ -8,7 +8,6 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
-	"github.com/townsendmerino/goinfer/backend/metal/kernels"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
@@ -260,8 +259,4 @@ func (r *resident) forwardHeadForTest(emb []float32, pos int) (act, logits []flo
 		act[i] = float32(q[i]) * sc
 	}
 	return act, append([]float32(nil), r.logits.Floats()...)
-}
-
-func dequantG32(q []int8, sc []float32, rows, cols int) []float32 {
-	return kernels.DequantG32(q, sc, rows, cols)
 }

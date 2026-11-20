@@ -11,6 +11,7 @@ import (
 
 	"github.com/townsendmerino/aikit/embed"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -217,7 +218,7 @@ func TestDSpark_targetEndToEnd(t *testing.T) {
 				ctxCat = append(ctxCat, row)
 				logits = lg
 			}
-			anchor := argmax(logits)
+			anchor := sampling.Argmax(logits)
 			if anchor != tr.AnchorToken {
 				t.Fatalf("anchor = %d, want %d (the target disagrees before the drafter runs)", anchor, tr.AnchorToken)
 			}

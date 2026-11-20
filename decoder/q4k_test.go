@@ -59,7 +59,7 @@ func TestQ4K_modePlumbing(t *testing.T) {
 	if got := quantizeWM(linalg.WrapF32(w, 4, 64), quantQ4K); !isW8A8(&got) {
 		t.Errorf("quantizeWM(q4k) kind %q, want int8 W8A8", got.Kind())
 	}
-	if _, err := loadWeights(t.TempDir(), quantQ4K, false, true, false, nil, nil); err == nil || !strings.Contains(err.Error(), "GGUF-only") {
+	if _, err := loadWeights(t.TempDir(), weightLoadOpts{quant: quantQ4K, needCanonical: true}); err == nil || !strings.Contains(err.Error(), "GGUF-only") {
 		t.Errorf("q4k safetensors load: err %v, want a GGUF-only refusal", err)
 	}
 	r := rand.New(rand.NewPCG(61, 62))

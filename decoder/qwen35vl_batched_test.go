@@ -4,6 +4,8 @@ import (
 	"context"
 	"slices"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // P26: the Qwen3.5 image prefill runs every projection as one matmul over the prompt
@@ -57,13 +59,13 @@ func TestQwen35VL_batchedPrefillMatchesPerToken(t *testing.T) {
 		if cos := logitCosine(bat, per); cos < 0.999999 {
 			t.Errorf("%s: batched vs per-token last-logit cosine %.9f < 0.999999", L.name, cos)
 		}
-		if argmax(bat) != argmax(per) {
-			t.Errorf("%s: argmax batched %d, per-token %d", L.name, argmax(bat), argmax(per))
+		if sampling.Argmax(bat) != sampling.Argmax(per) {
+			t.Errorf("%s: argmax batched %d, per-token %d", L.name, sampling.Argmax(bat), sampling.Argmax(per))
 		}
 		decode := func(lg []float32, c *KVCache) []int {
 			var out []int
 			for range 8 {
-				id := argmax(lg)
+				id := sampling.Argmax(lg)
 				out = append(out, id)
 				var err error
 				if lg, err = m.forward(id, c); err != nil {

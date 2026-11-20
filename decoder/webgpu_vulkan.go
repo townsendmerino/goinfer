@@ -207,13 +207,13 @@ func (m *Model) webgpuLayerCaches(i, ctx int, kvF16, kvI8 bool) (bufs []int64, k
 		}
 		return []int64{int64(convK-1) * int64(2*nk*hk+nv*hv) * 4, int64(nv*hv*hk) * 4}, false
 	case MixerMamba:
-		nH, hd, dS, nG, dConv, _, _, _, _, ok := m.BackendView().GraniteParams()
-		if !ok {
-			np, nok := m.BackendView().Nemotron()
+		var nH, hd, dS, nG, dConv int
+		if g, ok := m.BackendView().Granite(); ok {
+			nH, hd, dS, nG, dConv = g.NHeads, g.HeadDim, g.DState, g.NGroups, g.DConv
+		} else if np, ok := m.BackendView().Nemotron(); ok {
 			nH, hd, dS, nG, dConv = np.NHeads, np.HeadDim, np.DState, np.NGroups, np.DConv
-			if !nok {
-				return nil, false
-			}
+		} else {
+			return nil, false
 		}
 		return []int64{int64(dConv-1) * int64(nH*hd+2*nG*dS) * 4, int64(nH*hd*dS) * 4}, false
 	}
@@ -263,7 +263,8 @@ func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []
 			weights += n
 		}
 	}
-	hidden, nLayers, _, _, _, _, _ := m.Dims()
+	shape := m.Shape()
+	hidden, nLayers := shape.Hidden, shape.Layers
 	for i := range w.Layers {
 		var bufs []int64
 		var kv bool
@@ -308,7 +309,7 @@ func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []
 		if a := l.mla; a != nil {
 			// Each projection W8A8, from its int8 form or its f32 (mlaProj), then kv_b split into W_UKᵀ and W_UV, f32.
 			qLoRA, kvLoRA, qkNope, qkRope, vHead, _, _, _, _ := m.BackendView().MLAParams()
-			_, _, nH, _, _, _, _ := m.Dims()
+			nH := m.Shape().Heads
 			proj := func(q *linalg.WeightMat, rows, cols int) {
 				if q.Rows() != 0 {
 					rows, cols = q.Rows(), q.Cols()

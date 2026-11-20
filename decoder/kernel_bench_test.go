@@ -4,6 +4,8 @@ import (
 	"math"
 	"math/rand"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 func benchFloatSlice(n int, seed int64) []float32 {
@@ -249,7 +251,7 @@ func BenchmarkArgmax_Vocab32k(b *testing.B) {
 	b.SetBytes(vocab * 4)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = argmax(logits)
+		_ = sampling.Argmax(logits)
 	}
 }
 
@@ -259,7 +261,7 @@ func BenchmarkArgmax_Vocab128k(b *testing.B) {
 	b.SetBytes(vocab * 4)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = argmax(logits)
+		_ = sampling.Argmax(logits)
 	}
 }
 

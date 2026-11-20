@@ -1,0 +1,74 @@
+//go:build gpu && goinfer_testhooks
+
+package webgpu_test
+
+// Scratch diagnostic for WG4-intel, not committed: first-token logits on the CPU and the WebGPU resident at
+// int8int8 (and int4) for TestE2E_webgpu's prompt, with top-5, margin and cosine.
+
+import (
+	"context"
+	"math"
+	"os"
+	"sort"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+func top(l []float32, k int) []int {
+	idx := make([]int, len(l))
+	for i := range idx {
+		idx[i] = i
+	}
+	sort.Slice(idx, func(a, b int) bool { return l[idx[a]] > l[idx[b]] })
+	return idx[:k]
+}
+
+func TestWG4iScratch_firstTokenMargins(t *testing.T) {
+	path := os.Getenv("GOINFER_E2E_MODEL")
+	if path == "" {
+		t.Skip("set GOINFER_E2E_MODEL")
+	}
+	prompts := map[string][]int{
+		"e2e-1..8": {1, 2, 3, 4, 5, 6, 7, 8},
+		"e2e-1..4": {1, 2, 3, 4},
+	}
+	for _, quant := range []string{"int8int8", "int4"} {
+		cpu, err := decoder.Load(path, decoder.Options{Backend: "cpu", Quant: quant})
+		if err != nil {
+			t.Fatal(err)
+		}
+		gpu, err := decoder.Load(path, decoder.Options{Backend: "webgpu", Quant: quant})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !gpu.ResidentActive() {
+			t.Fatalf("%s: not resident", quant)
+		}
+		for name, p := range prompts {
+			cl, err := cpu.PromptLogitsMany(context.Background(), [][]int{p})
+			if err != nil {
+				t.Fatal(err)
+			}
+			c := cl[0]
+			g, err := gpu.ResidentPrefillSeedForTest(context.Background(), p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var dot, nc, ng, d2 float64
+			for i := range c {
+				dot += float64(c[i]) * float64(g[i])
+				nc += float64(c[i]) * float64(c[i])
+				ng += float64(g[i]) * float64(g[i])
+				d := float64(c[i] - g[i])
+				d2 += d * d
+			}
+			tc, tg := top(c, 5), top(g, 5)
+			t.Logf("%s %s: cos=%.6f relL2=%.4f", quant, name, dot/math.Sqrt(nc*ng), math.Sqrt(d2/nc))
+			t.Logf("  cpu top5 %v logits %.3f %.3f %.3f %.3f %.3f (margin %.3f)", tc, c[tc[0]], c[tc[1]], c[tc[2]], c[tc[3]], c[tc[4]], c[tc[0]]-c[tc[1]])
+			t.Logf("  gpu top5 %v logits %.3f %.3f %.3f %.3f %.3f (margin %.3f)", tg, g[tg[0]], g[tg[1]], g[tg[2]], g[tg[3]], g[tg[4]], g[tg[0]]-g[tg[1]])
+		}
+		cpu.Close()
+		gpu.Close()
+	}
+}

@@ -9,6 +9,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
@@ -68,7 +69,7 @@ func TestQwen25VL_e2eChain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prefillLogitsQwenVL: %v", err)
 	}
-	gotArg := argmax(logits)
+	gotArg := sampling.Argmax(logits)
 	cos := logitCosine(logits, g.LastLogits)
 	t.Logf("qwen2.5-VL e2e (encoder→decoder): argmax got=%d want=%d | cosine=%.6f", gotArg, g.Argmax, cos)
 	if gotArg != g.Argmax {
@@ -216,7 +217,7 @@ func TestQwen25VL_imageParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prefillLogitsQwenVL: %v", err)
 	}
-	gotArg := argmax(logits)
+	gotArg := sampling.Argmax(logits)
 	cos := logitCosine(logits, g.LastLogits)
 	t.Logf("qwen2.5-VL image parity: argmax got=%d want=%d | logit cosine=%.6f", gotArg, g.Argmax, cos)
 	if gotArg != g.Argmax {
@@ -230,7 +231,7 @@ func TestQwen25VL_imageParity(t *testing.T) {
 	// seqPos+mropeDelta). The cache carries mropePos+mropeDelta from the prefill.
 	got := make([]int, 0, len(g.Continuation))
 	for range g.Continuation {
-		id := argmax(logits)
+		id := sampling.Argmax(logits)
 		got = append(got, id)
 		if logits, err = m.forward(id, cache); err != nil {
 			t.Fatalf("continuation forward: %v", err)
