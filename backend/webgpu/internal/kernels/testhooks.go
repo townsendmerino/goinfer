@@ -18,7 +18,7 @@ import (
 )
 
 // RouteExpertsForTest runs the router top-k selection kernel standalone (upload logits,
-// dispatch, read back) — the C3a unit-test seam mirroring decoder.routeExperts for
+// dispatch, read back) — the router's unit-test seam mirroring decoder.routeExperts for
 // nGroup==1. bias may be nil. Returns the k chosen expert indices and their weights.
 func (c *Context) RouteExpertsForTest(logits, bias []float32, k int, sigmoid, norm bool, scale float32) ([]int, []float32, error) {
 	if err := c.ensureMoERoute(); err != nil {
@@ -104,8 +104,8 @@ func (c *Context) RouteExpertsForTest(logits, bias []float32, k int, sigmoid, no
 }
 
 // IndexedGEMVForTest runs ONE indexed expert GEMV standalone (overwrite mode): dst[N] =
-// (aq·expert[idx[slot]]ᵀ). The C3b unit-test seam — isolates the stacked-index addressing
-// from the full MoE block (C3c). aq is the quantized activation [K], aScale its scale.
+// (aq·expert[idx[slot]]ᵀ). The indexed GEMV's unit-test seam — isolates the stacked-index addressing
+// from the full MoE block. aq is the quantized activation [K], aScale its scale.
 func (c *Context) IndexedGEMVForTest(s *ResidentStackedW8A8, aq []int8, aScale float32, idx []int, slot int) ([]float32, error) {
 	if err := c.ensureMoEExpert(); err != nil {
 		return nil, err
@@ -316,7 +316,7 @@ func (c *Context) GptOssDownForTest(s *ResidentStackedW8A8, aq []int8, aScale fl
 // directly against the model's own resident buffer; see gemv_lmhead_isolation_test.go.
 func (r *DecodeRunner) LMHeadForTest() DecodeWeight { return r.lmHead }
 
-// SetPrefillProfForTest enables (on=true) or disables the R10 prefill decomposition profiler
+// SetPrefillProfForTest enables (on=true) or disables the prefill decomposition profiler
 // (gpu/prefill_prof.go) and resets its accumulators. See PrefillProfForTest.
 func (c *Context) SetPrefillProfForTest(on bool) {
 	if on {

@@ -14,14 +14,14 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-// The resident's cost counters (SB11, internal/cost). gpudev's Device counts, always, the dispatches in each command buffer
+// The resident's cost counters (internal/cost). gpudev's Device counts, always, the dispatches in each command buffer
 // committed, the buffers and the host's waits on them (Activity). For one counted token the resident attaches a dispatch
 // hook, and each dispatch in a buffer the token commits is attributed to its pipeline, named by the resident field that
 // holds it, when the buffer was encoded while a hook was set. The executor re-encodes a buffer it encoded ahead before the
 // counter was attached, so the first counted token is attributed in full; a buffer any other path commits that was encoded
-// with no counter attached is counted and not attributed: dispatch_other. Until OP4's walker names the operation a dispatch
-// belongs to, a Metal operation is a pipeline. A dispatch's bytes and time are not counted: it is asynchronous. Only
-// goinfer_testhooks builds count, until a production caller reports the counts (SB11b).
+// with no counter attached is counted and not attributed: dispatch_other. Nothing names the operation a dispatch belongs to,
+// so a Metal operation is a pipeline. A dispatch's bytes and time are not counted: it is asynchronous. Only
+// goinfer_testhooks builds count, until a production caller reports the counts.
 
 // costNames caches pipelineNames per resident. Only goinfer_testhooks builds reach it, and its entries live as long as the
 // process, which holds the few residents a test counts.

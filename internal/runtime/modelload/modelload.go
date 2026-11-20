@@ -1,10 +1,8 @@
 // Package modelload is the one path serve, chat and fit take from a --model value to a loaded
-// decoder.Model and its tokenizer. Each app used to do this its own way, and the copies drifted:
-// serve's .giw tokenizer fallback still swallowed the GGUF error chat had fixed as N-25, fit did not
-// resolve hf:/demo: references at all, and serve alone retried a fit decline with weight streaming.
-// The steps, in order: resolve a reference, pick the path to load (sidecar .giw or streaming
-// transcode for a .gguf), load the tokenizer, load the model under the swap guard, retry once with
-// streaming on a dense fit decline, and refuse an explicit --quant a prequant .giw cannot honour.
+// decoder.Model and its tokenizer, so the apps cannot drift apart on it. The steps, in order:
+// resolve a reference, pick the path to load (sidecar .giw or streaming transcode for a .gguf),
+// load the tokenizer, load the model under the swap guard, retry once with streaming on a dense
+// fit decline, and refuse an explicit --quant a prequant .giw cannot honour.
 package modelload
 
 import (
@@ -61,7 +59,7 @@ func Tokenizer(path string) (*tokenizer.Tokenizer, error) {
 
 // TokenizerFromTok parses a .giw bundle's tok half, which is GGUF metadata for a GGUF-sourced bundle
 // and the raw tokenizer.json for a safetensors-sourced one. When neither parses, BOTH errors are
-// reported (N-25): with only the JSON one, a corrupt GGUF-sourced bundle reads as "invalid JSON" and
+// reported: with only the JSON one, a corrupt GGUF-sourced bundle reads as "invalid JSON" and
 // sends the reader to the wrong half of the file.
 func TokenizerFromTok(raw []byte) (*tokenizer.Tokenizer, error) {
 	tk, gerr := tokenizer.LoadGGUFBytes(raw)
@@ -141,8 +139,8 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 	}
 
 	// Weight streaming needs the read-only mmap only a .giw provides, so a .gguf is transcoded to a
-	// sidecar once. Without streaming, a .gguf still resolves to its sidecar by default (S1,
-	// task-never-swap-2026-09.md) so resident weights are zero-copy mmap aliases rather than heap
+	// sidecar once. Without streaming, a .gguf still resolves to its sidecar by default
+	// (task-never-swap-2026-09.md) so resident weights are zero-copy mmap aliases rather than heap
 	// copies. -embed-int4 bakes its int4 head into the sidecar too (streamCachePath's "e4h" cache
 	// key keeps it distinct from a plain-head sidecar of the same source and quant) — it no longer
 	// forces a direct load.
@@ -168,7 +166,7 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 		}
 	default:
 		if opts.StreamWeights && isDir(src) {
-			// M-30: -stream-weights is a no-op for a safetensors directory; say so rather than leave a
+			// -stream-weights is a no-op for a safetensors directory; say so rather than leave a
 			// later fit refusal reading as "should have worked".
 			logs.Warnf("note: -stream-weights only applies to a .gguf source; %q is a "+
 				"safetensors directory — see cmd/prequant to build a streamable .giw from it", src)
@@ -225,8 +223,8 @@ type sourceRoute int
 const (
 	routeDirect        sourceRoute = iota
 	routeStreamSidecar             // -stream-weights on a .gguf: the sidecar is required
-	routeSidecar                   // a .gguf's default sidecar (S1): a failed build is the load's error
-	routeDirSidecar                // a safetensors directory's sidecar (S18): a failed build falls back to the direct load
+	routeSidecar                   // a .gguf's default sidecar: a failed build is the load's error
+	routeDirSidecar                // a safetensors directory's sidecar: a failed build falls back to the direct load
 )
 
 // routeFor is the one place Load and Plan choose how a source is opened. A q4k .gguf takes its sidecar like any other
@@ -323,7 +321,7 @@ func isDir(p string) bool {
 //   - q4k for a .gguf on the CPU, CUDA or Metal backend: the file's Q4_K tensors exact, the rest int8,
 //     per-32, which decodes faster than the int8int8 default on CPU and CUDA, and on CUDA fits the
 //     default context resident where int8int8 does not. On Metal it runs resident on the q4k lane, which quantizes no
-//     activation (OP6's default switch: docs/measurements/peer-vetted-2026-10-07-macbook.md, "M1 on main after #775: read");
+//     activation (the Metal q4k default: docs/measurements/peer-vetted-2026-10-07-macbook.md, "M1 on main after #775: read");
 //   - int8int8 with per-32 activation scales anywhere else (WebGPU: no Q4_K kernel). Only CUDA
 //     residency implements per-group activation scales, so on WebGPU such a load declines to the
 //     CPU (decoder's actGroupResidentDecline), which
@@ -352,7 +350,7 @@ func activationSafeQuant(src, quant string, group int, explicitQuant, backend st
 	return quant, group, fmt.Sprintf("warning: --quant %s quantizes activations to int8, and %s; expect degraded output (--quant int8int8 runs it with per-32 activation scales).", quant, why)
 }
 
-// loadGuarded is decoder.Load under S3's load-time swap tripwire.
+// loadGuarded is decoder.Load under the load-time swap tripwire (internal/guard/swapguard).
 // A .gguf direct build and a .giw load observe Options.LoadAbort (the .giw loader's CRC pass and layer walk, and the resident build through
 // Model.LoadAbort), so both arm the watch; an HF-dir or streamed load arms nothing.
 func loadGuarded(path string, opts decoder.Options, advice string) (*decoder.Model, error) {

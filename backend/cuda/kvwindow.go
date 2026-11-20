@@ -238,7 +238,7 @@ func (r *cudaResident) kvV(l int) Buffer { return r.vc[l] }
 // symptom. Executor thread only.
 func (r *cudaResident) kvEnsure(p0, n int) error { return r.kvEnsureSlot(r.kvSlot, p0, n) }
 
-// kvEnsureSlot is kvEnsure for slot s, whether or not it is the bound one (an MC3 step prepares every row's slot before its layer loops).
+// kvEnsureSlot is kvEnsure for slot s, whether or not it is the bound one (a batched decode step prepares every row's slot before its layer loops).
 func (r *cudaResident) kvEnsureSlot(s, p0, n int) error {
 	if e := r.kvWriteRefused(s, p0); e != nil {
 		return e

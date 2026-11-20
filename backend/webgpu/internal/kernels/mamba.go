@@ -120,7 +120,7 @@ func (c *Context) ensureMambaConv() error {
 		sh.Release()
 		return fmt.Errorf("gpu: pipeline mambaConv: %w", err)
 	}
-	c.track(sh.Release, pl.Release) // audit C-26: register at creation
+	c.track(sh.Release, pl.Release) // registered at creation, so Close releases them
 	c.mambaConvShader, c.mambaConvPipeline, c.mambaConvLayout = sh, pl, c.bgl(pl)
 	return nil
 }
@@ -185,7 +185,7 @@ func (c *Context) ensureMambaGNorm() error {
 		sh.Release()
 		return fmt.Errorf("gpu: pipeline mambaGNorm: %w", err)
 	}
-	c.track(sh.Release, pl.Release) // audit C-26: register at creation
+	c.track(sh.Release, pl.Release) // registered at creation, so Close releases them
 	c.mambaGNormShader, c.mambaGNormPipeline, c.mambaGNormLayout = sh, pl, c.bgl(pl)
 	return nil
 }
@@ -207,7 +207,7 @@ func (c *Context) ensureMambaSSM() error {
 		sh.Release()
 		return fmt.Errorf("gpu: pipeline mambaSSM: %w", err)
 	}
-	c.track(sh.Release, pl.Release) // audit C-26: register at creation
+	c.track(sh.Release, pl.Release) // registered at creation, so Close releases them
 	c.mambaSSMShader, c.mambaSSMPipeline, c.mambaSSMLayout = sh, pl, c.bgl(pl)
 	return nil
 }

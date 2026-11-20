@@ -38,11 +38,9 @@ type visionLayer struct {
 // VisionEncoder is a device-resident SigLIP forward, uploaded once from vision.GPUWeights.
 type VisionEncoder struct {
 	dev    *Device
-	stream Queue // created once at setup (M-18, docs/audit-2026-09-10.md) — ForwardPatches used to
-	// call r.dev.NewCommandQueue() per invocation, matching neither cudaResident's own
-	// once-per-lifetime r.stream (cuda/resident.go) nor this tower's own scratch-buffer lifetime.
-	reqCh chan func() error
-	ackCh chan error
+	stream Queue // created once at setup, like cudaResident's once-per-lifetime r.stream and this tower's scratch buffers
+	reqCh  chan func() error
+	ackCh  chan error
 
 	bLayerNormQuant Pipeline // layernorm_quant_batched
 	bLayerNormF32   Pipeline // layernorm_f32_batched (the tower's final post-LN)

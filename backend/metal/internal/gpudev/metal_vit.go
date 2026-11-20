@@ -1088,7 +1088,7 @@ const (
 	KernelGELUTanh  = "gelu_tanh"
 	KernelAttention = "attention"
 
-	// KernelAttentionTiled is the query-tiled online-softmax kernel (M-15). Dispatch via
+	// KernelAttentionTiled is the query-tiled online-softmax kernel. Dispatch via
 	// AttentionTiledDispatch, and only when AttentionTiledEligible(hd) — see the kernel's
 	// own doc comment.
 	KernelAttentionTiled = "attention_tiled"
@@ -1186,8 +1186,8 @@ const (
 )
 
 // GEMMW8A8Plan picks the int8 GEMM kernel and its Run2D geometry for a shape M×N×K — the
-// int8 analogue of GEMMF32Plan, and the Metal twin of cuda_vit.go's GEMMW8A8Plan (M-15,
-// audit-metal-2026-09-12.md; ported from CUDA's already-shipped M-12 kernel).
+// int8 analogue of GEMMF32Plan, and the Metal twin of cuda_vit.go's GEMMW8A8Plan
+// (docs/audit-metal-2026-09-12.md).
 //
 // It needs only K%16==0: M and N edge tiles stage zeros and skip their stores, so the
 // inner loop stays unguarded while any M and N are accepted — SigLIP-so400m's
@@ -1245,7 +1245,7 @@ func (v ViT) GEMMF32BiasAddPlan(M, N, K int) (p Pipeline, gx, gy, tgx, tgy int) 
 }
 
 // AttnTiledMaxHD/AttnTiledKTile/AttnTiledQTile mirror attention_tiled's AT_MAXHD/AT_KTILE/
-// AT_QTILE (M-15) — kept in sync by hand, like GEMMTile/SGBlock above mirror their own
+// AT_QTILE — kept in sync by hand, like GEMMTile/SGBlock above mirror their own
 // kernels' #defines elsewhere in this file.
 const (
 	AttnTiledMaxHD = 128
@@ -1325,7 +1325,7 @@ type ViT struct {
 	GELUTanh  Pipeline
 	Attention Pipeline
 
-	// AttentionTiled is the query-tiled online-softmax kernel (M-15) — see its own doc
+	// AttentionTiled is the query-tiled online-softmax kernel — see its own doc
 	// comment in vitMSL.
 	AttentionTiled Pipeline
 

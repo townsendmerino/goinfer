@@ -11,7 +11,7 @@ import (
 
 // A Qwen3.5+ vision tower from a llama.cpp GGUF mmproj (clip architecture, projector type qwen3vl_merger): the layout
 // unsloth's mmproj-*.gguf files and Ollama's qwen3.5 / qwen3.6 projector blobs both ship (read 2026-10-06, goinfer's
-// docs/multimodal.md P8b). The tensors are HF's under llama.cpp names, with ggml's innermost-first dimension order,
+// docs/multimodal.md, "GGUF mmproj"). The tensors are HF's under llama.cpp names, with ggml's innermost-first dimension order,
 // except the patch embedding: HF's Conv3d kernel [hidden, 3, 2, 16, 16] is split along its temporal axis into two
 // tensors (v.patch_embd.weight for t=0, .weight.1 for t=1) and recombined here. The config comes from the clip.*
 // metadata. The merger runs HF's erf GELU as the safetensors tower does (llama.cpp's own graph runs tanh there; the

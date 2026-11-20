@@ -9,17 +9,17 @@ import (
 	"github.com/townsendmerino/goinfer/internal/cost"
 )
 
-// The decode runners' cost counters (SB11, internal/cost). The Context counts, always, the dispatches in each command buffer a
+// The decode runners' cost counters (internal/cost). The Context counts, always, the dispatches in each command buffer a
 // decode runner submits (as recorded, counted at the submit, so an encode-ahead buffer counts with the token that runs it), the
 // buffers and the blocking polls (Activity). A runner with Cost set attributes each submitted buffer's steps, one dispatch per
-// step, to the step's pipeline, named by the Context field that holds it. Until OP4's
-// walker names the operation a dispatch belongs to, a WebGPU operation is a pipeline. A dispatch's bytes and time are not
+// step, to the step's pipeline, named by the Context field that holds it. No walker
+// names the operation a dispatch belongs to, so a WebGPU operation is a pipeline. A dispatch's bytes and time are not
 // counted: it is asynchronous.
 
 // DispatchUnmeasured is what a dispatch's counts leave out.
 var DispatchUnmeasured = []string{cost.FieldBytesRead, cost.FieldBytesWritten, cost.FieldTime}
 
-// CostPlantForTest plants SB11's WebGPU defect: 1 records each buffer's first step twice.
+// CostPlantForTest plants the cost counters' WebGPU defect: 1 records each buffer's first step twice.
 var CostPlantForTest int
 
 // Activity is the dispatches submitted, the command buffers and the blocking polls of this Context's decode runners so far.
@@ -40,7 +40,7 @@ func (c *Context) wait() {
 	c.waits.Add(1)
 }
 
-// Wait is wait, for a caller outside the package (SB11's extra-sync plant).
+// Wait is wait, for a caller outside the package (the cost counters' extra-sync plant).
 func (c *Context) Wait() { c.wait() }
 
 // countSteps records a submitted buffer's steps into k's phase p, one dispatch per step, against each step's pipeline.

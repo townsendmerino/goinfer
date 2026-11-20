@@ -46,7 +46,7 @@ const (
 // SelfSwapReader returns the per-process probe the swap guard watches: this process's compressed pages (ReadTask's Compressed), the
 // pages macOS has taken from the server itself, which it swaps from. Other processes' pages do not move it, as they move system
 // swap. It is nil, with the reason, when this process's task_vm_info cannot be read. Unlike Linux's VmSwap it does not count
-// descendants. B41's gate 2 read the server this way (docs/measurements/hostmem-available-2026-10/README.md, Amendment A1).
+// descendants. Gate 2 of docs/measurements/hostmem-available-2026-10/README.md read the server this way ("Amendment A1").
 func SelfSwapReader() (r func() (usedBytes int64, ok bool), unavailable string) {
 	pid := os.Getpid()
 	if _, ok := readTask(pid); !ok {

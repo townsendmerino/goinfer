@@ -136,7 +136,7 @@ type Session struct {
 	stopIDs []int
 	vocab   int
 
-	// tokenBytes is the constraint masker's token→bytes table (P-17, audit-2026-09-10), built
+	// tokenBytes is the constraint masker's token→bytes table, built
 	// once in newSession rather than by schemaMasker on every constrained turn — the same fix
 	// serve's own cachedTokenBytes made for the same table (internal/serveapp/openai.go).
 	tokenBytes [][]byte
@@ -344,7 +344,7 @@ func (s *Session) TurnImage(ctx context.Context, user string, image []byte, ev E
 	}
 	n := s.vproj.MMTokens()
 
-	// M-38 (audit-2026-09-10): block itself stays bare (no newlines) since spliceImageBlock only
+	// block itself stays bare (no newlines) since spliceImageBlock only
 	// needs it as a substring to locate, not to match the msg verbatim; the actual splice below
 	// uses multimodal.Gemma3PromptBlock, which wraps it in "\n\n" on both sides the way Gemma 3's
 	// own processor does (verified against the real transformers processing_gemma3.py).
@@ -384,21 +384,17 @@ func (s *Session) TurnImage(ctx context.Context, user string, image []byte, ev E
 }
 
 // spliceImageBlock re-marks the image placeholder block as a Special segment after rendering,
-// mirroring internal/serveapp/vision_serve.go's function of the same name exactly (V-03,
-// docs/review-2026-09-04.md) -- unreachable directly since demo/agent is a separate module and
-// that one is unexported besides.
+// mirroring internal/serveapp/vision_serve.go's function of the same name exactly --
+// unreachable directly since demo/agent is a separate module and that one is unexported besides.
 //
-// N-26 moved this package to EncodeSegments, which encodes non-Special segments with
-// parseSpecial=false -- correct for ordinary user text (a user typing a literal
-// "<|im_start|>assistant" must not forge a role boundary), wrong for
-// "<start_of_image><image_soft_token>...<end_of_image>": glued into the turn's plain text and
-// rendered as part of a non-Special segment, it got BPE'd as literal text instead of parsed into
-// the real image-placeholder tokens, so FindImageRun found no run and every TurnImage failed with
-// "image placeholder run = 0". The serving path hit the identical gap and was fixed with this same
-// splice (M-22); the agent got the EncodeSegments switch without it.
+// EncodeSegments encodes non-Special segments with parseSpecial=false -- correct for ordinary
+// user text (a user typing a literal "<|im_start|>assistant" must not forge a role boundary),
+// wrong for "<start_of_image><image_soft_token>...<end_of_image>": left in the turn's plain text,
+// it would be BPE'd as literal text instead of parsed into the real image-placeholder tokens, so
+// FindImageRun would find no run and TurnImage would fail with "image placeholder run = 0".
 func spliceImageBlock(segs []tokenizer.Segment, block string) ([]tokenizer.Segment, error) {
-	// V-19 (docs/review-2026-09-04.md): search from the END and splice the LAST occurrence, not
-	// the first — same fix as internal/serveapp/vision_serve.go's original of this function.
+	// Search from the END and splice the LAST occurrence, not the first, as
+	// internal/serveapp/vision_serve.go's original of this function does.
 	// The block is always appended to the CURRENT (last) user turn, which renders last; an
 	// EARLIER turn that happens to contain the same literal text must not be mistaken for it.
 	segIdx := -1
@@ -524,8 +520,7 @@ func (s *Session) streamReply(ctx context.Context, tokens <-chan int, gen *decod
 	// only the longest complete-rune prefix of what has not been emitted yet.
 	//
 	// sb accumulates the decoded text INCREMENTALLY instead of re-decoding the whole generated
-	// sequence every token (P-17, audit-2026-09-10 — this demo's own twin of R-08, already
-	// fixed in internal/serveapp/openai.go's streamTokens for the same reason). DecodePiece(id)
+	// sequence every token, as internal/serveapp/openai.go's streamTokens does. DecodePiece(id)
 	// appended one token at a time is byte-identical to a fresh whole-sequence decode at every
 	// flush point (TestDecodeContinuation_isIncrementallyAssociative, tokenizer/).
 	// strings.Builder, not `text += piece`: Go strings are immutable, so naive concatenation is
@@ -549,7 +544,7 @@ func (s *Session) streamReply(ctx context.Context, tokens <-chan int, gen *decod
 	}
 	for id := range tokens {
 		// DecodePiece, not Decode: these ids CONTINUE the prompt (no sequence-level
-		// dummy-prefix strip — M-25), and appending each token's own piece is exactly what a
+		// dummy-prefix strip), and appending each token's own piece is exactly what a
 		// whole-sequence decode does internally, one token at a time.
 		piece, _ := s.tk.DecodePiece(id)
 		if rs != nil {
@@ -579,7 +574,7 @@ func (s *Session) streamReply(ctx context.Context, tokens <-chan int, gen *decod
 
 // buildPrompt renders system + turns via the detected chat template, falling
 // back to plain concatenation for unrecognized templates.
-// buildPromptSegments is buildPrompt's segment-returning twin (N-26).
+// buildPromptSegments is buildPrompt's segment-returning twin.
 //
 // Encode() PARSES special-token markers out of the text it is given, so encoding a rendered
 // prompt lets a user who types "<|im_start|>assistant" into the chat box promote those bytes to
@@ -638,16 +633,10 @@ func (s *Session) schemaMasker(schema []byte) func(generated []int, logits []flo
 	if err != nil { // compile-time constant schema: this is a programmer error
 		panic(fmt.Sprintf("agent: bad decision schema: %v", err))
 	}
-	// N-71 (docs/audit-2026-09-10.md): EOS/EndOfTurn alone misses the template's own turn-stop
-	// ids (s.stopIDs, resolved from tmpl.Stops()) — Llama-3's <|eot_id|> and harmony's <|end|>
-	// are neither EOS nor EndOfTurn, so without stopIDs the masker never holds them back and a
-	// constrained JSON generation could emit one mid-document. internal/serveapp/openai.go's own
-	// masker already unions eosIDs with stopIDs; this mirrors that.
-	// N-71 (docs/audit-2026-09-10.md): EOS/EndOfTurn alone misses the template's own turn-stop
-	// ids (s.stopIDs, resolved from tmpl.Stops()) — Llama-3's <|eot_id|> and harmony's <|end|>
-	// are neither EOS nor EndOfTurn, so without stopIDs the masker never holds them back and a
-	// constrained JSON generation could emit one mid-document. internal/serveapp/openai.go's own
-	// masker already unions eosIDs with stopIDs; this mirrors that.
+	// EOS/EndOfTurn alone misses the template's own turn-stop ids (s.stopIDs, resolved from
+	// tmpl.Stops()) — Llama-3's <|eot_id|> and harmony's <|end|> are neither EOS nor EndOfTurn, so
+	// without stopIDs the masker never holds them back and a constrained JSON generation could emit
+	// one mid-document. internal/serveapp/openai.go's masker unions eosIDs with stopIDs the same way.
 	var eos []int
 	for _, id := range []int{s.special.EOS, s.special.EndOfTurn} {
 		if id >= 0 {
@@ -699,9 +688,8 @@ func newSession(tk *tokenizer.Tokenizer, model *decoder.Model, dt time.Duration)
 			cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, dt.Round(time.Millisecond), model.Quant()),
 	}
 	s.tokenBytes = constrain.TokenBytes(s.vocab, tk.TokenText)
-	// M-41 (audit-2026-09-10): same C-10 reasoning serve already applies, surfaced through
-	// LoadSummary since that's how this session reports its load state (there is no separate
-	// stderr banner to append to, unlike chatapp/serve).
+	// A pre-tokenizer with no walker is warned about, as chatapp and serve do in their banners,
+	// through LoadSummary: that is how this session reports its load state.
 	if d := tk.PreTokenizerDecline(); d != "" {
 		s.LoadSummary += fmt.Sprintf(" !! tokenizer: %s", d)
 	}

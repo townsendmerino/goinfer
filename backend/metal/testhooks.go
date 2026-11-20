@@ -60,7 +60,7 @@ func (r *resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, 
 	}
 	for l := range r.layers {
 		if r.layers[l].kvShared || r.layers[l].ffnI != r.I {
-			return nil, nil, nil, nil, nil // its own attention/FFN dispatches assume owned KV and one FFN width (S1.3/S1.4)
+			return nil, nil, nil, nil, nil // its own attention/FFN dispatches assume owned KV and one FFN width
 		}
 	}
 	runtime.LockOSThread()

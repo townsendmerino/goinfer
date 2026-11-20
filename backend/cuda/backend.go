@@ -77,7 +77,7 @@ var kquantKeepInt8ForTest bool
 // hlayer is one layer's host plan in BuildResident: its packed weights and side tables, and the layer kind.
 type hlayer struct {
 	q, k, v, o, g, u, d       hostW
-	pleGate, pleProj          hostW     // Gemma 4 E-model per-layer embedding branch (S1 on CUDA); zero unless pleP > 0
+	pleGate, pleProj          hostW     // Gemma 4 E-model per-layer embedding branch; zero unless pleP > 0
 	postPLENorm               []float32 // the PLE branch's post-norm weight [hidden]
 	qb, kb, vb                []float32
 	ob                        []float32 // attention output-projection bias (GPT-2 / gpt-oss)
@@ -127,7 +127,7 @@ type hlayer struct {
 	mlaQANorm, mlaKVANorm      []float32
 	mlaWUK, mlaWUV             []float32
 
-	// Mamba-2 (Nemotron-H, OP2b): the packed projections and small tables of a MixerMamba layer.
+	// Mamba-2 (Nemotron-H): the packed projections and small tables of a MixerMamba layer.
 	mamba hostMamba
 }
 

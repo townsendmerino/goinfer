@@ -24,7 +24,7 @@ const hasEmbeddedModel = true
 
 // quantIsFixedAtBuildTime is true here: loadEmbedded below never reads opts.Quant — the bundle's
 // weights are already quantized at whatever cmd/prequant used when build-embed.sh baked
-// internal/chatapp/model.giw (R6, docs/measurements/cold-user-2026-09-06-nobara-pc.md).
+// internal/chatapp/model.giw.
 const quantIsFixedAtBuildTime = true
 
 // loadEmbedded maps the prequant bundle: the int8 weight arrays are ALIASED
@@ -37,10 +37,9 @@ const quantIsFixedAtBuildTime = true
 // On a bundle mismatch (version/quant/CRC — e.g. a stale build) it returns the
 // error so main can report it; the user can fall back with --model <gguf>.
 func loadEmbedded(_ bool, opts decoder.Options) (*session, error) {
-	// N-78 (docs/audit-2026-09-10.md): decoder.NewModel below (unlike decoder.Load, which
-	// loadFromPath uses) takes no *decoder.Options at all — there is no chokepoint downstream of
-	// this function that could ever apply opts.LoRA to an already-serialized .giw bundle. Silently
-	// dropping it made --lora on a prequant build a no-op that looked like a merged adapter.
+	// The serialized-weights path below (unlike decoder.Load, which loadFromPath uses) has no
+	// chokepoint that could apply opts.LoRA to an already-serialized .giw bundle, so --lora is
+	// refused rather than dropped: dropped, it would be a no-op that looked like a merged adapter.
 	if opts.LoRA != "" {
 		return nil, fmt.Errorf("--lora is not supported on a prequant build: the bundle's weights are pre-quantized and aliased from the binary image, with no base to merge an adapter into (rebuild with a safetensors base via --model, or use a non-prequant build)")
 	}
@@ -54,16 +53,14 @@ func loadEmbedded(_ bool, opts decoder.Options) (*session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("prequant weights: %w (rebuild the bundle, or run with --model <gguf>)", err)
 	}
-	// N-25: a .giw's tok half is GGUF metadata for a GGUF-sourced bundle and RAW tokenizer.json
-	// for a safetensors-sourced one. This path tried only the GGUF form, so an embedded build
-	// made from a safetensors checkpoint produced a binary that exited at startup — the same
-	// fallback loadFromPath has always had, missing from the baked-in twin.
+	// A .giw's tok half is GGUF metadata for a GGUF-sourced bundle and RAW tokenizer.json for a
+	// safetensors-sourced one, so both forms are tried, as loadFromPath does.
 	tk, err := modelload.TokenizerFromTok(tokGGUF) // GGUF or raw tokenizer.json; both errors on failure
 	if err != nil {
 		return nil, fmt.Errorf("prequant tokenizer: %w", err)
 	}
 	// NewModelWithOptions, not NewModel: the latter reads only the backend, so --kv, --fit and
-	// --exact-prefill were accepted here and did nothing (the N-78 shape again, one option wider).
+	// --exact-prefill would be accepted here and do nothing.
 	model, err := decoder.NewModelWithOptions(w, opts)
 	if err != nil {
 		return nil, err

@@ -279,7 +279,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		return
 	}
 	system, turns := messagesToTurns(req.Messages)
-	// O5: an image plus response_format json_schema on GLM-OCR is an extraction request; its prompt is the schema's JSON template.
+	// An image plus response_format json_schema on GLM-OCR is an extraction request; its prompt is the schema's JSON template.
 	if err := lm.glmOcrExtractionTurn(req.sampling.ResponseFormat, turns); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return

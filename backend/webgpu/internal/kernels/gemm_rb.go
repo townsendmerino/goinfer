@@ -263,7 +263,7 @@ func (c *Context) compileTiled(tile int, bias bool) (tiledPipes, error) {
 		sh.Release()
 		return tiledPipes{}, fmt.Errorf("gpu: create %s pipeline: %w", label, err)
 	}
-	c.track(sh.Release, pl.Release) // audit C-26: register at creation
+	c.track(sh.Release, pl.Release) // registered at creation, so Close releases them
 	return tiledPipes{sh: sh, Pl: pl, Layout: c.bgl(pl)}, nil
 }
 

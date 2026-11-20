@@ -147,7 +147,7 @@ func (c *Context) ensureGEMVBias() error {
 		sh.Release()
 		return fmt.Errorf("gpu: create GEMV-bias pipeline: %w", err)
 	}
-	c.track(sh.Release, pl.Release) // audit C-26: register at creation
+	c.track(sh.Release, pl.Release) // registered at creation, so Close releases them
 	c.gemvBiasShader = sh
 	c.gemvBiasPipeline = pl
 	c.gemvBiasLayout = c.bgl(pl)
@@ -173,7 +173,7 @@ func (c *Context) ensureGEMV() error {
 		sh.Release()
 		return fmt.Errorf("gpu: create GEMV pipeline: %w", err)
 	}
-	c.track(sh.Release, pl.Release) // audit C-26: register at creation
+	c.track(sh.Release, pl.Release) // registered at creation, so Close releases them
 	c.gemvShader = sh
 	c.gemvPipeline = pl
 	c.gemvLayout = c.bgl(pl)
@@ -260,7 +260,7 @@ func (c *Context) BatchGEMV(aq []int8, aScale float32, rms []DecodeWeight) ([][]
 			return nil, fmt.Errorf("gpu: BatchGEMV dst: %w", err)
 		}
 		dims, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "batch-dims", Contents: wgpu.ToBytes([]uint32{1, uint32(rm.kPad()), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
-		if err != nil { // nil dims → nil-panic in CreateBindGroup / the cleanup Release below (audit R-06)
+		if err != nil { // nil dims → nil-panic in CreateBindGroup / the cleanup Release below
 			releaseBuf(dst)
 			pass.Release()
 			release()

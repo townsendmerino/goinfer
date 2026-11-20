@@ -334,8 +334,8 @@ func (c *Client) modelInfo(ctx context.Context, model string) (modelEntry, error
 }
 
 // Structured checks the promise the README makes: a schema the model cannot violate. Uses a
-// top-level integer on purpose — that is M-27's shape, where StopWhenComplete used to truncate
-// at the first complete document and return a single digit.
+// top-level integer on purpose: a grammar that stops at the first complete document would return
+// a single digit of it.
 func (c *Client) Structured(ctx context.Context, model string) Result {
 	res := Result{Name: "structured output"}
 	body := map[string]any{
@@ -371,9 +371,8 @@ func (c *Client) Structured(ctx context.Context, model string) Result {
 		res.Detail = fmt.Sprintf("%q does not parse as the schema's integer", txt)
 		return res
 	}
-	// V-17 (docs/review-2026-09-04.md): the prompt asks for "366" specifically BECAUSE that is
-	// M-27's shape — StopWhenComplete used to stop at the first complete document and return a
-	// single truncated digit. A check that only confirms the output PARSES as SOME json.Number
+	// The prompt asks for "366" specifically BECAUSE a stop at the first complete document
+	// returns a single truncated digit of it. A check that only confirms the output PARSES as SOME json.Number
 	// cannot detect that: a truncated "3" parses exactly as cleanly as the real "366" and this
 	// row would report OK against the very regression it exists to catch. Compare the VALUE.
 	if n.String() != "366" {
@@ -389,7 +388,7 @@ func (c *Client) Structured(ctx context.Context, model string) Result {
 // stop string split across token boundaries leaking into the output, which a harness sees as
 // corrupted text rather than as a bug here. It also checks that the count actually REACHED the
 // stop ("4" before "5"). A reply that never gets there, such as "Sure, I can count.", contains no
-// "5" either, and used to pass (audit-2026-09-10 G-12).
+// "5" either, and must not pass.
 //
 // The prompt says what to write, not just "Count: 1, 2, ...": with the bare list, Qwen2.5-Coder-7B
 // answered "The count is now 10." and the Gemma-4 26B "The total count is…" (2026-10-06). Neither
@@ -644,8 +643,8 @@ func (c *Client) Tools(ctx context.Context, model string) Result {
 		res.Detail = "unparseable response to the tool result"
 		return res
 	}
-	// A 200 is not a use of the result (audit-2026-09-10 G-12): asking for the tool again is M-18's
-	// agent-livelock shape, and an empty answer is a conversation that dies on turn two.
+	// A 200 is not a use of the result: asking for the tool again is the agent-livelock shape,
+	// and an empty answer is a conversation that dies on turn two.
 	if msg := out.Choices[0].Message; len(msg.ToolCalls) > 0 {
 		res.Detail = "turn two asked for the tool again instead of answering — the agent-livelock shape (M-18)"
 		return res
@@ -658,14 +657,12 @@ func (c *Client) Tools(ctx context.Context, model string) Result {
 	return res
 }
 
-// ToolsHarness is Tools' harness-scale twin. R11 (docs/measurements/cold-user-2026-09-06-nobara-pc.md):
-// `Tools` above passes with a ONE-function schema — "tools, OpenAI ... ok" — and a real agent
-// harness (opencode) driving the SAME server with the same model still printed a tool call as
-// plain-text JSON instead of a real OpenAI tool_calls response, twice, burning ~350 s finding
-// out. Confirmed by direct isolation that goinfer's own tool-calling was not the fault (a raw
-// curl with a one-tool schema got a proper tool_calls response) — the gap is specifically
-// "does the model still call the right tool once the schema looks like a real agent's", which
-// `Tools`'s minimal schema cannot expose. This row reproduces that shape: a dozen tools with
+// ToolsHarness is Tools' harness-scale twin. `Tools` above passes with a ONE-function schema,
+// while a real agent harness (opencode) driving the same server and model can still get a tool
+// call printed as plain-text JSON instead of a real tool_calls response
+// (docs/measurements/cold-user-2026-09-06-nobara-pc.md). The question is "does the model still
+// call the right tool once the schema looks like a real agent's", which `Tools`'s minimal schema
+// cannot expose. This row reproduces that shape: a dozen tools with
 // nested object parameters, the same target (get_weather) and prompt as `Tools`, so the schema
 // SIZE is the only variable that differs between the two rows.
 //
@@ -777,7 +774,7 @@ func messagesTools(openai []map[string]any) []map[string]any {
 
 // harnessScaleTools is a dozen tools shaped like a real coding-agent's — file read/write/edit,
 // shell, search, plus get_weather among them — several with nested object parameters, matching
-// what opencode's own "build" agent actually sends (the shape that broke under R11).
+// what opencode's own "build" agent actually sends.
 func harnessScaleTools() []map[string]any {
 	str := map[string]any{"type": "string"}
 	fn := func(name, desc string, params map[string]any, required []string) map[string]any {

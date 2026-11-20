@@ -63,8 +63,8 @@ func CopyDevice(dst, src Buffer, nBytes int) error {
 	if TraceForTest != nil {
 		TraceForTest(TraceEvent{Op: TraceCopyDevice, Dst: dst.BindAddr(), SrcPtr: src.BindAddr(), Bytes: nBytes})
 	}
-	// Pre-sync for the same write-after-read hazard Buffer.upload documents
-	// (audit C-01): a queued launch may still be reading dst.
+	// Pre-sync for the same write-after-read hazard Buffer.upload documents:
+	// a queued launch may still be reading dst.
 	if err := syncCopyContext(dst, src); err != nil {
 		return err
 	}

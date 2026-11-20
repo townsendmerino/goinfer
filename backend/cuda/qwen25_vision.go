@@ -23,7 +23,7 @@ func init() {
 	vision.RegisterQwenResident(func(enc *vision.QwenVisionEncoder) (vision.QwenResidentEncoder, error) {
 		return newQwen25Tower(enc)
 	})
-	multimodal.MarkResidentTower(multimodal.TowerQwen25VL, "cuda") // S8: aikit's slot cannot be asked what is registered
+	multimodal.MarkResidentTower(multimodal.TowerQwen25VL, "cuda") // aikit's slot cannot be asked what is registered
 }
 
 type qwen25Tower struct {

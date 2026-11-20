@@ -11,7 +11,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-// The greedy chain (docs/audit-metal-2026-09-30.md, C-B01 Phase 3 item 5).
+// The greedy chain (docs/audit-metal-2026-09-30.md).
 //
 // The pipelined executor (execLoop) pre-encodes token t+1 while t runs, but cannot commit it until t finishes: t+1's input is
 // the embedding of the token t's logits pick, and the host picks it, so between t's last kernel and t+1's first the GPU waits
@@ -59,7 +59,7 @@ var greedyChainOff = false
 
 // greedyChainWhyNot is why this resident cannot run the greedy chain ("" if it can). It covers what the GPU side needs
 // apart from the gather table, which chainEmbedTable prices and makes; the decoder adds what only it knows (its
-// embedding lookup has no multiplier, no adapter, no MC3).
+// embedding lookup has no multiplier, no adapter, no batched step).
 func (r *resident) greedyChainWhyNot() string {
 	switch {
 	case greedyChainOff:
@@ -148,7 +148,7 @@ func (r *resident) chainStart(id, pos int) error {
 	return r.chainOpen(chainReq{op: chainOpStart, id: id, pos: pos})
 }
 
-// chainStartSampled opens a temperature-only chain (C-P02): each buffer ends with ForwardSample's draw (the full
+// chainStartSampled opens a temperature-only chain: each buffer ends with ForwardSample's draw (the full
 // LM-head row, then gumbel_stage1 and gumbel_stage2) instead of the argmax head. The forward at position pos draws with
 // (seed, draw), and each later one with the next draw, which is how decoder.Sampler.NextDraw advances (the seed fixed,
 // the draw counting up). chainNextSampled checks that against the decoder's own draw for every token.

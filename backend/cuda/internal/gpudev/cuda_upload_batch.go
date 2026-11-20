@@ -77,7 +77,7 @@ func UploadBatch(copies []HostCopy) error {
 		}
 	}
 	// Pre-sync once for the whole batch — the write-after-read hazard
-	// Buffer.upload documents (audit C-01): queued launches may still be reading
+	// Buffer.upload documents: queued launches may still be reading
 	// these destinations.
 	if cx != nil {
 		if err := cx.Synchronize(bg); err != nil {

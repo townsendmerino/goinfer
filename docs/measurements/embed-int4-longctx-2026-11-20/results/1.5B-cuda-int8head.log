@@ -1,0 +1,18 @@
+=== RUN   TestEmbedInt4LongContext_run
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (20 MiB of scratch; 7064 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7064 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7064 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6932 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (210 MiB of scratch; 5800 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+ei4lc cuda-int8head: cuda-resident (int4), head int8, 6 documents
+ei4lc cuda-int8head: doc 1/6 RELEASING.md done, elapsed 1m6s
+ei4lc cuda-int8head: doc 2/6 backend_cuda_resident.go done, elapsed 2m13s
+ei4lc cuda-int8head: doc 3/6 decoder_weights.go done, elapsed 3m19s
+ei4lc cuda-int8head: doc 4/6 docs_env-vars.md done, elapsed 4m26s
+ei4lc cuda-int8head: doc 5/6 docs_server.md done, elapsed 5m33s
+ei4lc cuda-int8head: doc 6/6 internal_app_serveapp_openai.go done, elapsed 6m39s
+--- PASS: TestEmbedInt4LongContext_run (406.03s)
+PASS
+ledger: 5 device(s) released in this run

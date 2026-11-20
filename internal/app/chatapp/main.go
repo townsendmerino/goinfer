@@ -69,7 +69,7 @@ type session struct {
 	stopIDs []int          // turn-stop token ids resolved from tmpl.Stops()
 	vocab   int
 
-	// tokenBytes is the constraint masker's token→bytes table (P-17, audit-2026-09-10), built
+	// tokenBytes is the constraint masker's token→bytes table, built
 	// once in newSession rather than by jsonMasker on every constrained turn — the same fix
 	// serve's own cachedTokenBytes made for the same table (internal/serveapp/openai.go).
 	tokenBytes [][]byte
@@ -168,7 +168,7 @@ func Main() {
 	// `fit` — tasks/task-fit-to-hardware.md Phase 1's dry run: "does this fit, and how" without
 	// starting a chat session. Same dispatch shape as `pull` above, for the same reason (this
 	// binary IS the only tool the person running it has).
-	// `cache` lists what `pull` has put on disk (task-checkpoint-fetch-2026-09.md P8).
+	// `cache` lists what `pull` has put on disk (task-checkpoint-fetch-2026-09.md).
 	if len(os.Args) > 1 && os.Args[1] == "cache" {
 		os.Exit(pullcmd.RunCache(os.Args[2:], decoder.GIWFormatVersion))
 	}
@@ -215,11 +215,10 @@ func Main() {
 	// The README is fixed, but a stale README, a cached blog post or a year-old shell history will
 	// keep producing this invocation forever. An error that names the replacement costs one
 	// branch; the failure it prevents cost that run its worst dead end.
-	// --version answers "what is in this binary" without loading a model — R6
-	// (docs/measurements/cold-user-2026-09-06-nobara-pc.md): this binary had no way to report its
-	// own version at all. Checked here, before flag.Parse, so it works as the first argument the
-	// way `pull`/`models` above do; also registered as a flag below so `--model x --version`
-	// (version after another flag) is caught too.
+	// --version answers "what is in this binary" without loading a model. Checked here, before
+	// flag.Parse, so it works as the first argument the way `pull`/`models` above do; also
+	// registered as a flag below so `--model x --version` (version after another flag) is caught
+	// too.
 	if len(os.Args) > 1 && isVersionArg(os.Args[1]) {
 		fmt.Print(versionReport(filepath.Base(os.Args[0])))
 		return
@@ -275,12 +274,11 @@ All flags:
 		fmt.Print(versionReport(filepath.Base(os.Args[0])))
 		return
 	}
-	// An unrecognized subcommand/positional falls through silently otherwise — R6's other half.
-	// `./goinfer-chat-1.5b version` (a typo reaching for --version) was swallowed here: flag.Parse
-	// stops at the first non-flag argument and leaves it in flag.Args(), which nothing checked, so
-	// it fell straight into the `case hasEmbeddedModel:` branch below and started an interactive
-	// chat session — no error, no hint that "version" meant anything. Nothing in normal usage
-	// leaves a bare positional (every argument here is a --flag), so anything left is a mistake.
+	// An unrecognized subcommand/positional would otherwise fall through silently: flag.Parse
+	// stops at the first non-flag argument and leaves it in flag.Args(), so `goinfer-chat version`
+	// (a typo reaching for --version) would fall into the `case hasEmbeddedModel:` branch below and
+	// start an interactive chat session with no error. Nothing in normal usage leaves a bare
+	// positional (every argument here is a --flag), so anything left is a mistake.
 	if args := flag.Args(); len(args) > 0 {
 		fmt.Fprintf(os.Stderr, "%s: unrecognized argument %q\n\nknown subcommands: pull <name>, cache, fit <path>, decide, decisions-calibrate, models, --version. Or pass --model <file.gguf|dir>.\n",
 			filepath.Base(os.Args[0]), args[0])
@@ -352,7 +350,7 @@ All flags:
 	case *cf.model != "":
 		// Explicit checkpoint: a .gguf file, an HF dir, a .giw, or an hf:/demo: reference fetched on
 		// first use. The same path serve and fit take (internal/modelload): reference resolution, the
-		// S1 sidecar .giw default for a .gguf, the tokenizer, the swap-guarded load and the one
+		// sidecar .giw default for a .gguf, the tokenizer, the swap-guarded load and the one
 		// automatic streaming retry on a dense fit decline.
 		s, err = loadFromPath(*cf.model, opts, cf.load.DirectLoad, explicitQuant)
 	case hasEmbeddedModel && opts.StreamWeights:
@@ -473,7 +471,7 @@ All flags:
 		}
 		os.Exit(s.runBatch(plan, bd, modelNameOf(*cf.model)))
 	}
-	// R26: one prompt, plain output, exit — or the REPL, plain when it is being scripted (stdin or stdout is not a terminal).
+	// Plain one-shot mode: one prompt, plain output, exit — or the REPL, plain when it is being scripted (stdin or stdout is not a terminal).
 	s.plain = *cf.prompt != "" || img != nil || !isTerminal(os.Stdin) || !isTerminal(os.Stdout)
 	if *cf.prompt != "" || img != nil { // --image is one image, one answer: it never opens the REPL
 		if img != nil && *cf.prompt != "" && *cf.schema != "" {
@@ -565,10 +563,10 @@ func loadFromBytes(raw []byte, opts decoder.Options) (*session, error) {
 // newSession assembles the REPL session and prints the load summary to stderr.
 func newSession(tk *tokenizer.Tokenizer, model *decoder.Model, opts decoder.Options, dt time.Duration) *session {
 	cfg := model.Config()
-	// M-25 (audit-2026-09-10): DecodePath(), not Quant() — on Metal, --quant int8/int8int8/int4mix
-	// all silently re-quantize to int4 at resident-build time (no int8 GEMV kernel on that
-	// backend), so the raw requested quant string was printing a precision the GPU never actually
-	// runs. DecodePath() reports the corrected label (decoder/residency.go's residentQuantLabel).
+	// DecodePath(), not Quant() — on Metal, --quant int8/int8int8/int4mix all re-quantize to int4
+	// at resident-build time (no int8 GEMV kernel on that backend), so the raw requested quant
+	// string would print a precision the GPU never runs. DecodePath() reports the corrected label
+	// (decoder/residency.go's residentQuantLabel).
 	fmt.Fprintf(os.Stderr, "loaded %d-layer model (hidden %d, vocab %d) in %s [backend=%s decode=%s]\n",
 		cfg.NumLayers, cfg.HiddenDim, cfg.VocabSize, dt.Round(time.Millisecond), model.BackendReport(), model.DecodePath())
 	// The phase split, on the line under the banner. chat is where a first-time user meets a load
@@ -577,9 +575,9 @@ func newSession(tk *tokenizer.Tokenizer, model *decoder.Model, opts decoder.Opti
 	if sum := model.LoadProfile().Summary(); sum != "" {
 		fmt.Fprintln(os.Stderr, sum)
 	}
-	// M-41 (audit-2026-09-10): the same C-10 reasoning serve already applies, extended here — the
-	// REPL is the release asset whose whole pitch is "point it at your own GGUF," so a declined
-	// pre-tokenizer here is the single most likely place a user hits one, silently.
+	// A pre-tokenizer with no walker is warned about, as serve does in its banner: the REPL is the
+	// release asset whose whole pitch is "point it at your own GGUF," so it is the most likely
+	// place a user meets a declined pre-tokenizer.
 	if d := tk.PreTokenizerDecline(); d != "" {
 		fmt.Fprintf(os.Stderr, "  !! tokenizer: %s\n", d)
 	}
@@ -775,8 +773,7 @@ func (s *session) applyBudgetFor(sp *decoder.SamplingParams, tm *chat.Template, 
 // the token count.
 //
 // sb accumulates the decoded text INCREMENTALLY instead of re-decoding the whole generated
-// sequence every token (P-17, audit-2026-09-10 — this demo's own twin of R-08, already fixed in
-// internal/serveapp/openai.go's streamTokens for the same reason). DecodePiece(id) appended one
+// sequence every token, as internal/serveapp/openai.go's streamTokens does. DecodePiece(id) appended one
 // token at a time is byte-identical to a fresh whole-sequence decode at every flush point
 // (TestDecodeContinuation_isIncrementallyAssociative, tokenizer/). strings.Builder, not
 // `text += piece`: Go strings are immutable, so naive concatenation is itself O(n) per append and
@@ -819,7 +816,7 @@ func (s *session) streamReply(tokens <-chan int, rs *chat.ReplySplitter, onReaso
 	for id := range tokens {
 		nTok++
 		// DecodePiece, not Decode: these ids CONTINUE the prompt (no sequence-level
-		// dummy-prefix strip — M-25), and appending each token's own piece is exactly what a
+		// dummy-prefix strip), and appending each token's own piece is exactly what a
 		// whole-sequence decode does internally, one token at a time.
 		piece, _ := s.tk.DecodePiece(id)
 		if rs != nil {
@@ -990,7 +987,7 @@ func (s *session) jsonMasker() func(generated []int, logits []float32) {
 		if sg, err := constrain.JSONSchema(s.schema); err == nil {
 			g = sg
 		} else {
-			// N-78 (docs/audit-2026-09-10.md): main's flag parsing already fail-fasts (os.Exit) on
+			// main's flag parsing already fail-fasts (os.Exit) on
 			// an invalid --schema before s.schema is ever set, so this branch is unreachable today
 			// — but silently downgrading to the unconstrained JSON grammar here means a future
 			// caller that sets s.schema some other way (a reload, a per-request schema) would get a
@@ -1005,11 +1002,10 @@ func (s *session) jsonMasker() func(generated []int, logits []float32) {
 // grammarMasker constrains output to grammar g via logit masking; EOS/end-of-turn are held back until the document is complete.
 // jsonMasker's grammar is the session's (--schema or plain JSON); --batch passes each line's own response_format.
 func (s *session) grammarMasker(g constrain.Grammar) func(generated []int, logits []float32) {
-	// N-71 (docs/audit-2026-09-10.md): EOS/EndOfTurn alone misses the template's own turn-stop
-	// ids (s.stopIDs, resolved from tmpl.Stops()) — Llama-3's <|eot_id|> and harmony's <|end|>
-	// are neither EOS nor EndOfTurn, so without stopIDs the masker never holds them back and a
-	// constrained JSON generation could emit one mid-document. internal/serveapp/openai.go's own
-	// masker already unions eosIDs with stopIDs; this mirrors that.
+	// EOS/EndOfTurn alone misses the template's own turn-stop ids (s.stopIDs, resolved from
+	// tmpl.Stops()) — Llama-3's <|eot_id|> and harmony's <|end|> are neither EOS nor EndOfTurn, so
+	// without stopIDs the masker never holds them back and a constrained JSON generation could emit
+	// one mid-document. internal/serveapp/openai.go's masker unions eosIDs with stopIDs the same way.
 	var eos []int
 	for _, id := range []int{s.special.EOS, s.special.EndOfTurn} {
 		if id >= 0 {
@@ -1158,7 +1154,7 @@ const helpText = `commands:
   /help           this list                     /quit      exit
 `
 
-// replyPrinter writes a reply as it streams: the reasoning dimmed and the answer in cyan on a terminal; in plain mode (R26) the answer alone on
+// replyPrinter writes a reply as it streams: the reasoning dimmed and the answer in cyan on a terminal; in plain mode the answer alone on
 // stdout, uncoloured, with the reasoning (or its marker) on stderr — so `goinfer-chat -p ... > file` holds the answer and nothing else.
 type replyPrinter struct {
 	s                  *session

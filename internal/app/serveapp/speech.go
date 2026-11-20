@@ -129,7 +129,7 @@ func clock(sec float64, sep string) string {
 	return fmt.Sprintf("%02d:%02d:%02d%s%03d", h, m, ms/1000, sep, ms%1000)
 }
 
-// handleTranscriptions is POST /v1/audio/transcriptions (OpenAI's route, multipart/form-data); the accepted fields and what is refused are in the task doc's G-S14i.
+// handleTranscriptions is POST /v1/audio/transcriptions (OpenAI's route, multipart/form-data); the accepted fields and what is refused are in docs/completed/task-multimodal-support-2026-10.md (the transcriptions route's gate).
 func (s *server) handleTranscriptions(w http.ResponseWriter, r *http.Request) {
 	form, ok := parseUpload(w, r, "the request must be multipart/form-data with a file part")
 	if !ok {
