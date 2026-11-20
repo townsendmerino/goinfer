@@ -158,7 +158,7 @@ func ksh6cMarginPriced(t *testing.T, models []ksh6cModel) {
 			}
 			defer m.Close()
 			r, ok := m.ResidentForwardForTest().(*cudaResident)
-			if !ok && c.ctx > 0 && strings.Contains(m.ResidentDecline(), "GB of KV") {
+			if !ok && c.ctx > 0 && strings.Contains(m.ResidentDecline(), "GiB of KV") {
 				// A refused build declines to the CPU path, so Load itself succeeds.
 				fmt.Fprintf(os.Stderr, "[H6C-G5] %s at -ctx %d: REFUSED after the change: %s\n", c.rel, c.ctx, m.ResidentDecline())
 				return

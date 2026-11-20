@@ -482,7 +482,7 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 // refusal by name instead of a quietly wrong answer.
 func (m *Model) checkImageBlockFitsWindow(imgLen int) error {
 	if w := m.w.arch.SlidingWindow; w > 0 && imgLen > w {
-		return fmt.Errorf("decoder: an image block of %d tokens is longer than this model's %d-token sliding window, which the bidirectional image mask does not support (docs/multimodal.md F3)", imgLen, w)
+		return fmt.Errorf("decoder: an image block of %d tokens is longer than this model's %d-token sliding window, which the bidirectional image mask does not support (docs/multimodal.md)", imgLen, w)
 	}
 	return nil
 }

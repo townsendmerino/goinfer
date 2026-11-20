@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"strings"
 	"testing"
 )
@@ -57,7 +58,7 @@ func TestGuardGIWFit_floorRefusalNamesTheFloorsNeed(t *testing.T) {
 	if err == nil {
 		t.Fatal("no refusal below the floor; the test proves nothing")
 	}
-	floor := fmt.Sprintf("~%.2f GB", float64(estimateKVBytes(cfg, ctxFloor, false, false)+prefillAttnScratchBudget)/fitGB)
+	floor := "~" + mem.GiB(estimateKVBytes(cfg, ctxFloor, false, false)+prefillAttnScratchBudget)
 	if !strings.Contains(err.Error(), floor) {
 		t.Errorf("refusal %q does not give the floor's need %s", err, floor)
 	}

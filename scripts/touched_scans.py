@@ -258,7 +258,7 @@ SCANS = [
     Scan("backend/cuda", "TestPipelineLint_boundKernelsAreLaunched", NT("backend/cuda")),
     Scan("backend/cuda", "TestPrefillCoreAndDraftBlockCallTheShmemGuards", F("backend/cuda/prefill.go", "backend/cuda/drafter.go")),
     Scan("backend/cuda", "TestPrefillCoreCallsMropePosWindow", F("backend/cuda/prefill.go")),
-    Scan("backend/cuda", "TestKV8_everyFusedPrefillLaunchPassesScales", F("backend/cuda/prefill.go")),
+    Scan("backend/cuda", "TestKV8_everyFusedPrefillLaunchPassesScales", F("backend/cuda/prefill.go", "backend/cuda/prefill_pass.go")),
     Scan("backend/cuda", "TestPrefillCoreCallsCheckPrefillShmemImg", F("backend/cuda/prefill.go")),
     Scan("backend/cuda", "TestDeclineAdvice_wiredIntoBuildResident", F("backend/cuda/backend.go")),
     Scan("backend/cuda/kernels", "TestAttnKernelDigests_tableCoversTheSource", CU("backend/cuda")),
@@ -328,6 +328,8 @@ EXCLUDED = {
     # The quality_scan-tagged scans (internal/guard/qualityscan) run nightly by design, never in the day loop.
     "TestQualityScan_readsEveryModule": "nightly quality scan",
     "TestQualityScan_committedFixtureLoadsFailNotSkip": "nightly quality scan",
+    "TestQualityScan_userStringsCarryNoTrackerIDs": "nightly quality scan",
+    "TestQualityScan_memorySizesUseTheGiBFormatter": "nightly quality scan",
 }
 
 
