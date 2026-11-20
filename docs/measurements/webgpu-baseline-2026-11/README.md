@@ -64,7 +64,13 @@ only WebGPU KV. On the 7B it also leaves room for **one conversation where CUDA 
 are 1.75 GiB, the same bytes CUDA's f16 spends on 32,768. Whether one 7B conversation would fit past 16,384 on WebGPU is
 not answerable from a banner while the cap holds.
 
-## What the §B8 update would be (not made: Francis sees this first)
+## Decision on §B8 (Francis, 2026-11-20, option (a), relayed by the coordinator at 13:40 PST)
+
+The update below is made in **WG5's docs PR, after the Mac half**: the 38 / 41 / 63% WebGPU figure is replaced by WG0's
+45 / 51 / 75% at depth 128, the depth-2048 row (13 / 17 / 39%) and the TTFT row (10 / 12 / 18%) are added, and the old row
+moves to `docs/legacy-benchmarks.md`. Nothing on `docs/benchmarks.md` changes before then.
+
+## What the §B8 update is
 
 - The backend table's WebGPU column and its footnote ⁱ: replace "WebGPU runs at 38 / 41 / 63% of goinfer's own CUDA" with
   this run's **45 / 51 / 75% at depth 128** (WebGPU 236.6 / 141.9 / 64.2 tok/s beside CUDA 521.2 / 277.1 / 86.1, same build
