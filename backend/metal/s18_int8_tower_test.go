@@ -15,13 +15,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/goinfer/backend/metal/kernels"
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // G-S18f ( registered before the code): the
 // Metal int8 SigLIP tower (tower_gemm_w8, weights in groups of 32, activations f32) is exact on its own weights. The
 // reference is aikit's CPU float32 tower running the same weights rounded the way the tower rounds them
-// (dequantG32(quantG32(w))), so the tower bar holds: every token at cosine >= 0.9999. What the rounding itself costs
+// (kernels.DequantG32(kernels.QuantG32(w))), so the tower bar holds: every token at cosine >= 0.9999. What the rounding itself costs
 // against the true float32 tower is G-S18g's question (the served reply), recorded here as relative L2, with a
 // regression guard at 0.06.
 
@@ -34,9 +35,9 @@ func s18RoundWeights(t *testing.T, enc *vision.Encoder) {
 	}
 	for _, b := range w.Blocks {
 		for _, p := range []vision.VisionProj{b.Q, b.K, b.V, b.O, b.FC1, b.FC2} {
-			q, sc := quantG32(p.W, p.Out, p.In)
+			q, sc := kernels.QuantG32(p.W, p.Out, p.In)
 			makeWritable(p.W)
-			copy(p.W, dequantG32(q, sc, p.Out, p.In))
+			copy(p.W, kernels.DequantG32(q, sc, p.Out, p.In))
 		}
 	}
 }

@@ -445,12 +445,6 @@ type ResidentMoESpec struct {
 	TopkGroup             int
 }
 
-// ResidentDims is the model-level shape from the resolved Architecture (BackendModelView.Dims). Per-layer geometry (a
-// layer's own head dim and KV heads) is BackendLayerView's.
-type ResidentDims struct {
-	Hidden, Layers, Heads, KVHeads, HeadDim, Inter, Vocab int
-}
-
 // ResidentMLASpec holds the DeepSeek/Kimi MLA geometry and scales for a resident backend or planner.
 type ResidentMLASpec struct {
 	QLoRARank      int
@@ -636,11 +630,19 @@ func (m *Model) AttnScale() float32 {
 	return float32(1.0 / math.Sqrt(float64(m.w.arch.HeadDim)))
 }
 
-// Dims returns the model shape from the resolved Architecture — authoritative,
-// unlike Config() (Cfg), which a GGUF-loaded or .giw model may leave partly
-// zero. The forward pass reads these.
+// ResidentDims is the model-level shape from the resolved Architecture. Per-layer geometry (a layer's own head dim and
+// KV heads) is BackendLayerView's.
+type ResidentDims struct {
+	Hidden, Layers, Heads, KVHeads, HeadDim, Inter, Vocab int
+}
+
+// Shape returns the model shape from the resolved Architecture — authoritative, unlike Config() (Cfg), which a
+// GGUF-loaded or .giw model may leave partly zero. Prefer it to Dims: a caller names the field it reads.
+func (m *Model) Shape() ResidentDims { return m.BackendView().Dims() }
+
+// Dims is Shape as a positional tuple, kept for existing callers; new code takes Shape.
 func (m *Model) Dims() (hidden, nLayers, nH, nKV, hd, inter, vocab int) {
-	d := m.BackendView().Dims()
+	d := m.Shape()
 	return d.Hidden, d.Layers, d.Heads, d.KVHeads, d.HeadDim, d.Inter, d.Vocab
 }
 

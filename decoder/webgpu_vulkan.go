@@ -264,7 +264,8 @@ func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []
 			weights += n
 		}
 	}
-	hidden, nLayers, _, _, _, _, _ := m.Dims()
+	shape := m.Shape()
+	hidden, nLayers := shape.Hidden, shape.Layers
 	for i := range w.Layers {
 		var bufs []int64
 		var kv bool
@@ -310,7 +311,7 @@ func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []
 			// Each projection W8A8, from its int8 form or its f32 (mlaProj), then kv_b split into W_UKᵀ and W_UV, f32.
 			mla, _ := m.BackendView().MLA()
 			qLoRA, kvLoRA, qkNope, qkRope, vHead := mla.QLoRARank, mla.KVLoRARank, mla.QKNopeHeadDim, mla.QKRopeHeadDim, mla.VHeadDim
-			_, _, nH, _, _, _, _ := m.Dims()
+			nH := m.Shape().Heads
 			proj := func(q *linalg.WeightMat, rows, cols int) {
 				if q.Rows() != 0 {
 					rows, cols = q.Rows(), q.Cols()

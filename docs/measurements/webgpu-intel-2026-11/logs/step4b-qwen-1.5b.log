@@ -1,0 +1,32 @@
+=== RUN   TestE2E_webgpu
+    e2e_test.go:53: greedy agreement: 16/16 tokens match
+          cpu=[353 10 4999 1725 25 35058 2179 30 31 26056 90304 62 63 46115 92 93]
+          gpu=[353 10 4999 1725 25 35058 2179 30 31 26056 90304 62 63 46115 92 93]
+    e2e_test.go:69: decode 48 tok:  CPU   13.0 tok/s  |  GPU    9.0 tok/s  (0.70×)
+    e2e_test.go:71: prefill 256 tok (TTFT):  CPU 4647.1 ms  |  GPU 5689.1 ms  (0.82×)
+--- PASS: TestE2E_webgpu (32.94s)
+=== RUN   TestResidency_matchesCPU
+    split_copies_0_test.go:112: [live-contexts] 1 already open before this test
+    split_copies_0_test.go:115: [live-vram] 2371.7 MiB of device buffers already held before this test
+    residency_test.go:83: GPU residency: 16 tok | TTFT 3015 ms (CPU prefill + K/V upload) | decode 8.9 tok/s
+    residency_test.go:85: matched 16/16 greedy tokens vs CPU int4 oracle
+    residency_test.go:86: GPU output: "Recursion is a programming technique where a function calls itself to solve a problem."
+--- PASS: TestResidency_matchesCPU (11.66s)
+=== RUN   TestResidentForwardN_parity
+    forwardn_parity_test.go:104: row 0: cosine=1.000000 maxAbsDiff=0
+    forwardn_parity_test.go:104: row 1: cosine=1.000000 maxAbsDiff=0
+    forwardn_parity_test.go:104: row 2: cosine=1.000000 maxAbsDiff=0
+    forwardn_parity_test.go:104: row 3: cosine=1.000000 maxAbsDiff=0
+    forwardn_parity_test.go:104: row 4: cosine=1.000000 maxAbsDiff=0
+--- PASS: TestResidentForwardN_parity (6.50s)
+=== RUN   TestGenerate_batchedPrefillMatchesSequential
+decoder: fit is tight — qwen2.5-coder-1.5b-instruct-q4_k_m.gguf needs ~1.68 GiB resident at quant int8int8 + 1.75 GiB KV + 1.04 GiB reading the checkpoint (the .gguf stays mapped resident for the whole load) + 0.02 GiB heap beside it = 4.49 GiB; this machine currently has 8.42 GiB of memory available (budget 5.90 GiB = 70% of that) (76% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+    prefilllast_generate_integration_test.go:71: sequential (24 tok): [330 785 2038 374 24455 1667 264 53653 31088 448 264 6407 315 220 18 13 576 24455 1943 374 364 42 23818 868]
+    prefilllast_generate_integration_test.go:72: batched    (24 tok): [330 785 2038 374 24455 1667 264 53653 31088 448 264 6407 315 220 18 13 576 24455 1943 374 364 42 23818 868]
+--- PASS: TestGenerate_batchedPrefillMatchesSequential (15.86s)
+=== RUN   TestResidentPrefillLast_parity
+    prefilllast_resident_parity_test.go:110: last row (pos 19): cosine=1.000000 maxAbsDiff=0
+--- PASS: TestResidentPrefillLast_parity (7.98s)
+PASS
+ledger: 14 Context(s) closed in this run
+ok  	github.com/townsendmerino/goinfer/backend/webgpu	75.124s
