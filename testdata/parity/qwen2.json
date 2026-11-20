@@ -7,7 +7,7 @@
   "own": [
     "decoder/arch_qwen2.go"
   ],
-  "deps_hash": "sha256:7cc00cc91f52c69bd7b450f13b0863168cc2cacaca9604e11b31341bbbac4267",
+  "deps_hash": "sha256:71fb8dee536f2fbfbd4de4aa4cc2f70a058bdf7fad33f4473d8753b98c64f21a",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
