@@ -554,6 +554,7 @@
       "internal/cost",
       "internal/diag/sb2census",
       "internal/diag/towerid",
+      "internal/fidelity",
       "internal/guard/memgate",
       "internal/runtime/giw",
       "internal/runtime/mem",
