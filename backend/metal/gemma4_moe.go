@@ -353,7 +353,7 @@ func buildGemma4MoELayer(d *Device, m *decoder.Model, b *decoder.Gemma4MoEReside
 func (r *resident) encodeGemma4MoEFFN(e *Encoder, L *residLayer) {
 	if L.g4moe.pool != nil {
 		e.FinishEncoding()
-		panic("metal: encodeGemma4MoEFFN reached a paged Gemma-4 MoE layer — route through forwardLogitsPaged instead (C-02)")
+		panic("metal: encodeGemma4MoEFFN reached a paged Gemma-4 MoE layer — route through forwardLogitsPaged instead")
 	}
 	r.encodeG4Phase1(e, L)         // dense branch + router + preFFN2 quant
 	r.encodeG4Phase2NonPaged(e, L) // experts from the stacked all-E buffer

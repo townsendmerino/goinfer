@@ -1783,7 +1783,7 @@ func (r *cudaResident) ResizeExpertCache(reserve int64) (slots int, err error) {
 		budget := reservedBudget(int64(free)+slotRequirement(r.cacheSlots, nL, strides), reserve)
 		fit, decline := capSlots(budget, nL, strides, r.topK, r.cacheSlotsAsked)
 		if decline {
-			return fmt.Errorf("cuda: the expert cache cannot keep %d slots/layer beside %.2f GB reserved (%d fit)", r.topK, float64(reserve)/1e9, fit)
+			return fmt.Errorf("cuda: the expert cache cannot keep %d slots/layer beside %s reserved (%d fit)", r.topK, mem.GiB(reserve), fit)
 		}
 		if fit == r.cacheSlots {
 			return nil
@@ -4122,7 +4122,7 @@ func (r *cudaResident) decodeAttn(Ly *cudaLayer, l, pos int) error {
 	if arm == armRefused {
 		return fmt.Errorf("cuda: attention at %d attended keys needs %d B of shared memory, "+
 			"past this device's %d B limit, and split-KV is unavailable (%s) — lower -ctx or "+
-			"re-enable GOINFER_SPLITKV_ATTN (M-16)", nWin, attnShmemBytes(nWin),
+			"re-enable GOINFER_SPLITKV_ATTN", nWin, attnShmemBytes(nWin),
 			singleBlockAttnShmemLimit,
 			map[bool]string{true: "kernel not loaded", false: "disabled by GOINFER_SPLITKV_ATTN"}[r.skScores == (Pipeline{})])
 	}

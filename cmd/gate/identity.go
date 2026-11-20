@@ -85,7 +85,7 @@ func runIdentity(argv []string, w io.Writer) int {
 	fs.IntVar(&o.Steps, "steps", 0, "tokens generated per prompt; logits are dumped for each (default: tiny 8, real 32)")
 	fs.StringVar(&o.LogDir, "logdir", os.TempDir(), "where the run directory (worktrees, builds, dumps, logs) is created")
 	fs.BoolVar(&o.Keep, "keep", false, "keep the dumps, binaries and logs (worktrees are always removed)")
-	fs.StringVar(&o.Record, "record", "", "write PARITY_ROW lines for families whose T3 validation this run inherits (TE6(b)); merge them with the decoder's TestParityManifest_merge")
+	fs.StringVar(&o.Record, "record", "", "write PARITY_ROW lines for families whose real-checkpoint validation this run inherits (bit-identical output to the validated build); merge them with the decoder's TestParityManifest_merge")
 	fs.DurationVar(&o.Timeout, "timeout", 15*time.Minute, "per dumper process, and per transcode with -giw")
 	fs.StringVar(&o.Giw, "giw", "", "compare through each revision's OWN transcode of the source: bytes (the two .giw files' sha256) | logits (the dumper on each side's own .giw)")
 	replay := fs.String("replay", "", "grade the run record a -keep run wrote ("+identityRunRecordFile+" in its run directory) instead of running")

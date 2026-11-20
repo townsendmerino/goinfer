@@ -49,7 +49,7 @@ func TestAdmitPrefillMemory_refusesAnOversizedRequest(t *testing.T) {
 		t.Errorf("AdmitPrefillMemory allocated a KV cache (prefillEnters +%d) while REFUSING the request — "+
 			"admission must be a pure check with no allocation side effect", got)
 	}
-	for _, want := range []string{"GB", "available", "-ctx", "-stream-weights", "GOINFER_NO_FIT_GUARD"} {
+	for _, want := range []string{"GiB", "available", "-ctx", "-stream-weights", "GOINFER_NO_FIT_GUARD"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("refusal does not mention %q:\n%s", want, err.Error())
 		}

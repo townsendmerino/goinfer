@@ -1,10 +1,13 @@
 // Package fitdecide holds the CUDA backend's pure memory-fit decisions: what each takes is the free-VRAM reading and plain
-// numbers, and what it returns is the verdict, the lines to log and the refusal. It imports only the standard library, so the arithmetic is testable without a device or a model.
+// numbers, and what it returns is the verdict, the lines to log and the refusal. Beside the standard library it imports only
+// internal/runtime/mem's GiB formatter, so the arithmetic is testable without a device or a model.
 package fitdecide
 
 import (
 	"errors"
 	"fmt"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // AllocQuantumBytes is the driver's allocation granularity; package cuda holds it equal to gpudev's by a compile-time check.
@@ -136,30 +139,30 @@ func SlotsDecision(free uint64, ok bool, extra int64, nLayers int, strides []int
 		need := SlotRequirement(topK, int64(nLayers), strides)
 		if extra > 0 {
 			out.Err = fmt.Errorf("expert cache (C′) cannot fit its MINIMUM: top-%d routed experts across %d MoE "+
-				"layers need %.2f GB of slots, but only %.2f GB is free (%.2f GB reserved for a companion "+
+				"layers need %s of slots, but only %s is free (%s reserved for a companion "+
 				"attach, --drafter) — %d slots/layer fit. Free VRAM, lower --ctx, or drop "+
 				"GOINFER_MOE_CACHE_EXPERTS and use a card that holds the experts outright",
-				topK, nLayers, float64(need)/1e9, float64(free)/1e9, float64(extra)/1e9, fit)
+				topK, nLayers, mem.GiB(need), mem.GiB(free), mem.GiB(extra), fit)
 			return out
 		}
 		out.Err = fmt.Errorf("expert cache (C′) cannot fit its MINIMUM: top-%d routed experts across %d MoE "+
-			"layers need %.2f GB of slots, but only %.2f GB is free — %d slots/layer fit. Free VRAM, "+
+			"layers need %s of slots, but only %s is free — %d slots/layer fit. Free VRAM, "+
 			"lower --ctx, or drop GOINFER_MOE_CACHE_EXPERTS and use a card that holds the experts outright",
-			topK, nLayers, float64(need)/1e9, float64(free)/1e9, fit)
+			topK, nLayers, mem.GiB(need), mem.GiB(free), fit)
 		return out
 	}
 	if fit < want {
 		if extra > 0 {
-			out.Logs = append(out.Logs, fmt.Sprintf("[cuda] C′ cache: %d slots/layer would need %.1f GB VRAM but only %.1f GB free "+
-				"(%.1f GB of %.1f GB total reserved for a companion attach, --drafter) — capping to %d (%.1f GB)\n",
-				want, float64(SlotRequirement(want, int64(nLayers), strides))/1e9,
-				float64(budget)/1e9, float64(extra)/1e9, float64(free)/1e9,
-				fit, float64(SlotRequirement(fit, int64(nLayers), strides))/1e9))
+			out.Logs = append(out.Logs, fmt.Sprintf("[cuda] C′ cache: %d slots/layer would need %s VRAM but only %s free "+
+				"(%s of %s total reserved for a companion attach, --drafter) — capping to %d (%s)\n",
+				want, mem.GiB(SlotRequirement(want, int64(nLayers), strides)),
+				mem.GiB(budget), mem.GiB(extra), mem.GiB(free),
+				fit, mem.GiB(SlotRequirement(fit, int64(nLayers), strides))))
 		} else {
-			out.Logs = append(out.Logs, fmt.Sprintf("[cuda] C′ cache: %d slots/layer would need %.1f GB VRAM but only %.1f GB free — "+
-				"capping to %d (%.1f GB)\n", want,
-				float64(SlotRequirement(want, int64(nLayers), strides))/1e9, float64(free)/1e9,
-				fit, float64(SlotRequirement(fit, int64(nLayers), strides))/1e9))
+			out.Logs = append(out.Logs, fmt.Sprintf("[cuda] C′ cache: %d slots/layer would need %s VRAM but only %s free — "+
+				"capping to %d (%s)\n", want,
+				mem.GiB(SlotRequirement(want, int64(nLayers), strides)), mem.GiB(free),
+				fit, mem.GiB(SlotRequirement(fit, int64(nLayers), strides))))
 		}
 		out.Slots = fit
 	}
@@ -200,15 +203,15 @@ func WeightsFitDecision(need, extra, free int64, ok bool, margin int64) error {
 		return nil
 	}
 	if extra > 0 {
-		return fmt.Errorf("cuda: dense weights need %.2f GB plus %.2f GB reserved for a companion "+
-			"attach (--drafter) but only %.2f GB is free on the device (plus %.0f MB reserved for "+
+		return fmt.Errorf("cuda: dense weights need %s plus %s reserved for a companion "+
+			"attach (--drafter) but only %s is free on the device (plus %.0f MB reserved for "+
 			"driver and decode scratch) — use a smaller/more-quantized model, or the staged/CPU path",
-			float64(need)/1e9, float64(extra)/1e9, float64(free)/1e9, float64(margin)/(1<<20))
+			mem.GiB(need), mem.GiB(extra), mem.GiB(free), float64(margin)/(1<<20))
 	}
-	return fmt.Errorf("cuda: dense weights need %.2f GB but only %.2f GB is free on the device "+
+	return fmt.Errorf("cuda: dense weights need %s but only %s is free on the device "+
 		"(plus %.0f MB reserved for driver and decode scratch) — use a smaller/more-quantized "+
 		"model, or the staged/CPU path",
-		float64(need)/1e9, float64(free)/1e9, float64(margin)/(1<<20))
+		mem.GiB(need), mem.GiB(free), float64(margin)/(1<<20))
 }
 
 // KVFitIn is what checkKVFits decides from besides the free VRAM: the planned context and whether it was asked for, the KV
@@ -296,19 +299,19 @@ func KVFitDecision(in KVFitIn, free uint64, ok bool) KVFitOut {
 		return out
 	}
 	perPos := float64(need) / float64(max(out.CtxCap, 1)) / 1024
-	msg := fmt.Sprintf("cuda: resident context %d positions needs %.2f GB of KV "+
-		"(%.1f KB/position across %d layers) but only %.2f GB is free on the device beside the weights "+
+	msg := fmt.Sprintf("cuda: resident context %d positions needs %s of KV "+
+		"(%.1f KB/position across %d layers) but only %s is free on the device beside the weights "+
 		"(plus %.0f MB reserved for driver and decode scratch) — lower the serve context setting (-ctx), "+
 		"or use a smaller/more-quantized model",
-		out.CtxCap, float64(need)/1e9, perPos, in.Layers, float64(free)/1e9, float64(in.Margin)/(1<<20))
+		out.CtxCap, mem.GiB(need), perPos, in.Layers, mem.GiB(free), float64(in.Margin)/(1<<20))
 	if in.ExtraBytes > 0 {
-		msg = fmt.Sprintf("cuda: resident context %d positions needs %.2f GB of KV "+
-			"(%.1f KB/position across %d layers) plus %.2f GB reserved for a companion attach "+
-			"(--drafter) but only %.2f GB is free on the device beside the weights (plus %.0f MB "+
+		msg = fmt.Sprintf("cuda: resident context %d positions needs %s of KV "+
+			"(%.1f KB/position across %d layers) plus %s reserved for a companion attach "+
+			"(--drafter) but only %s is free on the device beside the weights (plus %.0f MB "+
 			"reserved for driver and decode scratch) — lower the serve context setting (-ctx), or "+
 			"use a smaller/more-quantized model",
-			out.CtxCap, float64(need)/1e9, perPos, in.Layers, float64(in.ExtraBytes)/1e9,
-			float64(free)/1e9, float64(in.Margin)/(1<<20))
+			out.CtxCap, mem.GiB(need), perPos, in.Layers, mem.GiB(in.ExtraBytes),
+			mem.GiB(free), float64(in.Margin)/(1<<20))
 	}
 	if in.Explicit {
 		out.Err = &KVWontFitError{Msg: msg}
@@ -317,13 +320,13 @@ func KVFitDecision(in KVFitIn, free uint64, ok bool) KVFitOut {
 	// Default cap: keep the historical decline. Strip the sentinel so BuildResident treats it as
 	// an ordinary "cannot host this here" and the staged path takes over, as it always has.
 	if in.ExtraBytes > 0 {
-		out.Err = fmt.Errorf("cuda: default resident context %d positions does not fit (%.2f GB of KV "+
-			"plus %.2f GB reserved for a companion attach, --drafter, %.2f GB free) — staged path",
-			out.CtxCap, float64(need)/1e9, float64(in.ExtraBytes)/1e9, float64(free)/1e9)
+		out.Err = fmt.Errorf("cuda: default resident context %d positions does not fit (%s of KV "+
+			"plus %s reserved for a companion attach, --drafter, %s free) — staged path",
+			out.CtxCap, mem.GiB(need), mem.GiB(in.ExtraBytes), mem.GiB(free))
 		return out
 	}
-	out.Err = fmt.Errorf("cuda: default resident context %d positions does not fit (%.2f GB of KV, %.2f GB free) — staged path",
-		out.CtxCap, float64(need)/1e9, float64(free)/1e9)
+	out.Err = fmt.Errorf("cuda: default resident context %d positions does not fit (%s of KV, %s free) — staged path",
+		out.CtxCap, mem.GiB(need), mem.GiB(free))
 	return out
 }
 

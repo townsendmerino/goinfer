@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
@@ -56,6 +58,9 @@ type prefillPass struct {
 	imgBlk              Buffer
 	mropeWin            [][3]int // this pass's rows' m-RoPE triples (mropePosWindow), set by prefillCore
 	rposT, rposH, rposW Buffer
+
+	outs [][]float32
+	ids  []int
 }
 
 // reset starts a pass, keeping the free list's and the DeepStack list's backing arrays.
@@ -788,6 +793,135 @@ func (p *prefillPass) captureTaps(l int) error {
 			r.capBOut[slot] = buf
 			break
 		}
+	}
+	return nil
+}
+
+// tailResidualAll ends a tailResidualAll pass: every row's residual, downloaded.
+func (p *prefillPass) tailResidualAll() error {
+	r, M, hidden, xB, xhost := p.r, p.M, p.hidden, p.xB, p.xhost
+	// The only tail that reads the whole residual on the host: the argmax and all-logits heads read xB on the device, and
+	// the last-row tails copy one row device-to-device. Downloading all M rows for them was pageable D2H after every pass
+	// for nothing.
+	if e := gpu.Download(xB, xhost); e != nil {
+		return e
+	}
+	p.outs = make([][]float32, M)
+	for m := range p.outs {
+		p.outs[m] = append([]float32(nil), xhost[m*hidden:(m+1)*hidden]...)
+	}
+	return r.launchErr
+}
+
+// tailAllArgmax ends a tailAllArgmax pass: the batched head's argmax of every row (batchedHeadArgmax).
+func (p *prefillPass) tailAllArgmax() error {
+	return p.r.batchedHeadArgmax(p.xB, p.aqB, p.aScB, p.M, &p.ids)
+}
+
+// tailAllLogits ends a tailAllLogits pass: the logits of every row whose logits are read.
+func (p *prefillPass) tailAllLogits() error {
+	r, M, rows, xB, aqB, aScB := p.r, p.M, p.rows, p.xB, p.aqB, p.aScB
+	// Every row whose logits are read needs the head (PrefillLastN, speculative verify, a step's rows; not a ragged step's
+	// prefill chunk but its final pass's last row, raggedChunk.headFrom): batch it, ONE norm+quant+GEMV over those rows,
+	// bit-identical to the per-row GEMV by construction (bGemvB). batchedHeadFull says what stays per row.
+	var e error
+	if p.outs, p.ids, e = r.batchedHeadFull(xB, aqB, aScB, M, rows, r.stepChunk.headFrom()); e != nil {
+		return e
+	}
+	return r.launchErr
+}
+
+// tailLastRow ends a tailLastLogits or tailHiddenLast pass: the last row's logits, or its post-final-norm hidden state.
+func (p *prefillPass) tailLastRow() error {
+	r, M, hidden, tail, rows, xB := p.r, p.M, p.hidden, p.tail, p.rows, p.xB
+	p.outs = make([][]float32, M)
+	// tailLastLogits / tailHiddenLast: only the last row's output is used, so batching the head would compute M-1 rows
+	// nobody reads.
+	for m := M - 1; m < M; m++ {
+		// The last row goes xB -> r.x on the device, the same bytes the host round trip (Download all, Upload one row) produced. A launch on r.stream
+		// like every other op here, so it is ordered after the layer stack with no extra sync.
+		if e := r.copyF32(xB.At(m*hidden*4), r.x, hidden); e != nil {
+			return e
+		}
+		if e := r.norm(r.x, r.finalNorm, r.aq, r.aSc); e != nil {
+			return e
+		}
+		if tail == tailHiddenLast {
+			// No head dispatch: r.aq/r.aSc (just written by the norm above) already hold what the head would read, the quantized
+			// post-final-norm hidden state. Download and dequantize it instead.
+			if e := r.stream.Sync(); e != nil {
+				return e
+			}
+			q := make([]int8, hidden)
+			if e := gpu.Download(r.aq, q); e != nil {
+				return e
+			}
+			sc := make([]float32, 1)
+			if e := gpu.Download(r.aSc, sc); e != nil {
+				return e
+			}
+			row := make([]float32, hidden)
+			linalg.DequantizeRowInt8(q, sc[0], row)
+			p.outs[m] = row
+			continue
+		}
+		if e := r.doG(r.lmW, r.aq, r.aSc, ArgNull(), r.logits, 0); e != nil {
+			return e
+		}
+		if rows != nil && rows[m].draw != nil {
+			// A step row whose token is drawn on-device: ForwardSample's own pick over this row's logits.
+			if p.ids == nil {
+				p.ids = make([]int, M)
+			}
+			id, e := r.stepDraw(rows[m].draw)
+			if e != nil {
+				return e
+			}
+			p.ids[m] = id
+			continue
+		}
+		if e := r.stream.Sync(); e != nil {
+			return e
+		}
+		if e := gpu.ReadToHost(r.logits, r.logitsPinned); e != nil {
+			return e
+		}
+		p.outs[m] = append([]float32(nil), r.logitsHost...)
+	}
+	return r.launchErr
+}
+
+// mapKV maps the pass's KV rows before anything is allocated: a step's rows in their slots (and its prefill chunk's shared-memory
+// check), or the ordinary pass's positions in the bound slot.
+func (p *prefillPass) mapKV() error {
+	r, startPos, M, rows := p.r, p.startPos, p.M, p.rows
+	if rows != nil {
+		r.kvStepAbort = false
+		for _, rw := range rows {
+			if e := r.kvEnsureSlot(rw.slot, rw.pos, 1); e != nil {
+				return e
+			}
+		}
+		if r.kvStepAbort {
+			// a row took back blocks from a borrower that may be another row of this step: run nothing, so each row can go alone
+			return fmt.Errorf("cuda step: a borrower was stopped while the rows were mapped: %w", decoder.ErrKVPoolFull)
+		}
+		if c := r.stepChunk; c.rows > 0 {
+			// The chunk's attention is an ordinary pass's without the row-batched exact kernels: a chunk that would need them declines.
+			fused := func(hd int) bool {
+				exact := r.forceExactKernels
+				r.forceExactKernels = c.exact
+				_, ok := r.useAttnFused(hd, c.rows)
+				r.forceExactKernels = exact
+				return ok
+			}
+			if e := r.checkPrefillShmem(c.pos, c.rows, fused); e != nil {
+				return fmt.Errorf("cuda ragged step: the prefill chunk at %d: %w", c.pos, e)
+			}
+			r.stepChunk.split = true
+		}
+	} else if e := r.kvEnsure(startPos, M); e != nil {
+		return e
 	}
 	return nil
 }

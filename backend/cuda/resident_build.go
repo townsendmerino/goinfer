@@ -803,7 +803,7 @@ func (s *buildState) newResident(planOnly bool, mp *memPlanRun) (*cudaResident, 
 			// this backend does not implement but not an operator flag that cannot mean what it says.
 			return nil, fmt.Errorf("cuda: --moe-cache-slots %d is below top-k %d — one "+
 				"token's own routed experts must all be resident at once, so this cannot be "+
-				"honoured (G-07)", req, topK)
+				"honoured", req, topK)
 		} else if req >= topK {
 			r.cacheSlots = req
 			r.cacheSlotsReq = req
@@ -1426,7 +1426,7 @@ func (s *buildState) bindFamilyState(r *cudaResident) error {
 		if !r.prefillReady {
 			return fmt.Errorf("cuda: attention sinks need the batched attention kernel, " +
 				"and prefill_batched.ptx did not load — the glue attention fallback has no " +
-				"sink parameter, so decoding here would silently drop it (N-10)")
+				"sink parameter, so decoding here would silently drop it")
 		}
 		r.gptOssSinks = make([]Buffer, nLayers)
 		for l := range nLayers {

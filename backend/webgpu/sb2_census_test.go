@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"math"
 	"os"
 	"path/filepath"
@@ -25,6 +28,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/diag/sb2census"
 	"github.com/townsendmerino/goinfer/internal/guard/memgate"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
 // Layer B-webgpu of the admission and routing census: WebGPU's own static
@@ -812,7 +816,7 @@ func webgpuGateRow(t *testing.T, row, path string, o decoder.Options, census boo
 	} else if covered {
 		webgpuScratchPlanCovered++
 	} else {
-		why := m.WebGPUDecodeScratchWhy()
+		why := webgpuDecodeScratchWhy(m)
 		if i := strings.Index(why, ": "); strings.HasPrefix(why, "layer ") && i > 0 {
 			why = why[i+2:] // the layer's number varies, the reason is the row's
 		}
@@ -886,7 +890,7 @@ func TestMemGate_webgpu(t *testing.T) {
 		t.Logf("no plan figure for %d rows: %s", n, why)
 	}
 	if webgpuScratchPlanCovered == 0 {
-		t.Error("VOID: Model.WebGPUDecodeScratch gave a figure for no row, so the plan-side gate compared nothing")
+		t.Error("VOID: webgpuDecodeScratchTerms gave a figure for no row, so the plan-side gate compared nothing")
 	}
 	memgate.HoldRows(t, webgpuGateRowsPath, built, *webgpuGateRowsUpdate)
 	g.Finish(t)
@@ -1041,10 +1045,10 @@ var webgpuScratchPlanCovered int
 // webgpuScratchPlanWhy counts the rows the plan gave no figure for, by the reason it gave (logged, so the next layer shape to derive is read, not guessed).
 var webgpuScratchPlanWhy = map[string]int{}
 
-// webgpuScratchPlanHolds is G-MS2w's second half (MM5b): where the plan gives a figure for m (Model.WebGPUDecodeScratch), the build's
+// webgpuScratchPlanHolds is G-MS2w's second half (MM5b): where the plan gives a figure for m (webgpuDecodeScratchTerms), the build's
 // scratch list equals it role by role, once for each runner the build made. covered is false where the plan gives none.
 func webgpuScratchPlanHolds(m *decoder.Model, rd *residentDecoder) (covered bool, err error) {
-	terms, ok := m.WebGPUDecodeScratch()
+	terms, ok := webgpuDecodeScratchTerms(m)
 	if !ok {
 		return false, nil
 	}
@@ -1052,7 +1056,7 @@ func webgpuScratchPlanHolds(m *decoder.Model, rd *residentDecoder) (covered bool
 }
 
 // webgpuScratchTermsHold compares terms with the build's scratch list, role by role, for each runner the build made.
-func webgpuScratchTermsHold(terms []decoder.WebGPUScratchTerm, rd *residentDecoder) error {
+func webgpuScratchTermsHold(terms []webgpuScratchTerm, rd *residentDecoder) error {
 	n := int64(max(1, len(rd.slots)))
 	want := map[string]int64{}
 	for _, tm := range terms {
@@ -1139,14 +1143,14 @@ func TestScratchPlan_plantsGoRed(t *testing.T) {
 	if !ok {
 		t.Skip("llama-tiny did not build resident on this adapter")
 	}
-	terms, ok := m.WebGPUDecodeScratch()
+	terms, ok := webgpuDecodeScratchTerms(m)
 	if !ok {
 		t.Fatal("VOID: no plan figure for llama-tiny")
 	}
 	if err := webgpuScratchTermsHold(terms, rd); err != nil {
 		t.Fatalf("unplanted: %v", err)
 	}
-	short := append([]decoder.WebGPUScratchTerm(nil), terms...)
+	short := append([]webgpuScratchTerm(nil), terms...)
 	for i := range short {
 		if short[i].Role == "gemvAdd" {
 			short[i].Bytes -= 16
@@ -1157,5 +1161,1007 @@ func TestScratchPlan_plantsGoRed(t *testing.T) {
 	}
 	if err := webgpuScratchTermsHold(terms[1:], rd); err == nil || !strings.Contains(err.Error(), "build: the build leases 1028 B the plan names no term for") {
 		t.Errorf("the build term dropped: err = %v, want one naming the build role the plan has no term for", err)
+	}
+}
+
+// webgpuLoRAScratchRows is the f32 rows a WebGPU build always leases for compute-time LoRA (kernels' loraRMax). The memory gate holds
+// webgpuDecodeScratchTerms to the build's own scratch list, so a drift here is red there.
+const webgpuLoRAScratchRows = 256
+
+// webgpuScratchTerm is one named part of WebGPU's decode scratch: the bytes the runner's op builders of that role lease at build.
+type webgpuScratchTerm struct {
+	Role  string
+	Bytes int64
+}
+
+// webgpuDecodeScratchTerms is what a WebGPU resident build of m leases on the scratch line for decode (the sum of the build's scratch list,
+// kernels.DecodeRunner.ScratchList), as terms named by the op builder that leases them: each from the program's declared per-row
+// activations, plus the per-dispatch parameter buffers the builders create. ok is false for a model whose layers are not all a
+// plain attention sublayer and a gated dense FFN with one geometry (the runner's other mixers are not yet derived): no figure is
+// given for it, rather than a guess. Reported, not charged: no admission decision reads it.
+func webgpuDecodeScratchTerms(m *decoder.Model) (terms []webgpuScratchTerm, ok bool) {
+	terms, why := webgpuDecodeScratch(m)
+	return terms, why == ""
+}
+
+// webgpuDecodeScratchWhy is the first reason webgpuDecodeScratchTerms gives no figure for m, or "" where it gives one.
+func webgpuDecodeScratchWhy(m *decoder.Model) string {
+	_, why := webgpuDecodeScratch(m)
+	return why
+}
+
+func webgpuDecodeScratch(m *decoder.Model) (terms []webgpuScratchTerm, why string) {
+	H, _, _, _, _, _, V := m.Dims()
+	view := m.BackendView()
+	wts := view.Weights()
+	if wts == nil || H <= 0 || V <= 0 {
+		return nil, "the model has no hidden or vocabulary width"
+	}
+	declared := m.DecodeRowsForTest()
+	kv := m.KVDeliveredFor("webgpu")
+	win := view.SlidingWindow() > 0
+	type geom struct {
+		hd, nKV, half int
+		kEqV          bool
+	}
+	geoms := map[geom]map[float32]bool{} // each distinct attention geometry, and the rope scales its uniforms are built for
+	var gemv, gemvAdd, actQuant, attnLayer, quantB, rmsQuantB, qkNormB, rmsnormB, biasAddB, gemvBiasB, moeFFN, moeRoute, moeExpert, swiglu, sharedCombine int64
+	var moeNE int
+	var deltaLayer, qSplit, attnGate, mlaLayer, mlaAbsorb, mlaLift, nRmsExtra int64
+	anyDelta, anyLatent, anySSM := false, false, false
+	var moeBlock, vNormB, scaleVecB, routedRows, mambaLayer, relu2, clampedRoute, clampedAct, clampedDown int64
+	pk := func(k int) int64 { return int64((k + 31) &^ 31) }
+	rmsQuantB = pk(H) + 20 // one call per sublayer norm and the final norm: the int8 row, its scale, its uniform
+	nRms, nQuant := int64(1), int64(0)
+	ffnTerms := func(l int, shape denseShape, rows map[string]int, nE, topK, shared int, hasShared bool) string {
+		if shape.postMLP { // the output projection splits as the attention's does
+			if shape.moe {
+				return fmt.Sprintf("layer %d: a routed FFN with an output norm", l)
+			}
+			gemvAdd -= 16
+			gemv += 4*int64(H) + 16
+			rmsnormB += 4*int64(H) + 16
+			biasAddB += 16
+		}
+		inter := int64(rows["gate"])
+		if !shape.moe {
+			gemv += 4*(inter+int64(rows["up"])) + 2*16
+			gemvAdd += 16
+			actQuant += pk(rows["gate"]) + 20
+		} else {
+			// The router's logits row; the selection rows and the experts' gate and up rows (reused over the top-k slots); the router's
+			// uniform; per slot the expert projections' uniforms and the fused activation's int8 row, scale and uniform.
+			gemv += 4*int64(nE) + 16
+			moeFFN += 4*int64(2*topK) + 4*2*inter
+			if shape.clamped { // the router's four words, the gate and up uniforms, the clamped activation's eight, the down's four
+				clampedRoute += 16
+				moeExpert += 2 * int64(topK) * 16
+				clampedAct += int64(topK) * (pk(rows["gate"]) + 4 + 32)
+				clampedDown += int64(topK) * 16
+			} else {
+				moeRoute += 32
+				moeExpert += 3 * int64(topK) * 16
+				swiglu += int64(topK) * (pk(rows["gate"]) + 20)
+			}
+			moeNE = nE
+			if hasShared { // the shared expert: a gated SwiGLU MLP, sigmoid-gated by a one-row projection or added ungated
+				gemv += 4*2*int64(shared) + 2*16
+				swiglu += pk(shared) + 20
+				if wts.Layers[l].SharedGate.Rows() > 0 {
+					gemv += 4*int64(H) + 16 + 4 + 16
+					sharedCombine += 16
+				} else {
+					gemvAdd += 16
+				}
+			}
+		}
+		return ""
+	}
+	// g4Terms is a parallel dense and routed block on the post-attention residual: the router's norm and projection, a dense branch and an
+	// expert branch each behind its own pre-norm, the post-norms, the join and the layer's output scalar.
+	g4Terms := func(l int) string {
+		g, ok := parallelBlockOf(view.Layer(l))
+		if !ok {
+			return fmt.Sprintf("layer %d: no parallel routed block", l)
+		}
+		rows := declared[l]
+		if rows["g4moe-router"] != g.nE || rows["g4moe-experts"] != g.topK || rows["gate"] != g.denseInter {
+			return fmt.Sprintf("layer %d: the block's declared rows disagree with its weights", l)
+		}
+		nRms += 2 // the dense branch's and the expert branch's pre-norms
+		moeNE = g.nE
+		rmsnormB += 4 * (4*int64(H) + 16)
+		moeBlock += 4*int64(g.nE) + 4*int64(2*g.topK) + 4*int64(H) + 4*3*int64(g.moeInter) + 16 + 32 + 16 + int64(g.topK)*16
+		gemv += 4*int64(2*g.denseInter) + 2*16 + 4*int64(H) + 16
+		actQuant += pk(g.denseInter) + 20 + int64(g.topK)*(pk(g.moeInter)+20)
+		moeExpert += 2 * int64(g.topK) * 16
+		scaleVecB += 16
+		biasAddB += 2 * 16
+		if sc := g.layerScalar; sc != 0 && sc != 1 {
+			scaleVecB += 16
+		}
+		return ""
+	}
+	for l, ops := range m.Program().Layers {
+		shape, isDense := denseAttnLayer(ops)
+		if !isDense {
+			return nil, fmt.Sprintf("layer %d: operations %v (FFN form %d) are not a plain attention and dense FFN sublayer", l, opKinds(ops), shape.otherForm)
+		}
+		if routesExperts(declared[l]) != (shape.moe || shape.block == blockRouted || shape.g4) {
+			return nil, fmt.Sprintf("layer %d: a routed-experts FFN of a form not derived", l)
+		}
+		rows := declared[l]
+		mixer := []string{"q", "k", "v", "ctx"}
+		switch {
+		case shape.gated:
+			mixer = append(mixer, "q-gate", "attn-gate")
+		case shape.g4:
+			mixer = []string{"q", "k", "v", "ctx", "g4moe-dense-out", "g4moe-experts", "g4moe-moe-out", "g4moe-router", "g4moe-router-in", "g4moe-weights"}
+		case shape.block == blockSSM:
+			mixer = []string{"mb-conv", "mb-gated", "mb-proj", "mb-y"}
+		case shape.block == blockMLP:
+			mixer = []string{"up"}
+		case shape.block == blockRouted:
+			p := shape.routedPrefix
+			mixer = []string{"up", "shared-up", p + "-router", p + "-experts", p + "-weights"}
+		case shape.latent:
+			mixer = []string{"mla-ctx", "mla-kv", "mla-q", "mla-q-abs", "mla-wsum"}
+			if rows["mla-qa"] > 0 { // a low-rank query projection
+				mixer = append(mixer, "mla-qa")
+			}
+		case shape.delta:
+			mixer = []string{"dn-ba", "dn-beta", "dn-conv", "dn-core", "dn-decay", "dn-gated", "dn-k", "dn-mixed", "dn-q", "dn-z"}
+		}
+		want := len(mixer) + 2 // and the FFN's gate and up
+		if shape.block != blockPair {
+			want = len(mixer) // a layer of one operation has no FFN rows beside it
+		}
+		var nE, topK, shared int
+		hasShared := shape.moe && wts.Layers[l].SharedExpert.Gate.Rows() > 0
+		if shape.moe {
+			pre := "moe" // the router's declared rows are named by the form
+			if shape.clamped {
+				pre = "gptoss"
+			}
+			nE, topK, shared = rows[pre+"-router"], rows[pre+"-experts"], rows["shared-gate"]
+			want += 3
+			if hasShared {
+				want += 2
+			}
+			if nE == 0 || topK == 0 || rows[pre+"-weights"] != topK || hasShared != (shared > 0) || rows["shared-up"] != shared {
+				return nil, fmt.Sprintf("layer %d: the routed FFN's declared rows are not the generic router's", l)
+			}
+		}
+		need := append(mixer, "gate", "up")
+		if shape.block != blockPair {
+			need = mixer
+		}
+		for _, k := range need {
+			if rows[k] == 0 {
+				return nil, fmt.Sprintf("layer %d: the declared row %q is missing", l, k)
+			}
+		}
+		if len(rows) != want {
+			return nil, fmt.Sprintf("layer %d: declared rows beyond the derived ones", l)
+		}
+		if shape.block == blockRouted {
+			p := shape.routedPrefix
+			nE, topK, inter, sh := rows[p+"-router"], rows[p+"-experts"], rows["up"], rows["shared-up"]
+			if nE == 0 || topK == 0 || rows[p+"-weights"] != topK || len(wts.Layers[l].PreAttnNorm) == 0 {
+				return nil, fmt.Sprintf("layer %d: the routed block's declared rows or its norm are not the derived ones", l)
+			}
+			nRms++
+			gemv += 4*int64(nE) + 16
+			routedRows += 4*int64(2*topK) + 4*int64(topK)*int64(inter)
+			moeRoute += 32
+			moeExpert += 2 * int64(topK) * 16
+			relu2 += int64(topK)*(pk(inter)+20) + pk(sh) + 20
+			gemv += 4*int64(sh) + 16
+			gemvAdd += 16
+			moeNE = nE
+			continue
+		}
+		if shape.block == blockSSM || shape.block == blockMLP {
+			if len(wts.Layers[l].PreAttnNorm) == 0 {
+				nQuant++
+			} else {
+				nRms++
+			}
+			if shape.block == blockSSM {
+				anySSM = true
+				gemv += 4*int64(rows["mb-proj"]) + 16
+				mambaLayer += 4 * int64(rows["mb-conv"]+rows["mb-y"]+rows["mb-gated"])
+				quantB += pk(rows["mb-gated"]) + 20
+			} else {
+				gemv += 4*int64(rows["up"]) + 16
+				relu2 += pk(rows["up"]) + 20
+			}
+			gemvAdd += 16
+			continue
+		}
+		if shape.latent {
+			anyLatent = true
+			for _, pre := range [][]float32{wts.Layers[l].PreAttnNorm, wts.Layers[l].PreMLPNorm} {
+				if len(pre) == 0 {
+					nQuant++
+				} else {
+					nRms++
+				}
+			}
+			// The query projection (through a low-rank bottleneck and its norm where there is one), the latent projection; the absorbed
+			// query, the rank-space context sum and the lifted context rows; the absorb and lift dispatches' uniforms.
+			gemv += 4*int64(rows["mla-q"]+rows["mla-kv"]) + 2*16
+			if qa := rows["mla-qa"]; qa > 0 {
+				gemv += 4*int64(qa) + 16
+				nRmsExtra += pk(qa) + 20
+			}
+			mlaLayer += 4 * int64(rows["mla-q-abs"]+rows["mla-wsum"]+rows["mla-ctx"])
+			mlaAbsorb += 32
+			mlaLift += 32
+			quantB += pk(rows["mla-ctx"]) + 20
+			gemvAdd += 16
+			if err := ffnTerms(l, shape, rows, nE, topK, shared, hasShared); err != "" {
+				return nil, err
+			}
+			continue
+		}
+		if shape.delta {
+			anyDelta = true
+			for _, pre := range [][]float32{wts.Layers[l].PreAttnNorm, wts.Layers[l].PreMLPNorm} {
+				if len(pre) == 0 {
+					nQuant++
+				} else {
+					nRms++
+				}
+			}
+			dn := int64(rows["dn-k"])
+			gemv += 4*int64(rows["dn-mixed"]+rows["dn-beta"]+rows["dn-decay"]+rows["dn-z"]) + 4*16
+			deltaLayer += 4 * (int64(rows["dn-conv"]) + 2*dn + int64(rows["dn-ba"]) + int64(rows["dn-core"]) + int64(rows["dn-gated"]))
+			quantB += pk(rows["dn-gated"]) + 20
+			gemvAdd += 16
+			if err := ffnTerms(l, shape, rows, nE, topK, shared, hasShared); err != "" {
+				return nil, err
+			}
+			continue
+		}
+		lv := view.Layer(l)
+		w := &wts.Layers[l]
+		rs := float32(lv.RopeMscale())
+		switch {
+		case rs == 0:
+			return nil, fmt.Sprintf("layer %d: rope scale 0", l)
+		case lv.VFromK() && !shape.g4:
+			return nil, fmt.Sprintf("layer %d: V from K", l)
+		}
+		// Each optional operation is held by the weights it runs on: the build creates its dispatches from the weights, not the program.
+		if shape.gated && (len(w.QBias) > 0 || len(w.OBias) > 0 || len(w.PostAttnNorm) > 0 || len(w.PostMLPNorm) > 0) {
+			return nil, fmt.Sprintf("layer %d: a bias or output norm on a gated attention layer", l)
+		}
+		hasQNorm := len(w.QNorm) > 0
+		if shape.gated { // the gated attention's QK-norm is part of its one operation, and its weights live apart from the layer's own
+			hasQNorm = gatedAttnQKNorm(lv)
+			shape.qkNorm = hasQNorm
+		}
+		if shape.g4 { // the block's own post-norms are its weights', not a sublayer output norm the layer's weights carry
+			shape.qkNorm, shape.postMLP = hasQNorm, len(w.PostMLPNorm) > 0
+		}
+		if shape.qkNorm != hasQNorm || shape.postAttn != (len(w.PostAttnNorm) > 0) || shape.postMLP != (len(w.PostMLPNorm) > 0) {
+			return nil, fmt.Sprintf("layer %d: a norm or QK-norm the weights and the operations disagree on", l)
+		}
+		g := geom{lv.HeadDim(), lv.KVHeads(), len(lv.RopeInvFreq()), lv.VFromK()}
+		if geoms[g] == nil {
+			geoms[g] = map[float32]bool{}
+		}
+		geoms[g][rs] = true
+		if shape.g4 && lv.KVSrc() != l {
+			return nil, fmt.Sprintf("layer %d: it shares another layer's K and V", l)
+		}
+		pres := [][]float32{w.PreAttnNorm, w.PreMLPNorm}
+		if shape.block == blockAttn || shape.g4 { // one pre-norm: a parallel block's own are counted with it
+			pres = pres[:1]
+		}
+		for _, pre := range pres {
+			if len(pre) == 0 { // a family with no pre-norm (norms after the sublayer only) quantizes the raw residual
+				nQuant++
+			} else {
+				nRms++
+			}
+		}
+		gemv += 4*int64(rows["q"]+rows["k"]+rows["v"]) + 3*16
+		if shape.g4 { // the scale-less V norm writes its own row; a layer whose V is its K has no V projection
+			attnLayer += 4 * int64(rows["k"])
+			vNormB += 16
+			if lv.VFromK() {
+				gemv -= 4*int64(rows["v"]) + 16
+			}
+		}
+		gemvAdd += 16    // the output projection, fused with its residual add
+		if shape.gated { // q_proj emits [query | gate] per head: its output row is the wide one, then a split and a gate applied to the context
+			gemv += 4 * int64(rows["q-gate"]-rows["q"])
+			qSplit += 4*2*int64(rows["q"]) + 16
+			attnGate += 16
+		}
+		if shape.qkNorm {
+			qkNormB += 2 * 16 // q's and k's
+		}
+		if len(w.QBias) > 0 { // q, k and v's bias: folded into an int8 weight's projection, else a separate add each
+			if w.QProj.Kind() == "int4" {
+				biasAddB += 3 * 16
+			} else {
+				q3 := 4*int64(rows["q"]+rows["k"]+rows["v"]) + 3*16
+				gemv -= q3
+				gemvBiasB += q3
+			}
+		}
+		// A post-sublayer norm splits the fused output projection into a bare gemv (its own output row), a norm (its own row and
+		// uniform) and a separate residual add (one uniform).
+		if shape.postAttn || len(w.OBias) > 0 { // an output bias splits it the same way
+			gemvAdd -= 16
+			gemv += 4*int64(H) + 16
+			biasAddB += 16
+		}
+		if shape.postAttn {
+			rmsnormB += 4*int64(H) + 16
+		}
+		if len(w.OBias) > 0 {
+			biasAddB += 16 // the bias add on the bare output
+		}
+		if shape.block == blockPair && !shape.g4 {
+			if err := ffnTerms(l, shape, rows, nE, topK, shared, hasShared); err != "" {
+				return nil, err
+			}
+		}
+		if shape.g4 {
+			if err := g4Terms(l); err != "" {
+				return nil, err
+			}
+		}
+		attnLayer += 4*int64(rows["ctx"]) + 16
+		quantB += pk(rows["ctx"]) + 20
+	}
+	if len(geoms) == 0 && !anyDelta && !anyLatent && !anySSM {
+		return nil, "the model has no layers"
+	}
+	gemv += 4*int64(V) + 16 // the head
+	geomB := int64(0)
+	nScale := int64(0) // each rope scale's uniforms: one fused (f32 KV), or q's and k's (f16 and int8 KV)
+	for _, scales := range geoms {
+		one := int64(16 + 32) // the v-store and attention uniforms
+		if win {
+			one += 32
+		}
+		if kv == mem.KVI8 {
+			one += 32
+		}
+		geomB += one
+		nScale += int64(len(scales))
+	}
+	mambaSetupB := int64(0)
+	if anySSM {
+		mambaSetupB = 16 + 32 + 32 // the conv's, the scan's and the gated norm's uniforms, shared across layers
+	}
+	mlaSetupB := int64(0)
+	if anyLatent {
+		mlaSetupB = 32 + 48 + 32 // the latent store's, the query rope's (twelve words) and the attention's uniforms, shared across layers
+	}
+	deltaSetupB := int64(0)
+	if anyDelta {
+		deltaSetupB = 16 + 16 + 32 + 32 + 32 // the five dispatch parameter buffers the delta mixer shares across layers
+	}
+	terms = []webgpuScratchTerm{
+		{"build", 4 + 4*webgpuLoRAScratchRows},
+		{"residual", 4 * int64(H)},
+		{"logitsStaging", 4 * int64(V)},
+		{"rmsQuant", nRms*rmsQuantB + nRmsExtra},
+		{"mlaLayer", mlaLayer},
+		{"mlaAbsorb", mlaAbsorb},
+		{"mlaLift", mlaLift},
+		{"mlaSetup", mlaSetupB},
+		{"mambaLayer", mambaLayer},
+		{"mambaSetup", mambaSetupB},
+		{"relu2Quant", relu2},
+		{"vNorm", vNormB},
+		{"gemma4MoE", moeBlock},
+		{"scaleVec", scaleVecB},
+		{"nemoMoE", routedRows},
+		{clampedRoles[0], clampedRoute},
+		{clampedRoles[1], clampedAct},
+		{clampedRoles[2], clampedDown},
+		{"quant", quantB + nQuant*(pk(H)+20)},
+		{"gemv", gemv},
+		{"gemvBias", gemvBiasB},
+		{"gemvAdd", gemvAdd},
+		{"moeFFN", moeFFN},
+		{"moeRoute", moeRoute},
+		{"moeExpert", moeExpert},
+		{"swigluQuant", swiglu},
+		{"sharedGatedCombine", sharedCombine},
+		{"moeZeroBias", 4 * int64(moeNE)},
+		{"deltaLayer", deltaLayer},
+		{"qSplit", qSplit},
+		{"attnGate", attnGate},
+		{"deltaSetup", deltaSetupB},
+		{"actQuantPad", actQuant},
+		{"attnLayer", attnLayer},
+		{"qkNorm", qkNormB},
+		{"rmsnormF32", rmsnormB},
+		{"biasAdd", biasAddB},
+		{"geomFor", geomB},
+	}
+	if kv == mem.KVF16 || kv == mem.KVI8 {
+		terms = append(terms, webgpuScratchTerm{"ropeQUniFor", 32 * nScale}, webgpuScratchTerm{"ropeKUniFor", 32 * nScale})
+	} else {
+		terms = append(terms, webgpuScratchTerm{"qkvFinUniFor", 32 * nScale})
+	}
+	kept := terms[:0]
+	for _, t := range terms {
+		if t.Bytes != 0 { // a role the model's layers never run
+			kept = append(kept, t)
+		}
+	}
+	return kept, ""
+}
+
+// routesExperts reports whether a layer's declared rows include a router's.
+func routesExperts(rows map[string]int) bool {
+	for name := range rows {
+		if strings.HasSuffix(name, "-router") {
+			return true
+		}
+	}
+	return false
+}
+
+// denseShape is the optional operations a plain attention layer carries: a QK-norm after the projections, and a norm on each
+// sublayer's output before its residual add.
+type denseShape struct {
+	qkNorm, postAttn, postMLP, moe, gated, delta, latent, clamped, g4 bool
+	routedPrefix                                                      string          // the declared rows' name prefix of a one-operation routed layer
+	otherForm                                                         program.FFNForm // the routed form a layer has that is not derived
+	block                                                             int             // blockPair, or a layer of one operation behind its one norm
+}
+
+const (
+	blockPair = iota
+	blockSSM
+	blockAttn
+	blockMLP
+	blockRouted
+)
+
+// routedPrefixOf names the declared router rows of the routed forms that stand alone in a layer.
+var routedPrefixOf = map[program.FFNForm]string{program.FfnNemotronMoE: "nemotronmoe"}
+
+// denseAttnLayer reports whether a layer's operations are a plain attention sublayer and a dense FFN, each behind its own pre-norm,
+// with only the optional operations of denseShape and nothing else (no output gate, temperature or layer scale).
+func denseAttnLayer(ops []program.Op) (s denseShape, ok bool) {
+	i := 0
+	next := func(k program.OpKind) bool {
+		if i < len(ops) && ops[i].Kind == k {
+			i++
+			return true
+		}
+		return false
+	}
+	opt := func(k program.OpKind) bool { return next(k) }
+	if !next(program.OpNorm) {
+		return s, false
+	}
+	// A layer of one operation behind its one norm: a state-space mixer, an attention sublayer or a non-gated FFN.
+	switch {
+	case next(program.OpMamba2):
+		s.block = blockSSM
+		return s, next(program.OpResidual) && i == len(ops)
+	case next(program.OpFFN):
+		switch ops[i-1].FFN.Form {
+		case program.FfnNonGated:
+			s.block = blockMLP
+		case program.FfnNemotronMoE:
+			s.block, s.routedPrefix = blockRouted, routedPrefixOf[ops[i-1].FFN.Form]
+		default:
+			s.otherForm = ops[i-1].FFN.Form
+			return s, false
+		}
+		return s, next(program.OpResidual) && i == len(ops)
+	}
+	switch {
+	case next(program.OpDeltaNet):
+		s.delta = true
+	case next(program.OpGatedAttn):
+		s.gated = true
+	case next(program.OpMLA):
+		s.latent = true
+	case next(program.OpGemma4Attn):
+		s.g4 = true
+		s.postAttn = opt(program.OpNorm)
+		return s, next(program.OpResidual) && next(program.OpGemma4MoE) && i == len(ops)
+	default:
+		if !next(program.OpProjQKV) {
+			return s, false
+		}
+		s.qkNorm = opt(program.OpQKNorm)
+		// A layer with no rotary embedding still runs the rope dispatch (over a zeroed frequency table, an identity), and a temperature
+		// operation scales the query in a dispatch of its own that the runner folds into the attention's uniform.
+		opt(program.OpRope)
+		opt(program.OpAttnTemp)
+		opt(program.OpRope)
+		if !next(program.OpAttention) || !next(program.OpProjO) {
+			return s, false
+		}
+		if i == len(ops)-1 && next(program.OpResidual) { // an attention block: no FFN follows in the layer
+			s.block = blockAttn
+			return s, true
+		}
+		s.postAttn = opt(program.OpNorm)
+	}
+	if !next(program.OpResidual) || !next(program.OpNorm) || !next(program.OpFFN) {
+		return s, false
+	}
+	switch ops[i-1].FFN.Form {
+	case program.FfnMoE:
+		s.moe = true
+	case program.FfnGptOss: // a router with a logit bias and clamped experts: its own builders, but the same dispatch shape
+		s.moe, s.clamped = true, true
+	case program.FfnGated, program.FfnNonGated:
+	default: // gpt-oss, Llama 4, Nemotron and Gemma 4's own routed forms are other builders
+		s.otherForm = ops[i-1].FFN.Form
+		return s, false
+	}
+	s.postMLP = opt(program.OpNorm)
+	return s, next(program.OpResidual) && i == len(ops)
+}
+
+// opKinds is a layer's operation kinds in order, for the reason a layer has no figure.
+func opKinds(ops []program.Op) []program.OpKind {
+	ks := make([]program.OpKind, len(ops))
+	for i, o := range ops {
+		ks[i] = o.Kind
+	}
+	return ks
+}
+
+// gatedAttnQKNorm reports whether a gated attention layer carries a QK-norm weight, which it keeps with its projections, not in the
+// layer's own norm fields. Like denseAttnLayer it reads the layer shape's own accessor, so the pricing body names no family.
+func gatedAttnQKNorm(lv decoder.ResidentLayerView) bool {
+	_, _, _, _, qn, _ := lv.Qwen35AttnWeights()
+	return len(qn) > 0
+}
+
+// clampedRoles are the runner's role names for the clamped router's three builders: the route, the clamped activation and the biased
+// down projection. They are the runner's names for builders it names by family, so they live beside the matcher, not in the pricing.
+var clampedRoles = [3]string{"routeGptOss", "gptossActQuant", "moeExpertGptOssDown"}
+
+// parallelBlock is the dimensions of a layer's parallel dense and routed block.
+type parallelBlock struct {
+	nE, topK, denseInter, moeInter int
+	layerScalar                    float32
+}
+
+// parallelBlockOf reads a layer's parallel block from the bundle the runner builds it from, as gatedAttnQKNorm reads the gated
+// attention's: the pricing body names no family.
+func parallelBlockOf(lv decoder.ResidentLayerView) (parallelBlock, bool) {
+	g, ok := lv.Gemma4MoEBundle()
+	if !ok {
+		return parallelBlock{}, false
+	}
+	return parallelBlock{g.NE, g.TopK, g.DenseInter, g.MoeInter, g.LayerScalar}, true
+}
+
+// TestMM5b_webgpuDecodeScratchNamesNoFamily is G-MS4w: the figure is priced from the operations' per-row declarations, so its pricing names no family, mixer or
+// FFN form. denseAttnLayer, which names the operation kinds of the one layer shape the figure is derived for, is the coverage
+// test and not the pricing; it is not scanned.
+func TestMM5b_webgpuDecodeScratchNamesNoFamily(t *testing.T) {
+	banned := []string{"ResidentLayerOps", "Mixer", "KVSrcAtResident", "HeadDimAtResident", "KVHeadsAtResident",
+		"Qwen35", "Nemotron", "MLA", "Gemma4", "GptOss", "DeltaNet", "Mamba", "KDA", "ShortConv", "PLE", "MoEResident", "QKNormWhole",
+		"NonGatedMLP", "OpAttention", "OpGatedAttn", "Ffn", ".qwen35", ".lfm2", ".kda", ".granite", ".nemotron", ".gemma4", ".mla"}
+	scanPricingBodies(t, map[string][]string{"sb2_census_test.go": {"webgpuDecodeScratchTerms", "webgpuDecodeScratch", "webgpuDecodeScratchWhy"}}, banned,
+		"WebGPU's decode scratch is priced from the operations' per-row declarations, not the family")
+}
+
+// webgpuScratchHand is the figure for a plain-attention model written as arithmetic on its config: hidden h, l layers, vocabulary v, the
+// query, key and FFN widths, a QK-norm per layer, a norm on each sublayer's output, at a KV precision, and the q/k/v bias an int4 or int8 weight carries.
+func webgpuScratchHand(h, l, v, qW, kvW, ffn int, qkNorm, post bool, kv, bias string, window, noPre bool) map[string]int64 {
+	pk := func(k int) int64 { return int64((k + 31) &^ 31) }
+	H, L, V := int64(h), int64(l), int64(v)
+	want := map[string]int64{
+		"build": 4 + 4*256, "residual": 4 * H, "logitsStaging": 4 * V,
+		"rmsQuant":    (2*L + 1) * (pk(h) + 4 + 16),
+		"quant":       L * (pk(qW) + 4 + 16),
+		"gemv":        L*(4*int64(qW+kvW+kvW+ffn+ffn)+5*16) + 4*V + 16,
+		"gemvAdd":     L * 2 * 16,
+		"actQuantPad": L * (pk(ffn) + 4 + 16),
+		"attnLayer":   L * (4*int64(qW) + 16),
+		"geomFor":     16 + 32,
+	}
+	if kv == "i8" || window { // the int8 V store's uniform; a sliding window's second attention uniform
+		want["geomFor"] += 32
+	}
+	if noPre { // norms after the sublayer only: the raw residual is quantized in place of each pre-norm's fused norm
+		want["rmsQuant"] = pk(h) + 20
+		want["quant"] += 2 * L * (pk(h) + 4 + 16)
+	}
+	if kv == "f16" || kv == "i8" {
+		want["ropeQUniFor"], want["ropeKUniFor"] = 32, 32
+	} else {
+		want["qkvFinUniFor"] = 32
+	}
+	switch bias { // q, k and v's bias: a separate add each on an int4 weight, folded into the projection on an int8 one
+	case "int4":
+		want["biasAdd"] = L * 3 * 16
+	case "int8":
+		q3 := L * (4*int64(qW+2*kvW) + 3*16)
+		want["gemv"] -= q3
+		want["gemvBias"] = q3
+	}
+	if qkNorm {
+		want["qkNorm"] = L * 2 * 16
+	}
+	if post { // both sublayers: a bare gemv, a norm and a separate residual add in place of the fused projection
+		delete(want, "gemvAdd") // no sublayer's output projection is fused
+		want["gemv"] += L * 2 * (4*H + 16)
+		want["rmsnormF32"] = L * 2 * (4*H + 16)
+		want["biasAdd"] += L * 2 * 16
+	}
+	return want
+}
+
+// webgpuScratchHandMoE is the figure for an f32-KV model with no bias or post norms, layer by layer: each layer's attention, then its FFN, dense
+// (ffn[l] > 0, that width) or routed (ffn[l] == 0, with nE experts of width inter, top k, and a shared expert of width shared, 0 for none,
+// sigmoid-gated when gated).
+func webgpuScratchHandMoE(h, v, qW, kvW int, ffn []int, nE, k, inter, shared int, gated, qkNorm bool) map[string]int64 {
+	pk := func(n int) int64 { return int64((n + 31) &^ 31) }
+	H, V := int64(h), int64(v)
+	want := map[string]int64{"build": 4 + 4*256, "residual": 4 * H, "logitsStaging": 4 * V, "geomFor": 16 + 32, "qkvFinUniFor": 32,
+		"rmsQuant": pk(h) + 20, "gemv": 4*V + 16}
+	add := func(role string, n int64) { want[role] += n }
+	anyMoE := false
+	for _, f := range ffn {
+		add("rmsQuant", 2*(pk(h)+20))
+		add("gemv", 4*int64(qW+2*kvW)+3*16)
+		add("quant", pk(qW)+20)
+		add("attnLayer", 4*int64(qW)+16)
+		add("gemvAdd", 16) // the output projection
+		if qkNorm {
+			add("qkNorm", 2*16)
+		}
+		if f > 0 {
+			add("gemv", 4*int64(2*f)+2*16)
+			add("actQuantPad", pk(f)+20)
+			add("gemvAdd", 16)
+			continue
+		}
+		anyMoE = true
+		add("gemv", 4*int64(nE)+16)                  // the router's logits
+		add("moeFFN", 4*int64(2*k)+4*int64(2*inter)) // the selection rows, the experts' gate and up rows
+		add("moeRoute", 32)                          // the router's uniform
+		add("moeExpert", 3*int64(k)*16)              // gate, up and down, a uniform each, per slot
+		add("swigluQuant", int64(k)*(pk(inter)+20))  // per slot: the int8 row, its scale, its uniform
+		if shared > 0 {
+			add("gemv", 4*int64(2*shared)+2*16)
+			add("swigluQuant", pk(shared)+20)
+			if gated {
+				add("gemv", 4*H+16+4+16)
+				add("sharedGatedCombine", 16)
+			} else {
+				add("gemvAdd", 16)
+			}
+		}
+	}
+	if anyMoE {
+		want["moeZeroBias"] = 4 * int64(nE)
+	}
+	return want
+}
+
+// webgpuScratchHandQwen35Tiny is qwen35-tiny's figure from its config (layer_types: three linear-attention layers then a full-attention one;
+// hidden 64, vocabulary 256; 2 key heads of 16 and 4 value heads of 16; 4 query heads of 16 over 2 KV heads, with an output gate and a
+// QK-norm; every FFN routed: 4 experts, top 2, width 32, and a sigmoid-gated shared expert of width 32).
+func webgpuScratchHandQwen35Tiny() map[string]int64 {
+	const H, V, L, nE, K, inter, shared = 64, 256, 4, 4, 2, 32, 32
+	pk := func(n int) int64 { return int64((n + 31) &^ 31) }
+	keyDim, valDim := 2*16, 4*16
+	conv := 2*keyDim + valDim // the mixed projection's rows
+	qW, kvW := 4*16, 2*16
+	want := map[string]int64{"build": 4 + 4*256, "residual": 4 * H, "logitsStaging": 4 * V, "geomFor": 16 + 32, "qkvFinUniFor": 32,
+		"rmsQuant": pk(H) + 20, "gemv": 4*V + 16, "deltaSetup": 16 + 16 + 32 + 32 + 32, "moeZeroBias": 4 * nE}
+	add := func(role string, n int64) { want[role] += n }
+	for l := 0; l < L; l++ {
+		add("rmsQuant", 2*(pk(H)+20))
+		add("gemvAdd", 16)
+		if l < 3 { // linear attention: the mixed, beta, alpha and z projections; the conv, q, k, head-parameter, core and gated rows
+			add("gemv", 4*int64(conv+4+4+valDim)+4*16)
+			add("deltaLayer", 4*int64(conv+2*keyDim+2*4+valDim+valDim))
+			add("quant", pk(valDim)+20)
+		} else { // full attention: the wide query projection, k, v, the split, the gate, the QK-norm, the context
+			add("gemv", 4*int64(2*qW+2*kvW)+3*16)
+			add("qSplit", 4*2*int64(qW)+16)
+			add("attnGate", 16)
+			add("qkNorm", 2*16)
+			add("attnLayer", 4*int64(qW)+16)
+			add("quant", pk(qW)+20)
+		}
+		add("gemv", 4*int64(nE)+16)
+		add("moeFFN", 4*2*K+4*2*inter)
+		add("moeRoute", 32)
+		add("moeExpert", 3*K*16)
+		add("swigluQuant", int64(K)*(pk(inter)+20)+pk(shared)+20)
+		add("gemv", 4*2*shared+2*16+4*H+16+4+16)
+		add("sharedGatedCombine", 16)
+	}
+	return want
+}
+
+// webgpuScratchHandDeepseekTiny is deepseek-tiny's figure from its config (hidden 64, vocabulary 128, 4 layers of latent attention: 4 heads,
+// query rank 24, latent rank 16, qk nope 16 and rope 8, v head 16; layer 0 a dense FFN of 128, layers 1 to 3 routed: 8 experts, top 2,
+// width 32, an ungated shared expert of 32). Latent attention builds no per-geometry attention uniforms.
+func webgpuScratchHandDeepseekTiny() map[string]int64 {
+	const H, V, L, nH, qRank, rank, nope, rope, vHead = 64, 128, 4, 4, 24, 16, 16, 8, 16
+	const nE, K, inter, shared, dense = 8, 2, 32, 32, 128
+	pk := func(n int) int64 { return int64((n + 31) &^ 31) }
+	qkHead, latDim := nope+rope, rank+rope
+	want := map[string]int64{"build": 4 + 4*256, "residual": 4 * H, "logitsStaging": 4 * V, "mlaSetup": 32 + 48 + 32,
+		"rmsQuant": pk(H) + 20, "gemv": 4*V + 16, "moeZeroBias": 4 * nE}
+	add := func(role string, n int64) { want[role] += n }
+	for l := 0; l < L; l++ {
+		add("rmsQuant", 2*(pk(H)+20)+pk(qRank)+20) // the two pre-norms, and the query bottleneck's norm
+		add("gemv", 4*int64(qRank)+16+4*int64(nH*qkHead)+16+4*int64(latDim)+16)
+		add("mlaLayer", 4*int64(nH*latDim+nH*rank+nH*vHead)) // the absorbed query, the rank-space sum, the lifted context
+		add("mlaAbsorb", 32)
+		add("mlaLift", 32)
+		add("quant", pk(nH*vHead)+20)
+		add("gemvAdd", 16)
+		if l == 0 {
+			add("gemv", 4*2*dense+2*16)
+			add("actQuantPad", pk(dense)+20)
+			add("gemvAdd", 16)
+			continue
+		}
+		add("gemv", 4*nE+16)
+		add("moeFFN", 4*2*K+4*2*inter)
+		add("moeRoute", 32)
+		add("moeExpert", 3*K*16)
+		add("swigluQuant", int64(K)*(pk(inter)+20)+pk(shared)+20)
+		add("gemv", 4*2*shared+2*16)
+		add("gemvAdd", 16) // the shared expert's down projection, fused
+	}
+	return want
+}
+
+// webgpuScratchHandNemotronTiny is nemotron-tiny's figure from its config: hidden 64, vocabulary 256, five layers of one operation each behind
+// one norm (a state-space mixer whose input projection has 168 rows over an inner width of 64 and a conv of 96, attention of 4 heads of 16 over
+// 2 KV heads, a non-gated FFN of 128, then a mixer and attention again).
+func webgpuScratchHandNemotronTiny() map[string]int64 {
+	return webgpuScratchHandNemotron([]string{"ssm", "attn", "mlp", "ssm", "attn"})
+}
+
+// webgpuScratchHandNemotron is the same layout over any run of its layer kinds; a "moe" layer is a routed block of 4 experts, top 2, width 32, with
+// a shared expert of 64, each expert non-gated.
+func webgpuScratchHandNemotron(kinds []string) map[string]int64 {
+	const H, V, inner, convDim, projRows, nH, hd, nKV, up = 64, 256, 64, 96, 168, 4, 16, 2, 128
+	pk := func(n int) int64 { return int64((n + 31) &^ 31) }
+	want := map[string]int64{"build": 4 + 4*256, "residual": 4 * H, "logitsStaging": 4 * V, "geomFor": 16 + 32, "qkvFinUniFor": 32,
+		"rmsQuant": pk(H) + 20, "gemv": 4*V + 16, "mambaSetup": 16 + 32 + 32}
+	add := func(role string, n int64) { want[role] += n }
+	const nE, K, expInter, shared = 4, 2, 32, 64
+	for _, kind := range kinds {
+		add("rmsQuant", pk(H)+20) // the layer's one norm
+		add("gemvAdd", 16)
+		switch kind {
+		case "ssm":
+			add("gemv", 4*projRows+16)
+			add("mambaLayer", 4*(convDim+inner+inner))
+			add("quant", pk(inner)+20)
+		case "attn":
+			add("gemv", 4*int64(nH*hd+2*nKV*hd)+3*16)
+			add("attnLayer", 4*int64(nH*hd)+16)
+			add("quant", pk(nH*hd)+20)
+		case "mlp":
+			add("gemv", 4*up+16)
+			add("relu2Quant", pk(up)+20)
+		case "moe": // the router's logits; the selection rows and each slot's up row; the router's uniform; the experts' uniforms; the activations; the shared expert
+			add("gemv", 4*nE+16)
+			add("nemoMoE", 4*2*K+4*K*expInter)
+			add("moeRoute", 32)
+			add("moeExpert", 2*K*16)
+			add("relu2Quant", K*(pk(expInter)+20)+pk(shared)+20)
+			add("gemv", 4*shared+16)
+			want["moeZeroBias"] = 4 * nE
+		}
+	}
+	return want
+}
+
+// webgpuScratchHandGptoss is gptoss_tiny's figure from its config: hidden 64, vocabulary 128, 4 layers of attention (8 query heads of 8 over 2 KV
+// heads of 8, q/k/v bias, an output bias, a sliding window) and a routed FFN of 4 experts, top 2, width 32 with the clamped router. bias is
+// "int4" or "int8", the weight kind that decides where q/k/v's bias goes.
+func webgpuScratchHandGptoss(bias string) map[string]int64 {
+	const H, V, L, qW, kvW, nE, K, inter = 64, 128, 4, 64, 16, 4, 2, 32
+	pk := func(n int) int64 { return int64((n + 31) &^ 31) }
+	want := map[string]int64{"build": 4 + 4*256, "residual": 4 * H, "logitsStaging": 4 * V, "geomFor": 16 + 32 + 32, "qkvFinUniFor": 32,
+		"rmsQuant": pk(H) + 20, "gemv": 4*V + 16, "moeZeroBias": 4 * nE}
+	add := func(role string, n int64) { want[role] += n }
+	for l := 0; l < L; l++ {
+		add("rmsQuant", 2*(pk(H)+20))
+		add("quant", pk(qW)+20)
+		add("attnLayer", 4*qW+16)
+		qkv := int64(4*(qW+2*kvW) + 3*16)
+		if bias == "int4" {
+			add("gemv", qkv)
+			add("biasAdd", 3*16)
+		} else {
+			add("gemvBias", qkv)
+		}
+		add("gemv", 4*H+16) // the output projection, bare: its bias is added, then it is added to the residual
+		add("biasAdd", 2*16)
+		add("gemv", 4*nE+16)
+		add("moeFFN", 4*2*K+4*2*inter)
+		add("routeGptOss", 16)
+		add("moeExpert", 2*K*16)
+		add("gptossActQuant", K*(pk(inter)+4+32))
+		add("moeExpertGptOssDown", K*16)
+	}
+	return want
+}
+
+// webgpuScratchHandGemma4Tiny is gemma4-moe-kv-tiny's figure from its config: hidden 64, vocabulary 256, two layers, each a parallel dense (48) and routed
+// (8 experts, top 2, width 16) block after attention with a QK-norm, a sliding window of 4 and a norm on its output. Layer 0 is local (4 heads of 16 over 2 KV
+// heads); layer 1 is global (4 heads of 512 over 1 KV head, V the same projection as K, so it has no V projection). Both carry an output scalar.
+func webgpuScratchHandGemma4Tiny() map[string]int64 {
+	const H, V, nE, K, dense, moeInter = 64, 256, 8, 2, 48, 16
+	pk := func(n int) int64 { return int64((n + 31) &^ 31) }
+	want := map[string]int64{"build": 4 + 4*256, "residual": 4 * H, "logitsStaging": 4 * V, "geomFor": 2 * (16 + 32 + 32), "qkvFinUniFor": 2 * 32,
+		"rmsQuant": pk(H) + 20, "gemv": 4*V + 16, "moeZeroBias": 4 * nE}
+	add := func(role string, n int64) { want[role] += n }
+	for _, c := range []struct {
+		qW, kvW int
+		vFromK  bool
+	}{{4 * 16, 2 * 16, false}, {4 * 512, 512, true}} {
+		add("rmsQuant", 3*(pk(H)+20)) // the attention's pre-norm and the block's two
+		if c.vFromK {
+			add("gemv", 4*int64(c.qW+c.kvW)+2*16)
+		} else {
+			add("gemv", 4*int64(c.qW+2*c.kvW)+3*16)
+		}
+		add("attnLayer", 4*int64(c.qW)+16+4*int64(c.kvW)) // the context, the sink flag, and the scale-less V norm's output row
+		add("vNorm", 16)
+		add("qkNorm", 2*16)
+		add("quant", pk(c.qW)+20)
+		add("gemv", 4*H+16) // the output projection is bare: its norm and the residual add follow
+		add("rmsnormF32", 4*H+16)
+		add("biasAdd", 16)
+		// The block: the router's norm and the three post-norms; the router's rows and uniforms; the dense branch; the experts.
+		add("rmsnormF32", 4*(4*H+16))
+		add("gemma4MoE", 4*nE+4*2*K+4*H+4*3*moeInter+16+32+16+K*16)
+		add("gemv", 4*2*dense+2*16+4*H+16)
+		add("actQuantPad", pk(dense)+20+K*(pk(moeInter)+20))
+		add("moeExpert", 2*K*16)
+		add("scaleVec", 16+16) // the expert sum's clear, and the layer's output scalar
+		add("biasAdd", 2*16)
+	}
+	return want
+}
+
+func withTerm(m map[string]int64, role string, b int64) map[string]int64 {
+	m[role] = b
+	return m
+}
+
+// TestWebGPUDecodeScratch_handTable is G-MS3w: the figure for llama-tiny at each KV precision, qwen3asr-tiny (a QK-norm) and glm-ocr-tiny
+// (a norm on each sublayer's output), term by term as arithmetic on the config; and no figure where a layer is not a plain shape.
+func TestWebGPUDecodeScratch_handTable(t *testing.T) {
+	for _, c := range []struct {
+		name, fx string
+		o        decoder.Options
+		want     map[string]int64
+	}{
+		{"llama f32", "llama-tiny", decoder.Options{}, webgpuScratchHand(64, 4, 256, 64, 32, 128, false, false, "f32", "", false, false)},
+		{"llama f16", "llama-tiny", decoder.Options{KVPrecision: "f16"}, webgpuScratchHand(64, 4, 256, 64, 32, 128, false, false, "f16", "", false, false)},
+		{"llama i8", "llama-tiny", decoder.Options{KVPrecision: "i8"}, webgpuScratchHand(64, 4, 256, 64, 32, 128, false, false, "i8", "", false, false)},
+		{"qwen3asr (qk-norm)", "qwen3asr-tiny", decoder.Options{}, webgpuScratchHand(24, 2, 160, 24, 12, 48, true, false, "f32", "", false, false)},
+		{"qwen25vl int4 (bias)", "qwen25vl-tiny", decoder.Options{Quant: "int4"}, webgpuScratchHand(64, 2, 300, 64, 32, 128, false, false, "f32", "int4", false, false)},
+		{"qwen25vl int8 (bias)", "qwen25vl-tiny", decoder.Options{Quant: "int8int8"}, webgpuScratchHand(64, 2, 300, 64, 32, 128, false, false, "f32", "int8", false, false)},
+		{"olmo3 (window, qk-norm, post-only norms)", "olmo3-tiny", decoder.Options{}, withTerm(webgpuScratchHand(64, 4, 512, 64, 64, 128, true, true, "f32", "", true, true), "qkvFinUniFor", 2*32)}, // two rope scales: the sliding layers' and the full ones'
+		{"mistral window", "mistral-tiny-window", decoder.Options{}, webgpuScratchHand(128, 3, 128, 128, 64, 256, false, false, "f32", "", true, false)},
+		{"mixtral (routed FFN)", "mixtral-tiny", decoder.Options{}, webgpuScratchHandMoE(64, 512, 64, 64, []int{0, 0, 0, 0}, 8, 2, 128, 0, false, false)},
+		{"qwen3moe (routed FFN, qk-norm)", "qwen3moe-tiny", decoder.Options{}, webgpuScratchHandMoE(64, 512, 64, 16, []int{0, 0, 0, 0}, 8, 2, 32, 0, false, true)},
+		{"glm (dense prefix, ungated shared expert, qk-norm)", "glm-tiny", decoder.Options{}, webgpuScratchHandMoE(64, 256, 64, 32, []int{128, 0, 0}, 8, 2, 32, 32, false, true)},
+		{"qwen35 (delta-net, gated attention, routed FFN)", "qwen35-tiny", decoder.Options{}, webgpuScratchHandQwen35Tiny()},
+		{"smollm3 (a layer with no rope operation)", "smollm3-tiny", decoder.Options{}, webgpuScratchHand(64, 4, 512, 64, 16, 128, false, false, "f32", "", false, false)},
+		{"deepseek (latent attention, dense then routed FFN)", "deepseek-tiny", decoder.Options{}, webgpuScratchHandDeepseekTiny()},
+		{"nemotron (a layer of one operation: state-space, attention, non-gated FFN)", "nemotron-tiny", decoder.Options{}, webgpuScratchHandNemotronTiny()},
+		{"gpt-oss int4 (bias, output bias, window, clamped router)", "gptoss_tiny.gguf", decoder.Options{Quant: "int4"}, webgpuScratchHandGptoss("int4")},
+		{"gpt-oss int8 (bias folded into the projection)", "gptoss_tiny.gguf", decoder.Options{Quant: "int8int8"}, webgpuScratchHandGptoss("int8")},
+		{"nemotron3nano (routed blocks)", "nemotron3nano-tiny", decoder.Options{}, webgpuScratchHandNemotron([]string{"ssm", "moe", "ssm", "attn", "ssm", "moe"})},
+		{"gemma4 (parallel dense and routed block, two geometries, V from K)", "gemma4-moe-kv-tiny", decoder.Options{}, webgpuScratchHandGemma4Tiny()},
+		{"glm-ocr (post norms)", "glm-ocr-tiny", decoder.Options{}, webgpuScratchHand(48, 3, 160, 128, 64, 144, false, true, "f32", "", false, false)},
+	} {
+		path := "../../testdata/" + c.fx
+		if c.fx == "gptoss_tiny.gguf" {
+			path = "../../decoder/testdata/" + c.fx
+		}
+		m, err := decoder.Load(path, c.o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		terms, ok := webgpuDecodeScratchTerms(m)
+		if !ok {
+			t.Fatalf("%s: no figure", c.name)
+		}
+		got := map[string]int64{}
+		for _, tm := range terms {
+			got[tm.Role] += tm.Bytes
+		}
+		for k, v := range c.want {
+			if got[k] != v {
+				t.Errorf("%s: %s = %d B, hand arithmetic says %d B", c.name, k, got[k], v)
+			}
+		}
+		if len(got) != len(c.want) {
+			t.Errorf("%s: %d terms, the hand table has %d", c.name, len(got), len(c.want))
+		}
+		m.Close()
+	}
+	m, err := decoder.Load("../../testdata/cohere-tiny", decoder.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if _, ok := webgpuDecodeScratchTerms(m); ok {
+		t.Error("cohere-tiny runs its attention and FFN in parallel, a layer shape whose scratch is not derived: the plan must give no figure")
+	}
+}
+
+// scanPricingBodies reports every function or variable in funcs (file to names) whose body or value names one of banned, and every
+// name it finds no declaration for.
+func scanPricingBodies(t *testing.T, funcs map[string][]string, banned []string, why string) {
+	t.Helper()
+	for file, names := range funcs {
+		src, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fs := token.NewFileSet()
+		f, err := parser.ParseFile(fs, file, src, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := map[string]bool{}
+		bodies := map[string]ast.Node{} // each declaration's body (a function's) or value (a variable's)
+		for _, d := range f.Decls {
+			switch d := d.(type) {
+			case *ast.FuncDecl:
+				if d.Body != nil {
+					bodies[d.Name.Name] = d.Body
+				}
+			case *ast.GenDecl:
+				for _, sp := range d.Specs {
+					if vs, ok := sp.(*ast.ValueSpec); ok {
+						for i, n := range vs.Names {
+							if i < len(vs.Values) {
+								bodies[n.Name] = vs.Values[i]
+							}
+						}
+					}
+				}
+			}
+		}
+		for _, name := range names {
+			node, ok := bodies[name]
+			if !ok {
+				continue
+			}
+			found[name] = true
+			body := string(src[fs.Position(node.Pos()).Offset:fs.Position(node.End()).Offset])
+			for _, b := range banned {
+				if strings.Contains(body, b) {
+					t.Errorf("%s: %s names %q: %s", file, name, b, why)
+				}
+			}
+		}
+		for _, name := range names {
+			if !found[name] {
+				t.Errorf("%s: no func %s to scan; the scan reads nothing for it", file, name)
+			}
+		}
 	}
 }
