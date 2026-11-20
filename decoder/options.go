@@ -82,8 +82,13 @@ type Options struct {
 	Knobs *Knobs
 	// EmbedInt4 relaxes the int8 pin on the token-embedding/LM-head table in int4 mode, storing it at int4 too: this halves the
 	// single largest resident tensor on a big-vocab small model, at a lossy cost (mostly on rare tokens). Off in a zero Options,
-	// which keeps the bit-exact int8 pin; the CLIs turn it on by default (internal/loadflags). GGUF load path only.
+	// which keeps the bit-exact int8 pin; the CLIs turn it on by default (internal/loadflags), and EmbedInt4Default lets the
+	// model's size take it back off.
 	EmbedInt4 bool
+	// EmbedInt4Default marks EmbedInt4 as the caller's default, not a choice: Load then keeps the int8 head on a model of
+	// embedInt4DefaultMaxParams parameters or more (EmbedInt4For). A planner that picks the sidecar before Load applies the
+	// same rule.
+	EmbedInt4Default bool
 	// ResidentContext requests a GPU-resident KV capacity in positions. 0 (default) keeps the
 	// backend's built-in default, so nobody who did not ask allocates deep-KV VRAM. When set, the
 	// backend caps it at the model's own context window — the effective cap is

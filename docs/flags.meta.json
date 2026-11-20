@@ -150,7 +150,7 @@
   {
    "name": "embed-int4",
    "group": "Backend, precision and context",
-   "summary": "With `--quant int4`, keep the token-embedding and LM-head table at int4 as well, halving the largest resident tensor on a small model with a big vocabulary. On by default, except when the backend is `metal` (named, or chosen by `auto`), where the resident runner does not take an int4 table yet and the default is off. `--embed-int4=false` keeps it at int8.",
+   "summary": "Keep the token-embedding and LM-head table at int4 with `--quant int4`, halving the largest resident tensor. The default is on under 1B parameters and off from 1B up and on `metal`; an explicit value wins.",
    "type": "bool",
    "see": "docs/quantization.md"
   },

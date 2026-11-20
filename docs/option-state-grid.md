@@ -111,6 +111,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 - `DirectLoad`: chooses the file Load opens (the source or its sidecar .giw); the paths run whatever was opened
 - `DisableFit`: selects load-time fit-by-default behaviour (resolveCtxCapFit, guardFit)
 - `Drafter`: tells ResolveKV at load that a block drafter will attach: auto stays f32 on CUDA, and an explicit f16 refuses
+- `EmbedInt4Default`: resolved into EmbedInt4 at the top of Load (EmbedInt4For) and cleared, so no path reads it
 - `ExtraResidentBytes`: prices a companion allocation when the resident is planned
 - `ExtraResidentKVPerPosition`: prices a companion allocation's K/V when the resident context is chosen
 - `LoRA`: merged into the base weights at load ("merged into the base at load"), so every path runs the merged weights; compute-time adapters are Session state, in the cache-state grid

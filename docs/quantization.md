@@ -148,6 +148,13 @@ Stated so nobody reads absence as endorsement:
   - Checked 2026-09-30 on the 0.5B coder: with the int4 table, CUDA stays `cuda-resident (int4)` (nobara-pc) and
     WebGPU stays `webgpu:metal-resident (int4)` (M1 Pro), so the default stays on for them. Only Metal declined.
   - The flip's quality and speed were measured on the CPU backend only.
+  - **From 1B parameters up the default is the int8 head (since 2026-11-20, owner decision).** On a long-context
+    agreement gate the int4 head passed on the 0.5B and failed on the 1.5B (agreement −2.08 points, lower confidence
+    bound −3.21; the record is goinfer issue #1160's accuracy check of 2026-11-20, filed under `docs/measurements/` by its own PR). The load counts the model's parameters
+    from its tensor directory before it picks the sidecar (`decoder.EmbedInt4For`, `PeekParamCount`), so the rule is
+    about size, not family; a size it cannot read (a prebuilt `.giw`) keeps the int4 default. An explicit
+    `--embed-int4` or `--embed-int4=false`, or serve's per-model `embed-int4=` key, wins at any size. A load of a 1B+
+    `.gguf` now opens the plain-head sidecar, which it builds once if only the `e4h` one exists.
 - The recommendation is for the families and shapes in `parity_manifest.json`. A family outside
   the gated set inherits no promise from this page.
 
