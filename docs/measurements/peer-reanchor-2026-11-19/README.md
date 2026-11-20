@@ -253,3 +253,18 @@ The void rule voids any swap growth in a cell, and on nobara a big load can grow
 - every Ollama cell in the table above, with v2 replacing its night VOID;
 - 0.5B @ 8000 VOID on goinfer's token gate;
 - c's llama.cpp row not measured.
+
+### Change, 2026-11-20: drop the checkpoint page cache before each step (Francis's decision, option 1)
+
+- **Decision:** Francis, 2026-11-20 05:00 PST, relayed by the coordinator. Option 1 of the swap question above: drop the
+  checkpoint page cache before cells that load a model. No guard and no `BENCH_SWAP_*` setting changes.
+- **What the script does:** `run-nobara.sh` runs [`evict_cache.py`](evict_cache.py) at the start of every step, before
+  the settle wait. It applies `posix_fadvise(DONTNEED)` over `~/models` and Ollama's model store, takes about 2.5 s, needs
+  no root, and logs the line `=== evict:`.
+- **Why:** this box's swap voids come only once RAM is full of page cache. Starting each step's loads from free memory
+  removes that trigger. The diagnostic and the by-day v2 re-run both read 0 MB of growth after an eviction.
+- **Limit:** it runs per step, not per cell, because the harness has no per-cell hook. A step whose own reads approach
+  the trigger can still fill RAM within itself. The 26B step reads about 48 GB across its three engines; nothing else
+  here reads more than about 30 GB.
+- **The 26B's llama.cpp arm stays not measured** (Francis, the same day): the registration rules out re-running a valid
+  goinfer/Ollama pair.
