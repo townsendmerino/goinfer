@@ -7,9 +7,7 @@ decoder/sidecar.go 2 -- a sidecar's size against free disk
 backend/cuda/pack_stream.go 1 -- a packed-experts file against free disk
 internal/app/pullcmd/pull.go 2 -- download sizes
 pull/registry.go 1 -- download sizes
-# Memory sizes still formatted by hand: the swap guard's trip lines, and lines in files other open work holds today (code-quality ledger, Q4).
-backend/cuda/resident.go 1 -- an expert-cache decline not yet on mem.GiB
-backend/metal/backend.go 8 -- fit text not yet on mem.GiB
+# Memory sizes still formatted by hand: the swap guard's lines.
 internal/app/serveapp/swapguard.go 2 -- swap-guard lines scripts/mem_darwin.py and its test parse; their unit moves with the guard's own work
 internal/guard/swapguard/sources.go 1 -- swap-guard lines scripts/mem_darwin.py and its test parse; their unit moves with the guard's own work
 internal/guard/swapguard/swapguard.go 4 -- swap-guard lines scripts/mem_darwin.py and its test parse; their unit moves with the guard's own work
