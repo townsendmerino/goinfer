@@ -18,6 +18,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/backend/cuda/internal/wpack"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -176,7 +177,7 @@ func TestKV16_layer0StoreIsTheRoundedF32Store(t *testing.T) {
 		f, h := c.f, c.h
 		bad, nonzero := 0, 0
 		for i := 0; i < n; i++ {
-			if want := f32ToF16RNE(f[i]); h[i] != want {
+			if want := wpack.F32ToF16RNE(f[i]); h[i] != want {
 				if bad < 3 {
 					t.Errorf("layer 0 %s[%d]: f16 cache %#04x, f32 %g rounds to %#04x", c.name, i, h[i], f[i], want)
 				}
@@ -227,12 +228,12 @@ func TestKV16_uploadKVRoundsLikeTheKernels(t *testing.T) {
 	}
 	got := kvWordsToHalves(words)
 	for i := range keys {
-		if want := f32ToF16RNE(keys[i]); got[2*kvDim+i] != want {
+		if want := wpack.F32ToF16RNE(keys[i]); got[2*kvDim+i] != want {
 			t.Fatalf("K[%d]: cache %#04x, want %#04x", i, got[2*kvDim+i], want)
 		}
 	}
 	for _, i := range []int{0, 1, kvDim - 1, 2*kvDim - 1} { // positions 0 and 1 hold the sentinel the upload at base 2 must not touch
-		if want := f32ToF16RNE(sentinel); got[i] != want {
+		if want := wpack.F32ToF16RNE(sentinel); got[i] != want {
 			t.Errorf("element %d below the upload base was disturbed: %#04x, want %#04x", i, got[i], want)
 		}
 	}
@@ -1518,7 +1519,7 @@ func TestKV8_exactInputIdentity_fusedPrefill(t *testing.T) {
 				out := make([]float32, len(c))
 				for i := range c {
 					p, h := i/kvDim, (i%kvDim)/hd
-					out[i] = linalg.F16ToF32(f32ToF16RNE(float32(c[i]) * sc[p*nKV+h]))
+					out[i] = linalg.F16ToF32(wpack.F32ToF16RNE(float32(c[i]) * sc[p*nKV+h]))
 				}
 				return out
 			}

@@ -283,11 +283,6 @@ func kvWindowNextBase(base, p0, n, window, capN, rollback int) (from, to int, er
 	return from, newBase, nil
 }
 
-// kvWindowReusable reports whether a forward continuing at position prefix finds its window held by a slot whose base is base.
-func kvWindowReusable(base, prefix, window int) bool {
-	return decoder.KVWindowReusable(base, prefix, window)
-}
-
 // kvRoomFor reports whether n rows at position p0 can ever be written: the window floor of the first row, then the rows themselves, must fit the
 // positions a windowed layer holds. False only for a pass wider than the slack allows (a long image block, a wide verify); no state is read, so
 // it can run off the executor, and a caller declines to a narrower pass.
@@ -309,7 +304,7 @@ func (r *cudaResident) ReusableKV(prefix int) int {
 	out := prefix
 	// the base and the released marks are executor state: read them where they are written
 	if err := r.do(func() error {
-		if r.kvReleasedLost(r.kvSlot, prefix) || (r.kvWin && !kvWindowReusable(r.kvBases[r.kvSlot], prefix, r.kvWindow)) {
+		if r.kvReleasedLost(r.kvSlot, prefix) || (r.kvWin && !decoder.KVWindowReusable(r.kvBases[r.kvSlot], prefix, r.kvWindow)) {
 			out = 0
 		}
 		return nil

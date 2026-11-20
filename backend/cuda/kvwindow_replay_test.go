@@ -55,7 +55,7 @@ func replayWindowedKV(t *testing.T, slack, rollback int) []replayed {
 		}
 		lcp = min(lcp, held)
 		reuse := lcp
-		if !kvWindowReusable(base, lcp, window) {
+		if !decoder.KVWindowReusable(base, lcp, window) {
 			reuse = 0
 		}
 		out = append(out, replayed{cold: reuse == 0, runStart: first, rollback: held - lcp})

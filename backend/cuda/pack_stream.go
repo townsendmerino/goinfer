@@ -252,7 +252,7 @@ func (r *cudaResident) streamW(h hostW) cudaWQ {
 			linalg.F16ToF32Slice(wide, s16[r0*gpr:r0*gpr+n])
 			gs := st.halves(n)
 			for i, v := range wide {
-				gs[i] = f32tof16(v)
+				gs[i] = wpack.F32ToF16(v)
 			}
 			st.outH = gs
 		}, func(st *packStage, r0, rows int) {
@@ -265,7 +265,7 @@ func (r *cudaResident) streamW(h hostW) cudaWQ {
 			q8, sc, _, _ := h.src.Int8()
 			r.streamBlocks(N, rowsFor(wpr), func(st *packStage, r0, rows int) {
 				words := st.words(rows * wpr)
-				packI8Into(words, q8[r0*K:(r0+rows)*K])
+				wpack.PackI8Into(words, q8[r0*K:(r0+rows)*K])
 				st.outW = words
 			}, func(st *packStage, r0, rows int) { putWords(st, r0, wpr) })
 			w.ws = r.up32(sc)
@@ -297,7 +297,7 @@ func (r *cudaResident) streamW(h hostW) cudaWQ {
 			}
 			q8, sc := linalg.QuantizeRowsInt8(src, rows, K)
 			words := st.words(rows * wpr)
-			packI8Into(words, q8)
+			wpack.PackI8Into(words, q8)
 			st.outW, st.outS = words, sc
 		}, func(st *packStage, r0, rows int) {
 			if st.err != nil {
@@ -372,9 +372,6 @@ func (r *cudaResident) streamKQuant(h hostW) cudaWQ {
 	return w
 }
 
-// packI8Into is packI8 into a caller's slice: four int8 per word, little-endian.
-func packI8Into(dst []uint32, q8 []int8) { wpack.PackI8Into(dst, q8) }
-
 // planWeightStack is packWeightStack's validation and nothing else: the same errors in the same order for the same weights, no allocation beyond the
 // returned header, and a hostW that names the member weights (srcs) and the element counts of the stack's two host buffers. Only the C' expert cache
 // consumes it (cacheWQ packs the members straight into the pinned copy); every other path takes packWeightStack's packed slices.
@@ -406,12 +403,6 @@ func planWeightStack(ws ...*linalg.WeightMat) (hostW, error) {
 	}
 	out.srcs = ws
 	return out, nil
-}
-
-// packInt4Into is packWeight's int4 layout written into caller-owned storage: the nibble-permuted words, and the group scales through the f16 -> f32 -> f16
-// trip packWeight makes. It allocates nothing.
-func packInt4Into(dstW []uint32, dstS []uint16, q4 []byte, s16 []uint16) {
-	wpack.PackInt4Into(dstW, dstS, q4, s16)
 }
 
 // packStackWorkers bounds the goroutines that pack one expert stack: the sources are mapped files, so more than a few readers only adds page-fault traffic.
@@ -475,7 +466,7 @@ func (r *cudaResident) packStackPinned(w *cudaWQ, h hostW) {
 					bad.Store(true)
 					return
 				}
-				packInt4Into(dw, ds, q4, s16)
+				wpack.PackInt4Into(dw, ds, q4, s16)
 			}
 		}()
 	}

@@ -296,7 +296,6 @@ var mlaKV16PTX []byte
 // are documented in package wpack.
 func nibblePosFast(i int) int     { return wpack.NibblePos(i) }
 func permuteFast(w uint32) uint32 { return wpack.Permute(w) }
-func f32tof16(f float32) uint16   { return wpack.F32ToF16(f) }
 
 // The _kv16 twins: the same sources as the modules above, built with -DKV_F16 (kvtype.cuh), so their K/V cache pointers are __half. The resident
 // loads a twin in place of its module when the KV cache is f16 (cudaResident.kvPTX); the f32 modules above are byte-identical to what they were

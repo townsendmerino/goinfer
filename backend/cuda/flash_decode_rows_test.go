@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/backend/cuda/internal/launchgeom"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
@@ -96,7 +97,7 @@ func TestFlashDecodeRowsBitIdentical(t *testing.T) {
 							if n0+M > maxKeys {
 								continue
 							}
-							runs := faRowRuns(n0, M, window, S)
+							runs := launchgeom.FaRowRuns(n0, M, window, S)
 							if len(runs) > 1 {
 								straddled++
 							}
@@ -150,7 +151,7 @@ func TestFlashDecodeRowsBitIdentical(t *testing.T) {
 					}
 				}
 			}
-			t.Logf("%s (nH=%d nKV=%d hd=%d G=%d R=%d): %d elements bit-identical to the M=1 lane; %d batches spanned >1 run", mc.name, nH, nKV, hd, nH/nKV, faRowsPerCTA(hd, nH/nKV), checked, straddled)
+			t.Logf("%s (nH=%d nKV=%d hd=%d G=%d R=%d): %d elements bit-identical to the M=1 lane; %d batches spanned >1 run", mc.name, nH, nKV, hd, nH/nKV, launchgeom.FaRowsPerCTA(hd, nH/nKV), checked, straddled)
 		})
 	}
 }

@@ -135,7 +135,7 @@ func TestWindowedKV_e0ResendReplay(t *testing.T) {
 		if err != nil {
 			t.Fatalf("decode at %d: %v", n, err)
 		}
-		return kvWindowReusable(base, (n+1-d)/block*block, window)
+		return decoder.KVWindowReusable(base, (n+1-d)/block*block, window)
 	}
 	for _, n := range []int{4096, 8192, 15360, 31744} {
 		for _, c := range []struct {
