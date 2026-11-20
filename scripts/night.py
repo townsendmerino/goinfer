@@ -1628,7 +1628,7 @@ def cmd_update_runner(a):
 # ---------------------------------------------------------------- status / stop / morning
 
 # The fit guard's own line: "... this machine currently has 6.6 GB of memory available ...".
-FIT_AVAIL_RE = re.compile(r"currently has ([0-9.]+) GB of memory available")
+FIT_AVAIL_RE = re.compile(r"currently has ([0-9.]+) Gi?B of memory available")  # logs older than the GiB formatter say GB
 START_RE = re.compile(r"^=== START\s+(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)", re.M)  # after the job's header lines
 
 

@@ -371,7 +371,7 @@ func TestSolvePlacement_declineReasonsQuoteEachTermOnce(t *testing.T) {
 			t.Fatalf("%s: %s, want a decline", c.name, planAnswer(d))
 		}
 		for _, q := range []struct{ what, re, want string }{
-			{"dense", `dense ([\d.]+) GB`, c.dense}, {"scratch", `scratch ([\d.]+) MB`, c.scratch}, {"free", `only ([\d.]+) GB is free`, c.avail},
+			{"dense", `dense ([\d.]+) GiB`, c.dense}, {"scratch", `scratch ([\d.]+) MB`, c.scratch}, {"free", `only ([\d.]+) GiB is free`, c.avail},
 		} {
 			if q.want == "" {
 				continue

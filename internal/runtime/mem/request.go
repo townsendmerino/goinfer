@@ -23,14 +23,14 @@ func AdmitRequest(r Request, m Machine, p Policy) string {
 		return ""
 	}
 	return fmt.Sprintf(
-		"decoder: this request needs ~%.2f GB (KV %.2f GB + prefill scratch %.2f GB for %d prompt + %d max_tokens positions) "+
-			"but only %.2f GB of this machine's %.2f GB currently-available memory would be left as a safety margin — "+
+		"decoder: this request needs ~%s (KV %s + prefill scratch %s for %d prompt + %d max_tokens positions) "+
+			"but only %s of this machine's %s currently-available memory would be left as a safety margin — "+
 			"rejected before prefill rather than paging.\n"+
 			"  Send a smaller prompt, lower max_tokens, pass -ctx to cap the context, close other "+
 			"applications to free memory, or -stream-weights to free more of the budget for KV.\n"+
 			"  Set GOINFER_NO_FIT_GUARD=1 to allow it anyway if this machine really has the room",
-		float64(need)/gb, float64(r.KVBytes)/gb, float64(r.ScratchBytes)/gb, r.PromptTokens, r.MaxTokens,
-		float64(remaining)/gb, float64(avail)/gb)
+		GiB(need), GiB(r.KVBytes), GiB(r.ScratchBytes), r.PromptTokens, r.MaxTokens,
+		GiB(remaining), GiB(avail))
 }
 
 // HostBudget is the resident budget on m: the policy's fraction of available host memory, 0 when unknown.
