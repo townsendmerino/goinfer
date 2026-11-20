@@ -120,6 +120,7 @@ var ogLoadOnly = map[string]string{
 	"ResidentKVSlotsDefault":       "tells the backend at load that ResidentKVSlots is the caller's default, not a chosen count",
 	"ResidentRecurrentStepDefault": "tells the backend at load that ResidentRecurrentStep is the caller's default, not a choice",
 	"ResidentGemma4StepDefault":    "tells the backend at load that ResidentGemma4Step is the caller's default, not a choice",
+	"EmbedInt4Default":             "resolved into EmbedInt4 at the top of Load (EmbedInt4For) and cleared, so no path reads it",
 }
 
 // ogGrid is the declaration for every Options field that reaches a path.
