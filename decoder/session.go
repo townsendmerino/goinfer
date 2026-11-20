@@ -94,7 +94,7 @@ func (s *Session) Reset() {
 // prefix reuse never reads stale history. Callers must skip it, and reconcile, for an empty prompt so a rejected call
 // leaves a warm session untouched.
 func (s *Session) rewindForReuse(prompt []int) (matched int) {
-	defer func() { s.classes = clipClassRuns(s.classes, matched) }()
+	defer func() { s.classes = kvmgr.ClipClassRuns(s.classes, matched) }()
 	// A just-created or Reset session has nothing for TruncateTo(0) to clear, and the reset would otherwise zero a recurrent
 	// state that is already zero. Every guard fails toward resetting: the flag is consumed here whatever happens.
 	clean := s.cleanCache && len(s.tokens) == 0 && s.cache.Pos() == 0
@@ -135,7 +135,7 @@ func (s *Session) Generate(ctx context.Context, prompt []int, maxTokens int, sp 
 	// prompt is a generateInto error: don't touch the cache (rewind/reconcile), so a warm session
 	// survives a rejected call.
 	matched := 0
-	g.PrefillSlot, g.PrefillMatch = len(s.tokens), commonPrefixLen(s.tokens, prompt)
+	g.PrefillSlot, g.PrefillMatch = len(s.tokens), kvmgr.CommonPrefixLen(s.tokens, prompt)
 	if len(prompt) > 0 {
 		matched = s.rewindForReuse(prompt)
 	}
@@ -255,9 +255,4 @@ func (s *Session) genSpec(ctx context.Context, prompt []int, maxTokens int, draf
 		}
 	})
 	return out, g, nil
-}
-
-// commonPrefixLen returns the length of the longest common leading run of a and b.
-func commonPrefixLen(a, b []int) int {
-	return kvmgr.CommonPrefixLen(a, b)
 }

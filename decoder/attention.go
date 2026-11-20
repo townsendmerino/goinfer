@@ -5,6 +5,8 @@ import (
 	"sync/atomic"
 
 	"github.com/townsendmerino/aikit/linalg"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
 )
 
 // addBias adds b into x in place, for architectures with q/k/v/o bias (Qwen2's projections, GPT-2's output). Callers pass equal
@@ -255,7 +257,7 @@ func applyGateRow(gates, ctx []float32, perHead bool, nH, hd int) {
 func applySigmoidGateRow(gates, ctx []float32, perHead bool, nH, hd int) {
 	if perHead {
 		for head := range nH {
-			g := sigmoidf(gates[head])
+			g := hybridattn.Sigmoidf(gates[head])
 			row := ctx[head*hd : head*hd+hd]
 			for i := range row {
 				row[i] *= g
@@ -264,7 +266,7 @@ func applySigmoidGateRow(gates, ctx []float32, perHead bool, nH, hd int) {
 		return
 	}
 	for i := range ctx {
-		ctx[i] *= sigmoidf(gates[i])
+		ctx[i] *= hybridattn.Sigmoidf(gates[i])
 	}
 }
 

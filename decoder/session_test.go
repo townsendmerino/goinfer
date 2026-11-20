@@ -7,6 +7,8 @@ import (
 	"os"
 	"slices"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/kvmgr"
 )
 
 // testModelPath picks a checkpoint for the model-gated session tests: the
@@ -109,8 +111,8 @@ func TestCommonPrefixLen(t *testing.T) {
 		{[]int{9}, []int{1}, 0},
 	}
 	for _, c := range cases {
-		if got := commonPrefixLen(c.a, c.b); got != c.want {
-			t.Errorf("commonPrefixLen(%v,%v) = %d, want %d", c.a, c.b, got, c.want)
+		if got := kvmgr.CommonPrefixLen(c.a, c.b); got != c.want {
+			t.Errorf("kvmgr.CommonPrefixLen(%v,%v) = %d, want %d", c.a, c.b, got, c.want)
 		}
 	}
 }

@@ -1,6 +1,10 @@
 package decoder
 
-import "github.com/townsendmerino/aikit/linalg"
+import (
+	"github.com/townsendmerino/aikit/linalg"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/hybridattn"
+)
 
 // mlaProjInt8 reports whether a load at q holds MLA's q (or q-LoRA pair), kv-A and o projections as per-row int8. No production
 // load does: every load keeps all six f32, because the DeepSeek family's real-model gates fail with any of the three int8 (D14,
@@ -51,7 +55,7 @@ func mlaMatvec(f []float32, q *linalg.WeightMat, rows, cols int, x []float32) []
 	if q.Rows() > 0 {
 		return matvecWM(nil, q, x)
 	}
-	return matvec(f, rows, cols, x)
+	return hybridattn.Matvec(f, rows, cols, x)
 }
 
 // MLALayerInt8 returns layer l's int8 MLA projections, each zero-valued where the load holds that projection f32: the q-LoRA
