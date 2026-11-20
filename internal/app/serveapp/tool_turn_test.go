@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/internal/codec"
 )
 
 // The shared tool turn's reconciliation, driven by the real prose streamer and the real ChatML
@@ -34,7 +35,7 @@ func TestReconcileProse_streamedPlusRestIsTheProse(t *testing.T) {
 				streamed.WriteString(ps.Push(c.out[i:min(i+chunk, len(c.out))]))
 			}
 			calls, parsed := tmpl.ParseToolCalls(c.out)
-			lead, rest, err := reconcileProse(c.out, len(calls) > 0, parsed, streamed.String())
+			lead, rest, err := codec.ReconcileProse(c.out, len(calls) > 0, parsed, streamed.String())
 			if err != nil {
 				t.Fatalf("%s (chunk %d): %v — streamed %q", c.name, chunk, err, streamed.String())
 			}
@@ -53,10 +54,10 @@ func TestReconcileProse_streamedPlusRestIsTheProse(t *testing.T) {
 }
 
 func TestReconcileProse_divergenceIsReported(t *testing.T) {
-	if _, _, err := reconcileProse("abc", true, "abc", "xyz"); !errors.Is(err, errProseDiverged) {
+	if _, _, err := codec.ReconcileProse("abc", true, "abc", "xyz"); !errors.Is(err, errProseDiverged) {
 		t.Errorf("streamed bytes that are not a prefix of the lead must report errProseDiverged, got %v", err)
 	}
-	lead, rest, err := reconcileProse("\n raw", false, "raw", "")
+	lead, rest, err := codec.ReconcileProse("\n raw", false, "raw", "")
 	if err != nil || lead != "\n raw" || rest != "\n raw" {
 		t.Errorf("nothing streamed: lead and rest are the raw output unchanged, got %q / %q / %v", lead, rest, err)
 	}
@@ -100,7 +101,7 @@ func TestReconcileProse_lenientFencedCalls(t *testing.T) {
 			if (len(calls) > 0) != c.isCall {
 				t.Fatalf("%s: calls = %+v, want a call: %v", c.name, calls, c.isCall)
 			}
-			lead, rest, err := reconcileProse(c.out, len(calls) > 0, parsed, streamed.String())
+			lead, rest, err := codec.ReconcileProse(c.out, len(calls) > 0, parsed, streamed.String())
 			if err != nil {
 				t.Fatalf("%s (chunk %d): %v — streamed %q", c.name, chunk, err, streamed.String())
 			}

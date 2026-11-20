@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -17,6 +16,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
+	"github.com/townsendmerino/goinfer/internal/runtime/scheduler"
 )
 
 // The scheduling census: today's scheduling
@@ -261,7 +262,7 @@ func (s *schedSim) step(e schedEvent) schedStep {
 			}
 			if len(r.ev.Prompt) > 0 {
 				if s.prev != nil {
-					n := commonPrefix(s.prev, r.ev.Prompt)
+					n := scheduler.CommonPrefix(s.prev, r.ev.Prompt)
 					r.out.SharedPrev = &n
 				}
 				s.prev = r.ev.Prompt
@@ -518,7 +519,7 @@ func (s *placementSim) holds(toks []int) string {
 	for _, n := range names {
 		c := s.convs[n]
 		for _, p := range append(slices.Clone(c.prompts), c.history) {
-			if m := commonPrefix(p, toks); m > best {
+			if m := scheduler.CommonPrefix(p, toks); m > best {
 				best, name = m, n
 			}
 		}
@@ -600,7 +601,7 @@ func (s *placementSim) acquire(e placementEvent) placementStep {
 		st.Action = "in_place"
 	}
 	if inLRU {
-		n, m := len(had), commonPrefix(had, prompt)
+		n, m := len(had), scheduler.CommonPrefix(had, prompt)
 		st.HadTokens, st.Common = &n, &m
 	}
 	h := len(x.Tokens())
