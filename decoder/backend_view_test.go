@@ -148,8 +148,8 @@ func TestBackendModelView_familyParams(t *testing.T) {
 	if _, ok := bv.Granite(); ok {
 		t.Error("Granite ok for a model with no Granite subsystem")
 	}
-	if _, _, _, _, _, _, ok := bv.Qwen35Params(); ok {
-		t.Error("Qwen35Params ok for a model with no DeltaNet subsystem")
+	if _, ok := bv.Qwen35(); ok {
+		t.Error("Qwen35 ok for a model with no DeltaNet subsystem")
 	}
 	if _, ok := bv.MLA(); ok {
 		t.Error("MLA ok for a model with no MLA subsystem")

@@ -23,7 +23,7 @@ type BackendModelView interface {
 	// The per-family resident geometry, each ok=false (zeros) when the model carries no such subsystem.
 	MoE() (ResidentMoESpec, bool)
 	MLA() (ResidentMLASpec, bool)
-	Qwen35Params() (convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numValueHeads int, attnGate, ok bool)
+	Qwen35() (ResidentQwen35Spec, bool)
 	Nemotron() (ResidentNemotronSpec, bool)
 	Granite() (ResidentGraniteSpec, bool)
 
@@ -169,12 +169,11 @@ func (v backendModelView) MLA() (ResidentMLASpec, bool) {
 	return ResidentMLASpec{}, false
 }
 
-func (v backendModelView) Qwen35Params() (convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numValueHeads int, attnGate, ok bool) {
-	g := v.m.ResidentSpec().Qwen35
-	if g == nil {
-		return 0, 0, 0, 0, 0, false, false
+func (v backendModelView) Qwen35() (ResidentQwen35Spec, bool) {
+	if g := v.m.ResidentSpec().Qwen35; g != nil {
+		return *g, true
 	}
-	return g.ConvKernel, g.KeyHeadDim, g.ValueHeadDim, g.NumKeyHeads, g.NumValueHeads, g.AttnGate, true
+	return ResidentQwen35Spec{}, false
 }
 
 func (v backendModelView) Nemotron() (ResidentNemotronSpec, bool) {
