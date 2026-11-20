@@ -198,15 +198,11 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		return
 	}
 	s.noteIDs(r, idsOut)
-	sm.fixedTokens = func() int { return lm.fixedPromptTokens(tm, system, nil) }
-	gr, err := lm.prepare(sm, ids, lm.residentPath())
+	gr, err := lm.prepareTurn(sm, tm, system, turns, nil, ids)
 	if err != nil {
 		writeResponsesPrepareErr(w, err, req.Stream, id, lm.name, created)
 		return
 	}
-	gr.boundary = lm.prefixBoundary(tm, system, turns, nil, ids)
-	gr.keep = lm.recurrentKeep(tm, system, turns, nil, ids)
-	gr.msgBoundary = lm.recurrentMsgBoundary(tm, system, turns, nil, ids)
 	gr.id = id                                // registers this generation for cancel-by-id
 	s.routeThink(lm, &gr, tm, turns, ts, nil) // the reasoning becomes a reasoning item (reasoning_items.go)
 	mint := s.mintFor(lm, r, gr)
@@ -379,15 +375,11 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		return
 	}
 	s.noteIDs(r, idsOut)
-	sm.fixedTokens = func() int { return lm.fixedPromptTokens(tm, system, tools) }
-	gr, err := lm.prepare(sm, ids, lm.residentPath())
+	gr, err := lm.prepareTurn(sm, tm, system, turns, tools, ids)
 	if err != nil {
 		writeResponsesPrepareErr(w, err, req.Stream, id, lm.name, created)
 		return
 	}
-	gr.boundary = lm.prefixBoundary(tm, system, turns, tools, ids)
-	gr.keep = lm.recurrentKeep(tm, system, turns, tools, ids)
-	gr.msgBoundary = lm.recurrentMsgBoundary(tm, system, turns, tools, ids)
 	gr.id = id // registers this generation for cancel-by-id
 	forced := forcedTool(req.ToolChoice, tools, endsWithToolResult(turns))
 	namedForce := toolChoiceMode(req.ToolChoice) == "function"

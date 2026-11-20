@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -769,7 +770,7 @@ func (s *server) unloadSuggestion(err error) string {
 	// Prose, not a line break: the caller appends this straight onto res.err.Error(), which the page
 	// renders as plain textContent with no white-space:pre-line — a literal "\n" would just collapse
 	// to a space, so the sentence has to read correctly either way.
-	return fmt.Sprintf(" Unload %q (%.1f GB) to make room.", biggest, float64(biggestBytes)/(1<<30))
+	return fmt.Sprintf(" Unload %q (%s) to make room.", biggest, mem.GiB(biggestBytes))
 }
 
 // handleWebUnload unloads a model the page itself can already see. UNLIKE LOAD, THIS NEEDS NO PATH POLICY: webLoadPath exists

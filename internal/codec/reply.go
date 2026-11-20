@@ -41,7 +41,7 @@ func SettleCalls(tm *chat.Template, raw string, tools []chat.Tool, routed []chat
 // prefix before it), but streamed bytes cannot be recalled, so a front end that ever sees it must say so rather than emit
 // a stream that disagrees with itself.
 var ErrProseDiverged = errors.New("internal: streamed prose diverged from the parsed lead; the tool-call " +
-	"stream for this family is not prefix-safe (G21)")
+	"stream for this family is not prefix-safe")
 
 // ReconcileProse settles a finished turn's prose against what already streamed. lead is the turn's prose for the final
 // message: the parser's lead when there are calls, the raw output when there are none. rest is what the front end still

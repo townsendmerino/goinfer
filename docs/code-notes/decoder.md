@@ -1900,7 +1900,7 @@ Every family forward that sizes its scores buffer from the f32 key store
 (`len(cache.Keys(layer))` — forward_granite/qwen35/nemotron/llama4/lfm2.go) must be
 excluded: with int8 on, that store is empty, the buffer has length 0, and attendQuery
 hands it to attendQueryI8, which indexes past it on the first decode step. LFM2 was
-missing and panicked (TestLFM2_kvQuantI8_generates); llama4 was excluded only through
+missing and panicked; Load now refuses that precision outright (TestLFM2_kvQuantI8_isRefusedOnTheCPU); llama4 was excluded only through
 a.MoE, so it is named too.
 ```
 

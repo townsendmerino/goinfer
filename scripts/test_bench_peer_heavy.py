@@ -213,6 +213,8 @@ class Rule(unittest.TestCase):
         self.addCleanup(bench_peer._FIT_NEED.clear)
         bench_peer.learn_fit_need("m", "fit: 32768-token cap needs 1.1 GB KV (weights 3.9 GB, budget 38.5 GB, 37.4 GB left)")
         self.assertEqual(bench_peer.fit_need("m"), (5120, "fit banner"))
+        bench_peer.learn_fit_need("m", "fit: 32768-token cap needs 1.10 GiB KV (weights 3.90 GiB, budget 38.50 GiB, 37.40 GiB left)")
+        self.assertEqual(bench_peer.fit_need("m"), (5120, "fit banner"))
         os.environ["BENCH_FIT_NEED_GB"] = "other=2,m=5.6"
         self.assertEqual(bench_peer.fit_need("m"), (5734, "BENCH_FIT_NEED_GB"))
         os.environ["BENCH_FIT_NEED_GB"] = "3"
