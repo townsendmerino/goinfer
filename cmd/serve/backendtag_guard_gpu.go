@@ -1,6 +1,6 @@
 //go:build gpu
 
-// See backendtag_guard_cuda.go for the rationale (M-19: the root cmd/serve builds no backend,
+// See backendtag_guard_cuda.go for the rationale (the root cmd/serve builds no backend,
 // so `-tags gpu` on it silently yields a CPU binary). This makes it a build failure naming the
 // WebGPU submodule entrypoint.
 package main

@@ -36,7 +36,7 @@ func llama4Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	}
 	hd := cfg.HeadDim
 	if hd == 0 {
-		if cfg.NumHeads <= 0 { // avoid a divide-by-zero on a hostile config (M16)
+		if cfg.NumHeads <= 0 { // avoid a divide-by-zero on a hostile config
 			return nil, nil, fmt.Errorf("decoder(llama4): num_attention_heads must be > 0 when head_dim is unset, got %d", cfg.NumHeads)
 		}
 		hd = cfg.HiddenDim / cfg.NumHeads

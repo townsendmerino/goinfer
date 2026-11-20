@@ -47,7 +47,7 @@ func RegisteredBackends() []string {
 	return names
 }
 
-// Backend self-tests (H2). A GPU backend registers the function that runs its own self-test on its device, once, the same register-from-init shape as the memory probe; the backend itself calls it at
+// Backend self-tests. A GPU backend registers the function that runs its own self-test on its device, once, the same register-from-init shape as the memory probe; the backend itself calls it at
 // BuildResident, and a hardware report calls RunSelfTests to run them all on demand.
 var (
 	selfTestFnMu sync.RWMutex

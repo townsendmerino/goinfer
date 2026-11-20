@@ -741,7 +741,7 @@ func readbackCPUKV(c *KVCache) (r kvReadback) {
 	return r
 }
 
-// KVReadbackForTest decodes n positions on the CPU cache this model's generations use and reads it back (G3's readback, for a
+// KVReadbackForTest decodes n positions on the CPU cache this model's generations use and reads it back (the delivered-bytes readback, for a
 // backend whose resident declines and leaves the model on the CPU cache).
 func (m *Model) KVReadbackForTest(n int) (n32, n16, n8, nScale int64, err error) {
 	cache := m.NewCache(n)
@@ -755,17 +755,17 @@ func (m *Model) KVReadbackForTest(n int) (n32, n16, n8, nScale int64, err error)
 	return r.n32, r.n16, r.n8, r.nScale, nil
 }
 
-// SetEmbedRowsObserverForTest sets the observer told how many rows each embedding of a resident prefill's suffix holds at once
-// (MEM6); nil clears it.
+// SetEmbedRowsObserverForTest sets the observer told how many rows each embedding of a resident prefill's suffix holds at once;
+// nil clears it.
 func SetEmbedRowsObserverForTest(f func(rows int)) { embedRowsObserver = f }
 
 // ResidentPrefillScratchForTest is residentPrefillScratch: what admission prices a resident request of promptTokens at, and
-// whether the resident splits or chunks its prefill (KS-H1).
+// whether the resident splits or chunks its prefill.
 func (m *Model) ResidentPrefillScratchForTest(promptTokens int) (int64, bool) {
 	return m.residentPrefillScratch(promptTokens)
 }
 
-// NewBlockSpecForTest is NewBlockSpec around rd, a test's own drafter, in place of the weights' attach: SP2's scripted-drafter
+// NewBlockSpecForTest is NewBlockSpec around rd, a test's own drafter, in place of the weights' attach: the scripted-drafter
 // gates drive the real loop with a drafter whose proposals they choose. dw stands for the drafter's weights; the loop reads
 // only its BlockSize and MaskTokenID. The fold path's preparation and refusal are NewBlockSpec's.
 func (m *Model) NewBlockSpecForTest(rd ResidentBlockDrafter, dw BlockDrafterWeights, taps []int) (*BlockSpec, error) {
@@ -816,7 +816,7 @@ func RegisteredBuildDemandForTest(backend string) BuildDemandFunc {
 	return buildDemands[backend]
 }
 
-// PlanWithoutSlackForTest is Plan with no allocation rounding priced: the before side of the rounding diff (MM2b gate 1).
+// PlanWithoutSlackForTest is Plan with no allocation rounding priced: the before side of the rounding diff.
 func (m *Model) PlanWithoutSlackForTest(backend string, freeBytes int64, req PlanRequest) Plan {
 	return m.plan(backend, freeBytes, req, false)
 }
@@ -844,7 +844,7 @@ const WebGPUVkFixed = webgpuVkFixed
 // AttendInt8ForTest is the CPU's production int8 decode attention (attendToken's widened-cache branch: the layer dequantized, then
 // attendBatchedHeadsP with float64 accumulation) for query q at position pos of layer, over an int8 cache holding exactly the given rows:
 // kQ and vQ are [pos+1][kvDim] int8, kSc and vSc [pos+1][nKV] f32 scales. m must hold an int8 CPU cache (Options.KVQuant "i8"). It is the
-// CPU half of the exact-input G2: both backends' readers fed one cache.
+// CPU half of the exact-input identity gate: both backends' readers fed one cache.
 func (m *Model) AttendInt8ForTest(layer, pos int, q []float32, kQ, vQ []int8, kSc, vSc []float32) ([]float32, error) {
 	a := m.w.arch
 	cache := m.NewCache(pos + 1)

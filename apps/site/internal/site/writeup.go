@@ -201,7 +201,7 @@ func (w *Writeup) validate() error {
 	return nil
 }
 
-// CheckWriteups is S7's "no claim not in the repo" for the writeups: every figure a writeup lists must appear in its
+// CheckWriteups is the "no claim not in the repo" check for the writeups: every figure a writeup lists must appear in its
 // body and in the record it names, and every source it cites must exist. Drafts are checked too, so a draft that could
 // not be reviewed is caught before the owner spends time on it.
 func CheckWriteups(root string, ws []*Writeup) error {

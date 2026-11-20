@@ -87,7 +87,7 @@ func (m *Model) runLayersFromEmbed(h []float32, cache *KVCache) ([]float32, erro
 }
 
 // runLayersFromEmbedPLE is runLayersFromEmbed with the token id behind h for Gemma 4's per-layer embedding: the id itself for a
-// text row, the checkpoint's pad id for a multimodal row (docs/multimodal.md, P7 entry).
+// text row, the checkpoint's pad id for a multimodal row (docs/multimodal.md, the Gemma 4 vision entry).
 func (m *Model) runLayersFromEmbedPLE(h []float32, pleID int, cache *KVCache) ([]float32, error) {
 	if cache.scr == nil { // direct callers (tests / the interleaver) may skip runLayers
 		cache.scr = newDecodeScratch(m.w.arch)

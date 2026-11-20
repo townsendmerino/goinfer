@@ -116,7 +116,7 @@ func matvecWM(be Backend, w *linalg.WeightMat, x []float32) []float32 {
 	return y
 }
 
-// matvecWMPre is matvecWM using p's block when it was quantized for x and w (R-13; see w4a8Act).
+// matvecWMPre is matvecWM using p's block when it was quantized for x and w (see w4a8Act).
 func matvecWMPre(be Backend, w *linalg.WeightMat, p *w4a8Act, x []float32) []float32 {
 	y := make([]float32, w.Rows())
 	matmulPre(be, w, p, x, y, 1)
@@ -132,7 +132,7 @@ func matvecWMPre(be Backend, w *linalg.WeightMat, p *w4a8Act, x []float32) []flo
 type deltaState struct {
 	convWin [][]float32 // up to K-1 prior mixed_qkv vectors, oldest first
 	s       []float32   // [numV * head_k_dim * head_v_dim]
-	hq      w4a8Act     // h quantized once for in_proj_qkv and in_proj_z (R-13); rewritten every step
+	hq      w4a8Act     // h quantized once for in_proj_qkv and in_proj_z; rewritten every step
 }
 
 func newDeltaState(p qwen35Params) *deltaState {

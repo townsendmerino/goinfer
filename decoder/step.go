@@ -13,7 +13,7 @@ const (
 	passNone   stepPass = iota // unset: no shape
 	passToken                  // one decode token: Emb holds exactly one row
 	passRows                   // one batched pass over Emb's rows (or inRowsFn's N), one row or more: prefill, verify, seed
-	passSeqs                   // one decode row for each of several sequences on their own KV slots (MC3): Seqs
+	passSeqs                   // one decode row for each of several sequences on their own KV slots (the batched decode): Seqs
 	passRagged                 // one or more rows for each of several sequences on their own KV slots: Ragged
 )
 

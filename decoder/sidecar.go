@@ -236,7 +236,7 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 
 // residentDirBody is the resident directory transcode: Load the whole model at quant, then serialize it. A LoRA merge
 // needs it (the merge works on the f32 projections), and so does a family whose safetensors loader does not stream; it is
-// also G-DS1's reference for the streamed bytes.
+// also the byte-identity reference for the streamed bytes.
 func residentDirBody(w io.Writer, dir, lora, quant string, embedInt4 bool, target GIWTarget, id string) (int64, error) {
 	// ResidentContext 1: a transcode runs no request, so it allocates no KV (selfCheck does the same).
 	// Unpinned, the fit guard prices the model's full context and can refuse a model whose weights fit.

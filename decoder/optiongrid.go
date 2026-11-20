@@ -17,7 +17,7 @@ type ogPath string
 const (
 	pathCPUDecode        ogPath = "CPU decode"                 // per-token forward on the CPU (and the sequential prefill)
 	pathCPUBatchPrefill  ogPath = "CPU batched prefill"        // forwardN over a prompt (canBatchN)
-	pathCPUBatchDecode   ogPath = "CPU batched decode"         // MC3c: concurrent generations joined into one forward (EnableCPUBatch)
+	pathCPUBatchDecode   ogPath = "CPU batched decode"         // concurrent generations joined into one forward (EnableCPUBatch)
 	pathResidentDecode   ogPath = "GPU resident decode"        // CUDA / Metal / WebGPU resident per-token decode
 	pathResidentPrefill  ogPath = "GPU resident prefill"       // a resident's batched prefill (PrefillPath on each resident)
 	pathSpecVerify       ogPath = "speculative verify"         // the speculative loops' verify step (SpecDecodeConflict, specRollbackSafe)
@@ -204,7 +204,7 @@ var ogGrid = map[string]map[ogPath]ogCell{
 			pathSessionLifecycle: ogTestedBy("TestMoECacheExperts_specAndSessionMetal"),
 		},
 	),
-	// The CUDA expert cache's slots uploaded from pageable pages (docs/measurements/mem10-2026-11/README.md, "MEM10 opt-in"): the same bytes, so
+	// The CUDA expert cache's slots uploaded from pageable pages (docs/measurements/mem10-2026-11/README.md, "MEM10 opt-in: `--moe-experts-unpinned`"): the same bytes, so
 	// every resident path is bit-identical to the pinned load on the paths it touches.
 	"MoEExpertsUnpinned": ogMerge(
 		ogCPUNA("a CUDA expert-cache option (with MoECacheExperts); the CPU's expert paging is StreamWeights"),

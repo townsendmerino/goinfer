@@ -412,7 +412,7 @@ func (g *schemaGrammar) dispatch(f *frame, b byte) bool {
 		}
 	case kAny: // the first byte picks the shape, and the frame continues as that shape
 		if (b == '{' || b == '[') && len(g.stack) > maxSchemaDepth {
-			return false // free nesting is bounded as a schema's is (M-40): deeper output would make each mask step's stack copy unbounded
+			return false // free nesting is bounded as a schema's is: deeper output would make each mask step's stack copy unbounded
 		}
 		switch {
 		case b == '{':
@@ -559,7 +559,7 @@ func numStartSchema(f *frame, b byte) bool {
 	switch {
 	case b == '-':
 		if f.n.nonNeg {
-			return false // minimum:0 — an unsigned field cannot open with a sign (M-28)
+			return false // minimum:0 — an unsigned field cannot open with a sign
 		}
 		f.num = snNeg
 	case b == '0':

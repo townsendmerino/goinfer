@@ -75,12 +75,12 @@ func (m *Model) PrefillLogitsVLForTest(ctx context.Context, ids []int, imageFeat
 	return m.prefillLogitsVL(ctx, ids, imageFeats, imgPos, imgLen, cache)
 }
 
-// PrefillLogitsVLSpansForTest exposes prefillLogitsVLSpans (S11, several images) for a backend's multi-block gate.
+// PrefillLogitsVLSpansForTest exposes prefillLogitsVLSpans (several images) for a backend's multi-block gate.
 func (m *Model) PrefillLogitsVLSpansForTest(ctx context.Context, ids []int, spans []ImageSpan, imageFeats []float32, cache *KVCache) ([]float32, error) {
 	return m.prefillLogitsVLSpans(ctx, ids, spans, imageFeats, cache, false)
 }
 
-// PrefillLogitsVLCausalSpansForTest is PrefillLogitsVLSpansForTest with the image tokens causal (Pixtral, S10).
+// PrefillLogitsVLCausalSpansForTest is PrefillLogitsVLSpansForTest with the image tokens causal (Pixtral).
 func (m *Model) PrefillLogitsVLCausalSpansForTest(ctx context.Context, ids []int, spans []ImageSpan, imageFeats []float32, cache *KVCache) ([]float32, error) {
 	return m.prefillLogitsVLSpans(ctx, ids, spans, imageFeats, cache, true)
 }
@@ -225,7 +225,7 @@ var PrefillGateProseFilesB = []string{
 	"audit-2026-08-05.md",
 }
 
-// PrefillGatePromptSet selects the snapshot prompt files for the L1 gate per GOINFER_PREFILL_GATE_PROMPTS ("" or "a" =
+// PrefillGatePromptSet selects the snapshot prompt files for the prose prefill gate per GOINFER_PREFILL_GATE_PROMPTS ("" or "a" =
 // set A, "b" = set B). It returns the set's label, so set A and set B outputs never collide, and the snapshot paths
 // testdata/prefill-gate-prose-<label>/<basename>, relative to a package directory one level under the repo root (the
 // "../testdata/..." convention).

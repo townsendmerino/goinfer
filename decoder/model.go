@@ -56,13 +56,13 @@ type Model struct {
 	lifeP       unsafe.Pointer  // *modelLife (lifecycle.go): the in-flight generations Close ends; made on first use
 	resBusy     int32           // atomic: claims the single shared resident KV for one in-flight generation. Raw int32 (not atomic.Bool) so Model stays copyable for the value-copy test seam.
 	capWarned   int32           // atomic: the first prompt past the resident's context has been reported (warnResidentCap)
-	// batcher: MC3's coordinator (mc3_batch.go) — several generations on the resident at once, each on its own KV
+	// batcher: the batched resident decode's coordinator (mc3_batch.go) — several generations on the resident at once, each on its own KV
 	// slot, their decode tokens joined into shared steps. nil unless EnableResidentConcurrency enabled it.
 	batcher *residentBatcher
-	// specAdaptive: MC4's "speculate when alone, batch under load" candidate (SetSpecAdaptive). off by default — genNgramInto's exclusive claim is unchanged unless
+	// specAdaptive: the "speculate when alone, batch under load" candidate (SetSpecAdaptive). off by default — genNgramInto's exclusive claim is unchanged unless
 	// this is on AND batcher is non-nil.
 	specAdaptive bool
-	// cpuBatch: MC3c step 2's coordinator (cpu_batch.go) — several CPU generations' decode tokens joined into one
+	// cpuBatch: the batched CPU decode's coordinator (cpu_batch.go) — several CPU generations' decode tokens joined into one
 	// batched forward. nil unless EnableCPUBatch enabled it; Options.CPUBatchDecode chooses when it may.
 	cpuBatch *cpuBatcher
 	// resIDs is the token sequence currently committed to the resident positional KV, or nil
@@ -70,7 +70,7 @@ type Model struct {
 	// to that cache; see resident_reuse.go for why nil is the safe default.
 	resIDs     []int
 	resIDsLora *loraRuntime // the adapter that built resIDs' KV, nil = base (resident_reuse.go)
-	// resImgBlocks records every image block committed within resIDs (P9a, docs/multimodal.md)
+	// resImgBlocks records every image block committed within resIDs (image-aware prefix reuse, docs/multimodal.md)
 	// — nil in the overwhelming common case (no image ever touched this resident KV). Cleared
 	// together with resIDs by residentForgetIDs, always; see resident_reuse.go.
 	resImgBlocks []residentImageBlock
@@ -242,7 +242,7 @@ func (m *Model) ResidentKVSlotsIsDefault() bool { return m.opts.ResidentKVSlotsD
 
 // WindowedKVSlack is the headroom, in positions, a windowed-KV layer holds beyond its window: a layer keeps window+WindowedKVSlack
 // positions and compacts (copies its live tail to the start) once per slack positions written. It must cover the widest batch of rows
-// written in one pass: a prefill chunk (512 by default), a verify batch, an MC3 row. The CUDA allocation and decoder's pricing both use
+// written in one pass: a prefill chunk (512 by default), a verify batch, a batched-decode row. The CUDA allocation and decoder's pricing both use
 // it, so priced bytes equal allocated bytes.
 const WindowedKVSlack = 512
 
@@ -455,7 +455,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 // error wrapping ErrWontFitResident.
 func Load(dir string, opts Options) (*Model, error) {
 	loadCalls.Add(1)
-	ensureCPUSelfTest() // once per process, before any kernel runs concurrently (H2): a CPU kernel tier that disagrees with its reference is stepped down, not trusted
+	ensureCPUSelfTest() // once per process, before any kernel runs concurrently: a CPU kernel tier that disagrees with its reference is stepped down, not trusted
 	// The head resolves before the sidecar is chosen: its cache key carries the head.
 	opts = resolveEmbedInt4(dir, opts.withAutoBackend())
 	if p, err := sidecarRoute(dir, opts); err != nil {
@@ -819,7 +819,7 @@ func (m *Model) Close() error {
 		for _, rt := range reg.byName { // release each compute-time adapter's mmap (#7)
 			rt.close()
 		}
-		for _, rt := range reg.retired { // and any displaced by a re-registration (C-29)
+		for _, rt := range reg.retired { // and any displaced by a re-registration
 			rt.close()
 		}
 		reg.byName, reg.retired = nil, nil
@@ -1108,7 +1108,7 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 				if mk != nil && canStep(m.resident, stepBatch{Pass: passRows, Emb: stepProbe, At: stepProbeAt}) {
 					sr, perr = m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: embed(prompt[from:]), Pos: from, Mark: mk.q, At: mk.at})
 				} else if canStep(m.resident, stepBatch{Pass: passRows, In: inRowsFn, N: 1, Rows: stepProbeRows}) {
-					// MEM6: the resident reads the suffix a chunk at a time.
+					// The resident reads the suffix a chunk at a time.
 					sr, perr = m.step(stepBatch{Pass: passRows, Ctx: ctx, In: inRowsFn, N: len(prompt) - from, Pos: from, Rows: m.suffixRows(prompt[from:])})
 				} else {
 					sr, perr = m.step(stepBatch{Pass: passRows, Ctx: ctx, Emb: embed(prompt[from:]), Pos: from})
@@ -1186,7 +1186,7 @@ func (m *Model) residentPrefillSeedMRoPE(ctx context.Context, prompt []int, from
 	return sr.Logits, nil
 }
 
-// mc3Prefill prefills prompt[from:] into an MC3 generation's slot and returns the seed logits. A long suffix is taken
+// mc3Prefill prefills prompt[from:] into a batched generation's slot and returns the seed logits. A long suffix is taken
 // in chunks while other generations are decoding (prefillChunkTokens; mc3_batch.go), each chunk in its own exclusive
 // section with one decode step yielded between them; otherwise — a short suffix, nobody decoding, or a resident whose
 // batched prefill declines — the rest goes through residentPrefillSeed in one section, exactly as before.
@@ -1278,7 +1278,7 @@ func (m *Model) tryClaimResident() bool {
 	if m.resident == nil {
 		return false
 	}
-	if m.batcher != nil { // MC3: the exclusive claim waits out no one — it simply fails while a holder has a slot
+	if m.batcher != nil { // Batched decode: the exclusive claim waits out no one — it simply fails while a holder has a slot
 		return m.batcher.claimExclusive(&m.resBusy)
 	}
 	return atomic.CompareAndSwapInt32(&m.resBusy, 0, 1)
@@ -1317,7 +1317,7 @@ type genRun struct {
 	lora           *loraRuntime
 	resAdapter     ResidentRuntimeSubsystem
 	useGPU         bool
-	mc3            *residentBatcher // non-nil: this generation holds an MC3 place and, after prefill, the KV slot mc3Slot
+	mc3            *residentBatcher // non-nil: this generation holds a batched-decode place and, after prefill, the KV slot mc3Slot
 	mc3Slot        int
 	mc3Committed   bool
 	gpuPos         int
@@ -1419,7 +1419,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			r.g.ResidentDeclined = fmt.Sprintf("the prompt's %d tokens pass the resident's context of %d", len(r.prompt), ctxCap)
 			m.warnResidentCap(r.g.ResidentDeclined)
 		} else if bt := m.batcher; bt != nil && r.lora == nil && bt.claim(&m.resBusy) {
-			// MC3: one of several concurrent generations on the resident, on its own KV slot (mc3_batch.go).
+			// Batched decode: one of several concurrent generations on the resident, on its own KV slot (mc3_batch.go).
 			r.mc3 = bt
 			defer bt.release()
 		} else if m.tryClaimResident() {
@@ -1453,7 +1453,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	}
 	r.gpuPos = 0
 
-	// resCost is set when this generation counts its cost on a resident that can (SB11b; never under MC3). A counted generation
+	// resCost is set when this generation counts its cost on a resident that can (never under the batched decode). A counted generation
 	// takes no decode path that queues a forward ahead of the host (the greedy and sampled chains, the optimistic forward), so
 	// its launches are exactly its emitted tokens'.
 
@@ -1472,7 +1472,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		var acq kvAcquired
 		scope := kvScopeOf(r.ctx)
 		if r.mc3 != nil {
-			// MC3: choose a slot no other running generation holds, and prefill into it, with the resident to
+			// Batched decode: choose a slot no other running generation holds, and prefill into it, with the resident to
 			// ourselves (between the other generations' steps).
 			r.mc3.exclusive(func() {
 				acq = m.residentAcquireIn(r.prompt, nil, r.lora, r.mc3.busySlots(), scope)
@@ -1512,8 +1512,8 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 				}
 			}()
 		} else {
-			scope.checkpoint = m.recurrentCheckpointer() != nil          // KV8a: this path restores, and saves after its prefill
-			acq = m.residentAcquireIn(r.prompt, nil, r.lora, nil, scope) // MC1: binds the KV slot this prompt will use
+			scope.checkpoint = m.recurrentCheckpointer() != nil          // recurrent checkpoint: this path restores, and saves after its prefill
+			acq = m.residentAcquireIn(r.prompt, nil, r.lora, nil, scope) // binds the resident KV slot this prompt will use
 			m.residentForgetIDs()
 			mk := m.kvPrefillMark(acq.slot, r.prompt, acq.reuse, r.lora, scope, &acq) // the boundary snapshot, taken between two passes
 			r.resCost = m.residentCostFor(cost.FromContext(r.ctx), false)
@@ -1539,7 +1539,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		r.gpuPos = len(r.prompt)
 	} else {
 		counted := false
-		if c := cost.FromContext(r.ctx); c != nil { // SB11b: the request asked for its cost; the walker counts into c
+		if c := cost.FromContext(r.ctx); c != nil { // the request asked for its cost; the walker counts into c
 			r.cache.cost, r.cache.costPhase, counted = c, cost.Prefill, true
 			defer func() { r.cache.cost = nil }() // a session's cache outlives this generation
 		}
@@ -1587,9 +1587,9 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		r.holdGrace.Stop()
 		defer r.holdGrace.Stop()
 	}
-	// MC3c step 2 (cpu_batch.go): a CPU generation on an eligible cache submits its decode tokens to the model's CPU
+	// Batched CPU decode (cpu_batch.go): a CPU generation on an eligible cache submits its decode tokens to the model's CPU
 	// batcher, which joins them with other generations' into one batched step; alone, a token runs m.forward as always.
-	// A generation that counts its cost (SB11b) decodes alone: a batched step's work is not attributed per generation.
+	// A generation that counts its cost decodes alone: a batched step's work is not attributed per generation.
 
 	if !r.useGPU && m.cpuBatch != nil && cpuBatchCacheEligible(r.cache) == nil && r.cache.cost == nil {
 		r.cb = m.cpuBatch
@@ -1659,7 +1659,7 @@ type Generation struct {
 	KVPromotedBlocks, KVPromotedRows int
 	// CheckpointRestored is the position a recurrent checkpoint was restored at for this prefill (0: none), CheckpointRestore its
 	// copy's time, CheckpointDeclined why a checkpoint hit prefilled cold instead; CheckpointSaved reports whether the state at the
-	// end of this prompt was saved for the next request, CheckpointSave that copy's time (KV8a, residentCheckpointSave).
+	// end of this prompt was saved for the next request, CheckpointSave that copy's time (residentCheckpointSave).
 	CheckpointRestored int
 	CheckpointRestore  time.Duration
 	CheckpointDeclined string

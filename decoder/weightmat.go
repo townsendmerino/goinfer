@@ -688,7 +688,7 @@ type GIWTarget string
 const (
 	GIWTargetNone     GIWTarget = ""
 	GIWTargetCPUArm64 GIWTarget = "cpu-arm64"
-	GIWTargetCPUAmd64 GIWTarget = "cpu-amd64" // defined for L5; does not yet change what's written
+	GIWTargetCPUAmd64 GIWTarget = "cpu-amd64" // defined, but does not yet change what's written
 	GIWTargetMetal    GIWTarget = "metal"
 	GIWTargetCUDA     GIWTarget = "cuda"
 	GIWTargetWebGPU   GIWTarget = "webgpu"

@@ -738,13 +738,13 @@ func (a *Architecture) hasAttnSinks() bool { return a.gptoss != nil || a.AttnSin
 // kvInt8OK reports whether NewCache may store this architecture's K/V as int8: a family whose attention is the batched kernel
 // (attnOrder) on the generic loop, which reads K/V through the int8-aware path, MoE included. A family with its own forward loop
 // (ownLoopFamily; gpt-oss's runs the batched kernel) keeps f32 until that loop is checked. What a quantized cache does to expert
-// routing is G4's published reading, not a refusal.
+// routing is a published quality reading, not a refusal.
 func (a *Architecture) kvInt8OK() bool {
 	return !a.ownLoopFamily() && a.attnOrder() == attnBatchedAcc64
 }
 
 // kvF16OK reports whether NewCache may store this architecture's KV at f16 (Options.KVQuant == "f16"): a family whose
-// attention is the batched kernel (attnOrder) on the generic loop, MoE included, held to gate F1 (TestKVF16_F1Exactness). A family
+// attention is the batched kernel (attnOrder) on the generic loop, MoE included, held to the f16 exactness gate (TestKVF16_F1Exactness). A family
 // with its own forward loop keeps f32 until it is checked on its own.
 func (a *Architecture) kvF16OK() bool {
 	return !a.ownLoopFamily() && a.attnOrder() == attnBatchedAcc64

@@ -8,15 +8,15 @@ import (
 	"time"
 )
 
-// MC3: several generations decoding on one resident at once, each on its own
+// The batched resident decode: several generations decoding on one resident at once, each on its own
 // resident KV slot, their decode tokens joined into shared steps.
 //
 // A resident is one command queue with one set of scratch buffers, so everything that touches it (a prefill, a
 // single-sequence forward, a batched step, the slot bookkeeping) runs one at a time, inside the batcher's exclusive
-// section. What MC3 adds is what runs there at a decode token: the batcher coalesces the tokens every decoding
+// section. What the batcher adds is what runs there at a decode token: the batcher coalesces the tokens every decoding
 // generation submits into one run. A run of at least lo batch-eligible tokens goes to BatchStepperAvailable.StepBatch
 // (every row bit-identical to that sequence's own Forward); anything else, a lone generation above all, runs
-// production's own per-sequence call unchanged, so a request served alone takes exactly the path it takes without MC3.
+// production's own per-sequence call unchanged, so a request served alone takes exactly the path it takes without the batcher.
 //
 // Generations join at token boundaries: a run starts once every decoding generation has submitted, or once the oldest
 // submission has waited batchStragglerWait (a generation whose consumer is slow to read its stream must not stall the
@@ -30,7 +30,7 @@ import (
 // a step when it fires, and it fires only for a straggler.
 const batchStragglerWait = 4 * time.Millisecond
 
-// tokenCoalescer is the token-joining core shared by MC3's residentBatcher and MC3c step 2's cpuBatcher
+// tokenCoalescer is the token-joining core shared by the resident's residentBatcher and the CPU's cpuBatcher
 // (cpu_batch.go): generations submit one decode token each, and a run serves the tokens pending once every decoding
 // generation has submitted or the straggler window has expired — in one batched step (step) when it has at least lo
 // tokens, else each through its own production call. What it does not know is what a run holds: the resident batcher
@@ -58,7 +58,7 @@ type tokenCoalescer struct {
 
 func (c *tokenCoalescer) init() { c.cond = sync.NewCond(&c.mu) }
 
-// residentBatcher is a Model's MC3 coordinator (Model.EnableResidentConcurrency): the shared coalescing core plus the
+// residentBatcher is a Model's batched-decode coordinator (Model.EnableResidentConcurrency): the shared coalescing core plus the
 // resident's slot holders. A resident is one command queue, so its runs and exclusive sections are one at a time.
 type residentBatcher struct {
 	tokenCoalescer
@@ -72,7 +72,7 @@ type residentBatcher struct {
 	holding bool
 }
 
-// ResidentBatchStats counts what MC3's batcher did (Model.ResidentBatchStats): runs, the tokens batched steps served
+// ResidentBatchStats counts what the resident batcher did (Model.ResidentBatchStats): runs, the tokens batched steps served
 // and how many steps there were, the tokens that ran as production's per-sequence call, and how many runs started
 // because the straggler window expired rather than because every decoding generation had submitted.
 //
@@ -95,7 +95,7 @@ type ResidentBatchStats struct {
 
 const batchStatsSizes = 17
 
-// ResidentBatchStats is a snapshot of the batcher's counters; zero when MC3 is not enabled.
+// ResidentBatchStats is a snapshot of the batcher's counters; zero when the batcher is not enabled.
 func (m *Model) ResidentBatchStats() ResidentBatchStats {
 	if m.batcher == nil {
 		return ResidentBatchStats{}
@@ -125,7 +125,7 @@ type chunkReq struct {
 	at   time.Time
 }
 
-// EnableResidentConcurrency lets up to n generations use this model's resident at once (MC3), and returns the n it
+// EnableResidentConcurrency lets up to n generations use this model's resident at once, and returns the n it
 // allowed: 1 — nothing enabled — unless the resident can batch (BatchStepperAvailable) over at least two KV slots, and
 // never more than the slot count, since each running generation holds a slot. Call it before any generation starts.
 func (m *Model) EnableResidentConcurrency(n int) int {
@@ -157,7 +157,7 @@ func (m *Model) ResidentConcurrency() int {
 	return m.batcher.maxHolders
 }
 
-// SetSpecAdaptive turns MC4's "speculate when alone, batch under load" candidate on or off.
+// SetSpecAdaptive turns the "speculate when alone, batch under load" candidate on or off.
 // Call it once at load, before any generation starts. It has no
 // effect unless EnableResidentConcurrency also enabled a batcher — with no batcher, genNgramInto's
 // exclusive claim behaves exactly as it does with this off.
@@ -173,7 +173,7 @@ func (m *Model) ResidentBatchCapable() bool {
 }
 
 // claim takes one of the batcher's holder places. It fails while an exclusive resident claim (tryClaimResident: the
-// paths MC3 does not batch — speculation, vision, adapters) is held, and when every place is taken.
+// paths the batcher does not batch — speculation, vision, adapters) is held, and when every place is taken.
 func (b *residentBatcher) claim(resBusy *int32) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -194,7 +194,7 @@ func (b *residentBatcher) release() {
 
 // holdSolo runs this holder's token fn with the resident kept between calls, while it is the only generation that wants
 // the resident: one holder, decoding, nothing pending and no exclusive section waiting. That is how a chained decode
-// runs under MC3: the chain keeps the next token's forward queued on the device between tokens, and nothing else may
+// runs under the batcher: the chain keeps the next token's forward queued on the device between tokens, and nothing else may
 // touch the resident until it stops. ok is false, with fn not run, when the holder is not alone; if a hold was kept
 // from an earlier call, release (the chain's Stop) runs first with the resident still held, then the hold ends. The
 // caller then submits the token through forward as usual. A newcomer (another holder's claim, its prefill's exclusive

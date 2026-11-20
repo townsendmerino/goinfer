@@ -238,7 +238,7 @@ func (m *Masker) maskID(g Grammar, id int, canEnd, plain bool, next *nextTable) 
 	// that is not EOS is judged by TryBytes like any other id, and its literal surface is
 	// plain-string-legal, so inside a JSON string value it can be emitted as if it were content.
 	// Fixing it needs an always-forbidden id set threaded through NewMasker, not a local change
-	// here. Open: docs/audit-2026-09-10.md (N-79); full text in docs/code-notes/constrain.md#Masker.maskID: control tokens.
+	// here. Full text in docs/code-notes/constrain.md#Masker.maskID: control tokens.
 	// Plain-string fast path: one bit test instead of a grammar walk for ids that cannot leave a
 	// string state or make it invalid (plainstring.go). `!canEnd` is belt-and-braces: a document
 	// cannot be complete mid-string, so the whitespace rule below cannot apply here.
