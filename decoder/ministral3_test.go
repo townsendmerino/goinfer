@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // G3 Ministral 3 parity (mistralai/Ministral-3-{3b,8b,
@@ -91,7 +93,7 @@ func TestMinistral3_forwardParity(t *testing.T) {
 		t.Fatalf("got %d logits, want vocab %d", len(logits), g.Vocab)
 	}
 
-	if got := argmax(logits); got != g.Argmax {
+	if got := sampling.Argmax(logits); got != g.Argmax {
 		t.Errorf("argmax = %d, want %d (logit[got]=%.4f logit[want]=%.4f)",
 			got, g.Argmax, logits[got], logits[g.Argmax])
 	}
@@ -117,7 +119,7 @@ func TestMinistral3_forwardParity(t *testing.T) {
 
 	cos := fullCosine(t, logits, ministral3ForwardFullPath)
 	t.Logf("mistral3: argmax=%d (want %d) | maxSampleΔ=%.5f | cosine=%v",
-		argmax(logits), g.Argmax, maxSampleΔ, cos)
+		sampling.Argmax(logits), g.Argmax, maxSampleΔ, cos)
 	emitParityRow(t, "mistral3", "tiny-golden", "HF f32 (ministral3-tiny seeded fixture, prompt > original_max_position_embeddings to exercise attn-temp)", 100.0, cos, cos)
 }
 

@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -72,7 +73,7 @@ func TestMellumGGUF_runs(t *testing.T) {
 			t.Fatalf("logit %d = %v (non-finite)", i, v)
 		}
 	}
-	am := argmax(logits)
+	am := sampling.Argmax(logits)
 	if am < 0 || am >= len(logits) {
 		t.Fatalf("argmax %d out of range", am)
 	}

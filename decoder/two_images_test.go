@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // S11: two images in one prompt, against the
@@ -97,7 +99,7 @@ func gradeAllPositions(got, want [][]float32, bar float64) (worst float64, lastA
 		worst = math.Min(worst, logitCosine(got[i], want[i]))
 	}
 	n := len(want) - 1
-	lastArgOK = argmax(got[n]) == argmax(want[n])
+	lastArgOK = sampling.Argmax(got[n]) == sampling.Argmax(want[n])
 	return worst, lastArgOK, worst >= bar && lastArgOK
 }
 
@@ -207,7 +209,7 @@ func qwenTwoImages(t *testing.T, ckpt, golden string, bar float64, blindOK map[s
 		}
 		last = append([]float32(nil), lg...)
 		for range l.Continuation {
-			next := argmax(lg)
+			next := sampling.Argmax(lg)
 			cont = append(cont, next)
 			if lg, err = m.forward(next, c); err != nil {
 				t.Fatal(err)
@@ -240,15 +242,15 @@ func qwenTwoImages(t *testing.T, ckpt, golden string, bar float64, blindOK map[s
 		feats := concatFeats(l.ImageFeatures[0], l.ImageFeatures[1])
 		last, cont := run(l, feats, pos)
 		cos := logitCosine(last, want)
-		t.Logf("%s: two images (grids %v): last cosine %.6f, argmax %d (HF %d), continuation %v (HF %v)", name, l.GridTHW, cos, argmax(last), argmax(want), cont, l.Continuation)
-		if cos < bar || argmax(last) != argmax(want) || !slices.Equal(cont, l.Continuation) {
+		t.Logf("%s: two images (grids %v): last cosine %.6f, argmax %d (HF %d), continuation %v (HF %v)", name, l.GridTHW, cos, sampling.Argmax(last), sampling.Argmax(want), cont, l.Continuation)
+		if cos < bar || sampling.Argmax(last) != sampling.Argmax(want) || !slices.Equal(cont, l.Continuation) {
 			t.Errorf("%s: two-image prefill misses the bar (cosine %.6f >= %.4f, argmax and continuation exact)", name, cos, bar)
 		}
 		// The whole bar, positions included: a defect clears it only if its positions are HF's too.
 		red := func(what string, p [][3]int, last []float32, cont []int) {
 			c := logitCosine(last, want)
-			t.Logf("%s: planted defect, %s: positions HF's %v, last cosine %.6f, argmax %d (HF %d), continuation %v", name, what, samePos(p), c, argmax(last), argmax(want), cont)
-			if samePos(p) && c >= bar && argmax(last) == argmax(want) && slices.Equal(cont, l.Continuation) {
+			t.Logf("%s: planted defect, %s: positions HF's %v, last cosine %.6f, argmax %d (HF %d), continuation %v", name, what, samePos(p), c, sampling.Argmax(last), sampling.Argmax(want), cont)
+			if samePos(p) && c >= bar && sampling.Argmax(last) == sampling.Argmax(want) && slices.Equal(cont, l.Continuation) {
 				if blindOK[name+": "+what] {
 					t.Logf("%s: BLIND, known: this fixture cannot see %q at its bar; the other fixtures and G-S11e carry it", name, what)
 				} else {
@@ -312,23 +314,23 @@ func TestTwoImages_gemma4Bidir(t *testing.T) {
 		last := append([]float32(nil), lg...)
 		var cont []int
 		for range l.Continuation {
-			next := argmax(lg)
+			next := sampling.Argmax(lg)
 			cont = append(cont, next)
 			if lg, err = m.forward(next, c); err != nil {
 				t.Fatal(err)
 			}
 		}
 		cos := logitCosine(last, want)
-		t.Logf("%s: two images: last cosine %.6f, argmax %d (HF %d), continuation %v (HF %v)", name, cos, argmax(last), argmax(want), cont, l.Continuation)
-		if cos < bar || argmax(last) != argmax(want) || !slices.Equal(cont, l.Continuation) {
+		t.Logf("%s: two images: last cosine %.6f, argmax %d (HF %d), continuation %v (HF %v)", name, cos, sampling.Argmax(last), sampling.Argmax(want), cont, l.Continuation)
+		if cos < bar || sampling.Argmax(last) != sampling.Argmax(want) || !slices.Equal(cont, l.Continuation) {
 			t.Errorf("%s: two-image prefill misses the bar (cosine %.6f >= %.3f, argmax and continuation exact)", name, cos, bar)
 		}
 		sw, err := m.prefillLogitsGemma4VLBidirectionalSpans(ctx, l.InputIDs, concatFeats(g.ImageFeatures[1], g.ImageFeatures[0]), spans, m.NewCache(len(l.InputIDs)))
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Logf("%s: planted defect, features swapped: last cosine %.6f, argmax %d", name, logitCosine(sw, want), argmax(sw))
-		if logitCosine(sw, want) >= bar && argmax(sw) == argmax(want) {
+		t.Logf("%s: planted defect, features swapped: last cosine %.6f, argmax %d", name, logitCosine(sw, want), sampling.Argmax(sw))
+		if logitCosine(sw, want) >= bar && sampling.Argmax(sw) == sampling.Argmax(want) {
 			t.Errorf("%s: BLIND: the swapped images still clear the bar", name)
 		}
 		// The second block left causal: both images spliced, only the first a block.
@@ -341,8 +343,8 @@ func TestTwoImages_gemma4Bidir(t *testing.T) {
 		}
 		bad := m.logitsFromNormed(hLast, bc)
 		hfBad := l.SecondCausalLogits[len(l.SecondCausalLogits)-1]
-		t.Logf("%s: planted defect, second block causal: last cosine %.6f against the golden, argmax %d; against HF's own defect forward %.6f (HF max|diff| %.4f)", name, logitCosine(bad, want), argmax(bad), logitCosine(bad, hfBad), l.SecondCausalDiff)
-		if logitCosine(bad, want) >= bar && argmax(bad) == argmax(want) {
+		t.Logf("%s: planted defect, second block causal: last cosine %.6f against the golden, argmax %d; against HF's own defect forward %.6f (HF max|diff| %.4f)", name, logitCosine(bad, want), sampling.Argmax(bad), logitCosine(bad, hfBad), l.SecondCausalDiff)
+		if logitCosine(bad, want) >= bar && sampling.Argmax(bad) == sampling.Argmax(want) {
 			t.Errorf("%s: BLIND: the second block left causal still clears the bar", name)
 		}
 		if logitCosine(bad, hfBad) < bar {

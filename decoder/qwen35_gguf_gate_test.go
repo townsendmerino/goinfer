@@ -20,6 +20,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -86,7 +87,7 @@ func TestQwen35GGUF_gate(t *testing.T) {
 				t.Fatalf("prompt %d step %d forward: %v", pi, s, err)
 			}
 			want := golden[s*man.Vocab : (s+1)*man.Vocab]
-			am := argmax(logits)
+			am := sampling.Argmax(logits)
 			totalSteps++
 			if am == p.GenIDs[s] {
 				argmaxHits++

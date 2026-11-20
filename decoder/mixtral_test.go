@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // G6 Mixtral / MoE parity. Mixtral is the llama descriptor with the dense FFN
@@ -81,7 +83,7 @@ func TestMixtral_forwardParity(t *testing.T) {
 		t.Fatalf("got %d logits, want vocab %d", len(logits), g.Vocab)
 	}
 
-	if got := argmax(logits); got != g.Argmax {
+	if got := sampling.Argmax(logits); got != g.Argmax {
 		t.Errorf("argmax = %d, want %d (logit[got]=%.4f logit[want]=%.4f)",
 			got, g.Argmax, logits[got], logits[g.Argmax])
 	}
@@ -107,7 +109,7 @@ func TestMixtral_forwardParity(t *testing.T) {
 
 	cos := fullCosine(t, logits, mixtralForwardFullPath)
 	t.Logf("mixtral: %dx top-%d | argmax=%d (want %d) | maxSampleΔ=%.5f | cosine=%v",
-		m.w.arch.MoE.NumExperts, m.w.arch.MoE.TopK, argmax(logits), g.Argmax, maxSampleΔ, cos)
+		m.w.arch.MoE.NumExperts, m.w.arch.MoE.TopK, sampling.Argmax(logits), g.Argmax, maxSampleΔ, cos)
 	// Record the validated metrics (no-op unless GOINFER_MANIFEST_EMIT; skipped on any failure
 	// above). tiny-golden: goinfer's forward vs the HF f32 forward of the SEEDED mixtral-tiny — an
 	// exact numeric oracle for the loader + MoE routing arithmetic (the method used when the real

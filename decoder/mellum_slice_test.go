@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -110,7 +111,7 @@ func TestMellumSlice_realWeightOracle(t *testing.T) {
 			t.Fatalf("forward: %v", err)
 		}
 	}
-	gotArg := argmax(logits)
+	gotArg := sampling.Argmax(logits)
 	cos := logitCosine(logits, g.LastLogits)
 	t.Logf("mellum2 slice (REAL weights, %d layers): argmax got=%d want=%d | logit cosine=%.8f",
 		g.NLayers, gotArg, g.Argmax, cos)
@@ -133,9 +134,9 @@ func TestMellumSlice_realWeightOracle(t *testing.T) {
 			t.Fatalf("prefillLogits: %v", err)
 		}
 		bcos := logitCosine(bl, g.LastLogits)
-		t.Logf("mellum2 slice batched prefill: argmax=%d cosine=%.8f", argmax(bl), bcos)
-		if argmax(bl) != g.Argmax {
-			t.Errorf("batched-prefill argmax = %d, want %d", argmax(bl), g.Argmax)
+		t.Logf("mellum2 slice batched prefill: argmax=%d cosine=%.8f", sampling.Argmax(bl), bcos)
+		if sampling.Argmax(bl) != g.Argmax {
+			t.Errorf("batched-prefill argmax = %d, want %d", sampling.Argmax(bl), g.Argmax)
 		}
 		if bcos < 0.9999 {
 			t.Errorf("batched-prefill cosine %.8f < 0.9999 on REAL weights", bcos)
@@ -153,7 +154,7 @@ func TestMellumSlice_realWeightOracle(t *testing.T) {
 				t.Fatalf("forward: %v", err)
 			}
 		}
-		nxt := argmax(lg)
+		nxt := sampling.Argmax(lg)
 		if i < len(g.ContinuationIDs) && nxt != g.ContinuationIDs[i] {
 			t.Errorf("continuation[%d] = %d, want %d", i, nxt, g.ContinuationIDs[i])
 			break

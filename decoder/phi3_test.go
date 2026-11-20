@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"os"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 // TestPhi3_descriptor checks the phi3 adapter resolves the llama-like descriptor: RMSNorm
@@ -76,7 +78,7 @@ func TestPhi3_textParity(t *testing.T) {
 			t.Fatalf("forward: %v", err)
 		}
 	}
-	gotArg := argmax(logits)
+	gotArg := sampling.Argmax(logits)
 	cos := logitCosine(logits, g.LastLogits)
 	t.Logf("phi3 text parity: argmax got=%d want=%d | logit cosine=%.6f", gotArg, g.Argmax, cos)
 	if gotArg != g.Argmax {
@@ -88,7 +90,7 @@ func TestPhi3_textParity(t *testing.T) {
 
 	got := make([]int, 0, g.NNew)
 	for range g.NNew {
-		id := argmax(logits)
+		id := sampling.Argmax(logits)
 		got = append(got, id)
 		if logits, err = m.forward(id, cache); err != nil {
 			t.Fatalf("continuation forward: %v", err)
