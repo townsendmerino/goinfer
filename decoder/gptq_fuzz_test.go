@@ -8,6 +8,7 @@ import (
 	"testing/fstest"
 
 	"github.com/townsendmerino/aikit/embed"
+	"github.com/townsendmerino/goinfer/decoder/quant"
 )
 
 // Track 2.4 (testing campaign): goinfer's interpretation of a pre-quantized
@@ -102,17 +103,17 @@ func TestGPTQReconstruct_nonMultipleOf8(t *testing.T) {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					t.Fatalf("gptqReconstruct(in=%d,out=%d) panicked: %v", d.in, d.out, r)
+					t.Fatalf("quant.GPTQReconstruct(in=%d,out=%d) panicked: %v", d.in, d.out, r)
 				}
 			}()
-			if _, err := gptqReconstruct(st, "l", d.in, d.out); err == nil {
-				t.Errorf("gptqReconstruct(in=%d,out=%d): want error for non-multiple-of-8 dims", d.in, d.out)
+			if _, err := quant.GPTQReconstruct(st, "l", d.in, d.out); err == nil {
+				t.Errorf("quant.GPTQReconstruct(in=%d,out=%d): want error for non-multiple-of-8 dims", d.in, d.out)
 			}
 		}()
 	}
 	// A clean multiple-of-8 case still reconstructs.
 	st := loadST(t, buildSafetensors(gptqFixture(16, 8, 1)))
-	if _, err := gptqReconstruct(st, "l", 16, 8); err != nil {
+	if _, err := quant.GPTQReconstruct(st, "l", 16, 8); err != nil {
 		t.Fatalf("valid gptq reconstruct rejected: %v", err)
 	}
 }
@@ -172,7 +173,7 @@ func FuzzGPTQReconstruct(f *testing.F) {
 			"l.scales":  {"F32", []int{groups, out}, f32Bytes(make([]float32, groups*out))},
 		}
 		st := loadST(t, buildSafetensors(ts))
-		res, err := gptqReconstruct(st, "l", in, out)
+		res, err := quant.GPTQReconstruct(st, "l", in, out)
 		if err == nil && len(res) != out*in {
 			t.Fatalf("gptq result len %d, want %d (in=%d out=%d)", len(res), out*in, in, out)
 		}
@@ -199,7 +200,7 @@ func FuzzAWQReconstruct(f *testing.F) {
 			"l.scales":  {"F32", []int{groups, out}, f32Bytes(make([]float32, groups*out))},
 		}
 		st := loadST(t, buildSafetensors(ts))
-		res, err := awqReconstruct(st, "l", in, out)
+		res, err := quant.AWQReconstruct(st, "l", in, out)
 		if err == nil && len(res) != out*in {
 			t.Fatalf("awq result len %d, want %d (in=%d out=%d)", len(res), out*in, in, out)
 		}
