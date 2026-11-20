@@ -1,0 +1,96 @@
+# goinfer-serve with the WebGPU backend, one binary per platform it can be built on with cgo, native on each runner:
+#   goinfer-serve-webgpu-linux-amd64, goinfer-serve-webgpu-linux-arm64, goinfer-serve-webgpu-windows-amd64.exe
+# The static assets (release-assets.yml's `plain` job) are CGO_ENABLED=0 and cannot carry WebGPU; macOS has Metal.
+#
+# release-assets.yml calls this with publish: true after its own `publish` job, so a failure here never holds the static
+# release. On a pull request that changes this file or its script, and on workflow_dispatch, it builds and smokes only: the
+# dry run, no tag needed. The smoke on a CI runner opens a software adapter at best (scripts/build_webgpu_serve.sh).
+name: webgpu assets
+
+on:
+  pull_request:
+    paths: ['.github/workflows/webgpu-assets.yml', 'scripts/build_webgpu_serve.sh']
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      tag:
+        description: 'The release tag to build and attach to'
+        type: string
+        required: true
+      publish:
+        description: 'Attach the assets to the release'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: webgpu serve (${{ matrix.os }}-${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: linux, arch: amd64, runner: ubuntu-24.04, ext: '', want: adapter }
+          - { os: linux, arch: arm64, runner: ubuntu-24.04-arm, ext: '', want: adapter }
+          - { os: windows, arch: amd64, runner: windows-latest, ext: '.exe', want: any }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      TAG: ${{ inputs.tag || github.sha }}
+      OUT: dist/goinfer-serve-webgpu-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with: { ref: '${{ inputs.tag || github.ref }}' }
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      # Mesa's software Vulkan adapter, for the smoke only: the binary itself needs no package at build time.
+      - name: software Vulkan adapter (smoke only)
+        if: matrix.os == 'linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q libegl1-mesa-dev mesa-vulkan-drivers
+      - name: build
+        run: bash scripts/build_webgpu_serve.sh build "$TAG" "$OUT"
+      - name: smoke (starts, lists webgpu, reports its adapter)
+        run: bash scripts/build_webgpu_serve.sh smoke "$OUT" "${{ matrix.want }}"
+      - name: assert the asset was not built from a modified tree (R18)
+        run: bash scripts/check_asset_vcs.sh "$OUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with: { name: 'webgpu-${{ matrix.os }}-${{ matrix.arch }}', path: '${{ env.OUT }}' }
+
+  publish:
+    name: attach the webgpu assets to the release
+    needs: build
+    if: inputs.publish
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with: { pattern: 'webgpu-*', path: dist, merge-multiple: true }
+      - name: checksum
+        run: |
+          set -euo pipefail
+          cd dist
+          for t in linux-amd64 linux-arm64 windows-amd64.exe; do
+            [ -f "goinfer-serve-webgpu-$t" ] || { echo "MISSING goinfer-serve-webgpu-$t"; exit 1; }
+          done
+          sha256sum -- goinfer-serve-webgpu-* > checksums-webgpu.txt
+          cat checksums-webgpu.txt
+      - name: attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with: { subject-checksums: dist/checksums-webgpu.txt }
+      - name: upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" dist/* --clobber --repo "${{ github.repository }}"

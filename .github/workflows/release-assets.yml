@@ -153,7 +153,7 @@ jobs:
       # possible at tag time.
       #
       # All of these are CGO_ENABLED=0. `-tags gpu` (WebGPU) is deliberately NOT here: it needs
-      # cgo, so it cannot be in a static release asset.
+      # cgo, so it cannot be in a static release asset; the `webgpu` job below builds it natively.
       - name: cross-compile goinfer-serve per platform
         run: |
           set -euo pipefail
@@ -619,6 +619,21 @@ jobs:
             echo "attached to this release, or the README names a file that is not built."
             exit 1
           }
+
+  # goinfer-serve with WebGPU (cgo, so not in `plain`): built, smoked and attached by webgpu-assets.yml after `publish`, so a
+  # failure there never holds the static release. It carries its own checksums-webgpu.txt and attestation.
+  webgpu:
+    name: webgpu assets
+    needs: publish
+    if: always() && needs.publish.result == 'success'
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/webgpu-assets.yml
+    with:
+      tag: ${{ github.event.inputs.tag || github.ref_name }}
+      publish: true
 
   # THE PUBLISHED COUNT, CHECKED EVEN WHEN THE BUILD FAILED. v0.18.0 went out with 0 assets (v0.17.x
   # had 27): a Windows cross-compile break failed `plain`, so `publish` — which needs it — never ran,
