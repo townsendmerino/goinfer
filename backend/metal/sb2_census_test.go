@@ -2047,7 +2047,7 @@ func prefillDispatchCalls(t *testing.T, m *decoder.Model, a *metalResident) []pr
 		}
 		return p
 	}
-	p24, p72, p136 := prompt(24, 0), prompt(72, 1), prompt(136, 2)
+	p24, p72, p104 := prompt(24, 0), prompt(72, 1), prompt(104, 2)
 	ctx := context.Background()
 	tr := newPrefillTrace(a.r)
 	knob := a.r.knob
@@ -2086,7 +2086,7 @@ func prefillDispatchCalls(t *testing.T, m *decoder.Model, a *metalResident) []pr
 	}
 	run("last24", floor0, last(p24))
 	run("last72", floor0, last(p72))
-	run("last136", floor0, last(p136))
+	run("last104", floor0, last(p104))
 	run("default-floor", nil, last(p24))
 	run("continue", floor0, func() (any, error) {
 		if _, err := a.PrefillLast(ctx, p24[:12], 0); err != nil {
@@ -2130,7 +2130,7 @@ func prefillDispatchCalls(t *testing.T, m *decoder.Model, a *metalResident) []pr
 	run("steel-off", floor0, last(p24))
 	prefillSteelAttnOff = false
 	swigluFusedOffForTest = true
-	run("swiglu-unfused", floor0, last(p136))
+	run("swiglu-unfused", floor0, last(p104))
 	swigluFusedOffForTest = false
 	exactAttnTileForTest = 8
 	run("attn-tiled", map[string]string{"GOINFER_METAL_FUSED_ATTENTION": "0", "GOINFER_METAL_FAST_PREFILL_FLOOR": "0"}, last(p24))
