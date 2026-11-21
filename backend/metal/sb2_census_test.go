@@ -1944,13 +1944,15 @@ func TestPrefillDispatch_sequencesHoldTheGolden(t *testing.T) {
 		}
 	}
 	// The census's kv-i8 cell quantizes the CPU cache (KVQuant); the device's int8 cache is KVPrecision's. The q4k lane is
-	// its own quant.
+	// its own quant, on decoder.WritePhi3Q4KTinyGGUFForTest's GGUF.
 	for _, f := range []string{"testdata/llama-tiny", "testdata/qwen3moe-tiny", "testdata/qwen35-tiny", "testdata/gemma2-tiny", "testdata/mistral-tiny-window", "testdata/gemma3-vl-tiny"} {
 		loads = append(loads, load{f + " int4/kvprec-i8", filepath.Join("../..", f), decoder.Options{Quant: "int4", KVPrecision: "i8"}})
 	}
-	for _, f := range []string{"testdata/llama-tiny", "testdata/qwen3moe-tiny", "testdata/gemma2-tiny", "testdata/phi3-tiny", "testdata/qwen25vl-tiny"} {
-		loads = append(loads, load{f + " q4k", filepath.Join("../..", f), decoder.Options{Quant: "q4k"}})
+	phi3 := filepath.Join(t.TempDir(), "phi3.gguf")
+	if err := decoder.WritePhi3Q4KTinyGGUFForTest(phi3); err != nil {
+		t.Fatal(err)
 	}
+	loads = append(loads, load{"phi3-q4k-tiny.gguf q4k", phi3, decoder.Options{Quant: "q4k"}})
 	for _, f := range prefillDispatchExtras {
 		path := filepath.Join("../..", f)
 		if _, err := os.Stat(path); err != nil {
@@ -2030,7 +2032,7 @@ type prefillDispatchCall struct {
 }
 
 // prefillDispatchCalls traces each prefill entry point on a, each from a reset with the fast-prefill floor at 0 unless named:
-// two prompt lengths (the fused SwiGLU GEMM takes only the 64-row tile), a prompt continued at a later position, the row
+// three prompt lengths (the GEMM tiles by rows, and the fused SwiGLU GEMM takes only the 64-row tile), a prompt continued at a later position, the row
 // source, the default floor, the tails forwardMultiOut serves, image blocks, m-RoPE and DeepStack, the second KV slot, and
 // the pass's switches (fused attention off, steel attention off, the unfused SwiGLU, the tiled exact attention, the row-by-row
 // MoE).
@@ -2045,7 +2047,7 @@ func prefillDispatchCalls(t *testing.T, m *decoder.Model, a *metalResident) []pr
 		}
 		return p
 	}
-	p24, p72 := prompt(24, 0), prompt(72, 1)
+	p24, p72, p136 := prompt(24, 0), prompt(72, 1), prompt(136, 2)
 	ctx := context.Background()
 	tr := newPrefillTrace(a.r)
 	knob := a.r.knob
@@ -2084,7 +2086,8 @@ func prefillDispatchCalls(t *testing.T, m *decoder.Model, a *metalResident) []pr
 	}
 	run("last24", floor0, last(p24))
 	run("last72", floor0, last(p72))
-	run("default-floor", nil, last(p72))
+	run("last136", floor0, last(p136))
+	run("default-floor", nil, last(p24))
 	run("continue", floor0, func() (any, error) {
 		if _, err := a.PrefillLast(ctx, p24[:12], 0); err != nil {
 			return nil, err
@@ -2127,7 +2130,7 @@ func prefillDispatchCalls(t *testing.T, m *decoder.Model, a *metalResident) []pr
 	run("steel-off", floor0, last(p24))
 	prefillSteelAttnOff = false
 	swigluFusedOffForTest = true
-	run("swiglu-unfused", floor0, last(p72))
+	run("swiglu-unfused", floor0, last(p136))
 	swigluFusedOffForTest = false
 	exactAttnTileForTest = 8
 	run("attn-tiled", map[string]string{"GOINFER_METAL_FUSED_ATTENTION": "0", "GOINFER_METAL_FAST_PREFILL_FLOOR": "0"}, last(p24))
