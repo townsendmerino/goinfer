@@ -894,6 +894,7 @@ func (q Queue) Begin() *Encoder {
 	runtime.LockOSThread()
 	pool := objc.ID(objc.GetClass("NSAutoreleasePool")).Send(selAlloc).Send(selInit)
 	cb := q.id.Send(selCommandBuffer)
+	traceOp(TraceBegin)
 	return &Encoder{pool: pool, pinned: true, cb: cb, enc: cb.Send(selComputeEncoder), act: q.act, tracked: q.act.dispatchHook() != nil}
 }
 
@@ -913,13 +914,14 @@ func (p ARPool) Drain() { p.id.Send(selDrain) }
 // command buffer without the LIFO pool-nesting a per-call pool would cause).
 func (q Queue) BeginNP() *Encoder {
 	cb := q.id.Send(selCommandBuffer)
+	traceOp(TraceBegin)
 	return &Encoder{cb: cb, enc: cb.Send(selComputeEncoder), act: q.act, tracked: q.act.dispatchHook() != nil}
 }
 
 // FinishEncoding closes the encoder (ready to commit) without committing — the split that lets
 // the executor encode token t+1 while token t's command buffer runs.
 func (e *Encoder) FinishEncoding() { e.enc.Send(selEndEncoding) }
-func (e *Encoder) Commit()         { e.cb.Send(selCommit); e.act.committed(e) }
+func (e *Encoder) Commit()         { e.cb.Send(selCommit); e.act.committed(e); traceOp(TraceCommit) }
 
 // WaitDone blocks until the committed command buffer completes, then captures any abort and reads
 // its GPU timestamps. Both reads are valid only post-completion and are taken here, while the cb is
@@ -927,6 +929,7 @@ func (e *Encoder) Commit()         { e.cb.Send(selCommit); e.act.committed(e) }
 func (e *Encoder) WaitDone() {
 	e.cb.Send(selWaitCompleted)
 	e.act.waited()
+	traceOp(TraceWait)
 	e.captureErr()
 	e.ReadTimes()
 }
@@ -1032,6 +1035,7 @@ func (e *Encoder) Dispatch(p Pipeline, n, tg int, bufs ...Buffer) {
 	perTG := mtlSize{w: uint64(tg), h: 1, d: 1}
 	e.enc.Send(selDispatchThreads, unsafe.Pointer(&total), unsafe.Pointer(&perTG))
 	e.counted(p)
+	traceDispatch(p, false, n, 1, tg, 1, 0, bufs)
 	runtime.KeepAlive(&total)
 	runtime.KeepAlive(&perTG)
 }
@@ -1055,6 +1059,7 @@ func (e *Encoder) Dispatch2D(p Pipeline, gx, gy, tgx, tgy int, bufs ...Buffer) {
 	perTG := mtlSize{w: uint64(tgx), h: uint64(tgy), d: 1}
 	e.enc.Send(selDispatchTG, unsafe.Pointer(&grid), unsafe.Pointer(&perTG))
 	e.counted(p)
+	traceDispatch(p, true, gx, gy, tgx, tgy, 0, bufs)
 	runtime.KeepAlive(&grid)
 	runtime.KeepAlive(&perTG)
 }
@@ -1076,6 +1081,7 @@ func (e *Encoder) DispatchTG(p Pipeline, n, tg, tgBytes int, bufs ...Buffer) {
 	perTG := mtlSize{w: uint64(tg), h: 1, d: 1}
 	e.enc.Send(selDispatchThreads, unsafe.Pointer(&total), unsafe.Pointer(&perTG))
 	e.counted(p)
+	traceDispatch(p, false, n, 1, tg, 1, tgBytes, bufs)
 	runtime.KeepAlive(&total)
 	runtime.KeepAlive(&perTG)
 }
@@ -1084,8 +1090,10 @@ func (e *Encoder) End() {
 	e.enc.Send(selEndEncoding)
 	e.cb.Send(selCommit)
 	e.act.committed(e)
+	traceOp(TraceCommit)
 	e.cb.Send(selWaitCompleted)
 	e.act.waited()
+	traceOp(TraceWait)
 	e.captureErr() // BEFORE the drain frees the cb
 	e.ReadTimes()
 	e.pool.Send(selDrain)
@@ -1122,6 +1130,7 @@ func (e *Encoder) EventBoundary(ev SharedEvent, sig, wait uint64) {
 	e.cb.Send(selEncodeWaitForEvent, ev.id, uintptr(wait))
 	e.enc = e.cb.Send(selComputeEncoder)
 	e.curPipe = 0
+	traceOp(TraceBoundary)
 }
 
 // DrainPool drains the Encoder's autorelease pool — the tail of a hand-built command buffer (e.g.

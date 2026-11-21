@@ -21,7 +21,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unsafe"
 
+	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/decoder/fit"
 	"github.com/townsendmerino/goinfer/internal/diag/sb2census"
@@ -1892,4 +1894,415 @@ func TestMultiSeqWalk_plantsGoRed(t *testing.T) {
 		}
 	}
 	t.Logf("fixtures red under the extra-residual plant: %d", reds)
+}
+
+var (
+	prefillDispatchUpdate = flag.Bool("prefilldispatch.update", false, "rewrite this architecture's testdata/metal_prefill_dispatch.<goarch>.txt.gz")
+	prefillDispatchDump   = flag.String("prefilldispatch.dump", "", "write each traced prefill call's full trace, and a hash of its output, to this directory")
+)
+
+// prefillDispatchExtras are generated fixtures layer D's census does not list but the batched prefill has branches for: a
+// Gemma 4 E-model's per-layer inputs, Gemma 4's MoE, two layer geometries and a bidirectional image fixture.
+// scripts/worktree_fixtures.sh copies them into a worktree.
+var prefillDispatchExtras = []string{"testdata/gemma4-emodel-tiny", "testdata/gemma4-moe-tiny", "testdata/gemma4-dense-twogeom-tiny", "testdata/gemma4-vl-bidir-tiny"}
+
+// TestPrefillDispatch_sequencesHoldTheGolden holds Metal's prefill to a recorded dispatch sequence, the gate for cutting
+// resident.prefillLastImgSrc into phases: on every census fixture and option cell that builds resident, an int8 KV cache, the
+// q4k lane and prefillDispatchExtras, each call prefillDispatchCalls makes issues the dispatches, command buffers,
+// allocations and releases the golden records (prefillTrace's text, summarised per call by traceSummaryMetal). A declined
+// call records its error, so the guards are held too. The outputs are not in the golden, since they are the machine's; on a
+// red line, or to hold a refactor to its outputs as well, run with -prefilldispatch.dump DIR on both trees and diff the
+// directories.
+func TestPrefillDispatch_sequencesHoldTheGolden(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	t.Setenv("GOINFER_SSM_RESIDENT", "")
+	d, err := sb2census.ReadLayerD("../..", "metal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	type load struct {
+		row, path string
+		o         decoder.Options
+	}
+	var loads []load
+	for _, f := range d.Fixtures {
+		path, err := sb2census.Path("../..", f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range sb2census.Cells {
+			if !d.Resident[f+" "+c.Name] {
+				continue
+			}
+			o := decoder.Options{Quant: c.Quant, ActQuantGroup: c.ActGroup, KVPrecision: c.KVPrec, KVQuant: c.KVQuant}
+			if c.SSM != "" {
+				o.Knobs = &decoder.Knobs{"GOINFER_SSM_RESIDENT": c.SSM}
+			}
+			loads = append(loads, load{f + " " + c.Name, path, o})
+		}
+	}
+	// The census's kv-i8 cell quantizes the CPU cache (KVQuant); the device's int8 cache is KVPrecision's. The q4k lane is
+	// its own quant.
+	for _, f := range []string{"testdata/llama-tiny", "testdata/qwen3moe-tiny", "testdata/qwen35-tiny", "testdata/gemma2-tiny", "testdata/mistral-tiny-window", "testdata/gemma3-vl-tiny"} {
+		loads = append(loads, load{f + " int4/kvprec-i8", filepath.Join("../..", f), decoder.Options{Quant: "int4", KVPrecision: "i8"}})
+	}
+	for _, f := range []string{"testdata/llama-tiny", "testdata/qwen3moe-tiny", "testdata/gemma2-tiny", "testdata/phi3-tiny", "testdata/qwen25vl-tiny"} {
+		loads = append(loads, load{f + " q4k", filepath.Join("../..", f), decoder.Options{Quant: "q4k"}})
+	}
+	for _, f := range prefillDispatchExtras {
+		path := filepath.Join("../..", f)
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("%s is missing (generated fixtures: scripts/worktree_fixtures.sh): %v", f, err)
+			continue
+		}
+		loads = append(loads, load{f + " int4", path, decoder.Options{Quant: "int4"}})
+	}
+	if *prefillDispatchDump != "" {
+		if err := os.MkdirAll(*prefillDispatchDump, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var lines []string
+	start := time.Now()
+	built, batched, last := 0, 0, ""
+	for i, ld := range loads {
+		if f, _, _ := strings.Cut(ld.row, " "); f != last {
+			last = f
+			fmt.Fprintf(os.Stderr, "[prefilldispatch] load %d of %d, %s: %d lines, %s elapsed\n", i+1, len(loads), f, len(lines), time.Since(start).Round(time.Second))
+		}
+		o := ld.o
+		o.Backend, o.ResidentContext, o.ResidentKVSlots = "metal", 256, 2
+		m, err := decoder.Load(ld.path, o)
+		if err != nil {
+			lines = append(lines, ld.row+" load err="+sb2census.Clean(err.Error()))
+			continue
+		}
+		a, ok := m.ResidentForwardForTest().(*metalResident)
+		if !ok {
+			lines = append(lines, ld.row+" load not-resident")
+			m.Close()
+			continue
+		}
+		built++
+		got := prefillDispatchCalls(t, m, a)
+		for _, c := range got {
+			key := ld.row + " " + c.name
+			lines = append(lines, key+" "+c.summary)
+			if strings.Contains(c.summary, "pf.") {
+				batched++
+			}
+			if *prefillDispatchDump != "" {
+				name := strings.NewReplacer("/", "_", " ", "__").Replace(key) + ".txt"
+				body := strings.Join(append(c.trace, "out "+c.out), "\n") + "\n"
+				if err := os.WriteFile(filepath.Join(*prefillDispatchDump, name), []byte(body), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		m.Close()
+	}
+	t.Logf("%d loads, %d resident; %d lines, %d of them through the batched pass's pipelines, in %s", len(loads), built, len(lines), batched, time.Since(start).Round(time.Second))
+	if built < 40 || batched < 200 {
+		t.Errorf("%d resident builds, %d calls through the batched pass: a gate that barely runs covers little", built, batched)
+	}
+	golden := sb2census.Golden("testdata", "metal_prefill_dispatch")
+	if *prefillDispatchUpdate {
+		if err := sb2census.Write(golden, lines); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("wrote %s", golden)
+		return
+	}
+	diffs, err := sb2census.Diff(golden, lines, 3)
+	if err != nil {
+		t.Fatalf("%v: run with -prefilldispatch.update to record the dispatch sequences", err)
+	}
+	if len(diffs) > 0 {
+		t.Errorf("the prefill dispatch sequences differ from %s in %d line(s):\n%s", golden, len(diffs), strings.Join(diffs[:min(len(diffs), 30)], "\n"))
+	}
+}
+
+type prefillDispatchCall struct {
+	name, summary, out string
+	trace              []string
+}
+
+// prefillDispatchCalls traces each prefill entry point on a, each from a reset with the fast-prefill floor at 0 unless named:
+// two prompt lengths (the fused SwiGLU GEMM takes only the 64-row tile), a prompt continued at a later position, the row
+// source, the default floor, the tails forwardMultiOut serves, image blocks, m-RoPE and DeepStack, the second KV slot, and
+// the pass's switches (fused attention off, steel attention off, the unfused SwiGLU, the tiled exact attention, the row-by-row
+// MoE).
+func prefillDispatchCalls(t *testing.T, m *decoder.Model, a *metalResident) []prefillDispatchCall {
+	t.Helper()
+	_, nLayers, _, _, _, _, vocab := m.Dims()
+	emb := func(id int) []float32 { return m.EmbedResidentForTest(id % vocab) }
+	prompt := func(n, salt int) [][]float32 {
+		p := make([][]float32, n)
+		for i := range p {
+			p[i] = emb(i*37 + salt*11 + 3)
+		}
+		return p
+	}
+	p24, p72 := prompt(24, 0), prompt(72, 1)
+	ctx := context.Background()
+	tr := newPrefillTrace(a.r)
+	knob := a.r.knob
+	defer func() { a.r.knob = knob }()
+	with := func(set map[string]string) func(string) (string, bool) {
+		return func(name string) (string, bool) {
+			if v, ok := set[name]; ok {
+				return v, true
+			}
+			if knob == nil {
+				return os.LookupEnv(name)
+			}
+			return knob(name)
+		}
+	}
+	floor0 := map[string]string{"GOINFER_METAL_FAST_PREFILL_FLOOR": "0"}
+	var out []prefillDispatchCall
+	run := func(name string, knobs map[string]string, fn func() (any, error)) {
+		a.r.knob = with(knobs)
+		a.Reset()
+		a.r.stopExec()
+		tr.start()
+		res, err := fn()
+		lines := tr.stop()
+		a.r.knob = knob
+		s := traceSummaryMetal(lines)
+		if err != nil {
+			s += " err=" + sb2census.Clean(err.Error())
+		}
+		h := sha256.New()
+		fmt.Fprintf(h, "%v", res)
+		out = append(out, prefillDispatchCall{name: name, summary: s, out: fmt.Sprintf("%x", h.Sum(nil)[:8]), trace: lines})
+	}
+	last := func(p [][]float32) func() (any, error) {
+		return func() (any, error) { return a.PrefillLast(ctx, p, 0) }
+	}
+	run("last24", floor0, last(p24))
+	run("last72", floor0, last(p72))
+	run("default-floor", nil, last(p72))
+	run("continue", floor0, func() (any, error) {
+		if _, err := a.PrefillLast(ctx, p24[:12], 0); err != nil {
+			return nil, err
+		}
+		return a.PrefillLast(ctx, p24[12:], 12)
+	})
+	run("rows", floor0, func() (any, error) {
+		return a.PrefillLastRows(ctx, len(p72), 0, func(lo, hi int) [][]float32 { return p72[lo:hi] })
+	})
+	run("argmax", floor0, func() (any, error) { return a.PrefillLastNArgmax(p24, 0) })
+	run("hidden", floor0, func() (any, error) { return a.HiddenLast(ctx, p24, 0) })
+	run("residual", floor0, func() (any, error) { return a.ResidualAll(ctx, p24, 0) })
+	run("image", floor0, func() (any, error) { return a.PrefillImageBlocksLast(ctx, p24, 0, [][2]int{{4, 10}, {14, 18}}) })
+	mpos := make([][3]int, len(p24))
+	for i := range mpos {
+		mpos[i] = [3]int{i, i, i}
+		if i >= 4 && i < 10 {
+			mpos[i] = [3]int{4, (i - 4) / 3, (i - 4) % 3}
+		}
+	}
+	run("mrope", floor0, func() (any, error) { return a.PrefillMRoPELast(ctx, p24, 0, mpos) })
+	deep := make([][]float32, min(nLayers, 2))
+	for l := range deep {
+		deep[l] = make([]float32, 6*a.r.H)
+		for i := range deep[l] {
+			deep[l][i] = float32((i+l)%7) * 0.01
+		}
+	}
+	run("deepstack", floor0, func() (any, error) { return a.PrefillMRoPEDeepstackLast(ctx, p24, 0, mpos, deep, 4, 6) })
+	run("slot1", floor0, func() (any, error) {
+		if err := a.UseKVSlot(1); err != nil {
+			return nil, err
+		}
+		defer a.UseKVSlot(0)
+		return a.PrefillLast(ctx, p24, 0)
+	})
+	run("fused-attn-off", map[string]string{"GOINFER_METAL_FUSED_ATTENTION": "0", "GOINFER_METAL_FAST_PREFILL_FLOOR": "0"}, last(p24))
+	run("moe-row-major", map[string]string{"GOINFER_MOE_EXPERT_MAJOR": "0", "GOINFER_METAL_FAST_PREFILL_FLOOR": "0"}, last(p24))
+	prefillSteelAttnOff = true
+	run("steel-off", floor0, last(p24))
+	prefillSteelAttnOff = false
+	swigluFusedOffForTest = true
+	run("swiglu-unfused", floor0, last(p72))
+	swigluFusedOffForTest = false
+	exactAttnTileForTest = 8
+	run("attn-tiled", map[string]string{"GOINFER_METAL_FUSED_ATTENTION": "0", "GOINFER_METAL_FAST_PREFILL_FLOOR": "0"}, last(p24))
+	exactAttnTileForTest = 0
+	a.Reset()
+	return out
+}
+
+// prefillTrace records the device work one prefill call issues, as text a refactor can be held to: every dispatch (its
+// pipeline's field name on resident or prefillState, its grid and threadgroup, every binding), every command buffer's begin,
+// commit and wait, and every allocation and release, in issue order.
+//
+// An MTLBuffer is named by what it is: "aN" for the N-th allocation made during the trace, "pN" for the N-th buffer that
+// existed before it, by first use; a binding adds its byte offset. A binding of an allocation of at most 16 bytes made during
+// the trace (a uniform) carries its contents at encode time.
+type prefillTrace struct {
+	r        *resident
+	pfWalked bool // the prefill pipelines are compiled on the first batched call, so they are named on first sight
+	names    map[Pipeline]string
+	unk      map[Pipeline]int
+
+	mu     sync.Mutex
+	lines  []string
+	allocs map[uintptr]int // live allocations made during the trace -> N
+	nAlloc int
+	small  map[uintptr]bool
+	pre    map[uintptr]int
+}
+
+func newPrefillTrace(r *resident) *prefillTrace {
+	t := &prefillTrace{r: r, names: map[Pipeline]string{}}
+	t.walk("", reflect.ValueOf(r).Elem())
+	return t
+}
+
+// walk names every Pipeline field (and array of them) of the struct v, under prefix.
+func (t *prefillTrace) walk(prefix string, v reflect.Value) {
+	pt := reflect.TypeFor[Pipeline]()
+	read := func(f reflect.Value) Pipeline { return *(*Pipeline)(unsafe.Pointer(f.UnsafeAddr())) }
+	add := func(p Pipeline, n string) {
+		if _, dup := t.names[p]; !dup && p != (Pipeline{}) {
+			t.names[p] = n
+		}
+	}
+	for i := range v.NumField() {
+		f, name := v.Field(i), prefix+v.Type().Field(i).Name
+		switch {
+		case f.Type() == pt:
+			add(read(f), name)
+		case f.Kind() == reflect.Array && f.Type().Elem() == pt:
+			for j := range f.Len() {
+				add(read(f.Index(j)), fmt.Sprintf("%s[%d]", name, j))
+			}
+		}
+	}
+}
+
+func (t *prefillTrace) start() {
+	t.lines, t.unk = nil, map[Pipeline]int{}
+	t.allocs, t.nAlloc, t.small, t.pre = map[uintptr]int{}, 0, map[uintptr]bool{}, map[uintptr]int{}
+	gpu.TraceForTest = t.event
+	gpu.AllocTraceForTest = func(_ *Device, a gpu.AllocTrace) {
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		t.allocs[a.ID] = t.nAlloc
+		t.small[a.ID] = a.Length <= 16
+		t.lines = append(t.lines, fmt.Sprintf("alloc a%d %d %s mapped=%v", t.nAlloc, a.Length, a.Line, a.FileMapped))
+		t.nAlloc++
+	}
+	gpu.FreeTraceForTest = func(_ *Device, id uintptr, _ int64) {
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		t.lines = append(t.lines, "free "+t.buf(id))
+		delete(t.allocs, id)
+	}
+}
+
+func (t *prefillTrace) stop() []string {
+	gpu.TraceForTest, gpu.AllocTraceForTest, gpu.FreeTraceForTest = nil, nil, nil
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.lines
+}
+
+// buf names an MTLBuffer (see prefillTrace). Called with t.mu held.
+func (t *prefillTrace) buf(id uintptr) string {
+	if id == 0 {
+		return "null"
+	}
+	if n, ok := t.allocs[id]; ok {
+		return fmt.Sprintf("a%d", n)
+	}
+	n, ok := t.pre[id]
+	if !ok {
+		n = len(t.pre)
+		t.pre[id] = n
+	}
+	return fmt.Sprintf("p%d", n)
+}
+
+func (t *prefillTrace) pipe(p Pipeline) string {
+	if _, ok := t.names[p]; !ok && !t.pfWalked && t.r.pf != nil {
+		t.walk("pf.", reflect.ValueOf(t.r.pf).Elem())
+		t.pfWalked = true
+	}
+	if n, ok := t.names[p]; ok {
+		return n
+	}
+	n, ok := t.unk[p]
+	if !ok {
+		n = len(t.unk)
+		t.unk[p] = n
+	}
+	return fmt.Sprintf("?%d", n)
+}
+
+func (t *prefillTrace) event(ev gpu.TraceEvent) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	var s string
+	switch ev.Op {
+	case gpu.TraceDispatch:
+		var b strings.Builder
+		kind := "threads"
+		if ev.TwoD {
+			kind = "groups"
+		}
+		fmt.Fprintf(&b, "dispatch %s %s=%d,%d tg=%d,%d tgmem=%d", t.pipe(ev.Pipe), kind, ev.Grid[0], ev.Grid[1], ev.TG[0], ev.TG[1], ev.TGBytes)
+		for _, bf := range ev.Bufs {
+			id, off := bf.TraceIdentity()
+			b.WriteString(" " + t.buf(id))
+			if off != 0 {
+				fmt.Fprintf(&b, "+%d", off)
+			}
+			if _, made := t.allocs[id]; made && t.small[id] && off == 0 && bf.Len() > 0 {
+				fmt.Fprintf(&b, "=%x", bf.U32s()[0])
+			}
+		}
+		s = b.String()
+	case gpu.TraceBegin:
+		s = "begin"
+	case gpu.TraceCommit:
+		s = "commit"
+	case gpu.TraceWait:
+		s = "wait"
+	case gpu.TraceBoundary:
+		s = "boundary"
+	default:
+		s = fmt.Sprintf("op%d", ev.Op)
+	}
+	t.lines = append(t.lines, s)
+}
+
+// traceSummaryMetal is one golden line's payload for a trace: the count of each kind of line, the dispatches of the batched
+// pass's own pipelines (prefillState's) among them, and a hash of the whole sequence.
+func traceSummaryMetal(lines []string) string {
+	counts := map[string]int{}
+	pf := 0
+	h := sha256.New()
+	for _, l := range lines {
+		k, rest, _ := strings.Cut(l, " ")
+		counts[k]++
+		if k == "dispatch" && strings.HasPrefix(rest, "pf.") {
+			pf++
+		}
+		h.Write([]byte(l))
+		h.Write([]byte{'\n'})
+	}
+	var b strings.Builder
+	for _, k := range slices.Sorted(maps.Keys(counts)) {
+		fmt.Fprintf(&b, "%s=%d ", k, counts[k])
+	}
+	if pf > 0 {
+		fmt.Fprintf(&b, "pf.=%d ", pf)
+	}
+	fmt.Fprintf(&b, "sha=%x", h.Sum(nil)[:8])
+	return b.String()
 }
