@@ -21,7 +21,7 @@ type decodeClock struct {
 //   - logits is the step's row for the host sampler; the processor masks it in place.
 //   - advance forwards next, which has been emitted, and leaves the next step's state. needFull says the gated processor
 //     wants the next row whole.
-//   - send, when set, may emit next before the loop's own send and reports whether it did (MC3's hold grace).
+//   - send, when set, may emit next before the loop's own send and reports whether it did (the batched decode's hold grace).
 //   - finish, when set, runs on a cancel and at the end of a completed decode, never after an error, with the tokens
 //     emitted: it records what the KV holds.
 type decodeTarget struct {

@@ -41,7 +41,7 @@ func (m *Model) prefillLogitsQwen35VL(ctx context.Context, ids []int, imageFeats
 // HF-golden tests hold either path to the same bars. The caller has checked qwen35BatchNAnyPos and set cache.mropePos
 // and mropeDelta.
 //
-// The prompt runs in passes of prefillChunkRows rows (MEM5-VL), each embedding and splicing its own rows: the DeltaNet state and
+// The prompt runs in passes of prefillChunkRows rows, each embedding and splicing its own rows: the DeltaNet state and
 // conv windows carry in the cache, and the full-attention layers read m-RoPE at absolute positions. A capture or a speculative tree
 // keeps one pass.
 func (m *Model) prefillQwen35VLBatched(ctx context.Context, ids []int, imageFeats []float32, spans []ImageSpan, cache *KVCache) ([]float32, error) {

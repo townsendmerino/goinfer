@@ -44,7 +44,7 @@ type tensorViewer interface {
 	Tensor(name string) (embed.Tensor, error)
 }
 
-// aliasQMat is newQMat over the checkpoint tensor name without copying it (MEM4(a)): a bf16 or f16 tensor is held as
+// aliasQMat is newQMat over the checkpoint tensor name without copying it: a bf16 or f16 tensor is held as
 // linalg.WrapBF16 / WrapF16 over the mapped bytes, an f32 one as WrapF32 over them (a copy only where the payload is
 // misaligned in the file, as embed.Tensor.Float32s does). Every matmul reads the same values newQMat's f32 copy holds
 // (widening is exact), so the outputs are the same bits. quant quantizes from a widened copy, as newQMat does. ok is false
@@ -88,7 +88,7 @@ func aliasQMat(src any, name string, rows, cols int, quant bool) (w linalg.Weigh
 // aliasedForTest counts the weights aliasQMat has wrapped in place, for a test to see the path ran.
 var aliasedForTest atomic.Int64
 
-// aliasOffForTest makes every loader copy its weights as before MEM4(a) (aliasQMat declines): the old arm of ALS-G1.
+// aliasOffForTest makes every loader copy its weights (aliasQMat declines): the copying arm of the aliasing comparison.
 var aliasOffForTest bool
 
 // errTowerClosed is what a tower's forward returns after Close.

@@ -16,7 +16,7 @@ func llamaArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err := cfg.ValidateLlama(); err != nil {
 		return nil, nil, err
 	}
-	scaling, err := parseRopeScaling(cfg.RopeScaling) // G4: linear + llama3; unsupported types error here
+	scaling, err := parseRopeScaling(cfg.RopeScaling) // linear + llama3; unsupported types error here
 	if err != nil {
 		return nil, nil, fmt.Errorf("decoder(llama): %w", err)
 	}

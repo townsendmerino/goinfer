@@ -7,8 +7,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-// Metal's names for internal/program's sublayers (OP4cu-b2 moved the derivation there, from this file): a layer's steps are its
-// sublayers, each one of Metal's fused blocks.
+// Metal's names for internal/program's sublayers: a layer's steps are its sublayers, each one of Metal's fused blocks.
 type (
 	layerStep = program.Sublayer
 	stepSpan  = program.SublayerSpan

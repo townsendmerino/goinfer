@@ -41,8 +41,8 @@ func mmapAliasedBytes(m *Model, w *linalg.WeightMat) int64 {
 			n += int64(len(p4)) + 2*int64(len(sc))
 		}
 	}
-	if raw, ok := w.Q4K(); ok && len(raw) > 0 {
-		if in(raw) {
+	for _, get := range []func() ([]byte, bool){w.Q4K, w.Q5K, w.Q6K} {
+		if raw, ok := get(); ok && len(raw) > 0 && in(raw) {
 			n += int64(len(raw))
 		}
 	}

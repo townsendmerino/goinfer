@@ -246,7 +246,7 @@ func (m *Model) gemma4PLEInputs(h []float32, pleTokenID int, dst []float32) {
 }
 
 // gemma4PLEInputsScratch is gemma4PLEInputs with its [NumLayers·pleDim] context-aware buffer taken from scratch when it is that
-// long (a prefill embedding row after row, MEM6), else allocated.
+// long (a prefill embedding row after row), else allocated.
 func (m *Model) gemma4PLEInputsScratch(h []float32, pleTokenID int, dst, scratch []float32) {
 	arch := m.w.arch
 	pleDim := arch.gemma4.HiddenSizePerLayerInput

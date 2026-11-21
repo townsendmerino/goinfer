@@ -52,9 +52,9 @@ type eg2Ops struct {
 	arena Buffer // one scalar per 256-byte slot, so no two dispatches in a command buffer share one
 	slot  int
 	eps   float32
-	w32   Pipeline // tower_gemm_w32: gemm's kernel (KS-D4)
+	w32   Pipeline // tower_gemm_w32: gemm's kernel
 	// vitGemmForTest runs gemm on aikit's GEMMF32Plan kernel, which tower_gemm_w32 matches byte for byte: the old arm of
-	// KS-D4's A/B.
+	// its A/B.
 	vitGemmForTest bool
 }
 

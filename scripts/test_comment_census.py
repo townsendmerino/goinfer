@@ -116,5 +116,69 @@ class Report(unittest.TestCase):
             self.assertEqual(row["doc"], 1)  # Old is an exported declaration with a doc comment
 
 
+TREE_SRC = '''package p
+
+// Exported keeps the S1 rows together (KV8a).
+func Exported() {
+	// Body says M-35 inside a function: not a doc comment.
+}
+
+// unexported names SB11: not an exported declaration.
+func unexported() {}
+
+// Fields names F16 and BF16 types, which are not ids.
+type Fields struct {
+	// Rows is M-12's table.
+	Rows int
+	// cols is C-09's, unexported.
+	cols int
+}
+'''
+
+
+class Tree(unittest.TestCase):
+    def test_ids_in_exported_docs_only(self):
+        self.assertEqual(cc.tree_ids(TREE_SRC), [(3, "S1"), (3, "KV8a"), (13, "M-12")])
+
+    def run_tree(self, d, *extra):
+        import io
+        import contextlib
+        cwd = os.getcwd()
+        os.chdir(d)
+        try:
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                code = cc.main(["tree", *extra])
+            return code, buf.getvalue()
+        finally:
+            os.chdir(cwd)
+
+    def test_ratchet_fails_a_rise_and_update_refuses_it(self):
+        with tempfile.TemporaryDirectory() as d:
+            git(d, "init", "-q")
+            os.mkdir(os.path.join(d, "testdata"))
+            open(os.path.join(d, "p.go"), "w").write(TREE_SRC)
+            open(os.path.join(d, "p_test.go"), "w").write("package p\n\n// TestX is M-99's.\nfunc TestX() {}\n")
+            git(d, "add", "p.go", "p_test.go")
+            self.assertEqual(self.run_tree(d, "--update")[0], 0)  # no ratchet: seeds one
+            ratchet = open(os.path.join(d, cc.RATCHET)).read()
+            self.assertIn("p.go 3", ratchet)
+            self.assertNotIn("p_test.go", ratchet)
+            self.assertEqual(self.run_tree(d)[0], 0)
+            open(os.path.join(d, "p.go"), "w").write(TREE_SRC + "\n// More is R-10's.\nvar More = 1\n")
+            code, out = self.run_tree(d)
+            self.assertEqual(code, 1, out)
+            self.assertIn("p.go: 4 > 3", out)
+            self.assertIn("VERDICT: RED", out)
+            self.assertEqual(self.run_tree(d, "--update")[0], 1)
+            self.assertIn("p.go 3", open(os.path.join(d, cc.RATCHET)).read())
+            open(os.path.join(d, "p.go"), "w").write(TREE_SRC.replace(" (KV8a)", ""))
+            code, out = self.run_tree(d)
+            self.assertEqual(code, 0, out)
+            self.assertIn("can shrink: p.go: 2 < 3", out)
+            self.assertEqual(self.run_tree(d, "--update")[0], 0)
+            self.assertIn("p.go 2", open(os.path.join(d, cc.RATCHET)).read())
+
+
 if __name__ == "__main__":
     unittest.main()

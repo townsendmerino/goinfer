@@ -11,7 +11,7 @@ import (
 )
 
 // Siglip2NaFlexEncoder is SigLIP2's NaFlex vision tower (transformers' Siglip2VisionModel, without its pooling head), the
-// tower of LFM2-VL (goinfer S10). It differs from SigLIP (Encoder) in its input only: a tile of any patch grid, embedded
+// tower of LFM2-VL. It differs from SigLIP (Encoder) in its input only: a tile of any patch grid, embedded
 // by a linear layer over each patch's (row, column, channel) vector, plus a learned square position table resized to the
 // tile's grid with antialiased bilinear interpolation. The blocks and the post-layernorm are SigLIP's (runBlocks). One
 // tile per call: HF batches tiles with a key mask over the padding, which leaves each tile's rows exactly what it gives

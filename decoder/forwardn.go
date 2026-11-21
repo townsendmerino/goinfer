@@ -60,7 +60,7 @@ const attnGroupedNEONSize = 6
 const attnGroupedNEONBlock = 8
 
 // attnGroupedMinKeys is the number of attended keys below which the per-head path runs unchanged. 128 is the smallest depth
-// either R13 record measured a win at: a conservative floor, not the cache probe's own crossover (the cache already dedups a GQA
+// either record below measured a win at: a conservative floor, not the cache probe's own crossover (the cache already dedups a GQA
 // group's shared reads below roughly K=1024). Records: docs/measurements/r13-distinct-bytes-probe-2026-09-19.md and
 // docs/measurements/r13-neon-kernel-ab-2026-09-20.md.
 const attnGroupedMinKeys = 128
@@ -108,7 +108,7 @@ func (m *Model) specRollbackSafe() bool { return m.specRollbackSafeVia(nil, 0) }
 // specRollbackSafeVia is specRollbackSafe for a loop that verifies through fold, a resident's recurrent fold path, in passes of up
 // to width rows (BlockSpec; nil for a loop that rolls back with TruncateTo or ForwardN). A recurrent model is admitted only there:
 // the fold path never writes the committed recurrent state during a verify and folds only the committed rows into it
-// (RecurrentSpecAvailable, SP2). The resident reports rows only when it serves every recurrent layer, and the model's own layers must
+// (RecurrentSpecAvailable). The resident reports rows only when it serves every recurrent layer, and the model's own layers must
 // all be Gated DeltaNet (RecurrentSpecArenaBytes), the kind the path is built for.
 func (m *Model) specRollbackSafeVia(fold ResidentRuntimeSubsystem, width int) bool {
 	a := m.w.arch
@@ -591,11 +591,11 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 	attendGroupedLayer := func(pool []headWorkerScratch) {
 		splitWorkers := max(min(len(pool), maxAttnWorkers), 1)
 		leader := &pool[0]
-		if c := nKV * group * nKeys; cap(leader.groupScoresCombined) < c { // grows by nKV*group a token: headroom (R-17)
+		if c := nKV * group * nKeys; cap(leader.groupScoresCombined) < c { // grows by nKV*group a token: headroom
 			leader.groupScoresCombined = make([]float32, growCap(cap(leader.groupScoresCombined), c))
 		}
 		fullScores := leader.groupScoresCombined[:nKV*group*nKeys]
-		fullCtx := ctx[:nKV*group*hd] // R-17: kv head kvh's group is ctx[kvh*group*hd:(kvh+1)*group*hd], the layout the old combined scratch was copied into at the end
+		fullCtx := ctx[:nKV*group*hd] // kv head kvh's group is ctx[kvh*group*hd:(kvh+1)*group*hd]
 
 		runSplitAligned(splitWorkers, nKeys, attnGroupedNEONBlock, func(w, lo, hi int) {
 			ws := &pool[w]
@@ -936,7 +936,7 @@ func (m *Model) prefillLogits(ctx context.Context, prompt []int, cache *KVCache)
 // image features spliced in. keep, if non-nil, sees each pass's output rows, which start at row lo and are valid only during the
 // call. It returns the last pass's output rows, post final norm.
 //
-// A sliding-window layer's fast attention is not chunk-invariant (G40-1: its output depends on where the pass's key window starts),
+// A sliding-window layer's fast attention is not chunk-invariant (its output depends on where the pass's key window starts),
 // so a cache with one keeps the single pass whenever the prefill takes fast attention. A cut never falls inside an image block
 // (KVCache.prefillCut), so every block's rows share a pass.
 func (m *Model) prefillPassesN(ctx context.Context, n int, cache *KVCache, embed func(dst []float32, lo, hi int), keep func(lo int, rows []float32)) ([]float32, error) {
@@ -947,7 +947,7 @@ func (m *Model) prefillPassesN(ctx context.Context, n int, cache *KVCache, embed
 	}
 	hidden, start := m.w.arch.HiddenDim, cache.Pos()
 	// One working set for every chunk, sized by the first (the largest, unless an image block stretches a later one) and the
-	// whole prefill's keys (G40's amendment).
+	// whole prefill's keys.
 	ps := &prefillPassScratch{poolKeys: start + n}
 	var h []float32
 	for c0, i := 0, 0; c0 < n; i++ {
@@ -1020,7 +1020,7 @@ func (ps *prefillPassScratch) take(buf *[]float32, n int) []float32 {
 var prefillChunkRows = 2048
 
 // prefillChunkDone, when set (tests only), is called after each chunk of a chunked prefill with its index, and with -1 right
-// after the KV reserve: the G40-T0 gates read the allocator there.
+// after the KV reserve: the chunked-prefill allocation gates read the allocator there.
 var prefillChunkDone func(chunk int)
 
 // prefillPasses counts the batched passes prefillLogits runs, so a test can see that a chunked prefill really chunked: a
@@ -1044,9 +1044,9 @@ func (m *Model) prefillLogitsVL(ctx context.Context, ids []int, imageEmbeds []fl
 	return m.prefillLogitsVLSpans(ctx, ids, []ImageSpan{{Pos: imgPos, Len: imgLen}}, imageEmbeds, cache, false)
 }
 
-// prefillLogitsVLSpans is prefillLogitsVL for several images (S11): each span is its own bidirectional block, and
+// prefillLogitsVLSpans is prefillLogitsVL for several images: each span is its own bidirectional block, and
 // imageEmbeds holds every span's rows concatenated in span order.
-// causal (Pixtral, S10) splices the spans without a bidirectional block: plain causal attention over the prompt.
+// causal (Pixtral) splices the spans without a bidirectional block: plain causal attention over the prompt.
 func (m *Model) prefillLogitsVLSpans(ctx context.Context, ids []int, spans []ImageSpan, imageEmbeds []float32, cache *KVCache, causal bool) ([]float32, error) {
 	var hN []float32
 	var err error
@@ -1065,7 +1065,7 @@ func (m *Model) prefillLogitsVLSpans(ctx context.Context, ids []int, spans []Ima
 // prefillHiddenVLSpans runs prefillLogitsVLSpans's prefill and returns the final hidden rows of every position (before
 // the LM head), so a test can grade every position, not only the last, through the production path.
 func (m *Model) prefillHiddenVLSpans(ctx context.Context, ids []int, spans []ImageSpan, imageEmbeds []float32, cache *KVCache, causal bool) ([]float32, error) {
-	if causal && m.w.arch.lfm2 != nil { // S10, LFM2-VL: lfm2 has no batched pass; its own forward, one row at a time
+	if causal && m.w.arch.lfm2 != nil { // LFM2-VL: lfm2 has no batched pass; its own forward, one row at a time
 		return m.prefillHiddenLFM2VL(ctx, ids, spans, imageEmbeds, cache)
 	}
 	return m.prefillVLRows(ctx, ids, spans, imageEmbeds, cache, causal, true)
@@ -1107,7 +1107,7 @@ func (m *Model) prefillSpliced(ctx context.Context, ids []int, spans []ImageSpan
 	return h, err
 }
 
-// prefillHiddenLFM2VL is prefillHiddenVLSpans for lfm2 (LFM2-VL, S10): the text embeddings with the image rows spliced
+// prefillHiddenLFM2VL is prefillHiddenVLSpans for lfm2 (LFM2-VL): the text embeddings with the image rows spliced
 // in, each run through the per-token walker in order (the conv windows see every row, image rows included), and each
 // position's hidden state final-normed, as the batched entry returns them.
 func (m *Model) prefillHiddenLFM2VL(ctx context.Context, ids []int, spans []ImageSpan, imageEmbeds []float32, cache *KVCache) ([]float32, error) {
@@ -1145,7 +1145,7 @@ func (m *Model) prefillLogitsQwenVL(ctx context.Context, ids []int, imageFeats [
 	return m.prefillLogitsQwenVLSpans(ctx, ids, []ImageSpan{{Pos: imgPos, Len: imgLen}}, imageFeats, mropePos, cache)
 }
 
-// prefillLogitsQwenVLSpans is prefillLogitsQwenVL for several images (S11): every span's merged rows, concatenated in
+// prefillLogitsQwenVLSpans is prefillLogitsQwenVL for several images: every span's merged rows, concatenated in
 // span order in imageFeats, replace that span's placeholder run, and mropePos covers them all (mropePositions with one
 // grid per image).
 func (m *Model) prefillLogitsQwenVLSpans(ctx context.Context, ids []int, spans []ImageSpan, imageFeats []float32, mropePos [][3]int, cache *KVCache) ([]float32, error) {
@@ -1172,7 +1172,7 @@ func (m *Model) prefillLogitsQwenVLSpans(ctx context.Context, ids []int, spans [
 }
 
 // addDeepstack adds DeepStack set l to the rows of h ([K*hidden], positions startPos..startPos+K) that fall in the image
-// run (S10): HF's hidden_states[visual_pos_masks] += deepstack_visual_embeds[l], after decoder layer l.
+// run: HF's hidden_states[visual_pos_masks] += deepstack_visual_embeds[l], after decoder layer l.
 func addDeepstack(h []float32, ds *deepstackRows, l, startPos, K, hidden int) {
 	set := ds.rows[l]
 	off := 0 // the first row of this span within the set

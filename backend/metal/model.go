@@ -48,7 +48,7 @@ func resolveMetalCtxCap(m *decoder.Model) (cap int, err error) {
 	if req <= 0 || !m.ResidentContextPinned() {
 		ctx := metalFitFor(m).Ctx
 		if c, ok := metalCtxCeiling.Load(m); ok {
-			ctx = min(ctx, c.(int)) // S18: lowered by BuildResident before it declines (shrinkCtxToFit)
+			ctx = min(ctx, c.(int)) // lowered by BuildResident before it declines (shrinkCtxToFit)
 		}
 		return ctx, nil
 	}
@@ -134,16 +134,16 @@ type residLayer struct {
 	qNorm, kNorm                  Buffer          // per-head QK-RMSNorm weights (Qwen3; zero if !qkNorm)
 	moe                           *moeLayer       // non-nil ⇒ this layer's FFN is MoE (dense guW/dW unused)
 	g4moe                         *gemma4MoeLayer // non-nil ⇒ Gemma-4 parallel dense‖MoE FFN (gemma4_moe.go)
-	uLayerScalar                  Buffer          // Gemma 4 dense layer's output scalar (S1.0); zero Buffer when 1 or absent
+	uLayerScalar                  Buffer          // Gemma 4 dense layer's output scalar; zero Buffer when 1 or absent
 	layerScaleRead                bool            // the build read the layer's output scalar (any value), so its steps end with the layer scale
 	// ffnI is this dense layer's FFN width and uFFNI its uniform. Equal to the model's I (and r.uI) for every family
 	// except a Gemma 4 E-model, whose KV-shared layers are double-wide.
 	ffnI  int
 	uFFNI Buffer
-	// Gemma 4 E-model PLE branch (S1.5): input gate [P,H], projection [H,P], post norm [H]. Zero when the model has
+	// Gemma 4 E-model PLE branch: input gate [P,H], projection [H,P], post norm [H]. Zero when the model has
 	// no PLE.
 	pleGW, pleGS, plePW, plePS, postPLENorm Buffer
-	// kvShared: a Gemma 4 E-model layer that owns no K/V (S1.4). It projects Q only, stores nothing, and attends over
+	// kvShared: a Gemma 4 E-model layer that owns no K/V. It projects Q only, stores nothing, and attends over
 	// layer kvSrc's cache, which r.kc[l]/r.vc[l] (and every slot's) alias.
 	kvShared                  bool
 	kvSrc                     int
@@ -152,7 +152,7 @@ type residLayer struct {
 	invf                      Buffer // per-layer RoPE inv-freq (Gemma local 10k vs global 1M base)
 	mscale                    Buffer // per-layer YaRN mscale (RopeMscaleLayer; 1.0 = no-op for every family without it)
 	uWindow                   Buffer // per-layer attention window (0 = full causal; Gemma mixes local/global)
-	window                    uint32 // R2: CPU-side twin of uWindow's value, for canUseAttnFA's dispatch-time guard (windows are out of scope for attention_fa — see its own doc comment)
+	window                    uint32 // CPU-side twin of uWindow's value, for canUseAttnFA's dispatch-time guard (windows are out of scope for attention_fa — see its own doc comment)
 	// GPT-2 (FeatLayerNorm/FeatNonGatedMLP/FeatOutBias): preNormBias/postNormBias are LayerNorm's
 	// bias (unused for RMS families — layernorm_quant only dispatches when arch.Norm==NormLayer).
 	// upW/upS is the SEPARATE (not gate-fused) up-projection a non-gated MLP uses instead of
@@ -207,7 +207,7 @@ func (r *resident) recurrentModel() bool { return r.dnet != nil || r.mamba != ni
 func (r *resident) recurrentPrefillOK() bool {
 	switch {
 	case r.mamba != nil:
-		// KS-D8 (prefill_mamba.go): the int8 GEMMs read K in 32-wide slabs, and mamba_conv_seq holds the window in 8 registers.
+		// The batched Mamba-2 prefill (prefill_mamba.go): the int8 GEMMs read K in 32-wide slabs, and mamba_conv_seq holds the window in 8 registers.
 		p := r.mamba
 		if !mambaPrefillOn || r.dnet != nil || r.postOnly || p.dConv < 2 || p.dConv > 8 || r.H%32 != 0 || p.dInner%32 != 0 {
 			return false
@@ -256,14 +256,14 @@ type resident struct {
 	d                                                                  *Device
 	q                                                                  Queue
 	pRms, pQv, pGemv, pGemvResid, pRope, pRope2, pKv, pAttn, pSw, pRes Pipeline
-	pLayerScale                                                        Pipeline // Gemma 4 dense layer scalar (S1.0)
-	// Gemma 4 E-model PLE (S1.5): pleP is P (0 = no PLE); pleIn holds this token's [L·P] per-layer inputs, copied
+	pLayerScale                                                        Pipeline // Gemma 4 dense layer scalar
+	// Gemma 4 E-model PLE: pleP is P (0 = no PLE); pleIn holds this token's [L·P] per-layer inputs, copied
 	// from the embedding row's tail (decoder embedResidentInto); pleG/pleQ/pleSc the branch's P-wide scratch.
 	pPLEGeluMul              Pipeline
 	pleP                     int
 	pleIn, pleG, pleQ, pleSc Buffer
-	ctxCeilKey               *decoder.Model // S18: the metalCtxCeiling entry this resident's context came from; nil when none
-	// KV8a's recurrent checkpoint (recurrent_checkpoint.go): its buffers, the save copies (live into checkpoint) and the restore
+	ctxCeilKey               *decoder.Model // the metalCtxCeiling entry this resident's context came from; nil when none
+	// The recurrent checkpoint (recurrent_checkpoint.go): its buffers, the save copies (live into checkpoint) and the restore
 	// copies against the bound slot (bindCheckpoint), the slot it was saved on (-1: none saved), the checkpoint's bytes (0: none kept), and why a
 	// load kept none.
 	ckptBufs               []Buffer
@@ -271,10 +271,10 @@ type resident struct {
 	ckptSlot               int
 	ckptBytes              int64
 	ckptDeclined           string
-	emodelLayerMajorRuns   int // S9: prompts the E-model layer-major pass ran (prefill_emodel.go); test introspection
+	emodelLayerMajorRuns   int // prompts the E-model layer-major pass ran (prefill_emodel.go); test introspection
 	uPleP                  Buffer
-	g4VNorm                bool     // Gemma 4: scale-less v_norm on every K/V-owning layer, K=V or not (S1.0)
-	pSA, pSABias, pSAResid Pipeline // Stage A gemv (K bounded by the M-11 threadgroup-memory guard, not a fixed constant)
+	g4VNorm                bool     // Gemma 4: scale-less v_norm on every K/V-owning layer, K=V or not
+	pSA, pSABias, pSAResid Pipeline // Stage A gemv (K bounded by the threadgroup-memory guard, not a fixed constant)
 	// The W4F16 decode lane: f16 activations, no int8 quantization, selected by GOINFER_METAL_DECODE_LANE=w4f16
 	// (decodeLaneW4F16). The pipelines are always built; only dispatch is conditional (canUseF16Lane). It covers
 	// plain dense QKV, o-proj and gate-up only: down-proj and every special case (MoE, paged, sandwich, postOnly,
@@ -288,7 +288,7 @@ type resident struct {
 	// activations (no activation quantization), over Q4_K super-blocks or int8 rows. axF32 is a projection's input (the
 	// normed residual), swF32 the down-projection's (SwiGLU's output).
 	q4kLane                                                    bool
-	mropeAxis                                                  Buffer // S16: the m-RoPE prefill\'s per-pair axis table; empty when the model has none
+	mropeAxis                                                  Buffer // the m-RoPE prefill\'s per-pair axis table; empty when the model has none
 	pQ4K, pQ4KResid, pQ4KBias, pW8F32, pW8F32Resid, pW8F32Bias Pipeline
 	pQ5K, pQ6K                                                 [3]Pipeline // native Q5_K and Q6_K GEMVs: plain, residual, bias
 	q4kR, w8F32R                                               int         // those GEMVs' rows a simdgroup (q4kGemvRows, w8F32GemvRows)
@@ -300,7 +300,7 @@ type resident struct {
 	pQ5KRows, pQ6KRows         [batchMaxSeqs + 1]Pipeline
 	pRmsF32OutRows, pSwF32Rows Pipeline
 	pArgFinish                 Pipeline // fused block-argmax lm head reduce
-	pArgRowsPart               Pipeline // E-P08: a batched step row's partial argmaxes (argmax_rows_part)
+	pArgRowsPart               Pipeline // a batched step row's partial argmaxes (argmax_rows_part)
 	// The split-KV decode-attention lane, gridded by (kvHead, split) instead of by query head: on by default
 	// (decodeAttnFA, from metalAttnFAEnabled; GOINFER_METAL_ATTN_FA=0 opts out). The pipelines are always built;
 	// dispatch is conditional (canUseAttnFA). It covers hd==128 (or hd==64 through the block twin, attnFAHeadDimOK)
@@ -308,7 +308,7 @@ type resident struct {
 	// uniformly worse than the shipped kernel at every depth), is in attention_fa's comment in kernels.go and
 	// docs/code-notes/metal.md#resident.pAttnFA.
 	pAttnFA, pAttnFACombine Pipeline
-	// E-P05: pAttnFA's and pAttnFACombine's multi-row forms for the batched step (batch_rows.go), and the length of one
+	// pAttnFA's and pAttnFACombine's multi-row forms for the batched step (batch_rows.go), and the length of one
 	// row's partial region, attnFAPartial's.
 	pAttnFARows, pAttnFACombineRows Pipeline
 	// int8 slice 3b: a native int8 resident's batched-step projection, B rows per weight read (batch_rows.go)
@@ -322,7 +322,7 @@ type resident struct {
 	// function both the dispatch grid and setPos's uAttnFANSplit use, and both for the same key count (the grid's
 	// comes from planNKeys), so the two cannot disagree.
 	attnFASplitOverride int
-	// moeCap is D-G01's routing capture (metal/dg01_moe_gate_test.go). ZERO in production. With idx and wgt set, decode's
+	// moeCap is the MoE routing capture metal/dg01_moe_gate_test.go reads. ZERO in production. With idx and wgt set, decode's
 	// non-paged MoE FFN copies each layer's selected experts and weights into slot l (k words each), and the batched
 	// prefill's row-by-row MoE (GOINFER_MOE_EXPERT_MAJOR=0) copies row m's into slot l*rows+m; the expert-major path,
 	// which reads its routing back to the host anyway, hands it to major. Encoded at encode time, so a test sets it
@@ -340,10 +340,10 @@ type resident struct {
 	// Zero in production; set only by tests (legacy-against-blk arms below the floor). Read through attnFAFloor by
 	// attnPlanFor, canUseAttnFA and canUseAttnFAAt, so the single-token step and the batched step plan alike.
 	attnFAFloorOverride int
-	// promptStepOff, when true, keeps PrefillLast off the step route (E-P01, prefillByStep). FALSE in production — set
+	// promptStepOff, when true, keeps PrefillLast off the step route (prefillByStep). FALSE in production — set
 	// only by tests that measure the batched pass or the sequential decline on a resident that could take the route.
 	promptStepOff bool
-	// gemvRows (R18, docs/measurements/metal-decode-gemv-r18-2026-09-26.md): rows per simdgroup for the dense decode
+	// gemvRows (docs/measurements/metal-decode-gemv-r18-2026-09-26.md): rows per simdgroup for the dense decode
 	// layer's four int4 GEMVs — qkv, o, fused gate/up and down — set by buildResident through gemvRowsFor. When a field
 	// is > 0 that GEMV dispatches its rows kernel (pSABiasRows / pSAResidRows / pSARows / pGemvResidStaged, grid
 	// rows·32/R, tg 256; down stages its activations in K bytes of threadgroup memory); 0 keeps the shipped kernel.
@@ -351,20 +351,20 @@ type resident struct {
 	// kernels (then flush the executor, stopExec).
 	gemvRows                                             struct{ qkv, o, gu, down int }
 	pSABiasRows, pSAResidRows, pSARows, pGemvResidStaged Pipeline
-	// E-P02: the batched step's per-row qkv and gate|up GEMVs as one dispatch with each tile's B threadgroups adjacent
+	// The batched step's per-row qkv and gate|up GEMVs as one dispatch with each tile's B threadgroups adjacent
 	// (mc3_gemv_w4a8_sa_{bias_}rows_adj<R>, the twin of pSABiasRows / pSARows), set with them; batch.go mc3AdjRowsOn.
 	pSABiasRowsAdj, pSARowsAdj Pipeline
-	// D-B04: R18's rows form at the int4 GEMV sites R18 never reached (gemvExt): the staged coal kernel, the SA rows
-	// kernel and the staged residual kernel at R = 2 and 4, and the threadgroup memory a staged kernel may take.
+	// The rows-per-simdgroup form at the int4 GEMV sites gemvRows does not cover (gemvExt): the staged coal kernel, the SA
+	// rows kernel and the staged residual kernel at R = 2 and 4, and the threadgroup memory a staged kernel may take.
 	gemvExtCoal, gemvExtSA, gemvExtResid [5]Pipeline
 	gemvExtTGMax                         int
 	gemvExtRows                          [3]int // rows-form dispatches per kind since the build (tests read it)
-	// attnFABlkSplit > 0: pAttnFA is the R17 block kernel (attention_fa_blk_g<G>), which runs at this fixed split
+	// attnFABlkSplit > 0: pAttnFA is the block kernel (attention_fa_blk_g<G>), which runs at this fixed split
 	// count instead of attention_fa's core-count rule — see attnFABlkSplit's const and the selection in
 	// buildResident.
 	attnFABlkSplit int
 	// attnFALayer is the first layer attention_fa can run (the one attnFANKV was taken from); its head dim picks the
-	// block kernel's hd = 128 form or B-P01's hd = 64 twin.
+	// block kernel's hd = 128 form or its hd = 64 twin.
 	attnFALayer int
 	curNKeys    int // CPU-side twin of uNKeys' value, set by setPos
 	// encNKeys, when > 0, is the key count of the command buffer being ENCODED: the pipelined executor sets it
@@ -374,9 +374,9 @@ type resident struct {
 	// attention_fa's split grid). See execLoop and attnPlan.
 	encNKeys int
 	// encFANSplit, when set, is the attention_fa split uniform the command buffer being encoded binds instead of
-	// uAttnFANSplit: the greedy chain's per-token set (greedy_chain.go, C-B01). Zero outside its encode.
+	// uAttnFANSplit: the greedy chain's per-token set (greedy_chain.go). Zero outside its encode.
 	encFANSplit Buffer
-	// The greedy chain (greedy_chain.go, C-B01): its gather pipeline, its goroutine's channels, and its two alternating
+	// The greedy chain (greedy_chain.go): its gather pipeline, its goroutine's channels, and its two alternating
 	// uniform sets and token-id buffers.
 	pEmbedGather Pipeline
 	lmTied       bool // lmW/lmS are the embedding table itself (a tied LM head): the chain gathers from them, no copy
@@ -390,7 +390,7 @@ type resident struct {
 	// newest forward whose token the chain returned, at the start position once its first write maps, and where the slot's sequence
 	// already ended before that (a refused first write wrote nothing). stopChain ends the slot's sequence there.
 	chainSlot, chainEnd int
-	// The untied head's gather table (C-B01): the int8 embedding table on the device, made the first time a chain is
+	// The untied head's gather table: the int8 embedding table on the device, made the first time a chain is
 	// asked for (chainEmbedTable), aliased from the .giw mapping where it can be. A tied head's gather reads lmW/lmS.
 	// chainEmbBase is the memory guard's price of this build (weights, host copy, every KV slot), which the table is
 	// priced on top of; chainEmbGuardOff is GOINFER_NO_RESIDENT_MEM_GUARD. chainGW/chainGS: the open chain's table.
@@ -401,7 +401,7 @@ type resident struct {
 	chainEmbBase         int64
 	chainEmbGuardOff     bool
 	chainGW, chainGS     Buffer
-	// The sampled chain's own gumbel uniforms (C-P02): 1/temperature and the seed for the chain, the draw per uniform set,
+	// The sampled chain's own gumbel uniforms: 1/temperature and the seed for the chain, the draw per uniform set,
 	// and a logits row per set (the -1 recovery takes the argmax of a row the next buffer has not overwritten).
 	chainInvT, chainK0, chainK1   Buffer
 	chainD0, chainD1, chainLogits [2]Buffer
@@ -416,11 +416,11 @@ type resident struct {
 	pRmsF32              Pipeline // Gemma sandwich: in-place RMSNorm of a sublayer output
 	pGemvW8, pGemvW8Amax Pipeline // int8 GEMV + fused block-argmax — the logit-critical LM head (see lmW)
 	pCopyVec             Pipeline // copy_f32 for on-device embedding copy in batched forward
-	pCopyU32             Pipeline // copy_u32: D-G01's routing capture (moeCap), tests only
+	pCopyU32             Pipeline // copy_u32: the routing capture (moeCap), tests only
 	qkNorm               bool     // arch has QK-norm
-	qkNormWhole          bool     // G5: QK-norm reduces over the WHOLE q/k vector, not per head (Olmo 3/Olmo Hybrid) — qkNorm must also be true
+	qkNormWhole          bool     // QK-norm reduces over the WHOLE q/k vector, not per head (Olmo 3/Olmo Hybrid) — qkNorm must also be true
 	sandwich             bool     // Gemma NormSandwich4: norm each sublayer output before the residual add
-	postOnly             bool     // G5: NO pre-norm at all (Olmo 3/Olmo Hybrid) — quantize the raw residual; PostAttnNorm/PostMLPNorm still dispatch, same as sandwich's post half
+	postOnly             bool     // NO pre-norm at all (Olmo 3/Olmo Hybrid) — quantize the raw residual; PostAttnNorm/PostMLPNorm still dispatch, same as sandwich's post half
 	kvF32                bool     // f32 KV cache (Gemma sandwich path) — f16 rounding craters Gemma's sensitive contexts
 	uAct                 Buffer   // gated-MLP activation ordinal (decoder.ActKind: 0=GELU-tanh, 1=SiLU)
 	uAddOne, uWindow     Buffer   // qk_norm + sliding-window uniforms
@@ -435,12 +435,12 @@ type resident struct {
 	posEmbed                         *linalg.WeightMat // [MaxPositions, H] learned position embedding table (learnedPos only)
 	uLNHasBias                       Buffer            // layernorm_quant's hasBias uniform (r.layerNormBias as 0/1)
 
-	// G5, the last row: Cohere/Command-R + Cohere2/Command-R7B.
+	// Cohere/Command-R + Cohere2/Command-R7B.
 	pairwiseRoPE  bool    // FeatPairwiseRoPE: pRope/pRope2 and the prefill's rope pipelines are the GPT-J pairwise twins (rope_pw, ...)
 	parallelBlock bool    // FeatParallelBlock: ONE shared input norm feeds attn AND MLP independently (x_final = x_orig + attn_out + mlp_out) — encodeLayer reuses encodeAttention's r.aq/r.aSc instead of re-normalizing r.x; no post-attn/post-MLP norm exists for this family
 	logitScale    float32 // host-side final-logit multiplier (1/arch.LogitScale), applied in finalizeLogits; 0 ⇒ none (FeatLogitScale)
 
-	// R7b Mac half: device-side temperature-only sampling by
+	// Device-side temperature-only sampling by
 	// Gumbel-max, decoder.ResidentDecodeSubsystem (gumbel_sample.go). Always built (like attnFAPartial
 	// above): SampleAvailable is a per-call gate (finalSoftcap/logitScale), not a build-time one.
 	pGumbel1, pGumbel2 Pipeline
@@ -495,7 +495,7 @@ type resident struct {
 	embedScale float32
 	embed      *linalg.WeightMat
 
-	// attnTempBeta/attnTempOrigMaxPos (Ministral 3, FeatAttnTemp, G5 ):
+	// attnTempBeta/attnTempOrigMaxPos (Ministral 3, FeatAttnTemp):
 	// the raw params behind the post-RoPE query scale (Model.AttnTempParams) — 0 for every family
 	// without it. uQTempScale (below) is the per-forward-call scale computed from these plus the
 	// CURRENT position, mutated in place at every uPos.SetU32 call site the same way uPos itself is.
@@ -509,7 +509,7 @@ type resident struct {
 	// through the bound slot's table (kvHostRow).
 	kc, vc []Buffer
 	ks, vs []Buffer
-	// kvSlotBufs: MC1's resident KV slots, each its block table; useKVSlot binds one
+	// kvSlotBufs: the resident KV slots, each its block table; useKVSlot binds one
 	// by binding its table (kt). One entry for one slot with a pool, so the batched step can prefill a prompt on it.
 	// kvSlot is the bound index.
 	kvSlotBufs []kvSlotBuf
@@ -522,7 +522,7 @@ type resident struct {
 	// the resident's own (r.kvTab, r.kt, r.kvRefs, ...).
 	kvNullBytes []int
 	kvGroup
-	// kvWin is the window group (KV5-7b): the sliding layers' own block ids and tables, beside the primary group; nil when the model
+	// kvWin is the window group: the sliding layers' own block ids and tables, beside the primary group; nil when the model
 	// has no sliding layer, or only sliding ones (the primary group is then the window group's). kvGs lists the groups, primary first.
 	kvWin *kvGroup
 	kvGs  []*kvGroup
@@ -536,7 +536,7 @@ type resident struct {
 	kvReclaimed []int
 	kvUpload    *kvUploadPass // the upload in progress between BeginKVUpload and EndKVUpload, nil when none
 	decode      decodeShape   // what decode's scratch list was sized from (decodeShape.buffers)
-	// batch: MC3's batched decode step over those slots (batch.go); nil when this resident cannot batch. preciseMath
+	// batch: the batched multi-sequence decode step over those slots (batch.go); nil when this resident cannot batch. preciseMath
 	// is the build's fast-math choice, which the batched kernels must share to round like the kernels they reproduce.
 	batch       *batchState
 	preciseMath bool
@@ -548,27 +548,26 @@ type resident struct {
 	// MoE dispatches on each row in turn.
 	moeStep bool
 	// recurrentStep is Options.ResidentRecurrentStep: a Qwen3.5-family model may run on the batched step, whose per-row
-	// blocks run decode's Gated-DeltaNet (on each row's own slot state) and gated-attention dispatches on each row in turn
-	// (OP4m-d4b).
+	// blocks run decode's Gated-DeltaNet (on each row's own slot state) and gated-attention dispatches on each row in turn.
 	recurrentStep bool
 	// gemma4Step is Options.ResidentGemma4Step: a Gemma 4 dense model may run on the batched step, each row's layer on decode's
-	// own encoder with the front of its dense FFN batched (OP4m-d5a, d5b).
+	// own encoder with the front of its dense FFN batched.
 	gemma4Step bool
-	// MC3 S3's multi-row forms of the per-row kernels (batch_rows.go), for the batched step
+	// Multi-row forms of the per-row kernels (batch_rows.go), for the batched step
 	pRmsRows, pQvRows, pSwRows, pRope2Rows, pKvRows, pAttnRows Pipeline
 	pKvI8Rows, pAttnI8Rows                                     Pipeline           // the step's int8 KV store and attention (kv_rows.go)
-	pQKNormRows                                                Pipeline           // E-P07: qk_norm over the step's rows (batch_rows.go)
-	pMoeBatch                                                  [5]Pipeline        // D-P01: moe_batch_gemv at R = 2, 4 (prefill_g4batch.go)
-	pMoeCombine                                                Pipeline           // D-P01: moe_batch_combine
-	pMoeCombineAcc                                             Pipeline           // KS-D9: moe_batch_combine_acc
+	pQKNormRows                                                Pipeline           // qk_norm over the step's rows (batch_rows.go)
+	pMoeBatch                                                  [5]Pipeline        // moe_batch_gemv at R = 2, 4 (prefill_g4batch.go)
+	pMoeCombine                                                Pipeline           // moe_batch_combine
+	pMoeCombineAcc                                             Pipeline           // moe_batch_combine_acc
 	kvI8                                                       bool               // m.KVCacheI8() (CLI flag --kv i8)
 	pKvI8, pAttnI8                                             Pipeline           // int8 KV store and attention pipelines
 	moe                                                        *moeResident       // non-nil ⇒ MoE model (router + stacked experts); see moe.go
 	g4moe                                                      *gemma4MoeResident // non-nil ⇒ Gemma-4 enable_moe_block (parallel dense‖MoE); see gemma4_moe.go
 	pagedNoHead                                                bool               // a paged forward skips the final norm and LM head (ForwardEmbNoLogitsPipe); exec-thread only
-	g4LayerMajorRuns                                           int                // prompts prefillG4Paged ran (4b); a test reads it to see the route was taken
-	g4BatchGroups, g4BatchMaxCnt                               int                // D-P01: slot groups the batched phase 2 ran, and the most pairs one entry shared
-	moeBatchGroups                                             int                // KS-D9: slot groups the generic batched phase 2 ran
+	g4LayerMajorRuns                                           int                // prompts prefillG4Paged ran; a test reads it to see the route was taken
+	g4BatchGroups, g4BatchMaxCnt                               int                // slot groups the batched phase 2 ran, and the most pairs one entry shared
+	moeBatchGroups                                             int                // slot groups the generic batched phase 2 ran
 	moeLayerMajorRuns                                          int                // prompts prefillMoEPaged ran; a test reads it to see the route was taken
 
 	// prefillOK reports whether the f16 MMA prefill kernels (prefill.go) actually implement
@@ -578,14 +577,14 @@ type resident struct {
 	// the sequential Forward loop: correct, just a slower TTFT.
 	prefillOK bool
 	// prefillResidNonFinite reports that the last batched pass ended with a non-finite value in its last residual row: the
-	// f16 residual overflowed (Gemma 3 4B's outgrows 65,504 by layer 6 S17).
+	// f16 residual overflowed (Gemma 3 4B's outgrows 65,504 by layer 6).
 	// batchedPrefillImg declines on it. poisonPrefillResidForTest writes an inf there first, for the test of that decline.
 	prefillResidNonFinite, poisonPrefillResidForTest bool
 
 	// w8: every dense body projection runs as W8A8 on its int8 weights instead of being re-quantized to int4.
 	// Set by buildResident (w8Eligible). The GEMV pipelines are then
-	// the int8 twins, and the paths that only read int4 are off: the R18 rows kernels, the f16 lane, fast prefill and
-	// the MC3 batched step.
+	// the int8 twins, and the paths that only read int4 are off: the rows-per-simdgroup kernels, the f16 lane, fast
+	// prefill and the batched step.
 	w8 bool
 	// w8Attn: int4mix run natively (slice 4): the attention projections as W8A8 on their int8 weights, the FFN on its
 	// int4 kernels. Set by buildResident (w8AttnEligible); never with w8.
@@ -594,12 +593,12 @@ type resident struct {
 	x, aq, aSc, ctx, cq, cSc, oO, mq, mSc, dq, dSc, dO, logits Buffer
 	invf, uH, uI, uNH, uScale, uEps                            Buffer // invf = model-level rope (prefill only); geometry uniforms live on residLayer.geom
 	uPos, uNKeys, uRopePos, uQTempScale                        Buffer
-	uQKWholeOne, uQKWholeHD                                    Buffer // G5 QKNormWhole: constant-1 nH/nKV replacement + the full nH*hd width
+	uQKWholeOne, uQKWholeHD                                    Buffer // QKNormWhole: constant-1 nH/nKV replacement + the full nH*hd width
 	part, tok, uP                                              Buffer // fused-argmax: tile partials, token out, tile count
 	logitsHost                                                 []float32
 	gpuStart, gpuEnd, kernStart, kernEnd                       float64      // last-Forward GPU timing (Step 0)
 	prof                                                       pagedProfile // per-phase paging decomposition (accumulates; snapshot+diff over a timed window)
-	alias                                                      *weightAlias // S6: set on a .giw-mapped model unless GOINFER_METAL_ALIAS=0; test/banner introspection
+	alias                                                      *weightAlias // set on a .giw-mapped model unless GOINFER_METAL_ALIAS=0; test/banner introspection
 	residency                                                  ResidencySet // pinned working set (GOINFER_MOE_RESIDENCY, paged path); zero value if unused
 	residencyBufs                                              []Buffer     // exactly the buffers added to `residency` (for the teardown-consistency gate)
 
@@ -639,9 +638,9 @@ type resident struct {
 	dnet                                          *dnetParams
 	pDnConv, pDnGates, pDnNorm, pDnRule, pDnGNorm Pipeline
 	pDnQSplit, pDnAttnGate                        Pipeline // this family's fused double-width q_proj + output gate
-	// D-B01: the mixer over M prompt rows (deltanet_kernels.go's _seq/_rows forms; prefill_deltanet.go)
+	// the mixer over M prompt rows (deltanet_kernels.go's _seq/_rows forms; prefill_deltanet.go)
 	pDnConvSeq, pDnGatesRows, pDnNormRows, pDnRuleSeq, pDnGNormRows, pDnProjW8Rows Pipeline
-	pDnRuleSeqTG, pDnConvSeqReg                                                    Pipeline // the on-chip forms (KS-D3); see dnSeqOnChip
+	pDnRuleSeqTG, pDnConvSeqReg                                                    Pipeline // the on-chip forms; see dnSeqOnChip
 	dnMixed, dnConvOut, dnQn, dnKn, dnHeadP                                        Buffer   // per-token scratch, sized from dnet (model-level, uniform across layers)
 	dnBt, dnAt, dnZOut, dnCore, dnGated                                            Buffer
 	dnGq, dnGSc                                                                    Buffer // int8 activation + scale for the gated output's out_proj GEMV
@@ -654,7 +653,7 @@ type resident struct {
 	// The Mamba-2 mixer (mamba.go); mamba nil ⇒ no Mamba layer, and nothing below is allocated.
 	mamba                     *mambaParams
 	pMbConv, pMbSSM, pMbGNorm Pipeline
-	// KS-D8: the batched prefill's row forms of the three (prefill_mamba.go), and the non-gated MLP's f16 activation, set
+	// The batched prefill's row forms of the three (prefill_mamba.go), and the non-gated MLP's f16 activation, set
 	// for a non-gated resident.
 	pMbConvSeq, pMbSSMSeq, pMbGNormRows, pNgActRows Pipeline
 	uMbNormGroups                                   Buffer
@@ -667,14 +666,14 @@ type resident struct {
 	uMbRep, uMbGSize, uMbDtBase, uMbGroupSize, uMbZero, uMbEps Buffer
 }
 
-// recordExecErr latches the first command-buffer abort a forward path observes (audit C-09).
+// recordExecErr latches the first command-buffer abort a forward path observes.
 func (r *resident) recordExecErr(err error) {
 	if err != nil && r.execErr == nil {
 		r.execErr = err
 	}
 }
 
-// takeExecErr returns and clears the latched command-buffer error (audit C-09). The adapter calls
+// takeExecErr returns and clears the latched command-buffer error. The adapter calls
 // it after each forward and returns the error in place of the (stale) logits.
 func (r *resident) takeExecErr() error {
 	err := r.execErr
@@ -707,7 +706,8 @@ type q4kSeg struct {
 	rows, off int
 }
 
-// q4kNativeOffForTest keeps a q4k resident on the int8 copies of its Q5_K and Q6_K tensors (KS-O1's old arm); read at build.
+// q4kNativeOffForTest keeps a q4k resident on the int8 copies of its Q5_K and Q6_K tensors instead of the native GEMVs; read at
+// build.
 var q4kNativeOffForTest bool
 
 // q4kPartKind is the kind a q4k-lane part uploads as: its own kind for Q4_K, the file's Q5_K or Q6_K when kq serves it (the
@@ -944,7 +944,7 @@ func int4Buf(d *Device, w *linalg.WeightMat) (Buffer, Buffer, error) {
 	return int4BufOn(gpu.UnlinedLine, d, w)
 }
 
-// int4BufA is int4Buf with an optional weightAlias (S6): when a is non-nil and w's nibbles live in the.
+// int4BufA is int4Buf with an optional weightAlias: when a is non-nil and w's nibbles live in the.
 // giw mapping, the nibbles are bound in place instead of copied; the f16 scales are built exactly as the
 // copy path builds them.
 func int4BufAOn(line string, d *Device, a *weightAlias, w *linalg.WeightMat) (Buffer, Buffer, error) {
@@ -1053,7 +1053,7 @@ func int4ConcatOn(line string, d *Device, wms ...*linalg.WeightMat) (Buffer, Buf
 		}
 		totalWords, totalScales = totalWords+nw, totalScales+ns
 	}
-	wb, sb := gpu.NewBufferLenOfOn[uint32](d, line, totalWords), gpu.NewBufferLenOfOn[uint16](d, line, totalScales) // f16 group scales (L1)
+	wb, sb := gpu.NewBufferLenOfOn[uint32](d, line, totalWords), gpu.NewBufferLenOfOn[uint16](d, line, totalScales) // f16 group scales
 	words, scales := wb.U32s(), sb.U16s()
 	for _, w := range wms {
 		nw, ns, _ := w4a8Size(w)
@@ -1191,12 +1191,12 @@ func f32Projection(m *decoder.Model) string {
 }
 
 // attnSoftcapDropForTest builds every resident without its attention-score softcap while the CPU keeps it: the planted
-// defect OP1's Gemma 2 gates must catch ( G2-D and G2-R's arm P).
+// defect the Gemma 2 softcap gates must catch.
 // Tests in this package set it directly.
 var attnSoftcapDropForTest bool
 
 // w8PreciseMath compiles the library of a model headed for the native int8 path without fast math: at int8int8 any
-// difference from the CPU is amplified by the activation quantization, and fast math was a large part of gate F3's gap.
+// difference from the CPU is amplified by the activation quantization, and fast math widens it.
 // It is decided before the build from the model alone, so a model that passes
 // w8Weights but is MoE (Gemma 4's parallel dense||MoE) is excluded here too.
 func w8PreciseMath(m *decoder.Model) bool {
@@ -1259,11 +1259,11 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	defer runtime.UnlockOSThread()
 	pool := NewARPool()
 	defer pool.Drain()
-	// MC1's slot count is priced before any buffer below exists. Its budget, metalMemoryCeiling, reads the live
+	// The KV slot count is priced before any buffer below exists. Its budget, metalMemoryCeiling, reads the live
 	// available memory; read after the weights were allocated, that figure already excludes the resident's own
 	// buffers while the base it is compared with (residentNeedBytes) still counts them, so the weights would be
 	// counted twice and too few slots granted.
-	// The layer shape the encoder dispatches on comes from the program (OP4m-b1); a program whose layers ask for two placements
+	// The layer shape the encoder dispatches on comes from the program; a program whose layers ask for two placements
 	// at once declines here, before any device state exists.
 	shape, err := program.ShapeOf(m.Program())
 	if err != nil {
@@ -1481,7 +1481,7 @@ func (r *resident) forwardHiddenNoHead(emb []float32, pos int, want bool) ([]flo
 	e := r.q.Begin()
 	r.encodeTrunkInto(e) // layers → final norm → r.aq/r.aSc; no head dispatch
 	e.End()
-	r.recordExecErr(e.Err()) // C-09
+	r.recordExecErr(e.Err())
 	if !want {
 		return nil, nil
 	}
@@ -1505,7 +1505,7 @@ func (r *resident) forwardLogits(pos int, ropePos ...int) []float32 {
 	r.encodeTrunkInto(e)                                                           // 28 layers → final norm → r.aq/r.aSc
 	e.Dispatch(r.pGemvW8, (r.V)*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH) // full lm head (int8 — logit-critical)
 	e.End()
-	r.recordExecErr(e.Err()) // C-09
+	r.recordExecErr(e.Err())
 	r.gpuStart, r.gpuEnd, r.kernStart, r.kernEnd = e.GPUStart(), e.GPUEnd(), e.KernStart(), e.KernEnd()
 	r.finalizeLogits()
 	return r.logitsHost
@@ -1605,7 +1605,7 @@ func (r *resident) ForwardEmbMRoPEPipe(emb []float32, pos, ropePos int) []float3
 func (r *resident) ForwardEmbNoLogitsPipe(emb []float32, pos int) {
 	if (r.g4moe != nil && r.g4moe.paged) || (r.moe != nil && r.moe.paged) {
 		// The synchronous paged path (no executor, ForwardEmbMRoPEPipe's reason), with the final norm and LM head
-		// skipped: a prompt token's logits are discarded, and on M26 the head reads ~0.74 GB of int8 a token
+		// skipped: a prompt token's logits are discarded, and on the Gemma 4 26B the head reads ~0.74 GB of int8 a token
 		// (task-m26-mac-2026-10.md). The layers, and so the KV, are the same calls either way.
 		r.pagedNoHead = true
 		r.ForwardEmb(emb, pos)
@@ -1698,7 +1698,7 @@ func (r *resident) execLoop() {
 			next, nextNoHead, nextPlan = encodeFor(job.noHead, job.pos+2), job.noHead, r.attnPlanFor(job.pos+2)
 		}
 		cur.WaitDone()
-		r.recordExecErr(cur.Err()) // C-09: set BEFORE the execAck send so the adapter's read is ordered
+		r.recordExecErr(cur.Err()) // set BEFORE the execAck send so the adapter's read is ordered
 		r.gpuStart, r.gpuEnd, r.kernStart, r.kernEnd = cur.GPUStart(), cur.GPUEnd(), cur.KernStart(), cur.KernEnd()
 		if !job.noHead {
 			r.finalizeLogits()
@@ -1783,7 +1783,7 @@ func (r *resident) writtenBuffers() []Buffer {
 	return append(r.kvBuffers(), r.scratchBuffers()...)
 }
 
-// kvSlotBuf is one resident KV slot (MC1): its block table in each group, a view of that group's kvTab (kt the primary group's, ktw
+// kvSlotBuf is one resident KV slot: its block table in each group, a view of that group's kvTab (kt the primary group's, ktw
 // the window group's).
 type kvSlotBuf struct {
 	kt, ktw Buffer
@@ -1908,7 +1908,7 @@ func (r *resident) useKVSlot(i int) error {
 // ); keep that ordering for any new caller.
 func (r *resident) Close() error {
 	if r.ctxCeilKey != nil {
-		metalCtxCeiling.Delete(r.ctxCeilKey) // S18: a ceiling must not keep its model alive past the resident
+		metalCtxCeiling.Delete(r.ctxCeilKey) // a ceiling must not keep its model alive past the resident
 		r.ctxCeilKey = nil
 	}
 	r.stopExec()
@@ -1922,7 +1922,7 @@ func (r *resident) Close() error {
 	}
 	if r.d != nil {
 		r.d.ReleaseAll()     // every MTLBuffer
-		r.d.ReleaseObjects() // command queue, ~40 pipelines, 1-2 libraries, and the MTLDevice (M24b)
+		r.d.ReleaseObjects() // command queue, ~40 pipelines, 1-2 libraries, and the MTLDevice
 	}
 	return nil
 }
@@ -1943,7 +1943,7 @@ func (r *resident) LastGPUTimes() (gpuBusy, kernTotal float64) {
 func (r *resident) ForwardArgmax(id, pos int) uint32 {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	r.loadEmbedRow(id, pos) // includes the arch embed scale — see loadEmbedRow (G-02)
+	r.loadEmbedRow(id, pos) // includes the arch embed scale — see loadEmbedRow
 	if r.V%8 != 0 {
 		// gemv_w8a8_amax derives its output row from tgid*(tgs>>5)+sgid, as the SA-family decode kernels do (see
 		// buildResident's width checks): dispatchThreads: makes the last threadgroup non-uniform whenever the dispatch
@@ -1964,7 +1964,7 @@ func (r *resident) ForwardArgmax(id, pos int) uint32 {
 	e.Dispatch(r.pGemvW8Amax, (r.V)*32, 256, r.aq, r.aSc, r.lmW, r.lmS, r.part, r.uH) // tile partials (int8 head)
 	e.Dispatch(r.pArgFinish, 256, 256, r.part, r.tok, r.uP)                           // reduce tiles → token
 	e.End()
-	r.recordExecErr(e.Err()) // C-09
+	r.recordExecErr(e.Err())
 	return uint32(headID(r.tok.U32(), r.V))
 }
 
@@ -2082,8 +2082,7 @@ func (r *resident) encodeLayerStep(e *Encoder, st layerStep, i, l int, L *residL
 const q4kGemvRows, w8F32GemvRows = 8, 2
 
 // q5kGemvRows and q6kGemvRows are the rows a simdgroup of the q4k lane's native Q5_K and Q6_K GEMVs (gemv_q5k_f32_rows<R>,
-// gemv_q6k_f32_rows<R>), KS-O1's O1-G0 reading. Only
-// these R are instantiated.
+// gemv_q6k_f32_rows<R>). Only these R are instantiated.
 const q5kGemvRows, q6kGemvRows = 4, 4
 
 // q4kBlockPipes is the plain, residual and bias GEMV of a block-kind segment ("q4k", "q5k", "q6k") and its rows a simdgroup;
@@ -2131,7 +2130,7 @@ func (r *resident) q4kGemv(e *Encoder, segs []q4kSeg, resid bool, bias, ax, out,
 	}
 }
 
-// encodePLE is a Gemma 4 E-model layer's Per-Layer-Embedding branch (S1.5), after the FFN residual and before the
+// encodePLE is a Gemma 4 E-model layer's Per-Layer-Embedding branch, after the FFN residual and before the
 // layer scalar, as decoder/forward_gemma4.go and HF's Gemma4DecoderLayer order it:
 // x += post_per_layer_input_norm( PLEProj · ( gelu_tanh(PLEGate · x) * pleIn[l] ) ). PLEGate reads the raw residual
 // (no pre-norm), quantized like every other W4A8 input; the projection lands in the FFN's dO scratch, free by now.
@@ -2148,7 +2147,7 @@ func (r *resident) encodePLE(e *Encoder, l int, x Buffer) {
 }
 
 // loadEmb stages one embedding row for a single-token forward: the hidden state into r.x and, for a Gemma 4
-// E-model, the row's PLE tail into r.pleIn (S1.5). The backend's entry points check the row's length
+// E-model, the row's PLE tail into r.pleIn. The backend's entry points check the row's length
 // (metalResident.embLen) before it gets here.
 func (r *resident) loadEmb(emb []float32) {
 	copy(r.x.Floats(), emb[:r.H])
@@ -2157,7 +2156,7 @@ func (r *resident) loadEmb(emb []float32) {
 	}
 }
 
-// w8RowsOffForTest keeps a native int8 resident on its one-row GEMVs (the old arm of KS-C3's A/B); read at build.
+// w8RowsOffForTest keeps a native int8 resident on its one-row GEMVs instead of the rows GEMVs; read at build.
 var w8RowsOffForTest bool
 
 // w8RowsOK reports whether a native int8 resident's dense GEMVs can take the int8 rows kernels, which read their weight rows
@@ -2176,10 +2175,10 @@ func (r *resident) w8RowsOK() bool {
 }
 
 // ksc2OldDownForTest builds the decode library with the staged coal kernels' per-word integer sum (KSC2_OLD_DOWN), the old
-// arm of KS-C2's A/B; read at build.
+// form; read at build.
 var ksc2OldDownForTest bool
 
-// gemvRowsFor is the rows-per-simdgroup count for an R18 GEMV of `rows` outputs: the largest of want, want/2, ..., 2
+// gemvRowsFor is the rows-per-simdgroup count for a rows-per-simdgroup GEMV of `rows` outputs: the largest of want, want/2, ..., 2
 // whose threadgroups of 8·R rows (tg 256 = 8 simdgroups) tile rows exactly, or 0 (keep the shipped kernel). The rows
 // kernels index rows from full threadgroups — a partial last one under dispatchThreads reports a smaller
 // threads_per_threadgroup — so an inexact tiling must not reach them.
@@ -2245,7 +2244,7 @@ const attnFADepthFloor = 1024
 
 // attnFAMaxG is the most query heads per KV head attention_fa holds: its per-thread arrays are sized
 // ATTN_FA_MAXG in kernels.go (TestAttnFAMaxG_matchesKernel ties the two). A wider group would index past
-// them, so attnFAGroupOK keeps such a layer on the shipped kernel (F-C03, docs/audit-metal-2026-09-30.md).
+// them, so attnFAGroupOK keeps such a layer on the shipped kernel (docs/audit-metal-2026-09-30.md).
 // The group size comes from the checkpoint, not the family (Llama 3.1 405B has 16), so this is a guard,
 // not a list.
 const attnFAMaxG = 8
@@ -2254,7 +2253,7 @@ const attnFAMaxG = 8
 func attnFAGroupOK(nH, nKV int) bool { return nKV > 0 && nH%nKV == 0 && nH/nKV <= attnFAMaxG }
 
 // attnFAHeadDimOK reports whether attention_fa can run a layer of head dim hd: 128 (attention_fa and the block kernel),
-// or 64 where the block kernel's hd = 64 twin is instantiated for the group size, G = 7 (B-P01). attention_fa itself
+// or 64 where the block kernel's hd = 64 twin is instantiated for the group size, G = 7. attention_fa itself
 // is hd = 128 only, so an hd = 64 layer must never reach it without the twin.
 func attnFAHeadDimOK(hd, nH, nKV int) bool {
 	if hd == 128 {
@@ -2263,7 +2262,7 @@ func attnFAHeadDimOK(hd, nH, nKV int) bool {
 	return hd == 64 && nKV > 0 && nH%nKV == 0 && nH/nKV == 7 && attnFABlk64On
 }
 
-// gemvExtOn routes the int4 GEMVs R18 never reached (DeltaNet's qkv and z projections, a shared expert's gate|up and
+// gemvExtOn routes the int4 GEMVs gemvRows does not cover (DeltaNet's qkv and z projections, a shared expert's gate|up and
 // down) through the rows-per-simdgroup kernels. Each rows kernel is bit-identical to the one it replaces (same
 // lane-strided words, per-word sum and simd_sum; TestGemvExt_bitIdentical).
 var gemvExtOn = true
@@ -2278,7 +2277,7 @@ const (
 	gemvExtKResid
 )
 
-// gemvExt encodes one int4 GEMV of `rows` outputs over K inputs at a site R18 never reached: its rows-per-simdgroup
+// gemvExt encodes one int4 GEMV of `rows` outputs over K inputs at a site gemvRows does not cover: its rows-per-simdgroup
 // twin when gemvExtOn and the shape allows it (rows fill whole threadgroups, K bytes of staged activations fit, an
 // int4 resident), else exactly the dispatch the site always made. args are the shipped kernel's buffers in order.
 func (r *resident) gemvExt(e *Encoder, kind gemvExtKind, rows, K int, args ...Buffer) {
@@ -2391,7 +2390,7 @@ func (r *resident) canUseAttnFA(l int) bool {
 	return g != nil && attnFAHeadDimOK(g.hd, r.nH, g.nKV) && attnFAGroupOK(r.nH, g.nKV) && r.planNKeys() >= r.attnFAFloor()
 }
 
-// attnFASplitFor picks S so kvHead*S clears 2x attnFACoreCount (R2's own registered rule),
+// attnFASplitFor picks S so kvHead*S clears 2x attnFACoreCount (the attention_fa lane's registered rule),
 // capped at r.attnFAMaxSplit (the partial buffer's own allocation) and at nKeys/32 (a floor on
 // keys-per-split — an S so large most splits see one or zero keys wastes the second dispatch's
 // combine pass for no parallelism gain).
@@ -2564,15 +2563,15 @@ func (r *resident) ForwardBatch(embeddings [][]float32, startPos int) ([][]float
 	return out, nil
 }
 
-// S1.0 test seams: re-drop each Gemma 4 fix, so a gate can show it
+// Test seams: re-drop each Gemma 4 fix (the layer scalar, v_norm), so a gate can show it
 // reproduces the before-fix numbers. Never set outside tests.
 var (
 	g4DropLayerScalarForTest bool
 	g4DropVNormForTest       bool
 )
 
-// S1 G2 planted defects: each re-introduces one E-model mistake on the
-// Metal side only, so G1 (Metal resident against the CPU) must turn red under it. Never set outside tests.
+// Planted defects: each re-introduces one E-model mistake on the Metal side only, so
+// the gate of the Metal resident against the CPU must turn red under it. Never set outside tests.
 var (
 	g4KeepSharedKVStoreForTest bool // (5) a shared layer stores its K/V over its source's cache
 	g4SkipPLEForTest           bool // (1) the PLE branch skipped

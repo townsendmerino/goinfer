@@ -1,6 +1,6 @@
 package main
 
-// The gate ledger (B14): the record of gate results a PERSON has confirmed. The file format, the source key
+// The gate ledger: the record of gate results a PERSON has confirmed. The file format, the source key
 // and every verdict are byte-for-byte what the original Python implementation produced, so existing
 // confirmations stay valid (TestLedger_realLedgerRoundTripsByteIdentical and
 // TestLedger_sourceKeyMatchesThePythonImplementation pin it).

@@ -41,8 +41,8 @@ type BatchSeq struct {
 }
 
 // BatchDraw is a temperature-only draw a batched step makes on-device for its row: ForwardSample's
-// arguments, from the sequence's own Sampler.NextDraw. Greedy marks a greedy generation's row (E-P08,
-// docs/audit-metal-2026-09-30.md), sent only to a resident that reports Caps.BatchGreedyDraw: the id must be the
+// arguments, from the sequence's own Sampler.NextDraw. Greedy marks a greedy generation's row
+// (docs/audit-metal-2026-09-30.md), sent only to a resident that reports Caps.BatchGreedyDraw: the id must be the
 // argmax of the logits the row would have returned (after any softcap or logit scale), first maximum on a tie, exactly
 // as the decoder's sampler would pick it from them.
 type BatchDraw struct {

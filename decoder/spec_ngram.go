@@ -243,7 +243,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 	// the prompt seeds the resident KV, verify is one batched ForwardN, and rollback is the resident no-op TruncateTo.
 	// The drafter is pure Go, so this adds no GPU memory. A session's CPU cache forces the staged path.
 	resident := cache == nil && target.resident != nil && target.DecodeRunnerEligible()
-	// adaptive claims the resident per round instead of once per generation, so MC3's batcher can admit other generations
+	// adaptive claims the resident per round instead of once per generation, so the resident batcher can admit other generations
 	// between rounds. Greedy only: a
 	// sampled generation takes the always-exclusive path, because the yield round needs a device-side greedy verify through
 	// the batcher, which does not exist for a sampled draw.
@@ -255,7 +255,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 		// staged CPU path on this call's own cache. Released on return.
 		//
 		// Claim through the batcher's claimExclusive when one exists, not a bare CAS on resBusy: a plain concurrent generation
-		// becomes an MC3 holder via bt.claim, which only reads resBusy, so a bare CAS would succeed while a holder is mid-step
+		// becomes a batched holder via bt.claim, which only reads resBusy, so a bare CAS would succeed while a holder is mid-step
 		// and corrupt the resident. claimExclusive also requires holders == 0. Production does not combine the two (-spec
 		// without -spec-adaptive forces concurrency to 1), but the guard must not depend on that;
 		// TestSpecAdaptiveSwitch_offByDefaultUnaffected exercises the combination.
@@ -294,7 +294,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			}
 			return target.forwardN(ctx, seq, tc)
 		}
-		// targetVerifyBatch is targetVerify's adaptive "batch under load" side: one token through MC3's coalescer on our own
+		// targetVerifyBatch is targetVerify's adaptive "batch under load" side: one token through the resident batcher's coalescer on our own
 		// reserved slot. A batched step has no argmax-only fast path, so it always returns one full logits row; greedy only,
 		// as adaptive is.
 		targetVerifyBatch := func(tok, base int) ([][]float32, error) {
@@ -381,7 +381,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			if adaptive {
 				// Our own slot, reserved for the whole generation: busySlots keeps this pick from colliding with another generation's.
 				// residentAcquireSlot rebinds the resident to the slot it picks, so the pick and the forget below need the resident to
-				// themselves, as generateInto's MC3 prefill does (model.go); neither is safe bare.
+				// themselves, as generateInto's batched prefill does (model.go); neither is safe bare.
 				target.batcher.exclusive(func() {
 					acq := target.residentAcquireIn(prompt, nil, nil, target.batcher.busySlots(), kvScopeOf(ctx))
 					reuseFrom, mc3Slot = acq.reuse, acq.slot
@@ -412,7 +412,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 				}
 				g.PrefillReused = reuseFrom
 			} else if resident {
-				reuseFrom = target.residentAcquireIn(prompt, nil, nil, nil, kvScopeOf(ctx)).reuse // the n-gram target never binds an adapter; MC1: binds the KV slot
+				reuseFrom = target.residentAcquireIn(prompt, nil, nil, nil, kvScopeOf(ctx)).reuse // the n-gram target never binds an adapter; binds the resident KV slot
 				target.residentForgetIDs()
 				if seedLogits, err = target.residentPrefillSeed(ctx, prompt, reuseFrom, false); err != nil {
 					g.err = err
@@ -450,7 +450,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			}
 			if adaptive {
 				// The generation's own resident touches are over by the time this runs (the round loop
-				// has returned); MC3 may be mid-run for other generations right now, so rebinding our
+				// has returned); the batcher may be mid-run for other generations right now, so rebinding our
 				// slot needs the same momentary exclusive access their own prefills take, not a bare
 				// unsynchronized call. mc3Slot is only ever valid (>= 0) when adaptive.
 				target.batcher.exclusive(func() {
@@ -482,7 +482,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 }
 
 // ngramTarget is what ngramSpecLoop asks of the target: verifying a sequence at a position (full logits, or argmax ids
-// when the resident backend computes them on device; idsVerify nil when it cannot), a one-token verify through the MC3
+// when the resident backend computes them on device; idsVerify nil when it cannot), a one-token verify through the resident
 // batcher on a round that yields, rolling the KV back, committing the decoded ids to a resident slot, the stop test and
 // context cap, and, when adaptive, the batcher's exclusive section and round claim. genNgramInto builds it from the
 // model; the scripted fake builds it from a Forward (TestNgramSpecLoop_exactOnTheFake).
@@ -587,7 +587,7 @@ func ngramSpecLoop(ctx context.Context, tg ngramTarget, seedLogits []float32, ou
 	var lookupBuf []int
 	var seqBuf []int
 	var phBuf []int
-	// Adaptive state. yielding: the previous round joined MC3's batch instead of speculating. aloneStreak: consecutive
+	// Adaptive state. yielding: the previous round joined the resident batch instead of speculating. aloneStreak: consecutive
 	// rounds this generation was alone; resuming multi-token drafting after a yield takes specAdaptiveResumeStreak of them
 	// (hysteresis, so a briefly idle second client does not thrash the switch), while a generation that never yielded keeps
 	// drafting every alone round. holdingExclusive tracks whether resBusy is ours, so the safety-net defer below cannot
@@ -619,7 +619,7 @@ func ngramSpecLoop(ctx context.Context, tg ngramTarget, seedLogits []float32, ou
 					yielding = false
 				}
 			} else if neverYield {
-				// Measurement only: wait for the resident rather than joining MC3's batch. A short,
+				// Measurement only: wait for the resident rather than joining the resident batch. A short,
 				// bounded spin — claimExclusive is a cheap non-blocking check, and this generation is
 				// the only thing in this process choosing to wait this way.
 				for !tg.claim() {
@@ -641,7 +641,7 @@ func ngramSpecLoop(ctx context.Context, tg ngramTarget, seedLogits []float32, ou
 		// probe is due), the round is a plain decode step, so the drafter's scan of the whole context is skipped.
 		var proposed []int
 		if !yieldThisRound && (ad == nil || ad.Depth(K) > 0) {
-			// A yield round never drafts: it is one plain token through MC3's batch, exactly what a
+			// A yield round never drafts: it is one plain token through the resident batch, exactly what a
 			// kEff==0 miss round already is below, just verified via the batcher instead of this
 			// generation's own exclusive resident access.
 			proposed = drafter.Draft(lookupBuf, K)
@@ -695,7 +695,7 @@ func ngramSpecLoop(ctx context.Context, tg ngramTarget, seedLogits []float32, ou
 				}
 			}
 			if tg.adaptive {
-				// resBusy (claimExclusive above) keeps MC3's holders off the resident, but other generations' exclusive sections (slot
+				// resBusy (claimExclusive above) keeps the batched holders off the resident, but other generations' exclusive sections (slot
 				// pick, prefill, commit) wait on the batcher's busy flag and never read resBusy. Verifying without busy let their
 				// residentBind-then-prefill interleave with this round's residentBind-then-ForwardN, and each wrote the other's slot.
 				// The round therefore takes busy too (docs/measurements/mc4-candidate-cuda-2026-10-01.md).

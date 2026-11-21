@@ -19,8 +19,10 @@ func wmBytes(w *linalg.WeightMat) int64 {
 	if f, ok := w.F32(); ok {
 		n += 4 * int64(len(f))
 	}
-	if raw, ok := w.Q4K(); ok {
-		n += int64(len(raw))
+	for _, get := range []func() ([]byte, bool){w.Q4K, w.Q5K, w.Q6K} {
+		if raw, ok := get(); ok {
+			n += int64(len(raw))
+		}
 	}
 	if u, _, ok := w.Half16(); ok {
 		n += 2 * int64(len(u))

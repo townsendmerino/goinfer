@@ -12,12 +12,12 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-// KV8a's recurrent checkpoint on CUDA (decoder.ResidentKVSubsystem; docs/measurements/kv8a-2026-10/README.md, "Where the
+// The recurrent checkpoint on CUDA (decoder.ResidentKVSubsystem; docs/measurements/kv8a-2026-10/README.md, "Where the
 // checkpoint lives on CUDA"): device copies of every recurrent layer's state and conv window, DeltaNet (dnWin, dnState) and
 // Mamba-2 (mbWin, mbSSM), one per KV slot when they fit. They live in device memory because the save runs on every request, and a
 // device-to-device copy keeps that cheap; there is no host fallback. A slot saves into its own copy; with fewer copies than slots,
 // a save takes a free one and then the least recently saved, and a slot whose copy was taken has its restore refused. A load whose free
-// VRAM cannot hold one keeps none, and the slot behaves as before KV8a.
+// VRAM cannot hold one keeps none, and the slot keeps no checkpoint.
 
 // ckptCopy is one checkpoint: a buffer per live one, in recurrentPair order by layer, and the slot whose state it holds, -1 for none.
 type ckptCopy struct {

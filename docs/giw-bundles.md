@@ -96,13 +96,17 @@ A `.giw` is a cache of its source, so the format has **one version at a time**. 
 ### From v17: a new encoding needs no new version
 
 - **Every tensor record starts with its encoding.** A weight matrix starts with its kind byte (1 f32 copied, 10 f32 aliased, 2 int8, 3 and 5
-  int4, 6 a fused int4 group, 8 Q4_K super-blocks, 9 bf16). A standalone array (a norm, a bias, an f32 Mamba projection) starts with encoding 1, f32.
+  int4, 6 a fused int4 group, 8 Q4_K super-blocks, 9 bf16, 11 and 12 Q5_K and Q6_K super-blocks). A standalone array (a norm, a bias, an f32 Mamba projection) starts with encoding 1, f32.
 - **A reader refuses only the encoding it does not read.** That tensor's encoding is named in a `*SerializeError`, and a
   sidecar is rebuilt as for a version mismatch. A bundle that never uses the new encoding still loads.
 - **So a new encoding is added at v17,** without a v18. q4k's form is that case: kind 8, a `--quant q4k` load's Q4_K
   tensors as their raw super-blocks, aliased from the mapping (D8b-build, `docs/completed/task-memory-campaign-2026-10.md`).
   - An older build refuses a sidecar that uses it and writes its own in place, under the same name.
   - The newer build reads that one, since it reads every older encoding.
+  - Kinds 11 and 12 are the same case: a q4k load's Q5_K and Q6_K tensors, written only into a cpu-amd64 bundle and only
+    where linalg has their kernels (`decoder/gguf.go:q4kNative56`). That sidecar's name carries `.k56`
+    (`decoder/sidecar.go:kquantTag`), so a q4k sidecar written before them, which widened those tensors to int8, is never
+    taken for one that keeps them.
 - **What it does not cover:** a change to the layout itself, such as a new per-layer field or a new header field. A reader
   cannot skip a record it cannot parse, so that still needs a new version.
 - **The KV snapshot (`.giw-kv`) is unchanged:** it keeps its own version and untagged arrays.

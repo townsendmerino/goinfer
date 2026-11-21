@@ -10,10 +10,9 @@ import (
 )
 
 // injectedVersion is set via `-ldflags -X` on a release-built binary, where a plain
-// runtime/debug.ReadBuildInfo() reads a "+dirty" pseudo-version (R6, docs/measurements/
-// cold-user-2026-09-06-nobara-pc.md): the release workflow's GPU assets are built from an
-// ephemeral submodule checkout with a local `go mod edit -replace` applied (R2-follow-on), and
-// that uncommitted go.mod edit is enough for the VCS stamp to read "modified" even though the
+// runtime/debug.ReadBuildInfo() reads a "+dirty" pseudo-version: the release workflow's GPU
+// assets are built from an ephemeral submodule checkout with a local `go mod edit -replace`
+// applied, and that uncommitted go.mod edit is enough for the VCS stamp to read "modified" even though the
 // tree is exactly the tagged release. A binary built with `go install .../cmd/chat@v0.17.0`
 // (no replace, no ephemeral checkout) is unaffected and continues to report its real tag via
 // cliutil.BuildIdent alone — this only overrides what that path would otherwise get wrong.
@@ -31,11 +30,7 @@ var injectedVersion string
 // string per build tag, --version says what actually shipped.
 var embeddedTier, embeddedQuant string
 
-// versionReport is what `goinfer-chat --version` prints. R6 (docs/measurements/
-// cold-user-2026-09-06-nobara-pc.md): on v0.17.0 this binary had NO way to report its version at
-// all — `--version`/`-v` both hit "flag provided but not defined", and a bare `version`
-// positional was silently swallowed and started an interactive chat session with the embedded
-// model instead of erroring or printing anything.
+// versionReport is what `goinfer-chat --version` (or `-v`) prints.
 func versionReport(prog string) string {
 	var b strings.Builder
 	version, revision := cliutil.BuildIdent(injectedVersion)

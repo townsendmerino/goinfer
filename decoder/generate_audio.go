@@ -24,7 +24,7 @@ func (m *Model) prefillLogitsAudio(ctx context.Context, ids []int, feats []float
 		return nil, fmt.Errorf("decoder: audio features len %d, want %d (%d tokens x %d)", len(feats), n*hidden, n, hidden)
 	}
 	// The audio run's rows are the raw projector output (no embed scale, as transformers' masked_scatter into inputs_embeds),
-	// spliced per pass; they attend causally, so any cut is allowed (MEM5-VL).
+	// spliced per pass; they attend causally, so any cut is allowed.
 	hN, err := m.prefillSpliced(ctx, ids, []ImageSpan{{Pos: pos, Len: n}}, feats, cache, false)
 	if err != nil {
 		return nil, err

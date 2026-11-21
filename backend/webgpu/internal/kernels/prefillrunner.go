@@ -694,12 +694,12 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mro
 	}
 	defer func() { enc.Release() }()
 
-	// buildErr accumulates the FIRST device-allocation/bind failure (audit C-27, mirrored
-	// from DecodeTokenFusedBatched): short-circuit once set, return it before Submit, so
+	// buildErr accumulates the FIRST device-allocation/bind failure (as DecodeTokenFusedBatched
+	// does): short-circuit once set, return it before Submit, so
 	// VRAM exhaustion is an error the caller falls back on rather than a panic or a
 	// downstream nil-buffer deref.
 	var buildErr error
-	// R-25: a layer's buffers are dead once the layer is encoded (the residual
+	// A layer's buffers are dead once the layer is encoded (the residual
 	// stream is updated in place, K/V are copied into the cache), so each layer recycles the one before it: storF hands
 	// out a free buffer of the same size before it creates one. A recycled buffer was written before, so wgpu does not
 	// zero-fill it again, and the pass holds one layer's intermediates instead of every layer's. The queue orders the
@@ -1042,7 +1042,7 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mro
 	// instead of a separate add: the add has to be fused into the GEMM's expression to stay bit-exact with production's
 	// gemvBias (docs/code-notes/gpu.md#runModelToModelW). An int4 matrix adds it in a separate dispatch, as decode does.
 	var projQB func(aqC, asC *wgpu.Buffer, rowsM int, rm prefillProj, bias *wgpu.Buffer) *wgpu.Buffer
-	// sharedQ returns the projections of one quantized input through rms. R-25: the
+	// sharedQ returns the projections of one quantized input through rms. The
 	// input is quantized once when every projection has the same K and reads it at the same padding, which q/k/v and
 	// gate/up of one precision always do. Quantization is deterministic, so each projection reads the bytes it would
 	// have read from its own copy; prefillQuantPerProj (tests only) restores a quantization each.
@@ -1140,7 +1140,7 @@ func (c *Context) prefillLastRows(xs [][]float32, m ModelW, pp prefillProjs, mro
 		keepBuf(pleIn)
 	}
 
-	// R10 prefill decomposition (gpu/prefill_prof.go): pt is a no-op (time.Time{}) whenever c.prefillProf is
+	// The prefill decomposition (gpu/prefill_prof.go): pt is a no-op (time.Time{}) whenever c.prefillProf is
 	// nil, so profiling off costs one nil-check per call. Category boundaries are syncs (as in cudaResident's
 	// profTic/profToc), so the category sum runs a bit over pipelined wall time; numbers in
 	// docs/measurements/webgpu-prefill-decomp-2026-09-22.md. residualB and swigluB (elementwise) fold into
@@ -1422,15 +1422,15 @@ var PrefillAttnRowsOff = false
 // binding offset is a multiple of 256 bytes.
 var PrefillAttnPerRow = false
 
-// PrefillQuantPerProj restores the batched prefill's quantization per projection (R-25, sharedQ), for the test that
+// PrefillQuantPerProj restores the batched prefill's quantization per projection (sharedQ), for the test that
 // compares the two and the A/B that times them. Tests only.
 var PrefillQuantPerProj = false
 
-// PrefillSharedQuants counts the quantizations sharedQ shared across projections (a test reads it to see R-25 ran).
+// PrefillSharedQuants counts the quantizations sharedQ shared across projections (a test reads it to see the sharing ran).
 var PrefillSharedQuants atomic.Int64
 
-// prefillBufFresh and prefillBufPoison are tests-only switches on the pass's buffer recycling (R-25, storF): fresh
-// buffers for every call, as before, and NaN-filled recycled buffers. prefillBufReused counts recycled buffers.
+// prefillBufFresh and prefillBufPoison are tests-only switches on the pass's buffer recycling (storF): fresh
+// buffers for every call, and NaN-filled recycled buffers. prefillBufReused counts recycled buffers.
 var (
 	PrefillBufFresh  = false
 	prefillBufPoison = false

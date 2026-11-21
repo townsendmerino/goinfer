@@ -171,7 +171,7 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *layerProgram, h []float3
 				isLocal := cache.isLocal(l)
 				for i := range K {
 					ki, vi := row(k, i, kvDim), row(v, i, kvDim)
-					if kvRoundF16ForTest { // F1's reference
+					if kvRoundF16ForTest { // the f16 exactness gate's reference
 						roundF16InPlace(ki)
 						roundF16InPlace(vi)
 					}
@@ -400,7 +400,7 @@ func activateRows(act ActKind, gate, up []float32) error {
 	return nil
 }
 
-// walkMulti runs prog's layers for B independent sequences, one token each, each on its own cache (MC3c), then the head's
+// walkMulti runs prog's layers for B independent sequences, one token each, each on its own cache (the batched CPU decode), then the head's
 // norm; it returns the B rows' hidden states. Its operations compute what walkToken's do for each row, with the projections at
 // M=B; the program must be one multiStepEligible admits.
 func (m *Model) walkMulti(prog *layerProgram, h []float32, caches []*KVCache) ([]float32, error) {

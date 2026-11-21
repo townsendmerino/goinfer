@@ -82,8 +82,13 @@ type Options struct {
 	Knobs *Knobs
 	// EmbedInt4 relaxes the int8 pin on the token-embedding/LM-head table in int4 mode, storing it at int4 too: this halves the
 	// single largest resident tensor on a big-vocab small model, at a lossy cost (mostly on rare tokens). Off in a zero Options,
-	// which keeps the bit-exact int8 pin; the CLIs turn it on by default (internal/loadflags). GGUF load path only.
+	// which keeps the bit-exact int8 pin; the CLIs turn it on by default (internal/loadflags), and EmbedInt4Default lets the
+	// model's size take it back off.
 	EmbedInt4 bool
+	// EmbedInt4Default marks EmbedInt4 as the caller's default, not a choice: Load then keeps the int8 head on a model of
+	// embedInt4DefaultMaxParams parameters or more (EmbedInt4For). A planner that picks the sidecar before Load applies the
+	// same rule.
+	EmbedInt4Default bool
 	// ResidentContext requests a GPU-resident KV capacity in positions. 0 (default) keeps the
 	// backend's built-in default, so nobody who did not ask allocates deep-KV VRAM. When set, the
 	// backend caps it at the model's own context window — the effective cap is
@@ -117,7 +122,7 @@ type Options struct {
 	ExactPrefill bool
 	// ResidentKVSlots asks a GPU-resident backend for this many independent KV caches ("slots"), so several interleaved
 	// conversations each keep their own prefix resident instead of evicting one another's.
-	// Still one generation at a time unless MC3 is enabled: a slot is bound per generation. 0 or 1 = one slot. A backend clamps it
+	// Still one generation at a time unless the batched decode is enabled (EnableResidentConcurrency): a slot is bound per generation. 0 or 1 = one slot. A backend clamps it
 	// to what its fit guard allows and says so; a backend that does not implement KVSlotterAvailable, and every family with
 	// recurrent state, keep one slot. serve sets it from -kv-sessions.
 	ResidentKVSlots int
@@ -150,7 +155,7 @@ type Options struct {
 	// encoder with the front of its dense FFN batched, bit-identical to the single-token forward.
 	// It costs the step's scratch. Only Metal reads it.
 	ResidentGemma4Step bool
-	// ResidentPrefillChunk, under MC3 (EnableResidentConcurrency), prefills a long prompt suffix in chunks of this many tokens
+	// ResidentPrefillChunk, under the batched decode (EnableResidentConcurrency), prefills a long prompt suffix in chunks of this many tokens
 	// while other generations are decoding, one decode step between chunks, instead of in one pass that stalls them all for the
 	// whole prompt. 0 = off: whole prefill. Sound only where the resident's batched
 	// prefill is chunk-invariant (Metal's is: TestMC5_prefillChunkInvariance). serve defaults it to 512, the graded value

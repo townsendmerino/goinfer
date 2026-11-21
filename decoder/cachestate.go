@@ -61,7 +61,7 @@ const (
 	lcPublish lifecyclePath = "publish" // a completed generation's rows enter the index: residentCommitIDs -> kvmgr.Slots.Commit
 	lcShare   lifecyclePath = "share"   // a request takes rows a sequence already holds: residentAcquireSlot -> kvmgr.Slots.Score
 	lcEvict   lifecyclePath = "evict"   // a slot's rows stop being a known sequence's: residentForgetIDs, or the slot given to another prompt
-	// KV8a's two paths (recurrent_checkpoint.go): the save at the end of a prefill, and the restore at that position.
+	// The recurrent checkpoint's two paths (recurrent_checkpoint.go): the save at the end of a prefill, and the restore at that position.
 	lcCkptSave    lifecyclePath = "checkpoint save"    // residentCheckpointSave, after the prefill and before the first decode step
 	lcCkptRestore lifecyclePath = "checkpoint restore" // residentCheckpointRestore, when kvmgr's scoreRecurrentTokens returns the checkpoint's c
 )

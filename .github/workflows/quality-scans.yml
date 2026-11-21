@@ -30,3 +30,8 @@ jobs:
           set -o pipefail
           go test -tags quality_scan -count=1 -v ./internal/guard/qualityscan/ | tee scan.log
           grep -q -- '--- PASS: TestQualityScan_readsEveryModule' scan.log
+      # Tracker ids in exported declarations' doc comments, held to testdata/comment_trackers.ratchet.
+      - name: comment_census.py tree
+        run: |
+          python3 scripts/test_comment_census.py
+          python3 scripts/comment_census.py tree

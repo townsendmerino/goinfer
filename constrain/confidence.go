@@ -15,8 +15,8 @@ import (
 // confidence unless a fitted temperature was supplied (FieldConfidence.Calibrated). It discriminates (a low-confidence
 // value is wrong more often; docs/measurements/confidence-c0-2026-09-27.md), but its calibration was not measured.
 //
-// WHICH FIELDS. Only the kinds C0's gates cleared are reported: enum, boolean and integer. Number and string fields
-// are omitted (C0 parked them for want of errors to judge them by), and so is any field with no free token — a
+// WHICH FIELDS. Only the kinds the confidence gates cleared are reported: enum, boolean and integer. Number and string fields
+// are omitted (parked for want of errors to judge them by), and so is any field with no free token — a
 // value the grammar forced says nothing about the model.
 //
 // HOW. CaptureConfidence makes Process record, at each position outside a free string, the normalizer of the
@@ -410,7 +410,7 @@ func fieldKind(n *node) string {
 			return "integer"
 		}
 	}
-	return "" // number, string: parked by C0; object / array: not scalars
+	return "" // number, string: parked; object / array: not scalars
 }
 
 // optionKey is an option's key in a Distribution: a string literal's decoded text, any other literal as written.

@@ -40,7 +40,7 @@ import (
 // QwenVisionEncoder does. Added ADDITIVELY: QwenVisionEncoder and Encoder are untouched (the
 // fused-attention body they used is shared via packedAttentionInto, moved verbatim).
 //
-// DeepStack (Qwen3-VL proper, deepstack_visual_indexes non-empty; goinfer S10): at each listed block a separate merger
+// DeepStack (Qwen3-VL proper, deepstack_visual_indexes non-empty): at each listed block a separate merger
 // turns that block's output into one row per merged token. Its LayerNorm runs AFTER the merge-unit shuffle, over the
 // hidden·merge² row (use_postshuffle_norm=True), unlike the main merger's. ForwardDeepstack returns those rows beside the
 // main ones; the decoder adds the i-th set to the image positions' hidden state after its i-th layer. Forward still

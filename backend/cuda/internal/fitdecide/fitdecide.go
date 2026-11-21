@@ -247,7 +247,7 @@ func KVFitDecision(in KVFitIn, free uint64, ok bool) KVFitOut {
 		// No MemInfo ⇒ no fit check possible. Do not fail the load on that: the default cap has
 		// always been allocated without one, and a hard failure here would regress every driver
 		// that does not report memory. The allocation itself still errors if it truly cannot fit.
-		// MC1's further slots are not allocated blind: one slot, as before.
+		// Further resident KV slots are not allocated blind: one slot.
 		return out
 	}
 	need := in.Charged(out.CtxCap, 1)
@@ -271,7 +271,7 @@ func KVFitDecision(in KVFitIn, free uint64, ok bool) KVFitOut {
 		}
 	}
 	if need+reserve <= int64(free) {
-		// MC1: as many of the requested KV slots as fit the same budget; the slots share each layer's pool buffer.
+		// As many of the requested resident KV slots as fit the same budget; the slots share each layer's pool buffer.
 		out.Slots = SlotsFit(in.Charged, in.SlotsReq, int64(free), out.CtxCap, reserve, in.SlotState)
 		if out.Slots < in.SlotsReq && !in.Explicit && out.CtxCap > CtxCapDefault {
 			// Slots before context (owner decision): an unpinned context gives up positions, never below CtxCapDefault,

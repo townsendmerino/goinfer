@@ -15,7 +15,7 @@ import (
 var ggufShardName = regexp.MustCompile(`^(.*)-(\d{5})-of-(\d{5})\.gguf$`)
 
 // GGUFShards returns the files a GGUF path stands for: the path itself for a single file, or every shard of a split
-// GGUF when path is its first shard (task-checkpoint-fetch-2026-09.md P4). The model is named by its first shard, the
+// GGUF when path is its first shard. The model is named by its first shard, the
 // one that carries the metadata. A later shard is refused, and so is a set with a shard missing from the directory,
 // naming it, so an interrupted pull reads as "re-run the pull" and not as a corrupt model.
 func GGUFShards(path string) ([]string, error) {

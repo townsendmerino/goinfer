@@ -79,8 +79,8 @@ func BusyCores(a, b CPUTicks, cores int) (float64, bool) {
 func Available() int64 { return available() }
 
 // OracleSample is a reading bracketed by the kernel's own count of available pages under CONFIG_JETSAM (pageable external + free
-// pages, read through sysctl), read immediately before and after it in one process: B41 gate 1a's instrument
-// (docs/measurements/hostmem-available-2026-10/README.md, amendment A3). JetsamBefore and JetsamAfter are bytes. Fresh is true
+// pages, read through sysctl), read immediately before and after it in one process: gate 1a's instrument in
+// docs/measurements/hostmem-available-2026-10/README.md ("Amendment A3"). JetsamBefore and JetsamAfter are bytes. Fresh is true
 // when Ours was computed inside the bracket: the sysctls are not rate-limited and host_statistics64 is (see Read), so Ours is
 // read twice, with a page fault between that a fresh reply counts, and Fresh is whether the two replies differ. A sample that is not
 // Fresh may predate the bracket and cannot be graded. The kernel figure is compared with Ours.Reclaimable, not Ours.Available.

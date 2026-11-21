@@ -126,7 +126,7 @@ func (s *buildState) admit() error {
 	dims := bv.Dims() // nKV, hd are per-layer now (KVHeadsAtResident/HeadDimAtResident); model-level unused
 	H, nLayers, nH, I, vocab := dims.Hidden, dims.Layers, dims.Heads, dims.Inter, dims.Vocab
 	// Gemma 4 E-model PLE width P (0 for every other model). The resident embedding row is then [hidden ‖ nLayers*P] (EmbedLen):
-	// the host computes the per-layer inputs, and each layer's PLE branch reads its slice of the tail (S1 on CUDA).
+	// the host computes the per-layer inputs, and each layer's PLE branch reads its slice of the tail.
 	pleP := bv.Gemma4PLEDim()
 	if want := H + nLayers*pleP; pleP > 0 && bv.EmbedLen() != want {
 		return decline(fmt.Errorf("gemma4 E-model: the decoder's resident embedding row is %d floats, but hidden+layers*P is %d", bv.EmbedLen(), want))
@@ -1486,7 +1486,7 @@ func (s *buildState) bindFamilyState(r *cudaResident) error {
 		loadD(&r.dnRuleRows, "delta_rule_rows")
 		loadD(&r.dnRuleRows128, "delta_rule_rows_128")
 		loadD(&r.dnGNormRows, "delta_gnorm_rows")
-		// SP2's verify twins (recurrent_spec.go).
+		// The speculative verify's twins (recurrent_spec.go).
 		loadD(&r.dnConvRowsSpec, "delta_conv_rows_spec")
 		loadD(&r.dnRuleRowsSpec, "delta_rule_rows_spec")
 		loadD(&r.dnRuleRows128Spec, "delta_rule_rows_128_spec")
@@ -2024,7 +2024,7 @@ func (s *buildState) allocDecodeScratch(r *cudaResident) error {
 		return e
 	}
 	nGb := launchgeom.GumbelBlocks(vocab)
-	r.gbKey, r.gbIdx, r.gbOut = r.af(nGb), r.ai(nGb), r.ai(1) // Gumbel-max sampling scratch (R7b)
+	r.gbKey, r.gbIdx, r.gbOut = r.af(nGb), r.ai(nGb), r.ai(1) // Gumbel-max sampling scratch
 	if hb, e := gpu.NewHostBufferOn[float32](r.dev, mem.LineScratch, vocab); e != nil {
 		return e
 	} else {
@@ -2037,7 +2037,7 @@ func (s *buildState) allocDecodeScratch(r *cudaResident) error {
 // cache (sized net of the windowed-KV grant's floor), then the windowed-KV grant itself. It runs last in the setup job, so every
 // allocation these must not cost has been made. It is the one place the grants are ordered.
 func (s *buildState) grantSlots(r *cudaResident) error {
-	// KV8a: the recurrent checkpoint comes out of what is left before the expert cache and the windowed grant are sized from it.
+	// The recurrent checkpoint comes out of what is left before the expert cache and the windowed grant are sized from it.
 	if postPoolDoneForTest != nil {
 		postPoolDoneForTest()
 	}

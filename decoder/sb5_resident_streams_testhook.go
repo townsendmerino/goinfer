@@ -27,7 +27,7 @@ type ResidentStreamCase struct {
 
 // ResidentStreamsForTest runs each of generateInto's decode paths once on m, a model loaded resident on llama-tiny (a
 // byte-level vocabulary), and returns the cases by name, prefixed with prefix. Each path is chosen by its knob and its
-// sampling parameters; a knob is restored after its case. Under MC3 (m.EnableResidentConcurrency) the same cases run on
+// sampling parameters; a knob is restored after its case. Under the batched decode (m.EnableResidentConcurrency) the same cases run on
 // the batcher. The streams are the before/after identity record for moving generateInto onto Forward.
 func ResidentStreamsForTest(m *Model, prefix string) (map[string]ResidentStreamCase, error) {
 	if !m.ResidentActive() {
@@ -108,7 +108,7 @@ func ResidentStreamsForTest(m *Model, prefix string) (map[string]ResidentStreamC
 	if m.batcher == nil {
 		return out, nil
 	}
-	// Under MC3, three generations at once, so the batcher's shared steps run: each stream must still be the one its
+	// Under the batched decode, three generations at once, so the batcher's shared steps run: each stream must still be the one its
 	// generation decodes alone (the batched row is bit-identical to the solo call).
 	conc := []cse{cases[0], cases[8], cases[10]}
 	type res struct {

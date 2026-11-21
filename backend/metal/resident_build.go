@@ -341,7 +341,7 @@ func (b *residentBuild) selectLanes() error {
 		return fmt.Errorf("metal: --quant q4k runs on Metal for the plain dense pre-norm shape only (Phi-3, Llama); this family has a variant the q4k lane does not cover")
 	}
 	r.ksd7Old = ksd7OldDequantForTest
-	r.prefillOK = !r.q4kLane && len(missing) == 0 && !m.HasPerLayerGeometry() &&
+	r.prefillOK = len(missing) == 0 && !m.HasPerLayerGeometry() &&
 		!(r.moe != nil && r.moe.paged) && dnetOK && !r.kvF32 &&
 		!r.attnSink && // D-C01: gpt-oss's sink and clamped, biased SwiGLU are in no prefill kernel; explicit, so a feature-map edit cannot admit it
 		prefillStepsDecline(m.Program()) == "" // a step with no batched block: MLA's latent attention, Gemma 4's MoE block

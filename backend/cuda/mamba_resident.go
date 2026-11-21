@@ -17,7 +17,7 @@ import (
 // GEMV, nongated_act.cu's relu2_quant, and the down GEMV. Nothing here is reachable end to end until the recurrent guard sites read Mamba too
 // (step 2c) and the backend declares the features.
 
-// mambaConvShiftForTest shifts mamba_conv's input read by that many elements: OP2b gate M's planted defect, a conv that sees the wrong channels while the CPU
+// mambaConvShiftForTest shifts mamba_conv's input read by that many elements: the Mamba-2 resident gate's planted defect, a conv that sees the wrong channels while the CPU
 // keeps the right math. Set by tests only.
 var mambaConvShiftForTest int
 

@@ -109,7 +109,7 @@ type Request struct {
 	Root   Root
 	Tokens []int
 	Images []ImageSpan
-	// Checkpoint: the caller restores a recurrent sequence's checkpoint before it prefills (KV8a). A recurrent request
+	// Checkpoint: the caller restores a recurrent sequence's checkpoint before it prefills. A recurrent request
 	// that is not a strict extension may then score the checkpoint's position (scoreRecurrentTokens).
 	Checkpoint bool
 }

@@ -688,7 +688,7 @@ type GIWTarget string
 const (
 	GIWTargetNone     GIWTarget = ""
 	GIWTargetCPUArm64 GIWTarget = "cpu-arm64"
-	GIWTargetCPUAmd64 GIWTarget = "cpu-amd64" // defined for L5; does not yet change what's written
+	GIWTargetCPUAmd64 GIWTarget = "cpu-amd64" // defined, but does not yet change what's written
 	GIWTargetMetal    GIWTarget = "metal"
 	GIWTargetCUDA     GIWTarget = "cuda"
 	GIWTargetWebGPU   GIWTarget = "webgpu"
@@ -958,9 +958,9 @@ func matmulWS(be Backend, own *linalg.Workspace, w *linalg.WeightMat, a, dst []f
 		linalg.MatmulBTQ8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
 		return
 	}
-	if w.Kind() == "q4k" {
-		// Native Q4_K (quantQ4K) runs on the CPU here: there is no staged-backend consult for it. Per-32 activations are built
-		// into the kind.
+	if k := w.Kind(); k == "q4k" || k == "q5k" || k == "q6k" {
+		// Native K-quants (quantQ4K) run on the CPU here: there is no staged-backend consult for them. Per-32 activations are
+		// built into the kinds.
 		ws, pooled := matmulWorkspace(own)
 		if pooled {
 			defer matmulWSPool.Put(ws)

@@ -53,7 +53,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 type Context struct {
 	instance *wgpu.Instance
 	adapter  *wgpu.Adapter
-	ledger   mem.Ledger // every buffer created on this Context (MM3; ledger.go)
+	ledger   mem.Ledger // every buffer created on this Context (ledger.go)
 	// collected and collectedBytes count the leased buffers the GC freed with their lease open (ledger.go's Collected).
 	collected, collectedBytes atomic.Int64
 	// dispatches, submits and waits are the decode runners' device activity, always counted (cost.go's Activity).
@@ -154,7 +154,7 @@ type Context struct {
 	swigluShader           *wgpu.ShaderModule
 	swigluPipeline         *wgpu.ComputePipeline
 	swigluLayout           *wgpu.BindGroupLayout
-	// G6: FeatGatedGELU (Gemma) — swiglu's GELU-tanh-gated
+	// FeatGatedGELU (Gemma) — swiglu's GELU-tanh-gated
 	// twin, plain (un-quantized-output) variant.
 	gegluShader      *wgpu.ShaderModule
 	gegluPipeline    *wgpu.ComputePipeline
@@ -276,7 +276,7 @@ type Context struct {
 	swigluQuantShader   *wgpu.ShaderModule
 	swigluQuantPipeline *wgpu.ComputePipeline
 	swigluQuantLayout   *wgpu.BindGroupLayout
-	// G6: FeatGatedGELU (Gemma) fused quantized variant.
+	// FeatGatedGELU (Gemma) fused quantized variant.
 	gegluQuantShader   *wgpu.ShaderModule
 	gegluQuantPipeline *wgpu.ComputePipeline
 	gegluQuantLayout   *wgpu.BindGroupLayout
@@ -335,7 +335,7 @@ type Context struct {
 	relu2Pipeline *wgpu.ComputePipeline
 	relu2Layout   *wgpu.BindGroupLayout
 
-	// MoE residency (Lever C3, moe.go): router top-k selection (moeRoute) feeding the
+	// MoE residency (moe.go): router top-k selection (moeRoute) feeding the
 	// indexed sparse-expert GEMV — Mixtral / Qwen2-MoE / GLM / DeepSeek on the resident path.
 	moeRouteShader   *wgpu.ShaderModule
 	moeRoutePipeline *wgpu.ComputePipeline
@@ -364,11 +364,11 @@ type Context struct {
 	moeExpertGptOssDownShader   *wgpu.ShaderModule
 	moeExpertGptOssDownPipeline *wgpu.ComputePipeline
 	moeExpertGptOssDownLayout   *wgpu.BindGroupLayout
-	// moeExpertGptOssDownW4*: the int4 twin, for Quant "int4" expert stacks (audit C-06).
+	// moeExpertGptOssDownW4*: the int4 twin, for Quant "int4" expert stacks.
 	moeExpertGptOssDownW4Shader   *wgpu.ShaderModule
 	moeExpertGptOssDownW4Pipeline *wgpu.ComputePipeline
 	moeExpertGptOssDownW4Layout   *wgpu.BindGroupLayout
-	// Gated shared-expert combine (Lever C3d, qwen2_moe): xd[n] += sigmoid(gl[0])·src[n].
+	// Gated shared-expert combine (qwen2_moe): xd[n] += sigmoid(gl[0])·src[n].
 	sharedGateShader   *wgpu.ShaderModule
 	sharedGatePipeline *wgpu.ComputePipeline
 	sharedGateLayout   *wgpu.BindGroupLayout
@@ -396,22 +396,22 @@ type Context struct {
 	biasRowsPipeline *wgpu.ComputePipeline
 	biasRowsLayout   *wgpu.BindGroupLayout
 
-	// MLA absorb-path attention (Lever C4, mla.go): rank-space single-query attention
+	// MLA absorb-path attention (mla.go): rank-space single-query attention
 	// over the compressed latent cache (DeepSeek/Kimi). wsum[h] = Σ_j softmax_j·cn_j.
 	mlaAttnShader   *wgpu.ShaderModule
 	mlaAttnPipeline *wgpu.ComputePipeline
 	mlaAttnLayout   *wgpu.BindGroupLayout
-	// MLA latent store (Lever C4b): kvA-norm the rank latent + decoupled-RoPE the key,
+	// MLA latent store: kvA-norm the rank latent + decoupled-RoPE the key,
 	// written into the latent cache at the token's position (the append).
 	mlaStoreShader   *wgpu.ShaderModule
 	mlaStorePipeline *wgpu.ComputePipeline
 	mlaStoreLayout   *wgpu.BindGroupLayout
-	// MLA per-head f32 matvec (Lever C4b): the W_UK absorb (q_nope→rank) and W_UV lift
+	// MLA per-head f32 matvec: the W_UK absorb (q_nope→rank) and W_UV lift
 	// (rank→v) — block-diagonal per head, so a dedicated batched matvec, not a GEMV.
 	mlaHeadMVShader   *wgpu.ShaderModule
 	mlaHeadMVPipeline *wgpu.ComputePipeline
 	mlaHeadMVLayout   *wgpu.BindGroupLayout
-	// MLA query RoPE (Lever C4c): gather + decoupled-RoPE the qk_rope query slice into
+	// MLA query RoPE: gather + decoupled-RoPE the qk_rope query slice into
 	// the combined qAbs buffer, after the absorbed qNopeAbs.
 	mlaQRopeShader   *wgpu.ShaderModule
 	mlaQRopePipeline *wgpu.ComputePipeline
@@ -591,7 +591,7 @@ func (c *Context) mkPipeline(label, code string) (*wgpu.ShaderModule, *wgpu.Comp
 // not be used afterward.
 func (c *Context) Close() error {
 	if !c.closed.CompareAndSwap(false, true) {
-		return nil // idempotent: `defer m.Close()` + an explicit Close must not double-release (C-26b)
+		return nil // idempotent: `defer m.Close()` + an explicit Close must not double-release
 	}
 	LiveContexts.Add(-1)
 	if h := leakAtClose; h != nil {
@@ -619,7 +619,7 @@ func (c *Context) release() {
 	// the nil-out below means a Context is only ever partially populated OR already drained.
 	// Nil each handle after release so a use-after-free is a nil dereference at the Go boundary —
 	// a stack trace pointing at the bug — rather than undefined behaviour inside the native layer.
-	if c.layout != nil { // the primary pipeline's group-0 BGL (New's struct literal), never released (audit R-17)
+	if c.layout != nil { // the primary pipeline's group-0 BGL (New's struct literal)
 		c.layout.Release()
 	}
 	if c.pipeline != nil {
@@ -924,6 +924,6 @@ func (c *Context) buildCompute(label, code string) (*wgpu.ShaderModule, *wgpu.Co
 		sh.Release()
 		return nil, nil, nil, fmt.Errorf("gpu: pipeline %s: %w", label, err)
 	}
-	c.track(sh.Release, pl.Release) // audit C-26: register at creation
+	c.track(sh.Release, pl.Release) // registered at creation, so Close releases them
 	return sh, pl, c.bgl(pl), nil
 }

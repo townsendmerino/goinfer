@@ -69,7 +69,7 @@ func (s *Session) Tokens() []int { return s.tokens }
 // resident base serves many fine-tunes. Switching adapters changes the projections, so KV built under a different (or no)
 // adapter is stale: the next Generate prefills cold rather than reusing it.
 func (s *Session) UseAdapter(name string) error {
-	rt := s.m.adapter(name) // locked read — LoadAdapter may mutate the map concurrently (audit C-29)
+	rt := s.m.adapter(name) // locked read — LoadAdapter may mutate the map concurrently
 	if rt == nil {
 		return fmt.Errorf("decoder: no compute-time adapter %q loaded", name)
 	}
@@ -113,7 +113,7 @@ func (s *Session) reconcile(seq []int) {
 	}
 }
 
-// sessionReconcile is the session's record after a turn (SB5): seq is the prompt plus every token the turn committed,
+// sessionReconcile is the session's record after a turn: seq is the prompt plus every token the turn committed,
 // pos the KV's position. A KV that ended short of seq (a turn cut off mid-write) is trusted only up to pos, unless it
 // holds recurrent state, which cannot be rolled back and so starts over; a truncation that cannot be exact also starts
 // over. It returns the tokens the KV now holds (nil: none) and whether they are live (the adapter they were built under

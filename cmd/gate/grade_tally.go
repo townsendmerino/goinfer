@@ -163,7 +163,7 @@ func reportCensus(w io.Writer, cfg *gateConfig, res *results, requireFixtures bo
 			rc = 1
 		} else {
 			// Say out loud what is being let through. skip_census.py exits 0 on a package-level
-			// fail, and E8 does not change what a gate decides — but a suppressed failure that
+			// fail, and this port does not change what a gate decides — but a suppressed failure that
 			// nobody is told about is indistinguishable from no failure, which is the defect this
 			// whole census exists to prevent. So it is preserved AND announced.
 			fmt.Fprintf(w, "\n  %sNOTE: %d package-level failure(s) above are NOT counted in this verdict%s\n",

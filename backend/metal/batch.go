@@ -1614,7 +1614,7 @@ func (a *metalResident) promptStepOK(n, startPos, floor int) bool {
 	if a.r.promptStepOff || n < 2 || !a.stepPrefill() {
 		return false
 	}
-	if !a.r.prefillOK || a.r.kvF32 { // the pass never runs here (the q4k lane; an f32 cache), so every prompt would otherwise take the sequential loop
+	if !a.r.prefillOK || a.r.kvF32 { // the pass never runs here (an arch it does not implement; an f32 cache), so every prompt would otherwise take the sequential loop
 		return true
 	}
 	if floor > 0 && startPos+n < a.stepPrefillBound(floor) { // A-P02: the step keeps prompts where it beats the pass

@@ -4,7 +4,7 @@ package metal
 
 import "github.com/townsendmerino/goinfer/internal/runtime/mem"
 
-// D-P01's batched expert GEMM (docs/audit-metal-2026-09-30.md): a layer-major
+// The batched expert GEMM (docs/audit-metal-2026-09-30.md): a layer-major
 // paged Gemma 4 prefill runs one slot group's routed experts expert by expert, every (row, expert) pair the group routes to
 // that expert in one pass over its weights, instead of row by row. Bit-identical to the per-row phase 2
 // (encodeG4Phase2Paged) by construction:
@@ -20,7 +20,7 @@ import "github.com/townsendmerino/goinfer/internal/runtime/mem"
 var g4ExpertBatchOn = true
 
 // moeBatchB is the most pairs one moe_batch_gemv threadgroup takes: B activations of K halves in threadgroup memory,
-// 22.5 KB at M26's hidden size of 2816 for gate|up.
+// 22.5 KB at Gemma 4 26B's hidden size of 2816 for gate|up.
 const moeBatchB = 4
 
 // moeBatchR is the rows a simdgroup moe_batch_gemv takes for a projection of n output rows: 4 or 2 where full

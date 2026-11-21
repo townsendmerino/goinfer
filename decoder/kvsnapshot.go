@@ -104,7 +104,7 @@ func (s *Session) Snapshot(id string) []byte {
 	}
 	quantByte := byte(c.quant)
 	if kvSnapF16ByteF32ForTest && c.quant == kvqF16 {
-		quantByte = byte(kvqF32) // F1's planted defect: the storage byte left at f32's value
+		quantByte = byte(kvqF32) // planted defect: the storage byte left at f32's value
 	}
 	wr.raw([]byte{manualPos, quantByte})
 	wr.u32(uint32(c.pos))
@@ -180,7 +180,7 @@ func (s *Session) Snapshot(id string) []byte {
 	return wr.buf
 }
 
-// kvSnapF16ByteF32ForTest writes an f16 cache's storage byte as f32's: a planted defect for gate F1.
+// kvSnapF16ByteF32ForTest writes an f16 cache's storage byte as f32's: a planted defect for TestKVF16_F1SnapshotAndCopy.
 var kvSnapF16ByteF32ForTest bool
 
 // LoadSession reconstructs a *Session from a Snapshot blob, validating its KV
@@ -385,7 +385,7 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 				return nil, e
 			}
 			if len(ref.keysQ[l]) > 0 {
-				ref.stride[l] = kvDim // restore the per-layer KV width (audit C-05)
+				ref.stride[l] = kvDim // restore the per-layer KV width
 			}
 		} else {
 			// f32 returns nil for a len-0 field (KV-shared layers); keep the cache's

@@ -15,7 +15,7 @@ import (
 )
 
 // Prefix snapshots in host memory. After a cold first prefill of a long prompt the
-// resident's KV for the prompt's full blocks is copied to pinned host memory, keyed by the token ids and the root KV2 keys on
+// resident's KV for the prompt's full blocks is copied to pinned host memory, keyed by the token ids and the KV root, which keys on
 // (namespace, model identity, adapter, KV precision). A later request whose prompt starts with those ids restores the rows into its
 // slot by device copy and prefills only the rest. It keeps a prefix that a one-slot card would overwrite when the next session
 // starts. The rows are prefill-class rows copied before any decode step, so a restored prefix is the prefix computed

@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-// `gate quick` — the day loop's one command (TE7(a)+(c)):
+// `gate quick` — the day loop's one command:
 // gofmt, vet (the tagged variants CI runs, for the touched modules), the pinned staticcheck, the
 // tests that can observe the diff — one `go test` per package, in parallel, each to its own log —
 // and, when a parity shared set is touched, the tiny forward goldens. Then PASS / SKIP / FAIL,
@@ -169,7 +169,7 @@ func quickMain(qc *quickConfig, o quickOpts, w io.Writer) int {
 		return refuse("go toolchain not on PATH: %v", err)
 	}
 
-	// TE9: one timed run per box. quick is not timed, but it loads every core, so it must not run
+	// One timed run per box. quick is not timed, but it loads every core, so it must not run
 	// under a run that is — two runs on one box measure each other, and nothing downstream can tell.
 	lockNote := "not checked"
 	if o.UnderLock {

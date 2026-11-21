@@ -33,7 +33,8 @@ import (
 //   - DETERMINISM FIRST: the NEW build runs every cell twice, in separate processes, and must be
 //     byte-identical to itself. A cell that is not is compared against the old build in tolerance
 //     mode (identityTolFactor × its own run-to-run max |diff|, argmax and tokens exact) and reported
-//     WITHIN TOLERANCE, never IDENTICAL. On the CPU that nondeterminism is TE6's kill criterion.
+//     WITHIN TOLERANCE, never IDENTICAL. On the CPU that nondeterminism is the kill criterion of
+//     identity-inherited validation (docs/parity-coverage-policy.md).
 //   - A SKIP IS NOT A PASS: a family whose asset is missing, whose load fails in both builds, or whose
 //     GPU cell fell back to the CPU is NOT RUN, listed separately with the reason.
 //   - BOTH SIDES SEE ONE ENVIRONMENT. Every GOINFER_* variable is removed from the dumpers' env: a

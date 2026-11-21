@@ -18,7 +18,7 @@ import (
 // resetRecurrent.
 
 // mambaSrcPlantForTest is a planted defect in the library source every resident compiles, {from, to}, set by tests in this
-// package only (OP2b's gate M: the Mamba-2 kernels broken in the Metal build while the CPU keeps the right math).
+// package only (a gate's planted defect: the Mamba-2 kernels broken in the Metal build while the CPU keeps the right math).
 var mambaSrcPlantForTest [2]string
 
 // mambaResetSkipForTest makes resetMamba leave the state alone: gate S's planted defect, set by tests in this package only.

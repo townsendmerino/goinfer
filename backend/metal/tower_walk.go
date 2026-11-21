@@ -89,7 +89,7 @@ func (a *gridVAccel) walkBlock(prog vision.TowerBlock, b *gvBlock, rows int, sg 
 			if op.Out != vision.TowerQ && op.Out != vision.TowerK {
 				return fmt.Errorf("op %d: the per-head norm runs on q or k, not register %d", i, op.Out)
 			}
-			if a.planted.noQKNorm { // G-S2c (4) drops it
+			if a.planted.noQKNorm { // the planted defect drops it
 				break
 			}
 			mark("norm")
@@ -143,7 +143,7 @@ func (a *gridVAccel) walkBlock(prog vision.TowerBlock, b *gvBlock, rows int, sg 
 			cur().Dispatch(a.p.add, n, 256, out, a.o, a.u32(uint32(n)))
 		case vision.TowerAttention:
 			mark("elementwise")
-			if !a.planted.noScale { // G-S2c (1), G-S3a (1) drop it
+			if !a.planted.noScale { // the planted defect drops it
 				n := rows * a.hidden
 				cur().Dispatch(a.scale, n, 256, a.q, a.u32(uint32(n)), a.f32(float32(op.Scale)))
 			}
