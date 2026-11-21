@@ -173,7 +173,7 @@ func TestMetalKVSlots_pricedBeforeTheBuild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	base, perSlot := residentNeedBytes(m), residentKVBytes(m)
+	base, perSlot := residentNeedBytes(m, metalCtxPlan{}), residentKVBytes(m, metalCtxPlan{})
 	if base <= 0 || perSlot <= 0 {
 		t.Skip("tiny fixture prices nothing")
 	}
@@ -182,7 +182,7 @@ func TestMetalKVSlots_pricedBeforeTheBuild(t *testing.T) {
 	orig := metalLiveAvailable
 	metalLiveAvailable = func() int64 { return live0 - (int64(dev.CurrentAllocatedSize()) - alloc0) }
 	t.Cleanup(func() { metalLiveAvailable = orig })
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("build resident: %v", err)
 	}

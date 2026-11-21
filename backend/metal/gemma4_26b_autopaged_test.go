@@ -73,7 +73,7 @@ func TestGemma4_26B_autoPagedRuns(t *testing.T) {
 			"(benchmarks.md \"M35/M26 on the Mac\"); refusing to decode", path)
 	}
 
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("BuildResident: %v", err)
 	}

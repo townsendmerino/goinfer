@@ -43,7 +43,7 @@ func q4kStepLoad(t *testing.T, env, file string, slots, ctx int) *metalResident 
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		m.Close()
 		t.Fatalf("build resident: %v", err)

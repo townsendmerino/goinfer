@@ -120,7 +120,7 @@ func TestMoEW8_X2_assembly(t *testing.T) {
 			t.Fatalf("load %s: %v", dir, err)
 		}
 		t.Cleanup(func() { m.Close() })
-		r, err := buildResident(m)
+		r, err := buildResident(m, metalCtxPlan{})
 		if err != nil {
 			t.Fatalf("resident %s: %v", dir, err)
 		}

@@ -16,8 +16,8 @@ import (
 
 // ckptFits reports whether the guard's budget holds the load's need plus the checkpoint's bytes (residentMemoryDecline's quantities,
 // not the OS's account of free memory), and why not. A variable so a test can stand in a machine with no room.
-var ckptFits = func(m *decoder.Model, bytes int64) (bool, string) {
-	need := residentNeedBytes(m)
+var ckptFits = func(m *decoder.Model, plan metalCtxPlan, bytes int64) (bool, string) {
+	need := residentNeedBytes(m, plan)
 	budget, ok := residentBudget()
 	if need <= 0 || !ok {
 		return true, "" // nothing to compare against, as residentMemoryDecline
@@ -30,7 +30,7 @@ var ckptFits = func(m *decoder.Model, bytes int64) (bool, string) {
 
 // allocRecurrentCheckpoint allocates the checkpoint once the resident is built. It keeps none, and says why on stderr, when the
 // memory guard's budget cannot also hold it.
-func (r *resident) allocRecurrentCheckpoint(m *decoder.Model) {
+func (r *resident) allocRecurrentCheckpoint(m *decoder.Model, plan metalCtxPlan) {
 	if !r.recurrentModel() {
 		return
 	}
@@ -38,7 +38,7 @@ func (r *resident) allocRecurrentCheckpoint(m *decoder.Model) {
 	if bytes == 0 {
 		return
 	}
-	if ok, why := ckptFits(m, bytes); !ok {
+	if ok, why := ckptFits(m, plan, bytes); !ok {
 		r.ckptDeclined = why
 		logs.Warnf("metal: recurrent checkpoint: none kept (%s); a reply rendered back differently re-prefills the whole prompt", why)
 		return

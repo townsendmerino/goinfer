@@ -1261,7 +1261,7 @@ func TestKVPages_refusedFreshWriteKeepsTheState(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatal(err)
 	}

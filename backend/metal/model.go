@@ -43,12 +43,12 @@ const attnScoreTileBound = 4096
 // A context the load-time fit guard auto-pinned (the caller did not choose it) is a ceiling, not a request: metalFitFor
 // takes it as a limit that lowers the choice and never raises it. Read as a request it allocated several times the
 // default KV on a tight machine, or was refused, which moved the whole forward to the CPU.
-func resolveMetalCtxCap(m *decoder.Model) (cap int, err error) {
+func resolveMetalCtxCap(m *decoder.Model, plan metalCtxPlan) (cap int, err error) {
 	req := m.ResidentContextRequest()
 	if req <= 0 || !m.ResidentContextPinned() {
-		ctx := metalFitFor(m).Ctx
-		if c, ok := metalCtxCeiling.Load(m); ok {
-			ctx = min(ctx, c.(int)) // lowered by BuildResident before it declines (shrinkCtxToFit)
+		ctx := metalFitFor(m, plan).Ctx
+		if plan.ceil > 0 {
+			ctx = min(ctx, plan.ceil) // lowered by BuildResident before it declines (shrinkCtxToFit)
 		}
 		return ctx, nil
 	}
@@ -262,7 +262,7 @@ type resident struct {
 	pPLEGeluMul              Pipeline
 	pleP                     int
 	pleIn, pleG, pleQ, pleSc Buffer
-	ctxCeilKey               *decoder.Model // the metalCtxCeiling entry this resident's context came from; nil when none
+	ctxCeil                  int // the build plan's ceil (metalCtxPlan), which the resident's need keeps reading; 0 for none
 	// The recurrent checkpoint (recurrent_checkpoint.go): its buffers, the save copies (live into checkpoint) and the restore
 	// copies against the bound slot (bindCheckpoint), the slot it was saved on (-1: none saved), the checkpoint's bytes (0: none kept), and why a
 	// load kept none.
@@ -1199,13 +1199,13 @@ var attnSoftcapDropForTest bool
 // difference from the CPU is amplified by the activation quantization, and fast math widens it.
 // It is decided before the build from the model alone, so a model that passes
 // w8Weights but is MoE (Gemma 4's parallel dense||MoE) is excluded here too.
-func w8PreciseMath(m *decoder.Model) bool {
+func w8PreciseMath(m *decoder.Model, plan metalCtxPlan) bool {
 	if !nativeInt8 || w8FastMath || m.BackendView().HasGemma4MoE() {
 		return false
 	}
 	if _, moe := m.BackendView().MoE(); moe {
 		// slice 4's MoE, as w8Eligible will admit it: not gpt-oss, not paged
-		if _, _, gptoss := m.BackendView().GptOssAct(); !nativeInt8MoE || gptoss || metalMoESlotsRequest(m) != "" {
+		if _, _, gptoss := m.BackendView().GptOssAct(); !nativeInt8MoE || gptoss || metalMoESlotsRequest(m, plan) != "" {
 			return false
 		}
 		return w8Weights(m)
@@ -1241,7 +1241,7 @@ func int8ConcatOn(line string, d *Device, a *weightAlias, wms ...*linalg.WeightM
 // allocates the KV slots. It returns an error, which the caller treats as a decline to the CPU path, when the model's
 // shape or the device cannot run it resident. The work is residentBuild's phases (resident_build.go), run in the order the
 // calls below list; the order is the order of the allocations the memory gate and the lease census read.
-func buildResident(m *decoder.Model) (res *resident, err error) {
+func buildResident(m *decoder.Model, plan metalCtxPlan) (res *resident, err error) {
 	// Entry point: convert the build-time panics (pipeline-compile failure, non-int4 expert weights, buffer OOM in
 	// model.go, moe.go and gemma4_moe.go) into the error this signature promises, so a direct caller gets a decline,
 	// not a process-killing panic. Registered first, so it runs last, after the cleanup defer below has released the
@@ -1269,8 +1269,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("metal: %w", err)
 	}
-	kvSlots := metalKVSlots(m)
-	stepHeadroom := metalStepHeadroom(m, kvSlots)
+	kvSlots := metalKVSlots(m, plan)
+	stepHeadroom := metalStepHeadroom(m, plan, kvSlots)
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
 		return nil, err
@@ -1286,7 +1286,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			d.ReleaseObjects()
 		}
 	}()
-	b := &residentBuild{m: m, d: d, shape: shape, kvSlots: kvSlots, stepHeadroom: stepHeadroom}
+	b := &residentBuild{m: m, plan: plan, d: d, shape: shape, kvSlots: kvSlots, stepHeadroom: stepHeadroom}
 	defer func() { _ = b.kq.Close() }() // nil-safe: only the q4k lane opens one
 	if err := b.compileKernels(); err != nil {
 		return nil, err
@@ -1907,10 +1907,6 @@ func (r *resident) useKVSlot(i int) error {
 // kills the server). Serve's unload drains in-flight holders first (internal/serveapp/admin.go, handleAdminUnload;
 // ); keep that ordering for any new caller.
 func (r *resident) Close() error {
-	if r.ctxCeilKey != nil {
-		metalCtxCeiling.Delete(r.ctxCeilKey) // a ceiling must not keep its model alive past the resident
-		r.ctxCeilKey = nil
-	}
 	r.stopExec()
 	if r.g4moe != nil && r.g4moe.giwFile != nil {
 		_ = r.g4moe.giwFile.Close() // the pread-staging fd (GOINFER_MOE_PREAD)

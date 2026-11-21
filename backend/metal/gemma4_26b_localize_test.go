@@ -87,7 +87,7 @@ func TestGemma4_26B_localize(t *testing.T) {
 		t.Logf("  {hd=%d nKV=%d half=%d kEqV=%d} → layers %v", k.hd, k.nKV, k.half, k.kEqV, ls)
 	}
 
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("BuildResident: %v", err)
 	}

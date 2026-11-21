@@ -35,7 +35,7 @@ func TestB35SplitInvariance(t *testing.T) {
 	prevDnet := dnetPrefillOn
 	dnetPrefillOn = true
 	defer func() { dnetPrefillOn = prevDnet }()
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("resident: %v", err)
 	}

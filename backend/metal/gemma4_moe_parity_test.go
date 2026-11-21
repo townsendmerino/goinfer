@@ -26,7 +26,7 @@ func buildMoeTiny(t *testing.T) (*resident, *decoder.Model, *decoder.Model) {
 	if err != nil {
 		t.Fatalf("load (resident side): %v", err)
 	}
-	r, err := buildResident(mg)
+	r, err := buildResident(mg, metalCtxPlan{})
 	if err != nil {
 		mg.Close()
 		t.Fatalf("BuildResident: %v — metal declined the gemma4 parallel dense‖MoE fixture", err)

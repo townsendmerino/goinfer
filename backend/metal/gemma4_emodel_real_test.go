@@ -78,13 +78,13 @@ func TestGemma4EModel_realE2BText(t *testing.T) {
 		t.Fatalf("load (metal): %v", err)
 	}
 	defer mg.Close()
-	if why := residentMemoryDecline(mg); why != "" {
+	if why := residentMemoryDecline(mg, metalCtxPlan{}); why != "" {
 		t.Fatalf("Metal's fit guard declines E2B: %s", why)
 	}
 	if err := program.Metal.Check(mg.Program()); err != nil || len(mg.FeaturesOutsideProgram()) > 0 {
 		t.Fatalf("metal declines E2B: %v, outside the program %v", err, mg.FeaturesOutsideProgram())
 	}
-	r, err := buildResident(mg)
+	r, err := buildResident(mg, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("buildResident: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestGemma4EModel_realE2BLocalize(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer mg.Close()
-	r, err := buildResident(mg)
+	r, err := buildResident(mg, metalCtxPlan{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,7 +385,7 @@ func TestG3Calibration_qwen15b(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer mg.Close()
-	r, err := buildResident(mg)
+	r, err := buildResident(mg, metalCtxPlan{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -430,10 +430,10 @@ func g3Model(t *testing.T, giw, tokGGUF, label string, logf func(string, ...any)
 		t.Fatal(err)
 	}
 	defer mg.Close()
-	if why := residentMemoryDecline(mg); why != "" {
+	if why := residentMemoryDecline(mg, metalCtxPlan{}); why != "" {
 		t.Fatalf("%s: Metal's fit guard declines it: %s", label, why)
 	}
-	r, err := buildResident(mg)
+	r, err := buildResident(mg, metalCtxPlan{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -38,7 +38,7 @@ func TestMLAResident_guards(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestMLAResident_guards(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer mi.Close()
-	if r, err := buildResident(mi); err != nil || r.kvI8 || r.mla == nil {
+	if r, err := buildResident(mi, metalCtxPlan{}); err != nil || r.kvI8 || r.mla == nil {
 		t.Errorf("an MLA model's build with int8 KV asked: err %v; want it built with its f32 latent and no int8 cache", err)
 	} else {
 		r.Close()

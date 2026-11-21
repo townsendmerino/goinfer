@@ -65,7 +65,7 @@ func bisectModel(t *testing.T, path string) {
 	if err != nil {
 		t.Fatalf("load int8: %v", err)
 	}
-	r, err := buildResident(m8)
+	r, err := buildResident(m8, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("BuildResident: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestGemmaBisect_Head(t *testing.T) {
 			if err != nil {
 				t.Fatalf("load int8: %v", err)
 			}
-			r, err := buildResident(m8)
+			r, err := buildResident(m8, metalCtxPlan{})
 			if err != nil {
 				t.Fatalf("BuildResident: %v", err)
 			}
@@ -392,7 +392,7 @@ func TestGemmaTraceDims(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load int8: %v", err)
 	}
-	r, err := buildResident(m8)
+	r, err := buildResident(m8, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("BuildResident: %v", err)
 	}

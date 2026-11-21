@@ -19,7 +19,7 @@ func TestPrefillInternal_refusesPastTheKVCap(t *testing.T) {
 		t.Skipf("no llama-tiny fixture: %v", err)
 	}
 	defer m.Close()
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("resident: %v", err)
 	}

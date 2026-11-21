@@ -84,7 +84,7 @@ func TestMoEExpertReuseProbe(t *testing.T) {
 	}
 	fmt.Fprintf(os.Stderr, "[moe-reuse-probe] loaded in %s\n", time.Since(tLoad).Round(time.Millisecond))
 
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("build resident: %v", err)
 	}

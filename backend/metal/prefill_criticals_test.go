@@ -45,7 +45,7 @@ func tinyPrefillResident(t *testing.T, opts decoder.Options, maxPositions int) *
 		t.Fatalf("load: %v", err)
 	}
 	t.Cleanup(func() { m.Close() })
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("build resident: %v", err)
 	}

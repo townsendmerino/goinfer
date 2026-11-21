@@ -48,7 +48,7 @@ func buildTwoGeom(t *testing.T) (*resident, *decoder.Model, *decoder.Model) {
 	if err != nil {
 		t.Fatalf("load (resident side): %v", err)
 	}
-	r, err := buildResident(mg)
+	r, err := buildResident(mg, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("BuildResident: %v — metal declined the dense two-geometry fixture", err)
 	}
@@ -129,7 +129,7 @@ func TestGemma4TwoGeom_f16ScaleConfound(t *testing.T) {
 		t.Fatalf("load (resident side): %v", err)
 	}
 	defer mg.Close()
-	r, err := buildResident(mg)
+	r, err := buildResident(mg, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("BuildResident: %v", err)
 	}

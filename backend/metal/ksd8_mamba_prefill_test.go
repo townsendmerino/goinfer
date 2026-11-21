@@ -157,7 +157,7 @@ func TestKSD8_tinyFidelity(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer m.Close()
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("resident: %v", err)
 	}
@@ -251,7 +251,7 @@ func TestKSD8_mambaShapeDeclines(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer m.Close()
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("resident: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestKSD8_mambaShapeDeclines(t *testing.T) {
 		}
 	}
 	mambaPrefillOn = false
-	off, err := buildResident(m)
+	off, err := buildResident(m, metalCtxPlan{})
 	mambaPrefillOn = true
 	if err != nil {
 		t.Fatalf("resident with the pass off: %v", err)
@@ -303,7 +303,7 @@ func TestKSD8_downBiasDeclines(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer m.Close()
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("resident: %v", err)
 	}
@@ -324,7 +324,7 @@ func TestKSD8_downBiasDeclines(t *testing.T) {
 	if !set {
 		t.Fatal("nemotron-tiny has no dense FFN layer to give a down bias")
 	}
-	r, err = buildResident(m)
+	r, err = buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("resident with a down bias: %v", err)
 	}

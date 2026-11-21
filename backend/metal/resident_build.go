@@ -24,6 +24,7 @@ type residentBuild struct {
 	r                *resident
 	shape            program.Shape
 	pipe             func(name string) Pipeline
+	plan             metalCtxPlan // the context this build sizes from (residentPreBuild's, or the zero plan for a direct buildResident)
 	kvSlots          int
 	stepHeadroom     int64
 	attnSoftcap      float32
@@ -56,7 +57,7 @@ func (b *residentBuild) compileKernels() error {
 	// does not improve CPU parity (docs/ollama-chase.md §A2-Metal). GOINFER_PRECISE_MATH is a documented opt-in for
 	// bits robust to a toolchain update; the snapshot golden otherwise detects such drift.
 	compile := d.CompileLibrary
-	preciseMath := preciseMathCompile || modelKnob(m, "GOINFER_PRECISE_MATH") != "" || w8PreciseMath(m)
+	preciseMath := preciseMathCompile || modelKnob(m, "GOINFER_PRECISE_MATH") != "" || w8PreciseMath(m, b.plan)
 	if preciseMath {
 		compile = d.CompileLibraryPrecise
 	}
@@ -89,9 +90,9 @@ func (b *residentBuild) compileKernels() error {
 	H, nL, nH, _, _, I, V := bv.Dims() // model-level hd/nKV dropped — geometry is per-layer (geom.go)
 	r := &resident{knob: m.Knob, prog: m.Program(), d: d, H: H, nL: nL, nH: nH, I: I, V: V, preciseMath: preciseMath, stepHeadroom: stepHeadroom,
 		moeStep: m.ResidentMoEStep(), recurrentStep: m.ResidentRecurrentStepOn(kvSlots), gemma4Step: m.ResidentGemma4StepOn(kvSlots), ckptSlot: -1}
-	r.chainEmbBase = residentNeedBytes(m) + int64(kvSlots-1)*metalSlotBytes(m) // every slot's KV and recurrent state
+	r.chainEmbBase = residentNeedBytes(m, b.plan) + int64(kvSlots-1)*metalSlotBytes(m, b.plan) // every slot's KV and recurrent state
 	r.chainEmbGuardOff = modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != ""
-	if r.ctxCap, err = resolveMetalCtxCap(m); err != nil {
+	if r.ctxCap, err = resolveMetalCtxCap(m, b.plan); err != nil {
 		return err
 	}
 	b.bv, b.pipe, b.r, b.attnSoftcap = bv, pipe, r, attnSoftcap
@@ -220,11 +221,11 @@ func (b *residentBuild) buildMixers() error {
 	if m.BackendView().RMSAddOne() {
 		addOne = 1
 	}
-	win := max(m.BackendView().SlidingWindow(), 0)        // 0 = full causal; Mistral is all-local with this window
-	if r.moe, err = buildMoE(d, m, pipe, H); err != nil { // nil for a dense (or gemma4-MoE) model; error ⇒ decline
+	win := max(m.BackendView().SlidingWindow(), 0)                // 0 = full causal; Mistral is all-local with this window
+	if r.moe, err = buildMoE(d, m, b.plan, pipe, H); err != nil { // nil for a dense (or gemma4-MoE) model; error ⇒ decline
 		return err
 	}
-	if r.g4moe, err = buildGemma4MoE(d, m, pipe, H, nL); err != nil { // Gemma-4 enable_moe_block; nil otherwise; error ⇒ decline
+	if r.g4moe, err = buildGemma4MoE(d, m, b.plan, pipe, H, nL); err != nil { // Gemma-4 enable_moe_block; nil otherwise; error ⇒ decline
 		return err
 	}
 	if r.dnet, err = buildDeltaNet(d, m, pipe); err != nil { // Gated-DeltaNet mixer; nil otherwise; error ⇒ decline
@@ -1253,7 +1254,7 @@ func (b *residentBuild) finish() error {
 	if err := r.buildLayerSteps(m.Program()); err != nil {
 		return fmt.Errorf("metal: %w", err)
 	}
-	r.allocRecurrentCheckpoint(m) // KV8a, once the KV and scratch are up (recurrent_checkpoint.go)
-	r.buildBatch()                // MC3: the batched decode step, when this resident can run one (batch.go)
+	r.allocRecurrentCheckpoint(m, b.plan) // KV8a, once the KV and scratch are up (recurrent_checkpoint.go)
+	r.buildBatch()                        // MC3: the batched decode step, when this resident can run one (batch.go)
 	return nil
 }

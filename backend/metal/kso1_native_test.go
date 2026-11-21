@@ -659,7 +659,7 @@ func TestKSO1_towardTheFile(t *testing.T) {
 	build := func(off bool) *resident {
 		q4kNativeOffForTest = off
 		defer func() { q4kNativeOffForTest = false }()
-		r, err := buildResident(mg)
+		r, err := buildResident(mg, metalCtxPlan{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -734,11 +734,11 @@ func kso1Speed(t *testing.T, path, label string) (float64, int) {
 		t.Fatal(err)
 	}
 	defer mg.Close()
-	if why := residentMemoryDecline(mg); why != "" {
+	if why := residentMemoryDecline(mg, metalCtxPlan{}); why != "" {
 		fmt.Fprintf(os.Stderr, "[O1-G7] %s FIT-REFUSED: %s\n", label, why)
 		t.Fatalf("Metal's fit guard declines %s: %s", label, why)
 	}
-	r, err := buildResident(mg)
+	r, err := buildResident(mg, metalCtxPlan{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -784,7 +784,7 @@ func kso1Speed(t *testing.T, path, label string) (float64, int) {
 	}
 	const margin = 2 << 30
 	avail := probe.Available()
-	devNow := residentNeedBytes(mg) - mg.ResidentHostCopyBytes(metalMoESlotsFromEnv(mg))
+	devNow := residentNeedBytes(mg, metalCtxPlan{}) - mg.ResidentHostCopyBytes(metalMoESlotsFromEnv(mg, metalCtxPlan{}))
 	switch wsCap := metalWorkingSetCap(); {
 	case avail > 0 && extra+margin > avail:
 		fmt.Fprintf(os.Stderr, "[O1-G7] %s FIT-REFUSED: the int8 arm's copies need %d bytes + the 2 GB margin, %d available\n", label, extra, avail)

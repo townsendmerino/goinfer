@@ -131,7 +131,7 @@ func TestInt4LaneBuild_heapBesideTheUpload(t *testing.T) {
 	}
 	defer m.Close()
 	var r *resident
-	alloc := heapAllocDuring(func() { r, err = buildResident(m) })
+	alloc := heapAllocDuring(func() { r, err = buildResident(m, metalCtxPlan{}) })
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}

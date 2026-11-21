@@ -78,7 +78,7 @@ func TestW8Native_perLayerBisect(t *testing.T) {
 			t.Fatalf("load %s: %v", quant, err)
 		}
 		defer m.Close()
-		r, err := buildResident(m)
+		r, err := buildResident(m, metalCtxPlan{})
 		if err != nil {
 			t.Fatalf("resident %s: %v", quant, err)
 		}
@@ -191,7 +191,7 @@ func TestW8Native_hiddenVsLogits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatal(err)
 	}

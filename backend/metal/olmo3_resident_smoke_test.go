@@ -127,7 +127,7 @@ func TestDeltaNetOpParams_layersMustAgree(t *testing.T) {
 		if _, err := deltaNetOpParams(m); err == nil || !strings.Contains(err.Error(), "differ") {
 			t.Errorf("%s disagreeing: %v, want the decline", c.name, err)
 		}
-		if r, err := buildResident(m); err == nil {
+		if r, err := buildResident(m, metalCtxPlan{}); err == nil {
 			_ = r.Close()
 			t.Errorf("%s disagreeing: the build went through", c.name)
 		} else if !strings.Contains(err.Error(), "differ") {

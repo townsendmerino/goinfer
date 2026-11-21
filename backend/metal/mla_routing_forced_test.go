@@ -19,7 +19,7 @@ func residentLockstepForced(t *testing.T, dir string, steps int) lockstep {
 		t.Fatalf("load %s: %v", dir, err)
 	}
 	defer m.Close()
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("%s: build resident: %v", dir, err)
 	}

@@ -32,7 +32,7 @@ func TestMetalResident_C09_execErrSurfaces(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load dense: %v", err)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("build resident: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestMetalResident_C11_argmaxEqualsFullLogits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load dense: %v", err)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("build resident: %v", err)
 	}

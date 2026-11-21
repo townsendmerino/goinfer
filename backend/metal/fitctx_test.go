@@ -71,9 +71,9 @@ func TestResolveMetalCtxCap_fitByDefault(t *testing.T) {
 				free, known = fitBudget(t, m, c.positions), true
 			}
 			defer decoder.SetMemoryProbeForTest("metal", free, known)()
-			got, err := resolveMetalCtxCap(m)
+			got, err := resolveMetalCtxCap(m, metalCtxPlan{})
 			if err != nil || got != c.want {
-				t.Errorf("resolveMetalCtxCap = %d, %v; want %d (%s)", got, err, c.want, metalFitFor(m).Why)
+				t.Errorf("resolveMetalCtxCap = %d, %v; want %d (%s)", got, err, c.want, metalFitFor(m, metalCtxPlan{}).Why)
 			}
 		})
 	}
@@ -211,13 +211,13 @@ func TestMetalFit_agreesWithSlotPricing(t *testing.T) {
 			}
 			defer m.Close()
 			defer decoder.SetMemoryProbeForTest("metal", fitBudget(t, m, 20000), true)()
-			fit := metalFitFor(m)
-			ctx, err := resolveMetalCtxCap(m)
+			fit := metalFitFor(m, metalCtxPlan{})
+			ctx, err := resolveMetalCtxCap(m, metalCtxPlan{})
 			if err != nil || ctx != fit.Ctx || ctx <= metalCtxCapDefault {
 				t.Fatalf("ctx %d (%v), fit %d: want them equal and past the default %d", ctx, err, fit.Ctx, metalCtxCapDefault)
 			}
 			// The guard adds every slot's table at the raised cap to its fixed need (metalKVSlots), as the fit adds it to the load's KV.
-			need, each, raise := residentNeedBytes(m), metalSlotBytes(m), metalRaisedTableBytes(m, slots)
+			need, each, raise := residentNeedBytes(m, metalCtxPlan{}), metalSlotBytes(m, metalCtxPlan{}), metalRaisedTableBytes(m, metalCtxPlan{}, slots)
 			further := fit.KVBytes - m.ResidentKVBytes("metal", ctx, false, false)
 			if raise <= 0 || further != int64(slots-1)*each+raise {
 				t.Errorf("the fit prices %d B past the first slot, metalSlotBytes %d B each and the raised tables %d B", further, each, raise)
@@ -307,7 +307,7 @@ func TestMetalLoadPlan_isTheGuardsPrice(t *testing.T) {
 			t.Fatalf("not resident on metal at a budget of %d B: %s", budget, m.DecodePath())
 		}
 		kept, banner = rf.(*metalResident).r.kvSlotCount(), m.ResidentKVSlots()
-		base, perSlot = residentNeedBytes(m)+metalRaisedTableBytes(m, metalKVSlotsWanted(m)), metalSlotBytes(m)
+		base, perSlot = residentNeedBytes(m, metalCtxPlan{})+metalRaisedTableBytes(m, metalCtxPlan{}, metalKVSlotsWanted(m)), metalSlotBytes(m, metalCtxPlan{})
 		return kept, banner, base + int64(kept-1)*perSlot, base, perSlot
 	}
 	plan := func(t *testing.T, c guardCase, budget int64) decoder.MetalLoad {

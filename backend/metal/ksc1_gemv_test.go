@@ -444,11 +444,11 @@ func TestKSC1_phi3Speed(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer mg.Close()
-	if why := residentMemoryDecline(mg); why != "" {
+	if why := residentMemoryDecline(mg, metalCtxPlan{}); why != "" {
 		fmt.Fprintf(os.Stderr, "[C1-G4] FIT-REFUSED: %s\n", why)
 		t.Fatalf("Metal's fit guard declines Phi-3: %s", why)
 	}
-	r, err := buildResident(mg)
+	r, err := buildResident(mg, metalCtxPlan{})
 	if err != nil {
 		t.Fatal(err)
 	}

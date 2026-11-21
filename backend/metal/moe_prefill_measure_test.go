@@ -40,7 +40,7 @@ func TestMoEPrefillMeasure_batchedVsSequential(t *testing.T) {
 	}
 	fmt.Fprintf(os.Stderr, "[moe-prefill-measure] loaded in %s\n", time.Since(tLoad).Round(time.Millisecond))
 
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("build resident: %v", err)
 	}

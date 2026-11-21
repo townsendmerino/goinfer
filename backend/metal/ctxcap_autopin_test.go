@@ -74,16 +74,16 @@ func TestResolveMetalCtxCap_autoPinIsACeiling(t *testing.T) {
 			restore := decoder.SetMemoryProbeForTest("metal", probe.free, probe.ok)
 			m := load(0)
 			m.AutoPinResidentContextForTest(tc.autoPin)
-			if got, err := resolveMetalCtxCap(m); err != nil || got != probe.want {
+			if got, err := resolveMetalCtxCap(m, metalCtxPlan{}); err != nil || got != probe.want {
 				t.Errorf("auto-pin %d, %s memory: resolveMetalCtxCap = %d, %v; want %d", tc.autoPin, probe.name, got, err, probe.want)
 			}
 			restore()
 		}
 	}
-	if got, err := resolveMetalCtxCap(load(16384)); err != nil || got != 16384 {
+	if got, err := resolveMetalCtxCap(load(16384), metalCtxPlan{}); err != nil || got != 16384 {
 		t.Errorf("-ctx 16384: resolveMetalCtxCap = %d, %v; want 16384, the caller's choice", got, err)
 	}
-	if _, err := resolveMetalCtxCap(load(metalCtxCapMax + 1)); err == nil {
+	if _, err := resolveMetalCtxCap(load(metalCtxCapMax+1), metalCtxPlan{}); err == nil {
 		t.Errorf("-ctx %d: resolveMetalCtxCap accepted a request above the ceiling", metalCtxCapMax+1)
 	}
 }

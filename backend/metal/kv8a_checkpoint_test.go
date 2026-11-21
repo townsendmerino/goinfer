@@ -283,7 +283,7 @@ func TestKV8aMetal_saveRunsBeforeDecode(t *testing.T) {
 func TestKV8aMetal_noRoomKeepsNone(t *testing.T) {
 	requireMetal(t)
 	saved := ckptFits
-	ckptFits = func(*decoder.Model, int64) (bool, string) { return false, "no room (test)" }
+	ckptFits = func(*decoder.Model, metalCtxPlan, int64) (bool, string) { return false, "no room (test)" }
 	defer func() { ckptFits = saved }()
 	m, err := decoder.Load(filepath.Join("../../testdata/qwen3next-tiny"), decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 4096})
 	if err != nil {

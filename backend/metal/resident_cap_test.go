@@ -59,7 +59,7 @@ func TestResolveMetalCtxCap(t *testing.T) {
 
 	t.Run("unset ⇒ metalCtxCapDefault, unchanged historical default", func(t *testing.T) {
 		m := load(t, 0)
-		got, err := resolveMetalCtxCap(m)
+		got, err := resolveMetalCtxCap(m, metalCtxPlan{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -70,7 +70,7 @@ func TestResolveMetalCtxCap(t *testing.T) {
 
 	t.Run("explicit, fits both the kernel ceiling and the model window ⇒ honoured exactly", func(t *testing.T) {
 		m := load(t, 64) // llama-tiny's window is 128; 64 < both ceilings
-		got, err := resolveMetalCtxCap(m)
+		got, err := resolveMetalCtxCap(m, metalCtxPlan{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -82,7 +82,7 @@ func TestResolveMetalCtxCap(t *testing.T) {
 
 	t.Run("explicit, exceeds the model's own window ⇒ clamped to the window, not refused", func(t *testing.T) {
 		m := load(t, 200) // > llama-tiny's 128-position window, but well under metalCtxCapMax
-		got, err := resolveMetalCtxCap(m)
+		got, err := resolveMetalCtxCap(m, metalCtxPlan{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -93,7 +93,7 @@ func TestResolveMetalCtxCap(t *testing.T) {
 
 	t.Run("explicit, exceeds the kernel's hard ceiling ⇒ REFUSED with the numbers, never silently clamped", func(t *testing.T) {
 		m := load(t, metalCtxCapMax+1)
-		_, err := resolveMetalCtxCap(m)
+		_, err := resolveMetalCtxCap(m, metalCtxPlan{})
 		if err == nil {
 			t.Fatal("resolveMetalCtxCap succeeded for a request above metalCtxCapMax — should refuse")
 		}

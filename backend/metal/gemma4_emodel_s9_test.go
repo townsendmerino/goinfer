@@ -107,7 +107,7 @@ func TestGemma4EModel_layerMajorPrefill(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer mg.Close()
-	r, err := buildResident(mg)
+	r, err := buildResident(mg, metalCtxPlan{})
 	if err != nil {
 		t.Fatal(err)
 	}

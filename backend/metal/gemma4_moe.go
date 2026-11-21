@@ -95,7 +95,7 @@ type gemma4MoeLayer struct {
 // from a model that declares enable_moe_block. Returns nil when the model has no gemma4 MoE layer,
 // and an error for a shape this path cannot express (so BuildResident declines → CPU fallback rather
 // than mis-running). Mirrors cuda/backend.go's isG4MoE build and its int4-width shape checks.
-func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, nL int) (*gemma4MoeResident, error) {
+func buildGemma4MoE(d *Device, m *decoder.Model, plan metalCtxPlan, pipe func(string) Pipeline, H, nL int) (*gemma4MoeResident, error) {
 	if !m.BackendView().HasGemma4MoE() {
 		return nil, nil
 	}
@@ -153,7 +153,7 @@ func buildGemma4MoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H, 
 	// Synchronous paging: --moe-cache-slots (GOINFER_METAL_MOE_SLOTS is the deprecated fallback; metalMoESlotsRequest) keeps only N
 	// experts per layer resident and stages the routed top-k in per token. N must be >= topK (a token's own top-k must fit); N==0 or
 	// unset keeps every expert resident (the fitting path and the paged-equals-non-paged parity reference).
-	if s := metalMoESlotsRequest(m); s != "" {
+	if s := metalMoESlotsRequest(m, plan); s != "" {
 		n, err := strconv.Atoi(s)
 		if err != nil || n < b.TopK {
 			return nil, fmt.Errorf("expert-slot request %q invalid (need integer >= topK=%d)", s, b.TopK)

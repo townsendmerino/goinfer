@@ -111,7 +111,7 @@ func TestResidentFitsMemory_honorsLiveCeiling(t *testing.T) {
 		t.Skip("GOINFER_NO_RESIDENT_MEM_GUARD is set in the environment — the guard is disabled, nothing to exercise")
 	}
 	m := tinyDenseModelWithMoESlots(t, 0)
-	need := residentNeedBytes(m)
+	need := residentNeedBytes(m, metalCtxPlan{})
 	if need <= 0 {
 		t.Skip("tiny fixture reports zero resident bytes — nothing to price")
 	}
@@ -121,7 +121,7 @@ func TestResidentFitsMemory_honorsLiveCeiling(t *testing.T) {
 	// being consulted.
 	metalLiveAvailable = func() int64 { return 1 }
 	t.Cleanup(func() { metalLiveAvailable = orig })
-	if residentFitsMemory(m) {
+	if residentFitsMemory(m, metalCtxPlan{}) {
 		t.Fatalf("residentFitsMemory() = true with metalLiveAvailable() = 1 byte (need=%d bytes) — "+
 			"the guard is not reading the live-tightened ceiling", need)
 	}
@@ -135,7 +135,7 @@ func TestResidentFitsMemory_refusesExactlyBelowTheReading(t *testing.T) {
 		t.Skip("GOINFER_NO_RESIDENT_MEM_GUARD is set in the environment: the guard is disabled, nothing to exercise")
 	}
 	m := tinyDenseModelWithMoESlots(t, 0)
-	need := residentNeedBytes(m)
+	need := residentNeedBytes(m, metalCtxPlan{})
 	if need <= 0 {
 		t.Skip("tiny fixture reports zero resident bytes: nothing to price")
 	}
@@ -146,7 +146,7 @@ func TestResidentFitsMemory_refusesExactlyBelowTheReading(t *testing.T) {
 		fits  bool
 	}{{need - 1, false}, {need, true}, {2 * need, true}} {
 		metalLiveAvailable = func() int64 { return c.avail }
-		if got := residentFitsMemory(m); got != c.fits {
+		if got := residentFitsMemory(m, metalCtxPlan{}); got != c.fits {
 			t.Errorf("reading %d for a need of %d: fits %v, want %v", c.avail, need, got, c.fits)
 		}
 	}
@@ -160,20 +160,20 @@ func TestResidentMemoryDecline_workingSetCap(t *testing.T) {
 		t.Skip("GOINFER_NO_RESIDENT_MEM_GUARD is set in the environment: the guard is disabled, nothing to exercise")
 	}
 	m := tinyDenseModelWithMoESlots(t, 0)
-	need := residentNeedBytes(m)
+	need := residentNeedBytes(m, metalCtxPlan{})
 	if need <= 0 {
 		t.Skip("tiny fixture reports zero resident bytes: nothing to price")
 	}
-	alloc := need - m.ResidentHostCopyBytes(metalMoESlotsFromEnv(m))
+	alloc := need - m.ResidentHostCopyBytes(metalMoESlotsFromEnv(m, metalCtxPlan{}))
 	origCap, origLive := metalWorkingSetCap, metalLiveAvailable
 	t.Cleanup(func() { metalWorkingSetCap, metalLiveAvailable = origCap, origLive })
 	metalLiveAvailable = func() int64 { return 1 << 40 }
 	metalWorkingSetCap = func() int64 { return alloc - 1 }
-	if why := residentMemoryDecline(m); !strings.Contains(why, "recommendedMaxWorkingSetSize") {
+	if why := residentMemoryDecline(m, metalCtxPlan{}); !strings.Contains(why, "recommendedMaxWorkingSetSize") {
 		t.Errorf("an allocation of %d over a cap of %d: decline %q, want one naming recommendedMaxWorkingSetSize", alloc, alloc-1, why)
 	}
 	metalWorkingSetCap = func() int64 { return alloc }
-	if why := residentMemoryDecline(m); why != "" {
+	if why := residentMemoryDecline(m, metalCtxPlan{}); why != "" {
 		t.Errorf("an allocation of %d at a cap of %d: declined %q", alloc, alloc, why)
 	}
 }
@@ -236,7 +236,7 @@ func TestMetalMoESlotsFromEnv(t *testing.T) {
 				t.Setenv("GOINFER_METAL_MOE_SLOTS", tc.val)
 			}
 			m := tinyDenseModelWithMoESlots(t, tc.optSlots)
-			if got := metalMoESlotsFromEnv(m); got != tc.want {
+			if got := metalMoESlotsFromEnv(m, metalCtxPlan{}); got != tc.want {
 				t.Errorf("metalMoESlotsFromEnv() with env=%q Options.MoECacheSlots=%d = %d, want %d", tc.val, tc.optSlots, got, tc.want)
 			}
 		})
@@ -263,7 +263,7 @@ func TestResidentNeedBytes_honorsPagingSlots(t *testing.T) {
 	defer m.Close()
 
 	unpaged := m.ResidentWeightBytes()
-	kv := residentKVBytes(m)
+	kv := residentKVBytes(m, metalCtxPlan{})
 	// The buffers Metal's build derives beside the tensors: the excess of its dense figure over the tensors' sum, which on this f32
 	// load, with no q4k lane or Mamba layer to take anything off, is that term alone.
 	derived := m.ResidentDenseWeightBytesFor("metal") - m.ResidentDenseWeightBytes()
@@ -279,7 +279,7 @@ func TestResidentNeedBytes_honorsPagingSlots(t *testing.T) {
 			t.Fatalf("Load (slots %q): %v", slots, err)
 		}
 		defer mk.Close()
-		return residentNeedBytes(mk) - mk.MetalDecodeScratchBytes(0)
+		return residentNeedBytes(mk, metalCtxPlan{}) - mk.MetalDecodeScratchBytes(0)
 	}
 	index := int64(4 * moeTopK(m)) // the paged experts' slot indices, 4 bytes for each of the top k
 
@@ -408,7 +408,7 @@ func TestResident_holdsTheModelsProgram(t *testing.T) {
 				t.Fatalf("load: %v", err)
 			}
 			defer m.Close()
-			r, err := buildResident(m)
+			r, err := buildResident(m, metalCtxPlan{})
 			if err != nil {
 				t.Fatalf("build resident: %v", err)
 			}

@@ -32,7 +32,7 @@ func TestGemma4DenseScaled_metalParity(t *testing.T) {
 		t.Fatalf("load (metal int4): %v", err)
 	}
 	defer mg.Close()
-	r, err := buildResident(mg)
+	r, err := buildResident(mg, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("BuildResident: %v — Metal declined the scaled dense geometry (256-local?)", err)
 	}

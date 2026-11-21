@@ -30,7 +30,7 @@ func TestResidencySet_pinsExactlyTheLiveSlots(t *testing.T) {
 	}
 	defer m.Close()
 
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("BuildResident: %v", err)
 	}
