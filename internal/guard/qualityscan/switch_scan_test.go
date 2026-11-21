@@ -42,7 +42,9 @@ func TestQualityScan_testSwitchAssignmentsRatchet(t *testing.T) {
 			if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.VAR {
 				for _, sp := range g.Specs {
 					for _, n := range sp.(*ast.ValueSpec).Names {
-						pkgVars[dir][n.Name] = true
+						if n.Name != "_" { // `var _ I = (*T)(nil)` declares nothing a test can set
+							pkgVars[dir][n.Name] = true
+						}
 					}
 				}
 			}
