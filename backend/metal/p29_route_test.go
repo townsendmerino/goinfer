@@ -12,10 +12,10 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestP29_q4kPromptRoutePerSlotCount: the route a q4k-lane prompt takes, and the rows each step carries, at one resident KV
-// slot (phi3's load on a 16 GB Mac, where the memory guard grants one) and at two. The q4k lane never runs the batched pass
-// (prefillOK), so the batched step is its only multi-row prefill. A one-slot resident builds the step for its own prompt
-// (P29), so at either slot count a prompt runs the step, batchMaxSeqs rows per step. On the 0.5B q4_k_m from ~/models.
+// TestP29_q4kPromptRoutePerSlotCount: the route a q4k-lane prompt takes at one resident KV slot (phi3's load on a 16 GB Mac,
+// where the memory guard grants one) and at two. The lane takes the batched f16 pass (prefillOK), and a one-slot resident still
+// builds the step (P29), so at either slot count a prompt below the step's bound runs the step, batchMaxSeqs rows at a time, and
+// a 64-token prompt, past it, runs the pass. On the 0.5B q4_k_m from ~/models.
 func TestP29_q4kPromptRoutePerSlotCount(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	path := filepath.Join(home, "models", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
@@ -23,11 +23,8 @@ func TestP29_q4kPromptRoutePerSlotCount(t *testing.T) {
 		t.Skipf("no model at %s", path)
 	}
 	const n = 64
-	for _, c := range []struct {
-		slots    int
-		wantStep bool
-	}{{1, true}, {2, true}} {
-		m, err := decoder.Load(path, decoder.Options{Quant: "q4k", ResidentContext: 512, ResidentKVSlots: c.slots})
+	for _, slots := range []int{1, 2} {
+		m, err := decoder.Load(path, decoder.Options{Quant: "q4k", ResidentContext: 512, ResidentKVSlots: slots})
 		if err != nil {
 			t.Fatalf("load: %v", err)
 		}
@@ -37,16 +34,13 @@ func TestP29_q4kPromptRoutePerSlotCount(t *testing.T) {
 			t.Fatalf("build resident: %v", err)
 		}
 		a := &metalResident{r: r, hidden: r.H}
-		step := a.promptStepOK(n, 0, metalFastPrefillFloorFor(r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR")))
-		rows, route := 1, "the sequential loop (decoder's per-token Forward)"
-		if step {
-			rows, route = batchMaxSeqs, "the batched step (prefillByStep)"
-		}
-		fmt.Fprintf(os.Stderr, "P29 counter: %d KV slot(s): q4k lane %v, pass %v, step built %v (batchIneligible %q); a %d-token prompt runs %s, %d row(s) per step\n",
-			r.kvSlotCount(), r.q4kLane, r.prefillOK, r.batch != nil, r.batchIneligible(), n, route, rows)
-		if !r.q4kLane || r.prefillOK || r.kvSlotCount() != c.slots || step != c.wantStep {
-			t.Errorf("%d slot(s): q4k lane %v, pass %v, %d KV slots, step route %v; want lane on, no pass, %d slots, step %v",
-				c.slots, r.q4kLane, r.prefillOK, r.kvSlotCount(), step, c.slots, c.wantStep)
+		floor := metalFastPrefillFloorFor(r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
+		short, long := a.promptStepOK(8, 0, floor), a.promptStepOK(n, 0, floor)
+		fmt.Fprintf(os.Stderr, "P29 counter: %d KV slot(s): q4k lane %v, pass %v, step built %v (batchIneligible %q); an 8-token prompt on the step %v, a %d-token one %v\n",
+			r.kvSlotCount(), r.q4kLane, r.prefillOK, r.batch != nil, r.batchIneligible(), short, n, long)
+		if !r.q4kLane || !r.prefillOK || r.kvSlotCount() != slots || !short || long {
+			t.Errorf("%d slot(s): q4k lane %v, pass %v, %d KV slots, step route at 8 tokens %v, at %d %v; want lane on, pass on, %d slots, the step at 8 and the pass at %d",
+				slots, r.q4kLane, r.prefillOK, r.kvSlotCount(), short, n, long, slots, n)
 		}
 		r.Close()
 		m.Close()
