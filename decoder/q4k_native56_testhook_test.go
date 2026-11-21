@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestQ4K_native56: a Backend "cpu" q4k load of a file with Phi-3's type mix (qkv Q5_K, down Q6_K) keeps those projections as
@@ -56,9 +57,8 @@ func TestQ4K_native56(t *testing.T) {
 	}
 	ref := d8bLogits(t, load("f32"))
 	got := d8bLogits(t, native)
-	q4kWiden56ForTest = true
+	testgate.SetForTest(t, &q4kWiden56ForTest, true) // the last load in this test: restored when it ends
 	widened := d8bLogits(t, load("q4k"))
-	q4kWiden56ForTest = false
 	eN, eW := relL2(got, ref), relL2(widened, ref)
 	t.Logf("logits rel L2 vs f32: native %.3g, int8-widened %.3g", eN, eW)
 	if !(eN < eW) {

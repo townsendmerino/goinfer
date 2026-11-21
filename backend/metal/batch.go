@@ -145,7 +145,8 @@ func (r *resident) stepInputs() *stepInputs {
 // metalStepInputs reads m before any build, as buildResident will decide each of them. The slots it reads are those the load asks for, since
 // the granted count depends on this price: a defaulted step on a load memory then holds to one slot is priced here and not built.
 func metalStepInputs(m *decoder.Model) *stepInputs {
-	H, nL, nH, _, _, I, V := m.Dims()
+	shape := m.Shape()
+	H, nL, nH, I, V := shape.Hidden, shape.Layers, shape.Heads, shape.Inter, shape.Vocab
 	p := m.Program()
 	wanted := metalKVSlotsWanted(m)
 	in := &stepInputs{prog: p, H: H, V: V, I: I, nH: nH, moeStep: m.ResidentMoEStep(), recurrentStep: m.ResidentRecurrentStepOn(wanted),

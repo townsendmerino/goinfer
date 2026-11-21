@@ -1571,43 +1571,13 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	skipRow4 = skipRow4 || !repackForDecode(sink) // every closure and family branch below takes it from here
 	native56 := q4kNative56(needCanonical, sink)
 
-	// rowDequantizer wraps g.RowDequantizer(name) and, when a companion `<name>.scale`
-	// tensor is present (llama.cpp PR #21445's GGUF NVFP4 per-tensor F32 [1] multiplier),
-	// scales each dequantized row in place before quantization.
-	rowDequantizer := func(name string) ([]int, func(offset int, dst []float32) error, error) {
-		dims, into, err := g.RowDequantizer(name)
-		if err != nil || !g.Has(name+".scale") {
-			return dims, into, err
-		}
-		sDims, sData, sErr := g.Tensor(name + ".scale")
-		if sErr != nil {
-			return nil, nil, fmt.Errorf("decoder(gguf): %q: %w", name+".scale", sErr)
-		}
-		if len(sDims) != 1 || sDims[0] != 1 || len(sData) != 1 {
-			return nil, nil, fmt.Errorf("decoder(gguf): %q dims %v, want [1]", name+".scale", sDims)
-		}
-		scale := sData[0]
-		if scale == 1 {
-			return dims, into, nil
-		}
-		return dims, func(offset int, dst []float32) error {
-			if err := into(offset, dst); err != nil {
-				return err
-			}
-			for i := range dst {
-				dst[i] *= scale
-			}
-			return nil
-		}, nil
-	}
-
 	// streamMat builds a [out, in] linalg.WeightMat by streaming the tensor's rows through
 	// the GGUF dequantizer and quantizing each row directly into the resident
 	// arrays — no whole-tensor f32 intermediate (see streamQuantized). rowSrc maps
 	// a destination row index to its source element offset in the tensor (identity
 	// for a plain load; a permutation for the RoPE-permuted q/k projections).
 	streamMat := func(name string, out, in int, mode quantMode, rowSrc func(r int) int) (linalg.WeightMat, error) {
-		dims, into, err := rowDequantizer(name)
+		dims, into, err := ggufScaledRowDequantizer(g, name)
 		if err != nil {
 			return linalg.WeightMat{}, err
 		}
@@ -1634,7 +1604,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	// streamQuantizedBatchedProj instead of streamQuantized, so it may build repacked-only int4 when this load's backend
 	// allows it. See quantizeBatchedProjWM for the safety argument.
 	streamMatBatched := func(name string, out, in int, mode quantMode, rowSrc func(r int) int) (linalg.WeightMat, error) {
-		dims, into, err := rowDequantizer(name)
+		dims, into, err := ggufScaledRowDequantizer(g, name)
 		if err != nil {
 			return linalg.WeightMat{}, err
 		}
@@ -1668,7 +1638,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	// embMatAt streams an embedding-shaped table at q through streamQuantizedEmbed, which may build repacked-only when
 	// needCanonical is false and int4 mode applies; see that function.
 	embMatAt := func(name string, out, in int, q quantMode) (linalg.WeightMat, error) {
-		dims, into, err := rowDequantizer(name)
+		dims, into, err := ggufScaledRowDequantizer(g, name)
 		if err != nil {
 			return linalg.WeightMat{}, err
 		}
@@ -1687,7 +1657,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 			*dst = m
 			return err
 		}
-		dims, into, err := rowDequantizer(name)
+		dims, into, err := ggufScaledRowDequantizer(g, name)
 		if err != nil {
 			return err
 		}
@@ -1764,7 +1734,7 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	// (fastest-first) blob where each expert occupies a contiguous [out, in]
 	// row-major slice — and returns one quantized linalg.WeightMat per expert.
 	stackedExperts := func(name string, out, in, nExpert int) ([]linalg.WeightMat, error) {
-		dims, into, err := rowDequantizer(name)
+		dims, into, err := ggufScaledRowDequantizer(g, name)
 		if err != nil {
 			return nil, err
 		}
@@ -1896,6 +1866,35 @@ func buildWeightsFromGGUF(cfg *Config, arch *Architecture, g *embed.GGUFFile, qu
 	}
 
 	return b.loadLayers()
+}
+
+// ggufScaledRowDequantizer wraps g.RowDequantizer(name) and, when a companion `<name>.scale` tensor is present (llama.cpp
+// PR #21445's GGUF NVFP4 per-tensor F32 [1] multiplier), scales each dequantized row in place before quantization.
+func ggufScaledRowDequantizer(g *embed.GGUFFile, name string) ([]int, func(offset int, dst []float32) error, error) {
+	dims, into, err := g.RowDequantizer(name)
+	if err != nil || !g.Has(name+".scale") {
+		return dims, into, err
+	}
+	sDims, sData, sErr := g.Tensor(name + ".scale")
+	if sErr != nil {
+		return nil, nil, fmt.Errorf("decoder(gguf): %q: %w", name+".scale", sErr)
+	}
+	if len(sDims) != 1 || sDims[0] != 1 || len(sData) != 1 {
+		return nil, nil, fmt.Errorf("decoder(gguf): %q dims %v, want [1]", name+".scale", sDims)
+	}
+	scale := sData[0]
+	if scale == 1 {
+		return dims, into, nil
+	}
+	return dims, func(offset int, dst []float32) error {
+		if err := into(offset, dst); err != nil {
+			return err
+		}
+		for i := range dst {
+			dst[i] *= scale
+		}
+		return nil
+	}, nil
 }
 
 // ggufQKPermuted reports whether llama.cpp's GGUF conversion permuted this architecture's q/k weights (and their per-row
