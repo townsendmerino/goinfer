@@ -217,6 +217,24 @@ anywhere in the gate. TWO groups now, because they answer different questions an
 evidence for the other (audit G-01: the artifact must not be adjacent to what it is read as).
 ```
 
+## cudaParityCell: timeout
+
+The cell runs the whole `./backend/cuda/` package under `cuda goinfer_testhooks` as one test binary, so its timeout is
+that package's wall plus headroom. It was 10m until the package outgrew it (`docs/measurements/sb12-2026-10.md` §19),
+then 20m. The package's wall, from the nightly CUDA device suite on nobara (same package, same tags, `-timeout 25m`):
+
+| date | commit | package wall |
+|---|---|---|
+| 2026-11-03 | 112e64a75 | 1129 s |
+| 2026-11-18 | 1287a582a | 1231 s |
+| 2026-11-20 | b7ce0e1cb | 1297 s |
+
+By 2026-11-18 it had passed 1200 s, so every `gate gpu` from then on would time this cell out with no test failed. That
+happened on the v0.25.0 pre-flight run of 2026-11-20 at e0d661712, in `TestPrefillSteps_equalTheFlags` at test 1341,
+while the nightly suite passed the same code (b7ce0e1cb..e0d661712 changes only `README.md` and `docs/`). The growth is
+cumulative, with no single commit behind it. 35m is about 1.6x the 2026-11-20 wall. The nightly suite's own 25m cap
+then had about 3 minutes of headroom left.
+
 ## drainingTests
 
 Moved from `cmd/gate/gpu.go` (the comment above `drainingTests`) on 2026-10-09.
