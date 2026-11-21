@@ -199,7 +199,7 @@ func TestOneSlotStep_scratchPricedNotTheLoad(t *testing.T) {
 
 	m := load()
 	t.Cleanup(func() { m.Close() })
-	need := residentNeedBytes(m)
+	need := residentNeedBytes(m, metalCtxPlan{})
 	tight := build(m, need)
 	if tight.r.batch != nil || tight.r.stepDecline == "" || tight.stepPrefill() {
 		t.Fatalf("need %d at a ceiling of %d: step built %v, decline %q; want the load admitted and the step declined",
@@ -217,7 +217,7 @@ func TestOneSlotStep_scratchPricedNotTheLoad(t *testing.T) {
 
 	m2 := load()
 	t.Cleanup(func() { m2.Close() })
-	roomy := build(m2, residentNeedBytes(m2)+scratch)
+	roomy := build(m2, residentNeedBytes(m2, metalCtxPlan{})+scratch)
 	if roomy.r.batch == nil || roomy.r.stepDecline != "" || !roomy.stepPrefill() {
 		t.Errorf("a ceiling of need + scratch: step built %v, decline %q; want the step", roomy.r.batch != nil, roomy.r.stepDecline)
 	}
@@ -255,10 +255,10 @@ func oneSlotPrefillAB(t *testing.T, path string, ctx int) {
 		t.Fatalf("load: %v", err)
 	}
 	t.Cleanup(func() { m.Close() })
-	if why := residentMemoryDecline(m); why != "" { // the guard the server applies; never bypassed here
+	if why := residentMemoryDecline(m, metalCtxPlan{}); why != "" { // the guard the server applies; never bypassed here
 		t.Skipf("Metal's memory guard declines this load now: %s", why)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("build resident: %v", err)
 	}

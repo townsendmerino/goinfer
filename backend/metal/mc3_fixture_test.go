@@ -143,7 +143,7 @@ func mc3FixtureResident(t *testing.T, slots, ctx int) (*decoder.Model, *resident
 	if err != nil {
 		t.Fatalf("load the MC3 fixture: %v", err)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		m.Close()
 		t.Fatalf("build the MC3 fixture's resident: %v", err)

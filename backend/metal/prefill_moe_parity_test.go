@@ -68,7 +68,7 @@ func testPrefillParityMoEFixture(t *testing.T, ckpt string, wantGatedShared bool
 	if hasGatedShared != wantGatedShared {
 		t.Fatalf("fixture FeatMoEGatedShared=%v, want %v", hasGatedShared, wantGatedShared)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("resident: %v", err)
 	}

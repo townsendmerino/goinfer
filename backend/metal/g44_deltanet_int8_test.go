@@ -25,7 +25,7 @@ func TestG44_deltaNetInt8Declines(t *testing.T) {
 			t.Fatalf("load at %s: %v", quant, err)
 		}
 		defer m.Close()
-		r, err := buildResident(m)
+		r, err := buildResident(m, metalCtxPlan{})
 		if err == nil {
 			_ = r.Close()
 		}

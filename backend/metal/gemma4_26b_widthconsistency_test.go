@@ -35,7 +35,7 @@ func TestGemma4_26B_pagingWidthConsistency(t *testing.T) {
 			t.Fatalf("load N=%d: %v", slots, err)
 		}
 		defer m.Close()
-		r, err := buildResident(m)
+		r, err := buildResident(m, metalCtxPlan{})
 		if err != nil {
 			t.Fatalf("BuildResident N=%d: %v", slots, err)
 		}

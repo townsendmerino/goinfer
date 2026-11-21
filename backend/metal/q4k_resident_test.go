@@ -92,7 +92,7 @@ func testQ4KLaneResident(t *testing.T, path string) {
 		for _, sb := range a.r.chainBuffers(true, true) {
 			chain += int64(sb.bytes())
 		}
-		if got, want := mm.MetalDecodeScratchBytes(metalMoESlotsFromEnv(mm)), a.r.decode.listBytes(a.r)+chain; got != want {
+		if got, want := mm.MetalDecodeScratchBytes(metalMoESlotsFromEnv(mm, metalCtxPlan{})), a.r.decode.listBytes(a.r)+chain; got != want {
 			t.Errorf("q4k lane: the decoder prices decode's scratch at %d bytes, the build's list with the chain's at %d (%+d)", got, want, got-want)
 		}
 	}

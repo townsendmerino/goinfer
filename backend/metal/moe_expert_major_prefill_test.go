@@ -37,7 +37,7 @@ func TestMoEExpertMajor_ParityVsRowByRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("resident: %v", err)
 	}
@@ -101,7 +101,7 @@ func BenchmarkMoEExpertMajor_VsRowByRow(b *testing.B) {
 	if err != nil {
 		b.Fatalf("load: %v", err)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		b.Fatalf("resident: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestMoEPrefillSpeedupDirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("resident: %v", err)
 	}

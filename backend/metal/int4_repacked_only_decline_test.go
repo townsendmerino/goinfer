@@ -28,7 +28,7 @@ func TestBuildResident_declinesWithLoudReasonForRepackedOnlyInt4(t *testing.T) {
 	}
 	defer m.Close()
 
-	_, err = buildResident(m)
+	_, err = buildResident(m, metalCtxPlan{})
 	if err == nil {
 		t.Fatal("buildResident succeeded on a Backend:\"cpu\"-loaded (repacked-only int4) model " +
 			"— want a clean decline naming the reason")

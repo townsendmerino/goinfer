@@ -28,7 +28,7 @@ func TestP29_q4kPromptRoutePerSlotCount(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load: %v", err)
 		}
-		r, err := buildResident(m)
+		r, err := buildResident(m, metalCtxPlan{})
 		if err != nil {
 			m.Close()
 			t.Fatalf("build resident: %v", err)

@@ -710,7 +710,7 @@ func TestStepFlagDefaults_grantedSessionsDecide(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			need, slot := residentNeedBytes(m), metalSlotBytes(m)
+			need, slot := residentNeedBytes(m, metalCtxPlan{}), metalSlotBytes(m, metalCtxPlan{})
 			m.Close()
 			defer func(v int64) { metalMemoryCeilingForTest = v }(metalMemoryCeilingForTest)
 			metalMemoryCeilingForTest = need + slot/2

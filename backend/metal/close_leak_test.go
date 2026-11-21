@@ -62,7 +62,7 @@ func TestMetal_CloseFreesMemory(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load: %v", err)
 		}
-		r, err := buildResident(m)
+		r, err := buildResident(m, metalCtxPlan{})
 		if err != nil {
 			t.Fatalf("BuildResident: %v", err)
 		}
@@ -132,7 +132,7 @@ func TestMetal_PrefillScratchDoesNotLeak(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("BuildResident: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestMetal_CloseWithSecondModelAlive(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load: %v", err)
 		}
-		r, err := buildResident(m)
+		r, err := buildResident(m, metalCtxPlan{})
 		if err != nil {
 			t.Fatalf("BuildResident: %v", err)
 		}

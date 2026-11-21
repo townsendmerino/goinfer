@@ -45,7 +45,7 @@ func TestMetalEmbedScale_forwardMatchesForwardEmb(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("buildResident: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestMetalSnapshotGolden(t *testing.T) {
 		}
 		defer m.Close()
 		H, _, _, _, _, _, V := m.Dims()
-		r, err := buildResident(m)
+		r, err := buildResident(m, metalCtxPlan{})
 		if err != nil {
 			t.Fatalf("BuildResident %s: %v", mm.dir, err)
 		}

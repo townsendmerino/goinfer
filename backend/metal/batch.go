@@ -144,7 +144,7 @@ func (r *resident) stepInputs() *stepInputs {
 
 // metalStepInputs reads m before any build, as buildResident will decide each of them. The slots it reads are those the load asks for, since
 // the granted count depends on this price: a defaulted step on a load memory then holds to one slot is priced here and not built.
-func metalStepInputs(m *decoder.Model) *stepInputs {
+func metalStepInputs(m *decoder.Model, plan metalCtxPlan) *stepInputs {
 	shape := m.Shape()
 	H, nL, nH, I, V := shape.Hidden, shape.Layers, shape.Heads, shape.Inter, shape.Vocab
 	p := m.Program()
@@ -154,7 +154,7 @@ func metalStepInputs(m *decoder.Model) *stepInputs {
 	in.w4f16Lane = modelKnob(m, "GOINFER_METAL_DECODE_LANE") == "w4f16" && m.Quant() == "int4"
 	in.attnSink = m.BackendView().HasAttnSinks()
 	if mo, ok := m.BackendView().MoE(); ok {
-		n := metalMoESlotsFromEnv(m)
+		n := metalMoESlotsFromEnv(m, plan)
 		in.pagedMoE = n > 0 && (n < mo.NumExperts || moePagedAllSlotsForTest)
 	}
 	if P := m.BackendView().Gemma4PLEDim(); P > 0 {
@@ -823,7 +823,9 @@ func attnFAPartialFloats(hd, nH, nKV int) int {
 
 // metalStepScratchReserve is what the step's scratch takes on m, read before a build: the price the build will set, or 0 where the
 // step cannot build.
-func metalStepScratchReserve(m *decoder.Model) int64 { return metalStepInputs(m).reserve() }
+func metalStepScratchReserve(m *decoder.Model, plan metalCtxPlan) int64 {
+	return metalStepInputs(m, plan).reserve()
+}
 
 // reserve is the step's price at these inputs, 0 where it cannot build.
 func (in *stepInputs) reserve() int64 {

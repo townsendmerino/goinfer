@@ -27,7 +27,7 @@ func TestZZ_metalSoftcapTokenShare(t *testing.T) {
 	if err != nil {
 		t.Skipf("load: %v", err)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		// The gemma-4-12b QAT q4_0 checkpoint doesn't build int4/int8 resident on this Mac
 		// (int4Concat weight-kind quirk); the E-series are MoE (paged, timing-misleading). This

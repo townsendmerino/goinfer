@@ -106,7 +106,7 @@ func TestMetalMoESlotsRequest_autoOnlyWithCacheExperts(t *testing.T) {
 	if m.MoECacheExperts() {
 		t.Fatal("test setup: MoECacheExperts should be false without the option")
 	}
-	if got := metalMoESlotsRequest(m); got != "" {
+	if got := metalMoESlotsRequest(m, metalCtxPlan{}); got != "" {
 		t.Errorf("metalMoESlotsRequest with MoECacheExperts unset = %q, want \"\" (unchanged default)", got)
 	}
 
@@ -121,7 +121,7 @@ func TestMetalMoESlotsRequest_autoOnlyWithCacheExperts(t *testing.T) {
 	if mAuto.MoECacheSlotsRequest() != 0 {
 		t.Fatal("test setup: no explicit --moe-cache-slots should have been set")
 	}
-	got := metalMoESlotsRequest(mAuto)
+	got := metalMoESlotsRequest(mAuto, metalCtxPlan{})
 	if got == "" {
 		t.Fatal("metalMoESlotsRequest with MoECacheExperts set returned \"\" — auto-sizing did not engage (M-13 regressed)")
 	}

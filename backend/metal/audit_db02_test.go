@@ -47,7 +47,7 @@ func TestDB02_expertMajorProbe(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer m.Close()
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("resident: %v", err)
 	}

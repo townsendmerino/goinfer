@@ -89,7 +89,7 @@ func TestPrefill_gptossFailsClosed(t *testing.T) {
 			delete(prefillFeatures, f)
 		}
 	})
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("build the gpt-oss resident: %v", err)
 	}

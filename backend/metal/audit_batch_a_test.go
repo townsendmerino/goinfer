@@ -58,7 +58,7 @@ func auditLoad(t *testing.T, def string, slots, ctx int, knobs *decoder.Knobs) (
 	if err != nil {
 		t.Fatalf("load %s: %v", path, err)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		m.Close()
 		t.Fatalf("build resident: %v", err)
@@ -423,7 +423,7 @@ func TestBuildResident_aBugPanicsInsteadOfDeclining(t *testing.T) {
 		build func()
 	}{
 		{"metalBackend.BuildResident", func() { _, _, _ = (&metalBackend{}).BuildResident(nil) }},
-		{"buildResident", func() { _, _ = buildResident((*decoder.Model)(nil)) }},
+		{"buildResident", func() { _, _ = buildResident((*decoder.Model)(nil), metalCtxPlan{}) }},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			defer func() {

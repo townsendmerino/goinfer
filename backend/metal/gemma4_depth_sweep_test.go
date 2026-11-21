@@ -68,7 +68,7 @@ func meanFloorEnv(t *testing.T, dir string, prompt []int, cos func(a, b []float3
 		t.Fatalf("load int4 %s: %v", dir, err)
 	}
 	defer mg.Close()
-	r, err := buildResident(mg)
+	r, err := buildResident(mg, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("BuildResident %s: %v", dir, err)
 	}
@@ -104,7 +104,7 @@ func perLayer64(t *testing.T, dir string) {
 		t.Fatalf("load: %v", err)
 	}
 	defer mg.Close()
-	r, err := buildResident(mg)
+	r, err := buildResident(mg, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("BuildResident: %v", err)
 	}

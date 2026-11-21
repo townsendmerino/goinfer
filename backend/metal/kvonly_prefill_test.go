@@ -29,7 +29,7 @@ func TestForwardNoLogits_byteIdenticalKV(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load: %v", err)
 		}
-		r, err := buildResident(m)
+		r, err := buildResident(m, metalCtxPlan{})
 		if err != nil {
 			t.Fatalf("build resident: %v", err)
 		}
@@ -100,7 +100,7 @@ func TestForwardNoLogits_pagedMoEFallback(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load: %v", err)
 		}
-		r, err := buildResident(m)
+		r, err := buildResident(m, metalCtxPlan{})
 		if err != nil {
 			t.Fatalf("build resident: %v", err)
 		}
@@ -169,7 +169,7 @@ func TestForwardNoLogits_pipelineTransitionParity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load: %v", err)
 		}
-		r, err := buildResident(m)
+		r, err := buildResident(m, metalCtxPlan{})
 		if err != nil {
 			t.Fatalf("build resident: %v", err)
 		}
@@ -255,7 +255,7 @@ func BenchmarkForwardNoLogits_SyncVsPipe(b *testing.B) {
 		if err != nil {
 			b.Fatalf("load: %v", err)
 		}
-		r, err := buildResident(m)
+		r, err := buildResident(m, metalCtxPlan{})
 		if err != nil {
 			b.Fatalf("build resident: %v", err)
 		}

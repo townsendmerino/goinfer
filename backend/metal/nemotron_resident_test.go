@@ -41,7 +41,7 @@ func residentLockstepAt(t *testing.T, path string, opts decoder.Options, steps i
 		t.Fatalf("load %s: %v", dir, err)
 	}
 	defer m.Close()
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("%s at %s: build resident: %v", dir, quant, err)
 	}
@@ -145,7 +145,7 @@ func TestNemotronResident_slots(t *testing.T) {
 		t.Errorf("Nemotron-H asks for %d resident KV slots, want 1: a recurrent family's state is not part of a slot", got)
 	}
 	build := func() *metalResident {
-		r, err := buildResident(m)
+		r, err := buildResident(m, metalCtxPlan{})
 		if err != nil {
 			t.Fatalf("build resident: %v", err)
 		}
@@ -194,7 +194,7 @@ func TestNemotronResident_int8Declines(t *testing.T) {
 			t.Fatalf("load at %s: %v", quant, err)
 		}
 		defer m.Close()
-		r, err := buildResident(m)
+		r, err := buildResident(m, metalCtxPlan{})
 		if err == nil {
 			_ = r.Close()
 		}
@@ -264,7 +264,7 @@ func residentTier1(t *testing.T, path, label string) {
 				t.Errorf("fit check: %s REFUSED: %v", filepath.Base(p), err)
 				continue
 			}
-			r, err := buildResident(m)
+			r, err := buildResident(m, metalCtxPlan{})
 			if err != nil {
 				m.Close()
 				t.Errorf("fit check: %s resident REFUSED: %v", filepath.Base(p), err)

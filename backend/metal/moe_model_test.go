@@ -52,7 +52,7 @@ func TestMoE_assemblyVsDense(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load moe: %v", err)
 	}
-	moeR, err := buildResident(moeM)
+	moeR, err := buildResident(moeM, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("build moe resident: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestMoE_assemblyVsDense(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load dense: %v", err)
 	}
-	denseR, err := buildResident(denseM)
+	denseR, err := buildResident(denseM, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("build dense resident: %v", err)
 	}
@@ -307,7 +307,7 @@ func TestMoE_declinesPrefill(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load %s: %v", dir, err)
 		}
-		r, err := buildResident(m)
+		r, err := buildResident(m, metalCtxPlan{})
 		if err != nil {
 			t.Fatalf("build %s: %v", dir, err)
 		}

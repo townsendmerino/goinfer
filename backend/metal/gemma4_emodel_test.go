@@ -62,7 +62,7 @@ func runEModelG1(t *testing.T) eModelG1 {
 	if err := program.Metal.Check(mg.Program()); err != nil || len(mg.FeaturesOutsideProgram()) > 0 {
 		t.Fatalf("metal declines the tiny E-model: %v, outside the program %v", err, mg.FeaturesOutsideProgram())
 	}
-	r, err := buildResident(mg)
+	r, err := buildResident(mg, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("buildResident: %v", err)
 	}
@@ -224,7 +224,7 @@ func gemma4StepModel(t *testing.T, dir string, on bool) (*decoder.Model, *reside
 	if err != nil {
 		t.Fatalf("load %s: %v", dir, err)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		m.Close()
 		t.Fatalf("build %s's resident: %v", dir, err)
@@ -399,7 +399,7 @@ func TestMC3Step_gemma4ScratchPriced(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { m.Close() })
-	metalMemoryCeilingForTest = residentNeedBytes(m) + metalSlotBytes(m)
+	metalMemoryCeilingForTest = residentNeedBytes(m, metalCtxPlan{}) + metalSlotBytes(m, metalCtxPlan{})
 	rf, ok, err := (&metalBackend{}).BuildResident(m)
 	if err != nil || !ok {
 		t.Fatalf("the load was refused: %v", err)

@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -32,16 +31,10 @@ func tinyMetalGIW(t *testing.T, quant string) string {
 	return path
 }
 
-func syncMapLen(m *sync.Map) int {
-	n := 0
-	m.Range(func(any, any) bool { n++; return true })
-	return n
-}
-
 // TestFitQuery_metalGIWPlansWhatTheLoadBuilds: for a .giw on Metal, FitQuery's decode path is the one the load then
 // reports, from the checks BuildResident makes before it allocates (PriceResident). With room, it names the resident and
 // the context the resident holds; with a memory figure the guard refuses even at the floor context, it names the CPU path
-// with the guard's own decline, the same text the load records. The plan leaves no per-model state behind.
+// with the guard's own decline, the same text the load records.
 func TestFitQuery_metalGIWPlansWhatTheLoadBuilds(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -66,9 +59,6 @@ func TestFitQuery_metalGIWPlansWhatTheLoadBuilds(t *testing.T) {
 			}
 			if !a.Fits || a.DecodePath == "" {
 				t.Fatalf("fits %v, decode path %q (unknown: %s)", a.Fits, a.DecodePath, a.DecodeUnknown)
-			}
-			if n, k := syncMapLen(&metalFitChoice), syncMapLen(&metalCtxCeiling); n+k != 0 {
-				t.Errorf("the plan left %d fit choices and %d context ceilings behind", n, k)
 			}
 			m, err := decoder.Load(path, opts)
 			if err != nil {

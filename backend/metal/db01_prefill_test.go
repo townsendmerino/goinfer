@@ -35,7 +35,7 @@ func TestDB01_prefillAgreesWithSequential(t *testing.T) {
 	defer m.Close()
 	prevOff := dnetPrefillOn
 	dnetPrefillOn = false // the switch's off arm (it is on by default since D-B01's grade)
-	off, err := buildResident(m)
+	off, err := buildResident(m, metalCtxPlan{})
 	dnetPrefillOn = prevOff
 	if err != nil {
 		t.Fatalf("resident: %v", err)
@@ -48,7 +48,7 @@ func TestDB01_prefillAgreesWithSequential(t *testing.T) {
 	prevDnet := dnetPrefillOn
 	dnetPrefillOn = true
 	defer func() { dnetPrefillOn = prevDnet }()
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("resident: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestDB01_chunkedPrefillMatchesWhole(t *testing.T) {
 	prevDnet := dnetPrefillOn
 	dnetPrefillOn = true
 	defer func() { dnetPrefillOn = prevDnet }()
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("resident: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestDB01_prefillFromZeroResetsState(t *testing.T) {
 	prevDnet := dnetPrefillOn
 	dnetPrefillOn = true
 	defer func() { dnetPrefillOn = prevDnet }()
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("resident: %v", err)
 	}

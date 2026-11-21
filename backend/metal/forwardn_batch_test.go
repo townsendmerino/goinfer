@@ -29,7 +29,7 @@ func TestForwardN_BitIdenticalParity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load: %v", err)
 		}
-		r, err := buildResident(m)
+		r, err := buildResident(m, metalCtxPlan{})
 		if err != nil {
 			t.Fatalf("build resident: %v", err)
 		}
@@ -68,7 +68,7 @@ func TestForwardN_DeltaNetBitIdenticalParity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load: %v", err)
 		}
-		r, err := buildResident(m)
+		r, err := buildResident(m, metalCtxPlan{})
 		if err != nil {
 			t.Fatalf("build resident: %v", err)
 		}
@@ -174,7 +174,7 @@ func BenchmarkForwardN_BatchVsSeq(b *testing.B) {
 		if err != nil {
 			b.Fatalf("load: %v", err)
 		}
-		r, err := buildResident(m)
+		r, err := buildResident(m, metalCtxPlan{})
 		if err != nil {
 			b.Fatalf("build resident: %v", err)
 		}

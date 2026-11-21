@@ -80,25 +80,21 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 			rf, ok, err = nil, false, decoder.DeclineResident("metal build panicked: %v", p)
 		}
 	}()
-	fit, from, perr := residentPreBuild(m)
-	defer metalFitChoice.Delete(m)
+	plan, from, perr := residentPreBuild(m)
 	if perr != nil {
 		return nil, false, perr
 	}
-	res, e := buildResident(m)
+	res, e := buildResident(m, plan)
 	if e != nil {
-		metalCtxCeiling.Delete(m)
 		return nil, false, decoder.DeclineResident("metal: %v", e)
 	}
-	if _, ok := metalCtxCeiling.Load(m); ok {
-		res.ctxCeilKey = m // the entry lives as long as the resident (resident.Close deletes it)
-	}
-	b.resident = &metalResident{r: res, hidden: res.H, exact: m.ExactPrefill(), need: func() int64 { return residentNeedBytes(m) }}
+	res.ctxCeil = plan.ceil
+	b.resident = &metalResident{r: res, hidden: res.H, exact: m.ExactPrefill(), need: func() int64 { return residentNeedBytes(m, res.ctxPlan()) }}
 	share := res.ctxCap // the note prices the context the plan sized each slot for, not the cap one conversation may borrow up to
 	if res.kvShareCtx > 0 {
 		share = res.kvShareCtx
 	}
-	b.resident.ctxNote = metalContextNote(m, fit, share, res.kvSlotCount())
+	b.resident.ctxNote = metalContextNote(m, plan.fit, share, res.kvSlotCount())
 	if got, want := b.resident.embLen(), m.BackendView().EmbedLen(); got != want {
 		_ = res.Close()
 		b.resident = nil
@@ -107,23 +103,35 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 	if res.w8 || res.w8Attn {
 		b.resident.quant = m.Quant()
 	}
-	if ctx, _ := resolveMetalCtxCap(m); ctx < from || m.ExtraResidentBytes() > 0 {
+	if ctx, _ := resolveMetalCtxCap(m, plan); ctx < from || m.ExtraResidentBytes() > 0 {
 		logs.InfoText(metalKVPlanLine(res.kvSlotCount(), ctx, from, m.ExtraResidentBytes()))
 	}
 	return b.resident, true, nil
 }
 
-// residentPreBuild is BuildResident's decisions before buildResident allocates anything, which PriceResident asks too. It
-// leaves the unpinned context's choice in metalFitChoice, which the caller deletes, and a context the memory guard lowered in
-// metalCtxCeiling. err is BuildResident's own return for a refusal.
-func residentPreBuild(m *decoder.Model) (fit decoder.MetalFit, from int, err error) {
+// metalCtxPlan is the context one resident build decides, handed to every reader that sizes from it: the unpinned
+// context's fit choice, made once per build (fitSet; a plan without one asks metalFitNow at each read), and the context
+// shrinkCtxToFit lowered an unpinned resident to (ceil, 0 for none). The zero value is no build: each reader decides now.
+type metalCtxPlan struct {
+	fit    decoder.MetalFit
+	fitSet bool
+	ceil   int
+}
+
+// ctxPlan is the plan a built resident's readers size from: its build's ceiling, with the fit choice asked again at each read.
+func (r *resident) ctxPlan() metalCtxPlan { return metalCtxPlan{ceil: r.ctxCeil} }
+
+// residentPreBuild is BuildResident's decisions before buildResident allocates anything, which PriceResident asks too: the
+// plan the build sizes from, and the context before the memory guard lowered it (from). err is BuildResident's own return
+// for a refusal.
+func residentPreBuild(m *decoder.Model) (plan metalCtxPlan, from int, err error) {
 	// The Metal kernels implement what Metal's operation table lists (program.Metal). A model that needs anything outside it
 	// must DECLINE (CPU fallback), never run with an operation or parameter silently dropped.
 	if err := program.Metal.Check(m.Program()); err != nil {
-		return fit, 0, decoder.DeclineResident("%v", err)
+		return plan, 0, decoder.DeclineResident("%v", err)
 	}
 	if missing := m.FeaturesOutsideProgram(); len(missing) > 0 {
-		return fit, 0, decoder.DeclineResident("metal does not implement %v, which this model needs", missing)
+		return plan, 0, decoder.DeclineResident("metal does not implement %v, which this model needs", missing)
 	}
 	// An explicit -ctx above metalCtxCapMax cannot be honoured (a fixed-size kernel score buffer, not a tunable budget): refuse it
 	// with a named error carrying the numbers, as cuda's errKVWontFit does, rather than folding it into the generic decline below.
@@ -133,33 +141,30 @@ func residentPreBuild(m *decoder.Model) (fit decoder.MetalFit, from int, err err
 	// (the model's own bytes and physical RAM, via metalMemoryCeiling), never on the OS's account of free memory: darwin's UBC reclaim
 	// makes "available" report what survived, so a guard keyed on it inverts when it is needed. Evidence:
 	// docs/code-notes/metal.md#metalBackend.BuildResident.guard.
-	if _, cerr := resolveMetalCtxCap(m); cerr != nil {
-		return fit, 0, cerr
+	if _, cerr := resolveMetalCtxCap(m, plan); cerr != nil {
+		return plan, 0, cerr
 	}
 	// The unpinned context is chosen once, here: its budget is live, and every later reader in this build (the guard, the
 	// slot count, the KV sizing) must see one number.
-	fit = metalFitNow(m)
-	metalFitChoice.Store(m, fit)
-	from, _ = resolveMetalCtxCap(m)
-	if why := residentMemoryDecline(m); why != "" {
-		if !shrinkCtxToFit(m) {
-			return fit, from, decoder.DeclineResident("%s", why)
+	plan.fit, plan.fitSet = metalFitNow(m), true
+	from, _ = resolveMetalCtxCap(m, plan)
+	if why := residentMemoryDecline(m, plan); why != "" {
+		if !shrinkCtxToFit(m, &plan) {
+			return plan, from, decoder.DeclineResident("%s", why)
 		}
 	}
-	return fit, from, nil
+	return plan, from, nil
 }
 
 // PriceResident (decoder.ResidencyPricer) is BuildResident's answer before it allocates: residentPreBuild, with the
 // context the resident would hold. Whether an int8 load runs natively or re-quantized to int4 is decided inside the build
 // (w8Eligible reads the resident it is building), so for those quants the label is left to the load.
 func (b *metalBackend) PriceResident(m *decoder.Model) (decoder.ResidentPrice, error) {
-	_, _, err := residentPreBuild(m)
-	defer metalFitChoice.Delete(m)
-	defer metalCtxCeiling.Delete(m)
+	plan, _, err := residentPreBuild(m)
 	if err != nil {
 		return decoder.ResidentPrice{}, err
 	}
-	ctx, _ := resolveMetalCtxCap(m)
+	ctx, _ := resolveMetalCtxCap(m, plan)
 	p := decoder.ResidentPrice{Ctx: ctx}
 	switch q := m.Quant(); q {
 	case "int4", "q4k":
@@ -170,14 +175,11 @@ func (b *metalBackend) PriceResident(m *decoder.Model) (decoder.ResidentPrice, e
 	return p, nil
 }
 
-// metalFitChoice is the fit-by-default context of the BuildResident in progress, per model (metalFitFor reads it).
-var metalFitChoice sync.Map // *decoder.Model -> decoder.MetalFit
-
-// metalFitFor is the context an unpinned load takes (decoder.Model.MetalFitCtx): the choice BuildResident made for this
-// model when one is in progress, otherwise the choice it would make now. docs/code-notes/metal.md#metalFitFor.
-func metalFitFor(m *decoder.Model) decoder.MetalFit {
-	if f, ok := metalFitChoice.Load(m); ok {
-		return f.(decoder.MetalFit)
+// metalFitFor is the context an unpinned load takes (decoder.Model.MetalFitCtx): the plan's choice when its build made one,
+// otherwise the choice a build would make now. docs/code-notes/metal.md#metalFitFor.
+func metalFitFor(m *decoder.Model, plan metalCtxPlan) decoder.MetalFit {
+	if plan.fitSet {
+		return plan.fit
 	}
 	return metalFitNow(m)
 }
@@ -217,33 +219,30 @@ func metalContextNote(m *decoder.Model, fit decoder.MetalFit, ctx, slots int) st
 	return fit.Why
 }
 
-// metalCtxCeiling is the context shrinkCtxToFit lowered an unpinned resident to, per model, read by resolveMetalCtxCap. A map
-// keyed by the model so the decoder keeps no backend state; resident.Close deletes the entry.
-var metalCtxCeiling sync.Map // *decoder.Model -> int
-
 // metalCtxFloor is the shortest context shrinkCtxToFit gives a model before the guard declines: an image turn (Gemma 3's
 // 256 soft tokens, a few hundred of text) and some conversation fit.
 const metalCtxFloor = 2048
 
 // shrinkCtxToFit halves an unpinned resident context, down to metalCtxFloor, until the memory guard passes (the
-// context gives way before the resident declines; an explicit -ctx never does). It reports whether one passed; when none
-// does the context is left as it was.
-func shrinkCtxToFit(m *decoder.Model) bool {
+// context gives way before the resident declines; an explicit -ctx never does), recording it as plan.ceil. It reports
+// whether one passed; when none does the plan is left as it was.
+func shrinkCtxToFit(m *decoder.Model, plan *metalCtxPlan) bool {
 	if m.ResidentContextPinned() {
 		return false
 	}
-	cur, err := resolveMetalCtxCap(m)
+	cur, err := resolveMetalCtxCap(m, *plan)
 	if err != nil {
 		return false
 	}
+	was := plan.ceil
 	for cur > metalCtxFloor {
 		cur = max(cur/2, metalCtxFloor)
-		metalCtxCeiling.Store(m, cur)
-		if residentMemoryDecline(m) == "" {
+		plan.ceil = cur
+		if residentMemoryDecline(m, *plan) == "" {
 			return true
 		}
 	}
-	metalCtxCeiling.Delete(m)
+	plan.ceil = was
 	return false
 }
 
@@ -325,7 +324,7 @@ var metalMemoryCeilingForTest int64
 // metalStepHeadroom is the bytes the memory guard leaves beside a build of `slots` KV slots, read before any buffer exists for
 // metalKVSlots' reason. The batched step's scratch must fit in it, or buildBatch declines the step for this load and the load
 // goes ahead. The guard's override leaves it unlimited; an unreadable RAM size leaves -1, which declines the step.
-func metalStepHeadroom(m *decoder.Model, slots int) int64 {
+func metalStepHeadroom(m *decoder.Model, plan metalCtxPlan, slots int) int64 {
 	if modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != "" {
 		return math.MaxInt64
 	}
@@ -333,19 +332,19 @@ func metalStepHeadroom(m *decoder.Model, slots int) int64 {
 	if (err != nil || ram == 0) && metalMemoryCeilingForTest <= 0 {
 		return -1
 	}
-	return metalMemoryCeiling(ram) - residentNeedBytes(m) - int64(max(slots, 1)-1)*metalSlotBytes(m)
+	return metalMemoryCeiling(ram) - residentNeedBytes(m, plan) - int64(max(slots, 1)-1)*metalSlotBytes(m, plan)
 }
 
 // metalMoESlotsRequest is the resolved expert-slot request as a string, ready for the strconv.Atoi and validation that moe.go and
 // gemma4_moe.go do at their dispatch-building call sites. `--moe-cache-slots` (Model.MoECacheSlotsRequest, the flag CUDA's
 // auto-cap also reads) wins; GOINFER_METAL_MOE_SLOTS is a deprecated fallback. "" means unset: every expert resident.
-func metalMoESlotsRequest(m *decoder.Model) string {
+func metalMoESlotsRequest(m *decoder.Model, plan metalCtxPlan) string {
 	if n := m.MoECacheSlotsRequest(); n > 0 {
 		return strconv.Itoa(n)
 	}
 	// --moe-cache-experts without --moe-cache-slots auto-sizes the slots from memory (autoMoESlots), as CUDA does against free VRAM.
 	if m.MoECacheExperts() {
-		return strconv.Itoa(autoMoESlots(m))
+		return strconv.Itoa(autoMoESlots(m, plan))
 	}
 	return modelKnob(m, "GOINFER_METAL_MOE_SLOTS")
 }
@@ -399,22 +398,22 @@ func autoMoESlotsForBudget(topK int, perSlot, needFixed, budget int64) int {
 // (MoECacheExperts) with no slot count. perSlot is the marginal bytes of one more slot (ResidentWeightBytesPaged(2) - (1)): a
 // layer's experts are uniform, so it is exact and follows any change to the byte accounting. An unreadable hw.memsize falls back
 // to autoMoESlotsMax.
-func autoMoESlots(m *decoder.Model) int {
+func autoMoESlots(m *decoder.Model, plan metalCtxPlan) int {
 	topK := moeTopK(m)
 	perSlot := m.ResidentWeightBytesPaged(2) - m.ResidentWeightBytesPaged(1)
 	ram, err := physicalRAM()
 	if err != nil || ram == 0 {
 		return max(topK, autoMoESlotsMax)
 	}
-	needFixed := m.ResidentWeightBytesPaged(1) - perSlot + m.ResidentHostCopyBytes(1) + residentKVBytes(m) // ResidentHostCopyBytes(>0) leaves paged experts out
+	needFixed := m.ResidentWeightBytesPaged(1) - perSlot + m.ResidentHostCopyBytes(1) + residentKVBytes(m, plan) // ResidentHostCopyBytes(>0) leaves paged experts out
 	return autoMoESlotsForBudget(topK, perSlot, needFixed, metalMemoryCeiling(ram))
 }
 
 // metalMoESlotsFromEnv is the guard's reader of metalMoESlotsRequest: an int, where an invalid or unset value means "assume
 // unpaged" rather than an error (buildResident still validates and declines a bad one). The name predates the option; it reads
 // the same resolved request.
-func metalMoESlotsFromEnv(m *decoder.Model) int {
-	n, err := strconv.Atoi(metalMoESlotsRequest(m))
+func metalMoESlotsFromEnv(m *decoder.Model, plan metalCtxPlan) int {
+	n, err := strconv.Atoi(metalMoESlotsRequest(m, plan))
 	if err != nil || n <= 0 {
 		return 0
 	}
@@ -425,8 +424,8 @@ func metalMoESlotsFromEnv(m *decoder.Model) int {
 // cap itself; on an error (an explicit ctx above metalCtxCapMax) it takes metalCtxCapMax, a safe over-estimate for a guard whose
 // job is not to under-count, since BuildResident reports that error on its own, earlier. The small per-model buffers (mq, gu,
 // logits, ...) are a few hundred KB each and round to nothing beside KV.
-func residentKVBytes(m *decoder.Model) int64 {
-	ctxCap, err := resolveMetalCtxCap(m)
+func residentKVBytes(m *decoder.Model, plan metalCtxPlan) int64 {
+	ctxCap, err := resolveMetalCtxCap(m, plan)
 	if err != nil {
 		ctxCap = metalCtxCapMax
 	}
@@ -440,29 +439,31 @@ func residentKVBytes(m *decoder.Model) int64 {
 // prices the paged weight estimate when a slot count is requested (metalMoESlotsFromEnv), not the every-expert-resident figure,
 // and adds Metal's host copy (the quantized host WeightMat stays beside the re-packed device buffer; genuinely paged experts have
 // none, so the host-copy addend is asked at the same slot count) and KV (residentKVBytes).
-func residentNeedBytes(m *decoder.Model) int64 {
-	ctxCap, err := resolveMetalCtxCap(m)
+func residentNeedBytes(m *decoder.Model, plan metalCtxPlan) int64 {
+	ctxCap, err := resolveMetalCtxCap(m, plan)
 	if err != nil {
 		ctxCap = metalCtxCapMax
 	}
 	// decoder.Model.ResidentNeedBytes is also what Plan("metal").NeedBytes() is built from, so `fit` and this guard are the same
 	// number by construction. The rest is what a companion claims beside the resident (a vision tower priced by serve's
 	// towerReserve, a drafter): Metal's device memory is the same RAM.
-	return m.ResidentNeedBytes("metal", metalMoESlotsFromEnv(m), ctxCap, false, false) +
+	return m.ResidentNeedBytes("metal", metalMoESlotsFromEnv(m, plan), ctxCap, false, false) +
 		m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(ctxCap)
 }
 
 // residentFitsMemory reports whether this model's weights fit the machine, declining loudly when
 // they do not. True (proceed) whenever the answer is unknown — an unreadable hw.memsize or a
 // model reporting zero bytes must not silently disable residency for everyone.
-func residentFitsMemory(m *decoder.Model) bool { return residentMemoryDecline(m) == "" }
+func residentFitsMemory(m *decoder.Model, plan metalCtxPlan) bool {
+	return residentMemoryDecline(m, plan) == ""
+}
 
 // metalKVSlots is how many resident KV slots buildResident allocates for m:
 // the model's request (decoder.Model.ResidentKVSlotsRequestFor("metal"), 1 for a family with recurrent state that
 // program.Metal does not keep per slot), reduced while the extra slots would take the build over the memory guard's budget.
 // The first slot is the build's own KV, which residentMemoryDecline prices; each further one costs metalSlotBytes. The guard's own override
 // (GOINFER_NO_RESIDENT_MEM_GUARD) allocates the request as asked; an unreadable RAM size allocates one.
-func metalKVSlots(m *decoder.Model) int {
+func metalKVSlots(m *decoder.Model, plan metalCtxPlan) int {
 	n := metalKVSlotsWanted(m)
 	if asked := m.ResidentKVSlotsRequestFor("metal"); n < asked {
 		logs.Infof("metal: %d resident KV slots (Metal's default; %d asked by default, -kv-sessions N keeps N if memory allows)",
@@ -478,12 +479,12 @@ func metalKVSlots(m *decoder.Model) int {
 	if err != nil || ram == 0 {
 		return 1
 	}
-	budget, need := metalMemoryCeiling(ram), residentNeedBytes(m)+metalRaisedTableBytes(m, n)
-	got := kvSlotsWithin(n, budget, need, metalSlotBytes(m))
+	budget, need := metalMemoryCeiling(ram), residentNeedBytes(m, plan)+metalRaisedTableBytes(m, plan, n)
+	got := kvSlotsWithin(n, budget, need, metalSlotBytes(m, plan))
 	// An unpinned slot count gives up a slot for the batched step's scratch, since a default slot is worth less than batched prefill,
 	// but only where the step then fits. A count the caller asked for keeps its slots, and the step declines if it no longer fits.
-	if reserve := metalStepScratchReserve(m); m.ResidentKVSlotsIsDefault() && reserve > 0 && need+reserve <= budget {
-		if within := kvSlotsWithin(n, budget-reserve, need, metalSlotBytes(m)); within < got {
+	if reserve := metalStepScratchReserve(m, plan); m.ResidentKVSlotsIsDefault() && reserve > 0 && need+reserve <= budget {
+		if within := kvSlotsWithin(n, budget-reserve, need, metalSlotBytes(m, plan)); within < got {
 			logs.Infof("metal: %d resident KV slots of %d by default, which leaves room for the batched step's %.1f MB of scratch; -kv-sessions N keeps N if memory allows",
 				within, n, float64(reserve)/(1<<20))
 			return within
@@ -491,15 +492,15 @@ func metalKVSlots(m *decoder.Model) int {
 	}
 	if got < n {
 		logs.Infof("metal: %d resident KV slots of %d requested — each costs %.0f MB (KV at the resident context, and any recurrent state), and the memory guard allows %d",
-			got, n, float64(metalSlotBytes(m))/(1<<20), got)
+			got, n, float64(metalSlotBytes(m, plan))/(1<<20), got)
 	}
 	return got
 }
 
 // metalRaisedTableBytes is what n slots' block tables add at one conversation's raised cap (decoder.Model.MetalKVTableRaiseBytes), priced
 // for the most slots asked: fewer raise the cap less.
-func metalRaisedTableBytes(m *decoder.Model, n int) int64 {
-	ctxCap, err := resolveMetalCtxCap(m)
+func metalRaisedTableBytes(m *decoder.Model, plan metalCtxPlan, n int) int64 {
+	ctxCap, err := resolveMetalCtxCap(m, plan)
 	if err != nil {
 		ctxCap = metalCtxCapMax
 	}
@@ -508,8 +509,8 @@ func metalRaisedTableBytes(m *decoder.Model, n int) int64 {
 
 // metalSlotBytes is what each KV slot after the first costs: its KV at the resident context, and its own recurrent state
 // (metalRecurrentSlotBytes, 0 for a model without a recurrent mixer).
-func metalSlotBytes(m *decoder.Model) int64 {
-	ctxCap, err := resolveMetalCtxCap(m)
+func metalSlotBytes(m *decoder.Model, plan metalCtxPlan) int64 {
+	ctxCap, err := resolveMetalCtxCap(m, plan)
 	if err != nil {
 		ctxCap = metalCtxCapMax
 	}
@@ -554,18 +555,18 @@ func residentBudget() (int64, bool) {
 	return metalMemoryCeiling(ram), true
 }
 
-func residentMemoryDecline(m *decoder.Model) string {
+func residentMemoryDecline(m *decoder.Model, plan metalCtxPlan) string {
 	if modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != "" {
 		return ""
 	}
-	need := residentNeedBytes(m)
+	need := residentNeedBytes(m, plan)
 	if need <= 0 {
 		return "" // nothing to compare against; not a reason to refuse
 	}
 	// The GPU's own limit: the Metal allocation (the need less the host copy, which is ordinary RAM) against the device's
 	// recommendedMaxWorkingSetSize (docs/measurements/hostmem-available-2026-10/README.md).
 	if wsCap := metalWorkingSetCap(); wsCap > 0 {
-		if alloc := need - m.ResidentHostCopyBytes(metalMoESlotsFromEnv(m)); alloc > wsCap {
+		if alloc := need - m.ResidentHostCopyBytes(metalMoESlotsFromEnv(m, plan)); alloc > wsCap {
 			return fmt.Sprintf(residentMemoryDeclinePrefix+"%s of Metal allocations (weights, KV and what a companion claims), over this GPU's "+
 				"recommendedMaxWorkingSetSize of %s. Override with GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.",
 				mem.GiB(alloc), mem.GiB(wsCap))

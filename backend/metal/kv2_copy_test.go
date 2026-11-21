@@ -111,7 +111,7 @@ func kv2Resident(t *testing.T, i8 bool) (*metalResident, *resident) {
 	if err != nil {
 		t.Fatalf("load the MC3 fixture: %v", err)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		m.Close()
 		t.Fatalf("build the resident: %v", err)

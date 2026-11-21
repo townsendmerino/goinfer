@@ -67,10 +67,10 @@ func TestPLE_qualityE2BMetal(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer m.Close()
-		if why := residentMemoryDecline(m); why != "" {
+		if why := residentMemoryDecline(m, metalCtxPlan{}); why != "" {
 			t.Fatalf("%s: Metal's fit guard declines it: %s", label, why)
 		}
-		r, err := buildResident(m)
+		r, err := buildResident(m, metalCtxPlan{})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -56,16 +56,14 @@ func (b *censusBackend) Name() string { return "metal" }
 func (b *censusBackend) SelfTestEligible() (bool, string) { return false, "admission census" }
 
 func (b *censusBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward, bool, error) {
-	fit, from, err := residentPreBuild(m)
+	plan, from, err := residentPreBuild(m)
 	ans := ""
 	if err != nil {
 		ans = "decline " + err.Error()
 	} else {
-		ctx, _ := resolveMetalCtxCap(m)
-		ans = fmt.Sprintf("ok ctx=%d fit=%d from=%d why=%s", ctx, fit.Ctx, from, fit.Why)
+		ctx, _ := resolveMetalCtxCap(m, plan)
+		ans = fmt.Sprintf("ok ctx=%d fit=%d from=%d why=%s", ctx, plan.fit.Ctx, from, plan.fit.Why)
 	}
-	metalFitChoice.Delete(m)
-	metalCtxCeiling.Delete(m)
 	b.mu.Lock()
 	b.reached, b.answer = true, ans
 	b.mu.Unlock()
@@ -355,7 +353,7 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	for _, sb := range r.chainBuffers(true, true) {
 		chain += int64(sb.bytes())
 	}
-	if got, want := m.MetalDecodeScratchBytes(metalMoESlotsFromEnv(m)), r.decode.listBytes(r)+chain; got != want {
+	if got, want := m.MetalDecodeScratchBytes(metalMoESlotsFromEnv(m, metalCtxPlan{})), r.decode.listBytes(r)+chain; got != want {
 		t.Errorf("%s: the decoder prices decode's scratch at %d bytes; the build's list with the chain's is %d (%+d)", row, got, want, got-want)
 	}
 	ch, g := m.Generate(context.Background(), []int{1, 2, 3, 4, 5}, 4, decoder.SamplingParams{})
@@ -377,7 +375,7 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	scratch := scratchLists(r)
 	// The reserve is the build's own answer read before the build: every input to it agrees, so it is the step's price where
 	// batchIneligible admits it and 0 where not, on shapes no fixture has as well as on these.
-	built, before := r.stepInputs(), metalStepInputs(m)
+	built, before := r.stepInputs(), metalStepInputs(m, metalCtxPlan{})
 	if !reflect.DeepEqual(built, before) {
 		t.Errorf("%s: what the step reads differs between the build and the model:\nbuilt  %+v\nbefore %+v", row, *built, *before)
 	}
@@ -386,7 +384,7 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	if why == "" {
 		price = r.stepScratchBytes()
 	}
-	if reserve := metalStepScratchReserve(m); reserve != price {
+	if reserve := metalStepScratchReserve(m, metalCtxPlan{}); reserve != price {
 		t.Errorf("%s: the reserve before the build is %d bytes, and the build prices the step at %d (batchIneligible %q)", row, reserve, price, why)
 	}
 	read.Named = map[mem.LineID]int64{mem.LineScratch: scratch}
@@ -721,7 +719,7 @@ func TestDecodeScratch_handTableChain(t *testing.T) {
 			t.Errorf("%s: the scratch line holds %d bytes requested, and the decode and step lists %d", c.name, held, want)
 		}
 	}
-	if got, want := m.MetalDecodeScratchBytes(metalMoESlotsFromEnv(m)), r.decode.listBytes(r); got != want {
+	if got, want := m.MetalDecodeScratchBytes(metalMoESlotsFromEnv(m, metalCtxPlan{})), r.decode.listBytes(r); got != want {
 		t.Errorf("with both chains open the decoder prices decode's scratch at %d bytes, and the list is %d", got, want)
 	}
 }
@@ -779,7 +777,7 @@ func TestDecodeScratch_handTablePagedFence(t *testing.T) {
 			for _, sb := range r.chainBuffers(true, true) {
 				chain += int64(sb.bytes())
 			}
-			if got, want := m.MetalDecodeScratchBytes(metalMoESlotsFromEnv(m)), n+chain; got != want {
+			if got, want := m.MetalDecodeScratchBytes(metalMoESlotsFromEnv(m, metalCtxPlan{})), n+chain; got != want {
 				t.Errorf("slots %q: the decoder prices decode's scratch at %d bytes; the list with the chain's is %d", slots, got, want)
 			}
 		}
@@ -886,7 +884,7 @@ func TestStepBuffers_listIsWhatBuilds(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { m.Close() })
-			metalMemoryCeilingForTest = residentNeedBytes(m) + metalSlotBytes(m) // two slots and no room for the step
+			metalMemoryCeilingForTest = residentNeedBytes(m, metalCtxPlan{}) + metalSlotBytes(m, metalCtxPlan{}) // two slots and no room for the step
 			rf, ok, err := (&metalBackend{}).BuildResident(m)
 			metalMemoryCeilingForTest = 0
 			if err != nil || !ok {
@@ -915,7 +913,7 @@ func TestStepBuffers_listIsWhatBuilds(t *testing.T) {
 			if r.stepScratchBytes() < requested {
 				t.Errorf("the price %d is under the list's %d bytes", r.stepScratchBytes(), requested)
 			}
-			if got, want := metalStepScratchReserve(m), r.stepScratchBytes(); got != want {
+			if got, want := metalStepScratchReserve(m, metalCtxPlan{}), r.stepScratchBytes(); got != want {
 				t.Errorf("the reserve before the build is %d bytes, and the build prices the step at %d", got, want)
 			}
 		})
@@ -1028,7 +1026,7 @@ func TestStepInputs_layerWithNoStepsOnBothPaths(t *testing.T) {
 			saved := p.Layers[0]
 			p.Layers[0] = append(slices.Clone(saved), program.Op{Kind: program.OpNorm}) // ends with no residual add, so it has no steps
 			defer func() { p.Layers[0] = saved }()
-			built, before := r.stepInputs(), metalStepInputs(m)
+			built, before := r.stepInputs(), metalStepInputs(m, metalCtxPlan{})
 			if before.stepsErr == "" || built.stepsErr != before.stepsErr {
 				t.Errorf("stepsErr: the build reads %q and the model %q; want one non-empty answer", built.stepsErr, before.stepsErr)
 			}
@@ -1044,7 +1042,7 @@ func TestStepInputs_layerWithNoStepsOnBothPaths(t *testing.T) {
 					t.Errorf("layer %d's steps: the build reads %v and the model %v", l, built.layers[l].steps, before.layers[l].steps)
 				}
 			}
-			if got := metalStepScratchReserve(m); got != 0 {
+			if got := metalStepScratchReserve(m, metalCtxPlan{}); got != 0 {
 				t.Errorf("the reserve is %d bytes for a step that cannot build", got)
 			}
 		})
@@ -1073,11 +1071,13 @@ func TestMetalKVSlots_defaultLeavesRoomForTheStep(t *testing.T) {
 		t.Cleanup(func() { a.r.Close() })
 		return a
 	}
-	twoSlots := func(m *decoder.Model) int64 { return residentNeedBytes(m) + metalSlotBytes(m) }
-	if a := build(true, func(m *decoder.Model) int64 { return twoSlots(m) + metalStepScratchReserve(m) - 1 }); len(a.r.kvSlotBufs) != 1 || a.r.batch == nil {
+	twoSlots := func(m *decoder.Model) int64 {
+		return residentNeedBytes(m, metalCtxPlan{}) + metalSlotBytes(m, metalCtxPlan{})
+	}
+	if a := build(true, func(m *decoder.Model) int64 { return twoSlots(m) + metalStepScratchReserve(m, metalCtxPlan{}) - 1 }); len(a.r.kvSlotBufs) != 1 || a.r.batch == nil {
 		t.Errorf("unpinned, a byte short of two slots and the reserve: %d slots, step built %v (%s); want one slot and the step", len(a.r.kvSlotBufs), a.r.batch != nil, a.r.stepDecline)
 	}
-	if a := build(true, func(m *decoder.Model) int64 { return twoSlots(m) + metalStepScratchReserve(m) }); len(a.r.kvSlotBufs) != 2 || a.r.batch == nil {
+	if a := build(true, func(m *decoder.Model) int64 { return twoSlots(m) + metalStepScratchReserve(m, metalCtxPlan{}) }); len(a.r.kvSlotBufs) != 2 || a.r.batch == nil {
 		t.Errorf("unpinned, room for two slots and the reserve: %d slots, step built %v (%s); want both", len(a.r.kvSlotBufs), a.r.batch != nil, a.r.stepDecline)
 	}
 	if a := build(false, twoSlots); len(a.r.kvSlotBufs) != 2 || a.r.batch != nil {
@@ -1085,8 +1085,8 @@ func TestMetalKVSlots_defaultLeavesRoomForTheStep(t *testing.T) {
 	}
 	// One slot's KV is smaller than the scratch here, so giving it up would still leave no room for the step, and the load would lose both.
 	if a := build(true, func(m *decoder.Model) int64 {
-		if metalSlotBytes(m) >= metalStepScratchReserve(m) {
-			t.Fatalf("a slot of %d bytes is not under the reserve of %d: this case needs a smaller slot", metalSlotBytes(m), metalStepScratchReserve(m))
+		if metalSlotBytes(m, metalCtxPlan{}) >= metalStepScratchReserve(m, metalCtxPlan{}) {
+			t.Fatalf("a slot of %d bytes is not under the reserve of %d: this case needs a smaller slot", metalSlotBytes(m, metalCtxPlan{}), metalStepScratchReserve(m, metalCtxPlan{}))
 		}
 		return twoSlots(m)
 	}); len(a.r.kvSlotBufs) != 2 || a.r.batch != nil {
@@ -1132,7 +1132,7 @@ func TestMetalDensePrice_isTheBuildsLeases(t *testing.T) {
 				}
 				c.plant(w)
 			}
-			r, err := buildResident(m)
+			r, err := buildResident(m, metalCtxPlan{})
 			if err != nil {
 				t.Fatalf("build: %v", err)
 			}
@@ -1513,13 +1513,13 @@ func TestMM5_buildRefusesADeclarationItsKernelsDoNotAddress(t *testing.T) {
 		{"K twice", edit(func(b []program.Buf) []program.Buf { return append(b, b[0]) })},
 	} {
 		m.SetLayerBuffersForTest(0, c.bufs)
-		if r, err := buildResident(m); err == nil {
+		if r, err := buildResident(m, metalCtxPlan{}); err == nil {
 			r.Close()
 			t.Errorf("%s: the build accepted it", c.name)
 		}
 	}
 	m.SetLayerBuffersForTest(0, all)
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("the declaration as built: %v", err)
 	}
@@ -1530,13 +1530,13 @@ func TestMM5_buildRefusesADeclarationItsKernelsDoNotAddress(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer q.Close()
-	if r, err := buildResident(q); err != nil {
+	if r, err := buildResident(q, metalCtxPlan{}); err != nil {
 		t.Fatalf("qwen35-tiny as built: %v", err)
 	} else {
 		r.Close()
 	}
 	q.SetLayerBuffersForTest(0, append(slices.Clone(q.LayerBuffers(0)), orig...))
-	if r, err := buildResident(q); err == nil {
+	if r, err := buildResident(q, metalCtxPlan{}); err == nil {
 		r.Close()
 		t.Error("a DeltaNet layer declaring K and V rows: the build accepted it")
 	}
@@ -1582,14 +1582,14 @@ func TestMM5b_buildRefusesDecodeRowsItsKernelsDoNotAddress(t *testing.T) {
 			t.Fatal(err)
 		}
 		decodeRowsPlantForTest = nil
-		if r, err := buildResident(m); err != nil {
+		if r, err := buildResident(m, metalCtxPlan{}); err != nil {
 			t.Errorf("%s as declared: %v", c.fx, err)
 		} else {
 			r.Close()
 		}
 		for name, plant := range c.plants {
 			decodeRowsPlantForTest = plant
-			if r, err := buildResident(m); err == nil {
+			if r, err := buildResident(m, metalCtxPlan{}); err == nil {
 				r.Close()
 				t.Errorf("%s, %s: the build accepted it", c.fx, name)
 			} else if !strings.Contains(err.Error(), "row") {

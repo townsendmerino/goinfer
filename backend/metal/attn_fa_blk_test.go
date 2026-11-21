@@ -310,7 +310,7 @@ func TestAttnFABlkSelection(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load %s: %v", path, err)
 		}
-		r, err := buildResident(m)
+		r, err := buildResident(m, metalCtxPlan{})
 		if err != nil {
 			t.Fatalf("resident: %v", err)
 		}
@@ -537,7 +537,7 @@ func TestKVPages_fusedAttentionDepthThroughTheTable(t *testing.T) {
 					t.Fatal(err)
 				}
 				defer m.Close()
-				r, err := buildResident(m)
+				r, err := buildResident(m, metalCtxPlan{})
 				if err != nil {
 					t.Fatal(err)
 				}

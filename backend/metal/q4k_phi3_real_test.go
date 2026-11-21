@@ -106,10 +106,10 @@ func g3ModelQ4K(t *testing.T, gguf, label string, twoLoads bool, logf func(strin
 		t.Fatal(err)
 	}
 	defer mg.Close()
-	if why := residentMemoryDecline(mg); why != "" {
+	if why := residentMemoryDecline(mg, metalCtxPlan{}); why != "" {
 		t.Fatalf("%s: Metal's fit guard declines it: %s", label, why)
 	}
-	r, err := buildResident(mg)
+	r, err := buildResident(mg, metalCtxPlan{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,10 +149,10 @@ func op6mpPhi3(t *testing.T, ctx int) (*decoder.Model, *metalResident, string) {
 		t.Fatalf("load: %v", err)
 	}
 	t.Cleanup(func() { m.Close() })
-	if why := residentMemoryDecline(m); why != "" {
+	if why := residentMemoryDecline(m, metalCtxPlan{}); why != "" {
 		t.Skipf("Metal's memory guard declines this load now: %s", why)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("build resident: %v", err)
 	}

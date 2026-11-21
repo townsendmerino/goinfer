@@ -24,7 +24,7 @@ func chainFixtureResident(t *testing.T, ctx int, tied bool) *resident {
 	if err != nil {
 		t.Fatalf("load the fixture: %v", err)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		m.Close()
 		t.Fatalf("build the fixture's resident: %v", err)

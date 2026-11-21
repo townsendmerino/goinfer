@@ -80,7 +80,7 @@ func mc3LoadCheckpoint(t *testing.T, slots, ctx int) (*decoder.Model, *resident)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		m.Close()
 		t.Fatalf("build resident: %v", err)
@@ -182,7 +182,7 @@ func moeStepResident(t *testing.T, dir string, on bool) *resident {
 	if err != nil {
 		t.Fatalf("load %s: %v", dir, err)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		m.Close()
 		t.Fatalf("build %s's resident: %v", dir, err)
@@ -428,8 +428,8 @@ func op4mStepSpeed(t *testing.T, c stepSpeedCell) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	need := m.ResidentNeedBytes("metal", 0, ctx, false, false) + int64(B-1)*metalSlotBytes(m) // every slot's KV and recurrent state
-	r0, ok := probe.Read()                                                                    // the fit check: after the load maps the file, before the resident allocates
+	need := m.ResidentNeedBytes("metal", 0, ctx, false, false) + int64(B-1)*metalSlotBytes(m, metalCtxPlan{}) // every slot's KV and recurrent state
+	r0, ok := probe.Read()                                                                                    // the fit check: after the load maps the file, before the resident allocates
 	if !ok {
 		t.Fatal("no memory reading")
 	}
@@ -442,7 +442,7 @@ func op4mStepSpeed(t *testing.T, c stepSpeedCell) {
 	if why != "" {
 		t.Fatalf("cell void: %s", why)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("build the resident: %v", err)
 	}
@@ -679,13 +679,17 @@ func mc3ScratchPricedAtTwoSlots(t *testing.T, dir string, moeStep bool) {
 		t.Cleanup(func() { a.r.Close() })
 		return a
 	}
-	tight := build(func(m *decoder.Model) int64 { return residentNeedBytes(m) + residentKVBytes(m) })
+	tight := build(func(m *decoder.Model) int64 {
+		return residentNeedBytes(m, metalCtxPlan{}) + residentKVBytes(m, metalCtxPlan{})
+	})
 	if len(tight.r.kvSlotBufs) != 2 || tight.r.batch != nil || tight.r.stepDecline == "" {
 		t.Fatalf("a ceiling of the weights and two slots' KV: %d slots, step built %v, decline %q; want 2 slots and the step declined",
 			len(tight.r.kvSlotBufs), tight.r.batch != nil, tight.r.stepDecline)
 	}
 	scratch := tight.r.stepScratchBytes()
-	roomy := build(func(m *decoder.Model) int64 { return residentNeedBytes(m) + residentKVBytes(m) + scratch })
+	roomy := build(func(m *decoder.Model) int64 {
+		return residentNeedBytes(m, metalCtxPlan{}) + residentKVBytes(m, metalCtxPlan{}) + scratch
+	})
 	if len(roomy.r.kvSlotBufs) != 2 || roomy.r.batch == nil || roomy.r.stepDecline != "" {
 		t.Errorf("that ceiling plus the step's %d bytes of scratch: %d slots, step built %v, decline %q; want 2 slots and the step",
 			scratch, len(roomy.r.kvSlotBufs), roomy.r.batch != nil, roomy.r.stepDecline)
@@ -793,7 +797,7 @@ func recurrentStepResidentSlots(t *testing.T, fx recurrentFixture, on bool, slot
 	if err != nil {
 		t.Fatalf("load %s: %v", fx.dir, err)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		m.Close()
 		t.Fatalf("build %s's resident: %v", fx.dir, err)
@@ -1288,7 +1292,7 @@ func TestMC3Step_recurrentScratchPriced(t *testing.T) {
 		return a
 	}
 	twoSlots := func(m *decoder.Model) int64 {
-		return residentNeedBytes(m) + metalSlotBytes(m)
+		return residentNeedBytes(m, metalCtxPlan{}) + metalSlotBytes(m, metalCtxPlan{})
 	}
 	tight := build(2, twoSlots)
 	if len(tight.r.kvSlotBufs) != 2 || tight.r.batch != nil || tight.r.stepDecline == "" {
@@ -1309,11 +1313,11 @@ func TestMC3Step_recurrentScratchPriced(t *testing.T) {
 	}(); state <= 0 {
 		t.Fatalf("the fixture's recurrent state is %d bytes: this test no longer discriminates", state)
 	}
-	one := build(1, func(m *decoder.Model) int64 { return residentNeedBytes(m) + scratch - 1 })
+	one := build(1, func(m *decoder.Model) int64 { return residentNeedBytes(m, metalCtxPlan{}) + scratch - 1 })
 	if one.r.batch != nil {
 		t.Error("one slot, a ceiling a byte short of the need, the slot's recurrent state in it, and the scratch: the step built")
 	}
-	if ok := build(1, func(m *decoder.Model) int64 { return residentNeedBytes(m) + scratch }); ok.r.batch == nil {
+	if ok := build(1, func(m *decoder.Model) int64 { return residentNeedBytes(m, metalCtxPlan{}) + scratch }); ok.r.batch == nil {
 		t.Errorf("one slot, its state and the scratch: no step (%s)", ok.r.stepDecline)
 	}
 }

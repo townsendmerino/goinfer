@@ -92,7 +92,7 @@ func TestQwen35_35B_pagedRuns(t *testing.T) {
 	say("loaded %.1fs rss=%d MB", time.Since(tLoad).Seconds(), rssMB())
 
 	tBuild := time.Now()
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("buildResident (paged N=%d): %v — the 35B did not build", N, err)
 	}

@@ -84,7 +84,7 @@ func TestMetalDecodeDecomp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("build resident: %v", err)
 	}

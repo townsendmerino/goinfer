@@ -906,9 +906,10 @@ The fit-by-default context of an unpinned Metal load (`backend/metal/backend.go:
 - **The margin (`decoder.MetalFitMarginBytes`, 384 MiB).** `BuildResident`'s guard and `metalKVSlots` read the live
   budget again after the context is chosen. A context taken at the exact edge would fail the guard on a drift of a
   few megabytes, and S18's `shrinkCtxToFit` would then halve it. The margin keeps the choice clear of that edge.
-- **Chosen once a build (`metalFitChoice`).** The budget is live, and `resolveMetalCtxCap` is read several times in
-  one build (the guard, the slot count, the KV sizing). `BuildResident` stores its choice for the build's duration so
-  they all see one number; the entry is deleted when the build returns.
+- **Chosen once a build (`metalCtxPlan`).** The budget is live, and `resolveMetalCtxCap` is read several times in
+  one build (the guard, the slot count, the KV sizing). `residentPreBuild` makes the choice once and returns it in the
+  plan, which `BuildResident` hands to `buildResident` and every reader in the build, so they all see one number. A
+  built resident keeps only the plan's ceiling (`resident.ctxPlan`); its need asks the fit choice again at each read.
 - **A paged-MoE load keeps 4096** (`metalPagesMoE`), for the reason CUDA's `-moe-cache-experts` does
   (docs/code-notes/cuda.md#resolveCtxCapFit): the expert pager is sized from what is left after everything pinned,
   so a byte given to KV is a byte its slots never see. `metalPagesMoE` reads the requests, not the resolved slot

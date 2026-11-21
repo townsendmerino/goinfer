@@ -57,7 +57,7 @@ func TestMoESlotsViaOptions_engagesPaging(t *testing.T) {
 	if got := m.MoECacheSlotsRequest(); got != N {
 		t.Fatalf("MoECacheSlotsRequest() = %d, want %d — Options.MoECacheSlots not wired through decoder.Load", got, N)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("BuildResident: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestMoESlotsViaOptions_engagesPaging_genericMoE(t *testing.T) {
 	if got := m.MoECacheSlotsRequest(); got != N {
 		t.Fatalf("MoECacheSlotsRequest() = %d, want %d — Options.MoECacheSlots not wired through decoder.Load", got, N)
 	}
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("BuildResident: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestMoESlotsViaOptions_belowTopKRefusesWithNumbers(t *testing.T) {
 	}
 	defer m.Close()
 
-	_, err = buildResident(m)
+	_, err = buildResident(m, metalCtxPlan{})
 	if err == nil {
 		t.Fatalf("BuildResident succeeded with MoECacheSlots=%d < topK=%d — should have refused", below, topK)
 	}

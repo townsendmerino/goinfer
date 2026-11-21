@@ -52,7 +52,7 @@ func TestGemma4_26B_pagedRuns(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer m.Close()
-	r, err := buildResident(m)
+	r, err := buildResident(m, metalCtxPlan{})
 	if err != nil {
 		t.Fatalf("BuildResident (paged, N=%d): %v — the 26B did not fit/build", N, err)
 	}

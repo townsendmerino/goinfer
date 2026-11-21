@@ -40,8 +40,8 @@ func TestResidentKVBytes_matchesMetalAllocation(t *testing.T) {
 				t.Fatalf("load: %v", err)
 			}
 			defer m.Close()
-			want := residentKVBytes(m)
-			r, err := buildResident(m)
+			want := residentKVBytes(m, metalCtxPlan{})
+			r, err := buildResident(m, metalCtxPlan{})
 			if err != nil {
 				t.Skipf("not resident on Metal: %v", err)
 			}

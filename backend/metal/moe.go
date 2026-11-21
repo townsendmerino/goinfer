@@ -133,7 +133,7 @@ var moePagedAllSlotsForTest bool
 // buildMoE builds the resident-level MoE state (pipelines, config, uniforms, scratch) from a dense-shaped model that
 // declares an MoE FFN. It returns nil when the model is not MoE, and an error for an MoE variant this path does not
 // implement, so BuildResident declines to the CPU rather than running wrong.
-func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*moeResident, error) {
+func buildMoE(d *Device, m *decoder.Model, plan metalCtxPlan, pipe func(string) Pipeline, H int) (*moeResident, error) {
 	spec, ok := m.BackendView().MoE()
 	if !ok {
 		return nil, nil // dense model — no MoE
@@ -217,7 +217,7 @@ func buildMoE(d *Device, m *decoder.Model, pipe func(string) Pipeline, H int) (*
 	// metalMoESlotsRequest) keeps only N experts/layer resident and stages the routed top-k in
 	// per token — same knob and semantics as gemma4_moe.go's (shared mechanism, generalized).
 	// N==0/unset ⇒ all experts resident (today's behavior).
-	if s := metalMoESlotsRequest(m); s != "" {
+	if s := metalMoESlotsRequest(m, plan); s != "" {
 		n, err := strconv.Atoi(s)
 		if err != nil || n < k {
 			return nil, fmt.Errorf("expert-slot request %q invalid (need integer >= topK=%d)", s, k)
