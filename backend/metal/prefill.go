@@ -578,7 +578,8 @@ func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int
 }
 
 // prefillLastImgSrc is prefillLastImg over a row source (rows.go): its input rows are read rowChunk at a time straight into the
-// pass's device buffers.
+// pass's device buffers. It is the guards, then the pass's phases (prefillPass): its buffers, the layers, and the
+// last row's head.
 func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int, deep *prefillDeep, blocks [][2]int) []float32 {
 	// Every K/V buffer holds kvCap positions, and a pass past them writes beyond the buffer. metalResident.checkCap refuses that for
 	// the decoder; an internal caller that skipped it is a programming error, named here rather than left to corrupt memory.
@@ -594,114 +595,13 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	d, pf := r.d, r.pf
-	normPipe := pf.pRms // the GEMM-input norms: RMSNorm, or a bias-free LayerNorm for Cohere (Part B)
-	if r.layerNorm {
-		normPipe = pf.pLN
-	}
 	ps := r.newPrefillPass(src, startPos, mrope, deep, blocks)
 	defer ps.release()
-	ps.r, ps.pf, ps.normPipe, ps.startPos, ps.mrope, ps.deep = r, pf, normPipe, startPos, mrope, deep
-	ps.fusedOn = r.prefillFusedOn()
-	// G-S9c (1): a shared layer attending over an empty cache instead of its source's (zero in production).
-	if emodelBatchDefect == 1 {
-		ps.zeroKV = prefillScratchU16(d, (startPos+ps.Mpad+8)*ps.qkvDim)
-		ps.scratch = append(ps.scratch, ps.zeroKV)
-		if ps.idTab == (Buffer{}) {
-			ps.idTab = kvIdentityTab(d, startPos+ps.Mpad+8)
-			ps.scratch = append(ps.scratch, ps.idTab)
-		}
+	ps.begin()
+	if !ps.layers() {
+		return nil
 	}
-
-	ps.e = r.q.Begin()
-	// S16: the DeepStack sets, uploaded once; addDeep(k) adds set k to the rows of this pass that fall in the image block.
-	// Set k is added after layer k, which is done at the top of iteration k+1 and after the loop, so every branch of the
-	// loop body (the MoE ones end in continue) reaches it.
-	if deep != nil {
-		for _, set := range deep.sets {
-			ps.deepB = append(ps.deepB, NewBufferFloatsOn(mem.LineScratch, d, set))
-		}
-		ps.scratch = append(ps.scratch, ps.deepB...) // the deferred release reads scratch when the call returns
-	}
-	for l := 0; l < r.nL; l++ {
-		if l > 0 {
-			ps.addDeep(l - 1)
-		}
-		L := &r.layers[l]
-		for _, st := range L.steps {
-			switch st {
-			case stepAttention:
-				ps.attnBlock(l, L)
-			case stepDeltaNet:
-				r.encodePrefillDeltaMixer(ps.e, L, ps.xF, ps.normF, ps.dn, ps.M, ps.Mpad, ps.gemm, ps.uM, ps.m0, ps.m2, ps.dummyBias)
-			case stepMamba:
-				r.encodePrefillMambaMixer(ps.e, L, ps.xF, ps.normF, ps.mb, ps.M, ps.Mpad, ps.gemmW8, ps.uM, ps.m0, ps.m2, ps.dummyBias)
-			case stepMoE:
-				if !ps.moeBlock(l, L) {
-					return nil
-				}
-			case stepDenseFFN, stepNonGatedFFN:
-				ps.ffnBlock(L)
-			case stepPLE:
-				ps.pleBlock(l, L)
-			case stepLayerScale:
-				ps.layerScaleBlock(L)
-			default:
-				panic(fmt.Sprintf("metal: the batched prefill has no block for the %v step, and prefillStepsDecline admits none", st))
-			}
-		}
-	}
-	ps.addDeep(r.nL - 1)
-	e, xF, M, H, V, uH, uEpsX := ps.e, ps.xF, ps.M, ps.H, ps.V, ps.uH, ps.uEpsX
-	// Final norm and LM head for the last token only, through the same int8-pinned head the decode path runs
-	// (rmsnorm to int8, then gemv_w8a8): the head weights are int8 (logit-critical), and the int4 gemm_w4f16 would
-	// misread them as packed nibbles and f16 scales, producing NaN logits. Norm-quant the last token's f16
-	// residual row to int8, then run the decode head.
-	finalNormQ := pf.pRmsQ
-	if r.layerNorm {
-		finalNormQ = pf.pLNQ
-	}
-	if r.q4kLane { // the lane's head reads an f32 input (r.pGemvW8 is gemv_w8f32_head there)
-		e.Dispatch(pf.pRmsF32Out, tgReduceNorm, tgReduceNorm, xF.At((M-1)*H*2), r.finalNorm, r.aq, uH, uEpsX, r.uAddOne)
-	} else {
-		e.Dispatch(finalNormQ, tgReduceNorm, tgReduceNorm, xF.At((M-1)*H*2), r.finalNorm, r.aq, r.aSc, uH, uEpsX, r.uAddOne)
-	}
-	e.Dispatch(r.pGemvW8, V*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
-	e.End()
-	// The int8 head turns a NaN row into finite zeros, which the caller's non-finite-logit check (A-C02) passes, so the
-	// residual itself is checked. Its last row is enough: a row that overflows before the final layer writes NaN K/V,
-	// which reaches the last row through attention; a row that overflows in the final layer writes no further K/V.
-	last := xF.U16s()[(M-1)*H : M*H]
-	if r.poisonPrefillResidForTest {
-		last[0] = 0x7c00 // +inf
-	}
-	r.prefillResidNonFinite = false
-	for _, h := range last {
-		if h&0x7c00 == 0x7c00 {
-			r.prefillResidNonFinite = true
-			break
-		}
-	}
-	if db02Trace != nil {
-		db02Trace(db02Event{layer: r.nL, gpuStart: e.GPUStart(), gpuEnd: e.GPUEnd()})
-	}
-	r.recordExecErr(e.Err()) // C-09
-
-	out := make([]float32, V)
-	copy(out, r.logits.Floats()[:V])
-	// Gemma's final-logit softcap: finalizeLogits (the decode path's entry point) applies it to r.logitsHost, but
-	// this pass copies straight out of r.logits into a fresh slice and returns before finalizeLogits runs, so it
-	// is applied here too. softcapParallel is a no-op for a non-softcapped family (0).
-	if r.finalSoftcap > 0 {
-		softcapParallel(out, r.finalSoftcap)
-	}
-	// Cohere's logit scale (FeatLogitScale), as finalizeLogits applies it for decode.
-	if r.logitScale != 0 && r.logitScale != 1 {
-		for i, v := range out {
-			out[i] = v * r.logitScale
-		}
-	}
-	return out
+	return ps.lastRowLogits()
 }
 
 // prefillScratchU16 allocates one of a pass's f16 scratch buffers, n halves, zero-filled. Metal fills a new buffer

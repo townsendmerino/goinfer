@@ -67,8 +67,8 @@ func (ps *prefillPass) release() {
 	}
 }
 
-// newPrefillPass allocates one batched pass's scratch and uniforms, in the order the pass has always allocated them, and
-// converts src's rows into the f16 residual. The caller releases them (prefillPass.release) once the pass's last command
+// newPrefillPass allocates one batched pass's scratch and uniforms, in the order the pass has always allocated them,
+// converts src's rows into the f16 residual, and records the pass's inputs. The caller releases them (prefillPass.release) once the pass's last command
 // buffer has completed.
 func (r *resident) newPrefillPass(src rowSource, startPos int, mrope [][3]int, deep *prefillDeep, blocks [][2]int) *prefillPass {
 	d := r.d
@@ -269,7 +269,21 @@ func (r *resident) newPrefillPass(src rowSource, startPos int, mrope [][3]int, d
 		imgB, imgN = NewBufferUint32sOn(mem.LineScratch, d, flat), NewBufferU32On(mem.LineScratch, d, uint32(len(blocks)))
 		scratch = append(scratch, imgB, imgN)
 	}
-	return &prefillPass{d: d, uConsts: map[int]Buffer{}, luCache: map[luKey]*layerU{}, M: M, Mpad: Mpad, H: H, I: I, V: V, nHhd: nHhd, kvDim: kvDim, qkvDim: qkvDim, xF: xF, pleInB: pleInB, normF: normF, qkvF: qkvF, ctxF: ctxF, fusedSw: fusedSw, guF: guF, dqF: dqF, posB: posB, pos3B: pos3B, uM: uM, uH: uH, uI: uI, u2I: u2I, uQkv: uQkv, uHd: uHd, uKOff: uKOff, uStartPos: uStartPos, uTotalQ: uTotalQ, uBase0: uBase0, m0: m0, m1: m1, m2: m2, dummyBias: dummyBias, uMReal: uMReal, kScrI8: kScrI8, vScrI8: vScrI8, uEndI8: uEndI8, idTab: idTab, attnTile: attnTile, uTile: uTile, moeDst: moeDst, moeLogits: moeLogits, moeIdx: moeIdx, moeWgt: moeWgt, expertIn: expertIn, expertDown: expertDown, rowIdxBuf: rowIdxBuf, rowWgtBuf: rowWgtBuf, scratch: scratch, uResidInv: uResidInv, uEpsX: uEpsX, pleGF: pleGF, uP: uP, uLP: uLP, dn: dn, qgF: qgF, kvF: kvF, gateF: gateF, u2NHhd: u2NHhd, u2KvDim: u2KvDim, uGateN: uGateN, mb: mb, imgB: imgB, imgN: imgN}
+	normPipe := r.pf.pRms // the GEMM-input norms: RMSNorm, or a bias-free LayerNorm for Cohere (Part B)
+	if r.layerNorm {
+		normPipe = r.pf.pLN
+	}
+	ps := &prefillPass{d: d, r: r, pf: r.pf, normPipe: normPipe, startPos: startPos, mrope: mrope, deep: deep, fusedOn: r.prefillFusedOn(), uConsts: map[int]Buffer{}, luCache: map[luKey]*layerU{}, M: M, Mpad: Mpad, H: H, I: I, V: V, nHhd: nHhd, kvDim: kvDim, qkvDim: qkvDim, xF: xF, pleInB: pleInB, normF: normF, qkvF: qkvF, ctxF: ctxF, fusedSw: fusedSw, guF: guF, dqF: dqF, posB: posB, pos3B: pos3B, uM: uM, uH: uH, uI: uI, u2I: u2I, uQkv: uQkv, uHd: uHd, uKOff: uKOff, uStartPos: uStartPos, uTotalQ: uTotalQ, uBase0: uBase0, m0: m0, m1: m1, m2: m2, dummyBias: dummyBias, uMReal: uMReal, kScrI8: kScrI8, vScrI8: vScrI8, uEndI8: uEndI8, idTab: idTab, attnTile: attnTile, uTile: uTile, moeDst: moeDst, moeLogits: moeLogits, moeIdx: moeIdx, moeWgt: moeWgt, expertIn: expertIn, expertDown: expertDown, rowIdxBuf: rowIdxBuf, rowWgtBuf: rowWgtBuf, scratch: scratch, uResidInv: uResidInv, uEpsX: uEpsX, pleGF: pleGF, uP: uP, uLP: uLP, dn: dn, qgF: qgF, kvF: kvF, gateF: gateF, u2NHhd: u2NHhd, u2KvDim: u2KvDim, uGateN: uGateN, mb: mb, imgB: imgB, imgN: imgN}
+	// G-S9c (1): a shared layer attending over an empty cache instead of its source's (zero in production).
+	if emodelBatchDefect == 1 {
+		ps.zeroKV = prefillScratchU16(d, (startPos+Mpad+8)*qkvDim)
+		ps.scratch = append(ps.scratch, ps.zeroKV)
+		if ps.idTab == (Buffer{}) {
+			ps.idTab = kvIdentityTab(d, startPos+Mpad+8)
+			ps.scratch = append(ps.scratch, ps.idTab)
+		}
+	}
+	return ps
 }
 
 // layerU is one attention geometry's uniforms, per layer. Every family before Gemma 4's E-models has one geometry, so
@@ -776,4 +790,108 @@ func (ps *prefillPass) layerScaleBlock(L *residLayer) {
 	if L.uLayerScalar != (Buffer{}) && emodelBatchDefect != 4 {
 		e.Dispatch(pf.pLayerScaleF16, M*H, 256, xF, L.uLayerScalar)
 	}
+}
+
+// begin opens the pass's command buffer and uploads deep's sets, which addDeep adds after each layer.
+func (ps *prefillPass) begin() {
+	r, d, deep := ps.r, ps.d, ps.deep
+	ps.e = r.q.Begin()
+	if deep != nil {
+		for _, set := range deep.sets {
+			ps.deepB = append(ps.deepB, NewBufferFloatsOn(mem.LineScratch, d, set))
+		}
+		ps.scratch = append(ps.scratch, ps.deepB...) // the deferred release reads scratch when the call returns
+	}
+}
+
+// layers encodes every layer's steps, then the last DeepStack set. It reports false when an encoder error stops the pass.
+func (ps *prefillPass) layers() bool {
+	r := ps.r
+	for l := 0; l < r.nL; l++ {
+		if l > 0 {
+			ps.addDeep(l - 1)
+		}
+		L := &r.layers[l]
+		for _, st := range L.steps {
+			switch st {
+			case stepAttention:
+				ps.attnBlock(l, L)
+			case stepDeltaNet:
+				r.encodePrefillDeltaMixer(ps.e, L, ps.xF, ps.normF, ps.dn, ps.M, ps.Mpad, ps.gemm, ps.uM, ps.m0, ps.m2, ps.dummyBias)
+			case stepMamba:
+				r.encodePrefillMambaMixer(ps.e, L, ps.xF, ps.normF, ps.mb, ps.M, ps.Mpad, ps.gemmW8, ps.uM, ps.m0, ps.m2, ps.dummyBias)
+			case stepMoE:
+				if !ps.moeBlock(l, L) {
+					return false
+				}
+			case stepDenseFFN, stepNonGatedFFN:
+				ps.ffnBlock(L)
+			case stepPLE:
+				ps.pleBlock(l, L)
+			case stepLayerScale:
+				ps.layerScaleBlock(L)
+			default:
+				panic(fmt.Sprintf("metal: the batched prefill has no block for the %v step, and prefillStepsDecline admits none", st))
+			}
+		}
+	}
+	ps.addDeep(r.nL - 1)
+	ps.addDeep(r.nL - 1)
+	return true
+}
+
+// lastRowLogits encodes the final norm and the LM head on the last row, commits and waits for the pass, records whether
+// the residual's last row is non-finite (r.prefillResidNonFinite), and returns the last row's logits.
+func (ps *prefillPass) lastRowLogits() []float32 {
+	r, pf := ps.r, ps.pf
+	e, xF, M, H, V, uH, uEpsX := ps.e, ps.xF, ps.M, ps.H, ps.V, ps.uH, ps.uEpsX
+	// Final norm and LM head for the last token only, through the same int8-pinned head the decode path runs
+	// (rmsnorm to int8, then gemv_w8a8): the head weights are int8 (logit-critical), and the int4 gemm_w4f16 would
+	// misread them as packed nibbles and f16 scales, producing NaN logits. Norm-quant the last token's f16
+	// residual row to int8, then run the decode head.
+	finalNormQ := pf.pRmsQ
+	if r.layerNorm {
+		finalNormQ = pf.pLNQ
+	}
+	if r.q4kLane { // the lane's head reads an f32 input (r.pGemvW8 is gemv_w8f32_head there)
+		e.Dispatch(pf.pRmsF32Out, tgReduceNorm, tgReduceNorm, xF.At((M-1)*H*2), r.finalNorm, r.aq, uH, uEpsX, r.uAddOne)
+	} else {
+		e.Dispatch(finalNormQ, tgReduceNorm, tgReduceNorm, xF.At((M-1)*H*2), r.finalNorm, r.aq, r.aSc, uH, uEpsX, r.uAddOne)
+	}
+	e.Dispatch(r.pGemvW8, V*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
+	e.End()
+	// The int8 head turns a NaN row into finite zeros, which the caller's non-finite-logit check (A-C02) passes, so the
+	// residual itself is checked. Its last row is enough: a row that overflows before the final layer writes NaN K/V,
+	// which reaches the last row through attention; a row that overflows in the final layer writes no further K/V.
+	last := xF.U16s()[(M-1)*H : M*H]
+	if r.poisonPrefillResidForTest {
+		last[0] = 0x7c00 // +inf
+	}
+	r.prefillResidNonFinite = false
+	for _, h := range last {
+		if h&0x7c00 == 0x7c00 {
+			r.prefillResidNonFinite = true
+			break
+		}
+	}
+	if db02Trace != nil {
+		db02Trace(db02Event{layer: r.nL, gpuStart: e.GPUStart(), gpuEnd: e.GPUEnd()})
+	}
+	r.recordExecErr(e.Err()) // C-09
+
+	out := make([]float32, V)
+	copy(out, r.logits.Floats()[:V])
+	// Gemma's final-logit softcap: finalizeLogits (the decode path's entry point) applies it to r.logitsHost, but
+	// this pass copies straight out of r.logits into a fresh slice and returns before finalizeLogits runs, so it
+	// is applied here too. softcapParallel is a no-op for a non-softcapped family (0).
+	if r.finalSoftcap > 0 {
+		softcapParallel(out, r.finalSoftcap)
+	}
+	// Cohere's logit scale (FeatLogitScale), as finalizeLogits applies it for decode.
+	if r.logitScale != 0 && r.logitScale != 1 {
+		for i, v := range out {
+			out[i] = v * r.logitScale
+		}
+	}
+	return out
 }
