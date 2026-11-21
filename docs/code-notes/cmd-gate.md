@@ -348,6 +348,22 @@ group as one process per model family, so no process holds two large checkpoints
 - **A single test can exceed the goal on its own.** Grouping cannot split one test. The 2026-10-15 readings are in
   `docs/measurements/b23-cuda-heavy-split-2026-10-15.md`.
 
+## cudaHeavy: the kv10 group
+
+Owner decision, Francis, 2026-11-21: option (c), both remedies, after the v0.25.0 pre-flight gate. Gate budgets are his call, as the
+20m to 35m parity-cell change (#1207) was.
+
+- **The cause.** `TestKV10_longContextFidelity` is KV10-b's long-context harness: a KV f16 against KV f32 logit comparison on
+  qwen3.5-0.8b at depths 3900, 65536 and 131000 (`docs/measurements/kv10-2026-11/README.md`). Its checkpoint classified it into
+  `small`. On the pre-flight run of 2026-11-20 at e0d661712 it took 3494 s: depth 65536 took 702 s, and depth 131000 most of the
+  rest, since prefill grows quadratically. With it, `small` hit its 120 m timeout at 7201 s; the group took 1809 s on 2026-10-16.
+  148 of its 621 tests never started, one was cut off mid-run, and the partition reconciliation failed on the same 149.
+- **The remedy.** `heavyFamilies` gives the harness its own group, `kv10`, keyed on `KV10_CKPT`, an env name only that test reads,
+  at a rank above `small`. `heavyGroupEnv` sets `GOINFER_KV10_DEPTHS=3900,65536` in every heavy process, which brings the harness to
+  about 12 min. The 131000 depth stays a by-hand measurement: its command is on the test's own doc comment.
+  `TestHeavyPartition_cudaTreeFitsTheTable` holds the derived group to that one test, and
+  `TestHeavyGroup_kv10RunsAloneAtTheGatesDepths` holds the depths.
+
 ## ptxVersionRe (group 4 header)
 
 Moved from `cmd/gate/gpu.go` (the comment above `ptxVersionRe`) on 2026-10-09.

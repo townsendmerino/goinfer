@@ -638,6 +638,14 @@ func partitionHeavy(listed []string, modelsDir string) ([]heavyGroup, []string, 
 
 // runHeavyGroup runs one main-group process with its test binary's memory sampled. An all-skip group is not marked
 // vacuous here: a family whose checkpoints are absent skips whole, and the tier's skip census names each test.
+// heavyGroupEnv is the environment of every heavy-tier main-group process. GOINFER_KV10_DEPTHS pins KV10's harness to
+// the depths the gate runs; its deepest default is a by-hand measurement (docs/code-notes/cmd-gate.md, "cudaHeavy: the
+// kv10 group"). It overrides a value in the calling environment.
+func heavyGroupEnv() map[string]string {
+	return map[string]string{"CGO_ENABLED": "0", "GOINFER_HEAVY_TESTS": "1", "GOINFER_ISOLATE_DEFER": "1",
+		"GOINFER_KV10_DEPTHS": "3900,65536"}
+}
+
 func (g *gpuGate) runHeavyGroup(h heavyGroup) (*results, cellResult, string, procPeak) {
 	cfg := &gateConfig{Name: "gpu", TopLevelOnly: true, RCIsFailure: true}
 	res := newResults()
@@ -652,7 +660,7 @@ func (g *gpuGate) runHeavyGroup(h heavyGroup) (*results, cellResult, string, pro
 	c := cell{
 		Name: "cuda-heavy-" + h.Label, Pkgs: []string{pkg}, Tags: []string{"cuda", "goinfer_testhooks"},
 		Serial: true, Timeout: "120m", Run: h.Run,
-		Env: map[string]string{"CGO_ENABLED": "0", "GOINFER_HEAVY_TESTS": "1", "GOINFER_ISOLATE_DEFER": "1"},
+		Env: heavyGroupEnv(),
 		OnStart: func(pid int) func() {
 			stop := startProcSampler(pid, res.inFlight)
 			return func() { peak = stop() }

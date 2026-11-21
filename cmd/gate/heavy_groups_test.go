@@ -25,6 +25,7 @@ func TestHeavyPartition_everyTestInExactlyOneGroup(t *testing.T) {
 		"TestG35":      {"qwen3.6-35b-a3b-int4.giw", "qwen36-35b-dflash"},
 		"TestHTower":   {"qwen3.6-35b-a3b-vision", "qwen3.5-0.8b"},
 		"TestI_Regexp": {"aya-expanse-8b"},
+		"TestJKV10":    {"$HOME/models/qwen3.5-0.8b", "KV10_CKPT"},
 	}
 	var listed []string
 	for k := range refs {
@@ -53,6 +54,7 @@ func TestHeavyPartition_everyTestInExactlyOneGroup(t *testing.T) {
 	want := map[string]string{
 		"TestA26": "gemma4-26b", "TestB7": "7b-8b", "TestCTiny": "small", "TestDNone": "small", "TestE15": "small",
 		"TestFGemma3": "gemma3-4b", "TestG35": "qwen3.6-35b", "TestHTower": "small", "TestI_Regexp": "7b-8b",
+		"TestJKV10": "kv10",
 	}
 	for n, g := range want {
 		if owner[n] != g {
@@ -61,6 +63,24 @@ func TestHeavyPartition_everyTestInExactlyOneGroup(t *testing.T) {
 	}
 	if last := groups[len(groups)-1].Label; last != heavySmallGroup {
 		t.Errorf("the shared group runs last; got %q last", last)
+	}
+}
+
+// KV10's harness runs at the gate's depths in its own process: its group is not the shared one, and every heavy process
+// pins GOINFER_KV10_DEPTHS, so a deeper value in the calling environment cannot reach it.
+func TestHeavyGroup_kv10RunsAloneAtTheGatesDepths(t *testing.T) {
+	refs := map[string][]string{"TestKV10_longContextFidelity": {"$HOME/models/qwen3.5-0.8b", "KV10_CKPT"}, "TestSmall": {"qwen3.5-0.8b"}}
+	groups, problems := heavyPartition([]string{"TestKV10_longContextFidelity", "TestSmall"}, refs, nil)
+	if len(problems) > 0 {
+		t.Fatalf("problems: %v", problems)
+	}
+	for _, g := range groups {
+		if slices.Contains(g.Tests, "TestKV10_longContextFidelity") && (g.Label == heavySmallGroup || len(g.Tests) != 1) {
+			t.Errorf("KV10 is in group %q with %v; want a group of its own", g.Label, g.Tests)
+		}
+	}
+	if got := heavyGroupEnv()["GOINFER_KV10_DEPTHS"]; got != "3900,65536" {
+		t.Errorf("heavy processes set GOINFER_KV10_DEPTHS=%q, want 3900,65536", got)
 	}
 }
 
@@ -200,6 +220,9 @@ func TestHeavyPartition_cudaTreeFitsTheTable(t *testing.T) {
 	}
 	if got := byGroup["nemotron-h"]; !slices.Equal(got, []string{"TestNemotronResidentCUDA_tier1", "TestP1r_nemotronRangeSurvey"}) {
 		t.Errorf("group nemotron-h = %v, want [TestNemotronResidentCUDA_tier1 TestP1r_nemotronRangeSurvey] so absent checkpoints grade as an all-skip group", got)
+	}
+	if got := byGroup["kv10"]; !slices.Equal(got, []string{"TestKV10_longContextFidelity"}) {
+		t.Errorf("group kv10 = %v, want [TestKV10_longContextFidelity] alone, out of the shared group", got)
 	}
 }
 
