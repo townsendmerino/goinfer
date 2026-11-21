@@ -1,0 +1,23 @@
+{
+  "utc": "2026-11-20T23:58:25Z",
+  "host": "nobara-pc",
+  "driver": "595.112.07",
+  "gpu": "NVIDIA GeForce RTX 2070 SUPER",
+  "kernel": "7.3.0-202.nobara.fc44.x86_64",
+  "distro": "Nobara Linux 44 (KDE Plasma Desktop Edition)",
+  "goinfer_commit": "48d15271c",
+  "goinfer_dirty": false,
+  "peer_version": "Warning: could not connect to a running Ollama instance",
+  "serve_mtime": "2026-11-20 15:38:10.342936329 -0800",
+  "loadavg": "0.61 0.89 1.33 1/779 1013494"
+}
+  [cache-check] goinfer      1.5B:512 repeat/fresh=0.31  caches; fresh prompts miss it (healthy)
+  [cache-check] ollama       1.5B:512 repeat/fresh=0.85  no caching detected on identical prompts
+1.5B   K=512     goinfer    5831.5 tok/s   ollama    1238.5 tok/s   ratio(ollama/goinfer) 0.21
+  [cache-check] goinfer      1.5B:3900 repeat/fresh=0.08  caches; fresh prompts miss it (healthy)
+  [cache-check] ollama       1.5B:3900 repeat/fresh=0.38  caches; fresh prompts miss it (healthy)
+1.5B   K=3900    goinfer    5943.3 tok/s   ollama    4146.2 tok/s   ratio(ollama/goinfer) 0.7
+  [scaling] goinfer:1.5B     512->3900 tok  93->666 ms  (7.18x over 7.62x depth)
+  [scaling] ollama:1.5B      512->3900 tok  437->955 ms  (2.19x over 7.62x depth)
+
+wrote /home/francis/goinfer-bench/peer-reanchor-int8head/results/cuda/d-prefill.json

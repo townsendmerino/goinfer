@@ -51,3 +51,46 @@ new head, and for the moved cells to be re-measured once it is on main.
 - **Use:** the graded cells replace the 1.5B and 7B rows of these cells in `docs/benchmarks.md`. The int4-head rows stay,
   marked as before the default changed.
 - **Not run until #1179 is on main.** Its CI was red at 12:40 PST on five root jobs.
+
+### Results (run 2026-11-20 15:38–16:29 PST, graded 16:30)
+
+**The run:**
+- One hold of the timing lock, exclusive, covering the build, the CUDA part and the CPU part. 51 min, against the
+  65 estimated.
+- Built from main at `48d15271c` (#1179's merge). `serve-cuda` sha256 `3c287093…`, `serve-cpu` `a456a7a6…`.
+- Driver 595.112.07, Ollama 0.32.5, llama.cpp `a37cc46`.
+- Every goinfer fit check and every goinfer serve log reports `head table: int8`. Every GPU cell is `cuda-resident (int4)`.
+- No cell voided: no swap void, no token-gate void, no refused start. The page cache was evicted and the load settled
+  before every step.
+- Graded with `../grade.py`: [`results/grade.jsonl`](results/grade.jsonl). Raw results, step logs and provenance are
+  in `results/`.
+
+**Against Ollama** (median r; the int4-head reading from 2026-11-19/20 in brackets; the outcome is decided by every pair):
+
+| cell | int8 head (the new default) | int4 head |
+|---|---|---|
+| a 1.5B @ 128 / 2048 / 3900 / 8000 | **AHEAD** 1.415 / 1.31 / 1.253 / 1.178 | 1.51 / 1.382 / 1.322 / 1.228 |
+| a 7B @ 128 / 2048 / 3900 | **AHEAD** 1.137 / 1.07 / 1.042 | 1.187 / 1.113 / 1.082 |
+| a 7B @ 8000 | **LEVEL** 0.981 | LEVEL 1.019 |
+| d TTFT 1.5B, K = 512 / 3900 | **AMBIGUOUS-HIGH** 4.691 (Ollama's spread 13.7%) / **AMBIGUOUS-HIGH** 1.435 (Ollama's 6.9%; every pair ≥ 1.371) | 4.589 / 1.43 |
+| e CPU 1.5B | **BEHIND** 0.927 (22.2 vs 23.9 tok/s) | LEVEL 1.012 (24.4 vs 24.1) |
+| e CPU 7B | **LEVEL** 0.991 (5.9 vs 6.0) | AHEAD 1.039 (6.2 vs 6.0) |
+
+**Against llama.cpp `a37cc46`** (beside):
+- **The 1.5B:** AHEAD 1.118 / 1.067 at 128 / 2048, AMBIGUOUS-HIGH 1.032 at 3900, **BEHIND 0.954** at 8000.
+- **The 7B:** AHEAD 1.044 at 128, LEVEL 0.993 at 2048, **BEHIND** 0.969 at 3900 and 0.911 at 8000.
+- **The CPU:** BEHIND 0.813 on the 1.5B and 0.929 on the 7B.
+
+**Reading:**
+- **The int8 head costs decode speed, about as #1179's byte counts predict.** goinfer's own rates against its int4-head
+  rates from the 19th/20th, the same binary family on the same box:
+  - CUDA 1.5B: 259.8 against 277.8 tok/s at 128 (−6.5%), and 191.8 against 200.5 at 8000.
+  - CUDA 7B: 82.1 against 85.9 (−4.4%), and 65.5 against 68.1 at 8000.
+  - CPU: 22.2 against 24.4 (−9%) on the 1.5B, and 5.9 against 6.2 on the 7B.
+  - These are cross-session figures, not graded ratios.
+- **Two labels move:**
+  - CPU 1.5B, LEVEL → BEHIND.
+  - CPU 7B, AHEAD → LEVEL.
+  - The CUDA 7B at 8000 stays LEVEL, now under 1.0.
+- **TTFT does not move.** The head is applied to the last position only.
+- **The 0.5B, gemma3-1b, phi3-mini and 26B rows** are untouched by #1179 and keep their 2026-11-19/20 readings.
