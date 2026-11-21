@@ -123,7 +123,8 @@ func (s *buildState) admit() error {
 		return decline(tableErr)
 	}
 
-	H, nLayers, nH, _, _, I, vocab := bv.Dims() // nKV, hd are per-layer now (KVHeadsAtResident/HeadDimAtResident); model-level unused
+	dims := bv.Dims() // nKV, hd are per-layer now (KVHeadsAtResident/HeadDimAtResident); model-level unused
+	H, nLayers, nH, I, vocab := dims.Hidden, dims.Layers, dims.Heads, dims.Inter, dims.Vocab
 	// Gemma 4 E-model PLE width P (0 for every other model). The resident embedding row is then [hidden ‖ nLayers*P] (EmbedLen):
 	// the host computes the per-layer inputs, and each layer's PLE branch reads its slice of the tail.
 	pleP := bv.Gemma4PLEDim()

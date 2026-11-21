@@ -15,7 +15,7 @@ import (
 // Callers obtain it via m.BackendView(). Individual *Resident methods on *Model
 // delegate through this view for backwards compatibility.
 type BackendModelView interface {
-	Dims() (hidden, nLayers, nH, nKV, hd, inter, vocab int)
+	Dims() ResidentDims
 	NumLayers() int
 	Spec() ResidentSpec
 	Weights() *Weights
@@ -121,9 +121,10 @@ func (m *Model) BackendView() BackendModelView {
 	return backendModelView{m: m}
 }
 
-func (v backendModelView) Dims() (hidden, nLayers, nH, nKV, hd, inter, vocab int) {
+func (v backendModelView) Dims() ResidentDims {
 	a := v.m.w.arch
-	return a.HiddenDim, a.NumLayers, a.NumHeads, a.NumKVHeads, a.HeadDim, a.IntermediateDim, a.VocabSize
+	return ResidentDims{Hidden: a.HiddenDim, Layers: a.NumLayers, Heads: a.NumHeads, KVHeads: a.NumKVHeads, HeadDim: a.HeadDim,
+		Inter: a.IntermediateDim, Vocab: a.VocabSize}
 }
 
 func (v backendModelView) NumLayers() int              { return v.m.w.arch.NumLayers }

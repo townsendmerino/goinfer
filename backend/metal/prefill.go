@@ -11,7 +11,6 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
-	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
 // prefillSteelAttnOff, set only by tests, runs attention_prefill_fused where attention_prefill_steel would run: the
@@ -601,530 +600,58 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 	}
 	ps := r.newPrefillPass(src, startPos, mrope, deep, blocks)
 	defer ps.release()
-	M, Mpad, H, I, V, nHhd, kvDim, qkvDim, xF, pleInB, normF, qkvF, ctxF, fusedSw, guF, dqF, posB, pos3B, uM, uH, uI, u2I, uQkv, uHd, uKOff, uStartPos, uTotalQ, uBase0, m0, m1, m2, dummyBias, uMReal, kScrI8, vScrI8, uEndI8, idTab, attnTile, uTile, moeDst, moeLogits, moeIdx, moeWgt, expertIn, expertDown, rowIdxBuf, rowWgtBuf, uResidInv, uEpsX, pleGF, uP, uLP, dn, qgF, kvF, gateF, u2NHhd, u2KvDim, uGateN, mb, imgB, imgN := ps.M, ps.Mpad, ps.H, ps.I, ps.V, ps.nHhd, ps.kvDim, ps.qkvDim, ps.xF, ps.pleInB, ps.normF, ps.qkvF, ps.ctxF, ps.fusedSw, ps.guF, ps.dqF, ps.posB, ps.pos3B, ps.uM, ps.uH, ps.uI, ps.u2I, ps.uQkv, ps.uHd, ps.uKOff, ps.uStartPos, ps.uTotalQ, ps.uBase0, ps.m0, ps.m1, ps.m2, ps.dummyBias, ps.uMReal, ps.kScrI8, ps.vScrI8, ps.uEndI8, ps.idTab, ps.attnTile, ps.uTile, ps.moeDst, ps.moeLogits, ps.moeIdx, ps.moeWgt, ps.expertIn, ps.expertDown, ps.rowIdxBuf, ps.rowWgtBuf, ps.uResidInv, ps.uEpsX, ps.pleGF, ps.uP, ps.uLP, ps.dn, ps.qgF, ps.kvF, ps.gateF, ps.u2NHhd, ps.u2KvDim, ps.uGateN, ps.mb, ps.imgB, ps.imgN
-
-	// Uniform buffer cache to avoid per-expert dynamic allocations
-	uConsts := make(map[int]Buffer)
-	getU32 := func(val int) Buffer {
-		if b, ok := uConsts[val]; ok {
-			return b
-		}
-		b := NewBufferU32On(mem.LineScratch, d, uint32(val))
-		uConsts[val] = b
-		ps.scratch = append(ps.scratch, b)
-		return b
-	}
-
-	// gemm: one GEMM dispatch over rows×N — a 2-D grid of (ceil(N/TN), ceil(rows/TM)) threadgroups of 128 threads, each
-	// owning a TN-feature × TM-token tile: gemm_w4f16_store's 64 × 64, or for a small pass a smaller tile of the
-	// same arithmetic (gemmTile).
-	gemm := func(e *Encoder, rows, N int, bufs ...Buffer) {
-		p, tm, tn := pf.gemmTile(rows, N)
-		e.Dispatch2D(p, (N+tn-1)/tn, (rows+tm-1)/tm, 128, 1, bufs...)
-	}
-	// gemmAttn is gemm for the attention projections (qkv, o), whose weights are int8 on an int4mix resident too.
-	gemmAttn := func(e *Encoder, rows, N int, bufs ...Buffer) {
-		p, tm, tn := pf.gemmTileFor(rows, N, r.w8 || r.w8Attn)
-		e.Dispatch2D(p, (N+tn-1)/tn, (rows+tm-1)/tm, 128, 1, bufs...)
-	}
-	// gemmSegs is gemm over a q4k-lane projection: one gemm_kq_tile dispatch per segment, each writing its own columns of the
-	// uLdc-wide output; mode 1 reads the bias at the output column.
-	gemmSegs := func(e *Encoder, rows int, segs []q4kSeg, a, c Buffer, uM, uK, uLdc, bias, mode Buffer) {
-		for _, s := range segs {
-			p, tm, tn := pf.gemmKQ(rows, s)
-			ws := s.s // int8's per-row scales; the block kinds carry theirs in w
-			if ws == (Buffer{}) {
-				ws = s.w
-			}
-			e.Dispatch2D(p, (s.rows+tn-1)/tn, (rows+tm-1)/tm, 128, 1, a, s.w, ws, c, uM, getU32(s.rows), uK, bias, mode, uLdc, getU32(s.off))
-		}
-	}
-	// gemmW8 is gemm on the int8 tiles: a Mamba layer's in_proj and out_proj.
-	gemmW8 := func(e *Encoder, rows, N int, bufs ...Buffer) {
-		p, tm, tn := pf.gemmTileFor(rows, N, true)
-		e.Dispatch2D(p, (N+tn-1)/tn, (rows+tm-1)/tm, 128, 1, bufs...)
-	}
-	// L2-Metal: attention_prefill_fused's grid — nH×ceil(M/8) simdgroups (ATTN_SGPT=4/threadgroup,
-	// prefill.go's own #define, matched here). Real M (unpadded): the tail row-tile's out-of-range
-	// rows are masked in-kernel via buffer(11), not dropped from the grid.
-	const attnFusedSGPT = 4
-	numRowTiles := (M + 7) / 8
-	attnFusedTotal := r.nH * numRowTiles
-	attnFusedTotal = (attnFusedTotal + attnFusedSGPT - 1) / attnFusedSGPT * attnFusedSGPT * 32
-	attnFusedTg := attnFusedSGPT * 32
-	// One attention geometry's uniforms, per layer. Every family before Gemma 4's E-models has one geometry, so
-	// it gets one bundle with the values the single-geometry pass used; an E-model gets one per head dim, and a KV-shared
-	// layer's Q-only projection its own stride. The fused/steel attention kernels hold head dims up to 128; past that the
-	// exact kernel runs (its key limit is checked before the pass).
-	type layerU struct {
-		g                                                            *attnGeom
-		qkvDim, nHhd, kvDim                                          int
-		uQkv, uStride, uKOff, uVOff, uTotalQ, uTotalK, uBaseK, uQDim Buffer
-		fused, steel, split                                          bool
-	}
-	type luKey struct {
-		g      *attnGeom
-		shared bool
-	}
-	luCache := map[luKey]*layerU{}
-	fusedOn := r.prefillFusedOn()
-	layerUFor := func(L *residLayer) *layerU {
-		k := luKey{L.geom, L.kvShared}
-		if u, ok := luCache[k]; ok {
-			return u
-		}
-		g := L.geom
-		nh := r.nH * g.hd
-		q := nh + 2*g.kvDim
-		if L.kvShared {
-			q = nh // Q only: a shared layer projects no K or V
-		}
-		fused := fusedOn && g.hd%8 == 0 && g.hd <= 128
-		u := &layerU{g: g, qkvDim: q, nHhd: nh, kvDim: g.kvDim,
-			uQkv: getU32(q), uStride: getU32(q), uKOff: getU32(nh), uVOff: getU32(nh + g.kvDim),
-			uTotalQ: getU32(nh), uTotalK: getU32(g.kvDim), uBaseK: getU32(nh), uQDim: getU32(nh),
-			fused: fused, steel: fused && steelHeadDim(g.hd) && !prefillSteelAttnOff,
-			split: fusedOn && splitSteelHeadDim(g.hd) && !prefillSteelAttnOff}
-		luCache[k] = u
-		return u
-	}
+	ps.r, ps.pf, ps.normPipe, ps.startPos, ps.mrope, ps.deep = r, pf, normPipe, startPos, mrope, deep
+	ps.fusedOn = r.prefillFusedOn()
 	// planted defect (1): a shared layer attending over an empty cache instead of its source's (zero in production).
-	var zeroKV Buffer
 	if emodelBatchDefect == 1 {
-		zeroKV = prefillScratchU16(d, (startPos+Mpad+8)*qkvDim)
-		ps.scratch = append(ps.scratch, zeroKV)
-		if idTab == (Buffer{}) {
-			idTab = kvIdentityTab(d, startPos+Mpad+8)
-			ps.scratch = append(ps.scratch, idTab)
+		ps.zeroKV = prefillScratchU16(d, (startPos+ps.Mpad+8)*ps.qkvDim)
+		ps.scratch = append(ps.scratch, ps.zeroKV)
+		if ps.idTab == (Buffer{}) {
+			ps.idTab = kvIdentityTab(d, startPos+ps.Mpad+8)
+			ps.scratch = append(ps.scratch, ps.idTab)
 		}
 	}
 
-	e := r.q.Begin()
+	ps.e = r.q.Begin()
 	// The DeepStack sets, uploaded once; addDeep(k) adds set k to the rows of this pass that fall in the image block.
 	// Set k is added after layer k, which is done at the top of iteration k+1 and after the loop, so every branch of the
 	// loop body (the MoE ones end in continue) reaches it.
-	var deepB []Buffer
 	if deep != nil {
 		for _, set := range deep.sets {
-			deepB = append(deepB, NewBufferFloatsOn(mem.LineScratch, d, set))
+			ps.deepB = append(ps.deepB, NewBufferFloatsOn(mem.LineScratch, d, set))
 		}
-		ps.scratch = append(ps.scratch, deepB...) // the deferred release reads scratch when the call returns
-	}
-	addDeep := func(k int) {
-		if k >= len(deepB) {
-			return
-		}
-		lo, hi := max(deep.start, startPos), min(deep.start+deep.n, startPos+M)
-		if hi <= lo {
-			return
-		}
-		e.Dispatch(pf.pResF32, (hi-lo)*H, 256, xF.At((lo-startPos)*H*2), deepB[k].At((lo-deep.start)*H*4))
-	}
-	// The batched pass's blocks, one for each layer step it implements. Each emits the dispatches the pass has always emitted for that block. moeBlock reports false when an encoder
-	// error stops the pass.
-	attnBlock := func(l int, L *residLayer) {
-		aw := &L.walk.Attn
-		lu := layerUFor(L)
-		// pre-attn norm — addOne (Gemma's 1+w) matters even for a plain non-sandwich family's
-		// GEMV-input norm, so it is always passed (0 for every family without RMSAddOne).
-		// Post-only placement (NormCopy): no pre-norm; GEMV reads raw residual xF directly.
-		inAttn := normF
-		if aw.InputForm == program.NormCopy {
-			inAttn = xF
-		} else {
-			e.Dispatch(normPipe, M*tgReduceNorm, tgReduceNorm, xF, L.preNorm, normF, uH, uEpsX, r.uAddOne)
-		}
-		// fused QKV (+bias)
-		if aw.Gated {
-			// Qwen3.5's gated softmax layer (decode's encodeAttention qGate branch): q_proj is [query ‖ gate]
-			// per head at double width, split on the activation into qkv's Q slot and the gate; K‖V is its own
-			// bias-free projection, copied into qkv's K and V slots.
-			gemm(e, Mpad, 2*nHhd, inAttn, L.dnQw, L.dnQs, qgF, uM, u2NHhd, uH, dummyBias, m0)
-			e.Dispatch(pf.pQGateSplit, M*nHhd, 256, qgF, qkvF, gateF, uTotalQ, uHd, uQkv, uMReal)
-			gemm(e, Mpad, 2*kvDim, inAttn, L.qkvW, L.qkvS, kvF, uM, u2KvDim, uH, dummyBias, m0)
-			e.Dispatch(pf.pCopyCols, M*2*kvDim, 256, kvF, qkvF, u2KvDim, uQkv, uKOff, uMReal)
-		} else if r.q4kLane {
-			gemmSegs(e, Mpad, L.qkvSegs, inAttn, qkvF, uM, uH, lu.uQkv, L.qkvBias, m1)
-		} else {
-			gemmAttn(e, Mpad, lu.qkvDim, inAttn, L.qkvW, L.qkvS, qkvF, uM, lu.uQkv, uH, L.qkvBias, m1)
-		}
-		if aw.QKNorm { // Qwen3 / Olmo 3: per-head or whole-vector Q/K RMSNorm before RoPE
-			qkNH, qkNKV, qkHD, qkNHhd := r.uNH, lu.g.uNKV, lu.g.uHd, lu.g.uNHhd
-			tgCount := r.nH + lu.g.nKV
-			if L.kvShared {
-				// Q heads only: a shared layer projects no K. The kernel maps a threadgroup to (row, head) by nH+nKV, so nKV
-				// must be 0 here too, or rows shift and the "K" head normalizes the next row's Q.
-				tgCount, qkNKV = r.nH, r.uZero
-			}
-			if aw.QKNormParams.Whole {
-				qkNH, qkNKV, qkHD, qkNHhd = r.uQKWholeOne, r.uQKWholeOne, r.uQKWholeHD, r.uQKWholeHD
-				tgCount = 2
-			}
-			e.Dispatch(pf.pQK, M*tgCount*tgReduceAttn, tgReduceAttn, qkvF, L.qNorm, L.kNorm, qkNH, qkNKV, qkHD, qkNHhd, lu.uStride, r.uEps, r.uAddOne)
-		}
-		// Gemma 4's scale-less v_norm on every K/V-owning layer's V slot, after Q/K norm and before RoPE, as
-		// decode does (encodeAttentionResidualWith): the Q/K-norm kernel over the V slot with nH = 0, a unit weight and
-		// addOne 0.
-		if aw.G4VNorm && emodelBatchDefect != 5 {
-			e.Dispatch(pf.pQK, M*lu.g.nKV*tgReduceAttn, tgReduceAttn, qkvF.At((lu.nHhd+lu.kvDim)*2), r.vNormUnit, r.vNormUnit,
-				r.uZero, lu.g.uNKV, lu.g.uHd, r.uZero, lu.uStride, r.uEps, r.uZero)
-		}
-		// rope q, k (per-row positions): bind the per-layer RoPE table and window, exactly as decode does
-		// (encodeTrunkInto), not the model-level r.invf/r.uWindow. For a mixed local/global-window arch the global
-		// layers must see window=0, and each layer its own RoPE base; FeatPerLayerRoPE is in prefillFeatures, so the
-		// per-layer binding is not behaviour-neutral.
-		if mrope != nil { // each row's own (t, h, w) rotation
-			e.Dispatch(pf.pRopeM, M*r.nH*lu.g.half, 128, qkvF, L.invf, lu.g.uHd, pos3B, lu.uTotalQ, lu.uStride, uBase0, lu.g.uHalf, L.mscale, r.mropeAxis)
-			if !L.kvShared {
-				e.Dispatch(pf.pRopeM, M*lu.g.nKV*lu.g.half, 128, qkvF, L.invf, lu.g.uHd, pos3B, lu.uTotalK, lu.uStride, lu.uBaseK, lu.g.uHalf, L.mscale, r.mropeAxis)
-			}
-		} else {
-			e.Dispatch(pf.pRope, M*r.nH*lu.g.half, 128, qkvF, L.invf, lu.g.uHd, posB, lu.uTotalQ, lu.uStride, uBase0, lu.g.uHalf, L.mscale)
-			if !L.kvShared {
-				e.Dispatch(pf.pRope, M*lu.g.nKV*lu.g.half, 128, qkvF, L.invf, lu.g.uHd, posB, lu.uTotalK, lu.uStride, lu.uBaseK, lu.g.uHalf, L.mscale)
-			}
-		}
-		// scatter K,V to cache; a KV-shared layer stores nothing (its cache is its source's). The cache is the layer's pool,
-		// bound from its start (Buffer.At is absolute), and a position's row is the bound slot's table's (kv_row).
-		kcPool, vcPool := r.kc[l].At(0), r.vc[l].At(0)
-		if !L.kvShared && r.kvI8 {
-			e.Dispatch(pf.pKvI8, M*lu.g.nKV, 32, qkvF, posB, kcPool, vcPool, r.ks[l].At(0), r.vs[l].At(0), lu.g.uNKV, lu.g.uHd, lu.uStride, lu.uKOff, lu.uVOff, uMReal, r.kvKT(l))
-		} else if !L.kvShared {
-			e.Dispatch(pf.pKv, M*lu.kvDim, 128, qkvF, kcPool, vcPool, posB, lu.g.uKvDim, lu.uStride, lu.uKOff, lu.uVOff, r.kvKT(l))
-		}
-		kc, vc, kt := kcPool, vcPool, r.kvKT(l)
-		if r.kvI8 { // the attention kernels read f16: this layer's cache, dequantized into contiguous rows read through an identity table
-			e.Dispatch(pf.pDeqI8, (startPos+M)*lu.kvDim, 256, kcPool, vcPool, r.ks[l].At(0), r.vs[l].At(0), kScrI8, vScrI8, lu.g.uNKV, lu.g.uHd, uEndI8, r.kvKT(l))
-			kc, vc, kt = kScrI8, vScrI8, idTab
-		}
-		if L.kvShared && emodelBatchDefect == 1 {
-			kc, vc, kt = zeroKV, zeroKV, idTab
-		}
-		// causal attention → ctx (per-layer window: 0 = full causal on a global layer)
-		ran := ""
-		if prefillAttnSkipForTest {
-			// no attention: ctxF keeps what it held (the attention-share measurement)
-		} else if imgB != (Buffer{}) {
-			ran = "attention_prefill_img"
-			e.Dispatch(pf.pAttnImg, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, imgB, imgN, kt)
-		} else if lu.steel {
-			ran = steelName(lu.g.hd)
-			e.Dispatch(pf.steelFor(lu.g.hd), r.nH*((M+31)/32)*128, 128, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uMReal, kt)
-		} else if lu.split { // 32 query rows a threadgroup at head dim 256, 16 at 512
-			p, bq := pf.pAttnSteel256, 32
-			if lu.g.hd == 512 {
-				p, bq = pf.pAttnSteel512, 16
-			}
-			ran = fmt.Sprintf("attention_prefill_steel_hd%d", lu.g.hd)
-			e.Dispatch(p, r.nH*((M+bq-1)/bq)*256, 256, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uMReal, kt)
-		} else if lu.fused {
-			ran = "attention_prefill_fused"
-			e.Dispatch(pf.pAttnFused, attnFusedTotal, attnFusedTg, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uMReal, kt)
-		} else if attnTile > 0 {
-			ran = "attention_prefill_tiled"
-			e.Dispatch(pf.pAttnTiled, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uTile, kt)
-		} else {
-			ran = "attention_prefill"
-			e.Dispatch(pf.pAttn, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, kt)
-		}
-		if prefillAttnRanForTest != nil && ran != "" {
-			prefillAttnRanForTest[ran]++
-		}
-		if aw.Gated { // ctx *= sigmoid(gate), before o-proj, as decode does
-			e.Dispatch(pf.pAttnGate, M*nHhd, 256, ctxF, gateF, uGateN)
-		}
-		// o-proj, then either the plain residual epilogue, Gemma's sandwich norm, or Olmo 3 postOnly: mode-0 write
-		// into normF (free scratch here: its last use, the fused-QKV input, already ran, and its next use, the pre-MLP
-		// norm's output, is below), norm the sublayer output in place (safe: rmsnorm_f16's read pass completes before
-		// its write pass touches the same buffer), then a separate residual add. Other families take the fused mode-2
-		// residual epilogue.
-		if aw.OutMode == program.OutPostNormResidual {
-			gemmAttn(e, Mpad, H, ctxF, L.oW, L.oS, normF, uM, uH, lu.uQDim, dummyBias, m0)
-			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, normF, L.postAttnNorm, normF, uH, r.uEps, r.uAddOne)
-			if uResidInv != (Buffer{}) {
-				e.Dispatch(pf.pResScaled, M*H, 256, xF, normF, uResidInv)
-			} else {
-				e.Dispatch(pf.pRes, M*H, 256, xF, normF)
-			}
-		} else if r.q4kLane {
-			gemmSegs(e, Mpad, L.oSegs, ctxF, xF, uM, lu.uQDim, uH, dummyBias, m2)
-		} else {
-			gemmAttn(e, Mpad, H, ctxF, L.oW, L.oS, xF, uM, uH, lu.uQDim, dummyBias, m2)
-		}
-	}
-	moeBlock := func(l int, L *residLayer) bool {
-		fw := &L.walk.FFN
-		normW, _ := r.ffnNormWeights(L, fw.InputNorm.Slot)
-		if r.knobValue("GOINFER_MOE_EXPERT_MAJOR") == "0" {
-			// Fallback to row-by-row path for A/B testing
-			for m := range M {
-				row := xF.At(m * H * 2)
-				e.Dispatch(pf.pRmsQ, tgReduceNorm, tgReduceNorm, row, normW, r.mq, r.mSc, uH, r.uEps, r.uAddOne)
-				r.encodeMoERouteForForm(e, L, fw.FFN.Form)
-				if r.moeCap.idx != (Buffer{}) && m < r.moeCap.rows {
-					r.encodeMoECapture(e, l*r.moeCap.rows+m)
-				}
-				e.Dispatch(pf.pZeroF32, r.H, 256, moeDst)
-				r.encodeMoEExperts(e, L, moeDst)
-				e.Dispatch(pf.pResF32, r.H, 256, row, moeDst)
-			}
-			return true
-		}
-
-		// --- EXPERT-MAJOR PATH ---
-		// 1. Pre-norm all M rows into normF
-		e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, xF, normW, normF, uH, uEpsX, r.uAddOne)
-
-		// 2. Batched Router GEMM: normF [M, H] x routerW [nE, H] -> moeLogits [M, nE]
-		totalRouterThreads := (M*r.moe.nE*32 + 255) / 256 * 256
-		e.Dispatch(pf.pRouterGemm, totalRouterThreads, 256, normF, L.moe.routerW, moeLogits, uH, r.moe.uNE, uMReal)
-
-		// 3. Batched Top-k Route: moeLogits -> moeIdx [M, k], moeWgt [M, k]
-		if fw.FFN.Form == program.FfnGptOss {
-			e.Dispatch(pf.pRouteGptOssBatch, M*32, 32, moeLogits, L.moe.routerBias, moeIdx, moeWgt, r.moe.uNE, r.moe.uK, uMReal)
-		} else {
-			e.Dispatch(pf.pMoeRouteBatch, M*32, 32, moeLogits, L.moe.routerBias, moeIdx, moeWgt, r.moe.uNE, r.moe.uK, r.moe.uSigmoid, r.moe.uNorm, r.moe.uScale, r.moe.uNGroup, r.moe.uTopkGroup, uMReal)
-		}
-
-		// 4. Commit and wait so the host can read the routing decisions
-		e.End()
-		if db02Trace != nil {
-			db02Trace(db02Event{layer: l, gpuStart: e.GPUStart(), gpuEnd: e.GPUEnd()})
-		}
-		r.recordExecErr(e.Err())
-		if err := r.takeExecErr(); err != nil {
-			return false
-		}
-
-		// 5. Host Grouping: group (token m, rank j) by expert e
-		type moeSlot struct {
-			row  int
-			rank int
-			wgt  float32
-		}
-		byExpert := make([][]moeSlot, r.moe.nE)
-		idxSlice := moeIdx.U32s()[:M*r.moe.k]
-		wgtSlice := moeWgt.Floats()[:M*r.moe.k]
-		if dg01Mutation != "" {
-			dg01Mutate(idxSlice, wgtSlice, M, r.moe.k)
-		}
-		if r.moeCap.major != nil {
-			r.moeCap.major(l, idxSlice, wgtSlice)
-		}
-		for m := range M {
-			for j := 0; j < r.moe.k; j++ {
-				eIdx := int(idxSlice[m*r.moe.k+j])
-				w := wgtSlice[m*r.moe.k+j]
-				if eIdx >= 0 && eIdx < r.moe.nE {
-					byExpert[eIdx] = append(byExpert[eIdx], moeSlot{row: m, rank: j, wgt: w})
-				}
-			}
-		}
-
-		// 6. Begin new command encoder for expert dispatches
-		e = r.q.Begin()
-
-		// 7. Dispatch each active expert
-		moeInter := r.moe.inter
-		rowsPerExpertGu := 2 * moeInter
-		rowsPerExpertD := H
-		wprGu := H / 8
-		gprGu := H / 32
-		wprD := moeInter / 8
-		gprD := moeInter / 32
-
-		rowIdxHost := rowIdxBuf.U32s()
-		rowWgtHost := rowWgtBuf.Floats()
-
-		slotOffset := 0
-		for eIdx, slots := range byExpert {
-			Ce := len(slots)
-			if Ce == 0 {
-				continue
-			}
-
-			for i, s := range slots {
-				rowIdxHost[slotOffset+i] = uint32(s.row)
-				rowWgtHost[slotOffset+i] = s.wgt
-			}
-
-			CePad := (Ce + 7) / 8 * 8
-			if db02Trace != nil {
-				_, tmGu, _ := pf.gemmTile(CePad, rowsPerExpertGu)
-				_, tmD, _ := pf.gemmTile(CePad, rowsPerExpertD)
-				db02Trace(db02Event{layer: l, expert: eIdx, rows: Ce, padRows: CePad,
-					tileRowsGu: (CePad + tmGu - 1) / tmGu * tmGu, tileRowsD: (CePad + tmD - 1) / tmD * tmD})
-			}
-			uCe := getU32(Ce)
-			uCePad := getU32(CePad)
-			uMoeI := getU32(moeInter)
-			u2MoeI := getU32(2 * moeInter)
-
-			expIdxBuf := rowIdxBuf.At(slotOffset * 4)
-			expWgtBuf := rowWgtBuf.At(slotOffset * 4)
-
-			// A. Gather Ce rows from normF into expertIn (with padding zeroed)
-			gatherTotal := (CePad*H + 255) / 256 * 256
-			e.Dispatch(pf.pGatherRows, gatherTotal, 256, normF, expertIn, expIdxBuf, uH, uCe, uCePad)
-
-			// B. Expert Gate/Up GEMM
-			guWOff := eIdx * rowsPerExpertGu * wprGu * 4
-			guSOff := eIdx * rowsPerExpertGu * gprGu * 2
-			if r.w8 { // int8 slice 4: H bytes of int8 codes and one f32 scale a row
-				guWOff, guSOff = eIdx*rowsPerExpertGu*H, eIdx*rowsPerExpertGu*4
-			}
-			gemm(e, CePad, rowsPerExpertGu, expertIn, L.moe.expGuW.At(guWOff), L.moe.expGuS.At(guSOff), guF, uCePad, u2MoeI, uH, dummyBias, m0)
-
-			// C. SwiGLU
-			e.Dispatch(pf.pSw, CePad*moeInter, 256, guF, dqF, uMoeI, r.uAct)
-
-			// D. Expert Down GEMM
-			dOff := eIdx * rowsPerExpertD * wprD * 4
-			dSOff := eIdx * rowsPerExpertD * gprD * 2
-			if r.w8 { // moeInter bytes of int8 codes and one f32 scale a row
-				dOff, dSOff = eIdx*rowsPerExpertD*moeInter, eIdx*rowsPerExpertD*4
-			}
-			gemm(e, CePad, rowsPerExpertD, dqF, L.moe.expDW.At(dOff), L.moe.expDS.At(dSOff), expertDown, uCePad, uH, uMoeI, dummyBias, m0)
-
-			// E. Scatter-add weighted output into residual xF
-			scatterTotal := (Ce*H + 255) / 256 * 256
-			e.Dispatch(pf.pScatterAdd, scatterTotal, 256, expertDown, xF, expIdxBuf, expWgtBuf, uH, uCe, uMReal)
-
-			slotOffset += Ce
-		}
-
-		// 8. Shared expert (if present)
-		if shI := fw.FFN.MoE.SharedIntermediateDim; shI > 0 && dg01Mutation != "shared-off" {
-			u2ShI := getU32(2 * shI)
-			uShI := getU32(shI)
-
-			gemm(e, Mpad, 2*shI, normF, L.moe.shGuW, L.moe.shGuS, guF, uM, u2ShI, uH, dummyBias, m0)
-			e.Dispatch(pf.pSw, Mpad*shI, 256, guF, dqF, uShI, r.uAct)
-
-			if fw.FFN.MoE.SharedUngated {
-				// dst += down directly into xF
-				gemm(e, Mpad, H, dqF, L.moe.shDW, L.moe.shDS, xF, uM, uH, uShI, dummyBias, m2)
-			} else {
-				// gated variant (Qwen2-MoE): compute sigmoid(gate)*down
-				gemm(e, Mpad, H, dqF, L.moe.shDW, L.moe.shDS, expertDown, uM, uH, uShI, dummyBias, m0)
-				// Gate logit for all M rows
-				gateLogitsTotal := (M*32 + 255) / 256 * 256
-				e.Dispatch(pf.pRouterGemm, gateLogitsTotal, 256, normF, L.moe.shGateW, moeLogits, uH, getU32(1), uMReal)
-				// Combine into xF via shared_gate_add_f16
-				e.Dispatch(pf.pSharedGateAdd, (M*H+255)/256*256, 256, expertDown, xF, moeLogits, uH, uMReal)
-			}
-		}
-		return true
-	}
-	ffnBlock := func(L *residLayer) {
-		fw := &L.walk.FFN
-		// pre-MLP norm. A parallel block (Cohere) has none: its MLP reads the same shared norm of the layer's input that the
-		// attention read, which normF still holds (the o-proj added into xF directly), so x ends as x + attn + mlp.
-		inFFN := normF
-		switch {
-		case fw.InputMode == program.FFNInShared && !prefillParallelDefectForTest:
-		case fw.InputMode == program.FFNInShared: // Part B's planted defect: the MLP fed from the post-attention residual
-			e.Dispatch(normPipe, M*tgReduceNorm, tgReduceNorm, xF, L.preNorm, normF, uH, uEpsX, r.uAddOne)
-		case fw.InputMode == program.FFNInRaw:
-			inFFN = xF
-		default:
-			normW, _ := r.ffnNormWeights(L, fw.InputNorm.Slot)
-			e.Dispatch(normPipe, M*tgReduceNorm, tgReduceNorm, xF, normW, normF, uH, uEpsX, r.uAddOne)
-		}
-		if fw.FFN.Form == program.FfnNonGated {
-			// The non-gated MLP (Nemotron-H's relu²; a down projection with a bias never reaches the pass): up with its
-			// bias, the activation in place, down accumulated into the residual.
-			gemm(e, Mpad, I, inFFN, L.upW, L.upS, dqF, uM, uI, uH, L.upBias, m1)
-			e.Dispatch(r.pNgActRows, M*I, 256, dqF, getU32(M*I), r.uAct)
-			gemm(e, Mpad, H, dqF, L.dW, L.dS, xF, uM, uH, uI, dummyBias, m2)
-			return
-		}
-		// This layer's FFN width (a Gemma 4 E-model's KV-shared layers are double-wide; every other family's
-		// layers are the model's I).
-		fI := I
-		if L.ffnI != 0 {
-			fI = L.ffnI
-		}
-		if emodelBatchDefect == 6 && r.layers[0].ffnI != 0 { // planted defect (6): every layer at the first layer's width
-			fI = r.layers[0].ffnI
-		}
-		uFI, u2FI := uI, u2I
-		if fI != I {
-			uFI, u2FI = getU32(fI), getU32(2*fI)
-		}
-		// gate/up, then swiglu/geglu (r.uAct selects, 0 for every family without FeatGatedGELU): one fused GEMM when the pass
-		// takes it (swigluFused), else the GEMM into guF and swiglu_f16.
-		if r.q4kLane {
-			gemmSegs(e, Mpad, L.guSegs, inFFN, guF, uM, uH, u2FI, dummyBias, m0)
-			e.Dispatch(pf.pSw, M*fI, 256, guF, dqF, uFI, r.uAct)
-		} else if fusedSw {
-			e.Dispatch2D(pf.pGemmSwiglu, (fI+31)/32, (Mpad+63)/64, 128, 1, inFFN, L.guW, L.guS, dqF, uM, uFI, uH, r.uAct)
-		} else {
-			gemm(e, Mpad, 2*fI, inFFN, L.guW, L.guS, guF, uM, u2FI, uH, dummyBias, m0)
-			e.Dispatch(pf.pSw, M*fI, 256, guF, dqF, uFI, r.uAct)
-		}
-		// down-proj, same plain-vs-sandwich split as o-proj above.
-		if fw.OutMode == program.OutPostNormResidual {
-			gemm(e, Mpad, H, dqF, L.dW, L.dS, normF, uM, uH, uFI, dummyBias, m0)
-			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, normF, L.postMLPNorm, normF, uH, r.uEps, r.uAddOne)
-			if uResidInv != (Buffer{}) {
-				e.Dispatch(pf.pResScaled, M*H, 256, xF, normF, uResidInv)
-			} else {
-				e.Dispatch(pf.pRes, M*H, 256, xF, normF)
-			}
-		} else if r.q4kLane {
-			gemmSegs(e, Mpad, L.dSegs, dqF, xF, uM, uFI, uH, dummyBias, m2)
-		} else {
-			gemm(e, Mpad, H, dqF, L.dW, L.dS, xF, uM, uH, uFI, dummyBias, m2)
-		}
-	}
-	pleBlock := func(l int, L *residLayer) {
-		// A Gemma 4 E-model's PLE block, in decode's order (encodeLayerResidualWith): the gate GEMM (H→P) on the raw
-		// residual, gelu(gate) times the row's own per-layer input, the projection GEMM (P→H), the post-PLE norm and the
-		// residual add. The layer scalar is its own step (layerScaleBlock).
-		if L.pleGW != (Buffer{}) && emodelBatchDefect != 2 {
-			P := r.pleP
-			gemm(e, Mpad, P, xF, L.pleGW, L.pleGS, pleGF, uM, uP, uH, dummyBias, m0)
-			e.Dispatch(pf.pPLEGeluMulF16, M*P, 256, pleGF, pleInB, uP, uLP, getU32(l*P))
-			gemm(e, Mpad, H, pleGF, L.plePW, L.plePS, normF, uM, uH, uP, dummyBias, m0)
-			e.Dispatch(pf.pRms, M*tgReduceNorm, tgReduceNorm, normF, L.postPLENorm, normF, uH, r.uEps, r.uAddOne)
-			e.Dispatch(pf.pRes, M*H, 256, xF, normF)
-		}
-	}
-	layerScaleBlock := func(L *residLayer) {
-		if L.uLayerScalar != (Buffer{}) && emodelBatchDefect != 4 {
-			e.Dispatch(pf.pLayerScaleF16, M*H, 256, xF, L.uLayerScalar)
-		}
+		ps.scratch = append(ps.scratch, ps.deepB...) // the deferred release reads scratch when the call returns
 	}
 	for l := 0; l < r.nL; l++ {
 		if l > 0 {
-			addDeep(l - 1)
+			ps.addDeep(l - 1)
 		}
 		L := &r.layers[l]
 		for _, st := range L.steps {
 			switch st {
 			case stepAttention:
-				attnBlock(l, L)
+				ps.attnBlock(l, L)
 			case stepDeltaNet:
-				r.encodePrefillDeltaMixer(e, L, xF, normF, dn, M, Mpad, gemm, uM, m0, m2, dummyBias)
+				r.encodePrefillDeltaMixer(ps.e, L, ps.xF, ps.normF, ps.dn, ps.M, ps.Mpad, ps.gemm, ps.uM, ps.m0, ps.m2, ps.dummyBias)
 			case stepMamba:
-				r.encodePrefillMambaMixer(e, L, xF, normF, mb, M, Mpad, gemmW8, uM, m0, m2, dummyBias)
+				r.encodePrefillMambaMixer(ps.e, L, ps.xF, ps.normF, ps.mb, ps.M, ps.Mpad, ps.gemmW8, ps.uM, ps.m0, ps.m2, ps.dummyBias)
 			case stepMoE:
-				if !moeBlock(l, L) {
+				if !ps.moeBlock(l, L) {
 					return nil
 				}
 			case stepDenseFFN, stepNonGatedFFN:
-				ffnBlock(L)
+				ps.ffnBlock(L)
 			case stepPLE:
-				pleBlock(l, L)
+				ps.pleBlock(l, L)
 			case stepLayerScale:
-				layerScaleBlock(L)
+				ps.layerScaleBlock(L)
 			default:
 				panic(fmt.Sprintf("metal: the batched prefill has no block for the %v step, and prefillStepsDecline admits none", st))
 			}
 		}
 	}
-	addDeep(r.nL - 1)
+	ps.addDeep(r.nL - 1)
+	e, xF, M, H, V, uH, uEpsX := ps.e, ps.xF, ps.M, ps.H, ps.V, ps.uH, ps.uEpsX
 	// Final norm and LM head for the last token only, through the same int8-pinned head the decode path runs
 	// (rmsnorm to int8, then gemv_w8a8): the head weights are int8 (logit-critical), and the int4 gemm_w4f16 would
 	// misread them as packed nibbles and f16 scales, producing NaN logits. Norm-quant the last token's f16

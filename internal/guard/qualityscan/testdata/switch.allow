@@ -315,3 +315,4 @@ decoder/w4a8_splithalf_fires_test.go 2 -- assignments before the ratchet; move t
 decoder/w4a8_splithalf_wiring_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 decoder/walkbatch_plants_test.go 2 -- assignments before the ratchet; move to testgate.SetForTest when next touched
 decoder/zz_goroutineleak_test.go 3 -- assignments before the ratchet; move to testgate.SetForTest when next touched
+decoder/decode_bench_test.go 2 -- loadBenchModel sets and restores q4kWiden56ForTest around its one Load inside a sync.Once that has no testing.TB, shared by 45 benchmarks
