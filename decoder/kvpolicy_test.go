@@ -187,7 +187,7 @@ func TestCUDAKVF16AutoDecline_table(t *testing.T) {
 }
 
 // TestResidentSpec_matchesLegacyAccessors verifies that Model.ResidentSpec() populates all sub-specs
-// and agrees with the accessors (MoE, MLAParams, Qwen35Params).
+// and agrees with the accessors (MoE, MLA, Qwen35Params).
 func TestResidentSpec_matchesLegacyAccessors(t *testing.T) {
 	m := &Model{
 		w: &Weights{
@@ -232,11 +232,8 @@ func TestResidentSpec_matchesLegacyAccessors(t *testing.T) {
 	if mo, ok := m.BackendView().MoE(); !ok || mo != *spec.MoE {
 		t.Errorf("ResidentSpec().MoE = %+v, disagrees with MoE() = %+v", *spec.MoE, mo)
 	}
-	qL, kvL, nope, rope, vDim, interleave, aScale, rScale, mlaOK := m.BackendView().MLAParams()
-	if !mlaOK || spec.MLA.QLoRARank != qL || spec.MLA.KVLoRARank != kvL || spec.MLA.QKNopeHeadDim != nope ||
-		spec.MLA.QKRopeHeadDim != rope || spec.MLA.VHeadDim != vDim || spec.MLA.RopeInterleave != interleave ||
-		spec.MLA.AttnScale != aScale || spec.MLA.RopeScale != rScale {
-		t.Errorf("ResidentSpec().MLA = %+v, disagrees with MLAParams()", *spec.MLA)
+	if mla, ok := m.BackendView().MLA(); !ok || mla != *spec.MLA {
+		t.Errorf("ResidentSpec().MLA = %+v, disagrees with MLA() = %+v", *spec.MLA, mla)
 	}
 	ck, khd, vhd, nkh, nvh, gate, qOK := m.BackendView().Qwen35Params()
 	if !qOK || spec.Qwen35.ConvKernel != ck || spec.Qwen35.KeyHeadDim != khd || spec.Qwen35.ValueHeadDim != vhd ||

@@ -154,8 +154,8 @@ func TestBackendModelView_familyParams(t *testing.T) {
 	if _, _, _, _, _, _, ok := bv.Qwen35Params(); ok {
 		t.Error("Qwen35Params ok for a model with no DeltaNet subsystem")
 	}
-	if _, _, _, _, _, _, _, _, ok := bv.MLAParams(); ok {
-		t.Error("MLAParams ok for a model with no MLA subsystem")
+	if _, ok := bv.MLA(); ok {
+		t.Error("MLA ok for a model with no MLA subsystem")
 	}
 
 }

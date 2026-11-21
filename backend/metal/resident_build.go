@@ -192,7 +192,7 @@ func (b *residentBuild) bindPipelines() {
 	// The resolver's answer, not the raw request (decoder.ResolveKV). It names the GQA K/V cache; an MLA model's latent is f32
 	// whatever it says (metal/mla.go), so neither flag applies there.
 	kvDelivered := m.KVDeliveredFor("metal")
-	if _, _, _, _, _, _, _, _, isMLA := m.BackendView().MLAParams(); isMLA {
+	if _, isMLA := m.BackendView().MLA(); isMLA {
 		kvDelivered = ""
 	}
 	r.kvF32 = kvDelivered == "f32"
