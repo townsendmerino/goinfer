@@ -201,10 +201,11 @@ func (m *Model) webgpuLayerCaches(i, ctx int, kvF16, kvI8 bool) (bufs []int64, k
 		}
 		return m.webgpuKVBuffers(i, ctx, kvF16, kvI8), true
 	case MixerDeltaNet:
-		convK, hk, hv, nk, nv, _, ok := m.BackendView().Qwen35Params()
+		q, ok := m.BackendView().Qwen35()
 		if !ok {
 			return nil, false
 		}
+		convK, hk, hv, nk, nv := q.ConvKernel, q.KeyHeadDim, q.ValueHeadDim, q.NumKeyHeads, q.NumValueHeads
 		return []int64{int64(convK-1) * int64(2*nk*hk+nv*hv) * 4, int64(nv*hv*hk) * 4}, false
 	case MixerMamba:
 		var nH, hd, dS, nG, dConv int
@@ -308,7 +309,8 @@ func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []
 		}
 		if a := l.mla; a != nil {
 			// Each projection W8A8, from its int8 form or its f32 (mlaProj), then kv_b split into W_UKᵀ and W_UV, f32.
-			qLoRA, kvLoRA, qkNope, qkRope, vHead, _, _, _, _ := m.BackendView().MLAParams()
+			mla, _ := m.BackendView().MLA()
+			qLoRA, kvLoRA, qkNope, qkRope, vHead := mla.QLoRARank, mla.KVLoRARank, mla.QKNopeHeadDim, mla.QKRopeHeadDim, mla.VHeadDim
 			nH := m.Shape().Heads
 			proj := func(q *linalg.WeightMat, rows, cols int) {
 				if q.Rows() != 0 {
@@ -409,8 +411,8 @@ func (m *Model) webgpuDerivedTableBytes() int64 {
 			n += 4 * (int64(m.w.arch.HiddenDim) + int64(g4.nE) - int64(len(g4.routerScale)))
 		}
 	}
-	if _, hk, hv, nk, nv, _, ok := m.BackendView().Qwen35Params(); ok {
-		n += 4 * int64(2*nk*hk+nv*hv)
+	if q, ok := m.BackendView().Qwen35(); ok {
+		n += 4 * int64(2*q.NumKeyHeads*q.KeyHeadDim+q.NumValueHeads*q.ValueHeadDim)
 	}
 	return n
 }

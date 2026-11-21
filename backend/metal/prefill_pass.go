@@ -74,7 +74,7 @@ func (r *resident) newPrefillPass(src rowSource, startPos int, mrope [][3]int, d
 	xF := prefillScratchU16(d, Mpad*H)
 	residInv := 1 / r.prefillResidScale(deep)
 	// The input rows, read rowChunk at a time from the source: each row's first H values into xF as f16, and a Gemma 4
-	// E-model's [L·P] per-layer tail straight into the device buffer the PLE gate reads (S9 step 2), so the host holds a chunk.
+	// E-model's [L·P] per-layer tail straight into the device buffer the PLE gate reads, so the host holds a chunk.
 	var pleInB Buffer
 	if r.pleP > 0 {
 		LP := r.nL * r.pleP
@@ -107,7 +107,7 @@ func (r *resident) newPrefillPass(src rowSource, startPos int, mrope [][3]int, d
 	}
 	posB := NewBufferUint32sOn(mem.LineScratch, d, posv)
 	prefillScratchSeen.Add(int64(4 * Mpad))
-	var pos3B Buffer // S16: the rows' m-RoPE triples, row-major [Mpad*3]; pad rows repeat the last real row's
+	var pos3B Buffer // the rows' m-RoPE triples, row-major [Mpad*3]; pad rows repeat the last real row's
 	if mrope != nil {
 		p3 := make([]uint32, Mpad*3)
 		for m := range Mpad {
@@ -139,7 +139,7 @@ func (r *resident) newPrefillPass(src rowSource, startPos int, mrope [][3]int, d
 	// above which holds Mpad for the GEMM grid. attention_prefill (the exact kernel) needs no
 	// such uniform because its Go-side dispatch grid is already sized off the real M.
 	uMReal := NewBufferU32On(mem.LineScratch, d, uint32(M))
-	// An int8 cache: each layer's rows [0, startPos+M) are dequantized into these f16 buffers before its attention (D9 (b)).
+	// An int8 cache: each layer's rows [0, startPos+M) are dequantized into these f16 buffers before its attention.
 	// The attention kernels read that scratch through idTab, an identity table, as they read the cache through its own.
 	var kScrI8, vScrI8, uEndI8, idTab Buffer
 	if r.kvI8 {
@@ -149,7 +149,7 @@ func (r *resident) newPrefillPass(src rowSource, startPos int, mrope [][3]int, d
 	}
 	attnTile := exactAttnTile(startPos + M) // > 0: the exact-attention layers take attention_prefill_tiled
 	uTile := NewBufferU32On(mem.LineScratch, d, uint32(max(attnTile, 1)))
-	// G8: the MoE row loop's F32 accumulate scratch (see the per-layer loop's own comment).
+	// The MoE row loop's F32 accumulate scratch (see the per-layer loop's own comment).
 	// Allocated unconditionally (cheap — H floats) rather than gated on whether any layer is
 	// MoE, avoiding a nil-buffer special case in the loop below.
 	moeDst := NewBufferFloatsOn(mem.LineScratch, d, make([]float32, H))
@@ -204,7 +204,7 @@ func (r *resident) newPrefillPass(src rowSource, startPos int, mrope [][3]int, d
 	if r.kvI8 {
 		scratch = append(scratch, kScrI8, vScrI8, uEndI8, idTab)
 	}
-	// S17: the scaled residual's 1/s, for residual_f16_scaled, and the eps of the norms that read the residual, eps/s², so
+	// The scaled residual's 1/s, for residual_f16_scaled, and the eps of the norms that read the residual, eps/s², so
 	// that x/s / sqrt(ms/s² + eps/s²) is x / sqrt(ms + eps) exactly (s is a power of two).
 	var uResidInv Buffer
 	uEpsX := r.uEps
@@ -213,12 +213,12 @@ func (r *resident) newPrefillPass(src rowSource, startPos int, mrope [][3]int, d
 		uEpsX = NewBufferFloatsOn(mem.LineScratch, d, []float32{r.uEps.Floats()[0] * residInv * residInv})
 		scratch = append(scratch, uResidInv, uEpsX)
 	}
-	// S9 step 2: a Gemma 4 E-model's per-layer inputs, each row's [L·P] tail of its [h ‖ L·P] embedding, and the PLE
+	// A Gemma 4 E-model's per-layer inputs, each row's [L·P] tail of its [h ‖ L·P] embedding, and the PLE
 	// gate's scratch.
 	var pleGF, uP, uLP Buffer
 	if r.pleP > 0 {
 		P, LP := r.pleP, r.nL*r.pleP
-		if emodelBatchDefect == 3 { // G-S9c (3): each row's PLE inputs taken from the next row
+		if emodelBatchDefect == 3 { // planted defect (3): each row's PLE inputs taken from the next row
 			pv := pleInB.Floats()
 			for m := 0; m+1 < M; m++ {
 				copy(pv[m*LP:(m+1)*LP], pv[(m+1)*LP:(m+2)*LP])
@@ -227,7 +227,7 @@ func (r *resident) newPrefillPass(src rowSource, startPos int, mrope [][3]int, d
 		pleGF, uP, uLP = prefillScratchU16(d, Mpad*P), NewBufferU32On(mem.LineScratch, d, uint32(P)), NewBufferU32On(mem.LineScratch, d, uint32(LP))
 		scratch = append(scratch, pleInB, pleGF, uP, uLP)
 	}
-	// D-B01: a Gated-DeltaNet hybrid's mixer scratch, and its gated-attention layers' [query ‖ gate] projection, K‖V
+	// A Gated-DeltaNet hybrid's mixer scratch, and its gated-attention layers' [query ‖ gate] projection, K‖V
 	// projection and split gate.
 	var dn *prefillDelta
 	var qgF, kvF, gateF, u2NHhd, u2KvDim, uGateN Buffer
@@ -239,7 +239,7 @@ func (r *resident) newPrefillPass(src rowSource, startPos int, mrope [][3]int, d
 		u2NHhd, u2KvDim, uGateN = NewBufferU32On(mem.LineScratch, d, uint32(2*nHhd)), NewBufferU32On(mem.LineScratch, d, uint32(2*kvDim)), NewBufferU32On(mem.LineScratch, d, uint32(M*nHhd))
 		scratch = append(append(scratch, dn.bufs...), qgF, kvF, gateF, u2NHhd, u2KvDim, uGateN)
 	}
-	var mb *prefillMamba // KS-D8: a Mamba-2 hybrid's mixer scratch
+	var mb *prefillMamba // a Mamba-2 hybrid's mixer scratch
 	if r.mamba != nil {
 		mb = r.newPrefillMamba(M, Mpad)
 		scratch = append(scratch, mb.bufs...)

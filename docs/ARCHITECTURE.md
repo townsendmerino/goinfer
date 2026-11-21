@@ -709,7 +709,7 @@ exported capability types outside the four, each kept for a stated reason, and t
 
 `decoder/backend_view.go:BackendModelView` is the read-only seam a resident builder and the placement code use to inspect
 a loaded model, in place of the 200-odd methods on `*Model`; `Model.BackendView()` returns it. It carries the dimensions,
-the per-family geometry (`MoE`, `MLAParams`, `Qwen35Params`, and so on), the norm, RoPE and softcap scalars, and the
+the per-family geometry (`MoE`, `MLA`, `Qwen35`, and so on), the norm, RoPE and softcap scalars, and the
 `Weights`. Its per-layer half is `decoder/backend_view.go:ResidentLayerView` (head geometry, RoPE schedule, and the
 family-specific weights). All three backends' resident builders read it, as do the fit and placement code in `decoder`.
 

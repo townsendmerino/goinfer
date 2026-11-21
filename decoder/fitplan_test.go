@@ -224,8 +224,8 @@ func TestPlan_tableDriven(t *testing.T) {
 
 	t.Run("hybrid/webgpu/kv_precision_declines_on_family_not_bytes", func(t *testing.T) {
 		m := loadHybridTiny(t)
-		_, _, _, _, _, _, _, _, mlaOK := m.BackendView().MLAParams()
-		_, _, _, _, _, _, dnetOK := m.BackendView().Qwen35Params()
+		_, mlaOK := m.BackendView().MLA()
+		_, dnetOK := m.BackendView().Qwen35()
 		_, nemoOK := m.BackendView().Nemotron()
 		dense := m.ResidentDenseWeightBytes()
 		kv := m.kvBytesPerPositionAllLayers(true, false) * ctxWant
