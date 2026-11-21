@@ -16,7 +16,7 @@ func webgpuKVRateOracle(m *Model, f16, i8 bool) int64 {
 	}
 	bv := m.BackendView()
 	arch := m.w.arch
-	_, nLayers, _, _, _, _, _ := bv.Dims()
+	nLayers := bv.NumLayers()
 	var perPos float64
 	for l := range nLayers {
 		if arch.gemma4KVSrcAt(l) != l {
@@ -87,7 +87,7 @@ func TestWebGPUKV_isTheDeclaredRows(t *testing.T) {
 				t.Errorf("%s kv=%q: bytes a position from the declared rows %d, from the architecture %d", fx.name, kv, got, want)
 			}
 			rates++
-			_, nLayers, _, _, _, _, _ := m.BackendView().Dims()
+			nLayers := m.BackendView().NumLayers()
 			for _, ctx := range []int{1, 256, 4096} {
 				for l := range nLayers {
 					mixer, _ := m.BackendView().Layer(l).Ops()
@@ -185,7 +185,7 @@ func TestWebGPUKVBuffersOf_plantedShortRowGoesRed(t *testing.T) {
 	planted := 0
 	for _, fx := range hostKVFixtures(t) {
 		m := fx.m
-		_, nLayers, _, _, _, _, _ := m.BackendView().Dims()
+		nLayers := m.BackendView().NumLayers()
 		for l := range nLayers {
 			oracle := webgpuKVBuffersOracle(m, l, 256, false, false)
 			if len(oracle) == 0 {
