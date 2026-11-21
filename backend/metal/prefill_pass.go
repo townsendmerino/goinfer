@@ -69,7 +69,7 @@ func (r *resident) newPrefillPass(src rowSource, startPos int, mrope [][3]int, d
 	// f16 activation scratch (per call, sized to the padded prompt).
 	// xF and the five prefillScratchU16 buffers below rely on Metal's zero-fill of a new buffer for their pad rows
 	// (aikit gpu.NewBufferLen* contract: Metal only; CUDA's is uninitialized) — see prefillScratchU16.
-	// xF too (R-20): the embeddings are converted straight into the buffer's M rows, its pad rows left as Metal zeroed
+	// xF too: the embeddings are converted straight into the buffer's M rows, its pad rows left as Metal zeroed
 	// them, instead of into a zeroed Go slice of Mpad rows that was then copied in whole.
 	xF := prefillScratchU16(d, Mpad*H)
 	residInv := 1 / r.prefillResidScale(deep)
@@ -165,7 +165,7 @@ func (r *resident) newPrefillPass(src rowSource, startPos int, mrope [][3]int, d
 		rowWgtBuf  Buffer
 	)
 	if r.moe != nil {
-		// R-20: zero-filled by Metal, not copied from zeroed Go slices; the router GEMM, the route kernels and the host
+		// Zero-filled by Metal, not copied from zeroed Go slices; the router GEMM, the route kernels and the host
 		// fill them before anything reads them (see prefillScratch).
 		moeLogits = prefillScratch[float32](d, M*r.moe.nE)
 		moeIdx = prefillScratch[uint32](d, M*r.moe.k)
