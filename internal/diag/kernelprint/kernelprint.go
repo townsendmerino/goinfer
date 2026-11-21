@@ -44,7 +44,7 @@ type Report struct {
 }
 
 // Digest is one SHA-256 over the configuration and every kernel's fingerprint, in name order: what a key mixes in
-// until it can name the kernels a family's operations use (VK4).
+// until it can name the kernels a family's operations use.
 func (r Report) Digest() string {
 	names := make([]string, 0, len(r.Kernels))
 	for n := range r.Kernels {
@@ -616,6 +616,46 @@ var suite = []kernel{
 				for _, M := range mLarge {
 					for _, N := range []int{1, 2, 3, 4, 5, 8, 9, 17} {
 						wm, err := linalg.WrapQ4K(g.blocks(q4k, N*K/256), N, K)
+						if err != nil {
+							panic(err)
+						}
+						a, dst := g.vec(M*K, 1), make([]float32, M*N)
+						wm.MatmulBTInto(workspace(thr, 0), a, dst, M)
+						s.tag("mm", thr, M, K, N)
+						s.f32(dst)
+					}
+				}
+			}
+		}
+	}},
+
+	{"linalg.WeightMat(q5k).MatmulBTInto", func(s *sink, g *gen) {
+		q5k := ggmlTypeByName("Q5_K")
+		for _, thr := range thresholds {
+			for _, K := range []int{256, 512, 768, 2304} {
+				for _, M := range mLarge {
+					for _, N := range []int{1, 2, 3, 4, 5, 8, 9, 17} {
+						wm, err := linalg.WrapQ5K(g.blocks(q5k, N*K/256), N, K)
+						if err != nil {
+							panic(err)
+						}
+						a, dst := g.vec(M*K, 1), make([]float32, M*N)
+						wm.MatmulBTInto(workspace(thr, 0), a, dst, M)
+						s.tag("mm", thr, M, K, N)
+						s.f32(dst)
+					}
+				}
+			}
+		}
+	}},
+
+	{"linalg.WeightMat(q6k).MatmulBTInto", func(s *sink, g *gen) {
+		q6k := ggmlTypeByName("Q6_K")
+		for _, thr := range thresholds {
+			for _, K := range []int{256, 512, 768, 2304} {
+				for _, M := range mLarge {
+					for _, N := range []int{1, 2, 3, 4, 5, 8, 9, 17} {
+						wm, err := linalg.WrapQ6K(g.blocks(q6k, N*K/256), N, K)
 						if err != nil {
 							panic(err)
 						}

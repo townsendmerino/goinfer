@@ -18,6 +18,8 @@ import (
 	"math/rand"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/backend/metal/kernels"
 )
 
 // TestGptOssAttnSink_metal gates the sink term against decoder/forward_gptoss.go's
@@ -436,7 +438,7 @@ func TestGptOssMoEDownBias_metal(t *testing.T) {
 		for k := range rowVals {
 			rowVals[k] = rng.Float32()*2 - 1
 		}
-		w, s := packW4A8Row(rowVals)
+		w, s := kernels.PackW4A8Row(rowVals)
 		copy(words[wrow*(K/8):(wrow+1)*(K/8)], w)
 		var acc float64
 		for g := range K / 32 {
@@ -457,7 +459,7 @@ func TestGptOssMoEDownBias_metal(t *testing.T) {
 		for k := range rowVals {
 			rowVals[k] = rng.Float32()*2 - 1
 		}
-		w, s := packW4A8Row(rowVals)
+		w, s := kernels.PackW4A8Row(rowVals)
 		copy(words[row*(K/8):(row+1)*(K/8)], w)
 		for g := range K / 32 {
 			scalesH[row*(K/32)+g] = f32ToF16(s[g])
@@ -560,7 +562,7 @@ func TestGptOssMoEDownBias_pagedIndexesBiasByExpert(t *testing.T) {
 		for k := range rowVals {
 			rowVals[k] = rng.Float32()*2 - 1
 		}
-		w, sc := packW4A8Row(rowVals)
+		w, sc := kernels.PackW4A8Row(rowVals)
 		copy(slotW[row*(K/8):(row+1)*(K/8)], w)
 		var acc float64
 		for g := range K / 32 {

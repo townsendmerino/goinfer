@@ -115,7 +115,7 @@ func runJob(s *server, lm *loadedModel, release func(), gr genRequest, rec admis
 	_, _ = lm.drive(bgCtx, gr, s.gens, s.jobs, func(t string) {
 		log.Append(mustJSON(chatChunk(gr.id, created, lm.name, delta{Content: t}, nil)))
 	})
-	// drive's own J2/J3 integration (openai.go's job block) already recorded the terminal transition and
+	// drive's own job bookkeeping (openai.go's job block) already recorded the terminal transition and
 	// result on this job; the stream closes with the same finish/usage/error events the chat route ends on.
 	if j, found := s.jobs.Snapshot(gr.id); found {
 		for _, e := range jobTerminalEvents(j, created, "") {

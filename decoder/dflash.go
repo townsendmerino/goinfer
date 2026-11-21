@@ -534,7 +534,7 @@ func loadDFlashDrafter(dir string, streamed bool) (*DFlashDrafter, error) {
 			d.rows[dst] = r
 			return nil
 		}
-		m, err := stIsland(st, name, rows, cols) // unquantized: a bf16 checkpoint's bits stay bf16, mapped (MEM11-bf16)
+		m, err := stIsland(st, name, rows, cols) // unquantized: a bf16 checkpoint's bits stay bf16, mapped
 		if err != nil {
 			return fmt.Errorf("dflash: %w", err)
 		}

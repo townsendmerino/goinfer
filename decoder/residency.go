@@ -106,7 +106,7 @@ func residentAdapterLayers(rt *loraRuntime) []ResidentAdapterLayer {
 // ResidentHybridMRoPEPrefill is an OPTIONAL marker for a MRoPEPrefillAvailable implementer: its batched m-RoPE prefill is correct for a
 // model with RECURRENT state (the Gated-DeltaNet hybrids, Qwen3.5+), building that state itself from the spliced embeddings. Without
 // it GenerateQwenVL keeps a recurrent family on the CPU prefill, because the CPU-prefill-then-UploadKV bridge copies only the layers
-// that have a KV and would leave the recurrent state zeroed (docs/multimodal.md, P8 record, item 5). HybridMRoPEPrefill reports
+// that have a KV and would leave the recurrent state zeroed (docs/multimodal.md, the Qwen3.x-VL image path record, item 5). HybridMRoPEPrefill reports
 // whether it applies to THIS loaded model (the kernel is present, the layout is supported, and no layer is one the implementer has not
 // been gated on).
 type ResidentHybridMRoPEPrefill interface {
@@ -366,9 +366,9 @@ func (a *Architecture) runnerShapeDeclineSSM(ssmResident bool) string {
 		// ropeResidentCompatible and read "yes".
 		return runnerShapeOwnForward
 	}
-	// Granite-4.0-H resident SSM hybrid (P5b): its own mixer-kind path (Mamba-2 ⊕
-	// attention), so it bypasses the standard GQA gates below. Guarded during the
-	// parity bring-up (P5b.3/P5b.4); P6 makes this unconditional.
+	// Granite-4.0-H resident SSM hybrid: its own mixer-kind path (Mamba-2 ⊕
+	// attention), so it bypasses the standard GQA gates below. Admitted only
+	// under ssmResident (GOINFER_SSM_RESIDENT, ssmResidentKnob).
 	if a.granite != nil {
 		if !ssmResident {
 			return runnerShapeBringUp
@@ -402,11 +402,11 @@ func (a *Architecture) runnerShapeDeclineSSM(ssmResident bool) string {
 	if a.mla != nil {
 		return ""
 	}
-	// Standard GQA attention: QK-norm (Qwen3/GLM/Mellum) is handled (Lever C1 — per-head
-	// RMSNorm before RoPE), q/k/v bias (Qwen2) and the (1+w) RMS offset too. Partial RoPE
-	// (GLM/Phi rotary_dim < HeadDim) is handled (Lever C5), sliding window (Lever C6), and
-	// per-layer-type RoPE (Mellum YaRN-on-global vs default-local invFreq + mscale, Lever
-	// C7). The last gate is ropeResidentCompatible below.
+	// Standard GQA attention: QK-norm (Qwen3/GLM/Mellum) is handled (per-head RMSNorm
+	// before RoPE), q/k/v bias (Qwen2) and the (1+w) RMS offset too. Partial RoPE
+	// (GLM/Phi rotary_dim < HeadDim) is handled, sliding window, and per-layer-type RoPE
+	// (Mellum YaRN-on-global vs default-local invFreq + mscale). The last gate is
+	// ropeResidentCompatible below.
 	if !a.ropeResidentCompatible() {
 		return runnerShapeRoPE
 	}
@@ -425,7 +425,7 @@ func (a *Architecture) ropeResidentCompatible() bool {
 // moeResidentEligible reports whether this arch's MoE is a shape the GPU resident
 // runner handles. The route kernel now covers every routing flavor — softmax/sigmoid,
 // optional selection bias, norm_topk_prob, routed scaling, and DeepSeek group-limited
-// top-k (NGroup > 1, Lever C4c) — plus the always-on shared expert (C3d) and dense
+// top-k (NGroup > 1) — plus the always-on shared expert and dense
 // prefix layers (FirstKDense > 0), so any int8-stackable MoE qualifies.
 func (a *Architecture) moeResidentEligible() bool {
 	return a.MoE != nil
@@ -600,7 +600,7 @@ type Gemma4MoEResidentBundle struct {
 // A whole-model no-RoPE arch (rope_theta absent, arch.NoPositionEncoding) never populates ropeInvFreqGlobal/Local,
 // so ropeInvFreq(i) is empty for every layer. The table is then RotaryDim()/2 wide, the width every resident rope
 // kernel launch expects (rhalf): a zero-length table would be a 0-byte device allocation, a hard error on CUDA
-// ( G5; docs/code-notes/decoder.md#Model.RopeInvFreqLayer).
+// (docs/code-notes/decoder.md#Model.RopeInvFreqLayer).
 func (m *Model) RopeInvFreqLayer(i int) []float32 {
 	a := m.w.arch
 	inv := a.ropeInvFreq(i)
@@ -630,9 +630,20 @@ func (m *Model) AttnScale() float32 {
 	return float32(1.0 / math.Sqrt(float64(m.w.arch.HeadDim)))
 }
 
-// Dims returns the model shape from the resolved Architecture — authoritative,
-// unlike Config() (Cfg), which a GGUF-loaded or .giw model may leave partly
-// zero. The forward pass reads these.
+// ResidentDims is the model-level shape from the resolved Architecture. Per-layer geometry (a layer's own head dim and
+// KV heads) is BackendLayerView's.
+type ResidentDims struct {
+	Hidden, Layers, Heads, KVHeads, HeadDim, Inter, Vocab int
+}
+
+// Shape returns the model shape from the resolved Architecture — authoritative, unlike Config() (Cfg), which a
+// GGUF-loaded or .giw model may leave partly zero. Prefer it to Dims: a caller names the field it reads.
+func (m *Model) Shape() ResidentDims {
+	h, l, nh, nkv, hd, inter, v := m.Dims()
+	return ResidentDims{Hidden: h, Layers: l, Heads: nh, KVHeads: nkv, HeadDim: hd, Inter: inter, Vocab: v}
+}
+
+// Dims is Shape as a positional tuple, kept for existing callers; new code takes Shape.
 func (m *Model) Dims() (hidden, nLayers, nH, nKV, hd, inter, vocab int) {
 	return m.BackendView().Dims()
 }
@@ -649,8 +660,8 @@ func (m *Model) NormEps() float32 {
 // the arch is eligible, then returns m. A no-op for the CPU backend / ineligible
 // archs (m.resident stays nil → staged/CPU path). Called at every model-load site.
 // attnSoftcapOffForTest removes the attention-score softcap from every model loaded while it is set, on the CPU and on
-// a resident alike, before the resident is built: OP1's real Gemma 2 gate measures its own baseline with it
-// ( G2-R's arm B). Set only through SetAttnSoftcapOffForTest
+// a resident alike, before the resident is built: the real Gemma 2 gate (TestG2R_registered) measures its
+// softcap-off arm with it. Set only through SetAttnSoftcapOffForTest
 // (goinfer_testhooks).
 var attnSoftcapOffForTest atomic.Bool
 
@@ -671,7 +682,7 @@ func (m *Model) withResidency() *Model {
 		m.resDecline = why
 		return m
 	}
-	// H2: the backend's startup self-test, once per backend and quant per process, BEFORE the build, so the device memory its
+	// The backend's startup self-test, once per backend and quant per process, BEFORE the build, so the device memory its
 	// fixture builds take (the local-memory pool their kernels' first launches reserve) is released or already held when the
 	// build's plan and fit check read free memory, never taken after them. A mismatch skips the build and continues on the CPU path with the reason on the decode path, instead of
 	// producing wrong numbers silently.
@@ -812,10 +823,9 @@ func (m *Model) plannedDecodePath() (path, unknown string, ctx int) {
 // build calls it (and a declined one does not); production is always debug.FreeOSMemory.
 var releaseHostMemory = debug.FreeOSMemory
 
-// --- Granite-4.0-H resident SSM bridge (P5b: resident Mamba decode, docs/ssm-residency-scope.md) ---
+// --- Granite-4.0-H resident SSM bridge (resident Mamba decode, docs/completed/ssm-residency-scope.md) ---
 // These expose the hybrid's per-layer mixer-kind + Mamba-2 mixer weights + scalar multipliers
-// to the gpu resident builder. Additive accessors; the eligibility flip (P6) is separate and
-// still gated, so production routing is unchanged until then.
+// to the gpu resident builder. Eligibility is decided separately (runnerShapeDeclineSSM's ssmResident gate).
 
 // ResidentActive reports whether the GPU full-residency decode path is built and
 // will run for a plain stateless Generate (webgpu backend + eligible arch).
@@ -824,7 +834,7 @@ func (m *Model) ResidentActive() bool { return m.resident != nil }
 // ResidentContextCap returns the resident backend's fixed KV/attention capacity in positions, or 0
 // when the model is not GPU-resident or its backend exposes no cap. A stateless prompt longer than
 // this cannot be prefilled on the resident path, so a caller can reject it up front rather than
-// fail mid-prefill (audit R-10). clampToResidentCap applies the same cap to maxTokens.
+// fail mid-prefill. clampToResidentCap applies the same cap to maxTokens.
 func (m *Model) ResidentContextCap() int { return residentCapsOf(m.resident).ContextCap }
 
 // clampToResidentCap is maxTokens cut so that a turn starting at gpuPos ends at the resident's context cap, and whether it was cut.
@@ -902,7 +912,7 @@ func (m *Model) DecodePath() string {
 		return fmt.Sprintf("%s-resident (%s)", be, label)
 	case be == "cpu":
 		s := fmt.Sprintf("cpu (%s)", m.Quant())
-		// The repacked-only int4 policy (wantsCanonicalInt4, aikit audit M-22) only ever
+		// The repacked-only int4 policy (wantsCanonicalInt4) only ever
 		// activates when Options.Backend is the literal "cpu" promise — appended here rather
 		// than in every DecodePath case, since a GPU-backend case always keeps canonical(+row4)
 		// by construction and has nothing new to say.
@@ -914,9 +924,9 @@ func (m *Model) DecodePath() string {
 		// The cuda and metal staged paths never reach the device: both backends' MatmulBT are bare CPU calls and neither
 		// implements QuantBackend, so int4, int8 and f32 all run the same CPU kernels. There is no real "cuda-staged" or
 		// "metal-staged" path, so report it the way BackendSummary reports a backend that failed to build: requested vs.
-		// actually executing (docs/measurements/cold-user-2026-09-06-nobara-pc.md, R9).
+		// actually executing (docs/measurements/cold-user-2026-09-06-nobara-pc.md).
 		req := be
-		if m.opts.BackendAuto { // the user asked for auto, which chose this backend (R17)
+		if m.opts.BackendAuto { // the user asked for auto, which chose this backend
 			req = "auto (" + be + ")"
 		}
 		return fmt.Sprintf("cpu (%s) — %s", m.Quant(), BackendSummary(req, "cpu", declinedToCPUReason(be, m.resDecline)))
@@ -941,7 +951,7 @@ func residentQuantLabel(backend, quant string) string {
 
 // autoMetalPrecision is why a model stays on the CPU when -backend auto chose metal, "" when it may go resident. A
 // backend the user did not name must not change the precision they loaded at (such as the int8int8 bundle a
-// model-included goinfer-chat carries; R17). Metal runs int4 resident, dense
+// model-included goinfer-chat carries). Metal runs int4 resident, dense
 // int8int8 natively, and q4k on its q4k lane, which keeps the file's K-quant
 // blocks; it re-quantizes int8, int4mix and the int8int8 models native int8 does
 // not cover (MoE, DeltaNet) to int4, and takes no f32. So int8int8 may try the resident here and
@@ -1041,7 +1051,7 @@ func (m *Model) PrefillPath() (batched bool, reason string) {
 // residency forward, including any embedding scale the arch applies before layer 0. Always
 // allocates fresh: safe for callers that collect several embeddings into a slice that outlives
 // the call (batch prefill assembly), where a shared buffer would corrupt every entry but the
-// last. The per-token decode loop wants embedResidentInto instead (P-08, audit-2026-09-10).
+// last. The per-token decode loop wants embedResidentInto instead.
 func (m *Model) embedResident(id int) []float32 { return m.embedResidentInto(id, nil) }
 
 // embedIsTableRow reports whether embedResidentInto is exactly m.w.Embed.Row: no embedding multiplier of either kind is
@@ -1092,7 +1102,7 @@ func (m *Model) embedResidentScratch(id int, dst, pleScratch []float32) []float3
 		}
 	}
 	// Granite embedding_multiplier — the resident residual stream starts at emb·EmbMul
-	// (P5b; the only Granite scalar applied outside the resident runner / weight folds).
+	// (the only Granite scalar applied outside the resident runner / weight folds).
 	if g := m.w.arch.granite; g != nil && g.EmbMul != 0 && g.EmbMul != 1 {
 		for i := range h {
 			h[i] *= g.EmbMul
@@ -1102,7 +1112,7 @@ func (m *Model) embedResidentScratch(id int, dst, pleScratch []float32) []float3
 		tail := row[hidden:]
 		m.gemma4PLEInputsScratch(h, id, tail, pleScratch)
 		if gemma4PLEDropTokenForTest {
-			// G2 defect (2), resident row only: take the token-identity term back out, leaving context_aware/√2.
+			// Planted defect (2), resident row only: take the token-identity term back out, leaving context_aware/√2.
 			tok := make([]float32, len(tail))
 			m.w.PerLayerTokenEmbed.Row(id, tok)
 			sc := float32(math.Sqrt(float64(m.w.arch.gemma4.HiddenSizePerLayerInput)) / math.Sqrt2)
@@ -1114,8 +1124,8 @@ func (m *Model) embedResidentScratch(id int, dst, pleScratch []float32) []float3
 	return row
 }
 
-// gemma4PLEDropTokenForTest is S1's G2 planted defect (2): the
-// token-identity term missing from the resident row's PLE inputs, which G1 (resident against the CPU) must catch.
+// gemma4PLEDropTokenForTest is planted defect (2) of TestGemma4EModel_plantedDefects: the token-identity term
+// missing from the resident row's PLE inputs, which the resident-against-CPU parity gate must catch.
 // Set only through SetGemma4PLEDropTokenForTest (goinfer_testhooks).
 var gemma4PLEDropTokenForTest bool
 
@@ -1149,7 +1159,7 @@ func (m *Model) BackendReport() string {
 // int4LayoutSummary reports which int4 layout each tensor CLASS resolved to (aikit's WeightMat.Int4Layout(), one
 // representative per class, since every tensor in a class shares one needCanonical decision): "int4 layout: row4-only
 // (embed, qkv, gate/up); canonical (down)". Diagnosable from this line instead of a tok/s comparison when a resident or
-// staged build declines for a reason that traces back to wantsCanonicalInt4 (M-22). "" when the model has no layers or
+// staged build declines for a reason that traces back to wantsCanonicalInt4. "" when the model has no layers or
 // nothing in it is int4-resident.
 func (m *Model) int4LayoutSummary() string {
 	if m.w == nil || len(m.w.Layers) == 0 {

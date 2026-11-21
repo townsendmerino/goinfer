@@ -38,9 +38,9 @@ type Config struct {
 // DefaultMaxPixels is the decompression-bomb cap applied when Config.MaxPixels
 // is unset. 16 MP is far above any real photo and caps the decode allocation.
 //
-// A ZERO MaxPixels used to mean "no limit" (audit C-06), so any caller who built
-// a Config literal without naming the field — the natural thing to do, and what
-// a zero value gives you — silently turned the guard OFF. That is the wrong
+// A ZERO MaxPixels means this default, not "no limit": otherwise any caller who
+// built a Config literal without naming the field — the natural thing to do, and
+// what a zero value gives you — would silently turn the guard OFF. That is the wrong
 // direction for a fail-safe: the default for an unset security limit should be
 // the limit, not its absence. A caller who genuinely wants a larger bound sets
 // a larger number.
@@ -48,7 +48,7 @@ const DefaultMaxPixels = 16 << 20
 
 // maxPixels resolves the effective decompression-bomb cap: the configured value
 // when set, DefaultMaxPixels when not. Factored out so the resolution can be
-// tested without synthesising a 16-megapixel image (audit C-06).
+// tested without synthesising a 16-megapixel image.
 func (c Config) maxPixels() int {
 	if c.MaxPixels <= 0 {
 		return DefaultMaxPixels
@@ -85,7 +85,7 @@ func Preprocess(data []byte, cfg Config) (*PixelValues, error) {
 	// A zero Std yields +Inf (v != Mean) or NaN (v == Mean) pixels that propagate
 	// silently through softmax to an all-NaN hidden state. Config is an exported
 	// struct with no mandatory constructor, so reject it like the other bad-field
-	// checks here (audit #23).
+	// checks here.
 	for c := range cfg.Std {
 		if cfg.Std[c] == 0 {
 			return nil, fmt.Errorf("vision: Std[%d] is 0 (would produce Inf/NaN pixels)", c)

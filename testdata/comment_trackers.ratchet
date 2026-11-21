@@ -1,0 +1,11 @@
+# Tracker ids left in exported declarations' doc comments, per file: `<file> <count>` (comment_census.py tree).
+# A count may only fall; `comment_census.py tree --update` rewrites it and refuses a rise.
+backend/cuda/internal/gpudev/cuda.go 1
+backend/metal/prefill.go 1
+backend/webgpu/internal/kernels/decodetoken_batched.go 1
+backend/webgpu/internal/kernels/prefillrunner.go 1
+decoder/fidelity_testhook.go 1
+decoder/fit/fit.go 2
+internal/runtime/mem/probe/reading.go 1
+internal/runtime/mem/probe/swap_darwin.go 1
+internal/vision/qwen3_encoder.go 2

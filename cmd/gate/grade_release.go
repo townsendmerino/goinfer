@@ -631,7 +631,7 @@ func rowCI(e *relEnv) relRow {
 
 // ---- row 11: the §C1 parity sweep ----
 
-// rowParity is the release command's §C1 row: a complete parity sweep covers HEAD. The paths a sweep vouches for
+// rowParity is the release command's RELEASING.md §C1 row: a complete parity sweep covers HEAD. The paths a sweep vouches for
 // (parityQualifyingPaths of the manifest) are the "parity-paths" read, one per line.
 func rowParity(e *relEnv) relRow {
 	const name = "the §C1 parity sweep covers HEAD"

@@ -19,6 +19,6 @@ var activationFanoutEnabled = false
 // (docs/measurements/cpu-decode-roofline-2026-09-23.md). On.
 const fusedGateUpDefault = true
 
-// w4a8BatchDefault: R-06's one fork/join for q/k/v (weightmat.go). Bit-identical, and a small gain on every measured
+// w4a8BatchDefault: one fork/join for q/k/v (weightmat.go). Bit-identical, and a small gain on every measured
 // model on top of the fused gate+up. On.
 const w4a8BatchDefault = true

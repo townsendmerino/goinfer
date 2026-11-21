@@ -44,7 +44,7 @@ func (r *cudaResident) prefillDeltaNetRows(Ly *cudaLayer, xB, aqB, aScB Buffer, 
 	t = r.profTic()
 	// The recurrence, five launches for all M rows. The conv ring and the delta rule walk the rows in order inside
 	// each thread; the gates and both norms are row-independent. Bit-identical to five launches per row.
-	// A speculative verify (SP2, recurrent_spec.go) takes the twins: they fold the previous verify's committed rows (pend, pM)
+	// A speculative verify (recurrent_spec.go) takes the twins: they fold the previous verify's committed rows (pend, pM)
 	// into the window and state first, then the conv reads its window and the pass's earlier rows and the scan starts from the
 	// committed state, and neither stores this pass's rows.
 	convCfg := g1cfg(dp.convDim, 256)

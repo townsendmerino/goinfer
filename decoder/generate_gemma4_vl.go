@@ -13,7 +13,7 @@ import (
 // Unlike prefillLogitsVL and prefillLogitsQwenVL, this walks ids one token at a time via the Gemma 4 program walk and
 // runLayersFromEmbedPLE: Gemma 4's program has no batched causal walk (the batched walker declines its operations, and its
 // batched twin serves only the bidirectional spans). That is exact for a checkpoint that ships
-// use_bidirectional_attention="" (the E-models, docs/multimodal.md P7 entry): the reference attends to the image block
+// use_bidirectional_attention="" (the E-models, docs/multimodal.md, the Gemma 4 vision entry): the reference attends to the image block
 // strictly causally too, so a sequential per-position walk is that forward. A checkpoint with
 // use_bidirectional_attention="vision" needs the batched, blockwise-masked forward
 // (prefillLogitsGemma4VLBidirectional); GenerateGemma4VL dispatches, and this function is never called for a
@@ -79,7 +79,7 @@ func (m *Model) prefillLogitsGemma4VLBidirectionalSpans(ctx context.Context, ids
 	if err := checkImageSpans(spans, len(ids), imageEmbeds, hidden); err != nil {
 		return nil, err
 	}
-	// Passes of prefillChunkRows rows, cut outside the image blocks (MEM5-VL): each pass embeds its own rows, with the raw projected
+	// Passes of prefillChunkRows rows, cut outside the image blocks: each pass embeds its own rows, with the raw projected
 	// features (no embed scale) spliced in. A capture or a speculative tree keeps one pass.
 	n, C := len(ids), len(ids)
 	if cache.captureLayers == nil && !cache.subCapture && cache.treeRowPos == nil && cache.treeMask == nil {

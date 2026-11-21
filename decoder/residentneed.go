@@ -99,7 +99,7 @@ func (m *Model) MetalKVTableRaiseBytes(slots, ctx int) int64 {
 }
 
 // metalKVTables is how many block tables a Metal resident holds for each slot: the primary group's and, when sliding layers and
-// layers of another group both hold K/V, the window group's (KV5-7b). It reads the geometry the build reads.
+// layers of another group both hold K/V, the window group's. It reads the geometry the build reads.
 func metalKVTables(a *Architecture) int {
 	if a == nil {
 		return 1

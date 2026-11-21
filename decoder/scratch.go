@@ -39,8 +39,8 @@ type decodeScratch struct {
 	ws        *linalg.Workspace // W8A8/W4A8 activation-quant scratch (zero-alloc Into/Batch)
 	qkvOps    [3]linalg.W8A8Op  // reused q/k/v batch ops
 	gateUpOps [2]linalg.W8A8Op  // reused gate/up batch ops
-	qkvOpsW4  [3]linalg.W4A8Op  // reused q/k/v W4A8 batch ops (audit R-06)
-	guOpsW4   [2]linalg.W4A8Op  // reused gate/up W4A8 batch ops (audit R-06)
+	qkvOpsW4  [3]linalg.W4A8Op  // reused q/k/v W4A8 batch ops
+	guOpsW4   [2]linalg.W4A8Op  // reused gate/up W4A8 batch ops
 	gptOss    *gptOssScratch    // gpt-oss MoE scratch (gptOssMoEWith), made on first use
 	fusedPair fusedPairScratch  // per-worker serial Workspaces for the fused gate+up+SwiGLU path (cpu_gateup_fused.go)
 

@@ -19,7 +19,7 @@ import (
 // TINY (the default, by day) is the fixture the family's forward golden already loads, with that
 // golden's own prompt ids — the family's parity prompt — so "identical here" is a statement about
 // exactly the input the family's tiny validation used. REAL (-assets real) is a small table of
-// checkpoints under ~/models with two fixed prose prompts (L1's), tokenized once by this build so both
+// checkpoints under ~/models with two fixed prose prompts (the prose prefill gate's), tokenized once by this build so both
 // revisions see the same ids. The table is explicit on purpose: a family with no tiny fixture is
 // listed with the reason, and TestIdentityAssets_coverTheManifest fails when a manifest family is in
 // neither list — a new family cannot silently fall out of the check.
@@ -118,7 +118,7 @@ var identityReal = []identityAsset{
 	{Family: "spark2_5", Name: "1.7b", Path: "spark25-1.7b", Tok: "spark25-1.7b"},
 }
 
-// identityRealPrompts are L1's two prose prompts (docs/measurements/cpu-decode-peer-gap-2026-09-27/
+// identityRealPrompts are the prose prefill gate's two prompts (docs/measurements/cpu-decode-peer-gap-2026-09-27/
 // f16xbuild-mac.go.txt): 145 and 621 tokens on the qwen2.5 tokenizer.
 //
 // long adds a third of about 2,500 tokens, so a CPU prefill crosses its 2,048-row chunk.
@@ -217,7 +217,7 @@ func maxPositions(dir string) int {
 }
 
 // longPrompt cycles the parity prompt out to a longer one, so a prompt past the batched-prefill
-// threshold is covered as well as the golden's short one (L1's dumps used 145 and 621 tokens). It
+// threshold is covered as well as the golden's short one (the prose prompts are 145 and 621 tokens). It
 // stays inside the checkpoint's context with room for the decode steps; 0 when there is no room.
 func longPrompt(ids []int, maxPos, steps int) []int {
 	const want = 160

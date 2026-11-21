@@ -124,7 +124,7 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 		// Claim the single shared resident KV before any device write: a second concurrent Generate on the same *Model would
 		// otherwise prefill into the same positional device KV, interleaving writes and corrupting both streams, against a
 		// Model doc that promises concurrent distinct sequences. On loss, fall back to the staged CPU cache. The draft is a
-		// separate Model with its own claim. tryClaimResident, not a bare CAS on resBusy: MC3's batched holders never set
+		// separate Model with its own claim. tryClaimResident, not a bare CAS on resBusy: the batched decode's holders never set
 		// resBusy, so only the claim that also requires no holder keeps this off a resident mid-batch.
 		if resident {
 			if target.tryClaimResident() {

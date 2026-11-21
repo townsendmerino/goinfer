@@ -77,7 +77,7 @@ func (m *Model) newGemma4Pass(prog *layerProgram, h []float32, rows *batchRows, 
 // gemma4BatchRange is the inclusive key range [lo, hi] a query at pos may attend: the causal range from the window's start
 // (window 0 is global), widened to the whole block when pos is inside a bidirectional span. The union is one interval, since pos
 // is in both. This is transformers' or_masks(windowed_causal, blockwise_overlay) (masking_utils.py), which applies to global and
-// sliding layers alike (docs/multimodal.md, P7 entry); a query outside every span gets the plain range.
+// sliding layers alike (docs/multimodal.md, the Gemma 4 vision entry); a query outside every span gets the plain range.
 func gemma4BatchRange(pos, window int, spans []ImageSpan) (lo, hi int) {
 	hi = pos
 	if window > 0 {

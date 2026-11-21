@@ -10,13 +10,12 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-// SP2's speculative verify on a Gated-DeltaNet resident (decoder.ResidentRuntimeSubsystem; design and gates in
-// ). A verify pass runs the DeltaNet layers through the
-// conv and scan twins that never store (delta_conv_rows_spec, delta_rule_rows_128_spec, delta_rule_rows_spec), and writes
-// each row's recurrence inputs into dnSpecArena instead of the pass's scratch. FoldVerified marks the rows the loop commits; the
-// next verify's twins fold them into the live window and state before scanning their own rows, and FlushFold folds them through
-// prefill's own kernels when something other than a verify comes next. Either way the committed state is the bits a prefill of
-// those rows would leave, and no copy of the state is ever made.
+// The speculative verify on a Gated-DeltaNet resident (decoder.ResidentRuntimeSubsystem). A verify pass runs the DeltaNet layers
+// through the conv and scan twins that never store (delta_conv_rows_spec, delta_rule_rows_128_spec, delta_rule_rows_spec), and
+// writes each row's recurrence inputs into dnSpecArena instead of the pass's scratch. FoldVerified marks the rows the loop
+// commits; the next verify's twins fold them into the live window and state before scanning their own rows, and FlushFold folds
+// them through prefill's own kernels when something other than a verify comes next. Either way the committed state is the bits a
+// prefill of those rows would leave, and no copy of the state is ever made.
 
 // dnSpecArena holds, per DeltaNet layer, a verify's rows in two banks: the conv input, the conv output, the normed q and k and the
 // gates, at most rows of each, in one device allocation (Buffer.At slices it). A verify writes one bank while the twins fold the
@@ -33,12 +32,12 @@ type dnSpecArena struct {
 	pend  int
 }
 
-// dnSpecPlantForTest plants a defect for SP2's identity gate to catch (G1's P1 and P2). Set by tests only.
+// dnSpecPlantForTest plants a defect for the speculative verify's identity gate to catch. Set by tests only.
 var dnSpecPlantForTest int
 
 const (
 	dnSpecPlantFoldSkipsConv     = iota + 1 // the fold replays the scan but leaves the conv window where it was
-	dnSpecPlantVerifyWritesState            // the verify commits every row, as before SP2, and the fold does nothing
+	dnSpecPlantVerifyWritesState            // the verify commits every row, and the fold does nothing
 )
 
 // recurrentSpecFloats is the f32 count one bank keeps per row and DeltaNet layer: conv input and output (convDim each), normed q

@@ -95,7 +95,7 @@ type expertPool struct {
 	// nibbles straight into slot s's unified-memory buffers, one syscall and no page faults, so fetch and copy collapse into
 	// the single read. nil ⇒ the mmap byte-copy path (docs/code-notes/metal.md#stagePread).
 	stagePread  func(e int, s expertSlot)
-	scalePreads atomic.Int64 // stages whose f16 scales were pread from the file too (C-P01); atomic: batch stages run concurrently
+	scalePreads atomic.Int64 // stages whose f16 scales were pread from the file too; atomic: batch stages run concurrently
 
 	// Lever 3: experts guessed for this layer's next use, claimed on the caller's
 	// thread and read in the background (prefetchAsync); finishPrefetch, which ensureResidentBatch runs first, waits for
@@ -143,7 +143,7 @@ func preadRangeIntoU32Buf(fd int, dst Buffer, dstOff int, off int64, n int) erro
 
 // preadScalesIntoPoolSlot is preadRangeIntoPoolSlot for a pool's f16 scale buffer (guS or dS, uint16 elements): it reads n
 // bytes from file offset off into slot's region at byte subOff, addressed against the BASE buffer by slot number for the
-// same reason (U16s ignores a view's offset). C-P01 (docs/audit-metal-2026-09-30.md): a .giw stores each
+// same reason (U16s ignores a view's offset). A .giw stores each
 // tensor's f16 scales in the file, so the pread stage reads them as it reads the nibbles instead of copying them out of the
 // mapping and taking a page fault per 16 KB on a cold expert.
 func preadScalesIntoPoolSlot(fd int, base Buffer, slot, strideElems, subOff int, off int64, n int) error {
@@ -174,7 +174,7 @@ func preadFull(fd int, db []byte, off int64) error {
 	return nil
 }
 
-// scaleFileOffset returns where an f16 scale slice lies in m's .giw mapping, if it does (C-P01). It views the slice's
+// scaleFileOffset returns where an f16 scale slice lies in m's .giw mapping, if it does. It views the slice's
 // bytes without copying; MmapByteOffset is pointer arithmetic and touches no page.
 func scaleFileOffset(m *decoder.Model, s []uint16) (int64, bool) {
 	if len(s) == 0 {
@@ -373,7 +373,7 @@ func (p *expertPool) ensureResidentBatch(ids []int) []expertSlot {
 	return out
 }
 
-// expertPoolDefect plants G-1's defects; 0 in
+// expertPoolDefect plants the expert pool's defects; 0 in
 // production. 1: a slot whose expert is evicted keeps the evicted expert's bytes (the new one is not staged). 2: the
 // GPU is told the next slot along. 3: each staged expert takes the next expert's scales.
 var expertPoolDefect int

@@ -1,6 +1,6 @@
 package kernels
 
-// PagedFenceSrc follows aikit's C-B03 probe (gpu/metal_fence_probe_test.go, after MLX's kernels/fence.metal): the system
+// PagedFenceSrc follows aikit's fence probe (gpu/metal_fence_probe_test.go, after MLX's kernels/fence.metal): the system
 // thread scope is not public MSL, so it is built from the compiler's __METAL_MEMORY_SCOPE_SYSTEM__. The router wrote its ids
 // with plain stores in an earlier dispatch of the same serial encoder, and a system-scope fence does not publish non-coherent
 // stores (the probe saw stale payloads), so this kernel copies the ids through coherent(system) stores into a mirror the host

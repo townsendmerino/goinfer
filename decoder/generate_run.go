@@ -185,7 +185,7 @@ func (r *genRun) advance(next int, needFull bool, clk *decodeClock) error {
 			return ferr
 		}
 		if r.mc3 != nil {
-			// MC3: submit the token; it runs in a shared step with the other generations' tokens, or — alone — as
+			// Batched decode: submit the token; it runs in a shared step with the other generations' tokens, or — alone — as
 			// residentCall on our own slot. A step's row is bit-identical to this token's own call: Forward's
 			// logits, or ForwardSample's id for a device-drawn token (the same draw). A greedy token served by a
 			// step continues on the full-logits path, which production's fast path equals by its own contract
@@ -274,9 +274,9 @@ func (r *genRun) chooseDecodePath() {
 		(r.sampler.ArgmaxEquivalent() || r.sampler.GreedyEquivalent()) &&
 		m.knobs.get(knobNoGreedyFastpath) == ""
 	// The greedy chain (GreedyChainAvailable): the same tokens with the next token's forward queued on the device before the host
-	// has seen this one. With no processor, or a gated one while its gate is closed (outside MC3: a step the gate opens stops the
+	// has seen this one. With no processor, or a gated one while its gate is closed (outside the batched decode: a step the gate opens stops the
 	// chain and takes the full-logits path below, which the chain would otherwise skip), no adapter, and where the embedding
-	// lookup is a plain table row, which the resident's gather reproduces. Under MC3 it runs only on the tokens this generation
+	// lookup is a plain table row, which the resident's gather reproduces. Under the batched decode it runs only on the tokens this generation
 	// decodes alone, with the resident held across them (holdSolo); every other token takes the batcher as before, so fastGreedy
 	// stays the path for those.
 	r.chainRF = m.resDecode()
@@ -286,7 +286,7 @@ func (r *genRun) chooseDecodePath() {
 	if r.useChain && r.mc3 == nil {
 		r.fastGreedy = false
 	}
-	r.chainTok = r.mc3 == nil // this token may run the chain: always unbatched, under MC3 only on a held token
+	r.chainTok = r.mc3 == nil // this token may run the chain: always unbatched, batched only on a held token
 	r.chainOpen, r.chainPos = false, 0
 	r.stopChain = func() {
 		if r.chainOpen {
@@ -302,7 +302,7 @@ func (r *genRun) chooseFastPaths() {
 	// Optimistic forward (spec_optfwd.go): sampled decode's (Temperature>0) sibling of the greedy fast path, overlapping the CPU
 	// sampler with a speculative Forward instead of skipping it. Excludes the rare overlap with fastGreedy (Temperature>0 AND
 	// top_k==1) so the two never drive the same step. GOINFER_NO_OPTFWD forces the plain sequential path (escape hatch / A-B
-	// check). Off under MC3: optFwdStep drives the resident outside the batcher's exclusive section.
+	// check). Off under the batched decode: optFwdStep drives the resident outside the batcher's exclusive section.
 	r.optFwd = r.useGPU && r.mc3 == nil && r.resCost == nil && !r.fastGreedy && !r.useChain && m.optFwdEligible(r.sp) && m.knobs.get(knobNoOptFwd) == ""
 
 	// Device top-K fast path (sampler_topk.go): a filtered sampler (top_k / top_p / min_p at temperature > 0) needs only the K
@@ -312,9 +312,9 @@ func (r *genRun) chooseFastPaths() {
 	// (escape hatch / A-B check), same convention as GOINFER_NO_GREEDY_FASTPATH.
 	r.topKOn = false
 	r.topKWidth, r.topKVocab = 0, len(r.logits)
-	// Under MC3 a TopKRow's Full() reads the resident's logits, which a later step of another generation may have overwritten, so
+	// Under the batched decode a TopKRow's Full() reads the resident's logits, which a later step of another generation may have overwritten, so
 	// the draw is resolved inside the resident call (topKPre / topKPreFull below) while this generation still holds the resident,
-	// not at the top of the next iteration. Do not switch it off under MC3: that sent every CUDA top-p request down the
+	// not at the top of the next iteration. Do not switch it off there: that sends every CUDA top-p request down the
 	// full-row path (docs/measurements/topp-regression-2026-09-30.md).
 	if r.useGPU && !r.fastGreedy && !r.useChain && !r.optFwd && r.procFree && m.knobs.get(knobNoTopKFastpath) == "" && r.sampler.TopKEligible() {
 		if m.canDecode(outTopK) {
@@ -342,11 +342,11 @@ func (r *genRun) chooseFastPaths() {
 		!math.IsInf(1/r.sp.Temperature, 0) && r.chainRF.SampleChainAvailable() {
 		r.sChainRF = r.chainRF
 	}
-	// Under MC3 the top-K draw is made inside the resident call (see topKOn above): topKPre is the drawn token when the row
+	// Under the batched decode the top-K draw is made inside the resident call (see topKOn above): topKPre is the drawn token when the row
 	// held the whole retained set, else topKPreFull says topKFullBuf holds this step's full row, copied before the resident
 	// was released. Both are consumed, and cleared, where topKRow is.
 
-	// mc3Logits holds an MC3 solo token's logits: a resident's Forward returns its one host buffer, reused by every call, and this
+	// mc3Logits holds a batched generation's solo-token logits: a resident's Forward returns its one host buffer, reused by every call, and this
 	// generation reads the logits after leaving the resident (in its LogitProcessor and its sampler) while another generation's
 	// solo token may already be rewriting that buffer.
 
@@ -357,10 +357,10 @@ func (r *genRun) chooseFastPaths() {
 
 }
 
-// bindDecodeExits defines exitDecode and commitResident: the two exits a decode ends through (an MC3 generation leaves the decoding count; the resident records what its KV now holds).
+// bindDecodeExits defines exitDecode and commitResident: the two exits a decode ends through (a batched generation leaves the decoding count; the resident records what its KV now holds).
 func (r *genRun) bindDecodeExits() {
 	m := r.m
-	// commitResident records what the resident KV now holds for this generation (residentCommitIDs). Under MC3 it binds
+	// commitResident records what the resident KV now holds for this generation (residentCommitIDs). Under the batched decode it binds
 	// this generation's slot first, with the resident to itself, and stops counting it as decoding (so no run waits for
 	// its token while it commits).
 	r.decoding = false
@@ -387,12 +387,12 @@ func (r *genRun) bindDecodeExits() {
 	}
 }
 
-// buildTarget assembles the decode target plainDecodeLoop drives from this generation's pick and advance, its held-send grace under MC3 and the cost counter that counts forwards.
+// buildTarget assembles the decode target plainDecodeLoop drives from this generation's pick and advance, its held-send grace under the batched decode and the cost counter that counts forwards.
 func (r *genRun) buildTarget() {
 	r.tg = decodeTarget{logits: func() []float32 { return r.logits }}
 	r.tg.pick = r.pick
 	if r.mc3 != nil {
-		// A kept hold (a chained decode alone under MC3) must not keep the resident while the consumer is not reading: a
+		// A kept hold (a chained decode alone under the batched decode) must not keep the resident while the consumer is not reading: a
 		// newcomer would wait on this send. Give the consumer a short grace, then let go before blocking.
 		r.tg.send = func(next int) bool {
 			if !r.mc3.isHolding() {
@@ -420,7 +420,7 @@ func (r *genRun) buildTarget() {
 		r.tg.finish = r.commitResident
 	}
 	r.tg.advance = r.advance
-	// A counted resident decode is one span over the loop (SB11b): its tokens are the forwards advance ran, one per emitted
+	// A counted resident decode is one span over the loop: its tokens are the forwards advance ran, one per emitted
 	// token.
 	r.decoded = 0
 	if r.resCost != nil && r.tg.advance != nil {

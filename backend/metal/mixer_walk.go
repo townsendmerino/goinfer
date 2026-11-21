@@ -12,7 +12,7 @@ import (
 // once: DeltaNet's out_proj adds into the residual. checkMixerWalk holds every step's operations to what the walk emits when the
 // resident builds, so the walk meets no operation it cannot emit.
 
-// mixerWalkPlantForTest plants P-1's defects in the walk: mixerWalkPlantResidual adds a residual after an output projection that
+// mixerWalkPlantForTest plants defects in the walk: mixerWalkPlantResidual adds a residual after an output projection that
 // already adds it (DeltaNet's out_proj, a fused attention o-proj), and mixerWalkPlantAddOne has the input norm ignore (1 + w).
 var mixerWalkPlantForTest int
 

@@ -39,7 +39,7 @@ type gpuRecord struct {
 	Trees        map[string]string `json:"trees"` // git tree id of each gpuQualifyingTrees directory at Commit, for a reader; qualification recomputes them
 	// HeavyProcesses is each heavy-tier main-group process's memory, as the never-swap rule reads it.
 	HeavyProcesses []heavyProcRecord `json:"heavy_processes,omitempty"`
-	// The tally gradeGPU decided from, by name, so a record regrades in full; records before SB12 step 7 hold only
+	// The tally gradeGPU decided from, by name, so a record regrades in full; an older record holds only
 	// Groups' counts.
 	Expect       []string `json:"expect,omitempty"`
 	Emitted      []string `json:"emitted,omitempty"`

@@ -9,7 +9,7 @@
 // (LoaderRule) to the builder rule. A family with no programs keeps every file in both. A tree is read through a Source,
 // so the same code hashes a working tree and any commit.
 // decoder's TestParityKey_matchesFreshDepsHash holds today's key equal to freshDepsHash, and
-// decoder's TestParityKey_shadowMatchesDecoder holds the shadow key to decoder's own computation. LoaderDigest reads SB4's
+// decoder's TestParityKey_shadowMatchesDecoder holds the shadow key to decoder's own computation. LoaderDigest reads the
 // loader identity table, which no key reads yet.
 //
 // Imports: the standard library only.
@@ -33,7 +33,7 @@ import (
 )
 
 // RecordsDir holds the parity records: SharedSetsFile and one <family>.json per family. LegacyManifestPath is the single
-// file they replaced (VK3); commits before the change carry it, and ManifestJSON still reads it there.
+// file they replaced; commits before the change carry it, and ManifestJSON still reads it there.
 const (
 	RecordsDir         = "testdata/parity"
 	SharedSetsFile     = RecordsDir + "/shared_sets.json"
@@ -69,7 +69,7 @@ func (d Dir) ListDir(path string) ([]string, error) {
 }
 
 // ManifestJSON assembles the parity manifest as one JSON object, {"shared_sets": {...}, "families": {"<name>": {...}}},
-// from src's records, each family's record carried verbatim. A tree without records (a commit before VK3) yields its
+// from src's records, each family's record carried verbatim. A tree without records (a commit before the per-family records) yields its
 // single manifest file unchanged. A tree with neither is an error, never an empty manifest.
 func ManifestJSON(src Source) ([]byte, error) {
 	sets, err := src.ReadFile(SharedSetsFile)
@@ -295,7 +295,7 @@ func TodayKey(src Source, m *Manifest, fam Family, def, tail string, programs ma
 	return hashFiles(src, ShadowFiles(m, fam, nil), "programs="+d+"\n"+tail)
 }
 
-// ProgramTablePath is VK4's committed program fingerprint table: GOARCH -> fixture directory -> fingerprint. decoder's
+// ProgramTablePath is the committed program fingerprint table: GOARCH -> fixture directory -> fingerprint. decoder's
 // TestProgramFingerprint_table holds each GOARCH's entry to the programs the fixtures' configs build.
 const ProgramTablePath = "testdata/program_fingerprints.json"
 
@@ -354,7 +354,7 @@ func ProgramsDigest(fixtures []string, tab map[string]map[string]string) (string
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// LoaderTablePath is SB4's committed loader identity table: GOARCH -> fixture -> quant mode -> the digest of the fixture's
+// LoaderTablePath is the committed loader identity table: GOARCH -> fixture -> quant mode -> the digest of the fixture's
 // per-tensor identities as loaded in that mode. decoder's TestLoaderIdentity_table holds each GOARCH's entry to the
 // loaders. The shadow key reads it (LoaderRule), so the loader files leave a family's key the way the program fingerprints let
 // the builders leave it.

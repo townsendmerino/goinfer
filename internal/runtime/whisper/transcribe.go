@@ -57,7 +57,7 @@ func LoadTranscriber(dir string) (*Transcriber, error) {
 	return nil, err
 }
 
-// MaxSamples is one window: 30 s of 16 kHz audio. A longer clip is long-form (S14.4d) and is refused here.
+// MaxSamples is one window: 30 s of 16 kHz audio. A longer clip is long-form and is refused here.
 const MaxSamples = 30 * audio.WhisperSampleRate
 
 // Encode runs the front end and the encoder over one window and returns the encoder's last hidden state.

@@ -9,7 +9,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/cost"
 )
 
-// costPlantForTest plants SB11's extra-sync defect: 2 adds a blocking poll after the token.
+// costPlantForTest plants the cost counters' extra-sync defect: 2 adds a blocking poll after the token.
 var costPlantForTest int
 
 // costToken runs one token's work with c counting into phase p (kernels' cost.go attributes the dispatches), and adds the token's

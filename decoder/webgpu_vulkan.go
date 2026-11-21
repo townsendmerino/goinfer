@@ -9,7 +9,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-// WebGPU's device memory as Vulkan allocates it (M1′, docs/measurements/sb2-vk-2026-10-31/README.md): wgpu-native's gpu-allocator
+// WebGPU's device memory as Vulkan allocates it (docs/measurements/sb2-vk-2026-10-31/README.md): wgpu-native's gpu-allocator
 // places each buffer into 128 MiB, then 256 MiB, device-local blocks, first fit, newest block first, and gives a buffer larger than
 // the current block size a block of its own; it keeps one 64 MiB host-visible block for the upload staging; and the device itself
 // holds 144 MiB. The planner prices a webgpu load as that, not as the sum of its buffers, and the WebGPU slot census predicts
@@ -17,12 +17,12 @@ import (
 // RTX 2070 SUPER on 595.112.07): the constants are re-measured, not carried, on another.
 const (
 	webgpuVkInternal  = 512<<10 + 256 + 256 // wgpu-core's own per-device buffers
-	webgpuVkAlign     = 256                 // the driver's buffer alignment, assumed (M1's source reading)
+	webgpuVkAlign     = 256                 // the driver's buffer alignment, assumed (from the source reading)
 	webgpuVkDevFirst  = 128 << 20
 	webgpuVkDevMax    = 256 << 20
 	webgpuVkHostBlock = 64 << 20  // the host-visible block gpu-allocator keeps
-	webgpuVkDevice    = 144 << 20 // the device's own memory, fitted on G-VK1's six loads and judged on five held out
-	webgpuVkScratch   = 8 << 20   // the runner's scratch line (3 to 7 MiB in G-VK1's ledgers)
+	webgpuVkDevice    = 144 << 20 // the device's own memory, fitted on six loads and judged on five held out
+	webgpuVkScratch   = 8 << 20   // the runner's scratch line (3 to 7 MiB in the fit loads' ledgers)
 )
 
 // webgpuVulkan reports whether this build's WebGPU runs on Vulkan, whose allocation M1′ models; on darwin wgpu runs on Metal, whose
@@ -264,7 +264,8 @@ func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []
 			weights += n
 		}
 	}
-	hidden, nLayers, _, _, _, _, _ := m.Dims()
+	shape := m.Shape()
+	hidden, nLayers := shape.Hidden, shape.Layers
 	for i := range w.Layers {
 		var bufs []int64
 		var kv bool
@@ -310,7 +311,7 @@ func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []
 			// Each projection W8A8, from its int8 form or its f32 (mlaProj), then kv_b split into W_UKᵀ and W_UV, f32.
 			mla, _ := m.BackendView().MLA()
 			qLoRA, kvLoRA, qkNope, qkRope, vHead := mla.QLoRARank, mla.KVLoRARank, mla.QKNopeHeadDim, mla.QKRopeHeadDim, mla.VHeadDim
-			_, _, nH, _, _, _, _ := m.Dims()
+			nH := m.Shape().Heads
 			proj := func(q *linalg.WeightMat, rows, cols int) {
 				if q.Rows() != 0 {
 					rows, cols = q.Rows(), q.Cols()
@@ -366,7 +367,7 @@ func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []
 
 // webgpuBlockRounding is what a WebGPU load holds at ctx beyond what the plan already prices on its own lines (the dense matrices, the
 // routed experts, the context, and one slot's recurrent state): gpu-allocator's blocks over webgpuDeviceBuffers, less those. The plan's
-// total is therefore M1′'s blocks plus webgpuVkFixed and what sits beside the blocks (the vectors, biases and derived tables).
+// total is therefore the allocator's blocks plus webgpuVkFixed and what sits beside the blocks (the vectors, biases and derived tables).
 func (m *Model) webgpuBlockRounding(ctx int, kvF16, kvI8 bool) int64 {
 	slot0, _, dense := m.webgpuDeviceBuffers(ctx, kvF16, kvI8)
 	return webgpuVkBlocks(slot0) - dense - m.webgpuExpertLine() - m.ResidentKVBytes("webgpu", ctx, kvF16, kvI8) - m.stateBytes("webgpu")

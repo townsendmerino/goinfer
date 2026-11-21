@@ -75,7 +75,7 @@ type DecodeSubsystem interface {
 	NoLogitsAvailable() bool
 	ForwardNoLogits(embedding []float32, pos int) error
 
-	// GreedyChainAvailable is an optional capability on a Forward (C-B01, docs/audit-metal-2026-09-30.md): greedy
+	// GreedyChainAvailable is an optional capability on a Forward (docs/audit-metal-2026-09-30.md): greedy
 	// decode with the token chained on the device. The resident picks each token's argmax on-device and gathers its
 	// embedding as the next forward's input itself, so it can queue the next forward before the host has seen the token;
 	// the host reads 4 bytes per token. GreedyChainStart opens a chain whose first input is token id at position pos;
@@ -83,18 +83,18 @@ type DecodeSubsystem interface {
 	// that forward's successor's input; GreedyChainStop closes it, waiting out any forward queued past the last token
 	// taken. Between Start and Stop the caller makes no other call on the resident. The decode loop uses it under the
 	// same conditions as GreedyAvailable, and only where its own embedding lookup is a plain table row (embedIsTableRow),
-	// with no MC3 concurrency, adapter or processor; the tokens are those of the full-logits path.
+	// with no batched concurrency, adapter or processor; the tokens are those of the full-logits path.
 	GreedyChainAvailable() bool
 	GreedyChainStart(id, pos int) error
 	GreedyChainNext() (int, error)
 	GreedyChainStop()
 
-	// SampleChainAvailable is GreedyChainAvailable's temperature-only sibling (C-P02): the chained forward ends with the
+	// SampleChainAvailable is GreedyChainAvailable's temperature-only sibling: the chained forward ends with the
 	// resident's own Gumbel-max draw (SampleAvailable's ForwardSample) instead of the argmax. SampleChainStart opens it with
 	// the draw of the forward at pos; the resident draws each later forward with the next one, which is how
 	// Sampler.NextDraw advances. Each SampleChainNext passes the caller's own draw for the forward it returns, and the
 	// resident refuses one that is not the draw it used. GreedyChainStop closes it. The decode loop uses it where it would
-	// call ForwardSample, with no MC3, adapter or processor and a plain table-row embedding; the tokens are ForwardSample's.
+	// call ForwardSample, with no batched concurrency, adapter or processor and a plain table-row embedding; the tokens are ForwardSample's.
 	SampleChainAvailable() bool
 	SampleChainStart(id, pos int, temperature float64, seed, draw uint64) error
 	SampleChainNext(seed, draw uint64) (int, error)
@@ -102,7 +102,7 @@ type DecodeSubsystem interface {
 	// BatchStepperAvailable is an OPTIONAL KVSlotterAvailable extension: one
 	// decode token for several sequences at once, each on its own KV slot at its own position, in one step. It reads and
 	// writes only the named slots — never the bound one's binding — and each returned row must equal what that sequence's
-	// own call would return on its slot, bit for bit (the identity gate MC3 keeps): Forward's logits, or, for a sequence
+	// own call would return on its slot, bit for bit (the batched decode's identity gate): Forward's logits, or, for a sequence
 	// that carries a Draw, SampleAvailable.ForwardSample's id. BatchStepRange is the batch sizes the step serves better than
 	// per-sequence calls; hi == 0 means the resident cannot batch at all.
 	BatchStepperAvailable() bool
@@ -168,7 +168,7 @@ type PrefillSubsystem interface {
 
 	// HiddenLastAvailable is an OPTIONAL Forward extension: ingest a whole sequence at positions
 	// startPos..startPos+len-1 and return the LAST position's hidden state AFTER the model's final norm — the resident
-	// twin of Prefiller, stopping before the LM head. Used by HiddenLast (G4) so an embedding request on a GPU box does
+	// twin of Prefiller, stopping before the LM head. Used by HiddenLast so an embedding request on a GPU box does
 	// not run the whole text decoder on the CPU. Bit-identical to the CPU path is the bar (embed.go): a backend whose
 	// batched forward is not bit-identical to its own sequential one must implement this as a per-token forward that
 	// stops before the head, or not at all, never reuse a declining Prefiller.
@@ -221,7 +221,7 @@ type PrefillSubsystem interface {
 	MRoPEPrefillAvailable() bool
 	PrefillMRoPELast(ctx context.Context, embeddings [][]float32, startPos int, mropePos [][3]int) (logits []float32, err error)
 
-	// MRoPEDeepstackPrefillAvailable is an OPTIONAL extension of MRoPEPrefillAvailable for Qwen3-VL (S16): the same batched m-RoPE
+	// MRoPEDeepstackPrefillAvailable is an OPTIONAL extension of MRoPEPrefillAvailable for Qwen3-VL: the same batched m-RoPE
 	// prefill, which also adds DeepStack set l to the image rows [imgStart, imgStart+imgLen) after decoder layer l, as the CPU
 	// prefill does (addDeepstack; HF's hidden_states[visual_pos_masks] += deepstack_visual_embeds[l]). deep holds one set per
 	// injected layer, imgLen rows of the hidden size each. Without it GenerateQwenVLDeepstack keeps a turn that has DeepStack
@@ -244,7 +244,7 @@ type KVSubsystem interface {
 	UseKVSlot(i int) error
 
 	// SetKVSlotBusy is the optional capability of a resident whose slots share one block pool to be told which slots a running
-	// generation holds (MC3's busy slots), so that it releases the blocks of an idle slot to make room, never a running one's. The bound
+	// generation holds (the batched decode's busy slots), so that it releases the blocks of an idle slot to make room, never a running one's. The bound
 	// slot counts as running whether or not it is marked.
 	SetKVSlotBusy(slot int, busy bool)
 	// KVPool is the optional capability of a resident whose slots share one block pool to say what it holds.
@@ -329,9 +329,9 @@ type RuntimeSubsystem interface {
 	// Caps is the optional capability of a resident to report its Caps.
 	ResidentCaps() Caps
 
-	// CostAvailable is a resident that counts SB11's device costs (internal/cost) over a span of its work: CostSpan runs work with c
+	// CostAvailable is a resident that counts device costs (internal/cost) over a span of its work: CostSpan runs work with c
 	// counting into phase p, adds the span's device-level counts and wall time, and counts the tokens work reports it covered.
-	// Optional. A generation that asks for its cost on a resident without it, or on one shared with other generations (MC3), gets
+	// Optional. A generation that asks for its cost on a resident without it, or on one shared with other generations (the batched decode), gets
 	// no phase from the resident.
 	CostAvailable() bool
 	CostSpan(c *cost.Counter, p cost.Phase, work func() (tokens int, err error)) error

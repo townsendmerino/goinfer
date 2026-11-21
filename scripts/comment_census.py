@@ -17,7 +17,14 @@
       rewrapped line) are never reported.
 
 The report's marker is the broad one the task's §1 census defined (it also counts docs/ and task- references and phrases such as "used
-to" and "landed"); the diff warning uses the narrow five-kind marker, because a broad one would fire on every pointer."""
+to" and "landed"); the diff warning uses the narrow five-kind marker, because a broad one would fire on every pointer.
+
+  comment_census.py tree [--update]
+      The ratchet on the stock. Counts the tracker ids (M-35, KV8a, SB11) in the doc comments of exported declarations (top-level,
+      methods, and exported fields and specs inside a group) in every tracked non-test .go file, and fails when a file's count is
+      above its line in testdata/comment_trackers.ratchet. An id in a doc comment resolves only in a task doc; replace it with what it
+      names (CLAUDE.md § "Code comments"). --update rewrites the ratchet from the tree and refuses to raise any count, so the stock
+      only shrinks (with no ratchet file it seeds one)."""
 import argparse
 import collections
 import os
@@ -200,6 +207,93 @@ def cmd_diff(args):
     return 1 if args.strict else 0
 
 
+# ---------------------------------------------------------------- tree
+
+RATCHET = "testdata/comment_trackers.ratchet"
+# a task or audit id: the hyphenated "M-35", "C-09", or the compact "K2", "KV8a", "SB11b", "MEM10"
+TREE_ID = re.compile(r"(?:^|[^\w-])([A-Z]{1,2}-\d{1,3}[a-z]?|[A-Z]{1,3}\d{1,3}[a-z]?)(?=$|[^\w-])")
+# tokens of that shape that name a type, a format, a part or a model, not a task
+TREE_NOT_ID = {
+    "F16", "F32", "BF16", "FP4", "FP8", "FP16", "FP32", "I1", "I2", "I3", "I8", "I16", "I32", "I64", "U8", "U16", "U32", "U64",
+    "U16s", "U32s", "Q2", "Q3", "Q4", "Q5", "Q6", "Q8", "KVF16", "KVF32", "KVI8", "UNP8", "MXFP4", "NVFP4", "AVX2", "AVX512",
+    "SSE4", "LFM2", "M1", "M2", "M3", "M4", "L1", "L2", "L3", "X1", "UTF8", "SHA1", "SHA256", "H100", "A100", "RTX2070", "SM75",
+    "SM80", "SM86", "SM89", "SM90", "SHA-1", "SHA-2", "UTF-8", "X-1", "K-1", "AES-128", "AES-256", "V2", "V3", "V4", "W8", "E2", "E4",
+}
+# a line an exported declaration starts on: top-level, or an exported field, method or spec inside a struct, interface or group
+TREE_DECL = re.compile(r"^(?:func\s+(?:\([^)]*\)\s*)?|type\s+|var\s+|const\s+)[A-Z]\w*|^\s+[A-Z]\w*(?:\s|\(|,|$)")
+
+
+def tree_ids(src: str):
+    """[(1-based line, id)] for every tracker id in a doc comment of an exported declaration in src."""
+    lines, bl = cd.blocks(src)
+    out = []
+    for a, b in bl:
+        if b >= len(lines) or not TREE_DECL.match(lines[b]):
+            continue
+        for k in range(a - 1, b):
+            for m in TREE_ID.finditer(lines[k]):
+                if m.group(1) not in TREE_NOT_ID:
+                    out.append((k + 1, m.group(1)))
+    return out
+
+
+def tree_files(r: str):
+    return [f for f in git("ls-files", "*.go", cwd=r).split() if not f.endswith("_test.go") and "testdata/" not in f]
+
+
+def read_ratchet(path: str):
+    out = {}
+    if os.path.exists(path):
+        for ln in open(path):
+            ln = ln.split("#", 1)[0].strip()
+            if ln:
+                f, n = ln.rsplit(None, 1)
+                out[f] = int(n)
+    return out
+
+
+def cmd_tree(args):
+    r = root()
+    found = {}
+    sites = collections.defaultdict(list)
+    for f in tree_files(r):
+        ids = tree_ids(open(os.path.join(r, f), errors="replace").read())
+        if ids:
+            found[f] = len(ids)
+            sites[f] = ids
+    path = os.path.join(r, RATCHET)
+    allow = read_ratchet(path)
+    grown = sorted(f for f in found if found[f] > allow.get(f, 0))
+    shrunk = sorted(f for f in allow if found.get(f, 0) < allow[f])
+    if args.update:
+        if grown and os.path.exists(path):
+            print(f"comment_census tree: refusing --update: {len(grown)} file(s) above the ratchet; the ratchet only shrinks:")
+            for f in grown:
+                print(f"  {f}: {found[f]} > {allow.get(f, 0)}")
+            print("VERDICT: RED")
+            return 1
+        with open(path, "w") as w:
+            w.write("# Tracker ids left in exported declarations' doc comments, per file: `<file> <count>` (comment_census.py tree).\n"
+                    "# A count may only fall; `comment_census.py tree --update` rewrites it and refuses a rise.\n")
+            for f in sorted(found):
+                w.write(f"{f} {found[f]}\n")
+        print(f"comment_census tree: wrote {RATCHET}: {sum(found.values())} id(s) in {len(found)} file(s)")
+        print("VERDICT: GREEN")
+        return 0
+    for f in shrunk:
+        print(f"  can shrink: {f}: {found.get(f, 0)} < {allow[f]} (comment_census.py tree --update)")
+    if grown:
+        print(f"comment_census tree: {len(grown)} file(s) carry more tracker ids in exported doc comments than {RATCHET} allows "
+              f"(replace each id with what it names, CLAUDE.md § \"Code comments\"):")
+        for f in grown:
+            print(f"  {f}: {found[f]} > {allow.get(f, 0)}: " + ", ".join(f"{n}:{i}" for n, i in sites[f]))
+        print("VERDICT: RED")
+        return 1
+    print(f"comment_census tree: {sum(found.values())} tracker id(s) in exported doc comments, {len(found)} file(s), none above the ratchet")
+    print("VERDICT: GREEN")
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -210,8 +304,10 @@ def main(argv=None):
     d.add_argument("--base", default="")
     d.add_argument("--head", default="")
     d.add_argument("--strict", action="store_true", help="exit 1 when anything is found (the warning exits 0)")
+    t = sub.add_parser("tree")
+    t.add_argument("--update", action="store_true", help="rewrite the ratchet from the tree (refuses a rise)")
     args = ap.parse_args(argv)
-    return cmd_report(args) if args.cmd == "report" else cmd_diff(args)
+    return {"report": cmd_report, "diff": cmd_diff, "tree": cmd_tree}[args.cmd](args)
 
 
 if __name__ == "__main__":

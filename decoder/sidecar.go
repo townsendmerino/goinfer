@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/internal/runtime/diskfree"
 	"github.com/townsendmerino/goinfer/internal/runtime/giw"
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
@@ -235,7 +236,7 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 
 // residentDirBody is the resident directory transcode: Load the whole model at quant, then serialize it. A LoRA merge
 // needs it (the merge works on the f32 projections), and so does a family whose safetensors loader does not stream; it is
-// also G-DS1's reference for the streamed bytes.
+// also the byte-identity reference for the streamed bytes.
 func residentDirBody(w io.Writer, dir, lora, quant string, embedInt4 bool, target GIWTarget, id string) (int64, error) {
 	// ResidentContext 1: a transcode runs no request, so it allocates no KV (selfCheck does the same).
 	// Unpinned, the fit guard prices the model's full context and can refuse a model whose weights fit.
@@ -441,8 +442,18 @@ func legacyCachePath(ggufPath, quant string, embedInt4 bool, target GIWTarget) s
 	if embedInt4 {
 		label += ".e4h"
 	}
-	label += gatherTableTag(ggufPath, quant, embedInt4)
+	label += gatherTableTag(ggufPath, quant, embedInt4) + kquantTag(quant, target)
 	return base + "." + label + "." + tgt + ".giw"
+}
+
+// kquantTag is the name segment of a q4k sidecar that keeps the GGUF's Q5_K and Q6_K tensors natively (kinds 11 and 12,
+// q4kNative56), ".k56"; "" otherwise. A q4k sidecar written before those kinds widened them under the name without the
+// segment, so the two are never mistaken for each other, and no legacy (unversioned) name carries it.
+func kquantTag(quant string, target GIWTarget) string {
+	if quant != "q4k" || target != GIWTargetCPUAmd64 || !linalg.KQuantNative() {
+		return ""
+	}
+	return ".k56"
 }
 
 // gatherTableTag is the name segment of a sidecar whose per-layer token table (Gemma 4's E-models) is int4 while the head

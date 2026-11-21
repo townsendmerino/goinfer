@@ -4,8 +4,8 @@ package metal
 
 import "github.com/townsendmerino/goinfer/internal/runtime/mem"
 
-// KS-D8: a Mamba-2 layer in the batched prefill pass, in
-// D-B01's shape. in_proj and out_proj run as int8 prefill GEMMs over all M rows (gemm_w8f16_*, on the int8 codes and per-row
+// A Mamba-2 layer in the batched prefill pass, in
+// the Gated-DeltaNet layer's shape (prefill_deltanet.go). in_proj and out_proj run as int8 prefill GEMMs over all M rows (gemm_w8f16_*, on the int8 codes and per-row
 // scales the layer already holds), on f16 activations like every other batched layer; the mixer between them runs as one
 // dispatch per stage over the M rows, the recurrent stages (the conv window, the SSM state) as a token loop inside the kernel.
 // Those row kernels are the decode kernels' statements per row, so given the same inputs they produce decode's bits, window

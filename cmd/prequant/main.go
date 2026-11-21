@@ -49,7 +49,7 @@ func run() int {
 		return 2
 	}
 	// Ctrl-C / SIGTERM aborts the (minutes-long, tens-of-GB) transcode and removes the
-	// partial .giw, instead of running to completion after the user gives up (audit M-21).
+	// partial .giw, instead of running to completion after the user gives up.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if *cpuProfile != "" {

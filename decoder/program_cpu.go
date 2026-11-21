@@ -19,7 +19,7 @@ const (
 	plantHiddenNoNorm              // HiddenLast's sequential path skips the head's norm (finalNorm)
 	plantCaptureEarly              // ForwardCapture copies the residual before the layer's last operation
 	plantSubPrePostNorm            // ForwardSubCapture records the attention contribution before its post-attention norm
-	plantCostDoubleCount           // the cost counters record each attention output projection twice (SB11's plant)
+	plantCostDoubleCount           // the cost counters record each attention output projection twice
 )
 
 // program returns m's program. A Model built without modelFromOptions (a test that assembles one) gets a fresh one per call.
@@ -383,7 +383,7 @@ func attendToken(p attentionParams, q, k, v, ctx []float32, cache *KVCache, scr 
 	}
 	nH, hd := arch.headsAt(l), arch.HeadDim
 	kvDim := arch.NumKVHeads * hd
-	if kvRoundF16ForTest { // F1's reference: the f32 path with each stored row rounded to f16 by hand
+	if kvRoundF16ForTest { // the f16 exactness gate's reference: the f32 path with each stored row rounded to f16 by hand
 		roundF16InPlace(k)
 		roundF16InPlace(v)
 	}

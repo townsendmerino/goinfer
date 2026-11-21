@@ -203,7 +203,7 @@ func (p webgpuProbe) record() *webgpuProbeRecord {
 // stays free of the gpu build tag and its cgo dependency. It is independent of detectBackend's cuda|metal|none choice on
 // purpose: a CUDA Linux box can also have a working Vulkan adapter. A software adapter (CI's lavapipe/llvmpipe) counts as
 // present: the group's own tests skip hardware-sensitive cases on one (newOrSkipHW). A probe that never answered is not
-// "no adapter": group W grades it as a failure (V-21, docs/code-notes/cmd-gate.md#detectWebGPU).
+// "no adapter": group W grades it as a failure (docs/code-notes/cmd-gate.md#detectWebGPU).
 func detectWebGPU(w io.Writer) webgpuProbe {
 	if os.Getenv("GOINFER_GATE_SKIP_WEBGPU") != "" {
 		return webgpuProbe{optOut: true}

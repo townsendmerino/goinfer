@@ -71,6 +71,8 @@ import (
 //	   aliased on load through linalg.WrapQ4K. group is 0.
 //	9  bf16: u16, rows×cols bf16 values, aliased on load through linalg.WrapBF16. group is 0. Written for an island
 //	   matrix the load holds bf16 (giwWriter.island); an f32 island is a standalone f32 array instead.
+//	11 Q5_K, 12 Q6_K: raw, as kind 8, for the file's Q5_K and Q6_K tensors a q4k load keeps (q4kNative56), aliased through
+//	   linalg.WrapQ5K / WrapQ6K. Written on a cpu-amd64 target only; every other target widens them to kind 2.
 //
 // Kinds 4 and 7 existed before v16 and are not read.
 
@@ -91,6 +93,10 @@ const (
 	giwKindF32 = 10
 	// giwKindBF16 is a bf16 weight matrix's kind: one aligned binary16 array of rows×cols values, aliased on load.
 	giwKindBF16 = 9
+	// giwKindQ5K and giwKindQ6K are a q4k load's native Q5_K and Q6_K tensors (q4kNative56): the GGUF super-blocks as they
+	// are (176 and 210 bytes per 256 values), aliased on load. Written for the cpu-amd64 target only.
+	giwKindQ5K = 11
+	giwKindQ6K = 12
 	// Sanity ceilings on the count fields, generous against any real checkpoint but low enough that a corrupt or hostile blob
 	// cannot drive a multi-GB make() before the body reader hits its first short read. A LayerWeights is a large struct, so an
 	// unbounded layer count is the worst offender.
@@ -861,7 +867,7 @@ func (w *Weights) quantLabel() string {
 			continue
 		}
 		switch m.Kind() {
-		case "q4k":
+		case "q4k", "q5k", "q6k":
 			hasQ4K = true
 		case "int4":
 			hasInt4 = true
@@ -875,7 +881,7 @@ func (w *Weights) quantLabel() string {
 	}
 	switch {
 	case hasQ4K:
-		return "q4k" // its other tensors are int8 W8A8 by construction (matmulQuant)
+		return "q4k" // its other tensors are the file's Q5_K/Q6_K blocks or int8 W8A8 by construction (matmulQuant, q4kNative56)
 	case hasInt4 && (hasInt8I8 || hasInt8):
 		return "int4mix"
 	case hasInt4:
@@ -1092,6 +1098,24 @@ func (w *giwWriter) weightMatKind(m *linalg.WeightMat, eligible bool) {
 		w.bytesField(raw)
 		return
 	}
+	if raw, kind, ok := kquant56Raw(m); ok {
+		// Kinds 11 and 12 are written for the cpu-amd64 target only, the one q4kNative56 builds them for; a bundle for any other
+		// reader must not carry them.
+		if w.target != GIWTargetCPUAmd64 {
+			if w.err == nil {
+				w.err = fmt.Errorf("decoder: a %dx%d tensor is held as native %s (a Backend \"cpu\" q4k load keeps the file's blocks); only a cpu-amd64 .giw carries it — write for that target, or load with another Backend", m.Rows(), m.Cols(), m.Kind())
+			}
+			return
+		}
+		w.raw([]byte{kind})
+		w.u32(uint32(m.Rows()))
+		w.u32(uint32(m.Cols()))
+		w.u32(0)
+		w.raw([]byte{0})
+		w.alignArray()
+		w.bytesField(raw)
+		return
+	}
 	if m.Rows() == 0 {
 		w.raw([]byte{0}) // empty
 		return
@@ -1274,7 +1298,7 @@ func (w *giwWriter) v6Layer(l *LayerWeights) {
 	} else {
 		w.raw([]byte{1})
 		m := l.mla
-		w.mambaProj(m.qAProj, &m.qAQ) // a quantized load's int8 projections as weight records, else f32 arrays (MEM11-int8)
+		w.mambaProj(m.qAProj, &m.qAQ) // a quantized load's int8 projections as weight records, else f32 arrays
 		w.f32(m.qALayernorm)
 		w.mambaProj(m.qBProj, &m.qBQ)
 		w.mambaProj(m.qProj, &m.qQ)
@@ -1648,7 +1672,7 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 	if kind == 0 {
 		return linalg.WeightMat{}
 	}
-	if kind != 1 && kind != giwKindF32 && kind != 2 && kind != 3 && kind != 5 && kind != 8 && kind != giwKindBF16 { // kind 6 is read as a fused group, never here
+	if kind != 1 && kind != giwKindF32 && kind != 2 && kind != 3 && kind != 5 && kind != 8 && kind != giwKindBF16 && kind != giwKindQ5K && kind != giwKindQ6K { // kind 6 is read as a fused group, never here
 		r.unknownEncoding(kind)
 		return linalg.WeightMat{}
 	}
@@ -1756,6 +1780,19 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 		wm, err := linalg.WrapQ4K(raw, rows, cols)
 		if err != nil {
 			r.fail(fmt.Sprintf("q4k weightMat %d×%d: %v", rows, cols, err))
+			return linalg.WeightMat{}
+		}
+		return wm
+	case giwKindQ5K, giwKindQ6K:
+		r.alignArray()
+		raw := r.rawAlias() // zero-copy: the super-blocks are aliased from the mapping
+		wrap, name := linalg.WrapQ5K, "q5k"
+		if kind == giwKindQ6K {
+			wrap, name = linalg.WrapQ6K, "q6k"
+		}
+		wm, err := wrap(raw, rows, cols)
+		if err != nil {
+			r.fail(fmt.Sprintf("%s weightMat %d×%d: %v", name, rows, cols, err))
 			return linalg.WeightMat{}
 		}
 		return wm
@@ -2061,4 +2098,15 @@ func (r *giwReader) hybridLayer(l *LayerWeights) {
 	default:
 		r.fail("unknown per-layer hybrid kind")
 	}
+}
+
+// kquant56Raw returns m's super-blocks and .giw kind when m holds native Q5_K or Q6_K blocks.
+func kquant56Raw(m *linalg.WeightMat) ([]byte, byte, bool) {
+	if raw, ok := m.Q5K(); ok {
+		return raw, giwKindQ5K, true
+	}
+	if raw, ok := m.Q6K(); ok {
+		return raw, giwKindQ6K, true
+	}
+	return nil, 0, false
 }

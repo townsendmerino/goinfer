@@ -145,7 +145,7 @@ func resolveGemma3VisionQuantMetal(cfg config, note io.Writer) config {
 		// The sidecar the load will look for: the RESOLVED quant and embed-int4 (Options: off by default on Metal, whose
 		// resident takes no int4 head), not the raw flags, which asked for the ".e4h" sidecar a Metal load never reads.
 		o := cfg.load.Options()
-		if _, fresh := sidecarFresh(path, o.Quant, "metal", o.EmbedInt4); !fresh {
+		if _, fresh := sidecarFresh(path, o.Quant, "metal", decoder.EmbedInt4For(path, o)); !fresh {
 			dec *= 2 // a heap load: the host copy stays beside the device one
 		}
 	}

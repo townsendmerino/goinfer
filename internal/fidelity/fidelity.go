@@ -5,8 +5,8 @@
 // What changed from the per-file criteria the gates carry today, and why:
 //
 //   - Every "no worse than" criterion has a margin. Without one it is a superiority test: equal arms pass it about half
-//     the time at any prompt count. TE12 measured the Metal pooled KL criterion (candidate <= exact, lower on at least
-//     half the prompts) failing 17 of 47 verdicts that way. NonInferior refuses a margin <= 0; Superiority is its own
+//     the time at any prompt count; the Metal pooled KL criterion (candidate <= exact, lower on at least half the prompts)
+//     fails that way (docs/completed/task-test-efficiency-2026-09.md, "Prompt budgets sized per criterion"). NonInferior refuses a margin <= 0; Superiority is its own
 //     function, so a pre-registration has to name it.
 //   - Agreement and hard flips are pooled across the gate's cells. Per-cell values are reported, never a per-cell veto
 //     (task-prefill-gap.md §3.2).
@@ -258,7 +258,7 @@ func WorstCaseExcluded(n int, alpha float64) float64 {
 }
 
 // PromptSetHash is the sha256 of a prompt set's token ids (length-prefixed, in order). A reference cached for one prompt
-// set must never be scored against another; TE6(a)'s reference key includes this hash.
+// set must never be scored against another; the cached reference's key includes this hash.
 func PromptSetHash(prompts [][]int) string {
 	h := sha256.New()
 	var b [8]byte
@@ -273,8 +273,8 @@ func PromptSetHash(prompts [][]int) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// WritePositions writes one JSON line per (cell, prompt, position, arm), the per-position log TE12 asks the next run of
-// the protocol to keep, so the within-prompt vs between-prompt variance split can size positions per prompt.
+// WritePositions writes one JSON line per (cell, prompt, position, arm), the per-position log the protocol's next run
+// keeps (docs/completed/task-test-efficiency-2026-09.md, "Prompt budgets sized per criterion"), so the within-prompt vs between-prompt variance split can size positions per prompt.
 func WritePositions(w io.Writer, cells []Cell) error {
 	enc := json.NewEncoder(w)
 	names := make([]string, 0, len(cells))

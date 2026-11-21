@@ -114,7 +114,7 @@ const (
 
 	// KernelGEMMW8A8Reg is the register-blocked int8 GEMM: a 64x64 output tile per
 	// block, 4x4 outputs per thread, packed-word shared staging and __dp4a. The
-	// int8 twin of gemm_f32_reg (audit M-12) — gemm_w8a8_tiled computes ONE output
+	// int8 twin of gemm_f32_reg — gemm_w8a8_tiled computes ONE output
 	// per thread from byte-granular shared memory, which is 32 ld.shared.u8 per 4
 	// dp4a and LSU-bound, the shape the roofline campaign measured at 7% of roof
 	// and retired from the ANN path. ALIGNED ONLY — M%64==0, N%64==0, K%16==0.
@@ -413,7 +413,7 @@ const (
 )
 
 // GEMMW8A8Plan picks the int8 GEMM kernel and its launch geometry for M×N×K —
-// the int8 analogue of GEMMF32Plan (audit M-12).
+// the int8 analogue of GEMMF32Plan.
 //
 // It needs only K%16==0: M and N edge tiles stage zeros and skip their stores,
 // so the inner loop stays unguarded while any M and N are accepted. That

@@ -6,7 +6,7 @@
 // except that it blank-imports the opt-in WebGPU module first: that init() registers the
 // "webgpu" decoder backend (decoder.RegisterBackend) and the resident SigLIP vision encoder
 // (vision.RegisterResident). Living in the ./gpu submodule keeps cgo/webgpu OUT of the
-// pure-Go root module graph (audit M-19). Run with `--backend webgpu`.
+// pure-Go root module graph. Run with `--backend webgpu`.
 package main
 
 import (

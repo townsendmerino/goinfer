@@ -1790,7 +1790,24 @@ func multiSeqWalkCells(t *testing.T) []multiSeqWalkCell {
 		}
 		cells = append(cells, multiSeqWalkCell{filepath.Base(dir), r, m.EmbedResidentForTest, true})
 	}
+	for _, c := range cells {
+		pinStepRows(c.r)
+	}
 	return cells
+}
+
+// pinStepRows fixes the batch sizes at which the step runs qkv and gate|up as per-row GEMVs (calibrateRows times them at load,
+// so the choice moves with the machine's load and clocks, and a dispatch golden would record it): per-row at B = 2, the
+// fragment at B = 4, so the golden holds both forms. An int8 projection keeps its per-row GEMV at every B, as calibrateRows
+// sets it.
+func pinStepRows(r *resident) {
+	if r.batch == nil || r.w8 {
+		return
+	}
+	r.batch.rowsGU = 2
+	if !r.w8Attn {
+		r.batch.rowsQKV = 2
+	}
 }
 
 // multiSeqWalkObserve runs the batched step on b rows (each on its own slot, at depths from 3 to 40) for four steps from a fresh

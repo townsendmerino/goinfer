@@ -43,7 +43,7 @@ func GoldenPath(root, backend string) string {
 	return filepath.Join(root, "internal", "diag", "towerid", "testdata", fmt.Sprintf("towers.%s-%s-%s.json", backend, runtime.GOOS, runtime.GOARCH))
 }
 
-// CheckGolden grades rec, recorded under anchor, against its backend's golden case for case, exactly (G-SB9-1). With update
+// CheckGolden grades rec, recorded under anchor, against its backend's golden case for case, exactly. With update
 // it first writes rec as the golden. A platform without a golden skips, printing the record to commit; a different anchor
 // skips or fails as onOther says. It returns the golden's record.
 func CheckGolden(t testing.TB, root string, rec Record, anchor string, onOther OnOtherAnchor, update bool) Record {
@@ -115,7 +115,7 @@ func diffCases(want, got []Case) []string {
 	return out
 }
 
-// CheckPlants is G-SB9-2: for each family in golden, a one-ulp plant in that family's output (PlantForTest) turns exactly
+// CheckPlants is the plant gate: for each family in golden, a one-ulp plant in that family's output (PlantForTest) turns exactly
 // that family's cases red against golden and leaves every other case equal.
 func CheckPlants(t testing.TB, root, backend string, golden Record) {
 	t.Helper()
@@ -287,13 +287,13 @@ func programPlantVerdict(backend string, fams []string, golden, rec Record) (err
 	return errs, covered
 }
 
-// The bound G-SB9-3 registered for a device output against the CPU's: an expectation, not a measured floor.
+// The bound registered for a device output against the CPU's: an expectation, not a measured floor.
 const (
 	BackendMinCosine = 0.999
 	BackendMaxRelErr = 0.05
 )
 
-// CompareBackends is G-SB9-3: each of backend's device cases against the CPU's output on the same input, by cosine and by
+// CompareBackends is the cross-backend gate: each of backend's device cases against the CPU's output on the same input, by cosine and by
 // max abs difference over the CPU output's RMS. A case outside the registered bound is a finding (DECISION NEEDED).
 func CompareBackends(t testing.TB, root, backend string) {
 	t.Helper()

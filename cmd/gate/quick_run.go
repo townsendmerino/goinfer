@@ -17,7 +17,7 @@ import (
 )
 
 // `gate quick`'s runner: lint steps and test cells share one bounded pool. Every test cell is ONE
-// `go test` invocation for ONE package — B19's rule, because `go test -v ./a/ ./b/` prints nothing
+// `go test` invocation for ONE package, because `go test -v ./a/ ./b/` prints nothing
 // for ./b/ until ./a/ finishes — each tee'd to its own log as it streams, so a slow cell and a hung
 // one can be told apart from the log alone.
 

@@ -14,7 +14,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
-// tensorIdentity is one tensor of a loaded *Weights as the model receives it: SB4's loader identity.
+// tensorIdentity is one tensor of a loaded *Weights as the model receives it: one entry of the loader identity.
 // Path names the field ("Layers[3].QProj", "Layers[0].Experts[2].Up");
 // Layout is the WeightMat's Kind, the element type of a plain slice, "scalar", or "len" for the length of a slice whose
 // elements are walked one by one; Shape is "rows x cols" or the length; Hash covers every byte and field of the tensor,
@@ -27,8 +27,8 @@ func (t tensorIdentity) String() string {
 	return t.Path + "\t" + t.Layout + "\t" + t.Shape + "\t" + t.Hash
 }
 
-// loaderSkip is the *Weights fields the identity leaves out: the config and architecture (VK4's program fingerprint covers
-// what they build), the source handles and profile, and bakedQuant, the label a .giw load carries and a direct load does
+// loaderSkip is the *Weights fields the identity leaves out: the config and architecture (the program fingerprint,
+// programFingerprint, covers what they build), the source handles and profile, and bakedQuant, the label a .giw load carries and a direct load does
 // not. kquant is not walked as a field: each entry is hashed into the identity of the WeightMat whose int8 copy it keys.
 var loaderSkip = map[string]bool{
 	"prof": true, "Cfg": true, "arch": true, "st": true, "backing": true, "schema": true,

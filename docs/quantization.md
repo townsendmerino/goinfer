@@ -133,7 +133,7 @@ Stated so nobody reads absence as endorsement:
   and for end-to-end coherence on the two real checkpoints named above. Nobody has measured what
   those sources cost in quality against their own f16 originals, and this page will not guess.
 - **`--embed-int4`** is disclosed as lossy at roughly **2.3 points of top-1**, mostly on rare
-  tokens (last measured pre-2026-09-28, not independently re-verified since). It is **default ON**
+  tokens (measured before 2026-09-28). **Re-measured 2026-11-20 against HF f32 on real long prompts, on CUDA and the CPU** (`measurements/embed-int4-longctx-2026-11-20/README.md`, #1160): against the int8 head, 1.0 pt of top-1 on the 0.5B coder and 2.1 on the 1.5B, pooled over 256 to 8192 tokens. It is 0.8 pts at 256 tokens and 2–4 pts at some longer K, with about 1.2× the KL. The 1.5B misses that check's registered non-inferiority bar. It is **default ON**
   since 2026-09-28 (owner decision: the CPU decode-gap work made the LM head a bigger share of a
   token — `docs/measurements/cpu-decode-peer-gap-2026-09-27.md` — and the quality re-eval was
   explicitly parked, not re-run, before the flip); pass `--embed-int4=false` for the int8 pin
@@ -148,6 +148,13 @@ Stated so nobody reads absence as endorsement:
   - Checked 2026-09-30 on the 0.5B coder: with the int4 table, CUDA stays `cuda-resident (int4)` (nobara-pc) and
     WebGPU stays `webgpu:metal-resident (int4)` (M1 Pro), so the default stays on for them. Only Metal declined.
   - The flip's quality and speed were measured on the CPU backend only.
+  - **From 1B parameters up the default is the int8 head (since 2026-11-20, owner decision).** On a long-context
+    agreement gate the int4 head passed on the 0.5B and failed on the 1.5B (agreement −2.08 points, lower confidence
+    bound −3.21; the record is goinfer issue #1160's accuracy check of 2026-11-20, filed under `docs/measurements/` by its own PR). The load counts the model's parameters
+    from its tensor directory before it picks the sidecar (`decoder.EmbedInt4For`, `PeekParamCount`), so the rule is
+    about size, not family; a size it cannot read (a prebuilt `.giw`) keeps the int4 default. An explicit
+    `--embed-int4` or `--embed-int4=false`, or serve's per-model `embed-int4=` key, wins at any size. A load of a 1B+
+    `.gguf` now opens the plain-head sidecar, which it builds once if only the `e4h` one exists.
 - The recommendation is for the families and shapes in `parity_manifest.json`. A family outside
   the gated set inherits no promise from this page.
 

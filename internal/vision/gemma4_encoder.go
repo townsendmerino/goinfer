@@ -30,9 +30,9 @@ import (
 // the encoder itself runs at full 16px-patch resolution. There is no separate
 // final norm: the last layer's own post_feedforward_layernorm is the last op.
 //
-// Parity: cosine vs a real HF Gemma4VisionModel forward hook (P7 Phase A gate).
+// Parity: cosine vs a real HF Gemma4VisionModel forward hook.
 // Source citations throughout are to huggingface/transformers'
-// modeling_gemma4.py, fetched 2026-09-09 (goinfer docs/multimodal.md's P7 entry).
+// modeling_gemma4.py, fetched 2026-09-09 (goinfer docs/multimodal.md, "Gemma 4 vision").
 
 // Gemma4EncoderConfig mirrors the HF Gemma4VisionConfig fields the forward needs.
 type Gemma4EncoderConfig struct {
@@ -409,7 +409,7 @@ func (e *Gemma4Encoder) averagePool(h []float32, positionIDs [][2]int, np int) (
 			dst[d] += src[d]
 		}
 	}
-	// Divide by the bucket's ACTUAL occupancy, not k*k (audit C-06). The
+	// Divide by the bucket's ACTUAL occupancy, not k*k. The
 	// divisibility check above guarantees the grid splits into whole buckets; it
 	// does NOT guarantee that positionIDs densely covers that grid. A sparse or
 	// padded patch set leaves a bucket under-filled, and dividing it by k*k
@@ -609,7 +609,7 @@ func (lw *gemma4EncLayer) towerClamp(w TowerWeight) (inMin, inMax, outMin, outMa
 // rmsNormHeadInto normalizes each head_dim-wide head slice of x independently
 // (shared weight w across every head; w == nil for an unscaled norm — v_norm).
 // In place.
-// Row-split across cores (audit M-10): each row's per-head f64 sum-of-squares
+// Row-split across cores: each row's per-head f64 sum-of-squares
 // fold is row-local, so the split is bit-identical.
 func rmsNormHeadInto(x []float32, w []float32, rows, hidden, nH, hd int, eps float64) {
 	parallelRows(rows, rows*hidden, func(start, end int) {
@@ -676,7 +676,7 @@ func rmsNormHeadRows(x []float32, w []float32, start, end, hidden, nH, hd int, e
 
 // rmsNormUnscaledInto is Gemma4RMSNorm(with_scale=False) — variance-normalize
 // only, no weight multiply (the embed_vision projector's pre-projection norm).
-// Row-split across cores (audit M-10); bit-identical, the fold is row-local.
+// Row-split across cores; bit-identical, the fold is row-local.
 func rmsNormUnscaledInto(dst, x []float32, rows, dim int, eps float64) {
 	parallelRows(rows, rows*dim, func(start, end int) {
 		rmsNormUnscaledRows(dst, x, start, end, dim, eps)
