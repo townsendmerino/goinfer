@@ -877,7 +877,7 @@ func (ps *prefillPass) lastRowLogits() []float32 {
 	if db02Trace != nil {
 		db02Trace(db02Event{layer: r.nL, gpuStart: e.GPUStart(), gpuEnd: e.GPUEnd()})
 	}
-	r.recordExecErr(e.Err()) // C-09
+	r.recordExecErr(e.Err())
 
 	out := make([]float32, V)
 	copy(out, r.logits.Floats()[:V])
