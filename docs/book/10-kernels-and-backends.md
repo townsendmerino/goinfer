@@ -230,7 +230,8 @@ it depends on the backend and on which phase you measure.
 
 **Decode on CUDA is ahead.** The pre-registered re-anchor of 2026-11-19/20 (an RTX 2070 SUPER at driver 595.112.07,
 Ollama v0.32.5, every arm sent the same sampling fields) put goinfer ahead on dense 4-bit greedy decode in 10 of the 11
-graded cells across the 0.5B, 1.5B and 7B from 128 to 8,000 tokens, 1.08–1.94×, and level on the 7B at 8,000; on the 7B
+graded cells across the 0.5B, 1.5B and 7B from 128 to 8,000 tokens, 1.04–1.94× (the 1.5B and 7B at the int8 output head that became
+the default for 1B+ models the same day), and level on the 7B at 8,000; on the 7B
 the margin narrows with depth
 ([`docs/measurements/peer-reanchor-2026-11-19/README.md`](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/peer-reanchor-2026-11-19/README.md);
 the 2026-09-29 sweep before it read 1.05–1.47× in all 12). Flash-decode,
