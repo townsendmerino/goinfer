@@ -13,7 +13,7 @@ import (
 // same base as the Qwen3.5+ and GLM-OCR towers (grid_vision.go), in float32. They plug into aikit's own resident seams,
 // vision.RegisterResident and vision.RegisterQwenResident, so serve's EnableResident routes the tower's Forward here
 // under --backend metal. aikit's tagged gpu/visionmetal and gpu/qwenmetal register on the same seams and are not
-// imported: G-S3a measured the first wrong at real size and the second no faster than the CPU.
+// imported: measured, the first is wrong at real size and the second no faster than the CPU.
 //
 // SigLIP: aikit's GridPatches (im2col) on the host, the patch embed plus the fixed position table, every layer over one
 // segment of all the patches with no RoPE, then FinishHidden (the post-layernorm) on the host. Float32 weights
@@ -32,11 +32,11 @@ func init() {
 	vision.RegisterQwenResident(func(enc *vision.QwenVisionEncoder) (vision.QwenResidentEncoder, error) {
 		return newQwen25VResident(enc)
 	})
-	multimodal.MarkResidentTower(multimodal.TowerSigLIP, "metal") // S8: aikit's slots cannot be asked what is registered
+	multimodal.MarkResidentTower(multimodal.TowerSigLIP, "metal") // aikit's slots cannot be asked what is registered
 	multimodal.MarkResidentTower(multimodal.TowerQwen25VL, "metal")
 }
 
-// siglipForceInt8 is a test seam (S18's G-S18f): build the int8 tower (tower_gemm_w8) from a float32 encoder's in-memory
+// siglipForceInt8 is a test seam: build the int8 tower (tower_gemm_w8) from a float32 encoder's in-memory
 // blocks, so a tiny gate can sharpen them first. Production chooses int8 by the encoder (vision.Encoder.Quantized).
 var siglipForceInt8 bool
 
@@ -48,7 +48,7 @@ type siglipVResident struct {
 }
 
 func newSiglipVResident(enc *vision.Encoder) (*siglipVResident, error) {
-	// S18: the blocks are read from the checkpoint one at a time (ForEachSiglipBlock) and uploaded, so the host never
+	// The blocks are read from the checkpoint one at a time (ForEachSiglipBlock) and uploaded, so the host never
 	// holds the whole tower beside the Metal copy (2.17 GB of f32 on Gemma 3's so400m). The encoder may be head-only
 	// (vision.LoadEncoderHead); its CPU path, serve's fallback, loads its own blocks only if it ever runs. An encoder
 	// loaded with quant=true gets the int8 tower: weights in groups of 32, activations f32 (tower_gemm_w8).
@@ -198,7 +198,7 @@ func (r *qwen25VResident) ForwardViT(pixels []float32, gridTHW [][3]int) ([]floa
 	if err != nil {
 		return nil, err
 	}
-	// order[i] is the original row that window-order row i holds; the identity under G-S3a's planted defect (4).
+	// order[i] is the original row that window-order row i holds; the identity under the noWindowOrder planted defect.
 	mu := r.merge * r.merge
 	order := make([]int, np)
 	for g, src := range plan.WinIdx {
@@ -224,7 +224,7 @@ func (r *qwen25VResident) ForwardViT(pixels []float32, gridTHW [][3]int) ([]floa
 		return nil, err
 	}
 	h, err := a.run(np, func(bi int) []int {
-		if a.blocks[bi].full || a.planted.noWindows { // G-S3a (3): every block attends its whole frame
+		if a.blocks[bi].full || a.planted.noWindows { // planted defect: every block attends its whole frame
 			return fullSegs
 		}
 		return win

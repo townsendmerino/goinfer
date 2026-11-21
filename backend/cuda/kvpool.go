@@ -19,7 +19,7 @@ import (
 // (kvwindow.go). A block id names the same block in every layer of its group. Block 0 of every pool is zero-filled and never handed
 // out: an entry a sequence has not mapped, or has released, points at it.
 //
-// A resident KV slot (MC1) is a sequence's tables, one per group: the block id of each kvBlock positions of the sequence. They live on
+// A resident KV slot is a sequence's tables, one per group: the block id of each kvBlock positions of the sequence. They live on
 // the host and are mirrored to one device buffer, which every KV kernel reads through kvpage.cuh's KV_ROW. A block counts the tables
 // that name it: a full-group block another slot's prefix shares (CopyKV, kvShare) has more than one, and a slot that is about to write
 // into such a block first takes a block of its own and copies the rows it keeps (kvMap), so a slot only ever writes blocks no other
@@ -43,8 +43,8 @@ type kvPool struct {
 	refs   []int32 // the tables that name each block
 }
 
-// kvPoolOrderForTest, when set, gives the order a pool of n blocks hands its blocks out in (ids 1..n-1, each once). G1a's scrambled
-// tables (docs/measurements/kv4-cuda-2026-10-21.md) use it; nil hands out ascending ids.
+// kvPoolOrderForTest, when set, gives the order a pool of n blocks hands its blocks out in (ids 1..n-1, each once).
+// TestKV4_scrambledTables uses it; nil hands out ascending ids.
 var kvPoolOrderForTest func(n int) []int32
 
 func newKVPool(blocks int) kvPool {
@@ -148,9 +148,9 @@ func (r *cudaResident) kvWithinShare(s int, cow bool) bool {
 	return held < r.kvShareBlocks || (cow && held <= r.kvShareBlocks)
 }
 
-// kvTake hands slot s a block of group g. When none is free it releases idle slots' blocks, least recently used first (D5's step 1); a
+// kvTake hands slot s a block of group g. When none is free it releases idle slots' blocks, least recently used first; a
 // slot within its share then takes back what a running borrower holds past its share, which stops that borrower (kvReclaim). A slot past
-// its share that still finds no block gets decoder.ErrKVPoolFull: only a borrower is ever stopped (D-KV4-2), and it ends as at the context
+// its share that still finds no block gets decoder.ErrKVPoolFull: only a borrower is ever stopped, and it ends as at the context
 // cap. The window group's pool holds every slot's most, so it never runs short.
 func (r *cudaResident) kvTake(s, g int, cow bool) (int32, error) {
 	if kvTakeFailForTest != nil && kvTakeFailForTest(s) {
@@ -269,7 +269,7 @@ func kvWindowBlocks(ctxCap, held int) int {
 // kvPoolBlocks is group g's pool: every slot's largest need, plus the null block.
 func (r *cudaResident) kvPoolBlocks(g, slots int) int { return slots*r.kvSlotBlocks(g) + 1 }
 
-// kvT is layer l's table in the slot whose K/V the kernels are addressing (kvTabSlot: the bound slot, or an MC3 row's).
+// kvT is layer l's table in the slot whose K/V the kernels are addressing (kvTabSlot: the bound slot, or a batched step row's).
 func (r *cudaResident) kvT(l int) Buffer { return r.kvTabBuf(r.kvTabSlot, r.kvGroupOf(l)) }
 
 // kvTabBuf is slot s's group-g table on the device.
@@ -277,8 +277,8 @@ func (r *cudaResident) kvTabBuf(s, g int) Buffer {
 	return r.kvTabDev.At((s*kvGroups + g) * r.kvMaxBlocks() * 4)
 }
 
-// kvAllocPools allocates every owning layer's pools and every slot's tables for slots slots, and zeroes the null blocks. It replaces the
-// per-slot buffers MC1 used to allocate; the caller has run checkKVFits and kvWindowSetup.
+// kvAllocPools allocates every owning layer's pools and every slot's tables for slots slots, and zeroes the null blocks. The
+// caller has run checkKVFits and kvWindowSetup.
 func (r *cudaResident) kvAllocPools(slots int) error {
 	defer r.onLine(mem.LineKV)()
 	r.kvPools = [kvGroups]kvPool{newKVPool(r.kvPoolBlocks(kvGroupFull, slots)), newKVPool(r.kvPoolBlocks(kvGroupWin, slots))}

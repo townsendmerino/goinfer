@@ -14,7 +14,7 @@ import (
 
 // PlainTokenizer adapts a goinfer tokenizer. Text a caller supplies (a state, an option) is always encoded as a plain
 // content segment, so special-token text written inside it (an "<|im_start|>" in a customer's message) stays literal
-// instead of becoming a control token — the parse_special split serve's own prompts use (M25). HF's reference encodes
+// instead of becoming a control token — the parse_special split serve's own prompts use. HF's reference encodes
 // bare-v1 with special parsing on, so the two differ only on such text.
 type PlainTokenizer struct {
 	Tok  *tokenizer.Tokenizer

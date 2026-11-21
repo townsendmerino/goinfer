@@ -116,8 +116,9 @@ func TestOneSlotStep_prefillBitIdentical(t *testing.T) {
 	}
 }
 
-// TestOneSlotStep_q4kLaneBitIdentical is the same check on the q4k lane, where PrefillLast takes the step for every prompt
-// of two or more tokens. It needs the Qwen2.5-Coder-0.5B q4_k_m file and skips without it.
+// TestOneSlotStep_q4kLaneBitIdentical is the same check on the q4k lane: prompts of 2 to 31 tokens through PrefillLast's step
+// route, and 32 to 64, which take the f16 pass there, through the step itself. It needs the Qwen2.5-Coder-0.5B q4_k_m file and
+// skips without it.
 func TestOneSlotStep_q4kLaneBitIdentical(t *testing.T) {
 	a := q4kStepResident(t, 1, 1024)
 	if len(a.r.kvSlotBufs) != 1 || a.VerifyCost() != nil {
@@ -125,7 +126,7 @@ func TestOneSlotStep_q4kLaneBitIdentical(t *testing.T) {
 	}
 	for _, n := range []int{2, 3, 8, 9, 17, 31, 32, 48, 64} {
 		embs, cont := oneSlotEmbs(a.r, uint32(2000+n), n)
-		lg, kv, cg := oneSlotStepDiff(t, a, embs, cont, true)
+		lg, kv, cg := oneSlotStepDiff(t, a, embs, cont, n < 32)
 		if lg != 0 || kv != 0 || cg != 0 {
 			t.Errorf("q4k, %d tokens: %d last-row logits, %d K/V elements, %d continuation logits differ from sequential", n, lg, kv, cg)
 		}

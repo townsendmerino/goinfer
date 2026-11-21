@@ -21,9 +21,9 @@
   GPTQ, AWQ, `.giw`; fp8 e4m3 reads (blockwise f32 scales).
 - **Standings vs Ollama** (nobara re-anchored 2026-11-19/20 at `e29da447`, driver 595.112.07,
   `measurements/peer-reanchor-2026-11-19/README.md`; dated rows in `benchmarks.md`'s TL;DR): CUDA greedy decode **AHEAD in 10 of 11
-  graded cells** (0.5B / 1.5B / 7B, 128 to 8000 tokens; 1.08–1.94×), LEVEL on the 7B at 8000, the 0.5B at 8000 void (issue #1160);
-  CUDA TTFT on the 1.5B ahead at K=512 and 3900 (4.59× / 1.43×, both capped by Ollama's spread); CPU amd64 decode behind on the 0.5B
-  (0.87×; 1.5B level, 7B ahead) and on phi3-mini and gpt-oss 20B (0.76× / 0.92×); **Phi-3 on CUDA behind** at its real `q4k` default
+  graded cells** (0.5B / 1.5B / 7B, 128 to 8000 tokens; 1.04–1.94×, the 1.5B and 7B at the int8-head default of #1179), LEVEL on the 7B at 8000, the 0.5B at 8000 void (issue #1160);
+  CUDA TTFT on the 1.5B ahead at K=512 and 3900 (4.69× / 1.44×, both capped by Ollama's spread); CPU amd64 decode behind on the 0.5B and 1.5B
+  (0.87× / 0.93×; 7B level) and on phi3-mini and gpt-oss 20B (0.76× / 0.92×); **Phi-3 on CUDA behind** at its real `q4k` default
   (0.91× / 0.79× at 128 / 3900); a top-p sampling regression on CUDA, found by the sweep and fixed 2026-09-30. Mac Metal decode: the 2026-09-25
   sweep had it behind at every depth ≥ 2048 (0.58–0.75×); after R18b a same-session run, not pre-registered, put it **ahead at
   every depth** (1.03–1.19×); the Mac half of the re-run (2026-09-30) is partial, with cell g one cell (0.5B at 128, AHEAD 1.296×) and

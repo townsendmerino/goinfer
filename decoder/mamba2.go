@@ -73,7 +73,7 @@ func mambaProjInt8(q quantMode) bool {
 	return false
 }
 
-// mambaKeepF32ForTest keeps the f32 projections on a quantized load: the f32 arm of B27's fidelity bar, and its planted defect.
+// mambaKeepF32ForTest keeps the f32 projections on a quantized load: the f32 arm of the int8 Mamba projections' fidelity bar, and its planted defect.
 var mambaKeepF32ForTest bool
 
 // quantizeProjections replaces the f32 projections with their int8 form.

@@ -107,7 +107,7 @@ func LoadQwen3PreprocessConfig(dir string) (QwenPreprocessConfig, error) {
 }
 
 // qwen35FamilyPreprocessorJSON is the preprocessor_config.json every Qwen3.5/3.6 checkpoint ships, byte for byte (the same MD5 on
-// Qwen3.5-0.8B, Qwen3.5-9B and Qwen3.6-35B-A3B). A GGUF mmproj carries no pixel budget (docs/multimodal.md P8b), so a tower loaded
+// Qwen3.5-0.8B, Qwen3.5-9B and Qwen3.6-35B-A3B). A GGUF mmproj carries no pixel budget (docs/multimodal.md, the GGUF `mmproj` entry), so a tower loaded
 // from one takes the family's own processor config from here.
 const qwen35FamilyPreprocessorJSON = `{
     "size": {

@@ -22,7 +22,7 @@ func lfm2FFNDim(cfg *Config) int {
 
 // lfm2Architecture expresses LFM2 / LFM2.5 (model_type lfm2): a gated-short-convolution + softmax-attention hybrid. Every layer has a SwiGLU
 // FFN; layer_types decides whether its mixer is a conv block or GQA attention with per-head RMSNorm on Q and K. EXPERIMENTAL tier: validated
-// against the HF reference on a real checkpoint, not against a full-model T3.
+// against the HF reference on a real checkpoint, not by a full-model real-checkpoint parity manifest row.
 //
 // Checked against the released LFM2.5-2.6B rather than inherited from the scoping brief: QK-norm is RMSNorm, not LayerNorm (the reference
 // uses Lfm2RMSNorm(head_dim) per head and the checkpoint carries q_layernorm.weight with no bias tensor), which is the difference between

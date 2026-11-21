@@ -469,8 +469,9 @@ This page used to promise an automatic fallback to the GGUF path; that fallback 
 ### Quantization and the CPU kernels
 
 **The default is `int4`.** `--quant` defaults to `int4` in chat, serve and `fit`. That is W4A8: int4
-weights, int8 activations. The embedding and LM head are relaxed to int4 too by default
-(`--embed-int4`, default ON since 2026-09-28 — pass `--embed-int4=false` for the W8A8 pin). The
+weights, int8 activations. The embedding and LM head are relaxed to int4 too by default on a model under 1B parameters
+(`--embed-int4`; from 1B up the default keeps them at int8, `decoder.EmbedInt4For` — pass `--embed-int4=false` for the W8A8
+pin at any size). The
 alternatives:
 - `int8int8` (W8A8), where accuracy matters more than RAM;
 - `int8` (weight-only);
@@ -1149,7 +1150,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `apps/examples/structured` | `chat`, `constrain`, `decoder`, `tokenizer` |  |
 | `apps/sdktest` |  | `server` |
 | `apps/site/cmd/build` | `site/internal/site` |  |
-| `backend/cuda` | `backend/cuda/internal/fitdecide`, `backend/cuda/internal/gpudev`, `backend/cuda/internal/launchgeom`, `backend/cuda/internal/wpack`, `decoder`, `decoder/fit`, `internal/audio`, `internal/cost`, `internal/runtime/logs`, `internal/runtime/mem`, `internal/runtime/program`, `internal/runtime/sampling`, `internal/vision`, `multimodal` | `chat`, `embeddinggemma2`, `internal/app/fitcmd`, `internal/app/loadflags`, `internal/clef`, `internal/diag/sb2census`, `internal/diag/towerid`, `internal/guard/memgate`, `internal/runtime/giw`, `internal/runtime/mem/probe`, `internal/runtime/modelload`, `internal/runtime/whisper`, `internal/testgate`, `internal/wrappedupload`, `tokenizer` |
+| `backend/cuda` | `backend/cuda/internal/fitdecide`, `backend/cuda/internal/gpudev`, `backend/cuda/internal/launchgeom`, `backend/cuda/internal/wpack`, `decoder`, `decoder/fit`, `internal/audio`, `internal/cost`, `internal/runtime/logs`, `internal/runtime/mem`, `internal/runtime/program`, `internal/runtime/sampling`, `internal/vision`, `multimodal` | `chat`, `embeddinggemma2`, `internal/app/fitcmd`, `internal/app/loadflags`, `internal/clef`, `internal/diag/sb2census`, `internal/diag/towerid`, `internal/fidelity`, `internal/guard/memgate`, `internal/runtime/giw`, `internal/runtime/mem/probe`, `internal/runtime/modelload`, `internal/runtime/whisper`, `internal/testgate`, `internal/wrappedupload`, `tokenizer` |
 | `backend/cuda/cmd/chat` | `backend/cuda`, `internal/app/chatapp` |  |
 | `backend/cuda/cmd/serve` | `backend/cuda`, `internal/app/serveapp` |  |
 | `backend/cuda/internal/fitdecide` | `internal/runtime/mem` |  |

@@ -1,0 +1,6 @@
+=== RUN   TestAdapterProbe
+ADAPTER_PROBE: backend=vulkan software=false
+--- PASS: TestAdapterProbe (0.06s)
+PASS
+ledger: 1 Context(s) closed in this run
+ok  	github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels	0.073s

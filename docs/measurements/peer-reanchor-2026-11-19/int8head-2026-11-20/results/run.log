@@ -1,0 +1,91 @@
+=== 2026-11-20 15:38:03 PST lock held: build 48d15271c
+Preparing worktree (detached HEAD 48d15271c)
+Updating files:  97% (13158/13496)Updating files:  98% (13227/13496)Updating files:  99% (13362/13496)Updating files: 100% (13496/13496)Updating files: 100% (13496/13496), done.
+HEAD is now at 48d15271c Merge pull request #1179 from townsendmerino/embedhead-int8-default
+wrote go.work from go.work.example
+48d15271c
+3c28709370fb225bbdec42236754a7cd774b40d0bcc608e4c3aba2fd37d459f7  serve-cuda
+a456a7a6aa7130892137670147474ac1e63186b40a1a8762a74b5d79d14ed9f0  serve-cpu
+=== 2026-11-20 15:38:11 PST cuda part
+part      cuda
+started   2026-11-20 15:38:11 PST
+rev       48d15271c (/home/francis/goinfer-bench/peer-reanchor-int8head/wt, clean)
+3c28709370fb225bbdec42236754a7cd774b40d0bcc608e4c3aba2fd37d459f7  serve-cuda
+a456a7a6aa7130892137670147474ac1e63186b40a1a8762a74b5d79d14ed9f0  serve-cpu
+host      nobara-pc Linux 7.3.0-202.nobara.fc44.x86_64
+gpu       595.112.07, NVIDIA GeForce RTX 2070 SUPER
+aikit     v1.76.0
+ollama    Warning: client version is 0.32.5
+llama     version: 0.7.0-dev (build 988, commit a37cc46)
+desktop   /usr/bin/kwin_wayland, 19 MiB;
+steps     all
+state     load 1.62 2.13 2.50 MemAvailable 60717 MiB swap 437 MiB
+== fit checks 2026-11-20 15:38:12 PST load 1.62 2.13 2.50 MemAvailable 60717 MiB swap 437 MiB
+fit 1.5B-ctx4096: cuda-resident (int4) | fit: 4 KV slots at a 4096-token cap hold 0.55 GiB KV (weights 1.12 GiB, budget 41.37 GiB, 40.82 GiB left for a request's own prefill) | KV plan: 4 conversations x 4096 positions (--ctx 4096)
+fit 7B-ctx4096: cuda-resident (int4) | fit: 4 KV slots at a 4096-token cap hold 0.98 GiB KV (weights 4.44 GiB, budget 41.32 GiB, 40.33 GiB left for a request's own prefill) | KV plan: 4 conversations x 4096 positions (--ctx 4096)
+fit 1.5B-ctx8192: cuda-resident (int4) | fit: 4 KV slots at a 8192-token cap hold 0.98 GiB KV (weights 1.12 GiB, budget 41.31 GiB, 40.33 GiB left for a request's own prefill) | KV plan: 4 conversations x 8192 positions (--ctx 8192)
+fit 7B-ctx8192: cuda-resident (int4) | fit: 4 KV slots at a 8192-token cap hold 1.86 GiB KV (weights 4.44 GiB, budget 41.35 GiB, 39.49 GiB left for a request's own prefill) | KV plan: 4 conversations x 8192 positions (--ctx 8192)
+fit ttft-1.5B: cuda-resident (int4) | fit: 4 KV slots at a 32768-token cap hold 1.86 GiB KV (weights 1.12 GiB, budget 41.39 GiB, 39.53 GiB left for a request's own prefill) | KV plan: a 65536-position pool for 4 conversations; each is guaranteed 16384, and one can use up to 32768
+== fit checks done 2026-11-20 15:38:54 PST
+=== evict: fadvise DONTNEED over 2305.9 GB of files load 2.31 2.21 2.51 MemAvailable 60829 MiB swap 437 MiB
+=== settle: load 2.31 >= 0.8, waiting (0/600s)
+=== settle: load 1.65 >= 0.8, waiting (20/600s)
+=== settle: load 1.18 >= 0.8, waiting (40/600s)
+=== settle: load 0.91 >= 0.8, waiting (60/600s)
+=== settle: load 0.65 < 0.8 after 80s
+=== 2026-11-20 15:40:16 PST START a-1.5B load 0.65 1.70 2.31 MemAvailable 60851 MiB swap 437 MiB
+=== 2026-11-20 15:43:09 PST END a-1.5B rc=0 (173s)
+=== evict: fadvise DONTNEED over 2305.9 GB of files load 0.97 1.39 2.08 MemAvailable 60875 MiB swap 437 MiB
+=== settle: load 0.97 >= 0.8, waiting (0/600s)
+=== settle: load 0.70 < 0.8 after 20s
+=== 2026-11-20 15:43:29 PST START a8000-1.5B load 0.70 1.30 2.03 MemAvailable 60840 MiB swap 437 MiB
+=== 2026-11-20 15:46:09 PST END a8000-1.5B rc=0 (160s)
+=== evict: fadvise DONTNEED over 2305.9 GB of files load 0.73 1.15 1.86 MemAvailable 60905 MiB swap 437 MiB
+=== settle: load 0.73 < 0.8 after 0s
+=== 2026-11-20 15:46:10 PST START a-7B load 0.73 1.15 1.86 MemAvailable 60905 MiB swap 437 MiB
+=== 2026-11-20 15:52:53 PST END a-7B rc=0 (403s)
+=== evict: fadvise DONTNEED over 2305.9 GB of files load 0.77 0.98 1.53 MemAvailable 60845 MiB swap 437 MiB
+=== settle: load 0.77 < 0.8 after 0s
+=== 2026-11-20 15:52:54 PST START a8000-7B load 0.77 0.98 1.53 MemAvailable 60844 MiB swap 437 MiB
+=== 2026-11-20 15:58:04 PST END a8000-7B rc=0 (310s)
+=== evict: fadvise DONTNEED over 2305.9 GB of files load 0.85 0.96 1.36 MemAvailable 60856 MiB swap 437 MiB
+=== settle: load 0.85 >= 0.8, waiting (0/600s)
+=== settle: load 0.61 < 0.8 after 20s
+=== 2026-11-20 15:58:25 PST START d-prefill load 0.61 0.89 1.33 MemAvailable 60863 MiB swap 437 MiB
+=== 2026-11-20 15:59:25 PST END d-prefill rc=0 (60s)
+finished  2026-11-20 15:59:25 PST rc=0 load 1.00 0.97 1.33 MemAvailable 60862 MiB swap 437 MiB
+=== 2026-11-20 15:59:25 PST cpu part
+part      cpu
+started   2026-11-20 15:59:25 PST
+rev       48d15271c (/home/francis/goinfer-bench/peer-reanchor-int8head/wt, clean)
+3c28709370fb225bbdec42236754a7cd774b40d0bcc608e4c3aba2fd37d459f7  serve-cuda
+a456a7a6aa7130892137670147474ac1e63186b40a1a8762a74b5d79d14ed9f0  serve-cpu
+host      nobara-pc Linux 7.3.0-202.nobara.fc44.x86_64
+gpu       595.112.07, NVIDIA GeForce RTX 2070 SUPER
+aikit     v1.76.0
+ollama    Warning: client version is 0.32.5
+llama     version: 0.7.0-dev (build 988, commit a37cc46)
+desktop   /usr/bin/kwin_wayland, 19 MiB;
+steps     all
+state     load 1.00 0.97 1.33 MemAvailable 60847 MiB swap 437 MiB
+== fit checks 2026-11-20 15:59:25 PST load 1.00 0.97 1.33 MemAvailable 60847 MiB swap 437 MiB
+fit cpu-1.5B: cpu (int4) [int4 layout: canonical (down, gate/up, qkv)] | fit: 4096-token cap needs 0.22 GiB KV (weights 1.12 GiB, budget 41.41 GiB, 41.19 GiB left for a request's own prefill) | 
+fit cpu-7B: cpu (int4) [int4 layout: canonical (down, gate/up, qkv)] | fit: 4096-token cap needs 0.44 GiB KV (weights 4.44 GiB, budget 41.22 GiB, 40.78 GiB left for a request's own prefill) | 
+== fit checks done 2026-11-20 15:59:33 PST
+=== evict: fadvise DONTNEED over 2311.8 GB of files load 1.08 0.99 1.33 MemAvailable 60467 MiB swap 437 MiB
+=== settle: load 1.08 >= 0.8, waiting (0/600s)
+=== settle: load 0.77 < 0.8 after 20s
+=== 2026-11-20 15:59:56 PST START e-1.5B load 0.77 0.92 1.30 MemAvailable 60796 MiB swap 437 MiB
+=== 2026-11-20 16:08:05 PST END e-1.5B rc=0 (489s)
+=== evict: fadvise DONTNEED over 2311.8 GB of files load 4.90 3.18 2.35 MemAvailable 60856 MiB swap 437 MiB
+=== settle: load 4.90 >= 0.8, waiting (0/600s)
+=== settle: load 3.57 >= 0.8, waiting (20/600s)
+=== settle: load 2.56 >= 0.8, waiting (40/600s)
+=== settle: load 1.83 >= 0.8, waiting (60/600s)
+=== settle: load 1.31 >= 0.8, waiting (80/600s)
+=== settle: load 0.94 >= 0.8, waiting (100/600s)
+=== settle: load 0.67 < 0.8 after 120s
+=== 2026-11-20 16:10:05 PST START e-7B load 0.67 2.13 2.06 MemAvailable 60858 MiB swap 437 MiB
+=== 2026-11-20 16:29:06 PST END e-7B rc=0 (1141s)
+finished  2026-11-20 16:29:06 PST rc=0 load 7.63 6.56 5.42 MemAvailable 60872 MiB swap 437 MiB
+=== 2026-11-20 16:29:06 PST ALL DONE cuda rc=0 cpu rc=0

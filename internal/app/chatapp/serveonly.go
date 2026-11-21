@@ -24,10 +24,8 @@ func serveOnlyInvocation(args []string, fs *flag.FlagSet) string {
 		"-embed-model": true, "--embed-model": true,
 		"-require-backend": true, "--require-backend": true,
 	}
-	// N-77 (docs/audit-2026-09-10.md): this used to scan every argv token uniformly, including a
-	// VALUE the user passed to a chat flag — `--system serve` set the system prompt to the
-	// literal word "serve" and got redirected to goinfer-serve as if "serve" were a subcommand.
-	// Chat's own value-taking flags (the space-separated `--flag value` form only — `--flag=value`
+	// A VALUE the user passes to a chat flag is not a subcommand: `--system serve` sets the system
+	// prompt to the literal word "serve" and must not redirect to goinfer-serve. Chat's own value-taking flags (the space-separated `--flag value` form only — `--flag=value`
 	// is already one token and never ambiguous) consume the next token; skip checking it here the
 	// same way a real flag parser would consume it. The set comes from the REGISTERED flags, not a
 	// list kept beside them: a hand-kept copy missed --kv, --spec and the model-loading flags.

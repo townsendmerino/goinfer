@@ -10,7 +10,7 @@ import (
 // Sharing between CPU sessions:
 // a new conversation copies the whole blocks of another session's KV that its own cold prefill would compute bit for
 // bit, and prefills the rest. A CPU prefill pass of fastAttnMinPrompt rows or more runs the fast prefill attention, a
-// class of its own; passes at or above it are invariant to where they start (docs/measurements/kv2-2026-10-14.md, G0).
+// class of its own; passes at or above it are invariant to where they start (docs/measurements/kv2-2026-10-14.md, "Split invariance").
 
 // cpuClassMap is the class rule for a CPU session's prefill passes.
 func (m *Model) cpuClassMap() kvmgr.ClassMap {

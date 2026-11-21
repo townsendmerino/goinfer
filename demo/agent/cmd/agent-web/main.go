@@ -111,7 +111,7 @@ func main() {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(indexHTML)
 	})
-	// N-26: this is demo-grade, but "demo" is not a security boundary — it binds a port and any
+	// This is demo-grade, but "demo" is not a security boundary — it binds a port and any
 	// web page the operator visits can POST to it. sameOrigin rejects cross-origin POSTs (a page
 	// on another site could otherwise burn a multi-minute vision turn or reset the history), and
 	// limitBody caps the request so an unbounded body cannot be streamed into memory.
@@ -242,7 +242,7 @@ func decodeImage(s string) ([]byte, error) {
 }
 
 // maxRequestBody bounds a POST. Generous for a base64 data-URI image (~8 MB of JPEG) and far
-// below anything that would matter as a memory target (N-26).
+// below anything that would matter as a memory target.
 const maxRequestBody = 12 << 20
 
 // limitBody wraps h so the request body cannot exceed maxRequestBody. MaxBytesReader makes the

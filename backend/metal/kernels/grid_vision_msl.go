@@ -131,7 +131,7 @@ TOWER_ATTN(80)
 `
 
 // TowerGemmMSL is the towers' GEMM kernels. Every EmbeddingGemma 2 / Gemma 4 tower library compiles it (newEG2Ops), so the
-// grid towers' lever B and eg2Ops.gemm (tower_gemm_w32, KS-D4) share one copy.
+// grid towers' lever B and eg2Ops.gemm (tower_gemm_w32) share one copy.
 const TowerGemmMSL = `
 // tower_gemm_{w32,w16}: S17 lever B on Metal:
 // C[M,N] = A[M,K]·Wᵀ (+ bias[N]), A in f32, W [N,K] in f32 (w32) or f16 widened to f32 as it is staged (w16), f32

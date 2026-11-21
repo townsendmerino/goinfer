@@ -76,9 +76,9 @@ type Device struct {
 	allocs []devAlloc // every device allocation handed out, for ReleaseAll
 	objs   []closer   // modules + streams, for ReleaseObjects
 	hosts  map[closer]func()
-	leaser Leaser // every allocation's lease (MM3); nil leases nothing
+	leaser Leaser // every allocation's lease; nil leases nothing
 	// launches and waits count every kernel launch and every host wait on the device (Activity), always on: the device-level
-	// count SB11's per-kernel counts are checked against.
+	// count the resident's per-kernel cost counts are checked against.
 	launches, waits atomic.Int64
 }
 
@@ -587,7 +587,7 @@ func (b Buffer) upload(src []byte) error {
 	if TraceForTest != nil {
 		TraceForTest(TraceEvent{Op: TraceUpload, Dst: b.BindAddr(), Bytes: len(src), Src: src})
 	}
-	// SYNCHRONIZE BEFORE THE COPY TOO, not just after (audit C-01).
+	// SYNCHRONIZE BEFORE THE COPY TOO, not just after.
 	//
 	// The trailing Synchronize below orders this copy before LATER launches —
 	// the read-after-write race the comment above describes. It does nothing

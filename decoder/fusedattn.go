@@ -13,7 +13,7 @@ import (
 // the softmax denominator and the AV fold. It is the same category as --cpu-fast-attention and is taken only on that
 // non-f64-accumulating path (attendBatchedHeads: !useAcc64 and no tree mask), so it adds no second user-facing flag.
 // GOINFER_FUSED_ATTENTION is a developer A/B handle, not a user setting: it keeps fusion's win attributable separately
-// from A3's and lets it roll back without losing A3's. It is on by default (an operator decision, because the
+// from the attention head fan-out's and lets it roll back without losing the fan-out's. It is on by default (an operator decision, because the
 // end-to-end gain is far smaller than the kernel gain); GOINFER_FUSED_ATTENTION=0 restores the materialized schedule.
 // The measurements, and the model-level divergence figures behind "same order, small increment", are in
 // docs/code-notes/decoder.md#fusedattn.

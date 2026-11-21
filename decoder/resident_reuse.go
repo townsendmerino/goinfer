@@ -244,7 +244,7 @@ func (m *Model) boundReuseLen(prompt []int, imgs []residentImageClaim, lora *lor
 }
 
 // ErrKVPoolFull is what a resident whose KV slots share one block pool returns, wrapped, when a conversation past its guaranteed share of
-// the pool needs a block and none is free (docs/measurements/kv4-cuda-2026-10-21.md, KV4a-3). A conversation within its share never
+// the pool needs a block and none is free (docs/measurements/kv4-cuda-2026-10-21.md). A conversation within its share never
 // sees it. The generation it stops ends as at the context cap: finish_reason "length", with what it emitted.
 var ErrKVPoolFull = errors.New("decoder: resident KV pool is full")
 
@@ -341,8 +341,8 @@ func (m *Model) residentAcquire(prompt []int, imgs []residentImageClaim, lora *l
 	return m.residentAcquireIn(prompt, imgs, lora, nil, KVScope{}).reuse
 }
 
-// residentAcquireSlot is residentAcquire that also returns the slot it bound, and never picks a slot busy marks (MC3:
-// another running generation's). With every slot busy it binds nothing and returns slot -1. It tells the manager
+// residentAcquireSlot is residentAcquire that also returns the slot it bound, and never picks a slot busy marks (under the
+// batched decode, another running generation's). With every slot busy it binds nothing and returns slot -1. It tells the manager
 // what the generation will do in the slot (skip reuse rows, prefill the rest of prompt), which the commit reads.
 func (m *Model) residentAcquireSlot(prompt []int, imgs []residentImageClaim, lora *loraRuntime, busy []bool) (reuse, slot int) {
 	acq := m.residentAcquireIn(prompt, imgs, lora, busy, KVScope{})
@@ -434,7 +434,7 @@ func (m *Model) capInPlaceReuse(reuse int, prompt []int, acq kvAcquired) int {
 }
 
 // kvInPlaceCapOff switches capInPlaceReuse off. Set only by in-package tests that compare the slot choice with the
-// bookkeeping KV1 replaced, which knew no kernel classes.
+// per-slot bookkeeping that predates internal/kvmgr, which knew no kernel classes.
 var kvInPlaceCapOff bool
 
 func (m *Model) residentAcquireSlotAll(prompt []int, imgs []residentImageClaim, lora *loraRuntime, busy []bool, sc KVScope) kvAcquired {
@@ -466,7 +466,7 @@ func (m *Model) residentAcquireSlotAll(prompt []int, imgs []residentImageClaim, 
 		return kvAcquired{slot: -1, src: -1}
 	}
 	if err := m.residentBind(pick); err != nil {
-		// The resident keeps its previous binding; with its bookkeeping unknown, go cold on it. Slot -1: an MC3 caller
+		// The resident keeps its previous binding; with its bookkeeping unknown, go cold on it. Slot -1: a batched caller
 		// must not decode on a binding it did not choose (it may be another generation's slot); residentAcquire's
 		// callers carry on cold on the previous binding, as they always have.
 		m.residentForgetIDs()
@@ -505,7 +505,7 @@ func kvChooseDonor(res ResidentForward, hits []int, cm kvmgr.ClassMap, n, dst, r
 }
 
 // kvOtherDonors states, for a declined copy, how many slots other than src and dst hold a hit longer than reuse that their
-// windows still hold. It changes nothing; it is the G5-C diagnostic of how much of a decline is the choice of donor
+// windows still hold. It changes nothing; it is the diagnostic of how much of a decline is the choice of donor
 // (docs/measurements/kv2-cuda-2026-10-15.md, §6).
 func kvOtherDonors(rk ResidentKVSubsystem, hits []int, cm kvmgr.ClassMap, n, src, dst, reuse int) string {
 	k := 0
@@ -605,8 +605,8 @@ func (m *Model) residentBind(slot int) error {
 
 // kvAllowanceOverride, when positive, replaces kvRollbackAllowance and leaves the slot choice no first-prompt lengths,
 // so an own rollback is held to the keep-at-least-as-much-as-it-overwrites rule like any request. Set only by in-package
-// tests: a large value switches both off, so a test can compare the rest of the slot choice with the bookkeeping KV1
-// replaced.
+// tests: a large value switches both off, so a test can compare the rest of the slot choice with the per-slot
+// bookkeeping that predates internal/kvmgr.
 var kvAllowanceOverride int
 
 // kvRollbackAllowance is how many rows a request may give up of a slot it takes in place (kvmgr.PickSlotWithin): one
@@ -623,7 +623,7 @@ func (m *Model) kvRollbackAllowance() int {
 
 // pickResidentSlot chooses a slot for a prompt from each slot's reuse score, its committed length and its last-use
 // tick (kvmgr.PickSlot): a continuation keeps its slot; a shared lead takes an empty slot, else the least recently
-// used. busy (nil: none) marks slots another running generation holds (MC3); -1 when all are busy.
+// used. busy (nil: none) marks slots another running generation holds (the batched decode); -1 when all are busy.
 func pickResidentSlot(scores, lens []int, uses []uint64, busy []bool) int {
 	return kvmgr.PickSlot(scores, lens, uses, busy)
 }
@@ -660,7 +660,7 @@ func (m *Model) residentCommitIDs(prompt, generated []int, newBlocks []residentI
 
 // residentPublishPrompt publishes the full blocks of prompt, which the generation in slot has just finished
 // prefilling, so a request arriving while it decodes can copy them (kvmgr.Slots.Prefilled). Only a generation that
-// shares the resident with others while it runs (MC3) needs it; the slot stays live until its commit or forget.
+// shares the resident with others while it runs (the batched decode) needs it; the slot stays live until its commit or forget.
 func (m *Model) residentPublishPrompt(slot int, prompt []int, lora *loraRuntime) {
 	m.kvSlots().Prefilled(slot, m.kvRootIn(lora, m.kvNSOf(slot)), prompt, nil, m.kvClassMap())
 }

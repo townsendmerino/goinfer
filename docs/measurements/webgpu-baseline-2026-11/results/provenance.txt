@@ -1,0 +1,13 @@
+started   2026-11-20 12:09:31 PST
+rev       018cbe74 (/home/francis/goinfer-bench/wg0-run/wt, clean); scripts from /home/francis/goinfer-bench/wg0-wt/docs/measurements/webgpu-baseline-2026-11 (5df28899f)
+serve     /home/francis/goinfer-bench/wg0-run/bin/serve-cuda-018cbe74 sha256 778850e2bf22cea6b92673c63a155767381acd19d6c9b30d0122ad98ebcb9fb2
+serve     /home/francis/goinfer-bench/wg0-run/bin/serve-webgpu-018cbe74 sha256 7e1c0a137413519ccc80dfc2d70e9217b62a1508dfc34f13bd8169e4a699a41d
+host      nobara-pc Linux 7.3.0-202.nobara.fc44.x86_64
+gpu       595.112.07, NVIDIA GeForce RTX 2070 SUPER
+vulkan    	deviceName = NVIDIA GeForce RTX 2070 SUPER;	driverInfo = 595.112.07;
+aikit     v1.76.0
+desktop   /usr/bin/kwin_wayland, 19 MiB;
+lock      free to this run (inherited from pid 909434 on nobara-pc, `bash /home/francis/goinfer-bench/wg0-wt/docs/measurements/webgpu-baseline-2026-11/run-nobara.sh`, started 2026-11-20T12:09:31-08:00, 0 min ago, label 'wg0') 
+steps     all
+state     load 4.76 3.92 3.73 MemAvailable 60692 MiB swap 416 MiB
+finished  2026-11-20 12:42:59 PST rc=0 load 0.96 0.75 1.06 MemAvailable 60761 MiB swap 416 MiB

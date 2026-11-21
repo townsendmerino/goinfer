@@ -3,7 +3,7 @@
 // see below]: bytes by class, the chosen placement per available backend, the ctx cap, and what
 // was pinned."
 //
-// PHASE 1 SCOPE NOTE ('s G11 entry has the full reasoning): the
+// PHASE 1 SCOPE NOTE (task-fit-to-hardware.md has the full reasoning): the
 // doc wants this header-only ("two seconds, no model in memory") so `pull` and the web UI can
 // check fit before a multi-GB download. Nothing in the repo separates dense from routed-expert
 // bytes at the checkpoint-header level today, so this phase loads the model like any other
@@ -116,7 +116,7 @@ func Run(args []string) int {
 		}
 	})
 
-	// M-19 (docs/audit-2026-09-10.md): the CPU free-RAM probe must be read BEFORE decoder.Load,
+	// The CPU free-RAM probe must be read BEFORE decoder.Load,
 	// or the budget it reports has already been depleted by the very model being planned for —
 	// a guard that inverts under the condition it exists for (CLAUDE.md's own name for this
 	// class of bug). GPU probes read DEVICE memory, which a CPU-resident load never touches, so
@@ -359,17 +359,16 @@ func selfMeasure(admitted []string, srcOf map[string]fitSource, planOf map[strin
 	defer pm.Close()
 
 	const probePrompt, probeDecode = 64, 32
-	_, _, _, _, _, _, vocab := pm.Dims()
+	vocab := pm.Shape().Vocab
 	prompt := make([]int, probePrompt)
 	for i := range prompt {
 		prompt[i] = (i*2654435761 + 1) % vocab // deterministic, in-range — a throughput probe, not a real prompt
 	}
 
-	// M-20 (docs/audit-2026-09-10.md): time from the FIRST generated token, not from before
-	// Generate is called — the first token's own latency includes the fixed one-time prompt
-	// prefill (probePrompt tokens), so folding it into the rate understated true decode
-	// throughput by roughly a third on the CPU staged path (the audit's own measurement). Every
-	// step after the first is pure decode, so that's what the rate reports.
+	// Time from the FIRST generated token, not from before Generate is called — the first
+	// token's own latency includes the fixed one-time prompt prefill (probePrompt tokens), so
+	// folding it into the rate would understate decode throughput. Every step after the first is
+	// pure decode, so that's what the rate reports.
 	t0 := time.Now()
 	out, gen := pm.Generate(context.Background(), prompt, probeDecode, decoder.SamplingParams{Temperature: 0})
 	n := 0
@@ -403,7 +402,7 @@ func selfMeasure(admitted []string, srcOf map[string]fitSource, planOf map[strin
 // freeBytesFor is CompiledBackends' "cpu" special case (HostRAMAvailableBytes, which predates
 // the RegisterMemoryProbe registry and lives directly on decoder) plus everything else via the
 // registry backends register their own probe into (metal/backend.go, cuda/backend.go).
-// hostFreeBeforeLoad is the CPU free-RAM probe captured BEFORE decoder.Load — see the M-19
+// hostFreeBeforeLoad is the CPU free-RAM probe captured BEFORE decoder.Load — see the
 // comment at the call site. GPU backends are unaffected by a CPU-resident load, so they still
 // query live.
 func freeBytesFor(backend string, hostFreeBeforeLoad int64) (int64, bool) {

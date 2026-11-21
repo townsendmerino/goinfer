@@ -43,7 +43,12 @@ func loadBenchModel() (*Model, error) {
 		if q, ok := os.LookupEnv("GOINFER_BENCH_QUANT"); ok {
 			quant = q
 		}
-		benchModel, benchErr = Load(path, Options{Quant: quant})
+		// GOINFER_BENCH_BACKEND names the load's Backend ("" by default, as before). A q4k load keeps the file's Q5_K/Q6_K
+		// natively only under Backend "cpu" (q4kNative56); GOINFER_BENCH_WIDEN56=1 then widens them to int8 as before the
+		// native kinds, so one binary times both arms of that A/B.
+		q4kWiden56ForTest = os.Getenv("GOINFER_BENCH_WIDEN56") == "1"
+		benchModel, benchErr = Load(path, Options{Quant: quant, Backend: os.Getenv("GOINFER_BENCH_BACKEND")})
+		q4kWiden56ForTest = false
 	})
 	return benchModel, benchErr
 }

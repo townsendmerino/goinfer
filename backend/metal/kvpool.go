@@ -153,7 +153,7 @@ func kvBlockOrder(blocks int, window bool) []uint32 {
 // (above one, slots share it, CopyKV), kvInUse the blocks some entry names, kvOrder the order a take scans for a free one, and
 // kvShareBlocks is each slot's guaranteed share.
 //
-// A window group (win > 0, KV5-7c) keeps only the recent positions of each sequence: kvBase[s] is the first position slot s still holds,
+// A window group (win > 0) keeps only the recent positions of each sequence: kvBase[s] is the first position slot s still holds,
 // a multiple of 64, and the entries below it name block 0, whose zero rows a window kernel's tile over-read lands in. A block that falls
 // behind the base is retired (kvRetired), not freed: its entry stays until every command buffer committed before it left has completed.
 type kvGroup struct {
@@ -165,7 +165,7 @@ type kvGroup struct {
 	kvOrder       []uint32
 	kvShareBlocks int
 	win           int         // the window length in positions, or 0 for a group that keeps every position
-	bounded       bool        // its pool holds decoder.MetalKVWindowBlocks a slot, not the context's (KV5-7c-ii): no slot borrows from another's share
+	bounded       bool        // its pool holds decoder.MetalKVWindowBlocks a slot, not the context's: no slot borrows from another's share
 	kvBase        []int       // each slot's first held position (a window group)
 	retired       []kvRetired // blocks behind a base whose entries are not yet repointed
 }
@@ -315,7 +315,8 @@ var kvWindowReadPlantForTest bool
 // window held.
 const kvWindowKeep = decoder.MetalKVWindowKeep
 
-// kvRetainOffForTest keeps every position in the window group, as KV5-7b did: the arm KV5-7c's identity readings compare against.
+// kvRetainOffForTest keeps every position in the window group: the arm the retiring window's identity readings
+// compare against.
 var kvRetainOffForTest bool
 
 // kvActivityForTest, when set, replaces the device's own count of command buffers committed and waited on, so a test can say when a

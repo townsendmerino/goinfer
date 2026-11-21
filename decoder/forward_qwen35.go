@@ -15,7 +15,7 @@ func (m *Model) qwen35AttentionWith(p *gatedAttnParams, n []float32, lw *LayerWe
 	nH, nKV, hd := arch.NumHeads, arch.NumKVHeads, arch.HeadDim
 
 	// q_proj emits [query ‖ gate] per head; split them.
-	cache.scr.hq.prepare(m.be, &a.qProj, n, 1) // n quantized once for q, k and v (R-13)
+	cache.scr.hq.prepare(m.be, &a.qProj, n, 1) // n quantized once for q, k and v
 	qg := matvecWMPre(m.be, &a.qProj, &cache.scr.hq, n)
 	q := make([]float32, nH*hd)
 	gate := make([]float32, nH*hd)
@@ -28,7 +28,7 @@ func (m *Model) qwen35AttentionWith(p *gatedAttnParams, n []float32, lw *LayerWe
 	applyRope(&p.Rope, q, k, nH, nKV, hd, pos, cache.mropePos, cache.mropeDelta)
 
 	cache.Append(layer, k, v)
-	ctx := cache.scr.ctxBuf(nH * hd) // R-17: from the scratch; attendQueryP clears it
+	ctx := cache.scr.ctxBuf(nH * hd) // from the scratch; attendQueryP clears it
 	nKeys := len(cache.Keys(layer)) / (nKV * hd)
 	attendQueryP(p.Attn, q, ctx, cache.scr.scoresBuf(nKeys), cache, layer, pos, arch)
 

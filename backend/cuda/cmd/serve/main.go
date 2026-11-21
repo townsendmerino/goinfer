@@ -6,7 +6,7 @@
 // whose init() registers the "cuda" decoder backend (decoder.RegisterBackend). Dense and MoE
 // residency (docs/hardware-matrix.md); a model it does not admit, or a box with no NVIDIA driver,
 // runs on the CPU. Living in
-// the ./cuda submodule keeps gocudrv/libcuda OUT of the pure-Go root module graph (audit M-19).
+// the ./cuda submodule keeps gocudrv/libcuda OUT of the pure-Go root module graph.
 // Run with `--backend cuda`.
 package main
 

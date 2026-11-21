@@ -343,7 +343,7 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	// contend for resBusy or forget a resIDs commit it never wrote.
 	var reuseFrom int
 	if m.resident != nil {
-		// tryClaimResident, not a bare CAS: it also refuses while an MC3 generation holds a batch place, which never
+		// tryClaimResident, not a bare CAS: it also refuses while a batched generation holds a batch place, which never
 		// sets resBusy.
 		if !m.tryClaimResident() {
 			return nil, 0, errBlockSpecResidentBusy
@@ -351,7 +351,7 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 		defer atomic.StoreInt32(&m.resBusy, 0)
 		// Compute reuse before forgetting: forgetting clears the very state residentReuseLen reads. BlockSpec never binds an adapter (nil lora,
 		// matching residentCommitIDs' own nil below).
-		// MC1: binds the KV slot (clearing resDrafterSynced on a switch). Off: the drafter keeps its own context, which a
+		// Binds the resident KV slot (clearing resDrafterSynced on a switch). Off: the drafter keeps its own context, which a
 		// copy of another sequence's rows would not bring with it.
 		sc := opt.scope
 		sc.Off = true

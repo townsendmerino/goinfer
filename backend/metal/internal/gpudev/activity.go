@@ -4,7 +4,7 @@ package gpudev
 
 import "sync/atomic"
 
-// activity is a Device's own count of what its queues ran (SB11's cost counters, internal/cost): the dispatches in each
+// activity is a Device's own count of what its queues ran (the cost counters, internal/cost): the dispatches in each
 // command buffer committed, the command buffers and the host's waits on them. It is always on: an encoder counts its
 // dispatches in a plain field, and a commit adds them with one atomic add. It is the count a backend's per-pipeline
 // attribution is checked against. hook, when set, is told the pipeline of each dispatch in a buffer committed while it is

@@ -19,8 +19,8 @@ import (
 // It takes one sequence, so the last token is always the last real token; there is no padded batch whose last slot
 // could be a pad. Callers that want a batch call it per sequence. The returned slice is a fresh copy the caller owns.
 //
-// Every family: its layers run through the program walker. Gate H.8
-// ("OP3's seams PR") holds the row to the forward's final hidden state, bit for bit.
+// Every family: its layers run through the program walker. TestSeams_gates
+// (gateH) holds the row to the forward's final hidden state, bit for bit.
 func (m *Model) HiddenLast(ids []int) ([]float32, error) {
 	_, done, err := m.enterCall(context.Background())
 	if err != nil {

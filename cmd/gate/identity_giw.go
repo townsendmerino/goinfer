@@ -56,9 +56,9 @@ func parseGiwConfigs(s string) ([]giwConfig, error) {
 	return out, nil
 }
 
-// defaultGiwConfigs is G-T1's matrix: by day on the tiny fixtures, G-DS1's configurations (int4 for Metal with and
-// without the int4 embedding, int4 for this box's CPU, int8int8) plus int4 for cpu-arm64; on a real checkpoint, int4
-// for this box's CPU and its GPU.
+// defaultGiwConfigs is the .giw identity matrix: by day on the tiny fixtures, the directory-stream gate's configurations
+// (int4 for Metal with and without the int4 embedding, int4 for this box's CPU, int8int8) plus int4 for cpu-arm64; on a
+// real checkpoint, int4 for this box's CPU and its GPU.
 func defaultGiwConfigs(assets string) []giwConfig {
 	if assets == "real" {
 		gpu := "cuda"
@@ -95,7 +95,7 @@ type giwSource struct {
 }
 
 // planGiwSources lists the bytes mode's sources. Tiny: every directory holding a .safetensors file directly under
-// testdata/ and decoder/testdata/ (G-DS1's walk; whether a directory is a model the transcode builds is decided by
+// testdata/ and decoder/testdata/ (the directory-stream gate's walk; whether a directory is a model the transcode builds is decided by
 // running it, and one neither build accepts is NOT RUN). Real: the -assets real table's GGUFs and directories.
 func planGiwSources(o identityOpts) ([]giwSource, error) {
 	keep := func(name string) bool { return len(o.Only) == 0 || slicesContains(o.Only, name) }

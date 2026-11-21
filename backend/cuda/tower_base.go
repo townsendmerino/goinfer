@@ -32,8 +32,8 @@ type towerOps struct {
 
 	scratch []Buffer         // per-call buffers, released by releaseScratch
 	err     error            // the first launch error of the current call
-	prof    *towerProf       // S17 step 0's class profile; nil in production (tower_prof.go)
-	ownAttn map[int]Pipeline // S17 lever A's fused attention by head dim (64, 72, 80); a head dim not in it takes aikit's kernel
+	prof    *towerProf       // the per-class profile; nil in production (tower_prof.go)
+	ownAttn map[int]Pipeline // the tower's own fused attention by head dim (64, 72, 80); a head dim not in it takes aikit's kernel
 
 	reqCh chan func() error
 	ackCh chan error
@@ -277,7 +277,7 @@ func (t *towerOps) attention(q, k, v, out Buffer, np, nH, hd int, scale float32)
 	t.cls(clsAttn)
 	t.profAttn(np, nH, hd)
 	if p, ok := t.ownAttn[hd]; ok && !towerAttnAikit {
-		// S17 lever A: the fused float32 kernel (tower_base.cu). No score row in shared memory, so no np ceiling; 64 queries per block, one block per head.
+		// The tower's own fused float32 kernel (tower_base.cu). No score row in shared memory, so no np ceiling; 64 queries per block, one block per head.
 		cfg := LaunchConfig{GridX: uint32((np + 63) / 64), GridY: uint32(nH), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 		t.launch(p, cfg, Arg(q), Arg(k), Arg(v), Arg(out), i32(int32(np)), i32(int32(nH)), f32v(scale*1.4426950408889634), i32(int32(towerAttnDefect)))
 		return nil

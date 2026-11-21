@@ -16,14 +16,18 @@ import (
 // activation-hazard default, the q4k lane, fit) outside the decoder package: two layers of Phi-3's fused attn_qkv and ffn_up
 // (gate‖up) at the smallest Q4_K width, 256, as random Q4_K blocks with small scales, beside f32 embeddings and norms and a 64-token
 // list. The bytes are fixed by a seed. It is written, not committed: random weights are no family's fixture.
-func WritePhi3Q4KTinyGGUFForTest(path string) error { return writeQ4KTinyGGUF(path, "phi3") }
+func WritePhi3Q4KTinyGGUFForTest(path string) error { return writeQ4KTinyGGUF(path, "phi3", false) }
+
+// WritePhi3KMixTinyGGUFForTest is WritePhi3Q4KTinyGGUFForTest with the real Phi-3-mini Q4_K_M file's type mix: attn_qkv stored
+// as Q5_K and ffn_down as Q6_K, every other projection Q4_K.
+func WritePhi3KMixTinyGGUFForTest(path string) error { return writeQ4KTinyGGUF(path, "phi3", true) }
 
 // WriteLlamaQ4KTinyGGUFForTest is WritePhi3Q4KTinyGGUFForTest for llama, whose q, k, v, gate and up are separate tensors: a family
 // with no activation hazard, so an int4 load of it runs resident on Metal.
-func WriteLlamaQ4KTinyGGUFForTest(path string) error { return writeQ4KTinyGGUF(path, "llama") }
+func WriteLlamaQ4KTinyGGUFForTest(path string) error { return writeQ4KTinyGGUF(path, "llama", false) }
 
-// writeQ4KTinyGGUF writes the two-layer synthetic GGUF for arch, phi3 or llama.
-func writeQ4KTinyGGUF(path, arch string) error {
+// writeQ4KTinyGGUF writes the two-layer synthetic GGUF for arch, phi3 or llama; kmix stores qkv as Q5_K and down as Q6_K.
+func writeQ4KTinyGGUF(path, arch string, kmix bool) error {
 	const hidden, heads, hd, inter, vocab, layers = 256, 4, 64, 256, 64, 2
 	const tU32, tF32, tStr, tArr = 4, 6, 8, 9
 	le := binary.LittleEndian
@@ -64,7 +68,7 @@ func writeQ4KTinyGGUF(path, arch string) error {
 	type tensor struct {
 		name string
 		dims []uint64 // GGUF order: ne0 (in-features) first
-		typ  uint32   // 0 f32, 12 Q4_K
+		typ  uint32   // 0 f32, 12 Q4_K, 13 Q5_K, 14 Q6_K
 		raw  []byte
 	}
 	r := rand.New(rand.NewPCG(3, 4))
@@ -93,6 +97,37 @@ func writeQ4KTinyGGUF(path, arch string) error {
 		}
 		return tensor{name, []uint64{uint64(in), uint64(out)}, 12, raw}
 	}
+	// q5k is q4k's block with 32 more bytes of fifth bits (176 bytes); q6k's block (210 bytes) puts its f16 d last, here 2^-10 to
+	// 2^-8, with int8 sub-scales in [-16, 16] so its weights stay within q4k's range.
+	q5k := func(name string, out, in int) tensor {
+		raw := make([]byte, out*(in/256)*176)
+		for b := 0; b < len(raw); b += 176 {
+			for _, off := range []int{0, 2} {
+				le.PutUint16(raw[b+off:], uint16(5+r.IntN(4))<<10|uint16(r.IntN(1024)))
+			}
+			for i := 4; i < 176; i++ {
+				raw[b+i] = byte(r.IntN(256))
+			}
+		}
+		return tensor{name, []uint64{uint64(in), uint64(out)}, 13, raw}
+	}
+	q6k := func(name string, out, in int) tensor {
+		raw := make([]byte, out*(in/256)*210)
+		for b := 0; b < len(raw); b += 210 {
+			for i := range 192 {
+				raw[b+i] = byte(r.IntN(256))
+			}
+			for i := 192; i < 208; i++ {
+				raw[b+i] = byte(int8(r.IntN(33) - 16))
+			}
+			le.PutUint16(raw[b+208:], uint16(5+r.IntN(3))<<10|uint16(r.IntN(1024)))
+		}
+		return tensor{name, []uint64{uint64(in), uint64(out)}, 14, raw}
+	}
+	qkvT, downT := q4k, q4k
+	if kmix {
+		qkvT, downT = q5k, q6k
+	}
 	ts := []tensor{
 		f32("token_embd.weight", []uint64{hidden, vocab}, vocab*hidden, false),
 		f32("output_norm.weight", []uint64{hidden}, hidden, true),
@@ -102,7 +137,7 @@ func writeQ4KTinyGGUF(path, arch string) error {
 		p := fmt.Sprintf("blk.%d.", l)
 		ts = append(ts, f32(p+"attn_norm.weight", []uint64{hidden}, hidden, true))
 		if arch == "phi3" {
-			ts = append(ts, q4k(p+"attn_qkv.weight", 3*heads*hd, hidden))
+			ts = append(ts, qkvT(p+"attn_qkv.weight", 3*heads*hd, hidden))
 		} else {
 			ts = append(ts, q4k(p+"attn_q.weight", heads*hd, hidden), q4k(p+"attn_k.weight", heads*hd, hidden), q4k(p+"attn_v.weight", heads*hd, hidden))
 		}
@@ -112,7 +147,7 @@ func writeQ4KTinyGGUF(path, arch string) error {
 		} else {
 			ts = append(ts, q4k(p+"ffn_gate.weight", inter, hidden), q4k(p+"ffn_up.weight", inter, hidden))
 		}
-		ts = append(ts, q4k(p+"ffn_down.weight", hidden, inter))
+		ts = append(ts, downT(p+"ffn_down.weight", hidden, inter))
 	}
 	u32(&hdr, 0x46554747) // "GGUF"
 	u32(&hdr, 3)

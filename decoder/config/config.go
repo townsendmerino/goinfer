@@ -351,7 +351,7 @@ type Config struct {
 	ConvLCache int `json:"conv_L_cache"`
 	// LFM2's FFN width rule (Lfm2MLP): with block_auto_adjust_ff_dim the width is int(2*intermediate_size/3), then, when
 	// block_ffn_dim_multiplier is set, int(multiplier*width) rounded up to block_multiple_of. The LFM2.5 text releases
-	// state the width and set the flag false; LFM2-VL's LFM2-1.2B text_config sets it (12288 -> 8192; S10).
+	// state the width and set the flag false; LFM2-VL's LFM2-1.2B text_config sets it (12288 -> 8192).
 	BlockAutoAdjustFFDim  bool     `json:"block_auto_adjust_ff_dim"`
 	BlockFFNDimMultiplier *float64 `json:"block_ffn_dim_multiplier"`
 	BlockMultipleOf       int      `json:"block_multiple_of"`

@@ -129,7 +129,7 @@ var quantKVDeclineOffForTest bool
 // staticResidentDecline is every decline BuildResident makes from the model alone, in its order, before it reads memory or
 // touches the device: the runner's eligibility, the shared feature taxonomy, per-layer geometry, the router-kernel cap, Gemma 4's
 // MoE FFN, the layouts without a quantized KV cache and the routed experts' weight kind. It returns a typed decline
-// (decoder.DeclineResident) or nil. SB2's layer B-webgpu census (gpu/sb2_census_test.go) records it per fixture and option
+// (decoder.DeclineResident) or nil. The webgpu memory census (gpu/sb2_census_test.go) records it per fixture and option
 // cell, and Plan's webgpu check (decoder.Model.Plan) mirrors the last two.
 func staticResidentDecline(m *decoder.Model) error {
 	// The Granite-4.0-H and Nemotron-H SSM hybrids are buildable independent of DecodeRunnerEligible (Granite's admission
@@ -236,7 +236,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	avail0 := availBeforeBuild(m) // MC1: read before the first upload (darwinKVSlots)
+	avail0 := availBeforeBuild(m) // read before the first upload (darwinKVSlots)
 
 	// No-GQA models (nKV == nH, e.g. phi3-mini) are NOT declined on WebGPU. A resident-vs-CPU cosine bar does not transfer to a
 	// real int4 checkpoint: the CPU forward is itself that sensitive to a ±1-ULP perturbation of its f32 norms (the int8
@@ -635,7 +635,7 @@ func (rd *residentDecoder) Reset() {
 func (rd *residentDecoder) Close() error { kernels.ContextReleaseOwned(rd.c, rd.release); return nil }
 
 func (rd *residentDecoder) release() {
-	// Every KV slot's runner and verify pool (MC1); the bound slot's are rd.runner / rd.batch.
+	// Every KV slot's runner and verify pool; the bound slot's are rd.runner / rd.batch.
 	slots := rd.slots
 	if slots == nil {
 		slots = []webgpuKVSlot{{}}

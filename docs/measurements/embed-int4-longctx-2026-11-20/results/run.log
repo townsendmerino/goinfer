@@ -1,0 +1,124 @@
+=== 2026-11-20 09:35:47 PST START build (load 0.69)
+=== 2026-11-20 09:35:57 PST END build rc=0 (10s)
+=== 2026-11-20 09:35:57 PST START ref-0.5B (load 1.84)
+loaded qwen2.5-coder-0.5b-instruct-q4_k_m.gguf in 33s: 630167424 params, torch 2.12.0+cpu, attn sdpa
+internal_app_serveapp_openai.go: 8256 ids, forward over 8192 positions in 23s, vocab 151936, elapsed 55s
+backend_cuda_resident.go: 8256 ids, forward over 8192 positions in 22s, vocab 151936, elapsed 77s
+decoder_weights.go: 8256 ids, forward over 8192 positions in 21s, vocab 151936, elapsed 98s
+docs_server.md: 8256 ids, forward over 8192 positions in 22s, vocab 151936, elapsed 120s
+docs_env-vars.md: 8256 ids, forward over 8192 positions in 22s, vocab 151936, elapsed 142s
+RELEASING.md: 8256 ids, forward over 8192 positions in 22s, vocab 151936, elapsed 164s
+=== 2026-11-20 09:38:44 PST END ref-0.5B rc=0 (167s)
+=== 2026-11-20 09:38:44 PST START ref-1.5B (load 14.06)
+loaded qwen2.5-coder-1.5b-instruct-q4_k_m.gguf in 43s: 1777088000 params, torch 2.12.0+cpu, attn sdpa
+internal_app_serveapp_openai.go: 8256 ids, forward over 8192 positions in 61s, vocab 151936, elapsed 103s
+backend_cuda_resident.go: 8256 ids, forward over 8192 positions in 66s, vocab 151936, elapsed 169s
+decoder_weights.go: 8256 ids, forward over 8192 positions in 62s, vocab 151936, elapsed 232s
+docs_server.md: 8256 ids, forward over 8192 positions in 79s, vocab 151936, elapsed 310s
+docs_env-vars.md: 8256 ids, forward over 8192 positions in 85s, vocab 151936, elapsed 396s
+RELEASING.md: 8256 ids, forward over 8192 positions in 85s, vocab 151936, elapsed 481s
+=== 2026-11-20 09:46:50 PST END ref-1.5B rc=0 (486s)
+=== 2026-11-20 09:46:50 PST START 0.5B-cuda-int4head (load 17.56)
+ei4lc cuda-int4head: cuda-resident (int4), head int4, 6 documents
+ei4lc cuda-int4head: doc 1/6 RELEASING.md done, elapsed 43s
+ei4lc cuda-int4head: doc 2/6 backend_cuda_resident.go pos 4089/8191, elapsed 1m0s
+ei4lc cuda-int4head: doc 2/6 backend_cuda_resident.go done, elapsed 1m26s
+ei4lc cuda-int4head: doc 3/6 decoder_weights.go done, elapsed 2m10s
+ei4lc cuda-int4head: doc 4/6 docs_env-vars.md done, elapsed 2m53s
+ei4lc cuda-int4head: doc 5/6 docs_server.md done, elapsed 3m36s
+ei4lc cuda-int4head: doc 6/6 internal_app_serveapp_openai.go done, elapsed 4m20s
+--- PASS: TestEmbedInt4LongContext_run (263.87s)
+=== 2026-11-20 09:52:49 PST END 0.5B-cuda-int4head rc=0 (359s)
+=== 2026-11-20 09:52:49 PST START 0.5B-cuda-int8head (load 1.79)
+ei4lc cuda-int8head: cuda-resident (int4), head int8, 6 documents
+ei4lc cuda-int8head: doc 1/6 RELEASING.md done, elapsed 45s
+ei4lc cuda-int8head: doc 2/6 backend_cuda_resident.go pos 3756/8191, elapsed 1m0s
+ei4lc cuda-int8head: doc 2/6 backend_cuda_resident.go done, elapsed 1m29s
+ei4lc cuda-int8head: doc 3/6 decoder_weights.go done, elapsed 2m14s
+ei4lc cuda-int8head: doc 4/6 docs_env-vars.md done, elapsed 2m59s
+ei4lc cuda-int8head: doc 5/6 docs_server.md done, elapsed 3m43s
+ei4lc cuda-int8head: doc 6/6 internal_app_serveapp_openai.go done, elapsed 4m28s
+--- PASS: TestEmbedInt4LongContext_run (271.95s)
+=== 2026-11-20 09:57:21 PST END 0.5B-cuda-int8head rc=0 (272s)
+=== 2026-11-20 09:57:21 PST START 1.5B-cuda-int4head (load 1.83)
+ei4lc cuda-int4head: doc 1/6 RELEASING.md done, elapsed 1m4s
+ei4lc cuda-int4head: doc 2/6 backend_cuda_resident.go pos 4122/8191, elapsed 1m30s
+ei4lc cuda-int4head: doc 2/6 backend_cuda_resident.go pos 7445/8191, elapsed 2m0s
+ei4lc cuda-int4head: doc 2/6 backend_cuda_resident.go done, elapsed 2m9s
+ei4lc cuda-int4head: doc 3/6 decoder_weights.go done, elapsed 3m13s
+ei4lc cuda-int4head: doc 4/6 docs_env-vars.md done, elapsed 4m18s
+ei4lc cuda-int4head: doc 5/6 docs_server.md done, elapsed 5m22s
+ei4lc cuda-int4head: doc 6/6 internal_app_serveapp_openai.go done, elapsed 6m27s
+--- PASS: TestEmbedInt4LongContext_run (394.13s)
+=== 2026-11-20 10:03:55 PST END 1.5B-cuda-int4head rc=0 (394s)
+=== 2026-11-20 10:03:55 PST START 1.5B-cuda-int8head (load 1.45)
+ei4lc cuda-int8head: doc 1/6 RELEASING.md done, elapsed 1m6s
+ei4lc cuda-int8head: doc 2/6 backend_cuda_resident.go pos 3807/8191, elapsed 1m30s
+ei4lc cuda-int8head: doc 2/6 backend_cuda_resident.go pos 7078/8191, elapsed 2m0s
+ei4lc cuda-int8head: doc 2/6 backend_cuda_resident.go done, elapsed 2m13s
+ei4lc cuda-int8head: doc 3/6 decoder_weights.go done, elapsed 3m19s
+ei4lc cuda-int8head: doc 4/6 docs_env-vars.md done, elapsed 4m26s
+ei4lc cuda-int8head: doc 5/6 docs_server.md done, elapsed 5m33s
+ei4lc cuda-int8head: doc 6/6 internal_app_serveapp_openai.go done, elapsed 6m39s
+--- PASS: TestEmbedInt4LongContext_run (406.03s)
+=== 2026-11-20 10:10:41 PST END 1.5B-cuda-int8head rc=0 (406s)
+=== 2026-11-20 10:10:41 PST START 0.5B-cpu-int4head (load 1.66)
+ei4lc cpu-int4head: doc 1/6 RELEASING.md done, elapsed 6m32s
+ei4lc cpu-int4head: doc 2/6 backend_cuda_resident.go done, elapsed 13m0s
+ei4lc cpu-int4head: doc 3/6 decoder_weights.go done, elapsed 19m29s
+ei4lc cpu-int4head: doc 4/6 docs_env-vars.md done, elapsed 26m0s
+ei4lc cpu-int4head: doc 5/6 docs_server.md done, elapsed 32m32s
+ei4lc cpu-int4head: doc 6/6 internal_app_serveapp_openai.go done, elapsed 39m1s
+--- PASS: TestEmbedInt4LongContext_run (2342.45s)
+=== 2026-11-20 10:49:44 PST END 0.5B-cpu-int4head rc=0 (2343s)
+=== 2026-11-20 10:49:44 PST START 1.5B-cpu-int4head (load 4.84)
+ei4lc cpu-int4head: doc 1/2 backend_cuda_resident.go done, elapsed 10m55s
+ei4lc cpu-int4head: doc 2/2 docs_server.md done, elapsed 21m37s
+--- PASS: TestEmbedInt4LongContext_run (1297.78s)
+=== 2026-11-20 11:11:22 PST END 1.5B-cpu-int4head rc=0 (1298s)
+=== 2026-11-20 11:11:22 PST START grade (load 7.78)
+    embed_int4_resident_test.go:368: 0.5B cuda-int4head K=256 vs reference: agree 84.38% (324/384), mean KL 0.1200, hard flips 22
+    embed_int4_resident_test.go:368: 0.5B cuda-int4head K=1024 vs reference: agree 78.65% (302/384), mean KL 0.1621, hard flips 33
+    embed_int4_resident_test.go:368: 0.5B cuda-int4head K=2048 vs reference: agree 81.51% (313/384), mean KL 0.1584, hard flips 18
+    embed_int4_resident_test.go:368: 0.5B cuda-int4head K=4096 vs reference: agree 82.55% (317/384), mean KL 0.1564, hard flips 24
+    embed_int4_resident_test.go:368: 0.5B cuda-int4head K=8192 vs reference: agree 78.39% (301/384), mean KL 0.1851, hard flips 32
+    embed_int4_resident_test.go:368: 0.5B cuda-int8head K=256 vs reference: agree 85.16% (327/384), mean KL 0.0988, hard flips 13
+    embed_int4_resident_test.go:368: 0.5B cuda-int8head K=1024 vs reference: agree 78.39% (301/384), mean KL 0.1395, hard flips 31
+    embed_int4_resident_test.go:368: 0.5B cuda-int8head K=2048 vs reference: agree 81.77% (314/384), mean KL 0.1248, hard flips 18
+    embed_int4_resident_test.go:368: 0.5B cuda-int8head K=4096 vs reference: agree 83.85% (322/384), mean KL 0.1271, hard flips 25
+    embed_int4_resident_test.go:368: 0.5B cuda-int8head K=8192 vs reference: agree 81.25% (312/384), mean KL 0.1622, hard flips 28
+    embed_int4_resident_test.go:368: 0.5B cpu-int4head K=256 vs reference: agree 84.11% (323/384), mean KL 0.1147, hard flips 22
+    embed_int4_resident_test.go:368: 0.5B cpu-int4head K=1024 vs reference: agree 78.39% (301/384), mean KL 0.1618, hard flips 33
+    embed_int4_resident_test.go:368: 0.5B cpu-int4head K=2048 vs reference: agree 80.21% (308/384), mean KL 0.1582, hard flips 25
+    embed_int4_resident_test.go:368: 0.5B cpu-int4head K=4096 vs reference: agree 81.51% (313/384), mean KL 0.1529, hard flips 25
+    embed_int4_resident_test.go:368: 0.5B cpu-int4head K=8192 vs reference: agree 78.65% (302/384), mean KL 0.1829, hard flips 31
+    embed_int4_resident_test.go:201: 0.5B VERDICT pass=true (agree true, KL true, flips true) pooled: agree int4 81.09% int8 82.08%, diff -0.99 pts (LCB -2.12), KL ratio 1.199 (UCB 1.225), flips 129/115, 30 prompts 1920 positions; []
+    embed_int4_resident_test.go:205: 0.5B K=256: agree int4 84.38% int8 85.16% (diff -0.78 pts), mean KL int4 0.1200 int8 0.0988 (ratio 1.215), flips 22/13
+    embed_int4_resident_test.go:205: 0.5B K=1024: agree int4 78.65% int8 78.39% (diff 0.26 pts), mean KL int4 0.1621 int8 0.1395 (ratio 1.162), flips 33/31
+    embed_int4_resident_test.go:205: 0.5B K=2048: agree int4 81.51% int8 81.77% (diff -0.26 pts), mean KL int4 0.1584 int8 0.1248 (ratio 1.270), flips 18/18
+    embed_int4_resident_test.go:205: 0.5B K=4096: agree int4 82.55% int8 83.85% (diff -1.30 pts), mean KL int4 0.1564 int8 0.1271 (ratio 1.231), flips 24/25
+    embed_int4_resident_test.go:205: 0.5B K=8192: agree int4 78.39% int8 81.25% (diff -2.86 pts), mean KL int4 0.1851 int8 0.1622 (ratio 1.141), flips 32/28
+    embed_int4_resident_test.go:368: 1.5B cuda-int4head K=256 vs reference: agree 86.98% (334/384), mean KL 0.0770, hard flips 20
+    embed_int4_resident_test.go:368: 1.5B cuda-int4head K=1024 vs reference: agree 83.85% (322/384), mean KL 0.0907, hard flips 14
+    embed_int4_resident_test.go:368: 1.5B cuda-int4head K=2048 vs reference: agree 83.33% (320/384), mean KL 0.0853, hard flips 11
+    embed_int4_resident_test.go:368: 1.5B cuda-int4head K=4096 vs reference: agree 81.77% (314/384), mean KL 0.0946, hard flips 17
+    embed_int4_resident_test.go:368: 1.5B cuda-int4head K=8192 vs reference: agree 79.43% (305/384), mean KL 0.1051, hard flips 19
+    embed_int4_resident_test.go:368: 1.5B cuda-int8head K=256 vs reference: agree 87.76% (337/384), mean KL 0.0654, hard flips 10
+    embed_int4_resident_test.go:368: 1.5B cuda-int8head K=1024 vs reference: agree 85.68% (329/384), mean KL 0.0673, hard flips 9
+    embed_int4_resident_test.go:368: 1.5B cuda-int8head K=2048 vs reference: agree 87.76% (337/384), mean KL 0.0689, hard flips 9
+    embed_int4_resident_test.go:368: 1.5B cuda-int8head K=4096 vs reference: agree 83.07% (319/384), mean KL 0.0805, hard flips 15
+    embed_int4_resident_test.go:368: 1.5B cuda-int8head K=8192 vs reference: agree 81.51% (313/384), mean KL 0.0881, hard flips 17
+    embed_int4_resident_test.go:368: 1.5B cpu-int4head K=256 vs reference: agree 89.84% (115/128), mean KL 0.0633, hard flips 3
+    embed_int4_resident_test.go:368: 1.5B cpu-int4head K=1024 vs reference: agree 82.81% (106/128), mean KL 0.0885, hard flips 3
+    embed_int4_resident_test.go:368: 1.5B cpu-int4head K=2048 vs reference: agree 82.81% (106/128), mean KL 0.0989, hard flips 3
+    embed_int4_resident_test.go:368: 1.5B cpu-int4head K=4096 vs reference: agree 79.69% (102/128), mean KL 0.1222, hard flips 8
+    embed_int4_resident_test.go:368: 1.5B cpu-int4head K=8192 vs reference: agree 75.78% (97/128), mean KL 0.1092, hard flips 9
+    embed_int4_resident_test.go:201: 1.5B VERDICT pass=false (agree false, KL false, flips false) pooled: agree int4 83.07% int8 85.16%, diff -2.08 pts (LCB -3.21), KL ratio 1.223 (UCB 1.265), flips 81/60, 30 prompts 1920 positions; [hard flips 81 > exact 60 + 2√exact agreement lower bound -3.21 pts < −2.50 KL ratio upper bound 1.265 > 1.250]
+    embed_int4_resident_test.go:205: 1.5B K=256: agree int4 86.98% int8 87.76% (diff -0.78 pts), mean KL int4 0.0770 int8 0.0654 (ratio 1.177), flips 20/10
+    embed_int4_resident_test.go:205: 1.5B K=1024: agree int4 83.85% int8 85.68% (diff -1.82 pts), mean KL int4 0.0907 int8 0.0673 (ratio 1.348), flips 14/9
+    embed_int4_resident_test.go:205: 1.5B K=2048: agree int4 83.33% int8 87.76% (diff -4.43 pts), mean KL int4 0.0853 int8 0.0689 (ratio 1.239), flips 11/9
+    embed_int4_resident_test.go:205: 1.5B K=4096: agree int4 81.77% int8 83.07% (diff -1.30 pts), mean KL int4 0.0946 int8 0.0805 (ratio 1.175), flips 17/15
+    embed_int4_resident_test.go:205: 1.5B K=8192: agree int4 79.43% int8 81.51% (diff -2.08 pts), mean KL int4 0.1051 int8 0.0881 (ratio 1.193), flips 19/17
+--- PASS: TestEmbedInt4LongContext_grade (0.02s)
+=== 2026-11-20 11:11:22 PST END grade rc=0 (0s)
+=== 2026-11-20 11:11:22 PST ALL DONE

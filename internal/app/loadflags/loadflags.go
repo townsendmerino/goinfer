@@ -91,7 +91,7 @@ func register(fs *flag.FlagSet, app App, goos string, ggufDirect bool) *Flags {
 	fs.BoolVar(&f.AcceptSlow, "accept-slow", boolDef("accept-slow"), use("accept-slow"))
 	fs.Var(embedInt4Flag{f}, "embed-int4", use("embed-int4"))
 	fs.BoolVar(&f.DirectLoad, "direct-load", boolDef("direct-load") || ggufDirect, use("direct-load"))
-	fs.Var((*cliutil.OnOff)(&f.Fit), "fit", use("fit")) // lenient: --fit=off works (M-14)
+	fs.Var((*cliutil.OnOff)(&f.Fit), "fit", use("fit")) // lenient: --fit=off works
 	fs.BoolVar(&f.ExactPrefill, "exact-prefill", boolDef("exact-prefill"), use("exact-prefill"))
 	fs.BoolVar(&f.CPUExactPrefill, "cpu-exact-prefill", boolDef("cpu-exact-prefill"), use("cpu-exact-prefill"))
 	fs.BoolVar(&f.WindowedKV, "windowed-kv", boolDef("windowed-kv"), use("windowed-kv"))
@@ -176,6 +176,7 @@ func Resolve(f Flags, m Machine, ov Overrides) decoder.Options {
 		MoEPager:              f.MoEPager,
 		AcceptSlowMoE:         f.AcceptSlow,
 		EmbedInt4:             or(ov.EmbedInt4, f.embedInt4()),
+		EmbedInt4Default:      ov.EmbedInt4 == nil && !f.EmbedInt4Set,
 		DisableFit:            !f.Fit,
 		ExactPrefill:          f.ExactPrefill,
 		ResidentWindowedKV:    f.WindowedKV,

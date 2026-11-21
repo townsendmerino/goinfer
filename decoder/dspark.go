@@ -158,7 +158,7 @@ func LoadDSparkDrafter(dir string) (*DSparkDrafter, error) {
 	}
 
 	mat := func(dst *linalg.WeightMat, name string, rows, cols int) error {
-		m, err := stIsland(st, name, rows, cols) // unquantized: a bf16 checkpoint's bits stay bf16, mapped (MEM11-bf16)
+		m, err := stIsland(st, name, rows, cols) // unquantized: a bf16 checkpoint's bits stay bf16, mapped
 		if err != nil {
 			return fmt.Errorf("dspark: %w", err)
 		}

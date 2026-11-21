@@ -312,7 +312,7 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 		// has none, so resident decode would start from a zeroed recurrent state, with no error and wrong tokens. Its one
 		// resident route is the resident m-RoPE prefill, taken only when the resident says it builds the recurrent state itself
 		// (ResidentHybridMRoPEPrefill); otherwise an image turn on a recurrent family is CPU prefill + CPU decode. See the
-		// docs/multimodal.md P8 record, item 5.
+		// docs/multimodal.md, the Qwen3.x-VL image path record, item 5.
 		recurrent := m.hasRecurrentState()
 
 		if canStep(m.resident, stepBatch{Pass: passToken, In: inMRoPE, Emb: stepProbe}) && !recurrent && m.tryClaimResident() {
@@ -475,7 +475,7 @@ func (m *Model) GenerateQwenVLDeepstackSpans(ctx context.Context, ids []int, spa
 	return out, g
 }
 
-// checkImageBlockFitsWindow refuses an image block longer than the sliding window (docs/multimodal.md, F3). The
+// checkImageBlockFitsWindow refuses an image block longer than the sliding window (docs/multimodal.md, the `attendHi` entry). The
 // bidirectional image-block mask this path uses (KVCache.attendHi, and the resident image prefill that mirrors it)
 // bounds a sliding layer's keys by the query's own window and never extends it back to the block's start, so a longer
 // block would under-attend its own image. Gemma 4's own path applies the correction and does not come here. A

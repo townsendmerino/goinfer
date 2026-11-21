@@ -31,7 +31,8 @@ func metalAttnFAPartialFloats(hd, nH, nKV int) int {
 // widest layer that declares it, and Metal's own terms beside them, read by the row's name (metalRowTerms). TestMemGate_metal holds
 // it to the build's own list on every row. 0 for a model with no hidden or vocabulary width.
 func (m *Model) MetalDecodeScratchBytes(slots int) int64 {
-	H, _, _, _, _, I, V := m.Dims()
+	shape := m.Shape()
+	H, I, V := shape.Hidden, shape.Inter, shape.Vocab
 	if H <= 0 || V <= 0 {
 		return 0
 	}
@@ -111,7 +112,8 @@ func (m *Model) MetalDecodeScratchBytes(slots int) int64 {
 // MetalDecodeRowWidths is decode's per-row activations as m's program declares them, each name at the widest layer that declares
 // it (program.Buffers' per-row entries and program.HeadBuffers): what a Metal build holds its decode rows to. A fresh map each call.
 func (m *Model) MetalDecodeRowWidths() map[string]int {
-	H, _, _, _, _, _, V := m.Dims()
+	shape := m.Shape()
+	H, V := shape.Hidden, shape.Vocab
 	return m.metalDecodeRows(H, V).widest
 }
 

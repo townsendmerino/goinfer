@@ -42,7 +42,7 @@ func (r *resident) PagedProfile() pagedProfile { return r.prof }
 type gemma4MoeResident struct {
 	scratch                             scratchList // its decode scratch, allocated with the decode list
 	pRouterF32, pRoute, pGU, pDownWacc  Pipeline
-	guR, downR                          int // D-B04: rows per simdgroup of pGU / pDownWacc (moeExpertRows)
+	guR, downR                          int // rows per simdgroup of pGU / pDownWacc (moeExpertRows)
 	pRmsNW, pScaleWgt, pScaleVec, pZero Pipeline
 
 	nE, topK, denseInter, moeInter int
@@ -74,7 +74,7 @@ type gemma4MoeResident struct {
 	// read-only fd across every layer's pool, closed by resident.Close.
 	giwFile *os.File
 
-	// alias is the S6 weight aliaser (nil when GOINFER_METAL_ALIAS=0 or the model is not .giw-mapped); buildResident sets it before the layer loop.
+	// alias is the weight aliaser (nil when GOINFER_METAL_ALIAS=0 or the model is not .giw-mapped); buildResident sets it before the layer loop.
 	alias *weightAlias
 }
 
@@ -619,8 +619,8 @@ func (r *resident) encodeG4Join(e *Encoder, L *residLayer) {
 	e.Dispatch(g.pScaleVec, r.H, 256, r.x, ml.uLayerScalar)                                        // r.x *= layerScalar
 }
 
-// pagedAsyncPhase2On commits a paged MoE layer's phase 2 (experts and join) without waiting for it (M-11,
-// docs/audit-metal-2026-09-30.md): the host reads nothing back from phase 2, and the next layer's phase 1 runs on the
+// pagedAsyncPhase2On commits a paged MoE layer's phase 2 (experts and join) without waiting for it
+// (docs/audit-metal-2026-09-30.md): the host reads nothing back from phase 2, and the next layer's phase 1 runs on the
 // same queue, ordered after it by Metal's hazard tracking on the residual it reads. The slot table the host rewrites for
 // the next layer is written only after that phase 1 is seen complete, so after this phase 2. Half the token's
 // submit-and-wait round trips go; the arithmetic is unchanged. Both pagers (forwardLogitsPaged, forwardLogitsMoEPaged).

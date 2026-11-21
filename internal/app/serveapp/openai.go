@@ -1871,7 +1871,7 @@ func jsonLogprob(x float64) float64 {
 func (lm *loadedModel) tokenText(id int) string { return string(lm.tk.TokenText(id)) }
 
 // logKVCopy reports a generation that took KV rows from another conversation's slot, or whose copy was declined: the
-// rows and the copy's wall time are the sharing gate's copy cost (docs/measurements/kv2-2026-10-14.md, G7).
+// rows and the copy's wall time are the sharing gate's copy cost (docs/measurements/kv2-2026-10-14.md, "The copy's cost, and admission's").
 // expertCacheNow reads the resident's MoE expert-cache counters, for logExpertCache to difference after the turn.
 func (lm *loadedModel) expertCacheNow() (decoder.ExpertCacheStats, bool) {
 	if lm.model == nil {

@@ -35,7 +35,7 @@ func init() {
 		}
 		return &residentVision{c: c, ve: ve, enc: e}, nil
 	})
-	multimodal.MarkResidentTower(multimodal.TowerSigLIP, "webgpu") // S8: aikit's slot cannot be asked what is registered
+	multimodal.MarkResidentTower(multimodal.TowerSigLIP, "webgpu") // aikit's slot cannot be asked what is registered
 }
 
 // residentVision owns the encoder's WebGPU Context so Close tears down both the

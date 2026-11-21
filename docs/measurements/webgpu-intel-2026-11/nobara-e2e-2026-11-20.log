@@ -1,0 +1,11 @@
+=== 12:44:20 #1175 near-tie: TestE2E_webgpu at 71c55dd3f
+=== RUN   TestE2E_webgpu
+    e2e_test.go:53: greedy agreement: 16/16 tokens match
+          cpu=[31 48077 45899 5 9 368 62 21473 28 91 6257 1294 25 26 21122 30]
+          gpu=[31 48077 45899 5 9 368 62 21473 28 91 6257 1294 25 26 21122 30]
+    e2e_test.go:69: decode 48 tok:  CPU   41.8 tok/s  |  GPU  266.7 tok/s  (6.38×)
+    e2e_test.go:71: prefill 256 tok (TTFT):  CPU 1641.6 ms  |  GPU   50.2 ms  (32.71×)
+--- PASS: TestE2E_webgpu (6.80s)
+PASS
+ok  	github.com/townsendmerino/goinfer/backend/webgpu	6.917s
+=== 12:44:30 done

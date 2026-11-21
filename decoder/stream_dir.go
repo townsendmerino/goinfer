@@ -11,14 +11,14 @@ import (
 	"github.com/townsendmerino/goinfer/decoder/config"
 )
 
-// streamDirSwapForTest writes layers 0 and 1 of a streamed directory transcode in each other's place: G-DS1's planted
-// defect, which its byte-identity test must catch. Set only through SetStreamDirSwapForTest (goinfer_testhooks).
+// streamDirSwapForTest writes layers 0 and 1 of a streamed directory transcode in each other's place: the planted
+// defect its byte-identity test (TestDirStream_plantedLayerSwapIsCaught) must catch. Set only through SetStreamDirSwapForTest (goinfer_testhooks).
 var streamDirSwapForTest bool
 
 // StreamTranscodeDir is StreamTranscodeGGUF for a safetensors model DIRECTORY: it writes a .giw weights body (the GINFW
 // serialization + trailing CRC) to out, loading ONE layer at a time and the embedding a row at a time, so peak memory is
 // about the globals plus one layer rather than the whole model.
-// The bytes are those Load + SerializeWeightsToForTarget write for the same directory (G-DS1). Returns the bytes written.
+// The bytes are those Load + SerializeWeightsToForTarget write for the same directory. Returns the bytes written.
 //
 // A family whose dedicated safetensors loader does not stream yet returns an error IsDirNoStream reports; the caller
 // takes the resident transcode instead. int4mix and q4k are GGUF-only, as in Load.
@@ -26,7 +26,7 @@ func StreamTranscodeDir(ctx context.Context, dir string, out io.Writer, quant st
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	out = &ctxWriter{ctx: ctx, w: out} // cancellation observed at every write, as in StreamTranscodeGGUF (M-21)
+	out = &ctxWriter{ctx: ctx, w: out} // cancellation observed at every write, as in StreamTranscodeGGUF
 	q, err := parseQuant(quant)
 	if err != nil {
 		return 0, err
