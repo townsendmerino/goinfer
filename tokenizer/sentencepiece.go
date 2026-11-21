@@ -44,12 +44,19 @@ type bigram struct{ left, right string }
 type mergeTable struct {
 	byID  map[uint64]int32
 	byStr map[bigram]int32 // usually empty
+	flat  *flatMerges      // set by LoadPack in place of byID
 }
 
 // newMergeTable sizes the id map for n merges.
 func newMergeTable(n int) mergeTable { return mergeTable{byID: make(map[uint64]int32, n)} }
 
-func (m *mergeTable) len() int { return len(m.byID) + len(m.byStr) }
+func (m *mergeTable) len() int {
+	n := len(m.byID) + len(m.byStr)
+	if m.flat != nil {
+		n += m.flat.n
+	}
+	return n
+}
 
 // add records (left, right) at rank; a later add of the same pair replaces it, as list order does.
 func (m *mergeTable) add(t *Tokenizer, left, right string, rank int32) {
@@ -70,7 +77,11 @@ func (m *mergeTable) add(t *Tokenizer, left, right string, rank int32) {
 // rank is the pair's rank: by ids when both pieces have one (pieceID), else by text.
 func (m *mergeTable) rank(li, ri int32, left, right string) (int32, bool) {
 	if li >= 0 && ri >= 0 {
-		r, ok := m.byID[uint64(li)<<32|uint64(ri)]
+		k := uint64(li)<<32 | uint64(ri)
+		if m.flat != nil {
+			return m.flat.get(k)
+		}
+		r, ok := m.byID[k]
 		return r, ok
 	}
 	r, ok := m.byStr[bigram{left, right}]

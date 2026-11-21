@@ -86,7 +86,8 @@ func TestPack_equalsJSON(t *testing.T) {
 		got, exp any
 	}{
 		{"vocab", got.vocab, want.vocab}, {"idToPiece", got.idToPiece, want.idToPiece},
-		{"merges", got.merges, want.merges}, {"special", got.special, want.special},
+		{"merges.byStr", got.merges.byStr, want.merges.byStr}, {"merges.len", got.merges.len(), want.merges.len()},
+		{"special", got.special, want.special},
 		{"byteFallback", got.byteFallback, want.byteFallback}, {"bytePiece", got.bytePiece, want.bytePiece},
 		{"byteToVal", got.byteToVal, want.byteToVal}, {"unkPiece", got.unkPiece, want.unkPiece},
 		{"unkID", got.unkID, want.unkID}, {"prependSpace", got.prependSpace, want.prependSpace},
@@ -96,6 +97,18 @@ func TestPack_equalsJSON(t *testing.T) {
 	} {
 		if !reflect.DeepEqual(f.got, f.exp) {
 			t.Errorf("%s differs: pack %v, json %v", f.name, f.got, f.exp)
+		}
+	}
+	for k, r := range want.merges.byID {
+		if gr, ok := got.merges.flat.get(k); !ok || gr != r {
+			t.Fatalf("merge %x: pack rank %d %v, json rank %d", k, gr, ok, r)
+		}
+	}
+	for k := uint64(0); k < 1<<12; k++ {
+		key := (k>>6)<<32 | k&63
+		_, inJSON := want.merges.byID[key]
+		if _, inPack := got.merges.flat.get(key); inJSON != inPack {
+			t.Fatalf("merge %x: present in json %v, in pack %v", key, inJSON, inPack)
 		}
 	}
 	if len(want.merges.byStr) == 0 {

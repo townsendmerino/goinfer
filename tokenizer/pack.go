@@ -354,7 +354,7 @@ func LoadPack(pack []byte) (*Tokenizer, error) {
 		t.vocab = vocab
 	})
 	wg.Go(func() {
-		m := newMergeTable(nMerges)
+		m := mergeTable{flat: newFlatMerges(nMerges)}
 		for i := range nMerges {
 			l := int32(binary.LittleEndian.Uint32(mrec[8*i:]))
 			rr := int32(binary.LittleEndian.Uint32(mrec[8*i+4:]))
@@ -363,7 +363,7 @@ func LoadPack(pack []byte) (*Tokenizer, error) {
 					mergeErr = fmt.Errorf("%w: merge %d", ErrPack, i)
 					return
 				}
-				m.byID[uint64(l)<<32|uint64(rr)] = int32(i)
+				m.flat.put(uint64(l)<<32|uint64(rr), int32(i))
 				continue
 			}
 			ls, lok := packMergeStr(l, strs, nPieces)
@@ -424,4 +424,59 @@ func packMergeStr(v int32, strs []string, nPieces int) (string, bool) {
 		return "", false
 	}
 	return strs[i], true
+}
+
+// flatMerges is an open-addressing hash table from a merge's packed id pair to its rank, filled once by LoadPack. It
+// answers exactly as mergeTable.byID would for the same adds, and builds several times faster than a Go map of the
+// same size. A key packs two ids below maxTokenID, so flatEmpty can never be a key.
+type flatMerges struct {
+	keys  []uint64
+	ranks []int32
+	shift uint
+	n     int
+}
+
+const flatEmpty = ^uint64(0)
+
+// newFlatMerges sizes the table to a power of two at least twice n, so probes stay short.
+func newFlatMerges(n int) *flatMerges {
+	bits := uint(4)
+	for 1<<bits < 2*n {
+		bits++
+	}
+	keys := make([]uint64, 1<<bits)
+	for i := range keys {
+		keys[i] = flatEmpty
+	}
+	return &flatMerges{keys: keys, ranks: make([]int32, 1<<bits), shift: 64 - bits}
+}
+
+func (f *flatMerges) slot(k uint64) uint64 { return (k * 0x9E3779B97F4A7C15) >> f.shift }
+
+// put sets k's rank; a later put of the same key replaces it, as a later merge in the list does.
+func (f *flatMerges) put(k uint64, rank int32) {
+	mask := uint64(len(f.keys) - 1)
+	for i := f.slot(k); ; i = (i + 1) & mask {
+		switch f.keys[i] {
+		case flatEmpty:
+			f.keys[i], f.ranks[i] = k, rank
+			f.n++
+			return
+		case k:
+			f.ranks[i] = rank
+			return
+		}
+	}
+}
+
+func (f *flatMerges) get(k uint64) (int32, bool) {
+	mask := uint64(len(f.keys) - 1)
+	for i := f.slot(k); ; i = (i + 1) & mask {
+		switch f.keys[i] {
+		case flatEmpty:
+			return 0, false
+		case k:
+			return f.ranks[i], true
+		}
+	}
 }
