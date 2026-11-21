@@ -60,7 +60,8 @@ type ropeEntry struct {
 func (b *webgpuBackend) newBuild(m *decoder.Model, avail0 int64) *webgpuBuild {
 	c := b.ctx
 	w := m.Weights()
-	hidden, _, nH, nKV, hd, inter, vocab := m.BackendView().Dims() // arch-backed (Cfg may be zero for GGUF/.giw)
+	dims := m.BackendView().Dims() // arch-backed (Cfg may be zero for GGUF/.giw)
+	hidden, nH, nKV, hd, inter, vocab := dims.Hidden, dims.Heads, dims.KVHeads, dims.HeadDim, dims.Inter, dims.Vocab
 	half := m.BackendView().RotaryDim() / 2
 	eps := m.NormEps()
 	kvDelivered := m.KVDeliveredFor("webgpu") // the resolver's answer, not the raw request (decoder.ResolveKV)

@@ -638,14 +638,12 @@ type ResidentDims struct {
 
 // Shape returns the model shape from the resolved Architecture — authoritative, unlike Config() (Cfg), which a
 // GGUF-loaded or .giw model may leave partly zero. Prefer it to Dims: a caller names the field it reads.
-func (m *Model) Shape() ResidentDims {
-	h, l, nh, nkv, hd, inter, v := m.Dims()
-	return ResidentDims{Hidden: h, Layers: l, Heads: nh, KVHeads: nkv, HeadDim: hd, Inter: inter, Vocab: v}
-}
+func (m *Model) Shape() ResidentDims { return m.BackendView().Dims() }
 
 // Dims is Shape as a positional tuple, kept for existing callers; new code takes Shape.
 func (m *Model) Dims() (hidden, nLayers, nH, nKV, hd, inter, vocab int) {
-	return m.BackendView().Dims()
+	d := m.Shape()
+	return d.Hidden, d.Layers, d.Heads, d.KVHeads, d.HeadDim, d.Inter, d.Vocab
 }
 
 // NormEps is the RMSNorm epsilon (arch-backed).
