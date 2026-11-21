@@ -15,15 +15,15 @@ import (
 // Callers obtain it via m.BackendView(). Individual *Resident methods on *Model
 // delegate through this view for backwards compatibility.
 type BackendModelView interface {
-	Dims() (hidden, nLayers, nH, nKV, hd, inter, vocab int)
+	Dims() ResidentDims
 	NumLayers() int
 	Spec() ResidentSpec
 	Weights() *Weights
 
 	// The per-family resident geometry, each ok=false (zeros) when the model carries no such subsystem.
 	MoE() (ResidentMoESpec, bool)
-	MLAParams() (qLoRA, kvLoRA, qkNope, qkRope, vHead int, interleave bool, attnScale, ropeScale float64, ok bool)
-	Qwen35Params() (convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numValueHeads int, attnGate, ok bool)
+	MLA() (ResidentMLASpec, bool)
+	Qwen35() (ResidentQwen35Spec, bool)
 	Nemotron() (ResidentNemotronSpec, bool)
 	Granite() (ResidentGraniteSpec, bool)
 
@@ -121,9 +121,10 @@ func (m *Model) BackendView() BackendModelView {
 	return backendModelView{m: m}
 }
 
-func (v backendModelView) Dims() (hidden, nLayers, nH, nKV, hd, inter, vocab int) {
+func (v backendModelView) Dims() ResidentDims {
 	a := v.m.w.arch
-	return a.HiddenDim, a.NumLayers, a.NumHeads, a.NumKVHeads, a.HeadDim, a.IntermediateDim, a.VocabSize
+	return ResidentDims{Hidden: a.HiddenDim, Layers: a.NumLayers, Heads: a.NumHeads, KVHeads: a.NumKVHeads, HeadDim: a.HeadDim,
+		Inter: a.IntermediateDim, Vocab: a.VocabSize}
 }
 
 func (v backendModelView) NumLayers() int              { return v.m.w.arch.NumLayers }
@@ -162,21 +163,18 @@ func (v backendModelView) MoE() (ResidentMoESpec, bool) {
 	return ResidentMoESpec{}, false
 }
 
-func (v backendModelView) MLAParams() (qLoRA, kvLoRA, qkNope, qkRope, vHead int, interleave bool, attnScale, ropeScale float64, ok bool) {
-	p := v.m.ResidentSpec().MLA
-	if p == nil {
-		return 0, 0, 0, 0, 0, false, 0, 0, false
+func (v backendModelView) MLA() (ResidentMLASpec, bool) {
+	if p := v.m.ResidentSpec().MLA; p != nil {
+		return *p, true
 	}
-	return p.QLoRARank, p.KVLoRARank, p.QKNopeHeadDim, p.QKRopeHeadDim, p.VHeadDim,
-		p.RopeInterleave, p.AttnScale, p.RopeScale, true
+	return ResidentMLASpec{}, false
 }
 
-func (v backendModelView) Qwen35Params() (convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numValueHeads int, attnGate, ok bool) {
-	g := v.m.ResidentSpec().Qwen35
-	if g == nil {
-		return 0, 0, 0, 0, 0, false, false
+func (v backendModelView) Qwen35() (ResidentQwen35Spec, bool) {
+	if g := v.m.ResidentSpec().Qwen35; g != nil {
+		return *g, true
 	}
-	return g.ConvKernel, g.KeyHeadDim, g.ValueHeadDim, g.NumKeyHeads, g.NumValueHeads, g.AttnGate, true
+	return ResidentQwen35Spec{}, false
 }
 
 func (v backendModelView) Nemotron() (ResidentNemotronSpec, bool) {

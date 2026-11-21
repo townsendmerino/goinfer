@@ -23,14 +23,9 @@ func TestBackendModelView_FlintTinyParity(t *testing.T) {
 
 	bv := m.BackendView()
 
-	h1, l1, nh1, nkv1, hd1, i1, v1 := bv.Dims()
 	h2, l2, nh2, nkv2, hd2, i2, v2 := m.Dims()
-	if got, want := m.Shape(), (ResidentDims{Hidden: h2, Layers: l2, Heads: nh2, KVHeads: nkv2, HeadDim: hd2, Inter: i2, Vocab: v2}); got != want {
-		t.Fatalf("Shape = %+v, disagrees with Dims %+v", got, want)
-	}
-	if h1 != h2 || l1 != l2 || nh1 != nh2 || nkv1 != nkv2 || hd1 != hd2 || i1 != i2 || v1 != v2 {
-		t.Fatalf("Dims mismatch: view=(%d,%d,%d,%d,%d,%d,%d) model=(%d,%d,%d,%d,%d,%d,%d)",
-			h1, l1, nh1, nkv1, hd1, i1, v1, h2, l2, nh2, nkv2, hd2, i2, v2)
+	if d, want := bv.Dims(), (ResidentDims{Hidden: h2, Layers: l2, Heads: nh2, KVHeads: nkv2, HeadDim: hd2, Inter: i2, Vocab: v2}); d != want || m.Shape() != want {
+		t.Fatalf("Dims mismatch: view=%+v Shape=%+v model=%+v", d, m.Shape(), want)
 	}
 	if bv.NumLayers() != l2 {
 		t.Fatalf("NumLayers = %d, want %d", bv.NumLayers(), l2)
@@ -151,11 +146,11 @@ func TestBackendModelView_familyParams(t *testing.T) {
 	if _, ok := bv.Granite(); ok {
 		t.Error("Granite ok for a model with no Granite subsystem")
 	}
-	if _, _, _, _, _, _, ok := bv.Qwen35Params(); ok {
-		t.Error("Qwen35Params ok for a model with no DeltaNet subsystem")
+	if _, ok := bv.Qwen35(); ok {
+		t.Error("Qwen35 ok for a model with no DeltaNet subsystem")
 	}
-	if _, _, _, _, _, _, _, _, ok := bv.MLAParams(); ok {
-		t.Error("MLAParams ok for a model with no MLA subsystem")
+	if _, ok := bv.MLA(); ok {
+		t.Error("MLA ok for a model with no MLA subsystem")
 	}
 
 }

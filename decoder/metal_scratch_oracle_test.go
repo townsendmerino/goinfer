@@ -101,7 +101,8 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 		bytes += int64(P)
 		u32s++
 	}
-	if _, hk, hv, nk, nv, attnGate, ok := m.BackendView().Qwen35Params(); ok { // the Gated DeltaNet mixer and gated attention's [query ‖ gate]
+	if q, ok := m.BackendView().Qwen35(); ok {
+		hk, hv, nk, nv, attnGate := q.KeyHeadDim, q.ValueHeadDim, q.NumKeyHeads, q.NumValueHeads, q.AttnGate // the Gated DeltaNet mixer and gated attention's [query ‖ gate]
 		keyDim, valueDim := nk*hk, nv*hv
 		f32 += int64(2*(2*keyDim+valueDim) + 2*nv + 2*nv + 2*keyDim + 3*valueDim + 1)
 		if attnGate {
@@ -120,7 +121,8 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 		bytes += int64(dInner)
 		u32s += 13
 	}
-	if qLoRA, rank, nope, rope, vHead, _, _, _, ok := m.BackendView().MLAParams(); ok { // Multi-head Latent Attention
+	if mla, ok := m.BackendView().MLA(); ok {
+		qLoRA, rank, nope, rope, vHead := mla.QLoRARank, mla.KVLoRARank, mla.QKNopeHeadDim, mla.QKRopeHeadDim, mla.VHeadDim // Multi-head Latent Attention
 		qkHead, latDim := nope+rope, rank+rope
 		f32 += int64(max(qLoRA, 1) + 1 + nH*qkHead + latDim + nH*latDim + nH*rank + nH*vHead + 1)
 		bytes += int64(max(qLoRA, 4) + nH*vHead + 4*(3+5+5+7+3)) // qaQ, ctxQ, and the five packed shapes

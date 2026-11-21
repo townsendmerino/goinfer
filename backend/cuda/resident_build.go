@@ -123,7 +123,8 @@ func (s *buildState) admit() error {
 		return decline(tableErr)
 	}
 
-	H, nLayers, nH, _, _, I, vocab := bv.Dims() // nKV, hd are per-layer now (KVHeadsAtResident/HeadDimAtResident); model-level unused
+	dims := bv.Dims() // nKV, hd are per-layer now (KVHeadsAtResident/HeadDimAtResident); model-level unused
+	H, nLayers, nH, I, vocab := dims.Hidden, dims.Layers, dims.Heads, dims.Inter, dims.Vocab
 	// Gemma 4 E-model PLE width P (0 for every other model). The resident embedding row is then [hidden ‖ nLayers*P] (EmbedLen):
 	// the host computes the per-layer inputs, and each layer's PLE branch reads its slice of the tail.
 	pleP := bv.Gemma4PLEDim()
@@ -182,12 +183,15 @@ func (s *buildState) admit() error {
 
 	// ---- host pack all weights (CPU; any incompatible shape → decline) ----
 	// MLA geometry (DeepSeek / Kimi).
-	qLoRA, kvLoRA, qkNope, qkRope, vHead, interleave, mlaAttnScale, mlaRopeScale, mlaOK := bv.MLAParams()
+	mla, mlaOK := bv.MLA()
+	qLoRA, kvLoRA, qkNope, qkRope, vHead := mla.QLoRARank, mla.KVLoRARank, mla.QKNopeHeadDim, mla.QKRopeHeadDim, mla.VHeadDim
+	interleave, mlaAttnScale, mlaRopeScale := mla.RopeInterleave, mla.AttnScale, mla.RopeScale
 
 	// Gated-DeltaNet hybrid geometry. Resolved before the per-layer pack because BOTH layer kinds
 	// branch on it: the linear layers take the recurrence, and the softmax ones carry the fused
 	// double-width q_proj that no other family has.
-	dnConvK, dnHK, dnHV, dnNK, dnNV, dnAttnGate, dnetOK := bv.Qwen35Params()
+	dn, dnetOK := bv.Qwen35()
+	dnConvK, dnHK, dnHV, dnNK, dnNV, dnAttnGate := dn.ConvKernel, dn.KeyHeadDim, dn.ValueHeadDim, dn.NumKeyHeads, dn.NumValueHeads, dn.AttnGate
 	var dnetP *dnetParams
 	if dnetOK {
 		keyDim, valueDim := dnNK*dnHK, dnNV*dnHV

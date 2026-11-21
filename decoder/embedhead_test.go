@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // qwenShapedGGUF writes a header-only GGUF whose tensor directory has a Qwen 2.5 decoder's shapes (tied head: the token
@@ -75,8 +77,6 @@ func TestEmbedInt4For_defaultBySize(t *testing.T) {
 // size rule, and the Model reports the head it was built with.
 func TestLoad_resolvesEmbedInt4Default(t *testing.T) {
 	src := filepath.Join("..", "testdata", "gemma1-tiny.gguf")
-	old := embedInt4DefaultMaxParams
-	t.Cleanup(func() { embedInt4DefaultMaxParams = old })
 	for _, c := range []struct {
 		name      string
 		maxParams int64
@@ -87,7 +87,7 @@ func TestLoad_resolvesEmbedInt4Default(t *testing.T) {
 		{"over the bar", 1, true, false},
 		{"over the bar, explicit", 1, false, true},
 	} {
-		embedInt4DefaultMaxParams = c.maxParams
+		testgate.SetForTest(t, &embedInt4DefaultMaxParams, c.maxParams)
 		m, err := Load(src, Options{Quant: "int4", EmbedInt4: true, EmbedInt4Default: c.isDefault, DirectLoad: true})
 		if err != nil {
 			t.Fatal(err)

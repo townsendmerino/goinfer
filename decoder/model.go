@@ -676,25 +676,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		// running fully resident (prequant to .giw with cmd/prequant to use it).
 		logs.Warnf("decoder: --stream-weights ignored — weights are heap-resident; prequant to .giw (cmd/prequant) to enable streaming")
 	}
-	// Write the resolved EOS set (config.json plus any extra ids generation_config.json adds) back into w.Cfg.EOSTokenID, not
-	// just onto this Model's eosIDs. w.Cfg is what a .giw bundle serializes (TranscodeGIW, via
-	// SerializeWeightsToForTarget), and a .giw's own Load branch reads eosIDs straight from w.Cfg.EOSIDs() with no directory to
-	// re-resolve generation_config.json from. Without this, a checkpoint whose stop ids live only in generation_config.json
-	// (Qwen3: <|endoftext|> beside config.json's <|im_end|>) loses the extra id when it round-trips through cmd/prequant, and a
-	// completion that emits it runs to max_tokens. Cfg.EOSTokenID has no other reader that needs the unresolved value, so
-	// overwriting it is safe.
-	//
-	// resolveEOSIDs reads generation_config.json through os.DirFS(eosDir), a real directory. For a .gguf load dir is the file
-	// path, so os.DirFS(dir) can never open anything inside it (ggufEOS's comment describes a fallback that does not cover this
-	// case); a GGUF conversion keeps generation_config.json beside the file, in its parent directory.
-	eosDir := dir
-	if strings.HasSuffix(dir, ".gguf") {
-		eosDir = filepath.Dir(dir)
-	}
-	resolvedEOS := config.ResolveEOSIDs(eosDir, &w.Cfg)
-	if raw, err := json.Marshal(resolvedEOS); err == nil {
-		w.Cfg.EOSTokenID = raw
-	}
+	resolvedEOS := resolveLoadEOS(dir, w)
 	m := modelFromOptions(w, be, opts)
 	m.resCtxPinned = ctxFromCaller
 	m.loadPath = dir
@@ -715,6 +697,29 @@ func Load(dir string, opts Options) (*Model, error) {
 		m.prof = w.prof
 	}
 	return m, nil
+}
+
+// resolveLoadEOS resolves a safetensors or GGUF load's EOS set (config.json plus any extra ids generation_config.json adds)
+// and writes it back into w.Cfg.EOSTokenID, not just onto the Model's eosIDs. w.Cfg is what a .giw bundle serializes
+// (TranscodeGIW, via SerializeWeightsToForTarget), and a .giw's own Load branch reads eosIDs straight from w.Cfg.EOSIDs()
+// with no directory to re-resolve generation_config.json from. Without this, a checkpoint whose stop ids live only in
+// generation_config.json (Qwen3: <|endoftext|> beside config.json's <|im_end|>) loses the extra id when it round-trips
+// through cmd/prequant, and a completion that emits it runs to max_tokens. Cfg.EOSTokenID has no other reader that needs the
+// unresolved value, so overwriting it is safe.
+//
+// generation_config.json is read through os.DirFS of a real directory. For a .gguf load dir is the file path, so
+// os.DirFS(dir) can never open anything inside it (ggufEOS's comment describes a fallback that does not cover this case); a
+// GGUF conversion keeps generation_config.json beside the file, in its parent directory.
+func resolveLoadEOS(dir string, w *Weights) []int {
+	eosDir := dir
+	if strings.HasSuffix(dir, ".gguf") {
+		eosDir = filepath.Dir(dir)
+	}
+	resolved := config.ResolveEOSIDs(eosDir, &w.Cfg)
+	if raw, err := json.Marshal(resolved); err == nil {
+		w.Cfg.EOSTokenID = raw
+	}
+	return resolved
 }
 
 // parseQuant maps Options.Quant to the internal quantMode.

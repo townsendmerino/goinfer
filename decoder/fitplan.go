@@ -27,7 +27,7 @@ func (m *Model) kvBytesPerPositionAllLayers(f16, i8 bool) int64 {
 		perElem = 2
 	}
 	bv := m.BackendView()
-	_, nLayers, _, _, _, _, _ := bv.Dims()
+	nLayers := bv.NumLayers()
 	var perPos float64
 	if m.w.arch != nil {
 		for l := range nLayers {
