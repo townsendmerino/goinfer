@@ -836,7 +836,6 @@ func (ps *prefillPass) layers() bool {
 		}
 	}
 	ps.addDeep(r.nL - 1)
-	ps.addDeep(r.nL - 1)
 	return true
 }
 
