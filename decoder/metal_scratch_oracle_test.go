@@ -101,7 +101,8 @@ func (m *Model) metalDecodeScratchByFamily(slots int) int64 {
 		bytes += int64(P)
 		u32s++
 	}
-	if _, hk, hv, nk, nv, attnGate, ok := m.BackendView().Qwen35Params(); ok { // the Gated DeltaNet mixer and gated attention's [query ‖ gate]
+	if q, ok := m.BackendView().Qwen35(); ok {
+		hk, hv, nk, nv, attnGate := q.KeyHeadDim, q.ValueHeadDim, q.NumKeyHeads, q.NumValueHeads, q.AttnGate // the Gated DeltaNet mixer and gated attention's [query ‖ gate]
 		keyDim, valueDim := nk*hk, nv*hv
 		f32 += int64(2*(2*keyDim+valueDim) + 2*nv + 2*nv + 2*keyDim + 3*valueDim + 1)
 		if attnGate {

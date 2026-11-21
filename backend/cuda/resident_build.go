@@ -189,7 +189,8 @@ func (s *buildState) admit() error {
 	// Gated-DeltaNet hybrid geometry. Resolved before the per-layer pack because BOTH layer kinds
 	// branch on it: the linear layers take the recurrence, and the softmax ones carry the fused
 	// double-width q_proj that no other family has.
-	dnConvK, dnHK, dnHV, dnNK, dnNV, dnAttnGate, dnetOK := bv.Qwen35Params()
+	dn, dnetOK := bv.Qwen35()
+	dnConvK, dnHK, dnHV, dnNK, dnNV, dnAttnGate := dn.ConvKernel, dn.KeyHeadDim, dn.ValueHeadDim, dn.NumKeyHeads, dn.NumValueHeads, dn.AttnGate
 	var dnetP *dnetParams
 	if dnetOK {
 		keyDim, valueDim := dnNK*dnHK, dnNV*dnHV

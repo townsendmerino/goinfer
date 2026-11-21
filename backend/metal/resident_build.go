@@ -411,7 +411,8 @@ func (b *residentBuild) uploadLayers() error {
 	// layer to one geom; Gemma 4's local/global interleave resolves to two. maxNHhd/maxKvDim size
 	// the shared per-token scratch to the widest layer (== the model shape for a uniform family).
 	geomCache := map[[4]int]*attnGeom{}
-	_, _, _, _, _, attnGate, dnetOK := m.BackendView().Qwen35Params()
+	q35, dnetOK := m.BackendView().Qwen35()
+	attnGate := q35.AttnGate
 	b.w, b.alias, b.mk, b.fuse, b.geomCache, b.attnGate, b.dnetOK = w, alias, mk, fuse, geomCache, attnGate, dnetOK
 	for l := range nL {
 		if err := b.buildLayer(l); err != nil {
