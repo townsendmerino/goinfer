@@ -182,12 +182,15 @@ func (s *buildState) admit() error {
 
 	// ---- host pack all weights (CPU; any incompatible shape → decline) ----
 	// MLA geometry (DeepSeek / Kimi).
-	qLoRA, kvLoRA, qkNope, qkRope, vHead, interleave, mlaAttnScale, mlaRopeScale, mlaOK := bv.MLAParams()
+	mla, mlaOK := bv.MLA()
+	qLoRA, kvLoRA, qkNope, qkRope, vHead := mla.QLoRARank, mla.KVLoRARank, mla.QKNopeHeadDim, mla.QKRopeHeadDim, mla.VHeadDim
+	interleave, mlaAttnScale, mlaRopeScale := mla.RopeInterleave, mla.AttnScale, mla.RopeScale
 
 	// Gated-DeltaNet hybrid geometry. Resolved before the per-layer pack because BOTH layer kinds
 	// branch on it: the linear layers take the recurrence, and the softmax ones carry the fused
 	// double-width q_proj that no other family has.
-	dnConvK, dnHK, dnHV, dnNK, dnNV, dnAttnGate, dnetOK := bv.Qwen35Params()
+	dn, dnetOK := bv.Qwen35()
+	dnConvK, dnHK, dnHV, dnNK, dnNV, dnAttnGate := dn.ConvKernel, dn.KeyHeadDim, dn.ValueHeadDim, dn.NumKeyHeads, dn.NumValueHeads, dn.AttnGate
 	var dnetP *dnetParams
 	if dnetOK {
 		keyDim, valueDim := dnNK*dnHK, dnNV*dnHV

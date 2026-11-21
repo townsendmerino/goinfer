@@ -14,10 +14,10 @@ import (
 )
 
 // prefillSteelAttnOff, set only by tests, runs attention_prefill_fused where attention_prefill_steel would run: the
-// baseline arm of R19's §3.2 gate and of the decomposition harness's A/B.
+// baseline arm of the steel kernel's gate and of the decomposition harness's A/B.
 var prefillSteelAttnOff bool
 
-// prefillAttnSkipForTest, set only by KS-D1's share measurement (TestKSD1_attnShare), skips the batched pass's attention
+// prefillAttnSkipForTest, set only by the attention-share measurement (TestKSD1_attnShare), skips the batched pass's attention
 // dispatch, so a timed pass without it prices attention. The pass's output is then meaningless.
 var prefillAttnSkipForTest bool
 
@@ -25,8 +25,8 @@ var prefillAttnSkipForTest bool
 // assert which kernel ran rather than which it meant to select. Not safe for concurrent passes; nil in production.
 var prefillAttnRanForTest map[string]int
 
-// gemmTilePolicy picks gemmTile's rule: "" the default (D-B02's padding rule below), "a01" A-P01's rule as it shipped,
-// "shipped" every GEMM on gemm_w4f16_store's 64 × 64 tile, "bm32" / "bn32" only A-P01's 32-token / 32-feature rule.
+// gemmTilePolicy picks gemmTile's rule: "" the default (the padding rule below), "a01" the small-tile rule as it first shipped,
+// "shipped" every GEMM on gemm_w4f16_store's 64 × 64 tile, "bm32" / "bn32" only the 32-token / 32-feature tile rule.
 // Test-only: the arms of the grades; not an option or an environment variable.
 var gemmTilePolicy = ""
 
@@ -45,7 +45,7 @@ func (pf *prefillState) gemmTile(rows, N int) (Pipeline, int, int) {
 	return pf.gemmTileFor(rows, N, pf.w8)
 }
 
-// gemmTileFor is gemmTile for a weight of a given kind: w8 picks the W8 tiles (int8 slice 2), else the int4 ones. An
+// gemmTileFor is gemmTile for a weight of a given kind: w8 picks the W8 tiles, else the int4 ones. An
 // int4mix resident (w8Attn) passes true for its attention GEMMs and false for its FFN.
 func (pf *prefillState) gemmTileFor(rows, N int, w8 bool) (Pipeline, int, int) {
 	tm, tn := gemmTileSize(rows, N)
@@ -92,7 +92,7 @@ func gemmTileSize(rows, N int) (tm, tn int) {
 	return tm, tn
 }
 
-// swigluFusedOffForTest keeps the gate|up GEMM and swiglu_f16 as two steps with guF between them: the old arm of KS-D5's A/B.
+// swigluFusedOffForTest keeps the gate|up GEMM and swiglu_f16 as two steps with guF between them: the old arm of the fused-SwiGLU A/B.
 var swigluFusedOffForTest bool
 
 // swigluFused reports whether a pass of Mpad rows runs every dense layer's gate|up projection through the fused GEMM
@@ -118,31 +118,31 @@ func (r *resident) swigluFused(Mpad int) bool {
 // prefillState holds the lazily compiled prefill pipelines (ensurePrefill); a decode-only run never builds it.
 type prefillState struct {
 	pGemmStore, pRms, pRes, pSw, pRope, pKv, pAttn, pQK, pRmsQ Pipeline
-	pGemmSwiglu                                                Pipeline // gemm_w4f16_swiglu (KS-D5), gemm_w8f16_swiglu on a native int8 resident
+	pGemmSwiglu                                                Pipeline // gemm_w4f16_swiglu, gemm_w8f16_swiglu on a native int8 resident
 	pKvI8, pDeqI8                                              Pipeline // an int8 cache's store and dequantize-to-scratch (kv_i8_prefill.go)
 	pLN, pLNQ                                                  Pipeline // Part B: layernorm_f16 / layernorm_quant_f16 (bias-free LayerNorm)
-	pAttnImg                                                   Pipeline // S17: attention_prefill with a bidirectional image block
-	pRopeM                                                     Pipeline // S16: rope_mrope_f16
-	pPLEGeluMulF16, pLayerScaleF16                             Pipeline // S9 step 2: the E-model PLE gate and layer scalar
-	// A-P01: gemm_w4f16_tile at the smaller tiles (tokens × features), picked by gemmTile.
+	pAttnImg                                                   Pipeline // attention_prefill with a bidirectional image block
+	pRopeM                                                     Pipeline // rope_mrope_f16
+	pPLEGeluMulF16, pLayerScaleF16                             Pipeline // the E-model PLE gate and layer scalar
+	// gemm_w4f16_tile at the smaller tiles (tokens × features), picked by gemmTile.
 	pGemmM32N64, pGemmM64N32, pGemmM32N32 Pipeline
-	pGemmM16N32                           Pipeline // D-B02's 16-token tile
+	pGemmM16N32                           Pipeline // the padding rule's 16-token tile
 	// int8 slice 2: a native int8 resident's GEMMs, gemm_w4f16_tile<TM, TN,
 	// true> by (TM, TN); w8 selects them in gemmTile.
 	w8  bool
 	pW8 map[[2]int]Pipeline
-	// G8: the MoE row loop's F32-scratch bridge (see
+	// The MoE row loop's F32-scratch bridge (see
 	// residual_f16_from_f32/zero_f32's own comments).
 	pResF32, pZeroF32 Pipeline
-	pResScaled        Pipeline // S17: residual_f16_scaled, the add into a residual stored scaled by 1/s
+	pResScaled        Pipeline // residual_f16_scaled, the add into a residual stored scaled by 1/s
 	// attention_prefill_fused: the simdgroup_matrix flash-attention twin of pAttn.
 	// On by default (metalFusedAttentionEnabled, backend.go);
 	// GOINFER_METAL_FUSED_ATTENTION=0 or --exact-prefill falls back to pAttn.
 	pAttnFused Pipeline
-	// R19: attention_prefill_steel, the prefill attention at the head dims steelHeadDim admits (it replaces pAttnFused there);
-	// pAttnSteel64 is its head-dim-64 instance (KS-D2). steelFor picks by head dim.
+	// attention_prefill_steel, the prefill attention at the head dims steelHeadDim admits (it replaces pAttnFused there);
+	// pAttnSteel64 is its head-dim-64 instance. steelFor picks by head dim.
 	pAttnSteel, pAttnSteel64 Pipeline
-	// KS-D1: attention_prefill_steel_split at head dims 256 and 512 (splitSteelHeadDim), where the exact kernel ran.
+	// attention_prefill_steel_split at head dims 256 and 512 (splitSteelHeadDim), where the exact kernel ran.
 	pAttnSteel256, pAttnSteel512 Pipeline
 	// attention_prefill_tiled: pAttn for a pass past prefillExactAttnMaxKeys keys (exactAttnTile).
 	pAttnTiled Pipeline
@@ -155,7 +155,7 @@ type prefillState struct {
 	pScatterAdd       Pipeline
 	pSharedGateAdd    Pipeline
 
-	// D-B01: a gated-attention layer (Qwen3.5) on the batched lane; the DeltaNet mixer's own row kernels live in the
+	// A gated-attention layer (Qwen3.5) on the batched lane; the DeltaNet mixer's own row kernels live in the
 	// resident library (r.pDn*Rows), beside the decode kernels they copy.
 	pQGateSplit, pCopyCols, pAttnGate Pipeline
 
@@ -257,7 +257,7 @@ func (r *resident) ensurePrefill() {
 
 		pQGateSplit: p("qgate_split_f16"), pCopyCols: p("copy_cols_f16"), pAttnGate: p("attn_gate_f16"),
 	}
-	if r.w8 || r.w8Attn || r.mamba != nil { // KS-D8: a Mamba layer's in_proj and out_proj are int8
+	if r.w8 || r.w8Attn || r.mamba != nil { // a Mamba layer's in_proj and out_proj are int8
 		r.pf.w8, r.pf.pW8 = r.w8, map[[2]int]Pipeline{}
 		for _, t := range [][2]int{{64, 64}, {32, 64}, {64, 32}, {32, 32}, {16, 32}} {
 			r.pf.pW8[t] = p(fmt.Sprintf("gemm_w8f16_m%dn%d", t[0], t[1]))
@@ -285,7 +285,7 @@ func parallelEmbedsF32ToF16(dst []uint16, embs [][]float32, H int) {
 	parallelEmbedsF32ToF16Scaled(dst, embs, H, 1)
 }
 
-// parallelEmbedsF32ToF16Scaled is parallelEmbedsF32ToF16 with every value times inv first (S17's scaled residual; inv is
+// parallelEmbedsF32ToF16Scaled is parallelEmbedsF32ToF16 with every value times inv first (the image prefill's scaled residual; inv is
 // a power of two, so the product is exact, and inv = 1 is the plain conversion bit for bit).
 func parallelEmbedsF32ToF16Scaled(dst []uint16, embs [][]float32, H int, inv float32) {
 	M := len(embs)
@@ -428,8 +428,8 @@ func (r *resident) kvI8ScratchRows() int { return (r.ctxCap + 7) / 8 * 8 }
 var prefillScratchSeen atomic.Int64
 
 // prefillAttnKernels is which attention kernel PrefillLast dispatches for this model: fused for hd%8==0 && hd<=128
-// (attention_prefill_fused's compile-time cap, ATTN_MAXHD), steel within that at the head dims steelHeadDim admits (R19:
-// one threadgroup of 128 threads per query head and 32 rows), and otherwise the exact attention_prefill, bounded by
+// (attention_prefill_fused's compile-time cap, ATTN_MAXHD), steel within that at the head dims steelHeadDim admits
+// (one threadgroup of 128 threads per query head and 32 rows), and otherwise the exact attention_prefill, bounded by
 // prefillExactAttnMaxKeys.
 func (r *resident) prefillAttnKernels() (fused, steel bool) {
 	g0 := r.prefillGeom()
@@ -439,8 +439,7 @@ func (r *resident) prefillAttnKernels() (fused, steel bool) {
 }
 
 // steelHeadDim reports whether attention_prefill_steel runs a layer of head dim hd. The kernel is built at 64, 80, 96 and
-// 128, but a head dim is admitted only after a model at it passes set A's pooled gate (R19 for 128, KS-D2 for 64; the
-// survey's KS-D2 row has 80 and 96's state).
+// 128, but a head dim is admitted only after a model at it passes set A's pooled gate, as 128 and 64 have.
 func steelHeadDim(hd int) bool { return hd == 128 || hd == 64 }
 
 // steelName is steelFor's kernel name.
@@ -467,7 +466,7 @@ func (r *resident) prefillFusedOn() bool {
 
 // prefillExactAttn reports whether any attention layer of the pass runs the exact attention kernel (no fused kernel for
 // its head dim, or fused attention off), whose score buffer holds prefillExactAttnMaxKeys keys. A Gemma 4 E-model's
-// layers differ (S9 step 2); every other family's are one geometry.
+// layers differ; every other family's are one geometry.
 func (r *resident) prefillExactAttn() bool {
 	fusedOn := r.prefillFusedOn()
 	for l := range r.layers {
@@ -500,7 +499,7 @@ func (r *resident) exactAttnHeadDim() int {
 }
 
 // prefillGeom is the attention geometry the pass uses for every attention layer: the first attention layer's. A
-// Gated-DeltaNet hybrid's layer 0 is a DeltaNet layer, which has none (D-B01); every other admitted family's layer 0
+// Gated-DeltaNet hybrid's layer 0 is a DeltaNet layer, which has none; every other admitted family's layer 0
 // has it.
 func (r *resident) prefillGeom() *attnGeom {
 	for i := range r.layers {
@@ -527,7 +526,7 @@ func (r *resident) PrefillLast(embs [][]float32, startPos int) []float32 {
 	return r.prefillLast(embs, startPos, nil, nil)
 }
 
-// prefillDeep is Qwen3-VL's DeepStack injection for the batched pass (S16): set l is added to the image rows [start,
+// prefillDeep is Qwen3-VL's DeepStack injection for the batched pass: set l is added to the image rows [start,
 // start+n) of the f16 residual after decoder layer l, as decoder's addDeepstack does on the CPU.
 type prefillDeep struct {
 	start, n int
@@ -570,7 +569,7 @@ func (r *resident) prefillLast(embs [][]float32, startPos int, mrope [][3]int, d
 }
 
 // prefillLastImg is prefillLast with image blocks, each [start, end) in absolute positions, that attend bidirectionally
-// (S17's Metal image prefill; several blocks for several images, S11): every layer's attention then runs
+// (the Metal image prefill; several blocks for several images): every layer's attention then runs
 // attention_prefill_img, the exact kernel with the blocks, in place of the fused and steel kernels, which carry no block
 // mask. No blocks: prefillLast exactly.
 func (r *resident) prefillLastImg(embs [][]float32, startPos int, mrope [][3]int, deep *prefillDeep, blocks [][2]int) []float32 {
@@ -603,7 +602,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 	defer ps.release()
 	ps.r, ps.pf, ps.normPipe, ps.startPos, ps.mrope, ps.deep = r, pf, normPipe, startPos, mrope, deep
 	ps.fusedOn = r.prefillFusedOn()
-	// G-S9c (1): a shared layer attending over an empty cache instead of its source's (zero in production).
+	// planted defect (1): a shared layer attending over an empty cache instead of its source's (zero in production).
 	if emodelBatchDefect == 1 {
 		ps.zeroKV = prefillScratchU16(d, (startPos+ps.Mpad+8)*ps.qkvDim)
 		ps.scratch = append(ps.scratch, ps.zeroKV)
@@ -614,7 +613,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 	}
 
 	ps.e = r.q.Begin()
-	// S16: the DeepStack sets, uploaded once; addDeep(k) adds set k to the rows of this pass that fall in the image block.
+	// The DeepStack sets, uploaded once; addDeep(k) adds set k to the rows of this pass that fall in the image block.
 	// Set k is added after layer k, which is done at the top of iteration k+1 and after the loop, so every branch of the
 	// loop body (the MoE ones end in continue) reaches it.
 	if deep != nil {
@@ -668,7 +667,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 	}
 	e.Dispatch(r.pGemvW8, V*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.logits, r.uH)
 	e.End()
-	// The int8 head turns a NaN row into finite zeros, which the caller's non-finite-logit check (A-C02) passes, so the
+	// The int8 head turns a NaN row into finite zeros, which the caller's non-finite-logit check passes, so the
 	// residual itself is checked. Its last row is enough: a row that overflows before the final layer writes NaN K/V,
 	// which reaches the last row through attention; a row that overflows in the final layer writes no further K/V.
 	last := xF.U16s()[(M-1)*H : M*H]
@@ -685,7 +684,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 	if db02Trace != nil {
 		db02Trace(db02Event{layer: r.nL, gpuStart: e.GPUStart(), gpuEnd: e.GPUEnd()})
 	}
-	r.recordExecErr(e.Err()) // C-09
+	r.recordExecErr(e.Err())
 
 	out := make([]float32, V)
 	copy(out, r.logits.Floats()[:V])
@@ -734,17 +733,17 @@ func prefillScratch[T gpu.Scalar](d *Device, n int) Buffer {
 
 var prefillScratchCopy = false
 
-// prefillR20Copy restores the copy for R-20's sites only (xF and the five MoE routing buffers), for the A/B that times
+// prefillR20Copy restores the copy for the zero-filled sites only (xF and the five MoE routing buffers), for the A/B that times
 // them; tests only.
 var prefillR20Copy = false
 
 // prefillScratchPoison fills the expert-major branch's five routing buffers with 0xFF bytes (NaN as f32, an
 // out-of-range expert id as u32) before the pass, set only by TestPrefillScratch_moeRoutingWrittenFirst: equal logits
 // then prove the router GEMM, the route kernels and the host write every element before anything reads it, so the
-// buffers need no zeros at all (R-20).
+// buffers need no zeros at all.
 var prefillScratchPoison = false
 
-// db02Trace is D-B02's probe (T1.12, metal/audit_db02_test.go): nil in production. The expert-major branch reports
+// db02Trace is the expert-major MoE prefill's probe (metal/audit_db02_test.go): nil in production. The expert-major branch reports
 // each command buffer it ends (gpuStart/gpuEnd, seconds; layer is the MoE layer whose routing it waits for, or nL for
 // the pass's last buffer) and each active expert's rows (real, padded to 8, and padded to each GEMM's row tile).
 var db02Trace func(db02Event)
@@ -755,7 +754,7 @@ type db02Event struct {
 	rows, padRows, tileRowsGu, tileRowsD int
 }
 
-// dg01Mutation names a deliberate defect in the expert-major MoE prefill, for D-G01's gate to prove it can go red
+// dg01Mutation names a deliberate defect in the expert-major MoE prefill, for the MoE routing gate to prove it can go red
 // (metal/dg01_moe_gate_test.go). "" in production; set only by that test.
 //   - "topk-renorm": the routing weights renormalised to sum to 1 per token, as a model with norm_topk_prob would
 //     have them (Qwen1.5-MoE does not): the scatter weights wrong.
@@ -787,6 +786,6 @@ func dg01Mutate(idx []uint32, wgt []float32, M, k int) {
 }
 
 // ksd7OldDequantForTest builds the prefill library with the per-weight nibble dequant in the GEMM's staging (KSD7_OLD_DEQUANT): the
-// old arm of KS-D7's A/B. The staging is in prefillKernels, so the define goes on the prefill library's source; the resident takes
+// old arm of the in-GEMM dequant's A/B. The staging is in prefillKernels, so the define goes on the prefill library's source; the resident takes
 // the switch when it is built (resident.ksd7Old).
 var ksd7OldDequantForTest bool

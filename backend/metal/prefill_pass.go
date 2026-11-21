@@ -90,7 +90,7 @@ func (r *resident) newPrefillPass(src rowSource, startPos int, mrope [][3]int, d
 	xF := prefillScratchU16(d, Mpad*H)
 	residInv := 1 / r.prefillResidScale(deep)
 	// The input rows, read rowChunk at a time from the source: each row's first H values into xF as f16, and a Gemma 4
-	// E-model's [L·P] per-layer tail straight into the device buffer the PLE gate reads (S9 step 2), so the host holds a chunk.
+	// E-model's [L·P] per-layer tail straight into the device buffer the PLE gate reads, so the host holds a chunk.
 	var pleInB Buffer
 	if r.pleP > 0 {
 		LP := r.nL * r.pleP
@@ -123,7 +123,7 @@ func (r *resident) newPrefillPass(src rowSource, startPos int, mrope [][3]int, d
 	}
 	posB := NewBufferUint32sOn(mem.LineScratch, d, posv)
 	prefillScratchSeen.Add(int64(4 * Mpad))
-	var pos3B Buffer // S16: the rows' m-RoPE triples, row-major [Mpad*3]; pad rows repeat the last real row's
+	var pos3B Buffer // the rows' m-RoPE triples, row-major [Mpad*3]; pad rows repeat the last real row's
 	if mrope != nil {
 		p3 := make([]uint32, Mpad*3)
 		for m := range Mpad {
@@ -155,7 +155,7 @@ func (r *resident) newPrefillPass(src rowSource, startPos int, mrope [][3]int, d
 	// above which holds Mpad for the GEMM grid. attention_prefill (the exact kernel) needs no
 	// such uniform because its Go-side dispatch grid is already sized off the real M.
 	uMReal := NewBufferU32On(mem.LineScratch, d, uint32(M))
-	// An int8 cache: each layer's rows [0, startPos+M) are dequantized into these f16 buffers before its attention (D9 (b)).
+	// An int8 cache: each layer's rows [0, startPos+M) are dequantized into these f16 buffers before its attention.
 	// The attention kernels read that scratch through idTab, an identity table, as they read the cache through its own.
 	var kScrI8, vScrI8, uEndI8, idTab Buffer
 	if r.kvI8 {
@@ -165,7 +165,7 @@ func (r *resident) newPrefillPass(src rowSource, startPos int, mrope [][3]int, d
 	}
 	attnTile := exactAttnTile(startPos + M) // > 0: the exact-attention layers take attention_prefill_tiled
 	uTile := NewBufferU32On(mem.LineScratch, d, uint32(max(attnTile, 1)))
-	// G8: the MoE row loop's F32 accumulate scratch (see the per-layer loop's own comment).
+	// The MoE row loop's F32 accumulate scratch (see the per-layer loop's own comment).
 	// Allocated unconditionally (cheap — H floats) rather than gated on whether any layer is
 	// MoE, avoiding a nil-buffer special case in the loop below.
 	moeDst := NewBufferFloatsOn(mem.LineScratch, d, make([]float32, H))
@@ -220,7 +220,7 @@ func (r *resident) newPrefillPass(src rowSource, startPos int, mrope [][3]int, d
 	if r.kvI8 {
 		scratch = append(scratch, kScrI8, vScrI8, uEndI8, idTab)
 	}
-	// S17: the scaled residual's 1/s, for residual_f16_scaled, and the eps of the norms that read the residual, eps/s², so
+	// The scaled residual's 1/s, for residual_f16_scaled, and the eps of the norms that read the residual, eps/s², so
 	// that x/s / sqrt(ms/s² + eps/s²) is x / sqrt(ms + eps) exactly (s is a power of two).
 	var uResidInv Buffer
 	uEpsX := r.uEps
@@ -229,12 +229,12 @@ func (r *resident) newPrefillPass(src rowSource, startPos int, mrope [][3]int, d
 		uEpsX = NewBufferFloatsOn(mem.LineScratch, d, []float32{r.uEps.Floats()[0] * residInv * residInv})
 		scratch = append(scratch, uResidInv, uEpsX)
 	}
-	// S9 step 2: a Gemma 4 E-model's per-layer inputs, each row's [L·P] tail of its [h ‖ L·P] embedding, and the PLE
+	// A Gemma 4 E-model's per-layer inputs, each row's [L·P] tail of its [h ‖ L·P] embedding, and the PLE
 	// gate's scratch.
 	var pleGF, uP, uLP Buffer
 	if r.pleP > 0 {
 		P, LP := r.pleP, r.nL*r.pleP
-		if emodelBatchDefect == 3 { // G-S9c (3): each row's PLE inputs taken from the next row
+		if emodelBatchDefect == 3 { // planted defect (3): each row's PLE inputs taken from the next row
 			pv := pleInB.Floats()
 			for m := 0; m+1 < M; m++ {
 				copy(pv[m*LP:(m+1)*LP], pv[(m+1)*LP:(m+2)*LP])
@@ -243,7 +243,7 @@ func (r *resident) newPrefillPass(src rowSource, startPos int, mrope [][3]int, d
 		pleGF, uP, uLP = prefillScratchU16(d, Mpad*P), NewBufferU32On(mem.LineScratch, d, uint32(P)), NewBufferU32On(mem.LineScratch, d, uint32(LP))
 		scratch = append(scratch, pleInB, pleGF, uP, uLP)
 	}
-	// D-B01: a Gated-DeltaNet hybrid's mixer scratch, and its gated-attention layers' [query ‖ gate] projection, K‖V
+	// A Gated-DeltaNet hybrid's mixer scratch, and its gated-attention layers' [query ‖ gate] projection, K‖V
 	// projection and split gate.
 	var dn *prefillDelta
 	var qgF, kvF, gateF, u2NHhd, u2KvDim, uGateN Buffer
@@ -255,7 +255,7 @@ func (r *resident) newPrefillPass(src rowSource, startPos int, mrope [][3]int, d
 		u2NHhd, u2KvDim, uGateN = NewBufferU32On(mem.LineScratch, d, uint32(2*nHhd)), NewBufferU32On(mem.LineScratch, d, uint32(2*kvDim)), NewBufferU32On(mem.LineScratch, d, uint32(M*nHhd))
 		scratch = append(append(scratch, dn.bufs...), qgF, kvF, gateF, u2NHhd, u2KvDim, uGateN)
 	}
-	var mb *prefillMamba // KS-D8: a Mamba-2 hybrid's mixer scratch
+	var mb *prefillMamba // a Mamba-2 hybrid's mixer scratch
 	if r.mamba != nil {
 		mb = r.newPrefillMamba(M, Mpad)
 		scratch = append(scratch, mb.bufs...)
@@ -402,7 +402,7 @@ func (ps *prefillPass) attnBlock(l int, L *residLayer) {
 	}
 	// fused QKV (+bias)
 	if aw.Gated {
-		// D-B01, Qwen3.5's gated softmax layer (decode's encodeAttention qGate branch): q_proj is [query ‖ gate]
+		// Qwen3.5's gated softmax layer (decode's encodeAttention qGate branch): q_proj is [query ‖ gate]
 		// per head at double width, split on the activation into qkv's Q slot and the gate; K‖V is its own
 		// bias-free projection, copied into qkv's K and V slots.
 		ps.gemm(e, Mpad, 2*nHhd, inAttn, L.dnQw, L.dnQs, qgF, uM, u2NHhd, uH, dummyBias, m0)
@@ -428,7 +428,7 @@ func (ps *prefillPass) attnBlock(l int, L *residLayer) {
 		}
 		e.Dispatch(pf.pQK, M*tgCount*tgReduceAttn, tgReduceAttn, qkvF, L.qNorm, L.kNorm, qkNH, qkNKV, qkHD, qkNHhd, lu.uStride, r.uEps, r.uAddOne)
 	}
-	// S9 step 2: Gemma 4's scale-less v_norm on every K/V-owning layer's V slot, after Q/K norm and before RoPE, as
+	// Gemma 4's scale-less v_norm on every K/V-owning layer's V slot, after Q/K norm and before RoPE, as
 	// decode does (encodeAttentionResidualWith): the Q/K-norm kernel over the V slot with nH = 0, a unit weight and
 	// addOne 0.
 	if aw.G4VNorm && emodelBatchDefect != 5 {
@@ -439,7 +439,7 @@ func (ps *prefillPass) attnBlock(l int, L *residLayer) {
 	// (encodeTrunkInto), not the model-level r.invf/r.uWindow. For a mixed local/global-window arch the global
 	// layers must see window=0, and each layer its own RoPE base; FeatPerLayerRoPE is in prefillFeatures, so the
 	// per-layer binding is not behaviour-neutral.
-	if mrope != nil { // S16: each row's own (t, h, w) rotation
+	if mrope != nil { // each row's own (t, h, w) rotation
 		e.Dispatch(pf.pRopeM, M*r.nH*lu.g.half, 128, qkvF, L.invf, lu.g.uHd, pos3B, lu.uTotalQ, lu.uStride, uBase0, lu.g.uHalf, L.mscale, r.mropeAxis)
 		if !L.kvShared {
 			e.Dispatch(pf.pRopeM, M*lu.g.nKV*lu.g.half, 128, qkvF, L.invf, lu.g.uHd, pos3B, lu.uTotalK, lu.uStride, lu.uBaseK, lu.g.uHalf, L.mscale, r.mropeAxis)
@@ -469,14 +469,14 @@ func (ps *prefillPass) attnBlock(l int, L *residLayer) {
 	// causal attention → ctx (per-layer window: 0 = full causal on a global layer)
 	ran := ""
 	if prefillAttnSkipForTest {
-		// no attention: ctxF keeps what it held (KS-D1's share measurement)
+		// no attention: ctxF keeps what it held (the attention-share measurement)
 	} else if imgB != (Buffer{}) {
 		ran = "attention_prefill_img"
 		e.Dispatch(pf.pAttnImg, M*r.nH*tgReduceAttn, tgReduceAttn, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, imgB, imgN, kt)
 	} else if lu.steel {
 		ran = steelName(lu.g.hd)
 		e.Dispatch(pf.steelFor(lu.g.hd), r.nH*((M+31)/32)*128, 128, qkvF, kc, vc, ctxF, r.uNH, lu.g.uNKV, lu.g.uHd, uStartPos, r.uScale, lu.uStride, L.uWindow, uMReal, kt)
-	} else if lu.split { // KS-D1: 32 query rows a threadgroup at head dim 256, 16 at 512
+	} else if lu.split { // 32 query rows a threadgroup at head dim 256, 16 at 512
 		p, bq := pf.pAttnSteel256, 32
 		if lu.g.hd == 512 {
 			p, bq = pf.pAttnSteel512, 16
@@ -707,27 +707,27 @@ func (ps *prefillPass) ffnBlock(L *residLayer) {
 		e.Dispatch(normPipe, M*tgReduceNorm, tgReduceNorm, xF, normW, normF, uH, uEpsX, r.uAddOne)
 	}
 	if fw.FFN.Form == program.FfnNonGated {
-		// KS-D8: the non-gated MLP (Nemotron-H's relu²; a down projection with a bias never reaches the pass): up with its
+		// The non-gated MLP (Nemotron-H's relu²; a down projection with a bias never reaches the pass): up with its
 		// bias, the activation in place, down accumulated into the residual.
 		ps.gemm(e, Mpad, I, inFFN, L.upW, L.upS, dqF, uM, uI, uH, L.upBias, m1)
 		e.Dispatch(r.pNgActRows, M*I, 256, dqF, ps.u32(M*I), r.uAct)
 		ps.gemm(e, Mpad, H, dqF, L.dW, L.dS, xF, uM, uH, uI, dummyBias, m2)
 		return
 	}
-	// S9 step 2: this layer's FFN width (a Gemma 4 E-model's KV-shared layers are double-wide; every other family's
+	// This layer's FFN width (a Gemma 4 E-model's KV-shared layers are double-wide; every other family's
 	// layers are the model's I).
 	fI := I
 	if L.ffnI != 0 {
 		fI = L.ffnI
 	}
-	if emodelBatchDefect == 6 && r.layers[0].ffnI != 0 { // G-S9c (6): every layer at the first layer's width
+	if emodelBatchDefect == 6 && r.layers[0].ffnI != 0 { // planted defect (6): every layer at the first layer's width
 		fI = r.layers[0].ffnI
 	}
 	uFI, u2FI := uI, u2I
 	if fI != I {
 		uFI, u2FI = ps.u32(fI), ps.u32(2*fI)
 	}
-	// gate/up, then swiglu/geglu (G8: r.uAct selects, 0 for every family without FeatGatedGELU): one fused GEMM when the pass
+	// gate/up, then swiglu/geglu (r.uAct selects, 0 for every family without FeatGatedGELU): one fused GEMM when the pass
 	// takes it (swigluFused), else the GEMM into guF and swiglu_f16.
 	if r.q4kLane {
 		ps.gemmSegs(e, Mpad, L.guSegs, inFFN, guF, uM, uH, u2FI, dummyBias, m0)
@@ -757,7 +757,7 @@ func (ps *prefillPass) ffnBlock(L *residLayer) {
 // pleBlock is a Gemma 4 E-model's per-layer-embedding step.
 func (ps *prefillPass) pleBlock(l int, L *residLayer) {
 	r, pf, e, M, Mpad, H, xF, pleInB, normF, uM, uH, m0, dummyBias, pleGF, uP, uLP := ps.r, ps.pf, ps.e, ps.M, ps.Mpad, ps.H, ps.xF, ps.pleInB, ps.normF, ps.uM, ps.uH, ps.m0, ps.dummyBias, ps.pleGF, ps.uP, ps.uLP
-	// S9 step 2: a Gemma 4 E-model's PLE block, in decode's order (encodeLayerResidualWith): the gate GEMM (H→P) on the raw
+	// A Gemma 4 E-model's PLE block, in decode's order (encodeLayerResidualWith): the gate GEMM (H→P) on the raw
 	// residual, gelu(gate) times the row's own per-layer input, the projection GEMM (P→H), the post-PLE norm and the
 	// residual add. The layer scalar is its own step (layerScaleBlock).
 	if L.pleGW != (Buffer{}) && emodelBatchDefect != 2 {
