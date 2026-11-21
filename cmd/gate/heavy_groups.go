@@ -67,6 +67,10 @@ var heavyFamilies = []heavyFamily{
 	{Group: "glm-ocr", Rank: 46, re: regexp.MustCompile(`(?i)glm-ocr`)},
 	{Group: "gemma2-2b", Rank: 44, re: regexp.MustCompile(`(?i)gemma-2-2b`)},
 	{Group: "gemma4-e2b", Rank: 45, re: regexp.MustCompile(`(?i)gemma-4-e2b`)},
+	// KV10's long-context harness loads a small checkpoint but runs for many minutes, so it gets its own process rather
+	// than eat the shared group's timeout. It is keyed on the env name only that harness reads, and outranks small.
+	// docs/code-notes/cmd-gate.md, "cudaHeavy: the kv10 group".
+	{Group: "kv10", Rank: 2, re: regexp.MustCompile(`^KV10_CKPT$`)},
 	{Group: heavySmallGroup, Rank: 1, re: regexp.MustCompile(
 		`(?i)qwen2\.5-coder-(0\.5b|1\.5b)|qwen2\.5-0\.5b|gemma3-1b|llama-3\.2-1b|qwen3-1\.7b|qwen3\.5-0\.8b|qwen35vl|phi-?3-mini|clef-flash`)},
 }
