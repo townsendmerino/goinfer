@@ -290,3 +290,115 @@ func TestKSD5_prefillSpeed(t *testing.T) {
 	slices.Sort(ratios)
 	fmt.Fprintf(os.Stderr, "[D5-G3] median fused/two-step %.4f, %d of 10 pairs below 1\n", (ratios[4]+ratios[5])/2, below)
 }
+
+// TestW8Tiles_kTailStaysInRow runs every gemm_w8f16 tile and gemm_w8f16_swiglu at K not a multiple of 32 (a native int8
+// load admits any K that is a multiple of 4: an MoE expert's down projection at moe_intermediate 24, a hidden of 48) against
+// the host product, in the precise library a native int8 resident compiles; K = 64 is the control. The activation rows past M
+// are NaN and the weight row past N is +127 codes, so a 32-wide slab that read past K (into the next row, or past the last
+// one) shows as NaN or a wrong sum.
+func TestW8Tiles_kTailStaysInRow(t *testing.T) {
+	d, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	lib, err := d.CompileLibraryPrecise(prefillKernels, MSL3_1)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	pipe := func(n string) Pipeline {
+		p, e := d.NewComputePipeline(lib, n)
+		if e != nil {
+			t.Fatalf("%s: %v", n, e)
+		}
+		return p
+	}
+	q := d.NewCommandQueue()
+	rng := rand.New(rand.NewSource(23))
+	h := func(v float32) float64 { return float64(f16ToF32(f32ToF16(v))) }
+	type mats struct {
+		A, W, WS   Buffer
+		a          []uint16
+		codes      []int8
+		scales     []float32
+		M, N, K    int
+		uM, uN, uK Buffer
+	}
+	mk := func(M, N, K int) mats {
+		a := make([]uint16, (M+8)*K)
+		for i := range a {
+			a[i] = f32ToF16(float32(rng.NormFloat64()))
+			if i >= M*K {
+				a[i] = 0x7e00 // NaN: rows past M
+			}
+		}
+		codes := make([]int8, (N+1)*K+8)
+		for i := range codes {
+			codes[i] = int8(rng.Intn(255) - 127)
+			if i >= N*K {
+				codes[i] = 127 // the weight row past N, and past the buffer's last row
+			}
+		}
+		scales := make([]float32, N+1)
+		for i := range scales {
+			scales[i] = float32(rng.NormFloat64()*0.002 + 0.004)
+		}
+		words := make([]uint32, (len(codes)+3)/4)
+		for i, c := range codes {
+			words[i/4] |= uint32(uint8(c)) << (8 * (i % 4))
+		}
+		return mats{A: NewBufferU16s(d, a), W: NewBufferUint32s(d, words), WS: NewBufferFloats(d, scales), a: a, codes: codes, scales: scales,
+			M: M, N: N, K: K, uM: NewBufferU32(d, uint32(M)), uN: NewBufferU32(d, uint32(N)), uK: NewBufferU32(d, uint32(K))}
+	}
+	// dot is the host's row m by weight row n, the weights rounded to half as the kernels stage them.
+	dot := func(x mats, m, n int) (sum, abs float64) {
+		for k := range x.K {
+			v := float64(f16ToF32(x.a[m*x.K+k])) * h(float32(x.codes[n*x.K+k])*x.scales[n])
+			sum, abs = sum+v, abs+math.Abs(v)
+		}
+		return sum, abs
+	}
+	check := func(name string, got []uint16, x mats, width int, want func(m, j int) (float64, float64)) {
+		bad := 0
+		for m := range x.M {
+			for j := range width {
+				w, scale := want(m, j)
+				g := float64(f16ToF32(got[m*width+j]))
+				if math.IsNaN(g) || math.Abs(g-w) > 4e-3*scale+1e-4 {
+					if bad < 3 {
+						t.Errorf("%s: out[%d][%d] = %v, host %v", name, m, j, g, w)
+					}
+					bad++
+				}
+			}
+		}
+		if bad > 0 {
+			t.Errorf("%s: %d of %d outputs off the host product", name, bad, x.M*width)
+		}
+	}
+	for _, K := range []int{24, 36, 48, 64} {
+		for _, M := range []int{13, 16} {
+			for _, tile := range [][2]int{{64, 64}, {32, 64}, {64, 32}, {32, 32}, {16, 32}} {
+				x := mk(M, 64, K)
+				out := NewBufferU16s(d, make([]uint16, M*x.N))
+				e := q.Begin()
+				e.Dispatch2D(pipe(fmt.Sprintf("gemm_w8f16_m%dn%d", tile[0], tile[1])), (x.N+tile[1]-1)/tile[1], (M+tile[0]-1)/tile[0], 128, 1,
+					x.A, x.W, x.WS, out, x.uM, x.uN, x.uK, NewBufferFloats(d, make([]float32, x.N)), NewBufferU32(d, 0))
+				e.End()
+				check(fmt.Sprintf("gemm_w8f16_m%dn%d K=%d M=%d", tile[0], tile[1], K, M), out.U16s(), x, x.N, func(m, j int) (float64, float64) { return dot(x, m, j) })
+			}
+			const I = 32
+			x := mk(M, 2*I, K)
+			out := NewBufferU16s(d, make([]uint16, M*I))
+			e := q.Begin()
+			e.Dispatch2D(pipe("gemm_w8f16_swiglu"), (I+31)/32, (M+63)/64, 128, 1, x.A, x.W, x.WS, out, x.uM, NewBufferU32(d, I), x.uK, NewBufferU32(d, 1))
+			e.End()
+			check(fmt.Sprintf("gemm_w8f16_swiglu K=%d M=%d", K, M), out.U16s(), x, I, func(m, j int) (float64, float64) {
+				g, ga := dot(x, m, j)
+				u, ua := dot(x, m, I+j)
+				g, u = h(float32(g)), h(float32(u))
+				s := g / (1 + math.Exp(-g))
+				return s * u, math.Abs(s)*ua + ga*math.Abs(u) + 1
+			})
+		}
+	}
+}

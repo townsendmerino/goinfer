@@ -162,6 +162,15 @@ inline float glu_act_f16(float x, uint act); // defined with swiglu_f16, below
 // same order as the two-step form, so the output is the same bits, and guF is never written. grid = (ceil(I/32), ceil(M/64)).
 // W8 (KS-D5c, gemm_w8f16_swiglu) stages the native int8 path's weights as gemm_w4f16_tile<64, 64, true> does, so it is
 // gemm_w8f16_m64n64 + swiglu_f16 bit for bit.
+// w8Block is one 8-k block of a native int8 weight row, the codes at byte offset off (a multiple of 4): zero when the row is
+// out (ok false) or the block starts at or past K, and its upper word zero when only four of its codes are inside K. A native
+// int8 row is any multiple of 4 bytes, so a 32-wide slab can end inside a row's last block or past it; two word loads never
+// read past the row.
+inline uint2 w8Block(device const uint* W, uint off, uint kk, uint K, bool ok) {
+    if (!ok || kk >= K) return uint2(0u);
+    return uint2(W[off/4u], kk + 8u <= K ? W[off/4u + 1u] : 0u);
+}
+
 template <bool W8>
 kernel void gemm_swiglu(device const half* A[[buffer(0)]], device const uint* W[[buffer(1)]],
     device const half* WS[[buffer(2)]], device half* C[[buffer(3)]],
@@ -198,7 +207,7 @@ kernel void gemm_swiglu(device const half* A[[buffer(0)]], device const uint* W[
             const float sc = wok ? reinterpret_cast<device const float*>(WS)[ncol] : 0.0f;
             for (ushort w = 0; w < 2; w++) {
                 const ushort kb = kh*2 + w;
-                const uint2 wd = wok ? *reinterpret_cast<device const uint2*>(W + (ncol*K + k0 + kb*8u)/4u) : uint2(0u);
+                const uint2 wd = w8Block(W, ncol*K + k0 + kb*8u, k0 + kb*8u, K, wok);
                 const char4 c0 = as_type<char4>(wd.x), c1 = as_type<char4>(wd.y);
                 threadgroup half* p = sa + (fb*4 + kb)*72 + nl;
                 for (ushort kl = 0; kl < 8; kl++) {
@@ -214,9 +223,10 @@ kernel void gemm_swiglu(device const half* A[[buffer(0)]], device const uint* W[
         for (ushort j = 0; j < 2; j++) {
             const ushort kb = kh2*2 + j;
             threadgroup half4* d4 = (threadgroup half4*)(sb + (tb*4 + kb)*64 + rl*8);
-            if (aok) {
-                device const half4* s4 = (device const half4*)(A + mrow*K + k0 + kb*8u);
-                d4[0] = s4[0]; d4[1] = s4[1];
+            const uint kk = k0 + kb*8u;
+            if (aok && (!W8 || kk < K)) {
+                device const half4* s4 = (device const half4*)(A + mrow*K + kk);
+                d4[0] = s4[0]; d4[1] = (!W8 || kk + 8u <= K) ? s4[1] : half4(0.0h);
             } else {
                 d4[0] = half4(0.0h); d4[1] = half4(0.0h);
             }
@@ -308,7 +318,7 @@ kernel void gemm_w4f16_tile(device const half* A[[buffer(0)]], device const uint
             float sc = wok ? reinterpret_cast<device const float*>(WS)[ncol] : 0.0f;
             for (ushort w = 0; w < WPT; w++) {
                 const ushort kb = kq*WPT + w;
-                const uint2 wd = wok ? *reinterpret_cast<device const uint2*>(W + (ncol*K + k0 + kb*8u)/4u) : uint2(0u);
+                const uint2 wd = w8Block(W, ncol*K + k0 + kb*8u, k0 + kb*8u, K, wok);
                 const char4 c0 = as_type<char4>(wd.x), c1 = as_type<char4>(wd.y);
                 threadgroup half* p = sa + (fb*4 + kb)*72 + nl;
                 for (ushort kl = 0; kl < 8; kl++) {
@@ -340,9 +350,10 @@ kernel void gemm_w4f16_tile(device const half* A[[buffer(0)]], device const uint
         for (ushort j = 0; j < BPT && (TM >= 32 || tr < TM); j++) {
             const ushort kb = kq2*BPT + j;
             threadgroup half4* d4 = (threadgroup half4*)(sb + (tb*4 + kb)*64 + rl*8);
-            if (aok) {
-                device const half4* s4 = (device const half4*)(A + mrow*K + k0 + kb*8u);
-                d4[0] = s4[0]; d4[1] = s4[1];
+            const uint kk = k0 + kb*8u;
+            if (aok && (!W8 || kk < K)) {
+                device const half4* s4 = (device const half4*)(A + mrow*K + kk);
+                d4[0] = s4[0]; d4[1] = (!W8 || kk + 8u <= K) ? s4[1] : half4(0.0h);
             } else {
                 d4[0] = half4(0.0h); d4[1] = half4(0.0h);
             }
