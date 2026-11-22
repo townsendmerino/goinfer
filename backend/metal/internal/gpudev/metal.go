@@ -169,7 +169,8 @@ func (d *Device) allocID(alloc func() objc.ID) objc.ID {
 	return id
 }
 
-// NewLeaser, when set, gives every device CreateSystemDefaultDevice creates its leaser: the backend sets it at init.
+// NewLeaser is the constructor of the leaser every device CreateSystemDefaultDevice creates gets, when set; the backend sets
+// it at init.
 var NewLeaser func() Leaser
 
 // UnlinedLine is the plan line an allocation through an unlined constructor (MustBuf, NewBufferLen, NewBufferLenOf, …) leases on:
@@ -177,8 +178,8 @@ var NewLeaser func() Leaser
 // package may set it to its test line for its own buffers.
 var UnlinedLine string
 
-// ReleasedForTest, when set, is called by ReleaseObjects after everything the device tracked is released, so a test can read the
-// leaser's account then (I1, I2). A test seam, nil in production.
+// ReleasedForTest is called by ReleaseObjects, when set, after everything the device tracked is released, so a test can read
+// the leaser's account then. A test seam, nil in production.
 var ReleasedForTest func(*Device)
 
 // Leaser is the attached leaser, or nil.

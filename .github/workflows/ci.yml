@@ -1432,6 +1432,15 @@ jobs:
         if: ${{ !cancelled() }}
         run: go vet -tags goinfer_testhooks ./backend/metal/...
 
+      # The tagged device-test files and the metal packages, which the Linux staticcheck steps never analyse. Metal is
+      # cgo-free, so this runs on the runner's own darwin/arm64.
+      - uses: ./.github/actions/staticcheck
+        with:
+          version: "2026.2.1" # v0.8.1, built against golang.org/x/tools v0.51.0 (Go 1.27.2: see the action)
+      - name: staticcheck -tags goinfer_testhooks (metal module)
+        if: ${{ !cancelled() }}
+        run: staticcheck -tags goinfer_testhooks ./backend/metal/...
+
       # DEVICE TESTS CANNOT RUN HERE. The macos-latest runner's paravirtual Metal/objc layer
       # SIGSEGVs inside purego's objc_msgSend the moment a test touches the device (measured: a
       # near-null crash in objc.ID.Send), and that abort takes the whole test binary down — so we

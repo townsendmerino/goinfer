@@ -58,9 +58,8 @@ var (
 	ResidencySetsSupported    = gpu.ResidencySetsSupported
 )
 
-// Thin re-wraps of aikit gpu's generic NewBufferOf[T]. Go has no generic methods, so it is a free function taking the
-// device first; these keep this package's many call sites at their original shape. History:
-// docs/code-notes/metal.md#NewBufferFloats.
+// NewBufferFloatsOn wraps aikit gpu's generic NewBufferOf[T] as a free function taking the device first, since Go has no
+// generic methods. See docs/code-notes/metal.md#NewBufferFloats.
 func NewBufferFloatsOn(line string, d *Device, data []float32) Buffer {
 	return gpu.NewBufferOfOn(d, line, data)
 }

@@ -25,7 +25,7 @@ type TraceEvent struct {
 	Bufs     []Buffer
 }
 
-// TraceForTest, when set, sees every event of every encoder, in issue order, from the goroutine that issued it. Nil in
+// TraceForTest sees, when set, every event of every encoder, in issue order, from the goroutine that issued it. Nil in
 // production, where each site costs one nil check; the bindings are copied only inside it, so the variadic slices of the
 // Dispatch calls do not escape.
 var TraceForTest func(TraceEvent)
