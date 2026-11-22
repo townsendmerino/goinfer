@@ -31,28 +31,7 @@ type programFixture struct {
 // directory that does not load is reported, not hidden.
 func programFixtures(t *testing.T) []programFixture {
 	t.Helper()
-	var dirs []string
-	for _, root := range []string{"../testdata", "testdata"} {
-		ents, err := os.ReadDir(root)
-		if err != nil {
-			continue
-		}
-		for _, e := range ents {
-			if !strings.Contains(e.Name(), "tiny") {
-				continue
-			}
-			d := filepath.Join(root, e.Name())
-			if !e.IsDir() {
-				if strings.HasSuffix(e.Name(), ".gguf") {
-					dirs = append(dirs, d) // a tiny GGUF fixture (gpt-oss's is one)
-				}
-				continue
-			}
-			if _, err := os.Stat(filepath.Join(d, "config.json")); err == nil {
-				dirs = append(dirs, d)
-			}
-		}
-	}
+	dirs := programFixtureDirs([]string{"../testdata", "testdata"})
 	// GPT-2 (gitignored, so absent on CI) is the only fixture with learned positions and non-zero biases: the tiny fixtures'
 	// biases are all zero, as HF initialises them.
 	if _, err := os.Stat("../testdata/gpt2/config.json"); err == nil {
@@ -80,6 +59,37 @@ func programFixtures(t *testing.T) []programFixture {
 	}
 	return out
 }
+
+// programFixtureDirs lists the tiny fixtures under roots: a directory with a config.json, or a .gguf file, whose name is a tiny
+// fixture's (isTinyFixtureName).
+func programFixtureDirs(roots []string) []string {
+	var dirs []string
+	for _, root := range roots {
+		ents, err := os.ReadDir(root)
+		if err != nil {
+			continue
+		}
+		for _, e := range ents {
+			if !isTinyFixtureName(e.Name()) {
+				continue
+			}
+			d := filepath.Join(root, e.Name())
+			if !e.IsDir() {
+				if strings.HasSuffix(e.Name(), ".gguf") {
+					dirs = append(dirs, d) // a tiny GGUF fixture (gpt-oss's is one)
+				}
+				continue
+			}
+			if _, err := os.Stat(filepath.Join(d, "config.json")); err == nil {
+				dirs = append(dirs, d)
+			}
+		}
+	}
+	return dirs
+}
+
+// isTinyFixtureName reports whether a testdata entry's name marks a tiny fixture.
+func isTinyFixtureName(name string) bool { return strings.Contains(name, "tiny") }
 
 func firstLine(s string) string {
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
