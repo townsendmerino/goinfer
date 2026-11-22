@@ -863,33 +863,37 @@ func TestSwitchGuard_namesALeak(t *testing.T) {
 // _test.go file in this directory assigns is in testSwitches, so a new switch cannot be left out of the guard.
 func TestSwitchGuard_coversEveryAssignedSwitch(t *testing.T) {
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, ".", nil, 0)
+	names, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
 	}
+	files := map[string]*ast.File{} // every .go file, whatever its build tags
+	for _, fn := range names {
+		if files[fn], err = parser.ParseFile(fset, fn, nil, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
 	scalar := map[string]bool{"bool": true, "int": true, "int64": true, "float32": true, "string": true}
 	vars := map[string]bool{}
-	for _, p := range pkgs {
-		for fn, f := range p.Files {
-			if strings.HasSuffix(fn, "_test.go") {
+	for fn, f := range files {
+		if strings.HasSuffix(fn, "_test.go") {
+			continue
+		}
+		for _, d := range f.Decls {
+			g, ok := d.(*ast.GenDecl)
+			if !ok || g.Tok != token.VAR {
 				continue
 			}
-			for _, d := range f.Decls {
-				g, ok := d.(*ast.GenDecl)
-				if !ok || g.Tok != token.VAR {
-					continue
-				}
-				for _, sp := range g.Specs {
-					vs := sp.(*ast.ValueSpec)
-					for i, n := range vs.Names {
-						if id, ok := vs.Type.(*ast.Ident); ok && scalar[id.Name] {
+			for _, sp := range g.Specs {
+				vs := sp.(*ast.ValueSpec)
+				for i, n := range vs.Names {
+					if id, ok := vs.Type.(*ast.Ident); ok && scalar[id.Name] {
+						vars[n.Name] = true
+					} else if vs.Type == nil && i < len(vs.Values) {
+						if lit, ok := vs.Values[i].(*ast.BasicLit); ok && lit.Kind != token.IMAG {
 							vars[n.Name] = true
-						} else if vs.Type == nil && i < len(vs.Values) {
-							if lit, ok := vs.Values[i].(*ast.BasicLit); ok && lit.Kind != token.IMAG {
-								vars[n.Name] = true
-							} else if id, ok := vs.Values[i].(*ast.Ident); ok && (id.Name == "true" || id.Name == "false") {
-								vars[n.Name] = true
-							}
+						} else if id, ok := vs.Values[i].(*ast.Ident); ok && (id.Name == "true" || id.Name == "false") {
+							vars[n.Name] = true
 						}
 					}
 				}
@@ -901,22 +905,20 @@ func TestSwitchGuard_coversEveryAssignedSwitch(t *testing.T) {
 		listed[s.name] = true
 	}
 	var missing []string
-	for _, p := range pkgs {
-		for fn, f := range p.Files {
-			if !strings.HasSuffix(fn, "_test.go") {
-				continue
-			}
-			ast.Inspect(f, func(n ast.Node) bool {
-				if a, ok := n.(*ast.AssignStmt); ok {
-					for _, l := range a.Lhs {
-						if id, ok := l.(*ast.Ident); ok && vars[id.Name] && !listed[id.Name] && !slices.Contains(missing, id.Name) {
-							missing = append(missing, id.Name)
-						}
+	for fn, f := range files {
+		if !strings.HasSuffix(fn, "_test.go") {
+			continue
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			if a, ok := n.(*ast.AssignStmt); ok {
+				for _, l := range a.Lhs {
+					if id, ok := l.(*ast.Ident); ok && vars[id.Name] && !listed[id.Name] && !slices.Contains(missing, id.Name) {
+						missing = append(missing, id.Name)
 					}
 				}
-				return true
-			})
-		}
+			}
+			return true
+		})
 	}
 	slices.Sort(missing)
 	if len(missing) > 0 {

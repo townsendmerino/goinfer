@@ -25,11 +25,15 @@ const (
 // cgo marks a target whose dependencies only type-check with cgo (gpu/: the WebGPU binding). cgo cannot cross-compile
 // from the Mac, so off Linux that target runs for the host's platform instead, and its cell says so;
 // TestCgoTargets_noPlatformFiles keeps that equivalent by holding those modules free of OS- and arch-specific files.
+//
+// platform, when set ("darwin/arm64"), is the cgo-free platform CI analyses the target on instead of ciEnv's; it
+// cross-analyses from any host.
 type target struct {
 	name      string
 	args      []string
 	workspace []string
 	cgo       bool
+	platform  string
 }
 
 var targets = []target{
@@ -37,6 +41,7 @@ var targets = []target{
 	{name: "gpu", args: []string{"-tags", "gpu goinfer_testhooks", "./backend/webgpu/..."}, workspace: []string{"backend/webgpu", "demo/agent"}, cgo: true},
 	{name: "demo/agent", args: []string{"./demo/agent/..."}, workspace: []string{"backend/webgpu", "demo/agent"}},
 	{name: "cuda", args: []string{"-tags", "cuda goinfer_testhooks", "./backend/cuda/..."}, workspace: []string{"backend/cuda"}},
+	{name: "metal", args: []string{"-tags", "goinfer_testhooks", "./backend/metal/..."}, workspace: []string{"backend/webgpu", "backend/metal"}, platform: "darwin/arm64"},
 }
 
 // ciEnv is the platform CI's staticcheck jobs run on (ubuntu-24.04).
@@ -44,6 +49,9 @@ var ciEnv = []string{"GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=0"}
 
 // platformEnv returns the environment t runs under on a host of hostOS/hostArch, and the GOOS it analyses.
 func platformEnv(t target, hostOS, hostArch string) ([]string, string) {
+	if goos, goarch, ok := strings.Cut(t.platform, "/"); ok {
+		return []string{"GOOS=" + goos, "GOARCH=" + goarch, "CGO_ENABLED=0"}, goos
+	}
 	if !t.cgo {
 		return ciEnv, "linux"
 	}
@@ -202,7 +210,7 @@ func checks(root, bin string, only map[string]bool) []cell {
 		}
 		env, goos := platformEnv(t, runtime.GOOS, runtime.GOARCH)
 		can := canaryFor(plat{env, goos}, t.cgo)
-		if goos != "linux" {
+		if goos != "linux" && t.platform == "" {
 			c.fields = append(c.fields, "goos="+goos+" (cgo cannot cross-compile; CI runs linux)")
 		}
 		switch {
@@ -243,10 +251,11 @@ type ciStep struct {
 }
 
 // parseCISteps reads ci.yml's staticcheck steps in order: a command on a `run:` line, a `- run:` list item, or a line of a
-// `run: |` block. A job header resets the workspace.
+// `run: |` block. A job header resets the workspace; `go work init` sets it and `go work use` adds to it.
 func parseCISteps(yml string) []ciStep {
 	jobRe := regexp.MustCompile(`^  [A-Za-z0-9_-]+:\s*$`)
 	initRe := regexp.MustCompile(`^\s*(?:-\s+)?(?:run:\s*)?go work init (.+)$`)
+	useRe := regexp.MustCompile(`^\s*(?:-\s+)?(?:run:\s*)?go work use (.+)$`)
 	runRe := regexp.MustCompile(`^\s*(?:-\s+)?(?:run:\s*)?staticcheck (.+)$`)
 	var steps []ciStep
 	var ws []string
@@ -260,6 +269,11 @@ func parseCISteps(yml string) []ciStep {
 				if f != "." {
 					ws = append(ws, strings.TrimPrefix(f, "./"))
 				}
+			}
+		}
+		if m := useRe.FindStringSubmatch(line); m != nil {
+			for _, f := range strings.Fields(m[1]) {
+				ws = append(ws, strings.TrimPrefix(f, "./"))
 			}
 		}
 		if m := runRe.FindStringSubmatch(line); m != nil {

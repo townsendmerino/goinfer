@@ -1,9 +1,8 @@
 package kernels
 
-// Gemma-4 enable_moe_block (26B-A4B) MSL kernels: the parallel dense||MoE FFN the generic moe.go path (Mixtral/Qwen/GLM shape)
-// cannot express. They live in their own const, concatenated after moeKernels, so moe.go's audited kernels are not touched (as
-// CUDA's separate router_f32.cu keeps moe.ptx unchanged). Each primitive was verified in isolation against a CPU oracle before
-// the composition was wired (gemma4_moekernels_test.go).
+// Gemma4MoeKernels is the MSL source of Gemma-4's enable_moe_block (26B-A4B): the parallel dense||MoE FFN the generic moe.go
+// path (Mixtral/Qwen/GLM shape) cannot express. It is its own const, concatenated after moeKernels, so moe.go's kernels stay
+// untouched. gemma4_moekernels_test.go checks each primitive against a CPU oracle.
 const Gemma4MoeKernels = `
 // gemv_f32_f32: pure-f32 GEMV — f32 weight [N,K] × f32 activation [K] → out[N], one simdgroup (32
 // lanes) per output row. This is the Gemma-4 MoE ROUTER projection, and it quantizes NOTHING on
