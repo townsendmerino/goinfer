@@ -1460,9 +1460,21 @@ func buildCells(qc *quickConfig, g *quickGraph, s *quickSelection, count1, heavy
 		}
 		restMem := false
 		if len(loaders) > 0 && len(r.tests)-len(split)-len(loaders) >= minSplitRest {
-			cells = append(cells, &quickCell{Name: shortPkg(qc, r.Pkg) + " [checkpoint]", Root: r, Run: anchored(loaders),
-				Count1: force, Tier: tier, Why: why, Mem: true, NotRun: notRun, Checkpoint: true})
-			skips = append(skips, anchored(loaders))
+			shared := loaders[:0:0]
+			for _, l := range loaders {
+				if !slicesContains(r.Mod.CheckpointAlone, l) {
+					shared = append(shared, l)
+					continue
+				}
+				cells = append(cells, &quickCell{Name: shortPkg(qc, r.Pkg) + " [checkpoint " + l + "]", Root: r, Run: anchored([]string{l}),
+					Count1: force, Tier: tier, Why: why, Mem: true, NotRun: notRun, Checkpoint: true})
+				skips = append(skips, anchored([]string{l}))
+			}
+			if len(shared) > 0 {
+				cells = append(cells, &quickCell{Name: shortPkg(qc, r.Pkg) + " [checkpoint]", Root: r, Run: anchored(shared),
+					Count1: force, Tier: tier, Why: why, Mem: true, NotRun: notRun, Checkpoint: true})
+				skips = append(skips, anchored(shared))
+			}
 		} else {
 			restMem = len(loaders) > 0
 		}
