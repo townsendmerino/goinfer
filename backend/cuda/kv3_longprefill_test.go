@@ -4,6 +4,8 @@ package cuda
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -646,13 +648,13 @@ func kv10KL(p, q []float32) float64 {
 	return kl
 }
 
-// kv10Text is this repository's source and docs as tokens of the checkpoint's tokenizer, at least n of them (real text, never cycled).
-func kv10Text(t *testing.T, ckpt string, n int) []int {
+// kv10TextSHA256 is the SHA-256 of KV10's prompt text: the text kv10Text built from the tree at 157e2ca29, the registration's first
+// reading (docs/measurements/kv10-2026-11/README.md, "The frozen text"; freeze_text.py there rebuilds it from git).
+const kv10TextSHA256 = "1cd7d3327d3488527f5c77789af8c4eacdf0d82ef9aa34fbc3939e1b3ec7ed0d"
+
+// kv10TextBytes is KV10's prompt text.
+func kv10TextBytes(t *testing.T) string {
 	t.Helper()
-	tk, err := modelload.Tokenizer(ckpt)
-	if err != nil {
-		t.Fatalf("tokenizer: %v", err)
-	}
 	var files []string
 	for _, g := range []string{"../../decoder/*.go", "../../docs/*.md", "../../backend/cuda/*.go"} {
 		m, _ := filepath.Glob(g)
@@ -673,12 +675,30 @@ func kv10Text(t *testing.T, ckpt string, n int) []int {
 			break
 		}
 	}
-	ids, err := tk.Encode(sb.String(), false)
+	return sb.String()
+}
+
+// TestKV10_textIsFrozen holds KV10's prompt text to the bytes its hash names, so the harness's verdict moves only with code. No device.
+func TestKV10_textIsFrozen(t *testing.T) {
+	sum := sha256.Sum256([]byte(kv10TextBytes(t)))
+	if got := hex.EncodeToString(sum[:]); got != kv10TextSHA256 {
+		t.Fatalf("KV10's prompt text has sha256 %s, want %s: the text moved", got, kv10TextSHA256)
+	}
+}
+
+// kv10Text is KV10's prompt text as tokens of the checkpoint's tokenizer, at least n of them (real text, never cycled).
+func kv10Text(t *testing.T, ckpt string, n int) []int {
+	t.Helper()
+	tk, err := modelload.Tokenizer(ckpt)
+	if err != nil {
+		t.Fatalf("tokenizer: %v", err)
+	}
+	ids, err := tk.Encode(kv10TextBytes(t), false)
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
 	if len(ids) < n {
-		t.Fatalf("VOID: the repository's text is %d tokens, the deepest cell needs %d", len(ids), n)
+		t.Fatalf("VOID: KV10's prompt text is %d tokens, the deepest cell needs %d", len(ids), n)
 	}
 	return ids[:n]
 }
