@@ -779,23 +779,31 @@ type kv10DepthReport struct {
 
 // kv10Depth judges one depth (kv10Judge, against judgeControl) and builds its report, which prints control.
 func kv10Depth(depth int, ckpt string, minCos float64, agree, agreeM, rows, rowsM int, kl, judgeControl, control float64, bad bool, secs float64) kv10DepthReport {
-	verdict, failure, _ := kv10Judge(minCos, agreeM, rowsM, kl, judgeControl, bad)
+	verdict, failure, bad := kv10Judge(minCos, agreeM, rowsM, kl, judgeControl, bad)
 	r := kv10DepthReport{failure: failure}
 	r.line = fmt.Sprintf("GATE_READING KV10 depth %d: min cosine %.6f, argmax agrees on %d of %d rows (%d of %d with a margin of 0.5+), mean KL %.3e nats (control %.3e), NaN/Inf %v: %s; %.0f s",
 		depth, minCos, agree, rows, agreeM, rowsM, kl, control, bad, verdict, secs)
-	if n := kv10Drift(depth, ckpt, minCos, kl); n != "" {
+	if n := kv10Drift(depth, ckpt, minCos, kl); n != "" && !bad { // a NaN or Inf is a failure, not a drift
 		r.notice = "GATE_NOTICE " + n
 	}
-	r.json, r.jsonErr = json.Marshal(map[string]any{"depth": depth, "min_cos": minCos, "agree": agree, "rows": rows, "agree_margin": agreeM, "rows_margin": rowsM, "mean_kl": kl,
-		"control_kl": control, "nan_inf": bad, "verdict": verdict, "seconds": secs, "ckpt": ckpt})
+	r.json, r.jsonErr = json.Marshal(map[string]any{"depth": depth, "min_cos": kv10JSONFloat(minCos), "agree": agree, "rows": rows, "agree_margin": agreeM,
+		"rows_margin": rowsM, "mean_kl": kv10JSONFloat(kl), "control_kl": kv10JSONFloat(control), "nan_inf": bad, "verdict": verdict, "seconds": secs, "ckpt": ckpt})
 	return r
+}
+
+// kv10JSONFloat is x for a JSONL record: the number when finite, else "NaN", "+Inf" or "-Inf", which encoding/json cannot write as
+// numbers.
+func kv10JSONFloat(x float64) any {
+	if math.IsNaN(x) || math.IsInf(x, 0) {
+		return fmt.Sprint(x)
+	}
+	return x
 }
 
 // kv10Judge labels one depth's reading by the registered bands (README.md, KV10-b: HOLDS, DEGRADES, FAILS) and says why the test
 // fails, or "" when it does not. The bands label a logged reading (Francis, 2026-11-22, option b): only a NaN or Inf fails, as a
-// correctness defect rather than a fidelity reading.
+// correctness defect rather than a fidelity reading. effBad is bad widened by a NaN or Inf cosine or KL, which the report prints.
 func kv10Judge(minCos float64, agreeM, rowsM int, kl, control float64, bad bool) (verdict, failure string, effBad bool) {
-	asked := bad
 	bad = bad || math.IsNaN(minCos) || math.IsInf(minCos, 0) || math.IsNaN(kl) || math.IsInf(kl, 0)
 	verdict = "HOLDS"
 	switch {
@@ -805,9 +813,9 @@ func kv10Judge(minCos float64, agreeM, rowsM int, kl, control float64, bad bool)
 		verdict = "DEGRADES"
 	}
 	if bad {
-		return verdict, fmt.Sprintf("a NaN or Inf in the logits or the metric (min cosine %v, mean KL %v)", minCos, kl), asked
+		return verdict, fmt.Sprintf("a NaN or Inf in the logits or the metric (min cosine %v, mean KL %v)", minCos, kl), true
 	}
-	return verdict, "", asked
+	return verdict, "", false
 }
 
 // kv10Recorded is the reading on the frozen text by depth, as printed: the 3,900 and 65,536 cells read at 3145faeea, equal to the
