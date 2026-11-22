@@ -1,0 +1,70 @@
+{
+  "schema": 1,
+  "release": "v0.25.0",
+  "accepted": [
+    {
+      "record": "cuda-20261121T222959Z-36dbfbaf.json",
+      "item": "heavy tier: TestKV10_longContextFidelity/depth65536 (its input text is built from the repo's own files; the 36dbfbaf1 binary passes on e0d661712's text, fails on 36dbfbaf1's)",
+      "class": "test-bug",
+      "evidence": "docs/measurements/release-v0.25.0/kv10-text/run.log",
+      "accepted_by": "Francis",
+      "accepted_on": "2026-11-21"
+    },
+    {
+      "record": "parity-20261122T031540Z-36dbfbaf.json",
+      "item": "cell ./decoder/ ./tokenizer/: 3h timeout with TestProgram_L_everyParameterIsLive in flight (0 failed, 0 did not run); the test re-run by name passes in 22m",
+      "class": "gate-definition",
+      "evidence": "docs/measurements/release-v0.25.0/parity-rerun-program-l-36dbfbaf.log",
+      "accepted_by": "Francis",
+      "accepted_on": "2026-11-22"
+    },
+    {
+      "record": "darwin-arm64-20261122T055546Z-36dbfbaf.json",
+      "item": "cell decoder [checkpoint]: 45m budget (0 failed); alone at 120m: 379 pass, 0 fail in 22m",
+      "class": "gate-definition",
+      "evidence": "docs/measurements/release-v0.25.0/quick-full-darwin/cells-120m.log",
+      "accepted_by": "Francis",
+      "accepted_on": "2026-11-22"
+    },
+    {
+      "record": "darwin-arm64-20261122T055546Z-36dbfbaf.json",
+      "item": "backend/webgpu: TestOtherGPUWindow_seesAnotherProcess (child's GPU share 0.04-0.05 under the 0.05 floor; fails the same at v0.24.1 on this Mac since macOS 26.7.3)",
+      "class": "environment",
+      "evidence": "docs/measurements/release-v0.25.0/quick-full-darwin/othergpu-ab.log",
+      "accepted_by": "Francis",
+      "accepted_on": "2026-11-22"
+    },
+    {
+      "record": "darwin-arm64-20261122T055546Z-36dbfbaf.json",
+      "item": "lint: staticcheck backend/metal -tags goinfer_testhooks (ST1020/ST1022 x5, SA1019 go/parser.ParseDir in a test; lint only, CI's staticcheck does not cover this target)",
+      "class": "gate-definition",
+      "evidence": "docs/measurements/release-v0.25.0/quick-full-darwin/lint-staticcheck-metal.log",
+      "accepted_by": "Francis",
+      "accepted_on": "2026-11-21"
+    },
+    {
+      "record": "linux-amd64-20261122T072005Z-36dbfbaf.json",
+      "item": "cell decoder: 45m budget (0 failed); alone at 120m: 1009 pass, 0 fail in 80m",
+      "class": "gate-definition",
+      "evidence": "docs/measurements/release-v0.25.0/quick-full-linux/decoder-120m.log",
+      "accepted_by": "Francis",
+      "accepted_on": "2026-11-22"
+    },
+    {
+      "record": "linux-amd64-20261122T072005Z-36dbfbaf.json",
+      "item": "cell decoder [checkpoint]: 45m budget (0 failed); alone at 120m: 457 pass, 0 fail in 61m",
+      "class": "gate-definition",
+      "evidence": "docs/measurements/release-v0.25.0/quick-full-linux/cells-120m.log",
+      "accepted_by": "Francis",
+      "accepted_on": "2026-11-22"
+    },
+    {
+      "record": "linux-amd64-20261122T072005Z-36dbfbaf.json",
+      "item": "lint: staticcheck backend/metal -tags goinfer_testhooks (ST1020/ST1022 x5, SA1019 go/parser.ParseDir in a test; lint only, CI's staticcheck does not cover this target)",
+      "class": "gate-definition",
+      "evidence": "docs/measurements/release-v0.25.0/quick-full-linux/lint-staticcheck-metal.log",
+      "accepted_by": "Francis",
+      "accepted_on": "2026-11-21"
+    }
+  ]
+}

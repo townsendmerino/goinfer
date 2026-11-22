@@ -1,0 +1,116 @@
+panic: test timed out after 3h0m0s
+	running tests:
+		TestProgram_L_everyParameterIsLive (36m27s)
+
+goroutine 38922143 [running]:
+testing.(*M).startAlarm.func1()
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.linux-amd64/src/testing/testing.go:2961 +0x34a
+created by time.goFunc
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.linux-amd64/src/time/sleep.go:182 +0x2d
+
+goroutine 1 [chan receive, 35 minutes]:
+testing.tRunner.func1()
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.linux-amd64/src/testing/testing.go:2144 +0x425
+testing.tRunner(0x3813eca96908, 0x3813ecb35b88)
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.linux-amd64/src/testing/testing.go:2201 +0x123
+testing.runTests({0xe9aeb1, 0x21}, {0xead54d, 0x29}, 0x3813eca64180, {0x1d7f690, 0x53b, 0x53b}, {0xc2b8af539306adce, 0x9d29239e6f5, ...})
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.linux-amd64/src/testing/testing.go:2742 +0x510
+testing.(*M).Run(0x3813ecb520a0)
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.linux-amd64/src/testing/testing.go:2602 +0x6af
+github.com/townsendmerino/goinfer/decoder.TestMain(0x3813ecb520a0)
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/suite_main_test.go:17 +0x36
+main.main()
+	_testmain.go:2820 +0xa5
+
+goroutine 21 [wait for GC cycle]:
+runtime.GC()
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.linux-amd64/src/runtime/mgc.go:558 +0x45
+runtime/debug.freeOSMemory()
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.linux-amd64/src/runtime/mheap.go:1805 +0x13
+runtime/debug.FreeOSMemory(...)
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.linux-amd64/src/runtime/debug/garbage.go:102
+github.com/townsendmerino/goinfer/decoder.startMemReclaimer.func2()
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/suite_main_test.go:70 +0x6c
+created by github.com/townsendmerino/goinfer/decoder.startMemReclaimer in goroutine 1
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/suite_main_test.go:62 +0x9f
+
+goroutine 37219 [chan receive, 36 minutes]:
+github.com/townsendmerino/goinfer/decoder.newAttnWorkerPool.func1()
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/forwardn.go:207 +0xa5
+created by github.com/townsendmerino/goinfer/decoder.newAttnWorkerPool in goroutine 37213
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/forwardn.go:206 +0x7a
+
+goroutine 37214 [chan receive, 36 minutes]:
+github.com/townsendmerino/goinfer/decoder.newAttnWorkerPool.func1()
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/forwardn.go:207 +0xa5
+created by github.com/townsendmerino/goinfer/decoder.newAttnWorkerPool in goroutine 37213
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/forwardn.go:206 +0x7a
+
+goroutine 37217 [chan receive, 36 minutes]:
+github.com/townsendmerino/goinfer/decoder.newAttnWorkerPool.func1()
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/forwardn.go:207 +0xa5
+created by github.com/townsendmerino/goinfer/decoder.newAttnWorkerPool in goroutine 37213
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/forwardn.go:206 +0x7a
+
+goroutine 29613721 [runnable]:
+github.com/townsendmerino/aikit/linalg.dot8ColsInto(0x3813ed3d7800?, 0x381635307800?, 0x381635309800?, 0x38163530b800?, 0x38163530d800?, 0x38163530f800?, 0x381635311800?, 0x381635313800?, 0x381635315800?, 0x80, ...)
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/dot8cols_amd64.go:25 +0xc8
+github.com/townsendmerino/aikit/linalg.accumRowRange({0x3813ed3d6000, 0x800, 0x192734b8bcb8?}, {0x381634f76000, 0xb00000, 0x28?}, {0x3814140ae000, 0x1600, 0x0?}, 0x0, ...)
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/matmul_blocked.go:165 +0x2c5
+github.com/townsendmerino/aikit/linalg.blockedFill({0x3813ed3d6000, 0x800, 0x800}, {0x381634f76000, 0xb00000, 0xb00000}, {0x3814140ae000, 0x1600, 0x1600}, 0x1, ...)
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/matmul_blocked.go:144 +0x2fe
+github.com/townsendmerino/aikit/linalg.MatmulBT.func1(0x68?, 0x3813ed157e70?)
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/linalg.go:151 +0xaa
+github.com/townsendmerino/aikit/linalg.parallelCols(0xe72f0d?, 0x8?, 0x3fedd2c2fa387587?)
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/linalg.go:211 +0x27
+github.com/townsendmerino/aikit/linalg.MatmulBT({0x3813ed3d6000, 0x800, 0x800}, {0x381634f76000, 0xb00000, 0xb00000}, {0x3814140ae000, 0x1600, 0x1600}, 0x1, ...)
+	/home/francis/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/linalg.go:150 +0x198
+github.com/townsendmerino/goinfer/decoder.(*cpuBackend).MatmulBT(0x11?, {0x3813ed3d6000?, 0x381414092000?, 0x1100?}, {0x381634f76000?, 0x3813ed734500?, 0x40?}, {0x3814140ae000, 0x1600, 0x1600}, ...)
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/backend.go:248 +0x5d
+github.com/townsendmerino/goinfer/decoder.matmulWS({0x1d23ac8?, 0x1dad600}, 0x0, 0x38141ea97770, {0x3813ed3d6000, 0x800, 0x800}, {0x3814140ae000, 0x1600, 0x1600}, ...)
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/weightmat.go:984 +0x794
+github.com/townsendmerino/goinfer/decoder.matmul(...)
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/weightmat.go:893
+github.com/townsendmerino/goinfer/decoder.matmulInto(0x3813ed9fe000, {0x1d23ac8?, 0x1dad600}, 0x38141ea97770, {0x3813ed3d6000, 0x800, 0x800}, {0x3814140ae000, 0x1600, 0x1600}, ...)
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/weightmat.go:1047 +0x2a5
+github.com/townsendmerino/goinfer/decoder.matmulIntoPre(0x381414120970?, {0x1d23ac8?, 0x1dad600?}, 0x800?, 0x800?, {0x3813ed3d6000?, 0x0?, 0x1000000?}, {0x3814140ae000, 0x1600, ...}, ...)
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/weightmat.go:995 +0x12f
+github.com/townsendmerino/goinfer/decoder.gatedMLPAct({0x3813ed3d6000, 0x800, 0x800}, {0x3813ed3dc000, 0x800, 0x800}, 0x38141ea970f8, 0x1, {0x1d23ac8, 0x1dad600}, ...)
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/mlp.go:519 +0xb1d
+github.com/townsendmerino/goinfer/decoder.(*Model).ffnToken(0x800?, 0x3813ed4e2000?, {0x3813ed3d6000?, 0x800?, 0x0?}, {0x3813ed3dc000, 0x800, 0x800?}, 0x1?, 0x3813ee234908, ...)
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/program_cpu.go:463 +0x227
+github.com/townsendmerino/goinfer/decoder.(*Model).walkToken(0x3814141215a8, 0x3814533b67e0?, {0x3813ed2c8000, 0x800, 0x800}, 0x3814141214a8?, 0x38142c484008)
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/program_cpu.go:155 +0x2215
+github.com/townsendmerino/goinfer/decoder.(*Model).runLayersFromEmbedPLE(0x3814141215a8, {0x3813ed2c8000, 0x800, 0x800}, 0x73, 0x38142c484008)
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/model_forward.go:95 +0x116
+github.com/townsendmerino/goinfer/decoder.(*Model).runLayers(0x3814141215a8, 0x73, 0x38142c484008)
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/model_forward.go:69 +0x3ac
+github.com/townsendmerino/goinfer/decoder.(*Model).forward(0x3814141215a8, 0x18?, 0x38142c484008)
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/model_forward.go:168 +0x27
+github.com/townsendmerino/goinfer/decoder.runProgram(0x38143a340008, 0x3814328b6060?, {0x381422d4e000, 0x18, 0x1c5ce78?}, {0xe70a8c?, 0x3813ee2459e8?})
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/program_test.go:167 +0x32b
+github.com/townsendmerino/goinfer/decoder.TestProgram_L_everyParameterIsLive(0x3814216a4008)
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/program_test.go:348 +0x39f
+testing.tRunner(0x3814216a4008, 0x1d38110)
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.linux-amd64/src/testing/testing.go:2195 +0xea
+created by testing.(*T).Run in goroutine 1
+	/home/francis/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.4.linux-amd64/src/testing/testing.go:2260 +0x4d4
+
+goroutine 37216 [chan receive, 36 minutes]:
+github.com/townsendmerino/goinfer/decoder.newAttnWorkerPool.func1()
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/forwardn.go:207 +0xa5
+created by github.com/townsendmerino/goinfer/decoder.newAttnWorkerPool in goroutine 37213
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/forwardn.go:206 +0x7a
+
+goroutine 37218 [chan receive, 36 minutes]:
+github.com/townsendmerino/goinfer/decoder.newAttnWorkerPool.func1()
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/forwardn.go:207 +0xa5
+created by github.com/townsendmerino/goinfer/decoder.newAttnWorkerPool in goroutine 37213
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/forwardn.go:206 +0x7a
+
+goroutine 37215 [chan receive, 36 minutes]:
+github.com/townsendmerino/goinfer/decoder.newAttnWorkerPool.func1()
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/forwardn.go:207 +0xa5
+created by github.com/townsendmerino/goinfer/decoder.newAttnWorkerPool in goroutine 37213
+	/home/francis/goinfer-bench/relgate-parity/wt/decoder/forwardn.go:206 +0x7a
+FAIL	github.com/townsendmerino/goinfer/decoder	10800.395s

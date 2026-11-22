@@ -1,0 +1,51 @@
+{
+ "schema": 1,
+ "commit": "36dbfbaf149aabdff43dce5766b49a65183113a7",
+ "date": "2026-11-22T03:15:40Z",
+ "host": "Linux x86_64",
+ "verdict": "BLOCKERS",
+ "dirty": false,
+ "realckpt": true,
+ "required": 95,
+ "blockers": 1,
+ "gaps": 2,
+ "first_runs": 0,
+ "cells": [
+  {
+   "name": "./decoder/ ./tokenizer/",
+   "pass": 1335,
+   "skip": 72,
+   "fail": 1,
+   "rc": 1
+  },
+  {
+   "name": "realckpt real-model gates",
+   "pass": 48,
+   "skip": 10,
+   "fail": 0,
+   "rc": 0
+  }
+ ],
+ "paths": {
+  "backend/cuda": "a6663dfbe3dcb174adc852fe451e21756e37cdf5",
+  "backend/metal": "b71949d68778a09a5670d1b64d58e9e15f3c5774",
+  "backend/webgpu": "e68143402abf774ecdae827db3b71be6ef87cc31",
+  "decoder": "10426406ed20efa975a34e8e9a877353960aef4e",
+  "internal/runtime/hybridattn/deltanet.go": "b607857e02660416ae81e73149eadc38d68f0837",
+  "internal/runtime/program/methods.go": "016e38f5af6015dabc4f1e7c9093042d6c58a6b2",
+  "internal/runtime/program/program.go": "c7f6a794005eaafae84c2bc74dd40a69f345dcaa",
+  "internal/runtime/program/values.go": "1359e9bdc124b9cd129a83e47595ee867082c71a",
+  "scripts/pin_flint_tiny.py": "ea3d77e6966068ef3b84ce8c3872d869ca191f95",
+  "scripts/pin_glm_ocr_tiny.py": "fdfb15faabbdcfad0dbf757e98d38cf3a02f2f02",
+  "scripts/pin_internlm2_tiny.py": "8e8df2f5c167dab7fa1d0a4da3506f59c7f5dcf6",
+  "scripts/pin_laguna_tiny.py": "def2d4c43ce8f61a4960427f14d0b30a8b951c4d",
+  "scripts/pin_olmo_hybrid_real.py": "331b76185119f9538b314dcd43d6b015c388ada5",
+  "scripts/pin_olmo_hybrid_tiny.py": "c98ef68b1411e0102a6340901a8f227f1d582e19",
+  "scripts/pin_qwen3_5_forward.py": "07cbc0702ce24c4066a1f248ba9ca648727f42ff",
+  "scripts/pin_qwen3next_tiny.py": "e3f1ac0000bd7ccd66848e92a77b5e642767068c",
+  "scripts/pin_qwen3vlmoe_tiny.py": "11d01a2e724cd29c10c762382f87d5fc8327d0db",
+  "scripts/pin_slice_oracle.py": "7bfe74ee34184778bf7bc831bc073ed2ec702caa",
+  "scripts/pin_spark2_5_real.py": "8299c05d8d79aa83eb18a850b469bab6ed3e3c43",
+  "scripts/pin_spark2_5_tiny.py": "6bb4bd5de2642df0eb569f263aec35bc9e88da45"
+ }
+}

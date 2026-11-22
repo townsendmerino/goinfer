@@ -1,0 +1,10 @@
+== test_decoder_[checkpoint] start 2026-11-21 21:55:49
+rc=0 end 2026-11-21 22:17:39
+{'pass': 379, 'fail': 0, 'skip': 62} failed: []
+== webgpu one-test rerun: go test -json -count=1 -tags gpu,goinfer_testhooks -timeout 10m -short -run '^TestOtherGPUWindow_seesAnotherProcess$' github.com/townsendmerino/goinfer/backend/webgpu
+rc=1
+--- FAIL: TestOtherGPUWindow_seesAnotherProcess (7.66s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/backend/webgpu	8.287s
+FAIL
+ALL DONE 2026-11-21 22:17:48

@@ -1,0 +1,599 @@
+== asset preflight — 59 registered asset(s), models root /home/francis/models ==
+   predicate: testdata/assets.json (kind/members/min_bytes) — the SAME one the gates apply
+   GOINFER_PREQUANT_GGUF        resolved  /home/francis/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+   GOINFER_QWEN35_GGUF          resolved  /home/francis/models/qwen3.6-35b-a3b-Q8_0.gguf
+   GOINFER_QWEN35_GOLDEN        resolved  /home/francis/models/qwen35_real_golden
+   GOINFER_QWEN35_REAL          resolved  /home/francis/models/qwen3.6-35b-a3b
+   GOINFER_DEEPSEEK_V2LITE      resolved  /home/francis/models/deepseek-v2-lite
+   GOINFER_DEEPSEEK_MOONLIGHT   resolved  /home/francis/models/moonlight-16b
+   GOINFER_DEEPSEEK_GGUF        resolved  /home/francis/models/deepseek-v2-lite-gguf/DeepSeek-V2-Lite-Chat-Q4_K_M.gguf
+   GOINFER_PHI3_MINI            resolved  /home/francis/models/phi3-mini-4k
+   GOINFER_PHI3_GGUF            resolved  /home/francis/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf
+   GOINFER_LLAMA4_GGUF          resolved  /home/francis/models/llama4-scout-gguf/Llama-4-Scout-17B-16E-Instruct-Q2_K.gguf
+   GOINFER_GRANITE_HF           resolved  /home/francis/models/granite-hf
+   GOINFER_NEMOTRON_HF          NOT FOUND —
+                                            ^ /home/francis/models/nemotron-hf (does not exist)
+   GOINFER_NEMOTRON_GGUF        resolved  /home/francis/models/nemotron/nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.gguf
+   GOINFER_DFLASH_35B           resolved  /home/francis/models/qwen36-35b-dflash
+   GOINFER_DSPARK_F32           resolved  /home/francis/models/dspark-qwen3-4b-f32
+   GOINFER_QWEN3_4B             resolved  /home/francis/models/qwen3-4b
+   GOINFER_DFLASH_F32           resolved  /home/francis/models/qwen3-4b-dflash-f32
+   GOINFER_DFLASH_BF16          resolved  /home/francis/models/qwen3-4b-dflash
+   GOINFER_DFLASH_GPTOSS        resolved  /home/francis/models/gptoss-20b-dflash
+   GOINFER_DFLASH_GEMMA4        resolved  /home/francis/models/gemma4-26b-dflash
+   GOINFER_QWEN3NEXT_HF         NOT FOUND —
+                                            ^ /home/francis/models/qwen3next-80b-partial (does not exist)
+   GOINFER_QWEN3MOE_HF          resolved  /home/francis/models/qwen3moe-30b-a3b-bf16
+   GOINFER_QWEN2MOE_HF          resolved  /home/francis/models/qwen15-moe-a27b
+   GOINFER_NEMOTRON3NANO_HF     NOT FOUND —
+                                            ^ /home/francis/models/nemotron3nano-30b-bf16 (does not exist)
+   GOINFER_NEMOTRON35LIGHTNING_HF NOT FOUND —
+                                            ^ /home/francis/models/nemotron35lightning-30b-bf16 (does not exist)
+   GOINFER_NEMOTRON3NANO_GGUF   NOT FOUND —
+                                            ^ /home/francis/models/nemotron3nano-gguf/nvidia_Nemotron-3-Nano-30B-A3B-Q4_K_M.gguf (does not exist)
+   GOINFER_LAGUNA_XS2           resolved  /home/francis/models/laguna-xs2
+   GOINFER_LAGUNA_GGUF          resolved  /home/francis/models/laguna-xs21-gguf/Laguna-XS-2.1-Q4_K_M.gguf
+   GOINFER_LAGUNA_DFLASH        resolved  /home/francis/models/laguna-xs2-dflash
+   GOINFER_GPTOSS_ST            resolved  /home/francis/models/gpt-oss-20b-hf
+   GOINFER_GPTOSS_GGUF          resolved  /home/francis/models/gpt-oss-20b-MXFP4.gguf
+   GOINFER_QWEN38               resolved  /home/francis/models/qwen3.8-27b
+   GOINFER_W4A8_INT4            resolved  /home/francis/models/qwen15-w4a8-int4.giw
+   GOINFER_W4A8_INT8            resolved  /home/francis/models/qwen15-w4a8-int8.giw
+   GOINFER_QWEN38_GGUF          resolved  /home/francis/models/qwen38-gguf/Qwen3.8-27B-UD-Q4_K_M.gguf
+   GOINFER_QWEN3_FP8            resolved  /home/francis/models/qwen3-0.6b-fp8
+   GOINFER_QWEN3_BF16           resolved  /home/francis/models/qwen3-0.6b-bf16
+   GOINFER_COHERE_AYA           resolved  /home/francis/models/aya-expanse-8b
+   GOINFER_COHERE2_R7B          resolved  /home/francis/models/command-r7b
+   GOINFER_SMOLLM3_3B           resolved  /home/francis/models/smollm3-3b
+   GOINFER_SPARK25_1_7B         resolved  /home/francis/models/spark25-1.7b
+   GOINFER_LFM2_2_6B            resolved  /home/francis/models/lfm25-2.6b
+   GOINFER_MINISTRAL3_3B        resolved  /home/francis/models/ministral3-3b-bf16
+   GOINFER_GRANITE_DENSE_3B     resolved  /home/francis/models/granite-4.2-3b
+   GOINFER_OLMO3_7B             resolved  /home/francis/models/olmo3-7b-think
+   GOINFER_OLMO_HYBRID_7B       resolved  /home/francis/models/olmo-hybrid-7b
+   GOINFER_INTERNLM2_1_8B       resolved  /home/francis/models/internlm2-1_8b
+   GOINFER_QWEN25VL_3B          resolved  /home/francis/models/qwen25vl-3b-instruct
+   GOINFER_QWEN3VL_2B           resolved  /home/francis/models/qwen3-vl-2b-instruct
+   GOINFER_GRANITE_GGUF         resolved  /home/francis/models/granite/granite-4.0-h-tiny-Q8_0.gguf
+   GOINFER_GLM_GGUF             resolved  /home/francis/models/glm-air/GLM-4.5-Air-Q2_K.gguf
+   GOINFER_GLM_GIW              resolved  /home/francis/models/glm-air/GLM-4.5-Air-Q2_K.int4.giw
+   GOINFER_MELLUM_CKPT          resolved  /home/francis/models/mellum2-unq
+   GOINFER_QWEN35VL_08B         resolved  /home/francis/models/qwen3.5-0.8b
+   GOINFER_QWEN35VL_G2          resolved  /home/francis/models/qwen35vl_g2
+   GOINFER_QWEN35VL_9B          resolved  /home/francis/models/qwen3.5-9b
+   GOINFER_QWEN35VL_G2_9B       resolved  /home/francis/models/qwen35vl_g2_9b
+   GOINFER_GLM_OCR              resolved  /home/francis/models/glm-ocr
+   GOINFER_GLM_OCR_E2E          resolved  /home/francis/models/glm-ocr-e2e
+   ^^ 5 of 59 UNRESOLVED — the gates needing them will skip, and a skip is
+      reported as a blocker. Fix the path above rather than reading the blocker list as a
+      tree defect.
+   GOINFER_HEAVY_TESTS=1 set by this gate — the release sweep loads real checkpoints
+
+[1m== parity sweep provenance ==[0m
+  repo        36dbfbaf1
+  date (UTC)  2026-11-21T22:30:43Z
+  host        Linux x86_64
+  realckpt    true
+  timeout     180m
+  emit        false
+  COMPOSITION of the release gate — 57 gates over 57 family labels
+    quant :  f32=40  int4=1  int4/int8=11  int8int8=5
+    loader:  gguf=12  safetensors=45
+
+  CROSS-GATE quant coverage (release gate vs the freeze-exception goldens):
+    gate parity       : f32 int4 int8 int8int8
+    forward goldens   : f32 int4 int8 int8int8
+    -> the two gates span the same quantizations.
+
+  CROSS-GATE loader coverage:
+    gate parity       : gguf safetensors
+    forward goldens   : gguf safetensors
+    -> the two gates span the same loaders.
+   realckpt -run derived from the //go:build realckpt files: 48 gate-shaped test(s) scanned, 52 carried from the legacy pattern, 58 selected after the union with parityRealckptGates
+-- running ./decoder/ ./tokenizer/ ...
+   ... ./decoder/ ./tokenizer/: 1m0s elapsed, 229 tests finished, last: FuzzEncode | in flight: TestA3FastAttentionDivergence (51s)
+   ... ./decoder/ ./tokenizer/: 2m0s elapsed, 590 tests finished, last: TestCPUBatch_everyEligibleFixtureBitIdentical/llama3-tokenizer//kvf16 | in flight: TestCPUBatch_everyEligibleFixtureBitIdentical (28s)
+   ... ./decoder/ ./tokenizer/: 3m0s elapsed, 600 tests finished, last: TestCPUBatch_everyEligibleFixtureBitIdentical/llama3.2-1b/int8int8/kvi8 | in flight: TestCPUBatch_everyEligibleFixtureBitIdentical (1m28s)
+   ... ./decoder/ ./tokenizer/: 4m0s elapsed, 625 tests finished, last: TestCPUBatch_everyEligibleFixtureBitIdentical/qwen3-1.7b//kv | in flight: TestCPUBatch_everyEligibleFixtureBitIdentical (2m28s)
+   ... ./decoder/ ./tokenizer/: 5m0s elapsed, 650 tests finished, last: TestCPUBatch_everyEligibleFixtureBitIdentical/tinyllama-1.1b//kvf16 | in flight: TestCPUBatch_everyEligibleFixtureBitIdentical (3m28s)
+   ... ./decoder/ ./tokenizer/: 6m0s elapsed, 659 tests finished, last: TestCPUBatch_everyEligibleFixtureBitIdentical/tinyllama-awq/int8int8/kvf16 | in flight: TestCPUBatch_everyEligibleFixtureBitIdentical (4m28s)
+   ... ./decoder/ ./tokenizer/: 7m0s elapsed, 812 tests finished, last: TestPlan_metalAdmitsAQ4KLoadThroughItsSidecar | in flight: TestDecode_fusedScheduleCostsNothingPerToken (7s)
+   ... ./decoder/ ./tokenizer/: 8m0s elapsed, 851 tests finished, last: TestDSpark_referenceParity | in flight: TestDSpark_targetEndToEnd (2s)
+   ... ./decoder/ ./tokenizer/: 9m0s elapsed, 1082 tests finished, last: TestGemma3VL_imageParity | in flight: TestGemma4_12B_logitParity (18s)
+   ... ./decoder/ ./tokenizer/: 10m0s elapsed, 1421 tests finished, last: TestKV2FU1_ownRollbackScheduleIndependence/slots4/random_seed_14 | in flight: TestKSF2_scratchReuseAcrossSteps (12s)
+   ... ./decoder/ ./tokenizer/: 11m0s elapsed, 1522 tests finished, last: TestKVI8_truncateReappend | in flight: TestKSF2_scratchReuseAcrossSteps (1m12s)
+   ... ./decoder/ ./tokenizer/: 12m0s elapsed, 1621 tests finished, last: TestLoaderIdentity_ggufConfigPlant | in flight: TestKSF2_scratchReuseAcrossSteps (2m12s)
+   ... ./decoder/ ./tokenizer/: 13m0s elapsed, 1691 tests finished, last: TestMellum2_logitParity | in flight: TestKSF2_scratchReuseAcrossSteps (3m12s)
+   ... ./decoder/ ./tokenizer/: 14m0s elapsed, 1691 tests finished, last: TestMellum2_logitParity | in flight: TestKSF2_scratchReuseAcrossSteps (4m12s)
+   ... ./decoder/ ./tokenizer/: 15m0s elapsed, 1691 tests finished, last: TestMellum2_logitParity | in flight: TestKSF2_scratchReuseAcrossSteps (5m12s)
+   ... ./decoder/ ./tokenizer/: 16m0s elapsed, 1691 tests finished, last: TestMellum2_logitParity | in flight: TestKSF2_scratchReuseAcrossSteps (6m12s)
+   ... ./decoder/ ./tokenizer/: 17m0s elapsed, 1691 tests finished, last: TestMellum2_logitParity | in flight: TestKSF2_scratchReuseAcrossSteps (7m12s)
+   ... ./decoder/ ./tokenizer/: 18m0s elapsed, 1691 tests finished, last: TestMellum2_logitParity | in flight: TestKSF2_scratchReuseAcrossSteps (8m12s)
+   ... ./decoder/ ./tokenizer/: 19m0s elapsed, 1691 tests finished, last: TestMellum2_logitParity | in flight: TestKSF2_scratchReuseAcrossSteps (9m12s)
+   ... ./decoder/ ./tokenizer/: 20m0s elapsed, 1691 tests finished, last: TestMellum2_logitParity | in flight: TestKSF2_scratchReuseAcrossSteps (10m12s)
+   ... ./decoder/ ./tokenizer/: 21m0s elapsed, 1691 tests finished, last: TestMellum2_logitParity | in flight: TestKSF2_scratchReuseAcrossSteps (11m12s)
+   ... ./decoder/ ./tokenizer/: 22m0s elapsed, 1691 tests finished, last: TestMellum2_logitParity | in flight: TestKSF2_scratchReuseAcrossSteps (12m12s)
+   ... ./decoder/ ./tokenizer/: 23m0s elapsed, 1744 tests finished, last: TestMetalCoverageFlags/phi3 | in flight: TestKSF2_scratchReuseAcrossSteps (13m12s)
+   ... ./decoder/ ./tokenizer/: 24m0s elapsed, 1767 tests finished, last: TestCensusFixtures_areTheCommittedOnes | in flight: TestKSF2_scratchReuseAcrossSteps (14m12s)
+   ... ./decoder/ ./tokenizer/: 25m0s elapsed, 1768 tests finished, last: TestDecisionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (15m12s)
+   ... ./decoder/ ./tokenizer/: 26m0s elapsed, 1768 tests finished, last: TestDecisionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (16m12s)
+   ... ./decoder/ ./tokenizer/: 27m0s elapsed, 1769 tests finished, last: TestDecisionCensus_twoRunsAgree | in flight: TestKSF2_scratchReuseAcrossSteps (17m12s)
+   ... ./decoder/ ./tokenizer/: 28m0s elapsed, 1789 tests finished, last: TestMoEExpertBatching_M1vsMN | in flight: TestKSF2_scratchReuseAcrossSteps (18m12s)
+   ... ./decoder/ ./tokenizer/: 29m0s elapsed, 1789 tests finished, last: TestMoEExpertBatching_M1vsMN | in flight: TestKSF2_scratchReuseAcrossSteps (19m12s)
+   ... ./decoder/ ./tokenizer/: 30m0s elapsed, 2000 tests finished, last: TestParityManifest_adapterFilesOwned | in flight: TestKSF2_scratchReuseAcrossSteps (20m12s)
+   ... ./decoder/ ./tokenizer/: 31m0s elapsed, 2021 tests finished, last: TestPixtralCausalSpans_tiny | in flight: TestKSF2_scratchReuseAcrossSteps (21m12s)
+   ... ./decoder/ ./tokenizer/: 32m0s elapsed, 2021 tests finished, last: TestPixtralCausalSpans_tiny | in flight: TestKSF2_scratchReuseAcrossSteps (22m12s)
+   ... ./decoder/ ./tokenizer/: 33m0s elapsed, 2076 tests finished, last: TestG40T0a_noAllocsAfterFirstChunk | in flight: TestKSF2_scratchReuseAcrossSteps (23m12s)
+   ... ./decoder/ ./tokenizer/: 34m0s elapsed, 2077 tests finished, last: TestG40T0a_noAllocsAfterFirstChunkReal0p5B | in flight: TestKSF2_scratchReuseAcrossSteps (24m12s)
+   ... ./decoder/ ./tokenizer/: 35m0s elapsed, 2077 tests finished, last: TestG40T0a_noAllocsAfterFirstChunkReal0p5B | in flight: TestKSF2_scratchReuseAcrossSteps (25m12s)
+   ... ./decoder/ ./tokenizer/: 36m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (26m12s)
+   ... ./decoder/ ./tokenizer/: 37m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (27m12s)
+   ... ./decoder/ ./tokenizer/: 38m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (28m12s)
+   ... ./decoder/ ./tokenizer/: 39m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (29m12s)
+   ... ./decoder/ ./tokenizer/: 40m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (30m12s)
+   ... ./decoder/ ./tokenizer/: 41m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (31m12s)
+   ... ./decoder/ ./tokenizer/: 42m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (32m12s)
+   ... ./decoder/ ./tokenizer/: 43m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (33m12s)
+   ... ./decoder/ ./tokenizer/: 44m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (34m12s)
+   ... ./decoder/ ./tokenizer/: 45m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (35m12s)
+   ... ./decoder/ ./tokenizer/: 46m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (36m12s)
+   ... ./decoder/ ./tokenizer/: 47m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (37m12s)
+   ... ./decoder/ ./tokenizer/: 48m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (38m12s)
+   ... ./decoder/ ./tokenizer/: 49m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (39m12s)
+   ... ./decoder/ ./tokenizer/: 50m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (40m12s)
+   ... ./decoder/ ./tokenizer/: 51m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (41m12s)
+   ... ./decoder/ ./tokenizer/: 52m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (42m12s)
+   ... ./decoder/ ./tokenizer/: 53m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (43m12s)
+   ... ./decoder/ ./tokenizer/: 54m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (44m12s)
+   ... ./decoder/ ./tokenizer/: 55m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (45m12s)
+   ... ./decoder/ ./tokenizer/: 56m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (46m12s)
+   ... ./decoder/ ./tokenizer/: 57m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (47m12s)
+   ... ./decoder/ ./tokenizer/: 58m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (48m12s)
+   ... ./decoder/ ./tokenizer/: 59m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (49m12s)
+   ... ./decoder/ ./tokenizer/: 1h0m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (50m12s)
+   ... ./decoder/ ./tokenizer/: 1h1m0s elapsed, 2084 tests finished, last: TestPrefillChunked_bitIdentical | in flight: TestKSF2_scratchReuseAcrossSteps (51m12s)
+   ... ./decoder/ ./tokenizer/: 1h2m0s elapsed, 2093 tests finished, last: TestPrefillReport_declinedPassIsNoted | in flight: TestKSF2_scratchReuseAcrossSteps (52m12s)
+   ... ./decoder/ ./tokenizer/: 1h3m0s elapsed, 2095 tests finished, last: TestPrefillAttnWorkerBudget | in flight: TestKSF2_scratchReuseAcrossSteps (53m12s)
+   ... ./decoder/ ./tokenizer/: 1h4m0s elapsed, 2095 tests finished, last: TestPrefillAttnWorkerBudget | in flight: TestKSF2_scratchReuseAcrossSteps (54m12s)
+   ... ./decoder/ ./tokenizer/: 1h5m0s elapsed, 2126 tests finished, last: TestProgramFingerprint_realCheckpoints | in flight: TestKSF2_scratchReuseAcrossSteps (55m12s)
+   ... ./decoder/ ./tokenizer/: 1h6m0s elapsed, 2126 tests finished, last: TestProgramFingerprint_realCheckpoints | in flight: TestKSF2_scratchReuseAcrossSteps (56m12s)
+   ... ./decoder/ ./tokenizer/: 1h7m0s elapsed, 2126 tests finished, last: TestProgramFingerprint_realCheckpoints | in flight: TestKSF2_scratchReuseAcrossSteps (57m12s)
+   ... ./decoder/ ./tokenizer/: 1h8m0s elapsed, 2126 tests finished, last: TestProgramFingerprint_realCheckpoints | in flight: TestKSF2_scratchReuseAcrossSteps (58m12s)
+   ... ./decoder/ ./tokenizer/: 1h9m0s elapsed, 2126 tests finished, last: TestProgramFingerprint_realCheckpoints | in flight: TestKSF2_scratchReuseAcrossSteps (59m12s)
+   ... ./decoder/ ./tokenizer/: 1h10m0s elapsed, 2126 tests finished, last: TestProgramFingerprint_realCheckpoints | in flight: TestKSF2_scratchReuseAcrossSteps (1h0m12s)
+   ... ./decoder/ ./tokenizer/: 1h11m0s elapsed, 2126 tests finished, last: TestProgramFingerprint_realCheckpoints | in flight: TestKSF2_scratchReuseAcrossSteps (1h1m12s)
+   ... ./decoder/ ./tokenizer/: 1h12m0s elapsed, 2126 tests finished, last: TestProgramFingerprint_realCheckpoints | in flight: TestKSF2_scratchReuseAcrossSteps (1h2m12s)
+   ... ./decoder/ ./tokenizer/: 1h13m0s elapsed, 2126 tests finished, last: TestProgramFingerprint_realCheckpoints | in flight: TestKSF2_scratchReuseAcrossSteps (1h3m12s)
+   ... ./decoder/ ./tokenizer/: 1h14m0s elapsed, 2126 tests finished, last: TestProgramFingerprint_realCheckpoints | in flight: TestKSF2_scratchReuseAcrossSteps (1h4m12s)
+   ... ./decoder/ ./tokenizer/: 1h15m0s elapsed, 2126 tests finished, last: TestProgramFingerprint_realCheckpoints | in flight: TestKSF2_scratchReuseAcrossSteps (1h5m12s)
+   ... ./decoder/ ./tokenizer/: 1h16m0s elapsed, 2126 tests finished, last: TestProgramFingerprint_realCheckpoints | in flight: TestKSF2_scratchReuseAcrossSteps (1h6m12s)
+   ... ./decoder/ ./tokenizer/: 1h17m0s elapsed, 2126 tests finished, last: TestProgramFingerprint_realCheckpoints | in flight: TestKSF2_scratchReuseAcrossSteps (1h7m12s)
+   ... ./decoder/ ./tokenizer/: 1h18m0s elapsed, 2126 tests finished, last: TestProgramFingerprint_realCheckpoints | in flight: TestKSF2_scratchReuseAcrossSteps (1h8m12s)
+   ... ./decoder/ ./tokenizer/: 1h19m0s elapsed, 2126 tests finished, last: TestProgramFingerprint_realCheckpoints | in flight: TestKSF2_scratchReuseAcrossSteps (1h9m12s)
+   ... ./decoder/ ./tokenizer/: 1h20m0s elapsed, 2126 tests finished, last: TestProgramFingerprint_realCheckpoints | in flight: TestKSF2_scratchReuseAcrossSteps (1h10m12s)
+   ... ./decoder/ ./tokenizer/: 1h21m0s elapsed, 2126 tests finished, last: TestProgramFingerprint_realCheckpoints | in flight: TestKSF2_scratchReuseAcrossSteps (1h11m12s)
+   ... ./decoder/ ./tokenizer/: 1h22m0s elapsed, 2126 tests finished, last: TestProgramFingerprint_realCheckpoints | in flight: TestKSF2_scratchReuseAcrossSteps (1h12m12s)
+   ... ./decoder/ ./tokenizer/: 1h23m0s elapsed, 2126 tests finished, last: TestProgramFingerprint_realCheckpoints | in flight: TestKSF2_scratchReuseAcrossSteps (1h13m12s)
+   ... ./decoder/ ./tokenizer/: 1h24m0s elapsed, 2270 tests finished, last: TestSeam_ResidentReuseNeverCrossesAdapters | in flight: TestKSF2_scratchReuseAcrossSteps (1h14m12s)
+   ... ./decoder/ ./tokenizer/: 1h25m0s elapsed, 2429 tests finished, last: TestApplyRoPE_partialRotary | in flight: TestKSF2_scratchReuseAcrossSteps (1h15m12s)
+   ... ./decoder/ ./tokenizer/: 1h26m0s elapsed, 2429 tests finished, last: TestApplyRoPE_partialRotary | in flight: TestKSF2_scratchReuseAcrossSteps (1h16m12s)
+   ... ./decoder/ ./tokenizer/: 1h27m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h17m12s)
+   ... ./decoder/ ./tokenizer/: 1h28m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h18m12s)
+   ... ./decoder/ ./tokenizer/: 1h29m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h19m12s)
+   ... ./decoder/ ./tokenizer/: 1h30m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h20m12s)
+   ... ./decoder/ ./tokenizer/: 1h31m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h21m12s)
+   ... ./decoder/ ./tokenizer/: 1h32m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h22m12s)
+   ... ./decoder/ ./tokenizer/: 1h33m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h23m12s)
+   ... ./decoder/ ./tokenizer/: 1h34m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h24m12s)
+   ... ./decoder/ ./tokenizer/: 1h35m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h25m12s)
+   ... ./decoder/ ./tokenizer/: 1h36m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h26m12s)
+   ... ./decoder/ ./tokenizer/: 1h37m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h27m12s)
+   ... ./decoder/ ./tokenizer/: 1h38m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h28m12s)
+   ... ./decoder/ ./tokenizer/: 1h39m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h29m12s)
+   ... ./decoder/ ./tokenizer/: 1h40m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h30m12s)
+   ... ./decoder/ ./tokenizer/: 1h41m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h31m12s)
+   ... ./decoder/ ./tokenizer/: 1h42m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h32m12s)
+   ... ./decoder/ ./tokenizer/: 1h43m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h33m12s)
+   ... ./decoder/ ./tokenizer/: 1h44m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h34m12s)
+   ... ./decoder/ ./tokenizer/: 1h45m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h35m12s)
+   ... ./decoder/ ./tokenizer/: 1h46m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h36m12s)
+   ... ./decoder/ ./tokenizer/: 1h47m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h37m12s)
+   ... ./decoder/ ./tokenizer/: 1h48m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h38m12s)
+   ... ./decoder/ ./tokenizer/: 1h49m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h39m12s)
+   ... ./decoder/ ./tokenizer/: 1h50m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h40m12s)
+   ... ./decoder/ ./tokenizer/: 1h51m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h41m12s)
+   ... ./decoder/ ./tokenizer/: 1h52m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h42m12s)
+   ... ./decoder/ ./tokenizer/: 1h53m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h43m12s)
+   ... ./decoder/ ./tokenizer/: 1h54m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h44m12s)
+   ... ./decoder/ ./tokenizer/: 1h55m0s elapsed, 2430 tests finished, last: TestAdmissionCensus | in flight: TestKSF2_scratchReuseAcrossSteps (1h45m12s)
+   ... ./decoder/ ./tokenizer/: 1h56m0s elapsed, 2431 tests finished, last: TestSeams_gates | in flight: TestKSF2_scratchReuseAcrossSteps (1h46m12s)
+   ... ./decoder/ ./tokenizer/: 1h57m0s elapsed, 2431 tests finished, last: TestSeams_gates | in flight: TestKSF2_scratchReuseAcrossSteps (1h47m12s)
+   ... ./decoder/ ./tokenizer/: 1h58m0s elapsed, 2431 tests finished, last: TestSeams_gates | in flight: TestKSF2_scratchReuseAcrossSteps (1h48m12s)
+   ... ./decoder/ ./tokenizer/: 1h59m0s elapsed, 2431 tests finished, last: TestSeams_gates | in flight: TestKSF2_scratchReuseAcrossSteps (1h49m12s)
+   ... ./decoder/ ./tokenizer/: 2h0m0s elapsed, 2431 tests finished, last: TestSeams_gates | in flight: TestKSF2_scratchReuseAcrossSteps (1h50m12s)
+   ... ./decoder/ ./tokenizer/: 2h1m0s elapsed, 2432 tests finished, last: TestSeams_subCaptureRefusedWhereGateSCannotRun | in flight: TestKSF2_scratchReuseAcrossSteps (1h51m12s)
+   ... ./decoder/ ./tokenizer/: 2h2m0s elapsed, 2432 tests finished, last: TestSeams_subCaptureRefusedWhereGateSCannotRun | in flight: TestKSF2_scratchReuseAcrossSteps (1h52m12s)
+   ... ./decoder/ ./tokenizer/: 2h3m0s elapsed, 2432 tests finished, last: TestSeams_subCaptureRefusedWhereGateSCannotRun | in flight: TestKSF2_scratchReuseAcrossSteps (1h53m12s)
+   ... ./decoder/ ./tokenizer/: 2h4m0s elapsed, 2432 tests finished, last: TestSeams_subCaptureRefusedWhereGateSCannotRun | in flight: TestKSF2_scratchReuseAcrossSteps (1h54m12s)
+   ... ./decoder/ ./tokenizer/: 2h5m0s elapsed, 2432 tests finished, last: TestSeams_subCaptureRefusedWhereGateSCannotRun | in flight: TestKSF2_scratchReuseAcrossSteps (1h55m12s)
+   ... ./decoder/ ./tokenizer/: 2h6m0s elapsed, 2432 tests finished, last: TestSeams_subCaptureRefusedWhereGateSCannotRun | in flight: TestKSF2_scratchReuseAcrossSteps (1h56m12s)
+   ... ./decoder/ ./tokenizer/: 2h7m0s elapsed, 2432 tests finished, last: TestSeams_subCaptureRefusedWhereGateSCannotRun | in flight: TestKSF2_scratchReuseAcrossSteps (1h57m12s)
+   ... ./decoder/ ./tokenizer/: 2h8m0s elapsed, 2432 tests finished, last: TestSeams_subCaptureRefusedWhereGateSCannotRun | in flight: TestKSF2_scratchReuseAcrossSteps (1h58m12s)
+   ... ./decoder/ ./tokenizer/: 2h9m0s elapsed, 2432 tests finished, last: TestSeams_subCaptureRefusedWhereGateSCannotRun | in flight: TestKSF2_scratchReuseAcrossSteps (1h59m12s)
+   ... ./decoder/ ./tokenizer/: 2h10m0s elapsed, 2432 tests finished, last: TestSeams_subCaptureRefusedWhereGateSCannotRun | in flight: TestKSF2_scratchReuseAcrossSteps (2h0m12s)
+   ... ./decoder/ ./tokenizer/: 2h11m0s elapsed, 2432 tests finished, last: TestSeams_subCaptureRefusedWhereGateSCannotRun | in flight: TestKSF2_scratchReuseAcrossSteps (2h1m12s)
+   ... ./decoder/ ./tokenizer/: 2h12m0s elapsed, 2432 tests finished, last: TestSeams_subCaptureRefusedWhereGateSCannotRun | in flight: TestKSF2_scratchReuseAcrossSteps (2h2m12s)
+   ... ./decoder/ ./tokenizer/: 2h13m0s elapsed, 2526 tests finished, last: TestSerializeGemma4MoE_roundTrip | in flight: TestKSF2_scratchReuseAcrossSteps (2h3m12s)
+   ... ./decoder/ ./tokenizer/: 2h14m0s elapsed, 2645 tests finished, last: TestDirSidecar_keepsMRopeSection | in flight: TestKSF2_scratchReuseAcrossSteps (2h4m12s)
+   ... ./decoder/ ./tokenizer/: 2h15m0s elapsed, 2645 tests finished, last: TestDirSidecar_keepsMRopeSection | in flight: TestKSF2_scratchReuseAcrossSteps (2h5m12s)
+   ... ./decoder/ ./tokenizer/: 2h16m0s elapsed, 2710 tests finished, last: TestRouterOnlineCorrection | in flight: TestKSF2_scratchReuseAcrossSteps (2h6m12s)
+   ... ./decoder/ ./tokenizer/: 2h17m0s elapsed, 2718 tests finished, last: TestForwardCaptureSeam | in flight: TestKSF2_scratchReuseAcrossSteps (2h7m12s)
+   ... ./decoder/ ./tokenizer/: 2h18m0s elapsed, 2718 tests finished, last: TestForwardCaptureSeam | in flight: TestKSF2_scratchReuseAcrossSteps (2h8m12s)
+   ... ./decoder/ ./tokenizer/: 2h19m0s elapsed, 2718 tests finished, last: TestForwardCaptureSeam | in flight: TestKSF2_scratchReuseAcrossSteps (2h9m12s)
+   ... ./decoder/ ./tokenizer/: 2h20m0s elapsed, 2718 tests finished, last: TestForwardCaptureSeam | in flight: TestKSF2_scratchReuseAcrossSteps (2h10m12s)
+   ... ./decoder/ ./tokenizer/: 2h21m0s elapsed, 2718 tests finished, last: TestForwardCaptureSeam | in flight: TestKSF2_scratchReuseAcrossSteps (2h11m12s)
+   ... ./decoder/ ./tokenizer/: 2h22m0s elapsed, 2743 tests finished, last: TestNgramSampledRejectsUnsupported | in flight: TestKSF2_scratchReuseAcrossSteps (2h12m12s)
+   ... ./decoder/ ./tokenizer/: 2h23m0s elapsed, 2919 tests finished, last: TestMatmulQuant_routerStaysInt8UnderInt4Mix | in flight: TestKSF2_scratchReuseAcrossSteps (2h13m12s)
+   ... ./decoder/ ./tokenizer/: 2h24m0s elapsed, 2929 tests finished, last: TestMellum2SliceShape | in flight: TestKSF2_scratchReuseAcrossSteps (2h14m12s)
+   ... ./decoder/ ./tokenizer/: 2h25m0s elapsed, 2929 tests finished, last: TestMellum2SliceShape | in flight: TestKSF2_scratchReuseAcrossSteps (2h15m12s)
+   ... ./decoder/ ./tokenizer/: 2h26m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (1h53m20s)
+   ... ./decoder/ ./tokenizer/: 2h27m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (1h54m20s)
+   ... ./decoder/ ./tokenizer/: 2h28m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (1h55m20s)
+   ... ./decoder/ ./tokenizer/: 2h29m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (1h56m20s)
+   ... ./decoder/ ./tokenizer/: 2h30m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (1h57m20s)
+   ... ./decoder/ ./tokenizer/: 2h31m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (1h58m20s)
+   ... ./decoder/ ./tokenizer/: 2h32m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (1h59m20s)
+   ... ./decoder/ ./tokenizer/: 2h33m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h0m20s)
+   ... ./decoder/ ./tokenizer/: 2h34m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h1m20s)
+   ... ./decoder/ ./tokenizer/: 2h35m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h2m20s)
+   ... ./decoder/ ./tokenizer/: 2h36m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h3m20s)
+   ... ./decoder/ ./tokenizer/: 2h37m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h4m20s)
+   ... ./decoder/ ./tokenizer/: 2h38m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h5m20s)
+   ... ./decoder/ ./tokenizer/: 2h39m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h6m20s)
+   ... ./decoder/ ./tokenizer/: 2h40m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h7m20s)
+   ... ./decoder/ ./tokenizer/: 2h41m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h8m20s)
+   ... ./decoder/ ./tokenizer/: 2h42m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h9m20s)
+   ... ./decoder/ ./tokenizer/: 2h43m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h10m20s)
+   ... ./decoder/ ./tokenizer/: 2h44m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h11m20s)
+   ... ./decoder/ ./tokenizer/: 2h45m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h12m20s)
+   ... ./decoder/ ./tokenizer/: 2h46m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h13m20s)
+   ... ./decoder/ ./tokenizer/: 2h47m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h14m20s)
+   ... ./decoder/ ./tokenizer/: 2h48m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h15m20s)
+   ... ./decoder/ ./tokenizer/: 2h49m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h16m20s)
+   ... ./decoder/ ./tokenizer/: 2h50m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h17m20s)
+   ... ./decoder/ ./tokenizer/: 2h51m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h18m20s)
+   ... ./decoder/ ./tokenizer/: 2h52m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h19m20s)
+   ... ./decoder/ ./tokenizer/: 2h53m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h20m20s)
+   ... ./decoder/ ./tokenizer/: 2h54m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h21m20s)
+   ... ./decoder/ ./tokenizer/: 2h55m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h22m20s)
+   ... ./decoder/ ./tokenizer/: 2h56m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h23m20s)
+   ... ./decoder/ ./tokenizer/: 2h57m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h24m20s)
+   ... ./decoder/ ./tokenizer/: 2h58m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h25m20s)
+   ... ./decoder/ ./tokenizer/: 2h59m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h26m20s)
+   ... ./decoder/ ./tokenizer/: 3h0m0s elapsed, 2930 tests finished, last: TestKSF2_scratchReuseAcrossSteps | in flight: TestGrammarSpecLoop_exactOnTheFake (2h27m20s)
+   1335 pass / 72 skip / 1 fail (go rc 1, 3h0m10s)  log: /home/francis/goinfer-logs/relgate-2026-11-21/parity/gate_parity___decoder____tokenizer.json
+-- running realckpt real-model gates ...
+   ... realckpt real-model gates: 1m0s elapsed, 2932 tests finished, last: TestCohere2R7bReal_gate | in flight: TestProgram_L_everyParameterIsLive (1h37m38s)
+   ... realckpt real-model gates: 2m0s elapsed, 2933 tests finished, last: TestCohereAyaReal_gate | in flight: TestProgram_L_everyParameterIsLive (1h38m38s)
+   ... realckpt real-model gates: 3m0s elapsed, 2933 tests finished, last: TestCohereAyaReal_gate | in flight: TestProgram_L_everyParameterIsLive (1h39m38s)
+   ... realckpt real-model gates: 4m0s elapsed, 2933 tests finished, last: TestCohereAyaReal_gate | in flight: TestProgram_L_everyParameterIsLive (1h40m38s)
+   ... realckpt real-model gates: 5m0s elapsed, 2934 tests finished, last: TestDeepseekV2LiteReal_gate | in flight: TestProgram_L_everyParameterIsLive (1h41m38s)
+   ... realckpt real-model gates: 6m0s elapsed, 2934 tests finished, last: TestDeepseekV2LiteReal_gate | in flight: TestProgram_L_everyParameterIsLive (1h42m38s)
+   ... realckpt real-model gates: 7m0s elapsed, 2934 tests finished, last: TestDeepseekV2LiteReal_gate | in flight: TestProgram_L_everyParameterIsLive (1h43m38s)
+   ... realckpt real-model gates: 8m0s elapsed, 2934 tests finished, last: TestDeepseekV2LiteReal_gate | in flight: TestProgram_L_everyParameterIsLive (1h44m38s)
+   ... realckpt real-model gates: 9m0s elapsed, 2935 tests finished, last: TestDeepseekMoonlightReal_gate | in flight: TestProgram_L_everyParameterIsLive (1h45m38s)
+   ... realckpt real-model gates: 10m0s elapsed, 2938 tests finished, last: TestGemma12Real_gate/codegemma-2b | in flight: TestProgram_L_everyParameterIsLive (1h46m38s)
+   ... realckpt real-model gates: 11m0s elapsed, 2941 tests finished, last: TestGemma3Real_gate | in flight: TestProgram_L_everyParameterIsLive (1h47m38s)
+   ... realckpt real-model gates: 12m0s elapsed, 2941 tests finished, last: TestGemma3Real_gate | in flight: TestProgram_L_everyParameterIsLive (1h48m38s)
+   ... realckpt real-model gates: 13m0s elapsed, 2942 tests finished, last: TestGemma4_26B_gate/int4 | in flight: TestProgram_L_everyParameterIsLive (1h49m38s)
+   ... realckpt real-model gates: 14m0s elapsed, 2942 tests finished, last: TestGemma4_26B_gate/int4 | in flight: TestProgram_L_everyParameterIsLive (1h50m38s)
+   ... realckpt real-model gates: 15m0s elapsed, 2944 tests finished, last: TestGemma4_26B_gate | in flight: TestProgram_L_everyParameterIsLive (1h51m38s)
+   ... realckpt real-model gates: 16m0s elapsed, 2944 tests finished, last: TestGemma4_26B_gate | in flight: TestProgram_L_everyParameterIsLive (1h52m38s)
+   ... realckpt real-model gates: 17m0s elapsed, 2944 tests finished, last: TestGemma4_26B_gate | in flight: TestProgram_L_everyParameterIsLive (1h53m38s)
+   ... realckpt real-model gates: 18m0s elapsed, 2944 tests finished, last: TestGemma4_26B_gate | in flight: TestProgram_L_everyParameterIsLive (1h54m38s)
+   ... realckpt real-model gates: 19m0s elapsed, 2944 tests finished, last: TestGemma4_26B_gate | in flight: TestProgram_L_everyParameterIsLive (1h55m38s)
+   ... realckpt real-model gates: 20m0s elapsed, 2944 tests finished, last: TestGemma4_26B_gate | in flight: TestProgram_L_everyParameterIsLive (1h56m38s)
+   ... realckpt real-model gates: 21m0s elapsed, 2944 tests finished, last: TestGemma4_26B_gate | in flight: TestProgram_L_everyParameterIsLive (1h57m38s)
+   ... realckpt real-model gates: 22m0s elapsed, 2945 tests finished, last: TestGlm4MoeAir_gate | in flight: TestProgram_L_everyParameterIsLive (1h58m38s)
+   ... realckpt real-model gates: 23m0s elapsed, 2948 tests finished, last: TestGraniteDenseReal_gate | in flight: TestProgram_L_everyParameterIsLive (1h59m38s)
+   ... realckpt real-model gates: 24m0s elapsed, 2949 tests finished, last: TestGraniteReal_gate | in flight: TestProgram_L_everyParameterIsLive (2h0m38s)
+   ... realckpt real-model gates: 25m0s elapsed, 2951 tests finished, last: TestInternLM2_1_8bReal_gate | in flight: TestProgram_L_everyParameterIsLive (2h1m38s)
+   ... realckpt real-model gates: 26m0s elapsed, 2951 tests finished, last: TestInternLM2_1_8bReal_gate | in flight: TestProgram_L_everyParameterIsLive (2h2m38s)
+   ... realckpt real-model gates: 27m0s elapsed, 2951 tests finished, last: TestInternLM2_1_8bReal_gate | in flight: TestProgram_L_everyParameterIsLive (2h3m38s)
+   ... realckpt real-model gates: 28m0s elapsed, 2951 tests finished, last: TestInternLM2_1_8bReal_gate | in flight: TestProgram_L_everyParameterIsLive (2h4m38s)
+   ... realckpt real-model gates: 29m0s elapsed, 2951 tests finished, last: TestInternLM2_1_8bReal_gate | in flight: TestProgram_L_everyParameterIsLive (2h5m38s)
+   ... realckpt real-model gates: 30m0s elapsed, 2951 tests finished, last: TestInternLM2_1_8bReal_gate | in flight: TestProgram_L_everyParameterIsLive (2h6m38s)
+   ... realckpt real-model gates: 31m0s elapsed, 2951 tests finished, last: TestInternLM2_1_8bReal_gate | in flight: TestProgram_L_everyParameterIsLive (2h7m38s)
+   ... realckpt real-model gates: 32m0s elapsed, 2952 tests finished, last: TestLagunaGGUF_gate | in flight: TestProgram_L_everyParameterIsLive (2h8m38s)
+   ... realckpt real-model gates: 33m0s elapsed, 2952 tests finished, last: TestLagunaGGUF_gate | in flight: TestProgram_L_everyParameterIsLive (2h9m38s)
+   ... realckpt real-model gates: 34m0s elapsed, 2952 tests finished, last: TestLagunaGGUF_gate | in flight: TestProgram_L_everyParameterIsLive (2h10m38s)
+   ... realckpt real-model gates: 35m0s elapsed, 2952 tests finished, last: TestLagunaGGUF_gate | in flight: TestProgram_L_everyParameterIsLive (2h11m38s)
+   ... realckpt real-model gates: 36m0s elapsed, 2952 tests finished, last: TestLagunaGGUF_gate | in flight: TestProgram_L_everyParameterIsLive (2h12m38s)
+   ... realckpt real-model gates: 37m0s elapsed, 2952 tests finished, last: TestLagunaGGUF_gate | in flight: TestProgram_L_everyParameterIsLive (2h13m38s)
+   ... realckpt real-model gates: 38m0s elapsed, 2952 tests finished, last: TestLagunaGGUF_gate | in flight: TestProgram_L_everyParameterIsLive (2h14m38s)
+   ... realckpt real-model gates: 39m0s elapsed, 2952 tests finished, last: TestLagunaGGUF_gate | in flight: TestProgram_L_everyParameterIsLive (2h15m38s)
+   ... realckpt real-model gates: 40m0s elapsed, 2952 tests finished, last: TestLagunaGGUF_gate | in flight: TestProgram_L_everyParameterIsLive (2h16m38s)
+   ... realckpt real-model gates: 41m0s elapsed, 2952 tests finished, last: TestLagunaGGUF_gate | in flight: TestProgram_L_everyParameterIsLive (2h17m38s)
+   ... realckpt real-model gates: 42m0s elapsed, 2953 tests finished, last: TestLagunaReal_gate | in flight: TestProgram_L_everyParameterIsLive (2h18m38s)
+   ... realckpt real-model gates: 43m0s elapsed, 2953 tests finished, last: TestLagunaReal_gate | in flight: TestProgram_L_everyParameterIsLive (2h19m38s)
+   ... realckpt real-model gates: 44m0s elapsed, 2953 tests finished, last: TestLagunaReal_gate | in flight: TestProgram_L_everyParameterIsLive (2h20m38s)
+   ... realckpt real-model gates: 45m0s elapsed, 2953 tests finished, last: TestLagunaReal_gate | in flight: TestProgram_L_everyParameterIsLive (2h21m38s)
+   ... realckpt real-model gates: 46m0s elapsed, 2953 tests finished, last: TestLagunaReal_gate | in flight: TestProgram_L_everyParameterIsLive (2h22m38s)
+   ... realckpt real-model gates: 47m0s elapsed, 2953 tests finished, last: TestLagunaReal_gate | in flight: TestProgram_L_everyParameterIsLive (2h23m38s)
+   ... realckpt real-model gates: 48m0s elapsed, 2953 tests finished, last: TestLagunaReal_gate | in flight: TestProgram_L_everyParameterIsLive (2h24m38s)
+   ... realckpt real-model gates: 49m0s elapsed, 2953 tests finished, last: TestLagunaReal_gate | in flight: TestProgram_L_everyParameterIsLive (2h25m38s)
+   ... realckpt real-model gates: 50m0s elapsed, 2953 tests finished, last: TestLagunaReal_gate | in flight: TestProgram_L_everyParameterIsLive (2h26m38s)
+   ... realckpt real-model gates: 51m0s elapsed, 2953 tests finished, last: TestLagunaReal_gate | in flight: TestProgram_L_everyParameterIsLive (2h27m38s)
+   ... realckpt real-model gates: 52m0s elapsed, 2955 tests finished, last: TestLFM2Real_gate | in flight: TestProgram_L_everyParameterIsLive (2h28m38s)
+   ... realckpt real-model gates: 53m0s elapsed, 2955 tests finished, last: TestLFM2Real_gate | in flight: TestProgram_L_everyParameterIsLive (2h29m38s)
+   ... realckpt real-model gates: 54m0s elapsed, 2955 tests finished, last: TestLFM2Real_gate | in flight: TestProgram_L_everyParameterIsLive (2h30m38s)
+   ... realckpt real-model gates: 55m0s elapsed, 2964 tests finished, last: TestNemotronReal_oracle | in flight: TestProgram_L_everyParameterIsLive (2h31m38s)
+   ... realckpt real-model gates: 56m0s elapsed, 2966 tests finished, last: TestOlmoHybridReal_gate | in flight: TestProgram_L_everyParameterIsLive (2h32m38s)
+   ... realckpt real-model gates: 57m0s elapsed, 2970 tests finished, last: TestQwen2Real_gate | in flight: TestProgram_L_everyParameterIsLive (2h33m38s)
+   ... realckpt real-model gates: 58m0s elapsed, 2971 tests finished, last: TestQwen2MoeReal_oracle | in flight: TestProgram_L_everyParameterIsLive (2h34m38s)
+   ... realckpt real-model gates: 59m0s elapsed, 2971 tests finished, last: TestQwen2MoeReal_oracle | in flight: TestProgram_L_everyParameterIsLive (2h35m38s)
+   ... realckpt real-model gates: 1h0m0s elapsed, 2971 tests finished, last: TestQwen2MoeReal_oracle | in flight: TestProgram_L_everyParameterIsLive (2h36m38s)
+   ... realckpt real-model gates: 1h1m0s elapsed, 2971 tests finished, last: TestQwen2MoeReal_oracle | in flight: TestProgram_L_everyParameterIsLive (2h37m38s)
+   ... realckpt real-model gates: 1h2m0s elapsed, 2971 tests finished, last: TestQwen2MoeReal_oracle | in flight: TestProgram_L_everyParameterIsLive (2h38m38s)
+   ... realckpt real-model gates: 1h3m0s elapsed, 2971 tests finished, last: TestQwen2MoeReal_oracle | in flight: TestProgram_L_everyParameterIsLive (2h39m38s)
+   ... realckpt real-model gates: 1h4m0s elapsed, 2972 tests finished, last: TestQwen35Real_gate2FullModel | in flight: TestProgram_L_everyParameterIsLive (2h40m38s)
+   ... realckpt real-model gates: 1h5m0s elapsed, 2972 tests finished, last: TestQwen35Real_gate2FullModel | in flight: TestProgram_L_everyParameterIsLive (2h41m38s)
+   ... realckpt real-model gates: 1h6m0s elapsed, 2972 tests finished, last: TestQwen35Real_gate2FullModel | in flight: TestProgram_L_everyParameterIsLive (2h42m38s)
+   ... realckpt real-model gates: 1h7m0s elapsed, 2972 tests finished, last: TestQwen35Real_gate2FullModel | in flight: TestProgram_L_everyParameterIsLive (2h43m38s)
+   ... realckpt real-model gates: 1h8m0s elapsed, 2972 tests finished, last: TestQwen35Real_gate2FullModel | in flight: TestProgram_L_everyParameterIsLive (2h44m38s)
+   ... realckpt real-model gates: 1h9m0s elapsed, 2972 tests finished, last: TestQwen35Real_gate2FullModel | in flight: TestProgram_L_everyParameterIsLive (2h45m38s)
+   ... realckpt real-model gates: 1h10m0s elapsed, 2972 tests finished, last: TestQwen35Real_gate2FullModel | in flight: TestProgram_L_everyParameterIsLive (2h46m38s)
+   ... realckpt real-model gates: 1h11m0s elapsed, 2972 tests finished, last: TestQwen35Real_gate2FullModel | in flight: TestProgram_L_everyParameterIsLive (2h47m38s)
+   ... realckpt real-model gates: 1h12m0s elapsed, 2972 tests finished, last: TestQwen35Real_gate2FullModel | in flight: TestProgram_L_everyParameterIsLive (2h48m38s)
+   ... realckpt real-model gates: 1h13m0s elapsed, 2972 tests finished, last: TestQwen35Real_gate2FullModel | in flight: TestProgram_L_everyParameterIsLive (2h49m38s)
+   ... realckpt real-model gates: 1h14m0s elapsed, 2974 tests finished, last: TestQwen35GGUF_locateDivergence | in flight: TestProgram_L_everyParameterIsLive (2h50m38s)
+   ... realckpt real-model gates: 1h15m0s elapsed, 2974 tests finished, last: TestQwen35GGUF_locateDivergence | in flight: TestProgram_L_everyParameterIsLive (2h51m38s)
+   ... realckpt real-model gates: 1h16m0s elapsed, 2974 tests finished, last: TestQwen35GGUF_locateDivergence | in flight: TestProgram_L_everyParameterIsLive (2h52m38s)
+   ... realckpt real-model gates: 1h17m0s elapsed, 2974 tests finished, last: TestQwen35GGUF_locateDivergence | in flight: TestProgram_L_everyParameterIsLive (2h53m38s)
+   ... realckpt real-model gates: 1h18m0s elapsed, 2974 tests finished, last: TestQwen35GGUF_locateDivergence | in flight: TestProgram_L_everyParameterIsLive (2h54m38s)
+   ... realckpt real-model gates: 1h19m0s elapsed, 2976 tests finished, last: TestQwen35GGUF_routeFlipAtOutlier | in flight: TestProgram_L_everyParameterIsLive (2h55m38s)
+   ... realckpt real-model gates: 1h20m0s elapsed, 2979 tests finished, last: TestQwen35Real_gate1SliceParity | in flight: TestProgram_L_everyParameterIsLive (2h56m38s)
+   ... realckpt real-model gates: 1h21m0s elapsed, 2984 tests finished, last: TestQwen35VLReal_G2 | in flight: TestProgram_L_everyParameterIsLive (2h57m38s)
+   ... realckpt real-model gates: 1h22m0s elapsed, 2985 tests finished, last: TestQwen35VLReal_G2_9B/A | in flight: TestProgram_L_everyParameterIsLive (2h58m38s)
+   ... realckpt real-model gates: 1h23m0s elapsed, 2986 tests finished, last: TestQwen35VLReal_G2_9B/B | in flight: TestProgram_L_everyParameterIsLive (2h59m38s)
+   ... realckpt real-model gates: 1h24m0s elapsed, 2988 tests finished, last: TestQwen35VLReal_G2_9B | in flight: TestProgram_L_everyParameterIsLive (3h0m38s)
+   ... realckpt real-model gates: 1h25m0s elapsed, 2988 tests finished, last: TestQwen35VLReal_G2_9B | in flight: TestProgram_L_everyParameterIsLive (3h1m38s)
+   ... realckpt real-model gates: 1h26m0s elapsed, 2988 tests finished, last: TestQwen35VLReal_G2_9B | in flight: TestProgram_L_everyParameterIsLive (3h2m38s)
+   ... realckpt real-model gates: 1h27m0s elapsed, 2988 tests finished, last: TestQwen35VLReal_G2_9B | in flight: TestProgram_L_everyParameterIsLive (3h3m38s)
+   ... realckpt real-model gates: 1h28m0s elapsed, 2989 tests finished, last: TestQwen38GGUF_gate | in flight: TestProgram_L_everyParameterIsLive (3h4m38s)
+   ... realckpt real-model gates: 1h29m0s elapsed, 2990 tests finished, last: TestQwen38GGUF_weightDiff | in flight: TestProgram_L_everyParameterIsLive (3h5m38s)
+   ... realckpt real-model gates: 1h30m0s elapsed, 2990 tests finished, last: TestQwen38GGUF_weightDiff | in flight: TestProgram_L_everyParameterIsLive (3h6m38s)
+   ... realckpt real-model gates: 1h31m0s elapsed, 2990 tests finished, last: TestQwen38GGUF_weightDiff | in flight: TestProgram_L_everyParameterIsLive (3h7m38s)
+   ... realckpt real-model gates: 1h32m0s elapsed, 2990 tests finished, last: TestQwen38GGUF_weightDiff | in flight: TestProgram_L_everyParameterIsLive (3h8m38s)
+   ... realckpt real-model gates: 1h33m0s elapsed, 2990 tests finished, last: TestQwen38GGUF_weightDiff | in flight: TestProgram_L_everyParameterIsLive (3h9m38s)
+   ... realckpt real-model gates: 1h34m0s elapsed, 2990 tests finished, last: TestQwen38GGUF_weightDiff | in flight: TestProgram_L_everyParameterIsLive (3h10m38s)
+   ... realckpt real-model gates: 1h35m0s elapsed, 2990 tests finished, last: TestQwen38GGUF_weightDiff | in flight: TestProgram_L_everyParameterIsLive (3h11m38s)
+   ... realckpt real-model gates: 1h36m0s elapsed, 2990 tests finished, last: TestQwen38GGUF_weightDiff | in flight: TestProgram_L_everyParameterIsLive (3h12m38s)
+   ... realckpt real-model gates: 1h37m0s elapsed, 2991 tests finished, last: TestQwen38Real_gate | in flight: TestProgram_L_everyParameterIsLive (3h13m38s)
+   ... realckpt real-model gates: 1h38m0s elapsed, 2991 tests finished, last: TestQwen38Real_gate | in flight: TestProgram_L_everyParameterIsLive (3h14m38s)
+   ... realckpt real-model gates: 1h39m0s elapsed, 2991 tests finished, last: TestQwen38Real_gate | in flight: TestProgram_L_everyParameterIsLive (3h15m38s)
+   ... realckpt real-model gates: 1h40m0s elapsed, 2991 tests finished, last: TestQwen38Real_gate | in flight: TestProgram_L_everyParameterIsLive (3h16m38s)
+   ... realckpt real-model gates: 1h41m0s elapsed, 2991 tests finished, last: TestQwen38Real_gate | in flight: TestProgram_L_everyParameterIsLive (3h17m38s)
+   ... realckpt real-model gates: 1h42m0s elapsed, 2991 tests finished, last: TestQwen38Real_gate | in flight: TestProgram_L_everyParameterIsLive (3h18m38s)
+   ... realckpt real-model gates: 1h43m0s elapsed, 2992 tests finished, last: TestQwen38Real_oracle | in flight: TestProgram_L_everyParameterIsLive (3h19m38s)
+   ... realckpt real-model gates: 1h44m0s elapsed, 2994 tests finished, last: TestQwen3ASRReal_gate | in flight: TestProgram_L_everyParameterIsLive (3h20m38s)
+   48 pass / 10 skip / 0 fail (go rc 0, 1h44m31s)  log: /home/francis/goinfer-logs/relgate-2026-11-21/parity/gate_parity_realckpt_real-model_gates.json
+
+FAMILY               GATE                               RESULT
+------------------------------------------------------------------------
+gemma3               TestGGUF_gemma3_parity             ✅ pass
+gemma3-forward       TestForward_logitParity            ✅ pass
+gemma3-sliding       TestForward_slidingWindowParity    ✅ pass
+gemma4-E2B/E4B       TestGemma4_logitParity             ✅ pass
+gemma4-12B           TestGemma4_12B_logitParity         ✅ pass
+qwen2                TestQwen2_forwardParity            ✅ pass
+qwen2-gguf           TestGGUF_qwen2_parity              ✅ pass
+qwen3                TestQwen3_forwardParity            ✅ pass
+qwen3_asr-text       TestQwen3ASR_tinyTextParity        ✅ pass
+qwen3_asr-composition TestQwen3ASR_tinyCompositionParity ✅ pass
+voxtral-text         TestVoxtral_tinyTextParity         ✅ pass
+voxtral-composition  TestVoxtral_tinyCompositionParity  ✅ pass
+qwen3-gguf           TestGGUF_qwen3_parity              ✅ pass
+qwen2moe             TestQwen2Moe_forwardParity         ✅ pass
+qwen3moe             TestQwen3Moe_forwardParity         ✅ pass
+granite-dense        TestGraniteDense_forwardParity     ✅ pass
+mistral3             TestMinistral3_forwardParity       ✅ pass
+smollm3              TestSmolLM3_forwardParity          ✅ pass
+olmo3                TestOlmo3_forwardParity            ✅ pass
+gemma+gemma2         TestGemma12_forwardParity          ✅ pass
+olmo_hybrid          TestOlmoHybrid_forwardParity       ✅ pass
+bailing_hybrid       TestBailingHybrid_forwardParity    ✅ pass
+flint-tiny           TestFlint_tinyForwardParity        ✅ pass
+flint-window         TestFlint_windowBoundaryParity     ✅ pass
+mistral3-batched     TestMinistral3_batchedMatchesSequential ✅ pass
+llama                TestLlama_forwardParity            ✅ pass
+llama3.2             TestLlama32_forwardParity          ✅ pass
+mistral              TestMistral_forwardParity          ✅ pass
+mixtral              TestMixtral_forwardParity          ✅ pass
+mellum2              TestMellum2_logitParity            ✅ pass
+mellum2-window       TestMellum2_windowParity           ✅ pass
+gpt2                 TestGPT2_forwardParity             ✅ pass
+qwen3_5_moe-tiny     TestQwen35_forwardParity           ✅ pass
+deltanet             TestGatedDeltaNet_parity           ✅ pass
+deepseek-tiny        TestDeepseek_textParity            ✅ pass
+kimi-tiny            TestKimi_textParity                ✅ pass
+phi3-tiny            TestPhi3_textParity                ✅ pass
+llama4-tiny          TestLlama4_textParity              ✅ pass
+nemotron-tiny        TestNemotron_textParity            ✅ pass
+nemotron3nano-tiny   TestNemotron3NanoMoE_textParity    ✅ pass
+gguf-Q8_0            TestGGUF_Q8_0_parity               ✅ pass
+gguf-Q4_0            TestGGUF_Q4_0_parity               ✅ pass
+gguf-Q4_K_M          TestGGUF_Q4_K_M_parity             ✅ pass
+gguf-Q4_K_S          TestGGUF_Q4_K_S_parity             ✅ pass
+gguf-Q5_K_M          TestGGUF_Q5_K_M_parity             ✅ pass
+gguf-Q6_K            TestGGUF_Q6_K_parity               ✅ pass
+gguf-Q3_K_M          TestGGUF_Q3_K_M_parity             ✅ pass
+gguf-Q2_K            TestGGUF_Q2_K_parity               ✅ pass
+gptq                 TestGPTQ_parity                    ✅ pass
+awq                  TestAWQ_parity                     ✅ pass
+w4a8-int4            TestW4A8DecodeParity               ✅ pass
+int4-forward         TestInt4_forwardParity             ✅ pass
+tok-gemma            TestEncodeDecode_goldenParity      ✅ pass
+tok-qwen3            TestByteLevel_qwen3GoldenParity    ✅ pass
+tok-llama3           TestByteLevel_llama3GoldenParity   ✅ pass
+tok-mellum2          TestByteLevel_mellum2GoldenParity  ✅ pass
+tok-tinyllama        TestLoadGGUF_tinyllamaParity       ✅ pass
+qwen3.6-gguf-gate    TestQwen35GGUF_gate                ✅ pass
+qwen3.6-weightdiff   TestQwen35GGUF_weightDiff          ✅ pass
+qwen3.6-gate2        TestQwen35Real_gate2FullModel      ✅ pass
+deepseek-v2lite      TestDeepseekV2LiteReal_gate        ✅ pass
+deepseek-moonlight   TestDeepseekMoonlightReal_gate     ✅ pass
+deepseek-gguf        TestDeepseekGGUFReal_gate          ✅ pass
+phi3-mini-oracle     TestPhi3MiniReal_gate              ✅ pass
+phi3-gguf            TestPhi3GGUFReal_gate              ✅ pass
+llama4-scout-gguf    TestLlama4Real_gate                ✅ pass
+qwen3next-oracle     TestQwen3NextReal_oracle           SKIP - asset missing, but in neverConfirmed (NOT a blocker): 2026-09-18 — needs ~59.3GB (47.3GB int4 weights + 12.0GB KV) against this box's ~43.4GB fit-guard ceiling. It passed on this box at bd085de/2026-08-27; between then and now dfd4bfe9 (2026-09-15, M-28) priced KV from real per-layer geometry (zero for a DeltaNet/mamba/conv mixer layer, the family's actual head_dim otherwise), which moved the estimate up. This one is not a close call either way (59.3GB vs a 43.4GB ceiling, not a few GB over). The gate's own doc comment's "int4 is ~40GB and fits" only ever estimated weights and omitted KV entirely. Needs a bigger box.
+nemotron35lightning-oracle TestNemotron35LightningReal_oracle SKIP - asset missing, but in neverConfirmed (NOT a blocker): 2026-09-13 — deferred for v0.18.0; needs the ~60GB bf16 checkpoint on the Linux box, not run this release. STILL TRUE 2026-09-18: the asset has still not been pulled to this box (its SKIP was, until today, incorrectly counting as a blocker regardless of this entry — see classifyChecks' neverConfirmed check in the SKIP branch, fixed the same day this was re-confirmed).
+qwen3moe-oracle      TestQwen3MoeReal_oracle            ✅ pass
+gpt_oss              TestGptOssReal_gate                ✅ pass
+gpt_oss-logits       TestGptOssReal_logitParity         ✅ pass
+granite-gguf         TestGraniteReal_gate               ✅ pass
+granite-oracle       TestGraniteReal_oracle             ✅ pass
+laguna               TestLagunaReal_gate                ✅ pass
+laguna-oracle        TestLagunaReal_oracle              ✅ pass
+qwen25vl-real        TestQwen25VLReal_gate              ✅ pass
+qwen3vl-real         TestQwen3VLReal_gate               ✅ pass
+laguna-gguf          TestLagunaGGUF_gate                ✅ pass
+glm4moe-air          TestGlm4MoeAir_gate                ✅ pass
+cohere               TestCohereAyaReal_gate             ✅ pass
+cohere2              TestCohere2R7bReal_gate            ✅ pass
+qwen3.8-dense        TestQwen38Real_gate                ✅ pass
+qwen3.8-dense-oracle TestQwen38Real_oracle              ✅ pass
+qwen3.8-gguf         TestQwen38GGUF_gate                ✅ pass
+qwen3.8-gguf-weightdiff TestQwen38GGUF_weightDiff          ✅ pass
+smollm3-3b           TestSmolLM3_3bReal_gate            ✅ pass
+lfm2-2.6b            TestLFM2Real_gate                  ✅ pass
+mistral3-real        TestMinistral3Real_gate            ✅ pass
+spark2_5-1.7b        TestSpark25Real_gate               ✅ pass
+granite-dense-real   TestGraniteDenseReal_gate          ✅ pass
+olmo3-oracle         TestOlmo3Real_gate                 ✅ pass
+gemma12-oracle       TestGemma12Real_gate               ✅ pass
+olmo-hybrid-oracle   TestOlmoHybridReal_gate            ✅ pass
+internlm2-real       TestInternLM2_1_8bReal_gate        ✅ pass
+qwen2moe-oracle      TestQwen2MoeReal_oracle            ✅ pass
+
+-- catch-all: other *Parity / *gate tests that SKIPPED (review) --
+   skipped: TestDeltaNetTiming_gate0Split
+   skipped: TestFlint_realCheckpointParity
+   skipped: TestLoad_qkvGateUpRepackedOnlyEndToEnd
+   skipped: TestNemotron3NanoMoEReal_gate
+   skipped: TestParityManifest_merge
+   skipped: TestQwen3ASRReal_gate
+   skipped: TestSpeculativeGreedyParity_draftTarget
+   skipped: TestVoxtralReal_gate
+
+   ❌ cell "./decoder/ ./tokenizer/" TIMED OUT at -timeout 3h0m0s (rc=1), not a test failure: in flight TestProgram_L_everyParameterIsLive; every gate after it did not run — raise TIMEOUT, or re-run just those gates with GATE_RUN — BLOCKER: /home/francis/goinfer-logs/relgate-2026-11-21/parity/gate_parity___decoder____tokenizer.json
+
+-- realckpt gates that run but are NOT required (13) --
+   TestGemma3Real_gate              pass      unregistered asset (GEMMA3_4B, not even GOINFER_-prefixed); gemma3 is required through TestGGUF_gemma3_parity + TestForward_logitParity
+   TestGemma4_26B_gate              pass      unregistered asset (GOINFER_GEMMA4_26B); gemma4 is required through TestGemma4_logitParity + TestGemma4_12B_logitParity
+   TestLlamaReal_gate               pass      unregistered asset (GOINFER_QWEN3_REAL); llama is required through TestLlama_forwardParity + TestLlama32_forwardParity
+   TestMistralReal_gate             pass      unregistered asset (GOINFER_QWEN3_REAL); mistral is required through TestMistral_forwardParity
+   TestNemotron3NanoMoEReal_gate    skip      nemotron3nano is required through TestNemotron3NanoMoE_textParity; this adds the real GGUF checkpoint
+   TestNemotron3NanoReal_oracle     skip      nemotron3nano is required through TestNemotron3NanoMoE_textParity; this adds the real bf16 checkpoint
+   TestNemotronReal_gate            pass      nemotron is required through TestNemotron_textParity; this adds the real Q8_0 GGUF checkpoint (GOINFER_NEMOTRON_GGUF)
+   TestNemotronReal_oracle          skip      nemotron is required through TestNemotron_textParity; this adds the real HF checkpoint
+   TestQwen2Real_gate               pass      unregistered asset (GOINFER_QWEN3_REAL); qwen2 is required through TestQwen2_forwardParity + TestGGUF_qwen2_parity
+   TestQwen35Real_gate1SliceParity  pass      unregistered asset (GOINFER_QWEN35_SLICE_REF); the full-model gate TestQwen35Real_gate2FullModel is required
+   TestQwen3ASRReal_gate            skip      qwen3_asr is required through the tiny gates (decoder TestQwen3ASR_tinyTextParity and TestQwen3ASR_tinyCompositionParity); this adds the real Qwen3-ASR-0.6B, whose reference needs scripts/pin_qwen3asr_real.py's output directory (GOINFER_QWEN3ASR_REF), not a plain registered asset
+   TestQwen3Real_gate               pass      unregistered asset (GOINFER_QWEN3_REAL); qwen3 is required through TestQwen3_forwardParity + TestGGUF_qwen3_parity
+   TestVoxtralReal_gate             skip      voxtral is required through the tiny gates (decoder TestVoxtral_tinyTextParity and TestVoxtral_tinyCompositionParity); this adds the real Voxtral Mini 3B, whose reference needs scripts/pin_voxtral_real.py's output directory (GOINFER_VOXTRAL_REF), not a plain registered asset
+
+  gate ledger: 93 confirmed entr(ies) — testdata/gate_ledger.json
+    FIRST-RUN (2): no confirmed prior result, so a failure here has no delta to compute — reported, never a blocker
+      TestNemotron35LightningReal_oracle
+      TestQwen3NextReal_oracle
+    CONFIRMED BEFORE THE GATE LAST CHANGED (78) — WARNING, does not block.
+      The assertion moved since the confirming commit, so the recorded value may be a confirmation of different semantics.
+      TestAWQ_parity  (confirmed at 679c9e5)
+      TestBailingHybrid_forwardParity  (confirmed at b7726cd)
+      TestCohere2R7bReal_gate  (confirmed at bcf50a49)
+      TestCohereAyaReal_gate  (confirmed at bcf50a49)
+      TestDeepseekGGUFReal_gate  (confirmed at 70be7081)
+      TestDeepseekMoonlightReal_gate  (confirmed at bcf50a49)
+      TestDeepseekV2LiteReal_gate  (confirmed at bcf50a49)
+      TestDeepseek_textParity  (confirmed at 679c9e5)
+      TestFlint_tinyForwardParity  (confirmed at 90e4d44f8)
+      TestFlint_windowBoundaryParity  (confirmed at 90e4d44f8)
+      TestForward_logitParity  (confirmed at 679c9e5)
+      TestForward_slidingWindowParity  (confirmed at 679c9e5)
+      TestGGUF_gemma3_parity  (confirmed at 679c9e5)
+      TestGGUF_qwen2_parity  (confirmed at 679c9e5)
+      TestGGUF_qwen3_parity  (confirmed at 679c9e5)
+      TestGPT2_forwardParity  (confirmed at 70be7081)
+      TestGPTQ_parity  (confirmed at 679c9e5)
+      TestGatedDeltaNet_parity  (confirmed at 70be7081)
+      TestGemma12Real_gate  (confirmed at 13c19bf7)
+      TestGemma12_forwardParity  (confirmed at 93722530)
+      TestGemma4_12B_logitParity  (confirmed at 679c9e5)
+      TestGemma4_logitParity  (confirmed at 679c9e5)
+      TestGlm4MoeAir_gate  (confirmed at eaa8bb23)
+      TestGptOssReal_gate  (confirmed at eaa8bb23)
+      TestGptOssReal_logitParity  (confirmed at eaa8bb23)
+      TestGraniteDenseReal_gate  (confirmed at bcf50a49)
+      TestGraniteDense_forwardParity  (confirmed at b7726cd)
+      TestGraniteReal_gate  (confirmed at eaa8bb23)
+      TestGraniteReal_oracle  (confirmed at 70be7081)
+      TestInt4_forwardParity  (confirmed at 7b50947a)
+      TestInternLM2_1_8bReal_gate  (confirmed at bcf50a49)
+      TestKimi_textParity  (confirmed at 679c9e5)
+      TestLFM2Real_gate  (confirmed at bcf50a49)
+      TestLagunaGGUF_gate  (confirmed at 70be7081)
+      TestLagunaReal_gate  (confirmed at eaa8bb23)
+      TestLagunaReal_oracle  (confirmed at 9ddde345)
+      TestLlama32_forwardParity  (confirmed at 679c9e5)
+      TestLlama4Real_gate  (confirmed at 70be7081)
+      TestLlama4_textParity  (confirmed at 679c9e5)
+      TestLlama_forwardParity  (confirmed at 679c9e5)
+      TestMellum2_logitParity  (confirmed at 679c9e5)
+      TestMellum2_windowParity  (confirmed at 679c9e5)
+      TestMinistral3Real_gate  (confirmed at bcf50a49)
+      TestMinistral3_forwardParity  (confirmed at b7726cd)
+      TestMistral_forwardParity  (confirmed at 679c9e5)
+      TestMixtral_forwardParity  (confirmed at 679c9e5)
+      TestNemotron3NanoMoE_textParity  (confirmed at bd085de)
+      TestNemotron_textParity  (confirmed at bd085de)
+      TestOlmo3Real_gate  (confirmed at f00fdf43)
+      TestOlmo3_forwardParity  (confirmed at b7726cd)
+      TestOlmoHybridReal_gate  (confirmed at bcf50a49)
+      TestOlmoHybrid_forwardParity  (confirmed at b7726cd)
+      TestPhi3GGUFReal_gate  (confirmed at 70be7081)
+      TestPhi3MiniReal_gate  (confirmed at bcf50a49)
+      TestPhi3_textParity  (confirmed at 679c9e5)
+      TestQwen25VLReal_gate  (confirmed at bcf50a49)
+      TestQwen2MoeReal_oracle  (confirmed at 70be7081)
+      TestQwen2Moe_forwardParity  (confirmed at 679c9e5)
+      TestQwen2_forwardParity  (confirmed at 679c9e5)
+      TestQwen35GGUF_gate  (confirmed at 70be7081)
+      TestQwen35GGUF_weightDiff  (confirmed at 70be7081)
+      TestQwen35Real_gate2FullModel  (confirmed at 70be7081)
+      TestQwen35_forwardParity  (confirmed at 679c9e5)
+      TestQwen38GGUF_gate  (confirmed at 1de75952)
+      TestQwen38GGUF_weightDiff  (confirmed at 2732e75b)
+      TestQwen38Real_gate  (confirmed at eaa8bb23)
+      TestQwen38Real_oracle  (confirmed at 70be7081)
+      TestQwen3ASR_tinyCompositionParity  (confirmed at 2083e745)
+      TestQwen3ASR_tinyTextParity  (confirmed at 2083e745)
+      TestQwen3MoeReal_oracle  (confirmed at 70be7081)
+      TestQwen3Moe_forwardParity  (confirmed at b7726cd)
+      TestQwen3VLReal_gate  (confirmed at 7ee05f0a)
+      TestQwen3_forwardParity  (confirmed at 679c9e5)
+      TestSmolLM3_3bReal_gate  (confirmed at bcf50a49)
+      TestSmolLM3_forwardParity  (confirmed at b7726cd)
+      TestSpark25Real_gate  (confirmed at bcf50a49)
+      TestVoxtral_tinyCompositionParity  (confirmed at 93f4ab0e)
+      TestVoxtral_tinyTextParity  (confirmed at 93f4ab0e)
+== 2 COVERAGE GAP(S): required gates whose asset has never been built ==
+   Reported, not counted as blockers. No invocation can clear them -- only building the
+   asset can. A permanent blocker is not a gate, it is an override habit.
+== 36dbfbaf1: 1 BLOCKER(S): 0 FAILED, 0 NOT EVALUATED (0 asset absent, 0 env gate unset, 0 did not run), 1 from the catch-alls (+2 coverage gap) ==
+full log: /home/francis/goinfer-logs/relgate-2026-11-21/parity/gate_parity___decoder____tokenizer.json
+full log: /home/francis/goinfer-logs/relgate-2026-11-21/parity/gate_parity_realckpt_real-model_gates.json
+
+  record: /home/francis/goinfer-logs/relgate-2026-11-21/parity/records/parity-20261122T031540Z-36dbfbaf.json (commit it with the release; `gate release` reads it)
+exit status 1

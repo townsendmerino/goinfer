@@ -1,0 +1,209 @@
+sweep and kv10 done at 2026-11-21 19:40:05
+== asset preflight — 59 registered asset(s), models root /home/francis/models ==
+   predicate: testdata/assets.json (kind/members/min_bytes) — the SAME one the gates apply
+   GOINFER_PREQUANT_GGUF        resolved  /home/francis/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+   GOINFER_QWEN35_GGUF          resolved  /home/francis/models/qwen3.6-35b-a3b-Q8_0.gguf
+   GOINFER_QWEN35_GOLDEN        resolved  /home/francis/models/qwen35_real_golden
+   GOINFER_QWEN35_REAL          resolved  /home/francis/models/qwen3.6-35b-a3b
+   GOINFER_DEEPSEEK_V2LITE      resolved  /home/francis/models/deepseek-v2-lite
+   GOINFER_DEEPSEEK_MOONLIGHT   resolved  /home/francis/models/moonlight-16b
+   GOINFER_DEEPSEEK_GGUF        resolved  /home/francis/models/deepseek-v2-lite-gguf/DeepSeek-V2-Lite-Chat-Q4_K_M.gguf
+   GOINFER_PHI3_MINI            resolved  /home/francis/models/phi3-mini-4k
+   GOINFER_PHI3_GGUF            resolved  /home/francis/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf
+   GOINFER_LLAMA4_GGUF          resolved  /home/francis/models/llama4-scout-gguf/Llama-4-Scout-17B-16E-Instruct-Q2_K.gguf
+   GOINFER_GRANITE_HF           resolved  /home/francis/models/granite-hf
+   GOINFER_NEMOTRON_HF          NOT FOUND —
+                                            ^ /home/francis/models/nemotron-hf (does not exist)
+   GOINFER_NEMOTRON_GGUF        resolved  /home/francis/models/nemotron/nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.gguf
+   GOINFER_DFLASH_35B           resolved  /home/francis/models/qwen36-35b-dflash
+   GOINFER_DSPARK_F32           resolved  /home/francis/models/dspark-qwen3-4b-f32
+   GOINFER_QWEN3_4B             resolved  /home/francis/models/qwen3-4b
+   GOINFER_DFLASH_F32           resolved  /home/francis/models/qwen3-4b-dflash-f32
+   GOINFER_DFLASH_BF16          resolved  /home/francis/models/qwen3-4b-dflash
+   GOINFER_DFLASH_GPTOSS        resolved  /home/francis/models/gptoss-20b-dflash
+   GOINFER_DFLASH_GEMMA4        resolved  /home/francis/models/gemma4-26b-dflash
+   GOINFER_QWEN3NEXT_HF         NOT FOUND —
+                                            ^ /home/francis/models/qwen3next-80b-partial (does not exist)
+   GOINFER_QWEN3MOE_HF          resolved  /home/francis/models/qwen3moe-30b-a3b-bf16
+   GOINFER_QWEN2MOE_HF          resolved  /home/francis/models/qwen15-moe-a27b
+   GOINFER_NEMOTRON3NANO_HF     NOT FOUND —
+                                            ^ /home/francis/models/nemotron3nano-30b-bf16 (does not exist)
+   GOINFER_NEMOTRON35LIGHTNING_HF NOT FOUND —
+                                            ^ /home/francis/models/nemotron35lightning-30b-bf16 (does not exist)
+   GOINFER_NEMOTRON3NANO_GGUF   NOT FOUND —
+                                            ^ /home/francis/models/nemotron3nano-gguf/nvidia_Nemotron-3-Nano-30B-A3B-Q4_K_M.gguf (does not exist)
+   GOINFER_LAGUNA_XS2           resolved  /home/francis/models/laguna-xs2
+   GOINFER_LAGUNA_GGUF          resolved  /home/francis/models/laguna-xs21-gguf/Laguna-XS-2.1-Q4_K_M.gguf
+   GOINFER_LAGUNA_DFLASH        resolved  /home/francis/models/laguna-xs2-dflash
+   GOINFER_GPTOSS_ST            resolved  /home/francis/models/gpt-oss-20b-hf
+   GOINFER_GPTOSS_GGUF          resolved  /home/francis/models/gpt-oss-20b-MXFP4.gguf
+   GOINFER_QWEN38               resolved  /home/francis/models/qwen3.8-27b
+   GOINFER_W4A8_INT4            resolved  /home/francis/models/qwen15-w4a8-int4.giw
+   GOINFER_W4A8_INT8            resolved  /home/francis/models/qwen15-w4a8-int8.giw
+   GOINFER_QWEN38_GGUF          resolved  /home/francis/models/qwen38-gguf/Qwen3.8-27B-UD-Q4_K_M.gguf
+   GOINFER_QWEN3_FP8            resolved  /home/francis/models/qwen3-0.6b-fp8
+   GOINFER_QWEN3_BF16           resolved  /home/francis/models/qwen3-0.6b-bf16
+   GOINFER_COHERE_AYA           resolved  /home/francis/models/aya-expanse-8b
+   GOINFER_COHERE2_R7B          resolved  /home/francis/models/command-r7b
+   GOINFER_SMOLLM3_3B           resolved  /home/francis/models/smollm3-3b
+   GOINFER_SPARK25_1_7B         resolved  /home/francis/models/spark25-1.7b
+   GOINFER_LFM2_2_6B            resolved  /home/francis/models/lfm25-2.6b
+   GOINFER_MINISTRAL3_3B        resolved  /home/francis/models/ministral3-3b-bf16
+   GOINFER_GRANITE_DENSE_3B     resolved  /home/francis/models/granite-4.2-3b
+   GOINFER_OLMO3_7B             resolved  /home/francis/models/olmo3-7b-think
+   GOINFER_OLMO_HYBRID_7B       resolved  /home/francis/models/olmo-hybrid-7b
+   GOINFER_INTERNLM2_1_8B       resolved  /home/francis/models/internlm2-1_8b
+   GOINFER_QWEN25VL_3B          resolved  /home/francis/models/qwen25vl-3b-instruct
+   GOINFER_QWEN3VL_2B           resolved  /home/francis/models/qwen3-vl-2b-instruct
+   GOINFER_GRANITE_GGUF         resolved  /home/francis/models/granite/granite-4.0-h-tiny-Q8_0.gguf
+   GOINFER_GLM_GGUF             resolved  /home/francis/models/glm-air/GLM-4.5-Air-Q2_K.gguf
+   GOINFER_GLM_GIW              resolved  /home/francis/models/glm-air/GLM-4.5-Air-Q2_K.int4.giw
+   GOINFER_MELLUM_CKPT          resolved  /home/francis/models/mellum2-unq
+   GOINFER_QWEN35VL_08B         resolved  /home/francis/models/qwen3.5-0.8b
+   GOINFER_QWEN35VL_G2          resolved  /home/francis/models/qwen35vl_g2
+   GOINFER_QWEN35VL_9B          resolved  /home/francis/models/qwen3.5-9b
+   GOINFER_QWEN35VL_G2_9B       resolved  /home/francis/models/qwen35vl_g2_9b
+   GOINFER_GLM_OCR              resolved  /home/francis/models/glm-ocr
+   GOINFER_GLM_OCR_E2E          resolved  /home/francis/models/glm-ocr-e2e
+   ^^ 5 of 59 UNRESOLVED — the gates needing them will skip, and a skip is
+      reported as a blocker. Fix the path above rather than reading the blocker list as a
+      tree defect.
+   GOINFER_HEAVY_TESTS=1 set by this gate — the release sweep loads real checkpoints
+
+[1m== parity sweep provenance ==[0m
+  repo        36dbfbaf1
+  date (UTC)  2026-11-22T03:40:07Z
+  host        Linux x86_64
+  realckpt    false
+  timeout     180m
+  emit        false
+  COMPOSITION of the release gate — 57 gates over 57 family labels
+    quant :  f32=40  int4=1  int4/int8=11  int8int8=5
+    loader:  gguf=12  safetensors=45
+
+  CROSS-GATE quant coverage (release gate vs the freeze-exception goldens):
+    gate parity       : f32 int4 int8 int8int8
+    forward goldens   : f32 int4 int8 int8int8
+    -> the two gates span the same quantizations.
+
+  CROSS-GATE loader coverage:
+    gate parity       : gguf safetensors
+    forward goldens   : gguf safetensors
+    -> the two gates span the same loaders.
+-- running ./decoder/ ./tokenizer/ ...
+   ... ./decoder/ ./tokenizer/: 1m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestProgram_L_everyParameterIsLive (59s)
+   ... ./decoder/ ./tokenizer/: 2m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestProgram_L_everyParameterIsLive (1m59s)
+   ... ./decoder/ ./tokenizer/: 3m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestProgram_L_everyParameterIsLive (2m59s)
+   ... ./decoder/ ./tokenizer/: 4m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestProgram_L_everyParameterIsLive (3m59s)
+   ... ./decoder/ ./tokenizer/: 5m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestProgram_L_everyParameterIsLive (4m59s)
+   ... ./decoder/ ./tokenizer/: 6m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestProgram_L_everyParameterIsLive (5m59s)
+   ... ./decoder/ ./tokenizer/: 7m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestProgram_L_everyParameterIsLive (6m59s)
+   ... ./decoder/ ./tokenizer/: 8m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestProgram_L_everyParameterIsLive (7m59s)
+   ... ./decoder/ ./tokenizer/: 9m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestProgram_L_everyParameterIsLive (8m59s)
+   ... ./decoder/ ./tokenizer/: 10m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestProgram_L_everyParameterIsLive (9m59s)
+   ... ./decoder/ ./tokenizer/: 11m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestProgram_L_everyParameterIsLive (10m59s)
+   ... ./decoder/ ./tokenizer/: 12m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestProgram_L_everyParameterIsLive (11m59s)
+   ... ./decoder/ ./tokenizer/: 13m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestProgram_L_everyParameterIsLive (12m59s)
+   ... ./decoder/ ./tokenizer/: 14m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestProgram_L_everyParameterIsLive (13m59s)
+   ... ./decoder/ ./tokenizer/: 15m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestProgram_L_everyParameterIsLive (14m59s)
+   ... ./decoder/ ./tokenizer/: 16m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestProgram_L_everyParameterIsLive (15m59s)
+   ... ./decoder/ ./tokenizer/: 17m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestProgram_L_everyParameterIsLive (16m59s)
+   ... ./decoder/ ./tokenizer/: 18m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestProgram_L_everyParameterIsLive (17m59s)
+   ... ./decoder/ ./tokenizer/: 19m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestProgram_L_everyParameterIsLive (18m59s)
+   ... ./decoder/ ./tokenizer/: 20m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestProgram_L_everyParameterIsLive (19m59s)
+   ... ./decoder/ ./tokenizer/: 21m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestProgram_L_everyParameterIsLive (20m59s)
+   ... ./decoder/ ./tokenizer/: 22m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestProgram_L_everyParameterIsLive (21m59s)
+   1 pass / 0 skip / 0 fail (go rc 0, 22m3s)  log: /home/francis/goinfer-logs/relgate-2026-11-21/progl-rerun/gate_parity___decoder____tokenizer.json
+
+== GATE_RUN="^TestProgram_L_everyParameterIsLive$": checkset narrowed from 57 to 0 required gate(s) — THIS IS A SCOPED RE-RUN, NOT A RELEASE-READY VERDICT ==
+
+FAMILY               GATE                               RESULT
+------------------------------------------------------------------------
+
+-- catch-all: other *Parity / *gate tests that SKIPPED (review) --
+
+  gate ledger: 93 confirmed entr(ies) — testdata/gate_ledger.json
+    CONFIRMED BEFORE THE GATE LAST CHANGED (78) — WARNING, does not block.
+      The assertion moved since the confirming commit, so the recorded value may be a confirmation of different semantics.
+      TestAWQ_parity  (confirmed at 679c9e5)
+      TestBailingHybrid_forwardParity  (confirmed at b7726cd)
+      TestCohere2R7bReal_gate  (confirmed at bcf50a49)
+      TestCohereAyaReal_gate  (confirmed at bcf50a49)
+      TestDeepseekGGUFReal_gate  (confirmed at 70be7081)
+      TestDeepseekMoonlightReal_gate  (confirmed at bcf50a49)
+      TestDeepseekV2LiteReal_gate  (confirmed at bcf50a49)
+      TestDeepseek_textParity  (confirmed at 679c9e5)
+      TestFlint_tinyForwardParity  (confirmed at 90e4d44f8)
+      TestFlint_windowBoundaryParity  (confirmed at 90e4d44f8)
+      TestForward_logitParity  (confirmed at 679c9e5)
+      TestForward_slidingWindowParity  (confirmed at 679c9e5)
+      TestGGUF_gemma3_parity  (confirmed at 679c9e5)
+      TestGGUF_qwen2_parity  (confirmed at 679c9e5)
+      TestGGUF_qwen3_parity  (confirmed at 679c9e5)
+      TestGPT2_forwardParity  (confirmed at 70be7081)
+      TestGPTQ_parity  (confirmed at 679c9e5)
+      TestGatedDeltaNet_parity  (confirmed at 70be7081)
+      TestGemma12Real_gate  (confirmed at 13c19bf7)
+      TestGemma12_forwardParity  (confirmed at 93722530)
+      TestGemma4_12B_logitParity  (confirmed at 679c9e5)
+      TestGemma4_logitParity  (confirmed at 679c9e5)
+      TestGlm4MoeAir_gate  (confirmed at eaa8bb23)
+      TestGptOssReal_gate  (confirmed at eaa8bb23)
+      TestGptOssReal_logitParity  (confirmed at eaa8bb23)
+      TestGraniteDenseReal_gate  (confirmed at bcf50a49)
+      TestGraniteDense_forwardParity  (confirmed at b7726cd)
+      TestGraniteReal_gate  (confirmed at eaa8bb23)
+      TestGraniteReal_oracle  (confirmed at 70be7081)
+      TestInt4_forwardParity  (confirmed at 7b50947a)
+      TestInternLM2_1_8bReal_gate  (confirmed at bcf50a49)
+      TestKimi_textParity  (confirmed at 679c9e5)
+      TestLFM2Real_gate  (confirmed at bcf50a49)
+      TestLagunaGGUF_gate  (confirmed at 70be7081)
+      TestLagunaReal_gate  (confirmed at eaa8bb23)
+      TestLagunaReal_oracle  (confirmed at 9ddde345)
+      TestLlama32_forwardParity  (confirmed at 679c9e5)
+      TestLlama4Real_gate  (confirmed at 70be7081)
+      TestLlama4_textParity  (confirmed at 679c9e5)
+      TestLlama_forwardParity  (confirmed at 679c9e5)
+      TestMellum2_logitParity  (confirmed at 679c9e5)
+      TestMellum2_windowParity  (confirmed at 679c9e5)
+      TestMinistral3Real_gate  (confirmed at bcf50a49)
+      TestMinistral3_forwardParity  (confirmed at b7726cd)
+      TestMistral_forwardParity  (confirmed at 679c9e5)
+      TestMixtral_forwardParity  (confirmed at 679c9e5)
+      TestNemotron3NanoMoE_textParity  (confirmed at bd085de)
+      TestNemotron_textParity  (confirmed at bd085de)
+      TestOlmo3Real_gate  (confirmed at f00fdf43)
+      TestOlmo3_forwardParity  (confirmed at b7726cd)
+      TestOlmoHybridReal_gate  (confirmed at bcf50a49)
+      TestOlmoHybrid_forwardParity  (confirmed at b7726cd)
+      TestPhi3GGUFReal_gate  (confirmed at 70be7081)
+      TestPhi3MiniReal_gate  (confirmed at bcf50a49)
+      TestPhi3_textParity  (confirmed at 679c9e5)
+      TestQwen25VLReal_gate  (confirmed at bcf50a49)
+      TestQwen2MoeReal_oracle  (confirmed at 70be7081)
+      TestQwen2Moe_forwardParity  (confirmed at 679c9e5)
+      TestQwen2_forwardParity  (confirmed at 679c9e5)
+      TestQwen35GGUF_gate  (confirmed at 70be7081)
+      TestQwen35GGUF_weightDiff  (confirmed at 70be7081)
+      TestQwen35Real_gate2FullModel  (confirmed at 70be7081)
+      TestQwen35_forwardParity  (confirmed at 679c9e5)
+      TestQwen38GGUF_gate  (confirmed at 1de75952)
+      TestQwen38GGUF_weightDiff  (confirmed at 2732e75b)
+      TestQwen38Real_gate  (confirmed at eaa8bb23)
+      TestQwen38Real_oracle  (confirmed at 70be7081)
+      TestQwen3ASR_tinyCompositionParity  (confirmed at 2083e745)
+      TestQwen3ASR_tinyTextParity  (confirmed at 2083e745)
+      TestQwen3MoeReal_oracle  (confirmed at 70be7081)
+      TestQwen3Moe_forwardParity  (confirmed at b7726cd)
+      TestQwen3VLReal_gate  (confirmed at 7ee05f0a)
+      TestQwen3_forwardParity  (confirmed at 679c9e5)
+      TestSmolLM3_3bReal_gate  (confirmed at bcf50a49)
+      TestSmolLM3_forwardParity  (confirmed at b7726cd)
+      TestSpark25Real_gate  (confirmed at bcf50a49)
+      TestVoxtral_tinyCompositionParity  (confirmed at 93f4ab0e)
+      TestVoxtral_tinyTextParity  (confirmed at 93f4ab0e)
+== 36dbfbaf1: ALL REQUIRED GATES GREEN ==
+full log: /home/francis/goinfer-logs/relgate-2026-11-21/progl-rerun/gate_parity___decoder____tokenizer.json
+
+  record: /home/francis/goinfer-logs/relgate-2026-11-21/progl-rerun/records/parity-20261122T040218Z-36dbfbaf.json (commit it with the release; `gate release` reads it)

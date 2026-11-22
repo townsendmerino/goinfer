@@ -1,0 +1,67 @@
+
+[1m== provenance ==[0m
+  repo        36dbfbaf1
+  date (UTC)  2026-11-21T15:36:14Z
+  host        Darwin arm64
+  backend     metal
+  models      /Users/francistownsend-merino/models
+  webgpu      adapter present (backend=metal)
+  gpu         Apple M1 Pro
+
+[1m== 0. clean GPU ==[0m
+  [33mSKIP[0m  clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)
+
+[1m== 1. seam (runs anywhere — no GPU, no model download) ==[0m
+  [32mPASS[0m  serve↔decoder↔backend seam: residency is actually reached, backend names validate
+
+[1m== 2. Metal suite ==[0m
+   ... metal-suite: 1m0s elapsed, 248 tests finished, last: TestMC3Step_w8BitIdentical/deep-fa-rows | in flight: TestMC3Step_w8BitIdentical (9s)
+  [32mPASS[0m  full metal suite
+      ok  	github.com/townsendmerino/goinfer/backend/metal	113.515s
+
+[1m== 2c. resident PARITY gates (-tags goinfer_testhooks — the forward is asserted here) ==[0m
+  [32mPASS[0m  resident parity gates (dense, gemma3, gemma4 MoE, qwen3.5, mellum, gpt-oss, paging bit-exactness)
+
+[1m== 3. cgo-free ==[0m
+  [32mPASS[0m  metal/cmd/serve builds CGO_ENABLED=0 and links no Metal framework (dlopen'd via purego-objc)
+
+[1m== 4. lifecycle ==[0m
+  [32mPASS[0m  Close() frees — sawtooth not staircase, and frees with a second model resident
+          close_leak_test.go:94: trajectory: base 920 MB → peak 1077 MB → end 977 MB (growth +57 MB over 4 cycles); CurrentAllocatedSize 655360 → 17432576 bytes, one resident 716308480
+          close_leak_test.go:292: A+B alive → closed A: A ledger now 0 buf/0 obj (want 0/0), B ledger 661 buf/92 obj (unchanged from 661/92); device CurrentAllocatedSize 1449000960 → 733413376 bytes; B bit-identical. RSS 2059 MB (informational)
+
+[1m== 4b. prefill (f16-MMA TTFT — a shipped path, and it shipped NaN) ==[0m
+  [32mPASS[0m  prefill matches sequential decode and emits finite logits (no NaN)
+          prefill_gemma_test.go:89: gemma prefill last-token argmax matches sequential ✓ (cosine 0.9998)
+          prefill_moe_parity_test.go:31: moe prefill last-token argmax matches sequential ✓ (cosine 0.9999)
+          prefill_moe_parity_test.go:45: moe prefill last-token argmax matches sequential ✓ (cosine 0.9998)
+          prefill_moe_parity_test.go:45: moe prefill last-token argmax matches sequential ✓ (cosine 0.9994)
+          prefill_parity_test.go:77: prefill last-token argmax matches sequential ✓ (cosine 0.9980)
+          prefill_parity_test.go:98: prefill 140 tokens: sequential 846.91 ms vs PrefillLast 68.87 ms => 12.3x faster TTFT
+
+[1m== W. WebGPU suite + resident parity (adapter-detected, -tags 'gpu goinfer_testhooks') ==[0m
+   ... webgpu-suite: 1m0s elapsed, 99 tests finished, last: TestDecodeRunnerW4A8_geometries/phi3-mini_(MHA,_hd=96)/pos0 | in flight: TestDecodeRunnerW4A8_geometries (4s)
+  [32mPASS[0m  webgpu suite (backend=metal)
+      ok  	github.com/townsendmerino/goinfer/backend/webgpu	24.372s
+      ok  	github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels	62.590s
+   ... webgpu-parity: 1m0s elapsed, 48 tests finished, last: TestOlmo3GQAResidentParityWebGPU/int4/ | in flight: TestOlmo3GQAResidentParityWebGPU (2s)
+  [32mPASS[0m  webgpu resident parity gates (qwen3.5 DeltaNet dense; MoE/granite/nemotron opt-in fixtures)
+      ok  	github.com/townsendmerino/goinfer/backend/webgpu	62.930s
+      ok  	github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels	34.969s
+
+[1m== 5. repo hygiene (derived from .github/workflows/ci.yml) ==[0m
+  [32mPASS[0m  VERDICT: PASS — citation lint: every citation resolves
+  [33mSKIP[0m  29 linux-only CI hygiene step(s) — wrong platform for this host
+  [32mPASS[0m  9 CI hygiene check(s) reproduced locally, derived from ci.yml
+
+[1m== verdict ==[0m
+  check groups: 9 declared -> 9 reported   |   verdicts within them: 10 pass, 2 skip, 0 fail
+
+  [33mSkipped — a skip is not a pass; this gate does NOT cover:[0m
+    - SKIPPED: clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)
+    - SKIPPED: 29 linux-only CI hygiene step(s) — wrong platform for this host
+
+  [32mPASS[0m — metal on Darwin @ 36dbfbaf1 (2026-11-21T15:42:31Z)
+  Paste this block for the tag. The OTHER box must pass its own run: no machine has both GPUs.
+
+  record: /Users/francistownsend-merino/goinfer-logs/relgate-2026-11-21/gate-gpu/records/metal-20261121T154231Z-36dbfbaf.json (commit it with the release; `gate gpu-records` reads it)
