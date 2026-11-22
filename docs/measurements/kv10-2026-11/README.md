@@ -71,3 +71,28 @@ Build `5ecc0d73d`'s tree plus the two tests (`backend/cuda/kv3_longprefill_test.
 - **Not read: a YaRN-configured checkpoint.** The candidates that carry YaRN here (`gpt-oss-20b-hf`, `mellum2`) do not fit at 128K, and the GGUF loader parses no rope scaling for `qwen2`.
 - **One checkpoint, one prompt, 16 rows a depth:** a first harness, not a graded set. The tail rows are the last 16 of a repository text, not held-out prompts.
 - **K8V4, Metal's and WebGPU's ceilings** are not in this item.
+
+## The frozen text (Francis, 2026-11-22, option A)
+
+**Why.** Until now `kv10Text` built its prompt from the live tree: the non-test `decoder/*.go`, `docs/*.md` and `backend/cuda/*.go`, sorted, first N tokens. So the verdict moved with any edit to those files. At v0.25.0 (`docs/releases/v0.25.0-checklist.md` §3), one `36dbfbaf1` test binary read 0.991232 at 65,536 on `e0d661712`'s text and 0.985122 on `36dbfbaf1`'s. The two texts are byte-identical up to byte 213,566, where one line of `decoder/backend_view.go` changed (`Dims()`'s result list became `ResidentDims`), about 60 tokens before the 16 scored rows (`docs/measurements/release-v0.25.0/kv10-text/`).
+The 0.99 bar sits inside that spread, and every deep reading so far lies on one side or the other of it: 0.9851, 0.9853, 0.9892, 0.9909, 0.9912.
+
+**What.** The prompt is now the text `kv10Text` built at `157e2ca29`, the commit of the first reading above. That text is identical to `5ecc0d73d`'s, since the diff between the two touches only the test file. It is chosen because it is what the registration graded, not because of a verdict.
+`backend/cuda/testdata/kv10_text_157e2ca29.txt.gz` holds the whole files `decoder/actquant_hazard.go` through `decoder/fitguard.go`: 78 files, 526,468 bytes, sha256 `1cd7d3327d3488527f5c77789af8c4eacdf0d82ef9aa34fbc3939e1b3ec7ed0d`, 157,831 bytes gzipped. `freeze_text.py` rebuilds it from git byte for byte. It is a byte prefix of the full 3,258,173-byte text, and its first 131,000 and 150,000 tokens equal the full text's (HF tokenizers 0.23.1 on the checkpoint's `tokenizer.json`).
+`kv10TextBytes` reads only that file, `kv10Text` declares the cell VOID on any other hash, and `TestKV10_textIsFrozen` (no device) holds the hash. The bar (0.99) and the bands did not change.
+
+**What the earlier readings now mean.** The registration's readings at `157e2ca29` (0.993464 at 3,900, 0.985323 at 65,536, 0.989244 at 131,000) are on this exact text. So a re-read at a later build differs from them only by code.
+
+### Reading on the frozen text, 2026-11-22: FAILS at 65,536, the registration's reading reproduced exactly
+
+The run was `run-frozen.sh` at `3145faeea`, from a clean worktree, under the exclusive timing lock. It started 09:24:21 PST and ended 09:36:12. Load average 2.28 at the start, 63.1 GB available. Driver 595.112.07 as anchored. The card held only the desktop compositor's context (`kwin_wayland`, 18 MiB). `qwen3.5-0.8b` was read from `~/models` on NVMe.
+Records are in `frozen-2026-11-22/` (`run.log`, `fidelity-frozen.jsonl`). The bar and the bands are the registered ones.
+
+| depth | min cosine (f16 vs f32) | argmax agrees (all rows / 0.5+ margin) | mean KL, nats | NaN or Inf | verdict | the registration's reading at `157e2ca29` |
+|---|---|---|---|---|---|---|
+| 3,900 (the control) | 0.993464 | 15 of 16 / 14 of 14 | 1.491e-02 | no | DEGRADES | 0.993464, 1.491e-02, DEGRADES |
+| 65,536 | **0.985323** | 16 of 16 / 12 of 12 | 1.241e-02 (0.83 of the control's) | no | **FAILS** (cosine under 0.99) | 0.985323, 1.241e-02, FAILS |
+
+- **Both cells equal the registration's to the last float digit** (`fidelity.jsonl`: min cosine 0.9853234643651604, mean KL 0.012412510429789178 at 65,536; 0.9934641567702915 and 0.01490808953608066 at 3,900). This says three things. The frozen text is the registered input: the harness tokenizes it with goinfer's own tokenizer and gets the same cells. The code path this harness reads computes the same logits at `3145faeea` as at `157e2ca29`. And the v0.25.0 red (0.985122 on `36dbfbaf1`'s text) was not a regression.
+- **The registered bar on the registered text reads FAILS, as it did on its first reading.** The pre-flight's pass on `e0d661712`'s text (0.991232) was that text's last 16 tokens. By the other registered measures the deep cell is no worse than the control: KL below it, every margin row agreeing, no NaN or Inf. That is the disagreement the first reading already recorded.
+- **What FAILS means for this harness is Francis's call** (a red in `gate gpu`, or a logged reading as the registration's "Means" row puts it: "FAILS: the harness's finding"). Until he answers, the wiring is unchanged: the test still errors on FAILS, and `gate gpu`'s kv10 group still runs it at 3900,65536.
