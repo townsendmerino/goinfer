@@ -13,7 +13,7 @@
   "programs": [
     "testdata/deepseek-tiny"
   ],
-  "deps_hash": "sha256:092c0854aa3d059fb79383a848e64bdfe2e8c128e9066fcfff49d485f668f709",
+  "deps_hash": "sha256:5177b41eec03aedb7e70fff2eb739fe9d64099fa07c01da128221654eb4e1a6f",
   "status": "validated",
   "validated_at": "d5c5a1d53",
   "date": "2026-10-23",

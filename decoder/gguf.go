@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
@@ -44,10 +45,27 @@ func ggufConfig(g *embed.GGUFFile) (cfg *Config, err error) {
 			cfg.Sampling = ggufSampling(g)
 		}
 	}()
+	if key := ggufHadamardKey(g); key != "" {
+		return nil, errorOfKind(ErrUnsupportedModel, "decoder(gguf): this file's weights are Hadamard-rotated (metadata %q) and need a matching "+
+			"activation transform on every forward pass that goinfer does not implement, so any read of them would generate garbage; not loaded", key)
+	}
 	if adapter, ok := ggufRegistry[arch]; ok {
 		return adapter(g)
 	}
 	return nil, errorOfKind(ErrUnsupportedModel, "decoder(gguf): architecture %q unsupported (have: %s)", arch, knownGGUFArchitectures())
+}
+
+// ggufHadamardKey is the first metadata key under llama.cpp's "prism.hadamard." prefix (the marker PrismML's Bonsai 2 files carry for a
+// blockwise Hadamard rotation folded into the weights), "" when there is none. Any key under the prefix declines: the file is rotated
+// whatever its tensor types, a third-party requantization included.
+func ggufHadamardKey(g *embed.GGUFFile) string {
+	first := ""
+	for k := range g.Metadata {
+		if strings.HasPrefix(k, "prism.hadamard.") && (first == "" || k < first) {
+			first = k
+		}
+	}
+	return first
 }
 
 // ggufVocabSize reads the vocab size from the embedding tensor's dims (no
