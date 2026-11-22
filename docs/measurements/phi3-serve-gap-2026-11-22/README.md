@@ -39,4 +39,31 @@ itself at 21:25.
 
 ## Results
 
-(pending)
+### Run, 2026-11-22 14:31–14:48 PST: **GAP at both depths** by the registered rule
+
+- **The run.** One process under the exclusive timing lock (nobara-pc, RTX 2070 SUPER, driver 595.112.07), 16 cells, no void cell, no
+  re-run. Every cell started at a 1-minute load of 0.83–0.99 (after its settle under 1.0), with 61,102–61,200 MiB available and system
+  swap flat at 519 MiB, held from before. No foreign process was present. kwin_wayland held 19 MiB of the card, and the GPU read
+  48–60 °C.
+- **Build.** Both binaries come from `896638446` (this branch's base, `origin/main`):
+  - serve: `CGO_ENABLED=0 go build -tags cuda ./backend/cuda/cmd/serve`, sha256 `c69859c6…`;
+  - the test binary: `go test -c -tags 'cuda goinfer_testhooks'` in `backend/cuda`, with the scratch file added as
+    `zz_gap_serve_auto_test.go`, sha256 `7246ac86…`. Every A cell printed the scratch's f16 marker.
+- **The fit check** (serve's own banner, [`raw/fit-phi3.log`](raw/fit-phi3.log)): `cuda-resident (q4k)`, f16 KV, 2 KV slots of 4 asked
+  at ctx 4096, a KV pool of 8,192 tokens in blocks of 64.
+
+| depth | pair ratios B ÷ A (block 1; block 2) | in-process A, tok/s | served B, tok/s | per-token gap, ms |
+|--:|---|---|---|--:|
+| 128 | 0.9051, 0.9066; 0.9049, 0.9051 | 126.3–126.6 | 114.31–114.58 | 0.82–0.83 |
+| 3,900 | 0.9495, 0.9489; 0.9498, 0.9494 | 62.21–62.27 | 59.06–59.09 | 0.85–0.86 |
+
+- **Verdict:** GAP at 128 and at 3,900. Every pair is under 0.98, and the pairs agree within 0.002.
+- **The gap is a constant per-token cost, not a depth-dependent one.** The served token is 0.82–0.86 ms longer than the in-process one
+  at both depths, while the in-process token itself grows from 7.9 to 16.1 ms between them. That points at something added once per
+  token around the same kernels, not at attention or the KV layout.
+- **Records:** [`raw/cells.tsv`](raw/cells.tsv) (one row per cell with its start state), [`raw/run.log`](raw/run.log), and the
+  per-cell logs and bench_peer result files in `raw/cell-logs.tar.gz`.
+
+### Diagnosis
+
+(next: where the 0.83 ms goes)
