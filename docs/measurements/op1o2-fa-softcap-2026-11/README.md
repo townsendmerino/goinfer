@@ -227,3 +227,34 @@ The README above registers the cell's rule and shape. This fixes the parts it le
   `serve-default.log.gz`. A first run is kept as `smoke-first-run-strict-fit.log`. It read FAIL on one check only: it compared
   the whole fit line, whose host budget (41.51–41.65 GiB) is the box's free memory at load. The plan in that line was equal on
   every arm. The script now compares the plan without the budget, and the re-run passed every check.
+
+## Addendum, 2026-11-22, before the run: what the default reaches, and a reading past Gemma 2's window
+
+Review of the default PR (#1230, relayed by the coordinator): the default is keyed on the model having an attention softcap, not on
+Gemma 2 2B. The fidelity gate read K = 3,900 and the timed cell stopped at depth 2,048. Neither crossed Gemma 2's 4,096-position
+sliding window, while serve's default plan for the 2B caps at 8,192.
+
+- **What the default reaches, from the code.** `cudaResident.faEligible` refuses a capped layer unless `faSoftcap` is set, and the cap
+  is `BackendView.AttnLogitSoftcap()`, which only two architectures fill:
+  - `gemma2Architecture`: every Gemma 2 checkpoint, from `config.json`'s `attn_logit_softcapping` or the GGUF's
+    `gemma2.attn_logit_softcapping`. The released 2B, 9B and 27B all set 50.
+  - `gemma3Architecture` passes `config.json`'s `attn_logit_softcapping` through. The released Gemma 3 configs set it to null (0),
+    and its GGUF path does not read the key, so no released Gemma 3 reaches the lane by this route.
+  - The lane admits head dims 64, 128 and 256 only. Gemma 2 2B and 9B have head dim 256 and 27B has 128, so all three are eligible.
+  - On this box's `~/models`, the reachable checkpoints are Gemma 2 2B: `gemma-2-2b-it-Q8_0.gguf`, and the `gemma-2-2b-it` directory,
+    which goinfer cannot tokenize (addendum of 2026-11-09). There is no Gemma 2 9B or 27B, and `gemma-3-4b-it`'s config has a null cap.
+- **The reading.** The registered gate, unchanged, on one more cell: `G22B:8000`, `gemma-2-2b-it-Q8_0.gguf` at int4 on CUDA, K = 8,000,
+  held-out set B. Its CPU f32 reference is `TestPrefillGateReference`'s G22B row with `GOINFER_CPU_REF_KS=8000`. K = 8,000 plus the 64
+  scored positions sits inside the model's 8,192, and every global layer attends past the 4,096 window. The local layers attend their
+  4,096 window, so they run the windowed lane at full width.
+  The gate loads with zero `Options`, so `ResidentWindowedKV` is off: the local layers keep the whole cache, and the window is applied
+  by masking. Serve's default ring, window + 512 positions, is the same attention over a different storage layout. It is held by the
+  windowed-KV tests, not by this gate.
+- **Criteria, unchanged:** (a) hard flips ≤ exact + 2√exact, the bar as amended by Francis on 2026-09-13 (from the strict
+  lane ≤ exact) and adopted in `attn-decode-fa-fidelity-PREREGISTERED.md` before the lane existed. The strict reading is printed too.
+  (b) agreement ≥ exact − 1.0 pt, and lane ≥ exact on at least half the prompts. (c) mean KL ≤ 1.10 × exact's. The ambiguous band is
+  the same. This is a reading, not a re-tune: nothing in the lane changes.
+- **What it decides:** nothing by itself. Francis chooses the default's scope with it in hand: on for every capped model, on for
+  Gemma 2 only, or off. A FAIL at K = 8,000 is evidence that the 3,900 PASS does not extend past the window.
+- **Cost:** the reference is about 80–100 min of CPU, 10 prompts at 8,000 tokens; the 3,900 reference took 37 min. The gate is
+  about 7 min under the exclusive lock. Both by day, finishing before 21:30 PST.
