@@ -1,0 +1,19 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+import (
+	"fmt"
+	"os"
+)
+
+// init restores serve's --kv auto (f16 for a cleared family such as phi3) when GAP_SERVE_AUTO=1. The suite pins it false in
+// kv16_default_test.go's init, which runs first (files initialise in name order: this file is built as zz_gap_serve_auto_test.go), so
+// BenchmarkResidentDecode would otherwise time an f32 cache that serve never loads for Phi-3. Scratch instrument for
+// docs/measurements/phi3-serve-gap-2026-11-22, the same as the split-KV record's; not committed as a test.
+func init() {
+	if os.Getenv("GAP_SERVE_AUTO") == "1" {
+		kvF16Auto.Store(true)
+		fmt.Fprintln(os.Stderr, "gap-scratch: kvF16Auto restored to true (serve's --kv auto)")
+	}
+}
