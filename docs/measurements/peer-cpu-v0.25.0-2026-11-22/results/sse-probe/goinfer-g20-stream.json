@@ -1,0 +1,40 @@
+{
+ "prompt_key": "G20:128",
+ "usage": {
+  "prompt_tokens": 130,
+  "completion_tokens": 64,
+  "total_tokens": 194,
+  "prefill_reused_tokens": 0
+ },
+ "events_total": 58,
+ "token_events": 55,
+ "with_content": 16,
+ "delta_keys": {
+  "reasoning_content": 39,
+  "content": 16
+ },
+ "first_deltas": [
+  {
+   "reasoning_content": "The"
+  },
+  {
+   "reasoning_content": " user"
+  },
+  {
+   "reasoning_content": " says"
+  }
+ ],
+ "gaps_ms": [
+  466.7,
+  468.6,
+  441.2,
+  394.8,
+  404.4,
+  384.1,
+  443.0,
+  366.0,
+  420.9,
+  424.1,
+  463.7
+ ]
+}

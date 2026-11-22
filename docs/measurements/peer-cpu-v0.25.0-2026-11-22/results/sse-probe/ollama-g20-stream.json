@@ -1,0 +1,26 @@
+{
+ "events": 62,
+ "token_events": 61,
+ "eval_count": 64,
+ "message_keys": {
+  "role": 61,
+  "thinking": 61
+ },
+ "first": [
+  {
+   "role": "assistant",
+   "content": "",
+   "thinking": "We"
+  },
+  {
+   "role": "assistant",
+   "content": "",
+   "thinking": " need"
+  },
+  {
+   "role": "assistant",
+   "content": "",
+   "thinking": " to"
+  }
+ ]
+}
