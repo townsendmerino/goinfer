@@ -1,0 +1,5 @@
+SKIP test_decoder: unexpected command: go test -json -tags goinfer_testhooks -timeout 120m -skip '(_forwardParity|_logitParity|_textParity)$|^TestGGUF_.*_parit
+== test_decoder_[checkpoint] start 2026-11-21 23:20:08
+rc=0 end 2026-11-22 00:21:00
+{'pass': 457, 'fail': 0, 'skip': 96} failed: []
+ALL DONE 2026-11-22 00:21:00

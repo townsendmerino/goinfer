@@ -1,0 +1,1291 @@
+# go test -json -count=1 -tags goinfer_testhooks -timeout 45m -run ^(TestA3FanoutEndToEnd|TestA3FastAttentionDivergence|TestA3NeverReachesSpeculativeVerify|TestAdmissionCensus|TestAdmit_shapeAndGatesAreTheArchs|TestAdmit_table|TestAttendBatchedHeads_vsNaive|TestCPUDecode_weightBytesPerToken|TestCPURoofline_fusedGateUp|TestCPURoofline_fusedGateUp_logitsBitIdentical|TestCPURoofline_w4a8Batch|TestCPURoofline_w4a8Batch_logitsBitIdentical|TestCUDATable_plantedGapGoesRed|TestCacheStateGrid_rewindCellsOnRealCaches|TestCacheStateGrid_snapshotCells|TestCacheStateGrid_specRollbackCells|TestCanSerialize_refusesUnrepresentable|TestCapabilityMatrix|TestCapabilityMatrix_CoverageComplete|TestCapabilityMatrix_checkpointLabels|TestCapabilityMatrix_siteDocsAreUsable|TestCheckGiwQuantMatch|TestCost_offShare|TestD8b_q4kGGUFTakesItsSidecar|TestD8b_q4kRoundTripsThroughGIW|TestDecideGIWFit_pinnedExpertsOf35B|TestDecideGIWFit_snapshotBudgetCounts|TestDecideGIWFit_withoutTheExpertCacheTheSameMemoryAdmits|TestDecodeCancellationStillHonored|TestDecodeParity|TestDecodeParityInt4|TestDecode_fusedScheduleCostsNothingPerToken|TestEmbedInt4Knob|TestEmbedInt4_reachesEveryFamilyLoader|TestEnsureCachedGIW_proceedsWhenDiskProbeUnknown|TestFeatureSplits_wrongHalfDeclinesByName|TestFitCheck_cudaResident7BAt32KIsAdmitted|TestFitEstimate_otherQuantsUnchanged|TestFitEstimate_q4kAgreesWithResidentWeightBytes|TestFitQuery_refusesACopiedF32Bundle|TestFitRefusal_streamableOnlyWhereItPages|TestForwardCaptureSeam|TestForwardN_matchesSequential|TestFusedAttention_logitDivergence|TestG15PrefillProfile|TestG40Speed|TestG40T0a_noAllocsAfterFirstChunkReal0p5B|TestG40T0b_peakLiveHeapReal0p5B|TestGIWWeightsQuant|TestGIWWeightsQuant_copiesNoWeights|TestGIW_f32WeightsAreMapped|TestGatedAct_metalModelPathAndGemma4MoE|TestGatedGELUErf_sparkNamesIt|TestGatedGELU_gemmaUnchanged|TestGemma4Admission_unconditional|TestGiwInt4LabelNotMix|TestGiwPinnedExpertBytes_matchesTheMeasured35B|TestGiwPinnedExpertBytes_onlyWhereTheCopyIsBuilt|TestGiwRecordsResolvedQuant|TestGlmOcrE2E_f32|TestGlmOcrE2E_f32_hfPixels|TestGptOss_webgpuDecline|TestGrammarAlphaPredictor|TestGrammarForcedFraction|TestGrammarRouterSpec|TestGrammarSpecHarness|TestGrammarSpec_sessionTwoTurnsMatchPlain|TestGuardGIWFit_cudaResidentNeedsNoHostKV|TestGuardGIWFit_metalNotOverchargedByCPUPricing|TestHardwareMatrix_breakItFirst|TestHardwareMatrix_declineReasonsNotHidden|TestHardwareMatrix_fresh|TestInt4MixMode|TestKSO1_cpuQ4KFingerprint|TestKVCache_recurrentKindsResetAndRewindHonestly|TestKVF16_F1Fast512|TestKVF16_F3InProcessAB|TestKVPricingFor_cudaNotCompiledKeepsCPUPricing|TestKVPricingFor_cudaResidentKVIsDevice|TestKVPricingFor_metalMLAPricedAsAllocated|TestKVPricingFor_metalNotCompiledKeepsCPUPricing|TestKVPricingFor_pricesWhatTheBackendAllocates|TestLFM2_arch|TestLFM2_declinesResidentRunner|TestLayerPager_residentBytesWithinBudget|TestLayerPaging_bitExact|TestLayerShape_kvRowsAreWhatTheCPUCacheHolds|TestLoadAdapter_rejectsEveryOwnForwardFamily|TestLoadGIW_mmap|TestLoadSerializedWeights_guards|TestLoadSerialized_finalizesTiedLMHead|TestLoadSerialized_neverPanicsOnValidCRC|TestLoad_directLoadWritesNothing|TestLoad_kind5UnderBackendNeedingCanonical_declinesLoudlyAtLoad|TestLoad_libraryDefaultOpensTheSidecar|TestLoad_productionDefaultTakesTheSidecar|TestLoad_refusesCopiedF32Bundle|TestLoad_resolvesAutoWeightCacheBudgetFromLiveProbe|TestLoad_sidecarRefusalNamesDirectLoad|TestLoad_testBinaryDefaultIsDirect|TestMEM11_giwBF16HeapLFM2|TestMEM11_lfm2ResidentBytes|TestMEM11_mlaInt8FidelitySlice|TestMEM8bp_e2bTranscodeHeap|TestMetalCoverageFlags|TestMetalDecodeScratch_q4kSegmentsAreThePartsTheLaneUploads|TestMetalPricing_followsThePathThatRuns|TestMetalTable_plantedGapGoesRed|TestNgramAdaptiveGreedyParity|TestNgramAdaptiveThetaAtLeastOne_declinesToGenerate|TestNgramAlphaCrossWorkload|TestNgramAlphaPredictor|TestNgramSampledFirstTokenMatchesPlain|TestNgramSampledHarness|TestNgramSampledRejectsUnsupported|TestNgramSpecHarness|TestNgramSpeculativeGreedyParity|TestNonGatedGELUErf_declinesByName|TestOwnForward_recurrentBitMatchesTheCacheKinds|TestPairwiseRoPE_declineNamesCause|TestPhi3GGUFReal_gate|TestPlan_metalAdmitsAQ4KLoadThroughItsSidecar|TestPrefillAttnPoolInvariance|TestPrefillAttnRowTileInvariance|TestPrefillCancelMidFlight|TestPrefillCancelledBeforeStart|TestPrefillChunked_bitIdenticalReal0p5B|TestPrefillCoverageAudit|TestPrefillGateReference|TestProgram_L_everyParameterIsLive|TestProgram_noFamilyLoopAndEveryFamilyWalks|TestProgram_pagerStaysOffNonGenericFamilies|TestQwen3VLImageReal|TestQwen3VLReal_gate|TestR06_speed|TestR9_decodeAttribution|TestR9_mlpMatmulIsolated|TestR9_parWidthSweep|TestResidentAdmission_matrix|TestResidentAdmission_registryCovered|TestResidentFeatures_derivationMatchesProfile|TestResidentHostCopyBytes_exemptsMappedQ4KBlocks|TestResidentMoECapacity_routerCap|TestResolveArchitecture_gpt2|TestResolveArchitecture_guardFiresRed|TestSequenceState_CPUAndResidentParity|TestSerializeCensus_everyFixtureIsListedOrExcluded|TestSerializeWeightsTo_matchesBuffer|TestSerializeWeights_roundTrip|TestSerializedInt4Weights_kind5RepackedOnly_matchesCanonical|TestSerializedInt4Weights_neverRepacked_pagedFallback|TestSessionNgramAdaptiveThetaAtLeastOne_declinesToGenerate|TestSessionNgramSpecParity|TestSession_adapterSwitchGoesCold|TestSession_bailingHybridNeverReusesKDAState|TestSession_cleanCacheSkipsTheSecondRecurrentReset|TestSession_snapshotRecordsAdapter|TestSidecarLoad_matchesDirectLoad|TestSidecarPathIfFresh|TestSidecar_copiedF32BundleIsRebuilt|TestSidecar_rewriteWhileLoaded|TestSpecRollbackSafe_stagedSlidingWindow|TestSpeculativeGreedyParity|TestSpeculativeGreedyParity_draftTarget|TestStateBuffers_kdaPerStream|TestStateSpecs_fromTheOperations|TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers|TestSuffixProbe_step1|TestSupportTable_fresh|TestSupportTable_plantedDefects|TestThetaProbe_CPU|TestTranscode_embedInt4ThreadedThroughRealGGUF|TestTranscode_realGGUFSucceedsAndPublishedBundleLoads|TestTreeUpside|TestTruncateTo|TestW4A8Row4_loadTimeAndMemoryDelta|TestW4A8Row4_skippedForMetalBackend|TestW4A8SplitHalfFires_onBenchModel)$ github.com/townsendmerino/goinfer/decoder
+# (in /Users/francistownsend-merino/goinfer-bench/relgate-qf-wt)
+
+=== RUN   TestA3FastAttentionDivergence
+21:01:53 [TestA3FastAttentionDivergence] start — 3 items
+21:01:53 [TestA3FastAttentionDivergence] K=256 (acc64 vs f32 prefill) elapsed=0s 0/3
+  A3 divergence K=256   cosine=1.000000000 maxAbs=0  (IDENTICAL — flag had no effect, check the guard)
+21:01:54 [TestA3FastAttentionDivergence] K=1024 (acc64 vs f32 prefill) elapsed=1s 1/3 rate=57/min
+  A3 divergence K=1024  cosine=0.998294924 maxAbs=6.39
+21:02:04 [TestA3FastAttentionDivergence] K=2048 (acc64 vs f32 prefill) elapsed=11s 2/3 rate=5.8/min
+  A3 divergence K=2048  cosine=0.998355925 maxAbs=6.39
+21:02:38 [TestA3FastAttentionDivergence] done elapsed=45s 3/3 rate=1.8/min
+--- PASS: TestA3FastAttentionDivergence (45.07s)
+=== RUN   TestA3NeverReachesSpeculativeVerify
+    a3_divergence_test.go:156: forwardN (speculative verify) is bit-identical with GOINFER_CPU_FAST_ATTENTION=1 — guard holds
+--- PASS: TestA3NeverReachesSpeculativeVerify (3.84s)
+=== RUN   TestA3FanoutEndToEnd
+    a3_fanout_e2e_test.go:25: set GOINFER_A3_FANOUT=1 to run the A3 end-to-end prefill A/B
+--- SKIP: TestA3FanoutEndToEnd (0.00s)
+=== RUN   TestAdmit_table
+--- PASS: TestAdmit_table (0.00s)
+=== RUN   TestAdmit_shapeAndGatesAreTheArchs
+--- PASS: TestAdmit_shapeAndGatesAreTheArchs (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/bailing_hybrid
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/bailing_hybrid (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/cohere
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/cohere (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/cohere2
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/cohere2 (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/deepseek_v2
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/deepseek_v2 (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/deepseek_v3
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/deepseek_v3 (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/flint
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/flint (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/gemma
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/gemma (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/gemma2
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/gemma2 (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/gemma3
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/gemma3 (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/gemma3_text
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/gemma3_text (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/gemma4
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/gemma4 (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/gemma4_text
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/gemma4_text (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/gemma4_unified_text
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/gemma4_unified_text (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/glm4_moe
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/glm4_moe (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/glm_ocr
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/glm_ocr (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/glm_ocr_text
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/glm_ocr_text (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/gpt2
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/gpt2 (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/gpt_oss
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/gpt_oss (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/granite
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/granite (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/granitemoehybrid
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/granitemoehybrid (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/internlm2
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/internlm2 (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/internlm3
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/internlm3 (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/kimi_k2
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/kimi_k2 (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/laguna
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/laguna (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/lfm2
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/lfm2 (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/lfm2_vl
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/lfm2_vl (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/llama
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/llama (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/llama4_text
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/llama4_text (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/mellum
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/mellum (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/ministral3
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/ministral3 (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/mistral
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/mistral (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/mistral3
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/mistral3 (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/mixtral
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/mixtral (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/nemotron_h
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/nemotron_h (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/olmo3
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/olmo3 (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/olmo_hybrid
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/olmo_hybrid (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/phi3
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/phi3 (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/qwen2
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/qwen2 (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/qwen2_5_vl
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/qwen2_5_vl (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/qwen2_moe
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/qwen2_moe (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/qwen3
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/qwen3 (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/qwen3_5
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/qwen3_5 (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/qwen3_5_moe
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/qwen3_5_moe (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/qwen3_5_moe_text
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/qwen3_5_moe_text (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/qwen3_5_text
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/qwen3_5_text (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/qwen3_asr
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/qwen3_asr (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/qwen3_moe
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/qwen3_moe (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/qwen3_next
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/qwen3_next (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/qwen3_vl
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/qwen3_vl (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/qwen3_vl_moe
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/qwen3_vl_moe (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/smollm3
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/smollm3 (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/spark2_5
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/spark2_5 (0.00s)
+=== RUN   TestCacheStateGrid_rewindCellsOnRealCaches/voxtral
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches/voxtral (0.00s)
+--- PASS: TestCacheStateGrid_rewindCellsOnRealCaches (0.00s)
+=== RUN   TestCacheStateGrid_snapshotCells
+=== RUN   TestCacheStateGrid_snapshotCells/MLA_latent
+--- PASS: TestCacheStateGrid_snapshotCells/MLA_latent (0.00s)
+=== RUN   TestCacheStateGrid_snapshotCells/DeltaNet_state
+--- PASS: TestCacheStateGrid_snapshotCells/DeltaNet_state (0.00s)
+=== RUN   TestCacheStateGrid_snapshotCells/short-conv_window
+--- PASS: TestCacheStateGrid_snapshotCells/short-conv_window (0.00s)
+=== RUN   TestCacheStateGrid_snapshotCells/Mamba-2_state
+--- PASS: TestCacheStateGrid_snapshotCells/Mamba-2_state (0.00s)
+=== RUN   TestCacheStateGrid_snapshotCells/KDA_state
+--- PASS: TestCacheStateGrid_snapshotCells/KDA_state (0.00s)
+=== RUN   TestCacheStateGrid_snapshotCells/image_blocks
+--- PASS: TestCacheStateGrid_snapshotCells/image_blocks (0.00s)
+=== RUN   TestCacheStateGrid_snapshotCells/m-RoPE_positions
+--- PASS: TestCacheStateGrid_snapshotCells/m-RoPE_positions (0.00s)
+=== RUN   TestCacheStateGrid_snapshotCells/deepstack_rows
+--- PASS: TestCacheStateGrid_snapshotCells/deepstack_rows (0.00s)
+=== RUN   TestCacheStateGrid_snapshotCells/capture_rows
+--- PASS: TestCacheStateGrid_snapshotCells/capture_rows (0.00s)
+=== RUN   TestCacheStateGrid_snapshotCells/tree-verify_mask
+--- PASS: TestCacheStateGrid_snapshotCells/tree-verify_mask (0.00s)
+=== RUN   TestCacheStateGrid_snapshotCells/LoRA_adapter_binding
+--- PASS: TestCacheStateGrid_snapshotCells/LoRA_adapter_binding (0.00s)
+--- PASS: TestCacheStateGrid_snapshotCells (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells
+=== RUN   TestCacheStateGrid_specRollbackCells/bailing_hybrid
+--- PASS: TestCacheStateGrid_specRollbackCells/bailing_hybrid (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/cohere
+--- PASS: TestCacheStateGrid_specRollbackCells/cohere (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/cohere2
+--- PASS: TestCacheStateGrid_specRollbackCells/cohere2 (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/deepseek_v2
+--- PASS: TestCacheStateGrid_specRollbackCells/deepseek_v2 (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/deepseek_v3
+--- PASS: TestCacheStateGrid_specRollbackCells/deepseek_v3 (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/flint
+--- PASS: TestCacheStateGrid_specRollbackCells/flint (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/gemma
+--- PASS: TestCacheStateGrid_specRollbackCells/gemma (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/gemma2
+--- PASS: TestCacheStateGrid_specRollbackCells/gemma2 (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/gemma3
+--- PASS: TestCacheStateGrid_specRollbackCells/gemma3 (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/gemma3_text
+--- PASS: TestCacheStateGrid_specRollbackCells/gemma3_text (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/gemma4
+--- PASS: TestCacheStateGrid_specRollbackCells/gemma4 (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/gemma4_text
+--- PASS: TestCacheStateGrid_specRollbackCells/gemma4_text (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/gemma4_unified_text
+--- PASS: TestCacheStateGrid_specRollbackCells/gemma4_unified_text (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/glm4_moe
+--- PASS: TestCacheStateGrid_specRollbackCells/glm4_moe (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/glm_ocr
+--- PASS: TestCacheStateGrid_specRollbackCells/glm_ocr (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/glm_ocr_text
+--- PASS: TestCacheStateGrid_specRollbackCells/glm_ocr_text (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/gpt2
+--- PASS: TestCacheStateGrid_specRollbackCells/gpt2 (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/gpt_oss
+--- PASS: TestCacheStateGrid_specRollbackCells/gpt_oss (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/granite
+--- PASS: TestCacheStateGrid_specRollbackCells/granite (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/granitemoehybrid
+--- PASS: TestCacheStateGrid_specRollbackCells/granitemoehybrid (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/internlm2
+--- PASS: TestCacheStateGrid_specRollbackCells/internlm2 (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/internlm3
+--- PASS: TestCacheStateGrid_specRollbackCells/internlm3 (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/kimi_k2
+--- PASS: TestCacheStateGrid_specRollbackCells/kimi_k2 (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/laguna
+--- PASS: TestCacheStateGrid_specRollbackCells/laguna (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/lfm2
+--- PASS: TestCacheStateGrid_specRollbackCells/lfm2 (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/lfm2_vl
+--- PASS: TestCacheStateGrid_specRollbackCells/lfm2_vl (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/llama
+--- PASS: TestCacheStateGrid_specRollbackCells/llama (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/llama4_text
+--- PASS: TestCacheStateGrid_specRollbackCells/llama4_text (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/mellum
+--- PASS: TestCacheStateGrid_specRollbackCells/mellum (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/ministral3
+--- PASS: TestCacheStateGrid_specRollbackCells/ministral3 (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/mistral
+--- PASS: TestCacheStateGrid_specRollbackCells/mistral (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/mistral3
+--- PASS: TestCacheStateGrid_specRollbackCells/mistral3 (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/mixtral
+--- PASS: TestCacheStateGrid_specRollbackCells/mixtral (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/nemotron_h
+--- PASS: TestCacheStateGrid_specRollbackCells/nemotron_h (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/olmo3
+--- PASS: TestCacheStateGrid_specRollbackCells/olmo3 (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/olmo_hybrid
+--- PASS: TestCacheStateGrid_specRollbackCells/olmo_hybrid (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/phi3
+--- PASS: TestCacheStateGrid_specRollbackCells/phi3 (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/qwen2
+--- PASS: TestCacheStateGrid_specRollbackCells/qwen2 (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/qwen2_5_vl
+--- PASS: TestCacheStateGrid_specRollbackCells/qwen2_5_vl (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/qwen2_moe
+--- PASS: TestCacheStateGrid_specRollbackCells/qwen2_moe (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/qwen3
+--- PASS: TestCacheStateGrid_specRollbackCells/qwen3 (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/qwen3_5
+--- PASS: TestCacheStateGrid_specRollbackCells/qwen3_5 (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/qwen3_5_moe
+--- PASS: TestCacheStateGrid_specRollbackCells/qwen3_5_moe (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/qwen3_5_moe_text
+--- PASS: TestCacheStateGrid_specRollbackCells/qwen3_5_moe_text (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/qwen3_5_text
+--- PASS: TestCacheStateGrid_specRollbackCells/qwen3_5_text (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/qwen3_asr
+--- PASS: TestCacheStateGrid_specRollbackCells/qwen3_asr (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/qwen3_moe
+--- PASS: TestCacheStateGrid_specRollbackCells/qwen3_moe (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/qwen3_next
+--- PASS: TestCacheStateGrid_specRollbackCells/qwen3_next (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/qwen3_vl
+--- PASS: TestCacheStateGrid_specRollbackCells/qwen3_vl (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/qwen3_vl_moe
+--- PASS: TestCacheStateGrid_specRollbackCells/qwen3_vl_moe (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/smollm3
+--- PASS: TestCacheStateGrid_specRollbackCells/smollm3 (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/spark2_5
+--- PASS: TestCacheStateGrid_specRollbackCells/spark2_5 (0.00s)
+=== RUN   TestCacheStateGrid_specRollbackCells/voxtral
+--- PASS: TestCacheStateGrid_specRollbackCells/voxtral (0.00s)
+--- PASS: TestCacheStateGrid_specRollbackCells (0.00s)
+=== RUN   TestSession_adapterSwitchGoesCold
+=== RUN   TestSession_adapterSwitchGoesCold/same_adapter_reuses
+--- PASS: TestSession_adapterSwitchGoesCold/same_adapter_reuses (0.00s)
+=== RUN   TestSession_adapterSwitchGoesCold/base_stays_base_reuses
+--- PASS: TestSession_adapterSwitchGoesCold/base_stays_base_reuses (0.00s)
+=== RUN   TestSession_adapterSwitchGoesCold/adapter_A_to_adapter_B_goes_cold
+--- PASS: TestSession_adapterSwitchGoesCold/adapter_A_to_adapter_B_goes_cold (0.00s)
+=== RUN   TestSession_adapterSwitchGoesCold/base_to_adapter_goes_cold
+--- PASS: TestSession_adapterSwitchGoesCold/base_to_adapter_goes_cold (0.00s)
+=== RUN   TestSession_adapterSwitchGoesCold/adapter_to_base_goes_cold
+--- PASS: TestSession_adapterSwitchGoesCold/adapter_to_base_goes_cold (0.00s)
+--- PASS: TestSession_adapterSwitchGoesCold (0.00s)
+=== RUN   TestSession_snapshotRecordsAdapter
+=== RUN   TestSession_snapshotRecordsAdapter/restored_under_its_own_adapter_reuses
+--- PASS: TestSession_snapshotRecordsAdapter/restored_under_its_own_adapter_reuses (0.00s)
+=== RUN   TestSession_snapshotRecordsAdapter/restored_base_stays_base_reuses
+--- PASS: TestSession_snapshotRecordsAdapter/restored_base_stays_base_reuses (0.00s)
+=== RUN   TestSession_snapshotRecordsAdapter/restored_under_another_adapter_goes_cold
+--- PASS: TestSession_snapshotRecordsAdapter/restored_under_another_adapter_goes_cold (0.00s)
+=== RUN   TestSession_snapshotRecordsAdapter/restored_adapter_session_rebound_to_base_goes_cold
+--- PASS: TestSession_snapshotRecordsAdapter/restored_adapter_session_rebound_to_base_goes_cold (0.00s)
+=== RUN   TestSession_snapshotRecordsAdapter/restored_base_session_bound_to_an_adapter_goes_cold
+--- PASS: TestSession_snapshotRecordsAdapter/restored_base_session_bound_to_an_adapter_goes_cold (0.00s)
+=== RUN   TestSession_snapshotRecordsAdapter/an_adapter_this_model_has_not_loaded_is_refused
+--- PASS: TestSession_snapshotRecordsAdapter/an_adapter_this_model_has_not_loaded_is_refused (0.00s)
+=== RUN   TestSession_snapshotRecordsAdapter/a_v2_blob_is_refused
+--- PASS: TestSession_snapshotRecordsAdapter/a_v2_blob_is_refused (0.00s)
+--- PASS: TestSession_snapshotRecordsAdapter (0.00s)
+=== RUN   TestCapabilityMatrix
+--- PASS: TestCapabilityMatrix (0.00s)
+=== RUN   TestCapabilityMatrix_checkpointLabels
+--- PASS: TestCapabilityMatrix_checkpointLabels (0.00s)
+=== RUN   TestCapabilityMatrix_siteDocsAreUsable
+--- PASS: TestCapabilityMatrix_siteDocsAreUsable (0.00s)
+=== RUN   TestCapabilityMatrix_CoverageComplete
+--- PASS: TestCapabilityMatrix_CoverageComplete (0.00s)
+=== RUN   TestCost_offShare
+    cost_cpu_test.go:300: heavy: set GOINFER_HEAVY_TESTS=1 (a 0.5B decode on the CPU)
+--- SKIP: TestCost_offShare (0.00s)
+=== RUN   TestCPUDecode_weightBytesPerToken
+    cpu_bytes_accounting_test.go:21: set GOINFER_HEAVY_TESTS=1 (loads real checkpoints on CPU)
+--- SKIP: TestCPUDecode_weightBytesPerToken (0.00s)
+=== RUN   TestCPURoofline_w4a8Batch
+=== RUN   TestCPURoofline_w4a8Batch/1.5B
+    cpu_roofline_ab_test.go:140: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint on CPU)
+--- SKIP: TestCPURoofline_w4a8Batch/1.5B (0.00s)
+=== RUN   TestCPURoofline_w4a8Batch/0.5B
+    cpu_roofline_ab_test.go:140: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint on CPU)
+--- SKIP: TestCPURoofline_w4a8Batch/0.5B (0.00s)
+=== RUN   TestCPURoofline_w4a8Batch/7B
+    cpu_roofline_ab_test.go:140: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint on CPU)
+--- SKIP: TestCPURoofline_w4a8Batch/7B (0.00s)
+--- PASS: TestCPURoofline_w4a8Batch (0.00s)
+=== RUN   TestCPURoofline_fusedGateUp
+=== RUN   TestCPURoofline_fusedGateUp/1.5B
+    cpu_roofline_ab_test.go:160: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint on CPU)
+--- SKIP: TestCPURoofline_fusedGateUp/1.5B (0.00s)
+=== RUN   TestCPURoofline_fusedGateUp/0.5B
+    cpu_roofline_ab_test.go:160: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint on CPU)
+--- SKIP: TestCPURoofline_fusedGateUp/0.5B (0.00s)
+=== RUN   TestCPURoofline_fusedGateUp/7B
+    cpu_roofline_ab_test.go:160: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint on CPU)
+--- SKIP: TestCPURoofline_fusedGateUp/7B (0.00s)
+--- PASS: TestCPURoofline_fusedGateUp (0.00s)
+=== RUN   TestCPURoofline_fusedGateUp_logitsBitIdentical
+=== RUN   TestCPURoofline_fusedGateUp_logitsBitIdentical/0.5B
+    cpu_roofline_ab_test.go:202: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint on CPU)
+--- SKIP: TestCPURoofline_fusedGateUp_logitsBitIdentical/0.5B (0.00s)
+=== RUN   TestCPURoofline_fusedGateUp_logitsBitIdentical/1.5B
+    cpu_roofline_ab_test.go:202: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint on CPU)
+--- SKIP: TestCPURoofline_fusedGateUp_logitsBitIdentical/1.5B (0.00s)
+=== RUN   TestCPURoofline_fusedGateUp_logitsBitIdentical/7B
+    cpu_roofline_ab_test.go:202: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint on CPU)
+--- SKIP: TestCPURoofline_fusedGateUp_logitsBitIdentical/7B (0.00s)
+--- PASS: TestCPURoofline_fusedGateUp_logitsBitIdentical (0.00s)
+=== RUN   TestCPURoofline_w4a8Batch_logitsBitIdentical
+=== RUN   TestCPURoofline_w4a8Batch_logitsBitIdentical/0.5B
+    cpu_roofline_ab_test.go:202: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint on CPU)
+--- SKIP: TestCPURoofline_w4a8Batch_logitsBitIdentical/0.5B (0.00s)
+=== RUN   TestCPURoofline_w4a8Batch_logitsBitIdentical/1.5B
+    cpu_roofline_ab_test.go:202: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint on CPU)
+--- SKIP: TestCPURoofline_w4a8Batch_logitsBitIdentical/1.5B (0.00s)
+=== RUN   TestCPURoofline_w4a8Batch_logitsBitIdentical/7B
+    cpu_roofline_ab_test.go:202: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint on CPU)
+--- SKIP: TestCPURoofline_w4a8Batch_logitsBitIdentical/7B (0.00s)
+--- PASS: TestCPURoofline_w4a8Batch_logitsBitIdentical (0.00s)
+=== RUN   TestCUDATable_plantedGapGoesRed
+    cuda_support_test.go:15: gemma: declined under the plant: layer 0: operation 7 (ffn): cuda has no GELU-tanh activation in its gated block
+    cuda_support_test.go:15: gemma2: declined under the plant: layer 0: operation 8 (ffn): cuda has no GELU-tanh activation in its gated block
+    cuda_support_test.go:15: gemma3: declined under the plant: layer 0: operation 9 (ffn): cuda has no GELU-tanh activation in its gated block
+    cuda_support_test.go:15: gemma3_text: declined under the plant: layer 0: operation 9 (ffn): cuda has no GELU-tanh activation in its gated block
+--- PASS: TestCUDATable_plantedGapGoesRed (0.00s)
+=== RUN   TestD8b_q4kRoundTripsThroughGIW
+--- PASS: TestD8b_q4kRoundTripsThroughGIW (0.02s)
+=== RUN   TestD8b_q4kGGUFTakesItsSidecar
+stream-weights: transcoding q4k-1layer.gguf → q4k-1layer.q4k.cpu-arm64.v17.giw (q4k, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (0 MB) in 0s: stream 0.0s, self-check 0.0s
+--- PASS: TestD8b_q4kGGUFTakesItsSidecar (0.02s)
+=== RUN   TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers
+=== RUN   TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers/q4k
+decoder: --stream-weights ignored (model fits the budget, or no mmap-backed layer weights)
+--- PASS: TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers/q4k (0.01s)
+=== RUN   TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers/f32
+decoder: --stream-weights ignored (model fits the budget, or no mmap-backed layer weights)
+--- PASS: TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers/f32 (0.02s)
+=== RUN   TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers/int8
+decoder: dense weight streaming: 8 layers, window 3 resident
+--- PASS: TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers/int8 (0.01s)
+=== RUN   TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers/int8int8
+decoder: dense weight streaming: 8 layers, window 3 resident
+--- PASS: TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers/int8int8 (0.01s)
+=== RUN   TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers/int4
+decoder: dense weight streaming: 8 layers, window 3 resident
+--- PASS: TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers/int4 (0.01s)
+=== RUN   TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers/int4mix
+decoder: dense weight streaming: 8 layers, window 3 resident
+--- PASS: TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers/int4mix (0.01s)
+--- PASS: TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers (0.09s)
+=== RUN   TestFitRefusal_streamableOnlyWhereItPages
+--- PASS: TestFitRefusal_streamableOnlyWhereItPages (0.00s)
+=== RUN   TestGIW_f32WeightsAreMapped
+    d8b_q4k_giw_test.go:329: Load: 133768 bytes of heap for a 19034014-byte bundle: 0.70% (file-backed mapping: true)
+--- PASS: TestGIW_f32WeightsAreMapped (0.13s)
+=== RUN   TestSidecar_copiedF32BundleIsRebuilt
+=== RUN   TestSidecar_copiedF32BundleIsRebuilt/embedInt4=false
+=== RUN   TestSidecar_copiedF32BundleIsRebuilt/embedInt4=false/write_a_kind-1_sidecar
+--- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=false/write_a_kind-1_sidecar (0.01s)
+=== RUN   TestSidecar_copiedF32BundleIsRebuilt/embedInt4=false/read_the_fixture
+--- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=false/read_the_fixture (0.00s)
+stream-weights: cache q4k-2layer.f32.cpu-arm64.v17.giw is newer than the source but does not load (q4k-2layer.f32.cpu-arm64.v17.giw: decoder: serialized weights: this bundle predates the mapped f32 encoding, and would load its f32 weights onto the heap, where the fit guard does not price them; rebuild it from its source: go run ./cmd/prequant -quant f32 -o <out.giw> <source>) — rebuilding
+stream-weights: transcoding q4k-2layer.gguf → q4k-2layer.f32.cpu-arm64.v17.giw (f32, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (5 MB) in 0s: stream 0.0s, self-check 0.0s
+--- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=false (0.02s)
+=== RUN   TestSidecar_copiedF32BundleIsRebuilt/embedInt4=true
+=== RUN   TestSidecar_copiedF32BundleIsRebuilt/embedInt4=true/write_a_kind-1_sidecar
+--- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=true/write_a_kind-1_sidecar (0.01s)
+=== RUN   TestSidecar_copiedF32BundleIsRebuilt/embedInt4=true/read_the_fixture
+--- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=true/read_the_fixture (0.00s)
+stream-weights: cache q4k-2layer.f32.e4h.cpu-arm64.v17.giw is newer than the source but does not load (q4k-2layer.f32.e4h.cpu-arm64.v17.giw: decoder: serialized weights: this bundle predates the mapped f32 encoding, and would load its f32 weights onto the heap, where the fit guard does not price them; rebuild it from its source: go run ./cmd/prequant -quant f32 -o <out.giw> <source>) — rebuilding
+stream-weights: transcoding q4k-2layer.gguf → q4k-2layer.f32.e4h.cpu-arm64.v17.giw (f32, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (5 MB) in 0s: stream 0.0s, self-check 0.0s
+--- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=true (0.02s)
+--- PASS: TestSidecar_copiedF32BundleIsRebuilt (0.05s)
+=== RUN   TestFitQuery_refusesACopiedF32Bundle
+=== RUN   TestFitQuery_refusesACopiedF32Bundle/write
+--- PASS: TestFitQuery_refusesACopiedF32Bundle/write (0.01s)
+--- PASS: TestFitQuery_refusesACopiedF32Bundle (0.02s)
+=== RUN   TestGIWWeightsQuant
+=== RUN   TestGIWWeightsQuant/kind_1
+--- PASS: TestGIWWeightsQuant/kind_1 (0.01s)
+--- PASS: TestGIWWeightsQuant (0.05s)
+=== RUN   TestGIWWeightsQuant_copiesNoWeights
+    d8b_q4k_giw_test.go:571: reading the quant: 65952 bytes of heap for a 19033347-byte bundle: 0.35% (file-backed mapping: true)
+--- PASS: TestGIWWeightsQuant_copiesNoWeights (0.04s)
+=== RUN   TestLoad_refusesCopiedF32Bundle
+=== RUN   TestLoad_refusesCopiedF32Bundle/write_kind1.giw
+--- PASS: TestLoad_refusesCopiedF32Bundle/write_kind1.giw (0.03s)
+=== RUN   TestLoad_refusesCopiedF32Bundle/write_kind10.giw
+--- PASS: TestLoad_refusesCopiedF32Bundle/write_kind10.giw (0.02s)
+=== RUN   TestLoad_refusesCopiedF32Bundle/write_moe.giw
+prequant: note: no tokenizer.json in ../testdata/mixtral-tiny — weights-only bundle (serve needs a separate tokenizer)
+--- PASS: TestLoad_refusesCopiedF32Bundle/write_moe.giw (0.01s)
+--- PASS: TestLoad_refusesCopiedF32Bundle (0.08s)
+=== RUN   TestSidecar_rewriteWhileLoaded
+=== RUN   TestSidecar_rewriteWhileLoaded/replacement_refused=false
+stream-weights: transcoding q4k-2layer.gguf → q4k-2layer.int8.cpu-arm64.v17.giw (int8, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (1 MB) in 0s: stream 0.0s, self-check 0.0s
+stream-weights: transcoding q4k-2layer.gguf → q4k-2layer.int8.cpu-arm64.v17.giw (int8, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (1 MB) in 0s: stream 0.0s, self-check 0.0s
+--- PASS: TestSidecar_rewriteWhileLoaded/replacement_refused=false (0.03s)
+=== RUN   TestSidecar_rewriteWhileLoaded/replacement_refused=true
+stream-weights: transcoding q4k-2layer.gguf → q4k-2layer.int8.cpu-arm64.v17.giw (int8, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (1 MB) in 0s: stream 0.0s, self-check 0.0s
+stream-weights: transcoding q4k-2layer.gguf → q4k-2layer.int8.cpu-arm64.v17.giw (int8, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (1 MB) in 0s: stream 0.0s, self-check 0.0s
+--- PASS: TestSidecar_rewriteWhileLoaded/replacement_refused=true (0.02s)
+--- PASS: TestSidecar_rewriteWhileLoaded (0.05s)
+=== RUN   TestPlan_metalAdmitsAQ4KLoadThroughItsSidecar
+stream-weights: transcoding q4k-2layer.gguf → q4k-2layer.q4k.cpu-arm64.v17.giw (q4k, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (1 MB) in 0s: stream 0.0s, self-check 0.0s
+--- PASS: TestPlan_metalAdmitsAQ4KLoadThroughItsSidecar (0.01s)
+=== RUN   TestDecode_fusedScheduleCostsNothingPerToken
+    decode_alloc_test.go:53: decode allocation: fused schedule on 80457 B/token, off 80457 B/token
+--- PASS: TestDecode_fusedScheduleCostsNothingPerToken (3.02s)
+=== RUN   TestDecodeParity
+--- PASS: TestDecodeParity (0.25s)
+=== RUN   TestEmbedInt4_reachesEveryFamilyLoader
+=== RUN   TestEmbedInt4_reachesEveryFamilyLoader/gpt2
+--- PASS: TestEmbedInt4_reachesEveryFamilyLoader/gpt2 (0.74s)
+=== RUN   TestEmbedInt4_reachesEveryFamilyLoader/granitemoehybrid
+--- PASS: TestEmbedInt4_reachesEveryFamilyLoader/granitemoehybrid (0.00s)
+=== RUN   TestEmbedInt4_reachesEveryFamilyLoader/granite_(dense)
+--- PASS: TestEmbedInt4_reachesEveryFamilyLoader/granite_(dense) (0.00s)
+=== RUN   TestEmbedInt4_reachesEveryFamilyLoader/nemotron_h
+--- PASS: TestEmbedInt4_reachesEveryFamilyLoader/nemotron_h (0.00s)
+=== RUN   TestEmbedInt4_reachesEveryFamilyLoader/nemotron_h_(nano)
+--- PASS: TestEmbedInt4_reachesEveryFamilyLoader/nemotron_h_(nano) (0.00s)
+=== RUN   TestEmbedInt4_reachesEveryFamilyLoader/phi3
+--- PASS: TestEmbedInt4_reachesEveryFamilyLoader/phi3 (0.00s)
+=== RUN   TestEmbedInt4_reachesEveryFamilyLoader/glm_ocr
+--- PASS: TestEmbedInt4_reachesEveryFamilyLoader/glm_ocr (0.00s)
+=== RUN   TestEmbedInt4_reachesEveryFamilyLoader/llama4_text
+--- PASS: TestEmbedInt4_reachesEveryFamilyLoader/llama4_text (0.00s)
+--- PASS: TestEmbedInt4_reachesEveryFamilyLoader (0.76s)
+=== RUN   TestEmbedInt4Knob
+    embedint4_test.go:10: SKIP-HEAVY: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestEmbedInt4Knob (0.00s)
+=== RUN   TestResidentAdmission_registryCovered
+--- PASS: TestResidentAdmission_registryCovered (0.00s)
+=== RUN   TestResidentAdmission_matrix
+    features_test.go:331: bailing_hybrid       → admitted by []
+    features_test.go:331: cohere               → admitted by [cuda metal]
+    features_test.go:331: cohere2              → admitted by [cuda metal]
+    features_test.go:331: deepseek_v2          → admitted by [cuda metal webgpu]
+    features_test.go:331: deepseek_v3          → admitted by [cuda metal webgpu]
+    features_test.go:331: flint                → admitted by [cuda metal webgpu]
+    features_test.go:331: gemma                → admitted by [cuda metal webgpu]
+    features_test.go:331: gemma2               → admitted by [cuda metal]
+    features_test.go:331: gemma3               → admitted by [cuda metal webgpu]
+    features_test.go:331: gemma3_text          → admitted by [cuda metal webgpu]
+    features_test.go:331: gemma4               → admitted by [cuda metal webgpu]
+    features_test.go:331: gemma4_text          → admitted by [cuda metal webgpu]
+    features_test.go:331: gemma4_unified_text  → admitted by [cuda metal webgpu]
+    features_test.go:331: glm4_moe             → admitted by [cuda metal webgpu]
+    features_test.go:331: glm_ocr              → admitted by [cuda metal]
+    features_test.go:331: glm_ocr_text         → admitted by [cuda metal]
+    features_test.go:331: gpt2                 → admitted by [metal]
+    features_test.go:331: gpt_oss              → admitted by [cuda metal webgpu]
+    features_test.go:331: granite              → admitted by [cuda metal webgpu]
+    features_test.go:331: granitemoehybrid     → admitted by [webgpu]
+    features_test.go:331: internlm2            → admitted by [cuda metal webgpu]
+    features_test.go:331: internlm3            → admitted by [cuda metal webgpu]
+    features_test.go:331: kimi_k2              → admitted by [cuda metal webgpu]
+    features_test.go:331: laguna               → admitted by []
+    features_test.go:331: lfm2                 → admitted by []
+    features_test.go:331: lfm2_vl              → admitted by []
+    features_test.go:331: llama                → admitted by [cuda metal webgpu]
+    features_test.go:331: llama4_text          → admitted by [webgpu]
+    features_test.go:331: mellum               → admitted by [cuda metal webgpu]
+    features_test.go:331: ministral3           → admitted by [cuda metal]
+    features_test.go:331: mistral              → admitted by [cuda metal webgpu]
+    features_test.go:331: mistral3             → admitted by [cuda metal]
+    features_test.go:331: mixtral              → admitted by [cuda metal webgpu]
+    features_test.go:331: nemotron_h           → admitted by [cuda metal webgpu]
+    features_test.go:331: olmo3                → admitted by [cuda metal webgpu]
+    features_test.go:331: olmo_hybrid          → admitted by [cuda metal webgpu]
+    features_test.go:331: phi3                 → admitted by [cuda metal webgpu]
+    features_test.go:331: qwen2                → admitted by [cuda metal webgpu]
+    features_test.go:331: qwen2_5_vl           → admitted by [cuda metal webgpu]
+    features_test.go:331: qwen2_moe            → admitted by [cuda metal webgpu]
+    features_test.go:331: qwen3                → admitted by [cuda metal webgpu]
+    features_test.go:331: qwen3_5              → admitted by [cuda metal webgpu]
+    features_test.go:331: qwen3_5_moe          → admitted by [cuda metal webgpu]
+    features_test.go:331: qwen3_5_moe_text     → admitted by [cuda metal webgpu]
+    features_test.go:331: qwen3_5_text         → admitted by [cuda metal webgpu]
+    features_test.go:331: qwen3_asr            → admitted by [cuda metal webgpu]
+    features_test.go:331: qwen3_moe            → admitted by [cuda metal webgpu]
+    features_test.go:331: qwen3_next           → admitted by [cuda metal webgpu]
+    features_test.go:331: qwen3_vl             → admitted by [cuda metal webgpu]
+    features_test.go:331: qwen3_vl_moe         → admitted by [cuda metal webgpu]
+    features_test.go:331: smollm3              → admitted by [cuda metal webgpu]
+    features_test.go:331: spark2_5             → admitted by []
+    features_test.go:331: voxtral              → admitted by [cuda metal webgpu]
+--- PASS: TestResidentAdmission_matrix (0.00s)
+=== RUN   TestPairwiseRoPE_declineNamesCause
+--- PASS: TestPairwiseRoPE_declineNamesCause (0.00s)
+=== RUN   TestResidentFeatures_derivationMatchesProfile
+--- PASS: TestResidentFeatures_derivationMatchesProfile (0.00s)
+=== RUN   TestResidentMoECapacity_routerCap
+--- PASS: TestResidentMoECapacity_routerCap (0.00s)
+=== RUN   TestFeatureSplits_wrongHalfDeclinesByName
+--- PASS: TestFeatureSplits_wrongHalfDeclinesByName (0.00s)
+=== RUN   TestKVPricingFor_cudaResidentKVIsDevice
+--- PASS: TestKVPricingFor_cudaResidentKVIsDevice (0.00s)
+=== RUN   TestKVPricingFor_cudaNotCompiledKeepsCPUPricing
+--- PASS: TestKVPricingFor_cudaNotCompiledKeepsCPUPricing (0.00s)
+=== RUN   TestFitCheck_cudaResident7BAt32KIsAdmitted
+--- PASS: TestFitCheck_cudaResident7BAt32KIsAdmitted (0.00s)
+=== RUN   TestGuardGIWFit_cudaResidentNeedsNoHostKV
+decoder: .giw context capped at 7021 (model allows 32768) so that KV+scratch fits: needs ~1.00 GiB of 2.00 GiB available (1.00 GiB margin) — pass -ctx to choose, or free memory to lift
+--- PASS: TestGuardGIWFit_cudaResidentNeedsNoHostKV (0.00s)
+=== RUN   TestGiwPinnedExpertBytes_matchesTheMeasured35B
+--- PASS: TestGiwPinnedExpertBytes_matchesTheMeasured35B (0.00s)
+=== RUN   TestGiwPinnedExpertBytes_onlyWhereTheCopyIsBuilt
+--- PASS: TestGiwPinnedExpertBytes_onlyWhereTheCopyIsBuilt (0.00s)
+=== RUN   TestDecideGIWFit_pinnedExpertsOf35B
+--- PASS: TestDecideGIWFit_pinnedExpertsOf35B (0.00s)
+=== RUN   TestDecideGIWFit_withoutTheExpertCacheTheSameMemoryAdmits
+--- PASS: TestDecideGIWFit_withoutTheExpertCacheTheSameMemoryAdmits (0.00s)
+=== RUN   TestKVPricingFor_pricesWhatTheBackendAllocates
+--- PASS: TestKVPricingFor_pricesWhatTheBackendAllocates (0.00s)
+=== RUN   TestKVPricingFor_metalNotCompiledKeepsCPUPricing
+--- PASS: TestKVPricingFor_metalNotCompiledKeepsCPUPricing (0.00s)
+=== RUN   TestGuardGIWFit_metalNotOverchargedByCPUPricing
+decoder: .giw context capped at 5184 (model allows 32768) so that KV+scratch fits: needs ~1.52 GiB of 2.52 GiB available (1.00 GiB margin) — pass -ctx to choose, or free memory to lift
+--- PASS: TestGuardGIWFit_metalNotOverchargedByCPUPricing (0.00s)
+=== RUN   TestKVPricingFor_metalMLAPricedAsAllocated
+--- PASS: TestKVPricingFor_metalMLAPricedAsAllocated (0.00s)
+=== RUN   TestFitEstimate_q4kAgreesWithResidentWeightBytes
+=== RUN   TestFitEstimate_q4kAgreesWithResidentWeightBytes/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+    fitguard_q4k_test.go:68: measured 609890816 bytes; estimate 616529920 (ratio 1.0109); the int4 price 709144064 (ratio 1.1627)
+--- PASS: TestFitEstimate_q4kAgreesWithResidentWeightBytes/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (0.57s)
+=== RUN   TestFitEstimate_q4kAgreesWithResidentWeightBytes/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+    fitguard_q4k_test.go:51: no model at /Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+--- SKIP: TestFitEstimate_q4kAgreesWithResidentWeightBytes/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf (0.00s)
+=== RUN   TestFitEstimate_q4kAgreesWithResidentWeightBytes/Phi-3-mini-4k-instruct-q4.gguf
+    fitguard_q4k_test.go:44: heavy-checkpoint row: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestFitEstimate_q4kAgreesWithResidentWeightBytes/Phi-3-mini-4k-instruct-q4.gguf (0.00s)
+--- PASS: TestFitEstimate_q4kAgreesWithResidentWeightBytes (0.57s)
+=== RUN   TestFitEstimate_otherQuantsUnchanged
+--- PASS: TestFitEstimate_otherQuantsUnchanged (0.12s)
+=== RUN   TestDecideGIWFit_snapshotBudgetCounts
+--- PASS: TestDecideGIWFit_snapshotBudgetCounts (0.00s)
+=== RUN   TestAttendBatchedHeads_vsNaive
+    forwardn_test.go:93: attendBatchedHeads vs naive f64: cosine 1.00000000, max abs diff 1.49e-08
+--- PASS: TestAttendBatchedHeads_vsNaive (0.01s)
+=== RUN   TestForwardN_matchesSequential
+=== RUN   TestForwardN_matchesSequential/K=6
+    forwardn_test.go:168: K=6: bit-identical across 911616 logits
+--- PASS: TestForwardN_matchesSequential/K=6 (0.08s)
+=== RUN   TestForwardN_matchesSequential/K=128
+    forwardn_test.go:168: K=128: bit-identical across 19447808 logits
+--- PASS: TestForwardN_matchesSequential/K=128 (1.50s)
+--- PASS: TestForwardN_matchesSequential (1.58s)
+=== RUN   TestTruncateTo
+--- PASS: TestTruncateTo (0.11s)
+=== RUN   TestG15PrefillProfile
+    g15_prefill_profile_test.go:91: set GOINFER_G15_PROF=<path> (and GOINFER_G15_K, GOINFER_BENCH_QUANT) to profile a prefill
+--- SKIP: TestG15PrefillProfile (0.00s)
+=== RUN   TestGatedAct_metalModelPathAndGemma4MoE
+--- PASS: TestGatedAct_metalModelPathAndGemma4MoE (0.00s)
+=== RUN   TestGatedGELUErf_sparkNamesIt
+--- PASS: TestGatedGELUErf_sparkNamesIt (0.00s)
+=== RUN   TestGatedGELU_gemmaUnchanged
+--- PASS: TestGatedGELU_gemmaUnchanged (0.00s)
+=== RUN   TestNonGatedGELUErf_declinesByName
+--- PASS: TestNonGatedGELUErf_declinesByName (0.00s)
+=== RUN   TestGemma4Admission_unconditional
+--- PASS: TestGemma4Admission_unconditional (0.00s)
+=== RUN   TestCheckGiwQuantMatch
+    giwquant_test.go:18: SKIP-HEAVY: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestCheckGiwQuantMatch (0.00s)
+=== RUN   TestResolveArchitecture_gpt2
+--- PASS: TestResolveArchitecture_gpt2 (0.00s)
+=== RUN   TestGptOss_webgpuDecline
+--- PASS: TestGptOss_webgpuDecline (0.00s)
+=== RUN   TestHardwareMatrix_fresh
+--- PASS: TestHardwareMatrix_fresh (0.00s)
+=== RUN   TestHardwareMatrix_breakItFirst
+--- PASS: TestHardwareMatrix_breakItFirst (0.01s)
+=== RUN   TestHardwareMatrix_declineReasonsNotHidden
+--- PASS: TestHardwareMatrix_declineReasonsNotHidden (0.00s)
+=== RUN   TestInt4MixMode
+    int4mix_test.go:10: SKIP-HEAVY: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestInt4MixMode (0.00s)
+=== RUN   TestKSO1_cpuQ4KFingerprint
+    kso1_cpu_test.go:31: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestKSO1_cpuQ4KFingerprint (0.00s)
+=== RUN   TestKVF16_F3InProcessAB
+=== RUN   TestKVF16_F3InProcessAB/0.5B-d128
+    kv_f16_ab_test.go:33: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint on CPU)
+--- SKIP: TestKVF16_F3InProcessAB/0.5B-d128 (0.00s)
+=== RUN   TestKVF16_F3InProcessAB/0.5B-d4096
+    kv_f16_ab_test.go:33: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint on CPU)
+--- SKIP: TestKVF16_F3InProcessAB/0.5B-d4096 (0.00s)
+=== RUN   TestKVF16_F3InProcessAB/1.5B-d128
+    kv_f16_ab_test.go:33: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint on CPU)
+--- SKIP: TestKVF16_F3InProcessAB/1.5B-d128 (0.00s)
+=== RUN   TestKVF16_F3InProcessAB/1.5B-d4096
+    kv_f16_ab_test.go:33: set GOINFER_HEAVY_TESTS=1 (loads a real checkpoint on CPU)
+--- SKIP: TestKVF16_F3InProcessAB/1.5B-d4096 (0.00s)
+--- PASS: TestKVF16_F3InProcessAB (0.00s)
+=== RUN   TestKVF16_F1Fast512
+    kv_f16_test.go:267: 600-row prefill: 0 differing values
+--- PASS: TestKVF16_F1Fast512 (4.84s)
+=== RUN   TestLayerPaging_bitExact
+    layerpaging_test.go:20: SKIP-HEAVY: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestLayerPaging_bitExact (0.00s)
+=== RUN   TestLoad_resolvesAutoWeightCacheBudgetFromLiveProbe
+    layerpaging_test.go:86: SKIP-HEAVY: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestLoad_resolvesAutoWeightCacheBudgetFromLiveProbe (0.00s)
+=== RUN   TestLayerPager_residentBytesWithinBudget
+    layerpaging_test.go:137: SKIP-HEAVY: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestLayerPager_residentBytesWithinBudget (0.00s)
+=== RUN   TestLFM2_arch
+--- PASS: TestLFM2_arch (0.00s)
+=== RUN   TestResolveArchitecture_guardFiresRed
+=== RUN   TestResolveArchitecture_guardFiresRed/missing_norm_eps_family_validator
+--- PASS: TestResolveArchitecture_guardFiresRed/missing_norm_eps_family_validator (0.00s)
+=== RUN   TestResolveArchitecture_guardFiresRed/missing_norm_eps_resolved_guard
+--- PASS: TestResolveArchitecture_guardFiresRed/missing_norm_eps_resolved_guard (0.00s)
+=== RUN   TestResolveArchitecture_guardFiresRed/missing_attn_scale
+--- PASS: TestResolveArchitecture_guardFiresRed/missing_attn_scale (0.00s)
+=== RUN   TestResolveArchitecture_guardFiresRed/well_formed_passes
+--- PASS: TestResolveArchitecture_guardFiresRed/well_formed_passes (0.00s)
+--- PASS: TestResolveArchitecture_guardFiresRed (0.00s)
+=== RUN   TestLFM2_declinesResidentRunner
+--- PASS: TestLFM2_declinesResidentRunner (0.00s)
+=== RUN   TestLoadAdapter_rejectsEveryOwnForwardFamily
+=== RUN   TestLoadAdapter_rejectsEveryOwnForwardFamily/bailing_hybrid
+--- PASS: TestLoadAdapter_rejectsEveryOwnForwardFamily/bailing_hybrid (0.00s)
+=== RUN   TestLoadAdapter_rejectsEveryOwnForwardFamily/deepseek_v2
+--- PASS: TestLoadAdapter_rejectsEveryOwnForwardFamily/deepseek_v2 (0.00s)
+=== RUN   TestLoadAdapter_rejectsEveryOwnForwardFamily/deepseek_v3
+--- PASS: TestLoadAdapter_rejectsEveryOwnForwardFamily/deepseek_v3 (0.00s)
+=== RUN   TestLoadAdapter_rejectsEveryOwnForwardFamily/gemma4
+--- PASS: TestLoadAdapter_rejectsEveryOwnForwardFamily/gemma4 (0.00s)
+=== RUN   TestLoadAdapter_rejectsEveryOwnForwardFamily/gemma4_text
+--- PASS: TestLoadAdapter_rejectsEveryOwnForwardFamily/gemma4_text (0.00s)
+=== RUN   TestLoadAdapter_rejectsEveryOwnForwardFamily/gemma4_unified_text
+--- PASS: TestLoadAdapter_rejectsEveryOwnForwardFamily/gemma4_unified_text (0.00s)
+=== RUN   TestLoadAdapter_rejectsEveryOwnForwardFamily/granitemoehybrid
+--- PASS: TestLoadAdapter_rejectsEveryOwnForwardFamily/granitemoehybrid (0.00s)
+=== RUN   TestLoadAdapter_rejectsEveryOwnForwardFamily/kimi_k2
+--- PASS: TestLoadAdapter_rejectsEveryOwnForwardFamily/kimi_k2 (0.00s)
+=== RUN   TestLoadAdapter_rejectsEveryOwnForwardFamily/lfm2
+--- PASS: TestLoadAdapter_rejectsEveryOwnForwardFamily/lfm2 (0.00s)
+=== RUN   TestLoadAdapter_rejectsEveryOwnForwardFamily/lfm2_vl
+--- PASS: TestLoadAdapter_rejectsEveryOwnForwardFamily/lfm2_vl (0.00s)
+=== RUN   TestLoadAdapter_rejectsEveryOwnForwardFamily/nemotron_h
+--- PASS: TestLoadAdapter_rejectsEveryOwnForwardFamily/nemotron_h (0.00s)
+=== RUN   TestLoadAdapter_rejectsEveryOwnForwardFamily/olmo_hybrid
+--- PASS: TestLoadAdapter_rejectsEveryOwnForwardFamily/olmo_hybrid (0.00s)
+=== RUN   TestLoadAdapter_rejectsEveryOwnForwardFamily/qwen3_5
+--- PASS: TestLoadAdapter_rejectsEveryOwnForwardFamily/qwen3_5 (0.00s)
+=== RUN   TestLoadAdapter_rejectsEveryOwnForwardFamily/qwen3_5_moe
+--- PASS: TestLoadAdapter_rejectsEveryOwnForwardFamily/qwen3_5_moe (0.00s)
+=== RUN   TestLoadAdapter_rejectsEveryOwnForwardFamily/qwen3_5_moe_text
+--- PASS: TestLoadAdapter_rejectsEveryOwnForwardFamily/qwen3_5_moe_text (0.00s)
+=== RUN   TestLoadAdapter_rejectsEveryOwnForwardFamily/qwen3_5_text
+--- PASS: TestLoadAdapter_rejectsEveryOwnForwardFamily/qwen3_5_text (0.00s)
+=== RUN   TestLoadAdapter_rejectsEveryOwnForwardFamily/qwen3_next
+--- PASS: TestLoadAdapter_rejectsEveryOwnForwardFamily/qwen3_next (0.00s)
+--- PASS: TestLoadAdapter_rejectsEveryOwnForwardFamily (0.00s)
+=== RUN   TestMEM11_lfm2ResidentBytes
+    mem11_bf16_test.go:22: set GOINFER_MEM11_LFM2=1 (loads LFM2.5-2.6B from ~/models)
+--- SKIP: TestMEM11_lfm2ResidentBytes (0.00s)
+=== RUN   TestMEM11_giwBF16HeapLFM2
+    mem11_giw_bf16_test.go:158: set GOINFER_MEM11_LFM2=1 (loads LFM2.5-2.6B from ~/models and writes two .giw files of a few GB)
+--- SKIP: TestMEM11_giwBF16HeapLFM2 (0.00s)
+=== RUN   TestMEM11_mlaInt8FidelitySlice
+    mem11_int8_mla_test.go:141: SKIP-HEAVY: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestMEM11_mlaInt8FidelitySlice (0.00s)
+=== RUN   TestMEM8bp_e2bTranscodeHeap
+    mem8bp_e2b_heap_test.go:22: set GOINFER_MEM8BP_E2B=1 (transcodes E2B from ~/models)
+--- SKIP: TestMEM8bp_e2bTranscodeHeap (0.00s)
+=== RUN   TestStateSpecs_fromTheOperations
+--- PASS: TestStateSpecs_fromTheOperations (0.01s)
+=== RUN   TestLayerShape_kvRowsAreWhatTheCPUCacheHolds
+    membufs_test.go:339: layers compared: map[DeltaNet:3 KDA:3 Mamba-2:2 k/v:15 latent:5 short conv:3]
+--- PASS: TestLayerShape_kvRowsAreWhatTheCPUCacheHolds (0.01s)
+=== RUN   TestMetalCoverageFlags
+    metal_coverage_flags_test.go:20: SKIP-HEAVY: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestMetalCoverageFlags (0.00s)
+=== RUN   TestMetalPricing_followsThePathThatRuns
+--- PASS: TestMetalPricing_followsThePathThatRuns (0.00s)
+=== RUN   TestMetalTable_plantedGapGoesRed
+    metal_support_test.go:44: gemma: declined under the plant: layer 0: operation 7 (ffn): metal has no GELU-tanh activation in its gated block
+    metal_support_test.go:44: gemma2: declined under the plant: layer 0: operation 8 (ffn): metal has no GELU-tanh activation in its gated block
+    metal_support_test.go:44: gemma3: declined under the plant: layer 0: operation 9 (ffn): metal has no GELU-tanh activation in its gated block
+    metal_support_test.go:44: gemma3_text: declined under the plant: layer 0: operation 9 (ffn): metal has no GELU-tanh activation in its gated block
+--- PASS: TestMetalTable_plantedGapGoesRed (0.00s)
+=== RUN   TestProgram_noFamilyLoopAndEveryFamilyWalks
+--- PASS: TestProgram_noFamilyLoopAndEveryFamilyWalks (0.04s)
+=== RUN   TestProgram_pagerStaysOffNonGenericFamilies
+--- PASS: TestProgram_pagerStaysOffNonGenericFamilies (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/bailing_hybrid
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/bailing_hybrid (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/cohere
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/cohere (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/cohere2
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/cohere2 (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/deepseek_v2
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/deepseek_v2 (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/deepseek_v3
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/deepseek_v3 (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/flint
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/flint (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/gemma
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/gemma (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/gemma2
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/gemma2 (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/gemma3
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/gemma3 (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/gemma3_text
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/gemma3_text (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/gemma4
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/gemma4 (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/gemma4_text
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/gemma4_text (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/gemma4_unified_text
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/gemma4_unified_text (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/glm4_moe
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/glm4_moe (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/glm_ocr
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/glm_ocr (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/glm_ocr_text
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/glm_ocr_text (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/gpt2
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/gpt2 (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/gpt_oss
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/gpt_oss (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/granite
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/granite (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/granitemoehybrid
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/granitemoehybrid (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/internlm2
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/internlm2 (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/internlm3
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/internlm3 (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/kimi_k2
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/kimi_k2 (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/laguna
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/laguna (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/lfm2
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/lfm2 (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/lfm2_vl
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/lfm2_vl (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/llama
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/llama (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/llama4_text
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/llama4_text (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/mellum
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/mellum (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/ministral3
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/ministral3 (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/mistral
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/mistral (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/mistral3
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/mistral3 (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/mixtral
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/mixtral (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/nemotron_h
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/nemotron_h (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/olmo3
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/olmo3 (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/olmo_hybrid
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/olmo_hybrid (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/phi3
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/phi3 (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen2
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen2 (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen2_5_vl
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen2_5_vl (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen2_moe
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen2_moe (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen3
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen3 (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen3_5
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen3_5 (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen3_5_moe
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen3_5_moe (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen3_5_moe_text
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen3_5_moe_text (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen3_5_text
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen3_5_text (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen3_asr
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen3_asr (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen3_moe
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen3_moe (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen3_next
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen3_next (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen3_vl
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen3_vl (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen3_vl_moe
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/qwen3_vl_moe (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/smollm3
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/smollm3 (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/spark2_5
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/spark2_5 (0.00s)
+=== RUN   TestOwnForward_recurrentBitMatchesTheCacheKinds/voxtral
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds/voxtral (0.00s)
+--- PASS: TestOwnForward_recurrentBitMatchesTheCacheKinds (0.00s)
+=== RUN   TestFusedAttention_logitDivergence
+    p19_fused_attn_test.go:690: set GOINFER_P19=1 (loads a real model)
+--- SKIP: TestFusedAttention_logitDivergence (0.00s)
+=== RUN   TestDecodeParityInt4
+--- PASS: TestDecodeParityInt4 (0.49s)
+=== RUN   TestStateBuffers_kdaPerStream
+--- PASS: TestStateBuffers_kdaPerStream (0.00s)
+=== RUN   TestG40T0a_noAllocsAfterFirstChunkReal0p5B
+[g40-t0a] chunk 1: 349 allocations of 4 KiB or more ; 17103 allocations, 347.36 MiB in all (reported)
+[g40-t0a] chunk 2: 19 allocations of 4 KiB or more ; 35499 allocations, 3.90 MiB in all (reported)
+[g40-t0a] chunk 3: 5 allocations of 4 KiB or more ; 54325 allocations, 5.67 MiB in all (reported)
+[g40-t0a] chunk 4: 0 allocations of 4 KiB or more ; 31443 allocations, 3.13 MiB in all (reported)
+--- PASS: TestG40T0a_noAllocsAfterFirstChunkReal0p5B (74.90s)
+=== RUN   TestG40T0b_peakLiveHeapReal0p5B
+[g40-t0a] chunk 1: 396 allocations of 4 KiB or more ; 17111 allocations, 348.19 MiB in all (reported)
+[g40-t0a] chunk 2: 30 allocations of 4 KiB or more ; 35514 allocations, 4.09 MiB in all (reported)
+[g40-t0a] chunk 3: 5 allocations of 4 KiB or more ; 54329 allocations, 5.67 MiB in all (reported)
+[g40-t0a] chunk 4: 6 allocations of 4 KiB or more ; 31468 allocations, 3.24 MiB in all (reported)
+[g40-t0b] peak live heap over the post-load baseline 271.3 MiB; bound 675.1 MiB (KV 164.1 + one chunk 127.0 + attention pool 256 + margin 128)
+--- PASS: TestG40T0b_peakLiveHeapReal0p5B (103.64s)
+=== RUN   TestG40Speed
+    prefill_chunk_speed_test.go:22: set GOINFER_G40_SPEED=1: G40-3's timed grade (night only)
+--- SKIP: TestG40Speed (0.00s)
+=== RUN   TestPrefillChunked_bitIdenticalReal0p5B
+[g40-1    46s] 1/20 cases: exact false, warm false, suffix 2047 done
+[g40-1    92s] 2/20 cases: exact false, warm false, suffix 2048 done
+[g40-1   137s] 3/20 cases: exact false, warm false, suffix 2049 done
+[g40-1   262s] 4/20 cases: exact false, warm false, suffix 4113 done
+[g40-1   444s] 5/20 cases: exact false, warm false, suffix 6744 done
+[g40-1   469s] 6/20 cases: exact false, warm true, suffix 2047 done
+[g40-1   494s] 7/20 cases: exact false, warm true, suffix 2048 done
+[g40-1   519s] 8/20 cases: exact false, warm true, suffix 2049 done
+[g40-1   585s] 9/20 cases: exact false, warm true, suffix 4113 done
+[g40-1   863s] 10/20 cases: exact false, warm true, suffix 6744 done
+[g40-1   931s] 11/20 cases: exact true, warm false, suffix 2047 done
+[g40-1   995s] 12/20 cases: exact true, warm false, suffix 2048 done
+[g40-1  1038s] 13/20 cases: exact true, warm false, suffix 2049 done
+[g40-1  1143s] 14/20 cases: exact true, warm false, suffix 4113 done
+[g40-1  1595s] 15/20 cases: exact true, warm false, suffix 6744 done
+[g40-1  1660s] 16/20 cases: exact true, warm true, suffix 2047 done
+[g40-1  1704s] 17/20 cases: exact true, warm true, suffix 2048 done
+[g40-1  1739s] 18/20 cases: exact true, warm true, suffix 2049 done
+[g40-1  1848s] 19/20 cases: exact true, warm true, suffix 4113 done
+[g40-1  2350s] 20/20 cases: exact true, warm true, suffix 6744 done
+--- PASS: TestPrefillChunked_bitIdenticalReal0p5B (2351.18s)
+=== RUN   TestPrefillCoverageAudit
+    prefill_coverage_test.go:35: family             verdict     reason (first guard)
+    prefill_coverage_test.go:36: ------------------------------------------------------------------
+    prefill_coverage_test.go:66: cohere             BATCHED     —
+    prefill_coverage_test.go:66: cohere2            BATCHED     —
+    prefill_coverage_test.go:70: deepseek_v2        fallback    MoE
+    prefill_coverage_test.go:70: deepseek_v3        fallback    MoE
+    prefill_coverage_test.go:66: gemma3             BATCHED     —
+    prefill_coverage_test.go:66: gemma4             BATCHED     —
+    prefill_coverage_test.go:70: glm4_moe           fallback    MoE
+    prefill_coverage_test.go:70: gpt-oss            fallback    MoE
+    prefill_coverage_test.go:70: gpt2               fallback    not resident (the embedding stage: cuda does not implement learned position embeddings; layer 0: operation 6 (ffn): cuda has no GELU-tanh activation in its non-gated block)
+    prefill_coverage_test.go:70: granitemoehybrid   fallback    not resident (family class unsupported)
+    prefill_coverage_test.go:70: kimi_k2            fallback    MoE
+    prefill_coverage_test.go:66: llama              BATCHED     —
+    prefill_coverage_test.go:70: llama4_text        fallback    not resident (family class unsupported)
+    prefill_coverage_test.go:70: mellum             fallback    MoE
+    prefill_coverage_test.go:66: mistral            BATCHED     —
+    prefill_coverage_test.go:70: mixtral            fallback    MoE
+    prefill_coverage_test.go:66: nemotron_h         BATCHED     —
+    prefill_coverage_test.go:70: phi3               fallback    not resident (every resident cuda projection quantizes activations to int8, and Phi-3's activation outliers are rounded to zero by the per-row int8 activation scale every int4/int8int8/int4mix path uses (queue-engineering.md H2))
+    prefill_coverage_test.go:66: qwen2              BATCHED     —
+    prefill_coverage_test.go:66: qwen2_5_vl         BATCHED     —
+    prefill_coverage_test.go:70: qwen2_moe          fallback    MoE
+    prefill_coverage_test.go:66: qwen3              BATCHED     —
+    prefill_coverage_test.go:70: qwen3_5_moe        fallback    MoE
+    prefill_coverage_test.go:73: ------------------------------------------------------------------
+    prefill_coverage_test.go:74: BATCHED: 10   FALLBACK: 13
+    prefill_coverage_test.go:81:    9 × MoE
+    prefill_coverage_test.go:81:    2 × not resident (family class unsupported)
+    prefill_coverage_test.go:81:    1 × not resident (every resident cuda projection quantizes activations to int8, and Phi-3's activation outliers are rounded to zero by the per-row int8 activation scale every int4/int8int8/int4mix path uses (queue-engineering.md H2))
+    prefill_coverage_test.go:81:    1 × not resident (the embedding stage: cuda does not implement learned position embeddings; layer 0: operation 6 (ffn): cuda has no GELU-tanh activation in its non-gated block)
+--- PASS: TestPrefillCoverageAudit (0.00s)
+=== RUN   TestPrefillGateReference
+    prefill_ref_gen_test.go:47: set GOINFER_HEAVY_TESTS=1 (loads real checkpoints on CPU: S and D7, or the cells GOINFER_CPU_REF_MODELS names)
+--- SKIP: TestPrefillGateReference (0.00s)
+=== RUN   TestPrefillAttnPoolInvariance
+    prefillattnpool_test.go:60: K=64: 57344 floats bit-identical, serial vs 6 workers
+    prefillattnpool_test.go:60: K=512: 458752 floats bit-identical, serial vs 6 workers
+    prefillattnpool_test.go:60: K=1200: 1075200 floats bit-identical, serial vs 6 workers
+--- PASS: TestPrefillAttnPoolInvariance (18.51s)
+=== RUN   TestPrefillAttnRowTileInvariance
+21:45:22 [TestPrefillAttnRowTileInvariance] start — 15 items
+21:45:22 [TestPrefillAttnRowTileInvariance] K=64 elapsed=0s 0/15
+    prefillattnpool_test.go:157: K=64: tiles 1/7/64/333 all bit-identical to untiled (57344 floats)
+21:45:23 [TestPrefillAttnRowTileInvariance] K=512 elapsed=1s 5/15 rate=477/min
+    prefillattnpool_test.go:157: K=512: tiles 1/7/64/333 all bit-identical to untiled (458752 floats)
+21:45:34 [TestPrefillAttnRowTileInvariance] K=1200 elapsed=12s 10/15 rate=27/min
+21:46:07 [TestPrefillAttnRowTileInvariance] K=1200 elapsed=45s 13/15 rate=5.4/min
+    prefillattnpool_test.go:157: K=1200: tiles 1/7/64/333 all bit-identical to untiled (1075200 floats)
+21:46:22 [TestPrefillAttnRowTileInvariance] done elapsed=59s 15/15 rate=8.4/min
+--- PASS: TestPrefillAttnRowTileInvariance (59.32s)
+=== RUN   TestPrefillCancelledBeforeStart
+    prefillcancel_test.go:59: cancelled-before-start prefill returned in 1.992292ms
+--- PASS: TestPrefillCancelledBeforeStart (0.00s)
+=== RUN   TestPrefillCancelMidFlight
+    prefillcancel_test.go:90: mid-flight cancel observed after 669.365625ms (cancel fired at 300ms)
+--- PASS: TestPrefillCancelMidFlight (0.67s)
+=== RUN   TestDecodeCancellationStillHonored
+    prefillcancel_test.go:112: decode stopped 0 tokens after cancel (gen.Err() = context canceled)
+--- PASS: TestDecodeCancellationStillHonored (0.05s)
+=== RUN   TestProgram_L_everyParameterIsLive
+=== PAUSE TestProgram_L_everyParameterIsLive
+=== RUN   TestGiwRecordsResolvedQuant
+    quant_label_test.go:16: SKIP-HEAVY: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGiwRecordsResolvedQuant (0.00s)
+=== RUN   TestGiwInt4LabelNotMix
+    quant_label_test.go:66: SKIP-HEAVY: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGiwInt4LabelNotMix (0.00s)
+=== RUN   TestR06_speed
+    r06_arm64_test.go:32: set GOINFER_R06_TIMING=1 (a timed run under the timing lock)
+--- SKIP: TestR06_speed (0.00s)
+=== RUN   TestR9_decodeAttribution
+    r9_decode_attribution_test.go:81: set GOINFER_HEAVY_TESTS=1 (loads real checkpoints on CPU)
+--- SKIP: TestR9_decodeAttribution (0.00s)
+=== RUN   TestR9_parWidthSweep
+    r9_decode_attribution_test.go:150: set GOINFER_HEAVY_TESTS=1 (loads real checkpoints on CPU)
+--- SKIP: TestR9_parWidthSweep (0.00s)
+=== RUN   TestR9_mlpMatmulIsolated
+    r9_decode_attribution_test.go:218: set GOINFER_HEAVY_TESTS=1 (loads real checkpoints on CPU)
+--- SKIP: TestR9_mlpMatmulIsolated (0.00s)
+=== RUN   TestKVCache_recurrentKindsResetAndRewindHonestly
+=== RUN   TestKVCache_recurrentKindsResetAndRewindHonestly/bailing_hybrid
+--- PASS: TestKVCache_recurrentKindsResetAndRewindHonestly/bailing_hybrid (0.00s)
+=== RUN   TestKVCache_recurrentKindsResetAndRewindHonestly/granitemoehybrid
+--- PASS: TestKVCache_recurrentKindsResetAndRewindHonestly/granitemoehybrid (0.00s)
+=== RUN   TestKVCache_recurrentKindsResetAndRewindHonestly/lfm2
+--- PASS: TestKVCache_recurrentKindsResetAndRewindHonestly/lfm2 (0.00s)
+=== RUN   TestKVCache_recurrentKindsResetAndRewindHonestly/lfm2_vl
+--- PASS: TestKVCache_recurrentKindsResetAndRewindHonestly/lfm2_vl (0.00s)
+=== RUN   TestKVCache_recurrentKindsResetAndRewindHonestly/nemotron_h
+--- PASS: TestKVCache_recurrentKindsResetAndRewindHonestly/nemotron_h (0.00s)
+=== RUN   TestKVCache_recurrentKindsResetAndRewindHonestly/olmo_hybrid
+--- PASS: TestKVCache_recurrentKindsResetAndRewindHonestly/olmo_hybrid (0.00s)
+=== RUN   TestKVCache_recurrentKindsResetAndRewindHonestly/qwen3_5
+--- PASS: TestKVCache_recurrentKindsResetAndRewindHonestly/qwen3_5 (0.00s)
+=== RUN   TestKVCache_recurrentKindsResetAndRewindHonestly/qwen3_5_moe
+--- PASS: TestKVCache_recurrentKindsResetAndRewindHonestly/qwen3_5_moe (0.00s)
+=== RUN   TestKVCache_recurrentKindsResetAndRewindHonestly/qwen3_5_moe_text
+--- PASS: TestKVCache_recurrentKindsResetAndRewindHonestly/qwen3_5_moe_text (0.00s)
+=== RUN   TestKVCache_recurrentKindsResetAndRewindHonestly/qwen3_5_text
+--- PASS: TestKVCache_recurrentKindsResetAndRewindHonestly/qwen3_5_text (0.00s)
+=== RUN   TestKVCache_recurrentKindsResetAndRewindHonestly/qwen3_next
+--- PASS: TestKVCache_recurrentKindsResetAndRewindHonestly/qwen3_next (0.00s)
+--- PASS: TestKVCache_recurrentKindsResetAndRewindHonestly (0.00s)
+=== RUN   TestSession_bailingHybridNeverReusesKDAState
+--- PASS: TestSession_bailingHybridNeverReusesKDAState (0.00s)
+=== RUN   TestSession_cleanCacheSkipsTheSecondRecurrentReset
+=== RUN   TestSession_cleanCacheSkipsTheSecondRecurrentReset/new_session:_no_reset_at_all_before_the_first_generation
+--- PASS: TestSession_cleanCacheSkipsTheSecondRecurrentReset/new_session:_no_reset_at_all_before_the_first_generation (0.00s)
+=== RUN   TestSession_cleanCacheSkipsTheSecondRecurrentReset/reset_session:_Reset_zeroes_once,_the_following_rewind_does_not_zero_again
+--- PASS: TestSession_cleanCacheSkipsTheSecondRecurrentReset/reset_session:_Reset_zeroes_once,_the_following_rewind_does_not_zero_again (0.00s)
+=== RUN   TestSession_cleanCacheSkipsTheSecondRecurrentReset/never_skips_when_the_cache_is_not_provably_empty
+--- PASS: TestSession_cleanCacheSkipsTheSecondRecurrentReset/never_skips_when_the_cache_is_not_provably_empty (0.00s)
+--- PASS: TestSession_cleanCacheSkipsTheSecondRecurrentReset (0.00s)
+=== RUN   TestMetalDecodeScratch_q4kSegmentsAreThePartsTheLaneUploads
+--- PASS: TestMetalDecodeScratch_q4kSegmentsAreThePartsTheLaneUploads (0.01s)
+=== RUN   TestSpecRollbackSafe_stagedSlidingWindow
+--- PASS: TestSpecRollbackSafe_stagedSlidingWindow (0.00s)
+=== RUN   TestAdmissionCensus
+    sb2_census_test.go:240: 2750 census lines in 4.69s
+--- PASS: TestAdmissionCensus (4.69s)
+=== RUN   TestSequenceState_CPUAndResidentParity
+--- PASS: TestSequenceState_CPUAndResidentParity (0.00s)
+=== RUN   TestSerializeCensus_everyFixtureIsListedOrExcluded
+    serialize_census_test.go:322: 75 fixture(s) present here, 60 of them tracked (the asserted scope); 27 exclusion(s), 9 naming gitignored fixtures absent here
+    serialize_census_test.go:325: untracked and unlisted, reported only — add them to censusList if they are real fixtures rather than local scratch: gemma4-emodel-tiny gemma4-vl-bidir-tiny qwen2.5-coder-0.5b-instruct-q4_k_m.f32.cpu-arm64.v17.giw qwen2.5-coder-0.5b-instruct-q4_k_m.gguf qwen2.5-coder-0.5b-instruct-q4_k_m.int4.metal.v16.giw qwen3vl-tiny
+--- PASS: TestSerializeCensus_everyFixtureIsListedOrExcluded (0.02s)
+=== RUN   TestSerializeWeights_roundTrip
+    serialize_test.go:73: SKIP-HEAVY: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestSerializeWeights_roundTrip (0.00s)
+=== RUN   TestLoadSerializedWeights_guards
+    serialize_test.go:174: SKIP-HEAVY: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestLoadSerializedWeights_guards (0.00s)
+=== RUN   TestLoadGIW_mmap
+    serialize_test.go:216: SKIP-HEAVY: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestLoadGIW_mmap (0.00s)
+=== RUN   TestSerializeWeightsTo_matchesBuffer
+    serialize_test.go:451: SKIP-HEAVY: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestSerializeWeightsTo_matchesBuffer (0.00s)
+=== RUN   TestCanSerialize_refusesUnrepresentable
+--- PASS: TestCanSerialize_refusesUnrepresentable (0.00s)
+=== RUN   TestLoadSerialized_finalizesTiedLMHead
+--- PASS: TestLoadSerialized_finalizesTiedLMHead (0.00s)
+=== RUN   TestLoadSerialized_neverPanicsOnValidCRC
+--- PASS: TestLoadSerialized_neverPanicsOnValidCRC (0.09s)
+=== RUN   TestSidecarPathIfFresh
+=== RUN   TestSidecarPathIfFresh/no_cache_yet_—_never_transcodes
+--- PASS: TestSidecarPathIfFresh/no_cache_yet_—_never_transcodes (0.00s)
+=== RUN   TestSidecarPathIfFresh/fresh_cache_exists_—_returned,_not_rebuilt
+    sidecar_default_test.go:81: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (needs a real, tokenizer-bearing GGUF)
+--- SKIP: TestSidecarPathIfFresh/fresh_cache_exists_—_returned,_not_rebuilt (0.00s)
+=== RUN   TestSidecarPathIfFresh/stale_cache_(source_touched_after)_—_refuses,_never_rebuilds
+    sidecar_default_test.go:106: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (needs a real, tokenizer-bearing GGUF)
+--- SKIP: TestSidecarPathIfFresh/stale_cache_(source_touched_after)_—_refuses,_never_rebuilds (0.00s)
+--- PASS: TestSidecarPathIfFresh (0.00s)
+=== RUN   TestEnsureCachedGIW_proceedsWhenDiskProbeUnknown
+    sidecar_default_test.go:151: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (needs a real, tokenizer-bearing GGUF)
+--- SKIP: TestEnsureCachedGIW_proceedsWhenDiskProbeUnknown (0.00s)
+=== RUN   TestSidecarLoad_matchesDirectLoad
+    sidecar_identity_test.go:23: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (needs a real, tokenizer-bearing GGUF)
+--- SKIP: TestSidecarLoad_matchesDirectLoad (0.00s)
+=== RUN   TestLoad_libraryDefaultOpensTheSidecar
+stream-weights: transcoding tok-tiny.gguf → tok-tiny.int8int8.cpu-arm64.v17.giw (int8int8, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (0 MB) in 0s: stream 0.0s, self-check 0.0s
+--- PASS: TestLoad_libraryDefaultOpensTheSidecar (0.01s)
+=== RUN   TestLoad_directLoadWritesNothing
+--- PASS: TestLoad_directLoadWritesNothing (0.00s)
+=== RUN   TestLoad_testBinaryDefaultIsDirect
+--- PASS: TestLoad_testBinaryDefaultIsDirect (0.00s)
+=== RUN   TestLoad_sidecarRefusalNamesDirectLoad
+stream-weights: transcoding tok-tiny.gguf → tok-tiny.int8int8.cpu-arm64.v17.giw (int8int8, one-time — minutes + ~model-size on disk)…
+--- PASS: TestLoad_sidecarRefusalNamesDirectLoad (0.00s)
+=== RUN   TestLoad_productionDefaultTakesTheSidecar
+--- PASS: TestLoad_productionDefaultTakesTheSidecar (1.09s)
+=== RUN   TestTranscode_embedInt4ThreadedThroughRealGGUF
+    sidecar_stream_test.go:312: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a real GGUF)
+--- SKIP: TestTranscode_embedInt4ThreadedThroughRealGGUF (0.00s)
+=== RUN   TestTranscode_realGGUFSucceedsAndPublishedBundleLoads
+    sidecar_stream_test.go:435: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a real GGUF)
+--- SKIP: TestTranscode_realGGUFSucceedsAndPublishedBundleLoads (0.00s)
+=== RUN   TestNgramAlphaPredictor
+    spec_alpha_test.go:76: α̂_ngram(match_len) calibration over 229 positions:
+    spec_alpha_test.go:77: matchLen      n  accept_prob     realized
+    spec_alpha_test.go:80:        2     42        0.705        0.738
+    spec_alpha_test.go:80:        3     14        0.857        0.857
+    spec_alpha_test.go:80:        4     10        0.832        0.900
+    spec_alpha_test.go:80:       11     12        0.916        0.917
+    spec_alpha_test.go:80:       13      3        0.662        0.667
+    spec_alpha_test.go:80:       16    148        0.966        0.986
+    spec_alpha_test.go:86: match_len → accepted: AUC=0.818  (accepted=211 rejected=18)
+    spec_alpha_test.go:87: mean accept_prob (α̅) = 0.899
+--- PASS: TestNgramAlphaPredictor (2.41s)
+=== RUN   TestGrammarAlphaPredictor
+    spec_alpha_test.go:268: α̂_grammar over 69 FORCED positions: mean accept_prob=0.202, realized accept=0.203
+    spec_alpha_test.go:277:   forced-run depth 0: n=55 accept_prob=0.236
+    spec_alpha_test.go:277:   forced-run depth 1: n=13 accept_prob=0.077
+    spec_alpha_test.go:277:   forced-run depth 2: n=1 accept_prob=0.000
+    spec_alpha_test.go:279: current grammarConf constant = 0.200
+--- PASS: TestGrammarAlphaPredictor (4.23s)
+=== RUN   TestNgramAlphaCrossWorkload
+    spec_alpha_test.go:383: heldout        n    AUC      ECE
+    spec_alpha_test.go:394: csv           10  (too few traces to score)
+    spec_alpha_test.go:421: config        86  0.829    0.038
+    spec_alpha_test.go:421: markdown      73  0.631    0.237
+    spec_alpha_test.go:421: sql           67  0.318    0.232
+    spec_alpha_test.go:421: prose-rep     91  0.697    0.046
+    spec_alpha_test.go:429: mean held-out ECE = 0.139 over 4 workloads (shipped ngramAlpha table)
+--- PASS: TestNgramAlphaCrossWorkload (4.08s)
+=== RUN   TestGrammarSpecHarness
+    spec_grammar_harness_test.go:40: schema          tok   accept tok/round  output
+    spec_grammar_harness_test.go:62: free-string      11    0.500      1.10  "{\n  \"text\": \"Hello, world!\"\n}"
+    spec_grammar_harness_test.go:62: mixed            20    0.222      1.11  "{\n  \"location\": \"New York\",\n  \"unit\": \"celsius\"\n}"
+    spec_grammar_harness_test.go:62: enum-heavy       23    0.143      1.05  "{\n  \"status\": \"approved\",\n  \"category\": \"feature\",\n  \"priority\": \"high\"\n}"
+    spec_grammar_harness_test.go:62: fixed-keys       29    0.529      1.45  "{\n  \"first_name\": \"Ada\",\n  \"last_name\": \"Lovelace\",\n  \"role\": \"engineer\"\n}"
+--- PASS: TestGrammarSpecHarness (0.97s)
+=== RUN   TestGrammarSpec_sessionTwoTurnsMatchPlain
+--- PASS: TestGrammarSpec_sessionTwoTurnsMatchPlain (0.66s)
+=== RUN   TestGrammarForcedFraction
+    spec_grammar_test.go:71: schema     | TOKEN-forced (ForcedRun) | BYTE-forced (ceiling)
+    spec_grammar_test.go:105: weather    |  0/10 tok =  0.0% | 20/37 bytes = 54.1%  "\xb7\xb7\xb7ocation\"\xb7\xb7\xb7\xb7\xb7\xb7\xb7\xb7\xb7\xb7unit\"\xb7\xb7\xb7elsius\"\xb7"
+    spec_grammar_test.go:105: record     |  0/14 tok =  0.0% | 17/39 bytes = 43.6%  "\xb7\xb7\xb7ame\"\xb7\xb7\xb7\xb7\xb7\xb7\xb7\xb7\xb7\xb7a\xb7e\"\xb7\xb7\xb7\xb7\xb7active\"\xb7\xb7rue\xb7"
+    spec_grammar_test.go:105: enum-heavy |  0/ 9 tok =  0.0% | 29/39 bytes = 74.4%  "\xb7\xb7\xb7tatus\"\xb7\xb7approved\"\xb7\xb7priority\"\xb7\xb7high\"\xb7"
+--- PASS: TestGrammarForcedFraction (0.07s)
+=== RUN   TestNgramSpecHarness
+    spec_harness_test.go:95: workload    mode        tok    α̅/α     acc   tok/v  speedup
+    spec_harness_test.go:144: codeedit    fixed       128   0.738   0.352    1.86    1.02x
+    spec_harness_test.go:146: codeedit    adaptive    128   0.566   0.605    1.58    1.22x
+    spec_harness_test.go:144: rag-copy    fixed       128   0.973   0.967    7.11    1.47x
+    spec_harness_test.go:146: rag-copy    adaptive    128   0.995   0.983    7.11    2.90x
+    spec_harness_test.go:144: agent-json  fixed       128   0.955   0.933    8.53    1.53x
+    spec_harness_test.go:146: agent-json  adaptive    128   0.989   0.904    6.74    2.73x
+--- PASS: TestNgramSpecHarness (9.25s)
+=== RUN   TestForwardCaptureSeam
+    spec_hidden_seam_test.go:75: hidden-state seam OK: captured layers [1 12 23] (hidden 896), read-only + last-layer exact
+--- PASS: TestForwardCaptureSeam (0.14s)
+=== RUN   TestNgramSpeculativeGreedyParity
+panic: test timed out after 45m0s
+	running tests:
+		TestNgramSpeculativeGreedyParity (3s)
+
+goroutine 2214564 [running]:
+testing.(*M).startAlarm.func1()
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.2.darwin-arm64/src/testing/testing.go:2961 +0x2c4
+created by time.goFunc
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.2.darwin-arm64/src/time/sleep.go:182 +0x38
+
+goroutine 1 [chan receive]:
+testing.(*T).Run(0x1afa8f64ed88, {0x1058ef71b?, 0x1afa8f715a48?}, 0x1067cc590)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.2.darwin-arm64/src/testing/testing.go:2268 +0x3cc
+testing.runTests.func1(0x1afa8f64ed88)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.2.darwin-arm64/src/testing/testing.go:2744 +0x38
+testing.tRunner(0x1afa8f64ed88, 0x1afa8f715b78)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.2.darwin-arm64/src/testing/testing.go:2195 +0xc4
+testing.runTests({0x1058f1dc2, 0x21}, {0x105904bc6, 0x29}, 0x1afa8f634390, {0x106814830, 0x579, 0x579}, {0x7?, 0x1050f46a0?, ...})
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.2.darwin-arm64/src/testing/testing.go:2742 +0x400
+testing.(*M).Run(0x1afa8f6a5d60)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.2.darwin-arm64/src/testing/testing.go:2602 +0x578
+github.com/townsendmerino/goinfer/decoder.TestMain(0x1afa8f6a5d60)
+	/Users/francistownsend-merino/goinfer-bench/relgate-qf-wt/decoder/suite_main_test.go:17 +0x38
+main.main()
+	_testmain.go:2944 +0x88
+
+goroutine 19 [select]:
+github.com/townsendmerino/goinfer/decoder.startMemReclaimer.func2()
+	/Users/francistownsend-merino/goinfer-bench/relgate-qf-wt/decoder/suite_main_test.go:66 +0xa0
+created by github.com/townsendmerino/goinfer/decoder.startMemReclaimer in goroutine 1
+	/Users/francistownsend-merino/goinfer-bench/relgate-qf-wt/decoder/suite_main_test.go:62 +0xbc
+
+goroutine 711459 [chan receive]:
+testing.(*T).Parallel(0x1afa8f64efc8)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.2.darwin-arm64/src/testing/testing.go:1959 +0x194
+github.com/townsendmerino/goinfer/decoder.TestProgram_L_everyParameterIsLive(0x1afa8f64efc8)
+	/Users/francistownsend-merino/goinfer-bench/relgate-qf-wt/decoder/program_test.go:333 +0x28
+testing.tRunner(0x1afa8f64efc8, 0x1067cc920)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.2.darwin-arm64/src/testing/testing.go:2195 +0xc4
+created by testing.(*T).Run in goroutine 1
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.2.darwin-arm64/src/testing/testing.go:2260 +0x3b8
+
+goroutine 2214580 [runnable]:
+github.com/townsendmerino/aikit/linalg.parallelSpawnCols.func1()
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/linalg.go:270
+created by github.com/townsendmerino/aikit/linalg.parallelSpawnCols in goroutine 2189916
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/linalg.go:270 +0x118
+
+goroutine 2189916 [sync.WaitGroup.Wait]:
+sync.runtime_SemacquireWaitGroup(0x105076c00?, 0x0?)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.2.darwin-arm64/src/runtime/sema.go:114 +0x38
+sync.(*WaitGroup).Wait(0x1afac14aef90)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.2.darwin-arm64/src/sync/waitgroup.go:206 +0xa4
+github.com/townsendmerino/aikit/linalg.parallelSpawnCols(0x2600, 0x10675cdd0?, 0x1afac14c2240)
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/linalg.go:281 +0x19c
+github.com/townsendmerino/aikit/linalg.(*Workspace).parallel(0x1afabfbf6000?, 0x2600, 0x1afac14c2240)
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/workspace.go:86 +0x38
+github.com/townsendmerino/aikit/linalg.MatmulBTW8A8Batch(0x1afabcc42c40, {0x1afac147a000, 0x380, 0x380}, 0x1, 0x380, {0x1afa90407da0, 0x2, 0x2})
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/quant.go:539 +0x394
+github.com/townsendmerino/goinfer/decoder.matmulW8A8Batch({0x1067b7f00?, 0x106849860?}, 0x1afabcc42c40, {0x1afac147a000, 0x380, 0x380}, 0x1, 0x380, {0x1afa90407da0, 0x2, ...}, ...)
+	/Users/francistownsend-merino/goinfer-bench/relgate-qf-wt/decoder/backend.go:68 +0x10c
+github.com/townsendmerino/goinfer/decoder.gatedMLPAct({0x1afac147a000, 0x380, 0x380}, {0x1afac147b000, 0x380, 0x380}, 0x1afa904de000, 0x1, {0x1067b7f00, 0x106849860}, ...)
+	/Users/francistownsend-merino/goinfer-bench/relgate-qf-wt/decoder/mlp.go:505 +0x3a0
+github.com/townsendmerino/goinfer/decoder.(*Model).ffnToken(0x380?, 0x1067b7f00?, {0x1afac147a000?, 0x1afac147b000?, 0x1afac147a000?}, {0x1afac147b000, 0x380, 0x1afabcb29000?}, 0x380?, 0x380?, ...)
+	/Users/francistownsend-merino/goinfer-bench/relgate-qf-wt/decoder/program_cpu.go:463 +0x21c
+github.com/townsendmerino/goinfer/decoder.(*Model).walkToken(0x1afa8f723888, 0x380?, {0x1afabcb29000, 0x380, 0x380}, 0x40?, 0x1afa90961508)
+	/Users/francistownsend-merino/goinfer-bench/relgate-qf-wt/decoder/program_cpu.go:155 +0x174c
+github.com/townsendmerino/goinfer/decoder.(*Model).runLayersFromEmbedPLE(0x1afa8f723888, {0x1afabcb29000, 0x380, 0x380}, 0x2, 0x1afa90961508)
+	/Users/francistownsend-merino/goinfer-bench/relgate-qf-wt/decoder/model_forward.go:95 +0xe4
+github.com/townsendmerino/goinfer/decoder.(*Model).runLayers(0x1afa8f723888, 0x2, 0x1afa90961508)
+	/Users/francistownsend-merino/goinfer-bench/relgate-qf-wt/decoder/model_forward.go:69 +0x2d4
+github.com/townsendmerino/goinfer/decoder.(*Model).forward(0x1afa8f723888, 0x2?, 0x1afa90961508)
+	/Users/francistownsend-merino/goinfer-bench/relgate-qf-wt/decoder/model_forward.go:168 +0x24
+github.com/townsendmerino/goinfer/decoder.(*genRun).advance(0x1afa90961188, 0x2, 0x2?, 0x2?)
+	/Users/francistownsend-merino/goinfer-bench/relgate-qf-wt/decoder/generate_run.go:244 +0x630
+github.com/townsendmerino/goinfer/decoder.plainDecodeLoop({0x1067b98a8, 0x1afac142e0f0}, {0x1afa8fbee310, 0x1afa8fbee300, 0x1afa8fbee320, 0x0, 0x0}, 0x1afa8f51a540, 0x1afac0b6f440, 0x1afac6fac038, ...)
+	/Users/francistownsend-merino/goinfer-bench/relgate-qf-wt/decoder/policy_decode.go:110 +0x52c
+github.com/townsendmerino/goinfer/decoder.(*Model).generateInto.func7()
+	/Users/francistownsend-merino/goinfer-bench/relgate-qf-wt/decoder/model.go:1608 +0xd0
+github.com/townsendmerino/goinfer/decoder.costSpan({0x0?, 0x0?}, 0x106849860?, 0xc0?, 0x6?)
+	/Users/francistownsend-merino/goinfer-bench/relgate-qf-wt/decoder/cost_resident.go:30 +0x54
+github.com/townsendmerino/goinfer/decoder.(*Model).generateInto(0x1afa8f723888, {0x1067b98a8, 0x1afac142e0f0}, 0x1afa8f51a540, 0x1afac0b6f440, 0x0, 0x1afac0b79530, {0x1067d21c0, 0x6, 0x6}, ...)
+	/Users/francistownsend-merino/goinfer-bench/relgate-qf-wt/decoder/model.go:1607 +0x14ec
+github.com/townsendmerino/goinfer/decoder.(*Model).Generate.func2({0x1067b98a8?, 0x1afac142e0f0?})
+	/Users/francistownsend-merino/goinfer-bench/relgate-qf-wt/decoder/model.go:972 +0x84
+github.com/townsendmerino/goinfer/decoder.(*Model).runGen.func1()
+	/Users/francistownsend-merino/goinfer-bench/relgate-qf-wt/decoder/lifecycle.go:76 +0x90
+created by github.com/townsendmerino/goinfer/decoder.(*Model).runGen in goroutine 1970287
+	/Users/francistownsend-merino/goinfer-bench/relgate-qf-wt/decoder/lifecycle.go:67 +0x2bc
+
+goroutine 2214578 [runnable]:
+github.com/townsendmerino/aikit/linalg.dotI8({0x1afabfbf6000?, 0x380?, 0x1300?}, {0x1afaa35ec780?, 0x380?, 0x1dd880?})
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/quant_i8_arm64.go:29 +0x128
+github.com/townsendmerino/aikit/linalg.w8a8SpanRows({0x1afabfbf6000, 0x1afa8f689d78?, 0x1300}, {0x1afabf5e3dc8, 0x1, 0x1afaa33a2000?}, {0x1afaa33a2000, 0x380?, 0x428000}, {0x1afa91628000, ...}, ...)
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/quant.go:489 +0x160
+github.com/townsendmerino/aikit/linalg.w8a8Span({0x1afabfbf6000, 0x380, 0x1300}, {0x1afabf5e3dc8, 0x1, 0x1}, {0x1afaa33a2000, 0x428000, 0x428000}, {0x1afa91628000, ...}, ...)
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/quant.go:460 +0xe8
+github.com/townsendmerino/aikit/linalg.w8a8BatchSpan({0x1afabfbf6000, 0x380, 0x1300}, {0x1afabf5e3dc8, 0x1, 0x1}, {0x1afa90407da0?, 0x1afa90080000?, 0x25180?}, 0x1, ...)
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/quant.go:565 +0xf8
+github.com/townsendmerino/aikit/linalg.MatmulBTW8A8Batch.func1(0x1001afa8f504e30?, 0x1057523a0?)
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/quant.go:540 +0x44
+github.com/townsendmerino/aikit/linalg.parallelSpawnCols.func1()
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/linalg.go:277 +0x6c
+created by github.com/townsendmerino/aikit/linalg.parallelSpawnCols in goroutine 2189916
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/linalg.go:270 +0x118
+
+goroutine 2214577 [runnable]:
+github.com/townsendmerino/aikit/linalg.parallelSpawnCols.func1()
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/linalg.go:270
+created by github.com/townsendmerino/aikit/linalg.parallelSpawnCols in goroutine 2189916
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/linalg.go:270 +0x118
+
+goroutine 2214582 [runnable]:
+github.com/townsendmerino/aikit/linalg.dotI8({0x1afabfbf6000?, 0x380?, 0x1300?}, {0x1afaa3619500?, 0x380?, 0x1b0b00?})
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/quant_i8_arm64.go:29 +0x128
+github.com/townsendmerino/aikit/linalg.w8a8SpanRows({0x1afabfbf6000, 0x1afa8fe8cd78?, 0x1300}, {0x1afabf5e3dc8, 0x1, 0x1afaa33a2000?}, {0x1afaa33a2000, 0x380?, 0x428000}, {0x1afa91628000, ...}, ...)
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/quant.go:489 +0x160
+github.com/townsendmerino/aikit/linalg.w8a8Span({0x1afabfbf6000, 0x380, 0x1300}, {0x1afabf5e3dc8, 0x1, 0x1}, {0x1afaa33a2000, 0x428000, 0x428000}, {0x1afa91628000, ...}, ...)
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/quant.go:460 +0xe8
+github.com/townsendmerino/aikit/linalg.w8a8BatchSpan({0x1afabfbf6000, 0x380, 0x1300}, {0x1afabf5e3dc8, 0x1, 0x1}, {0x1afa90407da0?, 0x190080000?, 0x25180?}, 0x1, ...)
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/quant.go:565 +0xf8
+github.com/townsendmerino/aikit/linalg.MatmulBTW8A8Batch.func1(0x1001afa8f526dc0?, 0x1057523a0?)
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/quant.go:540 +0x44
+github.com/townsendmerino/aikit/linalg.parallelSpawnCols.func1()
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/linalg.go:277 +0x6c
+created by github.com/townsendmerino/aikit/linalg.parallelSpawnCols in goroutine 2189916
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/linalg.go:270 +0x118
+
+goroutine 2214496 [runnable]:
+github.com/townsendmerino/aikit/linalg.dotI8({0x1afabfbf6000?, 0x380?, 0x1300?}, {0x1afaa357f180?, 0x380?, 0x24ae80?})
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/quant_i8_arm64.go:29 +0x128
+github.com/townsendmerino/aikit/linalg.w8a8SpanRows({0x1afabfbf6000, 0x1afa8f7e6d78?, 0x1300}, {0x1afabf5e3dc8, 0x1, 0x1afaa33a2000?}, {0x1afaa33a2000, 0x380?, 0x428000}, {0x1afa91628000, ...}, ...)
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/quant.go:489 +0x160
+github.com/townsendmerino/aikit/linalg.w8a8Span({0x1afabfbf6000, 0x380, 0x1300}, {0x1afabf5e3dc8, 0x1, 0x1}, {0x1afaa33a2000, 0x428000, 0x428000}, {0x1afa91628000, ...}, ...)
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/quant.go:460 +0xe8
+github.com/townsendmerino/aikit/linalg.w8a8BatchSpan({0x1afabfbf6000, 0x380, 0x1300}, {0x1afabf5e3dc8, 0x1, 0x1}, {0x1afa90407da0?, 0x1afab0477000?, 0x380?}, 0x1, ...)
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/quant.go:565 +0xf8
+github.com/townsendmerino/aikit/linalg.MatmulBTW8A8Batch.func1(0x100000000000d10?, 0x1057523a0?)
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/quant.go:540 +0x44
+github.com/townsendmerino/aikit/linalg.parallelSpawnCols.func1()
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/linalg.go:277 +0x6c
+created by github.com/townsendmerino/aikit/linalg.parallelSpawnCols in goroutine 2189916
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/linalg.go:270 +0x118
+
+goroutine 1970287 [chan receive]:
+github.com/townsendmerino/goinfer/decoder.collectTokens(...)
+	/Users/francistownsend-merino/goinfer-bench/relgate-qf-wt/decoder/speculative_test.go:12
+github.com/townsendmerino/goinfer/decoder.TestNgramSpeculativeGreedyParity(0x1afafb9206c8)
+	/Users/francistownsend-merino/goinfer-bench/relgate-qf-wt/decoder/spec_ngram_test.go:55 +0x1b4
+testing.tRunner(0x1afafb9206c8, 0x1067cc590)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.2.darwin-arm64/src/testing/testing.go:2195 +0xc4
+created by testing.(*T).Run in goroutine 1
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.2.darwin-arm64/src/testing/testing.go:2260 +0x3b8
+
+goroutine 2214579 [runnable]:
+github.com/townsendmerino/aikit/linalg.parallelSpawnCols.func1()
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/linalg.go:270
+created by github.com/townsendmerino/aikit/linalg.parallelSpawnCols in goroutine 2189916
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/linalg.go:270 +0x118
+
+goroutine 2214581 [runnable]:
+github.com/townsendmerino/aikit/linalg.parallelSpawnCols.func1()
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/linalg.go:270
+created by github.com/townsendmerino/aikit/linalg.parallelSpawnCols in goroutine 2189916
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/linalg.go:270 +0x118
+
+goroutine 2214495 [runnable]:
+github.com/townsendmerino/aikit/linalg.parallelSpawnCols.func1()
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/linalg.go:270
+created by github.com/townsendmerino/aikit/linalg.parallelSpawnCols in goroutine 2189916
+	/Users/francistownsend-merino/go/pkg/mod/github.com/townsendmerino/aikit@v1.78.0/linalg/linalg.go:270 +0x118
+FAIL	github.com/townsendmerino/goinfer/decoder	2700.491s

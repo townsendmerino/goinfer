@@ -17,6 +17,161 @@ any surface may still change.
 
 Each unreleased change is a file in [`changelog.d/`](changelog.d/), collected into the release's section when it is tagged (`scripts/changelog.py release`).
 
+## [v0.25.0] — 2026-11-22
+
+- **Prebuilt WebGPU binaries.** Each release now carries `goinfer-serve-webgpu-linux-amd64`, `-linux-arm64` and
+  `-windows-amd64.exe`, with their own `checksums-webgpu.txt` and build-provenance attestation, built with cgo and
+  wgpu-native linked in. The static assets and `checksums.txt` are unchanged, and a WebGPU build failure cannot hold them
+  back (#1177).
+- **A server keeps serving when a background task fails.** The web UI load, the SSE heartbeat and the unload drain now
+  run under the panic guard. A GPU allocation failure is now its own error type, so the broad recovers decline it cleanly
+  while a programming bug still surfaces instead of being swallowed (#1120, #1130).
+- **`Model.Shape` returns the model's dimensions as a struct**, beside the existing positional `Dims` (#1202).
+- **`--moe-experts-unpinned` (chat and serve, off by default): a CUDA expert cache without the pinned host copy.** With
+  `--moe-cache-experts`, the expert slots upload from the pageable pages of a packed-experts file written beside the model
+  instead of from a pinned copy in host memory: about 12 GiB less host memory on Gemma 4 26B, and slower by design (0.82x
+  decode at short context, 0.75x at long). The memory refusal names it when the pinned copy is what does not fit (#792).
+- **New family, experimental: Flint (`flint`, Cognichip Flint 36B-A3B).** Hybrid sliding-window and NoPE full attention
+  with per-head attention sinks, a dense prefix and a sigmoid-routed MoE with an ungated shared expert; text, from
+  safetensors or GGUF, resident on CUDA, Metal and WebGPU. It has passed the tiny-model reference check only, not a real
+  checkpoint yet. Pre-quantized NVFP4 and MLX (affine, nvfp4, mxfp4) safetensors checkpoints now load, reconstructed at
+  load time and then quantized as `--quant` says.
+- **Faster: Phi-3's prompt processing on Metal runs through the f16 matrix-multiply prefill.** The q4k lane used to
+  process a prompt one step at a time. On an M1 Pro, Phi-3 mini 4k q4 now prefills 6.04x as fast at 512 tokens and 4.73x
+  at 3,900 (111.9 s to 23.7 s), inside its registered fidelity gate (agreement and KL level, no hard flips) (#1162).
+- **Fixed: Metal's int8 prefill read past the end of a row when K was not a multiple of 32.** The native-int8 batched
+  prefill GEMMs summed a few weights and activations from the next row, and at the last row read leftover scratch, so the
+  result could depend on what ran before. It took `-quant int8int8` on Metal, a batched prefill and such a projection
+  width; no released checkpoint we checked has one. A K that is a multiple of 32 gives the same bits as before (#1206).
+- **Faster: Qwen2.5 0.5B's attention projections use every core on the CPU.** The int4 parallel threshold now sits below
+  their size, so the q, k, v and o projections fan out: about 2.6% per token, bit-identical, 10 of 10 timed pairs faster
+  (#1121).
+- **Faster: a Q4_K_M file's Q5_K and Q6_K tensors run as the file stores them on the CPU.** At `--quant q4k`, including
+  the default sidecar, they were widened to int8; they now run on new kernels from aikit v1.78.0. Phi-3 mini decodes
+  1.10x as fast on a Ryzen (10 of 10 timed pairs), inside its registered fidelity gate. Each token allocates more than
+  before: about 266 KB against 201 KB (#1170).
+- **Faster: gpt-oss decodes 1.64x as fast on the CPU.** Each token's chosen experts now run their gate and up projections
+  as one batched W4A8 call instead of one call per expert. Outputs are bit-identical; the speed rule's ten timed pairs on a
+  Ryzen were all faster (#1129).
+- **`--embed-int4`'s default now depends on model size: a model of 1B parameters or more keeps the int8 output head.**
+  Below 1B the default is still the int4 head, and on Metal still off. The load counts the parameters from the file's
+  tensor directory before it picks the sidecar `.giw`, so a 1B+ `.gguf` opens (and builds once, if missing) the plain-head
+  sidecar rather than the `e4h` one; a prebuilt `.giw` keeps the head its transcode baked. An explicit `--embed-int4`
+  or `--embed-int4=false`, or serve's per-model `embed-int4=` key, wins at any size. Costs about 100 MB more VRAM on a
+  1.5B and 240 MB on a 7B on CUDA. Library callers: `decoder.Options.EmbedInt4Default`, `decoder.EmbedInt4For`,
+  `decoder.PeekParamCount`, `Model.EmbedInt4`. Issue #1160.
+- **`--flash-decode-softcap` (chat and serve, off by default) lets a Gemma 2 model decode on CUDA's flash-decode lane.**
+  The lane runs in its capped variant; its outputs differ from the exact split-KV lane Gemma 2 decodes on by default, and
+  the registered fidelity gate (Gemma 2 2B, 3,900 keys) passes. A model without an attention softcap, and any other
+  backend, ignore it.
+- **Faster: min-p sampling scans the vocabulary on all cores.** With `min_p` set, the candidate scan over the logits is split across cores
+  and gives the same candidates in the same order: 2.7x faster at a 262k vocabulary (about 110 us a token), 1.9x at 152k and 1.05x at 32k
+  (M1 Pro; `docs/measurements/p42-r15-2026-11-09/README.md`).
+- **Fixed: Metal's batched `ForwardN` ran each Gated-DeltaNet layer on the resident's own residual, not the row's.** A batch of N tokens through a
+  DeltaNet model (Qwen3.5, Qwen3-Next) read the wrong input in those layers, so its logits differed from N sequential steps. Each row now
+  runs on its own residual, bit-identical to the sequential steps (N of 2, 4 and 8, from position 0 and 4).
+- **Fixed: `serve check`'s long-prompt row no longer fails on reasoning models.** The row asks for 8 tokens and counted only content, so a model
+  that thinks first read "stream produced no tokens". Reasoning tokens now count, and the row says how many of them there were.
+- **A JSON Schema string's `format` is now enforced for `date`, `time`, `date-time`, `uuid`, `ipv4` and `email`.**
+  Constrained output (`response_format` `json_schema`, `constrain.JSONSchema`, `GrammarFromStruct`) can no longer write
+  `"2026-13-01"` for a date or a malformed address for an email: the grammar holds the value to RFC 3339's full-date,
+  full-time and date-time, RFC 4122's UUID text, a dotted-quad IPv4 and a dot-atom email. Any other `format` stays an
+  annotation, as JSON Schema 2020-12 defines it. Before, every `format` was accepted and ignored.
+- **A generation that leaves the resident path says why.** `decoder.Generation.ResidentDeclined` names the reason a
+  generation ran on the CPU on a model with a resident runner: its prompt passed the resident's context, another generation
+  held the resident, or an adapter failed to bind. The first prompt past the resident's context also logs a warning, since
+  it is correct but far slower to the first token. Experimental.
+- **`decoder.Options.RequireBackend` makes a backend's decline a load error.** When `Backend` names a backend other than
+  the CPU and the load builds no resident runner on it (not linked, no device, or the model declined), `Load` returns an
+  error that `errors.Is` matches against the new `decoder.ErrBackendDeclined`, with the reason, instead of running on the
+  CPU: `serve -require-backend`'s resident half, for library callers. Experimental tier.
+- **Changes behavior: on CUDA, a context the fit guard chose is trimmed to fit, as an unrequested one is.** A load without `--ctx` whose
+  guard-chosen context missed free VRAM by a few MB fell back to the CPU; it now runs resident at the largest context that fits, never
+  below 4096, and with several KV slots gives up positions before slots. An explicit `--ctx` is unchanged: never trimmed, refused with
+  the numbers when it does not fit.
+- **`--kv f16` and `--kv i8` on the CPU for MoE models on the generic loop** (Mixtral, Qwen3-MoE, GLM-4-MoE, Qwen3-VL-MoE, Laguna). They used to
+  refuse the load. f16 is bit for bit the f32 path with each stored row rounded to f16. MoE families with their own forward loop (gpt-oss,
+  Llama 4, Gemma 4, Qwen3.5, the MLA models) still refuse, now naming that loop as the reason.
+- **CPU batched decode reads f16 and int8 KV caches.** With `--cpu-batch`, concurrent CPU generations on an `--kv f16` or
+  `--kv i8` cache now join their decode tokens into one batched forward, with replies bit-identical to decoding each alone.
+  Before, those tokens decoded one sequence at a time, and `--cpu-batch on` with such a cache refused the load.
+- **`chat.Template.ToolGrammar(tools, tokens, stopIDs)` builds the masker for a turn that may call a tool.** It masks
+  nothing until the template's call opener (or, for Llama 3, a call object's name key), then holds the call to the offered
+  tools' schemas: what `serve` does for `tool_choice: "auto"`, which now calls it. `ParseToolCalls` documents that a call's
+  `ID` is the one the model wrote, usually none, and that its content keeps a leading reasoning block. Experimental.
+- **`chat.Template.StopIDs(tok)` returns the token ids that end a generation.** The tokenizer's end-of-sequence and
+  end-of-turn ids where it has them, then each of the template's stop strings that is a single token, each id once: what
+  `decoder.SamplingParams.StopIDs` and `constrain.NewMasker` take, without the loop every caller wrote. Hard tier.
+- **`--version` names the binary without `.exe` on Windows.** The first line of `goinfer-serve --version` and `goinfer-chat
+  --version` read `goinfer-serve.exe v0.24.1` on Windows and `goinfer-serve v0.24.1` elsewhere; it is now `goinfer-serve <version>`
+  on every platform, followed by ` (<commit>)` when the version does not already carry it, so a client that compares the version
+  reads one form.
+- **On Metal, a Phi-3 or Phi-4 `.gguf` loads at `--quant q4k` by default and runs resident, under `-backend auto` too.** Metal's
+  q4k lane keeps the file's Q4_K blocks exactly and quantizes no activation. Before, the default for these families on Metal was
+  int8int8 with per-32 activation scales, which Metal declines, so the model decoded on the CPU. `-backend auto` now picks Metal
+  for any q4k model, as it does for int4. Against Ollama on the same file (Phi-3 mini 4k q4, M1 Pro, depth 128, greedy) the q4k
+  cell reads 42.4 tok/s to 41.7, LEVEL (`docs/measurements/peer-vetted-2026-10-07-macbook.md`). The load holds more of the
+  process's memory than the CPU path did. Metal keeps the weights and two KV slots resident: at `-ctx 2048`, after a 64-token
+  completion, the footprint is 4.0 GB (2.4 GB of weights, 1.5 GB of KV). The CPU path read its weights from a mapping macOS can
+  reclaim, and its footprint was 0.2 GB. An explicit `--quant` is kept, other families are unchanged, and WebGPU still loads
+  these families at int8int8 with per-32 scales on the CPU. The load prints a note saying it took q4k.
+- **On Metal, a tool or thinking-budget turn keeps the run-ahead chain while its gate is closed.** A turn with a gated logit processor (the
+  lazy tool-call union, a thinking budget) used to leave Metal's greedy chain for the whole turn; the chain now runs on the prose part and
+  stops at the step the gate opens, where the full-logits path takes over until the gate closes. Tokens are identical to before. On an
+  M1 Pro the prose part of such a turn decodes 1.135x (Qwen2.5-Coder 1.5B) and 1.019x (Qwen2.5 7B) as fast, and a whole tool-call turn
+  1.052x and 1.023x (`docs/measurements/hl-2026-11/README.md`). A turn whose gate opens and closes many times pays one wasted forward per
+  opening and is not measured. Greedy and `top_k = 1` turns on a single slot only; MC3, CUDA and sampled turns are unchanged.
+- **`fit` prices a Metal load through the sidecar it builds.** A `.gguf` or a safetensors directory with no fresh metal sidecar is
+  loaded on Metal by building that sidecar first, and `fit`'s Metal line now prices it as the sidecar holds it: canonical int4,
+  without the CPU's row4 repack, and a host copy the bundle maps. It priced the source itself before, which on an int4 model could
+  double the weights and add a heap copy of them. A directory's existing sidecar is now read too. The line says when it prices a
+  sidecar the load has not built yet.
+- **`fit` and the serve banner price every KV slot Metal keeps.** A load without `--kv-sessions` keeps two KV slots on Metal where
+  they fit. `goinfer-chat fit`'s Metal line now prices both, and says how many it keeps; before, it priced one at a pinned `-ctx` and
+  at the default context. The banner's `fit:` line, on a resident with two or more slots, now gives the KV the pool holds and the room
+  left after all of it. On the Phi-3 mini q4 at `-ctx 2048`, that is 1.5 GB, against the 0.8 GB of one conversation it printed.
+- **Changes behavior: under `--backend webgpu` on a Mac the vision towers run on the GPU by default.** Gemma 3's, Gemma 4's, Qwen2.5-VL's,
+  Qwen3.5+'s, Qwen3-VL's and GLM-OCR's towers were opt-in (`--vision-device gpu`) and are now the default, in float32; their speed gates read
+  0.355 to 0.488 of the CPU towers' encode time on an M1 Pro (five interleaved pairs each). `--vision-device cpu` keeps the towers on the CPU and
+  `--vision-quant int8` still picks Gemma 3's int8 tower. The tower is priced and an over-budget one refuses the load (see the pricing entry).
+  Two cases keep the CPU unless `--vision-device gpu` asks for the device (for Gemma 3 on a discrete GPU, an explicit `--vision-quant` asks too): a discrete GPU, whose memory WebGPU cannot query and so cannot be priced, and a Qwen3.5+ `.gguf`
+  mmproj tower, which has no `config.json` to price. A note on stderr says so when a tower is kept on the CPU. Where the device was asked for on a discrete GPU, a tower that cannot start is warned about at startup and runs on the CPU unless `--require-backend`
+  asks for a refusal; an image that needs more device memory than the decoder left makes the Qwen2.5-VL, Qwen3.5+, Qwen3-VL and GLM-OCR towers fall back to the CPU for good, and fails that one request
+  for Gemma 3 and Gemma 4, with a hint to lower `-ctx` or `-kv-sessions`, resize the image or use `--vision-device cpu`.
+- **Under `--backend webgpu` a vision tower on the device is now priced.** On a Mac the tower counts against RAM when
+  `--kv-sessions` and the context are sized (a single-slot build's context gives way, down to 4096, to fit it), and a tower that then needs more than the memory available refuses the load with its
+  size instead of overcommitting (a CPU tower would hold the same RAM, so it is not a fallback; `--vision-device cpu` runs it anyway). The refusal advises `--vision-quant int8` only for Gemma 3.
+  A discrete GPU has no free-memory figure under WebGPU, so there nothing changes. A Qwen3.5+ `.gguf` mmproj tower on the device is not priced.
+- **An image with an aspect ratio past 200 is refused on Qwen VL and GLM-OCR models, as Hugging Face's processor refuses it.** The
+  resize floored the short side to one patch cell without shrinking the long side to match, so a thin image of a few kilobytes
+  resized to many times the model's pixel budget: a 1 x 1,048,576 PNG became about 3 GB of pixel values under the Qwen3.5 config.
+  Such a request now fails with an error naming the image's size.
+- **`/v1/embeddings` on a GPU-resident decoder model no longer evicts a parked chat's cached prefix.** An embeddings request
+  (and `PromptHidden`, `PromptHiddenAll`) wrote the resident KV slot the last chat used, so that conversation's next turn
+  prefilled from scratch. It now runs in an empty slot, else the least recently used one; with one slot the old cost remains.
+- **`goinfer-chat cache prune-sidecars` reclaims `.giw` sidecars in a format this build no longer reads.** A dry run by
+  default: it lists each older-version sidecar under the pull cache (or `-dir <dir>`) and the space it holds; `-apply`
+  deletes them and their `.verified` markers. The current version, a newer one, a legacy unversioned name and a transcode
+  in progress are never touched.
+- **A Qwen VL or GLM-OCR `preprocessor_config.json` with sizes no released model has is refused when the model loads.** It used to
+  load, and then each image request either panicked (a `temporal_patch_size` past what a slice can hold), returned empty pixel values
+  with no error (a `patch_size` times `merge_size` that wraps to zero), or allocated until the process was killed. `temporal_patch_size`
+  may be at most 2 and the pixel budget (`max_pixels`, or `size.longest_edge`) at most 16,777,216, the largest any released
+  Qwen2.5-VL, Qwen3-VL, Qwen3.5, Qwen3.6 or GLM-OCR config sets, and `patch_size * merge_size` at most 1024 (released configs use 28
+  and 32). Qwen2.5-VL's loader, which had no limits, now checks the same ones, and refuses an `image_std` with a zero, as the Qwen3
+  loader already did; that config divided by zero on every image. A size it sets to zero or below is refused, where it used to
+  mean the default; a size it leaves out still takes the default.
+- **`decoder.Load`'s refusals can be told apart with `errors.Is`:** `ErrUnsupportedModel`, `ErrUnknownQuant` and `ErrUnknownBackend`. Their
+  text is unchanged. A preprocess config that exists but cannot be read is now an error, where the Qwen, LFM2-VL and Pixtral loaders used to
+  fall back to default image sizes without a word.
+- **Library messages can go to your logger.** `decoder.SetLogger` sends what the library and the GPU backends write (load decisions, declines,
+  KV pool activity) to a `*slog.Logger`, at debug, info or warn. Nothing changes by default: each is still the same line on stderr. The `DECODE
+  TIMING`, `DECODE SPLIT` and `DELTANET TIMING` diagnostics move from stdout to stderr, so they no longer mix with generated text in a pipe. One
+  failure no longer prints twice on Metal's context guard or on CUDA's speculative recurrent rows.
+- **Changes behavior: `--max-file-store-bytes` caps the memory that uploaded files and batch results hold, 1 GiB by default.** `POST /v1/files` could keep 256 files
+  of 64 MiB each with nothing to delete them, about 16 GiB of RAM. Past the limit the oldest files go first and the newest upload, or the newest batch's output and error files, are always kept, so download a batch's results
+  before uploading much more; a dropped file's id answers 404 and says why. `0` restores the old behavior, with only the 256-file limit.
+
 ## [v0.24.0] — 2026-11-04
 
 - **v0.24.0: more models on the GPU, more conversations in the same memory.** On the model side, Gemma 4 E-models on Metal use a

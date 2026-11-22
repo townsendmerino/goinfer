@@ -1,0 +1,7 @@
+=== RUN   TestOtherGPUWindow_seesAnotherProcess
+    gpuothers_test.go:228: the child decoded on the GPU through the window: its clients read 0.0000 of the wall time (all others 0.0254), vanished []; want at least 0.05 and the child's clients still listed
+--- FAIL: TestOtherGPUWindow_seesAnotherProcess (7.66s)
+FAIL
+ledger: 6 Context(s) closed in this run
+FAIL	github.com/townsendmerino/goinfer/backend/webgpu	8.287s
+FAIL

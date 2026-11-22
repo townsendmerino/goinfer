@@ -1,0 +1,18 @@
+built 22:52:55; old 7f19e161c new 36dbfbaf1
+== OLD 22:52:55
+    gpuothers_test.go:228: the child decoded on the GPU through the window: its clients read 0.0498 of the wall time (all others 0.0541), vanished []; want at least 0.05 and the child's clients still listed
+--- FAIL: TestOtherGPUWindow_seesAnotherProcess (8.99s)
+FAIL
+== NEW 22:53:05
+    gpuothers_test.go:228: the child decoded on the GPU through the window: its clients read 0.0463 of the wall time (all others 0.0507), vanished []; want at least 0.05 and the child's clients still listed
+--- FAIL: TestOtherGPUWindow_seesAnotherProcess (8.14s)
+FAIL
+== OLD 22:53:14
+    gpuothers_test.go:228: the child decoded on the GPU through the window: its clients read 0.0404 of the wall time (all others 0.0404), vanished []; want at least 0.05 and the child's clients still listed
+--- FAIL: TestOtherGPUWindow_seesAnotherProcess (7.89s)
+FAIL
+== NEW 22:53:21
+    gpuothers_test.go:228: the child decoded on the GPU through the window: its clients read 0.0409 of the wall time (all others 0.0409), vanished []; want at least 0.05 and the child's clients still listed
+--- FAIL: TestOtherGPUWindow_seesAnotherProcess (7.86s)
+FAIL
+ALL DONE 22:53:29

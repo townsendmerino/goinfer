@@ -1,0 +1,8 @@
+/home/francis/go/bin/staticcheck -tags goinfer_testhooks github.com/townsendmerino/goinfer/backend/metal github.com/townsendmerino/goinfer/backend/metal/cmd/chat github.com/townsendmerino/goinfer/backend/metal/cmd/serve github.com/townsendmerino/goinfer/backend/metal/internal/gpudev github.com/townsendmerino/goinfer/backend/metal/kernels
+
+device.go:61:1: comment on exported function NewBufferFloatsOn should be of the form "NewBufferFloatsOn ..." (ST1020)
+internal/gpudev/metal.go:172:1: comment on exported var NewLeaser should be of the form "NewLeaser ..." (ST1022)
+internal/gpudev/metal.go:180:1: comment on exported var ReleasedForTest should be of the form "ReleasedForTest ..." (ST1022)
+internal/gpudev/trace.go:28:1: comment on exported var TraceForTest should be of the form "TraceForTest ..." (ST1022)
+kernels/gemma4_moe_msl.go:3:1: comment on exported const Gemma4MoeKernels should be of the form "Gemma4MoeKernels ..." (ST1022)
+resident_memguard_test.go:866:15: go/parser.ParseDir has been deprecated since Go 1.25 and an alternative has been available since Go 1.11: ParseDir does not consider build tags when associating files with packages. For precise information about the relationship between packages and files, use golang.org/x/tools/go/packages, which can also optionally parse and type-check the files too.  (SA1019)

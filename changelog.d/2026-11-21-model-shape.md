@@ -1,1 +1,0 @@
-- **`Model.Shape` returns the model's dimensions as a struct**, beside the existing positional `Dims` (#1202).

@@ -1,0 +1,4 @@
+== test_decoder start 2026-11-22 01:39:15 in /home/francis/goinfer-bench/relgate-parity/wt
+{'skip': 60, 'pass': 1009} failed: []
+rc=0 end 2026-11-22 02:59:30
+ALL DONE
