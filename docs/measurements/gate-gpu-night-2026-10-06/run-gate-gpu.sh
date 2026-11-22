@@ -6,7 +6,8 @@
 #
 # Needs: an IDLE GPU (the gate checks), the timing lock (night.py takes it), the models under ~/models, and a go.work (gitignored, so the worktree gets one:
 # the cuda module builds against THIS tree's root, not the last published tag). The gitignored fixtures are placed from the main checkout (below).
-# A gate that did not print its own PASS verdict is a failure of this job, whatever the exit code: a skip is not a pass.
+# A gate that did not print its own PASS verdict (`PASS — <backend> on <host>`, any backend: the Mac runs this for Metal) is a failure
+# of this job, whatever the exit code: a skip is not a pass.
 #   python3 scripts/night.py add gate-gpu-cuda --est 150 --by "<who>, R1" --doc docs/queue-release.md -- bash docs/measurements/gate-gpu-night-2026-10-06/run-gate-gpu.sh
 #   GOINFER_GATE_SKIP_HEAVY=1 bash .../run-gate-gpu.sh /tmp/somewhere     # the 5-minute control of this script's own plumbing
 set -uo pipefail
@@ -42,7 +43,7 @@ go work init . "./$WG" "./$BK" "./$MT" ./demo/agent || { echo "FATAL: go work in
 go run ./cmd/gate gpu -logdir "$LOG" -record "$RECORD" 2>&1 | tee "$LOG/gate-gpu.log"
 rc=${PIPESTATUS[0]}
 clean=$(sed 's/\x1b\[[0-9;]*m//g' "$LOG/gate-gpu.log")
-if ! grep -q -- "PASS — cuda on Linux" <<<"$clean"; then echo "!! the gate printed no PASS verdict (rc=$rc); see $LOG/gate-gpu.log"; rc=1; fi
+if ! grep -qE -- "PASS — (cuda|metal|webgpu) on " <<<"$clean"; then echo "!! the gate printed no PASS verdict (rc=$rc); see $LOG/gate-gpu.log"; rc=1; fi
 ls "$RECORD"/*"$(git -C "$SRC" rev-parse --short=8 "$REV" 2>/dev/null)"*.json >/dev/null 2>&1 || { echo "!! the gate wrote no record for $REV under $RECORD"; rc=1; }
 echo "record(s) under $RECORD: $(ls -t "$RECORD"/*.json 2>/dev/null | head -2 | tr '\n' ' ')" | tee -a "$LOG/provenance.txt"
 echo "finished: $(date '+%F %T %Z') rc=$rc" | tee -a "$LOG/provenance.txt"
