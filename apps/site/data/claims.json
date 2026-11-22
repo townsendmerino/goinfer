@@ -56,18 +56,18 @@
       "checkpoint": "qwen2.5-coder-0.5b",
       "machine": "cpu",
       "basis": "median-of-3",
-      "value": 52.0,
-      "peer": 57.4,
-      "runs": "52.6 / 52.0 / 51.1",
-      "peer_runs": "57.4 / 57.4 / 57.5",
-      "ratio_raw": "0.905",
-      "ratio": "0.91×",
-      "verdict": "behind",
-      "why": "",
-      "date": "2026-09-29",
+      "value": 58.3,
+      "peer": 56.9,
+      "runs": "58.3 / 58.1 / 58.5",
+      "peer_runs": "56.9 / 57.0 / 56.9",
+      "ratio_raw": "1.023",
+      "ratio": "level with Ollama",
+      "verdict": "level",
+      "why": "Every pair within 3% of Ollama (1.019 to 1.028), at the v0.25.0 release binary.",
+      "date": "2026-11-22",
       "source": {
-        "path": "docs/measurements/peer-sweep-2026-09-29.md",
-        "heading": "Cells in detail (nobara-pc, 2026-09-29)"
+        "path": "docs/measurements/peer-cpu-v0.25.0-2026-11-22/README.md",
+        "heading": "Run, 2026-11-22 13:43–14:15 PST, graded 14:16 PST"
       }
     },
     {
@@ -110,20 +110,18 @@
       "id": "qwen2.5-coder-1.5b/cpu/decode",
       "checkpoint": "qwen2.5-coder-1.5b",
       "machine": "cpu",
-      "basis": "median-of-3",
-      "value": 24.3,
-      "peer": 24.0,
-      "ratio_raw": "1.01",
-      "ratio": "level with Ollama",
-      "verdict": "level",
-      "why": "Every pair within 3% of Ollama (1.007 to 1.015).",
-      "date": "2026-09-29",
+      "basis": "none",
+      "value": 22.2,
+      "peer": 23.9,
+      "ratio_raw": "0.927",
+      "ratio": "0.93×",
+      "verdict": "behind",
+      "why": "At the int8 output head, the default since 2026-11-20 for 1B+ models (#1179). The median of 3 pairs, every pair 0.926 to 0.928. At the int4 head it was level (1.012).",
+      "date": "2026-11-20",
       "source": {
-        "path": "docs/measurements/peer-sweep-2026-09-29.md",
-        "heading": "Cells in detail (nobara-pc, 2026-09-29)"
-      },
-      "runs": "24.3 / 24.2 / 24.4",
-      "peer_runs": "24.0 / 24.0 / 24.0"
+        "path": "docs/measurements/peer-reanchor-2026-11-19/int8head-2026-11-20/README.md",
+        "heading": "2. The moved cells: registered 2026-11-20 13:00 PST, before any data"
+      }
     },
     {
       "id": "qwen2.5-coder-1.5b/mac/decode",
@@ -203,19 +201,17 @@
       "id": "gpt-oss-20b/cpu/decode",
       "checkpoint": "gpt-oss-20b",
       "machine": "cpu",
-      "basis": "median-of-3",
-      "value": 7.5,
+      "basis": "none",
+      "value": 9.9,
       "peer": 10.7,
-      "runs": "7.5 / 7.4 / 7.5",
-      "peer_runs": "10.7 / 10.7 / 10.7",
-      "ratio_raw": "0.696",
-      "ratio": "0.70×",
+      "ratio_raw": "0.923",
+      "ratio": "0.92×",
       "verdict": "behind",
-      "why": "At its default, int4mix. Ollama is CPU-forced (num_gpu 0) so both run on the CPU.",
-      "date": "2026-10-07",
+      "why": "At its default, int4 (it was int4mix on 2026-10-07, 0.696). The median of 3 pairs, every pair 0.923. Ollama is CPU-forced (num_gpu 0) so both run on the CPU.",
+      "date": "2026-11-20",
       "source": {
-        "path": "docs/measurements/peer-vetted-2026-10-07-nobara-pc.md",
-        "heading": "Night 1, 2026-10-07 23:31-23:58 PDT (graded 2026-10-08)"
+        "path": "docs/measurements/peer-reanchor-2026-11-19/README.md",
+        "heading": "By-day v2 re-run, 2026-11-20 04:25–04:38 PST, graded 04:40 PST"
       }
     },
     {
