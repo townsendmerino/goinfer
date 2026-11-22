@@ -183,35 +183,37 @@
       "checkpoint": "phi3-mini-4k",
       "machine": "cpu",
       "basis": "median-of-3",
-      "value": 8.2,
-      "peer": 10.8,
-      "runs": "8.2 / 8.2 / 8.2",
-      "peer_runs": "10.8 / 10.7 / 10.8",
-      "ratio_raw": "0.763",
-      "ratio": "0.76×",
+      "value": 8.9,
+      "peer": 10.7,
+      "runs": "8.9 / 8.9 / 8.9",
+      "peer_runs": "10.7 / 10.7 / 10.7",
+      "ratio_raw": "0.833",
+      "ratio": "0.83×",
       "verdict": "behind",
-      "why": "At its default, --quant q4k. Ollama is CPU-forced (num_gpu 0) so both run on the CPU.",
-      "date": "2026-10-07",
+      "why": "At its default, --quant q4k, at the v0.25.0 release binary. Ollama is CPU-forced (num_gpu 0) so both run on the CPU.",
+      "date": "2026-11-22",
       "source": {
-        "path": "docs/measurements/peer-vetted-2026-10-07-nobara-pc.md",
-        "heading": "Night 1, 2026-10-07 23:31-23:58 PDT (graded 2026-10-08)"
+        "path": "docs/measurements/peer-cpu-v0.25.0-2026-11-22/README.md",
+        "heading": "Run, 2026-11-22 13:43–14:15 PST, graded 14:16 PST"
       }
     },
     {
       "id": "gpt-oss-20b/cpu/decode",
       "checkpoint": "gpt-oss-20b",
       "machine": "cpu",
-      "basis": "none",
-      "value": 9.9,
-      "peer": 10.7,
-      "ratio_raw": "0.923",
-      "ratio": "0.92×",
+      "basis": "median-of-3",
+      "value": 9.8,
+      "peer": 10.2,
+      "runs": "9.8 / 9.8 / 9.8",
+      "peer_runs": "10.2 / 10.2 / 10.2",
+      "ratio_raw": "0.960",
+      "ratio": "0.96×",
       "verdict": "behind",
-      "why": "At its default, int4 (it was int4mix on 2026-10-07, 0.696). The median of 3 pairs, every pair 0.923. Ollama is CPU-forced (num_gpu 0) so both run on the CPU.",
-      "date": "2026-11-20",
+      "why": "At its default, int4, at the v0.25.0 release binary. Ollama is CPU-forced (num_gpu 0) so both run on the CPU. Both rates are corrected for the three harmony header tokens neither engine streams; the ratio is the same uncorrected.",
+      "date": "2026-11-22",
       "source": {
-        "path": "docs/measurements/peer-reanchor-2026-11-19/README.md",
-        "heading": "By-day v2 re-run, 2026-11-20 04:25–04:38 PST, graded 04:40 PST"
+        "path": "docs/measurements/peer-cpu-v0.25.0-2026-11-22/README.md",
+        "heading": "Review follow-ups, 2026-11-22 14:54 PST (after the PR merged)"
       }
     },
     {

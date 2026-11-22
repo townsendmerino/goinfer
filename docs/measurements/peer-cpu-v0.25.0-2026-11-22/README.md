@@ -102,3 +102,32 @@ From 11-19's cells (0.5B arms about 40 s each plus about 100 s of idle gate; phi
   the page keeps their 11-19 entries.
 - **Attribution:** none. Ollama's own rates are within 1% of 11-19's on all three models, but this is still a cross-build,
   cross-session comparison (TE5(a)). The levers' own records hold their same-session A/Bs.
+
+### Review follow-ups, 2026-11-22 14:54 PST (after the PR merged)
+
+From the review of PR #1229, read on 2026-11-22 on nobara-pc.
+
+- **What ran, exactly.** Each model's arms ran one after another in one session, each on a freshly started server:
+  goinfer's 3 runs, then Ollama's 3, then llama.cpp's on the 0.5B. Pair i is goinfer's run i against the peer's run i. The order was
+  not A B B A; that is the 11-19 protocol, unchanged.
+- **gpt-oss 20B's decode rate: the ratio stands, and both arms' absolute rates read about 5% high.**
+  - The harness's rate is `(completion_tokens − 1) / (t_last − t_first)` over stream events. It assumes the first event carries one
+    token.
+  - gpt-oss opens its reply with harmony's channel header, `<|channel|>analysis<|message|>`, three tokens that neither engine streams
+    as an event. One request each, the same payload as the harness's (`sse_probe.py`, `ollama_probe.py`; outputs in
+    [`results/sse-probe/`](results/sse-probe/)):
+    - goinfer streamed 55 token events for 64 completion tokens: 39 `reasoning_content` and 16 `content`, its first event the fourth
+      token.
+    - Ollama streamed 61 events for `eval_count` 64, all `thinking`, its first event also the fourth token.
+  - On both arms, then, the timing window holds 60 tokens and the numerator counts 63. Corrected by 60/63, the rates are goinfer
+    9.79 and Ollama 10.20 tok/s; the pairs and the median stay at 0.960, BEHIND. Corrected runs (tok/s, run 1 / 2 / 3): goinfer
+    9.8 / 9.8 / 9.8, Ollama 10.2 / 10.2 / 10.2.
+  - The record's "4.0 tokens per chunk" for goinfer's arm counts only `content` deltas as chunks. It is not four tokens an event:
+    most events carry one token of `reasoning_content`. The 11-19 v2 cell (0.923) has the same structure and the same cancellation.
+  - Not changed here: `bench_peer.py`'s rate. Its definition is the gate instrument's, so a change goes to Francis first. One option is
+    to count the tokens before the first event per completion, from the engine's own count when it reports one. Until then, a cell
+    whose two arms' first events lag by different token counts does not cancel, and its record has to say so.
+- **The fit checks now match each cell's expected decode path** (`cpu (int4)`, `cpu (q4k)`, `cpu (int4)`), not any `cpu` prefix.
+  All three fit logs had resolved the expected path.
+- **Noted, not pursued:** goinfer's gpt-oss arm spent 258 s of its runs' wall in prefill and request, about 10.8 s a request for a
+  130-token prompt, against Ollama's 23 s. The decode rate excludes it.
