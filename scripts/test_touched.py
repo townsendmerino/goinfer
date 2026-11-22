@@ -114,6 +114,7 @@ NOT_SOURCE_READERS = {
     "TestCompare_classes": "sides built by hand; the paths it names are strings, and it reads no file",
     "TestGitSource_preMoveRevisionReadsTheInternalRegroup": "a synthetic repo in a temp dir (a pre-move and a post-move commit)",
     "TestCommentsOnly_gitCommitGreenAndRed": "a synthetic repo in a temp dir",
+    "TestQuick_checkpointAloneGetsItsOwnCell": "a synthetic repo in a temp dir (ckFixture)",
     "TestCommentsOnly_worktreeMode": "a synthetic repo in a temp dir",
     "TestIdentityDumperTemplate_isGoAndHasItsMarkers": "parses the embedded dumper template",
     "TestLedger_classifyOutcomes": "a scratch tree (ledgerScratch)",
