@@ -1,7 +1,9 @@
 package decoder
 
 import (
+	"flag"
 	"os"
+	"runtime"
 	"runtime/debug"
 	"strconv"
 	"testing"
@@ -11,6 +13,7 @@ import (
 // The decoder test suite's process-wide setup: a soft memory limit and a periodic reclaimer so the suite's RSS tracks
 // the working set (see boundSuiteMemory), and mem_probe_test.go's instruments.
 func TestMain(m *testing.M) {
+	boundSuiteHeapProfile()
 	boundSuiteMemory()
 	stopReclaim := startMemReclaimer() // return freed pages promptly so RSS tracks the working set, not the high-water
 	stop := startMemTicker()           // GOINFER_MEM_PROBE: per-2s RSS/heap ticks (interleave with -v to name the accumulator)
@@ -19,6 +22,18 @@ func TestMain(m *testing.M) {
 	stop()
 	memProbeSuite() // heap-vs-RSS discriminator over the whole suite (fixtures still mapped here)
 	os.Exit(code)
+}
+
+// boundSuiteHeapProfile turns heap-profile sampling off unless -test.memprofile asks for a profile. Every GC walks every
+// heap-profile bucket the process has made, and the buckets are never freed, so one test that allocates through many stacks
+// (the decision census) made every later GC dearer, and each forced one (debug.FreeOSMemory, in Load and the reclaimer) with
+// it: docs/measurements/decoder-test-growth-2026-11/README.md.
+func boundSuiteHeapProfile() {
+	flag.Parse()
+	if f := flag.Lookup("test.memprofile"); f != nil && f.Value.String() != "" {
+		return
+	}
+	runtime.MemProfileRate = 0
 }
 
 // boundSuiteMemory caps the suite's peak RSS with a soft GOMEMLIMIT. `go test ./decoder/` balloons its RSS before GC
