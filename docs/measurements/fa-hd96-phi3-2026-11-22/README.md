@@ -1,6 +1,6 @@
 # The CUDA flash-decode lane at head dim 96 (Phi-3 mini): registration (2026-11-22)
 
-**Status: REGISTERED 2026-11-22, NOT APPROVED.** No code before Francis approves this registration. A default change is his too.
+**Status: REGISTERED 2026-11-22, APPROVED (Francis, 2026-11-22, about 15:40 PST: "Yes build it", relayed by the coordinator).** Gates in order, each passing before the next, fixed N, no early stop; if it ships it lands behind an opt-in, and the default is Francis's separate call.
 
 **Question.** Does a head-dim-96 variant of CUDA's flash-decode lane decode Phi-3 mini (`q4k`, f16 KV) as well as the path it
 decodes on today, and faster at depth? Today `faEligible` admits hd 64, 128 and 256 only, so Phi-3's 32 layers (hd 96, MHA, G = 1)
