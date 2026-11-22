@@ -35,7 +35,7 @@ Every other layer runs the exact `attn_batched`. The census applies that rule to
 | **Fit check first** | each load by the server's own plan at its depth (`fit-checks.md`): 131,072 f32 is 4,198 MiB on the card; a refusal is NOT RUN, not a pass |
 | **Void if** | a timed lock not held (shared lock: not a timed run), the model read from `/srv/models`, a skip counted as a pass, a bar moved after a reading |
 | **Cost, stated before the run** | a prefill of 131,000 ids on the 0.8B at about 1,000 ids a second plus the quadratic attention term: **about 3 to 6 minutes a cell at 131,000, 1 to 2 at 65,536, seconds at 3,900; about 15 to 25 minutes in all**, started and finished times written to the status file. Over 2 hours would stop it |
-| **Means** | HOLDS at all depths: the f16 path is as faithful at 128K as at the graded depths on this family. DEGRADES: Francis decides what depth f16 may be offered at. FAILS: the harness's finding, with the cell |
+| **Means** | HOLDS at all depths: the f16 path is as faithful at 128K as at the graded depths on this family. DEGRADES: Francis decides what depth f16 may be offered at. FAILS: the harness's finding, with the cell. **Francis, 2026-11-22: a logged reading (option b).** The bands label each depth's reading, which the test prints and `gate gpu` reports. A cosine FAILS does not fail the test or the gate; a NaN or Inf does (see "What FAILS means", below) |
 
 **Not read (stated limits):** the fused attention kernel at 64K or more on a real checkpoint (nothing with head dim 64 or 128 and a native window of 64K or more fits resident beside its KV on this card, above); a YaRN-configured checkpoint (the long end of a model that needs scaling; the candidates that carry YaRN here, `gpt-oss-20b-hf` and `mellum2`, do not fit at 128K, and the GGUF loader parses no rope scaling for qwen2); K8V4; Metal and WebGPU.
 
@@ -95,4 +95,17 @@ Records are in `frozen-2026-11-22/` (`run.log`, `fidelity-frozen.jsonl`). The ba
 
 - **Both cells equal the registration's to the last float digit** (`fidelity.jsonl`: min cosine 0.9853234643651604, mean KL 0.012412510429789178 at 65,536; 0.9934641567702915 and 0.01490808953608066 at 3,900). This says three things. The frozen text is the registered input: the harness tokenizes it with goinfer's own tokenizer and gets the same cells. The code path this harness reads computes the same logits at `3145faeea` as at `157e2ca29`. And the v0.25.0 red (0.985122 on `36dbfbaf1`'s text) was not a regression.
 - **The registered bar on the registered text reads FAILS, as it did on its first reading.** The pre-flight's pass on `e0d661712`'s text (0.991232) was that text's last 16 tokens. By the other registered measures the deep cell is no worse than the control: KL below it, every margin row agreeing, no NaN or Inf. That is the disagreement the first reading already recorded.
-- **What FAILS means for this harness is Francis's call** (a red in `gate gpu`, or a logged reading as the registration's "Means" row puts it: "FAILS: the harness's finding"). Until he answers, the wiring is unchanged: the test still errors on FAILS, and `gate gpu`'s kv10 group still runs it at 3900,65536.
+- **What FAILS means for this harness** was left to Francis on this reading; he decided it the same day (next section).
+
+## What FAILS means: a logged reading (Francis, 2026-11-22, option b)
+
+**The decision.** KV10 is a logged reading, not a release gate. The 0.99 bar and the bands did not change; they now label the reading. A cosine FAILS does not fail the test or `gate gpu`.
+A NaN or Inf in the logits still fails both. That part is the coordinator's reading of Francis's word, stated in the PR: a NaN is a correctness defect, not a fidelity reading.
+
+**The wiring.**
+- `kv10Judge` labels each depth by the registered bands and fails only on a NaN or Inf. `TestKV10_judge` (no device) holds both halves: the frozen text's 65,536 reading (0.985323) is labelled FAILS and passes, and a NaN fails at any cosine.
+- Each depth prints `GATE_READING KV10 depth N: ... : <verdict>` to stdout.
+- `gate gpu` prints every `GATE_READING` line of a heavy process as `<group> reading: ...` beside its memory line, and keeps them in the process's record row (`readings`). `TestHeavyProcLines_readings` holds this through the same `go test -json` parse the run and the replay use.
+- A check of the real stream (depth 3,900 alone, the exclusive lock, 2026-11-22 10:19 PST, `frozen-2026-11-22/gate-reading-event-3900.jsonl`) gave the event `{"Action":"output","Test":"TestKV10_longContextFidelity/depth3900","Output":"GATE_READING KV10 depth 3900: min cosine 0.993464, ... DEGRADES; 13 s\n"}` and a pass.
+
+**So a move shows.** The reading on the frozen text is recorded in `frozen-2026-11-22/fidelity-frozen.jsonl` and in the table above: 0.993464 / 1.491e-02 at 3,900 and 0.985323 / 1.241e-02 at 65,536, the same as `157e2ca29`'s `fidelity.jsonl`. The text is fixed and the output was bit-identical across six days of code, so a `gate gpu` reading that differs from these numbers is a code change. It is worth reading even though it does not fail the gate.

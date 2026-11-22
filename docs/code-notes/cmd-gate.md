@@ -363,6 +363,9 @@ Owner decision, Francis, 2026-11-21: option (c), both remedies, after the v0.25.
   about 12 min. The 131000 depth stays a by-hand measurement: its command is on the test's own doc comment.
   `TestHeavyPartition_cudaTreeFitsTheTable` holds the derived group to that one test, and
   `TestHeavyGroup_kv10RunsAloneAtTheGatesDepths` holds the depths.
+- **A logged reading, not a gate** (Francis, 2026-11-22, option b). The harness reads a frozen text and fails only on a NaN or Inf.
+  Its cosine verdict is a `GATE_READING` line, which `heavyProcLines` prints as `kv10 reading: ...` and keeps in the process's record
+  (`readings`). Any heavy test may print such a line; the record is `docs/measurements/kv10-2026-11/README.md`, "What FAILS means".
 
 ## ptxVersionRe (group 4 header)
 
