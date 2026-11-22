@@ -74,7 +74,10 @@ type quickModule struct {
 	// Slow is a -run pattern for the module's long kernel tests. They run when the diff touches the module's own
 	// directory, or under -full; a change that only reaches the module from outside defers them (deferCells).
 	Slow string
-	Lint []lintSpec
+	// CheckpointAlone names real-checkpoint loaders that each take a [checkpoint <name>] cell of their own instead of sharing
+	// the package's [checkpoint] cell, so every checkpoint cell fits the cell budget (quickFullTimeout).
+	CheckpointAlone []string
+	Lint            []lintSpec
 }
 
 func (m *quickModule) native() bool { return m.NativeGOOS == "" || m.NativeGOOS == runtime.GOOS }
@@ -139,6 +142,8 @@ func realQuickConfig(root string) (*quickConfig, error) {
 			// with it is a superset of what the tests compile.
 			ListTags: []string{"goinfer_testhooks", "realckpt"},
 			TestTags: testhooks,
+			// The longest real-checkpoint test, alone in its cell: docs/measurements/decoder-test-growth-2026-11/README.md.
+			CheckpointAlone: []string{"TestPrefillChunked_bitIdenticalReal0p5B"},
 			Lint: []lintSpec{
 				{"build", nil, "", "affected", "root-darwin / lint: go build ./..."},
 				{"vet", testhooks, "", "affected", "root-darwin: go vet -tags goinfer_testhooks ./..."},
