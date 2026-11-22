@@ -79,8 +79,8 @@ func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
 		logs.Warnf("[cuda] flash-decode lane unavailable (exact decode attention used): %v", e)
 		return
 	}
-	var pipes [3]Pipeline
-	for i, name := range []string{"fa_partial_64", "fa_partial_128", "fa_partial_256"} {
+	var pipes [faHDs]Pipeline
+	for i, name := range []string{"fa_partial_64", "fa_partial_96", "fa_partial_128", "fa_partial_256"} {
 		if pipes[i], e = r.dev.NewComputePipeline(mod, name); e != nil {
 			logs.Warnf("[cuda] flash-decode lane unavailable (exact decode attention used): %v", e)
 			return
@@ -93,10 +93,10 @@ func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
 	r.faPartial = pipes
 	r.faModule = map[*byte]string{&decodeFAPTX[0]: "decode_fa", &decodeFAKV16PTX[0]: "decode_fa_kv16", &decodeFAKV8PTX[0]: "decode_fa_kv8",
 		&decodeFACapPTX[0]: "decode_fa_cap", &decodeFAKV16CapPTX[0]: "decode_fa_kv16_cap"}[&ptx[0]]
-	// Multi-row (speculative verify) variant: 24 kernels + the row combine. A load failure leaves them zero, which only disables
+	// Multi-row (speculative verify) variant: 32 kernels + the row combine. A load failure leaves them zero, which only disables
 	// the verify lane (speculation then falls back to the exact-attention scope), never the M=1 lane.
 	rowsOK := true
-	for hi, hd := range []int{64, 128, 256} {
+	for hi, hd := range faHDList {
 		for g := 1; g <= 8 && rowsOK; g++ {
 			p, le := r.dev.NewComputePipeline(mod, fmt.Sprintf("fa_partial_rows_%d_g%d", hd, g))
 			if le != nil {
@@ -114,11 +114,11 @@ func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
 		}
 	}
 	if !rowsOK {
-		r.faRows, r.faCombineRows = [3][9]Pipeline{}, Pipeline{}
+		r.faRows, r.faCombineRows = [faHDs][9]Pipeline{}, Pipeline{}
 	}
 	// A ragged step's twins (fa_partial_ragged_*, fa_combine_ragged). A load failure leaves them zero, so the step's lane rows take
 	// the M=1 lane row by row.
-	for i, name := range []string{"fa_partial_ragged_64", "fa_partial_ragged_128", "fa_partial_ragged_256"} {
+	for i, name := range []string{"fa_partial_ragged_64", "fa_partial_ragged_96", "fa_partial_ragged_128", "fa_partial_ragged_256"} {
 		if r.faRagged[i], e = r.dev.NewComputePipeline(mod, name); e != nil {
 			break
 		}
@@ -128,7 +128,7 @@ func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
 	}
 	if e != nil {
 		logs.Warnf("[cuda] flash-decode ragged kernels not loaded (a step's lane rows go one by one): %v", e)
-		r.faRagged, r.faCombineRagged, e = [3]Pipeline{}, Pipeline{}, nil
+		r.faRagged, r.faCombineRagged, e = [faHDs]Pipeline{}, Pipeline{}, nil
 	}
 	// The partial buffer holds faMaxRows rows so a verify batch fits; row 0 of the rows layout is the M=1 layout.
 	r.faBuf = r.af(faMaxRows * r.nH * s * faWarps * (maxHd + 4))
@@ -140,16 +140,34 @@ func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
 	r.faSplit = s
 }
 
+// faHDList is the head dims the lane's kernels are built for, in the order of the faPartial, faRows and faRagged tables.
+var faHDList = [faHDs]int{64, 96, 128, 256}
+
+const faHDs = 4
+
+// faHDIndex is hd's row in the lane's pipeline tables, or false for a head dim the lane has no kernel for. Every launch picks its
+// pipeline through it, so a head dim without a kernel can never fall through to another width's.
+func faHDIndex(hd int) (int, bool) {
+	for i, h := range faHDList {
+		if h == hd {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
 // faEligible reports whether layer l can take the lane: a supported head dim, a GQA group of at most 8, and no
 // attention sink (gpt-oss folds the sink into the softmax max and denominator, which fa_combine does not). A model with an attention
 // softcap takes it, in the capped variant (decodeFACapPTX), only when the load asked (faSoftcap): the lane's outputs differ from the
 // exact split-KV lane's, and no fidelity gate has read a capped model on it (docs/measurements/op1o2-fa-softcap-2026-11/README.md).
+// Head dim 96 takes it only when faHD96 is set: until its gates pass (docs/measurements/fa-hd96-phi3-2026-11-22/README.md) and the
+// default is decided, it is opt-in.
 func (r *cudaResident) faEligible(l int) bool {
 	if r.faSplit < 1 || r.faCombine == (Pipeline{}) || (r.attnCap != 0 && !r.faSoftcap) {
 		return false
 	}
 	Ly := &r.layers[l]
-	if (Ly.hd != 64 && Ly.hd != 128 && Ly.hd != 256) || Ly.nKV < 1 || r.nH%Ly.nKV != 0 || r.nH/Ly.nKV > 8 {
+	if _, ok := faHDIndex(Ly.hd); !ok || (Ly.hd == 96 && !r.faHD96) || Ly.nKV < 1 || r.nH%Ly.nKV != 0 || r.nH/Ly.nKV > 8 {
 		return false
 	}
 	return r.sinkArg(l) == ArgNull()
@@ -171,7 +189,10 @@ func (r *cudaResident) flashDecodeAttn(l, pos int) error {
 // K and V scale pools (kvScaled), none otherwise.
 func (r *cudaResident) flashDecodeLaunch(q, kc, vc, kvt, ctx Buffer, hd, nKV, winStart, nKeys int, scales ...gpu.KernelArg) error {
 	G := r.nH / nKV
-	which := map[int]int{64: 0, 128: 1, 256: 2}[hd]
+	which, ok := faHDIndex(hd)
+	if !ok {
+		return fmt.Errorf("cuda: flash-decode lane has no kernel for head dim %d", hd)
+	}
 	shm := uint32((G*hd + faWarps*64) * 4)
 	if e := r.launch(r.faPartial[which], LaunchConfig{GridX: uint32(nKV), GridY: uint32(r.faSplit), GridZ: 1, BlockX: faWarps * 32, BlockY: 1, BlockZ: 1, SharedMemBytes: shm},
 		r.withCap(append([]gpu.KernelArg{Arg(q), Arg(kc), Arg(vc), Arg(kvt), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(winStart)),
@@ -190,7 +211,10 @@ type faRun = launchgeom.FaRun
 // batch's buffers; q and ctx rows are [row][nH*hd]. Output row (run.Row0+i) equals the M=1 lane's output at nKeys = run.NKeys0+i.
 func (r *cudaResident) flashDecodeRowsLaunch(q, kc, vc, kvt, ctx Buffer, hd, nKV int, run faRun, scales ...gpu.KernelArg) error {
 	G := r.nH / nKV
-	which := map[int]int{64: 0, 128: 1, 256: 2}[hd]
+	which, ok := faHDIndex(hd)
+	if !ok {
+		return fmt.Errorf("cuda: flash-decode lane has no kernel for head dim %d", hd)
+	}
 	R := launchgeom.FaRowsPerCTA(hd, G)
 	shm := uint32((R*G*hd + faWarps*R*64) * 4)
 	grid := uint32((run.N + R - 1) / R)

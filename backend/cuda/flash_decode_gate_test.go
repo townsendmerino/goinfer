@@ -215,12 +215,17 @@ func TestFlashDecodeGateVsReference(t *testing.T) {
 	models := map[string]struct {
 		env, def string
 		decision bool
+		quant    string // the cell's load quant; "" is int4
+		serveKV  bool   // load with serve's auto KV (f16 for a covered family) rather than the suite's f32
 	}{
-		"D7": {"GOINFER_CUDA_GATE_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf", true},
-		"S":  {"GOINFER_CUDA_GATE_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", false},
+		"D7": {"GOINFER_CUDA_GATE_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf", true, "", false},
+		"S":  {"GOINFER_CUDA_GATE_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", false, "", false},
 		// G22B: Gemma 2 on the lane's capped variant, the opt-in's gate (docs/measurements/op1o2-fa-softcap-2026-11/README.md); run as
 		// GOINFER_FA_GATE_CELLS=G22B:3900.
-		"G22B": {"GOINFER_CUDA_GATE_MODEL_G22B", "$HOME/models/gemma-2-2b-it-Q8_0.gguf", true},
+		"G22B": {"GOINFER_CUDA_GATE_MODEL_G22B", "$HOME/models/gemma-2-2b-it-Q8_0.gguf", true, "", false},
+		// P3M: Phi-3 mini on the hd-96 kernels at its default q4k and serve's f16 KV, the hd-96 lane's gate
+		// (docs/measurements/fa-hd96-phi3-2026-11-22/README.md); run as GOINFER_FA_GATE_CELLS=P3M:3900.
+		"P3M": {"GOINFER_CUDA_GATE_MODEL_P3M", "$HOME/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf", true, "q4k", true},
 	}
 	for cell := range strings.SplitSeq(cells, ",") {
 		parts := strings.Split(strings.TrimSpace(cell), ":")
@@ -241,8 +246,16 @@ func TestFlashDecodeGateVsReference(t *testing.T) {
 			if _, err := os.Stat(path); err != nil {
 				t.Skipf("no fixture at %s", path)
 			}
+			quant := mc.quant
+			if quant == "" {
+				quant = "int4"
+			}
+			if mc.serveKV {
+				was := kvF16Auto.Swap(true)
+				defer kvF16Auto.Store(was)
+			}
 			// FlashDecodeSoftcap lets a capped model's lane arm take the lane; it changes nothing for an uncapped one.
-			m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: K + 128, FlashDecodeSoftcap: true})
+			m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: quant, ResidentContext: K + 128, FlashDecodeSoftcap: true})
 			if err != nil {
 				t.Fatalf("load: %v", err)
 			}
@@ -255,6 +268,7 @@ func TestFlashDecodeGateVsReference(t *testing.T) {
 				t.Fatalf("lane not loaded (faSplit=%d want %d)", rf.faSplit, nSplit)
 			}
 			rf.skMinKeys, rf.faMinKeys = 0, 0
+			rf.faHD96 = true // the hd-96 kernels' opt-in; inert at the other head dims
 			tk, err := tokenizer.LoadGGUF(path)
 			if err != nil {
 				t.Fatalf("tokenizer: %v", err)
