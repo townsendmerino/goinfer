@@ -214,6 +214,7 @@ SCANS = [
     Scan("cmd/gate", "TestHeavyPartition_cudaTreeFitsTheTable", T("backend/cuda")),
     Scan("cmd/gate", "TestGPU_isolatedGroupIsDerivedFromTheMarker", T("backend/cuda")),
     Scan("cmd/gate", "TestQuick_slowPatternsNameRealTests", T("backend/webgpu", "backend/cuda", "backend/metal")),
+    Scan("cmd/gate", "TestQuick_checkpointAloneNamesExist", T("decoder")),
     Scan("cmd/gate", "TestWebGPUGateIsListedOrExplicitlyNotRequired", T("backend/webgpu")),
     Scan("cmd/gate", "TestRealckptGateIsListedOrExplicitlyNotRequired", T("decoder")),
     Scan("cmd/gate", "TestRealckptRunReachesEveryScannedAndRequiredGate", T("decoder")),
