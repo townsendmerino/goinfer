@@ -129,9 +129,12 @@ func errText(s string) string {
 	return s
 }
 
-// heavyProcLines is what the tier prints after one main-group process: its memory line, a note when every test in it
-// skipped, and the path of its full output when it failed. It also returns the process's row for the gate record.
-func heavyProcLines(h heavyGroup, cr cellResult, p procPeak) ([]string, []string, heavyProcRecord) {
+// readingPrefix starts a line a heavy test prints to stdout for the report: a logged reading that is not a pass/fail verdict.
+const readingPrefix = "GATE_READING "
+
+// heavyProcLines is what the tier prints after one main-group process: its memory line, each readingPrefix line in its output, a
+// note when every test in it skipped, and the path of its full output when it failed. It also returns the process's row for the gate record.
+func heavyProcLines(h heavyGroup, cr cellResult, p procPeak, out string) ([]string, []string, heavyProcRecord) {
 	rec := heavyProcRecord{Group: h.Label, Tests: len(h.Tests), WallS: int(cr.Dur.Seconds()), Samples: p.Samples}
 	var lines, notes []string
 	if p.Samples == 0 {
@@ -144,6 +147,13 @@ func heavyProcLines(h heavyGroup, cr cellResult, p procPeak) ([]string, []string
 		}
 		lines = append(lines, fmt.Sprintf("      %s memory: VmHWM %d MB, peak VmSwap %d MB, wall %ds (pid %d, %d samples); largest RSS in flight: %s",
 			h.Label, rec.VmHWMMB, rec.VmSwapPkMB, rec.WallS, p.PID, p.Samples, strings.Join(top, ", ")))
+	}
+	for ln := range strings.SplitSeq(out, "\n") {
+		if r, ok := strings.CutPrefix(ln, readingPrefix); ok {
+			r = strings.TrimSpace(r)
+			rec.Readings = append(rec.Readings, r)
+			lines = append(lines, fmt.Sprintf("      %s reading: %s", h.Label, r))
+		}
 	}
 	if cr.Pass == 0 && cr.Fail == 0 && cr.Skip > 0 {
 		lines = append(lines, fmt.Sprintf("      %s: all %d test(s) SKIPPED — its checkpoints are likely absent (census below)", h.Label, cr.Skip))

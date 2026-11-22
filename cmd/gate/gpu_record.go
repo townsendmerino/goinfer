@@ -52,12 +52,13 @@ type gpuRecord struct {
 // VmHWM and peak VmSwap in MB (procPeak). Samples is 0 where /proc could not be read, and the two figures are then absent,
 // not zero.
 type heavyProcRecord struct {
-	Group      string `json:"group"`
-	Tests      int    `json:"tests"`
-	WallS      int    `json:"wall_s"`
-	Samples    int    `json:"samples"`
-	VmHWMMB    int64  `json:"vmhwm_mb,omitempty"`
-	VmSwapPkMB int64  `json:"vmswap_peak_mb,omitempty"`
+	Group      string   `json:"group"`
+	Tests      int      `json:"tests"`
+	WallS      int      `json:"wall_s"`
+	Samples    int      `json:"samples"`
+	VmHWMMB    int64    `json:"vmhwm_mb,omitempty"`
+	VmSwapPkMB int64    `json:"vmswap_peak_mb,omitempty"`
+	Readings   []string `json:"readings,omitempty"` // the process's GATE_READING lines, without the prefix
 }
 
 type gpuRecordGroups struct {

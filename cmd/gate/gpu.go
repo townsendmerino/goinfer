@@ -505,7 +505,7 @@ func (g *gpuGate) heavyTier(src gpuInputs) error {
 		}
 		mainRes = append(mainRes, res)
 		mainOut += out
-		lines, notes, rec := heavyProcLines(h, cr, peak)
+		lines, notes, rec := heavyProcLines(h, cr, peak, out)
 		g.heavyProcs = append(g.heavyProcs, rec)
 		g.apply(groupVerdict{State: groupNone, Lines: lines, Notes: notes})
 		if cr.RC != 0 {

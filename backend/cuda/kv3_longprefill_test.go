@@ -705,7 +705,7 @@ func kv10Text(t *testing.T, ckpt string, n int) []int {
 }
 
 // TestKV10_longContextFidelity is KV10-b's harness (docs/measurements/kv10-2026-11/README.md): at each depth, the last 16 rows' logits of the checkpoint with KV f16 against
-// KV f32, on KV10's frozen text (kv10TextPath). GOINFER_KV10_DEPTHS (default "3900,65536,131000"), KV10_CKPT (default ~/models/qwen3.5-0.8b), KV10_OUT (a JSON-lines file).
+// KV f32, on KV10's frozen text (kv10TextPath). Each depth prints a GATE_READING line labelled by kv10Judge; only a NaN or Inf fails. GOINFER_KV10_DEPTHS (default "3900,65536,131000"), KV10_CKPT (default ~/models/qwen3.5-0.8b), KV10_OUT (a JSON-lines file).
 //
 //	GOINFER_HEAVY_TESTS=1 KV10_OUT=<file> go test -tags 'cuda goinfer_testhooks' -run '^TestKV10_longContextFidelity$' -v -timeout 90m ./backend/cuda/
 func TestKV10_longContextFidelity(t *testing.T) {
@@ -745,27 +745,64 @@ func TestKV10_longContextFidelity(t *testing.T) {
 			f32 := kv10Tail(t, ckpt, "f32", ids[:depth], tail)
 			f16 := kv10Tail(t, ckpt, "f16", ids[:depth], tail)
 			minCos, agree, agreeM, rows, rowsM, kl, bad := kv10Compare(f32, f16)
-			verdict := "HOLDS"
-			switch {
-			case bad || minCos < 0.99:
-				verdict = "FAILS"
-			case minCos < 0.999 || agreeM < rowsM || (control > 0 && kl > 2*control):
-				verdict = "DEGRADES"
-			}
+			verdict, failure := kv10Judge(minCos, agreeM, rowsM, kl, control, bad)
 			if depth == depths[0] {
 				control = kl
 			}
-			t.Logf("depth %d: min cosine %.6f, argmax agrees on %d of %d rows (%d of %d with a margin of 0.5+), mean KL %.3e nats (control %.3e), NaN/Inf %v: %s; %.0f s",
+			// The GATE_READING line goes to stdout so gate gpu's report and record carry it (heavyProcLines).
+			fmt.Printf("GATE_READING KV10 depth %d: min cosine %.6f, argmax agrees on %d of %d rows (%d of %d with a margin of 0.5+), mean KL %.3e nats (control %.3e), NaN/Inf %v: %s; %.0f s\n",
 				depth, minCos, agree, rows, agreeM, rowsM, kl, control, bad, verdict, time.Since(t0).Seconds())
 			if out != nil {
 				rec, _ := json.Marshal(map[string]any{"depth": depth, "min_cos": minCos, "agree": agree, "rows": rows, "agree_margin": agreeM, "rows_margin": rowsM, "mean_kl": kl,
 					"control_kl": control, "nan_inf": bad, "verdict": verdict, "seconds": time.Since(t0).Seconds(), "ckpt": filepath.Base(ckpt)})
 				fmt.Fprintf(out, "%s\n", rec)
 			}
-			if verdict == "FAILS" {
-				t.Errorf("depth %d FAILS: min cosine %.6f, NaN/Inf %v", depth, minCos, bad)
+			if failure != "" {
+				t.Errorf("depth %d: %s", depth, failure)
 			}
 		})
+	}
+}
+
+// kv10Judge labels one depth's reading by the registered bands (README.md, KV10-b: HOLDS, DEGRADES, FAILS) and says why the test
+// fails, or "" when it does not. The bands label a logged reading (Francis, 2026-11-22, option b): only a NaN or Inf fails, as a
+// correctness defect rather than a fidelity reading.
+func kv10Judge(minCos float64, agreeM, rowsM int, kl, control float64, bad bool) (verdict, failure string) {
+	verdict = "HOLDS"
+	switch {
+	case bad || minCos < 0.99:
+		verdict = "FAILS"
+	case minCos < 0.999 || agreeM < rowsM || (control > 0 && kl > 2*control):
+		verdict = "DEGRADES"
+	}
+	if bad {
+		return verdict, fmt.Sprintf("a NaN or Inf in the logits (min cosine %.6f)", minCos)
+	}
+	return verdict, ""
+}
+
+// TestKV10_judge: a cosine under the bar is a FAILS reading that does not fail the test; a NaN or Inf fails it. No device.
+func TestKV10_judge(t *testing.T) {
+	for _, c := range []struct {
+		name          string
+		minCos        float64
+		agreeM, rowsM int
+		kl            float64
+		bad           bool
+		verdict       string
+		fails         bool
+	}{
+		{"the frozen text's 65,536 reading", 0.985323, 12, 12, 1.241e-02, false, "FAILS", false},
+		{"a NaN or Inf", 0.999999, 12, 12, 1e-03, true, "FAILS", true},
+		{"a NaN or Inf with a cosine under the bar", 0.5, 12, 12, 1e-03, true, "FAILS", true},
+		{"a margin row that disagrees", 0.9995, 11, 12, 1e-03, false, "DEGRADES", false},
+		{"KL above twice the control", 0.9995, 12, 12, 3.1e-02, false, "DEGRADES", false},
+		{"in band", 0.9995, 12, 12, 1e-03, false, "HOLDS", false},
+	} {
+		verdict, failure := kv10Judge(c.minCos, c.agreeM, c.rowsM, c.kl, 1.491e-02, c.bad)
+		if verdict != c.verdict || (failure != "") != c.fails {
+			t.Errorf("%s: verdict %s, failure %q; want %s, fails %v", c.name, verdict, failure, c.verdict, c.fails)
+		}
 	}
 }
 

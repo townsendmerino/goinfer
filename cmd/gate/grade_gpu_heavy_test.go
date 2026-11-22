@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -53,12 +55,12 @@ func TestGradeHeavy_plants(t *testing.T) {
 	}
 
 	h := green.Groups[0]
-	lines, notes, rec := heavyProcLines(h, cellResult{Skip: 3}, procPeak{})
+	lines, notes, rec := heavyProcLines(h, cellResult{Skip: 3}, procPeak{}, "")
 	if j := strings.Join(lines, "\n"); !strings.Contains(j, "NOT SAMPLED") || !strings.Contains(j, "all 3 test(s) SKIPPED") || len(notes) != 1 || rec.Tests != 3 {
 		t.Errorf("a process that ran nothing: lines %q notes %q rec %+v", lines, notes, rec)
 	}
 	lines, _, rec = heavyProcLines(h, cellResult{RC: 1, Pass: 1, LogPath: "/l/x.json", Dur: 61 * time.Second},
-		procPeak{PID: 7, HWMKB: 2048 * 1024, Samples: 4, ByTest: map[string]int64{"TestA": 1024 * 1024}})
+		procPeak{PID: 7, HWMKB: 2048 * 1024, Samples: 4, ByTest: map[string]int64{"TestA": 1024 * 1024}}, "")
 	if j := strings.Join(lines, "\n"); !strings.Contains(j, "VmHWM 2048 MB") || !strings.Contains(j, "TestA 1024 MB") ||
 		!strings.Contains(j, "small full output: /l/x.json") || rec.WallS != 61 || rec.VmHWMMB != 2048 {
 		t.Errorf("a failed sampled process: lines %q rec %+v", lines, rec)
@@ -221,7 +223,7 @@ func TestReplayGPU_heavyEqualsTheRun(t *testing.T) {
 		t.Errorf("the replay's heavy section differs from the run's:\n%s", lineDiff(runOut, replay.String()))
 	}
 	if rg.fail != g.fail || rg.pass != g.pass || rg.ran != g.ran || strings.Join(rg.notes, "|") != strings.Join(g.notes, "|") ||
-		len(rg.heavyProcs) != 2 || rg.heavyProcs[0] != g.heavyProcs[0] {
+		len(rg.heavyProcs) != 2 || !reflect.DeepEqual(rg.heavyProcs[0], g.heavyProcs[0]) {
 		t.Errorf("the replay's tally differs: fail %d/%d pass %d/%d ran %d/%d notes %q/%q procs %+v/%+v",
 			rg.fail, g.fail, rg.pass, g.pass, rg.ran, g.ran, rg.notes, g.notes, rg.heavyProcs, g.heavyProcs)
 	}
@@ -290,5 +292,35 @@ func TestHeavyNarrowed_noDrainInside(t *testing.T) {
 	}
 	if _, none := heavyNoDrain(nil, nil); none {
 		t.Error("an unnarrowed run with no drain test skips the drain process; gradeHeavyStart must fail it instead")
+	}
+}
+
+// TestHeavyProcLines_readings: a GATE_READING line a test prints reaches the report and the record, through the same event parse
+// the live run and the replay use; a t.Logf line that only mentions the prefix does not.
+func TestHeavyProcLines_readings(t *testing.T) {
+	stream := strings.Join([]string{
+		`{"Action":"run","Package":"p","Test":"TestKV10_longContextFidelity"}`,
+		`{"Action":"output","Package":"p","Test":"TestKV10_longContextFidelity/depth3900","Output":"GATE_READING KV10 depth 3900: min cosine 0.993464: DEGRADES\n"}`,
+		`{"Action":"output","Package":"p","Test":"TestKV10_longContextFidelity/depth3900","Output":"    x_test.go:9: not a GATE_READING line\n"}`,
+		`{"Action":"output","Package":"p","Test":"TestKV10_longContextFidelity/depth65536","Output":"GATE_READING KV10 depth 65536: min cosine 0.985323: FAILS\n"}`,
+		`{"Action":"pass","Package":"p","Test":"TestKV10_longContextFidelity"}`,
+	}, "\n")
+	r := newResults()
+	if err := r.consume(strings.NewReader(stream)); err != nil {
+		t.Fatal(err)
+	}
+	lines, _, rec := heavyProcLines(heavyGroup{Label: "kv10", Tests: []string{"TestKV10_longContextFidelity"}}, cellResult{Pass: 1}, procPeak{}, r.text())
+	want := []string{"KV10 depth 3900: min cosine 0.993464: DEGRADES", "KV10 depth 65536: min cosine 0.985323: FAILS"}
+	if !slices.Equal(rec.Readings, want) {
+		t.Errorf("record readings %q, want %q", rec.Readings, want)
+	}
+	j := strings.Join(lines, "\n")
+	for _, w := range want {
+		if !strings.Contains(j, "      kv10 reading: "+w) {
+			t.Errorf("report lines %q lack %q", lines, "kv10 reading: "+w)
+		}
+	}
+	if strings.Contains(j, "not a GATE_READING") {
+		t.Errorf("report lines %q carry a line that only mentions the prefix", lines)
 	}
 }
