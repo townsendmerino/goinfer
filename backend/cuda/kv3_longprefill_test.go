@@ -745,21 +745,23 @@ func TestKV10_longContextFidelity(t *testing.T) {
 			f32 := kv10Tail(t, ckpt, "f32", ids[:depth], tail)
 			f16 := kv10Tail(t, ckpt, "f16", ids[:depth], tail)
 			minCos, agree, agreeM, rows, rowsM, kl, bad := kv10Compare(f32, f16)
-			verdict, failure := kv10Judge(minCos, agreeM, rowsM, kl, control, bad)
+			judgeControl := control // the first depth is judged with no control, then becomes the control
 			if depth == depths[0] {
 				control = kl
 			}
+			r := kv10Depth(depth, filepath.Base(ckpt), minCos, agree, agreeM, rows, rowsM, kl, judgeControl, control, bad, time.Since(t0).Seconds())
 			// The GATE_READING line goes to stdout so gate gpu's report and record carry it (heavyProcLines).
-			fmt.Printf("GATE_READING KV10 depth %d: min cosine %.6f, argmax agrees on %d of %d rows (%d of %d with a margin of 0.5+), mean KL %.3e nats (control %.3e), NaN/Inf %v: %s; %.0f s\n",
-				depth, minCos, agree, rows, agreeM, rowsM, kl, control, bad, verdict, time.Since(t0).Seconds())
-			if n := kv10Drift(depth, filepath.Base(ckpt), minCos, kl); n != "" {
-				fmt.Printf("GATE_NOTICE %s\n", n)
+			fmt.Println(r.line)
+			if r.notice != "" {
+				fmt.Println(r.notice)
 			}
 			if out != nil {
-				rec, _ := json.Marshal(map[string]any{"depth": depth, "min_cos": minCos, "agree": agree, "rows": rows, "agree_margin": agreeM, "rows_margin": rowsM, "mean_kl": kl,
-					"control_kl": control, "nan_inf": bad, "verdict": verdict, "seconds": time.Since(t0).Seconds(), "ckpt": filepath.Base(ckpt)})
-				fmt.Fprintf(out, "%s\n", rec)
+				if r.jsonErr != nil {
+					t.Errorf("depth %d: the JSONL record: %v", depth, r.jsonErr)
+				}
+				fmt.Fprintf(out, "%s\n", r.json)
 			}
+			failure := r.failure
 			if failure != "" {
 				t.Errorf("depth %d: %s", depth, failure)
 			}
@@ -767,10 +769,41 @@ func TestKV10_longContextFidelity(t *testing.T) {
 	}
 }
 
+// kv10DepthReport is what one depth prints and records: its GATE_READING line, a GATE_NOTICE line or "", its JSONL record (and
+// the marshal error), and why the test fails, or "".
+type kv10DepthReport struct {
+	line, notice, failure string
+	json                  []byte
+	jsonErr               error
+}
+
+// kv10Depth judges one depth (kv10Judge, against judgeControl) and builds its report, which prints control.
+func kv10Depth(depth int, ckpt string, minCos float64, agree, agreeM, rows, rowsM int, kl, judgeControl, control float64, bad bool, secs float64) kv10DepthReport {
+	verdict, failure, bad := kv10Judge(minCos, agreeM, rowsM, kl, judgeControl, bad)
+	r := kv10DepthReport{failure: failure}
+	r.line = fmt.Sprintf("GATE_READING KV10 depth %d: min cosine %.6f, argmax agrees on %d of %d rows (%d of %d with a margin of 0.5+), mean KL %.3e nats (control %.3e), NaN/Inf %v: %s; %.0f s",
+		depth, minCos, agree, rows, agreeM, rowsM, kl, control, bad, verdict, secs)
+	if n := kv10Drift(depth, ckpt, minCos, kl); n != "" && !bad { // a NaN or Inf is a failure, not a drift
+		r.notice = "GATE_NOTICE " + n
+	}
+	r.json, r.jsonErr = json.Marshal(map[string]any{"depth": depth, "min_cos": kv10JSONFloat(minCos), "agree": agree, "rows": rows, "agree_margin": agreeM,
+		"rows_margin": rowsM, "mean_kl": kv10JSONFloat(kl), "control_kl": kv10JSONFloat(control), "nan_inf": bad, "verdict": verdict, "seconds": secs, "ckpt": ckpt})
+	return r
+}
+
+// kv10JSONFloat is x for a JSONL record: the number when finite, else "NaN", "+Inf" or "-Inf", which encoding/json cannot write as
+// numbers.
+func kv10JSONFloat(x float64) any {
+	if math.IsNaN(x) || math.IsInf(x, 0) {
+		return fmt.Sprint(x)
+	}
+	return x
+}
+
 // kv10Judge labels one depth's reading by the registered bands (README.md, KV10-b: HOLDS, DEGRADES, FAILS) and says why the test
 // fails, or "" when it does not. The bands label a logged reading (Francis, 2026-11-22, option b): only a NaN or Inf fails, as a
-// correctness defect rather than a fidelity reading.
-func kv10Judge(minCos float64, agreeM, rowsM int, kl, control float64, bad bool) (verdict, failure string) {
+// correctness defect rather than a fidelity reading. effBad is bad widened by a NaN or Inf cosine or KL, which the report prints.
+func kv10Judge(minCos float64, agreeM, rowsM int, kl, control float64, bad bool) (verdict, failure string, effBad bool) {
 	bad = bad || math.IsNaN(minCos) || math.IsInf(minCos, 0) || math.IsNaN(kl) || math.IsInf(kl, 0)
 	verdict = "HOLDS"
 	switch {
@@ -780,9 +813,9 @@ func kv10Judge(minCos float64, agreeM, rowsM int, kl, control float64, bad bool)
 		verdict = "DEGRADES"
 	}
 	if bad {
-		return verdict, fmt.Sprintf("a NaN or Inf in the logits or the metric (min cosine %v, mean KL %v)", minCos, kl)
+		return verdict, fmt.Sprintf("a NaN or Inf in the logits or the metric (min cosine %v, mean KL %v)", minCos, kl), true
 	}
-	return verdict, ""
+	return verdict, "", false
 }
 
 // kv10Recorded is the reading on the frozen text by depth, as printed: the 3,900 and 65,536 cells read at 3145faeea, equal to the
@@ -826,13 +859,16 @@ func TestKV10_judge(t *testing.T) {
 		{"a NaN KL", 0.9995, 12, 12, math.NaN(), false, "FAILS", true},
 		{"an Inf KL", 0.9995, 12, 12, math.Inf(1), false, "FAILS", true},
 	} {
-		verdict, failure := kv10Judge(c.minCos, c.agreeM, c.rowsM, c.kl, 1.491e-02, c.bad)
+		verdict, failure, bad := kv10Judge(c.minCos, c.agreeM, c.rowsM, c.kl, 1.491e-02, c.bad)
 		if verdict != c.verdict || (failure != "") != c.fails {
 			t.Errorf("%s: verdict %s, failure %q; want %s, fails %v", c.name, verdict, failure, c.verdict, c.fails)
 		}
+		if bad != c.fails { // only a NaN or Inf fails, so the returned flag is exactly "fails"
+			t.Errorf("%s: kv10Judge returned NaN/Inf %v, want %v", c.name, bad, c.fails)
+		}
 	}
 	// The first depth has no control yet (control 0): KL is not compared, so a high KL alone does not degrade it.
-	if verdict, failure := kv10Judge(0.9995, 12, 12, 5.0, 0, false); verdict != "HOLDS" || failure != "" {
+	if verdict, failure, _ := kv10Judge(0.9995, 12, 12, 5.0, 0, false); verdict != "HOLDS" || failure != "" {
 		t.Errorf("control 0: verdict %s, failure %q; want HOLDS and no failure", verdict, failure)
 	}
 }
@@ -846,8 +882,39 @@ func TestKV10_compareKeepsANaNCosine(t *testing.T) {
 	if !math.IsNaN(minCos) {
 		t.Errorf("min cosine %v over a zero row, want NaN", minCos)
 	}
-	if _, failure := kv10Judge(minCos, agreeM, rowsM, kl, 0, bad); failure == "" {
+	if _, failure, _ := kv10Judge(minCos, agreeM, rowsM, kl, 0, bad); failure == "" {
 		t.Errorf("kv10Judge(min cosine %v, KL %v, bad %v) does not fail", minCos, kl, bad)
+	}
+}
+
+// TestKV10_depthReportOnAMetricNaN: finite logits with a NaN cosine (kv10Compare's bad is false) report NaN/Inf true on the reading
+// line, give no drift notice, and write a JSONL record that marshals, with the NaN as a string; the recorded reading still reports
+// as it did. No device.
+func TestKV10_depthReportOnAMetricNaN(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		minCos float64
+		kl     float64
+	}{{"a NaN cosine", math.NaN(), 0.012412510429789178}, {"an Inf KL", 0.985330, math.Inf(1)}} {
+		r := kv10Depth(65536, "qwen3.5-0.8b", c.minCos, 16, 12, 16, 12, c.kl, 0.01490808953608066, 0.01490808953608066, false, 697)
+		if !strings.Contains(r.line, "NaN/Inf true: FAILS") || r.failure == "" {
+			t.Errorf("%s: line %q, failure %q; want NaN/Inf true, FAILS and a failure", c.name, r.line, r.failure)
+		}
+		if r.notice != "" {
+			t.Errorf("%s: a drift notice %q on a NaN or Inf reading", c.name, r.notice)
+		}
+		var rec map[string]any
+		if r.jsonErr != nil || json.Unmarshal(r.json, &rec) != nil || rec["nan_inf"] != true {
+			t.Errorf("%s: JSONL record %q (marshal error %v); want one that parses with nan_inf true", c.name, r.json, r.jsonErr)
+		}
+	}
+	r := kv10Depth(65536, "qwen3.5-0.8b", 0.9853234643651604, 16, 12, 16, 12, 0.012412510429789178, 0.01490808953608066, 0.01490808953608066, false, 697)
+	if r.notice != "" || r.failure != "" || !strings.Contains(r.line, "min cosine 0.985323") || !strings.Contains(r.line, "NaN/Inf false: FAILS") {
+		t.Errorf("the recorded reading: line %q, notice %q, failure %q", r.line, r.notice, r.failure)
+	}
+	var rec map[string]any
+	if r.jsonErr != nil || json.Unmarshal(r.json, &rec) != nil || rec["min_cos"] != 0.9853234643651604 {
+		t.Errorf("the recorded reading's JSONL %q (error %v): want min_cos as the number", r.json, r.jsonErr)
 	}
 }
 

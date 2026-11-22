@@ -110,7 +110,7 @@ A NaN or Inf in the logits still fails both. That part is the coordinator's read
 
 **A NaN fails even from finite logits.** `kv10Compare` keeps a NaN cosine (a row with a zero norm) as the minimum; `c < minCos` alone
 had dropped it, so the depth read as its other rows. `kv10Judge` treats a NaN or Inf cosine or KL as a NaN in the logits.
-`TestKV10_judge` and `TestKV10_compareKeepsANaNCosine` hold both, red first.
+`TestKV10_judge` and `TestKV10_compareKeepsANaNCosine` hold both, red first. `kv10Judge` returns the widened flag. The report (`kv10Depth`) then prints `NaN/Inf true` on such a depth, gives no drift notice for it, and writes its non-finite figures to the JSONL as the strings `"NaN"`, `"+Inf"` or `"-Inf"`, with the marshal error checked (`TestKV10_depthReportOnAMetricNaN`).
 
 **A drift is a notice, not a gate.** `kv10Drift` compares each depth with the reading recorded on this text, at the printed precision (cosine to six places, KL to four figures). The recorded readings are 3,900 and 65,536 from the table above, and the registration's 131,000. It checks only the default checkpoint.
 When they differ, the test prints a `GATE_NOTICE` line. `gate gpu` shows it as `kv10 notice: ...` beside the reading, keeps it in the process's record row and the run record (`notices`), and lists it in the verdict block under "Notices". The notice never fails the test, the run or its exit code (`TestGradeGPU_noticesDoNotChangeTheVerdict`).
