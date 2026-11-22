@@ -56,18 +56,18 @@
       "checkpoint": "qwen2.5-coder-0.5b",
       "machine": "cpu",
       "basis": "median-of-3",
-      "value": 52.0,
-      "peer": 57.4,
-      "runs": "52.6 / 52.0 / 51.1",
-      "peer_runs": "57.4 / 57.4 / 57.5",
-      "ratio_raw": "0.905",
-      "ratio": "0.91×",
-      "verdict": "behind",
-      "why": "",
-      "date": "2026-09-29",
+      "value": 58.3,
+      "peer": 56.9,
+      "runs": "58.3 / 58.1 / 58.5",
+      "peer_runs": "56.9 / 57.0 / 56.9",
+      "ratio_raw": "1.023",
+      "ratio": "level with Ollama",
+      "verdict": "level",
+      "why": "Every pair within 3% of Ollama (1.019 to 1.028), at the v0.25.0 release binary.",
+      "date": "2026-11-22",
       "source": {
-        "path": "docs/measurements/peer-sweep-2026-09-29.md",
-        "heading": "Cells in detail (nobara-pc, 2026-09-29)"
+        "path": "docs/measurements/peer-cpu-v0.25.0-2026-11-22/README.md",
+        "heading": "Run, 2026-11-22 13:43–14:15 PST, graded 14:16 PST"
       }
     },
     {
