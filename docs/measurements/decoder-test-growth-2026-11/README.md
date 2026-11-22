@@ -156,3 +156,29 @@ What this settles, and what it does not:
 - `TestPlanAgreesWithAdmission`'s 13× against v0.24.0 is untouched by this, and it does not use `programFixtures`. It is the one
   slowdown left without a mechanism. In the parity cell, `TestAdmissionCensus` (12×) is the same kind of walk.
 - No further run (gctrace, memory limit off) was made. Whether one is worth it for `TestPlanAgreesWithAdmission` is the owner's call.
+
+## The admission walks' 12–13×: heap-profile buckets left by the decision census (2026-11-22)
+
+Found with by-name runs and CPU profiles on the Intel laptop, at ccdfb3ad6 and at main. One run each, indicative and not
+timed.
+
+- Alone, `TestPlanAgreesWithAdmission` takes 5.7 s at ccdfb3ad6 and 6.5 s at main, over the same 1,890 / 1,917 cells as on the
+  CUDA box. The code did not get slower.
+- Run after the 652 tests that precede it in the decoder cell, it takes 115.8 s. After `TestDecisionCensus` alone, 51.5 s, and
+  after `TestDecisionCensus_secondProcess` alone, also 51.5 s. `TestAdmissionCensus`: 6.6 s alone, 51.7 s after
+  `TestDecisionCensus`.
+- It is not memory the census keeps. Its model cache (`censusLoaded`) holds 274 models but only 58 MiB of live heap, and
+  `TestCPUBatch` leaves no heap or goroutines behind, even with a real 0.5B checkpoint.
+- The profile of `TestPlanAgreesWithAdmission` after the census puts its time in `Load` → `withResidency` →
+  `debug.FreeOSMemory` → `runtime.GC` → `runtime.mProf_FlushLocked` / `(*bucket).mp`. Every GC walks every heap-profile bucket
+  the process has made, and buckets are never freed. The census allocates through a very large number of distinct stacks, on
+  every core, so every GC after it costs more. The suite forces one GC per resident `Load` and one every 3 s in
+  `startMemReclaimer`. A test that loads or allocates a lot pays that cost; a compute-bound one does not.
+- With `runtime.MemProfileRate = 0` (no heap-profile sampling), `TestPlanAgreesWithAdmission` after the census takes 11.5 s and
+  `TestAdmissionCensus` 11.9 s.
+- This explains why v0.24.0 was fast: the census tests failed in under 0.1 s there, so they made no buckets.
+
+The fix (this record's PR): the decoder suite's `TestMain` sets `runtime.MemProfileRate = 0` unless `-test.memprofile` asks for a
+profile (`boundSuiteHeapProfile`, with `TestSuite_heapProfileSamplingOffUnlessAskedFor`). No test reads a heap profile, so no
+coverage changes. The rest of the decoder cell after the census (CUDA box at b208993e8: the census trio at about 5 min, then 18
+min in all) has not been re-run with it.
