@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -207,30 +208,50 @@ func TestOtherGPUWindow_seesAnotherProcess(t *testing.T) {
 	}
 	cmd := exec.Command(os.Args[0], "-test.run", "^TestOtherGPUWindow_seesAnotherProcess$", "-test.count=1")
 	cmd.Env = append(os.Environ(), "GOINFER_GPUOTHERS_CHILD=1")
-	stdout, err := cmd.StdoutPipe()
+	// One pipe for both streams, opened here rather than by StdoutPipe: Wait closes the latter, which races a reader.
+	pr, pw, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
+	cmd.Stdout, cmd.Stderr = pw, pw
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
-	child := cmd.Process.Pid
-	ready := make(chan bool, 1)
+	_ = pw.Close()
+	var (
+		mu       sync.Mutex
+		output   strings.Builder
+		ready    = make(chan struct{})
+		finished = make(chan struct{}) // closed at EOF: the child exited
+	)
 	go func() {
-		sc := bufio.NewScanner(stdout)
-		for sc.Scan() {
-			if sc.Text() == gpuOthersReady {
-				ready <- true
-				break
+		defer close(finished)
+		sc := bufio.NewScanner(pr)
+		for seen := false; sc.Scan(); {
+			mu.Lock()
+			output.WriteString(sc.Text() + "\n")
+			mu.Unlock()
+			if !seen && sc.Text() == gpuOthersReady {
+				seen = true
+				close(ready)
 			}
 		}
-		_, _ = io.Copy(io.Discard, stdout) // keep the child from blocking on a full pipe
+		_, _ = io.Copy(io.Discard, pr) // a line past the scanner's limit must not block the child
 	}()
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		<-finished
+		_ = pr.Close()
+	})
+	child := cmd.Process.Pid
+	childOutput := func() string { mu.Lock(); defer mu.Unlock(); return output.String() }
 	select {
 	case <-ready:
+	case <-finished:
+		t.Fatalf("the child exited before reporting its model loaded; its output:\n%s", childOutput())
 	case <-time.After(60 * time.Second):
-		t.Fatal("the child never reported its model loaded")
+		t.Fatalf("the child never reported its model loaded; its output so far:\n%s", childOutput())
 	}
 	for steady, deadline := 0, time.Now().Add(15*time.Second); steady < 2; {
 		end := otherGPUWindow(t)
@@ -240,7 +261,7 @@ func TestOtherGPUWindow_seesAnotherProcess(t *testing.T) {
 		} else {
 			steady = 0
 		}
-		if time.Now().After(deadline) && steady < 2 {
+		if steady == 0 && time.Now().After(deadline) {
 			t.Fatal("the child's GPU work never showed steadily in the registry")
 		}
 	}
