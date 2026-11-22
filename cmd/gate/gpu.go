@@ -57,6 +57,7 @@ type gpuGate struct {
 	// check cannot see once any other cell has run.
 	emptyCells []string
 	notes      []string
+	notices    []string // the verdict's notices block (groupVerdict.Notices); never a failure
 
 	heavySkipped bool     // the real-model tier was skipped: the run is not the whole gate, and its record says so
 	heavyOnly    []string // -heavy-group: the heavy groups this run is narrowed to (none: every group)

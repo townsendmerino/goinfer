@@ -341,3 +341,19 @@ func TestGradeGPU_plants(t *testing.T) {
 		}
 	}
 }
+
+// TestGradeGPU_noticesDoNotChangeTheVerdict: a notice is printed in the verdict block whether or not anything skipped, and leaves the
+// exit code and the label as they were.
+func TestGradeGPU_noticesDoNotChangeTheVerdict(t *testing.T) {
+	for _, fail := range []int{0, 1} {
+		tl := gpuTally{Expect: []string{"seam"}, Emitted: map[string]bool{"seam": true}, Pass: 1, Ran: 1, Fail: fail, Notices: []string{"KV10 depth 65536 drifted"}}
+		var w strings.Builder
+		code, label := gradeGPU(&w, &tl, gpuVerdictInputs{Backend: "cuda", Commit: "abc", Host: "Linux", Now: "2026-11-22T00:00:00Z"})
+		if want := map[int]string{0: "PASS", 1: "FAIL"}[fail]; label != want || (code == 0) != (fail == 0) {
+			t.Errorf("fail %d: label %s exit %d, want %s", fail, label, code, want)
+		}
+		if !strings.Contains(w.String(), "- KV10 depth 65536 drifted") || !strings.Contains(w.String(), "Notices") {
+			t.Errorf("fail %d: the verdict block lacks the notice:\n%s", fail, w.String())
+		}
+	}
+}

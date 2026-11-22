@@ -14,6 +14,7 @@ type gpuTally struct {
 	Emitted               map[string]bool
 	Pass, Skip, Fail, Ran int
 	Vacuous, Empty, Notes []string
+	Notices               []string // printed in the verdict block; they never change the exit code or the label
 }
 
 // gpuVerdictInputs is what the verdict prints beyond the tally; the runner gathers each before grading.
