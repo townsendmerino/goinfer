@@ -211,3 +211,19 @@ The README above registers the cell's rule and shape. This fixes the parts it le
   smoke below reads both arms' fit and KV plan banners.
 - **Not covered,** as the readings above say: depths past 2,048 in the timed cell; Gemma 2's 4,096 window (G2-K holds the windowed
   lane at window 100); other capped models; and int8 KV, which is refused for capped families.
+
+### Served smoke with the new default, 2026-11-22 14:24–14:26 PST (nobara, RTX 2070 SUPER, driver 595.112.07): PASS
+
+- **What ran.** [`smoke_default.py`](smoke_default.py), under the exclusive timing lock, on one serve binary built from this branch
+  (`e3480e58b`, `CGO_ENABLED=0 go build -tags cuda ./backend/cuda/cmd/serve`). Gemma 2 2B (`~/models/gemma-2-2b-it-Q8_0.gguf`,
+  local NVMe, `-quant int4`) was served four times: the flag unset, `=false`, given, and `=false` again. Each server took
+  `probe_arms.py`'s depth-2,048 greedy request for 256 tokens. kwin_wayland held 19 MiB of the card.
+- **The default takes the lane.** The default's 256-token text equals the given flag's and differs from `=false`'s. `=false`
+  repeats itself. No arm warned that the lane was unavailable.
+- **No memory moves.** Every arm read the same plan: "4 KV slots at a 8192-token cap hold 5.13 GiB KV (weights 1.61 GiB …)",
+  with the same KV pool ("a 32512-position pool for 4 conversations; each is guaranteed 8128, and one can use up to 8192"). Each
+  server held 7,030 MiB of the card after load. The longest context that fits is unchanged.
+- **Records.** [`default-2026-11-22/smoke.log`](default-2026-11-22/smoke.log) and the default arm's serve log,
+  `serve-default.log.gz`. A first run is kept as `smoke-first-run-strict-fit.log`. It read FAIL on one check only: it compared
+  the whole fit line, whose host budget (41.51–41.65 GiB) is the box's free memory at load. The plan in that line was equal on
+  every arm. The script now compares the plan without the budget, and the re-run passed every check.
