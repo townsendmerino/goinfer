@@ -131,7 +131,7 @@ func errText(s string) string {
 
 // heavyProcLines is what the tier prints after one main-group process: its memory line, a note when every test in it
 // skipped, and the path of its full output when it failed. It also returns the process's row for the gate record.
-func heavyProcLines(h heavyGroup, cr cellResult, p procPeak) ([]string, []string, heavyProcRecord) {
+func heavyProcLines(h heavyGroup, cr cellResult, p procPeak, out string) ([]string, []string, heavyProcRecord) {
 	rec := heavyProcRecord{Group: h.Label, Tests: len(h.Tests), WallS: int(cr.Dur.Seconds()), Samples: p.Samples}
 	var lines, notes []string
 	if p.Samples == 0 {
