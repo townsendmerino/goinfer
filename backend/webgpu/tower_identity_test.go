@@ -24,7 +24,8 @@ func TestTowerIdentity_webgpu(t *testing.T) {
 var towerUpdate = flag.Bool("towerid.update", false, "rewrite this platform's WebGPU tower golden (review the diff)")
 
 // TestTowerGolden_webgpu is G-SB9-1, G-SB9-2, G-SB9-3 and G-SB9M-2 on WebGPU: the record equals the committed golden recorded on this
-// adapter (another adapter fails until it is re-anchored, and skips on CI, whose runner's adapter has no golden), each
+// adapter (one golden per adapter; an adapter with none skips and prints what to record, and a driver change on one that has one
+// fails until it is re-anchored), each
 // family's plant turns exactly its own cases red, each plant in SigLIP's block program turns exactly the families that
 // walk it red, and each device case agrees with the CPU within the registered bound.
 func TestTowerGolden_webgpu(t *testing.T) {
@@ -32,10 +33,10 @@ func TestTowerGolden_webgpu(t *testing.T) {
 	if err != nil {
 		t.Skipf("no WebGPU adapter: %v", err)
 	}
-	anchor := "webgpu " + c.AdapterAnchor()
+	anchor, adapter := "webgpu "+c.AdapterAnchor(), c.AdapterName()
 	c.Close()
 	rec := towerid.Check(t, "../..", "webgpu", "")
-	golden := towerid.CheckGolden(t, "../..", rec, anchor, towerid.FailOtherAnchorSkipOnCI, *towerUpdate)
+	golden := towerid.CheckGoldenForAdapter(t, "../..", rec, anchor, adapter, towerid.FailOtherAnchorSkipOnCI, *towerUpdate)
 	towerid.CheckPlants(t, "../..", "webgpu", golden)
 	towerid.CheckProgramPlants(t, "../..", "webgpu", golden, "siglip", "qwen3", "glm-ocr", "gemma4", "qwen2.5")
 	towerid.CompareBackends(t, "../..", "webgpu")
