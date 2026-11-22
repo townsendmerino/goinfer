@@ -88,8 +88,17 @@ func programFixtureDirs(roots []string) []string {
 	return dirs
 }
 
-// isTinyFixtureName reports whether a testdata entry's name marks a tiny fixture.
-func isTinyFixtureName(name string) bool { return strings.Contains(name, "tiny") }
+// isTinyFixtureName reports whether a testdata entry's name marks a tiny fixture: "tiny", optionally followed by digits, as a
+// whole token between '-', '_' or '.'. So llama-tiny, gemma4-moe-kv-tiny32 and gptoss_tiny.gguf match, and tinyllama-awq (a
+// real 1.1B checkpoint, 4.2 GB at f32) does not.
+func isTinyFixtureName(name string) bool {
+	for _, tok := range strings.FieldsFunc(name, func(r rune) bool { return r == '-' || r == '_' || r == '.' }) {
+		if rest, ok := strings.CutPrefix(tok, "tiny"); ok && strings.Trim(rest, "0123456789") == "" {
+			return true
+		}
+	}
+	return false
+}
 
 func firstLine(s string) string {
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
