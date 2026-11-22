@@ -108,4 +108,11 @@ A NaN or Inf in the logits still fails both. That part is the coordinator's read
 - `gate gpu` prints every `GATE_READING` line of a heavy process as `<group> reading: ...` beside its memory line, and keeps them in the process's record row (`readings`). `TestHeavyProcLines_readings` holds this through the same `go test -json` parse the run and the replay use.
 - A check of the real stream (depth 3,900 alone, the exclusive lock, 2026-11-22 10:19 PST, `frozen-2026-11-22/gate-reading-event-3900.jsonl`) gave the event `{"Action":"output","Test":"TestKV10_longContextFidelity/depth3900","Output":"GATE_READING KV10 depth 3900: min cosine 0.993464, ... DEGRADES; 13 s\n"}` and a pass.
 
+**A NaN fails even from finite logits.** `kv10Compare` keeps a NaN cosine (a row with a zero norm) as the minimum; `c < minCos` alone
+had dropped it, so the depth read as its other rows. `kv10Judge` treats a NaN or Inf cosine or KL as a NaN in the logits.
+`TestKV10_judge` and `TestKV10_compareKeepsANaNCosine` hold both, red first.
+
+**A drift is a notice, not a gate.** `kv10Drift` compares each depth with the reading recorded on this text, at the printed precision (cosine to six places, KL to four figures). The recorded readings are 3,900 and 65,536 from the table above, and the registration's 131,000. It checks only the default checkpoint.
+When they differ, the test prints a `GATE_NOTICE` line. `gate gpu` shows it as `kv10 notice: ...` beside the reading, keeps it in the process's record row and the run record (`notices`), and lists it in the verdict block under "Notices". The notice never fails the test, the run or its exit code (`TestGradeGPU_noticesDoNotChangeTheVerdict`).
+
 **So a move shows.** The reading on the frozen text is recorded in `frozen-2026-11-22/fidelity-frozen.jsonl` and in the table above: 0.993464 / 1.491e-02 at 3,900 and 0.985323 / 1.241e-02 at 65,536, the same as `157e2ca29`'s `fidelity.jsonl`. The text is fixed and the output was bit-identical across six days of code, so a `gate gpu` reading that differs from these numbers is a code change. It is worth reading even though it does not fail the gate.

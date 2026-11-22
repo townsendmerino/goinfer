@@ -130,9 +130,14 @@ func errText(s string) string {
 }
 
 // readingPrefix starts a line a heavy test prints to stdout for the report: a logged reading that is not a pass/fail verdict.
-const readingPrefix = "GATE_READING "
+// noticePrefix starts one for the verdict's notices block: a reading that moved, which never changes the verdict.
+const (
+	readingPrefix = "GATE_READING "
+	noticePrefix  = "GATE_NOTICE "
+)
 
-// heavyProcLines is what the tier prints after one main-group process: its memory line, each readingPrefix line in its output, a
+// heavyProcLines is what the tier prints after one main-group process: its memory line, each readingPrefix and noticePrefix line
+// in its output (the notices also go in the record row, for the verdict's notices block), a
 // note when every test in it skipped, and the path of its full output when it failed. It also returns the process's row for the gate record.
 func heavyProcLines(h heavyGroup, cr cellResult, p procPeak, out string) ([]string, []string, heavyProcRecord) {
 	rec := heavyProcRecord{Group: h.Label, Tests: len(h.Tests), WallS: int(cr.Dur.Seconds()), Samples: p.Samples}
@@ -153,6 +158,10 @@ func heavyProcLines(h heavyGroup, cr cellResult, p procPeak, out string) ([]stri
 			r = strings.TrimSpace(r)
 			rec.Readings = append(rec.Readings, r)
 			lines = append(lines, fmt.Sprintf("      %s reading: %s", h.Label, r))
+		} else if n, ok := strings.CutPrefix(ln, noticePrefix); ok {
+			n = strings.TrimSpace(n)
+			rec.Notices = append(rec.Notices, n)
+			lines = append(lines, fmt.Sprintf("      %s notice: %s", h.Label, n))
 		}
 	}
 	if cr.Pass == 0 && cr.Fail == 0 && cr.Skip > 0 {

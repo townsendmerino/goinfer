@@ -600,7 +600,7 @@ func kv10Compare(a, b [][]float32) (minCos float64, agree, agreeM, rows, rowsM i
 				bad = true
 			}
 		}
-		if c := kv0Cosine(a[i], b[i]); c < minCos {
+		if c := kv0Cosine(a[i], b[i]); c < minCos || math.IsNaN(c) { // a zero norm is NaN, and a NaN stays the minimum
 			minCos = c
 		}
 		top, second := float32(math.Inf(-1)), float32(math.Inf(-1))
@@ -752,6 +752,9 @@ func TestKV10_longContextFidelity(t *testing.T) {
 			// The GATE_READING line goes to stdout so gate gpu's report and record carry it (heavyProcLines).
 			fmt.Printf("GATE_READING KV10 depth %d: min cosine %.6f, argmax agrees on %d of %d rows (%d of %d with a margin of 0.5+), mean KL %.3e nats (control %.3e), NaN/Inf %v: %s; %.0f s\n",
 				depth, minCos, agree, rows, agreeM, rowsM, kl, control, bad, verdict, time.Since(t0).Seconds())
+			if n := kv10Drift(depth, filepath.Base(ckpt), minCos, kl); n != "" {
+				fmt.Printf("GATE_NOTICE %s\n", n)
+			}
 			if out != nil {
 				rec, _ := json.Marshal(map[string]any{"depth": depth, "min_cos": minCos, "agree": agree, "rows": rows, "agree_margin": agreeM, "rows_margin": rowsM, "mean_kl": kl,
 					"control_kl": control, "nan_inf": bad, "verdict": verdict, "seconds": time.Since(t0).Seconds(), "ckpt": filepath.Base(ckpt)})
@@ -768,6 +771,7 @@ func TestKV10_longContextFidelity(t *testing.T) {
 // fails, or "" when it does not. The bands label a logged reading (Francis, 2026-11-22, option b): only a NaN or Inf fails, as a
 // correctness defect rather than a fidelity reading.
 func kv10Judge(minCos float64, agreeM, rowsM int, kl, control float64, bad bool) (verdict, failure string) {
+	bad = bad || math.IsNaN(minCos) || math.IsInf(minCos, 0) || math.IsNaN(kl) || math.IsInf(kl, 0)
 	verdict = "HOLDS"
 	switch {
 	case bad || minCos < 0.99:
@@ -776,13 +780,29 @@ func kv10Judge(minCos float64, agreeM, rowsM int, kl, control float64, bad bool)
 		verdict = "DEGRADES"
 	}
 	if bad {
-		return verdict, fmt.Sprintf("a NaN or Inf in the logits (min cosine %.6f)", minCos)
+		return verdict, fmt.Sprintf("a NaN or Inf in the logits or the metric (min cosine %v, mean KL %v)", minCos, kl)
 	}
 	return verdict, ""
 }
 
-// kv10Drift is a notice when a reading on the frozen text differs from its recorded reading at the printed precision, or "".
-func kv10Drift(depth int, ckpt string, minCos, kl float64) string { return "" }
+// kv10Recorded is the reading on the frozen text by depth, as printed: the 3,900 and 65,536 cells read at 3145faeea, equal to the
+// registration's at 157e2ca29, which also read 131,000 (docs/measurements/kv10-2026-11/README.md, "Reading on the frozen text").
+var kv10Recorded = map[int][2]string{3900: {"0.993464", "1.491e-02"}, 65536: {"0.985323", "1.241e-02"}, 131000: {"0.989244", "1.344e-02"}}
+
+// kv10Drift is a notice when a reading of the default checkpoint (by base name) on the frozen text differs from kv10Recorded at
+// the printed precision, or "". The text is fixed, so a difference is a code change; under option b it is a notice, never a failure.
+func kv10Drift(depth int, ckpt string, minCos, kl float64) string {
+	rec, ok := kv10Recorded[depth]
+	if !ok || ckpt != "qwen3.5-0.8b" {
+		return ""
+	}
+	c, k := fmt.Sprintf("%.6f", minCos), fmt.Sprintf("%.3e", kl)
+	if c == rec[0] && k == rec[1] {
+		return ""
+	}
+	return fmt.Sprintf("KV10 depth %d moved from the frozen text's recorded reading: min cosine %s (recorded %s), mean KL %s (recorded %s): a code change "+
+		"(docs/measurements/kv10-2026-11/README.md, \"Reading on the frozen text\")", depth, c, rec[0], k, rec[1])
+}
 
 // TestKV10_judge: a cosine under the bar is a FAILS reading that does not fail the test; a NaN or Inf fails it. No device.
 func TestKV10_judge(t *testing.T) {

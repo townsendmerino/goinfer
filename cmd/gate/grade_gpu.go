@@ -85,6 +85,12 @@ func gradeGPU(w io.Writer, t *gpuTally, in gpuVerdictInputs) (int, string) {
 			fmt.Fprintf(w, "    - %s\n", n)
 		}
 	}
+	if len(t.Notices) > 0 {
+		fmt.Fprintf(w, "\n  %sNotices%s — readings that moved; they do not change this verdict:\n", amber, off)
+		for _, n := range t.Notices {
+			fmt.Fprintf(w, "    - %s\n", n)
+		}
+	}
 	if t.Ran == 0 {
 		fmt.Fprintf(w, "\n  %sNO GATE%s — nothing actually ran. Do not read this as a pass.\n", red, off)
 		return 1, "NO_GATE"
