@@ -1,0 +1,51 @@
+rev 3145faeea4794177d80e323ab594f3a319d5b77a
+start 2026-11-22 09:24:21 PST; load 2.28 1.82 0.80; MemAvailable:   63147448 kB
+595.112.07, 343 MiB, 8192 MiB
+1889, /usr/bin/kwin_wayland, 18 MiB
+=== RUN   TestKV10_longContextFidelity
+=== RUN   TestKV10_longContextFidelity/depth3900
+[kv10] depth 3900: start 09:24:22
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (20 MiB of scratch; 7160 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7160 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7160 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 7028 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 19.3 MiB on the device (36 buffers, KV8a)
+cuda: prefill width 2048 rows (349 MiB of scratch; 6512 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[kv10] depth 3900 kv f32: prefill of 3884 rows: done in 2.4 s
+cuda: recurrent checkpoint: 19.3 MiB on the device (36 buffers, KV8a)
+cuda: prefill width 2048 rows (349 MiB of scratch; 6560 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[kv10] depth 3900 kv f16: prefill of 3884 rows: done in 2.4 s
+    kv3_longprefill_test.go:758: depth 3900: min cosine 0.993464, argmax agrees on 15 of 16 rows (14 of 14 with a margin of 0.5+), mean KL 1.491e-02 nats (control 1.491e-02), NaN/Inf false: DEGRADES; 13 s
+=== RUN   TestKV10_longContextFidelity/depth65536
+[kv10] depth 65536: start 09:24:35
+cuda: recurrent checkpoint: 19.3 MiB on the device (36 buffers, KV8a)
+cuda: prefill width 2048 rows (413 MiB of scratch; 5044 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[kv10] depth 65536 kv f32: prefill of 65520 rows: 45 s elapsed
+[kv10] depth 65536 kv f32: prefill of 65520 rows: 90 s elapsed
+[kv10] depth 65536 kv f32: prefill of 65520 rows: 135 s elapsed
+[kv10] depth 65536 kv f32: prefill of 65520 rows: 180 s elapsed
+[kv10] depth 65536 kv f32: prefill of 65520 rows: 225 s elapsed
+[kv10] depth 65536 kv f32: prefill of 65520 rows: 270 s elapsed
+[kv10] depth 65536 kv f32: prefill of 65520 rows: 315 s elapsed
+[kv10] depth 65536 kv f32: prefill of 65520 rows: done in 325.0 s
+cuda: recurrent checkpoint: 19.3 MiB on the device (36 buffers, KV8a)
+cuda: prefill width 2048 rows (413 MiB of scratch; 5812 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[kv10] depth 65536 kv f16: prefill of 65520 rows: 45 s elapsed
+[kv10] depth 65536 kv f16: prefill of 65520 rows: 90 s elapsed
+[kv10] depth 65536 kv f16: prefill of 65520 rows: 135 s elapsed
+[kv10] depth 65536 kv f16: prefill of 65520 rows: 180 s elapsed
+[kv10] depth 65536 kv f16: prefill of 65520 rows: 225 s elapsed
+[kv10] depth 65536 kv f16: prefill of 65520 rows: 270 s elapsed
+[kv10] depth 65536 kv f16: prefill of 65520 rows: 315 s elapsed
+[kv10] depth 65536 kv f16: prefill of 65520 rows: 360 s elapsed
+[kv10] depth 65536 kv f16: prefill of 65520 rows: done in 366.0 s
+    kv3_longprefill_test.go:758: depth 65536: min cosine 0.985323, argmax agrees on 16 of 16 rows (12 of 12 with a margin of 0.5+), mean KL 1.241e-02 nats (control 1.491e-02), NaN/Inf false: FAILS; 697 s
+    kv3_longprefill_test.go:766: depth 65536 FAILS: min cosine 0.985323, NaN/Inf false
+--- FAIL: TestKV10_longContextFidelity (710.77s)
+    --- PASS: TestKV10_longContextFidelity/depth3900 (12.90s)
+    --- FAIL: TestKV10_longContextFidelity/depth65536 (697.36s)
+FAIL
+ledger: 8 device(s) released in this run
+end 2026-11-22 09:36:12 PST; exit 1
