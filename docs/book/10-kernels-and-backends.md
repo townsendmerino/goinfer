@@ -246,8 +246,9 @@ still behind: Phi-3 mini at its real default, 0.90× at 128 tokens and 0.72× at
 same-session A/B, not the pre-registered sweep. The sweep's re-run on 2026-09-30 measured the 0.5B at 1.296× at 128
 tokens, and its other Metal decode cells were refused because the machine was not idle; they are owed.
 
-**On the CPU it is mixed.** On x86 (a Ryzen 7 3700X) the 2026-09-29 sweep read 0.905× on the 0.5B, level on the
-1.5B (1.01×) and 1.04× on the 7B. On Apple Silicon's CPU goinfer is behind llama.cpp, 0.84× on the 0.5B.
+**On the CPU it is mixed.** On x86 (a Ryzen 7 3700X) the 0.5B is level with Ollama at v0.25.0 (1.02×, 2026-11-22), and
+at the int8 output head, the default since 2026-11-20, the 1.5B is behind (0.93×) and the 7B level (0.99×). On Apple
+Silicon's CPU goinfer is behind llama.cpp, 0.84× on the 0.5B.
 
 **Prefill depends on what you count.** Time to first token, the number a user feels, is level or ahead where it was
 measured on the GPU backends: on CUDA the 1.5B read 4.29× faster than Ollama at a 512-token prompt (marked ambiguous,
