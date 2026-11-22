@@ -1,0 +1,40 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+// Scratch (never committed): print the decoder cell's go test args as quick -full builds them.
+func TestZZPrintDecoderCell(t *testing.T) {
+	root, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	qc, err := realQuickConfig(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	qc.StateDir = t.TempDir()
+	g, err := loadGraph(qc, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cells := buildCells(qc, g, &quickSelection{Goldens: []string{"(any)"}}, true, false)
+	for _, c := range cells {
+		if c.Name == "decoder" || c.Name == "decoder [checkpoint]" {
+			j, err := testJob(qc, c, quickOpts{Timeout: "120m", Count1: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			b, _ := json_args(j.Args)
+			os.WriteFile(os.Getenv("ZZ_OUT")+"/"+map[bool]string{true: "decoder", false: "checkpoint"}[c.Name == "decoder"]+".args.json", b, 0o644)
+			fmt.Println("CELL", c.Name, len(j.Args))
+		}
+	}
+}
+
+func json_args(a []string) ([]byte, error) { return json.Marshal(a) }

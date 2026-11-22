@@ -119,3 +119,40 @@ Per contributor. The budgets, and any change to what a gate covers, are the owne
 | `TestCPUBatch` KV axis | 320 s | run the `f16` / `i8` cells on the tiny fixtures only; real checkpoints keep the plain cache | test fix, but it narrows coverage |
 | DecisionCensus trio | 233–570 s | none: new coverage | budget |
 | `TestProgram_L` / `TestPrefillChunked_bitIdenticalReal0p5B` in the checkpoint cell | 1427 + 1580 s | move one of the two into its own cell | cell split |
+
+Decisions (Francis, 2026-11-22): the TinyLlama change, yes (#1218). One diagnostic run, yes (below). The cell split, yes,
+moving `TestPrefillChunked_bitIdenticalReal0p5B` (#1221). `quickFullTimeout` and the parity timeout are unchanged. The
+`TestCPUBatch` narrowing: no, for now.
+
+## After #1218: quick -full's decoder cell, alone, at b208993e8 (2026-11-22)
+
+One run, as decided, with no gctrace and no memory-limit-off run. It was made on the CUDA box under its exclusive timing lock,
+12:04:42 to 12:22:51 PST, from a clean worktree with the fixtures placed by `scripts/worktree_fixtures.sh`. The toolchain was
+go1.27.4, as go.mod pins it (the start line's go1.27.2 is the bare `go version` outside the module). The command is the one
+`cmd/gate` builds for the cell: `printcell_test.go.txt` here is a scratch `cmd/gate` test that prints it, and at 36dbfbaf1 it
+reproduces the v0.25.0 120m command's `-skip` byte for byte. That command was run with `-count=1`, a 120m timeout,
+`GOWORK=off` and `GOINFER_MEM_PROBE=1` (a test hook) by `run-b.sh`. Per-test JSON: `b-decoder-b208993e8.json.gz`.
+
+**The cell took 18.0 min (sum of top-level elapsed) against 80.2 min at v0.25.0**, with the same 1,009 passes and 60 skips.
+
+| test | v0.24.0 parity (s) | v0.25.0 quick -full (s) | b208993e8 (s) |
+|---|---:|---:|---:|
+| `TestSeams_gates` | 318 | 1680 | 10.0 |
+| `TestProgram_P_plants` | 243 | 1097 | 6.9 |
+| `TestSeams_plantsGoRed` | 137 | 682 | 6.4 |
+| `TestSeams_subCaptureRefusedWhereGateSCannotRun` | 64 | 299 | 3.1 |
+| `TestPlanAgreesWithAdmission` | 11.9 | 155.9 | 155.8 |
+| DecisionCensus trio | 0.1 (failed) | 309 | 306 |
+| `TestCPUBatch_everyEligibleFixtureBitIdentical` | 125 | 305 | 306 |
+
+What this settles, and what it does not:
+
+- The seam and program tests' slowdown went with the two TinyLlamas, and not only their own share of it. Without them, the
+  other 63 fixtures, gpt2 among them, take 10 s in `TestSeams_gates`. In the v0.25.0 parity cell they took about 140 s
+  (gpt2 84 s of it). So the roughly 4× on the tiny fixtures was tied to the TinyLlamas being loaded alongside them (8.4 GB live, above the suite's 8 GiB soft limit). It was not
+  in the tiny fixtures' own code. Why v0.24.0 ran the same fixtures together at the old speed is still not known.
+- The mid-suite footprint is unchanged (the `[g40-kv]` line reads 13.8 → 14.4 GB, VmRSS 17.2 GB), so the extra resident memory
+  was not what slowed them.
+- `TestPlanAgreesWithAdmission`'s 13× against v0.24.0 is untouched by this, and it does not use `programFixtures`. It is the one
+  slowdown left without a mechanism. In the parity cell, `TestAdmissionCensus` (12×) is the same kind of walk.
+- No further run (gctrace, memory limit off) was made. Whether one is worth it for `TestPlanAgreesWithAdmission` is the owner's call.
