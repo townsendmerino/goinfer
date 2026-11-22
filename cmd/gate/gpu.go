@@ -57,6 +57,7 @@ type gpuGate struct {
 	// check cannot see once any other cell has run.
 	emptyCells []string
 	notes      []string
+	notices    []string // the verdict's notices block (groupVerdict.Notices); never a failure
 
 	heavySkipped bool     // the real-model tier was skipped: the run is not the whole gate, and its record says so
 	heavyOnly    []string // -heavy-group: the heavy groups this run is narrowed to (none: every group)
@@ -507,7 +508,7 @@ func (g *gpuGate) heavyTier(src gpuInputs) error {
 		mainOut += out
 		lines, notes, rec := heavyProcLines(h, cr, peak, out)
 		g.heavyProcs = append(g.heavyProcs, rec)
-		g.apply(groupVerdict{State: groupNone, Lines: lines, Notes: notes})
+		g.apply(groupVerdict{State: groupNone, Lines: lines, Notes: notes, Notices: rec.Notices})
 		if cr.RC != 0 {
 			mainRC = cr.RC
 		}
@@ -1158,7 +1159,7 @@ func (g *gpuGate) webgpuGroup(src gpuInputs) error {
 	return nil
 }
 
-// apply prints a group's verdict: its Pre lines, its line, its detail or evidence lines, then adds its notes. A pass counts
+// apply prints a group's verdict: its Pre lines, its line, its detail or evidence lines, then adds its notes and notices. A pass counts
 // toward ran unless Uncounted, and so does a verdict that says it ran.
 func (g *gpuGate) apply(v groupVerdict) {
 	for _, ln := range v.Pre {
@@ -1181,6 +1182,7 @@ func (g *gpuGate) apply(v groupVerdict) {
 	for _, n := range v.Notes {
 		g.note(n)
 	}
+	g.notices = append(g.notices, v.Notices...)
 }
 
 // repoHygiene runs the checks CI runs, DERIVED from .github/workflows/ci.yml by scripts/ci_checks.py
@@ -1340,5 +1342,5 @@ func (g *gpuGate) gradeVerdict(in gpuVerdictInputs) (int, string) {
 // tally is the check groups' result so far, as gradeGPU and the record read it.
 func (g *gpuGate) tally() gpuTally {
 	return gpuTally{Expect: g.expect, Emitted: g.emitted, Pass: g.pass, Skip: g.skipped, Fail: g.fail, Ran: g.ran,
-		Vacuous: g.vacuousCells, Empty: g.emptyCells, Notes: g.notes}
+		Vacuous: g.vacuousCells, Empty: g.emptyCells, Notes: g.notes, Notices: g.notices}
 }

@@ -366,6 +366,9 @@ Owner decision, Francis, 2026-11-21: option (c), both remedies, after the v0.25.
 - **A logged reading, not a gate** (Francis, 2026-11-22, option b). The harness reads a frozen text and fails only on a NaN or Inf.
   Its cosine verdict is a `GATE_READING` line, which `heavyProcLines` prints as `kv10 reading: ...` and keeps in the process's record
   (`readings`). Any heavy test may print such a line; the record is `docs/measurements/kv10-2026-11/README.md`, "What FAILS means".
+- **Notices.** A `GATE_NOTICE` line (KV10 prints one when its reading moves from the recorded one) is shown as `<group> notice: ...`,
+  kept in the process's record row and the run record (`notices`), and listed in the verdict block's Notices. It never changes the
+  exit code or the label.
 
 ## ptxVersionRe (group 4 header)
 

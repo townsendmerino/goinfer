@@ -183,6 +183,13 @@ func TestReplayGPU_heavyEqualsTheRun(t *testing.T) {
 		Listed: []string{"TestA", "TestD", "TestI", "TestK"},
 		Groups: []heavyGroup{{Label: "small", Tests: []string{"TestA", "TestD", "TestI"}}, {Label: "kernels", Tests: []string{"TestK"}}}}
 	g := &gpuGate{w: &live, logDir: dir, backend: "cuda", emitted: map[string]bool{}, runIn: gpuRunInputs{Heavy: &in}}
+	raw := func(evs []testEvent, test string, lines ...string) []testEvent {
+		var mid []testEvent
+		for _, ln := range lines {
+			mid = append(mid, testEvent{Action: "output", Package: metalPkg, Test: test, Output: ln})
+		}
+		return append(evs[:1:1], append(mid, evs[1:]...)...)
+	}
 	marker := func(evs []testEvent, test, token string) []testEvent {
 		return append(evs[:1], append([]testEvent{{Action: "output", Package: metalPkg, Test: test, Output: "    m.go:1: " + token + "\n"}}, evs[1:]...)...)
 	}
@@ -191,7 +198,7 @@ func TestReplayGPU_heavyEqualsTheRun(t *testing.T) {
 		marker(metalCellEvents([]string{"TestI"}, "skip", false), "TestI", "ISOLATED-SKIP")...)...)
 	evs := map[string][]testEvent{
 		"cuda-heavy-small":   small,
-		"cuda-heavy-kernels": metalCellEvents([]string{"TestK"}, "pass", false),
+		"cuda-heavy-kernels": raw(metalCellEvents([]string{"TestK"}, "pass", false), "TestK", "GATE_READING K reads 1.0\n", "GATE_NOTICE K moved\n"),
 		"cuda-drain":         marker(metalCellEvents([]string{"TestD"}, "pass", false), "TestD", "DRAIN-GROUP-RUN"),
 		"cuda-iso-TestI":     marker(metalCellEvents([]string{"TestI"}, "pass", false), "TestI", "ISOLATED-RUN"),
 	}
@@ -205,7 +212,7 @@ func TestReplayGPU_heavyEqualsTheRun(t *testing.T) {
 	}
 	runOut := live.String()
 	g.writeGPURunRecord()
-	for _, want := range []string{"· FAIL: TestA", "· PASS: TestK", "VmHWM 4096 MB", "ran-in-drain=1", "ran-alone=1", "— 42s"} {
+	for _, want := range []string{"· FAIL: TestA", "· PASS: TestK", "VmHWM 4096 MB", "ran-in-drain=1", "ran-alone=1", "— 42s", "kernels reading: K reads 1.0", "kernels notice: K moved"} {
 		if !strings.Contains(runOut, want) {
 			t.Errorf("the run printed no %q:\n%s", want, runOut)
 		}
@@ -223,9 +230,13 @@ func TestReplayGPU_heavyEqualsTheRun(t *testing.T) {
 		t.Errorf("the replay's heavy section differs from the run's:\n%s", lineDiff(runOut, replay.String()))
 	}
 	if rg.fail != g.fail || rg.pass != g.pass || rg.ran != g.ran || strings.Join(rg.notes, "|") != strings.Join(g.notes, "|") ||
-		len(rg.heavyProcs) != 2 || !reflect.DeepEqual(rg.heavyProcs[0], g.heavyProcs[0]) {
+		!reflect.DeepEqual(rg.heavyProcs, g.heavyProcs) || !slices.Equal(rg.notices, g.notices) {
 		t.Errorf("the replay's tally differs: fail %d/%d pass %d/%d ran %d/%d notes %q/%q procs %+v/%+v",
 			rg.fail, g.fail, rg.pass, g.pass, rg.ran, g.ran, rg.notes, g.notes, rg.heavyProcs, g.heavyProcs)
+	}
+	if len(g.heavyProcs) != 2 || !slices.Equal(g.heavyProcs[1].Readings, []string{"K reads 1.0"}) || !slices.Equal(g.heavyProcs[1].Notices, []string{"K moved"}) ||
+		!slices.Equal(g.notices, []string{"K moved"}) {
+		t.Errorf("the run's process records %+v and notices %q: want the kernels process's reading and notice", g.heavyProcs, g.notices)
 	}
 	if g.fail != 1 || g.pass != 2 || g.ran != 2 {
 		t.Errorf("the run's tally: fail %d pass %d ran %d; want 1 (the main group), 2 and 2 (the drain group and the fresh-process tests, each counted as ran)", g.fail, g.pass, g.ran)
@@ -303,6 +314,7 @@ func TestHeavyProcLines_readings(t *testing.T) {
 		`{"Action":"output","Package":"p","Test":"TestKV10_longContextFidelity/depth3900","Output":"GATE_READING KV10 depth 3900: min cosine 0.993464: DEGRADES\n"}`,
 		`{"Action":"output","Package":"p","Test":"TestKV10_longContextFidelity/depth3900","Output":"    x_test.go:9: not a GATE_READING line\n"}`,
 		`{"Action":"output","Package":"p","Test":"TestKV10_longContextFidelity/depth65536","Output":"GATE_READING KV10 depth 65536: min cosine 0.985323: FAILS\n"}`,
+		`{"Action":"output","Package":"p","Test":"TestKV10_longContextFidelity/depth65536","Output":"GATE_NOTICE KV10 depth 65536 drifted\n"}`,
 		`{"Action":"pass","Package":"p","Test":"TestKV10_longContextFidelity"}`,
 	}, "\n")
 	r := newResults()
@@ -319,6 +331,9 @@ func TestHeavyProcLines_readings(t *testing.T) {
 		if !strings.Contains(j, "      kv10 reading: "+w) {
 			t.Errorf("report lines %q lack %q", lines, "kv10 reading: "+w)
 		}
+	}
+	if !slices.Equal(rec.Notices, []string{"KV10 depth 65536 drifted"}) || !strings.Contains(j, "      kv10 notice: KV10 depth 65536 drifted") {
+		t.Errorf("notices: record %q, report lines %q; want the GATE_NOTICE line in both", rec.Notices, lines)
 	}
 	if strings.Contains(j, "not a GATE_READING") {
 		t.Errorf("report lines %q carry a line that only mentions the prefix", lines)

@@ -46,6 +46,7 @@ type gpuRecord struct {
 	VacuousCells []string `json:"vacuous_cells,omitempty"`
 	EmptyCells   []string `json:"empty_cells,omitempty"`
 	Notes        []string `json:"notes,omitempty"`
+	Notices      []string `json:"notices,omitempty"`
 }
 
 // heavyProcRecord is one heavy-tier process: its group, how many tests it owned, its wall time, and its test binary's
@@ -59,6 +60,7 @@ type heavyProcRecord struct {
 	VmHWMMB    int64    `json:"vmhwm_mb,omitempty"`
 	VmSwapPkMB int64    `json:"vmswap_peak_mb,omitempty"`
 	Readings   []string `json:"readings,omitempty"` // the process's GATE_READING lines, without the prefix
+	Notices    []string `json:"notices,omitempty"`  // the process's GATE_NOTICE lines, without the prefix
 }
 
 type gpuRecordGroups struct {
@@ -95,7 +97,7 @@ func (g *gpuGate) writeRecord(verdict string) {
 		Schema: 1, Backend: g.backend, Commit: full, Date: now.Format(time.RFC3339), Verdict: verdict, Dirty: g.dirty, HeavySkipped: g.heavySkipped, HeavyGroups: g.heavyOnly,
 		GPU: g.gpuName, Trees: map[string]string{}, HeavyProcesses: g.heavyProcs,
 		Groups: gpuRecordGroups{Declared: len(g.expect), Reported: len(g.emitted), Pass: g.pass, Skip: g.skipped, Fail: g.fail, Ran: g.ran},
-		Expect: g.expect, Emitted: sortedSet(g.emitted), VacuousCells: g.vacuousCells, EmptyCells: g.emptyCells, Notes: g.notes,
+		Expect: g.expect, Emitted: sortedSet(g.emitted), VacuousCells: g.vacuousCells, EmptyCells: g.emptyCells, Notes: g.notes, Notices: g.notices,
 	}
 	if b, err := exec.Command("uname", "-sm").Output(); err == nil {
 		rec.Host = strings.TrimSpace(string(b))

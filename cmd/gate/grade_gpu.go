@@ -14,6 +14,7 @@ type gpuTally struct {
 	Emitted               map[string]bool
 	Pass, Skip, Fail, Ran int
 	Vacuous, Empty, Notes []string
+	Notices               []string // printed in the verdict block; they never change the exit code or the label
 }
 
 // gpuVerdictInputs is what the verdict prints beyond the tally; the runner gathers each before grading.
@@ -81,6 +82,12 @@ func gradeGPU(w io.Writer, t *gpuTally, in gpuVerdictInputs) (int, string) {
 	if t.Skip > 0 {
 		fmt.Fprintf(w, "\n  %sSkipped — a skip is not a pass; this gate does NOT cover:%s\n", amber, off)
 		for _, n := range t.Notes {
+			fmt.Fprintf(w, "    - %s\n", n)
+		}
+	}
+	if len(t.Notices) > 0 {
+		fmt.Fprintf(w, "\n  %sNotices%s — readings that moved; they do not change this verdict:\n", amber, off)
+		for _, n := range t.Notices {
 			fmt.Fprintf(w, "    - %s\n", n)
 		}
 	}

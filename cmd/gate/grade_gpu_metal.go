@@ -92,6 +92,7 @@ type groupVerdict struct {
 	Line      string
 	Lines     []string
 	Notes     []string
+	Notices   []string // lines for the verdict's notices block; they never change the verdict
 	Uncounted bool
 	Ran       bool
 }

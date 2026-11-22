@@ -600,7 +600,7 @@ func kv10Compare(a, b [][]float32) (minCos float64, agree, agreeM, rows, rowsM i
 				bad = true
 			}
 		}
-		if c := kv0Cosine(a[i], b[i]); c < minCos {
+		if c := kv0Cosine(a[i], b[i]); c < minCos || math.IsNaN(c) { // a zero norm is NaN, and a NaN stays the minimum
 			minCos = c
 		}
 		top, second := float32(math.Inf(-1)), float32(math.Inf(-1))
@@ -752,6 +752,9 @@ func TestKV10_longContextFidelity(t *testing.T) {
 			// The GATE_READING line goes to stdout so gate gpu's report and record carry it (heavyProcLines).
 			fmt.Printf("GATE_READING KV10 depth %d: min cosine %.6f, argmax agrees on %d of %d rows (%d of %d with a margin of 0.5+), mean KL %.3e nats (control %.3e), NaN/Inf %v: %s; %.0f s\n",
 				depth, minCos, agree, rows, agreeM, rowsM, kl, control, bad, verdict, time.Since(t0).Seconds())
+			if n := kv10Drift(depth, filepath.Base(ckpt), minCos, kl); n != "" {
+				fmt.Printf("GATE_NOTICE %s\n", n)
+			}
 			if out != nil {
 				rec, _ := json.Marshal(map[string]any{"depth": depth, "min_cos": minCos, "agree": agree, "rows": rows, "agree_margin": agreeM, "rows_margin": rowsM, "mean_kl": kl,
 					"control_kl": control, "nan_inf": bad, "verdict": verdict, "seconds": time.Since(t0).Seconds(), "ckpt": filepath.Base(ckpt)})
@@ -768,6 +771,7 @@ func TestKV10_longContextFidelity(t *testing.T) {
 // fails, or "" when it does not. The bands label a logged reading (Francis, 2026-11-22, option b): only a NaN or Inf fails, as a
 // correctness defect rather than a fidelity reading.
 func kv10Judge(minCos float64, agreeM, rowsM int, kl, control float64, bad bool) (verdict, failure string) {
+	bad = bad || math.IsNaN(minCos) || math.IsInf(minCos, 0) || math.IsNaN(kl) || math.IsInf(kl, 0)
 	verdict = "HOLDS"
 	switch {
 	case bad || minCos < 0.99:
@@ -776,9 +780,28 @@ func kv10Judge(minCos float64, agreeM, rowsM int, kl, control float64, bad bool)
 		verdict = "DEGRADES"
 	}
 	if bad {
-		return verdict, fmt.Sprintf("a NaN or Inf in the logits (min cosine %.6f)", minCos)
+		return verdict, fmt.Sprintf("a NaN or Inf in the logits or the metric (min cosine %v, mean KL %v)", minCos, kl)
 	}
 	return verdict, ""
+}
+
+// kv10Recorded is the reading on the frozen text by depth, as printed: the 3,900 and 65,536 cells read at 3145faeea, equal to the
+// registration's at 157e2ca29, which also read 131,000 (docs/measurements/kv10-2026-11/README.md, "Reading on the frozen text").
+var kv10Recorded = map[int][2]string{3900: {"0.993464", "1.491e-02"}, 65536: {"0.985323", "1.241e-02"}, 131000: {"0.989244", "1.344e-02"}}
+
+// kv10Drift is a notice when a reading of the default checkpoint (by base name) on the frozen text differs from kv10Recorded at
+// the printed precision, or "". The text is fixed, so a difference is a code change; under option b it is a notice, never a failure.
+func kv10Drift(depth int, ckpt string, minCos, kl float64) string {
+	rec, ok := kv10Recorded[depth]
+	if !ok || ckpt != "qwen3.5-0.8b" {
+		return ""
+	}
+	c, k := fmt.Sprintf("%.6f", minCos), fmt.Sprintf("%.3e", kl)
+	if c == rec[0] && k == rec[1] {
+		return ""
+	}
+	return fmt.Sprintf("KV10 depth %d moved from the frozen text's recorded reading: min cosine %s (recorded %s), mean KL %s (recorded %s): a code change "+
+		"(docs/measurements/kv10-2026-11/README.md, \"Reading on the frozen text\")", depth, c, rec[0], k, rec[1])
 }
 
 // TestKV10_judge: a cosine under the bar is a FAILS reading that does not fail the test; a NaN or Inf fails it. No device.
@@ -798,10 +821,58 @@ func TestKV10_judge(t *testing.T) {
 		{"a margin row that disagrees", 0.9995, 11, 12, 1e-03, false, "DEGRADES", false},
 		{"KL above twice the control", 0.9995, 12, 12, 3.1e-02, false, "DEGRADES", false},
 		{"in band", 0.9995, 12, 12, 1e-03, false, "HOLDS", false},
+		{"a cosine in [0.99, 0.999) alone, as the 3,900 control reads", 0.993464, 14, 14, 1.491e-02, false, "DEGRADES", false},
+		{"a NaN cosine from finite logits (a zero norm)", math.NaN(), 12, 12, 1e-03, false, "FAILS", true},
+		{"a NaN KL", 0.9995, 12, 12, math.NaN(), false, "FAILS", true},
+		{"an Inf KL", 0.9995, 12, 12, math.Inf(1), false, "FAILS", true},
 	} {
 		verdict, failure := kv10Judge(c.minCos, c.agreeM, c.rowsM, c.kl, 1.491e-02, c.bad)
 		if verdict != c.verdict || (failure != "") != c.fails {
 			t.Errorf("%s: verdict %s, failure %q; want %s, fails %v", c.name, verdict, failure, c.verdict, c.fails)
+		}
+	}
+	// The first depth has no control yet (control 0): KL is not compared, so a high KL alone does not degrade it.
+	if verdict, failure := kv10Judge(0.9995, 12, 12, 5.0, 0, false); verdict != "HOLDS" || failure != "" {
+		t.Errorf("control 0: verdict %s, failure %q; want HOLDS and no failure", verdict, failure)
+	}
+}
+
+// TestKV10_compareKeepsANaNCosine: a row whose logits are all zero has a NaN cosine, and kv10Compare reports it as the minimum
+// rather than skipping it, so kv10Judge fails the depth. No device.
+func TestKV10_compareKeepsANaNCosine(t *testing.T) {
+	a := [][]float32{{1, 2, 3}, {0, 0, 0}, {3, 2, 1}}
+	b := [][]float32{{1, 2, 3}, {0, 0, 0}, {3, 2, 1}}
+	minCos, _, agreeM, _, rowsM, kl, bad := kv10Compare(a, b)
+	if !math.IsNaN(minCos) {
+		t.Errorf("min cosine %v over a zero row, want NaN", minCos)
+	}
+	if _, failure := kv10Judge(minCos, agreeM, rowsM, kl, 0, bad); failure == "" {
+		t.Errorf("kv10Judge(min cosine %v, KL %v, bad %v) does not fail", minCos, kl, bad)
+	}
+}
+
+// TestKV10_drift: a reading on the frozen text that differs from the recorded one (README.md, "Reading on the frozen text") at the
+// printed precision gives a notice; the recorded reading, a depth with no record, or another checkpoint gives none. No device.
+func TestKV10_drift(t *testing.T) {
+	const ck = "qwen3.5-0.8b"
+	for _, c := range []struct {
+		name       string
+		depth      int
+		ckpt       string
+		minCos, kl float64
+		notice     bool
+	}{
+		{"the recorded 65,536 reading", 65536, ck, 0.9853234643651604, 0.012412510429789178, false},
+		{"the recorded 3,900 reading", 3900, ck, 0.9934641567702915, 0.01490808953608066, false},
+		{"a cosine moved at the sixth digit", 65536, ck, 0.985330, 0.012412510429789178, true},
+		{"a KL moved", 3900, ck, 0.9934641567702915, 0.0152, true},
+		{"a depth with no record", 8000, ck, 0.5, 1, false},
+		{"another checkpoint", 65536, "other", 0.5, 1, false},
+	} {
+		if got := kv10Drift(c.depth, c.ckpt, c.minCos, c.kl); (got != "") != c.notice {
+			t.Errorf("%s: notice %q, want one: %v", c.name, got, c.notice)
+		} else if got != "" && !strings.Contains(got, "0.98") && !strings.Contains(got, "0.99") {
+			t.Errorf("%s: notice %q names no recorded cosine", c.name, got)
 		}
 	}
 }
