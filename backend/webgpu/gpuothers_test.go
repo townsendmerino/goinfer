@@ -3,7 +3,10 @@
 package webgpu
 
 import (
+	"bufio"
+	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"regexp"
@@ -174,24 +177,26 @@ func TestParseAGXClients(t *testing.T) {
 }
 
 // TestOtherGPUWindow_seesAnotherProcess: otherGPUWindow sees a second process's GPU work. This process opens its own GPU client
-// with GPU time first, then starts a child (this binary under GOINFER_GPUOTHERS_CHILD=1) that decodes llama-tiny on WebGPU until
-// it is killed at cleanup, waits until the child's client shows GPU time, and reads a 3-second otherGPUWindow: the child's own
+// with GPU time first, then starts a child (this binary under GOINFER_GPUOTHERS_CHILD=1) that prefills llama-tiny's whole
+// context window on WebGPU in a loop until it is killed at cleanup, waits until a half-second window shows the child's clients
+// at the floor below twice running, and reads a 3-second otherGPUWindow: the child's own
 // clients must account for at least 5% of its wall time, so another process's load cannot satisfy it, and the child's clients must
 // still be listed at the end (another process closing a client is not this test's concern).
 // It skips only where, with this process's own GPU work running, the registry lists no Apple GPU client (a virtualised GPU). macOS
 // only.
 func TestOtherGPUWindow_seesAnotherProcess(t *testing.T) {
 	if os.Getenv("GOINFER_GPUOTHERS_CHILD") == "1" {
-		run, done := gpuOthersLoad(t)
+		_, busy, done := gpuOthersLoad(t)
 		defer done()
-		run(2 * time.Minute) // until the parent kills it
+		fmt.Println(gpuOthersReady) // the parent measures only from here: loading creates and drops queues, whose time then resets
+		busy(2 * time.Minute)       // until the parent kills it
 		return
 	}
 	if runtime.GOOS != "darwin" {
 		t.Skip("no per-process GPU time on this platform")
 	}
 	newOrSkipHW(t).Close()
-	run, done := gpuOthersLoad(t) // this process's own client, with a GPU time, kept open through the test
+	run, _, done := gpuOthersLoad(t) // this process's own client, with a GPU time, kept open through the test
 	defer done()
 	run(300 * time.Millisecond)
 	if out, err := exec.Command("ioreg", "-r", "-c", "AGXDeviceUserClient").Output(); err != nil || !strings.Contains(string(out), "AGXDeviceUserClient") {
@@ -202,19 +207,41 @@ func TestOtherGPUWindow_seesAnotherProcess(t *testing.T) {
 	}
 	cmd := exec.Command(os.Args[0], "-test.run", "^TestOtherGPUWindow_seesAnotherProcess$", "-test.count=1")
 	cmd.Env = append(os.Environ(), "GOINFER_GPUOTHERS_CHILD=1")
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
 	child := cmd.Process.Pid
-	for deadline := time.Now().Add(15 * time.Second); ; {
-		end := otherGPUWindow(t)
-		time.Sleep(200 * time.Millisecond)
-		if arm, _ := end(); arm.byPid[child] > 0 {
-			break
+	ready := make(chan bool, 1)
+	go func() {
+		sc := bufio.NewScanner(stdout)
+		for sc.Scan() {
+			if sc.Text() == gpuOthersReady {
+				ready <- true
+				break
+			}
 		}
-		if time.Now().After(deadline) {
-			t.Fatal("the child's GPU work never showed in the registry")
+		_, _ = io.Copy(io.Discard, stdout) // keep the child from blocking on a full pipe
+	}()
+	select {
+	case <-ready:
+	case <-time.After(60 * time.Second):
+		t.Fatal("the child never reported its model loaded")
+	}
+	for steady, deadline := 0, time.Now().Add(15*time.Second); steady < 2; {
+		end := otherGPUWindow(t)
+		time.Sleep(500 * time.Millisecond)
+		if arm, _ := end(); float64(arm.byPid[child]) >= 0.05*float64(arm.wall.Nanoseconds()) {
+			steady++
+		} else {
+			steady = 0
+		}
+		if time.Now().After(deadline) && steady < 2 {
+			t.Fatal("the child's GPU work never showed steadily in the registry")
 		}
 	}
 	end := otherGPUWindow(t)
@@ -231,8 +258,14 @@ func TestOtherGPUWindow_seesAnotherProcess(t *testing.T) {
 	t.Logf("the child's GPU time over the window: %.1f%% of its wall time (all other processes %.1f%%)", 100*childFrac, 100*arm.frac)
 }
 
-// gpuOthersLoad loads llama-tiny's WebGPU resident; run decodes on it for d, and done closes it.
-func gpuOthersLoad(t *testing.T) (run func(d time.Duration), done func()) {
+// gpuOthersReady is the line the child prints once its model is loaded and before its GPU loop starts.
+const gpuOthersReady = "GOINFER_GPUOTHERS_READY"
+
+// gpuOthersLoad loads llama-tiny's WebGPU resident; run decodes on it for d, busy keeps the GPU occupied for d, and done closes
+// it. A decode waits for each token's logits, so the GPU idles between tokens and its share of the wall time depends on the
+// host's dispatch latency; busy prefills a full context window per pass, which queues enough GPU work per wait that the share
+// no longer does.
+func gpuOthersLoad(t *testing.T) (run, busy func(d time.Duration), done func()) {
 	m, err := decoder.Load("../../testdata/llama-tiny", decoder.Options{Backend: "webgpu", Quant: "int4"})
 	if err != nil {
 		t.Fatalf("load: %v", err)
@@ -253,7 +286,18 @@ func gpuOthersLoad(t *testing.T) (run func(d time.Duration), done func()) {
 			}
 		}
 	}
-	return run, func() { m.Close() }
+	busy = func(d time.Duration) {
+		rows := make([][]float32, rd.ContextCap())
+		for i := range rows {
+			rows[i] = m.EmbedResidentForTest((i*37 + 5) % V)
+		}
+		for stop := time.Now().Add(d); time.Now().Before(stop); {
+			if _, err := rd.PrefillLast(context.Background(), rows, 0); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	return run, busy, func() { m.Close() }
 }
 
 func requireWebGPUAdapter(t *testing.T) {
