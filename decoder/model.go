@@ -374,7 +374,7 @@ func (m *Model) MoECacheExperts() bool {
 func (m *Model) MoEExpertsUnpinned() bool { return m.opts.MoEExpertsUnpinned }
 
 // FlashDecodeSoftcap reports Options.FlashDecodeSoftcap: a model with an attention softcap may take CUDA's flash-decode lane, in its capped
-// variant. Off by default.
+// variant.
 func (m *Model) FlashDecodeSoftcap() bool { return m.opts.FlashDecodeSoftcap }
 
 // MoECacheSlotsRequest returns the requested per-layer expert-slot count, or 0 for "as many as fit"; only meaningful with

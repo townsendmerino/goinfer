@@ -81,10 +81,11 @@ func TestOptions_everyFlagReachesOptions(t *testing.T) {
 		// Default is true: the row probes the opt-out.
 		"windowed-kv": {"--windowed-kv=false", func(o decoder.Options, _ *Flags) bool { return !o.ResidentWindowedKV }},
 		// Default is true: the row probes the opt-out.
-		"moe-step":             {"--moe-step=false", func(o decoder.Options, _ *Flags) bool { return !o.ResidentMoEStep }},
-		"recurrent-step":       {"--recurrent-step", func(o decoder.Options, _ *Flags) bool { return o.ResidentRecurrentStep }},
-		"gemma4-step":          {"--gemma4-step", func(o decoder.Options, _ *Flags) bool { return o.ResidentGemma4Step }},
-		"flash-decode-softcap": {"--flash-decode-softcap", func(o decoder.Options, _ *Flags) bool { return o.FlashDecodeSoftcap }},
+		"moe-step":       {"--moe-step=false", func(o decoder.Options, _ *Flags) bool { return !o.ResidentMoEStep }},
+		"recurrent-step": {"--recurrent-step", func(o decoder.Options, _ *Flags) bool { return o.ResidentRecurrentStep }},
+		"gemma4-step":    {"--gemma4-step", func(o decoder.Options, _ *Flags) bool { return o.ResidentGemma4Step }},
+		// Default is true: the row probes the opt-out.
+		"flash-decode-softcap": {"--flash-decode-softcap=false", func(o decoder.Options, _ *Flags) bool { return !o.FlashDecodeSoftcap }},
 		// Not a decoder option: modelload.Request.DirectLoad reads it.
 		"direct-load": {"--direct-load", func(_ decoder.Options, f *Flags) bool { return f.DirectLoad }},
 	}

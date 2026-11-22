@@ -50,8 +50,8 @@
     },
     {
       "Name": "flash-decode-softcap",
-      "Usage": "Off by default. CUDA only: let a model with an attention softcap (Gemma 2) decode on the flash-decode lane, in its capped variant, instead of the exact split-KV lane. Its outputs differ from the exact lane's (docs/measurements/op1o2-fa-softcap-2026-11/README.md); no effect on a model without a softcap or off CUDA.",
-      "DefValue": "false",
+      "Usage": "On by default; --flash-decode-softcap=false keeps the exact split-KV lane. CUDA only: a model with an attention softcap (Gemma 2) decodes on the flash-decode lane, in its capped variant, once a layer attends 2048 keys or more. Its outputs differ from the exact lane's, inside the lane's fidelity gate, and it costs no memory: the capped lane is loaded either way (docs/measurements/op1o2-fa-softcap-2026-11/README.md). No effect on a model without a softcap or off CUDA.",
+      "DefValue": "true",
       "Type": "*flag.boolValue"
     },
     {
@@ -184,8 +184,8 @@
     },
     {
       "Name": "flash-decode-softcap",
-      "Usage": "Off by default. CUDA only: let a model with an attention softcap (Gemma 2) decode on the flash-decode lane, in its capped variant, instead of the exact split-KV lane. Its outputs differ from the exact lane's (docs/measurements/op1o2-fa-softcap-2026-11/README.md); no effect on a model without a softcap or off CUDA.",
-      "DefValue": "false",
+      "Usage": "On by default; --flash-decode-softcap=false keeps the exact split-KV lane. CUDA only: a model with an attention softcap (Gemma 2) decodes on the flash-decode lane, in its capped variant, once a layer attends 2048 keys or more. Its outputs differ from the exact lane's, inside the lane's fidelity gate, and it costs no memory: the capped lane is loaded either way (docs/measurements/op1o2-fa-softcap-2026-11/README.md). No effect on a model without a softcap or off CUDA.",
+      "DefValue": "true",
       "Type": "*flag.boolValue"
     },
     {

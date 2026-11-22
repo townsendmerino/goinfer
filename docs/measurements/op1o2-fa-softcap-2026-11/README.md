@@ -196,3 +196,18 @@ The README above registers the cell's rule and shape. This fixes the parts it le
   - Two points from the fidelity reading still stand: paired wins were exactly 5/10 and hard flips pass only the amended bar.
   - Gemma 2's window, 4,096, is not crossed at K = 3,900 or at this cell's depths. The windowed lane is held by G2-K, not by either gate.
   - Not measured: depths past 2,048, other capped models, a longer decode, int8 KV (refused for capped families), and TTFT.
+
+## Default, 2026-11-22: on for capped models in chat and serve (Francis)
+
+- **The decision.** Francis, 2026-11-22, relayed by the coordinator: the capped lane becomes the CUDA default for Gemma 2. It rests
+  on the fidelity gate's PASS (2026-11-09) and the timed cell's SHIP (2026-11-15), both above.
+- **Its shape.** `--flash-decode-softcap` defaults to true in goinfer-chat and serve (`internal/config`'s schema), and
+  `--flash-decode-softcap=false` keeps the exact split-KV lane. It follows `--windowed-kv`'s pattern: `decoder.Options.FlashDecodeSoftcap`
+  stays a plain bool whose zero value is off, so a library caller's zero `Options` are unchanged. There is no new environment read.
+  `TestResolve_flashDecodeSoftcapDefaultOn` holds both apps' default and the opt-out.
+- **Memory: none.** A capped model already loads the capped lane's module (`attnPTX` picks `decode_fa_cap` whenever the model has a
+  cap) and allocates its partial buffer (`loadFlashDecode` does so for every model the lane is not declined for). The option only
+  changes `faEligible`. Device and host bytes are the same either way, so the longest context that fits does not move. The served
+  smoke below reads both arms' fit and KV plan banners.
+- **Not covered,** as the readings above say: depths past 2,048 in the timed cell; Gemma 2's 4,096 window (G2-K holds the windowed
+  lane at window 100); other capped models; and int8 KV, which is refused for capped families.

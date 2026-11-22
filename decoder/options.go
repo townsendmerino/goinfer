@@ -42,9 +42,10 @@ type Options struct {
 	// Off by default; the fit guard names it when the pinned copy is what does not fit.
 	MoEExpertsUnpinned bool
 	// FlashDecodeSoftcap lets a model with an attention softcap (Gemma 2) take CUDA's flash-decode lane, in its capped variant, for decode and
-	// verify rows past the lane's key floor. Off by default: such a model decodes on the exact split-KV lane, and the flash-decode lane's
-	// outputs differ from it; whether it becomes the default is the owner's call (docs/measurements/op1o2-fa-softcap-2026-11/README.md). No
-	// effect on an uncapped model, which takes the lane by default, or off CUDA.
+	// verify rows past the lane's key floor; false keeps such a model on the exact split-KV lane. The lane's outputs differ from split-KV's,
+	// inside its fidelity gate (docs/measurements/op1o2-fa-softcap-2026-11/README.md). goinfer-chat and serve set it unless
+	// --flash-decode-softcap=false; a library caller's zero Options leave it off. No effect on an uncapped model, which takes the lane
+	// regardless, or off CUDA.
 	FlashDecodeSoftcap bool
 	// MoECacheSlots is the per-layer expert-slot count for MoECacheExperts (0 = ask for all and
 	// auto-cap to measured free VRAM). More slots ⇒ higher LRU hit rate ⇒ fewer per-token DMAs,

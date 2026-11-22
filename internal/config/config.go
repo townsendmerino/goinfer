@@ -110,7 +110,7 @@ var Settings = []Setting{
 	{Name: "moe-step", Flag: "moe-step", Apps: Chat | Serve, Option: "ResidentMoEStep", Default: "true", Doc: "docs/flags.md", Help: MoEStepHelp},
 	{Name: "recurrent-step", Flag: "recurrent-step", Apps: Chat | Serve, Option: "ResidentRecurrentStep", Default: "false", Doc: "docs/flags.md", Help: RecurrentStepHelp},
 	{Name: "gemma4-step", Flag: "gemma4-step", Apps: Chat | Serve, Option: "ResidentGemma4Step", Default: "false", Doc: "docs/flags.md", Help: Gemma4StepHelp},
-	{Name: "flash-decode-softcap", Flag: "flash-decode-softcap", Apps: Chat | Serve, Option: "FlashDecodeSoftcap", Default: "false", Doc: "docs/flags.md", Help: FlashDecodeSoftcapHelp},
+	{Name: "flash-decode-softcap", Flag: "flash-decode-softcap", Apps: Chat | Serve, Option: "FlashDecodeSoftcap", Default: "true", Doc: "docs/flags.md", Help: FlashDecodeSoftcapHelp},
 	{Name: "model", Flag: "model", Apps: Serve, Doc: "docs/flags.md"},
 	{Name: "served-model-name", Flag: "served-model-name", Apps: Serve, Doc: "docs/flags.md"},
 	{Name: "adapter", Flag: "adapter", Apps: Serve, Doc: "docs/flags.md"},
