@@ -101,7 +101,8 @@ exit 0
 	_, cgoOS := platformEnv(target{cgo: true}, runtime.GOOS, runtime.GOARCH)
 	want := map[string]outcome{
 		"staticcheck version": ok, "canary/linux": ok, "canary/" + cgoOS + "-cgo": ok,
-		"staticcheck/root": ok, "staticcheck/gpu": ok, "staticcheck/demo/agent": ok, "staticcheck/cuda": fail,
+		"staticcheck/root": ok, "staticcheck/gpu": ok, "staticcheck/demo/agent": ok, "staticcheck/cuda": fail, "staticcheck/metal": ok,
+		"canary/darwin": ok,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("cells = %v, want %v", got, want)
@@ -110,8 +111,8 @@ exit 0
 		t.Errorf("run = %s exit %d, want FAIL exit 1", r.outcome, r.exit)
 	}
 	only := checks(repoRoot, bin, map[string]bool{"root": true})
-	if r := reconcile(only); r.outcome != ok || r.na != 3 {
-		t.Errorf("-only root: run = %s with %d n/a, want PASS with 3 n/a", r.outcome, r.na)
+	if r := reconcile(only); r.outcome != ok || r.na != 4 {
+		t.Errorf("-only root: run = %s with %d n/a, want PASS with 4 n/a", r.outcome, r.na)
 	}
 }
 
@@ -167,6 +168,7 @@ func TestParseCISteps_blockScalars(t *testing.T) {
       - name: workspace
         run: |
           go work init . ./gpu
+          go work use ./extra
           go work sync
       - name: staticcheck
         run: |
@@ -179,8 +181,8 @@ func TestParseCISteps_blockScalars(t *testing.T) {
 `
 	got := parseCISteps(yml)
 	want := []ciStep{
-		{args: "-tags 'gpu goinfer_testhooks' ./gpu/...", workspace: []string{"gpu"}},
-		{args: "./demo/agent/...", workspace: []string{"gpu"}},
+		{args: "-tags 'gpu goinfer_testhooks' ./gpu/...", workspace: []string{"gpu", "extra"}},
+		{args: "./demo/agent/...", workspace: []string{"gpu", "extra"}},
 		{args: "./...", workspace: nil},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -192,6 +194,10 @@ func TestPlatformEnv(t *testing.T) {
 	plain := target{name: "root"}
 	if env, goos := platformEnv(plain, "darwin", "arm64"); goos != "linux" || !reflect.DeepEqual(env, ciEnv) {
 		t.Errorf("a cgo-free target on darwin: %v %s, want CI's linux env", env, goos)
+	}
+	m := target{name: "metal", platform: "darwin/arm64"}
+	if env, goos := platformEnv(m, "linux", "amd64"); goos != "darwin" || !reflect.DeepEqual(env, []string{"GOOS=darwin", "GOARCH=arm64", "CGO_ENABLED=0"}) {
+		t.Errorf("a platform target on linux: %v %s, want darwin/arm64 without cgo", env, goos)
 	}
 	c := target{name: "gpu", cgo: true}
 	if env, goos := platformEnv(c, "linux", "amd64"); goos != "linux" || !reflect.DeepEqual(env, []string{"GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=1"}) {
@@ -309,7 +315,7 @@ func TestUnpinnedStaticcheckJudgesNothing(t *testing.T) {
 // TestWorkspaceEnv_relativeRoot: Go reads a go.work's use paths relative to the go.work file, which is in a temp dir, so
 // a relative root must be written absolute, and quoted.
 func TestWorkspaceEnv_relativeRoot(t *testing.T) {
-	env, err := workspaceEnv(repoRoot, t.TempDir(), target{name: "gpu", workspace: []string{"gpu"}})
+	env, err := workspaceEnv(repoRoot, t.TempDir(), target{name: "gpu", workspace: []string{"gpu", "extra"}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -194,7 +194,7 @@ func realQuickConfig(root string) (*quickConfig, error) {
 				{"vet", nil, "darwin/arm64", "affected", "gpu-darwin (metal part): go vet ./metal/..."},
 				{"vet", testhooks, "darwin/arm64", "affected", "gpu-darwin (metal part): go vet -tags goinfer_testhooks ./metal/..."},
 				// Not a CI step. Run because a local staticcheck is the only one this module gets.
-				{"staticcheck", testhooks, "darwin/arm64", "changed", "(not in CI) staticcheck -tags goinfer_testhooks ./metal/..."},
+				{"staticcheck", testhooks, "darwin/arm64", "changed", "gpu-darwin (metal part): staticcheck -tags goinfer_testhooks ./metal/..."},
 			},
 		},
 		{
