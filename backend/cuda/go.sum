@@ -2,12 +2,10 @@ github.com/ebitengine/purego v0.10.1 h1:dewVBCBT2GaMu1SrNTYxQhgQBethzfhiwvZiLGP/
 github.com/ebitengine/purego v0.10.1/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
 github.com/eitamring/gocudrv v0.3.2 h1:zjRj3gRSfmbxbQkt1jXSTdGKHPwL1R912qovXnOPUlE=
 github.com/eitamring/gocudrv v0.3.2/go.mod h1:nA+ytiB8A1YvVSHzBQbn+Be+BGR4gAGVIP+7chLn+O4=
-github.com/townsendmerino/aikit v1.76.0 h1:bQ0KZqOZTGMAFZG/FR+LNjzu0VwxOvQZM1ZRbQ4QVnQ=
-github.com/townsendmerino/aikit v1.76.0/go.mod h1:XXSOKAI6jX/miQdMpMYrcXOBWEdjds2mbUolO3RPerU=
 github.com/townsendmerino/aikit v1.78.0 h1:AlQlBSdZcqXXdMjpn9FCFKj396nS0yH0ZoaPv8Iq3kk=
 github.com/townsendmerino/aikit v1.78.0/go.mod h1:Pv+U5no9SEkFz0DC+whRtFkgVSZHaklf4XYpInTkM9I=
-github.com/townsendmerino/goinfer v0.24.1 h1:JGA9cJpT+AGlR6zEcKr7sm6cqXKMWMj1PCCz8Tp6lPQ=
-github.com/townsendmerino/goinfer v0.24.1/go.mod h1:CuDcun/tFvvacbdtf7ZjKQBP9SOQvpDEb+oWE8cyRo8=
+github.com/townsendmerino/goinfer v0.25.0 h1:UaxaoIrb52vl7U0by00Kl5dy+60v597knVfGjQfFLXo=
+github.com/townsendmerino/goinfer v0.25.0/go.mod h1:WP9sM4Ne5yJKFDM8bxbW9SUtpP+4lyZi6fpqymk8GsY=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=
 go.uber.org/goleak v1.3.0/go.mod h1:CoHD4mav9JJNrW/WLlf7HGZPjdw8EucARQHekz1X6bE=
 golang.org/x/sys v0.47.0 h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=
