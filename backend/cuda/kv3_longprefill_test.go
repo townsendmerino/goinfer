@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,13 +12,13 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
 	"hash/fnv"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -652,30 +653,26 @@ func kv10KL(p, q []float32) float64 {
 // reading (docs/measurements/kv10-2026-11/README.md, "The frozen text"; freeze_text.py there rebuilds it from git).
 const kv10TextSHA256 = "1cd7d3327d3488527f5c77789af8c4eacdf0d82ef9aa34fbc3939e1b3ec7ed0d"
 
-// kv10TextBytes is KV10's prompt text.
+// kv10TextPath is KV10's prompt text, gzipped.
+const kv10TextPath = "testdata/kv10_text_157e2ca29.txt.gz"
+
+// kv10TextBytes is KV10's prompt text, read from kv10TextPath; it never reads the live tree, whose edits would move the verdict.
 func kv10TextBytes(t *testing.T) string {
 	t.Helper()
-	var files []string
-	for _, g := range []string{"../../decoder/*.go", "../../docs/*.md", "../../backend/cuda/*.go"} {
-		m, _ := filepath.Glob(g)
-		sort.Strings(m)
-		files = append(files, m...)
+	f, err := os.Open(kv10TextPath)
+	if err != nil {
+		t.Fatal(err)
 	}
-	var sb strings.Builder
-	for _, f := range files {
-		if strings.HasSuffix(f, "_test.go") {
-			continue
-		}
-		b, err := os.ReadFile(f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		sb.Write(b)
-		if sb.Len() > 3_000_000 {
-			break
-		}
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatalf("%s: %v", kv10TextPath, err)
 	}
-	return sb.String()
+	b, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatalf("%s: %v", kv10TextPath, err)
+	}
+	return string(b)
 }
 
 // TestKV10_textIsFrozen holds KV10's prompt text to the bytes its hash names, so the harness's verdict moves only with code. No device.
@@ -693,7 +690,11 @@ func kv10Text(t *testing.T, ckpt string, n int) []int {
 	if err != nil {
 		t.Fatalf("tokenizer: %v", err)
 	}
-	ids, err := tk.Encode(kv10TextBytes(t), false)
+	text := kv10TextBytes(t)
+	if sum := sha256.Sum256([]byte(text)); hex.EncodeToString(sum[:]) != kv10TextSHA256 {
+		t.Fatalf("VOID: %s is not KV10's frozen text (sha256 %x)", kv10TextPath, sum)
+	}
+	ids, err := tk.Encode(text, false)
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
@@ -704,7 +705,7 @@ func kv10Text(t *testing.T, ckpt string, n int) []int {
 }
 
 // TestKV10_longContextFidelity is KV10-b's harness (docs/measurements/kv10-2026-11/README.md): at each depth, the last 16 rows' logits of the checkpoint with KV f16 against
-// KV f32, on this repository's text. GOINFER_KV10_DEPTHS (default "3900,65536,131000"), KV10_CKPT (default ~/models/qwen3.5-0.8b), KV10_OUT (a JSON-lines file).
+// KV f32, on KV10's frozen text (kv10TextPath). GOINFER_KV10_DEPTHS (default "3900,65536,131000"), KV10_CKPT (default ~/models/qwen3.5-0.8b), KV10_OUT (a JSON-lines file).
 //
 //	GOINFER_HEAVY_TESTS=1 KV10_OUT=<file> go test -tags 'cuda goinfer_testhooks' -run '^TestKV10_longContextFidelity$' -v -timeout 90m ./backend/cuda/
 func TestKV10_longContextFidelity(t *testing.T) {
