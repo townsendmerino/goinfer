@@ -1,6 +1,6 @@
 # x86 CPU peer cells at v0.25.0 on nobara-pc (registered 2026-11-22)
 
-**Status: REGISTERED 2026-11-22 13:58 PST, before any timed run.** By day, under nobara-pc's exclusive timing lock.
+**Status: REGISTERED 2026-11-22 13:43 PST (commit `21f272426`; first typed as 13:58, corrected from the commit time), before any timed run.** By day, under nobara-pc's exclusive timing lock.
 Results go under *Results*. A bar that turns out wrong gets a dated amendment with its mechanism, not an edit.
 
 **Why.** The three x86 CPU cells below were last read at `e29da447` ([`peer-reanchor-2026-11-19`](../peer-reanchor-2026-11-19/README.md)
@@ -61,8 +61,44 @@ earlier work; the void rule reads growth during a cell, not the level.
 
 From 11-19's cells (0.5B arms about 40 s each plus about 100 s of idle gate; phi3-mini about 5 min an arm; v2's two arms
 791 s): fit checks 1 min, e about 8 min, v1 about 12 min, v2 about 14 min, evictions and settles about 5 min.
-**Expected: start 14:00 PST, finish about 14:45 PST.** The run holds the lock under `timeout 90m`.
+**Expected (corrected from the clock, as typed it said 14:00 to 14:45): start 13:43 PST, finish about 14:30 PST.** The run holds the lock under `timeout 90m`.
 
 ## Results
 
-(pending)
+### Run, 2026-11-22 13:43–14:15 PST, graded 14:16 PST
+
+- **The run:** `run.sh` rc=0 in 32 min (registration: about 45), under the exclusive timing lock with `timeout 90m`. Fit checks passed
+  again inside the script (13:42–13:43). The e-cpu step started at 13:45:21 after a 100 s settle, v-cpu at 13:51:52.
+- **The void rule:** no void cell. Every arm started at a 1-minute load of 0.64–0.94 (cap 8.0; the harness's own gate is 1.0)
+  with 61,181–61,293 MB available. Swap growth was 0.0 MB on every arm. The level stayed at 519 MiB, held from before the run.
+- **Records:** [`results/cpu/`](results/cpu/) holds `e-cpu.json`, `v-cpu.json`, their step logs, the fit logs and
+  `provenance.txt`. [`results/run.log`](results/run.log) is the script's log. The grade is
+  [`results/grade-2026-11-22.jsonl`](results/grade-2026-11-22.jsonl), written by `../peer-reanchor-2026-11-19/grade.py results/cpu`.
+- **Provenance:** nobara-pc, AMD Ryzen 7 3700X (8 cores, 16 threads), 62 GiB, kernel 7.3.0-202.nobara.fc44; goinfer
+  `v0.25.0 (d0da204c4b7a)` release asset (aikit v1.78.0, go1.27.4); Ollama 0.32.5; llama.cpp `0.7.0-dev (build 988, commit
+  a37cc46)`; greedy (`temperature 0`, seed 1), 3 runs × 8 completions × 64 tokens per arm, the median of the 3 runs reported.
+  Checkpoints from local NVMe: `~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf`,
+  `~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf`, `~/models/gpt-oss-20b-MXFP4.gguf` (none resolves under the archive;
+  the script checks). Thermal: no CPU temperature reading was taken; a desktop on mains power, each arm started idle (load ≤ 0.94),
+  and each arm's 3 runs agree within 0.7%.
+- **Decode paths:** goinfer decoded `cpu (int4)` on the 0.5B and gpt-oss 20B and `cpu (q4k)` on phi3-mini, as the fit checks
+  resolved. Ollama ran Q4_K_M on the 0.5B and phi3-mini and MXFP4 on gpt-oss. Every pair is 4-bit against 4-bit.
+
+**Against Ollama** (median r; every pair decides; the 11-19 reading at `e29da447` is in brackets):
+
+| cell | now (v0.25.0) | pairs | median tok/s, goinfer vs Ollama | was |
+|---|---|---|---|---|
+| e 0.5B | **LEVEL 1.023** (moved from BEHIND) | 1.023 / 1.019 / 1.028 | 58.3 vs 56.9 | BEHIND 0.867 (49.9 vs 57.5) |
+| v1 phi3-mini (`q4k`) | **BEHIND 0.833** | 0.833 / 0.833 / 0.831 | 8.9 vs 10.7 | BEHIND 0.763 (8.2 vs 10.7) |
+| v2 gpt-oss 20B (`int4`) | **BEHIND 0.960** | 0.960 / 0.960 / 0.960 | 10.3 vs 10.7 | BEHIND 0.923 (9.9 vs 10.7) |
+
+- **Runs** (tok/s, run 1 / 2 / 3): 0.5B goinfer 58.3 / 58.1 / 58.5, Ollama 56.9 / 57.0 / 56.9, llama.cpp 64.8 / 64.8 / 64.4;
+  phi3-mini goinfer 8.9 / 8.9 / 8.9, Ollama 10.7 / 10.7 / 10.7; gpt-oss 20B goinfer 10.3 / 10.3 / 10.3, Ollama 10.7 / 10.7 / 10.7.
+- **Spreads:** goinfer 0.7% / 0.1% / 0.1%, Ollama 0.2% / 0.1% / 0.1%, all under the 5% cap.
+- **Against llama.cpp `a37cc46`** (beside; no claim names it): the 0.5B is **BEHIND 0.900** (58.3 vs 64.8; pairs 0.900 / 0.896 /
+  0.909), against 0.77 on 11-19.
+- **What moves on the page** (the decision rule): only the 0.5B's label. It replaces the 0.5B's entry in `docs/benchmarks.md`'s
+  x86 CPU decode row, and the summary sentence's list of where goinfer is behind. phi3-mini and gpt-oss 20B keep their labels, so
+  the page keeps their 11-19 entries.
+- **Attribution:** none. Ollama's own rates are within 1% of 11-19's on all three models, but this is still a cross-build,
+  cross-session comparison (TE5(a)). The levers' own records hold their same-session A/Bs.
