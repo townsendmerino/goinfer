@@ -195,3 +195,26 @@ func TestResolve_stepFlagsFollowServeSessions(t *testing.T) {
 		})
 	}
 }
+
+// TestResolve_flashDecodeSoftcapDefaultOn: a capped model (Gemma 2) takes CUDA's capped flash-decode lane by default in both apps,
+// and --flash-decode-softcap=false keeps the exact split-KV lane (docs/measurements/op1o2-fa-softcap-2026-11/README.md, "Default").
+func TestResolve_flashDecodeSoftcapDefaultOn(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		app  App
+		args []string
+		want bool
+	}{
+		{"chat, unset", Chat, nil, true},
+		{"serve, unset", Serve, nil, true},
+		{"chat, off", Chat, []string{"-flash-decode-softcap=false"}, false},
+		{"serve, off", Serve, []string{"-flash-decode-softcap=false"}, false},
+		{"serve, given on", Serve, []string{"-flash-decode-softcap"}, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if o := Resolve(*parsed(t, c.app, c.args), Machine{}, Overrides{}); o.FlashDecodeSoftcap != c.want {
+				t.Errorf("FlashDecodeSoftcap %v, want %v", o.FlashDecodeSoftcap, c.want)
+			}
+		})
+	}
+}
