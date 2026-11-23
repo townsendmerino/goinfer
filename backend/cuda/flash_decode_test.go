@@ -296,14 +296,14 @@ func flashEndToEnd(t *testing.T, file string) {
 }
 
 // TestFlashDecodeHD96_laneCUDA: a head-dim-96 layer takes the flash-decode lane only when the load asked (decoder.Options.FlashDecodeHD96,
-// docs/measurements/fa-hd96-phi3-2026-11-22/README.md), and the option reaches the resident through a load. phi3-tiny's layer 0 is given
-// hd 96 by hand (the fixture's is 16); the control is the same layer at hd 64, which the lane serves either way. Every head dim the lane
-// has a kernel for resolves through faHDIndex, and one it has none for (80) does not.
+// docs/measurements/fa-hd96-phi3-2026-11-22/README.md), and the option reaches the resident through a load. llama-tiny's layer 0 is given
+// hd 96 by hand (a tiny Phi-3 is refused resident at int4 by the activation guard); the control is the same layer at hd 64, which the
+// lane serves either way. Every head dim the lane has a kernel for resolves through faHDIndex, and one it has none for (80) does not.
 func TestFlashDecodeHD96_laneCUDA(t *testing.T) {
 	requireCUDADevice(t)
 	t.Setenv("GOINFER_CUDA_FLASH_DECODE", "16") // the test binary turns the lane off by default
 	for _, opted := range []bool{false, true} {
-		m, err := decoder.Load("../../testdata/phi3-tiny", decoder.Options{Backend: "cuda", Quant: "int4", FlashDecodeHD96: opted})
+		m, err := decoder.Load("../../testdata/llama-tiny", decoder.Options{Backend: "cuda", Quant: "int4", FlashDecodeHD96: opted})
 		if err != nil {
 			t.Fatalf("load: %v", err)
 		}

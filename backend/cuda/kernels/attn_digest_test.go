@@ -443,13 +443,13 @@ var (
 	adFARaggedIdx  = []int32{4, 1, 3, 0}
 )
 
-// fa_partial_ragged_{64,128,256} and fa_combine_ragged (decode_fa.cu): the flash-decode lane over a ragged step's rows. Each listed
+// fa_partial_ragged_{64,96,128,256} and fa_combine_ragged (decode_fa.cu): the flash-decode lane over a ragged step's rows. Each listed
 // row is also run alone through fa_partial and fa_combine at M = 1 over its slot's table and must match it bit for bit; the unlisted
 // row's context stays zero.
 func adCasesFlashRagged() []adCase {
 	var cs []adCase
 	for kvi, m := range adFA {
-		for _, hd := range []int{64, 128, 256} {
+		for _, hd := range []int{64, 96, 128, 256} {
 			for _, G := range []int{1, 4} {
 				for _, window := range []int{0, 1500} {
 					f16, nKV, nSplit := kvi == 1, 2, 16
@@ -515,11 +515,11 @@ func adCasesFlashRagged() []adCase {
 	return cs
 }
 
-// fa_partial_{64,128,256} and fa_combine (decode_fa.cu), the flash-decode lane, and its multi-row variants for speculative verify.
+// fa_partial_{64,96,128,256} and fa_combine (decode_fa.cu), the flash-decode lane, and its multi-row variants for speculative verify.
 func adCasesFlash() []adCase {
 	var cs []adCase
 	for kvi, m := range adFA {
-		for _, hd := range []int{64, 128, 256} {
+		for _, hd := range []int{64, 96, 128, 256} {
 			for _, G := range []int{1, 2, 3, 4, 5, 6, 7, 8} {
 				for _, nSplit := range []int{4, 16} {
 					for _, kw := range [][2]int{{70, 0}, {1000, 0}, {2100, 500}} {
