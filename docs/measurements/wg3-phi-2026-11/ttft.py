@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """WG3-phi's TTFT cell: WG0's wg0_ttft.py with this registration's flags (registration.md): the phi3-mini:1024 prompt,
--quant int8int8, and no -require-backend, since the base arm runs on the CPU by design.
+-quant int8int8, and no -require-backend on the base arm (WG3_BASE_SERVE), which runs on the CPU by design.
 
   WG0_REPO=<worktree> ttft.py out.json --arm head=<serve>:webgpu --arm base=<serve>:webgpu --models phi3-mini --quads 2 --n 6
 """
@@ -15,6 +15,9 @@ wg0_ttft.bpp.MODELS.setdefault("phi3-mini", (os.path.expanduser("~/models/phi3-m
 _popen = wg0_ttft.subprocess.Popen
 
 
+BASE = os.environ["WG3_BASE_SERVE"]  # the base arm's binary: it runs on the CPU by design, the only arm without -require-backend
+
+
 def popen(argv, *a, **kw):
     if isinstance(argv, list) and argv and "-model" in argv:
         argv = fix_argv(argv)
@@ -25,7 +28,9 @@ def fix_argv(argv):
     argv = list(argv)
     if "-quant" in argv:
         argv[argv.index("-quant") + 1] = "int8int8"
-    return [x for x in argv if x != "-require-backend"]
+    if argv[0] == BASE:
+        argv = [x for x in argv if x != "-require-backend"]
+    return argv
 
 
 wg0_ttft.subprocess.Popen = popen

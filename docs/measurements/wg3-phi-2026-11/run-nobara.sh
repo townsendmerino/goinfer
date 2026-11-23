@@ -30,7 +30,7 @@ fit() {
   local arm=$1 log=$OUT/fit/$1.log
   "$W/bin/serve-webgpu-$arm" -model "bench=$M" -backend webgpu -quant int8int8 -ctx 4096 -addr 127.0.0.1:18299 >"$log" 2>&1 &
   local pid=$!
-  for _ in $(seq 1 120); do grep -q "decode path:" "$log" && break; sleep 1; done
+  for _ in $(seq 1 120); do grep -q "decode path:" "$log" && break; kill -0 $pid 2>/dev/null || break; sleep 1; done
   kill $pid; wait $pid 2>/dev/null
   grep -m1 "decode path:" "$log" | sed 's/.*decode path: *//'
 }
@@ -38,18 +38,27 @@ fb=$(fit base); fh=$(fit head)
 echo "fit base: $fb" | tee -a "$OUT/provenance.txt"; echo "fit head: $fh" | tee -a "$OUT/provenance.txt"
 case "$fh" in webgpu:vulkan-resident*) ;; *) echo "STOP: head is not resident"; exit 75;; esac
 case "$fb" in *-resident*|"") echo "STOP: base is resident or unread"; exit 75;; esac
+case "$fb" in cpu*|webgpu-staged*) ;; *) echo "STOP: base is not on the CPU path ($fb)"; exit 75;; esac
 H=$W/wt-head
-# The builds above load the box; bench_peer.py refuses a 1-minute load over 1.0, so settle under 0.8 first (up to 15 minutes).
-for _ in $(seq 1 90); do awk '{exit !($1 < 0.8)}' /proc/loadavg && break; sleep 10; done
-echo "settled: load $(cut -d' ' -f1-3 /proc/loadavg) $(ts)" | tee -a "$OUT/provenance.txt"
+# The builds load the box: settle the 1-minute load under 0.8 before each cell (up to 15 minutes), or stop.
+settle() {
+  for _ in $(seq 1 90); do awk '{exit !($1 < 0.8)}' /proc/loadavg && { echo "settled before $1: load $(cut -d' ' -f1-3 /proc/loadavg) $(ts)" | tee -a "$OUT/provenance.txt"; return 0; }; sleep 10; done
+  echo "STOP: load did not settle before $1 ($(cut -d' ' -f1-3 /proc/loadavg))" | tee -a "$OUT/provenance.txt"; exit 75
+}
+export WG3_BASE_SERVE=$W/bin/serve-webgpu-base
 export GOINFER_SERVE_WEBGPU=$W/bin/serve-webgpu-head GOINFER_SERVE_WEBGPU_OLD=$W/bin/serve-webgpu-base
 export BENCH_ENGINES=goinfer,goinfer_old BENCH_BACKENDS=webgpu BENCH_DEPTH_BACKEND=webgpu BENCH_PHASES=B BENCH_ABBA=2 BENCH_RUNS=2 BENCH_MODELS=phi3-mini BENCH_DEPTHS=128
 export BENCH_QUANT_OVERRIDE=phi3-mini=int8int8 BENCH_SWAP_VOID_STOP=3 BENCH_SWAP_KILL_MB=1024 BENCH_SERVE_LOG_DIR=$OUT/serve-logs
+rc_all=0
 case ",$STEPS," in *,decode,*)
-(cd "$H" && python3 -u scripts/bench_peer.py "$OUT/decode.json") > "$OUT/decode.log" 2>&1; echo "decode rc=$? $(ts)" | tee -a "$OUT/provenance.txt";;
+settle decode
+(cd "$H" && python3 -u scripts/bench_peer.py "$OUT/decode.json") > "$OUT/decode.log" 2>&1; rc=$?
+echo "decode rc=$rc $(ts)" | tee -a "$OUT/provenance.txt"; [ $rc -eq 0 ] || rc_all=$rc;;
 esac
 case ",$STEPS," in *,ttft,*)
+settle ttft
 (cd "$H" && WG0_REPO=$H python3 -u "$HERE/ttft.py" "$OUT/ttft.json" --arm head=$W/bin/serve-webgpu-head:webgpu \
-  --arm base=$W/bin/serve-webgpu-base:webgpu --models phi3-mini --quads 2 --n 6 --ctx 4096) > "$OUT/ttft.log" 2>&1
-echo "ttft rc=$? finished $(ts)" | tee -a "$OUT/provenance.txt";;
+  --arm base=$W/bin/serve-webgpu-base:webgpu --models phi3-mini --quads 2 --n 6 --ctx 4096) > "$OUT/ttft.log" 2>&1; rc=$?
+echo "ttft rc=$rc finished $(ts)" | tee -a "$OUT/provenance.txt"; [ $rc -eq 0 ] || rc_all=$rc;;
 esac
+exit $rc_all
