@@ -4,13 +4,14 @@
 
   WG0_REPO=<worktree> ttft.py out.json --arm head=<serve>:webgpu --arm base=<serve>:webgpu --models phi3-mini --quads 2 --n 6
 """
-import os, re, sys
+import os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "webgpu-baseline-2026-11"))
 import wg0_ttft  # noqa: E402
 
 wg0_ttft.PROMPT_KEY["phi3-mini"] = "phi3-mini:1024"
+wg0_ttft.bpp.MODELS.setdefault("phi3-mini", (os.path.expanduser("~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf"), "p3m-local"))
 _popen = wg0_ttft.subprocess.Popen
 
 

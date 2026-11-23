@@ -38,6 +38,9 @@ echo "fit base: $fb" | tee -a "$OUT/provenance.txt"; echo "fit head: $fh" | tee 
 case "$fh" in webgpu:vulkan-resident*) ;; *) echo "STOP: head is not resident"; exit 75;; esac
 case "$fb" in *-resident*|"") echo "STOP: base is resident or unread"; exit 75;; esac
 H=$W/wt-head
+# The builds above load the box; bench_peer.py refuses a 1-minute load over 1.0, so settle under 0.8 first (up to 15 minutes).
+for _ in $(seq 1 90); do awk '{exit !($1 < 0.8)}' /proc/loadavg && break; sleep 10; done
+echo "settled: load $(cut -d' ' -f1-3 /proc/loadavg) $(ts)" | tee -a "$OUT/provenance.txt"
 export GOINFER_SERVE_WEBGPU=$W/bin/serve-webgpu-head GOINFER_SERVE_WEBGPU_OLD=$W/bin/serve-webgpu-base
 export BENCH_ENGINES=goinfer,goinfer_old BENCH_BACKENDS=webgpu BENCH_PHASES=B BENCH_ABBA=2 BENCH_RUNS=2 BENCH_MODELS=phi3-mini BENCH_DEPTHS=128
 export BENCH_QUANT_OVERRIDE=phi3-mini=int8int8 BENCH_SWAP_VOID_STOP=3 BENCH_SWAP_KILL_MB=1024 BENCH_SERVE_LOG_DIR=$OUT/serve-logs
