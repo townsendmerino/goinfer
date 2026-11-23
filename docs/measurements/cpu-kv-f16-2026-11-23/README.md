@@ -122,3 +122,17 @@ lock (start 1-min load 0.93, 60.6 GB available, swap 910 → 860 MiB, peak RSS 6
 Decode 320.22 ms/token (3.12 tok/s); the timed operations sum to 99.8% of wall. Attention reads 3,081 MB a token, so it runs at about
 14.6 GB/s: it is not at this box's memory bandwidth on f32, which bounds what halving its bytes alone can buy. The fused f16 read's own
 registration says what it must show.
+
+## Kernel split before the build, registered 2026-11-23 13:17 PST, before the run
+
+Reading the kernels the fused read would replace changed what the build has to show. CPU decode attention always runs the acc64 kernels
+(`attendToken`'s `acc64` is a constant), which read the cache strided and in place. On amd64 their AVX2 ports are aikit's
+`qkAcc64AVX4` (one key per f64 lane, so a 4-key block's 96 dims go through ONE accumulator's FMA chain) and `avAcc64AVX32` (8 independent
+accumulators a 32-dim block). A latency-bound QK cannot get faster from fewer bytes, so f16 could pay only through AV, and only if AV is
+bound by its reads.
+- **Instrument:** `TestCPUAttnKernelProbe` (`decoder/`): one Phi-3 layer at depth 3,900 (3,900 keys, 32 heads × 96), f32, random
+  values; QK alone, AV alone, and a read-only pass over the same bytes in the same head-sliced pattern, on 1 and 16 workers, best of 20.
+  One run under the exclusive lock.
+- **Reading, no verdict of its own:** each kernel's GB/s against the read-only ceiling. A kernel under half its ceiling at 16 workers is
+  bound by its arithmetic; the report then says what f16 alone can buy (AV's share, at most halved) and what a latency fix to QK would,
+  and the build goes back to Francis with that before any assembly is written.
