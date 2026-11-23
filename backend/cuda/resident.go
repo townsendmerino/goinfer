@@ -3981,7 +3981,7 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 		// row (what every other model passes) would silently read the previous token's inputs: refuse by length, here, for every entry point.
 		return fmt.Errorf("cuda: Gemma 4 E-model embedding row has %d floats, want %d (hidden %d + %d layers x PLE width %d)", len(emb), r.embLen, r.hidden, r.nLayers, r.pleP)
 	}
-	if e := gpu.Upload(r.x, emb); e != nil {
+	if e := r.uploadEmb(emb); e != nil {
 		return e
 	}
 	if r.cacheProf {
@@ -4019,6 +4019,12 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 		r.profMark(&r.profHead)
 	}
 	return r.launchErr // surface any launch error discarded in the dense chain above
+}
+
+// uploadEmb copies the token's embedding row into r.x as a copy on r.stream: stream order puts it after every launch queued before it
+// (the previous token's, which read r.x) and before every launch after it, with no device synchronization around it.
+func (r *cudaResident) uploadEmb(emb []float32) error {
+	return gpu.UploadPageableAsync(r.stream, r.x, emb)
 }
 
 // decodeAttnGap is one layer's dynamic gap of a single-token decode: rope_kv at (pos, ropePos) into the BOUND KV
