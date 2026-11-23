@@ -1,0 +1,36 @@
+part      cpu
+started   2026-11-22 13:43:33 PST
+rev       v0.25.0 = d0da204c (/home/francis/goinfer-bench/peer-cpu-v0.25.0-2026-11-22/wt, clean)
+serve     /home/francis/goinfer-bench/peer-cpu-v0.25.0-2026-11-22/bin/serve-v0.25.0-linux-amd64 sha256 e93cdf5928663b44da741bc44ea50d9b03b52d272abac2b2124daf36b46c53f9 (serve-v0.25.0-linux-amd64 v0.25.0 (d0da204c4b7a))
+host      nobara-pc Linux 7.3.0-202.nobara.fc44.x86_64
+cpu        AMD Ryzen 7 3700X 8-Core Processor
+aikit     v1.78.0
+ollama    Warning: client version is 0.32.5
+llama     version: 0.7.0-dev (build 988, commit a37cc46)
+steps     all
+state     load 3.12 1.42 0.58 MemAvailable 61180 MiB swap 519 MiB
+== fit checks 2026-11-22 13:43:33 PST load 3.12 1.42 0.58 MemAvailable 61180 MiB swap 519 MiB
+fit cpu-0.5B: cpu (int4) [int4 layout: canonical (down, embed, gate/up, lm_head, qkv)] | fit: 4096-token cap needs 0.09 GiB KV (weights 0.33 GiB, budget 41.79 GiB, 41.69 GiB left for a request's own prefill) | 
+fit cpu-phi3-mini: cpu (q4k) | fit: 4096-token cap needs 3.00 GiB KV (weights 2.29 GiB, budget 41.84 GiB, 38.84 GiB left for a request's own prefill) — a ceiling, reached only by a request that fills the window | 
+fit cpu-G20: cpu (int4) [int4 layout: canonical (qkv)] | fit: 4096-token cap needs 0.20 GiB KV (weights 11.46 GiB, budget 41.75 GiB, 41.55 GiB left for a request's own prefill) | 
+== fit checks done 2026-11-22 13:43:36 PST
+=== evict: fadvise DONTNEED over 2326.6 GB of files load 2.95 1.41 0.58 MemAvailable 61257 MiB swap 519 MiB
+=== settle: load 2.95 >= 0.8, waiting (0/600s)
+=== settle: load 2.26 >= 0.8, waiting (20/600s)
+=== settle: load 1.62 >= 0.8, waiting (40/600s)
+=== settle: load 1.16 >= 0.8, waiting (60/600s)
+=== settle: load 0.90 >= 0.8, waiting (80/600s)
+=== settle: load 0.64 < 0.8 after 100s
+=== 2026-11-22 13:45:21 PST START e-cpu load 0.64 1.04 0.53 MemAvailable 61227 MiB swap 519 MiB
+=== 2026-11-22 13:49:51 PST END e-cpu rc=0 (270s)
+=== evict: fadvise DONTNEED over 2326.6 GB of files load 3.75 2.01 1.05 MemAvailable 61320 MiB swap 519 MiB
+=== settle: load 3.75 >= 0.8, waiting (0/600s)
+=== settle: load 2.69 >= 0.8, waiting (20/600s)
+=== settle: load 2.00 >= 0.8, waiting (40/600s)
+=== settle: load 1.43 >= 0.8, waiting (60/600s)
+=== settle: load 1.03 >= 0.8, waiting (80/600s)
+=== settle: load 0.80 >= 0.8, waiting (100/600s)
+=== settle: load 0.64 < 0.8 after 120s
+=== 2026-11-22 13:51:52 PST START v-cpu load 0.64 1.38 0.93 MemAvailable 61260 MiB swap 519 MiB
+=== 2026-11-22 14:15:23 PST END v-cpu rc=0 (1411s)
+finished  2026-11-22 14:15:23 PST rc=0 load 6.58 5.83 4.88 MemAvailable 61329 MiB swap 519 MiB

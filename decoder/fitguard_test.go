@@ -715,8 +715,11 @@ func TestFitCheck_declineNamesNoSmallerFile(t *testing.T) {
 				t.Errorf("%s: the smaller-load line %q names a smaller file (%q)", quant, line, bad)
 			}
 		}
-		if quant != "int4" && !strings.Contains(line, "--quant int4") {
-			t.Errorf("%s: the smaller-load line %q omits the --quant it can name", quant, line)
+		// --quant int4 is named only where int4 measures smaller than int8 on this platform (fitCheck.check's Int4Smaller): where the
+		// loader keeps a repacked copy of the nibbles, as on arm64, the line names no quant.
+		want := quant != "int4" && quantBytesPerElem(quantInt4) < quantBytesPerElem(quantInt8)
+		if got := strings.Contains(line, "--quant int4"); got != want {
+			t.Errorf("%s: the smaller-load line %q names --quant int4 = %v, want %v", quant, line, got, want)
 		}
 	}
 }

@@ -1,0 +1,23 @@
+part      cpu
+started   2026-11-22 13:42:16 PST
+rev       v0.25.0 = d0da204c (/home/francis/goinfer-bench/peer-cpu-v0.25.0-2026-11-22/wt, clean)
+serve     /home/francis/goinfer-bench/peer-cpu-v0.25.0-2026-11-22/bin/serve-v0.25.0-linux-amd64 sha256 e93cdf5928663b44da741bc44ea50d9b03b52d272abac2b2124daf36b46c53f9 (serve-v0.25.0-linux-amd64 v0.25.0 (d0da204c4b7a))
+host      nobara-pc Linux 7.3.0-202.nobara.fc44.x86_64
+cpu        AMD Ryzen 7 3700X 8-Core Processor
+aikit     v1.78.0
+ollama    Warning: client version is 0.32.5
+llama     version: 0.7.0-dev (build 988, commit a37cc46)
+steps     all
+state     load 0.05 0.09 0.09 MemAvailable 61167 MiB swap 519 MiB
+part      cpu
+started   2026-11-22 13:43:33 PST
+rev       v0.25.0 = d0da204c (/home/francis/goinfer-bench/peer-cpu-v0.25.0-2026-11-22/wt, clean)
+serve     /home/francis/goinfer-bench/peer-cpu-v0.25.0-2026-11-22/bin/serve-v0.25.0-linux-amd64 sha256 e93cdf5928663b44da741bc44ea50d9b03b52d272abac2b2124daf36b46c53f9 (serve-v0.25.0-linux-amd64 v0.25.0 (d0da204c4b7a))
+host      nobara-pc Linux 7.3.0-202.nobara.fc44.x86_64
+cpu        AMD Ryzen 7 3700X 8-Core Processor
+aikit     v1.78.0
+ollama    Warning: client version is 0.32.5
+llama     version: 0.7.0-dev (build 988, commit a37cc46)
+steps     all
+state     load 3.12 1.42 0.58 MemAvailable 61180 MiB swap 519 MiB
+finished  2026-11-22 14:15:23 PST rc=0 load 6.58 5.83 4.88 MemAvailable 61329 MiB swap 519 MiB
