@@ -196,3 +196,106 @@ The README above registers the cell's rule and shape. This fixes the parts it le
   - Two points from the fidelity reading still stand: paired wins were exactly 5/10 and hard flips pass only the amended bar.
   - Gemma 2's window, 4,096, is not crossed at K = 3,900 or at this cell's depths. The windowed lane is held by G2-K, not by either gate.
   - Not measured: depths past 2,048, other capped models, a longer decode, int8 KV (refused for capped families), and TTFT.
+
+## Default, 2026-11-22: stays off; `--flash-decode-softcap` stays the opt-in (Francis)
+
+- **What happened.** At about 13:55 PST Francis said yes to making the capped lane the CUDA default for Gemma 2, on the fidelity gate's
+  PASS (2026-11-09, K = 3,900) and the timed cell's SHIP (2026-11-15).
+  - The flip was built as PR #1230: `--flash-decode-softcap` defaulting to true in chat and serve.
+  - Its review found the default reaches every capped model at every context, and that neither reading had crossed Gemma 2's
+    4,096-position window, while serve's default plan caps at 8,192.
+  - The reading past the window (the addendum below) came out AMBIGUOUS, PARKED.
+- **The decision.** Francis, 2026-11-22, about 17:40 PST, relayed by the coordinator ("B 1"): keep the lane off by default, and keep
+  `--flash-decode-softcap` as the opt-in. #1230 was closed unmerged; this record carries its readings.
+- **What the build of the flip measured, kept because it holds for the opt-in too.**
+  - **Memory:** none. A capped model loads the capped lane's module (`attnPTX` picks `decode_fa_cap` whenever the model has a cap)
+    and allocates its partial buffer (`loadFlashDecode`) either way. The option changes only `faEligible`. Device and host bytes are
+    the same, and so is the longest context that fits.
+  - **The served smoke below** ran on #1230's binary (`e3480e58b`), where the flag defaulted on. Its "default" arm is today's
+    `--flash-decode-softcap`.
+- **Not covered,** as the readings say: other capped models (no Gemma 2 9B or 27B on this box), and int8 KV, which is refused for
+  capped families.
+
+### Served smoke with the flag defaulting on (#1230's binary), 2026-11-22 14:24–14:26 PST (nobara, RTX 2070 SUPER, driver 595.112.07): PASS
+
+- **What ran.** [`smoke_default.py`](smoke_default.py), under the exclusive timing lock, on one serve binary built from #1230's branch
+  (`e3480e58b`, `CGO_ENABLED=0 go build -tags cuda ./backend/cuda/cmd/serve`). Gemma 2 2B (`~/models/gemma-2-2b-it-Q8_0.gguf`,
+  local NVMe, `-quant int4`) was served four times: the flag unset, `=false`, given, and `=false` again. Each server took
+  `probe_arms.py`'s depth-2,048 greedy request for 256 tokens. kwin_wayland held 19 MiB of the card.
+- **The default takes the lane.** The default's 256-token text equals the given flag's and differs from `=false`'s. `=false`
+  repeats itself. No arm warned that the lane was unavailable.
+- **No memory moves.** Every arm read the same plan: "4 KV slots at a 8192-token cap hold 5.13 GiB KV (weights 1.61 GiB …)",
+  with the same KV pool ("a 32512-position pool for 4 conversations; each is guaranteed 8128, and one can use up to 8192"). Each
+  server held 7,030 MiB of the card after load. The longest context that fits is unchanged.
+- **Records.** [`default-2026-11-22/smoke.log`](default-2026-11-22/smoke.log) and the default arm's serve log,
+  `serve-default.log.gz`. A first run is kept as `smoke-first-run-strict-fit.log`. It read FAIL on one check only: it compared
+  the whole fit line, whose host budget (41.51–41.65 GiB) is the box's free memory at load. The plan in that line was equal on
+  every arm. The script now compares the plan without the budget, and the re-run passed every check.
+
+## Addendum, 2026-11-22, before the run: what the default reaches, and a reading past Gemma 2's window
+
+Review of the default PR (#1230, relayed by the coordinator): the default would be keyed on the model having an attention softcap, not on
+Gemma 2 2B. The fidelity gate read K = 3,900 and the timed cell stopped at depth 2,048. Neither crossed Gemma 2's 4,096-position
+sliding window, while serve's default plan for the 2B caps at 8,192.
+
+- **What the default reaches, from the code.** `cudaResident.faEligible` refuses a capped layer unless `faSoftcap` is set, and the cap
+  is `BackendView.AttnLogitSoftcap()`, which only two architectures fill:
+  - `gemma2Architecture`: every Gemma 2 checkpoint, from `config.json`'s `attn_logit_softcapping` or the GGUF's
+    `gemma2.attn_logit_softcapping`. The released 2B, 9B and 27B all set 50.
+  - `gemma3Architecture` passes `config.json`'s `attn_logit_softcapping` through. The released Gemma 3 configs set it to null (0),
+    and its GGUF path does not read the key, so no released Gemma 3 reaches the lane by this route.
+  - The lane admits head dims 64, 128 and 256 only. Gemma 2 2B and 9B have head dim 256 and 27B has 128, so all three are eligible.
+  - On this box's `~/models`, the reachable checkpoints are Gemma 2 2B: `gemma-2-2b-it-Q8_0.gguf`, and the `gemma-2-2b-it` directory,
+    which goinfer cannot tokenize (addendum of 2026-11-09). There is no Gemma 2 9B or 27B, and `gemma-3-4b-it`'s config has a null cap.
+- **The reading.** The registered gate, unchanged, on one more cell: `G22B:8000`, `gemma-2-2b-it-Q8_0.gguf` at int4 on CUDA, K = 8,000,
+  held-out set B. Its CPU f32 reference is `TestPrefillGateReference`'s G22B row with `GOINFER_CPU_REF_KS=8000`. K = 8,000 plus the 64
+  scored positions sits inside the model's 8,192, and every global layer attends past the 4,096 window. The local layers attend their
+  4,096 window, so they run the windowed lane at full width.
+  The gate loads with zero `Options`, so `ResidentWindowedKV` is off: the local layers keep the whole cache, and the window is applied
+  by masking. Serve's default ring, window + 512 positions, is the same attention over a different storage layout. It is held by the
+  windowed-KV tests, not by this gate.
+- **Criteria, unchanged:** (a) hard flips ≤ exact + 2√exact, the bar as amended by Francis on 2026-09-13 (from the strict
+  lane ≤ exact) and adopted in `attn-decode-fa-fidelity-PREREGISTERED.md` before the lane existed. The strict reading is printed too.
+  (b) agreement ≥ exact − 1.0 pt, and lane ≥ exact on at least half the prompts. (c) mean KL ≤ 1.10 × exact's. The ambiguous band is
+  the same. This is a reading, not a re-tune: nothing in the lane changes.
+- **What it decides:** nothing by itself. Francis chooses the default's scope with it in hand: on for every capped model, on for
+  Gemma 2 only, or off. A FAIL at K = 8,000 is evidence that the 3,900 PASS does not extend past the window.
+- **Cost:** the reference is about 80–100 min of CPU, 10 prompts at 8,000 tokens; the 3,900 reference took 37 min. The gate is
+  about 7 min under the exclusive lock. Both by day, finishing before 21:30 PST.
+
+### Reading past the window, 2026-11-22 (nobara, RTX 2070 SUPER, driver 595.112.07): **AMBIGUOUS, PARKED** by the registered rule
+
+- **Run.** #1230's branch at `22f2ab3bf`, with both test binaries built once from it.
+  - **The CPU reference,** `TestPrefillGateReference` G22B at `GOINFER_CPU_REF_KS=8000`, held the lock shared, 14:49–16:53 PST.
+    The first 8 prompts took 1 h 41 m each, in parallel. The test's own deadline guard then held back the last two, because at that
+    pace they would have ended past its 3-hour timeout. It kept the 8 it had stored, and a rerun resumed with them and computed the
+    last two in 22 min (logs `g22b8k-refs-part1.log.gz` and `g22b8k-refs-resume.log`).
+  - **The gate,** `TestFlashDecodeGateVsReference` `G22B:8000`, `GOINFER_CUDA_FLASH_DECODE=16`, held the lock exclusive,
+    16:55:59–17:05:34 PST (`run-gate-8000.sh`, `g22b8k-gate.log`). It started at a 1-minute load of 0.80 with 61,589 MiB
+    available; kwin_wayland held 19 MiB of the card.
+- **Preconditions held:** A/A bit-identical over 64 rows, the lane launched, and the seed rows were identical. 621 of 630
+  continuation rows differ between the arms.
+
+| | exact (split-KV) | lane (capped flash-decode) |
+|---|---|---|
+| mean teacher-forced agreement | 84.69% | 83.75% |
+| hard flips | 24 / 640 | 25 / 640 |
+| mean KL(reference ‖ arm) | 0.160404 | 0.154706 |
+
+- **(a) hard flips: PASS** on the amended bar, 25 against 24 + 2√24 = 33.8. The strict reading (lane ≤ exact) fails, 25 against 24.
+- **(b) agreement: AMBIGUOUS.** The lane is −0.94 pt from exact. That is inside the −1.0 pt bar but within its last 0.2 pt, which the
+  registration parks. Per prompt the lane is ahead on 1 and tied on 5, so lane ≥ exact on 6 of 10. It is behind on 4, by 1.56, 1.56,
+  3.12 and 4.69 pt.
+- **(c) KL: PASS.** The ratio is 0.9645, under 1.10 and outside the 1.05–1.10 band.
+- **Verdict: AMBIGUOUS, PARKED.** At K = 8,000, every global layer attends past Gemma 2's 4,096 window, and the lane is not shown to
+  decode as well as the exact lane there. Agreement sits in the parked zone on the bar. The 3,900 reading (PASS, −0.31 pt) does not
+  extend past the window on this evidence. Per the registration, a re-run needs a named mechanism, not a re-roll.
+- **What it decided:** Francis kept the lane off by default (the section above).
+
+### Served smoke re-run with the reviewed script, 2026-11-22 17:05 PST: PASS
+
+`smoke_default.py`, after the review's fixes, on #1230's binary (`e3480e58b`). It took the exclusive lock itself
+(`smoke-rerun-fixed-script.log`), and all nine checks passed:
+- the default's text equals the given flag's and differs from `=false`'s, and `=false` repeats itself;
+- the fit plan and the KV plan are equal and present on every arm;
+- device memory is 7,030 MiB on every arm, both at load and after the depth-2,048 request.
