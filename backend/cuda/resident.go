@@ -738,17 +738,21 @@ type cudaResident struct {
 	bMoeRows, bGluRows                           Pipeline // gemv_w4a8_moe_rows, glu_quant_rows (moe_rows.cu); zero when they did not load
 	moeRowsOff                                   bool     // test seam: run the expert-major path's per-pair launches (the A/B and identity reference)
 	bW8                                          Pipeline // batched W8A8 GEMV (int8 bundles); nil ⇒ int8 prefill declines
-	bQKN                                         Pipeline // batched per-head Q/K RMSNorm (qwen3 etc.); loaded with the batched set
-	bNormF32                                     Pipeline // batched plain f32 RMSNorm for Gemma sandwich post-norms; loaded with the batched set
-	bLN                                          Pipeline // batched mean-centered LayerNorm+quant (layernorm_quant.ptx) for Cohere/Command-R
-	zeroBias                                     Buffer   // [hidden] zeros for bias-free layernorm_quant_batched
-	skScores, skSoftmax, skVsum                  Pipeline // split-KV decode attention (high-occupancy, bit-identical)
-	skScoreBuf, skInvBuf                         Buffer   // split-KV scratch: [nH·ctxCap] raw/exp scores, [nH] inverse denominators
-	psScores, psSoftmax, psVsum                  Pipeline // the exact batched-prefill attention past attn_batched's shared-memory bound (prefill_splitkv.cu)
-	psLaunches                                   int      // launch groups of it, for tests
-	skVsumPartial, skVsumCombine                 Pipeline // flash-decode V-sum SPIKE (opt-in, NOT bit-identical) — scoping-decode-tree-recanon.md §6
-	skPartialBuf                                 Buffer   // [nH·maxHd·nSplit] partial folds for the spike
-	skVsumSplit                                  int      // vsumSplitForTest at build; 0 = off (the shipped path)
+	// The per-32 rows GEMVs (prefill_g32.cu), bound with the per-32 quantizers into bRms/bQuant/bSw under actG32;
+	// prefillG32Ready says all of them loaded, and without it a per-32 load's prefill declines.
+	bQ4KRows, bQ5KRows, bQ6KRows, bW8G32Rows Pipeline
+	prefillG32Ready                          bool
+	bQKN                                     Pipeline // batched per-head Q/K RMSNorm (qwen3 etc.); loaded with the batched set
+	bNormF32                                 Pipeline // batched plain f32 RMSNorm for Gemma sandwich post-norms; loaded with the batched set
+	bLN                                      Pipeline // batched mean-centered LayerNorm+quant (layernorm_quant.ptx) for Cohere/Command-R
+	zeroBias                                 Buffer   // [hidden] zeros for bias-free layernorm_quant_batched
+	skScores, skSoftmax, skVsum              Pipeline // split-KV decode attention (high-occupancy, bit-identical)
+	skScoreBuf, skInvBuf                     Buffer   // split-KV scratch: [nH·ctxCap] raw/exp scores, [nH] inverse denominators
+	psScores, psSoftmax, psVsum              Pipeline // the exact batched-prefill attention past attn_batched's shared-memory bound (prefill_splitkv.cu)
+	psLaunches                               int      // launch groups of it, for tests
+	skVsumPartial, skVsumCombine             Pipeline // flash-decode V-sum SPIKE (opt-in, NOT bit-identical) — scoping-decode-tree-recanon.md §6
+	skPartialBuf                             Buffer   // [nH·maxHd·nSplit] partial folds for the spike
+	skVsumSplit                              int      // vsumSplitForTest at build; 0 = off (the shipped path)
 	// Flash-decode lane (decode_fa.cu): default on (GOINFER_CUDA_FLASH_DECODE=0 turns it off), NOT bit-identical.
 	faPartial     [faHDs]Pipeline // fa_partial_<hd> for each of faHDList
 	kv8Store      Pipeline        // kv8_store: the int8 cache's quantizing store (kv8.go); bound only on an int8 cache

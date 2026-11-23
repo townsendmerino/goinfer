@@ -113,7 +113,7 @@ func (p *prefillPass) ai(n int) Buffer {
 func (p *prefillPass) allocScratch() error {
 	r, M, hidden, inter, maxQDim, maxKvDim := p.r, p.M, p.hidden, p.inter, p.maxQDim, p.maxKvDim
 	p.xB = p.af(M * hidden)
-	p.aqB, p.aScB = p.ai(M*hidden/4), p.af(M)
+	p.aqB, p.aScB = p.ai(M*hidden/4), p.af(M*r.actScaleLen(hidden))
 	p.qBb, p.kBb, p.vBb = p.af(M*maxQDim), p.af(M*maxKvDim), p.af(M*maxKvDim)
 	p.cctxB = p.af(M * maxQDim)
 	if p.rows != nil {
@@ -128,10 +128,10 @@ func (p *prefillPass) allocScratch() error {
 			p.psScB, p.psInvB = p.af(p.psRows*r.nH*p.psStride), p.af(p.psRows*r.nH)
 		}
 	}
-	p.cqB, p.cScB = p.ai(M*maxQDim/4), p.af(M)
-	p.mqB, p.mScB = p.ai(M*hidden/4), p.af(M)
+	p.cqB, p.cScB = p.ai(M*maxQDim/4), p.af(M*r.actScaleLen(maxQDim))
+	p.mqB, p.mScB = p.ai(M*hidden/4), p.af(M*r.actScaleLen(hidden))
 	p.gOb, p.uOb = p.af(M*inter), p.af(M*inter)
-	p.dqB, p.dScB = p.ai(M*inter/4), p.af(M)
+	p.dqB, p.dScB = p.ai(M*inter/4), p.af(M*r.actScaleLen(inter))
 	// Gated-DeltaNet families (qwen3_5 / qwen3_5_moe / qwen3_next): the M-row buffers the recurrence reads row
 	// by row, and the softmax layers' double-width q projection and output gate.
 	if r.dnet != nil {
@@ -858,12 +858,19 @@ func (p *prefillPass) tailLastRow() error {
 			if e := gpu.Download(r.aq, q); e != nil {
 				return e
 			}
-			sc := make([]float32, 1)
+			sc := make([]float32, r.actScaleLen(hidden))
 			if e := gpu.Download(r.aSc, sc); e != nil {
 				return e
 			}
 			row := make([]float32, hidden)
-			linalg.DequantizeRowInt8(q, sc[0], row)
+			if r.actG32 {
+				// One scale a group of 32 (the scale row's first half; the group sums follow).
+				for g := range hidden / 32 {
+					linalg.DequantizeRowInt8(q[32*g:32*g+32], sc[g], row[32*g:32*g+32])
+				}
+			} else {
+				linalg.DequantizeRowInt8(q, sc[0], row)
+			}
 			p.outs[m] = row
 			continue
 		}

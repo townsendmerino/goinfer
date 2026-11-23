@@ -1,0 +1,24 @@
+=== RUN   TestOP6C_q4kPassBitIdentity
+cuda: prefill width 2048 rows (290 MiB of scratch; 3276 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[op6c gate2] K=128 prompt 1/3: sequential arm (elapsed 0s)
+[op6c gate2] K=128 prompt 1/3: batched arm (elapsed 1s)
+OP6C_IDENTITY model=Phi-3-mini-4k-instruct-q4.gguf K=128 prompt=0 steps=17 differing_steps_so_far=0
+[op6c gate2] K=128 prompt 2/3: sequential arm (elapsed 2s)
+[op6c gate2] K=128 prompt 2/3: batched arm (elapsed 3s)
+OP6C_IDENTITY model=Phi-3-mini-4k-instruct-q4.gguf K=128 prompt=1 steps=17 differing_steps_so_far=0
+[op6c gate2] K=128 prompt 3/3: sequential arm (elapsed 3s)
+[op6c gate2] K=128 prompt 3/3: batched arm (elapsed 4s)
+OP6C_IDENTITY model=Phi-3-mini-4k-instruct-q4.gguf K=128 prompt=2 steps=17 differing_steps_so_far=0
+[op6c gate2] K=3900 prompt 1/3: sequential arm (elapsed 5s)
+[op6c gate2] K=3900 prompt 1/3: batched arm (elapsed 50s)
+OP6C_IDENTITY model=Phi-3-mini-4k-instruct-q4.gguf K=3900 prompt=0 steps=17 differing_steps_so_far=0
+[op6c gate2] K=3900 prompt 2/3: sequential arm (elapsed 1m18s)
+[op6c gate2] K=3900 prompt 2/3: batched arm (elapsed 2m3s)
+OP6C_IDENTITY model=Phi-3-mini-4k-instruct-q4.gguf K=3900 prompt=1 steps=17 differing_steps_so_far=0
+[op6c gate2] K=3900 prompt 3/3: sequential arm (elapsed 2m32s)
+[op6c gate2] K=3900 prompt 3/3: batched arm (elapsed 3m17s)
+OP6C_IDENTITY model=Phi-3-mini-4k-instruct-q4.gguf K=3900 prompt=2 steps=17 differing_steps_so_far=0
+    actgroup_phi3_resident_test.go:560: OP6C gate 2: 3270528 logits compared over 3 prompts x [128 3900] depths x 17 rows; 0 rows differ (elapsed 3m46s)
+--- PASS: TestOP6C_q4kPassBitIdentity (228.56s)
+PASS
+ledger: 1 device(s) released in this run
