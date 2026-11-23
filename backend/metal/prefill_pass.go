@@ -118,7 +118,9 @@ func (r *resident) newPrefillPass(src rowSource, startPos int, mrope [][3]int, d
 }
 
 // scratchU32 and scratchFloats allocate a per-call uniform onto the device ledger. releaseList names it for release.
-func (ps *prefillPass) scratchU32(v int) Buffer { return NewBufferU32On(mem.LineScratch, ps.d, uint32(v)) }
+func (ps *prefillPass) scratchU32(v int) Buffer {
+	return NewBufferU32On(mem.LineScratch, ps.d, uint32(v))
+}
 
 func (ps *prefillPass) scratchFloats(v []float32) Buffer {
 	return NewBufferFloatsOn(mem.LineScratch, ps.d, v)
@@ -322,7 +324,7 @@ func (ps *prefillPass) hybridScratch() {
 		ps.kvF = prefillScratchU16(d, Mpad*2*kvDim)
 		ps.gateF = prefillScratchU16(d, M*nHhd)
 		ps.u2NHhd, ps.u2KvDim, ps.uGateN = NewBufferU32On(mem.LineScratch, d, uint32(2*nHhd)), NewBufferU32On(mem.LineScratch, d, uint32(2*kvDim)), NewBufferU32On(mem.LineScratch, d, uint32(M*nHhd))
-		}
+	}
 	if r.mamba != nil {
 		ps.mb = r.newPrefillMamba(M, Mpad)
 	}
