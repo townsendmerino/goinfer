@@ -12,3 +12,7 @@ conversation at 16,384 positions. A real reading of the temperature would need t
 teacher-forced against a CPU reference that long; it has not been run. The real checkpoint's gate is its composition at
 temperature 1: `TestResidentCaptureParityWebGPU` per sublayer at int4 (the int8int8 load did not fit the 8 GB card at the
 test's default context and declined cleanly), queued on nobara.
+
+**Image turns.** The support table's `CPU / GPU` for Ministral 3 under WebGPU is generated from admission: the decoder
+after the image runs resident. The image turn itself (the Pixtral tower on the CPU, its prefill uploaded) takes the shared
+CPU-prefill-and-upload bridge; no Ministral 3 image turn has been run on WebGPU.
