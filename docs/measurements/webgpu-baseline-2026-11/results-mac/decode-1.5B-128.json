@@ -1,0 +1,1112 @@
+[
+ {
+  "kind": "provenance",
+  "utc": "2026-11-23T16:33:55Z",
+  "fit_need": "goinfer's fit: banner when one has been read, else BENCH_FIT_NEED_GB, else the checkpoint's file size, which is a lower bound (no KV or scratch) and is flagged per cell (machine.fit_need_lower_bound); the start check has no margin",
+  "free_mem_override": false,
+  "host": "MacBookPro",
+  "uname": "Darwin 25.6.0 arm64",
+  "distro": "",
+  "goinfer_commit": "018cbe74c",
+  "goinfer_tree_dirty": false,
+  "peer": {
+   "ollama_bin": "/Users/francistownsend-merino/ollama-0325/bin/ollama",
+   "version": null
+  },
+  "peer_llamacpp": {
+   "bin": "llama-server",
+   "version": null
+  },
+  "serve_binaries": {
+   "cpu": {
+    "path": "/home/francis/bench-v0.15.0/serve-cpu",
+    "mtime": null
+   },
+   "cuda": {
+    "path": "/home/francis/bench-v0.15.0/serve-cuda",
+    "mtime": null
+   },
+   "webgpu": {
+    "path": "/home/francis/bench-v0.15.0/serve-webgpu",
+    "mtime": null
+   },
+   "metal": {
+    "path": "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-metal-018cbe74",
+    "mtime": "2026-11-23T16:16:27Z"
+   }
+  },
+  "serve_binaries_old": {
+   "metal": {
+    "path": "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-webgpu-018cbe74",
+    "mtime": "2026-11-23T16:16:31Z"
+   }
+  },
+  "gpu": null,
+  "cpu_count": 8,
+  "loadavg_at_start": [
+   1.72509765625,
+   1.626953125,
+   1.791015625
+  ],
+  "gpu_compute_apps_at_start": [],
+  "sampling": "sent explicitly per cell; see each record's `sent`",
+  "deep_ctx": 0,
+  "ctx_pin": 0
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "metal",
+  "model": "1.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "ctx": 4096,
+  "mlx_path": null,
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   99.37800024796054,
+   99.24966903863535
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    1.693359375,
+    1.62255859375,
+    1.787109375
+   ],
+   "available_mb": 11624,
+   "ncores": 8,
+   "gpu": null,
+   "reclaimable_mb": 6911,
+   "swap_mb": 513.0,
+   "swapin_mb": 9421.34375,
+   "swapout_mb": 16532.796875,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "end": {
+    "loadavg": [
+     1.533203125,
+     1.5908203125,
+     1.7724609375
+    ],
+    "available_mb": 11624,
+    "reclaimable_mb": 6903,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.34375,
+    "swapout_mb": 16532.796875
+   },
+   "gate": {
+    "kind": "instant",
+    "wait_s": 9.1,
+    "busy_pct": 9.8
+   },
+   "fit_need_mb": 1065,
+   "fit_need_source": "file size",
+   "fit_need_lower_bound": true
+  },
+  "secs": 17.2,
+  "block": 0,
+  "quant": "int4",
+  "quant_class": "4-bit",
+  "quant_matched": true,
+  "counts": {
+   "swap": {
+    "swap_base_mb": 513.0,
+    "swap_growth_mb": 0.0,
+    "swap_peak_mb": 513.0,
+    "swap_killed": null,
+    "swapin_mb": 0.0,
+    "swapout_mb": 0.0,
+    "swap_void": null
+   },
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    100.72035035017171,
+    100.33855630039147,
+    99.56825434920344,
+    97.50024718979063,
+    99.10272705305003,
+    98.91747525035174,
+    98.15341105445867,
+    100.72298043626668,
+    100.69924693297756,
+    99.17571988972,
+    97.47442601831975,
+    97.24821000549608,
+    99.70215957789576,
+    101.4109469234655,
+    97.68685664860784,
+    100.59978631260024
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": "metal-resident (int4)",
+   "rss_peak_kb": 114208,
+   "phases": {
+    "start_to_listening_s": 1.67,
+    "warmup_s": 1.01,
+    "runs_wall_s": 11.12,
+    "decode_timed_s": 10.15,
+    "prefill_and_request_s": 0.97,
+    "teardown_s": 3.04
+   }
+  },
+  "mean": 99.3,
+  "spread": 0.1
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer_old",
+  "backend": "metal",
+  "model": "1.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "ctx": 4096,
+  "mlx_path": null,
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   36.94725266044398,
+   36.62279242790141
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    1.5703125,
+    1.59716796875,
+    1.7734375
+   ],
+   "available_mb": 11460,
+   "ncores": 8,
+   "gpu": null,
+   "reclaimable_mb": 6737,
+   "swap_mb": 513.0,
+   "swapin_mb": 9421.34375,
+   "swapout_mb": 16532.796875,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "end": {
+    "loadavg": [
+     1.95458984375,
+     1.7177734375,
+     1.810546875
+    ],
+    "available_mb": 11460,
+    "reclaimable_mb": 7044,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.34375,
+    "swapout_mb": 16532.796875
+   },
+   "gate": {
+    "kind": "instant",
+    "wait_s": 3.5,
+    "busy_pct": 9.2
+   },
+   "fit_need_mb": 1065,
+   "fit_need_source": "file size",
+   "fit_need_lower_bound": true
+  },
+  "secs": 39.4,
+  "block": 0,
+  "quant": "int4",
+  "quant_class": "4-bit",
+  "quant_matched": true,
+  "counts": {
+   "swap": {
+    "swap_base_mb": 513.0,
+    "swap_growth_mb": 0.0,
+    "swap_peak_mb": 513.0,
+    "swap_killed": null,
+    "swapin_mb": 0.0,
+    "swapout_mb": 0.0,
+    "swap_void": null
+   },
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    37.37711623406955,
+    36.76834460927458,
+    36.007784554252304,
+    36.237927006078,
+    36.46298177293162,
+    37.317882801906364,
+    37.116099675895896,
+    38.2898846291435,
+    37.21438695586901,
+    36.55179549217352,
+    36.174993948603785,
+    36.39471280542371,
+    37.41314249451111,
+    36.210865366002,
+    36.12108992631891,
+    36.901352434309224
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": "webgpu:metal-resident (int4)",
+   "rss_peak_kb": 2053696,
+   "phases": {
+    "start_to_listening_s": 4.29,
+    "warmup_s": 3.23,
+    "runs_wall_s": 28.35,
+    "decode_timed_s": 27.41,
+    "prefill_and_request_s": 0.94,
+    "teardown_s": 3.12
+   }
+  },
+  "mean": 36.8,
+  "spread": 0.3
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer_old",
+  "backend": "metal",
+  "model": "1.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "ctx": 4096,
+  "mlx_path": null,
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   36.64299572343446,
+   36.79516012944351
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    2.28125,
+    1.79296875,
+    1.8359375
+   ],
+   "available_mb": 11460,
+   "ncores": 8,
+   "gpu": null,
+   "reclaimable_mb": 7056,
+   "swap_mb": 513.0,
+   "swapin_mb": 9421.34375,
+   "swapout_mb": 16532.796875,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "end": {
+    "loadavg": [
+     2.06787109375,
+     1.7841796875,
+     1.82958984375
+    ],
+    "available_mb": 11624,
+    "reclaimable_mb": 7016,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.34375,
+    "swapout_mb": 16532.796875
+   },
+   "gate": {
+    "kind": "instant",
+    "wait_s": 9.1,
+    "busy_pct": 8.2
+   },
+   "fit_need_mb": 1177,
+   "fit_need_source": "fit banner",
+   "fit_need_lower_bound": false
+  },
+  "secs": 38.6,
+  "block": 1,
+  "quant": "int4",
+  "quant_class": "4-bit",
+  "quant_matched": true,
+  "counts": {
+   "swap": {
+    "swap_base_mb": 513.0,
+    "swap_growth_mb": 0.0,
+    "swap_peak_mb": 513.0,
+    "swap_killed": null,
+    "swapin_mb": 0.0,
+    "swapout_mb": 0.0,
+    "swap_void": null
+   },
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    36.466900479845904,
+    36.678736519522296,
+    36.5011124896297,
+    36.915778492711524,
+    36.4709933473658,
+    36.91923624060053,
+    36.13750319976048,
+    37.053705018039444,
+    36.96913983196934,
+    36.763382886295275,
+    36.71775339809595,
+    36.209776166311705,
+    36.71371103831326,
+    37.68401145496325,
+    36.53743347220282,
+    36.766072787396475
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": "webgpu:metal-resident (int4)",
+   "rss_peak_kb": 2055520,
+   "phases": {
+    "start_to_listening_s": 3.36,
+    "warmup_s": 3.23,
+    "runs_wall_s": 28.48,
+    "decode_timed_s": 27.45,
+    "prefill_and_request_s": 1.03,
+    "teardown_s": 3.1
+   }
+  },
+  "mean": 36.7,
+  "spread": 0.2
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "metal",
+  "model": "1.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "ctx": 4096,
+  "mlx_path": null,
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   99.32900505748236,
+   98.65889739765666
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    2.22314453125,
+    1.82421875,
+    1.84326171875
+   ],
+   "available_mb": 11460,
+   "ncores": 8,
+   "gpu": null,
+   "reclaimable_mb": 7007,
+   "swap_mb": 513.0,
+   "swapin_mb": 9421.34375,
+   "swapout_mb": 16532.796875,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "end": {
+    "loadavg": [
+     3.64599609375,
+     2.19970703125,
+     1.978515625
+    ],
+    "available_mb": 11624,
+    "reclaimable_mb": 6996,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.34375,
+    "swapout_mb": 16532.796875
+   },
+   "gate": {
+    "kind": "instant",
+    "wait_s": 9.2,
+    "busy_pct": 9.2
+   },
+   "fit_need_mb": 1177,
+   "fit_need_source": "fit banner",
+   "fit_need_lower_bound": false
+  },
+  "secs": 17.7,
+  "block": 1,
+  "quant": "int4",
+  "quant_class": "4-bit",
+  "quant_matched": true,
+  "counts": {
+   "swap": {
+    "swap_base_mb": 513.0,
+    "swap_growth_mb": 0.0,
+    "swap_peak_mb": 513.0,
+    "swap_killed": null,
+    "swapin_mb": 0.0,
+    "swapout_mb": 0.0,
+    "swap_void": null
+   },
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    100.01418852182428,
+    100.74120743401417,
+    97.43955648594313,
+    100.08144183026752,
+    99.72626722333324,
+    100.48405129325245,
+    98.74605581440959,
+    97.39927185681455,
+    98.20864056610205,
+    100.8373771105368,
+    99.97050473498558,
+    96.42513382335193,
+    97.31699876383732,
+    98.42426131828901,
+    97.89511273773955,
+    100.19315012641108
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": "metal-resident (int4)",
+   "rss_peak_kb": 106000,
+   "phases": {
+    "start_to_listening_s": 2.17,
+    "warmup_s": 0.92,
+    "runs_wall_s": 11.15,
+    "decode_timed_s": 10.18,
+    "prefill_and_request_s": 0.97,
+    "teardown_s": 3.03
+   }
+  },
+  "mean": 99.0,
+  "spread": 0.7
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "metal",
+  "model": "1.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "ctx": 4096,
+  "mlx_path": null,
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   99.14062136889119,
+   98.40281212799036
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    3.23876953125,
+    2.15966796875,
+    1.966796875
+   ],
+   "available_mb": 11460,
+   "ncores": 8,
+   "gpu": null,
+   "reclaimable_mb": 6862,
+   "swap_mb": 513.0,
+   "swapin_mb": 9421.34375,
+   "swapout_mb": 16532.796875,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "end": {
+    "loadavg": [
+     2.73583984375,
+     2.10205078125,
+     1.94921875
+    ],
+    "available_mb": 11460,
+    "reclaimable_mb": 6885,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.34375,
+    "swapout_mb": 16532.796875
+   },
+   "gate": {
+    "kind": "instant",
+    "wait_s": 9.2,
+    "busy_pct": 9.2
+   },
+   "fit_need_mb": 1177,
+   "fit_need_source": "fit banner",
+   "fit_need_lower_bound": false
+  },
+  "secs": 16.6,
+  "block": 2,
+  "quant": "int4",
+  "quant_class": "4-bit",
+  "quant_matched": true,
+  "counts": {
+   "swap": {
+    "swap_base_mb": 513.0,
+    "swap_growth_mb": 0.0,
+    "swap_peak_mb": 513.0,
+    "swap_killed": null,
+    "swapin_mb": 0.0,
+    "swapout_mb": 0.0,
+    "swap_void": null
+   },
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    101.05042980162389,
+    99.96490644732381,
+    99.7653007063418,
+    97.83520826641386,
+    97.42553036135286,
+    98.87647679532598,
+    97.34286803969891,
+    100.86425053304843,
+    101.09934172977012,
+    98.33278449738023,
+    101.22845957381925,
+    96.53337909161296,
+    97.5142886526642,
+    97.79892269472793,
+    97.62774270377103,
+    97.08757808017711
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": "metal-resident (int4)",
+   "rss_peak_kb": 110176,
+   "phases": {
+    "start_to_listening_s": 1.04,
+    "warmup_s": 0.92,
+    "runs_wall_s": 11.18,
+    "decode_timed_s": 10.21,
+    "prefill_and_request_s": 0.97,
+    "teardown_s": 3.08
+   }
+  },
+  "mean": 98.8,
+  "spread": 0.7
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer_old",
+  "backend": "metal",
+  "model": "1.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "ctx": 4096,
+  "mlx_path": null,
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   37.01043114621173,
+   37.412285285487705
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    2.4990234375,
+    2.080078125,
+    1.943359375
+   ],
+   "available_mb": 11624,
+   "ncores": 8,
+   "gpu": null,
+   "reclaimable_mb": 6863,
+   "swap_mb": 513.0,
+   "swapin_mb": 9421.34375,
+   "swapout_mb": 16532.796875,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "end": {
+    "loadavg": [
+     2.3623046875,
+     2.111328125,
+     1.9609375
+    ],
+    "available_mb": 11624,
+    "reclaimable_mb": 6931,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.34375,
+    "swapout_mb": 16532.796875
+   },
+   "gate": {
+    "kind": "instant",
+    "wait_s": 14.7,
+    "busy_pct": 9.5
+   },
+   "fit_need_mb": 1177,
+   "fit_need_source": "fit banner",
+   "fit_need_lower_bound": false
+  },
+  "secs": 38.5,
+  "block": 2,
+  "quant": "int4",
+  "quant_class": "4-bit",
+  "quant_matched": true,
+  "counts": {
+   "swap": {
+    "swap_base_mb": 513.0,
+    "swap_growth_mb": 0.0,
+    "swap_peak_mb": 513.0,
+    "swap_killed": null,
+    "swapin_mb": 0.0,
+    "swapout_mb": 0.0,
+    "swap_void": null
+   },
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    36.2363472682236,
+    37.42816521392651,
+    36.662663671971124,
+    37.15997880526357,
+    37.024782507944735,
+    36.924349218989754,
+    37.24701957387795,
+    37.400142909496616,
+    37.44972058422829,
+    36.837983416869704,
+    37.19239801418033,
+    37.9054387163689,
+    37.67324271611043,
+    37.608821213605935,
+    37.18009807665569,
+    37.450579545882356
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": "webgpu:metal-resident (int4)",
+   "rss_peak_kb": 2057824,
+   "phases": {
+    "start_to_listening_s": 3.78,
+    "warmup_s": 3.23,
+    "runs_wall_s": 28.07,
+    "decode_timed_s": 27.09,
+    "prefill_and_request_s": 0.98,
+    "teardown_s": 3.06
+   }
+  },
+  "mean": 37.2,
+  "spread": 0.4
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer_old",
+  "backend": "metal",
+  "model": "1.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "ctx": 4096,
+  "mlx_path": null,
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   37.50159870280917,
+   36.13788740511045
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    2.3623046875,
+    2.111328125,
+    1.9609375
+   ],
+   "available_mb": 11624,
+   "ncores": 8,
+   "gpu": null,
+   "reclaimable_mb": 6995,
+   "swap_mb": 513.0,
+   "swapin_mb": 9421.34375,
+   "swapout_mb": 16532.796875,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "end": {
+    "loadavg": [
+     2.04736328125,
+     2.05126953125,
+     1.943359375
+    ],
+    "available_mb": 11624,
+    "reclaimable_mb": 6947,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.34375,
+    "swapout_mb": 16532.796875
+   },
+   "gate": {
+    "kind": "instant",
+    "wait_s": 3.5,
+    "busy_pct": 7.2
+   },
+   "fit_need_mb": 1177,
+   "fit_need_source": "fit banner",
+   "fit_need_lower_bound": false
+  },
+  "secs": 38.9,
+  "block": 3,
+  "quant": "int4",
+  "quant_class": "4-bit",
+  "quant_matched": true,
+  "counts": {
+   "swap": {
+    "swap_base_mb": 513.0,
+    "swap_growth_mb": 0.0,
+    "swap_peak_mb": 513.0,
+    "swap_killed": null,
+    "swapin_mb": 0.0,
+    "swapout_mb": 0.0,
+    "swap_void": null
+   },
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    37.385289646784635,
+    37.1766946007604,
+    37.22487476208166,
+    37.96365085843083,
+    36.52150888549557,
+    37.61489148342107,
+    37.34538437437919,
+    38.78049501111998,
+    37.205684761757034,
+    38.5815896947474,
+    36.41003333868674,
+    35.60994059460317,
+    35.55914533512373,
+    34.8287890844926,
+    34.6435578991831,
+    36.26435853228982
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": "webgpu:metal-resident (int4)",
+   "rss_peak_kb": 2053888,
+   "phases": {
+    "start_to_listening_s": 3.81,
+    "warmup_s": 3.18,
+    "runs_wall_s": 28.34,
+    "decode_timed_s": 27.4,
+    "prefill_and_request_s": 0.94,
+    "teardown_s": 3.14
+   }
+  },
+  "mean": 36.8,
+  "spread": 1.4
+ },
+ {
+  "phase": "B",
+  "engine": "goinfer",
+  "backend": "metal",
+  "model": "1.5B",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "ctx": 4096,
+  "mlx_path": null,
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": [
+   99.53206928232359,
+   99.56386578396135
+  ],
+  "error": null,
+  "machine": {
+   "loadavg": [
+    1.96337890625,
+    2.03369140625,
+    1.9375
+   ],
+   "available_mb": 11624,
+   "ncores": 8,
+   "gpu": null,
+   "reclaimable_mb": 6946,
+   "swap_mb": 513.0,
+   "swapin_mb": 9421.34375,
+   "swapout_mb": 16532.796875,
+   "therm": "Note: No thermal warning level has been recorded / Note: No performance warning level has been recorded / Note: No CPU power status has been recorded",
+   "end": {
+    "loadavg": [
+     1.60791015625,
+     1.9501953125,
+     1.90869140625
+    ],
+    "available_mb": 11624,
+    "reclaimable_mb": 6935,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.34375,
+    "swapout_mb": 16532.796875
+   },
+   "gate": {
+    "kind": "instant",
+    "wait_s": 3.5,
+    "busy_pct": 8.0
+   },
+   "fit_need_mb": 1177,
+   "fit_need_source": "fit banner",
+   "fit_need_lower_bound": false
+  },
+  "secs": 17.6,
+  "block": 3,
+  "quant": "int4",
+  "quant_class": "4-bit",
+  "quant_matched": true,
+  "counts": {
+   "swap": {
+    "swap_base_mb": 513.0,
+    "swap_growth_mb": 0.0,
+    "swap_peak_mb": 513.0,
+    "swap_killed": null,
+    "swapin_mb": 0.0,
+    "swapout_mb": 0.0,
+    "swap_void": null
+   },
+   "tokens": 1024,
+   "chunks": 1024,
+   "tokens_per_chunk": 1.0,
+   "completion_rates": [
+    99.65684305101203,
+    99.76672274898145,
+    100.45699289642288,
+    100.25476103767848,
+    97.66699258039114,
+    99.91827462178088,
+    100.64652082164429,
+    97.88944650067756,
+    100.18434715516592,
+    99.27948840761842,
+    97.91347808171274,
+    100.07155911483748,
+    100.47215260749753,
+    97.90650392363506,
+    100.65549237215006,
+    100.02790460907356
+   ],
+   "ngen": 64,
+   "completion_tokens": [
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64,
+    64
+   ],
+   "warmup_tokens": 64,
+   "token_gate": {
+    "verdict": "ok",
+    "min": 64,
+    "threshold": 32,
+    "rule": "void if any completion < 32 of 64 tokens or unreported"
+   },
+   "decode_path": "metal-resident (int4)",
+   "rss_peak_kb": 112624,
+   "phases": {
+    "start_to_listening_s": 2.19,
+    "warmup_s": 0.92,
+    "runs_wall_s": 11.09,
+    "decode_timed_s": 10.13,
+    "prefill_and_request_s": 0.96,
+    "teardown_s": 3.01
+   }
+  },
+  "mean": 99.5,
+  "spread": 0.0
+ }
+]
