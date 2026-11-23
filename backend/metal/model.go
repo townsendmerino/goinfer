@@ -2249,6 +2249,11 @@ const attnFAMaxG = 8
 // attnFAGroupOK reports whether a layer with nH query heads over nKV KV heads fits attention_fa's arrays.
 func attnFAGroupOK(nH, nKV int) bool { return nKV > 0 && nH%nKV == 0 && nH/nKV <= attnFAMaxG }
 
+// metalHD96DefaultMaxCtx is the resident context cap up to which the hd = 96 lane is on by default: its fidelity gate read Phi-3 mini
+// at K = 3,900 within a 4,096 context, and nothing past it (docs/measurements/metal-fa-hd96-phi3-2026-11-23/README.md). A longer
+// context takes the lane only when it is asked for.
+const metalHD96DefaultMaxCtx = 4096
+
 // hd96Chosen is whether m asked for the hd = 96 lane: Options.FlashDecodeHD96 given as a choice. Set as the caller's default
 // (FlashDecodeHD96Default), it is CUDA's default, and Metal keeps the exact path.
 func hd96Chosen(m *decoder.Model) bool { return m.FlashDecodeHD96() && !m.FlashDecodeHD96Default() }
