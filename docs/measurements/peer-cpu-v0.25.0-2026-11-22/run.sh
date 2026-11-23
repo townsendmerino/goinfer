@@ -60,9 +60,9 @@ fit() { # fit <name> <want-decode-path-prefix> <serve> <args...>: the server's o
 }
 echo "== fit checks $(ts) $(state)"
 fok=0
-fit cpu-0.5B cpu "$SCPU" -model bench=$P05 -backend cpu -ctx 4096 -quant int4 || fok=1
-fit cpu-phi3-mini cpu "$SCPU" -model bench=$PPHI -backend cpu -ctx 4096 || fok=1
-fit cpu-G20 cpu "$SCPU" -model bench=$PG20 -backend cpu -ctx 4096 || fok=1
+fit cpu-0.5B "cpu (int4)" "$SCPU" -model bench=$P05 -backend cpu -ctx 4096 -quant int4 || fok=1
+fit cpu-phi3-mini "cpu (q4k)" "$SCPU" -model bench=$PPHI -backend cpu -ctx 4096 || fok=1
+fit cpu-G20 "cpu (int4)" "$SCPU" -model bench=$PG20 -backend cpu -ctx 4096 || fok=1
 [ $fok = 0 ] || { echo "== a fit check refused or resolved the wrong path: nothing timed; exit 75 $(ts)"; exit 75; }
 echo "== fit checks done $(ts)"
 [ "${FIT_ONLY:-}" = 1 ] && exit 0

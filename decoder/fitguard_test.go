@@ -691,3 +691,35 @@ func checkFitEstimateAgrees(t *testing.T, path string, estimate func(string, qua
 		})
 	}
 }
+
+// TestFitCheck_declineNamesNoSmallerFile: the resident weights are priced by --quant, not by the source file, so a refusal of a .gguf
+// load never tells the user to fetch another build of the same model, whatever its type (a read-only IQ2/IQ3 build prices the same as
+// its Q4_K build). The way down it names is a smaller --quant, a smaller context or a different model. Driven through fitCheck, the
+// caller the loader uses.
+func TestFitCheck_declineNamesNoSmallerFile(t *testing.T) {
+	for _, quant := range []string{"int8", "int4", "q4k", "f32"} {
+		f := fitCheck{name: "m-IQ2_XXS.gguf", quant: quant, isGGUF: true,
+			weightBytes: 21 << 30, srcFileBytes: 9 << 30, availBytes: 16 << 30}
+		msg := f.declineErr().Error()
+		var line string
+		for _, l := range strings.Split(msg, "\n") {
+			if strings.Contains(l, "smaller model") {
+				line = l
+			}
+		}
+		if line == "" {
+			t.Fatalf("%s: the refusal has no smaller-load line:\n%s", quant, msg)
+		}
+		for _, bad := range []string{"build", "file", "download", "quantization of", "IQ", "Q2", "Q3", "Q4_K"} {
+			if strings.Contains(line, bad) {
+				t.Errorf("%s: the smaller-load line %q names a smaller file (%q)", quant, line, bad)
+			}
+		}
+		// --quant int4 is named only where int4 measures smaller than int8 on this platform (fitCheck.check's Int4Smaller): where the
+		// loader keeps a repacked copy of the nibbles, as on arm64, the line names no quant.
+		want := quant != "int4" && quantBytesPerElem(quantInt4) < quantBytesPerElem(quantInt8)
+		if got := strings.Contains(line, "--quant int4"); got != want {
+			t.Errorf("%s: the smaller-load line %q names --quant int4 = %v, want %v", quant, line, got, want)
+		}
+	}
+}
