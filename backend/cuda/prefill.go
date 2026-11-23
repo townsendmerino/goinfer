@@ -1513,20 +1513,17 @@ func (r *cudaResident) bGemvRows(wt cudaWQ, a, as Buffer, bias KernelArg, dst Bu
 // its decode kernel's (doG). a and as hold M activation rows of K/4 ints and actScaleLen(K) floats.
 func (r *cudaResident) bGemvRowsG32(wt cudaWQ, a, as Buffer, bias KernelArg, dst Buffer, M int, accum int32) error {
 	cfg := LaunchConfig{GridX: uint32(launchgeom.PrefillG32RowsGridX(wt.N)), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
-	var p Pipeline
+	nSB, n, m := gpu.ArgValue(int32(wt.K/256)), gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(M))
 	switch wt.kind {
 	case "q4k":
-		p = r.bQ4KRows
+		return r.launch(r.bQ4KRows, cfg, Arg(wt.W), Arg(a), Arg(as), bias, n, nSB, m, Arg(dst), gpu.ArgValue(accum))
 	case "q5k":
-		p = r.bQ5KRows
+		return r.launch(r.bQ5KRows, cfg, Arg(wt.W), Arg(a), Arg(as), bias, n, nSB, m, Arg(dst), gpu.ArgValue(accum))
 	case "q6k":
-		p = r.bQ6KRows
+		return r.launch(r.bQ6KRows, cfg, Arg(wt.W), Arg(a), Arg(as), bias, n, nSB, m, Arg(dst), gpu.ArgValue(accum))
 	case "int8":
 		return r.launch(r.bW8G32Rows, cfg, Arg(wt.W), Arg(a), Arg(wt.ws), Arg(as), bias,
-			gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/4)), gpu.ArgValue(int32(M)), Arg(dst), gpu.ArgValue(accum))
-	default:
-		return fmt.Errorf("cuda prefill: the per-32 batched GEMV takes q4k, q5k, q6k or int8, got %q", wt.kind)
+			n, gpu.ArgValue(int32(wt.K/4)), m, Arg(dst), gpu.ArgValue(accum))
 	}
-	return r.launch(p, cfg, Arg(wt.W), Arg(a), Arg(as), bias,
-		gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/256)), gpu.ArgValue(int32(M)), Arg(dst), gpu.ArgValue(accum))
+	return fmt.Errorf("cuda prefill: the per-32 batched GEMV takes q4k, q5k, q6k or int8, got %q", wt.kind)
 }
