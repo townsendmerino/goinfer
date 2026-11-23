@@ -66,24 +66,6 @@ inline void gemm_stage_w(threadgroup half* sa, uint2 wv, float sc, bool wok, ush
     }
 }
 
-// gemm_ld_w and gemm_ld_a read one 32-k slab's global operands into registers: a weight thread's two words and its group scale,
-// an activation thread's four half4 (two 8-k blocks), zero where the row is out. The GEMMs read slab k0+32 while slab k0's MMAs
-// run and stage the registers after the next barrier, so each slab's values, and the order they meet the accumulators, are the
-// ones a load inside the slab gave.
-inline void gemm_ld_w(device const uint* W, device const half* WS, uint ncol, uint wpr, uint gpr, uint k0, ushort kh, bool wok,
-    thread uint2& wv, thread float& sc) {
-    wv = uint2(0u); sc = 0.0f;
-    if (wok) { wv = *(device const uint2*)(W + ncol*wpr + k0/8u + kh*2u); sc = float(WS[ncol*gpr + k0/32u]); }
-}
-
-inline void gemm_ld_a(device const half* A, uint mrow, uint K, uint k0, ushort kh2, bool aok, thread half4* av) {
-    for (ushort j = 0; j < 2; j++) {
-        device const half4* s4 = (device const half4*)(A + mrow*K + k0 + (kh2*2 + j)*8u);
-        av[2*j] = aok ? s4[0] : half4(0.0h);
-        av[2*j + 1] = aok ? s4[1] : half4(0.0h);
-    }
-}
-
 // gemm_epilogue_ld stores one 8x8 accumulator into columns [coff, coff+N) of C, whose rows are ldc halves apart; the bias is
 // indexed by the column in C. gemm_epilogue is the whole-width case (ldc = N, coff = 0).
 inline void gemm_epilogue_ld(threadgroup float* myc, simdgroup_float8x8 acc, uint mb, uint nb, uint M, uint N, uint ldc,
@@ -133,21 +115,22 @@ kernel void gemm_w4f16_store(device const half* A[[buffer(0)]], device const uin
     const uint mrow = m0 + tr;
     const bool aok = mrow < M;
 
-    uint2 wv; float sc; half4 av[4];
-    gemm_ld_w(W, WS, ncol, wpr, gpr, 0u, kh, wok, wv, sc);
-    gemm_ld_a(A, mrow, K, 0u, kh2, aok, av);
     for (uint k0 = 0; k0 < K; k0 += 32u) {
         threadgroup_barrier(mem_flags::mem_threadgroup);
+        uint2 wv = uint2(0u); float sc = 0.0f;
+        if (wok) { wv = *(device const uint2*)(W + ncol*wpr + k0/8u + kh*2u); sc = float(WS[ncol*gpr + k0/32u]); }
         gemm_stage_w(sa, wv, sc, wok, fb, kh, nl);
         for (ushort j = 0; j < 2; j++) {
-            threadgroup half4* d4 = (threadgroup half4*)(sb + (tb*4 + kh2*2 + j)*64 + rl*8);
-            d4[0] = av[2*j]; d4[1] = av[2*j + 1];
+            const ushort kb = kh2*2 + j;
+            threadgroup half4* d4 = (threadgroup half4*)(sb + (tb*4 + kb)*64 + rl*8);
+            if (aok) {
+                device const half4* s4 = (device const half4*)(A + mrow*K + k0 + kb*8u);
+                d4[0] = s4[0]; d4[1] = s4[1];
+            } else {
+                d4[0] = half4(0.0h); d4[1] = half4(0.0h);
+            }
         }
         threadgroup_barrier(mem_flags::mem_threadgroup);
-        if (k0 + 32u < K) { // the next slab's loads, in flight while this slab's MMAs run
-            gemm_ld_w(W, WS, ncol, wpr, gpr, k0 + 32u, kh, wok, wv, sc);
-            gemm_ld_a(A, mrow, K, k0 + 32u, kh2, aok, av);
-        }
 
         for (ushort ik = 0; ik < 4; ik++) {
             simdgroup_half8x8 a[4], b[4];
@@ -218,11 +201,6 @@ kernel void gemm_swiglu(device const half* A[[buffer(0)]], device const uint* W[
     const uint mrow = m0 + tr;
     const bool aok = mrow < M;
 
-    uint2 wv; float sc; half4 av[4]; // the int4 form's next slab, in registers while this slab's MMAs run (gemm_ld_w)
-    if constexpr (!W8) {
-        gemm_ld_w(W, WS, ncol, wpr, gpr, 0u, kh, wok, wv, sc);
-        gemm_ld_a(A, mrow, K, 0u, kh2, aok, av);
-    }
     for (uint k0 = 0; k0 < K; k0 += 32u) {
         threadgroup_barrier(mem_flags::mem_threadgroup);
         if constexpr (W8) { // K bytes of int8 codes a row and one f32 scale a row; an 8-k block is two words
@@ -238,30 +216,22 @@ kernel void gemm_swiglu(device const half* A[[buffer(0)]], device const uint* W[
                 }
             }
         } else {
+            uint2 wv = uint2(0u); float sc = 0.0f;
+            if (wok) { wv = *(device const uint2*)(W + ncol*wpr + k0/8u + kh*2u); sc = float(WS[ncol*gpr + k0/32u]); }
             gemm_stage_w(sa, wv, sc, wok, fb, kh, nl);
         }
         for (ushort j = 0; j < 2; j++) {
             const ushort kb = kh2*2 + j;
             threadgroup half4* d4 = (threadgroup half4*)(sb + (tb*4 + kb)*64 + rl*8);
-            if constexpr (!W8) {
-                d4[0] = av[2*j]; d4[1] = av[2*j + 1];
-                continue;
-            }
             const uint kk = k0 + kb*8u;
-            if (aok && kk < K) {
+            if (aok && (!W8 || kk < K)) {
                 device const half4* s4 = (device const half4*)(A + mrow*K + kk);
-                d4[0] = s4[0]; d4[1] = kk + 8u <= K ? s4[1] : half4(0.0h);
+                d4[0] = s4[0]; d4[1] = (!W8 || kk + 8u <= K) ? s4[1] : half4(0.0h);
             } else {
                 d4[0] = half4(0.0h); d4[1] = half4(0.0h);
             }
         }
         threadgroup_barrier(mem_flags::mem_threadgroup);
-        if constexpr (!W8) {
-            if (k0 + 32u < K) {
-                gemm_ld_w(W, WS, ncol, wpr, gpr, k0 + 32u, kh, wok, wv, sc);
-                gemm_ld_a(A, mrow, K, k0 + 32u, kh2, aok, av);
-            }
-        }
 
         for (ushort ik = 0; ik < 4; ik++) {
             simdgroup_half8x8 a[4], b[4];
