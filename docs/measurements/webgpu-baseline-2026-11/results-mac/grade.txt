@@ -1,0 +1,7 @@
+decode 0.5B @128     VALID  native 209.8  webgpu 61.2  fraction 0.292 (0.289-0.293, 4 pairs)
+decode 0.5B @2048    VALID  native 174.8  webgpu 27.8  fraction 0.159 (0.157-0.159, 4 pairs)
+decode 1.5B @128     VALID  native 99.2  webgpu 36.8  fraction 0.371 (0.370-0.377, 4 pairs)
+decode 1.5B @2048    VALID  native 91.1  webgpu 18.2  fraction 0.201 (0.195-0.206, 4 pairs)
+TTFT 0.5B @1024      VALID  native 289.1  webgpu 2739.9  fraction 0.106 (0.105-0.106, 4 pairs)
+TTFT 1.5B @1024      VALID  native 1041.7  webgpu 7811.0  fraction 0.133 (0.128-0.159, 4 pairs)
+G-WG0: every cell valid

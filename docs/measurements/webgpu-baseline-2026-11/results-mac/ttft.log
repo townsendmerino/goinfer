@@ -1,0 +1,32 @@
+# 08:50:58 0.5B block 0 metal: load 1.33740234375 avail 12443 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "0.5B", "block": 0, "arm": "metal", "ttft_ms_median": 288.98, "repeat_over_fresh": 0.068, "decode_path": "metal-resident (int4)", "error": null}
+# 08:51:05 0.5B block 0 webgpu: load 1.31005859375 avail 12443 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "0.5B", "block": 0, "arm": "webgpu", "ttft_ms_median": 2738.81, "repeat_over_fresh": 0.01, "decode_path": "webgpu:metal-resident (int4)", "error": null}
+# 08:51:44 0.5B block 1 webgpu: load 0.93115234375 avail 12443 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "0.5B", "block": 1, "arm": "webgpu", "ttft_ms_median": 2741.31, "repeat_over_fresh": 0.01, "decode_path": "webgpu:metal-resident (int4)", "error": null}
+# 08:52:22 0.5B block 1 metal: load 0.7490234375 avail 12443 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "0.5B", "block": 1, "arm": "metal", "ttft_ms_median": 289.7, "repeat_over_fresh": 0.068, "decode_path": "metal-resident (int4)", "error": null}
+# 08:52:29 0.5B block 2 metal: load 0.68896484375 avail 12443 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "0.5B", "block": 2, "arm": "metal", "ttft_ms_median": 288.48, "repeat_over_fresh": 0.067, "decode_path": "metal-resident (int4)", "error": null}
+# 08:52:36 0.5B block 2 webgpu: load 0.6337890625 avail 12607 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "0.5B", "block": 2, "arm": "webgpu", "ttft_ms_median": 2741.08, "repeat_over_fresh": 0.01, "decode_path": "webgpu:metal-resident (int4)", "error": null}
+# 08:53:15 0.5B block 3 webgpu: load 1.12255859375 avail 12443 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "0.5B", "block": 3, "arm": "webgpu", "ttft_ms_median": 2737.77, "repeat_over_fresh": 0.01, "decode_path": "webgpu:metal-resident (int4)", "error": null}
+# 08:53:53 0.5B block 3 metal: load 1.11474609375 avail 12443 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "0.5B", "block": 3, "arm": "metal", "ttft_ms_median": 289.29, "repeat_over_fresh": 0.068, "decode_path": "metal-resident (int4)", "error": null}
+# 08:54:00 1.5B block 0 metal: load 1.025390625 avail 12443 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 0, "arm": "metal", "ttft_ms_median": 985.79, "repeat_over_fresh": 0.044, "decode_path": "metal-resident (int4)", "error": null}
+# 08:54:15 1.5B block 0 webgpu: load 0.79736328125 avail 12443 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 0, "arm": "webgpu", "ttft_ms_median": 7442.33, "repeat_over_fresh": 0.005, "decode_path": "webgpu:metal-resident (int4)", "error": null}
+# 08:55:48 1.5B block 1 webgpu: load 1.73291015625 avail 12443 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 1, "arm": "webgpu", "ttft_ms_median": 7985.01, "repeat_over_fresh": 0.006, "decode_path": "webgpu:metal-resident (int4)", "error": null}
+# 08:57:22 1.5B block 1 metal: load 1.4228515625 avail 12279 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 1, "arm": "metal", "ttft_ms_median": 1058.18, "repeat_over_fresh": 0.043, "decode_path": "metal-resident (int4)", "error": null}
+# 08:57:39 1.5B block 2 metal: load 1.556640625 avail 12279 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 2, "arm": "metal", "ttft_ms_median": 1025.19, "repeat_over_fresh": 0.045, "decode_path": "metal-resident (int4)", "error": null}
+# 08:57:54 1.5B block 2 webgpu: load 1.35888671875 avail 12279 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 2, "arm": "webgpu", "ttft_ms_median": 7987.73, "repeat_over_fresh": 0.005, "decode_path": "webgpu:metal-resident (int4)", "error": null}
+# 08:59:29 1.5B block 3 webgpu: load 1.5263671875 avail 12279 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 3, "arm": "webgpu", "ttft_ms_median": 7636.94, "repeat_over_fresh": 0.005, "decode_path": "webgpu:metal-resident (int4)", "error": null}
+# 09:01:03 1.5B block 3 metal: load 1.5703125 avail 12279 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 3, "arm": "metal", "ttft_ms_median": 1210.12, "repeat_over_fresh": 0.049, "decode_path": "metal-resident (int4)", "error": null}

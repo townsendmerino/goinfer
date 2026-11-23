@@ -3,7 +3,7 @@
 **Read 2026-11-20 by the WG0 session, against [`registration.md`](registration.md)** (registered 11:15 PST at `9187d1cdc`,
 amended 11:22 PST at `5df28899f`, both before any timed run). **G-WG0 met: all 9 cells valid**: 4 complete pairs each,
 both arms on their resident decode path, the decode token gate ok, no void start and no swap void. The Mac half
-(WebGPU against Metal) is not in this record; its commands are in the registration.
+(WebGPU against Metal) is the last section, read 2026-11-23.
 
 **Provenance:** goinfer `018cbe74c` (both binaries; sha256 `778850e2…` serve-cuda, `7e1c0a13…` serve-webgpu), aikit v1.76.0 ·
 RTX 2070 SUPER, driver 595.112.07, WebGPU over Vulkan (wgpu-native, the NVIDIA adapter) · Ryzen 7 3700X, Linux
@@ -82,3 +82,49 @@ moves to `docs/legacy-benchmarks.md`. Nothing on `docs/benchmarks.md` changes be
 - The "the gap narrows as the model grows, which is what a dispatch-overhead story predicts" sentence still holds at depth
   128; at 2048 the gap is far wider on every size, and the page should say so rather than quote the short-context figure
   alone.
+
+## The Mac half: WebGPU against Metal (MacBook Pro M1 Pro, 2026-11-23)
+
+**Read 2026-11-23 against [`registration.md`](registration.md) § "The Mac half", its commands as written, by
+[`run-mac.sh`](run-mac.sh)** (`run-nobara.sh` with the macOS differences the registration names: no page-cache eviction, the
+darwin idle gate, settle under load 2.0). **G-WG0 met on the Mac: all 6 cells valid**: 4 complete pairs each, both arms on
+their resident decode path (`metal-resident (int4)`, `webgpu:metal-resident (int4)`), the token gate ok, no void start, swap flat.
+
+**Provenance:** goinfer `018cbe74c` from a clean detached worktree, both binaries built there (`CGO_ENABLED=0 ./backend/metal/cmd/serve`,
+sha256 `1827e32e…`; `CGO_ENABLED=1 -tags gpu ./backend/webgpu/cmd/serve`, sha256 `ebe60b75…`), aikit v1.76.0 · Apple M1 Pro
+(14-core GPU), macOS 26.7.3 · qwen2.5-coder 0.5B and 1.5B Q4_K_M GGUF from `~/models` on the internal SSD (the 1.5B copied that
+morning from nobara's `~/models`, byte count checked), `-quant int4` on both arms, ctx 4096 · greedy, seed 1 · one exclusive
+timing-lock session, **08:18–09:01 PST**, Francis's apps open (the idle gate waited up to 208 s before a cell; decode cells started
+at load 1.3–1.9) · swap 513 MB throughout, no growth. Raw: [`results-mac/`](results-mac/) (`provenance.txt`, `run.log`, `power.txt`,
+the harness JSON and logs, `serve-logs/`, `fit/`, `ctxfit.tsv`, `grade.txt`).
+
+| cell | Metal | WebGPU | WebGPU ÷ Metal (4 pairs) | per pair | power |
+|---|---|---|---|---|---|
+| decode 0.5B @128 | 209.8 tok/s | 61.2 tok/s | **0.292** (0.289–0.293) | 0.292 0.289 0.291 0.293 | battery |
+| decode 0.5B @2048 | 174.8 tok/s | 27.8 tok/s | **0.159** (0.157–0.159) | 0.159 0.159 0.158 0.159 | battery |
+| decode 1.5B @128 | 99.2 tok/s | 36.8 tok/s | **0.371** (0.370–0.377) | 0.370 0.371 0.377 0.370 | battery |
+| decode 1.5B @2048 | 91.1 tok/s | 18.2 tok/s | **0.201** (0.195–0.206) | 0.205 0.204 0.195 0.197 | block 0's Metal cell battery, the rest AC |
+| TTFT 0.5B @1024 | 289.1 ms | 2,739.9 ms | **0.106** (0.105–0.106) | 0.106 0.106 0.105 0.106 | AC |
+| TTFT 1.5B @1024 | 1,041.7 ms | 7,811.0 ms | **0.133** (0.128–0.159) | 0.132 0.133 0.128 0.158 | block 0 AC, block 1 changes over, 2–3 battery |
+
+TTFT prompts: 1,052 tokens by `usage` on every cell; repeat/fresh 0.07 / 0.04 on Metal and 0.01 / 0.005 on WebGPU, the healthy
+reading. The registration wrote no prediction for the Mac, so none is graded.
+
+**Power source, checked and kept.** The Mac ran on battery (low power mode off) until Francis plugged it in at 08:40:50 and on
+battery again from 08:55:53 (`pmset -g log`, [`results-mac/power.txt`](results-mac/power.txt); each step's START and END lines in
+`run.log` carry the source). Neither the registration nor `noise-registry.md` has a power rule, and the A B B A pairs interleave
+inside each cell, so no cell is void and none was re-run. The two cells that changed source were read for a power effect and show
+none: in decode 1.5B @2048 blocks 1–3 all ran on AC and still split 0.204 / 0.195 / 0.197, and in TTFT 1.5B the battery blocks
+read 0.128 and 0.158 on either side of the AC block's 0.132. That TTFT cell is the noisiest here (block 3's Metal cell 1,210 ms
+against 986–1,058); its median, 0.133, is quoted with that range.
+
+**Beside nobara's half** (a different box, backend and session: two readings side by side, not a ratio of them): at depth 128 WebGPU
+keeps less of the native backend on the Mac (29 / 37% of Metal) than on nobara (45 / 51% of CUDA); at 2048 the two are alike
+(16 / 20% against 13 / 17%), as is TTFT at 1,052 tokens (11 / 13% against 10 / 12%). WebGPU loses 55% / 51% of its depth-128 rate
+by 2048 on the Mac, Metal 17% / 8%: the same long-context shape as on nobara, so WG1's 2048 profile applies to both boxes.
+
+**Longest context that fits** (`results-mac/ctxfit.tsv`, untimed, `-quant int4`): Metal's default plan is a 32,768-position pool
+for 2 conversations (Metal's default of 2 slots), each guaranteed 16,384, one up to 32,768; with one conversation, 32,768 (the
+model's window) on both sizes. WebGPU's default plan is 4 × 16,384 and one conversation 16,384, its backend cap, on both sizes.
+At ctx 4096 Metal planned 2 conversations of the 4 asked and WebGPU 4. Neither size is memory-bound on this 16 GB Mac.
+
