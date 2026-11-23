@@ -180,14 +180,20 @@ func (r *cudaResident) bindPrefillG32() {
 	if e != nil {
 		return
 	}
-	var ps [7]Pipeline
-	for i, name := range []string{"rmsnorm_quant_g32_batched", "quant_vec_g32_batched", "glu_quant_g32_batched",
-		"gemv_q4k_g32_rows", "gemv_q5k_g32_rows", "gemv_q6k_g32_rows", "gemv_w8a8_g32_rows"} {
-		if ps[i], e = r.dev.NewComputePipeline(mod, name); e != nil {
+	var rms, quant, sw Pipeline
+	for _, f := range []struct {
+		dst  *Pipeline
+		name string
+	}{
+		{&rms, "rmsnorm_quant_g32_batched"}, {&quant, "quant_vec_g32_batched"}, {&sw, "glu_quant_g32_batched"},
+		{&r.bQ4KRows, "gemv_q4k_g32_rows"}, {&r.bQ5KRows, "gemv_q5k_g32_rows"}, {&r.bQ6KRows, "gemv_q6k_g32_rows"},
+		{&r.bW8G32Rows, "gemv_w8a8_g32_rows"},
+	} {
+		if *f.dst, e = r.dev.NewComputePipeline(mod, f.name); e != nil {
+			r.bQ4KRows, r.bQ5KRows, r.bQ6KRows, r.bW8G32Rows = Pipeline{}, Pipeline{}, Pipeline{}, Pipeline{}
 			return
 		}
 	}
-	r.bRms, r.bQuant, r.bSw = ps[0], ps[1], ps[2]
-	r.bQ4KRows, r.bQ5KRows, r.bQ6KRows, r.bW8G32Rows = ps[3], ps[4], ps[5], ps[6]
+	r.bRms, r.bQuant, r.bSw = rms, quant, sw
 	r.prefillG32Ready = true
 }
