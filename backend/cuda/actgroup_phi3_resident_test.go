@@ -115,3 +115,22 @@ func TestActGroup_phi3ResidentMatchesCPU(t *testing.T) {
 		t.Errorf("CUDA per-32 quality p10 %.4f is worse than the CPU per-32 path's %.4f on the same prompt", cudaQ, cpuQ)
 	}
 }
+
+// TestActCfg_spreadsOnlyPer32 pins actCfg's grid: a per-32 activation kernel gets a block for every blockDim/32 groups (Phi-3's
+// shapes: the 3,072-wide norm and quant on 12 blocks of 256, the 8,192-wide GLU on 8 of 1,024), a per-vector one keeps one block
+// (its absmax spans the vector). Bit-identity at every grid is the kernels' own test
+// (kernels/actgroup_kernel_test.go:TestActGroupKernels_warpQuantizersEqualSerial).
+func TestActCfg_spreadsOnlyPer32(t *testing.T) {
+	for _, c := range []struct {
+		g32            bool
+		block, n, want int
+	}{
+		{true, 256, 3072, 12}, {true, glueQuantThreads, 8192, 8}, {true, 256, 64, 1}, {true, 256, 288, 2},
+		{false, 256, 3072, 1}, {false, glueQuantThreads, 8192, 1},
+	} {
+		r := &cudaResident{actG32: c.g32}
+		if got := r.actCfg(c.block, 4, c.n).GridX; int(got) != c.want {
+			t.Errorf("actCfg(block %d, n %d) with actG32 %v: grid %d, want %d", c.block, c.n, c.g32, got, c.want)
+		}
+	}
+}
