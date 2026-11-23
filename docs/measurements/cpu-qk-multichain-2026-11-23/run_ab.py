@@ -29,6 +29,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bin-a", required=True)
     ap.add_argument("--bin-b", required=True)
+    ap.add_argument("--kv-b", default="", help="GOINFER_BENCH_KV for arm B (A stays at auto's f32); the f16-read A/B passes f16")
     ap.add_argument("--out", required=True)
     ap.add_argument("--models", default="Q05,P3M")
     ap.add_argument("--depths", default="128,3900")
@@ -65,7 +66,8 @@ def main():
                             start = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
                             log = os.path.join(a.out, "logs", f"{model}-d{depth}-b{block}-c{cell}-{arm}-a{attempt}.log")
                             env = dict(os.environ, GOINFER_PREQUANT_GGUF=os.path.expanduser(path), GOINFER_BENCH_QUANT=quant,
-                                       GOINFER_BENCH_BACKEND="cpu", GOINFER_BENCH_DEPTH=str(depth), GOINFER_BENCH_FILL="1")
+                                       GOINFER_BENCH_BACKEND="cpu", GOINFER_BENCH_DEPTH=str(depth), GOINFER_BENCH_FILL="1",
+                                       GOINFER_BENCH_KV=a.kv_b if arm == "B" else "")
                             t1 = time.time()
                             with open(log, "w") as lf:
                                 rc = subprocess.run(["/usr/bin/time", "-v", a.bin_b if arm == "B" else a.bin_a, "-test.run", "^$", "-test.bench", "^BenchmarkDecodeAtDepth$/^grouped_on$",
