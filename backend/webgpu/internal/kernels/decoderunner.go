@@ -457,6 +457,14 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 	if (m.LayerNorm || m.Parallel) && (m.Moe != nil || m.G4moe || m.Mla != nil || m.Mamba != nil || m.Dnet != nil || m.PleDim > 0 || m.PostOnlyNorm) {
 		return nil, fmt.Errorf("gpu: newDecodeRunner: LayerNorm and the parallel block are implemented on the dense attention path only")
 	}
+	// LayerNorm reaches only the norms rmsQuant builds (every pre-norm and the final norm). The unfused ones (QK-norm, V-norm,
+	// the post-sublayer norms) bind RMSNorm kernels, so a LayerNorm model carrying any of them is refused rather than run
+	// with RMSNorm there.
+	if m.LayerNorm && (m.QKNormWhole || slices.ContainsFunc(m.Layers, func(l RunLayer) bool {
+		return l.QNorm != nil || l.KNorm != nil || l.VNorm || l.GKEqV || l.PostAttnNorm != nil || l.PostMLPNorm != nil || l.PostPLENorm != nil
+	})) {
+		return nil, fmt.Errorf("gpu: newDecodeRunner: a LayerNorm model's QK-, V- or post-sublayer norms would run as RMSNorm; only its pre-norms and final norm take LayerNorm")
+	}
 	if m.Pairwise {
 		if m.Mla != nil {
 			return nil, fmt.Errorf("gpu: newDecodeRunner: pairwise RoPE on the MLA path is not implemented")

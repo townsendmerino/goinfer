@@ -188,10 +188,10 @@ func TestResidentAdmission_registryCovered(t *testing.T) {
 // `go test -run TestResidentAdmission_matrix -v` (the T logs it), then hand-verify each row before pasting: do NOT
 // auto-write it, that would restore the tautology.
 var admissionGolden = map[string][]string{
-	// Cohere / Command-R + Cohere2 / Command-R7B: FeatParallelBlock, FeatLogitScale and FeatLayerNorm (and for cohere2
-	// FeatNoPE/FeatSlidingWindow) are declared on cuda and metal. Their rotation is GPT-J pairwise and WebGPU's rope kernel
-	// is NeoX half-split, so webgpu declines (FeatPairwiseRoPE): a NeoX rotation reads near-zero cosine on the real
-	// checkpoints while flat 0.02-std fixtures read 0.9997.
+	// Cohere / Command-R + Cohere2 / Command-R7B: FeatParallelBlock, FeatLogitScale, FeatLayerNorm and FeatPairwiseRoPE (and for
+	// cohere2 FeatNoPE/FeatSlidingWindow), declared on every backend (gpu.TestCohereResidentParityWebGPU on peaked weights,
+	// gpu.TestPairwiseRoPERealWebGPU on the real Command-R7B). A NeoX rotation reads near-zero cosine on the real checkpoints
+	// while flat 0.02-std fixtures read 0.9997.
 	"cohere":      {"cuda", "metal", "webgpu"},
 	"cohere2":     {"cuda", "metal", "webgpu"},
 	"deepseek_v2": {"cuda", "metal", "webgpu"},

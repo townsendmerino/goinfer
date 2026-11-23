@@ -146,12 +146,16 @@ func TestLogitScaleResidentWebGPU(t *testing.T) {
 					d := float64(got[j]) - float64(want[j])
 					dd, bb = dd+d*d, bb+float64(want[j])*float64(want[j])
 				}
-				worst = math.Max(worst, math.Sqrt(dd/bb))
+				r := math.Sqrt(dd / bb)
+				if math.IsNaN(r) { // NaN, or an all-zero reference, is the worst reading
+					r = math.Inf(1)
+				}
+				worst = math.Max(worst, r)
 			}
 			m.Close()
 			cpu.Close()
 			t.Logf("%s int4 head %v: worst relL2 %.3g", fx, int4Head, worst)
-			if worst > 1e-3 {
+			if !(worst <= 1e-3) {
 				t.Errorf("%s int4 head %v: worst relL2 %.3g against the CPU, want <= 1e-3", fx, int4Head, worst)
 			}
 		}

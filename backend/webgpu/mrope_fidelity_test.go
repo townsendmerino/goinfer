@@ -553,7 +553,11 @@ func TestCohereResidentParityWebGPU(t *testing.T) {
 						g, r := float64(l[j]), float64(want[i][j])
 						ab, aa, bb, dd = ab+g*r, aa+g*g, bb+r*r, dd+(g-r)*(g-r)
 					}
-					cosW, relW = math.Min(cosW, ab/math.Sqrt(aa*bb)), math.Max(relW, math.Sqrt(dd/bb))
+					c, r := ab/math.Sqrt(aa*bb), math.Sqrt(dd/bb)
+					if math.IsNaN(c) || math.IsNaN(r) { // NaN, or an all-zero row, is the worst reading
+						c, r = -2, math.Inf(1)
+					}
+					cosW, relW = math.Min(cosW, c), math.Max(relW, r)
 				}
 				rd.Reset()
 				if _, err := rd.PrefillLast(context.Background(), embs[:4], 0); err == nil {
@@ -563,14 +567,14 @@ func TestCohereResidentParityWebGPU(t *testing.T) {
 			}
 			cw, rw := run(nil)
 			t.Logf("COHERE  worst cos %.6f relL2 %.3g", cw, rw)
-			if cw < cosBar || rw > relBar {
+			if !(cw >= cosBar && rw <= relBar) {
 				t.Errorf("diverges from the CPU: worst cosine %.6f (want >= %g), relL2 %.3g (want <= %g)", cw, cosBar, rw, relBar)
 			}
 			for name, p := range map[string]*bool{"NeoX rotation": &kernels.PairwiseNeoXForTest, "RMSNorm for LayerNorm": &kernels.LayerNormAsRMSForTest,
 				"MLP from the post-attention residual": &kernels.ParallelFromResidualForTest} {
 				cw, rw := run(p)
 				t.Logf("plant %-38s worst cos %.6f relL2 %.3g", name, cw, rw)
-				if cw >= cosBar && rw <= relBar {
+				if !(cw < cosBar || rw > relBar) {
 					t.Errorf("the gate is BLIND to %s: worst cosine %.6f, relL2 %.3g", name, cw, rw)
 				}
 			}
@@ -606,12 +610,19 @@ func TestPairwiseRoPERealWebGPU(t *testing.T) {
 		}
 		return b
 	}
+	ran := 0
+	t.Cleanup(func() { // a heavy run that finds no checkpoint is a failure, not a pass
+		if ran == 0 && !t.Failed() {
+			t.Errorf("no checkpoint of glm-ocr, command-r7b or aya-expanse-8b under %s: nothing was gated", filepath.Join(home, "models"))
+		}
+	})
 	for _, name := range []string{"glm-ocr", "command-r7b", "aya-expanse-8b"} {
 		t.Run(name, func(t *testing.T) {
 			dir := filepath.Join(home, "models", name)
 			if _, err := os.Stat(filepath.Join(dir, "config.json")); err != nil {
 				t.Skipf("no %s", dir)
 			}
+			ran++
 			tk, err := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
 			if err != nil {
 				t.Fatal(err)
@@ -660,6 +671,9 @@ func TestPairwiseRoPERealWebGPU(t *testing.T) {
 						ab, aa, bb = ab+float64(l[j])*float64(ref[i][j]), aa+float64(l[j])*float64(l[j]), bb+float64(ref[i][j])*float64(ref[i][j])
 					}
 					cs := ab / math.Sqrt(aa*bb)
+					if math.IsNaN(cs) { // NaN, or an all-zero row, is the worst reading
+						cs = -2
+					}
 					mean, worst = mean+cs, math.Min(worst, cs)
 					if cs < 0.95 {
 						t.Logf("  %s position %d (%s): cosine %.6f", name, i, map[bool]string{true: "prompt", false: "continuation"}[i < nPrompt], cs)
@@ -682,14 +696,15 @@ func TestPairwiseRoPERealWebGPU(t *testing.T) {
 			}
 			mean, worst, real, ties := measure()
 			t.Logf("PAIRWISE %s: %d positions, mean cos %.6f, worst %.6f; continuation flips %d near-tie, %d real", name, len(toks), mean, worst, ties, real)
-			if mean < 0.99 || worst < 0.90 || real > 0 {
+			if !(mean >= 0.99 && worst >= 0.90 && real == 0) {
 				t.Errorf("%s: mean %.6f (>= 0.99), worst %.6f (>= 0.90), %d non-tie continuation flips (0)", name, mean, worst, real)
 			}
 			kernels.PairwiseNeoXForTest = true
+			t.Cleanup(func() { kernels.PairwiseNeoXForTest = false })
 			nm, nw, _, _ := measure()
 			kernels.PairwiseNeoXForTest = false
 			t.Logf("NeoX     %s: mean cos %.6f, worst %.6f", name, nm, nw)
-			if nm >= 0.99 && nw >= 0.90 {
+			if !(nm < 0.99 || nw < 0.90) {
 				t.Errorf("%s: the gate is BLIND: with the NeoX kernels it reads mean %.6f, worst %.6f", name, nm, nw)
 			}
 		})
