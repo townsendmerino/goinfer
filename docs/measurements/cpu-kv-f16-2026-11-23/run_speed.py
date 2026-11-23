@@ -3,7 +3,8 @@
 (GOINFER_BENCH_KV=f16), one process a cell, A B B A x 3 blocks per model and depth. Run under the exclusive timing lock:
   python3 scripts/timing_lock.py run --label cpu-kv-speed -- python3 run_speed.py --bin <decoder test binary> --out DIR
 Each cell waits for a 1-minute load under 1.0, records its start state, its swap before and after and the process's peak RSS, and is VOID
-(re-run in place, listed) if it starts above load 8.0 or swap grows during it. Writes DIR/cells.tsv."""
+(re-run in place, listed) if it starts above load 8.0 or swap grows during it. Appends to DIR/cells.tsv; a re-run skips the cells it
+already holds a reading for."""
 import argparse, datetime, os, re, subprocess, sys, time
 
 MODELS = {"Q05": ("~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", "int4"),
@@ -35,6 +36,12 @@ def main():
     os.makedirs(os.path.join(a.out, "logs"), exist_ok=True)
     tsv = os.path.join(a.out, "cells.tsv")
     new = not os.path.exists(tsv)
+    done = set()  # resume: a cell with a recorded reading is not re-run
+    if not new:
+        for line in open(tsv).read().splitlines()[1:]:
+            f = line.split("\t")
+            if len(f) > 12 and re.fullmatch(r"[0-9.]+", f[12]):
+                done.add((f[1], int(f[2]), int(f[3]), int(f[4])))
     with open(tsv, "a") as out:
         if new:
             out.write("start\tmodel\tdepth\tblock\tcell\tarm\tsettle_s\tload1\tmemavail_mib\tswap_before\tswap_after\tmax_rss_kb\ttok_s\twall_s\n")
@@ -43,6 +50,8 @@ def main():
             for depth in [int(d) for d in a.depths.split(",")]:
                 for block in range(1, a.blocks + 1):
                     for cell, arm in enumerate("ABBA", 1):
+                        if (model, depth, block, cell) in done:
+                            continue
                         for attempt in range(1, 4):
                             if datetime.datetime.now().strftime("%H%M") >= "2125":
                                 print("STOP: 21:25 PT reached", flush=True)
