@@ -91,7 +91,7 @@ func (r *resident) newPrefillPass(src rowSource, startPos int, mrope [][3]int, d
 	ps.loadRows(src, residInv)
 	ps.activations(qDim, maxI)
 	ps.positions(startPos, mrope)
-	ps.uniforms(qDim)
+	uniformsOnly := ps.uniforms(qDim)
 	ps.int8KVScratch()
 	ps.attnTile = exactAttnTile(startPos + M) // > 0: the exact-attention layers take attention_prefill_tiled
 	ps.uTile = ps.scratchU32(max(ps.attnTile, 1))
@@ -104,6 +104,7 @@ func (r *resident) newPrefillPass(src rowSource, startPos int, mrope [][3]int, d
 	ps.pleScratch()
 	ps.hybridScratch()
 	ps.imageBlocks(blocks)
+	ps.scratch = ps.releaseList(residInv, uniformsOnly)
 	// planted defect (1): a shared layer attending over an empty cache instead of its source's (zero in production).
 	if emodelBatchDefect == 1 {
 		ps.zeroKV = prefillScratchU16(d, (startPos+Mpad+8)*qkvDim)
@@ -116,17 +117,49 @@ func (r *resident) newPrefillPass(src rowSource, startPos int, mrope [][3]int, d
 	return ps
 }
 
-// scratchU32 and scratchFloats allocate a per-call uniform onto the device ledger and record it for release.
-func (ps *prefillPass) scratchU32(v int) Buffer {
-	b := NewBufferU32On(mem.LineScratch, ps.d, uint32(v))
-	ps.scratch = append(ps.scratch, b)
-	return b
-}
+// scratchU32 and scratchFloats allocate a per-call uniform onto the device ledger. releaseList names it for release.
+func (ps *prefillPass) scratchU32(v int) Buffer { return NewBufferU32On(mem.LineScratch, ps.d, uint32(v)) }
 
 func (ps *prefillPass) scratchFloats(v []float32) Buffer {
-	b := NewBufferFloatsOn(mem.LineScratch, ps.d, v)
-	ps.scratch = append(ps.scratch, b)
-	return b
+	return NewBufferFloatsOn(mem.LineScratch, ps.d, v)
+}
+
+// releaseList is every buffer the pass allocated, in the order release frees them. Buffers that are the resident's
+// (uH, uHd, and uEpsX when it is r.uEps) are not in it: releasing them would corrupt the decode path. uniformsOnly holds
+// the uniforms that no field names.
+func (ps *prefillPass) releaseList(residInv float32, uniformsOnly [5]Buffer) []Buffer {
+	r := ps.r
+	uQDim, uStride, uVOff, uTotalK, uBaseK := uniformsOnly[0], uniformsOnly[1], uniformsOnly[2], uniformsOnly[3], uniformsOnly[4]
+	list := []Buffer{
+		ps.xF, ps.normF, ps.qkvF, ps.ctxF, ps.guF, ps.dqF, ps.posB, ps.moeDst,
+		ps.uM, ps.uI, ps.u2I, ps.uQkv, uQDim, uStride, ps.uKOff, uVOff, ps.uStartPos,
+		ps.uTotalQ, uTotalK, ps.uBase0, uBaseK, ps.m0, ps.m1, ps.m2, ps.dummyBias, ps.uMReal, ps.uTile,
+	}
+	if ps.pos3B != (Buffer{}) {
+		list = append(list, ps.pos3B)
+	}
+	if r.moe != nil {
+		list = append(list, ps.moeLogits, ps.moeIdx, ps.moeWgt, ps.expertIn, ps.expertDown, ps.rowIdxBuf, ps.rowWgtBuf)
+	}
+	if r.kvI8 {
+		list = append(list, ps.kScrI8, ps.vScrI8, ps.uEndI8, ps.idTab)
+	}
+	if residInv != 1 {
+		list = append(list, ps.uResidInv, ps.uEpsX)
+	}
+	if r.pleP > 0 {
+		list = append(list, ps.pleInB, ps.pleGF, ps.uP, ps.uLP)
+	}
+	if r.dnet != nil {
+		list = append(append(list, ps.dn.bufs...), ps.qgF, ps.kvF, ps.gateF, ps.u2NHhd, ps.u2KvDim, ps.uGateN)
+	}
+	if r.mamba != nil {
+		list = append(list, ps.mb.bufs...)
+	}
+	if ps.imgB != (Buffer{}) {
+		list = append(list, ps.imgB, ps.imgN)
+	}
+	return list
 }
 
 // loadRows allocates xF and converts src's rows into it as f16, scaled by residInv. The rows are read rowChunk at a time:
@@ -139,12 +172,10 @@ func (ps *prefillPass) scratchFloats(v []float32) Buffer {
 func (ps *prefillPass) loadRows(src rowSource, residInv float32) {
 	r, d, M, H := ps.r, ps.d, ps.M, ps.H
 	ps.xF = prefillScratchU16(d, ps.Mpad*H)
-	ps.scratch = append(ps.scratch, ps.xF)
 	if r.pleP > 0 {
 		LP := r.nL * r.pleP
 		ps.pleInB = d.NewBufferLenOn(mem.LineScratch, M*LP)
 		prefillScratchSeen.Add(int64(4 * M * LP))
-		ps.scratch = append(ps.scratch, ps.pleInB)
 	}
 	for lo := 0; lo < M; lo += rowChunk {
 		hi := min(lo+rowChunk, M)
@@ -170,7 +201,6 @@ func (ps *prefillPass) activations(qDim, maxI int) {
 		ps.guF = prefillScratchU16(d, Mpad*2*maxI)
 	}
 	ps.dqF = prefillScratchU16(d, Mpad*maxI)
-	ps.scratch = append(ps.scratch, ps.normF, ps.qkvF, ps.ctxF, ps.guF, ps.dqF)
 }
 
 // positions uploads the rows' positions, and their m-RoPE triples when mrope is set.
@@ -182,7 +212,6 @@ func (ps *prefillPass) positions(startPos int, mrope [][3]int) {
 	}
 	ps.posB = NewBufferUint32sOn(mem.LineScratch, d, posv)
 	prefillScratchSeen.Add(int64(4 * Mpad))
-	ps.scratch = append(ps.scratch, ps.posB)
 	if mrope != nil { // the rows' m-RoPE triples, row-major [Mpad*3]; pad rows repeat the last real row's
 		p3 := make([]uint32, Mpad*3)
 		for m := range Mpad {
@@ -190,32 +219,31 @@ func (ps *prefillPass) positions(startPos int, mrope [][3]int) {
 			p3[m*3], p3[m*3+1], p3[m*3+2] = uint32(t[0]), uint32(t[1]), uint32(t[2])
 		}
 		ps.pos3B = NewBufferUint32sOn(mem.LineScratch, d, p3)
-		ps.scratch = append(ps.scratch, ps.pos3B)
 	}
 }
 
 // uniforms allocates the pass's per-call uniforms. ps.uH and ps.uHd are the resident's, and are not released.
-func (ps *prefillPass) uniforms(qDim int) {
+func (ps *prefillPass) uniforms(qDim int) (only [5]Buffer) {
 	M, Mpad, nHhd, kvDim, qkvDim := ps.M, ps.Mpad, ps.nHhd, ps.kvDim, ps.qkvDim
 	ps.uM = ps.scratchU32(Mpad)
 	ps.uI = ps.scratchU32(ps.I)
 	ps.u2I = ps.scratchU32(2 * ps.I)
 	ps.uQkv = ps.scratchU32(qkvDim)
-	ps.scratchU32(qDim)
-	ps.scratchU32(qkvDim)
+	only[0], only[1] = ps.scratchU32(qDim), ps.scratchU32(qkvDim)
 	ps.uKOff = ps.scratchU32(nHhd)
-	ps.scratchU32(nHhd + kvDim)
+	only[2] = ps.scratchU32(nHhd + kvDim)
 	ps.uStartPos = ps.scratchU32(ps.startPos)
 	ps.uTotalQ = ps.scratchU32(nHhd)
-	ps.scratchU32(kvDim)
+	only[3] = ps.scratchU32(kvDim)
 	ps.uBase0 = ps.scratchU32(0)
-	ps.scratchU32(nHhd)
+	only[4] = ps.scratchU32(nHhd)
 	ps.m0, ps.m1, ps.m2 = ps.scratchU32(0), ps.scratchU32(1), ps.scratchU32(2)
 	ps.dummyBias = ps.scratchFloats(make([]float32, 1))
 	// L2-Metal: attention_prefill_fused's own row-count uniform — REAL M (unpadded), unlike uM
 	// above which holds Mpad for the GEMM grid. attention_prefill (the exact kernel) needs no
 	// such uniform because its Go-side dispatch grid is already sized off the real M.
 	ps.uMReal = ps.scratchU32(M)
+	return only
 }
 
 // int8KVScratch allocates, for an int8 cache, the f16 buffers each layer's rows [0, startPos+M) are dequantized into
@@ -230,7 +258,6 @@ func (ps *prefillPass) int8KVScratch() {
 	ps.kScrI8, ps.vScrI8 = prefillScratchU16(d, rows*ps.kvDim), prefillScratchU16(d, rows*ps.kvDim)
 	ps.uEndI8 = NewBufferU32On(mem.LineScratch, d, uint32(ps.startPos+ps.M))
 	ps.idTab = kvIdentityTab(d, rows)
-	ps.scratch = append(ps.scratch, ps.kScrI8, ps.vScrI8, ps.uEndI8, ps.idTab)
 }
 
 // moeScratch allocates the MoE expert-major prefill scratch, only when the model has MoE layers.
@@ -256,7 +283,6 @@ func (ps *prefillPass) moeScratch() {
 			}
 		}
 	}
-	ps.scratch = append(ps.scratch, ps.moeLogits, ps.moeIdx, ps.moeWgt, ps.expertIn, ps.expertDown, ps.rowIdxBuf, ps.rowWgtBuf)
 }
 
 // residScale allocates the scaled residual's 1/s, for residual_f16_scaled, and the eps of the norms that read the
@@ -284,7 +310,6 @@ func (ps *prefillPass) pleScratch() {
 		}
 	}
 	ps.pleGF, ps.uP, ps.uLP = prefillScratchU16(d, ps.Mpad*P), NewBufferU32On(mem.LineScratch, d, uint32(P)), NewBufferU32On(mem.LineScratch, d, uint32(LP))
-	ps.scratch = append(ps.scratch, ps.pleGF, ps.uP, ps.uLP)
 }
 
 // hybridScratch allocates a Gated-DeltaNet hybrid's mixer scratch and its gated-attention layers' [query ‖ gate]
@@ -297,11 +322,9 @@ func (ps *prefillPass) hybridScratch() {
 		ps.kvF = prefillScratchU16(d, Mpad*2*kvDim)
 		ps.gateF = prefillScratchU16(d, M*nHhd)
 		ps.u2NHhd, ps.u2KvDim, ps.uGateN = NewBufferU32On(mem.LineScratch, d, uint32(2*nHhd)), NewBufferU32On(mem.LineScratch, d, uint32(2*kvDim)), NewBufferU32On(mem.LineScratch, d, uint32(M*nHhd))
-		ps.scratch = append(append(ps.scratch, ps.dn.bufs...), ps.qgF, ps.kvF, ps.gateF, ps.u2NHhd, ps.u2KvDim, ps.uGateN)
-	}
+		}
 	if r.mamba != nil {
 		ps.mb = r.newPrefillMamba(M, Mpad)
-		ps.scratch = append(ps.scratch, ps.mb.bufs...)
 	}
 }
 
@@ -315,7 +338,6 @@ func (ps *prefillPass) imageBlocks(blocks [][2]int) {
 		flat = append(flat, uint32(b[0]), uint32(b[1]))
 	}
 	ps.imgB, ps.imgN = NewBufferUint32sOn(mem.LineScratch, ps.d, flat), NewBufferU32On(mem.LineScratch, ps.d, uint32(len(blocks)))
-	ps.scratch = append(ps.scratch, ps.imgB, ps.imgN)
 }
 
 // layerU is one attention geometry's uniforms, per layer. Every family before Gemma 4's E-models has one geometry, so
