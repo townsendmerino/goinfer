@@ -1,0 +1,58 @@
+started   2026-11-23 08:18:51 PST
+rev       018cbe74 (/Users/francistownsend-merino/goinfer-bench/wg0-mac/wt, clean); scripts from /Users/francistownsend-merino/goinfer-bench/wg0-mac/scripts
+serve     /Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-metal-018cbe74 sha256 1827e32e31a463e69aa9e518098c65e7c99578438e3f48e24490abb0a34836d0
+serve     /Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-webgpu-018cbe74 sha256 ebe60b75a623f3b15e00062e1d945ff39fbf03bcee0820ecaef8746186b3a85b
+host      MacBookPro Darwin 25.6.0 macOS 26.7.3
+gpu       Apple M1 Pro; 14; 
+aikit     v1.76.0
+therm     Note: No thermal warning level has been recorded;Note: No performance warning level has been recorded;Note: No CPU power status has been recorded;
+lock      free to this run (inherited from pid 92793 on MacBookPro, `bash /Users/francistownsend-merino/goinfer-bench/wg0-mac/scripts/run-mac.sh`, started 2026-11-23T08:18:50-08:00, 0 min ago, label 'wg0-mac') 
+steps     all
+state     load 2.95 2.46 2.06 free 77% swap 513.00 MB power Battery Power
+== fit checks 2026-11-23 08:18:51 PST load 2.95 2.46 2.06 free 77% swap 513.00 MB power Battery Power
+fit metal-0.5B: metal-resident (int4) | fit: 2 KV slots at a 4096-token cap hold 0.09 GiB KV (weights 0.44 GiB, budget 8.17 GiB, 8.08 GiB left for a request's own prefill) | KV plan: 2 conversations x 4096 positions (4 asked for; --ctx 4096)
+fit webgpu-0.5B: webgpu:metal-resident (int4) | fit: 4096-token cap needs 0.09 GiB KV (weights 0.33 GiB, budget 8.17 GiB, 8.08 GiB left for a request's own prefill) | KV plan: 4 conversations x 4096 positions (--ctx 4096)
+fit webgpu-ttft-0.5B: webgpu:metal-resident (int4) | fit: 4096-token cap needs 0.09 GiB KV (weights 0.33 GiB, budget 8.17 GiB, 8.08 GiB left for a request's own prefill) | KV plan: 4 conversations x 4096 positions (--ctx 4096)
+fit metal-1.5B: metal-resident (int4) | fit: 2 KV slots at a 4096-token cap hold 0.22 GiB KV (weights 1.12 GiB, budget 8.06 GiB, 7.84 GiB left for a request's own prefill) | KV plan: 2 conversations x 4096 positions (4 asked for; --ctx 4096)
+fit webgpu-1.5B: webgpu:metal-resident (int4) | fit: 4096-token cap needs 0.22 GiB KV (weights 0.93 GiB, budget 7.50 GiB, 7.28 GiB left for a request's own prefill) | KV plan: 4 conversations x 4096 positions (--ctx 4096)
+fit webgpu-ttft-1.5B: webgpu:metal-resident (int4) | fit: 4096-token cap needs 0.22 GiB KV (weights 0.93 GiB, budget 7.50 GiB, 7.28 GiB left for a request's own prefill) | KV plan: 4 conversations x 4096 positions (--ctx 4096)
+== fit checks done 2026-11-23 08:19:19 PST
+== longest-context probes 2026-11-23 08:19:19 PST load 2.66 2.44 2.07 free 70% swap 513.00 MB power Battery Power
+ctxfit metal-0.5B-default: ok | metal-resident (int4) | KV plan: a 32768-position pool for 2 conversations; each is guaranteed 16384, and one can use up to 32768 (4 asked for) | metal: 2 resident KV slots (Metal's default; 4 asked by default, -kv-sessions N keeps N if memory allows)
+ctxfit webgpu-0.5B-default: ok | webgpu:metal-resident (int4) | KV plan: 4 conversations x 16384 positions | fit: 16384-token cap needs 0.38 GiB KV (weights 0.33 GiB, budget 7.50 GiB, 7.12 GiB left for a request's own prefill)
+ctxfit metal-0.5B-one-32768: ok | metal-resident (int4) | KV plan: 1 conversation x 32768 positions (--ctx 32768) | fit: 32768-token cap needs 0.38 GiB KV (weights 0.44 GiB, budget 7.50 GiB, 7.12 GiB left for a request's own prefill)
+ctxfit webgpu-0.5B-one-32768: ok | webgpu:metal-resident (int4) | KV plan: 1 conversation x 16384 positions (--ctx 32768) | fit: 16384-token cap needs 0.38 GiB KV (weights 0.33 GiB, budget 7.50 GiB, 7.12 GiB left for a request's own prefill)
+ctxfit metal-1.5B-default: ok | metal-resident (int4) | KV plan: a 32768-position pool for 2 conversations; each is guaranteed 16384, and one can use up to 32768 (4 asked for) | metal: 2 resident KV slots (Metal's default; 4 asked by default, -kv-sessions N keeps N if memory allows)
+ctxfit webgpu-1.5B-default: ok | webgpu:metal-resident (int4) | KV plan: 4 conversations x 16384 positions | fit: 16384-token cap needs 0.88 GiB KV (weights 0.93 GiB, budget 7.50 GiB, 6.62 GiB left for a request's own prefill)
+ctxfit metal-1.5B-one-32768: ok | metal-resident (int4) | KV plan: 1 conversation x 32768 positions (--ctx 32768) | fit: 32768-token cap needs 0.88 GiB KV (weights 1.12 GiB, budget 7.27 GiB, 6.40 GiB left for a request's own prefill)
+ctxfit webgpu-1.5B-one-32768: ok | webgpu:metal-resident (int4) | KV plan: 1 conversation x 16384 positions (--ctx 32768) | fit: 16384-token cap needs 0.88 GiB KV (weights 0.93 GiB, budget 7.39 GiB, 6.51 GiB left for a request's own prefill)
+== longest-context probes done 2026-11-23 08:19:42 PST
+=== no page-cache eviction on macOS load 2.81 2.49 2.10 free 70% swap 513.00 MB power Battery Power
+=== settle: load 1.82 < 2.0 after 201s
+=== 2026-11-23 08:23:03 PST START decode-0.5B-128 load 1.82 2.24 2.07 free 71% swap 513.00 MB power Battery Power
+=== 2026-11-23 08:27:24 PST END decode-0.5B-128 rc=0 (261s) load 2.54 2.16 2.05 free 74% swap 513.00 MB power Battery Power
+=== no page-cache eviction on macOS load 2.54 2.16 2.05 free 74% swap 513.00 MB power Battery Power
+=== settle: load 1.83 < 2.0 after 40s
+=== 2026-11-23 08:28:04 PST START decode-0.5B-2048 load 1.83 2.03 2.01 free 75% swap 513.00 MB power Battery Power
+=== 2026-11-23 08:33:51 PST END decode-0.5B-2048 rc=0 (347s) load 1.81 1.64 1.80 free 74% swap 513.00 MB power Battery Power
+=== no page-cache eviction on macOS load 1.81 1.64 1.80 free 74% swap 513.00 MB power Battery Power
+=== settle: load 1.81 < 2.0 after 0s
+=== 2026-11-23 08:33:51 PST START decode-1.5B-128 load 1.81 1.64 1.80 free 74% swap 513.00 MB power Battery Power
+=== 2026-11-23 08:38:56 PST END decode-1.5B-128 rc=0 (305s) load 1.61 1.95 1.91 free 74% swap 513.00 MB power Battery Power
+=== no page-cache eviction on macOS load 1.61 1.95 1.91 free 74% swap 513.00 MB power Battery Power
+=== settle: load 1.61 < 2.0 after 0s
+=== 2026-11-23 08:38:56 PST START decode-1.5B-2048 load 1.61 1.95 1.91 free 74% swap 513.00 MB power Battery Power
+=== 2026-11-23 08:50:57 PST END decode-1.5B-2048 rc=0 (721s) load 1.34 1.76 1.95 free 79% swap 513.00 MB power AC Power
+=== no page-cache eviction on macOS load 1.34 1.76 1.95 free 79% swap 513.00 MB power AC Power
+=== settle: load 1.34 < 2.0 after 0s
+=== 2026-11-23 08:50:57 PST START ttft load 1.34 1.76 1.95 free 79% swap 513.00 MB power AC Power
+=== 2026-11-23 09:01:20 PST END ttft rc=0 (623s) load 1.63 1.57 1.67 free 78% swap 513.00 MB power Battery Power
+decode 0.5B @128     VALID  native 209.8  webgpu 61.2  fraction 0.292 (0.289-0.293, 4 pairs)
+decode 0.5B @2048    VALID  native 174.8  webgpu 27.8  fraction 0.159 (0.157-0.159, 4 pairs)
+decode 1.5B @128     VALID  native 99.2  webgpu 36.8  fraction 0.371 (0.370-0.377, 4 pairs)
+decode 1.5B @2048    VALID  native 91.1  webgpu 18.2  fraction 0.201 (0.195-0.206, 4 pairs)
+TTFT 0.5B @1024      VALID  native 289.1  webgpu 2739.9  fraction 0.106 (0.105-0.106, 4 pairs)
+TTFT 1.5B @1024      VALID  native 1041.7  webgpu 7811.0  fraction 0.133 (0.128-0.159, 4 pairs)
+G-WG0: every cell valid
+finished  2026-11-23 09:01:20 PST rc=0 load 1.63 1.57 1.67 free 78% swap 513.00 MB power Battery Power
+EXIT 0
