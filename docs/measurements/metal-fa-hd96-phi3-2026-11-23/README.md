@@ -1,6 +1,6 @@
 # Metal's attention_fa at head dim 96 (Phi-3 mini): registration (2026-11-23)
 
-**Status: SHIP, 2026-11-23: gates 1, 2 and 3 pass (gate 3 at 1.292× at depth 3,900); the default is Francis's call. Registered
+**Status: SHIP, 2026-11-23: gates 1, 2 and 3 pass (gate 3 at 1.292× at depth 3,900); on by default at a context of at most 4,096 (Francis, 2026-11-23, § "Default"). Registered
 2026-11-23, before any gate reading.** Owner's go: Francis, 2026-11-23 ~08:45 PST ("let's finish the
 performance and webgpu parts" of the fresh-eyes review ledger), relayed by the coordinator. Perf review finding 10. Gates in order,
 each passing before the next, fixed N, no early stop. If it ships it lands behind the existing opt-in `--flash-decode-hd96`
