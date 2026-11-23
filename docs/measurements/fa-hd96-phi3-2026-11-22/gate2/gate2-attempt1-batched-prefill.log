@@ -1,0 +1,11 @@
+queued for the lock 2026-11-22 18:25:46 PST load 3.42 8.42 12.46 MemAvailable 58800 MiB gpu /usr/bin/kwin_wayland, 19 MiB;/tmp/go-build2775957082/b293/cuda.test, 76 MiB;
+gate start (lock held) 2026-11-22 18:49:07 PST load 0.77 3.52 5.70 MemAvailable 61477 MiB
+=== RUN   TestFlashDecodeGateVsReference
+=== RUN   TestFlashDecodeGateVsReference/P3M-K3900
+cuda: prefill width 2048 rows (282 MiB of scratch; 3249 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    flash_decode_gate_test.go:280: PrefillLast (lane split=0): cuda prefill: per-32 activation quantization has no batched kernels yet: cuda prefill: batched path declined (arch/geometry)
+--- FAIL: TestFlashDecodeGateVsReference (2.82s)
+    --- FAIL: TestFlashDecodeGateVsReference/P3M-K3900 (2.82s)
+FAIL
+ledger: 1 device(s) released in this run
+gate end 2026-11-22 18:49:10 PST rc=0

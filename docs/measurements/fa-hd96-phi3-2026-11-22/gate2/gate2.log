@@ -1,0 +1,22 @@
+queued for the lock 2026-11-22 18:50:06 PST load 0.43 2.96 5.38 MemAvailable 61325 MiB gpu /usr/bin/kwin_wayland, 19 MiB;
+gate start (lock held) 2026-11-22 18:50:06 PST load 0.43 2.96 5.38 MemAvailable 61302 MiB
+=== RUN   TestFlashDecodeGateVsReference
+=== RUN   TestFlashDecodeGateVsReference/P3M-K3900
+cuda: prefill width 2048 rows (282 MiB of scratch; 3249 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    flash_decode_gate_test.go:283: P3M K=3900: A/A bit-identical over 64 rows
+[fa-gate] P3M K=3900 prompt  1/10 exact(agree=93.8% HF=0/64 KL=0.00207) lane(agree=92.2% HF=0/64 KL=0.00208) diff(agree=-1.56pt KL=+0.00001) rowsDiffering=63/63 elapsed=2m18s
+[fa-gate] P3M K=3900 prompt  2/10 exact(agree=96.9% HF=0/64 KL=0.00305) lane(agree=95.3% HF=0/64 KL=0.00316) diff(agree=-1.56pt KL=+0.00012) rowsDiffering=63/63 elapsed=3m50s
+[fa-gate] P3M K=3900 prompt  3/10 exact(agree=96.9% HF=0/64 KL=0.00407) lane(agree=96.9% HF=0/64 KL=0.00325) diff(agree=+0.00pt KL=-0.00083) rowsDiffering=63/63 elapsed=5m22s
+[fa-gate] P3M K=3900 prompt  4/10 exact(agree=98.4% HF=0/64 KL=0.00186) lane(agree=98.4% HF=0/64 KL=0.00203) diff(agree=+0.00pt KL=+0.00017) rowsDiffering=63/63 elapsed=6m54s
+[fa-gate] P3M K=3900 prompt  5/10 exact(agree=100.0% HF=0/64 KL=0.00570) lane(agree=100.0% HF=0/64 KL=0.00261) diff(agree=+0.00pt KL=-0.00309) rowsDiffering=63/63 elapsed=8m26s
+[fa-gate] P3M K=3900 prompt  6/10 exact(agree=100.0% HF=0/64 KL=0.00313) lane(agree=100.0% HF=0/64 KL=0.00321) diff(agree=+0.00pt KL=+0.00007) rowsDiffering=63/63 elapsed=9m58s
+[fa-gate] P3M K=3900 prompt  7/10 exact(agree=100.0% HF=0/64 KL=0.00149) lane(agree=100.0% HF=0/64 KL=0.00145) diff(agree=+0.00pt KL=-0.00004) rowsDiffering=63/63 elapsed=11m30s
+[fa-gate] P3M K=3900 prompt  8/10 exact(agree=100.0% HF=0/64 KL=0.00318) lane(agree=100.0% HF=0/64 KL=0.00184) diff(agree=+0.00pt KL=-0.00134) rowsDiffering=63/63 elapsed=13m2s
+[fa-gate] P3M K=3900 prompt  9/10 exact(agree=100.0% HF=0/64 KL=0.00276) lane(agree=95.3% HF=0/64 KL=0.00280) diff(agree=-4.69pt KL=+0.00003) rowsDiffering=63/63 elapsed=14m34s
+[fa-gate] P3M K=3900 prompt 10/10 exact(agree=100.0% HF=0/64 KL=0.00416) lane(agree=100.0% HF=0/64 KL=0.00757) diff(agree=+0.00pt KL=+0.00341) rowsDiffering=63/63 elapsed=16m6s
+=== FLASH-DECODE GATE P3M K=3900 (DECISION cell, set b, n=10 x 64 positions, S=16): exact(meanAgree=98.59% HF=0/640 worstGap=0.800% meanKL=0.003148) lane(meanAgree=97.81% HF=0/640 worstGap=0.800% meanKL=0.002999) pairedWins=7/10 rowsDiffering=630 critA(amended)=true [strict true] critB=true critC=true KLratio=0.9529 — PASSES ===
+--- PASS: TestFlashDecodeGateVsReference (968.41s)
+    --- PASS: TestFlashDecodeGateVsReference/P3M-K3900 (968.41s)
+PASS
+ledger: 1 device(s) released in this run
+gate end 2026-11-22 19:06:14 PST rc=0

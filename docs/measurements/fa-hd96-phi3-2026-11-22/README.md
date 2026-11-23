@@ -68,3 +68,26 @@ the gate about 5 min under the exclusive lock. Gate 3 about 25 min in-process an
   seed row identical across arms) still tests what it did. The other cells keep `PrefillLast`.
 - **Unchanged:** the cell, K = 3,900, set B, the reference, the preconditions, criteria (a), (b) and (c) and their ambiguous band.
 - **Cost:** about 21 sequential prefills of 3,900 positions (10 prompts × 2 arms, plus the A/A), about 25 min under the exclusive lock.
+
+## Gate 2, 2026-11-22 18:50–19:06 PST (nobara, RTX 2070 SUPER, driver 595.112.07): **PASS** by the registered rule
+
+- **Run.** The CPU f32 reference (`TestPrefillGateReference` P3M, K = 3,900, set B) held the lock shared, 17:19–18:23 PST. The gate,
+  `TestFlashDecodeGateVsReference` `P3M:3900` at `8c4b42ab7` with the addendum's sequential seed, held it exclusive, 18:50:06–19:06:14 PST.
+  - It waited behind a night-runner job, `cuda-device-suite`, which held the lock from 18:24 to 18:49.
+  - It started at a 1-minute load of 0.43 with 61,302 MiB available, with kwin_wayland holding 19 MiB of the card.
+  - Logs: [`gate2/gate2.log`](gate2/gate2.log), `gate2/p3m-refs.log.gz`, and the first launch, `gate2-attempt1-batched-prefill.log`
+    (the addendum's cause).
+- **Preconditions held:** A/A bit-identical over 64 rows; the lane launched; the seed rows were identical. All 630 continuation rows
+  differ from exact's.
+
+| | exact | lane (hd-96 flash-decode) |
+|---|---|---|
+| mean teacher-forced agreement | 98.59% | 97.81% |
+| hard flips | 0 / 640 | 0 / 640 |
+| mean KL(reference ‖ arm) | 0.003148 | 0.002999 |
+
+- **(a) hard flips: PASS** on the strict reading too, 0 against 0.
+- **(b) agreement: PASS.** The lane is −0.78 pt from exact, inside the −1.0 bar and 0.02 pt short of the parked zone (−0.80 to
+  −1.0), so close to the line. Paired wins are 7 of 10.
+- **(c) KL: PASS.** The ratio is 0.9529, under 1.10 and outside the 1.05–1.10 band.
+- **Verdict: PASSES.** Gate 3 runs next.
