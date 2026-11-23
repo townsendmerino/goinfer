@@ -131,3 +131,18 @@ the gate about 5 min under the exclusive lock. Gate 3 about 25 min in-process an
   refused at load 1.39, raised by the probe's two loads, and measured nothing. The script now waits for load under 0.9 after the probe
   too, as it does before it.
 - **Unchanged:** the cell, its depths, runs, order, rule and grader.
+
+### Gate 3, served cell: not yet read; owed tomorrow by day
+
+- **Attempt 4, 20:02–20:35 PST: VOID, measured nothing.** The probe passed: the lane arm launched `faCombine`, the exact arm `bAttn`.
+  Then every cell's server refused to start (`gate3/served-attempt4/`). The script, copied from OP1-o2's, set `BENCH_REQUIRE_BACKEND=1`,
+  and serve's `--require-backend` refuses a load that declines any path. Phi-3 at q4k declines the batched prefill by design ("prefill
+  path: sequential"). The script now drops it. The harness's decode-path gate still voids a cell that does not decode `cuda-resident
+  (q4k)`.
+- **Attempts 2 and 3 (20:00 and 20:01 PST)** were refused before timing anything: bench_peer's idle preflight at load 1.39, then no `go`
+  on PATH for its memory reading (`served-attempt2-*.log`, `served-attempt3-*.log`).
+- **Why not tonight.** At 20:08 PST Francis moved the C12 runs to start as soon as nobara's lock is free, so this session does not take
+  the lock again tonight. The served cell runs tomorrow by day: `run_gate3_served.sh` as it stands, with its registered rule (SHIP at a
+  served median ≥ 1.02 at 3,900 and ≥ 0.98 at 128).
+- **Where gate 3 stands:** in-process, 1.160× at 3,900 (10/10 pairs) and flat at 128. The registered SHIP decision waits for the served
+  cell.

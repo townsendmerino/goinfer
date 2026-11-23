@@ -21,7 +21,7 @@ python3 "$HERE/probe_lane_cost.py" "$BIN" "$OUT" || { echo "!! the arms did not 
 for _ in $(seq 1 90); do awk '{exit !($1 < 0.9)}' /proc/loadavg && break; sleep 10; done   # the probe's loads, settled before bench_peer's idle preflight
 rc=0
 (cd "$REPO" && env BENCH_ENGINES=goinfer,goinfer_old BENCH_BACKENDS=cuda BENCH_DEPTH_BACKEND=cuda BENCH_MODELS=phi3-mini BENCH_DEPTHS=3900 \
-  BENCH_QUANT_OVERRIDE="phi3-mini=default" BENCH_RUNS=2 BENCH_ABBA=1 BENCH_REQUIRE_BACKEND=1 BENCH_SERVE_LOG_DIR="$OUT/serve-logs" BENCH_LOAD_TIMEOUT=240 \
+  BENCH_QUANT_OVERRIDE="phi3-mini=default" BENCH_RUNS=2 BENCH_ABBA=1 BENCH_SERVE_LOG_DIR="$OUT/serve-logs" BENCH_LOAD_TIMEOUT=240 \
   GOINFER_SERVE_CUDA="$BIN" GOINFER_SERVE_CUDA_OLD="$BIN" BENCH_GOINFER_ARGS="-flash-decode-hd96" BENCH_GOINFER_OLD_ARGS="-flash-decode-hd96=false" \
   python3 -u scripts/bench_peer.py "$OUT/decode-cuda-all.json") 2>&1 | tee "$OUT/decode-cuda.log"
 [ "${PIPESTATUS[0]}" = 0 ] && [ -s "$OUT/decode-cuda-all.json" ] || { echo "!! the run failed or wrote no results (bench_peer exits 0 when it refuses a busy box)"; rc=1; }
