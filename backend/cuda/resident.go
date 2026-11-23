@@ -550,6 +550,7 @@ type cudaResident struct {
 	attnCap        float32 // Gemma 2 attention-score softcap (50); 0 ⇒ none. The covered kernels' capped variants take it as an argument (withCap).
 	faSoftcap      bool    // a capped layer may take the flash-decode lane's capped variant (decoder.Options.FlashDecodeSoftcap); off, it decodes on split-KV
 	faHD96         bool    // a head-dim-96 layer may take the flash-decode lane (fa_partial_96); off, it decodes on the exact path
+	faHD96Default  bool    // faHD96 is the caller's default: it applies only while ctxCap is at most flashDecodeHD96DefaultMaxCtx
 	// attnTempBeta/attnTempOrigMaxPos (Ministral 3, FeatAttnTemp): the raw
 	// params behind the post-RoPE query scale (decoder.Model.AttnTempParams), 0 for every family without it.
 	// Recomputed into qTempScale per decode call (rope_kv's parameter) or passed raw into rope_kv_batched, which
