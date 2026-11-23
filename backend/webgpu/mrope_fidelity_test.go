@@ -5,6 +5,7 @@ package webgpu
 import (
 	"bufio"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
@@ -433,4 +434,145 @@ func b2i(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// cohPeaked copies a tiny safetensors fixture with every 2-D F32 tensor scaled by factor, as Metal's and CUDA's pairwise
+// gates do: the committed fixtures' ~0.02-std weights give nearly uniform attention, where a wrong rotation hides.
+func cohPeaked(t *testing.T, src string, factor float32) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(src, "model.safetensors"))
+	if err != nil {
+		t.Skipf("no fixture %s: %v", src, err)
+	}
+	n := binary.LittleEndian.Uint64(raw[:8])
+	var hdr map[string]json.RawMessage
+	if err := json.Unmarshal(raw[8:8+n], &hdr); err != nil {
+		t.Fatal(err)
+	}
+	data, scaled := raw[8+n:], 0
+	for name, h := range hdr {
+		if name == "__metadata__" {
+			continue
+		}
+		var e struct {
+			Dtype   string   `json:"dtype"`
+			Shape   []int    `json:"shape"`
+			Offsets [2]int64 `json:"data_offsets"`
+		}
+		if err := json.Unmarshal(h, &e); err != nil {
+			t.Fatal(err)
+		}
+		if len(e.Shape) != 2 {
+			continue
+		}
+		if e.Dtype != "F32" {
+			t.Fatalf("tensor %s is %s: F32 only", name, e.Dtype)
+		}
+		for off := e.Offsets[0]; off < e.Offsets[1]; off += 4 {
+			binary.LittleEndian.PutUint32(data[off:], math.Float32bits(math.Float32frombits(binary.LittleEndian.Uint32(data[off:]))*factor))
+		}
+		scaled++
+	}
+	if scaled < 8 {
+		t.Fatalf("scaled only %d tensors", scaled)
+	}
+	dst := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dst, "model.safetensors"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"config.json", "generation_config.json"} {
+		if b, err := os.ReadFile(filepath.Join(src, f)); err == nil {
+			if err := os.WriteFile(filepath.Join(dst, f), b, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	return dst
+}
+
+// TestCohereResidentParityWebGPU is Metal's G-PR2 on WebGPU: Cohere (cohere-tiny) and Cohere2 (cohere2-tiny: sliding window and
+// a NoPE global layer), every 2-D weight scaled by 12.5 so attention is peaked, resident at int8int8 against the CPU int8int8
+// over 40 decoded positions. Bars, Metal's: worst cosine >= 0.995 and relL2 <= 0.15. Each plant must miss them: the NeoX
+// rotation (kernels.PairwiseNeoXForTest), RMSNorm in LayerNorm's place (kernels.LayerNormAsRMSForTest), and the parallel
+// block's MLP fed from the post-attention residual (kernels.ParallelFromResidualForTest). The batched prefill declines.
+func TestCohereResidentParityWebGPU(t *testing.T) {
+	if c, err := New(); err != nil {
+		t.Skipf("no webgpu: %v", err)
+	} else {
+		c.Close()
+	}
+	const n, cosBar, relBar = 40, 0.995, 0.15
+	for _, fx := range []string{"cohere-tiny", "cohere2-tiny"} {
+		t.Run(fx, func(t *testing.T) {
+			ckpt := cohPeaked(t, filepath.Join("../../testdata", fx), 12.5)
+			cpu, err := decoder.Load(ckpt, decoder.Options{Backend: "cpu", Quant: "int8int8"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer cpu.Close()
+			_, _, _, _, _, _, vocab := cpu.Dims()
+			toks := make([]int, n)
+			for i := range toks {
+				toks[i] = (i*37 + 3) % vocab
+			}
+			c := cpu.NewCache(n)
+			want := make([][]float32, n)
+			for i, tok := range toks {
+				l, err := cpu.ForwardForTest(tok, c)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want[i] = append([]float32(nil), l...)
+			}
+			run := func(plant *bool) (cosW, relW float64) {
+				if plant != nil {
+					*plant = true
+					defer func() { *plant = false }()
+				}
+				m, err := decoder.Load(ckpt, decoder.Options{Backend: "webgpu", Quant: "int8int8"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer m.Close()
+				rd, ok := m.ResidentForwardForTest().(*residentDecoder)
+				if !ok || !rd.rm.LayerNorm || !rd.rm.Parallel || !rd.rm.Pairwise {
+					t.Fatalf("not resident with LayerNorm, the parallel block and pairwise RoPE: %s", m.ResidentDecline())
+				}
+				rd.Reset()
+				cosW, relW = 1, 0
+				embs := make([][]float32, n)
+				for i, tok := range toks {
+					embs[i] = m.EmbedResidentForTest(tok)
+					l, err := rd.Forward(embs[i], i)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var ab, aa, bb, dd float64
+					for j := range l {
+						g, r := float64(l[j]), float64(want[i][j])
+						ab, aa, bb, dd = ab+g*r, aa+g*g, bb+r*r, dd+(g-r)*(g-r)
+					}
+					cosW, relW = math.Min(cosW, ab/math.Sqrt(aa*bb)), math.Max(relW, math.Sqrt(dd/bb))
+				}
+				rd.Reset()
+				if _, err := rd.PrefillLast(context.Background(), embs[:4], 0); err == nil {
+					t.Error("the batched prefill ran on a LayerNorm / parallel-block model")
+				}
+				return cosW, relW
+			}
+			cw, rw := run(nil)
+			t.Logf("COHERE  worst cos %.6f relL2 %.3g", cw, rw)
+			if cw < cosBar || rw > relBar {
+				t.Errorf("diverges from the CPU: worst cosine %.6f (want >= %g), relL2 %.3g (want <= %g)", cw, cosBar, rw, relBar)
+			}
+			for name, p := range map[string]*bool{"NeoX rotation": &kernels.PairwiseNeoXForTest, "RMSNorm for LayerNorm": &kernels.LayerNormAsRMSForTest,
+				"MLP from the post-attention residual": &kernels.ParallelFromResidualForTest} {
+				cw, rw := run(p)
+				t.Logf("plant %-38s worst cos %.6f relL2 %.3g", name, cw, rw)
+				if cw >= cosBar && rw <= relBar {
+					t.Errorf("the gate is BLIND to %s: worst cosine %.6f, relL2 %.3g", name, cw, rw)
+				}
+			}
+		})
+	}
 }

@@ -293,7 +293,15 @@ type RunModel struct {
 	// Pairwise (decoder.FeatPairwiseRoPE) binds the pairwise twins of the decode rope kernels (pairwise.go) in place of the
 	// NeoX ones; the batched prefill declines (RunModelToPrefill).
 	Pairwise bool
+	// LayerNorm (decoder.FeatLayerNorm, bias-free) runs every pre-norm and the final norm as LayerNorm
+	// (LayerNormQuantWGSL); Parallel (decoder.FeatParallelBlock) feeds the MLP the attention's normed input, so a layer
+	// carries no MlpNorm. The batched prefill declines both (RunModelToPrefill).
+	LayerNorm, Parallel bool
 }
+
+// The plants of the Cohere gates, read at newDecodeRunner: LayerNormAsRMSForTest binds RMSNorm for a LayerNorm model, and
+// ParallelFromResidualForTest feeds a parallel block's MLP the post-attention residual, normed again.
+var LayerNormAsRMSForTest, ParallelFromResidualForTest bool
 
 // MlaRunParams carries the model-level MLA geometry (uniform across layers). Per-layer
 // weights + the latent cache live on runLayer. latDim = kvLoRARank + qkRope is the
@@ -443,6 +451,12 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 		ensures = append(ensures, c.ensureMambaConv, c.ensureDeltaRule, c.ensureDeltaNorm,
 			c.ensureDeltaGates, c.ensureDeltaGNorm, c.ensureDeltaQSplit, c.ensureDeltaAttnGate)
 	}
+	if m.LayerNorm {
+		ensures = append(ensures, c.ensureLayerNorm)
+	}
+	if (m.LayerNorm || m.Parallel) && (m.Moe != nil || m.G4moe || m.Mla != nil || m.Mamba != nil || m.Dnet != nil || m.PleDim > 0 || m.PostOnlyNorm) {
+		return nil, fmt.Errorf("gpu: newDecodeRunner: LayerNorm and the parallel block are implemented on the dense attention path only")
+	}
 	if m.Pairwise {
 		if m.Mla != nil {
 			return nil, fmt.Errorf("gpu: newDecodeRunner: pairwise RoPE on the MLA path is not implemented")
@@ -529,7 +543,11 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 		// padK (a multiple of 16) under-sizes it when K%32 is 1..16: an OOB read, and the int4 zero-pad nibbles decode to −8.
 		q, s := storF(kp/4), storF(1)
 		p := uni([]uint32{uint32(K), F32bits(eps), BoolU32(addOne), uint32(kp)})
-		add(c.rmsQuantPipeline, bind(c.rmsQuantLayout, in, w, q, s, p), 1, 1)
+		pl, ly := c.rmsQuantPipeline, c.rmsQuantLayout
+		if m.LayerNorm && !LayerNormAsRMSForTest { // FeatLayerNorm: the same bindings, LayerNorm in place of RMSNorm
+			pl, ly = c.layerNormQuant.pl, c.layerNormQuant.ly
+		}
+		add(pl, bind(ly, in, w, q, s, p), 1, 1)
 		return q, s
 	}
 	// noAttnSinks is the fallback bound for a runLayer that leaves attnSinks nil, as every hand-built runLayer literal in the
@@ -1192,6 +1210,7 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 	}
 	for i := range m.Layers {
 		lw := &m.Layers[i]
+		var parAq, parAs *wgpu.Buffer // the attention's quantized input, which a parallel block's MLP reads too
 		if ssmStopLayer >= 0 && i > ssmStopLayer {
 			break // layer-sweep seam: logits from xd after this layer
 		}
@@ -1313,6 +1332,7 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 			} else {
 				aq, as = rmsQuant(r.xd, lw.AttnNorm, hidden)
 			}
+			parAq, parAs = aq, as
 			// Resolve this layer's attention geometry: its own head_dim/KV-heads/rotaryDim, or the model-level shape when the layer
 			// carries no override. geomFor dedups by value, so uniform models reuse one geom.
 			ghd, gnKV, ghalf := hd, nKV, half
@@ -1529,7 +1549,11 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 			continue
 		}
 		var mq, ms *wgpu.Buffer
-		if lw.MlpNorm == nil { // FeatPostOnlyNorm (Olmo 3 / Olmo Hybrid full-attn): no pre-norm, quantize raw residual
+		if m.Parallel && ParallelFromResidualForTest {
+			mq, ms = rmsQuant(r.xd, lw.AttnNorm, hidden)
+		} else if m.Parallel { // FeatParallelBlock: the MLP reads the attention's normed input, quantized once
+			mq, ms = parAq, parAs
+		} else if lw.MlpNorm == nil { // FeatPostOnlyNorm (Olmo 3 / Olmo Hybrid full-attn): no pre-norm, quantize raw residual
 			mq, ms = quant(r.xd, hidden)
 		} else {
 			mq, ms = rmsQuant(r.xd, lw.MlpNorm, hidden)

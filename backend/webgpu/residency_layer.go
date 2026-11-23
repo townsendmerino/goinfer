@@ -733,7 +733,10 @@ func (bs *webgpuBuild) uploadLayers() error {
 			if rl.AttnNorm, e = bs.up32(lw.PreAttnNorm); e != nil {
 				return e
 			}
-			if !isG4MoE { // a Gemma 4 MoE layer's feed-forward norms are its block's own
+			if len(lw.PreAttnNormBias) > 0 || len(lw.PreMLPNormBias) > 0 {
+				return fmt.Errorf("gpu: layer %d: a LayerNorm bias is not implemented on webgpu", i)
+			}
+			if !isG4MoE && !m.BackendView().ParallelBlock() { // a Gemma 4 MoE layer's feed-forward norms are its block's own; a parallel block has none
 				if rl.MlpNorm, e = bs.up32(lw.PreMLPNorm); e != nil {
 					return e
 				}

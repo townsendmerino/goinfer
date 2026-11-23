@@ -192,8 +192,8 @@ var admissionGolden = map[string][]string{
 	// FeatNoPE/FeatSlidingWindow) are declared on cuda and metal. Their rotation is GPT-J pairwise and WebGPU's rope kernel
 	// is NeoX half-split, so webgpu declines (FeatPairwiseRoPE): a NeoX rotation reads near-zero cosine on the real
 	// checkpoints while flat 0.02-std fixtures read 0.9997.
-	"cohere":      {"cuda", "metal"},
-	"cohere2":     {"cuda", "metal"},
+	"cohere":      {"cuda", "metal", "webgpu"},
+	"cohere2":     {"cuda", "metal", "webgpu"},
 	"deepseek_v2": {"cuda", "metal", "webgpu"},
 	"deepseek_v3": {"cuda", "metal", "webgpu"},
 	"flint":       {"cuda", "metal", "webgpu"},
@@ -429,6 +429,7 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 			FeatGemma4EModel,                            // gpu's TestGemma4EModel_webgpuResidentParity and its planted defects
 			FeatNoPE, FeatPostOnlyNorm, FeatQKNormWhole, // Olmo Hybrid / Olmo 3 / SmolLM3 (gpu.TestOlmoHybridResidentParityWebGPU)
 			FeatPairwiseRoPE, FeatPairwiseMRoPE, // the pairwise rope twins (gpu.TestGlmOcrResidentParityWebGPU, kernels.TestPairwiseTwins_matchGPTJ)
+			FeatLayerNorm, FeatParallelBlock, // LayerNormQuantWGSL and the shared MLP input (gpu.TestCohereResidentParityWebGPU)
 		},
 	}
 	// CUDA's admission reads its operation table; the evidence each
@@ -568,9 +569,8 @@ func TestPairwiseRoPE_derivationScope(t *testing.T) {
 	}
 }
 
-// TestPairwiseRoPE_admittedOnEveryBackend: every resident backend declares the pairwise rope kernels, so GLM-OCR (whose
-// only other need is the sandwich norm) is admitted on each, and Cohere / Cohere2 on WebGPU are declined for what WebGPU
-// still lacks (layer-norm, parallel-block), with pairwise-rope no longer among the reasons.
+// TestPairwiseRoPE_admittedOnEveryBackend: every resident backend declares the pairwise rope kernels and what the pairwise
+// families need besides, so Cohere, Cohere2 and GLM-OCR are admitted on each, and no decline names pairwise-rope.
 func TestPairwiseRoPE_admittedOnEveryBackend(t *testing.T) {
 	for _, fam := range []string{"cohere", "cohere2", "glm_ocr"} {
 		arch, _, err := resolveArchitecture(representativeConfig(fam))
@@ -585,8 +585,8 @@ func TestPairwiseRoPE_admittedOnEveryBackend(t *testing.T) {
 			if strings.Contains(why, string(FeatPairwiseRoPE)) {
 				t.Errorf("%s on %s: the decline %q still names %q", fam, be, why, FeatPairwiseRoPE)
 			}
-			if wantOK := fam == "glm_ocr" || be != "webgpu"; ResidentEligible(arch, be) != wantOK {
-				t.Errorf("%s on %s: eligible %v, want %v (%s)", fam, be, !wantOK, wantOK, why)
+			if !ResidentEligible(arch, be) {
+				t.Errorf("%s declined on %s: %s", fam, be, why)
 			}
 		}
 	}
