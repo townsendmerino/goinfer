@@ -50,9 +50,9 @@
     },
     {
       "Name": "flash-decode-hd96",
-      "Usage": "Off by default. CUDA only: let a model with head dimension 96 (Phi-3 mini) decode on the flash-decode lane, on its hd-96 kernels, once a layer attends 2048 keys or more, instead of the exact attention path. Its outputs differ from the exact path's (docs/measurements/fa-hd96-phi3-2026-11-22/README.md); no effect at another head dim or off CUDA.",
+      "Usage": "On by default at a context of at most 4096; --flash-decode-hd96 turns it on at any context, =false off. CUDA only: a model with head dimension 96 (Phi-3 mini) decodes on the flash-decode lane, on its hd-96 kernels, once a layer attends 2048 keys or more, instead of the exact attention path. Its outputs differ from the exact path's, inside the lane's fidelity gate, and it costs no memory (docs/measurements/fa-hd96-phi3-2026-11-22/README.md); no effect at another head dim or off CUDA.",
       "DefValue": "false",
-      "Type": "*flag.boolValue"
+      "Type": "loadflags.givenBool"
     },
     {
       "Name": "flash-decode-softcap",
@@ -190,9 +190,9 @@
     },
     {
       "Name": "flash-decode-hd96",
-      "Usage": "Off by default. CUDA only: let a model with head dimension 96 (Phi-3 mini) decode on the flash-decode lane, on its hd-96 kernels, once a layer attends 2048 keys or more, instead of the exact attention path. Its outputs differ from the exact path's (docs/measurements/fa-hd96-phi3-2026-11-22/README.md); no effect at another head dim or off CUDA.",
+      "Usage": "On by default at a context of at most 4096; --flash-decode-hd96 turns it on at any context, =false off. CUDA only: a model with head dimension 96 (Phi-3 mini) decodes on the flash-decode lane, on its hd-96 kernels, once a layer attends 2048 keys or more, instead of the exact attention path. Its outputs differ from the exact path's, inside the lane's fidelity gate, and it costs no memory (docs/measurements/fa-hd96-phi3-2026-11-22/README.md); no effect at another head dim or off CUDA.",
       "DefValue": "false",
-      "Type": "*flag.boolValue"
+      "Type": "loadflags.givenBool"
     },
     {
       "Name": "flash-decode-softcap",
