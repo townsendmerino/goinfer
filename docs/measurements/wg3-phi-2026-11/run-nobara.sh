@@ -17,6 +17,7 @@ for arm in base head; do
   rev=$([ $arm = base ] && echo $BASE || echo $HEAD)
   wt=$W/wt-$arm
   [ -d "$wt" ] || git -C "$HERE" worktree add -q --detach "$wt" "$rev" || exit 2
+  git -C "$wt" checkout -q --detach "$rev" || exit 2
   [ "$(git -C "$wt" rev-parse HEAD)" = "$(git -C "$HERE" rev-parse "$rev")" ] || { echo "FATAL: $wt is not at $rev"; exit 2; }
   [ -z "$(git -C "$wt" status --porcelain --untracked-files=no)" ] || { echo "FATAL: $wt has tracked changes"; exit 2; }
   (cd "$wt" && bash scripts/make_work.sh >/dev/null && CGO_ENABLED=1 go build -tags gpu -o "$W/bin/serve-webgpu-$arm" ./backend/webgpu/cmd/serve) || exit 2
