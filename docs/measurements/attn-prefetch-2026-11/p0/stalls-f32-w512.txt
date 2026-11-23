@@ -1,0 +1,5 @@
+launch grid  dur_ms  ld_stall%  long_sb%  lg_thr%  barrier%  tensor%  B/ld  ld_inst   warps_active%  regs  top other
+     0 (12, 4, 1)   1.145      23.6      6.6     17.1       2.8    20.76 21.61    370560          25.0   224  wait 17.3 math_pipe_throttle 16.4 selected 12.7 branch_resolving 8.8 no_instruction 8.5
+     1 (12, 4, 1)   1.153      23.6      6.5     17.1       2.8    20.72 21.57    370560          25.0   224  wait 17.4 math_pipe_throttle 16.4 selected 12.7 branch_resolving 8.8 no_instruction 8.3
+     2 (12, 4, 1)   1.137      23.6      6.5     17.0       2.8    20.74 21.61    370560          25.0   224  wait 17.4 math_pipe_throttle 16.4 selected 12.8 branch_resolving 8.9 no_instruction 8.3
+     3 (12, 4, 1)   1.134      23.6      6.7     16.9       2.8    20.75 21.62    370560          25.0   224  wait 17.4 math_pipe_throttle 16.4 selected 12.7 branch_resolving 8.8 no_instruction 8.2

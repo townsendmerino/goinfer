@@ -32,7 +32,6 @@ backend/cuda/ksb8_test.go 1 -- raw reads before the ratchet; move to testgate.Re
 backend/cuda/ksh6c_margin_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 backend/cuda/ksh6_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 backend/cuda/kso1c_fidelity_test.go 4 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
-backend/cuda/kso1c_resident_test.go 1 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 backend/cuda/kv0_invariance_test.go 2 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 backend/cuda/kv16_gate_test.go 2 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched
 backend/cuda/kv2_classes_test.go 3 -- raw reads before the ratchet; move to testgate.RequireHeavy when next touched

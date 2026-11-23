@@ -1,0 +1,2 @@
+2026-11-23 08:40:50 -0800 Assertions          	Summary- [System: PrevIdle DeclUser kDisp] Using AC(Charge: 88)          
+2026-11-23 08:55:53 -0800 Assertions          	Summary- [System: PrevIdle DeclUser kDisp] Using Batt(Charge: 91)          
