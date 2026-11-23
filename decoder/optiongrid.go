@@ -152,8 +152,8 @@ var ogGrid = map[string]map[ogPath]ogCell{
 	}, ogUntestedCell()),
 	"ActQuantGroup": ogFill(map[ogPath]ogCell{
 		pathCPUDecode: ogTestedBy("TestActQuantGroup_perModel"),
-		// Tested on CUDA, the one resident with per-group activation scales. Metal and WebGPU decline the load to the CPU
-		// (actGroupResidentDecline).
+		// Tested on CUDA and WebGPU, the residents with per-group activation scales (WebGPU's twin:
+		// TestActG32_phi3TinyResidentMatchesCPU). Metal declines the load to the CPU (actGroupResidentDecline).
 		pathResidentDecode:   ogTestedBy("TestActGroup_phi3ResidentMatchesCPU"),
 		pathResidentPrefill:  ogDeclinedAt("actGroupResidentDecline", "TestOptionPathMetal_actQuantGroupDeclines"),
 		pathCPUBatchDecode:   ogTestedBy("TestOptionPath_cpuBatchedDecode"),

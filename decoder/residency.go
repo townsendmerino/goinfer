@@ -267,20 +267,41 @@ func (m *Model) decodeRunnerDecline() string {
 	return admitRunner(f, f.Arch.runnerShapeDeclineSSM(f.SSMResident))
 }
 
-// actGroupResidentDecline is the ActQuantGroup gate (option-path admission finding 1, 2026-10-08,
-// ): per-group activation scales are implemented by
-// CUDA residency only (actgroup.cu). Metal's and WebGPU's projections read per-vector scales and nothing
-// in either backend reads the group, so a load that asked for per-32 ran resident at per-vector, silently,
-// whenever the family had no activation hazard for the gate below to catch. The Options doc has always
-// said such a load declines to the CPU; this makes it so. Metal's q4k lane is exempt: it quantizes no
-// activation at all, and every q4k load carries the group (a direct load's and a q4k .giw's alike). quant
-// is the loaded weights' (Model.Quant), as Metal's build reads it, not the --quant option a .giw does not keep.
+// actGroupResidentDecline is the ActQuantGroup gate: per-group activation scales are implemented by CUDA
+// residency (actgroup.cu) and, over int8int8 weights, WebGPU's decode runner (its per-32 twins, whose build
+// declines by name the paths they do not cover). Metal's projections read per-vector scales and nothing there reads the group, so without
+// this gate a per-32 load would run resident at per-vector, silently, whenever the family had no activation
+// hazard for the gate below to catch; it declines to the CPU, which honours the group. Metal's q4k lane is
+// exempt: it quantizes no activation at all, and every q4k load carries the group (a direct load's and a q4k
+// .giw's alike). quant is the loaded weights' (Model.Quant), as Metal's build reads it, not the --quant option
+// a .giw does not keep.
 func actGroupResidentDecline(backend string, actGroup int, quant string) string {
-	if actGroup == 0 || backend == "cuda" || backend == "metal" && quant == "q4k" {
+	if actGroup == 0 || backend == "cuda" || backend == "webgpu" && quant == "int8int8" || backend == "metal" && quant == "q4k" {
 		return ""
 	}
 	return fmt.Sprintf("ActQuantGroup %d: %s's resident projections use per-vector activation scales (per-group "+
-		"scales are implemented by CUDA residency only), so the load runs on the CPU, which honours the group", actGroup, backend)
+		"scales are implemented by CUDA and WebGPU residency only), so the load runs on the CPU, which honours the group", actGroup, backend)
+}
+
+// webgpuActGroupShapeDecline is why a per-32 activation load cannot run resident on WebGPU for its shape, "" when it
+// can: the per-32 twins cover the dense decode path over widths in whole groups of 32, and every mixer or FFN listed
+// here has kernels that read one activation scale per vector (the build's own check, webgpu's actG32Decline, refuses
+// the same shapes).
+func webgpuActGroupShapeDecline(backend string, actGroup int, a *Architecture) string {
+	if backend != "webgpu" || actGroup == 0 || a == nil {
+		return ""
+	}
+	for _, f := range a.residentFeatures() {
+		switch f {
+		case FeatMoE, FeatMLA, FeatSSM, FeatDeltaNet, FeatKDA, FeatGemma4EModel, FeatAttnSink:
+			return fmt.Sprintf("ActQuantGroup %d: webgpu's per-32 activation kernels cover the dense decode path, and this model needs %s", actGroup, f)
+		}
+	}
+	if a.HiddenDim%32 != 0 || a.IntermediateDim%32 != 0 || a.NumHeads*a.HeadDim%32 != 0 {
+		return fmt.Sprintf("ActQuantGroup %d: webgpu's per-32 activation kernels need hidden (%d), FFN width (%d) and attention width (%d) in whole groups of 32",
+			actGroup, a.HiddenDim, a.IntermediateDim, a.NumHeads*a.HeadDim)
+	}
+	return ""
 }
 
 // ResidentProjsInt4 reports whether the loaded projection weights are int4 (W4A8) — the gate for

@@ -112,6 +112,9 @@ func (r *DecodeRunner) SetAdapter(layers []adapter.ResidentAdapterLayer) error {
 		r.steps = r.baseSteps
 		return nil
 	}
+	if r.actG32 {
+		return fmt.Errorf("gpu: SetAdapter: the LoRA kernels read per-vector activation scales, and this runner quantizes per 32")
+	}
 	if len(layers) != r.nLayers {
 		return fmt.Errorf("gpu: SetAdapter got %d layers, model has %d", len(layers), r.nLayers)
 	}

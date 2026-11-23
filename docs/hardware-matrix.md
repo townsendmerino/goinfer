@@ -146,7 +146,8 @@ the configuration that has it. The loader picks one that does not
 - **Metal:** a GGUF loads at `--quant q4k` by default and runs resident on the q4k lane, which quantizes no
   activation. Any other source loads at int8int8 with per-32 activation scales, which Metal's resident projections do
   not implement, so it runs on the CPU.
-- **WebGPU:** neither; the CPU.
+- **WebGPU:** every source loads at int8int8 with per-32 activation scales (WebGPU has no q4k kernel) and runs
+  resident; the batched prefill does not take per-32 scales, so the prompt runs token by token.
 
 ## Verified on: what has actually run
 

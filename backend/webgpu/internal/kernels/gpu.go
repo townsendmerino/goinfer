@@ -270,6 +270,9 @@ type Context struct {
 
 	// §2 fused glue kernels (ensureFuse, decodefuse.go): fold quantize into its
 	// producer to shorten the serialized decode dependency chain.
+	// Per-32 activation twins (actgroup.go), compiled on first use by ensureActG32.
+	actG32 *actG32Pipes
+
 	rmsQuantShader      *wgpu.ShaderModule
 	rmsQuantPipeline    *wgpu.ComputePipeline
 	rmsQuantLayout      *wgpu.BindGroupLayout

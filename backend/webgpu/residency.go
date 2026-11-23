@@ -188,7 +188,47 @@ func staticResidentDecline(m *decoder.Model) error {
 	if k := m.BackendView().MoEExpertKind(); k != "" && k != "int8" && k != "int4" {
 		return decoder.DeclineResident("the routed experts are %s, and webgpu's MoE kernels take int8 or int4 (load with Quant int4 or int8int8)", k)
 	}
+	if m.ActQuantGroup() == 32 {
+		if why := actG32Decline(m, granOK || nemoOK); why != "" {
+			return decoder.DeclineResident("per-32 activations: %s", why)
+		}
+	}
 	return nil
+}
+
+// actG32Decline is why a per-32 activation load (decoder.Options.ActQuantGroup 32) cannot run resident, "" when it can. The
+// runner's per-32 twins (kernels.ensureActG32) cover the dense decode path over W8A8 projections whose widths are whole
+// 32-wide groups; every other path's kernels read one activation scale per vector.
+func actG32Decline(m *decoder.Model, ssm bool) string {
+	spec := m.BackendView().Spec()
+	_, _, _, _, _, _, _, _, _, _, moeOK := moeParams(spec)
+	_, _, _, _, _, _, _, _, mlaOK := mlaParams(spec)
+	_, _, _, _, _, _, dnetOK := qwen35Params(spec)
+	switch {
+	case moeOK || m.BackendView().HasGemma4MoE():
+		return "the MoE kernels read per-vector activation scales"
+	case mlaOK || ssm || dnetOK:
+		return "the MLA, SSM and DeltaNet paths are not implemented"
+	}
+	d := m.BackendView().Dims()
+	if d.Hidden%32 != 0 || d.Inter%32 != 0 || d.Heads*d.HeadDim%32 != 0 {
+		return fmt.Sprintf("hidden (%d), FFN width (%d) and attention width (%d) must be multiples of 32", d.Hidden, d.Inter, d.Heads*d.HeadDim)
+	}
+	w := m.Weights()
+	ws := []*linalg.WeightMat{&w.LMHead}
+	if w.LMHead.Rows() == 0 {
+		ws[0] = &w.Embed
+	}
+	for i := range w.Layers {
+		l := &w.Layers[i]
+		ws = append(ws, &l.QProj, &l.KProj, &l.VProj, &l.OProj, &l.GateProj, &l.UpProj, &l.DownProj)
+	}
+	for _, pw := range ws {
+		if pw.Rows() > 0 && pw.Kind() == "int4" {
+			return "the per-32 GEMV takes int8 weights, and this model has int4 projections (load with Quant int8int8)"
+		}
+	}
+	return ""
 }
 
 // The plants of the Olmo and SmolLM3 parity tests: each drops one setting at the build while the CPU reference keeps the true
