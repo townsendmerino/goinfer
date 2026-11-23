@@ -85,7 +85,8 @@ func TestOptions_everyFlagReachesOptions(t *testing.T) {
 		"recurrent-step":       {"--recurrent-step", func(o decoder.Options, _ *Flags) bool { return o.ResidentRecurrentStep }},
 		"gemma4-step":          {"--gemma4-step", func(o decoder.Options, _ *Flags) bool { return o.ResidentGemma4Step }},
 		"flash-decode-softcap": {"--flash-decode-softcap", func(o decoder.Options, _ *Flags) bool { return o.FlashDecodeSoftcap }},
-		"flash-decode-hd96":    {"--flash-decode-hd96", func(o decoder.Options, _ *Flags) bool { return o.FlashDecodeHD96 }},
+		// Default is on (as the caller's default): the row probes the opt-out.
+		"flash-decode-hd96": {"--flash-decode-hd96=false", func(o decoder.Options, _ *Flags) bool { return !o.FlashDecodeHD96 }},
 		// Not a decoder option: modelload.Request.DirectLoad reads it.
 		"direct-load": {"--direct-load", func(_ decoder.Options, f *Flags) bool { return f.DirectLoad }},
 	}

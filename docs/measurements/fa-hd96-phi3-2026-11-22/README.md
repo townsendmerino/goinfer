@@ -168,3 +168,16 @@ the gate about 5 min under the exclusive lock. Gate 3 about 25 min in-process an
   blocks, which saves about 0.84 ms a token on every token. That cost is not attention, so the lane's saving at depth (about 2.2 ms a
   token in-process at 3,900) should stand, and the ratio at depth should be at least this one. That is a statement about mechanism, not
   a measurement.
+
+## Default, 2026-11-23: on at a context of at most 4,096 (Francis)
+
+- **The decision.** Francis, 2026-11-23, about 08:25 PST, relayed by the coordinator, option (a) of the default-on case: the lane is on by
+  default only for a head-dim-96 load whose context is at most 4,096, which is what the gates read. `--flash-decode-hd96` reaches a longer
+  context as an opt-in, and `=false` turns it off.
+- **Its shape.** When `--flash-decode-hd96` is not given, goinfer-chat and serve set `decoder.Options.FlashDecodeHD96` with
+  `FlashDecodeHD96Default`. CUDA's `faEligible` then takes an hd-96 layer only while the resident's context cap is at most
+  `flashDecodeHD96DefaultMaxCtx` (4,096). The cap, not the model's maximum, bounds the span the lane attends, so a 128k model loaded with
+  `--ctx 4096` takes it too. A given flag is that choice at any cap. A library caller's zero `Options` leave the lane off.
+  `TestResolve_flashDecodeHD96Default` and `TestFlashDecodeHD96_defaultByContext` hold the rule.
+- **What it rests on:** gate 2 PASS at K = 3,900, served SHIP (1.149 at 3,900, 1.000 at 128), and no memory or context change (4 loads,
+  flag on and off, device 5,922 MiB and host RSS about 2.90 GB on each).

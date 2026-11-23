@@ -100,6 +100,7 @@ func TestAttentionPrefillTiled_bitIdenticalToTheExactKernel(t *testing.T) {
 		qkv, kc, vc := attnPrefillInputs(c, int64(c.hd+c.startPos))
 		exact := runAttnPrefill(rig, "attention_prefill", c, qkv, kc, vc, 0)
 		ref := runAttnPrefill(rig, "attention_prefill_tiled", c, qkv, kc, vc, prefillExactAttnMaxKeys)
+		recordAttnDigest(t, "attention_prefill_tiled", ref)
 		for _, tile := range []int{1, 32, 100, 128, 1000} {
 			got := runAttnPrefill(rig, "attention_prefill_tiled", c, qkv, kc, vc, tile)
 			if diff := countDiff(got, ref, 0); diff != 0 {
@@ -143,6 +144,7 @@ func TestAttentionPrefillTiled_pastTheExactKernelsBound(t *testing.T) {
 	} {
 		qkv, kc, vc := attnPrefillInputs(c, int64(7*c.hd+c.startPos))
 		got := runAttnPrefill(rig, "attention_prefill_tiled", c, qkv, kc, vc, prefillExactAttnMaxKeys)
+		recordAttnDigest(t, "attention_prefill_tiled", got)
 		qStride, kvDim := (c.nH+2*c.nKV)*c.hd, c.nKV*c.hd
 		scale := 1 / math.Sqrt(float64(c.hd))
 		worst := 0.0

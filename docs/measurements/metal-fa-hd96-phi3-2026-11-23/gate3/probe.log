@@ -1,0 +1,3 @@
+probe: lane  prompt 2048 tokens, [ATTNFA] lines 544 (hd=96: 544)
+probe: exact prompt 2048 tokens, [ATTNFA] lines 0 (hd=96: 0)
+probe: the lane arm dispatches attention_fa at hd 96, the exact arm does not

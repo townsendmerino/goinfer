@@ -1,0 +1,39 @@
+== build 2026-11-23T09:37:32-08:00 head 299ddfdde load 5.45 3.30 2.99 memavail 60366 MB
+461 MiB, 49, 405 MHz
+== build rc=0
+== ncu-b2 f32-w512 kv=f32 width=512 skip=168 2026-11-23T09:37:45-08:00 head 299ddfdde load 8.10 3.94 3.20 memavail 59869 MB
+461 MiB, 48, 300 MHz
+--- PASS: TestKS_B2_prefillUnderNcu (26.57s)
+== ncu-b2 f16-w512 kv=f16 width=512 skip=168 2026-11-23T09:38:14-08:00 head 299ddfdde load 6.16 3.90 3.21 memavail 60371 MB
+461 MiB, 56, 1950 MHz
+--- PASS: TestKS_B2_prefillUnderNcu (16.51s)
+== ncu-b2 f32-w2048 kv=f32 width=2048 skip=28 2026-11-23T09:38:31-08:00 head 299ddfdde load 5.41 3.85 3.21 memavail 60232 MB
+461 MiB, 59, 1935 MHz
+--- PASS: TestKS_B2_prefillUnderNcu (26.97s)
+== ncu-b2 f16-w2048 kv=f16 width=2048 skip=28 2026-11-23T09:38:59-08:00 head 299ddfdde load 3.79 3.61 3.15 memavail 60048 MB
+461 MiB, 57, 1935 MHz
+--- PASS: TestKS_B2_prefillUnderNcu (17.07s)
+== decomp f32 K=3900 2026-11-23T09:39:16-08:00 head 299ddfdde load 3.46 3.55 3.13 memavail 60174 MB
+461 MiB, 57, 1935 MHz
+[ap0] flags [-backend cuda -quant int4 -kv f32]; pass rows 2048, kv f16 false; reports [{Cache:resident Requested:f32 Delivered:f32 Reason:}]; load1 3.08 3.46 3.11
+[ap0] N=3900 wall 659ms | gemv 464.052742ms attn 104.422172ms glue 61.550125ms moe 0s sum 630.025039ms | attn 16.6% of sum, 15.8% of wall
+--- PASS: TestAP_prefillDecompKV (9.55s)
+== decomp f32 K=8192 ctx 8192 2026-11-23T09:39:26-08:00 head 299ddfdde load 3.08 3.46 3.11 memavail 60255 MB
+461 MiB, 60, 1935 MHz
+[ap0] flags [-backend cuda -quant int4 -kv f32 -ctx 8192]; pass rows 2048, kv f16 false; reports [{Cache:resident Requested:f32 Delivered:f32 Reason:}]; load1 2.76 3.38 3.09
+[ap0] N=3900 wall 663ms | gemv 464.56794ms attn 104.565005ms glue 61.046569ms moe 0s sum 630.179514ms | attn 16.6% of sum, 15.8% of wall
+[ap0] N=8192 wall 1.535s | gemv 986.679136ms attn 405.516464ms glue 128.930765ms moe 0s sum 1.521126365s | attn 26.7% of sum, 26.4% of wall
+--- PASS: TestAP_prefillDecompKV (15.78s)
+== decomp f16 K=3900 2026-11-23T09:39:42-08:00 head 299ddfdde load 2.62 3.34 3.08 memavail 60372 MB
+461 MiB, 62, 1920 MHz
+[ap0] flags [-backend cuda -quant int4 -kv f16]; pass rows 2048, kv f16 true; reports [{Cache:resident Requested:f16 Delivered:f16 Reason:}]; load1 2.37 3.26 3.05
+[ap0] N=3900 wall 647ms | gemv 464.971703ms attn 88.516226ms glue 61.494466ms moe 0s sum 614.982395ms | attn 14.4% of sum, 13.7% of wall
+--- PASS: TestAP_prefillDecompKV (9.72s)
+== decomp f16 K=8192 ctx 8192 2026-11-23T09:39:52-08:00 head 299ddfdde load 2.37 3.26 3.05 memavail 60369 MB
+461 MiB, 60, 1935 MHz
+[ap0] flags [-backend cuda -quant int4 -kv f16 -ctx 8192]; pass rows 2048, kv f16 true; reports [{Cache:resident Requested:f16 Delivered:f16 Reason:}]; load1 2.24 3.21 3.04
+[ap0] N=3900 wall 650ms | gemv 464.152309ms attn 88.476722ms glue 61.243205ms moe 0s sum 613.872236ms | attn 14.4% of sum, 13.6% of wall
+[ap0] N=8192 wall 1.465s | gemv 987.720749ms attn 338.678994ms glue 127.87221ms moe 0s sum 1.454271953s | attn 23.3% of sum, 23.1% of wall
+--- PASS: TestAP_prefillDecompKV (15.24s)
+== done 2026-11-23T09:40:07-08:00 head 299ddfdde load 2.05 3.13 3.01 memavail 60380 MB
+461 MiB, 62, 1920 MHz

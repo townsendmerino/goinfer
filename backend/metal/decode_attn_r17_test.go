@@ -1259,7 +1259,7 @@ func TestR17KernelAccuracy(t *testing.T) {
 				}
 				L := &r.layers[l]
 				g := L.geom
-				if g == nil || !attnFAHeadDimOK(g.hd, r.nH, g.nKV) || L.window != 0 {
+				if g == nil || !attnFAHeadDimOK(g.hd, r.nH, g.nKV, r.faHD96On()) || L.window != 0 {
 					continue
 				}
 				if g.hd != 128 { // B-P01's hd = 64 twin: only the exact and production arms are hd-general
