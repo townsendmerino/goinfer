@@ -1921,7 +1921,7 @@ driver 595.112.07, Ryzen 7 3700X, Linux 7.3.0-202.nobara.fc44 · qwen2.5-coder 0
 `~/models` on NVMe, `-quant int4` on both arms, ctx 4096, greedy, seed 1 · one exclusive timing-lock session, load settled under
 0.8 before each step, page cache evicted before each cell, the desktop compositor holding 19 MiB of the card · both arms on their resident decode path.
 
-| cell | CUDA | WebGPU | WebGPU ÷ CUDA |
+| cell | CUDA | WebGPU | WebGPU's share of CUDA's speed (decode: WebGPU ÷ CUDA tok/s; TTFT: CUDA ÷ WebGPU ms) |
 |---|---|---|---|
 | decode 0.5B @128 | 521.2 tok/s | 236.6 tok/s | **0.454** (0.452–0.456) |
 | decode 1.5B @128 | 277.1 tok/s | 141.9 tok/s | **0.512** (0.511–0.513) |
@@ -1939,7 +1939,7 @@ ctx 4096, greedy, seed 1 · one exclusive timing-lock session with Francis's app
 decode cells started at load 1.3–1.9); on battery for part of it and on AC for the rest, read for a power effect and none found (the record's
 § "Power source"). The 7B was not run on the Mac.
 
-| cell | Metal | WebGPU | WebGPU ÷ Metal |
+| cell | Metal | WebGPU | WebGPU's share of Metal's speed (decode: WebGPU ÷ Metal tok/s; TTFT: Metal ÷ WebGPU ms) |
 |---|---|---|---|
 | decode 0.5B @128 | 209.8 tok/s | 61.2 tok/s | **0.292** (0.289–0.293) |
 | decode 1.5B @128 | 99.2 tok/s | 36.8 tok/s | **0.371** (0.370–0.377) |
