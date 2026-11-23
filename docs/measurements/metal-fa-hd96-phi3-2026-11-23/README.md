@@ -127,3 +127,22 @@ on Metal, a default no gate here decided. Metal now takes it only when the flag 
 `764bc044c` ([`post-merge/checks.log`](post-merge/checks.log)): `TestFlashDecodeHD96_metalSelection` passes its not-given, chosen and
 caller's-default cases, and a served Phi-3 request at depth 2,048 logs no hd-96 `attention_fa` dispatch without the flag and 160 with
 `-flash-decode-hd96`. The gate readings above are unchanged: both gate-3 arms passed the flag explicitly.
+
+## Follow-ups from review, 2026-11-23 (after the merge of #1245)
+
+**1. Gate 1 never exercised the block table or the window** (review finding 1). `TestAttnFABlk96MatchesFloat64` and
+`TestAttnFABlk96Digest` ran on the identity table at window 0, where a run's second part (`base1`) and `winStart` reduce to `b0 + j`
+and a kernel that ignored either would pass. Both now also run permuted 64-key blocks behind a non-identity table (one block more
+than the keys fill, so physical block 0 and the order both differ) and windows of 1,000 and 2,500 keys; at 16 splits the 3,900- and
+4,100-key chunks start off a block edge, so runs cross it. On the Mac at `cc83c8c3d` ([`followups/tests-mac.log`](followups/tests-mac.log)):
+- **The kernel:** all 60 cases inside the bar (the 32 above and 28 new), worst cosine 1.0000000, worst max abs 1.87e-7. The
+  gate 1 verdict stands.
+- **`TestAttnFABlk96_tableAndWindowPlantsGoRed`:** a run that crosses a block edge without the table (`base1 = base0`) puts 360
+  heads outside the bar on the paged cases and **0 on the cases gate 1 had**, which is the gap closed; a window ignored
+  (`winStart = 0`) puts 288 outside on the windowed cases and 0 on the rest; a `base1` off by one key goes red on both (360 and
+  576: an index shift shows on the identity table too).
+
+**2. Gate 2's grader read the KL ratio from the rounded means** (review finding 2). `grade_gate2.py` divided the two printed means,
+each to 4 decimals (0.0001 / 0.0001). It now reads the harness's `KLratio`, computed from the unrounded means: **1.0002**, as gate 2's
+section above quotes. Re-graded from the same log: (a) PASS, (b) PASS, (c) PASS, outside the 1.05–1.10 band. **The verdict does not
+change: PASS.**
