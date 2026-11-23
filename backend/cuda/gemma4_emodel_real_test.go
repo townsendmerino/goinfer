@@ -290,6 +290,7 @@ func TestGemma4EModel_realE4BNonInferiority(t *testing.T) {
 // This writes, for the CPU's own greedy sequence on each of G3's prompts, both arms' top-8 (id, logit) at every position, so that an HF float32 forward over the SAME ids
 // (scripts/anchor_e4b_hf.py) can say, at every position where the arms disagree, which one HF sides with. Output: $E4B_ANCHOR_DIR (default ~/goinfer-logs/e4b-anchor/dump.json).
 func TestGemma4EModel_realE4BAnchorDump(t *testing.T) {
+	testgate.RequireMeasure(t)
 	testgate.RequireHeavy(t)
 	home, _ := os.UserHomeDir()
 	dir := filepath.Join(home, "models", "gemma-4-E4B-it")
@@ -399,6 +400,7 @@ func TestGemma4EModel_realE4BAnchorDump(t *testing.T) {
 // The float32 load needs about 30 GB of host memory. When the fit guard refuses it (decoder.ErrWontFitResident), as it does inside a long-lived
 // gate process whose earlier tests have taken memory, the test skips with the guard's arithmetic; run it alone to get the dump.
 func TestGemma4EModel_realE4BF32Dump(t *testing.T) {
+	testgate.RequireMeasure(t)
 	testgate.RequireHeavy(t)
 	home, _ := os.UserHomeDir()
 	dir := filepath.Join(home, "models", "gemma-4-E4B-it")

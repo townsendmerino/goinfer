@@ -194,7 +194,8 @@ class Tokens(unittest.TestCase):
 
     def test_skipHeavyAndSkipAssetAreNotDeviceSkips(self):
         for backend in ("cuda", "metal"):
-            for why in ("SKIP-HEAVY: no device needed until GOINFER_HEAVY_TESTS=1", "SKIP-ASSET: no cuda device tower at ~/models/x"):
+            for why in ("SKIP-HEAVY: no device needed until GOINFER_HEAVY_TESTS=1", "SKIP-ASSET: no cuda device tower at ~/models/x",
+                        "SKIP-MEASURE: no device needed until GOINFER_MEASURE_TESTS=1"):
                 red, lines = self.judge(why, backend)
                 self.assertFalse(red, (backend, why, lines))
 
@@ -207,7 +208,7 @@ class Tokens(unittest.TestCase):
     def test_theTokensAreTestgates(self):
         with open(os.path.join(os.path.dirname(HERE), "internal", "testgate", "testgate.go")) as f:
             src = f.read()
-        for tok in (cds.TOKEN_DEVICE, cds.TOKEN_HEAVY, cds.TOKEN_ASSET):
+        for tok in (cds.TOKEN_DEVICE, cds.TOKEN_HEAVY, cds.TOKEN_ASSET, cds.TOKEN_MEASURE):
             self.assertIn(f'"{tok}"', src)
 
 
