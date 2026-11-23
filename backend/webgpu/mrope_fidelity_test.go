@@ -661,6 +661,9 @@ func TestPairwiseRoPERealWebGPU(t *testing.T) {
 					}
 					cs := ab / math.Sqrt(aa*bb)
 					mean, worst = mean+cs, math.Min(worst, cs)
+					if cs < 0.95 {
+						t.Logf("  %s position %d (%s): cosine %.6f", name, i, map[bool]string{true: "prompt", false: "continuation"}[i < nPrompt], cs)
+					}
 					if i >= nPrompt-1 && i < len(toks)-1 {
 						if want, got := argmax(ref[i]), argmax(l); want != got {
 							lo, hi := ref[i][0], ref[i][0]
