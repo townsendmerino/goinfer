@@ -314,3 +314,44 @@ func TestPackStream_rowSourceBytesIdenticalToPackWeight(t *testing.T) {
 		r.setupErr = nil
 	}
 }
+
+// TestPlanHeldKQuant_onlyThroughPlanProj: a weight the load holds as Q5_K or Q6_K (a cuda .giw carries them) is planned natively only
+// as a projection or the head (buildState.planProj), from its own blocks and only under per-32 activations; planWeight, which the
+// drafter, the Mamba projections and the expert stacks call, refuses it by name rather than plan it without that check. No device.
+func TestPlanHeldKQuant_onlyThroughPlanProj(t *testing.T) {
+	const rows, cols = 3, 512
+	for _, c := range []struct {
+		kind string
+		wrap func([]byte, int, int) (linalg.WeightMat, error)
+		rb   int
+	}{{"q5k", linalg.WrapQ5K, linalg.Q5KRowBytes(cols)}, {"q6k", linalg.WrapQ6K, linalg.Q6KRowBytes(cols)}} {
+		raw := make([]byte, rows*c.rb)
+		for i := range raw {
+			raw[i] = byte(i * 7)
+		}
+		wm, err := c.wrap(raw, rows, cols)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := planWeight(&wm); err == nil || !strings.Contains(err.Error(), c.kind) {
+			t.Errorf("%s: planWeight planned a held native weight (err %v); only planProj may, under per-32 activations", c.kind, err)
+		}
+		s := &buildState{actG32: false}
+		if _, err := s.planProj(&wm); err == nil || !errors.As(err, new(buildDecline)) {
+			t.Errorf("%s: planProj without per-32 activations: err %v, want a decline", c.kind, err)
+		}
+		s.actG32 = true
+		h, err := s.planProj(&wm)
+		if err != nil {
+			t.Fatalf("%s: planProj: %v", c.kind, err)
+		}
+		if h.kind != c.kind || h.N != rows || h.K != cols || h.nBytes != len(raw) {
+			t.Errorf("%s: planned kind %q %dx%d, %d bytes; want %q %dx%d, %d", c.kind, h.kind, h.N, h.K, h.nBytes, c.kind, rows, cols, len(raw))
+		}
+		for r := range rows {
+			if !bytes.Equal(h.row(r), raw[r*c.rb:(r+1)*c.rb]) {
+				t.Errorf("%s: row %d is not the weight's own row %d blocks", c.kind, r, r)
+			}
+		}
+	}
+}

@@ -71,8 +71,10 @@ func planWeight(w *linalg.WeightMat) (hostW, error) {
 		return hostW{kind: "q4k", N: N, K: K, src: w, nWpk: len(raw) / 4}, nil
 	case "f32", "bf16": // quantized to int8 row by row; a bf16 weight's rows are widened first, so its bytes are the f32 weight's
 		return hostW{kind: "int8", N: N, K: K, src: w, nWpk: N * (K / 4), nWs: N}, nil
-	case "q5k", "q6k": // the file's blocks, held natively (a cuda .giw carries them): planned from the weight's own bytes
-		return planKQuantHeld(w)
+	case "q5k", "q6k":
+		// The file's blocks, held natively (a cuda .giw carries them): only a projection or the head takes them, through
+		// buildState.planProj, which checks for the per-32 activations their GEMVs read. Any other caller declines here, by name.
+		return hostW{}, fmt.Errorf("cuda: a native %s weight is planned only as a projection or the head (planProj), not here", w.Kind())
 	default:
 		return hostW{}, fmt.Errorf("cuda: unsupported projection kind %q", w.Kind())
 	}

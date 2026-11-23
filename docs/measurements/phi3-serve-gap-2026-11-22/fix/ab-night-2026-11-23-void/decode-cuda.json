@@ -1,0 +1,364 @@
+[
+ {
+  "kind": "provenance",
+  "utc": "2026-11-23T14:49:53Z",
+  "fit_need": "goinfer's fit: banner when one has been read, else BENCH_FIT_NEED_GB, else the checkpoint's file size, which is a lower bound (no KV or scratch) and is flagged per cell (machine.fit_need_lower_bound); the start check has no margin",
+  "free_mem_override": false,
+  "host": "nobara-pc",
+  "uname": "Linux 7.3.0-202.nobara.fc44.x86_64 x86_64",
+  "distro": "Nobara Linux 44",
+  "goinfer_commit": "32d2f9e59",
+  "goinfer_tree_dirty": false,
+  "peer": {
+   "ollama_bin": "/home/francis/ollama-0325/bin/ollama",
+   "version": "0.32.5"
+  },
+  "peer_llamacpp": {
+   "bin": "llama-server",
+   "version": null
+  },
+  "serve_binaries": {
+   "cpu": {
+    "path": "/home/francis/bench-v0.15.0/serve-cpu",
+    "mtime": "2026-08-22T18:18:03Z"
+   },
+   "cuda": {
+    "path": "/home/francis/goinfer-bench/k56-run/bin/serve-cuda-cda4facf4",
+    "mtime": "2026-11-23T02:14:36Z"
+   },
+   "webgpu": {
+    "path": "/home/francis/bench-v0.15.0/serve-webgpu",
+    "mtime": "2026-08-22T18:17:55Z"
+   },
+   "metal": {
+    "path": "/nonexistent/serve-metal",
+    "mtime": null
+   }
+  },
+  "serve_binaries_old": {
+   "cuda": {
+    "path": "/home/francis/goinfer-bench/phi3-gap-run/bin/serve-cuda-896638446",
+    "mtime": "2026-11-22T22:30:37Z"
+   }
+  },
+  "gpu": {
+   "driver": "595.112.07",
+   "name": "NVIDIA GeForce RTX 2070 SUPER",
+   "temp_c": 52,
+   "mem_used_mib": 460,
+   "mem_total_mib": 8192
+  },
+  "cpu_count": 16,
+  "loadavg_at_start": [
+   0.80419921875,
+   1.2021484375,
+   1.57080078125
+  ],
+  "gpu_compute_apps_at_start": [
+   "1889, 19 MiB"
+  ],
+  "sampling": "sent explicitly per cell; see each record's `sent`",
+  "deep_ctx": 0,
+  "ctx_pin": 0
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "phi3-mini",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "ctx": 4096,
+  "mlx_path": null,
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": null,
+  "error": "server did not come up",
+  "machine": {
+   "loadavg": [
+    0.80419921875,
+    1.2021484375,
+    1.57080078125
+   ],
+   "available_mb": 61692,
+   "ncores": 16,
+   "gpu": {
+    "driver": "595.112.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 53,
+    "mem_used_mib": 460,
+    "mem_total_mib": 8192
+   },
+   "reclaimable_mb": 61678,
+   "swap_mb": 752.421875,
+   "swapin_mb": 4443.80859375,
+   "swapout_mb": 18868.34765625,
+   "end": {
+    "loadavg": [
+     0.0390625,
+     0.6494140625,
+     1.283203125
+    ],
+    "available_mb": 61727,
+    "reclaimable_mb": 61723,
+    "swap_mb": 752.40625,
+    "swapin_mb": 4443.8203125,
+    "swapout_mb": 18868.34765625
+   },
+   "gate": {
+    "kind": "load",
+    "wait_s": 0,
+    "loadavg": 0.80419921875
+   },
+   "fit_need_mb": 2282,
+   "fit_need_source": "file size",
+   "fit_need_lower_bound": true
+  },
+  "secs": 183.3,
+  "block": 0,
+  "quant": null,
+  "quant_class": null,
+  "quant_matched": true,
+  "counts": {
+   "swap": {
+    "swap_base_mb": 752.421875,
+    "swap_growth_mb": 0.0,
+    "swap_peak_mb": 752.421875,
+    "swap_killed": null,
+    "swapin_mb": 0.0,
+    "swapout_mb": 0.0,
+    "swap_void": null
+   }
+  }
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer_old",
+  "backend": "cuda",
+  "model": "phi3-mini",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "ctx": 4096,
+  "mlx_path": null,
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": null,
+  "error": "server did not come up",
+  "machine": {
+   "loadavg": [
+    0.0390625,
+    0.6494140625,
+    1.283203125
+   ],
+   "available_mb": 61727,
+   "ncores": 16,
+   "gpu": {
+    "driver": "595.112.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 51,
+    "mem_used_mib": 460,
+    "mem_total_mib": 8192
+   },
+   "reclaimable_mb": 61734,
+   "swap_mb": 752.40234375,
+   "swapin_mb": 4443.8203125,
+   "swapout_mb": 18868.34765625,
+   "end": {
+    "loadavg": [
+     0.0,
+     0.34912109375,
+     1.0498046875
+    ],
+    "available_mb": 61730,
+    "reclaimable_mb": 61734,
+    "swap_mb": 752.3984375,
+    "swapin_mb": 4443.82421875,
+    "swapout_mb": 18868.34765625
+   },
+   "gate": {
+    "kind": "load",
+    "wait_s": 0,
+    "loadavg": 0.0390625
+   },
+   "fit_need_mb": 2282,
+   "fit_need_source": "file size",
+   "fit_need_lower_bound": true
+  },
+  "secs": 183.3,
+  "block": 0,
+  "quant": null,
+  "quant_class": null,
+  "quant_matched": true,
+  "counts": {
+   "swap": {
+    "swap_base_mb": 752.40234375,
+    "swap_growth_mb": 0.0,
+    "swap_peak_mb": 752.40234375,
+    "swap_killed": null,
+    "swapin_mb": 0.0,
+    "swapout_mb": 0.0,
+    "swap_void": null
+   }
+  }
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer_old",
+  "backend": "cuda",
+  "model": "phi3-mini",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "ctx": 4096,
+  "mlx_path": null,
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": null,
+  "error": "server did not come up",
+  "machine": {
+   "loadavg": [
+    0.0,
+    0.34912109375,
+    1.0498046875
+   ],
+   "available_mb": 61727,
+   "ncores": 16,
+   "gpu": {
+    "driver": "595.112.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 51,
+    "mem_used_mib": 460,
+    "mem_total_mib": 8192
+   },
+   "reclaimable_mb": 61736,
+   "swap_mb": 752.3984375,
+   "swapin_mb": 4443.82421875,
+   "swapout_mb": 18868.34765625,
+   "end": {
+    "loadavg": [
+     0.09326171875,
+     0.21923828125,
+     0.86767578125
+    ],
+    "available_mb": 61738,
+    "reclaimable_mb": 61746,
+    "swap_mb": 752.3984375,
+    "swapin_mb": 4443.82421875,
+    "swapout_mb": 18868.34765625
+   },
+   "gate": {
+    "kind": "load",
+    "wait_s": 0,
+    "loadavg": 0.0
+   },
+   "fit_need_mb": 2282,
+   "fit_need_source": "file size",
+   "fit_need_lower_bound": true
+  },
+  "secs": 183.3,
+  "block": 1,
+  "quant": null,
+  "quant_class": null,
+  "quant_matched": true,
+  "counts": {
+   "swap": {
+    "swap_base_mb": 752.3984375,
+    "swap_growth_mb": 0.0,
+    "swap_peak_mb": 752.3984375,
+    "swap_killed": null,
+    "swapin_mb": 0.0,
+    "swapout_mb": 0.0,
+    "swap_void": null
+   }
+  }
+ },
+ {
+  "phase": "A",
+  "engine": "goinfer",
+  "backend": "cuda",
+  "model": "phi3-mini",
+  "depth": 128,
+  "prompt_tokens": 129,
+  "prompt_format": "essay-v2",
+  "config": "greedy",
+  "sent": {
+   "temperature": 0,
+   "seed": 1
+  },
+  "ctx": 4096,
+  "mlx_path": null,
+  "note": "temperature=0 both sides (deterministic)",
+  "runs": null,
+  "error": "server did not come up",
+  "machine": {
+   "loadavg": [
+    0.09326171875,
+    0.21923828125,
+    0.86767578125
+   ],
+   "available_mb": 61743,
+   "ncores": 16,
+   "gpu": {
+    "driver": "595.112.07",
+    "name": "NVIDIA GeForce RTX 2070 SUPER",
+    "temp_c": 51,
+    "mem_used_mib": 460,
+    "mem_total_mib": 8192
+   },
+   "reclaimable_mb": 61741,
+   "swap_mb": 752.3984375,
+   "swapin_mb": 4443.82421875,
+   "swapout_mb": 18868.34765625,
+   "end": {
+    "loadavg": [
+     0.00732421875,
+     0.12109375,
+     0.70751953125
+    ],
+    "available_mb": 61744,
+    "reclaimable_mb": 61731,
+    "swap_mb": 752.3984375,
+    "swapin_mb": 4443.82421875,
+    "swapout_mb": 18868.34765625
+   },
+   "gate": {
+    "kind": "load",
+    "wait_s": 0,
+    "loadavg": 0.09326171875
+   },
+   "fit_need_mb": 2282,
+   "fit_need_source": "file size",
+   "fit_need_lower_bound": true
+  },
+  "secs": 183.3,
+  "block": 1,
+  "quant": null,
+  "quant_class": null,
+  "quant_matched": true,
+  "counts": {
+   "swap": {
+    "swap_base_mb": 752.3984375,
+    "swap_growth_mb": 0.0,
+    "swap_peak_mb": 752.3984375,
+    "swap_killed": null,
+    "swapin_mb": 0.0,
+    "swapout_mb": 0.0,
+    "swap_void": null
+   }
+  }
+ }
+]
