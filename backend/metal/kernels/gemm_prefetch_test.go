@@ -1,0 +1,235 @@
+//go:build darwin
+
+package kernels
+
+import (
+	"fmt"
+	"math/rand"
+	"strings"
+	"testing"
+
+	"github.com/ebitengine/purego/objc"
+)
+
+// gemmInSlab is PrefillKernels with the int4 prefill GEMMs' slab loads taken back inside the slab: each pair is a span of the shipped
+// text and the in-slab form it replaced (gemm_ld_w's comment). TestGemmPrefetch_bitIdentical runs the two libraries side by side.
+var gemmInSlab = [][2]string{
+	{`
+// gemm_ld_w and gemm_ld_a read one 32-k slab's global operands into registers: a weight thread's two words and its group scale,
+// an activation thread's four half4 (two 8-k blocks), zero where the row is out. The GEMMs read slab k0+32 while slab k0's MMAs
+// run and stage the registers after the next barrier, so each slab's values, and the order they meet the accumulators, are the
+// ones a load inside the slab gave.
+inline void gemm_ld_w(device const uint* W, device const half* WS, uint ncol, uint wpr, uint gpr, uint k0, ushort kh, bool wok,
+    thread uint2& wv, thread float& sc) {
+    wv = uint2(0u); sc = 0.0f;
+    if (wok) { wv = *(device const uint2*)(W + ncol*wpr + k0/8u + kh*2u); sc = float(WS[ncol*gpr + k0/32u]); }
+}
+
+inline void gemm_ld_a(device const half* A, uint mrow, uint K, uint k0, ushort kh2, bool aok, thread half4* av) {
+    for (ushort j = 0; j < 2; j++) {
+        device const half4* s4 = (device const half4*)(A + mrow*K + k0 + (kh2*2 + j)*8u);
+        av[2*j] = aok ? s4[0] : half4(0.0h);
+        av[2*j + 1] = aok ? s4[1] : half4(0.0h);
+    }
+}
+
+// gemm_epilogue_ld stores one 8x8 accumulator into columns [coff, coff+N) of C, whose rows are ldc halves apart; the bias is
+`,
+		`
+// gemm_epilogue_ld stores one 8x8 accumulator into columns [coff, coff+N) of C, whose rows are ldc halves apart; the bias is
+`},
+	{`
+    uint2 wv; float sc; half4 av[4];
+    gemm_ld_w(W, WS, ncol, wpr, gpr, 0u, kh, wok, wv, sc);
+    gemm_ld_a(A, mrow, K, 0u, kh2, aok, av);
+    for (uint k0 = 0; k0 < K; k0 += 32u) {
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        gemm_stage_w(sa, wv, sc, wok, fb, kh, nl);
+        for (ushort j = 0; j < 2; j++) {
+            threadgroup half4* d4 = (threadgroup half4*)(sb + (tb*4 + kh2*2 + j)*64 + rl*8);
+            d4[0] = av[2*j]; d4[1] = av[2*j + 1];
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        if (k0 + 32u < K) { // the next slab's loads, in flight while this slab's MMAs run
+            gemm_ld_w(W, WS, ncol, wpr, gpr, k0 + 32u, kh, wok, wv, sc);
+            gemm_ld_a(A, mrow, K, k0 + 32u, kh2, aok, av);
+        }
+
+`,
+		`
+    for (uint k0 = 0; k0 < K; k0 += 32u) {
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        uint2 wv = uint2(0u); float sc = 0.0f;
+        if (wok) { wv = *(device const uint2*)(W + ncol*wpr + k0/8u + kh*2u); sc = float(WS[ncol*gpr + k0/32u]); }
+        gemm_stage_w(sa, wv, sc, wok, fb, kh, nl);
+        for (ushort j = 0; j < 2; j++) {
+            const ushort kb = kh2*2 + j;
+            threadgroup half4* d4 = (threadgroup half4*)(sb + (tb*4 + kb)*64 + rl*8);
+            if (aok) {
+                device const half4* s4 = (device const half4*)(A + mrow*K + k0 + kb*8u);
+                d4[0] = s4[0]; d4[1] = s4[1];
+            } else {
+                d4[0] = half4(0.0h); d4[1] = half4(0.0h);
+            }
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+`},
+	{`
+    uint2 wv; float sc; half4 av[4]; // the int4 form's next slab, in registers while this slab's MMAs run (gemm_ld_w)
+    if constexpr (!W8) {
+        gemm_ld_w(W, WS, ncol, wpr, gpr, 0u, kh, wok, wv, sc);
+        gemm_ld_a(A, mrow, K, 0u, kh2, aok, av);
+    }
+    for (uint k0 = 0; k0 < K; k0 += 32u) {
+`,
+		`
+    for (uint k0 = 0; k0 < K; k0 += 32u) {
+`},
+	{`        } else {
+            gemm_stage_w(sa, wv, sc, wok, fb, kh, nl);
+`,
+		`        } else {
+            uint2 wv = uint2(0u); float sc = 0.0f;
+            if (wok) { wv = *(device const uint2*)(W + ncol*wpr + k0/8u + kh*2u); sc = float(WS[ncol*gpr + k0/32u]); }
+            gemm_stage_w(sa, wv, sc, wok, fb, kh, nl);
+`},
+	{`            threadgroup half4* d4 = (threadgroup half4*)(sb + (tb*4 + kb)*64 + rl*8);
+            if constexpr (!W8) {
+                d4[0] = av[2*j]; d4[1] = av[2*j + 1];
+                continue;
+            }
+            const uint kk = k0 + kb*8u;
+            if (aok && kk < K) {
+                device const half4* s4 = (device const half4*)(A + mrow*K + kk);
+                d4[0] = s4[0]; d4[1] = kk + 8u <= K ? s4[1] : half4(0.0h);
+            } else {
+`,
+		`            threadgroup half4* d4 = (threadgroup half4*)(sb + (tb*4 + kb)*64 + rl*8);
+            const uint kk = k0 + kb*8u;
+            if (aok && (!W8 || kk < K)) {
+                device const half4* s4 = (device const half4*)(A + mrow*K + kk);
+                d4[0] = s4[0]; d4[1] = (!W8 || kk + 8u <= K) ? s4[1] : half4(0.0h);
+            } else {
+`},
+	{`        threadgroup_barrier(mem_flags::mem_threadgroup);
+        if constexpr (!W8) {
+            if (k0 + 32u < K) {
+                gemm_ld_w(W, WS, ncol, wpr, gpr, k0 + 32u, kh, wok, wv, sc);
+                gemm_ld_a(A, mrow, K, k0 + 32u, kh2, aok, av);
+            }
+        }
+
+`,
+		`        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+`},
+}
+
+// gemmInSlabKernels is PrefillKernels in the in-slab form; it fails the test when a span is not in the shipped text exactly once.
+func gemmInSlabKernels(t *testing.T) string {
+	t.Helper()
+	src := prefillKernels
+	for i, p := range gemmInSlab {
+		if n := strings.Count(src, p[0]); n != 1 {
+			t.Fatalf("span %d of the prefetch is in PrefillKernels %d times, want 1: the pairs no longer describe the shipped text", i, n)
+		}
+		src = strings.Replace(src, p[0], p[1], 1)
+	}
+	return src
+}
+
+// TestGemmPrefetch_bitIdentical: gemm_w4f16_store (modes 0, 1 and 2) and gemm_w4f16_swiglu, which read the next slab's operands
+// while this slab's MMAs run, give every output bit their in-slab form gives. The shapes put rows past M and features past N in
+// the last tile, K at one slab (no prefetch) and at many, and run on random int4 weights, scales and f16 activations.
+func TestGemmPrefetch_bitIdentical(t *testing.T) {
+	d, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	shipped, err := d.CompileLibrary(prefillKernels, MSL3_1)
+	if err != nil {
+		t.Fatalf("compile PrefillKernels: %v", err)
+	}
+	inSlab, err := d.CompileLibrary(gemmInSlabKernels(t), MSL3_1)
+	if err != nil {
+		t.Fatalf("compile the in-slab form: %v", err)
+	}
+	cq := d.NewCommandQueue()
+	rng := rand.New(rand.NewSource(20261123))
+	halves := func(n int, s float64) []uint16 {
+		h := make([]uint16, n)
+		for i := range h {
+			h[i] = f32ToF16(float32(rng.NormFloat64() * s))
+		}
+		return h
+	}
+	words := func(n int) []uint32 {
+		w := make([]uint32, n)
+		for i := range w {
+			w[i] = rng.Uint32()
+		}
+		return w
+	}
+	u := func(v int) Buffer { return NewBufferU32(d, uint32(v)) }
+	run := func(lib objc.ID, name string, gx, gy int, c0 []uint16, args func(C Buffer) []Buffer) []uint16 {
+		p, err := d.NewComputePipeline(lib, name)
+		if err != nil {
+			t.Fatalf("pipeline %s: %v", name, err)
+		}
+		C := NewBufferU16s(d, c0)
+		e := cq.Begin()
+		e.Dispatch2D(p, gx, gy, 128, 1, args(C)...)
+		e.End()
+		if err := e.Err(); err != nil {
+			t.Fatalf("dispatch %s: %v", name, err)
+		}
+		return append([]uint16(nil), C.U16s()[:len(c0)]...)
+	}
+	same := func(label string, a, b []uint16) {
+		t.Helper()
+		nonzero := 0
+		for i := range a {
+			if a[i] != b[i] {
+				t.Fatalf("%s: output %d is %#04x, the in-slab form's %#04x", label, i, a[i], b[i])
+			}
+			if a[i]&0x7fff != 0 {
+				nonzero++
+			}
+		}
+		if nonzero < len(a)/2 {
+			t.Fatalf("%s: only %d of %d outputs are nonzero: the comparison would not see a wrong value", label, nonzero, len(a))
+		}
+	}
+	for _, s := range []struct{ M, N, K int }{{1, 8, 64}, {64, 64, 32}, {100, 200, 256}, {130, 1536, 1536}, {37, 72, 8960}} {
+		A, W, WS := halves(s.M*s.K, 0.5), words(s.N*s.K/8), halves(s.N*s.K/32, 0.02)
+		bias := make([]float32, s.N)
+		for i := range bias {
+			bias[i] = float32(rng.NormFloat64())
+		}
+		for mode := range 3 {
+			c0 := make([]uint16, s.M*s.N)
+			if mode == 2 {
+				c0 = halves(s.M*s.N, 1)
+			}
+			args := func(C Buffer) []Buffer {
+				return []Buffer{NewBufferU16s(d, A), NewBufferUint32s(d, W), NewBufferU16s(d, WS), C, u(s.M), u(s.N), u(s.K), NewBufferFloats(d, bias), u(mode)}
+			}
+			gx, gy := (s.N+63)/64, (s.M+63)/64
+			label := fmt.Sprintf("gemm_w4f16_store M=%d N=%d K=%d mode=%d", s.M, s.N, s.K, mode)
+			same(label, run(shipped, "gemm_w4f16_store", gx, gy, c0, args), run(inSlab, "gemm_w4f16_store", gx, gy, c0, args))
+		}
+	}
+	for _, s := range []struct{ M, I, K int }{{1, 32, 64}, {70, 40, 256}, {130, 96, 1536}, {37, 32, 8960}} {
+		A, W, WS := halves(s.M*s.K, 0.5), words(2*s.I*s.K/8), halves(2*s.I*s.K/32, 0.02)
+		for act := range 2 {
+			args := func(C Buffer) []Buffer {
+				return []Buffer{NewBufferU16s(d, A), NewBufferUint32s(d, W), NewBufferU16s(d, WS), C, u(s.M), u(s.I), u(s.K), u(act)}
+			}
+			c0 := make([]uint16, s.M*s.I)
+			gx, gy := (s.I+31)/32, (s.M+63)/64
+			label := fmt.Sprintf("gemm_w4f16_swiglu M=%d I=%d K=%d act=%d", s.M, s.I, s.K, act)
+			same(label, run(shipped, "gemm_w4f16_swiglu", gx, gy, c0, args), run(inSlab, "gemm_w4f16_swiglu", gx, gy, c0, args))
+		}
+	}
+}
