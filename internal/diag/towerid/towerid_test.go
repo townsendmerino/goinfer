@@ -147,6 +147,59 @@ func TestCheckGolden_otherAnchor(t *testing.T) {
 	}
 }
 
+// TestCheckGoldenForAdapter_oneGoldenPerAdapter: two adapters on one platform each record and are graded against their own golden, so
+// neither fails on the other's anchor; an adapter with no golden skips; a platform's unsuffixed golden still grades the adapter whose
+// anchor it carries.
+func TestCheckGoldenForAdapter_oneGoldenPerAdapter(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "internal", "diag", "towerid", "testdata"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mk := func(sha string) Record {
+		return Record{Schema: 1, Backend: "webgpu", GOOS: runtime.GOOS, GOARCH: runtime.GOARCH,
+			Cases: []Case{{Family: "siglip", Input: "normal-9", Device: true, Values: 4, SHA256: sha}}}
+	}
+	run := func(rec Record, anchor, adapter string, update bool) *outcomeTB {
+		return new(outcomeTB).outcome(func(o *outcomeTB) {
+			CheckGoldenForAdapter(o, root, rec, anchor, adapter, FailOtherAnchor, update)
+		})
+	}
+	a, b := mk("aa"), mk("bb")
+	for _, w := range []struct {
+		rec            Record
+		anchor, device string
+	}{{a, "webgpu vulkan Card A (1)", "Card A"}, {b, "webgpu vulkan Card B (2)", "Card B"}} {
+		if o := run(w.rec, w.anchor, w.device, true); o.how != "" {
+			t.Fatalf("recording %s: %s %s", w.device, o.how, o.msg)
+		}
+	}
+	if o := run(a, "webgpu vulkan Card A (1)", "Card A", false); o.how != "" {
+		t.Errorf("A against its own golden: %s %s", o.how, o.msg)
+	}
+	if o := run(b, "webgpu vulkan Card B (2)", "Card B", false); o.how != "" {
+		t.Errorf("B against its own golden (A's must not fail it): %s %s", o.how, o.msg)
+	}
+	if o := run(a, "webgpu vulkan Card A (1)", "Card B", false); o.how != "fail" {
+		t.Errorf("A's bits against B's golden: %s %s; want a failure", o.how, o.msg)
+	}
+	if o := run(a, "webgpu vulkan Card C (3)", "Card C", false); o.how != "skip" {
+		t.Errorf("an adapter with no golden: %s %s; want a skip", o.how, o.msg)
+	}
+	// A legacy unsuffixed golden grades the adapter whose anchor it carries and nobody else.
+	if o := new(outcomeTB).outcome(func(o *outcomeTB) { CheckGolden(o, root, a, "webgpu metal Mac D", FailOtherAnchor, true) }); o.how != "" {
+		t.Fatalf("writing the legacy golden: %s %s", o.how, o.msg)
+	}
+	if o := run(a, "webgpu metal Mac D", "Mac D", false); o.how != "" {
+		t.Errorf("the legacy golden's own adapter: %s %s", o.how, o.msg)
+	}
+	if o := run(a, "webgpu metal Mac E", "Mac E", false); o.how != "skip" {
+		t.Errorf("another adapter beside a legacy golden: %s %s; want a skip", o.how, o.msg)
+	}
+	if got, want := AdapterSlug("Intel(R) Iris(R) Plus Graphics 645 (CFL GT3)"), "intel-r-iris-r-plus-graphics-645-cfl-gt3"; got != want {
+		t.Errorf("AdapterSlug = %q, want %q", got, want)
+	}
+}
+
 // TestProgramPlantVerdict_vacuous holds G-SB9M-2's check to a golden it can fail: a record with no case of a family that
 // walks SigLIP's program proves nothing about the program, so it is an error, not a pass.
 func TestProgramPlantVerdict_vacuous(t *testing.T) {

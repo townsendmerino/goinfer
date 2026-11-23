@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/diag/kernelprint"
@@ -43,12 +44,55 @@ func GoldenPath(root, backend string) string {
 	return filepath.Join(root, "internal", "diag", "towerid", "testdata", fmt.Sprintf("towers.%s-%s-%s.json", backend, runtime.GOOS, runtime.GOARCH))
 }
 
+// AdapterGoldenPath is backend's golden for one adapter on this platform: GoldenPath with the adapter's slug before the extension.
+func AdapterGoldenPath(root, backend, adapter string) string {
+	return filepath.Join(root, "internal", "diag", "towerid", "testdata",
+		fmt.Sprintf("towers.%s-%s-%s-%s.json", backend, runtime.GOOS, runtime.GOARCH, AdapterSlug(adapter)))
+}
+
+// AdapterSlug is name lowercased with every run of non-alphanumerics as one "-", e.g. "NVIDIA GeForce RTX 2070 SUPER" is
+// "nvidia-geforce-rtx-2070-super".
+func AdapterSlug(name string) string {
+	var b []byte
+	for _, r := range strings.ToLower(name) {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			b = append(b, byte(r))
+		} else if len(b) > 0 && b[len(b)-1] != '-' {
+			b = append(b, '-')
+		}
+	}
+	return strings.TrimRight(string(b), "-")
+}
+
+// CheckGoldenForAdapter is CheckGolden for a backend whose bits depend on which adapter ran, so a platform holds one golden per
+// adapter (AdapterGoldenPath) and a second adapter on it has its own rather than failing the first one's. A platform's
+// pre-existing unsuffixed golden (GoldenPath) is still graded when its anchor is this machine's and no per-adapter file exists.
+// An adapter with neither skips, printing what to record.
+func CheckGoldenForAdapter(t testing.TB, root string, rec Record, anchor, adapter string, onOther OnOtherAnchor, update bool) Record {
+	t.Helper()
+	path := AdapterGoldenPath(root, rec.Backend, adapter)
+	if _, err := os.Stat(path); err != nil {
+		legacy := GoldenPath(root, rec.Backend)
+		if raw, lerr := os.ReadFile(legacy); lerr == nil {
+			var g Golden
+			if json.Unmarshal(raw, &g) == nil && g.Anchor == anchor {
+				path = legacy
+			}
+		}
+	}
+	return checkGoldenAt(t, path, rec, anchor, onOther, update)
+}
+
 // CheckGolden grades rec, recorded under anchor, against its backend's golden case for case, exactly. With update
 // it first writes rec as the golden. A platform without a golden skips, printing the record to commit; a different anchor
 // skips or fails as onOther says. It returns the golden's record.
 func CheckGolden(t testing.TB, root string, rec Record, anchor string, onOther OnOtherAnchor, update bool) Record {
 	t.Helper()
-	path := GoldenPath(root, rec.Backend)
+	return checkGoldenAt(t, GoldenPath(root, rec.Backend), rec, anchor, onOther, update)
+}
+
+func checkGoldenAt(t testing.TB, path string, rec Record, anchor string, onOther OnOtherAnchor, update bool) Record {
+	t.Helper()
 	if update {
 		j, err := json.MarshalIndent(Golden{Schema: 1, Anchor: anchor, Record: rec}, "", "  ")
 		if err != nil {

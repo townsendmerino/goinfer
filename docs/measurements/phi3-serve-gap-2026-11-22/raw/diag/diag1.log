@@ -1,0 +1,17 @@
+cell 1 D1a start 17:07:54 load 0.57 MemAvailable 61520 MiB
+cell 1 D1a rc=0 gapdiag: mode argmax opts bench depth 128 tokens 128 rate 126.70 tok/s kv [{Cache:resident Requested:auto Delivered:f16 Reason:auto is f16 on CUDA for this family}] slots 1
+cell 2 D1b start 17:08:49 load 0.85 MemAvailable 61510 MiB
+cell 2 D1b rc=0 gapdiag: mode argmax opts serve depth 128 tokens 128 rate 126.51 tok/s kv [{Cache:resident Requested:auto Delivered:f16 Reason:auto is f16 on CUDA for this family}] slots 3
+cell 3 D2a start 17:09:03 load 0.93 MemAvailable 61535 MiB
+cell 3 D2a rc=0 gapdiag: mode gen opts serve mc3 0 depth 128 tokens 129 rate 126.48 tok/s kv [{Cache:resident Requested:auto Delivered:f16 Reason:auto is f16 on CUDA for this family}]
+cell 4 D2b start 17:09:07 load 0.93 MemAvailable 61537 MiB
+cell 4 D2b rc=0 gapdiag: mode gen opts serve mc3 1 depth 128 tokens 129 rate 126.38 tok/s kv [{Cache:resident Requested:auto Delivered:f16 Reason:auto is f16 on CUDA for this family}]
+cell 5 D2b start 17:09:11 load 0.94 MemAvailable 61540 MiB
+cell 5 D2b rc=0 gapdiag: mode gen opts serve mc3 1 depth 128 tokens 129 rate 126.52 tok/s kv [{Cache:resident Requested:auto Delivered:f16 Reason:auto is f16 on CUDA for this family}]
+cell 6 D2a start 17:09:15 load 0.94 MemAvailable 61534 MiB
+cell 6 D2a rc=0 gapdiag: mode gen opts serve mc3 0 depth 128 tokens 129 rate 126.57 tok/s kv [{Cache:resident Requested:auto Delivered:f16 Reason:auto is f16 on CUDA for this family}]
+cell 7 D1b start 17:09:19 load 0.94 MemAvailable 61490 MiB
+cell 7 D1b rc=0 gapdiag: mode argmax opts serve depth 128 tokens 128 rate 126.39 tok/s kv [{Cache:resident Requested:auto Delivered:f16 Reason:auto is f16 on CUDA for this family}] slots 3
+cell 8 D1a start 17:09:43 load 0.91 MemAvailable 61530 MiB
+cell 8 D1a rc=0 gapdiag: mode argmax opts bench depth 128 tokens 128 rate 126.71 tok/s kv [{Cache:resident Requested:auto Delivered:f16 Reason:auto is f16 on CUDA for this family}] slots 1
+DIAG-DONE

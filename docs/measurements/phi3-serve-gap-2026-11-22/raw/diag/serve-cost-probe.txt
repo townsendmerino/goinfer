@@ -1,0 +1,663 @@
+{
+ "usage": {
+  "prompt_tokens": 129,
+  "completion_tokens": 64,
+  "total_tokens": 193,
+  "prefill_reused_tokens": 0
+ },
+ "timings": {
+  "queue_wait_ms": 0.001,
+  "prefill_ms": 1068.855,
+  "decode_ms": 558.808,
+  "ttft_ms": 1068.88
+ },
+ "cost": {
+  "prefill": {
+   "tokens": 129,
+   "wall_ns": 1063771130,
+   "totals": {
+    "calls": 53666,
+    "bytes_read": 0,
+    "bytes_written": 0,
+    "launches": 53666,
+    "submits": 0,
+    "syncs": 262,
+    "allocs": 0,
+    "alloc_bytes": 0,
+    "time_ns": 0,
+    "unmeasured": [
+     "bytes_read",
+     "bytes_written",
+     "time_ns"
+    ]
+   },
+   "ops": {
+    "alloc": {
+     "calls": 0,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 0,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "bAttn": {
+     "calls": 4128,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 4128,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "fQ": {
+     "calls": 4128,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 4128,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "fRms": {
+     "calls": 8257,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 8257,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "fSw": {
+     "calls": 4128,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 4128,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "gemvQ4K": {
+     "calls": 14448,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 14448,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "gemvW8": {
+     "calls": 14449,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 14449,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "ropeKV": {
+     "calls": 4128,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 4128,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "sync": {
+     "calls": 0,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 0,
+     "submits": 0,
+     "syncs": 262,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    }
+   }
+  },
+  "decode": {
+   "tokens": 64,
+   "wall_ns": 558899149,
+   "totals": {
+    "calls": 26816,
+    "bytes_read": 0,
+    "bytes_written": 0,
+    "launches": 26816,
+    "submits": 0,
+    "syncs": 193,
+    "allocs": 0,
+    "alloc_bytes": 0,
+    "time_ns": 0,
+    "unmeasured": [
+     "bytes_read",
+     "bytes_written",
+     "time_ns"
+    ]
+   },
+   "ops": {
+    "alloc": {
+     "calls": 0,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 0,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "bAttn": {
+     "calls": 2048,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 2048,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "fArg": {
+     "calls": 64,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 64,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "fQ": {
+     "calls": 2048,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 2048,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "fRms": {
+     "calls": 4160,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 4160,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "fSw": {
+     "calls": 2048,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 2048,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "gemvQ4K": {
+     "calls": 7168,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 7168,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "gemvW8": {
+     "calls": 7232,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 7232,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "ropeKV": {
+     "calls": 2048,
+     "byt
+{
+ "usage": {
+  "prompt_tokens": 129,
+  "completion_tokens": 64,
+  "total_tokens": 193,
+  "prefill_reused_tokens": 128,
+  "prefill_reuse": {
+   "own_tokens": 128,
+   "shared_tokens": 0,
+   "host_tokens": 0,
+   "disk_tokens": 0,
+   "promoted_blocks": 0
+  }
+ },
+ "timings": {
+  "queue_wait_ms": 0,
+  "prefill_ms": 13.773,
+  "decode_ms": 558.502,
+  "ttft_ms": 13.785
+ },
+ "cost": {
+  "prefill": {
+   "tokens": 1,
+   "wall_ns": 9223033,
+   "totals": {
+    "calls": 418,
+    "bytes_read": 0,
+    "bytes_written": 0,
+    "launches": 418,
+    "submits": 0,
+    "syncs": 3,
+    "allocs": 0,
+    "alloc_bytes": 0,
+    "time_ns": 0,
+    "unmeasured": [
+     "bytes_read",
+     "bytes_written",
+     "time_ns"
+    ]
+   },
+   "ops": {
+    "alloc": {
+     "calls": 0,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 0,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "bAttn": {
+     "calls": 32,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 32,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "fQ": {
+     "calls": 32,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 32,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "fRms": {
+     "calls": 65,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 65,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "fSw": {
+     "calls": 32,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 32,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "gemvQ4K": {
+     "calls": 112,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 112,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "gemvW8": {
+     "calls": 113,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 113,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "ropeKV": {
+     "calls": 32,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 32,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "sync": {
+     "calls": 0,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 0,
+     "submits": 0,
+     "syncs": 3,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    }
+   }
+  },
+  "decode": {
+   "tokens": 64,
+   "wall_ns": 558509785,
+   "totals": {
+    "calls": 26816,
+    "bytes_read": 0,
+    "bytes_written": 0,
+    "launches": 26816,
+    "submits": 0,
+    "syncs": 192,
+    "allocs": 0,
+    "alloc_bytes": 0,
+    "time_ns": 0,
+    "unmeasured": [
+     "bytes_read",
+     "bytes_written",
+     "time_ns"
+    ]
+   },
+   "ops": {
+    "alloc": {
+     "calls": 0,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 0,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "bAttn": {
+     "calls": 2048,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 2048,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "fArg": {
+     "calls": 64,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 64,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "fQ": {
+     "calls": 2048,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 2048,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "fRms": {
+     "calls": 4160,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 4160,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "fSw": {
+     "calls": 2048,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 2048,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "gemvQ4K": {
+     "calls": 7168,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 7168,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "bytes_written",
+      "time_ns"
+     ]
+    },
+    "gemvW8": {
+     "calls": 7232,
+     "bytes_read": 0,
+     "bytes_written": 0,
+     "launches": 7232,
+     "submits": 0,
+     "syncs": 0,
+     "allocs": 0,
+     "alloc_bytes": 0,
+     "time_ns": 0,
+     "unmeasured": [
+      "bytes_read",
+      "
