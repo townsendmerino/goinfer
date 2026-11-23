@@ -1,0 +1,5 @@
+3826752702 2026-10-17_12:24:23 /home/francis/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.int8int8.e4h.cuda.v17.giw
+2811139646 2026-11-22_14:30:55 /home/francis/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.q4k.cuda.v17.giw
+2811139646 2026-11-19_07:39:18 /home/francis/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.q4k.e4h.cpu-amd64.v17.giw
+2811139518 2026-11-03_15:22:33 /home/francis/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.q4k.e4h.cuda.v17.giw
+2454294334 2026-11-22_13:42:21 /home/francis/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.q4k.k56.cpu-amd64.v17.giw
