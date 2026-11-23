@@ -92,3 +92,30 @@ otherwise idle box. Two changes:
   hours, past the day's bound, and nobara's night is taken (C12 from 22:00). **K = 3,900 runs 1 block** (S B E E B S: one S–B pair
   and one S–E pair in each order); K = 1,024 keeps 2 blocks. The bars are unchanged and are read on the pairs that run. **Cost:** about
   95 minutes.
+
+## G4 result: WORTH IT for both batched arms; G2 PASS (2026-11-23, nobara CPU, the exclusive lock)
+
+Binary `decoder-f553040b3` (amendment 2), gpt-oss-20b at int4. Records: `g4/` (13:24–14:56 PST) and `g4/rerun-b1/` (15:39–15:54).
+**Void and re-run:** the first cell of K = 1,024 block 1 in `g4/` (S, 13:24:51–13:28:54) overlapped three 1–2 s `go vet` runs that
+another session made without the timing lock (13:25:57, 13:26:12, 13:26:56; that session's overlap table), so the whole block is
+VOID and was re-run in place as `g4/rerun-b1/`. nobara then crashed at about 15:16 and rebooted, before the re-run had started (it
+was waiting for the lock), so the crash voids nothing here. No other cell overlaps a recorded unlocked run. Every cell started at
+load 2.06–3.98 with at least 48.5 GB available: none void by the registered rule.
+
+| K | block | S s | B s | E s | S ÷ B (two pairs) | S ÷ E (two pairs) |
+|---|---|---|---|---|---|---|
+| 1,024 | 1 (re-run) | 240.6, 237.9 | 37.7, 37.7 | 42.1, 42.2 | 6.39, 6.31 | 5.71, 5.64 |
+| 1,024 | 2 | 243.6, 241.2 | 38.3, 38.3 | 42.9, 42.8 | 6.36, 6.30 | 5.68, 5.64 |
+| 3,900 | 1 | 977.3, 975.9 | 206.4, 207.0 | 220.7, 221.0 | 4.73, 4.71 | 4.43, 4.42 |
+
+- **S–B and S–E: WORTH IT** (every pair at least 2.0× at both K). E, the exact batched arm, is 7–12% behind B.
+- **G2: PASS.** E's first logits equal S's bit for bit on every S cell that ran (8 cells, including the voided block's, whose
+  identity check is not a timing).
+- **Memory (the Go heap's peak in use, sampled every 20 ms):** S 11,853 MiB at 1,024 and 11,988 at 3,900; B +213 and +595 MiB; E
+  +214 and +380 MiB. The batched pass's scratch is the difference; the fit plan (29,059 MiB need) is unchanged.
+
+## What it decides (Francis's call)
+
+By the registered outcomes, G3 FAIL leaves the default's f32 attention out, and the exact batched prefill (E) is the live option:
+bit-identical to today's sequential prefill (G1, G2), first token 5.6–5.7× sooner at 1,024 prompt tokens and 4.4× at 3,900, for
++214–380 MiB of peak heap.
