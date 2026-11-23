@@ -3,7 +3,7 @@
 registration's three models added to their model tables and BENCH_PROMPTS (the calibrated copy) as the prompt source.
 
   BENCH_PROMPTS=<prompts.json copy> bench.py decode <results.json>          (bench_peer's environment otherwise)
-  BENCH_PROMPTS=<prompts.json copy> WG0_REPO=<worktree> bench.py ttft <out.json> --arm head=<serve>:webgpu --arm base=... --models <key>
+  BENCH_PROMPTS=<prompts.json copy> WG3_BASE_SERVE=<base serve> WG0_REPO=<worktree> bench.py ttft <out.json> --arm head=<serve>:webgpu --arm base=... --models <key>
 """
 import json, os, signal, sys
 
@@ -17,7 +17,7 @@ MODELS = {
     "cr7b": (os.path.join(M, "command-r7b"), "cr7b-none"),
 }
 mode, rest = sys.argv[1], sys.argv[2:]
-prompts = json.load(open(os.environ["BENCH_PROMPTS"]))
+prompts = json.load(open(os.environ["BENCH_PROMPTS"]))  # bench_peer reads BENCH_PROMPTS itself, at import
 if mode == "decode":
     sys.argv = [os.path.join(REPO, "scripts", "bench_peer.py")] + rest
     import bench_peer as bp  # noqa: E402
@@ -37,8 +37,10 @@ elif mode == "ttft":
         wg0_ttft.PROMPT_KEY[k] = k + ":1024"
     _popen = wg0_ttft.subprocess.Popen
 
-    def popen(argv, *a, **kw):  # the base arm runs on the CPU by design, so no -require-backend
-        if isinstance(argv, list) and "-model" in argv:
+    base = os.environ["WG3_BASE_SERVE"]  # the base arm's binary: it runs on the CPU by design, the only arm without -require-backend
+
+    def popen(argv, *a, **kw):
+        if isinstance(argv, list) and argv and argv[0] == base:
             argv = [x for x in argv if x != "-require-backend"]
         return _popen(argv, *a, **kw)
 
@@ -47,7 +49,8 @@ elif mode == "ttft":
 
     def run_cell(*a, **kw):  # records the argv the server actually ran
         rec = _run_cell(*a, **kw)
-        rec["argv"] = [x for x in rec["argv"] if x != "-require-backend"]
+        if rec["argv"][0] == base:
+            rec["argv"] = [x for x in rec["argv"] if x != "-require-backend"]
         return rec
 
     wg0_ttft.run_cell = run_cell
