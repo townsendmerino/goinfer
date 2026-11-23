@@ -1,0 +1,11 @@
+VOID: depth 128: goinfer block 0 errored: server did not come up
+VOID: depth 128: goinfer_old block 0 errored: server did not come up
+VOID: depth 128: goinfer_old block 1 errored: server did not come up
+VOID: depth 128: goinfer block 1 errored: server did not come up
+VOID: depth 128: 0 good block(s), the registration asks for 2
+VOID: depth 3900: goinfer block 0 errored: server did not come up
+VOID: depth 3900: goinfer_old block 0 errored: server did not come up
+VOID: depth 3900: goinfer_old block 1 errored: server did not come up
+VOID: depth 3900: goinfer block 1 errored: server did not come up
+VOID: depth 3900: 0 good block(s), the registration asks for 2
+VERDICT VOID

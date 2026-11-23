@@ -1,0 +1,4 @@
+probe-cost: lane  prompt 2048 decode tokens 64 ops [('?', 2048), ('alloc', 0), ('fArg', 64), ('fQ', 2048), ('fRms', 4160), ('fSw', 2048), ('faCombine', 2048), ('gemvQ4K', 7168), ('gemvW8', 7232), ('ropeKV', 2048), ('sync', 0)]
+probe-cost: exact prompt 2048 decode tokens 64 ops [('alloc', 0), ('bAttn', 2048), ('fArg', 64), ('fQ', 2048), ('fRms', 4160), ('fSw', 2048), ('gemvQ4K', 7168), ('gemvW8', 7232), ('ropeKV', 2048), ('sync', 0)]
+probe-cost: flash-decode launches lane {'fArg': 64, 'faCombine': 2048} exact {'fArg': 64}
+probe-cost: the lane arm did not launch the lane, or the exact arm did

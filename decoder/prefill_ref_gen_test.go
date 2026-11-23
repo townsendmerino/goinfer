@@ -103,6 +103,9 @@ func TestPrefillGateReference(t *testing.T) {
 		{"DSV2L", "GOINFER_CPU_MODEL_DSV2L", "$HOME/models/deepseek-v2-lite", "int8", refKs([]int{3900, 8000})},
 		// G22B, Gemma-2-2B: the capped flash-decode lane's fidelity gate (docs/measurements/op1o2-fa-softcap-2026-11/README.md), f32 like S.
 		{"G22B", "GOINFER_CPU_MODEL_G22B", "$HOME/models/gemma-2-2b-it-Q8_0.gguf", "", refKs([]int{3900})},
+		// P3M, Phi-3 mini (head dim 96): the hd-96 flash-decode lane's fidelity gate (docs/measurements/fa-hd96-phi3-2026-11-22/README.md),
+		// f32 like S.
+		{"P3M", "GOINFER_CPU_MODEL_P3M", "$HOME/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf", "", refKs([]int{3900})},
 	}
 	// GOINFER_CPU_REF_MODELS (comma-separated cell names) narrows the run; unset builds S and D7, as before Q05.
 	want := map[string]bool{"S": true, "D7": true}

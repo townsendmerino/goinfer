@@ -297,7 +297,7 @@ func (r *cudaResident) raggedSKReady() bool {
 
 // raggedFAReady reports whether the flash-decode lane's ragged twins are loaded, so a step's lane rows can take one launch.
 func (r *cudaResident) raggedFAReady() bool {
-	return r.faCombineRagged != (Pipeline{}) && r.faRagged != [3]Pipeline{}
+	return r.faCombineRagged != (Pipeline{}) && r.faRagged != [faHDs]Pipeline{}
 }
 
 // raggedRowsFor uploads rows into one buffer from ai (prefillCore's scratch, so StepScratchBytes prices it), or returns nil when
@@ -451,7 +451,10 @@ func (r *cudaResident) stepAttnRows(Ly *cudaLayer, l int, rows []stepRow, from i
 		}
 	}
 	if c.nF > 0 {
-		which := map[int]int{64: 0, 128: 1, 256: 2}[Ly.hd]
+		which, ok := faHDIndex(Ly.hd)
+		if !ok {
+			return fmt.Errorf("cuda: flash-decode lane has no kernel for head dim %d", Ly.hd)
+		}
 		G, U := r.nH/Ly.nKV, r.faSplit*faWarps
 		for a := 0; a < c.nF; a += faMaxRows {
 			k := min(faMaxRows, c.nF-a)

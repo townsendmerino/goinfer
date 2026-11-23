@@ -1,0 +1,6 @@
+started: 2026-11-23 06:40:41 PST
+binary: /home/francis/goinfer-bench/fa-hd96-run/bin/serve-cuda-29e674092 sha256 583b937a86d2bee4
+gpu: NVIDIA GeForce RTX 2070 SUPER, 595.112.07, 460 MiB
+load: 1.12 2.15 2.01 1/671 533191
+mem: Mem:              62           2          30           0          30          60
+finished: 2026-11-23 06:49:15 PST rc=0

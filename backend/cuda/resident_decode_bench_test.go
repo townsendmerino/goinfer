@@ -15,7 +15,8 @@ import (
 // after prefilling GOINFER_BENCH_DEPTH positions: one op is one decoded token. It is the
 // speed-gate instrument for the q4k lane (goinfer against goinfer,
 // separate processes per quant). Env: GOINFER_BENCH_MODEL (a .gguf), GOINFER_BENCH_QUANT,
-// GOINFER_BENCH_ACT_GROUP (0 or 32), GOINFER_BENCH_DEPTH (default 128), GOINFER_BENCH_NO_FUSE (non-empty: fused kernels off). Prefill is outside the timer.
+// GOINFER_BENCH_ACT_GROUP (0 or 32), GOINFER_BENCH_DEPTH (default 128), GOINFER_BENCH_NO_FUSE (non-empty: fused kernels off), GOINFER_BENCH_FA_HD96 (non-empty: the hd-96 lane's
+// opt-in). Prefill is outside the timer.
 func BenchmarkResidentDecode(b *testing.B) {
 	path := os.Getenv("GOINFER_BENCH_MODEL")
 	if path == "" {
@@ -30,7 +31,8 @@ func BenchmarkResidentDecode(b *testing.B) {
 	}
 	opts := decoder.Options{Backend: "cuda", Quant: os.Getenv("GOINFER_BENCH_QUANT"),
 		ActQuantGroup: group, ResidentContext: depth + 1024}
-	if os.Getenv("GOINFER_BENCH_NO_FUSE") != "" { // attribution: the per-row path with its fused kernels off
+	opts.FlashDecodeHD96 = os.Getenv("GOINFER_BENCH_FA_HD96") != "" // the hd-96 lane's opt-in (docs/measurements/fa-hd96-phi3-2026-11-22)
+	if os.Getenv("GOINFER_BENCH_NO_FUSE") != "" {                   // attribution: the per-row path with its fused kernels off
 		opts.Knobs = &decoder.Knobs{"GOINFER_CUDA_NO_FUSE": "1"}
 	}
 	m, err := decoder.Load(path, opts)

@@ -1,0 +1,10 @@
+started: 2026-11-22 19:55:30 PST
+binary: /home/francis/goinfer-bench/fa-hd96-run/bin/serve-cuda-29e674092 sha256 583b937a86d2bee4
+gpu: NVIDIA GeForce RTX 2070 SUPER, 595.112.07, 460 MiB
+load: 1.72 1.43 1.37 1/754 464344
+mem: Mem:              62           2          23           0          37          59
+probe: exact 256 tokens 'planeplaneplaneplaneplaneplaneplaneplaneplaneplaneplaneplaneplaneplane'
+probe: lane  256 tokens 'planeplaneplaneplaneplaneplaneplaneplaneplaneplaneplaneplaneplaneplane'
+probe: exact twice identical: True; text equal across arms: True
+probe: IDENTICAL text on both arms over a long reply
+!! the arms did not differ (or a probe failed): the cell does not run

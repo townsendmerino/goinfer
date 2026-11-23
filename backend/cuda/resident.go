@@ -549,6 +549,7 @@ type cudaResident struct {
 	finalSoftcap   float32 // Gemma final-logit softcap (30); 0 ⇒ none. Applied host-side in step().
 	attnCap        float32 // Gemma 2 attention-score softcap (50); 0 ⇒ none. The covered kernels' capped variants take it as an argument (withCap).
 	faSoftcap      bool    // a capped layer may take the flash-decode lane's capped variant (decoder.Options.FlashDecodeSoftcap); off, it decodes on split-KV
+	faHD96         bool    // a head-dim-96 layer may take the flash-decode lane (fa_partial_96); off, it decodes on the exact path
 	// attnTempBeta/attnTempOrigMaxPos (Ministral 3, FeatAttnTemp): the raw
 	// params behind the post-RoPE query scale (decoder.Model.AttnTempParams), 0 for every family without it.
 	// Recomputed into qTempScale per decode call (rope_kv's parameter) or passed raw into rope_kv_batched, which
@@ -748,17 +749,17 @@ type cudaResident struct {
 	skPartialBuf                                 Buffer   // [nH·maxHd·nSplit] partial folds for the spike
 	skVsumSplit                                  int      // vsumSplitForTest at build; 0 = off (the shipped path)
 	// Flash-decode lane (decode_fa.cu): default on (GOINFER_CUDA_FLASH_DECODE=0 turns it off), NOT bit-identical.
-	faPartial     [3]Pipeline // fa_partial_{64,128,256}
-	kv8Store      Pipeline    // kv8_store: the int8 cache's quantizing store (kv8.go); bound only on an int8 cache
+	faPartial     [faHDs]Pipeline // fa_partial_<hd> for each of faHDList
+	kv8Store      Pipeline        // kv8_store: the int8 cache's quantizing store (kv8.go); bound only on an int8 cache
 	faCombine     Pipeline
-	faSplit       int            // S key splits per kv head; 0 = lane off (the exact path)
-	faMinKeys     int            // attended-span floor below which the exact path runs (GOINFER_CUDA_FLASH_DECODE_MIN_KEYS)
-	faBuf         Buffer         // partials [nH][S*8][hd+4]
-	faLaunches    int            // launches of fa_partial, so a test can prove the lane ran
-	faModule      string         // the build of decode_fa the lane was compiled from (decode_fa, _kv16 or _kv8), so a test can prove the precision's twin ran
-	skLaunches    int            // split-KV decode attention passes, so a test can prove that path ran
-	faExactScope  atomic.Int32   // >0: a speculative generation holds the exact-attention scope, so the lane is bypassed
-	faRows        [3][9]Pipeline // fa_partial_rows_{64,128,256}_g{1..8} (multi-row verify variant); zero when not loaded
+	faSplit       int                // S key splits per kv head; 0 = lane off (the exact path)
+	faMinKeys     int                // attended-span floor below which the exact path runs (GOINFER_CUDA_FLASH_DECODE_MIN_KEYS)
+	faBuf         Buffer             // partials [nH][S*8][hd+4]
+	faLaunches    int                // launches of fa_partial, so a test can prove the lane ran
+	faModule      string             // the build of decode_fa the lane was compiled from (decode_fa, _kv16 or _kv8), so a test can prove the precision's twin ran
+	skLaunches    int                // split-KV decode attention passes, so a test can prove that path ran
+	faExactScope  atomic.Int32       // >0: a speculative generation holds the exact-attention scope, so the lane is bypassed
+	faRows        [faHDs][9]Pipeline // fa_partial_rows_<hd>_g{1..8} (multi-row verify variant) for each of faHDList; zero when not loaded
 	faCombineRows Pipeline
 	faVerify      bool // the multi-row lane serves speculative verify rows (loaded, and not disabled by GOINFER_CUDA_FLASH_DECODE_VERIFY=0)
 	faRowLaunches int  // launches of fa_partial_rows, so a test can prove verify rows ran on the multi-row lane
@@ -883,7 +884,7 @@ type cudaResident struct {
 	// skScoresRagged, skSoftmaxRagged and skVsumRagged are split-KV's ragged twins (decode_splitkv.cu); zero when not loaded.
 	skScoresRagged, skSoftmaxRagged, skVsumRagged Pipeline
 	// faRagged and faCombineRagged are the flash-decode lane's ragged twins (decode_fa.cu); zero when not loaded.
-	faRagged        [3]Pipeline
+	faRagged        [faHDs]Pipeline
 	faCombineRagged Pipeline
 	// bRopeKVRagged and bAttnRagged are rope_kv_batched's and attn_batched's ragged twins (prefill_batched.cu); zero when not
 	// loaded, when a step's rows take decode's own gap.
