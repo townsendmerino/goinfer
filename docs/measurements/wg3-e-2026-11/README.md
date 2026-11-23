@@ -7,9 +7,8 @@ run; it reads a second adapter.
 
 **Run.** `TestGemma4EModel_webgpuRealNonInferiority` (`backend/webgpu/gemma4_emodel_real_test.go`), unchanged, built at
 `4859edaf1`, 2026-11-23 11:30-11:36 PST, under nobara's exclusive timing lock; driver 595.112.07. The int4 sidecars it
-reads were written for the run by `cmd/prequant -quant int4 -target webgpu` from the GGUFs in `~/models`
-(`gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf`, `gemma-4-e4b-gguf/gemma-4-E4B_q4_0-it.gguf`,
-`qwen2.5-coder-1.5b-instruct-q4_k_m.gguf`) into a scratch folder outside the models directory. Every arm reported
+reads were written for the run by `cmd/prequant -quant int4 -target webgpu` from the quantization-aware q4_0 GGUFs of
+E2B and E4B and the Qwen2.5-Coder-1.5B q4_k_m GGUF in nobara's models directory, into a scratch folder outside it. Every arm reported
 `webgpu:vulkan-resident (int4)`.
 
 | model | teacher-forced agreement | free-run passes | delta vs the reference | verdict |
