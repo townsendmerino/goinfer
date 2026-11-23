@@ -127,3 +127,15 @@ on Metal, a default no gate here decided. Metal now takes it only when the flag 
 `764bc044c` ([`post-merge/checks.log`](post-merge/checks.log)): `TestFlashDecodeHD96_metalSelection` passes its not-given, chosen and
 caller's-default cases, and a served Phi-3 request at depth 2,048 logs no hd-96 `attention_fa` dispatch without the flag and 160 with
 `-flash-decode-hd96`. The gate readings above are unchanged: both gate-3 arms passed the flag explicitly.
+
+## Default, 2026-11-23: on at a context of at most 4,096 (Francis)
+
+- **The decision.** Francis, 2026-11-23, about 11:15 PST, relayed by the coordinator: option (a), CUDA's rule (#1241) on Metal. The lane
+  is on by default for a head-dim-96 load whose resident context cap is at most 4,096, what the gates read; `--flash-decode-hd96` reaches
+  a longer context, and `=false` turns it off. Conditional on the review follow-ups above coming back clean, which they did.
+- **Its shape.** With the flag not given, serve and goinfer-chat set `FlashDecodeHD96` with `FlashDecodeHD96Default`. The resident sizes
+  the lane whenever `FlashDecodeHD96` is set, and `faHD96On` lets an hd-96 layer take it when chosen, or under the default while
+  `ctxCap` (after `kvRaise`, the depth a conversation can reach) is at most `metalHD96DefaultMaxCtx`. `TestFlashDecodeHD96_metalSelection`
+  holds the rule (red before the change: the two default rows): on at 4,096 and off at 4,097 under the default, on at 8,192 when chosen,
+  off at `=false`, and a head-dim-64 layer on with the option on and off.
+- **What it rests on:** gates 1–3 above (gate 3 SHIP, 1.292 at 3,900 and 1.002 at 128) and the bytes in gate 3's section.

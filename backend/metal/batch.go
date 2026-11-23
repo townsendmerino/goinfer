@@ -183,7 +183,7 @@ func metalStepInputs(m *decoder.Model, plan metalCtxPlan) *stepInputs {
 			info.hd, info.nKV = m.BackendView().Layer(l).HeadDim(), m.BackendView().Layer(l).KVHeads()
 			info.hasGeom, info.kEqV = info.hd > 0, m.BackendView().Layer(l).VFromK() && m.BackendView().Layer(l).KVSrc() == l
 			in.oneKVAllocation = true
-			in.faPartial = max(in.faPartial, attnFAPartialFloats(info.hd, nH, info.nKV, hd96Chosen(m)))
+			in.faPartial = max(in.faPartial, attnFAPartialFloats(info.hd, nH, info.nKV, m.FlashDecodeHD96()))
 		} else if mixer == decoder.MixerMLA {
 			in.oneKVAllocation = true
 		}
@@ -976,7 +976,7 @@ func (r *resident) canUseAttnFAAt(l, nKeys int) bool {
 		return false
 	}
 	g := L.geom
-	return g != nil && attnFAHeadDimOK(g.hd, r.nH, g.nKV, r.faHD96) && attnFAGroupOK(r.nH, g.nKV) && nKeys >= r.attnFAFloor()
+	return g != nil && attnFAHeadDimOK(g.hd, r.nH, g.nKV, r.faHD96On()) && attnFAGroupOK(r.nH, g.nKV) && nKeys >= r.attnFAFloor()
 }
 
 // forwardMulti runs one decode token for each of seqs — 1..batchMaxSeqs sequences, each on its own resident KV slot at
