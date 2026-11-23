@@ -132,6 +132,7 @@ func (b *residentBuild) bindPipelines() {
 	r.pAttnFA, r.pAttnFACombine = pipe("attention_fa"), pipe("attention_fa_combine")
 	r.pAttnFARows, r.pAttnFACombineRows = pipe("mc3_attention_fa_rows"), pipe("mc3_attention_fa_combine_rows")
 	r.decodeAttnFA = metalAttnFAEnabled(modelKnob(m, "GOINFER_METAL_ATTN_FA"))
+	r.faHD96 = hd96Chosen(m)
 	r.pArgFinish = pipe("argmax_finish")
 	r.pArgRowsPart = pipe("argmax_rows_part") // E-P08: the batched step's greedy rows (batch.go)
 	r.pEmbedGather = pipe("embed_gather_i8")
@@ -697,7 +698,7 @@ func (b *residentBuild) buildLayer(l int) error {
 		if r.nH*L.geom.hd > b.maxNHhd {
 			b.maxNHhd = r.nH * L.geom.hd
 		}
-		if e := attnFAPartialFloats(L.geom.hd, r.nH, L.geom.nKV); e > 0 {
+		if e := attnFAPartialFloats(L.geom.hd, r.nH, L.geom.nKV, r.faHD96); e > 0 {
 			b.maxAttnFAPartial = max(b.maxAttnFAPartial, e)
 			// Cache nKV here: attention_fa is dense-GQA-only, so every eligible layer shares one nKV (canUseAttnFA's own
 			// gate is this same condition), and setPos can compute G and nSplit once per decode step instead of the
@@ -1082,6 +1083,10 @@ func (b *residentBuild) sizeDecodeScratch() error {
 		case r.layers[r.attnFALayer].geom.hd == 64: // attnFAHeadDimOK admitted hd = 64 only where blk64 exists
 			r.pAttnFA = pipe(fmt.Sprintf("attention_fa_blk64_g%d", g))
 			r.pAttnFARows = pipe(fmt.Sprintf("mc3_attention_fa_blk64_rows_g%d", g))
+			r.attnFABlkSplit = attnFABlkSplit
+		case r.layers[r.attnFALayer].geom.hd == 96: // admitted at G = 1 only, under faHD96
+			r.pAttnFA = pipe(fmt.Sprintf("attention_fa_blk96_g%d", g))
+			r.pAttnFARows = pipe(fmt.Sprintf("mc3_attention_fa_blk96_rows_g%d", g))
 			r.attnFABlkSplit = attnFABlkSplit
 		case g == 6 || g == 7, attnFABlkAnyG && g >= 2 && g <= 8:
 			r.pAttnFA = pipe(fmt.Sprintf("attention_fa_blk_g%d", g))

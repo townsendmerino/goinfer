@@ -50,7 +50,7 @@
     },
     {
       "Name": "flash-decode-hd96",
-      "Usage": "On by default at a context of at most 4096; --flash-decode-hd96 turns it on at any context, =false off. CUDA only: a model with head dimension 96 (Phi-3 mini) decodes on the flash-decode lane, on its hd-96 kernels, once a layer attends 2048 keys or more, instead of the exact attention path. Its outputs differ from the exact path's, inside the lane's fidelity gate, and it costs no memory (docs/measurements/fa-hd96-phi3-2026-11-22/README.md); no effect at another head dim or off CUDA.",
+      "Usage": "A model with head dimension 96 (Phi-3 mini) decodes on the flash-decode lane, on its hd-96 kernels, instead of the exact attention path; its outputs differ from the exact path's, inside the lane's fidelity gate. CUDA: on by default at a context of at most 4096, past 2048 attended keys, at no memory cost (docs/measurements/fa-hd96-phi3-2026-11-22/README.md); --flash-decode-hd96 turns it on at any context, =false off. Metal: off by default; --flash-decode-hd96 turns it on past 1024 attended keys (docs/measurements/metal-fa-hd96-phi3-2026-11-23/README.md). No effect at another head dim.",
       "DefValue": "false",
       "Type": "loadflags.givenBool"
     },
@@ -190,7 +190,7 @@
     },
     {
       "Name": "flash-decode-hd96",
-      "Usage": "On by default at a context of at most 4096; --flash-decode-hd96 turns it on at any context, =false off. CUDA only: a model with head dimension 96 (Phi-3 mini) decodes on the flash-decode lane, on its hd-96 kernels, once a layer attends 2048 keys or more, instead of the exact attention path. Its outputs differ from the exact path's, inside the lane's fidelity gate, and it costs no memory (docs/measurements/fa-hd96-phi3-2026-11-22/README.md); no effect at another head dim or off CUDA.",
+      "Usage": "A model with head dimension 96 (Phi-3 mini) decodes on the flash-decode lane, on its hd-96 kernels, instead of the exact attention path; its outputs differ from the exact path's, inside the lane's fidelity gate. CUDA: on by default at a context of at most 4096, past 2048 attended keys, at no memory cost (docs/measurements/fa-hd96-phi3-2026-11-22/README.md); --flash-decode-hd96 turns it on at any context, =false off. Metal: off by default; --flash-decode-hd96 turns it on past 1024 attended keys (docs/measurements/metal-fa-hd96-phi3-2026-11-23/README.md). No effect at another head dim.",
       "DefValue": "false",
       "Type": "loadflags.givenBool"
     },

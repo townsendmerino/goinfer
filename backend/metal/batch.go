@@ -183,7 +183,7 @@ func metalStepInputs(m *decoder.Model, plan metalCtxPlan) *stepInputs {
 			info.hd, info.nKV = m.BackendView().Layer(l).HeadDim(), m.BackendView().Layer(l).KVHeads()
 			info.hasGeom, info.kEqV = info.hd > 0, m.BackendView().Layer(l).VFromK() && m.BackendView().Layer(l).KVSrc() == l
 			in.oneKVAllocation = true
-			in.faPartial = max(in.faPartial, attnFAPartialFloats(info.hd, nH, info.nKV))
+			in.faPartial = max(in.faPartial, attnFAPartialFloats(info.hd, nH, info.nKV, hd96Chosen(m)))
 		} else if mixer == decoder.MixerMLA {
 			in.oneKVAllocation = true
 		}
@@ -814,8 +814,8 @@ func (s stepShape) scratchBytes() int64 {
 }
 
 // attnFAPartialFloats is the fused attention's partial buffer for a layer of this geometry, 0 where that kernel never runs on it.
-func attnFAPartialFloats(hd, nH, nKV int) int {
-	if !attnFAHeadDimOK(hd, nH, nKV) || !attnFAGroupOK(nH, nKV) {
+func attnFAPartialFloats(hd, nH, nKV int, hd96 bool) int {
+	if !attnFAHeadDimOK(hd, nH, nKV, hd96) || !attnFAGroupOK(nH, nKV) {
 		return 0
 	}
 	return nH * (hd + 2) * attnFAPartialSplits
@@ -976,7 +976,7 @@ func (r *resident) canUseAttnFAAt(l, nKeys int) bool {
 		return false
 	}
 	g := L.geom
-	return g != nil && attnFAHeadDimOK(g.hd, r.nH, g.nKV) && attnFAGroupOK(r.nH, g.nKV) && nKeys >= r.attnFAFloor()
+	return g != nil && attnFAHeadDimOK(g.hd, r.nH, g.nKV, r.faHD96) && attnFAGroupOK(r.nH, g.nKV) && nKeys >= r.attnFAFloor()
 }
 
 // forwardMulti runs one decode token for each of seqs — 1..batchMaxSeqs sequences, each on its own resident KV slot at
