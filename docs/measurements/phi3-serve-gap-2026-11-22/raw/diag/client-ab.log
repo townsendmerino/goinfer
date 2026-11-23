@@ -1,0 +1,8 @@
+block 1 py rate 114.56 tok/s events 64 reported 64
+block 1 go rate 114.53 tok/s events 64 reported 64
+block 1 go rate 114.59 tok/s events 64 reported 64
+block 1 py rate 114.62 tok/s events 64 reported 64
+block 2 py rate 114.50 tok/s events 64 reported 64
+block 2 go rate 114.41 tok/s events 64 reported 64
+block 2 go rate 114.50 tok/s events 64 reported 64
+block 2 py rate 114.47 tok/s events 64 reported 64

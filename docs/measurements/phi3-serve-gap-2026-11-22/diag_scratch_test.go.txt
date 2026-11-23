@@ -1,0 +1,121 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/cost"
+	"github.com/townsendmerino/goinfer/tokenizer"
+)
+
+// TestGapDiag decomposes the served Phi-3 decode against BenchmarkResidentDecode (docs/measurements/phi3-serve-gap-2026-11-22,
+// "Diagnosis"). One load per process, chosen by env:
+//
+//	GAPD_OPTS=bench  the benchmark's load (ResidentContext depth+1024, one slot)
+//	GAPD_OPTS=serve  serve's (ResidentContext 4096, 4 slots asked as a default, auto KV)
+//	GAPD_MODE=argmax ForwardArgmax on the resident, the benchmark's loop, after a sequential prefill of the prose prompt
+//	GAPD_MODE=gen    decoder.Generate greedy on the same prompt, rate = (n-1)/(t_last-t_first) over the token channel
+//	GAPD_MC3=N       EnableResidentConcurrency(N) before generating (serve enables it when it holds two or more slots)
+//
+// Each prints one "gapdiag:" line. Scratch instrument; not committed as a test.
+func TestGapDiag(t *testing.T) {
+	path := os.Getenv("GOINFER_BENCH_MODEL")
+	if path == "" {
+		t.Skip("set GOINFER_BENCH_MODEL")
+	}
+	depth, n := 128, 128
+	if v, err := strconv.Atoi(os.Getenv("GOINFER_BENCH_DEPTH")); err == nil {
+		depth = v
+	}
+	opts := decoder.Options{Backend: "cuda", Quant: "q4k", ResidentContext: depth + 1024}
+	switch os.Getenv("GAPD_OPTS") {
+	case "serve":
+		opts = decoder.Options{Backend: "cuda", Quant: "q4k", ResidentContext: 4096, ResidentKVSlots: 4, ResidentKVSlotsDefault: true,
+			KVPrecision: "auto", ResidentWindowedKV: true}
+	case "serve2": // serve's resolved embed and head defaults as well (its banner: "head table: int8")
+		opts = decoder.Options{Backend: "cuda", Quant: "q4k", ResidentContext: 4096, ResidentKVSlots: 4, ResidentKVSlotsDefault: true,
+			KVPrecision: "auto", ResidentWindowedKV: true, EmbedInt4: true, EmbedInt4Default: true}
+	case "bench2": // the benchmark's load with only the embed and head defaults added
+		opts = decoder.Options{Backend: "cuda", Quant: "q4k", ResidentContext: depth + 1024, EmbedInt4: true, EmbedInt4Default: true}
+	}
+	tk, err := tokenizer.LoadGGUF(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, files := decoder.PrefillGatePromptSet()
+	ids := decoder.PrefillGateProseIDsForTest(t, tk, files[0], depth)[:depth]
+	m, err := decoder.Load(path, opts)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer m.Close()
+	mc3 := 0
+	if v, err := strconv.Atoi(os.Getenv("GAPD_MC3")); err == nil && v > 1 {
+		mc3 = m.EnableResidentConcurrency(v)
+	}
+	kv := m.KVPrecisionReports()
+	switch os.Getenv("GAPD_MODE") {
+	case "gen":
+		ctx := context.Background()
+		var cc *cost.Counter
+		if os.Getenv("GAPD_COST") == "1" { // the counter serve attaches when a request asks for its cost
+			cc = cost.New()
+			ctx = cost.WithCounter(ctx, cc)
+		}
+		ch, g := m.Generate(ctx, ids, n+1, decoder.SamplingParams{})
+		var tf, tl time.Time
+		got := 0
+		for range ch {
+			now := time.Now()
+			if got == 0 {
+				tf = now
+			}
+			tl = now
+			got++
+		}
+		if err := g.Err(); err != nil {
+			t.Fatalf("generate: %v", err)
+		}
+		fmt.Printf("gapdiag: mode gen opts %s mc3 %d depth %d tokens %d rate %.2f tok/s kv %+v\n", os.Getenv("GAPD_OPTS"), mc3, depth,
+			got, float64(got-1)/tl.Sub(tf).Seconds(), kv)
+		if cc != nil {
+			if d := cc.Report().Decode; d != nil {
+				fmt.Printf("gapdiag-cost: decode tokens %d wall %.3f ms/token launches %d syncs %d\n", d.Tokens, float64(d.WallNs)/1e6/float64(d.Tokens),
+					d.Totals.Launches, d.Totals.Syncs)
+				for op, c := range d.Ops {
+					fmt.Printf("gapdiag-cost-op: %s launches %d syncs %d\n", op, c.Launches, c.Syncs)
+				}
+			}
+		}
+	default:
+		rf := m.ResidentForwardForTest()
+		r, ok := rf.(*cudaResident)
+		if !ok {
+			t.Fatalf("no CUDA resident: %s", m.ResidentDecline())
+		}
+		pos := 0
+		for ; pos < depth; pos++ {
+			if _, err := r.Forward(m.EmbedResidentForTest(ids[pos]), pos); err != nil {
+				t.Fatal(err)
+			}
+		}
+		next := ids[depth-1]
+		t0 := time.Now()
+		for i := 0; i < n; i++ {
+			tok, err := r.ForwardArgmax(m.EmbedResidentForTest(next), pos)
+			if err != nil {
+				t.Fatal(err)
+			}
+			next, pos = tok, pos+1
+		}
+		fmt.Printf("gapdiag: mode argmax opts %s depth %d tokens %d rate %.2f tok/s kv %+v slots %d path %q\n", os.Getenv("GAPD_OPTS"), depth, n,
+			float64(n)/time.Since(t0).Seconds(), kv, r.KVSlots(), m.DecodePath())
+	}
+}

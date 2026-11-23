@@ -1,0 +1,16 @@
+cell 1 bench:argmax start 17:11:38 load 0.34
+cell 1 bench:argmax rc=0 gapdiag: mode argmax opts bench depth 128 tokens 128 rate 126.69 tok/s kv [{Cache:resident Requested:auto Delivered:f16 Reason:auto is f16 o path "cuda-resident (q4k)"
+cell 2 bench2:argmax start 17:11:42 load 0.55
+cell 2 bench2:argmax rc=0 gapdiag: mode argmax opts bench2 depth 128 tokens 128 rate 126.60 tok/s kv [{Cache:resident Requested:auto Delivered:f16 Reason:auto is f16  path "cuda-resident (q4k)"
+cell 3 serve2:argmax start 17:11:45 load 0.59
+cell 3 serve2:argmax rc=0 gapdiag: mode argmax opts serve2 depth 128 tokens 128 rate 126.48 tok/s kv [{Cache:resident Requested:auto Delivered:f16 Reason:auto is f16  path "cuda-resident (q4k)"
+cell 4 serve2:gen start 17:11:49 load 0.59
+cell 4 serve2:gen rc=0 gapdiag: mode gen opts serve2 mc3 0 depth 128 tokens 129 rate 126.45 tok/s kv [{Cache:resident Requested:auto Delivered:f16 Reason:auto is f 
+cell 5 serve2:gen start 17:11:53 load 0.62
+cell 5 serve2:gen rc=0 gapdiag: mode gen opts serve2 mc3 0 depth 128 tokens 129 rate 126.47 tok/s kv [{Cache:resident Requested:auto Delivered:f16 Reason:auto is f 
+cell 6 serve2:argmax start 17:11:57 load 0.65
+cell 6 serve2:argmax rc=0 gapdiag: mode argmax opts serve2 depth 128 tokens 128 rate 126.44 tok/s kv [{Cache:resident Requested:auto Delivered:f16 Reason:auto is f16  path "cuda-resident (q4k)"
+cell 7 bench2:argmax start 17:12:01 load 0.68
+cell 7 bench2:argmax rc=0 gapdiag: mode argmax opts bench2 depth 128 tokens 128 rate 126.61 tok/s kv [{Cache:resident Requested:auto Delivered:f16 Reason:auto is f16  path "cuda-resident (q4k)"
+cell 8 bench:argmax start 17:12:05 load 0.71
+cell 8 bench:argmax rc=0 gapdiag: mode argmax opts bench depth 128 tokens 128 rate 126.67 tok/s kv [{Cache:resident Requested:auto Delivered:f16 Reason:auto is f16 o path "cuda-resident (q4k)"

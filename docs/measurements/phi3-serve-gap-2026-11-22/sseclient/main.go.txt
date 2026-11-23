@@ -1,0 +1,61 @@
+// sseclient: one streaming chat request; prints the decode rate (n_reported-1)/(t_last-t_first) over SSE events, as bench_peer computes it.
+package main
+
+import (
+	"bufio"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+)
+
+func main() {
+	url, promptFile := os.Args[1], os.Args[2]
+	var prompts map[string]struct{ Text string `json:"text"` }
+	b, _ := os.ReadFile(promptFile)
+	json.Unmarshal(b, &prompts)
+	body, _ := json.Marshal(map[string]any{"model": "bench", "stream": true, "max_tokens": 64, "temperature": 0, "seed": 1,
+		"stream_options": map[string]any{"include_usage": true}, "messages": []map[string]string{{"role": "user", "content": prompts[os.Args[3]].Text}}})
+	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		panic(err)
+	}
+	defer resp.Body.Close()
+	sc := bufio.NewScanner(resp.Body)
+	var tf, tl time.Time
+	events, reported := 0, 0
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if !strings.HasPrefix(line, "data:") || strings.TrimSpace(line[5:]) == "[DONE]" {
+			continue
+		}
+		var d struct {
+			Usage   *struct{ CompletionTokens int `json:"completion_tokens"` } `json:"usage"`
+			Choices []struct {
+				FinishReason *string                `json:"finish_reason"`
+				Delta        map[string]any         `json:"delta"`
+			} `json:"choices"`
+		}
+		json.Unmarshal([]byte(line[5:]), &d)
+		if d.Usage != nil && d.Usage.CompletionTokens > 0 {
+			reported = d.Usage.CompletionTokens
+			continue
+		}
+		if len(d.Choices) == 0 || d.Choices[0].FinishReason != nil {
+			continue
+		}
+		if _, role := d.Choices[0].Delta["role"]; role && d.Choices[0].Delta["content"] == nil {
+			continue
+		}
+		now := time.Now()
+		if events == 0 {
+			tf = now
+		}
+		tl = now
+		events++
+	}
+	fmt.Printf("go-client events %d reported %d rate %.2f tok/s\n", events, reported, float64(reported-1)/tl.Sub(tf).Seconds())
+}
