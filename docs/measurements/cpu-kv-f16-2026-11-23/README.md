@@ -46,3 +46,26 @@ gate about 30 min for Phi-3 and 5 for the 0.5B. In all, about 2 h by day, finish
   `KVCache.dequantGlobalLayer`, which widens the layer's whole history into f32 scratch on one goroutine every token, and attention then
   reads the f32 scratch (`decoder/program_cpu.go:attendToken`'s `cache.quant.widened()` case). Per element per token that is a 2-byte
   read, a 4-byte write and a 4-byte read against f32's one 4-byte read, serial ahead of the parallel head workers.
+
+## Speed: Qwen2.5-Coder-0.5B (int4), complete, read 2026-11-23 09:36 PST
+
+24 cells, 08:41–09:28 PST, A B B A × 3 blocks at each depth, one process a cell, the decoder test binary built at `8bf0687b1`. Start load
+0.85–0.98 on every cell (settle under 1.0), no swap growth, no void cells. Cells: `speed/q05-cells.tsv`; logs: `speed/q05-logs.tar.gz`.
+
+| depth | f32 tok/s (mean) | f16 tok/s (mean) | pair ratios f16 ÷ f32 | median | bar | reading |
+|---|---|---|---|---|---|---|
+| 128 | 55.13 | 53.90 | 0.978 0.988 0.986 0.946 0.981 0.989 | **0.983** | ≥ 0.98 | holds |
+| 3,900 | 23.31 | 17.17 | 0.720 0.729 0.728 0.723 0.788 0.733 | **0.729** | ≥ 1.02 | **OFF** (under 1.00) |
+
+**0.5B speed: OFF.** Finding 12's kill does not fire: the f32 token at 3,900 costs 2.37× the token at 128, so depth is a real cost here; f16
+makes it worse, by the mechanism in the running notes. Peak RSS is the same for both arms (964 MB): it is set by the load, not by a cache this
+small, so the host-bytes reading comes from the fidelity gate's cache count.
+
+## Pause between models: lock sequencing, coordinator, 2026-11-23 09:35 PST
+
+At the coordinator's word (09:35 PST, lock sequencing: four other sessions were queued behind this run), the run was stopped at 09:35:54
+after the 0.5B half completed and five Phi-3 depth-128 cells had run, and the lock released. Those five cells (`speed/p3m-interrupted-2026-11-23.tsv`:
+block 1's A 9.018, B 8.046, B 8.102, A 9.037, and block 2's first A 9.014) are **set aside, not used**: Phi-3's half re-runs from its first
+cell as its own same-session A B B A comparison once the lock queue drains, by day and done before 21:30, or tomorrow by day if it cannot be.
+Pausing between models changes no registered rule: each model's comparison is self-contained (its own pairs, its own bar), and no cell of
+one model is paired with a cell of the other.
