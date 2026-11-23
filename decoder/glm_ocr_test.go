@@ -102,7 +102,8 @@ func TestGlmOcr_realConfig(t *testing.T) {
 
 // TestGlmOcr_residentDeclined: GLM-OCR rotates PAIRWISE (GPT-J) over m-RoPE sections, so a backend may run it resident
 // only if it declares FeatPairwiseRoPE and FeatPairwiseMRoPE, i.e. has pairwise rope kernels (the parity gates are
-// cuda.TestGlmOcrResidentParityCUDA over cuda/rope_pairwise.cu and metal.TestGlmOcrResidentParityMetal). A backend with
+// cuda.TestGlmOcrResidentParityCUDA over cuda/rope_pairwise.cu, metal.TestGlmOcrResidentParityMetal and
+// webgpu's TestGlmOcrResidentParityWebGPU). A backend with
 // only the NeoX half-split kernels must decline: admitting glm_ocr there computes the wrong rotation with no error
 // (logit cosine -0.34 resident-vs-CPU on the CUDA twin of that kernel set). The decline must name the missing features
 // so `serve check` shows the real cause.
@@ -121,7 +122,7 @@ func TestGlmOcr_residentDeclined(t *testing.T) {
 		if tb := residentBackendTables[backend]; tb != nil {
 			wantAdmit = tb.PairwiseRope // a table states pairwise rotation, m-RoPE sections included, as a rope parameter
 		}
-		pairwiseBackend := backend == "cuda" || backend == "metal"
+		pairwiseBackend := backend == "cuda" || backend == "metal" || backend == "webgpu"
 		if pairwiseBackend && !wantAdmit {
 			t.Errorf("%s must declare both pairwise features (its pairwise rope kernels)", backend)
 		}
