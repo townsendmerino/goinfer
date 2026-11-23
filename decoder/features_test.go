@@ -265,8 +265,8 @@ var admissionGolden = map[string][]string{
 	// code does, not because it is trusted.
 	"mellum":  {"cuda", "metal", "webgpu"},
 	"mistral": {"cuda", "metal", "webgpu"},
-	// Ministral 3: FeatAttnTemp (rope_kv/rope2's qTempScale param, Q-only, post-rotation) is declared on cuda and metal and is
-	// its only required feature; not webgpu, where it is unimplemented.
+	// Ministral 3: FeatAttnTemp is its only required feature: cuda and metal scale Q after rotation (rope_kv/rope2's
+	// qTempScale), webgpu folds the temperature into the attention score scale (gpu.TestMinistral3ResidentParityWebGPU).
 	"mistral3":   {"cuda", "metal", "webgpu"},
 	"ministral3": {"cuda", "metal", "webgpu"},
 	"mixtral":    {"cuda", "metal", "webgpu"},

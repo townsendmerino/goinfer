@@ -409,7 +409,8 @@ func TestS12AttnKernelFidelity(t *testing.T) {
 // relative L2 <= 1e-4 at every position: on this fixture the resident is the CPU's arithmetic to f32 rounding, and a
 // cosine bar cannot see the temperature (dropping it still reads cosine 0.99991). With the temperature dropped
 // (kernels.AttnTempOffForTest), positions 0..7 stay bit-identical to the real run (the temperature is 1 there) and some
-// position past 7 misses the bar. The batched prefill declines.
+// position past 7 misses the bar. NaN reads as a miss. The batched prefill declines (the temperature's own decline, apart
+// from this fixture's YaRN one, is kernels.TestRunModelToPrefill_declinesAttnTemp).
 func TestMinistral3ResidentParityWebGPU(t *testing.T) {
 	if c, err := New(); err != nil {
 		t.Skipf("no webgpu: %v", err)
@@ -436,19 +437,26 @@ func TestMinistral3ResidentParityWebGPU(t *testing.T) {
 		}
 		want[i] = append([]float32(nil), l...)
 	}
-	rel := func(a, b []float32) float64 {
+	rel := func(a, b []float32) float64 { // NaN, an all-zero reference or a length mismatch reads +Inf
+		if len(a) != len(b) || len(b) == 0 {
+			return math.Inf(1)
+		}
 		var dd, bb float64
 		for i := range a {
 			d := float64(a[i]) - float64(b[i])
 			dd, bb = dd+d*d, bb+float64(b[i])*float64(b[i])
 		}
-		return math.Sqrt(dd / bb)
+		if r := math.Sqrt(dd / bb); !math.IsNaN(r) {
+			return r
+		}
+		return math.Inf(1)
 	}
 	decode := func() ([][]float32, *residentDecoder, *decoder.Model) {
 		m, err := decoder.Load(ckpt, decoder.Options{Backend: "webgpu", Quant: "int8int8"})
 		if err != nil {
 			t.Fatal(err)
 		}
+		t.Cleanup(func() { m.Close() })
 		rd, ok := m.ResidentForwardForTest().(*residentDecoder)
 		if !ok || rd.rm.AttnTemp == nil {
 			t.Fatalf("not resident with the attention temperature: %s", m.ResidentDecline())
@@ -465,20 +473,19 @@ func TestMinistral3ResidentParityWebGPU(t *testing.T) {
 		return out, rd, m
 	}
 	got, rd, m := decode()
-	defer m.Close()
 	worst := 0.0
 	for i := range got {
 		worst = math.Max(worst, rel(got[i], want[i]))
 	}
 	t.Logf("resident vs CPU int8int8, %d positions: worst relL2 %.3g", n, worst)
-	if worst > bar {
+	if !(worst <= bar) {
 		t.Errorf("worst relL2 %.3g, want <= %g", worst, bar)
 	}
 
 	kernels.AttnTempOffForTest = true
-	off, _, mOff := decode()
+	t.Cleanup(func() { kernels.AttnTempOffForTest = false })
+	off, _, _ := decode()
 	kernels.AttnTempOffForTest = false
-	mOff.Close()
 	offWorst := 0.0
 	for i := range off {
 		if i < orig && !slices.Equal(off[i], got[i]) {
@@ -489,7 +496,7 @@ func TestMinistral3ResidentParityWebGPU(t *testing.T) {
 		}
 	}
 	t.Logf("plant (temperature dropped): worst relL2 past position %d %.3g", orig-1, offWorst)
-	if offWorst <= bar {
+	if !(offWorst > bar) {
 		t.Errorf("plant: the temperature dropped still reads relL2 %.3g <= %g past position %d; the gate is blind", offWorst, bar, orig-1)
 	}
 
@@ -497,4 +504,5 @@ func TestMinistral3ResidentParityWebGPU(t *testing.T) {
 	if _, err := rd.PrefillLast(context.Background(), [][]float32{m.EmbedResidentForTest(toks[0]), m.EmbedResidentForTest(toks[1])}, 0); err == nil {
 		t.Error("the batched prefill ran; it applies no attention temperature")
 	}
+	// The decline above may be the YaRN rope scale's; the attention temperature's own is kernels.TestRunModelToPrefill_declinesAttnTemp.
 }

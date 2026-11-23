@@ -745,8 +745,9 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 	// keyed by rope scale.
 	geomCache := map[[4]int]*attnGeom{}
 	// scoreScale is the attention score scale at pos: the model's, times the query's attention temperature where it has one.
+	tempOff := AttnTempOffForTest
 	scoreScale := func(pos int) float32 {
-		if m.AttnTemp == nil || AttnTempOffForTest {
+		if m.AttnTemp == nil || tempOff {
 			return scale
 		}
 		return scale * m.AttnTemp(pos)
