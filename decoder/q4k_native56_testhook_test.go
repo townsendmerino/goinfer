@@ -121,3 +121,57 @@ func TestQ4K_native56Sidecar(t *testing.T) {
 		t.Errorf("sidecars %v; want one, named with %q", sidecars, tag)
 	}
 }
+
+// TestQ4K_native56CUDATarget: a q4k load holding the file's Q5_K and Q6_K blocks serializes for the cuda target as kinds 11 and 12
+// and loads back holding them, as for cpu-amd64, while every other target refuses it naming the native kind; kquantTag names a q4k
+// sidecar ".k56" for exactly those two targets. Tier 0: the tiny Phi-3 type-mix fixture, no device.
+func TestQ4K_native56CUDATarget(t *testing.T) {
+	for _, c := range []struct {
+		quant  string
+		target GIWTarget
+		want   bool
+	}{{"q4k", GIWTargetCPUAmd64, true}, {"q4k", GIWTargetCUDA, true}, {"q4k", GIWTargetMetal, false}, {"q4k", GIWTargetWebGPU, false},
+		{"q4k", GIWTargetCPUArm64, false}, {"q4k", GIWTargetNone, false}, {"int8", GIWTargetCUDA, false}, {"int4", GIWTargetCPUAmd64, false}} {
+		want := ""
+		if c.want && linalg.KQuantNative() {
+			want = ".k56"
+		}
+		if got := kquantTag(c.quant, c.target); got != want {
+			t.Errorf("kquantTag(%q, %q) = %q, want %q", c.quant, c.target, got, want)
+		}
+		if c.quant == "q4k" && giwCarriesKQuant56(c.target) != c.want {
+			t.Errorf("giwCarriesKQuant56(%q) = %v, want %v", c.target, !c.want, c.want)
+		}
+	}
+	if !linalg.KQuantNative() {
+		t.Skip("no K-quant kernel on this CPU: a q4k load widens Q5_K and Q6_K, so there is nothing native to serialize")
+	}
+	src := filepath.Join(t.TempDir(), "phi3-kmix.gguf")
+	if err := WritePhi3KMixTinyGGUFForTest(src); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Load(src, Options{Backend: "cpu", Quant: "q4k", DirectLoad: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	blob, err := SerializeWeightsForTarget(m.w, "kmix", GIWTargetCUDA)
+	if err != nil {
+		t.Fatalf("serializing native Q5_K/Q6_K for the cuda target: %v", err)
+	}
+	back, err := LoadSerializedWeights(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range back.Layers {
+		l := &back.Layers[i]
+		if l.QProj.Kind() != "q5k" || l.DownProj.Kind() != "q6k" {
+			t.Errorf("layer %d from the cuda .giw: q %q, down %q; want q5k, q6k", i, l.QProj.Kind(), l.DownProj.Kind())
+		}
+	}
+	for _, tgt := range []GIWTarget{GIWTargetMetal, GIWTargetWebGPU, GIWTargetCPUArm64} {
+		if _, err := SerializeWeightsForTarget(m.w, "kmix", tgt); err == nil || !strings.Contains(err.Error(), "native") {
+			t.Errorf("serializing native Q5_K/Q6_K for %q: err %v, want a refusal naming the native kind", tgt, err)
+		}
+	}
+}
