@@ -20,5 +20,9 @@ reads were written for the run by `cmd/prequant -quant int4 -target webgpu` from
 
 Beside the Mac's (Metal) reading of the same rule: reference 95.58%, E2B 96.32% (+0.74, PASS), E4B 93.10% (-2.48).
 On Vulkan the reference agrees more closely with the CPU (96.11%) and both E-models less (E2B by 2.3 points, E4B by
-0.9). Neither model's free-run count fails the rule. Whether the E-models stay on the resident under WebGPU over Vulkan,
-given both readings, is the owner's decision; nobody here has looked for why the Vulkan E-model agreement is lower.
+0.9). Neither model's free-run count fails the rule.
+
+**Decision (Francis, 2026-11-23, relayed by the coordinator ~14:00 PST): the E-models stay resident on WebGPU on every
+adapter, Vulkan included**, both readings recorded here. This extends his October decision, which already shipped
+E4B on WebGPU over Metal with its G-S12.1d reading parked (-2.48). A short diagnostic of why the Vulkan agreement sits
+lower follows (per-layer hidden states against the CPU on both adapters); its finding is added here.
