@@ -539,6 +539,9 @@ func (c *Context) AdapterAnchor() string {
 	return fmt.Sprintf("%s %s (%s)", c.info.BackendType, c.info.Device, c.info.Description)
 }
 
+// AdapterName is the adapter's device name without the driver, which names its tower golden (towerid.CheckGoldenForAdapter).
+func (c *Context) AdapterName() string { return c.info.Device }
+
 // Backend reports the underlying graphics backend ("Metal", "Vulkan",
 // "D3D12", …) — useful for test logging to confirm which GPU API is in
 // play.
