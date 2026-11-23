@@ -16,10 +16,13 @@ import (
 // records its digest in metal's TestAttnFABlk96Digest.
 const blk96Cos, blk96MaxAbs = 0.9999, 1e-2
 
-// blk96Case is one synthetic input: nKV heads of one query head each (MHA), nKeys keys, split splits.
+// blk96Case is one synthetic input: nKV heads of one query head each (MHA), nKeys keys, split splits. paged lays the cache out in
+// permuted 64-key blocks behind a non-identity table, so a 32-key run that crosses a block edge reads its second part through the
+// table (base1); window > 0 attends the last window keys only.
 type blk96Case struct {
 	nKV, nKeys, split int
-	peaked            bool
+	peaked, paged     bool
+	window            int
 }
 
 func blk96Cases() []blk96Case {
@@ -28,12 +31,43 @@ func blk96Cases() []blk96Case {
 		for _, split := range []int{4, 16} { // 16: metal.attnFABlkSplit
 			for _, nKeys := range []int{1024, 1025, 3900, 4100} { // 1024: metal.attnFADepthFloor
 				for _, peaked := range []bool{false, true} {
-					cs = append(cs, blk96Case{nKV, nKeys, split, peaked})
+					cs = append(cs, blk96Case{nKV: nKV, nKeys: nKeys, split: split, peaked: peaked})
+				}
+			}
+		}
+	}
+	// The table and the window: at 16 splits 3,900 keys are 244-key chunks and 4,100 are 257, so runs start off a block edge and
+	// cross it; window starts of 2,900 and 1,400 keys are off one too.
+	for _, nKV := range []int{4, 32} {
+		for _, split := range []int{4, 16} {
+			for _, nKeys := range []int{1025, 3900, 4100} {
+				cs = append(cs, blk96Case{nKV: nKV, nKeys: nKeys, split: split, peaked: true, paged: true})
+			}
+			for _, w := range []int{1000, 2500} {
+				for _, paged := range []bool{false, true} {
+					cs = append(cs, blk96Case{nKV: nKV, nKeys: 3900, split: split, peaked: true, paged: paged, window: w})
 				}
 			}
 		}
 	}
 	return cs
+}
+
+// blk96Table is c's block table and the physical row of each logical key: identity, or (paged) a permutation of one more
+// block than the keys fill, so physical block 0 and the logical order both differ from the cache's own.
+func blk96Table(c blk96Case) (table []uint32, phys func(s int) int) {
+	nb := (c.nKeys + 63) / 64
+	table = make([]uint32, nb)
+	for b := range table {
+		table[b] = uint32(b)
+	}
+	if c.paged {
+		perm := rand.New(rand.NewSource(int64(c.nKeys + c.nKV))).Perm(nb + 1)
+		for b := range table {
+			table[b] = uint32(perm[b])
+		}
+	}
+	return table, func(s int) int { return int(table[s/64])*64 + s%64 }
 }
 
 // blk96Inputs builds q (f32, [nKV*96]) and f16 K/V ([nKeys][nKV][96]); peaked aligns three keys with each head's query, so the
@@ -68,9 +102,17 @@ func blk96Ref(c blk96Case, q []float32, kh, vh []uint16) []float64 {
 	scale := float64(float32(1 / math.Sqrt(hd)))
 	ref := make([]float64, c.nKV*hd)
 	sc := make([]float64, c.nKeys)
+	lo := 0
+	if c.window > 0 && c.nKeys > c.window {
+		lo = c.nKeys - c.window
+	}
 	for h := range c.nKV {
 		mx := math.Inf(-1)
 		for s := range c.nKeys {
+			if s < lo {
+				sc[s] = math.Inf(-1)
+				continue
+			}
 			var a float64
 			for d := range hd {
 				a += float64(q[h*hd+d]) * float64(f16ToF32(kh[(s*c.nKV+h)*hd+d]))
@@ -80,7 +122,7 @@ func blk96Ref(c blk96Case, q []float32, kh, vh []uint16) []float64 {
 		}
 		var sum float64
 		for s := range sc {
-			sc[s] = math.Exp(sc[s] - mx)
+			sc[s] = math.Exp(sc[s] - mx) // 0 below the window
 			sum += sc[s]
 		}
 		for d := range hd {
@@ -106,16 +148,22 @@ func blk96Run(t *testing.T, d *Device, cq Queue, lib objc.ID, c blk96Case, q []f
 	if err != nil {
 		t.Fatalf("combine: %v", err)
 	}
-	kb, vb := d.NewBufferBytes(len(kh)*2), d.NewBufferBytes(len(vh)*2)
-	copy(kb.U16s()[:len(kh)], kh)
-	copy(vb.U16s()[:len(vh)], vh)
+	table, phys := blk96Table(c)
+	row := c.nKV * hd
+	nPhys := (len(table) + 1) * 64
+	kb, vb := d.NewBufferBytes(nPhys*row*2), d.NewBufferBytes(nPhys*row*2)
+	ku, vu := kb.U16s(), vb.U16s()
+	for s := range c.nKeys {
+		copy(ku[phys(s)*row:(phys(s)+1)*row], kh[s*row:(s+1)*row])
+		copy(vu[phys(s)*row:(phys(s)+1)*row], vh[s*row:(s+1)*row])
+	}
 	partial := d.NewBufferLen(c.nKV * c.split * G * (hd + 2))
 	out := d.NewBufferLen(c.nKV * hd)
 	uG, uSplit := NewBufferU32(d, G), NewBufferU32(d, uint32(c.split))
 	e := cq.Begin()
 	e.DispatchTG(pipe, c.nKV*c.split*128, 128, 128*6*G*4, NewBufferFloats(d, q), kb, vb, partial,
 		NewBufferU32(d, uint32(c.nKV)), uG, NewBufferU32(d, uint32(c.nKeys)), NewBufferFloats(d, []float32{float32(1 / math.Sqrt(hd))}),
-		NewBufferU32(d, 0), uSplit, kvIdentityTable(d))
+		NewBufferU32(d, uint32(c.window)), uSplit, NewBufferUint32s(d, table))
 	e.Dispatch(comb, c.nKV*hd, hd, partial, out, uG, NewBufferU32(d, hd), uSplit)
 	e.End()
 	if err := e.Err(); err != nil {
@@ -159,7 +207,8 @@ func blk96Misses(t *testing.T, lib objc.ID, report func(c blk96Case, h int, cos,
 
 // TestAttnFABlk96MatchesFloat64 checks the shipped attention_fa_blk96_g1 with attention_fa_combine against float64 attention on
 // synthetic MHA inputs, no checkpoint: 4 and 32 KV heads, 4 and the production 16 splits, the depth floor, a one-key chunk tail and
-// two depths past 3,900, near-uniform and peaked weights.
+// two depths past 3,900, near-uniform and peaked weights, on a contiguous cache and on permuted blocks behind a table, with and
+// without a window.
 func TestAttnFABlk96MatchesFloat64(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
@@ -198,4 +247,50 @@ func TestAttnFABlk96_plantGoesRed(t *testing.T) {
 		t.Fatalf("the planted kernel passes the bar on every case: the bar cannot see a dropped lane dimension")
 	}
 	t.Logf("planted kernel: %d heads outside the bar, worst cosine %.4f", misses, worstCos)
+}
+
+// TestAttnFABlk96_tableAndWindowPlantsGoRed: the paged and windowed cases see what the contiguous, unwindowed ones cannot. A run that
+// crosses a block edge without the table (base1 = base0), a base1 off by one key, and a window ignored (winStart = 0) each fall
+// outside the bar on the cases they touch; the first and last pass every case they do not, which is why those cases exist.
+func TestAttnFABlk96_tableAndWindowPlantsGoRed(t *testing.T) {
+	d, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	const base1 = "const uint base1 = (edge < nb) ? kt[(b0 + edge) >> 6u]*64u - edge : base0;"
+	const winStart = "const uint winStart = (window > 0u && nKeys > window) ? nKeys - window : 0u;"
+	for _, p := range []struct {
+		name, from, to string
+		hits           func(c blk96Case) bool
+		blindOthers    bool // the plant must leave every case it does not touch inside the bar
+	}{
+		{"edge without the table", base1, "const uint base1 = base0;", func(c blk96Case) bool { return c.paged }, true},
+		{"base1 off by one", base1, "const uint base1 = (edge < nb) ? kt[(b0 + edge) >> 6u]*64u - edge + 1u : base0;", func(c blk96Case) bool { return c.paged }, false},
+		{"window ignored", winStart, "const uint winStart = 0u;", func(c blk96Case) bool { return c.window > 0 }, true},
+	} {
+		t.Run(p.name, func(t *testing.T) {
+			if !strings.Contains(allKernels, p.from) {
+				t.Fatalf("the plant's source line is not in allKernels: %q", p.from)
+			}
+			lib, err := d.CompileLibrary(strings.ReplaceAll(allKernels, p.from, p.to), MSL3_1)
+			if err != nil {
+				t.Fatalf("compile the planted library: %v", err)
+			}
+			hit, other := 0, 0
+			blk96Misses(t, lib, func(c blk96Case, h int, cos, mx float64) {
+				if p.hits(c) {
+					hit++
+				} else {
+					other++
+				}
+			})
+			t.Logf("%s: %d heads outside the bar on the cases it touches, %d on the rest", p.name, hit, other)
+			if hit == 0 {
+				t.Errorf("%s: no touched case falls outside the bar: the cases cannot see it", p.name)
+			}
+			if p.blindOthers && other != 0 {
+				t.Errorf("%s: %d heads outside the bar on cases it should not touch: the plant is not the defect it names", p.name, other)
+			}
+		})
+	}
 }
