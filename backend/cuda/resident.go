@@ -1024,6 +1024,10 @@ type cudaResident struct {
 	// extra copy. Reused across calls (decode consumes each before the next).
 	logitsPinned *HostBuffer[float32]
 	logitsHost   []float32 // zero-copy view of logitsPinned
+	// embStage is pinned staging for launchToken's embedding row (r.embLen floats), copied into r.x on r.stream; embEv marks that
+	// copy, and the row is rewritten only once it is done (uploadEmb).
+	embStage *HostBuffer[float32]
+	embEv    gpu.Event
 	// Batched-head verify scratch (PrefillLastNArgmax). Allocated lazily INSIDE the executor
 	// job — af/ai require r.dev's context current — and reused across rounds. logitsBCap is the
 	// row count the current allocation covers; a wider block reallocates once and then holds.
@@ -2695,6 +2699,10 @@ func (r *cudaResident) Close() error {
 			_ = r.kvTabStage.Close()
 			r.kvTabStage = nil
 		}
+		if r.embStage != nil {
+			_ = r.embStage.Close()
+			r.embStage = nil
+		}
 		// Host-mapped expert stacks are page-locked host memory too (not in the device ledger), so free them here alongside logitsPinned, before ReleaseObjects.
 		for i := range r.layers {
 			for _, m := range []*gpu.MappedHostBuffer{
@@ -3980,7 +3988,7 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 		// row (what every other model passes) would silently read the previous token's inputs: refuse by length, here, for every entry point.
 		return fmt.Errorf("cuda: Gemma 4 E-model embedding row has %d floats, want %d (hidden %d + %d layers x PLE width %d)", len(emb), r.embLen, r.hidden, r.nLayers, r.pleP)
 	}
-	if e := gpu.Upload(r.x, emb); e != nil {
+	if e := r.uploadEmb(emb); e != nil {
 		return e
 	}
 	if r.cacheProf {
@@ -4018,6 +4026,29 @@ func (r *cudaResident) launchToken(emb []float32, pos, ropePos int, head bool) e
 		r.profMark(&r.profHead)
 	}
 	return r.launchErr // surface any launch error discarded in the dense chain above
+}
+
+// uploadEmb copies the token's embedding row into r.x as a copy on r.stream from pinned staging. Stream order puts it after every
+// launch queued before it (the previous token's, which read r.x) and before every launch after it, so the host waits for the device
+// only when the staging row's previous copy is still queued.
+func (r *cudaResident) uploadEmb(emb []float32) error {
+	if len(emb) > r.embStage.Len() {
+		return fmt.Errorf("cuda: embedding row has %d floats, the staging row %d", len(emb), r.embStage.Len())
+	}
+	done, e := r.embEv.Done()
+	if e != nil {
+		return e
+	}
+	if !done {
+		if e := r.embEv.Sync(); e != nil {
+			return e
+		}
+	}
+	copy(r.embStage.Slice(), emb)
+	if e := gpu.UploadHostAsync(r.stream, r.x, r.embStage, len(emb)); e != nil {
+		return e
+	}
+	return r.stream.Record(r.embEv)
 }
 
 // decodeAttnGap is one layer's dynamic gap of a single-token decode: rope_kv at (pos, ropePos) into the BOUND KV

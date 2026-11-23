@@ -1240,6 +1240,66 @@ func TestCost_cudaDecodeExact(t *testing.T) {
 	}
 }
 
+// TestLaunchToken_queuedRowsReadTheirOwnEmbedding: tokens launched back to back with no host wait between them each read their own
+// embedding row. launchToken stages the row in pinned memory and copies it on the stream, so the staging row must not be rewritten
+// while the previous token's copy is still queued; the logits must equal the same tokens run one forward at a time. Memsets queued
+// ahead of each token keep its copy behind the device, which a tiny model's kernels alone do not: without them the host never gets
+// ahead and a missing wait passes.
+func TestLaunchToken_queuedRowsReadTheirOwnEmbedding(t *testing.T) {
+	requireCUDADevice(t)
+	m, err := decoder.Load(filepath.Join("../../testdata/llama-tiny"), decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	r, ok := m.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatalf("not resident: %s", m.ResidentDecline())
+	}
+	const n = 6
+	rows := make([][]float32, n)
+	for i := range rows {
+		rows[i] = m.EmbedResidentForTest(3 + 7*i)
+	}
+	var want []float32
+	for pos, e := range rows {
+		lg, err := r.Forward(e, pos)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want = append(want[:0], lg...)
+	}
+	got := make([]float32, len(want))
+	if err := r.do(func() error {
+		if e := r.resetState(); e != nil {
+			return e
+		}
+		const busyBytes = 64 << 20
+		busy := r.dev.NewBufferBytes(busyBytes)
+		for pos, e := range rows {
+			for range 8 {
+				if e := r.stream.ZeroAsync(busy, busyBytes); e != nil {
+					return e
+				}
+			}
+			if e := r.launchToken(e, pos, pos, pos == n-1); e != nil {
+				return e
+			}
+		}
+		if e := r.stream.Sync(); e != nil {
+			return e
+		}
+		return gpu.Download(r.logits, got)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("logit %d: %v queued back to back, %v one forward at a time", i, got[i], want[i])
+		}
+	}
+}
+
 // costOffDevice and costOffLaunch are the off path one launch pays, at the registered bound: two of the device's atomic adds and
 // the resident's nil check.
 type costOffDevice struct{ launches, waits atomic.Int64 }

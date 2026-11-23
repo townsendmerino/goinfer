@@ -3,8 +3,10 @@
 package gpudev
 
 import (
+	"errors"
 	"fmt"
 	"runtime"
+	"unsafe"
 
 	gc "github.com/eitamring/gocudrv/cuda"
 	"github.com/eitamring/gocudrv/cudaresult"
@@ -35,6 +37,22 @@ func (d *Device) NewEvent() (Event, error) {
 	}
 	d.TrackObj(e)
 	return Event{e: e, d: d}, nil
+}
+
+// Done reports whether ev's recorded position has executed, without blocking and without counting a host wait. An event never
+// recorded is done.
+func (ev Event) Done() (bool, error) {
+	if ev.e == nil {
+		return false, fmt.Errorf("cuda: Done of a nil event")
+	}
+	switch err := ev.e.Query(); {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, gc.ErrNotReady):
+		return false, nil
+	default:
+		return false, err
+	}
 }
 
 // Record marks this queue's current position in ev. Re-recording moves the mark; a Wait or Sync
@@ -114,6 +132,42 @@ func (q Queue) UploadAsyncAt(dst Buffer, src *HostBuffer[uint8], srcOff, n int) 
 	}
 	err := q.d.onThread(func(drv *cudasys.Driver) error {
 		return cudaresult.MemcpyHtoDAsync(drv, dptr, &s[srcOff], uint64(n), q.s.Raw())
+	})
+	runtime.KeepAlive(src)
+	return err
+}
+
+// UploadHostAsync enqueues an H2D copy of src's first n elements into dst at its bind offset, on q's stream, and returns without
+// synchronizing. UploadAsyncAt's contract holds: the host must not modify src[:n] until the copy has executed, and a reader of dst on
+// another queue is the caller's to order.
+func UploadHostAsync[T Scalar](q Queue, dst Buffer, src *HostBuffer[T], n int) error {
+	if dst.b == nil {
+		return fmt.Errorf("cuda: UploadHostAsync into a nil or mapped-host buffer")
+	}
+	if q.s == nil {
+		return fmt.Errorf("cuda: UploadHostAsync on a queue with no stream")
+	}
+	if src == nil || src.h == nil {
+		return fmt.Errorf("cuda: UploadHostAsync from a nil pinned buffer")
+	}
+	if n <= 0 {
+		return nil
+	}
+	if n > src.Len() {
+		return fmt.Errorf("cuda: UploadHostAsync of %d elements from a %d-element pinned buffer", n, src.Len())
+	}
+	var z T
+	nb := n * int(unsafe.Sizeof(z))
+	if got, want := dst.bytes(), uint64(dst.off)+uint64(nb); got < want {
+		return fmt.Errorf("cuda: UploadHostAsync of %d bytes at offset %d overruns a %d-byte buffer", nb, dst.off, got)
+	}
+	s := src.h.Slice()
+	dptr := dst.b.DevicePtr() + cudasys.CUdeviceptr(dst.off)
+	if TraceForTest != nil {
+		TraceForTest(TraceEvent{Op: TraceUploadAsync, Dst: uint64(dptr), Bytes: nb})
+	}
+	err := q.d.onThread(func(drv *cudasys.Driver) error {
+		return cudaresult.MemcpyHtoDAsync(drv, dptr, (*byte)(unsafe.Pointer(&s[0])), uint64(nb), q.s.Raw())
 	})
 	runtime.KeepAlive(src)
 	return err
