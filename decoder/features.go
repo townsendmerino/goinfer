@@ -561,5 +561,8 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		FeatNoPE:         true,
 		FeatPostOnlyNorm: true,
 		FeatQKNormWhole:  true,
+		// FeatAttnTemp: the decode runner folds the query temperature into each token's attention score scale, and the batched
+		// prefill declines to row-by-row decode (TestMinistral3ResidentParityWebGPU).
+		FeatAttnTemp: true,
 	},
 }
