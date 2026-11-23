@@ -106,9 +106,10 @@ Serve's own load banner for Phi-3 mini at its default load (`fit_banner.sh`; [`f
 | free beyond the pass margin | 1,568 MiB | 1,568 MiB |
 | prefill path | sequential | batched, exact kernels |
 
-**Unchanged.** The context margin already prices a 512-row pass on every load; the per-32 scale rows add 32–216 KiB to it on the
-memory census's per-32 and q4k cells (114 of 765 lines move, `margin` only; no planned context, KV or width moves), and the pass
-width is chosen from what is left after the build. Host bytes: none added.
+**Unchanged.** The context margin already prices a 512-row pass on every load, and the pass width is chosen from what is left
+after the build. The per-32 scale rows grow that margin by about 2.1 MiB on Phi-3 mini (1,084 floats a row at H 3,072, I 8,192;
+the banner's reservation 244 to 246 MB), which the free VRAM absorbs. The memory census's per-32 and q4k cells, on its tiny
+fixtures, move by 32–216 KiB (114 of 765 lines, `margin` only; no planned context, KV or width moves). Host bytes: none added.
 
 ## Cost split (diagnostic, not a registered cell)
 
