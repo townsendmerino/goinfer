@@ -61,7 +61,7 @@ func TestPairwiseTwins_matchGPTJ(t *testing.T) {
 		for i := range want {
 			e, m = max(e, math.Abs(float64(got[i])-want[i])), max(m, math.Abs(want[i]))
 		}
-		if e/m > tol {
+		if !(e/m <= tol) {
 			t.Errorf("%s: max error %.3g of the vector's scale, want <= %g", name, e/m, tol)
 		}
 	}
@@ -116,10 +116,19 @@ func TestPairwiseTwins_matchGPTJ(t *testing.T) {
 		t.Fatal(err)
 	}
 	words, scales := c.readWords(i8, (base+n)/4)[base/4:], c.readF(sc, heads*(at+1))[at*heads:]
+	for h := range heads { // each head's scale is its rotated row's max |x| / 127
+		var amax float64
+		for e := h * hd; e < (h+1)*hd; e++ {
+			amax = max(amax, math.Abs(want[e]))
+		}
+		if d := math.Abs(float64(scales[h]) - amax/127); !(d <= 1e-5*amax/127) {
+			t.Errorf("ropeStoreI8 head %d: scale %g, want max|x|/127 = %g", h, scales[h], amax/127)
+		}
+	}
 	for i := range n {
 		code := float64(int8(words[i/4] >> (8 * (i % 4))))
 		s := float64(scales[i/hd])
-		if d := math.Abs(code*s - want[i]); d > 0.5*s*(1+1e-4) {
+		if d := math.Abs(code*s - want[i]); !(d <= 0.5*s*(1+1e-4)) {
 			t.Errorf("ropeStoreI8 element %d: %g, want %g within half a step (%g)", i, code*s, want[i], s/2)
 		}
 	}

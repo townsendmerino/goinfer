@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
@@ -166,14 +165,25 @@ func TestForwardMRoPE_equalArgsMatchesForward(t *testing.T) {
 // pwWorst is a path's worst agreement with its reference: the lowest cosine and the highest relative L2 error.
 type pwWorst struct{ cos, rel float64 }
 
+// A NaN logit, an all-zero row or a length mismatch reads as the worst value (cosine -2, relL2 +Inf), so no bar passes it.
 func (w *pwWorst) add(got, want []float32) {
+	if len(got) != len(want) || len(want) == 0 {
+		w.cos, w.rel = -2, math.Inf(1)
+		return
+	}
 	var ab, aa, bb, dd float64
 	for i := range want {
 		g, r := float64(got[i]), float64(want[i])
 		ab, aa, bb, dd = ab+g*r, aa+g*g, bb+r*r, dd+(g-r)*(g-r)
 	}
-	w.cos = math.Min(w.cos, ab/math.Sqrt(aa*bb))
-	w.rel = math.Max(w.rel, math.Sqrt(dd/bb))
+	c, rel := ab/math.Sqrt(aa*bb), math.Sqrt(dd/bb)
+	if math.IsNaN(c) || math.IsInf(c, 0) {
+		c = -2
+	}
+	if math.IsNaN(rel) {
+		rel = math.Inf(1)
+	}
+	w.cos, w.rel = math.Min(w.cos, c), math.Max(w.rel, rel)
 }
 
 // TestGlmOcrResidentParityWebGPU is Metal's G-PR3 gate (TestGlmOcrResidentParityMetal) on WebGPU: glm-ocr-tiny's text
@@ -182,9 +192,9 @@ func (w *pwWorst) add(got, want []float32) {
 // glm_ocr_tiny_mrope_golden.json by the route production takes (the resident m-RoPE prefill declines on a pairwise model,
 // so the CPU prefill is uploaded); and decode past the image through ForwardMRoPE (rotation position != storage
 // position), teacher-forced on the golden continuation. Bars, Metal's: worst cosine >= 0.995 and relL2 <= 0.15 on every
-// path, text decode also on the f16 cache (its own rope-store twin). Text decode on the int8 cache runs only as a NeoX
-// control: int8 KV is too noisy against the CPU's f32 cache for this bar, and its twin is held to the GPT-J reference by
-// kernels.TestPairwiseTwins_matchGPTJ. The same paths with the NeoX kernels bound (kernels.PairwiseNeoXForTest) must each read below the cosine bar.
+// path. Text decode also runs on the f16 and int8 caches (their own rope-store twins), each against the CPU holding its cache
+// at the same precision (Options.KVQuant: per-row f16, per-(position, KV-head) symmetric int8, the GPU's schemes). The same
+// paths with the NeoX kernels bound (kernels.PairwiseNeoXForTest) must each read below the cosine bar.
 func TestGlmOcrResidentParityWebGPU(t *testing.T) {
 	if c, err := New(); err != nil {
 		t.Skipf("no webgpu: %v", err)
@@ -210,15 +220,24 @@ func TestGlmOcrResidentParityWebGPU(t *testing.T) {
 		t.Fatal(err)
 	}
 	const ckpt, cosBar, relBar = "../../testdata/glm-ocr-tiny", 0.995, 0.15
+	// load opens a model the caller closes; cpuLoad's live for the test.
 	load := func(backend, kv string) *decoder.Model {
-		m, err := decoder.Load(ckpt, decoder.Options{Backend: backend, Quant: "int8int8", KVPrecision: kv})
-		if err != nil {
-			t.Fatalf("load %s: %v", backend, err)
+		o := decoder.Options{Backend: backend, Quant: "int8int8", KVPrecision: kv}
+		if backend == "cpu" {
+			o.KVPrecision, o.KVQuant = "", kv
 		}
+		m, err := decoder.Load(ckpt, o)
+		if err != nil {
+			t.Fatalf("load %s --kv %q: %v", backend, kv, err)
+		}
+		return m
+	}
+	cpuLoad := func(kv string) *decoder.Model {
+		m := load("cpu", kv)
 		t.Cleanup(func() { m.Close() })
 		return m
 	}
-	cpu := load("cpu", "")
+	cpu := cpuLoad("")
 	_, _, _, _, _, _, vocab := cpu.Dims()
 	text := make([]int, 48)
 	for i := range text {
@@ -258,26 +277,42 @@ func TestGlmOcrResidentParityWebGPU(t *testing.T) {
 		}
 		past = append(past, append([]float32(nil), l...))
 	}
+	rowKV := map[string][][]float32{}
+	for _, kv := range []string{"f16", "i8"} {
+		c := cpuLoad(kv)
+		cc := c.NewCache(len(text))
+		for _, tok := range text {
+			l, err := c.ForwardForTest(tok, cc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rowKV[kv] = append(rowKV[kv], append([]float32(nil), l...))
+		}
+	}
 	measure := func() map[string]pwWorst {
 		out := map[string]pwWorst{}
 		for _, kv := range []string{"f16", "i8"} { // the f16 and int8 caches' rope-store twins, on text decode
-			m := load("webgpu", kv)
-			rd, ok := m.ResidentForwardForTest().(*residentDecoder)
-			if !ok || m.KVDeliveredFor("webgpu") != kv {
-				t.Fatalf("--kv %s: resident %v, KV delivered %q; decline: %s", kv, ok, m.KVDeliveredFor("webgpu"), m.ResidentDecline())
-			}
-			w := pwWorst{cos: 1}
-			rd.Reset()
-			for i, tok := range text {
-				l, err := rd.Forward(m.EmbedResidentForTest(tok), i)
-				if err != nil {
-					t.Fatal(err)
+			func() {
+				m := load("webgpu", kv)
+				defer m.Close()
+				rd, ok := m.ResidentForwardForTest().(*residentDecoder)
+				if !ok || m.KVDeliveredFor("webgpu") != kv {
+					t.Fatalf("--kv %s: resident %v, KV delivered %q; decline: %s", kv, ok, m.KVDeliveredFor("webgpu"), m.ResidentDecline())
 				}
-				w.add(l, row[i])
-			}
-			out["text decode, --kv "+kv] = w
+				w := pwWorst{cos: 1}
+				rd.Reset()
+				for i, tok := range text {
+					l, err := rd.Forward(m.EmbedResidentForTest(tok), i)
+					if err != nil {
+						t.Fatal(err)
+					}
+					w.add(l, rowKV[kv][i])
+				}
+				out["text decode, --kv "+kv] = w
+			}()
 		}
 		m := load("webgpu", "")
+		defer m.Close()
 		rd, ok := m.ResidentForwardForTest().(*residentDecoder)
 		if !ok {
 			t.Fatalf("not webgpu-resident: %s", m.ResidentDecline())
@@ -319,19 +354,17 @@ func TestGlmOcrResidentParityWebGPU(t *testing.T) {
 	}
 	for name, w := range measure() {
 		t.Logf("PAIRWISE %-28s worst cos %.6f relL2 %.2e", name, w.cos, w.rel)
-		if strings.HasSuffix(name, "--kv i8") {
-			continue // the NeoX control only: an int8 cache is too noisy against the CPU's f32 one to hold this bar
-		}
-		if w.cos < cosBar || w.rel > relBar {
+		if !(w.cos >= cosBar && w.rel <= relBar) {
 			t.Errorf("%s diverges from the CPU: worst cosine %.6f (want >= %.3f), relL2 %.4f (want <= %.2f)", name, w.cos, cosBar, w.rel, relBar)
 		}
 	}
 	kernels.PairwiseNeoXForTest = true
+	t.Cleanup(func() { kernels.PairwiseNeoXForTest = false })
 	neox := measure()
 	kernels.PairwiseNeoXForTest = false
 	for name, w := range neox {
 		t.Logf("NeoX     %-28s worst cos %.6f relL2 %.4f", name, w.cos, w.rel)
-		if w.cos >= cosBar {
+		if !(w.cos < cosBar) {
 			t.Errorf("the gate is BLIND on %q: with the NeoX kernels it still reads cosine %.6f >= %.3f", name, w.cos, cosBar)
 		}
 	}
@@ -415,6 +448,9 @@ func TestGlmOcrWebGPUResidentRealImage(t *testing.T) {
 				}
 				if gen.ImgPrefillResident {
 					t.Errorf("%s: the image prefill ran resident; on a pairwise model it must be the CPU's, uploaded", label)
+				}
+				if m == mg && gen.ResidentDeclined != "" {
+					t.Errorf("%s: the turn did not decode on the resident: %s", label, gen.ResidentDeclined)
 				}
 				return out
 			}
