@@ -1241,10 +1241,11 @@ func TestCost_cudaDecodeExact(t *testing.T) {
 }
 
 // TestLaunchToken_queuedRowsReadTheirOwnEmbedding: tokens launched back to back with no host wait between them each read their own
-// embedding row. launchToken stages the row in pinned memory and copies it on the stream, so the staging row must not be rewritten
-// while the previous token's copy is still queued; the logits must equal the same tokens run one forward at a time. Memsets queued
-// ahead of each token keep its copy behind the device, which a tiny model's kernels alone do not: without them the host never gets
-// ahead and a missing wait passes.
+// embedding row. launchToken copies the row on the stream without synchronizing, so each copy must land after the previous token's
+// launches and before its own, and the row must be consumed before the call returns; the logits must equal the same tokens run one
+// forward at a time. Memsets queued ahead of each token keep its copy behind the device, which a tiny model's kernels alone do not:
+// without them the host never gets ahead and a misordered or late copy passes. Each row is overwritten after its launch, so a copy
+// that read its source late would read the wrong row.
 func TestLaunchToken_queuedRowsReadTheirOwnEmbedding(t *testing.T) {
 	requireCUDADevice(t)
 	m, err := decoder.Load(filepath.Join("../../testdata/llama-tiny"), decoder.Options{Backend: "cuda", Quant: "int4"})
@@ -1282,8 +1283,12 @@ func TestLaunchToken_queuedRowsReadTheirOwnEmbedding(t *testing.T) {
 					return e
 				}
 			}
-			if e := r.launchToken(e, pos, pos, pos == n-1); e != nil {
+			row := append([]float32(nil), e...)
+			if e := r.launchToken(row, pos, pos, pos == n-1); e != nil {
 				return e
+			}
+			for i := range row {
+				row[i] = float32(math.NaN())
 			}
 		}
 		if e := r.stream.Sync(); e != nil {

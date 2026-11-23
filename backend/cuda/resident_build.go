@@ -2038,14 +2038,6 @@ func (s *buildState) allocDecodeScratch(r *cudaResident) error {
 	} else {
 		r.logitsPinned, r.logitsHost = hb, hb.Slice()
 	}
-	hb, e := gpu.NewHostBufferOn[float32](r.dev, mem.LineScratch, r.embLen)
-	if e != nil {
-		return e
-	}
-	r.embStage = hb
-	if r.embEv, e = r.dev.NewEvent(); e != nil {
-		return e
-	}
 	return nil
 }
 
