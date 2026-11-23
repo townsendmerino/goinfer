@@ -800,3 +800,59 @@ func TestKVPages_tiledRowsPastTheTileBound(t *testing.T) {
 		})
 	}
 }
+
+// TestFlashDecodeHD96_metalSelection builds the MC3 fixture at an MHA head-dim-96 geometry with and without the option: with it,
+// the resident sizes the partial buffer, selects the hd = 96 block kernel at the block split and lets every layer take
+// attention_fa past the floor; without it, none of that.
+func TestFlashDecodeHD96_metalSelection(t *testing.T) {
+	for _, on := range []bool{false, true} {
+		t.Run(fmt.Sprintf("FlashDecodeHD96=%v", on), func(t *testing.T) {
+			prevW, prevO := mc3FixtureWriter, mc3TestHD96
+			defer func() { mc3FixtureWriter, mc3TestHD96 = prevW, prevO }()
+			mc3FixtureWriter = func(t *testing.T, maxPositions int) string { return writeMC3FixtureGeom(t, maxPositions, 4, 4, 96) }
+			mc3TestHD96 = on
+			_, r := mc3FixtureResident(t, 2, 4096)
+			if g := r.layers[0].geom; g.hd != 96 || r.nH != g.nKV {
+				t.Fatalf("fixture geometry hd=%d nH=%d nKV=%d, want hd 96 MHA", g.hd, r.nH, g.nKV)
+			}
+			if r.faHD96 != on {
+				t.Fatalf("resident faHD96 = %v, want %v", r.faHD96, on)
+			}
+			if got := r.attnFANKV > 0 && r.attnFAPartial != (Buffer{}) && r.attnFABlkSplit == attnFABlkSplit; got != on {
+				t.Fatalf("attention_fa sized and on the block split = %v (attnFANKV %d, split %d), want %v", got, r.attnFANKV, r.attnFABlkSplit, on)
+			}
+			r.setPosAheadForTest(attnFADepthFloor + 10)
+			for l := range r.nL {
+				if got := r.canUseAttnFA(l); got != on {
+					t.Fatalf("layer %d: canUseAttnFA at %d keys = %v, want %v", l, r.curNKeys, got, on)
+				}
+			}
+		})
+	}
+}
+
+// TestAttnFAHeadDimOK_hd96: an hd = 96 layer takes attention_fa only at G = 1 and only under Options.FlashDecodeHD96; the head dims
+// that took it before are unchanged by the option.
+func TestAttnFAHeadDimOK_hd96(t *testing.T) {
+	for _, c := range []struct {
+		hd, nH, nKV int
+		hd96, want  bool
+	}{
+		{96, 32, 32, true, true},
+		{96, 32, 32, false, false},
+		{96, 32, 16, true, false}, // G = 2: no instantiation
+		{96, 32, 0, true, false},
+		{128, 32, 8, false, true},
+		{128, 32, 8, true, true},
+		{64, 14, 2, false, attnFABlk64On},
+		{64, 14, 2, true, attnFABlk64On},
+		{80, 32, 32, true, false},
+	} {
+		if got := attnFAHeadDimOK(c.hd, c.nH, c.nKV, c.hd96); got != c.want {
+			t.Errorf("attnFAHeadDimOK(hd=%d, nH=%d, nKV=%d, hd96=%v) = %v, want %v", c.hd, c.nH, c.nKV, c.hd96, got, c.want)
+		}
+		if got := attnFAPartialFloats(c.hd, c.nH, c.nKV, c.hd96) > 0; got != (c.want && attnFAGroupOK(c.nH, c.nKV)) {
+			t.Errorf("attnFAPartialFloats(hd=%d, nH=%d, nKV=%d, hd96=%v) > 0 = %v, want %v", c.hd, c.nH, c.nKV, c.hd96, got, c.want)
+		}
+	}
+}

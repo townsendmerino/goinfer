@@ -1,9 +1,8 @@
 //go:build darwin
 
-package metal
+package kernels
 
 import (
-	"fmt"
 	"math"
 	"math/rand"
 	"strings"
@@ -13,7 +12,8 @@ import (
 )
 
 // The hd = 96 block kernel's bar against float64 attention: the registration's gate 1
-// (docs/measurements/metal-fa-hd96-phi3-2026-11-23/README.md), the CUDA hd-96 lane's bar.
+// (docs/measurements/metal-fa-hd96-phi3-2026-11-23/README.md), the CUDA hd-96 lane's bar. The resident's dispatch of the same kernels
+// records its digest in metal's TestAttnFABlk96Digest.
 const blk96Cos, blk96MaxAbs = 0.9999, 1e-2
 
 // blk96Case is one synthetic input: nKV heads of one query head each (MHA), nKeys keys, split splits.
@@ -25,8 +25,8 @@ type blk96Case struct {
 func blk96Cases() []blk96Case {
 	var cs []blk96Case
 	for _, nKV := range []int{4, 32} {
-		for _, split := range []int{4, attnFABlkSplit} {
-			for _, nKeys := range []int{attnFADepthFloor, attnFADepthFloor + 1, 3900, 4100} {
+		for _, split := range []int{4, 16} { // 16: metal.attnFABlkSplit
+			for _, nKeys := range []int{1024, 1025, 3900, 4100} { // 1024: metal.attnFADepthFloor
 				for _, peaked := range []bool{false, true} {
 					cs = append(cs, blk96Case{nKV, nKeys, split, peaked})
 				}
@@ -125,7 +125,7 @@ func blk96Run(t *testing.T, d *Device, cq Queue, lib objc.ID, c blk96Case, q []f
 }
 
 // blk96Misses runs every case on lib and returns how many heads fall outside the bar, with the worst cosine and max abs error.
-func blk96Misses(t *testing.T, lib objc.ID, report func(c blk96Case, h int, cos, maxAbs float64), record bool) (misses int, worstCos, worstAbs float64) {
+func blk96Misses(t *testing.T, lib objc.ID, report func(c blk96Case, h int, cos, maxAbs float64)) (misses int, worstCos, worstAbs float64) {
 	t.Helper()
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
@@ -136,9 +136,6 @@ func blk96Misses(t *testing.T, lib objc.ID, report func(c blk96Case, h int, cos,
 	for _, c := range blk96Cases() {
 		q, kh, vh := blk96Inputs(c)
 		got := blk96Run(t, d, cq, lib, c, q, kh, vh)
-		if record {
-			recordAttnDigest(t, "attention_fa_blk96_g1,attention_fa_combine", got)
-		}
 		ref := blk96Ref(c, q, kh, vh)
 		for h := range c.nKV {
 			var dot, na, nb, mx float64
@@ -175,7 +172,7 @@ func TestAttnFABlk96MatchesFloat64(t *testing.T) {
 	misses, worstCos, worstAbs := blk96Misses(t, lib, func(c blk96Case, h int, cos, mx float64) {
 		t.Errorf("nKV=%d nKeys=%d split=%d peaked=%v head %d: cosine %.6f, max abs %.3g (bar cosine >= %g, max abs <= %g)",
 			c.nKV, c.nKeys, c.split, c.peaked, h, cos, mx, blk96Cos, blk96MaxAbs)
-	}, true)
+	})
 	t.Logf("%d cases; worst cosine %.7f, worst max abs %.3g; %d heads outside the bar", len(blk96Cases()), worstCos, worstAbs, misses)
 }
 
@@ -196,65 +193,9 @@ func TestAttnFABlk96_plantGoesRed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compile the planted library: %v", err)
 	}
-	misses, worstCos, _ := blk96Misses(t, lib, nil, false)
+	misses, worstCos, _ := blk96Misses(t, lib, nil)
 	if misses == 0 {
 		t.Fatalf("the planted kernel passes the bar on every case: the bar cannot see a dropped lane dimension")
 	}
 	t.Logf("planted kernel: %d heads outside the bar, worst cosine %.4f", misses, worstCos)
-}
-
-// TestAttnFAHeadDimOK_hd96: an hd = 96 layer takes attention_fa only at G = 1 and only under Options.FlashDecodeHD96; the head dims
-// that took it before are unchanged by the option.
-func TestAttnFAHeadDimOK_hd96(t *testing.T) {
-	for _, c := range []struct {
-		hd, nH, nKV int
-		hd96, want  bool
-	}{
-		{96, 32, 32, true, true},
-		{96, 32, 32, false, false},
-		{96, 32, 16, true, false}, // G = 2: no instantiation
-		{96, 32, 0, true, false},
-		{128, 32, 8, false, true},
-		{128, 32, 8, true, true},
-		{64, 14, 2, false, attnFABlk64On},
-		{64, 14, 2, true, attnFABlk64On},
-		{80, 32, 32, true, false},
-	} {
-		if got := attnFAHeadDimOK(c.hd, c.nH, c.nKV, c.hd96); got != c.want {
-			t.Errorf("attnFAHeadDimOK(hd=%d, nH=%d, nKV=%d, hd96=%v) = %v, want %v", c.hd, c.nH, c.nKV, c.hd96, got, c.want)
-		}
-		if got := attnFAPartialFloats(c.hd, c.nH, c.nKV, c.hd96) > 0; got != (c.want && attnFAGroupOK(c.nH, c.nKV)) {
-			t.Errorf("attnFAPartialFloats(hd=%d, nH=%d, nKV=%d, hd96=%v) > 0 = %v, want %v", c.hd, c.nH, c.nKV, c.hd96, got, c.want)
-		}
-	}
-}
-
-// TestFlashDecodeHD96_metalSelection builds the MC3 fixture at an MHA head-dim-96 geometry with and without the option: with it,
-// the resident sizes the partial buffer, selects the hd = 96 block kernel at the block split and lets every layer take
-// attention_fa past the floor; without it, none of that.
-func TestFlashDecodeHD96_metalSelection(t *testing.T) {
-	for _, on := range []bool{false, true} {
-		t.Run(fmt.Sprintf("FlashDecodeHD96=%v", on), func(t *testing.T) {
-			prevW, prevO := mc3FixtureWriter, mc3TestHD96
-			defer func() { mc3FixtureWriter, mc3TestHD96 = prevW, prevO }()
-			mc3FixtureWriter = func(t *testing.T, maxPositions int) string { return writeMC3FixtureGeom(t, maxPositions, 4, 4, 96) }
-			mc3TestHD96 = on
-			_, r := mc3FixtureResident(t, 2, 4096)
-			if g := r.layers[0].geom; g.hd != 96 || r.nH != g.nKV {
-				t.Fatalf("fixture geometry hd=%d nH=%d nKV=%d, want hd 96 MHA", g.hd, r.nH, g.nKV)
-			}
-			if r.faHD96 != on {
-				t.Fatalf("resident faHD96 = %v, want %v", r.faHD96, on)
-			}
-			if got := r.attnFANKV > 0 && r.attnFAPartial != (Buffer{}) && r.attnFABlkSplit == attnFABlkSplit; got != on {
-				t.Fatalf("attention_fa sized and on the block split = %v (attnFANKV %d, split %d), want %v", got, r.attnFANKV, r.attnFABlkSplit, on)
-			}
-			r.setPosAheadForTest(attnFADepthFloor + 10)
-			for l := range r.nL {
-				if got := r.canUseAttnFA(l); got != on {
-					t.Fatalf("layer %d: canUseAttnFA at %d keys = %v, want %v", l, r.curNKeys, got, on)
-				}
-			}
-		})
-	}
 }

@@ -35,7 +35,7 @@ var (
 
 // attnDigestRun is the -run pattern of the tests that record digests.
 const attnDigestRun = "^(TestAttention_ShippedKernelShapes|TestAttentionKernelsPastTileBound|TestAttentionFA_vsReference|TestAttnFABlk_anyGMatchesG7|" +
-	"TestAttnFABlkMatchesFloat64|TestAttnFABlk64Digest|TestAttnFABlk96MatchesFloat64|TestAttentionPrefillFused|TestAttentionPrefillSteelMatchesFloat64|" +
+	"TestAttnFABlkMatchesFloat64|TestAttnFABlk64Digest|TestAttnFABlk96Digest|TestAttentionPrefillFused|TestAttentionPrefillSteelMatchesFloat64|" +
 	"TestAttentionPrefillImg_matchesReference|TestGptOssAttnSink_metal|TestMetalKVI8_KVStoreAndAttentionParity|TestMetalKVI8_DeepContext|" +
 	"TestMC3Step_rowsPathBitIdentical|TestMC3Step_faRowsBitIdenticalDeep|TestAttnDigest_mc3RowsOtherGeometries)$"
 
@@ -217,6 +217,74 @@ func TestAttnFABlk64Digest(t *testing.T) {
 			if cos := dot / math.Sqrt(na*nb); !(cos >= 0.9999) {
 				t.Errorf("nKeys=%d peaked=%v: cosine %.6f against the CPU reference, want >= 0.9999", nKeys, peaked, cos)
 			}
+		}
+	}
+}
+
+// TestAttnFABlk96Digest drives attention_fa_blk96_g1 (head dimension 96, MHA: Phi-3 mini's shape) and attention_fa_combine the way
+// the resident does and records its output. The reference check is loose on purpose; the kernel's bar against float64 is
+// kernels.TestAttnFABlk96MatchesFloat64.
+func TestAttnFABlk96Digest(t *testing.T) {
+	d, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	lib, err := d.CompileLibrary(allKernels, MSL3_1)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	pipe, err := d.NewComputePipeline(lib, "attention_fa_blk96_g1")
+	if err != nil {
+		t.Fatalf("pipeline: %v", err)
+	}
+	comb, err := d.NewComputePipeline(lib, "attention_fa_combine")
+	if err != nil {
+		t.Fatalf("combine: %v", err)
+	}
+	const G, nKV, hd = 1, 8, 96
+	const nH = G * nKV
+	cq := d.NewCommandQueue()
+	scale := float32(1 / math.Sqrt(hd))
+	for _, nKeys := range []int{attnFADepthFloor, attnFADepthFloor + 1, 3900, 4100} {
+		rng := rand.New(rand.NewSource(int64(nKeys*10 + 96)))
+		q := make([]float32, nH*hd)
+		for i := range q {
+			q[i] = float32(rng.NormFloat64())
+		}
+		kh, vh := make([]uint16, nKeys*nKV*hd), make([]uint16, nKeys*nKV*hd)
+		for i := range kh {
+			kh[i] = f32ToF16(float32(rng.NormFloat64() * 0.5))
+			vh[i] = f32ToF16(float32(rng.NormFloat64()))
+		}
+		kb, vb := d.NewBufferBytes(len(kh)*2), d.NewBufferBytes(len(vh)*2)
+		copy(kb.U16s()[:len(kh)], kh)
+		copy(vb.U16s()[:len(vh)], vh)
+		partial := d.NewBufferLen(nKV * attnFABlkSplit * G * (hd + 2))
+		out := d.NewBufferLen(nH * hd)
+		uG, uSplit := NewBufferU32(d, G), NewBufferU32(d, attnFABlkSplit)
+		e := cq.Begin()
+		e.DispatchTG(pipe, nKV*attnFABlkSplit*128, 128, 128*6*G*4, NewBufferFloats(d, q), kb, vb, partial,
+			NewBufferU32(d, nKV), uG, NewBufferU32(d, uint32(nKeys)), NewBufferFloats(d, []float32{scale}), NewBufferU32(d, 0), uSplit, kvIdentityTable(d))
+		e.Dispatch(comb, nH*hd, hd, partial, out, uG, NewBufferU32(d, hd), uSplit)
+		e.End()
+		if err := e.Err(); err != nil {
+			t.Fatalf("dispatch: %v", err)
+		}
+		got := append([]float32(nil), out.Floats()[:nH*hd]...)
+		recordAttnDigest(t, "attention_fa_blk96_g1,attention_fa_combine", got)
+		kf, vf := make([]float32, len(kh)), make([]float32, len(vh))
+		for i := range kh {
+			kf[i], vf[i] = f16ToF32(kh[i]), f16ToF32(vh[i])
+		}
+		ref := cpuAttention(q, kf, vf, nH, nKV, hd, nKeys, 0, scale)
+		var dot, na, nb float64
+		for i := range ref {
+			dot += float64(got[i]) * float64(ref[i])
+			na += float64(got[i]) * float64(got[i])
+			nb += float64(ref[i]) * float64(ref[i])
+		}
+		if cos := dot / math.Sqrt(na*nb); !(cos >= 0.9999) {
+			t.Errorf("nKeys=%d: cosine %.6f against the CPU reference, want >= 0.9999", nKeys, cos)
 		}
 	}
 }
