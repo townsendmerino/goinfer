@@ -27,8 +27,8 @@ import (
 //	B  the batched walker at the default (CPU fast attention from fastAttnMinPrompt rows), the candidate.
 //
 // GPTOSS_PF_MODE=fit prints the load's fit plan (FitQuery) and the process's resident memory after the load. GPTOSS_PF_MODE=fidelity scores B against E over GPTOSS_PF_N prompts of prompt set A at each depth, teacher-forced on E's greedy
-// continuation (gptossPFPositions positions). GPTOSS_PF_MODE=ttft times S against B, A B B A per block over GPTOSS_PF_BLOCKS blocks
-// at each depth (block b uses prompt b), and checks E against S on every S cell's prompt; a cell starting above load 8.0 or under
+// continuation (gptossPFPositions positions). GPTOSS_PF_MODE=ttft times S, B and E as S B E E B S per block over GPTOSS_PF_BLOCKS
+// blocks at each depth (block b uses prompt b), and checks E against S on every S cell's prompt; a cell starting above load 8.0 or under
 // GPTOSS_PF_MIN_AVAIL_MIB available is VOID and recorded as such. Records go to GPTOSS_PF_OUT. A measurement tool: it skips unless
 // GPTOSS_PF_MODEL is set.
 func TestGptOssCPUPrefillGate(t *testing.T) {
@@ -168,7 +168,7 @@ func TestGptOssCPUPrefillGate(t *testing.T) {
 		for _, k := range depths {
 			for b := range blocks {
 				p := ids(b, k)
-				for c, arm := range "ABBA" {
+				for c, arm := range "SBEEBS" { // pairs S-B at cells (1,2), (5,6) and S-E at (1,3), (4,6)
 					l1, avail := gptossPFHostState()
 					st := time.Now().Format(time.RFC3339)
 					void := l1 > 8.0 || avail < minAvail
@@ -177,8 +177,8 @@ func TestGptOssCPUPrefillGate(t *testing.T) {
 					var last []float32
 					identical := "-"
 					if !void {
-						wall, peak, last = gptossPFTimed(t, m, p, arm == 'B')
-						if arm == 'A' {
+						wall, peak, last = gptossPFTimed(t, m, p, arm)
+						if arm == 'S' {
 							eL, _ := gptossPFRun(t, m, p, true, nil)
 							identical = strconv.FormatBool(gptossPFEqual(eL[0], last))
 						}
@@ -226,11 +226,13 @@ func gptossPFRun(t *testing.T, m *Model, p []int, exact bool, forced []int) ([][
 	return logits, toks
 }
 
-// gptossPFTimed runs one TTFT cell: the prompt's prefill to its first logits, sequential (batched false: the per-token walker) or
-// through prefillLogits at the default, on a fresh cache. It returns the wall time, the Go heap's peak in use while it ran (sampled
-// every 20 ms), and the logits.
-func gptossPFTimed(t *testing.T, m *Model, p []int, batched bool) (time.Duration, uint64, []float32) {
+// gptossPFTimed runs one TTFT cell: the prompt's prefill to its first logits on a fresh cache, by arm: 'S' the per-token walker, 'B'
+// prefillLogits at the default, 'E' prefillLogits with exact attention. It returns the wall time, the Go heap's peak in use while it
+// ran (sampled every 20 ms), and the logits.
+func gptossPFTimed(t *testing.T, m *Model, p []int, arm rune) (time.Duration, uint64, []float32) {
 	t.Helper()
+	m.opts.ExactPrefill = arm == 'E'
+	defer func() { m.opts.ExactPrefill = false }()
 	runtime.GC()
 	cache := m.NewCache(len(p) + 1)
 	var peak atomic.Uint64
@@ -256,7 +258,7 @@ func gptossPFTimed(t *testing.T, m *Model, p []int, batched bool) (time.Duration
 	t0 := time.Now()
 	var lg []float32
 	var err error
-	if batched {
+	if arm != 'S' {
 		lg, err = m.prefillLogits(context.Background(), p, cache)
 	} else {
 		for _, id := range p[:len(p)-1] {
