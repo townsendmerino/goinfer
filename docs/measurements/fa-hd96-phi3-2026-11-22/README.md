@@ -56,3 +56,15 @@ the gate about 5 min under the exclusive lock. Gate 3 about 25 min in-process an
 - **The plant:** the P·V load dropped one of each lane's three dims (`v[c] = 0` at c = 2). 896 comparisons fell outside the bar
   (cosine about 0.77; `gate1/plant-red.log.gz`). The bit-identity checks stay green under it, as they should, since both sides carry
   it. Restored, the PTX rebuilt to the committed bytes (sha256 `74627d34…`).
+
+## Addendum, 2026-11-22 18:52 PST, before gate 2's first reading: the instrument seeds Phi-3 by sequential prefill
+
+- **What happened.** Gate 2's first launch (18:49 PST) stopped at its first prompt, before scoring anything:
+  `PrefillLast (lane split=0): cuda prefill: per-32 activation quantization has no batched kernels yet`. The gate seeds each prompt
+  through the resident's batched prefill, and CUDA has none for q4k's per-32 activations. Serve takes the sequential path for Phi-3 at
+  q4k too ("prefill path: sequential" in its banner).
+- **The change, the instrument only.** For the `P3M` cell, `laneArm` prefills the K prompt positions one `Forward` at a time, on the
+  exact path in both arms: `faSplit` is 0 during the prefill and the arm's split for the scored positions only. So precondition 3 (the
+  seed row identical across arms) still tests what it did. The other cells keep `PrefillLast`.
+- **Unchanged:** the cell, K = 3,900, set B, the reference, the preconditions, criteria (a), (b) and (c) and their ambiguous band.
+- **Cost:** about 21 sequential prefills of 3,900 positions (10 prompts × 2 arms, plus the A/A), about 25 min under the exclusive lock.

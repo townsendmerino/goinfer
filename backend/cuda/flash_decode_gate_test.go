@@ -217,15 +217,16 @@ func TestFlashDecodeGateVsReference(t *testing.T) {
 		decision bool
 		quant    string // the cell's load quant; "" is int4
 		serveKV  bool   // load with serve's auto KV (f16 for a covered family) rather than the suite's f32
+		seqSeed  bool   // seed each prompt by sequential Forward (a load with no batched prefill: q4k's per-32 activations)
 	}{
-		"D7": {"GOINFER_CUDA_GATE_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf", true, "", false},
-		"S":  {"GOINFER_CUDA_GATE_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", false, "", false},
+		"D7": {"GOINFER_CUDA_GATE_MODEL_D7", "$HOME/models/qwen2.5-7b-instruct-q4_k_m.gguf", true, "", false, false},
+		"S":  {"GOINFER_CUDA_GATE_MODEL", "$HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", false, "", false, false},
 		// G22B: Gemma 2 on the lane's capped variant, the opt-in's gate (docs/measurements/op1o2-fa-softcap-2026-11/README.md); run as
 		// GOINFER_FA_GATE_CELLS=G22B:3900.
-		"G22B": {"GOINFER_CUDA_GATE_MODEL_G22B", "$HOME/models/gemma-2-2b-it-Q8_0.gguf", true, "", false},
+		"G22B": {"GOINFER_CUDA_GATE_MODEL_G22B", "$HOME/models/gemma-2-2b-it-Q8_0.gguf", true, "", false, false},
 		// P3M: Phi-3 mini on the hd-96 kernels at its default q4k and serve's f16 KV, the hd-96 lane's gate
 		// (docs/measurements/fa-hd96-phi3-2026-11-22/README.md); run as GOINFER_FA_GATE_CELLS=P3M:3900.
-		"P3M": {"GOINFER_CUDA_GATE_MODEL_P3M", "$HOME/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf", true, "q4k", true},
+		"P3M": {"GOINFER_CUDA_GATE_MODEL_P3M", "$HOME/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf", true, "q4k", true, true},
 	}
 	for cell := range strings.SplitSeq(cells, ",") {
 		parts := strings.Split(strings.TrimSpace(cell), ":")
@@ -277,10 +278,15 @@ func TestFlashDecodeGateVsReference(t *testing.T) {
 			for _, f := range promptFiles {
 				prompts = append(prompts, decoder.PrefillGateProseIDsForTest(t, tk, f, K))
 			}
+			gateSeqSeed = mc.seqSeed
+			defer func() { gateSeqSeed = false }()
 			runFlashGateCell(t, rf, m, name, K, nSplit, prompts, refDir, mc.decision)
 		})
 	}
 }
+
+// gateSeqSeed makes laneArm seed each prompt by sequential Forward on the exact path, for a cell whose load has no batched prefill.
+var gateSeqSeed bool
 
 func laneArm(t *testing.T, rf *cudaResident, m *decoder.Model, ids []int, K int, refTokens []int, split int) [][]float32 {
 	t.Helper()
@@ -289,12 +295,26 @@ func laneArm(t *testing.T, rf *cudaResident, m *decoder.Model, ids []int, K int,
 	for i, id := range ids {
 		embs[i] = m.EmbedResidentForTest(id)
 	}
-	rf.faSplit, rf.skVsumSplit = split, 0
-	rf.faLaunches = 0
-	seed, err := rf.PrefillLast(ctx, embs, 0)
-	if err != nil {
-		t.Fatalf("PrefillLast (lane split=%d): %v", split, err)
+	rf.skVsumSplit = 0
+	var seed []float32
+	var err error
+	if gateSeqSeed {
+		rf.faSplit = 0 // the prompt on the exact path in both arms, so the seed rows can match (precondition 3)
+		for pos := range K {
+			if seed, err = rf.Forward(embs[pos], pos); err != nil {
+				t.Fatalf("sequential seed Forward pos=%d (lane split=%d): %v", pos, split, err)
+			}
+		}
+		seed = append([]float32(nil), seed...)
+		rf.faSplit = split
+	} else {
+		rf.faSplit = split
+		seed, err = rf.PrefillLast(ctx, embs, 0)
+		if err != nil {
+			t.Fatalf("PrefillLast (lane split=%d): %v", split, err)
+		}
 	}
+	rf.faLaunches = 0
 	out := make([][]float32, len(refTokens))
 	out[0] = append([]float32(nil), seed...)
 	pos := K - 1
