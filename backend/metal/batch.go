@@ -183,7 +183,7 @@ func metalStepInputs(m *decoder.Model, plan metalCtxPlan) *stepInputs {
 			info.hd, info.nKV = m.BackendView().Layer(l).HeadDim(), m.BackendView().Layer(l).KVHeads()
 			info.hasGeom, info.kEqV = info.hd > 0, m.BackendView().Layer(l).VFromK() && m.BackendView().Layer(l).KVSrc() == l
 			in.oneKVAllocation = true
-			in.faPartial = max(in.faPartial, attnFAPartialFloats(info.hd, nH, info.nKV, m.FlashDecodeHD96()))
+			in.faPartial = max(in.faPartial, attnFAPartialFloats(info.hd, nH, info.nKV, metalHD96Sized(m, plan)))
 		} else if mixer == decoder.MixerMLA {
 			in.oneKVAllocation = true
 		}

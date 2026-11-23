@@ -315,7 +315,8 @@ type resident struct {
 	pW8Rows          [batchMaxSeqs + 1]Pipeline // by B
 	attnFAPartialLen int
 	decodeAttnFA     bool
-	faHD96           bool   // Options.FlashDecodeHD96: the hd = 96 lane is sized, and taken where faHD96On says
+	faHD96           bool   // Options.FlashDecodeHD96: an hd = 96 layer may take the lane where faHD96On says
+	faHD96Sized      bool   // metalHD96Sized: the build sizes the hd = 96 lane
 	faHD96Default    bool   // faHD96 is the caller's default: the lane applies only while ctxCap is at most metalHD96DefaultMaxCtx
 	attnFAPartial    Buffer // [nKV][maxSplit][G][hd+2] f32 scratch, sized once for the widest layer
 	attnFAMaxSplit   int
@@ -2254,6 +2255,21 @@ func attnFAGroupOK(nH, nKV int) bool { return nKV > 0 && nH%nKV == 0 && nH/nKV <
 // at K = 3,900 within a 4,096 context, and nothing past it (docs/measurements/metal-fa-hd96-phi3-2026-11-23/README.md). A longer
 // context takes the lane only when it is asked for.
 const metalHD96DefaultMaxCtx = 4096
+
+// metalHD96Sized reports whether a build of m under plan sizes the hd = 96 lane: Options.FlashDecodeHD96 asked for, or set as the
+// caller's default with the context cap the build will reach (resolveMetalCtxCap, then kvRaise over its slots) at most
+// metalHD96DefaultMaxCtx, where faHD96On will let a layer take it. A long context under the default pays no scratch for a lane it
+// cannot run.
+func metalHD96Sized(m *decoder.Model, plan metalCtxPlan) bool {
+	if !m.FlashDecodeHD96() {
+		return false
+	}
+	if !m.FlashDecodeHD96Default() {
+		return true
+	}
+	c, err := resolveMetalCtxCap(m, plan)
+	return err == nil && kvRaise(m, max(metalKVSlots(m, plan), 1), c) <= metalHD96DefaultMaxCtx
+}
 
 // faHD96On reports whether an hd = 96 layer may take attention_fa now: Options.FlashDecodeHD96 asked for, or set as the caller's
 // default (faHD96Default) while the resident's context cap, the depth a conversation can reach, is at most metalHD96DefaultMaxCtx.
