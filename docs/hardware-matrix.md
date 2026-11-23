@@ -88,7 +88,7 @@ features). Two load-time notes the taxonomy does not encode:
   (measured 2026-10-01 on the CUDA resident before its pairwise kernels existed: real Command-R7B and Aya-expanse-8B
   at int4, worst per-position cosine -0.075 / -0.041 against the CPU). Every resident backend binds pairwise twins
   (`backend/cuda/rope_pairwise.cu`, Metal's, `backend/webgpu/internal/kernels/pairwise.go`), each gated against the
-  CPU on peaked attention. Under WebGPU, Command-R and Command-R7B still lack the features the table names.
+  CPU on peaked attention.
 
 ## Why a cell reads CPU
 

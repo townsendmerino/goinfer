@@ -154,6 +154,17 @@ func (bs *webgpuBuild) projMul(pw *linalg.WeightMat, mult float32) (kernels.Deco
 	var q8 []int8
 	var scales []float32
 	switch pw.Kind() {
+	case "int4": // the group scales carry the factor; K a whole number of groups uploads the decoder's bytes as uploadProj does
+		q4, q4s, group, _ := decoder.Int4F32(pw)
+		if group != kernels.W4a8GroupSize || K%kernels.W4a8GroupSize != 0 {
+			return nil, fmt.Errorf("gpu: mult-fold of an int4 head needs whole %d-wide groups (group %d, K %d)", kernels.W4a8GroupSize, group, K)
+		}
+		rm, err := bs.c.UploadW4A8Packed(q4, scaleCopy(q4s, mult), N, K)
+		if err != nil {
+			return nil, err
+		}
+		bs.keep(rm.Release)
+		return rm, nil
 	case "int8":
 		q8, scales, _, _ = pw.Int8()
 	case "f32":

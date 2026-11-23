@@ -18,6 +18,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/fidelity"
+	"github.com/townsendmerino/goinfer/internal/testgate"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -574,5 +575,183 @@ func TestCohereResidentParityWebGPU(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestPairwiseRoPERealWebGPU is Metal's G-PR4 (TestPairwiseRoPERealMetal) on WebGPU: GLM-OCR's text decoder, Command-R7B and
+// Aya-expanse-8B from ~/models, resident at int4 against the CPU int4, 64 tokens of README.md and a 16-token greedy
+// continuation the CPU chose, teacher-forced. Bars, CUDA's real-checkpoint tier: mean per-position cosine >= 0.99, worst
+// >= 0.90, and every continuation argmax difference a near-tie (within 3% of the CPU's logit range). With the NeoX kernels
+// bound (kernels.PairwiseNeoXForTest) each model must miss the mean or the worst bar. The CPU reference is computed and its
+// model closed before each WebGPU load. GOINFER_HEAVY_TESTS=1; a model missing from ~/models is skipped by name.
+func TestPairwiseRoPERealWebGPU(t *testing.T) {
+	testgate.RequireHeavy(t)
+	if c, err := New(); err != nil {
+		t.Skipf("no webgpu: %v", err)
+	} else {
+		c.Close()
+	}
+	home, _ := os.UserHomeDir()
+	readme, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const nPrompt, nCont = 64, 16
+	argmax := func(v []float32) int {
+		b := 0
+		for i := range v {
+			if v[i] > v[b] {
+				b = i
+			}
+		}
+		return b
+	}
+	for _, name := range []string{"glm-ocr", "command-r7b", "aya-expanse-8b"} {
+		t.Run(name, func(t *testing.T) {
+			dir := filepath.Join(home, "models", name)
+			if _, err := os.Stat(filepath.Join(dir, "config.json")); err != nil {
+				t.Skipf("no %s", dir)
+			}
+			tk, err := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			ids, err := tk.Encode(string(readme), false)
+			if err != nil || len(ids) < nPrompt {
+				t.Fatalf("encode README: %d ids, %v", len(ids), err)
+			}
+			toks := append([]int(nil), ids[:nPrompt]...)
+			mc, err := decoder.Load(dir, decoder.Options{Backend: "cpu", Quant: "int4"})
+			if err != nil {
+				t.Fatalf("load cpu: %v", err)
+			}
+			c := mc.NewCache(nPrompt + nCont)
+			var ref [][]float32
+			for i := 0; i < nPrompt+nCont; i++ {
+				l, err := mc.ForwardForTest(toks[i], c)
+				if err != nil {
+					t.Fatal(err)
+				}
+				ref = append(ref, append([]float32(nil), l...))
+				if i >= nPrompt-1 && len(toks) < nPrompt+nCont {
+					toks = append(toks, argmax(l))
+				}
+			}
+			mc.Close()
+			measure := func() (mean, worst float64, real, ties int) {
+				m, err := decoder.Load(dir, decoder.Options{Backend: "webgpu", Quant: "int4", ResidentContext: 512})
+				if err != nil {
+					t.Fatalf("load webgpu: %v", err)
+				}
+				defer m.Close()
+				rd, ok := m.ResidentForwardForTest().(*residentDecoder)
+				if !ok || !rd.rm.Pairwise {
+					t.Fatalf("not resident with the pairwise twins: %s", m.ResidentDecline())
+				}
+				rd.Reset()
+				worst = 1
+				for i, tok := range toks {
+					l, err := rd.Forward(m.EmbedResidentForTest(tok), i)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var ab, aa, bb float64
+					for j := range l {
+						ab, aa, bb = ab+float64(l[j])*float64(ref[i][j]), aa+float64(l[j])*float64(l[j]), bb+float64(ref[i][j])*float64(ref[i][j])
+					}
+					cs := ab / math.Sqrt(aa*bb)
+					mean, worst = mean+cs, math.Min(worst, cs)
+					if i >= nPrompt-1 && i < len(toks)-1 {
+						if want, got := argmax(ref[i]), argmax(l); want != got {
+							lo, hi := ref[i][0], ref[i][0]
+							for _, v := range ref[i] {
+								lo, hi = min(lo, v), max(hi, v)
+							}
+							if float64(ref[i][want]-ref[i][got])/float64(hi-lo) <= 0.03 {
+								ties++
+							} else {
+								real++
+							}
+						}
+					}
+				}
+				return mean / float64(len(toks)), worst, real, ties
+			}
+			mean, worst, real, ties := measure()
+			t.Logf("PAIRWISE %s: %d positions, mean cos %.6f, worst %.6f; continuation flips %d near-tie, %d real", name, len(toks), mean, worst, ties, real)
+			if mean < 0.99 || worst < 0.90 || real > 0 {
+				t.Errorf("%s: mean %.6f (>= 0.99), worst %.6f (>= 0.90), %d non-tie continuation flips (0)", name, mean, worst, real)
+			}
+			kernels.PairwiseNeoXForTest = true
+			nm, nw, _, _ := measure()
+			kernels.PairwiseNeoXForTest = false
+			t.Logf("NeoX     %s: mean cos %.6f, worst %.6f", name, nm, nw)
+			if nm >= 0.99 && nw >= 0.90 {
+				t.Errorf("%s: the gate is BLIND: with the NeoX kernels it reads mean %.6f, worst %.6f", name, nm, nw)
+			}
+		})
+	}
+}
+
+// TestLogitScaleResidentWebGPU holds the head's logit-scale fold on the dense families that carry one (Granite divides,
+// Cohere multiplies) to the CPU's scale: relL2 <= 1e-3 over 16 decoded positions at int8int8 and with an int4 head
+// (EmbedInt4), where a missing or inverted fold reads relL2 of |1/s - 1| or more. Cosine cannot see a constant factor.
+func TestLogitScaleResidentWebGPU(t *testing.T) {
+	if c, err := New(); err != nil {
+		t.Skipf("no webgpu: %v", err)
+	} else {
+		c.Close()
+	}
+	for _, fx := range []string{"granite-dense-tiny", "cohere-tiny"} {
+		for _, int4Head := range []bool{false, true} {
+			opts := decoder.Options{Quant: "int8int8"}
+			if int4Head {
+				opts = decoder.Options{Quant: "int4", EmbedInt4: true}
+			}
+			dir := filepath.Join("../../testdata", fx)
+			cpuO := opts
+			cpuO.Backend = "cpu"
+			cpu, err := decoder.Load(dir, cpuO)
+			if err != nil {
+				t.Fatal(err)
+			}
+			gpuO := opts
+			gpuO.Backend = "webgpu"
+			m, err := decoder.Load(dir, gpuO)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rd, ok := m.ResidentForwardForTest().(*residentDecoder)
+			if !ok {
+				t.Fatalf("%s int4 head %v: not resident: %s", fx, int4Head, m.ResidentDecline())
+			}
+			_, _, _, _, _, _, vocab := cpu.Dims()
+			c := cpu.NewCache(16)
+			rd.Reset()
+			worst := 0.0
+			for i := range 16 {
+				tok := (i*37 + 3) % vocab
+				want, err := cpu.ForwardForTest(tok, c)
+				if err != nil {
+					t.Fatal(err)
+				}
+				got, err := rd.Forward(m.EmbedResidentForTest(tok), i)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var dd, bb float64
+				for j := range want {
+					d := float64(got[j]) - float64(want[j])
+					dd, bb = dd+d*d, bb+float64(want[j])*float64(want[j])
+				}
+				worst = math.Max(worst, math.Sqrt(dd/bb))
+			}
+			m.Close()
+			cpu.Close()
+			t.Logf("%s int4 head %v: worst relL2 %.3g", fx, int4Head, worst)
+			if worst > 1e-3 {
+				t.Errorf("%s int4 head %v: worst relL2 %.3g against the CPU, want <= 1e-3", fx, int4Head, worst)
+			}
+		}
 	}
 }
