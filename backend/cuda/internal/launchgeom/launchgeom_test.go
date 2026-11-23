@@ -41,6 +41,24 @@ func TestKQuantGemv_matchesCuDefine(t *testing.T) {
 	}
 }
 
+// TestPrefillG32_matchesCuDefines holds PrefillG32Rows and PrefillG32MT to prefill_g32.cu's RN and MT, so a change to one side
+// alone fails here instead of launching the per-32 rows GEMVs with a grid that skips or repeats rows.
+func TestPrefillG32_matchesCuDefines(t *testing.T) {
+	b, err := os.ReadFile("../../prefill_g32.cu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]int{"RN": PrefillG32Rows, "MT": PrefillG32MT} {
+		m := regexp.MustCompile(`(?m)^#define ` + name + ` (\d+)$`).FindSubmatch(b)
+		if m == nil {
+			t.Fatalf("prefill_g32.cu has no #define %s", name)
+		}
+		if got, _ := strconv.Atoi(string(m[1])); got != want {
+			t.Errorf("prefill_g32.cu defines %s %d; launchgeom has %d", name, got, want)
+		}
+	}
+}
+
 // TestGemmMMA_matchesCuDefines holds the GemmMMA* tile constants to gemm_w4a8_mma.cu's defines (GemmMMAThreads to GWARPS*32),
 // so a change to one side alone fails here instead of launching the kernel with a grid or shared-memory size it does not use.
 func TestGemmMMA_matchesCuDefines(t *testing.T) {

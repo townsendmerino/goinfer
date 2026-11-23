@@ -38,7 +38,11 @@ func TestPrefillDecomp(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no fixture at %s", path)
 	}
-	flags := []string{"-backend", "cuda", "-quant", "int4"}
+	quant := "int4"
+	if v := os.Getenv("GOINFER_DECOMP_QUANT"); v != "" { // e.g. q4k: Phi-3's default load, the per-32 lane
+		quant = v
+	}
+	flags := []string{"-backend", "cuda", "-quant", quant}
 	if os.Getenv("GOINFER_DECOMP_MOECACHE") != "" { // an MoE checkpoint that does not fit the card: the shipped configuration holds its experts in pinned host memory
 		ctxLen := 8192
 		if v, err := strconv.Atoi(os.Getenv("GOINFER_DECOMP_CTX")); err == nil && v > 0 {

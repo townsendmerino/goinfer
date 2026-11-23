@@ -79,7 +79,7 @@ func TestPrefillLongPrompt(t *testing.T) {
 			if Ly.kEqV {
 				kEqV++
 			}
-			if k := nonBatchableKind(Ly); k != "" {
+			if k := nonBatchableKind(Ly, rf.actG32); k != "" {
 				badKind[k]++
 			}
 		}

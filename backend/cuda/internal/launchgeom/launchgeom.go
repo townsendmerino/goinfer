@@ -112,6 +112,19 @@ func KQuantGemvGridX(n int) int {
 	return (n + 8*KQuantGemvRows - 1) / (8 * KQuantGemvRows)
 }
 
+// PrefillG32Rows and PrefillG32MT equal RN and MT in prefill_g32.cu: each warp of a per-32 rows GEMV computes PrefillG32Rows
+// output rows over a tile of PrefillG32MT activation rows, 8 warps a 256-thread block. TestPrefillG32_matchesCuDefines holds
+// them to the .cu.
+const (
+	PrefillG32Rows = 2
+	PrefillG32MT   = 8
+)
+
+// PrefillG32RowsGridX is the per-32 rows GEMVs' grid for n output rows.
+func PrefillG32RowsGridX(n int) int {
+	return (n + 8*PrefillG32Rows - 1) / (8 * PrefillG32Rows)
+}
+
 // GemmMMABM, GemmMMABN, GemmMMAThreads, GemmMMAKStep and GemmMMAAPad equal GBM, GBN, GWARPS*32, GKSTEP and GAPAD in
 // gemm_w4a8_mma.cu: a block computes a GemmMMABM x GemmMMABN output tile with GemmMMAThreads threads, staging GemmMMAKStep K
 // elements of the activation panel per pass with a GemmMMAAPad-word row pad. TestGemmMMA_matchesCuDefines holds them to the .cu.

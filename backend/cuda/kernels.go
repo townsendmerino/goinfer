@@ -79,6 +79,12 @@ var gptOssActPTX []byte
 //go:embed testdata/actgroup.ptx
 var actGroupPTX []byte
 
+// prefillG32PTX: the batched prefill pass's per-32 kernels (prefill_g32.cu), the M-row twins of actgroup.cu's quantizers and
+// Q4_K / Q5_K / Q6_K / int8 GEMVs, each bit-identical per row to its decode kernel. Loaded only under per-32 activations.
+//
+//go:embed testdata/prefill_g32.ptx
+var prefillG32PTX []byte
+
 // gemvRNPTX: gemv_w4a8_rn, the register-blocked batched GEMV (RN output rows per warp) that reuses each coalesced
 // activation load across RN rows. Bit-identical (per-row facc, one reduce each).
 //
