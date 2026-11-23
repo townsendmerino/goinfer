@@ -83,14 +83,12 @@ features). Two load-time notes the taxonomy does not encode:
   WebGPU does not, so they run resident on Metal and CUDA and on the CPU under WebGPU (a WebGPU run
   prints `webgpu does not implement [gemma4-e-model]`). The dense models and the 26B-A4B are
   resident as the row says. `DecodePath()` names the gap for a loaded model.
-- **Command-R, Command-R7B (Aya) and GLM-OCR run on the CPU under WebGPU for a stated reason.** Their
-  rotary embedding is GPT-J PAIRWISE (dims 2d, 2d+1); WebGPU's rope kernels are the NeoX half-split
-  (d, d+half), so it does not declare `pairwise-rope` / `pairwise-mrope`. Running them on the NeoX
-  kernels is exact at position 0 and wrong from position 1 with no error (measured 2026-10-01 on the
-  CUDA resident before its pairwise kernels existed: real Command-R7B and Aya-expanse-8B at int4, worst
-  per-position cosine -0.075 / -0.041 against the CPU). CUDA has `backend/cuda/rope_pairwise.cu` and Metal its
-  twins since 2026-10-09; a WebGPU row returns once it
-  has pairwise rope kernels and a resident-vs-CPU gate on peaked attention.
+- **Command-R, Command-R7B (Aya) and GLM-OCR rotate GPT-J PAIRWISE** (dims 2d, 2d+1), where the NeoX kernels
+  rotate (d, d+half). On NeoX kernels such a model is exact at position 0 and wrong from position 1 with no error
+  (measured 2026-10-01 on the CUDA resident before its pairwise kernels existed: real Command-R7B and Aya-expanse-8B
+  at int4, worst per-position cosine -0.075 / -0.041 against the CPU). Every resident backend binds pairwise twins
+  (`backend/cuda/rope_pairwise.cu`, Metal's, `backend/webgpu/internal/kernels/pairwise.go`), each gated against the
+  CPU on peaked attention. Under WebGPU, Command-R and Command-R7B still lack the features the table names.
 
 ## Why a cell reads CPU
 
