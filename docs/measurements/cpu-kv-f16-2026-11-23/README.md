@@ -90,3 +90,35 @@ Francis, same decision: before building a fused f16 read into CPU attention, mea
 - **Kill:** share under 25%: stop, record it, build nothing. Share 25% or more: build the fused f16 read (attention reads the f16 rows in
   place inside the parallel head workers; aikit fused f16 dot and axpy kernels on amd64 and arm64 with scalar fallbacks), under its own
   registration, committed before any timed run.
+
+## Fidelity: the 0.5B at K = 3,900, read 2026-11-23 13:03 PST — PASSES
+
+`TestCPUKVF16GateVsReference`, cell `Q05:3900`, set B (10 prompts × 64 positions), binary at `d1cdda1bb`, 12:42–12:54 PST under the shared
+lock. Log: `q05-fidelity.log`. Preconditions held: the arms' caches are f16 and f32, f16's rows differ from f32's on 10 of 10 prompts, A/A
+bit-identical over 64 rows.
+
+| | f32 (auto) | f16 | bar | |
+|---|---|---|---|---|
+| (a) hard flips | 29 | 26 | ≤ 29 + 2√29 | pass (strict too) |
+| (b) mean agreement | 86.72% | 87.50% (+0.78 pt) | ≥ f32 − 1.0 pt, f16 ≥ f32 on ≥ half | pass, 9/10 prompts |
+| (c) mean KL | 0.160735 | 0.164572 | ≤ 1.10× | pass, 1.024× (not in the 1.05–1.10 parked band) |
+
+**Host bytes**, read from the caches at depth 3,963: f32 97,394,688 B of K/V, f16 48,697,344 B (exactly half).
+
+## Profile: attention's share of decode, read 2026-11-23 13:03 PST — 65.9%, over the 25% kill: the build goes ahead
+
+`TestCPUAttnShareProbe`, Phi-3 mini q4k, CPU, f32 KV, depth 3,900, 32 tokens, binary at `d1cdda1bb`, 12:56–13:03 PST under the exclusive
+lock (start 1-min load 0.93, 60.6 GB available, swap 910 → 860 MiB, peak RSS 6.15 GB). Log: `profile.log`.
+
+| operation | ms/token | share of decode wall |
+|---|---|---|
+| attention | 210.97 | **65.9%** |
+| ffn | 67.07 | 20.9% |
+| proj_qkv | 28.29 | 8.8% |
+| proj_o | 8.54 | 2.7% |
+| lm_head | 3.74 | 1.2% |
+| the rest | 1.03 | 0.3% |
+
+Decode 320.22 ms/token (3.12 tok/s); the timed operations sum to 99.8% of wall. Attention reads 3,081 MB a token, so it runs at about
+14.6 GB/s: it is not at this box's memory bandwidth on f32, which bounds what halving its bytes alone can buy. The fused f16 read's own
+registration says what it must show.
