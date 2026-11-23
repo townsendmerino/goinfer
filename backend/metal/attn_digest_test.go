@@ -90,16 +90,41 @@ func attnKernelNames(src string) []string {
 	return names
 }
 
-// attnTemplateOnly is the attention kernels in src declared as a template with no host_name of their own: their
-// instantiations (attention_prefill_steel_split's _hd256 and _hd512) are the entry points.
+// attnTemplateOnly is the attention kernels in src declared as a template with no host_name of their own but at least one
+// host_name instantiation (attention_prefill_steel_split's _hd256 and _hd512): those instantiations are the entry points. A
+// template no instantiation names stays out, so the coverage check reports it rather than passing it.
 func attnTemplateOnly(src string) map[string]bool {
 	out := map[string]bool{}
 	for _, m := range regexp.MustCompile(`(?m)^template\s*<[^>]*>\s*\n\s*kernel void ((?:mc3_)?attention\w*)\(`).FindAllStringSubmatch(src, -1) {
-		if !strings.Contains(src, `host_name("`+m[1]+`")`) {
+		inst := regexp.MustCompile(`host_name\("[^"]+"\)\]\]\s*kernel\s+[^;]*\b` + m[1] + `<`)
+		if !strings.Contains(src, `host_name("`+m[1]+`")`) && inst.MatchString(src) {
 			out[m[1]] = true
 		}
 	}
 	return out
+}
+
+// TestAttnTemplateOnly_needsAnInstantiation: a template counts as instantiated-only when a host_name instantiation names it, in
+// either form the sources use (decltype or a typedef), and not when nothing instantiates it, nor when it has a host_name of its own.
+func TestAttnTemplateOnly_needsAnInstantiation(t *testing.T) {
+	const decl = "template <uint HD>\nkernel void attention_x(device float* o) {}\n"
+	for _, c := range []struct {
+		name, src string
+		want      bool
+	}{
+		{"decltype instantiation", decl + `template [[host_name("attention_x_hd64")]] kernel decltype(attention_x<64>) attention_x<64>;`, true},
+		{"typedef instantiation", decl + "typedef decltype(attention_x<1>) attention_x_t;\n" + `template [[host_name("attention_x_g1")]] kernel attention_x_t attention_x<1>;`, true},
+		{"no instantiation", decl, false},
+		{"another template's instantiation", decl + `template [[host_name("attention_xy_hd64")]] kernel decltype(attention_xy<64>) attention_xy<64>;`, false},
+		{"its own host_name", decl + `template [[host_name("attention_x")]] kernel decltype(attention_x<128>) attention_x<128>;`, false},
+	} {
+		if got := attnTemplateOnly(c.src)["attention_x"]; got != c.want {
+			t.Errorf("%s: attnTemplateOnly = %v, want %v", c.name, got, c.want)
+		}
+	}
+	if got := attnTemplateOnly(allKernels + mc3RowsKernels + prefillKernels); !got["attention_prefill_steel_split"] {
+		t.Errorf("the shipped sources' attention_prefill_steel_split is not instantiated-only: %v", got)
+	}
 }
 
 // attnDigestRowsLabel names the kernels behind the batched step's logits in mc3IdentityWith, for a test that forces a
@@ -263,7 +288,7 @@ func TestAttnFABlk96Digest(t *testing.T) {
 		paged         bool
 	}
 	cells := []cell{{attnFADepthFloor, 0, false}, {attnFADepthFloor + 1, 0, false}, {3900, 0, false}, {4100, 0, false},
-		{3900, 0, true}, {4100, 0, true}, {3900, 2500, false}, {3900, 2500, true}}
+		{3900, 0, true}, {4100, 0, true}, {3900, 1000, false}, {3900, 1000, true}, {3900, 2500, false}, {3900, 2500, true}}
 	for _, c := range cells {
 		nKeys := c.nKeys
 		rng := rand.New(rand.NewSource(int64(nKeys*10 + 96)))
