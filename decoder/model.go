@@ -377,6 +377,10 @@ func (m *Model) MoEExpertsUnpinned() bool { return m.opts.MoEExpertsUnpinned }
 // variant. Off by default.
 func (m *Model) FlashDecodeSoftcap() bool { return m.opts.FlashDecodeSoftcap }
 
+// FlashDecodeHD96 reports Options.FlashDecodeHD96: a head-dim-96 model may take CUDA's flash-decode lane on its hd-96 kernels. Off by
+// default.
+func (m *Model) FlashDecodeHD96() bool { return m.opts.FlashDecodeHD96 }
+
 // MoECacheSlotsRequest returns the requested per-layer expert-slot count, or 0 for "as many as fit"; only meaningful with
 // MoECacheExperts. 0 asks for ALL experts and lets the builder cap to measured free VRAM, deliberately: topK slots is the
 // worst setting for the situation this applies to, since it degenerates to fresh-loading every routed expert every token.

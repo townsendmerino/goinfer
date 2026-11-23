@@ -28,6 +28,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 | `CPUBatchDecode` | n/a | n/a | tested: `TestEnableCPUBatch_policy` | n/a | n/a | tested: `TestOptionPath_specVerify` | tested: `TestOptionPath_sessionSnapshot` |
 | `EmbedInt4` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedDecode` | declined at `int8BufOn` (`TestOptionPathMetal_embedInt4Declines`) | declined at `int8BufOn` (`TestOptionPathMetal_embedInt4Declines`) | tested: `TestOptionPath_specVerify` | n/a |
 | `ExactPrefill` | n/a | tested: `TestOptionPath_cpuBatchedPrefill` | n/a | n/a | tested: `TestOptionPathMetal_exactPrefill` | tested: `TestOptionPath_specVerify` | n/a |
+| `FlashDecodeHD96` | n/a | n/a | n/a | tested: `TestFlashDecodeHD96_laneCUDA` | n/a | tested: `TestFlashDecodeHD96_laneCUDA` | n/a |
 | `FlashDecodeSoftcap` | n/a | n/a | n/a | tested: `TestGemma2Softcap_lanesCUDA` | n/a | tested: `TestGemma2Softcap_lanesCUDA` | n/a |
 | `KVDemote` | n/a | n/a | n/a | n/a | tested: `TestKV7_demoteAndPromote` | n/a | n/a |
 | `KVHostBytes` | n/a | n/a | n/a | n/a | tested: `TestKV7_optionKVHostBytes_resident` | n/a | n/a |
@@ -60,6 +61,9 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 - `EmbedInt4`: a weight format; the session's cache does not depend on it
 - `ExactPrefill`: selects how a prompt is ingested; decode is one token
 - `ExactPrefill`: selects prefill numerics; a session's reuse rules do not depend on them
+- `FlashDecodeHD96`: a CUDA flash-decode lane option; the CPU has no flash-decode lane
+- `FlashDecodeHD96`: the flash-decode lane serves decode and verify rows; a prompt's prefill keeps its kernels
+- `FlashDecodeHD96`: it changes which kernel attends a decode row; a session's prefix, KV and snapshot are the same
 - `FlashDecodeSoftcap`: a CUDA flash-decode lane option; the CPU has no flash-decode lane
 - `FlashDecodeSoftcap`: the flash-decode lane serves decode and verify rows; a prompt's prefill keeps its kernels
 - `FlashDecodeSoftcap`: it changes which kernel attends a decode row; a session's prefix, KV and snapshot are the same

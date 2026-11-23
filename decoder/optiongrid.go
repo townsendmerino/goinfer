@@ -226,6 +226,17 @@ var ogGrid = map[string]map[ogPath]ogCell{
 			pathSessionLifecycle: ogNACell("it changes which kernel attends a decode row; a session's prefix, KV and snapshot are the same"),
 		},
 	),
+	// A head-dim-96 model on CUDA's flash-decode lane (docs/measurements/fa-hd96-phi3-2026-11-22/README.md): the option changes only the
+	// lane's eligibility, as FlashDecodeSoftcap does.
+	"FlashDecodeHD96": ogMerge(
+		ogCPUNA("a CUDA flash-decode lane option; the CPU has no flash-decode lane"),
+		map[ogPath]ogCell{
+			pathResidentDecode:   ogTestedBy("TestFlashDecodeHD96_laneCUDA"),
+			pathResidentPrefill:  ogNACell("the flash-decode lane serves decode and verify rows; a prompt's prefill keeps its kernels"),
+			pathSpecVerify:       ogTestedBy("TestFlashDecodeHD96_laneCUDA"),
+			pathSessionLifecycle: ogNACell("it changes which kernel attends a decode row; a session's prefix, KV and snapshot are the same"),
+		},
+	),
 	"MoECacheSlots": ogMerge(
 		ogCPUNA("\"Only meaningful with MoECacheExperts\", a residency option"),
 		map[ogPath]ogCell{

@@ -294,3 +294,46 @@ func flashEndToEnd(t *testing.T, file string) {
 		t.Errorf("lane worst cosine %.7f is far worse than the accepted spike family's %.7f: the lane is mis-wired", worstLane, worstSpike)
 	}
 }
+
+// TestFlashDecodeHD96_laneCUDA: a head-dim-96 layer takes the flash-decode lane only when the load asked (decoder.Options.FlashDecodeHD96,
+// docs/measurements/fa-hd96-phi3-2026-11-22/README.md), and the option reaches the resident through a load. phi3-tiny's layer 0 is given
+// hd 96 by hand (the fixture's is 16); the control is the same layer at hd 64, which the lane serves either way. Every head dim the lane
+// has a kernel for resolves through faHDIndex, and one it has none for (80) does not.
+func TestFlashDecodeHD96_laneCUDA(t *testing.T) {
+	requireCUDADevice(t)
+	t.Setenv("GOINFER_CUDA_FLASH_DECODE", "16") // the test binary turns the lane off by default
+	for _, opted := range []bool{false, true} {
+		m, err := decoder.Load("../../testdata/phi3-tiny", decoder.Options{Backend: "cuda", Quant: "int4", FlashDecodeHD96: opted})
+		if err != nil {
+			t.Fatalf("load: %v", err)
+		}
+		rf, ok := m.ResidentForwardForTest().(*cudaResident)
+		if !ok {
+			m.Close()
+			t.Fatalf("not resident: %s", m.ResidentDecline())
+		}
+		if rf.faHD96 != opted {
+			t.Errorf("FlashDecodeHD96 %v reached the resident as %v", opted, rf.faHD96)
+		}
+		if rf.faCombine == (Pipeline{}) || rf.faPartial[1] == (Pipeline{}) {
+			t.Fatalf("the lane's pipelines did not load (fa_partial_96 loaded %v)", rf.faPartial[1] != (Pipeline{}))
+		}
+		rf.layers[0].hd, rf.layers[0].nKV = 64, rf.nH
+		if !rf.faEligible(0) {
+			t.Fatal("VOID control: an hd-64 layer is not eligible for the lane")
+		}
+		rf.layers[0].hd = 96
+		if got := rf.faEligible(0); got != opted {
+			t.Errorf("an hd-96 layer with FlashDecodeHD96 %v: eligible %v", opted, got)
+		}
+		m.Close()
+	}
+	for _, hd := range []int{64, 96, 128, 256} {
+		if i, ok := faHDIndex(hd); !ok || faHDList[i] != hd {
+			t.Errorf("faHDIndex(%d) = %d, %v", hd, i, ok)
+		}
+	}
+	if _, ok := faHDIndex(80); ok {
+		t.Error("faHDIndex(80) found a kernel the lane does not have")
+	}
+}

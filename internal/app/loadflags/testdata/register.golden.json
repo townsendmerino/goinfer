@@ -49,6 +49,12 @@
       "Type": "*cliutil.OnOff"
     },
     {
+      "Name": "flash-decode-hd96",
+      "Usage": "Off by default. CUDA only: let a model with head dimension 96 (Phi-3 mini) decode on the flash-decode lane, on its hd-96 kernels, once a layer attends 2048 keys or more, instead of the exact attention path. Its outputs differ from the exact path's (docs/measurements/fa-hd96-phi3-2026-11-22/README.md); no effect at another head dim or off CUDA.",
+      "DefValue": "false",
+      "Type": "*flag.boolValue"
+    },
+    {
       "Name": "flash-decode-softcap",
       "Usage": "Off by default. CUDA only: let a model with an attention softcap (Gemma 2) decode on the flash-decode lane, in its capped variant, instead of the exact split-KV lane. Its outputs differ from the exact lane's (docs/measurements/op1o2-fa-softcap-2026-11/README.md); no effect on a model without a softcap or off CUDA.",
       "DefValue": "false",
@@ -181,6 +187,12 @@
       "Usage": "size an unpinned load to what this machine actually has, instead of a flat historical default. CUDA: an unpinned resident context gets more than the historical 4096 positions when the card has the free VRAM for it (cudaCtxCapDefault's own measurement found the real per-card ceiling is often 5-6x that). CPU: a plain .gguf that will not fit resident RAM gets one automatic retry with weight streaming (a dense model only — see --stream-weights) instead of just refusing. Never touches an EXPLICITLY set -ctx/-quant/--moe-cache-slots/--stream-weights — those are always honoured or refused as asked, with or without this flag. --fit=off restores every pre-Phase-2 default exactly; does not affect bug fixes shipped alongside this work (e.g. Metal now honouring an explicit -ctx at all)",
       "DefValue": "true",
       "Type": "*cliutil.OnOff"
+    },
+    {
+      "Name": "flash-decode-hd96",
+      "Usage": "Off by default. CUDA only: let a model with head dimension 96 (Phi-3 mini) decode on the flash-decode lane, on its hd-96 kernels, once a layer attends 2048 keys or more, instead of the exact attention path. Its outputs differ from the exact path's (docs/measurements/fa-hd96-phi3-2026-11-22/README.md); no effect at another head dim or off CUDA.",
+      "DefValue": "false",
+      "Type": "*flag.boolValue"
     },
     {
       "Name": "flash-decode-softcap",

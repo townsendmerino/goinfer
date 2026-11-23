@@ -215,6 +215,13 @@
    "see": "docs/measurements/op1o2-fa-softcap-2026-11/README.md"
   },
   {
+   "name": "flash-decode-hd96",
+   "group": "Backend, precision and context",
+   "summary": "CUDA only: a model with head dimension 96 (Phi-3 mini) decodes on the flash-decode lane, on its hd-96 kernels, once a layer attends 2048 keys or more, instead of the exact attention path. Off by default; its outputs differ from the exact path's. No effect at another head dim.",
+   "type": "bool",
+   "see": "docs/measurements/fa-hd96-phi3-2026-11-22/README.md"
+  },
+  {
    "name": "gemma4-step",
    "group": "Backend, precision and context",
    "summary": "Metal only: a Gemma 4 dense model batches concurrent requests in one decode step. Bit-identical output. In serve, on with 2 or more KV sessions, the default included, for about 10 MB; off in `goinfer-chat`. Not with a vision tower attached.",
