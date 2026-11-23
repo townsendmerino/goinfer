@@ -36,7 +36,7 @@ var (
 // attnDigestRun is the -run pattern of the tests that record digests.
 const attnDigestRun = "^(TestAttention_ShippedKernelShapes|TestAttentionKernelsPastTileBound|TestAttentionFA_vsReference|TestAttnFABlk_anyGMatchesG7|" +
 	"TestAttnFABlkMatchesFloat64|TestAttnFABlk64Digest|TestAttnFABlk96Digest|TestAttentionPrefillFused|TestAttentionPrefillSteelMatchesFloat64|" +
-	"TestAttentionPrefillImg_matchesReference|TestGptOssAttnSink_metal|TestMetalKVI8_KVStoreAndAttentionParity|TestMetalKVI8_DeepContext|" +
+	"TestAttentionPrefillImg_matchesReference|TestAttentionPrefillSteelDigest|TestAttentionPrefillTiled_bitIdenticalToTheExactKernel|TestAttentionPrefillTiled_pastTheExactKernelsBound|TestGptOssAttnSink_metal|TestMetalKVI8_KVStoreAndAttentionParity|TestMetalKVI8_DeepContext|" +
 	"TestMC3Step_rowsPathBitIdentical|TestMC3Step_faRowsBitIdenticalDeep|TestAttnDigest_mc3RowsOtherGeometries)$"
 
 // recordAttnDigest appends one line for out, the raw output a test read back after dispatching kernels (comma-separated
