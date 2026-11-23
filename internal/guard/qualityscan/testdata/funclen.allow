@@ -8,7 +8,6 @@ backend/cuda/resident_build.go:buildState.uploadLayers 202 -- over the ceiling b
 backend/metal/batch.go:resident.forwardMultiOut 417 -- over the ceiling before the ratchet; split it when next changed
 backend/metal/batch_rows.go:deriveRowsKernels 250 -- over the ceiling before the ratchet; split it when next changed
 backend/metal/decode_scratch.go:decodeShape.buffers 202 -- over the ceiling before the ratchet; split it when next changed
-backend/metal/prefill.go:resident.prefillLastImgSrc 770 -- over the ceiling before the ratchet; split it when next changed
 backend/metal/resident_build.go:residentBuild.buildLayer 346 -- over the ceiling before the ratchet; split it when next changed
 backend/webgpu/internal/kernels/decoderunner.go:Context.newDecodeRunner 1249 -- over the ceiling before the ratchet; split it when next changed
 backend/webgpu/internal/kernels/decodetoken_batched.go:Context.DecodeTokenFusedBatched 315 -- over the ceiling before the ratchet; split it when next changed
@@ -31,6 +30,6 @@ decoder/spec_ngram.go:ngramSpecLoop 344 -- over the ceiling before the ratchet; 
 decoder/weights_build.go:stBuild.loadLayer 307 -- over the ceiling before the ratchet; split it when next changed
 decoder/weights.go:buildWeightsFromSafetensorsTo 256 -- over the ceiling before the ratchet; split it when next changed
 internal/app/chatapp/batch.go:session.batchLine 269 -- over the ceiling before the ratchet; split it when next changed
-internal/app/chatapp/main.go:Main 329 -- over the ceiling before the ratchet; split it when next changed
+internal/app/chatapp/main.go:Main 327 -- over the ceiling before the ratchet; split it when next changed
 internal/app/serveapp/main.go:Main 301 -- over the ceiling before the ratchet; split it when next changed
 internal/clef/head.go:Head.Forward 205 -- over the ceiling before the ratchet; split it when next changed
