@@ -1,0 +1,138 @@
+=== RUN   TestGemma4EModel_cudaResidentParity
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (20 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6910 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (21 MiB of scratch; 7036 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    gemma4_emodel_test.go:65:   pos  0 CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.936346  argmax cpu=241 cuda=241
+    gemma4_emodel_test.go:65:   pos  1 CUDA-vs-CPUint4 0.999720 | CPUint4-vs-f32 0.931604  argmax cpu=157 cuda=157
+    gemma4_emodel_test.go:65:   pos  2 CUDA-vs-CPUint4 0.999519 | CPUint4-vs-f32 0.911016  argmax cpu=114 cuda=114
+    gemma4_emodel_test.go:65:   pos  3 CUDA-vs-CPUint4 0.999764 | CPUint4-vs-f32 0.888898  argmax cpu=100 cuda=100
+    gemma4_emodel_test.go:65:   pos  4 CUDA-vs-CPUint4 0.999813 | CPUint4-vs-f32 0.805542  argmax cpu=9 cuda=9
+    gemma4_emodel_test.go:65:   pos  5 CUDA-vs-CPUint4 0.999749 | CPUint4-vs-f32 0.761544  argmax cpu=16 cuda=16
+    gemma4_emodel_test.go:65:   pos  6 CUDA-vs-CPUint4 0.999518 | CPUint4-vs-f32 0.667586  argmax cpu=111 cuda=111
+    gemma4_emodel_test.go:65:   pos  7 CUDA-vs-CPUint4 0.999745 | CPUint4-vs-f32 0.732798  argmax cpu=245 cuda=245
+    gemma4_emodel_test.go:65:   pos  8 CUDA-vs-CPUint4 0.999637 | CPUint4-vs-f32 0.713802  argmax cpu=36 cuda=36
+    gemma4_emodel_test.go:65:   pos  9 CUDA-vs-CPUint4 0.999808 | CPUint4-vs-f32 0.831877  argmax cpu=129 cuda=129
+    gemma4_emodel_test.go:65:   pos 10 CUDA-vs-CPUint4 0.999871 | CPUint4-vs-f32 0.768481  argmax cpu=64 cuda=64
+    gemma4_emodel_test.go:65:   pos 11 CUDA-vs-CPUint4 0.998474 | CPUint4-vs-f32 0.704047  argmax cpu=135 cuda=135
+    gemma4_emodel_test.go:65:   pos 12 CUDA-vs-CPUint4 0.999788 | CPUint4-vs-f32 0.743296  argmax cpu=254 cuda=254
+    gemma4_emodel_test.go:65:   pos 13 CUDA-vs-CPUint4 0.999589 | CPUint4-vs-f32 0.718537  argmax cpu=140 cuda=140
+    gemma4_emodel_test.go:65:   pos 14 CUDA-vs-CPUint4 0.999679 | CPUint4-vs-f32 0.711344  argmax cpu=244 cuda=244
+    gemma4_emodel_test.go:65:   pos 15 CUDA-vs-CPUint4 0.999820 | CPUint4-vs-f32 0.818119  argmax cpu=15 cuda=15
+    gemma4_emodel_test.go:65:   pos 16 CUDA-vs-CPUint4 0.999808 | CPUint4-vs-f32 0.527985  argmax cpu=4 cuda=4
+    gemma4_emodel_test.go:65:   pos 17 CUDA-vs-CPUint4 0.999823 | CPUint4-vs-f32 0.796085  argmax cpu=36 cuda=36
+    gemma4_emodel_test.go:65: E-model G1c: exact-argmax 18/18 gaps>3%=0 worstNearTie=0.00% | mean CUDA-vs-CPUint4 0.999674 (min 0.998474), mean CPUint4-vs-f32 0.776050
+--- PASS: TestGemma4EModel_cudaResidentParity (1.97s)
+=== RUN   TestGemma4Graphs_bitExact_emodel
+cuda: prefill width 2048 rows (21 MiB of scratch; 7036 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[cuda] CUDA graphs FORCED (GOINFER_CUDA_GRAPHS_UNSAFE) despite: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1) — replay may not be bit-exact under context contention
+cuda: prefill width 2048 rows (21 MiB of scratch; 7036 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    gemma4_graphs_test.go:100: CUDA graphs (40 pos, cache=false, CUDA_LAUNCH_BLOCKING=""): replay == live launches, BIT-IDENTICAL
+--- PASS: TestGemma4Graphs_bitExact_emodel (0.98s)
+=== RUN   TestGraphsSafeGate
+[cuda] CUDA graphs requested but DECLINED: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1)
+cuda: prefill width 2048 rows (9 MiB of scratch; 7032 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    graphs_safe_test.go:45: DEFAULT box, GRAPHS=1: tenancy UNSAFE (compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1)) → graphs DECLINED (live path) ✓
+[cuda] CUDA graphs FORCED (GOINFER_CUDA_GRAPHS_UNSAFE) despite: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1) — replay may not be bit-exact under context contention
+cuda: prefill width 2048 rows (9 MiB of scratch; 7018 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    graphs_safe_test.go:54: UNSAFE override: graphs FORCED on + startup self-test bit-exact ✓
+--- PASS: TestGraphsSafeGate (0.30s)
+=== RUN   TestCost_cudaDecodeExact
+cuda: prefill width 2048 rows (5 MiB of scratch; 7038 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv_slots_test.go:1205: a decode token: 9 kernels, 34 launches, 2 syncs
+--- PASS: TestCost_cudaDecodeExact (0.26s)
+=== RUN   TestLaunchToken_queuedRowsReadTheirOwnEmbedding
+cuda: prefill width 2048 rows (5 MiB of scratch; 7038 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestLaunchToken_queuedRowsReadTheirOwnEmbedding (0.25s)
+=== RUN   TestGemma4EModel_cudaResidentParity
+cuda: prefill width 2048 rows (21 MiB of scratch; 7036 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    gemma4_emodel_test.go:65:   pos  0 CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.936346  argmax cpu=241 cuda=241
+    gemma4_emodel_test.go:65:   pos  1 CUDA-vs-CPUint4 0.999720 | CPUint4-vs-f32 0.931604  argmax cpu=157 cuda=157
+    gemma4_emodel_test.go:65:   pos  2 CUDA-vs-CPUint4 0.999519 | CPUint4-vs-f32 0.911016  argmax cpu=114 cuda=114
+    gemma4_emodel_test.go:65:   pos  3 CUDA-vs-CPUint4 0.999764 | CPUint4-vs-f32 0.888898  argmax cpu=100 cuda=100
+    gemma4_emodel_test.go:65:   pos  4 CUDA-vs-CPUint4 0.999813 | CPUint4-vs-f32 0.805542  argmax cpu=9 cuda=9
+    gemma4_emodel_test.go:65:   pos  5 CUDA-vs-CPUint4 0.999749 | CPUint4-vs-f32 0.761544  argmax cpu=16 cuda=16
+    gemma4_emodel_test.go:65:   pos  6 CUDA-vs-CPUint4 0.999518 | CPUint4-vs-f32 0.667586  argmax cpu=111 cuda=111
+    gemma4_emodel_test.go:65:   pos  7 CUDA-vs-CPUint4 0.999745 | CPUint4-vs-f32 0.732798  argmax cpu=245 cuda=245
+    gemma4_emodel_test.go:65:   pos  8 CUDA-vs-CPUint4 0.999637 | CPUint4-vs-f32 0.713802  argmax cpu=36 cuda=36
+    gemma4_emodel_test.go:65:   pos  9 CUDA-vs-CPUint4 0.999808 | CPUint4-vs-f32 0.831877  argmax cpu=129 cuda=129
+    gemma4_emodel_test.go:65:   pos 10 CUDA-vs-CPUint4 0.999871 | CPUint4-vs-f32 0.768481  argmax cpu=64 cuda=64
+    gemma4_emodel_test.go:65:   pos 11 CUDA-vs-CPUint4 0.998474 | CPUint4-vs-f32 0.704047  argmax cpu=135 cuda=135
+    gemma4_emodel_test.go:65:   pos 12 CUDA-vs-CPUint4 0.999788 | CPUint4-vs-f32 0.743296  argmax cpu=254 cuda=254
+    gemma4_emodel_test.go:65:   pos 13 CUDA-vs-CPUint4 0.999589 | CPUint4-vs-f32 0.718537  argmax cpu=140 cuda=140
+    gemma4_emodel_test.go:65:   pos 14 CUDA-vs-CPUint4 0.999679 | CPUint4-vs-f32 0.711344  argmax cpu=244 cuda=244
+    gemma4_emodel_test.go:65:   pos 15 CUDA-vs-CPUint4 0.999820 | CPUint4-vs-f32 0.818119  argmax cpu=15 cuda=15
+    gemma4_emodel_test.go:65:   pos 16 CUDA-vs-CPUint4 0.999808 | CPUint4-vs-f32 0.527985  argmax cpu=4 cuda=4
+    gemma4_emodel_test.go:65:   pos 17 CUDA-vs-CPUint4 0.999823 | CPUint4-vs-f32 0.796085  argmax cpu=36 cuda=36
+    gemma4_emodel_test.go:65: E-model G1c: exact-argmax 18/18 gaps>3%=0 worstNearTie=0.00% | mean CUDA-vs-CPUint4 0.999674 (min 0.998474), mean CPUint4-vs-f32 0.776050
+--- PASS: TestGemma4EModel_cudaResidentParity (0.31s)
+=== RUN   TestGemma4Graphs_bitExact_emodel
+cuda: prefill width 2048 rows (21 MiB of scratch; 7036 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[cuda] CUDA graphs FORCED (GOINFER_CUDA_GRAPHS_UNSAFE) despite: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1) — replay may not be bit-exact under context contention
+cuda: prefill width 2048 rows (21 MiB of scratch; 7036 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    gemma4_graphs_test.go:100: CUDA graphs (40 pos, cache=false, CUDA_LAUNCH_BLOCKING=""): replay == live launches, BIT-IDENTICAL
+--- PASS: TestGemma4Graphs_bitExact_emodel (0.57s)
+=== RUN   TestGraphsSafeGate
+[cuda] CUDA graphs requested but DECLINED: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1)
+cuda: prefill width 2048 rows (9 MiB of scratch; 7032 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    graphs_safe_test.go:45: DEFAULT box, GRAPHS=1: tenancy UNSAFE (compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1)) → graphs DECLINED (live path) ✓
+[cuda] CUDA graphs FORCED (GOINFER_CUDA_GRAPHS_UNSAFE) despite: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1) — replay may not be bit-exact under context contention
+cuda: prefill width 2048 rows (9 MiB of scratch; 7018 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    graphs_safe_test.go:54: UNSAFE override: graphs FORCED on + startup self-test bit-exact ✓
+--- PASS: TestGraphsSafeGate (0.29s)
+=== RUN   TestCost_cudaDecodeExact
+cuda: prefill width 2048 rows (5 MiB of scratch; 7038 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv_slots_test.go:1205: a decode token: 9 kernels, 34 launches, 2 syncs
+--- PASS: TestCost_cudaDecodeExact (0.25s)
+=== RUN   TestLaunchToken_queuedRowsReadTheirOwnEmbedding
+cuda: prefill width 2048 rows (5 MiB of scratch; 7038 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestLaunchToken_queuedRowsReadTheirOwnEmbedding (0.25s)
+=== RUN   TestGemma4EModel_cudaResidentParity
+cuda: prefill width 2048 rows (21 MiB of scratch; 7036 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    gemma4_emodel_test.go:65:   pos  0 CUDA-vs-CPUint4 1.000000 | CPUint4-vs-f32 0.936346  argmax cpu=241 cuda=241
+    gemma4_emodel_test.go:65:   pos  1 CUDA-vs-CPUint4 0.999720 | CPUint4-vs-f32 0.931604  argmax cpu=157 cuda=157
+    gemma4_emodel_test.go:65:   pos  2 CUDA-vs-CPUint4 0.999519 | CPUint4-vs-f32 0.911016  argmax cpu=114 cuda=114
+    gemma4_emodel_test.go:65:   pos  3 CUDA-vs-CPUint4 0.999764 | CPUint4-vs-f32 0.888898  argmax cpu=100 cuda=100
+    gemma4_emodel_test.go:65:   pos  4 CUDA-vs-CPUint4 0.999813 | CPUint4-vs-f32 0.805542  argmax cpu=9 cuda=9
+    gemma4_emodel_test.go:65:   pos  5 CUDA-vs-CPUint4 0.999749 | CPUint4-vs-f32 0.761544  argmax cpu=16 cuda=16
+    gemma4_emodel_test.go:65:   pos  6 CUDA-vs-CPUint4 0.999518 | CPUint4-vs-f32 0.667586  argmax cpu=111 cuda=111
+    gemma4_emodel_test.go:65:   pos  7 CUDA-vs-CPUint4 0.999745 | CPUint4-vs-f32 0.732798  argmax cpu=245 cuda=245
+    gemma4_emodel_test.go:65:   pos  8 CUDA-vs-CPUint4 0.999637 | CPUint4-vs-f32 0.713802  argmax cpu=36 cuda=36
+    gemma4_emodel_test.go:65:   pos  9 CUDA-vs-CPUint4 0.999808 | CPUint4-vs-f32 0.831877  argmax cpu=129 cuda=129
+    gemma4_emodel_test.go:65:   pos 10 CUDA-vs-CPUint4 0.999871 | CPUint4-vs-f32 0.768481  argmax cpu=64 cuda=64
+    gemma4_emodel_test.go:65:   pos 11 CUDA-vs-CPUint4 0.998474 | CPUint4-vs-f32 0.704047  argmax cpu=135 cuda=135
+    gemma4_emodel_test.go:65:   pos 12 CUDA-vs-CPUint4 0.999788 | CPUint4-vs-f32 0.743296  argmax cpu=254 cuda=254
+    gemma4_emodel_test.go:65:   pos 13 CUDA-vs-CPUint4 0.999589 | CPUint4-vs-f32 0.718537  argmax cpu=140 cuda=140
+    gemma4_emodel_test.go:65:   pos 14 CUDA-vs-CPUint4 0.999679 | CPUint4-vs-f32 0.711344  argmax cpu=244 cuda=244
+    gemma4_emodel_test.go:65:   pos 15 CUDA-vs-CPUint4 0.999820 | CPUint4-vs-f32 0.818119  argmax cpu=15 cuda=15
+    gemma4_emodel_test.go:65:   pos 16 CUDA-vs-CPUint4 0.999808 | CPUint4-vs-f32 0.527985  argmax cpu=4 cuda=4
+    gemma4_emodel_test.go:65:   pos 17 CUDA-vs-CPUint4 0.999823 | CPUint4-vs-f32 0.796085  argmax cpu=36 cuda=36
+    gemma4_emodel_test.go:65: E-model G1c: exact-argmax 18/18 gaps>3%=0 worstNearTie=0.00% | mean CUDA-vs-CPUint4 0.999674 (min 0.998474), mean CPUint4-vs-f32 0.776050
+--- PASS: TestGemma4EModel_cudaResidentParity (0.29s)
+=== RUN   TestGemma4Graphs_bitExact_emodel
+cuda: prefill width 2048 rows (21 MiB of scratch; 7036 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[cuda] CUDA graphs FORCED (GOINFER_CUDA_GRAPHS_UNSAFE) despite: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1) — replay may not be bit-exact under context contention
+cuda: prefill width 2048 rows (21 MiB of scratch; 7036 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    gemma4_graphs_test.go:100: CUDA graphs (40 pos, cache=false, CUDA_LAUNCH_BLOCKING=""): replay == live launches, BIT-IDENTICAL
+--- PASS: TestGemma4Graphs_bitExact_emodel (0.54s)
+=== RUN   TestGraphsSafeGate
+[cuda] CUDA graphs requested but DECLINED: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1)
+cuda: prefill width 2048 rows (9 MiB of scratch; 7032 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    graphs_safe_test.go:45: DEFAULT box, GRAPHS=1: tenancy UNSAFE (compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1)) → graphs DECLINED (live path) ✓
+[cuda] CUDA graphs FORCED (GOINFER_CUDA_GRAPHS_UNSAFE) despite: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1) — replay may not be bit-exact under context contention
+cuda: prefill width 2048 rows (9 MiB of scratch; 7018 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    graphs_safe_test.go:54: UNSAFE override: graphs FORCED on + startup self-test bit-exact ✓
+--- PASS: TestGraphsSafeGate (0.28s)
+=== RUN   TestCost_cudaDecodeExact
+cuda: prefill width 2048 rows (5 MiB of scratch; 7038 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv_slots_test.go:1205: a decode token: 9 kernels, 34 launches, 2 syncs
+--- PASS: TestCost_cudaDecodeExact (0.23s)
+=== RUN   TestLaunchToken_queuedRowsReadTheirOwnEmbedding
+cuda: prefill width 2048 rows (5 MiB of scratch; 7038 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestLaunchToken_queuedRowsReadTheirOwnEmbedding (0.26s)
+PASS
+ledger: 25 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/backend/cuda	7.164s
