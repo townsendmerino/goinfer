@@ -4,15 +4,20 @@ package cuda
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"math"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
 )
 
 // kso1cPlanes lays out Q6_K blocks (a weight of T = len(raw)/210 blocks) as q6kPlanes does, written independently of
@@ -175,4 +180,101 @@ func TestKSO1C_laneBytes(t *testing.T) {
 		}
 		fmt.Fprintf(os.Stderr, "O1C-G3 %s: %d native buffers (layer 0 and the head) equal the file's blocks\n", name, checked)
 	}
+}
+
+// TestKSO1C_sidecarCarriesNative: serve's load path (modelload.Load, which loads a q4k .gguf through its cuda .giw sidecar) must
+// reach the q4k lane's native Q5_K and Q6_K weights, as a direct load does. Qwen2.5-Coder-0.5B q4_k_m (Q6_K in half its layers'
+// v and down), linked into a scratch directory so the sidecar is written there: the sidecar route must open a .k56 sidecar,
+// never the int8-widened name an older build wrote (planted here as junk); every weight the direct load plans as q5k or q6k must
+// be planned the same from the sidecar, at the same device bytes; and the two loads' logits must be bit-identical over 8 positions.
+//
+//	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 20m -tags 'cuda goinfer_testhooks' -run '^TestKSO1C_sidecarCarriesNative$' -v ./backend/cuda/
+func TestKSO1C_sidecarCarriesNative(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
+	}
+	src := modelPath(kso1cModels[0])
+	if _, err := os.Stat(src); err != nil {
+		t.Skipf("no model %s: %v", src, err)
+	}
+	dir := t.TempDir()
+	gguf := filepath.Join(dir, filepath.Base(src))
+	if err := os.Symlink(src, gguf); err != nil {
+		t.Fatal(err)
+	}
+	opts := decoder.Options{Backend: "cuda", Quant: "q4k", ActQuantGroup: 32, ResidentContext: 512}
+	old := strings.Replace(decoder.SidecarPath(gguf, "q4k", "cuda", false), ".k56", "", 1)
+	if old == decoder.SidecarPath(gguf, "q4k", "cuda", false) {
+		t.Errorf("the cuda q4k sidecar is named %s, the same as the int8-widened one an older build wrote", old)
+	}
+	if err := os.WriteFile(old, []byte("an int8-widened sidecar from an older build"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	type planned struct {
+		kinds map[string]string // label -> planned kind
+		bytes int64
+		lg    [][]float32
+	}
+	read := func(m *decoder.Model) planned {
+		r, ok := m.ResidentForwardForTest().(*cudaResident)
+		if !ok {
+			t.Fatalf("no CUDA resident: %s", m.ResidentDecline())
+		}
+		p := planned{kinds: map[string]string{}}
+		labels, ws, _ := kso1cWeights(r, m)
+		for i, w := range ws {
+			p.kinds[labels[i]] = w.kind
+			p.bytes += kso1cDeviceBytes(w)
+		}
+		for pos, id := range []int{9707, 11, 1879, 374, 264, 1273, 13, 576} {
+			lg, err := r.Forward(m.EmbedResidentForTest(id), pos)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p.lg = append(p.lg, append([]float32(nil), lg...))
+		}
+		return p
+	}
+	dm, err := decoder.Load(gguf, opts)
+	if err != nil {
+		t.Fatalf("direct load: %v", err)
+	}
+	direct := read(dm)
+	dm.Close()
+	res, err := modelload.Load(context.Background(), modelload.Request{Spec: gguf, Opts: opts})
+	if err != nil {
+		t.Fatalf("serve's load: %v", err)
+	}
+	defer res.Model.Close()
+	if res.LoadPath == old || !strings.Contains(filepath.Base(res.LoadPath), ".k56.") {
+		t.Errorf("serve's load opened %s; want the .k56 cuda sidecar, never %s", res.LoadPath, old)
+	}
+	viaSidecar := read(res.Model)
+	native, differ := 0, 0
+	for label, k := range direct.kinds {
+		if k == "q5k" || k == "q6k" {
+			native++
+		}
+		if viaSidecar.kinds[label] != k {
+			differ++
+			if differ <= 4 {
+				t.Errorf("%s: the direct load plans %s, the sidecar load %s", label, k, viaSidecar.kinds[label])
+			}
+		}
+	}
+	if native == 0 {
+		t.Fatal("VOID: the direct load planned no native q5k/q6k weight, so the comparison proves nothing")
+	}
+	if differ > 0 || viaSidecar.bytes != direct.bytes {
+		t.Errorf("%d of %d weights planned differently; device weight bytes %d via the sidecar, %d direct", differ, len(direct.kinds), viaSidecar.bytes, direct.bytes)
+	}
+	for i := range direct.lg {
+		for j, v := range direct.lg[i] {
+			if math.Float32bits(viaSidecar.lg[i][j]) != math.Float32bits(v) {
+				t.Fatalf("position %d logit %d: %v via the sidecar, %v direct: not bit-identical", i, j, viaSidecar.lg[i][j], v)
+			}
+		}
+	}
+	fmt.Fprintf(os.Stderr, "sidecar-native %s: %d native weights, device weight bytes %d both ways, %d positions bit-identical, loaded %s\n",
+		kso1cModels[0], native, direct.bytes, len(direct.lg), filepath.Base(res.LoadPath))
 }

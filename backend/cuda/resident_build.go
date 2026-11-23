@@ -68,8 +68,16 @@ type buildState struct {
 
 // planProj plans a projection or the head: the file's own Q5_K or Q6_K blocks where the q4k lane uploads them natively
 // (decoder.Model.KQuantNative, which the fit pricing also reads), else planWeight. s.kq reads the file until the build returns.
+// A weight the load already holds as Q5_K or Q6_K (a cuda .giw carries them, decoder.giwCarriesKQuant56) is planned from its
+// own blocks: no int8 copy exists, and the fit pricing counts it at its native bytes.
 func (s *buildState) planProj(src *linalg.WeightMat) (hostW, error) {
 	m := s.m
+	if k := src.Kind(); k == "q5k" || k == "q6k" {
+		if !s.actG32 {
+			return hostW{}, decline(fmt.Errorf("a native %s weight needs per-32 activations (a q4k load's), and this load has none", k))
+		}
+		return planKQuantHeld(src)
+	}
 	kind := m.KQuantNative("cuda", src)
 	if kind == "" {
 		return planWeight(src)
