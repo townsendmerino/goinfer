@@ -139,5 +139,7 @@ func TestFlashDecodeHD96_againstFloat64(t *testing.T) {
 	if cases != 288 || rows != 704 || ragged != 32 {
 		t.Fatalf("%d cases, %d verify rows and %d ragged rows ran, want 288, 704 and 32: the matrix did not run whole", cases, rows, ragged)
 	}
-	t.Logf("%d hd-96 flash-decode cases (%d verify rows, %d ragged rows) inside the bar against float64, at f32 and f16 KV", cases, rows, ragged)
+	if !t.Failed() {
+		t.Logf("%d hd-96 flash-decode cases (%d verify rows, %d ragged rows) inside the bar against float64, at f32 and f16 KV", cases, rows, ragged)
+	}
 }

@@ -42,3 +42,17 @@ Phi-3, so the device bytes do not change; the PTX modules grow by the new kernel
 
 **Cost:** gate 1 about 15 min of build and card tests. Gate 2's reference about 60–80 min of CPU (the 2B took 37 min at K = 3,900) and
 the gate about 5 min under the exclusive lock. Gate 3 about 25 min in-process and 10 min served. By day; nothing past 21:30 PST.
+
+## Gate 1, 2026-11-22 17:18–17:23 PST (nobara, RTX 2070 SUPER, driver 595.112.07): PASS
+
+- **The kernels' code:** `fa_partial_96`, `fa_partial_rows_96_g1` to `g8` and `fa_partial_ragged_96`, at `0d4843a18`. The PTX was rebuilt at
+  the ambient NVRTC 12.9.86 (`build_ptx.sh decode_fa`).
+- **`TestAttnKernelDigests` (G1-K):** 2,152 digests equal base's on this card and driver. Every existing kernel is unchanged
+  ([`gate1/gate1.log`](gate1/gate1.log)).
+- **`TestFlashDecodeHD96_againstFloat64`:** all 288 cases are inside the bar (cosine ≥ 0.9999, max abs ≤ 1e-2), at f32 and f16 KV:
+  - the M = 1 lane at 4 and 16 splits;
+  - 704 verify rows, each also bit for bit against the M = 1 lane at its depth;
+  - 32 ragged rows, bit for bit against the M = 1 lane.
+- **The plant:** the P·V load dropped one of each lane's three dims (`v[c] = 0` at c = 2). 896 comparisons fell outside the bar
+  (cosine about 0.77; `gate1/plant-red.log.gz`). The bit-identity checks stay green under it, as they should, since both sides carry
+  it. Restored, the PTX rebuilt to the committed bytes (sha256 `74627d34…`).
