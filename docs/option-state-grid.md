@@ -118,6 +118,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 - `EmbedInt4Default`: resolved into EmbedInt4 at the top of Load (EmbedInt4For) and cleared, so no path reads it
 - `ExtraResidentBytes`: prices a companion allocation when the resident is planned
 - `ExtraResidentKVPerPosition`: prices a companion allocation's K/V when the resident context is chosen
+- `FlashDecodeHD96Default`: tells the backend at load that FlashDecodeHD96 is the caller's default, which CUDA applies only at a context of at most 4096
 - `LoRA`: merged into the base weights at load ("merged into the base at load"), so every path runs the merged weights; compute-time adapters are Session state, in the cache-state grid
 - `LoadAbort`: checked between layers during a GGUF weight build, a .giw load and a backend's resident build; nil afterwards in effect
 - `RequireBackend`: turns a backend's decline at load into Load's error; a loaded model runs whatever was built

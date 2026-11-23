@@ -801,16 +801,20 @@ func TestKVPages_tiledRowsPastTheTileBound(t *testing.T) {
 	}
 }
 
-// TestFlashDecodeHD96_metalSelection builds the MC3 fixture at an MHA head-dim-96 geometry with and without the option: with it,
-// the resident sizes the partial buffer, selects the hd = 96 block kernel at the block split and lets every layer take
-// attention_fa past the floor; without it, none of that.
+// TestFlashDecodeHD96_metalSelection builds the MC3 fixture at an MHA head-dim-96 geometry with the option chosen, not given, and
+// given as the caller's default (CUDA's default, which Metal does not take): chosen, the resident sizes the partial buffer, selects
+// the hd = 96 block kernel at the block split and lets every layer take attention_fa past the floor; otherwise none of that.
 func TestFlashDecodeHD96_metalSelection(t *testing.T) {
-	for _, on := range []bool{false, true} {
-		t.Run(fmt.Sprintf("FlashDecodeHD96=%v", on), func(t *testing.T) {
-			prevW, prevO := mc3FixtureWriter, mc3TestHD96
-			defer func() { mc3FixtureWriter, mc3TestHD96 = prevW, prevO }()
+	for _, c := range []struct {
+		name          string
+		opt, dflt, on bool
+	}{{"not given", false, false, false}, {"chosen", true, false, true}, {"the caller's default", true, true, false}} {
+		on := c.on
+		t.Run(c.name, func(t *testing.T) {
+			prevW, prevO, prevD := mc3FixtureWriter, mc3TestHD96, mc3TestHD96Default
+			defer func() { mc3FixtureWriter, mc3TestHD96, mc3TestHD96Default = prevW, prevO, prevD }()
 			mc3FixtureWriter = func(t *testing.T, maxPositions int) string { return writeMC3FixtureGeom(t, maxPositions, 4, 4, 96) }
-			mc3TestHD96 = on
+			mc3TestHD96, mc3TestHD96Default = c.opt, c.dflt
 			_, r := mc3FixtureResident(t, 2, 4096)
 			if g := r.layers[0].geom; g.hd != 96 || r.nH != g.nKV {
 				t.Fatalf("fixture geometry hd=%d nH=%d nKV=%d, want hd 96 MHA", g.hd, r.nH, g.nKV)

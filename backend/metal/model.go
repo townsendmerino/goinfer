@@ -2249,6 +2249,10 @@ const attnFAMaxG = 8
 // attnFAGroupOK reports whether a layer with nH query heads over nKV KV heads fits attention_fa's arrays.
 func attnFAGroupOK(nH, nKV int) bool { return nKV > 0 && nH%nKV == 0 && nH/nKV <= attnFAMaxG }
 
+// hd96Chosen is whether m asked for the hd = 96 lane: Options.FlashDecodeHD96 given as a choice. Set as the caller's default
+// (FlashDecodeHD96Default), it is CUDA's default, and Metal keeps the exact path.
+func hd96Chosen(m *decoder.Model) bool { return m.FlashDecodeHD96() && !m.FlashDecodeHD96Default() }
+
 // attnFAHeadDimOK reports whether attention_fa can run a layer of head dim hd: 128 (attention_fa and the block kernel),
 // 64 where the block kernel's hd = 64 twin is instantiated for the group size, G = 7, or 96 at G = 1 (attention_fa_blk96)
 // when hd96 (Options.FlashDecodeHD96) asks for it. attention_fa itself is hd = 128 only, so a layer of another head dim

@@ -37,6 +37,9 @@ var mc3TestKV = ""
 // mc3TestHD96 is the Options.FlashDecodeHD96 the MC3 fixture loads with: an hd = 96 geometry takes attention_fa only under it.
 var mc3TestHD96 bool
 
+// mc3TestHD96Default is the Options.FlashDecodeHD96Default it loads with: FlashDecodeHD96 as the caller's default, not a choice.
+var mc3TestHD96Default bool
+
 func mc3Resident(t *testing.T, slots, ctx int) (*decoder.Model, *resident) {
 	t.Helper()
 	if os.Getenv("GOINFER_METAL_MC3") == "1" {
