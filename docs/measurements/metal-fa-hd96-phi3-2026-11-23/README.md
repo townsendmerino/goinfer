@@ -1,6 +1,7 @@
 # Metal's attention_fa at head dim 96 (Phi-3 mini): registration (2026-11-23)
 
-**Status: REGISTERED 2026-11-23, before any gate reading.** Owner's go: Francis, 2026-11-23 ~08:45 PST ("let's finish the
+**Status: SHIP, 2026-11-23: gates 1, 2 and 3 pass (gate 3 at 1.292× at depth 3,900); the default is Francis's call. Registered
+2026-11-23, before any gate reading.** Owner's go: Francis, 2026-11-23 ~08:45 PST ("let's finish the
 performance and webgpu parts" of the fresh-eyes review ledger), relayed by the coordinator. Perf review finding 10. Gates in order,
 each passing before the next, fixed N, no early stop. If it ships it lands behind the existing opt-in `--flash-decode-hd96`
 (`Options.FlashDecodeHD96`, today CUDA only); the default is Francis's separate call. The template is CUDA's hd-96 lane,
@@ -95,3 +96,25 @@ roughly 30–45 min under the exclusive lock. Gate 3 about 15 min. By day; nothi
 - Both arms sit about 30× closer to the reference than CUDA's gate 2 did (mean KL 0.0001 against 0.0031 there): a different backend's
   exact path, not a property of the lane.
 - **Verdict: PASSES.** Gate 3 runs next.
+
+## Gate 3, served, 2026-11-23 09:25–09:34 PST (MacBook Pro M1 Pro, on AC): **SHIP** by the registered rule
+
+- **Run.** [`run_gate3_served.sh`](run_gate3_served.sh) under the Mac's exclusive lock, one serve binary from `0d6493608` (sha256
+  `ef7999e4…`) for both arms. Records: [`gate3/`](gate3/) (`provenance.txt`, `probe.log`, `decode-metal-all.json`, `decode-metal.log`,
+  `verdict.txt`, `serve-logs/`).
+- **The arm probe passed:** the lane arm logged 544 `attention_fa` dispatches at hd 96 (32 layers × 17 decode steps at depth 2,048);
+  the exact arm logged none.
+- **All 8 cells valid:** each decoded `metal-resident (q4k)`, the token gate ok, swap grew 0.0 MB, start loads 0.75–1.77, on AC
+  throughout (`pmset`: AC since 09:05:14).
+
+| depth | lane ÷ exact, per block | median | lane, tok/s | exact, tok/s |
+|--:|---|--:|--:|--:|
+| 128 | 0.9990, 1.0049 | **1.0020** | 41.35 | 41.27 |
+| 3,900 | 1.2912, 1.2928 | **1.2920** | 28.49 | 22.05 |
+
+- **Verdict: SHIP.** The median is at least 1.02 at 3,900 (1.292) and at least 0.98 at 128 (1.002). The lane lands behind
+  `--flash-decode-hd96`, which now applies on Metal as on CUDA; whether it becomes Phi-3's default on either backend is Francis's call.
+- At 3,900 the token goes from 45.4 ms to 35.1 ms. The review's estimate was 20–25% of the token at depth; the reading is 23%.
+- **Bytes.** With the option off, none. With it on, the resident's partial buffer (32 heads × 98 floats × 32 splits × 4 B = 401 KB) and
+  the batched step's per-row copy (up to 8 rows, 3.2 MB), which the step's scratch reserve prices into the fit check. The longest
+  context that fits does not move: Phi-3 mini's window is 4,096 positions, and both arms plan it.

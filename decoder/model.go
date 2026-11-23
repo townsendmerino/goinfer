@@ -377,7 +377,7 @@ func (m *Model) MoEExpertsUnpinned() bool { return m.opts.MoEExpertsUnpinned }
 // variant. Off by default.
 func (m *Model) FlashDecodeSoftcap() bool { return m.opts.FlashDecodeSoftcap }
 
-// FlashDecodeHD96 reports Options.FlashDecodeHD96: a head-dim-96 model may take CUDA's flash-decode lane on its hd-96 kernels. Off by
+// FlashDecodeHD96 reports Options.FlashDecodeHD96: a head-dim-96 model may take the flash-decode lane on its hd-96 kernels (CUDA, Metal). Off by
 // default.
 func (m *Model) FlashDecodeHD96() bool { return m.opts.FlashDecodeHD96 }
 
