@@ -1,0 +1,123 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+// Attention-prefetch Phase 0 instruments (docs/measurements/attn-prefetch-2026-11/README.md). Kept under docs as .go.txt
+// and copied into backend/cuda/ as ap0_scratch_test.go for a run; never committed under backend/cuda/. Every test is gated
+// on GOINFER_KS=1 so a stray copy cannot run in a suite.
+//
+// TestKS_B2_prefillUnderNcu is the kernel survey's instrument (docs/measurements/kernel-survey-2026-10/instruments/
+// ks_survey_test.go.txt) with one change: GOINFER_AP_KV (f32 or f16) is passed to the load as serve's -kv flag, so both
+// twins can be read. Unset, it loads as the survey's read did.
+// TestAP_prefillDecompKV is TestPrefillDecomp's loop on the same load, with the same -kv flag and an optional -ctx
+// (GOINFER_AP_CTX) for depths past the default context.
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+)
+
+func apGate(t *testing.T) {
+	if os.Getenv("GOINFER_KS") == "" {
+		t.Skip("set GOINFER_KS=1 (attention-prefetch instrument)")
+	}
+}
+
+func apFlags() []string {
+	flags := []string{"-backend", "cuda", "-quant", "int4"}
+	if kv := os.Getenv("GOINFER_AP_KV"); kv != "" {
+		flags = append(flags, "-kv", kv)
+	}
+	if c := os.Getenv("GOINFER_AP_CTX"); c != "" {
+		flags = append(flags, "-ctx", c)
+	}
+	return flags
+}
+
+func apEmbs(mc interface {
+	EmbedResidentForTest(int) []float32
+}, vocab, n int) [][]float32 {
+	embs := make([][]float32, n)
+	var s uint32 = uint32(n*2654435761 + 1)
+	for i := range embs {
+		s = s*1664525 + 1013904223
+		embs[i] = append([]float32(nil), mc.EmbedResidentForTest(int(s>>8)%(vocab-1))...)
+	}
+	return embs
+}
+
+func TestKS_B2_prefillUnderNcu(t *testing.T) {
+	apGate(t)
+	mc, err := loadLikeServe(t, modelPath("qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"), apFlags()...)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer mc.Close()
+	rf := mustResident(t, mc)
+	_, _, _, _, _, _, vocab := mc.Dims()
+	n := 3900
+	embs := apEmbs(mc, vocab, n)
+	t.Logf("flags %v; pass rows %d, layers %d, kv f16 %v; reports %+v", apFlags(), rf.PrefillChunkRows(), len(rf.layers), rf.kvF16, mc.KVPrecisionReports())
+	t0 := time.Now()
+	if _, err := rf.PrefillLast(context.Background(), embs, 0); err != nil {
+		t.Fatalf("prefill: %v", err)
+	}
+	t.Logf("prefill %d rows in %v", n, time.Since(t0))
+}
+
+func TestAP_prefillDecompKV(t *testing.T) {
+	apGate(t)
+	mc, err := loadLikeServe(t, modelPath("qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"), apFlags()...)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer mc.Close()
+	rf := mustResident(t, mc)
+	_, _, _, _, _, _, vocab := mc.Dims()
+	fmt.Fprintf(os.Stderr, "[ap0] flags %v; pass rows %d, kv f16 %v; reports %+v; load1 %s\n", apFlags(), rf.PrefillChunkRows(), rf.kvF16, mc.KVPrecisionReports(), apLoad())
+	runs := 3
+	depths := []int{3900}
+	if v := os.Getenv("GOINFER_DECOMP_K"); v != "" {
+		depths = depths[:0]
+		for f := range strings.SplitSeq(v, ",") {
+			if k, err := strconv.Atoi(strings.TrimSpace(f)); err == nil && k > 0 {
+				depths = append(depths, k)
+			}
+		}
+	}
+	for _, n := range depths {
+		embs := apEmbs(mc, vocab, n)
+		w0 := time.Now()
+		if _, e := rf.PrefillLast(context.Background(), embs, 0); e != nil {
+			t.Fatalf("warm n=%d: %v", n, e)
+		}
+		wall := time.Since(w0)
+		var best prefillProf
+		bestSum := time.Duration(1<<62 - 1)
+		for range runs {
+			rf.prof = &prefillProf{}
+			if _, e := rf.PrefillLast(context.Background(), embs, 0); e != nil {
+				t.Fatalf("prof n=%d: %v", n, e)
+			}
+			p := rf.prof
+			rf.prof = nil
+			if sum := p.gemv + p.attn + p.glue + p.moe + p.rec; sum < bestSum {
+				best, bestSum = *p, sum
+			}
+		}
+		sum := best.gemv + best.attn + best.glue + best.moe + best.rec
+		fmt.Fprintf(os.Stderr, "[ap0] N=%d wall %v | gemv %v attn %v glue %v moe %v sum %v | attn %.1f%% of sum, %.1f%% of wall\n",
+			n, wall.Round(time.Millisecond), best.gemv, best.attn, best.glue, best.moe, sum,
+			100*float64(best.attn)/float64(sum), 100*float64(best.attn)/float64(wall))
+	}
+}
+
+func apLoad() string {
+	b, _ := os.ReadFile("/proc/loadavg")
+	return strings.Join(strings.Fields(string(b))[:3], " ")
+}
