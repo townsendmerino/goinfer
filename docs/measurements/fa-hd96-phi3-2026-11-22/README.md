@@ -57,7 +57,7 @@ the gate about 5 min under the exclusive lock. Gate 3 about 25 min in-process an
   (cosine about 0.77; `gate1/plant-red.log.gz`). The bit-identity checks stay green under it, as they should, since both sides carry
   it. Restored, the PTX rebuilt to the committed bytes (sha256 `74627d34…`).
 
-## Addendum, 2026-11-22 18:52 PST, before gate 2's first reading: the instrument seeds Phi-3 by sequential prefill
+## Addendum, 2026-11-22 18:49 PST (commit `8c4b42ab7`; first typed as 18:52, corrected from the commit time), before gate 2's first reading: the instrument seeds Phi-3 by sequential prefill
 
 - **What happened.** Gate 2's first launch (18:49 PST) stopped at its first prompt, before scoring anything:
   `PrefillLast (lane split=0): cuda prefill: per-32 activation quantization has no batched kernels yet`. The gate seeds each prompt
