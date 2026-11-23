@@ -34,6 +34,9 @@ var mc3TestQuant = "int4"
 // mc3TestKV is the --kv the MC3 fixture loads at: "" (f16), or "i8" / "f32" for P3b-1's identity checks (p3b_rows_test.go).
 var mc3TestKV = ""
 
+// mc3TestHD96 is the Options.FlashDecodeHD96 the MC3 fixture loads with: an hd = 96 geometry takes attention_fa only under it.
+var mc3TestHD96 bool
+
 func mc3Resident(t *testing.T, slots, ctx int) (*decoder.Model, *resident) {
 	t.Helper()
 	if os.Getenv("GOINFER_METAL_MC3") == "1" {

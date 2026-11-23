@@ -159,13 +159,13 @@ func deriveRowsKernels() string {
 		"    uint head = mc3_gid % (nH + nKV); device float* qkv = qkv_rows + (mc3_gid / (nH + nKV))*qkvStride;\n    threadgroup float red[128];"))
 	b.WriteString("\n")
 
-	// The first pass of decode's flash attention (attention_fa, attention_fa_blk<G>, attention_fa_blk64<G>) for
+	// The first pass of decode's flash attention (attention_fa, attention_fa_blk<G>, attention_fa_blk64<G>, attention_fa_blk96<G>) for
 	// M rows at attention_fa depth in one dispatch. Row j serves batch row rowmap[j]: its own q (a row of the fused qkv
 	// buffer, qStride floats), its own table (tabOff), its key count and split count, and its own region of the
 	// partial buffer (partStride floats). The grid is M rows of nKV*maxS threadgroups; a threadgroup past its row's own
 	// split count returns, and the rest see the threadgroup index the row's own dispatch gave them, so every row's
 	// partials are its own dispatch's.
-	for _, fa := range []struct{ name, tmpl string }{{"attention_fa", ""}, {"attention_fa_blk", "template <uint G>\n"}, {"attention_fa_blk64", "template <uint G>\n"}} {
+	for _, fa := range []struct{ name, tmpl string }{{"attention_fa", ""}, {"attention_fa_blk", "template <uint G>\n"}, {"attention_fa_blk64", "template <uint G>\n"}, {"attention_fa_blk96", "template <uint G>\n"}} {
 		b.WriteString(fa.tmpl)
 		b.WriteString(edit(extractKernel(allKernels, fa.name),
 			"kernel void "+fa.name+"(", "kernel void mc3_"+fa.name+"_rows(",
@@ -191,6 +191,7 @@ func deriveRowsKernels() string {
 		fmt.Fprintf(&b, "template [[host_name(\"mc3_attention_fa_blk_rows_g%d\")]] kernel decltype(mc3_attention_fa_blk_rows<%d>) mc3_attention_fa_blk_rows<%d>;\n", g, g, g)
 	}
 	b.WriteString("template [[host_name(\"mc3_attention_fa_blk64_rows_g7\")]] kernel decltype(mc3_attention_fa_blk64_rows<7>) mc3_attention_fa_blk64_rows<7>;\n")
+	b.WriteString("template [[host_name(\"mc3_attention_fa_blk96_rows_g1\")]] kernel decltype(mc3_attention_fa_blk96_rows<1>) mc3_attention_fa_blk96_rows<1>;\n")
 	// Its combine: row j merges its own partial region into its own row of ctx (outStride floats), over its own splits.
 	b.WriteString(edit(extractKernel(allKernels, "attention_fa_combine"),
 		"kernel void attention_fa_combine(", "kernel void mc3_attention_fa_combine_rows(",

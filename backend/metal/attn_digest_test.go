@@ -35,7 +35,7 @@ var (
 
 // attnDigestRun is the -run pattern of the tests that record digests.
 const attnDigestRun = "^(TestAttention_ShippedKernelShapes|TestAttentionKernelsPastTileBound|TestAttentionFA_vsReference|TestAttnFABlk_anyGMatchesG7|" +
-	"TestAttnFABlkMatchesFloat64|TestAttnFABlk64Digest|TestAttentionPrefillFused|TestAttentionPrefillSteelMatchesFloat64|" +
+	"TestAttnFABlkMatchesFloat64|TestAttnFABlk64Digest|TestAttnFABlk96MatchesFloat64|TestAttentionPrefillFused|TestAttentionPrefillSteelMatchesFloat64|" +
 	"TestAttentionPrefillImg_matchesReference|TestGptOssAttnSink_metal|TestMetalKVI8_KVStoreAndAttentionParity|TestMetalKVI8_DeepContext|" +
 	"TestMC3Step_rowsPathBitIdentical|TestMC3Step_faRowsBitIdenticalDeep|TestAttnDigest_mc3RowsOtherGeometries)$"
 
@@ -223,28 +223,29 @@ func TestAttnFABlk64Digest(t *testing.T) {
 
 // TestAttnDigest_mc3RowsOtherGeometries runs the batched step's identity check on two generated models whose geometry
 // selects the split-KV kernels the default fixture (G = 6, head dimension 128) does not: head dimension 64 with G = 7,
-// which takes attention_fa_blk64 and its rows form, and G = 4 with the any-G block kernel off, which takes
-// attention_fa and its rows form. Which kernel a geometry takes is read from buildResident's selection, and each case
+// which takes attention_fa_blk64 and its rows form, G = 4 with the any-G block kernel off, which takes
+// attention_fa and its rows form, and head dimension 96 at G = 1 under Options.FlashDecodeHD96, which takes attention_fa_blk96 and its rows form. Which kernel a geometry takes is read from buildResident's selection, and each case
 // checks the conditions that selection keys on.
 func TestAttnDigest_mc3RowsOtherGeometries(t *testing.T) {
 	for _, c := range []struct {
 		name               string
 		heads, kvHeads, hd int
-		anyG               bool
+		anyG, hd96         bool
 		label              string
 	}{
-		{"hd64-G7", 14, 2, 64, true, "mc3_attention_rows,mc3_attention_fa_blk64_rows_g7,mc3_attention_fa_combine_rows"},
-		{"hd128-G4-legacy", 8, 2, 128, false, "mc3_attention_rows,mc3_attention_fa_rows,mc3_attention_fa_combine_rows"},
+		{"hd64-G7", 14, 2, 64, true, false, "mc3_attention_rows,mc3_attention_fa_blk64_rows_g7,mc3_attention_fa_combine_rows"},
+		{"hd128-G4-legacy", 8, 2, 128, false, false, "mc3_attention_rows,mc3_attention_fa_rows,mc3_attention_fa_combine_rows"},
+		{"hd96-G1", 4, 4, 96, true, true, "mc3_attention_rows,mc3_attention_fa_blk96_rows_g1,mc3_attention_fa_combine_rows"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			prevW, prevG, prevFA, prevL := mc3FixtureWriter, attnFABlkAnyG, mc3FARowsOn, attnDigestRowsLabel
+			prevW, prevG, prevFA, prevL, prevH := mc3FixtureWriter, attnFABlkAnyG, mc3FARowsOn, attnDigestRowsLabel, mc3TestHD96
 			defer func() {
-				mc3FixtureWriter, attnFABlkAnyG, mc3FARowsOn, attnDigestRowsLabel = prevW, prevG, prevFA, prevL
+				mc3FixtureWriter, attnFABlkAnyG, mc3FARowsOn, attnDigestRowsLabel, mc3TestHD96 = prevW, prevG, prevFA, prevL, prevH
 			}()
 			mc3FixtureWriter = func(t *testing.T, maxPositions int) string {
 				return writeMC3FixtureGeom(t, maxPositions, c.heads, c.kvHeads, c.hd)
 			}
-			attnFABlkAnyG, mc3FARowsOn, attnDigestRowsLabel = c.anyG, true, c.label
+			attnFABlkAnyG, mc3FARowsOn, attnDigestRowsLabel, mc3TestHD96 = c.anyG, true, c.label, c.hd96
 			mc3IdentityWith(t, []int{attnFADepthFloor + 400, attnFADepthFloor - 6, 100, attnFADepthFloor + 64}, 2048, func(r *resident) {
 				if r.attnFANKV == 0 {
 					t.Fatalf("the split-KV kernels do not engage for this geometry, so this case would record the exact kernel only")
