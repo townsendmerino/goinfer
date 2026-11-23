@@ -1556,16 +1556,24 @@ func q4kMat(g *embed.GGUFFile, name string, out, in int, rowSrc func(r int) int,
 
 // q4kNative56 reports whether a q4k load keeps the file's Q5_K and Q6_K projections natively instead of widening them to
 // int8: only where linalg has an arch kernel for them (linalg.KQuantNative; the portable dot is far slower than int8), and
-// only for a CPU reader: a heap load with needCanonical false (no GPU lane, which takes those blocks from the int8 copy
-// through KQuantReader), or a .giw written for the cpu-amd64 target (kinds 11 and 12; every other target widens).
+// only where the reader takes the blocks from the weight itself: a heap load with needCanonical false (no GPU lane; a GPU lane
+// on a heap load takes them from the int8 copy through KQuantReader), or a .giw written for the cpu-amd64 or cuda target (kinds
+// 11 and 12). A cuda .giw holds no GGUF mapping for KQuantReader, so CUDA's build plans its native weights from the blocks the
+// bundle carries (cuda's buildState.planProj); every other target widens.
 func q4kNative56(needCanonical bool, sink *giwWriter) bool {
 	if !linalg.KQuantNative() || q4kWiden56ForTest {
 		return false
 	}
 	if sink != nil {
-		return sink.target == GIWTargetCPUAmd64
+		return giwCarriesKQuant56(sink.target)
 	}
 	return !needCanonical
+}
+
+// giwCarriesKQuant56 reports whether a q4k .giw written for target holds the file's Q5_K and Q6_K tensors natively (kinds 11
+// and 12) rather than widened to int8: the cpu-amd64 target, whose CPU kernels read them, and cuda, whose resident uploads them.
+func giwCarriesKQuant56(target GIWTarget) bool {
+	return target == GIWTargetCPUAmd64 || target == GIWTargetCUDA
 }
 
 // q4kWiden56ForTest restores the int8 widening of Q5_K and Q6_K on every q4k load, for the test that compares the two.

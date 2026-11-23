@@ -72,7 +72,7 @@ import (
 //	9  bf16: u16, rows×cols bf16 values, aliased on load through linalg.WrapBF16. group is 0. Written for an island
 //	   matrix the load holds bf16 (giwWriter.island); an f32 island is a standalone f32 array instead.
 //	11 Q5_K, 12 Q6_K: raw, as kind 8, for the file's Q5_K and Q6_K tensors a q4k load keeps (q4kNative56), aliased through
-//	   linalg.WrapQ5K / WrapQ6K. Written on a cpu-amd64 target only; every other target widens them to kind 2.
+//	   linalg.WrapQ5K / WrapQ6K. Written on the cpu-amd64 and cuda targets only; every other target widens them to kind 2.
 //
 // Kinds 4 and 7 existed before v16 and are not read.
 
@@ -94,7 +94,7 @@ const (
 	// giwKindBF16 is a bf16 weight matrix's kind: one aligned binary16 array of rows×cols values, aliased on load.
 	giwKindBF16 = 9
 	// giwKindQ5K and giwKindQ6K are a q4k load's native Q5_K and Q6_K tensors (q4kNative56): the GGUF super-blocks as they
-	// are (176 and 210 bytes per 256 values), aliased on load. Written for the cpu-amd64 target only.
+	// are (176 and 210 bytes per 256 values), aliased on load. Written for the cpu-amd64 and cuda targets only.
 	giwKindQ5K = 11
 	giwKindQ6K = 12
 	// Sanity ceilings on the count fields, generous against any real checkpoint but low enough that a corrupt or hostile blob
@@ -1099,11 +1099,11 @@ func (w *giwWriter) weightMatKind(m *linalg.WeightMat, eligible bool) {
 		return
 	}
 	if raw, kind, ok := kquant56Raw(m); ok {
-		// Kinds 11 and 12 are written for the cpu-amd64 target only, the one q4kNative56 builds them for; a bundle for any other
+		// Kinds 11 and 12 are written for the targets q4kNative56 builds them for (giwCarriesKQuant56); a bundle for any other
 		// reader must not carry them.
-		if w.target != GIWTargetCPUAmd64 {
+		if !giwCarriesKQuant56(w.target) {
 			if w.err == nil {
-				w.err = fmt.Errorf("decoder: a %dx%d tensor is held as native %s (a Backend \"cpu\" q4k load keeps the file's blocks); only a cpu-amd64 .giw carries it — write for that target, or load with another Backend", m.Rows(), m.Cols(), m.Kind())
+				w.err = fmt.Errorf("decoder: a %dx%d tensor is held as native %s (a q4k load keeps the file's blocks); only a cpu-amd64 or cuda .giw carries it — write for one of those targets, or load with another Backend", m.Rows(), m.Cols(), m.Kind())
 			}
 			return
 		}
