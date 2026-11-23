@@ -1,6 +1,6 @@
 # Metal's attention_fa at head dim 96 (Phi-3 mini): registration (2026-11-23)
 
-**Status: SHIP, 2026-11-23: gates 1, 2 and 3 pass (gate 3 at 1.292× at depth 3,900); the default is Francis's call. Registered
+**Status: SHIP, 2026-11-23: gates 1, 2 and 3 pass (gate 3 at 1.292× at depth 3,900); on by default at a context of at most 4,096 (Francis, 2026-11-23, § "Default"). Registered
 2026-11-23, before any gate reading.** Owner's go: Francis, 2026-11-23 ~08:45 PST ("let's finish the
 performance and webgpu parts" of the fresh-eyes review ledger), relayed by the coordinator. Perf review finding 10. Gates in order,
 each passing before the next, fixed N, no early stop. If it ships it lands behind the existing opt-in `--flash-decode-hd96`
@@ -146,3 +146,15 @@ than the keys fill, so physical block 0 and the order both differ) and windows o
 each to 4 decimals (0.0001 / 0.0001). It now reads the harness's `KLratio`, computed from the unrounded means: **1.0002**, as gate 2's
 section above quotes. Re-graded from the same log: (a) PASS, (b) PASS, (c) PASS, outside the 1.05–1.10 band. **The verdict does not
 change: PASS.**
+
+## Default, 2026-11-23: on at a context of at most 4,096 (Francis)
+
+- **The decision.** Francis, 2026-11-23, about 11:15 PST, relayed by the coordinator: option (a), CUDA's rule (#1241) on Metal. The lane
+  is on by default for a head-dim-96 load whose resident context cap is at most 4,096, what the gates read; `--flash-decode-hd96` reaches
+  a longer context, and `=false` turns it off. Conditional on the review follow-ups above (the table and window cases, and gate 2 re-graded) coming back clean, which they did.
+- **Its shape.** With the flag not given, serve and goinfer-chat set `FlashDecodeHD96` with `FlashDecodeHD96Default`. The resident sizes
+  the lane whenever `FlashDecodeHD96` is set, and `faHD96On` lets an hd-96 layer take it when chosen, or under the default while
+  `ctxCap` (after `kvRaise`, the depth a conversation can reach) is at most `metalHD96DefaultMaxCtx`. `TestFlashDecodeHD96_metalSelection`
+  holds the rule (red before the change: the two default rows): on at 4,096 and off at 4,097 under the default, on at 8,192 when chosen,
+  off at `=false`, and a head-dim-64 layer on with the option on and off.
+- **What it rests on:** gates 1–3 above (gate 3 SHIP, 1.292 at 3,900 and 1.002 at 128) and the bytes in gate 3's section.

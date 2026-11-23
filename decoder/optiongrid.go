@@ -121,7 +121,7 @@ var ogLoadOnly = map[string]string{
 	"ResidentRecurrentStepDefault": "tells the backend at load that ResidentRecurrentStep is the caller's default, not a choice",
 	"ResidentGemma4StepDefault":    "tells the backend at load that ResidentGemma4Step is the caller's default, not a choice",
 	"EmbedInt4Default":             "resolved into EmbedInt4 at the top of Load (EmbedInt4For) and cleared, so no path reads it",
-	"FlashDecodeHD96Default":       "tells the backend at load that FlashDecodeHD96 is the caller's default, which CUDA applies only at a context of at most 4096",
+	"FlashDecodeHD96Default":       "tells the backend at load that FlashDecodeHD96 is the caller's default, which CUDA and Metal apply only at a context of at most 4096",
 }
 
 // ogGrid is the declaration for every Options field that reaches a path.

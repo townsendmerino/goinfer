@@ -132,7 +132,7 @@ func (b *residentBuild) bindPipelines() {
 	r.pAttnFA, r.pAttnFACombine = pipe("attention_fa"), pipe("attention_fa_combine")
 	r.pAttnFARows, r.pAttnFACombineRows = pipe("mc3_attention_fa_rows"), pipe("mc3_attention_fa_combine_rows")
 	r.decodeAttnFA = metalAttnFAEnabled(modelKnob(m, "GOINFER_METAL_ATTN_FA"))
-	r.faHD96 = hd96Chosen(m)
+	r.faHD96, r.faHD96Default = m.FlashDecodeHD96(), m.FlashDecodeHD96Default()
 	r.pArgFinish = pipe("argmax_finish")
 	r.pArgRowsPart = pipe("argmax_rows_part") // E-P08: the batched step's greedy rows (batch.go)
 	r.pEmbedGather = pipe("embed_gather_i8")
