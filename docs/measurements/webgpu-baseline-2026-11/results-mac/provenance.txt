@@ -1,0 +1,12 @@
+started   2026-11-23 08:18:51 PST
+rev       018cbe74 (/Users/francistownsend-merino/goinfer-bench/wg0-mac/wt, clean); scripts from /Users/francistownsend-merino/goinfer-bench/wg0-mac/scripts
+serve     /Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-metal-018cbe74 sha256 1827e32e31a463e69aa9e518098c65e7c99578438e3f48e24490abb0a34836d0
+serve     /Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-webgpu-018cbe74 sha256 ebe60b75a623f3b15e00062e1d945ff39fbf03bcee0820ecaef8746186b3a85b
+host      MacBookPro Darwin 25.6.0 macOS 26.7.3
+gpu       Apple M1 Pro; 14; 
+aikit     v1.76.0
+therm     Note: No thermal warning level has been recorded;Note: No performance warning level has been recorded;Note: No CPU power status has been recorded;
+lock      free to this run (inherited from pid 92793 on MacBookPro, `bash /Users/francistownsend-merino/goinfer-bench/wg0-mac/scripts/run-mac.sh`, started 2026-11-23T08:18:50-08:00, 0 min ago, label 'wg0-mac') 
+steps     all
+state     load 2.95 2.46 2.06 free 77% swap 513.00 MB power Battery Power
+finished  2026-11-23 09:01:20 PST rc=0 load 1.63 1.57 1.67 free 78% swap 513.00 MB power Battery Power

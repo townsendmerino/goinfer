@@ -1,0 +1,1218 @@
+[
+ {
+  "argv": [
+   "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-metal-018cbe74",
+   "-model",
+   "bench=/Users/francistownsend-merino/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+   "-backend",
+   "metal",
+   "-addr",
+   "127.0.0.1:18298",
+   "-quant",
+   "int4",
+   "-ctx",
+   "4096",
+   "-require-backend"
+  ],
+  "repeat_over_fresh": 0.068,
+  "ttft_ms_all": [
+   308.82,
+   309.62,
+   287.35,
+   289.28,
+   288.69,
+   288.33
+  ],
+  "prompt_tokens": [
+   1052,
+   1052,
+   1052,
+   1052,
+   1052,
+   1052
+  ],
+  "ttft_ms_median": 288.98,
+  "decode_path": "metal-resident (int4)",
+  "model": "0.5B",
+  "block": 0,
+  "arm": "metal",
+  "backend": "metal",
+  "binary": "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-metal-018cbe74",
+  "ctx": 4096,
+  "prompt_key": "0.5B:1024",
+  "machine": {
+   "start": {
+    "t": "2026-11-23 08:50:58",
+    "t_epoch": 1795452658.008138,
+    "load1": 1.33740234375,
+    "ncores": 8,
+    "available_mb": 12443,
+    "reclaimable_mb": 8588,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.53125,
+    "swapout_mb": 16532.796875,
+    "need_mb": 491.400064
+   },
+   "end": {
+    "t": "2026-11-23 08:51:04",
+    "t_epoch": 1795452664.890837,
+    "load1": 1.31005859375,
+    "ncores": 8,
+    "available_mb": 12443,
+    "reclaimable_mb": 8584,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.53125,
+    "swapout_mb": 16532.796875
+   },
+   "swap": {
+    "base_mb": 513.0,
+    "peak_mb": 513.0,
+    "peak_growth_mb": 0.0,
+    "unreadable": false,
+    "t_written": 1795452664.8653781
+   }
+  },
+  "void_attempts": [],
+  "valid": true
+ },
+ {
+  "argv": [
+   "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-webgpu-018cbe74",
+   "-model",
+   "bench=/Users/francistownsend-merino/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+   "-backend",
+   "webgpu",
+   "-addr",
+   "127.0.0.1:18298",
+   "-quant",
+   "int4",
+   "-ctx",
+   "4096",
+   "-require-backend"
+  ],
+  "repeat_over_fresh": 0.01,
+  "ttft_ms_all": [
+   2741.12,
+   2745.36,
+   2747.77,
+   2736.49,
+   2706.06,
+   2697.65
+  ],
+  "prompt_tokens": [
+   1052,
+   1052,
+   1052,
+   1052,
+   1052,
+   1052
+  ],
+  "ttft_ms_median": 2738.81,
+  "decode_path": "webgpu:metal-resident (int4)",
+  "model": "0.5B",
+  "block": 0,
+  "arm": "webgpu",
+  "backend": "webgpu",
+  "binary": "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-webgpu-018cbe74",
+  "ctx": 4096,
+  "prompt_key": "0.5B:1024",
+  "machine": {
+   "start": {
+    "t": "2026-11-23 08:51:05",
+    "t_epoch": 1795452665.064223,
+    "load1": 1.31005859375,
+    "ncores": 8,
+    "available_mb": 12443,
+    "reclaimable_mb": 8584,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.53125,
+    "swapout_mb": 16532.796875,
+    "need_mb": 491.400064
+   },
+   "end": {
+    "t": "2026-11-23 08:51:43",
+    "t_epoch": 1795452703.808374,
+    "load1": 0.93115234375,
+    "ncores": 8,
+    "available_mb": 12443,
+    "reclaimable_mb": 8596,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.53125,
+    "swapout_mb": 16532.796875
+   },
+   "swap": {
+    "base_mb": 513.0,
+    "peak_mb": 513.0,
+    "peak_growth_mb": 0.0,
+    "unreadable": false,
+    "t_written": 1795452703.778804
+   }
+  },
+  "void_attempts": [],
+  "valid": true
+ },
+ {
+  "argv": [
+   "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-webgpu-018cbe74",
+   "-model",
+   "bench=/Users/francistownsend-merino/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+   "-backend",
+   "webgpu",
+   "-addr",
+   "127.0.0.1:18298",
+   "-quant",
+   "int4",
+   "-ctx",
+   "4096",
+   "-require-backend"
+  ],
+  "repeat_over_fresh": 0.01,
+  "ttft_ms_all": [
+   2746.21,
+   2736.4,
+   2752.69,
+   2748.2,
+   2704.26,
+   2693.91
+  ],
+  "prompt_tokens": [
+   1052,
+   1052,
+   1052,
+   1052,
+   1052,
+   1052
+  ],
+  "ttft_ms_median": 2741.31,
+  "decode_path": "webgpu:metal-resident (int4)",
+  "model": "0.5B",
+  "block": 1,
+  "arm": "webgpu",
+  "backend": "webgpu",
+  "binary": "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-webgpu-018cbe74",
+  "ctx": 4096,
+  "prompt_key": "0.5B:1024",
+  "machine": {
+   "start": {
+    "t": "2026-11-23 08:51:43",
+    "t_epoch": 1795452703.983957,
+    "load1": 0.93115234375,
+    "ncores": 8,
+    "available_mb": 12443,
+    "reclaimable_mb": 8596,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.53125,
+    "swapout_mb": 16532.796875,
+    "need_mb": 491.400064
+   },
+   "end": {
+    "t": "2026-11-23 08:52:22",
+    "t_epoch": 1795452742.2514062,
+    "load1": 0.7490234375,
+    "ncores": 8,
+    "available_mb": 12443,
+    "reclaimable_mb": 8406,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875
+   },
+   "swap": {
+    "base_mb": 513.0,
+    "peak_mb": 513.0,
+    "peak_growth_mb": 0.0,
+    "unreadable": false,
+    "t_written": 1795452742.222197
+   }
+  },
+  "void_attempts": [],
+  "valid": true
+ },
+ {
+  "argv": [
+   "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-metal-018cbe74",
+   "-model",
+   "bench=/Users/francistownsend-merino/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+   "-backend",
+   "metal",
+   "-addr",
+   "127.0.0.1:18298",
+   "-quant",
+   "int4",
+   "-ctx",
+   "4096",
+   "-require-backend"
+  ],
+  "repeat_over_fresh": 0.068,
+  "ttft_ms_all": [
+   308.1,
+   309.26,
+   287.23,
+   290.35,
+   287.76,
+   289.05
+  ],
+  "prompt_tokens": [
+   1052,
+   1052,
+   1052,
+   1052,
+   1052,
+   1052
+  ],
+  "ttft_ms_median": 289.7,
+  "decode_path": "metal-resident (int4)",
+  "model": "0.5B",
+  "block": 1,
+  "arm": "metal",
+  "backend": "metal",
+  "binary": "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-metal-018cbe74",
+  "ctx": 4096,
+  "prompt_key": "0.5B:1024",
+  "machine": {
+   "start": {
+    "t": "2026-11-23 08:52:22",
+    "t_epoch": 1795452742.42617,
+    "load1": 0.7490234375,
+    "ncores": 8,
+    "available_mb": 12443,
+    "reclaimable_mb": 8405,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875,
+    "need_mb": 491.400064
+   },
+   "end": {
+    "t": "2026-11-23 08:52:29",
+    "t_epoch": 1795452749.3887758,
+    "load1": 0.68896484375,
+    "ncores": 8,
+    "available_mb": 12443,
+    "reclaimable_mb": 8416,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875
+   },
+   "swap": {
+    "base_mb": 513.0,
+    "peak_mb": 513.0,
+    "peak_growth_mb": 0.0,
+    "unreadable": false,
+    "t_written": 1795452749.361888
+   }
+  },
+  "void_attempts": [],
+  "valid": true
+ },
+ {
+  "argv": [
+   "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-metal-018cbe74",
+   "-model",
+   "bench=/Users/francistownsend-merino/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+   "-backend",
+   "metal",
+   "-addr",
+   "127.0.0.1:18298",
+   "-quant",
+   "int4",
+   "-ctx",
+   "4096",
+   "-require-backend"
+  ],
+  "repeat_over_fresh": 0.067,
+  "ttft_ms_all": [
+   308.92,
+   308.68,
+   288.47,
+   287.81,
+   288.49,
+   287.49
+  ],
+  "prompt_tokens": [
+   1052,
+   1052,
+   1052,
+   1052,
+   1052,
+   1052
+  ],
+  "ttft_ms_median": 288.48,
+  "decode_path": "metal-resident (int4)",
+  "model": "0.5B",
+  "block": 2,
+  "arm": "metal",
+  "backend": "metal",
+  "binary": "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-metal-018cbe74",
+  "ctx": 4096,
+  "prompt_key": "0.5B:1024",
+  "machine": {
+   "start": {
+    "t": "2026-11-23 08:52:29",
+    "t_epoch": 1795452749.558221,
+    "load1": 0.68896484375,
+    "ncores": 8,
+    "available_mb": 12443,
+    "reclaimable_mb": 8416,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875,
+    "need_mb": 491.400064
+   },
+   "end": {
+    "t": "2026-11-23 08:52:36",
+    "t_epoch": 1795452756.464438,
+    "load1": 0.6337890625,
+    "ncores": 8,
+    "available_mb": 12607,
+    "reclaimable_mb": 8451,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875
+   },
+   "swap": {
+    "base_mb": 513.0,
+    "peak_mb": 513.0,
+    "peak_growth_mb": 0.0,
+    "unreadable": false,
+    "t_written": 1795452756.437453
+   }
+  },
+  "void_attempts": [],
+  "valid": true
+ },
+ {
+  "argv": [
+   "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-webgpu-018cbe74",
+   "-model",
+   "bench=/Users/francistownsend-merino/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+   "-backend",
+   "webgpu",
+   "-addr",
+   "127.0.0.1:18298",
+   "-quant",
+   "int4",
+   "-ctx",
+   "4096",
+   "-require-backend"
+  ],
+  "repeat_over_fresh": 0.01,
+  "ttft_ms_all": [
+   2736.61,
+   2747.58,
+   2746.24,
+   2745.55,
+   2702.77,
+   2699.42
+  ],
+  "prompt_tokens": [
+   1052,
+   1052,
+   1052,
+   1052,
+   1052,
+   1052
+  ],
+  "ttft_ms_median": 2741.08,
+  "decode_path": "webgpu:metal-resident (int4)",
+  "model": "0.5B",
+  "block": 2,
+  "arm": "webgpu",
+  "backend": "webgpu",
+  "binary": "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-webgpu-018cbe74",
+  "ctx": 4096,
+  "prompt_key": "0.5B:1024",
+  "machine": {
+   "start": {
+    "t": "2026-11-23 08:52:36",
+    "t_epoch": 1795452756.6394129,
+    "load1": 0.6337890625,
+    "ncores": 8,
+    "available_mb": 12607,
+    "reclaimable_mb": 8452,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875,
+    "need_mb": 491.400064
+   },
+   "end": {
+    "t": "2026-11-23 08:53:15",
+    "t_epoch": 1795452795.0587368,
+    "load1": 1.12255859375,
+    "ncores": 8,
+    "available_mb": 12443,
+    "reclaimable_mb": 8527,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875
+   },
+   "swap": {
+    "base_mb": 513.0,
+    "peak_mb": 513.0,
+    "peak_growth_mb": 0.0,
+    "unreadable": false,
+    "t_written": 1795452795.0339909
+   }
+  },
+  "void_attempts": [],
+  "valid": true
+ },
+ {
+  "argv": [
+   "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-webgpu-018cbe74",
+   "-model",
+   "bench=/Users/francistownsend-merino/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+   "-backend",
+   "webgpu",
+   "-addr",
+   "127.0.0.1:18298",
+   "-quant",
+   "int4",
+   "-ctx",
+   "4096",
+   "-require-backend"
+  ],
+  "repeat_over_fresh": 0.01,
+  "ttft_ms_all": [
+   2734.33,
+   2741.21,
+   2745.78,
+   2742.99,
+   2702.98,
+   2699.5
+  ],
+  "prompt_tokens": [
+   1052,
+   1052,
+   1052,
+   1052,
+   1052,
+   1052
+  ],
+  "ttft_ms_median": 2737.77,
+  "decode_path": "webgpu:metal-resident (int4)",
+  "model": "0.5B",
+  "block": 3,
+  "arm": "webgpu",
+  "backend": "webgpu",
+  "binary": "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-webgpu-018cbe74",
+  "ctx": 4096,
+  "prompt_key": "0.5B:1024",
+  "machine": {
+   "start": {
+    "t": "2026-11-23 08:53:15",
+    "t_epoch": 1795452795.2310872,
+    "load1": 1.12255859375,
+    "ncores": 8,
+    "available_mb": 12443,
+    "reclaimable_mb": 8524,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875,
+    "need_mb": 491.400064
+   },
+   "end": {
+    "t": "2026-11-23 08:53:53",
+    "t_epoch": 1795452833.557293,
+    "load1": 1.11474609375,
+    "ncores": 8,
+    "available_mb": 12443,
+    "reclaimable_mb": 8526,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875
+   },
+   "swap": {
+    "base_mb": 513.0,
+    "peak_mb": 513.0,
+    "peak_growth_mb": 0.0,
+    "unreadable": false,
+    "t_written": 1795452833.5273228
+   }
+  },
+  "void_attempts": [],
+  "valid": true
+ },
+ {
+  "argv": [
+   "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-metal-018cbe74",
+   "-model",
+   "bench=/Users/francistownsend-merino/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+   "-backend",
+   "metal",
+   "-addr",
+   "127.0.0.1:18298",
+   "-quant",
+   "int4",
+   "-ctx",
+   "4096",
+   "-require-backend"
+  ],
+  "repeat_over_fresh": 0.068,
+  "ttft_ms_all": [
+   308.2,
+   309.97,
+   287.7,
+   289.23,
+   287.93,
+   289.36
+  ],
+  "prompt_tokens": [
+   1052,
+   1052,
+   1052,
+   1052,
+   1052,
+   1052
+  ],
+  "ttft_ms_median": 289.29,
+  "decode_path": "metal-resident (int4)",
+  "model": "0.5B",
+  "block": 3,
+  "arm": "metal",
+  "backend": "metal",
+  "binary": "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-metal-018cbe74",
+  "ctx": 4096,
+  "prompt_key": "0.5B:1024",
+  "machine": {
+   "start": {
+    "t": "2026-11-23 08:53:53",
+    "t_epoch": 1795452833.730191,
+    "load1": 1.11474609375,
+    "ncores": 8,
+    "available_mb": 12443,
+    "reclaimable_mb": 8526,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875,
+    "need_mb": 491.400064
+   },
+   "end": {
+    "t": "2026-11-23 08:54:00",
+    "t_epoch": 1795452840.553327,
+    "load1": 1.025390625,
+    "ncores": 8,
+    "available_mb": 12443,
+    "reclaimable_mb": 8526,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875
+   },
+   "swap": {
+    "base_mb": 513.0,
+    "peak_mb": 513.0,
+    "peak_growth_mb": 0.0,
+    "unreadable": false,
+    "t_written": 1795452840.525174
+   }
+  },
+  "void_attempts": [],
+  "valid": true
+ },
+ {
+  "argv": [
+   "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-metal-018cbe74",
+   "-model",
+   "bench=/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+   "-backend",
+   "metal",
+   "-addr",
+   "127.0.0.1:18298",
+   "-quant",
+   "int4",
+   "-ctx",
+   "4096",
+   "-require-backend"
+  ],
+  "repeat_over_fresh": 0.044,
+  "ttft_ms_all": [
+   1045.55,
+   1043.46,
+   981.7,
+   982.9,
+   982.89,
+   988.67
+  ],
+  "prompt_tokens": [
+   1052,
+   1052,
+   1052,
+   1052,
+   1052,
+   1052
+  ],
+  "ttft_ms_median": 985.79,
+  "decode_path": "metal-resident (int4)",
+  "model": "1.5B",
+  "block": 0,
+  "arm": "metal",
+  "backend": "metal",
+  "binary": "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-metal-018cbe74",
+  "ctx": 4096,
+  "prompt_key": "1.5B:1024",
+  "machine": {
+   "start": {
+    "t": "2026-11-23 08:54:00",
+    "t_epoch": 1795452840.726722,
+    "load1": 1.025390625,
+    "ncores": 8,
+    "available_mb": 12443,
+    "reclaimable_mb": 8526,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875,
+    "need_mb": 1117.320768
+   },
+   "end": {
+    "t": "2026-11-23 08:54:15",
+    "t_epoch": 1795452855.608649,
+    "load1": 0.79736328125,
+    "ncores": 8,
+    "available_mb": 12443,
+    "reclaimable_mb": 8530,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875
+   },
+   "swap": {
+    "base_mb": 513.0,
+    "peak_mb": 513.0,
+    "peak_growth_mb": 0.0,
+    "unreadable": false,
+    "t_written": 1795452855.5781739
+   }
+  },
+  "void_attempts": [],
+  "valid": true
+ },
+ {
+  "argv": [
+   "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-webgpu-018cbe74",
+   "-model",
+   "bench=/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+   "-backend",
+   "webgpu",
+   "-addr",
+   "127.0.0.1:18298",
+   "-quant",
+   "int4",
+   "-ctx",
+   "4096",
+   "-require-backend"
+  ],
+  "repeat_over_fresh": 0.005,
+  "ttft_ms_all": [
+   7455.35,
+   7452.88,
+   7441.34,
+   7443.33,
+   7375.28,
+   7366.38
+  ],
+  "prompt_tokens": [
+   1052,
+   1052,
+   1052,
+   1052,
+   1052,
+   1052
+  ],
+  "ttft_ms_median": 7442.33,
+  "decode_path": "webgpu:metal-resident (int4)",
+  "model": "1.5B",
+  "block": 0,
+  "arm": "webgpu",
+  "backend": "webgpu",
+  "binary": "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-webgpu-018cbe74",
+  "ctx": 4096,
+  "prompt_key": "1.5B:1024",
+  "machine": {
+   "start": {
+    "t": "2026-11-23 08:54:15",
+    "t_epoch": 1795452855.78203,
+    "load1": 0.79736328125,
+    "ncores": 8,
+    "available_mb": 12443,
+    "reclaimable_mb": 8530,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875,
+    "need_mb": 1117.320768
+   },
+   "end": {
+    "t": "2026-11-23 08:55:47",
+    "t_epoch": 1795452947.684012,
+    "load1": 1.73291015625,
+    "ncores": 8,
+    "available_mb": 12443,
+    "reclaimable_mb": 8536,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875
+   },
+   "swap": {
+    "base_mb": 513.0,
+    "peak_mb": 513.0,
+    "peak_growth_mb": 0.0,
+    "unreadable": false,
+    "t_written": 1795452947.656814
+   }
+  },
+  "void_attempts": [],
+  "valid": true
+ },
+ {
+  "argv": [
+   "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-webgpu-018cbe74",
+   "-model",
+   "bench=/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+   "-backend",
+   "webgpu",
+   "-addr",
+   "127.0.0.1:18298",
+   "-quant",
+   "int4",
+   "-ctx",
+   "4096",
+   "-require-backend"
+  ],
+  "repeat_over_fresh": 0.006,
+  "ttft_ms_all": [
+   7484.11,
+   8007.64,
+   7962.39,
+   8038.37,
+   7588.09,
+   8022.25
+  ],
+  "prompt_tokens": [
+   1052,
+   1052,
+   1052,
+   1052,
+   1052,
+   1052
+  ],
+  "ttft_ms_median": 7985.01,
+  "decode_path": "webgpu:metal-resident (int4)",
+  "model": "1.5B",
+  "block": 1,
+  "arm": "webgpu",
+  "backend": "webgpu",
+  "binary": "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-webgpu-018cbe74",
+  "ctx": 4096,
+  "prompt_key": "1.5B:1024",
+  "machine": {
+   "start": {
+    "t": "2026-11-23 08:55:47",
+    "t_epoch": 1795452947.861652,
+    "load1": 1.73291015625,
+    "ncores": 8,
+    "available_mb": 12443,
+    "reclaimable_mb": 8537,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875,
+    "need_mb": 1117.320768
+   },
+   "end": {
+    "t": "2026-11-23 08:57:22",
+    "t_epoch": 1795453042.656725,
+    "load1": 1.4228515625,
+    "ncores": 8,
+    "available_mb": 12279,
+    "reclaimable_mb": 8223,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875
+   },
+   "swap": {
+    "base_mb": 513.0,
+    "peak_mb": 513.0,
+    "peak_growth_mb": 0.0,
+    "unreadable": false,
+    "t_written": 1795453042.630813
+   }
+  },
+  "void_attempts": [],
+  "valid": true
+ },
+ {
+  "argv": [
+   "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-metal-018cbe74",
+   "-model",
+   "bench=/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+   "-backend",
+   "metal",
+   "-addr",
+   "127.0.0.1:18298",
+   "-quant",
+   "int4",
+   "-ctx",
+   "4096",
+   "-require-backend"
+  ],
+  "repeat_over_fresh": 0.043,
+  "ttft_ms_all": [
+   1095.99,
+   1098.51,
+   1064.97,
+   1039.32,
+   1051.39,
+   1034.49
+  ],
+  "prompt_tokens": [
+   1052,
+   1052,
+   1052,
+   1052,
+   1052,
+   1052
+  ],
+  "ttft_ms_median": 1058.18,
+  "decode_path": "metal-resident (int4)",
+  "model": "1.5B",
+  "block": 1,
+  "arm": "metal",
+  "backend": "metal",
+  "binary": "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-metal-018cbe74",
+  "ctx": 4096,
+  "prompt_key": "1.5B:1024",
+  "machine": {
+   "start": {
+    "t": "2026-11-23 08:57:22",
+    "t_epoch": 1795453042.834265,
+    "load1": 1.4228515625,
+    "ncores": 8,
+    "available_mb": 12279,
+    "reclaimable_mb": 8223,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875,
+    "need_mb": 1117.320768
+   },
+   "end": {
+    "t": "2026-11-23 08:57:38",
+    "t_epoch": 1795453058.732885,
+    "load1": 1.556640625,
+    "ncores": 8,
+    "available_mb": 12279,
+    "reclaimable_mb": 8300,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875
+   },
+   "swap": {
+    "base_mb": 513.0,
+    "peak_mb": 513.0,
+    "peak_growth_mb": 0.0,
+    "unreadable": false,
+    "t_written": 1795453058.7106152
+   }
+  },
+  "void_attempts": [],
+  "valid": true
+ },
+ {
+  "argv": [
+   "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-metal-018cbe74",
+   "-model",
+   "bench=/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+   "-backend",
+   "metal",
+   "-addr",
+   "127.0.0.1:18298",
+   "-quant",
+   "int4",
+   "-ctx",
+   "4096",
+   "-require-backend"
+  ],
+  "repeat_over_fresh": 0.045,
+  "ttft_ms_all": [
+   1070.7,
+   1073.22,
+   1010.86,
+   1024.11,
+   1026.27,
+   1007.86
+  ],
+  "prompt_tokens": [
+   1052,
+   1052,
+   1052,
+   1052,
+   1052,
+   1052
+  ],
+  "ttft_ms_median": 1025.19,
+  "decode_path": "metal-resident (int4)",
+  "model": "1.5B",
+  "block": 2,
+  "arm": "metal",
+  "backend": "metal",
+  "binary": "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-metal-018cbe74",
+  "ctx": 4096,
+  "prompt_key": "1.5B:1024",
+  "machine": {
+   "start": {
+    "t": "2026-11-23 08:57:38",
+    "t_epoch": 1795453058.8877409,
+    "load1": 1.556640625,
+    "ncores": 8,
+    "available_mb": 12279,
+    "reclaimable_mb": 8299,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875,
+    "need_mb": 1117.320768
+   },
+   "end": {
+    "t": "2026-11-23 08:57:54",
+    "t_epoch": 1795453074.128269,
+    "load1": 1.35888671875,
+    "ncores": 8,
+    "available_mb": 12279,
+    "reclaimable_mb": 8345,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875
+   },
+   "swap": {
+    "base_mb": 513.0,
+    "peak_mb": 513.0,
+    "peak_growth_mb": 0.0,
+    "unreadable": false,
+    "t_written": 1795453074.102519
+   }
+  },
+  "void_attempts": [],
+  "valid": true
+ },
+ {
+  "argv": [
+   "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-webgpu-018cbe74",
+   "-model",
+   "bench=/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+   "-backend",
+   "webgpu",
+   "-addr",
+   "127.0.0.1:18298",
+   "-quant",
+   "int4",
+   "-ctx",
+   "4096",
+   "-require-backend"
+  ],
+  "repeat_over_fresh": 0.005,
+  "ttft_ms_all": [
+   7977.42,
+   8061.68,
+   7998.04,
+   8114.22,
+   7661.4,
+   7648.9
+  ],
+  "prompt_tokens": [
+   1052,
+   1052,
+   1052,
+   1052,
+   1052,
+   1052
+  ],
+  "ttft_ms_median": 7987.73,
+  "decode_path": "webgpu:metal-resident (int4)",
+  "model": "1.5B",
+  "block": 2,
+  "arm": "webgpu",
+  "backend": "webgpu",
+  "binary": "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-webgpu-018cbe74",
+  "ctx": 4096,
+  "prompt_key": "1.5B:1024",
+  "machine": {
+   "start": {
+    "t": "2026-11-23 08:57:54",
+    "t_epoch": 1795453074.291331,
+    "load1": 1.35888671875,
+    "ncores": 8,
+    "available_mb": 12279,
+    "reclaimable_mb": 8346,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875,
+    "need_mb": 1117.320768
+   },
+   "end": {
+    "t": "2026-11-23 08:59:29",
+    "t_epoch": 1795453169.181925,
+    "load1": 1.5263671875,
+    "ncores": 8,
+    "available_mb": 12279,
+    "reclaimable_mb": 8310,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875
+   },
+   "swap": {
+    "base_mb": 513.0,
+    "peak_mb": 513.0,
+    "peak_growth_mb": 0.0,
+    "unreadable": false,
+    "t_written": 1795453169.152283
+   }
+  },
+  "void_attempts": [],
+  "valid": true
+ },
+ {
+  "argv": [
+   "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-webgpu-018cbe74",
+   "-model",
+   "bench=/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+   "-backend",
+   "webgpu",
+   "-addr",
+   "127.0.0.1:18298",
+   "-quant",
+   "int4",
+   "-ctx",
+   "4096",
+   "-require-backend"
+  ],
+  "repeat_over_fresh": 0.005,
+  "ttft_ms_all": [
+   7632.24,
+   7992.03,
+   7633.78,
+   7640.1,
+   7558.92,
+   7642.53
+  ],
+  "prompt_tokens": [
+   1052,
+   1052,
+   1052,
+   1052,
+   1052,
+   1052
+  ],
+  "ttft_ms_median": 7636.94,
+  "decode_path": "webgpu:metal-resident (int4)",
+  "model": "1.5B",
+  "block": 3,
+  "arm": "webgpu",
+  "backend": "webgpu",
+  "binary": "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-webgpu-018cbe74",
+  "ctx": 4096,
+  "prompt_key": "1.5B:1024",
+  "machine": {
+   "start": {
+    "t": "2026-11-23 08:59:29",
+    "t_epoch": 1795453169.343043,
+    "load1": 1.5263671875,
+    "ncores": 8,
+    "available_mb": 12279,
+    "reclaimable_mb": 8308,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875,
+    "need_mb": 1117.320768
+   },
+   "end": {
+    "t": "2026-11-23 09:01:03",
+    "t_epoch": 1795453263.508963,
+    "load1": 1.5703125,
+    "ncores": 8,
+    "available_mb": 12279,
+    "reclaimable_mb": 8267,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875
+   },
+   "swap": {
+    "base_mb": 513.0,
+    "peak_mb": 513.0,
+    "peak_growth_mb": 0.0,
+    "unreadable": false,
+    "t_written": 1795453263.4821298
+   }
+  },
+  "void_attempts": [],
+  "valid": true
+ },
+ {
+  "argv": [
+   "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-metal-018cbe74",
+   "-model",
+   "bench=/Users/francistownsend-merino/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+   "-backend",
+   "metal",
+   "-addr",
+   "127.0.0.1:18298",
+   "-quant",
+   "int4",
+   "-ctx",
+   "4096",
+   "-require-backend"
+  ],
+  "repeat_over_fresh": 0.049,
+  "ttft_ms_all": [
+   1184.89,
+   1228.72,
+   1057.74,
+   1191.51,
+   1262.78,
+   1261.16
+  ],
+  "prompt_tokens": [
+   1052,
+   1052,
+   1052,
+   1052,
+   1052,
+   1052
+  ],
+  "ttft_ms_median": 1210.12,
+  "decode_path": "metal-resident (int4)",
+  "model": "1.5B",
+  "block": 3,
+  "arm": "metal",
+  "backend": "metal",
+  "binary": "/Users/francistownsend-merino/goinfer-bench/wg0-mac/bin/serve-metal-018cbe74",
+  "ctx": 4096,
+  "prompt_key": "1.5B:1024",
+  "machine": {
+   "start": {
+    "t": "2026-11-23 09:01:03",
+    "t_epoch": 1795453263.6639009,
+    "load1": 1.5703125,
+    "ncores": 8,
+    "available_mb": 12279,
+    "reclaimable_mb": 8268,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875,
+    "need_mb": 1117.320768
+   },
+   "end": {
+    "t": "2026-11-23 09:01:20",
+    "t_epoch": 1795453280.292452,
+    "load1": 1.63427734375,
+    "ncores": 8,
+    "available_mb": 12279,
+    "reclaimable_mb": 8244,
+    "swap_mb": 513.0,
+    "swapin_mb": 9421.65625,
+    "swapout_mb": 16532.796875
+   },
+   "swap": {
+    "base_mb": 513.0,
+    "peak_mb": 513.0,
+    "peak_growth_mb": 0.0,
+    "unreadable": false,
+    "t_written": 1795453280.265437
+   }
+  },
+  "void_attempts": [],
+  "valid": true
+ }
+]

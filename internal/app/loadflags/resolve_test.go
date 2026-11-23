@@ -195,3 +195,27 @@ func TestResolve_stepFlagsFollowServeSessions(t *testing.T) {
 		})
 	}
 }
+
+// TestResolve_flashDecodeHD96Default: left unset, --flash-decode-hd96 resolves to on as the caller's default (the CUDA lane then takes a
+// head-dim-96 model only at a context of at most 4096, the backend's rule); given either way, it is that choice, not a default.
+func TestResolve_flashDecodeHD96Default(t *testing.T) {
+	for _, c := range []struct {
+		name          string
+		app           App
+		args          []string
+		want, wantDef bool
+	}{
+		{"chat, unset", Chat, nil, true, true},
+		{"serve, unset", Serve, nil, true, true},
+		{"serve, given on", Serve, []string{"-flash-decode-hd96"}, true, false},
+		{"serve, given off", Serve, []string{"-flash-decode-hd96=false"}, false, false},
+		{"chat, given off", Chat, []string{"-flash-decode-hd96=false"}, false, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			o := Resolve(*parsed(t, c.app, c.args), Machine{}, Overrides{})
+			if o.FlashDecodeHD96 != c.want || o.FlashDecodeHD96Default != c.wantDef {
+				t.Errorf("FlashDecodeHD96 %v, default %v; want %v, %v", o.FlashDecodeHD96, o.FlashDecodeHD96Default, c.want, c.wantDef)
+			}
+		})
+	}
+}

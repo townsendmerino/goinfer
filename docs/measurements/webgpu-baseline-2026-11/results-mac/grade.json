@@ -1,0 +1,176 @@
+[
+ {
+  "cell": "decode 0.5B @128",
+  "valid": true,
+  "problems": [],
+  "voids_rerun": [],
+  "native_tok_s_median": 209.8,
+  "webgpu_tok_s_median": 61.2,
+  "fraction": {
+   "median": 0.2917,
+   "min": 0.2887,
+   "max": 0.2935,
+   "n": 4
+  },
+  "decode_paths": [
+   "metal-resident (int4)",
+   "webgpu:metal-resident (int4)"
+  ]
+ },
+ {
+  "cell": "decode 0.5B @2048",
+  "valid": true,
+  "problems": [],
+  "voids_rerun": [],
+  "native_tok_s_median": 174.8,
+  "webgpu_tok_s_median": 27.8,
+  "fraction": {
+   "median": 0.1588,
+   "min": 0.1573,
+   "max": 0.1592,
+   "n": 4
+  },
+  "decode_paths": [
+   "metal-resident (int4)",
+   "webgpu:metal-resident (int4)"
+  ]
+ },
+ {
+  "cell": "decode 1.5B @128",
+  "valid": true,
+  "problems": [],
+  "voids_rerun": [],
+  "native_tok_s_median": 99.2,
+  "webgpu_tok_s_median": 36.8,
+  "fraction": {
+   "median": 0.3707,
+   "min": 0.3698,
+   "max": 0.3765,
+   "n": 4
+  },
+  "decode_paths": [
+   "metal-resident (int4)",
+   "webgpu:metal-resident (int4)"
+  ]
+ },
+ {
+  "cell": "decode 1.5B @2048",
+  "valid": true,
+  "problems": [],
+  "voids_rerun": [],
+  "native_tok_s_median": 91.1,
+  "webgpu_tok_s_median": 18.2,
+  "fraction": {
+   "median": 0.2009,
+   "min": 0.1948,
+   "max": 0.2056,
+   "n": 4
+  },
+  "decode_paths": [
+   "metal-resident (int4)",
+   "webgpu:metal-resident (int4)"
+  ]
+ },
+ {
+  "cell": "TTFT 0.5B @1024",
+  "valid": true,
+  "problems": [],
+  "voids_rerun": [],
+  "native_ttft_ms_median": 289.1,
+  "webgpu_ttft_ms_median": 2739.9,
+  "fraction": {
+   "median": 0.1056,
+   "min": 0.1052,
+   "max": 0.1057,
+   "n": 4
+  },
+  "prompt_tokens": [
+   1052
+  ],
+  "repeat_over_fresh": [
+   [
+    "native",
+    0.068
+   ],
+   [
+    "webgpu",
+    0.01
+   ],
+   [
+    "webgpu",
+    0.01
+   ],
+   [
+    "native",
+    0.068
+   ],
+   [
+    "native",
+    0.067
+   ],
+   [
+    "webgpu",
+    0.01
+   ],
+   [
+    "webgpu",
+    0.01
+   ],
+   [
+    "native",
+    0.068
+   ]
+  ]
+ },
+ {
+  "cell": "TTFT 1.5B @1024",
+  "valid": true,
+  "problems": [],
+  "voids_rerun": [],
+  "native_ttft_ms_median": 1041.7,
+  "webgpu_ttft_ms_median": 7811.0,
+  "fraction": {
+   "median": 0.1325,
+   "min": 0.1283,
+   "max": 0.1585,
+   "n": 4
+  },
+  "prompt_tokens": [
+   1052
+  ],
+  "repeat_over_fresh": [
+   [
+    "native",
+    0.044
+   ],
+   [
+    "webgpu",
+    0.005
+   ],
+   [
+    "webgpu",
+    0.006
+   ],
+   [
+    "native",
+    0.043
+   ],
+   [
+    "native",
+    0.045
+   ],
+   [
+    "webgpu",
+    0.005
+   ],
+   [
+    "webgpu",
+    0.005
+   ],
+   [
+    "native",
+    0.049
+   ]
+  ]
+ }
+]

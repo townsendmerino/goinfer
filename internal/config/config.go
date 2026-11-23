@@ -266,6 +266,7 @@ var Settings = []Setting{
 	{Name: "ResidentKVSlotsDefault", Option: "ResidentKVSlotsDefault", Class: Internal, Reason: "serve sets it when --kv-sessions was not given"},
 	{Name: "ResidentRecurrentStepDefault", Option: "ResidentRecurrentStepDefault", Class: Internal, Reason: "serve sets it when --recurrent-step was not given, so a backend that grants one KV slot leaves the step out"},
 	{Name: "ResidentGemma4StepDefault", Option: "ResidentGemma4StepDefault", Class: Internal, Reason: "serve sets it when --gemma4-step was not given, so a backend that grants one KV slot leaves the step out"},
+	{Name: "FlashDecodeHD96Default", Option: "FlashDecodeHD96Default", Class: Internal, Reason: "chat and serve set it when --flash-decode-hd96 was not given, so CUDA takes the hd-96 lane only at a context of at most 4096"},
 	{Name: "EmbedInt4Default", Option: "EmbedInt4Default", Class: Internal, Reason: "chat and serve set it when --embed-int4 was not given, so the model's size chooses the head (decoder.EmbedInt4For)"},
 	{Name: "ExtraResidentBytes", Option: "ExtraResidentBytes", Class: Internal, Reason: "serve prices a --drafter's weights into it"},
 	{Name: "ExtraResidentKVPerPosition", Option: "ExtraResidentKVPerPosition", Class: Internal, Reason: "serve prices a --drafter's KV rate into it"},
