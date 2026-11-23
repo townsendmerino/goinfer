@@ -118,3 +118,12 @@ roughly 30–45 min under the exclusive lock. Gate 3 about 15 min. By day; nothi
 - **Bytes.** With the option off, none. With it on, the resident's partial buffer (32 heads × 98 floats × 32 splits × 4 B = 401 KB) and
   the batched step's per-row copy (up to 8 rows, 3.2 MB), which the step's scratch reserve prices into the fit check. The longest
   context that fits does not move: Phi-3 mini's window is 4,096 positions, and both arms plan it.
+
+## After the merge of origin/main, 2026-11-23 09:45 PST: the Metal lane stays opt-in under CUDA's new default
+
+#1241 (Francis, 2026-11-23) made CUDA's hd-96 lane the default at a context of at most 4,096: serve and goinfer-chat now set
+`FlashDecodeHD96` with `FlashDecodeHD96Default` when the flag is not given. Read alone, that would have turned this lane on by default
+on Metal, a default no gate here decided. Metal now takes it only when the flag is given (`hd96Chosen`). Checked on the Mac at
+`764bc044c` ([`post-merge/checks.log`](post-merge/checks.log)): `TestFlashDecodeHD96_metalSelection` passes its not-given, chosen and
+caller's-default cases, and a served Phi-3 request at depth 2,048 logs no hd-96 `attention_fa` dispatch without the flag and 160 with
+`-flash-decode-hd96`. The gate readings above are unchanged: both gate-3 arms passed the flag explicitly.
