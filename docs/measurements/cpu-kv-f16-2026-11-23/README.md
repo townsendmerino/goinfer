@@ -69,3 +69,24 @@ block 1's A 9.018, B 8.046, B 8.102, A 9.037, and block 2's first A 9.014) are *
 cell as its own same-session A B B A comparison once the lock queue drains, by day and done before 21:30, or tomorrow by day if it cannot be.
 Pausing between models changes no registered rule: each model's comparison is self-contained (its own pairs, its own bar), and no cell of
 one model is paired with a cell of the other.
+
+## Amendment: Phi-3 not run (Francis, 2026-11-23, relayed by the coordinator at 10:39 PST; the relay was stamped ~11:00), written 10:40 PST before any further run
+
+Francis chose option (a). **Phi-3 mini's half is not run, speed or fidelity.** The reason is the mechanism in the running notes: CPU
+single-token decode on an f16 cache widens each layer's whole history into f32 scratch on one goroutine every token
+(`KVCache.dequantGlobalLayer`), about 10 bytes moved per element against f32's 4, so f16 cannot win on CPU decode at any depth on this read
+path. The five Phi-3 cells that ran before the pause stay set aside. **`auto` stays f32 on the CPU.** What still runs from this
+registration: the 0.5B's fidelity gate (`TestCPUKVF16GateVsReference`, cell `Q05:3900`, bars and preconditions as above), so the record
+holds f16's fidelity for the follow-on below.
+
+## Profile: attention's share of CPU decode at depth 3,900 (measure-first gate), registered 10:40 PST before the run
+
+Francis, same decision: before building a fused f16 read into CPU attention, measure whether attention is enough of decode to be worth it.
+- **Instrument:** `TestCPUAttnShareProbe` (`decoder/`): Phi-3 mini q4k on the CPU, the current f32 KV path (`auto`), prefilled to 3,900 by
+  the benchmark's batched path, then 32 greedy decode tokens with the CPU cost counters on. **Share** = the `attention` operation's time
+  (the q·k and p·v loops over the cache and softmax) ÷ the decode wall time.
+- **One run, under the exclusive lock**, load settled under 1.0 at its start, start load and memory recorded. Vacuity: the report must
+  hold a timed attention operation.
+- **Kill:** share under 25%: stop, record it, build nothing. Share 25% or more: build the fused f16 read (attention reads the f16 rows in
+  place inside the parallel head workers; aikit fused f16 dot and axpy kernels on amd64 and arm64 with scalar fallbacks), under its own
+  registration, committed before any timed run.
