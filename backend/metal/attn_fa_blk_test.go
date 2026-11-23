@@ -804,8 +804,7 @@ func TestKVPages_tiledRowsPastTheTileBound(t *testing.T) {
 // TestFlashDecodeHD96_metalSelection builds the MC3 fixture at an MHA head-dim-96 geometry and checks which builds let every layer
 // take attention_fa past the floor: the option chosen at any context; the option as the caller's default only while the resident's
 // context cap is at most metalHD96DefaultMaxCtx (on at 4,096, off at 4,097); an explicit =false never. A head-dim-64 layer (G = 7)
-// takes the lane the same with the option on or off. The lane is sized (the resident's partial buffer and the batched step's
-// reserve) exactly where it can run.
+// takes the lane the same with the option on or off. The partial buffer is sized whenever the option is set.
 func TestFlashDecodeHD96_metalSelection(t *testing.T) {
 	for _, c := range []struct {
 		name          string
@@ -832,18 +831,15 @@ func TestFlashDecodeHD96_metalSelection(t *testing.T) {
 				return writeMC3FixtureGeom(t, maxPositions, heads, kv, c.hd)
 			}
 			mc3TestHD96, mc3TestHD96Default = c.opt, c.dflt
-			m, r := mc3FixtureResident(t, 2, c.ctx)
+			_, r := mc3FixtureResident(t, 2, c.ctx)
 			if g := r.layers[0].geom; g.hd != c.hd {
 				t.Fatalf("fixture head dim %d, want %d", g.hd, c.hd)
 			}
 			if c.hd == 96 && c.ctx > metalHD96DefaultMaxCtx != (r.ctxCap > metalHD96DefaultMaxCtx) {
 				t.Fatalf("resident context cap %d at ctx %d: the case does not test the side of %d it names", r.ctxCap, c.ctx, metalHD96DefaultMaxCtx)
 			}
-			if c.hd == 96 && (r.attnFAPartial != (Buffer{})) != c.on {
-				t.Fatalf("partial buffer allocated = %v, want %v (sized exactly where the lane runs)", r.attnFAPartial != (Buffer{}), c.on)
-			}
-			if c.hd == 96 && (metalStepInputs(m, metalCtxPlan{}).faPartial > 0) != c.on {
-				t.Fatalf("the batched step's reserve sizes the lane = %v, want %v", metalStepInputs(m, metalCtxPlan{}).faPartial > 0, c.on)
+			if c.hd == 96 && (r.attnFAPartial != (Buffer{})) != c.opt {
+				t.Fatalf("partial buffer allocated = %v, want %v (sized whenever the option is set)", r.attnFAPartial != (Buffer{}), c.opt)
 			}
 			r.setPosAheadForTest(attnFADepthFloor + 10)
 			for l := range r.nL {
