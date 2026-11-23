@@ -13,13 +13,21 @@ three void attempts (swap grew by 4-8 kB during the cell) re-ran in place and ar
 
 | block | head ms | base ms | base ÷ head |
 |---|---|---|---|
-| 0 | 17,818 | 26,121 | 1.466 |
+| 0 | ~~17,818~~ | ~~26,121~~ | **VOID**, re-run pending |
 | 1 | 17,822 | 25,800 | 1.448 |
 | 2 | 17,802 | 25,805 | 1.450 |
 | 3 | 17,853 | 25,734 | 1.441 |
 
-Median pair ratio 1.449, min 1.441: **no regression** (bar 0.8). The resident's prompt runs token by token (the batched
-prefill takes no per-32 scales) and is still 1.45× faster to first token than the CPU path it replaces.
+**Block 0 is void.** Another session ran a 2-second `go` command on nobara without the shared timing lock at
+10:40:23-10:40:25 PST (reported by the coordinator, 14:00). Block 0's base cell (its second attempt, started 10:37:21;
+the next cell's line puts its end near 10:42:15) spans that window; no other cell does (block 0's head cell ended
+before 10:29:58, block 1's base began 10:44:30). The whole pair is voided, the head cell with it, so the re-run stays a
+same-session pair; both rows are marked `"valid": false` with the reason in `ttft.json`, the file as it was is kept
+beside it, and block 0 re-runs in place (head, then base) in nobara's afternoon queue.
+
+The three valid pairs read 1.441-1.450 (median 1.448): no regression so far against the 0.8 bar; the verdict waits for
+block 0's re-run. The resident's prompt runs token by token (the batched prefill takes no per-32 scales) and is about
+1.45× faster to first token than the CPU path it replaces.
 
 ## Decode @128
 
