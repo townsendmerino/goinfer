@@ -113,8 +113,8 @@ The 3,900-token cell read the same, to 0.2 ms of attention, in its `-ctx 8192` l
   no mask arithmetic on interior tiles) were not in this item and are not closed by it.
 
 **For scale, as arithmetic and not a measurement:** if a prefetch removed every load-stall cycle and none of it came back as
-another stall, attention would shrink by at most about 24%. That is about 25 ms, or 3.8%, of the 659 ms prefill at f32 and
-3,900 tokens. At 8,192 tokens the same bound is about 96 ms, or 6.3%, of 1,535 ms. Even the 3,900-token ceiling is below
+another stall, attention would shrink by at most about 24%. That is about 25 ms, or 3.7%, of the 659 ms prefill at f32 and
+3,900 tokens. At 8,192 tokens the same bound is about 96 ms, or 6.2%, of 1,535 ms. Even the 3,900-token ceiling is below
 the brief's 1.05× ship bar.
 
 **What moved since the survey:** KS-B2's vector loads cut load instructions 3.6× and load stalls from 59.7% to 23.6%. KS-B8's
