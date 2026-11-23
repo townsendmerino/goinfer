@@ -234,9 +234,8 @@ var admissionGolden = map[string][]string{
 	"granitemoehybrid": {"webgpu"},                  // feature-admitted on WebGPU; Metal's and CUDA's tables have no residual scale (residual_multiplier); the runner-shape bring-up gate keeps it on the CPU everywhere (hardware matrix)
 	"kimi_k2":          {"cuda", "metal", "webgpu"}, // feature-admitted; the 384-expert router cap keeps it off Metal (hardware matrix)
 	"bailing_hybrid":   {},                          // FeatKDA undeclared everywhere -- new this pass
-	// GLM-OCR: cuda (cuda.TestGlmOcrResidentParityCUDA) and metal (metal.TestGlmOcrResidentParityMetal), which have pairwise
-	// rope kernels; WebGPU has only NeoX rope kernels and declines (FeatPairwiseRoPE + FeatPairwiseMRoPE). Admitted with the
-	// NeoX kernels it read resident-vs-CPU cosine -0.34 on glm-ocr-tiny.
+	// GLM-OCR: every backend has pairwise rope kernels (cuda.TestGlmOcrResidentParityCUDA, metal.TestGlmOcrResidentParityMetal,
+	// gpu.TestGlmOcrResidentParityWebGPU). On NeoX kernels it read resident-vs-CPU cosine -0.34 on glm-ocr-tiny.
 	"glm_ocr":      {"cuda", "metal", "webgpu"},
 	"glm_ocr_text": {"cuda", "metal", "webgpu"},
 	"llama":        {"cuda", "metal", "webgpu"},
