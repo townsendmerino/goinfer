@@ -34,7 +34,7 @@ afterwards (never committed there), run by `instruments/ap0.sh` under the timing
 2. The decomposition at K = 3,900 (default context) and at 8,192 (`-ctx 8192`), f32 and f16: attention's share of the
    profiled category sum, and beside it attention over the unprofiled wall.
 
-**Amended 2026-11-23 09:30, before any run** (the first launch was stopped while it waited for the lock; nothing had
+**Amended 2026-11-23 09:02 PST, before any run** (the first launch was stopped while it waited for the lock; nothing had
 built or run): KS-B8 made 2,048-row passes the default where scratch allows, so the survey's `--launch-skip 168` (the
 seventh 512-row pass) names a pass that no longer exists at the default width. The instrument now takes the pass width
 from `GOINFER_AP_CHUNK` (the `GOINFER_PREFILL_CHUNK` knob on the loaded model), and ncu reads two passes a KV type:
