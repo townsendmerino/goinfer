@@ -8,11 +8,16 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/testgate"
+	"github.com/townsendmerino/goinfer/internal/vision"
+	"github.com/townsendmerino/goinfer/multimodal"
 )
 
 // TestForwardMRoPE_constantShiftInvariance is the WebGPU twin of
@@ -329,5 +334,103 @@ func TestGlmOcrResidentParityWebGPU(t *testing.T) {
 		if w.cos >= cosBar {
 			t.Errorf("the gate is BLIND on %q: with the NeoX kernels it still reads cosine %.6f >= %.3f", name, w.cos, cosBar)
 		}
+	}
+}
+
+// TestGlmOcrWebGPUResidentRealImage is CUDA's TestGlmOcrCUDAResidentRealImage, its whole-turn half, on WebGPU: the real
+// GLM-OCR checkpoint at int4 on both arms, a rendered page through the real tower, 64 greedy tokens through GenerateQwenVL
+// on the resident and on the CPU. The image prefill is the CPU's, uploaded (the resident m-RoPE prefill declines on a
+// pairwise model), and every token after it decodes on the resident through the pairwise twins. The bar is CUDA's: the
+// two arms' tokens are identical.
+//
+//	GOINFER_HEAVY_TESTS=1 GOINFER_GLM_OCR=~/models/glm-ocr go test -tags 'gpu goinfer_testhooks' ./backend/webgpu/ \
+//	  -run TestGlmOcrWebGPUResidentRealImage -v -timeout 30m
+func TestGlmOcrWebGPUResidentRealImage(t *testing.T) {
+	testgate.RequireHeavy(t)
+	ckpt := decoder.AssetPathForTest(t, "GOINFER_GLM_OCR")
+	if c, err := New(); err != nil {
+		t.Skipf("no webgpu: %v", err)
+	} else {
+		c.Close()
+	}
+	pp, err := multimodal.LoadGlmOcrPreprocessConfig(ckpt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enc, err := vision.LoadGlmOcrVisionEncoder(ckpt, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const ctxLen, imageToken, merge = 4096, 59280, 2
+	mg, err := decoder.Load(ckpt, decoder.Options{Backend: "webgpu", Quant: "int4", ResidentContext: ctxLen})
+	if err != nil {
+		t.Fatalf("load webgpu: %v", err)
+	}
+	defer mg.Close()
+	if rd, ok := mg.ResidentForwardForTest().(*residentDecoder); !ok || !rd.rm.Pairwise {
+		t.Fatalf("glm_ocr is not resident with the pairwise twins: %s", mg.ResidentDecline())
+	}
+	t.Logf("WebGPU resident: %s (cap %d)", mg.DecodePath(), mg.ResidentContextCap())
+	mcpu, err := decoder.Load(ckpt, decoder.Options{Backend: "cpu", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load cpu: %v", err)
+	}
+	defer mcpu.Close()
+	for _, name := range []string{"invoice", "table", "formula"} {
+		t.Run(name, func(t *testing.T) {
+			var g struct {
+				InputIDs   []int `json:"input_ids"`
+				ImageStart int   `json:"image_token_start"`
+				NImgTokens int   `json:"n_image_tokens"`
+				HFTokens   []int `json:"hf_tokens"`
+				NNew       int   `json:"n_new"`
+			}
+			if err := decoder.ReadGoldenJSONForTest(filepath.Join("../../testdata/glm_ocr/golden_"+name+".json.gz"), &g); err != nil {
+				t.Fatal(err)
+			}
+			if len(g.InputIDs)+g.NNew > ctxLen {
+				t.Skipf("%d prompt tokens + %d new do not fit the %d-token context this test runs at", len(g.InputIDs), g.NNew, ctxLen)
+			}
+			png, err := os.ReadFile(filepath.Join("../../testdata/glm_ocr", name+".png"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			pv, grid, err := multimodal.QwenPreprocess(png, pp)
+			if err != nil {
+				t.Fatal(err)
+			}
+			feats, err := enc.Forward(pv, [][3]int{grid})
+			if err != nil {
+				t.Fatal(err)
+			}
+			features := func() ([]float32, error) { return feats, nil }
+			run := func(m *decoder.Model, label string) []int {
+				stream, gen := m.GenerateQwenVL(context.Background(), g.InputIDs, g.ImageStart, g.NImgTokens, 0, features, [][3]int{grid}, merge, imageToken, g.NNew, decoder.SamplingParams{Temperature: 0})
+				var out []int
+				for id := range stream {
+					out = append(out, id)
+				}
+				if err := gen.Err(); err != nil {
+					t.Fatalf("%s: %v", label, err)
+				}
+				if gen.ImgPrefillResident {
+					t.Errorf("%s: the image prefill ran resident; on a pairwise model it must be the CPU's, uploaded", label)
+				}
+				return out
+			}
+			res, cpu := run(mg, "resident"), run(mcpu, "cpu")
+			first := -1
+			for i := 0; i < max(len(res), len(cpu)); i++ {
+				if i >= len(res) || i >= len(cpu) || res[i] != cpu[i] {
+					first = i
+					break
+				}
+			}
+			t.Logf("greedy %d tokens: resident vs CPU int4 first divergence %d (-1: identical); HF f32 tokens equal to the resident's: %v",
+				g.NNew, first, slices.Equal(res, g.HFTokens))
+			if first >= 0 {
+				t.Errorf("resident and CPU int4 greedy tokens diverge at step %d:\n resident %v\n cpu      %v", first, res, cpu)
+			}
+		})
 	}
 }
