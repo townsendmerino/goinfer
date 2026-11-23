@@ -28,7 +28,8 @@ import (
 //
 // GPTOSS_PF_MODE=fit prints the load's fit plan (FitQuery) and the process's resident memory after the load. GPTOSS_PF_MODE=fidelity scores B against E over GPTOSS_PF_N prompts of prompt set A at each depth, teacher-forced on E's greedy
 // continuation (gptossPFPositions positions). GPTOSS_PF_MODE=ttft times S, B and E as S B E E B S per block over GPTOSS_PF_BLOCKS
-// blocks at each depth (block b uses prompt b), and checks E against S on every S cell's prompt; a cell starting above load 8.0 or under
+// blocks at each depth (GPTOSS_PF_BLOCKS_AT_3900 at K >= 3,900; block b uses prompt b), each cell after the load settles under 4.0,
+// and checks E against S on every S cell's prompt; a cell starting above load 8.0 or under
 // GPTOSS_PF_MIN_AVAIL_MIB available is VOID and recorded as such. Records go to GPTOSS_PF_OUT. A measurement tool: it skips unless
 // GPTOSS_PF_MODEL is set.
 func TestGptOssCPUPrefillGate(t *testing.T) {
@@ -47,6 +48,14 @@ func TestGptOssCPUPrefillGate(t *testing.T) {
 	n := gptossPFInts(t, "GPTOSS_PF_N", "8")[0]
 	blocks := gptossPFInts(t, "GPTOSS_PF_BLOCKS", "2")[0]
 	minAvail := gptossPFInts(t, "GPTOSS_PF_MIN_AVAIL_MIB", "35000")[0] // the registered void bar: the load's need plus 2 GB
+	// GPTOSS_PF_BLOCKS_AT_3900 caps the blocks at K >= 3,900, where a sequential cell runs about 20 minutes (the amended size).
+	deepBlocks := gptossPFInts(t, "GPTOSS_PF_BLOCKS_AT_3900", strconv.Itoa(blocks))[0]
+	blocksAt := func(k int) int {
+		if k >= 3900 {
+			return min(blocks, deepBlocks)
+		}
+		return blocks
+	}
 	start := time.Now()
 	logf, err := os.OpenFile(filepath.Join(out, mode+".log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
@@ -164,11 +173,15 @@ func TestGptOssCPUPrefillGate(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer f.Close()
-		fmt.Fprintln(f, "start\tdepth\tblock\tcell\tarm\tload1\tmemavail_mib\tttft_s\theap_peak_mib\te_equals_s")
+		fmt.Fprintln(f, "start\tdepth\tblock\tcell\tarm\tsettle_s\tload1\tmemavail_mib\tttft_s\theap_peak_mib\te_equals_s")
 		for _, k := range depths {
 			for b := range blocks {
+				if b >= blocksAt(k) {
+					break
+				}
 				p := ids(b, k)
 				for c, arm := range "SBEEBS" { // pairs S-B at cells (1,2), (5,6) and S-E at (1,3), (4,6)
+					settle := gptossPFSettle(4.0, 10*time.Minute) // the previous cell's own threads, still in the load average
 					l1, avail := gptossPFHostState()
 					st := time.Now().Format(time.RFC3339)
 					void := l1 > 8.0 || avail < minAvail
@@ -187,7 +200,7 @@ func TestGptOssCPUPrefillGate(t *testing.T) {
 					if !void {
 						ttft = fmt.Sprintf("%.2f", wall.Seconds())
 					}
-					fmt.Fprintf(f, "%s\t%d\t%d\t%d\t%c\t%.2f\t%d\t%s\t%d\t%s\n", st, k, b+1, c+1, arm, l1, avail, ttft, peak>>20, identical)
+					fmt.Fprintf(f, "%s\t%d\t%d\t%d\t%c\t%.0f\t%.2f\t%d\t%s\t%d\t%s\n", st, k, b+1, c+1, arm, settle.Seconds(), l1, avail, ttft, peak>>20, identical)
 					say("ttft K=%d block %d cell %d %c: load %.2f avail %d MiB -> %s s (heap peak %d MiB, E==S %s)", k, b+1, c+1, arm, l1, avail, ttft, peak>>20, identical)
 				}
 			}
@@ -277,6 +290,18 @@ func gptossPFTimed(t *testing.T, m *Model, p []int, arm rune) (time.Duration, ui
 		t.Fatal(err)
 	}
 	return wall, peak.Load(), append([]float32(nil), lg...)
+}
+
+// gptossPFSettle waits, up to max, for the 1-minute load average to fall under below, and returns how long it waited.
+func gptossPFSettle(below float64, max time.Duration) time.Duration {
+	t0 := time.Now()
+	for time.Since(t0) < max {
+		if l1, _ := gptossPFHostState(); l1 < below {
+			break
+		}
+		time.Sleep(5 * time.Second)
+	}
+	return time.Since(t0)
 }
 
 // gptossPFHostState is the 1-minute load average and MemAvailable (MiB) at a cell's start.

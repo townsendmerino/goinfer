@@ -78,3 +78,17 @@ and flips argmaxes outside the near-tie band. The mechanism is the one `attendBa
 reassociation flips a top-k expert at a near-tie and cascades through 24 MoE layers); the tiny fixture shows no difference at all at
 512 and 1,024 rows, so a tier-0 test cannot see it. By the registered outcomes the live option is batched with exact attention (arm E,
 bit-identical to the sequential path), which G4 times since its amendment.
+
+## Amendment 2, 2026-11-23 13:24 PST, before any valid B or E reading
+
+G4's first attempt (13:14–13:19 PST, records `g4-attempt1/`) read one cell, S at K = 1,024 on prompt 1: **246.2 s** (0.24 s a token,
+not the 0.1 s the cost estimate assumed), with E's first logits equal to S's (a G2 reading, PASS). Every later cell started at load
+9.26 and is VOID: the harness had no settle wait, so the 1-minute average still carried the previous cell's own 16 threads on an
+otherwise idle box. Two changes:
+
+- **Settle:** each cell waits (up to 10 min) for the 1-minute load to fall under 4.0 before its start state is read; the void rule
+  (above 8.0, or under 31,107 MiB available) is unchanged.
+- **Size:** at 0.24 s a token an S cell at K = 3,900 runs about 20 minutes, so the registered 2 blocks there (4 S cells) put G4 near 3
+  hours, past the day's bound, and nobara's night is taken (C12 from 22:00). **K = 3,900 runs 1 block** (S B E E B S: one S–B pair
+  and one S–E pair in each order); K = 1,024 keeps 2 blocks. The bars are unchanged and are read on the pairs that run. **Cost:** about
+  95 minutes.
