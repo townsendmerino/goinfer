@@ -1770,7 +1770,7 @@ side. A ratio has two operands and this page has been bitten before by moving on
 quotient.
 
 **Shallow backends at depth 128** (Phase A, same run, deep-ctx protocol): goinfer CPU 22.4, Ollama
-CPU 57.4; goinfer CUDA **339.6**, Ollama CUDA 258.3 (goinfer 1.31×); goinfer WebGPU 126.9. The CUDA
+CPU 57.4; goinfer CUDA **339.6**, Ollama CUDA 258.3 (goinfer 1.31×); goinfer WebGPU 126.9 (the 2026-08-26 build; superseded by [B8.1](#b81--goinfers-webgpu-against-its-own-native-backends-wg0-2026-11-2023)). The CUDA
 row is consistent with §B8's 332.7 at the same depth on the same stack.
 
 **Scope kept as the original set it.** The 1.5B/32000 cell is still skipped — 45–70 minutes for a
@@ -1869,16 +1869,15 @@ backend rather than by model).
 > remaining gap is achieved memory bandwidth (goinfer 17–23 GB/s streaming *fewer* bytes than Ollama's 26–28, against a measured ~30 GB/s
 > ceiling), not bytes or format. The 2026-09-22 numbers in the callout above are kept as the dated record of the build before this change.
 
-| model | goinfer CPU (tok/s) | Ollama CPU (tok/s) | goinfer CUDA (tok/s) | Ollama CUDA (tok/s) | goinfer WebGPU ⁱ (tok/s) |
-|---|---|---|---|---|---|
-| 0.5B | **46.9** (2026-09-23) | 57.1 ±0.0 | **332.7** ±4.9 | 268.7 ±0.9 | 127.6 ±1.0 |
-| 1.5B | **19.4** (2026-09-23) | 23.8 ±0.0 | **220.8** ±1.0 | 195.8 ±0.1 | 90.1 ±0.4 |
-| 7B | **5.0** (2026-09-23) | 6.0 ±0.0 | 73.1 ±0.0 | 72.8 ±0.1 | 46.1 ±0.0 |
+| model | goinfer CPU (tok/s) | Ollama CPU (tok/s) | goinfer CUDA (tok/s) | Ollama CUDA (tok/s) |
+|---|---|---|---|---|
+| 0.5B | **46.9** (2026-09-23) | 57.1 ±0.0 | **332.7** ±4.9 | 268.7 ±0.9 |
+| 1.5B | **19.4** (2026-09-23) | 23.8 ±0.0 | **220.8** ±1.0 | 195.8 ±0.1 |
+| 7B | **5.0** (2026-09-23) | 6.0 ±0.0 | 73.1 ±0.0 | 72.8 ±0.1 |
 
-ⁱ **Cross-backend, not a peer cell.** Ollama has no WebGPU build, so this column has no counterpart
-and must never be presented as a like-for-like comparison. It is here to place goinfer's portable
-backend against its own native one: WebGPU runs at **38 / 41 / 63%** of goinfer's own CUDA at 0.5B /
-1.5B / 7B — the gap narrows as the model grows, which is what a dispatch-overhead story predicts.
+goinfer's WebGPU backend has no peer and no column here. It is read against goinfer's own CUDA and Metal in
+[B8.1](#b81--goinfers-webgpu-against-its-own-native-backends-wg0-2026-11-2023) below; the 2026-08-26 WebGPU column (127.6 / 90.1 / 46.1 tok/s
+and its "38 / 41 / 63%" footnote) is retired to [`legacy-benchmarks.md`](legacy-benchmarks.md), verbatim.
 
 #### The peer is the control, and it held to <0.5%
 
@@ -1908,6 +1907,58 @@ goinfer's own cells moved **+0.7% to +4.3%** against 2026-08-09 at every depth e
 *below* 2048, 243.2 vs 244.0, which a depth curve should not do), and the binaries differ — so the
 honest reading is that the old 512 cells were suspect, not that something got 25% faster. **The
 comparison in this subsection is cross-session and indicative; the anchor is the table above it.**
+
+### B8.1 — goinfer's WebGPU against its own native backends (WG0, 2026-11-20/23)
+
+**Cross-backend, never a peer cell:** Ollama has no WebGPU build, so nothing here compares goinfer with another engine. Each
+fraction is goinfer's WebGPU backend divided by goinfer's own native backend on the same box, same build, same session,
+per A B B A pair; median of 4 pairs, min–max beside it. TTFT fractions are the native TTFT ÷ the WebGPU TTFT, so every
+column reads as WebGPU's share of the native speed. Full tables, per-pair values, the prediction it was graded against and
+the raw files: [`measurements/webgpu-baseline-2026-11/README.md`](measurements/webgpu-baseline-2026-11/README.md).
+
+**nobara-pc, 2026-11-20 12:09–12:43 PST** (WebGPU over Vulkan against CUDA). goinfer `018cbe74c`, aikit v1.76.0 · RTX 2070 SUPER,
+driver 595.112.07, Ryzen 7 3700X, Linux 7.3.0-202.nobara.fc44 · qwen2.5-coder 0.5B / 1.5B and qwen2.5-7b-instruct, Q4_K_M GGUF from
+`~/models` on NVMe, `-quant int4` on both arms, ctx 4096, greedy, seed 1 · one exclusive timing-lock session, load settled under
+0.8 before each step, page cache evicted before each cell, the desktop compositor holding 19 MiB of the card · both arms on their resident decode path.
+
+| cell | CUDA | WebGPU | WebGPU ÷ CUDA |
+|---|---|---|---|
+| decode 0.5B @128 | 521.2 tok/s | 236.6 tok/s | **0.454** (0.452–0.456) |
+| decode 1.5B @128 | 277.1 tok/s | 141.9 tok/s | **0.512** (0.511–0.513) |
+| decode 7B @128 | 86.1 tok/s | 64.2 tok/s | **0.745** (0.745–0.746) |
+| decode 0.5B @2048 | 447.2 tok/s | 58.0 tok/s | **0.130** (0.129–0.130) |
+| decode 1.5B @2048 | 250.1 tok/s | 42.3 tok/s | **0.169** (0.169–0.169) |
+| decode 7B @2048 | 79.2 tok/s | 30.9 tok/s | **0.389** (0.388–0.390) |
+| TTFT 0.5B, 1,052-token prompt | 62.3 ms | 628.1 ms | **0.099** (0.098–0.101) |
+| TTFT 1.5B, 1,052-token prompt | 168.9 ms | 1,433.5 ms | **0.118** (0.116–0.120) |
+| TTFT 7B, 1,052-token prompt | 760.5 ms | 4,234.4 ms | **0.180** (0.179–0.180) |
+
+**MacBook Pro M1 Pro (14-core GPU), 2026-11-23 08:18–09:01 PST** (WebGPU over Metal against goinfer's Metal backend). goinfer `018cbe74c`,
+aikit v1.76.0, macOS 26.7.3 · qwen2.5-coder 0.5B / 1.5B Q4_K_M GGUF from `~/models` on the internal SSD, `-quant int4` on both arms,
+ctx 4096, greedy, seed 1 · one exclusive timing-lock session with Francis's apps open (the idle gate waited up to 208 s before a cell;
+decode cells started at load 1.3–1.9); on battery for part of it and on AC for the rest, read for a power effect and none found (the record's
+§ "Power source"). The 7B was not run on the Mac.
+
+| cell | Metal | WebGPU | WebGPU ÷ Metal |
+|---|---|---|---|
+| decode 0.5B @128 | 209.8 tok/s | 61.2 tok/s | **0.292** (0.289–0.293) |
+| decode 1.5B @128 | 99.2 tok/s | 36.8 tok/s | **0.371** (0.370–0.377) |
+| decode 0.5B @2048 | 174.8 tok/s | 27.8 tok/s | **0.159** (0.157–0.159) |
+| decode 1.5B @2048 | 91.1 tok/s | 18.2 tok/s | **0.201** (0.195–0.206) |
+| TTFT 0.5B, 1,052-token prompt | 289.1 ms | 2,739.9 ms | **0.106** (0.105–0.106) |
+| TTFT 1.5B, 1,052-token prompt | 1,041.7 ms | 7,811.0 ms | **0.133** (0.128–0.159) |
+
+What the numbers say, and what they do not:
+- At depth 128 the gap narrows as the model grows on nobara (0.45 / 0.51 / 0.75), which fits a dispatch-overhead story; this
+  run did not test that story. At depth 2048 the gap is far wider at every size on both boxes: WebGPU keeps 13 / 17 / 39% of CUDA's
+  rate on nobara and 16 / 20% of Metal's on the Mac. WebGPU loses 52–75% of its depth-128 rate by 2048 on nobara (55% / 51% on the Mac); CUDA loses 8–14% (Metal 17% / 8%).
+  Where that token goes is not established (the profile is WG1's open question).
+- The nobara depth-128 fractions are higher than the retired 38 / 41 / 63%. Both arms moved between builds and sessions, so that is not
+  a measured speedup of WebGPU (`measurements/noise-registry.md`, TE3).
+- The longest conversation that fits, from each server's banner: WebGPU's KV is f32 only and its cap is 16,384 positions; CUDA's default f16 KV and Metal
+  reach the model's 32,768-position window. On the 8 GB card the 7B plans 1 conversation on WebGPU where CUDA plans 4.
+- Not measured: WebGPU speed on any other GPU. The Intel Iris Plus 645 (Mesa Vulkan) ran correctness only, with no timing published
+  (`measurements/webgpu-intel-2026-11/README.md`); AMD and DX12 have not been run. No WebGPU-versus-peer comparison exists.
 
 ### B10 — decode-path decision matrix, re-measured (2026-09-02, goinfer `cd6895c2`)
 
@@ -2760,7 +2811,7 @@ longer have a block on this page; their full text is in
 
 | ID | what it was | status | current counterpart |
 |---|---|---|---|
-| **§B** | GPU residency vs native CUDA at equal quant (WebGPU int8 vs q8_0; the 60–70%-of-CUDA headline) | **RETIRED** 2026-08-27 — withdrawn, not corrected, not re-measured | none as a peer cell; §B8's backend table places goinfer's WebGPU against its own CUDA (38 / 41 / 63% at 0.5B / 1.5B / 7B) |
+| **§B** | GPU residency vs native CUDA at equal quant (WebGPU int8 vs q8_0; the 60–70%-of-CUDA headline) | **RETIRED** 2026-08-27 — withdrawn, not corrected, not re-measured | none as a peer cell; §B8.1 places goinfer's WebGPU against its own CUDA and Metal (WG0, 2026-11-20/23). The earlier 38 / 41 / 63% figure is retired to `legacy-benchmarks.md` |
 | **§B2** (historical rows) | peer tables against Ollama 0.5.7 and the 2026-08-04 v0.32.5 box; the batched-prefill chronology; the pre-re-anchor total-request-time crossover | superseded | §B8 (decode), §B2 above (prefill, 2026-09-01) |
 | **§B4** (595.58.03 record) | 16.98 tok/s @ 38 slots, 2026-08-02 | measured-but-unsafe; the configuration is no longer grantable | §B4.1 |
 | **§B5** | anchored re-measure 2026-08-09 vs Ollama v0.32.6, plus the v0.11.0 release qualification | superseded; the qualification was **RETIRED** rather than re-measured | §B5.1 (sampled, phi3-mini, gemma3-1b), §B8 (greedy) |
