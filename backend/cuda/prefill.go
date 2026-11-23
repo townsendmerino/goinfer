@@ -661,10 +661,9 @@ func (r *cudaResident) prefillFlagsDecline() error {
 	if !r.prefillReady {
 		return fmt.Errorf("cuda prefill: batched kernels unavailable: %w", errPrefillDeclined)
 	}
-	if r.actG32 {
-		// The batched quantizers and GEMMs read one activation scale per row; per-32 prompts take
-		// the sequential decode path, which runs the per-32 kernels.
-		return fmt.Errorf("cuda prefill: per-32 activation quantization has no batched kernels yet: %w", errPrefillDeclined)
+	if r.actG32 && !r.prefillG32Ready {
+		// The per-vector batched quantizers would write one scale a row where the per-32 GEMVs read 2·K/32.
+		return fmt.Errorf("cuda prefill: the per-32 batched kernels did not load: %w", errPrefillDeclined)
 	}
 	// MoE batches the attention half; its FFN runs row by row off the batched residual (prefillCore) and keeps decode's
 	// exact per-token expert sequence. The per-token debug seams would fire M times per layer in that row loop, so they
@@ -700,7 +699,7 @@ func (r *cudaResident) prefillFlagsDecline() error {
 		if Ly.vNorm && r.vNormUnit == (Buffer{}) {
 			return fmt.Errorf("cuda prefill: v_norm layer at %d but no v_norm unit weight: %w", l, errPrefillDeclined)
 		}
-		if k := nonBatchableKind(Ly); k != "" {
+		if k := nonBatchableKind(Ly, r.actG32); k != "" {
 			return fmt.Errorf("cuda prefill: %s weight at layer %d needs the sequential path: %w", k, l, errPrefillDeclined)
 		}
 	}
@@ -781,7 +780,7 @@ func (r *cudaResident) checkPrefillShmemImgBlocks(startPos, M int, blocks [][2]i
 // nonBatchableKind returns the weight kind of the layer's first projection the batched GEMVs cannot handle, or "" when
 // every projection is int4 or int8 (bGemvB: int4 uses gemv_w4a8_batched/_rn, int8 gemv_w8a8_batched; a uniform or mixed
 // int4/int8 bundle all batch). Naming the kind makes the startup message actionable.
-func nonBatchableKind(Ly *cudaLayer) string {
+func nonBatchableKind(Ly *cudaLayer, actG32 bool) string {
 	// A Mamba-2 mixer and a feed-forward-only block have no batched kernels: their prompts take the sequential path, named here
 	// and not left to the absent q/k/v weights reading as "absent/unquantized".
 	switch Ly.mixer {
@@ -813,14 +812,23 @@ func nonBatchableKind(Ly *cudaLayer) string {
 		ws = append(ws, Ly.g, Ly.u, Ly.d)
 	}
 	for _, w := range ws {
-		if w.kind != "int4" && w.kind != "int8" {
-			if w.kind == "" {
-				return "absent/unquantized"
-			}
+		if w.kind == "" {
+			return "absent/unquantized"
+		}
+		if !batchableKind(w.kind, actG32) {
 			return w.kind
 		}
 	}
 	return ""
+}
+
+// batchableKind reports whether bGemvRows has a batched GEMV for a weight of this kind: int4 and int8 under per-vector
+// activations, the q4k lane's Q4_K, Q5_K, Q6_K and int8 under per-32 (prefill_g32.cu has no int4 twin).
+func batchableKind(kind string, actG32 bool) bool {
+	if actG32 {
+		return kind == "q4k" || kind == "q5k" || kind == "q6k" || kind == "int8"
+	}
+	return kind == "int4" || kind == "int8"
 }
 
 // PrefillPath (decoder.PrefillPathReporter) answers at load, before a request is served, whether this model gets the
@@ -842,7 +850,10 @@ func (r *cudaResident) PrefillPath() (bool, string) {
 		}
 	}
 	if len(r.layers) > 0 {
-		if k := nonBatchableKind(&r.layers[0]); k != "" {
+		if k := nonBatchableKind(&r.layers[0], r.actG32); k != "" {
+			if r.actG32 {
+				return false, fmt.Sprintf("sequential — batched prefill under per-32 activations needs Q4_K, Q5_K, Q6_K or int8 projections (%s weights) (slower TTFT: one forward per prompt token)", k)
+			}
 			return false, fmt.Sprintf("sequential — batched prefill needs int4 or int8 projections (%s weights) — ~9× slower TTFT, 20× CPU on a 300-token prompt", k)
 		}
 	}
@@ -859,6 +870,9 @@ func (r *cudaResident) fusedAttnNote() string {
 	if r.eModel {
 		// prefillCore forces the exact kernels for an E-model at every length; saying "fused" here would be the untestable promise this note avoids.
 		return "; exact kernels (the fast levers are not fidelity-gated on Gemma 4 E-models)"
+	}
+	if r.actG32 {
+		return "; exact kernels (the fast levers are not fidelity-gated on per-32 activations)"
 	}
 	if !r.fastAttn {
 		return "; weight term: gemm_w4a8_mma (L3) where M>=" + strconv.Itoa(gemmMMAMinRows) +
@@ -993,13 +1007,16 @@ func (r *cudaResident) choosePassKernels(startPos, M, tail int, rows []stepRow) 
 		// real reading was clearly worse with them on), so such a pass runs the exact kernels, as the E-model does, until they
 		// have.
 		r.deepPlan != nil ||
+		// Per-32 activations (the q4k lane): the levers have no fidelity evidence on it, and on the exact kernels its pass is
+		// bit-identical to the sequential path (prefill_g32.cu).
+		r.actG32 ||
 		// a prompt with a layer on the row-batched attention past its bound (prefillPastBoundExact)
 		r.prefillPastBoundExact(r.passPromptLen)
 	if c := &r.stepChunk; rows != nil && c.rows > 0 {
 		// A step's prefill chunk: the floor is its prompt's, and its class is the one its own pass takes as a pass of an ordinary
 		// prompt (chunkOrdinary), so only the model-wide reasons above make it exact. The step's other rows stay exact.
 		r.passPromptLen = c.promptLen
-		c.exact = c.exact || r.recurrent() || r.eModel || r.deepPlan != nil || r.prefillPastBoundExact(r.passPromptLen)
+		c.exact = c.exact || r.recurrent() || r.eModel || r.deepPlan != nil || r.actG32 || r.prefillPastBoundExact(r.passPromptLen)
 	}
 }
 
@@ -1371,6 +1388,9 @@ func (r *cudaResident) aboveFastPrefillFloor() bool {
 // off, or neither kernel module loaded, in which case every selection site falls back to the exact path). GOINFER_CUDA_FAST_PREFILL_FLOOR=0 means "fast at any length", reported as 1: 0 is
 // the record's "never". The decoder uses it to decline reuse of a short prefix whose rows an exact-kernel request computed (decoder.declineShortLeadReuse).
 func (r *cudaResident) FastPrefillFloor() int {
+	if r.actG32 {
+		return 0 // choosePassKernels keeps every per-32 pass on the exact kernels
+	}
 	attn := r.fastAttn && (r.bAttnFused64 != (Pipeline{}) || r.bAttnFused128 != (Pipeline{}))
 	gemm := r.fastGemm && r.bGemmMMA != (Pipeline{})
 	if !attn && !gemm {
@@ -1451,13 +1471,16 @@ func (r *cudaResident) bGemvB(wt cudaWQ, a, as Buffer, bias KernelArg, dst Buffe
 		if e != nil || c.rows == M {
 			return e
 		}
-		return r.bGemvRows(wt, a.At(c.rows*wt.K), as.At(c.rows*4), bias, dst.At(c.rows*wt.N*4), M-c.rows, accum)
+		return r.bGemvRows(wt, a.At(c.rows*wt.K), as.At(c.rows*r.actScaleLen(wt.K)*4), bias, dst.At(c.rows*wt.N*4), M-c.rows, accum)
 	}
 	return r.bGemvRows(wt, a, as, bias, dst, M, accum)
 }
 
 // bGemvRows is bGemvB's launch over M rows in the class forceExactKernels and the pass allow.
 func (r *cudaResident) bGemvRows(wt cudaWQ, a, as Buffer, bias KernelArg, dst Buffer, M int, accum int32) error {
+	if r.actG32 {
+		return r.bGemvRowsG32(wt, a, as, bias, dst, M, accum)
+	}
 	switch wt.kind {
 	case "int4":
 		if r.useGemmMMA(wt.kind, wt.K, M) {
@@ -1484,4 +1507,26 @@ func (r *cudaResident) bGemvRows(wt cudaWQ, a, as Buffer, bias KernelArg, dst Bu
 	default:
 		return fmt.Errorf("cuda prefill: batched GEMV is int4/int8-only, got %q", wt.kind)
 	}
+}
+
+// bGemvRowsG32 is bGemvRows under per-32 activations: prefill_g32.cu's rows GEMV for the weight's kind, each output bit for bit
+// its decode kernel's (doG). a and as hold M activation rows of K/4 ints and actScaleLen(K) floats.
+func (r *cudaResident) bGemvRowsG32(wt cudaWQ, a, as Buffer, bias KernelArg, dst Buffer, M int, accum int32) error {
+	cfg := LaunchConfig{GridX: uint32(launchgeom.PrefillG32RowsGridX(wt.N)), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
+	var p Pipeline
+	switch wt.kind {
+	case "q4k":
+		p = r.bQ4KRows
+	case "q5k":
+		p = r.bQ5KRows
+	case "q6k":
+		p = r.bQ6KRows
+	case "int8":
+		return r.launch(r.bW8G32Rows, cfg, Arg(wt.W), Arg(a), Arg(wt.ws), Arg(as), bias,
+			gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/4)), gpu.ArgValue(int32(M)), Arg(dst), gpu.ArgValue(accum))
+	default:
+		return fmt.Errorf("cuda prefill: the per-32 batched GEMV takes q4k, q5k, q6k or int8, got %q", wt.kind)
+	}
+	return r.launch(p, cfg, Arg(wt.W), Arg(a), Arg(as), bias,
+		gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/256)), gpu.ArgValue(int32(M)), Arg(dst), gpu.ArgValue(accum))
 }
