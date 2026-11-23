@@ -91,3 +91,24 @@ the gate about 5 min under the exclusive lock. Gate 3 about 25 min in-process an
   −1.0), so close to the line. Paired wins are 7 of 10.
 - **(c) KL: PASS.** The ratio is 0.9529, under 1.10 and outside the 1.05–1.10 band.
 - **Verdict: PASSES.** Gate 3 runs next.
+
+## Gate 3, in-process half, 2026-11-22 19:06–19:55 PST: the direction resolves, faster at depth 3,900 and flat at 128
+
+- **Run.** [`run_gate3_inproc.py`](run_gate3_inproc.py) under the exclusive lock. One test binary from `29e674092`, with the f16-KV scratch
+  init. The arms:
+  - A: the lane off, `GOINFER_CUDA_FLASH_DECODE=0`;
+  - B: on, `=16` and `GOINFER_BENCH_FA_HD96=1`.
+
+  The design was A B B A × 5 blocks at depth 3,900, then at 128: 40 cells, none void. Each cell started under load 1.0 after its
+  settle; the highest start reading was 1.0, under the void rule's 8.0. Available memory was at least 61,373 MiB, and no foreign process
+  was present. Records: [`gate3/inproc-cells.tsv`](gate3/inproc-cells.tsv), `inproc-run.log`, `inproc-cell-logs.tar.gz`.
+
+| depth | pairs | B faster | median B ÷ A | range | A (lane off), tok/s | B (lane on), tok/s |
+|--:|--:|--:|--:|--:|---|---|
+| 3,900 | 10 | 10 / 10 | **1.1598** | 1.1555 – 1.1622 | 62.03 – 62.27 | 71.92 – 72.15 |
+| 128 | 10 | 3 / 10 | **0.9996** | 0.9992 – 1.0008 | 126.3 – 126.6 | 126.2 – 126.7 |
+
+- At 3,900 the token goes from 16.1 to 13.9 ms: the lane recovers 2.2 ms of the depth-dependent 8.2 ms. Split-KV recovered 0.79 ms there
+  (the split-KV record).
+- At 128 the lane does not engage (its floor is 2,048 attended keys), so 1.000 is the noise between two identical paths.
+- By the registration, the in-process result gives the direction; the served cell below decides SHIP.
