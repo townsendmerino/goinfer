@@ -36,3 +36,13 @@ held-out set B (K = 3,900, 64 positions × 10 prompts), each scored against the 
 
 **Cost:** speed 48 cells, about 50 s each plus about 30 s of settle, so about 65 min. Fidelity: the 0.5B's references about 10 min, the
 gate about 30 min for Phi-3 and 5 for the 0.5B. In all, about 2 h by day, finishing well before 21:30.
+
+## Running notes (not yet the result)
+
+- **Cost estimate was low** (written 2026-11-23 09:31 PST): each 3,900 cell pays its own batched prefill before its 32 timed tokens
+  (about 116 s on the 0.5B), so the speed half runs past its 65-minute estimate. The driver was made resumable (it skips cells it holds a
+  reading for) so the outer 150-minute timeout can be followed by a re-launch without re-running a cell. No cell, arm or bar changed.
+- **Mechanism, read from the code after the 0.5B's cells:** single-token decode on an f16 global layer goes through
+  `KVCache.dequantGlobalLayer`, which widens the layer's whole history into f32 scratch on one goroutine every token, and attention then
+  reads the f32 scratch (`decoder/program_cpu.go:attendToken`'s `cache.quant.widened()` case). Per element per token that is a 2-byte
+  read, a 4-byte write and a 4-byte read against f32's one 4-byte read, serial ahead of the parallel head workers.
