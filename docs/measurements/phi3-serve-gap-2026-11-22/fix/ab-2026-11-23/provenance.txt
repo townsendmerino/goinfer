@@ -1,0 +1,6 @@
+started: 2026-11-23 07:36:43 PST
+old: /home/francis/goinfer-bench/phi3-gap-run/bin/serve-cuda-896638446 sha256 c69859c6fdcd7a93
+new: /home/francis/goinfer-bench/k56-run/bin/serve-cuda-cda4facf4 sha256 94109e42493ee31f
+gpu: NVIDIA GeForce RTX 2070 SUPER, 595.112.07, 460 MiB
+load: 0.07 0.04 0.08 2/685 542303
+finished: 2026-11-23 07:39:29 PST rc=0
