@@ -45,3 +45,12 @@ Metal and the kernel is not merged. Gate 3 parks or regresses: not merged; the r
 
 **Cost:** gate 1 about 10 min on the Mac. Gate 2 about 20 sequential q4k prefills of 3,900 positions plus 1,280 decode steps,
 roughly 30–45 min under the exclusive lock. Gate 3 about 15 min. By day; nothing on the Mac past 21:00 PST.
+
+## Addendum 2026-11-23 08:45 PST, before any gate reading: gate 3's arm check and scripts
+
+- Metal has no per-op cost report, so CUDA's launch-count probe cannot run here. [`probe_lane_metal.py`](probe_lane_metal.py) takes
+  its place: each arm serves the depth-2,048 prompt with `GOINFER_ATTNFA_DEBUG=1`, and the lane arm must log `attention_fa` dispatches
+  at hd 96 while the exact arm logs none. The cell does not run otherwise.
+- [`run_gate3_served.sh`](run_gate3_served.sh) is CUDA's served script on Metal (macOS settle under load 2.0, the Mac's idle gate);
+  it grades with CUDA's [`grade_cell.py`](../fa-hd96-phi3-2026-11-22/grade_cell.py) unchanged.
+- Unchanged: the gates, cells and bars above.
