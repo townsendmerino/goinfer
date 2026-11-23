@@ -20,6 +20,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/townsendmerino/goinfer/decoder"
 )
 
 func apGate(t *testing.T) {
@@ -37,6 +39,14 @@ func apFlags() []string {
 		flags = append(flags, "-ctx", c)
 	}
 	return flags
+}
+
+// apChunk sets the prefill pass width from GOINFER_AP_CHUNK (the GOINFER_PREFILL_CHUNK knob on this model); unset, the build's
+// default width stands.
+func apChunk(t *testing.T, mc *decoder.Model) {
+	if v := os.Getenv("GOINFER_AP_CHUNK"); v != "" {
+		decoder.SetKnobEnvForTest(t, mc, "GOINFER_PREFILL_CHUNK", v)
+	}
 }
 
 func apEmbs(mc interface {
@@ -58,16 +68,17 @@ func TestKS_B2_prefillUnderNcu(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer mc.Close()
+	apChunk(t, mc)
 	rf := mustResident(t, mc)
 	_, _, _, _, _, _, vocab := mc.Dims()
 	n := 3900
 	embs := apEmbs(mc, vocab, n)
-	t.Logf("flags %v; pass rows %d, layers %d, kv f16 %v; reports %+v", apFlags(), rf.PrefillChunkRows(), len(rf.layers), rf.kvF16, mc.KVPrecisionReports())
+	t.Logf("flags %v; pass rows %d, layers %d, kv f16 %v; reports %+v", apFlags(), rf.prefillPassRows(), len(rf.layers), rf.kvF16, mc.KVPrecisionReports())
 	t0 := time.Now()
 	if _, err := rf.PrefillLast(context.Background(), embs, 0); err != nil {
 		t.Fatalf("prefill: %v", err)
 	}
-	t.Logf("prefill %d rows in %v", n, time.Since(t0))
+	t.Logf("prefill %d rows in %v; pass rows after %d", n, time.Since(t0), rf.prefillPassRows())
 }
 
 func TestAP_prefillDecompKV(t *testing.T) {
@@ -77,9 +88,10 @@ func TestAP_prefillDecompKV(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	defer mc.Close()
+	apChunk(t, mc)
 	rf := mustResident(t, mc)
 	_, _, _, _, _, _, vocab := mc.Dims()
-	fmt.Fprintf(os.Stderr, "[ap0] flags %v; pass rows %d, kv f16 %v; reports %+v; load1 %s\n", apFlags(), rf.PrefillChunkRows(), rf.kvF16, mc.KVPrecisionReports(), apLoad())
+	fmt.Fprintf(os.Stderr, "[ap0] flags %v; pass rows %d, kv f16 %v; reports %+v; load1 %s\n", apFlags(), rf.prefillPassRows(), rf.kvF16, mc.KVPrecisionReports(), apLoad())
 	runs := 3
 	depths := []int{3900}
 	if v := os.Getenv("GOINFER_DECOMP_K"); v != "" {

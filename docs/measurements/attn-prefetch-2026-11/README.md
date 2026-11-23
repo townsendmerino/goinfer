@@ -34,6 +34,18 @@ afterwards (never committed there), run by `instruments/ap0.sh` under the timing
 2. The decomposition at K = 3,900 (default context) and at 8,192 (`-ctx 8192`), f32 and f16: attention's share of the
    profiled category sum, and beside it attention over the unprofiled wall.
 
+**Amended 2026-11-23 09:30, before any run** (the first launch was stopped while it waited for the lock; nothing had
+built or run): KS-B8 made 2,048-row passes the default where scratch allows, so the survey's `--launch-skip 168` (the
+seventh 512-row pass) names a pass that no longer exists at the default width. The instrument now takes the pass width
+from `GOINFER_AP_CHUNK` (the `GOINFER_PREFILL_CHUNK` knob on the loaded model), and ncu reads two passes a KV type:
+- **the survey's pass:** 512-row passes, `--launch-skip 168 -c 4` (rows 3,072–3,583, grid 48), as on 2026-10-23;
+- **the served width:** 2,048-row passes, `--launch-skip 28 -c 4` (layers 0–3 of the second pass, rows 2,048–3,899, grid
+  12 × 15 = 180).
+
+The decision reads the survey's pass (the brief's instrument); the served pass is reported beside it, and if the two land
+in different bands the readings go to the coordinator. The decomposition runs at the build's default width, which it logs.
+Cost: four ncu passes, about 18 minutes in all.
+
 **Decision rule** (the brief's, read on the f32 twin at K = 3,900, the instrument the survey and KS-B2 read; f16 reported
 beside it, and a disagreement between the twins is reported):
 - **PROCEED** to Phase 1 if load stalls (`long_scoreboard` + `lg_throttle`) ≥ 40% of stall cycles **and** attention ≥ 20%
