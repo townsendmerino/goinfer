@@ -72,3 +72,26 @@ roughly 30–45 min under the exclusive lock. Gate 3 about 15 min. By day; nothi
   `attnDigestRun` records. Both new entry points have digests.
 - **Gate 2's inputs:** the `P3M` reference files copied from nobara byte for byte ([`p3m-refs.sha256`](p3m-refs.sha256)), and the
   Mac's `~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf` is nobara's file (sha256 `8a83c7fb…` on both).
+
+## Gate 2, 2026-11-23 09:15–09:24 PST (MacBook Pro M1 Pro, on AC): **PASS** by the registered rule
+
+- **Run.** `TestR2_decodeFidelityGate` at `31ab6adb6` with the registration's environment (`P3M`, `q4k`, `GOINFER_METAL_GATE_HD96=1`,
+  set B, K = 3,900), under the Mac's exclusive lock, started at load 1.27. Log: [`gate2/gate2.log`](gate2/gate2.log). Graded by
+  [`grade_gate2.py`](grade_gate2.py).
+- **Preconditions held:** the reference-identity check on all 10 prompts (seed-row KL 0.0001–0.0004 against the CPU f32 rows); every
+  layer took the lane in the candidate arm (the harness fails otherwise); the lane's outputs are not the exact arm's (the pooled KL
+  sums differ, ratio 1.0002).
+
+| | exact (`attention`) | lane (`attention_fa_blk96`) |
+|---|---|---|
+| mean teacher-forced agreement | 99.84% | 99.84% |
+| hard flips | 0 / 640 | 0 / 640 |
+| mean KL(reference ‖ arm) | 0.0001 | 0.0001 |
+
+- **(a) hard flips: PASS**, 0 against 0. **(b) agreement: PASS**, +0.00 pt, the lane at or above exact on 10 of 10 prompts.
+  **(c) KL: PASS**, ratio 1.0002 (the harness's unrounded figure; the grader's 1.0000 is from the 4-decimal printed means).
+- Beside it, not deciding: the harness's own amended verdict PASSES; its strict pooled critC reads false because the lane's KL is lower
+  on only 2 of 10 prompts, a criterion CUDA's rule does not have.
+- Both arms sit about 30× closer to the reference than CUDA's gate 2 did (mean KL 0.0001 against 0.0031 there): a different backend's
+  exact path, not a property of the lane.
+- **Verdict: PASSES.** Gate 3 runs next.
