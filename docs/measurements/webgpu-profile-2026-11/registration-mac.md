@@ -1,7 +1,8 @@
-# WG1, the Mac half: where a WebGPU token and a WebGPU prefill go now (DRAFT, 2026-11-23)
+# WG1, the Mac half: where a WebGPU token and a WebGPU prefill go now (registered 2026-11-23)
 
-**Status: DRAFT, not registered; nothing has run.** Drafted at the coordinator's request (2026-11-23 10:45 PST) for goinfer-notes
-`tasks/task-webgpu-2026-11.md`, row WG1. It becomes a registration when the owner approves it, before any reading. The nobara half is
+**Status: REGISTERED, approved by the coordinator 2026-11-23 11:20 PST, per Francis's 2026-11-23 instruction (finish the WebGPU part
+of the review ledger); before any run.** Drafted at the coordinator's request (2026-11-23 10:45 PST) for goinfer-notes
+`tasks/task-webgpu-2026-11.md`, row WG1. Results go in `README-mac.md` beside this file. The nobara half is
 its own registration. WG0's Mac half ([`../webgpu-baseline-2026-11/README.md`](../webgpu-baseline-2026-11/README.md)) is the baseline:
 WebGPU keeps 29 / 37% of Metal at depth 128 and 16 / 20% at 2,048 (0.5B / 1.5B).
 
