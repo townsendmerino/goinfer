@@ -46,3 +46,17 @@ sum-of-squares ladder the same in every block.
   other kernel of `actgroup.ptx` is unchanged (entry-by-entry, labels normalized). `TestActCfg_spreadsOnlyPer32` pins the grids.
 - Real model: `logits_scratch_test.go.txt` built into both arms, 128 positions then 32 greedy decode steps on Phi-3 mini q4k: SHA-256
   over every decode logit `3d770fdb20bcaa75c4b9af8ffbb5cbe476aac10c8c1a2ac7e21508f4269ee5e6` on both, the same 32 ids.
+
+## Speed: ships by the four-condition rule
+
+`run_ab.py --models phi3` (A B B A × 5, `BenchmarkResidentDecode` at depth 128, serve's f16 KV, the exclusive timing lock; binaries from
+`build_bins.sh`: A `1e69062e9`, B `25c7ad334`). 2026-11-23, 13:05–13:14 PST, 20 cells, none void, load 0.85–0.98 at every start, 60 GB
+available. Records: `ab/`.
+
+| | A tok/s | B tok/s | B faster | median B ÷ A | range |
+|---|---|---|---|---|---|
+| Phi-3 mini q4k | 126.5–126.7 | 132.8–133.0 | 10 of 10 | **1.0502** | 1.0481–1.0514 |
+
+About 378 µs a token, close to the census's price for the three single-block kernels. **The four conditions:** outputs bit-identical
+(above); no allocation added (only the launch grid changes; the PTX module carries the three test-only `*_serial` kernels, a few KB of
+code); faster on 10 of 10 pairs; it replaces the one-block launch, and the serial forms are a test-only reference, not a path.
