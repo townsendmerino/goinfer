@@ -237,8 +237,8 @@ var admissionGolden = map[string][]string{
 	// GLM-OCR: cuda (cuda.TestGlmOcrResidentParityCUDA) and metal (metal.TestGlmOcrResidentParityMetal), which have pairwise
 	// rope kernels; WebGPU has only NeoX rope kernels and declines (FeatPairwiseRoPE + FeatPairwiseMRoPE). Admitted with the
 	// NeoX kernels it read resident-vs-CPU cosine -0.34 on glm-ocr-tiny.
-	"glm_ocr":      {"cuda", "metal"},
-	"glm_ocr_text": {"cuda", "metal"},
+	"glm_ocr":      {"cuda", "metal", "webgpu"},
+	"glm_ocr_text": {"cuda", "metal", "webgpu"},
 	"llama":        {"cuda", "metal", "webgpu"},
 	// FeatNoPE is declared on cuda, metal and webgpu (RopeInvFreqLayer zeroes the NoPE layers' invFreq table, no new kernel):
 	// smollm3's only required feature.
@@ -428,6 +428,7 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 			FeatEmbedScale, FeatFinalLogitSoftcap, FeatSandwichNorm, FeatGatedGELU, FeatOutBias, FeatAttnSink,
 			FeatGemma4EModel,                            // gpu's TestGemma4EModel_webgpuResidentParity and its planted defects
 			FeatNoPE, FeatPostOnlyNorm, FeatQKNormWhole, // Olmo Hybrid / Olmo 3 / SmolLM3 (gpu.TestOlmoHybridResidentParityWebGPU)
+			FeatPairwiseRoPE, FeatPairwiseMRoPE, // the pairwise rope twins (gpu.TestGlmOcrResidentParityWebGPU, kernels.TestPairwiseTwins_matchGPTJ)
 		},
 	}
 	// CUDA's admission reads its operation table; the evidence each
@@ -567,28 +568,25 @@ func TestPairwiseRoPE_derivationScope(t *testing.T) {
 	}
 }
 
-// TestPairwiseRoPE_declineNamesCause: the families that rotate pairwise are DECLINED on every backend that has only
-// NeoX rope kernels, and the decline reason names the missing feature, so `serve check` / DecodePath tell the operator
-// why instead of "arch is not eligible".
-func TestPairwiseRoPE_declineNamesCause(t *testing.T) {
+// TestPairwiseRoPE_admittedOnEveryBackend: every resident backend declares the pairwise rope kernels, so GLM-OCR (whose
+// only other need is the sandwich norm) is admitted on each, and Cohere / Cohere2 on WebGPU are declined for what WebGPU
+// still lacks (layer-norm, parallel-block), with pairwise-rope no longer among the reasons.
+func TestPairwiseRoPE_admittedOnEveryBackend(t *testing.T) {
 	for _, fam := range []string{"cohere", "cohere2", "glm_ocr"} {
 		arch, _, err := resolveArchitecture(representativeConfig(fam))
 		if err != nil {
 			t.Fatalf("%s: %v", fam, err)
 		}
-		for _, be := range []string{"webgpu"} {
-			if ResidentEligible(arch, be) {
-				t.Errorf("%s admitted on %s: only NeoX rope kernels there", fam, be)
-				continue
-			}
-			why := residentGateReason(arch, be)
-			if !strings.Contains(why, string(FeatPairwiseRoPE)) {
-				t.Errorf("%s on %s: decline reason %q does not name %q", fam, be, why, FeatPairwiseRoPE)
-			}
+		if !slices.Contains(arch.residentFeatures(), FeatPairwiseRoPE) {
+			t.Fatalf("%s does not need %s: the fixture no longer exercises the pairwise rotation", fam, FeatPairwiseRoPE)
 		}
-		for _, be := range []string{"cuda", "metal"} {
-			if !ResidentEligible(arch, be) {
-				t.Errorf("%s declined on %s: %s", fam, be, residentGateReason(arch, be))
+		for _, be := range []string{"cuda", "metal", "webgpu"} {
+			why := residentGateReason(arch, be)
+			if strings.Contains(why, string(FeatPairwiseRoPE)) {
+				t.Errorf("%s on %s: the decline %q still names %q", fam, be, why, FeatPairwiseRoPE)
+			}
+			if wantOK := fam == "glm_ocr" || be != "webgpu"; ResidentEligible(arch, be) != wantOK {
+				t.Errorf("%s on %s: eligible %v, want %v (%s)", fam, be, !wantOK, wantOK, why)
 			}
 		}
 	}

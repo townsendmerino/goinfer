@@ -17,7 +17,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | DeepSeek-V3 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Flint | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | GLM-4.5/4.6 | ✅ | ✅ resident | ✅ resident | ✅ resident |
-| GLM-OCR | ✅ | CPU | ✅ resident | ✅ resident |
+| GLM-OCR | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | GPT-2 | ✅ | CPU | CPU | ✅ resident |
 | Gemma | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Gemma 2 | ✅ | CPU | ✅ resident | ✅ resident |
@@ -103,9 +103,8 @@ admission runs.
 
 | Family | CPU on | Why |
 |---|---|---|
-| Command-R | WebGPU | missing: `layer-norm`, `pairwise-rope`, `parallel-block` |
-| Command-R7B | WebGPU | missing: `layer-norm`, `pairwise-rope`, `parallel-block` |
-| GLM-OCR | WebGPU | missing: `pairwise-mrope`, `pairwise-rope` |
+| Command-R | WebGPU | missing: `layer-norm`, `parallel-block` |
+| Command-R7B | WebGPU | missing: `layer-norm`, `parallel-block` |
 | GPT-2 | WebGPU | missing: `layer-norm`, `learned-pos`, `non-gated-gelu-tanh` |
 | GPT-2 | CUDA | the embedding stage: cuda does not implement learned position embeddings; layer 0: operation 6 (ffn): cuda has no GELU-tanh activation in its non-gated block |
 | Gemma 2 | WebGPU | missing: `attn-logit-softcap` |
