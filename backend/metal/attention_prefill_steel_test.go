@@ -250,6 +250,7 @@ func TestAttentionPrefillSteelDigest(t *testing.T) {
 		}
 		got := append([]uint16(nil), outB.U16s()[:M*qDim]...)
 		recordAttnDigest(t, k.name, got)
+		d.ReleaseAll()
 		g, kf, vf := halvesToF64(got), halvesToF64(kc), halvesToF64(vc)
 		worst := 1.0
 		for i := range M {

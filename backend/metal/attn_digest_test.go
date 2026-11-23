@@ -90,6 +90,18 @@ func attnKernelNames(src string) []string {
 	return names
 }
 
+// attnTemplateOnly is the attention kernels in src declared as a template with no host_name of their own: their
+// instantiations (attention_prefill_steel_split's _hd256 and _hd512) are the entry points.
+func attnTemplateOnly(src string) map[string]bool {
+	out := map[string]bool{}
+	for _, m := range regexp.MustCompile(`(?m)^template\s*<[^>]*>\s*\n\s*kernel void ((?:mc3_)?attention\w*)\(`).FindAllStringSubmatch(src, -1) {
+		if !strings.Contains(src, `host_name("`+m[1]+`")`) {
+			out[m[1]] = true
+		}
+	}
+	return out
+}
+
 // attnDigestRowsLabel names the kernels behind the batched step's logits in mc3IdentityWith, for a test that forces a
 // geometry; "" lets mc3IdentityWith label them from the default fixture's.
 var attnDigestRowsLabel string
@@ -121,12 +133,13 @@ func TestAttnDigest_coversEveryKernel(t *testing.T) {
 			have[k]++
 		}
 	}
-	// A template's own name is not an entry point; its instantiations are. The block kernels' rows forms are
+	// A template's own name is not an entry point; its instantiations are (attnTemplateOnly). The block kernels' rows forms are
 	// instantiated for every group size the block kernels are, and are run at the two a fixture here has (6 and, at
 	// head dimension 64, 7): the rest are the same template text, as TestAttnFABlk_anyGMatchesG7 shows for the parent.
+	templ := attnTemplateOnly(allKernels + mc3RowsKernels + prefillKernels)
 	ran := 0
 	for _, n := range names {
-		if slices.ContainsFunc(names, func(o string) bool { return strings.HasPrefix(o, n+"_g") }) {
+		if templ[n] || slices.ContainsFunc(names, func(o string) bool { return strings.HasPrefix(o, n+"_g") }) {
 			continue
 		}
 		if have[n] > 0 {
