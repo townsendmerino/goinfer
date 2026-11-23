@@ -54,3 +54,21 @@ roughly 30–45 min under the exclusive lock. Gate 3 about 15 min. By day; nothi
 - [`run_gate3_served.sh`](run_gate3_served.sh) is CUDA's served script on Metal (macOS settle under load 2.0, the Mac's idle gate);
   it grades with CUDA's [`grade_cell.py`](../fa-hd96-phi3-2026-11-22/grade_cell.py) unchanged.
 - Unchanged: the gates, cells and bars above.
+
+## Gate 1, 2026-11-23 09:05–09:14 PST (MacBook Pro M1 Pro, macOS 26.7.3): PASS
+
+- **Run:** [`gate1/tier0-mac.log`](gate1/tier0-mac.log), the kernels at `44c4045aa`, base `26a73a8b0` (origin/main the branch started from),
+  under the Mac's shared lock.
+- **`TestAttnFABlk96MatchesFloat64`:** all 32 cases inside the bar; worst cosine 1.0000000, worst max abs 1.87e-7.
+- **The plant** (`TestAttnFABlk96_plantGoesRed`, one of each lane's three P·V dims dropped): 576 heads outside the bar, worst cosine 0.66.
+- **Selection and the rows form:** `TestAttnFAHeadDimOK_hd96`, `TestFlashDecodeHD96_metalSelection` (off and on) and
+  `TestAttnDigest_mc3RowsOtherGeometries/hd96-G1` (the batched step bit-identical to the single-row path) pass, with the existing
+  block-kernel pins (`TestAttnFABlkIsTheGradedKernel`, `TestAttnFABlkMatchesFloat64`, `TestAttnFABlkSelection`).
+- **Existing kernels unchanged:** all 1,097 base digest lines are present with the same hash on the branch
+  ([`gate1/digests-base.tsv`](gate1/digests-base.tsv), [`gate1/digests-hd96.tsv`](gate1/digests-hd96.tsv)); the 100 new lines are
+  the hd-96 kernel, its rows form and the model-decode lines of the new fixture case.
+- **Not this change's:** `TestAttnDigest_coversEveryKernel` fails on base and branch alike, on the same seven prefill kernels
+  (`attention_prefill_steel_hd64` / `hd80` / `hd96` / `hd256` / `hd512`, `_split`, `attention_prefill_tiled`), which no test in
+  `attnDigestRun` records. Both new entry points have digests.
+- **Gate 2's inputs:** the `P3M` reference files copied from nobara byte for byte ([`p3m-refs.sha256`](p3m-refs.sha256)), and the
+  Mac's `~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf` is nobara's file (sha256 `8a83c7fb…` on both).
