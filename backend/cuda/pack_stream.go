@@ -71,6 +71,8 @@ func planWeight(w *linalg.WeightMat) (hostW, error) {
 		return hostW{kind: "q4k", N: N, K: K, src: w, nWpk: len(raw) / 4}, nil
 	case "f32", "bf16": // quantized to int8 row by row; a bf16 weight's rows are widened first, so its bytes are the f32 weight's
 		return hostW{kind: "int8", N: N, K: K, src: w, nWpk: N * (K / 4), nWs: N}, nil
+	case "q5k", "q6k": // the file's blocks, held natively (a cuda .giw carries them): planned from the weight's own bytes
+		return planKQuantHeld(w)
 	default:
 		return hostW{}, fmt.Errorf("cuda: unsupported projection kind %q", w.Kind())
 	}
@@ -92,6 +94,21 @@ func planRows(m decoder.DrafterRows) (hostW, error) {
 // planKQuant is planWeight for a weight the q4k lane uploads as the file's Q5_K or Q6_K blocks (decoder.Model.KQuantNative):
 // row(r) is destination row r's blocks. Q5_K keeps the file's 176-byte blocks; Q6_K is laid out in planes over the whole weight
 // (q6kPlanes). Both hold exactly the file's bytes.
+// planKQuantHeld plans a weight the load holds as Q5_K or Q6_K (WeightMat.Q5K / Q6K) from its own blocks, row r at r·(K/256)
+// blocks, as planKQuant takes the file's blocks from KQuantReader for a heap load's int8 copy.
+func planKQuantHeld(w *linalg.WeightMat) (hostW, error) {
+	kind := w.Kind()
+	raw, ok := w.Q5K()
+	if kind == "q6k" {
+		raw, ok = w.Q6K()
+	}
+	if !ok || w.Rows() <= 0 {
+		return hostW{}, fmt.Errorf("cuda: native %s weight %dx%d holds no blocks", kind, w.Rows(), w.Cols())
+	}
+	rb := len(raw) / w.Rows()
+	return planKQuant(w, kind, func(r int) []byte { return raw[r*rb : (r+1)*rb] })
+}
+
 func planKQuant(w *linalg.WeightMat, kind string, row func(r int) []byte) (hostW, error) {
 	N, K := w.Rows(), w.Cols()
 	bb := map[string]int{"q5k": 176, "q6k": 210}[kind]
