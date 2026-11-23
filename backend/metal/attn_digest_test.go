@@ -36,7 +36,7 @@ var (
 // attnDigestRun is the -run pattern of the tests that record digests.
 const attnDigestRun = "^(TestAttention_ShippedKernelShapes|TestAttentionKernelsPastTileBound|TestAttentionFA_vsReference|TestAttnFABlk_anyGMatchesG7|" +
 	"TestAttnFABlkMatchesFloat64|TestAttnFABlk64Digest|TestAttnFABlk96Digest|TestAttentionPrefillFused|TestAttentionPrefillSteelMatchesFloat64|" +
-	"TestAttentionPrefillImg_matchesReference|TestGptOssAttnSink_metal|TestMetalKVI8_KVStoreAndAttentionParity|TestMetalKVI8_DeepContext|" +
+	"TestAttentionPrefillImg_matchesReference|TestAttentionPrefillSteelDigest|TestAttentionPrefillTiled_bitIdenticalToTheExactKernel|TestAttentionPrefillTiled_pastTheExactKernelsBound|TestGptOssAttnSink_metal|TestMetalKVI8_KVStoreAndAttentionParity|TestMetalKVI8_DeepContext|" +
 	"TestMC3Step_rowsPathBitIdentical|TestMC3Step_faRowsBitIdenticalDeep|TestAttnDigest_mc3RowsOtherGeometries)$"
 
 // recordAttnDigest appends one line for out, the raw output a test read back after dispatching kernels (comma-separated
@@ -90,6 +90,18 @@ func attnKernelNames(src string) []string {
 	return names
 }
 
+// attnTemplateOnly is the attention kernels in src declared as a template with no host_name of their own: their
+// instantiations (attention_prefill_steel_split's _hd256 and _hd512) are the entry points.
+func attnTemplateOnly(src string) map[string]bool {
+	out := map[string]bool{}
+	for _, m := range regexp.MustCompile(`(?m)^template\s*<[^>]*>\s*\n\s*kernel void ((?:mc3_)?attention\w*)\(`).FindAllStringSubmatch(src, -1) {
+		if !strings.Contains(src, `host_name("`+m[1]+`")`) {
+			out[m[1]] = true
+		}
+	}
+	return out
+}
+
 // attnDigestRowsLabel names the kernels behind the batched step's logits in mc3IdentityWith, for a test that forces a
 // geometry; "" lets mc3IdentityWith label them from the default fixture's.
 var attnDigestRowsLabel string
@@ -121,12 +133,13 @@ func TestAttnDigest_coversEveryKernel(t *testing.T) {
 			have[k]++
 		}
 	}
-	// A template's own name is not an entry point; its instantiations are. The block kernels' rows forms are
+	// A template's own name is not an entry point; its instantiations are (attnTemplateOnly). The block kernels' rows forms are
 	// instantiated for every group size the block kernels are, and are run at the two a fixture here has (6 and, at
 	// head dimension 64, 7): the rest are the same template text, as TestAttnFABlk_anyGMatchesG7 shows for the parent.
+	templ := attnTemplateOnly(allKernels + mc3RowsKernels + prefillKernels)
 	ran := 0
 	for _, n := range names {
-		if slices.ContainsFunc(names, func(o string) bool { return strings.HasPrefix(o, n+"_g") }) {
+		if templ[n] || slices.ContainsFunc(names, func(o string) bool { return strings.HasPrefix(o, n+"_g") }) {
 			continue
 		}
 		if have[n] > 0 {
@@ -222,7 +235,7 @@ func TestAttnFABlk64Digest(t *testing.T) {
 }
 
 // TestAttnFABlk96Digest drives attention_fa_blk96_g1 (head dimension 96, MHA: Phi-3 mini's shape) and attention_fa_combine the way
-// the resident does and records its output. The reference check is loose on purpose; the kernel's bar against float64 is
+// the resident does, on a contiguous cache and on permuted blocks behind a table, with and without a window, and records its output. The reference check is loose on purpose; the kernel's bar against float64 is
 // kernels.TestAttnFABlk96MatchesFloat64.
 func TestAttnFABlk96Digest(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
@@ -245,7 +258,14 @@ func TestAttnFABlk96Digest(t *testing.T) {
 	const nH = G * nKV
 	cq := d.NewCommandQueue()
 	scale := float32(1 / math.Sqrt(hd))
-	for _, nKeys := range []int{attnFADepthFloor, attnFADepthFloor + 1, 3900, 4100} {
+	type cell struct {
+		nKeys, window int
+		paged         bool
+	}
+	cells := []cell{{attnFADepthFloor, 0, false}, {attnFADepthFloor + 1, 0, false}, {3900, 0, false}, {4100, 0, false},
+		{3900, 0, true}, {4100, 0, true}, {3900, 2500, false}, {3900, 2500, true}}
+	for _, c := range cells {
+		nKeys := c.nKeys
 		rng := rand.New(rand.NewSource(int64(nKeys*10 + 96)))
 		q := make([]float32, nH*hd)
 		for i := range q {
@@ -256,15 +276,32 @@ func TestAttnFABlk96Digest(t *testing.T) {
 			kh[i] = f32ToF16(float32(rng.NormFloat64() * 0.5))
 			vh[i] = f32ToF16(float32(rng.NormFloat64()))
 		}
-		kb, vb := d.NewBufferBytes(len(kh)*2), d.NewBufferBytes(len(vh)*2)
-		copy(kb.U16s()[:len(kh)], kh)
-		copy(vb.U16s()[:len(vh)], vh)
+		// paged: the cache's 64-key blocks permuted behind the table (one block more than the keys fill), so a run that
+		// crosses a block edge reads through the table; otherwise the identity table over a contiguous cache.
+		nBlk := (nKeys + 63) / 64
+		table := make([]uint32, nBlk)
+		for b := range table {
+			table[b] = uint32(b)
+		}
+		if c.paged {
+			for b, p := range rand.New(rand.NewSource(int64(nKeys))).Perm(nBlk + 1)[:nBlk] {
+				table[b] = uint32(p)
+			}
+		}
+		row := nKV * hd
+		kb, vb := d.NewBufferBytes((nBlk+1)*64*row*2), d.NewBufferBytes((nBlk+1)*64*row*2)
+		ku, vu := kb.U16s(), vb.U16s()
+		for s := range nKeys {
+			p := int(table[s/64])*64 + s%64
+			copy(ku[p*row:(p+1)*row], kh[s*row:(s+1)*row])
+			copy(vu[p*row:(p+1)*row], vh[s*row:(s+1)*row])
+		}
 		partial := d.NewBufferLen(nKV * attnFABlkSplit * G * (hd + 2))
 		out := d.NewBufferLen(nH * hd)
 		uG, uSplit := NewBufferU32(d, G), NewBufferU32(d, attnFABlkSplit)
 		e := cq.Begin()
 		e.DispatchTG(pipe, nKV*attnFABlkSplit*128, 128, 128*6*G*4, NewBufferFloats(d, q), kb, vb, partial,
-			NewBufferU32(d, nKV), uG, NewBufferU32(d, uint32(nKeys)), NewBufferFloats(d, []float32{scale}), NewBufferU32(d, 0), uSplit, kvIdentityTable(d))
+			NewBufferU32(d, nKV), uG, NewBufferU32(d, uint32(nKeys)), NewBufferFloats(d, []float32{scale}), NewBufferU32(d, uint32(c.window)), uSplit, NewBufferUint32s(d, table))
 		e.Dispatch(comb, nH*hd, hd, partial, out, uG, NewBufferU32(d, hd), uSplit)
 		e.End()
 		if err := e.Err(); err != nil {
@@ -276,7 +313,7 @@ func TestAttnFABlk96Digest(t *testing.T) {
 		for i := range kh {
 			kf[i], vf[i] = f16ToF32(kh[i]), f16ToF32(vh[i])
 		}
-		ref := cpuAttention(q, kf, vf, nH, nKV, hd, nKeys, 0, scale)
+		ref := cpuAttention(q, kf, vf, nH, nKV, hd, nKeys, c.window, scale)
 		var dot, na, nb float64
 		for i := range ref {
 			dot += float64(got[i]) * float64(ref[i])
@@ -284,7 +321,7 @@ func TestAttnFABlk96Digest(t *testing.T) {
 			nb += float64(ref[i]) * float64(ref[i])
 		}
 		if cos := dot / math.Sqrt(na*nb); !(cos >= 0.9999) {
-			t.Errorf("nKeys=%d: cosine %.6f against the CPU reference, want >= 0.9999", nKeys, cos)
+			t.Errorf("nKeys=%d window=%d paged=%v: cosine %.6f against the CPU reference, want >= 0.9999", nKeys, c.window, c.paged, cos)
 		}
 	}
 }

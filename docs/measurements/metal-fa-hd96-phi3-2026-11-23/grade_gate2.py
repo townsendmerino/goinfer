@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Grade gate 2 (README beside this file) from TestR2_decodeFidelityGate's output by CUDA's criteria
 (attn-decode-fa-fidelity-PREREGISTERED.md): (a) hard flips: lane <= exact + 2*sqrt(exact); (b) mean agreement: lane >= exact - 1.0 pt
-and lane >= exact on at least half the prompts; (c) mean KL: lane <= 1.10 x exact. PARKED: (b) within its last 0.2 pt (lane - exact
+and lane >= exact on at least half the prompts; (c) mean KL: lane <= 1.10 x exact, the ratio read from the harness's KLratio (its unrounded means; the printed means carry 4 decimals,
+which at Phi-3's KL of about 0.0001 cannot resolve a ratio). PARKED: (b) within its last 0.2 pt (lane - exact
 in [-1.0, -0.8)), or (c) in 1.05-1.10x. VOID: a prompt failed the reference-identity check.
 
   grade_gate2.py <gate log>
@@ -13,7 +14,8 @@ per = re.findall(r"prompt\s+(\d+)/\s*\d+ shipped\(agree=([\d.]+)% HF=(\d+)/(\d+)
 pooled = re.search(r"shippedAgree=([\d.]+)% faAgree=([\d.]+)%", txt)
 kl = re.search(r"shippedMeanKL=([\d.]+) faMeanKL=([\d.]+)", txt)
 hf = re.search(r"\(shipped=(\d+) fa=(\d+)\)", txt)
-if not (per and pooled and kl and hf):
+klr = re.search(r"KLratio=([\d.]+)", txt)
+if not (per and pooled and kl and hf and klr):
     sys.exit("VERDICT VOID: the log has no complete gate output")
 void = "REFERENCE/PROMPT MISMATCH SUSPECTED" in txt
 ea, la = float(pooled.group(1)), float(pooled.group(2))
@@ -23,10 +25,10 @@ wins = sum(float(p[5]) >= float(p[1]) for p in per)
 a = lh <= eh + 2 * math.sqrt(eh)
 d = la - ea
 b = d >= -1.0 and wins * 2 >= len(per)
-ratio = lk / ek
+ratio = float(klr.group(1))
 c = ratio <= 1.10
 print(f"prompts {len(per)}; exact agree {ea:.2f}% lane {la:.2f}% (diff {d:+.2f} pt), lane >= exact on {wins}/{len(per)}")
-print(f"hard flips exact {eh} lane {lh}; mean KL exact {ek:.6f} lane {lk:.6f} (ratio {ratio:.4f})")
+print(f"hard flips exact {eh} lane {lh}; mean KL exact {ek:.4f} lane {lk:.4f} as printed; KL ratio {ratio:.4f} (the harness's, unrounded means)")
 print(f"(a) {'PASS' if a else 'FAIL'}  (b) {'PASS' if b else 'FAIL'}  (c) {'PASS' if c else 'FAIL'}")
 if void:
     print("VERDICT VOID (reference identity check failed)"); sys.exit(2)
