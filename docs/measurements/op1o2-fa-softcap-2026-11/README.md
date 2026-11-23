@@ -258,3 +258,41 @@ sliding window, while serve's default plan for the 2B caps at 8,192.
   Gemma 2 only, or off. A FAIL at K = 8,000 is evidence that the 3,900 PASS does not extend past the window.
 - **Cost:** the reference is about 80–100 min of CPU, 10 prompts at 8,000 tokens; the 3,900 reference took 37 min. The gate is
   about 7 min under the exclusive lock. Both by day, finishing before 21:30 PST.
+
+### Reading past the window, 2026-11-22 (nobara, RTX 2070 SUPER, driver 595.112.07): **AMBIGUOUS, PARKED** by the registered rule
+
+- **Run.** This branch at `22f2ab3bf`, with both test binaries built once from it.
+  - **The CPU reference,** `TestPrefillGateReference` G22B at `GOINFER_CPU_REF_KS=8000`, held the lock shared, 14:49–16:53 PST.
+    The first 8 prompts took 1 h 41 m each, in parallel. The test's own deadline guard then held back the last two, because at that
+    pace they would have ended past its 3-hour timeout. It kept the 8 it had stored, and a rerun resumed with them and computed the
+    last two in 22 min (logs `g22b8k-refs-part1.log.gz` and `g22b8k-refs-resume.log`).
+  - **The gate,** `TestFlashDecodeGateVsReference` `G22B:8000`, `GOINFER_CUDA_FLASH_DECODE=16`, held the lock exclusive,
+    16:55:59–17:05:34 PST (`run-gate-8000.sh`, `g22b8k-gate.log`). It started at a 1-minute load of 0.80 with 61,589 MiB
+    available; kwin_wayland held 19 MiB of the card.
+- **Preconditions held:** A/A bit-identical over 64 rows, the lane launched, and the seed rows were identical. 621 of 630
+  continuation rows differ between the arms.
+
+| | exact (split-KV) | lane (capped flash-decode) |
+|---|---|---|
+| mean teacher-forced agreement | 84.69% | 83.75% |
+| hard flips | 24 / 640 | 25 / 640 |
+| mean KL(reference ‖ arm) | 0.160404 | 0.154706 |
+
+- **(a) hard flips: PASS** on the amended bar, 25 against 24 + 2√24 = 33.8. The strict reading (lane ≤ exact) fails, 25 against 24.
+- **(b) agreement: AMBIGUOUS.** The lane is −0.94 pt from exact. That is inside the −1.0 pt bar but within its last 0.2 pt, which the
+  registration parks. Per prompt the lane is ahead on 1 and tied on 5, so lane ≥ exact on 6 of 10. It is behind on 4, by 1.56, 1.56,
+  3.12 and 4.69 pt.
+- **(c) KL: PASS.** The ratio is 0.9645, under 1.10 and outside the 1.05–1.10 band.
+- **Verdict: AMBIGUOUS, PARKED.** At K = 8,000, every global layer attends past Gemma 2's 4,096 window, and the lane is not shown to
+  decode as well as the exact lane there. Agreement sits in the parked zone on the bar. The 3,900 reading (PASS, −0.31 pt) does not
+  extend past the window on this evidence. Per the registration, a re-run needs a named mechanism, not a re-roll.
+- **What it leaves to Francis:** the default's scope. The options are on for every capped model, as built; on below the window only,
+  which would need new code and its own gate; or off, the opt-in as before.
+
+### Served smoke re-run with the reviewed script, 2026-11-22 17:05 PST: PASS
+
+`smoke_default.py`, after the review's fixes, on the same binary (`e3480e58b`). It took the exclusive lock itself
+(`smoke-rerun-fixed-script.log`), and all nine checks passed:
+- the default's text equals the given flag's and differs from `=false`'s, and `=false` repeats itself;
+- the fit plan and the KV plan are equal and present on every arm;
+- device memory is 7,030 MiB on every arm, both at load and after the depth-2,048 request.

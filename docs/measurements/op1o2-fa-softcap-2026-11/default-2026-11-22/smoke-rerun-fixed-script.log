@@ -1,0 +1,17 @@
+smoke: default  flags [] tokens 256 device 7030 MiB at load, 7030 MiB after | decode path: cuda-resident (int4) | fit: 4 KV slots at a 8192-token cap hold 5.13 GiB KV (weights 1.61 GiB, budget 41.80 GiB, 36.67 GiB left for a request's own prefill) | KV plan: a 32512-position pool for 4 conversations; each is guaranteed 8128, and one can use up to 8192
+smoke: default  tail ' spent years studying the ancient art of printing, his eyes reflecting'
+smoke: exact    flags ['-flash-decode-softcap=false'] tokens 256 device 7030 MiB at load, 7030 MiB after | decode path: cuda-resident (int4) | fit: 4 KV slots at a 8192-token cap hold 5.13 GiB KV (weights 1.61 GiB, budget 41.78 GiB, 36.65 GiB left for a request's own prefill) | KV plan: a 32512-position pool for 4 conversations; each is guaranteed 8128, and one can use up to 8192
+smoke: exact    tail 'nto the cliff. He was a boy from the village, a boy who had never seen'
+smoke: lane     flags ['-flash-decode-softcap'] tokens 256 device 7030 MiB at load, 7030 MiB after | decode path: cuda-resident (int4) | fit: 4 KV slots at a 8192-token cap hold 5.13 GiB KV (weights 1.61 GiB, budget 41.89 GiB, 36.76 GiB left for a request's own prefill) | KV plan: a 32512-position pool for 4 conversations; each is guaranteed 8128, and one can use up to 8192
+smoke: lane     tail ' spent years studying the ancient art of printing, his eyes reflecting'
+smoke: exact2   flags ['-flash-decode-softcap=false'] tokens 256 device 7030 MiB at load, 7030 MiB after | decode path: cuda-resident (int4) | fit: 4 KV slots at a 8192-token cap hold 5.13 GiB KV (weights 1.61 GiB, budget 41.88 GiB, 36.75 GiB left for a request's own prefill) | KV plan: a 32512-position pool for 4 conversations; each is guaranteed 8128, and one can use up to 8192
+smoke: exact2   tail 'nto the cliff. He was a boy from the village, a boy who had never seen'
+smoke: PASS default text == lane text
+smoke: PASS default text != exact text
+smoke: PASS exact repeats itself
+smoke: PASS every reply over 200 tokens
+smoke: PASS fit plan equal on every arm
+smoke: PASS KV plan line equal on every arm
+smoke: PASS device MiB at load equal on every arm
+smoke: PASS device MiB after the request equal on every arm
+smoke: PASS no lane-unavailable warning

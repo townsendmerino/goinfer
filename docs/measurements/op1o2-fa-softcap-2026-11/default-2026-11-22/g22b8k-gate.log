@@ -1,0 +1,28 @@
+gate start 2026-11-22 16:55:59 PST load 0.80 5.74 9.16 MemAvailable 61589 MiB swap 975 MiB gpu /usr/bin/kwin_wayland, 19 MiB;
+=== RUN   TestFlashDecodeGateVsReference
+=== RUN   TestFlashDecodeGateVsReference/G22B-K8000
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (20 MiB of scratch; 7037 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7041 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7041 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6909 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (262 MiB of scratch; 3707 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    flash_decode_gate_test.go:266: G22B K=8000: A/A bit-identical over 64 rows
+[fa-gate] G22B K=8000 prompt  1/10 exact(agree=68.8% HF=2/64 KL=0.15915) lane(agree=70.3% HF=1/64 KL=0.15063) diff(agree=+1.56pt KL=-0.00852) rowsDiffering=60/63 elapsed=1m20s
+[fa-gate] G22B K=8000 prompt  2/10 exact(agree=78.1% HF=2/64 KL=0.11389) lane(agree=78.1% HF=2/64 KL=0.11328) diff(agree=+0.00pt KL=-0.00061) rowsDiffering=62/63 elapsed=2m14s
+[fa-gate] G22B K=8000 prompt  3/10 exact(agree=89.1% HF=1/64 KL=0.11860) lane(agree=87.5% HF=0/64 KL=0.11620) diff(agree=-1.56pt KL=-0.00240) rowsDiffering=61/63 elapsed=3m8s
+[fa-gate] G22B K=8000 prompt  4/10 exact(agree=92.2% HF=4/64 KL=0.21123) lane(agree=92.2% HF=3/64 KL=0.25465) diff(agree=+0.00pt KL=+0.04341) rowsDiffering=62/63 elapsed=4m3s
+[fa-gate] G22B K=8000 prompt  5/10 exact(agree=93.8% HF=1/64 KL=0.07287) lane(agree=90.6% HF=3/64 KL=0.07851) diff(agree=-3.12pt KL=+0.00563) rowsDiffering=63/63 elapsed=4m56s
+[fa-gate] G22B K=8000 prompt  6/10 exact(agree=98.4% HF=1/64 KL=0.03796) lane(agree=98.4% HF=1/64 KL=0.03721) diff(agree=+0.00pt KL=-0.00075) rowsDiffering=63/63 elapsed=5m50s
+[fa-gate] G22B K=8000 prompt  7/10 exact(agree=85.9% HF=1/64 KL=0.09395) lane(agree=85.9% HF=2/64 KL=0.09620) diff(agree=+0.00pt KL=+0.00225) rowsDiffering=61/63 elapsed=6m44s
+[fa-gate] G22B K=8000 prompt  8/10 exact(agree=81.2% HF=2/64 KL=0.14974) lane(agree=76.6% HF=3/64 KL=0.16461) diff(agree=-4.69pt KL=+0.01486) rowsDiffering=63/63 elapsed=7m39s
+[fa-gate] G22B K=8000 prompt  9/10 exact(agree=89.1% HF=7/64 KL=0.44041) lane(agree=89.1% HF=6/64 KL=0.35359) diff(agree=+0.00pt KL=-0.08682) rowsDiffering=63/63 elapsed=8m32s
+[fa-gate] G22B K=8000 prompt 10/10 exact(agree=70.3% HF=3/64 KL=0.20623) lane(agree=68.8% HF=4/64 KL=0.18219) diff(agree=-1.56pt KL=-0.02404) rowsDiffering=63/63 elapsed=9m27s
+=== FLASH-DECODE GATE G22B K=8000 (DECISION cell, set b, n=10 x 64 positions, S=16): exact(meanAgree=84.69% HF=24/640 worstGap=35.642% meanKL=0.160404) lane(meanAgree=83.75% HF=25/640 worstGap=35.642% meanKL=0.154706) pairedWins=6/10 rowsDiffering=621 critA(amended)=true [strict false] critB=true critC=true KLratio=0.9645 — AMBIGUOUS — PARKED ===
+    flash_decode_gate_test.go:266: G22B K=8000 is the DECISION cell and it did not pass (AMBIGUOUS — PARKED) — the lane stays opt-in, which is a RESULT
+--- FAIL: TestFlashDecodeGateVsReference (574.76s)
+    --- FAIL: TestFlashDecodeGateVsReference/G22B-K8000 (574.76s)
+FAIL
+ledger: 5 device(s) released in this run
+gate end 2026-11-22 17:05:34 PST rc=0
