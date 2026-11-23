@@ -39,3 +39,12 @@ Francis with these readings, recommended. G3 AMBIGUOUS: DECISION NEEDED with the
 cells, 8 E checks, about 50 min. **Fit check** (`GPTOSS_PF_MODE=fit`, 2026-11-23 12:45 PST): the CPU plan at int4 fits, needing
 30,470,999,151 bytes (29,059 MiB) at the full 131,072-position context against 63.4 GB available; after the load VmHWM is 21.9 GB and
 VmSwap 0.
+
+## Amendment, 2026-11-23 12:41 PST, before any G4 data
+
+G3's first two prompts (K = 1,024) read 59 of 66 positions agreeing and one hard flip, so G3 is likely to FAIL and its registered
+outcome makes the exact-only option (the batched walker with exact attention, arm E) the live one. G4 as registered timed only B
+against S, which leaves that option's speed unmeasured. **G4 now times all three arms**, S B E E B S per block (S–B pairs at cells
+1–2 and 5–6, S–E pairs at 1–3 and 4–6), 2 blocks per K, the same K, prompts, void rule and stopping rule. **Bars, each read on its
+own pairs:** S–B and S–E each WORTH IT when every pair is at least 2.0× at both K, SMALL at 1.2×, FAIL under it. G2 is unchanged (E
+against S on every S cell). G3 runs to its fixed size, ungraded until it ends. **Cost:** 24 cells, about 60 min.
