@@ -25,6 +25,12 @@ before 10:29:58, block 1's base began 10:44:30). The whole pair is voided, the h
 same-session pair; both rows are marked `"valid": false` with the reason in `ttft.json`, the file as it was is kept
 beside it, and block 0 re-runs in place (head, then base) in nobara's afternoon queue.
 
+**Block 0's first re-run is void too.** It started 15:00:43 (head cell valid at 17,824 ms, 15:04-15:08; base cell's first
+attempt void on swap, +66 MB; its second attempt started 15:15:30) and nobara crashed at 15:16:45 PST (a hard stop, no
+shutdown or kernel GPU error in the journal; the box rebooted at 15:18). The pair is voided again, its head row with the
+reason, the file as it was kept beside it, and block 0 re-runs after cuda-small's run. That re-run also started out of
+the coordinator's order: it should have waited for cuda-small's job, which the orchestrator's process-name check missed.
+
 The three valid pairs read 1.441-1.450 (median 1.448): no regression so far against the 0.8 bar; the verdict waits for
 block 0's re-run. The resident's prompt runs token by token (the batched prefill takes no per-32 scales) and is about
 1.45× faster to first token than the CPU path it replaces.
