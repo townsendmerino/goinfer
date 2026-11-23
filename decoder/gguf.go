@@ -1572,6 +1572,8 @@ func q4kNative56(needCanonical bool, sink *giwWriter) bool {
 
 // giwCarriesKQuant56 reports whether a q4k .giw written for target holds the file's Q5_K and Q6_K tensors natively (kinds 11
 // and 12) rather than widened to int8: the cpu-amd64 target, whose CPU kernels read them, and cuda, whose resident uploads them.
+// q4kNative56 also asks for linalg.KQuantNative on the writing host, for the cuda target too: a resident that declines falls back
+// to the CPU on the same weights, and without that kernel a native weight is far slower there than int8.
 func giwCarriesKQuant56(target GIWTarget) bool {
 	return target == GIWTargetCPUAmd64 || target == GIWTargetCUDA
 }

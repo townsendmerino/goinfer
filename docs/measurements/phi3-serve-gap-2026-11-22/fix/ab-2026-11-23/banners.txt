@@ -1,0 +1,3 @@
+new-first: device 5580 MiB | fit: 2 KV slots at a 4096-token cap hold 3.13 GiB KV (weights 2.29 GiB, budget 42.06 GiB, 38.93 GiB left for a request's own prefill) | /home/francis/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.q4k.k56.cuda.v17.giw
+new: device 5580 MiB | fit: 2 KV slots at a 4096-token cap hold 3.13 GiB KV (weights 2.29 GiB, budget 42.05 GiB, 38.92 GiB left for a request's own prefill) | /home/francis/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.q4k.k56.cuda.v17.giw
+old: device 5922 MiB | fit: 2 KV slots at a 4096-token cap hold 3.13 GiB KV (weights 2.62 GiB, budget 42.05 GiB, 38.93 GiB left for a request's own prefill) | /home/francis/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.q4k.cuda.v17.giw

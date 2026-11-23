@@ -106,3 +106,28 @@ in `raw/diag/`.
   - (a) the CUDA q4k sidecar carries the native kinds, or records their source tensors so the resident reads them from the GGUF;
   - (b) serve's CUDA q4k route opens the GGUF's Q5_K/Q6_K blocks beside the sidecar, as `OpenKQuant` does for a heap load;
   - (c) leave it, and record that the served CUDA path is int8 for those tensors.
+
+## Fix, read 2026-11-23 (#1236; Francis, 2026-11-22: "C 1")
+
+- **The fix.** #1236: the CUDA q4k sidecar carries the native Q5_K/Q6_K kinds under `.k56`, and CUDA plans a held native weight from its
+  own blocks. Its follow-up, below, keeps that to projections and the head (`buildState.planProj`).
+- **Served A/B at depth 128, 2026-11-23 07:36–07:39 PST,** under the exclusive lock (`fix/run-fix-ab.sh`; records in
+  `fix/ab-2026-11-23/`). The old serve is `896638446` (sha256 `c69859c6…`), which reads the int8 `q4k.cuda.v17.giw`. The new one is
+  `cda4facf4` (`94109e42…`), which reads `q4k.k56.cuda.v17.giw`. Phi-3 mini q4k, `BENCH_RUNS=3`, `BENCH_ABBA=1`: 4 cells, none void.
+  Each started under load 1.0 with at least 61,581 MiB available; swap grew 0.0 MB.
+
+| block | new (the fix), tok/s | old, tok/s | new ÷ old | ms a token saved |
+|--:|--:|--:|--:|--:|
+| 1 | 126.21 | 114.55 | 1.1018 | 0.806 |
+| 2 | 126.33 | 114.63 | 1.1021 | 0.808 |
+
+- **The gap is closed.** Served Phi-3 now decodes at 126.3 tok/s at depth 128. The in-process arm of the registered run read 126.3–126.6,
+  where served read 114.3–114.6 before the fix.
+- **Memory.**
+  - The server's device memory after load (`banners.txt`): 5,580 MiB new against 5,922 MiB old, 342 MiB less.
+  - Device weight bytes (`TestKSO1C_laneBytes`, 2026-11-23): 2,336,288,256 against 2,710,959,360, 374.7 MB less.
+  - Planned weights (fit banner): 2.29 against 2.62 GiB.
+  - The KV plan is unchanged (2 slots × 4,096), so the longest context that fits does not move: 4,096 is the model's maximum.
+- **The night attempt (06:49–07:02 PST) was VOID** (`fix/ab-night-2026-11-23-void/`). The script set `BENCH_REQUIRE_BACKEND=1`, which
+  refuses a load that declines the batched prefill, as q4k does, so no server came up. The script still exited 0. It now drops the flag
+  and exits non-zero when no cell ran or any cell errored. Its banners read as the day run's did.
