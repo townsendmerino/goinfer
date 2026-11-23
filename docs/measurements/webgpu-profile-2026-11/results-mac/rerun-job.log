@@ -1,0 +1,10 @@
+== decode run 2 re-run start 12:58:21 PST load 5.52 swap 786.56 MB AC Power
+== decode run 2 re-run end rc=0 13:36:55 PST load 0.94 swap 1307.44 MB AC Power
+VOID: sleep, wake or battery during the re-run:
+2026-11-23 13:00:15 -0800 Assertions          	PID 0(kernel_task) Released Idle Sleep Preventer "IOPMrootDomain"  id:0x0x0 [System: PrevIdle PrevSleep DeclUser kCPU kDisp]          
+2026-11-23 13:00:15 -0800 Assertions          	PID 0(kernel_task) Released Idle Sleep Preventer "IOPMrootDomain"  id:0x0x0 [System: PrevIdle PrevSleep DeclUser kCPU kDisp]          
+2026-11-23 13:00:19 -0800 Assertions          	PID 0(kernel_task) Released Idle Sleep Preventer "IOPMrootDomain"  id:0x0x0 [System: PrevIdle PrevSleep DeclUser kCPU kDisp]          
+2026-11-23 13:00:55 -0800 Assertions          	PID 0(kernel_task) Released Idle Sleep Preventer "IOPMrootDomain"  id:0x0x0 [System: PrevIdle PrevSleep DeclUser kCPU kDisp]          
+2026-11-23 13:00:56 -0800 Assertions          	PID 0(kernel_task) Released Idle Sleep Preventer "IOPMrootDomain"  id:0x0x0 [System: PrevIdle PrevSleep DeclUser kCPU kDisp]          
+2026-11-23 13:01:00 -0800 Assertions          	PID 0(kernel_task) Released Idle Sleep Preventer "IOPMrootDomain"  id:0x0x0 [System: PrevIdle PrevSleep DeclUser kCPU kDisp]          
+EXIT 0
