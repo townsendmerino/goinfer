@@ -18,6 +18,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // kso1cPlanes lays out Q6_K blocks (a weight of T = len(raw)/210 blocks) as q6kPlanes does, written independently of
@@ -78,9 +79,7 @@ func kso1cDeviceBytes(w cudaWQ) int64 {
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 20m -tags 'cuda goinfer_testhooks' -run '^TestKSO1C_laneBytes$' -v ./cuda/
 func TestKSO1C_laneBytes(t *testing.T) {
-	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
-		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
-	}
+	testgate.RequireHeavy(t)
 	const heapSlack = 1 << 20
 	for _, name := range kso1cModels {
 		path := modelPath(name)
@@ -190,9 +189,7 @@ func TestKSO1C_laneBytes(t *testing.T) {
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 20m -tags 'cuda goinfer_testhooks' -run '^TestKSO1C_sidecarCarriesNative$' -v ./backend/cuda/
 func TestKSO1C_sidecarCarriesNative(t *testing.T) {
-	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
-		t.Skip("heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1")
-	}
+	testgate.RequireHeavy(t)
 	src := modelPath(kso1cModels[0])
 	if _, err := os.Stat(src); err != nil {
 		t.Skipf("no model %s: %v", src, err)

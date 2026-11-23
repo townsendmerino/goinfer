@@ -217,7 +217,7 @@
   {
    "name": "flash-decode-hd96",
    "group": "Backend, precision and context",
-   "summary": "CUDA only: a model with head dimension 96 (Phi-3 mini) decodes on the flash-decode lane, on its hd-96 kernels, once a layer attends 2048 keys or more, instead of the exact attention path. Off by default; its outputs differ from the exact path's. No effect at another head dim.",
+   "summary": "CUDA only: a head-dim-96 model (Phi-3 mini) decodes on the flash-decode lane past 2048 attended keys. On by default at a context of at most 4096; `=false` turns it off, the bare flag on at any context. Its outputs differ from the exact path's, inside the lane's fidelity gate.",
    "type": "bool",
    "see": "docs/measurements/fa-hd96-phi3-2026-11-22/README.md"
   },
