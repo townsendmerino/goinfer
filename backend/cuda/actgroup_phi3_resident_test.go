@@ -18,6 +18,7 @@ import (
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/testgate"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -454,9 +455,7 @@ func TestPrefillG32_tinyPassMatchesSequential(t *testing.T) {
 // path (a Qwen2.5 q4_k_m checks the lane on a second family; the registered cells are Phi-3's).
 func op6cLoad(t *testing.T, k, n int) (*decoder.Model, *cudaResident, [][]int, string) {
 	t.Helper()
-	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
-		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads Phi-3 mini)")
-	}
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_OP6C_MODEL")
 	if path == "" {
 		path = modelPath("phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf")
