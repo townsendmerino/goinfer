@@ -18,6 +18,7 @@ mkdir -p "$OUT/serve-logs" || exit 2
 for _ in $(seq 1 90); do awk '{exit !($1 < 0.9)}' /proc/loadavg && break; sleep 10; done
 awk '{exit !($1 < 1.0)}' /proc/loadavg || { echo "!! the box did not go idle: $(cat /proc/loadavg)"; exit 2; }
 python3 "$HERE/probe_lane_cost.py" "$BIN" "$OUT" || { echo "!! the arms did not launch their own attention kernels (or a probe failed): the cell does not run"; exit 2; }
+for _ in $(seq 1 90); do awk '{exit !($1 < 0.9)}' /proc/loadavg && break; sleep 10; done   # the probe's loads, settled before bench_peer's idle preflight
 rc=0
 (cd "$REPO" && env BENCH_ENGINES=goinfer,goinfer_old BENCH_BACKENDS=cuda BENCH_DEPTH_BACKEND=cuda BENCH_MODELS=phi3-mini BENCH_DEPTHS=3900 \
   BENCH_QUANT_OVERRIDE="phi3-mini=default" BENCH_RUNS=2 BENCH_ABBA=1 BENCH_REQUIRE_BACKEND=1 BENCH_SERVE_LOG_DIR="$OUT/serve-logs" BENCH_LOAD_TIMEOUT=240 \

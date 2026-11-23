@@ -1,0 +1,13 @@
+started: 2026-11-22 19:59:40 PST
+binary: /home/francis/goinfer-bench/fa-hd96-run/bin/serve-cuda-29e674092 sha256 583b937a86d2bee4
+gpu: NVIDIA GeForce RTX 2070 SUPER, 595.112.07, 460 MiB
+load: 0.64 1.01 1.20 1/725 465741
+mem: Mem:              62           2          20           0          40          59
+probe-cost: lane  prompt 2048 decode tokens 64 ops [('?', 2048), ('alloc', 0), ('fArg', 64), ('fQ', 2048), ('fRms', 4160), ('fSw', 2048), ('faCombine', 2048), ('gemvQ4K', 7168), ('gemvW8', 7232), ('ropeKV', 2048), ('sync', 0)]
+probe-cost: exact prompt 2048 decode tokens 64 ops [('alloc', 0), ('bAttn', 2048), ('fArg', 64), ('fQ', 2048), ('fRms', 4160), ('fSw', 2048), ('gemvQ4K', 7168), ('gemvW8', 7232), ('ropeKV', 2048), ('sync', 0)]
+probe-cost: faCombine lane 2048 exact 0; bAttn lane 0 exact 2048
+probe-cost: the lane arm launches the lane, the exact arm does not
+REFUSED: 1-min load average 1.39 exceeds 1.00. The box is not idle, and a number measured on a busy box is not distinguishable afterwards from a number measured on a quiet one. Wait, or raise BENCH_MAX_LOADAVG deliberately.
+!! the run failed or wrote no results (bench_peer exits 0 when it refuses a busy box)
+VERDICT VOID
+finished: 2026-11-22 20:00:29 PST rc=1

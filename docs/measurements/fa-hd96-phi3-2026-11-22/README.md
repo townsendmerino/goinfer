@@ -127,4 +127,7 @@ the gate about 5 min under the exclusive lock. Gate 3 about 25 min in-process an
   Its first run (`gate3/probe-cost-first-filter.log`) showed exactly that: the lane arm had `faCombine` 2,048 (32 layers × 64 tokens)
   and its partial kernels, which `pipeName` reports as `?`, and the exact arm had `bAttn` 2,048. But it exited 1, because its filter
   also matched `fArg`, the fused argmax. The filter now names the two kernels.
+- **And a settle after the probe.** The first launch with the new probe (20:00 PST) passed it, but bench_peer's idle preflight then
+  refused at load 1.39, raised by the probe's two loads, and measured nothing. The script now waits for load under 0.9 after the probe
+  too, as it does before it.
 - **Unchanged:** the cell, its depths, runs, order, rule and grader.
