@@ -29,6 +29,10 @@ func (q kvQuant) widened() bool { return q != kvqF32 }
 // attended at f32) and kvF16RingOffsetForTest (the ring window read one slot late).
 var kvRoundF16ForTest, kvF16NewRowsF32ForTest, kvF16RingOffsetForTest bool
 
+// kvF16WidenForTest sends single-token decode on an f16 global layer back through the widen-into-scratch read the f16 kernels
+// replaced, so a test can hold the two bit-identical (TestKVF16_decodeReadsInPlace).
+var kvF16WidenForTest bool
+
 // roundF16InPlace rounds x to f16 and back, the f16 cache's storage rounding.
 func roundF16InPlace(x []float32) {
 	for i, f := range x {

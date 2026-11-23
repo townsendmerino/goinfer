@@ -73,6 +73,9 @@ const attnGroupedMinKeys = 128
 // moeExpertMajorRuns (mlp.go) is the same idiom.
 var attnGroupedRuns int64
 
+// kvF16InPlaceRuns counts attendBatchedHeadsKV calls that read an f16 cache's rows in place, so a test can see the read engaged.
+var kvF16InPlaceRuns int64
+
 // canBatchN reports whether the batched M=K path applies: K>1 on a family without its own sequential forward, with a gated MLP
 // and no learned position embedding (GPT-2-style models take the sequential fallback). Sparse MoE batches its attention, but its
 // FFN stays per row because the router picks different experts per token.
@@ -293,12 +296,27 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 // attendBatchedHeadsP is attendBatchedHeads with the window, scale and softcap given, not read from arch: the program walker's
 // form (attentionParams). arch supplies the shapes and the knobs.
 func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache, layer, startPos, K int, ap attentionParams, arch *Architecture, useAcc64 bool, pool []headWorkerScratch) {
+	attendBatchedHeadsKV(q, ctx, keys, vals, nil, nil, base, cache, layer, startPos, K, ap, arch, useAcc64, pool)
+}
+
+// attendBatchedHeadsKV is attendBatchedHeadsP over K/V given either as f32 rows (keys, vals) or as an f16 cache's rows (keysH, valsH,
+// IEEE binary16 bits, keys and vals nil), which the acc64 kernels read in place: bit-identical to widening them into f32 first. f16
+// rows need useAcc64; they skip the grouped kernels, which have no f16 form.
+func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, base int, cache *KVCache, layer, startPos, K int, ap attentionParams, arch *Architecture, useAcc64 bool, pool []headWorkerScratch) {
 	// headsAt, not NumHeads: Laguna varies the query head count per layer (its KV heads stay uniform, so group is per-layer too).
 	nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim
 	kvDim, qDim := nKV*hd, nH*hd
 	group := nH / nKV
 	scale := ap.Scale
+	f16 := keysH != nil
+	if f16 && !useAcc64 {
+		panic("decoder: an f16 cache's rows are read in place only by the acc64 kernels")
+	}
 	nKeys := len(keys) / kvDim
+	if f16 {
+		nKeys = len(keysH) / kvDim
+		atomic.AddInt64(&kvF16InPlaceRuns, 1)
+	}
 	if arch.hasAttnSinks() && ap.Sinks == nil {
 		panic(fmt.Sprintf("decoder: layer %d: attention without its sinks (the caller built attentionParams without LayerWeights.AttnSinks)", layer))
 	}
@@ -376,7 +394,9 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 			// skipping the kh gather. MatmulQKAcc64 interleaves 8 keys' dot products as concurrent f64 accumulator chains to hide FMA latency;
 			// each key's own d-order fold is unchanged, so the result is bit-identical to the plain strided reduction
 			// (TestAttendStrided_matchesGatherReference checks it at this stride).
-			if useAcc64 {
+			if f16 {
+				linalg.MatmulQKAcc64F16(qh[:kt*hd], keysH, scores[:kt*nKeys], kt, hd, nKeys, kvh*hd, kvDim)
+			} else if useAcc64 {
 				linalg.MatmulQKAcc64(qh[:kt*hd], keys, scores[:kt*nKeys], kt, hd, nKeys, kvh*hd, kvDim)
 			} else {
 				mm(qh[:kt*hd], ws.kh[:nKeys*hd], scores[:kt*nKeys], kt, hd, nKeys)
@@ -483,9 +503,14 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 			// head's hd floats at ctx[t0*qDim+qhead*hd] are contiguous, so the scratch `ch` and the scatter copy are dead work. A multi-row
 			// tile's [kt,hd] result is not contiguous in ctx (row stride qDim) and keeps the scatter.
 			direct := useAcc64 && kt == 1
-			if direct {
+			if direct && f16 {
+				b := t0*qDim + qhead*hd
+				linalg.MatmulAVAcc64F16(scores[:nKeys], valsH, ctx[b:b+hd], avAcc, 1, nKeys, hd, kvh*hd, kvDim)
+			} else if direct {
 				b := t0*qDim + qhead*hd
 				linalg.MatmulAVAcc64(scores[:nKeys], vals, ctx[b:b+hd], avAcc, 1, nKeys, hd, kvh*hd, kvDim)
+			} else if f16 {
+				linalg.MatmulAVAcc64F16(scores[:kt*nKeys], valsH, ch[:kt*hd], avAcc, kt, nKeys, hd, kvh*hd, kvDim)
 			} else if useAcc64 {
 				linalg.MatmulAVAcc64(scores[:kt*nKeys], vals, ch[:kt*hd], avAcc, kt, nKeys, hd, kvh*hd, kvDim)
 			} else {
@@ -562,7 +587,7 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 	// attnGroupedOK is this call's eligibility for the grouped path, checked once per call since none of it depends on qhead.
 	// treeMask excludes speculative verify (attendGroupedHeads has no per-(row,column) mask); K != 1 excludes prefill/batched M>1
 	// (not wired); attnGroupedKernels is the per-architecture platform gate.
-	attnGroupedOK := useAcc64 && K == 1 && cache.treeMask == nil && attnGroupedKernels &&
+	attnGroupedOK := useAcc64 && !f16 && K == 1 && cache.treeMask == nil && attnGroupedKernels &&
 		group == attnGroupedNEONSize && nKeys >= attnGroupedMinKeys && arch.knobs.attnGrouped()
 	// runHeadRange walks qhead across [h0,h1), taking the grouped path for any run of attnGroupedNEONSize heads that starts on a
 	// kv-group boundary and fits inside [h0,h1); a worker whose range splits a kv group uses attendOneHead for that group's heads.

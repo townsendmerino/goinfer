@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -315,5 +316,31 @@ func TestKVF16_F5LibraryDefaultIsF32(t *testing.T) {
 	m := f1Load(t, filepath.Join("..", "testdata", "llama-tiny"))
 	if c := m.NewCache(8); c.quant != kvqF32 || m.CPUKVPrecision() != "f32" {
 		t.Errorf("zero options built a %d cache (CPUKVPrecision %q), want f32", c.quant, m.CPUKVPrecision())
+	}
+}
+
+// TestKVF16_decodeReadsInPlace holds single-token decode over an f16 cache, whose global layers' rows the f16 acc64 kernels read in
+// place, bit-identical to the widen-into-scratch read it replaced, through the real caller (Model.forward), and checks that the
+// in-place read is the one that ran. llama-tiny is dense (every layer global); 40 tokens put the history past the kernels' 16-key
+// groups.
+func TestKVF16_decodeReadsInPlace(t *testing.T) {
+	m := f1Load(t, filepath.Join("..", "testdata", "llama-tiny"))
+	f16, _ := f1Arms(m)
+	_, _, _, _, _, _, vocab := m.Dims()
+	ids := f1IDs(40, vocab)
+	before := atomic.LoadInt64(&kvF16InPlaceRuns)
+	inPlace := f1Decode(t, f16, ids)
+	if atomic.LoadInt64(&kvF16InPlaceRuns) == before {
+		t.Fatal("decode over the f16 cache did not take the in-place read")
+	}
+	kvF16WidenForTest = true
+	mid := atomic.LoadInt64(&kvF16InPlaceRuns)
+	widened := f1Decode(t, f16, ids)
+	kvF16WidenForTest = false
+	if atomic.LoadInt64(&kvF16InPlaceRuns) != mid {
+		t.Fatal("kvF16WidenForTest did not route decode back through the widened read")
+	}
+	if d := f1Diff(inPlace, widened); d != 0 {
+		t.Errorf("the in-place f16 read differs from the widened read in %d logits", d)
 	}
 }
