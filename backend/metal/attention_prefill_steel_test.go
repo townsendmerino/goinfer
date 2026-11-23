@@ -200,3 +200,93 @@ func steelCompareF64(got, ref []float64, nH, M int) (worstCos, maxAbs float64, n
 	}
 	return worstCos, maxAbs, nans
 }
+
+// TestAttentionPrefillSteelDigest drives attention_prefill_steel's other instantiations (head dims 64, 80 and 96) and
+// attention_prefill_steel_split's (256 and 512) at production's launch and records each one's output, which
+// TestAttentionPrefillSteelMatchesFloat64 (head dim 128 only) does not. The reference check is loose on purpose: it shows each
+// launch computed causal attention over the cache; the digest carries the identity.
+func TestAttentionPrefillSteelDigest(t *testing.T) {
+	d, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	defer d.ReleaseObjects()
+	lib, err := d.CompileLibrary(prefillKernels, MSL3_1)
+	if err != nil {
+		t.Fatalf("compile prefillKernels: %v", err)
+	}
+	cq := d.NewCommandQueue()
+	const nH, nKV, M, startPos = 4, 2, 33, 5
+	for _, k := range []struct {
+		name       string
+		hd, tg, bq int
+	}{ // prefill_pass's launch: 32 query rows a 128-thread group, and the split kernel's 32 (256) or 16 (512) a 256-thread group
+		{"attention_prefill_steel_hd64", 64, 128, 32}, {"attention_prefill_steel_hd80", 80, 128, 32}, {"attention_prefill_steel_hd96", 96, 128, 32},
+		{"attention_prefill_steel_hd256", 256, 256, 32}, {"attention_prefill_steel_hd512", 512, 256, 16},
+	} {
+		pipe, err := d.NewComputePipeline(lib, k.name)
+		if err != nil {
+			t.Fatalf("pipeline %s: %v", k.name, err)
+		}
+		hd := k.hd
+		qDim, kvDim := nH*hd, nKV*hd
+		stride := qDim + 2*kvDim
+		mPad, rows := (M+7)/8*8, (startPos+M+7)/8*8
+		rng := rand.New(rand.NewSource(int64(hd)))
+		qkv, kc, vc := randHalves(rng, mPad*stride, 1), randHalves(rng, rows*kvDim, 1), randHalves(rng, rows*kvDim, 1)
+		out := make([]uint16, mPad*qDim)
+		for i := range out {
+			out[i] = 0x7e00 // f16 NaN: an element the kernel does not write fails below
+		}
+		outB := NewBufferU16s(d, out)
+		u := func(v int) Buffer { return NewBufferU32(d, uint32(v)) }
+		scale := 1 / math.Sqrt(float64(hd))
+		e := cq.Begin()
+		e.Dispatch(pipe, nH*((M+k.bq-1)/k.bq)*k.tg, k.tg, NewBufferU16s(d, qkv), NewBufferU16s(d, kc), NewBufferU16s(d, vc), outB,
+			u(nH), u(nKV), u(hd), u(startPos), NewBufferFloats(d, []float32{float32(scale)}), u(stride), u(0), u(M), kvIdentityTable(d))
+		e.End()
+		if err := e.Err(); err != nil {
+			t.Fatalf("%s: dispatch: %v", k.name, err)
+		}
+		got := append([]uint16(nil), outB.U16s()[:M*qDim]...)
+		recordAttnDigest(t, k.name, got)
+		d.ReleaseAll()
+		g, kf, vf := halvesToF64(got), halvesToF64(kc), halvesToF64(vc)
+		worst := 1.0
+		for i := range M {
+			n := startPos + i + 1 // causal: row i sees keys [0, startPos+i]
+			for h := range nH {
+				kvh := h / (nH / nKV)
+				sc := make([]float64, n)
+				mx := math.Inf(-1)
+				for s := range n {
+					var a float64
+					for dd := range hd {
+						a += float64(f16ToF32(qkv[i*stride+h*hd+dd])) * kf[s*kvDim+kvh*hd+dd]
+					}
+					sc[s] = a * scale
+					mx = math.Max(mx, sc[s])
+				}
+				var sum float64
+				for s := range sc {
+					sc[s] = math.Exp(sc[s] - mx)
+					sum += sc[s]
+				}
+				var dot, na, nb float64
+				for dd := range hd {
+					var r float64
+					for s := range n {
+						r += sc[s] * vf[s*kvDim+kvh*hd+dd]
+					}
+					r /= sum
+					x := g[(i*nH+h)*hd+dd]
+					dot, na, nb = dot+x*r, na+x*x, nb+r*r
+				}
+				worst = math.Min(worst, dot/(math.Sqrt(na*nb)+1e-300)) // NaN, an unwritten element, makes it NaN
+			}
+		}
+		if !(worst >= 0.999) {
+			t.Errorf("%s: worst row cosine %.6f against float64 causal attention, want >= 0.999", k.name, worst)
+		}
+	}
+}
