@@ -112,3 +112,19 @@ the gate about 5 min under the exclusive lock. Gate 3 about 25 min in-process an
   (the split-KV record).
 - At 128 the lane does not engage (its floor is 2,048 attended keys), so 1.000 is the noise between two identical paths.
 - By the registration, the in-process result gives the direction; the served cell below decides SHIP.
+
+## Addendum, 2026-11-22 19:59 PST, before the served cell's first reading: the arm probe counts launches, not text
+
+- **What happened.** The served cell's untimed arm probe (19:55 PST; `gate3/served-attempt1-text-probe.log`) stopped the cell before any
+  timed run. Both arms' 256-token greedy replies to the depth-2,048 prompt were the same degenerate "planeplane…" loop. A distribution
+  that peaked does not move under the lane's small numeric differences, so equal text could not tell "the lane did not engage" from
+  "it engaged and flipped no token".
+- **The change.** [`probe_lane_cost.py`](probe_lane_cost.py) replaces it in `run_gate3_served.sh`. Each arm takes the same depth-2,048
+  request with goinfer's cost report, and the decode phase's kernel launches decide:
+  - the lane arm must launch `faCombine` and no `bAttn`;
+  - the exact arm must launch `bAttn` and no `faCombine`.
+
+  Its first run (`gate3/probe-cost-first-filter.log`) showed exactly that: the lane arm had `faCombine` 2,048 (32 layers × 64 tokens)
+  and its partial kernels, which `pipeName` reports as `?`, and the exact arm had `bAttn` 2,048. But it exited 1, because its filter
+  also matched `fArg`, the fused argmax. The filter now names the two kernels.
+- **Unchanged:** the cell, its depths, runs, order, rule and grader.
