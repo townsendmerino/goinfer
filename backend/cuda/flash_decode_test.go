@@ -337,3 +337,46 @@ func TestFlashDecodeHD96_laneCUDA(t *testing.T) {
 		t.Error("faHDIndex(80) found a kernel the lane does not have")
 	}
 }
+
+// TestFlashDecodeHD96_defaultByContext: left at its default (decoder.Options.FlashDecodeHD96Default), the hd-96 lane takes a layer only
+// while the resident's context cap is at most flashDecodeHD96DefaultMaxCtx, the context its gates read
+// (docs/measurements/fa-hd96-phi3-2026-11-22/README.md); given (--flash-decode-hd96), it takes one at any cap; off, at none. Other head
+// dims are unaffected. llama-tiny's layer 0 is given hd 96 by hand, and the cap is set on the resident.
+func TestFlashDecodeHD96_defaultByContext(t *testing.T) {
+	requireCUDADevice(t)
+	t.Setenv("GOINFER_CUDA_FLASH_DECODE", "16")
+	m, err := decoder.Load("../../testdata/llama-tiny", decoder.Options{Backend: "cuda", Quant: "int4", FlashDecodeHD96: true, FlashDecodeHD96Default: true})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer m.Close()
+	rf, ok := m.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatalf("not resident: %s", m.ResidentDecline())
+	}
+	if !rf.faHD96 || !rf.faHD96Default {
+		t.Fatalf("the default reached the resident as faHD96 %v, faHD96Default %v", rf.faHD96, rf.faHD96Default)
+	}
+	saved := rf.ctxCap
+	defer func() { rf.ctxCap = saved }()
+	rf.layers[0].nKV = rf.nH
+	for _, c := range []struct {
+		name         string
+		on, dflt     bool
+		hd, cap      int
+		wantEligible bool
+	}{
+		{"default, cap 2048", true, true, 96, 2048, true},
+		{"default, cap 4096", true, true, 96, flashDecodeHD96DefaultMaxCtx, true},
+		{"default, cap 4097", true, true, 96, flashDecodeHD96DefaultMaxCtx + 1, false},
+		{"default, cap 32768", true, true, 96, 32768, false},
+		{"given, cap 32768", true, false, 96, 32768, true},
+		{"off, cap 2048", false, false, 96, 2048, false},
+		{"hd 64 control, default, cap 32768", true, true, 64, 32768, true},
+	} {
+		rf.faHD96, rf.faHD96Default, rf.layers[0].hd, rf.ctxCap = c.on, c.dflt, c.hd, c.cap
+		if got := rf.faEligible(0); got != c.wantEligible {
+			t.Errorf("%s: eligible %v, want %v", c.name, got, c.wantEligible)
+		}
+	}
+}

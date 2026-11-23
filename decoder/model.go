@@ -381,6 +381,10 @@ func (m *Model) FlashDecodeSoftcap() bool { return m.opts.FlashDecodeSoftcap }
 // default.
 func (m *Model) FlashDecodeHD96() bool { return m.opts.FlashDecodeHD96 }
 
+// FlashDecodeHD96Default reports Options.FlashDecodeHD96Default: FlashDecodeHD96 is the caller's default, which CUDA applies only at a
+// resident context of at most 4096.
+func (m *Model) FlashDecodeHD96Default() bool { return m.opts.FlashDecodeHD96Default }
+
 // MoECacheSlotsRequest returns the requested per-layer expert-slot count, or 0 for "as many as fit"; only meaningful with
 // MoECacheExperts. 0 asks for ALL experts and lets the builder cap to measured free VRAM, deliberately: topK slots is the
 // worst setting for the situation this applies to, since it degenerates to fresh-loading every routed expert every token.

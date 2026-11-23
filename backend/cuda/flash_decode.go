@@ -140,6 +140,16 @@ func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
 	r.faSplit = s
 }
 
+// flashDecodeHD96DefaultMaxCtx is the resident context up to which the hd-96 lane is on by default: its fidelity gate read Phi-3 mini at
+// K = 3,900 within a 4,096 context, and nothing past it (docs/measurements/fa-hd96-phi3-2026-11-22/README.md, "Default"). A longer context
+// takes the lane only when it is asked for.
+const flashDecodeHD96DefaultMaxCtx = 4096
+
+// faHD96On reports whether a head-dim-96 layer may take the lane now: asked for, or on by default at a context cap the gates cover.
+func (r *cudaResident) faHD96On() bool {
+	return r.faHD96 && (!r.faHD96Default || r.ctxCap <= flashDecodeHD96DefaultMaxCtx)
+}
+
 // faHDList is the head dims the lane's kernels are built for, in the order of the faPartial, faRows and faRagged tables.
 var faHDList = [faHDs]int{64, 96, 128, 256}
 
@@ -160,14 +170,14 @@ func faHDIndex(hd int) (int, bool) {
 // attention sink (gpt-oss folds the sink into the softmax max and denominator, which fa_combine does not). A model with an attention
 // softcap takes it, in the capped variant (decodeFACapPTX), only when the load asked (faSoftcap): the lane's outputs differ from the
 // exact split-KV lane's, and no fidelity gate has read a capped model on it (docs/measurements/op1o2-fa-softcap-2026-11/README.md).
-// Head dim 96 takes it only when faHD96 is set: until its gates pass (docs/measurements/fa-hd96-phi3-2026-11-22/README.md) and the
-// default is decided, it is opt-in.
+// Head dim 96 takes it only when faHD96 is set and, when that is the caller's default (faHD96Default), only while the resident's context
+// cap is at most flashDecodeHD96DefaultMaxCtx (docs/measurements/fa-hd96-phi3-2026-11-22/README.md).
 func (r *cudaResident) faEligible(l int) bool {
 	if r.faSplit < 1 || r.faCombine == (Pipeline{}) || (r.attnCap != 0 && !r.faSoftcap) {
 		return false
 	}
 	Ly := &r.layers[l]
-	if _, ok := faHDIndex(Ly.hd); !ok || (Ly.hd == 96 && !r.faHD96) || Ly.nKV < 1 || r.nH%Ly.nKV != 0 || r.nH/Ly.nKV > 8 {
+	if _, ok := faHDIndex(Ly.hd); !ok || (Ly.hd == 96 && !r.faHD96On()) || Ly.nKV < 1 || r.nH%Ly.nKV != 0 || r.nH/Ly.nKV > 8 {
 		return false
 	}
 	return r.sinkArg(l) == ArgNull()
