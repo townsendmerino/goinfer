@@ -67,20 +67,20 @@ Columns:
 | # | test | group | min (G) | B23 s | guards? | campaign | verdict |
 |---|---|---|---|---|---|---|---|
 | 1 | `TestKSO1C_longContextQuality` | small | 19.4 / 20.4 | n/a | **guards**: on each of two repo documents (900 tokens), the native lane's mean KL to f32 past position 256 must be at most 1.05× the int8 lane's | KS-O1 (O1C), done; its kernel-survey doc is parked | **shrink** |
-| 2 | `TestP1r_nemotronRangeSurvey` | nemotron-h | 13.0 / 14.0 | n/a | barely: it fails on a NaN in K/V or on max\|K\|,\|V\| ≥ 32,752. The recorded worst is 44.67 (`docs/measurements/p1r-nemotron-f16-2026-11/README.md`), so the bar has about 730× headroom | P1r, done | **move** |
-| 3 | `TestKV10_longContextFidelity` | kv10 | = 11.9 (715 s) | n/a | **measures**: `kv10Judge` fails only on a NaN or Inf in the logits or the metric. The bands are `GATE_READING` lines and the drift is a `GATE_NOTICE` | KV10, **active** (the meaning of its two cosine FAILS is the maintainer's open decision) | **shrink** (the maintainer's call) |
+| 2 | `TestP1r_nemotronRangeSurvey` | nemotron-h | 13.0 / 14.0 | n/a | barely: it fails on a NaN in K/V or on max\|K\|,\|V\| ≥ 32,752. The recorded worst is 44.67 (`docs/measurements/p1r-nemotron-f16-2026-11/README.md`), so the bar has about 730× headroom | P1r, done | **shrink** (was move; §8) |
+| 3 | `TestKV10_longContextFidelity` | kv10 | = 11.9 (715 s) | n/a | **measures**: `kv10Judge` fails only on a NaN or Inf in the logits or the metric. The bands are `GATE_READING` lines and the drift is a `GATE_NOTICE` | KV10, **active** (the meaning of its two cosine FAILS is the maintainer's open decision) | **keep** (was shrink; §8) |
 | 4 | `TestS10DeepstackPrefillCUDA_real` | qwen3-vl-2b | 8.4 / 9.4 | 538 | **guards** (G-S10g): per image, the worst cosine must be within 0.005 of the text control's minimum, and every argmax split must be a near-tie | `docs/completed/task-multimodal-support-2026-10.md`, archived | **shrink** |
 | 5 | `TestGemma4BidirSpanPrefill_real26BDecode` | gemma4-26b | 7.2 / 8.2 | n/a | **measures** (fails only on errors; logs the first-difference step) | same doc (S19), archived | **move** |
 | 6 | `TestGemma4BidirSpanPrefill_real26B` | gemma4-26b | 6.0 / 7.0 | n/a | **guards** (G-S19c): per image, the resident span prefill's last argmax equals the CPU bidirectional prefill's (3 images) | same, archived | **shrink** |
 | 7 | `TestGemma4EModel_realE4BF32Dump` | gemma4-e4b | 5.3 / 6.3 | n/a | **measures**: a CPU f32 dump written outside the repo; it depends on `..._realE4BAnchorDump` having run first | same (S1/S6), archived | **move** |
 | 8 | `TestKSO1C_towardTheFile` | small | 5.2 / 6.2 | n/a | **guards** (O1C-G6): per model, native KL / int8 KL must be at most 1.0, on the 0.5B and on Phi-3 | KS-O1, done | **shrink** |
 | 9 | `TestPrefillGateVsReferenceCUDA` | 7b-8b | 4.6 / 5.6 | 307 | **guards**: the prefill-gap §3 criteria A/B/C at K 512 and 1024 against the CPU f32 reference. The fast-prefill default rests on it | `docs/completed/task-prefill-gap.md`, archived; the gate is still load-bearing | **keep** (optional trim) |
-| 10 | `TestPrefillLongPrompt` | fresh process | 4.0 / 5.0 | 248 | **measures**: a batched decline is printed and skipped past, and `PrefillPath` is printed, not asserted | `docs/measurements/prefill-chunking-d7-2026-09-04.md`, done | **move** |
+| 10 | `TestPrefillLongPrompt` | fresh process | 4.0 / 5.0 | 248 | **measures**: a batched decline is printed and skipped past, and `PrefillPath` is printed, not asserted | `docs/measurements/prefill-chunking-d7-2026-09-04.md`, done | **shrink** (was move; §8) |
 | 11 | `TestGemma4_26BActQuantSensitivity` | gemma4-26b | 3.8 / 4.8 | n/a | **measures** by default (it guards only with `GOINFER_S19_FLOATACT=1`, which the tier does not set). It is CPU-only, although it sits in `backend/cuda` | S19, archived | **move** |
 | 12 | `TestDefaultVerifyWidth_sweep` | qwen3-4b | 3.5 / 4.5 | 246 | **measures** (tok/s per width; 288 generations) | `docs/measurements/default-verify-width-2026-08-25.md`, done | **move** |
 | 13 | `TestGemma4EModel_realE4BNonInferiority` | gemma4-e4b | 3.0 / 4.0 | 224 | **guards** (G-E4B-C1b, registered margins against the 1.5B reference) | S1/S6, archived | **keep** |
 | 14 | `TestGridVisionCUDA_real` | qwen3.6-35b (by label) | 3.0 / 4.0 | 240 | **guards** (G-S2b): per image, the worst merged-token cosine against aikit's CPU tower must be at least 0.9999 | multimodal S4, archived | **shrink** |
-| 15 | `TestGemma4_26BDecodeLocalize` | gemma4-26b | 2.9 / 3.9 | n/a | **measures** by default. With `GOINFER_S19_CPUFLOAT=1` it is the registered G-S19f gate, but the tier does not set that variable | S19, archived (G-S19f read PASS) | **move** |
+| 15 | `TestGemma4_26BDecodeLocalize` | gemma4-26b | 2.9 / 3.9 | n/a | **measures** by default. With `GOINFER_S19_CPUFLOAT=1` it is the registered G-S19f gate, but the tier does not set that variable | S19, archived (G-S19f read PASS) | **keep, armed** (was move; §8) |
 | 16 | `TestS17LeverA_wholeTower` | gemma3-4b | 2.7 / 3.7 | 198 | **measures** lever A. It fails only on the profiler hook's own checks, which `TestS17ProfileCUDA` also makes | multimodal S17, archived | **move** |
 | 17 | `TestGlmOcrCUDAResidentRealImage` | glm-ocr | 2.5 / 3.5 | 184 | **guards** (O3), on three images: resident against CPU, prefill cosine ≥ 0.99 with equal argmax, and 64 greedy tokens identical | `docs/completed/task-glm-ocr-2026-10.md`, archived | **shrink** |
 | 18 | `TestKV11TradeCurve` | gemma4-26b | 2.5 / 3.5 | n/a | **measures** (fails on a decode error, or on fewer than two baseline cells). It says it is a timed run to be held under the exclusive timing lock, and the tier does not hold that lock. Each void cell can add a minute's sleep, up to four | KV11, blocked on KV7 | **move** |
@@ -100,14 +100,18 @@ Columns:
 | `TestGlmOcrCUDAResidentFullBudget` | glm-ocr | 1.6 / 2.6 | 169 | **guards** (6,156-token chunking and the position delta; no cheaper test holds it) | **keep** (optional trim) |
 | `TestGemma4EModel_realE4BAnchorDump` | gemma4-e4b | 1.6 / 2.6 | n/a | **measures** (an exploratory dump; at about 36 GB, the largest host RSS of its process) | **move** |
 | `TestKV2_scheduleIndependence_real1p5B` | small | 1.6 / 2.6 | n/a | **guards**, but `TestKV2_scheduleIndependence_tiny` holds the same schedules in three arms | **move** |
-| `TestBlockSpec_twoTurnsMatchPlain` | qwen3-4b | 1.6 / 2.5 | n/a | **guards** (the real-kernel two-turn check; only here) | **keep**, shrink its loads |
+| `TestBlockSpec_twoTurnsMatchPlain` | qwen3-4b | 1.6 / 2.5 | n/a | **guards** (the real-kernel two-turn check; only here) | **keep**, unchanged (§8) |
 
 ## 4. Each verdict: what it saves and what it loses
 
 Savings use G's lower bound: a move saves at least that much. A shrink's "after" is a **projection by case count, not a
 reading**. Every shrink keeps the same assertion unless it says otherwise.
 
-### Move (fifteen tests; at least 56 minutes)
+### Move
+
+> **Superseded in part by §8.** Of the moves below, P1r and `TestPrefillLongPrompt` became shrinks and `TestGemma4_26BDecodeLocalize` a keep. §9 is the standing list.
+
+The proposal before review: fifteen tests, at least 56 minutes.
 
 **The measure-only tests.** Each runs on demand through the measure tier, its record or its run script, and none asserts
 a result that a regression could turn red:
@@ -141,7 +145,11 @@ What each move loses:
 - **`TestSpecPagerInteraction`:** fold its one assertion (distinct experts per stage equals topK on the off arm) into
   `TestPagerDeterminism`, which already loads the same 35B. That saves a 35B load and a fresh process.
 
-### Shrink (eleven tests)
+### Shrink
+
+> **Superseded in part by §8.** KV10 and `TestBlockSpec_twoTurnsMatchPlain` became keeps. §9 is the standing list.
+
+The proposal before review: ten shrinks, plus one optional trim (the last row).
 
 | test | shrink | now (G, min) | projected | loses |
 |---|---|---|---|---|
@@ -166,7 +174,7 @@ These have registered real-checkpoint bars that nothing cheaper holds at that fi
 - `TestGemma4EModel_realE2BNonInferiority`
 - `TestKSO1C_realPhi3NonInferiority`
 - `TestGlmOcrCUDAResidentFullBudget`
-- `TestBlockSpec_twoTurnsMatchPlain` (shrunk as above)
+- `TestBlockSpec_twoTurnsMatchPlain` (unchanged, after §8)
 
 One possible trim: the E4B and E2B gates each re-measure the same 1.5B reference. They run in different processes, so
 sharing the reference is a design change, not a constant. Fewer prompts would change a registered rule, so it is not
@@ -192,8 +200,9 @@ proposed.
 - `cmd/gate/grade_gpu_heavy.go:heavyProcLines` compares each test's time against the budget. A test over budget becomes a
   notice in the verdict's notices block, as `GATE_NOTICE` lines already do. The same check covers the drain and
   fresh-process cells.
-- `cmd/gate/gpu_record.go:heavyProcRecord` gains a `slow_tests` list (name and seconds, for every test over the warn
-  line). The next triage then reads exact times from the committed record.
+- `cmd/gate/gpu_record.go:heavyProcRecord` gains a `slow_tests` list: the name and seconds of every top-level test that
+  took **60 s or more**, independent of the budget. Every test a 2.5-minute triage needs is then in the committed record
+  with its exact time (§8, point 5).
 - The budget is a constant beside `heavyGroupEnv`. An exception list names any test allowed past it, with the reason.
 
 **Options (recommendation first):**
@@ -208,8 +217,9 @@ proposed.
    - Pro: it fits how the tier is partitioned.
    - Con: it hides which test grew.
 
-After the moves and shrinks above, the slowest test left would be KSO1C long context at about 10 minutes (projected). So
-option 2's 15-minute line would hold every test that remains without exceptions.
+After the moves and shrinks that stand (§9), the slowest tests left are KV10 at 11.9 minutes (exact) and KSO1C long
+context at about 10 minutes (projected). So option 2's 15-minute line would hold every test that remains without
+exceptions.
 
 ## 6. Context: the Mac's long tests are in `quick -full`, not this tier
 
@@ -232,3 +242,119 @@ These are outside H1's scope and are not triaged here. The same method would app
 - **Replace each G bound with the exact Elapsed** from the v0.25.0 per-test streams on the CUDA box, when its timing lock
   is free. That settles the brief's "883" and "48%", and the size of the `small`/parity overlap.
 - Each verdict above is **the maintainer's decision, item by item.**
+
+## 8. Review answers (Gemini, on the PR), item by item
+
+The verdict cells in §2 and §3 already carry the changes below. Where §4 says otherwise, §8 and §9 stand.
+
+**1. "The registered 26B fidelity gates pass vacuously in the heavy tier; the proposal removes them instead of arming
+them." Right for #15. Changed: keep it, and arm it.**
+
+- `TestGemma4_26BDecodeLocalize` is the registered G-S19f gate only under `GOINFER_S19_CPUFLOAT=1`. The tier does not set
+  that variable, so today it runs about 3 minutes and asserts nothing.
+- The tiny `TestGemma4MoE_floatParity` holds the float-decode contract, but not at the 26B's depth, nor at its window
+  past step 95.
+- **Proposal:** set `GOINFER_S19_CPUFLOAT=1` in `cmd/gate/gpu.go:heavyGroupEnv`. Only this test reads the variable. Its
+  runtime armed is not measured.
+- It is a gate-definition change, so it needs the maintainer's word with the rest.
+- Not changed: #11 and #5 stay moves.
+  - **#11, `TestGemma4_26BActQuantSensitivity`,** guards only under `GOINFER_S19_FLOATACT=1`, and then only a float-path
+    miss count. That is a coverage counter, not a fidelity bar, and the tiny parity test holds it. Running it means a
+    26B CPU load (about 4 minutes) for one counter.
+  - **#5, the decode diagnostic,** has no gate under any setting.
+
+**2. "#10 `TestPrefillLongPrompt` skips past batched declines, and moving it loses real-model long-prompt memory-fit
+coverage." Right in part. Changed: shrink, not move.**
+
+- The test fails if the 7B Q4_K_M does not load resident at `-ctx 8192` on the 8 GB card. That is a real fit check.
+- It does not fail if the batched prefill declines: a decline is printed and passed over.
+- **The shrink:**
+  - drop the sequential arm (its 14,668 single-token forwards are most of the time);
+  - make a batched decline at the longest length (8,012) a `t.Errorf`.
+- Projected about 1 minute, saving about 3. The test then guards both the fit and the long batched prefill on a real model.
+- **Risk:** if 8,012 legitimately declines at v0.25.0, this turns red. The v0.25.0 stream on the CUDA box says which, so
+  read it before the change lands.
+
+**3. "The shrinks and moves for #2, #3 and `TestSpecPagerInteraction` weaken the 64K-context, fp16-overflow and
+pager+spec guards." Right for #3 and #2; refuted for `TestSpecPagerInteraction`.**
+
+- **#3 KV10: changed to keep both depths** (3,900 and 65,536) until KV10 closes.
+  - At 65,536 it is the only real-checkpoint run in the tier at 64K context. Its NaN/Inf check there is the only
+    assertion that depth has.
+  - KV10 is still active, and the meaning of its cosine FAILS is the maintainer's open decision.
+  - Revisit the depth when KV10 closes. Running only the f16 arm at 65,536 would halve the cost, but it needs a test change
+    and gives up the f32 control.
+- **#2 P1r: changed from move to shrink, 10 prompts to 2.**
+  - The overflow assertion (max|K|,|V| < 32,752, and no NaN) stays on the real Nemotron.
+  - With the recorded 730× headroom, two prompts cannot plausibly move the verdict. Projected about 2.6 minutes.
+- **`TestSpecPagerInteraction`: refuted, so it stays a move.**
+  - Its only result assertion is the off arm's instrument check (distinct experts per stage equals topK). That check is
+    folded into `TestPagerDeterminism`, which already loads the same 35B with the pager.
+  - Its R1 to R3 readings of pager and speculation together are logged, never asserted. Moving it drops no pager+spec
+    guard, because none runs today.
+  - What it does lose is a smoke run of `NewBlockSpec` on a paged 35B. Its own record found that on CUDA no model both
+    needs the pager and may speculate (`docs/measurements/spec-x-pager-2026-09-02.md`), so that path is not one a request
+    reaches.
+
+**4. "Shrinking `TestBlockSpec_twoTurnsMatchPlain` to shared loads risks state leaking across cases." Right. Changed:
+keep it unchanged.**
+
+- The fresh load per arm is the isolation the test relies on. A reset between cases is a second contract that this test
+  would then have to trust.
+- It saves about a minute, which does not pay for that.
+
+**5. "slow_tests recorded only over 5 minutes won't give exact times for the next triage." Right. Changed.**
+
+- The record's `slow_tests` now lists every top-level test of **60 s or more**, independent of the budget line (§5).
+- A 2.5-minute triage then needs nothing but the committed record.
+
+**6. "The PR's numbers disagree with the record." Right: there were two disagreements. Fixed.**
+
+- §4 said "eleven" shrinks where the PR said ten. The eleventh was `TestPrefillGateVsReferenceCUDA`'s optional trim, which
+  §2 and the keep list mark as keep. The record now counts ten shrinks plus one optional trim.
+- `TestBlockSpec_twoTurnsMatchPlain` appeared both as a shrink and in the keep list. It is now a keep (point 4).
+- The PR body is rewritten from §9, and both now carry the same table and totals.
+
+## 9. Proposed as approved: the moves and shrinks that stand after §8
+
+- Minutes are G's lower bounds for a move. For a shrink they are a projection by case count.
+- The Mac saves 0 on every row, since it has no heavy tier.
+- **Bold** rows are ones the review changed.
+- **Approved on the PR, not yet carried out.** Each is a separate change, and nothing in this record implements one.
+
+| test | proposal | CUDA min saved |
+|---|---|---|
+| **`TestP1r_nemotronRangeSurvey`** | **shrink: 2 prompts instead of 10 (was move)** | ≈ 10.4 |
+| `TestKSO1C_longContextQuality` | shrink: one document | ≈ 9.4 |
+| `TestGemma4BidirSpanPrefill_real26BDecode` | move (measures) | ≥ 7.2 |
+| `TestGemma4EModel_realE4BF32Dump` | move (measures) | ≥ 5.3 |
+| `TestS10DeepstackPrefillCUDA_real` | shrink: control 12 to 4 (a stricter bar; check S16 first) | ≈ 4.4 |
+| `TestGemma4BidirSpanPrefill_real26B` | shrink: one image | ≈ 4.0 |
+| `TestGemma4_26BActQuantSensitivity` | move (measures; CPU only) | ≥ 3.8 |
+| `TestDefaultVerifyWidth_sweep` | move (measures) | ≥ 3.5 |
+| **`TestPrefillLongPrompt`** | **shrink: drop the sequential arm, a decline at 8,012 fails (was move)** | ≈ 3.0 |
+| `TestS17LeverA_wholeTower` | move (measures) | ≥ 2.7 |
+| `TestKSO1C_towardTheFile` | shrink: 4 prompts | ≈ 2.6 |
+| `TestKV11TradeCurve` | move (a timed run that needs the exclusive lock) | ≥ 2.5 |
+| `TestKV0_continuationEffect_real1p5B` | move (its tiny twin holds the assertion) | ≥ 2.5 |
+| `TestSiglipCUDA_speed` | move (measures) | ≥ 2.1 |
+| `TestSpecPagerInteraction` | move; its one check is folded into `TestPagerDeterminism` | ≥ 2.0 |
+| `TestWalk_plantsGoRed` | shrink: stop at the first differing fixture | ≈ 1.7 (and again in the parity cell) |
+| `TestKV3_batchedPrefillPastTheSpanBound_tiny` | shrink: run in one cell, not two | ≥ 1.7 |
+| `TestKSH6_marginParts26B` | move (a reading) | ≥ 1.6 |
+| `TestGemma4EModel_realE4BAnchorDump` | move (measures; about 36 GB RSS) | ≥ 1.6 |
+| `TestKV2_scheduleIndependence_real1p5B` | move (its tiny twin holds the assertion) | ≥ 1.6 |
+| `TestGridVisionCUDA_real` | shrink: 2 images per family | ≈ 1.5 |
+| `TestGlmOcrCUDAResidentRealImage` | shrink: the invoice, 16 tokens | ≈ 1.5 |
+| | **12 moves, 10 shrinks** | **≈ 77 (CUDA); 0 (Mac)** |
+
+**Turned into keep by the review:**
+
+- **`TestKV10_longContextFidelity`**: both depths, until KV10 closes.
+- **`TestGemma4_26BDecodeLocalize`**: kept and armed with `GOINFER_S19_CPUFLOAT=1`, which is a gate-definition change.
+- **`TestBlockSpec_twoTurnsMatchPlain`**: unchanged.
+
+**Kept as before:** `TestPrefillGateVsReferenceCUDA` (its K=256 and K=3,900 trim is optional), the E4B and E2B
+non-inferiority gates, `TestKSO1C_realPhi3NonInferiority` and `TestGlmOcrCUDAResidentFullBudget`.
+
+**Still the maintainer's, beyond these rows:** the per-test budget (§5), and the fix for the `small`/parity overlap (§4).
