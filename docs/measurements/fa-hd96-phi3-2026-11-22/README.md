@@ -146,3 +146,25 @@ the gate about 5 min under the exclusive lock. Gate 3 about 25 min in-process an
   served median ≥ 1.02 at 3,900 and ≥ 0.98 at 128).
 - **Where gate 3 stands:** in-process, 1.160× at 3,900 (10/10 pairs) and flat at 128. The registered SHIP decision waits for the served
   cell.
+
+## Gate 3, served cell, 2026-11-23 06:40–06:49 PST (nobara, RTX 2070 SUPER, driver 595.112.07): **SHIP** by the registered rule
+
+- **Run.** `run_gate3_served.sh` as fixed on 2026-11-22: the launch-count probe, a settle after it, and no `--require-backend`. It ran
+  from the Mac's `night.py` under nobara's exclusive lock, on serve `29e674092` (sha256 `583b937a…`): `goinfer` with `-flash-decode-hd96`,
+  `goinfer_old` with it off. Phi-3 mini at q4k, `BENCH_RUNS=2`, `BENCH_ABBA=1`.
+  - All 8 cells are valid: each decoded `cuda-resident (q4k)`, the token gate passed, and swap grew 0.0 MB.
+  - Each cell started at a 1-minute load of 0.83–0.98, with at least 61,681 MiB available.
+  - Records: [`gate3/served/`](gate3/served/) (`verdict.txt`, `decode-cuda-all.json`, the log and the serve logs).
+
+| depth | lane ÷ exact, per block | median | lane, tok/s | exact, tok/s |
+|--:|---|--:|--:|--:|
+| 128 | 0.9991, 1.0011 | **1.0001** | 114.52 | 114.50 |
+| 3,900 | 1.1489, 1.1492 | **1.1491** | 67.93 | 59.12 |
+
+- **Verdict: SHIP.** The median is at least 1.02 at 3,900 (1.149) and at least 0.98 at 128 (1.000). By the registration, the lane lands
+  behind `--flash-decode-hd96`. Whether it becomes Phi-3's default is Francis's separate call.
+- **The baseline these figures carry.** This binary predates the CUDA q4k sidecar fix (#1236). Both arms decoded Phi-3's Q5_K/Q6_K
+  tensors from int8 copies, the same on both sides, so the ratio compares like with like. Since #1236, served decode reads the native
+  blocks, which saves about 0.84 ms a token on every token. That cost is not attention, so the lane's saving at depth (about 2.2 ms a
+  token in-process at 3,900) should stand, and the ratio at depth should be at least this one. That is a statement about mechanism, not
+  a measurement.
