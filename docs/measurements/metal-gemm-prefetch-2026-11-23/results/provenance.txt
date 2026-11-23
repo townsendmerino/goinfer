@@ -1,0 +1,6 @@
+started 2026-11-23 09:40:50 PST
+Now drawing from 'AC Power'
+{ 1.51 1.59 1.43 }
+total = 2048.00M  used = 513.00M  free = 1535.00M  (encrypted)
+finished 2026-11-23 09:58:47 PST rc=0
+Now drawing from 'AC Power'

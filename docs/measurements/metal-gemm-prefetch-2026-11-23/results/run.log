@@ -1,0 +1,59 @@
+Preparing worktree (detached HEAD bb76811c6)
+Updating files:  26% (3640/13633)Updating files:  27% (3681/13633)Updating files:  28% (3818/13633)Updating files:  29% (3954/13633)Updating files:  30% (4090/13633)Updating files:  31% (4227/13633)Updating files:  32% (4363/13633)Updating files:  33% (4499/13633)Updating files:  34% (4636/13633)Updating files:  35% (4772/13633)Updating files:  36% (4908/13633)Updating files:  37% (5045/13633)Updating files:  38% (5181/13633)Updating files:  39% (5317/13633)Updating files:  40% (5454/13633)Updating files:  41% (5590/13633)Updating files:  42% (5726/13633)Updating files:  43% (5863/13633)Updating files:  44% (5999/13633)Updating files:  45% (6135/13633)Updating files:  46% (6272/13633)Updating files:  47% (6408/13633)Updating files:  48% (6544/13633)Updating files:  49% (6681/13633)Updating files:  50% (6817/13633)Updating files:  51% (6953/13633)Updating files:  52% (7090/13633)Updating files:  53% (7226/13633)Updating files:  54% (7362/13633)Updating files:  54% (7447/13633)Updating files:  55% (7499/13633)Updating files:  56% (7635/13633)Updating files:  57% (7771/13633)Updating files:  58% (7908/13633)Updating files:  59% (8044/13633)Updating files:  60% (8180/13633)Updating files:  61% (8317/13633)Updating files:  62% (8453/13633)Updating files:  63% (8589/13633)Updating files:  64% (8726/13633)Updating files:  65% (8862/13633)Updating files:  66% (8998/13633)Updating files:  67% (9135/13633)Updating files:  68% (9271/13633)Updating files:  69% (9407/13633)Updating files:  70% (9544/13633)Updating files:  71% (9680/13633)Updating files:  72% (9816/13633)Updating files:  73% (9953/13633)Updating files:  74% (10089/13633)Updating files:  75% (10225/13633)Updating files:  76% (10362/13633)Updating files:  77% (10498/13633)Updating files:  78% (10634/13633)Updating files:  79% (10771/13633)Updating files:  80% (10907/13633)Updating files:  81% (11043/13633)Updating files:  82% (11180/13633)Updating files:  83% (11316/13633)Updating files:  84% (11452/13633)Updating files:  84% (11528/13633)Updating files:  85% (11589/13633)Updating files:  86% (11725/13633)Updating files:  87% (11861/13633)Updating files:  88% (11998/13633)Updating files:  89% (12134/13633)Updating files:  90% (12270/13633)Updating files:  91% (12407/13633)Updating files:  92% (12543/13633)Updating files:  93% (12679/13633)Updating files:  94% (12816/13633)Updating files:  95% (12952/13633)Updating files:  96% (13088/13633)Updating files:  97% (13225/13633)Updating files:  98% (13361/13633)Updating files:  99% (13497/13633)Updating files: 100% (13633/13633)Updating files: 100% (13633/13633), done.
+wrote go.work from go.work.example
+base bb76811c6 clean=yes
+go.work exists; left alone
+wt 134bf7c1d clean=yes
+5f84282e94a353c12b5a15dad0855a53affd7248a3fbe270357ca052edbfccc1  /Users/francistownsend-merino/goinfer-bench/gemm/bin/serve-metal-base
+5586ccc6786f9162e84c5e360fd90274e81732daeb828006c1e3d45f5b17076b  /Users/francistownsend-merino/goinfer-bench/gemm/bin/serve-metal-prefetch
+started 2026-11-23 09:40:50 PST
+Now drawing from 'AC Power'
+{ 1.51 1.59 1.43 }
+total = 2048.00M  used = 513.00M  free = 1535.00M  (encrypted)
+# 09:40:51 1.5B block 0 base: load 1.50537109375 avail 12115 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 0, "arm": "base", "ttft_ms_median": 4178.84, "repeat_over_fresh": 0.017, "decode_path": "metal-resident (int4)", "error": null}
+# 09:41:44 1.5B block 0 prefetch: load 1.11474609375 avail 12279 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 0, "arm": "prefetch", "ttft_ms_median": 4282.23, "repeat_over_fresh": 0.017, "decode_path": "metal-resident (int4)", "error": null}
+# 09:42:36 1.5B block 1 prefetch: load 1.01171875 avail 12279 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 1, "arm": "prefetch", "ttft_ms_median": 4289.29, "repeat_over_fresh": 0.017, "decode_path": "metal-resident (int4)", "error": null}
+# 09:44:28 1.5B block 1 base: load 1.90283203125 avail 12115 MB (settled 61s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 1, "arm": "base", "ttft_ms_median": 4169.22, "repeat_over_fresh": 0.017, "decode_path": "metal-resident (int4)", "error": null}
+# 09:45:18 1.5B block 2 base: load 0.966796875 avail 12115 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 2, "arm": "base", "ttft_ms_median": 4168.28, "repeat_over_fresh": 0.017, "decode_path": "metal-resident (int4)", "error": null}
+# 09:46:08 1.5B block 2 prefetch: load 0.759765625 avail 12115 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 2, "arm": "prefetch", "ttft_ms_median": 4273.82, "repeat_over_fresh": 0.017, "decode_path": "metal-resident (int4)", "error": null}
+# 09:46:59 1.5B block 3 prefetch: load 0.60986328125 avail 12279 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 3, "arm": "prefetch", "ttft_ms_median": 4276.07, "repeat_over_fresh": 0.017, "decode_path": "metal-resident (int4)", "error": null}
+# 09:47:50 1.5B block 3 base: load 1.1279296875 avail 12279 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 3, "arm": "base", "ttft_ms_median": 4171.24, "repeat_over_fresh": 0.017, "decode_path": "metal-resident (int4)", "error": null}
+# 09:48:40 1.5B block 4 base: load 0.93896484375 avail 12443 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 4, "arm": "base", "ttft_ms_median": 4171.77, "repeat_over_fresh": 0.017, "decode_path": "metal-resident (int4)", "error": null}
+# 09:49:30 1.5B block 4 prefetch: load 1.4375 avail 12607 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 4, "arm": "prefetch", "ttft_ms_median": 4282.26, "repeat_over_fresh": 0.017, "decode_path": "metal-resident (int4)", "error": null}
+# 09:50:21 1.5B block 5 prefetch: load 1.041015625 avail 12771 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 5, "arm": "prefetch", "ttft_ms_median": 4278.72, "repeat_over_fresh": 0.017, "decode_path": "metal-resident (int4)", "error": null}
+# 09:51:12 1.5B block 5 base: load 0.6533203125 avail 12771 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 5, "arm": "base", "ttft_ms_median": 4172.05, "repeat_over_fresh": 0.017, "decode_path": "metal-resident (int4)", "error": null}
+# 09:52:02 1.5B block 6 base: load 0.34423828125 avail 12771 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 6, "arm": "base", "ttft_ms_median": 4169.8, "repeat_over_fresh": 0.017, "decode_path": "metal-resident (int4)", "error": null}
+# 09:52:52 1.5B block 6 prefetch: load 0.36767578125 avail 12771 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 6, "arm": "prefetch", "ttft_ms_median": 4279.69, "repeat_over_fresh": 0.017, "decode_path": "metal-resident (int4)", "error": null}
+# 09:53:43 1.5B block 7 prefetch: load 0.67041015625 avail 12771 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 7, "arm": "prefetch", "ttft_ms_median": 4277.99, "repeat_over_fresh": 0.017, "decode_path": "metal-resident (int4)", "error": null}
+# 09:54:34 1.5B block 7 base: load 0.54248046875 avail 12771 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 7, "arm": "base", "ttft_ms_median": 4173.68, "repeat_over_fresh": 0.017, "decode_path": "metal-resident (int4)", "error": null}
+# 09:55:24 1.5B block 8 base: load 0.87890625 avail 12771 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 8, "arm": "base", "ttft_ms_median": 4173.94, "repeat_over_fresh": 0.017, "decode_path": "metal-resident (int4)", "error": null}
+# 09:56:14 1.5B block 8 prefetch: load 0.673828125 avail 12771 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 8, "arm": "prefetch", "ttft_ms_median": 4274.39, "repeat_over_fresh": 0.017, "decode_path": "metal-resident (int4)", "error": null}
+# 09:57:06 1.5B block 9 prefetch: load 0.4599609375 avail 12771 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 9, "arm": "prefetch", "ttft_ms_median": 4273.31, "repeat_over_fresh": 0.017, "decode_path": "metal-resident (int4)", "error": null}
+# 09:57:57 1.5B block 9 base: load 0.5068359375 avail 12771 MB (settled 0s) no posix_fadvise on this OS: page cache not evicted
+{"model": "1.5B", "block": 9, "arm": "base", "ttft_ms_median": 4168.8, "repeat_over_fresh": 0.017, "decode_path": "metal-resident (int4)", "error": null}
+pairs 10; prefetch faster on 0; median base/prefetch 0.9754 (range 0.9720-0.9765)
+base TTFT ms by block: [4178.8, 4169.2, 4168.3, 4171.2, 4171.8, 4172.1, 4169.8, 4173.7, 4173.9, 4168.8]
+prefetch TTFT ms by block: [4282.2, 4289.3, 4273.8, 4276.1, 4282.3, 4278.7, 4279.7, 4278.0, 4274.4, 4273.3]
+SPEED CONDITION NOT MET (at least 9 of 10 pairs faster)
+finished 2026-11-23 09:58:47 PST rc=0
+Now drawing from 'AC Power'
+EXIT 0
