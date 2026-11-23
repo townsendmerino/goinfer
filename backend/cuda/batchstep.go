@@ -37,6 +37,10 @@ func (r *cudaResident) BatchStepRange() (lo, hi int) {
 	if !r.prefillReady || r.cacheExperts || r.KVSlots() < 2 || program.CUDAStep.Check(r.prog) != nil {
 		return 0, 0
 	}
+	if r.actG32 {
+		// The per-32 lane's batched pass serves a prompt; a step's ragged rows have no per-32 test of their own yet.
+		return 0, 0
+	}
 	if !batchStepStaticDeclineOffForTest && r.prefillStaticDecline() != nil {
 		return 0, 0
 	}

@@ -1,0 +1,41 @@
+# gpt-oss batched CPU prefill (perf review finding 11, CPU half): registration
+
+Registered 2026-11-23, before any timed run or fidelity reading.
+
+## The change
+
+gpt-oss's prompts ran one token at a time on the CPU: `Program.BatchEligible` refused its FFN form (`FfnGptOss`). The batched walker
+now takes it. Its FFN runs expert-major in chunks (`gptOssMoEBatch`, new: the gpt-oss form of
+`decoder/mlp.go:moeMLPBatchWith`), its attention is the batched kernel with the sink term (KS-O4), and its window layers go through the KV ring.
+With exact attention the batched walker is bit-identical to the sequential one (tier 0, `TestGptOssPrefill_batchedEqualsSequential`, new).
+At the default it takes CPU fast attention (f32) from 512 prompt rows, as every batched family does, so outputs change by float order.
+Batched as gpt-oss's CPU default is Francis's call; this records what it is decided on.
+
+## Arms and instrument
+
+`TestGptOssCPUPrefillGate` (new, in `decoder/`; it lands with the code), one CPU load of `~/models/gpt-oss-20b-MXFP4.gguf` at serve's default
+quant (int4), nobara (Ryzen 7 3700X, 16 threads). S = today's sequential prefill. E = the batched walker with exact attention
+(`ExactPrefill`). B = the batched walker at the default (the candidate). Prompts: prefill-gate prose set A, truncated to K.
+
+## Gates
+
+| gate | question | metric | bar |
+|---|---|---|---|
+| G1, tier 0 | is the batched walker exact? | the tiny fixture's logits, batched against sequential, exact attention, past twice the window, 8 greedy steps, expert-major on and off | bit-identical (any difference: a bug, stop) |
+| G2, tier 1 | is E the sequential path on the real model? | E's first logits against S's, on every S cell of G4 | bit-identical on every prompt (any difference: stop, a bug) |
+| G3, tier 1 | does the default's f32 attention keep the exact outputs? | B against E, 8 prompts at K = 1,024 and 3,900, each scored at 33 positions (the first logits, then 32 teacher-forced on E's greedy tokens): 528 positions pooled. Hard flip: an argmax disagreement whose gap is over 3% of E's logit range (`NearTieArgmaxForTest`) | **PASS:** 0 hard flips and top-1 agreement ≥ 99.0%. **AMBIGUOUS (parked, DECISION NEEDED):** at most 2 hard flips and agreement ≥ 97.0%. **FAIL:** otherwise. Mean and max KL(E ‖ B) reported, not graded |
+| G4, tier 1 | how much faster is the first token? | TTFT in process, S against B, A B B A, 2 blocks per K (4 pairs), K = 1,024 and 3,900, block b on prompt b | **WORTH IT:** every pair ≥ 2.0× at both K. **SMALL:** every pair ≥ 1.2×. **FAIL:** any pair under 1.2×. The Go heap's peak per arm is reported beside it (host bytes) |
+
+**Void:** a G4 cell that starts with the 1-minute load above 8.0 or with less than 31,107 MiB available (the fit plan's need below
+plus 2 GiB; `GPTOSS_PF_MIN_AVAIL_MIB=31107`) is VOID and listed; a void cell is re-run in a follow-up invocation of the same block. **Stopping:** fixed sizes; no early stop. **Order:** G1, then G3 (it decides first, since the default changes
+output), then G4 with G2 inside it. G3 and G4 hold the timing lock (G3 shared, G4 exclusive), by day, done before 21:30.
+
+**What each outcome means:** G1 or G2 red: a bug, fixed before anything else. G3 PASS and G4 WORTH IT: the default change goes to
+Francis with these readings, recommended. G3 AMBIGUOUS: DECISION NEEDED with the flips listed. G3 FAIL: batched stays exact-only (an
+`ExactPrefill`-style default for gpt-oss) or parked, Francis's call. G4 SMALL or FAIL: reported; the change is not worth its risk.
+
+**Cost (estimated before running):** S runs about 0.1 s a token (9.8 tok/s decode at depth 128), so S is about 2 min at 1,024 and 7 min at
+3,900. G3: 16 prompt-cells of E and B, each a batched prefill plus 64 decode steps, about 30 min. G4: 8 S cells (about 36 min), 8 B
+cells, 8 E checks, about 50 min. **Fit check** (`GPTOSS_PF_MODE=fit`, 2026-11-23 12:45 PST): the CPU plan at int4 fits, needing
+30,470,999,151 bytes (29,059 MiB) at the full 131,072-position context against 63.4 GB available; after the load VmHWM is 21.9 GB and
+VmSwap 0.

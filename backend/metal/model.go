@@ -315,6 +315,8 @@ type resident struct {
 	pW8Rows          [batchMaxSeqs + 1]Pipeline // by B
 	attnFAPartialLen int
 	decodeAttnFA     bool
+	faHD96           bool   // Options.FlashDecodeHD96: the hd = 96 lane is sized, and taken where faHD96On says
+	faHD96Default    bool   // faHD96 is the caller's default: the lane applies only while ctxCap is at most metalHD96DefaultMaxCtx
 	attnFAPartial    Buffer // [nKV][maxSplit][G][hd+2] f32 scratch, sized once for the widest layer
 	attnFAMaxSplit   int
 	// attnFASplitOverride, when > 0, replaces attnFASplitFor's split-count rule (the nKeys/32 and attnFAMaxSplit
@@ -2248,14 +2250,31 @@ const attnFAMaxG = 8
 // attnFAGroupOK reports whether a layer with nH query heads over nKV KV heads fits attention_fa's arrays.
 func attnFAGroupOK(nH, nKV int) bool { return nKV > 0 && nH%nKV == 0 && nH/nKV <= attnFAMaxG }
 
+// metalHD96DefaultMaxCtx is the resident context cap up to which the hd = 96 lane is on by default: its fidelity gate read Phi-3 mini
+// at K = 3,900 within a 4,096 context, and nothing past it (docs/measurements/metal-fa-hd96-phi3-2026-11-23/README.md). A longer
+// context takes the lane only when it is asked for.
+const metalHD96DefaultMaxCtx = 4096
+
+// faHD96On reports whether an hd = 96 layer may take attention_fa now: Options.FlashDecodeHD96 asked for, or set as the caller's
+// default (faHD96Default) while the resident's context cap, the depth a conversation can reach, is at most metalHD96DefaultMaxCtx.
+func (r *resident) faHD96On() bool {
+	return r.faHD96 && (!r.faHD96Default || r.ctxCap <= metalHD96DefaultMaxCtx)
+}
+
 // attnFAHeadDimOK reports whether attention_fa can run a layer of head dim hd: 128 (attention_fa and the block kernel),
-// or 64 where the block kernel's hd = 64 twin is instantiated for the group size, G = 7. attention_fa itself
-// is hd = 128 only, so an hd = 64 layer must never reach it without the twin.
-func attnFAHeadDimOK(hd, nH, nKV int) bool {
-	if hd == 128 {
+// 64 where the block kernel's hd = 64 twin is instantiated for the group size, G = 7, or 96 at G = 1 (attention_fa_blk96)
+// when hd96 (Options.FlashDecodeHD96) asks for it. attention_fa itself is hd = 128 only, so a layer of another head dim
+// must never reach it without its twin.
+func attnFAHeadDimOK(hd, nH, nKV int, hd96 bool) bool {
+	switch hd {
+	case 128:
 		return true
+	case 64:
+		return nKV > 0 && nH%nKV == 0 && nH/nKV == 7 && attnFABlk64On
+	case 96:
+		return hd96 && nKV > 0 && nH == nKV
 	}
-	return hd == 64 && nKV > 0 && nH%nKV == 0 && nH/nKV == 7 && attnFABlk64On
+	return false
 }
 
 // gemvExtOn routes the int4 GEMVs gemvRows does not cover (DeltaNet's qkv and z projections, a shared expert's gate|up and
@@ -2383,7 +2402,7 @@ func (r *resident) canUseAttnFA(l int) bool {
 		return false
 	}
 	g := L.geom
-	return g != nil && attnFAHeadDimOK(g.hd, r.nH, g.nKV) && attnFAGroupOK(r.nH, g.nKV) && r.planNKeys() >= r.attnFAFloor()
+	return g != nil && attnFAHeadDimOK(g.hd, r.nH, g.nKV, r.faHD96On()) && attnFAGroupOK(r.nH, g.nKV) && r.planNKeys() >= r.attnFAFloor()
 }
 
 // attnFASplitFor picks S so kvHead*S clears 2x attnFACoreCount (the attention_fa lane's registered rule),

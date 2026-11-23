@@ -5,6 +5,7 @@ package gpudev
 import (
 	"fmt"
 	"runtime"
+	"unsafe"
 
 	gc "github.com/eitamring/gocudrv/cuda"
 	"github.com/eitamring/gocudrv/cudaresult"
@@ -114,6 +115,36 @@ func (q Queue) UploadAsyncAt(dst Buffer, src *HostBuffer[uint8], srcOff, n int) 
 	}
 	err := q.d.onThread(func(drv *cudasys.Driver) error {
 		return cudaresult.MemcpyHtoDAsync(drv, dptr, &s[srcOff], uint64(n), q.s.Raw())
+	})
+	runtime.KeepAlive(src)
+	return err
+}
+
+// UploadPageableAsync enqueues an H2D copy of src (ordinary, pageable host memory) into dst at its bind offset on q's stream, with
+// the driver call made on the calling thread (no hop to gocudrv's command thread). Stream order puts it after every launch already
+// queued on q and before every later one. The driver stages a pageable source before it returns (it may wait for q's queued work to
+// do so), so src may be reused as soon as the call returns. A reader of dst on another queue is the caller's to order.
+func UploadPageableAsync[T Scalar](q Queue, dst Buffer, src []T) error {
+	if dst.b == nil {
+		return fmt.Errorf("cuda: UploadPageableAsync into a nil or mapped-host buffer")
+	}
+	if q.s == nil {
+		return fmt.Errorf("cuda: UploadPageableAsync on a queue with no stream")
+	}
+	if len(src) == 0 {
+		return nil
+	}
+	var z T
+	nb := len(src) * int(unsafe.Sizeof(z))
+	if got, want := dst.bytes(), uint64(dst.off)+uint64(nb); got < want {
+		return fmt.Errorf("cuda: UploadPageableAsync of %d bytes at offset %d overruns a %d-byte buffer", nb, dst.off, got)
+	}
+	dptr := dst.b.DevicePtr() + cudasys.CUdeviceptr(dst.off)
+	if TraceForTest != nil {
+		TraceForTest(TraceEvent{Op: TraceUploadAsync, Dst: uint64(dptr), Bytes: nb})
+	}
+	err := q.d.onThread(func(drv *cudasys.Driver) error {
+		return cudaresult.MemcpyHtoDAsync(drv, dptr, (*byte)(unsafe.Pointer(&src[0])), uint64(nb), q.s.Raw())
 	})
 	runtime.KeepAlive(src)
 	return err

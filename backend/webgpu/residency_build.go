@@ -344,7 +344,8 @@ func (bs *webgpuBuild) uploadModelLevel() error {
 			GSize: gNG * gDS, Repeat: gNH / gNG, NormGroups: 1,
 		}
 	}
-	// Every other family's logit scale (Cohere's, which multiplies) is the same fold: LogitScale is the factor applied.
+	// Every other family's logit scale (dense Granite's, which divides; Cohere's, which multiplies) is the same fold:
+	// LogitScale is the factor applied.
 	if inv, ok := m.BackendView().LogitScale(); ok && !granOK {
 		lmMult = inv
 	}

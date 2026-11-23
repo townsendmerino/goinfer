@@ -1,0 +1,72 @@
+=== RUN   TestOP6C_q4kPassSpeed
+cuda: prefill width 2048 rows (290 MiB of scratch; 3276 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    actgroup_phi3_resident_test.go:594: OP6C pass scratch at 2048 rows: 290.5 MiB; prefill path: batched (weight-stationary CUDA passes of up to 2048 rows); exact kernels (the fast levers are not fidelity-gated on per-32 activations)
+OP6C_CELL P=128 arm=A ms=969.8 load1=2.34 availMB=57493 void=false (elapsed 1s)
+OP6C_CELL P=128 arm=B ms=340.4 load1=2.34 availMB=57483 void=false (elapsed 1s)
+OP6C_CELL P=128 arm=A ms=953.6 load1=2.34 availMB=57479 void=false (elapsed 2s)
+OP6C_CELL P=128 arm=B ms=339.8 load1=2.34 availMB=57437 void=false (elapsed 3s)
+OP6C_PAIR P=128 pair=0 order=AB A_ms=953.6 B_ms=339.8 ratio=2.806
+OP6C_CELL P=128 arm=B ms=339.5 load1=2.34 availMB=57431 void=false (elapsed 3s)
+OP6C_CELL P=128 arm=A ms=952.7 load1=2.34 availMB=57427 void=false (elapsed 4s)
+OP6C_PAIR P=128 pair=1 order=BA A_ms=952.7 B_ms=339.5 ratio=2.806
+OP6C_CELL P=128 arm=A ms=952.9 load1=2.23 availMB=57411 void=false (elapsed 5s)
+OP6C_CELL P=128 arm=B ms=339.8 load1=2.23 availMB=57399 void=false (elapsed 5s)
+OP6C_PAIR P=128 pair=2 order=AB A_ms=952.9 B_ms=339.8 ratio=2.804
+OP6C_CELL P=128 arm=B ms=339.7 load1=2.23 availMB=57400 void=false (elapsed 6s)
+OP6C_CELL P=128 arm=A ms=953.0 load1=2.23 availMB=57400 void=false (elapsed 6s)
+OP6C_PAIR P=128 pair=3 order=BA A_ms=953.0 B_ms=339.7 ratio=2.806
+OP6C_CELL P=128 arm=A ms=953.4 load1=2.23 availMB=57380 void=false (elapsed 7s)
+OP6C_CELL P=128 arm=B ms=339.2 load1=2.23 availMB=57370 void=false (elapsed 8s)
+OP6C_PAIR P=128 pair=4 order=AB A_ms=953.4 B_ms=339.2 ratio=2.811
+OP6C_CELL P=128 arm=B ms=339.5 load1=2.23 availMB=57370 void=false (elapsed 8s)
+OP6C_CELL P=128 arm=A ms=953.4 load1=2.23 availMB=57372 void=false (elapsed 9s)
+OP6C_PAIR P=128 pair=5 order=BA A_ms=953.4 B_ms=339.5 ratio=2.809
+OP6C_CELL P=128 arm=A ms=953.9 load1=2.29 availMB=57353 void=false (elapsed 10s)
+OP6C_CELL P=128 arm=B ms=340.0 load1=2.29 availMB=57341 void=false (elapsed 10s)
+OP6C_PAIR P=128 pair=6 order=AB A_ms=953.9 B_ms=340.0 ratio=2.806
+OP6C_CELL P=128 arm=B ms=339.3 load1=2.29 availMB=57342 void=false (elapsed 11s)
+OP6C_CELL P=128 arm=A ms=953.5 load1=2.29 availMB=57342 void=false (elapsed 12s)
+OP6C_PAIR P=128 pair=7 order=BA A_ms=953.5 B_ms=339.3 ratio=2.810
+OP6C_CELL P=128 arm=A ms=953.5 load1=2.29 availMB=57330 void=false (elapsed 13s)
+OP6C_CELL P=128 arm=B ms=339.8 load1=2.29 availMB=57312 void=false (elapsed 13s)
+OP6C_PAIR P=128 pair=8 order=AB A_ms=953.5 B_ms=339.8 ratio=2.806
+OP6C_CELL P=128 arm=B ms=339.5 load1=2.29 availMB=57312 void=false (elapsed 13s)
+OP6C_CELL P=128 arm=A ms=955.6 load1=2.29 availMB=57312 void=false (elapsed 14s)
+OP6C_PAIR P=128 pair=9 order=BA A_ms=955.6 B_ms=339.5 ratio=2.814
+OP6C_CELL P=3900 arm=A ms=44719.7 load1=2.35 availMB=57243 void=false (elapsed 59s)
+OP6C_CELL P=3900 arm=B ms=28486.1 load1=1.64 availMB=56753 void=false (elapsed 1m27s)
+OP6C_CELL P=3900 arm=A ms=44708.9 load1=1.49 availMB=56745 void=false (elapsed 2m12s)
+OP6C_CELL P=3900 arm=B ms=28484.3 load1=1.52 availMB=56338 void=false (elapsed 2m41s)
+OP6C_PAIR P=3900 pair=0 order=AB A_ms=44708.9 B_ms=28484.3 ratio=1.570
+OP6C_CELL P=3900 arm=B ms=28483.8 load1=1.31 availMB=56353 void=false (elapsed 3m9s)
+OP6C_CELL P=3900 arm=A ms=44713.7 load1=1.26 availMB=56259 void=false (elapsed 3m54s)
+OP6C_PAIR P=3900 pair=1 order=BA A_ms=44713.7 B_ms=28483.8 ratio=1.570
+OP6C_CELL P=3900 arm=A ms=44709.5 load1=1.34 availMB=56295 void=false (elapsed 4m39s)
+OP6C_CELL P=3900 arm=B ms=28486.7 load1=1.16 availMB=56393 void=false (elapsed 5m7s)
+OP6C_PAIR P=3900 pair=2 order=AB A_ms=44709.5 B_ms=28486.7 ratio=1.569
+OP6C_CELL P=3900 arm=B ms=28484.6 load1=1.15 availMB=56392 void=false (elapsed 5m36s)
+OP6C_CELL P=3900 arm=A ms=44705.1 load1=1.09 availMB=56387 void=false (elapsed 6m20s)
+OP6C_PAIR P=3900 pair=3 order=BA A_ms=44705.1 B_ms=28484.6 ratio=1.569
+OP6C_CELL P=3900 arm=A ms=44708.9 load1=1.38 availMB=56390 void=false (elapsed 7m5s)
+OP6C_CELL P=3900 arm=B ms=28483.6 load1=1.32 availMB=56386 void=false (elapsed 7m33s)
+OP6C_PAIR P=3900 pair=4 order=AB A_ms=44708.9 B_ms=28483.6 ratio=1.570
+OP6C_CELL P=3900 arm=B ms=28484.9 load1=1.29 availMB=56387 void=false (elapsed 8m2s)
+OP6C_CELL P=3900 arm=A ms=44700.0 load1=1.18 availMB=56380 void=false (elapsed 8m47s)
+OP6C_PAIR P=3900 pair=5 order=BA A_ms=44700.0 B_ms=28484.9 ratio=1.569
+OP6C_CELL P=3900 arm=A ms=44705.9 load1=1.49 availMB=56411 void=false (elapsed 9m31s)
+OP6C_CELL P=3900 arm=B ms=28485.1 load1=1.42 availMB=56408 void=false (elapsed 10m0s)
+OP6C_PAIR P=3900 pair=6 order=AB A_ms=44705.9 B_ms=28485.1 ratio=1.569
+OP6C_CELL P=3900 arm=B ms=28486.0 load1=1.25 availMB=56408 void=false (elapsed 10m28s)
+OP6C_CELL P=3900 arm=A ms=44703.0 load1=1.25 availMB=56400 void=false (elapsed 11m13s)
+OP6C_PAIR P=3900 pair=7 order=BA A_ms=44703.0 B_ms=28486.0 ratio=1.569
+OP6C_CELL P=3900 arm=A ms=44709.0 load1=1.39 availMB=56403 void=false (elapsed 11m58s)
+OP6C_CELL P=3900 arm=B ms=28481.8 load1=1.18 availMB=56397 void=false (elapsed 12m26s)
+OP6C_PAIR P=3900 pair=8 order=AB A_ms=44709.0 B_ms=28481.8 ratio=1.570
+OP6C_CELL P=3900 arm=B ms=28481.5 load1=1.11 availMB=56399 void=false (elapsed 12m55s)
+OP6C_CELL P=3900 arm=A ms=44707.3 load1=1.14 availMB=56394 void=false (elapsed 13m39s)
+OP6C_PAIR P=3900 pair=9 order=BA A_ms=44707.3 B_ms=28481.5 ratio=1.570
+    actgroup_phi3_resident_test.go:654: OP6C_SUMMARY P=128 pairs=10 median_A_over_B=2.806 pairs_above_1=10 ratios=[2.8060897084338965 2.805871384856622 2.8043245676651773 2.8056894521355744 2.810598651864028 2.8087136383572195 2.805525700547623 2.8099357975036883 2.806279386608222 2.8143852719648157]
+    actgroup_phi3_resident_test.go:654: OP6C_SUMMARY P=3900 pairs=10 median_A_over_B=1.570 pairs_above_1=10 ratios=[1.5696002776489872 1.5697924133726904 1.569486485885127 1.5694485258264792 1.5696379388502313 1.5692549853150062 1.5694487390593839 1.5692950148180675 1.5697369721123204 1.5696956588581013]
+--- PASS: TestOP6C_q4kPassSpeed (821.27s)
+PASS
+ledger: 1 device(s) released in this run

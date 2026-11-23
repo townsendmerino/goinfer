@@ -1,0 +1,15 @@
+=== RUN   TestPrefillDecomp
+cuda: 1 resident KV slots of 4 requested — one slot's pools cost 3200 MB at the resident context 4096, and free VRAM beside the weights (4985 MB, less 246 MB reserved) allows 1
+cuda: prefill width 2048 rows (290 MiB of scratch; 1612 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    prefill_decomp_test.go:71: N            gemv       attn       glue     moeFFN     catSum  moeFFN%
+[decomp] N=128 unprofiled pass done in 369ms; 1 profiled run(s) next
+    prefill_decomp_test.go:100: N=128 unprofiled wall 369ms (346.9 tok/s, 2.88 ms/token)
+[decomp] N=128 profiled: gemv 324.257214ms attn 9.171263ms glue 6.980412ms moeFFN 0s (sum 340.408889ms)
+    prefill_decomp_test.go:117: 128    324.257214ms 9.171263ms 6.980412ms         0s 340.408889ms     0.0%  (attn 2.7%)
+[decomp] N=3900 unprofiled pass done in 39.016s; 1 profiled run(s) next
+    prefill_decomp_test.go:100: N=3900 unprofiled wall 39.016s (100.0 tok/s, 10.00 ms/token)
+[decomp] N=3900 profiled: gemv 10.131917694s attn 28.788892545s glue 115.34719ms moeFFN 0s (sum 39.036157429s)
+    prefill_decomp_test.go:117: 3900   10.131917694s 28.788892545s 115.34719ms         0s 39.036157429s     0.0%  (attn 73.7%)
+--- PASS: TestPrefillDecomp (80.70s)
+PASS
+ledger: 1 device(s) released in this run
