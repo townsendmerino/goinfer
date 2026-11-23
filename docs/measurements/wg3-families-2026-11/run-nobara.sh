@@ -31,7 +31,7 @@ fit() {
   local bin=$1 log=$2
   "$bin" -model "bench=$M" -backend webgpu -quant int4 -ctx 4096 -addr 127.0.0.1:18299 >"$log" 2>&1 &
   local pid=$!
-  for _ in $(seq 1 900); do grep -q "decode path:" "$log" && break; sleep 1; done
+  for _ in $(seq 1 900); do grep -q "decode path:" "$log" && break; kill -0 $pid 2>/dev/null || break; sleep 1; done
   kill $pid; wait $pid 2>/dev/null
   grep -m1 "decode path:" "$log" | sed 's/.*decode path: *//'
 }
@@ -39,6 +39,7 @@ fb=$(fit "$SB" "$OUT/fit/base.log"); fh=$(fit "$SH" "$OUT/fit/head.log")
 echo "fit base: $fb" | tee -a "$OUT/provenance.txt"; echo "fit head: $fh" | tee -a "$OUT/provenance.txt"
 case "$fh" in webgpu:*-resident*) ;; *) echo "STOP: head is not resident"; exit 75;; esac
 case "$fb" in *-resident*|"") echo "STOP: base is resident or unread"; exit 75;; esac
+case "$fb" in cpu*|webgpu-staged*) ;; *) echo "STOP: base is not on the CPU path ($fb)"; exit 75;; esac
 P=$W/results/prompts.json
 [ -f "$P" ] || cp "$W/wt-$KEY-head/scripts/prompts.json" "$P"
 H=$W/wt-$KEY-head
@@ -46,16 +47,24 @@ if ! python3 -c "import json,sys; d=json.load(open('$P')); sys.exit(0 if all(f'$
   (cd "$H" && python3 -u scripts/bench_prompts_calibrate.py --serve "$SB" --backend webgpu --quant int4 --model "$KEY=$M" \
     --depth 128 --depth 1024 --out "$P") > "$OUT/calibrate.log" 2>&1 || { echo "STOP: calibration failed"; exit 2; }
 fi
-for _ in $(seq 1 90); do awk '{exit !($1 < 0.8)}' /proc/loadavg && break; sleep 10; done
-echo "settled: load $(cut -d' ' -f1-3 /proc/loadavg) $(ts)" | tee -a "$OUT/provenance.txt"
-export BENCH_PROMPTS=$P WG0_REPO=$H
+# The builds and the calibration load the box: settle the 1-minute load under 0.8 before each cell (up to 15 minutes), or stop.
+settle() {
+  for _ in $(seq 1 90); do awk '{exit !($1 < 0.8)}' /proc/loadavg && { echo "settled before $1: load $(cut -d' ' -f1-3 /proc/loadavg) $(ts)" | tee -a "$OUT/provenance.txt"; return 0; }; sleep 10; done
+  echo "STOP: load did not settle before $1 ($(cut -d' ' -f1-3 /proc/loadavg))" | tee -a "$OUT/provenance.txt"; exit 75
+}
+export BENCH_PROMPTS=$P WG0_REPO=$H WG3_BASE_SERVE=$SB
 export GOINFER_SERVE_WEBGPU=$SH GOINFER_SERVE_WEBGPU_OLD=$SB
 export BENCH_ENGINES=goinfer,goinfer_old BENCH_BACKENDS=webgpu BENCH_DEPTH_BACKEND=webgpu BENCH_PHASES=B BENCH_ABBA=2 BENCH_RUNS=2 BENCH_MODELS=$KEY BENCH_DEPTHS=128
 export BENCH_LOAD_TIMEOUT=900 BENCH_QUANT_OVERRIDE=$KEY=int4 BENCH_SWAP_VOID_STOP=3 BENCH_SWAP_KILL_MB=1024 BENCH_SERVE_LOG_DIR=$OUT/serve-logs
+rc_all=0
 case ",$STEPS," in *,decode,*)
-(cd "$H" && python3 -u "$HERE/bench.py" decode "$OUT/decode.json") > "$OUT/decode.log" 2>&1; echo "decode rc=$? $(ts)" | tee -a "$OUT/provenance.txt";;
+settle decode
+(cd "$H" && python3 -u "$HERE/bench.py" decode "$OUT/decode.json") > "$OUT/decode.log" 2>&1; rc=$?
+echo "decode rc=$rc $(ts)" | tee -a "$OUT/provenance.txt"; [ $rc -eq 0 ] || rc_all=$rc;;
 esac
 case ",$STEPS," in *,ttft,*)
-(cd "$H" && python3 -u "$HERE/bench.py" ttft "$OUT/ttft.json" --arm head=$SH:webgpu --arm base=$SB:webgpu --models $KEY --quads 2 --n 6 --ctx 4096) > "$OUT/ttft.log" 2>&1
-echo "ttft rc=$? finished $(ts)" | tee -a "$OUT/provenance.txt";;
+settle ttft
+(cd "$H" && python3 -u "$HERE/bench.py" ttft "$OUT/ttft.json" --arm head=$SH:webgpu --arm base=$SB:webgpu --models $KEY --quads 2 --n 6 --ctx 4096) > "$OUT/ttft.log" 2>&1; rc=$?
+echo "ttft rc=$rc finished $(ts)" | tee -a "$OUT/provenance.txt"; [ $rc -eq 0 ] || rc_all=$rc;;
 esac
+exit $rc_all
