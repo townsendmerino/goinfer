@@ -48,3 +48,33 @@ against S, which leaves that option's speed unmeasured. **G4 now times all three
 1–2 and 5–6, S–E pairs at 1–3 and 4–6), 2 blocks per K, the same K, prompts, void rule and stopping rule. **Bars, each read on its
 own pairs:** S–B and S–E each WORTH IT when every pair is at least 2.0× at both K, SMALL at 1.2×, FAIL under it. G2 is unchanged (E
 against S on every S cell). G3 runs to its fixed size, ungraded until it ends. **Cost:** 24 cells, about 60 min.
+
+## G1 result: PASS (2026-11-23, nobara CPU, tier 0)
+
+`TestGptOssPrefill_batchedEqualsSequential` (expert-major on and off), `TestGptOssMoEBatch_expertMajorEqualsPerRow` and
+`TestGptOssPrefill_fastAttentionRuns` green, with the KS-O4 ring test, `TestMoEExpertMajor_bitIdentical` and the gpt-oss GGUF parity test
+beside them. Red first: with `BatchEligible` as on main, the prefill test fails at `canBatchN`. A plant (the expert-major fold in
+reverse rank order) turns the synthetic-layer test red; the tiny fixture's prefill test stays green under it, so the fold order is
+pinned by the synthetic layer (top 4), not by the fixture.
+
+## G3 result: FAIL (2026-11-23 12:36–12:42 PST, nobara CPU), stopped at 3 of 16 prompt-cells once FAIL was certain
+
+Binary `decoder-2a349dff6`, gpt-oss-20b at int4, K = 1,024, records in `g3/`. Load at the start: 6.9 (16 cores).
+
+| prompt (set a) | agree of 33 | hard flips | KL at position 0 |
+|---|---|---|---|
+| `audit-2026-09-02.md` | 32 | 0 | 0.025 |
+| `QUEUE.md` | 27 | 1 | 0.049 |
+| `queue-engineering.md` | 28 | 3 | 0.065 |
+| **pooled, 99 positions** | **87 (87.9%)** | **4** | mean KL 0.169, max 1.7 over all positions |
+
+**FAIL by the registered bar:** 4 hard flips is past the AMBIGUOUS band's cap of 2, so no reading of the 13 cells left could change
+the verdict. **Deviation from the registration, stated:** it said fixed sizes and no early stop; the run was stopped here under
+CLAUDE.md's "stop as soon as the answer is clear", because the verdict was fixed and the run held nobara's timing lock against every
+timed run on a contended day. The K = 3,900 cells were not read.
+
+**What it means:** at the default, the batched prefill's f32 attention moves gpt-oss-20b's first-token distribution by 0.03–0.07 nats
+and flips argmaxes outside the near-tie band. The mechanism is the one `attendBatchedHeadsP`'s comment names (an f32 QKᵀ
+reassociation flips a top-k expert at a near-tie and cascades through 24 MoE layers); the tiny fixture shows no difference at all at
+512 and 1,024 rows, so a tier-0 test cannot see it. By the registered outcomes the live option is batched with exact attention (arm E,
+bit-identical to the sequential path), which G4 times since its amendment.
