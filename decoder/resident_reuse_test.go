@@ -341,7 +341,10 @@ func TestResidentCommitIDs_imageBlocksAppendOnlyValid(t *testing.T) {
 func TestResidentForgetIDs_clearsImageBlocksToo(t *testing.T) {
 	m := &Model{}
 	m.setBoundSeqForTest([]int{0, 0, 0, 0, 0}, nil, []residentImageBlock{{start: 2, end: 5, hash: 7}})
-	m.residentCommitIDs([]int{1, 2}, []int{3, 4}, nil, nil)
+	m.residentCommitIDs([]int{1, 2, 3, 4, 5}, []int{6}, nil, nil)
+	if got := m.boundBlocksForTest(); len(got) != 1 {
+		t.Fatalf("after the commit the slot holds blocks %v, want the earlier one: nothing for the forget to clear", got)
+	}
 	m.residentForgetIDs()
 	if m.boundBlocksForTest() != nil {
 		t.Errorf("resImgBlocks = %v after forget, want nil", m.boundBlocksForTest())
