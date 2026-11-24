@@ -8,12 +8,12 @@ import (
 	"fmt"
 	"go/scanner"
 	"go/token"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -307,12 +307,7 @@ func TestHardwareCensus(t *testing.T) {
 	found := discover(t)
 	c := loadCensus(t)
 	if os.Getenv("HWCENSUS_DUMP") != "" {
-		var ks []string
-		for k := range found {
-			ks = append(ks, k)
-		}
-		sort.Strings(ks)
-		for _, k := range ks {
+		for _, k := range slices.Sorted(maps.Keys(found)) {
 			t.Logf("%s\t%s", k, strings.Join(found[k], ", "))
 		}
 	}
@@ -324,7 +319,7 @@ func TestHardwareCensus(t *testing.T) {
 		}
 		ids[e.ID] = true
 		if !validKind[e.Kind] {
-			t.Errorf("entry %s: kind %q is not one of %v", e.ID, e.Kind, keys(validKind))
+			t.Errorf("entry %s: kind %q is not one of %v", e.ID, e.Kind, slices.Sorted(maps.Keys(validKind)))
 		}
 		if e.Gate == "" || e.SelectedWhen == "" || e.OurMachines == "" {
 			t.Errorf("entry %s: gate, selected_when and our_machines are required", e.ID)
@@ -337,7 +332,7 @@ func TestHardwareCensus(t *testing.T) {
 		}
 		for i, r := range e.LastExecuted {
 			if r.Machine == "" || r.Goinfer == "" || r.Aikit == "" || r.Gate == "" || !isoDate.MatchString(r.Date) || !validHow[r.How] {
-				t.Errorf("entry %s, last_executed[%d] %+v: a record names a machine, an ISO date, how (one of %v), both commits and the gate that ran", e.ID, i, r, keys(validHow))
+				t.Errorf("entry %s, last_executed[%d] %+v: a record names a machine, an ISO date, how (one of %v), both commits and the gate that ran", e.ID, i, r, slices.Sorted(maps.Keys(validHow)))
 			}
 		}
 	}
@@ -352,8 +347,8 @@ func TestHardwareCensus(t *testing.T) {
 			stale = append(stale, k+"  (entry "+id+")")
 		}
 	}
-	sort.Strings(missing)
-	sort.Strings(stale)
+	slices.Sort(missing)
+	slices.Sort(stale)
 	for _, m := range missing {
 		t.Errorf("hardware predicate with no census entry: %s — add it to docs/hardware-coverage.json with what it selects and where it last ran ([] for never)", m)
 	}
@@ -367,15 +362,6 @@ func TestHardwareCensus(t *testing.T) {
 		}
 	}
 	t.Logf("%d predicates found, %d census entries; NEVER EXECUTED (%d):\n  %s", len(found), len(c.Entries), len(never), strings.Join(never, "\n  "))
-}
-
-func keys(m map[string]bool) []string {
-	var s []string
-	for k := range m {
-		s = append(s, k)
-	}
-	sort.Strings(s)
-	return s
 }
 
 // TestScanSource pins the scanner on inputs whose answer is known, so a scanner change that stops seeing a predicate
@@ -402,7 +388,7 @@ func f() {
 }
 `)
 	got := scanSource(src, "goinfer/x.go")
-	sort.Strings(got)
+	slices.Sort(got)
 	want := []string{
 		"cpu:hasAVX9", "cpu:hasBlockFlag", "cuda:DeviceAttributeWarpSize",
 		"mem:/proc/meminfo@goinfer/x.go", "mem:MemInfo@goinfer/x.go", "mem:hw.memsize@goinfer/x.go", "mem:probe:tpu@goinfer/x.go",

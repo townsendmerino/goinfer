@@ -48,7 +48,7 @@ func ReadLayerD(root, backend string) (LayerD, error) {
 	}
 	d := LayerD{Resident: map[string]bool{}}
 	seen, cells := map[string]bool{}, map[string]bool{}
-	for _, l := range strings.Split(string(b), "\n") {
+	for l := range strings.SplitSeq(string(b), "\n") {
 		w := strings.Fields(l)
 		if len(w) < 5 || w[0] != "L" || w[3] != backend {
 			continue
@@ -132,7 +132,7 @@ func Diff(golden string, lines []string, keyFields int) ([]string, error) {
 		return strings.Join(f[:min(len(f), keyFields)], " ")
 	}
 	want := map[string]string{}
-	for _, l := range strings.Split(strings.TrimSuffix(string(b), "\n"), "\n") {
+	for l := range strings.SplitSeq(strings.TrimSuffix(string(b), "\n"), "\n") {
 		want[key(l)] = l
 	}
 	var diffs []string

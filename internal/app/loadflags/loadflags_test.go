@@ -3,7 +3,7 @@ package loadflags
 import (
 	"flag"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -29,7 +29,7 @@ func TestRegister_chatAndServeGetTheSameFlags(t *testing.T) {
 	serve, _ := parse(t, Serve)
 	names := func(fs *flag.FlagSet) (out []string) {
 		fs.VisitAll(func(f *flag.Flag) { out = append(out, f.Name+"="+f.DefValue) })
-		sort.Strings(out)
+		slices.Sort(out)
 		return out
 	}
 	if c, s := strings.Join(names(chat), " "), strings.Join(names(serve), " "); c != s {

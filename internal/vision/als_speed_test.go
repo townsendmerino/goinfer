@@ -133,7 +133,6 @@ func TestALS_G0_speed(t *testing.T) {
 		}
 		var bf []linalg.WeightMat
 		for _, w := range f32w {
-			w := w
 			alsBF16(t, &w)
 			bf = append(bf, w)
 		}

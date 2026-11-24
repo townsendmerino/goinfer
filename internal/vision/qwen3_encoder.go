@@ -446,18 +446,12 @@ func interpTaps(row, gh, side, col, gw int, idx *[4]int, wt *[4]float32) {
 }
 
 func axisTaps(index, size, side int, taps *[2]int, w *[2]float32) {
-	den := size - 1
-	if den < 1 {
-		den = 1
-	}
+	den := max(size-1, 1)
 	// f32 throughout, each step rounded: index * (side-1) then / den.
 	src := float32(float32(index)*float32(side-1)) / float32(den)
 	fl := float32(math.Floor(float64(src)))
 	for o := range 2 {
-		t := int(fl) + o
-		if t < 0 {
-			t = 0
-		}
+		t := max(int(fl)+o, 0)
 		if t > side-1 {
 			t = side - 1
 		}
