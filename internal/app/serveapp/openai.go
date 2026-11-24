@@ -5,10 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"maps"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"sort"
@@ -25,6 +24,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/engine"
 	"github.com/townsendmerino/goinfer/internal/app/connect"
+	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"github.com/townsendmerino/goinfer/internal/clef"
 	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/decide"
@@ -627,7 +627,7 @@ type chatReq struct {
 }
 
 // think is the request's thinking controls as think.go's input.
-func (r chatReq) think() thinkRequest {
+func (r *chatReq) think() thinkRequest {
 	tr := thinkRequest{kwargs: r.ChatTemplateKwargs, reasoningEffort: r.ReasoningEffort, format: r.ReasoningFormat}
 	if r.ThinkingTokenBudget != nil {
 		tr.budget = *r.ThinkingTokenBudget
@@ -716,13 +716,13 @@ func functionTools(tools []toolSpec) (kept []toolSpec, dropped []string) {
 	return kept, dropped
 }
 
-// dropUnrunnableTools applies functionTools to a request's tool list in place, setting the header when any is dropped.
-func dropUnrunnableTools(w http.ResponseWriter, tools *[]toolSpec) {
-	kept, dropped := functionTools(*tools)
+// dropUnrunnableTools filters a request's tool list with functionTools, setting the header when any is dropped.
+func dropUnrunnableTools(w http.ResponseWriter, tools []toolSpec) []toolSpec {
+	kept, dropped := functionTools(tools)
 	if len(dropped) > 0 {
 		w.Header().Set("X-Goinfer-Tools-Dropped", strings.Join(dropped, ","))
 	}
-	*tools = kept
+	return kept
 }
 
 // apiToolCall is the OpenAI wire form of a tool call (arguments is a JSON string).
@@ -862,7 +862,7 @@ func (s *server) handleChat(w http.ResponseWriter, r *http.Request) {
 	if s.fastRoute(r, &req.Model) {
 		req.applyFast()
 	}
-	dropUnrunnableTools(w, &req.Tools)
+	req.Tools = dropUnrunnableTools(w, req.Tools)
 	if err := validateN(req.N); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -1394,7 +1394,7 @@ func seedOrRandom(seed *int64) int64 {
 	if seed != nil {
 		return *seed
 	}
-	return rand.Int63()
+	return rand.Int64()
 }
 
 // clampMaxTokens bounds max_tokens by the model's context window. The KV cache is preallocated as

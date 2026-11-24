@@ -24,7 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	mathrand "math/rand"
+	mathrand "math/rand/v2"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -557,7 +557,7 @@ func (s *session) batchLine(ctx context.Context, bd batchDefaults, modelName str
 	case req.Seed != nil:
 		sp.Seed = *req.Seed
 	case !bd.seedSet:
-		sp.Seed = mathrand.Int63() // an omitted seed varies run to run, as in serve; an explicit one (even 0) is honoured
+		sp.Seed = mathrand.Int64() // an omitted seed varies run to run, as in serve; an explicit one (even 0) is honoured
 	}
 	maxTok := bd.maxTok
 	mt := req.MaxTokens

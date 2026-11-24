@@ -1450,7 +1450,7 @@ func (s *server) loadQwenVisionTower(dir string, int8Tower bool, backend string,
 		return fmt.Errorf("qwen2.5-vl preprocessor config (%s): %w", dir, err)
 	}
 	for _, lm := range s.models {
-		q := &qwen25Vision{qwenGrid: qwenGrid{pp: pp, merge: enc.Cfg.SpatialMergeSize, imgTok: -1}, enc: enc, require: require}
+		q := &qwen25Vision{pp: pp, merge: enc.Cfg.SpatialMergeSize, imgTok: -1, enc: enc, require: require}
 		lm.vision = q
 		if id, ok := lm.tk.TokenID(multimodal.QwenImagePad); ok {
 			q.imgTok = id

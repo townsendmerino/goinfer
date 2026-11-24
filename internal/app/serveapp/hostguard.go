@@ -50,7 +50,7 @@ func normalizeHost(h string) string {
 // splitHosts splits a comma-separated -allowed-hosts value.
 func splitHosts(s string) []string {
 	var out []string
-	for _, h := range strings.Split(s, ",") {
+	for h := range strings.SplitSeq(s, ",") {
 		if h = strings.TrimSpace(h); h != "" {
 			out = append(out, h)
 		}

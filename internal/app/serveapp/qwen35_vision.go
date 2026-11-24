@@ -219,7 +219,7 @@ func (s *server) loadQwen35MMProj(path string, int8Tower bool, backend string, r
 // attachQwen35Tower wires a (not yet loaded) Qwen3.5+ tower and its preprocessing into every loaded model.
 func (s *server) attachQwen35Tower(tower *qwen3Tower, pp multimodal.QwenPreprocessConfig, dir string) error {
 	for _, lm := range s.models {
-		q := &qwen3Vision{qwenGrid: qwenGrid{pp: pp, merge: pp.MergeSize, imgTok: -1}, qwen3Tower: tower}
+		q := &qwen3Vision{pp: pp, merge: pp.MergeSize, imgTok: -1, qwen3Tower: tower}
 		lm.vision = q
 		if id, ok := lm.tk.TokenID(multimodal.QwenImagePad); ok {
 			q.imgTok = id

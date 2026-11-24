@@ -120,7 +120,7 @@ func byteLevelScriptTokenizer(t *testing.T) *tokenizer.Tokenizer {
 		}
 	}
 	extra := 0
-	for b := 0; b < 256; b++ {
+	for b := range 256 {
 		if (b >= '!' && b <= '~') || (b >= 0xA1 && b <= 0xAC) || (b >= 0xAE && b <= 0xFF) {
 			add(string(rune(b)))
 		} else {

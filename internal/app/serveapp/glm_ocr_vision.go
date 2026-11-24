@@ -121,7 +121,7 @@ func (s *server) loadGlmOcrVisionTower(dir string, int8Tower bool, maxPixels int
 		return err
 	}
 	for _, lm := range s.models {
-		g := &glmVision{qwenGrid: qwenGrid{pp: pp, merge: pp.MergeSize, imgTok: -1}, glmOcrTower: tower}
+		g := &glmVision{pp: pp, merge: pp.MergeSize, imgTok: -1, glmOcrTower: tower}
 		lm.vision = g
 		if id, ok := lm.tk.TokenID(multimodal.GlmOcrImagePad); ok {
 			g.imgTok = id

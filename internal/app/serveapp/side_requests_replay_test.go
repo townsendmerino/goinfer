@@ -68,7 +68,7 @@ func TestSideRequests_evictionCounterfactual(t *testing.T) {
 		side                     bool
 	}
 	var ls []line
-	for _, l := range strings.Split(string(logRaw), "\n") {
+	for l := range strings.SplitSeq(string(logRaw), "\n") {
 		if m := reqRE.FindStringSubmatch(l); m != nil {
 			x := line{route: m[1], div: m[7]}
 			x.prompt, _ = strconv.Atoi(m[2])
@@ -199,7 +199,7 @@ func TestSideRequests_sessionStartPrefix(t *testing.T) {
 		}
 		logRaw, _ := os.ReadFile(filepath.Join(out, "logs", "serve-"+name+".log"))
 		x := session{name: name, first: ids}
-		for _, l := range strings.Split(string(logRaw), "\n") {
+		for l := range strings.SplitSeq(string(logRaw), "\n") {
 			if m := reqRE.FindStringSubmatch(l); m != nil {
 				p, _ := strconv.Atoi(m[1])
 				c, _ := strconv.Atoi(m[2])

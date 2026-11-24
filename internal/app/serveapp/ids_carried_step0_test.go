@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -203,9 +204,7 @@ func TestIDsCarried_G0(t *testing.T) {
 			ds = append(ds, defect{"d", idsDecode, next(func(items []map[string]any) []map[string]any {
 				c := items[msgAt]["content"].([]any)[0].(map[string]any)
 				cc := map[string]any{}
-				for k, v := range c {
-					cc[k] = v
-				}
+				maps.Copy(cc, c)
 				cc["text"] = flipChar(c["text"].(string))
 				items[msgAt]["content"] = []any{cc}
 				return items
@@ -334,9 +333,7 @@ func loadIDsStep0(t *testing.T) *idsStep0 {
 // body is the request a session sent with its first n input items, as Codex sent it.
 func (fx *idsStep0) body(session string, n int) map[string]any {
 	b := map[string]any{}
-	for k, v := range fx.template {
-		b[k] = v
-	}
+	maps.Copy(b, fx.template)
 	b["input"] = append([]any(nil), fx.sessions[session][:n]...)
 	return b
 }
@@ -352,7 +349,7 @@ func idsLCP(a, b []int) int {
 // flipChar changes one character in the middle of s (an ASCII letter or digit, so the JSON it may sit in stays valid).
 func flipChar(s string) string {
 	b := []byte(s)
-	for off := 0; off < len(b); off++ {
+	for off := range b {
 		for _, i := range []int{len(b)/2 + off, len(b)/2 - off} {
 			if i < 0 || i >= len(b) {
 				continue
