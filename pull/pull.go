@@ -19,6 +19,7 @@
 package pull
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	_ "embed"
@@ -26,12 +27,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -114,12 +116,7 @@ func Curated() map[string]CuratedTier {
 
 // CuratedNames returns the tier names, sorted, for help text and error messages.
 func CuratedNames() []string {
-	names := make([]string, 0, len(Curated()))
-	for k := range Curated() {
-		names = append(names, k)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(Curated()))
 }
 
 // ParseRef accepts "owner/repo", "owner/repo:file.gguf", "owner/repo:quant" or "owner/repo:safetensors" (the repo's
@@ -291,7 +288,7 @@ func List(ctx context.Context, repo string) ([]File, error) {
 		}
 		out = append(out, f)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	slices.SortFunc(out, func(a, b File) int { return cmp.Compare(a.Path, b.Path) })
 	return out, nil
 }
 
@@ -619,7 +616,7 @@ func shardGroup(f File, files []File) []File {
 			group = append(group, g)
 		}
 	}
-	sort.Slice(group, func(i, j int) bool { return group[i].Path < group[j].Path })
+	slices.SortFunc(group, func(a, b File) int { return cmp.Compare(a.Path, b.Path) })
 	return group
 }
 

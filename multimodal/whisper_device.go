@@ -2,7 +2,8 @@ package multimodal
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"sync"
 
 	"github.com/townsendmerino/goinfer/internal/audio"
@@ -27,12 +28,7 @@ func RegisterWhisperDevice(name string, factory func(*audio.WhisperEncoder) (aud
 func WhisperDevices() []string {
 	whisperDevMu.Lock()
 	defer whisperDevMu.Unlock()
-	var n []string
-	for k := range whisperDevs {
-		n = append(n, k)
-	}
-	sort.Strings(n)
-	return n
+	return slices.Sorted(maps.Keys(whisperDevs))
 }
 
 // UseWhisperDevice builds the named device over a loaded encoder and sets it on enc. An error (no such registration, or the device declining: no memory, no

@@ -152,7 +152,7 @@ func chatMLBOS(t string, has func(string) bool) string {
 }
 
 // Stops returns the turn-stop marker strings for this family.
-func (t *Template) Stops() Stops { return Stops{Strings: append([]string(nil), t.stops...)} }
+func (t *Template) Stops() Stops { return Stops{Strings: slices.Clone(t.stops)} }
 
 // StopIDs is the token ids that end a generation of this template on tok, for decoder.SamplingParams.StopIDs and
 // constrain.NewMasker: tok's end-of-sequence and end-of-turn ids where it has them, then each of Stops' strings that is a

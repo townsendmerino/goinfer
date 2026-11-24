@@ -1,13 +1,14 @@
 package pull
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -111,7 +112,7 @@ func StaleSidecars(root string, current int) (Listing, error) {
 	for i := range l.Stale {
 		l.Stale[i].SharedWith = sameFileIn(l.Stale[i].Path, stale)
 	}
-	sort.Slice(l.Stale, func(i, j int) bool { return l.Stale[i].Path < l.Stale[j].Path })
+	slices.SortFunc(l.Stale, func(a, b StaleSidecar) int { return cmp.Compare(a.Path, b.Path) })
 	return l, nil
 }
 
