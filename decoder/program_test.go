@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -101,8 +101,8 @@ func isTinyFixtureName(name string) bool {
 }
 
 func firstLine(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
+	if before, _, ok := strings.Cut(s, "\n"); ok {
+		return before
 	}
 	return s
 }
@@ -400,7 +400,7 @@ func TestProgram_L_everyParameterIsLive(t *testing.T) {
 	for k := range pairs {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	for _, k := range keys {
 		tl := pairs[k]
 		isLive := len(tl.changed) > 0 || len(tl.errored) > 0

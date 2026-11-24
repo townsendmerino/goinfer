@@ -1,13 +1,15 @@
 package decoder
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"math"
 	"path/filepath"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -55,7 +57,7 @@ func configIdentity(cfg *Config) string {
 			}
 		case reflect.Map:
 			keys := v.MapKeys()
-			sort.Slice(keys, func(i, j int) bool { return fmt.Sprint(keys[i]) < fmt.Sprint(keys[j]) })
+			slices.SortFunc(keys, func(a, b reflect.Value) int { return cmp.Compare(fmt.Sprint(a), fmt.Sprint(b)) })
 			fmt.Fprintf(h, "%s#%d\n", path, len(keys))
 			for _, k := range keys {
 				walk(fmt.Sprintf("%s[%v]", path, k), v.MapIndex(k))
@@ -132,13 +134,9 @@ func withLoaderEntries(tab map[string]map[string]map[string]string, fx string, e
 		out[arch] = map[string]map[string]string{}
 		for f, modes := range fxs {
 			out[arch][f] = map[string]string{}
-			for mode, d := range modes {
-				out[arch][f][mode] = d
-			}
+			maps.Copy(out[arch][f], modes)
 		}
-		for mode, d := range entries {
-			out[arch][fx][mode] = d
-		}
+		maps.Copy(out[arch][fx], entries)
 	}
 	return out
 }

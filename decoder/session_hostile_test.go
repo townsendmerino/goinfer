@@ -128,8 +128,8 @@ func TestLoadSession_bodyLengthsMustAgreeWithPos(t *testing.T) {
 	if blob == nil {
 		t.Fatal("Snapshot returned nil for a non-recurrent family")
 	}
-	var se *SnapshotError
-	if got, err := m.LoadSession(blob, ""); !errors.As(err, &se) {
+	got, err := m.LoadSession(blob, "")
+	if _, ok := errors.AsType[*SnapshotError](err); !ok {
 		t.Errorf("3 tokens at pos 0 accepted (session=%v, err=%v) — len(tokens) > pos makes "+
 			"rewindForReuse claim an exact match it never performed (M-04)", got != nil, err)
 	}
@@ -190,8 +190,8 @@ func TestLoadSession_allocationCeilingNotBodyRatio(t *testing.T) {
 	big := m.NewSession(0)
 	big.tokens = make([]int, hugePos)
 	big.cache.pos = hugePos
-	var se *SnapshotError
-	if _, err := m.LoadSession(big.Snapshot("m"), ""); !errors.As(err, &se) {
+	_, err := m.LoadSession(big.Snapshot("m"), "")
+	if se, ok := errors.AsType[*SnapshotError](err); !ok {
 		t.Errorf("pos=%d would allocate ~%d B and must be refused, got %v",
 			hugePos, int64(hugePos)*perPos*8, err)
 	} else if !strings.Contains(se.Error(), "ceiling") {

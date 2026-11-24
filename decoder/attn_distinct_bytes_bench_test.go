@@ -58,8 +58,7 @@ func benchAttnDistinctBytesArm(b *testing.B, nH, nKV, hd, group, nKeys int, gqa 
 	keys := randF32(nKeys*rowWidth, 2)
 	vals := randF32(nKeys*rowWidth, 3)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for head := range nH {
 			var off int
 			if gqa {

@@ -137,10 +137,9 @@ func TestKVPrecisionDelivered(t *testing.T) {
 			for _, v := range kvMatrixValues {
 				c := cells[[3]string{p.name, f.group, v}]
 				m, err := Load(filepath.Join("..", "testdata", f.dir), kvMatrixOpts(p, v))
-				var r *KVRefusal
 				switch {
 				case c.refused:
-					if !errors.As(err, &r) {
+					if _, ok := errors.AsType[*KVRefusal](err); !ok {
 						t.Errorf("%s / %s / --kv %s: refused in the table, but Load returned %v", p.name, f.group, v, err)
 					}
 				case err != nil:
@@ -252,9 +251,9 @@ var kvMatrixRow = regexp.MustCompile(`^\| (.+) \(` + "`" + `[^` + "`" + `]+` + "
 func parseKVMatrix(md []byte) map[[3]string]string {
 	out := map[[3]string]string{}
 	path := ""
-	for _, ln := range strings.Split(string(md), "\n") {
-		if strings.HasPrefix(ln, "## ") {
-			path = strings.TrimPrefix(ln, "## ")
+	for ln := range strings.SplitSeq(string(md), "\n") {
+		if after, ok := strings.CutPrefix(ln, "## "); ok {
+			path = after
 			continue
 		}
 		m := kvMatrixRow.FindStringSubmatch(ln)

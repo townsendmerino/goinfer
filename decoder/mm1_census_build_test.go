@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -155,13 +155,11 @@ func parallelEach(n int, fn func(i int)) {
 	var wg sync.WaitGroup
 	next := make(chan int)
 	for range max(1, runtime.NumCPU()) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for i := range next {
 				fn(i)
 			}
-		}()
+		})
 	}
 	for i := range n {
 		next <- i
@@ -265,7 +263,7 @@ func censusRealShapeConfigs(t *testing.T) []censusVariant {
 		ps, _ := filepath.Glob(g)
 		paths = append(paths, ps...)
 	}
-	sort.Strings(paths)
+	slices.Sort(paths)
 	var out []censusVariant
 	for _, p := range paths {
 		cfg, err := loadConfig(os.DirFS(filepath.Dir(p)), filepath.Base(p))

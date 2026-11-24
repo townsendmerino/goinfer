@@ -140,8 +140,7 @@ func PlanResidentLoad(path string, opts Options) (p ResidentPrice, why string, e
 		return ResidentPrice{}, m.be.Name() + " decides its residency only by building it", nil
 	}
 	if p, err = pr.PriceResident(m); err != nil {
-		var d *ResidentDeclineError
-		if errors.As(err, &d) {
+		if d, ok := errors.AsType[*ResidentDeclineError](err); ok {
 			return ResidentPrice{}, d.Reason, nil
 		}
 		return ResidentPrice{}, err.Error(), nil

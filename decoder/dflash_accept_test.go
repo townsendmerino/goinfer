@@ -452,8 +452,7 @@ func BenchmarkDFlashTrunk(b *testing.B) {
 			// implementations never do.
 			cctx := d.NewContext()
 			d.ExtendContext(be, cctx, fused)
-			b.ResetTimer()
-			for range b.N {
+			for b.Loop() {
 				if _, err := d.DraftBlockCtx(be, cctx, blockIn); err != nil {
 					b.Fatal(err)
 				}

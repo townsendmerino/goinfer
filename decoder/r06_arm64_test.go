@@ -144,7 +144,7 @@ func r06Paging(t *testing.T) int64 {
 		if err != nil {
 			t.Fatalf("vmstat: %v", err)
 		}
-		for _, ln := range strings.Split(string(b), "\n") {
+		for ln := range strings.SplitSeq(string(b), "\n") {
 			if f := strings.Fields(ln); len(f) == 2 && f[0] == "pswpout" {
 				n, _ = strconv.ParseInt(f[1], 10, 64)
 				return n
@@ -157,7 +157,7 @@ func r06Paging(t *testing.T) int64 {
 		t.Fatalf("vm_stat: %v", err)
 	}
 	found := 0
-	for _, ln := range strings.Split(string(out), "\n") {
+	for ln := range strings.SplitSeq(string(out), "\n") {
 		k, v, ok := strings.Cut(ln, ":")
 		if !ok || (k != "Pageouts" && k != "Swapouts") {
 			continue

@@ -53,8 +53,7 @@ func TestModel_concurrentGenerationsBeyondTheResidentsPlacesRunOnTheCPU(t *testi
 	errs := make([]error, n)
 	var wg sync.WaitGroup
 	for c, p := range prompts {
-		wg.Add(1)
-		go func() { defer wg.Done(); got[c], errs[c] = gen(m, p) }()
+		wg.Go(func() { got[c], errs[c] = gen(m, p) })
 	}
 	wg.Wait()
 	cpuRuns := 0
