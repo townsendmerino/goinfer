@@ -37,7 +37,7 @@ func main() {
 	var only map[string]bool
 	if *onlyFlag != "" {
 		only = map[string]bool{}
-		for _, n := range strings.Split(*onlyFlag, ",") {
+		for n := range strings.SplitSeq(*onlyFlag, ",") {
 			only[strings.TrimSpace(n)] = true
 		}
 	}
@@ -67,19 +67,18 @@ func underSharedLock(script, exe string, argv []string, w io.Writer) int {
 	cmd := exec.Command("python3", args...)
 	cmd.Stdout, cmd.Stderr = w, w
 	err := cmd.Run()
-	var ee *exec.ExitError
-	switch {
-	case err == nil:
+	if err == nil {
 		return 0
-	case errors.As(err, &ee) && ee.ExitCode() == 75:
-		fmt.Fprintln(w, verdict(inconclusive, "lint: a timed run holds the timing lock (timing_lock.py status names it); wait for it"))
-		return 2
-	case errors.As(err, &ee):
-		return ee.ExitCode()
-	default:
-		fmt.Fprintln(w, verdict(inconclusive, "lint: could not run under the timing lock: "+err.Error()))
-		return 2
 	}
+	if ee, ok := errors.AsType[*exec.ExitError](err); ok {
+		if ee.ExitCode() == 75 {
+			fmt.Fprintln(w, verdict(inconclusive, "lint: a timed run holds the timing lock (timing_lock.py status names it); wait for it"))
+			return 2
+		}
+		return ee.ExitCode()
+	}
+	fmt.Fprintln(w, verdict(inconclusive, "lint: could not run under the timing lock: "+err.Error()))
+	return 2
 }
 
 // resolveBin makes a relative -staticcheck path absolute against the directory lint was started in, since every run

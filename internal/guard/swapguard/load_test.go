@@ -138,7 +138,7 @@ func TestLoadSwapGuard_aTripDuringTheLoadAbortsItAndNothingLaterHidesIt(t *testi
 	t.Setenv("GOINFER_SWAP_GUARD", "500")
 	const base, layers = int64(1_000_000_000), 40
 	fakeLoad := func(abort <-chan struct{}, poll bool, layerDone func(int)) (built int, err error) {
-		for l := 0; l < layers; l++ {
+		for l := range layers {
 			if poll {
 				select {
 				case <-abort:

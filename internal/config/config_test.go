@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"maps"
 	"os"
 	"reflect"
 	"regexp"
@@ -30,9 +31,9 @@ var goinferName = regexp.MustCompile(`"(GOINFER_[A-Z0-9_]+)"`)
 func readSurfaces(t *testing.T) surfaces {
 	t.Helper()
 	s := surfaces{env: map[string]config.EnvRole{}, flags: map[string]config.Apps{}, defaults: map[string]string{}}
-	ot := reflect.TypeOf(decoder.Options{})
-	for i := range ot.NumField() {
-		if f := ot.Field(i); f.IsExported() {
+	ot := reflect.TypeFor[decoder.Options]()
+	for f := range ot.Fields() {
+		if f.IsExported() {
 			s.options = append(s.options, f.Name)
 		}
 	}
@@ -41,7 +42,7 @@ func readSurfaces(t *testing.T) surfaces {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, line := range strings.Split(string(reads), "\n") {
+	for line := range strings.SplitSeq(string(reads), "\n") {
 		name, rest, ok := strings.Cut(line, "\t")
 		if !ok || strings.HasPrefix(line, "#") {
 			continue
@@ -149,12 +150,12 @@ func check(settings []config.Setting, s surfaces, goos string) []string {
 			}
 		}
 	}
-	for _, f := range sortedKeys(s.flags) {
+	for _, f := range slices.Sorted(maps.Keys(s.flags)) {
 		if _, ok := flags[f]; !ok {
 			badf("flag %s is in no setting", f)
 		}
 	}
-	for _, e := range sortedKeys(s.env) {
+	for _, e := range slices.Sorted(maps.Keys(s.env)) {
 		if _, ok := envs[e]; !ok {
 			badf("variable %s is in no setting", e)
 		}
@@ -165,15 +166,6 @@ func check(settings []config.Setting, s surfaces, goos string) []string {
 		}
 	}
 	return bad
-}
-
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	return keys
 }
 
 // TestInventory is G-SB10-1 and G-SB10-2: config.Settings claims every option, variable, knob and flag the tree has,
@@ -209,7 +201,7 @@ func TestInventory_plants(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			s := surfaces{options: slices.Clone(real.options), env: clone(real.env), flags: clone(real.flags), defaults: clone(real.defaults)}
+			s := surfaces{options: slices.Clone(real.options), env: maps.Clone(real.env), flags: maps.Clone(real.flags), defaults: maps.Clone(real.defaults)}
 			st := slices.Clone(config.Settings)
 			c.edit(&s, &st)
 			got := check(st, s, runtime.GOOS)
@@ -218,12 +210,4 @@ func TestInventory_plants(t *testing.T) {
 			}
 		})
 	}
-}
-
-func clone[V any](m map[string]V) map[string]V {
-	out := make(map[string]V, len(m))
-	for k, v := range m {
-		out[k] = v
-	}
-	return out
 }

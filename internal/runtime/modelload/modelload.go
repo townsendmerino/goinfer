@@ -190,9 +190,10 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 		// (tasks/task-fit-to-hardware.md's CPU placement piece) — unless the model is MoE or an
 		// own-forward family (FitDeclineError.DenseStreamable: CPU expert paging is a measured
 		// failure), streaming was already on, or --fit=off asked for today's refusal instead.
-		var fde *fit.FitDeclineError
-		if opts.StreamWeights || opts.DisableFit || !strings.HasSuffix(src, ".gguf") ||
-			!errors.As(err, &fde) || !fde.DenseStreamable {
+		if opts.StreamWeights || opts.DisableFit || !strings.HasSuffix(src, ".gguf") {
+			return nil, fmt.Errorf("load model (%s): %w", loadPath, err)
+		}
+		if fde, ok := errors.AsType[*fit.FitDeclineError](err); !ok || !fde.DenseStreamable {
 			return nil, fmt.Errorf("load model (%s): %w", loadPath, err)
 		}
 		logs.Warnf("note: %q does not fit resident RAM; automatically retrying with weight streaming (pass --fit=off to keep today's refusal instead)", src)

@@ -315,10 +315,8 @@ func attendCross(q []float32, kh, vt [][]float32, m, n, heads, hd int) []float32
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, max(1, runtime.GOMAXPROCS(0)))
 	for h := range heads {
-		wg.Add(1)
 		sem <- struct{}{}
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			defer func() { <-sem }()
 			off := h * hd
 			qh := make([]float32, m*hd)
@@ -336,7 +334,7 @@ func attendCross(q []float32, kh, vt [][]float32, m, n, heads, hd int) []float32
 			for i := range m {
 				copy(out[i*D+off:i*D+off+hd], ctx[i*hd:(i+1)*hd])
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	return out
