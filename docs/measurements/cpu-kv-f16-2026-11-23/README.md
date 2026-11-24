@@ -136,3 +136,18 @@ bound by its reads.
 - **Reading, no verdict of its own:** each kernel's GB/s against the read-only ceiling. A kernel under half its ceiling at 16 workers is
   bound by its arithmetic; the report then says what f16 alone can buy (AV's share, at most halved) and what a latency fix to QK would,
   and the build goes back to Francis with that before any assembly is written.
+
+## Kernel split, read 2026-11-23 13:25 PST
+
+One run, 13:24 PST under the exclusive lock, start load 0.89, binary at `f23bb5317`. Log: `kernel-probe.log`.
+
+| workers | QK ms/layer (GB/s) | AV ms/layer (GB/s) | read-only pass ms (GB/s) | per token, 32 layers |
+|---|---|---|---|---|
+| 1 | 5.14 (9.3) | 7.11 (6.7) | 4.50 (10.7) | QK 164 ms, AV 227 ms |
+| 16 | 2.99 (16.0) | 1.60 (29.9) | 2.17 (22.0) | QK 96 ms, AV 51 ms |
+
+The read-only pass is a weak ceiling (a Go loop; AV beats it at 16 workers), so the measured floor on this box's read rate is AV's own 29.9
+GB/s. **QK reads the same bytes at 0.54× that rate and is the larger cost (96 of the 147 ms the two kernels take a token): QK is
+latency-bound, AV is near its read rate.** By the coordinator's rule (2026-11-23, 13:30 PST: "QK latency-bound: the multi-chain QK
+first, as its own PR under the four-condition rule; then the f16 kernels on top of it"), the next step is a bit-identical multi-chain
+`qkAcc64AVX4` in aikit (more 4-key blocks interleaved, each key's 96-dim sum in today's order), then the f16 kernels.

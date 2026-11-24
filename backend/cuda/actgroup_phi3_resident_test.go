@@ -124,6 +124,25 @@ func TestActGroup_phi3ResidentMatchesCPU(t *testing.T) {
 	}
 }
 
+// TestActCfg_spreadsOnlyPer32 pins actCfg's grid: a per-32 activation kernel gets a block for every blockDim/32 groups (Phi-3's
+// shapes: the 3,072-wide norm and quant on 12 blocks of 256, the 8,192-wide GLU on 8 of 1,024), a per-vector one keeps one block
+// (its absmax spans the vector). Bit-identity at every grid is the kernels' own test
+// (kernels/actgroup_kernel_test.go:TestActGroupKernels_warpQuantizersEqualSerial).
+func TestActCfg_spreadsOnlyPer32(t *testing.T) {
+	for _, c := range []struct {
+		g32            bool
+		block, n, want int
+	}{
+		{true, 256, 3072, 12}, {true, glueQuantThreads, 8192, 8}, {true, 256, 64, 1}, {true, 256, 288, 2},
+		{false, 256, 3072, 1}, {false, glueQuantThreads, 8192, 1},
+	} {
+		r := &cudaResident{actG32: c.g32}
+		if got := r.actCfg(c.block, 4, c.n).GridX; int(got) != c.want {
+			t.Errorf("actCfg(block %d, n %d) with actG32 %v: grid %d, want %d", c.block, c.n, c.g32, got, c.want)
+		}
+	}
+}
+
 // prefillG32Rig is phi3-tiny resident at int8int8 with per-32 activations: every per-32 decode kernel and prefill_g32.cu's
 // batched kernels are bound, so kernel-level checks can run on synthetic shapes. It skips without a device.
 func prefillG32Rig(t *testing.T) (*decoder.Model, *cudaResident) {

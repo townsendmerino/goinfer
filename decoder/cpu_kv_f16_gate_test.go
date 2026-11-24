@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/goinfer/internal/testgate"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -22,9 +23,7 @@ import (
 //
 //	GOINFER_HEAVY_TESTS=1 GOINFER_PREFILL_GATE_PROMPTS=b go test -tags goinfer_testhooks -run '^TestCPUKVF16GateVsReference$' -v -timeout 2h ./decoder/
 func TestCPUKVF16GateVsReference(t *testing.T) {
-	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
-		t.Skip("set GOINFER_HEAVY_TESTS=1 (real checkpoints and set B's reference files)")
-	}
+	testgate.RequireHeavy(t)
 	label, promptFiles := PrefillGatePromptSet()
 	if label != "b" {
 		t.Fatalf("the registered gate runs on held-out set B; GOINFER_PREFILL_GATE_PROMPTS selects set %q", label)

@@ -78,7 +78,7 @@ func (r *cudaResident) prefillGemma4ExpertMajorRun(ctx interface{ Err() error },
 		if e := r.doG(Ly.u, r.mq, r.mSc, nullBias, r.uO, 0); e != nil {
 			return e
 		}
-		if e := r.launch(r.fSw, onecfg(glueQuantThreads, glueQuantThreads*4), Arg(r.gO), Arg(r.uO), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)),
+		if e := r.launch(r.fSw, r.actCfg(glueQuantThreads, glueQuantThreads*4, r.inter), Arg(r.gO), Arg(r.uO), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)),
 			gpu.ArgValue(int32(r.inter)), gpu.ArgValue(r.act), Arg(r.dq), Arg(r.dSc), Arg(r.dScr)); e != nil {
 			return e
 		}
