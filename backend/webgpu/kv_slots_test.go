@@ -475,6 +475,38 @@ func TestDarwinKVSlots(t *testing.T) {
 	}
 }
 
+// TestHeadroomChunks: the headroom probe asks for webgpuSlotHeadroom in buffers no larger than the device's largest single
+// buffer, so an adapter whose maxBufferSize is below the headroom (llvmpipe's 128 MiB) measures free memory rather than
+// refusing every further slot, and the chunks always add up to the headroom asked for.
+func TestHeadroomChunks(t *testing.T) {
+	const mib = uint64(1 << 20)
+	for _, tc := range []struct {
+		total, maxBuf uint64
+		want          []uint64
+	}{
+		{384 * mib, 128 * mib, []uint64{128 * mib, 128 * mib, 128 * mib}},
+		{384 * mib, 100 * mib, []uint64{100 * mib, 100 * mib, 100 * mib, 84 * mib}},
+		{384 * mib, 2048 * mib, []uint64{384 * mib}},
+		{384 * mib, 384 * mib, []uint64{384 * mib}},
+		{384 * mib, 0, []uint64{384 * mib}}, // no limit read: one buffer, as before
+	} {
+		got := headroomChunks(tc.total, tc.maxBuf)
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("headroomChunks(%d MiB, %d MiB) = %v, want %v", tc.total/mib, tc.maxBuf/mib, got, tc.want)
+		}
+		var sum uint64
+		for _, c := range got {
+			if tc.maxBuf > 0 && c > tc.maxBuf {
+				t.Errorf("headroomChunks(%d MiB, %d MiB): chunk %d over the device's largest buffer", tc.total/mib, tc.maxBuf/mib, c)
+			}
+			sum += c
+		}
+		if sum != tc.total {
+			t.Errorf("headroomChunks(%d MiB, %d MiB) sums to %d, want %d", tc.total/mib, tc.maxBuf/mib, sum, tc.total)
+		}
+	}
+}
+
 // TestSlotsGranted is G-WS1's table: slotsGranted is
 // darwinKVSlots on darwin, every slot on a discrete GPU with no figure, and the headroom rule with one; slotsBeforeContextOn leaves a
 // discrete GPU's context alone and prices darwin's as ctxWhereSlotsFit over darwinKVSlots does.
