@@ -5,9 +5,10 @@
 > **Status 2026-11-24: a record of 2026-10-21, committed late.** The registration and the read were made on 2026-10-21 on the CUDA
 > box (an RTX 2070 SUPER, 8 GB, 16 CPU cores) and stayed on a local branch; they are committed here unchanged except that the box is
 > named by its hardware. The original commits, the registration e5bb7a79c and the read 7cb04cd1c, are on the branch
-> `archive/g46-2026-10-21`, and this record's citations are checked at 7cb04cd1c. The test now lives at
-> `backend/cuda/kv3_tiled_test.go:TestG46_gemma3GEMMFidelityLadder` (the package moved, and the test joined its KV3 neighbours' file), ported without a change to what it reads and not re-run since; the run
-> script below builds it from there. Its prompts are encoded from the tree's own sources (`kv0TextTokens`), so a re-run on a later tree
+> `archive/g46-2026-10-21`, and this record's citations are checked at 7cb04cd1c. At the pin the test is
+> `cuda/g46_gemm_fidelity_test.go:TestG46_gemma3GEMMFidelityLadder`; it is now in the backend/cuda package's KV3 tiled test file under
+> the same name (the package moved), ported without a change to what it reads and not re-run since; the run script below builds it
+> from there. Its prompts are encoded from the tree's own sources (`kv0TextTokens`), so a re-run on a later tree
 > reads different text.
 
 **Registered before the run** (decided 2026-10-21: run it by day on the CUDA box, `docs/queue-correctness.md` G46). The rule and the bar are
