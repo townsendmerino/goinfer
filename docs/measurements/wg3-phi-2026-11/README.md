@@ -13,7 +13,7 @@ three void attempts (swap grew by 4-8 kB during the cell) re-ran in place and ar
 
 | block | head ms | base ms | base ÷ head |
 |---|---|---|---|
-| 0 | ~~17,818~~ | ~~26,121~~ | **VOID**, re-run pending |
+| 0 | 17,778 | 25,883 | 1.456 (re-run 15:54-16:05; the two earlier attempts void, below) |
 | 1 | 17,822 | 25,800 | 1.448 |
 | 2 | 17,802 | 25,805 | 1.450 |
 | 3 | 17,853 | 25,734 | 1.441 |
@@ -35,10 +35,21 @@ The three valid pairs read 1.441-1.450 (median 1.448): no regression so far agai
 block 0's re-run. The resident's prompt runs token by token (the batched prefill takes no per-32 scales) and is about
 1.45× faster to first token than the CPU path it replaces.
 
-## Decode @128
+## Decode @128 (2026-11-23 16:05-16:33 PST)
 
-Not yet run: attempts 1-3 stopped in the harness before any request (the load gate after the builds, the prefill helper's
-model table, bench_peer's phase-B backend). Re-queued alone against the same two arm commits.
+`scripts/bench_peer.py`, A B B A × 2, 8 completions × 64 tokens × 2 runs a cell, prompt `phi3-mini:128`, after the
+harness fixes below; every cell's swap growth 0 (no void).
+
+| block | head tok/s | base tok/s | head ÷ base |
+|---|---|---|---|
+| 0 | 70.9 | 6.3 | 11.25 |
+| 1 | 70.9 | 6.3 | 11.25 |
+| 2 | 70.9 | 6.3 | 11.25 |
+| 3 | 70.9 | 6.3 | 11.25 |
+
+**Verdict, by the registration:** decode a **win** (median 11.25 ≥ 1.05, all four pairs > 1) and TTFT **no regression**
+(median pair ratio about 1.45 ≥ 0.8, every pair 1.441-1.466). The PR may be armed once its remaining gate, `cmd/gate
+identity` on nobara, reports.
 
 ## Harness review (goinfer #1254's, for the families harness, which repeats this one), checked 2026-11-23
 
