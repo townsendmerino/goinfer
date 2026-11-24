@@ -1,0 +1,9 @@
+built 2026-11-23T13:19:50-08:00
+start 2026-11-23T13:24:05-08:00 load 0.89 3.78 4.32
+=== RUN   TestCPUAttnKernelProbe
+[attn-kernel] layer shape: 3900 keys, 32 heads x 96 = kvDim 3072; K (or V) 47.9 MB f32; best of 20
+=== ATTN KERNELS workers=1: QK 5.14 ms (9.3 GB/s), AV 7.11 ms (6.7 GB/s), read-only ceiling 4.50 ms (10.7 GB/s); per token at 32 layers: QK 164 ms, AV 227 ms ===
+=== ATTN KERNELS workers=16: QK 2.99 ms (16.0 GB/s), AV 1.60 ms (29.9 GB/s), read-only ceiling 2.17 ms (22.0 GB/s); per token at 32 layers: QK 96 ms, AV 51 ms ===
+--- PASS: TestCPUAttnKernelProbe (0.70s)
+PASS
+probe rc=0 2026-11-23T13:24:06-08:00
