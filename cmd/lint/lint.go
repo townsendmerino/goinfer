@@ -259,20 +259,20 @@ func parseCISteps(yml string) []ciStep {
 	runRe := regexp.MustCompile(`^\s*(?:-\s+)?(?:run:\s*)?staticcheck (.+)$`)
 	var steps []ciStep
 	var ws []string
-	for _, line := range strings.Split(yml, "\n") {
+	for line := range strings.SplitSeq(yml, "\n") {
 		if jobRe.MatchString(line) {
 			ws = nil
 		}
 		if m := initRe.FindStringSubmatch(line); m != nil {
 			ws = nil
-			for _, f := range strings.Fields(m[1]) {
+			for f := range strings.FieldsSeq(m[1]) {
 				if f != "." {
 					ws = append(ws, strings.TrimPrefix(f, "./"))
 				}
 			}
 		}
 		if m := useRe.FindStringSubmatch(line); m != nil {
-			for _, f := range strings.Fields(m[1]) {
+			for f := range strings.FieldsSeq(m[1]) {
 				ws = append(ws, strings.TrimPrefix(f, "./"))
 			}
 		}

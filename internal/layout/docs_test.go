@@ -6,10 +6,11 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -174,11 +175,7 @@ func importAppendix(data layoutData) string {
 	for f := range data.TestArrows {
 		froms[f] = true
 	}
-	keys := make([]string, 0, len(froms))
-	for f := range froms {
-		keys = append(keys, f)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(froms))
 	code := func(xs []string) string {
 		out := make([]string, len(xs))
 		for i, x := range xs {
@@ -210,12 +207,7 @@ func importAppendix(data layoutData) string {
 				not = append(not, "`"+g+"`")
 			}
 		}
-		allowFrom := make([]string, 0, len(r.AllowGoinfer))
-		for f := range r.AllowGoinfer {
-			allowFrom = append(allowFrom, f)
-		}
-		sort.Strings(allowFrom)
-		for _, f := range allowFrom {
+		for _, f := range slices.Sorted(maps.Keys(r.AllowGoinfer)) {
 			not = append(not, fmt.Sprintf("(`%s` may import %s)", f, strings.Join(codeEach(r.AllowGoinfer[f]), ", ")))
 		}
 		not = append(not, codeEach(r.ForbidExternal)...)

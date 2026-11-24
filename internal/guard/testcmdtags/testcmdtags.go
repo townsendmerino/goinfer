@@ -10,10 +10,11 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -99,7 +100,7 @@ func parseTests(dir string) ([]testFunc, error) {
 			return nil, err
 		}
 		var expr constraint.Expr
-		for _, line := range strings.Split(string(src), "\n") {
+		for line := range strings.SplitSeq(string(src), "\n") {
 			if constraint.IsGoBuild(line) {
 				if expr, err = constraint.Parse(line); err != nil {
 					return nil, fmt.Errorf("%s: %w", f, err)
@@ -181,7 +182,7 @@ func addTags(tags map[string]bool, v string) {
 // -tags, -run and package arguments. ok is false when the line holds no `go test`.
 func Parse(line string) (c Command, ok bool) {
 	c = Command{Dir: ".", Tags: map[string]bool{}}
-	for _, part := range strings.Split(line, "&&") {
+	for part := range strings.SplitSeq(line, "&&") {
 		w := tokens(strings.TrimSpace(part))
 		if len(w) >= 2 && w[0] == "cd" {
 			c.Dir = filepath.Join(c.Dir, w[1])
@@ -190,7 +191,7 @@ func Parse(line string) (c Command, ok bool) {
 		i := 0
 		for i < len(w) && strings.Contains(w[i], "=") && !strings.HasPrefix(w[i], "-") {
 			if v, found := strings.CutPrefix(w[i], "GOFLAGS="); found {
-				for _, f := range strings.Fields(v) {
+				for f := range strings.FieldsSeq(v) {
 					if tv, ok := strings.CutPrefix(f, "-tags="); ok {
 						addTags(c.Tags, tv)
 					}
@@ -321,12 +322,7 @@ func Check(root string, c Command) ([]Finding, error) {
 					byName[f.name] = append(byName[f.name], f.expr)
 				}
 			}
-			names := make([]string, 0, len(byName))
-			for n := range byName {
-				names = append(names, n)
-			}
-			sort.Strings(names)
-			for _, n := range names {
+			for _, n := range slices.Sorted(maps.Keys(byName)) {
 				matched = true
 				compiles := false
 				var need []string

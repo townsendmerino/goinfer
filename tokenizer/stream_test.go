@@ -134,7 +134,7 @@ func TestStream_outOfRangeIDIsAnError(t *testing.T) {
 // byteLevelStreamTokenizer is a byte-level (GPT-2 style) tokenizer whose pieces spell 🦄's bytes through the byte table, one per token.
 func byteLevelStreamTokenizer() (*Tokenizer, []int, []int) {
 	dec := map[rune]byte{}
-	for b := 0; b < 256; b++ {
+	for b := range 256 {
 		dec[rune(0x100+b)] = byte(b)
 	}
 	for _, r := range "abcdefghijklmnopqrstuvwxyz" {
