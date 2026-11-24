@@ -5,9 +5,12 @@ package webgpu
 import (
 	"math"
 	"os"
+	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
 // TestResidentCaptureParityWebGPU runs the resident Forward against the CPU ForwardForTest at the same quant (an 8-token
@@ -20,6 +23,7 @@ import (
 // It prints and does not assert a bar (the only assertion is that the cosine is not NaN): what a cosine means for a given
 // checkpoint is what TestCPUQuantSensitivity measures for it.
 //
+// GOINFER_PARITY_README=n makes the prompt README.md's first n tokens under the checkpoint's tokenizer (TestPairwiseRoPERealWebGPU's).
 // GOINFER_PARITY_QUANT: int4 (default), int8, int8int8, or native (CPU f32 vs the resident W8A8-at-upload path, NOT a
 // same-quant comparison). GOINFER_INT4_F16_SCALES=1 makes both sides carry the f16-rounded int4 group scales the GPU stores,
 // the only single-variable form of the int4 comparison. Written against scripts/mk_phi3_synth.py's phi3-mini-shaped
@@ -35,6 +39,21 @@ func TestResidentCaptureParityWebGPU(t *testing.T) {
 		c.Close()
 	}
 	prompt := []int{1, 7, 42, 100, 5, 200, 13, 88}
+	if n, _ := strconv.Atoi(os.Getenv("GOINFER_PARITY_README")); n > 0 { // README.md's first n tokens: TestPairwiseRoPERealWebGPU's prompt
+		readme, err := os.ReadFile("../../README.md")
+		if err != nil {
+			t.Fatal(err)
+		}
+		tk, err := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids, err := tk.Encode(string(readme), false)
+		if err != nil || len(ids) < n {
+			t.Fatalf("encode README: %d ids, %v", len(ids), err)
+		}
+		prompt = ids[:n]
+	}
 	quant := os.Getenv("GOINFER_PARITY_QUANT") // "" ⇒ int4 (the doc's case); "native" for f32-vs-W8A8
 	if quant == "" {
 		quant = "int4"
