@@ -496,7 +496,7 @@ func (g *gpuGate) heavyTier(src gpuInputs) error {
 	}
 	groups, listed, drain, iso := heavyRunSet(*in)
 	var mainRes []*results
-	var mainOut string
+	var mainOut strings.Builder
 	mainRC := 0
 	for i, h := range groups {
 		fmt.Fprintf(g.w, "      main group, %s (%d test(s)), streaming (one line per test):\n", h.Label, len(h.Tests))
@@ -505,7 +505,7 @@ func (g *gpuGate) heavyTier(src gpuInputs) error {
 			return err
 		}
 		mainRes = append(mainRes, res)
-		mainOut += out
+		mainOut.WriteString(out)
 		lines, notes, rec := heavyProcLines(h, cr, peak, out)
 		g.heavyProcs = append(g.heavyProcs, rec)
 		g.apply(groupVerdict{State: groupNone, Lines: lines, Notes: notes, Notices: rec.Notices})
@@ -529,7 +529,7 @@ func (g *gpuGate) heavyTier(src gpuInputs) error {
 		if err != nil {
 			return err
 		}
-		for _, v := range gradeHeavyDrain(len(drain), strings.Count(mainOut, "DRAIN-GROUP-SKIP"), strings.Count(drainOut, "DRAIN-GROUP-RUN"), drainCR, drainOut) {
+		for _, v := range gradeHeavyDrain(len(drain), strings.Count(mainOut.String(), "DRAIN-GROUP-SKIP"), strings.Count(drainOut, "DRAIN-GROUP-RUN"), drainCR, drainOut) {
 			g.apply(v)
 		}
 	}
@@ -549,7 +549,7 @@ func (g *gpuGate) heavyTier(src gpuInputs) error {
 			g.apply(v)
 		}
 	}
-	g.apply(gradeHeavyIso(len(iso), strings.Count(mainOut, "ISOLATED-SKIP"), isoRan, isoBad))
+	g.apply(gradeHeavyIso(len(iso), strings.Count(mainOut.String(), "ISOLATED-SKIP"), isoRan, isoBad))
 
 	runLines := 0
 	var skipped [][]string
@@ -557,7 +557,7 @@ func (g *gpuGate) heavyTier(src gpuInputs) error {
 		runLines += r.runLines
 		skipped = append(skipped, testNames(r.topLevel("skip")))
 	}
-	g.apply(gradeHeavyTier(mainRC, src.heavySecs(), mainOut, runLines, skipped))
+	g.apply(gradeHeavyTier(mainRC, src.heavySecs(), mainOut.String(), runLines, skipped))
 	return nil
 }
 
@@ -891,7 +891,7 @@ func readPTX(keepDir string) ptxInput {
 		kernel := base
 		if _, err := os.Stat(filepath.Join("backend", "cuda", base+".cu")); err != nil {
 			for _, suffix := range []string{"_kv16_cap", "_cap", "_kv16", "_kv8"} {
-				if k := strings.TrimSuffix(base, suffix); k != base {
+				if k, ok := strings.CutSuffix(base, suffix); ok {
 					kernel = k
 					break
 				}

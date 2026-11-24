@@ -175,7 +175,7 @@ func TestQuick_slowPatternsNameRealTests(t *testing.T) {
 		}
 		checked++
 		src := moduleTestSource(t, qc, m)
-		for _, name := range strings.Split(body, "|") {
+		for name := range strings.SplitSeq(body, "|") {
 			if !strings.Contains(src, "func "+name+"(t *testing.T)") {
 				t.Errorf("module %s: Slow names %s, which no test file in %s declares", m.Name, name, m.Dir)
 			}

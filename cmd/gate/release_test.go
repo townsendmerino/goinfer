@@ -7,7 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -303,7 +303,7 @@ func TestRelModules_areTheTaggedModulesOfTheTree(t *testing.T) {
 	// Modules that are never tagged: the SDK tests, the site generator and CI's pinned staticcheck.
 	untagged := map[string]bool{"apps/sdktest": true, "apps/site": true, ".github/actions/staticcheck": true}
 	var inTree []string
-	for _, f := range strings.Fields(string(out)) {
+	for f := range strings.FieldsSeq(string(out)) {
 		dir := strings.TrimSuffix(strings.TrimSuffix(f, "go.mod"), "/")
 		if dir == "" {
 			dir = "."
@@ -312,9 +312,9 @@ func TestRelModules_areTheTaggedModulesOfTheTree(t *testing.T) {
 			inTree = append(inTree, dir)
 		}
 	}
-	sort.Strings(inTree)
-	want := append([]string(nil), relModules...)
-	sort.Strings(want)
+	slices.Sort(inTree)
+	want := slices.Clone(relModules)
+	slices.Sort(want)
 	if strings.Join(inTree, " ") != strings.Join(want, " ") {
 		t.Errorf("relModules = %v, but the tagged modules of the tree are %v", want, inTree)
 	}

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -120,12 +121,7 @@ func accepted(name, record string, detail ...string) relRow {
 }
 
 func isAcceptedClass(c string) bool {
-	for _, k := range acceptedClasses {
-		if k == c {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(acceptedClasses, c)
 }
 
 // A record's reds are counted from what it holds: a GPU record's failed groups and its vacuous and empty cells, a quick -full record's failed tests, a parity

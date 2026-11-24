@@ -178,7 +178,7 @@ func changedPaths(base string, worktree bool) ([]pathChange, error) {
 		if err != nil {
 			return nil, fmt.Errorf("git ls-files --others: %w", err)
 		}
-		for _, p := range strings.Split(strings.TrimRight(string(un), "\x00"), "\x00") {
+		for p := range strings.SplitSeq(strings.TrimRight(string(un), "\x00"), "\x00") {
 			if p != "" {
 				cs = append(cs, pathChange{Path: p, Status: "A"})
 			}
@@ -210,7 +210,7 @@ func addedDocsText(base string, worktree bool) (string, error) {
 		return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
 	}
 	var b strings.Builder
-	for _, ln := range strings.Split(string(out), "\n") {
+	for ln := range strings.SplitSeq(string(out), "\n") {
 		if strings.HasPrefix(ln, "+") && !strings.HasPrefix(ln, "+++") {
 			b.WriteString(ln[1:])
 			b.WriteByte('\n')
@@ -221,7 +221,7 @@ func addedDocsText(base string, worktree bool) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		for _, p := range strings.Split(strings.TrimRight(string(un), "\x00"), "\x00") {
+		for p := range strings.SplitSeq(strings.TrimRight(string(un), "\x00"), "\x00") {
 			if p == "" {
 				continue
 			}
