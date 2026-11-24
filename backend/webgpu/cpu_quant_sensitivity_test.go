@@ -5,9 +5,11 @@ package webgpu
 import (
 	"math"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
 // TestCPUQuantSensitivity is the control for TestResidentCaptureParityWebGPU: no GPU at all. It runs the CPU int4 forward
@@ -90,4 +92,80 @@ func TestCPUQuantSensitivity(t *testing.T) {
 		t.Logf("  pos %2d: CPU-vs-CPU(±1-ULP norm noise) cosine %.6f maxAbs %.3e argmax %d/%d", i, cos, maxAbs, argmaxF(la), argmaxF(lb))
 	}
 	t.Logf("CPU self-sensitivity floor (%s): min cosine %.6f", quant, minCos)
+}
+
+// TestCPUQuantSensitivityREADME is TestCPUQuantSensitivity on TestPairwiseRoPERealWebGPU's own sequence: README.md's first 64
+// tokens and a 16-token greedy continuation the clean CPU load chooses, both loads teacher-forced on it. It logs the
+// per-position logit cosine between the clean load and the ±1-ULP-norm-noise load, their mean and worst, and every position
+// under 0.95: the checkpoint's own floor on the prompt where the resident's worst position is read. It asserts nothing.
+//
+//	GOINFER_PARITY_CKPT=~/models/command-r7b go test -tags 'gpu goinfer_testhooks' ./backend/webgpu -run TestCPUQuantSensitivityREADME -v
+func TestCPUQuantSensitivityREADME(t *testing.T) {
+	dir := os.Getenv("GOINFER_PARITY_CKPT")
+	if dir == "" {
+		t.Skip("set GOINFER_PARITY_CKPT to a checkpoint directory with a tokenizer.json")
+	}
+	quant := os.Getenv("GOINFER_PARITY_QUANT")
+	if quant == "" {
+		quant = "int4"
+	}
+	readme, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tk, err := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const nPrompt, nCont = 64, 16
+	ids, err := tk.Encode(string(readme), false)
+	if err != nil || len(ids) < nPrompt {
+		t.Fatalf("encode README: %d ids, %v", len(ids), err)
+	}
+	toks := append([]int(nil), ids[:nPrompt]...)
+	ma, err := decoder.Load(dir, decoder.Options{Quant: quant})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ma.Close()
+	ca := ma.NewCache(nPrompt + nCont)
+	var ref [][]float32
+	for i := 0; i < nPrompt+nCont; i++ {
+		l, err := ma.ForwardForTest(toks[i], ca)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ref = append(ref, append([]float32(nil), l...))
+		if i >= nPrompt-1 && len(toks) < nPrompt+nCont {
+			toks = append(toks, argmaxF(l))
+		}
+	}
+	os.Setenv("GOINFER_NORM_ULP_NOISE", "1") // dense ±1-ULP noise on every norm vector at load — decoder/normnoise.go
+	mb, err := decoder.Load(dir, decoder.Options{Quant: quant})
+	os.Unsetenv("GOINFER_NORM_ULP_NOISE")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mb.Close()
+	cb := mb.NewCache(nPrompt + nCont)
+	var mean float64
+	worst, wp := 1.0, -1
+	for i, tok := range toks {
+		l, err := mb.ForwardForTest(tok, cb)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cos, _ := cosine(ref[i], l)
+		if math.IsNaN(cos) {
+			cos = -2
+		}
+		mean += cos
+		if cos < worst {
+			worst, wp = cos, i
+		}
+		if cos < 0.95 {
+			t.Logf("  position %d (%s): CPU-vs-CPU cosine %.6f", i, map[bool]string{true: "prompt", false: "continuation"}[i < nPrompt], cos)
+		}
+	}
+	t.Logf("CPU self-sensitivity on the README sequence (%s, %d positions): mean cosine %.6f, worst %.6f at position %d", quant, len(toks), mean/float64(len(toks)), worst, wp)
 }
