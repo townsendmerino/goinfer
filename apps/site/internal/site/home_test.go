@@ -26,11 +26,11 @@ func TestHome_heroCodeIsFromTheExample(t *testing.T) {
 		t.Fatal(err)
 	}
 	have := map[string]bool{}
-	for _, l := range strings.Split(string(src), "\n") {
+	for l := range strings.SplitSeq(string(src), "\n") {
 		have[strings.TrimSpace(l)] = true
 	}
 	n := 0
-	for _, l := range strings.Split(html.UnescapeString(string(m[1])), "\n") {
+	for l := range strings.SplitSeq(html.UnescapeString(string(m[1])), "\n") {
 		if l = strings.TrimSpace(l); l == "" {
 			continue
 		}

@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -129,7 +129,7 @@ func CheckInstallLines(root, out string) error {
 		return err
 	}
 	if len(bad) > 0 {
-		sort.Strings(bad)
+		slices.Sort(bad)
 		return fmt.Errorf("the site prints %d install line(s) the README does not (a go get must be a README <!-- smoke --> line):\n  %s",
 			len(bad), strings.Join(bad, "\n  "))
 	}
