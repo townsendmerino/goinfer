@@ -1,10 +1,11 @@
 package pull
 
 import (
+	"cmp"
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -63,11 +64,8 @@ func CacheEntries() ([]CacheEntry, error) {
 			out = append(out, repoEntries(o.Name()+"/"+r.Name(), dir)...)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Repo != out[j].Repo {
-			return out[i].Repo < out[j].Repo
-		}
-		return out[i].Path < out[j].Path
+	slices.SortFunc(out, func(a, b CacheEntry) int {
+		return cmp.Or(cmp.Compare(a.Repo, b.Repo), cmp.Compare(a.Path, b.Path))
 	})
 	return out, nil
 }
@@ -142,7 +140,7 @@ func repoEntries(repo, dir string) []CacheEntry {
 		}
 	}
 	for _, shards := range sets {
-		sort.Strings(shards)
+		slices.Sort(shards)
 		m := shardSuffix.FindStringSubmatch(strings.ToLower(shards[0]))
 		n, _ := strconv.Atoi(m[3]) // five digits, matched by shardSuffix
 		var bytes int64

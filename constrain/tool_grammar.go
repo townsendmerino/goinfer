@@ -2,9 +2,10 @@ package constrain
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -53,7 +54,7 @@ func ToolCallGrammar(prefix, suffix, argsKey, toolName string, array bool, param
 		args = anyObjNode // a call's arguments are an object, whatever the schema could not say
 	}
 	props := []propNode{{name: "name", schema: &node{kind: kEnum, enum: [][]byte{name}}}, {name: argsKey, schema: args}}
-	sort.Slice(props, func(i, j int) bool { return props[i].name < props[j].name })
+	slices.SortFunc(props, func(a, b propNode) int { return cmp.Compare(a.name, b.name) })
 	n := &node{kind: kObject, props: props, requiredMask: 0b11}
 	if array {
 		n = &node{kind: kArray, items: n, minItems: 1, maxItems: 1}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -265,7 +266,7 @@ func (m *Masker) FieldConfidence(generated []int) ([]FieldConfidence, error) {
 		if nfree == 0 {
 			continue
 		}
-		fc := FieldConfidence{Path: path, Kind: kind, Value: json.RawMessage(append([]byte(nil), out[f.start:f.end]...)), FreeTokens: nfree}
+		fc := FieldConfidence{Path: path, Kind: kind, Value: json.RawMessage(slices.Clone(out[f.start:f.end])), FreeTokens: nfree}
 		switch kind {
 		case "integer":
 			minp, any := 1.0, false

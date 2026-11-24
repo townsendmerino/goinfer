@@ -2,13 +2,14 @@ package multimodal
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"image"
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -130,7 +131,7 @@ func lfm2VLTargetRatios(minT, maxT int) [][2]int {
 			}
 		}
 	}
-	sort.SliceStable(r, func(i, j int) bool { return r[i][0]*r[i][1] < r[j][0]*r[j][1] })
+	slices.SortStableFunc(r, func(a, b [2]int) int { return cmp.Compare(a[0]*a[1], b[0]*b[1]) })
 	return r
 }
 
@@ -350,7 +351,7 @@ func LoadLfm2VLProjector(dir string) (*Lfm2VLProjector, error) {
 		}
 		var v []float32
 		v, err = st.TensorF32(pfx+name, want...)
-		return append([]float32(nil), v...)
+		return slices.Clone(v)
 	}
 	p.l1W, p.l1B = get("linear_1.weight", p.mid, in), get("linear_1.bias", p.mid)
 	p.l2W, p.l2B = get("linear_2.weight", p.textHidden, p.mid), get("linear_2.bias", p.textHidden)
@@ -409,7 +410,7 @@ func (p *Lfm2VLProjector) forwardStages(hidden []float32, grid [2]int) (unshuffl
 			row[i] += p.l1B[i]
 		}
 	}
-	linear1 = append([]float32(nil), h1...)
+	linear1 = slices.Clone(h1)
 	for i, x := range h1 {
 		v := float64(x)
 		h1[i] = float32(0.5 * v * (1 + math.Erf(v/math.Sqrt2)))
