@@ -33,7 +33,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Llama | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Llama 4 | ✅ | CPU | CPU | CPU |
 | Mellum2 | ✅ | ✅ resident | ✅ resident | ✅ resident |
-| Ministral 3 | ✅ | CPU | ✅ resident | ✅ resident |
+| Ministral 3 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Mistral | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Mixtral | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Nemotron-H | ✅ | ✅ resident | ✅ resident | ✅ resident |
@@ -121,7 +121,6 @@ admission runs.
 | Llama 4 | WebGPU | runner shape: own forward, not bridged |
 | Llama 4 | CUDA | runner shape: own forward, not bridged; layer 0: operation 2 (rope): cuda does not implement the de-interleaving (mlaRope) rotation; layer 0: operation 3 (qk-norm): cuda does not implement the parameter-free L2 QK-norm; layer 1: operation 8 (ffn): cuda has no block for the FFN form Llama 4 MoE |
 | Llama 4 | Metal | runner shape: own forward, not bridged; layer 0: operation 2 (rope): metal does not implement the de-interleaving (mlaRope) rotation; layer 0: operation 3 (qk-norm): metal does not implement the parameter-free L2 QK-norm; layer 1: operation 8 (ffn): metal has no block for the FFN form Llama 4 MoE |
-| Ministral 3 | WebGPU | missing: `attn-temp` |
 | Phi-3 / Phi-4 | WebGPU, CUDA, Metal | activation hazard: int8 activations, per row (see the note) |
 | Spark-X2.5 | WebGPU | runner shape: local and global RoPE tables differ in length; missing: `attn-output-gate-sigmoid`, `gated-gelu-erf` |
 | Spark-X2.5 | CUDA | runner shape: local and global RoPE tables differ in length; layer 0: operation 4 (out-gate): cuda has no step for it; layer 0: operation 8 (ffn): cuda has no GELU activation in its gated block |

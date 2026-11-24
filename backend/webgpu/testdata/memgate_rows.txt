@@ -154,6 +154,14 @@ testdata/llama-tiny int4/slots2
 testdata/llama-tiny int4/ssm
 testdata/llama-tiny int8int8
 testdata/llama-tiny int8int8/g32
+testdata/ministral3-tiny f32
+testdata/ministral3-tiny int4
+testdata/ministral3-tiny int4/kv-f16
+testdata/ministral3-tiny int4/kvprecision-i8
+testdata/ministral3-tiny int4/slots2
+testdata/ministral3-tiny int4/ssm
+testdata/ministral3-tiny int8int8
+testdata/ministral3-tiny int8int8/g32
 testdata/mistral-tiny-window f32
 testdata/mistral-tiny-window int4
 testdata/mistral-tiny-window int4/kv-f16
