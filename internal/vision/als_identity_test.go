@@ -258,7 +258,7 @@ func alsTowers(t *testing.T) []alsTower {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out := append([]float32(nil), merged...)
+			out := slices.Clone(merged)
 			for _, d := range deep {
 				out = append(out, d...)
 			}

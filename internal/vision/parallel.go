@@ -44,11 +44,9 @@ func parallelRows(rows, work int, fn func(start, end int)) {
 			break
 		}
 		end := min(start+rowsPer, rows)
-		wg.Add(1)
-		go func(start, end int) {
-			defer wg.Done()
+		wg.Go(func() {
 			fn(start, end)
-		}(start, end)
+		})
 	}
 	wg.Wait()
 }
