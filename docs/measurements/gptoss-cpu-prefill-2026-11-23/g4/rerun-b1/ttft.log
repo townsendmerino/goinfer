@@ -1,0 +1,7 @@
+gptoss-pf [     9s] loaded gpt-oss-20b-MXFP4.gguf in 9s; mode ttft, depths [1024], prompt set a, git decoder-f553040b3
+gptoss-pf [   300s] ttft K=1024 block 1 cell 1 S: load 3.42 avail 48704 MiB -> 240.56 s (heap peak 11854 MiB, E==S true)
+gptoss-pf [   393s] ttft K=1024 block 1 cell 2 B: load 3.89 avail 48961 MiB -> 37.67 s (heap peak 12068 MiB, E==S -)
+gptoss-pf [   465s] ttft K=1024 block 1 cell 3 E: load 3.72 avail 48941 MiB -> 42.11 s (heap peak 12068 MiB, E==S -)
+gptoss-pf [   532s] ttft K=1024 block 1 cell 4 E: load 3.98 avail 48966 MiB -> 42.17 s (heap peak 12068 MiB, E==S -)
+gptoss-pf [   580s] ttft K=1024 block 1 cell 5 B: load 3.86 avail 48925 MiB -> 37.72 s (heap peak 12067 MiB, E==S -)
+gptoss-pf [   908s] ttft K=1024 block 1 cell 6 S: load 3.70 avail 48902 MiB -> 237.85 s (heap peak 11854 MiB, E==S true)

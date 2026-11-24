@@ -2746,6 +2746,17 @@ func onecfg(b, sh int) LaunchConfig {
 	return LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: uint32(b), BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(sh)}
 }
 
+// actCfg is the launch of an activation kernel (r.fRms, r.fQ, r.fSw) over n elements, with block b and sh shared bytes. A per-vector
+// kernel needs its whole-vector absmax in one block, so it gets one; a per-32 kernel (actG32) runs a warp a group at any grid and gives
+// the same outputs at every grid (actgroup.cu), so it gets a block for every b/32 groups and its groups run in parallel.
+func (r *cudaResident) actCfg(b, sh, n int) LaunchConfig {
+	c := onecfg(b, sh)
+	if r.actG32 {
+		c.GridX = uint32(max(1, (n/32+b/32-1)/(b/32)))
+	}
+	return c
+}
+
 // glueQuantThreads is glu_quant's block size. The kernel is ONE block (its int8 scale needs the max over the whole
 // intermediate vector), so its time is the serial per-thread loop over I elements, and 1024 threads divide it. Its
 // only reduction is a MAX (exact, order-independent) and every element's value and packing are per-element, so the
@@ -2895,7 +2906,7 @@ func (r *cudaResident) addOneArg() int32 {
 }
 
 func (r *cudaResident) rmsDim(src, nrm Buffer, dim int, qOut Buffer, sOut Buffer) error {
-	return r.launch(r.fRms, onecfg(256, (dim+256)*4),
+	return r.launch(r.fRms, r.actCfg(256, (dim+256)*4, dim),
 		Arg(src), Arg(nrm), gpu.ArgValue(int32(dim)), gpu.ArgValue(r.eps),
 		gpu.ArgValue(r.addOneArg()), Arg(qOut), Arg(sOut))
 }
@@ -3146,7 +3157,7 @@ func (r *cudaResident) launchGluSplitExpert(gu Buffer, inter int, outQ, outSc, o
 			gpu.ArgValue(r.gptOssAlpha), gpu.ArgValue(r.gptOssLimit),
 			Arg(outQ), Arg(outSc), Arg(outScr))
 	}
-	return r.launch(r.fSw, onecfg(glueQuantThreads, glueQuantThreads*4),
+	return r.launch(r.fSw, r.actCfg(glueQuantThreads, glueQuantThreads*4, inter),
 		Arg(gu), Arg(gu), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(inter)),
 		gpu.ArgValue(int32(inter)), gpu.ArgValue(r.act),
 		Arg(outQ), Arg(outSc), Arg(outScr))
@@ -3314,7 +3325,7 @@ func (r *cudaResident) gemma4MoeMLPPre(Ly *cudaLayer, l int, x Buffer) error {
 	if e := r.doG(Ly.u, r.mq, r.mSc, nullBias, r.uO, 0); e != nil {
 		return e
 	}
-	if e := r.launch(r.fSw, onecfg(glueQuantThreads, glueQuantThreads*4), Arg(r.gO), Arg(r.uO), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)),
+	if e := r.launch(r.fSw, r.actCfg(glueQuantThreads, glueQuantThreads*4, r.inter), Arg(r.gO), Arg(r.uO), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)),
 		gpu.ArgValue(int32(r.inter)), gpu.ArgValue(r.act), Arg(r.dq), Arg(r.dSc), Arg(r.dScr)); e != nil {
 		return e
 	}
@@ -3678,7 +3689,7 @@ func (r *cudaResident) segB(Ly *cudaLayer, l int, x Buffer) error {
 	}
 	if r.floatAct {
 		// the attention output is already f32: no quantize, the o-projection reads it as is
-	} else if err := r.launch(r.fQ, onecfg(256, 256*4), Arg(r.cctx), gpu.ArgValue(int32(Ly.qDim)), Arg(r.cq), Arg(r.cSc)); err != nil {
+	} else if err := r.launch(r.fQ, r.actCfg(256, 256*4, Ly.qDim), Arg(r.cctx), gpu.ArgValue(int32(Ly.qDim)), Arg(r.cq), Arg(r.cSc)); err != nil {
 		return err
 	}
 	if Ly.attnOutUnfused() {
@@ -3828,7 +3839,7 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 			return e
 		}
 	}
-	if err := r.launch(r.fSw, onecfg(glueQuantThreads, glueQuantThreads*4), Arg(r.gO), Arg(r.uO), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(ffnI)),
+	if err := r.launch(r.fSw, r.actCfg(glueQuantThreads, glueQuantThreads*4, ffnI), Arg(r.gO), Arg(r.uO), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(ffnI)),
 		gpu.ArgValue(int32(fw.FFN.Act)), Arg(r.dq), Arg(r.dSc), Arg(r.dScr)); err != nil {
 		return err
 	}
@@ -3870,13 +3881,13 @@ func (r *cudaResident) segBFFN(Ly *cudaLayer, l int, x Buffer) error {
 		// Gemma 4 E-model per-layer embedding branch (decoder/forward_gemma4.go: gate on the RAW residual, geluTanh(gate)*this layer's input,
 		// projection, post-norm, residual add), between the FFN residual and the layer scalar. Existing launches only: quant_vec, the GEMV,
 		// glu_quant with a GELU-tanh act (0) and the layer's slice of the row's tail as its `up`, the GEMV, the post-norm, the add.
-		if e := r.launch(r.fQ, onecfg(256, 256*4), Arg(x), gpu.ArgValue(int32(r.hidden)), Arg(r.mq), Arg(r.mSc)); e != nil {
+		if e := r.launch(r.fQ, r.actCfg(256, 256*4, r.hidden), Arg(x), gpu.ArgValue(int32(r.hidden)), Arg(r.mq), Arg(r.mSc)); e != nil {
 			return e
 		}
 		if e := r.doG(Ly.pleGate, r.mq, r.mSc, nullBias, r.pleG, 0); e != nil {
 			return e
 		}
-		if e := r.launch(r.fSw, onecfg(glueQuantThreads, glueQuantThreads*4), Arg(r.pleG), Arg(r.x), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(r.hidden+(l+pleLayerShiftForTest)*r.pleP)), gpu.ArgValue(int32(r.pleP)),
+		if e := r.launch(r.fSw, r.actCfg(glueQuantThreads, glueQuantThreads*4, r.pleP), Arg(r.pleG), Arg(r.x), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(r.hidden+(l+pleLayerShiftForTest)*r.pleP)), gpu.ArgValue(int32(r.pleP)),
 			gpu.ArgValue(int32(0)), Arg(r.dq), Arg(r.dSc), Arg(r.dScr)); e != nil {
 			return e
 		}
@@ -4446,7 +4457,7 @@ func (r *cudaResident) deltaNetMixer(Ly *cudaLayer, l int) error {
 	}
 	// Quantize the gated output, then out_proj straight into the residual (accum=1), exactly as
 	// the attention path's o-proj does.
-	if e := r.launch(r.fQ, onecfg(256, 256*4),
+	if e := r.launch(r.fQ, r.actCfg(256, 256*4, dp.valueDim),
 		Arg(r.dnGated), gpu.ArgValue(int32(dp.valueDim)), Arg(r.dnGq), Arg(r.dnGSc)); e != nil {
 		return e
 	}

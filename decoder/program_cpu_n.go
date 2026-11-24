@@ -293,14 +293,14 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *layerProgram, h []float3
 	return h, nil
 }
 
-// ffnBatch writes the feed-forward output of K rows of x into out. A MoE layer runs its experts per row (the router picks per
-// token) or expert-major in chunks, its buffers in the pass scratch; a dense layer runs gate/up at M=K.
+// ffnBatch writes the feed-forward output of K rows of x into out. A MoE layer (gpt-oss's included) runs its experts per row (the
+// router picks per token) or expert-major in chunks, its buffers in the pass scratch; a dense layer runs gate/up at M=K.
 func (m *Model) ffnBatch(p *ffnParams, x, out []float32, outReg opReg, lw *LayerWeights, K int, ws *linalg.Workspace, hq *w4a8Act,
 	gate, up []float32, guOps *[2]linalg.W8A8Op, ps *prefillPassScratch) error {
 	arch, be := m.w.arch, m.be
 	hidden := arch.HiddenDim
 	switch p.Form {
-	case ffnMoE:
+	case ffnMoE, ffnGptOss:
 		if outReg == regB {
 			// No parallel-block MoE family exists; its joint residual add is not written.
 			return errNotImplemented
@@ -317,7 +317,13 @@ func (m *Model) ffnBatch(p *ffnParams, x, out []float32, outReg opReg, lw *Layer
 			emOut = moeGrow(&ms.out, K*hidden, &moeScratchGrows.out)
 			for c0 := 0; c0 < K; c0 += moeExpertMajorChunk {
 				c1 := min(c0+moeExpertMajorChunk, K)
-				ok, err := moeMLPBatchWith(x[c0*hidden:c1*hidden], c1-c0, lw, &p.MoE, p.Act, hidden, be, m.pager, emOut[c0*hidden:c1*hidden], ms)
+				var ok bool
+				var err error
+				if p.Form == ffnGptOss {
+					ok, err = m.gptOssMoEBatch(x[c0*hidden:c1*hidden], c1-c0, lw, p, hidden, emOut[c0*hidden:c1*hidden], ms)
+				} else {
+					ok, err = moeMLPBatchWith(x[c0*hidden:c1*hidden], c1-c0, lw, &p.MoE, p.Act, hidden, be, m.pager, emOut[c0*hidden:c1*hidden], ms)
+				}
 				if err != nil {
 					return err
 				}
@@ -335,7 +341,13 @@ func (m *Model) ffnBatch(p *ffnParams, x, out []float32, outReg opReg, lw *Layer
 				copy(dst, emOut[i*hidden:(i+1)*hidden])
 				continue
 			}
-			ff, err := moeMLP(x[i*hidden:(i+1)*hidden], lw, &p.MoE, p.Act, hidden, be, nil, m.pager)
+			var ff []float32
+			var err error
+			if p.Form == ffnGptOss {
+				ff, err = m.gptOssMoEWith(x[i*hidden:(i+1)*hidden], lw, p, hidden, nil)
+			} else {
+				ff, err = moeMLP(x[i*hidden:(i+1)*hidden], lw, &p.MoE, p.Act, hidden, be, nil, m.pager)
+			}
 			if err != nil {
 				return err
 			}

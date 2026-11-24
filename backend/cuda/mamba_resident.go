@@ -200,7 +200,7 @@ func (r *cudaResident) mambaMixer(Ly *cudaLayer) error {
 		gpu.ArgValue(int32(p.dInner/p.normGroups)), gpu.ArgValue(r.eps), gpu.ArgValue(int32(0))); e != nil {
 		return e
 	}
-	if e := r.launch(r.fQ, onecfg(256, 256*4), Arg(r.mbGated), gpu.ArgValue(int32(p.dInner)), Arg(r.mbGq), Arg(r.mbGSc)); e != nil {
+	if e := r.launch(r.fQ, r.actCfg(256, 256*4, p.dInner), Arg(r.mbGated), gpu.ArgValue(int32(p.dInner)), Arg(r.mbGq), Arg(r.mbGSc)); e != nil {
 		return e
 	}
 	return r.doG(Ly.mbOut, r.mbGq, r.mbGSc, nullBias, r.x, 1)

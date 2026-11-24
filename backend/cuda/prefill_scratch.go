@@ -174,8 +174,12 @@ func (r *cudaResident) PrefillScratchBytes(rows int) int64 {
 // bindPrefillG32 binds prefill_g32.cu's quantizers into bRms/bQuant/bSw, as the decode build binds actgroup.cu's into
 // fRms/fQ/fSw (each twin takes its per-vector sibling's argument list and launch shape), and loads the per-32 rows GEMVs.
 // prefillG32Ready is set only when every kernel loaded; the per-vector quantizers stay bound otherwise, and
-// prefillFlagsDecline refuses the load, so no pass reads a per-vector scale as a per-32 one.
+// prefillFlagsDecline refuses the load, so no pass reads a per-vector scale as a per-32 one. It runs after bindKernels and does
+// nothing unless the load is per-32 and the batched set loaded.
 func (r *cudaResident) bindPrefillG32() {
+	if !r.prefillReady || !r.actG32 {
+		return
+	}
 	mod, e := r.dev.CompileLibrary(prefillG32PTX)
 	if e != nil {
 		return

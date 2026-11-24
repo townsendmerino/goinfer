@@ -53,6 +53,28 @@ __device__ __forceinline__ void quantG32(const float* __restrict__ vals, int nG,
     }
 }
 
+// quantG32Lane quantizes group g of 32 held across one warp, lane `lane` holding element 32·g + lane in v, into exactly what
+// quantG32 writes for that group: the max is a warp reduction (fmaxf is exact and order-free, and each lane starts from
+// fmaxf(0, |v|) as quantG32's max starts from 0), the code sum an exact integer reduction, and lanes 0-7 pack the eight words.
+// Every lane of the warp calls it with the same g.
+__device__ __forceinline__ void quantG32Lane(float v, int g, int nG, int lane, int* __restrict__ q, float* __restrict__ aScale) {
+    float ma = fmaxf(0.f, fabsf(v));
+    for (int o = 16; o > 0; o >>= 1) ma = fmaxf(ma, __shfl_xor_sync(0xffffffffu, ma, o));
+    float sc = ma / 127.f;
+    float inv = sc > 0.f ? 1.f / sc : 0.f;
+    int x = __float2int_rn(v * inv);
+    x = max(-127, min(127, x));
+    int sum = x;
+    for (int o = 16; o > 0; o >>= 1) sum += __shfl_xor_sync(0xffffffffu, sum, o);
+    int packed = 0;
+    for (int b = 0; b < 4; b++) packed |= (__shfl_sync(0xffffffffu, x, (4 * lane + b) & 31) & 0xff) << (8 * b);
+    if (lane < 8) q[8 * g + lane] = packed;
+    if (lane == 0) {
+        aScale[g] = sc;
+        aScale[nG + g] = __fmul_rn(sc, (float)sum);
+    }
+}
+
 // q4kByte is byte k (0..11) of a Q4_K block's 12 scale bytes, held as three words. Selects and
 // shifts only: an indexed byte array here compiled to a per-block local-memory spill (a 48-byte
 // __local_depot) that made gemv_q4k_g32 slower than the int8 GEMV it replaces.
@@ -207,9 +229,67 @@ __device__ __forceinline__ void rowsQ6K(const unsigned char* __restrict__ W, int
 extern "C" {
 
 #ifndef ACTGROUP_DEVICE_ONLY // prefill_g32.cu includes this file for its device functions only
-// rmsnorm_quant_g32: rmsnorm_quant's passes 1-2 unchanged (sum of squares ladder, normed values),
-// then per-32 quantization. aScale holds H/32 floats. Shared: H + blockDim floats.
+// rmsnorm_quant_g32: rmsnorm_quant's sum-of-squares ladder, then each group's normed values x·w·rnorm quantized per 32, a warp a
+// group. Every block runs the whole ladder (blockDim 256, the same reduction), so rnorm, and hence every output, is the same at any
+// grid. aScale holds 2·H/32 floats (quantG32). Shared: H + blockDim floats (the ladder uses the last blockDim).
 __global__ void rmsnorm_quant_g32(const float* __restrict__ x, const float* __restrict__ w,
+                                  int H, float eps, int addOne, int* __restrict__ aq, float* __restrict__ aScale) {
+    extern __shared__ float sh[];
+    float* red = sh + H;
+    int t = threadIdx.x, nt = blockDim.x;
+    float ss = 0.f;
+    for (int k = t; k < H; k += nt) ss = __fmaf_rn(x[k], x[k], ss);
+    red[t] = ss; __syncthreads();
+    for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] += red[t + o]; __syncthreads(); }
+    float rnorm = 1.f / sqrtf(red[0] / H + eps);
+    int nG = H / 32;
+    int lane = threadIdx.x & 31;
+    int w0 = (blockIdx.x * blockDim.x + threadIdx.x) >> 5; // this warp's index across the grid: one group at a time from here
+    int nw = (gridDim.x * blockDim.x) >> 5;                // the grid's warps; the block size is a multiple of 32
+    for (int g = w0; g < nG; g += nw) {
+        int k = 32 * g + lane;
+        float gw = addOne ? (1.f + w[k]) : w[k];
+        quantG32Lane(x[k] * gw * rnorm, g, nG, lane, aq, aScale);
+    }
+}
+
+// quant_vec_g32: quant_vec with per-32 scales (scale holds 2·N/32 floats), a warp a group, at any grid. No shared memory.
+__global__ void quant_vec_g32(const float* __restrict__ x, int N, int* __restrict__ q, float* __restrict__ scale) {
+    int nG = N / 32;
+    int lane = threadIdx.x & 31;
+    int w0 = (blockIdx.x * blockDim.x + threadIdx.x) >> 5; // this warp's index across the grid: one group at a time from here
+    int nw = (gridDim.x * blockDim.x) >> 5;                // the grid's warps; the block size is a multiple of 32
+    for (int g = w0; g < nG; g += nw) quantG32Lane(x[32 * g + lane], g, nG, lane, q, scale);
+}
+
+// glu_quant_g32: glu_quant's activation (dscratch[k] = act(g)·u), then per-32 quantization of it, a warp a group, at any grid: each
+// lane computes its element, writes it to dscratch and quantizes it, so no block waits on another's elements.
+__global__ void glu_quant_g32(const float* __restrict__ g, const float* __restrict__ u,
+                              int gOff, int uOff, int I, int act,
+                              int* __restrict__ q, float* __restrict__ scale, float* __restrict__ dscratch) {
+    int nG = I / 32;
+    int lane = threadIdx.x & 31;
+    int w0 = (blockIdx.x * blockDim.x + threadIdx.x) >> 5; // this warp's index across the grid: one group at a time from here
+    int nw = (gridDim.x * blockDim.x) >> 5;                // the grid's warps; the block size is a multiple of 32
+    for (int gr = w0; gr < nG; gr += nw) {
+        int k = 32 * gr + lane;
+        float x = g[gOff + k], a;
+        if (act == ACT_SILU) {
+            a = x / (1.f + expf(-x));
+        } else {
+            a = 0.5f * x * (1.f + tanhf(0.7978845608028654f * (__fmaf_rn(0.044715f, __fmul_rn(__fmul_rn(x, x), x), x))));
+        }
+        float v = a * u[uOff + k];
+        dscratch[k] = v;
+        quantG32Lane(v, gr, nG, lane, q, scale);
+    }
+}
+
+// The three kernels below as they ran with one block and a thread a group: kept only as the bit-identity reference of the
+// warp-a-group forms above (kernels/actgroup_kernel_test.go). Nothing in the resident path launches them.
+// rmsnorm_quant_g32_serial: rmsnorm_quant's passes 1-2 unchanged (sum of squares ladder, normed values),
+// then per-32 quantization. aScale holds H/32 floats. Shared: H + blockDim floats.
+__global__ void rmsnorm_quant_g32_serial(const float* __restrict__ x, const float* __restrict__ w,
                                   int H, float eps, int addOne, int* __restrict__ aq, float* __restrict__ aScale) {
     extern __shared__ float sh[];
     float* normed = sh;
@@ -225,14 +305,14 @@ __global__ void rmsnorm_quant_g32(const float* __restrict__ x, const float* __re
     quantG32(normed, H / 32, aq, aScale);
 }
 
-// quant_vec_g32: quant_vec with per-32 scales (scale holds N/32 floats). No shared memory.
-__global__ void quant_vec_g32(const float* __restrict__ x, int N, int* __restrict__ q, float* __restrict__ scale) {
+// quant_vec_g32_serial: quant_vec with per-32 scales (scale holds N/32 floats). No shared memory.
+__global__ void quant_vec_g32_serial(const float* __restrict__ x, int N, int* __restrict__ q, float* __restrict__ scale) {
     quantG32(x, N / 32, q, scale);
 }
 
-// glu_quant_g32: glu_quant's activation pass unchanged (dscratch[k] = act(g)*u), then per-32
+// glu_quant_g32_serial: glu_quant's activation pass unchanged (dscratch[k] = act(g)*u), then per-32
 // quantization of dscratch (scale holds I/32 floats).
-__global__ void glu_quant_g32(const float* __restrict__ g, const float* __restrict__ u,
+__global__ void glu_quant_g32_serial(const float* __restrict__ g, const float* __restrict__ u,
                               int gOff, int uOff, int I, int act,
                               int* __restrict__ q, float* __restrict__ scale, float* __restrict__ dscratch) {
     int t = threadIdx.x, nt = blockDim.x;

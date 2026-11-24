@@ -26,9 +26,15 @@ import (
 // Evidence, measured figures and the decision record: docs/code-notes/decoder.md#cpuFastAttention.
 func cpuFastAttention() bool { return (*knobSet)(nil).cpuFastAttention() }
 
-// cpuFastAttention is the per-model form: off when this model was loaded with
-// Options.ExactPrefill, else the env var's answer.
-func (m *Model) cpuFastAttention() bool { return !m.opts.ExactPrefill && m.knobs.cpuFastAttention() }
+// cpuFastAttention is the per-model form: off when this model was loaded with Options.ExactPrefill or its attention carries learned
+// sinks (gpt-oss), else the env var's answer. gpt-oss's f32 batched attention failed its fidelity gate against the exact path
+// (docs/measurements/gptoss-cpu-prefill-2026-11-23, G3), so its batched prefill always runs the exact kernel.
+func (m *Model) cpuFastAttention() bool {
+	if m.w != nil && m.w.arch != nil && m.w.arch.hasAttnSinks() {
+		return false
+	}
+	return !m.opts.ExactPrefill && m.knobs.cpuFastAttention()
+}
 
 // ExactPrefill reports whether this model was loaded with Options.ExactPrefill — prompt ingestion
 // must take each backend's bit-exact path. Backends consult it next to their own env var.

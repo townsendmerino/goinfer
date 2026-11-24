@@ -18,6 +18,7 @@ import (
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/testgate"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -120,6 +121,25 @@ func TestActGroup_phi3ResidentMatchesCPU(t *testing.T) {
 	}
 	if cudaQ < cpuQ-0.01 {
 		t.Errorf("CUDA per-32 quality p10 %.4f is worse than the CPU per-32 path's %.4f on the same prompt", cudaQ, cpuQ)
+	}
+}
+
+// TestActCfg_spreadsOnlyPer32 pins actCfg's grid: a per-32 activation kernel gets a block for every blockDim/32 groups (Phi-3's
+// shapes: the 3,072-wide norm and quant on 12 blocks of 256, the 8,192-wide GLU on 8 of 1,024), a per-vector one keeps one block
+// (its absmax spans the vector). Bit-identity at every grid is the kernels' own test
+// (kernels/actgroup_kernel_test.go:TestActGroupKernels_warpQuantizersEqualSerial).
+func TestActCfg_spreadsOnlyPer32(t *testing.T) {
+	for _, c := range []struct {
+		g32            bool
+		block, n, want int
+	}{
+		{true, 256, 3072, 12}, {true, glueQuantThreads, 8192, 8}, {true, 256, 64, 1}, {true, 256, 288, 2},
+		{false, 256, 3072, 1}, {false, glueQuantThreads, 8192, 1},
+	} {
+		r := &cudaResident{actG32: c.g32}
+		if got := r.actCfg(c.block, 4, c.n).GridX; int(got) != c.want {
+			t.Errorf("actCfg(block %d, n %d) with actG32 %v: grid %d, want %d", c.block, c.n, c.g32, got, c.want)
+		}
 	}
 }
 
@@ -276,35 +296,43 @@ func TestPrefillG32_rowsMatchDecode(t *testing.T) {
 
 // TestPrefillG32_quantizersMatchDecode: the batched per-32 quantizers bound into bRms, bQuant and bSw equal the decode ones (fRms,
 // fQ, fSw at their decode launch shapes), row by row, in the int8 codes and in both halves of the scale row (the group scales and
-// the group sums gemv_q4k_g32 reads). Both glu activations run; bSw's product overwrites its gate rows, so each arm gets a copy.
+// the group sums gemv_q4k_g32 reads). The rmsnorm runs with and without (1 + w); both glu activations run, and the SiLU glu
+// also at a nonzero uOff (the up rows read from uOff on, row stride I, as decode reads u[uOff + k]). bSw's product overwrites
+// its gate rows, so each arm gets a copy.
 func TestPrefillG32_quantizersMatchDecode(t *testing.T) {
 	_, rf := prefillG32Rig(t)
 	rng := rand.New(rand.NewSource(11))
 	const M = 9
 	for _, K := range []int{64, 3072, 8192} {
-		x, w, u := g32Floats(rng, M*K, 2), g32Floats(rng, K, 1), g32Floats(rng, M*K, 1)
+		const uOffTest = 64
+		x, w, u := g32Floats(rng, M*K, 2), g32Floats(rng, K, 1), g32Floats(rng, M*K+uOffTest, 1)
 		sl := rf.actScaleLen(K)
-		for _, op := range []string{"rms", "quant", "glu-silu", "glu-gelu"} {
+		for _, op := range []string{"rms", "rms-addone", "quant", "glu-silu", "glu-gelu", "glu-uoff"} {
 			var wq, gq []int32
 			var ws, gs []float32
 			err := rf.do(func() error {
 				qd, sd, qb, sb := rf.ti(M*K/4), rf.tf(M*sl), rf.ti(M*K/4), rf.tf(M*sl)
 				xb, wb, ub := rf.tup32(x), rf.tup32(w), rf.tup32(u)
-				act := int32(1)
-				if op == "glu-gelu" {
+				act, addOne, uOff := int32(1), int32(0), int32(0)
+				switch op {
+				case "glu-gelu":
 					act = 0
+				case "rms-addone":
+					addOne = 1
+				case "glu-uoff":
+					uOff = uOffTest
 				}
 				scratch := rf.tf(K)
 				for m := range M {
 					xm, qm, sm := xb.At(m*K*4), qd.At(m*K), sd.At(m*sl*4)
 					var e error
 					switch op {
-					case "rms":
-						e = rf.launch(rf.fRms, onecfg(256, (K+256)*4), Arg(xm), Arg(wb), gpu.ArgValue(int32(K)), gpu.ArgValue(float32(1e-5)), gpu.ArgValue(int32(0)), Arg(qm), Arg(sm))
+					case "rms", "rms-addone":
+						e = rf.launch(rf.fRms, onecfg(256, (K+256)*4), Arg(xm), Arg(wb), gpu.ArgValue(int32(K)), gpu.ArgValue(float32(1e-5)), gpu.ArgValue(addOne), Arg(qm), Arg(sm))
 					case "quant":
 						e = rf.launch(rf.fQ, onecfg(256, 256*4), Arg(xm), gpu.ArgValue(int32(K)), Arg(qm), Arg(sm))
 					default:
-						e = rf.launch(rf.fSw, onecfg(glueQuantThreads, glueQuantThreads*4), Arg(xm), Arg(ub.At(m*K*4)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)),
+						e = rf.launch(rf.fSw, onecfg(glueQuantThreads, glueQuantThreads*4), Arg(xm), Arg(ub.At(m*K*4)), gpu.ArgValue(int32(0)), gpu.ArgValue(uOff),
 							gpu.ArgValue(int32(K)), gpu.ArgValue(act), Arg(qm), Arg(sm), Arg(scratch))
 					}
 					if e != nil {
@@ -314,13 +342,14 @@ func TestPrefillG32_quantizersMatchDecode(t *testing.T) {
 				var e error
 				cfg := LaunchConfig{GridX: M, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4}
 				switch op {
-				case "rms":
-					e = rf.bRmsB(xb, wb, K, qb, sb, M)
+				case "rms", "rms-addone":
+					e = rf.launch(rf.bRms, LaunchConfig{GridX: M, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((256 + K) * 4)},
+						Arg(xb), Arg(wb), gpu.ArgValue(int32(K)), gpu.ArgValue(float32(1e-5)), gpu.ArgValue(addOne), Arg(qb), Arg(sb))
 				case "quant":
 					e = rf.launch(rf.bQuant, cfg, Arg(xb), gpu.ArgValue(int32(K)), Arg(qb), Arg(sb), gpu.ArgValue(int32(M)))
 				default:
 					gb := rf.tup32(x) // bSw writes its product over the gate rows
-					e = rf.launch(rf.bSw, cfg, Arg(gb), Arg(ub), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(K)), gpu.ArgValue(act), Arg(qb), Arg(sb), gpu.ArgValue(int32(M)))
+					e = rf.launch(rf.bSw, cfg, Arg(gb), Arg(ub), gpu.ArgValue(uOff), gpu.ArgValue(int32(K)), gpu.ArgValue(act), Arg(qb), Arg(sb), gpu.ArgValue(int32(M)))
 				}
 				if e != nil {
 					return e
@@ -445,9 +474,7 @@ func TestPrefillG32_tinyPassMatchesSequential(t *testing.T) {
 // path (a Qwen2.5 q4_k_m checks the lane on a second family; the registered cells are Phi-3's).
 func op6cLoad(t *testing.T, k, n int) (*decoder.Model, *cudaResident, [][]int, string) {
 	t.Helper()
-	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
-		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads Phi-3 mini)")
-	}
+	testgate.RequireHeavy(t)
 	path := os.Getenv("GOINFER_OP6C_MODEL")
 	if path == "" {
 		path = modelPath("phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf")
@@ -579,11 +606,11 @@ func op6cHostOK(needBytes int64) (load float64, availMB int64, ok bool) {
 	return load, availMB, load <= 8.0 && availMB*(1<<20) >= needBytes+2<<30
 }
 
-// TestOP6C_q4kPassSpeed is OP6-C's gate 3: TTFT of the sequential arm (A) against the batched arm (B) on one load, P = 128 and
-// 3,900 from position 0 on set A's first prompt. Per P one untimed call of each arm, then 10 pairs alternating A B / B A (5 A B B A
-// blocks); a cell
-// started under heavy load is void and its pair re-run in order, at most 4 a P. The metric is the median per-pair A / B.
-// Run under the exclusive timing lock.
+// TestOP6C_q4kPassSpeed is OP6-C's gate 3, an instrument: it logs every cell and pair, the median and the pairs above 1, and
+// asserts nothing about speed; the registration's ADOPT / KILL rule grades the log. It times the sequential arm (A) against the
+// batched arm (B) on one load, P = 128 and 3,900 from position 0 on set A's first prompt: per P one untimed call of each arm, then
+// 10 pairs alternating A B / B A (5 A B B A blocks). A cell started under heavy load is void and its pair re-run in order, at most
+// 4 a P. The metric is the median per-pair A / B. Run under the exclusive timing lock.
 //
 //	GOINFER_HEAVY_TESTS=1 python3 scripts/timing_lock.py run --label op6c-gate3 -- go test -tags 'cuda goinfer_testhooks' -run TestOP6C_q4kPassSpeed -v -timeout 40m ./backend/cuda/
 func TestOP6C_q4kPassSpeed(t *testing.T) {

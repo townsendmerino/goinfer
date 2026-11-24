@@ -41,6 +41,22 @@ func TestRequireHeavy_skipsUnsetWithTheToken(t *testing.T) {
 	}
 }
 
+func TestRequireMeasure_skipsUnsetWithTheToken(t *testing.T) {
+	t.Setenv("GOINFER_MEASURE_TESTS", "")
+	t.Setenv("GOINFER_HEAVY_TESTS", "1")
+	r := &recorder{TB: t}
+	RequireMeasure(r)
+	if !r.skipped || !strings.HasPrefix(r.msg, SkipMeasure) || !strings.Contains(r.msg, "GOINFER_MEASURE_TESTS=1") {
+		t.Fatalf("unset under GOINFER_HEAVY_TESTS=1: skipped %v, message %q; want a skip beginning %q", r.skipped, r.msg, SkipMeasure)
+	}
+	t.Setenv("GOINFER_MEASURE_TESTS", "1")
+	r = &recorder{TB: t}
+	RequireMeasure(r)
+	if r.skipped {
+		t.Fatalf("GOINFER_MEASURE_TESTS=1: skipped with %q", r.msg)
+	}
+}
+
 func TestRequireDevice_skipsOnAProbeErrorWithTheToken(t *testing.T) {
 	r := &recorder{TB: t}
 	RequireDevice(r, "cuda", errors.New("cuInit: CUDA_ERROR_NO_DEVICE"))

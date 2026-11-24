@@ -1,0 +1,37 @@
+start 2026-11-23T17:50:34-08:00 load 0.98 2.00 1.73
+goos: linux
+goarch: amd64
+pkg: github.com/townsendmerino/aikit/linalg
+cpu: AMD Ryzen 7 3700X 8-Core Processor             
+BenchmarkQkAcc64Stride/stride3072/k4-16         	     200	    249562 ns/op
+BenchmarkQkAcc64Stride/stride3072/k4-16         	     200	    242531 ns/op
+BenchmarkQkAcc64Stride/stride3072/k4-16         	     200	    124161 ns/op
+BenchmarkQkAcc64Stride/stride3072/k4-16         	     200	    126451 ns/op
+BenchmarkQkAcc64Stride/stride3072/k4-16         	     200	    192790 ns/op
+BenchmarkQkAcc64Stride/stride3072/k16-16        	     200	    321163 ns/op
+BenchmarkQkAcc64Stride/stride3072/k16-16        	     200	    324937 ns/op
+BenchmarkQkAcc64Stride/stride3072/k16-16        	     200	    307623 ns/op
+BenchmarkQkAcc64Stride/stride3072/k16-16        	     200	    261839 ns/op
+BenchmarkQkAcc64Stride/stride3072/k16-16        	     200	    263933 ns/op
+BenchmarkQkAcc64Stride/stride3088/k4-16         	     200	    201013 ns/op
+BenchmarkQkAcc64Stride/stride3088/k4-16         	     200	    184675 ns/op
+BenchmarkQkAcc64Stride/stride3088/k4-16         	     200	    116183 ns/op
+BenchmarkQkAcc64Stride/stride3088/k4-16         	     200	    191166 ns/op
+BenchmarkQkAcc64Stride/stride3088/k4-16         	     200	    213562 ns/op
+BenchmarkQkAcc64Stride/stride3088/k16-16        	     200	    138681 ns/op
+BenchmarkQkAcc64Stride/stride3088/k16-16        	     200	    102736 ns/op
+BenchmarkQkAcc64Stride/stride3088/k16-16        	     200	     99140 ns/op
+BenchmarkQkAcc64Stride/stride3088/k16-16        	     200	    125270 ns/op
+BenchmarkQkAcc64Stride/stride3088/k16-16        	     200	    136649 ns/op
+BenchmarkQkAcc64Stride/stride128/k4-16          	     200	    185922 ns/op
+BenchmarkQkAcc64Stride/stride128/k4-16          	     200	    231727 ns/op
+BenchmarkQkAcc64Stride/stride128/k4-16          	     200	    225134 ns/op
+BenchmarkQkAcc64Stride/stride128/k4-16          	     200	    227943 ns/op
+BenchmarkQkAcc64Stride/stride128/k4-16          	     200	    183820 ns/op
+BenchmarkQkAcc64Stride/stride128/k16-16         	     200	    127920 ns/op
+BenchmarkQkAcc64Stride/stride128/k16-16         	     200	    141263 ns/op
+BenchmarkQkAcc64Stride/stride128/k16-16         	     200	     99338 ns/op
+BenchmarkQkAcc64Stride/stride128/k16-16         	     200	    102087 ns/op
+BenchmarkQkAcc64Stride/stride128/k16-16         	     200	     65153 ns/op
+PASS
+STRIDE-DONE

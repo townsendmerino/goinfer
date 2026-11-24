@@ -50,3 +50,26 @@ Francis chose the 1.1 h trim. **Run:** P1 and P2 at depth 3,900, and C1 (the 0.5
 comparisons × 20 cells = 60 cells. **Not run, by Francis's choice:** both decision cells at depth 128, P3 (the 4-key kernel padded), and C2
 (Phi-3 f16). **The bars are unchanged**, and their "no decision cell under 0.98" now covers P1 and P2 at 3,900 only. **No short-context check
 is made**, so an ADOPT carries "128 not measured" until the full implementation's A/B, which measures it. `run-ab.sh` runs the trimmed set.
+
+## Result, read 2026-11-23 20:28 PST: **ADOPT** (128 not measured)
+
+60 cells, 19:41–20:27 PST under the exclusive lock, binaries `dec-rowpad-K16-72b37bec2` and `dec-rowpad-K4-72b37bec2` (prototype branch
+`cpu-kv-rowpad-2026-11-23` at `72b37bec2`; its product code is unchanged since `f48c80016`). Start load 0.84–0.99 on every cell, no void
+cells. Every padded Phi-3 cell reported `rowpad 16` and every unpadded one `rowpad 0`; every C1 cell reported `rowpad 0` (the 0.5B's
+rows are never padded). Cells `ab/*-cells.tsv`, per-cell logs `ab/logs.tar.gz`, driver log `ab/run.log`, graded by `ab/grade.py`.
+
+| comparison (depth 3,900) | A tok/s | B tok/s | median B ÷ A | pairs faster | bar | |
+|---|---|---|---|---|---|---|
+| P1: Phi-3 f32, K16, padded ÷ unpadded | 2.962 | 3.459 | **1.168** | 10/10 | ≥ 1.15, 9/10 | pass |
+| P2: Phi-3 f32, K16 padded ÷ K4 unpadded (ships) | 3.097 | 3.461 | **1.117** | 10/10 | ≥ 1.05, 9/10 | pass |
+| C1: 0.5B f32, K16, pad not applied (A/A) | 24.50 | 24.38 | 0.995 | 4/10 | 0.98–1.02 | in band |
+
+**ADOPT:** both decision cells clear their bars, neither is under 0.98, and the control is in band. Per the registration, (b) goes to a
+full implementation covering every reader of the CPU KV layout, with its own tests, brought to the coordinator before it is armed.
+**Carried with it:** depth 128 is not measured (the trimmed run), so the full implementation's A/B measures it; P3 (the 4-key kernel
+under the pad) and C2 (Phi-3 f16) were not run. Pad memory as registered: Phi-3 16 MiB at 4,096 positions (+0.52%).
+
+**Against the prediction** (P1 about 1.15, P2 about 1.08): P1 as predicted, P2 above it. **The attempt that did not count:** attempt 1
+(19:12) stopped itself at its second cell when its pad check found no `rowpad` metric; the benchmark had reported it before the timed
+loop's `ResetTimer`, which drops it. The one cell it completed (P1 block 1 cell 1, A, 2.986 tok/s) was discarded; the fix (`72b37bec2`)
+is test-only.
