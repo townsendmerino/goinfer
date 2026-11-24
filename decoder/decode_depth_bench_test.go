@@ -97,13 +97,13 @@ func BenchmarkDecodeAtDepth(b *testing.B) {
 			if cache.rowPad > 0 && !fill {
 				b.Fatal("GOINFER_BENCH_KVPAD needs GOINFER_BENCH_FILL=1")
 			}
-			b.ReportMetric(float64(cache.rowPad), "rowpad")
 			if fill {
 				fillCacheForBench(b, m, cache, depth)
 			} else if _, err := m.forwardLayersN(context.Background(), ids, cache, false); err != nil {
 				b.Fatalf("batched prefill to depth %d: %v", depth, err)
 			}
 			decodeAtDepthOnce(b, m, cache, tok)
+			b.ReportMetric(float64(cache.rowPad), "rowpad") // after the timed loop: its ResetTimer drops metrics reported before it
 		})
 	}
 }
