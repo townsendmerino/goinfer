@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // G3-C, schedule independence on a CUDA resident through Generate (docs/measurements/kv2-cuda-2026-10-15.md): three
@@ -277,6 +278,7 @@ func TestKV2_scheduleIndependence_tiny(t *testing.T) {
 }
 
 func TestKV2_scheduleIndependence_real1p5B(t *testing.T) {
+	testgate.RequireMeasure(t)
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)")
 	}

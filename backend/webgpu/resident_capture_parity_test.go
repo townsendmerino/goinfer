@@ -19,8 +19,10 @@ import (
 // TestResidentCaptureParityWebGPU runs the resident Forward against the CPU ForwardForTest at the same quant (an 8-token
 // arbitrary prompt, then a greedy continuation) through the PRODUCTION load path, decoder.Load with Backend:"webgpu", on ANY
 // checkpoint (GOINFER_PARITY_CKPT: a safetensors dir or a .gguf). With GOINFER_GPU_CAPTURE=1 it differences the two forwards
-// PER SUBLAYER PER LAYER (attention context, attention contribution, MLP contribution: the runner's capture buffers vs
-// decoder.ForwardSubCaptureLogitsForTest), so a divergence is localised in one run instead of argued from the final logits.
+// PER SUBLAYER PER LAYER (attention context, attention contribution, everything after it, and the layer's output residual: the
+// runner's capture buffers vs decoder.ForwardLayerCaptureLogitsForTest), so a divergence is localised in one run instead of
+// argued from the final logits. On a Gemma 4 E-model the CPU side adds the PLE contribution and the layer scalar, so every
+// column compares the same quantity on both sides.
 // It prints and does not assert a bar (the only assertion is that the cosine is not NaN): what a cosine means for a given
 // checkpoint is what TestCPUQuantSensitivity measures for it.
 //
@@ -65,20 +67,26 @@ func TestResidentCaptureParityWebGPU(t *testing.T) {
 	}
 	defer mcpu.Close()
 	t.Logf("cpu decode path: %s", mcpu.DecodePath())
+	for i := range prompt { // a tiny checkpoint's vocabulary can be smaller than the prompt's ids
+		prompt[i] %= mcpu.Shape().Vocab
+	}
 
 	cache := mcpu.NewCache(len(prompt) + 16)
 	minCos := 1.0
 	var lastCPU, lastGPU []float32
 	// GOINFER_GPU_CAPTURE=1: per-layer, per-sublayer differencing (CLAUDE.md: "prefer
 	// differencing per layer over reasoning from final logits") — the resident runner's capture
-	// buffers vs decoder.ForwardSubCaptureLogitsForTest, from the SAME token on each side.
+	// buffers vs decoder.ForwardLayerCaptureLogitsForTest, from the SAME token on each side.
 	capture := os.Getenv("GOINFER_GPU_CAPTURE") != ""
 	runner := rf.(*residentDecoder).runner
 	for i, tok := range prompt {
 		var cpuL []float32
-		var cAttn, cMLP, cCtx [][]float32
+		var cAttn, cMLP, cCtx, cPLE, cOut [][]float32
+		var cScalar []float32
 		if capture {
-			cpuL, cAttn, cMLP, cCtx, _, err = mcpu.ForwardSubCaptureLogitsForTest(tok, cache)
+			var lc decoder.LayerCaptureForTest
+			cpuL, lc, err = mcpu.ForwardLayerCaptureLogitsForTest(tok, cache)
+			cAttn, cMLP, cCtx, cPLE, cOut, cScalar = lc.Attn, lc.MLP, lc.Ctx, lc.PLE, lc.Out, lc.Scalar
 		} else {
 			cpuL, err = mcpu.ForwardForTest(tok, cache)
 		}
@@ -100,12 +108,13 @@ func TestResidentCaptureParityWebGPU(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ReadCapture pos %d: %v", i, err)
 			}
-			// Reconstruct the CPU residual stream from the sublayer contributions: h_in(0) = the
-			// embedding (identical on both sides), h_attn(l) = h_in(l) + attn(l), h_out(l) =
-			// h_attn(l) + mlp(l). The GPU captures the residual itself; its contributions are
-			// the differences. Both views are printed: the residual cosine shows inherited error,
-			// the contribution cosine shows the sublayer's OWN error at that layer.
-			hIn := append([]float32(nil), x0...)
+			// Rebuild the CPU layer from the GPU's own previous output and the CPU's contributions: h_in(0) = the embedding
+			// (identical on both sides), h_attn(l) = h_in(l) + attn(l), h_out(l) = (h_attn(l) + mlp(l) + ple(l)) × scalar(l)
+			// (PLE and the scalar on a Gemma 4 E-model only), with h_in(l+1) = the GPU's h_out(l). The GPU captures the
+			// residual itself; its contributions are the differences, so "post-attn" on both sides is everything after the
+			// attention add. The contribution and "out" columns show layer l's own error; "chain" (the CPU's own layer output
+			// against the GPU's) shows the error inherited up to and through layer l.
+			hIn := append([]float32(nil), x0[:len(gAttn[0])]...) // the residual; an E-model row carries its PLE inputs past it
 			sub := func(a, b []float32) []float32 {
 				d := make([]float32, len(a))
 				for j := range d {
@@ -123,6 +132,15 @@ func TestResidentCaptureParityWebGPU(t *testing.T) {
 			for l := range gMLP {
 				hAttnCPU := add(hIn, cAttn[l])
 				hOutCPU := add(hAttnCPU, cMLP[l])
+				if cPLE != nil {
+					hOutCPU = add(hOutCPU, cPLE[l])
+				}
+				if sc := cScalar[l]; sc != 0 {
+					for j := range hOutCPU {
+						hOutCPU[j] *= sc
+					}
+				}
+				postCPU, postGPU := sub(hOutCPU, hAttnCPU), sub(gMLP[l], gAttn[l])
 				rel := func(ref, got []float32) float64 { // ||got-ref|| / ||ref||
 					var d, n float64
 					for j := range ref {
@@ -135,13 +153,12 @@ func TestResidentCaptureParityWebGPU(t *testing.T) {
 				cCos, _ := cosine(cCtx[l], gCtx[l])
 				aCos, _ := cosine(cAttn[l], sub(gAttn[l], hIn))
 				hACos, _ := cosine(hAttnCPU, gAttn[l])
-				mCos, _ := cosine(cMLP[l], sub(gMLP[l], gAttn[l]))
+				mCos, _ := cosine(postCPU, postGPU)
 				hOCos, _ := cosine(hOutCPU, gMLP[l])
-				t.Logf("      L%02d ctx cos %.8f rel %.2e | attn-contrib cos %.8f rel %.2e (resid %.8f) | mlp-contrib cos %.8f rel %.2e (resid %.8f)",
-					l, cCos, rel(cCtx[l], gCtx[l]), aCos, rel(cAttn[l], sub(gAttn[l], hIn)), hACos, mCos, rel(cMLP[l], sub(gMLP[l], gAttn[l])), hOCos)
-				hIn = gMLP[l] // next layer's input on the GPU side is its own residual; use it so each
-				//              layer's contribution cosine isolates that layer's error, not inherited drift
-				_ = hOutCPU
+				chCos, _ := cosine(cOut[l], gMLP[l])
+				t.Logf("      L%02d ctx cos %.8f rel %.2e | attn-contrib cos %.8f rel %.2e (resid %.8f) | post-attn cos %.8f rel %.2e | out cos %.8f rel %.2e | chain cos %.8f rel %.2e",
+					l, cCos, rel(cCtx[l], gCtx[l]), aCos, rel(cAttn[l], sub(gAttn[l], hIn)), hACos, mCos, rel(postCPU, postGPU), hOCos, rel(hOutCPU, gMLP[l]), chCos, rel(cOut[l], gMLP[l]))
+				hIn = gMLP[l] // the next layer starts from the GPU's own output, so its columns isolate its own error
 			}
 		}
 		lastCPU = append(lastCPU[:0], cpuL...)

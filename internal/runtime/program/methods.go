@@ -104,14 +104,14 @@ func (p *Program) MultiStepEligible() error {
 }
 
 // BatchEligible reports whether the batched walker runs prog: a layer program with no learned positions, the batched attention
-// kernel on every layer, and a gated or MoE FFN.
+// kernel on every layer, and a gated, MoE or gpt-oss FFN.
 func (p *Program) BatchEligible() bool {
 	if p.Layers == nil || p.Embed.LearnedPos || !p.AttnOrderIs(AttnBatchedAcc64) || !p.KindsIn(GenericKinds...) {
 		return false
 	}
 	for _, ops := range p.Layers {
 		for i := range ops {
-			if ops[i].Kind == OpFFN && ops[i].FFN.Form != FfnGated && ops[i].FFN.Form != FfnMoE {
+			if ops[i].Kind == OpFFN && ops[i].FFN.Form != FfnGated && ops[i].FFN.Form != FfnMoE && ops[i].FFN.Form != FfnGptOss {
 				return false
 			}
 		}

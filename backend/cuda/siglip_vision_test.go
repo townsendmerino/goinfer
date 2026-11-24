@@ -17,6 +17,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/testgate"
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
@@ -323,6 +324,7 @@ func TestSiglipCUDA_int8VsFloat32(t *testing.T) {
 // TestSiglipCUDA_speed is the S4 addendum's speed record (no bar): Gemma 3's SigLIP tower time per image, the float32 CUDA tower against the int8 CUDA tower against the CPU float32 tower,
 // interleaved per round on the same preprocessed image (SIGLIP_SPEED_ROUNDS, default 3; images: the first and last of the F2a four). Heavy; run under the timing lock (the night script does).
 func TestSiglipCUDA_speed(t *testing.T) {
+	testgate.RequireMeasure(t)
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
 		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1")
 	}

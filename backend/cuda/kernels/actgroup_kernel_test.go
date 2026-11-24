@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"math/rand"
 	"testing"
@@ -201,6 +202,86 @@ func TestActGroupKernels_quantizers(t *testing.T) {
 		got := float64(gotC[i]) * float64(gotS[i/32])
 		if math.Abs(got-want) > 0.51*float64(gotS[i/32])+1e-5*math.Abs(want) {
 			t.Fatalf("glu_quant_g32 [%d]: dequant %v, want %v (scale %v)", i, got, want, gotS[i/32])
+		}
+	}
+}
+
+// TestActGroupKernels_warpQuantizersEqualSerial: rmsnorm_quant_g32, quant_vec_g32 and glu_quant_g32, which take a warp a group at
+// any grid, write the same codes, scales, group sums and (glu) dscratch, bit for bit, as their one-block _serial forms, at one
+// block and at several grids, on vectors with an outlier, an all-zero group and a NaN; glu under both activations.
+func TestActGroupKernels_warpQuantizersEqualSerial(t *testing.T) {
+	ctx, _, launch := actGroupHarness(t)
+	rng := rand.New(rand.NewSource(11))
+	cfg := func(grid, block, shared int) gc.LaunchConfig {
+		return gc.LaunchConfig{GridX: uint32(grid), GridY: 1, GridZ: 1, BlockX: uint32(block), BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(shared)}
+	}
+	poison := func(v []float32) []float32 {
+		clear(v[32:64])                   // group 1 all zero: the zero-scale convention
+		v[len(v)-5] = float32(math.NaN()) // the last group holds a NaN
+		return v
+	}
+	same := func(name string, grid int, a, b []float32) {
+		t.Helper()
+		for i := range a {
+			if math.Float32bits(a[i]) != math.Float32bits(b[i]) {
+				t.Fatalf("%s at grid %d: [%d] = %v, serial %v", name, grid, i, b[i], a[i])
+			}
+		}
+	}
+	sameI := func(name string, grid int, a, b []int32) {
+		t.Helper()
+		for i := range a {
+			if a[i] != b[i] {
+				t.Fatalf("%s at grid %d: word %d = %#x, serial %#x", name, grid, i, b[i], a[i])
+			}
+		}
+	}
+	for _, H := range []int{96, 3072} {
+		nG := H / 32
+		x, w := poison(outlierVec(rng, H)), make([]float32, H)
+		for i := range w {
+			w[i] = float32(0.5 + rng.Float64())
+		}
+		dx, dw := upload(t, ctx, x), upload(t, ctx, w)
+		dq, ds := mustAlloc[int32](t, ctx, H/4), mustAlloc[float32](t, ctx, 2*nG)
+		run := func(kernel string, c gc.LaunchConfig, rms bool) ([]int32, []float32) {
+			if rms {
+				launch(kernel, c, gc.Arg(dx), gc.Arg(dw), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.ArgValue(int32(1)), gc.Arg(dq), gc.Arg(ds))
+			} else {
+				launch(kernel, c, gc.Arg(dx), gc.ArgValue(int32(H)), gc.Arg(dq), gc.Arg(ds))
+			}
+			return download(t, dq, H/4), download(t, ds, 2*nG)
+		}
+		for _, rms := range []bool{true, false} {
+			name, sh := "quant_vec_g32", 0
+			if rms {
+				name, sh = "rmsnorm_quant_g32", (H+256)*4
+			}
+			wq, wsc := run(name+"_serial", cfg(1, 256, sh), rms)
+			for _, grid := range []int{1, 3, (nG + 7) / 8} {
+				gq, gsc := run(name, cfg(grid, 256, sh), rms)
+				sameI(fmt.Sprintf("%s H=%d codes", name, H), grid, wq, gq)
+				same(fmt.Sprintf("%s H=%d scales", name, H), grid, wsc, gsc)
+			}
+		}
+	}
+	for _, act := range []int32{0, 1} {
+		const I = 8192
+		nG := I / 32
+		gv, uv := poison(outlierVec(rng, I)), outlierVec(rng, I)
+		dg, du := upload(t, ctx, gv), upload(t, ctx, uv)
+		dq, ds, dscr := mustAlloc[int32](t, ctx, I/4), mustAlloc[float32](t, ctx, 2*nG), mustAlloc[float32](t, ctx, I)
+		run := func(kernel string, c gc.LaunchConfig) ([]int32, []float32, []float32) {
+			launch(kernel, c, gc.Arg(dg), gc.Arg(du), gc.ArgValue(int32(0)), gc.ArgValue(int32(0)), gc.ArgValue(int32(I)), gc.ArgValue(act),
+				gc.Arg(dq), gc.Arg(ds), gc.Arg(dscr))
+			return download(t, dq, I/4), download(t, ds, 2*nG), download(t, dscr, I)
+		}
+		wq, wsc, wscr := run("glu_quant_g32_serial", cfg(1, 1024, 1024*4))
+		for _, grid := range []int{1, 3, (nG + 31) / 32} {
+			gq, gsc, gscr := run("glu_quant_g32", cfg(grid, 1024, 1024*4))
+			sameI(fmt.Sprintf("glu_quant_g32 act %d codes", act), grid, wq, gq)
+			same(fmt.Sprintf("glu_quant_g32 act %d scales", act), grid, wsc, gsc)
+			same(fmt.Sprintf("glu_quant_g32 act %d dscratch", act), grid, wscr, gscr)
 		}
 	}
 }

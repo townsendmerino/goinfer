@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -286,6 +287,7 @@ func TestClassifySkip_parityWithPythonRules(t *testing.T) {
 func TestClassifySkip_tokensFirst(t *testing.T) {
 	cases := []struct{ reason, want string }{
 		{"x_test.go:9: " + testgate.SkipHeavy + " heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in", "heavy-model"},
+		{"x_test.go:9: " + testgate.SkipMeasure + " a measurement, not a guard: set GOINFER_MEASURE_TESTS=1 to run it", "integration-env"},
 		{"x_test.go:9: " + testgate.SkipDevice + " no cuda device: cuInit: CUDA_ERROR_NO_DEVICE", "no-gpu-device"},
 		{"x_test.go:9: " + testgate.SkipDevice + " no metal device: real checkpoint absent", "no-gpu-device"},
 		{"x_test.go:9: " + testgate.SkipAsset + " gemma-heavy.gguf not found under the models directory", "missing-fixture"},
@@ -326,5 +328,24 @@ func TestHeavy_refusesWithoutModelsDir(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "REFUSED") {
 		t.Errorf("refusal not stated:\n%s", buf.String())
+	}
+}
+
+// No gate cell runs a measurement: an exported GOINFER_MEASURE_TESTS would pull testgate.RequireMeasure's tests back
+// into whichever tier ran, so cellEnv drops it unless the cell sets it itself.
+func TestCellEnv_dropsAnAmbientMeasureOptIn(t *testing.T) {
+	base := []string{"PATH=/bin", "GOINFER_MEASURE_TESTS=1", "GOINFER_HEAVY_TESTS=1"}
+	got := cellEnv(base, map[string]string{"CGO_ENABLED": "0"})
+	for _, kv := range got {
+		if strings.HasPrefix(kv, "GOINFER_MEASURE_TESTS=") {
+			t.Fatalf("cellEnv kept the ambient %q: %v", kv, got)
+		}
+	}
+	if !slices.Contains(got, "PATH=/bin") || !slices.Contains(got, "GOINFER_HEAVY_TESTS=1") || !slices.Contains(got, "CGO_ENABLED=0") {
+		t.Fatalf("cellEnv lost a variable it should keep: %v", got)
+	}
+	got = cellEnv(base, map[string]string{"GOINFER_MEASURE_TESTS": "1"})
+	if !slices.Contains(got, "GOINFER_MEASURE_TESTS=1") {
+		t.Fatalf("a cell that sets GOINFER_MEASURE_TESTS itself must keep it: %v", got)
 	}
 }

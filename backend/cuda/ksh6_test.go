@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // ksh6Sampler streams nvidia-smi's used memory every 20 ms until stop; it returns the maximum used MiB it saw and the samples.
@@ -82,6 +83,7 @@ func TestKSH6_marginPartsQwen3(t *testing.T) {
 }
 
 func TestKSH6_marginParts26B(t *testing.T) {
+	testgate.RequireMeasure(t)
 	ksh6MarginParts(t, ksh6Model{"Gemma 4 26B-A4B", modelPath("gemma-4-26b-a4b-it"), 0, 0, true})
 }
 

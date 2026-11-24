@@ -145,14 +145,14 @@ func (r *cudaResident) PrefillScratchBytes(rows int) int64 {
 	}
 	var sum int64
 	for _, n := range []int{
-		M * hidden,        // xB
-		M * hidden / 4, M, // aqB, aScB
+		M * hidden,                                // xB
+		M * hidden / 4, M * r.actScaleLen(hidden), // aqB, aScB
 		M * maxQDim, M * maxKvDim, M * maxKvDim, // qBb, kBb, vBb
-		M * maxQDim,        // cctxB
-		M * maxQDim / 4, M, // cqB, cScB
-		M * hidden / 4, M, // mqB, mScB
+		M * maxQDim,                                 // cctxB
+		M * maxQDim / 4, M * r.actScaleLen(maxQDim), // cqB, cScB
+		M * hidden / 4, M * r.actScaleLen(hidden), // mqB, mScB
 		M * inter, M * inter, // gOb, uOb
-		M * inter / 4, M, // dqB, dScB: glu_quant_batched writes its product into gOb, so there is no third M x inter buffer
+		M * inter / 4, M * r.actScaleLen(inter), // dqB, dScB: glu_quant_batched writes its product into gOb, so there is no third M x inter buffer
 	} {
 		sum += scratchBufBytes(n)
 	}
@@ -169,4 +169,35 @@ func (r *cudaResident) PrefillScratchBytes(rows int) int64 {
 		sum += scratchBufBytes(r.nLayers*M*r.pleP) + scratchBufBytes(M*r.pleP)
 	}
 	return sum
+}
+
+// bindPrefillG32 binds prefill_g32.cu's quantizers into bRms/bQuant/bSw, as the decode build binds actgroup.cu's into
+// fRms/fQ/fSw (each twin takes its per-vector sibling's argument list and launch shape), and loads the per-32 rows GEMVs.
+// prefillG32Ready is set only when every kernel loaded; the per-vector quantizers stay bound otherwise, and
+// prefillFlagsDecline refuses the load, so no pass reads a per-vector scale as a per-32 one. It runs after bindKernels and does
+// nothing unless the load is per-32 and the batched set loaded.
+func (r *cudaResident) bindPrefillG32() {
+	if !r.prefillReady || !r.actG32 {
+		return
+	}
+	mod, e := r.dev.CompileLibrary(prefillG32PTX)
+	if e != nil {
+		return
+	}
+	var rms, quant, sw Pipeline
+	for _, f := range []struct {
+		dst  *Pipeline
+		name string
+	}{
+		{&rms, "rmsnorm_quant_g32_batched"}, {&quant, "quant_vec_g32_batched"}, {&sw, "glu_quant_g32_batched"},
+		{&r.bQ4KRows, "gemv_q4k_g32_rows"}, {&r.bQ5KRows, "gemv_q5k_g32_rows"}, {&r.bQ6KRows, "gemv_q6k_g32_rows"},
+		{&r.bW8G32Rows, "gemv_w8a8_g32_rows"},
+	} {
+		if *f.dst, e = r.dev.NewComputePipeline(mod, f.name); e != nil {
+			r.bQ4KRows, r.bQ5KRows, r.bQ6KRows, r.bW8G32Rows = Pipeline{}, Pipeline{}, Pipeline{}, Pipeline{}
+			return
+		}
+	}
+	r.bRms, r.bQuant, r.bSw = rms, quant, sw
+	r.prefillG32Ready = true
 }

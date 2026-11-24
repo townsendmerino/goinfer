@@ -265,6 +265,7 @@ Setting any of them now does nothing.
 | Var | Purpose |
 |---|---|
 | `GOINFER_HEAVY_TESTS=1` | Opt into the ~120 heavy (real-checkpoint) tests that `go test ./...` otherwise skips. |
+| `GOINFER_MEASURE_TESTS=1` | Opt into the on-demand measurement tests (`testgate.RequireMeasure`: sweeps, timings, dumps, surveys whose decision is recorded). No gate runs them: `cmd/gate` drops the variable from every cell. `GOINFER_HEAVY_TESTS` does not imply it. |
 | `GOINFER_MANIFEST_EMIT` / `GOINFER_MANIFEST_MACHINE` | Emit parity-manifest rows / stamp the generating machine. |
 | `GOINFER_PAR_THRESHOLD` / `GOINFER_PAR_WIDTH` | Sweep the CPU matmul parallel threshold (MACs) / fan-out width. |
 | `GOINFER_PREFILL_GATE_PROMPTS` | `docs/completed/task-prefill-gap.md`'s §3 fidelity gate: `a` (default) or `b` selects which snapshotted 10-prompt set (`testdata/prefill-gate-prose-<label>/`) `TestPrefillGateReference`/`TestPrefillGateVsReference` build their reference and score against. |
