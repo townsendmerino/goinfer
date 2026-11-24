@@ -43,3 +43,10 @@ void rule unchanged. Two binaries of this commit: **K16** on aikit `f16-acc64-20
 **What it decides.** ADOPT: (b) goes to a full implementation covering every reader of the CPU KV layout (rings, snapshots, the GPU upload
 bridge, prefill), with its own tests, brought to the coordinator before it is armed; the QK dispatch question becomes P2 against P3.
 KILL: the pad is dropped and the QK change goes back to options (a) or (c). PARKED: Francis's call.
+
+## Amendment: the trimmed run (Francis, 2026-11-23, relayed by the coordinator at 18:10 PST), written 18:10 PST before any reading
+
+Francis chose the 1.1 h trim. **Run:** P1 and P2 at depth 3,900, and C1 (the 0.5B at 3,900, pad not applied) as the one control: 3
+comparisons × 20 cells = 60 cells. **Not run, by Francis's choice:** both decision cells at depth 128, P3 (the 4-key kernel padded), and C2
+(Phi-3 f16). **The bars are unchanged**, and their "no decision cell under 0.98" now covers P1 and P2 at 3,900 only. **No short-context check
+is made**, so an ADOPT carries "128 not measured" until the full implementation's A/B, which measures it. `run-ab.sh` runs the trimmed set.
