@@ -3,7 +3,7 @@ package decoder
 import (
 	"fmt"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"testing"
 )
 
@@ -54,7 +54,7 @@ func TestKSO4_sinkTerm(t *testing.T) {
 		for _, nKeys := range ksO4Keys {
 			for _, window := range []int{0, 40} {
 				name := fmt.Sprintf("%+v, %d keys, window %d", sh, nKeys, window)
-				r := rand.New(rand.NewSource(int64(nKeys*31 + sh.hd + window)))
+				r := rand.New(rand.NewPCG(uint64(nKeys*31+sh.hd+window), 0))
 				arch := &Architecture{NumHeads: sh.nH, NumKVHeads: sh.nKV, HeadDim: sh.hd}
 				kvDim := sh.nKV * sh.hd
 				cache := NewKVCache(1, sh.nKV, sh.hd, window, nKeys, nil)

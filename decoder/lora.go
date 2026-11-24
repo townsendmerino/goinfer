@@ -7,7 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -254,7 +254,7 @@ func (a *loraAdapter) checkAllMerged() error {
 	if len(missed) == 0 {
 		return nil
 	}
-	sort.Strings(missed)
+	slices.Sort(missed)
 	n, more := len(missed), ""
 	if n > 3 {
 		more = fmt.Sprintf(" and %d more", n-3)

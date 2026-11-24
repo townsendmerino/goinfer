@@ -2,7 +2,7 @@ package decoder
 
 import (
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"sync/atomic"
 	"testing"
 )
@@ -23,7 +23,7 @@ func syntheticDecodeCache(t *testing.T, arch *Architecture, nKeys int, seed int6
 	t.Helper()
 	kvDim := arch.NumKVHeads * arch.HeadDim
 	cache := NewKVCache(1, arch.NumKVHeads, arch.HeadDim, 0, nKeys+1, nil)
-	rng := rand.New(rand.NewSource(seed))
+	rng := rand.New(rand.NewPCG(uint64(seed), 0))
 	for range nKeys {
 		k := make([]float32, kvDim)
 		v := make([]float32, kvDim)

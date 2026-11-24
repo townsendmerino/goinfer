@@ -2,8 +2,9 @@ package decoder
 
 import (
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -15,7 +16,7 @@ import (
 func TestDequantKVRows_bitIdenticalToTheSerialWiden(t *testing.T) {
 	origMin, origPar := kvDequantMinFloats, kvDequantParallel
 	t.Cleanup(func() { kvDequantMinFloats, kvDequantParallel = origMin, origPar })
-	rng := rand.New(rand.NewSource(15))
+	rng := rand.New(rand.NewPCG(15, 0))
 	forks := 0
 	for _, tc := range []struct{ rows, cols, minFloats int }{
 		{1, 128, 1}, {2, 128, 1}, {7, 64, 1}, {64, 128, 1}, {1000, 128, 1}, {1001, 96, 1}, {4096, 128, 1},
@@ -26,7 +27,7 @@ func TestDequantKVRows_bitIdenticalToTheSerialWiden(t *testing.T) {
 		n := tc.rows * tc.cols
 		kq, vq := make([]int8, n), make([]int8, n)
 		for i := range kq {
-			kq[i], vq[i] = int8(rng.Intn(256)-128), int8(rng.Intn(256)-128)
+			kq[i], vq[i] = int8(rng.IntN(256)-128), int8(rng.IntN(256)-128)
 		}
 		ksc, vsc := make([]float32, tc.rows), make([]float32, tc.rows)
 		for i := range ksc {
@@ -72,9 +73,9 @@ func TestKVI8_parallelWidenBitIdenticalOnWholeDecodes(t *testing.T) {
 			defer m.Close()
 			const N = 40
 			toks := make([]int, N)
-			rng := rand.New(rand.NewSource(8))
+			rng := rand.New(rand.NewPCG(8, 0))
 			for i := range toks {
-				toks[i] = 1 + rng.Intn(m.w.arch.VocabSize-1)
+				toks[i] = 1 + rng.IntN(m.w.arch.VocabSize-1)
 			}
 			run := func(par bool) [][]float32 {
 				kvDequantParallel = par
@@ -89,7 +90,7 @@ func TestKVI8_parallelWidenBitIdenticalOnWholeDecodes(t *testing.T) {
 					if err != nil {
 						t.Fatalf("par=%v step %d: %v", par, i, err)
 					}
-					all = append(all, append([]float32(nil), lg...))
+					all = append(all, slices.Clone(lg))
 				}
 				return all
 			}

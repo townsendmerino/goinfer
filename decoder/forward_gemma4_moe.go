@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"math"
+	"slices"
 	"sync"
 	"unsafe"
 
@@ -58,7 +59,7 @@ func gemma4MoEFFNWith(be Backend, hidden int, eps float64, addOne bool, h []floa
 	// scale + hidden^-0.5), softmax over all experts → top-k → UNCONDITIONAL renorm →
 	// per-expert scale. Computed BEFORE the dense branch so idx is known in time to
 	// issue the fills the dense branch's compute below will overlap.
-	rn := append([]float32(nil), h...)
+	rn := slices.Clone(h)
 	rmsNormNoWeight(rn, 1, hidden, eps)
 	root := float32(math.Pow(float64(hidden), -0.5))
 	for i := range rn {
@@ -69,12 +70,12 @@ func gemma4MoEFFNWith(be Backend, hidden int, eps float64, addOne bool, h []floa
 	probs := softmaxF32(scores)
 	idx, topv := topK(probs, w.topK)
 	if routerCapture { // DIAGNOSTIC (default-off, observe-only): record the selected experts; see routercapture.go
-		routerCaptureDo(func() { routerCaptureBuf = append(routerCaptureBuf, append([]int(nil), idx...)) })
+		routerCaptureDo(func() { routerCaptureBuf = append(routerCaptureBuf, slices.Clone(idx)) })
 		// rn is the FINALIZED router input (weightless-norm · routerScale · hidden^-0.5) that feeds
 		// routerProj — captured so a resident-router unit test can replay the SAME input through the
 		// CUDA selection kernels and gate its idx against these (routerCaptureBuf), isolating a routing
 		// flip from any expert-GEMV numeric difference. Copy: rn is mutated/reused after this.
-		routerCaptureDo(func() { routerRnBuf = append(routerRnBuf, append([]float32(nil), rn...)) })
+		routerCaptureDo(func() { routerRnBuf = append(routerRnBuf, slices.Clone(rn)) })
 		// top-k boundary margin: min selected prob − max rejected prob (the gap a quant flip must cross).
 		sel := map[int]bool{}
 		for _, e := range idx {
@@ -117,13 +118,13 @@ func gemma4MoEFFNWith(be Backend, hidden int, eps float64, addOne bool, h []floa
 		wts[j] = (topv[j] / sum) * w.perExpertScale[e]
 	}
 	if routerCapture {
-		routerCaptureDo(func() { routerWtsBuf = append(routerWtsBuf, append([]float32(nil), wts...)) })
+		routerCaptureDo(func() { routerWtsBuf = append(routerWtsBuf, slices.Clone(wts)) })
 	}
 
 	// dense branch: x1 = post_ffn_norm_1(mlp(pre_ffn_norm(h))), gelu-tanh GeGLU. It runs after the fills are issued and before they
 	// are waited on, so its compute overlaps the fill goroutine's I/O. It touches only dense weights (never paged) and fresh local
 	// buffers, disjoint from what the fill goroutine touches, so it is safe without a lock of its own.
-	xd := append([]float32(nil), h...)
+	xd := slices.Clone(h)
 	rmsNorm(xd, w.preFFNNorm, 1, hidden, eps, addOne)
 	gate := make([]float32, w.denseInter)
 	up := make([]float32, w.denseInter)
@@ -136,7 +137,7 @@ func gemma4MoEFFNWith(be Backend, hidden int, eps float64, addOne bool, h []floa
 	matmul(be, &w.mlpDown, gate, x1, 1)
 	rmsNorm(x1, w.postFFNNorm1, 1, hidden, eps, addOne)
 	if routerCapture {
-		routerCaptureDo(func() { routerX1Buf = append(routerX1Buf, append([]float32(nil), x1...)) })
+		routerCaptureDo(func() { routerX1Buf = append(routerX1Buf, slices.Clone(x1)) })
 	}
 
 	// The moe branch below reads w.expertsGateUp/expertsDown, which the fill goroutine
@@ -145,7 +146,7 @@ func gemma4MoEFFNWith(be Backend, hidden int, eps float64, addOne bool, h []floa
 	fillWG.Wait()
 
 	// experts on pre_ffn_norm_2(h): gelu-tanh GeGLU, gate/up = contiguous halves.
-	xe := append([]float32(nil), h...)
+	xe := slices.Clone(h)
 	rmsNorm(xe, w.preFFNNorm2, 1, hidden, eps, addOne)
 	x2 := make([]float32, hidden)
 	gu := make([]float32, 2*w.moeInter)
@@ -164,7 +165,7 @@ func gemma4MoEFFNWith(be Backend, hidden int, eps float64, addOne bool, h []floa
 	}
 	rmsNorm(x2, w.postFFNNorm2, 1, hidden, eps, addOne)
 	if routerCapture {
-		routerCaptureDo(func() { routerX2Buf = append(routerX2Buf, append([]float32(nil), x2...)) })
+		routerCaptureDo(func() { routerX2Buf = append(routerX2Buf, slices.Clone(x2)) })
 	}
 
 	// join: out = (h + post_ffn_norm(x1 + x2)) * layer_scalar.

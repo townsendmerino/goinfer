@@ -339,7 +339,7 @@ func (d *DFlashDrafter) MaskTokenID() int { return d.maskTokenID }
 // hidden_states[id+1] because hidden_states[0] is the embedding output, so these name
 // layer outputs — pass them straight to Model.ForwardCapture, which uses the same
 // after-layer-l convention.
-func (d *DFlashDrafter) TargetLayerIDs() []int { return append([]int(nil), d.targetLayerIDs...) }
+func (d *DFlashDrafter) TargetLayerIDs() []int { return slices.Clone(d.targetLayerIDs) }
 
 // Close releases the drafter's mmap'd weights.
 func (d *DFlashDrafter) Close() error {
@@ -749,14 +749,14 @@ func (d *blockTrunk) DraftBlockCtx(be Backend, ctx *DFlashContext, blockIn [][]f
 		if len(row) != d.hidden {
 			return nil, fmt.Errorf("block trunk: block row %d is %d wide, want %d", i, len(row), d.hidden)
 		}
-		h[i] = append([]float32(nil), row...)
+		h[i] = slices.Clone(row)
 	}
 	for i := range d.layers {
 		d.layer(be, &d.layers[i], ctx.k[i], ctx.v[i], h)
 	}
 	out := make([][]float32, len(h))
 	for i, row := range h {
-		r := append([]float32(nil), row...)
+		r := slices.Clone(row)
 		rmsNorm(r, d.finalNorm, 1, d.hidden, d.normEps, false)
 		out[i] = r
 	}
@@ -839,7 +839,7 @@ func (d *blockTrunk) layer(be Backend, l *dflashLayer, ctxK, ctxV [][]float32, h
 	// Block rows, normed, are the attention input for Q and for the block's own K/V.
 	xb := make([][]float32, nBlk)
 	for i, row := range h {
-		x := append([]float32(nil), row...)
+		x := slices.Clone(row)
 		rmsNorm(x, l.inputNorm, 1, hid, d.normEps, false)
 		xb[i] = x
 	}
@@ -915,7 +915,7 @@ func (d *blockTrunk) layer(be Backend, l *dflashLayer, ctxK, ctxV [][]float32, h
 	up := make([]float32, d.inter)
 	down := make([]float32, hid)
 	for i := range nBlk {
-		x := append([]float32(nil), h[i]...)
+		x := slices.Clone(h[i])
 		rmsNorm(x, l.postAttnNorm, 1, hid, d.normEps, false)
 		matmul(be, &l.gate, x, gate, 1)
 		matmul(be, &l.up, x, up, 1)

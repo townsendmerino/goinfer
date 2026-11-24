@@ -3,6 +3,7 @@ package decoder
 import (
 	"errors"
 	"fmt"
+	"slices"
 )
 
 // gpt-oss: sparse MoE on every layer with per-head attention sinks, per-expert biases and a router-logit bias. q/k/v/o all
@@ -27,7 +28,7 @@ func (b *ggufBuild) loadGptOss() (*Weights, error) {
 		}
 		res := make([][]float32, nExp)
 		for e := range nExp {
-			res[e] = append([]float32(nil), data[e*out:(e+1)*out]...)
+			res[e] = slices.Clone(data[e*out : (e+1)*out])
 		}
 		return res, nil
 	}

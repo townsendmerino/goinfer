@@ -3,7 +3,7 @@
 package decoder
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"testing"
 	"time"
@@ -42,7 +42,7 @@ func TestRow4_vsCanonical_gemma4Shapes(t *testing.T) {
 		act, dstA, dstB   []float32
 	}
 	var gateUp, down []sample
-	rng := rand.New(rand.NewSource(1))
+	rng := rand.New(rand.NewPCG(1, 0))
 	build := func(wm *linalg.WeightMat) (sample, bool) {
 		q4, q4s16, group, ok := wm.Int4F16()
 		if !ok {

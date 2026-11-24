@@ -2,7 +2,8 @@ package decoder
 
 import (
 	"math"
-	"math/rand"
+	"math/rand/v2"
+	"slices"
 	"testing"
 )
 
@@ -45,13 +46,13 @@ func TestRing_decodeBitExact(t *testing.T) {
 	fullC := NewKVCache(nLayers, nKV, hd, W, N+1, nil)
 	fullC.scr = newDecodeScratch(arch)
 
-	rng := rand.New(rand.NewSource(11))
+	rng := rand.New(rand.NewPCG(11, 0))
 	for pos := range N {
 		for l := range nLayers {
 			global := arch.isGlobalLayer(l)
 			k, v, q := randVec(rng, kvDim), randVec(rng, kvDim), randVec(rng, qDim)
 
-			rk, rv, rq := append([]float32(nil), k...), append([]float32(nil), v...), append([]float32(nil), q...)
+			rk, rv, rq := slices.Clone(k), slices.Clone(v), slices.Clone(q)
 			ringC.Append(l, rk, rv)
 			rCtx := make([]float32, qDim)
 			attendQuery(rq, rCtx, ringC.scr.scoresBuf(ringC.storedRows(l, kvDim)), ringC, l, pos, global, arch)
@@ -88,7 +89,7 @@ func TestRing_batchedBitExact(t *testing.T) {
 	kvDim, qDim := nKV*hd, nH*hd
 	arch := ringTestArch(nH, nKV, hd, W, func(int) bool { return false }) // all local
 
-	rng := rand.New(rand.NewSource(23))
+	rng := rand.New(rand.NewPCG(23, 0))
 	q := randVec(rng, K*qDim)
 	k := randVec(rng, K*kvDim)
 	v := randVec(rng, K*kvDim)
@@ -150,12 +151,12 @@ func TestRing_moeDecodeBitExact(t *testing.T) {
 			scores: make([]float32, nKeys), ch: make([]float32, hd), avAcc: make([]float64, hd),
 		}}
 	}
-	rng := rand.New(rand.NewSource(31))
+	rng := rand.New(rand.NewPCG(31, 0))
 	for pos := range N {
 		k, v, q := randVec(rng, kvDim), randVec(rng, kvDim), randVec(rng, qDim)
 
 		// Ring: defer write, assemble [base,pos] window, attend, commit.
-		rk, rv := append([]float32(nil), k...), append([]float32(nil), v...)
+		rk, rv := slices.Clone(k), slices.Clone(v)
 		rows := pos - ring.WindowStart(pos, false) + 1
 		lk := make([]float32, rows*kvDim)
 		lv := make([]float32, rows*kvDim)

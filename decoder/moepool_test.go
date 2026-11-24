@@ -1,7 +1,7 @@
 package decoder
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"sync"
@@ -26,9 +26,10 @@ func int4PoolFixture(t *testing.T, nExperts int) (path string, mapping []byte, c
 	const perExpert = rows * bpr
 
 	path = filepath.Join(t.TempDir(), "experts.bin")
-	rng := rand.New(rand.NewSource(1))
+	ch := rand.NewChaCha8([32]byte{1})
 	buf := make([]byte, nExperts*perExpert)
-	rng.Read(buf)
+	ch.Read(buf)
+	rng := rand.New(ch)
 	if err := os.WriteFile(path, buf, 0o644); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
@@ -94,7 +95,7 @@ func TestExpertBufferPool_refillIsByteExact(t *testing.T) {
 	t.Cleanup(func() { _ = pool.close() })
 
 	x := make([]float32, canonical[0].Cols())
-	rng := rand.New(rand.NewSource(2))
+	rng := rand.New(rand.NewPCG(2, 0))
 	for i := range x {
 		x[i] = rng.Float32()*2 - 1
 	}
@@ -244,9 +245,9 @@ func TestExpertPager_poolModeLockPreventsCrossStreamCorruption(t *testing.T) {
 	errs := make(chan string, goroutines*itersEach)
 	for g := range goroutines {
 		wg.Go(func() {
-			rng := rand.New(rand.NewSource(int64(g) + 100))
+			rng := rand.New(rand.NewPCG(uint64(g)+100, 0))
 			for range itersEach {
-				i := rng.Intn(nExperts)
+				i := rng.IntN(nExperts)
 				pager.Lock()
 				pager.touch(keys[i])
 				live := (*linalg.WeightMat)(keys[i])

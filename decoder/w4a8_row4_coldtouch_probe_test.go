@@ -1,7 +1,7 @@
 package decoder
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"testing"
 	"time"
@@ -42,7 +42,7 @@ func TestRow4_coldTouchLatency(t *testing.T) {
 			t.Fatalf("%s: no pager built", label)
 		}
 
-		rng := rand.New(rand.NewSource(2))
+		rng := rand.New(rand.NewPCG(2, 0))
 		var ws linalg.Workspace
 		stride := max(len(m.w.Layers[0].gemma4moe.expertsGateUp)*len(m.w.Layers)/nExperts, 1)
 		count := 0

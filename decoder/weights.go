@@ -582,8 +582,8 @@ func (e errDirNoStream) Error() string {
 
 // IsDirNoStream reports whether err is StreamTranscodeDir declining a family whose loader does not stream.
 func IsDirNoStream(err error) bool {
-	var e errDirNoStream
-	return errors.As(err, &e)
+	_, ok := errors.AsType[errDirNoStream](err)
+	return ok
 }
 
 // loadEmbedTable loads a [rows, cols] logit table (the token embedding or an untied head) at the embedding precision mode:
@@ -845,7 +845,7 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 		// TensorF32 may alias the read-only mmap for F32 tensors; the in-place
 		// merge needs a writable copy (only for the targeted tensors).
 		if !fresh && lora.has(name) {
-			data = append([]float32(nil), data...)
+			data = slices.Clone(data)
 		}
 		if derr = lora.merge(name, data, out, in); derr != nil {
 			return linalg.WeightMat{}, derr
@@ -872,7 +872,7 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 		if len(shape) != 2 {
 			return nil, fmt.Errorf("decoder(lora): %q is rank %d; only a rank-2 weight can take a LoRA delta", name, len(shape))
 		}
-		data = append([]float32(nil), data...)
+		data = slices.Clone(data)
 		if derr = lora.merge(name, data, shape[0], shape[1]); derr != nil {
 			return nil, derr
 		}
@@ -1273,7 +1273,7 @@ func loadFusedExperts(st *embed.SafetensorsFile, gateUpName, downName string, nE
 		var m linalg.WeightMat
 		m = quantizeLayerWM(linalg.WrapF32(data, rows, cols), quant, needCanonical, skipRow4)
 		if f, ok := m.F32(); ok && view {
-			m = linalg.WrapF32(append([]float32(nil), f...), rows, cols)
+			m = linalg.WrapF32(slices.Clone(f), rows, cols)
 		}
 		return m
 	}
@@ -2211,9 +2211,9 @@ func buildGraniteWeights(cfg *Config, arch *Architecture, st *embed.SafetensorsF
 			return derr
 		}
 		half := sInter * hidden
-		lw.SharedExpert.Gate = q(linalg.WrapF32(append([]float32(nil), gu[:half]...), sInter, hidden))
-		lw.SharedExpert.Up = q(linalg.WrapF32(append([]float32(nil), gu[half:]...), sInter, hidden))
-		lw.SharedExpert.Down = q(linalg.WrapF32(append([]float32(nil), dn...), hidden, sInter))
+		lw.SharedExpert.Gate = q(linalg.WrapF32(slices.Clone(gu[:half]), sInter, hidden))
+		lw.SharedExpert.Up = q(linalg.WrapF32(slices.Clone(gu[half:]), sInter, hidden))
+		lw.SharedExpert.Down = q(linalg.WrapF32(slices.Clone(dn), hidden, sInter))
 		return nil
 	}
 	return finishLayers(w, arch, loadLayer, sink, id, abort)

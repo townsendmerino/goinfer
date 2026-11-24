@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
@@ -57,7 +58,7 @@ func (d *DSparkDrafter) BlockSize() int { return d.blockSize }
 func (d *DSparkDrafter) MaskTokenID() int { return d.maskTokenID }
 
 // TargetLayerIDs are the target layer OUTPUTS feeding `fc` — the ForwardCapture convention.
-func (d *DSparkDrafter) TargetLayerIDs() []int { return append([]int(nil), d.targetLayerIDs...) }
+func (d *DSparkDrafter) TargetLayerIDs() []int { return slices.Clone(d.targetLayerIDs) }
 
 // Close releases the drafter's mmap'd weights.
 func (d *DSparkDrafter) Close() error {

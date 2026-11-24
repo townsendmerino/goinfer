@@ -1,9 +1,10 @@
 package decoder
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"unsafe"
@@ -40,10 +41,11 @@ func gemma4BuildFixture(t *testing.T, nExperts, topK, hidden, denseInter, moeInt
 	guBytes := guRows * guBpr
 	dnBytes := dnRows * dnBpr
 
-	rng := rand.New(rand.NewSource(7))
+	ch := rand.NewChaCha8([32]byte{7})
 	path = filepath.Join(t.TempDir(), "experts.bin")
 	buf := make([]byte, nExperts*(guBytes+dnBytes))
-	rng.Read(buf)
+	ch.Read(buf)
+	rng := rand.New(ch)
 	if err := os.WriteFile(path, buf, 0o644); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
@@ -173,7 +175,7 @@ func TestGemma4MoEFFN_overlapBitIdentical(t *testing.T) {
 	w, arch, path, mapping := gemma4OverlapFixture(t, nExperts, topK)
 	be := &cpuBackend{}
 
-	rng := rand.New(rand.NewSource(99))
+	rng := rand.New(rand.NewPCG(99, 0))
 	toks := make([][]float32, nTokens)
 	for i := range toks {
 		h := make([]float32, arch.HiddenDim)
@@ -235,7 +237,7 @@ func TestGemma4MoEFFN_overlapConcurrentStreamsNoCorruption(t *testing.T) {
 	w, arch, path, mapping := gemma4OverlapFixture(t, nExperts, topK)
 	be := &cpuBackend{}
 
-	rng := rand.New(rand.NewSource(500))
+	rng := rand.New(rand.NewPCG(500, 0))
 	toks := make([][]float32, nToks)
 	want := make([][]float32, nToks)
 	for i := range toks {
@@ -244,7 +246,7 @@ func TestGemma4MoEFFN_overlapConcurrentStreamsNoCorruption(t *testing.T) {
 			h[j] = rng.Float32()*2 - 1
 		}
 		toks[i] = h
-		want[i] = gemma4MoEFFN(be, arch, append([]float32(nil), h...), w, nil) // sequential, no pager yet
+		want[i] = gemma4MoEFFN(be, arch, slices.Clone(h), w, nil) // sequential, no pager yet
 	}
 
 	poolPager := gemma4PoolPager(t, w, path, mapping, 2, topK) // deliberately tight: forces eviction under contention
@@ -254,10 +256,10 @@ func TestGemma4MoEFFN_overlapConcurrentStreamsNoCorruption(t *testing.T) {
 	fails := make(chan string, goroutines*itersEach)
 	for g := range goroutines {
 		wg.Go(func() {
-			rng := rand.New(rand.NewSource(int64(g)))
+			rng := rand.New(rand.NewPCG(uint64(g), 0))
 			for range itersEach {
-				i := rng.Intn(nToks)
-				got := gemma4MoEFFN(be, arch, append([]float32(nil), toks[i]...), w, poolPager)
+				i := rng.IntN(nToks)
+				got := gemma4MoEFFN(be, arch, slices.Clone(toks[i]), w, poolPager)
 				for j := range want[i] {
 					if got[j] != want[i][j] {
 						fails <- "mismatch"

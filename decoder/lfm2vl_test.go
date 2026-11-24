@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"slices"
 	"testing"
@@ -70,7 +70,7 @@ func TestLfm2VLCausalSpans_tiny(t *testing.T) {
 	}
 
 	// 2. Real features against a hand splice; a planted splice over the marker differs.
-	r := rand.New(rand.NewSource(13))
+	r := rand.New(rand.NewPCG(13, 0))
 	feats := make([]float32, 5*hidden)
 	for i := range feats {
 		feats[i] = float32(r.NormFloat64()) * 0.5

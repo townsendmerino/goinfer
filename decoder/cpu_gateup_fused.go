@@ -135,12 +135,10 @@ func gatedMLPFusedGateUpAct(h []float32, lw *LayerWeights, act ActKind, scr *dec
 		return true
 	}
 	var wg sync.WaitGroup
-	wg.Add(w - 1)
 	for i := 1; i < w; i++ {
-		go func(i int) {
-			defer wg.Done()
+		wg.Go(func() {
 			chunk(i)
-		}(i)
+		})
 	}
 	chunk(0)
 	wg.Wait()

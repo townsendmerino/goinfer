@@ -25,7 +25,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"slices"
@@ -250,8 +250,8 @@ func TestGemma3TowerSensitivity(t *testing.T) {
 		results[len(results)-1].RelL2 = sumRel / float64(n)
 		fmt.Fprintf(os.Stderr, "[g3]   (its mean relative L2 from the CPU tower: %.3g)\n", sumRel/float64(n))
 		for seed := int64(1); seed <= 3; seed++ {
-			rng := rand.New(rand.NewSource(seed))
-			f := append([]float32(nil), cpuF...)
+			rng := rand.New(rand.NewPCG(uint64(seed), 0))
+			f := slices.Clone(cpuF)
 			for i := range n {
 				row := f[i*hidden : (i+1)*hidden]
 				noise := make([]float64, hidden)

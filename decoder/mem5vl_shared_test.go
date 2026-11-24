@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"runtime"
+	"slices"
 	"sync/atomic"
 	"testing"
 )
@@ -22,7 +23,7 @@ func v1Prompt(m *Model) (ids []int, spans []ImageSpan, feats []float32, mrope []
 		ids[i] = (i*37 + 11) % vocab
 	}
 	spans = []ImageSpan{{Pos: 5, Len: 12, Hash: 1}, {Pos: 30, Len: 4, Hash: 2}}
-	r := rand.New(rand.NewSource(5))
+	r := rand.New(rand.NewPCG(5, 0))
 	rows := func(n int) []float32 {
 		f := make([]float32, n*hidden)
 		for i := range f {
@@ -108,7 +109,7 @@ func v1Run(t *testing.T, m *Model, route string, chunk int) (rows []float32, log
 
 func v1Decode(t *testing.T, m *Model, cache *KVCache, lg []float32) [][]float32 {
 	t.Helper()
-	out := [][]float32{append([]float32(nil), lg...)}
+	out := [][]float32{slices.Clone(lg)}
 	for range 4 {
 		best := 0
 		for j := range lg {
@@ -120,7 +121,7 @@ func v1Decode(t *testing.T, m *Model, cache *KVCache, lg []float32) [][]float32 
 		if lg, err = m.forward(best, cache); err != nil {
 			t.Fatal(err)
 		}
-		out = append(out, append([]float32(nil), lg...))
+		out = append(out, slices.Clone(lg))
 	}
 	return out
 }

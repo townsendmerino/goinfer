@@ -2,7 +2,8 @@ package decoder
 
 import (
 	"math"
-	"math/rand"
+	"math/rand/v2"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -22,7 +23,7 @@ import (
 func TestW4A8SplitHalfWiring_matchesCanonical(t *testing.T) {
 	const rows, cols = 128, 512 // rows%4==0 and cols%32==0: eligible for BOTH arches' repacks
 
-	rng := rand.New(rand.NewSource(7))
+	rng := rand.New(rand.NewPCG(7, 0))
 	f32 := make([]float32, rows*cols)
 	for i := range f32 {
 		f32[i] = float32(rng.NormFloat64())
@@ -45,7 +46,7 @@ func TestW4A8SplitHalfWiring_matchesCanonical(t *testing.T) {
 		defer func(prev bool) { w4a8SplitHalfRepackEnabled = prev }(w4a8SplitHalfRepackEnabled)
 		w4a8SplitHalfRepackEnabled = enabled
 
-		w := quantizeWM(linalg.WrapF32(append([]float32(nil), f32...), rows, cols), quantInt4)
+		w := quantizeWM(linalg.WrapF32(slices.Clone(f32), rows, cols), quantInt4)
 		dst := make([]float32, rows)
 		matmul(nil, &w, act, dst, 1) // M=1: the only M the split-half kernel serves
 		return dst

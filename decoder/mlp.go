@@ -3,6 +3,7 @@ package decoder
 import (
 	"fmt"
 	"math"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -57,8 +58,8 @@ func moeMLP(h []float32, lw *LayerWeights, moe *MoEConfig, act ActKind, hidden i
 		idx, wts = routeExperts(logits, lw.RouterBias, k, moe.RouterSigmoid, moe.NormTopKProb, moe.RoutedScale, moe.NGroup, moe.TopkGroup)
 	}
 	if moeSelTrace != nil { // record this call's routing (forward order)
-		moeSelTrace = append(moeSelTrace, append([]int(nil), idx...))
-		moeWtsTrace = append(moeWtsTrace, append([]float32(nil), wts...))
+		moeSelTrace = append(moeSelTrace, slices.Clone(idx))
+		moeWtsTrace = append(moeWtsTrace, slices.Clone(wts))
 	}
 	// Weight residency: the router selection is the demand signal. Touch every chosen expert before the matmuls so the pager faults
 	// them in and keeps resident RAM within budget (releasing the LRU tail). Bit-exact: released experts re-fault from the read-only
@@ -257,11 +258,9 @@ func parallelElementwise(n int, fn func(lo, hi int)) {
 		if lo >= hi {
 			continue
 		}
-		wg.Add(1)
-		go func(lo, hi int) {
-			defer wg.Done()
+		wg.Go(func() {
 			fn(lo, hi)
-		}(lo, hi)
+		})
 	}
 	wg.Wait()
 }

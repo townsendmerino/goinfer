@@ -3,7 +3,7 @@ package decoder
 import (
 	"context"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"slices"
@@ -48,20 +48,20 @@ func TestKVI8_decodeQuality(t *testing.T) {
 	i8.enableRings(W, arch.isGlobalLayer)
 	i8.scr = newDecodeScratch(arch)
 
-	rng := rand.New(rand.NewSource(7))
+	rng := rand.New(rand.NewPCG(7, 0))
 	worst := map[int]float64{0: 1, 1: 1}
 	for pos := range N {
 		for l := range nLayers {
 			global := arch.isGlobalLayer(l)
 			k, v, q := randVec(rng, kvDim), randVec(rng, kvDim), randVec(rng, qDim)
 
-			f32.Append(l, append([]float32(nil), k...), append([]float32(nil), v...))
+			f32.Append(l, slices.Clone(k), slices.Clone(v))
 			fCtx := make([]float32, qDim)
 			attendQuery(q, fCtx, f32.scr.scoresBuf(f32.storedRows(l, kvDim)), f32, l, pos, global, arch)
 
-			i8.Append(l, append([]float32(nil), k...), append([]float32(nil), v...))
+			i8.Append(l, slices.Clone(k), slices.Clone(v))
 			iCtx := make([]float32, qDim)
-			attendQuery(append([]float32(nil), q...), iCtx, i8.scr.scoresBuf(i8.storedRows(l, kvDim)), i8, l, pos, global, arch)
+			attendQuery(slices.Clone(q), iCtx, i8.scr.scoresBuf(i8.storedRows(l, kvDim)), i8, l, pos, global, arch)
 
 			if c := cosineV(iCtx, fCtx); c < worst[l] {
 				worst[l] = c
@@ -99,7 +99,7 @@ func TestKVI8_truncateReappend(t *testing.T) {
 		c.scr = newDecodeScratch(arch)
 		return c
 	}
-	rng := rand.New(rand.NewSource(5))
+	rng := rand.New(rand.NewPCG(5, 0))
 	vec := func() []float32 { return randVec(rng, kvDim) }
 	// final[p] = the K/V that position p ends up with (draft positions 6..9 rejected,
 	// re-appended with different values).
@@ -112,7 +112,7 @@ func TestKVI8_truncateReappend(t *testing.T) {
 	got := mk()
 	for p := range 6 {
 		for l := range nLayers {
-			got.Append(l, append([]float32(nil), final[p][0]...), append([]float32(nil), final[p][1]...))
+			got.Append(l, slices.Clone(final[p][0]), slices.Clone(final[p][1]))
 		}
 	}
 	for p := 6; p < 10; p++ { // rejected drafts
@@ -123,14 +123,14 @@ func TestKVI8_truncateReappend(t *testing.T) {
 	got.TruncateTo(6)
 	for p := 6; p < 10; p++ { // re-append the accepted tokens
 		for l := range nLayers {
-			got.Append(l, append([]float32(nil), final[p][0]...), append([]float32(nil), final[p][1]...))
+			got.Append(l, slices.Clone(final[p][0]), slices.Clone(final[p][1]))
 		}
 	}
 	// (2) reference: only ever the final 10.
 	ref := mk()
 	for p := range 10 {
 		for l := range nLayers {
-			ref.Append(l, append([]float32(nil), final[p][0]...), append([]float32(nil), final[p][1]...))
+			ref.Append(l, slices.Clone(final[p][0]), slices.Clone(final[p][1]))
 		}
 	}
 	if got.pos != ref.pos {
@@ -251,7 +251,7 @@ func TestKVI8_genParity(t *testing.T) {
 		for i, id := range ids {
 			logits, _ := mm.forward(id, cache)
 			am[i] = sampling.Argmax(logits)
-			lg[i] = append([]float32(nil), logits...)
+			lg[i] = slices.Clone(logits)
 		}
 		return am, lg
 	}

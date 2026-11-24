@@ -2,7 +2,8 @@ package decoder
 
 import (
 	"math"
-	"math/rand"
+	"math/rand/v2"
+	"slices"
 	"testing"
 )
 
@@ -36,7 +37,7 @@ func TestDeltaNetCoreN_bitIdentical(t *testing.T) {
 	defer func(a int) { deltaNetMinWork = a }(deltaNetMinWork)
 	deltaNetMinWork = 2
 
-	rnd := rand.New(rand.NewSource(7))
+	rnd := rand.New(rand.NewPCG(7, 0))
 	vec := func(n int, scale float64) []float32 {
 		x := make([]float32, n)
 		for i := range x {
@@ -47,7 +48,7 @@ func TestDeltaNetCoreN_bitIdentical(t *testing.T) {
 	newState := func(priorRows int, seed []float32, convWin [][]float32) *deltaState {
 		st := newDeltaState(p)
 		copy(st.s, seed)
-		st.convWin = append([][]float32(nil), convWin...)
+		st.convWin = slices.Clone(convWin)
 		_ = priorRows
 		return st
 	}
@@ -73,7 +74,7 @@ func TestDeltaNetCoreN_bitIdentical(t *testing.T) {
 			bt, at := vec(K*nv, 1), vec(K*nv, 1)
 
 			// reference: the per-token loop on its own copies of the inputs (deltaNetCore retains its mixed rows, so each arm gets a slab)
-			refMixed := append([]float32(nil), mixed...)
+			refMixed := slices.Clone(mixed)
 			refCore := make([]float32, K*valueDim)
 			ref := newState(prior, seed, convWin)
 			for i := range K {
@@ -83,7 +84,7 @@ func TestDeltaNetCoreN_bitIdentical(t *testing.T) {
 			before := deltaNetFanouts.Load()
 			got := newState(prior, seed, convWin)
 			gotCore := make([]float32, K*valueDim)
-			deltaNetCoreN(gotCore, append([]float32(nil), mixed...), bt, at, z, K, w, p, eps, got)
+			deltaNetCoreN(gotCore, slices.Clone(mixed), bt, at, z, K, w, p, eps, got)
 			if K >= deltaNetMinWork && deltaNetFanouts.Load() == before {
 				t.Fatalf("prior=%d K=%d: the fan-out never forked, so this compared the code with itself", prior, K)
 			}

@@ -1,8 +1,9 @@
 package decoder
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -25,8 +26,8 @@ func heapifyRow4(wm *linalg.WeightMat) bool {
 	if !ok {
 		return false
 	}
-	heapRow4 := append([]byte(nil), row4...)
-	heapScales := append([]float32(nil), row4Scales...)
+	heapRow4 := slices.Clone(row4)
+	heapScales := slices.Clone(row4Scales)
 	*wm = wrapInt4Row4F32(q4, q4s, wm.Rows(), wm.Cols(), group, heapRow4, heapScales)
 	return true
 }
@@ -64,7 +65,7 @@ func TestRow4_mmapVsHeapResident(t *testing.T) {
 		dst []float32
 	}
 	var samples []sample
-	rng := rand.New(rand.NewSource(1))
+	rng := rand.New(rand.NewPCG(1, 0))
 	for i := range m.w.Layers {
 		gm := m.w.Layers[i].gemma4moe
 		if gm == nil || len(samples) >= wantSamples {

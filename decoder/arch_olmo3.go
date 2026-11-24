@@ -3,6 +3,7 @@ package decoder
 import (
 	"fmt"
 	"math"
+	"slices"
 )
 
 // olmo3Architecture expresses Olmo 3 (model_type olmo3): a softmax-GQA/MHA model with two departures from every other family, both checked
@@ -59,7 +60,7 @@ func olmo3Architecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 		return nil, nil, err
 	}
 	hd := cfg.EffectiveHeadDim()
-	layerTypes := append([]string(nil), cfg.LayerTypes...) // snapshot so the closure doesn't retain cfg
+	layerTypes := slices.Clone(cfg.LayerTypes) // snapshot so the closure doesn't retain cfg
 	pattern := cfg.SlidingWindowPattern
 	isGlobal := func(i int) bool {
 		if i >= 0 && i < len(layerTypes) {

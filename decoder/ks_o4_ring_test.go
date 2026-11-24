@@ -2,7 +2,7 @@ package decoder
 
 import (
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"testing"
 )
 
@@ -40,8 +40,8 @@ func TestKSO4_ringEqualsAppendForever(t *testing.T) {
 		}
 	}
 	_, _, _, _, _, _, vocab := m.Dims()
-	r := rand.New(rand.NewSource(7))
-	id := 1 + r.Intn(vocab-1)
+	r := rand.New(rand.NewPCG(7, 0))
+	id := 1 + r.IntN(vocab-1)
 	for i := range n + steps {
 		got, err := m.forward(id, withRings)
 		if err != nil {
@@ -57,7 +57,7 @@ func TestKSO4_ringEqualsAppendForever(t *testing.T) {
 			}
 		}
 		if i < n {
-			id = 1 + r.Intn(vocab-1) // the prompt
+			id = 1 + r.IntN(vocab-1) // the prompt
 		} else {
 			id = argmaxF32(want) // greedy
 		}

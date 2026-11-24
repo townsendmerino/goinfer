@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"math/rand"
+	"math/rand/v2"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
@@ -28,7 +29,7 @@ func TestAttendBatchedHeads_vsNaive(t *testing.T) {
 	scale := arch.AttnScale
 	K := 64
 
-	rng := rand.New(rand.NewSource(7))
+	rng := rand.New(rand.NewPCG(7, 0))
 	q := make([]float32, K*qDim)
 	for i := range q {
 		q[i] = float32(rng.NormFloat64()) * 0.1
@@ -127,7 +128,7 @@ func TestForwardN_matchesSequential(t *testing.T) {
 				if err != nil {
 					t.Fatalf("seq forward %d: %v", i, err)
 				}
-				seq[i] = append([]float32(nil), l...)
+				seq[i] = slices.Clone(l)
 			}
 
 			cbat := m.NewCache(K)
