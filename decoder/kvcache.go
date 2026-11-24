@@ -172,6 +172,7 @@ type KVCache struct {
 	subMLP     [][]float32 // [layer][hidden] MLP contribution (down out, post sandwich-norm)
 	subMLPpre  [][]float32 // [layer][hidden] MLP down output BEFORE the post-MLP sandwich norm
 	subCtx     [][]float32 // [layer][qDim] attention CONTEXT, pre-o-proj (attendBatchedHeads out)
+	subPLE     [][]float32 // [layer][hidden] Gemma 4's PLE-branch contribution (post-PLE norm); nil unless the layer capture asked for it
 
 	// treeRowPos / treeMask, when non-nil, switch the batched verify (forwardN) from a linear causal chain to tree attention: row i
 	// takes its RoPE position from treeRowPos[i] (its depth) instead of startPos+i, and among the K new batch keys attends only to

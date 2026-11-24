@@ -213,14 +213,11 @@ func (rd *residentDecoder) newKVSlot(slot int) (webgpuKVSlot, []func(), error) {
 		// A discrete GPU has no free-memory query on this backend, so the room left after this slot is measured by
 		// asking for it. (On darwin the device's memory is host RAM, which webgpuKVSlotsWithin priced up front; an
 		// allocation there proves nothing.)
-		probe, err := kernels.CreateBufferOn(rd.c, mem.LineScratch, &wgpu.BufferDescriptor{Label: "kvslot-headroom", Size: webgpuSlotHeadroom,
-			Usage: wgpu.BufferUsageStorage})
-		if err != nil {
+		if !probeHeadroom(rd.c) {
 			r.Release()
 			undo()
 			return webgpuKVSlot{}, nil, fmt.Errorf("less than %d MiB left after it", webgpuSlotHeadroom>>20)
 		}
-		kernels.ReleaseBuffer(probe)
 	}
 	return webgpuKVSlot{rm: rm, runner: r}, frees, nil
 }
@@ -413,4 +410,38 @@ func (rd *residentDecoder) UseKVSlot(i int) error {
 	rd.rm, rd.runner, rd.batch = next.rm, next.runner, next.batch
 	rd.kvSlot = i
 	return nil
+}
+
+// headroomChunks splits a headroom probe of total bytes into buffers of at most maxBuf, the device's largest single buffer
+// (0: unknown, one buffer). A single buffer over maxBuf is refused whatever memory is free, so an unsplit probe would
+// measure the buffer limit instead of the room left.
+func headroomChunks(total, maxBuf uint64) []uint64 {
+	if maxBuf == 0 || total <= maxBuf {
+		return []uint64{total}
+	}
+	var out []uint64
+	for left := total; left > 0; left -= min(left, maxBuf) {
+		out = append(out, min(left, maxBuf))
+	}
+	return out
+}
+
+// probeHeadroom says whether c can still allocate webgpuSlotHeadroom bytes, by allocating them in buffers the device
+// accepts (headroomChunks) and releasing them all.
+func probeHeadroom(c *kernels.Context) bool {
+	var held []*wgpu.Buffer
+	defer func() {
+		for _, b := range held {
+			kernels.ReleaseBuffer(b)
+		}
+	}()
+	for _, size := range headroomChunks(webgpuSlotHeadroom, kernels.MaxBufferSize(c)) {
+		b, err := kernels.CreateBufferOn(c, mem.LineScratch, &wgpu.BufferDescriptor{Label: "kvslot-headroom", Size: size,
+			Usage: wgpu.BufferUsageStorage})
+		if err != nil {
+			return false
+		}
+		held = append(held, b)
+	}
+	return true
 }
