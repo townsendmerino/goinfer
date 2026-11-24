@@ -4,11 +4,12 @@ package metal
 
 import (
 	"bufio"
+	"cmp"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -242,7 +243,7 @@ func phaseMeans(t *testing.T, path string, marks map[string]time.Time, phases []
 		}
 		samples = append(samples, s)
 	}
-	sort.Slice(samples, func(i, j int) bool { return samples[i].at < samples[j].at })
+	slices.SortFunc(samples, func(a, b sample) int { return cmp.Compare(a.at, b.at) })
 	out := map[string]map[string]float64{}
 	for _, p := range phases {
 		lo := 0.0

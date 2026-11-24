@@ -3,12 +3,13 @@
 package metal
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -103,7 +104,7 @@ func TestEG2Metal_realParity(t *testing.T) {
 			t.Errorf("item %d (%d tokens): cosine %.9f, under 0.9999", i, len(ids), cos)
 		}
 	}
-	sort.Slice(rows, func(a, b int) bool { return rows[a].n > rows[b].n })
+	slices.SortFunc(rows, func(a, b row) int { return cmp.Compare(b.n, a.n) })
 	fmt.Fprintf(os.Stderr, "[eg2m %6.1fs] RESULT %d texts, worst cosine %.9f; exploratory timing: metal %.1f s, cpu %.1f s (%.1fx); longest %d tokens metal %.2f s, cpu %.2f s\n",
 		time.Since(t0).Seconds(), len(g.Items), worst, tg, tc, tc/tg, rows[0].n, rows[0].g, rows[0].c)
 }

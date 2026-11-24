@@ -3,10 +3,11 @@
 package metal
 
 import (
+	"cmp"
 	"fmt"
 	"math"
 	"os"
-	"sort"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -312,7 +313,7 @@ func topDivergentDims(t *testing.T, what string, metal, cpu []float32, norm func
 	}
 	// Rank by the amplified error: |metal-cpu| * (1+w) — the term that actually reaches the head.
 	ampErr := func(d dim) float64 { return math.Abs(d.m-d.c) * d.amp }
-	sort.Slice(dims, func(a, b int) bool { return ampErr(dims[a]) > ampErr(dims[b]) })
+	slices.SortFunc(dims, func(a, b dim) int { return cmp.Compare(ampErr(b), ampErr(a)) })
 	t.Logf("%s top divergent dims (by amplified error):", what)
 	for k := 0; k < 6 && k < len(dims); k++ {
 		d := dims[k]
@@ -324,8 +325,8 @@ func topDivergentDims(t *testing.T, what string, metal, cpu []float32, norm func
 	// for: top-magnitude channels (and their scale) reveal whether two backends tap the same place.
 	// (Distinct from the amplified-error ranking above, which is where Metal DIVERGES, not where
 	// the activation is largest — the two lists legitimately differ.)
-	byMag := append([]dim(nil), dims...)
-	sort.Slice(byMag, func(a, b int) bool { return math.Abs(byMag[a].c) > math.Abs(byMag[b].c) })
+	byMag := slices.Clone(dims)
+	slices.SortFunc(byMag, func(a, b dim) int { return cmp.Compare(math.Abs(b.c), math.Abs(a.c)) })
 	t.Logf("%s top-MAGNITUDE dims (|cpu-int4 pre-final-norm residual|, model property):", what)
 	for k := 0; k < 6 && k < len(byMag); k++ {
 		d := byMag[k]

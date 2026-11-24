@@ -5,6 +5,7 @@ package metal
 import (
 	"fmt"
 	"runtime"
+	"slices"
 
 	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
@@ -45,7 +46,7 @@ func (r *resident) forwardTrunkForTest(emb []float32, pos, nLayers int) []float3
 	e := r.q.Begin()
 	r.encodeTrunkInto(e)
 	e.End()
-	return append([]float32(nil), r.x.Floats()...)
+	return slices.Clone(r.x.Floats())
 }
 
 // forwardSubCaptureForTest is the Metal twin of decoder.ForwardSubCapture: it returns, per layer,
@@ -67,8 +68,8 @@ func (r *resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, 
 	defer runtime.UnlockOSThread()
 	r.loadEmb(emb)
 	r.setPosAheadForTest(pos)
-	grab := func() []float32 { return append([]float32(nil), r.oO.Floats()...) }
-	grabD := func() []float32 { return append([]float32(nil), r.dO.Floats()...) }
+	grab := func() []float32 { return slices.Clone(r.oO.Floats()) }
+	grabD := func() []float32 { return slices.Clone(r.dO.Floats()) }
 	for l := 0; l < r.nL; l++ {
 		L := &r.layers[l]
 		g := L.geom
@@ -97,7 +98,7 @@ func (r *resident) forwardSubCaptureForTest(emb []float32, pos int) (attn, mlp, 
 		// ctx (f32 attention output) and cq (its int8 quant) are still valid here — o-proj READ
 		// them but never wrote them. Capture both to isolate quant_vec (context int8-quant) vs the
 		// context itself as the o-proj INPUT under test.
-		ctx = append(ctx, append([]float32(nil), r.ctx.Floats()[:r.nH*g.hd]...))
+		ctx = append(ctx, slices.Clone(r.ctx.Floats()[:r.nH*g.hd]))
 		csc := r.cSc.Floats()[0]
 		cq8 := r.cq.Int8s()
 		deq := make([]float32, r.nH*g.hd)
@@ -162,7 +163,7 @@ func (r *resident) l0GegluForTest(emb []float32, pos int) (gateUp, geglu8 []floa
 	e.DispatchTG(r.pSA, (2*L.ffnI)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH)
 	e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(L.ffnI*4), r.dq, r.dSc, L.uFFNI, r.uAct)
 	e.End()
-	gateUp = append([]float32(nil), r.gu.Floats()[:2*L.ffnI]...)
+	gateUp = slices.Clone(r.gu.Floats()[:2*L.ffnI])
 	gSc = r.dSc.Floats()[0]
 	dq8 := r.dq.Int8s()
 	geglu8 = make([]float32, L.ffnI)
@@ -235,7 +236,7 @@ func (r *resident) attnConfirmForTest(resid, kHist, vHist []float32, layer, pos 
 		e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[layer].At(0), r.vc[layer].At(0), r.ctx, r.uNH, g.uNKV, g.uHd, r.uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kvKT(layer))
 	}
 	e.End()
-	return append([]float32(nil), r.ctx.Floats()[:nHhd]...)
+	return slices.Clone(r.ctx.Floats()[:nHhd])
 }
 
 // forwardHeadForTest runs the FULL trunk (final norm included) then the LM head, and returns
@@ -258,5 +259,5 @@ func (r *resident) forwardHeadForTest(emb []float32, pos int) (act, logits []flo
 	for i := range act {
 		act[i] = float32(q[i]) * sc
 	}
-	return act, append([]float32(nil), r.logits.Floats()...)
+	return act, slices.Clone(r.logits.Floats())
 }

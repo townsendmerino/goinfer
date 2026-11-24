@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 )
@@ -165,7 +165,7 @@ func TestMC3SmallMProbe(t *testing.T) {
 	seed := uint32(2463534242)
 	rnd := func() uint32 { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return seed }
 	const reps = 7
-	med := func(xs []float64) float64 { s := append([]float64(nil), xs...); sort.Float64s(s); return s[len(s)/2] }
+	med := func(xs []float64) float64 { s := slices.Clone(xs); slices.Sort(s); return s[len(s)/2] }
 	timeIt := func(per int, enc func(e *Encoder, i int)) float64 {
 		var ms []float64
 		for r := range reps + 1 {
@@ -232,7 +232,7 @@ func TestMC3SmallMProbe(t *testing.T) {
 			shippedRow(e, 0, m, ref)
 		}
 		e.End()
-		refV := append([]float32(nil), ref.Floats()[:maxM*s.N]...)
+		refV := slices.Clone(ref.Floats()[:maxM*s.N])
 
 		per := max(8, 2*copies)
 		line := fmt.Sprintf("%-4s %-8s N=%-6d K=%-5d R=%d:", s.model, s.cat, s.N, s.K, s.R)
@@ -344,7 +344,7 @@ func TestMC3S0PrefillGEMMSmallM(t *testing.T) {
 	seed := uint32(97531)
 	rnd := func() uint32 { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return seed }
 	const reps = 7
-	med := func(xs []float64) float64 { s := append([]float64(nil), xs...); sort.Float64s(s); return s[len(s)/2] }
+	med := func(xs []float64) float64 { s := slices.Clone(xs); slices.Sort(s); return s[len(s)/2] }
 	timeIt := func(per int, enc func(e *Encoder, i int)) float64 {
 		var ms []float64
 		for r := range reps + 1 {
