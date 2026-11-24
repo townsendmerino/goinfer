@@ -47,3 +47,11 @@ sample, 5 samples a cell run in sequence (direction, not size; log `stride.log`)
 
 At 3,072 every 16-key sample (262–325 µs) is slower than every 4-key sample (124–249 µs); a 64 B pad reverses it. The 16-key kernel's
 sixteen live rows, all at one offset mod 4 KiB, contend for one 8-way L1 set. What to do with the kernel is with the coordinator.
+
+## Void cells, written 2026-11-23 17:53 PST
+
+The coordinator reported two light reads of nobara at 16:33:4x and about 16:34:00–16:34:10 PST (a python start and file read; a lock-status
+poll). Cells whose spans fall in 16:33:30–16:34:15 are **void**: 0.5B depth 3,900, block 1, cells 1 (A, 16:33:40), 2 (B, 16:33:43) and 3 (B,
+16:33:45); cell 4 (16:34:17) started after the window. Both of block 1's pairs are therefore void. Without them the 0.5B at 3,900 reads
+median **1.099**, 8 of 8 pairs faster (1.064–1.138); the verdict is unchanged (it is decided by Phi-3, 0/10). The block is re-run in place
+with the re-registered A/B. The table above keeps the original 10-pair reading for the record; this section supersedes it for that cell.
