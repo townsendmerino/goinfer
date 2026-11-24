@@ -25,3 +25,22 @@ On Vulkan the reference agrees more closely with the CPU (96.11%) and both E-mod
 adapter, Vulkan included**, both readings recorded here. This extends his October decision, which already shipped
 E4B on WebGPU over Metal with its G-S12.1d reading parked (-2.48). A short diagnostic of why the Vulkan agreement sits
 lower follows (per-layer hidden states against the CPU on both adapters); its finding is added here.
+
+## The diagnostic (2026-11-23, after the decision): nothing stands out
+
+The one mechanism on record for WebGPU's E-model gap is S12's (`docs/completed/task-multimodal-support-2026-10.md`,
+"Resolved the same day: no kernel is off"): the fused RMSNorm-and-quantize of layer 0's input rounds a few int8 codes one
+step differently from the CPU's float arithmetic, and the coarse codes amplify it. It was checked here on both adapters
+with a throwaway test (not committed): production's widened `RmsnormQuantWGSL` on six real embedding rows (tokens 2, 105,
+1000, 4000, 20000, 100000) and layer 0's attention norm, against a float64 host quantization of the same row.
+
+| model | nobara, Vulkan | the Mac, Metal |
+|---|---|---|
+| E2B (1,536 wide) | 0 of 9,216 codes differ; scales equal to 1e-7 | 0 of 9,216; the same scale bits as Vulkan |
+| E4B (2,560 wide) | 2 of 15,360 (both at token 2) | not run here (no plain int4 sidecar on the Mac); S12 read 2 of 2,560 at token 2 |
+
+The first fused kernel is bit-identical across the two adapters, so it does not explain why Vulkan's E-model agreement
+sits lower. Placing the first layer where Vulkan's error grows past Metal's needs a per-layer CPU capture, which
+`decoder.ForwardSubCaptureLogitsForTest` does not cover for Gemma 4 ("a layer has an operation its contributions do not
+cover"); that is past this diagnostic's hour. No precision bug found; nothing is owed on the evidence in hand, and the
+E-models stay resident by the decision above.
