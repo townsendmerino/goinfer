@@ -46,13 +46,14 @@ type Options struct {
 	// outputs differ from it; whether it becomes the default is the owner's call (docs/measurements/op1o2-fa-softcap-2026-11/README.md). No
 	// effect on an uncapped model, which takes the lane by default, or off CUDA.
 	FlashDecodeSoftcap bool
-	// FlashDecodeHD96 lets a model with head dimension 96 (Phi-3 mini) take CUDA's flash-decode lane, on its hd-96 kernels, for decode and
-	// verify rows past the lane's key floor; the lane's outputs differ from the exact path's, inside its gates
-	// (docs/measurements/fa-hd96-phi3-2026-11-22/README.md). The zero value is off. No effect at another head dim or off CUDA.
+	// FlashDecodeHD96 lets a model with head dimension 96 (Phi-3 mini) take the split-KV flash-decode lane, on its hd-96 kernels, on CUDA
+	// and Metal, for decode and verify rows past the lane's key floor; the lane's outputs differ from the exact path's, inside its gates
+	// (docs/measurements/fa-hd96-phi3-2026-11-22/README.md, docs/measurements/metal-fa-hd96-phi3-2026-11-23/README.md). The zero value is
+	// off. No effect at another head dim or on the CPU or WebGPU.
 	FlashDecodeHD96 bool
 	// FlashDecodeHD96Default says FlashDecodeHD96 is the caller's default, not a choice (goinfer-chat and serve set it when
 	// --flash-decode-hd96 was not given): CUDA then takes the lane only at a resident context of at most 4096, the context its gates
-	// read, and keeps a longer one on the exact path.
+	// read, and keeps a longer one on the exact path; Metal applies the same rule.
 	FlashDecodeHD96Default bool
 	// MoECacheSlots is the per-layer expert-slot count for MoECacheExperts (0 = ask for all and
 	// auto-cap to measured free VRAM). More slots ⇒ higher LRU hit rate ⇒ fewer per-token DMAs,

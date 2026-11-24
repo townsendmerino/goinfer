@@ -268,6 +268,7 @@ SCANS = [
     Scan("backend/cuda/internal/launchgeom", "TestGemvRN_matchesCuDefines", F("backend/cuda/gemv_w4a8_rn.cu")),
     Scan("backend/cuda/internal/launchgeom", "TestKQuantGemv_matchesCuDefine", F("backend/cuda/actgroup.cu")),
     Scan("backend/cuda/internal/launchgeom", "TestGemmMMA_matchesCuDefines", F("backend/cuda/gemm_w4a8_mma.cu")),
+    Scan("backend/cuda/internal/launchgeom", "TestPrefillG32_matchesCuDefines", F("backend/cuda/prefill_g32.cu")),
     Scan("backend/cuda/internal/launchgeom", "TestGumbel_matchesCuDefine", F("backend/cuda/gumbel.cu")),
     Scan("backend/cuda/internal/gpudev", "TestPTXReproducible", CU("backend/cuda/internal/gpudev") + F("backend/cuda/internal/gpudev/testdata/*.ptx")),
     # Tests that read .github/workflows/ci.yml: each checks that a strided or subset run has its full form somewhere in CI.

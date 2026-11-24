@@ -800,3 +800,82 @@ func TestKVPages_tiledRowsPastTheTileBound(t *testing.T) {
 		})
 	}
 }
+
+// TestFlashDecodeHD96_metalSelection builds the MC3 fixture at an MHA head-dim-96 geometry and checks which builds let every layer
+// take attention_fa past the floor: the option chosen at any context; the option as the caller's default only while the resident's
+// context cap is at most metalHD96DefaultMaxCtx (on at 4,096, off at 4,097); an explicit =false never. A head-dim-64 layer (G = 7)
+// takes the lane the same with the option on or off. The partial buffer is sized whenever the option is set.
+func TestFlashDecodeHD96_metalSelection(t *testing.T) {
+	for _, c := range []struct {
+		name          string
+		hd, ctx       int
+		opt, dflt, on bool
+	}{
+		{"hd96 not given", 96, 4096, false, false, false},
+		{"hd96 chosen at 4096", 96, 4096, true, false, true},
+		{"hd96 chosen at 8192", 96, 8192, true, false, true},
+		{"hd96 default at 4096", 96, 4096, true, true, true},
+		{"hd96 default at 4097", 96, 4097, true, true, false},
+		{"hd96 =false at 4096", 96, 4096, false, false, false},
+		{"hd64 option on", 64, 4096, true, false, true},
+		{"hd64 option off", 64, 4096, false, false, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			prevW, prevO, prevD := mc3FixtureWriter, mc3TestHD96, mc3TestHD96Default
+			defer func() { mc3FixtureWriter, mc3TestHD96, mc3TestHD96Default = prevW, prevO, prevD }()
+			heads, kv := 4, 4
+			if c.hd == 64 {
+				heads, kv = 14, 2
+			}
+			mc3FixtureWriter = func(t *testing.T, maxPositions int) string {
+				return writeMC3FixtureGeom(t, maxPositions, heads, kv, c.hd)
+			}
+			mc3TestHD96, mc3TestHD96Default = c.opt, c.dflt
+			_, r := mc3FixtureResident(t, 2, c.ctx)
+			if g := r.layers[0].geom; g.hd != c.hd {
+				t.Fatalf("fixture head dim %d, want %d", g.hd, c.hd)
+			}
+			if c.hd == 96 && c.ctx > metalHD96DefaultMaxCtx != (r.ctxCap > metalHD96DefaultMaxCtx) {
+				t.Fatalf("resident context cap %d at ctx %d: the case does not test the side of %d it names", r.ctxCap, c.ctx, metalHD96DefaultMaxCtx)
+			}
+			if c.hd == 96 && (r.attnFAPartial != (Buffer{})) != c.opt {
+				t.Fatalf("partial buffer allocated = %v, want %v (sized whenever the option is set)", r.attnFAPartial != (Buffer{}), c.opt)
+			}
+			r.setPosAheadForTest(attnFADepthFloor + 10)
+			for l := range r.nL {
+				if got := r.canUseAttnFA(l); got != c.on {
+					t.Fatalf("layer %d: canUseAttnFA at %d keys, context cap %d = %v, want %v", l, r.curNKeys, r.ctxCap, got, c.on)
+				}
+			}
+			if c.on && c.hd == 96 && r.attnFABlkSplit != attnFABlkSplit {
+				t.Fatalf("hd-96 lane on the split %d, want the block split %d", r.attnFABlkSplit, attnFABlkSplit)
+			}
+		})
+	}
+}
+
+// TestAttnFAHeadDimOK_hd96: an hd = 96 layer takes attention_fa only at G = 1 and only under Options.FlashDecodeHD96; the head dims
+// that took it before are unchanged by the option.
+func TestAttnFAHeadDimOK_hd96(t *testing.T) {
+	for _, c := range []struct {
+		hd, nH, nKV int
+		hd96, want  bool
+	}{
+		{96, 32, 32, true, true},
+		{96, 32, 32, false, false},
+		{96, 32, 16, true, false}, // G = 2: no instantiation
+		{96, 32, 0, true, false},
+		{128, 32, 8, false, true},
+		{128, 32, 8, true, true},
+		{64, 14, 2, false, attnFABlk64On},
+		{64, 14, 2, true, attnFABlk64On},
+		{80, 32, 32, true, false},
+	} {
+		if got := attnFAHeadDimOK(c.hd, c.nH, c.nKV, c.hd96); got != c.want {
+			t.Errorf("attnFAHeadDimOK(hd=%d, nH=%d, nKV=%d, hd96=%v) = %v, want %v", c.hd, c.nH, c.nKV, c.hd96, got, c.want)
+		}
+		if got := attnFAPartialFloats(c.hd, c.nH, c.nKV, c.hd96) > 0; got != (c.want && attnFAGroupOK(c.nH, c.nKV)) {
+			t.Errorf("attnFAPartialFloats(hd=%d, nH=%d, nKV=%d, hd96=%v) > 0 = %v, want %v", c.hd, c.nH, c.nKV, c.hd96, got, c.want)
+		}
+	}
+}

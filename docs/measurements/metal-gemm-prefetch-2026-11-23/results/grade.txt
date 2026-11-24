@@ -1,0 +1,4 @@
+pairs 10; prefetch faster on 0; median base/prefetch 0.9754 (range 0.9720-0.9765)
+base TTFT ms by block: [4178.8, 4169.2, 4168.3, 4171.2, 4171.8, 4172.1, 4169.8, 4173.7, 4173.9, 4168.8]
+prefetch TTFT ms by block: [4282.2, 4289.3, 4273.8, 4276.1, 4282.3, 4278.7, 4279.7, 4278.0, 4274.4, 4273.3]
+SPEED CONDITION NOT MET (at least 9 of 10 pairs faster)

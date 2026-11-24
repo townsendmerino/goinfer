@@ -36,3 +36,118 @@ held-out set B (K = 3,900, 64 positions × 10 prompts), each scored against the 
 
 **Cost:** speed 48 cells, about 50 s each plus about 30 s of settle, so about 65 min. Fidelity: the 0.5B's references about 10 min, the
 gate about 30 min for Phi-3 and 5 for the 0.5B. In all, about 2 h by day, finishing well before 21:30.
+
+## Running notes (not yet the result)
+
+- **Cost estimate was low** (written 2026-11-23 09:31 PST): each 3,900 cell pays its own batched prefill before its 32 timed tokens
+  (about 116 s on the 0.5B), so the speed half runs past its 65-minute estimate. The driver was made resumable (it skips cells it holds a
+  reading for) so the outer 150-minute timeout can be followed by a re-launch without re-running a cell. No cell, arm or bar changed.
+- **Mechanism, read from the code after the 0.5B's cells:** single-token decode on an f16 global layer goes through
+  `KVCache.dequantGlobalLayer`, which widens the layer's whole history into f32 scratch on one goroutine every token, and attention then
+  reads the f32 scratch (`decoder/program_cpu.go:attendToken`'s `cache.quant.widened()` case). Per element per token that is a 2-byte
+  read, a 4-byte write and a 4-byte read against f32's one 4-byte read, serial ahead of the parallel head workers.
+
+## Speed: Qwen2.5-Coder-0.5B (int4), complete, read 2026-11-23 09:36 PST
+
+24 cells, 08:41–09:28 PST, A B B A × 3 blocks at each depth, one process a cell, the decoder test binary built at `8bf0687b1`. Start load
+0.85–0.98 on every cell (settle under 1.0), no swap growth, no void cells. Cells: `speed/q05-cells.tsv`; logs: `speed/q05-logs.tar.gz`.
+
+| depth | f32 tok/s (mean) | f16 tok/s (mean) | pair ratios f16 ÷ f32 | median | bar | reading |
+|---|---|---|---|---|---|---|
+| 128 | 55.13 | 53.90 | 0.978 0.988 0.986 0.946 0.981 0.989 | **0.983** | ≥ 0.98 | holds |
+| 3,900 | 23.31 | 17.17 | 0.720 0.729 0.728 0.723 0.788 0.733 | **0.729** | ≥ 1.02 | **OFF** (under 1.00) |
+
+**0.5B speed: OFF.** Finding 12's kill does not fire: the f32 token at 3,900 costs 2.37× the token at 128, so depth is a real cost here; f16
+makes it worse, by the mechanism in the running notes. Peak RSS is the same for both arms (964 MB): it is set by the load, not by a cache this
+small, so the host-bytes reading comes from the fidelity gate's cache count.
+
+## Pause between models: lock sequencing, coordinator, 2026-11-23 09:35 PST
+
+At the coordinator's word (09:35 PST, lock sequencing: four other sessions were queued behind this run), the run was stopped at 09:35:54
+after the 0.5B half completed and five Phi-3 depth-128 cells had run, and the lock released. Those five cells (`speed/p3m-interrupted-2026-11-23.tsv`:
+block 1's A 9.018, B 8.046, B 8.102, A 9.037, and block 2's first A 9.014) are **set aside, not used**: Phi-3's half re-runs from its first
+cell as its own same-session A B B A comparison once the lock queue drains, by day and done before 21:30, or tomorrow by day if it cannot be.
+Pausing between models changes no registered rule: each model's comparison is self-contained (its own pairs, its own bar), and no cell of
+one model is paired with a cell of the other.
+
+## Amendment: Phi-3 not run (Francis, 2026-11-23, relayed by the coordinator at 10:39 PST; the relay was stamped ~11:00), written 10:40 PST before any further run
+
+Francis chose option (a). **Phi-3 mini's half is not run, speed or fidelity.** The reason is the mechanism in the running notes: CPU
+single-token decode on an f16 cache widens each layer's whole history into f32 scratch on one goroutine every token
+(`KVCache.dequantGlobalLayer`), about 10 bytes moved per element against f32's 4, so f16 cannot win on CPU decode at any depth on this read
+path. The five Phi-3 cells that ran before the pause stay set aside. **`auto` stays f32 on the CPU.** What still runs from this
+registration: the 0.5B's fidelity gate (`TestCPUKVF16GateVsReference`, cell `Q05:3900`, bars and preconditions as above), so the record
+holds f16's fidelity for the follow-on below.
+
+## Profile: attention's share of CPU decode at depth 3,900 (measure-first gate), registered 10:40 PST before the run
+
+Francis, same decision: before building a fused f16 read into CPU attention, measure whether attention is enough of decode to be worth it.
+- **Instrument:** `TestCPUAttnShareProbe` (`decoder/`): Phi-3 mini q4k on the CPU, the current f32 KV path (`auto`), prefilled to 3,900 by
+  the benchmark's batched path, then 32 greedy decode tokens with the CPU cost counters on. **Share** = the `attention` operation's time
+  (the q·k and p·v loops over the cache and softmax) ÷ the decode wall time.
+- **One run, under the exclusive lock**, load settled under 1.0 at its start, start load and memory recorded. Vacuity: the report must
+  hold a timed attention operation.
+- **Kill:** share under 25%: stop, record it, build nothing. Share 25% or more: build the fused f16 read (attention reads the f16 rows in
+  place inside the parallel head workers; aikit fused f16 dot and axpy kernels on amd64 and arm64 with scalar fallbacks), under its own
+  registration, committed before any timed run.
+
+## Fidelity: the 0.5B at K = 3,900, read 2026-11-23 13:03 PST — PASSES
+
+`TestCPUKVF16GateVsReference`, cell `Q05:3900`, set B (10 prompts × 64 positions), binary at `d1cdda1bb`, 12:42–12:54 PST under the shared
+lock. Log: `q05-fidelity.log`. Preconditions held: the arms' caches are f16 and f32, f16's rows differ from f32's on 10 of 10 prompts, A/A
+bit-identical over 64 rows.
+
+| | f32 (auto) | f16 | bar | |
+|---|---|---|---|---|
+| (a) hard flips | 29 | 26 | ≤ 29 + 2√29 | pass (strict too) |
+| (b) mean agreement | 86.72% | 87.50% (+0.78 pt) | ≥ f32 − 1.0 pt, f16 ≥ f32 on ≥ half | pass, 9/10 prompts |
+| (c) mean KL | 0.160735 | 0.164572 | ≤ 1.10× | pass, 1.024× (not in the 1.05–1.10 parked band) |
+
+**Host bytes**, read from the caches at depth 3,963: f32 97,394,688 B of K/V, f16 48,697,344 B (exactly half).
+
+## Profile: attention's share of decode, read 2026-11-23 13:03 PST — 65.9%, over the 25% kill: the build goes ahead
+
+`TestCPUAttnShareProbe`, Phi-3 mini q4k, CPU, f32 KV, depth 3,900, 32 tokens, binary at `d1cdda1bb`, 12:56–13:03 PST under the exclusive
+lock (start 1-min load 0.93, 60.6 GB available, swap 910 → 860 MiB, peak RSS 6.15 GB). Log: `profile.log`.
+
+| operation | ms/token | share of decode wall |
+|---|---|---|
+| attention | 210.97 | **65.9%** |
+| ffn | 67.07 | 20.9% |
+| proj_qkv | 28.29 | 8.8% |
+| proj_o | 8.54 | 2.7% |
+| lm_head | 3.74 | 1.2% |
+| the rest | 1.03 | 0.3% |
+
+Decode 320.22 ms/token (3.12 tok/s); the timed operations sum to 99.8% of wall. Attention reads 3,081 MB a token, so it runs at about
+14.6 GB/s: it is not at this box's memory bandwidth on f32, which bounds what halving its bytes alone can buy. The fused f16 read's own
+registration says what it must show.
+
+## Kernel split before the build, registered 2026-11-23 13:17 PST, before the run
+
+Reading the kernels the fused read would replace changed what the build has to show. CPU decode attention always runs the acc64 kernels
+(`attendToken`'s `acc64` is a constant), which read the cache strided and in place. On amd64 their AVX2 ports are aikit's
+`qkAcc64AVX4` (one key per f64 lane, so a 4-key block's 96 dims go through ONE accumulator's FMA chain) and `avAcc64AVX32` (8 independent
+accumulators a 32-dim block). A latency-bound QK cannot get faster from fewer bytes, so f16 could pay only through AV, and only if AV is
+bound by its reads.
+- **Instrument:** `TestCPUAttnKernelProbe` (`decoder/`): one Phi-3 layer at depth 3,900 (3,900 keys, 32 heads × 96), f32, random
+  values; QK alone, AV alone, and a read-only pass over the same bytes in the same head-sliced pattern, on 1 and 16 workers, best of 20.
+  One run under the exclusive lock.
+- **Reading, no verdict of its own:** each kernel's GB/s against the read-only ceiling. A kernel under half its ceiling at 16 workers is
+  bound by its arithmetic; the report then says what f16 alone can buy (AV's share, at most halved) and what a latency fix to QK would,
+  and the build goes back to Francis with that before any assembly is written.
+
+## Kernel split, read 2026-11-23 13:25 PST
+
+One run, 13:24 PST under the exclusive lock, start load 0.89, binary at `f23bb5317`. Log: `kernel-probe.log`.
+
+| workers | QK ms/layer (GB/s) | AV ms/layer (GB/s) | read-only pass ms (GB/s) | per token, 32 layers |
+|---|---|---|---|---|
+| 1 | 5.14 (9.3) | 7.11 (6.7) | 4.50 (10.7) | QK 164 ms, AV 227 ms |
+| 16 | 2.99 (16.0) | 1.60 (29.9) | 2.17 (22.0) | QK 96 ms, AV 51 ms |
+
+The read-only pass is a weak ceiling (a Go loop; AV beats it at 16 workers), so the measured floor on this box's read rate is AV's own 29.9
+GB/s. **QK reads the same bytes at 0.54× that rate and is the larger cost (96 of the 147 ms the two kernels take a token): QK is
+latency-bound, AV is near its read rate.** By the coordinator's rule (2026-11-23, 13:30 PST: "QK latency-bound: the multi-chain QK
+first, as its own PR under the four-condition rule; then the f16 kernels on top of it"), the next step is a bit-identical multi-chain
+`qkAcc64AVX4` in aikit (more 4-key blocks interleaved, each key's 96-dim sum in today's order), then the f16 kernels.

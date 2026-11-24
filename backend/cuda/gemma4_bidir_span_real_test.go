@@ -16,6 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/runtime/modelload"
+	"github.com/townsendmerino/goinfer/internal/testgate"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 )
@@ -145,6 +146,7 @@ func dec(tk interface {
 // order of turns, with the first image repeated last, so a difference that depends on the turn's place in the order and one
 // that depends on the image can be told apart.
 func TestGemma4BidirSpanPrefill_real26BDecode(t *testing.T) {
+	testgate.RequireMeasure(t)
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("GOINFER_HEAVY_TESTS unset: real 26B")
 	}
@@ -485,6 +487,7 @@ func top5(tk interface {
 // (the size of the CUDA-vs-CPU tower difference). The second run is teacher-forced on the first run's tokens, and each step
 // logs the logits cosine, both argmaxes and, over GOINFER_S19_LOC_FROM..TO, the per-layer residual cosine between the two.
 func TestGemma4_26BActQuantSensitivity(t *testing.T) {
+	testgate.RequireMeasure(t)
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("GOINFER_HEAVY_TESTS unset: real 26B")
 	}
