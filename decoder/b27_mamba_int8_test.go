@@ -206,8 +206,7 @@ func TestB27_unknownEncodingRefusedByName(t *testing.T) {
 	} {
 		r := &giwReader{data: []byte{255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}}
 		c.read(r)
-		var se *SerializeError
-		if !errors.As(r.err, &se) || !strings.Contains(se.Error(), "encoding 255") {
+		if se, ok := errors.AsType[*SerializeError](r.err); !ok || !strings.Contains(se.Error(), "encoding 255") {
 			t.Errorf("%s with encoding 255: err %v, want a *SerializeError naming encoding 255", c.name, r.err)
 		}
 	}

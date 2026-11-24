@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -30,7 +30,7 @@ func TestD14_mlaProjSearch(t *testing.T) {
 		{"GOINFER_DEEPSEEK_V2LITE", "../testdata/deepseek_v2lite_golden.json", "deepseek_v2", "HF bf16 (DeepSeek-V2-Lite 15.7B; int8 resident)"},
 	}
 	only := os.Getenv("GOINFER_D14_MODEL") // "deepseek_v3" or "deepseek_v2"; empty runs both
-	for _, arm := range strings.Split(arms, ";") {
+	for arm := range strings.SplitSeq(arms, ";") {
 		for _, md := range models {
 			if only != "" && md.arch != only {
 				continue
@@ -38,7 +38,7 @@ func TestD14_mlaProjSearch(t *testing.T) {
 			t.Run(md.arch+"/"+arm, func(t *testing.T) {
 				prev, prevArmed := mlaProjF32ForTest, mlaInt8ForTest
 				mlaProjF32ForTest, mlaInt8ForTest = map[string]bool{}, true
-				for _, p := range strings.Split(arm, "+") {
+				for p := range strings.SplitSeq(arm, "+") {
 					if p != "all8" {
 						mlaProjF32ForTest[p] = true
 					}
@@ -166,7 +166,7 @@ func TestD14_mlaSpeedAB(t *testing.T) {
 		ratios = append(ratios, r)
 		fmt.Fprintf(os.Stderr, "[D14-speed] pair %d/%d: f32/int8 decode %.4f\n", p+1, pairs, r)
 	}
-	sort.Float64s(ratios)
+	slices.Sort(ratios)
 	fmt.Fprintf(os.Stderr, "[D14-speed] f32/int8 decode ratios %v, median %.4f\n", ratios, ratios[len(ratios)/2])
 }
 
@@ -178,9 +178,9 @@ func d14HostLoad() (float64, int) {
 	}
 	mem := 0
 	if b, err := os.ReadFile("/proc/meminfo"); err == nil {
-		for _, ln := range strings.Split(string(b), "\n") {
-			if strings.HasPrefix(ln, "MemAvailable:") {
-				fmt.Sscan(strings.TrimPrefix(ln, "MemAvailable:"), &mem)
+		for ln := range strings.SplitSeq(string(b), "\n") {
+			if rest, ok := strings.CutPrefix(ln, "MemAvailable:"); ok {
+				fmt.Sscan(rest, &mem)
 			}
 		}
 	}

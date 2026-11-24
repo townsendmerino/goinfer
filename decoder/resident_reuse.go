@@ -517,8 +517,7 @@ func (m *Model) residentShare(prompt []int, imgs []residentImageClaim, lora *lor
 	}
 	acq.copyDur = time.Since(t0)
 	if err != nil {
-		var d *KVCopyDecline
-		if errors.As(err, &d) {
+		if d, ok := errors.AsType[*KVCopyDecline](err); ok {
 			acq.declined = d.Reason
 			if kv.ReusableKVSlotAvailable() {
 				acq.declined += kvOtherDonors(kv, hits, cm, len(prompt), src, dst, acq.reuse)

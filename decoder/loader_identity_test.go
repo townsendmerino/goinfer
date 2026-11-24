@@ -13,7 +13,6 @@ import (
 	"reflect"
 	"runtime"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 	"unsafe"
@@ -55,7 +54,7 @@ func loaderFixtures(t *testing.T) []string {
 		t.Fatalf("git ls-files: %v", err)
 	}
 	files := map[string]bool{}
-	for _, f := range strings.Split(strings.TrimSpace(string(ls)), "\n") {
+	for f := range strings.SplitSeq(strings.TrimSpace(string(ls)), "\n") {
 		files["testdata/"+strings.TrimPrefix(f, "../testdata/")] = true
 	}
 	var out []string
@@ -71,7 +70,7 @@ func loaderFixtures(t *testing.T) []string {
 	if len(out) == 0 {
 		t.Fatal("no loader fixture found: the walk covered nothing")
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 
@@ -170,7 +169,7 @@ func TestLoaderIdentity_table(t *testing.T) {
 			}
 		}
 	}
-	sort.Strings(diffs)
+	slices.Sort(diffs)
 	if len(diffs) > 0 {
 		t.Errorf("%s loader identities changed for %d fixture-mode pair(s); if the change is meant, run -update and say which tensors moved:\n  %s",
 			arch, len(diffs), strings.Join(diffs, "\n  "))
@@ -396,7 +395,7 @@ func TestLoaderIdentity_walkTotal(t *testing.T) {
 			t.Errorf("%+v and %+v have one identity", pair[0], pair[1])
 		}
 	}
-	wt := reflect.TypeOf(Weights{})
+	wt := reflect.TypeFor[Weights]()
 	for name := range loaderSkip {
 		if _, ok := wt.FieldByName(name); !ok {
 			t.Errorf("loaderSkip names %q, which Weights does not have", name)

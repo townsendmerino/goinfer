@@ -270,8 +270,8 @@ func TestFitRefusal_streamableOnlyWhereItPages(t *testing.T) {
 	})
 	for quant, streamable := range map[string]bool{"q4k": false, "f32": false, "int8": true, "int8int8": true, "int4": true, "int4mix": true} {
 		_, err := Load(src, Options{Backend: "cpu", Quant: quant, DirectLoad: true})
-		var fde *FitDeclineError
-		if !errors.As(err, &fde) {
+		fde, ok := errors.AsType[*FitDeclineError](err)
+		if !ok {
 			t.Fatalf("%s: %v, want the fit guard's refusal", quant, err)
 		}
 		if fde.DenseStreamable != streamable {
@@ -505,8 +505,7 @@ func TestFitQuery_refusesACopiedF32Bundle(t *testing.T) {
 		"FitQuery":       func() error { _, err := FitQuery(corrupt, Options{Backend: "cpu"}); return err }(),
 		"GIWHeaderCheck": GIWHeaderCheck(corrupt),
 	} {
-		var se *SerializeError
-		if !errors.As(err, &se) || errors.Is(err, errCopiedF32Bundle) || !strings.Contains(se.Reason, "config json:") {
+		if se, ok := errors.AsType[*SerializeError](err); !ok || errors.Is(err, errCopiedF32Bundle) || !strings.Contains(se.Reason, "config json:") {
 			t.Errorf("%s on a corrupt header: %v, want a config json *SerializeError", name, err)
 		}
 	}
@@ -721,8 +720,7 @@ func TestLoad_refusesCopiedF32Bundle(t *testing.T) {
 	if !errors.Is(err, errCopiedF32Bundle) {
 		t.Errorf("%v is not the copied-f32 refusal", err)
 	}
-	var se *SerializeError
-	if !errors.As(err, &se) {
+	if _, ok := errors.AsType[*SerializeError](err); !ok {
 		t.Errorf("%v is not a *SerializeError", err)
 	}
 	for _, want := range []string{"predates the mapped f32 encoding", "go run ./cmd/prequant -quant f32", "kind1.giw"} {

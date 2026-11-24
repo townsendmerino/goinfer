@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"slices"
-	"sort"
 	"sync"
 	"time"
 
@@ -155,8 +155,8 @@ func (s *kvSnapStore) candidates(root kvmgr.Root, prompt []int) []snapMatch {
 			out = append(out, snapMatch{x, n})
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		return min(out[i].lcp, out[i].x.h.Rows()) > min(out[j].lcp, out[j].x.h.Rows())
+	slices.SortStableFunc(out, func(a, b snapMatch) int {
+		return cmp.Compare(min(b.lcp, b.x.h.Rows()), min(a.lcp, a.x.h.Rows()))
 	})
 	return out
 }
@@ -344,9 +344,7 @@ func (s *kvSnapStore) stats() KVSnapshotStats {
 	out := s.st
 	out.Budget, out.Used, out.Held = s.budget, s.used, len(s.list)
 	out.Declined = make(map[string]int, len(s.st.Declined))
-	for k, v := range s.st.Declined {
-		out.Declined[k] = v
-	}
+	maps.Copy(out.Declined, s.st.Declined)
 	for _, x := range s.list {
 		out.Snapshots = append(out.Snapshots, KVSnapshotInfo{Rows: x.h.Rows(), Bytes: x.h.Bytes(), Restores: x.restores, AgeSecs: int64(time.Since(x.created).Seconds())})
 	}
@@ -453,8 +451,7 @@ func (m *Model) residentRestoreSnapshot(prompt []int, lora *loraRuntime, sc KVSc
 	err := sn.RestoreKV(x.h, acq.slot, q)
 	d := time.Since(t0)
 	if err != nil {
-		var dec *KVCopyDecline
-		if errors.As(err, &dec) {
+		if dec, ok := errors.AsType[*KVCopyDecline](err); ok {
 			st.mu.Lock()
 			st.st.Declined["backend"]++
 			st.st.LastDecline = dec.Reason
@@ -793,9 +790,8 @@ func (m *Model) residentSnapshotRows(slot int, prompt []int, b int, lora *loraRu
 	d := time.Since(t0)
 	if err != nil {
 		st.Release(need)
-		var dec *KVCopyDecline
 		st.mu.Lock()
-		if errors.As(err, &dec) {
+		if dec, ok := errors.AsType[*KVCopyDecline](err); ok {
 			st.st.Declined["backend"]++
 			st.st.LastDecline = dec.Reason
 		} else {
@@ -805,7 +801,7 @@ func (m *Model) residentSnapshotRows(slot int, prompt []int, b int, lora *loraRu
 		st.mu.Unlock()
 		return
 	}
-	x := &kvSnap{root: root, ids: append([]int(nil), prompt[:b]...), classes: clipRuns(cold, b), h: h, preamble: recurrent && acq.preambleRows == b && b > 0}
+	x := &kvSnap{root: root, ids: slices.Clone(prompt[:b]), classes: clipRuns(cold, b), h: h, preamble: recurrent && acq.preambleRows == b && b > 0}
 	st.add(x, replaced, d, need)
 	used := st.stats().Used
 	fmt.Fprintf(stderrKV, "kv snapshot: took %d rows (%.0f MiB host) from slot %d in %.1f ms; %.0f of %.0f MiB held\n",

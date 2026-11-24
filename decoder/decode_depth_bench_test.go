@@ -27,8 +27,7 @@ func decodeAtDepthOnce(b *testing.B, m *Model, cache *KVCache, seed int) {
 		b.Fatalf("seed sample: %v", err)
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		logits, err := m.forward(next, cache)
 		if err != nil {
 			b.Fatalf("forward: %v", err)

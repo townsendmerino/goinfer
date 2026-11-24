@@ -6,7 +6,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -62,7 +62,7 @@ func TestPolicyTests_loadedRatchet(t *testing.T) {
 			}
 		}
 	}
-	sort.Strings(loaded)
+	slices.Sort(loaded)
 	got := strings.Join(loaded, "\n") + "\n"
 	if *updateMatrix {
 		if err := os.WriteFile(loadedPolicyTestsPath, []byte(got), 0o644); err != nil {
@@ -76,7 +76,7 @@ func TestPolicyTests_loadedRatchet(t *testing.T) {
 		t.Fatalf("read %s: %v (run with -update)", loadedPolicyTestsPath, err)
 	}
 	want := map[string]bool{}
-	for _, ln := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+	for ln := range strings.SplitSeq(strings.TrimSpace(string(b)), "\n") {
 		want[ln] = true
 	}
 	for _, l := range loaded {

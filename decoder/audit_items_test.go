@@ -143,8 +143,8 @@ func TestResidentDense_countsEveryDeltaNetTensor(t *testing.T) {
 	}
 	rt := reflect.TypeFor[deltaNetWeights]()
 	slices := 0
-	for i := range rt.NumField() {
-		if rt.Field(i).Type == reflect.TypeFor[[]float32]() {
+	for field := range rt.Fields() {
+		if field.Type == reflect.TypeFor[[]float32]() {
 			slices++
 		}
 	}

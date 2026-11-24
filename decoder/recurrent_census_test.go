@@ -32,7 +32,7 @@ func realCacheForType(t *testing.T, mt string) (*Model, *KVCache) {
 func modelTypes(t *testing.T) []string {
 	t.Helper()
 	var out []string
-	for _, mt := range strings.Split(knownModelTypes(), ", ") {
+	for mt := range strings.SplitSeq(knownModelTypes(), ", ") {
 		if representativeConfig(mt) != nil {
 			out = append(out, mt)
 		}
@@ -48,7 +48,7 @@ func modelTypes(t *testing.T) []string {
 func recurrentModelTypes(t *testing.T) []string {
 	t.Helper()
 	var out []string
-	for _, mt := range strings.Split(knownModelTypes(), ", ") {
+	for mt := range strings.SplitSeq(knownModelTypes(), ", ") {
 		cfg := representativeConfig(mt)
 		if cfg == nil {
 			continue

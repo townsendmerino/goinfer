@@ -20,7 +20,7 @@ func (m *Model) CPUHoldsForTest(l *mem.Ledger, c *KVCache) (release func()) {
 	h := &holdsWalker{l: l}
 	w := reflect.ValueOf(m.w).Elem()
 	weights := func(path string) mem.LineID {
-		for _, f := range strings.Split(path, ".") {
+		for f := range strings.SplitSeq(path, ".") {
 			if f == "Experts" || f == "expertsGateUp" || f == "expertsDown" {
 				return mem.LineExperts
 			}

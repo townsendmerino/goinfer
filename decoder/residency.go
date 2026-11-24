@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math"
 	"runtime/debug"
-	"sort"
+	"slices"
 	"strings"
 	"sync/atomic"
 
@@ -66,8 +66,7 @@ func (e *PrefillPartial) Unwrap() error { return e.Err }
 // prefillResume is where a prefill continues after a batched call that started at from returned err: PrefillPartial's Next when it names a
 // later position, else from.
 func prefillResume(from int, err error) int {
-	var p *PrefillPartial
-	if errors.As(err, &p) && p.Next > from {
+	if p, ok := errors.AsType[*PrefillPartial](err); ok && p.Next > from {
 		return p.Next
 	}
 	return from
@@ -250,8 +249,8 @@ func DeclineResident(format string, args ...any) error {
 
 // IsResidentDecline reports whether err is a decline (DeclineResident) rather than a failure.
 func IsResidentDecline(err error) bool {
-	var d *ResidentDeclineError
-	return errors.As(err, &d)
+	_, ok := errors.AsType[*ResidentDeclineError](err)
+	return ok
 }
 
 // DecodeRunnerEligible reports whether this model passes the FIRST resident-admission gate: its arch is a shape the
@@ -795,11 +794,10 @@ func (m *Model) residencyGate() (rb ResidencyBackend, why string) {
 // (a driver or device error: `--backend cuda` on a box with no usable GPU lands here, since the device is touched only at
 // build time).
 func buildDeclineReason(err error) string {
-	var d *ResidentDeclineError
-	switch {
-	case errors.As(err, &d):
+	if d, ok := errors.AsType[*ResidentDeclineError](err); ok {
 		return d.Reason
-	case err != nil:
+	}
+	if err != nil {
 		return "backend failed to build a resident path: " + err.Error()
 	}
 	return "backend declined to build a resident path (no reason given)"
@@ -1212,14 +1210,14 @@ func (m *Model) int4LayoutSummary() string {
 	for l := range byLayout {
 		layouts = append(layouts, l)
 	}
-	sort.Strings(layouts)
+	slices.Sort(layouts)
 	parts := make([]string, len(layouts))
 	for i, l := range layouts {
 		name := l
 		if l == "row4" || l == "splithalf" {
 			name += "-only" // distinguish from the canonical+row4/canonical+splithalf "both" policy
 		}
-		sort.Strings(byLayout[l])
+		slices.Sort(byLayout[l])
 		parts[i] = fmt.Sprintf("%s (%s)", name, strings.Join(byLayout[l], ", "))
 	}
 	return "int4 layout: " + strings.Join(parts, "; ")

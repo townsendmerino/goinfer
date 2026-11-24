@@ -2,14 +2,14 @@ package decoder
 
 import (
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
 )
 
 func benchFloatSlice(n int, seed int64) []float32 {
-	r := rand.New(rand.NewSource(seed))
+	r := rand.New(rand.NewPCG(uint64(seed), 0))
 	s := make([]float32, n)
 	for i := range s {
 		s[i] = float32(r.NormFloat64())
@@ -22,8 +22,7 @@ func BenchmarkRMSNorm_Dim896(b *testing.B) {
 	x := benchFloatSlice(dim, 1)
 	weight := benchFloatSlice(dim, 2)
 	b.SetBytes(dim * 4)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rmsNorm(x, weight, 1, dim, 1e-6, false)
 	}
 }
@@ -33,8 +32,7 @@ func BenchmarkRMSNorm_Dim2048(b *testing.B) {
 	x := benchFloatSlice(dim, 1)
 	weight := benchFloatSlice(dim, 2)
 	b.SetBytes(dim * 4)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rmsNorm(x, weight, 1, dim, 1e-6, false)
 	}
 }
@@ -44,8 +42,7 @@ func BenchmarkRMSNorm_Dim4096(b *testing.B) {
 	x := benchFloatSlice(dim, 1)
 	weight := benchFloatSlice(dim, 2)
 	b.SetBytes(dim * 4)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rmsNorm(x, weight, 1, dim, 1e-6, false)
 	}
 }
@@ -56,8 +53,7 @@ func BenchmarkLayerNorm_Dim896(b *testing.B) {
 	weight := benchFloatSlice(dim, 2)
 	bias := benchFloatSlice(dim, 3)
 	b.SetBytes(dim * 4)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		layerNorm(x, weight, bias, 1, dim, 1e-5)
 	}
 }
@@ -68,8 +64,7 @@ func BenchmarkLayerNorm_Dim2048(b *testing.B) {
 	weight := benchFloatSlice(dim, 2)
 	bias := benchFloatSlice(dim, 3)
 	b.SetBytes(dim * 4)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		layerNorm(x, weight, bias, 1, dim, 1e-5)
 	}
 }
@@ -84,8 +79,7 @@ func BenchmarkRoPE_Heads14_Dim64(b *testing.B) {
 		invFreq[i] = 1.0 / float64(10000*(i+1))
 	}
 	b.SetBytes(heads * headDim * 4)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		applyRoPE(vec, heads, headDim, 42, invFreq, 1.0)
 	}
 }
@@ -100,8 +94,7 @@ func BenchmarkRoPE_Heads32_Dim128(b *testing.B) {
 		invFreq[i] = 1.0 / float64(10000*(i+1))
 	}
 	b.SetBytes(heads * headDim * 4)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		applyRoPE(vec, heads, headDim, 42, invFreq, 1.0)
 	}
 }
@@ -111,8 +104,7 @@ func BenchmarkSwiGLU_Inter4864(b *testing.B) {
 	gate := benchFloatSlice(dim, 1)
 	up := benchFloatSlice(dim, 2)
 	b.SetBytes(dim * 4)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		swiglu(gate, up)
 	}
 }
@@ -122,8 +114,7 @@ func BenchmarkSwiGLU_Inter8960(b *testing.B) {
 	gate := benchFloatSlice(dim, 1)
 	up := benchFloatSlice(dim, 2)
 	b.SetBytes(dim * 4)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		swiglu(gate, up)
 	}
 }
@@ -133,8 +124,7 @@ func BenchmarkAddBias_Dim896(b *testing.B) {
 	x := benchFloatSlice(dim, 1)
 	bias := benchFloatSlice(dim, 2)
 	b.SetBytes(dim * 4)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		addBias(x, bias)
 	}
 }
@@ -144,8 +134,7 @@ func BenchmarkAddBias_Dim4864(b *testing.B) {
 	x := benchFloatSlice(dim, 1)
 	bias := benchFloatSlice(dim, 2)
 	b.SetBytes(dim * 4)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		addBias(x, bias)
 	}
 }
@@ -155,8 +144,7 @@ func BenchmarkResidualAdd_Dim896(b *testing.B) {
 	h := benchFloatSlice(dim, 1)
 	sub := benchFloatSlice(dim, 2)
 	b.SetBytes(dim * 4)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		addResidual(h, sub)
 	}
 }
@@ -166,8 +154,7 @@ func BenchmarkResidualAdd_Dim2048(b *testing.B) {
 	h := benchFloatSlice(dim, 1)
 	sub := benchFloatSlice(dim, 2)
 	b.SetBytes(dim * 4)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		addResidual(h, sub)
 	}
 }
@@ -189,8 +176,7 @@ func BenchmarkRing_BatchReadLocal_W1024(b *testing.B) {
 	dstV := make([]float32, W*kvDim)
 	startPos := W + 500 // wrapped around
 	b.SetBytes(int64(W * kvDim * 4 * 2))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		cache.batchReadLocal(0, startPos, 1, newK, newV, dstK, dstV)
 	}
 }
@@ -207,8 +193,7 @@ func BenchmarkRing_CommitBatch_K64_W1024(b *testing.B) {
 	newV := make([]float32, K*kvDim)
 	startPos := 500
 	b.SetBytes(int64(K * kvDim * 4 * 2))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		cache.commitBatch(0, startPos, K, newK, newV)
 	}
 }
@@ -226,8 +211,7 @@ func BenchmarkKV_DequantGlobalLayer_N512(b *testing.B) {
 	dstK := make([]float32, N*kvDim)
 	dstV := make([]float32, N*kvDim)
 	b.SetBytes(int64(N * kvDim * 4 * 2))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		cache.dequantGlobalLayer(0, kvDim, dstK, dstV)
 	}
 }
@@ -239,8 +223,7 @@ func BenchmarkNgram_Draft_Ctx1024(b *testing.B) {
 		ctx[i] = i % 32
 	}
 	d := &NgramDrafter{MinMatch: 2, MaxMatch: 16}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		d.Draft(ctx, 4)
 	}
 }
@@ -249,8 +232,7 @@ func BenchmarkArgmax_Vocab32k(b *testing.B) {
 	const vocab = 32000
 	logits := benchFloatSlice(vocab, 1)
 	b.SetBytes(vocab * 4)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = sampling.Argmax(logits)
 	}
 }
@@ -259,17 +241,17 @@ func BenchmarkArgmax_Vocab128k(b *testing.B) {
 	const vocab = 128000
 	logits := benchFloatSlice(vocab, 1)
 	b.SetBytes(vocab * 4)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = sampling.Argmax(logits)
 	}
 }
 
 func BenchmarkSampler_Observe_Greedy(b *testing.B) {
 	s := NewSampler(SamplingParams{Temperature: 0})
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		s.Observe(i % 1000)
+		i++
 	}
 }
 
@@ -278,8 +260,7 @@ func BenchmarkMoE_Combine_Dim2048(b *testing.B) {
 	out := benchFloatSlice(dim, 1)
 	expOut := benchFloatSlice(dim, 2)
 	b.SetBytes(dim * 4)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		addScaled(out, expOut, 0.75)
 	}
 }
@@ -290,8 +271,7 @@ func BenchmarkNormCopy_Dim2048(b *testing.B) {
 	dst := benchFloatSlice(dim, 2)
 	weight := benchFloatSlice(dim, 3)
 	b.SetBytes(dim * 4)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rmsNormInto(dst, src, weight, 1, dim, 1e-6, false)
 	}
 }
@@ -306,8 +286,7 @@ func BenchmarkRoPE_Interleaved_Heads32_Dim128(b *testing.B) {
 		invFreq[i] = 1.0 / float64(10000*(i+1))
 	}
 	b.SetBytes(heads * headDim * 4)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		applyRoPEInterleaved(vec, heads, headDim, 42, invFreq, 1.0)
 	}
 }
@@ -319,8 +298,7 @@ func BenchmarkForwardN_NormPrefill_K512_Dim2048(b *testing.B) {
 	norm := make([]float32, K*dim)
 	weight := benchFloatSlice(dim, 2)
 	b.SetBytes(K * dim * 4)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for r := range K {
 			rmsNormInto(norm[r*dim:(r+1)*dim], h[r*dim:(r+1)*dim], weight, 1, dim, 1e-6, false)
 		}
@@ -349,8 +327,7 @@ func BenchmarkAttendQuery_Heads32_K512_Dim128(b *testing.B) {
 	scores := make([]float32, nKeys)
 
 	b.SetBytes(int64(nKeys * hd * 4 * nH))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		attendQuery(q, ctx, scores, cache, 0, nKeys, true, arch)
 	}
 }
@@ -359,8 +336,7 @@ func BenchmarkSoftmaxF32_E64(b *testing.B) {
 	const E = 64
 	logits := benchFloatSlice(E, 1)
 	b.SetBytes(E * 4)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = softmaxF32(logits)
 	}
 }
@@ -394,8 +370,7 @@ func BenchmarkDeltaNet_Recurrence_Heads16_Dim128(b *testing.B) {
 	core := make([]float32, valueDim)
 
 	b.SetBytes(int64(nv * hk * hv * 4 * 2))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		copy(st.s, sOrig)
 		deltaNetRecurrence(core, conv, at, bt, w, p, st)
 	}
@@ -427,8 +402,7 @@ func BenchmarkKDA_Recurrence_Heads16_Dim128(b *testing.B) {
 	core := make([]float32, projSize)
 
 	b.SetBytes(int64(H * D * D * 4 * 2))
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		copy(st.s, sOrig)
 		kdaRecurrence(core, q, k, v, gDecayRaw, betaLogits, w, p, st)
 	}
