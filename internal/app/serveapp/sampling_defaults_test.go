@@ -9,16 +9,13 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-func fptr(v float64) *float64 { return &v }
-func iptr(v int) *int         { return &v }
-
 // TestPrepare_recommendedSampling: a field the request leaves out takes the model's recommended value, a field it sends
 // wins, a greedy request is left as sent, and a model with none keeps the server default (temperature 1.0, no filter).
 // gr.fromModel names exactly the fields that came from the model.
 func TestPrepare_recommendedSampling(t *testing.T) {
 	_, lm := tinyServed(t)
-	qwen := &decoder.RecommendedSampling{Source: "generation_config.json", Temperature: fptr(0.7), TopP: fptr(0.8), TopK: iptr(20),
-		MinP: fptr(0.05), RepetitionPenalty: fptr(1.05)}
+	qwen := &decoder.RecommendedSampling{Source: "generation_config.json", Temperature: new(0.7), TopP: new(0.8), TopK: new(20),
+		MinP: new(0.05), RepetitionPenalty: new(1.05)}
 	type want struct {
 		temp, topP, minP float64
 		topK             int
@@ -31,11 +28,11 @@ func TestPrepare_recommendedSampling(t *testing.T) {
 		want want
 	}{
 		{"nothing sent", qwen, sampling{}, want{0.7, 0.8, 0.05, 20, []string{"temperature", "top_p", "top_k", "min_p"}}},
-		{"temperature sent", qwen, sampling{Temperature: fptr(0.2)}, want{0.2, 0.8, 0.05, 20, []string{"top_p", "top_k", "min_p"}}},
-		{"all sent", qwen, sampling{Temperature: fptr(0.9), TopP: fptr(0.5), TopK: iptr(3)}, want{0.9, 0.5, 0.05, 3, []string{"min_p"}}},
-		{"greedy sent", qwen, sampling{Temperature: fptr(0)}, want{0, 0, 0, 0, nil}},
+		{"temperature sent", qwen, sampling{Temperature: new(0.2)}, want{0.2, 0.8, 0.05, 20, []string{"top_p", "top_k", "min_p"}}},
+		{"all sent", qwen, sampling{Temperature: new(0.9), TopP: new(0.5), TopK: new(3)}, want{0.9, 0.5, 0.05, 3, []string{"min_p"}}},
+		{"greedy sent", qwen, sampling{Temperature: new(0.0)}, want{0, 0, 0, 0, nil}},
 		{"model recommends none", nil, sampling{}, want{1.0, 0, 0, 0, nil}},
-		{"model recommends greedy", &decoder.RecommendedSampling{Source: "generation_config.json", Temperature: fptr(0)}, sampling{},
+		{"model recommends greedy", &decoder.RecommendedSampling{Source: "generation_config.json", Temperature: new(0.0)}, sampling{},
 			want{0, 0, 0, 0, []string{"temperature"}}},
 	} {
 		lm.sampling = c.rs
@@ -61,19 +58,19 @@ func TestSamplingLine(t *testing.T) {
 		want string
 	}{
 		{nil, "sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary"},
-		{&decoder.RecommendedSampling{Source: "generation_config.json", Temperature: fptr(0.7), TopP: fptr(0.8), TopK: iptr(20), RepetitionPenalty: fptr(1.05)},
+		{&decoder.RecommendedSampling{Source: "generation_config.json", Temperature: new(0.7), TopP: new(0.8), TopK: new(20), RepetitionPenalty: new(1.05)},
 			"sampling: generation_config.json recommends temperature 0.7, top_p 0.8, top_k 20, applied to the fields a request leaves out; " +
 				"not applied: repetition_penalty 1.05 (it divides logits; the sampler's penalties are subtractive)"},
-		{&decoder.RecommendedSampling{Source: "gguf general.sampling", Temperature: fptr(1), TopP: fptr(0.95), TopK: iptr(64)},
+		{&decoder.RecommendedSampling{Source: "gguf general.sampling", Temperature: new(1.0), TopP: new(0.95), TopK: new(64)},
 			"sampling: gguf general.sampling recommends temperature 1, top_p 0.95, top_k 64, applied to the fields a request leaves out"},
-		{&decoder.RecommendedSampling{Source: "generation_config.json", RepetitionPenalty: fptr(1.1)},
+		{&decoder.RecommendedSampling{Source: "generation_config.json", RepetitionPenalty: new(1.1)},
 			"sampling: generation_config.json recommends nothing the sampler applies; not applied: repetition_penalty 1.1 (it divides logits; the sampler's penalties are subtractive)"},
 	} {
 		if got := samplingLine(c.rs); got != c.want {
 			t.Errorf("got  %q\nwant %q", got, c.want)
 		}
 	}
-	rs := &decoder.RecommendedSampling{Source: "generation_config.json", TopK: iptr(20)}
+	rs := &decoder.RecommendedSampling{Source: "generation_config.json", TopK: new(20)}
 	if got := bannerLine(modelBannerFrom(bannerFacts{sampling: rs}, config{}), "sampling:"); got != samplingLine(rs) {
 		t.Errorf("banner sampling line %q, want %q", got, samplingLine(rs))
 	}

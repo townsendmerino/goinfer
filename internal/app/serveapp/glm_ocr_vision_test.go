@@ -131,7 +131,7 @@ func TestImageFitsContext(t *testing.T) {
 	if ctx != 512 {
 		t.Fatalf("fixture context %d, this test assumes 512", ctx)
 	}
-	glmv := &glmVision{qwenGrid: qwenGrid{merge: 2}}
+	glmv := &glmVision{merge: 2}
 	lm := &loadedModel{model: m, vision: glmv}
 	glmv.pp, _ = multimodal.LoadGlmOcrPreprocessConfig(writeQwen35Dir(t, glmConf, glmPre))
 	if err := lm.imageFitsContext(100, [3]int{1, 20, 20}); err != nil {
@@ -191,7 +191,7 @@ func TestGlmOcr_visionPromptIDs(t *testing.T) {
 		t.Fatalf("load ../../../testdata/glm-ocr-tiny: %v", err)
 	}
 	defer m.Close()
-	glmv := &glmVision{qwenGrid: qwenGrid{merge: 2, imgTok: 59280}, glmOcrTower: &glmOcrTower{dir: "unused"}}
+	glmv := &glmVision{merge: 2, imgTok: 59280, glmOcrTower: &glmOcrTower{dir: "unused"}}
 	lm := &loadedModel{tk: tk, model: m, tmpl: tmpl, vision: glmv}
 	glmv.pp, err = multimodal.LoadGlmOcrPreprocessConfig(dir)
 	if err != nil {
@@ -307,7 +307,7 @@ func TestGlmOcr_visionPromptServesFeaturesFromTheCache(t *testing.T) {
 		t.Fatalf("load ../../../testdata/glm-ocr-tiny: %v", err)
 	}
 	defer m.Close()
-	glmv := &glmVision{qwenGrid: qwenGrid{merge: 2, imgTok: 59280}, glmOcrTower: &glmOcrTower{dir: "unused"}}
+	glmv := &glmVision{merge: 2, imgTok: 59280, glmOcrTower: &glmOcrTower{dir: "unused"}}
 	lm := &loadedModel{tk: tk, model: m, tmpl: tmpl, vision: glmv}
 	if glmv.pp, err = multimodal.LoadGlmOcrPreprocessConfig(dir); err != nil {
 		t.Fatal(err)

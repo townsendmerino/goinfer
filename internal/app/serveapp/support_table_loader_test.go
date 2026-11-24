@@ -66,7 +66,7 @@ func tableModelTypes(t *testing.T) []string {
 	}
 	var out []string
 	re := regexp.MustCompile("^\\| [^|]*\\(`([a-z0-9_]+)`\\) \\|")
-	for _, ln := range strings.Split(doc[i:j], "\n") {
+	for ln := range strings.SplitSeq(doc[i:j], "\n") {
 		if m := re.FindStringSubmatch(ln); m != nil && m[1] != "model_type" { // not the header row
 			out = append(out, m[1])
 		}

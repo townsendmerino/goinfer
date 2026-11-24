@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -123,12 +124,8 @@ func (f *fastRig) lastPrompt(t *testing.T) string {
 
 func withFields(body map[string]any, extra map[string]any) map[string]any {
 	out := map[string]any{}
-	for k, v := range body {
-		out[k] = v
-	}
-	for k, v := range extra {
-		out[k] = v
-	}
+	maps.Copy(out, body)
+	maps.Copy(out, extra)
 	return out
 }
 
