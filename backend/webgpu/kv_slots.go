@@ -53,18 +53,6 @@ var (
 // without exhausting a device.
 var slotAllocHook func(slot, layer int) error
 
-// kvSlotsWithin is the unified-memory clamp arithmetic (metal/backend.go's, restated because the gpu module cannot
-// import metal): the largest slot count up to want whose build — base bytes for the first slot plus perSlot for each
-// further one — fits budget, and never below 1 (nothing on this backend prices the first slot; that is the load-time
-// fit guard's job).
-func kvSlotsWithin(want int, budget, base, perSlot int64) int {
-	n := max(1, want)
-	for n > 1 && base+int64(n-1)*perSlot > budget {
-		n--
-	}
-	return n
-}
-
 // darwinKVSlots prices slots where the device's buffers ARE host RAM (darwin), against the same two ceilings Metal's guard
 // takes the smaller of (metalMemoryCeiling):
 //   - the fit guard's share of physical RAM, against everything the build holds: the device weights, the host copy a
@@ -78,15 +66,12 @@ func darwinKVSlots(want int, ram, avail0, weights, hostCopy, perSlot int64) int 
 	if ram <= 0 {
 		return 1
 	}
-	n := kvSlotsWithin(want, ramShare(ram), weights+hostCopy+perSlot, perSlot)
+	n := mem.KVSlotsWithin(want, mem.RAMShare(ram), weights+hostCopy+perSlot, perSlot)
 	if avail0 > 0 {
-		n = min(n, kvSlotsWithin(want, avail0, weights+perSlot, perSlot))
+		n = min(n, mem.KVSlotsWithin(want, avail0, weights+perSlot, perSlot))
 	}
 	return n
 }
-
-// ramShare is the fit guard's share of physical RAM, the one ceiling both darwin slot functions read.
-func ramShare(ram int64) int64 { return int64(decoder.WeightsMemFraction * float64(ram)) }
 
 // darwinSlotsFit says whether want slots fit RAM without clamping: darwinKVSlots would grant all of them. Unlike darwinKVSlots, which
 // never grants fewer than one, it can say that a single slot does not fit, which is how a priced companion shortens a one-slot
@@ -96,7 +81,7 @@ func darwinSlotsFit(want int, ram, avail0, weights, hostCopy, perSlot int64) boo
 		return true
 	}
 	n := int64(max(1, want))
-	if weights+hostCopy+n*perSlot > ramShare(ram) {
+	if weights+hostCopy+n*perSlot > mem.RAMShare(ram) {
 		return false
 	}
 	return avail0 <= 0 || weights+n*perSlot <= avail0
@@ -109,7 +94,7 @@ func discreteKVSlots(want int, free, perSlot int64) int {
 	if slotHeadroomPlantForTest > 0 {
 		headroom = slotHeadroomPlantForTest
 	}
-	return kvSlotsWithin(want, free-headroom, 0, perSlot)
+	return mem.KVSlotsWithin(want, free-headroom, 0, perSlot)
 }
 
 // slotHeadroomPlantForTest, when positive (tests only), replaces webgpuSlotHeadroom in discreteKVSlots: the slot census's plant.
@@ -366,7 +351,7 @@ func (rd *residentDecoder) buildKVSlots(m *decoder.Model, want int, avail0 int64
 		logs.Infof("webgpu: %d resident KV slots of %d requested — each costs %.0f MB of KV at the resident context (%d positions); "+
 			"with %.0f MB of weights and reserved companions (+%.0f MB host copy), %.0f%% of %.0f MB RAM and %.0f MB available before the build allow %d",
 			n, want, float64(perSlot)/(1<<20), rd.ctxCap, float64(weights)/(1<<20), float64(hostCopy)/(1<<20),
-			100*decoder.WeightsMemFraction, float64(hostRAMBytes())/(1<<20), float64(avail0)/(1<<20), n)
+			mem.WeightsPercent(), float64(hostRAMBytes())/(1<<20), float64(avail0)/(1<<20), n)
 	}
 	rd.slots = []webgpuKVSlot{{rm: rd.rm, runner: rd.runner}}
 	for s := 1; s < n; s++ {

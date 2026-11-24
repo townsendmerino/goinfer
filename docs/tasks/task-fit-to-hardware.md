@@ -138,7 +138,7 @@ Scoped against what exists, the way `task-model-pull.md` was.
 - CPU weight paging: `--weight-cache 0` is "auto, ~half of available RAM"
   (`internal/app/loadflags/loadflags.go:Register`).
 - Metal: a memory-fit guard that refuses a model whose weights exceed 70% of RAM
-  (`backend/metal/backend.go:residentMemFraction`, `:142`) — the guard whose arithmetic M-01/M-02 found wrong in both
+  (`backend/metal/backend.go:metalStaticCeiling`) — the guard whose arithmetic M-01/M-02 found wrong in both
   directions, with `GOINFER_NO_RESIDENT_MEM_GUARD=1` printed as the remedy (`backend/metal/backend.go:residentMemoryDecline`).
 
 **Still the user's decision, with no basis offered for it:**
