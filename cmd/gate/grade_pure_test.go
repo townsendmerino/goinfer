@@ -16,7 +16,7 @@ import (
 // graderAllowedImports is everything a grader file may import: formatting, text, sorting, collections, numbers, decoding and time's
 // types.
 // Anything else (os, exec, net, filepath, runtime) is the runner's.
-var graderAllowedImports = map[string]bool{"fmt": true, "io": true, "maps": true, "slices": true, "sort": true, "strings": true, "regexp": true,
+var graderAllowedImports = map[string]bool{"cmp": true, "fmt": true, "io": true, "maps": true, "slices": true, "sort": true, "strings": true, "regexp": true,
 	"time": true, "math": true, "bytes": true, "strconv": true, "encoding/binary": true, "encoding/json": true}
 
 // graderClockCalls is the time package's functions that read the clock or wait; a grader may use time's types only.

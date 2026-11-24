@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -18,7 +19,6 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -350,7 +350,7 @@ func (qc *quickConfig) cmdEnv(m *quickModule, target, overlay string, forTest bo
 	for k, v := range set {
 		env = append(env, k+"="+v)
 	}
-	sort.Strings(env)
+	slices.Sort(env)
 	return env, nil
 }
 
@@ -565,7 +565,7 @@ func loadGraph(qc *quickConfig, overlay string) (*quickGraph, error) {
 		}
 		g.roots = append(g.roots, r)
 	}
-	sort.Slice(g.roots, func(i, j int) bool { return g.roots[i].Pkg < g.roots[j].Pkg })
+	slices.SortFunc(g.roots, func(a, b *testRoot) int { return cmp.Compare(a.Pkg, b.Pkg) })
 	return g, nil
 }
 
@@ -759,7 +759,7 @@ func (r *testRoot) scan() {
 		}
 	}
 	r.src = src.String()
-	sort.Strings(tests)
+	slices.Sort(tests)
 	r.tests = dedupe(tests)
 	for _, t := range r.tests {
 		// Only the tree walkers split off. A fixture helper that globs ../testdata is called by hundreds of
@@ -1129,7 +1129,7 @@ func changedFiles(root, base string) (files []string, baseDesc string, err error
 			files = append(files, filepath.ToSlash(s))
 		}
 	}
-	sort.Strings(files)
+	slices.Sort(files)
 	return files, baseDesc, nil
 }
 
@@ -1585,12 +1585,7 @@ func lintScope(g *quickGraph, s *quickSelection, m *quickModule, scope string) [
 			}
 		}
 	}
-	out := make([]string, 0, len(set))
-	for p := range set {
-		out = append(out, p)
-	}
-	sort.Strings(out)
-	return out
+	return slices.Sorted(maps.Keys(set))
 }
 
 // quoteTags renders tags as CI writes them.

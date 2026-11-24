@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -12,7 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -149,7 +150,7 @@ func planGiwSources(o identityOpts) ([]giwSource, error) {
 			out = append(out, s)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	slices.SortFunc(out, func(a, b giwSource) int { return cmp.Compare(a.Name, b.Name) })
 	return out, nil
 }
 

@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 )
@@ -446,7 +445,7 @@ func isolatedTests() []string { return markedTests("needsFreshProcess(t,") }
 // markedTests returns every top-level test in cuda/*_test.go whose body calls marker.
 func markedTests(marker string) []string {
 	files, _ := filepath.Glob(filepath.Join("backend", "cuda", "*_test.go"))
-	sort.Strings(files)
+	slices.Sort(files)
 	set := map[string]bool{}
 	fnRe := regexp.MustCompile(`^func (Test[A-Za-z0-9_]*)\(`)
 	for _, f := range files {
@@ -593,7 +592,7 @@ func (g *gpuGate) readHeavy() heavyInput {
 		}
 		return in
 	}
-	groups, parityOnly, problems, err := partitionHeavy(listed, g.models, append(append([]string(nil), in.Drain...), in.Iso...))
+	groups, parityOnly, problems, err := partitionHeavy(listed, g.models, slices.Concat(in.Drain, in.Iso))
 	if err != nil {
 		in.PartitionErr = err.Error()
 		return in
@@ -870,7 +869,7 @@ func readPTX(keepDir string) ptxInput {
 	}())}
 
 	ptxFiles, _ := filepath.Glob(filepath.Join("backend", "cuda", "testdata", "*.ptx"))
-	sort.Strings(ptxFiles)
+	slices.Sort(ptxFiles)
 	backup, err := os.MkdirTemp("", "gate_ptx_before")
 	if err != nil {
 		in.Backup = err.Error()

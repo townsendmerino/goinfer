@@ -4,10 +4,11 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -119,12 +120,7 @@ func dispatchedSubcommands(t *testing.T) []string {
 	if len(seen) == 0 {
 		t.Fatal("found no subcommand in main.go's run: the scan covered nothing")
 	}
-	out := make([]string, 0, len(seen))
-	for s := range seen {
-		out = append(out, s)
-	}
-	sort.Strings(out)
-	return out
+	return slices.Sorted(maps.Keys(seen))
 }
 
 // packageDecls is every function and method name declared in this package's non-test files.

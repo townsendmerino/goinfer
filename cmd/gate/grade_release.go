@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -185,7 +185,7 @@ func pendingOutlivingRelease(pending map[string]string, changelog, releasing str
 			blockers = append(blockers, fmt.Sprintf("%s (pending since %s)", gate, reason[:10]))
 		}
 	}
-	sort.Strings(blockers)
+	slices.Sort(blockers)
 	return prevVer, prevDate, blockers, nil
 }
 
@@ -276,10 +276,10 @@ func rowPins(e *relEnv) relRow {
 		if len(vs) > 1 {
 			var parts []string
 			for v, ms := range vs {
-				sort.Strings(ms)
+				slices.Sort(ms)
 				parts = append(parts, fmt.Sprintf("%s: %s", v, strings.Join(ms, ", ")))
 			}
-			sort.Strings(parts)
+			slices.Sort(parts)
 			bad = append(bad, label+" differs: "+strings.Join(parts, " | "))
 		}
 	}
@@ -291,7 +291,7 @@ func rowPins(e *relEnv) relRow {
 		}
 	}
 	if len(pseudo) > 0 {
-		sort.Strings(pseudo)
+		slices.Sort(pseudo)
 		bad = append(bad, "requires an untagged aikit (a pseudo-version); a release needs a tagged aikit (SD3): tag aikit and bump to it: "+strings.Join(pseudo, ", "))
 	}
 	if len(gpuReq) > 0 {
@@ -408,7 +408,7 @@ func neverExecuted(b []byte) ([]string, error) {
 			ids = append(ids, e.ID)
 		}
 	}
-	sort.Strings(ids)
+	slices.Sort(ids)
 	return ids, nil
 }
 
@@ -498,8 +498,8 @@ func branchesWithFixes(e *relEnv) (fixes, others []string, err error) {
 			others = append(others, line)
 		}
 	}
-	sort.Strings(fixes)
-	sort.Strings(others)
+	slices.Sort(fixes)
+	slices.Sort(others)
 	return fixes, others, nil
 }
 

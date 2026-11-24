@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -414,7 +414,7 @@ func identityInheritance(o identityOpts, old, nw *identitySide, head, arch, host
 	if len(in.Reasons) > 0 {
 		return in
 	}
-	sort.Strings(assets)
+	slices.Sort(assets)
 	ref := fmt.Sprintf("identity-inherited %s: full logits at %s byte-identical to %s (its validated_at), %s/cpu, real "+
 		"checkpoint(s) %s, quants %s, %d cell(s), gate identity. Original validation: %s",
 		date, nw.Short, old.Short, host, strings.Join(assets, ", "),
