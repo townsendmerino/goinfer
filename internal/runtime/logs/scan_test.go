@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"maps"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -177,20 +178,14 @@ func checkReportAndReturn(fset *token.FileSet, list []ast.Stmt) []finding {
 func stmtReports(st ast.Stmt, reported map[string]token.Pos) {
 	switch s := st.(type) {
 	case *ast.ExprStmt:
-		for name, pos := range logsReports(s) {
-			reported[name] = pos
-		}
+		maps.Copy(reported, logsReports(s))
 	case *ast.IfStmt:
 		for name := range assigned(s.Init, token.ASSIGN) { // if err = f(); ... assigns the outer err
 			delete(reported, name)
 		}
-		for name, pos := range ifReports(s) {
-			reported[name] = pos
-		}
+		maps.Copy(reported, ifReports(s))
 	case *ast.BlockStmt:
-		for name, pos := range listReports(s.List) {
-			reported[name] = pos
-		}
+		maps.Copy(reported, listReports(s.List))
 	case *ast.AssignStmt:
 		for name := range assigned(s, token.ASSIGN, token.DEFINE) {
 			delete(reported, name)
@@ -221,9 +216,7 @@ func ifReports(s *ast.IfStmt) map[string]token.Pos {
 	case *ast.IfStmt:
 		rest = ifReports(e)
 	}
-	for name, pos := range rest {
-		out[name] = pos
-	}
+	maps.Copy(out, rest)
 	for name := range assigned(s.Init, token.DEFINE) {
 		delete(out, name)
 	}

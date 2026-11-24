@@ -1,10 +1,11 @@
 package kernelprint
 
 import (
+	"cmp"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"slices"
 )
 
 // ggmlType is one GGUF tensor type the suite dequantizes: its id, the elements and bytes of one block, and the byte
@@ -103,7 +104,7 @@ type stTensor struct {
 
 // buildSafetensors writes a safetensors file holding ts, in name order.
 func buildSafetensors(ts []stTensor) []byte {
-	sort.Slice(ts, func(i, j int) bool { return ts[i].name < ts[j].name })
+	slices.SortFunc(ts, func(a, b stTensor) int { return cmp.Compare(a.name, b.name) })
 	type entry struct {
 		DType   string `json:"dtype"`
 		Shape   []int  `json:"shape"`
