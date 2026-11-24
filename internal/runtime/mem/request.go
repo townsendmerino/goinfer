@@ -33,7 +33,8 @@ func AdmitRequest(r Request, m Machine, p Policy) string {
 		GiB(remaining), GiB(avail))
 }
 
-// HostBudget is the resident budget on m: the policy's fraction of available host memory, 0 when unknown.
+// HostBudget is the resident budget on m: the policy's fraction of available host memory, 0 when unknown. Its callers
+// outside mem are listed as RAMShare's are.
 func HostBudget(m Machine, p Policy) int64 {
 	return int64(float64(m.Available(HostAnon)) * p.WeightsFraction)
 }

@@ -28,13 +28,15 @@ var guardThresholds = map[string]string{
 var thresholdRatchet = map[string]int{}
 
 // thresholdRules are mem's functions that apply a guard threshold to a figure their caller supplies (RAMShare takes
-// WeightsFraction of any byte count), so calling one is applying the threshold. ruleCallers is every file outside mem
+// WeightsFraction of any byte count, HostBudget the Policy's share of any Machine's reading), so calling one is applying
+// the threshold. ruleCallers is every file outside mem
 // allowed to, with its exact number of calls: a file not listed, or a count above or below its entry, is red.
-var thresholdRules = map[string]bool{"RAMShare": true, "WeightsPercent": true}
+var thresholdRules = map[string]bool{"RAMShare": true, "WeightsPercent": true, "HostBudget": true}
 
 var ruleCallers = map[string]int{
 	"backend/metal/backend.go":   3, // metalStaticCeiling and the two refusal messages
 	"backend/webgpu/kv_slots.go": 3, // darwinKVSlots, darwinSlotsFit and buildKVSlots' clamp log line
+	"decoder/prefill_budget.go":  1, // the per-request prefill budget
 }
 
 // ruleUses counts f's references to a threshold rule through a package selector (mem.RAMShare), calls and function
@@ -143,14 +145,14 @@ func TestNoGuardThresholdOutsideMem(t *testing.T) {
 	if got := thresholdUses(f); got != 3 {
 		t.Fatalf("the planted cross-alias and Policy field read count %d references, want 3", got)
 	}
-	rule := "package x\nimport \"github.com/townsendmerino/goinfer/internal/runtime/mem\"\nvar b = mem.RAMShare(8)\nvar pct = mem.WeightsPercent\n"
+	rule := "package x\nimport \"github.com/townsendmerino/goinfer/internal/runtime/mem\"\nvar b = mem.RAMShare(8)\nvar pct = mem.WeightsPercent\nvar hb = mem.HostBudget(mem.HostMachine(8), mem.DefaultPolicy())\n"
 	if f, err = parser.ParseFile(token.NewFileSet(), "rule.go", rule, 0); err != nil {
 		t.Fatal(err)
 	}
-	if got := ruleUses(f); got != 2 {
-		t.Fatalf("the planted RAMShare call and WeightsPercent value count %d rule references, want 2", got)
+	if got := ruleUses(f); got != 3 {
+		t.Fatalf("the planted RAMShare call, WeightsPercent value and HostBudget call count %d rule references, want 3", got)
 	}
-	planted := map[string]int{"x/rule.go": 2}
+	planted := map[string]int{"x/rule.go": 3}
 	for k, v := range ruleCallers {
 		planted[k] = v
 	}
