@@ -270,6 +270,9 @@ type Context struct {
 
 	// §2 fused glue kernels (ensureFuse, decodefuse.go): fold quantize into its
 	// producer to shorten the serialized decode dependency chain.
+	// Pairwise RoPE twins (pairwise.go), compiled on first use by ensurePairwise.
+	pairwise *pairwisePipes
+
 	rmsQuantShader      *wgpu.ShaderModule
 	rmsQuantPipeline    *wgpu.ComputePipeline
 	rmsQuantLayout      *wgpu.BindGroupLayout
