@@ -1,5 +1,5 @@
 // Package testgate holds the skip gates tests share across goinfer's modules: the heavy opt-in, the device probe's
-// verdict and the model directory; and SetForTest, the one way a test sets a package-level switch. Each skip message begins with a fixed token (SkipHeavy, SkipDevice, SkipAsset), which
+// verdict, the model directory and the measure opt-in; and SetForTest, the one way a test sets a package-level switch. Each skip message begins with a fixed token (SkipHeavy, SkipDevice, SkipAsset, SkipMeasure), which
 // cmd/gate's skip buckets and scripts/cuda_device_suite.py classify before their wording patterns.
 //
 // It is imported only by _test.go files (TestNoProductionImporter), so its environment reads are not production reads.
@@ -14,9 +14,10 @@ import (
 // The leading token of each gate's skip message. Classifiers match the token anywhere in the reason line, since
 // `go test` prefixes it with file:line.
 const (
-	SkipHeavy  = "SKIP-HEAVY:"
-	SkipDevice = "SKIP-DEVICE:"
-	SkipAsset  = "SKIP-ASSET:"
+	SkipHeavy   = "SKIP-HEAVY:"
+	SkipDevice  = "SKIP-DEVICE:"
+	SkipAsset   = "SKIP-ASSET:"
+	SkipMeasure = "SKIP-MEASURE:"
 )
 
 // RequireHeavy skips t unless GOINFER_HEAVY_TESTS is set: a test that loads a multi-GB checkpoint runs only on request,
@@ -25,6 +26,17 @@ func RequireHeavy(t testing.TB) {
 	t.Helper()
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip(SkipHeavy + " heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)")
+	}
+}
+
+// RequireMeasure skips t unless GOINFER_MEASURE_TESTS is set. It marks a test that measures rather than guards (a sweep, a
+// timing, a dump, a survey whose decision is recorded): it runs on demand, never in a gate, since cmd/gate drops the
+// variable from every cell (cellEnv). GOINFER_HEAVY_TESTS does not imply it. The list of what moved here and why is
+// docs/measurements/h1-heavy-tier-triage-2026-11-23.md, § "9. Proposed as approved".
+func RequireMeasure(t testing.TB) {
+	t.Helper()
+	if os.Getenv("GOINFER_MEASURE_TESTS") == "" {
+		t.Skip(SkipMeasure + " a measurement, not a guard: set GOINFER_MEASURE_TESTS=1 to run it (on demand; no gate runs it)")
 	}
 }
 

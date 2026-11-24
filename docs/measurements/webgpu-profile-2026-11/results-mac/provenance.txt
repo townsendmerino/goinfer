@@ -1,0 +1,19 @@
+started 11:04:45 PST load 1.45 swap 890.75 MB AC Power therm 2
+== decode run 1 start 11:04:45 PST load 1.45 swap 890.75 MB AC Power therm 2
+== decode run 1 end rc=0 11:48:04 PST load 0.43 swap 890.75 MB AC Power therm 2
+== decode run 2 start 11:48:04 PST load 0.43 swap 890.75 MB AC Power therm 2
+== decode run 2 end rc=0 12:31:55 PST load 0.13 swap 858.69 MB Battery Power therm 2
+== prefill run 1 start 12:31:55 PST load 0.13 swap 858.69 MB Battery Power therm 2
+== prefill run 1 end rc=1 12:32:02 PST load 0.58 swap 858.69 MB Battery Power therm 2
+== prefill run 2 start 12:32:02 PST load 0.58 swap 858.69 MB Battery Power therm 2
+== prefill run 2 end rc=1 12:32:08 PST load 0.62 swap 858.69 MB Battery Power therm 2
+finished 12:32:08 PST load 0.62 swap 858.69 MB Battery Power therm 2
+== decode run 2 re-run start 12:58:21 PST load 5.52 swap 786.56 MB AC Power
+== decode run 2 re-run end rc=0 13:36:55 PST load 0.94 swap 1307.44 MB AC Power
+VOID: sleep, wake or battery during the re-run:
+2026-11-23 13:00:15 -0800 Assertions          	PID 0(kernel_task) Released Idle Sleep Preventer "IOPMrootDomain"  id:0x0x0 [System: PrevIdle PrevSleep DeclUser kCPU kDisp]          
+2026-11-23 13:00:15 -0800 Assertions          	PID 0(kernel_task) Released Idle Sleep Preventer "IOPMrootDomain"  id:0x0x0 [System: PrevIdle PrevSleep DeclUser kCPU kDisp]          
+2026-11-23 13:00:19 -0800 Assertions          	PID 0(kernel_task) Released Idle Sleep Preventer "IOPMrootDomain"  id:0x0x0 [System: PrevIdle PrevSleep DeclUser kCPU kDisp]          
+2026-11-23 13:00:55 -0800 Assertions          	PID 0(kernel_task) Released Idle Sleep Preventer "IOPMrootDomain"  id:0x0x0 [System: PrevIdle PrevSleep DeclUser kCPU kDisp]          
+2026-11-23 13:00:56 -0800 Assertions          	PID 0(kernel_task) Released Idle Sleep Preventer "IOPMrootDomain"  id:0x0x0 [System: PrevIdle PrevSleep DeclUser kCPU kDisp]          
+2026-11-23 13:01:00 -0800 Assertions          	PID 0(kernel_task) Released Idle Sleep Preventer "IOPMrootDomain"  id:0x0x0 [System: PrevIdle PrevSleep DeclUser kCPU kDisp]          
