@@ -91,3 +91,19 @@ the pad's switch is `Architecture.kvRowPadAlign` (0, the default, never pads; th
 `kvRowPadAlignDefault`), the in-place read count is `KVCache.f16InPlaceReads`, and with F0 passed the widen read and
 `kvF16WidenForTest` are gone (`TestKVF16_decodeReadsInPlace` now checks the in-place read against the F1 reference). The binaries this
 reading measured are `a4e1c68bf`; the change after it moves no arithmetic.
+
+## Void and re-run, written 2026-11-24 13:25 PST
+
+A light touch of the box (one scp and one short ssh: a lock-file read and a waiting script's start) at 12:15:00–12:15:05 PST fell inside
+F0's Phi-3 block 5, cell 4 (the widen arm, started 12:14:51, 33.5 s). That cell is **void**, and with it block 5's two pairs; its four
+cells are kept in `ab/F0-void-P3M-block5.tsv` (A 1.501, B 4.788, B 4.798, A 1.500). Block 5 was re-run in place, 13:20–13:23 PST under
+the exclusive lock, start load 0.89–0.94 (A 1.493, B 4.799, B 4.823, A 1.504; in-place read counts 0, 1056, 1056, 0; logs
+`ab/F0-rerun-logs.tar.gz`). **F0, Phi-3 at 3,900, re-read: median 3.193×, 10/10 pairs faster** (3.164–3.214); the verdict, PASS, is
+unchanged. `ab/F0-cells.tsv` holds the re-run cells in block 5's place.
+
+## The owner's decisions on this reading (Francis, 2026-11-24)
+
+1. The pad is the CPU default, with the 16-key QK kernel under it: `resolveArchitecture` sets `kvRowPadAlign` to 4,096 for every model,
+   which pads where `Architecture.kvRowPad` allows; aikit's 16-key dispatch declines a 4 KiB-multiple key stride, so families the pad
+   declines keep the 4-key kernel. Memory: 64 B per row per layer for K and for V, 16 MiB for Phi-3 mini at 4,096 positions.
+2. f16 KV stays opt-in: `--kv auto` keeps f32 on the CPU; the in-place read ships for `--kv f16`.
