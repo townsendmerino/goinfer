@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"slices"
 	"testing"
 	"time"
 )
@@ -91,7 +92,7 @@ func TestKSH4_releaseKeepsOutputs(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				outs = append(outs, append([]float32(nil), out...))
+				outs = append(outs, slices.Clone(out))
 				time.Sleep(20 * time.Millisecond)
 			}
 			return outs

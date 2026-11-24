@@ -6,6 +6,7 @@ import (
 	"context"
 	"math"
 	"os"
+	"slices"
 	"testing"
 	"time"
 )
@@ -50,7 +51,7 @@ func TestR19_stepPrefillAB(t *testing.T) {
 				}
 				dt := float64(time.Since(st).Microseconds()) / 1e3
 				if ref == nil {
-					ref = append([]float32(nil), lg...)
+					ref = slices.Clone(lg)
 				}
 				for j := range ref {
 					if math.Float32bits(ref[j]) != math.Float32bits(lg[j]) {

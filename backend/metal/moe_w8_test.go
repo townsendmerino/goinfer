@@ -5,6 +5,7 @@ package metal
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -70,7 +71,7 @@ func TestMoEW8_X1_kernelsMatchReference(t *testing.T) {
 			resid[i] = rng.Float32()*2 - 1
 		}
 		out := NewBufferFloats(d, resid)
-		want := append([]float32(nil), resid...)
+		want := slices.Clone(resid)
 		for slot := range idx {
 			// overwrite form, this slot alone
 			gu := d.NewBufferLen(rows)
@@ -139,7 +140,7 @@ func TestMoEW8_X2_assembly(t *testing.T) {
 		}
 		minCos, mism := 1.0, 0
 		for pos, tok := range ids {
-			a := append([]float32(nil), moeR.Forward(tok, pos)...)
+			a := slices.Clone(moeR.Forward(tok, pos))
 			b := denseR.Forward(tok, pos)
 			minCos = math.Min(minCos, cosF(a, b))
 			if argmaxF(a) != argmaxF(b) {
@@ -167,7 +168,7 @@ func TestMoEW8_X2_assembly(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			cpu = append(cpu, append([]float32(nil), l...))
+			cpu = append(cpu, slices.Clone(l))
 		}
 		arm := func(native bool) (float64, int) {
 			nativeInt8MoE = native

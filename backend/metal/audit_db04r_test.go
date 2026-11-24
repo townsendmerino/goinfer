@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -116,7 +117,7 @@ func TestDB04R_expertRowsAB(t *testing.T) {
 		r.stopExec()
 		a.Reset()
 		for i, e := range embs {
-			logits[name] = append(logits[name], append([]float32(nil), r.ForwardEmb(e, i)...))
+			logits[name] = append(logits[name], slices.Clone(r.ForwardEmb(e, i)))
 		}
 	}
 	for i := range embs {

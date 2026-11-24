@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -99,7 +100,7 @@ func TestP3b_promptInRowsBitIdentical(t *testing.T) {
 				}
 				var ref [][]float32
 				for i, e := range embs {
-					ref = append(ref, append([]float32(nil), r.ForwardEmb(e, i)...))
+					ref = append(ref, slices.Clone(r.ForwardEmb(e, i)))
 				}
 				refKV := p3bSlotKV(t, r, 0, K)
 				var got [][]float32
@@ -109,7 +110,7 @@ func TestP3b_promptInRowsBitIdentical(t *testing.T) {
 						seqs = append(seqs, batchSeq{slot: 1, pos: i, emb: embs[i]})
 					}
 					for _, row := range mc3Step(t, r, seqs) {
-						got = append(got, append([]float32(nil), row...))
+						got = append(got, slices.Clone(row))
 					}
 				}
 				gotKV := p3bSlotKV(t, r, 1, K)
@@ -167,7 +168,7 @@ func TestP3b_stepPrefillTakesInt8AndF32(t *testing.T) {
 			}
 			var ref []float32
 			for i, e := range embs {
-				ref = append([]float32(nil), r.ForwardEmb(e, i)...)
+				ref = slices.Clone(r.ForwardEmb(e, i))
 			}
 			if err := r.useKVSlot(0); err != nil {
 				t.Fatal(err)

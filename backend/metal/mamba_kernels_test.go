@@ -74,8 +74,8 @@ func loadMambaFixture(t *testing.T, dir string) mambaFixture {
 	cnt := 0
 	decoder.SetMambaCapHook(func(proj, gated []float32) {
 		if cnt%nMamba == 0 { // the first Mamba layer of each token
-			f.proj = append(f.proj, append([]float32(nil), proj...))
-			f.gated = append(f.gated, append([]float32(nil), gated...))
+			f.proj = append(f.proj, slices.Clone(proj))
+			f.gated = append(f.gated, slices.Clone(gated))
 		}
 		cnt++
 	})

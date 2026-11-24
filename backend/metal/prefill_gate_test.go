@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -306,7 +307,7 @@ func runPrefillGateCell(t *testing.T, rf *metalResident, m *decoder.Model, ids [
 // cloneF32 copies a logits slice at capture time. Forward/PrefillLast return REUSED buffers
 // (see runPrefillGateCell) — every value this test keeps past the next backend call must be a
 // copy, not the returned slice itself.
-func cloneF32(v []float32) []float32 { return append([]float32(nil), v...) }
+func cloneF32(v []float32) []float32 { return slices.Clone(v) }
 
 func prefillGateArgmax(v []float32) int {
 	bi, bv := 0, v[0]

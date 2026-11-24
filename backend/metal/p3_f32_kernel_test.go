@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 )
 
@@ -62,7 +63,7 @@ func TestP3_attentionF32MatchesF16OnExactInputs(t *testing.T) {
 				if err := e.Err(); err != nil {
 					t.Fatalf("%s: %v", name, err)
 				}
-				return append([]float32(nil), out.Floats()[:nH*hd]...)
+				return slices.Clone(out.Floats()[:nH*hd])
 			}
 			a := run(p16, NewBufferU16s(d, kh), NewBufferU16s(d, vh))
 			b := run(p32, NewBufferFloats(d, kf), NewBufferFloats(d, vf))

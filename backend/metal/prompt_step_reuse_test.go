@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -67,7 +68,7 @@ func TestPromptStepAboveFloor_reuseVsCold(t *testing.T) {
 		if err != nil {
 			t.Fatalf("prefill: %v", err)
 		}
-		seed = append([]float32(nil), seed...)
+		seed = slices.Clone(seed)
 		toks, lg := []int{}, seed
 		for i := range greedyN {
 			id := argmaxF32(lg)

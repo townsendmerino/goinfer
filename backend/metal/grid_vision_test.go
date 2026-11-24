@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -252,7 +253,7 @@ func TestGridVisionMetal_real(t *testing.T) {
 				t.Skipf("no %s: %v", f.dir, err)
 			}
 			pp, cpu, dev, out := f.run(t, f.dir)
-			for _, img := range append(append([]string(nil), images...), f.extra...) {
+			for _, img := range append(slices.Clone(images), f.extra...) {
 				data, err := os.ReadFile(filepath.Join("../../testdata", img))
 				if err != nil {
 					t.Fatal(err)

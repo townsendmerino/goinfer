@@ -5,6 +5,7 @@ package kernels
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 )
 
@@ -48,7 +49,7 @@ func TestQKNorm_wholeVector(t *testing.T) {
 		qn, kn := rvec(wide), rvec(wide) // whole-vector weight: nH*hd wide, not per-head hd
 		// CPU reference: ONE RMS statistic over the WHOLE nH*hd-wide vector, applied per-element —
 		// decoder/attention.go's rmsNorm(q, QNorm, rows=1, dim=nH*hd, ...), not the per-head form.
-		ref := append([]float32(nil), qkv...)
+		ref := slices.Clone(qkv)
 		normWhole := func(off int, w []float32) {
 			var ss float64
 			for i := range wide {
@@ -93,7 +94,7 @@ func TestQKNorm_wholeVector(t *testing.T) {
 		// Sanity: the whole-vector result must NOT equal the per-head result on the same input —
 		// otherwise this test would pass even if encodeAttention silently kept the per-head
 		// geometry (a stale bug this test exists to catch, not just a formula check in isolation).
-		refPerHead := append([]float32(nil), qkv...)
+		refPerHead := slices.Clone(qkv)
 		normPerHead := func(off, heads int, w []float32) {
 			for h := range heads {
 				b := off + h*hd

@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -66,7 +67,7 @@ func TestG4ExpertBatch_matchesPerRow(t *testing.T) {
 						embs[i] = emb(c.prefix + i)
 					}
 					g0 := r.g4BatchGroups
-					last = append([]float32(nil), r.prefillG4Paged(embs, c.prefix, true)...)
+					last = slices.Clone(r.prefillG4Paged(embs, c.prefix, true))
 					if err := r.takeExecErr(); err != nil {
 						t.Fatal(err)
 					}
@@ -74,14 +75,14 @@ func TestG4ExpertBatch_matchesPerRow(t *testing.T) {
 					for l := range r.layers {
 						d := r.layers[l].geom.kvDim
 						o := r.kvHostOff(l, 2)
-						kvs = append(kvs, append([]uint16(nil), r.kc[l].U16s()[o:o+total*d]...), append([]uint16(nil), r.vc[l].U16s()[o:o+total*d]...))
+						kvs = append(kvs, slices.Clone(r.kc[l].U16s()[o:o+total*d]), slices.Clone(r.vc[l].U16s()[o:o+total*d]))
 					}
 					for s := range 3 {
 						lg, err := mr.Forward(emb(total+s), total+s)
 						if err != nil {
 							t.Fatal(err)
 						}
-						dec = append(dec, append([]float32(nil), lg...))
+						dec = append(dec, slices.Clone(lg))
 					}
 					return last, kvs, dec, groups
 				}

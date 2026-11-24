@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -92,7 +93,7 @@ func g2rMetalRun(t *testing.T, load, quant string, seed, inputs []int, steps int
 			t.Fatalf("gpu forward: %v", err)
 		}
 		fed = append(fed, tok)
-		out = append(out, append([]float32(nil), l...))
+		out = append(out, slices.Clone(l))
 		switch {
 		case inputs != nil && i+1 < len(inputs):
 			tok = inputs[i+1]

@@ -4,6 +4,7 @@ package metal
 
 import (
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -55,7 +56,7 @@ func TestGeometryPortIsLive(t *testing.T) {
 	ids := []int{7, 11, 42, 100}
 	var base []float32
 	for i, id := range ids {
-		base = append([]float32(nil), r.ForwardEmb(m.EmbedResidentForTest(id), i)...)
+		base = slices.Clone(r.ForwardEmb(m.EmbedResidentForTest(id), i))
 	}
 
 	// Poison layer 1's rope work-count → 0 (disables its RoPE), on its OWN geom so no other layer
@@ -66,7 +67,7 @@ func TestGeometryPortIsLive(t *testing.T) {
 	poisoned.uQtotal = NewBufferU32(r.d, 0)
 	poisoned.uKtotal = NewBufferU32(r.d, 0)
 	r.layers[1].geom = &poisoned
-	got := append([]float32(nil), r.ForwardEmb(m.EmbedResidentForTest(ids[len(ids)-1]), len(ids)-1)...)
+	got := slices.Clone(r.ForwardEmb(m.EmbedResidentForTest(ids[len(ids)-1]), len(ids)-1))
 	r.layers[1].geom = orig // restore (defensive; the runner is torn down after this test)
 
 	identical := len(got) == len(base)
