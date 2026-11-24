@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -252,7 +253,7 @@ func preflightConcurrencySafety(t *testing.T, m *Model, prompt []int, workers in
 				errs[w] = err
 				return
 			}
-			results[w] = append([]float32(nil), lg...)
+			results[w] = slices.Clone(lg)
 		})
 	}
 	wg.Wait()
@@ -395,7 +396,7 @@ func prefillReferenceCell(m *Model, ids []int, continuationN, K int) (seedLogits
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("prefill K=%d: %w", K, err)
 	}
-	seed = append([]float32(nil), seed...)
+	seed = slices.Clone(seed)
 
 	refTokens = make([]int, continuationN)
 	refLogits = make([][]float32, continuationN)
@@ -410,7 +411,7 @@ func prefillReferenceCell(m *Model, ids []int, continuationN, K int) (seedLogits
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("continuation step=%d: %w", i, err)
 		}
-		cur = append([]float32(nil), lg...)
+		cur = slices.Clone(lg)
 	}
 	return seed, refTokens, refLogits, nil
 }

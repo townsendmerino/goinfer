@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync/atomic"
 	"testing"
 
@@ -365,7 +366,7 @@ func TestSeam_ResidentReuseNeverCrossesAdapters(t *testing.T) {
 	turn := func(adapter string) int { // "" = stateless base Generate, as serve issues it
 		t.Helper()
 		tail++
-		prompt := append(append([]int(nil), sys...), tail%16)
+		prompt := append(slices.Clone(sys), tail%16)
 		if adapter == "" {
 			out, g := m.Generate(context.Background(), prompt, 2, SamplingParams{})
 			for range out {

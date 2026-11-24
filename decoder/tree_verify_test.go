@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -47,7 +48,7 @@ func TestTreeMaskLinearParity(t *testing.T) {
 	}
 	ref := make([][]float32, K)
 	for i := range la {
-		ref[i] = append([]float32(nil), la[i]...)
+		ref[i] = slices.Clone(la[i])
 	}
 
 	// B: the same draft as a LINEAR tree — row i attends to {0..i}, position startPos+i.

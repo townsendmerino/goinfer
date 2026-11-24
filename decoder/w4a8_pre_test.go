@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"os"
+	"slices"
 	"testing"
 )
 
@@ -37,7 +38,7 @@ func TestW4A8Pre_decodeBitIdenticalAndTaken(t *testing.T) {
 					if err != nil {
 						t.Fatalf("%s step %d: %v", fx, i, err)
 					}
-					out = append(out, append([]float32(nil), lg...))
+					out = append(out, slices.Clone(lg))
 				}
 				return out, w4a8PreCalls.Load() - c0, m.w.arch.NumLayers
 			}

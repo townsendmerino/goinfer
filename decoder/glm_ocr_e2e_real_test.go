@@ -175,7 +175,7 @@ func glmOcrReadGolden(t *testing.T, name string) (*glmOcrGolden, []byte) {
 type glmOcrCapture struct{ rows [][]float32 }
 
 func (c *glmOcrCapture) process(_ []int, logits []float32) {
-	c.rows = append(c.rows, append([]float32(nil), logits...))
+	c.rows = append(c.rows, slices.Clone(logits))
 }
 
 func top2(l []float32) (a, b int) {

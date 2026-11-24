@@ -5,6 +5,7 @@ import (
 	"errors"
 	"hash/crc32"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -61,7 +62,7 @@ func TestLoadSession_hostileHeaders(t *testing.T) {
 		return b
 	}
 	mutate := func(field string, v uint32) []byte {
-		b := append([]byte(nil), clean...)
+		b := slices.Clone(clean)
 		binary.LittleEndian.PutUint32(b[off[field]:], v)
 		return reseal(b)
 	}
@@ -77,13 +78,13 @@ func TestLoadSession_hostileHeaders(t *testing.T) {
 		// m.NewCache(pos) then allocated with the MODEL's geometry and this pos. A 20-byte
 		// header in -session-dir was `runtime: out of memory` at server boot.
 		"numLayers=0 with a huge pos": func() []byte {
-			b := append([]byte(nil), clean...)
+			b := slices.Clone(clean)
 			binary.LittleEndian.PutUint32(b[off["numLayers"]:], 0)
 			binary.LittleEndian.PutUint32(b[off["pos"]:], 0x7FFFFFFF)
 			return reseal(b)
 		}(),
 		"kvDim=0 with a huge pos": func() []byte {
-			b := append([]byte(nil), clean...)
+			b := slices.Clone(clean)
 			binary.LittleEndian.PutUint32(b[off["kvDim"]:], 0)
 			binary.LittleEndian.PutUint32(b[off["pos"]:], 0x7FFFFFFF)
 			return reseal(b)

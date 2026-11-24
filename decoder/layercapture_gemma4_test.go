@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -108,7 +109,7 @@ func checkLayerCapture(t *testing.T, m *Model, ids []int) error {
 		if err := checkCaptureValues(m, l, c); err != nil {
 			return err
 		}
-		h := append([]float32(nil), hIn...)
+		h := slices.Clone(hIn)
 		addResidual(h, c.Attn[l])
 		addResidual(h, c.MLP[l])
 		addResidual(h, c.PLE[l])
@@ -125,7 +126,7 @@ func checkLayerCapture(t *testing.T, m *Model, ids []int) error {
 		}
 		hIn = c.Out[l]
 	}
-	if !sameBits(m.logitsFromHidden(append([]float32(nil), c.Out[arch.NumLayers-1]...), cache), lg) {
+	if !sameBits(m.logitsFromHidden(slices.Clone(c.Out[arch.NumLayers-1]), cache), lg) {
 		return fmt.Errorf("the last layer's captured output through the head is not the logits")
 	}
 
@@ -133,7 +134,7 @@ func checkLayerCapture(t *testing.T, m *Model, ids []int) error {
 	if err != nil {
 		return err
 	}
-	lp = append([]float32(nil), lp...)
+	lp = slices.Clone(lp)
 	lc, err := m.forward(ids[0], cache)
 	if err != nil {
 		return err

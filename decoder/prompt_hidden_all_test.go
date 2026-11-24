@@ -254,7 +254,7 @@ func TestPromptHiddenAll_rowsDoNotAlias(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before := append([]float32(nil), rows[1]...)
+	before := slices.Clone(rows[1])
 	rows[0] = append(rows[0], 12345)
 	for j := range rows[0] {
 		rows[0][j] = 0
@@ -359,7 +359,7 @@ func TestPromptHiddenAll_residentRowsGetTheHostFinalNorm(t *testing.T) {
 	}
 	want := make([][]float32, len(raw))
 	for i, r := range raw {
-		want[i] = append([]float32(nil), r...)
+		want[i] = slices.Clone(r)
 		normalize(a, want[i], m.w.FinalNorm, m.w.FinalNormBias, a.HiddenDim)
 	}
 
@@ -422,7 +422,7 @@ func TestPromptHiddenAll_residentRowsGetTheHostFinalNorm(t *testing.T) {
 func cloneRows(r [][]float32) [][]float32 {
 	out := make([][]float32, len(r))
 	for i := range r {
-		out[i] = append([]float32(nil), r[i]...)
+		out[i] = slices.Clone(r[i])
 	}
 	return out
 }

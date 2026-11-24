@@ -222,7 +222,7 @@ func (f *mc3Fake) ForwardTopK(emb []float32, pos, k int, temperature float64, wa
 		if f.writes != mine {
 			return nil, fmt.Errorf("mc3Fake: a TopKRow's Full read the logits buffer after %d later write(s): another generation's row", f.writes-mine)
 		}
-		return append([]float32(nil), f.last...), nil
+		return slices.Clone(f.last), nil
 	}
 	return row, nil
 }

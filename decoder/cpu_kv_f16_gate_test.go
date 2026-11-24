@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -84,13 +85,13 @@ func cpuKVArm(t *testing.T, m *Model, ids, refTokens []int) ([][]float32, *KVCac
 	if err != nil {
 		t.Fatalf("prefill: %v", err)
 	}
-	out := [][]float32{append([]float32(nil), seed...)}
+	out := [][]float32{slices.Clone(seed)}
 	for i := 1; i < len(refTokens); i++ {
 		lg, err := m.forward(refTokens[i-1], cache)
 		if err != nil {
 			t.Fatalf("teacher-forced forward %d: %v", i, err)
 		}
-		out = append(out, append([]float32(nil), lg...))
+		out = append(out, slices.Clone(lg))
 	}
 	return out, cache
 }

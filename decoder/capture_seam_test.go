@@ -3,6 +3,7 @@ package decoder
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -57,7 +58,7 @@ func TestCaptureSeam_ownRunLayers(t *testing.T) {
 			if err != nil {
 				t.Fatalf("forward (control): %v", err)
 			}
-			wantLogits = append([]float32(nil), wantLogits...)
+			wantLogits = slices.Clone(wantLogits)
 
 			// --- capture first and last layer ---
 			cache := m.NewCache(8)

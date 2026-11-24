@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -50,7 +51,7 @@ func TestEmbedInt4_reachesEveryFamilyLoader(t *testing.T) {
 						t.Fatalf("EmbedInt4=%v: non-finite logit", on)
 					}
 				}
-				logits[on] = append([]float32(nil), l...)
+				logits[on] = slices.Clone(l)
 				m.Close()
 			}
 			// The two arms differ ONLY in the head table, so their logits are close but not equal; equal would mean the tables were the same kind.

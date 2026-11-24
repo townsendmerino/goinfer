@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"math/rand/v2"
+	"slices"
 	"sync/atomic"
 	"testing"
 
@@ -25,7 +26,7 @@ func TestGptOssExpertBatch_tinyLogitsBitIdentical(t *testing.T) {
 		c0 := gptOssExpertBatchCalls.Load()
 		var steps [][]float32
 		sp := SamplingParams{Temperature: 0, LogitProcessor: func(_ []int, logits []float32) {
-			steps = append(steps, append([]float32(nil), logits...))
+			steps = append(steps, slices.Clone(logits))
 		}}
 		out, g := m.Generate(context.Background(), []int{1, 5, 9, 17, 33, 65}, 12, sp)
 		for range out {
@@ -207,7 +208,7 @@ func TestGptOssPrefill_batchedEqualsSequential(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want = append([]float32(nil), want...)
+			want = slices.Clone(want)
 			bat := m.NewCache(n + steps)
 			p0, r0 := atomic.LoadInt64(&prefillPasses), gptOssExpertMajorRuns.Load()
 			got, err := m.prefillLogits(context.Background(), prompt, bat)
@@ -238,7 +239,7 @@ func TestGptOssPrefill_batchedEqualsSequential(t *testing.T) {
 				if want, err = m.forward(next, seq); err != nil {
 					t.Fatal(err)
 				}
-				want = append([]float32(nil), want...)
+				want = slices.Clone(want)
 				if got, err = m.forward(next, bat); err != nil {
 					t.Fatal(err)
 				}
@@ -275,7 +276,7 @@ func TestGptOssPrefill_defaultIsExact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want = append([]float32(nil), want...)
+	want = slices.Clone(want)
 	p0 := atomic.LoadInt64(&prefillPasses)
 	got, err := m.prefillLogits(context.Background(), prompt, m.NewCache(n+1))
 	if err != nil {

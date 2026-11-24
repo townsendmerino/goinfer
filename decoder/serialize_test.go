@@ -641,7 +641,7 @@ func TestLoadSerialized_neverPanicsOnValidCRC(t *testing.T) {
 		t.Fatalf("serialize: %v", err)
 	}
 	for i := 0; i < len(blob)-4; i++ {
-		b := append([]byte(nil), blob...)
+		b := slices.Clone(blob)
 		b[i] ^= 0xFF
 		binary.LittleEndian.PutUint32(b[len(b)-4:], crc32.ChecksumIEEE(b[:len(b)-4])) // make CRC "valid"
 		func() {
