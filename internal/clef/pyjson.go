@@ -14,11 +14,12 @@ package clef
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf16"
@@ -307,7 +308,7 @@ func writeValue(b *bytes.Buffer, v *value) error {
 			order[i] = i
 		}
 		// UTF-8 byte order is code point order, which is Python's str ordering.
-		sort.Slice(order, func(a, c int) bool { return v.keys[order[a]] < v.keys[order[c]] })
+		slices.SortFunc(order, func(a, c int) int { return cmp.Compare(v.keys[a], v.keys[c]) })
 		b.WriteByte('{')
 		for n, i := range order {
 			if n > 0 {

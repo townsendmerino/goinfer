@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -71,7 +72,7 @@ func (f fakeTok) EncodeChat(string) ([]int, error) { return []int{4, 5, 6, 7}, n
 
 func newFake() fakeTok {
 	f := fakeTok{ids: map[string]int{}}
-	for i, v := range append(append(append([]string(nil), noulOptions...), strings.Split(digits, "")...), strings.Split(letters, "")...) {
+	for i, v := range slices.Concat(noulOptions, strings.Split(digits, ""), strings.Split(letters, "")) {
 		f.ids[v] = 10 + i
 	}
 	return f

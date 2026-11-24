@@ -268,7 +268,7 @@ func New(tok Tokenizer, prefill Prefill, opts Options) (*Decider, error) {
 	}
 	d := &Decider{tok: tok, prefill: prefill, label: map[string]int{}, cal: cal, template: tmpl, prefillMany: opts.PrefillMany}
 	var bad []string
-	for _, v := range append(append(append([]string(nil), noulOptions...), strings.Split(digits, "")...), strings.Split(letters, "")...) {
+	for _, v := range slices.Concat(noulOptions, strings.Split(digits, ""), strings.Split(letters, "")) {
 		ids, err := tok.EncodePlain(v)
 		if err != nil {
 			return nil, err

@@ -2,7 +2,8 @@ package embeddinggemma2
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"sync"
 )
 
@@ -36,12 +37,7 @@ func RegisterAccelerator(name string, factory func(*Model) (Accelerator, error))
 func Accelerators() []string {
 	accelMu.Lock()
 	defer accelMu.Unlock()
-	var n []string
-	for k := range accels {
-		n = append(n, k)
-	}
-	sort.Strings(n)
-	return n
+	return slices.Sorted(maps.Keys(accels))
 }
 
 // NewAccelerator builds the named accelerator over this model's weights.
