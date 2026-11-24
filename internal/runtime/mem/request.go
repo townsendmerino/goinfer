@@ -33,9 +33,29 @@ func AdmitRequest(r Request, m Machine, p Policy) string {
 		GiB(remaining), GiB(avail))
 }
 
-// HostBudget is the resident budget on m: the policy's fraction of available host memory, 0 when unknown.
+// HostBudget is the resident budget on m: the policy's fraction of available host memory, 0 when unknown. Its callers
+// outside mem are listed as RAMShare's are.
 func HostBudget(m Machine, p Policy) int64 {
 	return int64(float64(m.Available(HostAnon)) * p.WeightsFraction)
+}
+
+// RAMShare is the resident budget a unified-memory backend's guards and slot clamps price against: WeightsFraction of ram,
+// the machine's physical RAM in bytes (HostBudget's arithmetic over physical rather than available memory). Calling it
+// applies the threshold, so the files outside mem that may are listed (TestNoGuardThresholdOutsideMem's ruleCallers).
+func RAMShare(ram int64) int64 { return int64(float64(ram) * WeightsFraction) }
+
+// WeightsPercent is WeightsFraction as the percentage a refusal or a clamp's log line prints; its callers outside mem are
+// listed as RAMShare's are.
+func WeightsPercent() float64 { return WeightsFraction * 100 }
+
+// KVSlotsWithin is the largest slot count up to want whose resident build, base bytes for the first slot plus perSlot
+// for each further one, fits budget, and never below 1: pricing the first slot is the caller's guard's job.
+func KVSlotsWithin(want int, budget, base, perSlot int64) int {
+	n := max(1, want)
+	for n > 1 && base+int64(n-1)*perSlot > budget {
+		n--
+	}
+	return n
 }
 
 // WeightCacheBudget is a weight cache's byte budget: requested when it is positive, else half of available host memory, 0

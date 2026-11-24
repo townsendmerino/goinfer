@@ -32,7 +32,8 @@ func TestResidentReuseLen(t *testing.T) {
 		{"single-token prompt", []int{1}, []int{1}, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			m := &Model{resIDs: tc.cached}
+			m := &Model{}
+			m.setBoundSeqForTest(tc.cached, nil, nil)
 			if got := m.residentReuseLen(tc.prompt, nil, nil); got != tc.want {
 				t.Errorf("residentReuseLen(%v | cached %v) = %d, want %d", tc.prompt, tc.cached, got, tc.want)
 			}
@@ -49,11 +50,63 @@ func TestResidentReuseLen_neverClaimsTheSeed(t *testing.T) {
 		for i := range ids {
 			ids[i] = i + 1
 		}
-		m := &Model{resIDs: ids}
+		m := &Model{}
+		m.setBoundSeqForTest(ids, nil, nil)
 		if got := m.residentReuseLen(ids, nil, nil); got >= n {
 			t.Errorf("prompt of %d identical tokens reused %d — must leave at least one to prefill", n, got)
 		}
 	}
+}
+
+// setBoundSeqForTest makes the bound slot hold ids, built under lora with image blocks, as the KV manager records a
+// commit: the same kvmgr.Slots.Commit residentCommitIDs makes, with no producer named. Empty ids forget the slot. A test
+// stands for an earlier generation's commit with it.
+func (m *Model) setBoundSeqForTest(ids []int, lora *loraRuntime, blocks []residentImageBlock) {
+	a := m.kvSlots()
+	slot := a.Bound()
+	a.Unrecorded(slot)
+	if len(ids) == 0 {
+		a.Forget(slot)
+		return
+	}
+	a.Commit(slot, m.kvRootIn(lora, m.kvNSOf(slot)), ids, kvSpansOfBlocks(blocks), len(ids), kvmgr.ClassMap{})
+}
+
+// boundIDsForTest is the bound slot's committed tokens, nil when it holds none.
+func (m *Model) boundIDsForTest() []int {
+	if s := m.boundSeqForTest(); s != nil {
+		return s.Tokens()
+	}
+	return nil
+}
+
+// boundBlocksForTest is the bound slot's image blocks, nil when it holds none.
+func (m *Model) boundBlocksForTest() []residentImageBlock {
+	s := m.boundSeqForTest()
+	if s == nil {
+		return nil
+	}
+	var out []residentImageBlock
+	for _, sp := range s.Images() {
+		out = append(out, residentImageBlock{start: sp.Start, end: sp.Start + sp.Len, hash: sp.Hash})
+	}
+	return out
+}
+
+// boundAdapterForTest is the adapter identity (kvAdapterID) the bound slot's sequence was built under, 0 for the base
+// weights or no sequence.
+func (m *Model) boundAdapterForTest() uint64 {
+	if s := m.boundSeqForTest(); s != nil {
+		return s.Root().Adapter
+	}
+	return 0
+}
+
+func (m *Model) boundSeqForTest() *kvmgr.Seq {
+	if m.kv == nil {
+		return nil
+	}
+	return m.kv.Seq(m.kv.Bound())
 }
 
 // recurrentTestModel builds a *Model whose hasRecurrentState() is true (qwen3_5_moe's dispatch
@@ -61,7 +114,9 @@ func TestResidentReuseLen_neverClaimsTheSeed(t *testing.T) {
 // arithmetic never touches them.
 func recurrentTestModel(resIDs []int) *Model {
 	// One linear layer: a family of attention layers only carries no in-place state.
-	return &Model{w: &Weights{arch: &Architecture{NumLayers: 1, qwen35: &qwen35Params{}, layerIsLinear: func(int) bool { return true }}}, resIDs: resIDs}
+	m := &Model{w: &Weights{arch: &Architecture{NumLayers: 1, qwen35: &qwen35Params{}, layerIsLinear: func(int) bool { return true }}}}
+	m.setBoundSeqForTest(resIDs, nil, nil)
+	return m
 }
 
 // TestResidentReuseLen_recurrentExactExtensionOnly is audit R-01 Phase 0: a recurrent family's
@@ -105,12 +160,12 @@ func TestResidentReuseLen_recurrentExactExtensionOnly(t *testing.T) {
 func TestResidentForgetIDs(t *testing.T) {
 	m := &Model{}
 	m.residentCommitIDs([]int{1, 2}, []int{3, 4}, nil, nil)
-	if len(m.resIDs) != 4 {
-		t.Fatalf("commit recorded %v, want prompt+generated", m.resIDs)
+	if len(m.boundIDsForTest()) != 4 {
+		t.Fatalf("commit recorded %v, want prompt+generated", m.boundIDsForTest())
 	}
 	m.residentForgetIDs()
-	if m.resIDs != nil {
-		t.Errorf("forget left %v, want nil", m.resIDs)
+	if m.boundIDsForTest() != nil {
+		t.Errorf("forget left %v, want nil", m.boundIDsForTest())
 	}
 	if got := m.residentReuseLen([]int{1, 2, 3, 4, 5}, nil, nil); got != 0 {
 		t.Errorf("after forgetting, reuse must be 0, got %d", got)
@@ -125,8 +180,8 @@ func TestResidentCommitIDs_copies(t *testing.T) {
 	m := &Model{}
 	m.residentCommitIDs(prompt, generated, nil, nil)
 	prompt[0], generated[0] = 99, 99
-	if m.resIDs[0] == 99 || m.resIDs[3] == 99 {
-		t.Errorf("resIDs aliases the caller's slice: %v", m.resIDs)
+	if m.boundIDsForTest()[0] == 99 || m.boundIDsForTest()[3] == 99 {
+		t.Errorf("resIDs aliases the caller's slice: %v", m.boundIDsForTest())
 	}
 }
 
@@ -185,7 +240,8 @@ func TestResidentReuseLen_imageBlockAtomicity(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			m := &Model{resIDs: cached, resImgBlocks: []residentImageBlock{block}}
+			m := &Model{}
+			m.setBoundSeqForTest(cached, nil, []residentImageBlock{block})
 			if got := m.residentReuseLen(tc.prompt, tc.imgs, nil); got != tc.want {
 				t.Errorf("residentReuseLen(%v, %v) = %d, want %d", tc.prompt, tc.imgs, got, tc.want)
 			}
@@ -200,7 +256,8 @@ func TestResidentReuseLen_imageBlockAtomicity(t *testing.T) {
 func TestResidentReuseLen_zeroHashNeverMatches(t *testing.T) {
 	cached := []int{100, 101, 900, 900, 900, 200, 201}
 	block := residentImageBlock{start: 2, end: 5, hash: 0}
-	m := &Model{resIDs: cached, resImgBlocks: []residentImageBlock{block}}
+	m := &Model{}
+	m.setBoundSeqForTest(cached, nil, []residentImageBlock{block})
 	prompt := []int{100, 101, 900, 900, 900, 200, 201, 300}
 	claims := []residentImageClaim{{Start: 2, Len: 3, Hash: 0}}
 	if got := m.residentReuseLen(prompt, claims, nil); got != 2 {
@@ -252,7 +309,7 @@ func TestResidentReuseLen_recurrentImageClaims(t *testing.T) {
 				resIDs = []int{1, P, P, 2, P, P}
 			}
 			m := recurrentTestModel(resIDs)
-			m.resImgBlocks = tc.blocks
+			m.setBoundSeqForTest(resIDs, nil, tc.blocks)
 			if got := m.residentReuseLen(tc.prompt, tc.claims, nil); got != tc.want {
 				t.Errorf("residentReuseLen = %d, want %d", got, tc.want)
 			}
@@ -264,16 +321,17 @@ func TestResidentReuseLen_recurrentImageClaims(t *testing.T) {
 // newly committed one's start stays valid (positions are append-only); this is a structural
 // sanity check on residentCommitIDs' bookkeeping, not a reuse-correctness test by itself.
 func TestResidentCommitIDs_imageBlocksAppendOnlyValid(t *testing.T) {
-	m := &Model{resImgBlocks: []residentImageBlock{{start: 2, end: 5, hash: 7}}}
+	m := &Model{}
+	m.setBoundSeqForTest([]int{0, 0, 0, 0, 0}, nil, []residentImageBlock{{start: 2, end: 5, hash: 7}})
 	m.residentCommitIDs([]int{0, 0, 0, 0, 0, 0, 0}, nil, []residentImageBlock{{start: 8, end: 11, hash: 42}}, nil)
-	if len(m.resImgBlocks) != 2 {
-		t.Fatalf("resImgBlocks = %v, want 2 entries (old block kept, new block added)", m.resImgBlocks)
+	if len(m.boundBlocksForTest()) != 2 {
+		t.Fatalf("resImgBlocks = %v, want 2 entries (old block kept, new block added)", m.boundBlocksForTest())
 	}
-	if m.resImgBlocks[0] != (residentImageBlock{start: 2, end: 5, hash: 7}) {
-		t.Errorf("old block not preserved: %v", m.resImgBlocks[0])
+	if m.boundBlocksForTest()[0] != (residentImageBlock{start: 2, end: 5, hash: 7}) {
+		t.Errorf("old block not preserved: %v", m.boundBlocksForTest()[0])
 	}
-	if m.resImgBlocks[1] != (residentImageBlock{start: 8, end: 11, hash: 42}) {
-		t.Errorf("new block not recorded: %v", m.resImgBlocks[1])
+	if m.boundBlocksForTest()[1] != (residentImageBlock{start: 8, end: 11, hash: 42}) {
+		t.Errorf("new block not recorded: %v", m.boundBlocksForTest()[1])
 	}
 }
 
@@ -281,11 +339,15 @@ func TestResidentCommitIDs_imageBlocksAppendOnlyValid(t *testing.T) {
 // TestResidentForgetIDs's own doc comment) — a stale image-block list is exactly as dangerous
 // as a stale resIDs, for the same reason.
 func TestResidentForgetIDs_clearsImageBlocksToo(t *testing.T) {
-	m := &Model{resImgBlocks: []residentImageBlock{{start: 2, end: 5, hash: 7}}}
-	m.residentCommitIDs([]int{1, 2}, []int{3, 4}, nil, nil)
+	m := &Model{}
+	m.setBoundSeqForTest([]int{0, 0, 0, 0, 0}, nil, []residentImageBlock{{start: 2, end: 5, hash: 7}})
+	m.residentCommitIDs([]int{1, 2, 3, 4, 5}, []int{6}, nil, nil)
+	if got := m.boundBlocksForTest(); len(got) != 1 {
+		t.Fatalf("after the commit the slot holds blocks %v, want the earlier one: nothing for the forget to clear", got)
+	}
 	m.residentForgetIDs()
-	if m.resImgBlocks != nil {
-		t.Errorf("resImgBlocks = %v after forget, want nil", m.resImgBlocks)
+	if m.boundBlocksForTest() != nil {
+		t.Errorf("resImgBlocks = %v after forget, want nil", m.boundBlocksForTest())
 	}
 }
 
@@ -327,8 +389,8 @@ func TestResidentForgetIDs_clearsAdapterToo(t *testing.T) {
 	m := &Model{}
 	m.residentCommitIDs([]int{1, 2}, []int{3}, nil, &loraRuntime{name: "a"})
 	m.residentForgetIDs()
-	if m.resIDs != nil || m.resIDsLora != nil {
-		t.Errorf("after forget: resIDs=%v resIDsLora=%v, want both nil", m.resIDs, m.resIDsLora)
+	if m.boundIDsForTest() != nil || m.boundAdapterForTest() != 0 {
+		t.Errorf("after forget: resIDs=%v adapter=%d, want nil and the base weights (0)", m.boundIDsForTest(), m.boundAdapterForTest())
 	}
 }
 

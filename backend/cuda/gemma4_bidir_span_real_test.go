@@ -22,7 +22,8 @@ import (
 )
 
 // TestGemma4BidirSpanPrefill_real26B is G-S19c's logits half: the
-// real 26B-A4B loaded with -backend cuda -moe-cache-experts at the fit-default context, one image prompt per form-like image, the
+// real 26B-A4B loaded with -backend cuda -moe-cache-experts at the fit-default context, one image prompt per form-like image (inv01 by
+// default; GOINFER_S19_IMAGES=3 adds inv02 and table, the registered set), the
 // tower run once on the CPU, then the last-position logits from the resident span prefill against the CPU bidirectional
 // prefill on the same model and the same features. It reports cosine and argmax; the served half grades the replies.
 //
@@ -65,7 +66,8 @@ func TestGemma4BidirSpanPrefill_real26B(t *testing.T) {
 	}
 	tmpl := chat.Gemma4()
 	ctx := context.Background()
-	for _, img := range []string{"../../testdata/glm_ocr/invoices/inv01.png", "../../testdata/glm_ocr/invoices/inv02.png", "../../testdata/glm_ocr/table.png"} {
+	imgs := []string{"../../testdata/glm_ocr/invoices/inv01.png", "../../testdata/glm_ocr/invoices/inv02.png", "../../testdata/glm_ocr/table.png"}
+	for _, img := range imgs[:caseCount(t, "GOINFER_S19_IMAGES", 1, len(imgs))] {
 		data, err := os.ReadFile(img)
 		if err != nil {
 			t.Fatal(err)

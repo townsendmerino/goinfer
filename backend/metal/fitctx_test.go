@@ -222,10 +222,10 @@ func TestMetalFit_agreesWithSlotPricing(t *testing.T) {
 			if raise <= 0 || further != int64(slots-1)*each+raise {
 				t.Errorf("the fit prices %d B past the first slot, metalSlotBytes %d B each and the raised tables %d B", further, each, raise)
 			}
-			if got := kvSlotsWithin(slots, need+further, need+raise, each); got != slots {
+			if got := mem.KVSlotsWithin(slots, need+further, need+raise, each); got != slots {
 				t.Errorf("a budget of exactly the fit's bytes grants %d slots", got)
 			}
-			if got := kvSlotsWithin(slots, need+further-1, need+raise, each); got != slots-1 {
+			if got := mem.KVSlotsWithin(slots, need+further-1, need+raise, each); got != slots-1 {
 				t.Errorf("a byte under the fit's bytes grants %d slots, want %d", got, slots-1)
 			}
 		})

@@ -263,8 +263,8 @@ func TestBlockSpecGenerate_foldsTheEmittedRows(t *testing.T) {
 		if len(host.folds) == 0 || host.folds[0] != 3 {
 			t.Errorf("folds %v, want the first to be 3 rows (the anchor and two accepted drafts)", host.folds)
 		}
-		if want := append(append([]int{}, prompt...), out...); !equalIntSlices(m.resIDs, want) {
-			t.Errorf("resIDs = %v, want prompt+out %v", m.resIDs, want)
+		if want := append(append([]int{}, prompt...), out...); !equalIntSlices(m.boundIDsForTest(), want) {
+			t.Errorf("resIDs = %v, want prompt+out %v", m.boundIDsForTest(), want)
 		}
 	})
 	t.Run("stop inside the burst", func(t *testing.T) {
@@ -281,8 +281,8 @@ func TestBlockSpecGenerate_foldsTheEmittedRows(t *testing.T) {
 		if !equalIntSlices(host.folds, []int{2}) {
 			t.Errorf("folds %v, want [2]: the anchor and the one emitted draft, not the three accepted", host.folds)
 		}
-		if want := []int{1, 2, 3, 7, 5}; !equalIntSlices(m.resIDs, want) {
-			t.Errorf("resIDs = %v, want %v", m.resIDs, want)
+		if want := []int{1, 2, 3, 7, 5}; !equalIntSlices(m.boundIDsForTest(), want) {
+			t.Errorf("resIDs = %v, want %v", m.boundIDsForTest(), want)
 		}
 		if host.flushes != 1 {
 			t.Errorf("%d flushes of marked rows, want 1: the marked rows must fold before the commit reads the state", host.flushes)
@@ -398,7 +398,7 @@ func TestBlockSpecGenerate_earlyExitDropsTheMarkedRows(t *testing.T) {
 	if host.marked || host.drops != 1 || host.flushes != 0 {
 		t.Errorf("after the early exit: marked %v, %d drops, %d flushes; want nothing marked, 1 drop, 0 flushes", host.marked, host.drops, host.flushes)
 	}
-	if m.resIDs != nil {
-		t.Errorf("resIDs = %v after an early exit (out %v); want nil, so the next turn goes cold", m.resIDs, out)
+	if m.boundIDsForTest() != nil {
+		t.Errorf("resIDs = %v after an early exit (out %v); want nil, so the next turn goes cold", m.boundIDsForTest(), out)
 	}
 }

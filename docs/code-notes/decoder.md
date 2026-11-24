@@ -600,7 +600,7 @@ packages that know how to ask (the same "register from init(), decoder stays cle
 RegisterBackend already uses, for the same reason). backend/metal/backend.go registers "metal" with
 70% of `hw.memsize` — NOT a live query, matching its OWN resident guard's existing budget
 exactly (darwin's UBC makes "available" memory unreliable, so the guard never asks for it —
-see backend/metal/backend.go's residentMemFraction comment); backend/cuda/backend.go registers "cuda" with
+see backend/metal/backend.go's metalStaticCeiling comment); backend/cuda/backend.go registers "cuda" with
 the CUDA driver's live MemInfo(). ok=false means "unknown" (no device, no driver, a query
 error) — Plan's own contract treats an unknown freeBytes as "cannot judge, proceed", so a
 probe should never fabricate a number to avoid returning ok=false.
@@ -4108,7 +4108,7 @@ Moved from `decoder/fitguard.go` (the comment above `fitMemFraction`) on 2026-10
 
 ```text
 fitMemFraction is the share of the fit check's base memory figure the WEIGHTS alone may occupy.
-Same figure and same provenance as backend/metal/backend.go's residentMemFraction: ONE measured failure
+Same figure and same provenance as backend/metal/backend.go's metalStaticCeiling: ONE measured failure
 (11.28 GB of 16 GB = 70.5% thrashed to swap exhaustion), so a threshold rather than a swept
 curve. The rest is not slack — KV, scratch, the tokenizer, and the operating system live there
 too. Originally fractioned against TOTAL physical RAM; fitCheckFor now fractions it against

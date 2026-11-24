@@ -39,14 +39,14 @@ import (
 // The bookkeeping is the KV manager's: one sequence per
 // KV slot, its tokens, image spans, root and the kernel class that wrote each row; which slot a prompt takes; what it
 // may skip; and the index of published blocks. This file is the decoder's side of it: it asks the resident what the
-// manager cannot know (the slot count, the window a slot still holds, the prefill floor), binds slots, and keeps
-// resIDs, resIDsLora and resImgBlocks as the bound sequence's record for the generation code that reads them.
+// manager cannot know (the slot count, the window a slot still holds, the prefill floor) and binds slots. The manager's
+// sequence for the bound slot is the one record of what the resident KV holds there.
 
 // residentReuseDisabled is the escape hatch / A-B switch, same convention as
 // GOINFER_NO_GREEDY_FASTPATH and GOINFER_NO_KVONLY_PREFILL.
 func (m *Model) residentReuseDisabled() bool { return m.knobs.get(knobNoResidentReuse) != "" }
 
-// residentImageBlock records one image block committed to the resident KV: its absolute position span within resIDs and
+// residentImageBlock records one image block committed to the resident KV: its absolute position span within the sequence and
 // a content hash of the raw image bytes that produced it (docs/multimodal.md). Every position inside [start,end)
 // attended every other position in the block under a bidirectional mask during its CPU prefill, so a reuse match must
 // treat the block as one atomic unit: either the whole span verifies and is skipped together, or none of it is.
@@ -164,32 +164,6 @@ func kvSpansOfClaims(claims []residentImageClaim) []kvmgr.ImageSpan {
 	return out
 }
 
-// kvAdopt makes the manager's record of the bound slot agree with resIDs, resIDsLora and resImgBlocks. Every writer
-// in this file keeps the two together, so this does nothing in a generation. It is for a caller that assigns the
-// fields directly (tests do, to stand for an earlier commit): the manager takes what it finds as the slot's content,
-// with no producer named. A live slot's record is a running generation's (kvmgr.Slots.Live), not the bound fields',
-// and is left alone.
-func (m *Model) kvAdopt(a *kvmgr.Slots) {
-	slot := a.Bound()
-	if a.Live(slot) {
-		return
-	}
-	s := a.Seq(slot)
-	if len(m.resIDs) == 0 {
-		if s != nil {
-			a.Forget(slot)
-		}
-		return
-	}
-	if s != nil && len(s.Tokens()) == len(m.resIDs) && &s.Tokens()[0] == &m.resIDs[0] &&
-		s.Root().Adapter == kvAdapterID(m.resIDsLora) && slices.Equal(s.Images(), kvSpansOfBlocks(m.resImgBlocks)) {
-		return
-	}
-	a.Unrecorded(slot)
-	a.Commit(slot, m.kvRootIn(m.resIDsLora, m.kvNSOf(slot)), m.resIDs, kvSpansOfBlocks(m.resImgBlocks), len(m.resIDs), kvmgr.ClassMap{})
-	m.kvSetLora(slot, m.resIDsLora)
-}
-
 // kvSetNS records the sharing namespace of the request that took slot; the commit that ends it keys the slot's
 // sequence under it.
 func (m *Model) kvSetNS(slot int, ns string) {
@@ -205,15 +179,6 @@ func (m *Model) kvNSOf(slot int) string {
 		return m.kvNS[slot]
 	}
 	return ""
-}
-
-// kvSetLora records which adapter runtime slot's sequence was built under. The manager keys on the adapter's
-// identity; the runtime itself is the decoder's, and resIDsLora is read back from here when a slot is bound.
-func (m *Model) kvSetLora(slot int, lora *loraRuntime) {
-	for len(m.kvLora) <= slot {
-		m.kvLora = append(m.kvLora, nil)
-	}
-	m.kvLora[slot] = lora
 }
 
 // residentReuseLen returns how many leading tokens of prompt the BOUND slot already holds and may skip. imgs
@@ -236,7 +201,6 @@ func (m *Model) residentReuseLenIn(prompt []int, imgs []residentImageClaim, lora
 // A live slot's announcement is a running generation's, so it is not marked unrecorded.
 func (m *Model) boundReuseLen(prompt []int, imgs []residentImageClaim, lora *loraRuntime, ns string, ckpt bool) int {
 	a := m.kvSlots()
-	m.kvAdopt(a)
 	if !a.Live(a.Bound()) {
 		a.Unrecorded(a.Bound())
 	}
@@ -566,17 +530,11 @@ func (m *Model) residentShare(prompt []int, imgs []residentImageClaim, lora *lor
 		return
 	}
 	a.Copied(src, dst, start, hit)
-	s := a.Seq(dst)
-	m.resIDs, m.resIDsLora, m.resImgBlocks = s.Tokens(), lora, nil
-	for _, sp := range s.Images() {
-		m.resImgBlocks = append(m.resImgBlocks, residentImageBlock{start: sp.Start, end: sp.Start + sp.Len, hash: sp.Hash})
-	}
-	m.kvSetLora(dst, lora)
 	acq.reuse, acq.shared, acq.src = hit, hit, src
 }
 
-// residentBind binds resident KV slot `slot` and makes resIDs, resIDsLora and resImgBlocks that slot's record. A
-// no-op when it is already bound. Switching slots also clears resDrafterSynced: a block drafter's own context
+// residentBind binds resident KV slot `slot`, whose sequence in the manager becomes the bound record. A no-op when it is
+// already bound. Switching slots also clears resDrafterSynced: a block drafter's own context
 // follows ONE conversation, the one the previous slot was serving.
 func (m *Model) residentBind(slot int) error {
 	a := m.kvSlots()
@@ -587,18 +545,7 @@ func (m *Model) residentBind(slot int) error {
 		return err
 	}
 	a.Resize(m.residentSlotCount())
-	m.kvAdopt(a) // the outgoing slot's record, in case its fields were written directly
 	a.SetBound(slot)
-	m.resIDs, m.resIDsLora, m.resImgBlocks = nil, nil, nil
-	if s := a.Seq(slot); s != nil {
-		m.resIDs = s.Tokens()
-		if slot < len(m.kvLora) {
-			m.resIDsLora = m.kvLora[slot]
-		}
-		for _, sp := range s.Images() {
-			m.resImgBlocks = append(m.resImgBlocks, residentImageBlock{start: sp.Start, end: sp.Start + sp.Len, hash: sp.Hash})
-		}
-	}
 	m.resDrafterSynced = nil
 	return nil
 }
@@ -633,25 +580,26 @@ func pickResidentSlot(scores, lens []int, uses []uint64, busy []bool) int {
 // blocks this turn added or re-verified, in prompt order (nil for plain text; several for a multi-image turn).
 //
 // Called only on the fully completed path, which is what lets the manager publish the sequence's full blocks here.
-// Everything else leaves resIDs (and resImgBlocks) nil.
+// Everything else leaves the bound slot forgotten.
 func (m *Model) residentCommitIDs(prompt, generated []int, newBlocks []residentImageBlock, lora *loraRuntime) {
 	ids := make([]int, 0, len(prompt)+len(generated))
 	ids = append(ids, prompt...)
 	ids = append(ids, generated...)
-	m.resIDs = ids
-	m.resIDsLora = lora
+	a := m.kvSlots()
+	var images []kvmgr.ImageSpan
+	if s := a.Seq(a.Bound()); s != nil {
+		images = s.Images()
+	}
 	if len(newBlocks) > 0 {
-		kept := m.resImgBlocks[:0:0]
-		for _, b := range m.resImgBlocks {
-			if b.end <= newBlocks[0].start { // still valid: append-only, earlier positions unchanged
-				kept = append(kept, b)
+		var kept []kvmgr.ImageSpan
+		for _, sp := range images {
+			if sp.Start+sp.Len <= newBlocks[0].start { // still valid: append-only, earlier positions unchanged
+				kept = append(kept, sp)
 			}
 		}
-		m.resImgBlocks = append(kept, newBlocks...)
+		images = append(kept, kvSpansOfBlocks(newBlocks)...)
 	}
-	a := m.kvSlots()
-	a.Commit(a.Bound(), m.kvRootIn(lora, m.kvNSOf(a.Bound())), ids, kvSpansOfBlocks(m.resImgBlocks), len(prompt), m.kvClassMap())
-	m.kvSetLora(a.Bound(), lora)
+	a.Commit(a.Bound(), m.kvRootIn(lora, m.kvNSOf(a.Bound())), ids, images, len(prompt), m.kvClassMap())
 	if m.resCkptPrompt != nil && slices.Equal(m.resCkptPrompt, prompt) {
 		a.SetCheckpoint(a.Bound(), len(prompt)) // this generation saved the state at the end of this prompt
 	}
@@ -668,13 +616,10 @@ func (m *Model) residentPublishPrompt(slot int, prompt []int, lora *loraRuntime)
 // residentForgetIDs marks the resident KV's contents unknown. Anything that writes the cache
 // outside a completed generateInto — a failed prefill, a cancelled decode, a batched verify —
 // must call this, because a stale id list is the one way this feature can be WRONG rather than
-// merely slow. Clears resImgBlocks together with resIDs, always — an image block's identity is
-// meaningless once the token sequence backing its position is no longer trusted. The bound slot's
+// merely slow. The sequence goes with its image blocks, always — an image block's identity is
+// meaningless once the token sequence backing its position is no longer trusted — and its
 // blocks leave the manager's index with it.
 func (m *Model) residentForgetIDs() {
-	m.resIDsLora = nil
-	m.resIDs = nil
-	m.resImgBlocks = nil
 	m.resDrafterSynced = nil // any resident write invalidates a block drafter's own reuse too
 	m.resCkptPrompt = nil
 	if m.kv != nil {

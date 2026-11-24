@@ -15,7 +15,8 @@ import (
 // generation returns ErrBlockSpecResidentBusy before any device call.
 func TestBlockSpecGenerate_declinesWhileAnMC3HolderIsActive(t *testing.T) {
 	host := &blockspecStubHost{}
-	m := &Model{resident: host, resIDs: []int{1, 2, 3}}
+	m := &Model{resident: host}
+	m.setBoundSeqForTest([]int{1, 2, 3}, nil, nil)
 	m.batcher = &residentBatcher{maxHolders: 2}
 	m.batcher.init()
 	if !m.batcher.claim(&m.resBusy) {

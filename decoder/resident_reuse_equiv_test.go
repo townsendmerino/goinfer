@@ -317,9 +317,10 @@ func TestResidentReuse_equalsTheBookkeepingItReplaced(t *testing.T) {
 		}
 		same := func(what string, op int) {
 			t.Helper()
-			if !slices.Equal(m.resIDs, o.resIDs) || m.resIDsLora != o.resIDsLora || !slices.Equal(m.resImgBlocks, o.resImg) || (m.resIDs == nil) != (o.resIDs == nil) {
-				t.Fatalf("seed %d op %d, after %s: the bound record differs\n new: %d ids, adapter %p, images %v\n old: %d ids, adapter %p, images %v",
-					seed, op, what, len(m.resIDs), m.resIDsLora, m.resImgBlocks, len(o.resIDs), o.resIDsLora, o.resImg)
+			ids, blocks := m.boundIDsForTest(), m.boundBlocksForTest()
+			if !slices.Equal(ids, o.resIDs) || (ids != nil && m.boundAdapterForTest() != kvAdapterID(o.resIDsLora)) || !slices.Equal(blocks, o.resImg) || (ids == nil) != (o.resIDs == nil) {
+				t.Fatalf("seed %d op %d, after %s: the bound record differs\n new: %d ids, adapter %d, images %v\n old: %d ids, adapter %d, images %v",
+					seed, op, what, len(ids), m.boundAdapterForTest(), blocks, len(o.resIDs), kvAdapterID(o.resIDsLora), o.resImg)
 			}
 			if rn.bound != ro.bound {
 				t.Fatalf("seed %d op %d, after %s: slot %d is bound, the old code bound %d", seed, op, what, rn.bound, ro.bound)
@@ -384,10 +385,9 @@ func TestResidentReuse_equalsTheBookkeepingItReplaced(t *testing.T) {
 				same("bind", op)
 			case k < 18: // the fields written directly, as tests do
 				ids := tokens(1 + rng.Intn(200))
-				m.resIDs, o.resIDs = slices.Clone(ids), slices.Clone(ids)
 				lora := loras[rng.Intn(len(loras))]
-				m.resIDsLora, o.resIDsLora = lora, lora
-				m.resImgBlocks, o.resImg = nil, nil
+				m.setBoundSeqForTest(slices.Clone(ids), lora, nil)
+				o.resIDs, o.resIDsLora, o.resImg = slices.Clone(ids), lora, nil
 			default:
 				m.residentForgetIDs()
 				o.residentForgetIDs()

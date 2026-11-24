@@ -83,6 +83,13 @@ testdata/gguf-split/glm-tiny-00001-of-00004.gguf int4/kvprecision-i8
 testdata/gguf-split/glm-tiny-00001-of-00004.gguf int4/slots2
 testdata/gguf-split/glm-tiny-00001-of-00004.gguf int4/ssm
 testdata/gguf-split/glm-tiny-00001-of-00004.gguf int8int8
+testdata/glm-ocr-tiny f32
+testdata/glm-ocr-tiny int4
+testdata/glm-ocr-tiny int4/kv-f16
+testdata/glm-ocr-tiny int4/kvprecision-i8
+testdata/glm-ocr-tiny int4/slots2
+testdata/glm-ocr-tiny int4/ssm
+testdata/glm-ocr-tiny int8int8
 testdata/glm-tiny int4
 testdata/glm-tiny int4/kv-f16
 testdata/glm-tiny int4/kvprecision-i8

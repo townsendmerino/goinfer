@@ -373,7 +373,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			// Shared with generateInto (residentPrefillSeed), so batched prefill applies here too.
 			//
 			// Prefix reuse: residentAcquire and residentAcquireSlot return the reusable prefix reuseFrom, so a --spec or --drafter
-			// agent loop does not cold-prefill the whole prompt every round. resIDs is accurate here because commitResident below
+			// agent loop does not cold-prefill the whole prompt every round. The bound sequence is accurate here because commitResident below
 			// keeps it so. Compute reuseFrom first, then forget the recorded ids: verify writes positions this function owns, so
 			// the list stops describing the resident past this point, and the next turn's commit makes it true again. Forgetting
 			// first would only lose reuse. generateInto uses the same order (resident_reuse.go).

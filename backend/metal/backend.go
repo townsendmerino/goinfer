@@ -261,12 +261,6 @@ func metalKVPlanLine(slots, ctx, from int, extra int64) string {
 	return s + "\n"
 }
 
-// residentMemFraction is the share of physical RAM the resident build (weights, host copy and KV; residentNeedBytes) may
-// occupy; the rest is scratch, command buffers and the system, all in the same unified memory. It is a threshold set from one
-// measured failure, not a curve: the bar sits just below that failure, so it must not be rounded up to pass it. A machine that
-// would fit overrides with GOINFER_NO_RESIDENT_MEM_GUARD=1. Evidence: docs/code-notes/metal.md#residentMemFraction.
-const residentMemFraction = decoder.WeightsMemFraction
-
 // metalLiveAvailable is decoder.HostRAMAvailableBytes behind a variable, so a test can inject a machine's live-available
 // figure (decoder/fitguard.go's hostRAMAvailable does the same).
 var metalLiveAvailable = decoder.HostRAMAvailableBytes
@@ -283,9 +277,12 @@ var physicalRAM = func() (uint64, error) {
 	return 0, errRAMUnknown
 }
 
-// metalStaticCeiling is residentMemFraction's own arithmetic, split out so fitsResidentBudget and
-// metalMemoryCeiling below share one formula rather than two copies that happen to agree.
-func metalStaticCeiling(ram uint64) int64 { return int64(float64(ram) * residentMemFraction) }
+// metalStaticCeiling is the share of physical RAM the resident build (weights, host copy and KV; residentNeedBytes) may
+// occupy (mem.RAMShare); the rest is scratch, command buffers and the system, all in the same unified memory. The share is a
+// threshold set from one measured failure, not a curve: the bar sits just below that failure, so it must not be rounded up
+// to pass it. A machine that would fit overrides with GOINFER_NO_RESIDENT_MEM_GUARD=1. Evidence:
+// docs/code-notes/metal.md#residentMemFraction. fitsResidentBudget and metalMemoryCeiling share this one formula.
+func metalStaticCeiling(ram uint64) int64 { return mem.RAMShare(int64(ram)) }
 
 // fitsResidentBudget is the static arithmetic alone (metalStaticCeiling). It never calls the live probe, so a test hands it exact
 // ram and need figures and gets the pure ratio.
@@ -298,7 +295,7 @@ func fitsResidentBudget(need int64, ram uint64) bool {
 
 // metalMemoryCeiling is the one budget both residentMemoryDecline (the load-time guard) and the registered "metal" memory probe
 // (decoder.Model.Plan) use, so `fit` and the guard cannot disagree. It is the static
-// ceiling (residentMemFraction of ram) min'd with decoder.HostRAMAvailableBytes, so the live figure can only tighten the ceiling.
+// ceiling (metalStaticCeiling of ram) min'd with decoder.HostRAMAvailableBytes, so the live figure can only tighten the ceiling.
 // That direction is deliberate: under pressure darwin's UBC reclaim makes "available" look generous, so a guard keyed on the live
 // figure alone would invert exactly when needed, while min() cannot make the ceiling scarcer than the static bound already
 // allowed. live<=0 (no probe, or unknown) leaves the static ceiling; ram==0 (an unreadable hw.memsize) returns 0, which every
@@ -480,11 +477,11 @@ func metalKVSlots(m *decoder.Model, plan metalCtxPlan) int {
 		return 1
 	}
 	budget, need := metalMemoryCeiling(ram), residentNeedBytes(m, plan)+metalRaisedTableBytes(m, plan, n)
-	got := kvSlotsWithin(n, budget, need, metalSlotBytes(m, plan))
+	got := mem.KVSlotsWithin(n, budget, need, metalSlotBytes(m, plan))
 	// An unpinned slot count gives up a slot for the batched step's scratch, since a default slot is worth less than batched prefill,
 	// but only where the step then fits. A count the caller asked for keeps its slots, and the step declines if it no longer fits.
 	if reserve := metalStepScratchReserve(m, plan); m.ResidentKVSlotsIsDefault() && reserve > 0 && need+reserve <= budget {
-		if within := kvSlotsWithin(n, budget-reserve, need, metalSlotBytes(m, plan)); within < got {
+		if within := mem.KVSlotsWithin(n, budget-reserve, need, metalSlotBytes(m, plan)); within < got {
 			logs.Infof("metal: %d resident KV slots of %d by default, which leaves room for the batched step's %.1f MB of scratch; -kv-sessions N keeps N if memory allows",
 				within, n, float64(reserve)/(1<<20))
 			return within
@@ -527,17 +524,6 @@ func metalKVSlotsWanted(m *decoder.Model) int { return m.MetalKVSlotsWanted() }
 // third and fourth concurrent client lose their own slot and their batching. -kv-sessions N still asks for N
 // (docs/audit-metal-2026-09-30.md).
 const metalDefaultKVSlots = decoder.MetalDefaultKVSlots
-
-// kvSlotsWithin is metalKVSlots' arithmetic: the largest slot count up to want whose resident build — base bytes for
-// the first slot (weights, host copy, one KV) plus perSlot for each further one — fits budget, and never below 1 (the
-// first slot is priced, and refused if it does not fit, by residentMemoryDecline, not here).
-func kvSlotsWithin(want int, budget, base, perSlot int64) int {
-	n := max(1, want)
-	for n > 1 && base+int64(n-1)*perSlot > budget {
-		n--
-	}
-	return n
-}
 
 // residentMemoryDeclinePrefix opens every memory-guard decline, so a caller can tell "this machine does not have the
 // memory right now" from a feature or admission decline (the resident parity tests skip on the first and fail on the
@@ -591,12 +577,12 @@ func residentMemoryDecline(m *decoder.Model, plan metalCtxPlan) string {
 	tightened := ""
 	if staticCeiling := metalStaticCeiling(ram); budget < staticCeiling {
 		tightened = fmt.Sprintf(" (this machine's live-available memory tightened the static %.0f%%/%s ceiling further)",
-			residentMemFraction*100, mem.GiB(staticCeiling))
+			mem.WeightsPercent(), mem.GiB(staticCeiling))
 	}
 	return fmt.Sprintf(residentMemoryDeclinePrefix+"%s (weights, host copy and KV), over %.0f%% of %s RAM "+
 		"(budget %s%s). Metal wires the pages it touches, so loading this would page to swap "+
 		"exhaustion rather than run. Override with GOINFER_NO_RESIDENT_MEM_GUARD=1 if this machine really fits it.%s",
-		mem.GiB(need), residentMemFraction*100, mem.GiB(ram), mem.GiB(budget), tightened, moeHint)
+		mem.GiB(need), mem.WeightsPercent(), mem.GiB(ram), mem.GiB(budget), tightened, moeHint)
 }
 
 // exactAttnNote is PrefillPath's account of the exact attention kernel's key bound, "" when every attention layer has a

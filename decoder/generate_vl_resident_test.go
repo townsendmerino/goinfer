@@ -57,7 +57,7 @@ func TestGenerateVL_residentDecodeEngagesAndUploadsKV(t *testing.T) {
 	m, g := loadGemma3VLTiny(t)
 	rf := &fakeResident{vocab: m.w.arch.VocabSize}
 	m.resident = rf
-	m.resIDs = []int{9, 9, 9} // stale — must not be mistaken for a reusable image block
+	m.setBoundSeqForTest([]int{9, 9, 9}, nil, nil) // stale — must not be mistaken for a reusable image block
 
 	const maxNew = 5
 	features := func() ([]float32, error) { return g.ImageFeatures, nil }
@@ -90,12 +90,12 @@ func TestGenerateVL_residentDecodeEngagesAndUploadsKV(t *testing.T) {
 		t.Error("resident Forward was never called — decode silently ran on CPU despite a resident being present")
 	}
 	want := append(append([]int{}, g.InputIDs...), got...)
-	if !equalIntSlices(m.resIDs, want) {
+	if !equalIntSlices(m.boundIDsForTest(), want) {
 		t.Errorf("resIDs = %v after a resident-touching GenerateVL, want prompt+generated %v — P9(a) commits "+
-			"the prefix so a future resend of the same image can reuse it", m.resIDs, want)
+			"the prefix so a future resend of the same image can reuse it", m.boundIDsForTest(), want)
 	}
-	if len(m.resImgBlocks) != 1 || m.resImgBlocks[0].start != g.ImageTokenStart || m.resImgBlocks[0].end != g.ImageTokenStart+g.MMTokens {
-		t.Errorf("resImgBlocks = %v, want one block [%d,%d)", m.resImgBlocks, g.ImageTokenStart, g.ImageTokenStart+g.MMTokens)
+	if len(m.boundBlocksForTest()) != 1 || m.boundBlocksForTest()[0].start != g.ImageTokenStart || m.boundBlocksForTest()[0].end != g.ImageTokenStart+g.MMTokens {
+		t.Errorf("resImgBlocks = %v, want one block [%d,%d)", m.boundBlocksForTest(), g.ImageTokenStart, g.ImageTokenStart+g.MMTokens)
 	}
 	if busy := atomic.LoadInt32(&m.resBusy); busy != 0 {
 		t.Errorf("resBusy = %d after GenerateVL returned, want 0 (released)", busy)
@@ -123,7 +123,7 @@ func TestGenerateVL_residentBusyDeclinesToCPU(t *testing.T) {
 	m, g := loadGemma3VLTiny(t)
 	rf := &fakeResident{vocab: m.w.arch.VocabSize}
 	m.resident = rf
-	m.resIDs = []int{1, 2, 3}
+	m.setBoundSeqForTest([]int{1, 2, 3}, nil, nil)
 	atomic.StoreInt32(&m.resBusy, 1) // simulate another in-flight generation holding the claim
 
 	const maxNew = 5
@@ -145,9 +145,9 @@ func TestGenerateVL_residentBusyDeclinesToCPU(t *testing.T) {
 	if len(rf.uploadKVs) != 0 {
 		t.Errorf("UploadKV called %d times while resBusy was held", len(rf.uploadKVs))
 	}
-	if !equalIntSlices(m.resIDs, []int{1, 2, 3}) {
+	if !equalIntSlices(m.boundIDsForTest(), []int{1, 2, 3}) {
 		t.Errorf("resIDs = %v after a declined claim, want unchanged [1 2 3] — a losing claim must not "+
-			"forget a commit it never touched", m.resIDs)
+			"forget a commit it never touched", m.boundIDsForTest())
 	}
 	if busy := atomic.LoadInt32(&m.resBusy); busy != 1 {
 		t.Errorf("resBusy = %d, want 1 (still held by the simulated concurrent caller)", busy)
@@ -234,7 +234,7 @@ func TestGenerateQwenVL_residentDecodeUsesForwardMRoPE(t *testing.T) {
 	m, g := loadQwen25VLTiny(t)
 	rf := &fakeResident{vocab: m.w.arch.VocabSize}
 	m.resident = rf
-	m.resIDs = []int{9, 9, 9}
+	m.setBoundSeqForTest([]int{9, 9, 9}, nil, nil)
 
 	features := func() ([]float32, error) { return g.ImageFeatures, nil }
 	stream, gen := m.GenerateQwenVL(context.Background(), g.InputIDs, g.ImageStart, g.NImageTokens, 0, features,
@@ -256,11 +256,11 @@ func TestGenerateQwenVL_residentDecodeUsesForwardMRoPE(t *testing.T) {
 		t.Error("resident ForwardMRoPE (which calls into Forward's bookkeeping) was never counted — decode silently ran on CPU")
 	}
 	want := append(append([]int{}, g.InputIDs...), got...)
-	if !equalIntSlices(m.resIDs, want) {
-		t.Errorf("resIDs = %v after a resident-touching GenerateQwenVL, want prompt+generated %v (P9(a) commit)", m.resIDs, want)
+	if !equalIntSlices(m.boundIDsForTest(), want) {
+		t.Errorf("resIDs = %v after a resident-touching GenerateQwenVL, want prompt+generated %v (P9(a) commit)", m.boundIDsForTest(), want)
 	}
-	if len(m.resImgBlocks) != 1 || m.resImgBlocks[0].start != g.ImageStart || m.resImgBlocks[0].end != g.ImageStart+g.NImageTokens {
-		t.Errorf("resImgBlocks = %v, want one block [%d,%d)", m.resImgBlocks, g.ImageStart, g.ImageStart+g.NImageTokens)
+	if len(m.boundBlocksForTest()) != 1 || m.boundBlocksForTest()[0].start != g.ImageStart || m.boundBlocksForTest()[0].end != g.ImageStart+g.NImageTokens {
+		t.Errorf("resImgBlocks = %v, want one block [%d,%d)", m.boundBlocksForTest(), g.ImageStart, g.ImageStart+g.NImageTokens)
 	}
 	if busy := atomic.LoadInt32(&m.resBusy); busy != 0 {
 		t.Errorf("resBusy = %d after GenerateQwenVL returned, want 0 (released)", busy)
@@ -288,7 +288,7 @@ func TestGenerateQwenVL_declinesResidentWithoutMRoPE(t *testing.T) {
 	m, g := loadQwen25VLTiny(t)
 	rf := &residentForwardOnly{fakeResident: &fakeResident{vocab: m.w.arch.VocabSize}}
 	m.resident = rf
-	m.resIDs = []int{4, 5, 6}
+	m.setBoundSeqForTest([]int{4, 5, 6}, nil, nil)
 
 	features := func() ([]float32, error) { return g.ImageFeatures, nil }
 	stream, gen := m.GenerateQwenVL(context.Background(), g.InputIDs, g.ImageStart, g.NImageTokens, 0, features,
@@ -306,8 +306,8 @@ func TestGenerateQwenVL_declinesResidentWithoutMRoPE(t *testing.T) {
 	if rf.fakeResident.forwards != 0 {
 		t.Errorf("resident Forward called %d times — a resident without MRoPEDecodeAvailable must never be claimed for Qwen decode", rf.fakeResident.forwards)
 	}
-	if !equalIntSlices(m.resIDs, []int{4, 5, 6}) {
-		t.Errorf("resIDs = %v, want unchanged [4 5 6] — the claim must never be attempted for a resident this call cannot use", m.resIDs)
+	if !equalIntSlices(m.boundIDsForTest(), []int{4, 5, 6}) {
+		t.Errorf("resIDs = %v, want unchanged [4 5 6] — the claim must never be attempted for a resident this call cannot use", m.boundIDsForTest())
 	}
 }
 
@@ -375,11 +375,11 @@ func TestGenerateVL_imageReuseFastPath_sameImageSkipsTower(t *testing.T) {
 		t.Errorf("turn 2: PrefillReused = %d, want >= %d (the image block plus everything before it)", gen2.PrefillReused, want)
 	}
 	wantIDs := append(append([]int{}, prompt2...), got2...)
-	if !equalIntSlices(m.resIDs, wantIDs) {
-		t.Errorf("resIDs after turn 2 = %v, want prompt2+generated2 %v", m.resIDs, wantIDs)
+	if !equalIntSlices(m.boundIDsForTest(), wantIDs) {
+		t.Errorf("resIDs after turn 2 = %v, want prompt2+generated2 %v", m.boundIDsForTest(), wantIDs)
 	}
-	if len(m.resImgBlocks) != 1 {
-		t.Errorf("resImgBlocks after turn 2 = %v, want exactly 1 (re-verified, not duplicated)", m.resImgBlocks)
+	if len(m.boundBlocksForTest()) != 1 {
+		t.Errorf("resImgBlocks after turn 2 = %v, want exactly 1 (re-verified, not duplicated)", m.boundBlocksForTest())
 	}
 }
 

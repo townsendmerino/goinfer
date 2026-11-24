@@ -211,11 +211,11 @@ func TestS10DeepstackPrefillCUDA_tiny(t *testing.T) {
 // TestS10DeepstackPrefillCUDA_real is G-S10g's real half, on Qwen3-VL-2B and the four F2a images at serve's 1,024-row cap,
 // graded by S16's RE-REGISTERED bar (the Mac's; owner option a): the strict per-step 0.9999 is tighter than a shipped
 // batched prefill's own distance from the CPU's int4 prefill, so the resident DeepStack prefill is held to non-inferiority
-// against a text control. For each image prompt, ctlPrompts (12) text-only prompts of the same length run the same isolated
+// against a text control. For each image prompt, ctlPrompts (4, or 12 for the 4x6 image) text-only prompts of the same length run the same isolated
 // comparison (the CPU's prefill and upload against CUDA's batched PrefillLast, both decoding the same 8 teacher-forced
 // steps on CUDA). PASS when the image turn's worst per-step cosine (the last row and the 8 steps) is at least the
 // control's minimum minus 0.005 and every argmax difference is an R10 near-tie; 0.005-0.015 below the control's minimum is
-// parked; worse fails. Both image arms see the same features and sets (the CPU encoder's). Heavy: about 6-8 minutes, a
+// parked; worse fails. Both image arms see the same features and sets (the CPU encoder's). Heavy, a
 // line per stage.
 func TestS10DeepstackPrefillCUDA_real(t *testing.T) {
 	prevDeep := cudaDeepstackPrefillOn // production default is ON (the owner's decision of 2026-10-09, see cudaDeepstackPrefillOn); the gate sets it explicitly and puts it back
@@ -231,8 +231,16 @@ func TestS10DeepstackPrefillCUDA_real(t *testing.T) {
 		t.Skipf("no %s", dir)
 	}
 	// ctlPrompts is the text control's size per image length. Seeds 1-4 are the original four, so growing it can only lower the
-	// control's minimum.
-	const merge, steps, ctlPrompts = 2, 8, 12
+	// control's minimum. Only the 4x6 image needs 12 (G-S10g decision (c)); the three larger images were read PASS against the
+	// 4-prompt control (docs/completed/task-multimodal-support-2026-10.md, "G-S10g, decision (c) read 2026-10-08"), and a
+	// smaller control's minimum is not lower, so their bar is unchanged or stricter. GOINFER_S10_CTL=12 runs 12 for every image.
+	const merge, steps = 2, 8
+	ctlFor := func(name string) int {
+		if name == "qwen25vl_preprocess_image.png" || os.Getenv("GOINFER_S10_CTL") == "12" {
+			return 12
+		}
+		return 4
+	}
 	tk, err := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -349,6 +357,7 @@ func TestS10DeepstackPrefillCUDA_real(t *testing.T) {
 			}
 			ctlMin := 1.0
 			var perPrompt []float64 // each control prompt's own minimum, printed for context; the verdict uses their minimum as registered
+			ctlPrompts := ctlFor(name)
 			for seed := 1; seed <= ctlPrompts; seed++ {
 				hb("%s: text control %d of %d (%d rows)", name, seed, ctlPrompts, n)
 				tids := make([]int, n)

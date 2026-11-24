@@ -316,3 +316,56 @@ func TestHostCheck_heapSlackBesideTheSource(t *testing.T) {
 		t.Errorf("SmallerFittingContext = %d, %v; want 1000 positions once the slack is out of the budget", got, ok)
 	}
 }
+
+// TestKVSlotsWithin pins the slot clamp without allocating a real clamp's worth of KV: the largest count up to the
+// request whose build fits the budget, never below 1.
+func TestKVSlotsWithin(t *testing.T) {
+	const mb = int64(1 << 20)
+	for _, tc := range []struct {
+		name               string
+		want               int
+		budget, base, slot int64
+		got                int
+	}{
+		{"all fit", 4, 10000 * mb, 2000 * mb, 117 * mb, 4},
+		{"clamped to what fits", 8, 2500 * mb, 2000 * mb, 117 * mb, 5}, // 2000 + 4*117 = 2468 <= 2500; +5*117 > 2500
+		{"exactly at the budget fits", 3, 2000*mb + 2*117*mb, 2000 * mb, 117 * mb, 3},
+		{"only the first fits", 4, 2050 * mb, 2000 * mb, 117 * mb, 1},
+		{"even the first over budget: still 1, the decline is elsewhere", 4, 1000 * mb, 2000 * mb, 117 * mb, 1},
+		{"request of 0 means 1", 0, 10000 * mb, 2000 * mb, 117 * mb, 1},
+	} {
+		if got := KVSlotsWithin(tc.want, tc.budget, tc.base, tc.slot); got != tc.got {
+			t.Errorf("%s: KVSlotsWithin(%d, ...) = %d, want %d", tc.name, tc.want, got, tc.got)
+		}
+	}
+}
+
+// TestRAMShare holds RAMShare to the arithmetic the backends' guards applied before it moved here, byte for byte: Metal's
+// int64(float64(ram)*fraction) over a uint64 RAM, and WebGPU's int64(fraction*float64(ram)) over an int64 one.
+func TestRAMShare(t *testing.T) {
+	rams := []uint64{0, 1, 3, 1 << 30, 8 << 30, 16 << 30, 16<<30 + 7, 24 << 30, 36<<30 - 1, 64 << 30, 192 << 30, 1<<53 + 1}
+	r := rand.New(rand.NewPCG(1, 2))
+	for range 1000 {
+		rams = append(rams, r.Uint64N(1<<40))
+	}
+	for _, ram := range rams {
+		got := RAMShare(int64(ram))
+		if metal := int64(float64(ram) * WeightsFraction); got != metal {
+			t.Errorf("RAMShare(%d) = %d, Metal's uint64 arithmetic %d", ram, got, metal)
+		}
+		if webgpu := int64(WeightsFraction * float64(int64(ram))); got != webgpu {
+			t.Errorf("RAMShare(%d) = %d, WebGPU's int64 arithmetic %d", ram, got, webgpu)
+		}
+	}
+}
+
+// TestWeightsPercent: the percentage the refusals print is WeightsFraction's, and "%.0f" renders it as the backends'
+// own expressions did.
+func TestWeightsPercent(t *testing.T) {
+	if got := WeightsPercent(); got != WeightsFraction*100 {
+		t.Errorf("WeightsPercent() = %v, want WeightsFraction*100 = %v", got, WeightsFraction*100)
+	}
+	if got, want := fmt.Sprintf("%.0f%%", WeightsPercent()), fmt.Sprintf("%.0f%%", 100*WeightsFraction); got != want {
+		t.Errorf("WeightsPercent prints %q, the backends printed %q", got, want)
+	}
+}

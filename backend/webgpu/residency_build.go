@@ -462,6 +462,7 @@ func (bs *webgpuBuild) bindRunner() error {
 	rd.rm.KvI8 = bs.kvI8                              // …or the int8 kernels + scale binds
 	rd.rm.GatedGELU = m.BackendView().GatedAct() == 0 // FeatGatedGELU — decoder's ActKind 0=GELU-tanh (Gemma)
 	rd.rm.ActG32 = m.ActQuantGroup() == 32            // per-32 activation scales (staticResidentDecline admitted the shape)
+	rd.rm.Pairwise = m.BackendView().PairwiseRoPE()   // FeatPairwiseRoPE — the pairwise rope twins
 	scale, addOne := m.AttnScale(), m.BackendView().RMSAddOne()
 	if bs.mlaOK { // MLA scores over qk_head_dim, not HeadDim — use the resolved score scale
 		scale = float32(bs.mlaAttnScale)
@@ -475,7 +476,7 @@ func (bs *webgpuBuild) bindRunner() error {
 		mw, pp, ok := kernels.RunModelToPrefill(&rd.rm, bs.hd)
 		pp.MropeAxis = rd.mropeAxis
 		if !ok {
-			return nil, fmt.Errorf("gpu: PrefillLast declines — model uses a feature outside the plain dense pass (MoE/MLA/SSM/sliding-window/per-32 activations/…)")
+			return nil, fmt.Errorf("gpu: PrefillLast declines — model uses a feature outside the plain dense pass (MoE/MLA/SSM/sliding-window/pairwise RoPE/per-32 activations/…)")
 		}
 		// q/k/v bias (Qwen2) on an int8 projection is admitted on Vulkan only: the fused-epilogue tiled GEMM
 		// (matmulTiledW8A8BiasKernelWGSL, see runModelToPrefill) is bit-exact there but still diverges on Metal past nKeys~15

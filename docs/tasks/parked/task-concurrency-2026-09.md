@@ -167,7 +167,7 @@
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| MC0-MC3c | done | — | MC0, MC1 (Metal, CUDA, WebGPU), MC2, MC3 (Metal, CUDA), MC3c steps 1-2; `backend/metal/kv_slots_test.go:TestKVSlotsWithin` |
+| MC0-MC3c | done | — | MC0, MC1 (Metal, CUDA, WebGPU), MC2, MC3 (Metal, CUDA), MC3c steps 1-2; `internal/runtime/mem/mem_test.go:TestKVSlotsWithin` |
 | MC5-chunk | done | — | `backend/metal/mc5_chunk_invariance_test.go:TestMC5_prefillChunkInvariance`; `docs/measurements/chunked-prefill-2026-09-27.md` |
 | MC5-paged | moved | KV5 in a private task doc | D1, 2026-10-13 |
 | MC4-cand | decision | Francis: keep `-spec-adaptive` opt-in, make it a default, or withdraw it | `docs/measurements/mc4-candidate-cuda-2026-10-01.md` "RERUN 2 RESULT" |
