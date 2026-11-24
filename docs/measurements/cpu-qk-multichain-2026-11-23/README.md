@@ -33,3 +33,17 @@ and the chain's re-launch.
 rows are 3,072 floats (12 KiB) apart, a multiple of 4 KiB, so the sixteen rows the new kernel reads at once fall in the same L1 sets
 (Zen 2: 8-way), where the 4-key kernel's four did not; the 0.5B's rows are 512 B apart. `BenchmarkQkAcc64Stride` (aikit) times both
 kernels at Phi-3's head shape at that stride and padded by 16 floats, to test it.
+
+## Mechanism check, read 2026-11-23 17:51 PST: L1 set aliasing at a 4 KiB-multiple key stride
+
+`BenchmarkQkAcc64Stride` (aikit `linalg/attn_acc64_stride_amd64_test.go`), one thread, one head of 96 dims × 3,900 keys, 200 calls a
+sample, 5 samples a cell run in sequence (direction, not size; log `stride.log`), 17:46 PST under the exclusive lock:
+
+| key row stride | 4-key kernel, median | 16-key kernel, median | 16-key ÷ 4-key |
+|---|---|---|---|
+| 3,072 floats (12 KiB, Phi-3's kvDim) | 193 µs | 308 µs | 1.6× slower |
+| 3,088 floats (padded by 64 B) | 191 µs | 125 µs | 1.5× faster |
+| 128 floats | 225 µs | 102 µs | 2.2× faster |
+
+At 3,072 every 16-key sample (262–325 µs) is slower than every 4-key sample (124–249 µs); a 64 B pad reverses it. The 16-key kernel's
+sixteen live rows, all at one offset mod 4 KiB, contend for one 8-way L1 set. What to do with the kernel is with the coordinator.
