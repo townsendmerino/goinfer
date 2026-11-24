@@ -119,3 +119,12 @@ load 2.06–3.98 with at least 48.5 GB available: none void by the registered ru
 By the registered outcomes, G3 FAIL leaves the default's f32 attention out, and the exact batched prefill (E) is the live option:
 bit-identical to today's sequential prefill (G1, G2), first token 5.6–5.7× sooner at 1,024 prompt tokens and 4.4× at 3,900, for
 +214–380 MiB of peak heap.
+
+## Decision: batched with exact attention (Francis, 2026-11-23 about 16:40 PST, relayed by the coordinator)
+
+Option 1: gpt-oss's CPU prefill takes the batched walker with exact attention by default. `Model.cpuFastAttention` reports false for an
+architecture with attention sinks, so gpt-oss's batched prefill always runs the exact kernel (`TestGptOssPrefill_defaultIsExact`).
+Output bit-identical to the sequential path (G1, G2); first token 5.6–5.7× sooner at 1,024 prompt tokens and 4.4× at 3,900; Go heap
+peak +214 MiB at 1,024 and +380 MiB at 3,900; the fit plan unchanged. The f32-attention variant stays off, recorded as failing G3.
+From this commit `TestGptOssCPUPrefillGate`'s B arm is the exact kernel too (the knob no longer reaches gpt-oss); the B readings above
+are `decoder-2a349dff6`'s and `decoder-f553040b3`'s.

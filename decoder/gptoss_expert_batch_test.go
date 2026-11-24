@@ -2,7 +2,6 @@ package decoder
 
 import (
 	"context"
-	"math"
 	"math/rand/v2"
 	"sync/atomic"
 	"testing"
@@ -248,32 +247,46 @@ func TestGptOssPrefill_batchedEqualsSequential(t *testing.T) {
 	}
 }
 
-// TestGptOssPrefill_fastAttentionRuns prefills the tiny gpt-oss at fastAttnMinPrompt rows with CPU fast attention on, the default
-// for a prompt that long: the f32 attention with the sink term over the window layers' single pass. It requires the batched pass to
-// run and the last row's logits to be finite; their distance from the exact path is the real-checkpoint fidelity gate's question.
-func TestGptOssPrefill_fastAttentionRuns(t *testing.T) {
+// TestGptOssPrefill_defaultIsExact prefills the tiny gpt-oss at fastAttnMinPrompt rows at the default, where every other batched family
+// takes CPU fast attention, with the fast-attention knob explicitly on. gpt-oss's batched prefill must stay on the exact kernel
+// (cpuFastAttention false) and its last row's logits must equal the per-token walker's bit for bit.
+func TestGptOssPrefill_defaultIsExact(t *testing.T) {
 	m, err := Load("testdata/gptoss_tiny.gguf", Options{Backend: "cpu", Quant: "int4", DirectLoad: true, Knobs: &Knobs{knobCPUFastAttention: "1"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer m.Close()
+	if m.cpuFastAttention() {
+		t.Fatal("cpuFastAttention() is true for gpt-oss: its batched prefill would take the f32 attention")
+	}
 	n := fastAttnMinPrompt
 	_, _, _, _, _, _, vocab := m.Dims()
 	prompt := make([]int, n)
 	for i := range prompt {
 		prompt[i] = 1 + (i*53+7)%(vocab-1)
 	}
+	seq := m.NewCache(n + 1)
+	for _, id := range prompt[:n-1] {
+		if _, err := m.runLayers(id, seq); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := m.forward(prompt[n-1], seq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = append([]float32(nil), want...)
 	p0 := atomic.LoadInt64(&prefillPasses)
-	lg, err := m.prefillLogits(context.Background(), prompt, m.NewCache(n+1))
+	got, err := m.prefillLogits(context.Background(), prompt, m.NewCache(n+1))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if atomic.LoadInt64(&prefillPasses) == p0 {
 		t.Fatal("prefillLogits ran no batched pass")
 	}
-	for i, v := range lg {
-		if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
-			t.Fatalf("logit %d is %v", i, v)
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("logit %d: batched prefill %v != sequential %v", i, got[i], want[i])
 		}
 	}
 }
