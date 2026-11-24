@@ -47,7 +47,9 @@ func loadBenchModel() (*Model, error) {
 		// natively only under Backend "cpu" (q4kNative56); GOINFER_BENCH_WIDEN56=1 then widens them to int8 as before the
 		// native kinds, so one binary times both arms of that A/B.
 		q4kWiden56ForTest = os.Getenv("GOINFER_BENCH_WIDEN56") == "1"
-		benchModel, benchErr = Load(path, Options{Quant: quant, Backend: os.Getenv("GOINFER_BENCH_BACKEND")})
+		// GOINFER_BENCH_KV names the load's KVQuant ("" is auto's f32 on the CPU; "f16" the half-width cache), for the CPU KV A/B
+		// (docs/measurements/cpu-kv-f16-2026-11-23/README.md).
+		benchModel, benchErr = Load(path, Options{Quant: quant, Backend: os.Getenv("GOINFER_BENCH_BACKEND"), KVQuant: os.Getenv("GOINFER_BENCH_KV")})
 		q4kWiden56ForTest = false
 	})
 	return benchModel, benchErr

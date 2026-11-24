@@ -228,6 +228,7 @@ __device__ __forceinline__ void rowsQ6K(const unsigned char* __restrict__ W, int
 
 extern "C" {
 
+#ifndef ACTGROUP_DEVICE_ONLY // prefill_g32.cu includes this file for its device functions only
 // rmsnorm_quant_g32: rmsnorm_quant's sum-of-squares ladder, then each group's normed values x·w·rnorm quantized per 32, a warp a
 // group. Every block runs the whole ladder (blockDim 256, the same reduction), so rnorm, and hence every output, is the same at any
 // grid. aScale holds 2·H/32 floats (quantG32). Shared: H + blockDim floats (the ladder uses the last blockDim).
@@ -328,6 +329,7 @@ __global__ void glu_quant_g32_serial(const float* __restrict__ g, const float* _
     quantG32(dscratch, I / 32, q, scale);
 }
 
+#endif // ACTGROUP_DEVICE_ONLY
 // ---- Per-32 matvec row bodies. Each returns ONE lane's partial sum for output row `n` (the caller
 // does the warp reduction and the epilogue). The standalone matvecs below and the fused per-32
 // kernels (fused_rms_qkv_g32 / fused_rms_gu_g32) call these same functions, so a fused projection
@@ -476,6 +478,7 @@ __device__ __forceinline__ float finishRow(int kind, float sum, const void* __re
     return __fadd_rn(sum, (bias ? bias[n] : 0.f));
 }
 
+#ifndef ACTGROUP_DEVICE_ONLY // prefill_g32.cu includes this file for its device functions only
 // gemv_w4a8_g32: gemv_w4a8_fwd with per-32 activation scales aS[Kgroups]; the epilogue drops the
 // per-vector activation multiply: dst[n] = sum + bias. Same launch geometry as gemv_w4a8_fwd (8 rows
 // per 256-thread block). Every multiply-accumulate is an explicit __fmaf_rn / __fmul_rn.
@@ -667,4 +670,5 @@ __global__ void fused_rms_gu_g32(
     }
 }
 
+#endif // ACTGROUP_DEVICE_ONLY
 } // extern "C"

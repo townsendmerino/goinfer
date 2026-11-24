@@ -32,21 +32,22 @@ METAL_DEVICE_SKIP = re.compile(r"(?i)\bno (?:(?:cuda|metal|gpu) )?device\b|did n
 # A skip whose reason is a missing asset or an opt-in variable: expected on a box that lacks the file or does not set the flag.
 ASSET_SKIP = re.compile(r"(?i)GOINFER_HEAVY_TESTS|\bset GOINFER_|\bno [\w .-]*(?:checkpoint|fixture|model|asset)|not found|missing|under ~/models")
 BACKENDS = {"cuda": DEVICE_SKIP, "metal": METAL_DEVICE_SKIP}
-# internal/testgate's leading skip tokens, read before the patterns above: SKIP-DEVICE is a device skip whatever its wording, SKIP-HEAVY and SKIP-ASSET
-# are asset or opt-in skips even when the message mentions a device.
-TOKEN_DEVICE, TOKEN_HEAVY, TOKEN_ASSET = "SKIP-DEVICE:", "SKIP-HEAVY:", "SKIP-ASSET:"
+# internal/testgate's leading skip tokens, read before the patterns above: SKIP-DEVICE is a device skip whatever its wording; SKIP-HEAVY, SKIP-ASSET
+# and SKIP-MEASURE are asset or opt-in skips even when the message mentions a device.
+TOKEN_DEVICE, TOKEN_HEAVY, TOKEN_ASSET, TOKEN_MEASURE = "SKIP-DEVICE:", "SKIP-HEAVY:", "SKIP-ASSET:", "SKIP-MEASURE:"
+OPT_IN_TOKENS = (TOKEN_HEAVY, TOKEN_ASSET, TOKEN_MEASURE)
 
 
 def is_device_skip(text, backend):
     if TOKEN_DEVICE in text:
         return True
-    if TOKEN_HEAVY in text or TOKEN_ASSET in text:
+    if any(tok in text for tok in OPT_IN_TOKENS):
         return False
     return bool((DEVICE_SKIP if backend == "cuda" else METAL_DEVICE_SKIP).search(text))
 
 
 def is_asset_skip(text):
-    if TOKEN_HEAVY in text or TOKEN_ASSET in text:
+    if any(tok in text for tok in OPT_IN_TOKENS):
         return True
     if TOKEN_DEVICE in text:
         return False
