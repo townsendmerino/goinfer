@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -532,7 +533,7 @@ func (s *server) maybeStore(store bool, id, model string, messages []chatMessage
 	if !store || s.responses == nil {
 		return
 	}
-	full := append(append([]chatMessage(nil), messages...),
+	full := append(slices.Clone(messages),
 		chatMessage{Role: "assistant", Content: rawStr(assistant), ToolCalls: toolCalls, ReasoningContent: reasoning})
 	s.responses.put(id, &responseEntry{model: model, messages: full})
 }

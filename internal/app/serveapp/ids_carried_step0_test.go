@@ -96,7 +96,7 @@ func TestIDsCarried_G0(t *testing.T) {
 		if len(P) != rp.P { // void: the fixture's prompt is not the one the replay's slot started with
 			t.Fatalf("VOID %s: the route renders %d prompt ids, the replay's slot started with %d", rp.ID, len(P), rp.P)
 		}
-		slot := append(append([]int(nil), P...), rp.Gen...)
+		slot := slices.Concat(P, rp.Gen)
 		rsText, rsAt, callAt, msgAt := "", -1, -1, -1
 		for i, it := range rp.Items {
 			switch it["type"] {
@@ -136,7 +136,7 @@ func TestIDsCarried_G0(t *testing.T) {
 				items = edit(items)
 			}
 			nb := fx.body(rp.Session, rp.NInput)
-			input := append([]any(nil), nb["input"].([]any)...)
+			input := slices.Clone(nb["input"].([]any))
 			for _, it := range items {
 				input = append(input, it)
 			}
@@ -334,7 +334,7 @@ func loadIDsStep0(t *testing.T) *idsStep0 {
 func (fx *idsStep0) body(session string, n int) map[string]any {
 	b := map[string]any{}
 	maps.Copy(b, fx.template)
-	b["input"] = append([]any(nil), fx.sessions[session][:n]...)
+	b["input"] = slices.Clone(fx.sessions[session][:n])
 	return b
 }
 

@@ -10,7 +10,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"os"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -546,7 +546,7 @@ func (s *server) servedNames() []string {
 	if s.embed != nil {
 		names = append(names, s.embedID)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	return names
 }
 
@@ -1340,7 +1340,7 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 		}
 	}
 	if g != nil {
-		eos := append(append([]int(nil), lm.eosIDs...), lm.stopIDs...)
+		eos := slices.Concat(lm.eosIDs, lm.stopIDs)
 		m := constrain.NewMasker(g, lm.cachedTokenBytes(), eos).StopWhenComplete()
 		if sm.Confidence {
 			m.CaptureConfidence(constrain.ConfidenceOptions{})

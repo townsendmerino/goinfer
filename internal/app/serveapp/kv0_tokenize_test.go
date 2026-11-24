@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -68,7 +68,7 @@ func TestKV0_tokenizeBodies(t *testing.T) {
 		}
 		return nil
 	})
-	sort.Strings(files)
+	slices.Sort(files)
 	of, err := os.Create(out)
 	if err != nil {
 		t.Fatal(err)

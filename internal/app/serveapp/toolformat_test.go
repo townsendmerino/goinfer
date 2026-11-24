@@ -2,6 +2,7 @@ package serveapp
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -72,7 +73,7 @@ func TestToolFormat_forcedToolUnderNative(t *testing.T) {
 	if err := constrainForcedTool(native, &gr, forced, false, "", qwenToolsForTest); err != nil || gr.sp.LogitProcessor != nil {
 		t.Errorf("a lone-tool convenience must run unconstrained without an error: %v", err)
 	}
-	if err := constrainForcedTool(native, &gr, nil, false, "required", append([]chat.Tool{}, qwenToolsForTest...)); err != nil || gr.sp.LogitProcessor != nil {
+	if err := constrainForcedTool(native, &gr, nil, false, "required", slices.Clone(qwenToolsForTest)); err != nil || gr.sp.LogitProcessor != nil {
 		t.Errorf("a union choice must run unconstrained without an error: %v", err)
 	}
 }

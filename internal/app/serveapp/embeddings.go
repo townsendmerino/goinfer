@@ -331,7 +331,7 @@ func wantsBase64(format string) (bool, error) {
 func postprocess(v []float32, dims int) []float32 {
 	l2normalize(v)
 	if dims < len(v) {
-		v = append([]float32(nil), v[:dims]...)
+		v = slices.Clone(v[:dims])
 		l2normalize(v)
 	}
 	return v

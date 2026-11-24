@@ -2,14 +2,15 @@ package serveapp
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -291,7 +292,7 @@ func (s *schedSim) step(e schedEvent) schedStep {
 			st.Queue = append(st.Queue, schedWaiter{ID: id, Place: place})
 		}
 	}
-	sort.Slice(st.Queue, func(i, j int) bool { return st.Queue[i].Place < st.Queue[j].Place })
+	slices.SortFunc(st.Queue, func(a, b schedWaiter) int { return cmp.Compare(a.Place, b.Place) })
 	_, st.Waiting, st.Occupied, _ = s.lm.turns.position("\x00census")
 	st.Load = s.lm.turns.load()
 	if s.lm.queue != nil {
@@ -511,12 +512,7 @@ func (s *placementSim) holds(toks []int) string {
 		return "empty"
 	}
 	best, name := 0, "?"
-	names := make([]string, 0, len(s.convs))
-	for n := range s.convs {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	for _, n := range names {
+	for _, n := range slices.Sorted(maps.Keys(s.convs)) {
 		c := s.convs[n]
 		for _, p := range append(slices.Clone(c.prompts), c.history) {
 			if m := scheduler.CommonPrefix(p, toks); m > best {
