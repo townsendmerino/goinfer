@@ -35,7 +35,7 @@ func TestPrefillFlags_reachTheDecoderThroughOptions(t *testing.T) {
 		{"--exact-prefill", config{load: loadflags.Flags{ExactPrefill: true}}, true, "0"},
 		{"--cpu-exact-prefill", config{load: loadflags.Flags{CPUExactPrefill: true}}, false, "0"},
 	} {
-		opts := (modelSpec{}).options(c.cfg)
+		opts := (&modelSpec{}).options(&c.cfg)
 		if opts.ExactPrefill != c.exact {
 			t.Errorf("%s: Options.ExactPrefill = %v, want %v", c.name, opts.ExactPrefill, c.exact)
 		}
@@ -56,7 +56,7 @@ func TestPrefillFlags_reachTheDecoderThroughOptions(t *testing.T) {
 func TestMoEPagerFlag_reachesTheDecoderThroughOptions(t *testing.T) {
 	unsetenvT(t, "GOINFER_MOE_PREAD_CPU")
 	for _, mode := range []string{"pool", "mmap"} {
-		if got := (modelSpec{}).options(config{load: loadflags.Flags{MoEPager: mode}}).MoEPager; got != mode {
+		if got := (&modelSpec{}).options(&config{load: loadflags.Flags{MoEPager: mode}}).MoEPager; got != mode {
 			t.Errorf("--moe-pager=%s: Options.MoEPager = %q", mode, got)
 		}
 	}

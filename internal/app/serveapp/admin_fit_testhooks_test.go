@@ -92,7 +92,7 @@ func TestAdminFit_answerIsWhatTheLoadDoes(t *testing.T) {
 	load := func() (*decoder.Model, error) {
 		c := srv.adminLoadConfig(adminLoadReq{Path: path})
 		spec := modelSpec{path: path}
-		p, err := modelload.Plan(modelload.Request{Spec: path, Opts: spec.options(c), DirectLoad: c.load.DirectLoad, ExplicitQuant: spec.explicitQuant(c)})
+		p, err := modelload.Plan(modelload.Request{Spec: path, Opts: spec.options(&c), DirectLoad: c.load.DirectLoad, ExplicitQuant: spec.explicitQuant(&c)})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -175,7 +175,7 @@ func TestAdminFit_builtSidecarIsPricedWithoutLoading(t *testing.T) {
 	}
 	c := srv.adminLoadConfig(adminLoadReq{Path: path})
 	spec := modelSpec{path: path}
-	p, err := modelload.Plan(modelload.Request{Spec: path, Opts: spec.options(c), ExplicitQuant: spec.explicitQuant(c)})
+	p, err := modelload.Plan(modelload.Request{Spec: path, Opts: spec.options(&c), ExplicitQuant: spec.explicitQuant(&c)})
 	if err != nil || p.Build == "" {
 		t.Fatalf("plan before the build: %+v, %v", p, err)
 	}
@@ -194,7 +194,7 @@ func TestAdminFit_builtSidecarIsPricedWithoutLoading(t *testing.T) {
 	if err := os.WriteFile(built, giw.Write(blob, []byte("tok")), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if again, err := modelload.Plan(modelload.Request{Spec: path, Opts: spec.options(c), ExplicitQuant: spec.explicitQuant(c)}); err != nil || again.LoadPath != built {
+	if again, err := modelload.Plan(modelload.Request{Spec: path, Opts: spec.options(&c), ExplicitQuant: spec.explicitQuant(&c)}); err != nil || again.LoadPath != built {
 		t.Fatalf("plan after the build: %+v, %v", again, err)
 	}
 

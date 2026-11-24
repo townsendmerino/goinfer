@@ -46,7 +46,7 @@ func TestKVHostBytes_parseAndResolve(t *testing.T) {
 	if _, _, err := resolveKVHostBytes("nope", g); err == nil {
 		t.Error("a bad value resolved")
 	}
-	if err := (config{kvHostBytesFlag: "1x"}).validate(); err == nil || !strings.Contains(err.Error(), "kv-host-bytes") {
+	if err := (&config{kvHostBytesFlag: "1x"}).validate(); err == nil || !strings.Contains(err.Error(), "kv-host-bytes") {
 		t.Errorf("validate accepted a bad -kv-host-bytes: %v", err)
 	}
 }

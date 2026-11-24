@@ -28,14 +28,14 @@ func TestKVShareOffFor(t *testing.T) {
 func TestKVShare_reachesTheModel(t *testing.T) {
 	for _, off := range []bool{false, true} {
 		cfg := config{kvShareOff: off}
-		if got := (modelSpec{}).options(cfg).KVShareOff; got != off {
+		if got := (&modelSpec{}).options(&cfg).KVShareOff; got != off {
 			t.Errorf("kvShareOff %v: decoder.Options.KVShareOff = %v", off, got)
 		}
 	}
 }
 
 func TestKVShare_validate(t *testing.T) {
-	if err := (config{kvShare: "maybe"}).validate(); err == nil {
+	if err := (&config{kvShare: "maybe"}).validate(); err == nil {
 		t.Error("-kv-share maybe was accepted")
 	}
 }
