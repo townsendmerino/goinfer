@@ -147,8 +147,8 @@ func TestKVSlotsWithin(t *testing.T) {
 		{"even the first over budget: still 1, the decline is elsewhere", 4, 1000 * mb, 2000 * mb, 117 * mb, 1},
 		{"request of 0 means 1", 0, 10000 * mb, 2000 * mb, 117 * mb, 1},
 	} {
-		if got := kvSlotsWithin(tc.want, tc.budget, tc.base, tc.slot); got != tc.got {
-			t.Errorf("%s: kvSlotsWithin(%d, ...) = %d, want %d", tc.name, tc.want, got, tc.got)
+		if got := mem.KVSlotsWithin(tc.want, tc.budget, tc.base, tc.slot); got != tc.got {
+			t.Errorf("%s: mem.KVSlotsWithin(%d, ...) = %d, want %d", tc.name, tc.want, got, tc.got)
 		}
 	}
 }

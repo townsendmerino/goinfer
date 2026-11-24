@@ -22,12 +22,9 @@ var guardThresholds = map[string]string{
 	"ctxPlanFloor": "PlanCtxFloor", "fitWarnRatio": "WarnRatio", "ctxFloor": "CtxFloor",
 }
 
-// thresholdRatchet is each file outside mem that still applies a guard threshold itself, and how many references it makes:
-// the backends' own guards, which MM2 moves into mem. A count may only fall, and a file leaves the list when it reaches 0.
-var thresholdRatchet = map[string]int{
-	"backend/webgpu/kv_slots.go": 2,
-	"backend/metal/backend.go":   3,
-}
+// thresholdRatchet is each file outside mem that still applies a guard threshold itself, and how many references it makes.
+// It is empty: every guard's arithmetic is in mem. A count may only fall, and a file leaves the list when it reaches 0.
+var thresholdRatchet = map[string]int{}
 
 // thresholdUses counts the references to a guard threshold in f, less the ones in a constant declaration that only aliases
 // one under a name for the same threshold (const fitMemFraction = mem.WeightsFraction). An alias of one threshold under
@@ -78,7 +75,7 @@ func thresholdUses(f *ast.File) int {
 }
 
 // TestNoGuardThresholdOutsideMem (MM1 gate G-MM1c-3, I6 as far as MM1 reaches): no file outside this package applies a guard
-// threshold, except the ratcheted backend guards. It goes red on a planted reference first.
+// threshold. It goes red on a planted reference first.
 func TestNoGuardThresholdOutsideMem(t *testing.T) {
 	plant := "package x\nimport \"github.com/townsendmerino/goinfer/decoder\"\nconst fitMemFraction = decoder.WeightsMemFraction\nvar budget = int64(decoder.WeightsMemFraction * 8)\n"
 	f, err := parser.ParseFile(token.NewFileSet(), "plant.go", plant, 0)
