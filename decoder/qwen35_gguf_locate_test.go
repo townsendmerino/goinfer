@@ -33,6 +33,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/testgate"
@@ -100,11 +101,11 @@ func TestQwen35GGUF_locateDivergence(t *testing.T) {
 		}
 		out := make([][]float32, len(hid))
 		for i := range hid {
-			out[i] = append([]float32(nil), hid[i]...)
+			out[i] = slices.Clone(hid[i])
 		}
 		// The descriptor outlives the model here only to LABEL the curve (layer kinds); it holds
 		// no weights, so keeping it after Close is a read of config, not of freed memory.
-		return out, append([]float32(nil), lg...), m.w.arch
+		return out, slices.Clone(lg), m.w.arch
 	}
 
 	refH, refL, arch := captureAll("safetensors", dir)

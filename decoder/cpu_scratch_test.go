@@ -88,7 +88,7 @@ func TestCPUDecodeScratch_plantsGoRed(t *testing.T) {
 		t.Errorf("a row beside the list: err = %v, want one naming scores and 32 B", err)
 	}
 	scr.scores = nil
-	short := append([]CPUScratchTerm(nil), terms...)
+	short := slices.Clone(terms)
 	for i := range short {
 		if short[i].Role == "norm" {
 			short[i].Bytes -= 4

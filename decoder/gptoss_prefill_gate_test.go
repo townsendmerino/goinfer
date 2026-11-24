@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -222,7 +223,7 @@ func gptossPFRun(t *testing.T, m *Model, p []int, exact bool, forced []int) ([][
 	if err != nil {
 		t.Fatal(err)
 	}
-	logits := [][]float32{append([]float32(nil), lg...)}
+	logits := [][]float32{slices.Clone(lg)}
 	var toks []int
 	for i := range gptossPFPositions - 1 {
 		next := argmaxF32(logits[len(logits)-1])
@@ -234,7 +235,7 @@ func gptossPFRun(t *testing.T, m *Model, p []int, exact bool, forced []int) ([][
 		if err != nil {
 			t.Fatal(err)
 		}
-		logits = append(logits, append([]float32(nil), lg...))
+		logits = append(logits, slices.Clone(lg))
 	}
 	return logits, toks
 }
@@ -289,7 +290,7 @@ func gptossPFTimed(t *testing.T, m *Model, p []int, arm rune) (time.Duration, ui
 	if err != nil {
 		t.Fatal(err)
 	}
-	return wall, peak.Load(), append([]float32(nil), lg...)
+	return wall, peak.Load(), slices.Clone(lg)
 }
 
 // gptossPFSettle waits, up to max, for the 1-minute load average to fall under below, and returns how long it waited.

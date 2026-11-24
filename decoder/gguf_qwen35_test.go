@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -108,7 +109,7 @@ func TestVReorder_roundTripAllBlocks(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			orig := iota32(c.total)
 			// Simulate the converter forward on just the V block.
-			tiled := append([]float32(nil), orig...)
+			tiled := slices.Clone(orig)
 			fwd := fwdReorderRef(orig[c.off:c.off+c.blk], c.lead, numK, vpk, c.hd, c.trail)
 			copy(tiled[c.off:c.off+c.blk], fwd)
 
@@ -122,7 +123,7 @@ func TestVReorder_roundTripAllBlocks(t *testing.T) {
 			}
 
 			// Production inverse on the V block must recover the original exactly.
-			got := append([]float32(nil), tiled...)
+			got := slices.Clone(tiled)
 			inv := untileVHeads(got[c.off:c.off+c.blk], c.lead, numK, vpk, c.hd, c.trail)
 			copy(got[c.off:c.off+c.blk], inv)
 

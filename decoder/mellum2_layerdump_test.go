@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"math"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -88,7 +89,7 @@ func TestMellum2_layerDump(t *testing.T) {
 			}
 			logits = lg
 			for l := range hid {
-				resid[l][pi] = append([]float32(nil), hid[l]...)
+				resid[l][pi] = slices.Clone(hid[l])
 			}
 		case capture:
 			_, hid, err := m.ForwardCapture(id, cache, layers)
@@ -96,7 +97,7 @@ func TestMellum2_layerDump(t *testing.T) {
 				t.Fatalf("ForwardCapture(%d): %v", i, err)
 			}
 			for l := range hid {
-				resid[l][pi] = append([]float32(nil), hid[l]...)
+				resid[l][pi] = slices.Clone(hid[l])
 			}
 		default:
 			if _, err := m.runLayers(id, cache); err != nil {

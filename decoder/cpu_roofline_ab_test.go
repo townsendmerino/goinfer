@@ -204,7 +204,7 @@ func logitsBitIdentical(t *testing.T, name string, set func(on bool)) {
 				set(on)
 				var steps [][]float32
 				sp := SamplingParams{Temperature: 0, LogitProcessor: func(_ []int, logits []float32) {
-					steps = append(steps, append([]float32(nil), logits...))
+					steps = append(steps, slices.Clone(logits))
 				}}
 				out, g := h.m.Generate(context.Background(), h.ids, 48, sp)
 				for range out {

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
@@ -93,7 +94,7 @@ func TestLlamaTiny_textParity(t *testing.T) {
 
 	// A MATCHING ARGMAX MEANS LITTLE ON ITS OWN — both LFM2 bugs held argmax while the logit
 	// cosine was 0.897. The greedy continuation is the part that compounds.
-	cur := append([]int(nil), g.PromptIDs...)
+	cur := slices.Clone(g.PromptIDs)
 	cont := make([]int, 0, g.NNew)
 	c2 := m.NewCache(len(cur) + g.NNew)
 	var lg []float32

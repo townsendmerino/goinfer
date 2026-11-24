@@ -72,7 +72,7 @@ func TestR13_cpuAB(t *testing.T) {
 				}
 				last = lg
 			}
-			return append([]float32(nil), last...), med(ms)
+			return slices.Clone(last), med(ms)
 		}
 		prefill := func(off bool) ([]float32, float64) {
 			w4a8PreOff = off
@@ -81,7 +81,7 @@ func TestR13_cpuAB(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			return append([]float32(nil), out[len(out)-1]...), float64(time.Since(st).Microseconds()) / 1e3
+			return slices.Clone(out[len(out)-1]), float64(time.Since(st).Microseconds()) / 1e3
 		}
 		type phase struct {
 			name string

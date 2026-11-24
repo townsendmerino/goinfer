@@ -280,7 +280,7 @@ func censusRealShapeConfigs(t *testing.T) []censusVariant {
 
 func censusD2(t *testing.T, c *census, fake *probe.Fake, zoo []censusMachine, variants []censusVariant) {
 	t.Helper()
-	cfgs := append(append([]censusVariant(nil), variants...), censusRealShapeConfigs(t)...)
+	cfgs := append(slices.Clone(variants), censusRealShapeConfigs(t)...)
 	backends := []censusBackend{{"cpu", "cpu", false}, {"cuda", "cuda", true}, {"cuda-unlinked", "cuda", false}, {"metal", "metal", true}}
 	for _, be := range backends {
 		restore := setCompiled(be.name, be.linked)

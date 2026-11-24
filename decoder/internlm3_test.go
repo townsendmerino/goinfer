@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
@@ -87,7 +88,7 @@ func TestInternLM3_textParity(t *testing.T) {
 	}
 
 	// Greedy continuation: a rope difference shows as drift across positions, not in one logit.
-	cur := append([]int(nil), g.PromptIDs...)
+	cur := slices.Clone(g.PromptIDs)
 	for i := range g.NNew {
 		c2 := m.NewCache(len(cur) + 1)
 		var lg []float32

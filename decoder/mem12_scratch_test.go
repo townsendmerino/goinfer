@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"sync/atomic"
 	"testing"
 )
@@ -140,7 +141,7 @@ func TestMEM12Scratch_identity(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			wantN = append(wantN, append([]float32(nil), l...))
+			wantN = append(wantN, slices.Clone(l))
 		}
 		c := m.NewCache(64)
 		for pass := range 2 {

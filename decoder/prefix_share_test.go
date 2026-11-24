@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -20,7 +21,7 @@ func sharedPrompts(vocab, prefix int, suffixes []int) [][]int {
 	}
 	out := make([][]int, len(suffixes))
 	for k, n := range suffixes {
-		p := append([]int(nil), base...)
+		p := slices.Clone(base)
 		for i := range n {
 			p = append(p, (k*101+i*53+7)%vocab)
 		}
@@ -146,7 +147,7 @@ func TestPromptHiddenMany_fallsBackWhereItCannotShare(t *testing.T) {
 }
 
 func TestShareGroups(t *testing.T) {
-	mk := func(prefix []int, tail ...int) []int { return append(append([]int(nil), prefix...), tail...) }
+	mk := func(prefix []int, tail ...int) []int { return append(slices.Clone(prefix), tail...) }
 	long := sharedPrompts(100, 20, []int{2})[0][:20]
 	other := []int{9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9}
 	prompts := [][]int{mk(long, 1, 2), other, mk(long, 3), mk(long, 1, 5)}

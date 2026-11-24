@@ -22,7 +22,7 @@ func repadSafetensors(t *testing.T, path string, odd bool) {
 		t.Fatal(err)
 	}
 	n := int(binary.LittleEndian.Uint64(raw))
-	hdr, blob := append([]byte(nil), raw[8:8+n]...), raw[8+n:]
+	hdr, blob := slices.Clone(raw[8:8+n]), raw[8+n:]
 	for (8+len(hdr))%2 == 1 != odd || (!odd && (8+len(hdr))%8 != 0) {
 		hdr = append(hdr, ' ')
 	}
