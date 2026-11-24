@@ -252,7 +252,7 @@ var kvCacheFieldState = map[string]cacheState{
 	"mropePos":  stateMRoPE, "mropeDelta": stateMRoPE,
 	"deepstack":     stateDeepstack,
 	"captureLayers": stateCapture, "captured": stateCapture,
-	"subCapture": stateCapture, "subAttn": stateCapture, "subMLP": stateCapture, "subMLPpre": stateCapture, "subCtx": stateCapture,
+	"subCapture": stateCapture, "subAttn": stateCapture, "subMLP": stateCapture, "subMLPpre": stateCapture, "subCtx": stateCapture, "subPLE": stateCapture,
 	"treeRowPos": stateTree, "treeMask": stateTree,
 	"lora": stateAdapter,
 }

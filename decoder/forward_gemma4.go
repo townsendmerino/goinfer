@@ -93,6 +93,9 @@ func (m *Model) gemma4AttnToken(p *gemma4AttnParams, x, out []float32, lw *Layer
 		start = max(pos-p.Window+1, 0)
 	}
 	gemma4Attend(q, ctx, keys, vals, nH, nKV, hd, start, nKeys, p.Scale, &t.sc)
+	if cache.subCapture { // the pre-o-proj context
+		cache.subCtx[l] = append(cache.subCtx[l][:0], ctx...)
+	}
 	matmul(be, &lw.OProj, ctx, out, 1)
 }
 

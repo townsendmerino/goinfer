@@ -49,6 +49,47 @@ func (m *Model) ForwardSubCaptureLogitsForTest(id int, cache *KVCache) (logits [
 	return append([]float32(nil), lg...), cache.subAttn, cache.subMLP, cache.subCtx, cache.subMLPpre, nil
 }
 
+// LayerCaptureForTest is one token's per-layer CPU intermediates from ForwardLayerCaptureLogitsForTest, each [layer][width]:
+// the pre-o-proj attention context, the attention, MLP (before and after its post-norm) and PLE contributions, and the residual
+// after the layer completes. A row the layer has no operation for is nil (PLE outside a Gemma 4 E-model).
+type LayerCaptureForTest struct {
+	Ctx, Attn, MLPPre, MLP, PLE, Out [][]float32
+}
+
+// ForwardLayerCaptureLogitsForTest runs one token and returns its logits with LayerCaptureForTest's captures, the CPU side of a
+// per-layer resident parity diff. Unlike ForwardSubCapture it serves Gemma 4's E-models: their PLE branch and layer scalar
+// change the residual past the two contributions, so a diff compares Out, not a sum of contributions. It refuses Gemma 4's
+// MoE block, which replaces the residual with no captured part. The forward's output is byte-identical to forward(id).
+func (m *Model) ForwardLayerCaptureLogitsForTest(id int, cache *KVCache) ([]float32, LayerCaptureForTest, error) {
+	a := m.w.arch
+	if m.program().AnyOp(func(o *op) bool { return o.Kind == opGemma4MoE }) {
+		return nil, LayerCaptureForTest{}, fmt.Errorf("decoder.ForwardLayerCaptureLogitsForTest: not wired for arch %q: Gemma 4's MoE block replaces the residual with no captured contribution", a.Name)
+	}
+	nL := a.NumLayers
+	all := make([]int, nL)
+	for l := range all {
+		all[l] = l
+	}
+	cache.subCapture = true
+	cache.subAttn, cache.subMLP, cache.subMLPpre = make([][]float32, nL), make([][]float32, nL), make([][]float32, nL)
+	cache.subCtx, cache.subPLE = make([][]float32, nL), make([][]float32, nL)
+	cache.captureLayers, cache.captured = all, make([][]float32, nL)
+	defer func() {
+		cache.subCapture = false
+		cache.subAttn, cache.subMLP, cache.subMLPpre, cache.subCtx, cache.subPLE = nil, nil, nil, nil, nil
+		cache.captureLayers, cache.captured = nil, nil
+	}()
+	lg, err := m.forward(id, cache)
+	if err != nil {
+		return nil, LayerCaptureForTest{}, err
+	}
+	c := LayerCaptureForTest{Ctx: cache.subCtx, Attn: cache.subAttn, MLPPre: cache.subMLPpre, MLP: cache.subMLP, Out: cache.captured}
+	if a.gemma4 != nil && a.gemma4.HiddenSizePerLayerInput > 0 {
+		c.PLE = cache.subPLE
+	}
+	return append([]float32(nil), lg...), c, nil
+}
+
 // FinalNormForTest applies the model's final normalization to a copy of h: the CPU reference for the seam between the trunk
 // and the LM head in a resident bisect. It does not project to logits; that is the head.
 func (m *Model) FinalNormForTest(h []float32) []float32 {
