@@ -5,6 +5,7 @@ internal/vision/testdata/qwen25vl-vision-tiny int4/kvprecision-i8
 internal/vision/testdata/qwen25vl-vision-tiny int4/slots2
 internal/vision/testdata/qwen25vl-vision-tiny int4/ssm
 internal/vision/testdata/qwen25vl-vision-tiny int8int8
+internal/vision/testdata/qwen25vl-vision-tiny int8int8/g32
 selftestdata/gemma3-vl-tiny f32
 selftestdata/gemma3-vl-tiny int4
 selftestdata/gemma3-vl-tiny int4/kv-f16
@@ -12,6 +13,7 @@ selftestdata/gemma3-vl-tiny int4/kvprecision-i8
 selftestdata/gemma3-vl-tiny int4/slots2
 selftestdata/gemma3-vl-tiny int4/ssm
 selftestdata/gemma3-vl-tiny int8int8
+selftestdata/gemma3-vl-tiny int8int8/g32
 selftestdata/llama-tiny f32
 selftestdata/llama-tiny int4
 selftestdata/llama-tiny int4/kv-f16
@@ -19,6 +21,7 @@ selftestdata/llama-tiny int4/kvprecision-i8
 selftestdata/llama-tiny int4/slots2
 selftestdata/llama-tiny int4/ssm
 selftestdata/llama-tiny int8int8
+selftestdata/llama-tiny int8int8/g32
 selftestdata/qwen35-tiny int4
 selftestdata/qwen35-tiny int4/slots2
 selftestdata/qwen35-tiny int4/ssm
@@ -45,6 +48,7 @@ testdata/gemma1-tiny int4/kvprecision-i8
 testdata/gemma1-tiny int4/slots2
 testdata/gemma1-tiny int4/ssm
 testdata/gemma1-tiny int8int8
+testdata/gemma1-tiny int8int8/g32
 testdata/gemma1-tiny.gguf f32
 testdata/gemma1-tiny.gguf int4
 testdata/gemma1-tiny.gguf int4/kv-f16
@@ -52,6 +56,7 @@ testdata/gemma1-tiny.gguf int4/kvprecision-i8
 testdata/gemma1-tiny.gguf int4/slots2
 testdata/gemma1-tiny.gguf int4/ssm
 testdata/gemma1-tiny.gguf int8int8
+testdata/gemma1-tiny.gguf int8int8/g32
 testdata/gemma3-vl-tiny f32
 testdata/gemma3-vl-tiny int4
 testdata/gemma3-vl-tiny int4/kv-f16
@@ -59,6 +64,7 @@ testdata/gemma3-vl-tiny int4/kvprecision-i8
 testdata/gemma3-vl-tiny int4/slots2
 testdata/gemma3-vl-tiny int4/ssm
 testdata/gemma3-vl-tiny int8int8
+testdata/gemma3-vl-tiny int8int8/g32
 testdata/gemma4-moe-kv-tiny int4
 testdata/gemma4-moe-kv-tiny int4/kv-f16
 testdata/gemma4-moe-kv-tiny int4/kvprecision-i8
@@ -115,6 +121,7 @@ testdata/granite-dense-tiny int4/kvprecision-i8
 testdata/granite-dense-tiny int4/slots2
 testdata/granite-dense-tiny int4/ssm
 testdata/granite-dense-tiny int8int8
+testdata/granite-dense-tiny int8int8/g32
 testdata/internlm2-tiny f32
 testdata/internlm2-tiny int4
 testdata/internlm2-tiny int4/kv-f16
@@ -122,6 +129,7 @@ testdata/internlm2-tiny int4/kvprecision-i8
 testdata/internlm2-tiny int4/slots2
 testdata/internlm2-tiny int4/ssm
 testdata/internlm2-tiny int8int8
+testdata/internlm2-tiny int8int8/g32
 testdata/internlm3-tiny f32
 testdata/internlm3-tiny int4
 testdata/internlm3-tiny int4/kv-f16
@@ -129,6 +137,7 @@ testdata/internlm3-tiny int4/kvprecision-i8
 testdata/internlm3-tiny int4/slots2
 testdata/internlm3-tiny int4/ssm
 testdata/internlm3-tiny int8int8
+testdata/internlm3-tiny int8int8/g32
 testdata/llama-attnfa-tiny f32
 testdata/llama-attnfa-tiny int4
 testdata/llama-attnfa-tiny int4/kv-f16
@@ -136,6 +145,7 @@ testdata/llama-attnfa-tiny int4/kvprecision-i8
 testdata/llama-attnfa-tiny int4/slots2
 testdata/llama-attnfa-tiny int4/ssm
 testdata/llama-attnfa-tiny int8int8
+testdata/llama-attnfa-tiny int8int8/g32
 testdata/llama-tiny f32
 testdata/llama-tiny int4
 testdata/llama-tiny int4/kv-f16
@@ -143,6 +153,7 @@ testdata/llama-tiny int4/kvprecision-i8
 testdata/llama-tiny int4/slots2
 testdata/llama-tiny int4/ssm
 testdata/llama-tiny int8int8
+testdata/llama-tiny int8int8/g32
 testdata/mistral-tiny-window f32
 testdata/mistral-tiny-window int4
 testdata/mistral-tiny-window int4/kv-f16
@@ -150,6 +161,7 @@ testdata/mistral-tiny-window int4/kvprecision-i8
 testdata/mistral-tiny-window int4/slots2
 testdata/mistral-tiny-window int4/ssm
 testdata/mistral-tiny-window int8int8
+testdata/mistral-tiny-window int8int8/g32
 testdata/mixtral-tiny int4
 testdata/mixtral-tiny int4/kv-f16
 testdata/mixtral-tiny int4/kvprecision-i8
@@ -169,6 +181,7 @@ testdata/olmo3-tiny int4/kvprecision-i8
 testdata/olmo3-tiny int4/slots2
 testdata/olmo3-tiny int4/ssm
 testdata/olmo3-tiny int8int8
+testdata/olmo3-tiny int8int8/g32
 testdata/olmo_hybrid-tiny f32
 testdata/olmo_hybrid-tiny int4
 testdata/olmo_hybrid-tiny int4/kv-f16
@@ -176,6 +189,7 @@ testdata/olmo_hybrid-tiny int4/kvprecision-i8
 testdata/olmo_hybrid-tiny int4/slots2
 testdata/olmo_hybrid-tiny int4/ssm
 testdata/olmo_hybrid-tiny int8int8
+testdata/phi3-tiny int8int8/g32
 testdata/qwen25vl-tiny f32
 testdata/qwen25vl-tiny int4
 testdata/qwen25vl-tiny int4/kv-f16
@@ -183,6 +197,7 @@ testdata/qwen25vl-tiny int4/kvprecision-i8
 testdata/qwen25vl-tiny int4/slots2
 testdata/qwen25vl-tiny int4/ssm
 testdata/qwen25vl-tiny int8int8
+testdata/qwen25vl-tiny int8int8/g32
 testdata/qwen35-tiny int4
 testdata/qwen35-tiny int4/slots2
 testdata/qwen35-tiny int4/ssm
@@ -242,6 +257,7 @@ testdata/smollm3-tiny int4/kvprecision-i8
 testdata/smollm3-tiny int4/slots2
 testdata/smollm3-tiny int4/ssm
 testdata/smollm3-tiny int8int8
+testdata/smollm3-tiny int8int8/g32
 testdata/voxtral-tiny f32
 testdata/voxtral-tiny int4
 testdata/voxtral-tiny int4/kv-f16

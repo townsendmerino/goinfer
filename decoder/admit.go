@@ -92,6 +92,9 @@ func admitResident(f AdmitFacts, ad Admission) string {
 	if why := actGroupResidentDecline(key, f.ActGroup, f.QuantLabel); why != "" {
 		return why
 	}
+	if why := webgpuActGroupShapeDecline(key, f.ActGroup, f.Arch); why != "" {
+		return why
+	}
 	if len(ad.Gates) > 0 {
 		return ad.Gates[0].Reason
 	}

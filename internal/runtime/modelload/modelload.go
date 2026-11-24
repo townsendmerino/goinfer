@@ -322,10 +322,8 @@ func isDir(p string) bool {
 //     per-32, which decodes faster than the int8int8 default on CPU and CUDA, and on CUDA fits the
 //     default context resident where int8int8 does not. On Metal it runs resident on the q4k lane, which quantizes no
 //     activation (the Metal q4k default: docs/measurements/peer-vetted-2026-10-07-macbook.md, "M1 on main after #775: read");
-//   - int8int8 with per-32 activation scales anywhere else (WebGPU: no Q4_K kernel). Only CUDA
-//     residency implements per-group activation scales, so on WebGPU such a load declines to the
-//     CPU (decoder's actGroupResidentDecline), which
-//     honours the group.
+//   - int8int8 with per-32 activation scales anywhere else (WebGPU: no Q4_K kernel), which WebGPU's
+//     decode runner implements.
 //
 // An explicit int8int8 gets per-32 too. An explicit int4/int4mix is honoured with a warning, because
 // per-32 does not clear int4's weight error. msg is "" when nothing applies.
