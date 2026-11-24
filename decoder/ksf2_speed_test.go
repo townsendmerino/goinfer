@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/rand/v2"
+	"math/rand"
 	"os"
 	"strconv"
 	"testing"
@@ -42,11 +42,11 @@ func TestKSF2_cpuDecodeSpeed(t *testing.T) {
 	defer m.Close()
 	load := time.Since(t0)
 	_, _, _, _, _, _, vocab := m.Dims()
-	r := rand.New(rand.NewPCG(uint64(depth), 0))
+	r := rand.New(rand.NewSource(int64(depth)))
 	lo := min(1000, vocab/4) // past the special ids, which sit at the low end of most vocabularies
 	prompt := make([]int, depth)
 	for i := range prompt {
-		prompt[i] = lo + r.IntN(min(vocab-lo, 30000))
+		prompt[i] = lo + r.Intn(min(vocab-lo, 30000))
 	}
 	t1 := time.Now()
 	ch, g := m.Generate(context.Background(), prompt, n+1, SamplingParams{})

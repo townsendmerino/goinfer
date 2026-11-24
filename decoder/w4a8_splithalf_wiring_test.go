@@ -2,7 +2,7 @@ package decoder
 
 import (
 	"math"
-	"math/rand/v2"
+	"math/rand"
 	"slices"
 	"testing"
 
@@ -23,7 +23,7 @@ import (
 func TestW4A8SplitHalfWiring_matchesCanonical(t *testing.T) {
 	const rows, cols = 128, 512 // rows%4==0 and cols%32==0: eligible for BOTH arches' repacks
 
-	rng := rand.New(rand.NewPCG(7, 0))
+	rng := rand.New(rand.NewSource(7))
 	f32 := make([]float32, rows*cols)
 	for i := range f32 {
 		f32[i] = float32(rng.NormFloat64())

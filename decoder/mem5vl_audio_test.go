@@ -3,7 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
-	"math/rand/v2"
+	"math/rand"
 	"os"
 	"sync/atomic"
 	"testing"
@@ -16,7 +16,7 @@ func v4Case(m *Model, n, a int) (ids []int, feats []float32) {
 	for i := range ids {
 		ids[i] = (i*37 + 11) % vocab
 	}
-	r := rand.New(rand.NewPCG(7, 0))
+	r := rand.New(rand.NewSource(7))
 	feats = make([]float32, a*m.w.arch.HiddenDim)
 	for i := range feats {
 		feats[i] = float32(r.NormFloat64()) * 0.5

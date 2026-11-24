@@ -6,7 +6,7 @@ import (
 	"errors"
 	"io"
 	"math"
-	"math/rand/v2"
+	"math/rand"
 	"slices"
 	"sync"
 	"testing"
@@ -121,7 +121,7 @@ func appendF32(dst []byte, f float32) []byte {
 func TestStreamQuantizedEmbed_rangesGiveTheSequentialTable(t *testing.T) {
 	defer func() { streamEmbedWorkersForTest = 0 }()
 	const rows, cols = 148, 64
-	rng := rand.New(rand.NewPCG(7, 0))
+	rng := rand.New(rand.NewSource(7))
 	src := make([]float32, rows*cols)
 	for i := range src {
 		src[i] = float32(rng.NormFloat64()) * 0.3

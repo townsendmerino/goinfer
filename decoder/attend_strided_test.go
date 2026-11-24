@@ -1,7 +1,7 @@
 package decoder
 
 import (
-	"math/rand/v2"
+	"math/rand"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -30,7 +30,7 @@ func TestAttendStrided_matchesGatherReference(t *testing.T) {
 	}
 	for _, s := range shapes {
 		t.Run(s.name, func(t *testing.T) {
-			rng := rand.New(rand.NewPCG(7, 0))
+			rng := rand.New(rand.NewSource(7))
 			kvDim := s.nKV * s.hd
 			qDim := s.nH * s.hd
 			group := s.nH / s.nKV

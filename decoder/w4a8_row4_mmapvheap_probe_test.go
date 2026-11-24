@@ -1,7 +1,7 @@
 package decoder
 
 import (
-	"math/rand/v2"
+	"math/rand"
 	"os"
 	"slices"
 	"testing"
@@ -65,7 +65,7 @@ func TestRow4_mmapVsHeapResident(t *testing.T) {
 		dst []float32
 	}
 	var samples []sample
-	rng := rand.New(rand.NewPCG(1, 0))
+	rng := rand.New(rand.NewSource(1))
 	for i := range m.w.Layers {
 		gm := m.w.Layers[i].gemma4moe
 		if gm == nil || len(samples) >= wantSamples {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"math/rand/v2"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -50,7 +50,7 @@ func TestKSF2_sinksBitIdentical(t *testing.T) {
 				for _, window := range []int{0, 40} {
 					for _, withScr := range []bool{true, false} {
 						name := fmt.Sprintf("procs %d, %+v, %d keys, window %d, scratch %v", procs, sh, nKeys, window, withScr)
-						r := rand.New(rand.NewPCG(uint64(nKeys*131+sh.hd*7+window+procs), 0))
+						r := rand.New(rand.NewSource(int64(nKeys*131 + sh.hd*7 + window + procs)))
 						arch := &Architecture{NumHeads: sh.nH, NumKVHeads: sh.nKV, HeadDim: sh.hd}
 						kvDim := sh.nKV * sh.hd
 						lw := &LayerWeights{AttnSinks: ksf2Floats(r, sh.nH, 3)}
@@ -100,7 +100,7 @@ func TestKSF2_queryPFannedBitIdentical(t *testing.T) {
 					for _, softcap := range []float64{0, 30} {
 						for _, withScr := range []bool{true, false} {
 							name := fmt.Sprintf("procs %d, %+v, %d keys, %s, softcap %v, scratch %v", procs, sh, nKeys, mode, softcap, withScr)
-							r := rand.New(rand.NewPCG(uint64(nKeys*977+sh.nH*13+len(mode)+procs), 0))
+							r := rand.New(rand.NewSource(int64(nKeys*977 + sh.nH*13 + len(mode) + procs)))
 							arch := &Architecture{NumHeads: sh.nH, NumKVHeads: sh.nKV, HeadDim: sh.hd}
 							kvDim := sh.nKV * sh.hd
 							p := attentionParams{Scale: 1 / math.Sqrt(float64(sh.hd)), Softcap: softcap}
@@ -283,7 +283,7 @@ func attendQueryPRef(p attentionParams, q, ctx, scores []float32, cache *KVCache
 func TestKSF2_scratchReuseAcrossSteps(t *testing.T) {
 	t.Parallel()
 	for _, sh := range []ksf2Shape{{64, 8, 64}, {16, 2, 128}} {
-		r := rand.New(rand.NewPCG(uint64(sh.nH), 0))
+		r := rand.New(rand.NewSource(int64(sh.nH)))
 		arch := &Architecture{NumHeads: sh.nH, NumKVHeads: sh.nKV, HeadDim: sh.hd}
 		kvDim := sh.nKV * sh.hd
 		lw := &LayerWeights{AttnSinks: ksf2Floats(r, sh.nH, 3)}

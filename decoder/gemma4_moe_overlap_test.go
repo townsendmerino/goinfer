@@ -1,7 +1,7 @@
 package decoder
 
 import (
-	"math/rand/v2"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"slices"
@@ -41,11 +41,10 @@ func gemma4BuildFixture(t *testing.T, nExperts, topK, hidden, denseInter, moeInt
 	guBytes := guRows * guBpr
 	dnBytes := dnRows * dnBpr
 
-	ch := rand.NewChaCha8([32]byte{7})
+	rng := rand.New(rand.NewSource(7))
 	path = filepath.Join(t.TempDir(), "experts.bin")
 	buf := make([]byte, nExperts*(guBytes+dnBytes))
-	ch.Read(buf)
-	rng := rand.New(ch)
+	rng.Read(buf)
 	if err := os.WriteFile(path, buf, 0o644); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
@@ -175,7 +174,7 @@ func TestGemma4MoEFFN_overlapBitIdentical(t *testing.T) {
 	w, arch, path, mapping := gemma4OverlapFixture(t, nExperts, topK)
 	be := &cpuBackend{}
 
-	rng := rand.New(rand.NewPCG(99, 0))
+	rng := rand.New(rand.NewSource(99))
 	toks := make([][]float32, nTokens)
 	for i := range toks {
 		h := make([]float32, arch.HiddenDim)
@@ -237,7 +236,7 @@ func TestGemma4MoEFFN_overlapConcurrentStreamsNoCorruption(t *testing.T) {
 	w, arch, path, mapping := gemma4OverlapFixture(t, nExperts, topK)
 	be := &cpuBackend{}
 
-	rng := rand.New(rand.NewPCG(500, 0))
+	rng := rand.New(rand.NewSource(500))
 	toks := make([][]float32, nToks)
 	want := make([][]float32, nToks)
 	for i := range toks {
@@ -256,9 +255,9 @@ func TestGemma4MoEFFN_overlapConcurrentStreamsNoCorruption(t *testing.T) {
 	fails := make(chan string, goroutines*itersEach)
 	for g := range goroutines {
 		wg.Go(func() {
-			rng := rand.New(rand.NewPCG(uint64(g), 0))
+			rng := rand.New(rand.NewSource(int64(g)))
 			for range itersEach {
-				i := rng.IntN(nToks)
+				i := rng.Intn(nToks)
 				got := gemma4MoEFFN(be, arch, slices.Clone(toks[i]), w, poolPager)
 				for j := range want[i] {
 					if got[j] != want[i][j] {

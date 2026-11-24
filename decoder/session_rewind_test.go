@@ -1,7 +1,7 @@
 package decoder
 
 import (
-	"math/rand/v2"
+	"math/rand"
 	"testing"
 )
 
@@ -24,7 +24,7 @@ func TestSession_cancelledSweepOnAWrappedRingGoesCold(t *testing.T) {
 
 	cache := NewKVCache(1, nKV, hd, W, startPos+K, nil)
 	cache.enableRings(W, arch.isGlobalLayer)
-	rng := rand.New(rand.NewPCG(53, 0))
+	rng := rand.New(rand.NewSource(53))
 
 	// Turn 1 completed: startPos positions committed and advanced.
 	hist := randVec(rng, startPos*kvDim)
@@ -74,7 +74,7 @@ func TestSession_exactRewindStaysWarm(t *testing.T) {
 
 	cache := NewKVCache(1, nKV, hd, W, 128, nil)
 	cache.enableRings(W, arch.isGlobalLayer)
-	rng := rand.New(rand.NewPCG(59, 0))
+	rng := rand.New(rand.NewSource(59))
 	// Never wraps: count stays <= W, so every rewind is exact.
 	const n = 32
 	cache.commitBatch(0, 0, n, randVec(rng, n*kvDim), randVec(rng, n*kvDim))

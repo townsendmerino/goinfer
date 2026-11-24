@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
-	"math/rand/v2"
+	"math/rand"
 	"os"
 	"slices"
 	"testing"
@@ -40,7 +40,7 @@ func pixtralCausalCase(m *Model) (ids []int, spans []ImageSpan, feats []float32)
 	ids = []int{1, 3, 5, 7, img, img, img, brk, img, img, img, end, 20, 21, 22}
 	spans = []ImageSpan{{Pos: 4, Len: 3, Hash: 9}, {Pos: 8, Len: 3, Hash: 9}}
 	hidden := m.w.arch.HiddenDim
-	r := rand.New(rand.NewPCG(11, 0))
+	r := rand.New(rand.NewSource(11))
 	feats = make([]float32, 6*hidden)
 	for i := range feats {
 		feats[i] = float32(r.NormFloat64()) * 0.5

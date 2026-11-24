@@ -3,7 +3,7 @@ package decoder
 import (
 	"context"
 	"math"
-	"math/rand/v2"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"slices"
@@ -48,7 +48,7 @@ func TestKVI8_decodeQuality(t *testing.T) {
 	i8.enableRings(W, arch.isGlobalLayer)
 	i8.scr = newDecodeScratch(arch)
 
-	rng := rand.New(rand.NewPCG(7, 0))
+	rng := rand.New(rand.NewSource(7))
 	worst := map[int]float64{0: 1, 1: 1}
 	for pos := range N {
 		for l := range nLayers {
@@ -99,7 +99,7 @@ func TestKVI8_truncateReappend(t *testing.T) {
 		c.scr = newDecodeScratch(arch)
 		return c
 	}
-	rng := rand.New(rand.NewPCG(5, 0))
+	rng := rand.New(rand.NewSource(5))
 	vec := func() []float32 { return randVec(rng, kvDim) }
 	// final[p] = the K/V that position p ends up with (draft positions 6..9 rejected,
 	// re-appended with different values).

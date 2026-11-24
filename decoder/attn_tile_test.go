@@ -1,7 +1,7 @@
 package decoder
 
 import (
-	"math/rand/v2"
+	"math/rand"
 	"testing"
 )
 
@@ -31,7 +31,7 @@ func TestAttnTile_ringLayerDoesNotOutgrowThePoolSlot(t *testing.T) {
 
 	ring := NewKVCache(1, nKV, hd, W, startPos+K, nil)
 	ring.enableRings(W, arch.isGlobalLayer)
-	rng := rand.New(rand.NewPCG(41, 0))
+	rng := rand.New(rand.NewSource(41))
 
 	// Turn 1: fill the ring past its window, so the assembled window is shorter than maxKeys.
 	hist := randVec(rng, startPos*kvDim)
@@ -90,7 +90,7 @@ func TestAttnTile_ringLayerDoesNotOutgrowThePoolSlot_acc64(t *testing.T) {
 
 	ring := NewKVCache(1, nKV, hd, W, startPos+K, nil)
 	ring.enableRings(W, arch.isGlobalLayer)
-	rng := rand.New(rand.NewPCG(42, 0))
+	rng := rand.New(rand.NewSource(42))
 	hist := randVec(rng, startPos*kvDim)
 	ring.commitBatch(0, 0, startPos, hist, hist)
 	ring.advanceTo(startPos)

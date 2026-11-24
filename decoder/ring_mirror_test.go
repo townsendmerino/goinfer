@@ -3,7 +3,7 @@ package decoder
 import (
 	"fmt"
 	"math"
-	"math/rand/v2"
+	"math/rand"
 	"os"
 	"slices"
 	"testing"
@@ -38,7 +38,7 @@ func TestRingMirror_invariantAndWindow(t *testing.T) {
 	for _, W := range []int{1, 3, 4, 7} {
 		const nKV, hd = 1, 3
 		const stride = nKV * hd
-		rng := rand.New(rand.NewPCG(uint64(W)*17, 0))
+		rng := rand.New(rand.NewSource(int64(W) * 17))
 		c := NewKVCache(1, nKV, hd, W, 64, nil)
 		c.enableRings(W, func(int) bool { return false })
 		r := c.rings[0]
@@ -78,14 +78,14 @@ func TestRingMirror_invariantAndWindow(t *testing.T) {
 		}
 		vec := func() []float32 { return randVec(rng, stride) }
 		for range 400 {
-			switch op := rng.IntN(10); {
+			switch op := rng.Intn(10); {
 			case op < 5: // a decode token: write the next position
 				r.write(pos, vec(), vec())
 				pos++
 				check("write")
 				readWindow()
 			case op < 7: // a batched commit of K rows at the current position
-				K := 1 + rng.IntN(2*W)
+				K := 1 + rng.Intn(2*W)
 				nk, nv := make([]float32, K*stride), make([]float32, K*stride)
 				for i := range nk {
 					nk[i], nv[i] = float32(rng.NormFloat64()), float32(rng.NormFloat64())
@@ -95,7 +95,7 @@ func TestRingMirror_invariantAndWindow(t *testing.T) {
 				check("commitBatch")
 				readWindow()
 			case op < 8 && pos > 0: // truncate to a random earlier position, then keep writing from there
-				p := rng.IntN(pos + 1)
+				p := rng.Intn(pos + 1)
 				r.truncate(p)
 				pos = p
 				check("truncate")
@@ -140,9 +140,9 @@ func TestRingMirror_decodeBitIdenticalToTheCopyPath(t *testing.T) {
 			}
 			const N = 52 // 6 to 13 windows deep at W=8..4, past every wrap
 			toks := make([]int, N)
-			rng := rand.New(rand.NewPCG(5, 0))
+			rng := rand.New(rand.NewSource(5))
 			for i := range toks {
-				toks[i] = 1 + rng.IntN(vocab-1)
+				toks[i] = 1 + rng.Intn(vocab-1)
 			}
 			run := func(direct bool) ([][]float32, *KVCache) {
 				ringDirectDecode = direct

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"math/rand/v2"
+	"math/rand"
 	"os"
 	"slices"
 	"testing"
@@ -30,7 +30,7 @@ func TestConvWin_noSlabRetained(t *testing.T) {
 	p := *arch.qwen35
 	nv, hk, hv, nk := p.NumValueHeads, p.KeyHeadDim, p.ValueHeadDim, p.NumKeyHeads
 	valueDim, convDim := hv*nv, 2*hk*nk+hv*nv
-	rnd := rand.New(rand.NewPCG(3, 0))
+	rnd := rand.New(rand.NewSource(3))
 	vec := func(n int) []float32 {
 		x := make([]float32, n)
 		for i := range x {

@@ -3,7 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
-	"math/rand/v2"
+	"math/rand"
 	"slices"
 	"testing"
 
@@ -148,7 +148,7 @@ func TestKV2FU1_ownRollbackScheduleIndependence(t *testing.T) {
 				order = append(order, c)
 			}
 		}
-		rand.New(rand.NewPCG(uint64(seed), 0)).Shuffle(len(order), func(i, j int) { order[i], order[j] = order[j], order[i] })
+		rand.New(rand.NewSource(seed)).Shuffle(len(order), func(i, j int) { order[i], order[j] = order[j], order[i] })
 		scheds = append(scheds, struct {
 			name  string
 			order []int

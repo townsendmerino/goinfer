@@ -2,7 +2,7 @@ package decoder
 
 import (
 	"math"
-	"math/rand/v2"
+	"math/rand"
 	"testing"
 )
 
@@ -17,7 +17,7 @@ func TestOptFwdGate_hysteresis(t *testing.T) {
 
 	// A sustained ~73% hit rate (the measured T=1.0 number) must eventually turn the gate off,
 	// since it is well below EnableAt (0.90) and even below DisableAt (0.85).
-	rng := rand.New(rand.NewPCG(1, 0))
+	rng := rand.New(rand.NewSource(1))
 	hit := func() bool { return rng.Float64() < 0.73 } // i.i.d., matching the measured T=1.0 rate
 	turnedOff := -1
 	for i := range 200 {
@@ -42,7 +42,7 @@ func TestOptFwdGate_hysteresis(t *testing.T) {
 // T=0.2 number, 99.7%) never turns the gate off.
 func TestOptFwdGate_highHitRateStaysOn(t *testing.T) {
 	g := &optFwdGate{}
-	rng := rand.New(rand.NewPCG(2, 0))
+	rng := rand.New(rand.NewSource(2))
 	for i := range 200 {
 		g.Observe(rng.Float64() < 0.997) // i.i.d., matching the measured T=0.2 rate
 		if !g.Should() {
@@ -56,7 +56,7 @@ func TestOptFwdGate_highHitRateStaysOn(t *testing.T) {
 // step to step once past the initial transient.
 func TestOptFwdGate_marginalRateHoldsSteady(t *testing.T) {
 	g := &optFwdGate{}
-	rng := rand.New(rand.NewPCG(93, 0))
+	rng := rand.New(rand.NewSource(93))
 	hit := func() bool { return rng.Float64() < 0.93 } // i.i.d., not a periodic burst pattern
 	for range 50 {
 		g.Observe(hit()) // warm up past the optimistic seed

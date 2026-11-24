@@ -3,7 +3,7 @@ package decoder
 import (
 	"fmt"
 	"math"
-	"math/rand/v2"
+	"math/rand"
 	"os"
 	"testing"
 	"time"
@@ -33,7 +33,7 @@ func TestG24AttnKernelRatio(t *testing.T) {
 		kvDim = nKV * hd
 		reps  = 5
 	)
-	rng := rand.New(rand.NewPCG(1, 0))
+	rng := rand.New(rand.NewSource(1))
 	fill := func(n int) []float32 {
 		s := make([]float32, n)
 		for i := range s {

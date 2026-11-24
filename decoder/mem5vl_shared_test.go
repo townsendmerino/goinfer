@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"math/rand/v2"
+	"math/rand"
 	"os"
 	"runtime"
 	"slices"
@@ -23,7 +23,7 @@ func v1Prompt(m *Model) (ids []int, spans []ImageSpan, feats []float32, mrope []
 		ids[i] = (i*37 + 11) % vocab
 	}
 	spans = []ImageSpan{{Pos: 5, Len: 12, Hash: 1}, {Pos: 30, Len: 4, Hash: 2}}
-	r := rand.New(rand.NewPCG(5, 0))
+	r := rand.New(rand.NewSource(5))
 	rows := func(n int) []float32 {
 		f := make([]float32, n*hidden)
 		for i := range f {

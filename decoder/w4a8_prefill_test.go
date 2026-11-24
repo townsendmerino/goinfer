@@ -2,7 +2,7 @@ package decoder
 
 import (
 	"github.com/townsendmerino/aikit/linalg"
-	"math/rand/v2"
+	"math/rand"
 	"testing"
 )
 
@@ -12,7 +12,7 @@ import (
 // removal of the prefill↔decode numerics seam.
 func TestMatmulInt4_MConsistent(t *testing.T) {
 	const rows, cols, K = 64, 64, 5 // dims are multiples of int4GroupSize (32)
-	rng := rand.New(rand.NewPCG(1, 0))
+	rng := rand.New(rand.NewSource(1))
 	uni := func(n int) []float32 {
 		s := make([]float32, n)
 		for i := range s {

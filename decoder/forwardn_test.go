@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"math/rand/v2"
+	"math/rand"
 	"slices"
 	"testing"
 
@@ -29,7 +29,7 @@ func TestAttendBatchedHeads_vsNaive(t *testing.T) {
 	scale := arch.AttnScale
 	K := 64
 
-	rng := rand.New(rand.NewPCG(7, 0))
+	rng := rand.New(rand.NewSource(7))
 	q := make([]float32, K*qDim)
 	for i := range q {
 		q[i] = float32(rng.NormFloat64()) * 0.1

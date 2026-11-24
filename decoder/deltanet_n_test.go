@@ -2,7 +2,7 @@ package decoder
 
 import (
 	"math"
-	"math/rand/v2"
+	"math/rand"
 	"slices"
 	"testing"
 )
@@ -37,7 +37,7 @@ func TestDeltaNetCoreN_bitIdentical(t *testing.T) {
 	defer func(a int) { deltaNetMinWork = a }(deltaNetMinWork)
 	deltaNetMinWork = 2
 
-	rnd := rand.New(rand.NewPCG(7, 0))
+	rnd := rand.New(rand.NewSource(7))
 	vec := func(n int, scale float64) []float32 {
 		x := make([]float32, n)
 		for i := range x {
