@@ -145,14 +145,12 @@ func rideCell(t *testing.T, rideErr error) (*Model, *rideFake) {
 	m.EnableResidentConcurrency(4)
 	var got0, got1, gotNew []int
 	var wg sync.WaitGroup
-	wg.Add(3)
-	go func() { defer wg.Done(); got0 = gen(m, d0, 60) }()
-	go func() { defer wg.Done(); got1 = gen(m, d1, 60) }()
-	go func() {
-		defer wg.Done()
+	wg.Go(func() { got0 = gen(m, d0, 60) })
+	wg.Go(func() { got1 = gen(m, d1, 60) })
+	wg.Go(func() {
 		time.Sleep(40 * time.Millisecond) // the two are decoding by now
 		gotNew = gen(m, long(m), 4)
-	}()
+	})
 	wg.Wait()
 	for _, c := range []struct {
 		name      string

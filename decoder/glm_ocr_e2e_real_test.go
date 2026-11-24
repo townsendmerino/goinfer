@@ -12,7 +12,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -390,7 +390,7 @@ func logPixelDiff(t *testing.T, got, want []float32) {
 			diffs = append(diffs, d)
 		}
 	}
-	sort.Float64s(diffs)
+	slices.Sort(diffs)
 	t.Logf("pixel_values vs HF (%d floats): bit-identical %.4f%%, differ %d, > 1 level %d (%.4f%%), max|diff| %.4f (%.1f levels), mean|diff| %.2e, p99 (sampled) %.4f",
 		len(got), 100*float64(len(got)-differ)/float64(len(got)), differ, over1, 100*float64(over1)/float64(len(got)), maxd, maxd/level, sum/float64(len(got)), diffs[len(diffs)*99/100])
 }

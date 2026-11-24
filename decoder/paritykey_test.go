@@ -9,7 +9,6 @@ import (
 	"reflect"
 	"runtime"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 
@@ -112,14 +111,14 @@ func TestParityKey_shadowMatchesDecoder(t *testing.T) {
 	for c := range kt {
 		cfgs = append(cfgs, c)
 	}
-	sort.Strings(cfgs)
+	slices.Sort(cfgs)
 	for _, c := range cfgs {
 		kd.Write([]byte(c + "\n"))
 		names := make([]string, 0, len(kt[c]))
 		for k := range kt[c] {
 			names = append(names, k)
 		}
-		sort.Strings(names)
+		slices.Sort(names)
 		for _, k := range names {
 			kd.Write([]byte(k + "=" + kt[c][k] + "\n"))
 		}
@@ -171,13 +170,13 @@ func TestParityKey_shadowMatchesDecoder(t *testing.T) {
 				h.Write(c)
 				h.Write([]byte{0})
 			}
-			fx := append([]string(nil), fam.Programs...)
-			sort.Strings(fx)
+			fx := slices.Clone(fam.Programs)
+			slices.Sort(fx)
 			archs := make([]string, 0, len(progs))
 			for a := range progs {
 				archs = append(archs, a)
 			}
-			sort.Strings(archs)
+			slices.Sort(archs)
 			d := sha256.New()
 			for _, a := range archs {
 				d.Write([]byte(a + "\n"))
@@ -187,7 +186,7 @@ func TestParityKey_shadowMatchesDecoder(t *testing.T) {
 			}
 			loaderLine := ""
 			if dropWeights {
-				sort.Strings(loaderFx)
+				slices.Sort(loaderFx)
 				ld := sha256.New()
 				for _, a := range sortedStringKeys(loaderTab) {
 					ld.Write([]byte(a + "\n"))
@@ -219,7 +218,7 @@ func sortedStringKeys[V any](m map[string]V) []string {
 	for k := range m {
 		out = append(out, k)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 
@@ -286,7 +285,7 @@ func TestParityLoaders_mapping(t *testing.T) {
 		}
 	}
 	if len(under) != 31 || !slices.Equal(keep, []string{"mellum"}) {
-		sort.Strings(keep)
+		slices.Sort(keep)
 		t.Errorf("%d under the rule of %d with programs, keeping %v; want 31, keeping [mellum]", len(under), len(withPrograms), keep)
 	}
 	for _, f := range []string{"testdata/gemma1-tiny.gguf", "testdata/gemma2-hd-tiny.gguf", "testdata/glm-tiny.gguf"} {
@@ -377,7 +376,7 @@ func TestParityPrograms_mapping(t *testing.T) {
 				}
 			}
 			if len(owners) > 1 && name != cfg.ModelType {
-				sort.Strings(owners)
+				slices.Sort(owners)
 				t.Errorf("%s lists %s, whose adapter file %s is owned by %v: it belongs to the family its model_type %q names", name, fx, def, owners, cfg.ModelType)
 			}
 		}

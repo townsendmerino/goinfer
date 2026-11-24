@@ -3,10 +3,11 @@
 package decoder
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -88,7 +89,7 @@ func TestCPUAttnShareProbe(t *testing.T) {
 		rows = append(rows, row{k, v.TimeNs})
 		sum += v.TimeNs
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].ns > rows[j].ns })
+	slices.SortFunc(rows, func(a, b row) int { return cmp.Compare(b.ns, a.ns) })
 	for _, x := range rows {
 		fmt.Fprintf(os.Stderr, "[attn-share] %-12s %8.2f ms/token  %5.1f%% of wall\n", x.name, float64(x.ns)/1e6/float64(n), 100*float64(x.ns)/float64(wall.Nanoseconds()))
 	}

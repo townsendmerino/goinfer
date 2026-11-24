@@ -68,11 +68,9 @@ func TestSpecAdaptiveSwitch_matchesPlainDecode(t *testing.T) {
 	// 1-3 plain concurrent generations, staggered short/long so the spec conversation is sometimes alone
 	// (claimExclusive succeeds, drafts) and sometimes not (yields), inside its own maxTok=40 lifetime.
 	for c := 1; c <= 3; c++ {
-		wg.Add(1)
-		go func(c int) {
-			defer wg.Done()
+		wg.Go(func() {
 			mc3Conversation(t, m, c, turns, maxTok-10*(c-1)) // 30, 20, 10 tokens: they finish and rejoin at different times
-		}(c)
+		})
 	}
 	wg.Wait()
 
@@ -117,11 +115,9 @@ func TestSpecAdaptiveSwitch_offByDefaultUnaffected(t *testing.T) {
 		got = specAdaptiveTurn(t, m, []int{1, 2, 3, 4, 5, 6}, 24)
 	})
 	for c := 1; c <= 2; c++ {
-		wg.Add(1)
-		go func(c int) {
-			defer wg.Done()
+		wg.Go(func() {
 			mc3Conversation(t, m, c, 1, 24)
-		}(c)
+		})
 	}
 	wg.Wait()
 	if len(got.ids) != 24 {

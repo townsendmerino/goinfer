@@ -22,13 +22,13 @@
 package decoder
 
 import (
+	"cmp"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"slices"
-	"sort"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/testgate"
@@ -124,10 +124,10 @@ func TestQwen35GGUF_routeFlipAtOutlier(t *testing.T) {
 	for s := range refL {
 		st := stepStat{step: s, cos: cosineFull(gotL[s], refL[s]), firstFlipLayer: -1}
 		for l := range nL {
-			a := append([]int(nil), refSel[s][l]...)
-			b := append([]int(nil), gotSel[s][l]...)
-			sort.Ints(a)
-			sort.Ints(b) // the SET, not the order: a reordered top-k is the same experts
+			a := slices.Clone(refSel[s][l])
+			b := slices.Clone(gotSel[s][l])
+			slices.Sort(a)
+			slices.Sort(b) // the SET, not the order: a reordered top-k is the same experts
 			if !slices.Equal(a, b) {
 				st.flips++
 				if st.firstFlipLayer < 0 {
@@ -143,7 +143,7 @@ func TestQwen35GGUF_routeFlipAtOutlier(t *testing.T) {
 	}
 
 	worst := slices.Clone(stats)
-	sort.Slice(worst, func(i, j int) bool { return worst[i].cos < worst[j].cos })
+	slices.SortFunc(worst, func(a, b stepStat) int { return cmp.Compare(a.cos, b.cos) })
 	t.Logf("=== %d steps, %d layers each; %d steps with ZERO flipped layers; %d flipped (step,layer) pairs total ===",
 		len(stats), nL, zero, totalFlips)
 	t.Logf("--- the 10 WORST steps by logit cosine ---")
@@ -153,7 +153,7 @@ func TestQwen35GGUF_routeFlipAtOutlier(t *testing.T) {
 			w.step, w.cos, w.flips, nL, w.firstFlipLayer)
 	}
 	byFlips := slices.Clone(stats)
-	sort.Slice(byFlips, func(i, j int) bool { return byFlips[i].flips > byFlips[j].flips })
+	slices.SortFunc(byFlips, func(a, b stepStat) int { return cmp.Compare(b.flips, a.flips) })
 	t.Logf("--- the 10 steps with the MOST flipped layers ---")
 	for i := 0; i < 10 && i < len(byFlips); i++ {
 		b := byFlips[i]

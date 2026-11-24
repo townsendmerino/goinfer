@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"reflect"
-	"sort"
+	"slices"
 	"testing"
 )
 
@@ -134,7 +134,7 @@ func handlingNames(m map[stateHandling]bool) []string {
 	for h := range m {
 		out = append(out, string(h))
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 
@@ -179,7 +179,7 @@ func TestCacheStateGrid_recurrentRowMatchesHasRecurrentState(t *testing.T) {
 			recurrent = append(recurrent, string(s))
 		}
 	}
-	sort.Strings(recurrent)
+	slices.Sort(recurrent)
 	if len(recurrent) != 4 {
 		t.Logf("recurrent kinds now: %v (was four on 2026-10-08: DeltaNet, short-conv, Mamba-2, KDA)", recurrent)
 	}

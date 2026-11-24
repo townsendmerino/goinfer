@@ -1,8 +1,9 @@
 package decoder
 
 import (
+	"cmp"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -89,7 +90,7 @@ func SelfTestResults() []SelfTestResult {
 	for _, r := range selfTestResults {
 		out = append(out, r)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Backend < out[j].Backend })
+	slices.SortFunc(out, func(a, b SelfTestResult) int { return cmp.Compare(a.Backend, b.Backend) })
 	return out
 }
 

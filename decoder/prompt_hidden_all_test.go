@@ -7,7 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/aikit/embed"
@@ -267,8 +267,8 @@ func TestPromptHiddenAll_rowsDoNotAlias(t *testing.T) {
 }
 
 func medianOf(v []float64) float64 {
-	c := append([]float64(nil), v...)
-	sort.Float64s(c)
+	c := slices.Clone(v)
+	slices.Sort(c)
 	return c[len(c)/2]
 }
 

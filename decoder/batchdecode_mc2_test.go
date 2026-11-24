@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -163,9 +163,7 @@ func TestMC2_batchedDecodeThroughput(t *testing.T) {
 			var wg sync.WaitGroup
 			errs := make([]error, N)
 			for b := range N {
-				wg.Add(1)
-				go func(b int) {
-					defer wg.Done()
+				wg.Go(func() {
 					id := ids[b]
 					for range steps {
 						lg, err := m.forward(id, caches[b])
@@ -175,7 +173,7 @@ func TestMC2_batchedDecodeThroughput(t *testing.T) {
 						}
 						id = argmaxF32(lg)
 					}
-				}(b)
+				})
 			}
 			wg.Wait()
 			for _, e := range errs {
@@ -218,8 +216,8 @@ func TestMC2_batchedDecodeThroughput(t *testing.T) {
 		hb("%s tok/s", line)
 	}
 	med := func(xs []float64) float64 {
-		s := append([]float64(nil), xs...)
-		sort.Float64s(s)
+		s := slices.Clone(xs)
+		slices.Sort(s)
 		return s[len(s)/2]
 	}
 	base := med(rates[0])
@@ -232,7 +230,7 @@ func TestMC2_batchedDecodeThroughput(t *testing.T) {
 	for i := range ratios {
 		ratios[i] = rates[4][i] / rates[0][i]
 	}
-	sort.Float64s(ratios)
+	slices.Sort(ratios)
 	hb("MC2 METRIC batched B=4 / serial x1 = %.3fx (per-rep sorted %v); J8 N=4 / serial x1 = %.3fx",
 		ratios[len(ratios)/2], ratios, med(rates[7])/base)
 }
