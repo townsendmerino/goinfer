@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"context"
+	"math/rand/v2"
 	"os"
 	"strconv"
 	"testing"
@@ -64,10 +65,14 @@ func BenchmarkDecodeAtDepth(b *testing.B) {
 		depth = d
 	}
 	tok := 785 // any valid id; content is decode-timing-irrelevant
-	// Reach depth via the BATCHED prefill path (forwardLayersN, K=depth): O(depth) via one wide matmul sweep, not
+	// GOINFER_BENCH_FILL=1 reaches depth by appending seeded random K/V rows to every layer instead of prefilling: decode attention's
+	// work at a depth does not depend on the cached values, and a 3,900-row CPU prefill costs minutes a process. A dense model only
+	// (every layer stores NumKVHeads x HeadDim a position).
+	fill := os.Getenv("GOINFER_BENCH_FILL") == "1"
+	// Otherwise reach depth via the BATCHED prefill path (forwardLayersN, K=depth): O(depth) via one wide matmul sweep, not
 	// O(depth²) via depth sequential single-token forwards. It is also what production prefill does, so it is the
 	// representative setup, not just the cheap one.
-	if !m.canBatchN(depth) {
+	if !fill && !m.canBatchN(depth) {
 		b.Skipf("model does not support batched prefill (canBatchN(%d)=false); depth setup would be O(depth²)", depth)
 	}
 	ids := make([]int, depth)
@@ -85,10 +90,35 @@ func BenchmarkDecodeAtDepth(b *testing.B) {
 		b.Run(arm.name, func(b *testing.B) {
 			setKnob(b, m, knobAttnGrouped, arm.env)
 			cache := m.NewCache(depth + b.N + 8)
-			if _, err := m.forwardLayersN(context.Background(), ids, cache, false); err != nil {
+			if fill {
+				fillCacheForBench(b, m, cache, depth)
+			} else if _, err := m.forwardLayersN(context.Background(), ids, cache, false); err != nil {
 				b.Fatalf("batched prefill to depth %d: %v", depth, err)
 			}
 			decodeAtDepthOnce(b, m, cache, tok)
 		})
+	}
+}
+
+// fillCacheForBench appends depth positions of seeded random K/V rows (uniform in [-1, 1)) to every layer of a dense model's cache.
+func fillCacheForBench(b *testing.B, m *Model, cache *KVCache, depth int) {
+	b.Helper()
+	a := m.w.arch
+	if a.mla != nil || cache.hasRecurrentState() {
+		b.Skip("GOINFER_BENCH_FILL covers dense attention caches only")
+	}
+	kvDim := a.NumKVHeads * a.HeadDim
+	rng := rand.New(rand.NewPCG(7, 11))
+	k, v := make([]float32, kvDim), make([]float32, kvDim)
+	for range depth {
+		for l := range a.NumLayers {
+			for i := range k {
+				k[i], v[i] = 2*rng.Float32()-1, 2*rng.Float32()-1
+			}
+			cache.Append(l, k, v)
+		}
+	}
+	if cache.Pos() != depth {
+		b.Fatalf("filled cache holds %d positions, want %d", cache.Pos(), depth)
 	}
 }

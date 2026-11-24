@@ -157,10 +157,7 @@ func runCell(c cell, cfg *gateConfig, res *results, logDir string) cellResult {
 
 	cmd := exec.Command("go", args...)
 	cmd.Dir = c.Dir
-	cmd.Env = os.Environ()
-	for k, v := range c.Env {
-		cmd.Env = append(cmd.Env, k+"="+v)
-	}
+	cmd.Env = cellEnv(os.Environ(), c.Env)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return gradeCellError(c, -1, err, "", 0)
@@ -208,4 +205,20 @@ func runCell(c cell, cfg *gateConfig, res *results, logDir string) cellResult {
 func sanitize(s string) string {
 	rep := strings.NewReplacer("/", "_", ".", "_", " ", "_", ":", "_")
 	return strings.Trim(rep.Replace(s), "_")
+}
+
+// cellEnv is a cell's environment: base, less an ambient GOINFER_MEASURE_TESTS, then the cell's own variables. A gate
+// never runs testgate.RequireMeasure's tests (they measure rather than guard), so an exported opt-in is dropped unless
+// the cell sets it.
+func cellEnv(base []string, set map[string]string) []string {
+	env := make([]string, 0, len(base)+len(set))
+	for _, kv := range base {
+		if !strings.HasPrefix(kv, "GOINFER_MEASURE_TESTS=") {
+			env = append(env, kv)
+		}
+	}
+	for k, v := range set {
+		env = append(env, k+"="+v)
+	}
+	return env
 }

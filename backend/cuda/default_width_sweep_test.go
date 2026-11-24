@@ -69,6 +69,7 @@ func stddev(xs []float64) float64 {
 }
 
 func TestDefaultVerifyWidth_sweep(t *testing.T) {
+	testgate.RequireMeasure(t)
 	testgate.RequireHeavy(t)
 	tgt := os.Getenv("GOINFER_CUDA_MODEL")
 	if tgt == "" {

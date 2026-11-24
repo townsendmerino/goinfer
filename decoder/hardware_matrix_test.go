@@ -167,10 +167,8 @@ func renderHardwareMD(rows []hwRow, verified string) []byte {
 	b.WriteString("  rows are one per architecture, not per checkpoint.\n")
 	b.WriteString("- **Gemma 4's row is generated from a representative that is not an E-model.** The small E-models\n")
 	b.WriteString("  (E2B, E4B: per-layer embeddings, cross-layer shared KV, variable FFN width) carry the\n")
-	b.WriteString("  `gemma4-e-model` feature, which Metal (S1, 2026-10-06) and CUDA (S1 on CUDA, 2026-10-07) declare and\n")
-	b.WriteString("  WebGPU does not, so they run resident on Metal and CUDA and on the CPU under WebGPU (a WebGPU run\n")
-	b.WriteString("  prints `webgpu does not implement [gemma4-e-model]`). The dense models and the 26B-A4B are\n")
-	b.WriteString("  resident as the row says. `DecodePath()` names the gap for a loaded model.\n")
+	b.WriteString("  `gemma4-e-model` feature. " + emodelBackendsNote() + " The dense models and the 26B-A4B are\n")
+	b.WriteString("  resident as the row says. `DecodePath()` names any gap for a loaded model.\n")
 	b.WriteString("- **Command-R, Command-R7B (Aya) and GLM-OCR rotate GPT-J PAIRWISE** (dims 2d, 2d+1), where the NeoX kernels\n")
 	b.WriteString("  rotate (d, d+half). On NeoX kernels such a model is exact at position 0 and wrong from position 1 with no error\n")
 	b.WriteString("  (measured 2026-10-01 on the CUDA resident before its pairwise kernels existed: real Command-R7B and Aya-expanse-8B\n")
@@ -180,6 +178,31 @@ func renderHardwareMD(rows []hwRow, verified string) []byte {
 	b.WriteString(renderHardwareWhy(rows))
 	b.WriteString(verified)
 	return []byte(b.String())
+}
+
+// emodelBackendsNote names, from admission, the GPU backends that run a Gemma 4 E-model resident and those that leave it on
+// the CPU: the dense representative turned into an E-model shape (per-layer inputs), as gemma4_admission_test.go builds it,
+// so the note cannot go stale when a backend's admission changes.
+func emodelBackendsNote() string {
+	names := map[string]string{"webgpu": "WebGPU", "cuda": "CUDA", "metal": "Metal"}
+	e, _, err := resolveArchitecture(representativeConfig("gemma4"))
+	if err != nil {
+		return "(the E-model representative did not resolve: " + err.Error() + ")"
+	}
+	e.gemma4.HiddenSizePerLayerInput = 256
+	var on, off []string
+	for _, be := range residentBackends {
+		if ResidentEligible(e, be) {
+			on = append(on, names[be])
+		} else {
+			off = append(off, names[be])
+		}
+	}
+	note := "They run resident on " + strings.Join(on, ", ")
+	if len(off) > 0 {
+		note += " and on the CPU under " + strings.Join(off, ", ")
+	}
+	return note + "."
 }
 
 // renderHardwareWhy is the decline section: for each family with a CPU cell, one line per distinct set of reasons with the

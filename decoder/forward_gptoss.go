@@ -138,11 +138,7 @@ func (m *Model) gptOssMoEWith(h []float32, lw *LayerWeights, p *ffnParams, hidde
 	inter := moe.IntermediateDim
 	s.size(moe.NumExperts, moe.TopK, inter, hidden)
 	matmul(m.be, &lw.Router, h, s.logits, 1)
-	if lw.RouterBias != nil {
-		addBias(s.logits, lw.RouterBias) // a plain router-logit bias, added before top-k
-	}
-	idx, topv := topK(s.logits, moe.TopK)
-	wts := softmaxF32(topv)
+	idx, wts := gptOssRoute(s.logits, lw.RouterBias, moe.TopK)
 
 	// Touch every routed expert before evaluating it, as moeMLP does, so the pager's budget and LRU see gpt-oss's demand.
 	if m.pager != nil {
@@ -163,12 +159,97 @@ func (m *Model) gptOssMoEWith(h []float32, lw *LayerWeights, p *ffnParams, hidde
 			matmul(m.be, &ex.Up, h, up, 1)
 		}
 		gptOssExpertDown(m.be, ex, gate, up, s.expOut, alpha, limit)
-		w := wts[j]
-		for i := range out {
-			out[i] += w * s.expOut[i]
-		}
+		gptOssAccum(out, s.expOut, wts[j])
 	}
 	return out, nil
+}
+
+// gptOssRoute adds the router-logit bias (nil: none) to logits in place, then selects the top k and weights them by a softmax over
+// the selected logits only.
+func gptOssRoute(logits, bias []float32, k int) ([]int, []float32) {
+	if bias != nil {
+		addBias(logits, bias)
+	}
+	idx, topv := topK(logits, k)
+	return idx, softmaxF32(topv)
+}
+
+// gptOssAccum folds one expert's output into the token's: out += w·src. Both the per-row and the expert-major forms fold through it,
+// in routing-rank order, so the two sum the same terms in the same order.
+func gptOssAccum(out, src []float32, w float32) {
+	for i := range out {
+		out[i] += w * src[i]
+	}
+}
+
+// gptOssExpertMajorRuns counts the chunks gptOssMoEBatch ran expert-major, so a test can see the path was taken.
+var gptOssExpertMajorRuns atomic.Int64
+
+// gptOssMoEBatch runs gpt-oss's sparse FFN over rows ([n, hidden]) expert-major, writing n*hidden results into dst: each expert's
+// gate, up and down run once at M = the rows routed to it, instead of once per (row, rank). It is bit-identical to gptOssMoEWith
+// per row: the matmuls are M-invariant, the routing and the expert epilogue are the same functions per row, and each row folds its
+// k outputs in routing-rank order (gptOssAccum). It refuses (false) under a live pager, whose touch order is its eviction signal, as
+// moeMLPBatchWith does. s holds the buffers across chunks and layers.
+func (m *Model) gptOssMoEBatch(rows []float32, n int, lw *LayerWeights, p *ffnParams, hidden int, dst []float32, s *moeBatchScratch) (bool, error) {
+	moe := &p.MoE
+	if len(lw.Experts) == 0 || m.pager != nil || n == 0 {
+		return false, nil
+	}
+	nE, k, inter := moe.NumExperts, moe.TopK, moe.IntermediateDim
+	alpha, limit := float32(p.Alpha), float32(p.Limit)
+	logits := moeGrow(&s.logits, n*nE, &moeScratchGrows.logits)
+	matmul(m.be, &lw.Router, rows, logits, n)
+	if len(s.byExpert) < nE {
+		s.byExpert = make([][]moeSlot, nE)
+	}
+	byExpert := s.byExpert[:nE]
+	for e := range byExpert {
+		byExpert[e] = byExpert[e][:0]
+	}
+	idxs, wtss := make([][]int, n), make([][]float32, n)
+	for r := range n {
+		idxs[r], wtss[r] = gptOssRoute(logits[r*nE:(r+1)*nE], lw.RouterBias, k)
+		for j, e := range idxs[r] {
+			byExpert[e] = append(byExpert[e], moeSlot{r, j})
+		}
+	}
+	perRank := moeGrow(&s.perRank, n*k*hidden, &moeScratchGrows.perRank)
+	gathered := moeGrow(&s.gathered, n*hidden, &moeScratchGrows.gathered)
+	gate := moeGrow(&s.gate, n*inter, &moeScratchGrows.gate)
+	up := moeGrow(&s.up, n*inter, &moeScratchGrows.up)
+	outBuf := moeGrow(&s.outBuf, n*hidden, &moeScratchGrows.outBuf)
+	for e, slots := range byExpert {
+		if len(slots) == 0 {
+			continue
+		}
+		mr := len(slots)
+		for i, sl := range slots {
+			copy(gathered[i*hidden:(i+1)*hidden], rows[sl.row*hidden:(sl.row+1)*hidden])
+		}
+		ex := &lw.Experts[e]
+		matmul(m.be, &ex.Gate, gathered[:mr*hidden], gate[:mr*inter], mr)
+		matmul(m.be, &ex.Up, gathered[:mr*hidden], up[:mr*inter], mr)
+		for i := range mr {
+			gptOssExpertAct(ex, gate[i*inter:(i+1)*inter], up[i*inter:(i+1)*inter], alpha, limit)
+		}
+		matmul(m.be, &ex.Down, gate[:mr*inter], outBuf[:mr*hidden], mr)
+		for i, sl := range slots {
+			o := outBuf[i*hidden : (i+1)*hidden]
+			if ex.DownBias != nil {
+				addBias(o, ex.DownBias)
+			}
+			copy(perRank[(sl.row*k+sl.rank)*hidden:(sl.row*k+sl.rank+1)*hidden], o)
+		}
+	}
+	gptOssExpertMajorRuns.Add(1)
+	for r := range n {
+		o := dst[r*hidden : (r+1)*hidden]
+		clear(o)
+		for j, w := range wtss[r] {
+			gptOssAccum(o, perRank[(r*k+j)*hidden:(r*k+j+1)*hidden], w)
+		}
+	}
+	return true, nil
 }
 
 // gptOssScratch is gptOssMoEWith's per-stream scratch: router logits, the chosen experts' gate and up outputs (expert j's
@@ -251,6 +332,16 @@ func (m *Model) gptOssExpertBatch(lw *LayerWeights, idx []int, h []float32, s *g
 //	glu  = gate · sigmoid(α·gate)
 //	dst  = Down·((up + 1)·glu) + downBias
 func gptOssExpertDown(be Backend, ex *expertWeights, gate, up, dst []float32, alpha, limit float32) {
+	gptOssExpertAct(ex, gate, up, alpha, limit)
+	matmul(be, &ex.Down, gate, dst, 1)
+	if ex.DownBias != nil {
+		addBias(dst, ex.DownBias)
+	}
+}
+
+// gptOssExpertAct is gptOssExpertDown's elementwise part for one row: the gate and up biases, the clamps and the gated activation,
+// written into gate.
+func gptOssExpertAct(ex *expertWeights, gate, up []float32, alpha, limit float32) {
 	if ex.GateBias != nil {
 		addBias(gate, ex.GateBias)
 	}
@@ -270,9 +361,5 @@ func gptOssExpertDown(be Backend, ex *expertWeights, gate, up, dst []float32, al
 		}
 		glu := g * float32(1.0/(1.0+math.Exp(-float64(alpha*g))))
 		gate[i] = (u + 1) * glu
-	}
-	matmul(be, &ex.Down, gate, dst, 1)
-	if ex.DownBias != nil {
-		addBias(dst, ex.DownBias)
 	}
 }

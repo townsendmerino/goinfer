@@ -47,7 +47,9 @@ func TestUploadKV_perLayerGeometry_planted(t *testing.T) {
 
 // uploadKVGeomRun runs the comparison at the given KV precisions ("" is float32) and both prompt lengths. With wantRed,
 // a case passes when the upload is refused or a decode step falls under the bar, and the longer prompt must do one of
-// the two.
+// the two. Without it, a step under the bar SKIPs, naming the steps, when the uploaded arm agrees with the CPU decode
+// over the uploaded cache and the sequential reference does not (referenceRoutedApart): on an adapter whose own prefill
+// rounds differently from the CPU's, a near-tied MoE router choice can go the other way in the reference alone.
 func uploadKVGeomRun(t *testing.T, dir string, wantRed bool, kvs ...string) {
 	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
 		t.Skipf("no fixture (%s)", dir)
@@ -122,18 +124,39 @@ func uploadKVGeomRun(t *testing.T, dir string, wantRed bool, kvs ...string) {
 				if kv != "" {
 					bar = 0.99
 				}
+				got := make([][]float32, nDecode)
+				var under []int
 				for i := range nDecode {
 					l, err := rf.Forward(mc.EmbedResidentForTest(seq[i]), n+i)
 					if err != nil {
 						t.Fatalf("uploaded decode step %d: %v", i, err)
 					}
+					got[i] = append([]float32(nil), l...)
 					cos, maxAbs := cosSim(want[i], l)
 					t.Logf("decode step %d: cosine(sequential, uploaded) = %.8f, max |diff| %.4g", i, cos, maxAbs)
 					if cos < bar {
 						red = true
-						if !wantRed {
-							t.Errorf("decode step %d: cosine %.8f, want at least %v", i, cos, bar)
+						under = append(under, i)
+					}
+				}
+				if !wantRed && len(under) > 0 {
+					// The CPU decode over the cache that was uploaded: the source the uploaded arm must agree with.
+					cpu := make([][]float32, nDecode)
+					for i := range nDecode {
+						l, err := mc.ForwardForTest(seq[i], cache)
+						if err != nil {
+							t.Fatalf("CPU decode step %d: %v", i, err)
 						}
+						cpu[i] = append([]float32(nil), l...)
+					}
+					if referenceRoutedApart(under, cpu, got, want, bar) {
+						t.Skipf("SKIP: decode steps %v: the uploaded arm agrees with the CPU decode it was uploaded from (cosine >= %v) and the "+
+							"sequential reference does not: this adapter's own prefill rows round differently from the CPU's and a near-tied "+
+							"MoE router choice goes the other way, so the reference cannot judge the upload at those steps", under, bar)
+					}
+					for _, i := range under {
+						cos, _ := cosSim(want[i], got[i])
+						t.Errorf("decode step %d: cosine %.8f, want at least %v", i, cos, bar)
 					}
 				}
 				if wantRed && !red && n > 4 {
@@ -141,5 +164,44 @@ func uploadKVGeomRun(t *testing.T, dir string, wantRed bool, kvs ...string) {
 				}
 			})
 		}
+	}
+}
+
+// referenceRoutedApart says whether every step under the bar is the sequential reference's disagreement and not the
+// upload's: the uploaded arm's logits (up) agree with the CPU decode over the uploaded cache (cpu) at bar, and the
+// reference's (ref) do not. A wrong upload disagrees with the CPU it came from, so it never qualifies.
+func referenceRoutedApart(under []int, cpu, up, ref [][]float32, bar float64) bool {
+	for _, i := range under {
+		if c, _ := cosSim(cpu[i], up[i]); c < bar {
+			return false
+		}
+		if c, _ := cosSim(cpu[i], ref[i]); c >= bar {
+			return false
+		}
+	}
+	return len(under) > 0
+}
+
+// TestReferenceRoutedApart: the skip in uploadKVGeomRun is taken only when the uploaded arm matches the CPU and the reference
+// does not; an upload that disagrees with the CPU at any step under the bar stays red.
+func TestReferenceRoutedApart(t *testing.T) {
+	a, b := []float32{1, 0, 0}, []float32{0, 1, 0}
+	for _, tc := range []struct {
+		name         string
+		cpu, up, ref []float32
+		want         bool
+	}{
+		{"the reference routed apart: skip", a, a, b, true},
+		{"the upload disagrees with the CPU: red", a, b, a, false},
+		{"both disagree with the CPU: red", a, b, b, false},
+		{"both agree with the CPU: red (nothing explains the miss)", a, a, a, false},
+	} {
+		got := referenceRoutedApart([]int{0}, [][]float32{tc.cpu}, [][]float32{tc.up}, [][]float32{tc.ref}, 0.999999)
+		if got != tc.want {
+			t.Errorf("%s: referenceRoutedApart = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+	if referenceRoutedApart(nil, nil, nil, nil, 0.999999) {
+		t.Error("no step under the bar: referenceRoutedApart = true, want false")
 	}
 }

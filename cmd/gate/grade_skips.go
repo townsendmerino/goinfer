@@ -12,7 +12,7 @@ import (
 //	missing-golden   no *_golden.json recorded yet
 //	no-gpu-device    needs a real GPU/Metal/CUDA device (CI has none)
 //	heavy-model      gated behind GOINFER_HEAVY_TESTS / a real ~/models checkpoint
-//	integration-env  needs a runtime env var (GOINFER_SERVE_MODEL / _EMBED_MODEL)
+//	integration-env  needs a runtime env var (GOINFER_SERVE_MODEL / _EMBED_MODEL; GOINFER_MEASURE_TESTS for a measurement)
 //	other            unclassified — inspect these; they should be rare
 //
 // The point of bucketing at all: a green `go test ./...` is not "all green" if most of the suite
@@ -35,6 +35,7 @@ var skipTokens = []struct{ token, bucket string }{
 	{"SKIP-HEAVY:", "heavy-model"},
 	{"SKIP-DEVICE:", "no-gpu-device"},
 	{"SKIP-ASSET:", "missing-fixture"},
+	{"SKIP-MEASURE:", "integration-env"},
 }
 
 // bucketOrder is the REPORT order, deliberately different from the MATCH order above: the report
