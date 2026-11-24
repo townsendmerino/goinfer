@@ -1,11 +1,14 @@
 package decoder
 
 import (
+	"context"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-// rowPadArms runs fn with the row-pad prototype on at alignment align (bytes) and returns to the defaults after.
+// rowPadArms runs fn with the row pad on (at alignment align, in bytes) or off, and restores the defaults after.
 func rowPadArms[T any](t *testing.T, on bool, align int, fn func() T) T {
 	t.Helper()
 	kvRowPadForTest, kvRowPadAlign = on, align
@@ -31,51 +34,171 @@ func TestKVRowPad_padOnlyAtAnAlignedRow(t *testing.T) {
 	}
 }
 
-// TestKVRowPad_decodeBitIdentical holds single-token decode over a padded cache bit-identical to the unpadded one, through
-// Model.forward, at f32 and f16, at an alignment that pads both precisions' rows (64 B: llama-tiny's 128 B f32 and 64 B f16 rows) and
-// at one that pads neither (4 KiB), and checks the padded store is the one decode read. 40 tokens run the 16-key QK kernel over the
-// first 32 keys and the 4-key kernel over the rest.
-func TestKVRowPad_decodeBitIdentical(t *testing.T) {
-	m := f1Load(t, filepath.Join("..", "testdata", "llama-tiny"))
-	f16, f32 := f1Arms(m)
+// rowPadFixtures are the tiny fixtures the pad cells run on, and whether the pad applies to each: dense families with uniform
+// attention layers take it; a family with a sliding window (rings) is declined it.
+var rowPadFixtures = []struct {
+	dir    string
+	n      int
+	padded bool
+}{
+	{"llama-tiny", 40, true},
+	{"qwen25vl-tiny", 24, true},
+	{"mixtral-tiny", 32, true},
+	{"qwen3moe-tiny", 32, true},
+	{"glm-tiny", 32, true},
+	{"gemma2-tiny", 30, false},
+}
+
+// rowPadCells runs every reader of the CPU KV layout once on model m, through its real caller, and returns each cell's output:
+// decode, batched prefill, prefill then decode, the GPU-upload bridge's rows, rewind then decode, a session snapshot's restore,
+// a prefix copy, and the multi-sequence walker. It also returns the prefill cache, so a caller can check whether it was padded.
+func rowPadCells(t *testing.T, m *Model, n int) (map[string][][]float32, *KVCache) {
+	t.Helper()
 	_, _, _, _, _, _, vocab := m.Dims()
-	ids := f1IDs(40, vocab)
-	for _, arm := range []struct {
-		name string
-		m    *Model
-	}{{"f32", f32}, {"f16", f16}} {
-		for _, align := range []int{64, kvRowPadAlignDefault} {
-			ref := f1Decode(t, arm.m, ids)
-			var padded *KVCache
-			got := rowPadArms(t, true, align, func() [][]float32 {
-				c := arm.m.NewCache(len(ids))
-				padded = c
-				var out [][]float32
-				for _, id := range ids {
-					lg, err := arm.m.forward(id, c)
-					if err != nil {
-						t.Fatal(err)
-					}
-					out = append(out, append([]float32(nil), lg...))
-				}
-				return out
+	ids := f1IDs(n, vocab)
+	step := func(c *KVCache, id int) []float32 {
+		lg, err := m.forward(id, c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return append([]float32(nil), lg...)
+	}
+	out := map[string][][]float32{}
+	out["decode"] = f1Decode(t, m, ids)
+	lg, pc := f1Prefill(t, m, ids[:n-4], nil)
+	out["prefill"] = lg
+	for _, id := range ids[n-4:] {
+		out["prefill+decode"] = append(out["prefill+decode"], step(pc, id))
+	}
+	for l := range pc.numLayers {
+		k, v, _ := pc.LayerKV(l)
+		out["bridge"] = append(out["bridge"], k, v)
+	}
+	pc.TruncateTo(n - 6)
+	for _, id := range ids[n-6 : n-2] {
+		out["rewind"] = append(out["rewind"], step(pc, id))
+	}
+	s := m.NewSession(n + 8)
+	if _, err := m.forwardN(context.Background(), ids, s.cache); err != nil {
+		t.Fatal(err)
+	}
+	s.tokens = append([]int(nil), ids...)
+	next := (ids[n-1] + 1) % vocab
+	if blob := s.Snapshot("id"); blob != nil {
+		back, err := m.LoadSession(blob, "id")
+		if err != nil {
+			t.Fatalf("LoadSession: %v", err)
+		}
+		out["snapshot"] = [][]float32{step(back.cache, next)}
+	} else {
+		t.Fatalf("Snapshot refused a %d-row cache", n)
+	}
+	cp := m.NewCache(n + 8)
+	if err := cp.copyPrefixFrom(s.cache, n); err != nil {
+		t.Fatalf("copyPrefixFrom: %v", err)
+	}
+	out["copy"] = [][]float32{step(cp, next)}
+	a, b := m.NewCache(n+8), m.NewCache(n+8)
+	for i := range n / 2 {
+		lgs, err := m.decodeMultiStep([]int{ids[i], ids[n-1-i]}, []*KVCache{a, b})
+		if err != nil {
+			t.Fatal(err)
+		}
+		out["multi"] = append(out["multi"], lgs...)
+	}
+	return out, pc
+}
+
+// TestKVRowPad_everyReaderBitIdentical holds every reader of the CPU KV layout bit-identical with the row pad on and off, at f32 and
+// f16, on the dense fixtures (64 B alignment, so their small rows are padded) and on a ring family the pad declines.
+func TestKVRowPad_everyReaderBitIdentical(t *testing.T) {
+	for _, fx := range rowPadFixtures {
+		m := f1Load(t, filepath.Join("..", "testdata", fx.dir))
+		f16, f32 := f1Arms(m)
+		for _, arm := range []struct {
+			name string
+			m    *Model
+		}{{"f32", f32}, {"f16", f16}} {
+			ref, rc := rowPadCells(t, arm.m, fx.n)
+			var pc *KVCache
+			got := rowPadArms(t, true, 64, func() map[string][][]float32 {
+				o, c := rowPadCells(t, arm.m, fx.n)
+				pc = c
+				return o
 			})
-			wantPad := align == 64
-			if (padded.rowPad > 0) != wantPad {
-				t.Fatalf("%s align %d: rowPad %d, want padded=%v", arm.name, align, padded.rowPad, wantPad)
+			if (pc.rowPad > 0) != fx.padded {
+				t.Fatalf("%s %s: the pad-on prefill cache has rowPad %d, want padded=%v", fx.dir, arm.name, pc.rowPad, fx.padded)
 			}
-			if wantPad && padded.storedRows(0, m.w.arch.NumKVHeads*m.w.arch.HeadDim) != len(ids) {
-				t.Fatalf("%s align %d: the padded store holds %d rows, want %d", arm.name, align, padded.storedRows(0, m.w.arch.NumKVHeads*m.w.arch.HeadDim), len(ids))
+			if rc.rowPad != 0 {
+				t.Fatalf("%s %s: the pad-off cache is padded (%d)", fx.dir, arm.name, rc.rowPad)
 			}
-			if d := f1Diff(got, ref); d != 0 {
-				t.Errorf("%s align %d: padded decode differs from unpadded in %d logits", arm.name, align, d)
+			for cell, want := range ref {
+				if d := f1Diff(got[cell], want); d != 0 || len(got[cell]) != len(want) {
+					t.Errorf("%s %s %s: padded differs from unpadded in %d values (%d against %d rows)", fx.dir, arm.name, cell, d, len(got[cell]), len(want))
+				}
 			}
 		}
 	}
 }
 
-// TestKVRowPad_planPricesThePad holds the CPU KV price to what a padded cache holds: kvBytesForCtx with the prototype on equals the
-// bytes a padded cache stores after ctx positions, at both precisions.
+// TestKVRowPad_padAppliesWhereEligible checks the pad is on for the dense fixtures' caches and off for the ring family's, so the
+// bit-identity test above is not comparing two unpadded runs.
+func TestKVRowPad_padAppliesWhereEligible(t *testing.T) {
+	for _, fx := range rowPadFixtures {
+		m := f1Load(t, filepath.Join("..", "testdata", fx.dir))
+		f16, f32 := f1Arms(m)
+		for _, mm := range []*Model{f32, f16} {
+			c := rowPadArms(t, true, 64, func() *KVCache { return mm.NewCache(16) })
+			if (c.rowPad > 0) != fx.padded {
+				t.Errorf("%s: rowPad %d, want padded=%v", fx.dir, c.rowPad, fx.padded)
+			}
+		}
+	}
+}
+
+// TestKVRowPad_snapshotCrossesLayouts restores a padded session into an unpadded cache and the reverse: the snapshot format holds
+// compact rows, so the next step matches either way.
+func TestKVRowPad_snapshotCrossesLayouts(t *testing.T) {
+	m := f1Load(t, filepath.Join("..", "testdata", "llama-tiny"))
+	_, f32 := f1Arms(m)
+	_, _, _, _, _, _, vocab := m.Dims()
+	ids := f1IDs(24, vocab)
+	next := (ids[len(ids)-1] + 1) % vocab
+	snap := func(padded bool) []byte {
+		return rowPadArms(t, padded, 64, func() []byte {
+			s := f32.NewSession(64)
+			if _, err := f32.forwardN(context.Background(), ids, s.cache); err != nil {
+				t.Fatal(err)
+			}
+			s.tokens = append([]int(nil), ids...)
+			return s.Snapshot("id")
+		})
+	}
+	restoreStep := func(blob []byte, padded bool) []float32 {
+		return rowPadArms(t, padded, 64, func() []float32 {
+			back, err := f32.LoadSession(blob, "id")
+			if err != nil {
+				t.Fatalf("LoadSession: %v", err)
+			}
+			if (back.cache.rowPad > 0) != padded {
+				t.Fatalf("restored cache rowPad %d, want padded=%v", back.cache.rowPad, padded)
+			}
+			lg, err := f32.forward(next, back.cache)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return append([]float32(nil), lg...)
+		})
+	}
+	want := restoreStep(snap(false), false)
+	for _, c := range []struct{ from, to bool }{{true, false}, {false, true}, {true, true}} {
+		if d := f1Diff([][]float32{restoreStep(snap(c.from), c.to)}, [][]float32{want}); d != 0 {
+			t.Errorf("snapshot padded=%v restored padded=%v: the next step differs in %d values", c.from, c.to, d)
+		}
+	}
+}
+
+// TestKVRowPad_planPricesThePad holds the CPU KV price to what a padded cache holds after ctx positions, at both precisions.
 func TestKVRowPad_planPricesThePad(t *testing.T) {
 	m := f1Load(t, filepath.Join("..", "testdata", "llama-tiny"))
 	f16, f32 := f1Arms(m)
@@ -107,32 +230,56 @@ func TestKVRowPad_planPricesThePad(t *testing.T) {
 	}
 }
 
-// TestKVRowPad_otherReadersRefuse checks that the readers the prototype does not cover refuse a padded cache instead of reading its
-// empty unpadded store: batched prefill, Keys/Vals, LayerKV and TruncateTo.
-func TestKVRowPad_otherReadersRefuse(t *testing.T) {
+// TestKVRowPad_keysRefusesAPaddedCache checks the unstrided accessors refuse a padded cache: a reader that indexes Keys/Vals by kvDim
+// would read the pad as data.
+func TestKVRowPad_keysRefusesAPaddedCache(t *testing.T) {
 	m := f1Load(t, filepath.Join("..", "testdata", "llama-tiny"))
 	_, f32 := f1Arms(m)
-	_, _, _, _, _, _, vocab := m.Dims()
-	ids := f1IDs(4, vocab)
-	refuses := func(name string, fn func()) {
-		t.Helper()
-		defer func() {
-			if recover() == nil {
-				t.Errorf("%s accepted a padded cache", name)
-			}
+	c := rowPadArms(t, true, 64, func() *KVCache { return f32.NewCache(16) })
+	for name, fn := range map[string]func(){"Keys": func() { c.Keys(0) }, "Vals": func() { c.Vals(0) }} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("%s accepted a padded cache", name)
+				}
+			}()
+			fn()
 		}()
-		fn()
 	}
-	rowPadArms(t, true, 64, func() int {
-		c := f32.NewCache(16)
-		if _, err := f32.forward(ids[0], c); err != nil {
+}
+
+// TestKVRowPad_keysReadersAreDeclinedFamilies is the reader census: every production call of KVCache.Keys or Vals in decoder/ is in a
+// family loop whose caches the pad declines (rings, hybrid state or per-layer widths), so a new reader that indexes the unstrided store
+// shows up here instead of reading the pad as data.
+func TestKVRowPad_keysReadersAreDeclinedFamilies(t *testing.T) {
+	allowed := map[string]bool{
+		"forward_gptoss.go":       true, // sliding-window layers: rings
+		"forward_qwen35.go":       true, // hybrid: manualPos
+		"forward_gemma4.go":       true, // per-layer widths, KV sharing: manualPos
+		"program_cpu_n_gemma4.go": true,
+		"program_cpu_n_qwen35.go": true,
+		"kvcache.go":              true, // the accessors themselves
+		"testhooks.go":            true,
+	}
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") || allowed[f] {
+			continue
+		}
+		src, err := os.ReadFile(f)
+		if err != nil {
 			t.Fatal(err)
 		}
-		refuses("forwardN", func() { _, _ = f32.forwardN(t.Context(), ids, c) })
-		refuses("Keys", func() { c.Keys(0) })
-		refuses("Vals", func() { c.Vals(0) })
-		refuses("LayerKV", func() { c.LayerKV(0) })
-		refuses("TruncateTo", func() { c.TruncateTo(0) })
-		return 0
-	})
+		for i, line := range strings.Split(string(src), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "//") {
+				continue
+			}
+			if strings.Contains(line, ".Keys(") || strings.Contains(line, ".Vals(") {
+				t.Errorf("%s:%d reads KVCache.Keys/Vals, which a padded cache refuses; read layerRows (and its stride) or decline the pad for this family: %s", f, i+1, strings.TrimSpace(line))
+			}
+		}
+	}
 }
