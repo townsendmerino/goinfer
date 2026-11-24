@@ -5,9 +5,10 @@ package whisper
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -39,11 +40,7 @@ func TestWhisperSmall_clips(t *testing.T) {
 	if err := json.Unmarshal(raw, &refs); err != nil {
 		t.Fatal(err)
 	}
-	ids := make([]string, 0, len(refs))
-	for id := range refs {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
+	ids := slices.Sorted(maps.Keys(refs))
 	if lim := os.Getenv("GOINFER_S14F_LIMIT"); lim != "" {
 		var n int
 		fmt.Sscanf(lim, "%d", &n)

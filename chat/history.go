@@ -23,9 +23,10 @@ package chat
 // What is deliberately NOT replicated: the templates trim every message's content (user and system too), which goinfer's
 // renderers have never done; and Gemma 4's `preserve_thinking` kwarg. Both are separate fidelity questions from reasoning.
 
-import "slices"
-
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 type histKind uint8
 

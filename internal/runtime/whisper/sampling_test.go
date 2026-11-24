@@ -1,10 +1,10 @@
 package whisper
 
 import (
+	"cmp"
 	"math"
 	"math/rand/v2"
 	"slices"
-	"sort"
 	"testing"
 )
 
@@ -118,7 +118,7 @@ func TestSampling_topK(t *testing.T) {
 	for i := range orig {
 		idx = append(idx, i)
 	}
-	sort.SliceStable(idx, func(a, b int) bool { return orig[idx[a]] > orig[idx[b]] })
+	slices.SortStableFunc(idx, func(a, b int) int { return cmp.Compare(orig[b], orig[a]) })
 	want := slices.Clone(idx[:topK])
 	slices.Sort(want)
 	if !slices.Equal(kept, want) {

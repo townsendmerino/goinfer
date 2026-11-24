@@ -9,7 +9,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -67,7 +67,7 @@ func countsBreak(got, want map[string]int, what, fix string) []string {
 			files = append(files, k)
 		}
 	}
-	sort.Strings(files)
+	slices.Sort(files)
 	var out []string
 	for _, k := range files {
 		switch w := want[k]; {
