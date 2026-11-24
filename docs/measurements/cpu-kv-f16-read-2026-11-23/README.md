@@ -41,3 +41,18 @@ in-place read still ships (it replaces a slower read of the same bytes, bit-iden
 the f32 path that ships; the A/B is re-run on whichever QK kernel ships. (2) Phi-3's f16 fidelity gate is running (started 17:51 PST).
 Part of Phi-3's gain is the same L1 aliasing: its f32 key rows are 12 KiB apart, its f16 rows 6 KiB, which split sixteen live rows over
 two sets.
+
+## Fidelity: Phi-3 mini at K = 3,900, read 2026-11-23 19:12 PST — PASSES
+
+`TestCPUKVF16GateVsReference`, cell `P3M:3900`, set B (10 prompts × 64 positions), binary `dec-F16-690049496`, 17:51–19:12 PST under the
+shared lock. Log: `p3m-fidelity.log`. Preconditions held: f16 and f32 caches, f16's rows differ from f32's on 10 of 10 prompts, A/A
+bit-identical over 64 rows.
+
+| | f32 (auto) | f16 | bar | |
+|---|---|---|---|---|
+| (a) hard flips | 0 | 0 | ≤ 0 + 2√0 | pass (strict too) |
+| (b) mean agreement | 97.81% | 98.12% (+0.31 pt) | ≥ f32 − 1.0 pt, f16 ≥ f32 on ≥ half | pass, 8/10 prompts |
+| (c) mean KL | 0.003484 | 0.002917 | ≤ 1.10× | pass, 0.837× |
+
+**Host bytes** at depth 3,963: f32 3,116,630,016 B of K/V, f16 1,558,315,008 B (exactly half). With the 0.5B's pass above, f16 KV passes
+its fidelity gate on both registered models. The speed claim for Phi-3 still waits on the re-measure on the shipping QK kernel.
