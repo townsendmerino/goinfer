@@ -89,12 +89,7 @@ func BenchmarkDecodeAtDepth(b *testing.B) {
 	} {
 		b.Run(arm.name, func(b *testing.B) {
 			setKnob(b, m, knobAttnGrouped, arm.env)
-			// GOINFER_BENCH_KVPAD=1 builds the cache with the row pad on (Architecture.kvRowPadAlign at its default alignment).
-			if os.Getenv("GOINFER_BENCH_KVPAD") == "1" {
-				m.w.arch.kvRowPadAlign = kvRowPadAlignDefault
-			}
 			cache := m.NewCache(depth + b.N + 8)
-			m.w.arch.kvRowPadAlign = 0
 			if fill {
 				fillCacheForBench(b, m, cache, depth)
 			} else if _, err := m.forwardLayersN(context.Background(), ids, cache, false); err != nil {

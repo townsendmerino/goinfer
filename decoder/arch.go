@@ -63,7 +63,7 @@ type Architecture struct {
 	AttnTempOrigMaxPos float64
 	SlidingWindow      int // 0 = none
 	// kvRowPadAlign is the CPU KV cache's row-pad alignment in bytes (kvRowPad): a row that is a multiple of it is padded by 64 B.
-	// 0, the default, never pads.
+	// resolveArchitecture sets kvRowPadAlignDefault; 0 never pads (a test's unpadded arm).
 	kvRowPadAlign int
 	layerIsGlobal func(i int) bool // per-layer global(full) vs local(sliding) attention
 	layerNoPE     func(i int) bool // per-layer NoPE: true ⇒ skip RoPE entirely on this layer (Cohere2 global layers; Llama-4 iRoPE style). nil ⇒ every layer ropes.
@@ -791,8 +791,8 @@ func kvRowPadPriced(a *Architecture, elems, elemBytes int) int {
 	return a.kvRowPad(elemBytes)
 }
 
-// kvRowPad is the row pad, in elements, a CPU cache of this architecture takes at elemBytes per element: one 64 B line when the pad is
-// on (kvRowPadAlign), every layer is a global attention layer of one KV width, and the row is a multiple of kvRowPadAlign bytes; else 0.
+// kvRowPad is the row pad, in elements, a CPU cache of this architecture takes at elemBytes per element: one 64 B line when every layer
+// is a global attention layer of one KV width and the row is a multiple of kvRowPadAlign bytes; else 0.
 // It is the one eligibility rule; KVCache.setRowPad and the plan's price both read it. A ring, an MLA latent or hybrid recurrent
 // state declines it, as does a per-layer KV width.
 func (a *Architecture) kvRowPad(elemBytes int) int {

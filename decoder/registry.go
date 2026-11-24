@@ -98,7 +98,8 @@ func resolveArchitecture(cfg *Config) (*Architecture, *tensorSchema, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	arch.finalizeRoPE() // precompute inv-freq tables (base + scaling + rotary dim)
+	arch.finalizeRoPE()                       // precompute inv-freq tables (base + scaling + rotary dim)
+	arch.kvRowPadAlign = kvRowPadAlignDefault // the CPU cache pads its rows where kvRowPad allows
 	if err := arch.validateResolved(); err != nil {
 		return nil, nil, err
 	}

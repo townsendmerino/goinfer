@@ -10,15 +10,15 @@ import (
 	"testing"
 )
 
-// rowPadArms runs fn with m's row pad on (at alignment align, in bytes) or off, and turns it off after. Both arms of f1Arms share
-// m's Architecture, so the setting reaches either.
+// rowPadArms runs fn with m's row pad on (at alignment align, in bytes) or off, and restores the default alignment after. Both arms of
+// f1Arms share m's Architecture, so the setting reaches either.
 func rowPadArms[T any](t *testing.T, m *Model, on bool, align int, fn func() T) T {
 	t.Helper()
 	m.w.arch.kvRowPadAlign = 0
 	if on {
 		m.w.arch.kvRowPadAlign = align
 	}
-	defer func() { m.w.arch.kvRowPadAlign = 0 }()
+	defer func() { m.w.arch.kvRowPadAlign = kvRowPadAlignDefault }()
 	return fn()
 }
 
@@ -138,7 +138,12 @@ func TestKVRowPad_everyReaderBitIdentical(t *testing.T) {
 			name string
 			m    *Model
 		}{{"f32", f32}, {"f16", f16}} {
-			ref, rc := rowPadCells(t, arm.m, fx.n)
+			var rc *KVCache
+			ref := rowPadArms(t, arm.m, false, 0, func() map[string][][]float32 {
+				o, c := rowPadCells(t, arm.m, fx.n)
+				rc = c
+				return o
+			})
 			var pc *KVCache
 			got := rowPadArms(t, arm.m, true, rowPadTestAlign, func() map[string][][]float32 {
 				o, c := rowPadCells(t, arm.m, fx.n)
@@ -243,7 +248,7 @@ func TestKVRowPad_planPricesThePad(t *testing.T) {
 			m    *Model
 			f16  bool
 		}{{"f32", f32, false}, {"f16", f16, true}} {
-			unpadded := kvBytesForCtx(arm.m.w.arch, ctx, arm.f16, false)
+			unpadded := rowPadArms(t, arm.m, false, 0, func() int64 { return kvBytesForCtx(arm.m.w.arch, ctx, arm.f16, false) })
 			rowPadArms(t, arm.m, true, rowPadTestAlign, func() int {
 				c := arm.m.NewCache(ctx)
 				for _, id := range ids {
