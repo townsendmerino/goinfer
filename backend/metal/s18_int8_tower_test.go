@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -96,7 +97,7 @@ func TestS18Int8Tower_tiny(t *testing.T) {
 	if wc < 0.9999 {
 		t.Errorf("siglip-tiny int8: worst token cosine %.9f under 0.9999", wc)
 	}
-	for _, d := range append(append([]s3Defect(nil), s3SiglipDefects...), s3Defect{7, "each group's scale from the next group (tower_gemm_w8 dbg 4)", nil}) {
+	for _, d := range append(slices.Clone(s3SiglipDefects), s3Defect{7, "each group's scale from the next group (tower_gemm_w8 dbg 4)", nil}) {
 		r.a.planted = gvDefect{}
 		if d.set != nil {
 			d.set(&r.a.planted)
@@ -291,9 +292,9 @@ func s18Footprint(t *testing.T) int64 {
 	if err != nil {
 		t.Fatalf("footprint: %v", err)
 	}
-	for _, l := range strings.Split(string(out), "\n") {
-		if i := strings.Index(l, "phys_footprint:"); i >= 0 {
-			f := strings.Fields(l[i+len("phys_footprint:"):])
+	for l := range strings.SplitSeq(string(out), "\n") {
+		if _, after, ok := strings.Cut(l, "phys_footprint:"); ok {
+			f := strings.Fields(after)
 			if len(f) >= 2 {
 				v, _ := strconv.ParseFloat(f[0], 64)
 				switch f[1] {

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -64,7 +64,7 @@ func TestMC5_chunkCost(t *testing.T) {
 	res := map[int][]float64{}
 	mx := map[int]float64{}
 	np := map[int]int{}
-	for rep := 0; rep < 3; rep++ {
+	for rep := range 3 {
 		for k := range arms {
 			C := arms[(k+rep)%len(arms)]
 			tot, mp, n := run(C)
@@ -74,7 +74,7 @@ func TestMC5_chunkCost(t *testing.T) {
 	}
 	for _, C := range arms {
 		v := res[C]
-		sort.Float64s(v)
+		slices.Sort(v)
 		fmt.Fprintf(os.Stderr, "[mc5-cost] C=%d: %d passes, total %.3f s (median of 3), longest pass %.3f s\n", C, np[C], v[1], mx[C])
 	}
 }
@@ -107,14 +107,14 @@ func TestMC5_passCost(t *testing.T) {
 		line := fmt.Sprintf("startPos %d:", at)
 		for _, C := range []int{16, 64, 128, 256} {
 			var ts []float64
-			for rep := 0; rep < 5; rep++ {
+			for range 5 {
 				t0 := time.Now()
 				if _, err := a.PrefillLast(context.Background(), embs[at:at+C], at); err != nil {
 					t.Fatal(err)
 				}
 				ts = append(ts, time.Since(t0).Seconds()*1e3)
 			}
-			sort.Float64s(ts)
+			slices.Sort(ts)
 			line += fmt.Sprintf("  C=%d %.1f ms (GPU %.1f)", C, ts[2], (r.gpuEnd-r.gpuStart)*1e3)
 		}
 		fmt.Fprintf(os.Stderr, "[mc5-pass] %s\n", line)

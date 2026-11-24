@@ -63,9 +63,8 @@ func BenchmarkAttentionPrefill(b *testing.B) {
 	for range 4 {
 		run()
 	}
-	b.ResetTimer()
 	best := time.Hour
-	for range b.N {
+	for b.Loop() {
 		t0 := time.Now()
 		run()
 		if dt := time.Since(t0); dt < best {
@@ -136,9 +135,8 @@ func benchAttentionPrefillFused(b *testing.B, M int) {
 	for range 4 {
 		run()
 	}
-	b.ResetTimer()
 	best := time.Hour
-	for range b.N {
+	for b.Loop() {
 		t0 := time.Now()
 		run()
 		if dt := time.Since(t0); dt < best {
@@ -204,9 +202,8 @@ func BenchmarkAttentionPrefillLongCtx(b *testing.B) {
 	for range 2 {
 		run()
 	}
-	b.ResetTimer()
 	best := time.Hour
-	for range b.N {
+	for b.Loop() {
 		t0 := time.Now()
 		run()
 		if dt := time.Since(t0); dt < best {

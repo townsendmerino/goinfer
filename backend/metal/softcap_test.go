@@ -5,6 +5,7 @@ package metal
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 )
 
@@ -27,8 +28,8 @@ func TestMetalSoftcapParallel_bitIdentical(t *testing.T) {
 			for i := range a {
 				a[i] = float32(rng.NormFloat64()) * 40 // spans well past ±sc so tanh saturates
 			}
-			want := append([]float32(nil), a...)
-			got := append([]float32(nil), a...)
+			want := slices.Clone(a)
+			got := slices.Clone(a)
 			softcapSerial(want, sc)
 			softcapParallel(got, sc)
 			for i := range want {
@@ -49,8 +50,7 @@ func benchSoftcap(b *testing.B, n int, parallel bool) {
 		base[i] = float32(rng.NormFloat64()) * 40
 	}
 	buf := make([]float32, n)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		copy(buf, base)
 		if parallel {
 			softcapParallel(buf, sc)

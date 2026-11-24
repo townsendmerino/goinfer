@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -70,7 +70,7 @@ func TestR18InSequence(t *testing.T) {
 			return def
 		}
 		var out []int
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			n, err := strconv.Atoi(strings.TrimSpace(f))
 			if err != nil {
 				t.Fatalf("%s: %v", env, err)
@@ -240,7 +240,7 @@ func TestR18InSequence(t *testing.T) {
 				if err := r.takeExecErr(); err != nil {
 					t.Fatalf("%s decode at %d: %v", a.name, D+i, err)
 				}
-				lg = append(lg, append([]float32(nil), out...))
+				lg = append(lg, slices.Clone(out))
 			}
 			restore()
 			if ai == 0 {
@@ -292,7 +292,7 @@ func TestR18InSequence(t *testing.T) {
 			}
 			return median(fs), median(ds)
 		}
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			step()
 		}
 		type res struct {
@@ -300,13 +300,13 @@ func TestR18InSequence(t *testing.T) {
 			cat              [4][]float64
 		}
 		rs := make([]res, len(arms))
-		for rep := 0; rep < reps; rep++ {
+		for rep := range reps {
 			line := fmt.Sprintf("depth %d rep %d/%d:", D, rep+1, reps)
 			for k := range arms {
 				ai := (k + rep) % len(arms)
 				a := arms[ai]
 				w, fulls := 0.0, []float64{}
-				for c := 0; c < 4; c++ {
+				for c := range 4 {
 					f, v := pair(a, c)
 					rs[ai].cat[c] = append(rs[ai].cat[c], v)
 					w += v
@@ -328,7 +328,7 @@ func TestR18InSequence(t *testing.T) {
 
 		// 3. the full token right after 2 s idle, per arm, alternating
 		idleMs := make([][]float64, len(arms))
-		for s := 0; s < idle; s++ {
+		for range idle {
 			for ai, a := range arms {
 				restore := set(a, -1)
 				step() // the swap's first token (encode-side state), then idle
@@ -344,9 +344,9 @@ func TestR18InSequence(t *testing.T) {
 			for i := range ratios {
 				ratios[i] = rs[0].work[i] / rs[ai].work[i]
 			}
-			sort.Float64s(ratios)
+			slices.Sort(ratios)
 			cats := ""
-			for c := 0; c < 4; c++ {
+			for c := range 4 {
 				cats += fmt.Sprintf(" %s %.3f", catNames[c], median(rs[ai].cat[c]))
 				if ai > 0 {
 					cats += fmt.Sprintf(" (%.2fx)", median(rs[0].cat[c])/median(rs[ai].cat[c]))
@@ -367,7 +367,7 @@ func TestR18InSequence(t *testing.T) {
 				for i := range pr {
 					pr[i] = rs[1].work[i] / rs[ai].work[i]
 				}
-				sort.Float64s(pr)
+				slices.Sort(pr)
 				hb("  %-8s METRIC production/arm = %.3fx (per-rep sorted %v); full token %+.3f ms vs production", a.name,
 					pr[len(pr)/2], fmtRatios(pr), median(rs[ai].full)-median(rs[1].full))
 			}

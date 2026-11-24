@@ -12,7 +12,7 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -382,7 +382,7 @@ func TestR17AttentionProto(t *testing.T) {
 			return def
 		}
 		var out []int
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			n, err := strconv.Atoi(strings.TrimSpace(f))
 			if err != nil {
 				t.Fatalf("%s: %v", env, err)
@@ -484,10 +484,10 @@ func TestR17AttentionProto(t *testing.T) {
 		logitsOf := func(a armSpec) []float32 {
 			restore := setArm(a)
 			defer restore()
-			for i := 0; i < 3; i++ {
+			for range 3 {
 				step()
 			}
-			return append([]float32(nil), r.logitsHost...)
+			return slices.Clone(r.logitsHost)
 		}
 		// the exact kernel (r.decodeAttnFA off → the shipped per-query-head attention) as a third reference, and the
 		// current kernel twice, so a disagreement can be placed on the arm that moved (or on nondeterminism)
@@ -518,7 +518,7 @@ func TestR17AttentionProto(t *testing.T) {
 			name string
 			lg   []float32
 		}{{"exact kernel (again)", exactOf()}, {arms[0].name, ref}, {arms[0].name + " (again)", logitsOf(arms[0])}}
-		fidArms := append([]armSpec(nil), arms[1:len(arms)-1]...)
+		fidArms := slices.Clone(arms[1 : len(arms)-1])
 		for _, sv := range splits { // the control: the CURRENT kernel at the same split counts
 			if sv != 0 {
 				fidArms = append(fidArms, armSpec{name: fmt.Sprintf("production S=%d", sv), first: current, split: sv})
@@ -549,7 +549,7 @@ func TestR17AttentionProto(t *testing.T) {
 		// GOINFER_METAL_R17_ABBA=1 swaps the first two arms on every odd rep, so the pairs run A B, B A, A B, …: a drift across the
 		// run lands on both arms alike.
 		abba := os.Getenv("GOINFER_METAL_R17_ABBA") == "1" && len(arms) >= 3
-		for rep := 0; rep < reps; rep++ {
+		for rep := range reps {
 			order := make([]int, len(arms))
 			for i := range order {
 				order[i] = i
@@ -795,7 +795,7 @@ func TestR17StateLeakBisect(t *testing.T) {
 	take := func() snap {
 		var s snap
 		for l := range r.kc {
-			s.kv = append(s.kv, append([]uint16(nil), halves(r.kc[l])...), append([]uint16(nil), halves(r.vc[l])...))
+			s.kv = append(s.kv, slices.Clone(halves(r.kc[l])), slices.Clone(halves(r.vc[l])))
 		}
 		return s
 	}
@@ -825,8 +825,8 @@ func TestR17StateLeakBisect(t *testing.T) {
 	for _, mode := range []string{"no restore", "restore KV cache", "restore r.ctx + partial"} {
 		a := run(false)
 		sa := take()
-		ctxA := append([]float32(nil), r.ctx.Floats()...)
-		partA := append([]float32(nil), r.attnFAPartial.Floats()...)
+		ctxA := slices.Clone(r.ctx.Floats())
+		partA := slices.Clone(r.attnFAPartial.Floats())
 		run(true) // shipped attention_fa
 		sf := take()
 		lo, hi, n := slotsDiffer(sa, sf)
@@ -864,7 +864,7 @@ func r17BufferBytes(b Buffer) int {
 func r17Buffers(r *resident) map[string]Buffer {
 	out := map[string]Buffer{}
 	seenPtr := map[uintptr]bool{}
-	bufT := reflect.TypeOf(Buffer{})
+	bufT := reflect.TypeFor[Buffer]()
 	var walk func(v reflect.Value, path string, depth int)
 	walk = func(v reflect.Value, path string, depth int) {
 		if depth > 6 || !v.IsValid() {
@@ -881,7 +881,7 @@ func r17Buffers(r *resident) map[string]Buffer {
 			return
 		}
 		switch v.Kind() {
-		case reflect.Ptr:
+		case reflect.Pointer:
 			if v.IsNil() || v.Elem().Kind() != reflect.Struct || seenPtr[v.Pointer()] {
 				return
 			}
@@ -908,15 +908,15 @@ func r17MayHoldBuffer(t reflect.Type, depth int) bool {
 	if depth > 4 {
 		return false
 	}
-	if t == reflect.TypeOf(Buffer{}) {
+	if t == reflect.TypeFor[Buffer]() {
 		return true
 	}
 	switch t.Kind() {
-	case reflect.Ptr, reflect.Slice, reflect.Array:
+	case reflect.Pointer, reflect.Slice, reflect.Array:
 		return r17MayHoldBuffer(t.Elem(), depth+1)
 	case reflect.Struct:
-		for i := 0; i < t.NumField(); i++ {
-			if r17MayHoldBuffer(t.Field(i).Type, depth+1) {
+		for field := range t.Fields() {
+			if r17MayHoldBuffer(field.Type, depth+1) {
 				return true
 			}
 		}
@@ -1010,7 +1010,7 @@ func TestR17StateLeakAllBuffers(t *testing.T) {
 		names = append(names, name)
 		total += n
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	fmt.Fprintf(os.Stderr, "[r17-all] %d distinct buffers reachable, %d snapshotted (%.1f MB)\n", len(ids), len(names), float64(total)/1e6)
 	snapshot := func() map[string][]byte {
 		sn := map[string][]byte{}
@@ -1101,7 +1101,7 @@ func TestR17KernelAccuracy(t *testing.T) {
 	depths := []int{3900}
 	if v := os.Getenv("GOINFER_METAL_R17_DEPTHS"); v != "" {
 		depths = depths[:0]
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			d, err := strconv.Atoi(strings.TrimSpace(f))
 			if err != nil || d < 2 {
 				t.Fatalf("GOINFER_METAL_R17_DEPTHS: bad depth %q", f)
@@ -1271,8 +1271,8 @@ func TestR17KernelAccuracy(t *testing.T) {
 				}
 				nHhd := r.nH * g.hd
 				G := r.nH / g.nKV
-				q := append([]float32(nil), r.qkv.Floats()[:nHhd]...)
-				inLayer := append([]float32(nil), r.ctx.Floats()[:nHhd]...)
+				q := slices.Clone(r.qkv.Floats()[:nHhd])
+				inLayer := slices.Clone(r.ctx.Floats()[:nHhd])
 				kh := r.kc[l].U16s()[:r.kc[l].Len()/2]
 				vh := r.vc[l].U16s()[:r.vc[l].Len()/2]
 				// float64 reference
@@ -1281,7 +1281,7 @@ func TestR17KernelAccuracy(t *testing.T) {
 				for h := 0; h < r.nH; h++ {
 					kvh := h / G
 					mx := math.Inf(-1)
-					for j := 0; j < nKeys; j++ {
+					for j := range nKeys {
 						var a float64
 						base := j*g.kvDim + kvh*g.hd
 						for d := 0; d < g.hd; d++ {
@@ -1297,7 +1297,7 @@ func TestR17KernelAccuracy(t *testing.T) {
 					}
 					for d := 0; d < g.hd; d++ {
 						var a float64
-						for j := 0; j < nKeys; j++ {
+						for j := range nKeys {
 							a += sc[j] * float64(f16ToF32(vh[j*g.kvDim+kvh*g.hd+d]))
 						}
 						ref[h*g.hd+d] = a / sum
@@ -1310,7 +1310,7 @@ func TestR17KernelAccuracy(t *testing.T) {
 					for h := 0; h < r.nH; h++ {
 						kvh := h / G
 						maxS := math.Inf(-1)
-						for j := 0; j < nKeys; j++ {
+						for j := range nKeys {
 							var dot float64
 							base := j*g.kvDim + kvh*g.hd
 							for d := 0; d < g.hd; d++ {
@@ -1329,7 +1329,7 @@ func TestR17KernelAccuracy(t *testing.T) {
 						inv := 1.0 / sum
 						accF := make([]float32, g.hd)
 						accU := make([]float32, g.hd)
-						for j := 0; j < nKeys; j++ {
+						for j := range nKeys {
 							w := float32(float64(sc32[j]) * inv)
 							base := j*g.kvDim + kvh*g.hd
 							for d := 0; d < g.hd; d++ {
@@ -1460,8 +1460,8 @@ func TestR17KernelAccuracy(t *testing.T) {
 		t.Errorf("capture sanity: the standalone exact dispatch matched the in-layer output in only %d of %d layers", sanityOK, sanityN)
 	}
 	pct := func(xs []float64, p float64) float64 {
-		s := append([]float64(nil), xs...)
-		sort.Float64s(s)
+		s := slices.Clone(xs)
+		slices.Sort(s)
 		return s[min(len(s)-1, int(p*float64(len(s))))]
 	}
 	fmt.Fprintf(os.Stderr, "\n=== R17 kernel accuracy vs float64, %s, prompt set %q, depths %v, %d prompts × %d layers × %d heads; capture sanity %d/%d layers bit-identical ===\n",

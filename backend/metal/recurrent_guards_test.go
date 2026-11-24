@@ -44,9 +44,9 @@ func TestRecurrentGuards_declineMamba(t *testing.T) {
 	}{
 		{"greedy chain", func(r *resident) bool { return strings.Contains(r.greedyChainWhyNot(), "recurrent") }, true},
 		{"KV copy", func(r *resident) bool {
-			var d *decoder.KVCopyDecline
 			err := (&metalResident{r: r}).CopyKV(0, 1, 0, 64)
-			return errors.As(err, &d) && strings.Contains(d.Reason, "recurrent")
+			d, ok := errors.AsType[*decoder.KVCopyDecline](err)
+			return ok && strings.Contains(d.Reason, "recurrent")
 		}, false},
 		{"batched step", func(r *resident) bool { return r.batchIneligible() != "" }, false},
 		{"batched step attention-FA", func(r *resident) bool { return !r.canUseAttnFAAt(0, 4096) }, false},

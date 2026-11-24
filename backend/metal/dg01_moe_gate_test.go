@@ -48,7 +48,7 @@ func TestDG01_expertMajorMoEPrefill(t *testing.T) {
 	Ms := []int{64, 512}
 	if v := os.Getenv("GOINFER_DG01_MS"); v != "" {
 		Ms = nil
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			if n, err := strconv.Atoi(strings.TrimSpace(f)); err == nil && n > 0 {
 				Ms = append(Ms, n)
 			}
@@ -144,7 +144,7 @@ func TestDG01_expertMajorMoEPrefill(t *testing.T) {
 		for i, id := range ids {
 			lg := r.Forward(id, i)
 			if i == M-1 {
-				a.logits = append([]float32(nil), lg...)
+				a.logits = slices.Clone(lg)
 			}
 			cap := r.moeCap.idx.U32s()
 			for l := range nL {
@@ -172,7 +172,7 @@ func TestDG01_expertMajorMoEPrefill(t *testing.T) {
 		if lg == nil {
 			t.Fatalf("PrefillLast (major %v) returned no logits: %v", major, r.takeExecErr())
 		}
-		a.logits = append([]float32(nil), lg...)
+		a.logits = slices.Clone(lg)
 		r.moeCap.major, r.moeCap.rows = nil, 0
 		if !major {
 			cap := r.moeCap.idx.U32s()
