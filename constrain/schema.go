@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"sort"
+	"slices"
 )
 
 // JSON Schema → Grammar. JSONSchema compiles a (subset of) JSON Schema into the
@@ -295,7 +295,7 @@ func (c compiler) compileObject(s map[string]any, depth int) (*node, error) {
 		}
 		names = append(names, name)
 	}
-	sort.Strings(names) // deterministic index→bit assignment
+	slices.Sort(names) // deterministic index→bit assignment
 	declared := make(map[string]bool, len(names))
 	for _, name := range names {
 		declared[name] = true

@@ -1,5 +1,7 @@
 package constrain
 
+import "slices"
+
 // Streaming byte-level JSON validator — a pushdown automaton that decides, byte
 // by byte, whether the input so far is a valid PREFIX of some JSON document
 // (could still be completed) and whether it is already a complete value. It is
@@ -75,7 +77,7 @@ func (g *jsonGrammar) Reset() {
 // of the container stack; snapshot scratch is left fresh).
 func (g *jsonGrammar) Clone() Grammar {
 	c := *g
-	c.stack = append([]byte(nil), g.stack...)
+	c.stack = slices.Clone(g.stack)
 	c.sStack = nil
 	return &c
 }

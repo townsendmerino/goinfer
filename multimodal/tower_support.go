@@ -2,7 +2,6 @@ package multimodal
 
 import (
 	"slices"
-	"sort"
 	"sync"
 )
 
@@ -34,7 +33,7 @@ var declaredTowers = map[string][]string{
 // DeclaredTowers returns the tower families backend's build declares, sorted.
 func DeclaredTowers(backend string) []string {
 	t := slices.Clone(declaredTowers[backend])
-	sort.Strings(t)
+	slices.Sort(t)
 	return t
 }
 
@@ -70,7 +69,7 @@ func ResidentTowers(family string) []string {
 	residentNamesMu.Lock()
 	defer residentNamesMu.Unlock()
 	n := slices.Clone(residentNames[family])
-	sort.Strings(n)
+	slices.Sort(n)
 	return n
 }
 
@@ -91,7 +90,7 @@ func LiveTowers(device string, extra ...string) []string {
 	add(TowerGlmOcr, GlmOcrTowers())
 	add(TowerGemma4, Gemma4Towers())
 	t = append(t, extra...)
-	sort.Strings(t)
+	slices.Sort(t)
 	return t
 }
 

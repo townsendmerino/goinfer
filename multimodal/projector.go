@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
@@ -84,7 +85,7 @@ func LoadProjector(dir string) (*Projector, error) {
 	if len(normW) != p.visionHidden {
 		return nil, fmt.Errorf("multimodal: mm_soft_emb_norm.weight length %d, want %d (vision_hidden)", len(normW), p.visionHidden)
 	}
-	p.normW = append([]float32(nil), normW...)
+	p.normW = slices.Clone(normW)
 	// Transpose [visionHidden, textHidden] → [textHidden, visionHidden] for MatmulBT.
 	vh, th := p.visionHidden, p.textHidden
 	if vh <= 0 || th <= 0 || len(projW) != vh*th { // guard the transpose indexing against a truncated tensor

@@ -2,6 +2,7 @@ package chat
 
 import (
 	"bytes"
+	"cmp"
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
@@ -16,7 +17,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -155,7 +155,7 @@ func trackedTemplateSources(t *testing.T) []*censusSource {
 	files, _ := filepath.Glob(filepath.Join("..", "testdata", "chat_goldens", "*.json"))
 	more, _ := filepath.Glob(filepath.Join("..", "testdata", "chat_think_goldens", "*.json"))
 	files = append(files, more...)
-	sort.Strings(files)
+	slices.Sort(files)
 	seen := map[string]bool{}
 	var out []*censusSource
 	for _, f := range files {
@@ -710,7 +710,7 @@ func codecCensus(t *testing.T, path censusPath, update bool) {
 		sources = append(sources, &s)
 		byName[name] = &s
 	}
-	sort.Slice(sources, func(i, j int) bool { return sources[i].Name < sources[j].Name })
+	slices.SortFunc(sources, func(a, b *censusSource) int { return cmp.Compare(a.Name, b.Name) })
 
 	totalRun, totalSkipped := 0, 0
 	var skippedSources []string
