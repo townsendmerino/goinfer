@@ -11,7 +11,10 @@ prefill's own decline is `kernels.TestRunModelToPrefill_declinesAttnTemp`.
 conversation at 16,384 positions. A real reading of the temperature would need the f16 cache past position 16,384,
 teacher-forced against a CPU reference that long; it has not been run. The real checkpoint's gate is its composition at
 temperature 1: `TestResidentCaptureParityWebGPU` per sublayer at int4 (the int8int8 load did not fit the 8 GB card at the
-test's default context and declined cleanly), queued on nobara.
+test's default context and declined cleanly). On nobara (2026-11-24 12:15-12:22, at `5b15f156f`, exclusive lock) its 8
+prompt positions read a min logit cosine of 0.911881 against the CPU at int4, with argmax agreeing at 7 of 8; no bar is
+asserted there (the test prints, and the temperature is 1 at those positions). The log is kept in the campaign's nobara
+scratch directory as temp-real-1124.log.
 
 **Image turns.** The support table's `CPU / GPU` for Ministral 3 under WebGPU is generated from admission: the decoder
 after the image runs resident. The image turn itself (the Pixtral tower on the CPU, its prefill uploaded) takes the shared
