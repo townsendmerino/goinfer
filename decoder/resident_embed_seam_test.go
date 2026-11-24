@@ -103,9 +103,9 @@ func TestSeam_HiddenLastUsesResidentWhenAvailable(t *testing.T) {
 		t.Fatalf("HiddenLast returned %v, want the resident fake's sentinel output (len %d, [0]=1) — "+
 			"the CPU path answered instead of the resident one", out, be.rf.hiddenDim)
 	}
-	if m.resIDs != nil {
+	if m.boundIDsForTest() != nil {
 		t.Errorf("resIDs = %v after HiddenLast, want nil — a HiddenLast prefill has nothing durable "+
-			"worth remembering for the next Generate call and must leave the resident KV's contents unknown", m.resIDs)
+			"worth remembering for the next Generate call and must leave the resident KV's contents unknown", m.boundIDsForTest())
 	}
 }
 

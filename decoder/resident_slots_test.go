@@ -153,7 +153,7 @@ func TestResidentAcquire_bindFailureGoesCold(t *testing.T) {
 	if got := m.residentAcquire([]int{1, 2, 200}, nil, nil); got != 0 {
 		t.Errorf("after a failed bind: reused %d, want 0", got)
 	}
-	if m.resIDs != nil {
-		t.Errorf("after a failed bind the bound slot's bookkeeping must be forgotten, got %v", m.resIDs)
+	if m.boundIDsForTest() != nil {
+		t.Errorf("after a failed bind the bound slot's bookkeeping must be forgotten, got %v", m.boundIDsForTest())
 	}
 }

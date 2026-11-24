@@ -141,7 +141,7 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 			if draft.tryClaimResident() {
 				defer atomic.StoreInt32(&draft.resBusy, 0)
 				// Same as the target's claim above, for the draft model: until this generation completes its resident KV is
-				// mid-write, so a later generation on the same draft Model must not trust a stale resIDs.
+				// mid-write, so a later generation on the same draft Model must not trust a stale bound sequence.
 				draft.residentForgetIDs()
 			} else {
 				draftResident = false

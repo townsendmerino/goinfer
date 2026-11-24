@@ -195,7 +195,7 @@ func TestGenerateQwenVL_recurrentTakesNoResidentBranch(t *testing.T) {
 	m, g := loadQwen35VLTiny(t)
 	rf := &fakeResident{vocab: m.w.arch.VocabSize}
 	m.resident = rf
-	m.resIDs = []int{9, 9, 9}
+	m.setBoundSeqForTest([]int{9, 9, 9}, nil, nil)
 	if !m.hasRecurrentState() {
 		t.Fatal("qwen3_5 is not classified recurrent: the guard under test would never fire")
 	}
@@ -218,7 +218,7 @@ func TestGenerateQwenVL_recurrentTakesNoResidentBranch(t *testing.T) {
 	if !slices.Equal(got, g.Continuation) {
 		t.Errorf("GenerateQwenVL streamed %v, want %v", got, g.Continuation)
 	}
-	if !slices.Equal(m.resIDs, []int{9, 9, 9}) {
-		t.Errorf("resIDs changed to %v by a CPU-only image turn", m.resIDs)
+	if !slices.Equal(m.boundIDsForTest(), []int{9, 9, 9}) {
+		t.Errorf("resIDs changed to %v by a CPU-only image turn", m.boundIDsForTest())
 	}
 }

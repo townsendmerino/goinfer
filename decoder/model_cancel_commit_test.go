@@ -48,10 +48,10 @@ func TestGenerateResident_cancelCommitsExactlyWhatWasEmitted(t *testing.T) {
 	}
 
 	want := append(append([]int{}, prompt...), got...)
-	if !equalIntSlices(m.resIDs, want) {
+	if !equalIntSlices(m.boundIDsForTest(), want) {
 		t.Errorf("after cancel, resIDs = %v, want prompt+emitted %v — the cache is consistent with "+
 			"exactly the tokens the caller actually received and must be recorded, not forgotten",
-			m.resIDs, want)
+			m.boundIDsForTest(), want)
 	}
 }
 
@@ -73,7 +73,7 @@ func TestGenerateResident_alreadyCancelledDoesNotForgetWarmCache(t *testing.T) {
 	if gen.Err() != nil {
 		t.Fatalf("warm-up Generate: %v", gen.Err())
 	}
-	warm := append([]int(nil), m.resIDs...)
+	warm := append([]int(nil), m.boundIDsForTest()...)
 	if len(warm) == 0 {
 		t.Fatal("test setup: warm-up left no resIDs to protect — nothing for this test to check")
 	}
@@ -86,10 +86,10 @@ func TestGenerateResident_alreadyCancelledDoesNotForgetWarmCache(t *testing.T) {
 	if !errors.Is(gen2.Err(), context.Canceled) {
 		t.Fatalf("gen2.Err() = %v, want context.Canceled", gen2.Err())
 	}
-	if !equalIntSlices(m.resIDs, warm) {
+	if !equalIntSlices(m.boundIDsForTest(), warm) {
 		t.Errorf("resIDs = %v after an already-cancelled Generate, want unchanged %v — the warm "+
 			"cache was forgotten for a request that never actually ran, forcing the next live turn "+
-			"to cold-prefill the whole conversation for no benefit", m.resIDs, warm)
+			"to cold-prefill the whole conversation for no benefit", m.boundIDsForTest(), warm)
 	}
 }
 
@@ -175,9 +175,9 @@ func TestGenerateResident_forwardErrorStillForgets(t *testing.T) {
 	if gen.Err() == nil {
 		t.Fatal("test setup: expected the erroring resident's forced failure, got nil")
 	}
-	if m.resIDs != nil {
+	if m.boundIDsForTest() != nil {
 		t.Errorf("resIDs = %v after a forward error, want nil — a partial write is possible on this "+
-			"exit and must not be trusted", m.resIDs)
+			"exit and must not be trusted", m.boundIDsForTest())
 	}
 }
 
@@ -217,14 +217,14 @@ func TestGenerateNgramSpeculative_residentCommitsAcceptedSequence(t *testing.T) 
 	}
 
 	want := append(append([]int{}, prompt...), got...)
-	if len(m.resIDs) < len(want)-1 || len(m.resIDs) > len(want) {
+	if len(m.boundIDsForTest()) < len(want)-1 || len(m.boundIDsForTest()) > len(want) {
 		t.Fatalf("resIDs has %d token(s), want %d (prompt+emitted) or %d (one short, the "+
 			"structural round-tail lag) — got %v, prompt+emitted was %v",
-			len(m.resIDs), len(want), len(want)-1, m.resIDs, want)
+			len(m.boundIDsForTest()), len(want), len(want)-1, m.boundIDsForTest(), want)
 	}
-	if !equalIntSlices(m.resIDs, want[:len(m.resIDs)]) {
+	if !equalIntSlices(m.boundIDsForTest(), want[:len(m.boundIDsForTest())]) {
 		t.Errorf("resIDs = %v is not a prefix of prompt+emitted %v — the resident branch's cache "+
-			"must never claim tokens it did not actually forward", m.resIDs, want)
+			"must never claim tokens it did not actually forward", m.boundIDsForTest(), want)
 	}
 }
 
@@ -236,7 +236,7 @@ func TestGenerateNgramSpeculative_residentCommitsAcceptedSequence(t *testing.T) 
 func TestGenerateSpeculative_forgetsDraftResIDs(t *testing.T) {
 	target, _ := loadWithFakeResident(t)
 	draft, _ := loadWithFakeResident(t)
-	draft.resIDs = []int{9, 9, 9} // stale, from an unrelated prior generation
+	draft.setBoundSeqForTest([]int{9, 9, 9}, nil, nil) // stale, from an unrelated prior generation
 
 	prompt := []int{1, 2, 3}
 	ch, gen, err := target.GenerateSpeculative(context.Background(), prompt, 8, draft, 4, SamplingParams{Temperature: 0})
@@ -249,13 +249,13 @@ func TestGenerateSpeculative_forgetsDraftResIDs(t *testing.T) {
 		t.Fatalf("gen.Err() = %v, want nil", gen.Err())
 	}
 
-	if draft.resIDs != nil {
+	if draft.boundIDsForTest() != nil {
 		t.Errorf("draft.resIDs = %v after GenerateSpeculative, want nil — the stale value from "+
 			"before this call was never forgotten, so a later unrelated draft.Generate would "+
-			"trust it against a resident KV this call already overwrote", draft.resIDs)
+			"trust it against a resident KV this call already overwrote", draft.boundIDsForTest())
 	}
-	if target.resIDs != nil {
+	if target.boundIDsForTest() != nil {
 		t.Errorf("target.resIDs = %v after GenerateSpeculative, want nil (R-00's own invariant, "+
-			"unaffected by this fix — checked as a control)", target.resIDs)
+			"unaffected by this fix — checked as a control)", target.boundIDsForTest())
 	}
 }

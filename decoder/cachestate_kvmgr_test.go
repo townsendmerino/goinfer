@@ -173,7 +173,7 @@ func TestCacheStateGrid_managerCells(t *testing.T) {
 				m := committed(&slotResident{n: 2}, nil, img)
 				spans, classes := kvSpansOfBlocks(img), m.kv.Seq(m.kv.Bound()).Classes()
 				m.residentForgetIDs()
-				if m.resIDs != nil || m.resImgBlocks != nil || m.kv.Seq(m.kv.Bound()) != nil {
+				if m.boundIDsForTest() != nil || m.boundBlocksForTest() != nil || m.kv.Seq(m.kv.Bound()) != nil {
 					t.Errorf("after a forget the bound slot still has a record")
 				}
 				if got := m.kv.Manager().Lookup(m.kvRoot(nil), next, spans, classes); got != 0 || m.kv.Manager().Blocks() != 0 {

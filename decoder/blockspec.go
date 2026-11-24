@@ -340,7 +340,7 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	// Claim the single shared resident KV before any device write: this path drives the same positional cache as Model.Generate and the
 	// n-gram/speculative paths. A loser returns before touching state, so the caller's fallback to plain Generate is exact. Gated on
 	// m.resident != nil, mirroring model.go's useGPU check: a host without a resident keeps its KV in its own CPU cache and must not
-	// contend for resBusy or forget a resIDs commit it never wrote.
+	// contend for resBusy or forget a commit it never wrote.
 	var reuseFrom int
 	if m.resident != nil {
 		// tryClaimResident, not a bare CAS: it also refuses while a batched generation holds a batch place, which never
@@ -356,8 +356,8 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 		sc := opt.scope
 		sc.Off = true
 		reuseFrom = m.residentAcquireIn(prompt, nil, nil, nil, sc).reuse
-		// resIDs matching is NOT enough on its own: a plain Generate or n-gram-speculative turn
-		// can commit resIDs without ever touching THIS drafter's own context, so the token
+		// A matching bound sequence is NOT enough on its own: a plain Generate or n-gram-speculative turn
+		// can commit one without ever touching THIS drafter's own context, so the token
 		// prefix can match while rd's state does not reflect it at all. Only trust reuseFrom
 		// when the last resident write was this same *BlockSpec's own completed generate().
 		if m.resDrafterSynced != s {
@@ -574,7 +574,7 @@ func (s *BlockSpec) generate(prompt []int, opt BlockSpecOptions, emit func([]int
 	}
 	// The only exit that commits, mirroring generateInto's rule that a generation which ran to completion is the only place the resident
 	// cache's contents are recorded (model.go). Every early return above (a device error, or the caller's emit stopping consumption) leaves
-	// resIDs nil, so the next turn cold-prefills rather than trusting a state this function cannot vouch for. resDrafterSynced = s marks this
+	// the bound slot forgotten, so the next turn cold-prefills rather than trusting a state this function cannot vouch for. resDrafterSynced = s marks this
 	// BlockSpec's own drafter context as in sync with the commit below, so its next generate() can reuse both the target's resident KV and
 	// the drafter's context; any other writer's commit (plain Generate, n-gram) clears it via residentForgetIDs, so a drafter turn never
 	// trusts a context it never built.
