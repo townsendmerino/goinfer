@@ -29,14 +29,8 @@ func (q kvQuant) widened() bool { return q != kvqF32 }
 // attended at f32) and kvF16RingOffsetForTest (the ring window read one slot late).
 var kvRoundF16ForTest, kvF16NewRowsF32ForTest, kvF16RingOffsetForTest bool
 
-// kvRowPadForTest turns the row pad on for caches built while it is set (docs/measurements/cpu-kv-rowpad-2026-11-23/README.md): a
-// dense cache whose K/V row is a multiple of kvRowPadAlign bytes stores each row padded by one 64 B line, so rows a power-of-two
-// stride apart stop sharing L1 sets. Off by default: making it the default is the owner's call, with its A/B and its memory.
-var kvRowPadForTest bool
-
-// kvRowPadAlign is the row size, in bytes, whose multiples kvRowPadElems pads; tests lower it to pad a tiny fixture's rows.
-var kvRowPadAlign = kvRowPadAlignDefault
-
+// kvRowPadAlignDefault is the row-pad alignment that pays on the CPU (docs/measurements/cpu-kv-rowpad-full-2026-11-24/README.md): rows a
+// multiple of 4 KiB apart share L1 sets, and a 64 B pad separates them.
 const kvRowPadAlignDefault = 4096
 
 // kvRowPadElems is the pad, in elements, for a row of elems elements of elemBytes bytes: one 64 B line when the row is a multiple of
@@ -129,10 +123,6 @@ func (c *KVCache) rowPadBytesHeld() int64 {
 	return n
 }
 
-// kvF16WidenForTest sends single-token decode on an f16 global layer back through the widen-into-scratch read the f16 kernels
-// replaced, so a test can hold the two bit-identical (TestKVF16_decodeReadsInPlace).
-var kvF16WidenForTest bool
-
 // roundF16InPlace rounds x to f16 and back, the f16 cache's storage rounding.
 func roundF16InPlace(x []float32) {
 	for i, f := range x {
@@ -224,6 +214,8 @@ type KVCache struct {
 	// rowPad > 0 pads every global layer's rows (setRowPad): position s of layer l starts at s*(kvDim+rowPad) in keys/vals or
 	// keysH/valsH, and stride[l] records that. Readers index by rowStride; Keys and Vals refuse a padded cache.
 	rowPad int
+	// f16InPlaceReads counts decode attention calls that read this cache's f16 rows in place (attendBatchedHeadsKV).
+	f16InPlaceReads int64
 
 	// manualPos decouples pos from Append's last-layer trigger, for families whose last layer never appends (Gemma 4's is KV-shared;
 	// a hybrid's linear layers do not Append): the caller advances pos explicitly via Advance() after each token's full layer sweep.

@@ -1,7 +1,7 @@
 # CPU KV row pad: the full implementation's plan, written 2026-11-23 20:31 PST
 
-Go-ahead: Francis ("go with b if it's really good"), on the ADOPT read (README beside this file), relayed by the coordinator ~20:35 PST.
-Code and tests first; the coordinator sees it before it is armed; its A/B is registered and run by day.
+Go-ahead: the owner's decision of 2026-11-23 to carry option (b) through to a full implementation if its A/B was strong, taken on the
+ADOPT read (README beside this file). Code and tests first; the change is reviewed before it is armed; its A/B is registered and run by day.
 
 **Layout.** The pad moves from the prototype's side fields into the cache's own store: a dense global layer's `keys/vals` (f32) or
 `keysH/valsH` (f16) hold rows `rowStride = kvDim + kvRowPadElems(kvDim, elemBytes, 4096)` elements apart; `c.stride[l]` records

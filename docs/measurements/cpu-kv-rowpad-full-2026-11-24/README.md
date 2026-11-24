@@ -31,10 +31,10 @@ commit: **K16** on aikit `f16-acc64-2026-11-23` (the 16-key f32 QK kernel; the f
 - **C1** outside 0.98–1.02 voids the session's readings (the instrument moved), not an option.
 - **Prediction:** R1 at 3,900 about 1.17, at 128 about 1.00; R2 at 3,900 about 1.12; R3 about 1.00; F1 about 1.40.
 
-**Cost:** R1 and R2 at both depths (four comparisons), R3, F1 and C1 at 3,900: about 105 min, under the exclusive lock, by day, run
-fourth in nobara's order of 2026-11-24 once the three sessions ahead have finished. **Stopping rule:** fixed N, no early stop.
+**Cost:** R1 and R2 at both depths (four comparisons), R3, F1 and C1 at 3,900: about 105 min, under the exclusive lock, by day, on the
+Ryzen 7 3700X box (16 threads), after the timed runs queued ahead of it. **Stopping rule:** fixed N, no early stop.
 
-## Amendment, written 2026-11-24 09:59 PST before any timed run (the coordinator's review of #1297, ~10:00 PST)
+## Amendment, written 2026-11-24 09:59 PST before any timed run (after the review of #1297)
 
 1. **F0 added, a decision cell: the f16 in-place read against the widen read it replaces,** same binary (K16), same commit,
    `GOINFER_BENCH_F16WIDEN=1` on arm A (`kvF16WidenForTest`). The in-place read is the default path for every f16 CPU cache, so it ships
@@ -85,3 +85,9 @@ in-place reads; F0's widen arm `f16inplace 0` and its in-place arm a positive co
   against 6.24 GB; with fidelity passed on both models (`docs/measurements/cpu-kv-f16-read-2026-11-23/README.md`), `--kv f16` on the CPU
   is a faster opt-in for Phi-3. Making it `auto`'s CPU pick is Francis's call.
 - **Against the prediction** (R1 1.17 / 1.00, R2 1.12, F1 1.40): all within 0.02 but R2 (1.103 against 1.12); F0's size was not predicted.
+
+**After the reading (12:31 PST):** the A/B seams named above were taken out of package globals, as the tree's Go rules ask for a new test seam:
+the pad's switch is `Architecture.kvRowPadAlign` (0, the default, never pads; the benchmark's `GOINFER_BENCH_KVPAD=1` sets it to
+`kvRowPadAlignDefault`), the in-place read count is `KVCache.f16InPlaceReads`, and with F0 passed the widen read and
+`kvF16WidenForTest` are gone (`TestKVF16_decodeReadsInPlace` now checks the in-place read against the F1 reference). The binaries this
+reading measured are `a4e1c68bf`; the change after it moves no arithmetic.

@@ -10,11 +10,15 @@ import (
 	"testing"
 )
 
-// rowPadArms runs fn with the row pad on (at alignment align, in bytes) or off, and restores the defaults after.
-func rowPadArms[T any](t *testing.T, on bool, align int, fn func() T) T {
+// rowPadArms runs fn with m's row pad on (at alignment align, in bytes) or off, and turns it off after. Both arms of f1Arms share
+// m's Architecture, so the setting reaches either.
+func rowPadArms[T any](t *testing.T, m *Model, on bool, align int, fn func() T) T {
 	t.Helper()
-	kvRowPadForTest, kvRowPadAlign = on, align
-	defer func() { kvRowPadForTest, kvRowPadAlign = false, kvRowPadAlignDefault }()
+	m.w.arch.kvRowPadAlign = 0
+	if on {
+		m.w.arch.kvRowPadAlign = align
+	}
+	defer func() { m.w.arch.kvRowPadAlign = 0 }()
 	return fn()
 }
 
@@ -136,7 +140,7 @@ func TestKVRowPad_everyReaderBitIdentical(t *testing.T) {
 		}{{"f32", f32}, {"f16", f16}} {
 			ref, rc := rowPadCells(t, arm.m, fx.n)
 			var pc *KVCache
-			got := rowPadArms(t, true, rowPadTestAlign, func() map[string][][]float32 {
+			got := rowPadArms(t, arm.m, true, rowPadTestAlign, func() map[string][][]float32 {
 				o, c := rowPadCells(t, arm.m, fx.n)
 				pc = c
 				return o
@@ -174,7 +178,7 @@ func TestKVRowPad_padAppliesWhereEligible(t *testing.T) {
 		m := f1Load(t, filepath.Join("..", "testdata", fx.dir))
 		f16, f32 := f1Arms(m)
 		for _, mm := range []*Model{f32, f16} {
-			c := rowPadArms(t, true, rowPadTestAlign, func() *KVCache { return mm.NewCache(16) })
+			c := rowPadArms(t, mm, true, rowPadTestAlign, func() *KVCache { return mm.NewCache(16) })
 			if (c.rowPad > 0) != fx.padded {
 				t.Errorf("%s: rowPad %d, want padded=%v", fx.dir, c.rowPad, fx.padded)
 			}
@@ -191,7 +195,7 @@ func TestKVRowPad_snapshotCrossesLayouts(t *testing.T) {
 	ids := f1IDs(24, vocab)
 	next := (ids[len(ids)-1] + 1) % vocab
 	snap := func(padded bool) []byte {
-		return rowPadArms(t, padded, rowPadTestAlign, func() []byte {
+		return rowPadArms(t, f32, padded, rowPadTestAlign, func() []byte {
 			s := f32.NewSession(64)
 			if _, err := f32.forwardN(context.Background(), ids, s.cache); err != nil {
 				t.Fatal(err)
@@ -201,7 +205,7 @@ func TestKVRowPad_snapshotCrossesLayouts(t *testing.T) {
 		})
 	}
 	restoreStep := func(blob []byte, padded bool) []float32 {
-		return rowPadArms(t, padded, rowPadTestAlign, func() []float32 {
+		return rowPadArms(t, f32, padded, rowPadTestAlign, func() []float32 {
 			back, err := f32.LoadSession(blob, "id")
 			if err != nil {
 				t.Fatalf("LoadSession: %v", err)
@@ -240,7 +244,7 @@ func TestKVRowPad_planPricesThePad(t *testing.T) {
 			f16  bool
 		}{{"f32", f32, false}, {"f16", f16, true}} {
 			unpadded := kvBytesForCtx(arm.m.w.arch, ctx, arm.f16, false)
-			rowPadArms(t, true, rowPadTestAlign, func() int {
+			rowPadArms(t, arm.m, true, rowPadTestAlign, func() int {
 				c := arm.m.NewCache(ctx)
 				for _, id := range ids {
 					if _, err := arm.m.forward(id, c); err != nil {
@@ -265,7 +269,7 @@ func TestKVRowPad_planPricesThePad(t *testing.T) {
 func TestKVRowPad_keysRefusesAPaddedCache(t *testing.T) {
 	m := f1Load(t, filepath.Join("..", "testdata", "llama-tiny"))
 	_, f32 := f1Arms(m)
-	c := rowPadArms(t, true, rowPadTestAlign, func() *KVCache { return f32.NewCache(16) })
+	c := rowPadArms(t, f32, true, rowPadTestAlign, func() *KVCache { return f32.NewCache(16) })
 	for name, fn := range map[string]func(){"Keys": func() { c.Keys(0) }, "Vals": func() { c.Vals(0) }} {
 		func() {
 			defer func() {

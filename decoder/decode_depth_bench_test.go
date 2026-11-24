@@ -5,7 +5,6 @@ import (
 	"math/rand/v2"
 	"os"
 	"strconv"
-	"sync/atomic"
 	"testing"
 )
 
@@ -90,23 +89,21 @@ func BenchmarkDecodeAtDepth(b *testing.B) {
 	} {
 		b.Run(arm.name, func(b *testing.B) {
 			setKnob(b, m, knobAttnGrouped, arm.env)
-			// GOINFER_BENCH_KVPAD=1 builds the cache with the row pad on (kvRowPadForTest). GOINFER_BENCH_F16WIDEN=1 sends an f16
-			// cache's decode through the widen-into-scratch read the in-place read replaced (kvF16WidenForTest), for their A/B.
-			kvRowPadForTest = os.Getenv("GOINFER_BENCH_KVPAD") == "1"
-			kvF16WidenForTest = os.Getenv("GOINFER_BENCH_F16WIDEN") == "1"
-			defer func() { kvF16WidenForTest = false }()
+			// GOINFER_BENCH_KVPAD=1 builds the cache with the row pad on (Architecture.kvRowPadAlign at its default alignment).
+			if os.Getenv("GOINFER_BENCH_KVPAD") == "1" {
+				m.w.arch.kvRowPadAlign = kvRowPadAlignDefault
+			}
 			cache := m.NewCache(depth + b.N + 8)
-			kvRowPadForTest = false
+			m.w.arch.kvRowPadAlign = 0
 			if fill {
 				fillCacheForBench(b, m, cache, depth)
 			} else if _, err := m.forwardLayersN(context.Background(), ids, cache, false); err != nil {
 				b.Fatalf("batched prefill to depth %d: %v", depth, err)
 			}
-			inPlace0 := atomic.LoadInt64(&kvF16InPlaceRuns)
 			decodeAtDepthOnce(b, m, cache, tok)
 			// After the timed loop: its ResetTimer drops metrics reported before it.
 			b.ReportMetric(float64(cache.rowPad), "rowpad")
-			b.ReportMetric(float64(atomic.LoadInt64(&kvF16InPlaceRuns)-inPlace0), "f16inplace")
+			b.ReportMetric(float64(cache.f16InPlaceReads), "f16inplace")
 		})
 	}
 }

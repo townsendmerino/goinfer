@@ -421,7 +421,7 @@ func attendToken(p attentionParams, q, k, v, ctx []float32, cache *KVCache, scr 
 		if !cache.manualPos && l == cache.numLayers-1 {
 			cache.pos++ // commitBatch does not step pos; Append's last-layer advance
 		}
-	case cache.quant == kvqF16 && !kvF16WidenForTest:
+	case cache.quant == kvqF16:
 		// The f16 cache's rows, read in place by the f16 acc64 kernels: no widening of the history into scratch.
 		cache.Append(l, k, v)
 		nKeys, rs := cache.storedRows(l, kvDim), cache.rowStride(kvDim)

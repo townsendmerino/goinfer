@@ -79,9 +79,6 @@ const attnGroupedMinKeys = 128
 // moeExpertMajorRuns (mlp.go) is the same idiom.
 var attnGroupedRuns int64
 
-// kvF16InPlaceRuns counts attendBatchedHeadsKV calls that read an f16 cache's rows in place, so a test can see the read engaged.
-var kvF16InPlaceRuns int64
-
 // canBatchN reports whether the batched M=K path applies: K>1 on a family without its own sequential forward, with a gated MLP
 // and no learned position embedding (GPT-2-style models take the sequential fallback). Sparse MoE batches its attention, but its
 // FFN stays per row because the router picks different experts per token.
@@ -326,7 +323,7 @@ func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, r
 	nKeys := len(keys) / rs
 	if f16 {
 		nKeys = len(keysH) / rs
-		atomic.AddInt64(&kvF16InPlaceRuns, 1)
+		cache.f16InPlaceReads++
 	}
 	if arch.hasAttnSinks() && ap.Sinks == nil {
 		panic(fmt.Sprintf("decoder: layer %d: attention without its sinks (the caller built attentionParams without LayerWeights.AttnSinks)", layer))
