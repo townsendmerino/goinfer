@@ -5,17 +5,16 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"go/parser"
+	"go/token"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"testing"
-
-	"go/parser"
-	"go/token"
 )
 
 // importsPath is SB13's data: every import from one goinfer package to another, and the rules no import may break.
@@ -246,7 +245,7 @@ func TestLayout_arrows(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, line := range strings.Split(string(gomod), "\n") {
+			for line := range strings.SplitSeq(string(gomod), "\n") {
 				f := strings.Fields(strings.TrimPrefix(strings.TrimSpace(line), "require "))
 				for _, m := range r.GoModForbid {
 					if len(f) > 0 && hasPrefixPath(f[0], m) {
@@ -296,7 +295,7 @@ func TestLayout_arrows(t *testing.T) {
 				}
 			}
 		}
-		sort.Strings(fresh)
+		slices.Sort(fresh)
 		for _, a := range fresh {
 			t.Errorf("a new %s arrow %s is not in %s: add it to the data in the change that makes it (-update), so the review sees it", kind, a, importsPath)
 		}
@@ -314,10 +313,7 @@ func TestLayout_arrows(t *testing.T) {
 func flatten(m map[string]map[string]string) map[string][]string {
 	out := map[string][]string{}
 	for from, tos := range m {
-		for to := range tos {
-			out[from] = append(out[from], to)
-		}
-		sort.Strings(out[from])
+		out[from] = slices.Sorted(maps.Keys(tos))
 	}
 	return out
 }
