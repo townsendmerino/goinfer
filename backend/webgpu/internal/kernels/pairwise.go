@@ -73,6 +73,11 @@ const pairwiseI8ElemRot = `    if (dd < 2u * p.half) {
 // pairwise model. Read at newDecodeRunner.
 var PairwiseNeoXForTest bool
 
+// PairwiseNeoXStoresForTest is the narrower plant: on a pairwise model the K-cache rope stores (f32, f16, int8) bind NeoX
+// while the query rotation and qkvFinalize stay pairwise, so a gate on an f16 or int8 cache sees one miswired store. Read
+// at newDecodeRunner.
+var PairwiseNeoXStoresForTest bool
+
 // pairwisePipe is one compiled pairwise twin and its bind-group layout.
 type pairwisePipe struct {
 	pl *wgpu.ComputePipeline

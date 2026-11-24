@@ -901,7 +901,11 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 		ropeStoreI8: pairwisePipe{c.ropeStoreI8Pipeline, c.ropeStoreI8Layout},
 	}
 	if m.Pairwise && !PairwiseNeoXForTest {
+		neox := rp
 		rp = *c.pairwise
+		if PairwiseNeoXStoresForTest {
+			rp.ropeStore, rp.ropeStoreF16, rp.ropeStoreI8 = neox.ropeStore, neox.ropeStoreF16, neox.ropeStoreI8
+		}
 	}
 	rope := func(g *attnGeom, vec, invFreq *wgpu.Buffer, ropeScale float32) {
 		if ropeScale == 0 {

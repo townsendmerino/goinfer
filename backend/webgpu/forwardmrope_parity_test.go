@@ -192,9 +192,11 @@ func (w *pwWorst) add(got, want []float32) {
 // glm_ocr_tiny_mrope_golden.json by the route production takes (the resident m-RoPE prefill declines on a pairwise model,
 // so the CPU prefill is uploaded); and decode past the image through ForwardMRoPE (rotation position != storage
 // position), teacher-forced on the golden continuation. Bars, Metal's: worst cosine >= 0.995 and relL2 <= 0.15 on every
-// path. Text decode also runs on the f16 and int8 caches (their own rope-store twins), each against the CPU holding its cache
-// at the same precision (Options.KVQuant: per-row f16, per-(position, KV-head) symmetric int8, the GPU's schemes). The same
-// paths with the NeoX kernels bound (kernels.PairwiseNeoXForTest) must each read below the cosine bar.
+// path. Text decode and decode past the uploaded image also run on the f16 and int8 caches (their own rope-store twins),
+// each against the CPU holding its cache at the same precision (Options.KVQuant: per-row f16, per-(position, KV-head)
+// symmetric int8, the GPU's schemes). Every path with the NeoX kernels bound (kernels.PairwiseNeoXForTest) must read below
+// the cosine bar, and so must every f16 and int8 path with only the K-cache stores bound NeoX
+// (kernels.PairwiseNeoXStoresForTest).
 func TestGlmOcrResidentParityWebGPU(t *testing.T) {
 	if c, err := New(); err != nil {
 		t.Skipf("no webgpu: %v", err)
@@ -203,7 +205,7 @@ func TestGlmOcrResidentParityWebGPU(t *testing.T) {
 	}
 	raw, err := os.ReadFile("../../testdata/glm_ocr_tiny_mrope_golden.json")
 	if err != nil {
-		t.Skipf("no m-RoPE golden: %v", err)
+		t.Fatalf("the committed m-RoPE golden: %v", err)
 	}
 	var g struct {
 		PromptIDs       []int       `json:"prompt_ids"`
@@ -277,9 +279,10 @@ func TestGlmOcrResidentParityWebGPU(t *testing.T) {
 		}
 		past = append(past, append([]float32(nil), l...))
 	}
-	rowKV := map[string][][]float32{}
+	rowKV, pastKV, cpuKV := map[string][][]float32{}, map[string][][]float32{}, map[string]*decoder.Model{}
 	for _, kv := range []string{"f16", "i8"} {
 		c := cpuLoad(kv)
+		cpuKV[kv] = c
 		cc := c.NewCache(len(text))
 		for _, tok := range text {
 			l, err := c.ForwardForTest(tok, cc)
@@ -287,6 +290,17 @@ func TestGlmOcrResidentParityWebGPU(t *testing.T) {
 				t.Fatal(err)
 			}
 			rowKV[kv] = append(rowKV[kv], append([]float32(nil), l...))
+		}
+		ic := c.NewCache(len(g.PromptIDs) + g.NNew)
+		if _, err := c.PrefillLogitsQwenVLForTest(ctx, g.PromptIDs, feats, g.ImageStart, g.NImage, mropePos, ic); err != nil {
+			t.Fatal(err)
+		}
+		for k := 0; k < g.NNew-1; k++ {
+			l, err := c.ForwardForTest(g.ContinuationIDs[k], ic)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pastKV[kv] = append(pastKV[kv], append([]float32(nil), l...))
 		}
 	}
 	measure := func() map[string]pwWorst {
@@ -309,6 +323,23 @@ func TestGlmOcrResidentParityWebGPU(t *testing.T) {
 					w.add(l, rowKV[kv][i])
 				}
 				out["text decode, --kv "+kv] = w
+				upC := cpuKV[kv].NewCache(len(g.PromptIDs) + g.NNew)
+				if _, err := cpuKV[kv].PrefillLogitsQwenVLForTest(ctx, g.PromptIDs, feats, g.ImageStart, g.NImage, mropePos, upC); err != nil {
+					t.Fatal(err)
+				}
+				rd.Reset()
+				if err := m.ResidentUploadPrefillForTest(upC); err != nil {
+					t.Fatalf("--kv %s: upload the CPU image prefill: %v", kv, err)
+				}
+				pst, at := pwWorst{cos: 1}, len(g.PromptIDs)
+				for k := 0; k < g.NNew-1; k++ {
+					l, err := rd.ForwardMRoPE(m.EmbedResidentForTest(g.ContinuationIDs[k]), at+k, at+k+delta)
+					if err != nil {
+						t.Fatal(err)
+					}
+					pst.add(l, pastKV[kv][k])
+				}
+				out["past the image, --kv "+kv] = pst
 			}()
 		}
 		m := load("webgpu", "")
@@ -366,6 +397,19 @@ func TestGlmOcrResidentParityWebGPU(t *testing.T) {
 		t.Logf("NeoX     %-28s worst cos %.6f relL2 %.4f", name, w.cos, w.rel)
 		if !(w.cos < cosBar) {
 			t.Errorf("the gate is BLIND on %q: with the NeoX kernels it still reads cosine %.6f >= %.3f", name, w.cos, cosBar)
+		}
+	}
+	kernels.PairwiseNeoXStoresForTest = true // only the K-cache stores miswired: every f16 and int8 cache path must read red
+	t.Cleanup(func() { kernels.PairwiseNeoXStoresForTest = false })
+	stores := measure()
+	kernels.PairwiseNeoXStoresForTest = false
+	for _, kv := range []string{"f16", "i8"} {
+		for _, name := range []string{"text decode, --kv " + kv, "past the image, --kv " + kv} {
+			w, ok := stores[name]
+			t.Logf("NeoX K-store %-24s worst cos %.6f relL2 %.4f", name, w.cos, w.rel)
+			if !ok || !(w.cos < cosBar) {
+				t.Errorf("the gate is BLIND to a miswired K-cache store on %q: cosine %.6f >= %.3f (measured %v)", name, w.cos, cosBar, ok)
+			}
 		}
 	}
 }
