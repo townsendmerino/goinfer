@@ -503,7 +503,9 @@ func kvBytesForRows(a *Architecture, ctx int, quant kvQuant, bufsOf func(l int) 
 			case quant == kvI8:
 				row = int64(b.Elems) + 4*int64(b.Heads)
 			case quant == kvqF16:
-				row = 2 * int64(b.Elems)
+				row = 2*int64(b.Elems) + 2*int64(kvRowPadPriced(a, b.Elems, 2))
+			default:
+				row += 4 * int64(kvRowPadPriced(a, b.Elems, 4))
 			}
 			total += rows * row
 		}
@@ -776,3 +778,17 @@ const (
 	ActReLU2    = program.ActReLU2
 	ActGelu     = program.ActGelu
 )
+
+// kvRowPadPriced is the row-pad prototype's pad on a row of elems elements of elemBytes bytes (kvRowPadForTest), priced where
+// KVCache.setRowPad would apply it: every layer dense at one KV width, no ring, no MLA, no hybrid state.
+func kvRowPadPriced(a *Architecture, elems, elemBytes int) int {
+	if !kvRowPadForTest || a.mla != nil || a.gemma4 != nil || a.qwen35 != nil || a.lfm2 != nil || a.granite != nil || a.nemotron != nil || a.kda != nil {
+		return 0
+	}
+	for l := range a.NumLayers {
+		if a.ringLayerAt(l) || a.kvDimAt(l) != elems {
+			return 0
+		}
+	}
+	return kvRowPadElems(elems, elemBytes, kvRowPadAlign)
+}

@@ -138,6 +138,7 @@ func (m *Model) specRollbackSafeVia(fold ResidentRuntimeSubsystem, width int) bo
 // per-position and causal. Bit-identical to K sequential forwards. Assumes
 // canBatchN(len(ids)) — callers check.
 func (m *Model) forwardLayersN(reqCtx context.Context, ids []int, cache *KVCache, fastAttn bool) ([]float32, error) {
+	cache.mustUnpadded("batched prefill")
 	t0 := costStart(cache)
 	h := m.embedN(ids)
 	if cache.cost != nil {
@@ -296,25 +297,33 @@ func attendBatchedHeads(q, ctx, keys, vals []float32, base int, cache *KVCache, 
 // attendBatchedHeadsP is attendBatchedHeads with the window, scale and softcap given, not read from arch: the program walker's
 // form (attentionParams). arch supplies the shapes and the knobs.
 func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache, layer, startPos, K int, ap attentionParams, arch *Architecture, useAcc64 bool, pool []headWorkerScratch) {
-	attendBatchedHeadsKV(q, ctx, keys, vals, nil, nil, base, cache, layer, startPos, K, ap, arch, useAcc64, pool)
+	attendBatchedHeadsKV(q, ctx, keys, vals, nil, nil, 0, base, cache, layer, startPos, K, ap, arch, useAcc64, pool)
 }
 
 // attendBatchedHeadsKV is attendBatchedHeadsP over K/V given either as f32 rows (keys, vals) or as an f16 cache's rows (keysH, valsH,
 // IEEE binary16 bits, keys and vals nil), which the acc64 kernels read in place: bit-identical to widening them into f32 first. f16
-// rows need useAcc64; they skip the grouped kernels, which have no f16 form.
-func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, base int, cache *KVCache, layer, startPos, K int, ap attentionParams, arch *Architecture, useAcc64 bool, pool []headWorkerScratch) {
+// rows need useAcc64; they skip the grouped kernels, which have no f16 form. rowStride is the elements between one key's row and the
+// next (0: kvDim); a padded stride needs useAcc64, whose kernels read the cache strided in place.
+func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, rowStride, base int, cache *KVCache, layer, startPos, K int, ap attentionParams, arch *Architecture, useAcc64 bool, pool []headWorkerScratch) {
 	// headsAt, not NumHeads: Laguna varies the query head count per layer (its KV heads stay uniform, so group is per-layer too).
 	nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim
 	kvDim, qDim := nKV*hd, nH*hd
 	group := nH / nKV
 	scale := ap.Scale
+	rs := kvDim
+	if rowStride != 0 {
+		rs = rowStride
+	}
+	if rs != kvDim && !useAcc64 {
+		panic("decoder: a padded KV row stride is read only by the acc64 kernels")
+	}
 	f16 := keysH != nil
 	if f16 && !useAcc64 {
 		panic("decoder: an f16 cache's rows are read in place only by the acc64 kernels")
 	}
-	nKeys := len(keys) / kvDim
+	nKeys := len(keys) / rs
 	if f16 {
-		nKeys = len(keysH) / kvDim
+		nKeys = len(keysH) / rs
 		atomic.AddInt64(&kvF16InPlaceRuns, 1)
 	}
 	if arch.hasAttnSinks() && ap.Sinks == nil {
@@ -395,9 +404,9 @@ func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, b
 			// each key's own d-order fold is unchanged, so the result is bit-identical to the plain strided reduction
 			// (TestAttendStrided_matchesGatherReference checks it at this stride).
 			if f16 {
-				linalg.MatmulQKAcc64F16(qh[:kt*hd], keysH, scores[:kt*nKeys], kt, hd, nKeys, kvh*hd, kvDim)
+				linalg.MatmulQKAcc64F16(qh[:kt*hd], keysH, scores[:kt*nKeys], kt, hd, nKeys, kvh*hd, rs)
 			} else if useAcc64 {
-				linalg.MatmulQKAcc64(qh[:kt*hd], keys, scores[:kt*nKeys], kt, hd, nKeys, kvh*hd, kvDim)
+				linalg.MatmulQKAcc64(qh[:kt*hd], keys, scores[:kt*nKeys], kt, hd, nKeys, kvh*hd, rs)
 			} else {
 				mm(qh[:kt*hd], ws.kh[:nKeys*hd], scores[:kt*nKeys], kt, hd, nKeys)
 			}
@@ -505,14 +514,14 @@ func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, b
 			direct := useAcc64 && kt == 1
 			if direct && f16 {
 				b := t0*qDim + qhead*hd
-				linalg.MatmulAVAcc64F16(scores[:nKeys], valsH, ctx[b:b+hd], avAcc, 1, nKeys, hd, kvh*hd, kvDim)
+				linalg.MatmulAVAcc64F16(scores[:nKeys], valsH, ctx[b:b+hd], avAcc, 1, nKeys, hd, kvh*hd, rs)
 			} else if direct {
 				b := t0*qDim + qhead*hd
-				linalg.MatmulAVAcc64(scores[:nKeys], vals, ctx[b:b+hd], avAcc, 1, nKeys, hd, kvh*hd, kvDim)
+				linalg.MatmulAVAcc64(scores[:nKeys], vals, ctx[b:b+hd], avAcc, 1, nKeys, hd, kvh*hd, rs)
 			} else if f16 {
-				linalg.MatmulAVAcc64F16(scores[:kt*nKeys], valsH, ch[:kt*hd], avAcc, kt, nKeys, hd, kvh*hd, kvDim)
+				linalg.MatmulAVAcc64F16(scores[:kt*nKeys], valsH, ch[:kt*hd], avAcc, kt, nKeys, hd, kvh*hd, rs)
 			} else if useAcc64 {
-				linalg.MatmulAVAcc64(scores[:kt*nKeys], vals, ch[:kt*hd], avAcc, kt, nKeys, hd, kvh*hd, kvDim)
+				linalg.MatmulAVAcc64(scores[:kt*nKeys], vals, ch[:kt*hd], avAcc, kt, nKeys, hd, kvh*hd, rs)
 			} else {
 				mm(scores[:kt*nKeys], ws.vt[:hd*nKeys], ch[:kt*hd], kt, nKeys, hd)
 			}
@@ -537,7 +546,7 @@ func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, b
 		qh0 := kvh * group
 		a := q[qh0*hd : qh0*hd+group*hd]
 		gScores := ws.groupScores[:group*nKeys]
-		linalg.MatmulQKAcc64Group(a, keys, gScores, group, hd, nKeys, kvh*hd, kvDim)
+		linalg.MatmulQKAcc64Group(a, keys, gScores, group, hd, nKeys, kvh*hd, rs)
 		pos := startPos // K==1 is a precondition, so this call's only row is gi=0
 		loP := ap.Start(pos) - base
 		hiP := cache.attendHi(pos) - base
@@ -581,7 +590,7 @@ func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, b
 		// MatmulAVAcc64Group overwrites a [group, hd] destination and this kv group's query heads are contiguous in ctx, so it writes
 		// straight into ctx with no scratch copy.
 		gAvAcc := ws.groupAvAcc[:group*hd]
-		linalg.MatmulAVAcc64Group(gScores, vals, ctx[qh0*hd:qh0*hd+group*hd], gAvAcc, group, nKeys, hd, kvh*hd, kvDim)
+		linalg.MatmulAVAcc64Group(gScores, vals, ctx[qh0*hd:qh0*hd+group*hd], gAvAcc, group, nKeys, hd, kvh*hd, rs)
 		atomic.AddInt64(&attnGroupedRuns, 1)
 	}
 	// attnGroupedOK is this call's eligibility for the grouped path, checked once per call since none of it depends on qhead.
@@ -629,7 +638,7 @@ func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, b
 			for kvh := range nKV {
 				qh0 := kvh * group
 				a := q[qh0*hd : qh0*hd+group*hd]
-				linalg.MatmulQKAcc64Group(a, keys, slice, group, hd, sliceLen, kvh*hd+lo*kvDim, kvDim)
+				linalg.MatmulQKAcc64Group(a, keys, slice, group, hd, sliceLen, kvh*hd+lo*rs, rs)
 				dst := fullScores[kvh*group*nKeys : (kvh+1)*group*nKeys]
 				for g := range group {
 					copy(dst[g*nKeys+lo:g*nKeys+hi], slice[g*sliceLen:(g+1)*sliceLen])
@@ -691,7 +700,7 @@ func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, b
 			sliceAcc := ws.groupAvAcc[:group*sliceHd]
 			for kvh := range nKV {
 				rows := fullScores[kvh*group*nKeys : (kvh+1)*group*nKeys]
-				linalg.MatmulAVAcc64Group(rows, vals, sliceCtx, sliceAcc, group, nKeys, sliceHd, kvh*hd+d0, kvDim)
+				linalg.MatmulAVAcc64Group(rows, vals, sliceCtx, sliceAcc, group, nKeys, sliceHd, kvh*hd+d0, rs)
 				dst := fullCtx[kvh*group*hd : (kvh+1)*group*hd]
 				for g := range group {
 					copy(dst[g*hd+d0:g*hd+d1], sliceCtx[g*sliceHd:(g+1)*sliceHd])
@@ -860,6 +869,7 @@ func (m *Model) lmHeadNInto(h []float32, M int, dst []float32) []float32 {
 // K sequential forwards. Falls back to sequential for the non-batched archs. The
 // rows may be the cache's own buffer, valid until the next batched prefill or verify on cache.
 func (m *Model) forwardN(reqCtx context.Context, ids []int, cache *KVCache) ([][]float32, error) {
+	cache.mustUnpadded("batched forward")
 	// Speculative VERIFY: never fast, whatever the operator asked for. See forwardNAttn.
 	return m.forwardNAttn(reqCtx, ids, cache, false)
 }
@@ -916,6 +926,7 @@ func (m *Model) forwardNAttn(reqCtx context.Context, ids []int, cache *KVCache, 
 // and the LM head on the last position only. Otherwise it falls back to sequential runLayers + forward. Bit-identical to the
 // sequential prefill when the exact kernel is in use; the cache is filled with the whole prompt either way.
 func (m *Model) prefillLogits(ctx context.Context, prompt []int, cache *KVCache) ([]float32, error) {
+	cache.mustUnpadded("prefill")
 	// Compute-time LoRA (#7) is wired only into the per-token walker (projQKVToken
 	// + gatedMLPAct), so an active adapter takes the M=1 path — the prompt's K/V must carry
 	// the delta or decode would continue a base-projected context. The RAM-density win
