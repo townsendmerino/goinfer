@@ -23,7 +23,8 @@ import (
 // It prints and does not assert a bar (the only assertion is that the cosine is not NaN): what a cosine means for a given
 // checkpoint is what TestCPUQuantSensitivity measures for it.
 //
-// GOINFER_PARITY_README=n makes the prompt README.md's first n tokens under the checkpoint's tokenizer (TestPairwiseRoPERealWebGPU's).
+// GOINFER_PARITY_README=n makes the prompt README.md's first n tokens under the checkpoint's tokenizer, at a resident context
+// of 512: TestPairwiseRoPERealWebGPU's prompt and context.
 // GOINFER_PARITY_QUANT: int4 (default), int8, int8int8, or native (CPU f32 vs the resident W8A8-at-upload path, NOT a
 // same-quant comparison). GOINFER_INT4_F16_SCALES=1 makes both sides carry the f16-rounded int4 group scales the GPU stores,
 // the only single-variable form of the int4 comparison. Written against scripts/mk_phi3_synth.py's phi3-mini-shaped
@@ -63,7 +64,11 @@ func TestResidentCaptureParityWebGPU(t *testing.T) {
 		cpuQuant, gpuQuant = "", ""
 	}
 
-	mg, err := decoder.Load(dir, decoder.Options{Backend: "webgpu", Quant: gpuQuant})
+	gpuOpts := decoder.Options{Backend: "webgpu", Quant: gpuQuant}
+	if os.Getenv("GOINFER_PARITY_README") != "" {
+		gpuOpts.ResidentContext = 512 // TestPairwiseRoPERealWebGPU's, so a 7B fits an 8 GB card as it does there
+	}
+	mg, err := decoder.Load(dir, gpuOpts)
 	if err != nil {
 		t.Fatalf("load webgpu: %v", err)
 	}

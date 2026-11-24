@@ -8,7 +8,7 @@ option (a) of the Command-R7B decision; #1255 stays unarmed until this reports.
 (`TestCPUQuantSensitivityREADME`) reads 0.948670 there, its own worst. Which sublayer opens WebGPU's gap at position 13?
 
 **Instrument.** `TestResidentCaptureParityWebGPU` with `GOINFER_GPU_CAPTURE=1`, `GOINFER_PARITY_README=20` and
-`GOINFER_PARITY_QUANT=int4`, on the real checkpoint in nobara's local model store (the same one the gate read), at the WG3-coh
+`GOINFER_PARITY_QUANT=int4` (the resident at the gate's context of 512), on the real checkpoint in nobara's local model store (the same one the gate read), at the WG3-coh
 head. For every position 0-19 and layer l it prints the relL2 between the CPU's and the resident's sublayers. Each
 layer starts from the GPU's own input residual, so three columns are that layer's own error: `ctx` (attention context,
 which also reads each side's own earlier K/V), `attn-contrib`, and `post-attn` (the MLP's contribution). One run; tier 1,
@@ -25,3 +25,7 @@ exclusive lock; stated start and end first. No bar is moved by it.
 4. **No clear cause:** anything else. Parked, to Francis with the numbers.
 
 The log is kept beside this file as `capture-pos13.log.gz`, and the outcome goes in `README.md` here.
+
+**Amended 2026-11-24 13:30, before any reading:** the first attempt (12:22:49-12:23:15) failed in 26 s without
+measuring: the capture test loaded the resident at its default context, not the gate's 512. The instrument now loads at
+512, and no outcome rule changes.
