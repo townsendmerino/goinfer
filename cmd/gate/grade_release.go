@@ -467,7 +467,7 @@ func branchesWithFixes(e *relEnv) (fixes, others []string, err error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, br := range strings.Fields(out) {
+	for br := range strings.FieldsSeq(out) {
 		if br == "main" || br == "origin/main" || strings.HasSuffix(br, "/HEAD") || br == "origin" {
 			continue
 		}
@@ -476,9 +476,8 @@ func branchesWithFixes(e *relEnv) (fixes, others []string, err error) {
 			continue
 		}
 		var subjects []string
-		for _, ln := range strings.Split(cherry, "\n") {
-			if strings.HasPrefix(ln, "+ ") {
-				sha := strings.TrimPrefix(ln, "+ ")
+		for ln := range strings.SplitSeq(cherry, "\n") {
+			if sha, ok := strings.CutPrefix(ln, "+ "); ok {
 				subj, _ := e.cmd(".", "git", "log", "-1", "--format=%s", sha)
 				subjects = append(subjects, subj)
 			}
@@ -553,7 +552,7 @@ func rowChangelog(e *relEnv) relRow {
 	}
 	out, err := e.look("changelog", "-base", e.prev, "-section", section)
 	var lines []string
-	for _, ln := range strings.Split(strings.TrimSpace(out), "\n") {
+	for ln := range strings.SplitSeq(strings.TrimSpace(out), "\n") {
 		if strings.Contains(ln, "OWED") || strings.HasPrefix(ln, "gate changelog:") {
 			lines = append(lines, strings.TrimSpace(ln))
 		}
@@ -575,7 +574,7 @@ func rowGofmt(e *relEnv) relRow {
 		if err != nil {
 			return owed(name, m, err.Error())
 		}
-		for _, f := range strings.Fields(out) {
+		for f := range strings.FieldsSeq(out) {
 			dirty = append(dirty, relPath(m, f))
 		}
 	}

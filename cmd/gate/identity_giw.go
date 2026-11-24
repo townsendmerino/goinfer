@@ -234,8 +234,8 @@ func runGiwTranscode(o identityOpts, bin, src, outDir string, c giwConfig, logPa
 		return r, out
 	}
 	if strings.HasPrefix(last, "wrote ") {
-		if i := strings.Index(last, " MB ("); i >= 0 {
-			r.Line = last[strings.LastIndex(last[:i], " ")+1:] // from the size on: the path is this run's own
+		if before, _, ok := strings.Cut(last, " MB ("); ok {
+			r.Line = last[strings.LastIndex(before, " ")+1:] // from the size on: the path is this run's own
 		}
 	}
 	sum, n, herr := sha256File(out)
