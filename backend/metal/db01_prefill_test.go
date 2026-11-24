@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -65,7 +66,7 @@ func TestDB01_prefillAgreesWithSequential(t *testing.T) {
 		for l := range r.layers {
 			L := &r.layers[l]
 			if L.delta != nil {
-				st = append(st, append([]float32(nil), L.delta.state.Floats()...))
+				st = append(st, slices.Clone(L.delta.state.Floats()))
 				continue
 			}
 			dd := L.geom.kvDim
@@ -105,7 +106,7 @@ func TestDB01_prefillAgreesWithSequential(t *testing.T) {
 		for i, id := range ids {
 			seq = r.Forward(id, i)
 		}
-		seq = append([]float32(nil), seq...)
+		seq = slices.Clone(seq)
 		kvS, stS := snap(M)
 		r.resetDeltaNet()
 		pass := r.PrefillLast(getEmbs(r, ids), 0)
@@ -186,21 +187,21 @@ func TestDB01_chunkedPrefillMatchesWhole(t *testing.T) {
 		for l := range r.layers {
 			L := &r.layers[l]
 			if L.delta != nil {
-				out = append(out, append([]uint32(nil), L.delta.win.U32s()...), append([]uint32(nil), L.delta.state.U32s()...))
+				out = append(out, slices.Clone(L.delta.win.U32s()), slices.Clone(L.delta.state.U32s()))
 				continue
 			}
 			n := N * L.geom.kvDim / 2 // halves, read as words
-			out = append(out, append([]uint32(nil), r.kc[l].U32s()[:n]...), append([]uint32(nil), r.vc[l].U32s()[:n]...))
+			out = append(out, slices.Clone(r.kc[l].U32s()[:n]), slices.Clone(r.vc[l].U32s()[:n]))
 		}
 		return
 	}
 	r.resetDeltaNet()
-	whole := append([]float32(nil), r.PrefillLast(embs, 0)...)
+	whole := slices.Clone(r.PrefillLast(embs, 0))
 	wantState := state()
 	for _, cut := range []int{64, 40} {
 		r.resetDeltaNet()
 		r.PrefillLast(embs[:cut], 0)
-		got := append([]float32(nil), r.PrefillLast(embs[cut:], cut)...)
+		got := slices.Clone(r.PrefillLast(embs[cut:], cut))
 		lg := 0
 		for i := range whole {
 			if math.Float32bits(whole[i]) != math.Float32bits(got[i]) {
@@ -272,7 +273,7 @@ func TestDB01_prefillFromZeroResetsState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want = append([]float32(nil), want...)
+	want = slices.Clone(want)
 	wantState := state()
 	if _, err := a.PrefillLast(context.Background(), getEmbs(r, idsA), 0); err != nil {
 		t.Fatal(err)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/testgate"
@@ -119,7 +120,7 @@ func TestAttentionKernelsPastTileBound(t *testing.T) {
 				if err := e.Err(); err != nil {
 					t.Fatalf("%s: dispatch: %v", name, err)
 				}
-				got := append([]float32(nil), out.Floats()[:nH*hd]...)
+				got := slices.Clone(out.Floats()[:nH*hd])
 				recordAttnDigest(t, kernel, got)
 				d.ReleaseAll() // this case's buffers; the next case allocates its own
 				want := attnRef64(qv, kf, vf, sinks, c.sink, nH, nKV, hd, winStart, c.nKeys, float64(scale))

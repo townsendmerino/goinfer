@@ -5,6 +5,7 @@ package metal
 import (
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -52,11 +53,11 @@ func TestGemma4MoE_noiseFloor(t *testing.T) {
 				if err != nil {
 					t.Fatalf("f32 forward: %v", err)
 				}
-				logF = append(logF, append([]float32(nil), l...))
+				logF = append(logF, slices.Clone(l))
 			}
 			idxF, _ := decoder.RouterCaptureForTest()
 			idxF = copyIdx(idxF)
-			marginF := append([]float32(nil), decoder.RouterMarginForTest()...)
+			marginF := slices.Clone(decoder.RouterMarginForTest())
 
 			// int4 forward.
 			decoder.SetRouterCaptureForTest(true) // clears
@@ -67,7 +68,7 @@ func TestGemma4MoE_noiseFloor(t *testing.T) {
 				if err != nil {
 					t.Fatalf("int4 forward: %v", err)
 				}
-				log4 = append(log4, append([]float32(nil), l...))
+				log4 = append(log4, slices.Clone(l))
 			}
 			idx4, _ := decoder.RouterCaptureForTest()
 
@@ -131,7 +132,7 @@ func TestGemma4MoE_noiseFloor(t *testing.T) {
 func copyIdx(in [][]int) [][]int {
 	out := make([][]int, len(in))
 	for i, s := range in {
-		out[i] = append([]int(nil), s...)
+		out[i] = slices.Clone(s)
 	}
 	return out
 }

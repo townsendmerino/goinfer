@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"runtime"
+	"slices"
 	"testing"
 )
 
@@ -63,7 +64,7 @@ func TestAttnFABlk_anyGMatchesG7(t *testing.T) {
 		if err := e.Err(); err != nil {
 			t.Fatalf("g%d: %v", G, err)
 		}
-		out := append([]float32(nil), part.Floats()[:nSplit*G*(hd+2)]...)
+		out := slices.Clone(part.Floats()[:nSplit*G*(hd+2)])
 		recordAttnDigest(t, fmt.Sprintf("attention_fa_blk_g%d", G), out)
 		return out
 	}

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -55,7 +56,7 @@ func TestMetalEmbedScale_forwardMatchesForwardEmb(t *testing.T) {
 	H, _, _, _, _, _, _ := m.Dims()
 
 	const id, pos = 42, 0
-	viaID := append([]float32(nil), r.Forward(id, pos)...)
+	viaID := slices.Clone(r.Forward(id, pos))
 	emb := make([]float32, H)
 	prodEmbedRow(r, id, emb)
 	viaEmb := r.ForwardEmb(emb, pos)

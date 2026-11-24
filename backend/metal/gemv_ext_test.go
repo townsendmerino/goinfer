@@ -5,6 +5,7 @@ package metal
 import (
 	"math"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -38,7 +39,7 @@ func TestGemvExt_bitIdentical(t *testing.T) {
 		e := make([]float32, r.H)
 		for pos := range steps {
 			r.embed.Row((pos*131+7)%r.V, e)
-			out = append(out, append([]float32(nil), r.ForwardEmb(e, pos)...))
+			out = append(out, slices.Clone(r.ForwardEmb(e, pos)))
 		}
 		return out, r.gemvExtRows
 	}

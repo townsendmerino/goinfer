@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"slices"
 	"testing"
 )
 
@@ -27,7 +28,7 @@ func TestKSD6_towerOutputsUnchanged(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s forward %d: %v", tw.name, i, err)
 			}
-			outs = append(outs, append([]float32(nil), out...))
+			outs = append(outs, slices.Clone(out))
 		}
 		return outs
 	}

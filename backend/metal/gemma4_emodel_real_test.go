@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -166,7 +167,7 @@ func TestGemma4EModel_realE2BTableControl(t *testing.T) {
 		}
 		n := len(ids) + g3NewTokens
 		c8, c4 := m8.NewCache(n), m4.NewCache(n)
-		seq := append([]int(nil), ids...)
+		seq := slices.Clone(ids)
 		pa := 0
 		for i := 0; i < n-1; i++ {
 			l8, err := m8.ForwardForTest(seq[i], c8)
@@ -240,7 +241,7 @@ func TestGemma4EModel_realE2BLocalize(t *testing.T) {
 		}
 		// Teacher-forced sequence: the prompt, then the CPU's greedy tokens, up to c.pos.
 		cc := mc.NewCache(c.pos + 1)
-		seq := append([]int(nil), ids...)
+		seq := slices.Clone(ids)
 		for i := 0; i < c.pos; i++ {
 			l, err := mc.ForwardForTest(seq[i], cc)
 			if err != nil {
@@ -291,7 +292,7 @@ func g3Run(t *testing.T, tk *tokenizer.Tokenizer, tmpl *chat.Template, r *reside
 		n := len(ids) + g3NewTokens
 		// CPU free run: prefill token by token, then 32 greedy tokens.
 		cc := mc.NewCache(n)
-		cpuSeq := append([]int(nil), ids...)
+		cpuSeq := slices.Clone(ids)
 		var cpuL []float32
 		for i := 0; i < n-1; i++ {
 			if cpuL, err = mc.ForwardForTest(cpuSeq[i], cc); err != nil {
@@ -302,7 +303,7 @@ func g3Run(t *testing.T, tk *tokenizer.Tokenizer, tmpl *chat.Template, r *reside
 			}
 		}
 		// Metal free run, same shape.
-		gpuSeq := append([]int(nil), ids...)
+		gpuSeq := slices.Clone(ids)
 		for i := 0; i < n-1; i++ {
 			l := r.ForwardEmb(mg.EmbedResidentForTest(gpuSeq[i]), i)
 			if i >= len(ids)-1 {
@@ -317,7 +318,7 @@ func g3Run(t *testing.T, tk *tokenizer.Tokenizer, tmpl *chat.Template, r *reside
 			if err != nil {
 				t.Fatal(err)
 			}
-			cl = append([]float32(nil), cl...)
+			cl = slices.Clone(cl)
 			gl := r.ForwardEmb(mg.EmbedResidentForTest(cpuSeq[i]), i)
 			ca, gap := argmaxTie(cl, argmaxF(gl))
 			if ca == argmaxF(gl) {
@@ -519,7 +520,7 @@ func TestGemma4EModel_realE2BPLEHostCost(t *testing.T) {
 	for _, v := range per {
 		sum += v
 	}
-	sorted := append([]float64(nil), per...)
+	sorted := slices.Clone(per)
 	for i := 1; i < len(sorted); i++ {
 		for j := i; j > 0 && sorted[j] < sorted[j-1]; j-- {
 			sorted[j], sorted[j-1] = sorted[j-1], sorted[j]

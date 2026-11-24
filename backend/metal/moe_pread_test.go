@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -65,7 +66,7 @@ func TestMoEPagingPread_matchesByteCopy(t *testing.T) {
 			if err != nil {
 				t.Fatalf("forward[%d] (slots=%q pread=%q): %v", i, slotsEnv, preadEnv, err)
 			}
-			out[i] = append([]float32(nil), lr...)
+			out[i] = slices.Clone(lr)
 		}
 		preads, scalePreads := 0, int64(0)
 		mr, ok := rf.(*metalResident) // the adapter wrapping *resident (backend.go)
@@ -210,7 +211,7 @@ func TestFlintResidentParityMetal(t *testing.T) {
 			if err != nil {
 				t.Fatalf(".giw forward[%d] (paged=%v): %v", i, paged, err)
 			}
-			out[i] = append([]float32(nil), lg...)
+			out[i] = slices.Clone(lg)
 		}
 		return out
 	}

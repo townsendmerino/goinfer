@@ -6,6 +6,7 @@ import (
 	"context"
 	"math"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -166,7 +167,7 @@ func TestDeltaNetPrefill_readsBothParameters(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return append([]float32(nil), lg...)
+		return slices.Clone(lg)
 	}
 	differ := func(a, b []float32) int {
 		n := 0

@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -48,7 +49,7 @@ func TestPagedFence_bitExactAndNotStale(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			lg = append(lg, append([]float32(nil), l...))
+			lg = append(lg, slices.Clone(l))
 		}
 		return lg, mr.r.g4moe.fence
 	}

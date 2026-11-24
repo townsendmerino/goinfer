@@ -5,6 +5,7 @@ package kernels
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"strings"
 	"testing"
 
@@ -169,7 +170,7 @@ func blk96Run(t *testing.T, d *Device, cq Queue, lib objc.ID, c blk96Case, q []f
 	if err := e.Err(); err != nil {
 		t.Fatalf("dispatch: %v", err)
 	}
-	return append([]float32(nil), out.Floats()[:c.nKV*hd]...)
+	return slices.Clone(out.Floats()[:c.nKV*hd])
 }
 
 // blk96Misses runs every case on lib and returns how many heads fall outside the bar, with the worst cosine and max abs error.

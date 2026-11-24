@@ -5,6 +5,7 @@ package kernels
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 )
 
@@ -222,7 +223,7 @@ func TestRopePairwise_f16PrefillKernels(t *testing.T) {
 				}
 				q.Run1D(pipe(kernel), M*reg[1]*tc.rhalf, 128, args...)
 			}
-			return append([]uint16(nil), xb.U16s()[:M*stride]...)
+			return slices.Clone(xb.U16s()[:M*stride])
 		}
 		ref := func(mrope bool) []float64 {
 			r := make([]float64, len(src))

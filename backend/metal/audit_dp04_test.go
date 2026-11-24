@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -91,7 +92,7 @@ func TestDP04_routeSGDecode(t *testing.T) {
 	for _, arm := range []string{"serial", "sg"} {
 		set(arm)
 		for i, e := range embs {
-			logits[arm] = append(logits[arm], append([]float32(nil), r.ForwardEmb(e, i)...))
+			logits[arm] = append(logits[arm], slices.Clone(r.ForwardEmb(e, i)))
 		}
 	}
 	for i := range embs {

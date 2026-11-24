@@ -5,6 +5,7 @@ package metal
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 )
 
@@ -50,7 +51,7 @@ func runAttnPrefill(rig prefillRig, kernel string, c attnPrefillCase, qkv, kc, v
 	}
 	args = append(args, kvIdentityTable(d))
 	rig.run(rig.pipe(kernel), c.M*c.nH*tgReduceAttn, tgReduceAttn, args...)
-	return append([]uint16(nil), out.U16s()[:c.M*c.nH*c.hd]...)
+	return slices.Clone(out.U16s()[:c.M*c.nH*c.hd])
 }
 
 func prefillLib(t *testing.T) prefillRig {

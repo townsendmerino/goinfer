@@ -121,14 +121,14 @@ func TestGemma3PrefillResidScaleReal(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ref[i] = [][]float32{append([]float32(nil), l...)}
+			ref[i] = [][]float32{slices.Clone(l)}
 			teach[i] = []int{argmaxF(l)}
 			for k := range steps {
 				l, err := mc.ForwardForTest(teach[i][k], c)
 				if err != nil {
 					t.Fatal(err)
 				}
-				ref[i] = append(ref[i], append([]float32(nil), l...))
+				ref[i] = append(ref[i], slices.Clone(l))
 				teach[i] = append(teach[i], argmaxF(l))
 			}
 			fmt.Fprintf(os.Stderr, "[G-RS2] CPU reference: %d tokens\n", len(ids))

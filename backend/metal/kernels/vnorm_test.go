@@ -5,6 +5,7 @@ package kernels
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 )
 
@@ -59,7 +60,7 @@ func TestVNorm_scaleless(t *testing.T) {
 		unit[i] = 1
 	}
 	run := func(addOne uint32) []float32 {
-		buf := NewBufferFloats(d, append([]float32(nil), in...))
+		buf := NewBufferFloats(d, slices.Clone(in))
 		uW := NewBufferFloats(d, unit)
 		u0 := NewBufferU32(d, 0) // nH=0 and nHhd=0 (V slot addressed at base 0+head*hd within buf)
 		uNKV, uHd := NewBufferU32(d, nKV), NewBufferU32(d, hd)
@@ -69,7 +70,7 @@ func TestVNorm_scaleless(t *testing.T) {
 		enc := cq.Begin()
 		enc.Dispatch(pQK, nKV*128, 128, buf, uW, uW, u0, uNKV, uHd, u0, uEps, uAdd)
 		enc.End()
-		return append([]float32(nil), buf.Floats()...)
+		return slices.Clone(buf.Floats())
 	}
 
 	// (a) unit weight + addOne=0 == CPU scale-less v_norm.

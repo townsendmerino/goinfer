@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -83,8 +84,8 @@ func TestAttentionFA_positionSweep(t *testing.T) {
 			for j := range emb {
 				emb[j] = float32(rng.NormFloat64()) * 0.05
 			}
-			l := r.ForwardEmb(append([]float32(nil), emb...), pos)
-			logitsPerStep = append(logitsPerStep, append([]float32(nil), l...))
+			l := r.ForwardEmb(slices.Clone(emb), pos)
+			logitsPerStep = append(logitsPerStep, slices.Clone(l))
 		}
 		b.Close()
 		m.Close()
@@ -207,8 +208,8 @@ func TestAttentionFA_ulpPerturbationControl(t *testing.T) {
 			for j := range emb {
 				emb[j] = float32(rng.NormFloat64()) * 0.05
 			}
-			l := r.ForwardEmb(append([]float32(nil), emb...), pos)
-			logitsPerStep = append(logitsPerStep, append([]float32(nil), l...))
+			l := r.ForwardEmb(slices.Clone(emb), pos)
+			logitsPerStep = append(logitsPerStep, slices.Clone(l))
 		}
 		b.Close()
 		m.Close()

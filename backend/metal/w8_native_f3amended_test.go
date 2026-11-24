@@ -92,7 +92,7 @@ func TestW8Native_F3amended_closerToF32(t *testing.T) {
 				if ref != nil {
 					kl[p][i] = klLogits(ref[p][i], l)
 				} else {
-					out[p][i] = append([]float32(nil), l...)
+					out[p][i] = slices.Clone(l)
 				}
 				if f16KV {
 					for layer := range nL {

@@ -5,6 +5,7 @@ package metal
 import (
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -64,7 +65,7 @@ func TestMoEExpertRows_bitIdentical(t *testing.T) {
 						if err != nil {
 							t.Fatal(err)
 						}
-						out = append(out, append([]float32(nil), lg...))
+						out = append(out, slices.Clone(lg))
 					}
 					return out
 				}
@@ -117,7 +118,7 @@ func TestMoEExpertRows_int8BitIdentical(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					out = append(out, append([]float32(nil), lg...))
+					out = append(out, slices.Clone(lg))
 				}
 				return out
 			}
