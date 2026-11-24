@@ -144,7 +144,6 @@ func (m *Model) specRollbackSafeVia(fold ResidentRuntimeSubsystem, width int) bo
 // per-position and causal. Bit-identical to K sequential forwards. Assumes
 // canBatchN(len(ids)) — callers check.
 func (m *Model) forwardLayersN(reqCtx context.Context, ids []int, cache *KVCache, fastAttn bool) ([]float32, error) {
-	cache.mustUnpadded("batched prefill")
 	t0 := costStart(cache)
 	h := m.embedN(ids)
 	if cache.cost != nil {
@@ -309,7 +308,7 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 // attendBatchedHeadsKV is attendBatchedHeadsP over K/V given either as f32 rows (keys, vals) or as an f16 cache's rows (keysH, valsH,
 // IEEE binary16 bits, keys and vals nil), which the acc64 kernels read in place: bit-identical to widening them into f32 first. f16
 // rows need useAcc64; they skip the grouped kernels, which have no f16 form. rowStride is the elements between one key's row and the
-// next (0: kvDim); a padded stride needs useAcc64, whose kernels read the cache strided in place.
+// next (0: kvDim): a padded cache's rows, read in place.
 func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, rowStride, base int, cache *KVCache, layer, startPos, K int, ap attentionParams, arch *Architecture, useAcc64 bool, pool []headWorkerScratch) {
 	// headsAt, not NumHeads: Laguna varies the query head count per layer (its KV heads stay uniform, so group is per-layer too).
 	nH, nKV, hd := arch.headsAt(layer), arch.NumKVHeads, arch.HeadDim
@@ -319,9 +318,6 @@ func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, r
 	rs := kvDim
 	if rowStride != 0 {
 		rs = rowStride
-	}
-	if rs != kvDim && !useAcc64 {
-		panic("decoder: a padded KV row stride is read only by the acc64 kernels")
 	}
 	f16 := keysH != nil
 	if f16 && !useAcc64 {
@@ -726,11 +722,11 @@ func attendBatchedHeadsKV(q, ctx, keys, vals []float32, keysH, valsH []uint16, r
 			// layout is not contiguous), so the layout is chosen here at gather time rather
 			// than re-transposed per block.
 			if fusedOK && ws.fused != nil {
-				gatherKVFused(ws.kh, ws.fused.vBlk, keys, vals, kvh, hd, kvDim, nKeys)
+				gatherKVFused(ws.kh, ws.fused.vBlk, keys, vals, kvh, hd, rs, nKeys)
 				return
 			}
 			for s := range nKeys {
-				kvBase := s*kvDim + kvh*hd
+				kvBase := s*rs + kvh*hd
 				copy(ws.kh[s*hd:s*hd+hd], keys[kvBase:kvBase+hd])
 				vrow := vals[kvBase : kvBase+hd]
 				_ = vrow[hd-1]
@@ -875,7 +871,6 @@ func (m *Model) lmHeadNInto(h []float32, M int, dst []float32) []float32 {
 // K sequential forwards. Falls back to sequential for the non-batched archs. The
 // rows may be the cache's own buffer, valid until the next batched prefill or verify on cache.
 func (m *Model) forwardN(reqCtx context.Context, ids []int, cache *KVCache) ([][]float32, error) {
-	cache.mustUnpadded("batched forward")
 	// Speculative VERIFY: never fast, whatever the operator asked for. See forwardNAttn.
 	return m.forwardNAttn(reqCtx, ids, cache, false)
 }
@@ -932,7 +927,6 @@ func (m *Model) forwardNAttn(reqCtx context.Context, ids []int, cache *KVCache, 
 // and the LM head on the last position only. Otherwise it falls back to sequential runLayers + forward. Bit-identical to the
 // sequential prefill when the exact kernel is in use; the cache is filled with the whole prompt either way.
 func (m *Model) prefillLogits(ctx context.Context, prompt []int, cache *KVCache) ([]float32, error) {
-	cache.mustUnpadded("prefill")
 	// Compute-time LoRA (#7) is wired only into the per-token walker (projQKVToken
 	// + gatedMLPAct), so an active adapter takes the M=1 path — the prompt's K/V must carry
 	// the delta or decode would continue a base-projected context. The RAM-density win

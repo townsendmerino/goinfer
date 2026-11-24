@@ -76,7 +76,7 @@ func (s *Session) Snapshot(id string) []byte {
 	// LoadSession (it rejects a ring stride != kvDim), so only globals leak.
 	for l := 0; l < c.numLayers; l++ {
 		isRing := c.rings[l] != nil
-		if !isRing && c.stride[l] != 0 && c.stride[l] != c.kvDim {
+		if !isRing && c.stride[l] != 0 && c.stride[l] != c.rowStride(c.kvDim) {
 			return nil
 		}
 	}
@@ -163,17 +163,19 @@ func (s *Session) Snapshot(id string) []byte {
 				wr.f32Body(kb)
 				wr.f32Body(vb)
 			}
-		} else if c.quant == kvqF16 {
-			wr.scales16(c.keysH[l])
-			wr.scales16(c.valsH[l])
+		} else if c.quant == kvqF16 { // compact rows: the format holds kvDim-wide rows whatever the cache's pad
+			n := c.storedRows(l, c.kvDim)
+			wr.scales16(compactRows(c.keysH[l], n, c.kvDim, c.rowStride(c.kvDim)))
+			wr.scales16(compactRows(c.valsH[l], n, c.kvDim, c.rowStride(c.kvDim)))
 		} else if c.quant == kvI8 {
 			wr.i8(c.keysQ[l])
 			wr.i8(c.valsQ[l])
 			wr.f32Body(c.keyScale[l])
 			wr.f32Body(c.valScale[l])
 		} else {
-			wr.f32Body(c.keys[l])
-			wr.f32Body(c.vals[l])
+			n := c.storedRows(l, c.kvDim)
+			wr.f32Body(compactRows(c.keys[l], n, c.kvDim, c.rowStride(c.kvDim)))
+			wr.f32Body(compactRows(c.vals[l], n, c.kvDim, c.rowStride(c.kvDim)))
 		}
 	}
 	wr.u32(crc32.ChecksumIEEE(wr.buf))
@@ -363,7 +365,8 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 				return nil, e
 			}
 			if len(ref.keysH[l]) > 0 {
-				ref.stride[l] = kvDim
+				ref.stride[l] = ref.rowStride(kvDim)
+				ref.keysH[l], ref.valsH[l] = padRows(ref.keysH[l], pos, kvDim, ref.stride[l]), padRows(ref.valsH[l], pos, kvDim, ref.stride[l])
 			}
 		} else if quant == kvI8 {
 			ref.keysQ[l], ref.valsQ[l], ref.keyScale[l], ref.valScale[l] = r.i8(), r.i8(), r.f32Body(), r.f32Body()
@@ -407,7 +410,8 @@ func (m *Model) LoadSession(data []byte, wantID string) (*Session, error) {
 				return nil, e
 			}
 			if len(ref.keys[l]) > 0 {
-				ref.stride[l] = kvDim
+				ref.stride[l] = ref.rowStride(kvDim)
+				ref.keys[l], ref.vals[l] = padRows(ref.keys[l], pos, kvDim, ref.stride[l]), padRows(ref.vals[l], pos, kvDim, ref.stride[l])
 			}
 		}
 	}

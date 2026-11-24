@@ -56,7 +56,7 @@ func (c *KVCache) copyStateFrom(src *KVCache) error {
 	case c.numLayers != src.numLayers || c.quant != src.quant || (c.delta == nil) != (src.delta == nil):
 		return fmt.Errorf("decoder: the checkpoint's cache and the target's differ in shape")
 	}
-	c.pos, c.mropeDelta, c.manualPos = src.pos, src.mropeDelta, src.manualPos
+	c.pos, c.mropeDelta, c.manualPos, c.rowPad = src.pos, src.mropeDelta, src.manualPos, src.rowPad // rows are copied at src's stride
 	for l := 0; l < src.numLayers; l++ {
 		c.stride[l] = src.stride[l]
 		if src.quant == kvqF16 {

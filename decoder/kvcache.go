@@ -29,9 +29,9 @@ func (q kvQuant) widened() bool { return q != kvqF32 }
 // attended at f32) and kvF16RingOffsetForTest (the ring window read one slot late).
 var kvRoundF16ForTest, kvF16NewRowsF32ForTest, kvF16RingOffsetForTest bool
 
-// kvRowPadForTest turns on the row-pad prototype for caches built while it is set (docs/measurements/cpu-kv-rowpad-2026-11-23/README.md):
-// a dense cache whose K/V row is a multiple of kvRowPadAlign bytes stores each row padded by one 64 B line, so rows a power-of-two
-// stride apart stop sharing L1 sets. A test seam for the A/B, not a production layout.
+// kvRowPadForTest turns the row pad on for caches built while it is set (docs/measurements/cpu-kv-rowpad-2026-11-23/README.md): a
+// dense cache whose K/V row is a multiple of kvRowPadAlign bytes stores each row padded by one 64 B line, so rows a power-of-two
+// stride apart stop sharing L1 sets. Off by default: making it the default is the owner's call, with its A/B and its memory.
 var kvRowPadForTest bool
 
 // kvRowPadAlign is the row size, in bytes, whose multiples kvRowPadElems pads; tests lower it to pad a tiny fixture's rows.
@@ -48,16 +48,17 @@ func kvRowPadElems(elems, elemBytes, align int) int {
 	return 64 / elemBytes
 }
 
-// mustUnpadded panics on a row-pad prototype cache: what is a reader that does not know the padded store.
+// mustUnpadded panics on a padded cache: what names an accessor that hands out the store without its stride.
 func (c *KVCache) mustUnpadded(what string) {
 	if c.rowPad != 0 {
-		panic("decoder: " + what + " does not read the row-pad prototype's padded KV store")
+		panic("decoder: " + what + " cannot read a row-padded KV cache; read layerRows and its stride")
 	}
 }
 
-// setRowPad turns the prototype on for a cache every layer of which is a dense, global attention layer of width kvDim at f32 or f16;
-// it leaves any other cache unpadded.
-func (c *KVCache) setRowPad(a *Architecture) {
+// setRowPad pads a cache every layer of which is a global attention layer of width kvDim at f32 or f16 (no ring, MLA latent, hybrid
+// state or per-layer width), when its row is a multiple of kvRowPadAlign bytes: each layer's rows then sit kvDim+rowPad elements
+// apart in keys/vals (or keysH/valsH), re-reserved here for capHint rows. Any other cache stays unpadded.
+func (c *KVCache) setRowPad(a *Architecture, capHint int) {
 	if !kvRowPadForTest || c.localAny || c.mlaLatent != nil || c.manualPos || c.quant == kvI8 {
 		return
 	}
@@ -75,22 +76,57 @@ func (c *KVCache) setRowPad(a *Architecture) {
 		return
 	}
 	c.rowPad = pad
-	c.keys, c.vals, c.keysH, c.valsH = make([][]float32, c.numLayers), make([][]float32, c.numLayers), make([][]uint16, c.numLayers), make([][]uint16, c.numLayers)
-	if c.quant == kvqF16 {
-		c.keysPH, c.valsPH = make([][]uint16, c.numLayers), make([][]uint16, c.numLayers)
-	} else {
-		c.keysP, c.valsP = make([][]float32, c.numLayers), make([][]float32, c.numLayers)
+	rs := c.kvDim + pad
+	for l := range c.numLayers {
+		lc := c.appendHint(l, capHint)
+		if c.quant == kvqF16 {
+			c.keysH[l], c.valsH[l] = make([]uint16, 0, lc*rs), make([]uint16, 0, lc*rs)
+		} else {
+			c.keys[l], c.vals[l] = make([]float32, 0, lc*rs), make([]float32, 0, lc*rs)
+		}
 	}
 }
 
-// rowPadBytesHeld is the K/V bytes a row-pad prototype cache stores, pad included.
+// rowStride is the elements between one position's row and the next in a global layer's store: kvDim, plus the pad on a padded cache.
+func (c *KVCache) rowStride(kvDim int) int { return kvDim + c.rowPad }
+
+// layerRows is global layer l's f32 store and its row stride: a reader indexes position s at s*stride.
+func (c *KVCache) layerRows(l, kvDim int) (k, v []float32, stride int) {
+	return c.keys[l], c.vals[l], c.rowStride(kvDim)
+}
+
+// compactRows returns n rows of a strided store with the pad dropped (the store itself when it is unpadded).
+func compactRows[T any](src []T, n, width, stride int) []T {
+	if stride == width {
+		return src[:n*width]
+	}
+	out := make([]T, n*width)
+	for p := range n {
+		copy(out[p*width:(p+1)*width], src[p*stride:p*stride+width])
+	}
+	return out
+}
+
+// padRows lays n compact rows of width elements out at stride, the pad zeroed (the slice itself when stride is width).
+func padRows[T any](src []T, n, width, stride int) []T {
+	if stride == width {
+		return src
+	}
+	out := make([]T, n*stride)
+	for p := range n {
+		copy(out[p*stride:p*stride+width], src[p*width:(p+1)*width])
+	}
+	return out
+}
+
+// rowPadBytesHeld is the K/V bytes a cache's global f32 and f16 stores hold, pad included.
 func (c *KVCache) rowPadBytesHeld() int64 {
 	var n int64
-	for l := range c.keysP {
-		n += 4 * int64(len(c.keysP[l])+len(c.valsP[l]))
+	for l := range c.keys {
+		n += 4 * int64(len(c.keys[l])+len(c.vals[l]))
 	}
-	for l := range c.keysPH {
-		n += 2 * int64(len(c.keysPH[l])+len(c.valsPH[l]))
+	for l := range c.keysH {
+		n += 2 * int64(len(c.keysH[l])+len(c.valsH[l]))
 	}
 	return n
 }
@@ -187,12 +223,9 @@ type KVCache struct {
 	// f16 KV (quant == kvqF16): global layers store K/V as f16 here, parallel to keys/vals (which stay empty).
 	keysH, valsH [][]uint16 // [pos*kvDim]
 
-	// rowPad > 0 is the row-pad prototype (kvRowPadForTest): every layer's K/V rows are kvDim+rowPad elements apart, in keysP/valsP
-	// (f32) or keysPH/valsPH (f16), and keys/vals/keysH/valsH stay empty. Only single-token decode reads them; every other reader
-	// refuses the cache (mustUnpadded).
-	rowPad         int
-	keysP, valsP   [][]float32
-	keysPH, valsPH [][]uint16
+	// rowPad > 0 pads every global layer's rows (setRowPad): position s of layer l starts at s*(kvDim+rowPad) in keys/vals or
+	// keysH/valsH, and stride[l] records that. Readers index by rowStride; Keys and Vals refuse a padded cache.
+	rowPad int
 
 	// manualPos decouples pos from Append's last-layer trigger, for families whose last layer never appends (Gemma 4's is KV-shared;
 	// a hybrid's linear layers do not Append): the caller advances pos explicitly via Advance() after each token's full layer sweep.
@@ -502,44 +535,37 @@ func (c *KVCache) Append(layer int, k, v []float32) int {
 	// local layer rings it (slot pos%W); a global layer append-forevers. Batched
 	// prefill does NOT route local layers here — it defers the ring write past the
 	// read (commitBatch), since writing all K first would evict in-batch history.
-	if c.rowPad > 0 {
-		c.stride[layer] = len(k) + c.rowPad
-		if c.quant == kvqF16 {
-			o := len(c.keysPH[layer])
-			c.keysPH[layer] = growU16(c.keysPH[layer], c.stride[layer])
-			c.valsPH[layer] = growU16(c.valsPH[layer], c.stride[layer])
-			narrowF16Into(c.keysPH[layer][o:o+len(k)], k)
-			narrowF16Into(c.valsPH[layer][o:o+len(v)], v)
-		} else {
-			c.keysP[layer] = append(append(c.keysP[layer], k...), make([]float32, c.rowPad)...)
-			c.valsP[layer] = append(append(c.valsP[layer], v...), make([]float32, c.rowPad)...)
-		}
-	} else if r := c.rings[layer]; r != nil {
+	if r := c.rings[layer]; r != nil {
 		r.write(c.pos, k, v) // ring quantizes internally when kvI8
 	} else {
 		if c.stride[layer] == 0 {
-			c.stride[layer] = len(k) // per-layer KV width, learned on first append
+			c.stride[layer] = len(k) + c.rowPad // the per-layer row stride, learned on first append (the pad: setRowPad)
 		}
+		st := c.stride[layer]
 		if c.quant == kvqF16 {
-			if len(c.keysH[layer])+len(k) > cap(c.keysH[layer]) {
+			if len(c.keysH[layer])+st > cap(c.keysH[layer]) {
 				c.regrowLayer(layer)
 			}
 			o := len(c.keysH[layer])
-			c.keysH[layer] = growU16(c.keysH[layer], len(k))
-			c.valsH[layer] = growU16(c.valsH[layer], len(v))
-			narrowF16Into(c.keysH[layer][o:], k)
-			narrowF16Into(c.valsH[layer][o:], v)
+			c.keysH[layer] = growU16(c.keysH[layer], st)
+			c.valsH[layer] = growU16(c.valsH[layer], st)
+			narrowF16Into(c.keysH[layer][o:o+len(k)], k)
+			narrowF16Into(c.valsH[layer][o:o+len(v)], v)
 		} else if c.quant == kvI8 {
 			if len(c.keysQ[layer])+len(k) > cap(c.keysQ[layer]) {
 				c.regrowLayer(layer)
 			}
 			c.appendQuant(layer, k, v)
 		} else {
-			if len(c.keys[layer])+len(k) > cap(c.keys[layer]) {
+			if len(c.keys[layer])+st > cap(c.keys[layer]) {
 				c.regrowLayer(layer)
 			}
 			c.keys[layer] = append(c.keys[layer], k...)
 			c.vals[layer] = append(c.vals[layer], v...)
+			if c.rowPad > 0 {
+				c.keys[layer] = growF32(c.keys[layer], c.rowPad)
+				c.vals[layer] = growF32(c.vals[layer], c.rowPad)
+			}
 		}
 	}
 	if layer == c.numLayers-1 && c.regrownBytes >= kvRegrowReleaseBytes {
@@ -675,7 +701,6 @@ func (c *KVCache) Vals(layer int) []float32 { c.mustUnpadded("KVCache.Vals"); re
 // local layers); this is the ring-aware read a resident-KV upload bridge needs to place a CPU
 // prefill's K/V at the GPU cache's correct absolute positions (decoder/generate_vl_resident.go).
 func (c *KVCache) LayerKV(layer int) (k, v []float32, base int) {
-	c.mustUnpadded("KVCache.LayerKV")
 	if r := c.rings[layer]; r != nil {
 		lo := kvmgr.WindowHorizon(r.count, r.w, 0)
 		nLive, st := r.count-lo, r.stride
@@ -701,11 +726,12 @@ func (c *KVCache) LayerKV(layer int) (k, v []float32, base int) {
 		return k, v, lo
 	}
 	if c.quant == kvqF16 {
-		n := len(c.keysH[layer])
-		k, v = make([]float32, n), make([]float32, n)
+		n := c.storedRows(layer, c.kvDim)
+		kh, vh := compactRows(c.keysH[layer], n, c.kvDim, c.rowStride(c.kvDim)), compactRows(c.valsH[layer], n, c.kvDim, c.rowStride(c.kvDim))
+		k, v = make([]float32, len(kh)), make([]float32, len(vh))
 		if n > 0 {
-			widenF16Into(k, c.keysH[layer])
-			widenF16Into(v, c.valsH[layer])
+			widenF16Into(k, kh)
+			widenF16Into(v, vh)
 		}
 		return k, v, 0
 	}
@@ -720,6 +746,10 @@ func (c *KVCache) LayerKV(layer int) (k, v []float32, base int) {
 			dequantHeads(c.valsQ[layer][o:o+st], c.valScale[layer][so:so+nKV], nKV, c.headDim, v[o:o+st])
 		}
 		return k, v, 0
+	}
+	if c.rowPad > 0 { // the bridge reads compact rows
+		n := c.storedRows(layer, c.kvDim)
+		return compactRows(c.keys[layer], n, c.kvDim, c.rowStride(c.kvDim)), compactRows(c.vals[layer], n, c.kvDim, c.rowStride(c.kvDim)), 0
 	}
 	return c.keys[layer], c.vals[layer], 0
 }
@@ -879,7 +909,6 @@ func (c *KVCache) resetMultimodal() {
 // The per-position stride is the per-layer width recorded at first append, not the nominal kvDim: Gemma 4's per-layer head_dim
 // and KV-head counts make widths differ, and its KV-shared tail layers append nothing (stride 0, so they stay empty).
 func (c *KVCache) TruncateTo(pos int) (exact bool) {
-	c.mustUnpadded("KVCache.TruncateTo")
 	exact = true
 	if pos < 0 || pos > c.pos {
 		return exact // out-of-range no-op is exact
@@ -1055,10 +1084,17 @@ func (c *KVCache) batchReadLocal(layer, startPos, K int, newK, newV, dstK, dstV 
 // dequant covers history + new uniformly (matching decode's dequant reads).
 func (c *KVCache) dequantGlobalLayer(layer, kvDim int, dstK, dstV []float32) int {
 	if c.quant == kvqF16 {
-		n := len(c.keysH[layer]) / kvDim
+		n, rs := c.storedRows(layer, kvDim), c.rowStride(kvDim)
+		if rs != kvDim { // a padded store widens row by row into compact scratch
+			for p := range n {
+				widenF16Into(dstK[p*kvDim:(p+1)*kvDim], c.keysH[layer][p*rs:p*rs+kvDim])
+				widenF16Into(dstV[p*kvDim:(p+1)*kvDim], c.valsH[layer][p*rs:p*rs+kvDim])
+			}
+			return n
+		}
 		if n > 0 {
-			widenF16Into(dstK[:n*kvDim], c.keysH[layer])
-			widenF16Into(dstV[:n*kvDim], c.valsH[layer])
+			widenF16Into(dstK[:n*kvDim], c.keysH[layer][:n*kvDim])
+			widenF16Into(dstV[:n*kvDim], c.valsH[layer][:n*kvDim])
 		}
 		return n
 	}
@@ -1131,12 +1167,6 @@ func (c *KVCache) isLocal(layer int) bool { return c.rings[layer] != nil }
 // count (it physically keeps only W) for a local layer, else the append-forever
 // length / width.
 func (c *KVCache) storedRows(layer, kvDim int) int {
-	if c.rowPad > 0 {
-		if c.quant == kvqF16 {
-			return len(c.keysPH[layer]) / (kvDim + c.rowPad)
-		}
-		return len(c.keysP[layer]) / (kvDim + c.rowPad)
-	}
 	if r := c.rings[layer]; r != nil {
 		return r.count
 	}
@@ -1144,9 +1174,9 @@ func (c *KVCache) storedRows(layer, kvDim int) int {
 		return len(c.keysQ[layer]) / kvDim
 	}
 	if c.quant == kvqF16 {
-		return len(c.keysH[layer]) / kvDim
+		return len(c.keysH[layer]) / c.rowStride(kvDim)
 	}
-	return len(c.keys[layer]) / kvDim
+	return len(c.keys[layer]) / c.rowStride(kvDim)
 }
 
 // WindowStart returns the first key index a query at absolute position pos

@@ -89,14 +89,10 @@ func BenchmarkDecodeAtDepth(b *testing.B) {
 	} {
 		b.Run(arm.name, func(b *testing.B) {
 			setKnob(b, m, knobAttnGrouped, arm.env)
-			// GOINFER_BENCH_KVPAD=1 builds the cache with the row-pad prototype (kvRowPadForTest); it needs GOINFER_BENCH_FILL, since
-			// batched prefill does not read a padded cache.
+			// GOINFER_BENCH_KVPAD=1 builds the cache with the row pad on (kvRowPadForTest).
 			kvRowPadForTest = os.Getenv("GOINFER_BENCH_KVPAD") == "1"
 			cache := m.NewCache(depth + b.N + 8)
 			kvRowPadForTest = false
-			if cache.rowPad > 0 && !fill {
-				b.Fatal("GOINFER_BENCH_KVPAD needs GOINFER_BENCH_FILL=1")
-			}
 			if fill {
 				fillCacheForBench(b, m, cache, depth)
 			} else if _, err := m.forwardLayersN(context.Background(), ids, cache, false); err != nil {

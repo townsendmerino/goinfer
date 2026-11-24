@@ -2,8 +2,10 @@ package decoder
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -34,6 +36,10 @@ func TestKVRowPad_padOnlyAtAnAlignedRow(t *testing.T) {
 	}
 }
 
+// rowPadTestAlign is the alignment the tests pad at: 32 B divides every dense fixture's f32 and f16 rows (qwen3moe-tiny's f16 row is
+// 32 B), so their caches take the pad.
+const rowPadTestAlign = 32
+
 // rowPadFixtures are the tiny fixtures the pad cells run on, and whether the pad applies to each: dense families with uniform
 // attention layers take it; a family with a sliding window (rings) is declined it.
 var rowPadFixtures = []struct {
@@ -46,6 +52,8 @@ var rowPadFixtures = []struct {
 	{"mixtral-tiny", 32, true},
 	{"qwen3moe-tiny", 32, true},
 	{"glm-tiny", 32, true},
+	{"phi3-tiny", 32, true},
+	{"llama4-tiny", 32, true}, // its attention runs attendQuery (chunked RoPE layers), not attendToken
 	{"gemma2-tiny", 30, false},
 }
 
@@ -94,13 +102,20 @@ func rowPadCells(t *testing.T, m *Model, n int) (map[string][][]float32, *KVCach
 		t.Fatalf("Snapshot refused a %d-row cache", n)
 	}
 	cp := m.NewCache(n + 8)
-	if err := cp.copyPrefixFrom(s.cache, n); err != nil {
+	if err := cp.copyPrefixFrom(s.cache, n); errors.Is(err, errCopyLayout) {
+		out["copy refused"] = [][]float32{{1}} // a layout copyPrefixFrom declines (both arms must)
+	} else if err != nil {
 		t.Fatalf("copyPrefixFrom: %v", err)
+	} else {
+		out["copy"] = [][]float32{step(cp, next)}
 	}
-	out["copy"] = [][]float32{step(cp, next)}
 	a, b := m.NewCache(n+8), m.NewCache(n+8)
 	for i := range n / 2 {
 		lgs, err := m.decodeMultiStep([]int{ids[i], ids[n-1-i]}, []*KVCache{a, b})
+		if err != nil && i == 0 {
+			out["multi refused"] = [][]float32{{1}} // the walker declines this family (both arms must)
+			break
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -110,7 +125,7 @@ func rowPadCells(t *testing.T, m *Model, n int) (map[string][][]float32, *KVCach
 }
 
 // TestKVRowPad_everyReaderBitIdentical holds every reader of the CPU KV layout bit-identical with the row pad on and off, at f32 and
-// f16, on the dense fixtures (64 B alignment, so their small rows are padded) and on a ring family the pad declines.
+// f16, on the dense fixtures (rowPadTestAlign, so their small rows are padded) and on a ring family the pad declines.
 func TestKVRowPad_everyReaderBitIdentical(t *testing.T) {
 	for _, fx := range rowPadFixtures {
 		m := f1Load(t, filepath.Join("..", "testdata", fx.dir))
@@ -121,7 +136,7 @@ func TestKVRowPad_everyReaderBitIdentical(t *testing.T) {
 		}{{"f32", f32}, {"f16", f16}} {
 			ref, rc := rowPadCells(t, arm.m, fx.n)
 			var pc *KVCache
-			got := rowPadArms(t, true, 64, func() map[string][][]float32 {
+			got := rowPadArms(t, true, rowPadTestAlign, func() map[string][][]float32 {
 				o, c := rowPadCells(t, arm.m, fx.n)
 				pc = c
 				return o
@@ -129,8 +144,19 @@ func TestKVRowPad_everyReaderBitIdentical(t *testing.T) {
 			if (pc.rowPad > 0) != fx.padded {
 				t.Fatalf("%s %s: the pad-on prefill cache has rowPad %d, want padded=%v", fx.dir, arm.name, pc.rowPad, fx.padded)
 			}
+			cells := make([]string, 0, len(ref))
+			for c := range ref {
+				cells = append(cells, c)
+			}
+			slices.Sort(cells)
+			t.Logf("%s %s: rowPad %d, cells %v", fx.dir, arm.name, pc.rowPad, cells)
 			if rc.rowPad != 0 {
 				t.Fatalf("%s %s: the pad-off cache is padded (%d)", fx.dir, arm.name, rc.rowPad)
+			}
+			for cell := range got {
+				if _, ok := ref[cell]; !ok {
+					t.Errorf("%s %s: cell %q ran only with the pad on", fx.dir, arm.name, cell)
+				}
 			}
 			for cell, want := range ref {
 				if d := f1Diff(got[cell], want); d != 0 || len(got[cell]) != len(want) {
@@ -148,7 +174,7 @@ func TestKVRowPad_padAppliesWhereEligible(t *testing.T) {
 		m := f1Load(t, filepath.Join("..", "testdata", fx.dir))
 		f16, f32 := f1Arms(m)
 		for _, mm := range []*Model{f32, f16} {
-			c := rowPadArms(t, true, 64, func() *KVCache { return mm.NewCache(16) })
+			c := rowPadArms(t, true, rowPadTestAlign, func() *KVCache { return mm.NewCache(16) })
 			if (c.rowPad > 0) != fx.padded {
 				t.Errorf("%s: rowPad %d, want padded=%v", fx.dir, c.rowPad, fx.padded)
 			}
@@ -165,7 +191,7 @@ func TestKVRowPad_snapshotCrossesLayouts(t *testing.T) {
 	ids := f1IDs(24, vocab)
 	next := (ids[len(ids)-1] + 1) % vocab
 	snap := func(padded bool) []byte {
-		return rowPadArms(t, padded, 64, func() []byte {
+		return rowPadArms(t, padded, rowPadTestAlign, func() []byte {
 			s := f32.NewSession(64)
 			if _, err := f32.forwardN(context.Background(), ids, s.cache); err != nil {
 				t.Fatal(err)
@@ -175,7 +201,7 @@ func TestKVRowPad_snapshotCrossesLayouts(t *testing.T) {
 		})
 	}
 	restoreStep := func(blob []byte, padded bool) []float32 {
-		return rowPadArms(t, padded, 64, func() []float32 {
+		return rowPadArms(t, padded, rowPadTestAlign, func() []float32 {
 			back, err := f32.LoadSession(blob, "id")
 			if err != nil {
 				t.Fatalf("LoadSession: %v", err)
@@ -210,7 +236,7 @@ func TestKVRowPad_planPricesThePad(t *testing.T) {
 		m    *Model
 		f16  bool
 	}{{"f32", f32, false}, {"f16", f16, true}} {
-		rowPadArms(t, true, 64, func() int {
+		rowPadArms(t, true, rowPadTestAlign, func() int {
 			c := arm.m.NewCache(ctx)
 			for _, id := range ids {
 				if _, err := arm.m.forward(id, c); err != nil {
@@ -222,7 +248,7 @@ func TestKVRowPad_planPricesThePad(t *testing.T) {
 			if held != priced || held == 0 {
 				t.Errorf("%s: the padded cache holds %d bytes at %d positions; the plan prices %d", arm.name, held, ctx, priced)
 			}
-			if unpadded := rowPadArms(t, false, 64, func() int64 { return kvBytesForCtx(arm.m.w.arch, ctx, arm.f16, false) }); priced <= unpadded {
+			if unpadded := rowPadArms(t, false, rowPadTestAlign, func() int64 { return kvBytesForCtx(arm.m.w.arch, ctx, arm.f16, false) }); priced <= unpadded {
 				t.Errorf("%s: padded price %d is not above the unpadded %d", arm.name, priced, unpadded)
 			}
 			return 0
@@ -235,7 +261,7 @@ func TestKVRowPad_planPricesThePad(t *testing.T) {
 func TestKVRowPad_keysRefusesAPaddedCache(t *testing.T) {
 	m := f1Load(t, filepath.Join("..", "testdata", "llama-tiny"))
 	_, f32 := f1Arms(m)
-	c := rowPadArms(t, true, 64, func() *KVCache { return f32.NewCache(16) })
+	c := rowPadArms(t, true, rowPadTestAlign, func() *KVCache { return f32.NewCache(16) })
 	for name, fn := range map[string]func(){"Keys": func() { c.Keys(0) }, "Vals": func() { c.Vals(0) }} {
 		func() {
 			defer func() {

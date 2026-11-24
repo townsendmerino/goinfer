@@ -886,7 +886,7 @@ func (m *Model) NewCache(capHint int) *KVCache {
 	// can read. ringLayerAt names them, the same predicate that gave them no reservation above; a family whose forward does not
 	// use attendQuery/attendBatchedHeads (kvRingsOK) has none and keeps append-forever.
 	c.enableRings(a.SlidingWindow, func(l int) bool { return !a.ringLayerAt(l) })
-	defer c.setRowPad(a) // after every hybrid and MLA field is set, which it declines
+	defer c.setRowPad(a, kvCapHint) // after every hybrid and MLA field is set, which it declines
 	if a.gemma4 != nil {
 		c.manualPos = true // gemma4's last layer is KV-shared; pos advances via Advance()
 	}
