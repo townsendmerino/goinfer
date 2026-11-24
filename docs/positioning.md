@@ -22,7 +22,7 @@ and runs them **in-process**. What makes it different — you don't have to choo
   toolkit's gigabytes, decoding qwen2.5-coder-1.5B at **220.8 tok/s** at short context — measured
   2026-08-26 on driver 595.91.07; numbers and the peer comparison
   below), **native Metal** on Apple Silicon,
-  and a portable **WebGPU** backend (runs on *any* GPU and streams bigger-than-VRAM MoE weights).
+  and a portable **WebGPU** backend (run so far on NVIDIA over Vulkan, Apple over Metal and Intel integrated over Vulkan, not yet on AMD or DX12; see [`gpu-vendor-coverage.md`](gpu-vendor-coverage.md); it streams bigger-than-VRAM MoE weights).
   Its standing ~60–70%-of-native figure is narrower and older than it reads: **dense-Qwen2/Llama
   residency decode only**, measured 2026-06-08 against a 2025-era peer, so it is not a current
   ratio. Which families each backend runs GPU-resident is generated from the admission predicate,

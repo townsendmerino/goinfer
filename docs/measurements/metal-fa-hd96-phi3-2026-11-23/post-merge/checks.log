@@ -1,0 +1,15 @@
+go.work exists; left alone
+764bc044c Merge origin/main into metal-fa-hd96: Metal keeps the exact path under CUDA's new hd-96 default
+--- PASS: TestAttnDigest_mc3RowsOtherGeometries (9.22s)
+    --- PASS: TestAttnDigest_mc3RowsOtherGeometries/hd64-G7 (3.65s)
+    --- PASS: TestAttnDigest_mc3RowsOtherGeometries/hd128-G4-legacy (2.90s)
+    --- PASS: TestAttnDigest_mc3RowsOtherGeometries/hd96-G1 (2.67s)
+--- PASS: TestFlashDecodeHD96_metalSelection (0.44s)
+    --- PASS: TestFlashDecodeHD96_metalSelection/not_given (0.15s)
+    --- PASS: TestFlashDecodeHD96_metalSelection/chosen (0.14s)
+    --- PASS: TestFlashDecodeHD96_metalSelection/the_caller's_default (0.14s)
+--- PASS: TestAttnFAHeadDimOK_hd96 (0.00s)
+ok  	github.com/townsendmerino/goinfer/backend/metal	10.274s
+arm 'no flag': ATTNFA hd=96 lines 0
+arm '-flash-decode-hd96': ATTNFA hd=96 lines 160
+EXIT 0

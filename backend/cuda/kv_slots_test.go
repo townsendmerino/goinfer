@@ -24,6 +24,7 @@ import (
 	"flag"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -1141,6 +1142,52 @@ func countedDecode(t *testing.T, m *decoder.Model, r *cudaResident, id, pos int)
 	return c.Report(), append([]float32(nil), lg...)
 }
 
+// TestCost_cudaDecodeLaunchCensus prints one decode token's launches per kernel on a real checkpoint (CENSUS_MODEL, a .gguf, at
+// CENSUS_QUANT) after prefilling CENSUS_DEPTH positions (default 128), from the same counters TestCost_cudaDecodeExact grades: each
+// kernel's launches for the token, the total, and the total per layer. A measurement tool: it skips unless CENSUS_MODEL is set.
+func TestCost_cudaDecodeLaunchCensus(t *testing.T) {
+	path := os.Getenv("CENSUS_MODEL")
+	if path == "" {
+		t.Skip("set CENSUS_MODEL (and CENSUS_QUANT, CENSUS_DEPTH)")
+	}
+	requireCUDADevice(t)
+	depth := 128
+	if v, err := strconv.Atoi(os.Getenv("CENSUS_DEPTH")); err == nil {
+		depth = v
+	}
+	m, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: os.Getenv("CENSUS_QUANT"), ResidentContext: depth + 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	r, ok := m.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatalf("not resident: %s", m.ResidentDecline())
+	}
+	for pos := range depth {
+		if _, err := r.Forward(m.EmbedResidentForTest(1000), pos); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rep, _ := countedDecode(t, m, r, 1000, depth)
+	got := sb11Counts(rep)
+	names := make([]string, 0, len(got))
+	var total int64
+	for n, c := range got {
+		names = append(names, n)
+		total += c[0]
+	}
+	sort.Slice(names, func(i, j int) bool {
+		return got[names[i]][0] > got[names[j]][0] || got[names[i]][0] == got[names[j]][0] && names[i] < names[j]
+	})
+	for _, n := range names {
+		c := got[n]
+		t.Logf("census %-20s launches %5d  per layer %6.2f  syncs %d", n, c[0], float64(c[0])/float64(r.nLayers), c[1])
+	}
+	t.Logf("census total: %d launches a token, %d layers, %.2f a layer (fuseQKV %v, fuseG32 %v, actG32 %v, hidden %d)",
+		total, r.nLayers, float64(total)/float64(r.nLayers), r.fuseQKV, r.fuseG32, r.actG32, r.hidden)
+}
+
 // TestCost_cudaDecodeExact (G-SB11-8, G-SB11-9, part of G-SB11-11): llama-tiny resident on CUDA. Tokens 2 to 4 each count the
 // same per-kernel launches, syncs and allocations, equal to the committed golden; their per-kernel launches sum to the device's
 // own count (no launch_other); a steady token allocates nothing; logits match the uncounted token's bit for bit; and the two plants
@@ -1237,6 +1284,71 @@ func TestCost_cudaDecodeExact(t *testing.T) {
 	rep, _ = countedDecode(t, m, r, 11, 6)
 	if got := sb11Counts(rep)["sync"][1]; got != want["sync"][1]+1 {
 		t.Errorf("the extra-sync plant gives %d syncs, want %d", got, want["sync"][1]+1)
+	}
+}
+
+// TestLaunchToken_queuedRowsReadTheirOwnEmbedding: tokens launched back to back with no host wait between them each read their own
+// embedding row. launchToken copies the row on the stream without synchronizing, so each copy must land after the previous token's
+// launches and before its own, and the row must be consumed before the call returns; the logits must equal the same tokens run one
+// forward at a time. Memsets queued ahead of each token keep its copy behind the device, which a tiny model's kernels alone do not:
+// without them the host never gets ahead and a misordered or late copy passes. Each row is overwritten after its launch, so a copy
+// that read its source late would read the wrong row.
+func TestLaunchToken_queuedRowsReadTheirOwnEmbedding(t *testing.T) {
+	requireCUDADevice(t)
+	m, err := decoder.Load(filepath.Join("../../testdata/llama-tiny"), decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	r, ok := m.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatalf("not resident: %s", m.ResidentDecline())
+	}
+	const n = 6
+	rows := make([][]float32, n)
+	for i := range rows {
+		rows[i] = m.EmbedResidentForTest(3 + 7*i)
+	}
+	var want []float32
+	for pos, e := range rows {
+		lg, err := r.Forward(e, pos)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want = append(want[:0], lg...)
+	}
+	got := make([]float32, len(want))
+	if err := r.do(func() error {
+		if e := r.resetState(); e != nil {
+			return e
+		}
+		const busyBytes = 64 << 20
+		busy := r.dev.NewBufferBytes(busyBytes)
+		for pos, e := range rows {
+			for range 8 {
+				if e := r.stream.ZeroAsync(busy, busyBytes); e != nil {
+					return e
+				}
+			}
+			row := append([]float32(nil), e...)
+			if e := r.launchToken(row, pos, pos, pos == n-1); e != nil {
+				return e
+			}
+			for i := range row {
+				row[i] = float32(math.NaN())
+			}
+		}
+		if e := r.stream.Sync(); e != nil {
+			return e
+		}
+		return gpu.Download(r.logits, got)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("logit %d: %v queued back to back, %v one forward at a time", i, got[i], want[i])
+		}
 	}
 }
 

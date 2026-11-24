@@ -1,0 +1,2 @@
+5f84282e94a353c12b5a15dad0855a53affd7248a3fbe270357ca052edbfccc1  /Users/francistownsend-merino/goinfer-bench/gemm/bin/serve-metal-base
+5586ccc6786f9162e84c5e360fd90274e81732daeb828006c1e3d45f5b17076b  /Users/francistownsend-merino/goinfer-bench/gemm/bin/serve-metal-prefetch

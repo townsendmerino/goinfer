@@ -1,0 +1,40 @@
+=== RUN   TestCPUKVF16GateVsReference
+=== RUN   TestCPUKVF16GateVsReference/Q05-K3900
+[cpu-kv-gate] Q05 K=3900: A/A bit-identical over 64 rows; KV bytes at depth 3963: f32 97394688, f16 48697344
+[cpu-kv-gate] Q05 K=3900 prompt  1/10 f32(agree=79.7% HF=5 KL=0.18346) f16(agree=81.2% HF=4 KL=0.19331) diff(agree=+1.56pt KL=+0.00985) differ=true elapsed=1m43s
+[cpu-kv-gate] Q05 K=3900 prompt  2/10 f32(agree=81.2% HF=4 KL=0.14727) f16(agree=81.2% HF=3 KL=0.15040) diff(agree=+0.00pt KL=+0.00313) differ=true elapsed=2m55s
+[cpu-kv-gate] Q05 K=3900 prompt  3/10 f32(agree=87.5% HF=1 KL=0.26881) f16(agree=89.1% HF=1 KL=0.26922) diff(agree=+1.56pt KL=+0.00040) differ=true elapsed=4m3s
+[cpu-kv-gate] Q05 K=3900 prompt  4/10 f32(agree=90.6% HF=3 KL=0.14749) f16(agree=95.3% HF=1 KL=0.13657) diff(agree=+4.69pt KL=-0.01092) differ=true elapsed=5m11s
+[cpu-kv-gate] Q05 K=3900 prompt  5/10 f32(agree=92.2% HF=2 KL=0.06400) f16(agree=93.8% HF=2 KL=0.06603) diff(agree=+1.56pt KL=+0.00203) differ=true elapsed=6m17s
+[cpu-kv-gate] Q05 K=3900 prompt  6/10 f32(agree=79.7% HF=5 KL=0.22946) f16(agree=79.7% HF=4 KL=0.24066) diff(agree=+0.00pt KL=+0.01120) differ=true elapsed=7m25s
+[cpu-kv-gate] Q05 K=3900 prompt  7/10 f32(agree=87.5% HF=2 KL=0.16313) f16(agree=85.9% HF=3 KL=0.17729) diff(agree=-1.56pt KL=+0.01415) differ=true elapsed=8m33s
+[cpu-kv-gate] Q05 K=3900 prompt  8/10 f32(agree=89.1% HF=1 KL=0.11468) f16(agree=89.1% HF=1 KL=0.11258) diff(agree=+0.00pt KL=-0.00210) differ=true elapsed=9m41s
+[cpu-kv-gate] Q05 K=3900 prompt  9/10 f32(agree=82.8% HF=4 KL=0.20522) f16(agree=82.8% HF=5 KL=0.20888) diff(agree=+0.00pt KL=+0.00366) differ=true elapsed=10m49s
+[cpu-kv-gate] Q05 K=3900 prompt 10/10 f32(agree=96.9% HF=2 KL=0.08382) f16(agree=96.9% HF=2 KL=0.09079) diff(agree=+0.00pt KL=+0.00697) differ=true elapsed=12m0s
+=== CPU KV F16 GATE Q05 K=3900 (set b, n=10): f32(meanAgree=86.72% HF=29 meanKL=0.160735) f16(meanAgree=87.50% HF=26 meanKL=0.164572) pairedWins=9/10 critA=true [strict true] critB=true critC=true KLratio=1.0239 — PASSES ===
+--- PASS: TestCPUKVF16GateVsReference (720.67s)
+    --- PASS: TestCPUKVF16GateVsReference/Q05-K3900 (720.67s)
+PASS
+	Command being timed: "/home/francis/goinfer-bench/cpu-kv-run/bin/decoder-d1cdda1bb.test -test.run ^TestCPUKVF16GateVsReference$ -test.v -test.timeout 2h"
+	User time (seconds): 4266.56
+	System time (seconds): 21.69
+	Percent of CPU this job got: 595%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 12:00.69
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 1894704
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 44
+	Minor (reclaiming a frame) page faults: 414641
+	Voluntary context switches: 1741612
+	Involuntary context switches: 498185
+	Swaps: 0
+	File system inputs: 1394336
+	File system outputs: 88
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

@@ -172,6 +172,49 @@ func heavyPartition(listed []string, refs map[string][]string, modelEntries []st
 	return groups, problems
 }
 
+// heavyGateMark stands in testReachableLiterals' output for a call to testgate.RequireHeavy, the heavy check that carries no
+// literal of its own. It matches no heavyFamilies row and no checkpoint shape.
+const heavyGateMark = "\x00testgate.RequireHeavy"
+
+// reachesHeavyCheck reports whether a test's reachable literals include a heavy check: the GOINFER_HEAVY_TESTS name or a
+// testgate.RequireHeavy call.
+func reachesHeavyCheck(lits []string) bool {
+	return slices.Contains(lits, "GOINFER_HEAVY_TESTS") || slices.Contains(lits, heavyGateMark)
+}
+
+// heavyMainGroups is heavyPartition with the shared group restricted to tests that reach a heavy check. A small-group test
+// that reaches none returns in parityOnly instead: the parity cell runs the whole package without the heavy opt-in, so it
+// already runs that test. keep names the tests that stay whatever they reach (the drain and fresh-process markers' tests,
+// whose skip tokens the tier reconciles in the main group). A family group is not restricted.
+func heavyMainGroups(listed []string, refs map[string][]string, modelEntries, keep []string) (groups []heavyGroup, parityOnly, problems []string) {
+	groups, problems = heavyPartition(listed, refs, modelEntries)
+	out := groups[:0]
+	for _, g := range groups {
+		if g.Label != heavySmallGroup {
+			out = append(out, g)
+			continue
+		}
+		var stay []string
+		for _, n := range g.Tests {
+			if reachesHeavyCheck(refs[n]) || slices.Contains(keep, n) {
+				stay = append(stay, n)
+			} else {
+				parityOnly = append(parityOnly, n)
+			}
+		}
+		if len(stay) == 0 {
+			continue
+		}
+		quoted := make([]string, len(stay))
+		for i, n := range stay {
+			quoted[i] = regexp.QuoteMeta(n)
+		}
+		g.Tests, g.Run = stay, "^("+strings.Join(quoted, "|")+")$"
+		out = append(out, g)
+	}
+	return out, parityOnly, problems
+}
+
 // namesEntry reports whether any path segment of l is an entry of the models directory.
 func namesEntry(l string, entries map[string]bool) bool {
 	for seg := range strings.SplitSeq(l, "/") {
@@ -218,6 +261,9 @@ func testReachableLiterals(dir string, tags []string, assetsJSON string) (map[st
 				uses[name][n.Name] = true
 			case *ast.SelectorExpr:
 				uses[name]["method:"+n.Sel.Name] = true
+				if x, ok := n.X.(*ast.Ident); ok && x.Name == "testgate" && n.Sel.Name == "RequireHeavy" {
+					lits[name][heavyGateMark] = true
+				}
 			}
 			return true
 		})
@@ -356,18 +402,23 @@ func runCUDAHeavy(argv []string, w io.Writer) int {
 		fmt.Fprintf(w, "gate cuda-heavy: `go test -list` found no tests in ./cuda/ (%v)\n", err)
 		return 1
 	}
-	groups, problems, err := partitionHeavy(listed, g.models)
+	groups, parityOnly, problems, err := partitionHeavy(listed, g.models, append(drainingTests(), isolatedTests()...))
 	if err != nil {
 		fmt.Fprintf(w, "gate cuda-heavy: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(w, "%d test(s) in ./cuda/, %d main-group process(es):\n", len(listed), len(groups))
+	fmt.Fprintf(w, "%d test(s) in ./cuda/, %d main-group process(es), %d left to the parity cell (no heavy check):\n", len(listed), len(groups), len(parityOnly))
 	for _, h := range groups {
 		fmt.Fprintf(w, "  %-14s %d test(s)\n", h.Label, len(h.Tests))
 		if *list {
 			for _, t := range h.Tests {
 				fmt.Fprintf(w, "      %s\n", t)
 			}
+		}
+	}
+	if *list {
+		for _, t := range parityOnly {
+			fmt.Fprintf(w, "  parity-only    %s\n", t)
 		}
 	}
 	for _, p := range problems {

@@ -1,0 +1,40 @@
+start 2026-11-23T12:56:07-08:00 load 0.93 4.67 5.46 memavail_mib 60581 swap_used_mib 910
+=== RUN   TestCPUAttnShareProbe
+[attn-share] prefill to 3900 took 6m44.516s; KV quant 0
+[attn-share] attention      210.97 ms/token   65.9% of wall
+[attn-share] ffn             67.07 ms/token   20.9% of wall
+[attn-share] proj_qkv        28.29 ms/token    8.8% of wall
+[attn-share] proj_o           8.54 ms/token    2.7% of wall
+[attn-share] lm_head          3.74 ms/token    1.2% of wall
+[attn-share] rope             0.44 ms/token    0.1% of wall
+[attn-share] norm             0.38 ms/token    0.1% of wall
+[attn-share] residual         0.21 ms/token    0.1% of wall
+[attn-share] final_norm       0.00 ms/token    0.0% of wall
+[attn-share] embed            0.00 ms/token    0.0% of wall
+=== ATTN SHARE depth=3900 tokens=32: wall 320.22 ms/token (3.12 tok/s), ops summed 99.8% of wall, attention 210.97 ms/token = 65.9% of decode wall; attention bytes read 3081 MB/token ===
+--- PASS: TestCPUAttnShareProbe (415.52s)
+PASS
+	Command being timed: "/home/francis/goinfer-bench/cpu-kv-run/bin/decoder-d1cdda1bb.test -test.run ^TestCPUAttnShareProbe$ -test.v -test.timeout 30m"
+	User time (seconds): 2909.02
+	System time (seconds): 8.29
+	Percent of CPU this job got: 702%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 6:55.54
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 6154804
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 35504
+	Voluntary context switches: 226220
+	Involuntary context switches: 162764
+	Swaps: 0
+	File system inputs: 24
+	File system outputs: 8
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
+end 2026-11-23T13:03:03-08:00 swap_used_mib 860

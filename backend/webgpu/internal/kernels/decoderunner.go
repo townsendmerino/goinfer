@@ -72,12 +72,13 @@ type DecodeRunner struct {
 	mcapProj, mcapConv, mcapY, mcapGated *wgpu.Buffer
 
 	// Per-layer residual-stream capture, built only when GOINFER_GPU_CAPTURE is set (nothing is allocated or recorded
-	// otherwise): for each generic-attention layer, the attention context (pre-o-proj, [nH*hd]) and the residual after the
-	// attention add and after the MLP add ([hidden] each), copied by an extra kv-store dispatch recorded into the plan. They
-	// hold the LAST run's values; ReadCapture reads them back. The WebGPU twin of decoder.Model.ForwardSubCapture, so a
-	// resident-vs-CPU divergence can be localised to a sublayer of a layer in one run.
+	// otherwise): for each generic-attention layer, the attention context (pre-o-proj, [nH*hd] at the layer's own head width,
+	// capCtxW) and the residual after the attention add and after the MLP add ([hidden] each), copied by an extra kv-store
+	// dispatch recorded into the plan. They hold the LAST run's values; ReadCapture reads them back. The WebGPU twin of
+	// decoder.Model.ForwardSubCapture, so a resident-vs-CPU divergence can be localised to a sublayer of a layer in one run.
 	capCtx, capAttn, capMLP []*wgpu.Buffer
-	capCtxN, capHidden      int
+	capCtxW                 []int
+	capHidden               int
 
 	// Compute-time LoRA (lora_resident.go). baseSteps is the pristine adapter-free plan: SetAdapter never mutates it, only
 	// rebuilds r.steps from it plus loraHooks (one per (layer, projection) the dense forward exposes, recorded in strictly
@@ -1168,7 +1169,6 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 	}
 	if captureOn {
 		r.capHidden = hidden
-		r.capCtxN = nH * hd
 	}
 
 	// A bound (all-zero) bias buffer for MoE layers without a selection bias
@@ -1441,6 +1441,7 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 			}
 			if captureOn { // the pre-o-proj context — decoder's subCtx[l]
 				r.capCtx = append(r.capCtx, capStep(ctxv, nH*g.hd))
+				r.capCtxW = append(r.capCtxW, nH*g.hd)
 			}
 			cq, cs := quant(ctxv, nH*g.hd)
 			// FeatOutBias (gpt-oss o_proj bias) and FeatSandwichNorm (Gemma's post-attn norm) need the sublayer output BEFORE the
@@ -1776,10 +1777,10 @@ func (r *DecodeRunner) ReadCapture() (ctx, attn, mlp [][]float32, err error) {
 		stag.TryUnmap()
 		return out, nil
 	}
-	read := func(bufs []*wgpu.Buffer, n int) ([][]float32, error) {
+	read := func(bufs []*wgpu.Buffer, n func(i int) int) ([][]float32, error) {
 		out := make([][]float32, len(bufs))
 		for i, b := range bufs {
-			v, e := rd(b, n)
+			v, e := rd(b, n(i))
 			if e != nil {
 				return nil, e
 			}
@@ -1787,13 +1788,14 @@ func (r *DecodeRunner) ReadCapture() (ctx, attn, mlp [][]float32, err error) {
 		}
 		return out, nil
 	}
-	if ctx, err = read(r.capCtx, r.capCtxN); err != nil {
+	hiddenW := func(int) int { return r.capHidden }
+	if ctx, err = read(r.capCtx, func(i int) int { return r.capCtxW[i] }); err != nil {
 		return nil, nil, nil, err
 	}
-	if attn, err = read(r.capAttn, r.capHidden); err != nil {
+	if attn, err = read(r.capAttn, hiddenW); err != nil {
 		return nil, nil, nil, err
 	}
-	if mlp, err = read(r.capMLP, r.capHidden); err != nil {
+	if mlp, err = read(r.capMLP, hiddenW); err != nil {
 		return nil, nil, nil, err
 	}
 	return ctx, attn, mlp, nil

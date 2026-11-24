@@ -1,0 +1,50 @@
+=== RUN   TestDecode_dispatchProfile
+    decode_dispatch_profile_test.go:123: resident plan: 366 dispatches/token across 7 pipeline classes
+    decode_dispatch_profile_test.go:124: geometry: hidden=1536 layers=28 nH=12 nKV=2 headDim=128 inter=8960 vocab=151936  (kvDim=256, KV bytes/pos/layer=2048)
+    decode_dispatch_profile_test.go:186: 
+    decode_dispatch_profile_test.go:187: === pos=128 — full plan 20.490 ms/token (366 dispatches) ===
+    decode_dispatch_profile_test.go:205: pipeline class              n/token  ablation ms  % token
+    decode_dispatch_profile_test.go:207: gemvPipeline                    113       12.917    63.0%
+    decode_dispatch_profile_test.go:207: attnKeysPipeline                 28        1.783     8.7%
+    decode_dispatch_profile_test.go:207: rmsQuantPipeline                 57        0.884     4.3%
+    decode_dispatch_profile_test.go:207: gemvBiasPipeline                 84        0.836     4.1%
+    decode_dispatch_profile_test.go:207: swigluQuantPipeline              28        0.685     3.3%
+    decode_dispatch_profile_test.go:207: quantizePipeline                 28        0.343     1.7%
+    decode_dispatch_profile_test.go:207: qkvFinPipeline                   28       -0.249    -1.2%
+    decode_dispatch_profile_test.go:209: TOTAL                           366       17.199    83.9%  (sum of parts; >100% ⇒ overlap, <100% ⇒ unattributed)
+    decode_dispatch_profile_test.go:186: 
+    decode_dispatch_profile_test.go:187: === pos=2048 — full plan 48.531 ms/token (366 dispatches) ===
+    decode_dispatch_profile_test.go:205: pipeline class              n/token  ablation ms  % token
+    decode_dispatch_profile_test.go:207: attnKeysPipeline                 28       29.748    61.3%
+    decode_dispatch_profile_test.go:207: gemvPipeline                    113       13.018    26.8%
+    decode_dispatch_profile_test.go:207: gemvBiasPipeline                 84        1.040     2.1%
+    decode_dispatch_profile_test.go:207: rmsQuantPipeline                 57        1.002     2.1%
+    decode_dispatch_profile_test.go:207: swigluQuantPipeline              28        0.015     0.0%
+    decode_dispatch_profile_test.go:207: qkvFinPipeline                   28       -0.489    -1.0%
+    decode_dispatch_profile_test.go:207: quantizePipeline                 28       -0.579    -1.2%
+    decode_dispatch_profile_test.go:209: TOTAL                           366       43.754    90.2%  (sum of parts; >100% ⇒ overlap, <100% ⇒ unattributed)
+    decode_dispatch_profile_test.go:186: 
+    decode_dispatch_profile_test.go:187: === pos=8192 — full plan 143.703 ms/token (366 dispatches) ===
+    decode_dispatch_profile_test.go:205: pipeline class              n/token  ablation ms  % token
+    decode_dispatch_profile_test.go:207: attnKeysPipeline                 28      125.238    87.2%
+    decode_dispatch_profile_test.go:207: gemvPipeline                    113       13.015     9.1%
+    decode_dispatch_profile_test.go:207: swigluQuantPipeline              28        5.087     3.5%
+    decode_dispatch_profile_test.go:207: quantizePipeline                 28        4.245     3.0%
+    decode_dispatch_profile_test.go:207: qkvFinPipeline                   28        2.263     1.6%
+    decode_dispatch_profile_test.go:207: rmsQuantPipeline                 57        1.525     1.1%
+    decode_dispatch_profile_test.go:207: gemvBiasPipeline                 84       -0.725    -0.5%
+    decode_dispatch_profile_test.go:209: TOTAL                           366      150.648   104.8%  (sum of parts; >100% ⇒ overlap, <100% ⇒ unattributed)
+    decode_dispatch_profile_test.go:186: 
+    decode_dispatch_profile_test.go:187: === pos=16384 — full plan 259.132 ms/token (366 dispatches) ===
+    decode_dispatch_profile_test.go:205: pipeline class              n/token  ablation ms  % token
+    decode_dispatch_profile_test.go:207: attnKeysPipeline                 28      240.666    92.9%
+    decode_dispatch_profile_test.go:207: gemvPipeline                    113       13.133     5.1%
+    decode_dispatch_profile_test.go:207: rmsQuantPipeline                 57        5.910     2.3%
+    decode_dispatch_profile_test.go:207: quantizePipeline                 28       -4.648    -1.8%
+    decode_dispatch_profile_test.go:207: gemvBiasPipeline                 84       -5.205    -2.0%
+    decode_dispatch_profile_test.go:207: swigluQuantPipeline              28       -7.936    -3.1%
+    decode_dispatch_profile_test.go:207: qkvFinPipeline                   28      -13.470    -5.2%
+    decode_dispatch_profile_test.go:209: TOTAL                           366      228.450    88.2%  (sum of parts; >100% ⇒ overlap, <100% ⇒ unattributed)
+--- PASS: TestDecode_dispatchProfile (2598.62s)
+PASS
+ledger: 2 Context(s) closed in this run

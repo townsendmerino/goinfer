@@ -1,0 +1,6 @@
+=== RUN   TestPrefill_dispatchProfile
+    prefill_dispatch_profile_test.go:66: geometry: hidden=1536 layers=28 nH=12 nKV=2 headDim=128 inter=8960 vocab=151936
+    prefill_dispatch_profile_test.go:114: warm-up PrefillLast: gpu: PrefillLast declines — q/k/v bias on backend "metal" is not yet verified bit-exact (Vulkan only for now)
+--- FAIL: TestPrefill_dispatchProfile (6.18s)
+FAIL
+ledger: 5 Context(s) closed in this run

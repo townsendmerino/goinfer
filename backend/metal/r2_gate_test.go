@@ -98,8 +98,15 @@ func runDecodeFidelityGate(t *testing.T, tag, candName string, prep func(t *test
 		}
 	}
 
+	// GOINFER_METAL_GATE_QUANT loads the model at another quant (Phi-3's P3M cell: q4k, its default), and
+	// GOINFER_METAL_GATE_HD96=1 sets Options.FlashDecodeHD96, without which an hd = 96 model has no attention_fa to grade.
+	quant := os.Getenv("GOINFER_METAL_GATE_QUANT")
+	if quant == "" {
+		quant = "int4"
+	}
 	t.Setenv("GOINFER_METAL_ATTN_FA", "0") // kernel OFF at build; toggled at runtime below
-	m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: K + contN + 8})
+	m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: quant, ResidentContext: K + contN + 8,
+		FlashDecodeHD96: os.Getenv("GOINFER_METAL_GATE_HD96") == "1"})
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}

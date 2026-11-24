@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
 // The gpu gate's CUDA heavy tier as graders: the partition block, each main-group
@@ -27,13 +28,18 @@ type heavyInput struct {
 	PartitionErr string       `json:"partition_err,omitempty"`
 	KernelsErr   string       `json:"kernels_err,omitempty"`
 	Kernels      int          `json:"kernels,omitempty"`
-	Listed       []string     `json:"listed,omitempty"` // every test the main group's processes must account for: ./cuda/'s and the kernels package's
+	Listed       []string     `json:"listed,omitempty"`      // every test the main group's processes must account for: ./cuda/'s and the kernels package's, less ParityOnly
+	ParityOnly   []string     `json:"parity_only,omitempty"` // ./cuda/ tests that reach no heavy check: the parity cell runs them, the main group does not
 	Groups       []heavyGroup `json:"groups,omitempty"`
 	Problems     []string     `json:"problems,omitempty"`
 	Iso          []string     `json:"iso,omitempty"`
 	Run          []string     `json:"run,omitempty"` // -heavy-group: the groups this run is narrowed to; none runs every group
 	Peaks        []procPeak   `json:"peaks,omitempty"`
 	Secs         int          `json:"secs,omitempty"`
+	// The budget each main-group process ran against (heavyBudgets), in seconds; a record without one grades none.
+	BudgetS       int            `json:"budget_s,omitempty"`
+	BudgetExceptS map[string]int `json:"budget_except_s,omitempty"`
+	BudgetErr     string         `json:"budget_err,omitempty"`
 }
 
 // gradeHeavyStart is the tier's verdicts before any process runs, and whether the processes run: a skipped tier, an empty
@@ -57,6 +63,9 @@ func gradeHeavyStart(in heavyInput) ([]groupVerdict, bool) {
 	case in.PartitionErr != "":
 		return append(out, groupVerdict{State: groupFail, Line: "heavy tier partition: " + in.PartitionErr,
 			Notes: []string{"heavy tier did not run: the model-family derivation could not read cuda/*_test.go"}}), false
+	case in.BudgetErr != "":
+		return append(out, groupVerdict{State: groupFail, Line: "heavy tier: the process budget table is refused: " + in.BudgetErr,
+			Notes: []string{"heavy tier did not run: heavyBudgetExceptions has an entry without its budget, reason or review (cmd/gate/gpu.go)"}}), false
 	case in.KernelsErr != "" || in.Kernels == 0:
 		return append(out, groupVerdict{State: groupFail,
 			Line:  fmt.Sprintf("heavy tier: `go test -list` found no tests in %s (%s)", cudaKernelsPkg, errText(in.KernelsErr)),
@@ -66,8 +75,11 @@ func gradeHeavyStart(in heavyInput) ([]groupVerdict, bool) {
 		"      partition (drain group from drainsDevice() in cuda/drain_marker_test.go; main group by model family, heavyFamilies):",
 		fmt.Sprintf("        package total     %d test(s)   [go test -list '.*'], plus %d in %s", in.Total, in.Kernels, cudaKernelsPkg),
 		fmt.Sprintf("        drain group        %d test(s)   %s", len(in.Drain), strings.Join(in.Drain, " ")),
-		fmt.Sprintf("        main group         %d test(s)   [complement, by construction], %d process(es):", in.Total-len(in.Drain), len(in.Groups)),
 	}
+	if len(in.ParityOnly) > 0 {
+		lines = append(lines, fmt.Sprintf("        parity cell only   %d test(s)   [no heavy check: the parity cell runs them]", len(in.ParityOnly)))
+	}
+	lines = append(lines, fmt.Sprintf("        main group         %d test(s)   [complement, by construction], %d process(es):", in.Total-len(in.Drain)-len(in.ParityOnly), len(in.Groups)))
 	for _, h := range in.Groups {
 		lines = append(lines, fmt.Sprintf("          %-14s %d test(s)", h.Label, len(h.Tests)))
 	}
@@ -172,6 +184,21 @@ func heavyProcLines(h heavyGroup, cr cellResult, p procPeak, out string) ([]stri
 		lines = append(lines, fmt.Sprintf("      %s full output: %s", h.Label, cr.LogPath))
 	}
 	return lines, notes, rec
+}
+
+// gradeHeavyBudget fails a main-group process whose wall is over its budget: its exception's, or the per-process one. A
+// record that carries no budget grades none.
+func gradeHeavyBudget(label string, wallS int, in heavyInput) (groupVerdict, bool) {
+	budget, ok := in.BudgetExceptS[label]
+	if !ok {
+		budget = in.BudgetS
+	}
+	if budget == 0 || wallS <= budget {
+		return groupVerdict{}, false
+	}
+	return groupVerdict{State: groupFail, Line: fmt.Sprintf("heavy process %s took %ds (%s), over its %ds budget (%s)", label, wallS,
+		time.Duration(wallS)*time.Second, budget, time.Duration(budget)*time.Second),
+		Notes: []string{fmt.Sprintf("heavy process %s over its time budget: %ds against %ds", label, wallS, budget)}}, true
 }
 
 // gradeHeavySplit reconciles the main group's processes against the listing: every listed test must have a result in exactly

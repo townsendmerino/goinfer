@@ -25,7 +25,7 @@ func (L *cudaLayer) routedFFN() bool {
 func (r *cudaResident) emitInputNorm(form program.NormForm, src, nrm, qOut, sOut Buffer) error {
 	switch form {
 	case program.NormCopy:
-		return r.launch(r.fQ, onecfg(256, 256*4), Arg(src), gpu.ArgValue(int32(r.hidden)), Arg(qOut), Arg(sOut))
+		return r.launch(r.fQ, r.actCfg(256, 256*4, r.hidden), Arg(src), gpu.ArgValue(int32(r.hidden)), Arg(qOut), Arg(sOut))
 	case program.NormLayer:
 		return r.layerNormQuant(src, nrm, qOut, sOut)
 	default:

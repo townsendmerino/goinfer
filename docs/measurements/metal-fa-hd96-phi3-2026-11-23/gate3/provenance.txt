@@ -1,0 +1,7 @@
+started: 2026-11-23 09:25:21 PST
+binary: /Users/francistownsend-merino/goinfer-bench/hd96/bin/serve-metal-hd96 sha256 ef7999e4487f6d61
+host: MacBookPro macOS 26.7.3
+load: { 1.06 0.97 1.34 }
+power: Now drawing from 'AC Power'
+swap: total = 2048.00M  used = 513.00M  free = 1535.00M  (encrypted)
+finished: 2026-11-23 09:34:11 PST rc=0

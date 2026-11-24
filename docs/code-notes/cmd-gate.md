@@ -331,6 +331,11 @@ group as one process per model family, so no process holds two large checkpoints
   Qwen3.6-35B, gpt-oss-20b, the 7-8B group, Gemma 4 E4B) each get a process; the 2-4B families with many tests (Gemma 3 4B, Qwen3-4B
   and its drafter, Qwen3-VL-2B, Qwen2.5-VL-3B, GLM-OCR, Gemma 4 E2B) also get one each, which keeps every process under about 20 min of
   test time; everything else, about 1.5B and smaller and the tiny fixtures, shares `small`.
+- **`small` runs only tests with a heavy check** (Francis, 2026-11-23, H1). The parity cell runs the whole package without the heavy
+  opt-in, so a test that reaches neither the `GOINFER_HEAVY_TESTS` name nor a `testgate.RequireHeavy` call (`reachesHeavyCheck`) ran
+  twice. `heavyMainGroups` leaves such a test to the parity cell (the partition's "parity cell only" line, the record's
+  `parity_only`), except the drain and fresh-process markers' tests, whose skip tokens the tier reconciles in the main group. Family
+  groups are not restricted. `docs/measurements/h1-heavy-tier-triage-2026-11-23.md` has the triage.
 - **Assignment is derived, not listed.** `testReachableLiterals` walks each test's body and every package-level declaration it names,
   transitively, and collects the string literals; an asset-registry key contributes its candidate paths. The test goes to the group of
   the highest-ranked family any literal matches. Matching by name over-approximates (a subtest label such as `"qwen3.6-35b-a3b"` in
