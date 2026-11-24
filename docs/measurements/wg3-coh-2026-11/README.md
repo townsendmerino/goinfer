@@ -51,3 +51,10 @@ rounding (f32 order, and the occasional int8 code that rounds the other way) com
 to. The CPU against itself with ±1-ULP norm noise is lowest at the same position (0.948670), and the first capture's
 2-4× excess from layer 12 on is that compounding seen without the isolation. Per the registration this goes to Francis
 recommending a recorded acceptance of the worst-position miss and arming #1255.
+
+## Decision
+
+Accepted (Francis, 2026-11-24): Command-R7B's worst-position miss on WebGPU (0.860 at prompt position 13, against the
+0.90 worst-position bar; mean 0.99004 against 0.99, met) is recorded as accepted, because the layer-isolated capture shows
+every resident layer equal to the CPU's to the f32 floor, so the miss is ordinary rounding compounded at a sensitive
+token rather than a WebGPU defect. #1255 is armed on it.
