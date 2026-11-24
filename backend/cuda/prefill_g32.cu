@@ -48,9 +48,10 @@ __global__ void quant_vec_g32_batched(const float* __restrict__ x, int N, int* _
     quantG32(x + (long)m * N, N / 32, q + (long)m * (N / 4), scale + (long)m * 2 * (N / 32));
 }
 
-// glu_quant_g32_batched: glu_quant_g32 per row, grid.x = M, with glu_quant_batched's argument list. The product act(g)·u is
-// written back over the gate row (glu_quant_batched's convention; g carries no __restrict__) and quantized after the barrier,
-// which makes the block's global writes visible to the quantizing threads.
+// glu_quant_g32_batched: glu_quant_g32 per row, grid.x = M, with glu_quant_batched's argument list. g is [M, I], and u is [M, I]
+// row-major from u + uOff (row stride I, as glu_quant_batched reads it), so a gate‖up buffer of row stride 2I is not a valid u.
+// The product act(g)·u is written back over the gate row (glu_quant_batched's convention; g carries no __restrict__) and
+// quantized after the barrier, which makes the block's global writes visible to the quantizing threads.
 __global__ void glu_quant_g32_batched(float* g, const float* __restrict__ u, int uOff, int I, int act,
                                       int* __restrict__ q, float* __restrict__ scale, int M) {
     int m = blockIdx.x;

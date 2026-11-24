@@ -662,6 +662,15 @@
         },
         {
           "vars": [
+            "GOINFER_MEASURE_TESTS"
+          ],
+          "label": "`GOINFER_MEASURE_TESTS=1`",
+          "cells": [
+            "Opt into the on-demand measurement tests (`testgate.RequireMeasure`: sweeps, timings, dumps, surveys whose decision is recorded). No gate runs them: `cmd/gate` drops the variable from every cell. `GOINFER_HEAVY_TESTS` does not imply it."
+          ]
+        },
+        {
+          "vars": [
             "GOINFER_MANIFEST_EMIT",
             "GOINFER_MANIFEST_MACHINE"
           ],

@@ -335,7 +335,7 @@ narrower path, or emulation), and which have never executed at all.
 
 What stands between you and a wrong answer on a machine we have not seen is a check goinfer runs at start: it runs the compute kernels it is about to use against a reference on a small fixed input, and if one disagrees
 it steps down to a slower path, or declines that backend, rather than giving wrong numbers. Today that covers the CPU kernels, CUDA, WebGPU on a real GPU (not on a software renderer), and Metal; each GPU backend's margins were
-measured on one device so far ([docs/server.md](docs/server.md)). `goinfer-serve check --hardware` prints what it found on your machine and sends nothing anywhere. If something is wrong, paste it into
+measured on a few devices so far (WebGPU's on an RTX 2070 SUPER, an M1 Pro and an Intel Iris Plus 645; AMD and DX12 have not been run) ([docs/server.md](docs/server.md)). `goinfer-serve check --hardware` prints what it found on your machine and sends nothing anywhere. If something is wrong, paste it into
 [a bug report](https://github.com/townsendmerino/goinfer/issues/new?template=bug.yml); that is the most useful thing you can send.
 
 ## What it is, and isn't
@@ -368,8 +368,8 @@ in-process. Longer form: [docs/positioning.md](docs/positioning.md).
   (`libcuda.so.1`, Metal.framework) and run kernels shipped in the binary, so there is no CUDA
   toolkit to build against, and without the driver the load declines to the CPU path. WebGPU
   (opt-in, `-tags gpu`) is the one cgo build: it links the prebuilt wgpu-native library, which
-  drives the system's Vulkan, Metal or DX12 driver, so it needs a C toolchain and is not in the
-  release binaries. Nothing that performs inference is loaded from outside the binary: no
+  drives the system's Vulkan, Metal or DX12 driver, so building it needs a C toolchain. The main release binaries do not include it; since v0.25.0 prebuilt WebGPU
+  binaries for Linux (amd64, arm64) and Windows (amd64) are separate release assets (the Windows one has not been run on a GPU). Nothing that performs inference is loaded from outside the binary: no
   llama.cpp, no libllama, no Python runtime. The library's `go.mod` has two direct requirements,
   `github.com/townsendmerino/aikit` and `golang.org/x/text`; each GPU backend is its own module.
   Dense and MoE models; anything unsupported declines at load and falls back to CPU. See [docs/cuda-backend.md](docs/cuda-backend.md)

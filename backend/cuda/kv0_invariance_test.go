@@ -16,6 +16,7 @@ import (
 
 	gc "github.com/eitamring/gocudrv/cuda"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/testgate"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -544,6 +545,7 @@ func TestKV0_continuationEffect_tiny(t *testing.T) {
 }
 
 func TestKV0_continuationEffect_real1p5B(t *testing.T) {
+	testgate.RequireMeasure(t)
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)")
 	}

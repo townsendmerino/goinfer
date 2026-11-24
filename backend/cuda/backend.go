@@ -209,6 +209,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		if e = s.bindKernels(r); e != nil {
 			return e
 		}
+		r.bindPrefillG32()
 		if !r.openedForPlan {
 			r.stream = r.dev.NewCommandQueue()
 		}

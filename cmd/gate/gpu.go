@@ -509,6 +509,9 @@ func (g *gpuGate) heavyTier(src gpuInputs) error {
 		lines, notes, rec := heavyProcLines(h, cr, peak, out)
 		g.heavyProcs = append(g.heavyProcs, rec)
 		g.apply(groupVerdict{State: groupNone, Lines: lines, Notes: notes, Notices: rec.Notices})
+		if v, over := gradeHeavyBudget(h.Label, rec.WallS, *in); over {
+			g.apply(v)
+		}
 		if cr.RC != 0 {
 			mainRC = cr.RC
 		}
@@ -578,6 +581,10 @@ func (g *gpuGate) readHeavy() heavyInput {
 		return heavyInput{Skipped: true}
 	}
 	in := heavyInput{Drain: drainingTests(), Iso: isolatedTests()}
+	var berr error
+	if in.BudgetS, in.BudgetExceptS, berr = heavyBudgets(heavyProcessBudget, heavyBudgetExceptions); berr != nil {
+		in.BudgetErr = berr.Error()
+	}
 	listed, err := listCUDATests("./backend/cuda/")
 	in.Total = len(listed)
 	if err != nil || in.Total == 0 {
@@ -586,11 +593,12 @@ func (g *gpuGate) readHeavy() heavyInput {
 		}
 		return in
 	}
-	groups, problems, err := partitionHeavy(listed, g.models)
+	groups, parityOnly, problems, err := partitionHeavy(listed, g.models, append(append([]string(nil), in.Drain...), in.Iso...))
 	if err != nil {
 		in.PartitionErr = err.Error()
 		return in
 	}
+	in.ParityOnly = parityOnly
 	// The kernel-level tests in ./cuda/kernels/ load no model, so they are one more process, run whole.
 	kernels, err := listCUDATests(cudaKernelsPkg)
 	in.Kernels = len(kernels)
@@ -601,7 +609,7 @@ func (g *gpuGate) readHeavy() heavyInput {
 		return in
 	}
 	in.Groups = append(groups, heavyGroup{Label: "kernels", Tests: kernels, Pkg: cudaKernelsPkg})
-	in.Listed = append(listed, kernels...)
+	in.Listed = append(slices.DeleteFunc(listed, func(n string) bool { return slices.Contains(parityOnly, n) }), kernels...)
 	in.Problems = problems
 	in.Run = g.heavyOnly
 	return in
@@ -627,14 +635,53 @@ func listCUDATests(pkg string) ([]string, error) {
 	return listed, nil
 }
 
-// partitionHeavy derives the heavy tier's main-group processes for the listed ./cuda/ tests from the source (heavyPartition).
-func partitionHeavy(listed []string, modelsDir string) ([]heavyGroup, []string, error) {
+// partitionHeavy derives the heavy tier's main-group processes for the listed ./cuda/ tests from the source
+// (heavyMainGroups), and the tests left to the parity cell. keep is the drain and fresh-process markers' tests.
+func partitionHeavy(listed []string, modelsDir string, keep []string) (groups []heavyGroup, parityOnly, problems []string, err error) {
 	refs, err := testReachableLiterals("backend/cuda", []string{"cuda", "goinfer_testhooks"}, filepath.Join("testdata", "assets.json"))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	groups, problems := heavyPartition(listed, refs, modelsDirEntries(modelsDir))
-	return groups, problems, nil
+	groups, parityOnly, problems = heavyMainGroups(listed, refs, modelsDirEntries(modelsDir), keep)
+	return groups, parityOnly, problems, nil
+}
+
+// heavyProcessBudget is the most wall time one heavy main-group process may take; a process over it fails the tier, unless
+// heavyBudgetExceptions gives it its own. The maintainer's decision: docs/measurements/h1-heavy-tier-triage-2026-11-23.md,
+// § "5. Draft: a per-test time budget".
+const heavyProcessBudget = 20 * time.Minute
+
+// heavyBudgetException is a main-group process allowed a budget of its own. Reason says why it needs one, Review when the entry
+// is looked at again; heavyBudgets refuses an entry without either.
+type heavyBudgetException struct {
+	Group          string
+	Budget         time.Duration
+	Reason, Review string
+}
+
+var heavyBudgetExceptions = []heavyBudgetException{
+	{Group: heavySmallGroup, Budget: 60 * time.Minute,
+		Reason: "small held every tiny-fixture and small-checkpoint test; its wall after it was restricted to tests with a heavy check is not yet measured",
+		Review: "the 2026-11-28 weekly heavy run: set small's own line at its measured wall plus 25%, or split small and drop this entry"},
+}
+
+// heavyBudgets is the per-process budget and each exception's, in seconds, or an error naming the first exception without
+// its group, budget, reason or review, or a group excepted twice.
+func heavyBudgets(base time.Duration, exc []heavyBudgetException) (int, map[string]int, error) {
+	out := map[string]int{}
+	for _, e := range exc {
+		switch {
+		case e.Group == "" || e.Budget <= 0:
+			return 0, nil, fmt.Errorf("%q: an exception needs a group and a budget", e.Group)
+		case strings.TrimSpace(e.Reason) == "" || strings.TrimSpace(e.Review) == "":
+			return 0, nil, fmt.Errorf("%s: an exception needs a reason and a review date", e.Group)
+		}
+		if _, dup := out[e.Group]; dup {
+			return 0, nil, fmt.Errorf("%s: excepted twice", e.Group)
+		}
+		out[e.Group] = int(e.Budget.Seconds())
+	}
+	return int(base.Seconds()), out, nil
 }
 
 // heavyGroupEnv is the environment of every heavy-tier main-group process. GOINFER_KV10_DEPTHS pins KV10's harness to

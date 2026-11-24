@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/goinfer/internal/testgate"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 )
@@ -214,6 +215,7 @@ func TestS17ProfileCUDA(t *testing.T) {
 // (fused, aikit, fused, aikit, ...), the ratio formed per round; then the fused tower's per-class profile. Towers: SigLIP float32, Qwen3.5-0.8B on glm_ocr/formula.png, GLM-OCR on the 896x896 image.
 // Heavy; run alone. SIGLIP_SPEED_ROUNDS sets the rounds (default 3).
 func TestS17LeverA_wholeTower(t *testing.T) {
+	testgate.RequireMeasure(t)
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
 		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1")
 	}

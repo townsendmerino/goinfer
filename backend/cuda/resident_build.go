@@ -1164,9 +1164,6 @@ func (s *buildState) bindKernels(r *cudaResident) error {
 				load(&r.bLN, lnmod, "layernorm_quant_batched")
 			}
 			r.prefillReady = ok
-			if ok && r.actG32 {
-				r.bindPrefillG32()
-			}
 		}
 	}
 	// Gemma 3 image-block prefill attention (decoder.ResidentPrefillSubsystem): own module, prefill_batched.ptx untouched. A
