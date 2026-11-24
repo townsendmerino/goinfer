@@ -266,7 +266,7 @@ func identityRun(t *testing.T) []identCase {
 			s := m.NewSession(64)
 			ch, g := s.Generate(context.Background(), prompt, 8, sp)
 			first := collect(t, ch, g)
-			ext := append(append(append([]int(nil), prompt...), first...), 9)
+			ext := append(append(slices.Clone(prompt), first...), 9)
 			ch, g = s.Generate(context.Background(), ext, 8, sp)
 			c.Tokens = [][]int{first, collect(t, ch, g)}
 		} else {

@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -64,7 +65,7 @@ func TestSplitGGUF_directLoadMatchesSingleFile(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out = append(out, append([]float32(nil), l...))
+			out = append(out, slices.Clone(l))
 		}
 		return out
 	}

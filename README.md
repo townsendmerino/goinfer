@@ -404,7 +404,7 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 | Qwen3-VL MoE (`qwen3_vl_moe`) | CPU / CPU | GPU / GPU | GPU / GPU | GPU / GPU |
 | GLM-OCR (`glm_ocr`) | CPU / CPU | GPU / GPU | GPU / GPU | GPU / GPU |
 | LFM2.5-VL (`lfm2_vl`) | CPU / CPU | CPU / CPU | CPU / CPU | CPU / CPU |
-| Ministral 3 (`mistral3`) | CPU / CPU | CPU / GPU | CPU / GPU | CPU / CPU |
+| Ministral 3 (`mistral3`) | CPU / CPU | CPU / GPU | CPU / GPU | CPU / GPU |
 
 <!-- END images-and-audio support table -->
 

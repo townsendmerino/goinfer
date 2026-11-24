@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"testing"
 )
 
@@ -37,7 +38,7 @@ func TestMC5_prefillChunkInvariance(t *testing.T) {
 		for l := range r.layers {
 			kvDim := r.layers[l].geom.kvDim
 			o := r.kvHostOff(l, 2)
-			out = append(out, append([]uint16(nil), r.kc[l].U16s()[o:o+N*kvDim]...), append([]uint16(nil), r.vc[l].U16s()[o:o+N*kvDim]...))
+			out = append(out, slices.Clone(r.kc[l].U16s()[o:o+N*kvDim]), slices.Clone(r.vc[l].U16s()[o:o+N*kvDim]))
 		}
 		return out
 	}
@@ -48,7 +49,7 @@ func TestMC5_prefillChunkInvariance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("whole prefill: %v", err)
 	}
-	whole = append([]float32(nil), whole...)
+	whole = slices.Clone(whole)
 	wantKV := snapshot(0)
 	// 100 and 77 start chunks off the steel kernel's 32-row tiles; a prefix-reuse turn's startPos is arbitrary too. The aligned
 	// sizes cannot see a bug at a tile edge, which shows the same way whole and chunked (F-G02: with the kernel's causal limit
@@ -75,7 +76,7 @@ func TestMC5_prefillChunkInvariance(t *testing.T) {
 			}
 			c = e
 		}
-		lg = append([]float32(nil), lg...)
+		lg = slices.Clone(lg)
 		gotKV := snapshot(1)
 		kvDiff, kvTotal := 0, 0
 		firstBad := -1
@@ -108,7 +109,7 @@ func TestMC5_prefillChunkInvariance(t *testing.T) {
 	if err := r.useKVSlot(1); err != nil {
 		t.Fatal(err)
 	}
-	pert := append([][]float32(nil), embs...)
+	pert := slices.Clone(embs)
 	pert[700] = mc3Emb(r, 777)
 	for c := 0; c < N; c += 256 {
 		if _, err := a.PrefillLast(context.Background(), pert[c:min(c+256, N)], c); err != nil {

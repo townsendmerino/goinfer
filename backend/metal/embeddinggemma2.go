@@ -5,12 +5,13 @@ package metal
 import (
 	"errors"
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"math"
+	"slices"
 	"sync"
 
 	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // EmbeddingGemma 2's text encoder on Metal: the CPU forward of
@@ -299,7 +300,7 @@ func (a *eg2Accel) ForwardEmbeds(x0 []float32, T int, keepLayers bool) ([]float3
 	copy(x, x0)
 	var layers [][]float32
 	if keepLayers {
-		layers = append(layers, append([]float32(nil), x...))
+		layers = append(layers, slices.Clone(x))
 	}
 	a.slot = 0
 	e := a.q.Begin()
@@ -348,7 +349,7 @@ func (a *eg2Accel) ForwardEmbeds(x0 []float32, T int, keepLayers bool) ([]float3
 			if err := e.Err(); err != nil {
 				return nil, nil, err
 			}
-			layers = append(layers, append([]float32(nil), s.x.Floats()[:T*H]...))
+			layers = append(layers, slices.Clone(s.x.Floats()[:T*H]))
 			a.slot = 0
 			e = a.q.Begin()
 		}
@@ -359,7 +360,7 @@ func (a *eg2Accel) ForwardEmbeds(x0 []float32, T int, keepLayers bool) ([]float3
 	if err := e.Err(); err != nil {
 		return nil, nil, err
 	}
-	return append([]float32(nil), s.out.Floats()[:T*E]...), layers, nil
+	return slices.Clone(s.out.Floats()[:T*E]), layers, nil
 }
 
 // attention is one layer's bidirectional grouped-query attention over b.q/b.k/b.v into b.ctx, as matmuls: q, k and v

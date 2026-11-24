@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -79,7 +80,7 @@ func TestW8Prefill_passAgainstSequential(t *testing.T) {
 				t.Fatalf("pass: %v", err)
 			}
 			tPass += time.Since(st).Seconds() * 1e3
-			pass = append([]float32(nil), pass...)
+			pass = slices.Clone(pass)
 			st = time.Now()
 			var seq []float32
 			for i, e := range embs {

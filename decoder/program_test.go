@@ -169,7 +169,7 @@ func runProgram(m *Model, prog *layerProgram, ids []int, mode walkerMode) (logit
 		if ferr != nil {
 			return nil, ferr
 		}
-		return append([]float32(nil), rows[len(rows)-1]...), nil
+		return slices.Clone(rows[len(rows)-1]), nil
 	case modeMulti:
 		c0, c1 := newCache(), newCache()
 		for i, id := range ids {
@@ -179,7 +179,7 @@ func runProgram(m *Model, prog *layerProgram, ids []int, mode walkerMode) (logit
 			}
 			logits = rows[0]
 		}
-		return append([]float32(nil), logits...), nil
+		return slices.Clone(logits), nil
 	}
 	cache := newCache()
 	for _, id := range ids {
@@ -189,7 +189,7 @@ func runProgram(m *Model, prog *layerProgram, ids []int, mode walkerMode) (logit
 		}
 		logits = lg
 	}
-	return append([]float32(nil), logits...), nil
+	return slices.Clone(logits), nil
 }
 
 // outcome compares a changed forward's result with the unchanged one.
@@ -210,15 +210,15 @@ func cloneProgram(p *layerProgram) *layerProgram {
 	c := *p
 	c.Layers = make([][]op, len(p.Layers))
 	for l, ops := range p.Layers {
-		c.Layers[l] = append([]op(nil), ops...)
+		c.Layers[l] = slices.Clone(ops)
 		for i := range c.Layers[l] {
 			o := &c.Layers[l][i]
-			o.Rope.InvFreq = append([]float64(nil), o.Rope.InvFreq...)
-			o.Rope.MRopeSection = append([]int(nil), o.Rope.MRopeSection...)
-			o.MLA.InvFreq = append([]float64(nil), o.MLA.InvFreq...)
-			o.Gated.Rope.InvFreq = append([]float64(nil), o.Gated.Rope.InvFreq...)
-			o.Gated.Rope.MRopeSection = append([]int(nil), o.Gated.Rope.MRopeSection...)
-			o.G4.InvFreq = append([]float64(nil), o.G4.InvFreq...)
+			o.Rope.InvFreq = slices.Clone(o.Rope.InvFreq)
+			o.Rope.MRopeSection = slices.Clone(o.Rope.MRopeSection)
+			o.MLA.InvFreq = slices.Clone(o.MLA.InvFreq)
+			o.Gated.Rope.InvFreq = slices.Clone(o.Gated.Rope.InvFreq)
+			o.Gated.Rope.MRopeSection = slices.Clone(o.Gated.Rope.MRopeSection)
+			o.G4.InvFreq = slices.Clone(o.G4.InvFreq)
 		}
 	}
 	return &c

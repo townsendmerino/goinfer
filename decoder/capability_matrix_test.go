@@ -20,12 +20,12 @@ package decoder
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 )
@@ -1000,7 +1000,7 @@ func buildMatrix(t *testing.T) ([]capabilityRow, error) {
 	for k := range registry {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 
 	manifest, err := loadParityManifest()
 	if err != nil {
@@ -1066,17 +1066,15 @@ func buildMatrix(t *testing.T) ([]capabilityRow, error) {
 
 	out := make([]capabilityRow, 0, len(rows))
 	for _, r := range rows {
-		sort.Strings(r.Aliases)
+		slices.Sort(r.Aliases)
 		out = append(out, *r)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].CoverageAxis != out[j].CoverageAxis {
-			return out[i].CoverageAxis < out[j].CoverageAxis
-		}
-		if out[i].DisplayName != out[j].DisplayName {
-			return out[i].DisplayName < out[j].DisplayName
-		}
-		return out[i].Name < out[j].Name
+	slices.SortFunc(out, func(a, b capabilityRow) int {
+		return cmp.Or(
+			cmp.Compare(a.CoverageAxis, b.CoverageAxis),
+			cmp.Compare(a.DisplayName, b.DisplayName),
+			cmp.Compare(a.Name, b.Name),
+		)
 	})
 	return out, nil
 }

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"math"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -54,13 +55,13 @@ func TestEModelFallback_visible(t *testing.T) {
 	t.Cleanup(func() { prefillDeclineForTest, emodelFallbackOut = nil, os.Stderr })
 
 	a.Reset()
-	want := append([]float32(nil), a.r.prefillEModel(rows, 0, true)...)
+	want := slices.Clone(a.r.prefillEModel(rows, 0, true))
 	if err := a.r.takeExecErr(); err != nil {
 		t.Fatal(err)
 	}
-	for req := 0; req < 2; req++ {
+	for req := range 2 {
 		ctx, rep := decoder.WithPrefillReport(context.Background())
-		for call := 0; call < 2; call++ { // a request may call the pass more than once (blocks, chunks)
+		for call := range 2 { // a request may call the pass more than once (blocks, chunks)
 			got, err := a.PrefillLast(ctx, rows, 0)
 			if err != nil {
 				t.Fatal(err)
@@ -99,7 +100,7 @@ func TestEModelTiledAttention_matchesTheExactKernel(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return append([]float32(nil), lg...)
+		return slices.Clone(lg)
 	}
 	exact, tiled := run(0), run(32)
 	diff := 0
@@ -112,7 +113,7 @@ func TestEModelTiledAttention_matchesTheExactKernel(t *testing.T) {
 		t.Errorf("%d of %d logits differ between the tiled and the untiled exact kernel", diff, len(exact))
 	}
 	a.Reset()
-	lm := append([]float32(nil), a.r.prefillEModel(rows, 0, true)...)
+	lm := slices.Clone(a.r.prefillEModel(rows, 0, true))
 	if err := a.r.takeExecErr(); err != nil {
 		t.Fatal(err)
 	}

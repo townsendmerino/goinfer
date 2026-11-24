@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -78,7 +79,7 @@ func TestWeightAlias_logitsByteIdentical(t *testing.T) {
 		}
 		for s := range nSteps {
 			l := r.ForwardEmb(emb(), prefillLen+s)
-			out.logits = append(out.logits, append([]float32(nil), l...))
+			out.logits = append(out.logits, slices.Clone(l))
 		}
 		b.Close() // resident first (releases every MTLBuffer, no-copy ones included) ...
 		m.Close() // ... then the model unmaps the .giw the no-copy buffers pointed into

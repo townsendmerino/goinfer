@@ -102,7 +102,7 @@ func TestDB02_tileAB(t *testing.T) {
 	Ms := []int{16, 24, 40, 72, 100, 160, 512}
 	if v := os.Getenv("GOINFER_TILE16_MS"); v != "" {
 		Ms = nil
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			if n, err := strconv.Atoi(strings.TrimSpace(f)); err == nil && n > 0 {
 				Ms = append(Ms, n)
 			}
@@ -131,7 +131,7 @@ func TestDB02_tileAB(t *testing.T) {
 				}
 				dt := time.Since(st).Seconds() * 1e3
 				if ref == nil {
-					ref = append([]float32(nil), lg...)
+					ref = slices.Clone(lg)
 				}
 				for j := range ref {
 					if math.Float32bits(ref[j]) != math.Float32bits(lg[j]) {

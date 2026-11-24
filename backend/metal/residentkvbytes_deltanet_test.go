@@ -157,7 +157,7 @@ func recurrentSolo(a *metalResident, embs [][]float32) [][]float32 {
 	a.Reset()
 	out := make([][]float32, len(embs))
 	for i, e := range embs {
-		out[i] = append([]float32(nil), a.r.ForwardEmb(e, i)...)
+		out[i] = slices.Clone(a.r.ForwardEmb(e, i))
 	}
 	return out
 }
@@ -435,8 +435,8 @@ func recurrentSlotCheckpoint(t *testing.T, dir string) {
 	if err := two.SaveRecurrentCheckpoint(); err != nil {
 		t.Fatal(err)
 	}
-	saved := append([]float32(nil), two.r.ckptBufs[1].Floats()...) // the first layer's state
-	for i, e := range B {                                          // slot 1's state moves on, with no reset, which would free the checkpoint
+	saved := slices.Clone(two.r.ckptBufs[1].Floats()) // the first layer's state
+	for i, e := range B {                             // slot 1's state moves on, with no reset, which would free the checkpoint
 		two.r.ForwardEmb(e, len(A)+i)
 	}
 	if err := two.r.useKVSlot(0); err != nil {

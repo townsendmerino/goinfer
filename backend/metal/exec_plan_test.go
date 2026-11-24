@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -61,7 +62,7 @@ func TestExecutorAttnPlan(t *testing.T) {
 			attnFADepthFloor, engaged, attnFADepthFloor-1, declined)
 	}
 
-	copyRow := func(v []float32) []float32 { return append([]float32(nil), v...) }
+	copyRow := func(v []float32) []float32 { return slices.Clone(v) }
 	ids := []int{1, 7, 42, 100, 5, 200, 13, 88, 3, 71, 9, 17, 60, 200, 33, 2}
 	emb := func(pos int) []float32 {
 		e := make([]float32, r.H)

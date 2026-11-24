@@ -275,7 +275,7 @@ func censusSetAvail(fake *probe.Fake, phys, avail int64) {
 }
 
 // d1Outcome names a resident-guard outcome, for coverage and for the change-point search.
-func d1Outcome(f fitCheck) string {
+func d1Outcome(f *fitCheck) string {
 	pin, decline := f.decide()
 	switch {
 	case decline != nil && f.pinned:
@@ -294,7 +294,7 @@ func d1Outcome(f fitCheck) string {
 }
 
 // d1Line is everything the resident guard says of f: its decision, its numbers, and the line guardFit prints or the refusal.
-func d1Line(f fitCheck) string {
+func d1Line(f *fitCheck) string {
 	pin, decline := f.decide()
 	line := ""
 	switch {

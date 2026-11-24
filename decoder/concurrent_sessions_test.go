@@ -58,11 +58,9 @@ func TestConcurrentSessions_matchAlone(t *testing.T) {
 	concurrent := make([][][]int, nConv)
 	var wg sync.WaitGroup
 	for c := range nConv {
-		wg.Add(1)
-		go func(c int) {
-			defer wg.Done()
+		wg.Go(func() {
 			concurrent[c] = run(c)
-		}(c)
+		})
 	}
 	wg.Wait()
 	for c := range nConv {

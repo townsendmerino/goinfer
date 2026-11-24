@@ -5,6 +5,7 @@ package decoder
 import (
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/testgate"
@@ -48,7 +49,7 @@ func TestGemmaConfirmerReference(t *testing.T) {
 			t.Fatalf("ForwardCapture pos %d: %v", i, err)
 		}
 		if i == probe {
-			residIntoL1 = append([]float32(nil), hid[0]...)
+			residIntoL1 = slices.Clone(hid[0])
 		}
 	}
 	// L1 is a sliding-window (ring) layer, so its K/V is NOT in Keys/Vals (the global store) —
@@ -64,7 +65,7 @@ func TestGemmaConfirmerReference(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ForwardSubCapture: %v", err)
 			}
-			ctxL1 = append([]float32(nil), ctx[injectLayer]...)
+			ctxL1 = slices.Clone(ctx[injectLayer])
 		} else if _, err := m.ForwardForTest(tok, subCache); err != nil {
 			t.Fatalf("warm pos %d: %v", i, err)
 		}

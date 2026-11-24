@@ -29,6 +29,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -250,7 +251,7 @@ func TestLfm2VLFull(t *testing.T) {
 	}
 	colMajor = append(colMajor, tileFeats[nTiles]...)
 	// Planted (2): the thumbnail's features first, then the tiles', filling the same spans.
-	thumbFirst := append(append([]float32(nil), tileFeats[nTiles]...), feats[:len(feats)-len(tileFeats[nTiles])]...)
+	thumbFirst := append(slices.Clone(tileFeats[nTiles]), feats[:len(feats)-len(tileFeats[nTiles])]...)
 	// Planted (3): features also over each tile's marker (the position before its run), a run's first row repeated there.
 	var feats3 []float32
 	var spans3 []ImageSpan

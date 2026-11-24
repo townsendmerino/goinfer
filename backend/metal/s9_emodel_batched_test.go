@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/chat"
@@ -71,7 +72,7 @@ func TestS9EModelBatched_tiny(t *testing.T) {
 			rows[i] = m.EmbedResidentForTest(id)
 		}
 		decode := func(first []float32, forced []int) ([][]float32, []int) {
-			out, toks := [][]float32{append([]float32(nil), first...)}, []int{argmaxF(first)}
+			out, toks := [][]float32{slices.Clone(first)}, []int{argmaxF(first)}
 			for k := range steps {
 				tok := toks[k]
 				if forced != nil {
@@ -81,7 +82,7 @@ func TestS9EModelBatched_tiny(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				out = append(out, append([]float32(nil), lg...))
+				out = append(out, slices.Clone(lg))
 				toks = append(toks, argmaxF(lg))
 			}
 			return out, toks
@@ -183,7 +184,7 @@ func TestS9EModelBatched_realE2B(t *testing.T) {
 		n := np + g3NewTokens
 		// The CPU reference: its free run, and its logits at every position from the last prompt row on.
 		cc := m.NewCache(n)
-		cpuSeq := append([]int(nil), ids...)
+		cpuSeq := slices.Clone(ids)
 		cpuL := map[int][]float32{}
 		for i := 0; i < n-1; i++ {
 			l, err := m.ForwardForTest(cpuSeq[i], cc)
@@ -191,7 +192,7 @@ func TestS9EModelBatched_realE2B(t *testing.T) {
 				t.Fatal(err)
 			}
 			if i >= np-1 {
-				cpuL[i] = append([]float32(nil), l...)
+				cpuL[i] = slices.Clone(l)
 				cpuSeq = append(cpuSeq, argmaxF(l))
 			}
 		}
@@ -203,7 +204,7 @@ func TestS9EModelBatched_realE2B(t *testing.T) {
 			prefill := func() []float32 {
 				a.Reset()
 				if arm == 0 {
-					lg := append([]float32(nil), a.r.prefillEModel(rows, 0, true)...)
+					lg := slices.Clone(a.r.prefillEModel(rows, 0, true))
 					if err := a.r.takeExecErr(); err != nil {
 						t.Fatal(err)
 					}
@@ -217,7 +218,7 @@ func TestS9EModelBatched_realE2B(t *testing.T) {
 			}
 			// Free run.
 			l := prefill()
-			gpuSeq := append(append([]int(nil), ids...), argmaxF(l))
+			gpuSeq := append(slices.Clone(ids), argmaxF(l))
 			for i := np; i < n-1; i++ {
 				lg, err := a.Forward(m.EmbedResidentForTest(gpuSeq[i]), i)
 				if err != nil {

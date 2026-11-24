@@ -19,7 +19,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -318,7 +318,7 @@ func TestSerializeCensus_everyFixtureIsListedOrExcluded(t *testing.T) {
 			unverifiable++
 		}
 	}
-	sort.Strings(untrackedExtra)
+	slices.Sort(untrackedExtra)
 	t.Logf("%d fixture(s) present here, %d of them tracked (the asserted scope); %d exclusion(s), "+
 		"%d naming gitignored fixtures absent here", len(found), nTracked, len(censusExcluded), unverifiable)
 	if len(untrackedExtra) > 0 {

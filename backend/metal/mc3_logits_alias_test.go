@@ -54,9 +54,8 @@ func TestMC3_soloLogitsSurviveAnotherGeneration(t *testing.T) {
 	alone := gen(promptA, 12, slow)
 	var withB []int
 	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() { defer wg.Done(); gen(promptB, 60, busy) }()
-	go func() { defer wg.Done(); time.Sleep(20 * time.Millisecond); withB = gen(promptA, 12, slow) }()
+	wg.Go(func() { gen(promptB, 60, busy) })
+	wg.Go(func() { time.Sleep(20 * time.Millisecond); withB = gen(promptA, 12, slow) })
 	wg.Wait()
 	t.Logf("A alone %v; A beside B %v", alone, withB)
 	if len(alone) != 12 || !slices.Equal(alone, withB) {

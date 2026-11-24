@@ -5,6 +5,7 @@ package kernels
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
@@ -116,7 +117,7 @@ func TestAmaxHead_nanRowsMatchTheHost(t *testing.T) {
 				}
 			}
 		}
-		tileBq := append([]int8(nil), bq...)
+		tileBq := slices.Clone(bq)
 		big(tileBq, 43)
 		tiles := scales()
 		tiles[40] = nan // NaN leads tile 5 (rows 40-47), whose row 43 holds the maximum
@@ -131,7 +132,7 @@ func TestAmaxHead_nanRowsMatchTheHost(t *testing.T) {
 			}
 			return s
 		}
-		tieBq := append([]int8(nil), bq...)
+		tieBq := slices.Clone(bq)
 		for _, r := range []int{300, 301, 700} {
 			big(tieBq, r) // the same weights and scale, so the three logits tie at the maximum
 		}
@@ -153,7 +154,7 @@ func TestAmaxHead_nanRowsMatchTheHost(t *testing.T) {
 			}
 		}
 		// Every logit NaN: a NaN in the activations (a NaN scale on the int8 head, a NaN element on the f32 one).
-		nanA := append([]float32(nil), a...)
+		nanA := slices.Clone(a)
 		ascNaN := float32(1)
 		if h.f32 {
 			nanA[0] = nan

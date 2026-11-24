@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"slices"
-	"sort"
 	"testing"
 	"time"
 
@@ -47,7 +46,7 @@ func TestMC3Step_deviceArgmaxMatchesHost(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			draw := append([]batchSeq(nil), seqs...)
+			draw := slices.Clone(seqs)
 			draw[B-1].draw = greedy
 			_, gotDraw, err := r.forwardMultiInto(draw, false)
 			if err != nil {
@@ -89,8 +88,8 @@ func TestEP08_stepWallAB(t *testing.T) {
 		mc3Fill(t, r, sl, ids)
 	}
 	med := func(v []float64) float64 {
-		s := append([]float64(nil), v...)
-		sort.Float64s(s)
+		s := slices.Clone(v)
+		slices.Sort(s)
 		return s[len(s)/2]
 	}
 	serveRoute := os.Getenv("GOINFER_EP08_ROUTE") == "serve"
@@ -139,7 +138,7 @@ func TestEP08_stepWallAB(t *testing.T) {
 					}
 					ms = append(ms, float64(time.Since(st).Microseconds())/1e3)
 					if tok == 0 {
-						first[k] = append([]int(nil), ids...)
+						first[k] = slices.Clone(ids)
 					}
 				}
 				arm[on] = med(ms)

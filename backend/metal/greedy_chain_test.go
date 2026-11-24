@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"runtime/debug"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -69,7 +70,7 @@ func greedyChainBitIdentical(t *testing.T, tied bool) {
 		for l := range r.layers {
 			d := r.layers[l].geom.kvDim
 			o := r.kvHostOff(l, 2)
-			out = append(out, append([]uint16(nil), r.kc[l].U16s()[o:o+n*d]...), append([]uint16(nil), r.vc[l].U16s()[o:o+n*d]...))
+			out = append(out, slices.Clone(r.kc[l].U16s()[o:o+n*d]), slices.Clone(r.vc[l].U16s()[o:o+n*d]))
 		}
 		return out
 	}
@@ -169,7 +170,7 @@ func TestGreedyChain_nanHeadRecovers(t *testing.T) {
 		for l := range r.layers {
 			d := r.layers[l].geom.kvDim
 			o := r.kvHostOff(l, 2)
-			out = append(out, append([]uint16(nil), r.kc[l].U16s()[o:o+n*d]...), append([]uint16(nil), r.vc[l].U16s()[o:o+n*d]...))
+			out = append(out, slices.Clone(r.kc[l].U16s()[o:o+n*d]), slices.Clone(r.vc[l].U16s()[o:o+n*d]))
 		}
 		return out
 	}
@@ -258,7 +259,7 @@ func sampleChainBitIdentical(t *testing.T, tied bool, fallbackAt int) {
 		for l := range r.layers {
 			d := r.layers[l].geom.kvDim
 			o := r.kvHostOff(l, 2)
-			out = append(out, append([]uint16(nil), r.kc[l].U16s()[o:o+n*d]...), append([]uint16(nil), r.vc[l].U16s()[o:o+n*d]...))
+			out = append(out, slices.Clone(r.kc[l].U16s()[o:o+n*d]), slices.Clone(r.vc[l].U16s()[o:o+n*d]))
 		}
 		return out
 	}

@@ -222,7 +222,7 @@ func censusD1(t *testing.T, c *census, fake *probe.Fake, zoo []censusMachine, va
 
 func censusD1Group(c *census, zoo []censusMachine, key, path, q string, qm quantMode, o Options) {
 	f := fitCheckFor(path, q, qm, o)
-	at := func(v int64) fitCheck { g := f; g.availBytes = v; return g }
+	at := func(v int64) *fitCheck { g := *f; g.availBytes = v; return &g }
 	edges := changePointsBelow(0, 2*f.need()+1, 8, func(v int64) string { return d1Outcome(at(v)) })
 	lines := []string{fmt.Sprintf("priced: weight %d kv %d src %d cudaBuild %d expert %d pack %d deviceKV %v ctx %d pinned %v streamable %v noGuard %v",
 		f.weightBytes, f.kvBytes, f.srcFileBytes, f.cudaBuildBytes, f.expertBytes, f.packBytes, f.deviceKV, f.effCtx, f.pinned, f.denseStreamable, f.noGuard)}
@@ -280,7 +280,7 @@ func censusRealShapeConfigs(t *testing.T) []censusVariant {
 
 func censusD2(t *testing.T, c *census, fake *probe.Fake, zoo []censusMachine, variants []censusVariant) {
 	t.Helper()
-	cfgs := append(append([]censusVariant(nil), variants...), censusRealShapeConfigs(t)...)
+	cfgs := append(slices.Clone(variants), censusRealShapeConfigs(t)...)
 	backends := []censusBackend{{"cpu", "cpu", false}, {"cuda", "cuda", true}, {"cuda-unlinked", "cuda", false}, {"metal", "metal", true}}
 	for _, be := range backends {
 		restore := setCompiled(be.name, be.linked)

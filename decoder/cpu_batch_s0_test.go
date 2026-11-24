@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -47,7 +47,7 @@ func TestCPUBatchS0_matmulScaling(t *testing.T) {
 	}
 	Ms := []int{1, 2, 3, 4, 8}
 	reps := 7
-	rng := rand.New(rand.NewSource(1))
+	rng := rand.New(rand.NewPCG(1, 0))
 	start := time.Now()
 	for si, sh := range shapes {
 		K, N := sh.w.Cols(), sh.w.Rows()
@@ -69,7 +69,7 @@ func TestCPUBatchS0_matmulScaling(t *testing.T) {
 				times[M] = append(times[M], float64(time.Since(t0).Nanoseconds())/float64(iters))
 			}
 		}
-		med := func(v []float64) float64 { s := append([]float64(nil), v...); sort.Float64s(s); return s[len(s)/2] }
+		med := func(v []float64) float64 { s := slices.Clone(v); slices.Sort(s); return s[len(s)/2] }
 		t1 := med(times[1])
 		line := fmt.Sprintf("%-8s N=%-6d K=%-6d layout=%-10s t(1)=%8.0f us", sh.name, N, K, sh.w.Int4Layout(), t1/1e3)
 		for _, M := range Ms[1:] {
@@ -175,8 +175,8 @@ func TestCPUBatchS1_fusedVsUnfused(t *testing.T) {
 		fmt.Fprintf(os.Stderr, "[s1 %6.1fs] %s\n", time.Since(start).Seconds(), line)
 	}
 	for _, B := range Bs {
-		s := append([]float64(nil), ratios[B]...)
-		sort.Float64s(s)
+		s := slices.Clone(ratios[B])
+		slices.Sort(s)
 		msg := fmt.Sprintf("S1 METRIC depth %d B=%d fused/unfused median %.3fx (per-rep sorted %.3f)", depth, B, s[len(s)/2], s)
 		fmt.Fprintf(os.Stderr, "[s1 %6.1fs] %s\n", time.Since(start).Seconds(), msg)
 		t.Log(msg)
@@ -212,9 +212,9 @@ func TestCPUBatchS0b_fusedShapesAndWidth(t *testing.T) {
 		{"gate‖up", []*linalg.WeightMat{&lw.GateProj, &lw.UpProj}},
 		{"down", []*linalg.WeightMat{&lw.DownProj}},
 	}
-	rng := rand.New(rand.NewSource(1))
+	rng := rand.New(rand.NewPCG(1, 0))
 	start := time.Now()
-	med := func(v []float64) float64 { s := append([]float64(nil), v...); sort.Float64s(s); return s[len(s)/2] }
+	med := func(v []float64) float64 { s := slices.Clone(v); slices.Sort(s); return s[len(s)/2] }
 	// timeOp runs one fused call of shape sh at M rows with the given width (0 = default) or serial, and returns ns/op.
 	timeOp := func(sh shape, M, width int, serial bool, a []float32, dsts [][]float32, iters int) float64 {
 		var ws linalg.Workspace
@@ -323,9 +323,9 @@ func TestCPUBatchS0c_widthAA(t *testing.T) {
 		width int
 	}
 	arms := []arm{{"A", 0}, {"A'", 0}, {"w8", 8}, {"w12", 12}}
-	rng := rand.New(rand.NewSource(1))
+	rng := rand.New(rand.NewPCG(1, 0))
 	start := time.Now()
-	med := func(v []float64) float64 { s := append([]float64(nil), v...); sort.Float64s(s); return s[len(s)/2] }
+	med := func(v []float64) float64 { s := slices.Clone(v); slices.Sort(s); return s[len(s)/2] }
 	const reps = 9
 	for _, M := range []int{4, 1} {
 		for si, sh := range shapes {

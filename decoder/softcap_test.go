@@ -3,6 +3,7 @@ package decoder
 import (
 	"math"
 	"math/rand/v2"
+	"slices"
 	"testing"
 )
 
@@ -27,8 +28,8 @@ func TestSoftcapParallel_bitIdentical(t *testing.T) {
 			for i := range a {
 				a[i] = float32(rng.NormFloat64()) * 40 // spans well past ±sc so tanh saturates
 			}
-			want := append([]float32(nil), a...)
-			got := append([]float32(nil), a...)
+			want := slices.Clone(a)
+			got := slices.Clone(a)
 			softcapSerial(want, sc)
 			softcapParallel(got, sc)
 			for i := range want {

@@ -6,7 +6,7 @@ import (
 	"context"
 	"math"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -156,7 +156,7 @@ func TestSampledDecodeLadder_speed(t *testing.T) {
 	pairedRatio := func(num, den *arm) []float64 {
 		n := min(len(num.results), len(den.results))
 		out := make([]float64, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			out[i] = num.results[i] / den.results[i]
 		}
 		return out
@@ -176,8 +176,8 @@ func median(xs []float64) float64 {
 	if len(xs) == 0 {
 		return math.NaN()
 	}
-	s := append([]float64(nil), xs...)
-	sort.Float64s(s)
+	s := slices.Clone(xs)
+	slices.Sort(s)
 	n := len(s)
 	if n%2 == 1 {
 		return s[n/2]

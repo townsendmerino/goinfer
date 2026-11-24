@@ -7,7 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"sync"
 	"syscall"
 	"testing"
@@ -124,15 +124,12 @@ func TestM26ZeroCopyProbe(t *testing.T) {
 		var wg sync.WaitGroup
 		errs := make([]error, 2*topK)
 		for j, id := range ids {
-			wg.Add(2)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				errs[2*j] = preadIntoPoolSlot(fd, poolGU, j, guBytes/4, int64(id*guBytes))
-			}()
-			go func() {
-				defer wg.Done()
+			})
+			wg.Go(func() {
 				errs[2*j+1] = preadIntoPoolSlot(fd, poolD, j, dBytes/4, dBase+int64(id*dBytes))
-			}()
+			})
 		}
 		wg.Wait()
 		for _, err := range errs {
@@ -171,8 +168,8 @@ func TestM26ZeroCopyProbe(t *testing.T) {
 			if len(v) == 0 {
 				return 0
 			}
-			s := append([]float64(nil), v...)
-			sort.Float64s(s)
+			s := slices.Clone(v)
+			slices.Sort(s)
 			return s[len(s)/2]
 		}
 		t.Logf("RESULT %s (%d rounds x %d experts, medians, ms): pread stage %.2f + cb %.2f (gpu %.2f) = %.2f; zero-copy cb %.2f (gpu %.2f); zero-copy / pread %.3f",
@@ -229,7 +226,7 @@ func TestM26ZeroCopyProbe(t *testing.T) {
 				next += time.Second
 			}
 		}
-		sort.Float64s(roundMs)
+		slices.Sort(roundMs)
 		time.Sleep(2 * time.Second)
 		t.Logf("RESULT sustained %s: %d rounds in 5 s, median %.2f ms a round; wired MB at each second %v (peak %+.0f MB), after 2 s idle %+.0f MB",
 			label, len(roundMs), roundMs[len(roundMs)/2], samples, mb(peak), mb(vmStat(t)["wired"]-w0))

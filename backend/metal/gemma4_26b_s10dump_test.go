@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -128,7 +129,7 @@ func TestGemma4_26B_s10Dump(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			seq, plen = append([]int(nil), ids...), len(ids)
+			seq, plen = slices.Clone(ids), len(ids)
 		} else {
 			seq, plen = seqs[pi], promptLens[pi]
 		}

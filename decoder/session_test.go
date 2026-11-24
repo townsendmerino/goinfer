@@ -138,7 +138,7 @@ func TestSession_reuseParity(t *testing.T) {
 	if len(first) == 0 {
 		t.Fatal("first generation produced no tokens")
 	}
-	ext := append(append([]int(nil), prompt...), first...) // prompt + generated
+	ext := append(slices.Clone(prompt), first...) // prompt + generated
 	stream, g2 := sess.Generate(ctx, ext, 6, greedy)
 	var reused []int
 	for id := range stream {
@@ -186,7 +186,7 @@ func TestSession_snapshotRoundTrip(t *testing.T) {
 	prompt := []int{1, 100, 200, 300, 400}
 	sess := m.NewSession(0)
 	gen(t, func() (<-chan int, *Generation) { return sess.Generate(ctx, prompt, 5, greedy) })
-	seq := append([]int(nil), sess.Tokens()...)
+	seq := slices.Clone(sess.Tokens())
 
 	blob := sess.Snapshot("roundtrip")
 	restored, err := m.LoadSession(blob, "roundtrip") // matching id passes the identity guard
@@ -231,7 +231,7 @@ func TestLoadSession_rejectsCorrupt(t *testing.T) {
 	if _, ok := errors.AsType[*SnapshotError](err); !ok {
 		t.Fatalf("identity mismatch: got %v, want *SnapshotError", err)
 	}
-	bad := append([]byte(nil), blob...)
+	bad := slices.Clone(blob)
 	bad[len(bad)-1] ^= 0xff // corrupt the CRC word
 	_, err = m.LoadSession(bad, "")
 	if _, ok := errors.AsType[*SnapshotError](err); !ok {

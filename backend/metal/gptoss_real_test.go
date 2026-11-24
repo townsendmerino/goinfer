@@ -5,6 +5,7 @@ package metal
 import (
 	"encoding/json"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -85,7 +86,7 @@ func TestGptOssPaging_matchesNonPaged(t *testing.T) {
 			if err != nil {
 				t.Fatalf("forward[%d] (slots=%q): %v", i, slotsEnv, err)
 			}
-			out[i] = append([]float32(nil), lr...)
+			out[i] = slices.Clone(lr)
 		}
 		return out
 	}

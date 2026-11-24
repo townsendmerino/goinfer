@@ -57,7 +57,7 @@ func TestG4LayerMajor_matchesSequential(t *testing.T) {
 				for l := range r.layers {
 					d := r.layers[l].geom.kvDim
 					o := r.kvHostOff(l, 2)
-					out = append(out, append([]uint16(nil), r.kc[l].U16s()[o:o+n*d]...), append([]uint16(nil), r.vc[l].U16s()[o:o+n*d]...))
+					out = append(out, slices.Clone(r.kc[l].U16s()[o:o+n*d]), slices.Clone(r.vc[l].U16s()[o:o+n*d]))
 				}
 				return out
 			}
@@ -88,7 +88,7 @@ func TestG4LayerMajor_matchesSequential(t *testing.T) {
 						for i := range embs {
 							embs[i] = emb(c.prefix + i)
 						}
-						last = append([]float32(nil), r.prefillG4Paged(embs, c.prefix, true)...)
+						last = slices.Clone(r.prefillG4Paged(embs, c.prefix, true))
 						if err := r.takeExecErr(); err != nil {
 							t.Fatal(err)
 						}
@@ -104,7 +104,7 @@ func TestG4LayerMajor_matchesSequential(t *testing.T) {
 							if err != nil {
 								t.Fatal(err)
 							}
-							last = append([]float32(nil), lg...)
+							last = slices.Clone(lg)
 						}
 					}
 					staged = stages() - s0
@@ -114,7 +114,7 @@ func TestG4LayerMajor_matchesSequential(t *testing.T) {
 						if err != nil {
 							t.Fatal(err)
 						}
-						dec = append(dec, append([]float32(nil), lg...))
+						dec = append(dec, slices.Clone(lg))
 					}
 					return last, kvs, dec, staged
 				}
@@ -172,7 +172,7 @@ func TestG4LayerMajor_generateThroughDecoder(t *testing.T) {
 		t.Fatalf("transcode: %v", err)
 	}
 	p1 := []int{1, 7, 42, 100, 5, 200, 13, 88, 3, 64}
-	p2 := append(append([]int(nil), p1...), 9, 77, 31, 2, 150, 6, 44, 18, 120, 11)
+	p2 := append(slices.Clone(p1), 9, 77, 31, 2, 150, 6, 44, 18, 120, 11)
 	run := func(on bool) (toks [][]int, runs int) {
 		prev := g4LayerMajorOn
 		g4LayerMajorOn = on

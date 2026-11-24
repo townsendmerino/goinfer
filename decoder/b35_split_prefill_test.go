@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"math"
+	"slices"
 	"testing"
 )
 
@@ -43,7 +44,7 @@ func TestQwen35SplitPrefill_bitIdentical(t *testing.T) {
 			if err != nil {
 				t.Fatalf("runLayersQwen35N [%d,%d): %v", from, to, err)
 			}
-			last = append([]float32(nil), hN[(to-from-1)*hidden:]...)
+			last = slices.Clone(hN[(to-from-1)*hidden:])
 			from = to
 		}
 		return arm{last, cache}

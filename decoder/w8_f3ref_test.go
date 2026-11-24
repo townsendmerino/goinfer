@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -51,7 +52,7 @@ func TestW8F3Reference_write(t *testing.T) {
 			if err != nil {
 				t.Fatalf("forward prompt %d at %d: %v", p, i, err)
 			}
-			lgs = append(lgs, append([]float32(nil), l...))
+			lgs = append(lgs, slices.Clone(l))
 			if i+1 < promptLen {
 				tok = ref.Prompts[p][i+1]
 			} else {

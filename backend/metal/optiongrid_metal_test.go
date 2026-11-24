@@ -123,7 +123,7 @@ func (r *mgRejecting) Draft(ctx []int, k int) []int {
 	if k < 2 || i >= len(r.full) {
 		return nil
 	}
-	out := append([]int(nil), r.full[i:min(i+k, len(r.full))]...)
+	out := slices.Clone(r.full[i:min(i+k, len(r.full))])
 	if len(out) < 2 {
 		return nil
 	}
@@ -141,7 +141,7 @@ func mgSpecMatchesPlain(t *testing.T, m *decoder.Model) {
 	const n = 24
 	ch, g := m.Generate(context.Background(), p, n, decoder.SamplingParams{})
 	want, _ := mgRun(t, ch, g)
-	full := append(append([]int(nil), p...), want...)
+	full := append(slices.Clone(p), want...)
 	for _, d := range []decoder.Drafter{&decoder.NgramDrafter{}, &mgRejecting{full: full}} {
 		ch, g, err := m.GenerateNgramSpeculative(context.Background(), p, n, d, 4, decoder.SamplingParams{})
 		if err != nil {
@@ -161,7 +161,7 @@ func mgTwoTurns(t *testing.T, m *decoder.Model) ([]int, []float64, int) {
 	s := m.NewSession(0)
 	p := mgShort()
 	first, _ := mgSess(t, s, p, 8)
-	turn2 := append(append(append([]int(nil), p...), first...), 7, 11, 13)
+	turn2 := append(append(slices.Clone(p), first...), 7, 11, 13)
 	ch, g := s.Generate(context.Background(), turn2, 8, mgSP)
 	toks, lp := mgRun(t, ch, g)
 	return toks, lp, g.PrefillReused
@@ -244,7 +244,7 @@ func mgTeacherForced(t *testing.T, m *decoder.Model, seq []int) [][]float32 {
 		if err != nil {
 			t.Fatalf("resident Forward[%d]: %v", i, err)
 		}
-		out[i] = append([]float32(nil), l...)
+		out[i] = slices.Clone(l)
 	}
 	rf.Reset()
 	return out
@@ -260,7 +260,7 @@ func mgCPUTeacherForced(t *testing.T, m *decoder.Model, seq []int) [][]float32 {
 		if err != nil {
 			t.Fatalf("cpu Forward[%d]: %v", i, err)
 		}
-		out[i] = append([]float32(nil), l...)
+		out[i] = slices.Clone(l)
 	}
 	return out
 }
@@ -366,7 +366,7 @@ func TestOptionPathMetal_kvPrecision(t *testing.T) {
 			s := m.NewSession(0)
 			p := mgShort()
 			first, _ := mgSess(t, s, p, 8)
-			turn2 := append(append(append([]int(nil), p...), first...), 7, 11, 13)
+			turn2 := append(append(slices.Clone(p), first...), 7, 11, 13)
 			coldT, coldL := mgGen(t, m, turn2, 8)
 			const tol = 0.02
 			if !slices.Equal(toks, coldT) || mgMaxDiff(lp, coldL) > tol {

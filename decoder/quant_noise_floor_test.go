@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"math"
 	"os"
+	"slices"
 	"testing"
 )
 
@@ -60,7 +61,7 @@ func TestQuantNoiseFloor_gemma4MoE(t *testing.T) {
 			if err != nil {
 				t.Fatalf("forward pos %d: %v", i, err)
 			}
-			logits = append(logits, append([]float32(nil), l...))
+			logits = append(logits, slices.Clone(l))
 		}
 		return logits, routerCaptureBuf, routerMarginBuf
 	}

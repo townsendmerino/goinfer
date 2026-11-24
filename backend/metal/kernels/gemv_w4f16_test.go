@@ -5,6 +5,7 @@ package kernels
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 )
 
@@ -34,7 +35,7 @@ func TestNib2HalfAllValues(t *testing.T) {
 	const K = 32
 	N := 16 // one row per nibble value 0..15
 	words := make([]uint32, N*(K/8))
-	for n := 0; n < N; n++ {
+	for n := range N {
 		base := n * (K / 8)
 		// nibble slot 0 = n; slots 1..7 of THIS word, and every nibble of every other word in
 		// the row, = 8 (neutral -> nib2half(8)-8 = 0) so only the one nibble under test
@@ -64,7 +65,7 @@ func TestNib2HalfAllValues(t *testing.T) {
 	e.End()
 
 	got := dOut.Floats()
-	for n := 0; n < N; n++ {
+	for n := range N {
 		want := float32(n - 8)
 		if got[n] != want {
 			t.Errorf("nib2half(%d): got %v want %v (raw nibble-8 not exact)", n, got[n], want)
@@ -93,7 +94,6 @@ func TestGemvW4F16_vsScalarReference(t *testing.T) {
 	}
 
 	for _, K := range []int{1536, 8960} {
-		K := K
 		t.Run(shapeName(K), func(t *testing.T) {
 			const N = 64
 			rng := rand.New(rand.NewSource(int64(K) + 7))
@@ -101,7 +101,7 @@ func TestGemvW4F16_vsScalarReference(t *testing.T) {
 			rows := make([][]float32, N)
 			words := make([]uint32, 0, N*(K/8))
 			scales := make([]float32, 0, N*(K/32))
-			for n := 0; n < N; n++ {
+			for n := range N {
 				row := make([]float32, K)
 				for k := range row {
 					row[k] = (rng.Float32()*2 - 1) * 0.3 // weight-scale magnitude, mirrors real checkpoints
@@ -136,12 +136,12 @@ func TestGemvW4F16_vsScalarReference(t *testing.T) {
 			// words (not from `rows`), so this checks the kernel's actual dequant against the
 			// actual packed bits, exactly like UNP8V does on-device — just in plain Go.
 			want := make([]float32, N)
-			for n := 0; n < N; n++ {
+			for n := range N {
 				var acc float64 // f64 accumulation in the reference for a tighter ground truth
 				wbase := n * (K / 8)
 				for g := 0; g < K/32; g++ {
 					sc := float64(scF16Truth[n*(K/32)+g])
-					for kk := 0; kk < 32; kk++ {
+					for kk := range 32 {
 						k := g*32 + kk
 						word := words[wbase+k/8]
 						nibble := (word >> (4 * uint(k%8))) & 0xF
@@ -163,13 +163,13 @@ func TestGemvW4F16_vsScalarReference(t *testing.T) {
 				e := q_.Begin()
 				e.DispatchTG(pipe, N*32, 256, K*2, dWq, dSct, dAx, dOut, uK)
 				e.End()
-				return append([]float32(nil), dOut.Floats()...)
+				return slices.Clone(dOut.Floats())
 			}
 			got := run()
 
 			var maxAbs float64
 			var dot, magA, magB float64
-			for n := 0; n < N; n++ {
+			for n := range N {
 				d := math.Abs(float64(got[n] - want[n]))
 				if d > maxAbs {
 					maxAbs = d
@@ -195,7 +195,7 @@ func TestGemvW4F16_vsScalarReference(t *testing.T) {
 			// match exactly — Metal's simd_sum reduction order is fixed per dispatch shape, so
 			// this should be bit-identical, not just close.
 			got2 := run()
-			for n := 0; n < N; n++ {
+			for n := range N {
 				if got[n] != got2[n] {
 					t.Errorf("non-deterministic at row %d: %v vs %v", n, got[n], got2[n])
 				}
@@ -222,7 +222,7 @@ func TestGemvW4F16_epilogues(t *testing.T) {
 
 	words := make([]uint32, 0, N*(K/8))
 	scales := make([]float32, 0, N*(K/32))
-	for n := 0; n < N; n++ {
+	for range N {
 		row := make([]float32, K)
 		for k := range row {
 			row[k] = (rng.Float32()*2 - 1) * 0.3
@@ -248,12 +248,12 @@ func TestGemvW4F16_epilogues(t *testing.T) {
 		scF16Truth[i] = f16ToF32(sctHalf[i])
 	}
 	dot := make([]float32, N)
-	for n := 0; n < N; n++ {
+	for n := range N {
 		var acc float64
 		wbase := n * (K / 8)
-		for g := 0; g < K/32; g++ {
+		for g := range K / 32 {
 			sc := float64(scF16Truth[n*(K/32)+g])
-			for kk := 0; kk < 32; kk++ {
+			for kk := range 32 {
 				k := g*32 + kk
 				word := words[wbase+k/8]
 				nibble := (word >> (4 * uint(k%8))) & 0xF
@@ -314,7 +314,7 @@ func TestGemvW4F16_epilogues(t *testing.T) {
 		for i := range base {
 			base[i] = rng.Float32()*2 - 1
 		}
-		dOut := NewBufferFloats(d, append([]float32(nil), base...))
+		dOut := NewBufferFloats(d, slices.Clone(base))
 		e := q_.Begin()
 		e.DispatchTG(pipe, N*32, 256, K*2, dWq, dSct, dAx, dOut, uK)
 		e.End()

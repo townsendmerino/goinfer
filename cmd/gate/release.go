@@ -200,12 +200,12 @@ func replayRelease(w io.Writer, path string) int {
 		fmt.Fprintf(w, "gate release -replay: %s is not a release run record\n", path)
 		return 2
 	}
-	var missing []string
-	e := &relEnv{tag: in.Tag, prev: in.Prev, offline: in.Offline, look: relReplayLook(in.Looks, &missing)}
+	look, missing := relReplayLook(in.Looks)
+	e := &relEnv{tag: in.Tag, prev: in.Prev, offline: in.Offline, look: look}
 	var buf bytes.Buffer
 	code := reportRelease(&buf, e, releaseRows)
-	if len(missing) > 0 {
-		fmt.Fprintf(w, "gate release -replay: %s holds no answer for: %s\n", path, strings.Join(missing, "; "))
+	if missed := missing(); len(missed) > 0 {
+		fmt.Fprintf(w, "gate release -replay: %s holds no answer for: %s\n", path, strings.Join(missed, "; "))
 		return 2
 	}
 	w.Write(buf.Bytes())

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"math"
 	"os"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -108,7 +109,7 @@ func TestDSpark_referenceParity(t *testing.T) {
 			d.ExtendContext(be, cctx, fused)
 			h := make([][]float32, len(blockIn))
 			for i, row := range blockIn {
-				h[i] = append([]float32(nil), row...)
+				h[i] = slices.Clone(row)
 			}
 			for li := range d.layers {
 				d.layer(be, &d.layers[li], cctx.k[li], cctx.v[li], h)

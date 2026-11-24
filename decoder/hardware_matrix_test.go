@@ -13,11 +13,11 @@ package decoder
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"os"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 )
@@ -80,7 +80,7 @@ func buildHardwareRows(t *testing.T) ([]hwRow, error) {
 	for k := range registry {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 
 	rows := map[string]*hwRow{}
 	for _, mt := range keys {
@@ -115,7 +115,7 @@ func buildHardwareRows(t *testing.T) ([]hwRow, error) {
 	for _, r := range rows {
 		out = append(out, *r)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Display < out[j].Display })
+	slices.SortFunc(out, func(a, b hwRow) int { return cmp.Compare(a.Display, b.Display) })
 	return out, nil
 }
 
@@ -456,7 +456,7 @@ func renderVerifiedOn(c censusFile) string {
 		for h := range m.hows {
 			hows = append(hows, h)
 		}
-		sort.Strings(hows)
+		slices.Sort(hows)
 		b.WriteString(fmt.Sprintf("| %s | %s | %d | %s |\n", strings.ReplaceAll(name, "|", "/"), strings.Join(hows, ", "), len(m.ids), m.latest))
 	}
 	b.WriteString(fmt.Sprintf("\n**%d of %d hardware-selected paths have no record of ever executing:**\n\n", len(never), len(c.Entries)))

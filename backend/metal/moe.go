@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"sync"
 
@@ -296,8 +297,8 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 			// gate|up fused per row-block: the stacked (non-paged) layout is gate rows THEN up rows
 			// per expert (int4Concat(gate,up) order), so a slot must reproduce that concatenation —
 			// gemv_w4a8_moe reads row r < inter as gate, r >= inter as up, off the SAME buffer.
-			guBytes := append(append([]byte(nil), gw...), uw...)
-			guS := append(append([]uint16(nil), experts[e].Gate.Int4ScalesF16()...), experts[e].Up.Int4ScalesF16()...)
+			guBytes := slices.Concat(gw, uw)
+			guS := slices.Concat(experts[e].Gate.Int4ScalesF16(), experts[e].Up.Int4ScalesF16())
 			return guBytes, guS, dw, experts[e].Down.Int4ScalesF16()
 		}
 		ml.pool = newExpertPool(d, mo.slots, nGuW, nGuS, len(dw0), len(ds0), stage)
@@ -362,37 +363,29 @@ func buildMoELayer(d *Device, m *decoder.Model, l int, lw *decoder.LayerWeights,
 					// sub-offset (0 for gate, sp.gLen for up).
 					var wg sync.WaitGroup
 					var errG, errU, errD error
-					wg.Add(3)
-					go func() {
-						defer wg.Done()
+					wg.Go(func() {
 						errG = preadRangeIntoPoolSlot(fd, pool.guW, sl.slot, pool.nGuW, 0, sp.gOff, sp.gLen)
-					}()
-					go func() {
-						defer wg.Done()
+					})
+					wg.Go(func() {
 						errU = preadRangeIntoPoolSlot(fd, pool.guW, sl.slot, pool.nGuW, sp.gLen, sp.uOff, sp.uLen)
-					}()
-					go func() {
-						defer wg.Done()
+					})
+					wg.Go(func() {
 						errD = preadRangeIntoPoolSlot(fd, pool.dW, sl.slot, pool.nDW, 0, sp.dOff, sp.dLen)
-					}()
+					})
 					// With the scales in the file, they are three more disjoint ranges: gate's and
 					// up's fill the two halves of the slot's gate|up scale range, down's its own buffer.
 					var errGS, errUS, errDS error
 					gsLen := 2 * len(experts[ei].Gate.Int4ScalesF16())
 					if scalesInFile {
-						wg.Add(3)
-						go func() {
-							defer wg.Done()
+						wg.Go(func() {
 							errGS = preadScalesIntoPoolSlot(fd, pool.guS, sl.slot, pool.nGuS, 0, sp.gsOff, gsLen)
-						}()
-						go func() {
-							defer wg.Done()
+						})
+						wg.Go(func() {
 							errUS = preadScalesIntoPoolSlot(fd, pool.guS, sl.slot, pool.nGuS, gsLen, sp.usOff, 2*pool.nGuS-gsLen)
-						}()
-						go func() {
-							defer wg.Done()
+						})
+						wg.Go(func() {
 							errDS = preadScalesIntoPoolSlot(fd, pool.dS, sl.slot, pool.nDS, 0, sp.dsOff, 2*pool.nDS)
-						}()
+						})
 					}
 					wg.Wait()
 					for _, e := range []struct {

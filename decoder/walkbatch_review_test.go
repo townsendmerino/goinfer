@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"math"
+	"slices"
 	"testing"
 )
 
@@ -28,7 +29,7 @@ func TestWalkBatch_gatedAttentionIgnoresFastAttention(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return append([]float32(nil), h...)
+		return slices.Clone(h)
 	}
 	want := run(false, nil)
 	// A scratch whose pool was last built fused, as a reused prefillPassScratch can be.

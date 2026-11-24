@@ -5,6 +5,7 @@ package metal
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 )
 
@@ -45,13 +46,13 @@ func TestArgmaxRowsPart_matchesHost(t *testing.T) {
 			r[i] = float32(rng.NormFloat64())
 		}
 		cases = append(cases, rowCase{"random", r})
-		tie := append([]float32(nil), r...)
+		tie := slices.Clone(r)
 		mx := float32(10)
 		for _, i := range []int{V - 1, V / 2, V / 3, 7 % V} {
 			tie[i] = mx
 		}
 		cases = append(cases, rowCase{"ties", tie})
-		last := append([]float32(nil), r...)
+		last := slices.Clone(r)
 		last[V-1] = 20
 		cases = append(cases, rowCase{"max last", last})
 		inf := make([]float32, V)
@@ -64,10 +65,10 @@ func TestArgmaxRowsPart_matchesHost(t *testing.T) {
 			eq[i] = 0.5
 		}
 		cases = append(cases, rowCase{"all equal", eq})
-		n0 := append([]float32(nil), r...)
+		n0 := slices.Clone(r)
 		n0[0] = nan
 		cases = append(cases, rowCase{"NaN first", n0})
-		nm := append([]float32(nil), last...)
+		nm := slices.Clone(last)
 		for i := 1; i < V; i += 97 {
 			nm[i] = nan
 		}

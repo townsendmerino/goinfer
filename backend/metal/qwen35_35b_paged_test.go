@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -171,8 +171,8 @@ func TestQwen35_35B_pagedRuns(t *testing.T) {
 
 	// Steady state = last two thirds. Median, plus p90 for the paging tail.
 	cut := len(times) / 3
-	tail := append([]float64(nil), times[cut:]...)
-	sort.Float64s(tail)
+	tail := slices.Clone(times[cut:])
+	slices.Sort(tail)
 	q := func(p float64) float64 { return tail[min(int(p*float64(len(tail))), len(tail)-1)] }
 	med, p10, p90 := q(0.50), q(0.10), q(0.90)
 	early := 0.0
@@ -265,8 +265,8 @@ func TestQwen35_35B_cpuPagedBaseline(t *testing.T) {
 	}
 	runSecs := time.Since(tRun).Seconds()
 	cut := len(times) / 3
-	tail := append([]float64(nil), times[cut:]...)
-	sort.Float64s(tail)
+	tail := slices.Clone(times[cut:])
+	slices.Sort(tail)
 	q := func(p float64) float64 { return tail[min(int(p*float64(len(tail))), len(tail)-1)] }
 	med, p10, p90 := q(0.50), q(0.10), q(0.90)
 	say("=== RESULT (CPU-paged, budget %.1f GB) ===", budgetGB)

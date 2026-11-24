@@ -7,7 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 )
 
@@ -248,7 +248,7 @@ func TestKSO1_gemvTiming(t *testing.T) {
 				ms = append(ms, (e.GPUEnd()-e.GPUStart())*1e3/float64(per))
 			}
 		}
-		sort.Float64s(ms)
+		slices.Sort(ms)
 		return ms[len(ms)/2]
 	}
 	{
@@ -530,7 +530,7 @@ func TestKSO1_q4kSideReading(t *testing.T) {
 			if err := e.Err(); err != nil {
 				t.Fatalf("%s: dispatch: %v", name, err)
 			}
-			return append([]uint32(nil), out.U32s()[:s.N]...)
+			return slices.Clone(out.U32s()[:s.N])
 		}
 		ref := run("gemv_q4k_f32_rows8", 8)
 		line := fmt.Sprintf("%-18s N=%-5d K=%-5d %6.1f MB:", s.name, s.N, s.K, float64(bytes)/1e6)
@@ -555,7 +555,7 @@ func TestKSO1_q4kSideReading(t *testing.T) {
 					ms = append(ms, (e.GPUEnd()-e.GPUStart())*1e3/float64(per))
 				}
 			}
-			sort.Float64s(ms)
+			slices.Sort(ms)
 			m := ms[len(ms)/2]
 			diff := 0
 			for i, v := range run(k.name, k.R) {

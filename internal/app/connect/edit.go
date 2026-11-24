@@ -56,8 +56,8 @@ func parseObject(raw []byte) (object, error) {
 }
 
 // get returns the value of key as an object, empty when the key is absent, and an error when it holds something else.
-func (o object) get(key string) (object, error) {
-	for _, m := range o {
+func (o *object) get(key string) (object, error) {
+	for _, m := range *o {
 		if m.key == key {
 			sub, err := parseObject(m.val)
 			if err != nil {
@@ -88,10 +88,10 @@ func (o *object) set(key string, v any) {
 	*o = append(*o, member{key, raw})
 }
 
-func (o object) compact() json.RawMessage {
+func (o *object) compact() json.RawMessage {
 	var b bytes.Buffer
 	b.WriteByte('{')
-	for i, m := range o {
+	for i, m := range *o {
 		if i > 0 {
 			b.WriteByte(',')
 		}
@@ -105,7 +105,7 @@ func (o object) compact() json.RawMessage {
 }
 
 // text is the object as an indented file.
-func (o object) text() []byte {
+func (o *object) text() []byte {
 	var b bytes.Buffer
 	_ = json.Indent(&b, o.compact(), "", "  ")
 	b.WriteByte('\n')

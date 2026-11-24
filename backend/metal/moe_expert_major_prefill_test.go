@@ -116,16 +116,14 @@ func BenchmarkMoEExpertMajor_VsRowByRow(b *testing.B) {
 
 		b.Run(fmt.Sprintf("RowByRow_M=%d", M), func(b *testing.B) {
 			setResidentKnob(b, r, "GOINFER_MOE_EXPERT_MAJOR", "0")
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				r.PrefillLast(embs, 0)
 			}
 		})
 
 		b.Run(fmt.Sprintf("ExpertMajor_M=%d", M), func(b *testing.B) {
 			setResidentKnob(b, r, "GOINFER_MOE_EXPERT_MAJOR", "1")
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				r.PrefillLast(embs, 0)
 			}
 		})

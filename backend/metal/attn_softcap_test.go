@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -168,7 +169,7 @@ func TestAttnSoftcap_decodeKernels(t *testing.T) {
 							if err := e.Err(); err != nil {
 								t.Fatalf("%s: dispatch: %v", name, err)
 							}
-							return append([]float32(nil), out.Floats()[:nH*hd]...)
+							return slices.Clone(out.Floats()[:nH*hd])
 						}
 						got, dropped := run(pCap), run(pPlain)
 						d.ReleaseAll()

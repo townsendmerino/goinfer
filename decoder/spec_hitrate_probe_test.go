@@ -3,11 +3,12 @@
 package decoder
 
 import (
+	"cmp"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -92,7 +93,7 @@ func TestSpecHitRate(t *testing.T) {
 		for _, id := range []int{2, 108, 4368, 235, 9020, 1596, 774, 12} {
 			feed(id)
 		}
-		rng := rand.New(rand.NewSource(1))
+		rng := rand.New(rand.NewPCG(1, 0))
 		for i := 0; i < nGen; i++ {
 			nxt := sampleTopK(logits, 40, 1.0, rng)
 			gen = append(gen, nxt)
@@ -209,7 +210,7 @@ func sampleTopK(logits []float32, k int, temp float64, rng *rand.Rand) int {
 	for i, v := range logits {
 		xs[i] = le{i, v}
 	}
-	sort.Slice(xs, func(a, b int) bool { return xs[a].v > xs[b].v })
+	slices.SortFunc(xs, func(a, b le) int { return cmp.Compare(b.v, a.v) })
 	if k > len(xs) {
 		k = len(xs)
 	}

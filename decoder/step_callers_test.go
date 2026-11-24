@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -377,14 +378,14 @@ func (f callLogMRoPEPf) PrefillMRoPELast(_ context.Context, embs [][]float32, st
 
 func (f callLogHidden) HiddenLast(_ context.Context, embs [][]float32, start int) ([]float32, error) {
 	f.log = append(f.log, fmt.Sprintf("HiddenLast %d+%d", start, len(embs)))
-	return append([]float32(nil), embs[len(embs)-1]...), nil
+	return slices.Clone(embs[len(embs)-1]), nil
 }
 
 func (f callLogHidden) ResidualAll(_ context.Context, embs [][]float32, start int) ([][]float32, error) {
 	f.log = append(f.log, fmt.Sprintf("ResidualAll %d+%d", start, len(embs)))
 	out := make([][]float32, len(embs))
 	for i, e := range embs {
-		out[i] = append([]float32(nil), e...)
+		out[i] = slices.Clone(e)
 	}
 	return out, nil
 }

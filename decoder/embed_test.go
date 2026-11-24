@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/testgate"
@@ -59,7 +60,7 @@ func TestHiddenLast_shapeDeterminismAndPooling(t *testing.T) {
 	}
 
 	// Last-token pooling: swapping only the FINAL token must move the vector.
-	swapped := append(append([]int(nil), base[:len(base)-1]...), 8112) // different FINAL token
+	swapped := append(slices.Clone(base[:len(base)-1]), 8112) // different FINAL token
 	vSwap, err := m.HiddenLast(swapped)
 	if err != nil {
 		t.Fatalf("HiddenLast (swapped last): %v", err)
@@ -71,7 +72,7 @@ func TestHiddenLast_shapeDeterminismAndPooling(t *testing.T) {
 
 	// Extending the sequence moves the pooled position, so the vector must change too. (A mean pool
 	// over a 1-token extension could stay nearly identical; a last-token pool cannot.)
-	longer := append(append([]int(nil), base...), 30)
+	longer := append(slices.Clone(base), 30)
 	vLong, err := m.HiddenLast(longer)
 	if err != nil {
 		t.Fatalf("HiddenLast (extended): %v", err)

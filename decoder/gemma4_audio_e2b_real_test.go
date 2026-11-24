@@ -28,6 +28,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -167,7 +168,7 @@ func TestGemma4E2BAudioFull(t *testing.T) {
 			var err error
 			if i >= apos && i < apos+in.AudioLen {
 				off := (i - apos) * hidden
-				h, err = m.runLayersFromEmbedPLE(append([]float32(nil), rows[off:off+hidden]...), pleTok, cache)
+				h, err = m.runLayersFromEmbedPLE(slices.Clone(rows[off:off+hidden]), pleTok, cache)
 			} else {
 				h, err = m.runLayers(id, cache)
 			}
@@ -208,7 +209,7 @@ func TestGemma4E2BAudioFull(t *testing.T) {
 	}
 
 	// The planted defects, each alone, must fail the last-position bar.
-	scaled := append([]float32(nil), soft...)
+	scaled := slices.Clone(soft)
 	for i := range scaled {
 		scaled[i] *= float32(arch.EmbedScale)
 	}

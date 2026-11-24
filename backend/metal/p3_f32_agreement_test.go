@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -53,7 +54,7 @@ func TestP3_metalF32AgreesWithCPU(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				ref = append(ref, append([]float32(nil), l...))
+				ref = append(ref, slices.Clone(l))
 			}
 			arm := func(kv string) (maxDiff, meanDiff float64, agree int) {
 				m, err := decoder.Load(dir, decoder.Options{Backend: "metal", Quant: "int4", KVPrecision: kv, ResidentContext: 64})

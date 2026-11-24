@@ -10,7 +10,7 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -171,7 +171,7 @@ func TestParityManifest_loadersClosed(t *testing.T) {
 			missing = append(missing, f+" (first reached: "+why+")")
 		}
 	}
-	sort.Strings(missing)
+	slices.Sort(missing)
 	for _, f := range missing {
 		t.Errorf("the load path reaches %s, which no shared set or own list covers and loadersExempt does not list", f)
 	}

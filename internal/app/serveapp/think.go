@@ -54,7 +54,7 @@ func parseReasoningFormat(s string) (reasoningFormat, bool) {
 // thinkDefault / reasoningFormat resolve the -thinking / -reasoning-format flags (validated at startup). The default is
 // `template`, each model's own chat template's default, and it lives HERE so a config built without the flag, as tests build
 // it, gets exactly what the flag's default gives; `asis` (the pre-thinking prompt bytes) has to be asked for by name.
-func (c config) thinkDefault() chat.ThinkMode {
+func (c *config) thinkDefault() chat.ThinkMode {
 	if strings.TrimSpace(c.thinking) == "" {
 		return chat.ThinkTemplate
 	}
@@ -64,17 +64,17 @@ func (c config) thinkDefault() chat.ThinkMode {
 
 // tuneTemplate applies the flags that shape how a loaded model's template renders and reads a conversation: -thinking, -tool-format and
 // -lenient-tool-calls. One place, so a test can hold the flag-to-template wiring.
-func (c config) tuneTemplate(t *chat.Template) *chat.Template {
+func (c *config) tuneTemplate(t *chat.Template) *chat.Template {
 	return t.WithThinking(c.thinkDefault()).WithToolFormat(c.toolFormatDefault()).WithLenientToolCalls(c.lenientToolCalls)
 }
 
 // toolFormatDefault resolves -tool-format (validated at startup); the empty value, as in a config built without the flag, is hermes.
-func (c config) toolFormatDefault() chat.ToolFormat {
+func (c *config) toolFormatDefault() chat.ToolFormat {
 	f, _ := chat.ParseToolFormat(c.toolFormat)
 	return f
 }
 
-func (c config) reasoningFormat() reasoningFormat {
+func (c *config) reasoningFormat() reasoningFormat {
 	f, _ := parseReasoningFormat(c.reasoningFmt)
 	return f
 }

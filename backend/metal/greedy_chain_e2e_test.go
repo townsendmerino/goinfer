@@ -97,7 +97,7 @@ func greedyChainGenerate(t *testing.T, tied, noRoom bool, sp decoder.SamplingPar
 		}
 		o.one = gen(prompt, 90)
 		o.turn1 = gen(prompt, 30)
-		ext := append(append(append([]int(nil), prompt...), o.turn1...), 777, 778, 779)
+		ext := append(append(slices.Clone(prompt), o.turn1...), 777, 778, 779)
 		o.turn2 = gen(ext, 30)
 		o.served = a.r.chainServed
 		return o

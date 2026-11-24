@@ -30,7 +30,7 @@ func TestSpecHead(t *testing.T) {
 	if err := m.Set("jev2=/some/model,head=" + judgeTiny + ",lora=/other/adapter"); err != nil {
 		t.Fatal(err)
 	}
-	o = m[1].options(config{})
+	o = m[1].options(&config{})
 	if _, err := specHead(m[1], &o); err == nil || !strings.Contains(err.Error(), "brings its adapter") {
 		t.Fatalf("a conflicting lora=: %v", err)
 	}

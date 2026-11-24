@@ -207,7 +207,7 @@ func sb11Decode(t *testing.T, m *decoder.Model, a *metalResident, id, pos int) (
 		lg, e = a.Forward(m.EmbedResidentForTest(id), pos)
 		return e
 	})
-	return r, append([]float32(nil), lg...)
+	return r, slices.Clone(lg)
 }
 
 // sb11Attributed checks that every dispatch the device counted was attributed (no dispatch_other), and that some were.
@@ -276,7 +276,7 @@ func TestCost_metalDecodeExact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	off = append([]float32(nil), off...)
+	off = slices.Clone(off)
 	_, on := sb11Decode(t, m, a, 9, 4)
 	for i := range on {
 		if math.Float32bits(on[i]) != math.Float32bits(off[i]) {

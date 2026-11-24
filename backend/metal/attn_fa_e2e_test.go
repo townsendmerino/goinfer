@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -82,8 +83,8 @@ func TestAttentionFA_endToEndReproduction(t *testing.T) {
 			for j := range emb {
 				emb[j] = float32(rng.NormFloat64()) * 0.05
 			}
-			l := r.ForwardEmb(append([]float32(nil), emb...), pos)
-			logitsPerStep = append(logitsPerStep, append([]float32(nil), l...))
+			l := r.ForwardEmb(slices.Clone(emb), pos)
+			logitsPerStep = append(logitsPerStep, slices.Clone(l))
 		}
 		b.Close() // fully torn down before the next call — no two residents alive at once
 		m.Close()

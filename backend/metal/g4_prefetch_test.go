@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -48,7 +49,7 @@ func TestG4Prefetch_bitExactAndRuns(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			lg = append(lg, append([]float32(nil), l...))
+			lg = append(lg, slices.Clone(l))
 		}
 		for l := range mr.r.layers {
 			if gl := mr.r.layers[l].g4moe; gl != nil && gl.pool != nil {

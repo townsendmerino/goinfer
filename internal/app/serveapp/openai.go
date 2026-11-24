@@ -597,7 +597,7 @@ type respFormat struct {
 // constrainsOutput reports whether the request's response_format makes a grammar constrain the output from the first
 // token (json_object / json_schema) — the case think.go renders thinking-off, since an open think block in the prompt
 // would contradict the mask.
-func (sm sampling) constrainsOutput() bool {
+func (sm *sampling) constrainsOutput() bool {
 	return sm.ResponseFormat != nil && (sm.ResponseFormat.Type == "json_object" || sm.ResponseFormat.Type == "json_schema")
 }
 
