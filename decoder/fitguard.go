@@ -25,7 +25,7 @@ import (
 // load continues. The guard's failure mode must be letting a doomed load through, never refusing one that would have run.
 
 // fitMemFraction is the share of the fit check's base memory figure (currently available memory) the WEIGHTS alone may occupy. The rest is
-// not slack: KV, scratch, the tokenizer and the operating system live there too. Same figure as metal/backend.go's residentMemFraction,
+// not slack: KV, scratch, the tokenizer and the operating system live there too. Same figure as metal/backend.go's metalStaticCeiling,
 // from one measured thrash failure, so a threshold rather than a swept curve.
 const fitMemFraction = WeightsMemFraction
 

@@ -394,8 +394,8 @@ func TestTwoImages_reuse(t *testing.T) {
 	if towerCalls != 1 || g1.PrefillReused != 0 {
 		t.Fatalf("turn 1: tower calls %d (want 1), PrefillReused %d (want 0)", towerCalls, g1.PrefillReused)
 	}
-	if len(m.resImgBlocks) != 2 {
-		t.Fatalf("turn 1 committed %d image blocks, want 2", len(m.resImgBlocks))
+	if len(m.boundBlocksForTest()) != 2 {
+		t.Fatalf("turn 1 committed %d image blocks, want 2", len(m.boundBlocksForTest()))
 	}
 	prompt2 := append(append(append([]int{}, l.InputIDs...), gen1...), l.InputIDs[len(l.InputIDs)-1])
 	// The bound each claim set reaches, read before any turn changes the record.

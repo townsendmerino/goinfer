@@ -564,5 +564,11 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		// FeatAttnTemp: the decode runner folds the query temperature into each token's attention score scale, and the batched
 		// prefill declines to row-by-row decode (TestMinistral3ResidentParityWebGPU).
 		FeatAttnTemp: true,
+		// FeatPairwiseRoPE: the decode rope kernels' pairwise twins (gpu/pairwise.go), bound in place of the NeoX ones. FeatPairwiseMRoPE:
+		// the batched prefill, the image turn's m-RoPE pass included, declines on a pairwise model, so an image prompt takes the CPU
+		// prefill and its upload, and decode past it rotates at ForwardMRoPE's position through the same twins
+		// (TestGlmOcrResidentParityWebGPU).
+		FeatPairwiseRoPE:  true,
+		FeatPairwiseMRoPE: true,
 	},
 }

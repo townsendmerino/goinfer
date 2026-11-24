@@ -295,6 +295,9 @@ type RunModel struct {
 	// RoPE; nil is off. Scaling q scales each score q·k by the same factor, so the runner multiplies it into the attention
 	// uniform's score scale per token instead of touching q. The batched prefill applies none and declines (RunModelToPrefill).
 	AttnTemp func(pos int) float32
+	// Pairwise (decoder.FeatPairwiseRoPE) binds the pairwise twins of the decode rope kernels (pairwise.go) in place of the
+	// NeoX ones; the batched prefill declines (RunModelToPrefill).
+	Pairwise bool
 }
 
 // AttnTempOffForTest is the attention temperature's plant: a runner built while it is set ignores RunModel.AttnTemp.
@@ -450,6 +453,12 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 	}
 	if m.AttnTemp != nil && m.Mla != nil {
 		return nil, fmt.Errorf("gpu: newDecodeRunner: the attention temperature on the MLA path is not implemented")
+	}
+	if m.Pairwise {
+		if m.Mla != nil {
+			return nil, fmt.Errorf("gpu: newDecodeRunner: pairwise RoPE on the MLA path is not implemented")
+		}
+		ensures = append(ensures, c.ensurePairwise)
 	}
 	for _, e := range ensures {
 		if err := e(); err != nil {
@@ -903,11 +912,24 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 		g.qkvFinUnis[rs] = b
 		return b
 	}
+	// rp is the rope kernels this plan binds: the NeoX ones, or their pairwise twins (pairwise.go) on a pairwise model.
+	rp := pairwisePipes{
+		rope: pairwisePipe{c.ropePipeline, c.ropeLayout}, ropeStore: pairwisePipe{c.ropeStorePipeline, c.ropeStoreLayout},
+		qkvFin: pairwisePipe{c.qkvFinPipeline, c.qkvFinLayout}, ropeStoreF16: pairwisePipe{c.ropeStoreF16Pipeline, c.ropeStoreF16Layout},
+		ropeStoreI8: pairwisePipe{c.ropeStoreI8Pipeline, c.ropeStoreI8Layout},
+	}
+	if m.Pairwise && !PairwiseNeoXForTest {
+		neox := rp
+		rp = *c.pairwise
+		if PairwiseNeoXStoresForTest {
+			rp.ropeStore, rp.ropeStoreF16, rp.ropeStoreI8 = neox.ropeStore, neox.ropeStoreF16, neox.ropeStoreI8
+		}
+	}
 	rope := func(g *attnGeom, vec, invFreq *wgpu.Buffer, ropeScale float32) {
 		if ropeScale == 0 {
 			ropeScale = 1
 		}
-		add(c.ropePipeline, bind(c.ropeLayout, vec, invFreq, ropeQUniFor(g, ropeScale)), uint32(nH*g.half+63)/64, 1)
+		add(rp.rope.pl, bind(rp.rope.ly, vec, invFreq, ropeQUniFor(g, ropeScale)), uint32(nH*g.half+63)/64, 1)
 	}
 	// ropeStore rotates src (the K projection) and writes it straight into the KV
 	// cache at pos*kvDim — replacing the K CopyBufferToBuffer append so the token
@@ -920,15 +942,15 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 		ku := ropeKUniFor(g, ropeScale)
 		if m.KvI8 {
 			// one thread per KV head: per-head absmax → scale → quantize + pack 4/word.
-			add(c.ropeStoreI8Pipeline, bind(c.ropeStoreI8Layout, src, invFreq, cache, scale, ku), uint32(g.nKV+63)/64, 1)
+			add(rp.ropeStoreI8.pl, bind(rp.ropeStoreI8.ly, src, invFreq, cache, scale, ku), uint32(g.nKV+63)/64, 1)
 			return
 		}
 		if m.KvF16 {
 			// word-based (2 f16/word): kvDim/2 = nKV·hd/2 words, covering the rotated span AND the partial-rotary pass-through tail.
-			add(c.ropeStoreF16Pipeline, bind(c.ropeStoreF16Layout, src, invFreq, cache, ku), uint32(g.nKV*g.hd/2+63)/64, 1)
+			add(rp.ropeStoreF16.pl, bind(rp.ropeStoreF16.ly, src, invFreq, cache, ku), uint32(g.nKV*g.hd/2+63)/64, 1)
 		} else {
 			// element-based: nKV·half rotation pairs + nKV·(hd-2·half) pass-through tail = nKV·(hd-half).
-			add(c.ropeStorePipeline, bind(c.ropeStoreLayout, src, invFreq, cache, ku), uint32(g.nKV*(g.hd-g.half)+63)/64, 1)
+			add(rp.ropeStore.pl, bind(rp.ropeStore.ly, src, invFreq, cache, ku), uint32(g.nKV*(g.hd-g.half)+63)/64, 1)
 		}
 	}
 	// vStore copies src (the V projection) into the V cache at pos*kvDim. The f16
@@ -953,7 +975,7 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 			ropeScale = 1
 		}
 		n := max(g.kvDim, nH*g.half)
-		add(c.qkvFinPipeline, bind(c.qkvFinLayout, q, k, v, invFreq, kCache, vCache, qkvFinUniFor(g, ropeScale)), uint32(n+63)/64, 1)
+		add(rp.qkvFin.pl, bind(rp.qkvFin.ly, q, k, v, invFreq, kCache, vCache, qkvFinUniFor(g, ropeScale)), uint32(n+63)/64, 1)
 	}
 	// biasAdd computes vec[i] += bias[i] by reusing the residual kernel: the Qwen2 q/k/v bias (n is the projection width), and
 	// the plain `xd += out` residual add where the fused gemvAdd epilogue cannot be used.

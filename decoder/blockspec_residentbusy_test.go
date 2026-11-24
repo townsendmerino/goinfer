@@ -83,7 +83,8 @@ func equalIntSlices(a, b []int) bool {
 // interleave writes into the same positional resident KV with no error anywhere.
 func TestBlockSpecGenerate_residentBusyDeclines(t *testing.T) {
 	host := &blockspecStubHost{}
-	m := &Model{resident: host, resIDs: []int{1, 2, 3}}
+	m := &Model{resident: host}
+	m.setBoundSeqForTest([]int{1, 2, 3}, nil, nil)
 	atomic.StoreInt32(&m.resBusy, 1) // simulate another in-flight generation
 	s := &BlockSpec{m: m, host: host, dw: blockspecStubWeights{blockSize: 8}}
 
@@ -95,9 +96,9 @@ func TestBlockSpecGenerate_residentBusyDeclines(t *testing.T) {
 		t.Errorf("SetBatchedCapture called %d times while resBusy was held — the busy path must "+
 			"return before any device write", got)
 	}
-	if !equalIntSlices(m.resIDs, []int{1, 2, 3}) {
+	if !equalIntSlices(m.boundIDsForTest(), []int{1, 2, 3}) {
 		t.Errorf("resIDs = %v after a declined claim, want unchanged [1 2 3] — a losing claim must "+
-			"not forget a commit it never touched", m.resIDs)
+			"not forget a commit it never touched", m.boundIDsForTest())
 	}
 	if atomic.LoadInt32(&m.resBusy) != 1 {
 		t.Error("resBusy released by a call that never held the claim")
@@ -111,7 +112,8 @@ func TestBlockSpecGenerate_residentBusyDeclines(t *testing.T) {
 func TestBlockSpecGenerate_forgetsResIDsBeforeAnyWrite(t *testing.T) {
 	wantErr := errors.New("stub: stop here")
 	host := &blockspecStubHost{setBatchedCaptureErr: wantErr}
-	m := &Model{resident: host, resIDs: []int{9, 9, 9}}
+	m := &Model{resident: host}
+	m.setBoundSeqForTest([]int{9, 9, 9}, nil, nil)
 	s := &BlockSpec{m: m, host: host, dw: blockspecStubWeights{blockSize: 8}}
 
 	_, _, err := s.generate([]int{1, 2, 3}, BlockSpecOptions{VerifyWidth: 4}, nil)
@@ -121,9 +123,9 @@ func TestBlockSpecGenerate_forgetsResIDsBeforeAnyWrite(t *testing.T) {
 	if got := atomic.LoadInt32(&host.setBatchedCaptureCalls); got != 1 {
 		t.Fatalf("SetBatchedCapture called %d times, want exactly 1 — test setup assumption broke", got)
 	}
-	if m.resIDs != nil {
+	if m.boundIDsForTest() != nil {
 		t.Errorf("resIDs = %v after a claimed generation, want nil — the forget must happen before "+
-			"the first device write, not only on a clean return", m.resIDs)
+			"the first device write, not only on a clean return", m.boundIDsForTest())
 	}
 	if atomic.LoadInt32(&m.resBusy) != 0 {
 		t.Error("resBusy still held after generate() returned — an early error must still release the claim")
