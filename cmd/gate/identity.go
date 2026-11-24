@@ -13,7 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -451,11 +451,9 @@ func identityRunDir(o identityOpts, t0 time.Time, old, nw *identitySide, extra s
 func buildIdentitySides(o identityOpts, wd string, old, nw *identitySide) *identitySide {
 	var wg sync.WaitGroup
 	for _, s := range []*identitySide{old, nw} {
-		wg.Add(1)
-		go func(s *identitySide) {
-			defer wg.Done()
+		wg.Go(func() {
 			s.Err = buildIdentitySide(o, wd, s)
-		}(s)
+		})
 	}
 	wg.Wait()
 	for _, s := range []*identitySide{old, nw} {
@@ -514,7 +512,7 @@ func identityScrubbedVars() []string {
 			out = append(out, k)
 		}
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 
@@ -535,7 +533,7 @@ func identityEnv(set map[string]string) []string {
 	for k, v := range set {
 		env = append(env, k+"="+v)
 	}
-	sort.Strings(env)
+	slices.Sort(env)
 	return env
 }
 

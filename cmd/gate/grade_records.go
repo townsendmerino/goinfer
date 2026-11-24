@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 )
 
@@ -259,10 +261,8 @@ func (r parityRecord) changedSince(head string, paths []string, objOf func(rev, 
 		}
 		if then != now {
 			c := canonicalPath(p)
-			for _, d := range parityQualifyingTrees {
-				if c == d {
-					return c + "/", nil
-				}
+			if slices.Contains(parityQualifyingTrees, c) {
+				return c + "/", nil
 			}
 			return c, nil
 		}
@@ -323,12 +323,10 @@ var internalMoveMap = map[string]string{
 // allMoveMap is backendMoveMap and internalMoveMap together: the moves preMovePath reads through.
 var allMoveMap = mergeMoveMaps(backendMoveMap, internalMoveMap)
 
-func mergeMoveMaps(maps ...map[string]string) map[string]string {
+func mergeMoveMaps(ms ...map[string]string) map[string]string {
 	out := map[string]string{}
-	for _, m := range maps {
-		for k, v := range m {
-			out[k] = v
-		}
+	for _, m := range ms {
+		maps.Copy(out, m)
 	}
 	return out
 }

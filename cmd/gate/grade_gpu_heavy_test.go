@@ -202,7 +202,7 @@ func TestReplayGPU_heavyEqualsTheRun(t *testing.T) {
 		"cuda-drain":         marker(metalCellEvents([]string{"TestD"}, "pass", false), "TestD", "DRAIN-GROUP-RUN"),
 		"cuda-iso-TestI":     marker(metalCellEvents([]string{"TestI"}, "pass", false), "TestI", "ISOLATED-RUN"),
 	}
-	src := fakeHeavyLive{fakeLiveInputs: fakeLiveInputs{t: t, g: g, evs: evs, rcs: map[string]int{"cuda-heavy-small": 1}, asked: map[string]bool{}},
+	src := fakeHeavyLive{t: t, g: g, evs: evs, rcs: map[string]int{"cuda-heavy-small": 1}, asked: map[string]bool{},
 		peaks: []procPeak{{PID: 9, HWMKB: 4 << 20, Samples: 3, ByTest: map[string]int64{"TestA": 3 << 20}}, {}}}
 	g.runIn.Heavy = &heavyInput{}
 	*g.runIn.Heavy = in
@@ -288,8 +288,8 @@ func TestHeavyNarrowed_noDrainInside(t *testing.T) {
 		Groups: []heavyGroup{{Label: "small", Tests: []string{"TestA", "TestD"}}, {Label: "kernels", Tests: []string{"TestK"}}},
 		Run:    []string{"kernels"}, Secs: 5}
 	g := &gpuGate{w: &live, logDir: dir, backend: "cuda", emitted: map[string]bool{}, runIn: gpuRunInputs{Heavy: &in}}
-	src := fakeHeavyLive{fakeLiveInputs: fakeLiveInputs{t: t, g: g, asked: map[string]bool{},
-		evs: map[string][]testEvent{"cuda-heavy-kernels": metalCellEvents([]string{"TestK"}, "pass", false)}}, peaks: []procPeak{{}}}
+	src := fakeHeavyLive{t: t, g: g, asked: map[string]bool{},
+		evs: map[string][]testEvent{"cuda-heavy-kernels": metalCellEvents([]string{"TestK"}, "pass", false)}, peaks: []procPeak{{}}}
 	if err := g.heavyTier(src); err != nil {
 		t.Fatal(err)
 	}

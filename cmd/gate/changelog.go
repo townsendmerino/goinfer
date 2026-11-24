@@ -8,11 +8,12 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -89,7 +90,7 @@ func (g gitSource) lsTree(dir string) ([]string, error) {
 		return nil, err
 	}
 	var names []string
-	for _, ln := range strings.Fields(string(out)) {
+	for ln := range strings.FieldsSeq(string(out)) {
 		names = append(names, filepath.Base(ln))
 	}
 	return names, nil
@@ -236,7 +237,7 @@ func changelogOwed(base, head *clState, sec string, waived func(kind, name strin
 			newRoutes = append(newRoutes, r)
 		}
 	}
-	sort.Strings(newRoutes)
+	slices.Sort(newRoutes)
 	pathOf := func(r string) string { _, p, _ := strings.Cut(r, " "); return p }
 	for _, r := range newRoutes {
 		p := pathOf(r)
@@ -259,23 +260,18 @@ func changelogOwed(base, head *clState, sec string, waived func(kind, name strin
 	flagRE := func(n string) *regexp.Regexp {
 		return regexp.MustCompile(`-{1,2}` + regexp.QuoteMeta(n) + `([^A-Za-z0-9_-]|$)`)
 	}
-	for _, n := range sortedKeysBool(head.Flags) {
+	for _, n := range slices.Sorted(maps.Keys(head.Flags)) {
 		if !base.Flags[n] && !flagRE(n).MatchString(sec) {
 			add("flag", n, "a new flag")
 		}
 	}
-	for _, n := range sortedKeysBool(base.Flags) {
+	for _, n := range slices.Sorted(maps.Keys(base.Flags)) {
 		if !head.Flags[n] && !flagRE(n).MatchString(sec) {
 			add("flag", n, "a removed flag")
 		}
 	}
 	// families
-	var fams []string
-	for n := range head.Families {
-		fams = append(fams, n)
-	}
-	sort.Strings(fams)
-	for _, n := range fams {
+	for _, n := range slices.Sorted(maps.Keys(head.Families)) {
 		if _, had := base.Families[n]; had {
 			continue
 		}
@@ -298,15 +294,6 @@ func changelogOwed(base, head *clState, sec string, waived func(kind, name strin
 	return owed
 }
 
-func sortedKeysBool(m map[string]bool) []string {
-	var ks []string
-	for k := range m {
-		ks = append(ks, k)
-	}
-	sort.Strings(ks)
-	return ks
-}
-
 // changelogFragmentDir holds the unreleased entries, one file per change; CHANGELOG.md's [Unreleased] section is a pointer to
 // it, and scripts/changelog.py moves them into a release's section.
 const changelogFragmentDir = "changelog.d"
@@ -318,7 +305,7 @@ const unreleasedPointerPrefix = "Each unreleased change is a file in"
 // changelogFragmentDir, which a release would leave behind.
 func unreleasedStray(body string) []string {
 	var out []string
-	for _, ln := range strings.Split(body, "\n") {
+	for ln := range strings.SplitSeq(body, "\n") {
 		if strings.TrimSpace(ln) != "" && !strings.HasPrefix(ln, unreleasedPointerPrefix) {
 			out = append(out, ln)
 		}
@@ -336,7 +323,8 @@ func changelogFragments(src clSource) (string, error) {
 		}
 		return "", err
 	}
-	sort.Sort(sort.Reverse(sort.StringSlice(names)))
+	slices.Sort(names)
+	slices.Reverse(names)
 	var b strings.Builder
 	for _, n := range names {
 		if n == "README.md" || !strings.HasSuffix(n, ".md") {
@@ -386,7 +374,7 @@ func newestVersionTag(root, skip string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	for _, t := range strings.Fields(out) {
+	for t := range strings.FieldsSeq(out) {
 		if t != skip && !strings.Contains(t, "/") {
 			return t, nil
 		}
@@ -472,7 +460,7 @@ func runChangelog(args []string, w io.Writer) int {
 			Why: fmt.Sprintf("%d line(s) under CHANGELOG.md's [Unreleased], which holds only the pointer; move the entry into %s/", len(stray), changelogFragmentDir)})
 	}
 	fmt.Fprintf(w, "CHANGELOG [%s] against %s: %d routes, %d flags, %d families, aikit %s (was %s)\n", *section, *base, len(hs.Routes), len(hs.Flags), len(hs.Families), hs.Pin, bs.Pin)
-	for _, k := range sortedKeysBool(used) {
+	for _, k := range slices.Sorted(maps.Keys(used)) {
 		fmt.Fprintf(w, "  waived %s: %s\n", k, waivers[k])
 	}
 	if len(owed) == 0 {
