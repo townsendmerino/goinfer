@@ -48,7 +48,7 @@ func TestLoad_mapsGIWSharedOnDarwin(t *testing.T) {
 		t.Skipf("vmmap: %v", err)
 	}
 	var region string
-	for _, l := range strings.Split(string(out), "\n") {
+	for l := range strings.SplitSeq(string(out), "\n") {
 		if strings.Contains(l, path) {
 			region = strings.Join(strings.Fields(l), " ")
 			break

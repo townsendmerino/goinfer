@@ -227,16 +227,18 @@ func TestLoadSession_rejectsCorrupt(t *testing.T) {
 	if _, err := m.LoadSession(blob, "model-A"); err != nil {
 		t.Fatalf("clean blob, matching id should load: %v", err)
 	}
-	var se *SnapshotError
-	if _, err := m.LoadSession(blob, "model-B"); !errors.As(err, &se) {
+	_, err := m.LoadSession(blob, "model-B")
+	if _, ok := errors.AsType[*SnapshotError](err); !ok {
 		t.Fatalf("identity mismatch: got %v, want *SnapshotError", err)
 	}
 	bad := append([]byte(nil), blob...)
 	bad[len(bad)-1] ^= 0xff // corrupt the CRC word
-	if _, err := m.LoadSession(bad, ""); !errors.As(err, &se) {
+	_, err = m.LoadSession(bad, "")
+	if _, ok := errors.AsType[*SnapshotError](err); !ok {
 		t.Fatalf("corrupt blob: got %v, want *SnapshotError", err)
 	}
-	if _, err := m.LoadSession([]byte("nope"), ""); !errors.As(err, &se) {
+	_, err = m.LoadSession([]byte("nope"), "")
+	if _, ok := errors.AsType[*SnapshotError](err); !ok {
 		t.Fatalf("garbage blob: got %v, want *SnapshotError", err)
 	}
 }

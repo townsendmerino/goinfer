@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"flag"
@@ -8,7 +9,7 @@ import (
 	"math"
 	"os"
 	"runtime"
-	"sort"
+	"slices"
 	"testing"
 )
 
@@ -110,11 +111,8 @@ func (f identTopK) ForwardTopK(emb []float32, pos, k int, temperature float64, w
 	for i := range idx {
 		idx[i] = i
 	}
-	sort.Slice(idx, func(a, b int) bool {
-		if l[idx[a]] != l[idx[b]] {
-			return l[idx[a]] > l[idx[b]]
-		}
-		return idx[a] < idx[b]
+	slices.SortFunc(idx, func(a, b int) int {
+		return cmp.Or(cmp.Compare(l[b], l[a]), cmp.Compare(a, b))
 	})
 	k = min(k, len(l))
 	row := TopKRow{IDs: make([]int32, k), Logits: make([]float32, k), Full: func() ([]float32, error) { f.topKFulls++; return l, nil }}
@@ -136,7 +134,7 @@ func (f *identResident) gumbelPick(l []float32, temperature float64, seed, draw 
 		h := fnv.New64a()
 		var b [24]byte
 		for i, u := range [3]uint64{seed, draw, uint64(v)} {
-			for j := 0; j < 8; j++ {
+			for j := range 8 {
 				b[i*8+j] = byte(u >> (8 * j))
 			}
 		}
@@ -297,7 +295,7 @@ func identityRun(t *testing.T) []identCase {
 	run("resident/temperature-draw", "sample", SamplingParams{Temperature: 0.9, Seed: 5}, false)
 	run("resident/sampled-chain", "samplechain", SamplingParams{Temperature: 0.9, Seed: 5}, false)
 	run("resident/top1-sampled-chain", "chain", SamplingParams{Temperature: 0.7, TopK: 1, Seed: 3}, false)
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	slices.SortFunc(out, func(a, b identCase) int { return cmp.Compare(a.Name, b.Name) })
 	return out
 }
 

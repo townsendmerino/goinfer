@@ -83,8 +83,7 @@ func TestPromptHiddenMany_matchesSeparate(t *testing.T) {
 // reachable caller until then.
 func TestPromptHiddenMany_int8KV(t *testing.T) {
 	m, err := Load("testdata/qwen3_5-tiny-normw", Options{KVQuant: "i8"})
-	var r *KVRefusal
-	if !errors.As(err, &r) || r.Path != "cpu" || !strings.Contains(r.Reason, "phase 4") {
+	if r, ok := errors.AsType[*KVRefusal](err); !ok || r.Path != "cpu" || !strings.Contains(r.Reason, "phase 4") {
 		t.Fatalf("load error %v, want a CPU KV refusal naming phase 4", err)
 	}
 	if m != nil {

@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"maps"
 	"slices"
 	"testing"
 
@@ -21,9 +22,7 @@ func checkTablePlantedGapGoesRed(t *testing.T, backend string, table *program.Su
 	t.Helper()
 	planted := *table
 	planted.FFN = map[program.FFNForm][]program.ActKind{}
-	for f, acts := range table.FFN {
-		planted.FFN[f] = acts
-	}
+	maps.Copy(planted.FFN, table.FFN)
 	planted.FFN[program.FfnGated] = []program.ActKind{program.ActSiLU}
 	prev := residentBackendTables[backend]
 	residentBackendTables[backend] = &planted

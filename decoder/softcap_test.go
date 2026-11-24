@@ -2,7 +2,7 @@ package decoder
 
 import (
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"testing"
 )
 
@@ -20,7 +20,7 @@ func softcapSerial(logits []float32, sc float32) {
 // vocab with mixed-sign, mixed-magnitude inputs incl. values past the softcap where tanh
 // saturates. Mirrors metal/softcap_test.go's TestMetalSoftcapParallel_bitIdentical.
 func TestSoftcapParallel_bitIdentical(t *testing.T) {
-	rng := rand.New(rand.NewSource(30303))
+	rng := rand.New(rand.NewPCG(30303, 0))
 	for _, n := range []int{7, 8192, 262144} { // below threshold (serial), at, and gemma-3/4 vocab
 		for _, sc := range []float32{30.0, 50.0} { // gemma-2/3 = 30, gemma-4 = 50
 			a := make([]float32, n)
@@ -44,13 +44,12 @@ func TestSoftcapParallel_bitIdentical(t *testing.T) {
 func benchSoftcap(b *testing.B, n int, parallel bool) {
 	const sc = float32(30.0)
 	base := make([]float32, n)
-	rng := rand.New(rand.NewSource(1))
+	rng := rand.New(rand.NewPCG(1, 0))
 	for i := range base {
 		base[i] = float32(rng.NormFloat64()) * 40
 	}
 	buf := make([]float32, n)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		copy(buf, base)
 		if parallel {
 			softcapParallel(buf, sc)

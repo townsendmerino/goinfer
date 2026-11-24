@@ -12,7 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -101,7 +101,7 @@ func buildSB2Census(t *testing.T) []string {
 	for k := range registry {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	for _, mt := range keys {
 		cfg := representativeConfig(mt)
 		if cfg == nil {
@@ -175,7 +175,7 @@ type sb2Machine struct {
 func sb2Machines(t *testing.T) []sb2Machine {
 	t.Helper()
 	paths, _ := filepath.Glob("../testdata/machines/*.json")
-	sort.Strings(paths)
+	slices.Sort(paths)
 	var ms []sb2Machine
 	for _, p := range paths {
 		b, err := os.ReadFile(p)
@@ -349,7 +349,7 @@ func sb2Fixtures(t *testing.T) []censusFamily {
 		t.Fatalf("the census needs git to tell committed fixtures from local ones: %v", err)
 	}
 	committed := map[string]bool{}
-	for _, l := range strings.Split(string(out), "\n") {
+	for l := range strings.SplitSeq(string(out), "\n") {
 		committed[filepath.Clean(l)] = true
 	}
 	var fixtures []censusFamily
@@ -360,7 +360,7 @@ func sb2Fixtures(t *testing.T) []censusFamily {
 			if len(ws) == 0 {
 				continue
 			}
-			sort.Strings(ws)
+			slices.Sort(ws)
 			w = ws[0]
 		}
 		if !committed[filepath.Clean(w)] { // ls-files prints paths relative to the package directory, as w is

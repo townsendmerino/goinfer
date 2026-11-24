@@ -192,7 +192,7 @@ func TestClose_duringPromptStateCalls(t *testing.T) {
 	for i := range prompt {
 		prompt[i] = 1 + i%50
 	}
-	for round := 0; round < 20; round++ {
+	for round := range 20 {
 		m, err := Load("../testdata/llama-tiny", Options{Quant: "f32"})
 		if err != nil {
 			t.Fatal(err)

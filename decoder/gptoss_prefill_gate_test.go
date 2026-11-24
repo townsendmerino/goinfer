@@ -100,7 +100,7 @@ func TestGptOssCPUPrefillGate(t *testing.T) {
 	}
 	if mode == "fit" {
 		raw, _ := os.ReadFile("/proc/self/status")
-		for _, ln := range strings.Split(string(raw), "\n") {
+		for ln := range strings.SplitSeq(string(raw), "\n") {
 			if strings.HasPrefix(ln, "VmHWM") || strings.HasPrefix(ln, "VmRSS") || strings.HasPrefix(ln, "VmSwap") {
 				say("after load: %s", strings.Join(strings.Fields(ln), " "))
 			}
@@ -312,7 +312,7 @@ func gptossPFHostState() (float64, int) {
 	}
 	avail := 0
 	if raw, err := os.ReadFile("/proc/meminfo"); err == nil {
-		for _, ln := range strings.Split(string(raw), "\n") {
+		for ln := range strings.SplitSeq(string(raw), "\n") {
 			if f := strings.Fields(ln); len(f) >= 2 && f[0] == "MemAvailable:" {
 				kb, _ := strconv.Atoi(f[1])
 				avail = kb / 1024
@@ -351,7 +351,7 @@ func gptossPFInts(t *testing.T, name, def string) []int {
 		v = def
 	}
 	var out []int
-	for _, s := range strings.Split(v, ",") {
+	for s := range strings.SplitSeq(v, ",") {
 		x, err := strconv.Atoi(strings.TrimSpace(s))
 		if err != nil || x < 1 {
 			t.Fatalf("%s %q", name, v)
