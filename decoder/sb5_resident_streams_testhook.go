@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"sync"
 )
 
@@ -118,16 +118,14 @@ func ResidentStreamsForTest(m *Model, prefix string) (map[string]ResidentStreamC
 	results := make([]res, len(conc))
 	var wg sync.WaitGroup
 	for i, c := range conc {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			ch, g := m.Generate(context.Background(), prompt, n, c.sp)
 			var toks []int
 			for id := range ch {
 				toks = append(toks, id)
 			}
 			results[i] = res{toks, g}
-		}()
+		})
 	}
 	wg.Wait()
 	for i, c := range conc {
@@ -171,7 +169,7 @@ func CompareResidentStreamsForTest(got map[string]ResidentStreamCase, outPath, w
 			names = append(names, k)
 		}
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	var diffs []string
 	for _, k := range names {
 		w, wok := want[k]

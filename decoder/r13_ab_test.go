@@ -6,7 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -35,7 +35,7 @@ func TestR13_cpuAB(t *testing.T) {
 	hb := func(f string, a ...any) {
 		fmt.Fprintf(os.Stderr, "[r13 %6.1fs] %s\n", time.Since(t0).Seconds(), fmt.Sprintf(f, a...))
 	}
-	med := func(v []float64) float64 { s := append([]float64(nil), v...); sort.Float64s(s); return s[len(s)/2] }
+	med := func(v []float64) float64 { s := slices.Clone(v); slices.Sort(s); return s[len(s)/2] }
 	for _, path := range paths {
 		if strings.HasPrefix(path, "/Volumes/") || strings.HasPrefix(path, "/srv/models") {
 			t.Fatalf("%s is on the archive, not the bench set (CLAUDE.md)", path)

@@ -251,9 +251,7 @@ func TestHiddenLast_residentRacesChat(t *testing.T) {
 	m, _ := loadWithSlotHiddenLastResident(t)
 	var wg sync.WaitGroup
 	errs := make(chan error, 64)
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		prompt := []int{1, 2, 3}
 		for range 8 {
 			stream, g := m.Generate(context.Background(), prompt, 3, SamplingParams{})
@@ -265,15 +263,14 @@ func TestHiddenLast_residentRacesChat(t *testing.T) {
 			}
 			prompt = append(prompt, 4)
 		}
-	}()
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		for i := range 16 {
 			if _, err := m.HiddenLast([]int{5, 6, 7 + i%3}); err != nil {
 				errs <- err
 			}
 		}
-	}()
+	})
 	wg.Wait()
 	close(errs)
 	for err := range errs {

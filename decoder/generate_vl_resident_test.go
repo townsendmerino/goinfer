@@ -163,15 +163,12 @@ func TestGenerateVL_residentConcurrencyRace(t *testing.T) {
 	m.resident = rf
 
 	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		stream, _ := m.Generate(context.Background(), []int{1, 2, 3}, 4, SamplingParams{Temperature: 0})
 		for range stream { //nolint:revive // draining is the point
 		}
-	}()
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		features := func() ([]float32, error) { return g.ImageFeatures, nil }
 		stream, gen := m.GenerateVL(context.Background(), g.InputIDs, g.ImageTokenStart, g.MMTokens, 0, features, 4, SamplingParams{Temperature: 0})
 		for range stream { //nolint:revive
@@ -179,7 +176,7 @@ func TestGenerateVL_residentConcurrencyRace(t *testing.T) {
 		if err := gen.Err(); err != nil {
 			t.Errorf("GenerateVL under concurrent resident contention: %v", err)
 		}
-	}()
+	})
 	wg.Wait()
 
 	if busy := atomic.LoadInt32(&m.resBusy); busy != 0 {

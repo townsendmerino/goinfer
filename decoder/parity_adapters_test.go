@@ -9,7 +9,6 @@ import (
 	"reflect"
 	"runtime"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 )
@@ -74,7 +73,7 @@ func TestParityManifest_adapterFilesOwned(t *testing.T) {
 		for f := range files {
 			out = append(out, f)
 		}
-		sort.Strings(out)
+		slices.Sort(out)
 		return out
 	}
 

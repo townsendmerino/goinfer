@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/testgate"
@@ -134,7 +134,7 @@ func TestA3MoERouteFlips(t *testing.T) {
 		}
 		bounds = append(bounds, wmin)
 	}
-	sort.Float64s(bounds)
+	slices.Sort(bounds)
 	pct := func(p float64) float64 {
 		if len(bounds) == 0 {
 			return 0

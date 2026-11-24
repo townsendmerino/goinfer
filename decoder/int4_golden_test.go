@@ -7,7 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
@@ -134,7 +134,7 @@ func int4FixtureDirs(t *testing.T) []string {
 		}
 		dirs = append(dirs, d)
 	}
-	sort.Strings(dirs)
+	slices.Sort(dirs)
 	return dirs
 }
 

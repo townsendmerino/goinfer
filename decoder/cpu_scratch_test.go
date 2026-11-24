@@ -3,7 +3,7 @@ package decoder
 import (
 	"fmt"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -36,7 +36,7 @@ func cpuScratchHolds(scr *decodeScratch, terms []CPUScratchTerm) error {
 		}
 	}
 	if len(diffs) > 0 {
-		sort.Strings(diffs)
+		slices.Sort(diffs)
 		return fmt.Errorf("%s", strings.Join(diffs, "; "))
 	}
 	return nil

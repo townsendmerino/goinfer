@@ -30,7 +30,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -117,7 +117,7 @@ func prefillRefSourceSHA256() (string, error) {
 			}
 		}
 		files = append(files, "go.mod")
-		sort.Strings(files)
+		slices.Sort(files)
 		h := sha256.New()
 		for _, rel := range files {
 			b, err := os.ReadFile(filepath.Join(root, rel))
@@ -254,7 +254,7 @@ func checkpointDirSHA256(dir string) (string, error) {
 	if len(rels) == 0 {
 		return "", fmt.Errorf("%s: no checkpoint files", dir)
 	}
-	sort.Strings(rels)
+	slices.Sort(rels)
 	hh := sha256.New()
 	for _, rel := range rels {
 		h, err := checkpointSHA256(filepath.Join(dir, filepath.FromSlash(rel)))

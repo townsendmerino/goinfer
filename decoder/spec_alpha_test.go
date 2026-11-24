@@ -1,8 +1,9 @@
 package decoder
 
 import (
+	"cmp"
 	"context"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/constrain"
@@ -72,7 +73,7 @@ func TestNgramAlphaPredictor(t *testing.T) {
 	for k := range buckets {
 		keys = append(keys, k)
 	}
-	sort.Ints(keys)
+	slices.Sort(keys)
 	t.Logf("α̂_ngram(match_len) calibration over %d positions:", len(rows))
 	t.Logf("%8s %6s %12s %12s", "matchLen", "n", "accept_prob", "realized")
 	for _, k := range keys {
@@ -136,7 +137,7 @@ func aucByFeature(rows []SpecTrace) (auc float64, nPos, nNeg int) {
 		return 0.5, nPos, nNeg
 	}
 	// rank-sum: average ranks (ties → mid-rank), AUC = (R_pos - nPos(nPos+1)/2) / (nPos·nNeg)
-	sort.Slice(pts, func(i, j int) bool { return pts[i].x < pts[j].x })
+	slices.SortFunc(pts, func(a, b pt) int { return cmp.Compare(a.x, b.x) })
 	ranks := make([]float64, len(pts))
 	for i := 0; i < len(pts); {
 		j := i
@@ -271,7 +272,7 @@ func TestGrammarAlphaPredictor(t *testing.T) {
 	for d := range byDepth {
 		depths = append(depths, d)
 	}
-	sort.Ints(depths)
+	slices.Sort(depths)
 	for _, d := range depths {
 		b := byDepth[d]
 		t.Logf("  forced-run depth %d: n=%d accept_prob=%.3f", d, b.n, b.acc/float64(b.n))

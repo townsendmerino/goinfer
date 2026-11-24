@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -47,7 +47,7 @@ func TestQwen3ASRWER_arms(t *testing.T) {
 	for id := range refs {
 		ids = append(ids, id)
 	}
-	sort.Strings(ids)
+	slices.Sort(ids)
 	if lim := os.Getenv("GOINFER_S14C4_LIMIT"); lim != "" {
 		var n int
 		fmt.Sscanf(lim, "%d", &n)
