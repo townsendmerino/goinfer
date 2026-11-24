@@ -443,7 +443,7 @@ func cohPeaked(t *testing.T, src string, factor float32) string {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join(src, "model.safetensors"))
 	if err != nil {
-		t.Skipf("no fixture %s: %v", src, err)
+		t.Fatalf("the committed fixture %s: %v", src, err)
 	}
 	n := binary.LittleEndian.Uint64(raw[:8])
 	var hdr map[string]json.RawMessage
@@ -610,10 +610,10 @@ func TestPairwiseRoPERealWebGPU(t *testing.T) {
 		}
 		return b
 	}
-	ran := 0
-	t.Cleanup(func() { // a heavy run that finds no checkpoint is a failure, not a pass
-		if ran == 0 && !t.Failed() {
-			t.Errorf("no checkpoint of glm-ocr, command-r7b or aya-expanse-8b under %s: nothing was gated", filepath.Join(home, "models"))
+	ran, cohRan := 0, 0
+	t.Cleanup(func() { // a heavy run that gates no Cohere checkpoint (LayerNorm, parallel block) is a failure, not a pass
+		if (ran == 0 || cohRan == 0) && !t.Failed() {
+			t.Errorf("no checkpoint of command-r7b or aya-expanse-8b under %s (%d of glm-ocr ran): the Cohere path was not gated", filepath.Join(home, "models"), ran)
 		}
 	})
 	for _, name := range []string{"glm-ocr", "command-r7b", "aya-expanse-8b"} {
@@ -623,6 +623,9 @@ func TestPairwiseRoPERealWebGPU(t *testing.T) {
 				t.Skipf("no %s", dir)
 			}
 			ran++
+			if name != "glm-ocr" {
+				cohRan++
+			}
 			tk, err := tokenizer.Load(filepath.Join(dir, "tokenizer.json"))
 			if err != nil {
 				t.Fatal(err)

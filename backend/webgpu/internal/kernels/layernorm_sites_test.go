@@ -44,3 +44,22 @@ func TestNewDecodeRunner_layerNormOnlyWhereItReaches(t *testing.T) {
 		t.Errorf("whole-vector QK-norm on a LayerNorm model: err %v, want the refusal naming RMSNorm", err)
 	}
 }
+
+// TestRunModelToPrefill_declinesLayerNormAndParallel: a plain dense RunModel takes the batched pass, and the same model with
+// only RunModel.LayerNorm, or only RunModel.Parallel, set does not, since the pass runs RMSNorm and the sequential block.
+// Each flag is set alone, so neither rides another decline (Pairwise, on every real model that sets them). No device:
+// RunModelToPrefill reads the plan's fields only.
+func TestRunModelToPrefill_declinesLayerNormAndParallel(t *testing.T) {
+	base := RunModel{LmHead: &ResidentW8A8{}}
+	if _, _, ok := RunModelToPrefill(&base, 64); !ok {
+		t.Fatal("the plain dense baseline declined: the test cannot isolate LayerNorm or Parallel")
+	}
+	ln, par := base, base
+	ln.LayerNorm, par.Parallel = true, true
+	if _, _, ok := RunModelToPrefill(&ln, 64); ok {
+		t.Error("RunModelToPrefill admitted a LayerNorm model: the batched pass would run RMSNorm")
+	}
+	if _, _, ok := RunModelToPrefill(&par, 64); ok {
+		t.Error("RunModelToPrefill admitted a parallel-block model: the batched pass would run the block sequentially")
+	}
+}

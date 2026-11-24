@@ -140,9 +140,9 @@ func TestCPUQuantSensitivityREADME(t *testing.T) {
 			toks = append(toks, argmaxF(l))
 		}
 	}
-	os.Setenv("GOINFER_NORM_ULP_NOISE", "1") // dense ±1-ULP noise on every norm vector at load — decoder/normnoise.go
+	t.Setenv("GOINFER_NORM_ULP_NOISE", "1") // dense ±1-ULP noise on every norm vector at load — decoder/normnoise.go
 	mb, err := decoder.Load(dir, decoder.Options{Quant: quant})
-	os.Unsetenv("GOINFER_NORM_ULP_NOISE")
+	os.Unsetenv("GOINFER_NORM_ULP_NOISE") // the clean arm is loaded; t.Setenv restores the original at cleanup
 	if err != nil {
 		t.Fatal(err)
 	}
