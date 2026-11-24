@@ -294,7 +294,7 @@ func (o *idsOutcome) note(reason string) {
 }
 
 // fields is the outcome as -log-requests writes it: ids=<used>/<carried> ids_fallback=<reasons, comma-separated, or ->.
-func (o idsOutcome) fields() string {
+func (o *idsOutcome) fields() string {
 	fb := "-"
 	if len(o.fallbacks) > 0 {
 		fb = strings.Join(o.fallbacks, ",")

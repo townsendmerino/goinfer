@@ -37,7 +37,8 @@ func TestActivationQuantHazard_declinesGPUResidency(t *testing.T) {
 
 // TestActivationQuantHazard_metalQ4KLane: the one Metal configuration that clears the hazard is the q4k lane, which
 // quantizes no activation at all. residentGateReasonAct admits Phi-3 on Metal
-// with actSafe; WebGPU stays declined either way (no such lane), and the default (actSafe false) still declines Metal.
+// with actSafe, and on WebGPU, whose actSafe is per-32 activation scales over int8 weights; the default (actSafe false)
+// still declines both.
 func TestActivationQuantHazard_metalQ4KLane(t *testing.T) {
 	m, err := Load("../testdata/phi3-tiny", Options{})
 	if err != nil {
@@ -50,7 +51,10 @@ func TestActivationQuantHazard_metalQ4KLane(t *testing.T) {
 	if why := residentGateReasonAct(m.w.arch, "metal", false); !strings.Contains(why, "Phi-3's activation outliers") {
 		t.Errorf("metal without the q4k lane must keep the hazard decline, got %q", why)
 	}
-	if why := residentGateReasonAct(m.w.arch, "webgpu", true); !strings.Contains(why, "Phi-3's activation outliers") {
-		t.Errorf("webgpu has no float-activation lane and must keep the hazard decline, got %q", why)
+	if why := residentGateReasonAct(m.w.arch, "webgpu", true); strings.Contains(why, "Phi-3's activation outliers") {
+		t.Errorf("webgpu with per-32 activation scales (actSafe) still declined for the hazard: %q", why)
+	}
+	if why := residentGateReasonAct(m.w.arch, "webgpu", false); !strings.Contains(why, "Phi-3's activation outliers") {
+		t.Errorf("webgpu with per-vector scales must keep the hazard decline, got %q", why)
 	}
 }

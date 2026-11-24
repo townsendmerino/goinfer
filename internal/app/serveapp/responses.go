@@ -47,7 +47,7 @@ type responseReq struct {
 	sampling
 }
 
-func (r responseReq) thinkRequest() thinkRequest {
+func (r *responseReq) thinkRequest() thinkRequest {
 	tr := thinkRequest{}
 	if r.Reasoning != nil {
 		tr.reasoningEffort = r.Reasoning.Effort
@@ -102,7 +102,7 @@ func (s *server) handleResponses(w http.ResponseWriter, r *http.Request) {
 	if s.fastRoute(r, &req.Model) {
 		req.applyFast()
 	}
-	dropUnrunnableTools(w, &req.Tools)
+	req.Tools = dropUnrunnableTools(w, req.Tools)
 	s.withModel(w, req.Model, func(lm *loadedModel) { s.serveResponsesWith(w, r, req, lm) })
 }
 

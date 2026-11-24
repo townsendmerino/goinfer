@@ -74,7 +74,7 @@ func TestSideRequests_ccDiag(t *testing.T) {
 			p[0], p[1], l, "", show(lm, a[max(0, l-12):l]), p[0], show(lm, a[l:min(len(a), l+12)]), p[1], show(lm, b[l:min(len(b), l+12)]), len(a)-l, len(b)-l)
 	}
 	ids2 := map[string][]int{}
-	for _, n := range strings.Split(os.Getenv("CCEXTRA"), ",") {
+	for n := range strings.SplitSeq(os.Getenv("CCEXTRA"), ",") {
 		if n == "" {
 			continue
 		}

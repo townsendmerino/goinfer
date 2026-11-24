@@ -7,7 +7,8 @@ import (
 )
 
 // TestActGroupResidentDecline_table is the gate's rule: a set activation group declines every resident
-// backend but CUDA, except Metal's q4k lane, which quantizes no activation.
+// backend but CUDA and WebGPU at int8int8 (its per-32 GEMV takes int8 weights), except Metal's q4k lane, which
+// quantizes no activation.
 func TestActGroupResidentDecline_table(t *testing.T) {
 	for _, c := range []struct {
 		backend, quant string
@@ -15,11 +16,13 @@ func TestActGroupResidentDecline_table(t *testing.T) {
 		declines       bool
 	}{
 		{"metal", "int8int8", 32, true},
-		{"webgpu", "int8int8", 32, true},
+		{"webgpu", "int8int8", 32, false},
 		{"metal", "int4", 32, true},
 		{"cuda", "int8int8", 32, false},
 		{"metal", "q4k", 32, false}, // modelFromOptions stamps 32 on every q4k load
 		{"webgpu", "q4k", 32, true},
+		{"webgpu", "int4", 32, true},
+		{"webgpu", "f32", 32, true},
 		{"metal", "int8int8", 0, false},
 		{"webgpu", "int4", 0, false},
 	} {
@@ -36,8 +39,8 @@ func TestActGroupResidentDecline_table(t *testing.T) {
 var actGroupBackendSeq atomic.Int32
 
 // TestResidentAdmission_actGroupDeclinesOffCUDA drives the gate through Load with a fake residency backend
-// reporting each real backend's name (resident_admission_test.go's harness): with ActQuantGroup set, Metal and
-// WebGPU are refused before the build and the decline names the option; CUDA builds; Metal without the option
+// reporting each real backend's name (resident_admission_test.go's harness): with ActQuantGroup set, Metal is
+// refused before the build and the decline names the option; CUDA and WebGPU build; Metal without the option
 // builds, so the refusal is the option's and not the fixture's.
 func TestResidentAdmission_actGroupDeclinesOffCUDA(t *testing.T) {
 	const dir = "../testdata/llama-tiny"
@@ -60,7 +63,7 @@ func TestResidentAdmission_actGroupDeclinesOffCUDA(t *testing.T) {
 		t.Cleanup(func() { _ = m.Close() })
 		return m, be
 	}
-	for _, name := range []string{"metal", "webgpu"} {
+	for _, name := range []string{"metal"} {
 		m, be := load(name, 32)
 		if n := be.built.Load(); n != 0 {
 			t.Errorf("%s: BuildResident called %d times with ActQuantGroup 32", name, n)
@@ -72,8 +75,10 @@ func TestResidentAdmission_actGroupDeclinesOffCUDA(t *testing.T) {
 			t.Errorf("%s: decline does not name ActQuantGroup: %q", name, m.ResidentDecline())
 		}
 	}
-	if _, be := load("cuda", 32); be.built.Load() == 0 {
-		t.Error("cuda: not built with ActQuantGroup 32; CUDA residency implements per-group scales")
+	for _, name := range []string{"cuda", "webgpu"} {
+		if _, be := load(name, 32); be.built.Load() == 0 {
+			t.Errorf("%s: not built with ActQuantGroup 32; its residency implements per-group scales", name)
+		}
 	}
 	if _, be := load("metal", 0); be.built.Load() == 0 {
 		t.Error("metal without ActQuantGroup was not built: the fixture does not isolate the option")

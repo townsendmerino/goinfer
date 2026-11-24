@@ -5,9 +5,15 @@ package webgpu
 import (
 	"math"
 	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
+	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
 // TestResidentCaptureParityWebGPU runs the resident Forward against the CPU ForwardForTest at the same quant (an 8-token
@@ -179,5 +185,173 @@ func TestResidentCaptureParityWebGPU(t *testing.T) {
 	t.Logf("phi3-synth (%s): min prompt cosine %.6f", quant, minCos)
 	if math.IsNaN(minCos) {
 		t.Errorf("NaN cosine")
+	}
+}
+
+func actG32RequireAdapter(t *testing.T) {
+	t.Helper()
+	c, err := New()
+	if err != nil {
+		t.Skipf("no WebGPU adapter: %v", err)
+	}
+	c.Close()
+}
+
+func actG32Cosine(a, b []float32) float64 {
+	var ab, aa, bb float64
+	for i := range a {
+		ab += float64(a[i]) * float64(b[i])
+		aa += float64(a[i]) * float64(a[i])
+		bb += float64(b[i]) * float64(b[i])
+	}
+	return ab / math.Sqrt(aa*bb)
+}
+
+// actG32ResidentLogits loads path on webgpu at int8int8 with per-32 activations, checks the decode path is resident, and
+// returns each position's logits from the resident forward.
+func actG32ResidentLogits(t *testing.T, path string, ids []int, opts decoder.Options) [][]float32 {
+	t.Helper()
+	opts.Backend, opts.Quant, opts.ActQuantGroup = "webgpu", "int8int8", 32
+	m, err := decoder.Load(path, opts)
+	if err != nil {
+		t.Fatalf("webgpu load: %v", err)
+	}
+	defer m.Close()
+	rf := m.ResidentForwardForTest()
+	if dp := m.DecodePath(); rf == nil || !strings.HasPrefix(dp, "webgpu") || !strings.Contains(dp, "-resident") {
+		t.Fatalf("decode path %q, want a webgpu resident; decline: %s", m.DecodePath(), m.ResidentDecline())
+	}
+	if rd, ok := rf.(*residentDecoder); !ok || !rd.rm.ActG32 {
+		t.Fatalf("the resident (%T) was not built with the per-32 twins", rf)
+	}
+	rf.Reset()
+	out := make([][]float32, len(ids))
+	for p, id := range ids {
+		lg, err := rf.Forward(m.EmbedResidentForTest(id), p)
+		if err != nil {
+			t.Fatalf("resident forward pos %d: %v", p, err)
+		}
+		out[p] = append([]float32(nil), lg...)
+	}
+	return out
+}
+
+// actG32CPULogits is the CPU forward's logits at each position under opts.
+func actG32CPULogits(t *testing.T, path string, ids []int, opts decoder.Options) [][]float32 {
+	t.Helper()
+	m, err := decoder.Load(path, opts)
+	if err != nil {
+		t.Fatalf("cpu load %+v: %v", opts, err)
+	}
+	defer m.Close()
+	c := m.NewCache(len(ids) + 1)
+	out := make([][]float32, len(ids))
+	for p, id := range ids {
+		lg, err := m.ForwardForTest(id, c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out[p] = append([]float32(nil), lg...)
+	}
+	return out
+}
+
+// actG32Agreement is the sorted per-position cosines of a against b.
+func actG32Agreement(a, b [][]float32) []float64 {
+	cs := make([]float64, len(a))
+	for p := range a {
+		cs[p] = actG32Cosine(a[p], b[p])
+	}
+	sort.Float64s(cs)
+	return cs
+}
+
+// TestActG32_phi3TinyResidentMatchesCPU: the synthetic two-layer Phi-3 at int8int8 with per-32 activations runs resident on
+// WebGPU, past the activation-hazard gate, and its logits at every position match the CPU per-32 path (the same algorithm,
+// differing by kernel accumulation order) at median cosine >= 0.9999 and minimum >= 0.999. The planted per-vector scale
+// index (kernels.ActG32PerVectorScaleForTest) misses the median bar, and an int4 load with per-32 activations declines naming
+// the option (on the synthetic llama, which has no activation hazard to refuse it first).
+func TestActG32_phi3TinyResidentMatchesCPU(t *testing.T) {
+	actG32RequireAdapter(t)
+	path := filepath.Join(t.TempDir(), "phi3-tiny.gguf")
+	if err := decoder.WritePhi3Q4KTinyGGUFForTest(path); err != nil {
+		t.Fatal(err)
+	}
+	ids := make([]int, 24)
+	for p := range ids {
+		ids[p] = (7 + 13*p) % 64
+	}
+	want := actG32CPULogits(t, path, ids, decoder.Options{Quant: "int8int8", ActQuantGroup: 32})
+	cs := actG32Agreement(actG32ResidentLogits(t, path, ids, decoder.Options{}), want)
+	t.Logf("webgpu per-32 vs cpu per-32: %d positions, cosine min %.7f median %.7f", len(cs), cs[0], cs[len(cs)/2])
+	if cs[len(cs)/2] < 0.9999 || cs[0] < 0.999 {
+		t.Errorf("median cosine %.7f (want >= 0.9999), min %.7f (want >= 0.999)", cs[len(cs)/2], cs[0])
+	}
+
+	kernels.ActG32PerVectorScaleForTest = true
+	planted := actG32Agreement(actG32ResidentLogits(t, path, ids, decoder.Options{}), want)
+	kernels.ActG32PerVectorScaleForTest = false
+	t.Logf("plant (group 0's scale for every group): cosine min %.7f median %.7f", planted[0], planted[len(planted)/2])
+	if planted[len(planted)/2] >= 0.9999 {
+		t.Errorf("plant: median cosine %.7f still passes the 0.9999 bar", planted[len(planted)/2])
+	}
+
+	// int4 with per-32 activations, on a family the activation-hazard gate does not refuse first.
+	llama := filepath.Join(t.TempDir(), "llama-tiny.gguf")
+	if err := decoder.WriteLlamaQ4KTinyGGUFForTest(llama); err != nil {
+		t.Fatal(err)
+	}
+	m, err := decoder.Load(llama, decoder.Options{Backend: "webgpu", Quant: "int4", ActQuantGroup: 32})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if m.ResidentActive() || !strings.Contains(m.ResidentDecline(), "ActQuantGroup 32") {
+		t.Errorf("int4 with per-32 activations: resident %v, decline %q; want a decline naming ActQuantGroup 32", m.ResidentActive(), m.ResidentDecline())
+	}
+}
+
+// TestActG32_phi3ResidentMatchesCPU is CUDA's TestActGroup_phi3ResidentMatchesCPU on WebGPU: the real Phi-3-mini at
+// int8int8 with per-32 activations, resident, over a ~130-token chat prompt of filler (the regime that broke per-vector
+// scales). The bars are CUDA's: median cosine against the CPU per-32 path >= 0.9995, and p10 quality no worse than the CPU
+// per-32 path's by more than 0.01. Quality is read against goinfer's weight-only int8 (f32 activations, which hold on
+// Phi-3; decoder.ActivationQuantHazard) rather than CUDA's f32 reference, so the three loads fit a 16 GB host in turn.
+//
+//	GOINFER_PHI3_MINI_GGUF=~/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf \
+//	  go test -tags 'gpu goinfer_testhooks' ./backend/webgpu -run TestActG32_phi3ResidentMatchesCPU -v
+func TestActG32_phi3ResidentMatchesCPU(t *testing.T) {
+	path := os.Getenv("GOINFER_PHI3_MINI_GGUF")
+	if path == "" {
+		t.Skip("set GOINFER_PHI3_MINI_GGUF")
+	}
+	actG32RequireAdapter(t)
+	tk, err := tokenizer.LoadGGUF(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl, err := chat.Detect(chat.Meta{ChatTemplate: tk.ChatTemplate(), HasToken: tk.Has})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := strings.Repeat("the ", 110) + "\n\nThe text above is only filler. Now write a long, detailed essay about the history of the printing press."
+	ids, err := tk.EncodeSegments(tmpl.RenderSegments("", []chat.Turn{{Role: "user", Content: text}}), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gl := actG32ResidentLogits(t, path, ids, decoder.Options{ResidentContext: 512})
+	cpuG := actG32CPULogits(t, path, ids, decoder.Options{Quant: "int8int8", ActQuantGroup: 32})
+	ref := actG32CPULogits(t, path, ids, decoder.Options{Quant: "int8"})
+	report := func(name string, cs []float64) {
+		t.Logf("%s: %d positions, cosine min %.6f p10 %.6f median %.6f", name, len(cs), cs[0], cs[len(cs)/10], cs[len(cs)/2])
+	}
+	agree, gpuQ, cpuQ := actG32Agreement(gl, cpuG), actG32Agreement(gl, ref), actG32Agreement(cpuG, ref)
+	report("webgpu per-32 vs cpu per-32", agree)
+	report("webgpu per-32 vs cpu weight-only int8", gpuQ)
+	report("cpu per-32 vs cpu weight-only int8 (same prompt, the baseline)", cpuQ)
+	if agree[len(agree)/2] < 0.9995 {
+		t.Errorf("WebGPU per-32 vs CPU per-32: median cosine %.6f, want >= 0.9995", agree[len(agree)/2])
+	}
+	if gpuQ[len(gpuQ)/10] < cpuQ[len(cpuQ)/10]-0.01 {
+		t.Errorf("WebGPU per-32 quality p10 %.4f is worse than the CPU per-32 path's %.4f on the same prompt", gpuQ[len(gpuQ)/10], cpuQ[len(cpuQ)/10])
 	}
 }

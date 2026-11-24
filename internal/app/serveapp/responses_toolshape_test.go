@@ -62,12 +62,12 @@ func TestFunctionTools_dropsWhatCannotRunAndNamesIt(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	dropUnrunnableTools(w, &tools)
+	tools = dropUnrunnableTools(w, tools)
 	if got := w.Header().Get("X-Goinfer-Tools-Dropped"); got != "custom:apply_patch,web_search" {
 		t.Errorf("header = %q", got)
 	}
 	if len(tools) != 2 {
-		t.Errorf("request tools not filtered in place: %d left", len(tools))
+		t.Errorf("request tools not filtered: %d left", len(tools))
 	}
 }
 

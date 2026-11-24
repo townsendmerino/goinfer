@@ -407,7 +407,7 @@ func checkForced(t *testing.T, sc *loadedModel, name, body string, raw []byte) {
 			}
 		}
 	}
-	for _, line := range strings.Split(string(raw), "\n") {
+	for line := range strings.SplitSeq(string(raw), "\n") {
 		line = strings.TrimPrefix(line, "data: ")
 		var v any
 		if json.Unmarshal([]byte(line), &v) == nil {

@@ -90,7 +90,7 @@ func TestKV0_tokenizeBodies(t *testing.T) {
 		if err := json.Unmarshal(raw, &rec); err != nil {
 			t.Fatalf("%s: %v", f, err)
 		}
-		route := strings.Split(rec.Path, "?")[0]
+		route, _, _ := strings.Cut(rec.Path, "?")
 		ids, rerr := kv0Render(s, lm, route, []byte(rec.Body))
 		line := map[string]any{"file": f, "route": route}
 		if rerr != nil {

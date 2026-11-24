@@ -255,7 +255,8 @@ func renderHardwareWhy(rows []hwRow) string {
 		b.WriteString("- **Metal:** a GGUF loads at `--quant q4k` by default and runs resident on the q4k lane, which quantizes no\n")
 		b.WriteString("  activation. Any other source loads at int8int8 with per-32 activation scales, which Metal's resident projections do\n")
 		b.WriteString("  not implement, so it runs on the CPU.\n")
-		b.WriteString("- **WebGPU:** neither; the CPU.\n")
+		b.WriteString("- **WebGPU:** every source loads at int8int8 with per-32 activation scales (WebGPU has no q4k kernel) and runs\n")
+		b.WriteString("  resident; the batched prefill does not take per-32 scales, so the prompt runs token by token.\n")
 	}
 	return b.String()
 }
