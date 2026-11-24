@@ -1,0 +1,4 @@
+gptoss-pf [     7s] loaded gpt-oss-20b-MXFP4.gguf in 6s; mode fidelity, depths [1024 3900], prompt set a, git decoder-2a349dff6
+gptoss-pf [   107s] fidelity K=1024 prompt 1/8 (audit-2026-09-02.md): agree 32/33, hard flips 0, expert-major chunks 48; pooled 32/33 agree, 0 hard
+gptoss-pf [   210s] fidelity K=1024 prompt 2/8 (QUEUE.md): agree 27/33, hard flips 1, expert-major chunks 48; pooled 59/66 agree, 1 hard
+gptoss-pf [   310s] fidelity K=1024 prompt 3/8 (queue-engineering.md): agree 28/33, hard flips 3, expert-major chunks 48; pooled 87/99 agree, 4 hard
