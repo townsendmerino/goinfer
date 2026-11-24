@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -18,7 +19,7 @@ import (
 func TestSystemOne_questionsShareOneModelCall(t *testing.T) {
 	srv, lm := tinyServed(t)
 	tok := sysOneTok{ids: map[string]int{}}
-	for i, v := range append(append([]string{"false", "true"}, strings.Split("0123456789", "")...), strings.Split("ABCDEFGHIJKLMNOP", "")...) {
+	for i, v := range slices.Concat([]string{"false", "true"}, strings.Split("0123456789", ""), strings.Split("ABCDEFGHIJKLMNOP", "")) {
 		tok.ids[v] = 10 + i
 	}
 	logits := make([]float32, 64)

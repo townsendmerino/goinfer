@@ -43,20 +43,20 @@ func TestBestExtend(t *testing.T) {
 	sessions := [][]int{convA, convB}
 
 	// Continuing conversation A: A's tokens are a prefix of the new prompt → pick A.
-	promptA := append(append([]int(nil), convA...), 13, 14)
+	promptA := append(slices.Clone(convA), 13, 14)
 	if got := scheduler.BestExtend(sessions, promptA); got != 0 {
 		t.Errorf("continuing A: bestExtend = %d, want 0", got)
 	}
 
 	// A brand-new conversation that only shares the system preamble: neither
 	// session's full tokens are contained → no reuse (don't hijack A or B).
-	fresh := append(append([]int(nil), sys...), 99, 98, 97)
+	fresh := append(slices.Clone(sys), 99, 98, 97)
 	if got := scheduler.BestExtend(sessions, fresh); got != -1 {
 		t.Errorf("fresh conversation: bestExtend = %d, want -1", got)
 	}
 
 	// Exact-prompt repeat of B (regeneration): B fully contained → pick B.
-	if got := scheduler.BestExtend(sessions, append([]int(nil), convB...)); got != 1 {
+	if got := scheduler.BestExtend(sessions, slices.Clone(convB)); got != 1 {
 		t.Errorf("repeat B: bestExtend = %d, want 1", got)
 	}
 
@@ -137,14 +137,14 @@ func TestMoveToFront(t *testing.T) {
 // decoder's rewindForReuse truncates to the shared prefix.
 func TestBestExtend_stopStringTokensReuse(t *testing.T) {
 	turn1 := []int{1, 2, 3, 4} // system preamble + turn 1
-	visible := append(append([]int(nil), turn1...), 10, 11, 12)
+	visible := append(slices.Clone(turn1), 10, 11, 12)
 	// The session actually stored a few more tokens: whatever the model emitted
 	// after the stop string before generation was cancelled — committed, never sent.
-	stored := append(append([]int(nil), visible...), 13, 14)
+	stored := append(slices.Clone(visible), 13, 14)
 	sessions := [][]int{stored}
 
 	// Turn 3 continues from what the client saw, not from what the session stored.
-	turn3 := append(append([]int(nil), visible...), 20, 21)
+	turn3 := append(slices.Clone(visible), 20, 21)
 	if got := scheduler.BestExtend(sessions, turn3); got != 0 {
 		t.Errorf("bestExtend = %d, want 0 — the shared prefix (through the invisible post-stop tokens) should still be reused", got)
 	}
@@ -156,11 +156,11 @@ func TestBestExtend_stopStringTokensReuse(t *testing.T) {
 // though that session's full token list is no longer contained in the new
 // prompt at all (they diverge mid-conversation, not just at the tail).
 func TestBestExtend_editedLastMessageReuse(t *testing.T) {
-	shared := []int{1, 2, 3, 4, 10, 11, 12}                       // system preamble + turn 1
-	original := append(append([]int(nil), shared...), 20, 21, 22) // turn 2, first draft
+	shared := []int{1, 2, 3, 4, 10, 11, 12}              // system preamble + turn 1
+	original := append(slices.Clone(shared), 20, 21, 22) // turn 2, first draft
 	sessions := [][]int{original}
 
-	edited := append(append([]int(nil), shared...), 30, 31) // turn 2, edited
+	edited := append(slices.Clone(shared), 30, 31) // turn 2, edited
 	if got := scheduler.BestExtend(sessions, edited); got != 0 {
 		t.Errorf("bestExtend = %d, want 0 — everything before the edit should still be reused", got)
 	}
@@ -172,13 +172,13 @@ func TestBestExtend_editedLastMessageReuse(t *testing.T) {
 // single session, each truncating the other to the preamble, and the LRU would never grow past one session
 // despite -kv-sessions 4.
 func TestPickSession_sparePreambleGoesFresh(t *testing.T) {
-	pre := []int{1, 2, 3, 4, 5, 6, 7}                          // the chat template's shared lead
-	convA := append(append([]int(nil), pre...), 100, 101, 102) // conversation A's turn 1 + reply ...
+	pre := []int{1, 2, 3, 4, 5, 6, 7}                 // the chat template's shared lead
+	convA := append(slices.Clone(pre), 100, 101, 102) // conversation A's turn 1 + reply ...
 	for i := range 160 {
 		convA = append(convA, 200+i)
 	}
 	sessions := [][]int{convA}
-	convB := append(append([]int(nil), pre...), 900, 901) // conversation B's first turn: shares only the preamble
+	convB := append(slices.Clone(pre), 900, 901) // conversation B's first turn: shares only the preamble
 
 	if got := pickSession(sessions, convB, true); got != -1 {
 		t.Errorf("spare capacity, preamble-only match: pickSession = %d, want -1 (fresh) — reusing would truncate A's %d tokens to %d", got, len(convA), len(pre))
@@ -188,7 +188,7 @@ func TestPickSession_sparePreambleGoesFresh(t *testing.T) {
 		t.Errorf("no spare capacity: pickSession = %d, want 0", got)
 	}
 	// A's own continuation still reuses, with room or without.
-	nextA := append(append([]int(nil), convA...), 300, 301)
+	nextA := append(slices.Clone(convA), 300, 301)
 	for _, spare := range []bool{true, false} {
 		if got := pickSession(sessions, nextA, spare); got != 0 {
 			t.Errorf("continuing A (spare=%v): pickSession = %d, want 0", spare, got)
@@ -200,14 +200,14 @@ func TestPickSession_sparePreambleGoesFresh(t *testing.T) {
 // tail or an edited last message keeps most of the session, so it is still the session's own continuation.
 func TestPickSession_keepsP18Reuse(t *testing.T) {
 	turn1 := []int{1, 2, 3, 4}
-	visible := append(append([]int(nil), turn1...), 10, 11, 12)
-	stored := append(append([]int(nil), visible...), 13, 14)
-	if got := pickSession([][]int{stored}, append(append([]int(nil), visible...), 20, 21), true); got != 0 {
+	visible := append(slices.Clone(turn1), 10, 11, 12)
+	stored := append(slices.Clone(visible), 13, 14)
+	if got := pickSession([][]int{stored}, append(slices.Clone(visible), 20, 21), true); got != 0 {
 		t.Errorf("stop-string tail: pickSession = %d, want 0", got)
 	}
 	shared := []int{1, 2, 3, 4, 10, 11, 12}
-	original := append(append([]int(nil), shared...), 20, 21, 22)
-	if got := pickSession([][]int{original}, append(append([]int(nil), shared...), 30, 31), true); got != 0 {
+	original := append(slices.Clone(shared), 20, 21, 22)
+	if got := pickSession([][]int{original}, append(slices.Clone(shared), 30, 31), true); got != 0 {
 		t.Errorf("edited last message: pickSession = %d, want 0", got)
 	}
 }

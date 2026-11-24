@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -109,7 +109,7 @@ func TestServe_everyTokenizingRouteGuardsItsInputSize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sort.Strings(files)
+	slices.Sort(files)
 	fnRe := regexp.MustCompile(`(?ms)^func (?:\([^)]*\) )?(\w+)\(([^\n]*)\{\n(.*?)\n\}`)
 	routes, unguarded := 0, []string{}
 	for _, f := range files {

@@ -55,10 +55,8 @@ func TestServe_goroutineLeakCheck(t *testing.T) {
 		if i%2 == 0 {
 			payload = stream
 		}
-		wg.Add(1)
-		go func(pl string) {
-			defer wg.Done()
-			r, err := http.Post(ts.URL+"/v1/chat/completions", "application/json", strings.NewReader(pl))
+		wg.Go(func() {
+			r, err := http.Post(ts.URL+"/v1/chat/completions", "application/json", strings.NewReader(payload))
 			if err != nil {
 				return
 			}
@@ -70,7 +68,7 @@ func TestServe_goroutineLeakCheck(t *testing.T) {
 				}
 			}
 			r.Body.Close()
-		}(payload)
+		})
 	}
 	wg.Wait()
 

@@ -3,9 +3,9 @@ package serveapp
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"maps"
 	"net/http"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/townsendmerino/goinfer/chat"
@@ -102,12 +102,7 @@ func (lm *loadedModel) encodePrompt(tm *chat.Template, system string, turns []ch
 }
 
 func sortedKeys(m map[int]*idsCarrier) []int {
-	ks := make([]int, 0, len(m))
-	for k := range m {
-		ks = append(ks, k)
-	}
-	sort.Ints(ks)
-	return ks
+	return slices.Sorted(maps.Keys(m))
 }
 
 // reasonBeforeRender is the reason a carrier fails before its ids are compared with the rendered turn ("" when it passes
@@ -150,7 +145,8 @@ func newSegPlan(segs []chat.Segment) *segPlan {
 
 // segAt is the segment holding byte x (x < len(text)).
 func (p *segPlan) segAt(x int) int {
-	return sort.Search(len(p.segs), func(i int) bool { return p.starts[i+1] > x })
+	i, _ := slices.BinarySearch(p.starts[1:], x+1)
+	return i
 }
 
 // idsPiece is one special id or one run of ordinary ids, as text.

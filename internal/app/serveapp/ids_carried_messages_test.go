@@ -526,7 +526,7 @@ func TestIDsCarriedMessages_G0(t *testing.T) {
 					reply = append(reply, map[string]any{"type": "message", "role": "assistant", "content": []any{map[string]any{"type": "output_text", "text": text}}})
 				}
 			}
-			nb["input"] = append(append(append([]any(nil), nb["input"].([]any)...), reply...), rp.Follow...)
+			nb["input"] = slices.Concat(nb["input"].([]any), reply, rp.Follow)
 			m := messagesFromResponses(t, nb)
 			if keepThinking { // the translator put the visible text in the block; the signature is the case's
 				for _, x := range m["messages"].([]any) {

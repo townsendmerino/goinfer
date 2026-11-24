@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -53,13 +53,11 @@ func TestSSEWriter_heartbeatAndHandlerDoNotRace(t *testing.T) {
 	}()
 	start := time.Now()
 	for i := range 4 { // several "handlers" is not the real shape, but it widens the window
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
+		wg.Go(func() {
 			for j := 0; j < 200 || time.Since(start) < 20*time.Millisecond || (!pinged.Load() && time.Since(start) < 5*time.Second); j++ {
 				sseSend(ss, map[string]any{"delta": fmt.Sprintf("w%d-%d", i, j)})
 			}
-		}(i)
+		})
 	}
 	wg.Wait()
 	stop()
@@ -264,7 +262,7 @@ func TestSSE_everyBufferedStreamSiteHeartbeats(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sort.Strings(files)
+	slices.Sort(files)
 	// func ... { ... } at column 0 — one top-level function per match.
 	fnRe := regexp.MustCompile(`(?ms)^func (?:\([^)]*\) )?(\w+)\([^\n]*\{\n(.*?)\n\}`)
 	checked, buffered := 0, []string{}
