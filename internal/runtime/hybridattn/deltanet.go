@@ -13,7 +13,6 @@ package hybridattn
 
 import (
 	"math"
-	"slices"
 	"sync/atomic"
 	"time"
 
@@ -274,7 +273,7 @@ func DeltaNetCore(
 
 	var capPre, capGate []float32
 	if deltaCapHook != nil { // test seam: step 2's output, before step 3 overwrites it in place
-		capPre = slices.Clone(core)
+		capPre = append([]float32(nil), core...)
 		capGate = make([]float32, 2*nv)
 		for headV := range nv {
 			g := negExpA[headV] * Softplusf(at[headV]+dtBias[headV])
@@ -307,7 +306,7 @@ func DeltaNetCore(
 		timers.OtherNs.Add(int64(time.Since(t0)))
 	}
 	if deltaCapHook != nil {
-		deltaCapHook(mixed, conv, slices.Concat(bt, at), capGate, capPre, core, z)
+		deltaCapHook(mixed, conv, append(append([]float32(nil), bt...), at...), capGate, capPre, core, z)
 	}
 }
 
