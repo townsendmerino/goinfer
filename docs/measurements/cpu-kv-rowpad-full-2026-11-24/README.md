@@ -33,3 +33,22 @@ commit: **K16** on aikit `f16-acc64-2026-11-23` (the 16-key f32 QK kernel; the f
 
 **Cost:** R1 and R2 at both depths (four comparisons), R3, F1 and C1 at 3,900: about 105 min, under the exclusive lock, by day, run
 fourth in nobara's order of 2026-11-24 once the three sessions ahead have finished. **Stopping rule:** fixed N, no early stop.
+
+## Amendment, written 2026-11-24 09:59 PST before any timed run (the coordinator's review of #1297, ~10:00 PST)
+
+1. **F0 added, a decision cell: the f16 in-place read against the widen read it replaces,** same binary (K16), same commit,
+   `GOINFER_BENCH_F16WIDEN=1` on arm A (`kvF16WidenForTest`). The in-place read is the default path for every f16 CPU cache, so it ships
+   only by the four-condition rule on its own: bit-identical (`TestKVF16_decodeReadsInPlace`, `TestKVF16_F1Exactness` through the new
+   read); scratch and memory not higher (it allocates no widen scratch; each cell's peak RSS is reported); faster on ≥ 9/10 pairs; it
+   replaces the widen read (`kvF16WidenForTest` is a test-only switch back). **Cells:** Phi-3 f16 and the 0.5B f16 at 3,900 (decision,
+   ≥ 9/10 pairs faster each), the 0.5B f16 at 128 (report, median ≥ 0.98 expected). Every arm-A cell must report `f16inplace 0` and every
+   arm-B cell a positive count. Failing F0 splits the in-place read out of #1297 and drops it.
+2. **R3 removed** (report-only; the kernel microbench put the 4-key kernel flat under a pad), to keep the run under 2 h.
+3. **ADOPT outcome, stated now:** if Francis makes the pad the CPU default, `kvRowPadForTest` and `kvRowPadAlign` go and the pad becomes the
+   code path (`Architecture.kvRowPad` with the 4 KiB rule); if it stays opt-in, it becomes a `decoder.Options` field with a per-model
+   accessor. `kvF16WidenForTest` stays a test seam only while the widen read is the A/B's control, and goes with the widen read.
+4. **One eligibility rule:** `Architecture.kvRowPad` decides the pad for both the cache (`KVCache.setRowPad`, which panics if a cache it
+   accepts holds a ring, MLA latent or hybrid state) and the plan's price; `TestKVRowPad_planPricesThePad` checks price against held bytes
+   on every fixture at both precisions.
+
+**Revised cells and cost:** R1 (3,900, 128), R2 (3,900, 128), F1 (3,900), F0 (Phi-3 3,900; 0.5B 3,900 and 128), C1 (3,900): about 110 min.

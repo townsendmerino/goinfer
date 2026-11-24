@@ -10,7 +10,8 @@ K16=$B/dec-rowpad-K16-$H.test K4=$B/dec-rowpad-K4-$H.test
 lock() { python3 scripts/timing_lock.py run --wait 14400 --label "$1" -- "${@:2}"; }
 lock rowpad-full-R1 python3 -u $AB --bin-a $K16 --bin-b $K16 --pad-b --models P3M --depths 3900,128 --out $O/R1 || exit 1
 lock rowpad-full-R2 python3 -u $AB --bin-a $K4 --bin-b $K16 --pad-a --pad-b --models P3M --depths 3900,128 --out $O/R2 || exit 1
-lock rowpad-full-R3 python3 -u $AB --bin-a $K4 --bin-b $K4 --pad-b --models P3M --depths 3900 --out $O/R3 || exit 1
 lock rowpad-full-F1 python3 -u $AB --bin-a $K16 --bin-b $K16 --pad-a --kv-b f16 --models P3M --depths 3900 --out $O/F1 || exit 1
+lock rowpad-full-F0p python3 -u $AB --bin-a $K16 --bin-b $K16 --widen-a --kv-a f16 --kv-b f16 --models P3M --depths 3900 --out $O/F0 || exit 1
+lock rowpad-full-F0q python3 -u $AB --bin-a $K16 --bin-b $K16 --widen-a --kv-a f16 --kv-b f16 --models Q05 --depths 3900,128 --out $O/F0 || exit 1
 lock rowpad-full-C1 python3 -u $AB --bin-a $K16 --bin-b $K16 --pad-b --models Q05 --depths 3900 --out $O/C1 || exit 1
 echo ROWPAD-FULL-AB-DONE

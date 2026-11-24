@@ -224,35 +224,39 @@ func TestKVRowPad_snapshotCrossesLayouts(t *testing.T) {
 	}
 }
 
-// TestKVRowPad_planPricesThePad holds the CPU KV price to what a padded cache holds after ctx positions, at both precisions.
+// TestKVRowPad_planPricesThePad holds the CPU KV price to what the cache holds with the pad on, on every fixture at both
+// precisions: a padded fixture's priced bytes equal its global stores' bytes after ctx positions and exceed the unpadded price; a
+// declined one prices as unpadded.
 func TestKVRowPad_planPricesThePad(t *testing.T) {
-	m := f1Load(t, filepath.Join("..", "testdata", "llama-tiny"))
-	f16, f32 := f1Arms(m)
-	_, _, _, _, _, _, vocab := m.Dims()
 	const ctx = 24
-	ids := f1IDs(ctx, vocab)
-	for _, arm := range []struct {
-		name string
-		m    *Model
-		f16  bool
-	}{{"f32", f32, false}, {"f16", f16, true}} {
-		rowPadArms(t, true, rowPadTestAlign, func() int {
-			c := arm.m.NewCache(ctx)
-			for _, id := range ids {
-				if _, err := arm.m.forward(id, c); err != nil {
-					t.Fatal(err)
+	for _, fx := range rowPadFixtures {
+		m := f1Load(t, filepath.Join("..", "testdata", fx.dir))
+		f16, f32 := f1Arms(m)
+		_, _, _, _, _, _, vocab := m.Dims()
+		ids := f1IDs(ctx, vocab)
+		for _, arm := range []struct {
+			name string
+			m    *Model
+			f16  bool
+		}{{"f32", f32, false}, {"f16", f16, true}} {
+			unpadded := kvBytesForCtx(arm.m.w.arch, ctx, arm.f16, false)
+			rowPadArms(t, true, rowPadTestAlign, func() int {
+				c := arm.m.NewCache(ctx)
+				for _, id := range ids {
+					if _, err := arm.m.forward(id, c); err != nil {
+						t.Fatal(err)
+					}
 				}
-			}
-			held := c.rowPadBytesHeld()
-			priced := kvBytesForCtx(arm.m.w.arch, ctx, arm.f16, false)
-			if held != priced || held == 0 {
-				t.Errorf("%s: the padded cache holds %d bytes at %d positions; the plan prices %d", arm.name, held, ctx, priced)
-			}
-			if unpadded := rowPadArms(t, false, rowPadTestAlign, func() int64 { return kvBytesForCtx(arm.m.w.arch, ctx, arm.f16, false) }); priced <= unpadded {
-				t.Errorf("%s: padded price %d is not above the unpadded %d", arm.name, priced, unpadded)
-			}
-			return 0
-		})
+				priced := kvBytesForCtx(arm.m.w.arch, ctx, arm.f16, false)
+				switch {
+				case c.rowPad == 0 && priced != unpadded:
+					t.Errorf("%s %s: unpadded cache, but the plan prices %d against the unpadded %d", fx.dir, arm.name, priced, unpadded)
+				case c.rowPad > 0 && (priced != c.rowPadBytesHeld() || priced <= unpadded):
+					t.Errorf("%s %s: the padded cache holds %d bytes at %d positions; the plan prices %d (unpadded %d)", fx.dir, arm.name, c.rowPadBytesHeld(), ctx, priced, unpadded)
+				}
+				return 0
+			})
+		}
 	}
 }
 

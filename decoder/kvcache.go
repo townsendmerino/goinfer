@@ -55,25 +55,23 @@ func (c *KVCache) mustUnpadded(what string) {
 	}
 }
 
-// setRowPad pads a cache every layer of which is a global attention layer of width kvDim at f32 or f16 (no ring, MLA latent, hybrid
-// state or per-layer width), when its row is a multiple of kvRowPadAlign bytes: each layer's rows then sit kvDim+rowPad elements
-// apart in keys/vals (or keysH/valsH), re-reserved here for capHint rows. Any other cache stays unpadded.
+// setRowPad pads the cache at Architecture.kvRowPad's answer for its precision (int8 is never padded): each layer's rows then sit
+// kvDim+rowPad elements apart in keys/vals (or keysH/valsH), re-reserved here for capHint rows. A cache holding a ring, an MLA latent
+// or hybrid state on an architecture kvRowPad accepts means the rule and the cache disagree, which panics.
 func (c *KVCache) setRowPad(a *Architecture, capHint int) {
-	if !kvRowPadForTest || c.localAny || c.mlaLatent != nil || c.manualPos || c.quant == kvI8 {
+	if c.quant == kvI8 {
 		return
-	}
-	for l := range a.NumLayers {
-		if a.kvDimAt(l) != c.kvDim {
-			return
-		}
 	}
 	eb := 4
 	if c.quant == kvqF16 {
 		eb = 2
 	}
-	pad := kvRowPadElems(c.kvDim, eb, kvRowPadAlign)
+	pad := a.kvRowPad(eb)
 	if pad == 0 {
 		return
+	}
+	if c.localAny || c.mlaLatent != nil || c.manualPos || a.NumKVHeads*a.HeadDim != c.kvDim {
+		panic("decoder: Architecture.kvRowPad accepted a cache that holds a ring, an MLA latent or hybrid state")
 	}
 	c.rowPad = pad
 	rs := c.kvDim + pad
