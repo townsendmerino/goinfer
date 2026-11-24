@@ -7,7 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 )
 
@@ -83,7 +83,7 @@ func TestKSO1_smallShapeReading(t *testing.T) {
 					ms = append(ms, (e.GPUEnd()-e.GPUStart())*1e3/float64(max(64, 2*copies)))
 				}
 			}
-			sort.Float64s(ms)
+			slices.Sort(ms)
 			return ms[3]
 		}
 		line := fmt.Sprintf("%-10s N=%d K=%d:", s.name, s.N, s.K)

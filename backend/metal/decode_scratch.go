@@ -107,19 +107,15 @@ func (r *resident) decodeRowsCheck(declared map[string]int) error {
 		want["q-gate"], want["attn-gate"] = 2*s.nHhd, s.nHhd
 	}
 	if dp := s.dnet; dp != nil {
-		for n, w := range map[string]int{"dn-mixed": dp.convDim, "dn-conv": dp.convDim, "dn-beta": dp.nv, "dn-decay": dp.nv, "dn-ba": 2 * dp.nv,
-			"dn-q": dp.keyDim, "dn-k": dp.keyDim, "dn-core": dp.valueDim, "dn-z": dp.valueDim, "dn-gated": dp.valueDim} {
-			want[n] = w
-		}
+		maps.Copy(want, map[string]int{"dn-mixed": dp.convDim, "dn-conv": dp.convDim, "dn-beta": dp.nv, "dn-decay": dp.nv, "dn-ba": 2 * dp.nv,
+			"dn-q": dp.keyDim, "dn-k": dp.keyDim, "dn-core": dp.valueDim, "dn-z": dp.valueDim, "dn-gated": dp.valueDim})
 	}
 	if p := s.mamba; p != nil {
 		want["mb-proj"], want["mb-conv"], want["mb-y"], want["mb-gated"] = p.projDim, p.convDim, p.dInner, p.dInner
 	}
 	if p := s.mla; p != nil {
-		for n, w := range map[string]int{"mla-qa": p.qLoRA, "mla-q": p.nH * p.qkHead, "mla-kv": p.latDim, "mla-q-abs": p.nH * p.latDim,
-			"mla-wsum": p.nH * p.rank, "mla-ctx": p.nH * p.vHead} {
-			want[n] = w
-		}
+		maps.Copy(want, map[string]int{"mla-qa": p.qLoRA, "mla-q": p.nH * p.qkHead, "mla-kv": p.latDim, "mla-q-abs": p.nH * p.latDim,
+			"mla-wsum": p.nH * p.rank, "mla-ctx": p.nH * p.vHead})
 	}
 	if P := s.pleP; P > 0 {
 		want["ple-gate"], want["ple-in"] = P, s.nL*P
@@ -132,10 +128,8 @@ func (r *resident) decodeRowsCheck(declared map[string]int) error {
 		want[prefix+"-router"], want[prefix+"-experts"], want[prefix+"-weights"] = mo.nE, mo.k, mo.k
 	}
 	if g := r.g4moe; g != nil {
-		for n, w := range map[string]int{"g4moe-router": g.nE, "g4moe-experts": g.topK, "g4moe-weights": g.topK, "g4moe-dense-out": s.H,
-			"g4moe-moe-out": s.H, "g4moe-router-in": s.H} {
-			want[n] = w
-		}
+		maps.Copy(want, map[string]int{"g4moe-router": g.nE, "g4moe-experts": g.topK, "g4moe-weights": g.topK, "g4moe-dense-out": s.H,
+			"g4moe-moe-out": s.H, "g4moe-router-in": s.H})
 	}
 	for _, n := range slices.Sorted(maps.Keys(declared)) {
 		w, ok := want[n]

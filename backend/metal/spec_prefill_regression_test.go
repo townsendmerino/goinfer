@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"testing"
 	"time"
 
@@ -127,7 +126,7 @@ func TestMetalSpecPrefillRegression(t *testing.T) {
 			_, d := f(prompt)
 			ms = append(ms, float64(d.Microseconds())/1000.0)
 		}
-		sort.Float64s(ms)
+		slices.Sort(ms)
 		return ms[len(ms)/2]
 	}
 

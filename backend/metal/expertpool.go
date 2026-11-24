@@ -342,17 +342,15 @@ func (p *expertPool) ensureResidentBatch(ids []int) []expertSlot {
 		var wg sync.WaitGroup
 		var mu sync.Mutex
 		var fetchNanos int64
-		wg.Add(len(misses))
 		for _, ms := range misses {
-			go func(ms miss) {
-				defer wg.Done()
+			wg.Go(func() {
 				t0 := time.Now()
 				p.stageInto(ms.expert, ms.slot)
 				d := time.Since(t0).Nanoseconds()
 				mu.Lock()
 				fetchNanos += d
 				mu.Unlock()
-			}(ms)
+			})
 		}
 		wg.Wait()
 		p.fetchNanos += fetchNanos

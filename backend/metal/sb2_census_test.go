@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -90,7 +89,7 @@ func readCensusProfiles(t *testing.T) []censusProfile {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sort.Strings(paths)
+	slices.Sort(paths)
 	var out []censusProfile
 	for _, p := range paths {
 		b, err := os.ReadFile(p)

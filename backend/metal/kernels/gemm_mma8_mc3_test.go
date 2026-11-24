@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -406,7 +406,7 @@ func TestMC3MMA8(t *testing.T) {
 	seed := uint32(88172645)
 	rnd := func() uint32 { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return seed }
 	const reps = 7
-	med := func(xs []float64) float64 { s := append([]float64(nil), xs...); sort.Float64s(s); return s[len(s)/2] }
+	med := func(xs []float64) float64 { s := slices.Clone(xs); slices.Sort(s); return s[len(s)/2] }
 	timeIt := func(per int, enc func(e *Encoder, i int)) float64 {
 		var ms []float64
 		for r := range reps + 1 {
@@ -478,7 +478,7 @@ func TestMC3MMA8(t *testing.T) {
 			gemvRow(e, 0, m, ref)
 		}
 		e.End()
-		refV := append([]float32(nil), ref.Floats()[:M*s.N]...)
+		refV := slices.Clone(ref.Floats()[:M*s.N])
 		refMax := 0.0
 		for _, v := range refV {
 			refMax = math.Max(refMax, math.Abs(float64(v)))
@@ -584,7 +584,7 @@ func TestMC3MMA8Down(t *testing.T) {
 	seed := uint32(362436069)
 	rnd := func() uint32 { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return seed }
 	const reps = 7
-	med := func(xs []float64) float64 { s := append([]float64(nil), xs...); sort.Float64s(s); return s[len(s)/2] }
+	med := func(xs []float64) float64 { s := slices.Clone(xs); slices.Sort(s); return s[len(s)/2] }
 	timeIt := func(per int, enc func(e *Encoder, i int)) float64 {
 		var ms []float64
 		for r := range reps + 1 {
@@ -651,7 +651,7 @@ func TestMC3MMA8Down(t *testing.T) {
 			downRow(e, 0, m, ref)
 		}
 		e.End()
-		refV := append([]float32(nil), ref.Floats()[:M*s.N]...)
+		refV := slices.Clone(ref.Floats()[:M*s.N])
 		per := max(8, 2*copies)
 		t1 := timeIt(per, func(e *Encoder, i int) { downRow(e, i%copies, 0, ref) })
 		line := fmt.Sprintf("%-4s down N=%-5d K=%-5d production staged4 %.3f ms, x8 = %.3f:", s.model, s.N, s.K, t1, 8*t1)
@@ -715,7 +715,7 @@ func TestMC3MMA8LMHead(t *testing.T) {
 	seed := uint32(521288629)
 	rnd := func() uint32 { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return seed }
 	const reps = 7
-	med := func(xs []float64) float64 { s := append([]float64(nil), xs...); sort.Float64s(s); return s[len(s)/2] }
+	med := func(xs []float64) float64 { s := slices.Clone(xs); slices.Sort(s); return s[len(s)/2] }
 	timeIt := func(per int, enc func(e *Encoder, i int)) float64 {
 		var ms []float64
 		for r := range reps + 1 {
@@ -781,7 +781,7 @@ func TestMC3MMA8LMHead(t *testing.T) {
 			lmRow(e, m, ref)
 		}
 		e.End()
-		refV := append([]float32(nil), ref.Floats()[:M*s.V]...)
+		refV := slices.Clone(ref.Floats()[:M*s.V])
 		t1 := timeIt(4, func(e *Encoder, i int) { lmRow(e, 0, ref) })
 		line := fmt.Sprintf("%-4s LM head V=%d H=%d production gemv_w8a8_coal %.3f ms, x8 = %.3f:", s.model, s.V, s.H, t1, 8*t1)
 		for _, fb := range []int{1, 2, 4} {
