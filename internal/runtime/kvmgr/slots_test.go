@@ -140,7 +140,7 @@ func TestOracle_slots(t *testing.T) {
 					t.Fatalf("seed %d op %d: %d blocks published; the index holds %d, the cache %d, %d blocks in use (%d tails)", seed, op, published, inIndex, m.Cached(), m.Blocks(), tails(a))
 				}
 			}
-			for op := 0; op < 4000; op++ {
+			for op := range 4000 {
 				switch k := rng.Intn(10); {
 				case k < 6: // a generation: score every slot, pick, bind, forget, and usually commit
 					req := request()

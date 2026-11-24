@@ -217,7 +217,7 @@ func TestOracle_share(t *testing.T) {
 						out[p] = cls
 					}
 				}
-				for op := 0; op < 3000; op++ {
+				for op := range 3000 {
 					sl := rng.Intn(a.Count())
 					switch k := rng.Intn(10); {
 					case k < 4: // a cold generation, completed

@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -153,9 +154,7 @@ func TestNoGuardThresholdOutsideMem(t *testing.T) {
 		t.Fatalf("the planted RAMShare call, WeightsPercent value and HostBudget call count %d rule references, want 3", got)
 	}
 	planted := map[string]int{"x/rule.go": 3}
-	for k, v := range ruleCallers {
-		planted[k] = v
-	}
+	maps.Copy(planted, ruleCallers)
 	if bad := countsBreak(planted, ruleCallers, "applies a threshold rule", "lower ruleCallers"); len(bad) != 1 || !strings.Contains(bad[0], "x/rule.go") {
 		t.Fatalf("a caller outside ruleCallers was not refused: %v", bad)
 	}

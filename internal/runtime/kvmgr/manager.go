@@ -1,6 +1,9 @@
 package kvmgr
 
-import "errors"
+import (
+	"errors"
+	"slices"
+)
 
 // ErrNoBlocks is returned when a sequence needs a block and none is free or evictable.
 var ErrNoBlocks = errors.New("kvmgr: no free block, and none cached to evict")
@@ -430,7 +433,7 @@ func (s *Seq) Release() {
 	if s.released {
 		return
 	}
-	for i := len(s.table) - 1; i >= 0; i-- {
+	for i := range slices.Backward(s.table) {
 		s.dropBlock(i)
 	}
 	s.table, s.hashes, s.released = nil, nil, true

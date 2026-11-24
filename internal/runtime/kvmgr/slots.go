@@ -78,7 +78,7 @@ func (a *Slots) Touch(slot int) {
 	a.tick++
 	a.uses[slot] = a.tick
 	if s := a.seqs[slot]; s != nil {
-		for i := len(s.hashes) - 1; i >= 0; i-- {
+		for i := range slices.Backward(s.hashes) {
 			if a.m.blocks[s.table[i]].cached {
 				a.m.lruRemove(s.table[i])
 				a.m.lruPush(s.table[i])
@@ -292,11 +292,11 @@ func (a *Slots) drop(slot int) {
 	if s == nil {
 		return
 	}
-	for i := len(s.table) - 1; i >= 0; i-- {
+	for i, v := range slices.Backward(s.table) {
 		if i < len(s.hashes) {
-			a.m.evict(s.table[i])
+			a.m.evict(v)
 		} else {
-			a.m.unref(s.table[i])
+			a.m.unref(v)
 		}
 	}
 	s.table, s.hashes, s.released = nil, nil, true
@@ -333,7 +333,7 @@ func (a *Slots) commit(slot int, root Root, tokens []int, images []ImageSpan, pr
 	s.Publish()
 	// The sequence is idle: nobody references its published blocks. They are cached, the last first, until the
 	// slot is given to something else.
-	for i := len(s.hashes) - 1; i >= 0; i-- {
+	for i := range slices.Backward(s.hashes) {
 		a.m.unref(s.table[i])
 	}
 	a.seqs[slot] = s

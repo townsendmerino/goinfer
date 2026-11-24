@@ -4,6 +4,8 @@ package kvmgr
 // and the chain carries the root, the tokens, the image spans and the class of every row, so a hash match is the whole
 // test.
 
+import "slices"
+
 // ColdClasses is the class the requester's own cold prefill of a prompt of n tokens writes each row with: one pass
 // from row 0.
 func (c ClassMap) ColdClasses(n int) []ClassRun {
@@ -127,7 +129,7 @@ func (a *Slots) Copied(src, dst, start, rows int) {
 		t.table = append(t.table, id)
 	}
 	t.Publish()
-	for i := len(t.hashes) - 1; i >= 0; i-- {
+	for i := range slices.Backward(t.hashes) {
 		a.m.unref(t.table[i])
 	}
 	a.seqs[dst] = t
@@ -153,7 +155,7 @@ func (a *Slots) Restored(dst int, root Root, tokens []int, classes []ClassRun) {
 		t.table = append(t.table, id)
 	}
 	t.Publish()
-	for i := len(t.hashes) - 1; i >= 0; i-- {
+	for i := range slices.Backward(t.hashes) {
 		a.m.unref(t.table[i])
 	}
 	a.seqs[dst] = t

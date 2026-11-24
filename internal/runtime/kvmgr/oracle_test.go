@@ -175,7 +175,7 @@ func (o *oracle) step() {
 			}
 		}
 		// The rows it was given must be the rows this request would have computed: the wrong-hit check.
-		for p := 0; p < hit; p++ {
+		for p := range hit {
 			if got := o.dev[s.Table()[p/BlockRows]][p%BlockRows]; got != want.rows[p] {
 				o.failf("WRONG HIT: row %d of the shared prefix is %+v, the request's own is %+v", p, got, want.rows[p])
 			}
