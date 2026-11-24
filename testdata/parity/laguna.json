@@ -16,7 +16,7 @@
     "decoder/arch_laguna.go",
     "decoder/gguf_build_laguna.go"
   ],
-  "deps_hash": "sha256:0b9eff28f9ab282bffb45f313f329a3790a29cb2084c5e9704210e2e9df51790",
+  "deps_hash": "sha256:ee6aa5463fdfc70d3c3369ff95dcbf8697f0b709f655f37cd3f42d8f62e8038c",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
