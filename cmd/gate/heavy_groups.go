@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -162,7 +161,7 @@ func heavyPartition(listed []string, refs map[string][]string, modelEntries []st
 		if len(tests) == 0 {
 			continue
 		}
-		sort.Strings(tests)
+		slices.Sort(tests)
 		quoted := make([]string, len(tests))
 		for i, n := range tests {
 			quoted[i] = regexp.QuoteMeta(n)
@@ -240,7 +239,7 @@ func testReachableLiterals(dir string, tags []string, assetsJSON string) (map[st
 	if len(files) == 0 {
 		return nil, fmt.Errorf("no *_test.go files in %s", dir)
 	}
-	sort.Strings(files)
+	slices.Sort(files)
 	fset := token.NewFileSet()
 	lits := map[string]map[string]bool{} // declaration name -> literals in it
 	uses := map[string]map[string]bool{} // declaration name -> identifiers it mentions

@@ -7,7 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
@@ -300,7 +300,7 @@ func planIdentityCells(o *identityOpts, fams map[string]manifestFamily) ([]*iden
 			selected = append(selected, f)
 		}
 	}
-	sort.Strings(selected)
+	slices.Sort(selected)
 	want := map[string]bool{}
 	for _, f := range selected {
 		want[f] = true

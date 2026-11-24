@@ -1,13 +1,15 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -103,12 +105,7 @@ func parityQualifyingPaths(manifest []byte) ([]string, error) {
 	for _, d := range parityQualifyingTrees {
 		set[d] = true
 	}
-	paths := make([]string, 0, len(set))
-	for p := range set {
-		paths = append(paths, p)
-	}
-	sort.Strings(paths)
-	return paths, nil
+	return slices.Sorted(maps.Keys(set)), nil
 }
 
 // gitObject is the git object id of path (a file or a directory) at rev, and "" when rev has no such path. An unknown rev is an error.
@@ -149,7 +146,7 @@ func loadParityRecords(dir string) ([]parityRecord, error) {
 		}
 		recs = append(recs, r)
 	}
-	sort.SliceStable(recs, func(i, j int) bool { return recs[i].Date < recs[j].Date })
+	slices.SortStableFunc(recs, func(a, b parityRecord) int { return cmp.Compare(a.Date, b.Date) })
 	return recs, nil
 }
 

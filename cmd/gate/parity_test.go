@@ -452,7 +452,7 @@ func TestParity_everyRequiredGateIsConfirmed(t *testing.T) {
 	}
 
 	required := map[string]bool{}
-	for _, g := range append(append([]gateCheck{}, parityGates...), parityRealckptGates...) {
+	for _, g := range slices.Concat(parityGates, parityRealckptGates) {
 		required[g.Test] = true
 		exempt, isExempt := neverConfirmed[g.Test]
 		pending, isPending := awaitingFirstConfirmation[g.Test]

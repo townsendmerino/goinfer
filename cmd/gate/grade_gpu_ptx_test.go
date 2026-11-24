@@ -1,6 +1,7 @@
 package main
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -35,7 +36,7 @@ func TestGradePTX_plants(t *testing.T) {
 	}
 
 	some := green
-	some.Files = append(append([]ptxFile{}, green.Files...), ptxFile{Base: "c", Outcome: "unverified", Why: "no recorded version"},
+	some.Files = append(slices.Clone(green.Files), ptxFile{Base: "c", Outcome: "unverified", Why: "no recorded version"},
 		ptxFile{Base: "d", Want: "12.8.1", Outcome: "unverified", Why: "build failed at V12.8.1"})
 	v = gradePTX(some)
 	if len(v) != 2 || v[0].State != groupPass || v[0].Line != "2/4 PTX regenerate byte-identically at their recorded NVRTC" ||

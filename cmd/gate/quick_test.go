@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -328,11 +329,7 @@ func TestQuick_neverDropsAGoListDependent(t *testing.T) {
 	if binaries < 20 || len(oracle) < 500 {
 		t.Fatalf("oracle too small to mean anything: %d test binaries, %d files — the listing is broken, not the selection", binaries, len(oracle))
 	}
-	files := make([]string, 0, len(oracle))
-	for f := range oracle {
-		files = append(files, f)
-	}
-	sort.Strings(files)
+	files := slices.Sorted(maps.Keys(oracle))
 	dropped := 0
 	for _, rel := range files {
 		_, _, hits := g.affectedBy(qc, rel)
@@ -513,7 +510,7 @@ func TestQuick_checkpointLoadersGetTheirOwnCell(t *testing.T) {
 	qc, r := ckFixture(t)
 	g := &quickGraph{roots: []*testRoot{r}}
 	cells := buildCells(qc, g, &quickSelection{}, false, false)
-	sort.Strings(r.loaders)
+	slices.Sort(r.loaders)
 	if want := []string{"TestDir", "TestHelper", "TestRegistry", "TestTable"}; strings.Join(r.loaders, ",") != strings.Join(want, ",") {
 		t.Fatalf("loaders %v, want %v (why: %v)", r.loaders, want, r.loadWhy)
 	}

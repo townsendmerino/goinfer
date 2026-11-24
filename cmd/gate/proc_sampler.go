@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -109,7 +109,7 @@ func findTestBinary(root int) int {
 		p := todo[0]
 		todo = todo[1:]
 		cs := kids[p]
-		sort.Ints(cs)
+		slices.Sort(cs)
 		for _, c := range cs {
 			if strings.HasSuffix(names[c], ".test") {
 				return c
