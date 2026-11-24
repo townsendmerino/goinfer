@@ -21,6 +21,9 @@ const (
 	plantSubPrePostNorm            // ForwardSubCapture records the attention contribution before its post-attention norm
 	plantCostDoubleCount           // the cost counters record each attention output projection twice
 	plantSkipPLECapture            // the layer capture leaves layer 1's PLE contribution unrecorded
+	plantCtxBeforeAttend           // Gemma 4's layer 1 records its attention context before attention fills it
+	plantCtxNarrow                 // Gemma 4's global layers record their context at the model-level head width
+	plantMLPPreAfterNorm           // layer 1 records its MLP output after the post-MLP norm
 )
 
 // program returns m's program. A Model built without modelFromOptions (a test that assembles one) gets a fresh one per call.
@@ -176,6 +179,9 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 					switch {
 					case lastFFN:
 						cache.subMLP[l] = append(cache.subMLP[l][:0], scr.sub...)
+						if seamPlantForTest == plantMLPPreAfterNorm && l == 1 {
+							cache.subMLPpre[l] = append(cache.subMLPpre[l][:0], scr.sub...)
+						}
 					case planted != nil:
 						cache.subAttn[l] = append(cache.subAttn[l][:0], planted...)
 					default:

@@ -95,18 +95,24 @@ func checkLayerCapture(t *testing.T, m *Model, ids []int) error {
 		for _, r := range []struct {
 			name string
 			rows [][]float32
-			n    int // the row width; 0 for the context, whose width a global layer changes
-		}{{"Ctx", c.Ctx, 0}, {"Attn", c.Attn, hidden}, {"MLPPre", c.MLPPre, hidden},
+			n    int // the row width
+		}{{"Ctx", c.Ctx, arch.NumHeads * arch.headDimAt(l)}, {"Attn", c.Attn, hidden}, {"MLPPre", c.MLPPre, hidden},
 			{"MLP", c.MLP, hidden}, {"PLE", c.PLE, hidden}, {"Out", c.Out, hidden}} {
-			if len(r.rows) != arch.NumLayers || len(r.rows[l]) == 0 || (r.n > 0 && len(r.rows[l]) != r.n) {
+			if len(r.rows) != arch.NumLayers || len(r.rows[l]) == 0 {
 				return fmt.Errorf("layer %d: %s not captured (%d layers)", l, r.name, len(r.rows))
 			}
+			if len(r.rows[l]) != r.n {
+				return fmt.Errorf("layer %d: %s is %d wide, want %d", l, r.name, len(r.rows[l]), r.n)
+			}
+		}
+		if err := checkCaptureValues(m, l, c); err != nil {
+			return err
 		}
 		h := append([]float32(nil), hIn...)
 		addResidual(h, c.Attn[l])
 		addResidual(h, c.MLP[l])
 		addResidual(h, c.PLE[l])
-		if s := m.w.Layers[l].LayerScalar; s != 0 {
+		if s := c.Scalar[l]; s != 0 {
 			for i := range h {
 				h[i] *= s
 			}
@@ -138,6 +144,33 @@ func checkLayerCapture(t *testing.T, m *Model, ids []int) error {
 	return nil
 }
 
+// checkCaptureValues holds layer l's context and pre-norm MLP output to the contributions they produce: the context through
+// the output projection and the post-attention norm is Attn, and MLPPre through the post-MLP norm is MLP, bit for bit.
+func checkCaptureValues(m *Model, l int, c LayerCaptureForTest) error {
+	lw := &m.w.Layers[l]
+	hidden := m.w.arch.HiddenDim
+	post := func(slot normSlot, src []float32) []float32 {
+		for _, o := range m.program().Layers[l] {
+			if o.Kind == opNorm && o.Norm.Slot == slot {
+				dst := make([]float32, hidden)
+				w, b := lw.normWeights(o.Norm)
+				applyNorm(o.Norm, dst, src, w, b, hidden)
+				return dst
+			}
+		}
+		return nil
+	}
+	proj := make([]float32, hidden)
+	matmul(m.be, &lw.OProj, c.Ctx[l], proj, 1)
+	if !sameBits(post(slotPostAttn, proj), c.Attn[l]) {
+		return fmt.Errorf("layer %d: Ctx through the output projection and post-attention norm is not Attn", l)
+	}
+	if !sameBits(post(slotPostMLP, c.MLPPre[l]), c.MLP[l]) {
+		return fmt.Errorf("layer %d: MLPPre through the post-MLP norm is not MLP", l)
+	}
+	return nil
+}
+
 var layerCapturePrompt = []int{3, 10, 17, 24, 31, 38, 45, 52}
 
 // TestLayerCapture_gemma4EModel: the per-layer capture serves Gemma 4's E-models (the PLE branch and the layer scalar
@@ -152,15 +185,27 @@ func TestLayerCapture_gemma4EModel(t *testing.T) {
 	}
 }
 
-// TestLayerCapture_plantSkippedPLEGoesRed: with layer 1's PLE contribution left unrecorded, checkLayerCapture goes red.
-func TestLayerCapture_plantSkippedPLEGoesRed(t *testing.T) {
+// TestLayerCapture_plantsGoRed: each planted capture defect turns checkLayerCapture red with its own message.
+func TestLayerCapture_plantsGoRed(t *testing.T) {
 	m := loadTinyGemma4GGUF(t, g4EModelNoShare)
 	t.Cleanup(func() { seamPlantForTest = plantNone })
-	seamPlantForTest = plantSkipPLECapture
-	err := checkLayerCapture(t, m, layerCapturePrompt)
-	seamPlantForTest = plantNone
-	if err == nil || !strings.Contains(err.Error(), "layer 1: PLE not captured") {
-		t.Fatalf("the skipped PLE capture was not seen: %v", err)
+	global := m.w.arch.NumLayers - 1 // tinyGemma4GGUF's one global layer
+	for _, pl := range []struct {
+		name  string
+		plant seamPlant
+		want  string
+	}{
+		{"layer 1's PLE capture skipped", plantSkipPLECapture, "layer 1: PLE not captured"},
+		{"layer 1's context before attention", plantCtxBeforeAttend, "layer 1: Ctx through the output projection"},
+		{"the global layer's context at the model-level width", plantCtxNarrow, fmt.Sprintf("layer %d: Ctx is", global)},
+		{"layer 1's MLP output after its post-norm", plantMLPPreAfterNorm, "layer 1: MLPPre through the post-MLP norm"},
+	} {
+		seamPlantForTest = pl.plant
+		err := checkLayerCapture(t, m, layerCapturePrompt)
+		seamPlantForTest = plantNone
+		if err == nil || !strings.Contains(err.Error(), pl.want) {
+			t.Errorf("%s: not seen (%v)", pl.name, err)
+		}
 	}
 	if err := checkLayerCapture(t, m, layerCapturePrompt); err != nil {
 		t.Fatalf("unplanted: %v", err)

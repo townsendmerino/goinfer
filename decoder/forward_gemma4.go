@@ -92,9 +92,16 @@ func (m *Model) gemma4AttnToken(p *gemma4AttnParams, x, out []float32, lw *Layer
 	if p.Window > 0 {
 		start = max(pos-p.Window+1, 0)
 	}
-	gemma4Attend(q, ctx, keys, vals, nH, nKV, hd, start, nKeys, p.Scale, &t.sc)
-	if cache.subCapture { // the pre-o-proj context
+	if cache.subCapture && seamPlantForTest == plantCtxBeforeAttend && l == 1 {
 		cache.subCtx[l] = append(cache.subCtx[l][:0], ctx...)
+	}
+	gemma4Attend(q, ctx, keys, vals, nH, nKV, hd, start, nKeys, p.Scale, &t.sc)
+	if cache.subCapture && !(seamPlantForTest == plantCtxBeforeAttend && l == 1) { // the pre-o-proj context
+		c := ctx
+		if seamPlantForTest == plantCtxNarrow && arch.isGlobalLayer(l) {
+			c = ctx[:min(len(ctx), nH*arch.HeadDim)]
+		}
+		cache.subCtx[l] = append(cache.subCtx[l][:0], c...)
 	}
 	matmul(be, &lw.OProj, ctx, out, 1)
 }

@@ -51,9 +51,11 @@ func (m *Model) ForwardSubCaptureLogitsForTest(id int, cache *KVCache) (logits [
 
 // LayerCaptureForTest is one token's per-layer CPU intermediates from ForwardLayerCaptureLogitsForTest, each [layer][width]:
 // the pre-o-proj attention context, the attention, MLP (before and after its post-norm) and PLE contributions, and the residual
-// after the layer completes. A row the layer has no operation for is nil (PLE outside a Gemma 4 E-model).
+// after the layer completes. A row the layer has no operation for is nil (PLE outside a Gemma 4 E-model). Scalar is each
+// layer's learned output scalar (0: none); with it a Gemma 4 E-model's Out[l] is (input + Attn + MLP + PLE) × Scalar[l].
 type LayerCaptureForTest struct {
 	Ctx, Attn, MLPPre, MLP, PLE, Out [][]float32
+	Scalar                           []float32
 }
 
 // ForwardLayerCaptureLogitsForTest runs one token and returns its logits with LayerCaptureForTest's captures, the CPU side of a
@@ -83,7 +85,11 @@ func (m *Model) ForwardLayerCaptureLogitsForTest(id int, cache *KVCache) ([]floa
 	if err != nil {
 		return nil, LayerCaptureForTest{}, err
 	}
-	c := LayerCaptureForTest{Ctx: cache.subCtx, Attn: cache.subAttn, MLPPre: cache.subMLPpre, MLP: cache.subMLP, Out: cache.captured}
+	c := LayerCaptureForTest{Ctx: cache.subCtx, Attn: cache.subAttn, MLPPre: cache.subMLPpre, MLP: cache.subMLP, Out: cache.captured,
+		Scalar: make([]float32, nL)}
+	for l := range c.Scalar {
+		c.Scalar[l] = m.w.Layers[l].LayerScalar
+	}
 	if a.gemma4 != nil && a.gemma4.HiddenSizePerLayerInput > 0 {
 		c.PLE = cache.subPLE
 	}
