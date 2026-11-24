@@ -274,3 +274,85 @@ func TestProcSampler_helperSleeps(t *testing.T) {
 	}
 	time.Sleep(time.Second)
 }
+
+// The shared group runs only tests that reach a heavy check (Francis, 2026-11-23): a test with none runs in the parity cell,
+// which runs the whole package, so running it in small too pays for it twice. A drain- or fresh-process-marked test stays,
+// since the tier reconciles its skip token there; a test in a family group is not affected.
+func TestHeavyMainGroups_aTestWithNoHeavyCheckRunsOnlyInTheParityCell(t *testing.T) {
+	refs := map[string][]string{
+		"TestTinyNoHeavy":  {"../../testdata/llama-tiny"},
+		"TestTinyHeavy":    {"../../testdata/llama-tiny", "GOINFER_HEAVY_TESTS"},
+		"TestRequireHeavy": {"qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", heavyGateMark},
+		"TestDrainNoHeavy": {"../../testdata/llama-tiny"},
+		"TestIsoNoHeavy":   nil,
+		"TestBigNoHeavy":   {"gemma4-26b-int4.giw"},
+		"TestNothingAtAll": nil,
+	}
+	var listed []string
+	for k := range refs {
+		listed = append(listed, k)
+	}
+	slices.Sort(listed)
+	groups, parityOnly, problems := heavyMainGroups(listed, refs, nil, []string{"TestDrainNoHeavy", "TestIsoNoHeavy"})
+	if len(problems) > 0 {
+		t.Fatalf("problems: %v", problems)
+	}
+	owner := map[string]string{}
+	for _, g := range groups {
+		re := regexp.MustCompile(g.Run)
+		for _, n := range g.Tests {
+			owner[n] = g.Label
+		}
+		for _, n := range listed {
+			if re.MatchString(n) != slices.Contains(g.Tests, n) {
+				t.Errorf("%s's pattern matches %s: %v, but owning it: %v", g.Label, n, re.MatchString(n), slices.Contains(g.Tests, n))
+			}
+		}
+	}
+	want := map[string]string{"TestTinyHeavy": "small", "TestRequireHeavy": "small", "TestDrainNoHeavy": "small",
+		"TestIsoNoHeavy": "small", "TestBigNoHeavy": "gemma4-26b"}
+	for n, g := range want {
+		if owner[n] != g {
+			t.Errorf("%s: in %q, want %q", n, owner[n], g)
+		}
+	}
+	if w := []string{"TestNothingAtAll", "TestTinyNoHeavy"}; !slices.Equal(parityOnly, w) {
+		t.Errorf("parity-only %v, want %v", parityOnly, w)
+	}
+	for _, n := range parityOnly {
+		if owner[n] != "" {
+			t.Errorf("%s is parity-only and also in %s", n, owner[n])
+		}
+	}
+}
+
+// A call to testgate.RequireHeavy is a heavy check as much as the variable's name in a literal, through a helper too.
+func TestReachableLiterals_aRequireHeavyCallIsAHeavyCheck(t *testing.T) {
+	dir := t.TempDir()
+	src := `package cuda
+
+import (
+	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/testgate"
+)
+
+func needsModel(t *testing.T) { testgate.RequireHeavy(t) }
+
+func TestDirect(t *testing.T) { testgate.RequireHeavy(t) }
+func TestHelper(t *testing.T) { needsModel(t) }
+func TestNone(t *testing.T)   { _ = "../../testdata/llama-tiny" }
+`
+	if err := os.WriteFile(filepath.Join(dir, "x_test.go"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	refs, err := testReachableLiterals(dir, nil, filepath.Join(dir, "no-assets.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for n, want := range map[string]bool{"TestDirect": true, "TestHelper": true, "TestNone": false} {
+		if got := reachesHeavyCheck(refs[n]); got != want {
+			t.Errorf("%s: reaches a heavy check %v, want %v (literals %q)", n, got, want, refs[n])
+		}
+	}
+}

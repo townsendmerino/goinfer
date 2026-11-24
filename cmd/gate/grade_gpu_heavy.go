@@ -27,7 +27,8 @@ type heavyInput struct {
 	PartitionErr string       `json:"partition_err,omitempty"`
 	KernelsErr   string       `json:"kernels_err,omitempty"`
 	Kernels      int          `json:"kernels,omitempty"`
-	Listed       []string     `json:"listed,omitempty"` // every test the main group's processes must account for: ./cuda/'s and the kernels package's
+	Listed       []string     `json:"listed,omitempty"`      // every test the main group's processes must account for: ./cuda/'s and the kernels package's, less ParityOnly
+	ParityOnly   []string     `json:"parity_only,omitempty"` // ./cuda/ tests that reach no heavy check: the parity cell runs them, the main group does not
 	Groups       []heavyGroup `json:"groups,omitempty"`
 	Problems     []string     `json:"problems,omitempty"`
 	Iso          []string     `json:"iso,omitempty"`
@@ -66,8 +67,11 @@ func gradeHeavyStart(in heavyInput) ([]groupVerdict, bool) {
 		"      partition (drain group from drainsDevice() in cuda/drain_marker_test.go; main group by model family, heavyFamilies):",
 		fmt.Sprintf("        package total     %d test(s)   [go test -list '.*'], plus %d in %s", in.Total, in.Kernels, cudaKernelsPkg),
 		fmt.Sprintf("        drain group        %d test(s)   %s", len(in.Drain), strings.Join(in.Drain, " ")),
-		fmt.Sprintf("        main group         %d test(s)   [complement, by construction], %d process(es):", in.Total-len(in.Drain), len(in.Groups)),
 	}
+	if len(in.ParityOnly) > 0 {
+		lines = append(lines, fmt.Sprintf("        parity cell only   %d test(s)   [no heavy check: the parity cell runs them]", len(in.ParityOnly)))
+	}
+	lines = append(lines, fmt.Sprintf("        main group         %d test(s)   [complement, by construction], %d process(es):", in.Total-len(in.Drain)-len(in.ParityOnly), len(in.Groups)))
 	for _, h := range in.Groups {
 		lines = append(lines, fmt.Sprintf("          %-14s %d test(s)", h.Label, len(h.Tests)))
 	}

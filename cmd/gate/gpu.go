@@ -586,11 +586,12 @@ func (g *gpuGate) readHeavy() heavyInput {
 		}
 		return in
 	}
-	groups, problems, err := partitionHeavy(listed, g.models)
+	groups, parityOnly, problems, err := partitionHeavy(listed, g.models, append(append([]string(nil), in.Drain...), in.Iso...))
 	if err != nil {
 		in.PartitionErr = err.Error()
 		return in
 	}
+	in.ParityOnly = parityOnly
 	// The kernel-level tests in ./cuda/kernels/ load no model, so they are one more process, run whole.
 	kernels, err := listCUDATests(cudaKernelsPkg)
 	in.Kernels = len(kernels)
@@ -601,7 +602,7 @@ func (g *gpuGate) readHeavy() heavyInput {
 		return in
 	}
 	in.Groups = append(groups, heavyGroup{Label: "kernels", Tests: kernels, Pkg: cudaKernelsPkg})
-	in.Listed = append(listed, kernels...)
+	in.Listed = append(slices.DeleteFunc(listed, func(n string) bool { return slices.Contains(parityOnly, n) }), kernels...)
 	in.Problems = problems
 	in.Run = g.heavyOnly
 	return in
@@ -627,14 +628,15 @@ func listCUDATests(pkg string) ([]string, error) {
 	return listed, nil
 }
 
-// partitionHeavy derives the heavy tier's main-group processes for the listed ./cuda/ tests from the source (heavyPartition).
-func partitionHeavy(listed []string, modelsDir string) ([]heavyGroup, []string, error) {
+// partitionHeavy derives the heavy tier's main-group processes for the listed ./cuda/ tests from the source
+// (heavyMainGroups), and the tests left to the parity cell. keep is the drain and fresh-process markers' tests.
+func partitionHeavy(listed []string, modelsDir string, keep []string) (groups []heavyGroup, parityOnly, problems []string, err error) {
 	refs, err := testReachableLiterals("backend/cuda", []string{"cuda", "goinfer_testhooks"}, filepath.Join("testdata", "assets.json"))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	groups, problems := heavyPartition(listed, refs, modelsDirEntries(modelsDir))
-	return groups, problems, nil
+	groups, parityOnly, problems = heavyMainGroups(listed, refs, modelsDirEntries(modelsDir), keep)
+	return groups, parityOnly, problems, nil
 }
 
 // heavyGroupEnv is the environment of every heavy-tier main-group process. GOINFER_KV10_DEPTHS pins KV10's harness to
