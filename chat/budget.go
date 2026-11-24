@@ -1,6 +1,9 @@
 package chat
 
-import "math"
+import (
+	"math"
+	"slices"
+)
 
 // The reasoning budget: a ceiling on how long a reply may think, enforced by forcing the block closed. Without it a thinking reply
 // that runs out of max_tokens while still inside its block has no answer at all. With it, once the block has used its budget the
@@ -137,7 +140,7 @@ func (b *ReasoningBudget) forcedHarmony(generated []int) int {
 			return -1 // the reply did not open with an analysis message
 		}
 	}
-	if indexOfID(generated[:trigger], b.endID) >= 0 {
+	if slices.Contains(generated[:trigger], b.endID) {
 		return -1 // the model closed its own analysis in time
 	}
 	return b.force[n-trigger]
@@ -150,7 +153,7 @@ func (b *ReasoningBudget) due(generated []int) bool {
 	}
 	start := 0
 	if !b.opens {
-		i := indexOfID(generated, b.open)
+		i := slices.Index(generated, b.open)
 		if i < 0 {
 			return false // the model has not opened a block (and may never)
 		}
@@ -160,16 +163,7 @@ func (b *ReasoningBudget) due(generated []int) bool {
 	if len(inside) < b.limit {
 		return false
 	}
-	return indexOfID(inside, b.closeID) < 0
-}
-
-func indexOfID(ids []int, id int) int {
-	for i, v := range ids {
-		if v == id {
-			return i
-		}
-	}
-	return -1
+	return !slices.Contains(inside, b.closeID)
 }
 
 // Process is a decoder.SamplingParams.LogitProcessor. It is safe to call on every step (a decode loop that ignores the gate does):

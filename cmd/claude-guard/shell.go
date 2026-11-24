@@ -1,8 +1,10 @@
 package main
 
 import (
+	"maps"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -473,7 +475,7 @@ func commandsDepth(s string, depth int, exported map[string]string) ([]segment, 
 	}
 	var out []segment
 	for _, words := range segs {
-		seg := segment{env: copyEnv(exported)}
+		seg := segment{env: maps.Clone(exported)}
 		for len(words) > 0 {
 			words = liftEnv(words, seg.env)
 			if len(words) == 0 {
@@ -492,7 +494,7 @@ func commandsDepth(s string, depth int, exported map[string]string) ([]segment, 
 				continue
 			}
 			if strings.HasSuffix(base, "timing_lock.py") || (strings.HasPrefix(base, "python") && len(words) > 1 && strings.HasSuffix(words[1], "timing_lock.py")) {
-				if i := indexOf(words, "--"); i >= 0 {
+				if i := slices.Index(words, "--"); i >= 0 {
 					words = words[i+1:]
 					continue
 				}
@@ -513,7 +515,7 @@ func commandsDepth(s string, depth int, exported map[string]string) ([]segment, 
 			continue
 		}
 		if inner, ok := shellScript(base, words); ok {
-			sub, subOK := commandsDepth(inner, depth+1, copyEnv(seg.env))
+			sub, subOK := commandsDepth(inner, depth+1, maps.Clone(seg.env))
 			if !subOK {
 				return nil, false
 			}
@@ -543,23 +545,6 @@ func liftEnv(words []string, env map[string]string) []string {
 		words = words[1:]
 	}
 	return words
-}
-
-func copyEnv(m map[string]string) map[string]string {
-	c := make(map[string]string, len(m))
-	for k, v := range m {
-		c[k] = v
-	}
-	return c
-}
-
-func indexOf(words []string, w string) int {
-	for i, x := range words {
-		if x == w {
-			return i
-		}
-	}
-	return -1
 }
 
 // shellScript returns the script of `bash|sh|zsh|dash|ksh [options] -c SCRIPT`: the c may share a cluster (-lc, -ec),

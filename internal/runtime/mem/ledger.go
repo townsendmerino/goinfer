@@ -1,6 +1,9 @@
 package mem
 
-import "sync"
+import (
+	"maps"
+	"sync"
+)
 
 // LineID names the plan line an allocation is leased against: a term of the DevicePlan, or a share of the margin.
 type LineID string
@@ -139,11 +142,7 @@ func (l *Ledger) Usage() Usage {
 	defer l.mu.Unlock()
 	u := l.usage
 	u.ByLine, u.ByTier = make(map[LineID]int64, len(l.usage.ByLine)), make(map[Tier]int64, len(l.usage.ByTier))
-	for k, v := range l.usage.ByLine {
-		u.ByLine[k] = v
-	}
-	for k, v := range l.usage.ByTier {
-		u.ByTier[k] = v
-	}
+	maps.Copy(u.ByLine, l.usage.ByLine)
+	maps.Copy(u.ByTier, l.usage.ByTier)
 	return u
 }

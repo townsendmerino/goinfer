@@ -63,7 +63,7 @@ func osMemoryReads(fset *token.FileSet, f *ast.File) []string {
 	for _, cg := range f.Comments {
 		for _, c := range cg.List {
 			if rest, ok := strings.CutPrefix(c.Text, "//go:cgo_import_dynamic "); ok {
-				for _, w := range strings.Fields(rest) {
+				for w := range strings.FieldsSeq(rest) {
 					if literalReadsOSMemory(w) {
 						out = append(out, fset.Position(c.Pos()).String()+": "+c.Text)
 					}
