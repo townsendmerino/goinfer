@@ -25,7 +25,7 @@ func TestKVFlag_drivesBothCachesUnlessKVQuantOverrides(t *testing.T) {
 		{"per-model kv= drives both", modelSpec{kvPrec: str("i8")}, config{load: loadflags.Flags{KV: "f32"}}, "i8", "i8"},
 		{"per-model kv-quant= overrides", modelSpec{kvPrec: str("i8"), kvQuant: str("f32")}, config{load: loadflags.Flags{KV: "f32"}}, "i8", "f32"},
 	} {
-		o := c.spec.options(c.cfg)
+		o := c.spec.options(&c.cfg)
 		if o.KVPrecision != c.wantGPU || o.KVQuant != c.want {
 			t.Errorf("%s: KVPrecision=%q KVQuant=%q, want %q / %q", c.name, o.KVPrecision, o.KVQuant, c.wantGPU, c.want)
 		}

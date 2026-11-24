@@ -28,7 +28,7 @@ func TestKVSessions_defaultReachesTheBackend(t *testing.T) {
 			t.Fatalf("%v: parse: %v", tc.args, err)
 		}
 		markGivenFlags(fs, &sf.cfg)
-		o := modelSpec{}.options(sf.cfg)
+		o := (&modelSpec{}).options(&sf.cfg)
 		if o.ResidentKVSlots != tc.wantSlots || o.ResidentKVSlotsDefault != tc.wantDefault {
 			t.Errorf("%v: ResidentKVSlots %d, ResidentKVSlotsDefault %v; want %d, %v", tc.args, o.ResidentKVSlots, o.ResidentKVSlotsDefault, tc.wantSlots, tc.wantDefault)
 		}

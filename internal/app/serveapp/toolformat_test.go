@@ -11,7 +11,7 @@ import (
 
 func TestToolFormatDefault(t *testing.T) {
 	for in, want := range map[string]chat.ToolFormat{"": chat.ToolFormatAuto, "auto": chat.ToolFormatAuto, "hermes": chat.ToolFormatHermes, "template": chat.ToolFormatTemplate, " Template ": chat.ToolFormatTemplate} {
-		if got := (config{toolFormat: in}).toolFormatDefault(); got != want {
+		if got := (&config{toolFormat: in}).toolFormatDefault(); got != want {
 			t.Errorf("-tool-format %q resolved to %v, want %v", in, got, want)
 		}
 	}

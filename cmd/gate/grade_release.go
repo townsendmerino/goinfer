@@ -52,13 +52,14 @@ func relLookupKey(kind string, args []string) string {
 	return kind + "\x00" + strings.Join(args, "\x00")
 }
 
-// relReplayLook answers each read from a record. A read the record does not hold fails, and is added to *missing.
-func relReplayLook(looks []relLookup, missing *[]string) func(kind string, args ...string) (string, error) {
+// relReplayLook answers each read from a record and returns a missing getter listing reads the record did not hold.
+func relReplayLook(looks []relLookup) (look func(kind string, args ...string) (string, error), missing func() []string) {
 	ans := map[string]relLookup{}
 	for _, l := range looks {
 		ans[relLookupKey(l.Kind, l.Args)] = l
 	}
-	return func(kind string, args ...string) (string, error) {
+	var missed []string
+	look = func(kind string, args ...string) (string, error) {
 		l, ok := ans[relLookupKey(kind, args)]
 		if !ok && kind == "accepted" {
 			return "", nil // a record made before the accepted file existed holds no answer: nothing was accepted
@@ -70,7 +71,7 @@ func relReplayLook(looks []relLookup, missing *[]string) func(kind string, args 
 			}); handled {
 				return out, err
 			}
-			*missing = append(*missing, strings.TrimSpace(kind+" "+strings.Join(args, " ")))
+			missed = append(missed, strings.TrimSpace(kind+" "+strings.Join(args, " ")))
 			return "", fmt.Errorf("not in the record: %s %s", kind, strings.Join(args, " "))
 		}
 		if l.Failed {
@@ -78,6 +79,7 @@ func relReplayLook(looks []relLookup, missing *[]string) func(kind string, args 
 		}
 		return l.Out, nil
 	}
+	return look, func() []string { return missed }
 }
 
 // The reads. Paths are relative to the repository root.

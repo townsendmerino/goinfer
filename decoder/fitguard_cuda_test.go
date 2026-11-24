@@ -110,12 +110,12 @@ func TestFitCheck_cudaResident7BAt32KIsAdmitted(t *testing.T) {
 		t.Errorf("the arithmetic does not say where the KV is: %q", cuda.arithmetic())
 	}
 	// No source term (a safetensors directory): one packed layer and the staging blocks are what the build adds beside the weights.
-	nosrc := fitCheck{weightBytes: 4 * GiB, availBytes: 14 * GiB}.priceCtxAndKV(cfg, Options{Backend: "cuda"})
+	nosrc := (&fitCheck{weightBytes: 4 * GiB, availBytes: 14 * GiB}).priceCtxAndKV(cfg, Options{Backend: "cuda"})
 	if want := 4*GiB + 4*GiB/28 + cudaPackStageBytes; nosrc.need() != want {
 		t.Errorf("no-source need %d, want weights + one layer + staging %d", nosrc.need(), want)
 	}
 	// The C' expert-cache term is untouched and stays the larger.
-	moe := fitCheck{weightBytes: 4 * GiB, srcFileBytes: 4 * GiB, cudaBuildBytes: 20 * GiB, expertBytes: 12 * GiB, availBytes: 64 * GiB}.priceCtxAndKV(cfg, Options{Backend: "cuda"})
+	moe := (&fitCheck{weightBytes: 4 * GiB, srcFileBytes: 4 * GiB, cudaBuildBytes: 20 * GiB, expertBytes: 12 * GiB, availBytes: 64 * GiB}).priceCtxAndKV(cfg, Options{Backend: "cuda"})
 	if moe.need() != 20*GiB {
 		t.Errorf("C' build need %d, want the unchanged %d", moe.need(), 20*GiB)
 	}

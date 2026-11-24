@@ -129,7 +129,7 @@ func TestGuardGIWFit_metalNotOverchargedByCPUPricing(t *testing.T) {
 		t.Errorf("CPU load: pinned %d, err %v; want a pin below the %d window", ctx, err, cfg.MaxPositions)
 	}
 	// The .gguf/safetensors guard shares the pricing.
-	f := fitCheck{}.priceCtxAndKV(cfg, Options{Backend: "metal"})
+	f := (&fitCheck{}).priceCtxAndKV(cfg, Options{Backend: "metal"})
 	if f.effCtx != MetalCtxDefault || !f.kvF16 || f.kvBytes != metalKV {
 		t.Errorf("priceCtxAndKV for Metal: ctx %d f16 %v kv %d", f.effCtx, f.kvF16, f.kvBytes)
 	}

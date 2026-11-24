@@ -173,7 +173,7 @@ func (s *modelSpec) setOverride(key, val string, hasVal bool) error {
 // explicitQuant returns the quant the user EXPLICITLY chose for this model: the per-model `quant=` override, else the
 // global --quant if it was actually passed, else "" (the process default). Used only for the .giw mismatch check: a bare
 // default must never conflict with an already-baked bundle.
-func (s modelSpec) explicitQuant(cfg config) string {
+func (s *modelSpec) explicitQuant(cfg *config) string {
 	if s.quant != nil {
 		return *s.quant
 	}
@@ -182,7 +182,7 @@ func (s modelSpec) explicitQuant(cfg config) string {
 
 // options resolves this spec's overrides over the server-global defaults (cfg.load, the flags chat
 // shares) into a decoder.Options. Backend is process-wide (GPU device init), never per-model.
-func (s modelSpec) options(cfg config) decoder.Options {
+func (s *modelSpec) options(cfg *config) decoder.Options {
 	ov := loadflags.Overrides{Quant: s.quant, LoRA: s.lora, KV: s.kvPrec, KVQuant: s.kvQuant, Stream: s.stream,
 		WeightCacheGB: s.weightCache, EmbedInt4: s.embedInt4, Ctx: s.ctxSize, Serve: &loadflags.ServeLoad{
 			KVQuant: cfg.kvQuant, KVSessions: cfg.kvSessions, KVSessionsSet: cfg.kvSessionsSet, PrefillChunk: cfg.prefillChunk,
@@ -502,7 +502,7 @@ func (srv *server) checkpointSessions(cfg config) {
 // validate checks the settings that do not depend on how the server is reached: the session directory, the
 // speculation and tiering choices, the thinking and tool formats, and the decision-route calibration. The listener's
 // own checks (the address, the API key, TLS) stay with the caller.
-func (cfg config) validate() error {
+func (cfg *config) validate() error {
 	if err := sessionDirOK(cfg.sessionDir); err != nil {
 		return err
 	}
@@ -1129,7 +1129,7 @@ func (s *server) loadAdapters(cfg config) error {
 // towerBackend is the backend a device tower (vision or audio) is chosen for: the model's own, unless -vision-device cpu keeps the
 // tower on the CPU, which also isolates the tower in a served comparison with the language model on the same backend in
 // both arms.
-func (cfg config) towerBackend() string {
+func (cfg *config) towerBackend() string {
 	if cfg.visionDevice == "cpu" {
 		return "cpu"
 	}
@@ -1162,7 +1162,7 @@ const (
 //     binary has a WebGPU tower for.
 //
 // An audio encoder does not come through here (towerBackend).
-func (cfg config) routeVisionTower(family string, mmproj bool) visionRoute {
+func (cfg *config) routeVisionTower(family string, mmproj bool) visionRoute {
 	be := cfg.towerBackend()
 	if be != "webgpu" {
 		return visionRoute{Backend: be}
@@ -1654,7 +1654,7 @@ func servedNameFor(path string) string {
 func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel, error) {
 	// Resolve this model's knobs (per-model overrides over server-global defaults)
 	// and reject invalid enums up front.
-	opts := spec.options(cfg)
+	opts := spec.options(&cfg)
 	head, err := specHead(spec, &opts)
 	if err != nil {
 		return nil, fmt.Errorf("--model %q: %w", spec.path, err)
@@ -1705,7 +1705,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	// the cache it may have loaded through.
 	res, err := modelload.Load(ctx, modelload.Request{
 		Spec: spec.path, Opts: opts, DirectLoad: cfg.load.DirectLoad,
-		ExplicitQuant: spec.explicitQuant(cfg), GuardAdvice: "use -stream-weights or a smaller quant",
+		ExplicitQuant: spec.explicitQuant(&cfg), GuardAdvice: "use -stream-weights or a smaller quant",
 	})
 	if err != nil {
 		return nil, err

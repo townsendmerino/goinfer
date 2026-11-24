@@ -393,11 +393,11 @@ func TestDefaultThinkingIsTheTemplatesOwn(t *testing.T) {
 	}
 	for _, tc := range cases {
 		base := templateFromGolden(t, tc.ckpt)
-		def := base.WithThinking(config{}.thinkDefault()).Render("", user)
+		def := base.WithThinking((&config{}).thinkDefault()).Render("", user)
 		if !strings.HasSuffix(def, tc.wantTail) {
 			t.Errorf("%s: default prompt ends %q, want it to end %q", tc.ckpt, def[max(0, len(def)-50):], tc.wantTail)
 		}
-		asis := base.WithThinking(config{thinking: "asis"}.thinkDefault()).Render("", user)
+		asis := base.WithThinking((&config{thinking: "asis"}).thinkDefault()).Render("", user)
 		if strings.Contains(asis, "<think>") {
 			t.Errorf("%s: -thinking asis must not write a think block, got %q", tc.ckpt, asis[max(0, len(asis)-50):])
 		}

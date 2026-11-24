@@ -110,20 +110,20 @@ type fitCheck struct {
 	isGGUF bool
 }
 
-func (f fitCheck) need() int64   { return f.check().Need() }
-func (f fitCheck) budget() int64 { return f.check().Budget() }
+func (f *fitCheck) need() int64   { return f.check().Need() }
+func (f *fitCheck) budget() int64 { return f.check().Budget() }
 
 // known reports whether both sides of the comparison are real numbers. Anything else proceeds.
-func (f fitCheck) known() bool { return f.check().Known() }
+func (f *fitCheck) known() bool { return f.check().Known() }
 
-func (f fitCheck) fits() bool { return f.check().Fits() }
+func (f *fitCheck) fits() bool { return f.check().Fits() }
 
 // ratio is need/budget — 1.0 is exactly at the refusal.
-func (f fitCheck) ratio() float64 { return f.check().Ratio() }
+func (f *fitCheck) ratio() float64 { return f.check().Ratio() }
 
 // check is f as internal/mem's resident guard reads it: the priced terms, the machine's available memory and the policy.
 // The int4-against-int8 comparison a refusal's last line reads is measured only for a load not already at int4.
-func (f fitCheck) check() mem.HostCheck {
+func (f *fitCheck) check() mem.HostCheck {
 	l := mem.HostLoad{Name: f.name, Quant: f.quant, WeightBytes: f.weightBytes, KVBytes: f.kvBytes, SourceBytes: f.srcFileBytes,
 		CUDABuildBytes: f.cudaBuildBytes, ExpertBytes: f.expertBytes, PackBytes: f.packBytes, DeviceKV: f.deviceKV, SnapshotBytes: f.snapshotBytes,
 		Ctx: f.effCtx, Pinned: f.pinned, NoGuard: f.noGuard, GGUF: f.isGGUF, DenseStreamable: f.denseStreamable}
@@ -138,17 +138,17 @@ func (f fitCheck) check() mem.HostCheck {
 }
 
 // kvAt is the KV f prices at ctx positions, the one function its own figure and every re-pricing at another context read.
-func (f fitCheck) kvAt(ctx int) int64 {
+func (f *fitCheck) kvAt(ctx int) int64 {
 	return kvPrice{kvF16: f.kvF16, kvI8: f.kvI8, metalKV: f.metalKV}.bytes(f.cfg, ctx)
 }
 
 const fitGB = 1 << 30
 
 // arithmetic is the one line both the warning and the refusal share (mem.HostCheck.Arithmetic).
-func (f fitCheck) arithmetic() string { return f.check().Arithmetic() }
+func (f *fitCheck) arithmetic() string { return f.check().Arithmetic() }
 
 // warning is what the banner prints when the load fits but only just.
-func (f fitCheck) warning() string { return f.check().Warning() }
+func (f *fitCheck) warning() string { return f.check().Warning() }
 
 // denseStreamable mirrors newLayerPager's own exclusions (decoder/layerpaging.go) exactly, so the fit guard's retry decision and the
 // pager's decision to build one cannot disagree: an MoE model uses expertPager instead (see FitDeclineError.DenseStreamable), and a
@@ -167,7 +167,7 @@ func denseStreamable(cfg *Config) bool {
 
 // declineErr is the refusal. It is an error, not a warning, because the measured alternative is a
 // machine that stops responding: the user cannot read a warning on a box that is thrashing.
-func (f fitCheck) declineErr() *FitDeclineError { return fitDecline(f.check().Decline()) }
+func (f *fitCheck) declineErr() *FitDeclineError { return fitDecline(f.check().Decline()) }
 
 // fitDecline is mem's refusal as the error Load returns.
 func fitDecline(d *mem.Decline) *FitDeclineError {
@@ -185,7 +185,7 @@ func fitDecline(d *mem.Decline) *FitDeclineError {
 // silently downgraded); an unpinned load that does not fit at the model's maximum but does fit at some smaller context >= ctxFloor is
 // auto-pinned to it, reported, and proceeds; an unpinned load that does not fit even at ctxFloor is refused. KV is always priced, at the
 // model's own maximum when nothing is pinned, because nothing else bounds the CPU cache's growth.
-func guardFit(f fitCheck) (int, error) {
+func guardFit(f *fitCheck) (int, error) {
 	c := f.check()
 	fit := mem.SolveHost(c.HostLoad, mem.HostMachine(c.Available), c.Policy)
 	if fit.Decline != nil {
@@ -199,7 +199,7 @@ func guardFit(f fitCheck) (int, error) {
 
 // decide is guardFit's decision without its stderr lines, for a caller that reports it instead (FitQuery): the context to
 // pin (0 = leave the request alone), or the refusal.
-func (f fitCheck) decide() (pinCtx int, decline *FitDeclineError) {
+func (f *fitCheck) decide() (pinCtx int, decline *FitDeclineError) {
 	pin, d := f.check().Decide()
 	return pin, fitDecline(d)
 }
@@ -488,16 +488,16 @@ func estimateKVBytes(cfg *Config, ctx int, kvF16, kvI8 bool) int64 {
 // needs more than the rest. Weights are still subtracted here (unlike prefill_budget.go's request-time check) because guardFit runs before
 // loadWeights (decoder/model.go): the weights this call is about to allocate are not yet resident, so the availability figure does not yet
 // reflect their cost.
-func fitCheckFor(path, quantName string, quant quantMode, opts Options) fitCheck {
+func fitCheckFor(path, quantName string, quant quantMode, opts Options) *fitCheck {
 	return fitCheckForAt(path, quantName, quant, opts, hostRAMAvailable)
 }
 
 // fitCheckForAt is fitCheckFor with the available-memory reading passed in (read is called once, first).
-func fitCheckForAt(path, quantName string, quant quantMode, opts Options, read func() int64) fitCheck {
+func fitCheckForAt(path, quantName string, quant quantMode, opts Options, read func() int64) *fitCheck {
 	if quantName == "" {
 		quantName = "f32"
 	}
-	f := fitCheck{
+	f := &fitCheck{
 		name:       filepath.Base(path),
 		quant:      quantName,
 		availBytes: read(),
@@ -558,30 +558,31 @@ func FitDescribe(path string, opts Options) (string, error) {
 
 // priceCtxAndKV fills in effCtx/pinned/kvBytes from a resolved Config: the ctx-pricing logic fitCheckFor's .gguf and safetensors branches
 // share. Price at opts.ResidentContext when pinned, else the model's own MaxPositions, the worst case a real request can reach.
-func (f fitCheck) priceCtxAndKV(cfg *Config, opts Options) fitCheck {
-	f.cfg = cfg
-	f.snapshotBytes = snapshotStoreBytes(cfg, opts)
-	f.denseStreamable = denseStreamable(cfg) && mem.QuantPages(f.quant) // TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers
+func (f *fitCheck) priceCtxAndKV(cfg *Config, opts Options) *fitCheck {
+	out := *f
+	out.cfg = cfg
+	out.snapshotBytes = snapshotStoreBytes(cfg, opts)
+	out.denseStreamable = denseStreamable(cfg) && mem.QuantPages(out.quant) // TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers
 	p, ok := kvPricingFor(cfg, opts)
-	f.pinned = p.pinned
+	out.pinned = p.pinned
 	if !ok {
-		return f // no pin and the model's own max is unknown ⇒ can't price KV; proceed as before
+		return &out // no pin and the model's own max is unknown ⇒ can't price KV; proceed as before
 	}
-	f.effCtx, f.kvF16, f.kvI8, f.metalKV = p.ctx, p.kvF16, p.kvI8, p.metalKV
-	if f.cudaBuildBytes > 0 { // the config gives the layer count: the build peak now prices its packed layer
-		if peak := buildDemandFor(cfg, opts, f.weightBytes, f.expertBytes, f.isGGUF).HostBuildPeak; peak > 0 {
-			f.cudaBuildBytes = peak
+	out.effCtx, out.kvF16, out.kvI8, out.metalKV = p.ctx, p.kvF16, p.kvI8, p.metalKV
+	if out.cudaBuildBytes > 0 { // the config gives the layer count: the build peak now prices its packed layer
+		if peak := buildDemandFor(cfg, opts, out.weightBytes, out.expertBytes, out.isGGUF).HostBuildPeak; peak > 0 {
+			out.cudaBuildBytes = peak
 		}
 	}
 	if p.deviceKV {
-		f.deviceKV = true
-		if f.cudaBuildBytes == 0 {
-			f.packBytes = buildDemandFor(cfg, opts, f.weightBytes, 0, f.isGGUF).HostPackBytes
+		out.deviceKV = true
+		if out.cudaBuildBytes == 0 {
+			out.packBytes = buildDemandFor(cfg, opts, out.weightBytes, 0, out.isGGUF).HostPackBytes
 		}
-		return f
+		return &out
 	}
-	f.kvBytes = f.kvAt(f.effCtx)
-	return f
+	out.kvBytes = out.kvAt(out.effCtx)
+	return &out
 }
 
 // kvPrice is the KV a host fit guard prices: the context, whether the caller pinned it, and the precision.
@@ -678,11 +679,11 @@ func kvPricingFor(cfg *Config, opts Options) (p kvPrice, ok bool) {
 
 // smallerFittingContext is the largest context <= f.effCtx whose weights+KV fit the budget, floored at ctxFloor; false for a pin, an
 // unread config, or a load that does not fit even at the floor (mem.HostCheck.SmallerFittingContext).
-func (f fitCheck) smallerFittingContext() (int, bool) { return f.check().SmallerFittingContext() }
+func (f *fitCheck) smallerFittingContext() (int, bool) { return f.check().SmallerFittingContext() }
 
 // capNote is the banner line printed when the guard auto-pins a smaller context: a working server and a visible limit, rather than
 // a refusal on the model the README told the user to pull.
-func (f fitCheck) capNote(ctx int) string { return f.check().CapNote(ctx) }
+func (f *fitCheck) capNote(ctx int) string { return f.check().CapNote(ctx) }
 
 // weightAllocs counts entries into loadWeights — the call that turns a checkpoint into resident
 // heap. It exists so "the guard refused BEFORE allocating" is an assertion rather than a
