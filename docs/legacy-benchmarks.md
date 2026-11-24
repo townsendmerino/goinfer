@@ -22,6 +22,7 @@
 > | §B5 (anchored re-measure) + the v0.11.0 qualification | superseded; the qualification was **RETIRED** rather than re-measured | §B5.1 / §B8 |
 > | §B6 (split-KV) | superseded | §B6.3 |
 > | §B7 (deep context) + its control | superseded | §B7.1 |
+> | §B8's WebGPU column and footnote (38 / 41 / 63%) | **RETIRED** 2026-11-23 | `benchmarks.md` §B8.1 (WG0) |
 > | §B9 (relocated README tables) | **STALE** — peer v0.32.6 on the pre-2026-08-25 stack | §B8 (greedy) and §B5.1 (sampled) |
 > | *moved 2026-09-05:* §A — the 2026-08-22 Mac decode table and diagnosis; the 2026-08-02 load re-measure and the v0.5.0-era decode rows; the v0.5.0 relative prefill speedups; the pre-2026-09-01 CPU-prefill record; the Mellum2 MoE-prefill and SigLIP rows | superseded (the first four and the SigLIP row, the last **re-measured 2026-09-08**) / **STALE**, never re-anchored (Mellum2 only) | `benchmarks.md` §A — the 2026-08-24 peer row, the cold-start table, the 2026-09-01 prefill re-anchor, the 2026-09-08 vision-tower re-measure |
 > | *moved 2026-09-05:* §B2 total-request-time crossover | computed from the retired pre-re-anchor prefill figure; not re-derived | nothing yet — `benchmarks.md` §B2 says so in place |
@@ -1437,3 +1438,24 @@ tok/s = ~71%** — this peer figure lives in CHANGELOG, not gpu-assessment) · *
 CUDA)** — measured 2026-07-16 on this repo at commit `7557723`, RTX 2070 SUPER / driver 595.58.03,
 peer Ollama 0.5.7 via `/api/generate`; goinfer via `cmd/serve` `/v1/chat/completions`; both
 wall-clock, best of 3 warm; lab notes in `docs/completed/task-cuda-cgofree-spike.md`.
+
+---
+
+## §B8's WebGPU column and its "38 / 41 / 63%" footnote — RETIRED 2026-11-23
+
+Moved here verbatim from `benchmarks.md` §B8's backend table (measured 2026-08-26, goinfer `a161bd6`, the Nobara 44 / driver
+595.91.07 stack). It is superseded by WG0's reading, `benchmarks.md` §B8.1 and
+`measurements/webgpu-baseline-2026-11/README.md`: WebGPU at 45 / 51 / 75% of goinfer's CUDA at depth 128 (a different build and session, so the
+two figures are indicative against each other only), and at 13 / 17 / 39% at depth 2048, which this block's depth-128 figure did not show. The table
+below is the whole block as it stood, CPU and Ollama columns included.
+
+| model | goinfer CPU (tok/s) | Ollama CPU (tok/s) | goinfer CUDA (tok/s) | Ollama CUDA (tok/s) | goinfer WebGPU ⁱ (tok/s) |
+|---|---|---|---|---|---|
+| 0.5B | **46.9** (2026-09-23) | 57.1 ±0.0 | **332.7** ±4.9 | 268.7 ±0.9 | 127.6 ±1.0 |
+| 1.5B | **19.4** (2026-09-23) | 23.8 ±0.0 | **220.8** ±1.0 | 195.8 ±0.1 | 90.1 ±0.4 |
+| 7B | **5.0** (2026-09-23) | 6.0 ±0.0 | 73.1 ±0.0 | 72.8 ±0.1 | 46.1 ±0.0 |
+
+ⁱ **Cross-backend, not a peer cell.** Ollama has no WebGPU build, so this column has no counterpart
+and must never be presented as a like-for-like comparison. It is here to place goinfer's portable
+backend against its own native one: WebGPU runs at **38 / 41 / 63%** of goinfer's own CUDA at 0.5B /
+1.5B / 7B — the gap narrows as the model grows, which is what a dispatch-overhead story predicts.

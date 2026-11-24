@@ -329,19 +329,21 @@ func TestHeavyMainGroups_aTestWithNoHeavyCheckRunsOnlyInTheParityCell(t *testing
 // A call to testgate.RequireHeavy is a heavy check as much as the variable's name in a literal, through a helper too.
 func TestReachableLiterals_aRequireHeavyCallIsAHeavyCheck(t *testing.T) {
 	dir := t.TempDir()
-	src := `package cuda
+	// The fixture's lines are indented so a line-anchored scan of this file (scripts/test_touched.py) does not read its
+	// functions as this file's own; the Go parser does not care.
+	src := `	package cuda
 
-import (
-	"testing"
+	import (
+		"testing"
 
-	"github.com/townsendmerino/goinfer/internal/testgate"
-)
+		"github.com/townsendmerino/goinfer/internal/testgate"
+	)
 
-func needsModel(t *testing.T) { testgate.RequireHeavy(t) }
+	func needsModel(t *testing.T) { testgate.RequireHeavy(t) }
 
-func TestDirect(t *testing.T) { testgate.RequireHeavy(t) }
-func TestHelper(t *testing.T) { needsModel(t) }
-func TestNone(t *testing.T)   { _ = "../../testdata/llama-tiny" }
+	func TestDirect(t *testing.T) { testgate.RequireHeavy(t) }
+	func TestHelper(t *testing.T) { needsModel(t) }
+	func TestNone(t *testing.T)   { _ = "../../testdata/llama-tiny" }
 `
 	if err := os.WriteFile(filepath.Join(dir, "x_test.go"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)
@@ -354,5 +356,70 @@ func TestNone(t *testing.T)   { _ = "../../testdata/llama-tiny" }
 		if got := reachesHeavyCheck(refs[n]); got != want {
 			t.Errorf("%s: reaches a heavy check %v, want %v (literals %q)", n, got, want, refs[n])
 		}
+	}
+}
+
+// A heavy main-group process over its budget fails the tier, naming the process, its wall and its budget; one at the budget
+// passes. A record without a budget (written before the budget existed) grades none.
+func TestGradeHeavyBudget_aProcessOverTwentyMinutesFails(t *testing.T) {
+	in := heavyInput{BudgetS: 1200}
+	v, bad := gradeHeavyBudget("gemma4-26b", 1201, in)
+	if !bad || v.State != groupFail {
+		t.Fatalf("1,201 s against 1,200: bad %v, state %v; want a failure", bad, v.State)
+	}
+	for _, want := range []string{"gemma4-26b", "1201s", "1200s"} {
+		if !strings.Contains(v.Line, want) {
+			t.Errorf("the failure %q does not name %q", v.Line, want)
+		}
+	}
+	if _, bad := gradeHeavyBudget("gemma4-26b", 1200, in); bad {
+		t.Error("a process at exactly its budget failed")
+	}
+	if _, bad := gradeHeavyBudget("gemma4-26b", 99999, heavyInput{}); bad {
+		t.Error("a record with no budget recorded failed a process")
+	}
+}
+
+// The tree's table: 20 minutes per process, and small excepted at 60 (Francis, 2026-11-23), so small at 59 minutes passes
+// and at 61 fails.
+func TestHeavyBudgets_theTreesTable(t *testing.T) {
+	base, except, err := heavyBudgets(heavyProcessBudget, heavyBudgetExceptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base != 20*60 {
+		t.Errorf("the per-process budget is %d s, want 1,200", base)
+	}
+	in := heavyInput{BudgetS: base, BudgetExceptS: except}
+	if _, bad := gradeHeavyBudget(heavySmallGroup, 59*60, in); bad {
+		t.Error("small at 59 minutes failed its 60-minute exception")
+	}
+	if _, bad := gradeHeavyBudget(heavySmallGroup, 61*60, in); !bad {
+		t.Error("small at 61 minutes passed its 60-minute exception")
+	}
+	if _, bad := gradeHeavyBudget("qwen3-4b", 21*60, in); !bad {
+		t.Error("a process without an exception passed at 21 minutes")
+	}
+}
+
+// An exception must say why it exists and when it is reviewed, or the table is refused and the tier does not run.
+func TestHeavyBudgets_refusesAnExceptionWithoutAReason(t *testing.T) {
+	for name, exc := range map[string]heavyBudgetException{
+		"no reason": {Group: heavySmallGroup, Budget: time.Hour, Review: "the next heavy run"},
+		"no review": {Group: heavySmallGroup, Budget: time.Hour, Reason: "too big"},
+		"no budget": {Group: heavySmallGroup, Reason: "too big", Review: "the next heavy run"},
+		"no group":  {Budget: time.Hour, Reason: "too big", Review: "the next heavy run"},
+	} {
+		if _, _, err := heavyBudgets(20*time.Minute, []heavyBudgetException{exc}); err == nil {
+			t.Errorf("%s: an exception %+v was accepted", name, exc)
+		}
+	}
+	two := heavyBudgetException{Group: heavySmallGroup, Budget: time.Hour, Reason: "r", Review: "v"}
+	if _, _, err := heavyBudgets(20*time.Minute, []heavyBudgetException{two, two}); err == nil {
+		t.Error("two exceptions for one group were accepted")
+	}
+	in := heavyInput{Total: 1, Kernels: 1, Drain: []string{"TestD"}, BudgetErr: "small: no reason"}
+	if vs, run := gradeHeavyStart(in); run || !slices.ContainsFunc(vs, func(v groupVerdict) bool { return v.State == groupFail }) {
+		t.Errorf("a refused budget table: run %v, verdicts %+v; want a failure and no run", run, vs)
 	}
 }
