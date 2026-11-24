@@ -5,6 +5,7 @@ package kernels
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"strings"
 	"testing"
 
@@ -106,7 +107,7 @@ func qgateRun(t *testing.T, src string) (splitDiff int, gateErr float64, skip bo
 			qg[int(gateAt[j*n/7])] = v
 		}
 		padded := func(v []float32) []float32 {
-			out := append(append([]float32(nil), v...), make([]float32, tail)...)
+			out := append(slices.Clone(v), make([]float32, tail)...)
 			for i := len(v); i < len(out); i++ {
 				out[i] = sentinel
 			}
@@ -136,7 +137,7 @@ func qgateRun(t *testing.T, src string) (splitDiff int, gateErr float64, skip bo
 				splitDiff++
 			}
 		}
-		wantCtx := append([]float32(nil), ctx...)
+		wantCtx := slices.Clone(ctx)
 		hybridattn.QGateContext(wantCtx, wantG)
 		for i, got := range ctxB.Floats()[:n] {
 			gateErr = math.Max(gateErr, math.Abs(float64(got)-float64(wantCtx[i]))/math.Abs(float64(ctx[i])))

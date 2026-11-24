@@ -5,6 +5,7 @@ package kernels
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 )
 
@@ -46,13 +47,13 @@ func TestSlidingWindow(t *testing.T) {
 		cq.Run1D(pipe, nH*128, 128, NewBufferFloats(d, q), NewBufferU16s(d, kc), NewBufferU16s(d, vc),
 			out, NewBufferU32(d, nH), NewBufferU32(d, nKV), NewBufferU32(d, hd), NewBufferU32(d, uint32(nKeys)),
 			NewBufferFloats(d, []float32{scale}), NewBufferU32(d, uint32(window)), NewBufferFloats(d, make([]float32, nH)), NewBufferU32(d, 0), kvIdentityTable(d))
-		return append([]float32(nil), out.Floats()...)
+		return slices.Clone(out.Floats())
 	}
 	// A: windowed over all N keys.
 	outA := run(kFull, vFull, N, W)
 	// B: full attention over just the last W keys.
-	lastK := append([]uint16(nil), kFull[(N-W)*kvDim:]...)
-	lastV := append([]uint16(nil), vFull[(N-W)*kvDim:]...)
+	lastK := slices.Clone(kFull[(N-W)*kvDim:])
+	lastV := slices.Clone(vFull[(N-W)*kvDim:])
 	outB := run(lastK, lastV, W, 0)
 
 	var maxAbs float64

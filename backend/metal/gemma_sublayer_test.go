@@ -5,6 +5,7 @@ package metal
 import (
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -98,7 +99,7 @@ func TestGemmaSublayer_MetalContribution(t *testing.T) {
 	// captured contributions don't mean what the label says (the CUDA box self-checked theirs too).
 	emb := m8.EmbedResidentForTest(seed[pos])
 	full := r.forwardTrunkForTest(emb, pos, r.nL)
-	recon := append([]float32(nil), emb...)
+	recon := slices.Clone(emb)
 	for l := 0; l < r.nL; l++ {
 		for i := range recon {
 			recon[i] += attn[l][i] + mlp[l][i]

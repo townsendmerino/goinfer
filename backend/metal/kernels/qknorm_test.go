@@ -5,6 +5,7 @@ package kernels
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 )
 
@@ -41,7 +42,7 @@ func TestQKNorm(t *testing.T) {
 		qkv := rvec(qkvDim)
 		qn, kn := rvec(hd), rvec(hd)
 		// CPU reference (only q + k sections change; v untouched).
-		ref := append([]float32(nil), qkv...)
+		ref := slices.Clone(qkv)
 		norm := func(off, heads int, w []float32) {
 			for h := range heads {
 				b := off + h*hd

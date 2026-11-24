@@ -6,6 +6,7 @@ import (
 	"context"
 	"math/rand"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -370,7 +371,7 @@ func TestUploadKV_slidingLayerStartsLate(t *testing.T) {
 			if err != nil {
 				t.Fatalf("decode step %d: %v", i, err)
 			}
-			out[i] = append([]float32(nil), l...)
+			out[i] = slices.Clone(l)
 			tok = argmaxF(l)
 		}
 		return out

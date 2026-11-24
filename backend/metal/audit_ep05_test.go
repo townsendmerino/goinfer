@@ -23,7 +23,7 @@ func TestEP05_deepRowsAB(t *testing.T) {
 	depths := []int{1100, 2048, 4096}
 	if v := os.Getenv("GOINFER_EP05_DEPTHS"); v != "" {
 		depths = nil
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			var n int
 			fmt.Sscan(strings.TrimSpace(f), &n)
 			depths = append(depths, n)

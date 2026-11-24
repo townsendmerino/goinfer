@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"math"
+	"slices"
 	"testing"
 )
 
@@ -81,7 +82,7 @@ func TestGemmW8Tile_matchesReference(t *testing.T) {
 					if err := e.Err(); err != nil {
 						t.Fatalf("N %d K %d rows %d mode %d %s: %v", N, K, rows, mode, tl.name, err)
 					}
-					got := append([]uint16(nil), c.U16s()[:rows*N]...)
+					got := slices.Clone(c.U16s()[:rows*N])
 					d.ReleaseBuf(c)
 					if first == nil {
 						first = got

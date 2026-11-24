@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -56,7 +57,7 @@ func TestMetalDecodeDecomp(t *testing.T) {
 			return def
 		}
 		var out []int
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			n, err := strconv.Atoi(strings.TrimSpace(f))
 			if err != nil {
 				t.Fatalf("%s: %v", env, err)
@@ -188,10 +189,10 @@ func TestMetalDecodeDecomp(t *testing.T) {
 			}
 			return (r.gpuEnd - r.gpuStart) * 1e3
 		}
-		for i := 0; i < 5; i++ { // warm
+		for range 5 { // warm
 			step()
 		}
-		ref := append([]float32(nil), r.logitsHost...)
+		ref := slices.Clone(r.logitsHost)
 		arm := func(ps []*Pipeline) float64 { // median GPU ms per token over `steps` decode steps
 			var restore func()
 			if ps != nil {
@@ -209,7 +210,7 @@ func TestMetalDecodeDecomp(t *testing.T) {
 		full := []float64{}
 		floor := []float64{}
 		per := make([][]float64, len(cats))
-		for rep := 0; rep < reps; rep++ {
+		for rep := range reps {
 			full = append(full, arm(nil))
 			for ci, c := range cats {
 				per[ci] = append(per[ci], arm(c.pipes))
@@ -246,7 +247,7 @@ func TestMetalDecodeDecomp(t *testing.T) {
 			attnPipes := cats[0].pipes // "attention"
 			type sres struct{ full, attn []float64 }
 			res := make([]sres, len(splits))
-			for rep := 0; rep < reps; rep++ {
+			for rep := range reps {
 				for si, sv := range splits {
 					r.attnFASplitOverride = sv
 					r.setPosAheadForTest(D) // setPos writes uAttnFANSplit from attnFASplitFor, like every decode step

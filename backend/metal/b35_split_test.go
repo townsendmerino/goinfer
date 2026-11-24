@@ -5,6 +5,7 @@ package metal
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -59,14 +60,14 @@ func TestB35SplitInvariance(t *testing.T) {
 		for l := range r.layers {
 			L := &r.layers[l]
 			if L.delta != nil {
-				out = append(out, append([]uint32(nil), L.delta.win.U32s()...), append([]uint32(nil), L.delta.state.U32s()...))
+				out = append(out, slices.Clone(L.delta.win.U32s()), slices.Clone(L.delta.state.U32s()))
 				continue
 			}
 			if L.geom == nil || l >= len(r.kc) {
 				continue
 			}
 			n := N * L.geom.kvDim / 2 // f16 halves, read as words
-			out = append(out, append([]uint32(nil), r.kc[l].U32s()[:n]...), append([]uint32(nil), r.vc[l].U32s()[:n]...))
+			out = append(out, slices.Clone(r.kc[l].U32s()[:n]), slices.Clone(r.vc[l].U32s()[:n]))
 		}
 		return
 	}
@@ -78,7 +79,7 @@ func TestB35SplitInvariance(t *testing.T) {
 			if plant && from > 0 {
 				r.resetDeltaNet()
 			}
-			last = append([]float32(nil), r.PrefillLast(embs[from:to], from)...)
+			last = slices.Clone(r.PrefillLast(embs[from:to], from))
 			from = to
 		}
 		return last, words()

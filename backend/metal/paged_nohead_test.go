@@ -5,6 +5,7 @@ package metal
 import (
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -71,7 +72,7 @@ func TestPagedNoLogits_skipsHeadAndKeepsKV(t *testing.T) {
 						t.Fatalf("Forward[%d]: %v", i, err)
 					}
 					if i >= promptLen-1 {
-						got = append(got, append([]float32(nil), lg...))
+						got = append(got, slices.Clone(lg))
 					}
 				}
 				return got

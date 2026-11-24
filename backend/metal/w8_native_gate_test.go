@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -170,7 +171,7 @@ func cpuLogitsAtKV(t *testing.T, path, quant string, seed []int, steps int, forc
 		if err != nil {
 			t.Fatalf("cpu forward (%q) at %d: %v", quant, i, err)
 		}
-		out[i] = append([]float32(nil), l...)
+		out[i] = slices.Clone(l)
 		if f16KV {
 			for layer := range nL {
 				k, v, _ := cache.LayerKVForTest(layer)
@@ -215,7 +216,7 @@ func metalLogitsAt(t *testing.T, path, quant string, toks []int, wantNative bool
 		if err != nil {
 			t.Fatalf("metal forward (%s) at %d: %v", quant, i, err)
 		}
-		out[i] = append([]float32(nil), l...)
+		out[i] = slices.Clone(l)
 	}
 	return out
 }

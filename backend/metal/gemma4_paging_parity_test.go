@@ -4,6 +4,7 @@ package metal
 
 import (
 	"os"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -72,7 +73,7 @@ func TestGemma4Paging_bitExact(t *testing.T) {
 	}
 	paged := make([][]float32, len(twoGeomPrompt))
 	for i, tok := range twoGeomPrompt {
-		paged[i] = append([]float32(nil), r.ForwardEmb(mg.EmbedResidentForTest(tok), i)...)
+		paged[i] = slices.Clone(r.ForwardEmb(mg.EmbedResidentForTest(tok), i))
 	}
 
 	// BYTE-IDENTICAL: paged ≡ non-paged, every logit, every position (exact float equality).
@@ -131,7 +132,7 @@ func runG4(t *testing.T, ckpt string) [][]float32 {
 	defer r.Close()
 	out := make([][]float32, len(twoGeomPrompt))
 	for i, tok := range twoGeomPrompt {
-		out[i] = append([]float32(nil), r.ForwardEmb(m.EmbedResidentForTest(tok), i)...)
+		out[i] = slices.Clone(r.ForwardEmb(m.EmbedResidentForTest(tok), i))
 	}
 	return out
 }

@@ -5,6 +5,7 @@ package gpudev
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 )
 
@@ -39,7 +40,7 @@ func TestMetal_gemmW8A8Fused(t *testing.T) {
 		ref := d.NewBufferLen(sh.M * sh.N)
 		p, gx, gy, tgx, tgy := v.GEMMW8A8Plan(sh.M, sh.N, sh.K)
 		run2d(q, p, gx, gy, tgx, tgy, dA, dAs, dB, dBs, ref, i32b(d, sh.M), i32b(d, sh.N), i32b(d, sh.K))
-		want := append([]float32(nil), ref.Floats()[:sh.M*sh.N]...)
+		want := slices.Clone(ref.Floats()[:sh.M*sh.N])
 		for r := range sh.M {
 			for c := range sh.N {
 				want[r*sh.N+c] += bias[c]

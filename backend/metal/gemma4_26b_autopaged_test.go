@@ -5,6 +5,7 @@ package metal
 import (
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -87,7 +88,7 @@ func TestGemma4_26B_autoPagedRuns(t *testing.T) {
 		r.g4moe.slots, autoMoESlotsMax, rss0, rssBuilt)
 
 	toks := twoGeomPrompt[:5] // 1 seed + 4 timed steps, same bound as TestGemma4_26B_pagedRuns
-	warm := append([]float32(nil), r.ForwardEmb(m.EmbedResidentForTest(toks[0]), 0)...)
+	warm := slices.Clone(r.ForwardEmb(m.EmbedResidentForTest(toks[0]), 0))
 	_ = warm
 	t.Logf("seed token OK -- RSS %d MB", rssMB())
 

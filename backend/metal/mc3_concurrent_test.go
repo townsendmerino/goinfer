@@ -118,11 +118,9 @@ func TestMC3_concurrentMatchesAloneOnMetal(t *testing.T) {
 	concurrent := make([][]turn, nConv)
 	var wg sync.WaitGroup
 	for c := range nConv {
-		wg.Add(1)
-		go func(c int) {
-			defer wg.Done()
+		wg.Go(func() {
 			concurrent[c] = run(m, c)
-		}(c)
+		})
 	}
 	wg.Wait()
 	b := m.ResidentForwardForTest().(*metalResident).r.batch
@@ -206,8 +204,7 @@ func TestMC3_concurrentSampledMatchesAloneOnMetal(t *testing.T) {
 	together := make([][]int, nConv)
 	var wg sync.WaitGroup
 	for c := range nConv {
-		wg.Add(1)
-		go func(c int) { defer wg.Done(); together[c] = run(m, c) }(c)
+		wg.Go(func() { together[c] = run(m, c) })
 	}
 	wg.Wait()
 	for c := range nConv {

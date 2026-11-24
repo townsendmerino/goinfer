@@ -5,6 +5,7 @@ package kernels
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 )
 
@@ -37,7 +38,7 @@ func TestRopePartial(t *testing.T) {
 		invf[i] = float32(1.0 / math.Pow(10000, float64(2*i)/float64(rotaryDim)))
 	}
 	// CPU reference: rotate (d, rhalf+d) for d<rhalf per head; tail untouched.
-	ref := append([]float32(nil), x...)
+	ref := slices.Clone(x)
 	for h := range nH {
 		b := h * hd
 		for dd := range rhalf {

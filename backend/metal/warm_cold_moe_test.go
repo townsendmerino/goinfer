@@ -6,6 +6,7 @@ import (
 	"context"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -42,7 +43,7 @@ func TestPrefillLast_tailContinuationMatchesCold_MoE(t *testing.T) {
 			if err != nil {
 				t.Fatalf("cold pass declined: %v", err)
 			}
-			cold = append([]float32(nil), cold...)
+			cold = slices.Clone(cold)
 			differ := func(x []float32) int {
 				d := 0
 				for i := range cold {

@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -56,7 +57,7 @@ func TestMetalPrefillDecomp(t *testing.T) {
 	ks := []int{512, 3900}
 	if v := os.Getenv("GOINFER_METAL_DECOMP_K"); v != "" {
 		ks = nil
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			k, err := strconv.Atoi(strings.TrimSpace(f))
 			if err != nil {
 				t.Fatalf("GOINFER_METAL_DECOMP_K: %v", err)
@@ -146,7 +147,7 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 			d.ReleaseBuf(b)
 		}
 	}()
-	xF := nb(NewBufferU16s(d, append([]uint16(nil), xh...)))
+	xF := nb(NewBufferU16s(d, slices.Clone(xh)))
 	normF := nb(NewBufferU16s(d, make([]uint16, Mpad*H)))
 	qkvF := nb(NewBufferU16s(d, make([]uint16, Mpad*qkvDim)))
 	ctxF := nb(NewBufferU16s(d, make([]uint16, Mpad*qDim)))
@@ -304,7 +305,7 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 	// Full replay GPU time, then each category, interleaved rep by rep so drift hits every arm alike.
 	fullMs := []float64{}
 	catMs := make([][]float64, len(cats))
-	for rep := 0; rep < reps; rep++ {
+	for rep := range reps {
 		resetX()
 		pi0, si0 := vmPageCounts()
 		fullMs = append(fullMs, gpuMs(full))
@@ -362,7 +363,7 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 		}
 		looFull := []float64{}
 		looWithout := make(map[int][]float64)
-		for rep := 0; rep < reps; rep++ {
+		for rep := range reps {
 			resetX()
 			looFull = append(looFull, gpuMs(full))
 			for _, ci := range big {
@@ -414,7 +415,7 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 		}
 		conds := []string{"after 2 s idle", "right after a full replay", "right after attention-only", "back-to-back (2nd of 2)"}
 		res := make([][]float64, len(conds))
-		for rep := 0; rep < reps; rep++ {
+		for rep := range reps {
 			time.Sleep(2 * time.Second)
 			resetX()
 			res[0] = append(res[0], gpuMs(only(gu)))
@@ -481,13 +482,13 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 		for _, ci := range gemmCats {
 			c := cats[ci]
 			out := outOf[c.name]
-			before := append([]uint16(nil), out.U16s()...)
+			before := slices.Clone(out.U16s())
 			runOne := func(proto bool) []uint16 {
 				copy(out.U16s(), before)
 				protoOn = proto
 				gpuMs(func(e *Encoder) { c.enc(e, 0) })
 				protoOn = false
-				return append([]uint16(nil), out.U16s()...)
+				return slices.Clone(out.U16s())
 			}
 			cur, pro := runOne(false), runOne(true)
 			copy(out.U16s(), before)
@@ -554,7 +555,7 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 		arms := map[bool]*armRes{false: {}, true: {}}
 		perCat := map[bool]map[int][]float64{false: {}, true: {}}
 		var ratios []float64
-		for rep := 0; rep < reps; rep++ {
+		for rep := range reps {
 			order := []bool{false, true}
 			if rep%2 == 1 {
 				order = []bool{true, false}
@@ -598,7 +599,7 @@ func runDecompAt(t *testing.T, r *resident, embs [][]float32, reps int, hb func(
 		}
 		idle := map[bool][]float64{}
 		sus := map[bool][]float64{}
-		for rep := 0; rep < reps; rep++ {
+		for range reps {
 			for _, arm := range []bool{false, true} {
 				protoOn = arm
 				time.Sleep(2 * time.Second)
@@ -701,7 +702,7 @@ func vmPageCounts() (pageins, swapins int64) {
 	if err != nil {
 		return -1, -1
 	}
-	for _, line := range strings.Split(string(out), "\n") {
+	for line := range strings.SplitSeq(string(out), "\n") {
 		f := strings.Fields(strings.TrimSuffix(strings.TrimSpace(line), "."))
 		if len(f) < 2 {
 			continue
@@ -726,7 +727,7 @@ func thermalNote() string {
 	if err != nil {
 		return "thermal: ?"
 	}
-	for _, line := range strings.Split(string(out), "\n") {
+	for line := range strings.SplitSeq(string(out), "\n") {
 		l := strings.TrimSpace(line)
 		if l == "" || strings.Contains(l, "No thermal warning") || strings.Contains(l, "No performance warning") || strings.Contains(l, "No CPU power status") {
 			continue

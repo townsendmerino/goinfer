@@ -5,6 +5,7 @@ package metal
 import (
 	"math"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -91,7 +92,7 @@ func TestM11_asyncPhase2AB(t *testing.T) {
 			st := time.Now()
 			l := r.ForwardEmb(e, i)
 			ms = append(ms, float64(time.Since(st).Microseconds())/1e3)
-			lg = append(lg, append([]float32(nil), l...))
+			lg = append(lg, slices.Clone(l))
 		}
 		return ms, lg
 	}

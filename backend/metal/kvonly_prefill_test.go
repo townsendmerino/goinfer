@@ -5,6 +5,7 @@ package metal
 import (
 	"math/rand"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -206,7 +207,7 @@ func TestForwardNoLogits_pipelineTransitionParity(t *testing.T) {
 			if err != nil {
 				t.Fatalf("turn %d full Forward(%d): %v", turnIdx, i, err)
 			}
-			fullLogits[i] = append([]float32(nil), l...)
+			fullLogits[i] = slices.Clone(l)
 		}
 
 		// Pipelined: prefill tokens use ForwardNoLogits, then Forward for prompt end & decode
@@ -221,7 +222,7 @@ func TestForwardNoLogits_pipelineTransitionParity(t *testing.T) {
 			if err != nil {
 				t.Fatalf("turn %d pipe Forward(%d): %v", turnIdx, i, err)
 			}
-			pipeLogits[i] = append([]float32(nil), l...)
+			pipeLogits[i] = slices.Clone(l)
 		}
 
 		// Verify that all positions that produced logits match byte-identically
@@ -273,8 +274,7 @@ func BenchmarkForwardNoLogits_SyncVsPipe(b *testing.B) {
 
 	b.Run("Sync", func(b *testing.B) {
 		r := load()
-		b.ResetTimer()
-		for it := 0; it < b.N; it++ {
+		for b.Loop() {
 			for i := range nTokens {
 				if _, err := r.forwardHiddenNoHead(embs[i], i, false); err != nil {
 					b.Fatalf("sync pos %d: %v", i, err)
@@ -285,8 +285,7 @@ func BenchmarkForwardNoLogits_SyncVsPipe(b *testing.B) {
 
 	b.Run("Pipelined", func(b *testing.B) {
 		r := load()
-		b.ResetTimer()
-		for it := 0; it < b.N; it++ {
+		for b.Loop() {
 			for i := range nTokens {
 				r.ForwardEmbNoLogitsPipe(embs[i], i)
 			}

@@ -5,6 +5,7 @@ package metal
 import (
 	"os"
 	"runtime"
+	"slices"
 	"testing"
 	"time"
 
@@ -84,7 +85,7 @@ func TestPageCost_sharedEventReal(t *testing.T) {
 
 	// argmax cross-check: shared-event is a different ENCODING of the same compute — it must pick the
 	// same token as the single-submit path, or the number prices a broken forward.
-	base0 := append([]float32(nil), r.ForwardEmb(emb[0], 0)...)
+	base0 := slices.Clone(r.ForwardEmb(emb[0], 0))
 	se0 := r.forwardLogitsSharedEvent(0, ev, 0)
 	if a, b := argmaxF(base0), argmaxF(se0); a != b {
 		t.Fatalf("shared-event argmax %d != single-submit %d at pos 0 — instrumented forward diverges", b, a)

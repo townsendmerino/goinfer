@@ -232,7 +232,7 @@ func TestPhiloxGumbelMSL_mutationDetectsAConstantChange(t *testing.T) {
 
 	mismatch, worstGap := 0, float32(0)
 	const draws = 300
-	for i := 0; i < draws; i++ {
+	for i := range draws {
 		seed := uint64(i%5) + 1
 		T := []float64{0.3, 1.0, 2.0}[i%3]
 		dev := draw(seed, uint64(i), T)

@@ -5,6 +5,7 @@ package metal
 import (
 	"math"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -59,7 +60,7 @@ func TestGemma2Softcap_lanesAndPrefillMetal(t *testing.T) {
 			for i, id := range prompt {
 				seq = r.Forward(id%vocab, i)
 			}
-			seq = append([]float32(nil), seq...)
+			seq = slices.Clone(seq)
 			embs := make([][]float32, len(prompt))
 			for i, id := range prompt {
 				e := make([]float32, r.H)

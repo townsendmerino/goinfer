@@ -4,6 +4,7 @@ package metal
 
 import (
 	"os"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -45,7 +46,7 @@ func TestGemma4_26B_pagingWidthConsistency(t *testing.T) {
 		}
 		out := make([][]float32, len(prompt))
 		for i, tok := range prompt {
-			out[i] = append([]float32(nil), r.ForwardEmb(m.EmbedResidentForTest(tok), i)...)
+			out[i] = slices.Clone(r.ForwardEmb(m.EmbedResidentForTest(tok), i))
 		}
 		return out
 	}

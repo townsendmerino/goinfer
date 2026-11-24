@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -67,7 +68,7 @@ func TestW8Native_perLayerBisect(t *testing.T) {
 				}
 			}
 		}
-		return hidden, append([]float32(nil), logits...)
+		return hidden, slices.Clone(logits)
 	}
 	metalRun := func(quant string, native bool) (hidden [][]float32, logits []float32) {
 		prev := nativeInt8
@@ -90,9 +91,9 @@ func TestW8Native_perLayerBisect(t *testing.T) {
 			r.forwardTrunkForTest(m.EmbedResidentForTest(seed[i]), i, r.nL)
 		}
 		for l := 1; l <= r.nL; l++ {
-			hidden = append(hidden, append([]float32(nil), r.forwardTrunkForTest(m.EmbedResidentForTest(seed[pos]), pos, l)...))
+			hidden = append(hidden, slices.Clone(r.forwardTrunkForTest(m.EmbedResidentForTest(seed[pos]), pos, l)))
 		}
-		return hidden, append([]float32(nil), r.ForwardEmb(m.EmbedResidentForTest(seed[pos]), pos)...)
+		return hidden, slices.Clone(r.ForwardEmb(m.EmbedResidentForTest(seed[pos]), pos))
 	}
 	cpu8, cpu8Lg := cpuRun("int8int8", false)
 	cpu8h, cpu8hLg := cpuRun("int8int8", true)
@@ -178,8 +179,8 @@ func TestW8Native_hiddenVsLogits(t *testing.T) {
 				if err != nil {
 					t.Skipf("ForwardCapture: %v", err)
 				}
-				out.hidden = append(out.hidden, append([]float32(nil), h[0]...))
-				out.logits = append(out.logits, append([]float32(nil), lg...))
+				out.hidden = append(out.hidden, slices.Clone(h[0]))
+				out.logits = append(out.logits, slices.Clone(lg))
 			}
 		}
 		return out
@@ -200,8 +201,8 @@ func TestW8Native_hiddenVsLogits(t *testing.T) {
 	for p := range nP {
 		for i, id := range prompts[p] {
 			emb := m.EmbedResidentForTest(id)
-			met.hidden = append(met.hidden, append([]float32(nil), r.forwardTrunkForTest(emb, i, r.nL)...))
-			met.logits = append(met.logits, append([]float32(nil), r.ForwardEmb(emb, i)...))
+			met.hidden = append(met.hidden, slices.Clone(r.forwardTrunkForTest(emb, i, r.nL)))
+			met.logits = append(met.logits, slices.Clone(r.ForwardEmb(emb, i)))
 		}
 	}
 	r.Close()

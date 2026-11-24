@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -44,14 +45,14 @@ func TestImagePrefillResident_gemma3Tiny(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := [][]float32{append([]float32(nil), first...)}
+	want := [][]float32{slices.Clone(first)}
 	teach := []int{argmaxF(first)}
 	for k := range steps {
 		l, err := ref.ForwardForTest(teach[k], rc)
 		if err != nil {
 			t.Fatal(err)
 		}
-		want = append(want, append([]float32(nil), l...))
+		want = append(want, slices.Clone(l))
 		teach = append(teach, argmaxF(l))
 	}
 	m, err := decoder.Load(ckpt, decoder.Options{Backend: "metal", Quant: "int4"})
@@ -72,7 +73,7 @@ func TestImagePrefillResident_gemma3Tiny(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got = append(got, append([]float32(nil), l...))
+			got = append(got, slices.Clone(l))
 		}
 		for i := range got {
 			worstCos = math.Min(worstCos, cosF(got[i], want[i]))
@@ -88,7 +89,7 @@ func TestImagePrefillResident_gemma3Tiny(t *testing.T) {
 	if gpuPos != n {
 		t.Fatalf("gpuPos %d, want %d", gpuPos, n)
 	}
-	c, r := decodeAfter(append([]float32(nil), l...))
+	c, r := decodeAfter(slices.Clone(l))
 	t.Logf("resident image prefill: worst cos %.6f, worst relL2 %.4f (last token + %d steps)", c, r, steps)
 	if c < 0.995 || r > 0.15 {
 		t.Errorf("resident image prefill diverges from the CPU: worst cosine %.6f (>= 0.995), relL2 %.4f (<= 0.15)", c, r)
@@ -108,7 +109,7 @@ func TestImagePrefillResident_gemma3Tiny(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bc, br := decodeAfter(append([]float32(nil), bad...))
+	bc, br := decodeAfter(slices.Clone(bad))
 	t.Logf("planted defect (no image block, causal everywhere): worst cos %.6f, worst relL2 %.4f", bc, br)
 	if bc >= 0.995 && br <= 0.15 {
 		t.Logf("BLIND: gemma3-vl-tiny's 4-token block does not move the logits past the bar without the mask; G-IP3 carries the gate (as registered)")
@@ -150,7 +151,7 @@ func TestImagePrefillResident_twoImagesTiny(t *testing.T) {
 	if !ok {
 		t.Fatalf("not Metal-resident: %s", m.ResidentDecline())
 	}
-	feats := append(append([]float32(nil), g.ImageFeatures[0]...), g.ImageFeatures[1]...)
+	feats := append(slices.Clone(g.ImageFeatures[0]), g.ImageFeatures[1]...)
 	for _, name := range []string{"interleaved", "adjacent"} {
 		l := g.Layouts[name]
 		spans := []decoder.ImageSpan{{Pos: l.Spans[0][0], Len: l.Spans[0][1]}, {Pos: l.Spans[1][0], Len: l.Spans[1][1]}}
@@ -160,14 +161,14 @@ func TestImagePrefillResident_twoImagesTiny(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want := [][]float32{append([]float32(nil), first...)}
+		want := [][]float32{slices.Clone(first)}
 		teach := []int{argmaxF(first)}
 		for k := range steps {
 			lg, err := ref.ForwardForTest(teach[k], rc)
 			if err != nil {
 				t.Fatal(err)
 			}
-			want = append(want, append([]float32(nil), lg...))
+			want = append(want, slices.Clone(lg))
 			teach = append(teach, argmaxF(lg))
 		}
 		a.Reset()
@@ -178,13 +179,13 @@ func TestImagePrefillResident_twoImagesTiny(t *testing.T) {
 		if gpuPos != n {
 			t.Fatalf("%s: gpuPos %d, want %d", name, gpuPos, n)
 		}
-		got := [][]float32{append([]float32(nil), lg...)}
+		got := [][]float32{slices.Clone(lg)}
 		for k := range steps {
 			lg, err := a.Forward(m.EmbedResidentForTest(teach[k]), n+k)
 			if err != nil {
 				t.Fatal(err)
 			}
-			got = append(got, append([]float32(nil), lg...))
+			got = append(got, slices.Clone(lg))
 		}
 		worstCos, worstRel := 1.0, 0.0
 		for i := range got {

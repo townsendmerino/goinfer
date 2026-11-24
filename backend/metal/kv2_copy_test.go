@@ -186,8 +186,8 @@ func TestKV2_copyKVExact(t *testing.T) {
 				t.Errorf("after the copies slot 2 answers %d for 1,000 rows and %d for 1,001; want 1000 and 0", got, past)
 			}
 			before := kv2Slot(t, r, 2, rows)
-			var d *decoder.KVCopyDecline
-			if err := a.CopyKV(0, 2, 0, 4096); !errors.As(err, &d) {
+			err := a.CopyKV(0, 2, 0, 4096)
+			if _, ok := errors.AsType[*decoder.KVCopyDecline](err); !ok {
 				t.Errorf("a range past the cache: %v, want a KVCopyDecline", err)
 			}
 			if b, p := kv2RowsEqual(kv2Slot(t, r, 2, rows), before, rb, 0, rows); b >= 0 {
@@ -817,8 +817,7 @@ func TestKVPages_copyJudgesTheSourceAfterTheChainStops(t *testing.T) {
 		t.Fatalf("slot 0 holds %d blocks with the look-ahead at 64 in flight; want 2, or the test reads nothing", held)
 	}
 	err := a.CopyKV(0, 1, 0, 128)
-	var d *decoder.KVCopyDecline
-	if !errors.As(err, &d) {
+	if _, ok := errors.AsType[*decoder.KVCopyDecline](err); !ok {
 		t.Errorf("CopyKV of rows [0, 128) with the chain open returned %v; want a decline: once the chain stops slot 0 holds rows to 64", err)
 	}
 	if r.chainReq != nil {

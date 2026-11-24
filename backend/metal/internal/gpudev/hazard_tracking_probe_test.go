@@ -3,7 +3,7 @@
 package gpudev
 
 import (
-	"sort"
+	"slices"
 	"testing"
 )
 
@@ -57,7 +57,7 @@ kernel void bump(device float* buf [[buffer(0)]], constant uint& n [[buffer(1)]]
 	q := d.NewCommandQueue()
 	runToken := func(bufs []Buffer, nBuf Buffer) float64 {
 		e := q.Begin()
-		for i := 0; i < nDispatch; i++ {
+		for i := range nDispatch {
 			e.Dispatch(pipe, nFloats, tg, bufs[i%nSlots], nBuf)
 		}
 		e.End()
@@ -79,12 +79,12 @@ kernel void bump(device float* buf [[buffer(0)]], constant uint& n [[buffer(1)]]
 	var trackedMs, untrackedMs []float64
 	// Interleaved, not pooled (measurement discipline: a pooled before/after comparison carries
 	// thermal/scheduling drift that swamps a small per-dispatch effect).
-	for r := 0; r < reps; r++ {
+	for range reps {
 		trackedMs = append(trackedMs, runToken(tracked, nBuf)*1000)
 		untrackedMs = append(untrackedMs, runToken(untracked, nBuf)*1000)
 	}
-	sort.Float64s(trackedMs)
-	sort.Float64s(untrackedMs)
+	slices.Sort(trackedMs)
+	slices.Sort(untrackedMs)
 	medTracked := trackedMs[reps/2]
 	medUntracked := untrackedMs[reps/2]
 	perDispatchTracked := medTracked * 1000 / nDispatch

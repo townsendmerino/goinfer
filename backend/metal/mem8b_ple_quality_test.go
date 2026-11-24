@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -106,7 +107,7 @@ func TestPLE_qualityE2BMetal(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			seq := append([]int(nil), ids...)
+			seq := slices.Clone(ids)
 			n := len(ids) + g3NewTokens
 			for i := 0; i < n-1; i++ {
 				l := step(seq[i], i)

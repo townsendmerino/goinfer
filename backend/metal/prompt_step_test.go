@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"testing"
 )
 
@@ -38,7 +39,7 @@ func TestPrefillLast_stepRouteBitIdentical(t *testing.T) {
 		for l := range r.layers {
 			d := r.layers[l].geom.kvDim
 			o := r.kvHostOff(l, 2)
-			out = append(out, append([]uint16(nil), r.kc[l].U16s()[o:o+n*d]...), append([]uint16(nil), r.vc[l].U16s()[o:o+n*d]...))
+			out = append(out, slices.Clone(r.kc[l].U16s()[o:o+n*d]), slices.Clone(r.vc[l].U16s()[o:o+n*d]))
 		}
 		return out
 	}
@@ -156,11 +157,11 @@ func TestPrefillLast_stepRouteNoHead(t *testing.T) {
 				t.Fatalf("%d tokens: %v", n, err)
 			}
 			noHead[arm] = r.batch.noHeadSteps - h0
-			lg[arm] = append([]float32(nil), got...)
+			lg[arm] = slices.Clone(got)
 			for l := range r.layers {
 				d := r.layers[l].geom.kvDim
 				o := r.kvHostOff(l, 2)
-				kvs[arm] = append(kvs[arm], append([]uint16(nil), r.kc[l].U16s()[o:o+n*d]...), append([]uint16(nil), r.vc[l].U16s()[o:o+n*d]...))
+				kvs[arm] = append(kvs[arm], slices.Clone(r.kc[l].U16s()[o:o+n*d]), slices.Clone(r.vc[l].U16s()[o:o+n*d]))
 			}
 		}
 		if want := (n+batchMaxSeqs-1)/batchMaxSeqs - 1; noHead[0] != 0 || noHead[1] != want {
