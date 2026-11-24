@@ -193,6 +193,23 @@ proposed.
 
 ## 5. Draft: a per-test time budget (the threshold is the maintainer's)
 
+> **Decided, Francis, 2026-11-23 (via the coordinator).** The draft below asked about a budget per test. He chose **one
+> budget per heavy main-group process, with no warnings: 20 minutes, and a process over its budget fails the heavy tier**,
+> naming the process, its wall and its budget. `small` is the one exception, at 60 minutes, because its wall after the overlap
+> fix (§4, the structural finding) is not yet measured. Its review is the 2026-11-28 weekly heavy run: set `small`'s own line
+> at its measured wall plus 25%, or split `small` in two and drop the exception.
+>
+> **In cmd/gate:** the constant `heavyProcessBudget` and the table `heavyBudgetExceptions`, beside `heavyGroupEnv`. Each
+> entry carries its budget, reason and review; `heavyBudgets` refuses an entry without them, and the tier then does not
+> run. `gradeHeavyBudget` grades each process. The budget is written into the run's heavy input, so a record from before
+> it replays unchanged.
+>
+> **Basis:** the v0.25.0 walls (§1's record, `heavy_processes`): `small` 77.9 minutes, the 26B 31.8, `gemma3-4b` 20.1,
+> every other process 15.1 or less. After the moves and shrinks in §9 the largest process other than `small` projects to
+> about 15 to 17 minutes, so 20 leaves about 20 to 30%. `small` projects to about 41 to 62 minutes after the overlap fix,
+> depending on how much of the parity cell's 21 minutes it sheds. The per-test draft below is kept as the record of the
+> question; per-test times (`slow_tests`) were not adopted with it.
+
 **Where it lives.**
 
 - `cmd/gate/event.go:results` keeps each top-level test's final `Elapsed` beside its action. Today it keeps the action
