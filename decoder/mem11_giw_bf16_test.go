@@ -195,7 +195,7 @@ func TestMEM11_giwBF16HeapLFM2(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			lg = append(lg, append([]float32(nil), l...))
+			lg = append(lg, slices.Clone(l))
 		}
 		cache = nil
 		h := heap()

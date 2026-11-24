@@ -80,7 +80,7 @@ func metalGateDecisionKs(def []int) []int {
 		return def
 	}
 	out := make([]int, 0, len(def)+2)
-	for _, f := range strings.Split(v, ",") {
+	for f := range strings.SplitSeq(v, ",") {
 		if k, err := strconv.Atoi(strings.TrimSpace(f)); err == nil && k > 0 {
 			out = append(out, k)
 		}
@@ -138,7 +138,7 @@ func TestPrefillGateVsReference(t *testing.T) {
 	gateModels := map[string]bool{"S": true, "D7": true}
 	if v := strings.TrimSpace(os.Getenv("GOINFER_METAL_GATE_MODELS")); v != "" {
 		gateModels = map[string]bool{}
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			gateModels[strings.TrimSpace(f)] = true
 		}
 	}

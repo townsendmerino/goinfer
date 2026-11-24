@@ -77,7 +77,7 @@ func TestClaudeCodeWindowWarning(t *testing.T) {
 		s.Window, s.Output, s.MaxPos = c.window, OutputLimit(c.window), c.max
 		connect(&out, "claude-code", harnesses["claude-code"], filepath.Join(t.TempDir(), "settings.json"), s, false, false)
 		line := ""
-		for _, ln := range strings.Split(out.String(), "\n") {
+		for ln := range strings.SplitSeq(out.String(), "\n") {
 			if strings.Contains(ln, "warning: Claude Code's output cap") {
 				line = ln
 			}

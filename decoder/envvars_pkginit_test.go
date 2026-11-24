@@ -7,7 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -102,7 +102,7 @@ func pkgInitEnvReads(t *testing.T, root string) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 

@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"runtime"
+	"slices"
 	"testing"
 )
 
@@ -135,7 +136,7 @@ func TestMetal_vitGELU(t *testing.T) {
 	}
 	dx := NewBufferOf(d, x)
 	run1d(q, v.GELUTanh, len(x), mtg(len(x)), dx, i32b(d, len(x)))
-	got := append([]float32(nil), dx.Floats()...)
+	got := slices.Clone(dx.Floats())
 	dmax := maxAbsDiffM(got, want)
 	t.Logf("gelu_tanh f32 worst Δ %.3g vs double CPU (CUDA bar was 1e-6)", dmax)
 	if dmax > 1e-5 {
@@ -416,7 +417,7 @@ func TestMetal_vitGELUErf(t *testing.T) {
 	}
 	dx := NewBufferOf(d, x)
 	run1d(q, v.GELUErf, len(x), mtg(len(x)), dx, i32b(d, len(x)))
-	got := append([]float32(nil), dx.Floats()...)
+	got := slices.Clone(dx.Floats())
 	dm := maxAbsDiffM(got, want)
 	t.Logf("gelu_erf f32-approx worst Δ %.3g vs double math.Erf (CUDA bar was 1e-6)", dm)
 	if dm > 5e-5 {
@@ -464,7 +465,7 @@ func TestMetal_vitRopeQK(t *testing.T) {
 	cos := randF32M(rng, seq*hd, 1)
 	sin := randF32M(rng, seq*hd, 1)
 
-	want := append([]float32(nil), qkv...)
+	want := slices.Clone(qkv)
 	hf := hd / 2
 	for i := range seq {
 		co, si := cos[i*hd:(i+1)*hd], sin[i*hd:(i+1)*hd]
@@ -555,7 +556,7 @@ func TestMetal_vitAttentionSeg(t *testing.T) {
 	out := d.NewBufferLen(seq * hidden)
 	run1dTG(q, v.AttentionSeg, seq*nH*ViTBlock, ViTBlock, maxSeg*4,
 		dq, out, segb(d, segStart), segb(d, segEnd), i32b(d, seq), i32b(d, nH), i32b(d, hd), f32b(d, scale))
-	got := append([]float32(nil), out.Floats()...)
+	got := slices.Clone(out.Floats())
 	dm := maxAbsDiffM(got, want)
 	t.Logf("attention_seg f32-softmax worst Δ %.3g vs double CPU (CUDA bar was 1e-5)", dm)
 	if dm > 5e-5 {
@@ -735,7 +736,7 @@ func BenchmarkMetalGEMMF32(b *testing.B) {
 			gx, gy, tgx, tgy := TileDims(s.M, s.N)
 			runtime.LockOSThread()
 			defer runtime.UnlockOSThread()
-			for range b.N {
+			for b.Loop() {
 				q.Run2D(v.GEMMF32Tiled, gx, gy, tgx, tgy, dA, dB, dC, i32b(d, s.M), i32b(d, s.N), i32b(d, s.K))
 			}
 			b.ReportMetric(mf/1e3/(b.Elapsed().Seconds()/float64(b.N)), "GFLOP/s")
@@ -744,7 +745,7 @@ func BenchmarkMetalGEMMF32(b *testing.B) {
 			gx, gy, tgx, tgy := SGDims(s.M, s.N)
 			runtime.LockOSThread()
 			defer runtime.UnlockOSThread()
-			for range b.N {
+			for b.Loop() {
 				q.Run2D(v.GEMMF32SG, gx, gy, tgx, tgy, dA, dB, dC, i32b(d, s.M), i32b(d, s.N), i32b(d, s.K))
 			}
 			b.ReportMetric(mf/1e3/(b.Elapsed().Seconds()/float64(b.N)), "GFLOP/s")
@@ -753,7 +754,7 @@ func BenchmarkMetalGEMMF32(b *testing.B) {
 			p, gx, gy, tgx, tgy := v.GEMMF32Plan(s.M, s.N, s.K)
 			runtime.LockOSThread()
 			defer runtime.UnlockOSThread()
-			for range b.N {
+			for b.Loop() {
 				q.Run2D(p, gx, gy, tgx, tgy, dA, dB, dC, i32b(d, s.M), i32b(d, s.N), i32b(d, s.K))
 			}
 			b.ReportMetric(mf/1e3/(b.Elapsed().Seconds()/float64(b.N)), "GFLOP/s")

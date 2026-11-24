@@ -91,7 +91,7 @@ func TestGlmOcr_extractionPromptIDs(t *testing.T) {
 		t.Fatalf("load ../../../testdata/glm-ocr-tiny: %v", err)
 	}
 	defer m.Close()
-	glmv := &glmVision{qwenGrid: qwenGrid{merge: 2, imgTok: 59280}, glmOcrTower: &glmOcrTower{dir: "unused"}}
+	glmv := &glmVision{merge: 2, imgTok: 59280, glmOcrTower: &glmOcrTower{dir: "unused"}}
 	lm := &loadedModel{tk: tk, model: m, tmpl: chat.GlmOCR(), vision: glmv}
 	if glmv.pp, err = multimodal.LoadGlmOcrPreprocessConfig(dir); err != nil {
 		t.Fatal(err)

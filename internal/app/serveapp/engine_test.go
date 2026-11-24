@@ -83,7 +83,7 @@ func TestDriveVL_mediaRequest(t *testing.T) {
 		{"bidirectional", with(one, func(v *visionInput) { v.spans = multi }), engine.MediaImage, multi, false, nil, 0},
 	} {
 		var got engine.Request
-		lm := &loadedModel{tk: &tokenizer.Tokenizer{}, fakeEngine: mediaEngine{&got}, vision: &qwen25Vision{qwenGrid: qwenGrid{merge: 2, imgTok: 151655}}}
+		lm := &loadedModel{tk: &tokenizer.Tokenizer{}, fakeEngine: mediaEngine{&got}, vision: &qwen25Vision{merge: 2, imgTok: 151655}}
 		ran := false
 		c.vi.features = func() ([]float32, error) { ran = true; return nil, nil }
 		gr := genRequest{promptIDs: []int{1, 2, 3}, maxTokens: 4}

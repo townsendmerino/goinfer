@@ -17,7 +17,7 @@ func TestReqTrace_checkpointFields(t *testing.T) {
 	tr.ckptRestored, tr.ckptRestore = 6139, 812*time.Microsecond
 	l := tr.line("/v1/chat/completions", 200, time.Now())
 	kv := map[string]string{}
-	for _, tok := range strings.Fields(l) {
+	for tok := range strings.FieldsSeq(l) {
 		if k, v, ok := strings.Cut(tok, "="); ok {
 			kv[k] = v
 		}

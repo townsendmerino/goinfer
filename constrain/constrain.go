@@ -318,7 +318,7 @@ func (m *Masker) nextBytes(g Grammar, t *nextTable) {
 			continue
 		}
 		probe[0] = byte(b)
-		for c := 0; c < 256; c++ {
+		for c := range 256 {
 			probe[1] = byte(c)
 			if g.TryBytes(probe) {
 				t.second[b][c>>6] |= 1 << (c & 63)

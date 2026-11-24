@@ -136,7 +136,7 @@ func TestMedia_qwenFeatureErrorReachesTheGenerator(t *testing.T) {
 	boom := errors.New("tower failed")
 	for _, sets := range []int{0, 2} {
 		var gotErr error
-		f := &qwenErrFake{fakeMedia: fakeMedia{hidden: 2}, err: &gotErr}
+		f := &qwenErrFake{hidden: 2, err: &gotErr}
 		md := &Media{Kind: MediaQwen, Spans: []decoder.ImageSpan{{Pos: 0, Len: 1}}, DeepSets: sets, Features: func() ([]float32, error) { return nil, boom }}
 		generateMedia(context.Background(), f, Request{Media: md})
 		if !errors.Is(gotErr, boom) {

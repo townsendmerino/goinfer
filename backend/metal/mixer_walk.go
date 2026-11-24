@@ -293,7 +293,7 @@ func (r *resident) encodeAttentionWalk(e *Encoder, l int, ops []program.Op, x, u
 	whole := func(i int) {
 		r.attnOut(e, &a, attnOutFormOf(r, ops, i, false))
 	}
-	for i := 0; i < len(ops); i++ {
+	for i := range ops {
 		switch o := &ops[i]; o.Kind {
 		case program.OpNorm: // the input norm; a post-attention norm is the output tail's
 			if mixerWalkPlantForTest == mixerWalkPlantAddOne {

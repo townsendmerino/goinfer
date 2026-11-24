@@ -16,7 +16,6 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -179,12 +178,12 @@ func TestCompute_reachesCensus(t *testing.T) {
 	}
 	for key := range unreachableSide {
 		site := key[:strings.LastIndex(key, "|")]
-		if file := strings.SplitN(key, "|", 2)[0]; builtFiles[file] && !seen[site] {
+		if file, _, _ := strings.Cut(key, "|"); builtFiles[file] && !seen[site] {
 			t.Errorf("stale exclusion: %s is built here but has no such site", site)
 		}
 	}
 	checkUncalled(t)
-	sort.Strings(unreached)
+	slices.Sort(unreached)
 	for _, u := range unreached {
 		t.Errorf("unreached: %s", u)
 	}
@@ -228,7 +227,7 @@ func checkUncalled(t *testing.T) {
 		t.Fatal("the source scan found no linalg.MatmulBT: it read nothing")
 	}
 	for fn, u := range uncalled {
-		pkg := strings.SplitN(fn, ".", 2)[0]
+		pkg, _, _ := strings.Cut(fn, ".")
 		for _, v := range u.via {
 			if named[pkg+"."+v] {
 				t.Errorf("uncalled says goinfer never reaches %s, but its production code names %s.%s", fn, pkg, v)

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -100,7 +101,7 @@ func TestGptOssCPUPrefillGate(t *testing.T) {
 	}
 	if mode == "fit" {
 		raw, _ := os.ReadFile("/proc/self/status")
-		for _, ln := range strings.Split(string(raw), "\n") {
+		for ln := range strings.SplitSeq(string(raw), "\n") {
 			if strings.HasPrefix(ln, "VmHWM") || strings.HasPrefix(ln, "VmRSS") || strings.HasPrefix(ln, "VmSwap") {
 				say("after load: %s", strings.Join(strings.Fields(ln), " "))
 			}
@@ -222,7 +223,7 @@ func gptossPFRun(t *testing.T, m *Model, p []int, exact bool, forced []int) ([][
 	if err != nil {
 		t.Fatal(err)
 	}
-	logits := [][]float32{append([]float32(nil), lg...)}
+	logits := [][]float32{slices.Clone(lg)}
 	var toks []int
 	for i := range gptossPFPositions - 1 {
 		next := argmaxF32(logits[len(logits)-1])
@@ -234,7 +235,7 @@ func gptossPFRun(t *testing.T, m *Model, p []int, exact bool, forced []int) ([][
 		if err != nil {
 			t.Fatal(err)
 		}
-		logits = append(logits, append([]float32(nil), lg...))
+		logits = append(logits, slices.Clone(lg))
 	}
 	return logits, toks
 }
@@ -289,7 +290,7 @@ func gptossPFTimed(t *testing.T, m *Model, p []int, arm rune) (time.Duration, ui
 	if err != nil {
 		t.Fatal(err)
 	}
-	return wall, peak.Load(), append([]float32(nil), lg...)
+	return wall, peak.Load(), slices.Clone(lg)
 }
 
 // gptossPFSettle waits, up to max, for the 1-minute load average to fall under below, and returns how long it waited.
@@ -312,7 +313,7 @@ func gptossPFHostState() (float64, int) {
 	}
 	avail := 0
 	if raw, err := os.ReadFile("/proc/meminfo"); err == nil {
-		for _, ln := range strings.Split(string(raw), "\n") {
+		for ln := range strings.SplitSeq(string(raw), "\n") {
 			if f := strings.Fields(ln); len(f) >= 2 && f[0] == "MemAvailable:" {
 				kb, _ := strconv.Atoi(f[1])
 				avail = kb / 1024
@@ -351,7 +352,7 @@ func gptossPFInts(t *testing.T, name, def string) []int {
 		v = def
 	}
 	var out []int
-	for _, s := range strings.Split(v, ",") {
+	for s := range strings.SplitSeq(v, ",") {
 		x, err := strconv.Atoi(strings.TrimSpace(s))
 		if err != nil || x < 1 {
 			t.Fatalf("%s %q", name, v)

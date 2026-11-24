@@ -10,7 +10,7 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -131,7 +131,7 @@ func TestParityManifest_coreClosed(t *testing.T) {
 			missing = append(missing, f+" (first reached: "+why+")")
 		}
 	}
-	sort.Strings(missing)
+	slices.Sort(missing)
 	for _, f := range missing {
 		t.Errorf("core reaches %s, which no shared set or own list covers", f)
 	}

@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"runtime"
+	"slices"
 	"testing"
 )
 
@@ -121,7 +122,7 @@ func forcedLongPromptCloseness(t *testing.T, m *Model, prompt []int) {
 		if err != nil {
 			t.Fatalf("prefillLogits(fast=%s): %v", fast, err)
 		}
-		return append([]float32(nil), lg...)
+		return slices.Clone(lg)
 	}
 	exact, fast := logits("0"), logits("1")
 	if d := cosineDistance(fast, exact); d > forcedLogitCloseness {

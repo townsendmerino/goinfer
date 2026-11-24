@@ -2,7 +2,8 @@ package vision
 
 import (
 	"math"
-	"math/rand"
+	"math/rand/v2"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -23,7 +24,7 @@ func newQMat32(w []float32, rows, cols int) linalg.WeightMat {
 // iteration is seconds rather than minutes: hidden 1280, inter 3420, 16 heads,
 // merge 2. depth is a parameter.
 func benchQwenEncoder(depth, gridH, gridW int) (*QwenVisionEncoder, []float32, [][3]int) {
-	rng := rand.New(rand.NewSource(11))
+	rng := rand.New(rand.NewPCG(11, 0))
 	rnd := func(n int) []float32 {
 		s := make([]float32, n)
 		for i := range s {
@@ -115,7 +116,7 @@ func TestQwenScratch_poisonedArenaIsInert(t *testing.T) {
 	_, cuWin := e.windowIndex(grid)
 	seq := cuWin[len(cuWin)-1]
 	maxSeg := maxSegment(cuWin)
-	rng := rand.New(rand.NewSource(5))
+	rng := rand.New(rand.NewPCG(5, 0))
 	x := make([]float32, seq*hidden)
 	for i := range x {
 		x[i] = float32(rng.NormFloat64())
@@ -155,7 +156,7 @@ func TestQwenScratch_poisonedArenaIsInert(t *testing.T) {
 		}
 		mlpOut := s.mlpOut[:seq*hidden]
 		e.mlpInto(mlpOut, x, b, seq, s)
-		return append([]float32(nil), att...), append([]float32(nil), mlpOut...)
+		return slices.Clone(att), slices.Clone(mlpOut)
 	}
 
 	wantAtt, wantMLP := run(false)

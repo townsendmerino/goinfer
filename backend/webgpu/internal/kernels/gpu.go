@@ -272,6 +272,8 @@ type Context struct {
 	// producer to shorten the serialized decode dependency chain.
 	// LayerNormQuantWGSL (layernorm.go), compiled on first use by ensureLayerNorm.
 	layerNormQuant layerNormPipe
+	// Per-32 activation twins (actgroup.go), compiled on first use by ensureActG32.
+	actG32 *actG32Pipes
 	// Pairwise RoPE twins (pairwise.go), compiled on first use by ensurePairwise.
 	pairwise *pairwisePipes
 

@@ -2,6 +2,7 @@ package serveapp
 
 import (
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
+	"slices"
 	"sync"
 	"time"
 )
@@ -60,7 +61,7 @@ func (b *batchRecord) requestCancel(js *jobs.Store) {
 		return
 	}
 	b.Status = "cancelling"
-	ids := append([]string(nil), b.JobIDs...)
+	ids := slices.Clone(b.JobIDs)
 	b.mu.Unlock()
 	for _, id := range ids {
 		if id != "" { // a line still validating (before setJobID) has no job to cancel yet

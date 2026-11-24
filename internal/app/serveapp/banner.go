@@ -524,7 +524,7 @@ func kvBannerPart(reps []decoder.KVPrecisionReport, cudaResident bool) string {
 	if len(reps) == 0 {
 		return " · KV f32"
 	}
-	var s string
+	var s strings.Builder
 	for i, r := range reps {
 		label := "KV"
 		if i > 0 {
@@ -540,7 +540,7 @@ func kvBannerPart(reps []decoder.KVPrecisionReport, cudaResident bool) string {
 				note += ": " + kvI8Cost
 			}
 		}
-		s += " · " + label + " " + r.Delivered + " (" + note + ")"
+		s.WriteString(" · " + label + " " + r.Delivered + " (" + note + ")")
 	}
-	return s
+	return s.String()
 }

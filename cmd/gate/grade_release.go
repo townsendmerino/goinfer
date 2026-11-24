@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -185,7 +185,7 @@ func pendingOutlivingRelease(pending map[string]string, changelog, releasing str
 			blockers = append(blockers, fmt.Sprintf("%s (pending since %s)", gate, reason[:10]))
 		}
 	}
-	sort.Strings(blockers)
+	slices.Sort(blockers)
 	return prevVer, prevDate, blockers, nil
 }
 
@@ -276,10 +276,10 @@ func rowPins(e *relEnv) relRow {
 		if len(vs) > 1 {
 			var parts []string
 			for v, ms := range vs {
-				sort.Strings(ms)
+				slices.Sort(ms)
 				parts = append(parts, fmt.Sprintf("%s: %s", v, strings.Join(ms, ", ")))
 			}
-			sort.Strings(parts)
+			slices.Sort(parts)
 			bad = append(bad, label+" differs: "+strings.Join(parts, " | "))
 		}
 	}
@@ -291,7 +291,7 @@ func rowPins(e *relEnv) relRow {
 		}
 	}
 	if len(pseudo) > 0 {
-		sort.Strings(pseudo)
+		slices.Sort(pseudo)
 		bad = append(bad, "requires an untagged aikit (a pseudo-version); a release needs a tagged aikit (SD3): tag aikit and bump to it: "+strings.Join(pseudo, ", "))
 	}
 	if len(gpuReq) > 0 {
@@ -408,7 +408,7 @@ func neverExecuted(b []byte) ([]string, error) {
 			ids = append(ids, e.ID)
 		}
 	}
-	sort.Strings(ids)
+	slices.Sort(ids)
 	return ids, nil
 }
 
@@ -467,7 +467,7 @@ func branchesWithFixes(e *relEnv) (fixes, others []string, err error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, br := range strings.Fields(out) {
+	for br := range strings.FieldsSeq(out) {
 		if br == "main" || br == "origin/main" || strings.HasSuffix(br, "/HEAD") || br == "origin" {
 			continue
 		}
@@ -476,9 +476,8 @@ func branchesWithFixes(e *relEnv) (fixes, others []string, err error) {
 			continue
 		}
 		var subjects []string
-		for _, ln := range strings.Split(cherry, "\n") {
-			if strings.HasPrefix(ln, "+ ") {
-				sha := strings.TrimPrefix(ln, "+ ")
+		for ln := range strings.SplitSeq(cherry, "\n") {
+			if sha, ok := strings.CutPrefix(ln, "+ "); ok {
 				subj, _ := e.cmd(".", "git", "log", "-1", "--format=%s", sha)
 				subjects = append(subjects, subj)
 			}
@@ -499,8 +498,8 @@ func branchesWithFixes(e *relEnv) (fixes, others []string, err error) {
 			others = append(others, line)
 		}
 	}
-	sort.Strings(fixes)
-	sort.Strings(others)
+	slices.Sort(fixes)
+	slices.Sort(others)
 	return fixes, others, nil
 }
 
@@ -553,7 +552,7 @@ func rowChangelog(e *relEnv) relRow {
 	}
 	out, err := e.look("changelog", "-base", e.prev, "-section", section)
 	var lines []string
-	for _, ln := range strings.Split(strings.TrimSpace(out), "\n") {
+	for ln := range strings.SplitSeq(strings.TrimSpace(out), "\n") {
 		if strings.Contains(ln, "OWED") || strings.HasPrefix(ln, "gate changelog:") {
 			lines = append(lines, strings.TrimSpace(ln))
 		}
@@ -575,7 +574,7 @@ func rowGofmt(e *relEnv) relRow {
 		if err != nil {
 			return owed(name, m, err.Error())
 		}
-		for _, f := range strings.Fields(out) {
+		for f := range strings.FieldsSeq(out) {
 			dirty = append(dirty, relPath(m, f))
 		}
 	}

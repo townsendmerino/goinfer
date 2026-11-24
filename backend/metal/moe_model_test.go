@@ -11,7 +11,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -73,7 +73,7 @@ func TestMoE_assemblyVsDense(t *testing.T) {
 	tok, pos, mism, nan := ids[0], 0, 0, 0
 	var cosMin float64 = 1
 	for i := range steps {
-		gMoE := append([]float32(nil), moeR.Forward(tok, pos)...)
+		gMoE := slices.Clone(moeR.Forward(tok, pos))
 		gDense := denseR.Forward(tok, pos)
 		c := cosF(gMoE, gDense)
 		// Count NaN, don't reduce it: `NaN < cosMin` is false, so a degenerate MoE dispatch would
@@ -252,7 +252,7 @@ func writeSTF32(t *testing.T, path string, tensors map[string]stf32) {
 	for n := range tensors {
 		names = append(names, n)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	header := map[string]meta{}
 	var blob []byte
 	off := 0

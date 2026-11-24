@@ -12,7 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -93,7 +93,7 @@ func splitSafetensors(t *testing.T, raw []byte) (a, b, index []byte) {
 			names = append(names, k)
 		}
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	type ent struct {
 		Dtype   string  `json:"dtype"`
 		Shape   []int64 `json:"shape"`
@@ -437,7 +437,7 @@ func TestPlan_treeDigestFollowsTheFiles(t *testing.T) {
 		"a file's name":     func(p *Plan) { p.Files[0].Path = "config2.json" },
 		"an added file":     func(p *Plan) { p.Files = append(p.Files, File{Path: "extra.json", Size: 1}) },
 	} {
-		q := Plan{Repo: "o/r", Files: append([]File(nil), base.Files...)}
+		q := Plan{Repo: "o/r", Files: slices.Clone(base.Files)}
 		mut(&q)
 		if q.TreeDigest() == d {
 			t.Errorf("changing %s did not change the tree digest", name)

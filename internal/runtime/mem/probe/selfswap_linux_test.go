@@ -81,7 +81,7 @@ func TestSelfSwap_realProc(t *testing.T) {
 		t.Skipf("no /proc/self/status: %v", err)
 	}
 	var kb int64 = -1
-	for _, l := range strings.Split(string(status), "\n") {
+	for l := range strings.SplitSeq(string(status), "\n") {
 		if rest, ok := strings.CutPrefix(l, "VmSwap:"); ok {
 			if _, err := fmt.Sscanf(strings.TrimSpace(rest), "%d kB", &kb); err != nil {
 				t.Fatalf("unparsable VmSwap line %q: %v", l, err)

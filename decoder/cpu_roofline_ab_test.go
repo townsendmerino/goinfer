@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -118,7 +118,7 @@ func (h *cpuDecodeAB) run(name string, pairs int, set func(on bool)) (median flo
 		h.t.Logf("%s pair %d: ON %.2f | OFF %.2f ms/tok | ON is %.3fx faster", name, p, on, off, off/on)
 	}
 	set(false)
-	sort.Float64s(ratios)
+	slices.Sort(ratios)
 	median = ratios[len(ratios)/2]
 	h.t.Logf("%s: mean ON %.2f OFF %.2f ms/tok | paired median %.3fx (min %.3f max %.3f, n=%d)",
 		name, sumOn/float64(pairs), sumOff/float64(pairs), median, ratios[0], ratios[len(ratios)-1], pairs)
@@ -204,7 +204,7 @@ func logitsBitIdentical(t *testing.T, name string, set func(on bool)) {
 				set(on)
 				var steps [][]float32
 				sp := SamplingParams{Temperature: 0, LogitProcessor: func(_ []int, logits []float32) {
-					steps = append(steps, append([]float32(nil), logits...))
+					steps = append(steps, slices.Clone(logits))
 				}}
 				out, g := h.m.Generate(context.Background(), h.ids, 48, sp)
 				for range out {
@@ -343,6 +343,6 @@ func pairAB(t *testing.T, name string, a, b *cpuDecodeAB, pairs int) {
 		ratios = append(ratios, mb/ma)
 		fmt.Fprintf(os.Stderr, "[%s] pair %d: a %.2f | b %.2f ms/tok | b/a %.4f\n", name, p, ma, mb, mb/ma)
 	}
-	sort.Float64s(ratios)
+	slices.Sort(ratios)
 	fmt.Fprintf(os.Stderr, "[%s] median b/a %.4f (min %.4f max %.4f, n=%d)\n", name, ratios[len(ratios)/2], ratios[0], ratios[len(ratios)-1], pairs)
 }

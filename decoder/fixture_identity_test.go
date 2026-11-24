@@ -9,7 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -110,7 +110,7 @@ func fixtureIdentityMismatch(manifestPath, fixtureDir string) (string, error) {
 	if len(bad) == 0 {
 		return "", nil
 	}
-	sort.Strings(bad)
+	slices.Sort(bad)
 	if len(bad) > 3 {
 		bad = append(bad[:3], fmt.Sprintf("… %d more", len(bad)-3))
 	}
@@ -213,7 +213,7 @@ func TestFixtureIdentity_update(t *testing.T) {
 	for k := range all {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	var out strings.Builder
 	out.WriteString("{\n")
 	for i, k := range keys {
@@ -247,7 +247,7 @@ func writeF32Safetensors(t *testing.T, path string, tensors map[string][]float32
 	for n := range tensors {
 		names = append(names, n)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	hdr := map[string]any{}
 	var data []byte
 	for _, n := range names {
@@ -317,7 +317,7 @@ func TestFixtureIdentityMismatch(t *testing.T) {
 
 	ulp := map[string][]float32{}
 	for n, v := range recorded {
-		w := append([]float32(nil), v...)
+		w := slices.Clone(v)
 		for i := range w {
 			if i%3 == 0 && w[i] != 1 {
 				w[i] = math.Nextafter32(w[i], 1) // 1-ULP noise on a third of the elements, as between arm64 and amd64

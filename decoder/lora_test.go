@@ -6,7 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -302,7 +302,7 @@ func writeSafetensors(t *testing.T, path string, tensors map[string]stTensor) {
 	for n := range tensors {
 		names = append(names, n)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	header := map[string]meta{}
 	var blob []byte
 	off := 0

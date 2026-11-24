@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -164,8 +165,8 @@ func tomlEdit(src string, top []tomlRow, table string, rows []tomlRow) (string, 
 			return "", fmt.Errorf("line %d sets %s inside [%s] without a [%s] table; edit it by hand", i+1, k, parent, table)
 		}
 	}
-	head := append([]string(nil), lines[:first]...)
-	rest := append([]string(nil), lines[first:]...)
+	head := slices.Clone(lines[:first])
+	rest := slices.Clone(lines[first:])
 	for _, kv := range top {
 		line, done := kv.key+" = "+kv.val, false
 		for i, ln := range head {

@@ -292,7 +292,7 @@ func residentGateReason(a *Architecture, backend string) string {
 }
 
 // residentGateReasonAct is residentGateReason for a model whose resident projections run W8A8 with per-32 activation scales (actSafe):
-// that clears ActivationQuantHazard on a backend that implements it (cuda, actgroup.cu), since the hazard is the per-vector activation
+// that clears ActivationQuantHazard on a backend that implements it (cuda's actgroup.cu, webgpu's per-32 twins), since the hazard is the per-vector activation
 // scale.
 func residentGateReasonAct(a *Architecture, backend string, actSafe bool) string {
 	if g := residentGateReasons(a, nil, backend, actSafe); len(g) > 0 {
@@ -332,7 +332,7 @@ func residentGateReasons(a *Architecture, prog *layerProgram, backend string, ac
 	var out []residentGate
 	// No resident GPU backend has an f32-activation projection, so a family whose output int8 activations destroy runs on the CPU at
 	// weight-only precision instead of fast and wrong. Checked here rather than in decodeRunnerDecline so the generated matrix shows it.
-	if why := ActivationQuantHazard(a.Name); why != "" && !(actSafe && (backend == "cuda" || backend == "metal")) {
+	if why := ActivationQuantHazard(a.Name); why != "" && !(actSafe && (backend == "cuda" || backend == "metal" || backend == "webgpu")) {
 		out = append(out, residentGate{Kind: residentGateActHazard,
 			Reason: "every resident " + backend + " projection quantizes activations to int8, and " + why})
 	}
@@ -561,6 +561,9 @@ var residentBackendFeatures = map[string]map[ResidentFeature]bool{
 		FeatNoPE:         true,
 		FeatPostOnlyNorm: true,
 		FeatQKNormWhole:  true,
+		// FeatAttnTemp: the decode runner folds the query temperature into each token's attention score scale, and the batched
+		// prefill declines to row-by-row decode (TestMinistral3ResidentParityWebGPU).
+		FeatAttnTemp: true,
 		// FeatPairwiseRoPE: the decode rope kernels' pairwise twins (gpu/pairwise.go), bound in place of the NeoX ones. FeatPairwiseMRoPE:
 		// the batched prefill, the image turn's m-RoPE pass included, declines on a pairwise model, so an image prompt takes the CPU
 		// prefill and its upload, and decode past it rotates at ForwardMRoPE's position through the same twins

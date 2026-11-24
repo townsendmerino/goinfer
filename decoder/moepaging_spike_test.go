@@ -1,11 +1,12 @@
 package decoder
 
 import (
+	"cmp"
 	"container/list"
 	"errors"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/testgate"
@@ -96,7 +97,7 @@ func TestMoEPagingSpike(t *testing.T) {
 	for k, c := range freq {
 		fl = append(fl, kv{k, c})
 	}
-	sort.Slice(fl, func(i, j int) bool { return fl[i].c > fl[j].c })
+	slices.SortFunc(fl, func(a, b kv) int { return cmp.Compare(b.c, a.c) })
 	total := len(access)
 	cum, distinct := 0, len(freq)
 	t.Logf("distinct (layer,expert) pages touched: %d of %d (%.0f%% of the universe)",

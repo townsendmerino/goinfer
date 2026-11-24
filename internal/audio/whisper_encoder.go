@@ -246,11 +246,9 @@ func parallelRows(n int, fn func(lo, hi int)) {
 	var wg sync.WaitGroup
 	for k := range w {
 		lo, hi := k*n/w, (k+1)*n/w
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			fn(lo, hi)
-		}()
+		})
 	}
 	wg.Wait()
 }

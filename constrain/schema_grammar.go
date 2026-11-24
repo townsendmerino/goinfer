@@ -1,5 +1,7 @@
 package constrain
 
+import "slices"
+
 // schemaGrammar is the incremental byte-level acceptor for a compiled schema. It
 // is a pushdown automaton: a stack of frames, each one a position inside the
 // value of some schema node. The top frame consumes bytes; when a value
@@ -80,7 +82,7 @@ func (g *schemaGrammar) Reset() {
 // that shared, read-only tree). Snapshot scratch is left fresh.
 func (g *schemaGrammar) Clone() Grammar {
 	c := *g
-	c.stack = append([]frame(nil), g.stack...)
+	c.stack = slices.Clone(g.stack)
 	c.sStack = nil
 	return &c
 }

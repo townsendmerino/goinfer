@@ -50,9 +50,7 @@ func TestCPUAttnKernelProbe(t *testing.T) {
 			per := (nH + workers - 1) / workers
 			for w := range workers {
 				h0, h1 := w*per, min((w+1)*per, nH)
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
+				wg.Go(func() {
 					sc, dst, acc := make([]float32, nKeys), make([]float32, hd), make([]float64, hd)
 					for i := range sc {
 						sc[i] = 1 / float32(nKeys)
@@ -60,7 +58,7 @@ func TestCPUAttnKernelProbe(t *testing.T) {
 					for h := h0; h < h1; h++ {
 						body(h, sc, dst, acc)
 					}
-				}()
+				})
 			}
 			wg.Wait()
 			best = min(best, time.Since(t0))

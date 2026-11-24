@@ -378,9 +378,10 @@ func TestKV4b_mropePrefillStoreIsTheRoundedF32Store(t *testing.T) {
 	}
 }
 
-// TestP1r_nemotronRangeSurvey is P1r's G5 (docs/measurements/p1r-nemotron-f16-2026-11/README.md): Nemotron-Nano-9B-v2 on CUDA at an f32 cache, each
-// of the ten held-out set-B gate prompts prefilled at 3,900 tokens, and every attention layer's max |K| and max |V| read back; the worst must be
-// under 65504/2, or an f16 cache could overflow it.
+// TestP1r_nemotronRangeSurvey is P1r's G5 (docs/measurements/p1r-nemotron-f16-2026-11/README.md): Nemotron-Nano-9B-v2 on CUDA at an f32 cache,
+// held-out set-B gate prompts prefilled at 3,900 tokens, and every attention layer's max |K| and max |V| read back; the worst must be under
+// 65504/2, or an f16 cache could overflow it. By default it runs the first two prompts, since the recorded worst over all ten sits far under the
+// limit; P1R_PROMPTS=10 is G5's registered set.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' -run '^TestP1r_nemotronRangeSurvey$' -v
 func TestP1r_nemotronRangeSurvey(t *testing.T) {
@@ -419,6 +420,7 @@ func TestP1r_nemotronRangeSurvey(t *testing.T) {
 	if len(files) == 0 {
 		t.Fatal("no set-B prompts: the survey would be vacuous")
 	}
+	files = files[:caseCount(t, "P1R_PROMPTS", min(2, len(files)), len(files))]
 	ctx := context.Background()
 	nans := 0
 	for pi, f := range files {

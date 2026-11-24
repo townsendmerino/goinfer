@@ -21,7 +21,7 @@ func (f *snapFake) PrefillLastMarked(ctx context.Context, embs [][]float32, star
 		n := min(f.markAlign, len(embs)-i)
 		f.enter()
 		f.events = append(f.events, 'P')
-		for j := 0; j < n; j++ {
+		for j := range n {
 			lg = f.fwd(f.bound, embs[i+j], startPos+i+j)
 		}
 		f.leave()

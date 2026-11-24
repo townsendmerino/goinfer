@@ -3,7 +3,7 @@ package serveapp
 import (
 	"maps"
 	"net/http"
-	"sort"
+	"slices"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -34,7 +34,7 @@ func (s *server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		draining = append(draining, name)
 	}
 	s.regMu.RUnlock()
-	sort.Strings(draining)
+	slices.Sort(draining)
 
 	// halted is always present so a client's shape does not change between the two states; reason and at are null
 	// when not halted, not omitted, for the same reason.

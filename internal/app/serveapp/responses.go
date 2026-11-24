@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -47,7 +48,7 @@ type responseReq struct {
 	sampling
 }
 
-func (r responseReq) thinkRequest() thinkRequest {
+func (r *responseReq) thinkRequest() thinkRequest {
 	tr := thinkRequest{}
 	if r.Reasoning != nil {
 		tr.reasoningEffort = r.Reasoning.Effort
@@ -102,7 +103,7 @@ func (s *server) handleResponses(w http.ResponseWriter, r *http.Request) {
 	if s.fastRoute(r, &req.Model) {
 		req.applyFast()
 	}
-	dropUnrunnableTools(w, &req.Tools)
+	req.Tools = dropUnrunnableTools(w, req.Tools)
 	s.withModel(w, req.Model, func(lm *loadedModel) { s.serveResponsesWith(w, r, req, lm) })
 }
 
@@ -532,7 +533,7 @@ func (s *server) maybeStore(store bool, id, model string, messages []chatMessage
 	if !store || s.responses == nil {
 		return
 	}
-	full := append(append([]chatMessage(nil), messages...),
+	full := append(slices.Clone(messages),
 		chatMessage{Role: "assistant", Content: rawStr(assistant), ToolCalls: toolCalls, ReasoningContent: reasoning})
 	s.responses.put(id, &responseEntry{model: model, messages: full})
 }

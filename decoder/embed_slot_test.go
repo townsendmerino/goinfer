@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 )
@@ -45,9 +46,9 @@ func (f *slotHiddenLastResident) snap() slotSnap {
 	defer f.mu.Unlock()
 	return slotSnap{
 		bound:     f.bound,
-		embeds:    append([]embedCall(nil), f.embeds...),
-		firstPos:  append([]int(nil), f.firstPos...),
-		lastWrite: append([]string(nil), f.lastWrite...),
+		embeds:    slices.Clone(f.embeds),
+		firstPos:  slices.Clone(f.firstPos),
+		lastWrite: slices.Clone(f.lastWrite),
 	}
 }
 
@@ -199,7 +200,7 @@ func TestHiddenLast_residentKeepsTheChatsSlot(t *testing.T) {
 			}
 
 			rf.clearFirstPos()
-			drainGenerate(t, m, append(append(append([]int(nil), turn1...), reply...), 6), 2)
+			drainGenerate(t, m, append(append(slices.Clone(turn1), reply...), 6), 2)
 			got = rf.snap()
 			if got.bound != chatSlot {
 				t.Errorf("turn 2 ran in slot %d, want the chat's slot %d", got.bound, chatSlot)
@@ -238,7 +239,7 @@ func TestHiddenLast_residentLRUWhenNoSlotIsFree(t *testing.T) {
 	}
 
 	rf.clearFirstPos()
-	drainGenerate(t, m, append(append(append([]int(nil), chatB...), replyB...), 6), 2)
+	drainGenerate(t, m, append(append(slices.Clone(chatB), replyB...), 6), 2)
 	got = rf.snap()
 	if got.bound != slotB || len(got.firstPos) == 0 || got.firstPos[0] == 0 {
 		t.Errorf("chat B's turn 2 ran in slot %d from position %v, want slot %d past 0 (its prefix kept)", got.bound, got.firstPos, slotB)
@@ -251,9 +252,7 @@ func TestHiddenLast_residentRacesChat(t *testing.T) {
 	m, _ := loadWithSlotHiddenLastResident(t)
 	var wg sync.WaitGroup
 	errs := make(chan error, 64)
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		prompt := []int{1, 2, 3}
 		for range 8 {
 			stream, g := m.Generate(context.Background(), prompt, 3, SamplingParams{})
@@ -265,15 +264,14 @@ func TestHiddenLast_residentRacesChat(t *testing.T) {
 			}
 			prompt = append(prompt, 4)
 		}
-	}()
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		for i := range 16 {
 			if _, err := m.HiddenLast([]int{5, 6, 7 + i%3}); err != nil {
 				errs <- err
 			}
 		}
-	}()
+	})
 	wg.Wait()
 	close(errs)
 	for err := range errs {

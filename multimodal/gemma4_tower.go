@@ -2,7 +2,8 @@ package multimodal
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"sync"
 
 	"github.com/townsendmerino/goinfer/internal/vision"
@@ -45,12 +46,7 @@ func UnregisterGemma4Tower(name string) {
 func Gemma4Towers() []string {
 	g4TowerMu.Lock()
 	defer g4TowerMu.Unlock()
-	var n []string
-	for k := range g4Towers {
-		n = append(n, k)
-	}
-	sort.Strings(n)
-	return n
+	return slices.Sorted(maps.Keys(g4Towers))
 }
 
 // NewGemma4Tower builds the named tower accelerator over a loaded tower (float32, LoadGemma4Encoder quant=false).

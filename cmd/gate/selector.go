@@ -1,12 +1,13 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -62,21 +63,21 @@ func (b *bucket) add(k, v string) {
 }
 
 func (b *bucket) byCountDesc() []string {
-	ks := append([]string{}, b.keys...)
-	sort.SliceStable(ks, func(i, j int) bool { return len(b.m[ks[i]]) > len(b.m[ks[j]]) })
+	ks := slices.Clone(b.keys)
+	slices.SortStableFunc(ks, func(x, y string) int { return cmp.Compare(len(b.m[y]), len(b.m[x])) })
 	return ks
 }
 
 func (b *bucket) sortedKeys() []string {
-	ks := append([]string{}, b.keys...)
-	sort.Strings(ks)
+	ks := slices.Clone(b.keys)
+	slices.Sort(ks)
 	return ks
 }
 
 func (b *bucket) writeGroups(w io.Writer, keys []string) {
 	for _, k := range keys {
-		ts := append([]string{}, b.m[k]...)
-		sort.Strings(ts)
+		ts := slices.Clone(b.m[k])
+		slices.Sort(ts)
 		fmt.Fprintf(w, "    %s  (%d)\n", k, len(ts))
 		for i, t := range ts {
 			if i >= 6 {
@@ -119,7 +120,7 @@ func selectorCoverage(w io.Writer) int {
 	var rows []selRow
 	for _, d := range selectorScanDirs {
 		files, _ := filepath.Glob(filepath.Join(d, "*_test.go"))
-		sort.Strings(files)
+		slices.Sort(files)
 		for _, f := range files {
 			raw, err := os.ReadFile(f)
 			if err != nil {

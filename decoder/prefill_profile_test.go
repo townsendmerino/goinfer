@@ -41,8 +41,7 @@ func BenchmarkPrefillLong(b *testing.B) {
 		prompt[i] = (i*131 + 7) % vocab
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		cache := m.NewCache(L + 4)
 		if _, err := m.prefillLogits(context.Background(), prompt, cache); err != nil {
 			b.Fatalf("prefill: %v", err)

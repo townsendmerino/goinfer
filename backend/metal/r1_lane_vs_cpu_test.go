@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -79,13 +80,13 @@ func TestR1_laneVsCPU(t *testing.T) {
 			t.Fatalf("cpu load (%s): %v", refQuant, err)
 		}
 		cache := mc.NewCache(N + 4)
-		for pos := 0; pos < N; pos++ {
+		for pos := range N {
 			lg, err := mc.ForwardForTest(ids[pos], cache)
 			if err != nil {
 				mc.Close()
 				t.Fatalf("cpu forward pos %d: %v", pos, err)
 			}
-			cpuLogits[pos] = append([]float32(nil), lg...)
+			cpuLogits[pos] = slices.Clone(lg)
 			if pos%8 == 7 || pos == N-1 {
 				fmt.Fprintf(os.Stderr, "[r1-x2] cpu ref: %d/%d positions done\n", pos+1, N)
 			}
@@ -130,9 +131,9 @@ func TestR1_laneVsCPU(t *testing.T) {
 		r.decodeLaneW4F16 = f16
 		defer func() { r.decodeLaneW4F16 = false }()
 		out := make([][]float32, N)
-		for pos := 0; pos < N; pos++ {
+		for pos := range N {
 			lg := r.Forward(ids[pos], pos) // returns the shared r.logitsHost — copy it
-			out[pos] = append([]float32(nil), lg...)
+			out[pos] = slices.Clone(lg)
 		}
 		if err := r.takeExecErr(); err != nil {
 			t.Fatalf("%s arm: resident exec error: %v", name, err)
@@ -148,7 +149,7 @@ func TestR1_laneVsCPU(t *testing.T) {
 
 	// Sanity: the toggle must have taken — the two arms may not be bit-identical everywhere.
 	identical := 0
-	for pos := 0; pos < N; pos++ {
+	for pos := range N {
 		same := true
 		for i := range w4a8[pos] {
 			if w4a8[pos][i] != f16[pos][i] {
@@ -230,7 +231,7 @@ func TestR1_laneVsCPU(t *testing.T) {
 		s.gap = make([]float64, N)
 		s.agree = make([]bool, N)
 		s.hard = make([]bool, N)
-		for pos := 0; pos < N; pos++ {
+		for pos := range N {
 			s.cos[pos] = cosine(cpuLogits[pos], arm[pos])
 			s.klv[pos] = kl(cpuLogits[pos], arm[pos])
 			agree, gapPct, hardFail := decoder.NearTieArgmaxForTest(cpuLogits[pos], arm[pos])
@@ -253,7 +254,7 @@ func TestR1_laneVsCPU(t *testing.T) {
 
 	// Paired counts.
 	laneAgree, onlyOne, onlyW, onlyF, f16Lower := 0, 0, 0, 0, 0
-	for pos := 0; pos < N; pos++ {
+	for pos := range N {
 		if argmax(w4a8[pos]) == argmax(f16[pos]) {
 			laneAgree++
 		}
@@ -274,7 +275,7 @@ func TestR1_laneVsCPU(t *testing.T) {
 	logf("=== PER-POSITION TABLE (reference = cpu/%s, f32 activations) ===", refQuant)
 	logf("%4s %7s %6s | %10s %10s %6s %7s | %10s %10s %6s %7s | %6s %10s",
 		"pos", "tok", "cpuArg", "w4a8.cos", "w4a8.KL", "w.top1", "w.gap%", "f16.cos", "f16.KL", "f.top1", "f.gap%", "lanes=", "ratioKL f/w")
-	for pos := 0; pos < N; pos++ {
+	for pos := range N {
 		mark := func(agree, hard bool) string {
 			switch {
 			case agree:

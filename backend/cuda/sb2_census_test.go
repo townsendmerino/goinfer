@@ -1245,8 +1245,8 @@ func walkDecode(t *testing.T, dir string, steps int) [][]float32 {
 var walkNamedDeclines = map[string]bool{}
 
 // walkEqualsLegacy compares the walk with the pre-walk loop on every fixture and returns how many fixtures ran and how many
-// differed, naming each difference.
-func walkEqualsLegacy(t *testing.T, report func(format string, args ...any)) (ran, differ int) {
+// differed, naming each difference; with stopAtFirst it returns at the first fixture that differs.
+func walkEqualsLegacy(t *testing.T, report func(format string, args ...any), stopAtFirst bool) (ran, differ int) {
 	const steps = 24
 	for _, dir := range walkFixtures(t) {
 		walk := walkDecode(t, dir, steps)
@@ -1263,6 +1263,9 @@ func walkEqualsLegacy(t *testing.T, report func(format string, args ...any)) (ra
 		case walk == nil && old != nil:
 			report("%s: the walk's build declined a fixture the pre-walk build accepts", filepath.Base(dir))
 			differ++
+			if stopAtFirst {
+				return ran, differ
+			}
 			continue
 		case walk == nil:
 			t.Logf("NOT RUN: %s: not a CUDA resident at int4", filepath.Base(dir))
@@ -1276,6 +1279,9 @@ func walkEqualsLegacy(t *testing.T, report func(format string, args ...any)) (ra
 				break
 			}
 		}
+		if stopAtFirst && differ > 0 {
+			return ran, differ
+		}
 	}
 	return ran, differ
 }
@@ -1284,7 +1290,7 @@ func walkEqualsLegacy(t *testing.T, report func(format string, args ...any)) (ra
 // fixture that builds a CUDA resident at int4, 24 greedy decode positions on the walk equal the pre-walk loop's bit for bit.
 func TestWalk_equalsLegacy(t *testing.T) {
 	requireDeviceAndFixture(t, "../../testdata/llama-tiny")
-	ran, differ := walkEqualsLegacy(t, t.Errorf)
+	ran, differ := walkEqualsLegacy(t, t.Errorf, false)
 	if ran < 10 {
 		t.Fatalf("only %d fixtures ran on CUDA: a comparison over few fixtures proves little", ran)
 	}
@@ -1312,8 +1318,8 @@ func TestWalk_plantsGoRed(t *testing.T) {
 	}{{"attnGap dropped", walkPlantDropGap}, {"outFFN before attnGap", walkPlantSwap}, {"outFFN reads qDim-1", walkPlantQDimMinus1}} {
 		t.Run(c.name, func(t *testing.T) {
 			setWalkPlantForTest(t, c.plant)
-			ran, differ := walkEqualsLegacy(t, t.Logf)
-			t.Logf("plant %q: %d of %d fixtures differ", c.name, differ, ran)
+			ran, differ := walkEqualsLegacy(t, t.Logf, true)
+			t.Logf("plant %q: %d of %d fixtures differ (it stops at the first)", c.name, differ, ran)
 			if differ == 0 {
 				t.Errorf("plant %q: no fixture differs", c.name)
 			}

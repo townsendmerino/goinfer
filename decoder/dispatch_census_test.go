@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -82,7 +82,7 @@ func scanDispatchSites(t *testing.T) (ident, tsw []string) {
 	if err != nil {
 		t.Fatalf("glob: %v", err)
 	}
-	sort.Strings(files)
+	slices.Sort(files)
 
 	// Pass 1: which predicates are quantization-identity predicates at all.
 	names := map[string]bool{}
@@ -105,7 +105,7 @@ func scanDispatchSites(t *testing.T) (ident, tsw []string) {
 	for n := range names {
 		alts = append(alts, n)
 	}
-	sort.Strings(alts)
+	slices.Sort(alts)
 	identityCall := regexp.MustCompile(`\b(` + strings.Join(alts, "|") + `)\(`)
 
 	// Pass 2: their call sites.

@@ -86,7 +86,7 @@ func TestMessagesUsage_cacheRead(t *testing.T) {
 			u, _ = msg["usage"].(map[string]any)
 		} else {
 			var start map[string]any
-			for _, frame := range strings.Split(string(raw), "\n\n") {
+			for frame := range strings.SplitSeq(string(raw), "\n\n") {
 				_, data, ok := strings.Cut(frame, "\ndata: ")
 				if !ok {
 					continue

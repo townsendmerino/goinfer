@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -333,7 +332,7 @@ func (l *sessionLRU) tierOut(i int) (*decoder.Session, bool) {
 		fmt.Fprintf(os.Stderr, "tiered-kv: write %s: %v\n", path, err)
 		return nil, false
 	}
-	l.cold = append([]*coldSession{{tokens: append([]int(nil), s.Tokens()...), path: path}}, l.cold...)
+	l.cold = append([]*coldSession{{tokens: slices.Clone(s.Tokens()), path: path}}, l.cold...)
 	l.order = append(l.order[:i], l.order[i+1:]...)
 	delete(l.touched, s)
 	delete(l.first, s)
@@ -477,7 +476,7 @@ func (l *sessionLRU) save(dir string) error {
 // not an error. Returns the number loaded.
 func (l *sessionLRU) load(dir string) int {
 	paths, _ := filepath.Glob(filepath.Join(dir, "session-*"+sessionSnapExt))
-	sort.Strings(paths) // session-00 first
+	slices.Sort(paths) // session-00 first
 	loaded := 0
 	for _, p := range paths {
 		if len(l.order) >= l.size {

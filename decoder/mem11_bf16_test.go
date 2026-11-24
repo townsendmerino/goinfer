@@ -60,7 +60,7 @@ func mem11Logits(t *testing.T, m *Model) [][]float32 {
 		if err != nil {
 			t.Fatal(err)
 		}
-		out = append(out, append([]float32(nil), lg...))
+		out = append(out, slices.Clone(lg))
 	}
 	return out
 }

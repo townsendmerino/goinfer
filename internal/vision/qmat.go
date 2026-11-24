@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -35,7 +36,7 @@ func newQMat(w []float32, rows, cols int, quant bool) linalg.WeightMat {
 		// w8a8=true selects MatmulBTW8A8 — the kernel this tower already used.
 		return linalg.QuantizeInt8(w, rows, cols, true)
 	}
-	return linalg.WrapF32(append([]float32(nil), w...), rows, cols)
+	return linalg.WrapF32(slices.Clone(w), rows, cols)
 }
 
 // tensorViewer is a tensor source that hands out a checkpoint tensor's bytes in place: a mapped safetensors file, or one

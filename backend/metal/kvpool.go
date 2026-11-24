@@ -5,6 +5,7 @@ package metal
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sync/atomic"
 
 	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
@@ -869,8 +870,7 @@ func (tx *kvTx) write(s, lo, hi int) error {
 // (a release or reclaim stands): released, it holds nothing; stopped, nothing past its share.
 func (tx *kvTx) abort() {
 	r := tx.r
-	for i := len(tx.log) - 1; i >= 0; i-- {
-		e := tx.log[i]
+	for _, e := range slices.Backward(tx.log) {
 		g := r.kvGs[e.g]
 		if e.take && *g.kvRow(e.s, e.b) == e.next { // a release or reclaim meanwhile gave next back with the entry
 			g.kvUnref(e.next)

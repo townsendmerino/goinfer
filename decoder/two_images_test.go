@@ -207,7 +207,7 @@ func qwenTwoImages(t *testing.T, ckpt, golden string, bar float64, blindOK map[s
 		if err != nil {
 			t.Fatalf("prefillLogitsQwenVLSpans: %v", err)
 		}
-		last = append([]float32(nil), lg...)
+		last = slices.Clone(lg)
 		for range l.Continuation {
 			next := sampling.Argmax(lg)
 			cont = append(cont, next)
@@ -311,7 +311,7 @@ func TestTwoImages_gemma4Bidir(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		last := append([]float32(nil), lg...)
+		last := slices.Clone(lg)
 		var cont []int
 		for range l.Continuation {
 			next := sampling.Argmax(lg)
@@ -394,8 +394,8 @@ func TestTwoImages_reuse(t *testing.T) {
 	if towerCalls != 1 || g1.PrefillReused != 0 {
 		t.Fatalf("turn 1: tower calls %d (want 1), PrefillReused %d (want 0)", towerCalls, g1.PrefillReused)
 	}
-	if len(m.resImgBlocks) != 2 {
-		t.Fatalf("turn 1 committed %d image blocks, want 2", len(m.resImgBlocks))
+	if len(m.boundBlocksForTest()) != 2 {
+		t.Fatalf("turn 1 committed %d image blocks, want 2", len(m.boundBlocksForTest()))
 	}
 	prompt2 := append(append(append([]int{}, l.InputIDs...), gen1...), l.InputIDs[len(l.InputIDs)-1])
 	// The bound each claim set reaches, read before any turn changes the record.

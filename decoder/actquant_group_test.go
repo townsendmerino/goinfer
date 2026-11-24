@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -15,7 +16,7 @@ func tinyPhi3Logits(t *testing.T, m *Model, ids []int) [][]float32 {
 		if err != nil {
 			t.Fatal(err)
 		}
-		out[i] = append([]float32(nil), lg...)
+		out[i] = slices.Clone(lg)
 	}
 	return out
 }

@@ -1,11 +1,12 @@
 package tokenizer
 
 import (
+	"cmp"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 )
 
 // Mistral's Tekken tokenizer (Voxtral Mini, Mistral Small 3.x), shipped as ONE file, tekken.json, and no tokenizer.json.
@@ -118,7 +119,7 @@ func loadTekken(raw []byte, opt tekkenOptions) (*Tokenizer, error) {
 		for len(parts) > 2 {
 			best, bestRank := -1, -1
 			for i := 0; i+1 < len(parts); i++ {
-				cat := append(append(make([]byte, 0, len(parts[i])+len(parts[i+1])), parts[i]...), parts[i+1]...)
+				cat := slices.Concat(parts[i], parts[i+1])
 				if rk, ok := ranks[string(cat)]; ok && rk < r && (bestRank < 0 || rk < bestRank) {
 					best, bestRank = i, rk
 				}
@@ -126,7 +127,7 @@ func loadTekken(raw []byte, opt tekkenOptions) (*Tokenizer, error) {
 			if best < 0 {
 				break
 			}
-			cat := append(append([]byte(nil), parts[best]...), parts[best+1]...)
+			cat := slices.Concat(parts[best], parts[best+1])
 			parts = append(append(parts[:best:best], cat), parts[best+2:]...)
 		}
 		if len(parts) != 2 {
@@ -135,9 +136,9 @@ func loadTekken(raw []byte, opt tekkenOptions) (*Tokenizer, error) {
 		merges = append(merges, merge{rank: r, a: mapped(parts[0]), b: mapped(parts[1]), size: len(tok)})
 	}
 	if opt.sortBySize {
-		sort.SliceStable(merges, func(i, j int) bool { return merges[i].size > merges[j].size })
+		slices.SortStableFunc(merges, func(a, b merge) int { return cmp.Compare(b.size, a.size) })
 	} else {
-		sort.Slice(merges, func(i, j int) bool { return merges[i].rank < merges[j].rank })
+		slices.SortFunc(merges, func(a, b merge) int { return cmp.Compare(a.rank, b.rank) })
 	}
 	pairs := make([][2]string, len(merges))
 	for i, m := range merges {

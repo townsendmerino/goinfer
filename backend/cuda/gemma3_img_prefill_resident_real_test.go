@@ -134,7 +134,7 @@ func TestGemma3ImgPrefillResidentReal_gate(t *testing.T) {
 	// --- Half 2: integration-level, through the real GenerateVL entrypoint ---
 	// Reuses mc rather than loading a second resident instance: two resident int4 gemma-3-4b-it instances (weights +
 	// a 4096-position KV cache each) do not fit together on an 8GB card. Safe to reuse: ResidentImagePrefillForTest
-	// above left mc.resIDs untouched (nil; that bookkeeping is the P9(a) path's, not this primitive's), and
+	// above left the bound slot's record untouched (empty; that bookkeeping is the P9(a) path's, not this primitive's), and
 	// GenerateVL's ordinary path is ALWAYS a full, unconditional prefill overwrite regardless of whatever the
 	// resident cache held before.
 	features := func() ([]float32, error) { return feats, nil }

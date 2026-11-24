@@ -154,7 +154,7 @@ var cacheStateGrid = map[cacheState]map[lifecyclePath]stateCell{
 		lcSpecRollback: {hTransient, "the speculative loops take text prompts; nothing they run puts an image block in their cache"},
 		lcPublish:      {hExact, "each span's content hash, offset and length are in the key of every block it touches"},
 		lcShare:        {hColdOnMismatch, "a span is taken whole, and only when the request claims the same image at the same place; otherwise the match stops at its start"},
-		lcEvict:        {hCleared, "residentForgetIDs clears resImgBlocks with the ids, always"},
+		lcEvict:        {hCleared, "residentForgetIDs drops the bound sequence's image blocks with its ids, always"},
 		lcCkptSave:     {hTransient, "the saving path (generateInto) takes text prompts: no image block is in what it saves"},
 		lcCkptRestore:  {hRefused, "scoreRecurrentTokens gives no checkpoint hit to a sequence or a request with an image span"},
 	},

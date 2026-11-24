@@ -10,7 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -62,7 +62,7 @@ type quickJob struct {
 func runJobs(jobs []*quickJob, j int, rundir string, progress io.Writer, beat time.Duration, t0 time.Time) {
 	var mu sync.Mutex
 	cond := sync.NewCond(&mu)
-	pending := append([]*quickJob(nil), jobs...)
+	pending := slices.Clone(jobs)
 	running := map[*quickJob]bool{}
 	devBusy, memBusy := false, false
 	// Cells of ONE package never overlap. `go test` runs a package in one process, so its tests
@@ -164,7 +164,7 @@ func heartbeatLine(t0 time.Time, done, total int, running map[*quickJob]bool, pe
 	for jb := range running {
 		names = append(names, fmt.Sprintf("%s %s", jb.Name, now.Sub(jb.start).Round(time.Second)))
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	line := fmt.Sprintf("   ... quick: %s elapsed (started %s), %d/%d jobs done; running: %s",
 		now.Sub(t0).Round(time.Second), t0.Format("15:04:05"), done, total, strings.Join(names, ", "))
 	known, longest, sum := true, 0.0, 0.0
@@ -238,7 +238,7 @@ func (jb *quickJob) runLint() {
 			return
 		}
 		jb.Detail = fmt.Sprintf("%d pkgs", len(keep))
-		args = append(append([]string(nil), args...), keep...)
+		args = slices.Concat(args, keep)
 		jb.Args = args
 	}
 	cmd := exec.Command(args[0], args[1:]...)

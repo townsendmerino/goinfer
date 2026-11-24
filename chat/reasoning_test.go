@@ -2,7 +2,7 @@ package chat
 
 import (
 	"encoding/json"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,11 +74,11 @@ func chunkings(s string) [][]string {
 		bytewise = append(bytewise, s[i:i+1])
 	}
 	out = append(out, bytewise)
-	rng := rand.New(rand.NewSource(int64(len(s))*7919 + 1))
+	rng := rand.New(rand.NewPCG(uint64(len(s))*7919+1, 0))
 	for range 40 {
 		var parts []string
 		for rest := s; rest != ""; {
-			n := min(1+rng.Intn(6), len(rest))
+			n := min(1+rng.IntN(6), len(rest))
 			parts = append(parts, rest[:n])
 			rest = rest[n:]
 		}

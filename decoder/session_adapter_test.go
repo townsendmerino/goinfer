@@ -3,6 +3,7 @@ package decoder
 import (
 	"context"
 	"math"
+	"slices"
 	"testing"
 )
 
@@ -79,8 +80,8 @@ func TestSession_snapshotAdapterContinuation(t *testing.T) {
 		t.Fatal(err)
 	}
 	gen(t, func() (<-chan int, *Generation) { return s.Generate(ctx, prompt, n, greedy) })
-	seq := append([]int(nil), s.Tokens()...)
-	turn2 := append(append([]int(nil), seq...), 4, 11)
+	seq := slices.Clone(s.Tokens())
+	turn2 := append(slices.Clone(seq), 4, 11)
 	blob := s.Snapshot("id")
 	if blob == nil {
 		t.Fatal("Snapshot refused a session under a compute-time adapter")

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -261,7 +262,7 @@ func TestNewReasoningBudgetFor_harmony(t *testing.T) {
 		if got := b.forcedHarmony(g); got != 7 {
 			t.Errorf("mode %v: at the trigger the first forced token is %d, want <|end|> (7)", mode, got)
 		}
-		if got := b.forcedHarmony(append(append([]int(nil), g...), 7, 6, 73, 5)); got != 17 {
+		if got := b.forcedHarmony(append(slices.Clone(g), 7, 6, 73, 5)); got != 17 {
 			t.Errorf("mode %v: the fifth forced token is %d, want final (17)", mode, got)
 		}
 	}

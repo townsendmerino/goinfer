@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -374,7 +374,7 @@ func runParity(w io.Writer, logDir, recordDir string) int {
 	in := parityInputs{Commit: prov.Commit, Realckpt: realckpt, Emit: emitManifest, Ledger: map[string]string{}, Lists: liveParityLists()}
 	in.Checks = parityGates
 	if realckpt {
-		in.Checks = append(append([]gateCheck{}, parityGates...), parityRealckptGates...)
+		in.Checks = slices.Concat(parityGates, parityRealckptGates)
 	}
 	if gateFilter != nil {
 		in.ScopeRaw, in.ScopedFrom = gateRaw, len(in.Checks)
@@ -613,7 +613,7 @@ func buildTaggedTests(root string, dirs []string, tagWord *regexp.Regexp, want f
 	seen := map[string]bool{}
 	for _, d := range dirs {
 		files, _ := filepath.Glob(filepath.Join(root, d, "*_test.go"))
-		sort.Strings(files)
+		slices.Sort(files)
 		for _, f := range files {
 			b, err := os.ReadFile(f)
 			if err != nil {

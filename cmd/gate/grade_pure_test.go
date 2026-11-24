@@ -7,16 +7,16 @@ import (
 	"go/token"
 	"go/types"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 )
 
-// graderAllowedImports is everything a grader file may import: formatting, text, sorting, numbers, decoding and time's
+// graderAllowedImports is everything a grader file may import: formatting, text, sorting, collections, numbers, decoding and time's
 // types.
 // Anything else (os, exec, net, filepath, runtime) is the runner's.
-var graderAllowedImports = map[string]bool{"fmt": true, "io": true, "sort": true, "strings": true, "regexp": true,
+var graderAllowedImports = map[string]bool{"cmp": true, "fmt": true, "io": true, "maps": true, "slices": true, "sort": true, "strings": true, "regexp": true,
 	"time": true, "math": true, "bytes": true, "strconv": true, "encoding/binary": true, "encoding/json": true}
 
 // graderClockCalls is the time package's functions that read the clock or wait; a grader may use time's types only.
@@ -104,6 +104,6 @@ func TestGraders_arePure(t *testing.T) {
 	if len(graders) == 0 {
 		t.Fatal("no grade_*.go file: the scan covered nothing")
 	}
-	sort.Strings(graders)
+	slices.Sort(graders)
 	t.Logf("grader files: %s", strings.Join(graders, " "))
 }

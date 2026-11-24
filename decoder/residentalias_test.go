@@ -14,15 +14,15 @@ func TestResidentAlias_namesAreTheLeafTypes(t *testing.T) {
 		name      string
 		dec, leaf reflect.Type
 	}{
-		{"ResidentForward", reflect.TypeOf((*ResidentForward)(nil)).Elem(), reflect.TypeOf((*resident.Forward)(nil)).Elem()},
-		{"ResidentDecodeSubsystem", reflect.TypeOf((*ResidentDecodeSubsystem)(nil)).Elem(), reflect.TypeOf((*resident.DecodeSubsystem)(nil)).Elem()},
-		{"ResidentPrefillSubsystem", reflect.TypeOf((*ResidentPrefillSubsystem)(nil)).Elem(), reflect.TypeOf((*resident.PrefillSubsystem)(nil)).Elem()},
-		{"ResidentKVSubsystem", reflect.TypeOf((*ResidentKVSubsystem)(nil)).Elem(), reflect.TypeOf((*resident.KVSubsystem)(nil)).Elem()},
-		{"ResidentRuntimeSubsystem", reflect.TypeOf((*ResidentRuntimeSubsystem)(nil)).Elem(), reflect.TypeOf((*resident.RuntimeSubsystem)(nil)).Elem()},
-		{"ResidentSubsystemProvider", reflect.TypeOf((*ResidentSubsystemProvider)(nil)).Elem(), reflect.TypeOf((*resident.SubsystemProvider)(nil)).Elem()},
-		{"ResidentSubsystems", reflect.TypeOf(ResidentSubsystems{}), reflect.TypeOf(resident.Subsystems{})},
-		{"TopKRow", reflect.TypeOf(TopKRow{}), reflect.TypeOf(resident.TopKRow{})},
-		{"ResidentCaps", reflect.TypeOf(ResidentCaps{}), reflect.TypeOf(resident.Caps{})},
+		{"ResidentForward", reflect.TypeFor[ResidentForward](), reflect.TypeFor[resident.Forward]()},
+		{"ResidentDecodeSubsystem", reflect.TypeFor[ResidentDecodeSubsystem](), reflect.TypeFor[resident.DecodeSubsystem]()},
+		{"ResidentPrefillSubsystem", reflect.TypeFor[ResidentPrefillSubsystem](), reflect.TypeFor[resident.PrefillSubsystem]()},
+		{"ResidentKVSubsystem", reflect.TypeFor[ResidentKVSubsystem](), reflect.TypeFor[resident.KVSubsystem]()},
+		{"ResidentRuntimeSubsystem", reflect.TypeFor[ResidentRuntimeSubsystem](), reflect.TypeFor[resident.RuntimeSubsystem]()},
+		{"ResidentSubsystemProvider", reflect.TypeFor[ResidentSubsystemProvider](), reflect.TypeFor[resident.SubsystemProvider]()},
+		{"ResidentSubsystems", reflect.TypeFor[ResidentSubsystems](), reflect.TypeFor[resident.Subsystems]()},
+		{"TopKRow", reflect.TypeFor[TopKRow](), reflect.TypeFor[resident.TopKRow]()},
+		{"ResidentCaps", reflect.TypeFor[ResidentCaps](), reflect.TypeFor[resident.Caps]()},
 	} {
 		if c.dec != c.leaf {
 			t.Errorf("decoder.%s is %v, the leaf's is %v", c.name, c.dec, c.leaf)

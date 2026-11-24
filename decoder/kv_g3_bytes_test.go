@@ -53,8 +53,7 @@ func TestKVDeliveredBytes_CPU(t *testing.T) {
 					continue
 				}
 				m, err := Load(filepath.Join("..", "testdata", f.dir), kvMatrixOpts(p, v))
-				var r *KVRefusal
-				if errors.As(err, &r) || err != nil {
+				if _, ok := errors.AsType[*KVRefusal](err); ok || err != nil {
 					t.Fatalf("%s / %s / --kv %s: Load: %v", p.name, f.group, v, err)
 				}
 				cache := m.NewCache(16)

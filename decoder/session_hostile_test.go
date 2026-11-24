@@ -5,6 +5,7 @@ import (
 	"errors"
 	"hash/crc32"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -61,7 +62,7 @@ func TestLoadSession_hostileHeaders(t *testing.T) {
 		return b
 	}
 	mutate := func(field string, v uint32) []byte {
-		b := append([]byte(nil), clean...)
+		b := slices.Clone(clean)
 		binary.LittleEndian.PutUint32(b[off[field]:], v)
 		return reseal(b)
 	}
@@ -77,13 +78,13 @@ func TestLoadSession_hostileHeaders(t *testing.T) {
 		// m.NewCache(pos) then allocated with the MODEL's geometry and this pos. A 20-byte
 		// header in -session-dir was `runtime: out of memory` at server boot.
 		"numLayers=0 with a huge pos": func() []byte {
-			b := append([]byte(nil), clean...)
+			b := slices.Clone(clean)
 			binary.LittleEndian.PutUint32(b[off["numLayers"]:], 0)
 			binary.LittleEndian.PutUint32(b[off["pos"]:], 0x7FFFFFFF)
 			return reseal(b)
 		}(),
 		"kvDim=0 with a huge pos": func() []byte {
-			b := append([]byte(nil), clean...)
+			b := slices.Clone(clean)
 			binary.LittleEndian.PutUint32(b[off["kvDim"]:], 0)
 			binary.LittleEndian.PutUint32(b[off["pos"]:], 0x7FFFFFFF)
 			return reseal(b)
@@ -128,8 +129,8 @@ func TestLoadSession_bodyLengthsMustAgreeWithPos(t *testing.T) {
 	if blob == nil {
 		t.Fatal("Snapshot returned nil for a non-recurrent family")
 	}
-	var se *SnapshotError
-	if got, err := m.LoadSession(blob, ""); !errors.As(err, &se) {
+	got, err := m.LoadSession(blob, "")
+	if _, ok := errors.AsType[*SnapshotError](err); !ok {
 		t.Errorf("3 tokens at pos 0 accepted (session=%v, err=%v) — len(tokens) > pos makes "+
 			"rewindForReuse claim an exact match it never performed (M-04)", got != nil, err)
 	}
@@ -190,8 +191,8 @@ func TestLoadSession_allocationCeilingNotBodyRatio(t *testing.T) {
 	big := m.NewSession(0)
 	big.tokens = make([]int, hugePos)
 	big.cache.pos = hugePos
-	var se *SnapshotError
-	if _, err := m.LoadSession(big.Snapshot("m"), ""); !errors.As(err, &se) {
+	_, err := m.LoadSession(big.Snapshot("m"), "")
+	if se, ok := errors.AsType[*SnapshotError](err); !ok {
 		t.Errorf("pos=%d would allocate ~%d B and must be refused, got %v",
 			hugePos, int64(hugePos)*perPos*8, err)
 	} else if !strings.Contains(se.Error(), "ceiling") {

@@ -22,6 +22,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -29,11 +30,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -233,7 +235,7 @@ func reconcileLedger(w io.Writer, root string, gates []string) {
 		}
 	}
 	if len(incomplete) > 0 {
-		sort.Strings(incomplete)
+		slices.Sort(incomplete)
 		fmt.Fprintf(w, "    INCOMPLETE (%d): missing a required field — a note, not a confirmation: %s\n",
 			len(incomplete), strings.Join(incomplete, ", "))
 	}
@@ -248,7 +250,7 @@ func reconcileLedger(w io.Writer, root string, gates []string) {
 				firstrun = append(firstrun, g)
 			}
 		}
-		sort.Strings(firstrun)
+		slices.Sort(firstrun)
 		if len(firstrun) > 0 {
 			fmt.Fprintf(w, "    FIRST-RUN (%d): no confirmed prior result, so a failure here has no delta to compute — reported, never a blocker\n", len(firstrun))
 			for _, g := range firstrun {
@@ -264,7 +266,7 @@ func reconcileLedger(w io.Writer, root string, gates []string) {
 			}
 		}
 	}
-	sort.Strings(stale)
+	slices.Sort(stale)
 	if len(stale) > 0 {
 		fmt.Fprintf(w, "    STALE (%d): ledger entry with no matching gate — reported and IGNORED. A removed or renamed gate is ordinary; a ledger that blocks on its own leftovers trains people to delete entries\n", len(stale))
 		for _, g := range stale {
@@ -310,7 +312,7 @@ func nonEmptyNonString(v any) bool {
 }
 
 func sortEntries(d *ledgerDoc) {
-	sort.SliceStable(d.Entries, func(i, j int) bool { return entryStr(d.Entries[i], "gate") < entryStr(d.Entries[j], "gate") })
+	slices.SortStableFunc(d.Entries, func(a, b map[string]any) int { return cmp.Compare(entryStr(a, "gate"), entryStr(b, "gate")) })
 }
 
 var seedPassRe = regexp.MustCompile(`(?m)^--- PASS: (\S+) \(`)
@@ -406,11 +408,7 @@ func runLedger(argv []string, w io.Writer) int {
 		for _, m := range seedPassRe.FindAllStringSubmatch(string(logb), -1) {
 			set[m[1]] = true
 		}
-		var passed []string
-		for g := range set {
-			passed = append(passed, g)
-		}
-		sort.Strings(passed)
+		passed := slices.Sorted(maps.Keys(set))
 		if only := splitGates(*gates); len(only) > 0 {
 			keep := map[string]bool{}
 			for _, g := range only {

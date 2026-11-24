@@ -72,13 +72,11 @@ func TestResolveKV_pure(t *testing.T) {
 	want := all()
 	var wg sync.WaitGroup
 	for range 16 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if all() != want {
 				t.Error("a concurrent run answered differently")
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }

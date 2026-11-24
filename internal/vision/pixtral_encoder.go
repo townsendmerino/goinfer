@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
@@ -137,7 +138,7 @@ func LoadPixtralVisionEncoder(dir string, quant bool) (*PixtralVisionEncoder, er
 		if err != nil {
 			return nil
 		}
-		return append([]float32(nil), v...)
+		return slices.Clone(v)
 	}
 	hidden, inter, p := cfg.HiddenSize, cfg.IntermediateSize, cfg.PatchSize
 	qm := func(name string, rows, cols int) linalg.WeightMat {
@@ -278,7 +279,7 @@ func (e *PixtralVisionEncoder) Forward(patches []float32, grids [][2]int) ([]flo
 // block's, in order (len = 2 + layers).
 func (e *PixtralVisionEncoder) ForwardStages(patches []float32, grids [][2]int) ([][]float32, error) {
 	var st [][]float32
-	_, err := e.forward(patches, grids, func(x []float32) { st = append(st, append([]float32(nil), x...)) })
+	_, err := e.forward(patches, grids, func(x []float32) { st = append(st, slices.Clone(x)) })
 	return st, err
 }
 

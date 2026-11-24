@@ -1,7 +1,7 @@
 package vision
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"testing"
 )
 
@@ -11,7 +11,7 @@ import (
 // applyRotaryVision is the same call either way.
 func BenchmarkApplyRotaryVision(b *testing.B) {
 	const headDim = 128
-	rng := rand.New(rand.NewSource(1))
+	rng := rand.New(rand.NewPCG(1, 0))
 	vec := make([]float32, headDim)
 	cos := make([]float32, headDim)
 	sin := make([]float32, headDim)

@@ -63,3 +63,21 @@ func TestRunModelToPrefill_declinesLayerNormAndParallel(t *testing.T) {
 		t.Error("RunModelToPrefill admitted a parallel-block model: the batched pass would run the block sequentially")
 	}
 }
+
+// TestNewDecodeRunner_refusesLayerNormWithActG32: there is no per-32 twin of LayerNormQuantWGSL, so a plan asking for both
+// is refused before anything is built rather than running one of the two quantizers in the other's place.
+func TestNewDecodeRunner_refusesLayerNormWithActG32(t *testing.T) {
+	c, err := New()
+	if err != nil {
+		t.Skipf("no GPU adapter: %v", err)
+	}
+	defer c.Close()
+	m := RunModel{LmHead: &ResidentW8A8{}, LayerNorm: true, ActG32: true, Layers: []RunLayer{{}}}
+	r, err := c.newDecodeRunner(m, 64, 2, 2, 32, 128, 0, 1e-5, 1, false)
+	if err == nil {
+		r.release()
+	}
+	if err == nil || !strings.Contains(err.Error(), "LayerNorm has no per-32") {
+		t.Errorf("LayerNorm with per-32 activations: err %v, want the refusal naming the missing twin", err)
+	}
+}

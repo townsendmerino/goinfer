@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"slices"
 	"sync/atomic"
 
 	"github.com/townsendmerino/goinfer/constrain"
@@ -39,7 +40,7 @@ func lazyTurn(ctx context.Context, req Request, lazy *constrain.LazyMasker, free
 				return
 			}
 		}
-		prompt := append(append([]int(nil), req.PromptIDs...), emitted...)
+		prompt := slices.Concat(req.PromptIDs, emitted)
 		s2, g2, d2, err := constrained(ctx, prompt, budget, gated(emitted))
 		if err != nil {
 			startErr.Store(&err)

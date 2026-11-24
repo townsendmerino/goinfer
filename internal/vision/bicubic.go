@@ -1,6 +1,9 @@
 package vision
 
-import "math"
+import (
+	"math"
+	"slices"
+)
 
 // The reference resize of Gemma 4's image processor (and of every HF processor on the torchvision backend that resizes
 // with BICUBIC and antialias=True): torchvision's antialiased bicubic on the uint8 image, as its uint8 CPU path computes
@@ -186,7 +189,7 @@ func ResizeBilinearAAFloat(src []float32, h, w, c, th, tw int) []float32 {
 		cur = resizePassFloat(cur, h, cw, c, th, false)
 	}
 	if &cur[0] == &src[0] {
-		cur = append([]float32(nil), src...)
+		cur = slices.Clone(src)
 	}
 	return cur
 }

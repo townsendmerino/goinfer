@@ -298,8 +298,7 @@ func TestKVF16_excludedFamilyKeepsF32(t *testing.T) {
 	for _, path := range []string{filepath.Join("..", "testdata", "llama4-tiny"), filepath.Join("testdata", "gptoss_tiny.gguf")} {
 		for _, kv := range []string{"f16", "i8"} {
 			m, err := Load(path, Options{KVQuant: kv})
-			var r *KVRefusal
-			if !errors.As(err, &r) || r.Path != "cpu" || !strings.Contains(r.Reason, "own forward loop") {
+			if r, ok := errors.AsType[*KVRefusal](err); !ok || r.Path != "cpu" || !strings.Contains(r.Reason, "own forward loop") {
 				t.Errorf("%s -kv %s: load error %v, want a CPU KV refusal naming its own forward loop", filepath.Base(path), kv, err)
 			}
 			if m != nil {

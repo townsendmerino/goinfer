@@ -155,8 +155,10 @@ func (a *specPagerArm) alpha() float64 {
 	return 0
 }
 
+// TestSpecPagerInteraction is a measurement (testgate.RequireMeasure). Run it alone: after the rest of the package in one
+// process, NewBlockSpec runs out of device memory. TestPagerDeterminism holds its off-arm instrument check.
 func TestSpecPagerInteraction(t *testing.T) {
-	needsFreshProcess(t, "NewBlockSpec hit CUDA_ERROR_OUT_OF_MEMORY in the one-process heavy tier; passes alone")
+	testgate.RequireMeasure(t)
 	testgate.RequireHeavy(t)
 
 	// PARAMETERIZED OVER THE VENUE, because one paged MoE cannot answer the whole question. A Gated-DeltaNet MoE

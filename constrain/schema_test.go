@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"slices"
 	"strings"
 	"testing"
@@ -45,7 +45,7 @@ func genConstrained(t *testing.T, g Grammar, seed int64, maxDigitRun int) []byte
 	t.Helper()
 	tokens, eos := testVocab()
 	m := NewMasker(g, tokens, []int{eos}).StopWhenComplete()
-	rng := rand.New(rand.NewSource(seed))
+	rng := rand.New(rand.NewPCG(uint64(seed), 0))
 	var generated []int
 	var out bytes.Buffer
 	neg := float32(math.Inf(-1))
@@ -81,9 +81,9 @@ func genConstrained(t *testing.T, g Grammar, seed int64, maxDigitRun int) []byte
 		}
 		var pick int
 		if len(closers) > 0 && rng.Float64() < 0.5 {
-			pick = closers[rng.Intn(len(closers))]
+			pick = closers[rng.IntN(len(closers))]
 		} else {
-			pick = pool[rng.Intn(len(pool))]
+			pick = pool[rng.IntN(len(pool))]
 		}
 		if pick == eos {
 			return out.Bytes()

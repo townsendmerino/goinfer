@@ -1,10 +1,11 @@
 package pull
 
 import (
+	"cmp"
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -110,7 +111,7 @@ func RecommendedAll() []Checkpoint {
 	for _, c := range m {
 		out = append(out, c)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Bytes < out[j].Bytes })
+	slices.SortFunc(out, func(a, b Checkpoint) int { return cmp.Compare(a.Bytes, b.Bytes) })
 	return out
 }
 

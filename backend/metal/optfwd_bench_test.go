@@ -57,12 +57,12 @@ func BenchmarkOptFwd(b *testing.B) {
 	}
 	for _, tc := range cases {
 		b.Run(tc.name+"_on", func(b *testing.B) {
-			for range b.N {
+			for b.Loop() {
 				run(tc.temp, false)
 			}
 		})
 		b.Run(tc.name+"_off", func(b *testing.B) {
-			for range b.N {
+			for b.Loop() {
 				run(tc.temp, true)
 			}
 		})

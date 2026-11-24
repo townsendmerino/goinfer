@@ -1,6 +1,7 @@
 package pull
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,7 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -268,7 +269,7 @@ func PlanCheckpointFor(ctx context.Context, repo string, loads func(modelType st
 		p.Files = append(p.Files, f)
 		p.Bytes += f.Size
 	}
-	sort.Slice(p.Files, func(i, j int) bool { return p.Files[i].Path < p.Files[j].Path })
+	slices.SortFunc(p.Files, func(a, b File) int { return cmp.Compare(a.Path, b.Path) })
 	return p, nil
 }
 
@@ -277,8 +278,8 @@ func PlanCheckpointFor(ctx context.Context, repo string, loads func(modelType st
 // declares; a small non-LFS file (config, tokenizer) carries its size only, which is what the tree listing offers. It is the
 // directory's counterpart of a GGUF entry's sha256: the same upstream-re-upload guard, for a set.
 func (p Plan) TreeDigest() string {
-	files := append([]File(nil), p.Files...)
-	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	files := slices.Clone(p.Files)
+	slices.SortFunc(files, func(a, b File) int { return cmp.Compare(a.Path, b.Path) })
 	h := sha256.New()
 	for _, f := range files {
 		sum := f.SHA256

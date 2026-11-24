@@ -1,13 +1,13 @@
 package tokenizer
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -856,11 +856,8 @@ func buildScoreRank(scores []float32) []int32 {
 	for i := range order {
 		order[i] = int32(i)
 	}
-	sort.Slice(order, func(a, b int) bool {
-		if scores[order[a]] != scores[order[b]] {
-			return scores[order[a]] > scores[order[b]]
-		}
-		return order[a] < order[b] // stable, deterministic within an equal-score run
+	slices.SortFunc(order, func(a, b int32) int {
+		return cmp.Or(cmp.Compare(scores[b], scores[a]), cmp.Compare(a, b))
 	})
 	rank := make([]int32, len(scores))
 	for r, id := range order {

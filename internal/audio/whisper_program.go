@@ -3,6 +3,7 @@ package audio
 import (
 	"fmt"
 	"math"
+	"slices"
 
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
@@ -87,7 +88,7 @@ func (e *WhisperEncoder) walkBlock(prog vision.TowerBlock, ly *whisperLayer, h [
 		switch op.Kind {
 		case vision.TowerNorm:
 			w, b, _ := ly.towerNorm(op.W)
-			x := append([]float32(nil), in...)
+			x := slices.Clone(in)
 			layerNormEps(x, w, b, n, D, op.Eps)
 			set(op.Out, x)
 		case vision.TowerLinear, vision.TowerLinearAdd:

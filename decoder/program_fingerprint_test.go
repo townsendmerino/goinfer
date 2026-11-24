@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -95,7 +95,7 @@ func TestProgramFingerprint_table(t *testing.T) {
 			diffs = append(diffs, k+" (no longer resolves)")
 		}
 	}
-	sort.Strings(diffs)
+	slices.Sort(diffs)
 	if len(diffs) > 0 {
 		t.Errorf("%s program fingerprints changed for %d fixture(s); if the change is meant, run -update and say which programs moved:\n  %s",
 			arch, len(diffs), strings.Join(diffs, "\n  "))
@@ -111,7 +111,7 @@ func TestProgramFingerprint_configMatchesWeights(t *testing.T) {
 	for d := range fps {
 		dirs = append(dirs, d)
 	}
-	sort.Strings(dirs)
+	slices.Sort(dirs)
 	var checked, absent []string
 	for _, d := range dirs {
 		m, err := Load(filepath.Join("..", d), Options{})

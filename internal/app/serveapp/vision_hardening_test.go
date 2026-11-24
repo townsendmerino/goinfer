@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -144,7 +144,7 @@ func TestServe_noRouteEncodesARenderedPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sort.Strings(files)
+	slices.Sort(files)
 	// `Encode(` applied to a `Render(` result, in either spelling the package uses.
 	bad := regexp.MustCompile(`(?:lm\.encode|tk\.Encode)\(\s*(?:lm\.)?tmpl\.Render\(`)
 	scanned := 0

@@ -2,12 +2,13 @@ package site
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
 	"html/template"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -79,11 +80,11 @@ func splitFrontMatter(b []byte) (fm, body []byte, err error) {
 		return nil, nil, fmt.Errorf("no front matter (the file must start with ---)")
 	}
 	rest := s[4:]
-	i := strings.Index(rest, "\n---\n")
-	if i < 0 {
+	before, after, ok := strings.Cut(rest, "\n---\n")
+	if !ok {
 		return nil, nil, fmt.Errorf("front matter is never closed (a line of ---)")
 	}
-	return []byte(rest[:i]), []byte(rest[i+5:]), nil
+	return []byte(before), []byte(after), nil
 }
 
 var md = goldmark.New(
@@ -156,7 +157,7 @@ func LoadWriteups(root string) ([]*Writeup, error) {
 		}
 		out = append(out, w)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Order < out[j].Order })
+	slices.SortFunc(out, func(a, b *Writeup) int { return cmp.Compare(a.Order, b.Order) })
 	return out, nil
 }
 
@@ -207,12 +208,13 @@ func (w *Writeup) validate() error {
 func CheckWriteups(root string, ws []*Writeup) error {
 	var bad []string
 	for _, w := range ws {
-		text := w.Body
+		var text strings.Builder
+		text.WriteString(w.Body)
 		for _, f := range w.Doesnt {
-			text += "\n" + f.Text + "\n" + f.Title
+			text.WriteString("\n" + f.Text + "\n" + f.Title)
 		}
 		for _, f := range w.Facts {
-			text += "\n" + f.Value
+			text.WriteString("\n" + f.Value)
 		}
 		for _, f := range w.Figures {
 			src, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(f.Source)))
@@ -221,14 +223,14 @@ func CheckWriteups(root string, ws []*Writeup) error {
 				bad = append(bad, fmt.Sprintf("%s: a figure has no text", w.Slug))
 			case err != nil:
 				bad = append(bad, fmt.Sprintf("%s: figure %q names a record that is not there: %s", w.Slug, f.Text, f.Source))
-			case !strings.Contains(text, f.Text):
+			case !strings.Contains(text.String(), f.Text):
 				bad = append(bad, fmt.Sprintf("%s: figure %q is listed but never appears in the page", w.Slug, f.Text))
 			case !hasToken(string(src), f.Text):
 				bad = append(bad, fmt.Sprintf("%s: figure %q does not appear in %s", w.Slug, f.Text, f.Source))
 			}
 		}
 		// A link into the repo on GitHub must name a path that exists, or it is a dead link on a public page.
-		for _, m := range repoLinkRE.FindAllStringSubmatch(text+"\n"+string(w.HTML), -1) {
+		for _, m := range repoLinkRE.FindAllStringSubmatch(text.String()+"\n"+string(w.HTML), -1) {
 			if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(m[1]))); err != nil {
 				bad = append(bad, fmt.Sprintf("%s: links to %s, which is not in the repo", w.Slug, m[1]))
 			}

@@ -226,8 +226,8 @@ func TestReadWithOracle_rateLimitedIsNotFresh(t *testing.T) {
 		t.Skip("no oracle on this platform")
 	}
 	stale := 0
-	for i := 0; i < 5; i++ {
-		for j := 0; j < 25; j++ { // past the most requests a window serves fresh (10)
+	for range 5 {
+		for range 25 { // past the most requests a window serves fresh (10)
 			Read()
 		}
 		if o, _ := ReadWithOracle(); !o.Fresh {

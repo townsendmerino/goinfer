@@ -12,10 +12,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -234,7 +235,7 @@ func probe(c *http.Client, url, key, model string) (settings, error) {
 			ids = append(ids, m.ID)
 		}
 	}
-	sort.Strings(ids)
+	slices.Sort(ids)
 	if model == "" {
 		if len(ids) != 1 {
 			return settings{}, fmt.Errorf("the server serves %d generative models (%s); choose one with -model", len(ids), strings.Join(ids, ", "))
@@ -355,11 +356,7 @@ It never starts the agent.
 
 // Run implements `serve connect`. args excludes the program name and the "connect" word.
 func Run(args []string, self string, out io.Writer) int {
-	names := make([]string, 0, len(harnesses))
-	for n := range harnesses {
-		names = append(names, n)
-	}
-	sort.Strings(names)
+	names := slices.Sorted(maps.Keys(harnesses))
 	fs := flag.NewFlagSet("connect", flag.ContinueOnError)
 	fs.SetOutput(out)
 	fs.Usage = func() { fmt.Fprintf(out, usage, self, strings.Join(names, ", ")); fs.PrintDefaults() }

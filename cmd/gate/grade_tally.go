@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -136,7 +136,7 @@ func reportCensus(w io.Writer, cfg *gateConfig, res *results, requireFixtures bo
 				fails = append(fails, fmt.Sprintf("    %s  %s", k.Pkg, k.Test))
 			}
 		}
-		sort.Strings(fails)
+		slices.Sort(fails)
 		for _, f := range fails {
 			fmt.Fprintln(w, f)
 		}

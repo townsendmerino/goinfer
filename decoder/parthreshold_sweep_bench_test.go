@@ -2,7 +2,7 @@ package decoder
 
 import (
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -46,7 +46,7 @@ var decodeShapes = []struct {
 var sweepThresholds = []int{0, 300_000, 1 << 19, 700_000, 1 << 20, 1_500_000, 2_000_000, 4_000_000, 6_000_000, 12_000_000, 1 << 24}
 
 func BenchmarkInt4ParThresholdSweep(b *testing.B) {
-	rng := rand.New(rand.NewSource(1))
+	rng := rand.New(rand.NewPCG(1, 0))
 	for _, sh := range decodeShapes {
 		// Build the int4 weight [N, K] and f32 activation [1, K] once — same quantizer
 		// matmul() feeds (linalg.QuantizeInt4), so the codes/scales are production-shaped.
@@ -68,8 +68,7 @@ func BenchmarkInt4ParThresholdSweep(b *testing.B) {
 			b.Run(fmt.Sprintf("%s/thr=%d", sh.name, thr), func(b *testing.B) {
 				var ws linalg.Workspace
 				ws.SetThreshold(thr)
-				b.ResetTimer()
-				for i := 0; i < b.N; i++ {
+				for b.Loop() {
 					linalg.MatmulBTW4A8Into(&ws, a, q4, q4s, dst, 1, sh.K, sh.N, group)
 				}
 			})
@@ -78,7 +77,7 @@ func BenchmarkInt4ParThresholdSweep(b *testing.B) {
 }
 
 func BenchmarkInt8ParThresholdSweep(b *testing.B) {
-	rng := rand.New(rand.NewSource(2))
+	rng := rand.New(rand.NewPCG(2, 0))
 	for _, sh := range decodeShapes {
 		wf := make([]float32, sh.N*sh.K)
 		for i := range wf {
@@ -98,8 +97,7 @@ func BenchmarkInt8ParThresholdSweep(b *testing.B) {
 			b.Run(fmt.Sprintf("%s/thr=%d", sh.name, thr), func(b *testing.B) {
 				var ws linalg.Workspace
 				ws.SetThreshold(thr)
-				b.ResetTimer()
-				for i := 0; i < b.N; i++ {
+				for b.Loop() {
 					linalg.MatmulBTW8A8Into(&ws, a, q8, scales, dst, 1, sh.K, sh.N)
 				}
 			})

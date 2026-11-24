@@ -167,13 +167,11 @@ func TestKV2_scheduleIndependenceMetal(t *testing.T) {
 			if !together {
 				idsA = append(idsA, <-chA)
 			}
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				for id := range chA {
 					idsA = append(idsA, id)
 				}
-			}()
+			})
 			b = gen(m, first(1))
 			wg.Wait()
 			if err := gA.Err(); err != nil {

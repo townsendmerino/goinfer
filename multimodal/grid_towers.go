@@ -2,7 +2,8 @@ package multimodal
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"sync"
 
 	"github.com/townsendmerino/goinfer/internal/vision"
@@ -80,12 +81,7 @@ func (r *gridTowerRegistry[E]) unregister(name string) {
 func (r *gridTowerRegistry[E]) names() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	var n []string
-	for k := range r.m {
-		n = append(n, k)
-	}
-	sort.Strings(n)
-	return n
+	return slices.Sorted(maps.Keys(r.m))
 }
 
 func (r *gridTowerRegistry[E]) build(family, name string, enc *E) (GridTowerAccelerator, error) {

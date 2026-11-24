@@ -59,7 +59,7 @@ func TestTransport_streamsEachEvent(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
 		f.Flush()
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			fmt.Fprintf(w, "data: %d\n\n", i)
 			f.Flush()
 			select {

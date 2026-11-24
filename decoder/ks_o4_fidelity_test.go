@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -285,7 +286,7 @@ func ksO4Run(t *testing.T, m *Model, cache *KVCache, prompt, forced []int) ([][]
 		if err != nil {
 			t.Fatal(err)
 		}
-		return append([]float32(nil), lg...)
+		return slices.Clone(lg)
 	}
 	var last []float32
 	for _, id := range prompt {

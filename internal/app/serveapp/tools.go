@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -252,7 +253,7 @@ func constrainForcedTool(lm *loadedModel, gr *genRequest, forced *chat.Tool, nam
 		}
 		return nil
 	}
-	eos := append(append([]int(nil), lm.eosIDs...), lm.stopIDs...)
+	eos := slices.Concat(lm.eosIDs, lm.stopIDs)
 	// lm.cachedTokenBytes(), not a fresh constrain.TokenBytes: the table is ~152k entries and is built once per model;
 	// rebuilding it per request, before the queue, is the cost this avoids.
 	m := constrain.NewMasker(g, lm.cachedTokenBytes(), eos).StopWhenComplete()
@@ -284,7 +285,7 @@ func constrainToolUnion(lm *loadedModel, gr *genRequest, mode string, tools []ch
 		gr.callPostCheck = mode == "required" && forcedCallEnforcement(lm.tmpl) == "post-check"
 		return
 	}
-	eos := append(append([]int(nil), lm.eosIDs...), lm.stopIDs...)
+	eos := slices.Concat(lm.eosIDs, lm.stopIDs)
 	if mode == "required" {
 		specs := make([]constrain.ToolSpec, len(tools))
 		for i, t := range tools {

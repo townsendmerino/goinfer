@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/testgate"
@@ -76,7 +77,7 @@ func TestQwen35GGUF_vsSafetensors(t *testing.T) {
 				if err != nil {
 					t.Fatalf("%s prompt %d step %d: %v", label, pi, s, err)
 				}
-				out = append(out, append([]float32(nil), logits...))
+				out = append(out, slices.Clone(logits))
 				cur = p.GenIDs[s] // teacher force with the golden token
 			}
 		}

@@ -392,7 +392,7 @@ func (d *Decoder) timestampRules(l []float32, seq []int, g GenConfig) {
 		}
 	}
 	if len(seq) == 0 && d.tsDefect != tsNoInitialRule {
-		for i := 0; i < tsBegin; i++ {
+		for i := range tsBegin {
 			l[i] = neg
 		}
 		if g.MaxInitialTS != nil {
@@ -427,7 +427,7 @@ func (d *Decoder) timestampRules(l []float32, seq []int, g GenConfig) {
 		}
 	}
 	if math.Log(tsSum) > maxText {
-		for i := 0; i < tsBegin; i++ {
+		for i := range tsBegin {
 			l[i] = neg
 		}
 	}

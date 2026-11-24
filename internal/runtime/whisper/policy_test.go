@@ -26,14 +26,15 @@ type polGolden struct {
 	}
 }
 
-func f64(v float64) *float64 { return &v }
+//go:fix inline
+func f64(v float64) *float64 { return new(v) }
 
 var polConfigs = map[string]TranscribeOptions{
 	"cond":  {ConditionOnPrev: true},
-	"thr":   {LogprobThreshold: f64(-0.5), CompressionRatioThreshold: f64(1.2)},
-	"skip":  {LogprobThreshold: f64(-0.5), NoSpeechThreshold: f64(1e-4)},
-	"skip2": {LogprobThreshold: f64(-0.5), NoSpeechThreshold: f64(1e-5)},
-	"all":   {ConditionOnPrev: true, LogprobThreshold: f64(-0.5), CompressionRatioThreshold: f64(1.2), NoSpeechThreshold: f64(1e-4)},
+	"thr":   {LogprobThreshold: new(-0.5), CompressionRatioThreshold: new(1.2)},
+	"skip":  {LogprobThreshold: new(-0.5), NoSpeechThreshold: new(1e-4)},
+	"skip2": {LogprobThreshold: new(-0.5), NoSpeechThreshold: new(1e-5)},
+	"all":   {ConditionOnPrev: true, LogprobThreshold: new(-0.5), CompressionRatioThreshold: new(1.2), NoSpeechThreshold: new(1e-4)},
 }
 
 func loadPolicy(t *testing.T) polGolden {

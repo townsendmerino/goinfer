@@ -53,8 +53,8 @@ func TestFitGuard_refusesBeforeAllocating(t *testing.T) {
 	if !errors.Is(err, ErrWontFitResident) {
 		t.Error("refusal does not wrap ErrWontFitResident")
 	}
-	var fde *FitDeclineError
-	if !errors.As(err, &fde) {
+	fde, ok := errors.AsType[*FitDeclineError](err)
+	if !ok {
 		t.Fatal("refusal is not a *FitDeclineError")
 	}
 	if fde.DenseStreamable {
@@ -702,7 +702,7 @@ func TestFitCheck_declineNamesNoSmallerFile(t *testing.T) {
 			weightBytes: 21 << 30, srcFileBytes: 9 << 30, availBytes: 16 << 30}
 		msg := f.declineErr().Error()
 		var line string
-		for _, l := range strings.Split(msg, "\n") {
+		for l := range strings.SplitSeq(msg, "\n") {
 			if strings.Contains(l, "smaller model") {
 				line = l
 			}

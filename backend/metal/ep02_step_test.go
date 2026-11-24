@@ -5,7 +5,7 @@ package metal
 import (
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 )
 
@@ -31,8 +31,8 @@ func TestEP02_stepAB(t *testing.T) {
 		mc3Fill(t, r, sl, ids)
 	}
 	med := func(v []float64) float64 {
-		s := append([]float64(nil), v...)
-		sort.Float64s(s)
+		s := slices.Clone(v)
+		slices.Sort(s)
 		return s[len(s)/2]
 	}
 	fmt.Fprintf(os.Stderr, "[e-p02] rows per-row at B <= qkv %d, gate|up %d (calibrateRows)\n", r.batch.rowsQKV, r.batch.rowsGU)

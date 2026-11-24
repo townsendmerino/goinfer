@@ -3,7 +3,8 @@ package main
 import (
 	"fmt"
 	"io"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 )
 
@@ -141,10 +142,5 @@ func gradeGPU(w io.Writer, t *gpuTally, in gpuVerdictInputs) (int, string) {
 	return 0, "PASS"
 }
 func sortedSet(m map[string]bool) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
+	return slices.Sorted(maps.Keys(m))
 }

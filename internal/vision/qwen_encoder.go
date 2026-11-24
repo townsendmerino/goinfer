@@ -184,7 +184,7 @@ func LoadQwenVisionEncoder(dir string, quant bool) (*QwenVisionEncoder, error) {
 		if err != nil {
 			return nil
 		}
-		return append([]float32(nil), v...) // copy out so st can close
+		return slices.Clone(v) // copy out so st can close
 	}
 	hidden, inter := cfg.HiddenSize, cfg.IntermediateSize
 	qm := func(name string, rows, cols int) linalg.WeightMat {
@@ -526,9 +526,7 @@ func attendPackedInto(out, q, k, v []float32, hidden, nH int, cu []int, scale fl
 			if h0 >= h1 {
 				continue
 			}
-			wg.Add(1)
-			go func(w, h0, h1 int) {
-				defer wg.Done()
+			wg.Go(func() {
 				ws := &s.headPool[w]
 				for head := h0; head < h1; head++ {
 					if err := attendHead(ws, ws.mmWS.MatmulBT, head, start, n); err != nil {
@@ -536,7 +534,7 @@ func attendPackedInto(out, q, k, v []float32, hidden, nH int, cu []int, scale fl
 						return
 					}
 				}
-			}(w, h0, h1)
+			})
 		}
 		wg.Wait()
 		for _, err := range errs {

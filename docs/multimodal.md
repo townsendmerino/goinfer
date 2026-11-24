@@ -22,7 +22,7 @@ Each cell: where the image or audio **tower** runs / where the **decoder** runs 
 | Qwen3-VL MoE (`qwen3_vl_moe`) | CPU / CPU | GPU / GPU | GPU / GPU | GPU / GPU | Qwen3-VL-30B-A3B: too large for a 16 GB Mac or an 8 GB card at once. Decoder, tower and the full model (CPU, int8int8 and int4) checked against HF (G-S10q-a, b, c); the served check is pending (S10, 2026-10-10). |
 | GLM-OCR (`glm_ocr`) | CPU / CPU | GPU / GPU | GPU / GPU | GPU / GPU | One image per request (2026-10-09). WebGPU: the tower runs on the GPU by default on a unified-memory Mac (since 2026-11-07; a discrete GPU keeps the CPU tower unless `--vision-device gpu` asks; `--vision-device cpu` keeps it on the CPU). |
 | LFM2.5-VL (`lfm2_vl`) | CPU / CPU | CPU / CPU | CPU / CPU | CPU / CPU | SigLIP2 NaFlex tower, CPU float32; the lfm2 decoder runs on the CPU only (no backend implements its short convolution) (S10, 2026-10-09). |
-| Ministral 3 (`mistral3`) | CPU / CPU | CPU / GPU | CPU / GPU | CPU / CPU | Pixtral tower, CPU float32. Served CPU and Metal agree (G-S10m-d, 2026-10-09); on Metal the image turn's prefill runs on the CPU and is uploaded (the resident prefill declines for this FFN shape), then decodes on the GPU. |
+| Ministral 3 (`mistral3`) | CPU / CPU | CPU / GPU | CPU / GPU | CPU / GPU | Pixtral tower, CPU float32. Served CPU and Metal agree (G-S10m-d, 2026-10-09); on Metal the image turn's prefill runs on the CPU and is uploaded (the resident prefill declines for this FFN shape), then decodes on the GPU. |
 
 <!-- END images-and-audio support table -->
 

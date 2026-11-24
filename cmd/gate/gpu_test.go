@@ -401,7 +401,7 @@ func TestGPU_isolatedGroupIsDerivedFromTheMarker(t *testing.T) {
 	if len(drain) == 0 {
 		t.Fatal("drain derivation found nothing from the repo root — the scan itself is broken")
 	}
-	for _, want := range []string{"TestPrefillLongPrompt", "TestGemma4_26B_cache_B", "TestSpecPagerInteraction"} {
+	for _, want := range []string{"TestPrefillLongPrompt", "TestGemma4_26B_cache_B"} {
 		if !slices.Contains(iso, want) {
 			t.Errorf("fresh-process group %v is missing %s, which carries the marker", iso, want)
 		}
@@ -606,6 +606,21 @@ func TestBuildPTX_towerBaseDoesNotDependOnTheCheckoutDirectory(t *testing.T) {
 		}
 		if string(got) != string(committed) {
 			t.Errorf("tower_base.ptx built from a checkout in %q differs from the committed file (%d bytes, want %d)", name, len(got), len(committed))
+		}
+	}
+}
+
+// A measurement (testgate.RequireMeasure) skips in every gate cell, so a fresh-process marker on one would make the heavy tier
+// start a process only to skip it, and its ISOLATED-RUN token would never print.
+func TestGPU_noMeasurementTakesAFreshProcess(t *testing.T) {
+	t.Chdir(filepath.Join("..", ".."))
+	measure := markedTests("testgate.RequireMeasure(t)")
+	if len(measure) == 0 {
+		t.Fatal("no test calls testgate.RequireMeasure from the repo root: the scan itself is broken")
+	}
+	for _, n := range isolatedTests() {
+		if slices.Contains(measure, n) {
+			t.Errorf("%s calls testgate.RequireMeasure and carries needsFreshProcess: drop the marker", n)
 		}
 	}
 }
