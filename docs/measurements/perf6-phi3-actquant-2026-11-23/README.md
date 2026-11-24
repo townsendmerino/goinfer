@@ -60,3 +60,12 @@ available. Records: `ab/`.
 About 378 µs a token, close to the census's price for the three single-block kernels. **The four conditions:** outputs bit-identical
 (above); no allocation added (only the launch grid changes; the PTX module carries the three test-only `*_serial` kernels, a few KB of
 code); faster on 10 of 10 pairs; it replaces the one-block launch, and the serial forms are a test-only reference, not a path.
+
+## After the A/B: the kernel FMA lint (`TestKernelFMALint`)
+
+The lint read the A/B-tested kernels' grid-index macro (`g += (gridDim.x * blockDim.x) >> 5`) as a bare float multiply-accumulate.
+The same integer expressions now sit in `int` declarations, which the lint exempts. The rebuilt PTX differs from the A/B-tested PTX
+only in where the three kernels compute the loop-invariant grid stride (three prologue instructions moved) and in register numbers: per
+kernel the multiset of instructions with registers renamed is identical (130, 313 and 319 lines), every other kernel is unchanged, and
+the kernel and decode tests above pass on the rebuilt PTX. The A/B reading is carried over on that basis rather than re-measured (the
+lock was booked through 21:25 on 2026-11-23).

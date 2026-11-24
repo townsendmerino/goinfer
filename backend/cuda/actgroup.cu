@@ -75,12 +75,6 @@ __device__ __forceinline__ void quantG32Lane(float v, int g, int nG, int lane, i
     }
 }
 
-// G32_WARPS loops g over the 32-element groups [0, nG), one warp a group, the groups spread over every warp of the grid. The
-// block size must be a multiple of 32; the loop bound is the same for a warp's 32 lanes, as quantG32Lane needs.
-#define G32_WARPS(g, nG, lane) \
-    int lane = threadIdx.x & 31; \
-    for (int g = (blockIdx.x * blockDim.x + threadIdx.x) >> 5; g < (nG); g += (gridDim.x * blockDim.x) >> 5)
-
 // q4kByte is byte k (0..11) of a Q4_K block's 12 scale bytes, held as three words. Selects and
 // shifts only: an indexed byte array here compiled to a per-block local-memory spill (a 48-byte
 // __local_depot) that made gemv_q4k_g32 slower than the int8 GEMV it replaces.
@@ -248,7 +242,10 @@ __global__ void rmsnorm_quant_g32(const float* __restrict__ x, const float* __re
     for (int o = nt >> 1; o > 0; o >>= 1) { if (t < o) red[t] += red[t + o]; __syncthreads(); }
     float rnorm = 1.f / sqrtf(red[0] / H + eps);
     int nG = H / 32;
-    G32_WARPS(g, nG, lane) {
+    int lane = threadIdx.x & 31;
+    int w0 = (blockIdx.x * blockDim.x + threadIdx.x) >> 5; // this warp's index across the grid: one group at a time from here
+    int nw = (gridDim.x * blockDim.x) >> 5;                // the grid's warps; the block size is a multiple of 32
+    for (int g = w0; g < nG; g += nw) {
         int k = 32 * g + lane;
         float gw = addOne ? (1.f + w[k]) : w[k];
         quantG32Lane(x[k] * gw * rnorm, g, nG, lane, aq, aScale);
@@ -258,7 +255,10 @@ __global__ void rmsnorm_quant_g32(const float* __restrict__ x, const float* __re
 // quant_vec_g32: quant_vec with per-32 scales (scale holds 2·N/32 floats), a warp a group, at any grid. No shared memory.
 __global__ void quant_vec_g32(const float* __restrict__ x, int N, int* __restrict__ q, float* __restrict__ scale) {
     int nG = N / 32;
-    G32_WARPS(g, nG, lane) quantG32Lane(x[32 * g + lane], g, nG, lane, q, scale);
+    int lane = threadIdx.x & 31;
+    int w0 = (blockIdx.x * blockDim.x + threadIdx.x) >> 5; // this warp's index across the grid: one group at a time from here
+    int nw = (gridDim.x * blockDim.x) >> 5;                // the grid's warps; the block size is a multiple of 32
+    for (int g = w0; g < nG; g += nw) quantG32Lane(x[32 * g + lane], g, nG, lane, q, scale);
 }
 
 // glu_quant_g32: glu_quant's activation (dscratch[k] = act(g)·u), then per-32 quantization of it, a warp a group, at any grid: each
@@ -267,7 +267,10 @@ __global__ void glu_quant_g32(const float* __restrict__ g, const float* __restri
                               int gOff, int uOff, int I, int act,
                               int* __restrict__ q, float* __restrict__ scale, float* __restrict__ dscratch) {
     int nG = I / 32;
-    G32_WARPS(gr, nG, lane) {
+    int lane = threadIdx.x & 31;
+    int w0 = (blockIdx.x * blockDim.x + threadIdx.x) >> 5; // this warp's index across the grid: one group at a time from here
+    int nw = (gridDim.x * blockDim.x) >> 5;                // the grid's warps; the block size is a multiple of 32
+    for (int gr = w0; gr < nG; gr += nw) {
         int k = 32 * gr + lane;
         float x = g[gOff + k], a;
         if (act == ACT_SILU) {
