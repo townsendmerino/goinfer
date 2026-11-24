@@ -39,11 +39,7 @@ func TestLoadJSONBytes_noCWDSibling_M14(t *testing.T) {
 		`"decoder":{"type":"ByteLevel"},"pre_tokenizer":{"type":"ByteLevel"}}`)
 	// Poison tokenizer_config.json in CWD naming <s> as bos_token.
 	dir := t.TempDir()
-	cwd, _ := os.Getwd()
-	defer os.Chdir(cwd)
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
+	t.Chdir(dir)
 	if err := os.WriteFile(filepath.Join(dir, "tokenizer_config.json"), []byte(`{"bos_token":"<s>"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -276,7 +277,7 @@ func TestWeightsVersionFile(t *testing.T) {
 	for name, b := range map[string][]byte{
 		"bundle magic": append([]byte("XXXXX"), cases["v3"][5:]...),
 		"weights magic": func() []byte {
-			b := append([]byte(nil), cases["v3"]...)
+			b := slices.Clone(cases["v3"])
 			copy(b[bundleBlobOffsetV3:], "XXXXX")
 			return b
 		}(),
