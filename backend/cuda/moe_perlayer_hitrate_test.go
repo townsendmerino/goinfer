@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
 // TestMoEPerLayerHitRate is Lead 4's own "first step":
@@ -181,6 +182,7 @@ func TestKV11Bars(t *testing.T) {
 // VRAM. A cell past the void bars waits and re-runs, listed; a context that does not fit is a reading, but both baseline cells must
 // measure. A timed run: hold the exclusive timing lock.
 func TestKV11TradeCurve(t *testing.T) {
+	testgate.RequireMeasure(t)
 	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
 		t.Skip("GOINFER_HEAVY_TESTS unset: real 26B loads")
 	}
