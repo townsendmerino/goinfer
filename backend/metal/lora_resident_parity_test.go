@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -83,7 +84,7 @@ func TestLoRAResidentParityMetal(t *testing.T) {
 			}
 			last = lr
 		}
-		return append([]float32(nil), last...)
+		return slices.Clone(last)
 	}
 
 	if err := ra.SetAdapter(mRes.ResidentAdapterLayersForTest("a")); err != nil {
@@ -170,7 +171,7 @@ func TestLoRAResidentParityMetal_armedExecutorThenBind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resident forward after bind: %v", err)
 	}
-	got = append([]float32(nil), got...)
+	got = slices.Clone(got)
 
 	want, err := mCPU.PrefillLogitsWithAdapterForTest(context.Background(), []int{tok}, "a")
 	if err != nil {
@@ -284,7 +285,7 @@ func buildLlamaTinyLoRAFixture(t *testing.T) string {
 	itoa := func(i int) string {
 		return string(rune('0' + i))
 	}
-	for l := 0; l < layers; l++ {
+	for l := range layers {
 		add := func(mod string, inDim, outDim, seed int) {
 			at[pfx+itoa(l)+mod+".lora_A.weight"] = loraStTensor{[]int{r, inDim}, fill(r*inDim, seed)}
 			at[pfx+itoa(l)+mod+".lora_B.weight"] = loraStTensor{[]int{outDim, r}, fill(outDim*r, seed+1)}

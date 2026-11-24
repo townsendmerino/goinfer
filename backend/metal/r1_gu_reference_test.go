@@ -3,10 +3,11 @@
 package metal
 
 import (
+	"cmp"
 	"fmt"
 	"math"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -70,7 +71,7 @@ func TestR1_guReference(t *testing.T) {
 		}
 	}
 
-	embed := append([]float32(nil), m.EmbedResidentForTest(tok)...)
+	embed := slices.Clone(m.EmbedResidentForTest(tok))
 	reset := func() {
 		copy(r.x.Floats(), embed)
 		r.setPos(0)
@@ -140,7 +141,7 @@ func TestR1_guReference(t *testing.T) {
 			d := math.Abs(got[i] - ref[i])
 			rs[i] = rowErr{i, d, d / (math.Abs(ref[i]) + 1e-3*am), got[i], ref[i]}
 		}
-		sort.Slice(rs, func(a, b int) bool { return rs[a].rel > rs[b].rel })
+		slices.SortFunc(rs, func(a, b rowErr) int { return cmp.Compare(b.rel, a.rel) })
 		return rs[:n]
 	}
 
@@ -170,7 +171,7 @@ func TestR1_guReference(t *testing.T) {
 		e := r.q.Begin()
 		r.encodeAttention(e, l)
 		e.End()
-		xMid := append([]float32(nil), r.x.Floats()[:H]...) // post-attention residual = FFN input
+		xMid := slices.Clone(r.x.Floats()[:H]) // post-attention residual = FFN input
 		xAmax, xArg := amaxOf(toF64(xMid))
 		gw := L.postNorm.Floats()[:H]
 
@@ -180,8 +181,8 @@ func TestR1_guReference(t *testing.T) {
 		e.DispatchTG(r.pSAf16, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mxF16, r.gu, r.uH)
 		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct)
 		e.End()
-		guF16 := toF64(append([]float32(nil), r.gu.Floats()[:N]...))
-		axHalf := append([]uint16(nil), r.mxF16.U16s()[:H]...)
+		guF16 := toF64(slices.Clone(r.gu.Floats()[:N]))
+		axHalf := slices.Clone(r.mxF16.U16s()[:H])
 		dScF16 := float64(r.dSc.Floats()[0])
 
 		// ---- W4A8 arm (verbatim production dispatches: encodeLayerResidualWith's default FFN branch in model.go), then pSw ----
@@ -190,13 +191,13 @@ func TestR1_guReference(t *testing.T) {
 		e.DispatchTG(r.pSA, (2*r.I)*32, 256, r.H*2, L.guW, L.guS, r.mq, r.mSc, r.gu, r.uH)
 		e.Dispatch(r.pSw, 256, 256, r.gu, r.gu.At(r.I*4), r.dq, r.dSc, r.uI, r.uAct)
 		e.End()
-		guW4A8 := toF64(append([]float32(nil), r.gu.Floats()[:N]...))
-		mq := append([]int8(nil), r.mq.Int8s()[:H]...)
+		guW4A8 := toF64(slices.Clone(r.gu.Floats()[:N]))
+		mq := slices.Clone(r.mq.Int8s()[:H])
 		mSc := float64(r.mSc.Floats()[0])
 		dScW4A8 := float64(r.dSc.Floats()[0])
 
 		// Sanity: r.x must be untouched by the arm dispatches.
-		for i := 0; i < H; i++ {
+		for i := range H {
 			if r.x.Floats()[i] != xMid[i] {
 				t.Fatalf("layer %d: r.x changed during arm dispatches at channel %d", l, i)
 			}
@@ -214,7 +215,7 @@ func TestR1_guReference(t *testing.T) {
 		aQ8 := make([]float64, H) // what the W4A8 kernel actually received (dequantized)
 		var producerMaxRel float64
 		var nZero, nLe1 int
-		for k := 0; k < H; k++ {
+		for k := range H {
 			aRef[k] = float64(xMid[k]) * rms * float64(gw[k])
 			aHalfRB[k] = float64(f16ToF32(axHalf[k]))
 			aHalfCPU[k] = float64(f16ToF32(f32ToF16(float32(aRef[k]))))
@@ -248,16 +249,16 @@ func TestR1_guReference(t *testing.T) {
 			return (words[n*(K/8)+k/8] >> (4 * uint(k%8))) & 0xF
 		}
 		wrow := make([]float64, K)
-		for n := 0; n < N; n++ {
-			for g := 0; g < G; g++ {
+		for n := range N {
+			for g := range G {
 				sc := float64(f16ToF32(scales[n*G+g]))
-				for kk := 0; kk < 32; kk++ {
+				for kk := range 32 {
 					k := g*32 + kk
 					wrow[k] = float64(int(nibAt(n, k))-8) * sc
 				}
 			}
 			var d0, d1, d2 float64
-			for k := 0; k < K; k++ {
+			for k := range K {
 				d0 += wrow[k] * aRef[k]
 				d1 += wrow[k] * aHalfRB[k]
 				d2 += wrow[k] * aQ8[k]
@@ -279,7 +280,7 @@ func TestR1_guReference(t *testing.T) {
 		res.relW4A8Q8, i4 = maxRel(guW4A8, guQ8Ref)
 		// per-row: which arm is closer to guRef
 		var nF16Closer int
-		for n := 0; n < N; n++ {
+		for n := range N {
 			if math.Abs(guF16[n]-guRef[n]) < math.Abs(guW4A8[n]-guRef[n]) {
 				nF16Closer++
 			}
@@ -291,7 +292,7 @@ func TestR1_guReference(t *testing.T) {
 			l, res.cosF16Half, res.relF16Half, i3, res.cosW4A8Q8, res.relW4A8Q8, i4)
 		// maxAbs for the kernel checks too (the record's own unit)
 		var mabsF16, mabsQ8, gAm float64
-		for n := 0; n < N; n++ {
+		for n := range N {
 			mabsF16 = math.Max(mabsF16, math.Abs(guF16[n]-guHalfRef[n]))
 			mabsQ8 = math.Max(mabsQ8, math.Abs(guW4A8[n]-guQ8Ref[n]))
 			gAm = math.Max(gAm, math.Abs(guRef[n]))
@@ -319,14 +320,14 @@ func TestR1_guReference(t *testing.T) {
 		// ---- downstream: h = silu(gate)*up from each arm's gu, and the int8 step pSw chose ----
 		hF16 := make([]float64, I)
 		hW4A8 := make([]float64, I)
-		for j := 0; j < I; j++ {
+		for j := range I {
 			hF16[j] = silu(guF16[j]) * guF16[I+j]
 			hW4A8[j] = silu(guW4A8[j]) * guW4A8[I+j]
 		}
 		res.hAmaxF16, res.hArgF16 = amaxOf(hF16)
 		res.hAmaxW4A8, res.hArgW4A8 = amaxOf(hW4A8)
 		hRef := make([]float64, I)
-		for j := 0; j < I; j++ {
+		for j := range I {
 			hRef[j] = silu(guRef[j]) * guRef[I+j]
 		}
 		hRefAmax, hRefArg := amaxOf(hRef)
@@ -349,11 +350,11 @@ func TestR1_guReference(t *testing.T) {
 	logf("=== REPRO DECOMPOSITION: W4A8 through 0..25 -> x1; then 26..27 on each lane ===")
 	reset()
 	runLayers(0, 26)
-	x1 := append([]float32(nil), r.x.Floats()[:H]...)
+	x1 := slices.Clone(r.x.Floats()[:H])
 	runLayers(26, 27)
-	base26 := append([]float32(nil), r.x.Floats()[:H]...)
+	base26 := slices.Clone(r.x.Floats()[:H])
 	runLayers(27, r.nL)
-	base27 := append([]float32(nil), r.x.Floats()[:H]...)
+	base27 := slices.Clone(r.x.Floats()[:H])
 
 	copy(r.x.Floats(), x1)
 	r.setPos(0)
@@ -362,9 +363,9 @@ func TestR1_guReference(t *testing.T) {
 		t.Fatalf("f16 lane not eligible at 26/27 with the flag on")
 	}
 	runLayers(26, 27)
-	f26 := append([]float32(nil), r.x.Floats()[:H]...)
+	f26 := slices.Clone(r.x.Floats()[:H])
 	runLayers(27, r.nL)
-	f27 := append([]float32(nil), r.x.Floats()[:H]...)
+	f27 := slices.Clone(r.x.Floats()[:H])
 	r.decodeLaneW4F16 = false
 
 	x1Amax, x1Arg := amaxOf(toF64(x1))
@@ -384,7 +385,7 @@ func TestR1_guReference(t *testing.T) {
 		for i := range idx {
 			idx[i] = i
 		}
-		sort.Slice(idx, func(p, q int) bool { return math.Abs(diff[idx[p]]) > math.Abs(diff[idx[q]]) })
+		slices.SortFunc(idx, func(p, q int) int { return cmp.Compare(math.Abs(diff[q]), math.Abs(diff[p])) })
 		logf("%s: cosine=%.8f maxAbs=%.6g ||diff||=%.6g ||w4a8||=%.6g ||f16||=%.6g", name, cos, maxAbs, math.Sqrt(sumSq),
 			math.Sqrt(func() float64 {
 				s := 0.0
@@ -400,7 +401,7 @@ func TestR1_guReference(t *testing.T) {
 				}
 				return s
 			}()))
-		for rank := 0; rank < 10; rank++ {
+		for rank := range 10 {
 			i := idx[rank]
 			logf("%s: top-%2d ch %4d: w4a8=%.4f f16=%.4f diff=%.4f share=%.4f", name, rank+1, i, A[i], B[i], diff[i], diff[i]*diff[i]/sumSq)
 		}
@@ -409,8 +410,8 @@ func TestR1_guReference(t *testing.T) {
 			diff[408]*diff[408]/sumSq, top, diff[top]*diff[top]/sumSq,
 			(diff[idx[0]]*diff[idx[0]]+diff[idx[1]]*diff[idx[1]]+diff[idx[2]]*diff[idx[2]])/sumSq)
 		// exclude top-1 channel
-		A2 := append([]float64(nil), A...)
-		B2 := append([]float64(nil), B...)
+		A2 := slices.Clone(A)
+		B2 := slices.Clone(B)
 		A2[top], B2[top] = 0, 0
 		var maxAbs2 float64
 		for i := range A2 {
@@ -420,8 +421,8 @@ func TestR1_guReference(t *testing.T) {
 		}
 		logf("%s: with top-1 channel (%d) removed: cosine=%.8f maxAbs=%.6g", name, top, cosine(A2, B2), maxAbs2)
 		// exclude channel 408 and any |x|>200 in either arm
-		A3 := append([]float64(nil), A...)
-		B3 := append([]float64(nil), B...)
+		A3 := slices.Clone(A)
+		B3 := slices.Clone(B)
 		var nEx int
 		for i := range A3 {
 			if i == 408 || math.Abs(A3[i]) > 200 || math.Abs(B3[i]) > 200 {

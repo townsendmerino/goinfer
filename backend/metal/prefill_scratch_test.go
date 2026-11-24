@@ -62,7 +62,7 @@ func TestPrefillScratch_identical(t *testing.T) {
 			if err != nil {
 				t.Fatalf("n=%d: %v", n, err)
 			}
-			out[i] = append([]float32(nil), lg...)
+			out[i] = slices.Clone(lg)
 		}
 		for j := range out[0] {
 			if math.Float32bits(out[0][j]) != math.Float32bits(out[1][j]) {
@@ -85,7 +85,7 @@ func TestPrefillScratch_AB(t *testing.T) {
 	Ms := []int{512, 2048}
 	if v := os.Getenv("GOINFER_PSCRATCH_MS"); v != "" {
 		Ms = nil
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			if n, err := strconv.Atoi(strings.TrimSpace(f)); err == nil && n > 0 {
 				Ms = append(Ms, n)
 			}
@@ -118,7 +118,7 @@ func TestPrefillScratch_AB(t *testing.T) {
 				}
 				dt := time.Since(st).Seconds() * 1e3
 				if ref == nil {
-					ref = append([]float32(nil), lg...)
+					ref = slices.Clone(lg)
 				}
 				for j := range ref {
 					if math.Float32bits(ref[j]) != math.Float32bits(lg[j]) {
@@ -176,7 +176,7 @@ func TestPrefillScratch_moeRoutingWrittenFirst(t *testing.T) {
 					t.Fatalf("%s: %v", a.name, err)
 				}
 				if ref == nil {
-					ref = append([]float32(nil), lg...)
+					ref = slices.Clone(lg)
 					continue
 				}
 				for j := range ref {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"slices"
 	"sync"
 	"testing"
 )
@@ -70,7 +71,7 @@ func TestAttentionPrefillSteelMatchesFloat64(t *testing.T) {
 						if err := e.Err(); err != nil {
 							t.Fatalf("%s: dispatch: %v", name, err)
 						}
-						got := append([]uint16(nil), outB.U16s()[:M*qDim]...)
+						got := slices.Clone(outB.U16s()[:M*qDim])
 						recordAttnDigest(t, "attention_prefill_steel", got)
 						d.ReleaseAll()
 
@@ -122,9 +123,7 @@ func steelRef64(qkv, kc, vc []uint16, nH, nKV, M, startPos, window, stride int, 
 	out := make([]float64, M*nH*hd)
 	var wg sync.WaitGroup
 	for h := range nH {
-		wg.Add(1)
-		go func(h int) {
-			defer wg.Done()
+		wg.Go(func() {
 			kvh := h / (nH / nKV)
 			q := make([]float64, hd)
 			sc := make([]float64, 0, startPos+M+1)
@@ -162,7 +161,7 @@ func steelRef64(qkv, kc, vc []uint16, nH, nKV, M, startPos, window, stride int, 
 					o[dd] /= sum
 				}
 			}
-		}(h)
+		})
 	}
 	wg.Wait()
 	return out
@@ -248,7 +247,7 @@ func TestAttentionPrefillSteelDigest(t *testing.T) {
 		if err := e.Err(); err != nil {
 			t.Fatalf("%s: dispatch: %v", k.name, err)
 		}
-		got := append([]uint16(nil), outB.U16s()[:M*qDim]...)
+		got := slices.Clone(outB.U16s()[:M*qDim])
 		recordAttnDigest(t, k.name, got)
 		d.ReleaseAll()
 		g, kf, vf := halvesToF64(got), halvesToF64(kc), halvesToF64(vc)

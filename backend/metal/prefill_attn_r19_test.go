@@ -4,7 +4,7 @@ package metal
 
 import (
 	"math"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 )
@@ -98,7 +98,7 @@ func runR19Phase(t *testing.T, r *resident, M, reps int, hb func(string, ...any)
 		}
 	}
 	var ratios, curMs, proMs []float64
-	for rep := 0; rep < reps; rep++ {
+	for rep := range reps {
 		order := []bool{false, true}
 		if rep%2 == 1 {
 			order = []bool{true, false}
@@ -117,7 +117,7 @@ func runR19Phase(t *testing.T, r *resident, M, reps int, hb func(string, ...any)
 		ratios = append(ratios, cost[true]/cost[false])
 		hb("K=%d R19 rep %d/%d: attention in sequence — fused %.1f ms, steel %.1f ms → %.2fx", M, rep+1, reps, cost[true], cost[false], ratios[rep])
 	}
-	med := func(xs []float64) float64 { v := append([]float64(nil), xs...); sort.Float64s(v); return v[len(v)/2] }
+	med := func(xs []float64) float64 { v := slices.Clone(xs); slices.Sort(v); return v[len(v)/2] }
 	hb("K=%d R19 attention in sequence (median of %d paired reps): fused %.1f ms, steel %.1f ms → %.3fx (per rep %v)",
 		M, reps, med(curMs), med(proMs), med(ratios), ratios)
 	// (4) Burst vs sustained (R19 precondition 2 grades the sustained number): the attention category alone over every
@@ -128,7 +128,7 @@ func runR19Phase(t *testing.T, r *resident, M, reps int, hb func(string, ...any)
 		}
 	}
 	sus, idle := map[bool][]float64{}, map[bool][]float64{}
-	for rep := 0; rep < reps; rep++ {
+	for range reps {
 		for _, arm := range []bool{false, true} {
 			*protoOn = arm
 			gpuMs(only)

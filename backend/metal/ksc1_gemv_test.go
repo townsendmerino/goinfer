@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -146,7 +145,7 @@ func TestKSC1_gemvTiming(t *testing.T) {
 				ms = append(ms, (e.GPUEnd()-e.GPUStart())*1e3/float64(per))
 			}
 		}
-		sort.Float64s(ms)
+		slices.Sort(ms)
 		return ms[len(ms)/2]
 	}
 	{
@@ -246,7 +245,7 @@ func TestKSC1_stepMatchesDecodeKernels(t *testing.T) {
 func replaceNth(t *testing.T, s, old, nw string, n int) string {
 	t.Helper()
 	at := -1
-	for k := 0; k < n; k++ {
+	for range n {
 		i := strings.Index(s[at+1:], old)
 		if i < 0 {
 			t.Fatalf("the plant's target is not in the kernel source (occurrence %d of %q)", n, old)

@@ -108,25 +108,25 @@ func forwardNMatchesSequential(t *testing.T, loadResident func() *metalResident,
 	// 1. Sequential ground truth, its KV cache and recurrent state pre-seeded to startPos.
 	seqRes := loadResident()
 	defer seqRes.Close()
-	for p := 0; p < startPos; p++ {
+	for p := range startPos {
 		if _, err := seqRes.Forward(allEmbs[p], p); err != nil {
 			t.Fatalf("seq pre-seed at %d: %v", p, err)
 		}
 	}
 	seqLogits := make([][]float32, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		pos := startPos + i
 		l, err := seqRes.Forward(allEmbs[pos], pos)
 		if err != nil {
 			t.Fatalf("seq Forward at %d: %v", pos, err)
 		}
-		seqLogits[i] = append([]float32(nil), l...)
+		seqLogits[i] = slices.Clone(l)
 	}
 
 	// 2. Batched single-command-buffer candidate.
 	batchRes := loadResident()
 	defer batchRes.Close()
-	for p := 0; p < startPos; p++ {
+	for p := range startPos {
 		if _, err := batchRes.Forward(allEmbs[p], p); err != nil {
 			t.Fatalf("batch pre-seed at %d: %v", p, err)
 		}
@@ -141,7 +141,7 @@ func forwardNMatchesSequential(t *testing.T, loadResident func() *metalResident,
 
 	// Bit-exact parity for every logit.
 	totalLogits := 0
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if len(batchLogits[i]) != len(seqLogits[i]) {
 			t.Fatalf("row %d length mismatch: batch %d vs seq %d", i, len(batchLogits[i]), len(seqLogits[i]))
 		}
@@ -195,8 +195,7 @@ func BenchmarkForwardN_BatchVsSeq(b *testing.B) {
 		}
 
 		b.Run(fmt.Sprintf("Seq_N%d", n), func(b *testing.B) {
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				for p, emb := range embs {
 					if _, err := batchRes.Forward(emb, p); err != nil {
 						b.Fatalf("seq Forward: %v", err)
@@ -206,8 +205,7 @@ func BenchmarkForwardN_BatchVsSeq(b *testing.B) {
 		})
 
 		b.Run(fmt.Sprintf("Batch_N%d", n), func(b *testing.B) {
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				if _, err := batchRes.ForwardN(embs, 0); err != nil {
 					b.Fatalf("batched ForwardN: %v", err)
 				}

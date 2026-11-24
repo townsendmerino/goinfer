@@ -120,7 +120,7 @@ func TestWeightAlias_closeCycles(t *testing.T) {
 			t.Skipf("vmmap: %v", err)
 		}
 		n := 0
-		for _, l := range strings.Split(string(out), "\n") {
+		for l := range strings.SplitSeq(string(out), "\n") {
 			if strings.Contains(l, giw) {
 				n++
 			}
@@ -209,7 +209,7 @@ func aliasArm(t *testing.T, giw, alias string) (aliasRun, bool) {
 		if err != nil {
 			t.Fatalf("forward[%d] (alias=%s): %v", i, alias, err)
 		}
-		out.logits = append(out.logits, append([]float32(nil), l...))
+		out.logits = append(out.logits, slices.Clone(l))
 	}
 	return out, true
 }

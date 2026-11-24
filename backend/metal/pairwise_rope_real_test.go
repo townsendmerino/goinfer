@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"testing"
 	"time"
 
@@ -57,13 +58,13 @@ func TestPairwiseRoPERealMetal(t *testing.T) {
 			fmt.Fprintf(os.Stderr, "[%s] cpu int4 loaded in %s\n", name, time.Since(t0).Round(time.Second))
 			c := mc.NewCache(nPrompt + nCont)
 			var ref [][]float32
-			toks := append([]int(nil), ids...)
-			for i := 0; i < nPrompt+nCont; i++ {
+			toks := slices.Clone(ids)
+			for i := range nPrompt + nCont {
 				l, err := mc.ForwardForTest(toks[i], c)
 				if err != nil {
 					t.Fatal(err)
 				}
-				ref = append(ref, append([]float32(nil), l...))
+				ref = append(ref, slices.Clone(l))
 				if i >= nPrompt-1 && len(toks) < nPrompt+nCont {
 					toks = append(toks, argmaxF(l))
 				}

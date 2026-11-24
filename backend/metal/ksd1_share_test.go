@@ -136,7 +136,7 @@ func TestKSD1_longCell(t *testing.T) {
 	cc := m.NewCache(np + gen)
 	seq := slices.Clone(ids)
 	cpuL := map[int][]float32{}
-	for i := 0; i < np+gen-1; i++ {
+	for i := range np + gen - 1 {
 		l, err := m.ForwardForTest(seq[i], cc)
 		if err != nil {
 			t.Fatal(err)
