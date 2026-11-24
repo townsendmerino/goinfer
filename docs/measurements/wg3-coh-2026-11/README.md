@@ -30,3 +30,23 @@ the GPU's own residual, but its CPU sublayer outputs are the CPU's own forward, 
 difference as well as that layer's own error; the columns are not isolated per layer. Telling a WebGPU defect that opens
 at layer 12 from int4/int8 rounding amplified at a sensitive token needs a capture that runs the CPU layer on the GPU's
 input. #1255 stays unarmed; this goes to Francis.
+
+## The layer-isolated capture (registered in [registration-isolated.md](registration-isolated.md))
+
+Francis's call (2026-11-24 ~14:30) after outcome 4 above. `TestResidentLayerIsolatedWebGPU` at `ccd10e3e9`, the same
+checkpoint, prompt and context, exclusive lock 2026-11-24 15:02:50-15:03:26 PST. Log:
+[isolated-pos13.log.gz](isolated-pos13.log.gz). Each CPU layer runs on the resident's own input, so each `layer` reading
+is that layer's own error.
+
+**Outcome, by the registration: 2, rounding amplified downstream.** At position 13 every layer's own contribution agrees
+with the CPU to a median relL2 of 1.96e-7, and none is above 2× its baseline over positions 0-12 (the largest ratio is
+0.32×). With the CPU head on the resident's last-layer input, the logits agree to a cosine of 1.000000 at every position.
+The only readings above about 1e-5 anywhere are isolated ones of 1e-3 to 1.6e-2 at scattered (position, layer) pairs: the
+size of one int8 activation code rounding the other way at a tie. Position 13 carries one such reading (layer 18,
+9.3e-4), and so do positions 0-12 (layer 18's baseline is 1.2e-2).
+
+So the resident's layers are the CPU's, layer for layer, to the f32 floor. The 0.860 at position 13 is ordinary per-layer
+rounding (f32 order and the occasional int8 tie) compounded through 32 layers at a token this checkpoint is sensitive
+to. The CPU against itself with ±1-ULP norm noise is lowest at the same position (0.948670), and the first capture's
+2-4× excess from layer 12 on is that compounding seen without the isolation. Per the registration this goes to Francis
+recommending a recorded acceptance of the worst-position miss and arming #1255.
