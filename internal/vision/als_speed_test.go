@@ -3,7 +3,7 @@ package vision
 import (
 	"fmt"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -117,7 +117,7 @@ func TestALS_G0_speed(t *testing.T) {
 		c := e.Cfg
 		grid := [][3]int{{1, 32, 44}}
 		pd := c.InChans * c.TemporalPatchSize * c.PatchSize * c.PatchSize
-		rng := rand.New(rand.NewSource(61))
+		rng := rand.New(rand.NewPCG(61, 0))
 		px := make([]float32, 32*44*pd)
 		for i := range px {
 			px[i] = float32(rng.NormFloat64())

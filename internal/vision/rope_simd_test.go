@@ -4,7 +4,8 @@ package vision
 
 import (
 	"math"
-	"math/rand"
+	"math/rand/v2"
+	"slices"
 	"testing"
 )
 
@@ -26,7 +27,7 @@ func applyRotaryVisionScalar(vec, cos, sin []float32) {
 // actual vector-vs-scalar gap — pure Mul/Sub/Add carries no MulAdd/FMA
 // contraction, so this is not assumed bit-identical, just measured.
 func TestApplyRotaryVision_matchesScalar(t *testing.T) {
-	rng := rand.New(rand.NewSource(31))
+	rng := rand.New(rand.NewPCG(31, 0))
 	var maxDiff float32
 	for _, headDim := range []int{2, 4, 6, 8, 16, 30, 32, 64, 80, 128} {
 		for trial := range 20 {
@@ -39,7 +40,7 @@ func TestApplyRotaryVision_matchesScalar(t *testing.T) {
 				cos[i] = float32(math.Cos(theta))
 				sin[i] = float32(math.Sin(theta))
 			}
-			vecB := append([]float32(nil), vecA...)
+			vecB := slices.Clone(vecA)
 
 			applyRotaryVisionScalar(vecA, cos, sin)
 			applyRotaryVision(vecB, cos, sin)
