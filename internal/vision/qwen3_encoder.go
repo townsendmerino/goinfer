@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
@@ -262,7 +263,7 @@ func LoadQwen3VisionEncoderFrom(cfg Qwen3EncoderConfig, src TensorSource, quant 
 		if err != nil {
 			return nil
 		}
-		return append([]float32(nil), v...)
+		return slices.Clone(v)
 	}
 	hidden, inter := cfg.HiddenSize, cfg.IntermediateSize
 	_, owned := src.(ownedSource)
@@ -451,10 +452,7 @@ func axisTaps(index, size, side int, taps *[2]int, w *[2]float32) {
 	src := float32(float32(index)*float32(side-1)) / float32(den)
 	fl := float32(math.Floor(float64(src)))
 	for o := range 2 {
-		t := max(int(fl)+o, 0)
-		if t > side-1 {
-			t = side - 1
-		}
+		t := min(max(int(fl)+o, 0), side-1)
 		taps[o] = t
 		d := float32(src - fl - float32(o))
 		if d < 0 {

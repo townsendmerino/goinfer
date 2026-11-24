@@ -2,7 +2,7 @@ package vision
 
 import (
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"slices"
 	"testing"
@@ -50,7 +50,7 @@ func TestQwen3Export_recomposesForward(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rng := rand.New(rand.NewSource(7))
+	rng := rand.New(rand.NewPCG(7, 0))
 	randomise(rng, e.posEmbed, e.mergerLNw)
 	for _, b := range w.Blocks {
 		randomise(rng, b.Norm1W, b.Norm1B, b.Norm2W, b.Norm2B)
@@ -123,7 +123,7 @@ func TestGlmOcrExport_recomposesForward(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rng := rand.New(rand.NewSource(11))
+	rng := rand.New(rand.NewPCG(11, 0))
 	randomise(rng, e.postNormW, e.mLNw)
 	for _, b := range w.Blocks {
 		randomise(rng, b.Norm1W, b.Norm2W, b.QNorm, b.KNorm)

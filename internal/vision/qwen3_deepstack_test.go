@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -83,7 +84,7 @@ func TestQwen3Deepstack_tiny(t *testing.T) {
 	// The planted defect: each DeepStack merger without its post-shuffle LayerNorm (fc1 -> GELU -> fc2 straight on the
 	// shuffled rows), from the same tapped block outputs.
 	h := map[int][]float32{}
-	if _, err := e.forwardBlocks(g.PixelValues, g.Grids, func(li int, x []float32) { h[li] = append([]float32(nil), x...) }); err != nil {
+	if _, err := e.forwardBlocks(g.PixelValues, g.Grids, func(li int, x []float32) { h[li] = slices.Clone(x) }); err != nil {
 		t.Fatal(err)
 	}
 	c := e.Cfg
@@ -194,7 +195,7 @@ func TestQwen3VisionEncoder_realDeepstack(t *testing.T) {
 		}
 		stages = append(stages, stage{"embed", emb, g.Hidden})
 		blocks := map[int][]float32{}
-		if _, err := e.forwardBlocks(px, grid, func(li int, h []float32) { blocks[li] = append([]float32(nil), h...) }); err != nil {
+		if _, err := e.forwardBlocks(px, grid, func(li int, h []float32) { blocks[li] = slices.Clone(h) }); err != nil {
 			t.Fatal(err)
 		}
 		for L := range g.Depth {
@@ -253,7 +254,7 @@ func TestQwen3Deepstack_exportRecomposes(t *testing.T) {
 		t.Fatal(err)
 	}
 	taps := map[int][]float32{}
-	last, err := e.forwardBlocks(px, grid, func(li int, h []float32) { taps[li] = append([]float32(nil), h...) })
+	last, err := e.forwardBlocks(px, grid, func(li int, h []float32) { taps[li] = slices.Clone(h) })
 	if err != nil {
 		t.Fatal(err)
 	}

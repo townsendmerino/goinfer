@@ -7,7 +7,7 @@ import (
 	"image/jpeg"
 	"image/png"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"testing"
 )
 
@@ -15,14 +15,14 @@ import (
 // work (smooth gradients plus noise, not a flat field a JPEG would compress to
 // nothing).
 func benchImage(w, h int, asPNG bool) []byte {
-	rng := rand.New(rand.NewSource(int64(w * h)))
+	rng := rand.New(rand.NewPCG(uint64(w*h), 0))
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
 	for y := range h {
 		for x := range w {
 			img.SetRGBA(x, y, color.RGBA{
-				R: uint8((x*255/w + rng.Intn(24)) % 256),
-				G: uint8((y*255/h + rng.Intn(24)) % 256),
-				B: uint8(((x+y)*255/(w+h) + rng.Intn(24)) % 256),
+				R: uint8((x*255/w + rng.IntN(24)) % 256),
+				G: uint8((y*255/h + rng.IntN(24)) % 256),
+				B: uint8(((x+y)*255/(w+h) + rng.IntN(24)) % 256),
 				A: 255,
 			})
 		}

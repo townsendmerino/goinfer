@@ -1,7 +1,7 @@
 package vision
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"testing"
 
@@ -24,7 +24,7 @@ func TestSiglipExport_recomposesForward(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rng := rand.New(rand.NewSource(13))
+	rng := rand.New(rand.NewPCG(13, 0))
 	randomise(rng, e.postLNw, e.postLNb)
 	for _, b := range w.Blocks {
 		randomise(rng, b.LN1W, b.LN1B, b.LN2W, b.LN2B)
