@@ -6,7 +6,7 @@ import (
 	"image"
 	"io/fs"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"testing"
 )
@@ -139,30 +139,31 @@ type genericImage struct{ image.Image }
 // that leaving it out was the right call, not an oversight.
 func TestQwenExtractRGB_fastPathsMatchGeneric(t *testing.T) {
 	const h, w = 5, 7
-	rng := rand.New(rand.NewSource(1))
+	ch := rand.NewChaCha8([32]byte{1})
+	rng := rand.New(ch)
 
 	mkYCbCr := func() *image.YCbCr {
 		im := image.NewYCbCr(image.Rect(0, 0, w, h), image.YCbCrSubsampleRatio420)
 		for i := range im.Y {
-			im.Y[i] = uint8(rng.Intn(256))
+			im.Y[i] = uint8(rng.IntN(256))
 		}
 		for i := range im.Cb {
-			im.Cb[i] = uint8(rng.Intn(256))
-			im.Cr[i] = uint8(rng.Intn(256))
+			im.Cb[i] = uint8(rng.IntN(256))
+			im.Cr[i] = uint8(rng.IntN(256))
 		}
 		return im
 	}
 	mkRGBA := func() *image.RGBA {
 		im := image.NewRGBA(image.Rect(0, 0, w, h))
-		rng.Read(im.Pix)
+		ch.Read(im.Pix)
 		return im
 	}
 	mkNRGBAWithAlpha := func() *image.NRGBA {
 		im := image.NewNRGBA(image.Rect(0, 0, w, h))
-		rng.Read(im.Pix)
+		ch.Read(im.Pix)
 		for y := range h { // force a genuinely non-255 alpha so premultiplication actually matters
 			for x := range w {
-				im.Pix[im.PixOffset(x, y)+3] = uint8(rng.Intn(255))
+				im.Pix[im.PixOffset(x, y)+3] = uint8(rng.IntN(255))
 			}
 		}
 		return im

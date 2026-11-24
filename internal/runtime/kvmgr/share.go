@@ -117,7 +117,7 @@ func (a *Slots) Copied(src, dst, start, rows int) {
 	}
 	a.floors[dst] = max(a.floors[dst], a.floors[src])
 	rows = min(rows, len(s.hashes)*BlockRows)
-	t := &Seq{m: a.m, root: s.root, rootHash: s.rootHash, slot: int32(dst), tokens: append([]int(nil), s.tokens[:rows]...),
+	t := &Seq{m: a.m, root: s.root, rootHash: s.rootHash, slot: int32(dst), tokens: slices.Clone(s.tokens[:rows]),
 		classes: clipClasses(s.classes, rows)}
 	for _, sp := range s.images {
 		if sp.end() <= rows {
@@ -148,7 +148,7 @@ func (a *Slots) Restored(dst int, root Root, tokens []int, classes []ClassRun) {
 	if rows <= 0 {
 		return
 	}
-	t := &Seq{m: a.m, root: root, rootHash: rootHash(root, a.m.parts), slot: int32(dst), tokens: append([]int(nil), tokens[:rows]...),
+	t := &Seq{m: a.m, root: root, rootHash: rootHash(root, a.m.parts), slot: int32(dst), tokens: slices.Clone(tokens[:rows]),
 		classes: clipClasses(classes, rows)}
 	for i := 0; i*BlockRows < rows; i++ {
 		id, _ := a.m.alloc(int32(dst), int32(i)) // an unlimited manager always has a block
@@ -167,7 +167,7 @@ func (a *Slots) Restored(dst int, root Root, tokens []int, classes []ClassRun) {
 // generation.
 func (a *Slots) Prefilled(slot int, root Root, prompt []int, images []ImageSpan, cm ClassMap) {
 	p := a.pend[slot]
-	a.commit(slot, root, append([]int(nil), prompt...), append([]ImageSpan(nil), images...), len(prompt), cm)
+	a.commit(slot, root, slices.Clone(prompt), slices.Clone(images), len(prompt), cm)
 	a.pend[slot] = p // the generation's Commit reads it again
 	if a.seqs[slot] != nil {
 		a.live[slot] = true

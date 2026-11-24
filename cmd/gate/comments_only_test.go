@@ -206,11 +206,7 @@ func coRepo(t *testing.T) string {
 	write("README.md", "hello\n")
 	git("add", "go.mod", "p.go", "docs/a.md", "README.md")
 	git("commit", "-q", "-m", "base")
-	wd, _ := os.Getwd()
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(wd) })
+	t.Chdir(dir)
 	return dir
 }
 

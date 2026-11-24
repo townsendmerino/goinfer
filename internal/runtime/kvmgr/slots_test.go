@@ -2,7 +2,7 @@ package kvmgr
 
 import (
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"slices"
 	"testing"
 )
@@ -75,28 +75,28 @@ func TestOracle_slots(t *testing.T) {
 	cm := ClassMap{Floor: 96, MinRows: 16}
 	for seed := int64(1); seed <= 8; seed++ {
 		t.Run(fmt.Sprintf("seed%d", seed), func(t *testing.T) {
-			rng := rand.New(rand.NewSource(seed))
+			rng := rand.New(rand.NewPCG(uint64(seed), 0))
 			recurrent := seed%4 == 0
-			a := NewSlots(1 + rng.Intn(4))
+			a := NewSlots(1 + rng.IntN(4))
 			model := make([]slotModel, a.Count())
 			var history [][]int
 			randTokens := func(n int) []int {
 				out := make([]int, n)
 				for i := range out {
-					out[i] = rng.Intn(4)
+					out[i] = rng.IntN(4)
 				}
 				return out
 			}
 			request := func() Request {
-				r := Request{Root: roots[rng.Intn(len(roots))]}
-				if len(history) > 0 && rng.Intn(4) != 0 {
-					h := history[rng.Intn(len(history))]
-					r.Tokens = append(r.Tokens, h[:rng.Intn(len(h)+1)]...)
+				r := Request{Root: roots[rng.IntN(len(roots))]}
+				if len(history) > 0 && rng.IntN(4) != 0 {
+					h := history[rng.IntN(len(history))]
+					r.Tokens = append(r.Tokens, h[:rng.IntN(len(h)+1)]...)
 				}
-				r.Tokens = append(r.Tokens, randTokens(rng.Intn(3*BlockRows))...)
-				if n := len(r.Tokens); n > 4 && rng.Intn(3) == 0 {
-					at := rng.Intn(n - 3)
-					r.Images = []ImageSpan{{Start: at, Len: 1 + rng.Intn(min(n-at, 40)), Hash: uint64(rng.Intn(3))}}
+				r.Tokens = append(r.Tokens, randTokens(rng.IntN(3*BlockRows))...)
+				if n := len(r.Tokens); n > 4 && rng.IntN(3) == 0 {
+					at := rng.IntN(n - 3)
+					r.Images = []ImageSpan{{Start: at, Len: 1 + rng.IntN(min(n-at, 40)), Hash: uint64(rng.IntN(3))}}
 				}
 				return r
 			}
@@ -141,7 +141,7 @@ func TestOracle_slots(t *testing.T) {
 				}
 			}
 			for op := range 4000 {
-				switch k := rng.Intn(10); {
+				switch k := rng.IntN(10); {
 				case k < 6: // a generation: score every slot, pick, bind, forget, and usually commit
 					req := request()
 					scores, lens, uses := make([]int, a.Count()), make([]int, a.Count()), make([]uint64, a.Count())
@@ -156,7 +156,7 @@ func TestOracle_slots(t *testing.T) {
 					a.SetBound(pick)
 					a.Touch(pick)
 					reuse := cm.DeclineShortLead(len(req.Tokens), scores[pick])
-					announced := rng.Intn(5) != 0
+					announced := rng.IntN(5) != 0
 					if announced {
 						a.Acquired(pick, reuse, req.Tokens)
 					} else {
@@ -165,10 +165,10 @@ func TestOracle_slots(t *testing.T) {
 					prev := model[pick]
 					a.Forget(pick)
 					model[pick] = slotModel{}
-					if rng.Intn(6) == 0 || len(req.Tokens) == 0 {
+					if rng.IntN(6) == 0 || len(req.Tokens) == 0 {
 						break // a cancelled generation: the slot stays forgotten
 					}
-					gen := randTokens(rng.Intn(BlockRows))
+					gen := randTokens(rng.IntN(BlockRows))
 					all := append(slices.Clone(req.Tokens), gen...)
 					imgs := slices.Clone(req.Images) // a span with hash 0 is held too: it claims nothing and must never match
 					a.Commit(pick, req.Root, all, imgs, len(req.Tokens), cm)
@@ -218,7 +218,7 @@ func TestOracle_slots(t *testing.T) {
 					a.Forget(a.Bound())
 					model[a.Bound()] = slotModel{}
 				default: // the slot count changes: the bound slot becomes slot 0, the rest are emptied
-					n := 1 + rng.Intn(4)
+					n := 1 + rng.IntN(4)
 					if n != a.Count() {
 						keep := model[a.Bound()]
 						a.Resize(n)
@@ -266,18 +266,17 @@ func TestPickSlot(t *testing.T) {
 
 // A request for 20,000 tokens (Claude Code's first request) and its completion: what the manager adds to a request.
 func benchRequest(b *testing.B, n int) {
-	rng := rand.New(rand.NewSource(1))
+	rng := rand.New(rand.NewPCG(1, 0))
 	prompt := make([]int, n)
 	for i := range prompt {
-		prompt[i] = rng.Intn(150000)
+		prompt[i] = rng.IntN(150000)
 	}
 	gen := prompt[:min(500, n)]
 	a := NewSlots(2)
 	root := Root{Model: "qwen2.5-7b/int4/metal", Precision: "f16"}
 	cm := ClassMap{Floor: 512, MinRows: 16}
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		req := Request{Root: root, Tokens: prompt}
 		scores, lens, uses := []int{a.Score(0, req, false), a.Score(1, req, false)}, []int{a.Len(0), a.Len(1)}, []uint64{a.Use(0), a.Use(1)}
 		pick := PickSlot(scores, lens, uses, nil)

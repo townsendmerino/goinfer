@@ -2,7 +2,7 @@ package kvmgr
 
 import (
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"slices"
 	"testing"
 )
@@ -193,8 +193,8 @@ func TestOracle_share(t *testing.T) {
 	for _, cm := range []ClassMap{metalClasses, {Floor: 96, MinRows: 16}} {
 		for seed := int64(1); seed <= 6; seed++ {
 			t.Run(fmt.Sprintf("floor%d/seed%d", cm.Floor, seed), func(t *testing.T) {
-				rng := rand.New(rand.NewSource(seed))
-				a := NewSlots(2 + rng.Intn(3))
+				rng := rand.New(rand.NewPCG(uint64(seed), 0))
+				a := NewSlots(2 + rng.IntN(3))
 				type rec struct {
 					root    Root
 					tokens  []int
@@ -203,9 +203,9 @@ func TestOracle_share(t *testing.T) {
 				model := make([]rec, a.Count())
 				pre := seqOf(3*BlockRows+5, int(seed))
 				prompt := func() []int {
-					p := slices.Clone(pre[:rng.Intn(len(pre)+1)])
-					for range rng.Intn(2 * BlockRows) {
-						p = append(p, rng.Intn(3))
+					p := slices.Clone(pre[:rng.IntN(len(pre)+1)])
+					for range rng.IntN(2 * BlockRows) {
+						p = append(p, rng.IntN(3))
 					}
 					if len(p) == 0 {
 						p = append(p, 1)
@@ -218,11 +218,11 @@ func TestOracle_share(t *testing.T) {
 					}
 				}
 				for op := range 3000 {
-					sl := rng.Intn(a.Count())
-					switch k := rng.Intn(10); {
+					sl := rng.IntN(a.Count())
+					switch k := rng.IntN(10); {
 					case k < 4: // a cold generation, completed
-						p, root := prompt(), roots[rng.Intn(2)]
-						gen := seqOf(rng.Intn(BlockRows), op)
+						p, root := prompt(), roots[rng.IntN(2)]
+						gen := seqOf(rng.IntN(BlockRows), op)
 						commitPrompt(a, sl, root, p, gen, cm)
 						all := append(slices.Clone(p), gen...)
 						r := rec{root: root, tokens: all, classes: make([]Class, len(all))}
@@ -230,7 +230,7 @@ func TestOracle_share(t *testing.T) {
 						fill(ClassExact, len(p), len(all), r.classes)
 						model[sl] = r
 					case k < 6: // a prompt prefilled, its generation still running
-						p, root := prompt(), roots[rng.Intn(2)]
+						p, root := prompt(), roots[rng.IntN(2)]
 						a.Acquired(sl, 0, p)
 						a.Forget(sl)
 						a.Prefilled(sl, root, p, nil, cm)
@@ -238,11 +238,11 @@ func TestOracle_share(t *testing.T) {
 						fill(cm.Pass(len(p), len(p)), 0, len(p), r.classes)
 						model[sl] = r
 					case k < 9: // a copy of another slot's published prefix
-						src := rng.Intn(a.Count())
+						src := rng.IntN(a.Count())
 						if src == sl || a.Seq(src) == nil || a.Seq(src).Published() == 0 {
 							continue
 						}
-						rows := (1 + rng.Intn(a.Seq(src).Published())) * BlockRows
+						rows := (1 + rng.IntN(a.Seq(src).Published())) * BlockRows
 						a.Copied(src, sl, 0, rows)
 						model[sl] = rec{root: model[src].root, tokens: slices.Clone(model[src].tokens[:rows]), classes: slices.Clone(model[src].classes[:rows])}
 					default:
@@ -275,7 +275,7 @@ func TestOracle_share(t *testing.T) {
 					if inIndex != published || a.Manager().Cached() != published {
 						t.Fatalf("op %d: %d published; the index holds %d, the cache %d", op, published, inIndex, a.Manager().Cached())
 					}
-					req, root := prompt(), roots[rng.Intn(2)]
+					req, root := prompt(), roots[rng.IntN(2)]
 					cold := cm.ColdClasses(len(req))
 					got := a.Hits(Request{Root: root, Tokens: req}, cold)
 					for s := 0; s < a.Count(); s++ {

@@ -94,8 +94,7 @@ func TestMinPCandidates_matchesSerialScan(t *testing.T) {
 
 func benchTopKByLogitParallel(b *testing.B, n, k int) {
 	logits := benchRandLogits(n, 2)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		topKByLogitParallel(logits, k)
 	}
 }
@@ -114,8 +113,7 @@ func benchMinPCandidates(b *testing.B, n int) {
 	logits := benchRandLogits(n, 3)
 	thr := float64(maxScanSerial(logits)) - 4
 	cand := make([]int, n)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		cand = minPCandidates(logits, thr, cand)
 	}
 }

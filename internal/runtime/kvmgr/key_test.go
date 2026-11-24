@@ -2,6 +2,7 @@ package kvmgr
 
 import (
 	"os"
+	"slices"
 	"testing"
 )
 
@@ -184,7 +185,7 @@ func TestWrongHit_unknownClass(t *testing.T) {
 	} {
 		m := New(0)
 		first, _ := m.Admit(root, nil, nil, nil)
-		first.tokens = append([]int(nil), tokens...)
+		first.tokens = slices.Clone(tokens)
 		first.classes = tc.stored
 		for i := 0; i*BlockRows < len(tokens); i++ {
 			id, _ := m.alloc(-1, int32(i))
@@ -219,10 +220,10 @@ func TestCommit_unalignedFastPassOnAWindowedModel(t *testing.T) {
 		{"windowed, an exact-class prompt at an odd start stays exact", ClassMap{Windowed: true}, 100, ClassExact},
 	} {
 		a := NewSlots(1)
-		a.Commit(0, root, append([]int(nil), prompt[:tc.reuse]...), nil, tc.reuse, ClassMap{}) // an earlier turn, no producer named
+		a.Commit(0, root, slices.Clone(prompt[:tc.reuse]), nil, tc.reuse, ClassMap{}) // an earlier turn, no producer named
 		a.Acquired(0, tc.reuse, prompt)
 		a.Forget(0)
-		a.Commit(0, root, append([]int(nil), prompt...), nil, n, tc.cm)
+		a.Commit(0, root, slices.Clone(prompt), nil, n, tc.cm)
 		if got := classAt(a.Seq(0).Classes(), n-1); got != tc.wantTail {
 			t.Errorf("%s: the prefilled rows are class %d, want %d", tc.name, got, tc.wantTail)
 		}
