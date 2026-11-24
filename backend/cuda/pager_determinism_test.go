@@ -134,7 +134,12 @@ func runDeterminismArm(t *testing.T, m *decoder.Model, r *cudaResident, tk *toke
 			// supposedly stateless Generate, or the prefill is skipped for another reason. The position count
 			// distinguishes that from a sampling or stop-token explanation, which would leave prefill untouched.
 			hits, misses := r.CacheStatsForTest()
-			st, _ := r.PagerStageStatsForTest()
+			st, di := r.PagerStageStatsForTest()
+			// The router stages topK distinct experts per routed layer and position, so distinct/stage reads topK; off by more
+			// than 2% means the pager's counters, which every pager reading rests on, are wrong.
+			if d := float64(di) / float64(max(1, st)); st == 0 || d < 0.98*float64(r.topK) || d > 1.02*float64(r.topK) {
+				t.Errorf("%.40s… run %d: %d stages at %.4f distinct experts per stage, want topK %d within 2%%", text, run, st, d, r.topK)
+			}
 			hb("%.40s… run %d: %d tok | %d stages (~%d positions) | hit %.1f%%",
 				text, run, len(got), st, int(st)/max(1, nMoELayers(r)),
 				100*float64(hits)/float64(max(1, int(hits+misses))))

@@ -37,7 +37,7 @@ func TestResidentMemGuard(t *testing.T) {
 		ram  uint64
 		want bool
 	}{
-		// The measured failure behind residentMemFraction: gpt-oss-20b's weights on a 16 GB MacBook. It must be refused.
+		// The measured failure behind metalStaticCeiling's share: gpt-oss-20b's weights on a 16 GB MacBook. It must be refused.
 		{"gptoss20b_on_16gb", 11280 * gb / 1000, 16 * uint64(gb), false},
 		// Ordinary models on the same machine (qwen2.5-coder 0.5B and 1.5B int4) must still go resident; a guard that refused these would
 		// be worse than none.
@@ -62,7 +62,7 @@ func TestResidentMemGuard(t *testing.T) {
 	}
 }
 
-// TestMetalMemoryCeiling_takesTheStricterBound pins that the combined ceiling equals the static ram*residentMemFraction figure
+// TestMetalMemoryCeiling_takesTheStricterBound pins that the combined ceiling equals the static metalStaticCeiling figure
 // whenever the live probe is unknown or looser, and the live figure whenever that is tighter, never wider: a live figure allowed to
 // widen the ceiling would reopen the darwin-UBC "guard that inverts under pressure" failure metalMemoryCeiling's doc comment
 // explains.

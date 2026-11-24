@@ -12,7 +12,7 @@
   "programs": [
     "testdata/glm-ocr-tiny"
   ],
-  "deps_hash": "sha256:caeed70176779a534e6ebd3e36cab768db72f253829b28d9772bf10e12c2be68",
+  "deps_hash": "sha256:20643b782cf80ce941e284472fadfeb7a49db9160b4eb5e2074348a05e5a2107",
   "status": "experimental",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

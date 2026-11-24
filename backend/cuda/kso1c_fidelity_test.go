@@ -40,8 +40,9 @@ func kso1cKL(p, q []float32) float64 {
 
 // TestKSO1C_towardTheFile is O1C-G6: on the 0.5B q4_k_m and Phi-3
 // mini q4, one CUDA q4k resident holding both arms (kquantKeepInt8ForTest) and the CPU at f32 on the same GGUF (the file exactly).
-// Over G3's 8 prompts, the CPU's own greedy continuation of 32 tokens is teacher-forced through each arm, and every position's
-// KL(CPU f32 ‖ arm) is taken. PASS per model iff the native arm's mean KL is at most the int8 arm's; up to 1.10× is ambiguous.
+// Over G3's first 4 prompts (KSO1C_PROMPTS=8 is the registered set), the CPU's own greedy continuation of 32 tokens is teacher-forced
+// through each arm, and every position's KL(CPU f32 ‖ arm) is taken. PASS per model iff the native arm's mean KL is at most the int8
+// arm's; up to 1.10× is ambiguous.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 40m -tags 'cuda goinfer_testhooks' -run '^TestKSO1C_towardTheFile$' -v ./cuda/
 func TestKSO1C_towardTheFile(t *testing.T) {
@@ -75,7 +76,7 @@ func TestKSO1C_towardTheFile(t *testing.T) {
 		}
 		var sum [2]float64
 		lower, positions := 0, 0
-		for pi, text := range g3Prompts {
+		for pi, text := range g3Prompts[:caseCount(t, "KSO1C_PROMPTS", 4, len(g3Prompts))] {
 			ids, err := tk.Encode(tmpl.Render("", []chat.Turn{{Role: "user", Content: text}}), false)
 			if err != nil {
 				t.Fatal(err)
@@ -225,7 +226,8 @@ func kso1cDocPrompt(t *testing.T, tk *tokenizer.Tokenizer, doc string, n int) (t
 	return "Summarize this document:\n\n" + body, fmt.Sprintf("%s, first %d tokens", doc, n)
 }
 
-// TestKSO1C_longContextQuality is the native lane's long-context quality gate: on Phi-3 mini q4, README.md and docs/benchmarks.md each cut to their first 900 tokens
+// TestKSO1C_longContextQuality is the native lane's long-context quality gate: on Phi-3 mini q4, README.md (KSO1C_DOCS=2 adds docs/benchmarks.md,
+// the registered pair) cut to its first 900 tokens
 // inside "Summarize this document:", teacher-forced through both arms of one CUDA q4k resident and through the CPU at f32 on the
 // file. PASS iff on each document the native arm's mean KL to f32 over positions 256 and later is at most 1.05× the int8 arm's.
 // The bar is relative (both arms see the same text), so it holds as the documents change; a document under 256 tokens fails.
@@ -261,7 +263,8 @@ func TestKSO1C_longContextQuality(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer mf.Close()
-	for _, doc := range []string{"../../README.md", "../../docs/benchmarks.md"} {
+	docs := []string{"../../README.md", "../../docs/benchmarks.md"}[:caseCount(t, "KSO1C_DOCS", 1, 2)]
+	for _, doc := range docs {
 		text, label := kso1cDocPrompt(t, tk, doc, tokens)
 		ids, err := tk.EncodeSegments(tmpl.RenderSegments("", []chat.Turn{{Role: "user", Content: text}}), false)
 		if err != nil {

@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -234,11 +235,12 @@ func TestGridVisionCUDA_scratchDeterminismClose(t *testing.T) {
 
 // TestGridVisionCUDA_real is G-S2b on the real towers (~/models/qwen3.5-0.8b, ~/models/glm-ocr; never the archive), through serve's own preprocessing and caps: the
 // four images F2a uses for both towers, plus GLM-OCR's three O3 documents. Every merged token at cosine >= 0.9999 against aikit's CPU Forward; a worst token in
-// 0.999-0.9999 is ambiguous (parked). Times are exploratory. Heavy: GOINFER_HEAVY_TESTS=1.
+// 0.999-0.9999 is ambiguous (parked). Times are exploratory. Heavy: GOINFER_HEAVY_TESTS=1. By default each family runs the first two images, one square and
+// one tall; GOINFER_GRID_IMAGES=5 is the registered set.
 func TestGridVisionCUDA_real(t *testing.T) {
 	testgate.RequireHeavy(t)
 	home, _ := os.UserHomeDir()
-	images := []string{"gemma3_preprocess_image.png", "qwen25vl_preprocess_image.png", "glm_ocr/formula.png", "glm_ocr/table.png"}
+	images := []string{"gemma3_preprocess_image.png", "glm_ocr/formula.png", "qwen25vl_preprocess_image.png", "glm_ocr/table.png"}
 	type fam struct {
 		name, dir string
 		extra     []string
@@ -297,7 +299,8 @@ func TestGridVisionCUDA_real(t *testing.T) {
 			}
 			pp, cpu, dev, out, closeFn := f.run(t, f.dir)
 			defer closeFn()
-			for _, img := range append(append([]string(nil), images...), f.extra...) {
+			all := append(append([]string(nil), images...), f.extra...)
+			for _, img := range all[:min(caseCount(t, "GOINFER_GRID_IMAGES", 2, 5), len(all))] {
 				data, err := os.ReadFile(filepath.Join("../../testdata", img))
 				if err != nil {
 					t.Fatal(err)
@@ -350,4 +353,19 @@ func TestGridVisionCUDA_fusedAttentionKernelDefects(t *testing.T) {
 			t.Errorf("kernel defect (%d) %s left the tiny GLM-OCR tower at %.9f: the fixture cannot see it", d, name, w)
 		}
 	}
+}
+
+// caseCount is how many of a heavy test's cases run: def, or the value of the variable env, which must be 1 to hi. A gate
+// that shrank to fewer cases than it registered names its variable, so the registered set still runs on request.
+func caseCount(t *testing.T, env string, def, hi int) int {
+	t.Helper()
+	v := os.Getenv(env)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 || n > hi {
+		t.Fatalf("%s=%q: want 1 to %d", env, v, hi)
+	}
+	return n
 }

@@ -65,34 +65,24 @@ type Model struct {
 	// cpuBatch: the batched CPU decode's coordinator (cpu_batch.go) — several CPU generations' decode tokens joined into one
 	// batched forward. nil unless EnableCPUBatch enabled it; Options.CPUBatchDecode chooses when it may.
 	cpuBatch *cpuBatcher
-	// resIDs is the token sequence currently committed to the resident positional KV, or nil
-	// when its contents are unknown. Guarded by the same resBusy claim that serialises writes
-	// to that cache; see resident_reuse.go for why nil is the safe default.
-	resIDs     []int
-	resIDsLora *loraRuntime // the adapter that built resIDs' KV, nil = base (resident_reuse.go)
-	// resImgBlocks records every image block committed within resIDs (image-aware prefix reuse, docs/multimodal.md)
-	// — nil in the overwhelming common case (no image ever touched this resident KV). Cleared
-	// together with resIDs by residentForgetIDs, always; see resident_reuse.go.
-	resImgBlocks []residentImageBlock
 	// resCkptPrompt is the prompt whose end the resident's recurrent checkpoint holds, saved by the running generation and
 	// recorded on its sequence by the commit (residentCheckpointSave, residentCommitIDs); nil otherwise.
 	resCkptPrompt []int
 	// opts is the Options the model was loaded with: the accessors for each load option read it, and ResolveKV reads it for the
 	// precision each cache delivers (KVPrecisionReport).
 	opts Options
-	// resDrafterSynced identifies which *BlockSpec's own drafter context is in sync with resIDs; nil means no drafter context is
-	// trustworthy for reuse. resIDs alone is not enough: a plain Generate or n-gram-speculative turn can commit resIDs without
-	// touching a block drafter's context, so the token prefix can match while the drafter's state does not reflect it. Cleared
-	// by residentForgetIDs (every resident write invalidates it) and set only by BlockSpec.generate's fully-completed exit, the
-	// one path that keeps resIDs and the drafter's context advancing together.
+	// resDrafterSynced identifies which *BlockSpec's own drafter context is in sync with the bound slot's sequence; nil means no
+	// drafter context is trustworthy for reuse. The sequence alone is not enough: a plain Generate or n-gram-speculative turn can
+	// commit one without touching a block drafter's context, so the token prefix can match while the drafter's state does not
+	// reflect it. Cleared by residentForgetIDs (every resident write invalidates it) and set only by BlockSpec.generate's
+	// fully-completed exit, the one path that keeps the sequence and the drafter's context advancing together.
 	resDrafterSynced *BlockSpec
 	// kv is the KV manager over the resident's slots (internal/kvmgr, resident_reuse.go): one sequence per slot, the
-	// slot a prompt takes, what it may reuse, and the index of published blocks. nil until first used. The bound
-	// slot's record is mirrored in the resIDs fields above. kvLora is the adapter runtime each slot's sequence was
-	// built under, by slot (the manager keys on the adapter's identity, not the runtime); kvNS is the sharing namespace
-	// of the request that took each slot (KVScope).
+	// slot a prompt takes, what it may reuse, and the index of published blocks; the one record of what each slot holds,
+	// the bound one included. nil until first used. Guarded by the same resBusy claim that serialises writes to the
+	// resident KV. kvNS is the sharing namespace of the request that took each slot (KVScope), which the manager does
+	// not keep: the commit that ends the request keys the slot's sequence under it.
 	kv           *kvmgr.Slots
-	kvLora       []*loraRuntime
 	kvNS         []string
 	kvF16        bool          // the resident KV cache is f16: Options.KVPrecision == "f16", or on CUDA "auto" (the default) for a cleared family (kv16_cuda.go)
 	kvF16Decline string        // CUDA only: why an explicit -kv f16 was held at f32 ("" when it was not asked for or not held back)

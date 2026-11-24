@@ -74,6 +74,9 @@ func TestGlmOcrCUDAContextFit(t *testing.T) {
 // and the 64 new tokens with room to spare. TestGlmOcrCUDAContextFit records how much further the card goes.
 const glmOcrResidentCtx = 4096
 
+// TestGlmOcrCUDAResidentRealImage is O3 on the real GLM-OCR: per image, the resident m-RoPE prefill against the CPU int4 prefill, then
+// greedy tokens resident against CPU. By default it runs the invoice (the longest prompt) for 16 tokens; GOINFER_GLM_IMAGES=3 and
+// GOINFER_GLM_NEW=64 are the registered set.
 func TestGlmOcrCUDAResidentRealImage(t *testing.T) {
 	testgate.RequireHeavy(t)
 	ckpt := decoder.AssetPathForTest(t, "GOINFER_GLM_OCR")
@@ -108,7 +111,8 @@ func TestGlmOcrCUDAResidentRealImage(t *testing.T) {
 		t.Fatal("the CPU arm has a resident")
 	}
 
-	for _, name := range []string{"invoice", "table", "formula"} {
+	images := []string{"invoice", "table", "formula"}
+	for _, name := range images[:caseCount(t, "GOINFER_GLM_IMAGES", 1, len(images))] {
 		t.Run(name, func(t *testing.T) {
 			var g glmOcrRealGolden
 			raw, err := readGolden(filepath.Join("../../testdata/glm_ocr/golden_" + name + ".json.gz"))
@@ -121,6 +125,7 @@ func TestGlmOcrCUDAResidentRealImage(t *testing.T) {
 			if len(g.InputIDs)+g.NNew > glmOcrResidentCtx {
 				t.Skipf("%d prompt tokens + %d new do not fit the %d-token context this test runs at", len(g.InputIDs), g.NNew, glmOcrResidentCtx)
 			}
+			nNew := caseCount(t, "GOINFER_GLM_NEW", min(16, g.NNew), g.NNew)
 			png, err := os.ReadFile(filepath.Join("../../testdata/glm_ocr", name+".png"))
 			if err != nil {
 				t.Fatal(err)
@@ -170,7 +175,7 @@ func TestGlmOcrCUDAResidentRealImage(t *testing.T) {
 			features := func() ([]float32, error) { return feats, nil }
 			run := func(m *decoder.Model, label string) ([]int, *decoder.Generation) {
 				t0 := time.Now()
-				stream, gen := m.GenerateQwenVL(context.Background(), g.InputIDs, g.ImageStart, g.NImgTokens, 0, features, [][3]int{grid}, merge, imageToken, g.NNew, decoder.SamplingParams{Temperature: 0})
+				stream, gen := m.GenerateQwenVL(context.Background(), g.InputIDs, g.ImageStart, g.NImgTokens, 0, features, [][3]int{grid}, merge, imageToken, nNew, decoder.SamplingParams{Temperature: 0})
 				var out []int
 				for id := range stream {
 					out = append(out, id)
@@ -196,9 +201,9 @@ func TestGlmOcrCUDAResidentRealImage(t *testing.T) {
 					break
 				}
 			}
-			ref := g.HFTokens
+			ref := g.HFTokens[:min(nNew, len(g.HFTokens))]
 			t.Logf("greedy %d tokens: resident vs CPU identical=%v (first divergence %d); resident vs HF f32 first divergence %d, CPU int4 vs HF f32 first divergence %d",
-				g.NNew, first < 0, first, firstDiff(resToks, ref), firstDiff(cpuToks, ref))
+				nNew, first < 0, first, firstDiff(resToks, ref), firstDiff(cpuToks, ref))
 			if tk, terr := tokenizer.Load(ckpt); terr == nil { // the library-level text the serve HTTP smoke is compared against
 				rt, _ := tk.Decode(resToks)
 				ct, _ := tk.Decode(cpuToks)

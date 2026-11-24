@@ -84,9 +84,9 @@ func TestBlockSpecGenerate_commitsResIDsOnFullCompletion(t *testing.T) {
 	}
 
 	want := append(append([]int{}, prompt...), out...)
-	if !equalIntSlices(m.resIDs, want) {
+	if !equalIntSlices(m.boundIDsForTest(), want) {
 		t.Errorf("resIDs = %v after a fully-completed generation, want %v — the completed exit must "+
-			"commit prompt+generated exactly like generateInto's own natural-completion commit", m.resIDs, want)
+			"commit prompt+generated exactly like generateInto's own natural-completion commit", m.boundIDsForTest(), want)
 	}
 }
 
@@ -158,13 +158,13 @@ func TestBlockSpecGenerate_commitsOnlyWrittenPositions(t *testing.T) {
 			t.Fatalf("maxTokens %d: emitted %d tokens (%d rounds) — test setup assumption broke", maxTok, len(out), rounds)
 		}
 		want := append(append([]int{}, prompt...), out...)
-		if !equalIntSlices(m.resIDs, want) {
-			t.Errorf("maxTokens %d: resIDs = %v, want prompt+out %v, as plain decode commits", maxTok, m.resIDs, want)
+		if !equalIntSlices(m.boundIDsForTest(), want) {
+			t.Errorf("maxTokens %d: resIDs = %v, want prompt+out %v, as plain decode commits", maxTok, m.boundIDsForTest(), want)
 		}
-		for p := range m.resIDs {
+		for p := range m.boundIDsForTest() {
 			if !host.written[p] {
 				t.Errorf("maxTokens %d (%d rounds): resIDs claims position %d (token %d) but the target never wrote its K/V",
-					maxTok, rounds, p, m.resIDs[p])
+					maxTok, rounds, p, m.boundIDsForTest()[p])
 			}
 		}
 	}

@@ -102,7 +102,7 @@ func TestGenerateGemma4VL_residentDecodeEngagesOnBidirectional(t *testing.T) {
 	m, g := loadGemma4VLBidirTiny(t)
 	rf := &fakeResident{vocab: m.w.arch.VocabSize}
 	m.resident = rf
-	m.resIDs = []int{9, 9, 9} // stale — must not be mistaken for a reusable prefix
+	m.setBoundSeqForTest([]int{9, 9, 9}, nil, nil) // stale — must not be mistaken for a reusable prefix
 
 	const maxNew = 4
 	const testImgHash = 0xC0FFEE // nonzero — a real hash, so the M-07 block-commit assertion below is meaningful
@@ -121,10 +121,10 @@ func TestGenerateGemma4VL_residentDecodeEngagesOnBidirectional(t *testing.T) {
 	// M-07 (docs/audit-2026-09-10.md): the commit must record an image block, or a later turn's
 	// residentReuseLen has nothing to key a reuse check on and can walk straight through this
 	// image's K/V for any prompt sharing Gemma4's content-independent soft-token ids.
-	if len(m.resImgBlocks) != 1 {
-		t.Fatalf("resImgBlocks = %v, want exactly 1 entry after a resident-committed image turn", m.resImgBlocks)
+	if len(m.boundBlocksForTest()) != 1 {
+		t.Fatalf("resImgBlocks = %v, want exactly 1 entry after a resident-committed image turn", m.boundBlocksForTest())
 	}
-	if got := m.resImgBlocks[0]; got.start != g.ImageTokenStart || got.end != g.ImageTokenStart+g.NImageTokens || got.hash != testImgHash {
+	if got := m.boundBlocksForTest()[0]; got.start != g.ImageTokenStart || got.end != g.ImageTokenStart+g.NImageTokens || got.hash != testImgHash {
 		t.Errorf("resImgBlocks[0] = %+v, want {start:%d end:%d hash:%d}",
 			got, g.ImageTokenStart, g.ImageTokenStart+g.NImageTokens, uint64(testImgHash))
 	}
@@ -146,8 +146,8 @@ func TestGenerateGemma4VL_residentDecodeEngagesOnBidirectional(t *testing.T) {
 		t.Error("resident Forward was never called — decode silently ran on CPU despite a resident being present")
 	}
 	want := append(append([]int{}, g.InputIDs...), got...)
-	if !equalIntSlices(m.resIDs, want) {
-		t.Errorf("resIDs = %v after a resident-touching GenerateGemma4VL, want prompt+generated %v", m.resIDs, want)
+	if !equalIntSlices(m.boundIDsForTest(), want) {
+		t.Errorf("resIDs = %v after a resident-touching GenerateGemma4VL, want prompt+generated %v", m.boundIDsForTest(), want)
 	}
 	if busy := atomic.LoadInt32(&m.resBusy); busy != 0 {
 		t.Errorf("resBusy = %d after GenerateGemma4VL returned, want 0 (released)", busy)
@@ -175,7 +175,7 @@ func TestGenerateGemma4VL_residentUploadFailureFallsBackToCPU(t *testing.T) {
 	m, g := loadGemma4VLBidirTiny(t)
 	rf := &uploadFailResident{fakeResident: &fakeResident{vocab: m.w.arch.VocabSize}}
 	m.resident = rf
-	m.resIDs = []int{1, 2, 3}
+	m.setBoundSeqForTest([]int{1, 2, 3}, nil, nil)
 
 	const maxNew = 4
 	features := func() ([]float32, error) { return g.ImageFeatures, nil }
@@ -193,8 +193,8 @@ func TestGenerateGemma4VL_residentUploadFailureFallsBackToCPU(t *testing.T) {
 	if rf.fakeResident.forwards != 0 {
 		t.Errorf("resident Forward called %d times after a declined upload — decode must run entirely on CPU", rf.fakeResident.forwards)
 	}
-	if m.resIDs != nil {
-		t.Errorf("resIDs = %v after a declined upload, want nil (forgotten) — the resident cache was never actually seeded this turn", m.resIDs)
+	if m.boundIDsForTest() != nil {
+		t.Errorf("resIDs = %v after a declined upload, want nil (forgotten) — the resident cache was never actually seeded this turn", m.boundIDsForTest())
 	}
 	if busy := atomic.LoadInt32(&m.resBusy); busy != 0 {
 		t.Errorf("resBusy = %d after GenerateGemma4VL returned, want 0 (released)", busy)
@@ -330,10 +330,10 @@ func TestResidentCommitIDs_gemma4ImageBlockPreventsCrossImageReuse(t *testing.T)
 	generated := []int{300, 301}
 	m.residentCommitIDs(prompt, generated, []residentImageBlock{{start: 2, end: 5, hash: 0xC0FFEE}}, nil)
 
-	if len(m.resImgBlocks) != 1 {
-		t.Fatalf("resImgBlocks = %v, want exactly 1 entry", m.resImgBlocks)
+	if len(m.boundBlocksForTest()) != 1 {
+		t.Fatalf("resImgBlocks = %v, want exactly 1 entry", m.boundBlocksForTest())
 	}
-	if got := m.resImgBlocks[0]; got.start != 2 || got.end != 5 || got.hash != 0xC0FFEE {
+	if got := m.boundBlocksForTest()[0]; got.start != 2 || got.end != 5 || got.hash != 0xC0FFEE {
 		t.Errorf("resImgBlocks[0] = %+v, want {start:2 end:5 hash:0xC0FFEE}", got)
 	}
 

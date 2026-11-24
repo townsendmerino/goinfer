@@ -20,8 +20,9 @@ import (
 // silently falling back to the sequential per-token loop.
 //
 // Reports, per M: the static decline (if any), whether the call succeeded, its duration, and the per-token
-// cost. Diagnostic: it asserts only that the model loaded and that the static gate is open; the numbers are
-// the output.
+// cost. It fails if the model does not load resident at -ctx 8192, or if the batched prefill declines the longest
+// length. GOINFER_LONGPROMPT_SEQUENTIAL=1 adds the sequential per-token arm at the same lengths, a measurement of
+// the fallback's cost.
 //
 //	GOINFER_HEAVY_TESTS=1 go test -tags 'cuda goinfer_testhooks' -run TestPrefillLongPrompt -v -timeout 40m ./cuda/
 func TestPrefillLongPrompt(t *testing.T) {
@@ -151,6 +152,9 @@ func TestPrefillLongPrompt(t *testing.T) {
 		d := time.Since(start)
 		if perr != nil {
 			fmt.Fprintf(os.Stderr, "[longprompt] M=%-5d DECLINED after %-10s: %v\n", M, d.Round(time.Millisecond), perr)
+			if M == lengths[len(lengths)-1] {
+				t.Errorf("the batched prefill declined the longest prompt (M=%d at -ctx 8192): %v", M, perr)
+			}
 			continue
 		}
 		fmt.Fprintf(os.Stderr, "[longprompt] M=%-5d batched OK %-10s (%.3f ms/token)\n",
@@ -161,6 +165,9 @@ func TestPrefillLongPrompt(t *testing.T) {
 	// Sequential reference at the SAME lengths, so the fallback's real cost is measured rather than
 	// extrapolated from a shallow point — its per-token cost grows with depth too (each position
 	// attends its own prefix), so a 512-token reading understates it badly at 8k.
+	if os.Getenv("GOINFER_LONGPROMPT_SEQUENTIAL") != "1" {
+		return
+	}
 	for _, M := range lengths {
 		rf.Reset()
 		embs := build(M)

@@ -472,9 +472,6 @@ func (m *Model) residentRestoreSnapshot(prompt []int, lora *loraRuntime, sc KVSc
 		return
 	}
 	a.Restored(acq.slot, root, x.ids[:q], x.classes)
-	s := a.Seq(acq.slot)
-	m.resIDs, m.resIDsLora, m.resImgBlocks = s.Tokens(), nil, nil
-	m.kvSetLora(acq.slot, nil)
 	acq.reuse, acq.snapRows, acq.snapDur, acq.snapFrom, acq.shared, acq.src = q, q, d, x, 0, -1
 	st.use(x, q, d)
 	fmt.Fprintf(stderrKV, "kv snapshot: restored %d rows of %d into slot %d in %.1f ms\n", q, x.h.Rows(), acq.slot, float64(d.Microseconds())/1000)

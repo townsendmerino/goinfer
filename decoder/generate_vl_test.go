@@ -48,7 +48,7 @@ func TestGenerateVL_streams(t *testing.T) {
 	// V-11: this model has no resident backend (Options{}, plain CPU), so GenerateVL's
 	// resident-touching branches (gap 0, P9a) never engage: a pre-existing resIDs describing an UNRELATED resident
 	// generation must survive this call untouched.
-	m.resIDs = []int{9, 9, 9}
+	m.setBoundSeqForTest([]int{9, 9, 9}, nil, nil)
 
 	const maxNew = 5
 	features := func() ([]float32, error) { return g.ImageFeatures, nil }
@@ -71,9 +71,9 @@ func TestGenerateVL_streams(t *testing.T) {
 		t.Errorf("first token = %d, want golden argmax %d", got[0], g.Argmax)
 	}
 	t.Logf("GenerateVL streamed %d tokens (first=%d == argmax %d)", len(got), got[0], g.Argmax)
-	if !equalIntSlices(m.resIDs, []int{9, 9, 9}) {
+	if !equalIntSlices(m.boundIDsForTest(), []int{9, 9, 9}) {
 		t.Errorf("resIDs = %v after GenerateVL, want unchanged [9 9 9] — GenerateVL never "+
 			"touches the resident KV and must not invalidate a caller's unrelated resident "+
-			"state (V-11)", m.resIDs)
+			"state (V-11)", m.boundIDsForTest())
 	}
 }

@@ -17,7 +17,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | DeepSeek-V3 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Flint | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | GLM-4.5/4.6 | ✅ | ✅ resident | ✅ resident | ✅ resident |
-| GLM-OCR | ✅ | CPU | ✅ resident | ✅ resident |
+| GLM-OCR | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | GPT-2 | ✅ | CPU | CPU | ✅ resident |
 | Gemma | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Gemma 2 | ✅ | CPU | ✅ resident | ✅ resident |
@@ -81,14 +81,13 @@ features). Two load-time notes the taxonomy does not encode:
   (E2B, E4B: per-layer embeddings, cross-layer shared KV, variable FFN width) carry the
   `gemma4-e-model` feature. They run resident on WebGPU, CUDA, Metal. The dense models and the 26B-A4B are
   resident as the row says. `DecodePath()` names any gap for a loaded model.
-- **Command-R, Command-R7B (Aya) and GLM-OCR run on the CPU under WebGPU for a stated reason.** Their
-  rotary embedding is GPT-J PAIRWISE (dims 2d, 2d+1); WebGPU's rope kernels are the NeoX half-split
-  (d, d+half), so it does not declare `pairwise-rope` / `pairwise-mrope`. Running them on the NeoX
-  kernels is exact at position 0 and wrong from position 1 with no error (measured 2026-10-01 on the
-  CUDA resident before its pairwise kernels existed: real Command-R7B and Aya-expanse-8B at int4, worst
-  per-position cosine -0.075 / -0.041 against the CPU). CUDA has `backend/cuda/rope_pairwise.cu` and Metal its
-  twins since 2026-10-09; a WebGPU row returns once it
-  has pairwise rope kernels and a resident-vs-CPU gate on peaked attention.
+- **Command-R, Command-R7B (Aya) and GLM-OCR rotate GPT-J PAIRWISE** (dims 2d, 2d+1), where the NeoX kernels
+  rotate (d, d+half). On NeoX kernels such a model is exact at position 0 and wrong from position 1 with no error
+  (measured 2026-10-01 on the CUDA resident before its pairwise kernels existed: real Command-R7B and Aya-expanse-8B
+  at int4, worst per-position cosine -0.075 / -0.041 against the CPU). Every resident backend binds pairwise twins
+  (`backend/cuda/rope_pairwise.cu`, Metal's, `backend/webgpu/internal/kernels/pairwise.go`), each gated against the
+  CPU with a NeoX control that must read far below (on peaked tiny fixtures or real checkpoints). Under WebGPU,
+  Command-R and Command-R7B still lack the features the table names.
 
 ## Why a cell reads CPU
 
@@ -101,9 +100,8 @@ admission runs.
 
 | Family | CPU on | Why |
 |---|---|---|
-| Command-R | WebGPU | missing: `layer-norm`, `pairwise-rope`, `parallel-block` |
-| Command-R7B | WebGPU | missing: `layer-norm`, `pairwise-rope`, `parallel-block` |
-| GLM-OCR | WebGPU | missing: `pairwise-mrope`, `pairwise-rope` |
+| Command-R | WebGPU | missing: `layer-norm`, `parallel-block` |
+| Command-R7B | WebGPU | missing: `layer-norm`, `parallel-block` |
 | GPT-2 | WebGPU | missing: `layer-norm`, `learned-pos`, `non-gated-gelu-tanh` |
 | GPT-2 | CUDA | the embedding stage: cuda does not implement learned position embeddings; layer 0: operation 6 (ffn): cuda has no GELU-tanh activation in its non-gated block |
 | Gemma 2 | WebGPU | missing: `attn-logit-softcap` |
