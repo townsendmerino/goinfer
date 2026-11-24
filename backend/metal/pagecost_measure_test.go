@@ -5,6 +5,7 @@ package metal
 import (
 	"os"
 	"runtime"
+	"slices"
 	"testing"
 	"time"
 
@@ -95,7 +96,7 @@ func TestPageCost_submissionStructure(t *testing.T) {
 	// Correctness cross-check: per-layer-submit is a different ENCODING of the same compute, so at the
 	// same position it must pick the same argmax as the single-submit path. If it doesn't, the regime
 	// number is measuring a broken forward, not the cost — fail loudly rather than report noise.
-	base0 := append([]float32(nil), r.ForwardEmb(emb[0], 0)...)
+	base0 := slices.Clone(r.ForwardEmb(emb[0], 0))
 	perlayer0 := r.forwardLogitsPerLayerSubmit(0) // pos 0 already has its KV from the line above
 	if a, b := argmaxF(base0), argmaxF(perlayer0); a != b {
 		t.Fatalf("per-layer-submit argmax %d != single-submit %d at pos 0 — the instrumented forward diverges; number would be meaningless", b, a)

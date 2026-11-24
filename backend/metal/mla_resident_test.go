@@ -53,20 +53,20 @@ func TestMLAResident_guards(t *testing.T) {
 		t.Error("the MC3 batched step admits an MLA model")
 	}
 	a := &metalResident{r: r, hidden: r.H}
-	var dec *decoder.KVCopyDecline
-	if err := a.CopyKV(0, 1, 0, 64); !errors.As(err, &dec) || !strings.Contains(err.Error(), "MLA") {
+	err = a.CopyKV(0, 1, 0, 64)
+	if _, ok := errors.AsType[*decoder.KVCopyDecline](err); !ok || !strings.Contains(err.Error(), "MLA") {
 		t.Errorf("CopyKV on an MLA model = %v, want the MLA decline", err)
 	}
 	mlaKVCopyDeclineOffForTest = true
 	err = a.CopyKV(0, 1, 0, 64)
 	mlaKVCopyDeclineOffForTest = false
-	if errors.As(err, &dec) && strings.Contains(err.Error(), "MLA") {
+	if _, ok := errors.AsType[*decoder.KVCopyDecline](err); ok && strings.Contains(err.Error(), "MLA") {
 		t.Error("with the decline removed CopyKV still gives the MLA decline: the test cannot see its defect")
 	}
 	// An MLA model asked for int8 KV on Metal: the resolver refuses the load by name (D5), and a build it reaches anyway keeps
 	// the f32 latent and no int8 cache.
-	var refusal *decoder.KVRefusal
-	if _, err := decoder.Load(dir, decoder.Options{Backend: "metal", Quant: "int4", KVPrecision: "i8", KVQuant: "i8"}); !errors.As(err, &refusal) || !strings.Contains(refusal.Reason, "latent") {
+	_, err = decoder.Load(dir, decoder.Options{Backend: "metal", Quant: "int4", KVPrecision: "i8", KVQuant: "i8"})
+	if refusal, ok := errors.AsType[*decoder.KVRefusal](err); !ok || !strings.Contains(refusal.Reason, "latent") {
 		t.Errorf("an MLA model with int8 KV on Metal: Load = %v, want a KV refusal naming the f32 latent", err)
 	}
 	mi, err := decoder.Load(dir, decoder.Options{Quant: "int4", KVPrecision: "i8"})

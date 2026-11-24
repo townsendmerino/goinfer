@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -39,7 +40,7 @@ func newFastRig(t *testing.T, reply string, alias bool) *fastRig {
 	var prompts [][]int
 	lm := &loadedModel{tk: tk, name: "m", scripted: append([]int{}, ids...)}
 	lm.fakeEngine = scriptedEngine{lm}
-	lm.onScripted = func(p []int) { prompts = append(prompts, append([]int(nil), p...)) }
+	lm.onScripted = func(p []int) { prompts = append(prompts, slices.Clone(p)) }
 	lm.tmpl = s.cfg.tuneTemplate(mellum21Template(t))
 	s.models = map[string]*loadedModel{"m": lm}
 	var log bytes.Buffer

@@ -4,6 +4,7 @@ package decoder
 
 import (
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/testgate"
@@ -61,7 +62,7 @@ func TestGemmaSublayerTrace(t *testing.T) {
 					t.Fatalf("ForwardSubCapture: %v", err)
 				}
 				attn, mlp = a, mm
-				scaledEmbed = append([]float32(nil), m.EmbedResidentForTest(tok)...)
+				scaledEmbed = slices.Clone(m.EmbedResidentForTest(tok))
 			} else if _, err := m.ForwardForTest(tok, cache); err != nil {
 				t.Fatalf("warm pos %d: %v", i, err)
 			}

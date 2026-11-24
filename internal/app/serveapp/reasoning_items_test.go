@@ -23,7 +23,7 @@ func scriptedLM(t *testing.T, reply string) (*httptest.Server, *[][]int, []int) 
 	s := &server{}
 	lm := &loadedModel{tk: tk, name: "m", scripted: append([]int{}, ids...)}
 	lm.fakeEngine = scriptedEngine{lm}
-	lm.onScripted = func(p []int) { prompts = append(prompts, append([]int(nil), p...)) }
+	lm.onScripted = func(p []int) { prompts = append(prompts, slices.Clone(p)) }
 	lm.tmpl = s.cfg.tuneTemplate(mellum21Template(t))
 	s.models = map[string]*loadedModel{"m": lm}
 	mux := http.NewServeMux()
@@ -166,7 +166,7 @@ func TestResponses_reasoningRoundTripKeepsThePrefix(t *testing.T) {
 		req["input"] = append(in, callIn, result)
 		postScripted(t, ts.URL+"/v1/responses", req)
 		p2 := (*prompts)[len(*prompts)-1]
-		want := append(append([]int(nil), p1...), genIDs...)
+		want := slices.Concat(p1, genIDs)
 		extends := len(p2) >= len(want) && slices.Equal(p2[:len(want)], want)
 		if extends != c.extends {
 			n := 0

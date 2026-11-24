@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -123,7 +123,7 @@ func TestQ4KStep_phi3Tier1(t *testing.T) {
 		fmt.Fprintf(os.Stderr, "[op6-tier1] pair %d: step %.1f ms (%.0f tok/s), sequential %.1f ms (%.0f tok/s), ratio %.3f\n",
 			p+1, ts.Seconds()*1e3, float64(len(e))/ts.Seconds(), tq.Seconds()*1e3, float64(len(e))/tq.Seconds(), ratio)
 	}
-	sort.Float64s(ratios)
+	slices.Sort(ratios)
 	med := ratios[len(ratios)/2]
 	verdict := "OFF"
 	switch {

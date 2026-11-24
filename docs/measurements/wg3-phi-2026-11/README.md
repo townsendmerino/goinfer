@@ -6,6 +6,15 @@ Registered in [registration.md](registration.md) (committed before any timed run
 (serve sha256 `f6af1bbb…` and `5b653c17…`); fit: base `webgpu-staged (int8int8)` (the CPU path), head
 `webgpu:vulkan-resident (int8int8)`.
 
+## Disclosed deviation: a poller on nobara (Francis, 2026-11-24, verdicts kept)
+
+From 2026-11-23 11:22:52 to 2026-11-24 07:45 PST, a leftover waiter on mbp2 (this campaign's session) ran
+`ssh nobara 'grep -q "decode rc=" ~/goinfer-bench/tmp/mbp2-wg3/speed4.log'` once a minute: an sshd session, a zsh login
+and one grep each. Its span covers block 3's two TTFT cells (base from 11:19:26, head from 11:26:32), block 0's re-run
+(15:54-16:05) and the whole decode cell (16:05-16:33); TTFT blocks 1 and 2 ran before it. The margins it sits against:
+decode 11.25× in every pair against the 1.05 bar; TTFT 1.441 (block 3) and 1.456 (block 0) against 0.8. Francis's call
+(2026-11-24, via the coordinator): keep the verdicts and record the poller here, no re-run.
+
 ## TTFT @1024 (2026-11-23 10:26-11:30 PST)
 
 A B B A × 2, 6 timed requests a cell, median; prompt `phi3-mini:1024` (1,031 tokens by `usage`). All eight cells valid;

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"slices"
 	"testing"
 	"time"
 )
@@ -244,7 +245,7 @@ func TestDB04AB(t *testing.T) {
 			var out []dsnap
 			for _, L := range r.layers {
 				if L.delta != nil {
-					out = append(out, dsnap{append([]float32(nil), L.delta.state.Floats()...), append([]float32(nil), L.delta.win.Floats()...)})
+					out = append(out, dsnap{slices.Clone(L.delta.state.Floats()), slices.Clone(L.delta.win.Floats())})
 				}
 			}
 			return out
@@ -278,7 +279,7 @@ func TestDB04AB(t *testing.T) {
 				if on {
 					ai = 1
 				}
-				tm[ai], last[ai] = auditMedian(ks), append([]float32(nil), lg...)
+				tm[ai], last[ai] = auditMedian(ks), slices.Clone(lg)
 			}
 			for i := range last[0] {
 				if last[0][i] != last[1][i] {

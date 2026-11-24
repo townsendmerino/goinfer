@@ -1,13 +1,14 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -102,6 +103,6 @@ func loadQuickRecords(dir string) ([]quickRecord, error) {
 		}
 		recs = append(recs, r)
 	}
-	sort.SliceStable(recs, func(i, j int) bool { return recs[i].Date < recs[j].Date })
+	slices.SortStableFunc(recs, func(a, b quickRecord) int { return cmp.Compare(a.Date, b.Date) })
 	return recs, nil
 }

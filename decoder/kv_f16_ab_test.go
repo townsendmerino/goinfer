@@ -5,7 +5,7 @@ package decoder
 import (
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 )
@@ -75,7 +75,7 @@ func TestKVF16_F3InProcessAB(t *testing.T) {
 				progress("pair %d/%d: f16 %.2f | f32 %.2f ms/tok | rate f16/f32 %.3f | stream prefix agree %d/%d",
 					p+1, mc.pairs, msH, msF, r, same, len(tF))
 			}
-			sort.Float64s(ratios)
+			slices.Sort(ratios)
 			med := ratios[len(ratios)/2]
 			if len(ratios)%2 == 0 {
 				med = (ratios[len(ratios)/2-1] + ratios[len(ratios)/2]) / 2

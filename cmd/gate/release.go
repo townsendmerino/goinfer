@@ -10,7 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/townsendmerino/goinfer/internal/guard/paritykey"
@@ -138,7 +138,7 @@ func relLiveRead(e *relEnv, kind string, args []string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		sort.Strings(files)
+		slices.Sort(files)
 		for i, f := range files {
 			if rel, err := filepath.Rel(e.root, f); err == nil {
 				files[i] = filepath.ToSlash(rel)

@@ -6,9 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -507,7 +508,7 @@ func gradeGoldenGiwBytes(t *testing.T, dir string, c *goldenCase, _ lookupFn) st
 	if err != nil || len(files) == 0 {
 		t.Fatalf("no records in %s: %v", c.Records, err)
 	}
-	sort.Strings(files)
+	slices.Sort(files)
 	counts := map[string]int{}
 	var b strings.Builder
 	rows := 0
@@ -557,11 +558,7 @@ func gradeGoldenGiwBytes(t *testing.T, dir string, c *goldenCase, _ lookupFn) st
 		}
 		fh.Close()
 	}
-	keys := make([]string, 0, len(counts))
-	for k := range counts {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(counts))
 	fmt.Fprintf(&b, "%d rows in %d records\n", rows, len(files))
 	for _, k := range keys {
 		fmt.Fprintf(&b, "  %s %d\n", k, counts[k])

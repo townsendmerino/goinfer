@@ -5,6 +5,7 @@ package metal
 import (
 	"os"
 	"runtime"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -42,7 +43,7 @@ func (r *resident) forwardPagedCaptureForTest(pos int) [][]float32 {
 			r.encodeLayer(e, l)
 			e.End()
 		}
-		cap = append(cap, append([]float32(nil), r.x.Floats()...))
+		cap = append(cap, slices.Clone(r.x.Floats()))
 	}
 	return cap
 }

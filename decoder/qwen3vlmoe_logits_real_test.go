@@ -25,6 +25,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -197,7 +198,7 @@ func TestQwen3VLMoe_goinferLogits(t *testing.T) {
 			if !ok {
 				t.Fatalf("sequence %d names image %q, not one of %v", k, s.Name, q3mImages)
 			}
-			ids := append(append([]int(nil), s.IDs...), s.Path[:len(s.Path)-1]...)
+			ids := append(slices.Clone(s.IDs), s.Path[:len(s.Path)-1]...)
 			spans := spanOf(ids)
 			mp, err := mropePositions(ids, imgTok, [][3]int{im.grid}, merge)
 			if err != nil {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -49,7 +50,7 @@ func ksd3Run(t *testing.T, ckpt string, old bool) ([][]float32, string) {
 	if err != nil {
 		t.Fatalf("%s: prefill: %v", ckpt, err)
 	}
-	out := [][]float32{append([]float32(nil), lg...)}
+	out := [][]float32{slices.Clone(lg)}
 	for i := range 8 {
 		best := 0
 		for j := range lg {
@@ -60,7 +61,7 @@ func ksd3Run(t *testing.T, ckpt string, old bool) ([][]float32, string) {
 		if lg, err = rf.Forward(m.EmbedResidentForTest(best), n+i); err != nil {
 			t.Fatalf("%s: decode %d: %v", ckpt, i, err)
 		}
-		out = append(out, append([]float32(nil), lg...))
+		out = append(out, slices.Clone(lg))
 	}
 	return out, ""
 }

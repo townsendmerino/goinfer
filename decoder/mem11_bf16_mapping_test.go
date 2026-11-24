@@ -6,7 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -45,7 +45,7 @@ func writeBF16Checkpoint(t *testing.T, src, dst string, asBF16 bool) {
 			names = append(names, k)
 		}
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	out := map[string]any{}
 	var blob []byte
 	for _, k := range names {

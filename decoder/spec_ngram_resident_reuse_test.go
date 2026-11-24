@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"context"
+	"slices"
 	"testing"
 )
 
@@ -40,7 +41,7 @@ func TestGenNgramInto_residentReusesWarmPrefix(t *testing.T) {
 
 	// Round 2's prompt is round 1's own committed sequence (prompt1 + everything it emitted) plus
 	// one more token — a strict extension, the only shape residentReuseLen ever credits.
-	prompt2 := append(append([]int(nil), prompt1...), got1...)
+	prompt2 := append(slices.Clone(prompt1), got1...)
 	prompt2 = append(prompt2, 99)
 
 	ch2, g2, err := m.GenerateNgramSpeculative(ctx, prompt2, 6, drafter, 4, greedy)
@@ -98,7 +99,7 @@ func TestGenNgramInto_residentCommitMatchesPlain(t *testing.T) {
 			if g.Err() != nil {
 				t.Fatalf("round 1: %v", g.Err())
 			}
-			prompt2 := append(append(append([]int(nil), prompt1...), got...), 99, 98)
+			prompt2 := append(append(slices.Clone(prompt1), got...), 99, 98)
 			ch2, g2 := m.Generate(ctx, prompt2, 2, greedy)
 			for range ch2 {
 			}

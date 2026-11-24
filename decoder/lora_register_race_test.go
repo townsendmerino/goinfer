@@ -29,9 +29,8 @@ func TestRegisterAdapter_retiresNotCloses_C29(t *testing.T) {
 	// Concurrent register (re-register) + reads must be race-free (run under -race).
 	var wg sync.WaitGroup
 	for range 8 {
-		wg.Add(2)
-		go func() { defer wg.Done(); m.registerAdapter("a", &loraRuntime{name: "a"}) }()
-		go func() { defer wg.Done(); _ = m.adapter("a"); _ = m.HasAdapter("a") }()
+		wg.Go(func() { m.registerAdapter("a", &loraRuntime{name: "a"}) })
+		wg.Go(func() { _ = m.adapter("a"); _ = m.HasAdapter("a") })
 	}
 	wg.Wait()
 }

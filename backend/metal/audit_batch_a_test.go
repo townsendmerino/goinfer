@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -79,8 +79,8 @@ func auditMedian(xs []float64) float64 {
 	if len(xs) == 0 {
 		return math.NaN()
 	}
-	s := append([]float64(nil), xs...)
-	sort.Float64s(s)
+	s := slices.Clone(xs)
+	slices.Sort(s)
 	if len(s)%2 == 1 {
 		return s[len(s)/2]
 	}
@@ -234,8 +234,8 @@ func TestAuditT13_kernelGap(t *testing.T) {
 		gaps = append(gaps, (starts[i]-ends[i-1])*1e3)
 		kGaps = append(kGaps, (kStarts[i]-kEnds[i-1])*1e3)
 	}
-	s := append([]float64(nil), gaps...)
-	sort.Float64s(s)
+	s := slices.Clone(gaps)
+	slices.Sort(s)
 	pct := func(p float64) float64 {
 		if len(s) == 0 {
 			return math.NaN()

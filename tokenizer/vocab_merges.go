@@ -2,13 +2,14 @@ package tokenizer
 
 import (
 	"bufio"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -94,7 +95,7 @@ func LoadVocabMerges(dir string) (*Tokenizer, error) {
 		}
 		at = append(at, added{ID: id, Content: a.Content, SingleWord: a.SingleWord, LStrip: a.LStrip, RStrip: a.RStrip, Normalized: a.Normalized, Special: a.Special})
 	}
-	sort.Slice(at, func(i, j int) bool { return at[i].ID < at[j].ID })
+	slices.SortFunc(at, func(a, b added) int { return cmp.Compare(a.ID, b.ID) })
 	doc := map[string]any{
 		"version":      "1.0",
 		"added_tokens": at,

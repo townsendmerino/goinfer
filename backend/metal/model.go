@@ -914,13 +914,11 @@ func parallelF32ToF16(dst []uint16, src []float32) {
 	var wg sync.WaitGroup
 	for lo := 0; lo < n; lo += chunk {
 		hi := min(lo+chunk, n)
-		wg.Add(1)
-		go func(lo, hi int) {
-			defer wg.Done()
+		wg.Go(func() {
 			for i := lo; i < hi; i++ {
 				dst[i] = f32ToF16(src[i])
 			}
-		}(lo, hi)
+		})
 	}
 	wg.Wait()
 }
@@ -1557,13 +1555,11 @@ func softcapParallel(logits []float32, softcap float32) {
 	var wg sync.WaitGroup
 	for lo := 0; lo < n; lo += chunk {
 		hi := min(lo+chunk, n)
-		wg.Add(1)
-		go func(lo, hi int) {
-			defer wg.Done()
+		wg.Go(func() {
 			for j := lo; j < hi; j++ {
 				logits[j] = sc * float32(math.Tanh(float64(logits[j]/sc)))
 			}
-		}(lo, hi)
+		})
 	}
 	wg.Wait()
 }

@@ -55,8 +55,7 @@ func TestFitEstimate_q4kAgreesWithResidentWeightBytes(t *testing.T) {
 			old := estimateGGUFWeightBytes(path, quantQ4K)
 			q4kPriceAsInt4ForTest = false
 			m, err := Load(path, Options{Quant: "q4k", ResidentContext: 64})
-			var fit *FitDeclineError
-			if errors.As(err, &fit) {
+			if _, ok := errors.AsType[*FitDeclineError](err); ok {
 				t.Fatalf("the fit guard refused the measuring load, so this row is unmeasured: %v", err)
 			}
 			if err != nil {

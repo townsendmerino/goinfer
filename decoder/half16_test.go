@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -24,7 +23,7 @@ func writeHalfFixture(t *testing.T, src, dtype string) string {
 	}
 	defer st.Close()
 	names := slices.Clone(st.Names())
-	sort.Strings(names)
+	slices.Sort(names)
 	hdr := map[string]any{}
 	var data []byte
 	for _, n := range names {

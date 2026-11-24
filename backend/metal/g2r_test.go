@@ -4,6 +4,7 @@ package metal
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -170,7 +171,7 @@ func g2rRun(t *testing.T, path, quant string, seed []int, steps int, softcapOff 
 		if err != nil {
 			t.Fatalf("cpu forward: %v", err)
 		}
-		out = append(out, append([]float32(nil), l...))
+		out = append(out, slices.Clone(l))
 		switch {
 		case i+1 >= steps:
 		case toks != nil:

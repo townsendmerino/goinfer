@@ -5,6 +5,7 @@ package kernels
 import (
 	"fmt"
 	"math"
+	"slices"
 	"testing"
 )
 
@@ -147,7 +148,7 @@ func TestGptOssRoute_neverEmitsAnOutOfRangeExpert(t *testing.T) {
 				for i, x := range w {
 					wb[i] = math.Float32bits(x)
 				}
-				return append([]uint32(nil), idx...), wb
+				return slices.Clone(idx), wb
 			}
 			type out struct {
 				name   string

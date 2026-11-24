@@ -386,7 +386,7 @@ func TestOP6MP_q4kPassFidelity(t *testing.T) {
 	Ks, partial := []int{512, 2048}, false
 	if v := os.Getenv("OP6MP_FIDELITY_K"); v != "" {
 		Ks, partial = nil, true
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			k, err := strconv.Atoi(strings.TrimSpace(f))
 			if err != nil || k <= 0 || k > 2048 {
 				t.Fatalf("OP6MP_FIDELITY_K %q: each K is an integer in 1..2048", v)

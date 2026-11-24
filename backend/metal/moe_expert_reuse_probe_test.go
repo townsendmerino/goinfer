@@ -5,6 +5,7 @@ package metal
 import (
 	"fmt"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -69,7 +70,7 @@ func TestMoEExpertReuseProbe(t *testing.T) {
 	if len(ids) < M {
 		// Repeat the corpus rather than fail — the exact CONTENT matters far less here than
 		// having M positions of real-token statistics to route on.
-		base := append([]int(nil), ids...)
+		base := slices.Clone(ids)
 		for len(ids) < M {
 			ids = append(ids, base...)
 		}

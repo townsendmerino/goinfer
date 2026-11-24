@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -33,7 +33,7 @@ func oneSlotStepDiff(t *testing.T, a *metalResident, embs [][]float32, cont []fl
 			t.Fatal(err)
 		}
 		if i == n-1 {
-			want = append([]float32(nil), out...)
+			want = slices.Clone(out)
 		}
 	}
 	wantKV := q4kStepKV(t, r, 0, 0, n)
@@ -41,7 +41,7 @@ func oneSlotStepDiff(t *testing.T, a *metalResident, embs [][]float32, cont []fl
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantCont = append([]float32(nil), wantCont...)
+	wantCont = slices.Clone(wantCont)
 	// The step must write these rows itself, or its K/V reads back as what the sequential arm left.
 	r.stopExec()
 	for l := range r.layers {
@@ -65,7 +65,7 @@ func oneSlotStepDiff(t *testing.T, a *metalResident, embs [][]float32, cont []fl
 	if err != nil {
 		t.Fatalf("%d tokens on the step: %v", n, err)
 	}
-	got = append([]float32(nil), got...) // a one-row last piece returns Forward's own buffer, which the continuation overwrites
+	got = slices.Clone(got) // a one-row last piece returns Forward's own buffer, which the continuation overwrites
 	gotKV := q4kStepKV(t, r, 0, 0, n)
 	gotCont, err := a.Forward(cont, n)
 	if err != nil {
@@ -299,7 +299,7 @@ func oneSlotPrefillAB(t *testing.T, path string, ctx int) {
 		fmt.Fprintf(os.Stderr, "[p29-ab] pair %d (%s first): sequential %.2f s (%.0f tok/s), step %.2f s (%.0f tok/s), ratio %.3f\n",
 			p+1, map[bool]string{true: "sequential", false: "step"}[p%2 == 0], s.Seconds(), n/s.Seconds(), b.Seconds(), n/b.Seconds(), ratios[p])
 	}
-	sorted := append([]float64(nil), ratios...)
-	sort.Float64s(sorted)
+	sorted := slices.Clone(ratios)
+	slices.Sort(sorted)
 	t.Logf("P29 tier 1: sequential ÷ step over %d pairs at %d tokens: median %.3f, pairs %v", pairs, n, sorted[pairs/2], ratios)
 }

@@ -3,7 +3,7 @@ package constrain
 import (
 	"encoding/json"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"testing"
 )
 
@@ -150,7 +150,7 @@ func TestConstrainedDecode_alwaysValidJSON(t *testing.T) {
 	completed := 0
 	for trial := range trials {
 		m.Reset()
-		rng := rand.New(rand.NewSource(int64(trial) + 1))
+		rng := rand.New(rand.NewPCG(uint64(trial)+1, 0))
 		var gen []int
 		done := false
 		for step := range 300 {

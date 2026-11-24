@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -125,7 +126,7 @@ func g2rCPUArmFrom(t *testing.T, load, quant string, seed []int, steps int, soft
 			t.Fatalf("cpu forward: %v", err)
 		}
 		arm.Inputs = append(arm.Inputs, tok)
-		arm.Logits = append(arm.Logits, append([]float32(nil), l...))
+		arm.Logits = append(arm.Logits, slices.Clone(l))
 		if i+1 < len(seed) {
 			tok = seed[i+1]
 		} else {

@@ -4,12 +4,13 @@ package metal
 
 import (
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"math"
+	"slices"
 	"sync"
 
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
 	"github.com/townsendmerino/goinfer/internal/audio"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
@@ -163,7 +164,7 @@ func (a *g4aAccel) Blocks(h []float32, n int) ([]float32, error) {
 			return nil, err
 		}
 	}
-	return append([]float32(nil), a.x.Floats()[:n*H]...), nil
+	return slices.Clone(a.x.Floats()[:n*H]), nil
 }
 
 // reg is the tower's activation buffer for a program register (vision.TowerReg): x is the residual stream, mid is u

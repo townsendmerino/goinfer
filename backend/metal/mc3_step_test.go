@@ -13,7 +13,6 @@ import (
 	"runtime"
 	"runtime/debug"
 	"slices"
-	"sort"
 	"strings"
 	"syscall"
 	"testing"
@@ -270,8 +269,8 @@ func cellPaging(t *testing.T) (swapMiB float64, pageouts int64) {
 		t.Fatal(err)
 	}
 	for line := range strings.SplitSeq(string(vs), "\n") {
-		if strings.HasPrefix(line, "Pageouts:") {
-			fmt.Sscanf(strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(line, "Pageouts:")), "."), "%d", &pageouts)
+		if after, ok := strings.CutPrefix(line, "Pageouts:"); ok {
+			fmt.Sscanf(strings.TrimSuffix(strings.TrimSpace(after), "."), "%d", &pageouts)
 		}
 	}
 	return swapMiB, pageouts
@@ -492,7 +491,7 @@ func op4mStepSpeed(t *testing.T, c stepSpeedCell) {
 		if r.recurrentModel() { // every run starts from the state the fill left, as the KV rows it rewrites in place do
 			stepCellFill(t, r, fills, row, c.rows != nil)
 		}
-		cur := append([]int(nil), first...)
+		cur := slices.Clone(first)
 		var toks []int
 		t0 := time.Now()
 		for s := range steps {
@@ -568,7 +567,7 @@ func op4mStepSpeed(t *testing.T, c stepSpeedCell) {
 			faster++
 		}
 	}
-	sort.Float64s(ratios)
+	slices.Sort(ratios)
 	med := (ratios[pairs/2-1] + ratios[pairs/2]) / 2
 	verdict := "PARKED (under the feature bar, not under 1.00)"
 	switch {
@@ -847,7 +846,7 @@ func mc3IdentityDiff(t *testing.T, r *resident, depths []int) int {
 			if err := r.useKVSlot(B + m); err != nil {
 				t.Fatal(err)
 			}
-			ref[m] = append([]float32(nil), r.ForwardEmb(seqs[m].emb, seqs[m].pos)...)
+			ref[m] = slices.Clone(r.ForwardEmb(seqs[m].emb, seqs[m].pos))
 		}
 		got := mc3Step(t, r, seqs)
 		for m := range B {
@@ -1233,7 +1232,7 @@ func recurrentRowAtZeroDiff(t *testing.T, r *resident, plant *bool) [2]int {
 	ref := func(e []float32) []float32 {
 		bind(2)
 		r.resetRecurrent()
-		return append([]float32(nil), r.ForwardEmb(e, 0)...)
+		return slices.Clone(r.ForwardEmb(e, 0))
 	}
 	want0, want1 := ref(e0), ref(e1)
 	if plant != nil {
@@ -1399,7 +1398,7 @@ func mc3IdentityOn(t *testing.T, r *resident, depths []int) {
 			if err := r.useKVSlot(B + m); err != nil {
 				t.Fatal(err)
 			}
-			ref[m] = append([]float32(nil), r.ForwardEmb(seqs[m].emb, seqs[m].pos)...)
+			ref[m] = slices.Clone(r.ForwardEmb(seqs[m].emb, seqs[m].pos))
 		}
 		got := mc3Step(t, r, seqs)
 		rowsLabel := attnDigestRowsLabel
@@ -1477,7 +1476,7 @@ func TestMC3Step_throughput(t *testing.T) {
 	}
 	seed := uint32(7654321)
 	rnd := func() int { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return int(seed % 20000) }
-	med := func(xs []float64) float64 { v := append([]float64(nil), xs...); sort.Float64s(v); return v[len(v)/2] }
+	med := func(xs []float64) float64 { v := slices.Clone(xs); slices.Sort(v); return v[len(v)/2] }
 	for _, D := range depths {
 		for sl := 0; sl <= maxB; sl++ {
 			ids := make([]int, D)
@@ -1519,7 +1518,7 @@ func TestMC3Step_throughput(t *testing.T) {
 			for i := range per[a] {
 				ratio = append(ratio, float64(a)*per[0][i]/per[a][i])
 			}
-			sort.Float64s(ratio)
+			slices.Sort(ratio)
 			line += fmt.Sprintf("  | B=%d step %.3f ms (%.2fx a token), aggregate %.3fx [%.3f-%.3f]", a, med(per[a]), med(per[a])/med(per[0]), med(ratio), ratio[0], ratio[len(ratio)-1])
 		}
 		hb("%s", line)
@@ -1569,7 +1568,7 @@ func TestMC3Step_drawsMatchForwardSample(t *testing.T) {
 				}
 				wantID[m] = id
 			} else {
-				wantLogits[m] = append([]float32(nil), r.ForwardEmb(seqs[m].emb, seqs[m].pos)...)
+				wantLogits[m] = slices.Clone(r.ForwardEmb(seqs[m].emb, seqs[m].pos))
 			}
 		}
 		logits, ids, err := r.forwardMulti(seqs)
@@ -1649,7 +1648,7 @@ func TestMC3StepBreakdown(t *testing.T) {
 			depths = append(depths, n)
 		}
 	}
-	med := func(xs []float64) float64 { v := append([]float64(nil), xs...); sort.Float64s(v); return v[len(v)/2] }
+	med := func(xs []float64) float64 { v := slices.Clone(xs); slices.Sort(v); return v[len(v)/2] }
 	arms := []struct {
 		name string
 		off  []string
@@ -1711,7 +1710,7 @@ func TestMC3StepWallVsGPU(t *testing.T) {
 		}
 		mc3Fill(t, r, sl, ids)
 	}
-	med := func(xs []float64) float64 { v := append([]float64(nil), xs...); sort.Float64s(v); return v[len(v)/2] }
+	med := func(xs []float64) float64 { v := slices.Clone(xs); slices.Sort(v); return v[len(v)/2] }
 	report := func(name string, wall, gpu []float64) {
 		w, g := med(wall), med(gpu)
 		fmt.Fprintf(os.Stderr, "[mc3-wall] %-24s wall %7.3f ms  GPU %7.3f ms  not-GPU %6.3f ms (%.1f%% of wall)\n", name, w, g, w-g, 100*(w-g)/w)
@@ -1774,7 +1773,7 @@ func TestMC3Verify_sameSlotRowsBitIdentical(t *testing.T) {
 		for l := range r.layers {
 			d := r.layers[l].geom.kvDim
 			o := r.kvHostOff(l, 2) + from*d
-			out = append(out, append([]uint16(nil), r.kc[l].U16s()[o:o+n*d]...), append([]uint16(nil), r.vc[l].U16s()[o:o+n*d]...))
+			out = append(out, slices.Clone(r.kc[l].U16s()[o:o+n*d]), slices.Clone(r.vc[l].U16s()[o:o+n*d]))
 		}
 		return out
 	}
@@ -1796,7 +1795,7 @@ func TestMC3Verify_sameSlotRowsBitIdentical(t *testing.T) {
 		}
 		var ref [][]float32
 		for i, e := range embs {
-			ref = append(ref, append([]float32(nil), r.ForwardEmb(e, c.D+i)...))
+			ref = append(ref, slices.Clone(r.ForwardEmb(e, c.D+i)))
 		}
 		refKV := kv(0, c.D, c.M)
 		seqs := make([]batchSeq, c.M)
@@ -1844,7 +1843,7 @@ func TestMC3Step_promptInRowsBitIdentical(t *testing.T) {
 		for l := range r.layers {
 			d := r.layers[l].geom.kvDim
 			o := r.kvHostOff(l, 2)
-			out = append(out, append([]uint16(nil), r.kc[l].U16s()[o:o+n*d]...), append([]uint16(nil), r.vc[l].U16s()[o:o+n*d]...))
+			out = append(out, slices.Clone(r.kc[l].U16s()[o:o+n*d]), slices.Clone(r.vc[l].U16s()[o:o+n*d]))
 		}
 		return out
 	}
@@ -1858,7 +1857,7 @@ func TestMC3Step_promptInRowsBitIdentical(t *testing.T) {
 		}
 		var ref [][]float32
 		for i, e := range embs {
-			ref = append(ref, append([]float32(nil), r.ForwardEmb(e, i)...))
+			ref = append(ref, slices.Clone(r.ForwardEmb(e, i)))
 		}
 		refKV := kv(0, K)
 		var got [][]float32
@@ -1868,7 +1867,7 @@ func TestMC3Step_promptInRowsBitIdentical(t *testing.T) {
 				seqs = append(seqs, batchSeq{slot: 1, pos: i, emb: embs[i]})
 			}
 			for _, row := range mc3Step(t, r, seqs) {
-				got = append(got, append([]float32(nil), row...))
+				got = append(got, slices.Clone(row))
 			}
 		}
 		gotKV := kv(1, K)
@@ -1903,7 +1902,7 @@ func TestMC3Verify_rowCost(t *testing.T) {
 	_, r := mc3RealResident(t, 2, 4096) // the step needs slot buffers, which a one-slot resident does not keep
 	seed := uint32(13131)
 	rnd := func() int { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return int(seed % 20000) }
-	med := func(xs []float64) float64 { v := append([]float64(nil), xs...); sort.Float64s(v); return v[len(v)/2] }
+	med := func(xs []float64) float64 { v := slices.Clone(xs); slices.Sort(v); return v[len(v)/2] }
 	for _, D := range []int{128, 512, 2048} {
 		ids := make([]int, D)
 		for i := range ids {

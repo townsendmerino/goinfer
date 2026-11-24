@@ -3,7 +3,7 @@ package decoder
 import (
 	"fmt"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -36,7 +36,7 @@ func cpuScratchHolds(scr *decodeScratch, terms []CPUScratchTerm) error {
 		}
 	}
 	if len(diffs) > 0 {
-		sort.Strings(diffs)
+		slices.Sort(diffs)
 		return fmt.Errorf("%s", strings.Join(diffs, "; "))
 	}
 	return nil
@@ -88,7 +88,7 @@ func TestCPUDecodeScratch_plantsGoRed(t *testing.T) {
 		t.Errorf("a row beside the list: err = %v, want one naming scores and 32 B", err)
 	}
 	scr.scores = nil
-	short := append([]CPUScratchTerm(nil), terms...)
+	short := slices.Clone(terms)
 	for i := range short {
 		if short[i].Role == "norm" {
 			short[i].Bytes -= 4

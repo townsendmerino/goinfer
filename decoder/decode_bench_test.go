@@ -117,8 +117,7 @@ func BenchmarkDecode(b *testing.B) {
 		b.Fatalf("seed sample: %v", err)
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		logits, err := m.forward(next, cache)
 		if err != nil {
 			b.Fatalf("forward: %v", err)

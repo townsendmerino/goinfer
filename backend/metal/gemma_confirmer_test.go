@@ -5,6 +5,7 @@ package metal
 import (
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -63,10 +64,10 @@ func TestGemmaConfirmer_MatchedInput(t *testing.T) {
 			t.Fatalf("ForwardCapture pos %d: %v", i, err)
 		}
 		if i == 0 {
-			residIntoL1P0 = append([]float32(nil), hid[0]...)
+			residIntoL1P0 = slices.Clone(hid[0])
 		}
 		if i == probe {
-			residIntoL1 = append([]float32(nil), hid[0]...)
+			residIntoL1 = slices.Clone(hid[0])
 		}
 	}
 	// Is Metal's L0 OUTPUT for the BOS (residual entering L1 at pos 0) already wrong? If so the
@@ -146,7 +147,7 @@ func TestGemmaConfirmer_MatchedInput(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ForwardSubCapture: %v", err)
 			}
-			ctxL1 = append([]float32(nil), ctx[injectLayer]...)
+			ctxL1 = slices.Clone(ctx[injectLayer])
 		} else if _, err := m.ForwardForTest(tok, subCache); err != nil {
 			t.Fatalf("warm pos %d: %v", i, err)
 		}

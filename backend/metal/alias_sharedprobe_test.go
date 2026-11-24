@@ -4,11 +4,12 @@ package metal
 
 import (
 	"bufio"
+	"cmp"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -103,7 +104,7 @@ func TestAliasSharedMappingProbe(t *testing.T) {
 			// (1) one touch, then correctness.
 			tTouch := time.Now()
 			q.Run1D(pipe, nPages, 256, buf, out, stride)
-			got := append([]float32(nil), out.Floats()[:nPages]...)
+			got := slices.Clone(out.Floats()[:nPages])
 			touchMS := float64(time.Since(tTouch).Microseconds()) / 1000
 			marks["touch-end"] = time.Now()
 			wrong := 0
@@ -242,7 +243,7 @@ func phaseMeans(t *testing.T, path string, marks map[string]time.Time, phases []
 		}
 		samples = append(samples, s)
 	}
-	sort.Slice(samples, func(i, j int) bool { return samples[i].at < samples[j].at })
+	slices.SortFunc(samples, func(a, b sample) int { return cmp.Compare(a.at, b.at) })
 	out := map[string]map[string]float64{}
 	for _, p := range phases {
 		lo := 0.0

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"testing"
 
@@ -82,7 +83,7 @@ func q4kStepKV(t *testing.T, r *resident, slot, from, n int) [][]uint16 {
 	for l := range r.layers {
 		d := r.layers[l].geom.kvDim
 		o := r.kvHostOff(l, 2) + from*d
-		out = append(out, append([]uint16(nil), r.kc[l].U16s()[o:o+n*d]...), append([]uint16(nil), r.vc[l].U16s()[o:o+n*d]...))
+		out = append(out, slices.Clone(r.kc[l].U16s()[o:o+n*d]), slices.Clone(r.vc[l].U16s()[o:o+n*d]))
 	}
 	return out
 }
@@ -213,7 +214,7 @@ func TestQ4KStep_verifyRowsMatchDecode(t *testing.T) {
 		}
 		var ref [][]float32
 		for j, e := range embs {
-			ref = append(ref, append([]float32(nil), r.ForwardEmb(e, c.D+j)...))
+			ref = append(ref, slices.Clone(r.ForwardEmb(e, c.D+j)))
 		}
 		seqs := make([]batchSeq, c.M)
 		for j := range seqs {
@@ -248,7 +249,7 @@ func TestQ4KStep_twoSequencesMatchAlone(t *testing.T) {
 	for s := range 2 {
 		mc3Fill(t, r, s, hist[s])
 		for k := range steps {
-			alone[s] = append(alone[s], append([]float32(nil), r.ForwardEmb(mc3Emb(r, next[s][k]), depth[s]+k)...))
+			alone[s] = append(alone[s], slices.Clone(r.ForwardEmb(mc3Emb(r, next[s][k]), depth[s]+k)))
 		}
 	}
 	for s := range 2 { // the same history again; the steps overwrite each position before attention reads it

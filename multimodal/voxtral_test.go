@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -115,7 +116,7 @@ func edges(a []int) []int {
 	if len(a) <= 14 {
 		return a
 	}
-	return append(append(append([]int(nil), a[:5]...), -1), a[len(a)-8:]...)
+	return append(append(slices.Clone(a[:5]), -1), a[len(a)-8:]...)
 }
 
 // Each plausible mistake in the builder must put at least one request over the bar.

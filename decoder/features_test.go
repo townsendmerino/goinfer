@@ -264,10 +264,10 @@ var admissionGolden = map[string][]string{
 	// code does, not because it is trusted.
 	"mellum":  {"cuda", "metal", "webgpu"},
 	"mistral": {"cuda", "metal", "webgpu"},
-	// Ministral 3: FeatAttnTemp (rope_kv/rope2's qTempScale param, Q-only, post-rotation) is declared on cuda and metal and is
-	// its only required feature; not webgpu, where it is unimplemented.
-	"mistral3":   {"cuda", "metal"},
-	"ministral3": {"cuda", "metal"},
+	// Ministral 3: FeatAttnTemp is its only required feature: cuda and metal scale Q after rotation (rope_kv/rope2's
+	// qTempScale), webgpu folds the temperature into the attention score scale (gpu.TestMinistral3ResidentParityWebGPU).
+	"mistral3":   {"cuda", "metal", "webgpu"},
+	"ministral3": {"cuda", "metal", "webgpu"},
 	"mixtral":    {"cuda", "metal", "webgpu"},
 	"nemotron_h": {"cuda", "metal", "webgpu"}, // Metal since OP2b step 2, CUDA since OP2b step 2d's declaration, int4 only (buildMamba declines int8 on both)
 	"phi3":       {"cuda", "metal", "webgpu"},
@@ -427,6 +427,7 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 			FeatEmbedScale, FeatFinalLogitSoftcap, FeatSandwichNorm, FeatGatedGELU, FeatOutBias, FeatAttnSink,
 			FeatGemma4EModel,                            // gpu's TestGemma4EModel_webgpuResidentParity and its planted defects
 			FeatNoPE, FeatPostOnlyNorm, FeatQKNormWhole, // Olmo Hybrid / Olmo 3 / SmolLM3 (gpu.TestOlmoHybridResidentParityWebGPU)
+			FeatAttnTemp,                        // folded into the attention score scale (gpu.TestMinistral3ResidentParityWebGPU)
 			FeatPairwiseRoPE, FeatPairwiseMRoPE, // the pairwise rope twins (gpu.TestGlmOcrResidentParityWebGPU, kernels.TestPairwiseTwins_matchGPTJ)
 		},
 	}

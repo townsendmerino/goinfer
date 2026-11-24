@@ -4,10 +4,11 @@ package metal
 
 import (
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"math"
+	"slices"
 	"sync"
 
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 )
@@ -201,7 +202,7 @@ func (a *g4vAccel) Hidden(patches []float32, pos [][2]int) ([]float32, error) {
 			e = a.eg2Ops.q.Begin()
 		}
 	}
-	return append([]float32(nil), a.x.Floats()[:np*H]...), nil
+	return slices.Clone(a.x.Floats()[:np*H]), nil
 }
 
 // reg is the tower's activation buffer for a program register (vision.TowerReg): x is the residual stream, mid and mid2

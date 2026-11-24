@@ -3,6 +3,7 @@ package decoder
 import (
 	"bytes"
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -60,8 +61,8 @@ func TestFakeQuantOffBitIdentical(t *testing.T) {
 	const rows, cols = 4, 64
 	w := testWeights(rows, cols)
 
-	got := quantizeWM(linalg.WrapF32(append([]float32(nil), w...), rows, cols), quantInt4)
-	want := linalg.QuantizeInt4(append([]float32(nil), w...), rows, cols, int4GroupSize)
+	got := quantizeWM(linalg.WrapF32(slices.Clone(w), rows, cols), quantInt4)
+	want := linalg.QuantizeInt4(slices.Clone(w), rows, cols, int4GroupSize)
 
 	gq, gs, gg, gok := Int4F32(&got)
 	wq, ws, wg, wok := Int4F32(&want)

@@ -28,7 +28,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"testing"
 	"time"
 
@@ -126,7 +125,7 @@ func TestConfidenceC0(t *testing.T) {
 		t.Fatal(err)
 	}
 	var tickets []c0Ticket
-	for _, line := range bytes.Split(bytes.TrimSpace(raw), []byte("\n")) {
+	for line := range bytes.SplitSeq(bytes.TrimSpace(raw), []byte("\n")) {
 		var tk c0Ticket
 		if err := json.Unmarshal(line, &tk); err != nil {
 			t.Fatalf("ticket: %v", err)
@@ -433,7 +432,7 @@ func analyzeC0(t *testing.T, tc c0Ticket, ids []int, recs []c0Pos, tokBytes [][]
 			for k := range d.Dist {
 				keys = append(keys, k)
 			}
-			sort.Strings(keys)
+			slices.Sort(keys)
 			for _, k := range keys {
 				d.Dist[k] /= total
 			}

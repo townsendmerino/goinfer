@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -8,7 +9,7 @@ import (
 	"hash"
 	"math"
 	"reflect"
-	"sort"
+	"slices"
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -35,7 +36,7 @@ var loaderSkip = map[string]bool{
 	"kquant": true, "ggufPath": true, "kquantFile": true, "bakedQuant": true,
 }
 
-var weightMatType = reflect.TypeOf(linalg.WeightMat{})
+var weightMatType = reflect.TypeFor[linalg.WeightMat]()
 
 // identWalker accumulates the identities of one walk. kquant is the walked Weights' k-quant source table, keyed by the
 // int8 copy's data pointer; matched counts the entries a WeightMat claimed.
@@ -64,7 +65,7 @@ func loaderIdentity(w *Weights) []tensorIdentity {
 	if n := len(w.kquant) - iw.matched; n != 0 {
 		iw.out = append(iw.out, tensorIdentity{"kquant", "unmatched", fmt.Sprint(n), ""})
 	}
-	sort.Slice(iw.out, func(i, j int) bool { return iw.out[i].Path < iw.out[j].Path })
+	slices.SortFunc(iw.out, func(a, b tensorIdentity) int { return cmp.Compare(a.Path, b.Path) })
 	return iw.out
 }
 
@@ -82,8 +83,8 @@ func checkIdentType(path string, t reflect.Type, seen map[reflect.Type]bool) {
 		}
 		checkIdentType(path, t.Elem(), seen)
 	case reflect.Struct:
-		for i := range t.NumField() {
-			checkIdentType(path+"."+t.Field(i).Name, t.Field(i).Type, seen)
+		for field := range t.Fields() {
+			checkIdentType(path+"."+field.Name, field.Type, seen)
 		}
 	case reflect.Slice, reflect.Array:
 		checkIdentType(path+"[]", t.Elem(), seen)
@@ -247,6 +248,6 @@ func loaderIdentityDiff(a, b []tensorIdentity) []string {
 			out = append(out, p)
 		}
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }

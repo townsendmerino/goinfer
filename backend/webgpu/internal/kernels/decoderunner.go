@@ -293,6 +293,10 @@ type RunModel struct {
 	// PostOnlyNorm (FeatPostOnlyNorm) is a model whose attention and FFN layers carry no pre-norm: AttnNorm and MlpNorm are nil there,
 	// and the sublayer's input is quantized as it is.
 	PostOnlyNorm bool
+	// AttnTemp (decoder.FeatAttnTemp, Ministral 3) is the query's attention temperature at a token's position, applied after
+	// RoPE; nil is off. Scaling q scales each score q·k by the same factor, so the runner multiplies it into the attention
+	// uniform's score scale per token instead of touching q. The batched prefill applies none and declines (RunModelToPrefill).
+	AttnTemp func(pos int) float32
 	// ActG32 (decoder.Options.ActQuantGroup == 32) runs every decode quantize and W8A8 GEMV on the per-32 twins
 	// (actgroup.go): each activation scale buffer holds np/32 floats. Dense W8A8 only; newDecodeRunner refuses the
 	// paths whose kernels read one scale per vector.
@@ -301,6 +305,9 @@ type RunModel struct {
 	// NeoX ones; the batched prefill declines (RunModelToPrefill).
 	Pairwise bool
 }
+
+// AttnTempOffForTest is the attention temperature's plant: a runner built while it is set ignores RunModel.AttnTemp.
+var AttnTempOffForTest bool
 
 // MlaRunParams carries the model-level MLA geometry (uniform across layers). Per-layer
 // weights + the latent cache live on runLayer. latDim = kvLoRARank + qkRope is the
@@ -449,6 +456,9 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 		// layers, which are part of the same admission and so are compiled unconditionally with it.
 		ensures = append(ensures, c.ensureMambaConv, c.ensureDeltaRule, c.ensureDeltaNorm,
 			c.ensureDeltaGates, c.ensureDeltaGNorm, c.ensureDeltaQSplit, c.ensureDeltaAttnGate)
+	}
+	if m.AttnTemp != nil && m.Mla != nil {
+		return nil, fmt.Errorf("gpu: newDecodeRunner: the attention temperature on the MLA path is not implemented")
 	}
 	if m.ActG32 {
 		switch {
@@ -803,6 +813,14 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 	// and caches it by value; each geom owns the v-store, attn and windowed-attn uniforms, and the rope uniforms hang off it
 	// keyed by rope scale.
 	geomCache := map[[4]int]*attnGeom{}
+	// scoreScale is the attention score scale at pos: the model's, times the query's attention temperature where it has one.
+	tempOff := AttnTempOffForTest
+	scoreScale := func(pos int) float32 {
+		if m.AttnTemp == nil || tempOff {
+			return scale
+		}
+		return scale * m.AttnTemp(pos)
+	}
 	geomFor := func(ghd, gnKV, ghalf int, kEqV bool) *attnGeom {
 		defer inRole("geomFor")()
 		kb := 0
@@ -851,7 +869,7 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 			dst[3] = uint32(pos + 1)
 			dst[4] = uint32(start)
 			dst[5] = uint32(nH / g.nKV)
-			dst[6] = F32bits(scale)
+			dst[6] = F32bits(scoreScale(pos))
 			dst[7] = 0
 			return 8
 		}})
@@ -873,7 +891,7 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 				dst[3] = uint32(pos + 1)
 				dst[4] = uint32(ws)
 				dst[5] = uint32(nH / g.nKV)
-				dst[6] = F32bits(scale)
+				dst[6] = F32bits(scoreScale(pos))
 				dst[7] = 0
 				return 8
 			}})

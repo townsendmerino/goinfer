@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
@@ -140,8 +141,8 @@ func TestApplyMRoPE_scalarEquivalence(t *testing.T) {
 		base[i] = float32((i*7)%13)*0.1 - 0.6
 	}
 	for _, pos := range []int{0, 1, 5, 42, 1000} {
-		a := append([]float32(nil), base...)
-		b := append([]float32(nil), base...)
+		a := slices.Clone(base)
+		b := slices.Clone(base)
 		applyRoPE(a, heads, headDim, pos, invFreq, 1.0)
 		applyMRoPE(b, heads, headDim, [3]int{pos, pos, pos}, section, invFreq, 1.0, false)
 		for i := range a {
@@ -151,8 +152,8 @@ func TestApplyMRoPE_scalarEquivalence(t *testing.T) {
 		}
 	}
 	// A divergent (image) position must NOT equal the scalar result (non-vacuous).
-	a := append([]float32(nil), base...)
-	b := append([]float32(nil), base...)
+	a := slices.Clone(base)
+	b := slices.Clone(base)
 	applyRoPE(a, heads, headDim, 4, invFreq, 1.0)
 	applyMRoPE(b, heads, headDim, [3]int{4, 5, 6}, section, invFreq, 1.0, false)
 	same := true

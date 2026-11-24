@@ -1,6 +1,7 @@
 package tokenizer
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -150,7 +151,7 @@ func byteLevelStreamTokenizer() (*Tokenizer, []int, []int) {
 
 func TestStream_byteLevelHoldsPartialCharacters(t *testing.T) {
 	tk, words, uni := byteLevelStreamTokenizer()
-	ids := append(append([]int{}, words...), uni...)
+	ids := slices.Concat(words, uni)
 	want, err := tk.Decode(ids)
 	if err != nil {
 		t.Fatal(err)

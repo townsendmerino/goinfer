@@ -4,6 +4,7 @@ package metal
 
 import (
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -53,7 +54,7 @@ func TestGemma4DenseScaled_metalParity(t *testing.T) {
 	run := func(fwd func(pos, tok int) []float32) [][]float32 {
 		out := make([][]float32, len(prompt))
 		for i, tok := range prompt {
-			out[i] = append([]float32(nil), fwd(i, tok)...)
+			out[i] = slices.Clone(fwd(i, tok))
 		}
 		return out
 	}

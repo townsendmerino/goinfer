@@ -41,7 +41,7 @@ func (r *refMixer) step(proj []float64, eps float64) []float64 {
 		}
 		conv[c] = silu64(s)
 	}
-	r.win = append(r.win, append([]float64(nil), xBC...))
+	r.win = append(r.win, slices.Clone(xBC))
 	gSize := p.NGroups * N
 	x, B, C := conv[:dInner], conv[dInner:dInner+gSize], conv[dInner+gSize:dInner+2*gSize]
 	y := make([]float64, dInner)

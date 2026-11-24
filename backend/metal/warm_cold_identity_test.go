@@ -32,7 +32,7 @@ func TestPrefillLast_tailContinuationMatchesCold(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cold pass: %v", err)
 	}
-	cold = append([]float32(nil), cold...)
+	cold = slices.Clone(cold)
 	differ := func(x []float32) int {
 		d := 0
 		for i := range cold {

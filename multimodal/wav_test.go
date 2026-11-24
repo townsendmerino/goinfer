@@ -1,6 +1,9 @@
 package multimodal
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 // Samples is the price a caller refuses a clip by, so it must be exactly the length Decode returns: every rate class
 // (equal, up by an integer, up and down by a ratio, down), channel count, and length, with torn frames at the end of the file.
@@ -49,9 +52,9 @@ func TestWAV_parseDecodesNothing(t *testing.T) {
 func TestWAV_refusesWhatDecodeRefuses(t *testing.T) {
 	good := wavBytes(make([]float32, 8), 1, 16000, false)
 	badRate := wavBytes(make([]float32, 8), 1, 383999, false)
-	eightBit := append([]byte(nil), good...)
+	eightBit := slices.Clone(good)
 	eightBit[34] = 8
-	noFmt := append(append([]byte(nil), good[:12]...), good[36:]...)
+	noFmt := slices.Concat(good[:12], good[36:])
 	for name, data := range map[string][]byte{
 		"empty": nil, "not riff": []byte("ID3 not a wav at all"), "header only": good[:12],
 		"filter bomb rate": badRate, "8-bit": eightBit, "data before fmt": noFmt,

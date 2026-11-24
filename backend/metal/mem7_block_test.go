@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"testing"
 	"time"
 
@@ -144,7 +143,7 @@ func TestMEM7_speedSmallBlock(t *testing.T) {
 		fmt.Fprintf(os.Stderr, "[BLK-G3] %s: today %.2fs, 128 MiB %.2fs (ratio %.4f); elapsed %.0fs\n",
 			label, dt.Seconds(), ds.Seconds(), ds.Seconds()/dt.Seconds(), time.Since(start).Seconds())
 	}
-	sort.Float64s(ratios)
+	slices.Sort(ratios)
 	med := ratios[len(ratios)/2]
 	fmt.Fprintf(os.Stderr, "[BLK-G3] median 128 MiB / today %.4f (pairs %v)\n", med, ratios)
 	switch {

@@ -228,8 +228,7 @@ func benchExpChunked(b *testing.B, V int, reuse bool) {
 		}
 	}
 	shared := make([]float64, V)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		out := shared
 		if !reuse {
 			out = make([]float64, V)

@@ -18,6 +18,7 @@
 package decoder
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -26,7 +27,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -86,7 +87,7 @@ func layoutTopK(l []float32, k int) []int {
 	for i := range idx {
 		idx[i] = i
 	}
-	sort.Slice(idx, func(a, b int) bool { return l[idx[a]] > l[idx[b]] })
+	slices.SortFunc(idx, func(a, b int) int { return cmp.Compare(l[b], l[a]) })
 	return idx[:k]
 }
 

@@ -15,6 +15,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1358,7 +1359,7 @@ func (a *metalResident) ResidualAll(ctx context.Context, embeddings [][]float32,
 		if err := a.r.takeExecErr(); err != nil {
 			return nil, err // a command buffer aborted: never return a stale residual
 		}
-		out = append(out, append([]float32(nil), a.r.x.Floats()[:a.r.H]...))
+		out = append(out, slices.Clone(a.r.x.Floats()[:a.r.H]))
 	}
 	return out, nil
 }
@@ -1386,7 +1387,7 @@ func (a *metalResident) ForwardN(embeddings [][]float32, startPos int) ([][]floa
 			if err != nil {
 				return nil, err
 			}
-			out[i] = append([]float32(nil), l...)
+			out[i] = slices.Clone(l)
 		}
 		return out, nil
 	}

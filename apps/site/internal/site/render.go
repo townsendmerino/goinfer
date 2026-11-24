@@ -8,7 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -139,12 +139,7 @@ func (m *Model) funcs(cfg Config) template.FuncMap {
 			return "0"
 		},
 		"hasTask": func(f *Family, t string) bool {
-			for _, x := range f.Tasks {
-				if x == t {
-					return true
-				}
-			}
-			return false
+			return slices.Contains(f.Tasks, t)
 		},
 		"lt100": func(p *float64) bool { return p != nil && *p < 100 },
 		"lt99":  func(p *float64) bool { return p != nil && *p < 0.99 },
@@ -379,7 +374,7 @@ func (m *Model) Render(out string, cfg Config, ws []*Writeup) (*Report, error) {
 		}
 	}
 	names, _ := fs.Glob(assetFS, "assets/*")
-	sort.Strings(names)
+	slices.Sort(names)
 	for _, n := range names {
 		b, err := assetFS.ReadFile(n)
 		if err != nil {

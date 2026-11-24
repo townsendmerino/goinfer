@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"os"
+	"slices"
 	"testing"
 	"time"
 )
@@ -96,7 +97,7 @@ func median(xs []float64) float64 {
 	if len(xs) == 0 {
 		return 0
 	}
-	c := append([]float64(nil), xs...)
+	c := slices.Clone(xs)
 	for i := range c {
 		for j := i + 1; j < len(c); j++ {
 			if c[j] < c[i] {

@@ -37,15 +37,8 @@ func scratchRepo(t *testing.T, body string) (dir, rel string) {
 	if err := os.WriteFile(filepath.Join(dir, rel), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	// runMutation chdirs to the repo root itself; put the caller back either way.
-	t.Cleanup(func() { _ = os.Chdir(wd) })
+	// runMutation chdirs to the repo root itself; t.Chdir restores the caller's cwd either way.
+	t.Chdir(dir)
 	return dir, rel
 }
 

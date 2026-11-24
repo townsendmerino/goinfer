@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -58,7 +59,7 @@ func TestPrefillResidScale_identityTiny(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return append([]float32(nil), l...)
+		return slices.Clone(l)
 	}
 	plain, scaled := run(1), run(0)
 	md := 0.0

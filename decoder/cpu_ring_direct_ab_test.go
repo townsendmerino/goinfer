@@ -4,6 +4,7 @@ package decoder
 
 import (
 	"context"
+	"slices"
 	"testing"
 )
 
@@ -43,7 +44,7 @@ func TestCPURing_directDecodeLogitsBitIdentical(t *testing.T) {
 		ringDirectDecode = on
 		var steps [][]float32
 		sp := SamplingParams{Temperature: 0, LogitProcessor: func(_ []int, logits []float32) {
-			steps = append(steps, append([]float32(nil), logits...))
+			steps = append(steps, slices.Clone(logits))
 		}}
 		out, g := h.m.Generate(context.Background(), h.ids, 48, sp)
 		for range out {
@@ -108,7 +109,7 @@ func TestCPUKVI8_parallelWidenLogitsBitIdentical(t *testing.T) {
 		kvDequantParallel = on
 		var steps [][]float32
 		sp := SamplingParams{Temperature: 0, LogitProcessor: func(_ []int, logits []float32) {
-			steps = append(steps, append([]float32(nil), logits...))
+			steps = append(steps, slices.Clone(logits))
 		}}
 		out, g := h.m.Generate(context.Background(), h.ids, 48, sp)
 		for range out {

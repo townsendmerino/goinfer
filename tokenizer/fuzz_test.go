@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -57,10 +58,10 @@ func FuzzReadGGUFMeta(f *testing.F) {
 		for _, n := range []int{4, 8, 24, 64, len(raw) / 2, len(raw) - 1} {
 			f.Add(raw[:n])
 		}
-		hostile := append([]byte(nil), raw...)
+		hostile := slices.Clone(raw)
 		binary.LittleEndian.PutUint64(hostile[8:], 1<<62) // tensor count
 		f.Add(hostile)
-		hostile = append([]byte(nil), raw...)
+		hostile = slices.Clone(raw)
 		binary.LittleEndian.PutUint64(hostile[16:], 1<<62) // key count
 		f.Add(hostile)
 	}

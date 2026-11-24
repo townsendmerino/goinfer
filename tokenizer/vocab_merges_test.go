@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 )
@@ -190,7 +189,7 @@ func TestLoadVocabMerges_realQwen3ASR(t *testing.T) {
 	for i := 0; i < 151700; i += 77 {
 		ids = append(ids, i)
 	}
-	sort.Ints(ids)
+	slices.Sort(ids)
 	wd, _ := want.Decode(ids)
 	gd, _ := got.Decode(ids)
 	if wd != gd {

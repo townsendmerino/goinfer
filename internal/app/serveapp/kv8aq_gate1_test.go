@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 
@@ -55,7 +54,7 @@ func TestKV8aQ_gate1Scopes(t *testing.T) {
 	defer ts.Close()
 
 	files, _ := filepath.Glob(filepath.Join(dir, "*.json"))
-	sort.Strings(files)
+	slices.Sort(files)
 	of, err := os.Create(out)
 	if err != nil {
 		t.Fatal(err)

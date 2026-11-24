@@ -2,6 +2,7 @@ package serveapp
 
 import (
 	"encoding/json"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/chat"
@@ -18,7 +19,7 @@ import (
 
 func TestForcedTool_loneToolConvenienceEndsAtTheToolResult(t *testing.T) {
 	lone := []chat.Tool{{Name: "get_weather", Parameters: json.RawMessage(`{"type":"object"}`)}}
-	two := append(append([]chat.Tool(nil), lone...), chat.Tool{Name: "get_time", Parameters: json.RawMessage(`{"type":"object"}`)})
+	two := append(slices.Clone(lone), chat.Tool{Name: "get_time", Parameters: json.RawMessage(`{"type":"object"}`)})
 	choice := func(s string) json.RawMessage {
 		if s == "" {
 			return nil

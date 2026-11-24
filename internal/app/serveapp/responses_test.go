@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -229,7 +230,7 @@ func TestMaybeStore_preservesToolCallsForPreviousResponseID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	full := append(append([]chatMessage(nil), entry.messages...), contMsgs...)
+	full := slices.Concat(entry.messages, contMsgs)
 	if len(full) < 2 {
 		t.Fatal("reconstructed conversation is too short to check")
 	}

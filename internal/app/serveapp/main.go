@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"github.com/townsendmerino/goinfer/internal/app/serveapp/jobs"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -38,7 +39,6 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1935,11 +1935,7 @@ func (s *server) loadEncoder(cfg config) error {
 func (s *server) endpointSummary() string {
 	var parts []string
 	if len(s.models) > 0 {
-		names := make([]string, 0, len(s.models))
-		for n := range s.models {
-			names = append(names, n)
-		}
-		sort.Strings(names)
+		names := slices.Sorted(maps.Keys(s.models))
 		parts = append(parts, fmt.Sprintf("chat:[%s]", strings.Join(names, " ")))
 	}
 	if s.embed != nil {

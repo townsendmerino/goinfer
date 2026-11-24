@@ -4,7 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 
@@ -20,12 +21,7 @@ type taskStub struct {
 }
 
 func (e taskStub) PromptNames() []string {
-	var n []string
-	for k := range e.prompts {
-		n = append(n, k)
-	}
-	sort.Strings(n)
-	return n
+	return slices.Sorted(maps.Keys(e.prompts))
 }
 
 func (e taskStub) PromptText(name string) (string, error) {

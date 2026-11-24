@@ -3,13 +3,14 @@
 package metal
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -95,7 +96,7 @@ func TestQwen25VLPrefillSplit(t *testing.T) {
 	for i := range idx {
 		idx[i] = i
 	}
-	sort.Slice(idx, func(a, b int) bool { return got[idx[a]] > got[idx[b]] })
+	slices.SortFunc(idx, func(a, b int) int { return cmp.Compare(got[b], got[a]) })
 	var mx, s float64
 	mx = math.Inf(-1)
 	for _, v := range got {

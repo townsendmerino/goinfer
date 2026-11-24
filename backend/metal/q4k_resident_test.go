@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -104,7 +105,7 @@ func testQ4KLaneResident(t *testing.T, path string) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got = append(got, append([]float32(nil), lg...))
+		got = append(got, slices.Clone(lg))
 	}
 	mm.Close()
 
@@ -224,7 +225,7 @@ func TestPhi3Default_tracksTheCPUReferenceAtLeastAsCloselyAsTheOldDefault(t *tes
 		if err != nil {
 			t.Fatal(err)
 		}
-		got = append(got, append([]float32(nil), lg...))
+		got = append(got, slices.Clone(lg))
 	}
 	def.Close()
 
@@ -244,7 +245,7 @@ func TestPhi3Default_tracksTheCPUReferenceAtLeastAsCloselyAsTheOldDefault(t *tes
 			if err != nil {
 				t.Fatal(err)
 			}
-			out = append(out, append([]float32(nil), lg...))
+			out = append(out, slices.Clone(lg))
 		}
 		return out
 	}

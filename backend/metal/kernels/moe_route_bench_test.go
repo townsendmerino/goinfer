@@ -84,9 +84,9 @@ func BenchmarkMoERoute(b *testing.B) {
 				time1(true)
 				time1(false)
 			}
-			b.ResetTimer()
 			bestR, bestC := time.Hour, time.Hour
-			for i := range b.N {
+			i := 0
+			for b.Loop() {
 				// alternate which arm goes first, so a drift in clock or load lands on both
 				for _, route := range []bool{i%2 == 0, i%2 != 0} {
 					dt := time1(route)
@@ -96,6 +96,7 @@ func BenchmarkMoERoute(b *testing.B) {
 						bestC = min(bestC, dt)
 					}
 				}
+				i++
 			}
 			net := float64(bestR-bestC) / reps / float64(time.Microsecond)
 			b.ReportMetric(float64(bestR)/reps/float64(time.Microsecond), "us/route(best)")

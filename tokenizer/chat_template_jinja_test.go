@@ -50,11 +50,7 @@ func TestChatTemplateJinja(t *testing.T) {
 	// No-sibling mode (a .giw's embedded tokenizer.json, M-14) must still read nothing from disk,
 	// the jinja file included — even with one sitting in the process CWD.
 	dir := t.TempDir()
-	cwd, _ := os.Getwd()
-	defer os.Chdir(cwd)
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
+	t.Chdir(dir)
 	if err := os.WriteFile("chat_template.jinja", []byte(jinja), 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -67,7 +67,7 @@ func TestMoELayerMajor_matchesSequential(t *testing.T) {
 						}
 						d := r.layers[l].geom.kvDim
 						o := r.kvHostOff(l, 2)
-						out = append(out, append([]uint16(nil), r.kc[l].U16s()[o:o+n*d]...), append([]uint16(nil), r.vc[l].U16s()[o:o+n*d]...))
+						out = append(out, slices.Clone(r.kc[l].U16s()[o:o+n*d]), slices.Clone(r.vc[l].U16s()[o:o+n*d]))
 					}
 					return out
 				}
@@ -89,7 +89,7 @@ func TestMoELayerMajor_matchesSequential(t *testing.T) {
 								embs[i] = emb(c.prefix + i)
 							}
 							groups := r.moeBatchGroups
-							last = append([]float32(nil), r.prefillMoEPaged(embs, c.prefix, true)...)
+							last = slices.Clone(r.prefillMoEPaged(embs, c.prefix, true))
 							if err := r.takeExecErr(); err != nil {
 								t.Fatal(err)
 							}
@@ -108,7 +108,7 @@ func TestMoELayerMajor_matchesSequential(t *testing.T) {
 								if err != nil {
 									t.Fatal(err)
 								}
-								last = append([]float32(nil), lg...)
+								last = slices.Clone(lg)
 							}
 						}
 						kvs = kv(total)
@@ -117,7 +117,7 @@ func TestMoELayerMajor_matchesSequential(t *testing.T) {
 							if err != nil {
 								t.Fatal(err)
 							}
-							dec = append(dec, append([]float32(nil), lg...))
+							dec = append(dec, slices.Clone(lg))
 						}
 						return
 					}

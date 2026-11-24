@@ -73,7 +73,7 @@ func TestKSD7_prefillIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a = append([]float32(nil), a...)
+	a = slices.Clone(a)
 	b, err := pfn.PrefillLast(context.Background(), ksd7Prompt(mn, 100), 0)
 	if err != nil {
 		t.Fatal(err)
@@ -106,7 +106,7 @@ func TestKSD7_prefillSpeed(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return time.Since(t0).Seconds(), append([]float32(nil), lg...)
+		return time.Since(t0).Seconds(), slices.Clone(lg)
 	}
 	_, la := run(rfo, pfo)
 	_, lb := run(rfn, pfn)
@@ -163,7 +163,7 @@ func TestKSD7_memoryUnchanged(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return prefillScratchSeen.Load() - before, int64(probe.CurrentAllocatedSize()) - base, append([]float32(nil), lg...)
+		return prefillScratchSeen.Load() - before, int64(probe.CurrentAllocatedSize()) - base, slices.Clone(lg)
 	}
 	os1, oa, ol := arm(true)
 	ns, na, nl := arm(false)

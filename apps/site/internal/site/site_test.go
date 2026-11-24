@@ -16,8 +16,6 @@ func needRepo(t *testing.T) {
 	}
 }
 
-func f64(v float64) *float64 { return &v }
-
 func TestParseProof(t *testing.T) {
 	cases := []struct {
 		in           string
@@ -27,10 +25,10 @@ func TestParseProof(t *testing.T) {
 		via          string
 		coherentWant bool
 	}{
-		{"full-oracle 100.0%/1.00000", "released", false, f64(100), f64(1), "", false},
-		{"real-oracle 77.5%/0.99069", "released", false, f64(77.5), f64(0.99069), "", false},
-		{"experimental: real-oracle 100.0%/0.98988", "released", true, f64(100), f64(0.98988), "", false},
-		{"experimental: tiny-oracle 100.0%/1.00000 +coherent", "fixture", true, f64(100), f64(1), "", true},
+		{"full-oracle 100.0%/1.00000", "released", false, new(100.0), new(1.0), "", false},
+		{"real-oracle 77.5%/0.99069", "released", false, new(77.5), new(0.99069), "", false},
+		{"experimental: real-oracle 100.0%/0.98988", "released", true, new(100.0), new(0.98988), "", false},
+		{"experimental: tiny-oracle 100.0%/1.00000 +coherent", "fixture", true, new(100.0), new(1.0), "", true},
 		{"shared-path: deepseek_v3", "shared", false, nil, nil, "deepseek_v3", false},
 		{"pending", "other", false, nil, nil, "", false},
 	}
@@ -162,10 +160,10 @@ func TestCheckClaims_refusesDrift(t *testing.T) {
 		mutate func(c *Claim)
 		want   string
 	}{
-		{"the mockup's 253.1, the first of three runs and not the median", func(c *Claim) { c.Value = f64(253.1) }, "median"},
+		{"the mockup's 253.1, the first of three runs and not the median", func(c *Claim) { c.Value = new(253.1) }, "median"},
 		{"runs that are not in the record", func(c *Claim) { c.Runs = "253.1 / 252.8 / 252.9" }, "runs"},
 		{"no basis declared", func(c *Claim) { c.Basis = "" }, "basis"},
-		{"a peer figure from memory", func(c *Claim) { c.Peer = f64(199.9) }, "peer"},
+		{"a peer figure from memory", func(c *Claim) { c.Peer = new(199.9) }, "peer"},
 		{"a wrong raw ratio", func(c *Claim) { c.RatioRaw = "1.400" }, "ratio_raw"},
 		{"a display that does not round from the raw ratio", func(c *Claim) { c.Ratio = "1.35×" }, "rounds to"},
 		{"a date that is not in the section", func(c *Claim) { c.Date = "2026-01-01" }, "date"},
@@ -359,7 +357,7 @@ func TestVerify_failsWhenAFamilyHasNoPage(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(out, "models", victim, "index.html"), []byte(m.Families[3].DisplayName+" What hasn't been shown"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	m.Families[3].Checkpoints = append(m.Families[3].Checkpoints, &Checkpoint{ID: "ghost", Speed: map[string]*Speed{"mac": {Tok: f64(123.4), Date: "2026-09-25"}}})
+	m.Families[3].Checkpoints = append(m.Families[3].Checkpoints, &Checkpoint{ID: "ghost", Speed: map[string]*Speed{"mac": {Tok: new(123.4), Date: "2026-09-25"}}})
 	if err := Verify(out, m, nil, false); err == nil || !strings.Contains(err.Error(), "123.4") {
 		t.Errorf("Verify must refuse a speed that is not on its page, got %v", err)
 	}

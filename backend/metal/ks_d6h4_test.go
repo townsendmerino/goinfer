@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -56,7 +57,7 @@ func TestKSD6H4_gridTowerScratch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out1 = append([]float32(nil), out1...)
+	out1 = slices.Clone(out1)
 	after := size()
 
 	bufs := []struct {

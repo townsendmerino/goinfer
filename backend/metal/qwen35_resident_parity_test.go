@@ -4,6 +4,7 @@ package metal
 
 import (
 	"os"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -118,7 +119,7 @@ func deltaNetParityMetal(t *testing.T, ckpt, quant string) deltaNetParity {
 			t.Fatalf("resident forward[%d]: %v", i, err)
 		}
 		if len(firstRun) < 16 {
-			firstRun = append(firstRun, append([]float32(nil), lr...))
+			firstRun = append(firstRun, slices.Clone(lr))
 		}
 		if argmaxF32(lc) == argmaxF32(lr) {
 			agree++

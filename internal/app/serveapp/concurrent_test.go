@@ -28,13 +28,11 @@ func TestAdmission_capN(t *testing.T) {
 	order := make(chan int, 2)
 	var wg sync.WaitGroup
 	for i := 1; i <= 2; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
+		wg.Go(func() {
 			if a.enter(ctx, admissionRecord{}) {
 				order <- i
 			}
-		}(i)
+		})
 		time.Sleep(20 * time.Millisecond) // waiter 1 queues before waiter 2
 	}
 	select {
@@ -173,8 +171,7 @@ func TestServe_maxConcurrentMatchesAlone(t *testing.T) {
 	together := make([][]turn, nConv)
 	var wg sync.WaitGroup
 	for c := range nConv {
-		wg.Add(1)
-		go func(c int) { defer wg.Done(); together[c] = conv(lm, c) }(c)
+		wg.Go(func() { together[c] = conv(lm, c) })
 	}
 	wg.Wait()
 	for c := range nConv {

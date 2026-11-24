@@ -303,16 +303,14 @@ func parallelEmbedsF32ToF16Scaled(dst []uint16, embs [][]float32, H int, inv flo
 	var wg sync.WaitGroup
 	for lo := 0; lo < M; lo += chunk {
 		hi := min(lo+chunk, M)
-		wg.Add(1)
-		go func(lo, hi int) {
-			defer wg.Done()
+		wg.Go(func() {
 			for m := lo; m < hi; m++ {
 				row := embs[m]
 				for i := range H {
 					dst[m*H+i] = f32ToF16(row[i] * inv)
 				}
 			}
-		}(lo, hi)
+		})
 	}
 	wg.Wait()
 }

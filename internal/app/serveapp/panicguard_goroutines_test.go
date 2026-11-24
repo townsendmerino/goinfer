@@ -7,7 +7,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -128,7 +128,7 @@ func TestPanicGuard_everyGoFuncLiteralDefersARecover(t *testing.T) {
 			})
 		}
 	}
-	sort.Strings(missing)
+	slices.Sort(missing)
 	for _, m := range missing {
 		t.Errorf("%s: a `go func` with no deferred recover; defer one of panicguard.go's recover* functions, or a func literal that recovers", m)
 	}

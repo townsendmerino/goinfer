@@ -265,13 +265,11 @@ func TestKV2_busySourceUnderMC3(t *testing.T) {
 	var idsA []int
 	idsA = append(idsA, <-chA) // A has prefilled: its prompt is published
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for id := range chA {
 			idsA = append(idsA, id)
 		}
-	}()
+	})
 	b.turn(t, context.Background(), m, 1, maxTok)
 	wg.Wait()
 	if err := genA.Err(); err != nil {
@@ -349,7 +347,7 @@ func TestKV2_declinedPrefillSharesNothing(t *testing.T) {
 	rf.declinePrefill = true
 	a.turn(t, context.Background(), m, 0, maxTok)
 	rf.declinePrefill = false
-	for s := 0; s < 2; s++ {
+	for s := range 2 {
 		if q := m.kv.Seq(s); q != nil {
 			for _, r := range q.Classes() {
 				if r.Class != kvmgr.ClassUnknown {

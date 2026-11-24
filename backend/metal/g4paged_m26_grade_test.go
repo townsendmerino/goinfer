@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -39,7 +39,7 @@ func TestG4LayerMajor_M26AB(t *testing.T) {
 	Ms := []int{128, 512}
 	if v := os.Getenv("GOINFER_G4LM_MS"); v != "" {
 		Ms = nil
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			if n, err := strconv.Atoi(strings.TrimSpace(f)); err == nil && n > 0 {
 				Ms = append(Ms, n)
 			}
@@ -159,7 +159,7 @@ func TestG4LayerMajor_M26AB(t *testing.T) {
 					t.Fatalf("layer-major per-row: %v", err)
 				}
 				ms := float64(time.Since(st).Microseconds()) / 1e3
-				return append([]float32(nil), lg...), kvHash(M), ms, stagesAndSubmits() - s0
+				return slices.Clone(lg), kvHash(M), ms, stagesAndSubmits() - s0
 			}
 			a.Reset()
 			s0 := stagesAndSubmits()
@@ -175,7 +175,7 @@ func TestG4LayerMajor_M26AB(t *testing.T) {
 				t.Fatalf("sequential last: %v", err)
 			}
 			ms := float64(time.Since(st).Microseconds()) / 1e3
-			return append([]float32(nil), lg...), kvHash(M), ms, stagesAndSubmits() - s0
+			return slices.Clone(lg), kvHash(M), ms, stagesAndSubmits() - s0
 		}
 		lm := func() ([]float32, [32]byte, float64, int) {
 			a.Reset()
@@ -187,7 +187,7 @@ func TestG4LayerMajor_M26AB(t *testing.T) {
 				t.Fatalf("layer-major: %v", err)
 			}
 			ms := float64(time.Since(st).Microseconds()) / 1e3
-			return append([]float32(nil), lg...), kvHash(M), ms, stagesAndSubmits() - s0
+			return slices.Clone(lg), kvHash(M), ms, stagesAndSubmits() - s0
 		}
 		var ratios, seqMs, lmMs []float64
 		var seqSt, lmSt []int
@@ -230,8 +230,8 @@ func TestG4LayerMajor_M26AB(t *testing.T) {
 			}
 		}
 		med := func(v []float64) float64 {
-			s := append([]float64(nil), v...)
-			sort.Float64s(s)
+			s := slices.Clone(v)
+			slices.Sort(s)
 			return s[len(s)/2]
 		}
 		above := 0
@@ -241,8 +241,8 @@ func TestG4LayerMajor_M26AB(t *testing.T) {
 			}
 		}
 		medInt := func(v []int) int {
-			s := append([]int(nil), v...)
-			sort.Ints(s)
+			s := slices.Clone(v)
+			slices.Sort(s)
 			return s[len(s)/2]
 		}
 		hb("RESULT M=%d, %d slots: %s %.0f ms, %s %.0f ms (medians of %d); %s / %s median %.3f, %d of %d reps above 1 (per rep %v); experts staged a prompt: %s %d, %s %d; logits and K/V equal in every rep",

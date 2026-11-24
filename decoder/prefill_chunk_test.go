@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -33,7 +34,7 @@ func prefillChunkArm(t *testing.T, m *Model, prefix, suffix []int, chunk int) ([
 	if err != nil {
 		t.Fatalf("prefill: %v", err)
 	}
-	return append([]float32(nil), lg...), c
+	return slices.Clone(lg), c
 }
 
 // kvDiff counts the K/V elements (and ring slots) that differ between two caches, and names the first.

@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -351,8 +350,8 @@ func TestI8_real(t *testing.T) {
 		fmt.Fprintf(os.Stderr, "i8 speed %s: one pass %.2fs, blocks of %d %.2fs (ratio %.4f), own block %d %.2fs (ratio %.4f); elapsed %.0fs\n",
 			label, dw.Seconds(), forced, db.Seconds(), db.Seconds()/dw.Seconds(), own, do.Seconds(), do.Seconds()/dw.Seconds(), time.Since(start).Seconds())
 	}
-	sort.Float64s(ratios)
-	sort.Float64s(ownRatios)
+	slices.Sort(ratios)
+	slices.Sort(ownRatios)
 	fmt.Fprintf(os.Stderr, "i8 speed: %d tokens, median blocked / whole %.4f (pairs %v); own block, not graded, %.4f (%v)\n",
 		n, ratios[len(ratios)/2], ratios, ownRatios[len(ownRatios)/2], ownRatios)
 }

@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -45,7 +46,7 @@ func TestMoEKSlots_bitIdentical(t *testing.T) {
 		r.stopExec()
 		var out [][]float32
 		for pos, tok := range ids {
-			out = append(out, append([]float32(nil), r.Forward(tok, pos)...))
+			out = append(out, slices.Clone(r.Forward(tok, pos)))
 		}
 		return out
 	}
