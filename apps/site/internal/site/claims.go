@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -85,7 +85,7 @@ func medianOf(runs string) (float64, error) {
 		}
 		v[i] = f
 	}
-	sort.Float64s(v)
+	slices.Sort(v)
 	return v[1], nil
 }
 

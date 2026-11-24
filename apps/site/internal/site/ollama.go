@@ -150,7 +150,7 @@ func snapshotFamilies(cell string) []string {
 		return []string{}
 	}
 	var out []string
-	for _, f := range strings.Split(cell, " / ") {
+	for f := range strings.SplitSeq(cell, " / ") {
 		if k, ok := strings.CutPrefix(f, "aikit encoder ("); ok {
 			out = append(out, "encoder:"+strings.ToLower(strings.TrimSuffix(k, ")")))
 			continue
@@ -199,7 +199,7 @@ func CheckOllama(root string, in *Inputs) error {
 		return fmt.Errorf("ollama: %s has no \"The 60, in page order\" table", d.Snapshot)
 	}
 	var snap [][]string
-	for _, ln := range strings.Split(table, "\n") {
+	for ln := range strings.SplitSeq(table, "\n") {
 		if tableRow.MatchString(ln) {
 			snap = append(snap, splitCells(ln))
 		}
@@ -215,7 +215,7 @@ func CheckOllama(root string, in *Inputs) error {
 		}
 		caps := []string{}
 		if s[3] != "" {
-			for _, c := range strings.Split(s[3], ",") {
+			for c := range strings.SplitSeq(s[3], ",") {
 				caps = append(caps, strings.TrimSpace(c))
 			}
 		}
@@ -257,7 +257,7 @@ func CheckOllama(root string, in *Inputs) error {
 	for _, st := range []string{OllamaSupported, OllamaTextOnly, OllamaUnsupported, OllamaUnverified} {
 		want := fmt.Sprintf("| %d | %.1f | %s |", tags[st], pulls[st], share(st))
 		found := false
-		for _, ln := range strings.Split(res, "\n") {
+		for ln := range strings.SplitSeq(res, "\n") {
 			if strings.HasPrefix(ln, "| "+st+",") && strings.HasSuffix(strings.TrimSpace(ln), want) {
 				found = true
 			}

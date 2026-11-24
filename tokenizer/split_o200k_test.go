@@ -1,7 +1,7 @@
 package tokenizer
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"regexp"
 	"slices"
 	"strings"
@@ -127,13 +127,13 @@ func TestSplitO200k_matchesTheOrderedAlternationOracle(t *testing.T) {
 		}
 	}
 
-	rng := rand.New(rand.NewSource(7))
+	rng := rand.New(rand.NewPCG(7, 0))
 	alphabet := []rune("aAzZ09 \n\r\t'/.,-_!?éÉ\u0301新Ω")
 	for range 4000 {
-		n := rng.Intn(24)
+		n := rng.IntN(24)
 		b := make([]rune, n)
 		for i := range b {
-			b[i] = alphabet[rng.Intn(len(alphabet))]
+			b[i] = alphabet[rng.IntN(len(alphabet))]
 		}
 		s := string(b)
 		got, want := splitO200k(s), refSplitO200k(s)
@@ -146,12 +146,12 @@ func TestSplitO200k_matchesTheOrderedAlternationOracle(t *testing.T) {
 // Whatever it splits into, the pieces must reassemble to the input — a walker that drops or
 // duplicates a rune would otherwise pass any spot check that happened to miss the position.
 func TestSplitO200k_isLossless(t *testing.T) {
-	rng := rand.New(rand.NewSource(11))
+	rng := rand.New(rand.NewPCG(11, 0))
 	alphabet := []rune("aA0 \n'/é新")
 	for range 2000 {
-		b := make([]rune, rng.Intn(20))
+		b := make([]rune, rng.IntN(20))
 		for i := range b {
-			b[i] = alphabet[rng.Intn(len(alphabet))]
+			b[i] = alphabet[rng.IntN(len(alphabet))]
 		}
 		s := string(b)
 		if joined := strings.Join(splitO200k(s), ""); joined != s {
