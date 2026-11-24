@@ -131,6 +131,9 @@ func CreateBufferOn(c *Context, line string, d *wgpu.BufferDescriptor) (*wgpu.Bu
 // ReleaseBuffer closes b's lease and releases it: the gpu package's way to free a buffer.
 func ReleaseBuffer(b *wgpu.Buffer) { releaseBuf(b) }
 
+// MaxBufferSize is the largest single buffer c's device creates (its maxBufferSize limit).
+func MaxBufferSize(c *Context) uint64 { return c.device.GetLimits().MaxBufferSize }
+
 // BuffersHeld is wgpu-native's own count of the buffers this Context's instance holds for the user: what the ledger's open
 // leases must equal (I3). Diagnostics; nothing decides on it.
 func (c *Context) BuffersHeld() uint64 {
