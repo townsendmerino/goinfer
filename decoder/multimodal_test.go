@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -81,7 +82,7 @@ func TestMultimodal_embedInjectionMatchesIDPath(t *testing.T) {
 		if err != nil {
 			t.Fatalf("forward(%d): %v", id, err)
 		}
-		want = append([]float32(nil), want...) // forward returns cache scratch; copy before reuse
+		want = slices.Clone(want) // forward returns cache scratch; copy before reuse
 
 		embCache := m.NewCache(1)
 		e := make([]float32, hidden)
@@ -159,7 +160,7 @@ func TestMultimodal_embedInjectionSequence(t *testing.T) {
 		if err != nil {
 			t.Fatalf("forward: %v", err)
 		}
-		idLogits = append(idLogits, append([]float32(nil), l...))
+		idLogits = append(idLogits, slices.Clone(l))
 	}
 
 	embCache := m.NewCache(len(seq))

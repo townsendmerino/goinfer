@@ -317,7 +317,7 @@ func TestFixtureIdentityMismatch(t *testing.T) {
 
 	ulp := map[string][]float32{}
 	for n, v := range recorded {
-		w := append([]float32(nil), v...)
+		w := slices.Clone(v)
 		for i := range w {
 			if i%3 == 0 && w[i] != 1 {
 				w[i] = math.Nextafter32(w[i], 1) // 1-ULP noise on a third of the elements, as between arm64 and amd64

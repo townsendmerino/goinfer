@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -89,7 +90,7 @@ func (f *fakeResident) ForwardN(embeddings [][]float32, startPos int) ([][]float
 func (f *fakeResident) UploadKV(layer, base int, keys, vals []float32) error {
 	f.uploadKVs = append(f.uploadKVs, fakeUploadKVCall{
 		layer: layer, base: base,
-		keys: append([]float32(nil), keys...), vals: append([]float32(nil), vals...),
+		keys: slices.Clone(keys), vals: slices.Clone(vals),
 	})
 	return nil
 }

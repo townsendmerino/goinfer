@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"math/rand/v2"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -56,7 +57,7 @@ func TestInt4ParThreshold_qwen05bShapesFanOut(t *testing.T) {
 		linalg.MatmulBTW4A8Batch(&ws, a, 1, hidden, int4GroupSize, ops)
 		res := make([][]float32, len(ops))
 		for i := range ops {
-			res[i] = append([]float32(nil), ops[i].Dst...)
+			res[i] = slices.Clone(ops[i].Dst)
 		}
 		return res
 	}

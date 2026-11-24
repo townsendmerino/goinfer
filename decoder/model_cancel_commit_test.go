@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 )
 
@@ -73,7 +74,7 @@ func TestGenerateResident_alreadyCancelledDoesNotForgetWarmCache(t *testing.T) {
 	if gen.Err() != nil {
 		t.Fatalf("warm-up Generate: %v", gen.Err())
 	}
-	warm := append([]int(nil), m.boundIDsForTest()...)
+	warm := slices.Clone(m.boundIDsForTest())
 	if len(warm) == 0 {
 		t.Fatal("test setup: warm-up left no resIDs to protect — nothing for this test to check")
 	}

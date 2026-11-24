@@ -101,7 +101,7 @@ func TestQwen35GGUF_routeFlipAtOutlier(t *testing.T) {
 					t.Fatalf("%s prompt %d step %d: %d router calls, want %d (one per layer)",
 						label, pi, s, len(step), nL)
 				}
-				logits = append(logits, append([]float32(nil), lg...))
+				logits = append(logits, slices.Clone(lg))
 				sel = append(sel, step)
 				cur = p.GenIDs[s]
 			}

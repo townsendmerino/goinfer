@@ -140,7 +140,7 @@ func TestOptionPath_sessionSnapshot(t *testing.T) {
 			// Uninterrupted: both turns on one session.
 			whole := m.NewSession(0)
 			gen(t, func() (<-chan int, *Generation) { return whole.Generate(ctx, prompt, n, greedy) })
-			turn2 := append(append([]int(nil), whole.Tokens()...), 7, 11, 13)
+			turn2 := append(slices.Clone(whole.Tokens()), 7, 11, 13)
 			want := gen(t, func() (<-chan int, *Generation) { return whole.Generate(ctx, turn2, n, greedy) })
 
 			// Snapshotted after the first turn, restored, continued.

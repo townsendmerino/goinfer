@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
@@ -78,7 +79,7 @@ func TestWalkBatchPlant_qwen35ConvWindowDropped(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out = append([]float32(nil), hN[(to-from-1)*hidden:]...)
+			out = slices.Clone(hN[(to-from-1)*hidden:])
 			from = to
 		}
 		return out

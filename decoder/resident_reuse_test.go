@@ -278,7 +278,7 @@ func TestResidentReuseLen_recurrentImageClaims(t *testing.T) {
 	const P = 900 // the shared placeholder id
 	committed := []int{10, 11, P, P, P, P, 12, 13}
 	blk := residentImageBlock{start: 2, end: 6, hash: 7}
-	ext := append(append([]int(nil), committed...), 20, 21)
+	ext := append(slices.Clone(committed), 20, 21)
 	for _, tc := range []struct {
 		name   string
 		blocks []residentImageBlock
@@ -291,9 +291,9 @@ func TestResidentReuseLen_recurrentImageClaims(t *testing.T) {
 		{"committed block with no claim at all", []residentImageBlock{blk}, ext, nil, 0},
 		{"claim of a different length", []residentImageBlock{blk}, ext, []residentImageClaim{{Start: 2, Len: 3, Hash: 7}}, 0},
 		{"committed hash 0 never verifies, even against a claim of 0", []residentImageBlock{{start: 2, end: 6, hash: 0}}, ext, []residentImageClaim{{Start: 2, Len: 4, Hash: 0}}, 0},
-		{"a new image past the reused span is ordinary new work", []residentImageBlock{blk}, append(append([]int(nil), ext...), P, P, 30),
+		{"a new image past the reused span is ordinary new work", []residentImageBlock{blk}, append(slices.Clone(ext), P, P, 30),
 			[]residentImageClaim{{Start: 2, Len: 4, Hash: 7}, {Start: 10, Len: 2, Hash: 55}}, 8},
-		{"a claim straddling the committed boundary (ids still match the whole span)", []residentImageBlock{blk}, append(append([]int(nil), committed...), P, P, 20),
+		{"a claim straddling the committed boundary (ids still match the whole span)", []residentImageBlock{blk}, append(slices.Clone(committed), P, P, 20),
 			[]residentImageClaim{{Start: 2, Len: 4, Hash: 7}, {Start: 6, Len: 5, Hash: 3}}, 0},
 		{"claim over positions the state saw as plain tokens", nil, ext, []residentImageClaim{{Start: 2, Len: 4, Hash: 7}}, 0},
 		{"edited prefix", []residentImageBlock{blk}, append([]int{99}, ext[1:]...), []residentImageClaim{{Start: 2, Len: 4, Hash: 7}}, 0},

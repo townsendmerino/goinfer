@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
@@ -91,7 +92,7 @@ func gemma4MoEForwardParity(t *testing.T, goldenPath, ckpt, pinner string) {
 	}
 
 	// Greedy continuation must be byte-identical (argmax at every step).
-	cur := append([]int(nil), g.PromptIDs...)
+	cur := slices.Clone(g.PromptIDs)
 	cont := make([]int, 0, g.NNew)
 	for range g.NNew {
 		c2 := m.NewCache(len(cur))
