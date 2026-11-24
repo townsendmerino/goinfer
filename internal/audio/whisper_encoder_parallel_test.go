@@ -2,7 +2,8 @@ package audio
 
 import (
 	"math"
-	"math/rand"
+	"math/rand/v2"
+	"slices"
 	"sync/atomic"
 	"testing"
 
@@ -32,7 +33,7 @@ func TestParallelRows_coversEveryIndexOnce(t *testing.T) {
 
 // geluInto is the exact-GELU contract kernel over the whole buffer (the chunking and the fan-out change nothing), and the planted tanh defect keeps its scalar form.
 func TestWhisperGeluInto_isTheKernelAndKeepsTheDefect(t *testing.T) {
-	rng := rand.New(rand.NewSource(11))
+	rng := rand.New(rand.NewPCG(11, 0))
 	src := make([]float32, 3*(1<<14)+123) // several chunks and a ragged tail
 	for i := range src {
 		src[i] = float32(rng.NormFloat64()) * 3
@@ -40,7 +41,7 @@ func TestWhisperGeluInto_isTheKernelAndKeepsTheDefect(t *testing.T) {
 	want := make([]float32, len(src))
 	linalg.GELUContractInto(want, src)
 	e := &WhisperEncoder{}
-	got := append([]float32(nil), src...)
+	got := slices.Clone(src)
 	e.geluInto(got)
 	for i := range got {
 		if math.Float32bits(got[i]) != math.Float32bits(want[i]) {

@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -39,7 +40,7 @@ func TestGenerationTail_realTemplates(t *testing.T) {
 					}
 				}
 				keep := gen[:len(gen)-len(tail)]
-				next := tm.Render(system, append(append([]Turn(nil), turns...), Turn{Role: "assistant", Content: "Sure, here it is."},
+				next := tm.Render(system, append(slices.Clone(turns), Turn{Role: "assistant", Content: "Sure, here it is."},
 					Turn{Role: "user", Content: "And the next part?"}))
 				if !strings.HasPrefix(next, keep) {
 					t.Errorf("%s thinking=%s %s: a real next turn does not start with the prompt minus its tail", g.Checkpoint, mode, conv)

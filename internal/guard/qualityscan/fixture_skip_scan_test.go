@@ -20,7 +20,7 @@ func trackedTestdataDirs(t *testing.T, root string) map[string]bool {
 		t.Fatal(err)
 	}
 	dirs := map[string]bool{}
-	for _, p := range strings.Split(string(out), "\x00") {
+	for p := range strings.SplitSeq(string(out), "\x00") {
 		for d := path.Dir(p); d != "." && strings.Contains(d, "testdata"); d = path.Dir(d) {
 			dirs[d] = true
 		}

@@ -1,9 +1,10 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"io"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -85,8 +86,8 @@ func gradeQuick(w io.Writer, jobs []*quickJob, notRun, deferred []*quickCell, go
 	var vacuousAffected []string
 	skipBuckets := map[string]int{}
 	var skipRows []skipRow
-	sorted := append([]*quickJob(nil), tests...)
-	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].Name < sorted[j].Name })
+	sorted := slices.Clone(tests)
+	slices.SortStableFunc(sorted, func(a, b *quickJob) int { return cmp.Compare(a.Name, b.Name) })
 	for _, jb := range sorted {
 		pass, skip, fail = pass+jb.Pass, skip+jb.Skip, fail+jb.Fail
 		if jb.Hidden || jb.Err != nil {

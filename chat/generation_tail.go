@@ -1,5 +1,7 @@
 package chat
 
+import "slices"
+
 // generationTailProbe is the reply and the next user message GenerationTail renders after the conversation: text no template starts a
 // marker with, so the two renders part ways at the reply, never inside it.
 const generationTailProbe = "\x00goinfer generation tail probe\x00"
@@ -9,7 +11,7 @@ const generationTailProbe = "\x00goinfer generation tail probe\x00"
 // the reasoning of the turns after the last user query (Qwen3.5's tool-loop rule) renders a trailing assistant turn with its think
 // block, and drops it once a user turn follows.
 func NextTurns(turns []Turn) []Turn {
-	return append(append([]Turn(nil), turns...), Turn{Role: "assistant", Content: generationTailProbe}, Turn{Role: "user", Content: generationTailProbe})
+	return append(slices.Clone(turns), Turn{Role: "assistant", Content: generationTailProbe}, Turn{Role: "user", Content: generationTailProbe})
 }
 
 // GenerationTail is the end of Render(system, turns) that the next turn's prompt does not contain: the part of the generation prompt

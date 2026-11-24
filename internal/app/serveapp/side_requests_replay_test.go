@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -68,7 +68,7 @@ func TestSideRequests_evictionCounterfactual(t *testing.T) {
 		side                     bool
 	}
 	var ls []line
-	for _, l := range strings.Split(string(logRaw), "\n") {
+	for l := range strings.SplitSeq(string(logRaw), "\n") {
 		if m := reqRE.FindStringSubmatch(l); m != nil {
 			x := line{route: m[1], div: m[7]}
 			x.prompt, _ = strconv.Atoi(m[2])
@@ -102,7 +102,7 @@ func TestSideRequests_evictionCounterfactual(t *testing.T) {
 			t.Fatalf("request %d: %v", i+1, err)
 		}
 		ls[i].prompts = ids
-		ls[i].slotIDs = append(append([]int(nil), ids...), g.Gen...)
+		ls[i].slotIDs = slices.Concat(ids, g.Gen)
 	}
 	// A side request is one that took a slot another conversation held: it shares at most the preamble's first ids.
 	var mainAt int = -1
@@ -199,7 +199,7 @@ func TestSideRequests_sessionStartPrefix(t *testing.T) {
 		}
 		logRaw, _ := os.ReadFile(filepath.Join(out, "logs", "serve-"+name+".log"))
 		x := session{name: name, first: ids}
-		for _, l := range strings.Split(string(logRaw), "\n") {
+		for l := range strings.SplitSeq(string(logRaw), "\n") {
 			if m := reqRE.FindStringSubmatch(l); m != nil {
 				p, _ := strconv.Atoi(m[1])
 				c, _ := strconv.Atoi(m[2])
@@ -228,15 +228,15 @@ func TestSideRequests_sessionStartPrefix(t *testing.T) {
 			}
 		}
 	}
-	sort.Float64s(shareFrac)
-	sort.Float64s(over)
+	slices.Sort(shareFrac)
+	slices.Sort(over)
 	q := func(v []float64, f float64) float64 { return v[int(f*float64(len(v)-1))] }
 	var finals, firsts []int
 	for _, x := range ss {
 		finals, firsts = append(finals, x.finalL), append(firsts, len(x.first))
 	}
-	sort.Ints(finals)
-	sort.Ints(firsts)
+	slices.Sort(finals)
+	slices.Sort(firsts)
 	t.Logf("%d sessions, %d ordered pairs; first prompts %d to %d ids (median %d); final slot lengths %d to %d (median %d)",
 		len(ss), pairs, firsts[0], firsts[len(firsts)-1], firsts[len(firsts)/2], finals[0], finals[len(finals)-1], finals[len(finals)/2])
 	t.Logf("share of a session's first prompt that the previous session's prompt holds: min %.1f%%, median %.1f%%, max %.1f%%",

@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
@@ -160,7 +161,7 @@ func (v *VoxtralAudio) embed(chunks [][]float32, keepTower bool) ([]float32, []f
 	}
 	if v.defect == voxtralDefectChunksReversed && len(chunks) > 1 {
 		rev := make([]float32, 0, len(out))
-		for c := len(chunks) - 1; c >= 0; c-- {
+		for c := range slices.Backward(chunks) {
 			rev = append(rev, out[c*rows*H:(c+1)*rows*H]...)
 		}
 		out = rev

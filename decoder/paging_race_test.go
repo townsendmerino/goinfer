@@ -44,14 +44,12 @@ func TestExpertPager_concurrentNoRace(t *testing.T) {
 	p := &expertPager{cache: cache, nExperts: nExp, total: nExp * 4096}
 	var wg sync.WaitGroup
 	for g := range 6 {
-		wg.Add(1)
-		go func(off int) {
-			defer wg.Done()
+		wg.Go(func() {
 			for iter := range 50 {
-				p.touch(keys[(iter+off)%nExp])
+				p.touch(keys[(iter+g)%nExp])
 				_, _, _ = p.stats()
 			}
-		}(g)
+		})
 	}
 	wg.Wait()
 }

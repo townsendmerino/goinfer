@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -101,7 +101,7 @@ func TestPerRowScalePhase0(t *testing.T) {
 	for n := range byType {
 		names = append(names, n)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 
 	t.Logf("§7 Phase 0 — sym int4 weight reconstruction, per-row vs per-group (%s)", path)
 	t.Logf("%-6s %-4s %-11s %-13s %-15s", "type", "n", "grp/sym", "row/sym (×)", "row/symmse (×)")

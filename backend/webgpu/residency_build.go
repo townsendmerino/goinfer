@@ -465,6 +465,7 @@ func (bs *webgpuBuild) bindRunner() error {
 	if beta, _ := m.BackendView().AttnTempParams(); beta != 0 {
 		rd.rm.AttnTemp = m.BackendView().AttnTempScale
 	}
+	rd.rm.ActG32 = m.ActQuantGroup() == 32          // per-32 activation scales (staticResidentDecline admitted the shape)
 	rd.rm.Pairwise = m.BackendView().PairwiseRoPE() // FeatPairwiseRoPE — the pairwise rope twins
 	scale, addOne := m.AttnScale(), m.BackendView().RMSAddOne()
 	if bs.mlaOK { // MLA scores over qk_head_dim, not HeadDim — use the resolved score scale
@@ -479,7 +480,7 @@ func (bs *webgpuBuild) bindRunner() error {
 		mw, pp, ok := kernels.RunModelToPrefill(&rd.rm, bs.hd)
 		pp.MropeAxis = rd.mropeAxis
 		if !ok {
-			return nil, fmt.Errorf("gpu: PrefillLast declines — model uses a feature outside the plain dense pass (MoE/MLA/SSM/sliding-window/pairwise RoPE/attention temperature/…)")
+			return nil, fmt.Errorf("gpu: PrefillLast declines — model uses a feature outside the plain dense pass (MoE/MLA/SSM/sliding-window/pairwise RoPE/per-32 activations/attention temperature/…)")
 		}
 		// q/k/v bias (Qwen2) on an int8 projection is admitted on Vulkan only: the fused-epilogue tiled GEMM
 		// (matmulTiledW8A8BiasKernelWGSL, see runModelToPrefill) is bit-exact there but still diverges on Metal past nKeys~15

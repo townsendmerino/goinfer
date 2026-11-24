@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"math"
+	"slices"
 	"testing"
 )
 
@@ -83,7 +84,7 @@ func TestApplyRoPE_partialRotary(t *testing.T) {
 	rotaryDim := 4 // partial: rotate first 4 of 8 dims
 
 	vec := []float32{1, 2, 3, 4, 5, 6, 7, 8} // one head
-	orig := append([]float32(nil), vec...)
+	orig := slices.Clone(vec)
 
 	inv := computeInvFreq(base, rotaryDim, nil)
 	applyRoPE(vec, 1, headDim, pos, inv, 1.0)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"flag"
 	"fmt"
 	"io"
@@ -10,7 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -283,12 +284,8 @@ func quickMain(qc *quickConfig, o quickOpts, w io.Writer) int {
 		tests = append(tests, jb)
 	}
 	// Longest first; a cell never run before goes by its test count, which ranks decoder first.
-	sort.SliceStable(tests, func(i, j int) bool {
-		a, b := tests[i], tests[j]
-		if a.expected != b.expected {
-			return a.expected > b.expected
-		}
-		return len(a.Cell.Root.tests) > len(b.Cell.Root.tests)
+	slices.SortStableFunc(tests, func(a, b *quickJob) int {
+		return cmp.Or(cmp.Compare(b.expected, a.expected), cmp.Compare(len(b.Cell.Root.tests), len(a.Cell.Root.tests)))
 	})
 	jobs = append(jobs, tests...)
 
@@ -551,13 +548,13 @@ func printSelection(w io.Writer, qc *quickConfig, g *quickGraph, s *quickSelecti
 		for r := range m {
 			roots = append(roots, r)
 		}
-		sort.Slice(roots, func(i, j int) bool { return roots[i].Pkg < roots[j].Pkg })
+		slices.SortFunc(roots, func(a, b *testRoot) int { return cmp.Compare(a.Pkg, b.Pkg) })
 		fmt.Fprintf(w, "  %s (%d):\n", title, len(roots))
 		for _, r := range roots {
 			why := m[r]
 			shown := why
 			if !verbose && len(why) > 2 {
-				shown = append(append([]string(nil), why[:2]...), fmt.Sprintf("+%d more", len(why)-2))
+				shown = append(slices.Clone(why[:2]), fmt.Sprintf("+%d more", len(why)-2))
 			}
 			fmt.Fprintf(w, "    %-28s %s\n", shortPkg(qc, r.Pkg), strings.Join(shown, "; "))
 		}

@@ -24,11 +24,11 @@ import (
 	"fmt"
 	"go/scanner"
 	"go/token"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 )
 
@@ -151,12 +151,7 @@ func DepFiles(m *Manifest, fam Family) []string {
 	for _, f := range fam.Own {
 		seen[f] = true
 	}
-	out := make([]string, 0, len(seen))
-	for f := range seen {
-		out = append(out, f)
-	}
-	sort.Strings(out)
-	return out
+	return slices.Sorted(maps.Keys(seen))
 }
 
 var aikitPinRE = regexp.MustCompile(`(?m)^\s*github\.com/townsendmerino/aikit (v[0-9][^\s]*)`)
@@ -198,7 +193,7 @@ func ReadKernelTable(src Source) (map[string]map[string]string, error) {
 // then its kernels as "name=fingerprint" lines in sorted order.
 func KernelTableDigest(tab map[string]map[string]string) string {
 	h := sha256.New()
-	for _, cfg := range sortedKeys(tab) {
+	for _, cfg := range slices.Sorted(maps.Keys(tab)) {
 		h.Write([]byte(cfg + "\n"))
 		h.Write([]byte(kernelLines(tab[cfg])))
 	}
@@ -207,19 +202,10 @@ func KernelTableDigest(tab map[string]map[string]string) string {
 
 func kernelLines(kernels map[string]string) string {
 	var b strings.Builder
-	for _, k := range sortedKeys(kernels) {
+	for _, k := range slices.Sorted(maps.Keys(kernels)) {
 		b.WriteString(k + "=" + kernels[k] + "\n")
 	}
 	return b.String()
-}
-
-func sortedKeys[V any](m map[string]V) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }
 
 // TodayTail is the tail of today's key in src: "kernel_fingerprints=" and the kernel table's digest, or, in a tree from
@@ -338,10 +324,10 @@ func ProgramsDigest(fixtures []string, tab map[string]map[string]string) (string
 	if len(tab) == 0 {
 		return "", fmt.Errorf("%s is missing or empty, so it cannot stand for the builders", ProgramTablePath)
 	}
-	fx := append([]string(nil), fixtures...)
-	sort.Strings(fx)
+	fx := slices.Clone(fixtures)
+	slices.Sort(fx)
 	h := sha256.New()
-	for _, arch := range sortedKeys(tab) {
+	for _, arch := range slices.Sorted(maps.Keys(tab)) {
 		h.Write([]byte(arch + "\n"))
 		for _, f := range fx {
 			fp, ok := tab[arch][f]
@@ -387,17 +373,17 @@ func LoaderDigest(fixtures []string, tab map[string]map[string]map[string]string
 	if len(tab) == 0 {
 		return "", fmt.Errorf("%s is missing or empty, so it cannot stand for the loaders", LoaderTablePath)
 	}
-	fx := append([]string(nil), fixtures...)
-	sort.Strings(fx)
+	fx := slices.Clone(fixtures)
+	slices.Sort(fx)
 	h := sha256.New()
-	for _, arch := range sortedKeys(tab) {
+	for _, arch := range slices.Sorted(maps.Keys(tab)) {
 		h.Write([]byte(arch + "\n"))
 		for _, f := range fx {
 			modes := tab[arch][f]
 			if len(modes) == 0 {
 				return "", fmt.Errorf("%s has no %s entry for %s", LoaderTablePath, arch, f)
 			}
-			for _, m := range sortedKeys(modes) {
+			for _, m := range slices.Sorted(maps.Keys(modes)) {
 				h.Write([]byte(f + " " + m + "=" + modes[m] + "\n"))
 			}
 		}
@@ -432,7 +418,7 @@ func LoaderRule(fam Family, tab map[string]map[string]map[string]string) (fixtur
 	if len(fixtures) == 0 {
 		return nil, nil
 	}
-	sort.Strings(fixtures)
+	slices.Sort(fixtures)
 	dropped = []string{"decoder/weights.go"}
 	if hasGGUF {
 		dropped = append(dropped, "decoder/gguf.go")

@@ -3,6 +3,8 @@ package scheduler
 // Placement chooses among a model's resident sessions, given each one's tokens. A session a generation holds is
 // passed as nil tokens (or marked busy): its tokens are being written and are never read here.
 
+import "slices"
+
 // CommonPrefix is the length of the longest common leading run of a and b.
 func CommonPrefix(a, b []int) int {
 	n := min(len(a), len(b))
@@ -60,8 +62,8 @@ func KeepsFirst(first, keep int) bool { return first > 0 && keep >= first }
 // ColdestIdle is the index of the least recently used session no generation holds, or -1 when every one is busy. busy
 // is in recency order, most recent first.
 func ColdestIdle(busy []bool) int {
-	for i := len(busy) - 1; i >= 0; i-- {
-		if !busy[i] {
+	for i, b := range slices.Backward(busy) {
+		if !b {
 			return i
 		}
 	}

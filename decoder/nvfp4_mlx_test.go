@@ -9,7 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -91,7 +91,7 @@ func writeSyntheticSafetensors(t *testing.T, path string, tensors map[string]stR
 	for n := range tensors {
 		names = append(names, n)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 
 	type headerEntry struct {
 		DType       string `json:"dtype"`

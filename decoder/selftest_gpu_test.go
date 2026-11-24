@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -194,7 +195,7 @@ func TestGPUProbe_runsBeforeTheBuild(t *testing.T) {
 	}
 	m := load("int4")
 	mu.Lock()
-	first := append([]bool(nil), seq...)
+	first := slices.Clone(seq)
 	mu.Unlock()
 	if len(first) != len(selfTestFixtures)+1 || first[len(first)-1] {
 		t.Fatalf("first load built %v (true: a fixture); want %d fixtures, then the model", first, len(selfTestFixtures))
@@ -209,7 +210,7 @@ func TestGPUProbe_runsBeforeTheBuild(t *testing.T) {
 	}
 	m2 := load("int4")
 	mu.Lock()
-	second := append([]bool(nil), seq[len(first):]...)
+	second := slices.Clone(seq[len(first):])
 	mu.Unlock()
 	if len(second) != 1 || second[0] || m2.resident == nil {
 		t.Errorf("second load built %v (want one model build, no fixture), resident attached %v", second, m2.resident != nil)
@@ -218,7 +219,7 @@ func TestGPUProbe_runsBeforeTheBuild(t *testing.T) {
 	SkipSelfTests()
 	m3 := load("int8")
 	mu.Lock()
-	third := append([]bool(nil), seq[len(first)+len(second):]...)
+	third := slices.Clone(seq[len(first)+len(second):])
 	mu.Unlock()
 	if len(third) != 1 || third[0] || m3.resident == nil {
 		t.Errorf("with self-tests skipped the load built %v (want one model build, no fixture), resident attached %v", third, m3.resident != nil)

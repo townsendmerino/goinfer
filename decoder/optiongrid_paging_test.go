@@ -225,7 +225,7 @@ func TestOptionPath_moePaging(t *testing.T) {
 				p := ogPrompt()
 				const n = 20
 				want, _, plain := runSession(t, ref, p, n, 0)
-				full := append(append([]int(nil), p...), want...)
+				full := append(slices.Clone(p), want...)
 				for _, d := range []Drafter{&ogCountingDrafter{}, &ogRejectingDrafter{full: full}} {
 					s := m.NewSession(0)
 					got := gen(t, func() (<-chan int, *Generation) {

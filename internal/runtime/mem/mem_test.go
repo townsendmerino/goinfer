@@ -101,8 +101,7 @@ func TestSolve_pure(t *testing.T) {
 	var wg sync.WaitGroup
 	got := make([][]string, 16)
 	for g := range got {
-		wg.Add(1)
-		go func() { defer wg.Done(); got[g] = answers(7, n) }()
+		wg.Go(func() { got[g] = answers(7, n) })
 	}
 	wg.Wait()
 	for g, a := range got {
@@ -221,7 +220,7 @@ func TestImports(t *testing.T) {
 func TestHostCheck_notOfferedStreamingWhereItCannotPage(t *testing.T) {
 	const flag = "-stream-weights to lift"
 	check := func(quant string) HostCheck {
-		return HostCheck{HostLoad: HostLoad{Name: "m", Quant: quant, GGUF: true, MaxCtx: 4096}}
+		return HostCheck{Name: "m", Quant: quant, GGUF: true, MaxCtx: 4096}
 	}
 	for quant, pages := range map[string]bool{"q4k": false, "f32": false, "bf16": false, "f16": false,
 		"int8": true, "int8int8": true, "int4": true, "int4mix": true} {
@@ -310,7 +309,7 @@ func TestHostCheck_heapSlackBesideTheSource(t *testing.T) {
 	}
 	// A KV curve of 1 byte a position, with the budget leaving exactly 1,000 positions beside weights, source and slack.
 	kv := func(ctx int) int64 { return int64(ctx) }
-	c := HostCheck{HostLoad: HostLoad{Name: "m", GGUF: true, WeightBytes: w, SourceBytes: src, KV: kv, Ctx: 1 << 20}, Policy: Policy{WeightsFraction: 1, CtxFloor: 1}}
+	c := HostCheck{Name: "m", GGUF: true, WeightBytes: w, SourceBytes: src, KV: kv, Ctx: 1 << 20, Policy: Policy{WeightsFraction: 1, CtxFloor: 1}}
 	c.Available = w + src + w/100 + 1000
 	if got, ok := c.SmallerFittingContext(); !ok || got != 1000 {
 		t.Errorf("SmallerFittingContext = %d, %v; want 1000 positions once the slack is out of the budget", got, ok)

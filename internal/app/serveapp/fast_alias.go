@@ -2,6 +2,7 @@ package serveapp
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"strings"
 )
@@ -69,9 +70,7 @@ func (r *chatReq) applyFast() {
 		r.ChatTemplateKwargs = map[string]json.RawMessage{}
 	} else { // the request's own map is not shared with anything else, but do not edit a caller's value in place
 		m := make(map[string]json.RawMessage, len(r.ChatTemplateKwargs)+1)
-		for k, v := range r.ChatTemplateKwargs {
-			m[k] = v
-		}
+		maps.Copy(m, r.ChatTemplateKwargs)
 		r.ChatTemplateKwargs = m
 	}
 	r.ChatTemplateKwargs["enable_thinking"] = json.RawMessage("false")

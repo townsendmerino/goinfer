@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/townsendmerino/aikit/embed"
 	"github.com/townsendmerino/aikit/linalg"
@@ -216,7 +217,7 @@ func LoadGlmOcrVisionEncoder(dir string, quant bool) (*GlmOcrVisionEncoder, erro
 		if err != nil {
 			return nil
 		}
-		return append([]float32(nil), v...)
+		return slices.Clone(v)
 	}
 	hidden, inter, out := cfg.HiddenSize, cfg.IntermediateSize, cfg.OutHiddenSize
 	headDim := hidden / cfg.NumHeads

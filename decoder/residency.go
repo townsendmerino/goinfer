@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math"
 	"runtime/debug"
-	"sort"
+	"slices"
 	"strings"
 	"sync/atomic"
 
@@ -66,8 +66,7 @@ func (e *PrefillPartial) Unwrap() error { return e.Err }
 // prefillResume is where a prefill continues after a batched call that started at from returned err: PrefillPartial's Next when it names a
 // later position, else from.
 func prefillResume(from int, err error) int {
-	var p *PrefillPartial
-	if errors.As(err, &p) && p.Next > from {
+	if p, ok := errors.AsType[*PrefillPartial](err); ok && p.Next > from {
 		return p.Next
 	}
 	return from
@@ -250,8 +249,8 @@ func DeclineResident(format string, args ...any) error {
 
 // IsResidentDecline reports whether err is a decline (DeclineResident) rather than a failure.
 func IsResidentDecline(err error) bool {
-	var d *ResidentDeclineError
-	return errors.As(err, &d)
+	_, ok := errors.AsType[*ResidentDeclineError](err)
+	return ok
 }
 
 // DecodeRunnerEligible reports whether this model passes the FIRST resident-admission gate: its arch is a shape the
@@ -267,20 +266,41 @@ func (m *Model) decodeRunnerDecline() string {
 	return admitRunner(f, f.Arch.runnerShapeDeclineSSM(f.SSMResident))
 }
 
-// actGroupResidentDecline is the ActQuantGroup gate (option-path admission finding 1, 2026-10-08,
-// ): per-group activation scales are implemented by
-// CUDA residency only (actgroup.cu). Metal's and WebGPU's projections read per-vector scales and nothing
-// in either backend reads the group, so a load that asked for per-32 ran resident at per-vector, silently,
-// whenever the family had no activation hazard for the gate below to catch. The Options doc has always
-// said such a load declines to the CPU; this makes it so. Metal's q4k lane is exempt: it quantizes no
-// activation at all, and every q4k load carries the group (a direct load's and a q4k .giw's alike). quant
-// is the loaded weights' (Model.Quant), as Metal's build reads it, not the --quant option a .giw does not keep.
+// actGroupResidentDecline is the ActQuantGroup gate: per-group activation scales are implemented by CUDA
+// residency (actgroup.cu) and, over int8int8 weights, WebGPU's decode runner (its per-32 twins, whose build
+// declines by name the paths they do not cover). Metal's projections read per-vector scales and nothing there reads the group, so without
+// this gate a per-32 load would run resident at per-vector, silently, whenever the family had no activation
+// hazard for the gate below to catch; it declines to the CPU, which honours the group. Metal's q4k lane is
+// exempt: it quantizes no activation at all, and every q4k load carries the group (a direct load's and a q4k
+// .giw's alike). quant is the loaded weights' (Model.Quant), as Metal's build reads it, not the --quant option
+// a .giw does not keep.
 func actGroupResidentDecline(backend string, actGroup int, quant string) string {
-	if actGroup == 0 || backend == "cuda" || backend == "metal" && quant == "q4k" {
+	if actGroup == 0 || backend == "cuda" || backend == "webgpu" && quant == "int8int8" || backend == "metal" && quant == "q4k" {
 		return ""
 	}
 	return fmt.Sprintf("ActQuantGroup %d: %s's resident projections use per-vector activation scales (per-group "+
-		"scales are implemented by CUDA residency only), so the load runs on the CPU, which honours the group", actGroup, backend)
+		"scales are implemented by CUDA and WebGPU residency only), so the load runs on the CPU, which honours the group", actGroup, backend)
+}
+
+// webgpuActGroupShapeDecline is why a per-32 activation load cannot run resident on WebGPU for its shape, "" when it
+// can: the per-32 twins cover the dense decode path over widths in whole groups of 32, and every mixer or FFN listed
+// here has kernels that read one activation scale per vector (the build's own check, webgpu's actG32Decline, refuses
+// the same shapes).
+func webgpuActGroupShapeDecline(backend string, actGroup int, a *Architecture) string {
+	if backend != "webgpu" || actGroup == 0 || a == nil {
+		return ""
+	}
+	for _, f := range a.residentFeatures() {
+		switch f {
+		case FeatMoE, FeatMLA, FeatSSM, FeatDeltaNet, FeatKDA, FeatGemma4EModel, FeatAttnSink:
+			return fmt.Sprintf("ActQuantGroup %d: webgpu's per-32 activation kernels cover the dense decode path, and this model needs %s", actGroup, f)
+		}
+	}
+	if a.HiddenDim%32 != 0 || a.IntermediateDim%32 != 0 || a.NumHeads*a.HeadDim%32 != 0 {
+		return fmt.Sprintf("ActQuantGroup %d: webgpu's per-32 activation kernels need hidden (%d), FFN width (%d) and attention width (%d) in whole groups of 32",
+			actGroup, a.HiddenDim, a.IntermediateDim, a.NumHeads*a.HeadDim)
+	}
+	return ""
 }
 
 // ResidentProjsInt4 reports whether the loaded projection weights are int4 (W4A8) — the gate for
@@ -774,11 +794,10 @@ func (m *Model) residencyGate() (rb ResidencyBackend, why string) {
 // (a driver or device error: `--backend cuda` on a box with no usable GPU lands here, since the device is touched only at
 // build time).
 func buildDeclineReason(err error) string {
-	var d *ResidentDeclineError
-	switch {
-	case errors.As(err, &d):
+	if d, ok := errors.AsType[*ResidentDeclineError](err); ok {
 		return d.Reason
-	case err != nil:
+	}
+	if err != nil {
 		return "backend failed to build a resident path: " + err.Error()
 	}
 	return "backend declined to build a resident path (no reason given)"
@@ -1191,14 +1210,14 @@ func (m *Model) int4LayoutSummary() string {
 	for l := range byLayout {
 		layouts = append(layouts, l)
 	}
-	sort.Strings(layouts)
+	slices.Sort(layouts)
 	parts := make([]string, len(layouts))
 	for i, l := range layouts {
 		name := l
 		if l == "row4" || l == "splithalf" {
 			name += "-only" // distinguish from the canonical+row4/canonical+splithalf "both" policy
 		}
-		sort.Strings(byLayout[l])
+		slices.Sort(byLayout[l])
 		parts[i] = fmt.Sprintf("%s (%s)", name, strings.Join(byLayout[l], ", "))
 	}
 	return "int4 layout: " + strings.Join(parts, "; ")

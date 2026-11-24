@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -112,7 +111,7 @@ func TestD7_int8StepVsF16Pass(t *testing.T) {
 			fmt.Fprintf(os.Stderr, "[D7] %d tokens, %s (load1 %.2f, available %.2f GB at start): f16 %.2fs (%.0f tok/s), i8 %.2fs (%.0f tok/s), i8/f16 %.3f; elapsed %.0fs\n",
 				n, label, l1, float64(avail)/1e9, df.Seconds(), float64(n)/df.Seconds(), di.Seconds(), float64(n)/di.Seconds(), di.Seconds()/df.Seconds(), time.Since(start).Seconds())
 		}
-		sort.Float64s(ratios)
+		slices.Sort(ratios)
 		med := ratios[len(ratios)/2]
 		fmt.Fprintf(os.Stderr, "[D7] %d tokens: median i8 / f16 %.3f (pairs %.3f)\n", n, med, ratios)
 		if med > 1.25 {

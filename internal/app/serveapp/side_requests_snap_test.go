@@ -50,7 +50,7 @@ func TestSideRequests_snapshotPrefixes(t *testing.T) {
 	var prompts [][]int
 	var bad int
 	i := 0
-	for _, l := range strings.Split(string(logRaw), "\n") {
+	for l := range strings.SplitSeq(string(logRaw), "\n") {
 		m := re.FindStringSubmatch(l)
 		if m == nil {
 			continue
@@ -63,7 +63,7 @@ func TestSideRequests_snapshotPrefixes(t *testing.T) {
 		zr, _ := gzip.NewReader(f)
 		raw, _ := io.ReadAll(zr)
 		f.Close()
-		route := strings.SplitN(m[1], "?", 2)[0]
+		route, _, _ := strings.Cut(m[1], "?")
 		ids, _, err := kv0RenderIDs(s, lm, route, raw, false)
 		if err != nil {
 			t.Fatalf("request %d: %v", i, err)
@@ -103,7 +103,7 @@ func TestSideRequests_sessionStartShare(t *testing.T) {
 		t.Skip("SIDE_BODIES lists the bodies to read")
 	}
 	var paths []string
-	for _, p := range strings.Split(list, ",") {
+	for p := range strings.SplitSeq(list, ",") {
 		if st, err := os.Stat(p); err == nil && st.IsDir() {
 			m, _ := filepath.Glob(filepath.Join(p, "*.req.json.gz"))
 			paths = append(paths, m...)

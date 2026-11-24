@@ -1,13 +1,14 @@
 package vision
 
 import (
+	"cmp"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -61,7 +62,7 @@ func alsToBF16(t *testing.T, b []byte) []byte {
 		}
 		ents[k], names = e, append(names, k)
 	}
-	sort.Slice(names, func(i, j int) bool { return ents[names[i]].Offsets[0] < ents[names[j]].Offsets[0] })
+	slices.SortFunc(names, func(a, b string) int { return cmp.Compare(ents[a].Offsets[0], ents[b].Offsets[0]) })
 	newHdr := map[string]any{}
 	var body []byte
 	for _, k := range names {
@@ -257,7 +258,7 @@ func alsTowers(t *testing.T) []alsTower {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out := append([]float32(nil), merged...)
+			out := slices.Clone(merged)
 			for _, d := range deep {
 				out = append(out, d...)
 			}

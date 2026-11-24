@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -196,7 +197,7 @@ func LoadGemma4Encoder(dir string, quant bool) (*Gemma4Encoder, error) {
 		if err != nil {
 			return nil
 		}
-		return append([]float32(nil), v...)
+		return slices.Clone(v)
 	}
 	scalar := func(name string) float32 {
 		v := get(name) // 0-dim tensor: no shape check, just want [1]
@@ -528,9 +529,7 @@ func (e *Gemma4Encoder) attendInto(att, q, k, v []float32, np, hd, nH int, scale
 			if h0 >= h1 {
 				continue
 			}
-			wg.Add(1)
-			go func(w, h0, h1 int) {
-				defer wg.Done()
+			wg.Go(func() {
 				ws := &s.headPool[w]
 				for head := h0; head < h1; head++ {
 					if err := attendHead(ws, ws.mmWS.MatmulBT, head); err != nil {
@@ -538,7 +537,7 @@ func (e *Gemma4Encoder) attendInto(att, q, k, v []float32, np, hd, nH int, scale
 						return
 					}
 				}
-			}(w, h0, h1)
+			})
 		}
 		wg.Wait()
 		for _, err := range errs {

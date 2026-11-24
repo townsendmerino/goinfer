@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 
 	"github.com/townsendmerino/aikit/embed"
@@ -189,7 +190,7 @@ func (r *siglipReader) get(name string, want ...int) []float32 {
 		r.err = err
 		return nil
 	}
-	return append([]float32(nil), v...) // copy out so st can close
+	return slices.Clone(v) // copy out so st can close
 }
 
 // block reads layer l's float32 weights.
@@ -549,9 +550,7 @@ func (e *Encoder) attentionInto(att, q, k, v []float32, np int, scale float64, s
 		if h0 >= h1 {
 			continue
 		}
-		wg.Add(1)
-		go func(w, h0, h1 int) {
-			defer wg.Done()
+		wg.Go(func() {
 			ws := &s.headPool[w]
 			for head := h0; head < h1; head++ {
 				if err := attendHead(ws, ws.mmWS.MatmulBT, head); err != nil {
@@ -559,7 +558,7 @@ func (e *Encoder) attentionInto(att, q, k, v []float32, np int, scale float64, s
 					return
 				}
 			}
-		}(w, h0, h1)
+		})
 	}
 	wg.Wait()
 	for _, err := range errs {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"math"
 	"math/rand/v2"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/vision"
@@ -92,7 +93,7 @@ func TestWhisperWalkBlock_postNormMatchesReference(t *testing.T) {
 		fc1W: rnd(F*D, 0.5), fc1B: rnd(F, 0.1), fc2W: rnd(D*F, 0.5), fc2B: rnd(D, 0.1)}
 	h0 := rnd(n*D, 1)
 
-	want := append([]float32(nil), h0...)
+	want := slices.Clone(h0)
 	q := linear(want, ly.qW, ly.qB, n, D, D)
 	k := linear(want, ly.kW, make([]float32, D), n, D, D)
 	v := linear(want, ly.vW, ly.vB, n, D, D)
@@ -110,7 +111,7 @@ func TestWhisperWalkBlock_postNormMatchesReference(t *testing.T) {
 	}
 	layerNorm(want, ly.ln2W, ly.ln2B, n, D)
 
-	got := append([]float32(nil), h0...)
+	got := slices.Clone(h0)
 	if err := e.walkBlock(whisperPostNormProgram(e.Cfg), ly, got, n, n); err != nil {
 		t.Fatal(err)
 	}

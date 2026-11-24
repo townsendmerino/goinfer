@@ -63,7 +63,7 @@ func frozenHostmemAvailable() int64 {
 }
 
 func frozenMeminfoKB(meminfo, key string) int64 {
-	for _, ln := range strings.Split(meminfo, "\n") {
+	for ln := range strings.SplitSeq(meminfo, "\n") {
 		if f := strings.Fields(ln); len(f) >= 2 && f[0] == key {
 			v, _ := strconv.ParseInt(f[1], 10, 64)
 			return v

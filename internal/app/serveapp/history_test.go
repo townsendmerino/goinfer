@@ -2,6 +2,7 @@ package serveapp
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -155,7 +156,7 @@ func TestHistory_bothClientShapesRenderTheReasoning(t *testing.T) {
 	}
 
 	// Before the last REAL query the reasoning is dropped (the template's own rule), however it arrived.
-	next := append(append([]chat.Turn(nil), anTurns...), chat.Turn{Role: "assistant", Content: "It is 18C."}, chat.Turn{Role: "user", Content: "And Rome?"})
+	next := append(slices.Clone(anTurns), chat.Turn{Role: "assistant", Content: "It is 18C."}, chat.Turn{Role: "user", Content: "And Rome?"})
 	if p := tm.RenderTools("", next, tools); strings.Contains(p, "need the weather") {
 		t.Errorf("reasoning from a finished loop must not be replayed once a new user query arrives:\n%s", p[max(0, len(p)-500):])
 	}

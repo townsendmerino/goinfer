@@ -1,6 +1,7 @@
 package tokenizer
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -134,7 +135,7 @@ func TestStream_outOfRangeIDIsAnError(t *testing.T) {
 // byteLevelStreamTokenizer is a byte-level (GPT-2 style) tokenizer whose pieces spell 🦄's bytes through the byte table, one per token.
 func byteLevelStreamTokenizer() (*Tokenizer, []int, []int) {
 	dec := map[rune]byte{}
-	for b := 0; b < 256; b++ {
+	for b := range 256 {
 		dec[rune(0x100+b)] = byte(b)
 	}
 	for _, r := range "abcdefghijklmnopqrstuvwxyz" {
@@ -150,7 +151,7 @@ func byteLevelStreamTokenizer() (*Tokenizer, []int, []int) {
 
 func TestStream_byteLevelHoldsPartialCharacters(t *testing.T) {
 	tk, words, uni := byteLevelStreamTokenizer()
-	ids := append(append([]int{}, words...), uni...)
+	ids := slices.Concat(words, uni)
 	want, err := tk.Decode(ids)
 	if err != nil {
 		t.Fatal(err)

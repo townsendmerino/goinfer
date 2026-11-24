@@ -1,11 +1,11 @@
 package decoder
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"math"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -203,7 +203,7 @@ func (f *mc3Fake) ForwardTopK(emb []float32, pos, k int, temperature float64, wa
 	for i := range idx {
 		idx[i] = i
 	}
-	sort.SliceStable(idx, func(a, b int) bool { return lg[idx[a]] > lg[idx[b]] })
+	slices.SortStableFunc(idx, func(a, b int) int { return cmp.Compare(lg[b], lg[a]) })
 	k = min(k, len(lg))
 	if f.topKCap > 0 {
 		k = min(k, f.topKCap)
@@ -222,7 +222,7 @@ func (f *mc3Fake) ForwardTopK(emb []float32, pos, k int, temperature float64, wa
 		if f.writes != mine {
 			return nil, fmt.Errorf("mc3Fake: a TopKRow's Full read the logits buffer after %d later write(s): another generation's row", f.writes-mine)
 		}
-		return append([]float32(nil), f.last...), nil
+		return slices.Clone(f.last), nil
 	}
 	return row, nil
 }
@@ -323,11 +323,9 @@ func TestMC3_concurrentGenerationsMatchAlone(t *testing.T) {
 	concurrent := make([][]mc3Turn, nConv)
 	var wg sync.WaitGroup
 	for c := range nConv {
-		wg.Add(1)
-		go func(c int) {
-			defer wg.Done()
+		wg.Go(func() {
 			concurrent[c] = mc3Conversation(t, m, c, turns, maxTok)
-		}(c)
+		})
 	}
 	wg.Wait()
 	for c := range nConv {
@@ -398,14 +396,12 @@ func TestMC3_stepErrorFailsTheGeneration(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make([]error, 4)
 	for c := range 4 {
-		wg.Add(1)
-		go func(c int) {
-			defer wg.Done()
+		wg.Go(func() {
 			ch, gen := m.Generate(context.Background(), []int{1, 2, 3, 4 + c}, 64, SamplingParams{})
 			for range ch {
 			}
 			errs[c] = gen.Err()
-		}(c)
+		})
 	}
 	wg.Wait()
 	failed := 0
@@ -430,9 +426,7 @@ func TestMC3_concurrentGenerationsFillSteps(t *testing.T) {
 	m.EnableResidentConcurrency(4)
 	var wg sync.WaitGroup
 	for c := range 4 {
-		wg.Add(1)
-		go func(c int) {
-			defer wg.Done()
+		wg.Go(func() {
 			if c == 3 {
 				// A late joiner: its prefill runs while the other three are decoding, and its first token arrives
 				// just as the resident comes free — the case that phase-locked on Metal.
@@ -444,7 +438,7 @@ func TestMC3_concurrentGenerationsFillSteps(t *testing.T) {
 			if err := gen.Err(); err != nil {
 				t.Errorf("conversation %d: %v", c, err)
 			}
-		}(c)
+		})
 	}
 	wg.Wait()
 	st := m.ResidentBatchStats()
@@ -490,8 +484,7 @@ func TestMC3_sampledConcurrentMatchesAlone(t *testing.T) {
 	together := make([][]int, nConv)
 	var wg sync.WaitGroup
 	for c := range nConv {
-		wg.Add(1)
-		go func(c int) { defer wg.Done(); together[c] = run(m, c) }(c)
+		wg.Go(func() { together[c] = run(m, c) })
 	}
 	wg.Wait()
 	for c := range nConv {
@@ -540,14 +533,12 @@ func TestMC3_longPrefillChunksWhileOthersDecode(t *testing.T) {
 	m.EnableResidentConcurrency(4)
 	var got0, got1, gotNew []int
 	var wg sync.WaitGroup
-	wg.Add(3)
-	go func() { defer wg.Done(); got0 = gen(m, d0, 60) }()
-	go func() { defer wg.Done(); got1 = gen(m, d1, 60) }()
-	go func() {
-		defer wg.Done()
+	wg.Go(func() { got0 = gen(m, d0, 60) })
+	wg.Go(func() { got1 = gen(m, d1, 60) })
+	wg.Go(func() {
 		time.Sleep(40 * time.Millisecond) // the two are decoding by now
 		gotNew = gen(m, vocabPrompt(m, 1200, 3), 4)
-	}()
+	})
 	wg.Wait()
 	for _, c := range []struct {
 		name      string
@@ -601,20 +592,17 @@ func TestMC3_prefillChunkOffByDefault(t *testing.T) {
 		long[i] = (i*7 + 3) % v
 	}
 	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		ch, _ := m.Generate(context.Background(), []int{1, 2, 3, 40}, 60, SamplingParams{})
 		for range ch {
 		}
-	}()
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		time.Sleep(40 * time.Millisecond)
 		ch, _ := m.Generate(context.Background(), long, 4, SamplingParams{})
 		for range ch {
 		}
-	}()
+	})
 	wg.Wait()
 	if n := strings.Count(string(rf.events), "P"); n != 1 {
 		t.Errorf("the 1200-token prompt went in %d prefill calls with chunking unset, want 1", n)
@@ -674,8 +662,7 @@ func TestMC3_topPConcurrentMatchesAlone(t *testing.T) {
 			together := make([][]int, nConv)
 			var wg sync.WaitGroup
 			for c := range nConv {
-				wg.Add(1)
-				go func(c int) { defer wg.Done(); together[c], _ = run(m, c) }(c)
+				wg.Go(func() { together[c], _ = run(m, c) })
 			}
 			wg.Wait()
 			for c := range nConv {
@@ -704,11 +691,9 @@ func TestMC3_batchGreedyDrawAsksForTheID(t *testing.T) {
 	concurrent := make([][]mc3Turn, nConv)
 	var wg sync.WaitGroup
 	for c := range nConv {
-		wg.Add(1)
-		go func(c int) {
-			defer wg.Done()
+		wg.Go(func() {
 			concurrent[c] = mc3Conversation(t, m, c, turns, maxTok)
-		}(c)
+		})
 	}
 	wg.Wait()
 	for c := range nConv {

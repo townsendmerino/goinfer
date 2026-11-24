@@ -1,7 +1,7 @@
 package tokenizer
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"slices"
 	"testing"
 )
@@ -13,10 +13,12 @@ func cutInputs() []string {
 		"\xff", "\xff\xfe abc", "a\xc3", "\xc3\x28", "\xed\xa0\x80 x", "ok \xe2\x82 tail\n\n", "\xf0\x9f\x98", "\xf4\x90\x80\x80",
 		string([]byte{0, 1, 2, 127, 128, 200, 255}),
 	}
-	r := rand.New(rand.NewSource(3))
+	r := rand.New(rand.NewPCG(3, 0))
 	for range 2000 {
-		b := make([]byte, r.Intn(24))
-		r.Read(b)
+		b := make([]byte, r.IntN(24))
+		for i := range b {
+			b[i] = byte(r.Uint32())
+		}
 		inputs = append(inputs, string(b))
 	}
 	return inputs

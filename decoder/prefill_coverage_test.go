@@ -1,8 +1,9 @@
 package decoder
 
 import (
+	"cmp"
 	"fmt"
-	"sort"
+	"slices"
 	"testing"
 )
 
@@ -28,7 +29,7 @@ func TestPrefillCoverageAudit(t *testing.T) {
 	for n := range families {
 		names = append(names, n)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 
 	batched, fallback := 0, 0
 	byGuard := map[string]int{}
@@ -76,7 +77,7 @@ func TestPrefillCoverageAudit(t *testing.T) {
 	for g := range byGuard {
 		gk = append(gk, g)
 	}
-	sort.Slice(gk, func(i, j int) bool { return byGuard[gk[i]] > byGuard[gk[j]] })
+	slices.SortFunc(gk, func(a, b string) int { return cmp.Compare(byGuard[b], byGuard[a]) })
 	for _, g := range gk {
 		t.Logf("  %2d × %s", byGuard[g], g)
 	}

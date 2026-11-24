@@ -203,7 +203,7 @@ func TestJobStore_promptIDsRetainFourBytesEach(t *testing.T) {
 		return ms.HeapAlloc
 	}
 	before := heap()
-	for i := 0; i < jobs; i++ {
+	for i := range jobs {
 		req := make([]int, ids)
 		for k := range req {
 			req[k] = k % 150000

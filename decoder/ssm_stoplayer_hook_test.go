@@ -4,6 +4,7 @@ package decoder
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -22,7 +23,7 @@ func TestSetSSMStopLayerForTest_truncatesTheForward(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return append([]float32(nil), lg...)
+		return slices.Clone(lg)
 	}
 	full := fwd(-1)
 	first := fwd(0)

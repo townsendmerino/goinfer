@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"testing"
 	"weak"
 
@@ -34,14 +35,9 @@ func writeF32Checkpoint(t *testing.T, dir string, config any, tensors map[string
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), cfg, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	names := make([]string, 0, len(tensors))
-	for n := range tensors {
-		names = append(names, n)
-	}
-	sort.Strings(names)
 	header := map[string]any{}
 	var payload []byte
-	for _, n := range names {
+	for _, n := range slices.Sorted(maps.Keys(tensors)) {
 		tt := tensors[n]
 		raw := make([]byte, 4*len(tt.data))
 		for i, v := range tt.data {
@@ -71,7 +67,7 @@ type tensorSet struct {
 }
 
 func newTensorSet() *tensorSet {
-	return &tensorSet{m: map[string]stTensor{}, rng: rand.New(rand.NewSource(3))}
+	return &tensorSet{m: map[string]stTensor{}, rng: rand.New(rand.NewPCG(3, 0))}
 }
 
 func (s *tensorSet) add(name string, shape ...int) {
@@ -110,7 +106,7 @@ func whisperTensors(s *tensorSet, prefix string, D, mels, ffn int) {
 
 // featsOf is n seeded feature values.
 func featsOf(n int) []float32 {
-	rng := rand.New(rand.NewSource(5))
+	rng := rand.New(rand.NewPCG(5, 0))
 	f := make([]float32, n)
 	for i := range f {
 		f[i] = float32(rng.NormFloat64())
@@ -150,9 +146,7 @@ func audioLifetimeCases() []lifetimeCase {
 			write: func(t *testing.T, dir string) {
 				const inter, H = 4 * D, 3
 				audio := map[string]any{"intermediate_size": inter}
-				for k, v := range whisperCfg {
-					audio[k] = v
-				}
+				maps.Copy(audio, whisperCfg)
 				s := newTensorSet()
 				whisperTensors(s, "audio_tower.", D, mels, ffn)
 				s.add("multi_modal_projector.linear_1.weight", H, inter)

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/sampling"
@@ -104,7 +105,7 @@ func TestCohere2_forwardParity(t *testing.T) {
 		t.Errorf("maxAbs %.3e > 5e-2", maxAbs)
 	}
 
-	cur := append([]int(nil), g.PromptIDs...)
+	cur := slices.Clone(g.PromptIDs)
 	cont := make([]int, 0, g.NNew)
 	for range g.NNew {
 		c2 := m.NewCache(len(cur))

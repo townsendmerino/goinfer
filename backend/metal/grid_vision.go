@@ -4,12 +4,13 @@ package metal
 
 import (
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/runtime/mem"
+	"slices"
 	"sync"
 	"time"
 
 	gpu "github.com/townsendmerino/goinfer/backend/metal/internal/gpudev"
 	"github.com/townsendmerino/goinfer/backend/metal/kernels"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 )
@@ -360,7 +361,7 @@ func (a *gridVAccel) HiddenTaps(pixels []float32, gridTHW [][3]int, blocks []int
 	a.tap = func(bi, n int) {
 		for k, b := range blocks {
 			if b+a.planted.tapShift == bi { // the planted defect shifts the tap a block late
-				taps[k] = append([]float32(nil), a.x.Floats()[:n]...)
+				taps[k] = slices.Clone(a.x.Floats()[:n])
 			}
 		}
 	}
@@ -533,7 +534,7 @@ func (a *gridVAccel) run(np int, segs func(bi int) []int, prog vision.TowerBlock
 		a.tap(len(a.blocks)-1, np*H)
 	}
 	a.slot = 0
-	out := append([]float32(nil), a.x.Floats()[:np*H]...)
+	out := slices.Clone(a.x.Floats()[:np*H])
 	a.armRelease()
 	return out, nil
 }

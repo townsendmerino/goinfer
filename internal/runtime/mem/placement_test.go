@@ -91,8 +91,7 @@ func TestSolvePlacement_pure(t *testing.T) {
 	var wg sync.WaitGroup
 	got := make([]string, 16)
 	for g := range got {
-		wg.Add(1)
-		go func() { defer wg.Done(); got[g] = deviceAnswers(9, n) }()
+		wg.Go(func() { got[g] = deviceAnswers(9, n) })
 	}
 	wg.Wait()
 	for g, a := range got {

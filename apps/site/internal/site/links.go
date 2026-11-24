@@ -7,7 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -50,7 +50,7 @@ func CheckLinks(out string) error {
 		return err
 	}
 	if len(bad) > 0 {
-		sort.Strings(bad)
+		slices.Sort(bad)
 		return fmt.Errorf("broken internal links:\n  %s", strings.Join(bad, "\n  "))
 	}
 	return nil

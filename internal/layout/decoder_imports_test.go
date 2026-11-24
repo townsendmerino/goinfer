@@ -6,9 +6,10 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -175,7 +176,7 @@ func census(files []goFile) (map[string]backendCount, map[string]int) {
 		if !f.test || decoderRatchetExempt[f.dir+"/"+f.name] {
 			continue
 		}
-		mod := strings.SplitN(f.dir, "/", 2)[0]
+		mod, _, _ := strings.Cut(f.dir, "/")
 		if mod == "backend" {
 			if parts := strings.SplitN(f.dir, "/", 3); len(parts) >= 2 {
 				mod = parts[1]
@@ -189,11 +190,8 @@ func census(files []goFile) (map[string]backendCount, map[string]int) {
 		}
 		c := counts[mod]
 		c.tests++
-		for _, q := range f.imports {
-			if q == decoderPath {
-				c.direct++
-				break
-			}
+		if slices.Contains(f.imports, decoderPath) {
+			c.direct++
 		}
 		if dirReaches[f.dir] {
 			c.reach++
@@ -213,12 +211,7 @@ func TestBackendTests_decoderImportsOnlyFall(t *testing.T) {
 	if len(counts) != len(decoderRatchet) {
 		t.Fatalf("found test files in %d of the %d backend modules; the scan is broken", len(counts), len(decoderRatchet))
 	}
-	mods := make([]string, 0, len(decoderRatchet))
-	for m := range decoderRatchet {
-		mods = append(mods, m)
-	}
-	sort.Strings(mods)
-	for _, m := range mods {
+	for _, m := range slices.Sorted(maps.Keys(decoderRatchet)) {
 		c, want := counts[m], decoderRatchet[m]
 		t.Logf("%-6s test files %4d, importing decoder %4d, reaching decoder %4d", m, c.tests, c.direct, c.reach)
 		check := func(what string, got, figure int) {
@@ -234,12 +227,7 @@ func TestBackendTests_decoderImportsOnlyFall(t *testing.T) {
 		check("importing", c.direct, want.Direct)
 		check("reaching", c.reach, want.Reach)
 	}
-	dirs := make([]string, 0, len(byDir))
-	for d := range byDir {
-		dirs = append(dirs, d)
-	}
-	sort.Strings(dirs)
-	for _, d := range dirs {
+	for _, d := range slices.Sorted(maps.Keys(byDir)) {
 		t.Logf("  reaching: %-40s %4d", d, byDir[d])
 	}
 }
@@ -313,14 +301,11 @@ func TestServeappTests_decoderImportsOnlyFall(t *testing.T) {
 		if f.dir != "internal/app/serveapp" || !f.test {
 			continue
 		}
-		for _, q := range f.imports {
-			if q == decoderPath {
-				got = append(got, f.name)
-				break
-			}
+		if slices.Contains(f.imports, decoderPath) {
+			got = append(got, f.name)
 		}
 	}
-	sort.Strings(got)
+	slices.Sort(got)
 	switch n := len(got); {
 	case n > serveappDecoderTests:
 		t.Errorf("%d internal/app/serveapp test files import decoder, above the ratchet's %d: test the serving shell on the fake engine instead. Files: %s",

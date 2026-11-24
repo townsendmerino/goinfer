@@ -1,9 +1,9 @@
 package paritykey
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 )
 
@@ -70,8 +70,8 @@ func LoadSide(src Source) (Side, error) {
 				}
 			}
 		}
-		s.Programs[name] = append([]string(nil), fam.Programs...)
-		sort.Strings(s.Programs[name])
+		s.Programs[name] = slices.Clone(fam.Programs)
+		slices.Sort(s.Programs[name])
 		for _, f := range fam.Programs {
 			if s.Fixture[f], err = ProgramsDigest([]string{f}, progs); err != nil {
 				return Side{}, fmt.Errorf("%s: %w", name, err)
@@ -197,7 +197,7 @@ func Compare(before, after Side) []Verdict {
 			out = append(out, Verdict{Family: name, Class: Removed, Explained: true})
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Family < out[j].Family })
+	slices.SortFunc(out, func(a, b Verdict) int { return cmp.Compare(a.Family, b.Family) })
 	return out
 }
 

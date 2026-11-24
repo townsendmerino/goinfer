@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"testing"
@@ -322,7 +322,7 @@ func TestGlmOcrVisionEncoder_costSweep(t *testing.T) {
 			t.Fatalf("unknown point %q (want 1, 2, 4.8)", p)
 		}
 		n := g[0] * g[1] * g[2]
-		rng := rand.New(rand.NewSource(1))
+		rng := rand.New(rand.NewPCG(1, 0))
 		pv := make([]float32, n*enc.Cfg.patchDim())
 		for i := range pv {
 			pv[i] = float32(rng.NormFloat64())

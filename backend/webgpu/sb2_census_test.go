@@ -1211,7 +1211,14 @@ func webgpuDecodeScratch(m *decoder.Model) (terms []webgpuScratchTerm, why strin
 	anyDelta, anyLatent, anySSM := false, false, false
 	var moeBlock, vNormB, scaleVecB, routedRows, mambaLayer, relu2, clampedRoute, clampedAct, clampedDown int64
 	pk := func(k int) int64 { return int64((k + 31) &^ 31) }
-	rmsQuantB = pk(H) + 20 // one call per sublayer norm and the final norm: the int8 row, its scale, its uniform
+	// qrow is one dense quantize's int8 row, its scale buffer (one float, or one per 32 under per-32 activations) and its uniform.
+	qrow := func(k int) int64 {
+		if m.ActQuantGroup() == 32 {
+			return pk(k) + pk(k)/8 + 16
+		}
+		return pk(k) + 20
+	}
+	rmsQuantB = qrow(H) // one call per sublayer norm and the final norm: the int8 row, its scale, its uniform
 	nRms, nQuant := int64(1), int64(0)
 	ffnTerms := func(l int, shape denseShape, rows map[string]int, nE, topK, shared int, hasShared bool) string {
 		if shape.postMLP { // the output projection splits as the attention's does
@@ -1227,7 +1234,7 @@ func webgpuDecodeScratch(m *decoder.Model) (terms []webgpuScratchTerm, why strin
 		if !shape.moe {
 			gemv += 4*(inter+int64(rows["up"])) + 2*16
 			gemvAdd += 16
-			actQuant += pk(rows["gate"]) + 20
+			actQuant += qrow(rows["gate"])
 		} else {
 			// The router's logits row; the selection rows and the experts' gate and up rows (reused over the top-k slots); the router's
 			// uniform; per slot the expert projections' uniforms and the fused activation's int8 row, scale and uniform.
@@ -1517,7 +1524,7 @@ func webgpuDecodeScratch(m *decoder.Model) (terms []webgpuScratchTerm, why strin
 			}
 		}
 		attnLayer += 4*int64(rows["ctx"]) + 16
-		quantB += pk(rows["ctx"]) + 20
+		quantB += qrow(rows["ctx"])
 	}
 	if len(geoms) == 0 && !anyDelta && !anyLatent && !anySSM {
 		return nil, "the model has no layers"
@@ -1567,7 +1574,7 @@ func webgpuDecodeScratch(m *decoder.Model) (terms []webgpuScratchTerm, why strin
 		{clampedRoles[0], clampedRoute},
 		{clampedRoles[1], clampedAct},
 		{clampedRoles[2], clampedDown},
-		{"quant", quantB + nQuant*(pk(H)+20)},
+		{"quant", quantB + nQuant*qrow(H)},
 		{"gemv", gemv},
 		{"gemvBias", gemvBiasB},
 		{"gemvAdd", gemvAdd},

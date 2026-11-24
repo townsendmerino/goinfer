@@ -3,13 +3,14 @@
 package metal
 
 import (
+	"cmp"
 	"context"
 	"encoding/binary"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -82,7 +83,7 @@ func TestPrefillRefIdentity(t *testing.T) {
 		if len(cells) == 0 {
 			continue
 		}
-		sort.Slice(cells, func(i, j int) bool { return cells[i].K < cells[j].K })
+		slices.SortFunc(cells, func(a, b cell) int { return cmp.Compare(a.K, b.K) })
 		path := os.ExpandEnv(models[mdl])
 		if _, err := os.Stat(path); err != nil {
 			t.Logf("%s: no checkpoint at %s — skipping its %d cells", mdl, path, len(cells))
@@ -105,7 +106,7 @@ func TestPrefillRefIdentity(t *testing.T) {
 		}
 		for _, c := range cells {
 			ps := prompts[c]
-			sort.Ints(ps)
+			slices.Sort(ps)
 			cellStart := time.Now()
 			line := fmt.Sprintf("[ref-identity] set %q %s-K%-5d", label, mdl, c.K)
 			for _, p := range ps {

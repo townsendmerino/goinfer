@@ -3,8 +3,9 @@ package main
 import (
 	"fmt"
 	"io"
+	"maps"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -112,7 +113,7 @@ func catchAllSkips(res *results, checks []gateCheck) []string {
 		seen[k.Test] = true
 		out = append(out, k.Test)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 
@@ -172,17 +173,7 @@ func unlistedFailures(res *results, checks []gateCheck) []string {
 		}
 		out = append(out, k.Test)
 	}
-	sort.Strings(out)
-	return out
-}
-
-// sortedKeys is sortedSet for a string-valued map.
-func sortedKeys(m map[string]string) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 
@@ -226,7 +217,7 @@ func extraBlockers(w io.Writer, res *results, checks []gateCheck, cells []cellRe
 	// statement the report makes rather than an absence a reader has to notice.
 	if realckpt && len(lists.RealckptNotRequired) > 0 {
 		fmt.Fprintf(w, "\n-- realckpt gates that run but are NOT required (%d) --\n", len(lists.RealckptNotRequired))
-		for _, name := range sortedKeys(lists.RealckptNotRequired) {
+		for _, name := range slices.Sorted(maps.Keys(lists.RealckptNotRequired)) {
 			act, seen := res.lookupTop(name)
 			if !seen {
 				act = "no result"

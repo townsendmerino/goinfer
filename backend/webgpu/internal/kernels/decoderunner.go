@@ -26,6 +26,8 @@ var SsmStopLayerForTest = -1
 // pattern applied to the whole token graph.
 type DecodeRunner struct {
 	c *Context
+	// actG32 is RunModel.ActG32: every activation scale is per 32, so SetAdapter refuses an adapter.
+	actG32 bool
 	// scratch is this build's scratch leases by the op builder that asked for them (ScratchList).
 	scratch scratchBook
 	// Cost, when set, counts each submitted token's dispatches into CostPhase (cost.go); nil is off. costNames caches each
@@ -295,6 +297,10 @@ type RunModel struct {
 	// RoPE; nil is off. Scaling q scales each score q·k by the same factor, so the runner multiplies it into the attention
 	// uniform's score scale per token instead of touching q. The batched prefill applies none and declines (RunModelToPrefill).
 	AttnTemp func(pos int) float32
+	// ActG32 (decoder.Options.ActQuantGroup == 32) runs every decode quantize and W8A8 GEMV on the per-32 twins
+	// (actgroup.go): each activation scale buffer holds np/32 floats. Dense W8A8 only; newDecodeRunner refuses the
+	// paths whose kernels read one scale per vector.
+	ActG32 bool
 	// Pairwise (decoder.FeatPairwiseRoPE) binds the pairwise twins of the decode rope kernels (pairwise.go) in place of the
 	// NeoX ones; the batched prefill declines (RunModelToPrefill).
 	Pairwise bool
@@ -454,6 +460,15 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 	if m.AttnTemp != nil && m.Mla != nil {
 		return nil, fmt.Errorf("gpu: newDecodeRunner: the attention temperature on the MLA path is not implemented")
 	}
+	if m.ActG32 {
+		switch {
+		case m.Moe != nil || m.G4moe:
+			return nil, fmt.Errorf("gpu: newDecodeRunner: per-32 activations: the MoE kernels read per-vector activation scales")
+		case m.Mla != nil || m.Mamba != nil || m.Dnet != nil || m.PleDim > 0:
+			return nil, fmt.Errorf("gpu: newDecodeRunner: per-32 activations: the MLA, SSM, DeltaNet and per-layer-embedding paths are not implemented")
+		}
+		ensures = append(ensures, c.ensureActG32)
+	}
 	if m.Pairwise {
 		if m.Mla != nil {
 			return nil, fmt.Errorf("gpu: newDecodeRunner: pairwise RoPE on the MLA path is not implemented")
@@ -465,7 +480,7 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 			return nil, err
 		}
 	}
-	r := &DecodeRunner{c: c, vocab: m.LmHead.nRows(), logitsHost: make([]float32, m.LmHead.nRows()), nLayers: len(m.Layers), lmHead: m.LmHead, hidden: hidden, pleDim: m.PleDim}
+	r := &DecodeRunner{c: c, vocab: m.LmHead.nRows(), logitsHost: make([]float32, m.LmHead.nRows()), nLayers: len(m.Layers), lmHead: m.LmHead, hidden: hidden, pleDim: m.PleDim, actG32: m.ActG32}
 	// buildErr holds the FIRST device-allocation/bind failure: the storF/uni/bind helpers short-circuit once it is set and the
 	// constructor returns it, so VRAM exhaustion is an error the caller can fall back on, never a panic in library code.
 	var buildErr error
@@ -531,6 +546,13 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 		r.steps = append(r.steps, RunStep{Pl: pl, Bg: bg, Gx: gx, Gy: gy})
 	}
 
+	// scaleBuf is a quantizer's scale buffer for a kp-wide activation: one float, or kp/32 under ActG32.
+	scaleBuf := func(kp int) *wgpu.Buffer {
+		if m.ActG32 {
+			return storF(kp / 32)
+		}
+		return storF(1)
+	}
 	// op builders (record a step against persistent buffers):
 	// rmsQuant fuses RMSNorm→quantize: one dispatch, no xn round-trip, one fewer
 	// link on the serialized decode spine (§2). Bit-exact with rms→quant.
@@ -538,9 +560,13 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 		defer inRole("rmsQuant")()
 		kp := PadK32(K) // int8 activation for a W4A8/W8A8 gemv that reads to the weight's kPad==padK32;
 		// padK (a multiple of 16) under-sizes it when K%32 is 1..16: an OOB read, and the int4 zero-pad nibbles decode to −8.
-		q, s := storF(kp/4), storF(1)
+		q, s := storF(kp/4), scaleBuf(kp)
 		p := uni([]uint32{uint32(K), F32bits(eps), BoolU32(addOne), uint32(kp)})
-		add(c.rmsQuantPipeline, bind(c.rmsQuantLayout, in, w, q, s, p), 1, 1)
+		pl, ly := c.rmsQuantPipeline, c.rmsQuantLayout
+		if m.ActG32 {
+			pl, ly = c.actG32.rmsQuant.pl, c.actG32.rmsQuant.ly
+		}
+		add(pl, bind(ly, in, w, q, s, p), 1, 1)
 		return q, s
 	}
 	// noAttnSinks is the fallback bound for a runLayer that leaves attnSinks nil, as every hand-built runLayer literal in the
@@ -553,16 +579,25 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 	// the big buffer stays off the spine. With gatedGELU it uses the geglu(Quant) pipelines instead (gelu_tanh(gate)·up);
 	// otherwise it is byte-identical to the SiLU path.
 	gelu := m.GatedGELU
+	// gatedQuantPipe is the gated product's quantizer: SiLU or GELU-tanh, per-vector or per-32.
+	gatedQuantPipe := func(gelu bool) (*wgpu.ComputePipeline, *wgpu.BindGroupLayout) {
+		switch {
+		case m.ActG32 && gelu:
+			return c.actG32.gegluQuant.pl, c.actG32.gegluQuant.ly
+		case m.ActG32:
+			return c.actG32.swigluQuant.pl, c.actG32.swigluQuant.ly
+		case gelu:
+			return c.gegluQuantPipeline, c.gegluQuantLayout
+		}
+		return c.swigluQuantPipeline, c.swigluQuantLayout
+	}
 	// actQuantPad is the gated product over K activations into an int8 buffer padded to kp; swigluQuant is the common
 	// case kp == padK32(K).
 	actQuantPad := func(gate, up *wgpu.Buffer, K, kp int) (*wgpu.Buffer, *wgpu.Buffer) {
 		defer inRole("actQuantPad")()
-		q, s := storF(kp/4), storF(1)
+		q, s := storF(kp/4), scaleBuf(kp)
 		p := uni([]uint32{uint32(K), uint32(kp), 0, 0})
-		pl, ly := c.swigluQuantPipeline, c.swigluQuantLayout
-		if m.GatedGELU {
-			pl, ly = c.gegluQuantPipeline, c.gegluQuantLayout
-		}
+		pl, ly := gatedQuantPipe(m.GatedGELU)
 		add(pl, bind(ly, gate, up, q, s, p), 1, 1)
 		return q, s
 	}
@@ -570,12 +605,9 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 		defer inRole("swigluQuant")()
 		kp := PadK32(K) // int8 activation for a W4A8/W8A8 down-proj gemv, which reads to the weight's
 		// kPad == padK32 (see rmsQuant); padK32 also zeroes the tail, matching the zero-padded weight.
-		q, s := storF(kp/4), storF(1)
+		q, s := storF(kp/4), scaleBuf(kp)
 		p := uni([]uint32{uint32(K), uint32(kp), 0, 0})
-		pl, ly := c.swigluQuantPipeline, c.swigluQuantLayout
-		if gelu {
-			pl, ly = c.gegluQuantPipeline, c.gegluQuantLayout
-		}
+		pl, ly := gatedQuantPipe(gelu)
 		add(pl, bind(ly, gate, up, q, s, p), 1, 1)
 		return q, s
 	}
@@ -592,19 +624,44 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 	quant := func(in *wgpu.Buffer, K int) (*wgpu.Buffer, *wgpu.Buffer) {
 		defer inRole("quant")()
 		kp := PadK32(K) // int8 activation for a W4A8/W8A8 gemv reading to padK32 — see rmsQuant
-		q, s := storF(kp/4), storF(1)
+		q, s := storF(kp/4), scaleBuf(kp)
 		p := uni([]uint32{1, uint32(K), uint32(kp), 0})
-		add(c.quantizePipeline, bind(c.quantizeLayout, in, q, s, p), 1, 1)
+		pl, ly := c.quantizePipeline, c.quantizeLayout
+		if m.ActG32 {
+			pl, ly = c.actG32.quantize.pl, c.actG32.quantize.ly
+		}
+		add(pl, bind(ly, in, q, s, p), 1, 1)
 		return q, s
 	}
 	// gemv records a projection matmul against any resident precision (W8A8 or
 	// W4A8 — both expose the same 6-binding gemv + addResidual via decodeWeight).
+	// gemvPipe is w's GEMV: its own kernel, or under ActG32 the per-32 W8A8 twin, which needs a W8A8 weight whose
+	// padded width is whole groups (anything else fails the build rather than read a group scale as a vector one).
+	gemvPipe := func(w DecodeWeight, bias bool) (*wgpu.ComputePipeline, *wgpu.BindGroupLayout) {
+		if !m.ActG32 {
+			if bias {
+				return c.gemvBiasPipeline, c.gemvBiasLayout
+			}
+			return w.gPipe(c), w.gLayout(c)
+		}
+		if _, ok := w.(*ResidentW8A8); !ok || w.kPad()%32 != 0 {
+			if buildErr == nil {
+				buildErr = fmt.Errorf("gpu: newDecodeRunner: per-32 activations need int8 weights over whole 32-wide groups (a %d-wide %T)", w.kPad(), w)
+			}
+			return nil, nil
+		}
+		if bias {
+			return c.actG32.gemvBias.pl, c.actG32.gemvBias.ly
+		}
+		return c.actG32.gemv.pl, c.actG32.gemv.ly
+	}
 	gemv := func(aq, as *wgpu.Buffer, w DecodeWeight) *wgpu.Buffer {
 		defer inRole("gemv")()
 		out := storF(w.nRows())
 		p := uni([]uint32{1, uint32(w.kPad()), uint32(w.nRows()), 0})
 		gx, gy := GemvGrid(w.nRows())
-		add(w.gPipe(c), bind(w.gLayout(c), aq, w.wbuf(), as, w.sbuf(), out, p), gx, gy)
+		pl, ly := gemvPipe(w, false)
+		add(pl, bind(ly, aq, w.wbuf(), as, w.sbuf(), out, p), gx, gy)
 		return out
 	}
 	// gemvAdd is gemv with the residual fused into the epilogue: dst (the running
@@ -613,7 +670,8 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 		defer inRole("gemvAdd")()
 		p := uni([]uint32{1, uint32(w.kPad()), uint32(w.nRows()), 1})
 		gx, gy := GemvGrid(w.nRows())
-		add(w.gPipe(c), bind(w.gLayout(c), aq, w.wbuf(), as, w.sbuf(), dst, p), gx, gy)
+		pl, ly := gemvPipe(w, false)
+		add(pl, bind(ly, aq, w.wbuf(), as, w.sbuf(), dst, p), gx, gy)
 	}
 	// gemvBias is gemv with a per-output bias folded into the epilogue (dst[n] =
 	// r + bias[n]), deleting the standalone biasAdd link for q/k/v of bias models
@@ -623,7 +681,8 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 		out := storF(w.nRows())
 		p := uni([]uint32{1, uint32(w.kPad()), uint32(w.nRows()), 0})
 		gx, gy := GemvGrid(w.nRows())
-		add(c.gemvBiasPipeline, bind(c.gemvBiasLayout, aq, w.wbuf(), as, w.sbuf(), out, p, bias), gx, gy)
+		pl, ly := gemvPipe(w, true)
+		add(pl, bind(ly, aq, w.wbuf(), as, w.sbuf(), out, p, bias), gx, gy)
 		return out
 	}
 	// Mamba-2 SSM mixer dispatches: the conv/ssm/gatedNorm kernels read slices of the in_proj output (z|xBC|dt) from the full

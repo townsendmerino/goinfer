@@ -93,8 +93,8 @@ func TestCounts_fieldNamesAreJSONNames(t *testing.T) {
 	names := []string{FieldBytesRead, FieldBytesWritten, FieldLaunches, FieldSubmits, FieldSyncs, FieldAllocs, FieldAllocBytes, FieldTime}
 	tags := map[string]bool{}
 	ty := reflect.TypeFor[Counts]()
-	for i := range ty.NumField() {
-		tag, _, _ := strings.Cut(ty.Field(i).Tag.Get("json"), ",")
+	for field := range ty.Fields() {
+		tag, _, _ := strings.Cut(field.Tag.Get("json"), ",")
 		tags[tag] = true
 	}
 	var c Counts

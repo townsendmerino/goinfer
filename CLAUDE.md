@@ -87,6 +87,27 @@ the style: do not rewrite comments in a file you are only passing through, or ad
 (`//go:build`, `//go:embed`, `//nolint`, `// Output:`) are code. `scripts/comment_census.py diff` (pre-push, a warning)
 lists added comments that carry a history marker.
 
+## Go style and structure
+
+**Structure over growth.** Do not append unrelated state to a struct, file or package that is already large (a backend's
+resident struct, `decoder`, `serveapp`): group related state into a cohesive sub-struct, or split along a clean seam early.
+A new test seam is an injected option, a struct field or a constructor parameter, not a package-global `*ForTest` hook or a
+side-effect `init()` registration: globals break `t.Parallel()` and hide coupling. Existing globals stay unless touched.
+
+**An interface lives in the package that consumes it** and stays narrow (a handful of methods). Do not add a wide interface
+mirroring a whole concrete type only so a test can fake it. Existing consolidated interfaces (`decoder/resident`) stay as they are.
+
+**The standard library comes before a hand-rolled helper** (`go.mod` targets Go 1.27): `slices` (`Contains`, `Index`,
+`Clone`, `Sort`, `SortFunc`, `Sorted`, `Backward`), `maps` (`Clone`, `Copy`, `Keys`), `strings` (`Cut`, `CutPrefix`,
+`CutSuffix`, `SplitSeq`, `FieldsSeq`), `errors.AsType`, `sync.WaitGroup.Go`, `cmp.Or`, `min`/`max`, `for range n`,
+`new(expr)` and `math/rand/v2`. Keep `math/rand` v1 only where seeded output parity depends on its generator
+(`internal/runtime/sampling/sampler.go`). Run `go fix -diff` on the packages you touch and review each suggestion before
+applying it: keep imports grouped, and check nil-map behavior before a hand copy becomes `maps.Clone` (a nil map clones to nil).
+
+**One receiver kind per type:** do not mix pointer and value receivers; a type with mutating methods, a lock or a large
+body takes pointer receivers. Return a modified slice instead of taking a `*[]T` out-parameter; explicit allocation-free
+scratch reuse and `sync.Pool` buffers are fine.
+
 ## Tests
 
 Each rule's story is in the model-bring-up skill, `.claude/skills/model-bring-up/SKILL.md`.

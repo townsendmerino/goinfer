@@ -208,11 +208,9 @@ func TestDecoderEmbedder_concurrentEncode(t *testing.T) {
 	errs := make([]error, workers)
 	got := make([][]float32, workers)
 	for i := range workers {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
+		wg.Go(func() {
 			got[i], errs[i] = e.Encode(text, false)
-		}(i)
+		})
 	}
 	wg.Wait()
 	for i := range workers {

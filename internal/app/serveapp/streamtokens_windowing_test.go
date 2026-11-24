@@ -2,7 +2,7 @@ package serveapp
 
 import (
 	"context"
-	"math/rand"
+	"math/rand/v2"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -80,14 +80,14 @@ func TestStreamTokens_windowedScanMatchesFullRescan(t *testing.T) {
 		{"ENDO"}, // spans three tokens (E/EN + N + D + O combinations) — a longer split match
 	}
 
-	rng := rand.New(rand.NewSource(1))
+	rng := rand.New(rand.NewPCG(1, 0))
 	const trials = 300
 	for trial := range trials {
 		stops := stopSets[trial%len(stopSets)]
-		n := 5 + rng.Intn(30)
+		n := 5 + rng.IntN(30)
 		ids := make([]int, n)
 		for i := range ids {
-			ids[i] = palette[rng.Intn(len(palette))]
+			ids[i] = palette[rng.IntN(len(palette))]
 		}
 
 		wantEmit, wantStopHit := referenceStreamTokens(tk, ids, stops)

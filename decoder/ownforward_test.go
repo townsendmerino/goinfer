@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -22,7 +22,7 @@ func TestProgram_noFamilyLoopAndEveryFamilyWalks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sort.Strings(files)
+	slices.Sort(files)
 	re := regexp.MustCompile(`(?m)^func \(m \*Model\) (runLayers[A-Z][A-Za-z0-9]*)\(id int, cache \*KVCache\) \(\[\]float32, error\) \{`)
 	scanned := 0
 	for _, f := range files {

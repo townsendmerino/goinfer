@@ -11,6 +11,8 @@ page adds no rule. It lists the ones an agent that did not load `CLAUDE.md` has 
 - **Public text names no session, coordinator or machine nickname (describe a box by its hardware), quotes no owner message
   (record the decision, the date and the reason), and a commit ends with `Co-Authored-By`, no session URL** (`CLAUDE.md`,
   "Public text").
+- **New and edited Go code follows `CLAUDE.md`, "Go style and structure":** no unrelated state piled onto large structs, no new
+  package-global test hooks, narrow interfaces in the consumer, the standard library before a hand-rolled helper.
 - **Stage explicit paths.** Never `git add -A` or `git add .`. No rebase and no force-push: merge `origin/main`.
 - **A change that lands structure or closes work changes its task doc's ledger row when it lands** (`CLAUDE.md`, "Task
   docs: the ledger"; the doc is in the maintainer's notes checkout). If no row owns the work, add one.

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -55,7 +56,7 @@ type idsKey struct {
 }
 
 func newIDsKey(key []byte) *idsKey {
-	k := &idsKey{key: append([]byte(nil), key...)}
+	k := &idsKey{key: slices.Clone(key)}
 	sum := sha256.Sum256(key)
 	copy(k.id[:], sum[:8])
 	return k
@@ -239,7 +240,7 @@ func parseIDsBlob(enc string) (*idsBlob, error) {
 		return nil, errIDsBlob
 	}
 	if m > 0 {
-		b.mac = append([]byte(nil), r[k:]...)
+		b.mac = slices.Clone(r[k:])
 	}
 	return b, nil
 }
@@ -264,7 +265,7 @@ func (k *idsKey) verifyMAC(b *idsBlob) bool {
 
 // mint is the encrypted_content of a reply's reasoning item carrying ids, signed by k.
 func (k *idsKey) mint(model, ns, text string, ids []int, whole bool) string {
-	b := &idsBlob{whole: whole, model: model, ns: ns, text: text, ids: append([]int(nil), ids...)}
+	b := &idsBlob{whole: whole, model: model, ns: ns, text: text, ids: slices.Clone(ids)}
 	k.seal(b)
 	return b.String()
 }
@@ -294,7 +295,7 @@ func (o *idsOutcome) note(reason string) {
 }
 
 // fields is the outcome as -log-requests writes it: ids=<used>/<carried> ids_fallback=<reasons, comma-separated, or ->.
-func (o idsOutcome) fields() string {
+func (o *idsOutcome) fields() string {
 	fb := "-"
 	if len(o.fallbacks) > 0 {
 		fb = strings.Join(o.fallbacks, ",")

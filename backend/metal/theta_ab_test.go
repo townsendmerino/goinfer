@@ -6,7 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -107,7 +107,7 @@ func TestMetalThetaAB(t *testing.T) {
 		for range reps {
 			ms = append(ms, float64(f().Microseconds())/1000)
 		}
-		sort.Float64s(ms)
+		slices.Sort(ms)
 		return ms[len(ms)/2]
 	}
 
