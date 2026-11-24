@@ -1,7 +1,7 @@
 package tokenizer
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"regexp"
 	"strings"
 	"testing"
@@ -85,12 +85,12 @@ func TestSplitGPT2Original_matchesTheOrderedAlternationOracle(t *testing.T) {
 			t.Errorf("%q:\n  walker %q\n  oracle %q", s, got, want)
 		}
 	}
-	rng := rand.New(rand.NewSource(13))
+	rng := rand.New(rand.NewPCG(13, 0))
 	alphabet := []rune("aAzZ09 \n\r\t'/.,-_!?éÉ新Ω")
 	for range 4000 {
-		b := make([]rune, rng.Intn(22))
+		b := make([]rune, rng.IntN(22))
 		for i := range b {
-			b[i] = alphabet[rng.Intn(len(alphabet))]
+			b[i] = alphabet[rng.IntN(len(alphabet))]
 		}
 		s := string(b)
 		got, want := splitGPT2Original(s), refSplitGPT2Original(s)
@@ -101,12 +101,12 @@ func TestSplitGPT2Original_matchesTheOrderedAlternationOracle(t *testing.T) {
 }
 
 func TestSplitGPT2Original_isLossless(t *testing.T) {
-	rng := rand.New(rand.NewSource(17))
+	rng := rand.New(rand.NewPCG(17, 0))
 	alphabet := []rune("aA0 \n'/é")
 	for range 2000 {
-		b := make([]rune, rng.Intn(18))
+		b := make([]rune, rng.IntN(18))
 		for i := range b {
-			b[i] = alphabet[rng.Intn(len(alphabet))]
+			b[i] = alphabet[rng.IntN(len(alphabet))]
 		}
 		s := string(b)
 		if joined := strings.Join(splitGPT2Original(s), ""); joined != s {

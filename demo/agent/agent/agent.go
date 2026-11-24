@@ -250,7 +250,7 @@ func (s *Session) Turn(ctx context.Context, user string, ev Events) (string, err
 	}
 
 	// Phase 2: optional retrieval, then a grounded streamed answer.
-	answerTurns := append([]msg(nil), s.history...)
+	answerTurns := slices.Clone(s.history)
 	if d.Action == "search" && d.Query != "" {
 		results, err := s.ken.search(ctx, d.Query)
 		if ev.Search != nil {
@@ -349,7 +349,7 @@ func (s *Session) TurnImage(ctx context.Context, user string, image []byte, ev E
 	// uses multimodal.Gemma3PromptBlock, which wraps it in "\n\n" on both sides the way Gemma 3's
 	// own processor does (verified against the real transformers processing_gemma3.py).
 	block := multimodal.Gemma3ImageBlock(n)
-	turns := append([]msg(nil), s.history...)
+	turns := slices.Clone(s.history)
 	turns = append(turns, msg{"user", multimodal.Gemma3PromptBlock(n) + user})
 	segs, err := spliceImageBlock(s.buildPromptSegments(visionSystem, turns), block)
 	if err != nil {
@@ -428,7 +428,7 @@ func spliceImageBlock(segs []tokenizer.Segment, block string) ([]tokenizer.Segme
 // bug, not bad model output — we still fail soft (search with the raw user
 // text) to keep the demo resilient.
 func (s *Session) decide(ctx context.Context, user string) decision {
-	turns := append(append([]msg(nil), s.history...), msg{"user", user})
+	turns := append(slices.Clone(s.history), msg{"user", user})
 	sp := decoder.SamplingParams{Temperature: 0,
 		LogitProcessor: s.schemaMasker([]byte(decisionSchema))}
 	raw, _ := s.generate(ctx, decideSystem, turns, sp, 96, nil, nil, true)

@@ -1,11 +1,12 @@
 package site
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -45,7 +46,7 @@ func LoadBook(root string) ([]BookChapter, error) {
 		fmt.Sscanf(t[1], "%d", &n)
 		out = append(out, BookChapter{Num: n, Title: strings.TrimSpace(t[2]), File: strings.TrimSuffix(e.Name(), ".md") + ".html"})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Num < out[j].Num })
+	slices.SortFunc(out, func(a, b BookChapter) int { return cmp.Compare(a.Num, b.Num) })
 	if len(out) == 0 {
 		return nil, fmt.Errorf("docs/book has no chapters")
 	}
