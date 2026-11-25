@@ -62,6 +62,7 @@ func (s *server) runToolTurn(ctx context.Context, lm *loadedModel, gr genRequest
 	var stopBeat func()
 	if ss != nil {
 		stopBeat = sseHeartbeat(ss)
+		defer stopBeat()
 	}
 	var turn toolTurn
 	var gerr error

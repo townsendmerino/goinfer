@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/townsendmerino/goinfer/internal/batchio"
@@ -66,6 +67,8 @@ func (s *server) handleGetFileContent(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, fileNotFound)
 		return
 	}
+	rc := http.NewResponseController(w)
+	_ = rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(f.Bytes)
@@ -121,9 +124,7 @@ func (s *server) handleCreateBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	b := s.batches.create("openai_chat", req.Endpoint, req.CompletionWindow, req.InputFileID, customIDs)
-	for i, creq := range reqs {
-		go runBatchChatLine(s, b, i, creq)
-	}
+	runBatchPool(len(reqs), func(i int) { runBatchChatLine(s, b, i, reqs[i]) })
 	go s.finalizeBatch(b.ID)
 
 	writeJSON(w, http.StatusOK, openAIBatchObject(b))
@@ -227,9 +228,7 @@ func (s *server) handleCreateMessageBatch(w http.ResponseWriter, r *http.Request
 	}
 
 	b := s.batches.create("anthropic_messages", "/v1/messages", "", "", customIDs)
-	for i, areq := range reqs {
-		go runBatchMessageLine(s, b, i, areq)
-	}
+	runBatchPool(len(reqs), func(i int) { runBatchMessageLine(s, b, i, reqs[i]) })
 	go s.finalizeBatch(b.ID)
 
 	writeJSON(w, http.StatusOK, anthropicBatchObject(b))
@@ -296,14 +295,20 @@ func (s *server) handleGetMessageBatchResults(w http.ResponseWriter, r *http.Req
 		return
 	}
 	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.Status != "completed" && b.Status != "cancelled" && b.Status != "failed" {
+	ready := b.Status == "completed" || b.Status == "cancelled" || b.Status == "failed"
+	var results []batchLineResult
+	if ready {
+		results = slices.Clone(b.Results)
+	}
+	b.mu.Unlock()
+	if !ready {
 		writeAnthropicErr(w, http.StatusConflict, "invalid_request_error", "batch results are not ready yet")
 		return
 	}
+	rc := http.NewResponseController(w)
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.WriteHeader(http.StatusOK)
-	for _, res := range b.Results {
+	for _, res := range results {
 		line := map[string]any{"custom_id": res.CustomID}
 		switch {
 		case res.ErrType == "cancelled":
@@ -314,9 +319,17 @@ func (s *server) handleGetMessageBatchResults(w http.ResponseWriter, r *http.Req
 		default:
 			line["result"] = map[string]any{"type": "succeeded", "message": res.Body}
 		}
-		lineBytes, _ := json.Marshal(line)
-		_, _ = w.Write(lineBytes)
-		_, _ = w.Write([]byte("\n"))
+		lineBytes, err := json.Marshal(line)
+		if err != nil {
+			continue
+		}
+		_ = rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
+		if _, err := w.Write(lineBytes); err != nil {
+			return
+		}
+		if _, err := w.Write([]byte("\n")); err != nil {
+			return
+		}
 	}
 }
 

@@ -236,6 +236,18 @@ func (e *decoderEmbedder) tokenize(text string, isQuery bool) ([]int, error) {
 	return ids, nil
 }
 
+// Close releases the underlying decoder model.
+func (e *decoderEmbedder) Close() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.m == nil {
+		return nil
+	}
+	err := e.m.Close()
+	e.m = nil
+	return err
+}
+
 // truncateForContext is tokenize's truncation arithmetic, pulled out so a test calls the same code the request path
 // runs instead of re-deriving it beside it. It truncates before the caller appends appendID, reserving its slot, so
 // the appended token is never what truncation drops: it must stay last, because it is the pooled position.

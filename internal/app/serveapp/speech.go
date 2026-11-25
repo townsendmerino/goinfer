@@ -3,6 +3,7 @@ package serveapp
 import (
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -183,7 +184,7 @@ func (s *server) handleTranscriptions(w http.ResponseWriter, r *http.Request) {
 	temperature := 0.0
 	if t := val("temperature"); t != "" {
 		v, err := strconv.ParseFloat(t, 64)
-		if err != nil || v < 0 || v > 1 {
+		if err != nil || math.IsNaN(v) || v < 0 || v > 1 {
 			writeErr(w, http.StatusBadRequest, fmt.Sprintf("temperature %q must be a number from 0 to 1", t))
 			return
 		}
@@ -218,9 +219,11 @@ func (s *server) handleTranscriptions(w http.ResponseWriter, r *http.Request) {
 	samples := wav.Decode()
 	opts := transcriptionPolicy(temperature)
 	opts.Language, opts.Task, opts.Seed = language, "transcribe", uint64(time.Now().UnixNano())
-	sm.mu.Lock()
-	res, err := sm.eng.TranscribeWith(samples, opts)
-	sm.mu.Unlock()
+	res, err := func() (*whisper.LongResult, error) {
+		sm.mu.Lock()
+		defer sm.mu.Unlock()
+		return sm.eng.TranscribeWith(samples, opts)
+	}()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "transcription: "+err.Error())
 		return

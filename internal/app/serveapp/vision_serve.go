@@ -180,6 +180,13 @@ func recoverDeviceTower(family string, fn func() ([]float32, error)) (out []floa
 	defer func() {
 		if r := recover(); r != nil {
 			hint := ""
+			if rErr, ok := r.(error); ok {
+				if mem.DeviceOutOfMemory(rErr) {
+					hint = ": the input needs more device memory than the decoder left it; lower -ctx or -kv-sessions, resize the image, or use -vision-device cpu"
+				}
+				out, err = nil, fmt.Errorf("the %s tower failed (%w)%s", family, rErr, hint)
+				return
+			}
 			if mem.DeviceOutOfMemory(fmt.Errorf("%v", r)) {
 				hint = ": the input needs more device memory than the decoder left it; lower -ctx or -kv-sessions, resize the image, or use -vision-device cpu"
 			}
@@ -323,6 +330,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		// else is sent before the first token and a CPU image prefill can take minutes, so a heartbeat runs while driveVL
 		// works, as on the text-only lm.drive sites.
 		stopBeat := sseHeartbeat(ss)
+		defer stopBeat()
 		s.routeThink(lm, &gr, tm, turns, ts, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{ReasoningContent: t}, nil))
 		})
@@ -477,6 +485,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		// The ping above is one-shot, not a keep-alive: an image prefill on CPU can take minutes with nothing sent until the
 		// first token.
 		stopBeat := sseHeartbeat(ss)
+		defer stopBeat()
 		res, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
 			anthropicEvent(ss, "content_block_delta", map[string]any{
 				"type": "content_block_delta", "index": 0,

@@ -73,6 +73,7 @@ func NewHandler(args []string) (http.Handler, io.Closer, error) {
 	// Every request's context is a child of life, as the binary's are of its server context, so Close cancels the
 	// generations in flight instead of waiting for them.
 	life, stop := context.WithCancel(context.Background())
+	srv.lifeCtx = life
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithCancel(r.Context())
 		defer cancel()
@@ -91,12 +92,33 @@ type handlerCloser struct {
 // Close ends the handler's life: see NewHandler. It reports the models still draining when the wait ran out.
 func (c *handlerCloser) Close() error {
 	c.stop()
+	if c.srv.swapWatch != nil {
+		c.srv.swapWatch.Stop()
+	}
+	c.srv.closeTokenLog()
 	c.srv.checkpointSessions(c.cfg)
 	var busy []string
 	for _, lm := range c.srv.modelList() {
 		if status, _, ok := c.srv.unloadByName(lm.name, c.cfg.unloadDrainWait); ok && status != http.StatusOK {
 			busy = append(busy, lm.name)
 		}
+	}
+	if cl, ok := c.srv.embed.(io.Closer); ok {
+		_ = cl.Close()
+	}
+	c.srv.regMu.Lock()
+	speech := make([]*speechModel, 0, len(c.srv.speech))
+	for _, sm := range c.srv.speech {
+		speech = append(speech, sm)
+	}
+	c.srv.speech = nil
+	c.srv.regMu.Unlock()
+	for _, sm := range speech {
+		sm.mu.Lock()
+		if cl, ok := sm.eng.(io.Closer); ok {
+			_ = cl.Close()
+		}
+		sm.mu.Unlock()
 	}
 	if len(busy) > 0 {
 		return fmt.Errorf("goinfer: %s still had requests in flight after %s; their memory is released when those finish", strings.Join(busy, ", "), c.cfg.unloadDrainWait)

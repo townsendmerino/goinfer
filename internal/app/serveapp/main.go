@@ -153,7 +153,9 @@ func (srv *server) routes(cfg config, authKey string, stderr io.Writer) (*http.S
 	// gets auth + maxBytes only (haltGate and inf bound decode concurrency, not upload I/O). POST /v1/batches and POST
 	// /v1/messages/batches queue real generation work (one job per line, the /v1/jobs pipeline) and get the full stack.
 	// Every GET and every .../cancel gets auth only, as /v1/jobs' own GET/DELETE do.
-	mux.HandleFunc("POST /v1/files", auth(maxBytes(fileCap, srv.handleCreateFile)))
+	// Bound concurrent 64 MiB file uploads independently of inference inflight slots.
+	fileUploadSem := make(chan struct{}, 8)
+	mux.HandleFunc("POST /v1/files", auth(limitInflight(fileUploadSem, maxBytes(fileCap, srv.handleCreateFile))))
 	mux.HandleFunc("GET /v1/files/{id}", auth(srv.handleGetFile))
 	mux.HandleFunc("GET /v1/files/{id}/content", auth(srv.handleGetFileContent))
 	mux.HandleFunc("POST /v1/batches", auth(srv.haltGate(inf(maxBytes(textCap, srv.handleCreateBatch)))))
@@ -377,8 +379,8 @@ All %[2]d flags, with the trade-offs each one makes, follow.
 	// httpSrv.Shutdown waits for a long streaming generation but never cancels it, and the shutdown runs past its 30s
 	// timeout. sessMu is held only briefly (around sessions.acquire), so the checkpoint loop does not deadlock on a running
 	// generation, but Shutdown still waits for the handler to return: cancelling is what bounds it. tryLockUntil's deadline
-	// is the remaining bound on sessMu itself.
 	srvCtx, srvCancel := context.WithCancel(context.Background())
+	srv.lifeCtx = srvCtx
 	defer srvCancel()
 	var handler http.Handler = mux
 	if addrIsLoopback(*addr) {

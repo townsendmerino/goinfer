@@ -48,6 +48,13 @@ type batchRecord struct {
 	CompletedAt  *time.Time
 }
 
+// isCancelling reports whether cancellation has been requested for this batch.
+func (b *batchRecord) isCancelling() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.Status == "cancelling" || b.Status == "cancelled"
+}
+
 // requestCancel is the batch-level analogue of jobs.Store.Cancel: mark cancelling, then cancel every constituent job not
 // yet terminal (checked live against jobs.Store, not against Results, since Results is only written by a line's OWN
 // goroutine as it finishes).
@@ -122,7 +129,7 @@ func (bs *batchStore) evictLocked() {
 		live := true
 		if b != nil {
 			b.mu.Lock()
-			live = b.Status != "completed" && b.Status != "cancelled"
+			live = b.Status != "completed" && b.Status != "cancelled" && b.Status != "failed"
 			b.mu.Unlock()
 		}
 		if b == nil || !live {

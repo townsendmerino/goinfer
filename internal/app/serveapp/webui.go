@@ -634,6 +634,7 @@ func (s *server) handleWebLoad(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
+	sw := newSSEWriter(w, flusher)
 	send := func(event string, payload any) {
 		if r.Context().Err() != nil {
 			return // the tab went away; the load carries on regardless (below)
@@ -642,8 +643,7 @@ func (s *server) handleWebLoad(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return
 		}
-		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, b)
-		flusher.Flush()
+		_ = sw.frame("event: %s\ndata: %s\n\n", event, b)
 	}
 	send("start", map[string]any{"name": name})
 

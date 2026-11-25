@@ -228,6 +228,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		// Nothing is sent between response.created and the first token, and on CPU that gap is the whole prefill: a
 		// heartbeat covers it, as it does on the tools-active branch.
 		stopBeat := sseHeartbeat(ss)
+		defer stopBeat()
 		res, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 			sb.WriteString(t)
 			rs.delta(t)
@@ -266,12 +267,19 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 // serveVisionResponses is serveResponsesWith's plain-text branch for input that carries images: the prompt from
 // visionPromptN, generation through driveVL, rendered as a Responses object (or its event stream).
 func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm *loadedModel, req responseReq, messages []chatMessage, imgs []imageRef, sm sampling, id string, created int64, store bool) {
-	if imgs[0].audio {
-		if !lm.audioCapable() {
-			writeErr(w, http.StatusBadRequest, "this model has no audio tower (audio input needs a Gemma 4 checkpoint with an audio_config, e.g. E2B or E4B)")
-			return
+	var hasAudio, hasImage bool
+	for _, im := range imgs {
+		if im.audio {
+			hasAudio = true
+		} else {
+			hasImage = true
 		}
-	} else if !lm.visionCapable() {
+	}
+	if hasAudio && !lm.audioCapable() {
+		writeErr(w, http.StatusBadRequest, "this model has no audio tower (audio input needs a Gemma 4 checkpoint with an audio_config, e.g. E2B or E4B)")
+		return
+	}
+	if hasImage && !lm.visionCapable() {
 		writeErr(w, http.StatusBadRequest, "this model has no vision tower (start with --vision <dir> to enable image input)")
 		return
 	}
@@ -301,6 +309,7 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 		return
 	}
 	gr.id = id
+	s.routeThink(lm, &gr, tm, turns, ts, nil)
 	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs, clock: gr.clock}, s.haltState) {
 		return
 	}
@@ -313,8 +322,12 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 		}
 		rs := newRespStream(ss, id)
 		rs.emit("response.created", map[string]any{"response": responseObject(id, lm.name, created, "in_progress", []any{}, inTok, 0)})
+		if gr.think != nil {
+			gr.think.onReasoning = rs.reasoningDelta
+		}
 		var sb strings.Builder
 		stopBeat := sseHeartbeat(ss) // the image turn's tower and prefill are the silent window
+		defer stopBeat()
 		res, gerr := lm.driveVL(r.Context(), gr, vi, s.gens, s.jobs, func(t string) {
 			sb.WriteString(t)
 			rs.delta(t)
@@ -325,13 +338,13 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 			sseDone(ss)
 			return
 		}
-		out := []any{rs.closeMessage(sb.String())}
-		rs.emit("response.completed", map[string]any{"response": markEmptyResponse(responseObjectTurn(gr.clock, id, lm.name, created, respStatus(res.finish), out, inTok, res.nComp), emptyAnswerOf(gr, res.finish, res.stopHit, 0, res.nComp))})
+		out := withReasoning(rs, gr.think, id, nil, []any{rs.closeMessage(sb.String())})
+		rs.emit("response.completed", map[string]any{"response": withCachedTokens(markEmptyResponse(responseObjectTurn(gr.clock, id, lm.name, created, respStatus(res.finish), out, inTok, res.nComp), emptyAnswerOf(gr, res.finish, res.stopHit, 0, res.nComp)), res.reused.Tokens)})
 		if res.cancelReason != "" {
 			rs.emit("response.cancelled", map[string]any{"reason": res.cancelReason})
 		}
 		sseDone(ss)
-		s.maybeStore(store, id, lm.name, messages, sb.String(), "", nil)
+		s.maybeStore(store, id, lm.name, messages, sb.String(), gr.think.reasoningText(), nil)
 		return
 	}
 	var sb strings.Builder
@@ -344,9 +357,9 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 		writeErr(w, statusCancelled, "generation cancelled: "+res.cancelReason)
 		return
 	}
-	out := []any{outputMessage(id+"-msg", sb.String())}
-	writeJSON(w, http.StatusOK, markEmptyResponse(responseObjectTurn(gr.clock, id, lm.name, created, respStatus(res.finish), out, inTok, res.nComp), emptyAnswerOf(gr, res.finish, res.stopHit, 0, res.nComp)))
-	s.maybeStore(store, id, lm.name, messages, sb.String(), "", nil)
+	out := withReasoning(nil, gr.think, id, nil, []any{outputMessage(id+"-msg", sb.String())})
+	writeJSON(w, http.StatusOK, withCachedTokens(markEmptyResponse(responseObjectTurn(gr.clock, id, lm.name, created, respStatus(res.finish), out, inTok, res.nComp), emptyAnswerOf(gr, res.finish, res.stopHit, 0, res.nComp)), res.reused.Tokens))
+	s.maybeStore(store, id, lm.name, messages, sb.String(), gr.think.reasoningText(), nil)
 }
 
 // respondTools generates a (buffered) tool-calling response and emits

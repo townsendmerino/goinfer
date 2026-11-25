@@ -35,6 +35,10 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
+// maxAutoTextBodyBytes caps the context-derived default text body limit (64 MiB) so ultra-long-context models
+// (e.g. 10M positions) cannot silently raise the default cap into gigabytes; -max-body-bytes still overrides it.
+const maxAutoTextBodyBytes = 64 << 20
+
 const defaultMaxTokens = 512
 
 // maxTopLogprobs is the largest `top_logprobs` a request may ask for: OpenAI's own documented ceiling, so no
@@ -403,6 +407,16 @@ type server struct {
 	// swapWatch (GOINFER_SWAP_GUARD=off) is a valid, permanent state.
 	swapGuardTripped atomic.Bool
 	swapWatch        *swapguard.Watch
+
+	// lifeCtx is the server-lifetime context cancelled on shutdown/Close; background jobs and batch lines derive from it.
+	lifeCtx context.Context
+}
+
+func (s *server) lifeContext() context.Context {
+	if s.lifeCtx != nil {
+		return s.lifeCtx
+	}
+	return context.Background()
 }
 
 // lookupLocked resolves a request's model name to a loaded entry: an exact served-name match, else the sole model
@@ -452,7 +466,7 @@ func (s *server) resolveBodyCaps(override int64) (textCap, visionCap, embedCap, 
 			}
 		}
 		if derived > textCap {
-			textCap = derived
+			textCap = min(derived, maxAutoTextBodyBytes)
 		}
 	}
 	visionCap = textCap + maxVisionBodyBytes // image data on top of the text budget
@@ -953,6 +967,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		// Nothing else is sent between here and the first token, and on CPU that gap is the whole prefill: a
 		// heartbeat keeps a client's idle timeout from firing during it.
 		stopBeat := sseHeartbeat(ss)
+		defer stopBeat()
 		s.routeThink(lm, &gr, tm, turns, ts, func(t string) {
 			sseSend(ss, chatChunk(id, created, lm.name, delta{ReasoningContent: t}, nil))
 		})
@@ -1081,6 +1096,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		}
 		// Same prefill silence as the chat stream: heartbeat until the first token.
 		stopBeat := sseHeartbeat(ss)
+		defer stopBeat()
 		res, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 			sseSend(ss, completionChunk(id, created, lm.name, t, nil))
 		})

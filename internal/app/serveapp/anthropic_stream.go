@@ -29,7 +29,10 @@ func anthropicSSEStart(w http.ResponseWriter) (*sseWriter, bool) {
 
 // anthropicEvent writes one named SSE event.
 func anthropicEvent(ss *sseWriter, event string, v any) {
-	b, _ := json.Marshal(v)
+	b, err := json.Marshal(v)
+	if err != nil {
+		return
+	}
 	ss.frame("event: %s\ndata: %s\n\n", event, b)
 }
 
@@ -91,6 +94,7 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 	// The ping above is a one-shot liveness check, not a keep-alive: nothing else is sent until the first token, and
 	// on CPU that is after the whole prefill, so a heartbeat keeps a client's idle timeout from firing.
 	stopBeat := sseHeartbeat(ss)
+	defer stopBeat()
 	res, gerr := lm.drive(r.Context(), gr, s.gens, s.jobs, func(t string) {
 		anthropicEvent(ss, "content_block_delta", map[string]any{
 			"type": "content_block_delta", "index": 0,
@@ -301,6 +305,7 @@ func (t *anthropicThink) offset() int {
 func streamMessagesThinking(ss *sseWriter, th *anthropicThink, gr genRequest, run func(onText func(string)) (turnResult, error)) {
 	text := &anthropicTextStream{ss: ss, think: th}
 	stopBeat := sseHeartbeat(ss)
+	defer stopBeat()
 	res, gerr := run(text.pushPlain)
 	stopBeat()
 	th.close()

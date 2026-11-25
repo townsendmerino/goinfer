@@ -89,7 +89,7 @@ func runJob(s *server, lm *loadedModel, release func(), gr genRequest, rec admis
 	// before tryEnter is even attempted, so DELETE /v1/jobs/{id} can stop a still-QUEUED job, not
 	// just a running one — cancelling it propagates to whatever drive derives from it once
 	// admission is granted, the same way any other context cancellation in this codebase does.
-	bgCtx, bgCancel := context.WithCancel(context.Background())
+	bgCtx, bgCancel := context.WithCancel(s.lifeContext())
 	s.jobs.SetCancel(gr.id, bgCancel)
 	defer bgCancel() // release resources tied to bgCtx once this job is fully done, either way
 
