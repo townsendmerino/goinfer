@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -287,6 +288,9 @@ func TestKVRowPad_keysRefusesAPaddedCache(t *testing.T) {
 	}
 }
 
+// kvAccessorCall matches a call of a Keys or Vals method on anything but the standard library's maps package.
+var kvAccessorCall = regexp.MustCompile(`\b(?:[A-Za-z_][A-Za-z0-9_]*)\.(?:Keys|Vals)\(`)
+
 // TestKVRowPad_keysReadersAreDeclinedFamilies is the reader census: every production call of KVCache.Keys or Vals in decoder/ is in a
 // family loop whose caches the pad declines (rings, hybrid state or per-layer widths), so a new reader that indexes the unstrided store
 // shows up here instead of reading the pad as data.
@@ -316,7 +320,7 @@ func TestKVRowPad_keysReadersAreDeclinedFamilies(t *testing.T) {
 			if strings.HasPrefix(strings.TrimSpace(line), "//") {
 				continue
 			}
-			if strings.Contains(line, ".Keys(") || strings.Contains(line, ".Vals(") {
+			if slices.ContainsFunc(kvAccessorCall.FindAllString(line, -1), func(m string) bool { return !strings.HasPrefix(m, "maps.") }) {
 				t.Errorf("%s:%d reads KVCache.Keys/Vals, which a padded cache refuses; read layerRows (and its stride) or decline the pad for this family: %s", f, i+1, strings.TrimSpace(line))
 			}
 		}
