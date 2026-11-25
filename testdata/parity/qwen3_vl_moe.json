@@ -14,7 +14,7 @@
   "programs": [
     "testdata/qwen3vlmoe-tiny"
   ],
-  "deps_hash": "sha256:8261d61e974353b34479fbbaa732c19201b378c76c69cbca1d9fe7a7ac0be169",
+  "deps_hash": "sha256:e9bf8790ba93c12aa69719798f8d9eb168ab41f9764869027cda232d33228438",
   "status": "experimental",
   "validated_at": "936d2f49",
   "date": "2026-10-09",
