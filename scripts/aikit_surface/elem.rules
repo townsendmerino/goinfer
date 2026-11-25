@@ -1,0 +1,22 @@
+# LS4 move 1 (aikit linalg-surface-2026-11): the elementwise kernels move from linalg to linalg/elem.
+# One gofmt -r rule per moved name; aikit_surface_rewrite.py applies each with the file's qualifier for the package.
+package elem github.com/townsendmerino/aikit/linalg/elem
+linalg.ErfF32 -> elem.ErfF32
+linalg.ExpContractInto -> elem.ExpContractInto
+linalg.ExpF32 -> elem.ExpF32
+linalg.ExpF32Into -> elem.ExpF32Into
+linalg.GELUContractInto -> elem.GELUContractInto
+linalg.GELUF32 -> elem.GELUF32
+linalg.GELUInto -> elem.GELUInto
+linalg.GELUTanhContractInto -> elem.GELUTanhContractInto
+linalg.GELUTanhF32 -> elem.GELUTanhF32
+linalg.GELUTanhInto -> elem.GELUTanhInto
+linalg.SiLUContractInto -> elem.SiLUContractInto
+linalg.SiLUF32 -> elem.SiLUF32
+linalg.SiLUInto -> elem.SiLUInto
+linalg.SoftmaxRowContractInto -> elem.SoftmaxRowContractInto
+linalg.SoftmaxRowInto -> elem.SoftmaxRowInto
+linalg.SoftmaxRowScaledContractInto -> elem.SoftmaxRowScaledContractInto
+linalg.SoftmaxRowScaledInto -> elem.SoftmaxRowScaledInto
+linalg.TanhF32 -> elem.TanhF32
+linalg.TanhInto -> elem.TanhInto
