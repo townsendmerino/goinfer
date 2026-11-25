@@ -20,7 +20,7 @@ import (
 func visionDispatchTypes(t *testing.T) map[string]bool {
 	t.Helper()
 	fset := token.NewFileSet()
-	af, err := parser.ParseFile(fset, "main.go", nil, 0)
+	af, err := parser.ParseFile(fset, "towers_load.go", nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

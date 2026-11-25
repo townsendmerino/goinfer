@@ -177,11 +177,11 @@ func TestBanner_contextIsTheEnforcedWindow(t *testing.T) {
 	if !strings.Contains(facts[:strings.Index(facts, "\n}\n")], "f.ctxWindow = lm.contextWindow(lm.adapter == \"\")") {
 		t.Error("factsOf no longer takes ctxWindow from lm.contextWindow — the banner can drift from the enforced limit")
 	}
-	mainSrc, err := os.ReadFile("main.go")
+	loadSrc, err := os.ReadFile("model_load.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(mainSrc), "bannerCfg.load.Ctx = opts.ResidentContext") {
+	if !strings.Contains(string(loadSrc), "bannerCfg.load.Ctx = opts.ResidentContext") {
 		t.Error("the load path no longer passes the model's resolved -ctx to the banner — a per-model ctx= would be misreported")
 	}
 }

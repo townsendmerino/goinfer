@@ -143,7 +143,7 @@ SCANS = [
     Scan("decoder", "TestResidentMoECap_pinsKernelConstant", F("backend/webgpu/moe.go", "backend/cuda/moe.cu")),
     Scan("decoder", "TestResidentMoECap_runtimeDeclineReadsTheDeclaration", F("backend/webgpu/residency.go")),
     # internal/app/serveapp
-    Scan("internal/app/serveapp", "TestBanner_contextIsTheEnforcedWindow", F("internal/app/serveapp/banner.go", "internal/app/serveapp/main.go")),
+    Scan("internal/app/serveapp", "TestBanner_contextIsTheEnforcedWindow", F("internal/app/serveapp/banner.go", "internal/app/serveapp/model_load.go")),
     Scan("internal/app/serveapp", "TestServeVisionChat_appliesExtractionRuleBeforeThePromptIsBuilt", F("internal/app/serveapp/vision_serve.go")),
     Scan("internal/app/serveapp", "TestServe_everyTokenizingRouteGuardsItsInputSize", NT("internal/app/serveapp")),
     # A loadedModel's blockSpec is set only through drafterOf.
@@ -165,7 +165,7 @@ SCANS = [
          F("internal/app/serveapp/openai.go", "internal/app/serveapp/anthropic_stream.go", "internal/app/serveapp/vision_serve.go",
            "internal/app/serveapp/responses.go")),
     Scan("internal/app/serveapp", "TestSSE_everyBufferedStreamSiteHeartbeats", NT("internal/app/serveapp")),
-    Scan("internal/app/serveapp", "TestSupportTable_everyFamilyHasALoader", F("internal/app/serveapp/main.go", "docs/multimodal.md")),
+    Scan("internal/app/serveapp", "TestSupportTable_everyFamilyHasALoader", F("internal/app/serveapp/towers_load.go", "docs/multimodal.md")),
     Scan("internal/app/serveapp", "TestServe_noRouteEncodesARenderedPrompt", NT("internal/app/serveapp")),
     Scan("internal/app/serveapp", "TestVision_imageBlockNewlinesMatchTheRealProcessors",
          F("internal/app/serveapp/vision_multi.go", "internal/app/serveapp/vision_serve.go")),
