@@ -93,7 +93,7 @@ func TestDeltaScratch_bitIdenticalToFreshBuffers(t *testing.T) {
 	}
 }
 
-// TestDeltaNetCore_windowKeepsTheLastMixedRows: once full, the conv window is the last K-1 mixed vectors DeltaNetCore was
+// TestDeltaNetCore_windowKeepsTheLastMixedRows: once full, the conv window is the last (ConvKernel - 1) mixed vectors DeltaNetCore was
 // given, oldest first and by identity (the core retains mixed and copies nothing).
 func TestDeltaNetCore_windowKeepsTheLastMixedRows(t *testing.T) {
 	p := DeltaNetParams{ConvKernel: 4, NumKeyHeads: 2, NumValueHeads: 2, KeyHeadDim: 4, ValueHeadDim: 4}
