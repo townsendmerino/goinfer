@@ -61,13 +61,22 @@ moved symbol; those are edited by hand.
   released aikit until the bump, and green against the branch.
 
 Order on main's head at LS8: `aikit_surface_rewrite.py` (the four rules files), `kind_string_fix.py` per module and tag,
-`ls6_fix.py` (both rules files), `ls3_census_fix.py`, `ls3_census_code.py`, the hand edits above, then
+`ls6_fix.py` (both rules files), `step4_fix.py`, `ls3_census_fix.py`, `ls3_census_code.py`, the hand edits above, then
 `scripts/refresh_parity_hashes.sh`.
 
 - LS2 part 2 (the int4 repack helpers and `WeightMat.Int4`/`Int4Row4` unexported): goinfer calls none of the
   helpers. By hand: three tests took a `*WeightMat` through an interface literal declaring `Int4()`
   (`decoder/int4mix_test.go`, and `backend/cuda`'s `reale2e_test.go` and `realforward_test.go`); they declare
   `Int4F16()` and copy the binary16 scales as stored (the f32 round trip they did was exact).
+
+- LS6 step 4, second part (the raw-slice int8 and int4 matmuls unexported): `python3 scripts/aikit_surface/step4_fix.py .`
+  turns decoder's four calls on a WeightMat's own raw arrays into `w.MatmulBTInto` (the same kernels), every other call of
+  the four int8 forms into a package helper over a `WeightMat` (it writes each package's `aikit_matmul_helpers.go` or
+  `_test.go`), and drops a `linalg` import left unused. By hand: `decoder/weightmat.go`'s Q8 branch reads `Int8()` for
+  its kind only; and the three calls of the f32-scale W4A8 forms (`decoder/parthreshold_sweep_bench_test.go` through its
+  WeightMat; `decoder/w4a8_row4_vs_canonical_probe_test.go` with `MatmulBTW4A8F16Into` and the WeightMat's
+  `MatmulBTW4A8Into` for row4; `backend/webgpu/backend_w4a8_test.go`'s CPU reference through `WrapInt4` over the binary16
+  scales the GPU got). Run it after `ls6_fix.py`.
 
 ## Proof, per move
 

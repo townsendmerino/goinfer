@@ -17,7 +17,7 @@ func cpuChainW8A8(act []float32, M, K int, bq []int8, bScales []float32, depth i
 	cur := slices.Clone(act)
 	dst := make([]float32, M*K)
 	for range depth {
-		linalg.MatmulBTW8A8(cur, bq, bScales, dst, M, K, K) // N==K (square)
+		aikitMatmulW8A8(cur, bq, bScales, dst, M, K, K) // N==K (square)
 		copy(cur, dst)
 	}
 	return cur
@@ -136,7 +136,7 @@ func TestChainW8A8_microbench(t *testing.T) {
 	for range iters {
 		cur := slices.Clone(act)
 		for range depth {
-			linalg.MatmulBTW8A8(cur, bq, bScales, dst, M, K, K)
+			aikitMatmulW8A8(cur, bq, bScales, dst, M, K, K)
 			copy(cur, dst)
 		}
 	}

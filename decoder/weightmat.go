@@ -948,7 +948,7 @@ func matmulWS(be Backend, own *linalg.Workspace, w *linalg.WeightMat, a, dst []f
 			}
 			ws.SetThreshold(DefaultDecodeParallelThreshold)
 			ws.SetActQuantGroup(w.ActQuantGroup())
-			linalg.MatmulBTW8A8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
+			w.MatmulBTInto(ws, a, dst, M)
 			return
 		}
 		// Pooled Workspace, as in the W8A8 case: the bare linalg.MatmulBTQ8 wrapper builds a fresh, non-pooled Workspace every
@@ -958,7 +958,7 @@ func matmulWS(be Backend, own *linalg.Workspace, w *linalg.WeightMat, a, dst []f
 			defer matmulWSPool.Put(ws)
 		}
 		ws.SetThreshold(DefaultDecodeParallelThreshold)
-		linalg.MatmulBTQ8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
+		w.MatmulBTInto(ws, a, dst, M)
 		return
 	}
 	if k := w.Kind(); k == "q4k" || k == "q5k" || k == "q6k" {
@@ -1022,14 +1022,14 @@ func matmulInto(ws *linalg.Workspace, be Backend, w *linalg.WeightMat, a, dst []
 			return
 		}
 		ws.SetActQuantGroup(w.ActQuantGroup())
-		linalg.MatmulBTW8A8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
+		w.MatmulBTInto(ws, a, dst, M)
 		return
 	}
-	if q8, scales, w8a8, ok := w.Int8(); ok && !w8a8 {
+	if _, _, w8a8, ok := w.Int8(); ok && !w8a8 {
 		// Weight-only Q8 (the int8-pinned LM head in int4 mode): thread the caller's own scratch Workspace rather than falling
 		// through to matmul's pool round-trip.
 		ws.SetThreshold(DefaultDecodeParallelThreshold)
-		linalg.MatmulBTQ8Into(ws, a, q8, scales, dst, M, w.Cols(), w.Rows())
+		w.MatmulBTInto(ws, a, dst, M)
 		return
 	}
 	if w.IsInt4() {

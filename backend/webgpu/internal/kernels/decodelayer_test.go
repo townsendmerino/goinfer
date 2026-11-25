@@ -6,8 +6,6 @@ import (
 	"math"
 	"slices"
 	"testing"
-
-	"github.com/townsendmerino/aikit/linalg"
 )
 
 func refRMSNorm(x, w []float32, H int, eps float32, addOne bool) []float32 {
@@ -102,18 +100,18 @@ func TestAttnBlock_parity(t *testing.T) {
 	// --- Go reference ---
 	xn := refRMSNorm(x, normW, hidden, eps, false)
 	q := make([]float32, qDim)
-	linalg.MatmulBTW8A8(xn, qBQ, qS, q, 1, hidden, qDim)
+	aikitMatmulW8A8(xn, qBQ, qS, q, 1, hidden, qDim)
 	k := make([]float32, kvDim)
-	linalg.MatmulBTW8A8(xn, kBQ, kS, k, 1, hidden, kvDim)
+	aikitMatmulW8A8(xn, kBQ, kS, k, 1, hidden, kvDim)
 	v := make([]float32, kvDim)
-	linalg.MatmulBTW8A8(xn, vBQ, vS, v, 1, hidden, kvDim)
+	aikitMatmulW8A8(xn, vBQ, vS, v, 1, hidden, kvDim)
 	refRoPE(q, nH, hd, pos, invFreq)
 	refRoPE(k, nKV, hd, pos, invFreq)
 	kFull := slices.Concat(priorK, k)
 	vFull := slices.Concat(priorV, v)
 	ctxv := refAttn(q, kFull, vFull, nH, nKV, hd, pos+1, scale)
 	attnOut := make([]float32, hidden)
-	linalg.MatmulBTW8A8(ctxv, oBQ, oS, attnOut, 1, qDim, hidden)
+	aikitMatmulW8A8(ctxv, oBQ, oS, attnOut, 1, qDim, hidden)
 	ref := make([]float32, hidden)
 	for i := range ref {
 		ref[i] = x[i] + attnOut[i]

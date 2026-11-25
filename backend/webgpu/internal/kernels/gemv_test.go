@@ -73,7 +73,7 @@ func TestGEMV_microbench(t *testing.T) {
 	cpuDst := make([]float32, N)
 
 	// warm up
-	linalg.MatmulBTW8A8(act, bq, bScales, cpuDst, 1, K, N)
+	aikitMatmulW8A8(act, bq, bScales, cpuDst, 1, K, N)
 	if _, err := ctx.MatmulW8A8(aq, aScale, rm, 1); err != nil {
 		t.Fatalf("naive: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestGEMV_microbench(t *testing.T) {
 
 	t0 := time.Now()
 	for range iters {
-		linalg.MatmulBTW8A8(act, bq, bScales, cpuDst, 1, K, N)
+		aikitMatmulW8A8(act, bq, bScales, cpuDst, 1, K, N)
 	}
 	cpu := time.Since(t0) / iters
 

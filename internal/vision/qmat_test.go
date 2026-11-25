@@ -46,7 +46,7 @@ func TestQMat_migrationIsBitIdentical(t *testing.T) {
 			want := make([]float32, sh.M*sh.rows)
 			if quant {
 				q, s := linalg.QuantizeRowsInt8(w, sh.rows, sh.cols)
-				linalg.MatmulBTW8A8(a, q, s, want, sh.M, sh.cols, sh.rows)
+				aikitMatmulW8A8(a, q, s, want, sh.M, sh.cols, sh.rows)
 			} else {
 				f := slices.Clone(w)
 				linalg.MatmulBT(a, f, want, sh.M, sh.cols, sh.rows)

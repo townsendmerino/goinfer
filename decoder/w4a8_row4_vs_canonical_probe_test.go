@@ -16,9 +16,9 @@ import (
 // TestRow4_vsCanonical_gemma4Shapes is the follow-up the mmap-vs-heap result suggests: memory source is ruled out
 // (TestRow4_mmapVsHeapResident), so if gemma4's paged decode is still slower with kind-4 than kind-3,
 // the remaining candidate is that the row4 kernel is
-// not faster than canonical on THESE SPECIFIC expert shapes (the original speedup may have been measured on different tensor dimensions). Calls both
-// free-function kernels directly on the same real gemma4 expert bytes, same activation, same dst: isolates kernel choice
-// as the only variable.
+// not faster than canonical on THESE SPECIFIC expert shapes (the original speedup may have been measured on different tensor dimensions). Runs the
+// canonical kernel (MatmulBTW4A8F16Into) and the row4 one (the WeightMat's MatmulBTW4A8Into, which takes row4 at M=1) on the
+// same real gemma4 expert bytes, same activation, same dst: isolates kernel choice as the only variable.
 //
 // It runs on no machine we have, so it is not coverage: it builds only on arm64, and it needs the 26B kind-4 .giw on a Mac
 // that can hold it, which the 16 GB Mac cannot; nobara is amd64. A skip here vouches for nothing.
@@ -36,8 +36,9 @@ func TestRow4_vsCanonical_gemma4Shapes(t *testing.T) {
 	defer m.Close()
 
 	type sample struct {
-		q4, q4Row4        []byte
-		q4s, q4Row4Scales []float32
+		wm                *linalg.WeightMat // canonical and row4: MatmulBTW4A8Into takes row4 at M=1
+		q4                []byte
+		q4s16             []uint16
 		group, rows, cols int
 		act, dstA, dstB   []float32
 	}
@@ -48,19 +49,15 @@ func TestRow4_vsCanonical_gemma4Shapes(t *testing.T) {
 		if !ok {
 			return sample{}, false
 		}
-		row4, row4Scales16, ok := wm.Int4Row4F16()
-		if !ok {
+		if _, _, ok := wm.Int4Row4F16(); !ok {
 			return sample{}, false
 		}
-		q4s, row4Scales := make([]float32, len(q4s16)), make([]float32, len(row4Scales16))
-		linalg.F16ToF32Slice(q4s, q4s16) // the kernels below take f32 scales
-		linalg.F16ToF32Slice(row4Scales, row4Scales16)
 		act := make([]float32, wm.Cols())
 		for j := range act {
 			act[j] = rng.Float32()*2 - 1
 		}
 		return sample{
-			q4: q4, q4Row4: row4, q4s: q4s, q4Row4Scales: row4Scales,
+			wm: wm, q4: q4, q4s16: q4s16,
 			group: group, rows: wm.Rows(), cols: wm.Cols(),
 			act: act, dstA: make([]float32, wm.Rows()), dstB: make([]float32, wm.Rows()),
 		}, true
@@ -92,7 +89,7 @@ func TestRow4_vsCanonical_gemma4Shapes(t *testing.T) {
 		start := time.Now()
 		for r := range reps {
 			s := samples[r%len(samples)]
-			linalg.MatmulBTW4A8Into(&ws, s.act, s.q4, s.q4s, s.dstA, 1, s.cols, s.rows, s.group)
+			linalg.MatmulBTW4A8F16Into(&ws, s.act, s.q4, s.q4s16, s.dstA, 1, s.cols, s.rows, s.group)
 		}
 		return time.Since(start)
 	}
@@ -100,7 +97,7 @@ func TestRow4_vsCanonical_gemma4Shapes(t *testing.T) {
 		start := time.Now()
 		for r := range reps {
 			s := samples[r%len(samples)]
-			linalg.MatmulBTW4A8Row4Into(&ws, s.act, s.q4Row4, s.q4Row4Scales, s.dstB, 1, s.cols, s.rows, s.group)
+			s.wm.MatmulBTW4A8Into(&ws, s.act, s.dstB, 1)
 		}
 		return time.Since(start)
 	}
