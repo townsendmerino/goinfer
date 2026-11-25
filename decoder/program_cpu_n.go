@@ -232,7 +232,7 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *layerProgram, h []float3
 			case opGemma4MoE:
 				for i := range K {
 					hi := row(h, i, hidden)
-					copy(hi, gemma4MoEFFNWith(be, hidden, o.Norms.Eps, o.Norms.AddOne, hi, lw.gemma4moe, m.pager))
+					copy(hi, gemma4MoEFFNWith(be, hidden, o.Norms.Eps, o.Norms.AddOne, hi, lw.gemma4moe, m.pager, gp.moeScratch()))
 				}
 			case opPLE:
 				m.gemma4PLEBatch(h, l, K, lw, &o.Norms, gp)

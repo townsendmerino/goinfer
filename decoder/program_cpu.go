@@ -54,7 +54,7 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 	var t attnTimer
 	var g4 *gemma4Token // Gemma 4's per-token state: its PLE inputs are computed from the embedding, before layer 0
 	if arch.gemma4 != nil {
-		g4 = m.newGemma4Token(prog, h, pleID, pos)
+		g4 = m.newGemma4Token(prog, h, pleID, pos, &scr.g4)
 		if g4traceHidden != nil {
 			g4traceHidden(-1, h)
 		}
@@ -156,7 +156,7 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 					if g4 == nil {
 						return nil, fmt.Errorf("decoder: layer %d: Gemma 4's dense FFN form on a model without Gemma 4 state", l)
 					}
-					if err := m.gemma4DenseFFN(o.FFN.Act, m.reg(o.In, h, scr), out, lw, arch.ffnAt(l), &g4.hq); err != nil {
+					if err := m.gemma4DenseFFN(o.FFN.Act, m.reg(o.In, h, scr), out, lw, arch.ffnAt(l), g4); err != nil {
 						return nil, err
 					}
 				} else if err := m.ffnToken(&o.FFN, m.reg(o.In, h, scr), out, lw, scr, ld); err != nil {
@@ -200,9 +200,9 @@ func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVC
 				m.gemma4AttnToken(&o.G4, m.reg(o.In, h, scr), m.reg(o.Out, h, scr), lw, cache, l, pos, g4)
 				lastFFN = false
 			case opGemma4MoE:
-				copy(h, gemma4MoEFFNWith(m.be, arch.HiddenDim, o.Norms.Eps, o.Norms.AddOne, h, lw.gemma4moe, m.pager))
+				copy(h, gemma4MoEFFNWith(m.be, arch.HiddenDim, o.Norms.Eps, o.Norms.AddOne, h, lw.gemma4moe, m.pager, &g4.moe))
 			case opPLE:
-				m.gemma4PLEBranch(h, g4.ple(l), lw, &o.Norms, scr.sub)
+				m.gemma4PLEBranch(h, l, g4, lw, &o.Norms, scr.sub)
 				if cache.subPLE != nil && !(seamPlantForTest == plantSkipPLECapture && l == 1) { // the contribution just added
 					cache.subPLE[l] = append(cache.subPLE[l][:0], scr.sub...)
 				}
@@ -473,12 +473,11 @@ func (m *Model) ffnToken(p *ffnParams, x, out []float32, lw *LayerWeights, scr *
 		copy(out, m.nemotronMoEWith(x, lw, &p.MoE, arch.HiddenDim))
 		return nil
 	case ffnNonGated:
-		g, err := nonGatedMLPWith(x, lw, p.Act, lw.UpProj.Rows(), arch.HiddenDim, m.be)
-		if err != nil {
-			return err
+		var mid *[]float32
+		if scr != nil {
+			mid = &scr.ffnMid
 		}
-		copy(out, g)
-		return nil
+		return nonGatedMLPWith(x, out, lw, p.Act, lw.UpProj.Rows(), arch.HiddenDim, m.be, mid)
 	}
 	return gatedMLPAct(x, out, lw, p.Act, m.be, scr, ld)
 }

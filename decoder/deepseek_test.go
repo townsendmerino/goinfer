@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"math"
 	"os"
 	"testing"
 
@@ -231,4 +232,62 @@ func TestMLAAbsorb_parity(t *testing.T) {
 	if cos < 0.9999 {
 		t.Errorf("absorb vs naive last-logit cosine %.6f < 0.9999", cos)
 	}
+}
+
+// The absorb path draws its seven per-call working buffers (the roped and absorbed queries, the per-key scores and normalized
+// latents, the rope key, the rank-space value sum and the context) from the stream's scratch. Pinned two ways on the tiny
+// checkpoint, alternating two layers so the scratch is reused across layers: the output is bit-identical to a cache with no
+// scratch (fresh buffers every call), and a warm call makes at least those seven fewer allocations than a fresh one.
+func TestMLAAbsorb_scratchReuseIsBitIdenticalAndAllocatesLess(t *testing.T) {
+	const ckpt = "../testdata/deepseek-tiny"
+	if _, err := os.Stat(ckpt); errors.Is(err, fs.ErrNotExist) {
+		t.Skipf("no checkpoint at %s — run scripts/pin_deepseek_tiny.py", ckpt)
+	}
+	m, err := Load(ckpt, Options{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	defer m.Close()
+	arch := m.w.arch
+	prog := m.program()
+	opAt := func(l int) *mlaOpParams {
+		for i := range prog.Layers[l] {
+			if prog.Layers[l][i].Kind == opMLA {
+				return &prog.Layers[l][i].MLA
+			}
+		}
+		t.Fatalf("layer %d runs no MLA op", l)
+		return nil
+	}
+	layers := []int{0, arch.NumLayers - 1}
+	const steps = 48
+	warm, fresh := m.NewCache(steps+64), m.NewCache(steps+64)
+	fresh.scr = nil
+	n := make([]float32, arch.HiddenDim)
+	for pos := range steps {
+		for i := range n {
+			n[i] = float32((pos*31+i*7)%17)/17 - 0.5
+		}
+		for _, l := range layers {
+			op, lw := opAt(l), &m.w.Layers[l]
+			got := m.mlaAttentionAbsorb(op, n, lw, arch, warm, l, pos)
+			want := m.mlaAttentionAbsorb(op, n, lw, arch, fresh, l, pos)
+			for i := range want {
+				if math.Float32bits(got[i]) != math.Float32bits(want[i]) {
+					t.Fatalf("pos %d layer %d: out[%d] = %v with the scratch, %v without", pos, l, i, got[i], want[i])
+				}
+			}
+		}
+	}
+	l, op, lw := layers[0], opAt(layers[0]), &m.w.Layers[layers[0]]
+	pos := steps
+	call := func(c *KVCache) func() {
+		return func() { m.mlaAttentionAbsorb(op, n, lw, arch, c, l, pos) }
+	}
+	warmAllocs, freshAllocs := testing.AllocsPerRun(20, call(warm)), testing.AllocsPerRun(20, call(fresh))
+	if warmAllocs > freshAllocs-7 {
+		t.Errorf("a warm absorb call allocates %.0f times, a scratch-free one %.0f: the seven working buffers are not reused",
+			warmAllocs, freshAllocs)
+	}
+	t.Logf("allocations per call: %.0f warm, %.0f without scratch", warmAllocs, freshAllocs)
 }

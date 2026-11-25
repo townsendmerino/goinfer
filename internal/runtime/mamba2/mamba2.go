@@ -46,10 +46,22 @@ type Weights struct {
 }
 
 // State is one layer's recurrent state: the conv window (the last K-1 xBC vectors, oldest first, each its own convDim floats)
-// and the SSM state [nHeads·P·N].
+// and the SSM state [nHeads·P·N]. It belongs to one sequence and is advanced by one goroutine at a time. conv and y are Mix's
+// grow-only scratch, rewritten in full every step: they are not state, so a copy, snapshot or reset of the state carries
+// only ConvWin and SSM and leaves them out.
 type State struct {
 	ConvWin [][]float32
 	SSM     []float32
+
+	conv, y []float32
+}
+
+// sized returns (*buf)[:n], reallocating *buf when its capacity is short. The contents are not cleared.
+func sized(buf *[]float32, n int) []float32 {
+	if cap(*buf) < n {
+		*buf = make([]float32, n)
+	}
+	return (*buf)[:n]
 }
 
 // NewState returns a zero state for p.
@@ -60,7 +72,8 @@ func NewState(p Params) *State {
 // Mix advances one token through the mixer, reading and updating st, and returns the gated-norm output [dInner], the
 // out_proj's input. proj is the in_proj output [z (dInner) ‖ xBC (convDim) ‖ dt (nHeads)]; st's conv window keeps a copy of
 // its xBC part, never a view, so the window holds no part of proj. f32 computes exp(dt·A) and the norm's
-// accumulation in f32, as the GPU kernels do (a precision-localization seam, off in production).
+// accumulation in f32, as the GPU kernels do (a precision-localization seam, off in production). The returned slice is st's
+// scratch: it is valid until the next Mix on st, so a caller that keeps it must copy it.
 func Mix(proj []float32, w Weights, p Params, eps float64, st *State, f32 bool) []float32 {
 	dInner, convDim, K := p.DInner(), p.ConvDim(), p.DConv
 	N, P := p.DState, p.HeadDim
@@ -73,7 +86,7 @@ func Mix(proj []float32, w Weights, p Params, eps float64, st *State, f32 bool) 
 
 	// Depthwise causal conv over xBC (+ bias, + SiLU). Taps t-K+1..t: the last K-1 come from the window (zero-padded
 	// early), the K-th is this token.
-	conv := make([]float32, convDim)
+	conv := sized(&st.conv, convDim) // every element is written below
 	win := st.ConvWin
 	for c := range convDim {
 		s := w.ConvB[c] + w.ConvW[c*K+(K-1)]*xBC[c] // current token (tap K-1)
@@ -100,7 +113,7 @@ func Mix(proj []float32, w Weights, p Params, eps float64, st *State, f32 bool) 
 	C := conv[dInner+gSize : dInner+2*gSize]
 
 	// Selective SSM recurrence per head; the state persists in st.SSM.
-	y := make([]float32, dInner)
+	y := sized(&st.y, dInner) // every element is assigned (not accumulated) below
 	for head := range p.NHeads {
 		g := head / repeat
 		Bh := B[g*N : (g+1)*N]
@@ -142,13 +155,12 @@ func Mix(proj []float32, w Weights, p Params, eps float64, st *State, f32 bool) 
 		}
 	}
 
-	// Gated RMSNorm: y·SiLU(z), normalized per norm group, times the weight.
-	gated := make([]float32, dInner)
+	// Gated RMSNorm, in place over y: y·SiLU(z), normalized per norm group, times the weight.
 	for i := range dInner {
-		gated[i] = y[i] * hybridattn.Silu(z[i])
+		y[i] *= hybridattn.Silu(z[i])
 	}
-	GatedRMSNormGrouped(gated, w.NormW, p.NormGroups, eps, f32)
-	return gated
+	GatedRMSNormGrouped(y, w.NormW, p.NormGroups, eps, f32)
+	return y
 }
 
 // GatedRMSNormGrouped applies the Mamba-2 gated RMSNorm in place: x already holds y·SiLU(gate); it is split into nGroups

@@ -59,6 +59,27 @@ type decodeScratch struct {
 	// gateUpQ is gatedMLPFusedGateUp's one quantization of h, read by every worker.
 	gateUpQ        linalg.ActQ
 	moeGate, moeUp []float32 // [max(IntermediateDim, SharedIntermediateDim)]
+
+	ffnMid []float32 // nonGatedMLPWith's [inter] activation, grown on first use
+
+	mla mlaScratch  // MLA absorb attention's working set; empty until an MLA layer runs
+	g4  gemma4Token // Gemma 4's per-position state, reset by newGemma4Token each token; empty for every other family
+}
+
+// mlaScratch is mlaAttentionAbsorb's per-stream working set: the roped query, the absorbed query, the per-key scores and
+// normalized latents, the rope key, the rank-space value sum and the context. Each buffer is reused across layers and tokens and
+// grows to the longest context seen.
+type mlaScratch struct {
+	qRope, qNopeAbs, scores, cnAll, krj, wsum, ctx []float32
+}
+
+// scratchF32 returns (*b)[:n], first growing *b with headroom (growCap) when it holds less, since the key-sized buffers rise by
+// one row a token. The contents are stale: the caller writes or clears every element it reads.
+func scratchF32(b *[]float32, n int) []float32 {
+	if cap(*b) < n {
+		*b = make([]float32, growCap(cap(*b), n))
+	}
+	return (*b)[:n]
 }
 
 // loraBuf returns a length-r scratch for the compute-time LoRA A·x intermediate,

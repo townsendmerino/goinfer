@@ -1,6 +1,8 @@
 package decoder
 
 import (
+	"context"
+	"errors"
 	"os"
 	"slices"
 	"testing"
@@ -136,11 +138,11 @@ func TestHiddenLast_batchedMatchesSequential(t *testing.T) {
 		if !m.canBatchN(len(ids)) {
 			t.Fatalf("n=%d: canBatchN false — test assumes the batched path applies here", n)
 		}
-		seq, err := m.hiddenLastSequential(ids)
+		seq, err := m.hiddenLastSequential(context.Background(), ids)
 		if err != nil {
 			t.Fatalf("n=%d: hiddenLastSequential: %v", n, err)
 		}
-		batched, err := m.hiddenLastBatched(ids)
+		batched, err := m.hiddenLastBatched(context.Background(), ids)
 		if err != nil {
 			t.Fatalf("n=%d: hiddenLastBatched: %v", n, err)
 		}
@@ -169,4 +171,41 @@ func allZero(v []float32) bool {
 		}
 	}
 	return true
+}
+
+// HiddenLastContext stops on its context on every CPU path — the batched pass and the per-token loop — and on a live context
+// returns exactly HiddenLast's row. A cancelled context returns context.Canceled, never a row computed anyway.
+func TestHiddenLastContext_honoursCancellation(t *testing.T) {
+	const ckpt = "../testdata/llama-tiny"
+	if _, err := os.Stat(ckpt); err != nil {
+		t.Skipf("no tiny checkpoint at %s", ckpt)
+	}
+	m, err := Load(ckpt, Options{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	defer m.Close()
+	ids := []int{1, 5, 9, 2, 7, 3}
+	if !m.canBatchN(len(ids)) {
+		t.Fatal("test assumes the batched path applies to this fixture")
+	}
+	want, err := m.HiddenLast(ids)
+	if err != nil {
+		t.Fatalf("HiddenLast: %v", err)
+	}
+	got, err := m.HiddenLastContext(context.Background(), ids)
+	if err != nil || !slices.Equal(got, want) {
+		t.Fatalf("HiddenLastContext on a live context = %v, %v; want HiddenLast's row", got, err)
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	for name, run := range map[string]func() ([]float32, error){
+		"HiddenLastContext": func() ([]float32, error) { return m.HiddenLastContext(cancelled, ids) },
+		"batched":           func() ([]float32, error) { return m.hiddenLastBatched(cancelled, ids) },
+		"sequential":        func() ([]float32, error) { return m.hiddenLastSequential(cancelled, ids) },
+	} {
+		if out, err := run(); !errors.Is(err, context.Canceled) {
+			t.Errorf("%s on a cancelled context = %d floats, %v; want context.Canceled", name, len(out), err)
+		}
+	}
 }

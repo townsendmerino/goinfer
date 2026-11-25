@@ -46,11 +46,10 @@ func synthInt8(rows, cols int, seed float32) linalg.WeightMat {
 // the arch can emit it — one row4-eligible int4 matrix swapped into layer 0.
 func alignFixtureWeights(t *testing.T) *Weights {
 	t.Helper()
-	raw, _, _, _ := tinyNormRopeGGUF("llama")
-	w := loadTinyGGUFWeights(t, raw, "llama")
+	w := wideTinyLlama(t)
 	l := &w.Layers[0]
 	l.QProj = synthInt4(8, 64, 32, 3)
-	l.KProj = synthInt8(4, 16, 5)
+	l.KProj = synthInt8(4, 64, 5)
 	l.GateProj = synthInt4(16, 64, 32, 9) // rows%4==0, cols%32==0: kind 5 under an arm64 target
 	return w
 }

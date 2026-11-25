@@ -45,10 +45,29 @@ type DeltaNetWeights struct {
 }
 
 // DeltaState is one Gated DeltaNet layer's streaming state: the last K-1 conv inputs and the recurrent matrix state S
-// (one [head_k_dim, head_v_dim] block per value head).
+// (one [head_k_dim, head_v_dim] block per value head). scratch is DeltaNetStep's working memory, not state: a copy,
+// snapshot or reset of the state carries only ConvWin and S.
 type DeltaState struct {
 	ConvWin [][]float32 // up to K-1 prior mixed_qkv vectors, oldest first
 	S       []float32   // [numV * head_k_dim * head_v_dim]
+
+	scratch DeltaScratch
+}
+
+// DeltaScratch is one Gated DeltaNet layer's per-step working memory (the gate projections, z, the conv output, the
+// normalized q and k, the kv row and the core), grow-only and reused from step to step. Every buffer is rewritten in full
+// before it is read, so nothing passes from one step to the next and a copy or snapshot of the state needs none of it. A
+// scratch belongs to one state and is used by one goroutine at a time. A nil *DeltaScratch allocates each buffer afresh.
+type DeltaScratch struct {
+	bt, at, z, core, conv, qAll, kAll, kv []float32
+}
+
+// sized returns (*buf)[:n], reallocating *buf when its capacity is short. The contents are not cleared.
+func sized(buf *[]float32, n int) []float32 {
+	if cap(*buf) < n {
+		*buf = make([]float32, n)
+	}
+	return (*buf)[:n]
 }
 
 // NewDeltaState allocates a zeroed streaming state for p's geometry.
@@ -94,7 +113,7 @@ func NewDeltaNet(
 // DeltaNetStep advances one token through dn on the CPU using f32 projections.
 func DeltaNetStep(h []float32, dn *DeltaNet, hidden int, eps float64, st *DeltaState) []float32 {
 	w := &dn.Weights
-	return GatedDeltaNetStep(
+	return st.scratch.Step(
 		nil, h,
 		&w.InProjQKV, &w.InProjZ, &w.OutProj,
 		w.InProjB, w.InProjA, w.ConvW, w.DtBias, w.NegExpA, w.NormW,
@@ -168,7 +187,7 @@ func AddScaled(dst, src []float32, scale float32) {
 
 // GatedDeltaNetStep advances one token through the Gated DeltaNet layer, reading and updating s and convWin, and
 // returns the layer output [hidden]. When proj is nil, the three WeightMat projections run as f32 Matvec and panic if
-// any WeightMat is not f32.
+// any WeightMat is not f32. Its working buffers are allocated per call; DeltaScratch.Step reuses them.
 func GatedDeltaNetStep(
 	proj func(w *linalg.WeightMat, x []float32, pre bool) []float32,
 	h []float32,
@@ -181,11 +200,38 @@ func GatedDeltaNetStep(
 	convWin *[][]float32,
 	timers *DeltaNetTimers,
 ) []float32 {
+	var sc *DeltaScratch
+	return sc.Step(proj, h, inProjQKV, inProjZ, outProj, inProjB, inProjA, convW, dtBias, negExpA, normW, p, hidden, eps, s, convWin, timers)
+}
+
+// Step is GatedDeltaNetStep with its working buffers taken from ds. proj's outputs are the caller's: in_proj_qkv's is kept by
+// convWin and out_proj's is returned. With a nil proj, z is written into ds and the other two are allocated. While the
+// capture hook is installed the buffers are allocated per call, since the hook may keep them.
+func (ds *DeltaScratch) Step(
+	proj func(w *linalg.WeightMat, x []float32, pre bool) []float32,
+	h []float32,
+	inProjQKV, inProjZ, outProj *linalg.WeightMat,
+	inProjB, inProjA, convW, dtBias, negExpA, normW []float32,
+	p DeltaNetParams,
+	hidden int,
+	eps float64,
+	s []float32,
+	convWin *[][]float32,
+	timers *DeltaNetTimers,
+) []float32 {
+	if ds == nil || deltaCapHook != nil {
+		ds = new(DeltaScratch)
+	}
 	if proj == nil {
 		proj = func(wm *linalg.WeightMat, x []float32, _ bool) []float32 {
 			f32, ok := wm.F32()
 			if !ok {
 				panic("program.GatedDeltaNetStep: nil proj requires an f32 WeightMat (got " + wm.Kind() + ")")
+			}
+			if wm == inProjZ {
+				z := sized(&ds.z, wm.Rows())
+				linalg.MatmulBT(x, f32, z, 1, wm.Cols(), wm.Rows())
+				return z
 			}
 			return Matvec(f32, wm.Rows(), wm.Cols(), x)
 		}
@@ -200,14 +246,15 @@ func GatedDeltaNetStep(
 		timers.ProjNs.Add(int64(time.Since(t0)))
 		t0 = time.Now()
 	}
-	bt := Matvec(inProjB, nv, hidden, h)
-	at := Matvec(inProjA, nv, hidden, h)
+	bt, at := sized(&ds.bt, nv), sized(&ds.at, nv)
+	linalg.MatmulBT(h, inProjB, bt, 1, hidden, nv) // Matvec into scratch
+	linalg.MatmulBT(h, inProjA, at, 1, hidden, nv)
 	z := proj(inProjZ, h, true)
 	if timers != nil {
 		timers.OtherNs.Add(int64(time.Since(t0)))
 	}
-	core := make([]float32, p.ValueHeadDim*nv)
-	DeltaNetCore(core, mixed, bt, at, z, convW, dtBias, negExpA, normW, p, eps, s, convWin, timers)
+	core := sized(&ds.core, p.ValueHeadDim*nv) // cleared by Core
+	ds.Core(core, mixed, bt, at, z, convW, dtBias, negExpA, normW, p, eps, s, convWin, timers)
 	if timers != nil {
 		t0 = time.Now()
 	}
@@ -231,6 +278,24 @@ func DeltaNetCore(
 	convWin *[][]float32,
 	timers *DeltaNetTimers,
 ) {
+	var sc *DeltaScratch
+	sc.Core(core, mixed, bt, at, z, convW, dtBias, negExpA, normW, p, eps, s, convWin, timers)
+}
+
+// Core is DeltaNetCore with its conv output and recurrence buffers taken from ds; once convWin holds K-1 rows it slides
+// without allocating. While the capture hook is installed the buffers are allocated per call, since the hook may keep them.
+func (ds *DeltaScratch) Core(
+	core, mixed, bt, at, z []float32,
+	convW, dtBias, negExpA, normW []float32,
+	p DeltaNetParams,
+	eps float64,
+	s []float32,
+	convWin *[][]float32,
+	timers *DeltaNetTimers,
+) {
+	if ds == nil || deltaCapHook != nil {
+		ds = new(DeltaScratch)
+	}
 	nk, nv := p.NumKeyHeads, p.NumValueHeads
 	hk, hv := p.KeyHeadDim, p.ValueHeadDim
 	keyDim, valueDim := hk*nk, hv*nv
@@ -248,7 +313,7 @@ func DeltaNetCore(
 
 	// 1. Depthwise causal conv (+ SiLU). Taps t-K+1..t: the last K-1 come from
 	// convWin (zero-padded early), the K-th is this token.
-	conv := make([]float32, convDim)
+	conv := sized(&ds.conv, convDim) // every element is written below
 	win := *convWin
 	for c := range convDim {
 		sc := convW[c*K+(K-1)] * mixed[c] // j=K-1 tap = current token
@@ -259,10 +324,15 @@ func DeltaNetCore(
 		}
 		conv[c] = Silu(sc)
 	}
-	// slide the window: keep the last K-1 mixed vectors
-	*convWin = append(*convWin, mixed)
-	if len(*convWin) > K-1 {
-		*convWin = (*convWin)[len(*convWin)-(K-1):]
+	// slide the window: keep the last K-1 mixed vectors; a full window shifts in place
+	if K > 1 && len(win) == K-1 {
+		copy(win, win[1:])
+		win[K-2] = mixed
+	} else {
+		*convWin = append(*convWin, mixed)
+		if len(*convWin) > K-1 {
+			*convWin = (*convWin)[len(*convWin)-(K-1):]
+		}
 	}
 	if timers != nil {
 		timers.OtherNs.Add(int64(time.Since(t0))) // conv; the gate projections are timed by the caller
@@ -270,7 +340,7 @@ func DeltaNetCore(
 
 	// 2. Gated delta-rule recurrence, per value head; state persists in s.
 	clear(core)
-	DeltaNetRecurrence(core, conv, at, bt, dtBias, negExpA, p, s, timers)
+	ds.Recurrence(core, conv, at, bt, dtBias, negExpA, p, s, timers)
 
 	var capPre, capGate []float32
 	if deltaCapHook != nil { // test seam: step 2's output, before step 3 overwrites it in place
@@ -318,6 +388,20 @@ func DeltaNetRecurrence(
 	s []float32,
 	timers *DeltaNetTimers,
 ) {
+	var sc *DeltaScratch
+	sc.Recurrence(core, conv, at, bt, dtBias, negExpA, p, s, timers)
+}
+
+// Recurrence is DeltaNetRecurrence with the buffers too large for its stack arrays taken from ds.
+func (ds *DeltaScratch) Recurrence(
+	core, conv, at, bt, dtBias, negExpA []float32,
+	p DeltaNetParams,
+	s []float32,
+	timers *DeltaNetTimers,
+) {
+	if ds == nil {
+		ds = new(DeltaScratch)
+	}
 	nk, nv := p.NumKeyHeads, p.NumValueHeads
 	hk, hv := p.KeyHeadDim, p.ValueHeadDim
 	keyDim := hk * nk
@@ -338,8 +422,8 @@ func DeltaNetRecurrence(
 		qAll = qAllBuf[:keyDim]
 		kAll = kAllBuf[:keyDim]
 	} else {
-		qAll = make([]float32, keyDim)
-		kAll = make([]float32, keyDim)
+		qAll = sized(&ds.qAll, keyDim) // both written in full below
+		kAll = sized(&ds.kAll, keyDim)
 	}
 	for headK := range nk {
 		L2NormScaledInto(qAll[headK*hk:(headK+1)*hk], conv[headK*hk:(headK+1)*hk], qScale)
@@ -352,7 +436,7 @@ func DeltaNetRecurrence(
 	if hv <= len(kvBuf) {
 		kv = kvBuf[:hv]
 	} else {
-		kv = make([]float32, hv)
+		kv = sized(&ds.kv, hv) // cleared per head below
 	}
 
 	for headV := range nv {

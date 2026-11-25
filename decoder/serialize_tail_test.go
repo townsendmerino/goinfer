@@ -35,7 +35,10 @@ func TestValidateShapes_gptOssTailIsRequired(t *testing.T) {
 		MoE:    &MoEConfig{NumExperts: 1, TopK: 1, IntermediateDim: 4},
 	}
 	full := func() *Weights {
+		qDim, kvDim := arch.NumHeads*arch.HeadDim, arch.NumKVHeads*arch.HeadDim
 		return &Weights{Layers: []LayerWeights{{
+			QProj: mat(qDim, arch.HiddenDim), KProj: mat(kvDim, arch.HiddenDim), VProj: mat(kvDim, arch.HiddenDim),
+			OProj: mat(arch.HiddenDim, qDim), Router: mat(arch.MoE.NumExperts, arch.HiddenDim),
 			AttnSinks: make([]float32, arch.NumHeads),
 			Experts: []expertWeights{{
 				Gate: mat(arch.MoE.IntermediateDim, arch.HiddenDim),

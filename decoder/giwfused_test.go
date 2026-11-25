@@ -14,10 +14,45 @@ import (
 // the members really are adjacent and 16-aligned in the loaded blob, a non-Metal target's bytes are
 // exactly what v12 wrote, and a group that cannot be fused degrades to plain records.
 
-func fusedFixture(t *testing.T) *Weights {
+// wideTinyLlama is the tiny llama fixture at hidden 64 (query/key heads 2/1 of head_dim 4, FFN width 16), with every tensor
+// rebuilt at that width. Each projection that reads the hidden state is then 64 wide, a multiple of the int4 group, so a
+// synthetic int4 or int8 matrix can replace it at a shape the loader's arch check accepts.
+func wideTinyLlama(t *testing.T) *Weights {
 	t.Helper()
 	raw, _, _, _ := tinyNormRopeGGUF("llama")
 	w := loadTinyGGUFWeights(t, raw, "llama")
+	const hidden, hd = 64, 4
+	w.Cfg.HiddenDim, w.Cfg.HeadDim = hidden, hd
+	arch, _, err := resolveArchitecture(&w.Cfg)
+	if err != nil {
+		t.Fatalf("resolveArchitecture: %v", err)
+	}
+	w.arch = arch
+	qDim, kvDim, inter, vocab := arch.NumHeads*hd, arch.NumKVHeads*hd, arch.IntermediateDim, arch.VocabSize
+	f32 := func(rows, cols, seed int) linalg.WeightMat {
+		return linalg.WrapF32(distinct(rows*cols, seed), rows, cols)
+	}
+	ones := func(n int) []float32 {
+		o := make([]float32, n)
+		for i := range o {
+			o[i] = 1
+		}
+		return o
+	}
+	w.Embed, w.LMHead, w.FinalNorm = f32(vocab, hidden, 4), f32(vocab, hidden, 5), ones(hidden)
+	for i := range w.Layers {
+		w.Layers[i] = LayerWeights{
+			QProj: f32(qDim, hidden, 1), KProj: f32(kvDim, hidden, 2), VProj: f32(kvDim, hidden, 3), OProj: f32(hidden, qDim, 6),
+			GateProj: f32(inter, hidden, 7), UpProj: f32(inter, hidden, 8), DownProj: f32(hidden, inter, 9),
+			PreAttnNorm: ones(hidden), PreMLPNorm: ones(hidden),
+		}
+	}
+	return w
+}
+
+func fusedFixture(t *testing.T) *Weights {
+	t.Helper()
+	w := wideTinyLlama(t)
 	l := &w.Layers[0]
 	l.QProj = synthInt4(8, 64, 32, 3)
 	l.KProj = synthInt4(4, 64, 32, 5)
@@ -129,9 +164,11 @@ func TestGIWFused_ineligibleGroupFallsBack(t *testing.T) {
 	if bytes.Contains(blob, []byte{6, 8, 0, 0, 0, 64, 0, 0, 0, 32, 0, 0, 0}) || bytes.Contains(blob, []byte{6, 16, 0, 0, 0, 64, 0, 0, 0, 32, 0, 0, 0}) {
 		t.Error("an ineligible group was written as kind 6")
 	}
-	got, err := LoadSerializedWeights(blob)
+	// Scan mode reads the records without the arch check: a llama layer with no V is not a loadable bundle, but the absent
+	// member must still round-trip through the writer's fallback.
+	got, err := walkSerializedWeights(blob, false, nil, nil, true)
 	if err != nil {
-		t.Fatalf("LoadSerializedWeights: %v", err)
+		t.Fatalf("walkSerializedWeights: %v", err)
 	}
 	sameMat(t, "Q", &src.Layers[0].QProj, &got.Layers[0].QProj)
 	sameMat(t, "Gate", &src.Layers[0].GateProj, &got.Layers[0].GateProj)
