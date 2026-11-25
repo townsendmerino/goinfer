@@ -8,7 +8,6 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/internal/vision"
-	"github.com/townsendmerino/goinfer/multimodal"
 )
 
 // Qwen2.5-VL's vision tower in float32 on the CUDA tower base: the port
@@ -19,13 +18,6 @@ import (
 // its output), each block attends per window except the full-attention blocks (per frame), and the result is permuted back to the original patch order; the merger (MergeHidden) stays aikit's, on the host, where Forward calls it.
 // Block: RMSNorm (eps 1e-6, aikit's rmsNorm), biased q/k/v from the fused qkv split at upload, NeoX rotate-half RoPE, attention at scale 1/sqrt(head_dim) through the fused kernel (tower_base.cu), biased proj and residual,
 // RMSNorm, the SiLU-gated biased MLP, residual. Float32 only: an int8-loaded encoder declines, as Metal's does.
-
-func init() {
-	vision.RegisterQwenResident(func(enc *vision.QwenVisionEncoder) (vision.QwenResidentEncoder, error) {
-		return newQwen25Tower(enc)
-	})
-	multimodal.MarkResidentTower(multimodal.TowerQwen25VL, "cuda") // aikit's slot cannot be asked what is registered
-}
 
 type qwen25Tower struct {
 	g     *gridTower

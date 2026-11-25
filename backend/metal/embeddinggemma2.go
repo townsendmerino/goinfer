@@ -21,12 +21,6 @@ import (
 // movement around it, RoPE from the CPU's own tables, the GELU-tanh multiplies and the residual adds. The embedding
 // gather and pooling stay on the host. Registered as the "metal" accelerator.
 
-func init() {
-	embeddinggemma2.RegisterAccelerator("metal", func(m *embeddinggemma2.Model) (embeddinggemma2.Accelerator, error) {
-		return newEG2Accel(m)
-	})
-}
-
 const eg2TG = 128
 
 type eg2Pipes struct{ geluMul, geluMulPLE, add, addScale, rope, headMajor, vtBlock, softmax, scatter Pipeline }

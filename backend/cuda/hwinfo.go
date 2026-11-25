@@ -6,14 +6,11 @@ import (
 	"fmt"
 
 	gc "github.com/eitamring/gocudrv/cuda"
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // ptxTargetMajor/Minor: every PTX file in this package targets sm_75 (Turing), JIT-compiled forward by the driver on a newer card. A card
 // OLDER than that cannot load the kernels at all, and the report says so.
 const ptxTargetMajor, ptxTargetMinor = 7, 5
-
-func init() { decoder.RegisterHardwareInfo("cuda", cudaHardwareInfo) }
 
 // cudaHardwareInfo is the device facts `check --hardware` prints for the CUDA backend. It opens the device only when asked, and says so plainly when there is none.
 func cudaHardwareInfo() []string {

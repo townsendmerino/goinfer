@@ -11,8 +11,6 @@ import (
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/goinfer/internal/vision"
-
-	"github.com/townsendmerino/goinfer/multimodal"
 )
 
 // The Gemma 4 vision tower on WebGPU: aikit's Gemma4Encoder.Forward up to its pool, in float32, from aikit's export
@@ -20,12 +18,6 @@ import (
 // (matmulF32Device), with the row RMSNorm, the ClippableLinear clamps, the axial 2-D RoPE and the gated GELU below. The
 // pool and the projection after them stay aikit's (FinishHidden), on the host. Registered as multimodal's "webgpu"
 // Gemma 4 tower.
-
-func init() {
-	multimodal.RegisterGemma4Tower("webgpu", func(enc *vision.Gemma4Encoder) (multimodal.Gemma4TowerAccelerator, error) {
-		return newG4VTower(enc)
-	})
-}
 
 // g4vClampWGSL: a ClippableLinear's output clamp, in place.
 const g4vClampWGSL = `

@@ -28,21 +28,6 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/program"
 )
 
-func init() {
-	decoder.RegisterBackend("metal", func() (decoder.Backend, error) {
-		return &metalBackend{}, nil
-	})
-	// The "metal" memory probe decoder.Model.Plan reads: the same metalMemoryCeiling the real guard (residentMemoryDecline)
-	// judges against, so `fit` and the guard cannot disagree.
-	decoder.RegisterMemoryProbe("metal", func() (int64, bool) {
-		ram, err := physicalRAM()
-		if err != nil || ram == 0 {
-			return 0, false
-		}
-		return metalMemoryCeiling(ram), true
-	})
-}
-
 // Compile-time seams: catch signature drift against decoder/residency.go + decoder/backend.go.
 var (
 	_ decoder.Backend             = (*metalBackend)(nil)

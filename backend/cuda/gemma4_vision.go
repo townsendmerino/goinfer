@@ -9,7 +9,6 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/internal/vision"
-	"github.com/townsendmerino/goinfer/multimodal"
 )
 
 // The Gemma 4 vision tower on CUDA: aikit's Gemma4Encoder.Forward up to
@@ -18,12 +17,6 @@ import (
 // port of metal/gemma4_vision.go: the same ops in the same order, with aikit's bidirectional attention kernel (scale
 // 1.0, one head per KV head, no window) in place of Metal's matmul-blocked attention. Registered as multimodal's "cuda"
 // Gemma 4 tower.
-
-func init() {
-	multimodal.RegisterGemma4Tower("cuda", func(enc *vision.Gemma4Encoder) (multimodal.Gemma4TowerAccelerator, error) {
-		return newG4Tower(enc)
-	})
-}
 
 // g4Proj is one ClippableLinear on the device: its [Out, In] weight and its bounds.
 type g4Proj struct {

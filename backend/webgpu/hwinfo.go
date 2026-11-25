@@ -5,11 +5,7 @@ package webgpu
 import (
 	"fmt"
 	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
-
-	"github.com/townsendmerino/goinfer/decoder"
 )
-
-func init() { decoder.RegisterHardwareInfo("webgpu", webgpuHardwareInfo) }
 
 // webgpuHardwareInfo is the adapter facts `check --hardware` prints for the WebGPU backend. It opens an adapter only when asked, and says so
 // plainly when there is none. WebGPU does not expose VRAM size or the driver version, so the report says it cannot report them rather than leaving the gap unexplained. The adapter's name is the

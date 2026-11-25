@@ -10,10 +10,6 @@ import (
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
-// Every device created in a process that links this package leases its MTLBuffers to a mem.Ledger, whichever package
-// creates it.
-func init() { gpu.NewLeaser = func() gpu.Leaser { return &deviceLedger{} } }
-
 // deviceLedger is a device's mem.Ledger: MTLBuffers on Unified, a no-copy alias of caller memory on FileMapped.
 type deviceLedger struct {
 	mem.Ledger

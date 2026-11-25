@@ -10,28 +10,11 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/audio"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
-	"github.com/townsendmerino/goinfer/multimodal"
 )
 
 // The Whisper-style audio encoder on CUDA: aikit's audio.WhisperEncoder (Whisper's, and Voxtral's tower) run in
 // float32 on the SigLIP tower's machinery: the two Conv1d stems as im2col + GEMM (audio_encoder.cu), the learned positions added, pre-LayerNorm layers (biased q, v and out; no bias
 // on k) with the fused attention kernel, an exact-GELU MLP, a final LayerNorm. Nothing is quantized: the result is held to the CPU encoder by cosine, not by bits.
-
-func init() {
-	multimodal.RegisterWhisperDevice("cuda", func(enc *audio.WhisperEncoder) (audio.WhisperDevice, error) {
-		t, err := newAudioTower(enc)
-		if err == nil {
-			return t, nil
-		}
-		// The layers do not fit next to what the device already holds (a resident decoder takes most of an 8 GB card): stream them,
-		// one layer's weights at a time over the bus, rather than hand the window back to the CPU.
-		t2, err2 := newAudioTowerMode(enc, true)
-		if err2 != nil {
-			return nil, fmt.Errorf("%w (and streamed: %v)", err, err2)
-		}
-		return t2, nil
-	})
-}
 
 // audioDefect numbers the planted defects the same way audio.WhisperEncoder's are (SetDefectForTest), so one list drives both encoders.
 type audioDefect int

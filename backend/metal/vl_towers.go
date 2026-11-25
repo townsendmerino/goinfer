@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/townsendmerino/goinfer/internal/vision"
-	"github.com/townsendmerino/goinfer/multimodal"
 )
 
 // Gemma 3's SigLIP tower and Qwen2.5-VL's tower on Metal, on the
@@ -24,17 +23,6 @@ import (
 // output), the blocks attend per window except the full-attention ones (per image frame), and the output is permuted
 // back to the original order; aikit's merger (MergeHidden) stays on the host, where Forward calls it. Float32 weights
 // from GPUWeights' float32 form.
-
-func init() {
-	vision.RegisterResident(func(enc *vision.Encoder) (vision.ResidentEncoder, error) {
-		return newSiglipVResident(enc)
-	})
-	vision.RegisterQwenResident(func(enc *vision.QwenVisionEncoder) (vision.QwenResidentEncoder, error) {
-		return newQwen25VResident(enc)
-	})
-	multimodal.MarkResidentTower(multimodal.TowerSigLIP, "metal") // aikit's slots cannot be asked what is registered
-	multimodal.MarkResidentTower(multimodal.TowerQwen25VL, "metal")
-}
 
 // siglipForceInt8 is a test seam: build the int8 tower (tower_gemm_w8) from a float32 encoder's in-memory
 // blocks, so a tiny gate can sharpen them first. Production chooses int8 by the encoder (vision.Encoder.Quantized).

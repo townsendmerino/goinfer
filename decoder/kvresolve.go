@@ -194,14 +194,6 @@ func CUDAKVI8Decline(f KVFacts, o Options) string {
 	return ""
 }
 
-// The CUDA policy ResolveKV reads when the cuda package is not linked in, as in the decoder's own tests and the generated KV matrix:
-// auto is f16 for a cleared family (the owner's decision of 2026-10-13). The cuda package registers the same table with its own auto
-// switch, which its tests pin to f32.
-func init() {
-	RegisterKVF16Policy("cuda", KVF16Policy{Decline: CUDAKVF16Decline, Auto: func() bool { return true }, AutoDecline: CUDAKVF16AutoDecline,
-		DeclineI8: CUDAKVI8Decline})
-}
-
 // kvPath is the cache a generation of this model writes: the resident backend's when a runner is active, else the CPU's.
 func (m *Model) kvPath() string {
 	if m.resident != nil && m.be != nil {

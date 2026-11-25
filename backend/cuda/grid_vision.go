@@ -9,7 +9,6 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/internal/vision"
-	"github.com/townsendmerino/goinfer/multimodal"
 )
 
 // The Qwen3.5+ and GLM-OCR vision towers on CUDA: aikit's CPU Forward up
@@ -22,15 +21,6 @@ import (
 // 1/sqrt(head_dim) within each image frame, biased proj and residual, then the MLP and residual. Qwen3: LayerNorm with bias (eps 1e-6), MLP fc1 -> GELU-tanh -> fc2,
 // and the interpolated position rows added after the patch embed. GLM-OCR: RMSNorm (eps rms_norm_eps), per-head RMSNorm of q and k before RoPE, MLP
 // down(silu(gate) * up), no position table. The merger after the blocks stays aikit's (FinishHidden), on the host.
-
-func init() {
-	multimodal.RegisterQwen3Tower("cuda", func(enc *vision.Qwen3VisionEncoder) (multimodal.GridTowerAccelerator, error) {
-		return newQwen3Tower(enc)
-	})
-	multimodal.RegisterGlmOcrTower("cuda", func(enc *vision.GlmOcrVisionEncoder) (multimodal.GridTowerAccelerator, error) {
-		return newGlmOcrTower(enc)
-	})
-}
 
 type gridKind uint8
 

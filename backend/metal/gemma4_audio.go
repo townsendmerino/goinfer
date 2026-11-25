@@ -8,7 +8,6 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/townsendmerino/goinfer/embeddinggemma2"
 	"github.com/townsendmerino/goinfer/internal/audio"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 	"github.com/townsendmerino/goinfer/internal/vision"
@@ -21,12 +20,6 @@ import (
 // query and head over the Window keys behind it, relative-position keys added to each, softcap, softmax). The
 // subsampler and the projections after the blocks stay aikit's, on the host. Registered as the "metal" audio
 // accelerator.
-
-func init() {
-	embeddinggemma2.RegisterAudioAccelerator("metal", func(enc *audio.Gemma4AudioEncoder) (embeddinggemma2.AudioAccelerator, error) {
-		return newG4AAccel(enc)
-	})
-}
 
 type g4aPipes struct{ silu, axpy, glu, dwconv, scaleQK, attn Pipeline }
 
