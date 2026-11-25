@@ -171,7 +171,7 @@ func streamQuantizedRow4(rows, cols int, mode quantMode, row4 bool, rowInto func
 			linalg.QuantizeGroupInt4Row(scratch, cols, group, q4[r*bpr:(r+1)*bpr], rowScales)
 			linalg.F32ToF16Slice(q4s[r*nGroups:(r+1)*nGroups], rowScales) // int4 scales are stored as binary16
 		}
-		canon := linalg.WrapInt4F16(q4, q4s, rows, cols, group)
+		canon, _ := linalg.WrapInt4(q4, q4s, rows, cols, group, linalg.LayoutCanonical)
 		if row4 {
 			return repackW4A8IfEligible(canon), nil
 		}
@@ -228,7 +228,7 @@ func streamQuantizedRepackable(rows, cols int, mode quantMode, needCanonical, sk
 		linalg.QuantizeGroupInt4Row(scratch, cols, group, q4[r*bpr:(r+1)*bpr], rowScales)
 		linalg.F32ToF16Slice(q4s[r*nGroups:(r+1)*nGroups], rowScales) // int4 scales are stored as binary16
 	}
-	canon := linalg.WrapInt4F16(q4, q4s, rows, cols, group)
+	canon, _ := linalg.WrapInt4(q4, q4s, rows, cols, group, linalg.LayoutCanonical)
 	return repackedOnlyOrCanonical(canon, needCanonical, skipRow4), nil
 }
 
@@ -333,7 +333,8 @@ func streamQuantizedEmbed(rows, cols int, mode quantMode, needCanonical, skipRow
 		if err != nil {
 			return linalg.WeightMat{}, err
 		}
-		return repackedOnlyOrCanonical(linalg.WrapInt4F16(q4, q4s, rows, cols, group), needCanonical, skipRow4), nil
+		wm4, _ := linalg.WrapInt4(q4, q4s, rows, cols, group, linalg.LayoutCanonical)
+		return repackedOnlyOrCanonical(wm4, needCanonical, skipRow4), nil
 	default: // quantNone: keep the full f32
 		f32 := make([]float32, rows*cols)
 		err := forRowRanges(rows, cols, align, newReader, func(lo, hi int, read rowReader) error {
@@ -575,10 +576,10 @@ func repackedOnlyOrCanonical(canon linalg.WeightMat, needCanonical, skipRow4 boo
 		return repackW4A8IfEligible(canon)
 	}
 	q4, q4s, group, ok := canon.Int4F16()
-	if !ok || !linalg.Int4Row4Usable(canon.Rows(), canon.Cols(), group) {
+	if !ok || linalg.PreferredInt4Layout(canon.Rows(), canon.Cols(), group) != linalg.LayoutRow4 {
 		return repackW4A8IfEligible(canon) // this core/shape can't do row4 at all — existing policy
 	}
-	if repacked, repOK := linalg.RepackInt4Row4InPlaceF16(q4, q4s, canon.Rows(), canon.Cols(), group); repOK {
+	if repacked, repOK := linalg.RepackInt4InPlace(q4, q4s, canon.Rows(), canon.Cols(), group, linalg.LayoutRow4); repOK {
 		return repacked
 	}
 	return repackW4A8IfEligible(canon) // Int4Row4Usable said yes, so this shouldn't miss — no silent data loss either way
@@ -712,7 +713,7 @@ func GIWTargetForBackend(backendName string) GIWTarget {
 			// (Int4Row4Usable). A core without it (a Raspberry Pi 4, Windows on ARM, where aikit assumes none) would refuse to load
 			// its own cpu-arm64 file and rebuild it on every start, so it builds canonical bundles, which any core loads. A
 			// cpu-arm64 bundle can still be built for a DotProd reader by naming the target (-target cpu-arm64).
-			if linalg.Int4Row4Usable(4, 32, 32) {
+			if linalg.PreferredInt4Layout(4, 32, 32) == linalg.LayoutRow4 {
 				return GIWTargetCPUArm64
 			}
 			return GIWTargetNone

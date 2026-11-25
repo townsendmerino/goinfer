@@ -121,7 +121,7 @@ func TestGIWAligned_scalesAliasTheMapping(t *testing.T) {
 		t    GIWTarget
 	}{{"canonical", GIWTargetNone}, {"cpu-arm64 (kind 5 where eligible)", GIWTargetCPUArm64}} {
 		t.Run(target.name, func(t *testing.T) {
-			if target.t == GIWTargetCPUArm64 && runtime.GOARCH == "arm64" && !linalg.Int4Row4Usable(4, 32, 32) {
+			if target.t == GIWTargetCPUArm64 && runtime.GOARCH == "arm64" && linalg.PreferredInt4Layout(4, 32, 32) != linalg.LayoutRow4 {
 				// A kind-5 file is a promise to a core that can read it; this arm64 core (no DotProd: a Pi 4, Windows on ARM) cannot, and refusing it is the right behaviour
 				// (TestGIWTargetForBackend_cpuArm64NeedsDotProd pins that it is never the default here).
 				t.Skip("this arm64 core has no DotProd, so it cannot load a cpu-arm64 (row4-only) bundle")
@@ -253,11 +253,11 @@ func TestGIWTargetForBackend_cpuArm64NeedsDotProd(t *testing.T) {
 	switch runtime.GOARCH {
 	case "arm64":
 		want := GIWTargetNone
-		if linalg.Int4Row4Usable(4, 32, 32) {
+		if linalg.PreferredInt4Layout(4, 32, 32) == linalg.LayoutRow4 {
 			want = GIWTargetCPUArm64
 		}
 		if got != want {
-			t.Errorf("GIWTargetForBackend(cpu) = %q on an arm64 core with Int4Row4Usable=%v, want %q", got, linalg.Int4Row4Usable(4, 32, 32), want)
+			t.Errorf("GIWTargetForBackend(cpu) = %q on an arm64 core with Int4Row4Usable=%v, want %q", got, linalg.PreferredInt4Layout(4, 32, 32) == linalg.LayoutRow4, want)
 		}
 		// And what it returns is something this core can load back: the round trip the bug broke.
 		src := alignFixtureWeights(t)

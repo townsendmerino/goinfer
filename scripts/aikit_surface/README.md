@@ -27,6 +27,16 @@ moved symbol; those are edited by hand.
 - LS6 step 3 (narrowed on 2026-11-24): `policy.rules` renames the S-05 fold's A/B toggle to its test-hook names in
   `decoder/r9_s05_fold_ab_test.go`, and its two comments by hand. The other setters are unchanged.
 
+- LS6 step 1 (one int4 constructor with a layout): `int4_layout_fix.py` with `int4_layout.rules`
+  (`python3 scripts/aikit_surface/int4_layout_fix.py .`). The rules map `Int4Row4Usable`, `WrapInt4Row4OnlyF16` and
+  `RepackInt4Row4InPlaceF16` (and the split-half pair) one to one; the script turns the assignment and return forms of
+  `WrapInt4F16` into `WrapInt4(..., LayoutCanonical)`, and lists what is left. 11 files. By hand: `decoder/weightmat.go`'s
+  `WrapInt4F16` passed straight as an argument (a local first); and `WrapInt4Row4F16`, which has no replacement, in
+  `decoder/weightmat_testhelpers_test.go` (its helper deleted) and its one caller, `decoder/w4a8_row4_mmapvheap_probe_test.go`,
+  whose heap copy is now a row4-only `WrapInt4(LayoutRow4)` (the timed call reads only the row4 bytes either way).
+  Not done here: `internal/diag/kernelprint/census_test.go`'s exclusion keys name the old aikit functions; K3 is already
+  red against the integration branch (LS3's flag renames) and its keys change with goinfer's bump.
+
 ## Proof, per move
 
 - `testdata/kernel_fingerprints.json` byte-identical and `TestCompute_table` passing without `-update`, on each

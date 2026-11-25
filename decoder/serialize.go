@@ -1737,7 +1737,8 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 			r.fail(fmt.Sprintf("int4 weightMat %d×%d group=%d: q4=%d (want %d) q4s=%d (want %d)", rows, cols, group, len(q4), wantQ4, len(q4s), wantScales))
 			return linalg.WeightMat{}
 		}
-		return linalg.WrapInt4F16(q4, q4s, rows, cols, group)
+		wm4, _ := linalg.WrapInt4(q4, q4s, rows, cols, group, linalg.LayoutCanonical)
+		return wm4
 	case 5:
 		if group <= 0 {
 			r.fail(fmt.Sprintf("int4-row4-only weightMat group %d ≤ 0", group))
@@ -1753,7 +1754,7 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 			r.fail(fmt.Sprintf("int4-row4-only weightMat %d×%d group=%d: q4Row4=%d (want %d) q4Row4Scales=%d (want %d)", rows, cols, group, len(q4Row4), wantQ4, len(q4Row4Scales), wantScales))
 			return linalg.WeightMat{}
 		}
-		wm, ok := linalg.WrapInt4Row4OnlyF16(q4Row4, q4Row4Scales, rows, cols, group)
+		wm, ok := linalg.WrapInt4(q4Row4, q4Row4Scales, rows, cols, group, linalg.LayoutRow4)
 		if !ok {
 			// Named and actionable: a kind-5 file is a promise to one target. ok=false here means Int4Row4Usable rejected
 			// this core: wrong arch (the file was written for arm64), or a shape this core's build cannot run the row4
@@ -1858,7 +1859,7 @@ func (r *giwReader) fusedGroup(dst ...*linalg.WeightMat) {
 		if r.err != nil {
 			return
 		}
-		*p.dst = linalg.WrapInt4F16(nibbles[i], scales, p.rows, p.cols, p.group)
+		*p.dst, _ = linalg.WrapInt4(nibbles[i], scales, p.rows, p.cols, p.group, linalg.LayoutCanonical)
 	}
 }
 

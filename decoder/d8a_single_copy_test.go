@@ -69,7 +69,7 @@ type d8aPair struct {
 // kept, so canonical plus row4 on arm64).
 func d8aLoad(t *testing.T) []d8aPair {
 	t.Helper()
-	if runtime.GOARCH != "arm64" || !linalg.Int4Row4Usable(4, 32, 32) {
+	if runtime.GOARCH != "arm64" || linalg.PreferredInt4Layout(4, 32, 32) != linalg.LayoutRow4 {
 		t.Skip("the row4 layout is arm64 with DotProd only; D8a changes nothing elsewhere")
 	}
 	var out []d8aPair
@@ -109,7 +109,7 @@ func TestD8a_cpuLoadKeepsOneInt4Copy(t *testing.T) {
 		var cpuBytes, refBytes int64
 		for _, m := range d8aInt4(p.cpu.w) {
 			cpuBytes += wmBytes(m)
-			if linalg.Int4Row4Usable(m.Rows(), m.Cols(), 32) && m.Int4Layout() != "row4" {
+			if linalg.PreferredInt4Layout(m.Rows(), m.Cols(), 32) == linalg.LayoutRow4 && m.Int4Layout() != "row4" {
 				t.Errorf("%s: a %dx%d int4 tensor is %q under Backend \"cpu\", want row4 alone", p.dir, m.Rows(), m.Cols(), m.Int4Layout())
 			}
 		}
@@ -169,7 +169,7 @@ func TestD8a_cpuLoadComputesTheSame(t *testing.T) {
 
 // TestD8a_writerRefusesARepackedOnlyTensor is D8A-G3.
 func TestD8a_writerRefusesARepackedOnlyTensor(t *testing.T) {
-	if runtime.GOARCH != "arm64" || !linalg.Int4Row4Usable(4, 32, 32) {
+	if runtime.GOARCH != "arm64" || linalg.PreferredInt4Layout(4, 32, 32) != linalg.LayoutRow4 {
 		t.Skip("a repacked-only tensor is built only on arm64 with DotProd")
 	}
 	m, err := Load("../testdata/llama-tiny", Options{Backend: "cpu", Quant: "int4"})

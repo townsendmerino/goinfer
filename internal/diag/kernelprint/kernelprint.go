@@ -192,13 +192,13 @@ func int4Layouts(w []float32, N, K int) []int4Layout {
 	heap := linalg.QuantizeInt4(w, N, K, group)
 	heapOK := heap.RepackInt4Row4()
 	q4, q4s := int4F16(w, N, K)
-	inPlace, inPlaceOK := linalg.RepackInt4Row4InPlaceF16(q4, q4s, N, K, group)
+	inPlace, inPlaceOK := linalg.RepackInt4InPlace(q4, q4s, N, K, group, linalg.LayoutRow4)
 	// The .giw reader wraps what the emit repacked (row4Emit), and declines a shape or core that cannot run row4.
 	q4g, q4sg := int4F16(w, N, K)
-	if linalg.Int4Row4Usable(N, K, group) {
+	if linalg.PreferredInt4Layout(N, K, group) == linalg.LayoutRow4 {
 		q4g, q4sg = row4Emit(q4g, q4sg, N, K, group)
 	}
-	giw, giwOK := linalg.WrapInt4Row4OnlyF16(q4g, q4sg, N, K, group)
+	giw, giwOK := linalg.WrapInt4(q4g, q4sg, N, K, group, linalg.LayoutRow4)
 	split := linalg.QuantizeInt4(w, N, K, group)
 	splitOK := split.RepackInt4SplitHalf()
 	return []int4Layout{{"canonical", canon, true}, {"row4-heap", heap, heapOK}, {"row4-inplace", inPlace, inPlaceOK}, {"row4-giw", giw, giwOK}, {"split-half", split, splitOK}}
