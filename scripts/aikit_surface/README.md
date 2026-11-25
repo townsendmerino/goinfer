@@ -64,6 +64,11 @@ Order on main's head at LS8: `aikit_surface_rewrite.py` (the four rules files), 
 `ls6_fix.py` (both rules files), `ls3_census_fix.py`, `ls3_census_code.py`, the hand edits above, then
 `scripts/refresh_parity_hashes.sh`.
 
+- LS2 part 2 (the int4 repack helpers and `WeightMat.Int4`/`Int4Row4` unexported): goinfer calls none of the
+  helpers. By hand: three tests took a `*WeightMat` through an interface literal declaring `Int4()`
+  (`decoder/int4mix_test.go`, and `backend/cuda`'s `reale2e_test.go` and `realforward_test.go`); they declare
+  `Int4F16()` and copy the binary16 scales as stored (the f32 round trip they did was exact).
+
 ## Proof, per move
 
 - `testdata/kernel_fingerprints.json` byte-identical and `TestCompute_table` passing without `-update`, on each

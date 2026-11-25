@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"runtime"
+	"slices"
 	"testing"
 	"time"
 
@@ -14,7 +15,6 @@ import (
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
 
-	"github.com/townsendmerino/goinfer/backend/cuda/internal/wpack"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -82,23 +82,20 @@ func BenchmarkRealE2EDecode(b *testing.B) {
 		Rows() int
 		Cols() int
 		Kind() linalg.Kind
-		Int4() ([]byte, []float32, int, bool)
+		Int4F16() ([]byte, []uint16, int, bool)
 		Int8() ([]int8, []float32, bool, bool)
 		F32() ([]float32, bool)
 	}) hw {
 		N, K := pw.Rows(), pw.Cols()
 		switch pw.Kind() {
 		case "int4":
-			q4, sc, _, _ := pw.Int4()
+			q4, sc16, _, _ := pw.Int4F16()
 			p := make([]uint32, N*(K/8))
 			for i := range p {
 				nib := q4[i*4 : i*4+4]
 				p[i] = permuteFast(uint32(nib[0]) | uint32(nib[1])<<8 | uint32(nib[2])<<16 | uint32(nib[3])<<24)
 			}
-			gs := make([]uint16, len(sc))
-			for i, v := range sc {
-				gs[i] = wpack.F32ToF16(v)
-			}
+			gs := slices.Clone(sc16) // the binary16 scales as stored
 			return hw{kind: "int4", wpk: p, ws16: gs, N: N, K: K}
 		case "int8":
 			q8, sc, _, _ := pw.Int8()

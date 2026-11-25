@@ -6,6 +6,7 @@ import (
 	"context"
 	_ "embed"
 	"os"
+	"slices"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -13,7 +14,6 @@ import (
 	gpu "github.com/townsendmerino/goinfer/backend/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
 
-	"github.com/townsendmerino/goinfer/backend/cuda/internal/wpack"
 	"github.com/townsendmerino/goinfer/internal/testgate"
 )
 
@@ -120,7 +120,7 @@ func TestRealForwardParity(t *testing.T) {
 		Rows() int
 		Cols() int
 		Kind() linalg.Kind
-		Int4() ([]byte, []float32, int, bool)
+		Int4F16() ([]byte, []uint16, int, bool)
 		Int8() ([]int8, []float32, bool, bool)
 		F32() ([]float32, bool)
 	}) wq {
@@ -133,16 +133,13 @@ func TestRealForwardParity(t *testing.T) {
 			if K%32 != 0 {
 				t.Fatalf("int4 K=%d not mult-32", K)
 			}
-			q4, sc, _, _ := pw.Int4()
+			q4, sc16, _, _ := pw.Int4F16()
 			wpk := make([]uint32, N*(K/8))
 			for i := range wpk {
 				b := q4[i*4 : i*4+4]
 				wpk[i] = permuteFast(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24)
 			}
-			gs := make([]uint16, len(sc))
-			for i, v := range sc {
-				gs[i] = wpack.F32ToF16(v)
-			}
+			gs := slices.Clone(sc16) // the binary16 scales as stored
 			return wq{kind: "int4", W: upu32(wpk), ws16: upu16(gs), N: N, K: K}
 		case "int8":
 			q8, sc, _, _ := pw.Int8()
