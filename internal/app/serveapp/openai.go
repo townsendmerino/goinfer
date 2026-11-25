@@ -48,64 +48,61 @@ const maxTopLogprobs = 20
 // big.
 const maxOutputTokensCeiling = 131072
 
+// modelCaches groups the lazily computed, sync.Once-guarded derived tables cached per loadedModel.
+type modelCaches struct {
+	featOnce        sync.Once // vision_serve.go: the tower-output cache, made on first image
+	feat            *featureCache
+	tokenBytesOnce  sync.Once // constraint masker's token-to-bytes table (one entry per vocab id)
+	tokenBytes      [][]byte
+	tokenBytesFrom  *loadedModel // base model whose table this adapter shares
+	idsIdentOnce    sync.Once    // model-and-tokenizer identity carried-id blobs name (idsIdentity)
+	idsIdent        string
+	maxTokBytesOnce sync.Once // byte length of the longest token in the vocab (pre-tokenize guard)
+	maxTokBytes     int
+}
+
+// decisionState groups the /v1/systemone decision-routing state on a loadedModel (Route B head, Route C Clef, or lazy label decider).
+type decisionState struct {
+	head        *decide.Head // trained decision head (Route B), nil for label scoring
+	clef        *clef.Model  // Clef joint-head model (Route C), set when model dir has joint_head.safetensors
+	deciderOnce sync.Once
+	decider     *decide.Decider
+	deciderErr  error
+}
+
 // loadedModel is one resident generative model and the per-model state a request needs: its tokenizer, chat template,
 // stop ids, vocab, warm-KV sessions, and the admission (turns) that serializes its generations. The server registry
 // holds them keyed by served name; requests to distinct models run in parallel.
 type loadedModel struct {
-	featCacheOnce sync.Once // vision_serve.go: the tower-output cache, made on first image
-	featCache     *featureCache
-	tk            *tokenizer.Tokenizer
-	model         *decoder.Model
-	closer        io.Closer      // test-only liveness/close stand-in when model is nil; production uses model directly (livenessKey)
-	tmpl          *chat.Template // nil → raw completion
-	stopIDs       []int          // turn-stop token ids from the template
-	eosIDs        []int
-	vocab         int
-	name          string // served id (reported by /v1/models, matched on the request model field)
-	fp            string // model fingerprint (binds --session-dir snapshots)
-	source        string // the model path as loadDecoder resolved it (an hf:/demo: reference → what it fetched); "" for an adapter
-	adapter       string // compute-time LoRA adapter name (#7); "" = base model. Shares model with its base.
-	spec          bool   // --spec ngram: lossless n-gram (prompt-lookup) speculative decode with adaptive depth
-	specAdaptive  bool   // --spec-adaptive: speculate only while alone, join the batched decode otherwise
+	tk           *tokenizer.Tokenizer
+	model        *decoder.Model
+	closer       io.Closer      // test-only liveness/close stand-in when model is nil; production uses model directly (livenessKey)
+	tmpl         *chat.Template // nil → raw completion
+	stopIDs      []int          // turn-stop token ids from the template
+	eosIDs       []int
+	vocab        int
+	name         string // served id (reported by /v1/models, matched on the request model field)
+	fp           string // model fingerprint (binds --session-dir snapshots)
+	source       string // the model path as loadDecoder resolved it (an hf:/demo: reference → what it fetched); "" for an adapter
+	adapter      string // compute-time LoRA adapter name (#7); "" = base model. Shares model with its base.
+	spec         bool   // --spec ngram: lossless n-gram (prompt-lookup) speculative decode with adaptive depth
+	specAdaptive bool   // --spec-adaptive: speculate only while alone, join the batched decode otherwise
 	// blockSpec is an attached pretrained block drafter (--drafter), nil when unused. It is attached once at load:
 	// the weight upload is a per-process cost, and paying it per request is a several-fold slowdown (docs/spec/08-dspark-dflash.md).
 	blockSpec blockDrafter
 	// sampling is the checkpoint's recommended sampling (decoder.Config.Sampling), which prepare applies to the fields a
 	// request leaves out; nil when it carries none.
-	sampling *decoder.RecommendedSampling
-	sessions *sessionLRU // prefix-keyed KV reuse across requests
-	// head is the entry's trained decision head, nil for label scoring. The decider POST /v1/systemone answers with
-	// is built on first use, since its label tokens are resolved once per tokenizer.
-	head *decide.Head
-	// clef is the entry's Clef decision model, set when the model directory carries joint_head.safetensors. It
-	// answers /v1/systemone instead of the label decider.
-	clef        *clef.Model
-	deciderOnce sync.Once
-	decider     *decide.Decider
-	deciderErr  error
-	turns       admission // FIFO, context-aware granter of decode turns; a waiter can give up on disconnect or halt
+	sampling  *decoder.RecommendedSampling
+	sessions  *sessionLRU // prefix-keyed KV reuse across requests
+	decisions decisionState
+	caches    modelCaches
+	turns     admission // FIFO, context-aware granter of decode turns; a waiter can give up on disconnect or halt
 	// sessMu guards sessions, the sessionLRU, which is not goroutine-safe (sessions.go): drive's acquire and checkin
 	// and the background save, restore and demote goroutines take it. It is held around those operations only, not
 	// across a generation: the session a generation is using is checked out instead (sessionLRU.busy), and the LRU
 	// never hands out, evicts, demotes, saves or reads a busy session. That is what lets several generations of one
 	// CPU model run at once (-max-concurrent) while nothing frees or moves memory under a running generation.
 	sessMu sync.Mutex
-
-	// tokenBytes is the constraint masker's token-to-bytes table (one entry per vocab id). It is a pure function of
-	// (vocab, tokenizer), so it is built once per model, not per constrained request.
-	tokenBytesOnce sync.Once
-	tokenBytes     [][]byte
-	// tokenBytesFrom, when set, is the base model whose table this adapter reads: an adapter has its base's tokenizer and
-	// vocabulary, so the table is the same bytes, held once.
-	tokenBytesFrom *loadedModel
-	// idsIdent is the model-and-tokenizer identity carried-id blobs name (idsIdentity), computed once.
-	idsIdentOnce sync.Once
-	idsIdent     string
-	// maxTokBytes is the byte length of the longest token in the vocab, computed once. It bounds tokenization cost: a
-	// servable prompt is at most ctx tokens, so its text is at most ctx*maxTokBytes bytes, and a longer input cannot
-	// fit and is rejected before the O(n) BPE runs.
-	maxTokBytesOnce sync.Once
-	maxTokBytes     int
 	// queue bounds in-flight plus waiting requests (cap = concurrent + --max-queue); a request claims a slot before
 	// its turn. nil = unbounded. Backpressure, not batching: a full queue returns 429 Retry-After.
 	queue chan struct{}
@@ -141,28 +138,28 @@ type loadedModel struct {
 // cachedTokenBytes returns the constraint masker's token-to-bytes table, built once per model and reused across
 // constrained requests.
 func (lm *loadedModel) cachedTokenBytes() [][]byte {
-	if lm.tokenBytesFrom != nil {
-		return lm.tokenBytesFrom.cachedTokenBytes()
+	if lm.caches.tokenBytesFrom != nil {
+		return lm.caches.tokenBytesFrom.cachedTokenBytes()
 	}
-	lm.tokenBytesOnce.Do(func() {
-		lm.tokenBytes = constrain.TokenBytes(lm.vocab, lm.tk.TokenText)
+	lm.caches.tokenBytesOnce.Do(func() {
+		lm.caches.tokenBytes = constrain.TokenBytes(lm.vocab, lm.tk.TokenText)
 	})
-	return lm.tokenBytes
+	return lm.caches.tokenBytes
 }
 
 // maxTokenBytes returns the byte length of the longest token in the vocab (at least 1), computed once and cached. It
 // is the per-token byte ceiling of the tokenization guard.
 func (lm *loadedModel) maxTokenBytes() int {
-	lm.maxTokBytesOnce.Do(func() {
+	lm.caches.maxTokBytesOnce.Do(func() {
 		m := 1
 		for id := 0; id < lm.vocab; id++ {
 			if n := len(lm.tk.TokenText(id)); n > m {
 				m = n
 			}
 		}
-		lm.maxTokBytes = m
+		lm.caches.maxTokBytes = m
 	})
-	return lm.maxTokBytes
+	return lm.caches.maxTokBytes
 }
 
 // promptTooLargeForContext cheaply rejects an input whose tokenizable text cannot fit the model's context window,
@@ -840,11 +837,11 @@ func (s *server) decisionsField(name string) map[string]any {
 	if lm == nil || lm.model == nil || lm.adapter != "" {
 		return nil
 	}
-	if lm.clef != nil {
+	if lm.decisions.clef != nil {
 		return map[string]any{"endpoint": "/v1/systemone", "route": routeClef, "kinds": []string{decide.KindNoul, decide.KindChoice, decide.KindScore},
 			"calibrated": false, "confidence": clefConfidence}
 	}
-	if h := lm.head; h != nil {
+	if h := lm.decisions.head; h != nil {
 		return map[string]any{"endpoint": "/v1/systemone", "route": decide.RouteHead, "kinds": h.Kinds(), "template": h.Template,
 			"calibrated": h.Calibration != nil, "head": h.Name + " " + h.Version}
 	}

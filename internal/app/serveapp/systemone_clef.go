@@ -57,7 +57,7 @@ func (s *server) isClefModel(name string) bool {
 		return false
 	}
 	defer release()
-	return lm.clef != nil
+	return lm.decisions.clef != nil
 }
 
 // clefQuestion is what the response shaping needs from one question of the request, in the order sent.
@@ -69,7 +69,7 @@ type clefQuestion struct {
 }
 
 func (s *server) serveClef(w http.ResponseWriter, r *http.Request, lm *loadedModel, body []byte, rawQuestions json.RawMessage) {
-	if lm.clef == nil {
+	if lm.decisions.clef == nil {
 		writeErr(w, http.StatusConflict, "this model is not a Clef model; the entry changed while the request was admitted")
 		return
 	}
@@ -122,7 +122,7 @@ func (s *server) serveClef(w http.ResponseWriter, r *http.Request, lm *loadedMod
 		return
 	}
 	defer lm.exit()
-	res, err := lm.clef.Decide(r.Context(), body)
+	res, err := lm.decisions.clef.Decide(r.Context(), body)
 	if err != nil {
 		if r.Context().Err() != nil {
 			return // the client left
