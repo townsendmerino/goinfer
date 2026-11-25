@@ -8,6 +8,19 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
+// mambaPipes holds the Context's resident Mamba-2 SSM, causal-conv, and gated-norm pipelines.
+type mambaPipes struct {
+	mambaSSMShader     *wgpu.ShaderModule
+	mambaSSMPipeline   *wgpu.ComputePipeline
+	mambaSSMLayout     *wgpu.BindGroupLayout
+	mambaConvShader    *wgpu.ShaderModule
+	mambaConvPipeline  *wgpu.ComputePipeline
+	mambaConvLayout    *wgpu.BindGroupLayout
+	mambaGNormShader   *wgpu.ShaderModule
+	mambaGNormPipeline *wgpu.ComputePipeline
+	mambaGNormLayout   *wgpu.BindGroupLayout
+}
+
 // Resident Mamba-2 selective-SSM decode step (Granite-4.0-H / Nemotron-H hybrids).
 // Decode is a BOUNDED per-token recurrence — not the prefill scan — so it slots onto
 // the resident DecodeRunner like a KV cache: persistent {conv ring, ssm} state updated

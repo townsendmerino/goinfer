@@ -61,12 +61,23 @@ func (r *DecodeRunner) countSteps(k *cost.Counter, p cost.Phase, steps []RunStep
 // pipelineName is the name of the Context field that holds p ("pipeline" when no field holds it). It reads every field by
 // reflection, so it runs once per pipeline per runner, and only when a counter is attached.
 func (c *Context) pipelineName(p *wgpu.ComputePipeline) string {
-	v := reflect.ValueOf(c).Elem()
-	for i := range v.NumField() {
-		f := v.Field(i)
-		if f.Kind() == reflect.Pointer && !f.IsNil() && f.Pointer() == reflect.ValueOf(p).Pointer() {
-			return v.Type().Field(i).Name
-		}
+	if name := pipelineNameIn(reflect.ValueOf(c).Elem(), reflect.ValueOf(p).Pointer()); name != "" {
+		return name
 	}
 	return "pipeline"
+}
+
+func pipelineNameIn(v reflect.Value, want uintptr) string {
+	for i := range v.NumField() {
+		f := v.Field(i)
+		if f.Kind() == reflect.Pointer && !f.IsNil() && f.Pointer() == want {
+			return v.Type().Field(i).Name
+		}
+		if f.Kind() == reflect.Struct && v.Type().Field(i).Anonymous {
+			if name := pipelineNameIn(f, want); name != "" {
+				return name
+			}
+		}
+	}
+	return ""
 }

@@ -9,6 +9,41 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
+// gemmPipes holds the Context's GEMM, GEMV, quantization, and multi-row W4A8/W8A8 pipelines.
+type gemmPipes struct {
+	quantShader       *wgpu.ShaderModule
+	quantPipeline     *wgpu.ComputePipeline
+	quantLayout       *wgpu.BindGroupLayout
+	quantizeShader    *wgpu.ShaderModule
+	quantizePipeline  *wgpu.ComputePipeline
+	quantizeLayout    *wgpu.BindGroupLayout
+	gemvShader        *wgpu.ShaderModule
+	gemvPipeline      *wgpu.ComputePipeline
+	gemvLayout        *wgpu.BindGroupLayout
+	gemvBiasShader    *wgpu.ShaderModule
+	gemvBiasPipeline  *wgpu.ComputePipeline
+	gemvBiasLayout    *wgpu.BindGroupLayout
+	gemmTile          int
+	tiledShader       *wgpu.ShaderModule
+	tiledPipeline     *wgpu.ComputePipeline
+	tiledLayout       *wgpu.BindGroupLayout
+	tiledByTile       map[int]tiledPipes
+	tiledBiasShader   *wgpu.ShaderModule
+	tiledBiasPipeline *wgpu.ComputePipeline
+	tiledBiasLayout   *wgpu.BindGroupLayout
+	tiledBiasByTile   map[int]tiledPipes
+	gemmRowShader     *wgpu.ShaderModule
+	gemmRowPipeline   *wgpu.ComputePipeline
+	gemmRowLayout     *wgpu.BindGroupLayout
+	gemvW4Shader      *wgpu.ShaderModule
+	gemvW4Pipeline    *wgpu.ComputePipeline
+	gemvW4Layout      *wgpu.BindGroupLayout
+	w4Multi           [2]tiledPipes
+	w4MultiPin        int
+	biasRowsPipeline  *wgpu.ComputePipeline
+	biasRowsLayout    *wgpu.BindGroupLayout
+}
+
 // Tiled W8A8 GEMM (the prefill, M>1 kernel). The naive matmul re-streams a full
 // weight row and activation row from global memory per output element — fine when
 // bandwidth-bound at M=1, but at prefill it's compute/traffic-bound and wastes

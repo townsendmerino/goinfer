@@ -8,6 +8,28 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
+// deltaPipes holds the Context's Gated-DeltaNet recurrence, q/k norm, gates, gated norm, and qGate pipelines.
+type deltaPipes struct {
+	deltaRuleShader       *wgpu.ShaderModule
+	deltaRulePipeline     *wgpu.ComputePipeline
+	deltaRuleLayout       *wgpu.BindGroupLayout
+	deltaNormShader       *wgpu.ShaderModule
+	deltaNormPipeline     *wgpu.ComputePipeline
+	deltaNormLayout       *wgpu.BindGroupLayout
+	deltaGatesShader      *wgpu.ShaderModule
+	deltaGatesPipeline    *wgpu.ComputePipeline
+	deltaGatesLayout      *wgpu.BindGroupLayout
+	deltaGNormShader      *wgpu.ShaderModule
+	deltaGNormPipeline    *wgpu.ComputePipeline
+	deltaGNormLayout      *wgpu.BindGroupLayout
+	deltaQSplitShader     *wgpu.ShaderModule
+	deltaQSplitPipeline   *wgpu.ComputePipeline
+	deltaQSplitLayout     *wgpu.BindGroupLayout
+	deltaAttnGateShader   *wgpu.ShaderModule
+	deltaAttnGatePipeline *wgpu.ComputePipeline
+	deltaAttnGateLayout   *wgpu.BindGroupLayout
+}
+
 // Resident Gated-DeltaNet decode step (Qwen3.5/3.6-MoE, Qwen3-Next, Qwen3.8). Design: docs/deltanet-residency-plan.md;
 // history: docs/code-notes/gpu.md#deltaRuleShaderWGSL.
 //

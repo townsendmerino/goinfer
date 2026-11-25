@@ -19,6 +19,38 @@ import (
 // norm_topk_prob) and scale them (DeepSeek routed_scaling_factor). The group-limited variant (DeepSeek nGroup>1) mirrors
 // decoder.groupLimit. nE is tiny (8–512) so one single-lane workgroup is plenty: selection is not the cost, the expert GEMVs
 // are.
+// moePipes holds the Context's MoE router, sparse-expert GEMV, Gemma 4 MoE, gpt-oss MoE, and shared-gate pipelines.
+type moePipes struct {
+	moeRouteShader                *wgpu.ShaderModule
+	moeRoutePipeline              *wgpu.ComputePipeline
+	moeRouteLayout                *wgpu.BindGroupLayout
+	g4RouteScalePipeline          *wgpu.ComputePipeline
+	g4RouteScaleLayout            *wgpu.BindGroupLayout
+	g4TailCopyPipeline            *wgpu.ComputePipeline
+	g4TailCopyLayout              *wgpu.BindGroupLayout
+	moeExpertShader               *wgpu.ShaderModule
+	moeExpertPipeline             *wgpu.ComputePipeline
+	moeExpertLayout               *wgpu.BindGroupLayout
+	moeExpertW4Shader             *wgpu.ShaderModule
+	moeExpertW4Pipeline           *wgpu.ComputePipeline
+	moeExpertW4Layout             *wgpu.BindGroupLayout
+	routeGptOssShader             *wgpu.ShaderModule
+	routeGptOssPipeline           *wgpu.ComputePipeline
+	routeGptOssLayout             *wgpu.BindGroupLayout
+	gptossGluQuantShader          *wgpu.ShaderModule
+	gptossGluQuantPipeline        *wgpu.ComputePipeline
+	gptossGluQuantLayout          *wgpu.BindGroupLayout
+	moeExpertGptOssDownShader     *wgpu.ShaderModule
+	moeExpertGptOssDownPipeline   *wgpu.ComputePipeline
+	moeExpertGptOssDownLayout     *wgpu.BindGroupLayout
+	moeExpertGptOssDownW4Shader   *wgpu.ShaderModule
+	moeExpertGptOssDownW4Pipeline *wgpu.ComputePipeline
+	moeExpertGptOssDownW4Layout   *wgpu.BindGroupLayout
+	sharedGateShader              *wgpu.ShaderModule
+	sharedGatePipeline            *wgpu.ComputePipeline
+	sharedGateLayout              *wgpu.BindGroupLayout
+}
+
 const moeRouteWGSL = `
 const MAXE: u32 = 512u;
 struct P { nE: u32, k: u32, sigmoid: u32, norm: u32, scale: f32, hasBias: u32, nGroup: u32, topkGroup: u32 };
