@@ -24,6 +24,9 @@ moved symbol; those are edited by hand.
   string variable): 12 files. Two test interfaces in `backend/cuda` (`reale2e_test.go`, `realforward_test.go`) declare
   `Kind() linalg.Kind` by hand.
 
+- LS6 step 3 (narrowed on 2026-11-24): `policy.rules` renames the S-05 fold's A/B toggle to its test-hook names in
+  `decoder/r9_s05_fold_ab_test.go`, and its two comments by hand. The other setters are unchanged.
+
 ## Proof, per move
 
 - `testdata/kernel_fingerprints.json` byte-identical and `TestCompute_table` passing without `-update`, on each

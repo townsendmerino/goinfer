@@ -101,7 +101,10 @@ def main(argv):
             used = [(old, new) for old, new in rules if re.search(r"\blinalg\." + old + r"\b", code_only(out))]
             if not used:
                 continue
-            qual = pkg if not re.search(r"\b" + pkg + r"\b", code_only(out)) else "aikit" + pkg
+            if imp == LINALG:
+                qual = "linalg"  # a rename inside linalg: the file already imports it under that name
+            else:
+                qual = pkg if not re.search(r"\b" + pkg + r"\b", code_only(out)) else "aikit" + pkg
             if check:
                 out = out + "\n"  # mark as changing
                 continue
