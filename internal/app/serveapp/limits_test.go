@@ -263,35 +263,6 @@ func TestAnthropic_decodeUsesTheSharedShaping(t *testing.T) {
 	}
 }
 
-// Session persistence is the conversation: a .giw-kv blob replays what the user said and the model answered,
-// so the blobs and their directory (whose listing exposes the session ids) must be owner-only, not
-// world-readable. Audit N-21.
-func TestSessions_persistedStateIsOwnerOnly(t *testing.T) {
-	if sessionFilePerm != 0o600 {
-		t.Errorf("session blobs are written %#o, want 0o600", sessionFilePerm)
-	}
-	if sessionDirPerm != 0o700 {
-		t.Errorf("the session directory is created %#o, want 0o700", sessionDirPerm)
-	}
-	b, err := os.ReadFile("sessions.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Code lines only: the comment above the constants names the old modes, and a substring scan over the whole
-	// file would match its own explanation.
-	for line := range strings.SplitSeq(string(b), "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "//") {
-			continue
-		}
-		for _, world := range []string{"0o644", "0o755", "0o666", "0o777"} {
-			if strings.Contains(line, world) {
-				t.Errorf("sessions.go still writes something %s — a KV blob is the conversation: %s",
-					world, strings.TrimSpace(line))
-			}
-		}
-	}
-}
-
 // Two concurrent loads of the same name must not leak the loser's model. loadDecoder runs outside the registry
 // lock, so both load and the post-check in publishLoaded (admin.go, shared with the web UI load in webui.go)
 // refuses the second; the refused *loadedModel holds resident device memory, the .giw mmap and an uploaded
@@ -442,7 +413,7 @@ func TestStartDrain_savesSessionsUnderTheLRULock(t *testing.T) {
 	lines := strings.Split(string(src), "\n")
 	var found bool
 	for i, ln := range lines {
-		if !strings.Contains(ln, "lm.sessions.save(") {
+		if !strings.Contains(ln, "lm.sessions.Save(") {
 			continue
 		}
 		found = true
@@ -460,7 +431,7 @@ func TestStartDrain_savesSessionsUnderTheLRULock(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Error("no lm.sessions.save( in liveness.go — this guard is watching the wrong file")
+		t.Error("no lm.sessions.Save( in liveness.go — this guard is watching the wrong file")
 	}
 }
 

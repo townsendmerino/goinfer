@@ -525,16 +525,16 @@ func (s *placementSim) holds(toks []int) string {
 
 func (s *placementSim) order() []placementSlot {
 	out := []placementSlot{}
-	for _, x := range s.l.order {
-		out = append(out, placementSlot{Session: s.label(x), Holds: s.holds(x.Tokens()), Busy: s.l.busy[x], First: s.l.first[x]})
+	for _, x := range s.l.Order() {
+		out = append(out, placementSlot{Session: s.label(x), Holds: s.holds(x.Tokens()), Busy: s.l.Busy(x), First: s.l.FirstPrompt(x)})
 	}
 	return out
 }
 
 func (s *placementSim) cold() []string {
 	var out []string
-	for _, c := range s.l.cold {
-		out = append(out, s.holds(c.tokens))
+	for _, c := range s.l.Cold() {
+		out = append(out, s.holds(c.Tokens))
 	}
 	return out
 }
@@ -572,18 +572,18 @@ func (s *placementSim) acquire(e placementEvent) placementStep {
 	prompt := s.build(e)
 	st := placementStep{T: e.T, Event: "acquire " + e.ID + " (" + e.Conv + " " + e.Build + ")", PromptLen: len(prompt)}
 	before := map[*decoder.Session][]int{}
-	for _, x := range s.l.order {
+	for _, x := range s.l.Order() {
 		before[x] = slices.Clone(x.Tokens())
 	}
 	coldBefore := map[string][]int{}
-	for _, c := range s.l.cold {
-		coldBefore[c.path] = c.tokens
+	for _, c := range s.l.Cold() {
+		coldBefore[c.Path] = c.Tokens
 	}
-	x := s.l.acquire(prompt)
+	x := s.l.Acquire(prompt)
 	st.Session = s.label(x)
 	had, inLRU := before[x]
 	switch {
-	case !slices.Contains(s.l.order, x):
+	case !slices.Contains(s.l.Order(), x):
 		st.Action = "transient"
 	case !inLRU && s.faulted(coldBefore, x):
 		st.Action = "fault_back"
@@ -613,8 +613,8 @@ func (s *placementSim) acquire(e placementEvent) placementStep {
 // fault-back. A fresh session seeded by copy holds a resident donor's rows instead.
 func (s *placementSim) faulted(before map[string][]int, x *decoder.Session) bool {
 	now := map[string]bool{}
-	for _, c := range s.l.cold {
-		now[c.path] = true
+	for _, c := range s.l.Cold() {
+		now[c.Path] = true
 	}
 	for p, toks := range before {
 		if !now[p] && len(toks) > 0 && slices.Equal(toks, x.Tokens()) {
@@ -644,7 +644,7 @@ func (s *placementSim) generate(e placementEvent) placementStep {
 }
 
 func (s *placementSim) checkin(e placementEvent) placementStep {
-	s.l.checkin(s.held[e.ID])
+	s.l.Checkin(s.held[e.ID])
 	delete(s.held, e.ID)
 	return placementStep{T: e.T, Event: "checkin " + e.ID, Order: s.order(), Cold: s.cold()}
 }
@@ -655,10 +655,10 @@ func runPlacementTrace(t *testing.T, m *decoder.Model, tr placementTrace) placem
 		now: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
 	s.l = newSessionLRU(m, tr.Size, 0, "census")
 	start := s.now
-	s.l.now = func() time.Time { return s.now }
+	s.l.SetClock(func() time.Time { return s.now })
 	if tr.DemoteMS > 0 {
-		s.l.enableTiering(t.TempDir(), time.Duration(tr.DemoteMS)*time.Millisecond, tr.DemotedMax)
-		defer s.l.removeColdFiles()
+		s.l.EnableTiering(t.TempDir(), time.Duration(tr.DemoteMS)*time.Millisecond, tr.DemotedMax)
+		defer s.l.RemoveColdFiles()
 	}
 	rec := placementRecord{Trace: tr.Name, About: tr.About}
 	for _, e := range tr.Events {
@@ -677,7 +677,7 @@ func runPlacementTrace(t *testing.T, m *decoder.Model, tr placementTrace) placem
 		case "turn":
 			rec.Steps = append(rec.Steps, s.acquire(e), s.generate(e), s.checkin(e))
 		case "tick":
-			n := s.l.demoteIdle()
+			n := s.l.DemoteIdle()
 			rec.Steps = append(rec.Steps, placementStep{T: e.T, Event: "tick", Demoted: &n, Order: s.order(), Cold: s.cold()})
 		default:
 			t.Fatalf("census: unknown op %q", e.Op)

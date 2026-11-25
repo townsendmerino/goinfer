@@ -29,7 +29,7 @@ func TestSessionLRU_restoreBindsTheLRUsAdapter(t *testing.T) {
 	const fp = "shared-fp"
 	lru := func(adapter string) *loadedModel {
 		l := newSessionLRU(m, 4, 0, fp)
-		l.adapter = adapter
+		l.SetAdapter(adapter)
 		return &loadedModel{model: m, name: "x", fp: fp, adapter: adapter, sessions: l}
 	}
 
@@ -37,12 +37,12 @@ func TestSessionLRU_restoreBindsTheLRUsAdapter(t *testing.T) {
 	src := lru("a1")
 	prompt := []int{1, 4, 2, 7, 3}
 	genGreedy(t, src, prompt, 6)
-	if len(src.sessions.order) != 1 {
-		t.Fatalf("source LRU holds %d sessions, want 1", len(src.sessions.order))
+	if len(src.sessions.Order()) != 1 {
+		t.Fatalf("source LRU holds %d sessions, want 1", len(src.sessions.Order()))
 	}
-	turn2 := append(slices.Clone(src.sessions.order[0].Tokens()), 5, 6)
+	turn2 := append(slices.Clone(src.sessions.Order()[0].Tokens()), 5, 6)
 	dir := t.TempDir()
-	if err := src.sessions.save(dir); err != nil {
+	if err := src.sessions.Save(dir); err != nil {
 		t.Fatalf("save: %v", err)
 	}
 
@@ -62,7 +62,7 @@ func TestSessionLRU_restoreBindsTheLRUsAdapter(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dst := lru(tc.adapter)
-			if n := dst.sessions.load(dir); n != 1 {
+			if n := dst.sessions.Load(dir); n != 1 {
 				t.Fatalf("load restored %d sessions, want 1", n)
 			}
 			if got := genGreedy(t, dst, turn2, 8); !eqTokens(got, tc.want) {
