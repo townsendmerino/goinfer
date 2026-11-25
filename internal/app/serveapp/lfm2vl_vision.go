@@ -47,7 +47,7 @@ func (s *server) loadLfm2VLVisionTower(dir string) error {
 		return fmt.Errorf("lfm2-vl: the processor's patch %d is not the tower's %d", pp.PatchSize, enc.Cfg.PatchSize)
 	}
 	for _, lm := range s.models {
-		if h := lm.mdl().Config().HiddenDim; h != proj.TextHidden() {
+		if h := lm.model.Config().HiddenDim; h != proj.TextHidden() {
 			return fmt.Errorf("lfm2-vl: the projector emits %d-wide rows and %q's decoder takes %d", proj.TextHidden(), lm.name, h)
 		}
 		id, ok := lm.tk.TokenID(multimodal.Lfm2VLImageToken)
@@ -77,7 +77,7 @@ func (t *lfm2vlTower) prep(lm *loadedModel, img imageRef) (imagePrep, error) {
 	for _, k := range runLens {
 		n += k
 	}
-	hidden := lm.mdl().Config().HiddenDim
+	hidden := lm.model.Config().HiddenDim
 	p := imagePrep{n: n, runLens: runLens, hash: multimodal.HashImageBytes(img.data), block: multimodal.Lfm2VLImageBlock(layout, t.pp)}
 	p.features = func() ([]float32, error) {
 		out := make([]float32, 0, n*hidden)

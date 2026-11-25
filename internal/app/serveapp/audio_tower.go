@@ -135,7 +135,7 @@ func (g *gemma4Audio) clipPrompt(lm *loadedModel, tm *chat.Template, system stri
 	if n <= 0 {
 		return visionInput{}, fmt.Errorf("the audio clip is too short (%d samples)", len(samples))
 	}
-	hiddenDim := lm.mdl().Config().HiddenDim
+	hiddenDim := lm.model.Config().HiddenDim
 	features := func() ([]float32, error) {
 		enc, err := g.encoder(lm.name)
 		if err != nil {
@@ -214,7 +214,7 @@ func (q *qwenASRAudio) clipPrompt(lm *loadedModel, system string, clip imageRef)
 		return visionInput{}, fmt.Errorf("audio features: %w", err)
 	}
 	n := audio.QwenASRTokenCount(f.Valid)
-	hiddenDim := lm.mdl().Config().HiddenDim
+	hiddenDim := lm.model.Config().HiddenDim
 	features := func() ([]float32, error) {
 		enc, err := q.encoder()
 		if err != nil {
@@ -295,7 +295,7 @@ func (v *voxtralAudio) clipPrompt(lm *loadedModel, clip imageRef) (visionInput, 
 	}
 	samples := wav.Decode()
 	n := multimodal.VoxtralAudioTokens(len(samples))
-	hiddenDim := lm.mdl().Config().HiddenDim
+	hiddenDim := lm.model.Config().HiddenDim
 	features := func() ([]float32, error) {
 		wins, err := audio.WhisperFeaturesWindows(samples, 128)
 		if err != nil {
