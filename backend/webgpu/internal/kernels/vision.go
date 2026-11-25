@@ -18,6 +18,24 @@ import (
 // bidirectional softmax, composed with the existing device matmul / quantize / residual primitives.
 // History: docs/code-notes/gpu.md#Resident SigLIP vision encoder.
 
+// visionPipes holds the Context's resident vision-encoder pipelines (ensureVision).
+type visionPipes struct {
+	lnRowsPipeline     *wgpu.ComputePipeline
+	lnRowsLayout       *wgpu.BindGroupLayout
+	geluPipeline       *wgpu.ComputePipeline
+	geluLayout         *wgpu.BindGroupLayout
+	softmaxPipeline    *wgpu.ComputePipeline
+	softmaxLayout      *wgpu.BindGroupLayout
+	addRowsPipeline    *wgpu.ComputePipeline
+	addRowsLayout      *wgpu.BindGroupLayout
+	copyHeadPipeline   *wgpu.ComputePipeline
+	copyHeadLayout     *wgpu.BindGroupLayout
+	mmTiledF32Pipeline *wgpu.ComputePipeline
+	mmTiledF32Layout   *wgpu.BindGroupLayout
+	mmRB64F32Pipeline  *wgpu.ComputePipeline
+	mmRB64F32Layout    *wgpu.BindGroupLayout
+}
+
 // layerNormRowsWGSL: standard LayerNorm over each of `rows` independent rows of
 // width `h`: y = (x-mean)/sqrt(var+eps) * weight + bias, population variance
 // (var = mean(x²) - mean(x)²), matching HF nn.LayerNorm. One workgroup per row.

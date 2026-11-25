@@ -218,14 +218,19 @@ func TestDecode_dispatchProfile(t *testing.T) {
 // which is the same failure mode Context.releases was rewritten to avoid.
 func pipelineFieldNames(c *Context) map[uintptr]string {
 	out := map[uintptr]string{}
-	v := reflect.ValueOf(c).Elem()
-	tt := v.Type()
 	want := reflect.TypeFor[*wgpu.ComputePipeline]()
-	for i := range tt.NumField() {
-		f := v.Field(i)
-		if f.Kind() == reflect.Pointer && f.Type() == want && !f.IsNil() {
-			out[f.Pointer()] = tt.Field(i).Name
+	var walk func(v reflect.Value)
+	walk = func(v reflect.Value) {
+		tt := v.Type()
+		for i := range tt.NumField() {
+			f := v.Field(i)
+			if f.Kind() == reflect.Pointer && f.Type() == want && !f.IsNil() {
+				out[f.Pointer()] = tt.Field(i).Name
+			} else if f.Kind() == reflect.Struct && tt.Field(i).Anonymous {
+				walk(f)
+			}
 		}
 	}
+	walk(reflect.ValueOf(c).Elem())
 	return out
 }

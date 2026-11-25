@@ -13,6 +13,71 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
+// attnPipes holds the Context's RoPE, KV-store, single-query, wide-head, and batched causal attention pipelines.
+type attnPipes struct {
+	ropeShader              *wgpu.ShaderModule
+	ropePipeline            *wgpu.ComputePipeline
+	ropeLayout              *wgpu.BindGroupLayout
+	ropeBatchedShader       *wgpu.ShaderModule
+	ropeBatchedPipeline     *wgpu.ComputePipeline
+	ropeBatchedLayout       *wgpu.BindGroupLayout
+	ropeMRoPERows           tiledPipes
+	pairwise                *pairwisePipes
+	attnBatchedShader       *wgpu.ShaderModule
+	attnBatchedPipeline     *wgpu.ComputePipeline
+	attnBatchedLayout       *wgpu.BindGroupLayout
+	attnKeysBatchedShader   *wgpu.ShaderModule
+	attnKeysBatchedPipeline *wgpu.ComputePipeline
+	attnKeysBatchedLayout   *wgpu.BindGroupLayout
+	attnBatchedF16Shader    *wgpu.ShaderModule
+	attnBatchedF16Pipeline  *wgpu.ComputePipeline
+	attnBatchedF16Layout    *wgpu.BindGroupLayout
+	qkvFinShader            *wgpu.ShaderModule
+	qkvFinPipeline          *wgpu.ComputePipeline
+	qkvFinLayout            *wgpu.BindGroupLayout
+	attnWideShader          *wgpu.ShaderModule
+	attnWidePipeline        *wgpu.ComputePipeline
+	attnWideLayout          *wgpu.BindGroupLayout
+	attnF16WideShader       *wgpu.ShaderModule
+	attnF16WidePipeline     *wgpu.ComputePipeline
+	attnF16WideLayout       *wgpu.BindGroupLayout
+	attnI8WideShader        *wgpu.ShaderModule
+	attnI8WidePipeline      *wgpu.ComputePipeline
+	attnI8WideLayout        *wgpu.BindGroupLayout
+	attnShader              *wgpu.ShaderModule
+	attnPipeline            *wgpu.ComputePipeline
+	attnLayout              *wgpu.BindGroupLayout
+	attnKeysShader          *wgpu.ShaderModule
+	attnKeysPipeline        *wgpu.ComputePipeline
+	attnKeysLayout          *wgpu.BindGroupLayout
+	attnKeysWide            tiledPipes
+	attnKeysRows            [2]tiledPipes
+	ropeStoreShader         *wgpu.ShaderModule
+	ropeStorePipeline       *wgpu.ComputePipeline
+	ropeStoreLayout         *wgpu.BindGroupLayout
+	kvStoreShader           *wgpu.ShaderModule
+	kvStorePipeline         *wgpu.ComputePipeline
+	kvStoreLayout           *wgpu.BindGroupLayout
+	attnF16Shader           *wgpu.ShaderModule
+	attnF16Pipeline         *wgpu.ComputePipeline
+	attnF16Layout           *wgpu.BindGroupLayout
+	ropeStoreF16Shader      *wgpu.ShaderModule
+	ropeStoreF16Pipeline    *wgpu.ComputePipeline
+	ropeStoreF16Layout      *wgpu.BindGroupLayout
+	kvStoreF16Shader        *wgpu.ShaderModule
+	kvStoreF16Pipeline      *wgpu.ComputePipeline
+	kvStoreF16Layout        *wgpu.BindGroupLayout
+	attnI8Shader            *wgpu.ShaderModule
+	attnI8Pipeline          *wgpu.ComputePipeline
+	attnI8Layout            *wgpu.BindGroupLayout
+	ropeStoreI8Shader       *wgpu.ShaderModule
+	ropeStoreI8Pipeline     *wgpu.ComputePipeline
+	ropeStoreI8Layout       *wgpu.BindGroupLayout
+	kvStoreI8Shader         *wgpu.ShaderModule
+	kvStoreI8Pipeline       *wgpu.ComputePipeline
+	kvStoreI8Layout         *wgpu.BindGroupLayout
+}
+
 // Stage 3 attention primitives: RoPE and single-query attention on the GPU, so a decode token's full forward records into
 // one command buffer (no CPU interleave). Both match the CPU (decoder.applyRoPE / attendQuery) to f32 tolerance (the CPU
 // accumulates in f64, the GPU in f32): cosine ~1.0, not bit-exact.

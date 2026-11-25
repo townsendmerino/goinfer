@@ -19,6 +19,49 @@ import (
 // plus CPU norm/SwiGLU/residual. Attention + KV-on-device (the harder half, with
 // the resident growing KV cache) is the remaining Stage-3 work.
 
+// normPipes holds the Context's normalization, elementwise activation, fused-quantize, QK/V-norm, and ReLU² pipelines.
+type normPipes struct {
+	rmsnormShader          *wgpu.ShaderModule
+	rmsnormPipeline        *wgpu.ComputePipeline
+	rmsnormLayout          *wgpu.BindGroupLayout
+	rmsnormBatchedShader   *wgpu.ShaderModule
+	rmsnormBatchedPipeline *wgpu.ComputePipeline
+	rmsnormBatchedLayout   *wgpu.BindGroupLayout
+	swigluShader           *wgpu.ShaderModule
+	swigluPipeline         *wgpu.ComputePipeline
+	swigluLayout           *wgpu.BindGroupLayout
+	gegluShader            *wgpu.ShaderModule
+	gegluPipeline          *wgpu.ComputePipeline
+	gegluLayout            *wgpu.BindGroupLayout
+	residualShader         *wgpu.ShaderModule
+	residualPipeline       *wgpu.ComputePipeline
+	residualLayout         *wgpu.BindGroupLayout
+	layerNormQuant         layerNormPipe
+	actG32                 *actG32Pipes
+	rmsQuantShader         *wgpu.ShaderModule
+	rmsQuantPipeline       *wgpu.ComputePipeline
+	rmsQuantLayout         *wgpu.BindGroupLayout
+	swigluQuantShader      *wgpu.ShaderModule
+	swigluQuantPipeline    *wgpu.ComputePipeline
+	swigluQuantLayout      *wgpu.BindGroupLayout
+	gegluQuantShader       *wgpu.ShaderModule
+	gegluQuantPipeline     *wgpu.ComputePipeline
+	gegluQuantLayout       *wgpu.BindGroupLayout
+	fusedRows              [fusedRowsKinds]tiledPipes
+	qkNormShader           *wgpu.ShaderModule
+	qkNormPipeline         *wgpu.ComputePipeline
+	qkNormLayout           *wgpu.BindGroupLayout
+	vNormShader            *wgpu.ShaderModule
+	vNormPipeline          *wgpu.ComputePipeline
+	vNormLayout            *wgpu.BindGroupLayout
+	scaleVecShader         *wgpu.ShaderModule
+	scaleVecPipeline       *wgpu.ComputePipeline
+	scaleVecLayout         *wgpu.BindGroupLayout
+	relu2Shader            *wgpu.ShaderModule
+	relu2Pipeline          *wgpu.ComputePipeline
+	relu2Layout            *wgpu.BindGroupLayout
+}
+
 const rmsnormShaderWGSL = `
 struct P { h: u32, eps: f32, addone: u32, _p: u32 };
 @group(0) @binding(0) var<storage, read>       src:    array<f32>;
