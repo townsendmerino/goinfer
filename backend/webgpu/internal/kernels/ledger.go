@@ -64,6 +64,11 @@ func (c *Context) lease(line string, b *wgpu.Buffer) *wgpu.Buffer {
 }
 
 func (c *Context) tryCreateBuffer(line string, d *wgpu.BufferDescriptor) (*wgpu.Buffer, error) {
+	if c.createFail != nil {
+		if err := c.createFail(line, d.Size); err != nil {
+			return nil, err
+		}
+	}
 	b, err := c.device.TryCreateBuffer(d)
 	if err != nil {
 		return nil, err
@@ -72,12 +77,22 @@ func (c *Context) tryCreateBuffer(line string, d *wgpu.BufferDescriptor) (*wgpu.
 }
 
 func (c *Context) tryCreateBufferInit(line string, d *wgpu.BufferInitDescriptor) (*wgpu.Buffer, error) {
+	if c.createFail != nil {
+		if err := c.createFail(line, uint64(len(d.Contents))); err != nil {
+			return nil, err
+		}
+	}
 	b, err := c.device.TryCreateBufferInit(d)
 	if err != nil {
 		return nil, err
 	}
 	return c.lease(line, b), nil
 }
+
+// SetCreateFailForTest makes every later leased buffer creation on c ask f first and fail with f's error when it returns one
+// (line is the buffer's plan line, size its bytes); nil clears it. A build that fails partway can then be held to releasing what
+// it had leased.
+func (c *Context) SetCreateFailForTest(f func(line string, size uint64) error) { c.createFail = f }
 
 // unlease closes b's lease, if it has one.
 func unlease(b *wgpu.Buffer) { unleaseKey(weak.Make(b)) }

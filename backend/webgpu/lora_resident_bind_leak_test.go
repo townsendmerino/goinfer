@@ -3,10 +3,15 @@
 package webgpu
 
 import (
-	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
+	"errors"
+	"fmt"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
 
 // TestSetAdapter_partialBindErrorRestoresSteps pins that a SetAdapter that fails partway through
@@ -92,5 +97,62 @@ func TestSetAdapter_partialBindErrorRestoresSteps(t *testing.T) {
 	// The resident must still be usable after a rejected bind — no adapter, but not broken.
 	if err := ra.SetAdapter(nil); err != nil {
 		t.Errorf("SetAdapter(nil) after a failed bind: %v", err)
+	}
+}
+
+// TestBuildResident_kvAllocFailureReleasesWhatItLeased fails a resident build at one layer's V allocation, after that layer's
+// K was created, and holds the build to its unwind: once Load has fallen back, no buffer on the KV line, and no buffer the build
+// leased on any line, is still open on the backend's Context. Each KV site is covered: the generic attention layer at every KV
+// precision (an int8 cache is two KV-line buffers, the codes then their scales, so its cases fail layer 1's V codes and,
+// separately, its V scales), Nemotron-H's attention layer and Qwen3.5's gated attention layer.
+func TestBuildResident_kvAllocFailureReleasesWhatItLeased(t *testing.T) {
+	for _, tc := range []struct {
+		ckpt, quant, kv string
+		failAt          int    // the KV-line allocation refused, counting from 1
+		decline         string // the site's error
+	}{
+		{"llama-tiny", "int8int8", "", 4, "residency KV alloc (layer 1)"},
+		{"llama-tiny", "int8int8", "f16", 4, "residency KV alloc (layer 1)"},
+		{"llama-tiny", "int8int8", "i8", 7, "residency KV alloc (layer 1)"},
+		{"llama-tiny", "int8int8", "i8", 8, "residency KV alloc (layer 1)"},
+		{"nemotron-tiny", "int4", "", 2, "nemotron KV alloc"},
+		{"qwen35-tiny", "int4", "", 2, "qwen35 KV alloc"},
+	} {
+		kv, ckpt := tc.kv, "../../testdata/"+tc.ckpt
+		t.Run(fmt.Sprintf("%s/kv=%s/alloc%d", tc.ckpt, kv, tc.failAt), func(t *testing.T) {
+			b, err := newWebGPUBackend("kv-alloc-failure test")
+			if err != nil {
+				t.Skipf("no webgpu device: %v", err)
+			}
+			defer b.ctx.Close()
+			before := b.ctx.Ledger().Usage()
+			kvAllocs := 0
+			b.ctx.SetCreateFailForTest(func(line string, _ uint64) error {
+				if line != mem.LineKV {
+					return nil
+				}
+				if kvAllocs++; kvAllocs == tc.failAt {
+					return errors.New("planted: KV allocation refused")
+				}
+				return nil
+			})
+			reg := fmt.Sprintf("webgpu-kv-alloc-failure-%s-%s-%d", tc.ckpt, kv, time.Now().UnixNano())
+			decoder.RegisterBackend(reg, func() (decoder.Backend, error) { return b, nil })
+			m, err := decoder.Load(ckpt, decoder.Options{Backend: reg, Quant: tc.quant, KVPrecision: kv})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+			if !strings.Contains(m.ResidentDecline(), tc.decline) {
+				t.Fatalf("the plant did not fail the build at the KV allocation it targets (%q): decline %q", tc.decline, m.ResidentDecline())
+			}
+			after := b.ctx.Ledger().Usage()
+			if n := after.ByLine[mem.LineKV]; n != 0 {
+				t.Errorf("%d bytes still leased on the KV line after the failed build", n)
+			}
+			if after.Leases != before.Leases {
+				t.Errorf("%d leases open after the failed build (%d before it): by line %v", after.Leases, before.Leases, after.ByLine)
+			}
+		})
 	}
 }

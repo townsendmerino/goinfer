@@ -83,6 +83,17 @@ func (b *webgpuBackend) newBuild(m *decoder.Model, avail0 int64) *webgpuBuild {
 // keep registers a release for rd.Close to run.
 func (bs *webgpuBuild) keep(f func()) { bs.rd.keep = append(bs.rd.keep, f) }
 
+// keepAll keeps every non-nil buffer in bufs for release with the resident. A KV site calls it on both halves of a pair before
+// it checks either allocation's error, so a failure on one side still releases the other with the rest of a failed build. A
+// constructor that fails returns nil, having released what it made.
+func (bs *webgpuBuild) keepAll(bufs ...*DeviceBuffer) {
+	for _, b := range bufs {
+		if b != nil {
+			bs.keep(func() { _ = b.Close() })
+		}
+	}
+}
+
 // up32 uploads v as a dense f32 buffer.
 func (bs *webgpuBuild) up32(v []float32) (*wgpu.Buffer, error) {
 	d, err := bs.c.UploadF32On(mem.LineDense, v)

@@ -54,6 +54,9 @@ type Context struct {
 	instance *wgpu.Instance
 	adapter  *wgpu.Adapter
 	ledger   mem.Ledger // every buffer created on this Context (ledger.go)
+	// createFail, when set, is asked before each leased buffer is created and refuses it by returning an error: the test seam
+	// that fails a build partway (SetCreateFailForTest). nil in production.
+	createFail func(line string, size uint64) error
 	// collected and collectedBytes count the leased buffers the GC freed with their lease open (ledger.go's Collected).
 	collected, collectedBytes atomic.Int64
 	// dispatches, submits and waits are the decode runners' device activity, always counted (cost.go's Activity).
