@@ -27,7 +27,7 @@
 |---|---|---|---|
 | J0 | done | — | `scripts/queue_citation_lint.py:untracked_live_docs` |
 | J1 | done | — | `internal/runtime/scheduler/admission.go:Admission`; `internal/app/serveapp/admission_test.go:TestAdmission_waiterLeavesOnContextCancelWithoutWaitingForHolder` |
-| J2 | done | — | `internal/app/serveapp/jobs/jobjournal.go:Journal`; `-job-dir` in `internal/app/serveapp/main.go:registerFlags` |
+| J2 | done | — | `internal/app/serveapp/jobs/jobjournal.go:Journal`; `-job-dir` in `internal/app/serveapp/flags.go:registerFlags` |
 | J3 | done | unbuilt: vision and tool bodies, the `user` key (needs K4), `-job-cap` | `internal/app/serveapp/jobs_http_test.go:TestJobs_submitPollReattachMatchesSyncRun` |
 | J4 | done | unbuilt: vision and tool lines, non-chat endpoints | `internal/app/serveapp/batches_http_test.go:TestBatches_openAIRoundTrip` |
 | J5 | done | — | `internal/app/chatapp/batch.go:planBatch`; `internal/app/serveapp/batch_cli_parity_test.go:TestBatch_cliAndServeAgree` |
@@ -114,7 +114,7 @@ Not rebuilt below; this is the floor J1–J9 build on.
   20-token request that arrived last can go after a 4,000-token one that arrived first, and
   nothing in the system knows the difference.
 - **Backpressure is a number, not a plan.** `-max-queue` defaults to 8
-  (`internal/app/serveapp/main.go:registerFlags`); a full queue is a 429 on the OpenAI routes and a 529
+  (`internal/app/serveapp/flags.go:registerFlags`); a full queue is a 429 on the OpenAI routes and a 529
   `overloaded_error` on the Anthropic one (`internal/app/serveapp/anthropic.go:server.serveMessagesWith`). A global
   `-max-inflight` (default 128) bounds the pre-queue stage — JSON and image decode, tokenisation,
   template render — and is deliberately distinct from the per-model 429
@@ -144,7 +144,7 @@ Not rebuilt below; this is the floor J1–J9 build on.
    own, against the roadmap's kill-or-earn rule. Everything else here is about *which* request the
    one worker takes next, and about surviving a disconnect.
    > **Note 2026-11-09:** superseded by MC3c (`parked/task-concurrency-2026-09.md`): `serve -max-concurrent` (default 4,
-   > registered in `internal/app/serveapp/main.go:registerFlags`) runs several generations on a CPU model, through
+   > registered in `internal/app/serveapp/flags.go:registerFlags`) runs several generations on a CPU model, through
    > `internal/runtime/scheduler`. The "What exists today" section below describes the tree before J1.
 2. **Compatibility is the promise for `serve`** (`docs/api-tiers.md`). J4 implements the two batch
    APIs as specified, including their quirks; it does not invent a third.
