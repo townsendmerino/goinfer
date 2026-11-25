@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -108,8 +109,8 @@ func TestAttnBlock_parity(t *testing.T) {
 	linalg.MatmulBTW8A8(xn, vBQ, vS, v, 1, hidden, kvDim)
 	refRoPE(q, nH, hd, pos, invFreq)
 	refRoPE(k, nKV, hd, pos, invFreq)
-	kFull := append(append([]float32(nil), priorK...), k...)
-	vFull := append(append([]float32(nil), priorV...), v...)
+	kFull := slices.Concat(priorK, k)
+	vFull := slices.Concat(priorV, v)
 	ctxv := refAttn(q, kFull, vFull, nH, nKV, hd, pos+1, scale)
 	attnOut := make([]float32, hidden)
 	linalg.MatmulBTW8A8(ctxv, oBQ, oS, attnOut, 1, qDim, hidden)

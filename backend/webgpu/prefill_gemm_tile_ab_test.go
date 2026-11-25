@@ -8,7 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -132,8 +132,8 @@ func TestPrefill_gemmTileAB(t *testing.T) {
 			p, msf(g16), msf(g64), g16.Seconds()/g64.Seconds(), msf(w16), msf(w64), w16.Seconds()/w64.Seconds())
 	}
 	med := func(x []float64) float64 {
-		s := append([]float64(nil), x...)
-		sort.Float64s(s)
+		s := slices.Clone(x)
+		slices.Sort(s)
 		return (s[len(s)/2-1] + s[len(s)/2]) / 2
 	}
 	gm, wm := med(gr), med(wr)

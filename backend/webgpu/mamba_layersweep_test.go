@@ -7,6 +7,7 @@ package webgpu
 import (
 	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -57,7 +58,7 @@ func TestMambaResidentLayerSweep(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		cpuLogits[L] = append([]float32(nil), lg...)
+		cpuLogits[L] = slices.Clone(lg)
 	}
 	mc.Close()
 

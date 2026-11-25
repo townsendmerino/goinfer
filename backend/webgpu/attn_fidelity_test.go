@@ -91,7 +91,7 @@ func attnFidelitySet(mode string) []attnFidelityPrompt {
 	var ps []attnFidelityPrompt
 	if mode == "pilot" {
 		for t := range attnFidelityPilotTexts {
-			for i := 0; i < 3; i++ {
+			for i := range 3 {
 				ps = append(ps, attnFidelityPrompt{cell: "short", texts: []int{t}, instruction: i, pilot: true})
 			}
 		}
@@ -99,7 +99,7 @@ func attnFidelitySet(mode string) []attnFidelityPrompt {
 			attnFidelityPrompt{cell: "medium", texts: []int{1, 0, 1, 0}, instruction: 4, pilot: true})
 	}
 	n := len(attnFidelityTexts)
-	for t := 0; t < n; t++ {
+	for t := range n {
 		for i := range attnFidelityInstructions {
 			ps = append(ps, attnFidelityPrompt{cell: "short", texts: []int{t}, instruction: i})
 		}
@@ -111,10 +111,10 @@ func attnFidelitySet(mode string) []attnFidelityPrompt {
 		}
 		return out
 	}
-	for k := 0; k < 16; k++ {
+	for k := range 16 {
 		ps = append(ps, attnFidelityPrompt{cell: "medium", texts: rot(k%n, 4), instruction: (k + k/n) % len(attnFidelityInstructions)})
 	}
-	for k := 0; k < 8; k++ {
+	for k := range 8 {
 		ps = append(ps, attnFidelityPrompt{cell: "long", texts: rot(k, 12), instruction: k % len(attnFidelityInstructions)})
 	}
 	return ps
@@ -276,13 +276,13 @@ func TestS12AttnKernelFidelity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: reference prefill: %v", p.id(), err)
 		}
-		ref := [][]float32{append([]float32(nil), l...)}
+		ref := [][]float32{slices.Clone(l)}
 		toks := []int{argmax(l)}
 		for k := 1; k < attnFidelityPositions; k++ {
 			if l, err = mR.ForwardForTest(toks[k-1], cR); err != nil {
 				t.Fatalf("%s: reference step %d: %v", p.id(), k, err)
 			}
-			ref = append(ref, append([]float32(nil), l...))
+			ref = append(ref, slices.Clone(l))
 			toks = append(toks, argmax(l))
 		}
 		arm := func(m *decoder.Model, rd *residentDecoder, disabled, stale bool) ([]fidelity.Position, [][]float32) {
@@ -290,13 +290,13 @@ func TestS12AttnKernelFidelity(t *testing.T) {
 			rd.Reset()
 			embs := make([][]float32, n)
 			for r, id := range ids {
-				embs[r] = append([]float32(nil), m.EmbedResidentForTest(id)...)
+				embs[r] = slices.Clone(m.EmbedResidentForTest(id))
 			}
 			l, err := rd.PrefillLast(ctx, embs, 0)
 			if err != nil {
 				t.Fatalf("%s: resident prefill (key-split off: %v): %v", p.id(), disabled, err)
 			}
-			raw := [][]float32{append([]float32(nil), l...)}
+			raw := [][]float32{slices.Clone(l)}
 			pos := []fidelity.Position{mropeScore(ref[0], l)}
 			for k := 1; k < attnFidelityPositions; k++ {
 				tok := toks[k-1]
@@ -309,7 +309,7 @@ func TestS12AttnKernelFidelity(t *testing.T) {
 				if l, err = rd.Forward(m.EmbedResidentForTest(tok), n+k-1); err != nil {
 					t.Fatalf("%s: resident step %d (key-split off: %v): %v", p.id(), k, disabled, err)
 				}
-				raw = append(raw, append([]float32(nil), l...))
+				raw = append(raw, slices.Clone(l))
 				pos = append(pos, mropeScore(ref[k], l))
 			}
 			return pos, raw
@@ -435,7 +435,7 @@ func TestMinistral3ResidentParityWebGPU(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		want[i] = append([]float32(nil), l...)
+		want[i] = slices.Clone(l)
 	}
 	rel := func(a, b []float32) float64 { // NaN, an all-zero reference or a length mismatch reads +Inf
 		if len(a) != len(b) || len(b) == 0 {
@@ -468,7 +468,7 @@ func TestMinistral3ResidentParityWebGPU(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out[i] = append([]float32(nil), l...)
+			out[i] = slices.Clone(l)
 		}
 		return out, rd, m
 	}

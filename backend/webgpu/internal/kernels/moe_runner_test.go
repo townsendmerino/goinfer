@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -92,7 +93,7 @@ func TestDecodeRunnerMoE_parity(t *testing.T) {
 		for i := range probs {
 			probs[i] /= sum
 		}
-		sel := append([]float32(nil), probs...)
+		sel := slices.Clone(probs)
 		idx = make([]int, topK)
 		wts = make([]float32, topK)
 		var wsum float32
@@ -115,7 +116,7 @@ func TestDecodeRunnerMoE_parity(t *testing.T) {
 	}
 
 	// --- CPU oracle (same math as the GPU MoE forward) ---
-	x := append([]float32(nil), x0...)
+	x := slices.Clone(x0)
 	for l := range layers {
 		L := &layers[l]
 		xn := refRMSNorm(x, L.an, hidden, eps, false)
@@ -127,8 +128,8 @@ func TestDecodeRunnerMoE_parity(t *testing.T) {
 		linalg.MatmulBTW8A8(xn, L.vBQ, L.vS, v, 1, hidden, kvDim)
 		refRoPE(q, nH, hd, pos, invFreq)
 		refRoPE(k, nKV, hd, pos, invFreq)
-		kFull := append(append([]float32(nil), L.priorK...), k...)
-		vFull := append(append([]float32(nil), L.priorV...), v...)
+		kFull := slices.Concat(L.priorK, k)
+		vFull := slices.Concat(L.priorV, v)
 		cv := refAttn(q, kFull, vFull, nH, nKV, hd, pos+1, scale)
 		ao := make([]float32, hidden)
 		linalg.MatmulBTW8A8(cv, L.oBQ, L.oS, ao, 1, qDim, hidden)

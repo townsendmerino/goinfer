@@ -5,6 +5,7 @@ package kernels
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
@@ -440,7 +441,7 @@ func TestDeltaRule_cpuParity_olmoHybrid(t *testing.T) {
 
 		var capGateIn, capConv, capZ, capBG, capPre, capGated []float32
 		hybridattn.SetDeltaCapHook(func(_, conv, gateIn, bg, preNorm, gated, z []float32) {
-			cp := func(s []float32) []float32 { return append([]float32(nil), s...) }
+			cp := func(s []float32) []float32 { return slices.Clone(s) }
 			capGateIn, capConv, capZ, capBG, capPre, capGated = cp(gateIn), cp(conv), cp(z), cp(bg), cp(preNorm), cp(gated)
 		})
 		defer hybridattn.SetDeltaCapHook(nil)

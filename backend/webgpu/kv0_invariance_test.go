@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -114,7 +113,7 @@ func (g *kv0Rig) layerDim(l int) int {
 func (g *kv0Rig) embs(ids []int) [][]float32 {
 	out := make([][]float32, len(ids))
 	for i, id := range ids {
-		out[i] = append([]float32(nil), g.m.EmbedResidentForTest(id)...)
+		out[i] = slices.Clone(g.m.EmbedResidentForTest(id))
 	}
 	return out
 }
@@ -163,7 +162,7 @@ func (g *kv0Rig) prefill(e [][]float32, start int) []float32 {
 	if err != nil {
 		g.t.Fatalf("PrefillLast(%d rows at %d): %v", len(e), start, err)
 	}
-	return append([]float32(nil), lg...)
+	return slices.Clone(lg)
 }
 
 // blockRows sets prefillBlockRows for the rest of the test.
@@ -193,7 +192,7 @@ func kv0TextTokens(t *testing.T, ggufPath string) func(int) func(n, off int) []i
 		t.Fatalf("tokenizer: %v", err)
 	}
 	files, _ := filepath.Glob("../../decoder/*.go")
-	sort.Strings(files)
+	slices.Sort(files)
 	var sb strings.Builder
 	for _, f := range files {
 		if strings.HasSuffix(f, "_test.go") {
@@ -215,7 +214,7 @@ func kv0TextTokens(t *testing.T, ggufPath string) func(int) func(n, off int) []i
 	return func(int) func(n, off int) []int {
 		return func(n, off int) []int {
 			off %= max(1, len(ids)-n)
-			return append([]int(nil), ids[off:off+n]...)
+			return slices.Clone(ids[off : off+n])
 		}
 	}
 }

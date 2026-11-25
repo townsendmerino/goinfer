@@ -30,7 +30,7 @@ func TestRopeKernels_noBuiltinSinCos(t *testing.T) {
 		}
 		// Shader source is Go raw strings; scan only those, so a Go comment that mentions sin or cos is not a shader call.
 		for _, lit := range rawString.FindAllString(string(src), -1) {
-			for _, line := range strings.Split(lit, "\n") {
+			for line := range strings.SplitSeq(lit, "\n") {
 				if builtin.MatchString(line) {
 					t.Errorf("%s: a shader calls a WGSL builtin sin or cos; use ropeCosSin: %s", f, strings.TrimSpace(line))
 				}

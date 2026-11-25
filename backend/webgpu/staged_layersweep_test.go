@@ -4,6 +4,7 @@ package webgpu
 
 import (
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -54,7 +55,7 @@ func TestStagedLayerSweep(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		cpuLogits[L] = append([]float32(nil), lg...)
+		cpuLogits[L] = slices.Clone(lg)
 	}
 	mc.Close()
 

@@ -3,10 +3,11 @@
 package webgpu
 
 import (
+	"cmp"
 	"context"
 	"math"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -65,7 +66,7 @@ func top5(p []float64) map[int]bool {
 	for i, v := range p {
 		a[i] = kv{i, v}
 	}
-	sort.Slice(a, func(x, y int) bool { return a[x].p > a[y].p })
+	slices.SortFunc(a, func(x, y kv) int { return cmp.Compare(y.p, x.p) })
 	m := map[int]bool{}
 	for i := 0; i < 5 && i < len(a); i++ {
 		m[a[i].i] = true

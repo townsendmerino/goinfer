@@ -81,7 +81,7 @@ func runGeomParity(t *testing.T, ctx *Context, hidden, nH, nKV, hd, inter, vocab
 
 	// --- CPU oracle (same math as the GPU W4A8 forward) ---
 	silu := func(g float32) float32 { return g / (1 + float32(math.Exp(float64(-g)))) }
-	x := append([]float32(nil), x0...)
+	x := slices.Clone(x0)
 	for l := range layers {
 		L := &layers[l]
 		xn := refRMSNorm(x, L.an, hidden, eps, false)
@@ -91,8 +91,8 @@ func runGeomParity(t *testing.T, ctx *Context, hidden, nH, nKV, hd, inter, vocab
 		v := refMatmulW4A8(aq, as, L.vN, L.vS, kvDim, hidden, w4Group)
 		refRoPE(q, nH, hd, pos, invFreq)
 		refRoPE(k, nKV, hd, pos, invFreq)
-		kFull := append(append([]float32(nil), L.priorK...), k...)
-		vFull := append(append([]float32(nil), L.priorV...), v...)
+		kFull := slices.Concat(L.priorK, k)
+		vFull := slices.Concat(L.priorV, v)
 		cv := refAttn(q, kFull, vFull, nH, nKV, hd, pos+1, scale)
 		cq, cs := refQuantInt8(cv)
 		ao := refMatmulW4A8(cq, cs, L.oN, L.oS, hidden, qDim, w4Group)

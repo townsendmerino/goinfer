@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -78,7 +79,7 @@ func TestDecodeRunnerPerLayerRoPE_parity(t *testing.T) {
 	lmBQ, lmS := quantW(vocab, hidden, 999)
 
 	// --- CPU oracle (per-layer rope) ---
-	x := append([]float32(nil), x0...)
+	x := slices.Clone(x0)
 	for l := range layers {
 		Lw := &layers[l]
 		xn := refRMSNorm(x, Lw.an, hidden, eps, false)
@@ -90,8 +91,8 @@ func TestDecodeRunnerPerLayerRoPE_parity(t *testing.T) {
 		linalg.MatmulBTW8A8(xn, Lw.vBQ, Lw.vS, v, 1, hidden, kvDim)
 		scaledRoPE(q, nH, invFreq[l], ropeScale[l])
 		scaledRoPE(k, nKV, invFreq[l], ropeScale[l])
-		kFull := append(append([]float32(nil), Lw.priorK...), k...)
-		vFull := append(append([]float32(nil), Lw.priorV...), v...)
+		kFull := slices.Concat(Lw.priorK, k)
+		vFull := slices.Concat(Lw.priorV, v)
 		cv := refAttn(q, kFull, vFull, nH, nKV, hd, pos+1, scale)
 		ao := make([]float32, hidden)
 		linalg.MatmulBTW8A8(cv, Lw.oBQ, Lw.oS, ao, 1, qDim, hidden)

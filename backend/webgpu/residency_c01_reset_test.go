@@ -4,6 +4,7 @@ package webgpu
 
 import (
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -54,14 +55,14 @@ func TestResident_C01_pos0ResetsRecurrent(t *testing.T) {
 	}
 
 	tok := 1
-	emb0 := append([]float32(nil), m.EmbedResidentForTest(tok)...)
+	emb0 := slices.Clone(m.EmbedResidentForTest(tok))
 
 	// (1) First sequence, token `tok` at pos 0 from a fresh resident.
 	l0, err := rd.Forward(emb0, 0)
 	if err != nil {
 		t.Fatalf("Forward pos 0 (first): %v", err)
 	}
-	first := append([]float32(nil), l0...)
+	first := slices.Clone(l0)
 
 	// (2) Compound the recurrent state: decode several more tokens so {win,ssm} evolves away from
 	// zero. mamba2Step mutates the state in place, so after this it is NOT the fresh-sequence state.
@@ -85,7 +86,7 @@ func TestResident_C01_pos0ResetsRecurrent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Forward pos 0 (second): %v", err)
 	}
-	second := append([]float32(nil), l0b...)
+	second := slices.Clone(l0b)
 
 	if len(first) != len(second) {
 		t.Fatalf("logit length changed: %d vs %d", len(first), len(second))

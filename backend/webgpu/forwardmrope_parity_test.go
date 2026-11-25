@@ -261,7 +261,7 @@ func TestGlmOcrResidentParityWebGPU(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		row[i] = append([]float32(nil), l...)
+		row[i] = slices.Clone(l)
 	}
 	imgC := cpu.NewCache(len(g.PromptIDs) + g.NNew)
 	if _, err := cpu.PrefillLogitsQwenVLForTest(ctx, g.PromptIDs, feats, g.ImageStart, g.NImage, mropePos, imgC); err != nil {
@@ -277,7 +277,7 @@ func TestGlmOcrResidentParityWebGPU(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		past = append(past, append([]float32(nil), l...))
+		past = append(past, slices.Clone(l))
 	}
 	rowKV, pastKV, cpuKV := map[string][][]float32{}, map[string][][]float32{}, map[string]*decoder.Model{}
 	for _, kv := range []string{"f16", "i8"} {
@@ -289,7 +289,7 @@ func TestGlmOcrResidentParityWebGPU(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			rowKV[kv] = append(rowKV[kv], append([]float32(nil), l...))
+			rowKV[kv] = append(rowKV[kv], slices.Clone(l))
 		}
 		ic := c.NewCache(len(g.PromptIDs) + g.NNew)
 		if _, err := c.PrefillLogitsQwenVLForTest(ctx, g.PromptIDs, feats, g.ImageStart, g.NImage, mropePos, ic); err != nil {
@@ -300,7 +300,7 @@ func TestGlmOcrResidentParityWebGPU(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			pastKV[kv] = append(pastKV[kv], append([]float32(nil), l...))
+			pastKV[kv] = append(pastKV[kv], slices.Clone(l))
 		}
 	}
 	measure := func() map[string]pwWorst {

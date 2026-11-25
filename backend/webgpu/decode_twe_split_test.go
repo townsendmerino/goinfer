@@ -7,7 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -82,8 +82,8 @@ func TestDecodeTWE_split(t *testing.T) {
 		tot[i] = tw[i] + te[i] + ts[i]
 	}
 	pct := func(xs []float64, p float64) float64 {
-		s := append([]float64(nil), xs...)
-		sort.Float64s(s)
+		s := slices.Clone(xs)
+		slices.Sort(s)
 		return s[int(p*float64(len(s)-1))]
 	}
 	stat := func(name string, xs []float64) {

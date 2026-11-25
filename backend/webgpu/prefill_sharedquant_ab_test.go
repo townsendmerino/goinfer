@@ -10,7 +10,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -97,7 +97,7 @@ func TestPrefill_sharedQuantAB(t *testing.T) {
 				}
 				dt := float64(time.Since(st).Microseconds()) / 1e3
 				if ref == nil {
-					ref = append([]float32(nil), lg...)
+					ref = slices.Clone(lg)
 				}
 				for j := range ref {
 					if math.Float32bits(ref[j]) != math.Float32bits(lg[j]) {
@@ -109,7 +109,7 @@ func TestPrefill_sharedQuantAB(t *testing.T) {
 				}
 			}
 		}
-		med := func(v []float64) float64 { s := append([]float64(nil), v...); sort.Float64s(s); return s[len(s)/2] }
+		med := func(v []float64) float64 { s := slices.Clone(v); slices.Sort(s); return s[len(s)/2] }
 		ratio := make([]float64, reps)
 		above := 0
 		per := ""

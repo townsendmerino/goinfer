@@ -6,7 +6,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -83,7 +83,7 @@ func droppedTryErrors(t *testing.T, dir string) []string {
 			return true
 		})
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 

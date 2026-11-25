@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
@@ -188,7 +189,7 @@ func mropeEqualPositions(t *testing.T, dir string, opts decoder.Options, counts 
 			if err != nil {
 				t.Fatalf("%d rows: %v", n, err)
 			}
-			out := [][]float32{append([]float32(nil), last...)}
+			out := [][]float32{slices.Clone(last)}
 			var chosen []int
 			tok := argmax(last)
 			for i := range prefillInt4Steps {
@@ -200,7 +201,7 @@ func mropeEqualPositions(t *testing.T, dir string, opts decoder.Options, counts 
 				if err != nil {
 					t.Fatal(err)
 				}
-				out = append(out, append([]float32(nil), l...))
+				out = append(out, slices.Clone(l))
 				tok = argmax(l)
 			}
 			return out, chosen
@@ -297,7 +298,7 @@ func mropeImageReading4(t *testing.T, dir string, prompt func(m *decoder.Model) 
 			t.Fatal(err)
 		}
 		steps := func(first []float32, toks []int) ([][]float32, []int) {
-			out := [][]float32{append([]float32(nil), first...)}
+			out := [][]float32{slices.Clone(first)}
 			var chosen []int
 			tok := argmax(first)
 			for i := range prefillInt4Steps {
@@ -309,7 +310,7 @@ func mropeImageReading4(t *testing.T, dir string, prompt func(m *decoder.Model) 
 				if err != nil {
 					t.Fatal(err)
 				}
-				out = append(out, append([]float32(nil), l...))
+				out = append(out, slices.Clone(l))
 				tok = argmax(l)
 			}
 			return out, chosen

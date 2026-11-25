@@ -5,7 +5,7 @@ package kernels
 import (
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -45,8 +45,8 @@ func TestGEMVNSweep(t *testing.T) {
 	act := randMat(K, 2)
 	aq, aScales := linalg.QuantizeRowsInt8(act, 1, K)
 	median := func(xs []float64) float64 {
-		s := append([]float64(nil), xs...)
-		sort.Float64s(s)
+		s := slices.Clone(xs)
+		slices.Sort(s)
 		return s[len(s)/2]
 	}
 	for _, n := range ns {

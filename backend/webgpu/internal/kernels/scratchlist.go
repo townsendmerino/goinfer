@@ -2,7 +2,10 @@
 
 package kernels
 
-import "sort"
+import (
+	"cmp"
+	"slices"
+)
 
 // ScratchEntry is one named group of a decode runner's build-time scratch leases: the role that created them (the op builder or build step that
 // asked for them), how many buffers and their bytes. The runner builds its scratch from op builders that each name themselves, so the list is
@@ -37,7 +40,7 @@ func (b *scratchBook) list() []ScratchEntry {
 	for _, e := range b.byRole {
 		out = append(out, *e)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Role < out[j].Role })
+	slices.SortFunc(out, func(a, b ScratchEntry) int { return cmp.Compare(a.Role, b.Role) })
 	return out
 }
 

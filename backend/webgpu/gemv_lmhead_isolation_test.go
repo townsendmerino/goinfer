@@ -4,7 +4,7 @@ package webgpu
 
 import (
 	"os"
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -62,8 +62,8 @@ func TestGEMVLMHeadIsolation(t *testing.T) {
 	aq, aScales := linalg.QuantizeRowsInt8(act, 1, hidden)
 
 	median := func(xs []float64) float64 {
-		s := append([]float64(nil), xs...)
-		sort.Float64s(s)
+		s := slices.Clone(xs)
+		slices.Sort(s)
 		return s[len(s)/2]
 	}
 	measure := func(label string) float64 {

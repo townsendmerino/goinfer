@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -176,7 +175,7 @@ func residentParityWebGPU(t *testing.T, ckpt string, o decoder.Options) deltaNet
 			t.Fatalf("resident forward[%d]: %v", i, err)
 		}
 		if len(firstRun) < 16 {
-			firstRun = append(firstRun, append([]float32(nil), lr...))
+			firstRun = append(firstRun, slices.Clone(lr))
 		}
 		if argmaxF(lc) == argmaxF(lr) {
 			agree++
@@ -318,7 +317,7 @@ func olmo3GQAFixture(t *testing.T) string {
 			names = append(names, name)
 		}
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	out := map[string]any{}
 	var data []byte
 	for _, name := range names {

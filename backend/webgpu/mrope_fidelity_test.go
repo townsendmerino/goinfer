@@ -12,6 +12,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -316,13 +317,13 @@ func TestS12MRoPEFidelity(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: reference prefill: %v", p.id(), err)
 		}
-		ref := [][]float32{append([]float32(nil), l...)}
+		ref := [][]float32{slices.Clone(l)}
 		toks := []int{argmax(l)}
 		for k := 1; k < mropeFidelityPositions; k++ {
 			if l, err = mR.ForwardForTest(toks[k-1], cR); err != nil {
 				t.Fatalf("%s: reference step %d: %v", p.id(), k, err)
 			}
-			ref = append(ref, append([]float32(nil), l...))
+			ref = append(ref, slices.Clone(l))
 			toks = append(toks, argmax(l))
 		}
 		arm := func(prefill func() ([]float32, error)) []fidelity.Position {
@@ -347,7 +348,7 @@ func TestS12MRoPEFidelity(t *testing.T) {
 			if err != nil {
 				return nil, err
 			}
-			l = append([]float32(nil), l...)
+			l = slices.Clone(l)
 			return l, mA.ResidentUploadPrefillForTest(cA)
 		})
 		if defect {

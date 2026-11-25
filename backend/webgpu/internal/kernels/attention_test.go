@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"math"
+	"slices"
 	"testing"
 )
 
@@ -24,7 +25,7 @@ func TestRoPE_parity(t *testing.T) {
 	}
 	const scale = 1.0
 
-	ref := append([]float32(nil), vec...)
+	ref := slices.Clone(vec)
 	for d := range half {
 		theta := float64(pos) * float64(invFreq[d])
 		c := math.Cos(theta) * scale
@@ -36,7 +37,7 @@ func TestRoPE_parity(t *testing.T) {
 			ref[off+half+d] = float32(x2*c + x1*s)
 		}
 	}
-	got, err := ctx.RoPE(append([]float32(nil), vec...), heads, hd, pos, invFreq, scale)
+	got, err := ctx.RoPE(slices.Clone(vec), heads, hd, pos, invFreq, scale)
 	if err != nil {
 		t.Fatalf("RoPE: %v", err)
 	}
@@ -67,7 +68,7 @@ func TestRoPE_parityAtLongContextCeiling(t *testing.T) {
 	}
 	const scale = 1.0
 
-	ref := append([]float32(nil), vec...)
+	ref := slices.Clone(vec)
 	for d := range half {
 		theta := float64(pos) * float64(invFreq[d])
 		c := math.Cos(theta) * scale
@@ -79,7 +80,7 @@ func TestRoPE_parityAtLongContextCeiling(t *testing.T) {
 			ref[off+half+d] = float32(x2*c + x1*s)
 		}
 	}
-	got, err := ctx.RoPE(append([]float32(nil), vec...), heads, hd, pos, invFreq, scale)
+	got, err := ctx.RoPE(slices.Clone(vec), heads, hd, pos, invFreq, scale)
 	if err != nil {
 		t.Fatalf("RoPE: %v", err)
 	}

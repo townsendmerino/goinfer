@@ -3,13 +3,13 @@
 package webgpu
 
 import (
+	"cmp"
 	"fmt"
 	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
 	"math/rand"
 	"os"
 	"reflect"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -58,7 +58,7 @@ func TestDecode_dispatchProfile(t *testing.T) {
 	positions := []int{64, 512}
 	if v := os.Getenv("GOINFER_DECODE_POS"); v != "" {
 		positions = nil
-		for _, f := range strings.Split(v, ",") {
+		for f := range strings.SplitSeq(v, ",") {
 			n, err := strconv.Atoi(f)
 			if err != nil || n < 1 {
 				t.Fatalf("GOINFER_DECODE_POS %q: %v", v, err)
@@ -201,7 +201,7 @@ func TestDecode_dispatchProfile(t *testing.T) {
 			rows = append(rows, row{cl.name, cl.count, saved, pct})
 			sum += saved
 		}
-		sort.Slice(rows, func(i, j int) bool { return rows[i].savedMS > rows[j].savedMS })
+		slices.SortFunc(rows, func(a, b row) int { return cmp.Compare(b.savedMS, a.savedMS) })
 		t.Logf("%-26s %8s %12s %8s", "pipeline class", "n/token", "ablation ms", "% token")
 		for _, rw := range rows {
 			t.Logf("%-26s %8d %12.3f %7.1f%%", rw.name, rw.count, rw.savedMS, rw.pct)

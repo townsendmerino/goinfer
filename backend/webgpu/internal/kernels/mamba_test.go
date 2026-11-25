@@ -5,6 +5,7 @@ package kernels
 import (
 	"math"
 	"math/rand"
+	"slices"
 	"testing"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
@@ -200,7 +201,7 @@ func TestMambaConv_parity(t *testing.T) {
 			}
 			conv[c] = siluRef(s)
 		}
-		win = append(win, append([]float32(nil), xBC...))
+		win = append(win, slices.Clone(xBC))
 		if len(win) > K-1 {
 			win = win[len(win)-(K-1):]
 		}
@@ -346,7 +347,7 @@ func TestMambaLayer_compose(t *testing.T) {
 			}
 			conv[c] = siluRef(s)
 		}
-		win = append(win, append([]float32(nil), xBC...))
+		win = append(win, slices.Clone(xBC))
 		if len(win) > K-1 {
 			win = win[len(win)-(K-1):]
 		}

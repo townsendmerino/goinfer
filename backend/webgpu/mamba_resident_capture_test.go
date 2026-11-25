@@ -5,6 +5,7 @@ package webgpu
 import (
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -90,7 +91,7 @@ func TestMambaResidentCapture(t *testing.T) {
 			}
 			conv[c] = silu(s)
 		}
-		win = append(win, append([]float32(nil), xBC...))
+		win = append(win, slices.Clone(xBC))
 		if len(win) > K-1 {
 			win = win[len(win)-(K-1):]
 		}
@@ -204,7 +205,7 @@ func TestMambaResidentCapture(t *testing.T) {
 	cnt := 0
 	decoder.SetMambaCapHook(func(proj, gated []float32) {
 		if cnt%nMamba == 0 {
-			cpuProj = append(cpuProj, append([]float32(nil), proj...))
+			cpuProj = append(cpuProj, slices.Clone(proj))
 		}
 		cnt++
 	})

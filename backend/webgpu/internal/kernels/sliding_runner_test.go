@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -68,7 +69,7 @@ func TestDecodeRunnerSlidingWindow_parity(t *testing.T) {
 	lmBQ, lmS := quantW(vocab, hidden, 999)
 
 	// --- CPU oracle (windowed attention) ---
-	x := append([]float32(nil), x0...)
+	x := slices.Clone(x0)
 	for l := range layers {
 		L := &layers[l]
 		xn := refRMSNorm(x, L.an, hidden, eps, false)
@@ -80,8 +81,8 @@ func TestDecodeRunnerSlidingWindow_parity(t *testing.T) {
 		linalg.MatmulBTW8A8(xn, L.vBQ, L.vS, v, 1, hidden, kvDim)
 		refRoPE(q, nH, hd, pos, invFreq)
 		refRoPE(k, nKV, hd, pos, invFreq)
-		kFull := append(append([]float32(nil), L.priorK...), k...)
-		vFull := append(append([]float32(nil), L.priorV...), v...)
+		kFull := slices.Concat(L.priorK, k)
+		vFull := slices.Concat(L.priorV, v)
 		// Window: attend only keys [start, nKeys) — slice off the masked prefix.
 		cv := refAttn(q, kFull[start*kvDim:], vFull[start*kvDim:], nH, nKV, hd, nKeys-start, scale)
 		ao := make([]float32, hidden)

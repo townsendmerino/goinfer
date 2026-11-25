@@ -7,6 +7,7 @@ import (
 	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
 	"math"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -33,7 +34,7 @@ func eModelPrompt(t *testing.T) []int {
 	if err := json.Unmarshal(raw, &g); err != nil {
 		t.Fatal(err)
 	}
-	return append(append([]int(nil), g.PromptIDs...), g.ContinuationIDs...)
+	return slices.Concat(g.PromptIDs, g.ContinuationIDs)
 }
 
 // eModelG1 is what G-S12.1a grades: the WebGPU resident against
@@ -113,7 +114,7 @@ func runEModelG1(t *testing.T) eModelG1 {
 		if err != nil {
 			t.Fatalf("webgpu pos %d: %v", i, err)
 		}
-		gpu := append([]float32(nil), l...)
+		gpu := slices.Clone(l)
 		res.gpu = append(res.gpu, gpu)
 		cg, _ := cosMaxAbs(cpu4, gpu)
 		cc, _ := cosMaxAbs(cpuF, cpu4)
@@ -215,7 +216,7 @@ func TestGemma4EModel_webgpuRowLength(t *testing.T) {
 	if len(row) != mg.BackendView().EmbedLen() || len(row) != 256+6*32 {
 		t.Fatalf("the row is %d floats, EmbedLen %d, want 256 + 6·32", len(row), mg.BackendView().EmbedLen())
 	}
-	for _, short := range [][]float32{row[:256], row[:len(row)-1], append(append([]float32(nil), row...), 0)} {
+	for _, short := range [][]float32{row[:256], row[:len(row)-1], append(slices.Clone(row), 0)} {
 		entries := map[string]func() error{
 			"Forward":         func() error { _, err := rd.Forward(short, 0); return err },
 			"ForwardMRoPE":    func() error { _, err := rd.ForwardMRoPE(short, 0, 0); return err },
@@ -264,7 +265,7 @@ func TestGemma4EModel_webgpuPrefillAndBatch(t *testing.T) {
 		if err != nil {
 			t.Fatalf("sequential pos %d: %v", i, err)
 		}
-		seq[i] = append([]float32(nil), l...)
+		seq[i] = slices.Clone(l)
 	}
 	same := func(what string, got, want []float32) {
 		t.Helper()
@@ -296,7 +297,7 @@ func TestGemma4EModel_webgpuPrefillAndBatch(t *testing.T) {
 	}
 	// ForwardN over positions n..n+3 after a sequential prefix.
 	rd.Reset()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if _, err := rd.Forward(rows[i], i); err != nil {
 			t.Fatal(err)
 		}

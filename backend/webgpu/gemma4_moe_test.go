@@ -6,6 +6,7 @@ import (
 	"github.com/townsendmerino/goinfer/backend/webgpu/internal/kernels"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -90,7 +91,7 @@ func runG4MoE(t *testing.T, dir string, d int) (res g4MoERead, ok bool) {
 		if err != nil {
 			t.Fatalf("webgpu pos %d: %v", i, err)
 		}
-		gpu := append([]float32(nil), l...)
+		gpu := slices.Clone(l)
 		for _, v := range gpu {
 			if v != v {
 				res.nan = true
@@ -217,7 +218,7 @@ func TestGemma4MoE_webgpuPrefill(t *testing.T) {
 		}
 		walked = append(walked[:0], l...)
 		if i < n-1 {
-			rows[i] = append([]float32(nil), mb.EmbedResidentForTest(tok)...)
+			rows[i] = slices.Clone(mb.EmbedResidentForTest(tok))
 		}
 	}
 	pf := decoder.SubsystemsOf(rb).Prefill

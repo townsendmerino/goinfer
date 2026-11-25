@@ -69,7 +69,7 @@ func TestZZ_decodeRunAllocs(t *testing.T) {
 
 	res := testing.Benchmark(func(b *testing.B) {
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			if _, err := runner.Run(x0, pos, pos); err != nil {
 				b.Fatalf("Run: %v", err)
 			}

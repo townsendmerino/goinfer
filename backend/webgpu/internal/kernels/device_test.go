@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"math"
+	"slices"
 	"testing"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 // cpuChainW8A8 is the CPU reference for ChainW8A8: each step quantizes the
 // running activation (internally, in MatmulBTW8A8) and matmuls. Square weights.
 func cpuChainW8A8(act []float32, M, K int, bq []int8, bScales []float32, depth int) []float32 {
-	cur := append([]float32(nil), act...)
+	cur := slices.Clone(act)
 	dst := make([]float32, M*K)
 	for range depth {
 		linalg.MatmulBTW8A8(cur, bq, bScales, dst, M, K, K) // N==K (square)
@@ -100,7 +101,7 @@ func TestChainW8A8_microbench(t *testing.T) {
 
 	// GPU per-call (Stage-1): CPU requant + a synced MatmulW8A8 per step.
 	perCall := func() {
-		cur := append([]float32(nil), act...)
+		cur := slices.Clone(act)
 		for range depth {
 			aq, aScales := linalg.QuantizeRowsInt8(cur, M, K)
 			out, err := ctx.MatmulW8A8(aq, aScales, rm, M)
@@ -133,7 +134,7 @@ func TestChainW8A8_microbench(t *testing.T) {
 	dst := make([]float32, M*K)
 	t2 := time.Now()
 	for range iters {
-		cur := append([]float32(nil), act...)
+		cur := slices.Clone(act)
 		for range depth {
 			linalg.MatmulBTW8A8(cur, bq, bScales, dst, M, K, K)
 			copy(cur, dst)

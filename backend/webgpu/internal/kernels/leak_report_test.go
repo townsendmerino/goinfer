@@ -3,11 +3,12 @@
 package kernels
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"reflect"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -98,7 +99,7 @@ func survivorSites(since int64) string {
 	for k := range by {
 		keys = append(keys, k)
 	}
-	sort.Slice(keys, func(i, j int) bool { return by[keys[i]].bytes > by[keys[j]].bytes })
+	slices.SortFunc(keys, func(a, b string) int { return cmp.Compare(by[b].bytes, by[a].bytes) })
 	var out []string
 	for _, k := range keys {
 		out = append(out, fmt.Sprintf("%s x%d (%d B)", k, by[k].n, by[k].bytes))
