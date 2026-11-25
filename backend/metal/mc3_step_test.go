@@ -1121,7 +1121,7 @@ func TestMC3Step_recurrentPromptRouteChangesNoOutput(t *testing.T) {
 // (no tracked fixture has that shape, so the resident is built by hand), runs the step's recurrent blocks. So its prompts take the
 // step only below the pass's floor, as a DeltaNet model's do.
 func TestMC3Step_recurrentBlocksWithoutDeltaNet(t *testing.T) {
-	r := &resident{recurrentStep: true, layers: []residLayer{{qGate: true}}, kvSlotBufs: make([]kvSlotBuf, 2)}
+	r := &resident{recurrentStep: true, layers: []residLayer{{qGate: true}}, kvPoolState: kvPoolState{kvSlotBufs: make([]kvSlotBuf, 2)}}
 	if !r.recurrentBlocks() {
 		t.Fatal("a gated-attention model with the recurrent blocks on does not run them")
 	}

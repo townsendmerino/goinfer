@@ -90,7 +90,8 @@ func (b *residentBuild) compileKernels() error {
 	dims := bv.Dims() // model-level hd/nKV dropped — geometry is per-layer (geom.go)
 	H, nL, nH, I, V := dims.Hidden, dims.Layers, dims.Heads, dims.Inter, dims.Vocab
 	r := &resident{knob: m.Knob, prog: m.Program(), d: d, H: H, nL: nL, nH: nH, I: I, V: V, preciseMath: preciseMath, stepHeadroom: stepHeadroom,
-		moeStep: m.ResidentMoEStep(), recurrentStep: m.ResidentRecurrentStepOn(kvSlots), gemma4Step: m.ResidentGemma4StepOn(kvSlots), ckptSlot: -1}
+		moeStep: m.ResidentMoEStep(), recurrentStep: m.ResidentRecurrentStepOn(kvSlots), gemma4Step: m.ResidentGemma4StepOn(kvSlots),
+		recurrentCkpt: recurrentCkpt{ckptSlot: -1}}
 	r.chainEmbBase = residentNeedBytes(m, b.plan) + int64(kvSlots-1)*metalSlotBytes(m, b.plan) // every slot's KV and recurrent state
 	r.chainEmbGuardOff = modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != ""
 	if r.ctxCap, err = resolveMetalCtxCap(m, b.plan); err != nil {

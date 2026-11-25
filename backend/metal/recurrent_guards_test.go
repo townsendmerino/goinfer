@@ -19,11 +19,11 @@ import (
 // The batched prefill is not in the list: it runs Mamba-2 (prefill_mamba.go, TestKSD8_tinyFidelity).
 func TestRecurrentGuards_declineMamba(t *testing.T) {
 	mambaRes := func() *resident {
-		return &resident{V: 1024, H: 64, mamba: &mambaParams{}, layers: []residLayer{{mamba: &mambaLayer{}}},
-			decodeLaneW4F16: true, kvSlotBufs: make([]kvSlotBuf, 2), ctxCap: 4096}
+		return &resident{V: 1024, H: 64, mambaState: mambaState{mamba: &mambaParams{}}, layers: []residLayer{{mamba: &mambaLayer{}}},
+			w4f16Lane: w4f16Lane{decodeLaneW4F16: true}, kvPoolState: kvPoolState{kvSlotBufs: make([]kvSlotBuf, 2)}, ctxCap: 4096}
 	}
 	plainRes := func() *resident {
-		return &resident{V: 1024, H: 64, layers: []residLayer{{ffn: true}}, decodeLaneW4F16: true}
+		return &resident{V: 1024, H: 64, layers: []residLayer{{ffn: true}}, w4f16Lane: w4f16Lane{decodeLaneW4F16: true}}
 	}
 	declines := func(f func() bool) (d bool) {
 		defer func() {

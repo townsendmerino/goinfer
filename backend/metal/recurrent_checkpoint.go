@@ -14,6 +14,17 @@ import (
 // ones, copied on the device after the executor has drained. A load the memory guard cannot also fit it into keeps none, and the
 // slot has no checkpoint to restore.
 
+// recurrentCkpt is the resident's recurrent checkpoint state: its buffers, the save copies (live into checkpoint) and the restore
+// copies against the bound slot (bindCheckpoint), the slot it was saved on (-1: none saved), the checkpoint's bytes (0: none kept),
+// and why a load kept none.
+type recurrentCkpt struct {
+	ckptBufs              []Buffer
+	ckptSave, ckptRestore []gpu.DeviceCopy
+	ckptSlot              int
+	ckptBytes             int64
+	ckptDeclined          string
+}
+
 // ckptFits reports whether the guard's budget holds the load's need plus the checkpoint's bytes (residentMemoryDecline's quantities,
 // not the OS's account of free memory), and why not. A variable so a test can stand in a machine with no room.
 var ckptFits = func(m *decoder.Model, plan metalCtxPlan, bytes int64) (bool, string) {

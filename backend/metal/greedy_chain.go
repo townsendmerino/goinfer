@@ -6,10 +6,40 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"sync"
 
 	"github.com/townsendmerino/goinfer/internal/runtime/logs"
 	"github.com/townsendmerino/goinfer/internal/runtime/mem"
 )
+
+// chainState holds the resident's greedy/sampled decode chain pipelines, goroutine channels, double-buffered uniforms,
+// untied gather table, and sampled-chain Gumbel uniforms.
+type chainState struct {
+	pEmbedGather Pipeline
+	lmTied       bool // lmW/lmS are the embedding table itself (a tied LM head): the chain gathers from them, no copy
+	chainReq     chan chainReq
+	chainResp    chan chainResp
+	chainDone    chan struct{}
+	chainSets    [2]posUniforms
+	chainTok     [2]Buffer
+	chainServed  int // tokens chainNext has returned since the build (tests read it)
+	// chainSlot is the open chain's KV slot; chainEnd, written by the chain's goroutine, is where its caller's sequence ends.
+	chainSlot, chainEnd int
+	// The untied head's gather table: the int8 embedding table on the device, made the first time a chain is asked for
+	// (chainEmbedTable), aliased from the .giw mapping where it can be.
+	chainEmbMu           sync.Mutex
+	chainEmbTried        bool
+	chainEmbW, chainEmbS Buffer
+	chainEmbWhy          string
+	chainEmbBase         int64
+	chainEmbGuardOff     bool
+	chainGW, chainGS     Buffer
+	// The sampled chain's own gumbel uniforms and double-buffered logits rows.
+	chainInvT, chainK0, chainK1   Buffer
+	chainD0, chainD1, chainLogits [2]Buffer
+	chainNegInf                   Buffer // chainNegInfForTest's row; never made in production
+	chainNaNScale                 Buffer // chainNaNScaleForTest's scale; never made in production
+}
 
 // The greedy chain (docs/audit-metal-2026-09-30.md).
 //

@@ -2183,6 +2183,8 @@ func (t *prefillTrace) walk(prefix string, v reflect.Value) {
 			for j := range f.Len() {
 				add(read(f.Index(j)), fmt.Sprintf("%s[%d]", name, j))
 			}
+		case f.Kind() == reflect.Struct && v.Type().Field(i).Anonymous:
+			t.walk(prefix, f)
 		}
 	}
 }
