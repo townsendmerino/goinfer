@@ -400,6 +400,43 @@ func qwenExtractRGB(img image.Image, h, w int) []float32 {
 	return out
 }
 
+// qwenExtractRGBU8 reads img into a [h*w*3] 0..255 channel-last uint8 buffer directly, avoiding the 4x larger
+// []float32 intermediate for processors whose resize operates on uint8 pixels (LFM2-VL, Pixtral).
+func qwenExtractRGBU8(img image.Image, h, w int) []uint8 {
+	b := img.Bounds()
+	out := make([]uint8, h*w*3)
+	switch src := img.(type) {
+	case *image.YCbCr:
+		for y := range h {
+			for x := range w {
+				yi := src.YOffset(b.Min.X+x, b.Min.Y+y)
+				ci := src.COffset(b.Min.X+x, b.Min.Y+y)
+				r, g, bl := color.YCbCrToRGB(src.Y[yi], src.Cb[ci], src.Cr[ci])
+				i := (y*w + x) * 3
+				out[i+0], out[i+1], out[i+2] = r, g, bl
+			}
+		}
+		return out
+	case *image.RGBA:
+		for y := range h {
+			for x := range w {
+				pi := src.PixOffset(b.Min.X+x, b.Min.Y+y)
+				i := (y*w + x) * 3
+				out[i+0], out[i+1], out[i+2] = src.Pix[pi+0], src.Pix[pi+1], src.Pix[pi+2]
+			}
+		}
+		return out
+	}
+	for y := range h {
+		for x := range w {
+			cr, cg, cb, _ := img.At(b.Min.X+x, b.Min.Y+y).RGBA()
+			i := (y*w + x) * 3
+			out[i+0], out[i+1], out[i+2] = uint8(cr>>8), uint8(cg>>8), uint8(cb>>8)
+		}
+	}
+	return out
+}
+
 // qwenBicubicU8 resizes src ([h*w*3] 0..255 channel-last) to [hb*wb*3] with PIL's
 // bicubic filter (Keys cubic a=-0.5, antialiased on downscale), separable
 // horizontal then vertical with a uint8 clamp+round between/after passes (matching

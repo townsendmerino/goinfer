@@ -175,18 +175,41 @@ def running():
     return out
 
 
+def _pid_is_runner(pid):
+    """Verify pid is a live night.py process so post-reboot PID reuse (e.g. a desktop service inheriting
+    an uncleanly left runner.pid) never wedges goinfer-night.service in a restart loop."""
+    if pid == os.getpid():
+        return True
+    try:
+        if sys.platform.startswith("linux"):
+            raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+            if not raw:
+                return False
+            cmd = raw.replace(b"\x00", b" ").decode("utf-8", "replace")
+        else:
+            r = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True, timeout=5)
+            if r.returncode != 0 or not r.stdout.strip():
+                return False
+            cmd = r.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return "night.py" in cmd
+
+
 def runner_pid():
     try:
         pid = int(PIDFILE.read_text().strip())
     except Exception:
         return None
+    if pid <= 0:
+        return None
     try:
         os.kill(pid, 0)
-        return pid
     except ProcessLookupError:
         return None
     except PermissionError:
-        return pid
+        return pid if _pid_is_runner(pid) else None
+    return pid if _pid_is_runner(pid) else None
 
 
 def parse_deadline(s, start):

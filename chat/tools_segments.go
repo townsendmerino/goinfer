@@ -11,6 +11,7 @@ import "strings"
 // testdata/chat_goldens pin it byte for byte through Template.RenderTools).
 type toolBuf struct {
 	segBuf
+	gap   strings.Builder   // accumulates consecutive non-special text to avoid O(N^2) string concatenation
 	tk    func(string) bool // does the vocabulary hold this marker as a token? (Template.has, or always true when unknown)
 	marks []string          // the family's control-token strings
 }
@@ -24,17 +25,33 @@ func (t *Template) newToolBuf(marks ...string) *toolBuf {
 	return &toolBuf{tk: tk, marks: marks}
 }
 
+func (b *toolBuf) flushGap() {
+	if b.gap.Len() == 0 {
+		return
+	}
+	b.segs = append(b.segs, Segment{Text: b.gap.String()})
+	b.gap.Reset()
+}
+
+// out flushes any buffered trailing gap text and returns the completed segments.
+func (b *toolBuf) out() []Segment {
+	b.flushGap()
+	return b.segs
+}
+
+// sp flushes any open gap text before appending a special token segment.
+func (b *toolBuf) sp(s string) {
+	b.flushGap()
+	b.segBuf.sp(s)
+}
+
 // txt appends untrusted or plain text to the open gap, merging into the previous non-special span so the whole gap between two
 // tokens is tokenized once, as the whole-string path tokenizes it.
 func (b *toolBuf) txt(s string) {
 	if s == "" {
 		return
 	}
-	if n := len(b.segs); n > 0 && !b.segs[n-1].Special {
-		b.segs[n-1].Text += s
-		return
-	}
-	b.segs = append(b.segs, Segment{Text: s})
+	b.gap.WriteString(s)
 }
 
 // mark appends a control token: a special span when the vocabulary has it, otherwise ordinary text in the gap (a vocabulary

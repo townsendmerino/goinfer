@@ -89,7 +89,8 @@ type harmonySplitter struct {
 	sawReason bool    // an analysis message was opened
 	answered  bool    // content was emitted
 
-	calls []harmonyCall
+	calls       []harmonyCall
+	curCallArgs strings.Builder
 }
 
 func newHarmonySplitter() *harmonySplitter { return &harmonySplitter{} }
@@ -186,6 +187,10 @@ func (s *harmonySplitter) Push(chunk string) (reasoning, content string) {
 				return out[hmToReasoning].String(), out[hmToContent].String()
 			}
 			s.body(s.buf[:i], emit)
+			if s.route == hmToCall && len(s.calls) > 0 {
+				s.calls[len(s.calls)-1].Args = s.curCallArgs.String()
+				s.curCallArgs.Reset()
+			}
 			s.buf = s.buf[i+len(which):]
 			s.state = hmTop
 		}
@@ -198,7 +203,7 @@ func (s *harmonySplitter) body(text string, emit func(hmRoute, string)) {
 		return
 	}
 	if s.route == hmToCall {
-		s.calls[len(s.calls)-1].Args += text
+		s.curCallArgs.WriteString(text)
 		return
 	}
 	emit(s.route, text)
@@ -212,6 +217,7 @@ func (s *harmonySplitter) openMessage() {
 	switch {
 	case recipient != "":
 		s.route = hmToCall
+		s.curCallArgs.Reset()
 		s.calls = append(s.calls, harmonyCall{Channel: channel, Recipient: recipient, Constrain: constrain})
 	case channel == "analysis":
 		s.route, s.sawReason = hmToReasoning, true
@@ -224,6 +230,14 @@ func (s *harmonySplitter) openMessage() {
 // dropped; a body's held-back tail (a partial terminator that never completed) is text.
 func (s *harmonySplitter) Flush() (reasoning, content string) {
 	defer func() { s.buf, s.header = "", "" }()
+	if s.state == hmBody && s.route == hmToCall && len(s.calls) > 0 {
+		if strings.TrimSpace(s.buf) != "" {
+			s.curCallArgs.WriteString(s.buf)
+		}
+		s.calls[len(s.calls)-1].Args = s.curCallArgs.String()
+		s.curCallArgs.Reset()
+		return "", ""
+	}
 	if s.state != hmBody && s.state != hmTop {
 		return "", ""
 	}
@@ -239,7 +253,9 @@ func (s *harmonySplitter) Flush() (reasoning, content string) {
 	}
 	text := s.buf
 	if route == hmToCall {
-		s.calls[len(s.calls)-1].Args += text
+		s.curCallArgs.WriteString(text)
+		s.calls[len(s.calls)-1].Args = s.curCallArgs.String()
+		s.curCallArgs.Reset()
 		return "", ""
 	}
 	if !s.started {

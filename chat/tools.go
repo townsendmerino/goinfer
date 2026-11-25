@@ -343,7 +343,7 @@ func (t *Template) renderChatMLTools(system string, turns []Turn, tools []Tool, 
 		}
 	}
 	b.lit("<|im_start|>assistant\n")
-	return b.segs
+	return b.out()
 }
 
 // parseChatMLTools reads every <tool_call> block: the JSON form goinfer prompts for ({"name": …, "arguments": {…}}) and, where the body is
@@ -424,7 +424,7 @@ func (t *Template) renderMistralTools(system string, turns []Turn, tools []Tool)
 			b.lit("[/INST]")
 		}
 	}
-	return b.segs
+	return b.out()
 }
 
 func parseMistralTools(out string) ([]ToolCall, string) {
@@ -486,7 +486,7 @@ func (t *Template) renderLlama3Tools(system string, turns []Turn, tools []Tool) 
 		}
 	}
 	b.lit("<|start_header_id|>assistant<|end_header_id|>\n\n")
-	return b.segs
+	return b.out()
 }
 
 func parseLlama3Tools(out string) ([]ToolCall, string) {
@@ -619,7 +619,7 @@ func (t *Template) renderFlintTools(system string, turns []Turn, tools []Tool) [
 		emitTools()
 	}
 	b.lit("<|assistant|>")
-	return b.segs
+	return b.out()
 }
 
 func parseFlintTools(out string, tools []Tool) ([]ToolCall, string) {

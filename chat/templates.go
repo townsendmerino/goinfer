@@ -411,7 +411,7 @@ func (t *Template) renderMistral(system string, turns []Turn) []Segment {
 		b.txt(content)
 		b.lit("[/INST]")
 	}
-	return b.segs
+	return b.out()
 }
 
 // Ministral is Ministral 3's own template (mistralai/Ministral-3-8B-Instruct-2512's chat_template.jinja): "<s>" once, an explicit system

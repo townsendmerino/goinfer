@@ -1737,5 +1737,18 @@ class ServeLogged(unittest.TestCase):
             time.sleep(0.1)
         self.assertIn("hi", (d / "goinfer-serve-y.serve.log").read_text())
 
+
+class RunnerPidReuse(unittest.TestCase):
+    """A stale runner.pid whose PID was reassigned after reboot to an unrelated process must not
+    read as a live night.py runner and wedge goinfer-night.service."""
+
+    def test_unrelated_live_pid_is_not_treated_as_runner(self):
+        proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        self.addCleanup(lambda: (proc.terminate(), proc.wait(timeout=5)))
+        night.PIDFILE.parent.mkdir(parents=True, exist_ok=True)
+        night.PIDFILE.write_text(str(proc.pid))
+        self.addCleanup(lambda: night.PIDFILE.unlink(missing_ok=True))
+        self.assertIsNone(night.runner_pid(), "unrelated live python process was mistaken for night.py")
+
 if __name__ == "__main__":
     unittest.main()
