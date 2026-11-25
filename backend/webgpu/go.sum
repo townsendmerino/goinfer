@@ -18,6 +18,8 @@ github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/townsendmerino/aikit v1.78.0 h1:AlQlBSdZcqXXdMjpn9FCFKj396nS0yH0ZoaPv8Iq3kk=
 github.com/townsendmerino/aikit v1.78.0/go.mod h1:Pv+U5no9SEkFz0DC+whRtFkgVSZHaklf4XYpInTkM9I=
+github.com/townsendmerino/aikit v1.79.0 h1:4YDdHtJYDItxBtZQGep8uZyHzWZGhPFtjkN5QsqQHBs=
+github.com/townsendmerino/aikit v1.79.0/go.mod h1:Pv+U5no9SEkFz0DC+whRtFkgVSZHaklf4XYpInTkM9I=
 github.com/townsendmerino/goinfer v0.25.0 h1:UaxaoIrb52vl7U0by00Kl5dy+60v597knVfGjQfFLXo=
 github.com/townsendmerino/goinfer v0.25.0/go.mod h1:WP9sM4Ne5yJKFDM8bxbW9SUtpP+4lyZi6fpqymk8GsY=
 golang.org/x/sys v0.47.0 h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=
