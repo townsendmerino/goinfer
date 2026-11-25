@@ -298,7 +298,7 @@ func (t *reqTrace) line(route string, status int, end time.Time) string {
 	}
 	ids := "ids=- ids_fallback=-"
 	if t.idsSeen {
-		ids = t.ids.fields()
+		ids = t.ids.Fields()
 	}
 	line := fmt.Sprintf("request: %s model=%s status=%d prompt_tokens=%s completion_tokens=%s ttft=%s total=%dms reused=%s slot=%s div=%s canon=%s %s",
 		route, model, status, prompt, completion, ttft, end.Sub(t.start).Milliseconds(), reused, slot, div, canon, ids)

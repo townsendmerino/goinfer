@@ -423,6 +423,7 @@
       "internal/app/connect",
       "internal/app/loadflags",
       "internal/app/pullcmd",
+      "internal/app/serveapp/carriedids",
       "internal/app/serveapp/jobs",
       "internal/app/serveapp/sessions",
       "internal/audio",
@@ -442,6 +443,11 @@
       "internal/vision",
       "multimodal",
       "pull",
+      "tokenizer"
+    ],
+    "internal/app/serveapp/carriedids": [
+      "chat",
+      "internal/codec",
       "tokenizer"
     ],
     "internal/app/serveapp/jobs": [

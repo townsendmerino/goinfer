@@ -112,7 +112,7 @@ func TestIDsCarried_templateFormat(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				m["encrypted_content"] = key.mint(model, b.ns, b.text, b.ids, b.whole)
+				m["encrypted_content"] = key.Mint(model, b.NS, b.Text, b.IDs, b.Whole)
 			}
 		}
 	}
@@ -141,15 +141,15 @@ func TestIDsCarried_templateFormat(t *testing.T) {
 			t.Fatalf("%s: the reply has no reasoning item or no call", c.ID)
 		}
 		blob, err := parseIDsBlob(input[rsAt].(map[string]any)["encrypted_content"].(string))
-		if err != nil || !slices.Equal(blob.ids, c.Gen) {
+		if err != nil || !slices.Equal(blob.IDs, c.Gen) {
 			t.Fatalf("%s: the carried ids are not the logged generation (%v)", c.ID, err)
 		}
 
 		// Carried and untouched: the ids replace the template's formatting and the slot is kept.
 		ids, out := render(next, true)
-		want := fmt.Sprintf("ids=%d/%d ids_fallback=- ids_fmt=1", out.carried, out.carried)
-		if out.fields() != want {
-			t.Errorf("%s carried: %s, want %s", c.ID, out.fields(), want)
+		want := fmt.Sprintf("ids=%d/%d ids_fallback=- ids_fmt=1", out.Carried, out.Carried)
+		if out.Fields() != want {
+			t.Errorf("%s carried: %s, want %s", c.ID, out.Fields(), want)
 		}
 		if len(ids) < len(slot) || !slices.Equal(ids[:len(slot)], slot) {
 			t.Errorf("%s carried: the next prompt leaves the slot at %d of %d", c.ID, idsLCP(ids, slot), len(slot))
@@ -159,7 +159,7 @@ func TestIDsCarried_templateFormat(t *testing.T) {
 		// same loss (the off arm's cases).
 		v1 := func(text string) string { return reasoningBlobPrefix + base64.StdEncoding.EncodeToString([]byte(text)) }
 		noCarrier := next.clone(t)
-		noCarrier.item(rsAt)["encrypted_content"] = v1(blob.text)
+		noCarrier.item(rsAt)["encrypted_content"] = v1(blob.Text)
 		today, _ := render(noCarrier, true)
 		if at := idsLCP(today, slot); at < len(P0) || at >= len(slot) {
 			t.Errorf("%s without a carrier: the prompt leaves the slot at %d; want inside the reply [%d, %d)", c.ID, at, len(P0), len(slot))
@@ -174,23 +174,23 @@ func TestIDsCarried_templateFormat(t *testing.T) {
 		if vi < len(`"cmd":"`) || vi+2 > len(args) {
 			t.Fatalf("%s: no cmd string in %s", c.ID, args)
 		}
-		mid := strings.Index(blob.text[len(blob.text)/2:], " ") + len(blob.text)/2
+		mid := strings.Index(blob.Text[len(blob.Text)/2:], " ") + len(blob.Text)/2
 		type defect struct {
 			name, reason string
 			args, text   string // the call's arguments and the blob's text after the edit
 		}
 		ds := []defect{
-			{"args one character", idsDecode, flipChar(args), blob.text},
-			{"reasoning one character", idsDecode, args, flipChar(blob.text)},
-			{"space inside an argument string", idsDecode, args[:vi+1] + " " + args[vi+1:], blob.text},
-			{"space inside the reasoning", idsDecode, args, blob.text[:mid] + " " + blob.text[mid:]},
-			{"space before the closing delimiter", idsDecode, args, blob.text + " "},
-			{"the call's JSON re-spaced outside strings", "", strings.Replace(args, `"cmd":"`, `"cmd": "`, 1), blob.text},
+			{"args one character", idsDecode, flipChar(args), blob.Text},
+			{"reasoning one character", idsDecode, args, flipChar(blob.Text)},
+			{"space inside an argument string", idsDecode, args[:vi+1] + " " + args[vi+1:], blob.Text},
+			{"space inside the reasoning", idsDecode, args, blob.Text[:mid] + " " + blob.Text[mid:]},
+			{"space before the closing delimiter", idsDecode, args, blob.Text + " "},
+			{"the call's JSON re-spaced outside strings", "", strings.Replace(args, `"cmd":"`, `"cmd": "`, 1), blob.Text},
 		}
 		for _, d := range ds {
 			body := next.clone(t)
 			body.item(callAt)["arguments"] = d.args
-			body.item(rsAt)["encrypted_content"] = key.mint(model, "", d.text, blob.ids, blob.whole)
+			body.item(rsAt)["encrypted_content"] = key.Mint(model, "", d.text, blob.IDs, blob.Whole)
 			got, out := render(body, true)
 			plain := body.clone(t)
 			plain.item(rsAt)["encrypted_content"] = v1(d.text)
@@ -199,14 +199,14 @@ func TestIDsCarried_templateFormat(t *testing.T) {
 				t.Fatalf("VOID %s (%s): the edit left the rendered prompt unchanged", c.ID, d.name)
 			}
 			if d.reason == "" {
-				want := fmt.Sprintf("ids=%d/%d ids_fallback=- ids_fmt=1", out.carried, out.carried)
-				if out.fields() != want || len(got) < len(slot) || !slices.Equal(got[:len(slot)], slot) {
-					t.Errorf("%s (%s): %s, slot kept to %d of %d; want %s and the whole slot", c.ID, d.name, out.fields(), idsLCP(got, slot), len(slot), want)
+				want := fmt.Sprintf("ids=%d/%d ids_fallback=- ids_fmt=1", out.Carried, out.Carried)
+				if out.Fields() != want || len(got) < len(slot) || !slices.Equal(got[:len(slot)], slot) {
+					t.Errorf("%s (%s): %s, slot kept to %d of %d; want %s and the whole slot", c.ID, d.name, out.Fields(), idsLCP(got, slot), len(slot), want)
 				}
 				continue
 			}
-			if want := fmt.Sprintf("ids=%d/%d ids_fallback=%s", out.carried-1, out.carried, d.reason); out.fields() != want {
-				t.Errorf("%s (%s): %s, want %s", c.ID, d.name, out.fields(), want)
+			if want := fmt.Sprintf("ids=%d/%d ids_fallback=%s", out.Carried-1, out.Carried, d.reason); out.Fields() != want {
+				t.Errorf("%s (%s): %s, want %s", c.ID, d.name, out.Fields(), want)
 			}
 			if !slices.Equal(got, ref) {
 				t.Errorf("%s (%s): the fallback is not the v1 tokenization of the same text (first difference at %d)", c.ID, d.name, idsLCP(got, ref))
